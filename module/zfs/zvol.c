@@ -142,6 +142,32 @@ zvol_find_by_name(const char *name)
 }
 
 /*
+ * Given a path, return TRUE if path is a ZVOL.
+ */
+boolean_t zvol_is_zvol(const char *device)
+{
+    struct block_device *bdev;
+    unsigned int major;
+
+    if (device) {
+
+        bdev = vdev_bdev_open(device, vdev_bdev_mode(FREAD), NULL);
+
+        if (IS_ERR(bdev))
+            return B_FALSE;
+
+        major = MAJOR(bdev->bd_dev);
+        vdev_bdev_close(bdev, vdev_bdev_mode(FREAD));
+
+        if (major == zvol_major)
+            return (B_TRUE);
+    }
+    return (B_FALSE);
+}
+
+
+
+/*
  * ZFS_IOC_CREATE callback handles dmu zvol and zap object creation.
  */
 void
