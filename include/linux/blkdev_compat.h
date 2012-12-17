@@ -31,7 +31,6 @@
 
 #include <linux/blkdev.h>
 #include <linux/elevator.h>
-#include <sys/vnode.h> /* For FREAD, FWRITE, etc */
 
 #ifndef HAVE_FMODE_T
 typedef unsigned __bitwise__ fmode_t;
@@ -461,37 +460,6 @@ blk_queue_discard_granularity(struct request_queue *q, unsigned int dg)
 #else
 #define blk_queue_discard_granularity(x, dg)	((void)0)
 #endif /* HAVE_DISCARD_GRANULARITY */
-
-#ifdef HAVE_OPEN_BDEV_EXCLUSIVE
-static inline fmode_t
-vdev_bdev_mode(int smode)
-{
-	fmode_t mode = 0;
-
-	ASSERT3S(smode & (FREAD | FWRITE), !=, 0);
-
-	if (smode & FREAD)
-		mode |= FMODE_READ;
-
-	if (smode & FWRITE)
-		mode |= FMODE_WRITE;
-
-	return mode;
-}
-#else
-static inline int
-vdev_bdev_mode(int smode)
-{
-	int mode = 0;
-
-	ASSERT3S(smode & (FREAD | FWRITE), !=, 0);
-
-	if ((smode & FREAD) && !(smode & FWRITE))
-		mode = MS_RDONLY;
-
-	return mode;
-}
-#endif /* HAVE_OPEN_BDEV_EXCLUSIVE */
 
 /*
  * Default Linux IO Scheduler,
