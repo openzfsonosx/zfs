@@ -49,6 +49,37 @@ typedef struct dio_request {
 } dio_request_t;
 
 
+#ifdef HAVE_OPEN_BDEV_EXCLUSIVE
+static fmode_t
+vdev_bdev_mode(int smode)
+{
+	fmode_t mode = 0;
+
+	ASSERT3S(smode & (FREAD | FWRITE), !=, 0);
+
+	if (smode & FREAD)
+		mode |= FMODE_READ;
+
+	if (smode & FWRITE)
+		mode |= FMODE_WRITE;
+
+	return mode;
+}
+#else
+static int
+vdev_bdev_mode(int smode)
+{
+	int mode = 0;
+
+	ASSERT3S(smode & (FREAD | FWRITE), !=, 0);
+
+	if ((smode & FREAD) && !(smode & FWRITE))
+		mode = MS_RDONLY;
+
+	return mode;
+}
+#endif /* HAVE_OPEN_BDEV_EXCLUSIVE */
+
 static uint64_t
 bdev_capacity(struct block_device *bdev)
 {
