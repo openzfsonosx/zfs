@@ -30,7 +30,7 @@
 #ifndef _SYS_ZFS_CONTEXT_H
 #define	_SYS_ZFS_CONTEXT_H
 
-#ifdef __KERNEL__
+#ifdef _KERNEL
 
 #include <sys/note.h>
 #include <sys/types.h>
@@ -63,7 +63,19 @@
 #include <sys/sunddi.h>
 #include <sys/ctype.h>
 #include <sys/disp.h>
-#include <linux/dcache_compat.h>
+#include <sys/atomic.h>
+//#include <linux/dcache_compat.h>
+
+typedef enum kmem_cbrc {
+	KMEM_CBRC_YES,
+	KMEM_CBRC_NO,
+	KMEM_CBRC_LATER,
+	KMEM_CBRC_DONT_NEED,
+	KMEM_CBRC_DONT_KNOW
+} kmem_cbrc_t;
+
+#define	KMC_KMEM		0x0
+
 
 #else /* _KERNEL */
 

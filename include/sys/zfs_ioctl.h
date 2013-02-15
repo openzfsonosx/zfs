@@ -31,6 +31,9 @@
 #include <sys/dsl_deleg.h>
 #include <sys/spa.h>
 #include <sys/zfs_stat.h>
+#include <sys/conf.h>
+#include <sys/systm.h>
+#include <miscfs/devfs/devfs.h>
 
 #ifdef _KERNEL
 #include <sys/nvpair.h>
@@ -64,6 +67,10 @@ typedef enum drr_headertype {
 
 #define	DMU_GET_FEATUREFLAGS(vi)	BF64_GET((vi), 2, 30)
 #define	DMU_SET_FEATUREFLAGS(vi, x)	BF64_SET((vi), 2, 30, x)
+
+// FIXME
+typedef void *minor_t;
+
 
 /*
  * Feature flags for zfs send streams (flags in drr_versioninfo)
@@ -292,6 +299,8 @@ typedef struct zfs_cmd {
 	uint64_t	zc_fromobj;
 	uint64_t	zc_createtxg;
 	zfs_stat_t	zc_stat;
+    int             zc_ioc_error; /* ioctl error value */
+    uint64_t        zc_dev;      /* OSX doesn't have ddi_driver_major*/
 } zfs_cmd_t;
 
 typedef struct zfs_useracct {
@@ -328,7 +337,7 @@ enum zfsdev_state_type {
 typedef struct zfsdev_state {
         list_node_t             zs_next;        /* next zfsdev_state_t link */
 	struct file		*zs_file;	/* associated file struct */
-	minor_t			zs_minor;	/* made up minor number */
+    //	minor_t			zs_minor;	/* made up minor number */
 	void			*zs_onexit;	/* onexit data */
 	void			*zs_zevent;	/* zevent data */
 } zfsdev_state_t;

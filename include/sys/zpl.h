@@ -26,15 +26,19 @@
 #define	_SYS_ZPL_H
 
 #include <sys/vfs.h>
-#include <linux/vfs_compat.h>
-#include <linux/xattr_compat.h>
-#include <linux/exportfs.h>
-#include <linux/writeback.h>
-#include <linux/falloc.h>
+//#include <linux/vfs_compat.h>
+//#include <linux/xattr_compat.h>
+//#include <linux/exportfs.h>
+//#include <linux/writeback.h>
+//#include <linux/falloc.h>
+
 
 /* zpl_inode.c */
-extern void zpl_vap_init(vattr_t *vap, struct inode *dir,
-    struct dentry *dentry, zpl_umode_t mode, cred_t *cr);
+//extern void zpl_vap_init(vattr_t *vap, struct inode *dir,
+//   struct dentry *dentry, zpl_umode_t mode, cred_t *cr);
+struct inode;
+struct dentry;
+struct qstr;
 
 extern const struct inode_operations zpl_inode_operations;
 extern const struct inode_operations zpl_dir_inode_operations;
@@ -70,7 +74,7 @@ extern ssize_t zpl_xattr_list(struct dentry *dentry, char *buf, size_t size);
 extern int zpl_xattr_security_init(struct inode *ip, struct inode *dip,
     const struct qstr *qstr);
 
-extern xattr_handler_t *zpl_xattr_handlers[];
+//extern xattr_handler_t *zpl_xattr_handlers[];
 
 /* zpl_ctldir.c */
 extern const struct file_operations zpl_fops_root;

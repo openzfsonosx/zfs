@@ -411,7 +411,7 @@ txg_sync_thread(dsl_pool_t *dp)
 	 * unsafe to use KM_SLEEP during memory allocations due to the
 	 * potential for a deadlock.  KM_PUSHPAGE should be used instead.
 	 */
-	current->flags |= PF_NOFS;
+	//current->flags |= PF_NOFS;
 #endif /* _KERNEL */
 
 	txg_thread_enter(tx, &cpr);
@@ -809,6 +809,7 @@ txg_list_next(txg_list_t *tl, void *p, uint64_t txg)
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
+#if 0
 EXPORT_SYMBOL(txg_init);
 EXPORT_SYMBOL(txg_fini);
 EXPORT_SYMBOL(txg_sync_start);
@@ -826,4 +827,5 @@ EXPORT_SYMBOL(txg_sync_waiting);
 
 module_param(zfs_txg_timeout, int, 0644);
 MODULE_PARM_DESC(zfs_txg_timeout, "Max seconds worth of delta per txg");
+#endif
 #endif

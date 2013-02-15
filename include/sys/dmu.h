@@ -66,6 +66,7 @@ struct nvlist;
 struct arc_buf;
 struct zio_prop;
 struct sa_handle;
+    struct request; // lund
 
 typedef struct objset objset_t;
 typedef struct dmu_tx dmu_tx_t;
@@ -593,12 +594,12 @@ void dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 void dmu_prealloc(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	dmu_tx_t *tx);
 #ifdef _KERNEL
-#include <linux/blkdev_compat.h>
+    //#include <linux/blkdev_compat.h>
 int dmu_read_req(objset_t *os, uint64_t object, struct request *req);
 int dmu_write_req(objset_t *os, uint64_t object, struct request *req,
 	dmu_tx_t *tx);
-int dmu_read_uio(objset_t *os, uint64_t object, struct uio *uio, uint64_t size);
-int dmu_write_uio(objset_t *os, uint64_t object, struct uio *uio, uint64_t size,
+int dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size);
+int dmu_write_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size,
 	dmu_tx_t *tx);
 int dmu_write_uio_dbuf(dmu_buf_t *zdb, struct uio *uio, uint64_t size,
 	dmu_tx_t *tx);
@@ -792,9 +793,10 @@ typedef void (*dmu_traverse_cb_t)(objset_t *os, void *arg, struct blkptr *bp,
 void dmu_traverse_objset(objset_t *os, uint64_t txg_start,
     dmu_traverse_cb_t cb, void *arg);
 
-int dmu_send(objset_t *tosnap, objset_t *fromsnap, boolean_t fromorigin,
-    int outfd, struct vnode *vp, offset_t *off);
-int dmu_send_estimate(objset_t *tosnap, objset_t *fromsnap, boolean_t fromorign,
+int
+dmu_send(objset_t *tosnap, objset_t *fromsnap, boolean_t fromorigin,
+         int outfd, vnode_t *vp, offset_t *off);
+int dmu_send_estimate(objset_t *tosnap, objset_t *fromsnap, boolean_t orign,
     uint64_t *sizep);
 
 typedef struct dmu_recv_cookie {
@@ -817,7 +819,7 @@ typedef struct dmu_recv_cookie {
 
 int dmu_recv_begin(char *tofs, char *tosnap, char *topds, struct drr_begin *,
     boolean_t force, objset_t *origin, dmu_recv_cookie_t *);
-int dmu_recv_stream(dmu_recv_cookie_t *drc, struct vnode *vp, offset_t *voffp,
+int dmu_recv_stream(dmu_recv_cookie_t *drc, vnode_t *vp, offset_t *voffp,
     int cleanup_fd, uint64_t *action_handlep);
 int dmu_recv_end(dmu_recv_cookie_t *drc);
 

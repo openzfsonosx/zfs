@@ -1736,6 +1736,7 @@ spa_debug_enabled(spa_t *spa)
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
 /* Namespace manipulation */
+#if 0
 EXPORT_SYMBOL(spa_lookup);
 EXPORT_SYMBOL(spa_add);
 EXPORT_SYMBOL(spa_remove);
@@ -1812,4 +1813,5 @@ EXPORT_SYMBOL(spa_writeable);
 EXPORT_SYMBOL(spa_mode);
 
 EXPORT_SYMBOL(spa_namespace_lock);
+#endif
 #endif
