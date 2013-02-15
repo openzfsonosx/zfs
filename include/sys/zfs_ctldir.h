@@ -83,7 +83,7 @@ extern int zfsctl_snapdir_mkdir(struct inode *dip, char *dirname, vattr_t *vap,
 extern void zfsctl_snapdir_inactive(struct inode *ip);
 extern int zfsctl_unmount_snapshot(zfs_sb_t *zsb, char *name, int flags);
 extern int zfsctl_unmount_snapshots(zfs_sb_t *zsb, int flags, int *count);
-extern int zfsctl_mount_snapshot(struct path *path, int flags);
+//extern int zfsctl_mount_snapshot(struct path *path, int flags);
 extern int zfsctl_lookup_objset(struct super_block *sb, uint64_t objsetid,
     zfs_sb_t **zsb);
 

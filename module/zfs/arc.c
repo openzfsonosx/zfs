@@ -142,6 +142,7 @@
 #include <sys/kstat.h>
 #include <sys/dmu_tx.h>
 #include <zfs_fletcher.h>
+#include <sys/timer.h>
 
 static kmutex_t		arc_reclaim_thr_lock;
 static kcondvar_t	arc_reclaim_thr_cv;	/* used to signal reclaim thr */
@@ -2282,6 +2283,7 @@ arc_evictable_memory(void) {
 	return (ghost_clean + MAX((int64_t)arc_size - (int64_t)arc_c_min, 0));
 }
 
+#if 0
 static int
 __arc_shrinker_func(struct shrinker *shrink, struct shrink_control *sc)
 {
@@ -2340,6 +2342,7 @@ SPL_SHRINKER_CALLBACK_WRAPPER(arc_shrinker_func);
 
 SPL_SHRINKER_DECLARE(arc_shrinker, arc_shrinker_func, DEFAULT_SEEKS);
 #endif /* _KERNEL */
+#endif
 
 /*
  * Adapt arc info given the number of bytes we are trying to add and
@@ -3696,13 +3699,13 @@ arc_init(void)
 	 * than the addressable space (intel in 32-bit mode), we may
 	 * need to limit the cache to 1/8 of VM size.
 	 */
-	arc_c = MIN(arc_c, vmem_size(heap_arena, VMEM_ALLOC | VMEM_FREE) / 8);
+	//arc_c = MIN(arc_c, vmem_size(heap_arena, VMEM_ALLOC | VMEM_FREE) / 8);
 	/*
 	 * Register a shrinker to support synchronous (direct) memory
 	 * reclaim from the arc.  This is done to prevent kswapd from
 	 * swapping out pages when it is preferable to shrink the arc.
 	 */
-	spl_register_shrinker(&arc_shrinker);
+	//spl_register_shrinker(&arc_shrinker);
 #endif
 
 	/* set min cache to 1/32 of all memory, or 64MB, whichever is more */
@@ -3826,7 +3829,7 @@ arc_fini(void)
 
 	mutex_enter(&arc_reclaim_thr_lock);
 #ifdef _KERNEL
-	spl_unregister_shrinker(&arc_shrinker);
+	//spl_unregister_shrinker(&arc_shrinker);
 #endif /* _KERNEL */
 
 	arc_thread_exit = 1;

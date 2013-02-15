@@ -39,6 +39,11 @@
 #include <sys/sa.h>
 #include <sys/sa_impl.h>
 
+//
+// FIXME
+#define noinline
+
+
 struct dbuf_hold_impl_data {
 	/* Function arguments */
 	dnode_t *dh_dn;

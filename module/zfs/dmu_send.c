@@ -48,6 +48,8 @@
 #include <sys/ddt.h>
 #include <sys/zfs_onexit.h>
 
+#define noinline
+
 /* Set this tunable to TRUE to replace corrupt data with 0x2f5baddb10c */
 int zfs_send_corrupt_data = B_FALSE;
 

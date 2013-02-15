@@ -3200,6 +3200,7 @@ vdev_split(vdev_t *vd)
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
+
 EXPORT_SYMBOL(vdev_fault);
 EXPORT_SYMBOL(vdev_degrade);
 EXPORT_SYMBOL(vdev_online);

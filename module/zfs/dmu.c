@@ -876,13 +876,17 @@ dmu_xuio_init(xuio_t *xuio, int nblk)
 	dmu_xuio_t *priv;
 	uio_t *uio = &xuio->xu_uio;
 
-	uio->uio_iovcnt = nblk;
-	uio->uio_iov = kmem_zalloc(nblk * sizeof (iovec_t), KM_PUSHPAGE);
+	//uio->uio_iovcnt = nblk;
+	//uio->uio_iov = kmem_zalloc(nblk * sizeof (iovec_t), KM_PUSHPAGE);
+    uio = uio_create(nblk, 0, UIO_SYSSPACE,
+                     XUIO_XUZC_RW(xuio) == UIO_READ ? UIO_READ : UIO_WRITE);
 
 	priv = kmem_zalloc(sizeof (dmu_xuio_t), KM_PUSHPAGE);
 	priv->cnt = nblk;
 	priv->bufs = kmem_zalloc(nblk * sizeof (arc_buf_t *), KM_PUSHPAGE);
-	priv->iovp = uio->uio_iov;
+	//priv->iovp = uio->uio_iov;
+    priv->iovp = uio_curriovbase(uio);
+
 	XUIO_XUZC_PRIV(xuio) = priv;
 
 	if (XUIO_XUZC_RW(xuio) == UIO_READ)
@@ -923,7 +927,9 @@ dmu_xuio_add(xuio_t *xuio, arc_buf_t *abuf, offset_t off, size_t n)
 
 	ASSERT(i < priv->cnt);
 	ASSERT(off + n <= arc_buf_size(abuf));
-	iov = uio->uio_iov + i;
+
+	//iov = uio->uio_iov + i;
+	iov = uio_iovcnt(uio) + i;
 	iov->iov_base = (char *)abuf->b_data + off;
 	iov->iov_len = n;
 	priv->bufs[i] = abuf;
@@ -989,6 +995,9 @@ xuio_stat_wbuf_nocopy()
 }
 
 #ifdef _KERNEL
+
+
+#if 0 // fixme
 
 /*
  * Copy up to size bytes between arg_buf and req based on the data direction
@@ -1214,6 +1223,10 @@ error:
 	return (err);
 }
 
+#endif
+
+
+
 int
 dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 {
@@ -1225,7 +1238,9 @@ dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 	 * NB: we could do this block-at-a-time, but it's nice
 	 * to be reading in parallel.
 	 */
-	err = dmu_buf_hold_array(os, object, uio->uio_loffset, size, TRUE, FTAG,
+	//err = dmu_buf_hold_array(os, object, uio->uio_loffset, size, TRUE, FTAG,
+    //   &numbufs, &dbp);
+	err = dmu_buf_hold_array(os, object, uio_offset(uio), size, TRUE, FTAG,
 	    &numbufs, &dbp);
 	if (err)
 		return (err);
@@ -1237,7 +1252,8 @@ dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 
 		ASSERT(size > 0);
 
-		bufoff = uio->uio_loffset - db->db_offset;
+		//bufoff = uio->uio_loffset - db->db_offset;
+		bufoff = uio_offset(uio) - db->db_offset;
 		tocpy = (int)MIN(db->db_size - bufoff, size);
 
 		if (xuio) {
@@ -1246,8 +1262,9 @@ dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 			arc_buf_t *abuf = dbuf_loan_arcbuf(dbi);
 			err = dmu_xuio_add(xuio, abuf, bufoff, tocpy);
 			if (!err) {
-				uio->uio_resid -= tocpy;
-				uio->uio_loffset += tocpy;
+				//uio->uio_resid -= tocpy;
+				//uio->uio_loffset += tocpy;
+                uio_update(uio, tocpy);
 			}
 
 			if (abuf == dbuf_abuf)
@@ -1276,7 +1293,9 @@ dmu_write_uio_dnode(dnode_t *dn, uio_t *uio, uint64_t size, dmu_tx_t *tx)
 	int err = 0;
 	int i;
 
-	err = dmu_buf_hold_array_by_dnode(dn, uio->uio_loffset, size,
+	//err = dmu_buf_hold_array_by_dnode(dn, uio->uio_loffset, size,
+    //   FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
+	err = dmu_buf_hold_array_by_dnode(dn, uio_offset(uio), size,
 	    FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
 	if (err)
 		return (err);
@@ -1288,7 +1307,8 @@ dmu_write_uio_dnode(dnode_t *dn, uio_t *uio, uint64_t size, dmu_tx_t *tx)
 
 		ASSERT(size > 0);
 
-		bufoff = uio->uio_loffset - db->db_offset;
+		//bufoff = uio->uio_loffset - db->db_offset;
+		bufoff = uio_offset(uio) - db->db_offset;
 		tocpy = (int)MIN(db->db_size - bufoff, size);
 
 		ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);

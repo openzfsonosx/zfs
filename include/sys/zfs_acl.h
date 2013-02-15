@@ -224,8 +224,8 @@ int zfs_zaccess_delete(struct znode *, struct znode *, cred_t *);
 int zfs_zaccess_rename(struct znode *, struct znode *,
     struct znode *, struct znode *, cred_t *cr);
 void zfs_acl_free(zfs_acl_t *);
-int zfs_vsec_2_aclp(struct zfs_sb *, umode_t, vsecattr_t *, cred_t *,
-    struct zfs_fuid_info **, zfs_acl_t **);
+    //int zfs_vsec_2_aclp(struct zfs_sb *, umode_t, vsecattr_t *, cred_t *,
+    // struct zfs_fuid_info **, zfs_acl_t **);
 int zfs_aclset_common(struct znode *, zfs_acl_t *, cred_t *, dmu_tx_t *);
 uint64_t zfs_external_acl(struct znode *);
 int zfs_znode_acl_version(struct znode *);

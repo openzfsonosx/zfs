@@ -824,6 +824,16 @@ typedef enum zfs_ioc {
 	ZFS_IOC_SEND_PROGRESS,
 } zfs_ioc_t;
 
+
+#define IOCNUM_MASK     0x000000ff
+
+#define ZFS_IOC_NUM(cmd)        ((cmd) & IOCNUM_MASK)
+
+#define ZFS_IOC_CMD(num)        _IOWR('Z', (num), struct zfs_cmd)
+
+
+
+
 /*
  * zvol ioctl to get dataset name
  */

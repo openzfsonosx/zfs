@@ -544,6 +544,7 @@ zfs_zevent_minor_to_state(minor_t minor, zfs_zevent_t **ze)
 	return (0);
 }
 
+#if 0
 int
 zfs_zevent_fd_hold(int fd, minor_t *minorp, zfs_zevent_t **ze)
 {
@@ -562,6 +563,7 @@ zfs_zevent_fd_hold(int fd, minor_t *minorp, zfs_zevent_t **ze)
 
 	return (error);
 }
+#endif
 
 void
 zfs_zevent_fd_rele(int fd)
@@ -1544,6 +1546,7 @@ fm_fini(void)
 	}
 }
 
+#if 0
 module_param(zfs_zevent_len_max, int, 0644);
 MODULE_PARM_DESC(zfs_zevent_len_max, "Max event queue length");
 
@@ -1552,5 +1555,6 @@ MODULE_PARM_DESC(zfs_zevent_cols, "Max event column width");
 
 module_param(zfs_zevent_console, int, 0644);
 MODULE_PARM_DESC(zfs_zevent_console, "Log events to the console");
+#endif
 
 #endif /* _KERNEL */

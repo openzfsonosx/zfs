@@ -208,8 +208,8 @@ void dsl_dataset_drop_ref(dsl_dataset_t *ds, void *tag);
 boolean_t dsl_dataset_tryown(dsl_dataset_t *ds, boolean_t inconsistentok,
     void *tag);
 void dsl_dataset_make_exclusive(dsl_dataset_t *ds, void *tag);
-void dsl_register_onexit_hold_cleanup(dsl_dataset_t *ds, const char *htag,
-    minor_t minor);
+    //void dsl_register_onexit_hold_cleanup(dsl_dataset_t *ds, const char *htag,
+    //minor_t minor);
 uint64_t dsl_dataset_create_sync(dsl_dir_t *pds, const char *lastname,
     dsl_dataset_t *origin, uint64_t flags, cred_t *, dmu_tx_t *);
 uint64_t dsl_dataset_create_sync_dd(dsl_dir_t *dd, dsl_dataset_t *origin,
