@@ -75,6 +75,7 @@ typedef enum kmem_cbrc {
 } kmem_cbrc_t;
 
 #define	KMC_KMEM		0x0
+#define	KMC_VMEM		0x0
 
 
 #else /* _KERNEL */

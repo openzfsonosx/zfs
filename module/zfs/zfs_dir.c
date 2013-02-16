@@ -151,6 +151,7 @@ int
 zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
     int flag, int *direntflags, pathname_t *realpnp)
 {
+#if 0
 	zfs_sb_t	*zsb = ZTOZSB(dzp);
 	zfs_dirlock_t	*dl;
 	boolean_t	update;
@@ -355,7 +356,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 	}
 
 	*dlpp = dl;
-
+#endif
 	return (0);
 }
 
@@ -403,6 +404,7 @@ int
 zfs_dirlook(znode_t *dzp, char *name, struct inode **ipp, int flags,
     int *deflg, pathname_t *rpnp)
 {
+#if 0
 	zfs_dirlock_t *dl;
 	znode_t *zp;
 	int error = 0;
@@ -454,6 +456,7 @@ zfs_dirlook(znode_t *dzp, char *name, struct inode **ipp, int flags,
 		(void) strlcpy(rpnp->pn_buf, name, rpnp->pn_bufsize);
 
 	return (error);
+#endif
 }
 
 /*
@@ -473,13 +476,13 @@ zfs_dirlook(znode_t *dzp, char *name, struct inode **ipp, int flags,
 void
 zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 {
-	zfs_sb_t *zsb = ZTOZSB(zp);
+    //	zfs_sb_t *zsb = ZTOZSB(zp);
 
 	ASSERT(zp->z_unlinked);
 	ASSERT(zp->z_links == 0);
 
-	VERIFY3U(0, ==,
-	    zap_add_int(zsb->z_os, zsb->z_unlinkedobj, zp->z_id, tx));
+	//VERIFY3U(0, ==,
+    //  zap_add_int(zsb->z_os, zsb->z_unlinkedobj, zp->z_id, tx));
 }
 
 /*
@@ -528,7 +531,7 @@ zfs_unlinked_drain(zfs_sb_t *zsb)
 			continue;
 
 		zp->z_unlinked = B_TRUE;
-		iput(ZTOI(zp));
+		//iput(ZTOI(zp));
 	}
 	zap_cursor_fini(&zc);
 }
@@ -547,6 +550,7 @@ zfs_unlinked_drain(zfs_sb_t *zsb)
 static int
 zfs_purgedir(znode_t *dzp)
 {
+#if 0
 	zap_cursor_t	zc;
 	zap_attribute_t	zap;
 	znode_t		*xzp;
@@ -597,11 +601,13 @@ zfs_purgedir(znode_t *dzp)
 	if (error != ENOENT)
 		skipped += 1;
 	return (skipped);
+#endif
 }
 
 void
 zfs_rmnode(znode_t *zp)
 {
+#if 0
 	zfs_sb_t	*zsb = ZTOZSB(zp);
 	objset_t	*os = zsb->z_os;
 	znode_t		*xzp = NULL;
@@ -700,6 +706,7 @@ zfs_rmnode(znode_t *zp)
 out:
 	if (xzp)
 		iput(ZTOI(xzp));
+#endif
 }
 
 static uint64_t
@@ -707,8 +714,8 @@ zfs_dirent(znode_t *zp, uint64_t mode)
 {
 	uint64_t de = zp->z_id;
 
-	if (ZTOZSB(zp)->z_version >= ZPL_VERSION_DIRENT_TYPE)
-		de |= IFTODT(mode) << 60;
+	//if (ZTOZSB(zp)->z_version >= ZPL_VERSION_DIRENT_TYPE)
+    //de |= IFTODT(mode) << 60;
 	return (de);
 }
 

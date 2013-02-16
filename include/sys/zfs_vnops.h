@@ -36,6 +36,11 @@
 extern "C" {
 #endif
 
+typedef int (*filldir_t)(void *, const char *, int, loff_t, loff_t, unsigned);
+    struct nameidata;
+    struct dentry;
+    struct writeback_control;
+
 extern int zfs_open(struct inode *ip, int mode, int flag, cred_t *cr);
 extern int zfs_close(struct inode *ip, int flag, cred_t *cr);
 extern int zfs_read(struct inode *ip, uio_t *uio, int ioflag, cred_t *cr);
@@ -54,7 +59,7 @@ extern int zfs_readdir(struct inode *ip, void *dirent, filldir_t filldir,
     loff_t *pos, cred_t *cr);
 extern int zfs_fsync(struct inode *ip, int syncflag, cred_t *cr);
 extern int zfs_getattr(struct inode *ip, vattr_t *vap, int flag, cred_t *cr);
-extern int zfs_getattr_fast(struct inode *ip, struct kstat *sp);
+extern int zfs_getattr_fast(struct inode *ip, kstat_t *sp);
 extern int zfs_setattr(struct inode *ip, vattr_t *vap, int flag, cred_t *cr);
 extern int zfs_rename(struct inode *sdip, char *snm, struct inode *tdip,
     char *tnm, cred_t *cr, int flags);

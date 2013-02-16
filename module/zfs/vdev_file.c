@@ -83,8 +83,8 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	 * to local zone users, so the underlying devices should be as well.
 	 */
 	ASSERT(vd->vdev_path != NULL && vd->vdev_path[0] == '/');
-	error = vn_openat(vd->vdev_path + 1, UIO_SYSSPACE,
-	    spa_mode(vd->vdev_spa) | FOFFMAX, 0, &vp, 0, 0, rootdir, -1);
+    //	error = vn_openat(vd->vdev_path + 1, UIO_SYSSPACE,
+	//    spa_mode(vd->vdev_spa) | FOFFMAX, 0, &vp, 0, 0, rootdir, -1);
 
 	if (error) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
@@ -97,10 +97,10 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	/*
 	 * Make sure it's a regular file.
 	 */
-	if (vp->v_type != VREG) {
-		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
-		return (ENODEV);
-	}
+    //	if (vp->v_type != VREG) {
+	//	vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
+	//	return (ENODEV);
+	//}
 #endif
 
 skip_open:
