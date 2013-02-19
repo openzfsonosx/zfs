@@ -3297,7 +3297,7 @@ nvs_xdr(nvstream_t *nvs, nvlist_t *nvl, char *buf, size_t *buflen)
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
-
+#if 0
 static int nvpair_init(void) { return 0; }
 static int nvpair_fini(void) { return 0; }
 
@@ -3421,5 +3421,5 @@ EXPORT_SYMBOL(nvpair_value_uint64_array);
 EXPORT_SYMBOL(nvpair_value_string_array);
 EXPORT_SYMBOL(nvpair_value_nvlist_array);
 EXPORT_SYMBOL(nvpair_value_hrtime);
-
+#endif
 #endif

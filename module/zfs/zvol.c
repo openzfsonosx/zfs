@@ -44,7 +44,7 @@
 #include <sys/zfs_rlock.h>
 #include <sys/zfs_znode.h>
 #include <sys/zvol.h>
-#include <linux/blkdev_compat.h>
+//#include <linux/blkdev_compat.h>
 
 unsigned int zvol_inhibit_dev = 0;
 unsigned int zvol_major = ZVOL_MAJOR;
@@ -88,6 +88,7 @@ typedef struct zvol_state {
 static int
 zvol_find_minor(unsigned *minor)
 {
+#if 0
 	zvol_state_t *zv;
 
 	*minor = 0;
@@ -101,7 +102,7 @@ zvol_find_minor(unsigned *minor)
 	/* All minors are in use */
 	if (*minor >= (1 << MINORBITS))
 		return ENXIO;
-
+#endif
 	return 0;
 }
 
@@ -112,13 +113,14 @@ static zvol_state_t *
 zvol_find_by_dev(dev_t dev)
 {
 	zvol_state_t *zv;
-
+#if 0
 	ASSERT(MUTEX_HELD(&zvol_state_lock));
 	for (zv = list_head(&zvol_state_list); zv != NULL;
 	     zv = list_next(&zvol_state_list, zv)) {
 		if (zv->zv_dev == dev)
 			return zv;
 	}
+#endif
 
 	return NULL;
 }
@@ -129,6 +131,7 @@ zvol_find_by_dev(dev_t dev)
 static zvol_state_t *
 zvol_find_by_name(const char *name)
 {
+#if 0
 	zvol_state_t *zv;
 
 	ASSERT(MUTEX_HELD(&zvol_state_lock));
@@ -137,7 +140,7 @@ zvol_find_by_name(const char *name)
 		if (!strncmp(zv->zv_name, name, MAXNAMELEN))
 			return zv;
 	}
-
+#endif
 	return NULL;
 }
 
@@ -528,9 +531,11 @@ zvol_log_write(zvol_state_t *zv, dmu_tx_t *tx,
  * is responsible for copying the request structure data in to the DMU and
  * signaling the request queue with the result of the copy.
  */
-static void
-zvol_write(void *arg)
+int zvol_write(dev_t dev, uio_t *uiop, cred_t *cr)
+//static void
+//zvol_write(void *arg)
 {
+#if 0
 	struct request *req = (struct request *)arg;
 	struct request_queue *q = req->q;
 	zvol_state_t *zv = q->queuedata;
@@ -588,6 +593,7 @@ zvol_write(void *arg)
 	blk_end_request(req, -error, size);
 out:
 	current->flags &= ~PF_NOFS;
+#endif
 }
 
 #ifdef HAVE_BLK_QUEUE_DISCARD
@@ -651,9 +657,11 @@ out:
  * a linux request structure.  It then must signal the request queue with
  * an error code describing the result of the copy.
  */
-static void
-zvol_read(void *arg)
+int zvol_read(dev_t dev, uio_t *uiop, cred_t *cr)
+//static void
+//zvol_read(void *arg)
 {
+#if 0
 	struct request *req = (struct request *)arg;
 	struct request_queue *q = req->q;
 	zvol_state_t *zv = q->queuedata;
@@ -678,6 +686,7 @@ zvol_read(void *arg)
 		error = EIO;
 
 	blk_end_request(req, -error, size);
+#endif
 }
 
 /*
@@ -687,8 +696,8 @@ zvol_read(void *arg)
 static inline void
 zvol_dispatch(task_func_t func, struct request *req)
 {
-	if (!taskq_dispatch(zvol_taskq, func, (void *)req, TQ_NOSLEEP))
-		blk_requeue_request(req->q, req);
+	//if (!taskq_dispatch(zvol_taskq, func, (void *)req, TQ_NOSLEEP))
+	//	blk_requeue_request(req->q, req);
 }
 
 /*
@@ -709,6 +718,7 @@ zvol_dispatch(task_func_t func, struct request *req)
 static void
 zvol_request(struct request_queue *q)
 {
+#if 0
 	zvol_state_t *zv = q->queuedata;
 	struct request *req;
 	unsigned int size;
@@ -761,6 +771,7 @@ zvol_request(struct request_queue *q)
 			break;
 		}
 	}
+#endif
 }
 
 static void
@@ -926,9 +937,11 @@ zvol_last_close(zvol_state_t *zv)
 	zv->zv_objset = NULL;
 }
 
-static int
-zvol_open(struct block_device *bdev, fmode_t flag)
+int zvol_open(dev_t *devp, int flag, int otyp, cred_t *cr)
+//static int
+//zvol_open(struct block_device *bdev, fmode_t flag)
 {
+#if 0
 	zvol_state_t *zv = bdev->bd_disk->private_data;
 	int error = 0, drop_mutex = 0;
 
@@ -970,8 +983,10 @@ out_mutex:
 	check_disk_change(bdev);
 
 	return (error);
+#endif
 }
 
+#if 0
 static int
 zvol_release(struct gendisk *disk, fmode_t mode)
 {
@@ -1218,6 +1233,7 @@ out_kmem:
 out:
 	return NULL;
 }
+#endif
 
 /*
  * Cleanup then free a zvol_state_t which was created by zvol_alloc().
@@ -1234,6 +1250,20 @@ zvol_free(zvol_state_t *zv)
 
 	kmem_free(zv, sizeof (zvol_state_t));
 }
+
+
+int zvol_close(dev_t dev, int flag, int otyp, cred_t *cr)
+{
+
+}
+
+int zvol_busy(void)
+{
+    return 0;
+}
+
+
+#if 0
 
 static int
 __zvol_create_minor(const char *name)
@@ -1320,6 +1350,7 @@ out:
 
 	return (error);
 }
+#endif
 
 /*
  * Create a block device minor node and setup the linkage between it
@@ -1332,12 +1363,14 @@ zvol_create_minor(const char *name)
 	int error;
 
 	mutex_enter(&zvol_state_lock);
-	error = __zvol_create_minor(name);
+	//error = __zvol_create_minor(name);
 	mutex_exit(&zvol_state_lock);
 
 	return (error);
 }
 
+
+#if 0
 static int
 __zvol_remove_minor(const char *name)
 {
@@ -1357,7 +1390,7 @@ __zvol_remove_minor(const char *name)
 
 	return (0);
 }
-
+#endif
 /*
  * Remove a block device minor node for the specified volume.
  */
@@ -1367,7 +1400,7 @@ zvol_remove_minor(const char *name)
 	int error;
 
 	mutex_enter(&zvol_state_lock);
-	error = __zvol_remove_minor(name);
+	//error = __zvol_remove_minor(name);
 	mutex_exit(&zvol_state_lock);
 
 	return (error);
@@ -1380,7 +1413,7 @@ zvol_create_minors_cb(spa_t *spa, uint64_t dsobj,
 	if (strchr(dsname, '/') == NULL)
 		return 0;
 
-	(void) __zvol_create_minor(dsname);
+	//(void) __zvol_create_minor(dsname);
 	return (0);
 }
 
@@ -1456,19 +1489,19 @@ zvol_init(void)
 	zvol_taskq = taskq_create(ZVOL_DRIVER, zvol_threads, maxclsyspri,
 		                  zvol_threads, INT_MAX, TASKQ_PREPOPULATE);
 	if (zvol_taskq == NULL) {
-		printk(KERN_INFO "ZFS: taskq_create() failed\n");
+		printk("ZFS: taskq_create() failed\n");
 		return (-ENOMEM);
 	}
 
 	error = register_blkdev(zvol_major, ZVOL_DRIVER);
 	if (error) {
-		printk(KERN_INFO "ZFS: register_blkdev() failed %d\n", error);
+		printk("ZFS: register_blkdev() failed %d\n", error);
 		taskq_destroy(zvol_taskq);
 		return (error);
 	}
 
-	blk_register_region(MKDEV(zvol_major, 0), 1UL << MINORBITS,
-	                    THIS_MODULE, zvol_probe, NULL, NULL);
+	//blk_register_region(MKDEV(zvol_major, 0), 1UL << MINORBITS,
+    //THIS_MODULE, zvol_probe, NULL, NULL);
 
 	mutex_init(&zvol_state_lock, NULL, MUTEX_DEFAULT, NULL);
 	list_create(&zvol_state_list, sizeof (zvol_state_t),
@@ -1483,13 +1516,13 @@ void
 zvol_fini(void)
 {
 	zvol_remove_minors(NULL);
-	blk_unregister_region(MKDEV(zvol_major, 0), 1UL << MINORBITS);
+	//blk_unregister_region(MKDEV(zvol_major, 0), 1UL << MINORBITS);
 	unregister_blkdev(zvol_major, ZVOL_DRIVER);
 	taskq_destroy(zvol_taskq);
 	mutex_destroy(&zvol_state_lock);
 	list_destroy(&zvol_state_list);
 }
-
+#if 0
 module_param(zvol_inhibit_dev, uint, 0644);
 MODULE_PARM_DESC(zvol_inhibit_dev, "Do not create zvol device nodes");
 
@@ -1501,3 +1534,5 @@ MODULE_PARM_DESC(zvol_threads, "Number of threads for zvol device");
 
 module_param(zvol_max_discard_blocks, ulong, 0444);
 MODULE_PARM_DESC(zvol_max_discard_blocks, "Max number of blocks to discard at once");
+
+#endif

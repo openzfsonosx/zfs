@@ -1,0 +1,4 @@
+
+rsync -ar --delete zfs.kext/ /tmp/zfs.kext/
+chown -R root:wheel /tmp/zfs.kext
+kextload -r /tmp/ -v /tmp/zfs.kext/

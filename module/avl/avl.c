@@ -1030,6 +1030,7 @@ done:
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
+#if 0
 
 static int avl_init(void) { return 0; }
 static int avl_fini(void) { return 0; }
@@ -1054,4 +1055,5 @@ EXPORT_SYMBOL(avl_remove);
 EXPORT_SYMBOL(avl_numnodes);
 EXPORT_SYMBOL(avl_destroy_nodes);
 EXPORT_SYMBOL(avl_destroy);
+#endif
 #endif

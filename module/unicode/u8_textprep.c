@@ -2133,7 +2133,7 @@ u8_textprep_str(char *inarray, size_t *inlen, char *outarray, size_t *outlen,
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
-
+#if 0
 static int unicode_init(void) { return 0; }
 static int unicode_fini(void) { return 0; }
 
@@ -2147,4 +2147,5 @@ MODULE_LICENSE(ZFS_META_LICENSE);
 EXPORT_SYMBOL(u8_validate);
 EXPORT_SYMBOL(u8_strcmp);
 EXPORT_SYMBOL(u8_textprep_str);
+#endif
 #endif
