@@ -39,7 +39,7 @@
 
 #define BUFSIZE (MNT_LINE_MAX + 2)
 
-__thread char buf[BUFSIZE];
+/*__thread*/ char buf[BUFSIZE];
 
 #define DIFF(xx) ((mrefp->xx != NULL) && \
 		  (mgetp->xx == NULL || strcmp(mrefp->xx, mgetp->xx) != 0))
@@ -47,36 +47,64 @@ __thread char buf[BUFSIZE];
 int
 getmntany(FILE *fp, struct mnttab *mgetp, struct mnttab *mrefp)
 {
-	int ret;
+        struct statfs *sfsp;
+        int nitems;
 
-	while (((ret = _sol_getmntent(fp, mgetp)) == 0) &&
-	       (DIFF(mnt_special) || DIFF(mnt_mountp) ||
-		DIFF(mnt_fstype) || DIFF(mnt_mntopts)));
+        nitems = getmntinfo(&sfsp, MNT_WAIT);
 
-	return ret;
+        while (nitems-- > 0) {
+                if (strcmp(mrefp->mnt_fstype, sfsp->f_fstypename) == 0 &&
+                    strcmp(mrefp->mnt_special, sfsp->f_mntfromname) == 0) {
+                        mgetp->mnt_special = sfsp->f_mntfromname;
+                        mgetp->mnt_mountp = sfsp->f_mntonname;
+                        mgetp->mnt_fstype = sfsp->f_fstypename;
+                        mgetp->mnt_mntopts = "";
+                        return (0);
+                }
+                ++sfsp;
+        }
+        return (-1);
 }
 
-int
-_sol_getmntent(FILE *fp, struct mnttab *mgetp)
+char *
+mntopt(char **p)
 {
-	struct mntent mntbuf;
-	struct mntent *ret;
+        char *cp = *p;
+        char *retstr;
 
-	ret = getmntent_r(fp, &mntbuf, buf, BUFSIZE);
+        while (*cp && isspace(*cp))
+                cp++;
 
-	if (ret != NULL) {
-		mgetp->mnt_special = mntbuf.mnt_fsname;
-		mgetp->mnt_mountp = mntbuf.mnt_dir;
-		mgetp->mnt_fstype = mntbuf.mnt_type;
-		mgetp->mnt_mntopts = mntbuf.mnt_opts;
-		return 0;
-	}
+        retstr = cp;
+        while (*cp && *cp != ',')
+                cp++;
 
-	if (feof(fp))
-		return -1;
+        if (*cp) {
+                *cp = '\0';
+                cp++;
+        }
 
-	return MNT_TOOLONG;
+        *p = cp;
+        return (retstr);
 }
+
+char *
+hasmntopt(struct mnttab *mnt, char *opt)
+{
+        char tmpopts[MNT_LINE_MAX];
+        char *f, *opts = tmpopts;
+
+        if (mnt->mnt_mntopts == NULL)
+                return (NULL);
+        (void) strcpy(opts, mnt->mnt_mntopts);
+        f = mntopt(&opts);
+        for (; *f; f = mntopt(&opts)) {
+                if (strncmp(opt, f, strlen(opt)) == 0)
+                        return (f - tmpopts + mnt->mnt_mntopts);
+        }
+        return (NULL);
+}
+
 
 int
 getextmntent(FILE *fp, struct extmnttab *mp, int len)

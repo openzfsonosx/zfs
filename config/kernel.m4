@@ -1,82 +1,10 @@
 dnl #
-dnl # Default ZFS kernel configuration 
+dnl # Default ZFS kernel configuration
 dnl #
 AC_DEFUN([ZFS_AC_CONFIG_KERNEL], [
 	ZFS_AC_KERNEL
 	ZFS_AC_SPL
-	ZFS_AC_TEST_MODULE
-	ZFS_AC_KERNEL_CONFIG
-	ZFS_AC_KERNEL_BDEV_BLOCK_DEVICE_OPERATIONS
-	ZFS_AC_KERNEL_TYPE_FMODE_T
-	ZFS_AC_KERNEL_KOBJ_NAME_LEN
-	ZFS_AC_KERNEL_3ARG_BLKDEV_GET
-	ZFS_AC_KERNEL_BLKDEV_GET_BY_PATH
-	ZFS_AC_KERNEL_OPEN_BDEV_EXCLUSIVE
-	ZFS_AC_KERNEL_INVALIDATE_BDEV_ARGS
-	ZFS_AC_KERNEL_BDEV_LOGICAL_BLOCK_SIZE
-	ZFS_AC_KERNEL_BDEV_PHYSICAL_BLOCK_SIZE
-	ZFS_AC_KERNEL_BIO_EMPTY_BARRIER
-	ZFS_AC_KERNEL_BIO_FAILFAST
-	ZFS_AC_KERNEL_BIO_FAILFAST_DTD
-	ZFS_AC_KERNEL_REQ_FAILFAST_MASK
-	ZFS_AC_KERNEL_BIO_END_IO_T_ARGS
-	ZFS_AC_KERNEL_BIO_RW_SYNC
-	ZFS_AC_KERNEL_BIO_RW_SYNCIO
-	ZFS_AC_KERNEL_REQ_SYNC
-	ZFS_AC_KERNEL_BLK_END_REQUEST
-	ZFS_AC_KERNEL_BLK_QUEUE_FLUSH
-	ZFS_AC_KERNEL_BLK_QUEUE_MAX_HW_SECTORS
-	ZFS_AC_KERNEL_BLK_QUEUE_MAX_SEGMENTS
-	ZFS_AC_KERNEL_BLK_QUEUE_PHYSICAL_BLOCK_SIZE
-	ZFS_AC_KERNEL_BLK_QUEUE_IO_OPT
-	ZFS_AC_KERNEL_BLK_QUEUE_NONROT
-	ZFS_AC_KERNEL_BLK_QUEUE_DISCARD
-	ZFS_AC_KERNEL_BLK_FETCH_REQUEST
-	ZFS_AC_KERNEL_BLK_REQUEUE_REQUEST
-	ZFS_AC_KERNEL_BLK_RQ_BYTES
-	ZFS_AC_KERNEL_BLK_RQ_POS
-	ZFS_AC_KERNEL_BLK_RQ_SECTORS
-	ZFS_AC_KERNEL_GET_DISK_RO
-	ZFS_AC_KERNEL_GET_GENDISK
-	ZFS_AC_KERNEL_RQ_IS_SYNC
-	ZFS_AC_KERNEL_RQ_FOR_EACH_SEGMENT
-	ZFS_AC_KERNEL_DISCARD_GRANULARITY
-	ZFS_AC_KERNEL_CONST_XATTR_HANDLER
-	ZFS_AC_KERNEL_XATTR_HANDLER_GET
-	ZFS_AC_KERNEL_XATTR_HANDLER_SET
-	ZFS_AC_KERNEL_SHOW_OPTIONS
-	ZFS_AC_KERNEL_FSYNC
-	ZFS_AC_KERNEL_EVICT_INODE
-	ZFS_AC_KERNEL_DIRTY_INODE_WITH_FLAGS
-	ZFS_AC_KERNEL_NR_CACHED_OBJECTS
-	ZFS_AC_KERNEL_FREE_CACHED_OBJECTS
-	ZFS_AC_KERNEL_FALLOCATE
-	ZFS_AC_KERNEL_MKDIR_UMODE_T
-	ZFS_AC_KERNEL_LOOKUP_NAMEIDATA
-	ZFS_AC_KERNEL_CREATE_NAMEIDATA
-	ZFS_AC_KERNEL_TRUNCATE_RANGE
-	ZFS_AC_KERNEL_AUTOMOUNT
-	ZFS_AC_KERNEL_ENCODE_FH_WITH_INODE
-	ZFS_AC_KERNEL_COMMIT_METADATA
-	ZFS_AC_KERNEL_CLEAR_INODE
-	ZFS_AC_KERNEL_INSERT_INODE_LOCKED
-	ZFS_AC_KERNEL_D_MAKE_ROOT
-	ZFS_AC_KERNEL_D_OBTAIN_ALIAS
-	ZFS_AC_KERNEL_CHECK_DISK_SIZE_CHANGE
-	ZFS_AC_KERNEL_TRUNCATE_SETSIZE
-	ZFS_AC_KERNEL_6ARGS_SECURITY_INODE_INIT_SECURITY
-	ZFS_AC_KERNEL_CALLBACK_SECURITY_INODE_INIT_SECURITY
-	ZFS_AC_KERNEL_MOUNT_NODEV
-	ZFS_AC_KERNEL_SHRINK
-	ZFS_AC_KERNEL_BDI
-	ZFS_AC_KERNEL_BDI_SETUP_AND_REGISTER
-	ZFS_AC_KERNEL_SET_NLINK
-	ZFS_AC_KERNEL_ELEVATOR_CHANGE
-	ZFS_AC_KERNEL_5ARG_SGET
 
-	AS_IF([test "$LINUX_OBJ" != "$LINUX"], [
-		KERNELMAKE_PARAMS="$KERNELMAKE_PARAMS O=$LINUX_OBJ"
-	])
 	AC_SUBST(KERNELMAKE_PARAMS)
 
 
@@ -85,6 +13,7 @@ AC_DEFUN([ZFS_AC_CONFIG_KERNEL], [
 	KERNELCPPFLAGS="$KERNELCPPFLAGS $NO_UNUSED_BUT_SET_VARIABLE"
 	KERNELCPPFLAGS="$KERNELCPPFLAGS -DHAVE_SPL -D_KERNEL"
 	KERNELCPPFLAGS="$KERNELCPPFLAGS -DTEXT_DOMAIN=\\\"zfs-linux-kernel\\\""
+	KERNELCPPFLAGS="$KERNELCPPFLAGS  -Wall -g -nostdinc -mkernel -D_KERNEL -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT -I/Users/lundman/src/zfs/osx.zfs/x/zfs/include -I/Users/lundman/src/zfs/osx.zfs/x/spl/include -I/System/Library/Frameworks/Kernel.framework/PrivateHeaders -I/System/Library/Frameworks/Kernel.framework/Headers -DZFS_META_VERSION=\"0.6.0\" -DZFS_META_RELEASE=\"rc12\" -DZFS_DEBUG_STR=\"alpha\" -DHAVE_SPL=1 "
 
 	AC_SUBST(KERNELCPPFLAGS)
 ])
@@ -120,8 +49,8 @@ dnl #
 dnl # Detect the kernel to be built against
 dnl #
 AC_DEFUN([ZFS_AC_KERNEL], [
-	AC_ARG_WITH([linux],
-		AS_HELP_STRING([--with-linux=PATH],
+	AC_ARG_WITH([darwin],
+		AS_HELP_STRING([--with-darwin=PATH],
 		[Path to kernel source]),
 		[kernelsrc="$withval"])
 
@@ -129,7 +58,6 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 		AS_HELP_STRING([--with-linux-obj=PATH],
 		[Path to kernel build objects]),
 		[kernelbuild="$withval"])
-
 	AC_MSG_CHECKING([kernel source directory])
 	AS_IF([test -z "$kernelsrc"], [
 		AS_IF([test -e "/lib/modules/$(uname -r)/source"], [
@@ -180,23 +108,21 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 	AC_MSG_RESULT([$kernelbuild])
 
 	AC_MSG_CHECKING([kernel source version])
-	utsrelease1=$kernelbuild/include/linux/version.h
-	utsrelease2=$kernelbuild/include/linux/utsrelease.h
-	utsrelease3=$kernelbuild/include/generated/utsrelease.h
-	AS_IF([test -r $utsrelease1 && fgrep -q UTS_RELEASE $utsrelease1], [
-		utsrelease=linux/version.h
+	utsrelease1=$kernelbuild/Headers/libkern/version.h
+	AS_IF([test -r $utsrelease1 && fgrep -q OSRELEASE $utsrelease1], [
+		utsrelease=libkern/version.h
 	], [test -r $utsrelease2 && fgrep -q UTS_RELEASE $utsrelease2], [
 		utsrelease=linux/utsrelease.h
 	], [test -r $utsrelease3 && fgrep -q UTS_RELEASE $utsrelease3], [
 		utsrelease=generated/utsrelease.h
 	])
-
+echo "booga $utsrelease $utsrelease1"
 	AS_IF([test "$utsrelease"], [
 		kernsrcver=`(echo "#include <$utsrelease>";
-		             echo "kernsrcver=UTS_RELEASE") |
-		             cpp -I $kernelbuild/include |
+		             echo "kernsrcver=OSRELEASE") |
+		             cpp -I$kernelbuild/Headers |
 		             grep "^kernsrcver=" | cut -d \" -f 2`
-
+echo "gooba $kernsrcver"
 		AS_IF([test -z "$kernsrcver"], [
 			AC_MSG_RESULT([Not found])
 			AC_MSG_ERROR([*** Cannot determine kernel version.])
@@ -320,7 +246,7 @@ AC_DEFUN([ZFS_AC_SPL], [
 		])
 
 		AS_IF([test -e $sourcelink/spl_config.h], [
-			splsrc=`readlink -f ${sourcelink}`
+			splsrc=`readlink  ${sourcelink}`
 		], [
 			AC_MSG_RESULT([Not found])
 			AC_MSG_ERROR([
@@ -348,7 +274,7 @@ AC_DEFUN([ZFS_AC_SPL], [
 
 		splsrcver=`(echo "#include <spl_config.h>";
 		            echo "splsrcver=SPL_META_VERSION-SPL_META_RELEASE") |
-		            cpp -I $splbuild |
+		            cpp -I$splbuild |
 		            grep "^splsrcver=" | tr -d \" | cut -d= -f2`
 	])
 
@@ -507,7 +433,7 @@ dnl #
 AC_DEFUN([ZFS_LINUX_CONFIG],
 	[AC_MSG_CHECKING([whether Linux was built with CONFIG_$1])
 	ZFS_LINUX_TRY_COMPILE([
-		#include <linux/module.h>
+		#include <libkern/version.h>
 	],[
 		#ifndef CONFIG_$1
 		#error CONFIG_$1 not #defined

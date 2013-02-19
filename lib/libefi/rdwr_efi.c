@@ -30,7 +30,7 @@
 #include <unistd.h>
 #include <uuid/uuid.h>
 #include <zlib.h>
-#include <libintl.h>
+//#include <libintl.h>
 #include <sys/types.h>
 #include <sys/dkio.h>
 #include <sys/vtoc.h>
@@ -132,11 +132,12 @@ read_disk_info(int fd, diskaddr_t *capacity, uint_t *lbsize)
 	int sector_size;
 	unsigned long long capacity_size;
 
-        if (ioctl(fd, BLKSSZGET, &sector_size) < 0)
-                return (-1);
+    //        if (ioctl(fd, BLKSSZGET, &sector_size) < 0)
+    //           return (-1);
 
-	if (ioctl(fd, BLKGETSIZE64, &capacity_size) < 0)
-		return (-1);
+	//if (ioctl(fd, BLKGETSIZE64, &capacity_size) < 0)
+	//	return (-1);
+    return -1;
 
 	*lbsize = (uint_t)sector_size;
 	*capacity = (diskaddr_t)(capacity_size / sector_size);

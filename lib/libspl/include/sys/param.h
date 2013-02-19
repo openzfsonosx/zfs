@@ -43,7 +43,7 @@
  * Note that the blocked devices are assumed to have DEV_BSIZE
  * "sectors" and that fragments must be some multiple of this size.
  */
-#define MAXBSIZE   8192
+//#define MAXBSIZE   8192
 #define DEV_BSIZE  512
 #define DEV_BSHIFT 9     /* log2(DEV_BSIZE) */
 

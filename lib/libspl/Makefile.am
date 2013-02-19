@@ -3,7 +3,7 @@ include $(top_srcdir)/config/Rules.am
 AM_CFLAGS += $(DEBUG_STACKFLAGS) $(FRAME_LARGER_THAN)
 
 SUBDIRS = include $(TARGET_ASM_DIR)
-DIST_SUBDIRS = include asm-generic asm-i386 asm-x86_64
+DIST_SUBDIRS = include asm-generic #asm-i386 asm-x86_64
 
 DEFAULT_INCLUDES += \
 	-I$(top_srcdir)/lib/libspl/include
@@ -30,4 +30,4 @@ libspl_la_SOURCES = \
 	$(top_srcdir)/lib/libspl/include/sys/list.h \
 	$(top_srcdir)/lib/libspl/include/sys/list_impl.h
 
-libspl_la_LDFLAGS = -lrt
+#libspl_la_LDFLAGS = -lrt

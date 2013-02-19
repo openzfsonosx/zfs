@@ -32,14 +32,11 @@
 hrtime_t
 gethrtime(void)
 {
-	struct timespec ts;
-	int rc;
+    static uint64_t start = 0;
 
-	rc = clock_gettime(CLOCK_MONOTONIC, &ts);
-	if (rc) {
-		fprintf(stderr, "Error: clock_gettime() = %d\n", rc);
-	        abort();
-	}
+    if (start == 0)
+        start = mach_absolute_time();
 
-	return (((u_int64_t)ts.tv_sec) * NANOSEC) + ts.tv_nsec;
+    return zfs_abs_to_nano(mach_absolute_time() - start);
 }
+
