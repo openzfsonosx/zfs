@@ -68,19 +68,19 @@ struct extmnttab {
 };
 
 extern int getmntany(FILE *fp, struct mnttab *mp, struct mnttab *mpref);
-extern int _sol_getmntent(FILE *fp, struct mnttab *mp);
+//extern int _sol_getmntent(FILE *fp, struct mnttab *mp);
 extern int getextmntent(FILE *fp, struct extmnttab *mp, int len);
 
-static inline char *_sol_hasmntopt(struct mnttab *mnt, char *opt)
-{
-	struct mntent mnt_new;
+//static inline char *_sol_hasmntopt(struct mnttab *mnt, char *opt)
+//{
+//	struct mntent mnt_new;
+//
+//	mnt_new.mnt_opts = mnt->mnt_mntopts;
+//
+//	return hasmntopt(&mnt_new, opt);
+//}
 
-	mnt_new.mnt_opts = mnt->mnt_mntopts;
-
-	return hasmntopt(&mnt_new, opt);
-}
-
-#define hasmntopt _sol_hasmntopt
-#define getmntent _sol_getmntent
+//#define hasmntopt _sol_hasmntopt
+//#define getmntent _sol_getmntent
 
 #endif

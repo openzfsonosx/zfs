@@ -29,4 +29,6 @@
 #include_next <rpc/types.h>
 #include <sys/kmem.h>
 
+#include <stdint.h>
+
 #endif /* LIBSPL_RPC_TYPES_H */

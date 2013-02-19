@@ -6,9 +6,10 @@ AC_DEFUN([ZFS_AC_CONFIG_USER_ARCH], [
 	TARGET_ARCH=`echo ${target_cpu} | sed -e s/i.86/i386/`
 
 	case $TARGET_ARCH in
-	i386|x86_64)
-		TARGET_ASM_DIR=asm-${TARGET_ARCH}
-		;;
+    # Fix OSX assembler later
+	#i386|x86_64)
+	#	TARGET_ASM_DIR=asm-${TARGET_ARCH}
+	#	;;
 	*)
 		TARGET_ASM_DIR=asm-generic
 		;;

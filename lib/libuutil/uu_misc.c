@@ -27,7 +27,7 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <libintl.h>
+//#include <libintl.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -40,6 +40,8 @@
 #if !defined(TEXT_DOMAIN)
 #define	TEXT_DOMAIN "SYS_TEST"
 #endif
+
+#define __thread
 
 /*
  * All of the old code under !defined(PTHREAD_ONCE_KEY_NP)

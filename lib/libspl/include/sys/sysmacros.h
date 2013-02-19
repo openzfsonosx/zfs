@@ -27,7 +27,7 @@
 #ifndef _LIBSPL_SYS_SYSMACROS_H
 #define _LIBSPL_SYS_SYSMACROS_H
 
-#include_next <sys/sysmacros.h>
+//#include_next <sys/sysmacros.h>
 
 /* common macros */
 #ifndef MIN
@@ -42,7 +42,7 @@
 
 #define makedevice(maj,min)	makedev(maj,min)
 #define _sysconf(a)		sysconf(a)
-#define __NORETURN		__attribute__ ((noreturn))
+//#define __NORETURN		__attribute__ ((noreturn))
 
 /*
  * Compatibility macros/typedefs needed for Solaris -> Linux port
