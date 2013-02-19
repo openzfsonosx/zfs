@@ -623,6 +623,7 @@ zfs_prop_align_right(zfs_prop_t prop)
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
 
+#if 0
 static int zcommon_init(void) { return 0; }
 static int zcommon_fini(void) { return 0; }
 
@@ -653,5 +654,6 @@ EXPORT_SYMBOL(zfs_prop_userquota);
 EXPORT_SYMBOL(zfs_prop_index_to_string);
 EXPORT_SYMBOL(zfs_prop_string_to_index);
 EXPORT_SYMBOL(zfs_prop_valid_for_type);
+#endif
 
 #endif
