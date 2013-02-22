@@ -728,7 +728,7 @@ zvol_request(struct request_queue *q)
 
 		if (size != 0 && blk_rq_pos(req) + blk_rq_sectors(req) >
 		    get_capacity(zv->zv_disk)) {
-			printk(KERN_INFO
+			printf(
 			       "%s: bad access: block=%llu, count=%lu\n",
 			       req->rq_disk->disk_name,
 			       (long long unsigned)blk_rq_pos(req),
@@ -738,7 +738,7 @@ zvol_request(struct request_queue *q)
 		}
 
 		if (!blk_fs_request(req)) {
-			printk(KERN_INFO "%s: non-fs cmd\n",
+			printf( "%s: non-fs cmd\n",
 			       req->rq_disk->disk_name);
 			__blk_end_request(req, -EIO, size);
 			continue;
@@ -765,7 +765,7 @@ zvol_request(struct request_queue *q)
 			zvol_dispatch(zvol_write, req);
 			break;
 		default:
-			printk(KERN_INFO "%s: unknown cmd: %d\n",
+			printf( "%s: unknown cmd: %d\n",
 			       req->rq_disk->disk_name, (int)rq_data_dir(req));
 			__blk_end_request(req, -EIO, size);
 			break;
@@ -1188,7 +1188,7 @@ zvol_alloc(dev_t dev, const char *name)
 	error = elevator_change(zv->zv_queue, "noop");
 #endif /* HAVE_ELEVATOR_CHANGE */
 	if (error) {
-		printk("ZFS: Unable to set \"%s\" scheduler for zvol %s: %d\n",
+		printf("ZFS: Unable to set \"%s\" scheduler for zvol %s: %d\n",
 		    "noop", name, error);
 		goto out_queue;
 	}
@@ -1489,13 +1489,13 @@ zvol_init(void)
 	zvol_taskq = taskq_create(ZVOL_DRIVER, zvol_threads, maxclsyspri,
 		                  zvol_threads, INT_MAX, TASKQ_PREPOPULATE);
 	if (zvol_taskq == NULL) {
-		printk("ZFS: taskq_create() failed\n");
+		printf("ZFS: taskq_create() failed\n");
 		return (-ENOMEM);
 	}
 
 	error = register_blkdev(zvol_major, ZVOL_DRIVER);
 	if (error) {
-		printk("ZFS: register_blkdev() failed %d\n", error);
+		printf("ZFS: register_blkdev() failed %d\n", error);
 		taskq_destroy(zvol_taskq);
 		return (error);
 	}

@@ -825,7 +825,7 @@ zfsctl_mount_snapshot(struct path *path, int flags)
 	error = call_usermodehelper(argv[0], argv, envp, 1);
 	strfree(argv[2]);
 	if (error) {
-		printk("ZFS: Unable to automount %s at %s: %d\n",
+		printf("ZFS: Unable to automount %s at %s: %d\n",
 		    full_name, full_path, error);
 		error = EISDIR;
 		goto error;

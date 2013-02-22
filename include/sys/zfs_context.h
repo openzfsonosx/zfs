@@ -411,7 +411,7 @@ typedef struct taskq_ent {
 #define	TQ_FRONT	0x08		/* Queue in front */
 
 extern taskq_t *system_taskq;
-
+asdasd=;
 extern taskq_t	*taskq_create(const char *, int, pri_t, int, int, uint_t);
 #define	taskq_create_proc(a, b, c, d, e, p, f) \
 	    (taskq_create(a, b, c, d, e, f))
