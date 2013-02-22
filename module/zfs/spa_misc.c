@@ -48,6 +48,7 @@
 #include <sys/metaslab_impl.h>
 #include <sys/arc.h>
 #include <sys/ddt.h>
+#include <sys/stropts.h>
 #include "zfs_prop.h"
 #include "zfeature_common.h"
 
