@@ -64,6 +64,7 @@
 #include <sys/zfs_ioctl.h>
 #include <sys/dsl_scan.h>
 #include <sys/zfeature.h>
+#include <sys/zfs_context.h>
 
 #ifdef	_KERNEL
 #include <sys/bootprops.h>

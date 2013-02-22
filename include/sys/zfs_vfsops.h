@@ -41,6 +41,45 @@ extern "C" {
 struct zfs_sb;
 struct znode;
 
+typedef struct zfsvfs zfsvfs_t;
+
+struct zfsvfs {
+        vfs_t           *z_vfs;         /* generic fs struct */
+        zfsvfs_t        *z_parent;      /* parent fs */
+        objset_t        *z_os;          /* objset reference */
+        uint64_t        z_root;         /* id of root znode */
+        uint64_t        z_unlinkedobj;  /* id of unlinked zapobj */
+        uint64_t        z_max_blksz;    /* maximum block size for files */
+        uint64_t        z_assign;       /* TXG_NOWAIT or set by zil_replay() */
+        zilog_t         *z_log;         /* intent log pointer */
+        uint_t          z_acl_mode;     /* acl chmod/mode behavior */
+        uint_t          z_acl_inherit;  /* acl inheritance behavior */
+        zfs_case_t      z_case;         /* case-sense */
+        boolean_t       z_utf8;         /* utf8-only */
+        int             z_norm;         /* normalization flags */
+        boolean_t       z_atime;        /* enable atimes mount option */
+        boolean_t       z_unmounted;    /* unmounted */
+        krwlock_t       z_unmount_lock;
+        krwlock_t       z_unmount_inactive_lock;
+        krwlock_t       z_teardown_inactive_lock;
+        list_t          z_all_znodes;   /* all vnodes in the fs */
+        kmutex_t        z_znodes_lock;  /* lock for z_all_znodes */
+        struct vnode   *z_ctldir;      /* .zfs directory pointer */
+        time_t          z_mount_time;           /* mount timestamp (for Spotlight) */
+        time_t          z_last_unmount_time;    /* unmount timestamp (for Spotlight) */
+        time_t          z_last_mtime_synced;    /* last fs mtime synced to disk */
+        struct vnode   *z_mtime_vp;            /* znode utilized for the fs mtime. */
+        boolean_t       z_show_ctldir;  /* expose .zfs in the root dir */
+        boolean_t       z_issnap;       /* true if this is a snapshot */
+        boolean_t       z_replay;       /* set during ZIL replay */
+        boolean_t       z_use_sa;       /* version allow system attributes */
+        uint64_t        z_version;
+        uint64_t        z_shares_dir;   /* hidden shares dir */
+        sa_attr_type_t  *z_attr_table;  /* SA attr mapping->id */
+#define ZFS_OBJ_MTX_SZ  256
+        kmutex_t        z_hold_mtx[ZFS_OBJ_MTX_SZ];     /* znode hold locks */
+};
+
 typedef struct zfs_sb {
 	struct super_block *z_sb;	/* generic super_block */
 	//struct backing_dev_info z_bdi;	/* generic backing dev info */
@@ -87,7 +126,7 @@ typedef struct zfs_sb {
 	uint64_t	z_groupquota_obj;
 	uint64_t	z_replay_eof;	/* New end of file - replay only */
 	sa_attr_type_t	*z_attr_table;	/* SA attr mapping->id */
-#define	ZFS_OBJ_MTX_SZ	256
+    //#define	ZFS_OBJ_MTX_SZ	256
 	kmutex_t	z_hold_mtx[ZFS_OBJ_MTX_SZ];	/* znode hold locks */
 } zfs_sb_t;
 
