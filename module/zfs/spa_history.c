@@ -317,8 +317,8 @@ spa_history_log(spa_t *spa, const char *history_str, history_log_type_t what)
 	}
 
 	ha = kmem_alloc(sizeof (history_arg_t), KM_PUSHPAGE);
-	ha->ha_history_str = strdup(history_str);
-	ha->ha_zone = strdup(spa_history_zone());
+	ha->ha_history_str = spa_strdup(history_str);
+	ha->ha_zone = spa_strdup(spa_history_zone());
 	ha->ha_log_type = what;
 	ha->ha_uid = crgetuid(CRED());
 
