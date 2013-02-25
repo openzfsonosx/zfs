@@ -41,6 +41,8 @@
 #include <sys/zone.h>
 #endif
 
+#define vnode_t struct vnode
+
 /*
  * Pool configuration repository.
  *

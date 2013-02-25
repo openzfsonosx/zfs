@@ -78,6 +78,18 @@ typedef enum kmem_cbrc {
 #define	KMC_VMEM		0x0
 
 
+typedef struct dirent dirent_t;
+typedef struct direntry dirent64_t;
+
+#define DIRENT_RECLEN(namelen, ext)  \
+        ((ext) ?  \
+        ((sizeof(dirent64_t) + (namelen) - (MAXPATHLEN-1) + 7) & ~7)  \
+        :  \
+        ((sizeof(dirent_t) - (NAME_MAX+1)) + (((namelen)+1 + 7) &~ 7)))
+
+#define        CREATE_XATTR_DIR        0x04    /* Create extended attr dir */
+
+
 #else /* _KERNEL */
 
 #define	_SYS_MUTEX_H
@@ -208,6 +220,7 @@ extern void vpanic(const char *, __va_list);
 #else
 #define	EXTRA_GUARD_BYTES	0
 #endif
+
 
 /* in libzpool, p0 exists only to have its address taken */
 typedef struct proc {
@@ -411,7 +424,6 @@ typedef struct taskq_ent {
 #define	TQ_FRONT	0x08		/* Queue in front */
 
 extern taskq_t *system_taskq;
-asdasd=;
 extern taskq_t	*taskq_create(const char *, int, pri_t, int, int, uint_t);
 #define	taskq_create_proc(a, b, c, d, e, p, f) \
 	    (taskq_create(a, b, c, d, e, f))
@@ -662,5 +674,14 @@ void ksiddomain_rele(ksiddomain_t *);
 	sysevent_post_event(_c, _d, _b, "libzpool", _e, _f)
 
 #endif /* _KERNEL */
+
+
+#ifndef MAX_UPL_TRANSFER
+#define MAX_UPL_TRANSFER 256
+#endif
+
+
+
+
 
 #endif	/* _SYS_ZFS_CONTEXT_H */

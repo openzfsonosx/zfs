@@ -31,6 +31,8 @@
 #include <sys/fs/zfs.h>
 #include <sys/fm/fs/zfs.h>
 
+#define vnode_t struct vnode
+
 /*
  * Virtual device vector for files.
  */

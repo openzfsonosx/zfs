@@ -39,12 +39,13 @@
 #define	ZFS_SNAPDIR_NAME	"snapshot"
 #define	ZFS_SHAREDIR_NAME	"shares"
 
-#define	zfs_has_ctldir(zdp)	\
-	((zdp)->z_id == ZTOZSB(zdp)->z_root && \
-	(ZTOZSB(zdp)->z_ctldir != NULL))
-#define	zfs_show_ctldir(zdp)	\
-	(zfs_has_ctldir(zdp) && \
-	(ZTOZSB(zdp)->z_show_ctldir))
+#define zfs_has_ctldir(zdp)     \
+        ((zdp)->z_id == (zdp)->z_zfsvfs->z_root && \
+        ((zdp)->z_zfsvfs->z_ctldir != NULL))
+
+#define zfs_show_ctldir(zdp)    \
+        (zfs_has_ctldir(zdp) && \
+        ((zdp)->z_zfsvfs->z_show_ctldir))
 
 typedef struct {
 	char			*se_name;
