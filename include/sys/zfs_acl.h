@@ -46,6 +46,8 @@ struct znode_phys;
 #define	ZFS_ACL_VERSION_FUID	1ULL
 #define	ZFS_ACL_VERSION		ZFS_ACL_VERSION_FUID
 
+#define MAX_ACL_SIZE    (MAX_ACL_ENTRIES * 2 + 6)
+
 /*
  * ZFS ACLs are store in various forms.
  * Files created with ACL version ZFS_ACL_VERSION_INITIAL

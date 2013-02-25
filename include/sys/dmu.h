@@ -43,6 +43,7 @@
 #include <sys/cred.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+#include <sys/vnode.h>
 
 #ifdef	__cplusplus
 extern "C" {
