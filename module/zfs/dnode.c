@@ -1380,9 +1380,9 @@ dnode_new_blkid(dnode_t *dn, uint64_t blkid, dmu_tx_t *tx, boolean_t have_read)
 
 	ASSERT(blkid != DMU_BONUS_BLKID);
 
-	ASSERT(have_read ?
-	    RW_READ_HELD(&dn->dn_struct_rwlock) :
-	    RW_WRITE_HELD(&dn->dn_struct_rwlock));
+	//ASSERT(have_read ?
+    //   RW_READ_HELD(&dn->dn_struct_rwlock) :
+    //   RW_WRITE_HELD(&dn->dn_struct_rwlock));
 
 	/*
 	 * if we have a read-lock, check to see if we need to do any work

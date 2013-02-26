@@ -237,6 +237,17 @@ void zfs_znode_byteswap(void *buf, size_t size);
 #define	DS_FIND_SNAPSHOTS	(1<<0)
 #define	DS_FIND_CHILDREN	(1<<1)
 
+#define DS_MODE_NONE            0       /* invalid, to aid debugging */
+#define DS_MODE_STANDARD        1       /* normal access, no special needs */
+#define DS_MODE_PRIMARY         2       /* the "main" access, e.g. a mount */
+#define DS_MODE_EXCLUSIVE       3       /* exclusive access, e.g. to destroy */
+#define DS_MODE_LEVELS          4
+#define DS_MODE_LEVEL(x)        ((x) & (DS_MODE_LEVELS - 1))
+#define DS_MODE_READONLY        0x8
+#define DS_MODE_IS_READONLY(x)  ((x) & DS_MODE_READONLY)
+#define DS_MODE_INCONSISTENT    0x10
+#define DS_MODE_IS_INCONSISTENT(x)      ((x) & DS_MODE_INCONSISTENT)
+
 /*
  * The maximum number of bytes that can be accessed as part of one
  * operation, including metadata.

@@ -203,7 +203,8 @@ extern boolean_t zfs_owner_overquota(zfs_sb_t *zsb, struct znode *,
     boolean_t isgroup);
 extern boolean_t zfs_fuid_overquota(zfs_sb_t *zsb, boolean_t isgroup,
     uint64_t fuid);
-extern int zfs_set_version(zfs_sb_t *zsb, uint64_t newvers);
+extern int
+zfs_set_version(const char *name, uint64_t newvers);
 extern int zfs_get_zplprop(objset_t *os, zfs_prop_t prop,
     uint64_t *value);
 extern int zfs_sb_create(const char *name, zfs_sb_t **zsbp);
@@ -217,7 +218,7 @@ extern boolean_t zfs_is_readonly(zfs_sb_t *zsb);
 
 extern int zfs_register_callbacks(zfs_sb_t *zsb);
 extern void zfs_unregister_callbacks(zfs_sb_t *zsb);
-extern int zfs_domount(struct super_block *sb, void *data, int silent);
+    //extern int zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx);
 extern void zfs_preumount(struct super_block *sb);
 extern int zfs_umount(struct super_block *sb);
 extern int zfs_remount(struct super_block *sb, int *flags, char *data);
