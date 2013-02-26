@@ -449,6 +449,9 @@ dsl_check_user_access(objset_t *mos, uint64_t zapobj, const char *perm,
 		return (0);
 
 	/* check each supplemental group user is a member of */
+/*XXX NOEL: get kauth equivs for the below, crgetngroups, crgetgroups*/
+#ifndef __APPLE__
+
 	ngids = crgetngroups(cr);
 	gids = crgetgroups(cr);
 	for (i = 0; i != ngids; i++) {
@@ -459,6 +462,8 @@ dsl_check_user_access(objset_t *mos, uint64_t zapobj, const char *perm,
 	}
 
 	return (EPERM);
+#endif
+    return 0;
 }
 
 /*
@@ -523,6 +528,7 @@ dsl_load_user_sets(objset_t *mos, uint64_t zapobj, avl_tree_t *avl,
 	(void) dsl_load_sets(mos, zapobj,
 	    ZFS_DELEG_EVERYONE_SETS, checkflag, NULL, avl);
 
+#if 0
 	ngids = crgetngroups(cr);
 	gids = crgetgroups(cr);
 	for (i = 0; i != ngids; i++) {
@@ -530,6 +536,7 @@ dsl_load_user_sets(objset_t *mos, uint64_t zapobj, avl_tree_t *avl,
 		(void) dsl_load_sets(mos, zapobj,
 		    ZFS_DELEG_GROUP_SETS, checkflag, &id, avl);
 	}
+#endif
 }
 
 /*
