@@ -88,6 +88,8 @@ typedef struct direntry dirent64_t;
         ((sizeof(dirent_t) - (NAME_MAX+1)) + (((namelen)+1 + 7) &~ 7)))
 
 #define        CREATE_XATTR_DIR        0x04    /* Create extended attr dir */
+#define	kpreempt_disable()	((void)0)
+#define	kpreempt_enable()	((void)0)
 
 
 #else /* _KERNEL */
@@ -679,8 +681,6 @@ void ksiddomain_rele(ksiddomain_t *);
 #ifndef MAX_UPL_TRANSFER
 #define MAX_UPL_TRANSFER 256
 #endif
-
-
 
 
 

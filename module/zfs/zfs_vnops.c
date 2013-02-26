@@ -2523,7 +2523,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp)
 	zp->z_zn_prefetch = B_FALSE; /* a lookup will re-enable pre-fetching */
 
 #ifdef __APPLE__
-	if (error = uio_move(outbuf, (long)outcount, UIO_READ, uio)) {
+	if (error = uiomove(outbuf, (long)outcount, UIO_READ, uio)) {
 		/*
 		 * Reset the pointer.
 		 */
@@ -3789,7 +3789,7 @@ zfs_readlink(vnode_t *vp, uio_t *uio, cred_t *cr)
 	bufsz = (size_t)zp->z_phys->zp_size;
 	if (bufsz + sizeof (znode_phys_t) <= zp->z_dbuf->db_size) {
 #ifdef __APPLE__
-		error = uio_move((caddr_t)(zp->z_phys + 1),
+		error = uiomove((caddr_t)(zp->z_phys + 1),
 		    MIN((size_t)bufsz, uio_resid(uio)), UIO_READ, uio);
 #else
 		error = uiomove(zp->z_phys + 1,
@@ -3803,7 +3803,7 @@ zfs_readlink(vnode_t *vp, uio_t *uio, cred_t *cr)
 			return (error);
 		}
 #ifdef __APPLE__
-		error = uio_move(dbp->db_data,
+		error = uiomove(dbp->db_data,
 		    MIN((size_t)bufsz, uio_resid(uio)), UIO_READ, uio);
 #else
 		error = uiomove(dbp->db_data,

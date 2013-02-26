@@ -141,7 +141,7 @@ typedef struct zil_bp_node {
 } zil_bp_node_t;
 
 #define	ZIL_MAX_LOG_DATA (SPA_MAXBLOCKSIZE - sizeof (zil_chain_t) - \
-    sizeof (lr_write_t))
+                          sizeof (lr_write_t))
 
 #ifdef	__cplusplus
 }

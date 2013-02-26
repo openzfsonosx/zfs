@@ -969,6 +969,48 @@ typedef enum history_internal_events {
 	LOG_END
 } history_internal_events_t;
 
+#define ZFS_SYSCTL_FOOTPRINT    1
+#define ZFS_SYSCTL_READONLY     2
+#define ZFS_SYSCTL_CONFIG_DEBUGMSG 3
+#define ZFS_SYSCTL_CONFIG_zdprintf 4
+
+#define ZFS_FOOTPRINT_VERSION   1
+
+typedef struct memory_stats {
+        uint32_t        current;
+        uint32_t        target;
+        uint32_t        highest;
+        uint32_t        maximum;
+} zfs_memory_stats_t;
+
+typedef struct kmem_cache_stats {
+        char            cache_name[32];
+        uint32_t        cache_obj_size;
+        uint32_t        cache_obj_count;
+        uint32_t        cache_obj_inuse;
+        uint32_t        cache_obj_peak;
+        uint32_t        cache_slab_size;
+        uint32_t        spare[3];
+} kmem_cache_stats_t;
+
+typedef struct zfs_footprint_stats {
+        uint32_t                version;
+        uint32_t                thread_count;
+        zfs_memory_stats_t      memory_stats;
+        zfs_memory_stats_t      arc_stats;
+        uint32_t                spare;
+        uint32_t                caches_count;
+        kmem_cache_stats_t      cache_stats[1];
+} zfs_footprint_stats_t;
+
+    // Let's get rid of these global vars
+extern zfs_memory_stats_t zfs_footprint;
+extern int zfs_threads;
+extern int zfs_msg_buf_enabled;
+extern u_int32_t k_maczfs_debug_stalk;
+extern size_t zfs_kallocmap_size;
+extern size_t zfs_kernelmap_size;
+
 #ifdef	__cplusplus
 }
 #endif

@@ -125,6 +125,10 @@ extern "C" {
 
 #define	MASTER_NODE_OBJ	1
 
+#define MANDMODE(mode)          (((mode) & (VSGID|(VEXEC>>3))) == VSGID)
+#define MANDLOCK(vp, mode)      (vnode_isreg(vp) && MANDMODE(mode))
+
+
 /*
  * Special attributes for master node.
  * "userquota@" and "groupquota@" are also valid (from
@@ -390,14 +394,16 @@ extern void zfs_log_symlink(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
     znode_t *dzp, znode_t *zp, char *name, char *link);
 extern void zfs_log_rename(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
     znode_t *sdzp, char *sname, znode_t *tdzp, char *dname, znode_t *szp);
-extern void zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
+extern void zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
     znode_t *zp, offset_t off, ssize_t len, int ioflag);
-extern void zfs_log_truncate(zilog_t *zilog, dmu_tx_t *tx, int txtype,
+extern void zfs_log_truncate(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
     znode_t *zp, uint64_t off, uint64_t len);
-extern void zfs_log_setattr(zilog_t *zilog, dmu_tx_t *tx, int txtype,
+extern void zfs_log_setattr(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
     znode_t *zp, vattr_t *vap, uint_t mask_applied, zfs_fuid_info_t *fuidp);
-extern void zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, znode_t *zp,
-    vsecattr_t *vsecp, zfs_fuid_info_t *fuidp);
+extern void zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
+                       znode_t *zp, int aclcnt, ace_t *z_ace, zfs_fuid_info_t *fuidp);
+//extern void zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, znode_t *zp,
+//   vsecattr_t *vsecp, zfs_fuid_info_t *fuidp);
 extern void zfs_xvattr_set(znode_t *zp, xvattr_t *xvap, dmu_tx_t *tx);
 extern void zfs_upgrade(zfs_sb_t *zsb, dmu_tx_t *tx);
 extern int zfs_create_share_dir(zfs_sb_t *zsb, dmu_tx_t *tx);

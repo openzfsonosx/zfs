@@ -1,8 +1,10 @@
 #!/bin/bash -x -e
 
-CFLAGS="-Wall -nostdinc -mkernel -D_KERNEL -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT -I/Users/lundman/src/zfs/osx.zfs/x/zfs/include -I/Users/lundman/src/zfs/osx.zfs/x/spl/include -I/System/Library/Frameworks/Kernel.framework/PrivateHeaders -I/System/Library/Frameworks/Kernel.framework/Headers -DZFS_META_VERSION=\"0.6.0\" -DZFS_META_RELEASE=\"rc12\" -DZFS_DEBUG_STR=\"alpha\" -DHAVE_SPL=1"
+CFLAGS="-Wall -nostdinc -mkernel -D_KERNEL -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT -I/Users/lundman/src/zfs/osx.zfs/x/zfs/include -I/Users/lundman/src/zfs/osx.zfs/x/spl/include -I/System/Library/Frameworks/Kernel.framework/PrivateHeaders -I/System/Library/Frameworks/Kernel.framework/Headers -DZFS_META_VERSION=\"0.6.0\" -DZFS_META_RELEASE=\"rc12\" -DZFS_DEBUG_STR=\"alpha\" -DHAVE_SPL=1 -DNAMEDSTREAMS=1"
 
 # Two ## means the source file still needs to be ported.
+#gcc $CFLAGS -o zvol.o -c zvol.c
+#exit
 
 gcc $CFLAGS -o arc.o -c arc.c
 gcc $CFLAGS -o bplist.o -c bplist.c
@@ -66,18 +68,18 @@ gcc $CFLAGS -o zfs_acl.o -c zfs_acl.c
 gcc $CFLAGS -o zfs_byteswap.o -c zfs_byteswap.c
 ##gcc $CFLAGS -o zfs_ctldir.o -c zfs_ctldir.c
 gcc $CFLAGS -o zfs_debug.o -c zfs_debug.c
-##gcc $CFLAGS -o zfs_dir.o -c zfs_dir.c
+gcc $CFLAGS -o zfs_dir.o -c zfs_dir.c
 gcc $CFLAGS -o zfs_fm.o -c zfs_fm.c
 gcc $CFLAGS -o zfs_fuid.o -c zfs_fuid.c
 gcc $CFLAGS -o zfs_ioctl.o -c zfs_ioctl.c
-##gcc $CFLAGS -o zfs_log.o -c zfs_log.c
+gcc $CFLAGS -o zfs_log.o -c zfs_log.c
 gcc $CFLAGS -o zfs_onexit.o -c zfs_onexit.c
 gcc $CFLAGS -o zfs_osx.o -c zfs_osx.c
 ##gcc $CFLAGS -o zfs_replay.o -c zfs_replay.c
 gcc $CFLAGS -o zfs_rlock.o -c zfs_rlock.c
 ##gcc $CFLAGS -o zfs_sa.o -c zfs_sa.c
-##gcc $CFLAGS -o zfs_vfsops.o -c zfs_vfsops.c
-##gcc $CFLAGS -o zfs_vnops.o -c zfs_vnops.c
+gcc $CFLAGS -o zfs_vfsops.o -c zfs_vfsops.c
+gcc $CFLAGS -o zfs_vnops.o -c zfs_vnops.c
 gcc $CFLAGS -o zfs_znode.o -c zfs_znode.c
 gcc $CFLAGS -o zil.o -c zil.c
 gcc $CFLAGS -o zio.o -c zio.c
