@@ -101,7 +101,7 @@ static int  zfs_vfs_setattr (struct mount *mp, struct vfs_attr *fsap, vfs_contex
 static int  zfs_vfs_sync (struct mount *mp, int waitfor, vfs_context_t context);
 static int  zfs_vfs_fhtovp (struct mount *mp, int fhlen, unsigned char *fhp, vnode_t **vpp, vfs_context_t context);
 static int  zfs_vfs_vptofh (vnode_t *vp, int *fhlenp, unsigned char *fhp, vfs_context_t context);
-static int  zfs_vfs_sysctl (int *name, u_int namelen, user_addr_t oldp, size_t *oldlenp,  user_addr_t newp, size_t newlen, vfs_context_t context);
+extern int  zfs_vfs_sysctl (int *name, u_int namelen, user_addr_t oldp, size_t *oldlenp,  user_addr_t newp, size_t newlen, vfs_context_t context);
 static int  zfs_vfs_quotactl ( struct mount *mp, int cmds, uid_t uid, caddr_t datap, vfs_context_t context);
 static void zfs_objset_close(zfsvfs_t *zfsvfs);
 
@@ -742,11 +742,15 @@ zfs_domount(vfs_t *vfsp, char *osname, cred_t *cr)
 	else
 		mode = DS_MODE_PRIMARY;
 
-	error = dmu_objset_open(osname, DMU_OST_ZFS, mode, &zfsvfs->z_os);
+	//error = dmu_objset_open(osname, DMU_OST_ZFS, mode, &zfsvfs->z_os);
+	error = dmu_objset_own(osname, DMU_OST_ZFS,
+                           readonly ? B_TRUE : B_FALSE, &zfsvfs, &zfsvfs->z_os);
 	if (error == EROFS) {
 		mode = DS_MODE_PRIMARY | DS_MODE_READONLY;
-		error = dmu_objset_open(osname, DMU_OST_ZFS, mode,
-		    &zfsvfs->z_os);
+        error = dmu_objset_own(osname, DMU_OST_ZFS,
+                               B_TRUE, &zfsvfs, &zfsvfs->z_os);
+		//error = dmu_objset_open(osname, DMU_OST_ZFS, mode,
+        //   &zfsvfs->z_os);
 	}
 
 	if (error)
@@ -847,7 +851,9 @@ zfs_domount(vfs_t *vfsp, char *osname, cred_t *cr)
 out:
 	if (error) {
 		if (zfsvfs->z_os)
-			dmu_objset_close(zfsvfs->z_os);
+            //		dmu_objset_close(zfsvfs->z_os);
+            dmu_objset_disown(zfsvfs->z_os, NULL);
+
 		mutex_destroy(&zfsvfs->z_znodes_lock);
 		list_destroy(&zfsvfs->z_all_znodes);
 		rw_destroy(&zfsvfs->z_unmount_lock);
@@ -1796,7 +1802,8 @@ zfs_umount(vfs_t *vfsp, int fflag, cred_t *cr)
 	/*
 	 * Finally close the objset
 	 */
-	dmu_objset_close(os);
+	//dmu_objset_close(os);
+    dmu_objset_disown(os, zfsvfs);
 
 	/*
 	 * We can now safely destroy the '.zfs' directory node.
@@ -2046,6 +2053,9 @@ zfs_vfs_vptofh(vnode_t *vp, int *fhlenp, unsigned char *fhp, __unused vfs_contex
 
 
 
+
+
+
 #ifndef __APPLE__
 static int
 zfs_vget(vfs_t *vfsp, vnode_t **vpp, fid_t *fidp)
@@ -2199,6 +2209,77 @@ zfs_vfsinit(int fstype, char *name)
 	return (0);
 }
 
+
+boolean_t
+zfs_fuid_overquota(zfs_sb_t *zsb, boolean_t isgroup, uint64_t fuid)
+//zfs_fuid_overquota(vfs_t *vfsp, boolean_t isgroup, uint64_t fuid)
+{
+	char buf[32];
+	uint64_t used, quota, usedobj, quotaobj;
+	int err;
+	//zfsvfs_t *zfsvfs = NULL;
+	//zfsvfs = vfsp->vfs_data;
+
+	usedobj = isgroup ? DMU_GROUPUSED_OBJECT : DMU_USERUSED_OBJECT;
+	quotaobj = isgroup ? zsb->z_groupquota_obj : zsb->z_userquota_obj;
+
+	if (quotaobj == 0 || zsb->z_replay)
+		return (B_FALSE);
+
+	(void) sprintf(buf, "%llx", (longlong_t)fuid);
+	err = zap_lookup(zsb->z_os, quotaobj, buf, 8, 1, &quota);
+	if (err != 0)
+		return (B_FALSE);
+
+	err = zap_lookup(zsb->z_os, usedobj, buf, 8, 1, &used);
+	if (err != 0)
+		return (B_FALSE);
+	return (used >= quota);
+}
+
+/*
+ * Read a property stored within the master node.
+ */
+int
+zfs_get_zplprop(objset_t *os, zfs_prop_t prop, uint64_t *value)
+{
+	const char *pname;
+	int error = ENOENT;
+
+	/*
+	 * Look up the file system's value for the property.  For the
+	 * version property, we look up a slightly different string.
+	 */
+	if (prop == ZFS_PROP_VERSION)
+		pname = ZPL_VERSION_STR;
+	else
+		pname = zfs_prop_to_name(prop);
+
+	if (os != NULL)
+		error = zap_lookup(os, MASTER_NODE_OBJ, pname, 8, 1, value);
+
+	if (error == ENOENT) {
+		/* No value set, use the default value */
+		switch (prop) {
+		case ZFS_PROP_VERSION:
+			*value = ZPL_VERSION;
+			break;
+		case ZFS_PROP_NORMALIZE:
+		case ZFS_PROP_UTF8ONLY:
+			*value = 0;
+			break;
+		case ZFS_PROP_CASE:
+			*value = ZFS_CASE_SENSITIVE;
+			break;
+		default:
+			return (error);
+		}
+		error = 0;
+	}
+	return (error);
+}
+
+
 static int
 zfs_vfs_start(__unused struct mount *mp, __unused int flags, __unused vfs_context_t context)
 {
@@ -2266,6 +2347,285 @@ zfs_get_stats(objset_t *os, nvlist_t *nv)
 	return (error);
 }
 
+
+/*
+ * Block out VOPs and close zfs_sb_t::z_os
+ *
+ * Note, if successful, then we return with the 'z_teardown_lock' and
+ * 'z_teardown_inactive_lock' write held.
+ */
+int
+zfs_suspend_fs(zfs_sb_t *zsb)
+{
+	int error;
+
+	//if ((error = zfs_sb_teardown(zsb, B_FALSE)) != 0)
+	//	return (error);
+	dmu_objset_disown(zsb->z_os, zsb);
+
+	return (0);
+}
+EXPORT_SYMBOL(zfs_suspend_fs);
+
+
+
+
+/*
+ * Reopen zfs_sb_t::z_os and release VOPs.
+ */
+int
+zfs_resume_fs(zfs_sb_t *zsb, const char *osname)
+{
+	int err, err2;
+
+	ASSERT(RRW_WRITE_HELD(&zsb->z_teardown_lock));
+	ASSERT(RW_WRITE_HELD(&zsb->z_teardown_inactive_lock));
+
+	err = dmu_objset_own(osname, DMU_OST_ZFS, B_FALSE, zsb, &zsb->z_os);
+	if (err) {
+		zsb->z_os = NULL;
+	} else {
+		znode_t *zp;
+		uint64_t sa_obj = 0;
+
+		err2 = zap_lookup(zsb->z_os, MASTER_NODE_OBJ,
+		    ZFS_SA_ATTRS, 8, 1, &sa_obj);
+
+		if ((err || err2) && zsb->z_version >= ZPL_VERSION_SA)
+			goto bail;
+
+#if 0
+		if ((err = sa_setup(zsb->z_os, sa_obj,
+		    zfs_attr_table,  ZPL_END, &zsb->z_attr_table)) != 0)
+			goto bail;
+
+		VERIFY(zfs_sb_setup(zsb, B_FALSE) == 0);
+#endif
+
+		/*
+		 * Attempt to re-establish all the active znodes with
+		 * their dbufs.  If a zfs_rezget() fails, then we'll let
+		 * any potential callers discover that via ZFS_ENTER_VERIFY_VP
+		 * when they try to use their znode.
+		 */
+		mutex_enter(&zsb->z_znodes_lock);
+		for (zp = list_head(&zsb->z_all_znodes); zp;
+		    zp = list_next(&zsb->z_all_znodes, zp)) {
+			(void) zfs_rezget(zp);
+		}
+		mutex_exit(&zsb->z_znodes_lock);
+
+	}
+
+bail:
+	/* release the VOPs */
+	rw_exit(&zsb->z_teardown_inactive_lock);
+	rrw_exit(&zsb->z_teardown_lock, FTAG);
+
+	if (err) {
+		/*
+		 * Since we couldn't reopen zfs_sb_t::z_os, force
+		 * unmount this file system.
+		 */
+		//(void) zfs_umount(zsb->z_sb);
+	}
+	return (err);
+}
+
+
+
+
+static void
+fuidstr_to_sid(zfs_sb_t *zsb, const char *fuidstr,
+    char *domainbuf, int buflen, uid_t *ridp)
+{
+	uint64_t fuid;
+	const char *domain;
+
+	fuid = strtonum(fuidstr, NULL);
+
+	domain = zfs_fuid_find_by_idx(zsb, FUID_INDEX(fuid));
+	if (domain)
+		(void) strlcpy(domainbuf, domain, buflen);
+	else
+		domainbuf[0] = '\0';
+	*ridp = FUID_RID(fuid);
+}
+
+
+static uint64_t
+zfs_userquota_prop_to_obj(zfs_sb_t *zsb, zfs_userquota_prop_t type)
+{
+	switch (type) {
+	case ZFS_PROP_USERUSED:
+		return (DMU_USERUSED_OBJECT);
+	case ZFS_PROP_GROUPUSED:
+		return (DMU_GROUPUSED_OBJECT);
+	case ZFS_PROP_USERQUOTA:
+		return (zsb->z_userquota_obj);
+	case ZFS_PROP_GROUPQUOTA:
+		return (zsb->z_groupquota_obj);
+	default:
+		return (ENOTSUP);
+	}
+	return (0);
+}
+
+
+int
+zfs_userspace_many(zfs_sb_t *zsb, zfs_userquota_prop_t type,
+    uint64_t *cookiep, void *vbuf, uint64_t *bufsizep)
+{
+	int error;
+	zap_cursor_t zc;
+	zap_attribute_t za;
+	zfs_useracct_t *buf = vbuf;
+	uint64_t obj;
+
+	if (!dmu_objset_userspace_present(zsb->z_os))
+		return (ENOTSUP);
+
+	obj = zfs_userquota_prop_to_obj(zsb, type);
+	if (obj == 0) {
+		*bufsizep = 0;
+		return (0);
+	}
+
+	for (zap_cursor_init_serialized(&zc, zsb->z_os, obj, *cookiep);
+	    (error = zap_cursor_retrieve(&zc, &za)) == 0;
+	    zap_cursor_advance(&zc)) {
+		if ((uintptr_t)buf - (uintptr_t)vbuf + sizeof (zfs_useracct_t) >
+		    *bufsizep)
+			break;
+
+		fuidstr_to_sid(zsb, za.za_name,
+		    buf->zu_domain, sizeof (buf->zu_domain), &buf->zu_rid);
+
+		buf->zu_space = za.za_first_integer;
+		buf++;
+	}
+	if (error == ENOENT)
+		error = 0;
+
+	ASSERT3U((uintptr_t)buf - (uintptr_t)vbuf, <=, *bufsizep);
+	*bufsizep = (uintptr_t)buf - (uintptr_t)vbuf;
+	*cookiep = zap_cursor_serialize(&zc);
+	zap_cursor_fini(&zc);
+	return (error);
+}
+EXPORT_SYMBOL(zfs_userspace_many);
+
+/*
+ * buf must be big enough (eg, 32 bytes)
+ */
+static int
+id_to_fuidstr(zfs_sb_t *zsb, const char *domain, uid_t rid,
+    char *buf, boolean_t addok)
+{
+	uint64_t fuid;
+	int domainid = 0;
+
+	if (domain && domain[0]) {
+		domainid = zfs_fuid_find_by_domain(zsb, domain, NULL, addok);
+		if (domainid == -1)
+			return (ENOENT);
+	}
+	fuid = FUID_ENCODE(domainid, rid);
+	(void) sprintf(buf, "%llx", (longlong_t)fuid);
+	return (0);
+}
+
+
+int
+zfs_userspace_one(zfs_sb_t *zsb, zfs_userquota_prop_t type,
+    const char *domain, uint64_t rid, uint64_t *valp)
+{
+	char buf[32];
+	int err;
+	uint64_t obj;
+
+	*valp = 0;
+
+	if (!dmu_objset_userspace_present(zsb->z_os))
+		return (ENOTSUP);
+
+	obj = zfs_userquota_prop_to_obj(zsb, type);
+	if (obj == 0)
+		return (0);
+
+	err = id_to_fuidstr(zsb, domain, rid, buf, B_FALSE);
+	if (err)
+		return (err);
+
+	err = zap_lookup(zsb->z_os, obj, buf, 8, 1, valp);
+	if (err == ENOENT)
+		err = 0;
+	return (err);
+}
+
+// This needs to be OSXified.
+int
+zfs_set_userquota(zfs_sb_t *zsb, zfs_userquota_prop_t type,
+    const char *domain, uint64_t rid, uint64_t quota)
+{
+	char buf[32];
+	int err;
+	dmu_tx_t *tx;
+	uint64_t *objp;
+	boolean_t fuid_dirtied;
+
+	if (type != ZFS_PROP_USERQUOTA && type != ZFS_PROP_GROUPQUOTA)
+		return (EINVAL);
+
+	if (zsb->z_version < ZPL_VERSION_USERSPACE)
+		return (ENOTSUP);
+
+	objp = (type == ZFS_PROP_USERQUOTA) ? &zsb->z_userquota_obj :
+	    &zsb->z_groupquota_obj;
+
+	err = id_to_fuidstr(zsb, domain, rid, buf, B_TRUE);
+	if (err)
+		return (err);
+	fuid_dirtied = zsb->z_fuid_dirty;
+
+	tx = dmu_tx_create(zsb->z_os);
+	dmu_tx_hold_zap(tx, *objp ? *objp : DMU_NEW_OBJECT, B_TRUE, NULL);
+	if (*objp == 0) {
+		dmu_tx_hold_zap(tx, MASTER_NODE_OBJ, B_TRUE,
+		    zfs_userquota_prop_prefixes[type]);
+	}
+	if (fuid_dirtied)
+		zfs_fuid_txhold(zsb, tx);
+	err = dmu_tx_assign(tx, TXG_WAIT);
+	if (err) {
+		dmu_tx_abort(tx);
+		return (err);
+	}
+
+	mutex_enter(&zsb->z_lock);
+	if (*objp == 0) {
+		*objp = zap_create(zsb->z_os, DMU_OT_USERGROUP_QUOTA,
+		    DMU_OT_NONE, 0, tx);
+		VERIFY(0 == zap_add(zsb->z_os, MASTER_NODE_OBJ,
+		    zfs_userquota_prop_prefixes[type], 8, 1, objp, tx));
+	}
+	mutex_exit(&zsb->z_lock);
+
+	if (quota == 0) {
+		err = zap_remove(zsb->z_os, *objp, buf, tx);
+		if (err == ENOENT)
+			err = 0;
+	} else {
+		err = zap_update(zsb->z_os, *objp, buf, 8, 1, &quota, tx);
+	}
+	ASSERT(err == 0);
+	if (fuid_dirtied)
+		zfs_fuid_sync(zsb, tx);
+	dmu_tx_commit(tx);
+	return (err);
+}
+
+
 int
 zfs_set_version(const char *name, uint64_t newvers)
 {
@@ -2283,7 +2643,8 @@ zfs_set_version(const char *name, uint64_t newvers)
 	if (newvers < ZPL_VERSION_INITIAL || newvers > ZPL_VERSION)
 		return (EINVAL);
 
-	error = dmu_objset_open(name, DMU_OST_ZFS, DS_MODE_PRIMARY, &os);
+	//error = dmu_objset_open(name, DMU_OST_ZFS, DS_MODE_PRIMARY, &os);
+	error = dmu_objset_own(name, DMU_OST_ZFS, B_FALSE, NULL, &os);
 	if (error)
 		return (error);
 
@@ -2313,7 +2674,8 @@ zfs_set_version(const char *name, uint64_t newvers)
 	dmu_tx_commit(tx);
 
 out:
-	dmu_objset_close(os);
+    dmu_objset_disown(os, NULL);
+	//dmu_objset_close(os);
 	return (error);
 }
 

@@ -283,8 +283,9 @@ int dmu_objset_destroy(const char *name, boolean_t defer);
 int dmu_snapshots_destroy_nvl(struct nvlist *snaps, boolean_t defer, char *);
 int dmu_objset_snapshot(char *fsname, char *snapname, char *tag,
     struct nvlist *props, boolean_t recursive, boolean_t temporary, int fd);
-int dmu_objset_rename(const char *name, const char *newname,
-    boolean_t recursive);
+    //int dmu_objset_rename(const char *name, const char *newname,
+    // boolean_t recursive);
+#define  dmu_objset_rename(old, new, recursive)       dsl_dataset_rename((old), (new), (recursive))
 int dmu_objset_find(char *name, int func(const char *, void *), void *arg,
     int flags);
 void dmu_objset_byteswap(void *buf, size_t size);

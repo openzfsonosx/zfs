@@ -4,6 +4,8 @@ CFLAGS="-Wall -nostdinc -mkernel -D_KERNEL -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PR
 
 # Two ## means the source file still needs to be ported.
 #gcc $CFLAGS -o zvol.o -c zvol.c
+#gcc $CFLAGS -o zfs_acl.o -c zfs_acl.c
+#gcc $CFLAGS -o zfs_vnops.o -c zfs_vnops.c
 #exit
 
 gcc $CFLAGS -o arc.o -c arc.c
@@ -51,7 +53,7 @@ gcc $CFLAGS -o uberblock.o -c uberblock.c
 gcc $CFLAGS -o unique.o -c unique.c
 gcc $CFLAGS -o vdev.o -c vdev.c
 gcc $CFLAGS -o vdev_cache.o -c vdev_cache.c
-##gcc $CFLAGS -o vdev_disk.o -c vdev_disk.c
+gcc $CFLAGS -o vdev_disk.o -c vdev_disk.c
 gcc $CFLAGS -o vdev_file.o -c vdev_file.c
 gcc $CFLAGS -o vdev_label.o -c vdev_label.c
 gcc $CFLAGS -o vdev_mirror.o -c vdev_mirror.c

@@ -63,13 +63,37 @@ extern void zfsctl_inode_inactive(struct inode *ip);
 extern void zfsctl_inode_destroy(struct inode *ip);
 extern int zfsctl_create(zfs_sb_t *zsb);
 extern void zfsctl_destroy(zfs_sb_t *zsb);
-extern struct inode *zfsctl_root(znode_t *zp);
+//extern struct inode *zfsctl_root(znode_t *zp);
 extern int zfsctl_fid(struct inode *ip, fid_t *fidp);
 
+
+static inline int
+zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, void *pnp,
+                   int flags, struct vnode *rdir, cred_t *cr)
+{
+    return (ENOENT);
+}
+
+static inline ino64_t
+zfsctl_root_inode_cb(struct vnode *vp, int index)
+{
+    ASSERT(index == 0);
+    return (0);
+}
+
+static inline struct vnode *
+zfsctl_root(void *zp)
+{
+    return (NULLVP);
+}
+
+
+
+
 /* zfsctl '.zfs' functions */
-extern int zfsctl_root_lookup(struct inode *dip, char *name,
-    struct inode **ipp, int flags, cred_t *cr, int *direntflags,
-    pathname_t *realpnp);
+//extern int zfsctl_root_lookup(struct inode *dip, char *name,
+//   struct inode **ipp, int flags, cred_t *cr, int *direntflags,
+//   pathname_t *realpnp);
 
 /* zfsctl '.zfs/snapshot' functions */
 extern int zfsctl_snapdir_lookup(struct inode *dip, char *name,

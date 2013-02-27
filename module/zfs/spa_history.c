@@ -505,6 +505,36 @@ spa_history_log_version(spa_t *spa, history_internal_events_t event)
 #endif
 }
 
+void
+spa_history_internal_log(history_internal_events_t event, spa_t *spa,
+    dmu_tx_t *tx, cred_t *cr, const char *fmt, ...)
+{
+    history_arg_t *hap;
+    char *str;
+    va_list adx;
+
+    hap = kmem_alloc(sizeof (history_arg_t), KM_SLEEP);
+    str = kmem_alloc(HIS_MAX_RECORD_LEN, KM_SLEEP);
+
+    va_start(adx, fmt);
+    (void) vsnprintf(str, HIS_MAX_RECORD_LEN, fmt, adx);
+    va_end(adx);
+
+    hap->ha_log_type = LOG_INTERNAL;
+    hap->ha_history_str = str;
+    hap->ha_event = event;
+    hap->ha_zone[0] = '\0';
+
+    if (dmu_tx_is_syncing(tx)) {
+        spa_history_log_sync(spa, hap, tx);
+    } else {
+        dsl_sync_task_do_nowait(spa_get_dsl(spa), NULL,
+                                spa_history_log_sync, spa, hap, 0, tx);
+    }
+    /* spa_history_log_sync() will free hap and str */
+}
+
+
 #if defined(_KERNEL) && defined(HAVE_SPL)
 EXPORT_SYMBOL(spa_history_create_obj);
 EXPORT_SYMBOL(spa_history_get);

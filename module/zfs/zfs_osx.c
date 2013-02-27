@@ -24,7 +24,7 @@ extern SInt32 zfs_active_fs_count;
 
 
 #ifdef __APPLE__
-static int
+extern int
 zfs_vfs_sysctl(int *name, __unused u_int namelen, user_addr_t oldp, size_t *oldlenp,
                user_addr_t newp, size_t newlen, __unused vfs_context_t context)
 {

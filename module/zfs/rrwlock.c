@@ -84,10 +84,10 @@ rrn_find(rrwlock_t *rrl)
 	if (refcount_count(&rrl->rr_linked_rcount) == 0)
 		return (NULL);
 
-	for (rn = tsd_get(rrw_tsd_key); rn != NULL; rn = rn->rn_next) {
-		if (rn->rn_rrl == rrl)
-			return (rn);
-	}
+	//for (rn = tsd_get(rrw_tsd_key); rn != NULL; rn = rn->rn_next) {
+	//	if (rn->rn_rrl == rrl)
+	//		return (rn);
+	//}
 	return (NULL);
 }
 
@@ -101,8 +101,8 @@ rrn_add(rrwlock_t *rrl)
 
 	rn = kmem_alloc(sizeof (*rn), KM_SLEEP);
 	rn->rn_rrl = rrl;
-	rn->rn_next = tsd_get(rrw_tsd_key);
-	VERIFY(tsd_set(rrw_tsd_key, rn) == 0);
+	//rn->rn_next = tsd_get(rrw_tsd_key);
+	//VERIFY(tsd_set(rrw_tsd_key, rn) == 0);
 }
 
 /*
@@ -117,7 +117,7 @@ rrn_find_and_remove(rrwlock_t *rrl)
 
 	if (refcount_count(&rrl->rr_linked_rcount) == 0)
 		return (B_FALSE);
-
+#if 0
 	for (rn = tsd_get(rrw_tsd_key); rn != NULL; rn = rn->rn_next) {
 		if (rn->rn_rrl == rrl) {
 			if (prev)
@@ -129,6 +129,7 @@ rrn_find_and_remove(rrwlock_t *rrl)
 		}
 		prev = rn;
 	}
+#endif
 	return (B_FALSE);
 }
 

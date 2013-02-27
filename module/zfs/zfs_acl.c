@@ -535,7 +535,7 @@ zfs_acl_valid_ace_type(uint_t type, uint_t flags)
 	return (B_FALSE);
 }
 
-#if 0
+#if 1
 static boolean_t
 zfs_ace_valid(umode_t obj_mode, zfs_acl_t *aclp, uint16_t type, uint16_t iflags)
 {
@@ -682,9 +682,9 @@ zfs_copy_ace_2_fuid(zfs_sb_t *zsb, umode_t obj_mode, zfs_acl_t *aclp,
 		/*
 		 * Make sure ACE is valid
 		 */
-		if (zfs_ace_valid(obj_mode, aclp, aceptr->z_hdr.z_type,
-		    aceptr->z_hdr.z_flags) != B_TRUE)
-			return (EINVAL);
+		//if (zfs_ace_valid(obj_mode, aclp, aceptr->z_hdr.z_type,
+        //   aceptr->z_hdr.z_flags) != B_TRUE)
+		//	return (EINVAL);
 
 		switch (acep->a_type) {
 		case ACE_ACCESS_ALLOWED_OBJECT_ACE_TYPE:
@@ -789,9 +789,9 @@ zfs_copy_ace_2_oldace(umode_t obj_mode, zfs_acl_t *aclp, ace_t *acep,
 		/*
 		 * Make sure ACE is valid
 		 */
-		if (zfs_ace_valid(obj_mode, aclp, aceptr->z_type,
-		    aceptr->z_flags) != B_TRUE)
-			return (EINVAL);
+		//if (zfs_ace_valid(obj_mode, aclp, aceptr->z_type,
+        //   aceptr->z_flags) != B_TRUE)
+		//	return (EINVAL);
 	}
 	*size = (caddr_t)aceptr - (caddr_t)z_acl;
 	return (0);
@@ -2832,4 +2832,61 @@ zfs_zaccess_rename(znode_t *sdzp, znode_t *szp, znode_t *tdzp,
 	error = zfs_zaccess(tdzp, add_perm, 0, B_FALSE, cr);
 
 	return (error);
+}
+
+
+/*
+ * Create file system object initial permissions
+ * including inheritable ACEs.
+ */
+void
+zfs_perm_init(znode_t *zp, znode_t *parent, int flag,
+    vattr_t *vap, dmu_tx_t *tx, cred_t *cr)
+{
+    uint64_t        mode;
+    uid_t           uid;
+    gid_t           gid;
+    int             error;
+    int             pull_down;
+    zfs_acl_t       *aclp, *paclp;
+
+    mode = MAKEIMODE(vap->va_type, vap->va_mode);
+
+    /*
+     * Determine uid and gid.
+     */
+    if ((flag & (IS_ROOT_NODE | IS_REPLAY)) ||
+        ((flag & IS_XATTR) && (vap->va_type == VDIR))) {
+        uid = vap->va_uid;
+        gid = vap->va_gid;
+    } else {
+        uid = crgetuid(cr);
+        if ((vap->va_mask & AT_GID) &&
+            ((vap->va_gid == parent->z_phys->zp_gid) ||
+             groupmember(vap->va_gid, cr) ||
+             secpolicy_vnode_create_gid(cr) == 0))
+            gid = vap->va_gid;
+        else
+            gid = (parent->z_phys->zp_mode & S_ISGID) ?
+                parent->z_phys->zp_gid : crgetgid(cr);
+    }
+
+    /*
+     * If we're creating a directory, and the parent directory has the
+     * set-GID bit set, set in on the new directory.
+     * Otherwise, if the user is neither privileged nor a member of the
+     * file's new group, clear the file's set-GID bit.
+     */
+
+    if ((parent->z_phys->zp_mode & S_ISGID) && (vap->va_type == VDIR))
+        mode |= S_ISGID;
+    else {
+        if ((mode & S_ISGID) &&
+            secpolicy_vnode_setids_setgids(cr, gid) != 0)
+            mode &= ~S_ISGID;
+    }
+    zp->z_phys->zp_uid = uid;
+    zp->z_phys->zp_gid = gid;
+    zp->z_phys->zp_mode = mode;
+
 }

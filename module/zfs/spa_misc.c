@@ -1564,6 +1564,12 @@ spa_boot_init(void)
 	spa_config_load();
 }
 
+int
+spa_busy(void)
+{
+    return (spa_active_count);
+}
+
 void
 spa_init(int mode)
 {
