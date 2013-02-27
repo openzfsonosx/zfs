@@ -1114,7 +1114,7 @@ static int
 zfs_sb_hold(const char *name, void *tag, zfs_sb_t **zsbp, boolean_t writer)
 {
 	int error = 0;
-
+#if 0
 	if (get_zfs_sb(name, zsbp) != 0)
 		error = zfs_sb_create(name, zsbp);
 	if (error == 0) {
@@ -1130,6 +1130,7 @@ zfs_sb_hold(const char *name, void *tag, zfs_sb_t **zsbp, boolean_t writer)
 			return (EBUSY);
 		}
 	}
+#endif
 	return (error);
 }
 
@@ -1139,10 +1140,10 @@ zfs_sb_rele(zfs_sb_t *zsb, void *tag)
 	rrw_exit(&zsb->z_teardown_lock, tag);
 
 	if (zsb->z_sb) {
-		deactivate_super(zsb->z_sb);
+		//deactivate_super(zsb->z_sb);
 	} else {
 		dmu_objset_disown(zsb->z_os, zsb);
-		zfs_sb_free(zsb);
+		//zfs_sb_free(zsb);
 	}
 }
 
@@ -3127,7 +3128,7 @@ zfs_unmount_snap(const char *name, void *arg)
 
 	error = zfs_sb_hold(dsname, FTAG, &zsb, B_FALSE);
 	if (error == 0) {
-		error = zfsctl_unmount_snapshot(zsb, fullname, MNT_FORCE);
+		//error = zfsctl_unmount_snapshot(zsb, fullname, MNT_FORCE);
 		zfs_sb_rele(zsb, FTAG);
 
 		/* Allow ENOENT for consistency with upstream */
@@ -3271,7 +3272,7 @@ zfs_ioc_rollback(zfs_cmd_t *zc)
 			resume_err = zfs_resume_fs(zsb, zc->zc_name);
 			error = error ? error : resume_err;
 		}
-		deactivate_super(zsb->z_sb);
+		//deactivate_super(zsb->z_sb);
 	} else {
 		if (dsl_dataset_tryown(ds, B_FALSE, FTAG)) {
 			error = dsl_dataset_clone_swap(clone, ds, B_TRUE);
@@ -3758,7 +3759,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 			if (error == 0)
 				error = zfs_resume_fs(zsb, tofs);
 			error = error ? error : end_err;
-			deactivate_super(zsb->z_sb);
+			//deactivate_super(zsb->z_sb);
 		} else {
 			error = dmu_recv_end(&drc);
 		}
@@ -4254,7 +4255,7 @@ zfs_ioc_userspace_upgrade(zfs_cmd_t *zc)
 		}
 		if (error == 0)
 			error = dmu_objset_userspace_upgrade(zsb->z_os);
-		deactivate_super(zsb->z_sb);
+		//deactivate_super(zsb->z_sb);
 	} else {
 		/* XXX kind of reading contents without owning */
 		error = dmu_objset_hold(zc->zc_name, FTAG, &os);
@@ -4680,7 +4681,7 @@ zfs_ioc_events_next(zfs_cmd_t *zc)
 	uint64_t dropped = 0;
 	int error;
 
-	error = zfs_zevent_fd_hold(zc->zc_cleanup_fd, &minor, &ze);
+	//error = zfs_zevent_fd_hold(zc->zc_cleanup_fd, &minor, &ze);
 	if (error != 0)
 		return (error);
 

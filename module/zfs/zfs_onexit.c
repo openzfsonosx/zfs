@@ -126,7 +126,7 @@ zfs_onexit_fd_hold(int fd, minor_t *minorp)
 	file_t *fp;
 	zfs_onexit_t *zo;
 
-	fp = getf(fd);
+	//fp = getf(fd);
 	if (fp == NULL)
 		return (EBADF);
 
@@ -137,7 +137,7 @@ zfs_onexit_fd_hold(int fd, minor_t *minorp)
 void
 zfs_onexit_fd_rele(int fd)
 {
-	releasef(fd);
+	//releasef(fd);
 }
 
 /*

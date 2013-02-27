@@ -181,8 +181,10 @@ zprop_iter_common(zprop_func func, void *cb, boolean_t show_all,
 		order[j] = &prop_tbl[j];
 
 	if (ordered) {
+#ifndef _KERNEL
 		qsort((void *)order, num_props, sizeof (zprop_desc_t *),
 		    zprop_compare);
+#endif
 	}
 
 	prop = ZPROP_CONT;

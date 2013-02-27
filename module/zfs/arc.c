@@ -3407,7 +3407,6 @@ arc_has_callback(arc_buf_t *buf)
 	return (callback);
 }
 
-#ifdef ZFS_DEBUG
 int
 arc_referenced(arc_buf_t *buf)
 {
@@ -3418,7 +3417,6 @@ arc_referenced(arc_buf_t *buf)
 	mutex_exit(&buf->b_evict_lock);
 	return (referenced);
 }
-#endif
 
 static void
 arc_write_ready(zio_t *zio)
@@ -3553,7 +3551,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t inflight_data, uint64_t txg)
 {
 #ifdef _KERNEL
 	uint64_t available_memory;
-
+#if 0
 	/* Easily reclaimable memory (free + inactive + arc-evictable) */
 	available_memory = ptob(spl_kmem_availrmem()) + arc_evictable_memory();
 
@@ -3568,6 +3566,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t inflight_data, uint64_t txg)
 		DMU_TX_STAT_BUMP(dmu_tx_memory_inflight);
 		return (ERESTART);
 	}
+#endif
 #endif
 	return (0);
 }

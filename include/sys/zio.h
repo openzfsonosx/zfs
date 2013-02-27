@@ -199,6 +199,7 @@ enum zio_flag {
 };
 
 #define	ZIO_FLAG_MUSTSUCCEED		0
+#define ZIO_FLAG_FAILFAST               0x00002
 
 #define	ZIO_DDT_CHILD_FLAGS(zio)				\
 	(((zio)->io_flags & ZIO_FLAG_DDT_INHERIT) |		\

@@ -73,6 +73,7 @@
 #include <sys/pool.h>
 #include <sys/sysdc.h>
 #include <sys/zone.h>
+#include <sys/vnode.h>
 #endif	/* _KERNEL */
 
 #include "zfs_prop.h"
@@ -2307,7 +2308,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 			    ZPOOL_CONFIG_HOSTNAME, &hostname) == 0);
 
 #ifdef	_KERNEL
-			myhostid = zone_get_hostid(NULL);
+			//myhostid = zone_get_hostid(NULL);
 #else	/* _KERNEL */
 			/*
 			 * We're emulating the system's hostid in userland, so
@@ -3524,6 +3525,9 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
  * Get the root pool information from the root disk, then import the root pool
  * during the system boot up time.
  */
+
+#if 0
+
 extern int vdev_disk_read_rootlabel(char *, char *, nvlist_t **);
 
 static nvlist_t *
@@ -3600,6 +3604,8 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 	}
 }
 
+#endif
+
 /*
  * Import a root pool.
  *
@@ -3625,7 +3631,7 @@ spa_import_rootpool(char *devpath, char *devid)
 	/*
 	 * Read the label from the boot device and generate a configuration.
 	 */
-	config = spa_generate_rootconf(devpath, devid, &guid);
+	//config = spa_generate_rootconf(devpath, devid, &guid);
 #if defined(_OBP) && defined(_KERNEL)
 	if (config == NULL) {
 		if (strstr(devpath, "/iscsi/ssd") != NULL) {
@@ -3688,6 +3694,7 @@ spa_import_rootpool(char *devpath, char *devid)
 	/*
 	 * Determine if there is a better boot device.
 	 */
+#if 0
 	avd = bvd;
 	spa_alt_rootvdev(rvd, &avd, &txg);
 	if (avd != bvd) {
@@ -3696,6 +3703,7 @@ spa_import_rootpool(char *devpath, char *devid)
 		error = EINVAL;
 		goto out;
 	}
+#endif
 
 	/*
 	 * If the boot device is part of a spare vdev then ensure that
@@ -5610,6 +5618,8 @@ spa_async_resume(spa_t *spa)
 static void
 spa_async_dispatch(spa_t *spa)
 {
+    vnode_t *rootdir = getrootdir();
+
 	mutex_enter(&spa->spa_async_lock);
 	if (spa->spa_async_tasks && !spa->spa_async_suspended &&
 	    spa->spa_async_thread == NULL &&

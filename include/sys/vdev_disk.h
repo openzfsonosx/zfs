@@ -32,14 +32,15 @@
 #include <sys/vdev.h>
 
 typedef struct vdev_disk {
-	ddi_devid_t		vd_devid;
-	char			*vd_minor;
-	struct block_device	*vd_bdev;
+    char            *vd_minor;
+    struct vnode    *vd_devvp;
 } vdev_disk_t;
 
-extern int vdev_disk_physio(struct block_device *, caddr_t,
-			    size_t, uint64_t, int);
-extern int vdev_disk_read_rootlabel(char *, char *, nvlist_t **);
+#define lbtodb(bytes)                   /* calculates (bytes / DEV_BSIZE) */ \
+        ((unsigned long long)(bytes) >> DEV_BSHIFT)
+#define ldbtob(db)                      /* calculates (db * DEV_BSIZE) */ \
+        ((unsigned long long)(db) << DEV_BSHIFT)
+
 
 #endif /* _KERNEL */
 #endif /* _SYS_VDEV_DISK_H */

@@ -47,6 +47,13 @@ typedef enum vdev_dtl_type {
 
 extern int zfs_nocacheflush;
 
+/*
+ * Fault injection modes.
+ */
+#define VDEV_FAULT_NONE         0
+#define VDEV_FAULT_RANDOM       1
+#define VDEV_FAULT_COUNT        2
+
 extern int vdev_open(vdev_t *);
 extern void vdev_open_children(vdev_t *);
 extern boolean_t vdev_uses_zvols(vdev_t *);

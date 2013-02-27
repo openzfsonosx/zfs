@@ -91,6 +91,13 @@ typedef struct direntry dirent64_t;
 #define	kpreempt_disable()	((void)0)
 #define	kpreempt_enable()	((void)0)
 
+/* Buffer flags not used in Mac OS X */
+#define B_FAILFAST  0
+
+/* Pre-faulting pages not yet supported for Mac OS X */
+#define zfs_prefault_write(n, uio)
+
+
 
 #else /* _KERNEL */
 

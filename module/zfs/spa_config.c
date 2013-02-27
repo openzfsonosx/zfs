@@ -89,7 +89,7 @@ spa_config_load(void)
 	pathname = kmem_alloc(MAXPATHLEN, KM_PUSHPAGE);
 
 	(void) snprintf(pathname, MAXPATHLEN, "%s%s",
-	    (rootdir != NULL) ? "./" : "", spa_config_path);
+	    "", spa_config_path);
 
 	file = kobj_open_file(pathname);
 
@@ -204,7 +204,7 @@ spa_config_sync(spa_t *target, boolean_t removing, boolean_t postsysevent)
 
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
-	if (rootdir == NULL || !(spa_mode_global & FWRITE))
+	if (/*rootdir == NULL ||*/ !(spa_mode_global & FWRITE))
 		return;
 
 	/*
@@ -354,7 +354,7 @@ spa_config_generate(spa_t *spa, vdev_t *vd, uint64_t txg, int getstats)
 
 
 #ifdef	_KERNEL
-	hostid = zone_get_hostid(NULL);
+	//hostid = zone_get_hostid(NULL);
 #else	/* _KERNEL */
 	/*
 	 * We're emulating the system's hostid in userland, so we can't use

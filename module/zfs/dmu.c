@@ -1381,6 +1381,65 @@ dmu_write_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size,
 }
 #endif /* _KERNEL */
 
+int
+dmu_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
+    struct page *pp, dmu_tx_t *tx)
+{
+    dmu_buf_t **dbp;
+    int numbufs, i;
+    int err;
+
+    if (size == 0)
+        return (0);
+
+    err = dmu_buf_hold_array(os, object, offset, size,
+                             FALSE, FTAG, &numbufs, &dbp);
+    if (err)
+        return (err);
+
+    for (i = 0; i < numbufs; i++) {
+        int tocpy, copied, thiscpy;
+        int bufoff;
+        dmu_buf_t *db = dbp[i];
+        caddr_t va;
+
+        ASSERT(size > 0);
+        ASSERT3U(db->db_size, >=, PAGESIZE);
+
+        bufoff = offset - db->db_offset;
+        tocpy = (int)MIN(db->db_size - bufoff, size);
+
+        ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
+        if (tocpy == db->db_size)
+            dmu_buf_will_fill(db, tx);
+        else
+            dmu_buf_will_dirty(db, tx);
+
+
+        ubc_upl_map(pp, (vm_offset_t *)&va);
+        for (copied = 0; copied < tocpy; copied += PAGESIZE) {
+            thiscpy = MIN(PAGESIZE, tocpy - copied);
+            bcopy(va, (char *)db->db_data + bufoff, thiscpy);
+            va += PAGESIZE;
+            bufoff += PAGESIZE;
+        }
+        ubc_upl_unmap(pp);
+
+
+        if (tocpy == db->db_size)
+            dmu_buf_fill_done(db, tx);
+
+        if (err)
+            break;
+
+        offset += tocpy;
+        size -= tocpy;
+    }
+    dmu_buf_rele_array(dbp, numbufs, FTAG);
+    return (err);
+}
+
+
 /*
  * Allocate a loaned anonymous arc buffer.
  */
@@ -1991,6 +2050,52 @@ dmu_fini(void)
 	sa_cache_fini();
 	zfs_dbgmsg_fini();
 }
+
+int
+dmu_allocate_check(objset_t *z_os, off_t length)
+{
+    dsl_dataset_t *d_data = z_os->os_dsl_dataset;
+    uint64_t avail;
+
+    avail = dsl_dir_space_available(d_data->ds_dir, NULL, 0, FALSE);
+
+    if (length < avail)
+        return (0);
+    else
+        return (ENOSPC);
+}
+
+void
+dmu_buf_will_dirty(dmu_buf_t *db, dmu_tx_t *tx)
+{
+    dbuf_will_dirty((dmu_buf_impl_t *)db, tx);
+}
+
+void
+dmu_buf_fill_done(dmu_buf_t *db, dmu_tx_t *tx)
+{
+    dbuf_fill_done((dmu_buf_impl_t *)db, tx);
+}
+
+void
+dmu_buf_add_ref(dmu_buf_t *db, void* tag)
+{
+    dbuf_add_ref((dmu_buf_impl_t *)db, tag);
+}
+
+void
+dmu_buf_rele(dmu_buf_t *db, void *tag)
+{
+    dbuf_rele((dmu_buf_impl_t *)db, tag);
+}
+
+uint64_t
+dmu_buf_refcount(dmu_buf_t *db)
+{
+    return dbuf_refcount((dmu_buf_impl_t *)db);
+}
+
+
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
 EXPORT_SYMBOL(dmu_bonus_hold);
