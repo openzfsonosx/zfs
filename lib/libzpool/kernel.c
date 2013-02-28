@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
+#include <sys/vnode.h>
 #include <sys/signal.h>
 #include <sys/spa.h>
 #include <sys/stat.h>
@@ -52,7 +53,7 @@ struct utsname utsname = {
 };
 
 /* this only exists to have its address taken */
-struct proc p0;
+//struct proc p0;
 
 /*
  * =========================================================================
@@ -525,7 +526,7 @@ vn_open(char *path, int x1, int flags, int mode, vnode_t **vpp, int x2, int x3)
 	vnode_t *vp;
 	int old_umask;
 	char *realpath;
-	struct stat64 st;
+	struct stat st;
 	int err;
 
 	realpath = umem_alloc(MAXPATHLEN, UMEM_NOFAIL);
@@ -546,13 +547,13 @@ vn_open(char *path, int x1, int flags, int mode, vnode_t **vpp, int x2, int x3)
 	if (0) {
 #endif
 		char *dsk;
-		fd = open64(path, O_RDONLY);
+		fd = open(path, O_RDONLY);
 		if (fd == -1) {
 			err = errno;
 			free(realpath);
 			return (err);
 		}
-		if (fstat64(fd, &st) == -1) {
+		if (fstat(fd, &st) == -1) {
 			err = errno;
 			close(fd);
 			free(realpath);
@@ -566,7 +567,7 @@ vn_open(char *path, int x1, int flags, int mode, vnode_t **vpp, int x2, int x3)
 			    dsk + 1);
 	} else {
 		(void) sprintf(realpath, "%s", path);
-		if (!(flags & FCREAT) && stat64(realpath, &st) == -1) {
+		if (!(flags & FCREAT) && stat(realpath, &st) == -1) {
 			err = errno;
 			free(realpath);
 			return (err);
@@ -588,7 +589,7 @@ vn_open(char *path, int x1, int flags, int mode, vnode_t **vpp, int x2, int x3)
 	 * The construct 'flags - FREAD' conveniently maps combinations of
 	 * FREAD and FWRITE to the corresponding O_RDONLY, O_WRONLY, and O_RDWR.
 	 */
-	fd = open64(realpath, flags - FREAD, mode);
+	fd = open(realpath, flags - FREAD, mode);
 	free(realpath);
 
 	if (flags & FCREAT)
@@ -597,7 +598,7 @@ vn_open(char *path, int x1, int flags, int mode, vnode_t **vpp, int x2, int x3)
 	if (fd == -1)
 		return (errno);
 
-	if (fstat64_blk(fd, &st) == -1) {
+	if (fstat_blk(fd, &st) == -1) {
 		err = errno;
 		close(fd);
 		return (err);
@@ -913,10 +914,10 @@ kobj_close_file(struct _buf *file)
 int
 kobj_get_filesize(struct _buf *file, uint64_t *size)
 {
-	struct stat64 st;
+	struct stat st;
 	vnode_t *vp = (vnode_t *)file->_fd;
 
-	if (fstat64(vp->v_fd, &st) == -1) {
+	if (fstat(vp->v_fd, &st) == -1) {
 		vn_close(vp);
 		return (errno);
 	}
@@ -1043,9 +1044,16 @@ umem_out_of_memory(void)
 void
 kernel_init(int mode)
 {
+    size_t len;
+
 	umem_nofail_callback(umem_out_of_memory);
 
-	physmem = sysconf(_SC_PHYS_PAGES);
+    len = sizeof(physmem);
+    sysctlbyname("hw.memsize", &physmem, &len, NULL, 0);
+	//physmem = sysconf(_SC_PHYS_PAGES);
+    // "hw.pagesize"
+    // Is there a problem that ZOL thinks "physmem" is in pages,
+    // and OSX it is in bytes?
 
 	dprintf("physmem = %llu pages (%.2f GB)\n", physmem,
 	    (double)physmem * sysconf(_SC_PAGE_SIZE) / (1ULL << 30));

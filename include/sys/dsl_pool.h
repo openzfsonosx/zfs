@@ -68,6 +68,7 @@ typedef struct zfs_all_blkstats {
 	zfs_blkstat_t	zab_type[DN_MAX_LEVELS + 1][DMU_OT_TOTAL + 1];
 } zfs_all_blkstats_t;
 
+#if	defined(_KERNEL)
 typedef enum kstat_txg_state {
     TXG_STATE_OPEN      = 1,
     TXG_STATE_QUIESCING = 2,
@@ -87,6 +88,7 @@ typedef struct kstat_txg {
     hrtime_t           quiesce_time;/* quiesce time */
     hrtime_t           sync_time;   /* sync time */
 } kstat_txg_t;
+#endif
 
 typedef struct txg_history {
 	kstat_txg_t	th_kstat;

@@ -33,6 +33,7 @@
 #include <strings.h>
 #include <libnvpair.h>
 #include <ctype.h>
+#include <sys/zfs_context.h>
 #endif
 /* XXX includes zfs_context.h, so why bother with the above? */
 #include <sys/dsl_deleg.h>

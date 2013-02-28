@@ -703,12 +703,16 @@ typedef struct kstat_timer {
 /*
  * TXG statistics - bytes read/written and iops performed
  */
+#if 1
+#if	!defined(_KERNEL)
+
 typedef enum kstat_txg_state {
 	TXG_STATE_OPEN      = 1,
 	TXG_STATE_QUIESCING = 2,
 	TXG_STATE_SYNCING   = 3,
 	TXG_STATE_COMMITTED = 4,
 } kstat_txg_state_t;
+#endif
 
 typedef struct kstat_txg {
 	u_longlong_t		txg;		/* txg id */
@@ -722,6 +726,8 @@ typedef struct kstat_txg {
 	hrtime_t		quiesce_time;	/* quiesce time */
 	hrtime_t		sync_time;	/* sync time */
 } kstat_txg_t;
+
+#endif
 
 #if	defined(_KERNEL)
 
