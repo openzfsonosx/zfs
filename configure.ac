@@ -44,8 +44,13 @@ AC_CONFIG_HEADERS([zfs_config.h], [
 	rm zfs_config.h.tmp) || exit 1])
 
 AC_PROG_INSTALL
+dnl save $CFLAGS since AC_PROG_CC likes to insert "-g -O2"
+dnl if $CFLAGS is blank
+cflags_save="$CFLAGS"
 AC_PROG_CC
+CFLAGS="$cflags_save"
 AC_PROG_LIBTOOL
+AM_PROG_CC_C_O
 AM_PROG_AS
 
 ZFS_AC_LICENSE

@@ -11,6 +11,7 @@ if CONFIG_USER
 SUBDIRS += dracut udev etc man scripts lib cmd
 endif
 
+
 AUTOMAKE_OPTIONS = foreign
 EXTRA_DIST  = autogen.sh zfs.spec.in zfs-modules.spec.in
 EXTRA_DIST += config/config.awk config/rpm.am config/deb.am config/tgz.am

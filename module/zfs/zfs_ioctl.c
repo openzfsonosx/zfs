@@ -82,6 +82,9 @@
 #include "zfs_deleg.h"
 #include "zfs_comutil.h"
 
+#define ZFS_DEBUG_STR  "(alpha)"
+
+
 kmutex_t zfsdev_state_lock;
 list_t zfsdev_state_list;
 

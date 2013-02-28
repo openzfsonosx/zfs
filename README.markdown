@@ -7,6 +7,13 @@ Does not even compile yet, keep moving..
 Current status:
 
 ```
+# ./autogen.sh
+# ./configure --with-darwin=/System/Library/Frameworks/Kernel.framework --with-spl=/Users/lundman/src/zfs/osx.zfs/x/spl/
+# make
+
+# rsync -ar --delete module/zfs/zfs.kext/ /tmp/zfs.kext/
+# chown -R root:wheel /tmp/zfs.kext
+
 # kextload -r /tmp/ -v /tmp/zfs.kext/
 
 Requesting load of /tmp/zfs.kext.
