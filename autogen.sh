@@ -1,7 +1,7 @@
 #!/bin/sh
 
 aclocal -I config
-libtoolize --automake --copy
+glibtoolize --automake --copy
 autoheader
 automake --add-missing --include-deps --copy
 autoconf

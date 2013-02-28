@@ -49,8 +49,8 @@ dnl #
 dnl # Detect the kernel to be built against
 dnl #
 AC_DEFUN([ZFS_AC_KERNEL], [
-	AC_ARG_WITH([darwin],
-		AS_HELP_STRING([--with-darwin=PATH],
+	AC_ARG_WITH([kernelsrc],
+		AS_HELP_STRING([--with-kernelsrc=PATH],
 		[Path to kernel source]),
 		[kernelsrc="$withval"])
 
@@ -60,6 +60,12 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 		[kernelbuild="$withval"])
 	AC_MSG_CHECKING([kernel source directory])
 	AS_IF([test -z "$kernelsrc"], [
+		AS_IF([test -d "/System/Library/Frameworks/Kernel.framework"], [
+			kernelsrc="/System/Library/Frameworks/Kernel.framework"])
+	])
+	AS_IF([test -z "$kernelsrc"], [
+		AS_IF([test -d "/System/Library/Frameworks/Kernel.framework"], [
+			kernelsrc="/System/Library/Frameworks/Kernel.framework"])
 		AS_IF([test -e "/lib/modules/$(uname -r)/source"], [
 			headersdir="/lib/modules/$(uname -r)/source"
 			sourcelink=$(readlink -f "$headersdir")
@@ -72,10 +78,12 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 			             2>/dev/null | grep -v obj | tail -1)
 		])
 
-		AS_IF([test -n "$sourcelink" && test -e ${sourcelink}], [
-			kernelsrc=`readlink -f ${sourcelink}`
-		], [
-			kernelsrc="[Not found]"
+		AS_IF([test -z "kernelsrc"], [
+			AS_IF([test -n "$sourcelink" && test -e ${sourcelink}], [
+				kernelsrc=`readlink -f ${sourcelink}`
+			], [
+				kernelsrc="[Not found]"
+			])
 		])
 	], [
 		AS_IF([test "$kernelsrc" = "NONE"], [
@@ -235,7 +243,7 @@ AC_DEFUN([ZFS_AC_SPL], [
 		dnl # Look in the parent directory
 		dnl #
 		AS_IF([test -z "$sourcelink" || test ! -e $sourcelink/spl_config.h], [
-			sourcelink=../spl
+			sourcelink=`pwd`/../spl
 		])
 
 		dnl #
@@ -245,9 +253,12 @@ AC_DEFUN([ZFS_AC_SPL], [
 			sourcelink="$LINUX"
 		])
 
-		AS_IF([test -e $sourcelink/spl_config.h], [
+		AS_IF([test -d "$sourcelink"], [splsrc=$sourcelink])
+
+		AS_IF([test -z "$splsrc" && test -e $sourcelink/spl_config.h], [
 			splsrc=`readlink  ${sourcelink}`
-		], [
+		])
+		AS_IF([test ! -d "$splsrc"], [
 			AC_MSG_RESULT([Not found])
 			AC_MSG_ERROR([
 	*** Please make sure the spl devel package for your distribution

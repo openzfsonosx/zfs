@@ -1,14 +1,25 @@
+This is a very early alpha of ZFS on OSX, to be the next generation of MacZFS.
+Currently, it builds only zfs.kext, which is the core of ZFS functionality
+in the XNU kernel.  The build will continue
+past the completion of zfs.kext and on to the yet-unported userspace, yielding
+lots of errors.  Test this with the expectation of a kernel panic.
+zfs.kext depends upon spl.kext, so start with that repository.
 
-Very early work for ZFS on OSX.
+It is tested primarily on Mac OS 10.8.2 and secondarily on 10.6.8, with 
+the latest Macports.
 
-Does not even compile yet, keep moving..
+OSX claims that gcc has to be version 4.2
+Hopefully the path to /System/Library/Frameworks/Kernel.framework is universal.
 
+See https://github.com/zfs-osx/ and http://MacZFS.org/ for more information.
+Note MacZFS's wiki on kernel development and panic decoding.
 
-Current status:
+# git clone https://github.com/zfs-osx/zfs.git
 
 ```
+
 # ./autogen.sh
-# ./configure --with-darwin=/System/Library/Frameworks/Kernel.framework --with-spl=/Users/lundman/src/zfs/osx.zfs/x/spl/
+# ./configure --with-spl=/path/to/your/spl
 # make
 
 # rsync -ar --delete module/zfs/zfs.kext/ /tmp/zfs.kext/
