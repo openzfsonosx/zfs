@@ -40,7 +40,10 @@
 #ifndef	_LIBSPL_SYS_UIO_H
 #define	_LIBSPL_SYS_UIO_H
 
-#include_next <sys/uio.h>
+#undef uio_t
+#include <sys/kernel_types.h>
+#define uio_t struct uio
+//#include_next <sys/uio.h>
 
 typedef struct iovec iovec_t;
 
@@ -55,7 +58,7 @@ typedef enum uio_seg {
 	UIO_USERISPACE= 2,
 } uio_seg_t;
 
-typedef struct uio {
+struct uio {
 	struct iovec	*uio_iov;	/* pointer to array of iovecs */
 	int		uio_iovcnt;	/* number of iovecs */
 	offset_t	uio_loffset;	/* file offset */
@@ -64,7 +67,7 @@ typedef struct uio {
 	uint16_t	uio_extflg;	/* extended flags */
 	offset_t	uio_limit;	/* u-limit (maximum byte offset) */
 	ssize_t		uio_resid;	/* residual count */
-} uio_t;
+};
 
 typedef enum xuio_type {
 	UIOTYPE_ASYNCIO,

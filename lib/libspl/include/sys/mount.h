@@ -24,15 +24,17 @@
  * Use is subject to license terms.
  */
 
-#include_next <sys/mount.h>
-
 #ifndef _LIBSPL_SYS_MOUNT_H
 #define _LIBSPL_SYS_MOUNT_H
 
+#include <sys/vnode.h>
 #include <sys/mntent.h>
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
+#undef vnode_t
+#include_next <sys/mount.h>
+#define vnode_t struct vnode
 
 /*
  * Some old glibc headers don't define BLKGETSIZE64

@@ -31,8 +31,8 @@
 
 #include <sys/user.h>
 
-#define FREAD   1
-#define FWRITE  2
+//#define FREAD   1
+//#define FWRITE  2
 //#define FAPPEND  8
 
 #define FCREAT  O_CREAT

@@ -99,7 +99,13 @@ typedef struct direntry dirent64_t;
 
 
 
+
 #else /* _KERNEL */
+
+
+
+
+
 
 #define	_SYS_MUTEX_H
 #define	_SYS_RWLOCK_H
@@ -180,6 +186,8 @@ extern void vcmn_err(int, const char *, __va_list);
 extern void panic(const char *, ...);
 extern void vpanic(const char *, __va_list);
 
+#define       ERESTART (-1)            /* restart syscall */
+
 #define	fm_panic	panic
 
 /*
@@ -232,9 +240,11 @@ extern void vpanic(const char *, __va_list);
 
 
 /* in libzpool, p0 exists only to have its address taken */
+#if	defined(_KERNEL)
 typedef struct proc {
 	uintptr_t	this_is_never_used_dont_dereference_it;
 } proc_t;
+#endif
 
 extern struct proc p0;
 #define	curproc		(&p0)
@@ -455,11 +465,15 @@ extern void	system_taskq_fini(void);
 /*
  * vnodes
  */
-typedef struct vnode {
+struct vnode {
 	uint64_t	v_size;
 	int		v_fd;
 	char		*v_path;
-} vnode_t;
+};
+
+#undef vnode_t
+#define vnode_t struct vnode
+
 
 #define	AV_SCANSTAMP_SZ	32		/* length of anti-virus scanstamp */
 
@@ -527,7 +541,8 @@ typedef struct vsecattr {
 
 #define	CRCREAT		0
 
-extern int fop_getattr(vnode_t *vp, vattr_t *vap);
+extern int fop_getattr(vnode_t *vp,
+                       vattr_t *vap);
 
 #define	VOP_CLOSE(vp, f, c, o, cr, ct)	vn_close(vp)
 #define	VOP_PUTPAGE(vp, of, sz, fl, cr, ct)	0
