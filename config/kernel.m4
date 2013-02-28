@@ -253,9 +253,12 @@ AC_DEFUN([ZFS_AC_SPL], [
 			sourcelink="$LINUX"
 		])
 
-		AS_IF([test -e $sourcelink/spl_config.h], [
+		AS_IF([test -d "$sourcelink"], [splsrc=$sourcelink])
+
+		AS_IF([test -z "$splsrc" && test -e $sourcelink/spl_config.h], [
 			splsrc=`readlink  ${sourcelink}`
-		], [
+		])
+		AS_IF([test ! -d "$splsrc"], [
 			AC_MSG_RESULT([Not found])
 			AC_MSG_ERROR([
 	*** Please make sure the spl devel package for your distribution
