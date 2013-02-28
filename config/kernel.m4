@@ -49,8 +49,8 @@ dnl #
 dnl # Detect the kernel to be built against
 dnl #
 AC_DEFUN([ZFS_AC_KERNEL], [
-	AC_ARG_WITH([darwin],
-		AS_HELP_STRING([--with-darwin=PATH],
+	AC_ARG_WITH([kernelsrc],
+		AS_HELP_STRING([--with-kernelsrc=PATH],
 		[Path to kernel source]),
 		[kernelsrc="$withval"])
 
@@ -60,6 +60,12 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 		[kernelbuild="$withval"])
 	AC_MSG_CHECKING([kernel source directory])
 	AS_IF([test -z "$kernelsrc"], [
+		AS_IF([test -d "/System/Library/Frameworks/Kernel.framework"], [
+			kernelsrc="/System/Library/Frameworks/Kernel.framework"])
+	])
+	AS_IF([test -z "$kernelsrc"], [
+		AS_IF([test -d "/System/Library/Frameworks/Kernel.framework"], [
+			kernelsrc="/System/Library/Frameworks/Kernel.framework"])
 		AS_IF([test -e "/lib/modules/$(uname -r)/source"], [
 			headersdir="/lib/modules/$(uname -r)/source"
 			sourcelink=$(readlink -f "$headersdir")
@@ -72,10 +78,12 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 			             2>/dev/null | grep -v obj | tail -1)
 		])
 
-		AS_IF([test -n "$sourcelink" && test -e ${sourcelink}], [
-			kernelsrc=`readlink -f ${sourcelink}`
-		], [
-			kernelsrc="[Not found]"
+		AS_IF([test -z "kernelsrc"], [
+			AS_IF([test -n "$sourcelink" && test -e ${sourcelink}], [
+				kernelsrc=`readlink -f ${sourcelink}`
+			], [
+				kernelsrc="[Not found]"
+			])
 		])
 	], [
 		AS_IF([test "$kernelsrc" = "NONE"], [

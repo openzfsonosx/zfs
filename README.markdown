@@ -19,7 +19,7 @@ Note MacZFS's wiki on kernel development and panic decoding.
 ```
 
 # ./autogen.sh
-# ./configure --with-darwin=/System/Library/Frameworks/Kernel.framework --with-spl=/Users/lundman/src/zfs/osx.zfs/x/spl/
+# ./configure --with-spl=/path/to/your/spl
 # make
 
 # rsync -ar --delete module/zfs/zfs.kext/ /tmp/zfs.kext/
