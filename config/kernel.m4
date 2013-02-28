@@ -243,7 +243,7 @@ AC_DEFUN([ZFS_AC_SPL], [
 		dnl # Look in the parent directory
 		dnl #
 		AS_IF([test -z "$sourcelink" || test ! -e $sourcelink/spl_config.h], [
-			sourcelink=../spl
+			sourcelink=`pwd`/../spl
 		])
 
 		dnl #
