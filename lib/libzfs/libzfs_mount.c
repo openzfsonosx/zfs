@@ -63,7 +63,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <libgen.h>
-#include <libintl.h>
+//#include <libintl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -176,12 +176,12 @@ static boolean_t
 dir_is_empty(const char *dirname)
 {
 	DIR *dirp;
-	struct dirent64 *dp;
+	struct dirent *dp;
 
 	if ((dirp = opendir(dirname)) == NULL)
 		return (B_TRUE);
 
-	while ((dp = readdir64(dirp)) != NULL) {
+	while ((dp = readdir(dirp)) != NULL) {
 
 		if (strcmp(dp->d_name, ".") == 0 ||
 		    strcmp(dp->d_name, "..") == 0)

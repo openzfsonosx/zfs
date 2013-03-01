@@ -71,8 +71,9 @@
 #include <sys/zap.h>
 #include <sys/zfs_znode.h>
 
+#include <sys/zfs_sa.h>
 
-#define vnode_t struct vnode
+#include <sys/vnode.h>
 
 /*
  * Functions needed for userland (ie: libzpool) are not put under
@@ -1713,6 +1714,7 @@ zfs_obj_to_path(objset_t *osp, uint64_t obj, char *buf, int len)
 }
 
 #ifdef __APPLE__
+#ifdef _KERNEL
 uint32_t
 zfs_getbsdflags(znode_t *zp)
 {
@@ -1772,6 +1774,7 @@ zfs_setbsdflags(znode_t *zp, uint32_t bsdflags)
 
 	zp->z_phys->zp_flags = zflags;
 }
+#endif
 
 #ifdef _KERNEL
 #ifdef ZFS_DEBUG

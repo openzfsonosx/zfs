@@ -44,7 +44,7 @@
 #include <devid.h>
 #include <dirent.h>
 #include <errno.h>
-#include <libintl.h>
+//#include <libintl.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1001,7 +1001,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 {
 	int i, dirs = iarg->paths;
 	DIR *dirp = NULL;
-	struct dirent64 *dp;
+	struct dirent *dp;
 	char path[MAXPATHLEN];
 	char *end, **dir = iarg->path;
 	size_t pathleft;
@@ -1079,7 +1079,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 		/*
 		 * This is not MT-safe, but we have no MT consumers of libzfs
 		 */
-		while ((dp = readdir64(dirp)) != NULL) {
+		while ((dp = readdir(dirp)) != NULL) {
 			const char *name = dp->d_name;
 			if (name[0] == '.' &&
 			    (name[1] == 0 || (name[1] == '.' && name[2] == 0)))

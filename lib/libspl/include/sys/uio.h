@@ -43,20 +43,25 @@
 #undef uio_t
 #include <sys/kernel_types.h>
 #define uio_t struct uio
-//#include_next <sys/uio.h>
+#include_next <sys/uio.h>
 
 typedef struct iovec iovec_t;
 
+#if 0
 typedef enum uio_rw {
 	UIO_READ =      0,
 	UIO_WRITE =     1,
 } uio_rw_t;
+#endif
 
 typedef enum uio_seg {
 	UIO_USERSPACE = 0,
 	UIO_SYSSPACE =  1,
 	UIO_USERISPACE= 2,
 } uio_seg_t;
+
+
+
 
 struct uio {
 	struct iovec	*uio_iov;	/* pointer to array of iovecs */

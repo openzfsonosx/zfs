@@ -37,11 +37,13 @@
 
 #define FCREAT  O_CREAT
 #define FTRUNC  O_TRUNC
-#define FOFFMAX O_LARGEFILE
+#define FOFFMAX 0
 #define FSYNC   O_SYNC
 #define FDSYNC  O_DSYNC
 #define FRSYNC  O_RSYNC
 #define FEXCL   O_EXCL
+
+#define O_DIRECT 0
 
 #define FNODSYNC        0x10000 /* fsync pseudo flag */
 #define FNOFOLLOW       0x20000 /* don't follow symlinks */

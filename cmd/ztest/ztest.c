@@ -111,7 +111,7 @@
 #include <sys/refcount.h>
 #include <sys/zfeature.h>
 #include <stdio.h>
-#include <stdio_ext.h>
+//#include <stdio_ext.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
