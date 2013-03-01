@@ -113,7 +113,7 @@ getextmntent(FILE *fp, struct extmnttab *mp, int len)
 	int ret;
 	struct stat64 st;
 
-	ret = _sol_getmntent(fp, (struct mnttab *) mp);
+	ret = getmntent(fp, (struct mnttab *) mp);
 	if (ret == 0) {
 		if (stat64(mp->mnt_mountp, &st) != 0) {
 			mp->mnt_major = 0;
@@ -125,4 +125,37 @@ getextmntent(FILE *fp, struct extmnttab *mp, int len)
 	}
 
 	return ret;
+}
+
+
+int getmntent(FILE *fp, struct mnttab *mgetp)
+{
+    static struct statfs *mntbufp = NULL;
+    static unsigned int total   = 0;
+    static unsigned int current = 0;
+
+    if (!mntbufp) {
+
+        total = getmntinfo(&mntbufp, MNT_WAIT);
+        current = 0;
+
+        if (total <= 0) return -1; // EOF
+
+    }
+
+    if (current < total) {
+
+        mgetp->mnt_special = mntbufp[current].f_mntfromname;
+        mgetp->mnt_mountp =  mntbufp[current].f_mntonname;
+        mgetp->mnt_fstype =  mntbufp[current].f_fstypename;
+        mgetp->mnt_mntopts = "";
+
+        current++;
+        return 0; // Valid record
+    }
+
+    // Finished all nodes, return EOF once, and get ready for next time
+    mntbufp = NULL;
+
+    return -1; // EOF
 }

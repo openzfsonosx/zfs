@@ -26,8 +26,8 @@
 
 #include <dlfcn.h>
 #include <errno.h>
-#include <libintl.h>
-#include <link.h>
+//#include <libintl.h>
+//#include <link.h>
 #include <pthread.h>
 #include <strings.h>
 #include <unistd.h>

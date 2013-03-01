@@ -95,4 +95,8 @@
 #define	offsetof(s, m)	((size_t)(&(((s *)0)->m)))
 #endif
 
+#ifndef RLIM64_INFINITY
+#define RLIM64_INFINITY			(~0ULL)
+#endif
+
 #endif /* _LIBSPL_SYS_SYSMACROS_H */

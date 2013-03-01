@@ -29,6 +29,6 @@
 
 #include_next <sys/utsname.h>
 
-struct utsname utsname;
+extern struct utsname utsname;
 
 #endif  /* _LIBSPL_UTSNAME_H */

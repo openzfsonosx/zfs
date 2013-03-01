@@ -3335,7 +3335,7 @@ zfs_do_rollback(int argc, char **argv)
 
 	/* open the parent dataset */
 	(void) strlcpy(parentname, argv[0], sizeof (parentname));
-	verify((delim = strrchr(parentname, '@')) != NULL);
+    verify((delim = strrchr(parentname, '@')) != NULL);
 	*delim = '\0';
 	if ((zhp = zfs_open(g_zfs, parentname, ZFS_TYPE_DATASET)) == NULL) {
 		zfs_close(snap);
@@ -5921,7 +5921,7 @@ unshare_unmount_path(int op, char *path, int flags, boolean_t is_manual)
 		}
 		(void) fprintf(stderr, gettext("warning: %s not in mtab\n"),
 		    path);
-		if ((ret = umount2(path, flags)) != 0)
+		if ((ret = unmount(path, flags)) != 0)
 			(void) fprintf(stderr, gettext("%s: %s\n"), path,
 			    strerror(errno));
 		return (ret != 0);
@@ -6368,7 +6368,7 @@ main(int argc, char **argv)
 	char *cmdname;
 
 	(void) setlocale(LC_ALL, "");
-	(void) textdomain(TEXT_DOMAIN);
+	//(void) textdomain(TEXT_DOMAIN);
 
 	opterr = 0;
 

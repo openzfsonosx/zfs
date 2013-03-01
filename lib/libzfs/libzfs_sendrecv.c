@@ -225,8 +225,12 @@ cksummer(void *arg)
 	struct drr_write_byref *wbr_drrr = &wbr_drr.drr_u.drr_write_byref;
 	dedup_table_t ddt;
 	zio_cksum_t stream_cksum;
-	uint64_t physmem = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGESIZE);
+    size_t len;
+	uint64_t physmem = 0;
 	uint64_t numbuckets;
+
+    len = sizeof(physmem);
+    sysctlbyname("hw.memsize", &physmem, &len, NULL, 0);
 
 	ddt.max_ddt_size =
 	    MAX((physmem * MAX_DDT_PHYSMEM_PERCENT)/100,

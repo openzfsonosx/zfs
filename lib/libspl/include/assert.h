@@ -43,16 +43,8 @@ __assert_c99(const char *expr, const char *file, int line, const char *func)
 #endif  /* __assert_c99 */
 
 #ifndef verify
-#if defined(__STDC__)
-#if __STDC_VERSION__ - 0 >= 199901L
 #define	verify(EX) (void)((EX) || \
 	(__assert_c99(#EX, __FILE__, __LINE__, __func__), 0))
-#else
-#define	verify(EX) (void)((EX) || (__assert(#EX, __FILE__, __LINE__), 0))
-#endif  /* __STDC_VERSION__ - 0 >= 199901L */
-#else
-#define	verify(EX) (void)((EX) || (_assert("EX", __FILE__, __LINE__), 0))
-#endif	/* __STDC__ */
 #endif  /* verify */
 
 #undef VERIFY
@@ -72,7 +64,7 @@ extern void __assert(const char *, const char *, int);
 		(void) snprintf(__buf, 256, "%s %s %s (0x%llx %s 0x%llx)", \
 			#LEFT, #OP, #RIGHT, \
 			(u_longlong_t)__left, #OP, (u_longlong_t)__right); \
-		__assert(__buf, __FILE__, __LINE__); \
+		__assert_c99(__buf, __FILE__, __LINE__, __func__);              \
 	} \
 } while (0)
 /* END CSTYLED */

@@ -25,7 +25,7 @@
  */
 
 #include <stdio.h>
-#include <stdio_ext.h>
+//#include <stdio_ext.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <sys/zfs_context.h>
@@ -1761,7 +1761,7 @@ dump_cachefile(const char *cachefile)
 	char *buf;
 	nvlist_t *config;
 
-	if ((fd = open64(cachefile, O_RDONLY)) < 0) {
+	if ((fd = open(cachefile, O_RDONLY)) < 0) {
 		(void) printf("cannot open '%s': %s\n", cachefile,
 		    strerror(errno));
 		exit(1);
@@ -1844,7 +1844,7 @@ dump_label(const char *dev)
 		path = strdup(dev);
 	}
 
-	if ((fd = open64(path, O_RDONLY)) < 0) {
+	if ((fd = open(path, O_RDONLY)) < 0) {
 		(void) printf("cannot open '%s': %s\n", path, strerror(errno));
 		free(path);
 		exit(1);
@@ -1868,7 +1868,7 @@ dump_label(const char *dev)
 		(void) printf("LABEL %d\n", l);
 		(void) printf("--------------------------------------------\n");
 
-		if (pread64(fd, &label, sizeof (label),
+		if (pread(fd, &label, sizeof (label),
 		    vdev_label_offset(psize, l, 0)) != sizeof (label)) {
 			(void) printf("failed to read label %d\n", l);
 			continue;
