@@ -49,6 +49,7 @@
 #include <sys/stat.h>
 #include <sys/fm/util.h>
 #include <sys/fm/protocol.h>
+#include <sys/zfs_ioctl.h>
 
 #include <libzfs.h>
 
@@ -5504,6 +5505,7 @@ main(int argc, char **argv)
 		 * it as such.
 		 */
 		char buf[16384];
+
 		int fd = open(ZFS_DEV, O_RDWR);
 		(void) strcpy((void *)buf, argv[2]);
 		return (!!ioctl(fd, ZFS_IOC_POOL_FREEZE, buf));

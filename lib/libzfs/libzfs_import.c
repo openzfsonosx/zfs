@@ -950,7 +950,7 @@ zpool_find_import_blkid(libzfs_handle_t *hdl, pool_list_t *pools)
 
 	while (blkid_dev_next(iter, &dev) == 0) {
 		devname = blkid_dev_devname(dev);
-		if ((fd = open64(devname, O_RDONLY)) < 0)
+		if ((fd = open(devname, O_RDONLY)) < 0)
 			continue;
 
 		err = zpool_read_label(fd, &config);
@@ -1067,7 +1067,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 		else
 			rdsk = path;
 
-		if ((dfd = open64(rdsk, O_RDONLY)) < 0 ||
+		if ((dfd = open(rdsk, O_RDONLY)) < 0 ||
 		    (dirp = fdopendir(dfd)) == NULL) {
 			zfs_error_aux(hdl, strerror(errno));
 			(void) zfs_error_fmt(hdl, EZFS_BADPATH,

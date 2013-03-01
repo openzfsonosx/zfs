@@ -37,6 +37,8 @@
 #include <sys/vnode.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/fcntl.h>
 
 #define BUFSIZE (MNT_LINE_MAX + 2)
 
@@ -158,4 +160,23 @@ int getmntent(FILE *fp, struct mnttab *mgetp)
     mntbufp = NULL;
 
     return -1; // EOF
+}
+
+
+DIR *fdopendir(int fd)
+{
+    char fullpath[MAXPATHLEN];
+    DIR *d;
+
+    if(fcntl(fd, F_GETPATH, fullpath) < 0) {
+        perror("fcntl");
+        fprintf(stderr, "tup error: Unable to convert file descriptor back to pathname in fdopendir() compat library.\n");
+        return NULL;
+    }
+    if(close(fd) < 0) {
+        return NULL;
+    }
+
+    d = opendir(fullpath);
+    return d;
 }

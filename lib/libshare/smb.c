@@ -64,6 +64,8 @@ static boolean_t smb_available(void);
 
 static sa_fstype_t *smb_fstype;
 
+smb_share_t *smb_shares = NULL;
+
 /**
  * Retrieve the list of SMB shares.
  */

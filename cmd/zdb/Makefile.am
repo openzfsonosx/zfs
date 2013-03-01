@@ -16,4 +16,4 @@ zdb_LDADD = \
 	$(top_builddir)/lib/libzpool/libzpool.la \
 	$(top_builddir)/lib/libzfs/libzfs.la
 
-zdb_LDFLAGS = -pthread -lm $(ZLIB) -L/opt/local//lib -lgettextlib -ldl $(LIBUUID) $(LIBBLKID)
+zdb_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID)
