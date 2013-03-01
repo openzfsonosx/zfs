@@ -1094,13 +1094,18 @@ zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 {
 	int error;
 
+    fprintf(stderr, "zfs_ioctl(%d) sending ... \r\n", request);
+
 	zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
 	error = app_ioctl(hdl->libzfs_fd, request, zc);
+    fprintf(stderr, "pew pew\r\n");
 	if (hdl->libzfs_log_str) {
 		free(hdl->libzfs_log_str);
 		hdl->libzfs_log_str = NULL;
 	}
 	zc->zc_history = 0;
+
+    fprintf(stderr, "zfs_ioctl(%d) done %d \r\n", error);
 
 	return (error);
 }

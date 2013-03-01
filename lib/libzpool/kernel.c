@@ -646,7 +646,7 @@ vn_rdwr(int uio, vnode_t *vp, void *addr, ssize_t len, offset_t offset,
 	ssize_t rc, done = 0, split;
 
 	if (uio == UIO_READ) {
-		rc = pread64(vp->v_fd, addr, len, offset);
+		rc = pread(vp->v_fd, addr, len, offset);
 	} else {
 		/*
 		 * To simulate partial disk writes, we split writes into two
