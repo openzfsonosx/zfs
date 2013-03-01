@@ -59,6 +59,11 @@ ZFS_AC_CONFIG
 ZFS_AC_DEBUG
 ZFS_AC_DEBUG_DMU_TX
 
+# during dev
+if test "x$ac_cv_prog_gcc" = xyes ; then
+   CFLAGS="$CFLAGS -g "
+fi
+
 AC_CONFIG_FILES([
 	Makefile
 	dracut/Makefile

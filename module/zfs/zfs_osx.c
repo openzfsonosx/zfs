@@ -133,7 +133,7 @@ kern_return_t zfs_start (kmod_info_t * ki, void * d)
 	///sysctl_register_oid(&sysctl__debug_maczfs);
 	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
 
-    return zfs_vfsops_init();
+    zfs_vfsops_init();
 
     return KERN_SUCCESS;
 }
@@ -141,19 +141,28 @@ kern_return_t zfs_start (kmod_info_t * ki, void * d)
 
 kern_return_t zfs_stop (kmod_info_t * ki, void * d)
 {
+    printf("Attempting to unload ZFS...\n");
+
+#if 0
 	if (zfs_active_fs_count != 0 ||
 	    spa_busy() ||
-	    zvol_busy() ||
-
-        zfs_vfsops_fini() != 0) {
+	    zvol_busy()) {
 
 		return KERN_FAILURE;   /* ZFS Still busy! */
 	}
+#endif
 
-    zfs_ioctl_fini();
+    zfs_vfsops_fini();
+
+    printf(" .. vfsops\n");
 
 	zfs_znode_fini();
 
+    printf(" .. znode\n");
+
+    zfs_ioctl_fini();
+
+    printf(" .. ioctl\n");
 	//kmem_fini();
 
 	//zfs_context_fini();

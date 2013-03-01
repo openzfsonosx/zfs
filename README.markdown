@@ -5,7 +5,7 @@ past the completion of zfs.kext and on to the yet-unported userspace, yielding
 lots of errors.  Test this with the expectation of a kernel panic.
 zfs.kext depends upon spl.kext, so start with that repository.
 
-It is tested primarily on Mac OS 10.8.2 and secondarily on 10.6.8, with 
+It is tested primarily on Mac OS 10.8.2 and secondarily on 10.6.8, with
 the latest Macports.
 
 OSX claims that gcc has to be version 4.2
@@ -38,20 +38,22 @@ bash-3.2# ls -l /dev/zfs
 crw-rw-rw-  1 root  wheel   33,   0 Feb 27 17:20 /dev/zfs
 
 
-# Don't have zpool yet, so using MacZFS's zpool
-
-# DYLD_LIBRARY_PATH=/Users/lundman/maczfs/build/zfs.build/Debug/libzfs.build/Objects-normal/x86_64/
-# export DYLD_LIBRARY_PATH
-# exec /Users/lundman/maczfs/build/zfs.build/Debug/zpool.build/Objects-normal/x86_64/zpool
-
-missing command
-
 # ./zpool.sh status
 no pools available
 
+
 # ./zpool.sh create BOOM /Users/lundman/maczfs/diskimage.bin
 
-http://i.imgur.com/ldJFM7l.png
+mach_kernel     : _return_from_trap
+net.lundman.spl : _kmem_cache_alloc
+net.lundman.spl : _taskq_create
+net.lundman.zfs : _spa_taskq_create
+net.lundman.zfs : _spa_create_zio_tasks
+net.lundman.zfs : _spa_activate
+net.lundman.zfs : _spa_create
+
+
+
 
 
 ```

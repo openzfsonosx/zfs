@@ -5460,7 +5460,7 @@ main(int argc, char **argv)
 	char *cmdname;
 
 	(void) setlocale(LC_ALL, "");
-	(void) textdomain(TEXT_DOMAIN);
+	//(void) textdomain(TEXT_DOMAIN);
 
 	opterr = 0;
 

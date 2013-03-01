@@ -3052,6 +3052,8 @@ spa_get_stats(const char *name, nvlist_t **config,
 	*config = NULL;
 	error = spa_open_common(name, &spa, FTAG, NULL, config);
 
+    printf("spa_get_stats: %d\n", error);
+
 	if (spa != NULL) {
 		/*
 		 * This still leaves a window of inconsistency where the spares

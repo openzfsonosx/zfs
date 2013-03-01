@@ -1319,8 +1319,12 @@ zfs_ioc_pool_stats(zfs_cmd_t *zc)
 	int error;
 	int ret = 0;
 
+    printf("In  stats\n");
+
 	error = spa_get_stats(zc->zc_name, &config, zc->zc_value,
 	    sizeof (zc->zc_value));
+
+    printf("  spa_get_stats %d\n", error);
 
 	if (config != NULL) {
 		ret = put_nvlist(zc, config);
@@ -1336,6 +1340,7 @@ zfs_ioc_pool_stats(zfs_cmd_t *zc)
 		ret = error;
 	}
 
+    printf("Out stats \n");
 	return (ret);
 }
 
@@ -5145,6 +5150,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
      * Return the real error in zc_ioc_error so the ioctl
      * call always does a copyout of the zc data
      */
+    printf("[zfs] ioctl done %d\n", error);
     zc->zc_ioc_error = error;
     error = 0;
 
