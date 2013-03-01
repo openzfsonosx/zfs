@@ -38,7 +38,8 @@
 #include <sys/utsname.h>
 #include <sys/time.h>
 #include <sys/systeminfo.h>
-
+#include <sys/proc.h>
+#include <sys/kernel_types.h>
 /*
  * Emulation of kernel services in userland.
  */
@@ -52,8 +53,11 @@ struct utsname utsname = {
 	"userland", "libzpool", "1", "1", "na"
 };
 
+struct proc {
+};
+
 /* this only exists to have its address taken */
-//struct proc p0;
+struct proc p0;
 
 /*
  * =========================================================================

@@ -35,6 +35,11 @@
 #include <selinux/selinux.h>
 #endif /* HAVE_LIBSELINUX */
 
+
+// THIS FILE IS VERY LINUX, MAKE OSX VERSION
+
+#if 0
+
 libzfs_handle_t *g_zfs;
 
 typedef struct option_map {
@@ -303,6 +308,10 @@ mtab_update(char *dataset, char *mntpoint, char *type, char *mntopts)
 	return (MOUNT_SUCCESS);
 }
 
+
+#endif
+
+
 int
 main(int argc, char **argv)
 {
@@ -316,6 +325,10 @@ main(int argc, char **argv)
 	unsigned long mntflags = 0, zfsflags = 0, remount = 0;
 	int sloppy = 0, fake = 0, verbose = 0, nomtab = 0, zfsutil = 0;
 	int error, c;
+
+    return -1;
+
+#if 0
 
 	(void) setlocale(LC_ALL, "");
 	(void) textdomain(TEXT_DOMAIN);
@@ -512,4 +525,5 @@ main(int argc, char **argv)
 	}
 
 	return (MOUNT_SUCCESS);
+#endif
 }

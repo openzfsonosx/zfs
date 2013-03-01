@@ -27,7 +27,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <linux/ioctl.h>
+//#include <linux/ioctl.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/zfs_znode.h>

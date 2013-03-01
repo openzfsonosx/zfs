@@ -5111,6 +5111,8 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
     error = zfs_ioc_vec[vec].zvec_secpolicy(zc, cr);
     // 10a286 vfs_context_rele(ctx);
 
+    printf("[zfs] Yay, got ioctl %d\n", vec);
+
     /*
      * Ensure that all pool/dataset names are valid before we pass down to
      * the lower layers.

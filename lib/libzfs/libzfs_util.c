@@ -675,12 +675,14 @@ libzfs_init(void)
 {
 	libzfs_handle_t *hdl;
 
+#if LINUX
 	if (libzfs_load_module("zfs") != 0) {
 		(void) fprintf(stderr, gettext("Failed to load ZFS module "
 			       "stack.\nLoad the module manually by running "
 			       "'insmod <location>/zfs.ko' as root.\n"));
 		return (NULL);
 	}
+#endif
 
 	if ((hdl = calloc(1, sizeof (libzfs_handle_t))) == NULL) {
 		return (NULL);
@@ -1056,13 +1058,44 @@ zcmd_read_dst_nvlist(libzfs_handle_t *hdl, zfs_cmd_t *zc, nvlist_t **nvlp)
 	return (0);
 }
 
+char *
+dgettext(const char *domain, const char *msgid)
+{
+        return (msgid);
+}
+
+char *
+gettext(const char *msg)
+{
+        return (msg);
+}
+
+int
+app_ioctl(int libzfsfd, unsigned long zfs_ioc_call, zfs_cmd_t *zc)
+{
+        int err = 0;
+
+        err = ioctl(libzfsfd, zfs_ioc_call, zc);
+        /* normal path, zfsdev_ioctl returns the real error in zc_ioc_error */
+        if (err == 0 ) {
+                err = zc->zc_ioc_error;
+                errno = zc->zc_ioc_error;
+        } else {
+                /* something evil happened in the ioctl syscall */
+                errno = err;
+        }
+
+        return(err);
+}
+
+
 int
 zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 {
 	int error;
 
 	zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
-	error = ioctl(hdl->libzfs_fd, request, zc);
+	error = app_ioctl(hdl->libzfs_fd, request, zc);
 	if (hdl->libzfs_log_str) {
 		free(hdl->libzfs_log_str);
 		hdl->libzfs_log_str = NULL;
