@@ -45,14 +45,10 @@ no pools available
 # ./zpool.sh create BOOM /Users/lundman/maczfs/diskimage.bin
 
 mach_kernel     : _return_from_trap
-net.lundman.spl : _kmem_cache_alloc
-net.lundman.spl : _taskq_create
-net.lundman.zfs : _spa_taskq_create
-net.lundman.zfs : _spa_create_zio_tasks
-net.lundman.zfs : _spa_activate
-net.lundman.zfs : _spa_create
-
-
+net.lundman.zfs : _dsl_pool_sync_context
+net.lundman.zfs : _spa_guid
+net.lundman.zfs : _spa_generate_guid
+net.lundman.zfs : _vdev_alloc_common
 
 
 
