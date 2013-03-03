@@ -30,14 +30,15 @@
  * CDDL HEADER END
  */
 
-AC_INIT
+AC_INIT(m4_esyscmd([awk '/^Name:/ {print $2}' META | tr -d '\n']),
+	m4_esyscmd([awk '/^Version:/ {print $2}' META | tr -d '\n']))
 AC_LANG(C)
 ZFS_AC_META
 AC_CONFIG_AUX_DIR([config])
 AC_CANONICAL_SYSTEM
 AM_MAINTAINER_MODE
 AM_SILENT_RULES
-AM_INIT_AUTOMAKE([$ZFS_META_NAME], [$ZFS_META_VERSION])
+AM_INIT_AUTOMAKE
 AC_CONFIG_HEADERS([zfs_config.h], [
 	(mv zfs_config.h zfs_config.h.tmp &&
 	awk -f ${ac_srcdir}/config/config.awk zfs_config.h.tmp >zfs_config.h &&
