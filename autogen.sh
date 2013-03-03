@@ -1,5 +1,6 @@
 #!/bin/sh
-
+set -e
+set -x
 aclocal -I config
 glibtoolize --automake --copy
 autoheader
