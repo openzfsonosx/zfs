@@ -95,6 +95,8 @@
 
 #define	ALL_MODE_EXECS (S_IXUSR | S_IXGRP | S_IXOTH)
 
+static zfs_acl_t *zfs_acl_alloc(int);
+
 static uint16_t
 zfs_ace_v0_get_type(void *acep)
 {
