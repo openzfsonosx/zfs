@@ -57,6 +57,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	vnode_t *vp;
 	vattr_t vattr;
 	int error;
+    vnode_t *rootdir;
 
 	/*
 	 * We must have a pathname, and it must be absolute.
@@ -85,8 +86,32 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	 * to local zone users, so the underlying devices should be as well.
 	 */
 	ASSERT(vd->vdev_path != NULL && vd->vdev_path[0] == '/');
-    //	error = vn_openat(vd->vdev_path + 1, UIO_SYSSPACE,
-	//    spa_mode(vd->vdev_spa) | FOFFMAX, 0, &vp, 0, 0, rootdir, -1);
+
+    /*
+      vn_openat(char *pnamep,
+      enum uio_seg seg,
+      int filemode,
+      int createmode,
+      struct vnode **vpp,
+      enum create crwhy,
+      mode_t umask,
+      struct vnode *startvp)
+      extern int vn_openat(char *pnamep, enum uio_seg seg, int filemode,
+      int createmode, struct vnode **vpp, enum create crwhy,
+      mode_t umask, struct vnode *startvp);
+    */
+
+    rootdir = getrootdir();
+
+    error = vn_openat(vd->vdev_path + 1,
+                      UIO_SYSSPACE,
+                      spa_mode(vd->vdev_spa) | FOFFMAX,
+                      0,
+                      &vp,
+                      0,
+                      0,
+                      rootdir
+                      );
 
 	if (error) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;

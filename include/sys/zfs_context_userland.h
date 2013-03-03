@@ -482,7 +482,7 @@ extern int fop_getattr(vnode_t *vp,
 extern int vn_open(char *path, int x1, int oflags, int mode, vnode_t **vpp,
     int x2, int x3);
 extern int vn_openat(char *path, int x1, int oflags, int mode, vnode_t **vpp,
-    int x2, int x3, vnode_t *vp, int fd);
+    int x2, int x3, vnode_t *vp);
 extern int vn_rdwr(int uio, vnode_t *vp, void *addr, ssize_t len,
     offset_t offset, int x1, int x2, rlim64_t x3, void *x4, ssize_t *residp);
 extern void vn_close(vnode_t *vp);
