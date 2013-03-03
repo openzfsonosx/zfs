@@ -5149,6 +5149,7 @@ out:
 	return (error);
 }
 
+#ifdef NOTYET
 /*
  * Obtain the vnode for a stream.
  */
@@ -5294,6 +5295,7 @@ out:
 
 	return (error);
 }
+#endif
 
 static int
 zfs_vnop_exchange(__unused struct vnop_exchange_args *ap)
@@ -6106,9 +6108,11 @@ struct vnodeopv_entry_desc zfs_fvnodeops_template[] = {
 	{&vnop_setxattr_desc,	(VOPFUNC)zfs_vnop_setxattr},
 	{&vnop_removexattr_desc,(VOPFUNC)zfs_vnop_removexattr},
 	{&vnop_listxattr_desc,	(VOPFUNC)zfs_vnop_listxattr},
+#ifdef NOTYET
 	{&vnop_getnamedstream_desc,	(VOPFUNC)zfs_vnop_getnamedstream},
 	{&vnop_makenamedstream_desc,	(VOPFUNC)zfs_vnop_makenamedstream},
 	{&vnop_removenamedstream_desc,	(VOPFUNC)zfs_vnop_removenamedstream},
+#endif
 	{NULL, (VOPFUNC)NULL }
 };
 struct vnodeopv_desc zfs_fvnodeop_opv_desc =
