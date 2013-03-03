@@ -5,6 +5,9 @@ PLIST_STRING = InfoPlist.strings
 ZFS_META_VERSION = @ZFS_META_VERSION@
 ZFS_DEBUG_STR = @ZFS_DEBUG_STR@
 
+# XXX Make this usable for the installed location too
+SPL_KMODDIR=	@SPL@/module/spl/spl.kext
+
 CFLAGS_KMOD = \
 	-Wall \
 	-nostdinc \
@@ -138,24 +141,28 @@ zfs_LDFLAGS=$(LINKFLAGS_KMOD)
 
 dist_noinst_DATA = $(PLIST_STRING) $(INFO_PLIST)
 
-zfs.kext : zfs $(PLIST_STRING) $(INFO_PLIST)
-		@echo ""
-		@mkdir -p zfs.kext/Contents/Resources/English.lproj zfs.kext/Contents/MacOS
-	@cp -f $(INFO_PLIST) zfs.kext/Contents/
-	@cp -f $(PLIST_STRING) zfs.kext/Contents/Resources/English.lproj/
-	@cp -f zfs zfs.kext/Contents/MacOS/
-	@kextlibs -undef-symbols -xml zfs.kext/ || echo "lots of warnings to ignore here"
-	@echo ""
-	@echo "To load module, use;"
-	@echo "    rsync -ar --delete module/zfs/zfs.kext/ /tmp/zfs.kext/"
-	@echo "    chown -R root:wheel /tmp/zfs.kext"
-	@echo "    kextload -r /tmp/ -v /tmp/zfs.kext/"
-	@echo ""
+zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
+	@echo
+	rm -rf zfs.kext
+	mkdir -p zfs.kext/Contents/Resources/English.lproj zfs.kext/Contents/MacOS
+	cp -f $(INFO_PLIST) zfs.kext/Contents/
+	cp -f $(PLIST_STRING) zfs.kext/Contents/Resources/English.lproj/
+	cp -f zfs zfs.kext/Contents/MacOS/
+	kextlibs -undef-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/
 
-install-exec-local :
-	echo "There is no install yet, don't do it."
-	exit 1
+# Show more information if there are linking problems.
+debug-kext-linking:
+	kextlibs -all-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/
+
+install-exec-local: zfs.kext
+	rm -rf /System/Library/Extensions/zfs.kext
+	rsync -r zfs.kext/ /System/Library/Extensions/zfs.kext/
+	chown -R root:wheel /System/Library/Extensions/zfs.kext/
+	@echo
+	@echo "To load module: kextload -v /System/Library/Extensions/zfs.kext"
+	@echo "To uninstall module: rm -rf /System/Library/Extensions/zfs.kext"
+	@echo
 
 clean:
 	rm -rf zfs.kext/
-	rm -f *.o *.lo
+	rm -f *.o *.lo zfs
