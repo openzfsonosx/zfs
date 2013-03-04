@@ -308,7 +308,7 @@ zfs_create_op_tables()
 int
 zfs_init_fs(zfsvfs_t *zfsvfs, znode_t **zpp, cred_t *cr)
 {
-	extern int zfsfstype;
+    //	extern int zfsfstype;
 
 	objset_t	*os = zfsvfs->z_os;
 	int		i, error;
@@ -1460,7 +1460,7 @@ zfs_freesp(znode_t *zp, uint64_t off, uint64_t len, int flag, boolean_t log)
 		} else if (len == 0) {
 			extent = size - off;
 		}
-		if (error = chklock(vp, FWRITE, start, extent, flag, NULL)) {
+		if ((error = chklock(vp, FWRITE, start, extent, flag, NULL))) {
 			zfs_range_unlock(rl);
 			return (error);
 		}
@@ -1562,7 +1562,7 @@ zfs_create_fs(objset_t *os, cred_t *cr, uint64_t version, dmu_tx_t *tx)
 	uint64_t	moid, doid, roid = 0;
 	int		error;
 	znode_t		*rootzp = NULL;
-	vnode_t		*vp;
+	//vnode_t		*vp;
 	vattr_t		vattr;
 
 	/*
@@ -1693,7 +1693,7 @@ zfs_obj_to_path(objset_t *osp, uint64_t obj, char *buf, int len)
 
 		component[0] = '/';
 		if (is_xattrdir) {
-			(void) sprintf(component + 1, "<xattrdir>");
+			(void) snprintf(component + 1, sizeof(component), "<xattrdir>");
 		} else {
 			error = zap_value_search(osp, pobj, obj,
 			    ZFS_DIRENT_OBJ(-1ULL), component + 1);
@@ -1873,8 +1873,8 @@ zfs_grab_sa_handle(objset_t *osp, uint64_t obj, sa_handle_t **hdlp,
 	dmu_object_info_from_db(*db, &doi);
 	if ((doi.doi_bonus_type != DMU_OT_SA &&
 	    doi.doi_bonus_type != DMU_OT_ZNODE) ||
-	    doi.doi_bonus_type == DMU_OT_ZNODE &&
-	    doi.doi_bonus_size < sizeof (znode_phys_t)) {
+        ( doi.doi_bonus_type == DMU_OT_ZNODE &&
+          doi.doi_bonus_size < sizeof (znode_phys_t))) {
 		sa_buf_rele(*db, tag);
 		return (ENOTSUP);
 	}

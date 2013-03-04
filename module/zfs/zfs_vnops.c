@@ -150,9 +150,9 @@ typedef int vcexcl_t;
 enum vcexcl	{ NONEXCL, EXCL };
 
 
-static int zfs_getsecattr(znode_t *, kauth_acl_t *, cred_t *);
+//static int zfs_getsecattr(znode_t *, kauth_acl_t *, cred_t *);
 
-static int zfs_setsecattr(znode_t *, kauth_acl_t, cred_t *);
+//static int zfs_setsecattr(znode_t *, kauth_acl_t, cred_t *);
 
 int zfs_obtain_xattr(znode_t *, const char *, mode_t, cred_t *, vnode_t **, int);
 
@@ -1117,13 +1117,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 }
 
 static void
-zfs_get_done(dmu_buf_t *db, void *vzgd)
+    //zfs_get_done(dmu_buf_t *db, void *vzgd)
+    zfs_get_done(zgd_t *zgd, int error)
 {
-	zgd_t *zgd = (zgd_t *)vzgd;
 	rl_t *rl = zgd->zgd_rl;
 	vnode_t *vp = ZTOV(rl->r_zp);
 
-	dmu_buf_rele(db, vzgd);
+	dmu_buf_rele(zgd->zgd_db, zgd);
 	zfs_range_unlock(rl);
 	VN_RELE(vp);
 
@@ -1320,7 +1320,7 @@ zfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct pathname *pnp,
 	struct componentname cn;
 	char smallname[64];
 	char *filename = NULL;
-	char * nm;
+    //	char * nm;
 	// cred_t *cr = (cred_t *)vfs_context_ucred(ap->a_context);
 #endif /* __APPLE__ */
 	znode_t *zdp = VTOZ(dvp);
@@ -1747,7 +1747,7 @@ top:
 	 * Attempt to lock directory; fail if entry doesn't exist.
 	 */
 #ifdef __APPLE__
-	if (error = zfs_dirent_lock(&dl, dzp, cnp, &zp, ZEXISTS)) {
+	if ((error = zfs_dirent_lock(&dl, dzp, cnp, &zp, ZEXISTS))) {
 #else
 	if (error = zfs_dirent_lock(&dl, dzp, name, &zp, ZEXISTS)) {
 #endif /* __APPLE__ */
@@ -1993,7 +1993,7 @@ top:
 	 * First make sure the new directory doesn't exist.
 	 */
 #ifdef __APPLE__
-	if (error = zfs_dirent_lock(&dl, dzp, cnp, &zp, ZNEW)) {
+	if ((error = zfs_dirent_lock(&dl, dzp, cnp, &zp, ZNEW))) {
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
@@ -2113,7 +2113,7 @@ top:
 	 * Attempt to lock directory; fail if entry doesn't exist.
 	 */
 #ifdef __APPLE__
-	if (error = zfs_dirent_lock(&dl, dzp, cnp, &zp, ZEXISTS))
+	if ((error = zfs_dirent_lock(&dl, dzp, cnp, &zp, ZEXISTS)))
 #else
 	if (error = zfs_dirent_lock(&dl, dzp, name, &zp, ZEXISTS))
 #endif
@@ -2361,13 +2361,13 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp)
 		 * Special case `.', `..', and `.zfs'.
 		 */
 		if (offset == 0) {
-			(void) strcpy(zap.za_name, ".");
+			(void) strlcpy(zap.za_name, ".", MAXNAMELEN);
 			objnum = zp->z_id;
 		} else if (offset == 1) {
-			(void) strcpy(zap.za_name, "..");
+			(void) strlcpy(zap.za_name, "..", MAXNAMELEN);
 			objnum = zp->z_phys->zp_parent;
 		} else if (offset == 2 && zfs_show_ctldir(zp)) {
-			(void) strcpy(zap.za_name, ZFS_CTLDIR_NAME);
+			(void) strlcpy(zap.za_name, ZFS_CTLDIR_NAME, MAXNAMELEN);
 			objnum = ZFSCTL_INO_ROOT;
 		} else {
 #ifdef __APPLE__
@@ -2378,7 +2378,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp)
 			/*
 			 * Grab next entry.
 			 */
-			if (error = zap_cursor_retrieve(&zc, &zap)) {
+			if ((error = zap_cursor_retrieve(&zc, &zap))) {
 				if ((*eofp = (error == ENOENT)) != 0)
 					break;
 				else
@@ -2530,7 +2530,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp)
 	zp->z_zn_prefetch = B_FALSE; /* a lookup will re-enable pre-fetching */
 
 #ifdef __APPLE__
-	if (error = uiomove(outbuf, (long)outcount, UIO_READ, uio)) {
+	if ((error = uiomove(outbuf, (long)outcount, UIO_READ, uio))) {
 		/*
 		 * Reset the pointer.
 		 */
@@ -2650,7 +2650,7 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	znode_phys_t *pzp = zp->z_phys;
 	int	error;
-	uint64_t links;
+	//uint64_t links;
 
 	ZFS_ENTER(zfsvfs);
 
@@ -2835,7 +2835,7 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	vnode_t  *vp = ap->a_vp;
 	vattr_t  *vap = ap->a_vap;
 	uint64_t  mask; // = vap->va_active;
-	uint64_t  saved_mask;
+	//uint64_t  saved_mask;
 	cred_t  *cr = (cred_t *)vfs_context_ucred(ap->a_context);
 #else
 	vattr_t		oldva;
@@ -2847,10 +2847,10 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
 	zilog_t		*zilog = zfsvfs->z_log;
 	dmu_tx_t	*tx;
-	int		trim_mask = 0;
+	//int		trim_mask = 0;
 	uint64_t	new_mode = 0;
 	znode_t		*attrzp;
-	int		need_policy = FALSE;
+	//int		need_policy = FALSE;
 	int		err;
 
 #ifndef __APPLE__
@@ -3099,13 +3099,14 @@ top:
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
 		if ((vap->va_acl != (kauth_acl_t) KAUTH_FILESEC_NONE) &&
 		    (vap->va_acl->acl_entrycount != KAUTH_FILESEC_NOACL)) {
-			if ((err = zfs_setacl(zp, vap->va_acl, cr, tx)))
+			if ((err = zfs_setacl(zp, vap->va_acl, B_TRUE, cr)))
 				goto out;
 		} else {
 			struct kauth_acl blank_acl;
+			//struct vsecattr blank_acl;
 
 			bzero(&blank_acl, sizeof blank_acl);
-			if ((err = zfs_setacl(zp, &blank_acl, cr, tx)))
+			if ((err = zfs_setacl(zp, &blank_acl, B_TRUE, cr)))
 				goto out;
 		}
 		VATTR_SET_SUPPORTED(vap, va_acl);
@@ -3484,7 +3485,7 @@ top:
 		 * Check to make sure rename is valid.
 		 * Can't do a move like this: /usr/a/b to /usr/a/b/c/d
 		 */
-		if (error = zfs_rename_lock(szp, tdzp, sdzp, &zl))
+		if ((error = zfs_rename_lock(szp, tdzp, sdzp, &zl)))
 			goto out;
 	}
 
@@ -3667,7 +3668,7 @@ top:
 	 * Attempt to lock directory; fail if entry already exists.
 	 */
 #ifdef __APPLE__
-	if (error = zfs_dirent_lock(&dl, dzp, cnp, &zp, ZNEW))
+	if ((error = zfs_dirent_lock(&dl, dzp, cnp, &zp, ZNEW)))
 #else
 	if (error = zfs_dirent_lock(&dl, dzp, name, &zp, ZNEW))
 #endif /* __APPLE__ */
@@ -3859,7 +3860,7 @@ zfs_link(vnode_t *tdvp, vnode_t *svp, char *name, cred_t *cr)
 	zilog_t		*zilog = zfsvfs->z_log;
 	zfs_dirlock_t	*dl;
 	dmu_tx_t	*tx;
-	vnode_t		*realvp;
+	//vnode_t		*realvp;
 	int		error;
 
 #ifdef __APPLE__
@@ -3936,7 +3937,7 @@ top:
 	 * Attempt to lock directory; fail if entry already exists.
 	 */
 #ifdef __APPLE__
-	if (error = zfs_dirent_lock(&dl, dzp, cnp, &tzp, ZNEW)) {
+	if ((error = zfs_dirent_lock(&dl, dzp, cnp, &tzp, ZNEW))) {
 #else
 	if (error = zfs_dirent_lock(&dl, dzp, name, &tzp, ZNEW)) {
 #endif
@@ -5908,7 +5909,7 @@ zfs_setsecattr(vnode_t *vp, vsecattr_t *vsecp, int flag, cred_t *cr)
 	int error;
 
 	ZFS_ENTER(zfsvfs);
-	error = zfs_setacl(zp, vsecp, cr);
+	error = zfs_setacl(zp, vsecp, B_TRUE, cr);
 	ZFS_EXIT(zfsvfs);
 	return (error);
 }
@@ -6426,7 +6427,7 @@ zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 	int		maxcount = ap->a_maxcount;
 	uint64_t	offset = (uint64_t)uio_offset(uio);
 	u_int32_t	fixedsize;
-	u_int32_t	defaultvariablesize;
+	//u_int32_t	defaultvariablesize;
 	u_int32_t	maxsize;
 	u_int32_t	attrbufsize;
 	void		*attrbufptr = NULL;
@@ -6515,14 +6516,14 @@ zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 			offset = 2;
 			continue;
 		} else if (offset == 2 && zfs_show_ctldir(zp)) {
-			(void) strcpy(zap.za_name, ZFS_CTLDIR_NAME);
+			(void) strlcpy(zap.za_name, ZFS_CTLDIR_NAME, MAXNAMELEN);
 			objnum = ZFSCTL_INO_ROOT;
 			vtype = VDIR;
 		} else {
 			/*
 			 * Grab next entry.
 			 */
-			if (error = zap_cursor_retrieve(&zc, &zap)) {
+			if ((error = zap_cursor_retrieve(&zc, &zap))) {
 				*(ap->a_eofflag) = (error == ENOENT);
 					goto update;
 			}
@@ -6869,7 +6870,7 @@ dirattrpack(attrinfo_t *aip, znode_t *zp)
 	attrgroup_t dirattr = aip->ai_attrlist->dirattr;
 	void *attrbufptr = *aip->ai_attrbufpp;
 	znode_phys_t *pzp = zp ? zp->z_phys : NULL;
-	u_int32_t entries;
+	//u_int32_t entries;
 
 	if (ATTR_DIR_LINKCOUNT & dirattr) {
 		*((u_int32_t *)attrbufptr) = 1;  /* no dir hard links */
