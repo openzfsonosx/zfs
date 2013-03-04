@@ -68,10 +68,6 @@ typedef enum drr_headertype {
 #define	DMU_GET_FEATUREFLAGS(vi)	BF64_GET((vi), 2, 30)
 #define	DMU_SET_FEATUREFLAGS(vi, x)	BF64_SET((vi), 2, 30, x)
 
-// FIXME
-#if	defined(_KERNEL)
-typedef void *minor_t;
-#endif
 
 
 /*

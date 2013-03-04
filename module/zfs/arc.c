@@ -2113,6 +2113,7 @@ arc_shrink(uint64_t bytes)
 		arc_adjust();
 }
 
+#if 0
 static void
 arc_kmem_reap_now(arc_reclaim_strategy_t strat, uint64_t bytes)
 {
@@ -2143,7 +2144,7 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat, uint64_t bytes)
 	kmem_cache_reap_now(buf_cache);
 	kmem_cache_reap_now(hdr_cache);
 }
-
+#endif
 /*
  * Unlike other ZFS implementations this thread is only responsible for
  * adapting the target ARC size on Linux.  The responsibility for memory
@@ -2263,6 +2264,7 @@ arc_adapt_thread(void)
  *         already below arc_c_min, evicting any more would only
  *         increase this negative difference.
  */
+#if 0
 static uint64_t
 arc_evictable_memory(void) {
 	uint64_t arc_clean =
@@ -2282,6 +2284,7 @@ arc_evictable_memory(void) {
 
 	return (ghost_clean + MAX((int64_t)arc_size - (int64_t)arc_c_min, 0));
 }
+#endif
 
 #if 0
 static int
@@ -3550,8 +3553,8 @@ static int
 arc_memory_throttle(uint64_t reserve, uint64_t inflight_data, uint64_t txg)
 {
 #ifdef _KERNEL
-	uint64_t available_memory;
 #if 0
+	uint64_t available_memory;
 	/* Easily reclaimable memory (free + inactive + arc-evictable) */
 	available_memory = ptob(spl_kmem_availrmem()) + arc_evictable_memory();
 
@@ -3638,6 +3641,7 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 	return (0);
 }
 
+#if 1
 static void
 arc_kstat_update_state(arc_state_t *state, kstat_named_t *size,
     kstat_named_t *evict_data, kstat_named_t *evict_metadata)
@@ -3646,6 +3650,8 @@ arc_kstat_update_state(arc_state_t *state, kstat_named_t *size,
 	evict_data->value.ui64 = state->arcs_lsize[ARC_BUFC_DATA];
 	evict_metadata->value.ui64 = state->arcs_lsize[ARC_BUFC_METADATA];
 }
+#endif
+
 
 static int
 arc_kstat_update(kstat_t *ksp, int rw)

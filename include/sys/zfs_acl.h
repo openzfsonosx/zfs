@@ -232,7 +232,9 @@ int zfs_aclset_common(struct znode *, zfs_acl_t *, cred_t *, dmu_tx_t *);
 uint64_t zfs_external_acl(struct znode *);
 int zfs_znode_acl_version(struct znode *);
 int zfs_acl_size(struct znode *, int *);
-static zfs_acl_t *zfs_acl_alloc(int);
+
+    //static zfs_acl_t *zfs_acl_alloc(int);
+
 zfs_acl_node_t *zfs_acl_node_alloc(size_t);
 void zfs_acl_xform(struct znode *, zfs_acl_t *, cred_t *);
 void zfs_acl_data_locator(void **, uint32_t *, uint32_t, boolean_t, void *);

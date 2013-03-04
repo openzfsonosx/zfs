@@ -446,7 +446,8 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops, uint64_t txg)
 	VERIFY(NULL != (os = dmu_objset_create_impl(dp->dp_spa, ds,
 	    dsl_dataset_get_blkptr(ds), DMU_OST_ZFS, tx)));
 #ifdef _KERNEL
-	zfs_create_fs(os, kcred, zplprops, tx);
+	//zfs_create_fs(os, kcred, zplprops, tx);
+	zfs_create_fs(os, kcred, ZPL_VERSION, tx);// FIXME, should be props
 #endif
 	dsl_dataset_rele(ds, FTAG);
 

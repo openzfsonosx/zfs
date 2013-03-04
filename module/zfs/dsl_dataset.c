@@ -664,22 +664,22 @@ void
 dsl_dataset_name(dsl_dataset_t *ds, char *name)
 {
 	if (ds == NULL) {
-		(void) strcpy(name, "mos");
+		(void) strlcpy(name, "mos", MAXNAMELEN);
 	} else {
 		dsl_dir_name(ds->ds_dir, name);
 		VERIFY(0 == dsl_dataset_get_snapname(ds));
 		if (ds->ds_snapname[0]) {
-			(void) strcat(name, "@");
+			(void) strlcat(name, "@", MAXPATHLEN);
 			/*
 			 * We use a "recursive" mutex so that we
 			 * can call dprintf_ds() with ds_lock held.
 			 */
 			if (!MUTEX_HELD(&ds->ds_lock)) {
 				mutex_enter(&ds->ds_lock);
-				(void) strcat(name, ds->ds_snapname);
+				(void) strlcat(name, ds->ds_snapname, MAXPATHLEN);
 				mutex_exit(&ds->ds_lock);
 			} else {
-				(void) strcat(name, ds->ds_snapname);
+				(void) strlcat(name, ds->ds_snapname, MAXPATHLEN);
 			}
 		}
 	}
@@ -942,7 +942,7 @@ dmu_snapshots_destroy_nvl(nvlist_t *snaps, boolean_t defer, char *failed)
 		} else if (err == ENOENT) {
 			err = 0;
 		} else {
-			(void) strcpy(failed, nvpair_name(pair));
+			(void) strlcpy(failed, nvpair_name(pair), MAXPATHLEN);
 			break;
 		}
 	}
@@ -2460,7 +2460,7 @@ dsl_dataset_snapshot_rename_sync(void *arg1, void *arg2, dmu_tx_t *tx)
 	err = dsl_dataset_snap_remove(hds, ds->ds_snapname, tx);
 	ASSERT3U(err, ==, 0);
 	mutex_enter(&ds->ds_lock);
-	(void) strcpy(ds->ds_snapname, newsnapname);
+	(void) strlcpy(ds->ds_snapname, newsnapname, MAXPATHLEN);
 	mutex_exit(&ds->ds_lock);
 	err = zap_add(mos, hds->ds_phys->ds_snapnames_zapobj,
 	    ds->ds_snapname, 8, 1, &ds->ds_object, tx);
@@ -2582,7 +2582,7 @@ dsl_valid_rename(const char *oldname, void *arg)
 	return (0);
 }
 
-#pragma weak dmu_objset_rename = dsl_dataset_rename
+//#pragma weak dmu_objset_rename = dsl_dataset_rename
 int
 dsl_dataset_rename(char *oldname, const char *newname, boolean_t recursive)
 {
