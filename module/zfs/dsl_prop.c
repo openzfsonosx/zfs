@@ -131,8 +131,8 @@ dsl_prop_get_dd(dsl_dir_t *dd, const char *propname,
 					if (inheriting) {
 						dsl_dir_name(dd, setpoint);
 					} else {
-						(void) strcpy(setpoint,
-						    ZPROP_SOURCE_VAL_RECVD);
+						(void) strlcpy(setpoint,
+                                       ZPROP_SOURCE_VAL_RECVD, MAXNAMELEN);
 					}
 				}
 				break;
@@ -207,8 +207,8 @@ dsl_prop_get_ds(dsl_dataset_t *ds, const char *propname,
 			strfree(recvdstr);
 			if (err != ENOENT) {
 				if (setpoint != NULL && err == 0)
-					(void) strcpy(setpoint,
-					    ZPROP_SOURCE_VAL_RECVD);
+					(void) strlcpy(setpoint,
+                                   ZPROP_SOURCE_VAL_RECVD, MAXNAMELEN);
 				return (err);
 			}
 		}
@@ -250,7 +250,7 @@ dsl_prop_register(dsl_dataset_t *ds, const char *propname,
 	cbr = kmem_alloc(sizeof (dsl_prop_cb_record_t), KM_PUSHPAGE);
 	cbr->cbr_ds = ds;
 	cbr->cbr_propname = kmem_alloc(strlen(propname)+1, KM_PUSHPAGE);
-	(void) strcpy((char *)cbr->cbr_propname, propname);
+	(void) strlcpy((char *)cbr->cbr_propname, propname, MAXNAMELEN);
 	cbr->cbr_func = callback;
 	cbr->cbr_arg = cbarg;
 	mutex_enter(&dd->dd_lock);

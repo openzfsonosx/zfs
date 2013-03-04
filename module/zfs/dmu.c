@@ -44,6 +44,7 @@
 #ifdef _KERNEL
 #include <sys/vmsystm.h>
 #include <sys/zfs_znode.h>
+#include <sys/ubc.h>
 #endif
 
 const dmu_object_type_info_t dmu_ot[DMU_OT_NUMTYPES] = {
@@ -874,18 +875,20 @@ int
 dmu_xuio_init(xuio_t *xuio, int nblk)
 {
 	dmu_xuio_t *priv;
-	uio_t *uio = &xuio->xu_uio;
+	uio_t *uio = NULL;
+	//uio_t *uio = &xuio->xu_uio;
 
 	//uio->uio_iovcnt = nblk;
 	//uio->uio_iov = kmem_zalloc(nblk * sizeof (iovec_t), KM_PUSHPAGE);
     uio = uio_create(nblk, 0, UIO_SYSSPACE,
                      XUIO_XUZC_RW(xuio) == UIO_READ ? UIO_READ : UIO_WRITE);
+    xuio->xu_uio = uio;
 
 	priv = kmem_zalloc(sizeof (dmu_xuio_t), KM_PUSHPAGE);
 	priv->cnt = nblk;
 	priv->bufs = kmem_zalloc(nblk * sizeof (arc_buf_t *), KM_PUSHPAGE);
 	//priv->iovp = uio->uio_iov;
-    priv->iovp = uio_curriovbase(uio);
+    priv->iovp = (iovec_t *)uio_curriovbase(uio);
 
 	XUIO_XUZC_PRIV(xuio) = priv;
 
@@ -921,7 +924,8 @@ int
 dmu_xuio_add(xuio_t *xuio, arc_buf_t *abuf, offset_t off, size_t n)
 {
 	struct iovec *iov;
-	uio_t *uio = &xuio->xu_uio;
+	uio_t *uio = xuio->xu_uio;
+	//uio_t *uio = &xuio->xu_uio;
 	dmu_xuio_t *priv = XUIO_XUZC_PRIV(xuio);
 	int i = priv->next++;
 
@@ -929,7 +933,7 @@ dmu_xuio_add(xuio_t *xuio, arc_buf_t *abuf, offset_t off, size_t n)
 	ASSERT(off + n <= arc_buf_size(abuf));
 
 	//iov = uio->uio_iov + i;
-	iov = uio_iovcnt(uio) + i;
+	iov = ((iovec_t *)uio_curriovbase(uio)) + i;
 	iov->iov_base = (char *)abuf->b_data + off;
 	iov->iov_len = n;
 	priv->bufs[i] = abuf;
@@ -1416,14 +1420,14 @@ dmu_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
             dmu_buf_will_dirty(db, tx);
 
 
-        ubc_upl_map(pp, (vm_offset_t *)&va);
+        ubc_upl_map((upl_t)pp, (vm_offset_t *)&va);
         for (copied = 0; copied < tocpy; copied += PAGESIZE) {
             thiscpy = MIN(PAGESIZE, tocpy - copied);
             bcopy(va, (char *)db->db_data + bufoff, thiscpy);
             va += PAGESIZE;
             bufoff += PAGESIZE;
         }
-        ubc_upl_unmap(pp);
+        ubc_upl_unmap((upl_t)pp);
 
 
         if (tocpy == db->db_size)

@@ -1431,7 +1431,7 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	return (0);
 }
 
-#pragma weak dmu_buf_will_dirty = dbuf_will_dirty
+//#pragma weak dmu_buf_will_dirty = dbuf_will_dirty
 void
 dbuf_will_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 {
@@ -1475,7 +1475,7 @@ dmu_buf_will_fill(dmu_buf_t *db_fake, dmu_tx_t *tx)
 	(void) dbuf_dirty(db, tx);
 }
 
-#pragma weak dmu_buf_fill_done = dbuf_fill_done
+//#pragma weak dmu_buf_fill_done = dbuf_fill_done
 /* ARGSUSED */
 void
 dbuf_fill_done(dmu_buf_impl_t *db, dmu_tx_t *tx)
@@ -2106,7 +2106,7 @@ dbuf_rm_spill(dnode_t *dn, dmu_tx_t *tx)
 	dbuf_free_range(dn, DMU_SPILL_BLKID, DMU_SPILL_BLKID, tx);
 }
 
-#pragma weak dmu_buf_add_ref = dbuf_add_ref
+//#pragma weak dmu_buf_add_ref = dbuf_add_ref
 void
 dbuf_add_ref(dmu_buf_impl_t *db, void *tag)
 {
@@ -2120,7 +2120,7 @@ dbuf_add_ref(dmu_buf_impl_t *db, void *tag)
  * Without that, the dbuf_rele() could lead to a dnode_rele() followed by the
  * dnode's parent dbuf evicting its dnode handles.
  */
-#pragma weak dmu_buf_rele = dbuf_rele
+//#pragma weak dmu_buf_rele = dbuf_rele
 void
 dbuf_rele(dmu_buf_impl_t *db, void *tag)
 {
@@ -2204,7 +2204,7 @@ dbuf_rele_and_unlock(dmu_buf_impl_t *db, void *tag)
 	}
 }
 
-#pragma weak dmu_buf_refcount = dbuf_refcount
+//#pragma weak dmu_buf_refcount = dbuf_refcount
 uint64_t
 dbuf_refcount(dmu_buf_impl_t *db)
 {

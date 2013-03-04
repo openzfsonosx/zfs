@@ -535,6 +535,7 @@ zfs_zevent_post(nvlist_t *nvl, nvlist_t *detector, zevent_cb_t *cb)
 	mutex_exit(&zevent_lock);
 }
 
+#if 0
 static int
 zfs_zevent_minor_to_state(minor_t minor, zfs_zevent_t **ze)
 {
@@ -544,6 +545,7 @@ zfs_zevent_minor_to_state(minor_t minor, zfs_zevent_t **ze)
 
 	return (0);
 }
+#endif
 
 #if 0
 int

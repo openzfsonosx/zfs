@@ -258,7 +258,7 @@ typedef struct dmu_sendarg {
 	dmu_replay_record_t *dsa_drr;
 	vnode_t *dsa_vp;
 	int dsa_outfd;
-	proc_t *dsa_proc;
+	struct proc *dsa_proc;
 	offset_t *dsa_off;
 	objset_t *dsa_os;
 	zio_cksum_t dsa_zc;

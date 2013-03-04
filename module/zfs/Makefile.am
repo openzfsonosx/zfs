@@ -148,7 +148,7 @@ zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
 	cp -f $(INFO_PLIST) zfs.kext/Contents/
 	cp -f $(PLIST_STRING) zfs.kext/Contents/Resources/English.lproj/
 	cp -f zfs zfs.kext/Contents/MacOS/
-	kextlibs -undef-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/
+	kextlibs -undef-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/ || echo Ignoring errors
 
 # Show more information if there are linking problems.
 debug-kext-linking:

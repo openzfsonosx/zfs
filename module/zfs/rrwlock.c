@@ -79,7 +79,7 @@ typedef struct rrw_node {
 static rrw_node_t *
 rrn_find(rrwlock_t *rrl)
 {
-	rrw_node_t *rn;
+	//rrw_node_t *rn;
 
 	if (refcount_count(&rrl->rr_linked_rcount) == 0)
 		return (NULL);
@@ -112,8 +112,8 @@ rrn_add(rrwlock_t *rrl)
 static boolean_t
 rrn_find_and_remove(rrwlock_t *rrl)
 {
-	rrw_node_t *rn;
-	rrw_node_t *prev = NULL;
+	//rrw_node_t *rn;
+	//rrw_node_t *prev = NULL;
 
 	if (refcount_count(&rrl->rr_linked_rcount) == 0)
 		return (B_FALSE);

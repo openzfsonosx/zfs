@@ -123,7 +123,7 @@ dsl_dir_open_obj(dsl_pool_t *dp, uint64_t ddobj,
 				    tail, sizeof (foundobj), 1, &foundobj);
 				ASSERT(err || foundobj == ddobj);
 #endif
-				(void) strcpy(dd->dd_myname, tail);
+				(void) strlcpy(dd->dd_myname, tail, MAXNAMELEN);
 			} else {
 				err = zap_value_search(dp->dp_meta_objset,
 				    dd->dd_parent->dd_phys->dd_child_dir_zapobj,
@@ -132,7 +132,7 @@ dsl_dir_open_obj(dsl_pool_t *dp, uint64_t ddobj,
 			if (err)
 				goto errout;
 		} else {
-			(void) strcpy(dd->dd_myname, spa_name(dp->dp_spa));
+			(void) strlcpy(dd->dd_myname, spa_name(dp->dp_spa), MAXNAMELEN);
 		}
 
 		if (dsl_dir_is_clone(dd)) {
@@ -206,7 +206,7 @@ dsl_dir_name(dsl_dir_t *dd, char *buf)
 {
 	if (dd->dd_parent) {
 		dsl_dir_name(dd->dd_parent, buf);
-		(void) strcat(buf, "/");
+		(void) strlcat(buf, "/", MAXNAMELEN);
 	} else {
 		buf[0] = '\0';
 	}
@@ -216,10 +216,10 @@ dsl_dir_name(dsl_dir_t *dd, char *buf)
 		 * dprintf_dd() with dd_lock held
 		 */
 		mutex_enter(&dd->dd_lock);
-		(void) strcat(buf, dd->dd_myname);
+		(void) strlcat(buf, dd->dd_myname, MAXNAMELEN);
 		mutex_exit(&dd->dd_lock);
 	} else {
-		(void) strcat(buf, dd->dd_myname);
+		(void) strlcat(buf, dd->dd_myname, MAXNAMELEN);
 	}
 }
 
@@ -269,7 +269,7 @@ getcomponent(const char *path, char *component, const char **nextp)
 			return (EINVAL);
 		if (strlen(path) >= MAXNAMELEN)
 			return (ENAMETOOLONG);
-		(void) strcpy(component, path);
+		(void) strlcpy(component, path, MAXNAMELEN);
 		p = NULL;
 	} else if (p[0] == '/') {
 		if (p-path >= MAXNAMELEN)
@@ -1326,7 +1326,7 @@ dsl_dir_rename_sync(void *arg1, void *arg2, dmu_tx_t *tx)
 	    dd->dd_myname, tx);
 	ASSERT3U(err, ==, 0);
 
-	(void) strcpy(dd->dd_myname, ra->mynewname);
+	(void) strlcpy(dd->dd_myname, ra->mynewname, MAXNAMELEN);
 	dsl_dir_close(dd->dd_parent, dd);
 	dd->dd_phys->dd_parent_obj = ra->newparent->dd_object;
 	VERIFY(0 == dsl_dir_open_obj(dd->dd_pool,

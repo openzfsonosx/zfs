@@ -425,9 +425,9 @@ static int
 dsl_check_user_access(objset_t *mos, uint64_t zapobj, const char *perm,
     int checkflag, cred_t *cr)
 {
-	const	gid_t *gids;
-	int	ngids;
-	int	i;
+	//const	gid_t *gids;
+    //	int	ngids;
+	//int	i;
 	uint64_t id;
 
 	/* check for user */
@@ -513,8 +513,8 @@ static void
 dsl_load_user_sets(objset_t *mos, uint64_t zapobj, avl_tree_t *avl,
     char checkflag, cred_t *cr)
 {
-	const	gid_t *gids;
-	int	ngids, i;
+	//const	gid_t *gids;
+	//int	ngids, i;
 	uint64_t id;
 
 	id = crgetuid(cr);

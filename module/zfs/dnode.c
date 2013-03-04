@@ -59,7 +59,7 @@ int zfs_default_bs = SPA_MINBLOCKSHIFT;
 int zfs_default_ibs = DN_MAX_INDBLKSHIFT;
 
 #ifdef	_KERNEL
-static kmem_cbrc_t dnode_move(void *, void *, size_t, void *);
+//static kmem_cbrc_t dnode_move(void *, void *, size_t, void *);
 #endif /* _KERNEL */
 
 /* ARGSUSED */
@@ -781,7 +781,7 @@ dnode_move_impl(dnode_t *odn, dnode_t *ndn)
 }
 
 /*ARGSUSED*/
-static kmem_cbrc_t
+kmem_cbrc_t
 dnode_move(void *buf, void *newbuf, size_t size, void *arg)
 {
 	dnode_t *odn = buf, *ndn = newbuf;

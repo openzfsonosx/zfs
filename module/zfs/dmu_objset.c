@@ -903,7 +903,7 @@ dmu_objset_snapshot_one(const char *name, void *arg)
 	if (cp && cp[1] == '%' && sn->recursive)
 		return (0);
 
-	(void) strcpy(sn->failed, name);
+	(void) strlcpy(sn->failed, name, sizeof(sn->failed));
 
 	/*
 	 * Check permissions if we are doing a recursive snapshot.  The
@@ -952,7 +952,7 @@ dmu_objset_snapshot(char *fsname, char *snapname, char *tag,
 	int err;
 
 	sn = kmem_alloc(sizeof (struct snaparg), KM_SLEEP);
-	(void) strcpy(sn->failed, fsname);
+	(void) strlcpy(sn->failed, fsname, sizeof(sn->failed));
 
 	err = spa_open(fsname, &spa, FTAG);
 	if (err) {
@@ -1006,7 +1006,7 @@ dmu_objset_snapshot(char *fsname, char *snapname, char *tag,
 	}
 
 	if (err)
-		(void) strcpy(fsname, sn->failed);
+		(void) strlcpy(fsname, sn->failed, sizeof(sn->failed)); // fixme
 	if (temporary)
 		zfs_onexit_fd_rele(cleanup_fd);
 	dsl_sync_task_group_destroy(sn->dstg);
@@ -1561,7 +1561,7 @@ dmu_snapshot_list_next(objset_t *os, int namelen, char *name,
 		return (ENAMETOOLONG);
 	}
 
-	(void) strcpy(name, attr.za_name);
+	(void) strlcpy(name, attr.za_name, namelen);
 	if (idp)
 		*idp = attr.za_first_integer;
 	if (case_conflict)
@@ -1635,7 +1635,7 @@ dmu_dir_list_next(objset_t *os, int namelen, char *name,
 		return (ENAMETOOLONG);
 	}
 
-	(void) strcpy(name, attr.za_name);
+	(void) strlcpy(name, attr.za_name, namelen);
 	if (idp)
 		*idp = attr.za_first_integer;
 	zap_cursor_advance(&cursor);

@@ -137,6 +137,7 @@ int arc_tempreserve_space(uint64_t reserve, uint64_t txg);
 
 void arc_init(void);
 void arc_fini(void);
+int arc_referenced(arc_buf_t *buf);
 
 /*
  * Level 2 ARC
