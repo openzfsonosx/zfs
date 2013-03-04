@@ -874,6 +874,7 @@ static xuio_stats_t xuio_stats = {
 int
 dmu_xuio_init(xuio_t *xuio, int nblk)
 {
+#ifdef UIO_XUIO
 	dmu_xuio_t *priv;
 	uio_t *uio = NULL;
 	//uio_t *uio = &xuio->xu_uio;
@@ -896,6 +897,7 @@ dmu_xuio_init(xuio_t *xuio, int nblk)
 		XUIOSTAT_INCR(xuiostat_onloan_rbuf, nblk);
 	else
 		XUIOSTAT_INCR(xuiostat_onloan_wbuf, nblk);
+#endif
 
 	return (0);
 }
@@ -903,6 +905,7 @@ dmu_xuio_init(xuio_t *xuio, int nblk)
 void
 dmu_xuio_fini(xuio_t *xuio)
 {
+#ifdef UIO_XUIO
 	dmu_xuio_t *priv = XUIO_XUZC_PRIV(xuio);
 	int nblk = priv->cnt;
 
@@ -914,6 +917,7 @@ dmu_xuio_fini(xuio_t *xuio)
 		XUIOSTAT_INCR(xuiostat_onloan_rbuf, -nblk);
 	else
 		XUIOSTAT_INCR(xuiostat_onloan_wbuf, -nblk);
+#endif
 }
 
 /*
@@ -923,6 +927,7 @@ dmu_xuio_fini(xuio_t *xuio)
 int
 dmu_xuio_add(xuio_t *xuio, arc_buf_t *abuf, offset_t off, size_t n)
 {
+#ifdef UIO_XUIO
 	struct iovec *iov;
 	uio_t *uio = xuio->xu_uio;
 	//uio_t *uio = &xuio->xu_uio;
@@ -937,6 +942,7 @@ dmu_xuio_add(xuio_t *xuio, arc_buf_t *abuf, offset_t off, size_t n)
 	iov->iov_base = (char *)abuf->b_data + off;
 	iov->iov_len = n;
 	priv->bufs[i] = abuf;
+#endif
 	return (0);
 }
 
@@ -1389,6 +1395,7 @@ int
 dmu_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
     struct page *pp, dmu_tx_t *tx)
 {
+#ifdef NOTYET
     dmu_buf_t **dbp;
     int numbufs, i;
     int err;
@@ -1441,6 +1448,9 @@ dmu_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
     }
     dmu_buf_rele_array(dbp, numbufs, FTAG);
     return (err);
+#else
+    return (-1);
+#endif
 }
 
 

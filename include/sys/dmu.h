@@ -99,11 +99,6 @@ typedef enum dmu_object_byteswap {
 #define	DMU_OT_BYTESWAP_MASK 0x3f
 
 
-#if	defined(_KERNEL)
-typedef void *minor_t;
-#endif
-
-
 /*
  * Defines a uint8_t object type. Object types specify if the data
  * in the object is metadata (boolean) and how to byteswap the data

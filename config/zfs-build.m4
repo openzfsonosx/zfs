@@ -7,6 +7,18 @@ AC_DEFUN([ZFS_AC_LICENSE], [
 ])
 
 AC_DEFUN([ZFS_AC_DEBUG], [
+	AC_MSG_CHECKING([whether strict compile is enabled])
+	AC_ARG_ENABLE([strict-compile],
+		[AS_HELP_STRING([--enable-strict-compile],
+		[Enable strict compile checking @<:@default=no@:>@])],
+		[strict_compile=yes],
+		[strict_compile=no])
+	AS_IF([test "x$strict_compile" = xyes],
+	[
+		DEBUG_CFLAGS="${DEBUG_CFLAGS} -Werror"
+	])
+	AC_MSG_RESULT([$strict_compile])
+
 	AC_MSG_CHECKING([whether debugging is enabled])
 	AC_ARG_ENABLE([debug],
 		[AS_HELP_STRING([--enable-debug],
@@ -16,17 +28,15 @@ AC_DEFUN([ZFS_AC_DEBUG], [
 
 	AS_IF([test "x$enable_debug" = xyes],
 	[
-		KERNELCPPFLAGS="${KERNELCPPFLAGS} -DDEBUG -Werror"
-		HOSTCFLAGS="${HOSTCFLAGS} -DDEBUG -Werror"
-		DEBUG_CFLAGS="-DDEBUG -Werror"
+		KERNELCPPFLAGS="${KERNELCPPFLAGS} -DDEBUG"
+		HOSTCFLAGS="${HOSTCFLAGS} -DDEBUG"
+		DEBUG_CFLAGS="-DDEBUG"
 		DEBUG_STACKFLAGS="-fstack-check"
 		DEBUG_ZFS="_with_debug"
 		AC_DEFINE(ZFS_DEBUG, 1, [zfs debugging enabled])
 	],
 	[
-		KERNELCPPFLAGS="${KERNELCPPFLAGS} -DNDEBUG "
-		HOSTCFLAGS="${HOSTCFLAGS} -DNDEBUG "
-		DEBUG_CFLAGS="-DNDEBUG"
+		DEBUG_CFLAGS=""
 		DEBUG_STACKFLAGS=""
 		DEBUG_ZFS="_without_debug"
 	])
