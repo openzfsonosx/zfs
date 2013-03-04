@@ -1,3 +1,4 @@
+include $(top_srcdir)/config/Rules.am
 
 INFO_PLIST = Info.plist
 PLIST_STRING = InfoPlist.strings
@@ -9,6 +10,7 @@ ZFS_DEBUG_STR = @ZFS_DEBUG_STR@
 SPL_KMODDIR=	@SPL@/module/spl/spl.kext
 
 CFLAGS_KMOD = \
+	$(AM_CFLAGS) \
 	-Wall \
 	-nostdinc \
 	-mkernel \

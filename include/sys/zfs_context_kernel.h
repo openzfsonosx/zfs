@@ -97,7 +97,7 @@ typedef struct direntry dirent64_t;
 /* Pre-faulting pages not yet supported for Mac OS X */
 #define zfs_prefault_write(n, uio)
 
-
+extern u_int32_t k_maczfs_debug_stalk;
 
 #endif /* _KERNEL */
 #endif	/* _SYS_ZFS_CONTEXT_H */
