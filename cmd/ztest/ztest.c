@@ -1254,7 +1254,7 @@ ztest_pattern_set(void *buf, uint64_t size, uint64_t value)
 		*ip++ = value;
 }
 
-#ifndef NDEBUG
+#ifdef DEBUG
 static boolean_t
 ztest_pattern_match(void *buf, uint64_t size, uint64_t value)
 {

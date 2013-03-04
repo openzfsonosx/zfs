@@ -5178,6 +5178,7 @@ static struct cdevsw zfs_cdevsw =
 static int zfs_ioctl_installed = 0;
 static int zfs_major = 0;
 static void * zfs_devnode = NULL;
+u_int32_t k_maczfs_debug_stalk;
 
 #define ZFS_MAJOR  -24
 
@@ -5195,6 +5196,7 @@ zfs_ioctl_init(void)
         return;
     }
     zfs_ioctl_installed = 1;
+    k_maczfs_debug_stalk = 0;
 
     dev = zfs_major << 24;
     zfs_devnode = devfs_make_node(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL, 0666, "zfs", 0);

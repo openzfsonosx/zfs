@@ -233,6 +233,10 @@ typedef struct znode {
     uint8_t         z_mmapped;      /* file has been memory mapped */
     uint8_t         z_dbuf_held;    /* Is z_dbuf already held? */
 
+#ifdef ZFS_DEBUG
+	list_t		z_stalker;	/*vnode life tracker */
+#endif
+
     /*
      * These are dmu managed fields.
      */
@@ -421,6 +425,31 @@ extern void zfs_unmap_page(page_t *, caddr_t);
 extern zil_get_data_t zfs_get_data;
 extern zil_replay_func_t *zfs_replay_vector[TX_MAX_TYPE];
 extern int zfsfstype;
+
+#ifdef ZFS_DEBUG
+typedef enum whereami {
+	N_znode_alloc = 0,
+	N_vnop_inactive,
+	N_zinactive,
+	N_zreclaim,
+	N_vnop_reclaim,
+	N_znode_delete,
+	N_znode_pageout,
+	N_zfs_nolink_add,
+	N_mknode_err,
+	N_zinact_retearly,
+	N_zfs_rmnode,
+	N_vnop_fsync_zil
+} whereami_t;
+
+typedef struct findme {
+	whereami_t event;
+	list_node_t n_elem;
+} findme_t;
+
+extern void znode_stalker(znode_t *zp, whereami_t event);
+extern void znode_stalker_fini(znode_t *zp);
+#endif
 
 #endif /* _KERNEL */
 
