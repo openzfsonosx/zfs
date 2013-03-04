@@ -421,6 +421,14 @@ extern void zfs_unmap_page(page_t *, caddr_t);
 extern zil_get_data_t zfs_get_data;
 extern zil_replay_func_t *zfs_replay_vector[TX_MAX_TYPE];
 extern int zfsfstype;
+extern void zfs_znode_free(znode_t *zp);
+void zfs_perm_init(znode_t *zp, znode_t *parent, int flag,
+                   vattr_t *vap, dmu_tx_t *tx, cred_t *cr);
+void zfs_time_stamper(znode_t *zp, uint_t flag, dmu_tx_t *tx);
+int zfs_attach_vnode(znode_t *zp);
+uint32_t zfs_getbsdflags(znode_t *zp);
+void zfs_setbsdflags(znode_t *zp, uint32_t bsdflags);
+void zfs_time_stamper_locked(znode_t *zp, uint_t flag, dmu_tx_t *tx);
 
 #endif /* _KERNEL */
 

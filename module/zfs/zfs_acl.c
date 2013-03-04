@@ -1885,7 +1885,7 @@ zfs_acl_ids_overquota(zfs_sb_t *zsb, zfs_acl_ids_t *acl_ids)
  * Retrieve a files ACL
  */
 int
-zfs_getacl(znode_t *zp, vsecattr_t *vsecp, boolean_t skipaclchk, cred_t *cr)
+zfs_getacl(znode_t *zp, kauth_acl_t *vsecp, boolean_t skipaclchk, cred_t *cr)
 {
 #if 0
 	zfs_acl_t	*aclp;
@@ -2041,7 +2041,7 @@ zfs_vsec_2_aclp(zfs_sb_t *zsb, umode_t obj_mode,
  * Set a files ACL
  */
 int
-zfs_setacl(znode_t *zp, vsecattr_t *vsecp, boolean_t skipaclchk, cred_t *cr)
+zfs_setacl(znode_t *zp, struct kauth_acl *vsecp, boolean_t skipaclchk, cred_t *cr)
 {
 	int		error=0;
 #if 0
