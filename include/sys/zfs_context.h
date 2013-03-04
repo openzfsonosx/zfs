@@ -35,6 +35,8 @@
 #ifndef _SYS_ZFS_CONTEXT_H
 #define	_SYS_ZFS_CONTEXT_H
 
+typedef int minor_t;
+
 #ifdef _KERNEL
 
 #include <sys/zfs_context_kernel.h>

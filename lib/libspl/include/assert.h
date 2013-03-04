@@ -50,10 +50,13 @@ __assert_c99(const char *expr, const char *file, int line, const char *func)
 #undef VERIFY
 #undef ASSERT
 
-#define	VERIFY	verify
-#define	ASSERT	assert
-
-extern void __assert(const char *, const char *, int);
+#ifdef DEBUG
+#define	VERIFY(x)	verify(x)
+#define	ASSERT(x)	assert(x)
+#else
+#define	VERIFY(x)	verify(x)
+#define	ASSERT(x)	((void)0)
+#endif
 
 /* BEGIN CSTYLED */
 #define	VERIFY3_IMPL(LEFT, OP, RIGHT, TYPE) do { \
@@ -73,7 +76,7 @@ extern void __assert(const char *, const char *, int);
 #define	VERIFY3U(x, y, z)	VERIFY3_IMPL(x, y, z, uint64_t)
 #define	VERIFY3P(x, y, z)	VERIFY3_IMPL(x, y, z, uintptr_t)
 
-#ifdef NDEBUG
+#ifndef DEBUG
 #define	ASSERT3S(x, y, z)	((void)0)
 #define	ASSERT3U(x, y, z)	((void)0)
 #define	ASSERT3P(x, y, z)	((void)0)
@@ -83,6 +86,6 @@ extern void __assert(const char *, const char *, int);
 #define	ASSERT3U(x, y, z)	VERIFY3U(x, y, z)
 #define	ASSERT3P(x, y, z)	VERIFY3P(x, y, z)
 #define	ASSERTV(x)		x
-#endif  /* NDEBUG */
+#endif  /* DEBUG */
 
 #endif  /* _LIBSPL_ASSERT_H */
