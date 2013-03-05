@@ -1178,8 +1178,12 @@ zio_taskq_dispatch(zio_t *zio, enum zio_taskq_type q, boolean_t cutinline)
 	 * to dispatch the zio to another taskq at the same time.
 	 */
 	ASSERT(taskq_empty_ent(&zio->io_tqent));
-	taskq_dispatch_ent(spa->spa_zio_taskq[t][q],
-	    (task_func_t *)zio_execute, zio, flags, &zio->io_tqent);
+	//taskq_dispatch_ent(spa->spa_zio_taskq[t][q],
+    //   (task_func_t *)zio_execute, zio, flags, &zio->io_tqent);
+    taskq_ent_t *tqe;
+	tqe = (taskq_ent_t *)taskq_dispatch(spa->spa_zio_taskq[t][q],
+                                        (task_func_t *)zio_execute, zio, flags);
+    memcpy(&zio->io_tqent, tqe, sizeof(zio->io_tqent));
 }
 
 static boolean_t

@@ -301,19 +301,21 @@ dbuf_init(void)
 
 retry:
 	h->hash_table_mask = hsize - 1;
-#if defined(_KERNEL) && defined(HAVE_SPL)
-	/* Large allocations which do not require contiguous pages
-	 * should be using vmem_alloc() in the linux kernel */
-	h->hash_table = vmem_zalloc(hsize * sizeof (void *), KM_PUSHPAGE);
-#else
-	h->hash_table = kmem_zalloc(hsize * sizeof (void *), KM_NOSLEEP);
-#endif
+
+    printf("[dbuf] init hsize is 0x%llx mask is 0x%llx\n", hsize, h->hash_table_mask);
+
+	h->hash_table = kmem_zalloc(hsize * sizeof (void *), KM_PUSHPAGE);
+
 	if (h->hash_table == NULL) {
 		/* XXX - we should really return an error instead of assert */
 		ASSERT(hsize > (1ULL << 10));
 		hsize >>= 1;
 		goto retry;
 	}
+
+    printf("[dbuf] hash_table allocated %llu bytes (hsize %llu)\n",
+           hsize * sizeof (void *),
+           hsize);
 
 	dbuf_cache = kmem_cache_create("dmu_buf_impl_t",
 	    sizeof (dmu_buf_impl_t),
