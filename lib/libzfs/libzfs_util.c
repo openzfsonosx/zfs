@@ -1096,9 +1096,10 @@ zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 
     fprintf(stderr, "zfs_ioctl(%d) sending ... \r\n", request);
 
-	zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
+    // This is broken
+	//zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
+	zc->zc_history = NULL;
 	error = app_ioctl(hdl->libzfs_fd, request, zc);
-    fprintf(stderr, "pew pew\r\n");
 	if (hdl->libzfs_log_str) {
 		free(hdl->libzfs_log_str);
 		hdl->libzfs_log_str = NULL;
