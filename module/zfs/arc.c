@@ -2210,6 +2210,7 @@ arc_adapt_thread(void)
 		(void) cv_timedwait_interruptible(&arc_reclaim_thr_cv,
 		    &arc_reclaim_thr_lock, (ddi_get_lbolt() + hz));
 		CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_thr_lock);
+
 	}
 
 	arc_thread_exit = 0;
@@ -4764,6 +4765,7 @@ l2arc_feed_thread(void)
 		 */
 		next = l2arc_write_interval(begin, size, wrote);
 		spa_config_exit(spa, SCL_L2ARC, dev);
+
 	}
 
 	l2arc_thread_exit = 0;

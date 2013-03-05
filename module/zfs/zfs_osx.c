@@ -103,6 +103,9 @@ kern_return_t zfs_start (kmod_info_t * ki, void * d)
 
     printf("ZFS: Loaded module v0.01. Pool version -1\n");
 
+    //if ((error = zvol_init()) != 0)
+    //   goto out1;
+
 	/*
 	 * Initialize our context globals
 	 */
@@ -126,7 +129,7 @@ kern_return_t zfs_start (kmod_info_t * ki, void * d)
 	zfs_znode_init();
 
 	/*
-	 * Initialize /dev/zfs
+	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
 	 */
 	zfs_ioctl_init();
 
@@ -141,7 +144,7 @@ kern_return_t zfs_start (kmod_info_t * ki, void * d)
 
 kern_return_t zfs_stop (kmod_info_t * ki, void * d)
 {
-    printf("Attempting to unload ZFS...\n");
+    printf("ZFS: Attempting to unload ...\n");
 
 #if 0
 	if (zfs_active_fs_count != 0 ||
@@ -152,17 +155,11 @@ kern_return_t zfs_stop (kmod_info_t * ki, void * d)
 	}
 #endif
 
+    zfs_ioctl_fini();
+    zvol_fini();
     zfs_vfsops_fini();
-
-    printf(" .. vfsops\n");
-
 	zfs_znode_fini();
 
-    printf(" .. znode\n");
-
-    zfs_ioctl_fini();
-
-    printf(" .. ioctl\n");
 	//kmem_fini();
 
 	//zfs_context_fini();

@@ -2754,8 +2754,9 @@ static void
 zfs_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx)
 {
 	zfs_creat_t *zct = arg;
-
+    printf("+ zfs_create_cb\n");
 	zfs_create_fs(os, cr, zct->zct_zplprops, tx);
+    printf("- zfs_create_cb\n");
 }
 
 #define	ZFS_PROP_UNDEFINED	((uint64_t)-1)

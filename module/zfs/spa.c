@@ -3304,6 +3304,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	nvpair_t *elem;
 	int c;
 
+    printf("+spa_create\n");
 	/*
 	 * If this pool already exists, return failure.
 	 */
@@ -3516,6 +3517,8 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa->spa_minref = refcount_count(&spa->spa_refcount);
 
 	mutex_exit(&spa_namespace_lock);
+
+    printf("-spa_create\n");
 
 	return (0);
 }
