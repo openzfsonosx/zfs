@@ -101,6 +101,8 @@
 
 extern int aok;
 
+#define fstat_blk fstat
+
 /*
  * ZFS debugging
  */
@@ -492,6 +494,7 @@ extern void vn_close(vnode_t *vp);
 #define	vn_is_readonly(vp)		B_FALSE
 
 extern vnode_t *rootdir;
+#define	getrootdir() rootdir
 
 #include <sys/file.h>		/* for FREAD, FWRITE, etc */
 
