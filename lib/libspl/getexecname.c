@@ -30,6 +30,7 @@
 #include <pthread.h>
 #include <limits.h>
 
+#if 0
 const char *
 getexecname(void)
 {
@@ -55,3 +56,4 @@ getexecname(void)
 	pthread_mutex_unlock(&mtx);
 	return ptr;
 }
+#endif
