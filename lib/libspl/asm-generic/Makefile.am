@@ -11,7 +11,9 @@ COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
 EXTRA_DIST = $(atomic_SOURCE)
 
 # Generates assembly to simplify inclusion in ../Makefile.am
-all-am:
+all-am: atomic.S
+
+atomic.S: atomic.c
 	$(COMPILE) -c -S $(atomic_SOURCE) -o $(atomic_ASM)
 
 clean-generic:
