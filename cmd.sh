@@ -2,5 +2,14 @@
 cmd=$1
 shift
 
-export DYLD_LIBRARY_PATH=./lib/libnvpair/.libs/:./lib/libuutil/.libs/:./lib/libzpool/.libs/:./lib/libzfs/.libs/
-exec cmd/$cmd/$cmd $*
+topdir=`pwd`
+for lib in nvpair uutil zpool zfs; do
+	export DYLD_LIBRARY_PATH=$topdir/lib/lib${lib}/.libs:$DYLD_LIBRARY_PATH
+done
+for cmd in zdb zfs zpool ztest; do
+	export PATH=${topdir}/cmd/${cmd}/.libs:$PATH
+done
+
+echo PATH=$PATH
+echo DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH
+exec ./cmd/$cmd/.libs/$cmd $*
