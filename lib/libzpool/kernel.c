@@ -1047,19 +1047,18 @@ umem_out_of_memory(void)
 void
 kernel_init(int mode)
 {
-    size_t len;
+	size_t len;
+	int ret;
 
 	umem_nofail_callback(umem_out_of_memory);
 
-    len = sizeof(physmem);
-    sysctlbyname("hw.memsize", &physmem, &len, NULL, 0);
-	//physmem = sysconf(_SC_PHYS_PAGES);
-    // "hw.pagesize"
-    // Is there a problem that ZOL thinks "physmem" is in pages,
-    // and OSX it is in bytes?
+	len = sizeof(physmem);
+	ret = sysctlbyname("hw.memsize", &physmem, &len, NULL, 0);
+
+	physmem /= PAGESIZE;
 
 	dprintf("physmem = %llu pages (%.2f GB)\n", physmem,
-	    (double)physmem * sysconf(_SC_PAGE_SIZE) / (1ULL << 30));
+	    (double)physmem * PAGESIZE / (1ULL << 30));
 
 	(void) snprintf(hw_serial, sizeof (hw_serial), "%ld",
 	    (mode & FWRITE) ? gethostid() : 0);
