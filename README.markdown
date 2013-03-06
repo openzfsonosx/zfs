@@ -1,8 +1,5 @@
 This is a very early alpha of ZFS on OSX, to be the next generation of MacZFS.
-Currently, it builds only zfs.kext, which is the core of ZFS functionality
-in the XNU kernel.  The build will continue
-past the completion of zfs.kext and on to the yet-unported userspace, yielding
-lots of errors.  Test this with the expectation of a kernel panic.
+Test this with the expectation of a kernel panic.
 zfs.kext depends upon spl.kext, so start with that repository.
 
 It is tested primarily on Mac OS 10.8.2 and secondarily on 10.6.8, with
