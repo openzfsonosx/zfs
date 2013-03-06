@@ -24,10 +24,8 @@
  * Use is subject to license terms.
  */
 
-#include <time.h>
-#include <sys/time.h>
-#include <stdlib.h>
-#include <stdio.h>
+#include <sys/types.h>
+#include <mach/mach_time.h>
 
 hrtime_t
 gethrtime(void)
@@ -37,6 +35,7 @@ gethrtime(void)
     if (start == 0)
         start = mach_absolute_time();
 
-    return zfs_abs_to_nano(mach_absolute_time() - start);
+    return mach_absolute_time() - start;
+    //return zfs_abs_to_nano(mach_absolute_time() - start);
 }
 
