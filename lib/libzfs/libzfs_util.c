@@ -610,16 +610,42 @@ libzfs_print_on_error(libzfs_handle_t *hdl, boolean_t printerr)
 	hdl->libzfs_printerr = printerr;
 }
 
+#define	MAX_LINE_LEN	4096
 static int
 libzfs_module_loaded(const char *module)
 {
-	const char path_prefix[] = "/sys/module/";
-	char path[256];
+	char *line = NULL, *modname = NULL;
+	FILE *fp = NULL;
+	int ret = 0;
 
-	memcpy(path, path_prefix, sizeof(path_prefix) - 1);
-	strcpy(path + sizeof(path_prefix) - 1, module);
+	if (asprintf(&modname, "net.lundman.%s", module) == -1)
+		return (0);
 
-	return (access(path, F_OK) == 0);
+	fp = popen("/usr/sbin/kextstat", "r");
+	if (fp == NULL)
+		goto out;
+
+	line = calloc(MAX_LINE_LEN, sizeof(char));
+	while ((line = fgets(line, MAX_LINE_LEN, fp)) != NULL) {
+		char *linep, *word;
+
+		linep = line;
+		while ((word = strsep(&linep, " \t")) != NULL) {
+			if (strcmp(word, modname) == 0) {
+				ret = 1;
+				goto out;
+			}
+		}
+	}
+
+out:
+	if (line)
+		free(line);
+	if (fp)
+		pclose(fp);
+	if (modname)
+		free(modname);
+	return (ret);
 }
 
 int
@@ -627,6 +653,10 @@ libzfs_run_process(const char *path, char *argv[], int flags)
 {
 	pid_t pid;
 	int rc, devnull_fd;
+	char **argp;
+
+	for (argp = &argv[0]; *argp; argp++)
+		printf("%s: %s\n", __func__, *argp);
 
 	pid = vfork();
 	if (pid == 0) {
@@ -662,27 +692,37 @@ libzfs_run_process(const char *path, char *argv[], int flags)
 int
 libzfs_load_module(const char *module)
 {
-	char *argv[4] = {"/sbin/modprobe", "-q", (char *)module, (char *)0};
+	char *argv[4] = {"/sbin/kextload", NULL, (char *)0};
+	char *modpath = NULL;
+	int ret;
+	
+	ret = asprintf(&modpath, "/System/Library/Extensions/%s.kext", module);
+	if (ret == -1)
+		return (errno);
+	ret = 0;
 
-	if (libzfs_module_loaded(module))
-		return 0;
+	argv[1] = modpath;
+	if (!libzfs_module_loaded(module))
+		ret = libzfs_run_process("/sbin/kextload", argv, 0);
 
-	return libzfs_run_process("/sbin/modprobe", argv, 0);
+	free(modpath);
+	return (ret);
 }
+
+#define	MODLOAD_CMD \
+	"/sbin/kextload /System/Library/Extensions/zfs.kext"
 
 libzfs_handle_t *
 libzfs_init(void)
 {
 	libzfs_handle_t *hdl;
 
-#if LINUX
 	if (libzfs_load_module("zfs") != 0) {
 		(void) fprintf(stderr, gettext("Failed to load ZFS module "
 			       "stack.\nLoad the module manually by running "
-			       "'insmod <location>/zfs.ko' as root.\n"));
+			       "'" MODLOAD_CMD "' as root.\n"));
 		return (NULL);
 	}
-#endif
 
 	if ((hdl = calloc(1, sizeof (libzfs_handle_t))) == NULL) {
 		return (NULL);
@@ -694,23 +734,11 @@ libzfs_init(void)
 		if (errno == ENOENT)
 			(void) fprintf(stderr,
 			     gettext("Verify the ZFS module stack is "
-			     "loaded by running '/sbin/modprobe zfs'.\n"));
+			     "loaded by running '" MODLOAD_CMD "' as root.\n"));
 
 		free(hdl);
 		return (NULL);
 	}
-
-#ifdef HAVE_SETMNTENT
-	if ((hdl->libzfs_mnttab = setmntent(MNTTAB, "r")) == NULL) {
-#else
-	if ((hdl->libzfs_mnttab = fopen(MNTTAB, "r")) == NULL) {
-#endif
-		(void) close(hdl->libzfs_fd);
-		free(hdl);
-		return (NULL);
-	}
-
-	hdl->libzfs_sharetab = fopen("/etc/dfs/sharetab", "r");
 
 	zfs_prop_init();
 	zpool_prop_init();
@@ -1061,13 +1089,13 @@ zcmd_read_dst_nvlist(libzfs_handle_t *hdl, zfs_cmd_t *zc, nvlist_t **nvlp)
 char *
 dgettext(const char *domain, const char *msgid)
 {
-        return (msgid);
+        return ((char *)(uintptr_t)msgid);
 }
 
 char *
 gettext(const char *msg)
 {
-        return (msg);
+        return ((char *)(uintptr_t)msg);
 }
 
 int
@@ -1094,19 +1122,14 @@ zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 {
 	int error;
 
-    fprintf(stderr, "zfs_ioctl(%d) sending ... \r\n", request);
-
-    // This is broken
 	//zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
-	zc->zc_history = NULL;
+	zc->zc_history = 0;
 	error = app_ioctl(hdl->libzfs_fd, request, zc);
 	if (hdl->libzfs_log_str) {
 		free(hdl->libzfs_log_str);
 		hdl->libzfs_log_str = NULL;
 	}
 	zc->zc_history = 0;
-
-    fprintf(stderr, "zfs_ioctl(%d) done %d \r\n", error);
 
 	return (error);
 }
