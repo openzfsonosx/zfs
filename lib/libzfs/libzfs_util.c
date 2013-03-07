@@ -1086,18 +1086,6 @@ zcmd_read_dst_nvlist(libzfs_handle_t *hdl, zfs_cmd_t *zc, nvlist_t **nvlp)
 	return (0);
 }
 
-char *
-dgettext(const char *domain, const char *msgid)
-{
-        return ((char *)(uintptr_t)msgid);
-}
-
-char *
-gettext(const char *msg)
-{
-        return ((char *)(uintptr_t)msg);
-}
-
 int
 app_ioctl(int libzfsfd, unsigned long zfs_ioc_call, zfs_cmd_t *zc)
 {

@@ -27,6 +27,7 @@
 
 #include <libnvpair.h>
 #include <libzfs.h>
+#include <sys/zfs_context.h>
 
 #ifdef	__cplusplus
 extern "C" {

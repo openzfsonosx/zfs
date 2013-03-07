@@ -79,6 +79,13 @@
 #include <sys/fm/fs/zfs.h>
 #include <sys/sunddi.h>
 
+#ifdef HAVE_GETTEXT
+#include <libintl.h>
+#else
+#define	gettext(str) (str)
+#define	dgettext(domain, str) (str)
+#endif
+
 /*
  * Stack
  */
