@@ -69,6 +69,7 @@ vdev_missing_close(vdev_t *vd)
 static int
 vdev_missing_io_start(zio_t *zio)
 {
+    printf("vdev_missing_io_start\n");
 	zio->io_error = ENOTSUP;
 	return (ZIO_PIPELINE_CONTINUE);
 }

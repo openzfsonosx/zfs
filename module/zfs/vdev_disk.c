@@ -415,6 +415,8 @@ vdev_disk_io_start(zio_t *zio)
 #endif
 	int flags, error;
 
+    printf("vdev_disk_io_start\n");
+
 	if (zio->io_type == ZIO_TYPE_IOCTL) {
 		zio_vdev_io_bypass(zio);
 
@@ -461,7 +463,7 @@ vdev_disk_io_start(zio_t *zio)
 				 * and will call vdev_disk_ioctl_done()
 				 * upon completion.
 				 */
-				return;
+				return ZIO_PIPELINE_STOP;;
 			} else if (error == ENOTSUP || error == ENOTTY) {
 				/*
 				 * If we get ENOTSUP or ENOTTY, we know that
