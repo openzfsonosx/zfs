@@ -27,7 +27,12 @@
 #ifndef	_LIBUUTIL_IMPL_H
 #define	_LIBUUTIL_IMPL_H
 
-
+#ifdef HAVE_GETTEXT
+#include <libintl.h>
+#else
+#define	gettext(str)		(str)
+#define	dgettext(domain, str)	(str)
+#endif
 
 #include <libuutil.h>
 #include <pthread.h>

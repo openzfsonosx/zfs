@@ -24,6 +24,13 @@
  * Copyright (c) 2011 Gunnar Beutner
  */
 
+#ifdef HAVE_GETTEXT
+#include <libintl.h>
+#else
+#define	gettext(str)		(str)
+#define	dgettext(domain, str)	(str)
+#endif
+
 struct sa_handle_impl;
 
 typedef struct sa_share_fsinfo {

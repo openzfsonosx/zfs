@@ -26,6 +26,7 @@
 #define	_ZFS_UTIL_H
 
 #include <libzfs.h>
+#include <sys/zfs_context.h>
 
 #ifdef	__cplusplus
 extern "C" {
