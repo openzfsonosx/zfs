@@ -101,7 +101,7 @@ zfs_vfs_sysctl(int *name, __unused u_int namelen, user_addr_t oldp, size_t *oldl
 kern_return_t zfs_start (kmod_info_t * ki, void * d)
 {
 
-    printf("ZFS: Loaded module v0.01. Pool version -1\n");
+    printf("ZFS: Loading module ...\n");
 
     //if ((error = zvol_init()) != 0)
     //   goto out1;

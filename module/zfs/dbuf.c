@@ -302,7 +302,7 @@ dbuf_init(void)
 retry:
 	h->hash_table_mask = hsize - 1;
 
-    printf("[dbuf] init hsize is 0x%llx mask is 0x%llx\n", hsize, h->hash_table_mask);
+    //printf("[dbuf] init hsize is 0x%llx mask is 0x%llx\n", hsize, h->hash_table_mask);
 
 	h->hash_table = kmem_zalloc(hsize * sizeof (void *), KM_PUSHPAGE);
 
@@ -313,9 +313,9 @@ retry:
 		goto retry;
 	}
 
-    printf("[dbuf] hash_table allocated %llu bytes (hsize %llu)\n",
-           hsize * sizeof (void *),
-           hsize);
+    //printf("[dbuf] hash_table allocated %llu bytes (hsize %llu)\n",
+    //       hsize * sizeof (void *),
+    //      hsize);
 
 	dbuf_cache = kmem_cache_create("dmu_buf_impl_t",
 	    sizeof (dmu_buf_impl_t),

@@ -505,7 +505,7 @@ zio_wait_for_children(zio_t *zio, enum zio_child child, enum zio_wait_type wait)
 	if (*countp != 0) {
 		zio->io_stage >>= 1;
 		zio->io_stall = countp;
-		waiting = B_TRUE;
+        waiting = B_TRUE;
 	}
 	mutex_exit(&zio->io_lock);
 
@@ -1016,8 +1016,9 @@ zio_write_bp_init(zio_t *zio)
 	 * wait for them and then repeat this pipeline stage.
 	 */
 	if (zio_wait_for_children(zio, ZIO_CHILD_GANG, ZIO_WAIT_READY) ||
-	    zio_wait_for_children(zio, ZIO_CHILD_LOGICAL, ZIO_WAIT_READY))
+	    zio_wait_for_children(zio, ZIO_CHILD_LOGICAL, ZIO_WAIT_READY)) {
 		return (ZIO_PIPELINE_STOP);
+    }
 
 	if (!IO_IS_ALLOCATING(zio))
 		return (ZIO_PIPELINE_CONTINUE);
@@ -1119,7 +1120,6 @@ zio_write_bp_init(zio_t *zio)
 			zio->io_pipeline = ZIO_DDT_WRITE_PIPELINE;
 		}
 	}
-
 	return (ZIO_PIPELINE_CONTINUE);
 }
 
@@ -1248,6 +1248,7 @@ static inline void
 __zio_execute(zio_t *zio)
 {
 	zio->io_executor = curthread;
+
 
 	while (zio->io_stage < ZIO_STAGE_DONE) {
 		enum zio_stage pipeline = zio->io_pipeline;
@@ -2856,12 +2857,14 @@ zio_done(zio_t *zio)
 	if (zio_wait_for_children(zio, ZIO_CHILD_VDEV, ZIO_WAIT_DONE) ||
 	    zio_wait_for_children(zio, ZIO_CHILD_GANG, ZIO_WAIT_DONE) ||
 	    zio_wait_for_children(zio, ZIO_CHILD_DDT, ZIO_WAIT_DONE) ||
-	    zio_wait_for_children(zio, ZIO_CHILD_LOGICAL, ZIO_WAIT_DONE))
+	    zio_wait_for_children(zio, ZIO_CHILD_LOGICAL, ZIO_WAIT_DONE)) {
 		return (ZIO_PIPELINE_STOP);
+    }
 
 	for (c = 0; c < ZIO_CHILD_TYPES; c++)
-		for (w = 0; w < ZIO_WAIT_TYPES; w++)
+		for (w = 0; w < ZIO_WAIT_TYPES; w++) {
 			ASSERT(zio->io_children[c][w] == 0);
+        }
 
 	if (zio->io_bp != NULL) {
 		ASSERT(zio->io_bp->blk_pad[0] == 0);
@@ -3110,7 +3113,7 @@ zio_done(zio_t *zio)
 	for (pio = zio_walk_parents(zio); pio != NULL; pio = pio_next) {
 		zio_link_t *zl = zio->io_walk_link;
 		pio_next = zio_walk_parents(zio);
-		zio_remove_child(pio, zio, zl);
+	zio_remove_child(pio, zio, zl);
 		zio_notify_parent(pio, zio, ZIO_WAIT_DONE);
 	}
 
