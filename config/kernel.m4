@@ -11,9 +11,12 @@ AC_DEFUN([ZFS_AC_CONFIG_KERNEL], [
 	dnl # -Wall -fno-strict-aliasing -Wstrict-prototypes and other
 	dnl # compiler options are added by the kernel build system.
 	KERNELCPPFLAGS="$KERNELCPPFLAGS $NO_UNUSED_BUT_SET_VARIABLE"
-	KERNELCPPFLAGS="$KERNELCPPFLAGS -DHAVE_SPL -D_KERNEL"
-	KERNELCPPFLAGS="$KERNELCPPFLAGS -DTEXT_DOMAIN=\\\"zfs-linux-kernel\\\""
-	KERNELCPPFLAGS="$KERNELCPPFLAGS  -Wall -g -nostdinc -mkernel -D_KERNEL -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT -I/Users/lundman/src/zfs/osx.zfs/x/zfs/include -I/Users/lundman/src/zfs/osx.zfs/x/spl/include -I/System/Library/Frameworks/Kernel.framework/PrivateHeaders -I/System/Library/Frameworks/Kernel.framework/Headers -DZFS_META_VERSION=\"0.6.0\" -DZFS_META_RELEASE=\"rc12\" -DZFS_DEBUG_STR=\"alpha\" -DHAVE_SPL=1 "
+	KERNELCPPFLAGS="$KERNELCPPFLAGS -D_KERNEL -DKERNEL -DKERNEL_PRIVATE -mkernel"
+	KERNELCPPFLAGS="$KERNELCPPFLAGS -DAPPLE -DNeXT -DZFS_DEBUG_STR=\"alpha\""
+	KERNELCPPFLAGS="$KERNELCPPFLAGS -DTEXT_DOMAIN=\\\"zfs-kernel\\\""
+	KERNELCPPFLAGS="$KERNELCPPFLAGS -Wall -g -nostdinc -DZFS_DEBUG_STR=\"alpha\""
+	KERNELCPPFLAGS="$KERNELCPPFLAGS -DZFS_META_VERSION=\"\$(ZFS_META_VERSION)\""
+	KERNELCPPFLAGS="$KERNELCPPFLAGS -DZFS_META_RELEASE=\"\$(ZFS_META_RELEASE)\""
 
 	AC_SUBST(KERNELCPPFLAGS)
 ])
