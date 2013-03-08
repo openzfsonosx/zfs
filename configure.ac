@@ -30,8 +30,9 @@
  * CDDL HEADER END
  */
 
-AC_INIT(m4_esyscmd([awk '/^Name:/ {print $2}' META | tr -d '\n']),
-	m4_esyscmd([awk '/^Version:/ {print $2}' META | tr -d '\n']))
+m4_define([NAME], m4_esyscmd([awk '/^Name:/ {print $2}' META | tr -d '\n']))
+m4_define([VERS], m4_esyscmd([awk '/^Version:/ {print $2}' META | tr -d '\n']))
+AC_INIT(NAME, VERS)
 AC_LANG(C)
 ZFS_AC_META
 AC_CONFIG_AUX_DIR([config])
