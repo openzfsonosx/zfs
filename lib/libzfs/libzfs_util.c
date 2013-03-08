@@ -489,6 +489,7 @@ zpool_standard_error_fmt(libzfs_handle_t *hdl, int error, const char *fmt, ...)
 int
 no_memory(libzfs_handle_t *hdl)
 {
+    abort();
 	return (zfs_error(hdl, EZFS_NOMEM, "internal error"));
 }
 
@@ -695,7 +696,7 @@ libzfs_load_module(const char *module)
 	char *argv[4] = {"/sbin/kextload", NULL, (char *)0};
 	char *modpath = NULL;
 	int ret;
-	
+
 	ret = asprintf(&modpath, "/System/Library/Extensions/%s.kext", module);
 	if (ret == -1)
 		return (errno);
@@ -1080,8 +1081,10 @@ int
 zcmd_read_dst_nvlist(libzfs_handle_t *hdl, zfs_cmd_t *zc, nvlist_t **nvlp)
 {
 	if (nvlist_unpack((void *)(uintptr_t)zc->zc_nvlist_dst,
-	    zc->zc_nvlist_dst_size, nvlp, 0) != 0)
+               zc->zc_nvlist_dst_size, nvlp, 0) != 0) {
+        printf("nvlist_unpack failed\n");
 		return (no_memory(hdl));
+    }
 
 	return (0);
 }

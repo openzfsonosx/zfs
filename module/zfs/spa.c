@@ -6013,7 +6013,6 @@ spa_sync(spa_t *spa, uint64_t txg)
 	 */
 	spa_config_enter(spa, SCL_STATE, FTAG, RW_READER);
 	while (list_head(&spa->spa_state_dirty_list) != NULL) {
-        printf("spa_sync 0th loop\n");
 		/*
 		 * We need the write lock here because, for aux vdevs,
 		 * calling vdev_config_dirty() modifies sav_config.
@@ -6122,7 +6121,6 @@ spa_sync(spa_t *spa, uint64_t txg)
 		 * We hold SCL_STATE to prevent vdev open/close/etc.
 		 * while we're attempting to write the vdev labels.
 		 */
-        printf("spa_sync 2nd loop\n");
 		spa_config_enter(spa, SCL_STATE, FTAG, RW_READER);
 
 		if (list_is_empty(&spa->spa_config_dirty_list)) {

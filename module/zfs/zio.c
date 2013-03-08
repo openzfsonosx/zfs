@@ -22,6 +22,11 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
  * Copyright (c) 2011 Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2013 MacZFS team. All rights reserved.
+ *
+ * Changed taskq_ent_ API calls to OSX SPL versions.
+ *  - lundman
+ *
  */
 
 #include <sys/zfs_context.h>
@@ -645,8 +650,6 @@ zio_create(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 			zio->io_gang_leader = pio->io_gang_leader;
 		zio_add_child(pio, zio);
 	}
-
-	//taskq_init_ent(&zio->io_tqent);
 
 	return (zio);
 }
