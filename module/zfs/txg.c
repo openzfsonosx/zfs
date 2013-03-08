@@ -125,8 +125,6 @@ txg_sync_start(dsl_pool_t *dp)
 
 	mutex_enter(&tx->tx_sync_lock);
 
-	printf("pool %p\n", dp);
-
 	ASSERT(tx->tx_threads == 0);
 
 	tx->tx_threads = 2;
@@ -185,7 +183,6 @@ txg_sync_stop(dsl_pool_t *dp)
 {
 	tx_state_t *tx = &dp->dp_tx;
 
-	printf("pool %p\n", dp);
 	/*
 	 * Finish off any work in progress.
 	 */
@@ -435,7 +432,7 @@ txg_sync_thread(dsl_pool_t *dp)
 		    !tx->tx_exiting && timer > 0 &&
 		    tx->tx_synced_txg >= tx->tx_sync_txg_waiting &&
 		    tx->tx_quiesced_txg == 0) {
-			printf("waiting; tx_synced=%llu waiting=%llu dp=%p\n",
+			dprintf("waiting; tx_synced=%llu waiting=%llu dp=%p\n",
 			    tx->tx_synced_txg, tx->tx_sync_txg_waiting, dp);
 			txg_thread_wait(tx, &cpr, &tx->tx_sync_more_cv, timer);
 			delta = ddi_get_lbolt() - start;
@@ -471,7 +468,7 @@ txg_sync_thread(dsl_pool_t *dp)
 		vdev_get_stats(spa->spa_root_vdev, &th->th_vs1);
 		dsl_pool_txg_history_put(th);
 
-		printf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
+		dprintf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
 		    txg, tx->tx_quiesce_txg_waiting, tx->tx_sync_txg_waiting);
 		mutex_exit(&tx->tx_sync_lock);
 
@@ -536,7 +533,7 @@ txg_quiesce_thread(dsl_pool_t *dp)
 			txg_thread_exit(tx, &cpr, &tx->tx_quiesce_thread);
 
 		txg = tx->tx_open_txg;
-		printf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
+		dprintf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
 		    txg, tx->tx_quiesce_txg_waiting,
 		    tx->tx_sync_txg_waiting);
 		mutex_exit(&tx->tx_sync_lock);
@@ -546,7 +543,7 @@ txg_quiesce_thread(dsl_pool_t *dp)
 		/*
 		 * Hand this txg off to the sync thread.
 		 */
-		printf("quiesce done, handing off txg %llu\n", txg);
+		dprintf("quiesce done, handing off txg %llu\n", txg);
 		tx->tx_quiesced_txg = txg;
 		cv_broadcast(&tx->tx_sync_more_cv);
 		cv_broadcast(&tx->tx_quiesce_done_cv);
@@ -619,7 +616,7 @@ txg_wait_open(dsl_pool_t *dp, uint64_t txg)
 		txg = tx->tx_open_txg + 1;
 	if (tx->tx_quiesce_txg_waiting < txg)
 		tx->tx_quiesce_txg_waiting = txg;
-	printf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
+	dprintf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
 	    txg, tx->tx_quiesce_txg_waiting, tx->tx_sync_txg_waiting);
 	while (tx->tx_open_txg < txg) {
 		cv_broadcast(&tx->tx_quiesce_more_cv);
