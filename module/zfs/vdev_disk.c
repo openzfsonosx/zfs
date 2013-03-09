@@ -51,7 +51,7 @@ typedef struct vdev_disk_buf {
 #endif /*!__APPLE__*/
 
 static int
-vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *ashift)
+vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 {
 	vdev_disk_t *dvd = NULL;
 #ifdef __APPLE__
@@ -103,7 +103,8 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *ashift)
 	context = vfs_context_create((vfs_context_t)0);
 
 	/* Obtain an opened/referenced vnode for the device. */
-	if ((error = vnode_open(vd->vdev_path, spa_mode, 0, 0, &devvp, context))) {
+	error = vnode_open(vd->vdev_path, spa_mode(vd->vdev_spa), 0, 0, &devvp, context);
+	if (error) {
 		goto out;
 	}
 	if (!vnode_isblk(devvp)) {
@@ -140,7 +141,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *ashift)
 		error = EINVAL;
 		goto out;
 	}
-	*psize = blkcnt * (uint64_t)blksize;
+	*size = blkcnt * (uint64_t)blksize;
 
 	/*
 	 *  ### APPLE TODO ###
@@ -198,18 +199,18 @@ out:
 
 			(void) snprintf(buf, len, "%ss0", vd->vdev_path);
 
-			if (ldi_open_by_name(buf, spa_mode, kcred,
+			if (ldi_open_by_name(buf, spa_mode(vd->vdev_spa), kcred,
 			    &lh, zfs_li) == 0) {
 				spa_strfree(vd->vdev_path);
 				vd->vdev_path = buf;
 				vd->vdev_wholedisk = 1ULL;
-				(void) ldi_close(lh, spa_mode, kcred);
+				(void) ldi_close(lh, spa_mode(vd->vdev_spa), kcred);
 			} else {
 				kmem_free(buf, len);
 			}
 		}
 
-		error = ldi_open_by_name(vd->vdev_path, spa_mode, kcred,
+		error = ldi_open_by_name(vd->vdev_path, spa_mode(vd->vdev_spa), kcred,
 		    &dvd->vd_lh, zfs_li);
 
 		/*
@@ -219,7 +220,7 @@ out:
 		    ldi_get_devid(dvd->vd_lh, &devid) == 0) {
 			if (ddi_devid_compare(devid, dvd->vd_devid) != 0) {
 				error = EINVAL;
-				(void) ldi_close(dvd->vd_lh, spa_mode, kcred);
+				(void) ldi_close(dvd->vd_lh, spa_mode(vd->vdev_spa), kcred);
 				dvd->vd_lh = NULL;
 			}
 			ddi_devid_free(devid);
@@ -239,7 +240,7 @@ out:
 	 */
 	if (error != 0 && vd->vdev_devid != NULL)
 		error = ldi_open_by_devid(dvd->vd_devid, dvd->vd_minor,
-		    spa_mode, kcred, &dvd->vd_lh, zfs_li);
+		    spa_mode(vd->vdev_spa), kcred, &dvd->vd_lh, zfs_li);
 
 	/*
 	 * If all else fails, then try opening by physical path (if available)
@@ -250,7 +251,7 @@ out:
 	if (error) {
 		if (vd->vdev_physpath != NULL &&
 		    (dev = ddi_pathname_to_dev_t(vd->vdev_physpath)) != ENODEV)
-			error = ldi_open_by_dev(&dev, OTYP_BLK, spa_mode,
+			error = ldi_open_by_dev(&dev, OTYP_BLK, spa_mode(vd->vdev_spa),
 			    kcred, &dvd->vd_lh, zfs_li);
 
 		/*
@@ -259,7 +260,7 @@ out:
 		 * don't need to propagate its oddities to this edge condition.
 		 */
 		if (error && vd->vdev_path != NULL)
-			error = ldi_open_by_name(vd->vdev_path, spa_mode, kcred,
+			error = ldi_open_by_name(vd->vdev_path, spa_mode(vd->vdev_spa), kcred,
 			    &dvd->vd_lh, zfs_li);
 	}
 
@@ -294,7 +295,7 @@ out:
 	/*
 	 * Determine the actual size of the device.
 	 */
-	if (ldi_get_size(dvd->vd_lh, psize) != 0) {
+	if (ldi_get_size(dvd->vd_lh, size) != 0) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 		return (EINVAL);
 	}
@@ -340,11 +341,10 @@ vdev_disk_close(vdev_t *vd)
 #ifdef __APPLE__
 	if (dvd->vd_devvp != NULL) {
 		vfs_context_t context;
-		int fmode;
 
 		context = vfs_context_create((vfs_context_t)0);
 
-		(void) vnode_close(dvd->vd_devvp, spa_mode, context);
+		(void) vnode_close(dvd->vd_devvp, spa_mode(vd->vdev_spa), context);
 		(void) vfs_context_rele(context);
 	}
 #else
@@ -355,7 +355,7 @@ vdev_disk_close(vdev_t *vd)
 		ddi_devid_free(dvd->vd_devid);
 
 	if (dvd->vd_lh != NULL)
-		(void) ldi_close(dvd->vd_lh, spa_mode, kcred);
+		(void) ldi_close(dvd->vd_lh, spa_mode(vd->vdev_spa), kcred);
 #endif /* __APPLE__ */
 
 	kmem_free(dvd, sizeof (vdev_disk_t));
@@ -614,7 +614,9 @@ vdev_ops_t vdev_disk_ops = {
 	vdev_default_asize,
 	vdev_disk_io_start,
 	vdev_disk_io_done,
-	NULL,
-	VDEV_TYPE_DISK,		/* name of this vdev type */
+	NULL /* vdev_op_state_change */,
+	NULL /* vdev_op_hold */,
+	NULL /* vdev_op_rele */,
+	"VDEV_TYPE_DISK",	/* name of this vdev type */
 	B_TRUE			/* leaf vdev */
 };
