@@ -1069,7 +1069,7 @@ vdev_open_child(void *arg)
 {
 	vdev_t *vd = arg;
 
-	vd->vdev_open_thread = curthread;
+	vd->vdev_open_thread = (kthread_t *)curthread;
 	vd->vdev_open_error = vdev_open(vd);
 	vd->vdev_open_thread = NULL;
 }

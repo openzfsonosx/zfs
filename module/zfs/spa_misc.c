@@ -295,7 +295,7 @@ spa_config_tryenter(spa_t *spa, int locks, void *tag, krw_t rw)
 				spa_config_exit(spa, locks ^ (1 << i), tag);
 				return (0);
 			}
-			scl->scl_writer = curthread;
+			scl->scl_writer = (kthread_t *)curthread;
 		}
 		(void) refcount_add(&scl->scl_count, tag);
 		mutex_exit(&scl->scl_lock);
@@ -311,7 +311,7 @@ spa_config_enter(spa_t *spa, int locks, void *tag, krw_t rw)
 
 	for (i = 0; i < SCL_LOCKS; i++) {
 		spa_config_lock_t *scl = &spa->spa_config_lock[i];
-		if (scl->scl_writer == curthread)
+		if (scl->scl_writer == (kthread_t *)curthread)
 			wlocks_held |= (1 << i);
 		if (!(locks & (1 << i)))
 			continue;
@@ -327,7 +327,7 @@ spa_config_enter(spa_t *spa, int locks, void *tag, krw_t rw)
 				cv_wait(&scl->scl_cv, &scl->scl_lock);
 				scl->scl_write_wanted--;
 			}
-			scl->scl_writer = curthread;
+			scl->scl_writer = (kthread_t *)curthread;
 		}
 		(void) refcount_add(&scl->scl_count, tag);
 		mutex_exit(&scl->scl_lock);
@@ -366,7 +366,7 @@ spa_config_held(spa_t *spa, int locks, krw_t rw)
 		if (!(locks & (1 << i)))
 			continue;
 		if ((rw == RW_READER && !refcount_is_zero(&scl->scl_count)) ||
-		    (rw == RW_WRITER && scl->scl_writer == curthread))
+		    (rw == RW_WRITER && scl->scl_writer == (kthread_t *)curthread))
 			locks_held |= 1 << i;
 	}
 

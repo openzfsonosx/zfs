@@ -692,7 +692,7 @@ dsl_pool_sync_done(dsl_pool_t *dp, uint64_t txg)
 int
 dsl_pool_sync_context(dsl_pool_t *dp)
 {
-	return (curthread == dp->dp_tx.tx_sync_thread ||
+	return ((kthread_t *)curthread == dp->dp_tx.tx_sync_thread ||
 	    spa_is_initializing(dp->dp_spa));
 }
 

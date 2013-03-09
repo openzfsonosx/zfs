@@ -198,7 +198,7 @@ rrw_enter_write(rrwlock_t *rrl)
 		cv_wait(&rrl->rr_cv, &rrl->rr_lock);
 	}
 	rrl->rr_writer_wanted = B_FALSE;
-	rrl->rr_writer = curthread;
+	rrl->rr_writer = (kthread_t *)curthread;
 	mutex_exit(&rrl->rr_lock);
 }
 
@@ -254,7 +254,7 @@ rrw_held(rrwlock_t *rrl, krw_t rw)
 
 	mutex_enter(&rrl->rr_lock);
 	if (rw == RW_WRITER) {
-		held = (rrl->rr_writer == curthread);
+		held = (rrl->rr_writer == (kthread_t *)curthread);
 	} else {
 		held = (!refcount_is_zero(&rrl->rr_anon_rcount) ||
 		    !refcount_is_zero(&rrl->rr_linked_rcount));
