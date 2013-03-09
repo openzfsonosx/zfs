@@ -2153,7 +2153,7 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat, uint64_t bytes)
  * the arc_reclaim thread has been renamed to arc_adapt.
  */
 static void
-arc_adapt_thread(void)
+arc_adapt_thread(void *arg __unused)
 {
 	callb_cpr_t		cpr;
 	int64_t			prune;
@@ -4681,7 +4681,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
  * heart of the L2ARC.
  */
 static void
-l2arc_feed_thread(void)
+l2arc_feed_thread(void *arg __unused)
 {
 	callb_cpr_t cpr;
 	l2arc_dev_t *dev;
