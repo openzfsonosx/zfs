@@ -32,6 +32,8 @@
 #include <string.h>
 #include <mntent.h>
 #include <ctype.h> /* for isspace() */
+#include <errno.h>
+#include <unistd.h>
 #include <sys/mnttab.h>
 
 #include <sys/types.h>
@@ -164,21 +166,86 @@ getextmntent(FILE *fp, struct extmnttab *mp, int len)
 	return ret;
 }
 
-
-DIR *fdopendir(int fd)
+DIR *
+fdopendir(int fd)
 {
-    char fullpath[MAXPATHLEN];
-    DIR *d;
+	char fullpath[MAXPATHLEN];
 
-    if(fcntl(fd, F_GETPATH, fullpath) < 0) {
-        perror("fcntl");
-        fprintf(stderr, "tup error: Unable to convert file descriptor back to pathname in fdopendir() compat library.\n");
-        return NULL;
-    }
-    if(close(fd) < 0) {
-        return NULL;
-    }
+	if (fcntl(fd, F_GETPATH, fullpath) < 0) {
+		perror("fcntl");
+		return (NULL);
+	}
+	if (close(fd) < 0) {
+		return (NULL);
+	}
 
-    d = opendir(fullpath);
-    return d;
+	return (opendir(fullpath));
+}
+
+static int
+chdir_block_begin(int newroot_fd)
+{
+	int cwdfd, error;
+
+	cwdfd = open(".", O_RDONLY | O_DIRECTORY);
+	if (cwdfd == -1)
+		return (-1);
+
+	if (fchdir(newroot_fd) == -1) {
+		error = errno;
+		(void) close(cwdfd);
+		errno = error;
+		return (-1);
+	}
+	return (cwdfd);
+}
+
+static void
+chdir_block_end(int cwdfd)
+{
+	int error = errno;
+	(void) fchdir(cwdfd);
+	(void) close(cwdfd);
+	errno = error;
+}
+
+int
+openat64(int dirfd, const char *path, int flags, ...)
+{
+	int cwdfd, filefd;
+
+	if ((cwdfd = chdir_block_begin(dirfd)) == -1)
+		return (-1);
+
+	if ((flags & O_CREAT) != 0) {
+		va_list ap;
+		int mode;
+
+		va_start(ap, flags);
+		mode = va_arg(ap, int);
+		va_end(ap);
+
+		filefd = open(path, flags, mode);
+	} else
+		filefd = open(path, flags);
+
+	chdir_block_end(cwdfd);
+	return (filefd);
+}
+
+int
+fstatat64(int dirfd, const char *path, struct stat64 *statbuf, int flag)
+{
+	int cwdfd, error;
+
+	if ((cwdfd = chdir_block_begin(dirfd)) == -1)
+		return (-1);
+
+	if (flag == AT_SYMLINK_NOFOLLOW)
+		error = lstat64(path, statbuf);
+	else
+		error = stat64(path, statbuf);
+
+	chdir_block_end(cwdfd);
+	return (error);
 }
