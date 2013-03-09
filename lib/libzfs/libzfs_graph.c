@@ -395,7 +395,7 @@ iterate_children(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 	 * Iterate over all children
 	 */
 	for ((void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name));
-	    ioctl(hdl->libzfs_fd, ZFS_IOC_DATASET_LIST_NEXT, &zc) == 0;
+	    zfs_ioctl(hdl, ZFS_IOC_DATASET_LIST_NEXT, &zc) == 0;
 	    (void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name))) {
 		/*
 		 * Get statistics for this dataset, to determine the type of the
@@ -403,7 +403,7 @@ iterate_children(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 		 * since been removed, and we're pretty much screwed anyway.
 		 */
 		zc.zc_objset_stats.dds_origin[0] = '\0';
-		if (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0)
+		if (zfs_ioctl(hdl, ZFS_IOC_OBJSET_STATS, &zc) != 0)
 			continue;
 
 		if (zc.zc_objset_stats.dds_origin[0] != '\0') {
@@ -439,7 +439,7 @@ iterate_children(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 	bzero(&zc, sizeof (zc));
 
 	for ((void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name));
-	    ioctl(hdl->libzfs_fd, ZFS_IOC_SNAPSHOT_LIST_NEXT, &zc) == 0;
+	    zfs_ioctl(hdl, ZFS_IOC_SNAPSHOT_LIST_NEXT, &zc) == 0;
 	    (void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name))) {
 
 		/*
@@ -447,7 +447,7 @@ iterate_children(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 		 * dataset and clone statistics.  If this fails, the dataset has
 		 * since been removed, and we're pretty much screwed anyway.
 		 */
-		if (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0)
+		if (zfs_ioctl(hdl, ZFS_IOC_OBJSET_STATS, &zc) != 0)
 			continue;
 
 		/*
@@ -480,7 +480,7 @@ external_dependents(libzfs_handle_t *hdl, zfs_graph_t *zgp, const char *dataset)
 	 * iterate_children() only checks the children.
 	 */
 	(void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name));
-	if (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0)
+	if (zfs_ioctl(hdl, ZFS_IOC_OBJSET_STATS, &zc) != 0)
 		return (B_TRUE);
 
 	if (zc.zc_objset_stats.dds_origin[0] != '\0') {

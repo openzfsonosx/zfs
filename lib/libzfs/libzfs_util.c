@@ -489,7 +489,6 @@ zpool_standard_error_fmt(libzfs_handle_t *hdl, int error, const char *fmt, ...)
 int
 no_memory(libzfs_handle_t *hdl)
 {
-    abort();
 	return (zfs_error(hdl, EZFS_NOMEM, "internal error"));
 }
 
@@ -1081,10 +1080,9 @@ int
 zcmd_read_dst_nvlist(libzfs_handle_t *hdl, zfs_cmd_t *zc, nvlist_t **nvlp)
 {
 	if (nvlist_unpack((void *)(uintptr_t)zc->zc_nvlist_dst,
-               zc->zc_nvlist_dst_size, nvlp, 0) != 0) {
-        printf("nvlist_unpack failed\n");
+            zc->zc_nvlist_dst_size, nvlp, 0) != 0) {
 		return (no_memory(hdl));
-    }
+	}
 
 	return (0);
 }
@@ -1115,7 +1113,9 @@ zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 
 	//zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
 	zc->zc_history = 0;
+	printf("ioctl(%d, %d, %p)\n", hdl->libzfs_fd, request, zc);
 	error = app_ioctl(hdl->libzfs_fd, request, zc);
+	printf("request cmd#%d ret %d\n", request - ZFS_IOC, error);
 	if (hdl->libzfs_log_str) {
 		free(hdl->libzfs_log_str);
 		hdl->libzfs_log_str = NULL;

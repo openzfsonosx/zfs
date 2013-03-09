@@ -262,12 +262,13 @@ zpool_get_features(zpool_handle_t *zhp)
 int
 zpool_refresh_stats(zpool_handle_t *zhp, boolean_t *missing)
 {
-	zfs_cmd_t zc = { "\0", "\0", "\0", "\0", 0 };
+	zfs_cmd_t zc;
 	int error;
 	nvlist_t *config;
 	libzfs_handle_t *hdl = zhp->zpool_hdl;
 
 	*missing = B_FALSE;
+	bzero(&zc, sizeof(zc));
 	(void) strcpy(zc.zc_name, zhp->zpool_name);
 
 	if (zhp->zpool_config_size == 0)
@@ -277,13 +278,11 @@ zpool_refresh_stats(zpool_handle_t *zhp, boolean_t *missing)
 		return (-1);
 
 	for (;;) {
-		//if (zfs_ioctl(zhp->zpool_hdl->libzfs_fd, ZFS_IOC_POOL_STATS,
 		if (zfs_ioctl(zhp->zpool_hdl, ZFS_IOC_POOL_STATS,
 		    &zc) == 0) {
 			/*
 			 * The real error is returned in the zc_cookie field.
 			 */
-            printf("ioctl(POOL_STATS) returned error\n");
 			error = zc.zc_cookie;
 			break;
 		}

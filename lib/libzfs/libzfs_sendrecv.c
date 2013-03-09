@@ -1203,7 +1203,7 @@ dump_filesystem(zfs_handle_t *zhp, void *arg)
 
 	(void) snprintf(zc.zc_name, sizeof (zc.zc_name), "%s@%s",
 	    zhp->zfs_name, sdd->tosnap);
-	if (ioctl(zhp->zfs_hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0) {
+	if (zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_OBJSET_STATS, &zc) != 0) {
 		(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
 		    "WARNING: could not send %s@%s: does not exist\n"),
 		    zhp->zfs_name, sdd->tosnap);
@@ -1221,8 +1221,7 @@ dump_filesystem(zfs_handle_t *zhp, void *arg)
 		 */
 		(void) snprintf(zc.zc_name, sizeof (zc.zc_name), "%s@%s",
 		    zhp->zfs_name, sdd->fromsnap);
-		if (ioctl(zhp->zfs_hdl->libzfs_fd,
-		    ZFS_IOC_OBJSET_STATS, &zc) != 0) {
+		if (zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_OBJSET_STATS, &zc) != 0) {
 			missingfrom = B_TRUE;
 		}
 	}
@@ -1716,7 +1715,7 @@ recv_rename(libzfs_handle_t *hdl, const char *name, const char *tryname,
 			(void) printf("attempting rename %s to %s\n",
 			    zc.zc_name, zc.zc_value);
 		}
-		err = ioctl(hdl->libzfs_fd, ZFS_IOC_RENAME, &zc);
+		err = zfs_ioctl(hdl, ZFS_IOC_RENAME, &zc);
 		if (err == 0)
 			changelist_rename(clp, name, tryname);
 	} else {
@@ -1735,7 +1734,7 @@ recv_rename(libzfs_handle_t *hdl, const char *name, const char *tryname,
 			(void) printf("failed - trying rename %s to %s\n",
 			    zc.zc_name, zc.zc_value);
 		}
-		err = ioctl(hdl->libzfs_fd, ZFS_IOC_RENAME, &zc);
+		err = zfs_ioctl(hdl, ZFS_IOC_RENAME, &zc);
 		if (err == 0)
 			changelist_rename(clp, name, newname);
 		if (err && flags->verbose) {
@@ -1789,7 +1788,7 @@ recv_destroy(libzfs_handle_t *hdl, const char *name, int baselen,
 
 	if (flags->verbose)
 		(void) printf("attempting destroy %s\n", zc.zc_name);
-	err = ioctl(hdl->libzfs_fd, ZFS_IOC_DESTROY, &zc);
+	err = zfs_ioctl(hdl, ZFS_IOC_DESTROY, &zc);
 	if (err == 0) {
 		if (flags->verbose)
 			(void) printf("success\n");
@@ -2754,7 +2753,7 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 				    zc.zc_name);
 				return (zfs_error(hdl, EZFS_EXISTS, errbuf));
 			}
-			if (ioctl(hdl->libzfs_fd, ZFS_IOC_SNAPSHOT_LIST_NEXT,
+			if (zfs_ioctl(hdl, ZFS_IOC_SNAPSHOT_LIST_NEXT,
 			    &zc) == 0) {
 				zcmd_free_nvlists(&zc);
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
