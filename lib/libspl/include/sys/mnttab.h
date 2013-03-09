@@ -31,7 +31,9 @@
 #define _SYS_MNTTAB_H
 
 #include <stdio.h>
+#include <dirent.h>
 #include <mntent.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 
 #ifdef MNTTAB
@@ -71,5 +73,13 @@ extern int getmntany(FILE *fp, struct mnttab *mgetp, struct mnttab *mrefp);
 extern char *mntopt(char **p);
 extern char *hasmntopt(struct mnttab *mnt, char *opt);
 extern int getmntent(FILE *fp, struct mnttab *mgetp);
+extern DIR *fdopendir(int fd);
+extern int openat64(int, const char *, int, ...);
+
+#define	AT_FDCWD		-100
+#define	AT_SYMLINK_NOFOLLOW	0x100
+#define	AT_REMOVEDIR		0x200
+#define	AT_SYMLINK_FOLLOW	0x400
+extern int fstatat64(int, const char *, struct stat64 *, int);
 
 #endif
