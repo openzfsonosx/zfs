@@ -1089,34 +1089,20 @@ zcmd_read_dst_nvlist(libzfs_handle_t *hdl, zfs_cmd_t *zc, nvlist_t **nvlp)
 }
 
 int
-app_ioctl(int libzfsfd, unsigned long zfs_ioc_call, zfs_cmd_t *zc)
-{
-        int err = 0;
-
-        err = ioctl(libzfsfd, zfs_ioc_call, zc);
-        /* normal path, zfsdev_ioctl returns the real error in zc_ioc_error */
-        if (err == 0 ) {
-                err = zc->zc_ioc_error;
-                errno = zc->zc_ioc_error;
-        } else {
-                /* something evil happened in the ioctl syscall */
-                errno = err;
-        }
-
-        return(err);
-}
-
-
-int
 zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 {
 	int error;
 
 	//zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
 	zc->zc_history = 0;
-	printf("ioctl(%d, %d, %p)\n", hdl->libzfs_fd, request, zc);
-	error = app_ioctl(hdl->libzfs_fd, request, zc);
-	printf("request cmd#%d ret %d\n", request - ZFS_IOC, error);
+	error = ioctl(hdl->libzfs_fd, request, zc);
+
+        /* normal path, zfsdev_ioctl returns the real error in zc_ioc_error */
+	if (error == 0)
+		error = errno = zc->zc_ioc_error;
+	else
+		errno = error;
+
 	if (hdl->libzfs_log_str) {
 		free(hdl->libzfs_log_str);
 		hdl->libzfs_log_str = NULL;
