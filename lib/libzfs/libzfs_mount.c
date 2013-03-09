@@ -275,7 +275,7 @@ static int
 do_mount(const char *src, const char *mntpt, char *opts)
 {
 	char *argv[8] = {
-	    "/bin/mount",
+	    "/sbin/mount",
 	    "-t", MNTTYPE_ZFS,
 	    "-o", opts,
 	    (char *)src,
@@ -386,7 +386,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	char mountpoint[ZFS_MAXPROPLEN];
 	char mntopts[MNT_LINE_MAX];
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
-	int remount = 0, rc;
+	int remount, rc;
 
 	if (options == NULL) {
 		(void) strlcpy(mntopts, MNTOPT_DEFAULTS, sizeof (mntopts));
@@ -429,6 +429,9 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 
 	/* Create the directory if it doesn't already exist */
 	if (lstat(mountpoint, &buf) != 0) {
+		char path[MAXPATHLEN];
+		FILE *fp;
+
 		if (mkdirp(mountpoint, 0755) != 0) {
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "failed to create mountpoint"));
@@ -436,6 +439,11 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 			    dgettext(TEXT_DOMAIN, "cannot mount '%s'"),
 			    mountpoint));
 		}
+		/* Create the mountpoint cookie file. */
+		snprintf(path, MAXPATHLEN, "%s/%s", mountpoint, MOUNT_POINT_COOKIE);
+		fp = fopen(path, "w");
+		if (fp)
+			fclose(fp);
 	}
 
 	/*
@@ -1069,7 +1077,6 @@ libzfs_dataset_cmp(const void *a, const void *b)
  * we have the list of all filesystems, we iterate over them in order and mount
  * and/or share each one.
  */
-#pragma weak zpool_mount_datasets = zpool_enable_datasets
 int
 zpool_enable_datasets(zpool_handle_t *zhp, const char *mntopts, int flags)
 {
@@ -1140,8 +1147,6 @@ mountpoint_compare(const void *a, const void *b)
 	return (strcmp(mountb, mounta));
 }
 
-/* alias for 2002/240 */
-#pragma weak zpool_unmount_datasets = zpool_disable_datasets
 /*
  * Unshare and unmount all datasets within the given pool.  We don't want to
  * rely on traversing the DSL to discover the filesystems within the pool,
@@ -1153,34 +1158,29 @@ int
 zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 {
 	int used, alloc;
-	struct mnttab entry;
 	size_t namelen;
 	char **mountpoints = NULL;
 	zfs_handle_t **datasets = NULL;
 	libzfs_handle_t *hdl = zhp->zpool_hdl;
+	mnttab_node_t *mntn;
 	int i;
 	int ret = -1;
 	int flags = (force ? MS_FORCE : 0);
 
 	namelen = strlen(zhp->zpool_name);
 
-	rewind(hdl->libzfs_mnttab);
 	used = alloc = 0;
-	while (getmntent(hdl->libzfs_mnttab, &entry) == 0) {
-		/*
-		 * Ignore non-ZFS entries.
-		 */
-		if (entry.mnt_fstype == NULL ||
-		    strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
-			continue;
+	for (mntn = libzfs_mnttab_first(hdl); mntn != NULL;
+	     mntn = libzfs_mnttab_next(hdl, mntn)) {
+		struct mnttab *mt = &mntn->mtn_mt;
 
 		/*
 		 * Ignore filesystems not within this pool.
 		 */
-		if (entry.mnt_mountp == NULL ||
-		    strncmp(entry.mnt_special, zhp->zpool_name, namelen) != 0 ||
-		    (entry.mnt_special[namelen] != '/' &&
-		    entry.mnt_special[namelen] != '\0'))
+		if (mt->mnt_mountp == NULL ||
+		    strncmp(mt->mnt_special, zhp->zpool_name, namelen) != 0 ||
+		    (mt->mnt_special[namelen] != '/' &&
+		    mt->mnt_special[namelen] != '\0'))
 			continue;
 
 		/*
@@ -1217,8 +1217,8 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 			}
 		}
 
-		if ((mountpoints[used] = zfs_strdup(hdl,
-		    entry.mnt_mountp)) == NULL)
+		mountpoints[used] = zfs_strdup(hdl, mt->mnt_mountp);
+		if (mountpoints[used] == NULL)
 			goto out;
 
 		/*
@@ -1226,7 +1226,7 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 		 * is only used to determine if we need to remove the underlying
 		 * mountpoint, so failure is not fatal.
 		 */
-		datasets[used] = make_dataset_handle(hdl, entry.mnt_special);
+		datasets[used] = make_dataset_handle(hdl, mt->mnt_special);
 
 		used++;
 	}

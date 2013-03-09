@@ -67,20 +67,9 @@ struct extmnttab {
 	uint_t mnt_minor;
 };
 
-extern int getmntany(FILE *fp, struct mnttab *mp, struct mnttab *mpref);
-//extern int _sol_getmntent(FILE *fp, struct mnttab *mp);
-extern int getextmntent(FILE *fp, struct extmnttab *mp, int len);
-
-//static inline char *_sol_hasmntopt(struct mnttab *mnt, char *opt)
-//{
-//	struct mntent mnt_new;
-//
-//	mnt_new.mnt_opts = mnt->mnt_mntopts;
-//
-//	return hasmntopt(&mnt_new, opt);
-//}
-
-//#define hasmntopt _sol_hasmntopt
-//#define getmntent _sol_getmntent
+extern int getmntany(FILE *fp, struct mnttab *mgetp, struct mnttab *mrefp);
+extern char *mntopt(char **p);
+extern char *hasmntopt(struct mnttab *mnt, char *opt);
+extern int getmntent(FILE *fp, struct mnttab *mgetp);
 
 #endif

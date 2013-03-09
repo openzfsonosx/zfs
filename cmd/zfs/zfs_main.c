@@ -5791,7 +5791,7 @@ share_mount(int op, int argc, char **argv)
 
 		free(dslist);
 	} else if (argc == 0) {
-		struct mnttab entry;
+		mnttab_node_t *mntn;
 
 		if ((op == OP_SHARE) || (options != NULL)) {
 			(void) fprintf(stderr, gettext("missing filesystem "
@@ -5800,20 +5800,17 @@ share_mount(int op, int argc, char **argv)
 		}
 
 		/*
-		 * When mount is given no arguments, go through /etc/mtab and
-		 * display any active ZFS mounts.  We hide any snapshots, since
-		 * they are controlled automatically.
+		 * When mount is given no arguments, display any active ZFS
+		 * mounts.  We hide any snapshots, since they are controlled
+		 * automatically.
 		 */
-		rewind(mnttab_file);
-		while (getmntent(mnttab_file, &entry) == 0) {
-			if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0 ||
-			    strchr(entry.mnt_special, '@') != NULL)
-				continue;
-
-			(void) printf("%-30s  %s\n", entry.mnt_special,
-			    entry.mnt_mountp);
+		for (mntn = libzfs_mnttab_first(g_zfs); mntn;
+		     mntn = libzfs_mnttab_next(g_zfs, mntn)) {
+			struct mnttab *mt = &mntn->mtn_mt;
+			if (strchr(mt->mnt_special, '@') == NULL)
+				(void) printf("%-30s  %s\n",
+				    mt->mnt_special, mt->mnt_mountp);
 		}
-
 	} else {
 		zfs_handle_t *zhp;
 
@@ -6042,12 +6039,12 @@ unshare_unmount(int op, int argc, char **argv)
 		 * the special type (dataset name), and walk the result in
 		 * reverse to make sure to get any snapshots first.
 		 */
-		struct mnttab entry;
 		uu_avl_pool_t *pool;
 		uu_avl_t *tree = NULL;
 		unshare_unmount_node_t *node;
 		uu_avl_index_t idx;
 		uu_avl_walk_t *walk;
+		mnttab_node_t *mntn;
 
 		if (argc != 0) {
 			(void) fprintf(stderr, gettext("too many arguments\n"));
@@ -6061,18 +6058,19 @@ unshare_unmount(int op, int argc, char **argv)
 		    ((tree = uu_avl_create(pool, NULL, UU_DEFAULT)) == NULL))
 			nomem();
 
-		rewind(mnttab_file);
-		while (getmntent(mnttab_file, &entry) == 0) {
+		for (mntn = libzfs_mnttab_first(g_zfs); mntn;
+		     mntn = libzfs_mnttab_next(g_zfs, mntn)) {
+			struct mnttab *mt = &mntn->mtn_mt;
 
 			/* ignore non-ZFS entries */
-			if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
+			if (strcmp(mt->mnt_fstype, MNTTYPE_ZFS) != 0)
 				continue;
 
 			/* ignore snapshots */
-			if (strchr(entry.mnt_special, '@') != NULL)
+			if (strchr(mt->mnt_special, '@') != NULL)
 				continue;
 
-			if ((zhp = zfs_open(g_zfs, entry.mnt_special,
+			if ((zhp = zfs_open(g_zfs, mt->mnt_special,
 			    ZFS_TYPE_FILESYSTEM)) == NULL) {
 				ret = 1;
 				continue;
@@ -6111,7 +6109,7 @@ unshare_unmount(int op, int argc, char **argv)
 
 			node = safe_malloc(sizeof (unshare_unmount_node_t));
 			node->un_zhp = zhp;
-			node->un_mountp = safe_strdup(entry.mnt_mountp);
+			node->un_mountp = safe_strdup(mt->mnt_mountp);
 
 			uu_avl_node_init(node, &node->un_avlnode, pool);
 
