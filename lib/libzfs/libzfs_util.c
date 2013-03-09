@@ -655,9 +655,6 @@ libzfs_run_process(const char *path, char *argv[], int flags)
 	int rc, devnull_fd;
 	char **argp;
 
-	for (argp = &argv[0]; *argp; argp++)
-		printf("%s: %s\n", __func__, *argp);
-
 	pid = vfork();
 	if (pid == 0) {
 		devnull_fd = open("/dev/null", O_WRONLY);
