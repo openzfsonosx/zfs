@@ -293,7 +293,7 @@ get_stats_ioctl(zfs_handle_t *zhp, zfs_cmd_t *zc)
 
 	(void) strlcpy(zc->zc_name, zhp->zfs_name, sizeof (zc->zc_name));
 
-	while (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, zc) != 0) {
+	while (zfs_ioctl(hdl, ZFS_IOC_OBJSET_STATS, zc) != 0) {
 		if (errno == ENOMEM) {
 			if (zcmd_expand_dst_nvlist(hdl, zc) != 0) {
 				return (-1);
@@ -321,7 +321,7 @@ get_recvd_props_ioctl(zfs_handle_t *zhp)
 
 	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
 
-	while (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_RECVD_PROPS, &zc) != 0) {
+	while (zfs_ioctl(hdl, ZFS_IOC_OBJSET_RECVD_PROPS, &zc) != 0) {
 		if (errno == ENOMEM) {
 			if (zcmd_expand_dst_nvlist(hdl, &zc) != 0) {
 				return (-1);
@@ -602,10 +602,16 @@ zfs_close(zfs_handle_t *zhp)
 	free(zhp);
 }
 
-typedef struct mnttab_node {
-	struct mnttab mtn_mt;
-	avl_node_t mtn_node;
-} mnttab_node_t;
+mnttab_node_t *
+libzfs_mnttab_first(libzfs_handle_t *hdl)
+{
+	return (avl_first(&hdl->libzfs_mnttab_cache));
+}
+mnttab_node_t *
+libzfs_mnttab_next(libzfs_handle_t *hdl, mnttab_node_t *cur)
+{
+	return (AVL_NEXT(&hdl->libzfs_mnttab_cache, cur));
+}
 
 static int
 libzfs_mnttab_cache_compare(const void *arg1, const void *arg2)
@@ -632,20 +638,21 @@ libzfs_mnttab_init(libzfs_handle_t *hdl)
 void
 libzfs_mnttab_update(libzfs_handle_t *hdl)
 {
-	struct mnttab entry;
+	int nitems;
+	struct statfs *sfsp;
 
-	rewind(hdl->libzfs_mnttab);
-	while (getmntent(hdl->libzfs_mnttab, &entry) == 0) {
+	nitems = getmntinfo(&sfsp, MNT_WAIT);
+	if (nitems == 0) {
+		(void) fprintf(stderr, gettext("no mounted filesystems\n"));
+		abort();
+	}
+	while (--nitems >= 0) {
 		mnttab_node_t *mtn;
 
-		if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
+		if (strcmp(sfsp->f_fstypename, MNTTYPE_ZFS) != 0)
 			continue;
-		mtn = zfs_alloc(hdl, sizeof (mnttab_node_t));
-		mtn->mtn_mt.mnt_special = zfs_strdup(hdl, entry.mnt_special);
-		mtn->mtn_mt.mnt_mountp = zfs_strdup(hdl, entry.mnt_mountp);
-		mtn->mtn_mt.mnt_fstype = zfs_strdup(hdl, entry.mnt_fstype);
-		mtn->mtn_mt.mnt_mntopts = zfs_strdup(hdl, entry.mnt_mntopts);
-		avl_add(&hdl->libzfs_mnttab_cache, mtn);
+		libzfs_mnttab_add(hdl, sfsp->f_mntfromname, sfsp->f_mntonname,
+		    NULL);
 	}
 }
 
@@ -659,7 +666,8 @@ libzfs_mnttab_fini(libzfs_handle_t *hdl)
 		free(mtn->mtn_mt.mnt_special);
 		free(mtn->mtn_mt.mnt_mountp);
 		free(mtn->mtn_mt.mnt_fstype);
-		free(mtn->mtn_mt.mnt_mntopts);
+		if (mtn->mtn_mt.mnt_mntopts)
+			free(mtn->mtn_mt.mnt_mntopts);
 		free(mtn);
 	}
 	avl_destroy(&hdl->libzfs_mnttab_cache);
@@ -704,20 +712,72 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 	return (ENOENT);
 }
 
+static void
+libzfs_mnttab_root(const char *mountp)
+{
+#ifdef NOTYET
+	/* For a root file system, add a volume icon. */
+	ssize_t attrsize;
+	uint16_t finderinfo[16];
+	struct stat sbuf;
+	char *path;
+
+	/* Tag the root directory as having a custom icon. */
+	attrsize = getxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
+	    sizeof (finderinfo), 0, 0);
+	if (attrsize != sizeof (finderinfo))
+		(void) memset(&finderinfo, 0, sizeof(finderinfo));
+	finderinfo[4] |= OSSwapHostToBigInt16(0x0400);
+
+	(void) setxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
+	    sizeof (finderinfo), 0, 0);
+
+	if (asprintf(&path, "%s/%s", mountpoint, MOUNT_POINT_CUSTOM_ICON) == -1)
+		return;
+	if ((stat(path, &sbuf) != 0 || sbuf.st_size == 0) &&
+	    (stat(CUSTOM_ICON_PATH, &sbuf) == 0 && sbuf.st_size > 0)) {
+		FILE *dstfp, srcfp;
+		void *buf;
+
+		srcfp = fopen(CUSTOM_ICON_PATH, "r");
+		dstfp = fopen(path, "w");
+		if (srcfp && dstfp) {
+			/* Copy the custom icon to the root directory */
+			buf = malloc(sbuf.st_size);
+			if (fread(buf, 1, sbuf.st_size, srcfile) == sbuf.st_size)
+				(void) fwrite(buf, 1, sbuf.st_size, file);
+			free(buf);
+			/* Init the custom icon's Finder Info. */
+			(void) memset(&finderinfo, 0, sizeof (finderinfo));
+			finderinfo[4] = OSSwapHostToBigInt16(0x4000);
+			(void) setxattr(path, XATTR_FINDERINFO_NAME,
+			    &finderinfo, sizeof (finderinfo), 0, 0);
+		}
+		if (srcfp)
+			fclose(srcfp);
+		if (dstfp)
+			fclose(dstfp);
+	}
+	free(path);
+#endif
+}
+
 void
 libzfs_mnttab_add(libzfs_handle_t *hdl, const char *special,
     const char *mountp, const char *mntopts)
 {
 	mnttab_node_t *mtn;
 
-	if (avl_numnodes(&hdl->libzfs_mnttab_cache) == 0)
-		return;
 	mtn = zfs_alloc(hdl, sizeof (mnttab_node_t));
 	mtn->mtn_mt.mnt_special = zfs_strdup(hdl, special);
 	mtn->mtn_mt.mnt_mountp = zfs_strdup(hdl, mountp);
 	mtn->mtn_mt.mnt_fstype = zfs_strdup(hdl, MNTTYPE_ZFS);
-	mtn->mtn_mt.mnt_mntopts = zfs_strdup(hdl, mntopts);
+	if (mntopts != NULL)
+		mtn->mtn_mt.mnt_mntopts = zfs_strdup(hdl, mntopts);
 	avl_add(&hdl->libzfs_mnttab_cache, mtn);
+
+	if (strcmp(mountp, "/") == 0)
+		libzfs_mnttab_root(mountp);
 }
 
 void
@@ -2576,7 +2636,7 @@ zfs_prop_get_userquota_common(zfs_handle_t *zhp, const char *propname,
 	if (err)
 		return (err);
 
-	err = ioctl(zhp->zfs_hdl->libzfs_fd, ZFS_IOC_USERSPACE_ONE, &zc);
+	err = zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_USERSPACE_ONE, &zc);
 	if (err)
 		return (err);
 
@@ -2646,7 +2706,7 @@ zfs_prop_get_written_int(zfs_handle_t *zhp, const char *propname,
 		(void) strlcat(zc.zc_value, snapname, sizeof (zc.zc_value));
 	}
 
-	err = ioctl(zhp->zfs_hdl->libzfs_fd, ZFS_IOC_SPACE_WRITTEN, &zc);
+	err = zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_SPACE_WRITTEN, &zc);
 	if (err)
 		return (err);
 
@@ -2685,7 +2745,7 @@ zfs_get_snapused_int(zfs_handle_t *firstsnap, zfs_handle_t *lastsnap,
 	(void) strlcpy(zc.zc_name, lastsnap->zfs_name, sizeof (zc.zc_name));
 	(void) strlcpy(zc.zc_value, firstsnap->zfs_name, sizeof (zc.zc_value));
 
-	err = ioctl(lastsnap->zfs_hdl->libzfs_fd, ZFS_IOC_SPACE_SNAPS, &zc);
+	err = zfs_ioctl(lastsnap->zfs_hdl, ZFS_IOC_SPACE_SNAPS, &zc);
 	if (err)
 		return (err);
 
@@ -2786,7 +2846,7 @@ check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
 		slash = parent + strlen(parent);
 	(void) strncpy(zc.zc_name, parent, slash - parent);
 	zc.zc_name[slash - parent] = '\0';
-	if (ioctl(hdl->libzfs_fd, ZFS_IOC_OBJSET_STATS, &zc) != 0 &&
+	if (zfs_ioctl(hdl, ZFS_IOC_OBJSET_STATS, &zc) != 0 &&
 	    errno == ENOENT) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "no such pool '%s'"), zc.zc_name);
@@ -4006,7 +4066,7 @@ zvol_create_link_common(libzfs_handle_t *hdl, const char *dataset, int ifexists)
 	/*
 	 * Issue the appropriate ioctl.
 	 */
-	if (ioctl(hdl->libzfs_fd, ZFS_IOC_CREATE_MINOR, &zc) != 0) {
+	if (zfs_ioctl(hdl, ZFS_IOC_CREATE_MINOR, &zc) != 0) {
 		switch (errno) {
 		case EEXIST:
 			/*
@@ -4067,7 +4127,7 @@ zvol_remove_link(libzfs_handle_t *hdl, const char *dataset)
 	 * remove the link after timeout milliseconds return the failure.
 	 */
 	for (i = 0; i < timeout; i++) {
-		error = ioctl(hdl->libzfs_fd, ZFS_IOC_REMOVE_MINOR, &zc);
+		error = zfs_ioctl(hdl, ZFS_IOC_REMOVE_MINOR, &zc);
 		if (error && errno == EBUSY) {
 			usleep(1000);
 			continue;
@@ -4287,7 +4347,7 @@ zfs_smb_acl_mgmt(libzfs_handle_t *hdl, char *dataset, char *path,
 	default:
 		return (-1);
 	}
-	error = ioctl(hdl->libzfs_fd, ZFS_IOC_SMB_ACL, &zc);
+	error = zfs_ioctl(hdl, ZFS_IOC_SMB_ACL, &zc);
 	if (nvlist)
 		nvlist_free(nvlist);
 	return (error);
@@ -4342,8 +4402,7 @@ zfs_userspace(zfs_handle_t *zhp, zfs_userquota_prop_t type,
 		zfs_useracct_t *zua = buf;
 
 		zc.zc_nvlist_dst_size = sizeof (buf);
-		error = ioctl(zhp->zfs_hdl->libzfs_fd,
-		    ZFS_IOC_USERSPACE_MANY, &zc);
+		error = zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_USERSPACE_MANY, &zc);
 		if (error || zc.zc_nvlist_dst_size == 0)
 			break;
 
@@ -4486,7 +4545,7 @@ tryagain:
 
 	(void) strlcpy(zc.zc_name, zhp->zfs_name, ZFS_MAXNAMELEN);
 
-	if (ioctl(hdl->libzfs_fd, ZFS_IOC_GET_FSACL, &zc) != 0) {
+	if (zfs_ioctl(hdl, ZFS_IOC_GET_FSACL, &zc) != 0) {
 		(void) snprintf(errbuf, sizeof (errbuf),
 		    dgettext(TEXT_DOMAIN, "cannot get permissions on '%s'"),
 		    zc.zc_name);

@@ -38,6 +38,10 @@
 #include <libzfs.h>
 #include <libshare.h>
 
+#define	MOUNT_POINT_COOKIE		".autodiskmounted"
+#define	MOUNT_POINT_CUSTOMICON		".VolumeIcon.icns"
+#define	CUSTOM_ICON_PATH		"/System/Library/Filesystems/zfs.fs/Contents/Resources/VolumeIcon.icns"
+
 #if defined(HAVE_LIBTOPO)
 #include <fm/libtopo.h>
 #endif /* HAVE_LIBTOPO */

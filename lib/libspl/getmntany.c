@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <mntent.h>
+#include <ctype.h> /* for isspace() */
 #include <sys/mnttab.h>
 
 #include <sys/types.h>
@@ -110,27 +111,7 @@ hasmntopt(struct mnttab *mnt, char *opt)
 
 
 int
-getextmntent(FILE *fp, struct extmnttab *mp, int len)
-{
-	int ret;
-	struct stat64 st;
-
-	ret = getmntent(fp, (struct mnttab *) mp);
-	if (ret == 0) {
-		if (stat64(mp->mnt_mountp, &st) != 0) {
-			mp->mnt_major = 0;
-			mp->mnt_minor = 0;
-			return ret;
-		}
-		mp->mnt_major = major(st.st_dev);
-		mp->mnt_minor = minor(st.st_dev);
-	}
-
-	return ret;
-}
-
-
-int getmntent(FILE *fp, struct mnttab *mgetp)
+getmntent(FILE *fp, struct mnttab *mgetp)
 {
     static struct statfs *mntbufp = NULL;
     static unsigned int total   = 0;
@@ -160,6 +141,27 @@ int getmntent(FILE *fp, struct mnttab *mgetp)
     mntbufp = NULL;
 
     return -1; // EOF
+}
+
+
+int
+getextmntent(FILE *fp, struct extmnttab *mp, int len)
+{
+	int ret;
+	struct stat64 st;
+
+	ret = getmntent(fp, (struct mnttab *) mp);
+	if (ret == 0) {
+		if (stat64(mp->mnt_mountp, &st) != 0) {
+			mp->mnt_major = 0;
+			mp->mnt_minor = 0;
+			return ret;
+		}
+		mp->mnt_major = major(st.st_dev);
+		mp->mnt_minor = minor(st.st_dev);
+	}
+
+	return ret;
 }
 
 
