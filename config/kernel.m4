@@ -277,8 +277,15 @@ AC_DEFUN([ZFS_AC_SPL], [
 
 	AC_MSG_RESULT([$splsrc])
 	AC_MSG_CHECKING([spl build directory])
-	AS_IF([test -z "$splbuild"], [
-		splbuild=${splsrc}
+	AS_IF([test -n "$splsrc"], [
+		AS_IF(
+			[test -f "$splsrc/spl_config.h"], [splbuild=${splsrc}],
+			[test -f "$splsrc/include/spl_config.h"], [splbuild=${splsrc}/include]
+		)
+	])
+	AS_IF([test ! -d "$splbuild" -a ! -f "$splbuild/spl_config.h"], [
+		AC_MSG_RESULT([Not found])
+		AC_MSG_ERROR([*** Cannot determine SPL object directory])
 	])
 	AC_MSG_RESULT([$splbuild])
 
