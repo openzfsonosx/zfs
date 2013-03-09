@@ -647,7 +647,6 @@ libzfs_mnttab_update(libzfs_handle_t *hdl)
 		abort();
 	}
 	while (--nitems >= 0) {
-		mnttab_node_t *mtn;
 
 		if (strcmp(sfsp->f_fstypename, MNTTYPE_ZFS) != 0)
 			continue;
