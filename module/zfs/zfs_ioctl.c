@@ -1319,12 +1319,8 @@ zfs_ioc_pool_stats(zfs_cmd_t *zc)
 	int error;
 	int ret = 0;
 
-    printf("In  stats\n");
-
 	error = spa_get_stats(zc->zc_name, &config, zc->zc_value,
 	    sizeof (zc->zc_value));
-
-    printf("  spa_get_stats %d\n", error);
 
 	if (config != NULL) {
 		ret = put_nvlist(zc, config);
@@ -1340,7 +1336,6 @@ zfs_ioc_pool_stats(zfs_cmd_t *zc)
 		ret = error;
 	}
 
-    printf("Out stats \n");
 	return (ret);
 }
 
@@ -5099,63 +5094,60 @@ zfsdev_release(struct inode *ino, struct file *filp)
 	return (-error);
 }
 
+#define	CRED	((uintptr_t)NOCRED)
+
 static int
 zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct proc *p)
-//static long
-//zfsdev_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
 {
 	zfs_cmd_t *zc;
 	uint_t vec;
 	int error, rc;
-    cred_t *cr;
+	cred_t *cr;
 
-    vec = ZFS_IOC_NUM(cmd);
-    zc = (zfs_cmd_t *)data;
-    // 10a286 ctx = vfs_context_create(NULL) // again?
-    cr = (uintptr_t)NOCRED;    /* wants vfs_context_current() */
-    zc->zc_dev = dev;
-    error = zfs_ioc_vec[vec].zvec_secpolicy(zc, cr);
-    // 10a286 vfs_context_rele(ctx);
+	vec = cmd - ZFS_IOC;
+	if (vec >= sizeof(zfs_ioc_vec) / sizeof(zfs_ioc_vec[0]))
+		return (EINVAL);
 
-    printf("[zfs] Yay, got ioctl %d\n", vec);
+	zc = (zfs_cmd_t *)data;
+	zc->zc_dev = dev;
+	error = zfs_ioc_vec[vec].zvec_secpolicy(zc, cr);
+	printf("[zfs] got ioctl %d\n", vec);
+	delay(hz);
 
-    /*
-     * Ensure that all pool/dataset names are valid before we pass down to
-     * the lower layers.
-     */
-    if (error == 0) {
-        zc->zc_name[sizeof (zc->zc_name) - 1] = '\0';
-        switch (zfs_ioc_vec[vec].zvec_namecheck) {
-        case POOL_NAME:
-            if (pool_namecheck(zc->zc_name, NULL, NULL) != 0)
-                error = EINVAL;
-            break;
+	/*
+	 * Ensure that all pool/dataset names are valid before we pass down to
+	 * the lower layers.
+	 */
+	if (error == 0) {
+		zc->zc_name[sizeof (zc->zc_name) - 1] = '\0';
+		switch (zfs_ioc_vec[vec].zvec_namecheck) {
+		case POOL_NAME:
+			if (pool_namecheck(zc->zc_name, NULL, NULL) != 0)
+				error = EINVAL;
+			break;
+		case DATASET_NAME:
+			if (dataset_namecheck(zc->zc_name, NULL, NULL) != 0)
+				error = EINVAL;
+			break;
+		case NO_NAME:
+			break;
+		}
+	}
 
-        case DATASET_NAME:
-            if (dataset_namecheck(zc->zc_name, NULL, NULL) != 0)
-                error = EINVAL;
-            break;
+	if (error == 0)
+		error = zfs_ioc_vec[vec].zvec_func(zc);
 
-        case NO_NAME:
-            break;
-        }
-    }
+	if (error == 0 && zfs_ioc_vec[vec].zvec_his_log == B_TRUE)
+		zfs_log_history(zc);
 
-    if (error == 0)
-        error = zfs_ioc_vec[vec].zvec_func(zc);
-
-    if (error == 0 && zfs_ioc_vec[vec].zvec_his_log == B_TRUE)
-        zfs_log_history(zc);
-
-    /*
-     * Return the real error in zc_ioc_error so the ioctl
-     * call always does a copyout of the zc data
-     */
-    printf("[zfs] ioctl done %d\n", error);
-    zc->zc_ioc_error = error;
-    error = 0;
-
-    return (error);
+	/*
+	 * Return the real error in zc_ioc_error so the ioctl call always
+	 * does a copyout of the zc data
+	 */
+	printf("[zfs] ioctl done %d\n", error);
+	delay(hz);
+	zc->zc_ioc_error = error;
+	return (0);
 }
 
 static struct cdevsw zfs_cdevsw =
