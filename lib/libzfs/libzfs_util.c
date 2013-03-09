@@ -739,6 +739,7 @@ libzfs_init(void)
 		free(hdl);
 		return (NULL);
 	}
+	hdl->libzfs_mnttab_enable = B_TRUE;
 
 	zfs_prop_init();
 	zpool_prop_init();
