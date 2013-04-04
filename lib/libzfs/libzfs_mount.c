@@ -72,7 +72,6 @@
 #include <sys/mntent.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
-
 #include <libzfs.h>
 
 #include "libzfs_impl.h"
@@ -114,6 +113,11 @@ zfs_share_proto_t share_all_proto[] = {
 	PROTO_NFS,
 	PROTO_SMB,
 	PROTO_END
+};
+
+struct zfs_mount_args {
+    const char      *fspec;         /* block special device to mount */
+    int     flags;
 };
 
 /*
@@ -387,6 +391,10 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	char mntopts[MNT_LINE_MAX];
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	int remount, rc;
+#ifdef __APPLE__
+    struct zfs_mount_args mnt_args;
+    char  path[MAXPATHLEN];
+#endif
 
 	if (options == NULL) {
 		(void) strlcpy(mntopts, MNTOPT_DEFAULTS, sizeof (mntopts));
@@ -439,11 +447,16 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 			    dgettext(TEXT_DOMAIN, "cannot mount '%s'"),
 			    mountpoint));
 		}
+
+#if 0   // FIXME, removed. it seems odd we first create a file
+        // then we check the dir is empty
+
 		/* Create the mountpoint cookie file. */
 		snprintf(path, MAXPATHLEN, "%s/%s", mountpoint, MOUNT_POINT_COOKIE);
 		fp = fopen(path, "w");
 		if (fp)
 			fclose(fp);
+#endif
 	}
 
 	/*
@@ -460,7 +473,15 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	}
 
 	/* perform the mount */
+#if LINUX
 	rc = do_mount(zfs_get_name(zhp), mountpoint, mntopts);
+#else
+    printf("zfs_mount: unused options: \"%s\"\n", mntopts);
+    mnt_args.fspec = zfs_get_name(zhp);
+    rc = mount(MNTTYPE_ZFS, mountpoint, flags, &mnt_args);
+#endif
+
+
 	if (rc) {
 		/*
 		 * Generic errors are nasty, but there are just way too many
@@ -508,10 +529,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 static int
 unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
 {
-	int error;
-
-	error = do_unmount(mountpoint, flags);
-	if (error != 0) {
+    if (unmount(mountpoint, flags) != 0) {
 		return (zfs_error_fmt(hdl, EZFS_UMOUNTFAILED,
 		    dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
 		    mountpoint));
@@ -526,40 +544,43 @@ unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
 int
 zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
 {
-	libzfs_handle_t *hdl = zhp->zfs_hdl;
-	struct mnttab entry;
-	char *mntpt = NULL;
+    struct mnttab search = { 0 }, entry;
+    char *mntpt = NULL;
 
-	/* check to see if we need to unmount the filesystem */
-	if (mountpoint != NULL || ((zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) &&
-	    libzfs_mnttab_find(hdl, zhp->zfs_name, &entry) == 0)) {
-		/*
-		 * mountpoint may have come from a call to
-		 * getmnt/getmntany if it isn't NULL. If it is NULL,
-		 * we know it comes from libzfs_mnttab_find which can
-		 * then get freed later. We strdup it to play it safe.
-		 */
-		if (mountpoint == NULL)
-			mntpt = zfs_strdup(hdl, entry.mnt_mountp);
-		else
-			mntpt = zfs_strdup(hdl, mountpoint);
+    /* check to see if need to unmount the filesystem */
+    search.mnt_special = zhp->zfs_name;
+    search.mnt_fstype = MNTTYPE_ZFS;
+#ifndef __APPLE__
+    rewind(zhp->zfs_hdl->libzfs_mnttab);
+#endif /*!__APPLE__*/
+    if (mountpoint != NULL || ((zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) &&
+                               getmntany(zhp->zfs_hdl->libzfs_mnttab, &entry, &search) == 0)) {
+        /*
+         * mountpoint may have come from a call to
+         * getmnt/getmntany if it isn't NULL. If it is NULL,
+         * we know it comes from getmntany which can then get
+         * overwritten later. We strdup it to play it safe.
+         */
+        if (mountpoint == NULL)
+            mntpt = zfs_strdup(zhp->zfs_hdl, entry.mnt_mountp);
+        else
+            mntpt = zfs_strdup(zhp->zfs_hdl, mountpoint);
 
-		/*
-		 * Unshare and unmount the filesystem
-		 */
-		if (zfs_unshare_proto(zhp, mntpt, share_all_proto) != 0)
-			return (-1);
+        /*
+         * Unshare and unmount the filesystem
+         */
+        if (zfs_unshare_nfs(zhp, mntpt) != 0)
+            return (-1);
 
-		if (unmount_one(hdl, mntpt, flags) != 0) {
-			free(mntpt);
-			(void) zfs_shareall(zhp);
-			return (-1);
-		}
-		libzfs_mnttab_remove(hdl, zhp->zfs_name);
-		free(mntpt);
-	}
+        if (unmount_one(zhp->zfs_hdl, mntpt, flags) != 0) {
+            free(mntpt);
+            (void) zfs_share_nfs(zhp);
+            return (-1);
+        }
+        free(mntpt);
+    }
 
-	return (0);
+    return (0);
 }
 
 /*
