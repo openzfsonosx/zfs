@@ -207,15 +207,26 @@ dir_is_empty(const char *dirname)
 boolean_t
 is_mounted(libzfs_handle_t *zfs_hdl, const char *special, char **where)
 {
-	struct mnttab entry;
+    struct mnttab search = { 0 }, entry;
 
-	if (libzfs_mnttab_find(zfs_hdl, special, &entry) != 0)
-		return (B_FALSE);
+    /*
+     * Search for the entry in /etc/mnttab.  We don't bother getting the
+     * mountpoint, as we can just search for the special device.  This will
+     * also let us find mounts when the mountpoint is 'legacy'.
+     */
+    search.mnt_special = (char *)special;
+    search.mnt_fstype = MNTTYPE_ZFS;
 
-	if (where != NULL)
-		*where = zfs_strdup(zfs_hdl, entry.mnt_mountp);
+#ifndef __APPLE__
+    rewind(zfs_hdl->libzfs_mnttab);
+#endif
+    if (getmntany(zfs_hdl->libzfs_mnttab, &entry, &search) != 0)
+        return (B_FALSE);
 
-	return (B_TRUE);
+    if (where != NULL)
+        *where = zfs_strdup(zfs_hdl, entry.mnt_mountp);
+
+    return (B_TRUE);
 }
 
 boolean_t
@@ -430,7 +441,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	/*
 	 * Append zfsutil option so the mount helper allow the mount
 	 */
-	strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
+	//strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
 
 	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL))
 		return (0);

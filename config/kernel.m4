@@ -309,7 +309,7 @@ AC_DEFUN([ZFS_AC_SPL], [
 	AC_MSG_RESULT([$splsrcver])
 
 	SPL=${splsrc}
-	SPL_OBJ=${splbuild}
+	SPL_OBJ=${splbuild}/include
 	SPL_VERSION=${splsrcver}
 
 	AC_SUBST(SPL)

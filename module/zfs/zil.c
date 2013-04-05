@@ -1597,6 +1597,9 @@ zil_commit(zilog_t *zilog, uint64_t foid)
 {
 	uint64_t mybatch;
 
+    // OSX often has NULL zil for some reason
+    if (!zilog) return;
+
 	if (zilog->zl_sync == ZFS_SYNC_DISABLED)
 		return;
 

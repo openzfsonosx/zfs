@@ -786,6 +786,7 @@ zfs_domount(vfs_t *vfsp, char *osname, cred_t *cr)
 #ifdef __APPLE__
 		if (!vfs_isrdonly(vfsp))
 			zfs_unlinked_drain(zfsvfs);
+        zfsvfs->z_log = zil_open(zfsvfs->z_os, zfs_get_data);
 #else
 		uint_t readonly;
 		error = zfs_register_callbacks(vfsp);
