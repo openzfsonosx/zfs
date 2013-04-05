@@ -2750,7 +2750,15 @@ zfs_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx)
 {
 	zfs_creat_t *zct = arg;
     printf("+ zfs_create_cb\n");
-	zfs_create_fs(os, cr, zct->zct_zplprops, tx);
+    /*
+     * We have a clash between OSX and ZOL versions here. In the newer
+     * ZOL version, zfs_create_fs() now takes a zplprop list to create
+     * a new ZFS, whereas old OSX simply took an integer 'version'.
+     * We should update zfs_create_fs() to take the list of properties.
+     */
+
+	//zfs_create_fs(os, cr, zct->zct_zplprops, tx);
+	zfs_create_fs(os, cr, ZPL_VERSION_5, tx);
     printf("- zfs_create_cb\n");
 }
 

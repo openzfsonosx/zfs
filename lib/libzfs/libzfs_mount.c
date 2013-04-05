@@ -217,11 +217,9 @@ is_mounted(libzfs_handle_t *zfs_hdl, const char *special, char **where)
     search.mnt_special = (char *)special;
     search.mnt_fstype = MNTTYPE_ZFS;
 
-#ifndef __APPLE__
-    rewind(zfs_hdl->libzfs_mnttab);
-#endif
-    if (getmntany(zfs_hdl->libzfs_mnttab, &entry, &search) != 0)
+    if (getmntany(zfs_hdl->libzfs_mnttab, &entry, &search) != 0) {
         return (B_FALSE);
+    }
 
     if (where != NULL)
         *where = zfs_strdup(zfs_hdl, entry.mnt_mountp);
@@ -561,9 +559,7 @@ zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
     /* check to see if need to unmount the filesystem */
     search.mnt_special = zhp->zfs_name;
     search.mnt_fstype = MNTTYPE_ZFS;
-#ifndef __APPLE__
-    rewind(zhp->zfs_hdl->libzfs_mnttab);
-#endif /*!__APPLE__*/
+
     if (mountpoint != NULL || ((zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) &&
                                getmntany(zhp->zfs_hdl->libzfs_mnttab, &entry, &search) == 0)) {
         /*
@@ -917,7 +913,6 @@ zfs_unshare_proto(zfs_handle_t *zhp, const char *mountpoint,
 	char *mntpt = NULL;
 
 	/* check to see if need to unmount the filesystem */
-	rewind(zhp->zfs_hdl->libzfs_mnttab);
 	if (mountpoint != NULL)
 		mountpoint = mntpt = zfs_strdup(hdl, mountpoint);
 

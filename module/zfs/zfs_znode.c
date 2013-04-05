@@ -1555,6 +1555,7 @@ zfs_freesp(znode_t *zp, uint64_t off, uint64_t len, int flag, boolean_t log)
 	return (0);
 }
 
+#if 1 // OSX
 void
 zfs_create_fs(objset_t *os, cred_t *cr, uint64_t version, dmu_tx_t *tx)
 {
@@ -1634,6 +1635,159 @@ zfs_create_fs(objset_t *os, cred_t *cr, uint64_t version, dmu_tx_t *tx)
 #endif
 	kmem_cache_free(znode_cache, rootzp);
 }
+#endif
+
+#if 0 // Linux
+void
+zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
+{
+        struct super_block *sb;
+        zfs_sb_t        *zsb;
+        uint64_t        moid, obj, sa_obj, version;
+        uint64_t        sense = ZFS_CASE_SENSITIVE;
+        uint64_t        norm = 0;
+        nvpair_t        *elem;
+        int             error;
+        int             i;
+        znode_t         *rootzp = NULL;
+        vattr_t         vattr;
+        znode_t         *zp;
+        zfs_acl_ids_t   acl_ids;
+
+        /*
+         * First attempt to create master node.
+         */
+        /*
+         * In an empty objset, there are no blocks to read and thus
+         * there can be no i/o errors (which we assert below).
+         */
+        moid = MASTER_NODE_OBJ;
+        error = zap_create_claim(os, moid, DMU_OT_MASTER_NODE,
+            DMU_OT_NONE, 0, tx);
+        ASSERT(error == 0);
+        /*
+         * Set starting attributes.
+         */
+        version = zfs_zpl_version_map(spa_version(dmu_objset_spa(os)));
+        elem = NULL;
+        while ((elem = nvlist_next_nvpair(zplprops, elem)) != NULL) {
+                /* For the moment we expect all zpl props to be uint64_ts */
+                uint64_t val;
+                char *name;
+
+                ASSERT(nvpair_type(elem) == DATA_TYPE_UINT64);
+                VERIFY(nvpair_value_uint64(elem, &val) == 0);
+                name = nvpair_name(elem);
+                if (strcmp(name, zfs_prop_to_name(ZFS_PROP_VERSION)) == 0) {
+                        if (val < version)
+                                version = val;
+                } else {
+                        error = zap_update(os, moid, name, 8, 1, &val, tx);
+                }
+                ASSERT(error == 0);
+                if (strcmp(name, zfs_prop_to_name(ZFS_PROP_NORMALIZE)) == 0)
+                        norm = val;
+                else if (strcmp(name, zfs_prop_to_name(ZFS_PROP_CASE)) == 0)
+                        sense = val;
+        }
+        ASSERT(version != 0);
+        error = zap_update(os, moid, ZPL_VERSION_STR, 8, 1, &version, tx);
+
+        /*
+         * Create zap object used for SA attribute registration
+         */
+
+        if (version >= ZPL_VERSION_SA) {
+                sa_obj = zap_create(os, DMU_OT_SA_MASTER_NODE,
+                    DMU_OT_NONE, 0, tx);
+                error = zap_add(os, moid, ZFS_SA_ATTRS, 8, 1, &sa_obj, tx);
+                ASSERT(error == 0);
+        } else {
+                sa_obj = 0;
+        }
+        /*
+         * Create a delete queue.
+         */
+        obj = zap_create(os, DMU_OT_UNLINKED_SET, DMU_OT_NONE, 0, tx);
+
+        error = zap_add(os, moid, ZFS_UNLINKED_SET, 8, 1, &obj, tx);
+        ASSERT(error == 0);
+
+        /*
+         * Create root znode.  Create minimal znode/inode/zsb/sb
+         * to allow zfs_mknode to work.
+         */
+        vattr.va_mask = ATTR_MODE|ATTR_UID|ATTR_GID;
+        vattr.va_mode = S_IFDIR|0755;
+        vattr.va_uid = crgetuid(cr);
+        vattr.va_gid = crgetgid(cr);
+
+        rootzp = kmem_cache_alloc(znode_cache, KM_PUSHPAGE);
+        rootzp->z_moved = 0;
+        rootzp->z_unlinked = 0;
+        rootzp->z_atime_dirty = 0;
+        rootzp->z_is_sa = USE_SA(version, os);
+
+        zsb = kmem_zalloc(sizeof (zfs_sb_t), KM_PUSHPAGE | KM_NODEBUG);
+        zsb->z_os = os;
+        zsb->z_parent = zsb;
+        zsb->z_version = version;
+        zsb->z_use_fuids = USE_FUIDS(version, os);
+        zsb->z_use_sa = USE_SA(version, os);
+        zsb->z_norm = norm;
+
+        sb = kmem_zalloc(sizeof (struct super_block), KM_PUSHPAGE);
+        sb->s_fs_info = zsb;
+
+        ZTOI(rootzp)->i_sb = sb;
+
+        error = sa_setup(os, sa_obj, zfs_attr_table, ZPL_END,
+            &zsb->z_attr_table);
+
+        ASSERT(error == 0);
+
+        /*
+         * Fold case on file systems that are always or sometimes case
+         * insensitive.
+         */
+        if (sense == ZFS_CASE_INSENSITIVE || sense == ZFS_CASE_MIXED)
+                zsb->z_norm |= U8_TEXTPREP_TOUPPER;
+
+        mutex_init(&zsb->z_znodes_lock, NULL, MUTEX_DEFAULT, NULL);
+        list_create(&zsb->z_all_znodes, sizeof (znode_t),
+            offsetof(znode_t, z_link_node));
+
+        for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
+                mutex_init(&zsb->z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
+
+        VERIFY(0 == zfs_acl_ids_create(rootzp, IS_ROOT_NODE, &vattr,
+            cr, NULL, &acl_ids));
+        zfs_mknode(rootzp, &vattr, tx, cr, IS_ROOT_NODE, &zp, &acl_ids);
+        ASSERT3P(zp, ==, rootzp);
+        error = zap_add(os, moid, ZFS_ROOT_OBJ, 8, 1, &rootzp->z_id, tx);
+        ASSERT(error == 0);
+        zfs_acl_ids_free(&acl_ids);
+
+        atomic_set(&ZTOI(rootzp)->i_count, 0);
+        sa_handle_destroy(rootzp->z_sa_hdl);
+        kmem_cache_free(znode_cache, rootzp);
+
+        /*
+         * Create shares directory
+         */
+        error = zfs_create_share_dir(zsb, tx);
+        ASSERT(error == 0);
+
+        for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
+                mutex_destroy(&zsb->z_hold_mtx[i]);
+
+        kmem_free(sb, sizeof (struct super_block));
+        kmem_free(zsb, sizeof (zfs_sb_t));
+}
+
+#endif
+
+
 #endif /* _KERNEL */
 
 /*
