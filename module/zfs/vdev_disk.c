@@ -617,6 +617,6 @@ vdev_ops_t vdev_disk_ops = {
 	NULL /* vdev_op_state_change */,
 	NULL /* vdev_op_hold */,
 	NULL /* vdev_op_rele */,
-	"VDEV_TYPE_DISK",	/* name of this vdev type */
+	VDEV_TYPE_DISK,	/* name of this vdev type */
 	B_TRUE			/* leaf vdev */
 };
