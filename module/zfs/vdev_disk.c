@@ -352,8 +352,6 @@ vdev_disk_io_start(zio_t *zio)
 static void
 vdev_disk_io_done(zio_t *zio)
 {
-	// vdev_t *vd = zio->io_vd;
-	// vdev_disk_t *dvd = vd->vdev_tsd;
 
 #ifndef __APPLE__
 	/*
