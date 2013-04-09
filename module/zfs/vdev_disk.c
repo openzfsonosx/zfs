@@ -576,17 +576,7 @@ vdev_disk_io_start(zio_t *zio)
 static void
 vdev_disk_io_done(zio_t *zio)
 {
-	// vdev_t *vd = zio->io_vd;
-	// vdev_disk_t *dvd = vd->vdev_tsd;
-	int state;
 
-	vdev_queue_io_done(zio);
-
-	if (zio->io_type == ZIO_TYPE_WRITE)
-		vdev_cache_write(zio);
-
-	if (zio_injection_enabled && zio->io_error == 0)
-		zio->io_error = zio_handle_device_injection(zio->io_vd, NULL, EIO);
 #ifndef __APPLE__
 	/*
 	 * XXX- NOEL TODO
