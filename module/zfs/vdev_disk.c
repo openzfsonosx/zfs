@@ -413,7 +413,7 @@ vdev_disk_io_start(zio_t *zio)
 	vdev_disk_buf_t *vdb;
 	buf_t *bp;
 #endif
-	int flags, error;
+	int flags, error = 0;
 
     printf("vdev_disk_io_start\n");
 
