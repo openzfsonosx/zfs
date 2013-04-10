@@ -260,8 +260,9 @@ zio_checksum_error(zio_t *zio, zio_bad_cksum_t *info)
 	info->zbc_injected = 0;
 	info->zbc_has_cksum = 1;
 
-	if (!ZIO_CHECKSUM_EQUAL(actual_cksum, expected_cksum))
+	if (!ZIO_CHECKSUM_EQUAL(actual_cksum, expected_cksum)) {
 		return (ECKSUM);
+    }
 
 	if (zio_injection_enabled && !zio->io_error &&
 	    (error = zio_handle_fault_injection(zio, ECKSUM)) != 0) {

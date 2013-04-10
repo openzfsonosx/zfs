@@ -37,6 +37,7 @@ extern "C" {
 
 typedef struct vdev_file {
 	struct vnode	*vf_vnode;
+    uint32_t	vf_vid;
 } vdev_file_t;
 
 #ifdef	__cplusplus

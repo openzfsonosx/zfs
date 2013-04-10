@@ -315,6 +315,8 @@ zfs_init_fs(zfsvfs_t *zfsvfs, znode_t **zpp, cred_t *cr)
 	dmu_object_info_t doi;
 	uint64_t fsid_guid;
 
+    printf("zfs_init_fs called\n");
+
 	*zpp = NULL;
 
 	/*
@@ -329,7 +331,8 @@ zfs_init_fs(zfsvfs_t *zfsvfs, znode_t **zpp, cred_t *cr)
 		dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT); /* root node */
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		ASSERT3U(error, ==, 0);
-		zfs_create_fs(os, cr, ZPL_VERSION, tx);
+        printf("zfs_init_fs calling create_fs\n");
+		zfs_create_fs(os, cr, NULL, tx);
 		dmu_tx_commit(tx);
 	}
 
@@ -474,7 +477,7 @@ zfs_znode_sa_init(zfsvfs_t *zfsvfs, znode_t *zp,
 	 * Slap on VROOT if we are the root znode
 	 */
 	//if (zp->z_id == zfsvfs->z_root)
-	//	ZTOV(zp)->v_flag |= VROOT;
+    //   ZTOV(zp)->v_flag |= VROOT;
 
 	mutex_exit(&zp->z_lock);
 	vn_exists(ZTOV(zp));
@@ -1557,14 +1560,19 @@ zfs_freesp(znode_t *zp, uint64_t off, uint64_t len, int flag, boolean_t log)
 
 #if 1 // OSX
 void
-zfs_create_fs(objset_t *os, cred_t *cr, uint64_t version, dmu_tx_t *tx)
+zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 {
 	zfsvfs_t	zfsvfs;
-	uint64_t	moid, doid, roid = 0;
+	uint64_t	moid, doid, roid = 0, version;
+    uint64_t        norm = 0;
+
 	int		error;
 	znode_t		*rootzp = NULL;
 	//vnode_t		*vp;
 	vattr_t		vattr;
+        nvpair_t        *elem;
+        uint64_t        sense = ZFS_CASE_SENSITIVE;
+
 
 	/*
 	 * First attempt to create master node.
@@ -1582,8 +1590,38 @@ zfs_create_fs(objset_t *os, cred_t *cr, uint64_t version, dmu_tx_t *tx)
 	 * Set starting attributes.
 	 */
 
-	error = zap_update(os, moid, ZPL_VERSION_STR, 8, 1, &version, tx);
+        /*
+         * Set starting attributes.
+         */
+        version = zfs_zpl_version_map(spa_version(dmu_objset_spa(os)));
+        elem = NULL;
+        while ((elem = nvlist_next_nvpair(zplprops, elem)) != NULL) {
+                /* For the moment we expect all zpl props to be uint64_ts */
+                uint64_t val;
+                char *name;
+
+                ASSERT(nvpair_type(elem) == DATA_TYPE_UINT64);
+                VERIFY(nvpair_value_uint64(elem, &val) == 0);
+                name = nvpair_name(elem);
+                if (strcmp(name, zfs_prop_to_name(ZFS_PROP_VERSION)) == 0) {
+                        if (val < version)
+                                version = val;
+                } else {
+                        error = zap_update(os, moid, name, 8, 1, &val, tx);
+                }
+                ASSERT(error == 0);
+                if (strcmp(name, zfs_prop_to_name(ZFS_PROP_NORMALIZE)) == 0)
+                        norm = val;
+                else if (strcmp(name, zfs_prop_to_name(ZFS_PROP_CASE)) == 0)
+                        sense = val;
+        }
+        ASSERT(version != 0);
+
+        error = zap_update(os, moid, ZPL_VERSION_STR, 8, 1, &version, tx);
+        //error = zap_update(os, moid, ZPL_VERSION_STR, 8, 1, &version, tx);
+
 	ASSERT(error == 0);
+
 
 	/*
 	 * Create a delete queue.
@@ -1634,6 +1672,7 @@ zfs_create_fs(objset_t *os, cred_t *cr, uint64_t version, dmu_tx_t *tx)
 	ZTOV(rootzp)->v_count = 0;
 #endif
 	kmem_cache_free(znode_cache, rootzp);
+
 }
 #endif
 

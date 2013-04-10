@@ -95,7 +95,7 @@ extern int zfs_mg_alloc_failures;
  */
 #define	IO_IS_ALLOCATING(zio) ((zio)->io_orig_pipeline & ZIO_STAGE_DVA_ALLOCATE)
 
-int zio_requeue_io_start_cut_in_line = 1;
+int zio_requeue_io_start_cut_in_line = B_TRUE;
 
 #ifdef ZFS_DEBUG
 int zio_buf_debug_limit = 16384;
@@ -215,6 +215,7 @@ zio_init(void)
 	zfs_mg_alloc_failures = MAX((3 * max_ncpus / 2), 8);
 
 	zio_inject_init();
+
 }
 
 void
@@ -385,8 +386,9 @@ zio_decompress(zio_t *zio, void *data, uint64_t size)
 {
 	if (zio->io_error == 0 &&
 	    zio_decompress_data(BP_GET_COMPRESS(zio->io_bp),
-	    zio->io_data, data, zio->io_size, size) != 0)
+                            zio->io_data, data, zio->io_size, size) != 0) {
 		zio->io_error = EIO;
+    }
 }
 
 /*
@@ -568,6 +570,7 @@ zio_create(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 	ASSERT(vd || stage == ZIO_STAGE_OPEN);
 
 	zio = kmem_cache_alloc(zio_cache, KM_PUSHPAGE);
+    /* We do not zero the zio here, as the zio_cons() creates lists for us. */
 
 	if (vd != NULL)
 		zio->io_child_type = ZIO_CHILD_VDEV;
@@ -650,7 +653,6 @@ zio_create(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 			zio->io_gang_leader = pio->io_gang_leader;
 		zio_add_child(pio, zio);
 	}
-
 	return (zio);
 }
 
@@ -1180,8 +1182,9 @@ zio_taskq_dispatch(zio_t *zio, enum zio_taskq_type q, boolean_t cutinline)
 	 * to a single taskq at a time.  It would be a grievous error
 	 * to dispatch the zio to another taskq at the same time.
 	 */
+    //printf("zio_disp %p stage %04x\n", zio, zio->io_stage);
     (void) taskq_dispatch(spa->spa_zio_taskq[t][q],
-                          (task_func_t *)zio_execute, zio, flags);
+                          (task_func_t *)__zio_execute, zio, flags);
 }
 
 static boolean_t
@@ -1282,7 +1285,7 @@ __zio_execute(zio_t *zio)
 			zio_taskq_dispatch(zio, ZIO_TASKQ_ISSUE, cut);
 			return;
 		}
-
+#if 0
 		/*
 		 * If we executing in the context of the tx_sync_thread,
 		 * or we are performing pool initialization outside of a
@@ -1295,6 +1298,7 @@ __zio_execute(zio_t *zio)
 			zio_taskq_dispatch(zio, ZIO_TASKQ_ISSUE, cut);
 			return;
 		}
+#endif
 
 		zio->io_stage = stage;
 		rv = zio_pipeline[highbit(stage) - 1](zio);
@@ -1312,11 +1316,13 @@ __zio_execute(zio_t *zio)
  * Initiate I/O, either sync or async
  * ==========================================================================
  */
+#if 0
 int
 zio_wait(zio_t *zio)
 {
 	uint64_t timeout;
 	int error;
+    int booga;
 
 	ASSERT(zio->io_stage == ZIO_STAGE_OPEN);
 	ASSERT(zio->io_executor == NULL);
@@ -1327,6 +1333,8 @@ zio_wait(zio_t *zio)
 	__zio_execute(zio);
 
 	mutex_enter(&zio->io_lock);
+
+    booga=0;
 	while (zio->io_executor != NULL) {
 		/*
 		 * Wake up periodically to prevent the kernel from complaining
@@ -1335,6 +1343,23 @@ zio_wait(zio_t *zio)
 		 */
 		cv_timedwait_interruptible(&zio->io_cv, &zio->io_lock,
 		    ddi_get_lbolt() + hz);
+
+#if _KERNEL
+        if (booga++ > 10) {
+            int i,j;
+            printf("Bastard hack\n");
+            for (i = 0; i < ZIO_TYPES; i++) {
+                for (j = 0; j < ZIO_TASKQ_TYPES; j++) {
+                    taskq_t *tq = zio->io_spa->spa_zio_taskq[i][j];
+                    if (!tq) continue;
+                    printf("tq[%d][%d] %p '%s' threads %d\n",
+                           i,j,tq,tq->tq_name, tq->tq_nthreads);
+                }
+            }
+            panic("time to die");
+            break;
+        }
+#endif
 
 		if (timeout && (ddi_get_lbolt() > timeout)) {
 			zio->io_delay = zio_delay_max;
@@ -1350,6 +1375,31 @@ zio_wait(zio_t *zio)
 
 	return (error);
 }
+#endif
+#if 1
+int
+zio_wait(zio_t *zio)
+{
+    int error;
+
+    ASSERT(zio->io_stage == ZIO_STAGE_OPEN);
+    ASSERT(zio->io_executor == NULL);
+
+    zio->io_waiter = curthread;
+
+    __zio_execute(zio);
+
+    mutex_enter(&zio->io_lock);
+    while (zio->io_executor != NULL)
+        cv_wait(&zio->io_cv, &zio->io_lock);
+    mutex_exit(&zio->io_lock);
+
+    error = zio->io_error;
+    zio_destroy(zio);
+
+    return (error);
+}
+#endif
 
 void
 zio_nowait(zio_t *zio)
@@ -2331,9 +2381,9 @@ zio_dva_claim(zio_t *zio)
 	int error;
 
 	error = metaslab_claim(zio->io_spa, zio->io_bp, zio->io_txg);
-	if (error)
+	if (error) {
 		zio->io_error = error;
-
+    }
 	return (ZIO_PIPELINE_CONTINUE);
 }
 
@@ -3110,8 +3160,8 @@ zio_done(zio_t *zio)
 		zio_remove_child(pio, zio, zl);
 		zio_notify_parent(pio, zio, ZIO_WAIT_DONE);
 	}
-
 	if (zio->io_waiter != NULL) {
+        //printf("zio done, cleared %p\n", zio);
 		mutex_enter(&zio->io_lock);
 		zio->io_executor = NULL;
 		cv_broadcast(&zio->io_cv);

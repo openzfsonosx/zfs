@@ -292,13 +292,16 @@ void dnode_evict_dbufs(dnode_t *dn);
 kmem_cbrc_t
 dnode_move(void *buf, void *newbuf, size_t size, void *arg);
 
-#ifdef ZFS_DEBUG
+#ifdef ZFS_DEBUGXXX
 
 /*
  * There should be a ## between the string literal and fmt, to make it
  * clear that we're joining two strings together, but that piece of shit
  * gcc doesn't support that preprocessor token.
  */
+
+// OSX, this code is broooken
+
 #define	dprintf_dnode(dn, fmt, ...) do { \
 	if (zfs_flags & ZFS_DEBUG_DPRINTF) { \
 	char __db_buf[32]; \

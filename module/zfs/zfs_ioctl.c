@@ -82,7 +82,7 @@
 #include "zfs_deleg.h"
 #include "zfs_comutil.h"
 
-#define ZFS_DEBUG_STR  "(alpha)"
+#define ZFS_DEBUG_STR  "(beta)"
 
 
 kmutex_t zfsdev_state_lock;
@@ -2757,8 +2757,8 @@ zfs_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx)
      * We should update zfs_create_fs() to take the list of properties.
      */
 
-	//zfs_create_fs(os, cr, zct->zct_zplprops, tx);
-	zfs_create_fs(os, cr, ZPL_VERSION_5, tx);
+	zfs_create_fs(os, cr, zct->zct_zplprops, tx);
+	//zfs_create_fs(os, cr, ZPL_VERSION_5, tx);
     printf("- zfs_create_cb\n");
 }
 
@@ -5119,8 +5119,8 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	zc = (zfs_cmd_t *)data;
 	zc->zc_dev = dev;
 	error = zfs_ioc_vec[vec].zvec_secpolicy(zc, cr);
-	printf("[zfs] got ioctl %d\n", vec);
-	delay(hz);
+	//printf("[zfs] got ioctl %d\n", vec);
+	//delay(hz);
 
 	/*
 	 * Ensure that all pool/dataset names are valid before we pass down to
@@ -5152,8 +5152,8 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	 * Return the real error in zc_ioc_error so the ioctl call always
 	 * does a copyout of the zc data
 	 */
-	printf("[zfs] ioctl done %d\n", error);
-	delay(hz);
+	//printf("[zfs] ioctl done %d\n", error);
+	//delay(hz);
 	zc->zc_ioc_error = error;
 	return (0);
 }

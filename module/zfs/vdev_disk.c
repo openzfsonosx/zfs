@@ -147,8 +147,6 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 	 */
 	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
 
-    printf("vdev_disk open ashift %d size %lld\n", *ashift, *size);
-
 	/*
 	 * Clear the nowritecache bit, so that on a vdev_reopen() we will
 	 * try again.
@@ -200,8 +198,6 @@ vdev_disk_close(vdev_t *vd)
 static void
 vdev_disk_io_intr(struct buf *bp, void *arg)
 {
-    printf("vdev_disk_io_intr: IO done: %p\n", arg);
-
 	zio_t *zio = (zio_t *)arg;
 
 	if ((zio->io_error = buf_error(bp)) == 0 && buf_resid(bp) != 0) {
@@ -231,8 +227,6 @@ vdev_disk_io_start(zio_t *zio)
 	struct buf *bp;
 	vfs_context_t context;
 	int flags, error = 0;
-
-    printf("vdev_disk_io_start\n");
 
 	if (zio->io_type == ZIO_TYPE_IOCTL) {
 		zio_vdev_io_bypass(zio);

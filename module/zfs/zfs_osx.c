@@ -22,6 +22,12 @@
 
 extern SInt32 zfs_active_fs_count;
 
+/* Global system task queue for common use */
+extern int system_taskq_size;
+taskq_t	*system_taskq = NULL;
+
+
+
 
 #ifdef __APPLE__
 extern int
@@ -98,6 +104,25 @@ zfs_vfs_sysctl(int *name, __unused u_int namelen, user_addr_t oldp, size_t *oldl
 
 
 
+void
+system_taskq_fini(void)
+{
+    if (system_taskq)
+        taskq_destroy(system_taskq);
+}
+
+void
+system_taskq_init(void)
+{
+    system_taskq = taskq_create("system_taskq",
+                                system_taskq_size * max_ncpus,
+                                minclsyspri, 4, 512,
+                                TASKQ_DYNAMIC | TASKQ_PREPOPULATE);
+}
+
+
+
+
 kern_return_t zfs_start (kmod_info_t * ki, void * d)
 {
 
@@ -138,6 +163,14 @@ kern_return_t zfs_start (kmod_info_t * ki, void * d)
 
     zfs_vfsops_init();
 
+
+    /*
+     * When is the best time to start the system_taskq? It is strictly
+     * speaking not used by SPL, but by ZFS. ZFS should really start it?
+     */
+    system_taskq_init();
+
+
     return KERN_SUCCESS;
 }
 
@@ -154,6 +187,7 @@ kern_return_t zfs_stop (kmod_info_t * ki, void * d)
 		return KERN_FAILURE;   /* ZFS Still busy! */
 	}
 #endif
+    system_taskq_fini();
 
     zfs_ioctl_fini();
     zvol_fini();

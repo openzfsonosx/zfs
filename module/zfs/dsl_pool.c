@@ -200,6 +200,14 @@ dsl_pool_open_special_dir(dsl_pool_t *dp, const char *name, dsl_dir_t **ddp)
 {
 	uint64_t obj;
 	int err;
+#if 0
+    printf("  +dsl_pool_open_special_dir: '%s'\n", name ? name : "(null)");
+    printf("   dp %p\n", dp);
+    printf("   dp->meta %p\n", dp->dp_meta_objset);
+    printf("   dp->root %p\n", dp->dp_root_dir);
+    printf("   dp->root->phys %p\n", dp->dp_root_dir->dd_phys);
+    printf("   dp->root->phys->zap %p\n", dp->dp_root_dir->dd_phys->dd_child_dir_zapobj);
+#endif
 
 	err = zap_lookup(dp->dp_meta_objset,
 	    dp->dp_root_dir->dd_phys->dd_child_dir_zapobj,
@@ -267,6 +275,7 @@ dsl_pool_open(dsl_pool_t *dp)
 	uint64_t obj;
 
 	rw_enter(&dp->dp_config_rwlock, RW_WRITER);
+
 	err = zap_lookup(dp->dp_meta_objset, DMU_POOL_DIRECTORY_OBJECT,
 	    DMU_POOL_ROOT_DATASET, sizeof (uint64_t), 1,
 	    &dp->dp_root_dir_obj);
@@ -446,8 +455,8 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops, uint64_t txg)
 	VERIFY(NULL != (os = dmu_objset_create_impl(dp->dp_spa, ds,
 	    dsl_dataset_get_blkptr(ds), DMU_OST_ZFS, tx)));
 #ifdef _KERNEL
-	//zfs_create_fs(os, kcred, zplprops, tx);
-	zfs_create_fs(os, kcred, ZPL_VERSION, tx);// FIXME, should be props
+	zfs_create_fs(os, kcred, zplprops, tx);
+	//zfs_create_fs(os, kcred, ZPL_VERSION, tx);// FIXME, should be props
 #endif
 	dsl_dataset_rele(ds, FTAG);
 

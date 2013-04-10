@@ -2286,6 +2286,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		}
 	}
 
+
 	spa->spa_is_initializing = B_TRUE;
 	error = dsl_pool_open(spa->spa_dsl_pool);
 	spa->spa_is_initializing = B_FALSE;
@@ -2611,6 +2612,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		if (!dsl_scan_resilvering(spa->spa_dsl_pool) &&
 		    vdev_resilver_needed(rvd, NULL, NULL))
 			spa_async_request(spa, SPA_ASYNC_RESILVER);
+
 
 		/*
 		 * Delete any inconsistent datasets.
@@ -3304,7 +3306,6 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	nvpair_t *elem;
 	int c;
 
-    printf("+spa_create\n");
 	/*
 	 * If this pool already exists, return failure.
 	 */
@@ -3507,7 +3508,6 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	 * bean counters are appropriately updated.
 	 */
 	txg_wait_synced(spa->spa_dsl_pool, txg);
-	printf("[spa] back from txg_wait_synced!\n");
 
 	spa_config_sync(spa, B_FALSE, B_TRUE);
 
@@ -3518,8 +3518,6 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa->spa_minref = refcount_count(&spa->spa_refcount);
 
 	mutex_exit(&spa_namespace_lock);
-
-    printf("-spa_create\n");
 
 	return (0);
 }

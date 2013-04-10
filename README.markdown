@@ -13,6 +13,19 @@ Note MacZFS's wiki on kernel development and panic decoding.
 
 # git clone https://github.com/zfs-osx/zfs.git
 
+
+KNOWN ISSUES.
+
+*) "zpool export" does not unmount. Issue "zfs umount POOL/FS" for all
+   filesystems first. Then "zpool export".
+
+*) Copy large file to POOL will hang.
+
+*) Large sections are missing. File attributes, ACLs, xattr, etc etc.
+
+*) Compiling with --enable-debug will cause double-fault panics.
+
+
 ```
 
 # ./autogen.sh
@@ -55,39 +68,30 @@ drwx------  2 root  wheel  3 Apr  4 16:44 .fseventsd
 
 drwxr-xr-x  2 root  wheel  2 Apr  4 16:45 THIS.DIRECTORY.IS.ON.ZFS
 
-# hexdump -C /Users/lundman/osx.zfs/diskimage.bin |less
-
-00414880  07 00 00 00 00 00 00 40  00 00 00 00 00 00 54 48  |.......@......TH|
-00414890  49 53 2e 44 49 52 45 43  54 4f 52 59 2e 49 53 2e  |IS.DIRECTORY.IS.|
-004148a0  49 4e 2e 5a 46 53 00 00  00 00 00 00 00 00 00 00  |IN.ZFS..........|
-004148b0  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  |................|
-
-# echo "Hello World" > /BOOM/THIS.IS.A.FILE
-
-# strings /Users/lundman/osx.zfs/diskimage.bin | grep Hello
-Hello World
-
 # ./cmd.sh zfs umount BOOM
-cannot unmount 'BOOM': not currently mounted
 
-# ./cmd.sh zfs create -o compression=on BOOM/roger
-zfs_mount: unused options: "defaults,atime,dev,exec,rw,suid,xattr,nomand,zfsutil"
+# ./zpool.sh export BOOM
 
-panic:
+# ./zpool.sh import -d /Users/lundman/osx.zfs/
+   pool: BOOM
+     id: 17559987915944145476
+  state: ONLINE
+ action: The pool can be imported using its name or numeric identifier.
+ config:
 
-#0  0xffffff7f80f35444 in _zil_commit
-#1  0xffffff7f80f25d52 in _zfs_vnop_fsync
-#2  0xffffff800031206f in VNOP_MNOMAP
-#3  0xffffff80002f9915 in prepare_coveredvp
-#4  0xffffff80002f8385 in mount_common
-#5  0xffffff80002f97ba in __mac_mount
-#6  0xffffff80002f8f99 in mount_common
-#7  0xffffff80005e17da in unix_syscall64
+        BOOM                             ONLINE
+          /Users/lundman/pool-image.bin  ONLINE
 
-# umount /BOOM
+# ./zpool.sh import -d /Users/lundman/osx.zfs/ BOOM
 
-panic:
+# ls -l /BOOM/
+total 3
+drwx------  2 root  wheel  3 Apr  4 16:44 .fseventsd
+drwxr-xr-x  2 root  wheel  2 Apr  4 16:45 THIS.DIRECTORY.IS.ON.ZFS
 
+# ./zpool.sh import -d ~/image/ FROMSOLARIS
+NAME          SIZE  ALLOC   FREE    CAP  DEDUP  HEALTH  ALTROOT
+FROMSOLARIS   123M   354K   123M     0%  1.00x  ONLINE  -
 
 
 ```

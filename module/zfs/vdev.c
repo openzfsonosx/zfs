@@ -74,7 +74,6 @@ vdev_getops(const char *type)
 	for (opspp = vdev_ops_table; (ops = *opspp) != NULL; opspp++)
 		if (strcmp(ops->vdev_op_type, type) == 0)
 			break;
-
 	return (ops);
 }
 
@@ -960,9 +959,9 @@ vdev_probe_done(zio_t *zio)
 		mutex_exit(&vd->vdev_probe_lock);
 
 		while ((pio = zio_walk_parents(zio)) != NULL)
-			if (!vdev_accessible(vd, pio))
+			if (!vdev_accessible(vd, pio)) {
 				pio->io_error = ENXIO;
-
+            }
 		kmem_free(vps, sizeof (*vps));
 	}
 }

@@ -83,6 +83,7 @@ dsl_dir_open_obj(dsl_pool_t *dp, uint64_t ddobj,
 	    dsl_pool_sync_context(dp));
 
 	err = dmu_bonus_hold(dp->dp_meta_objset, ddobj, tag, &dbuf);
+
 	if (err)
 		return (err);
 	dd = dmu_buf_get_user(dbuf);
@@ -112,6 +113,7 @@ dsl_dir_open_obj(dsl_pool_t *dp, uint64_t ddobj,
 		if (dd->dd_phys->dd_parent_obj) {
 			err = dsl_dir_open_obj(dp, dd->dd_phys->dd_parent_obj,
 			    NULL, dd, &dd->dd_parent);
+
 			if (err)
 				goto errout;
 			if (tail) {
@@ -134,7 +136,6 @@ dsl_dir_open_obj(dsl_pool_t *dp, uint64_t ddobj,
 		} else {
 			(void) strlcpy(dd->dd_myname, spa_name(dp->dp_spa), MAXNAMELEN);
 		}
-
 		if (dsl_dir_is_clone(dd)) {
 			dmu_buf_t *origin_bonus;
 			dsl_dataset_phys_t *origin_phys;
@@ -153,7 +154,6 @@ dsl_dir_open_obj(dsl_pool_t *dp, uint64_t ddobj,
 			    origin_phys->ds_creation_txg;
 			dmu_buf_rele(origin_bonus, FTAG);
 		}
-
 		winner = dmu_buf_set_user_ie(dbuf, dd, &dd->dd_phys,
 		    dsl_dir_evict);
 		if (winner) {
@@ -181,6 +181,7 @@ dsl_dir_open_obj(dsl_pool_t *dp, uint64_t ddobj,
 	ASSERT3U(dd->dd_object, ==, ddobj);
 	ASSERT3P(dd->dd_dbuf, ==, dbuf);
 	*ddp = dd;
+
 	return (0);
 
 errout:

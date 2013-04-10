@@ -741,6 +741,7 @@ avl_remove(avl_tree_t *tree, void *data)
 	 * be easily removed from the tree.
 	 */
 	ASSERT(tree->avl_numnodes > 0);
+    if (tree->avl_numnodes==0) panic("avl_numnodes is 0 before decrease1");
 	--tree->avl_numnodes;
 	parent = AVL_XPARENT(delete);
 	which_child = AVL_XCHILD(delete);
@@ -983,6 +984,7 @@ avl_destroy_nodes(avl_tree_t *tree, void **cookie)
 	child = (uintptr_t)(*cookie) & CHILDBIT;
 	parent->avl_child[child] = NULL;
 	ASSERT(tree->avl_numnodes > 1);
+    if (tree->avl_numnodes<=1) panic("avl_numnodes is 0 before decrease2");
 	--tree->avl_numnodes;
 
 	/*

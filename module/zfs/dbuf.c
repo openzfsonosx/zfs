@@ -670,6 +670,7 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 	    DBUF_IS_CACHEABLE(db);
 
 	mutex_enter(&db->db_mtx);
+
 	if (db->db_state == DB_CACHED) {
 		mutex_exit(&db->db_mtx);
 		if (prefetch)

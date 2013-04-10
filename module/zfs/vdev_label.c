@@ -1085,9 +1085,9 @@ vdev_label_sync_top_done(zio_t *zio)
 {
 	uint64_t *good_writes = zio->io_private;
 
-	if (*good_writes == 0)
+	if (*good_writes == 0) {
 		zio->io_error = EIO;
-
+    }
 	kmem_free(good_writes, sizeof (uint64_t));
 }
 

@@ -56,7 +56,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	vdev_file_t *vf;
 	vnode_t *vp;
 	vattr_t vattr;
-	int error;
+	int error = 0;
     vnode_t *rootdir;
 
 	/*
@@ -74,6 +74,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	if (vd->vdev_tsd != NULL) {
 		ASSERT(vd->vdev_reopening);
 		vf = vd->vdev_tsd;
+        vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
 		goto skip_open;
 	}
 
@@ -119,15 +120,18 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	}
 
 	vf->vf_vnode = vp;
+    vf->vf_vid = vnode_vid(vp);
 
 #ifdef _KERNEL
 	/*
 	 * Make sure it's a regular file.
 	 */
-    //	if (vp->v_type != VREG) {
-	//	vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
-	//	return (ENODEV);
-	//}
+	if (!vnode_isreg(vp)) {
+        vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
+        vnode_put(vf->vf_vnode);
+        return (ENODEV);
+    }
+
 #endif
 
 skip_open:
@@ -138,11 +142,13 @@ skip_open:
 	error = VOP_GETATTR(vf->vf_vnode, &vattr, 0, kcred, NULL);
 	if (error) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
+        vnode_put(vf->vf_vnode);
 		return (error);
 	}
 
 	*max_psize = *psize = vattr.va_size;
 	*ashift = SPA_MINBLOCKSHIFT;
+    vnode_put(vf->vf_vnode);
 
 	return (0);
 }
@@ -156,6 +162,7 @@ vdev_file_close(vdev_t *vd)
 		return;
 
 	if (vf->vf_vnode != NULL) {
+        vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
         // Also commented out in MacZFS
 		//(void) VOP_PUTPAGE(vf->vf_vnode, 0, 0, B_INVAL, kcred, NULL);
 		(void) VOP_CLOSE(vf->vf_vnode, spa_mode(vd->vdev_spa), 1, 0,
@@ -171,21 +178,23 @@ static int
 vdev_file_io_start(zio_t *zio)
 {
 	vdev_t *vd = zio->io_vd;
-	vdev_file_t *vf;
+    vdev_file_t *vf = vd->vdev_tsd;
 	ssize_t resid = 0;
 
-	if (!vdev_readable(vd)) {
-		zio->io_error = ENXIO;
-		return (ZIO_PIPELINE_CONTINUE);
-	}
-
-	vf = vd->vdev_tsd;
 
 	if (zio->io_type == ZIO_TYPE_IOCTL) {
+
+        if (!vdev_readable(vd)) {
+            zio->io_error = ENXIO;
+            return (ZIO_PIPELINE_CONTINUE);
+        }
+
 		switch (zio->io_cmd) {
 		case DKIOCFLUSHWRITECACHE:
+            vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
 			zio->io_error = VOP_FSYNC(vf->vf_vnode, FSYNC | FDSYNC,
 			    kcred, NULL);
+            vnode_put(vf->vf_vnode);
 			break;
 		default:
 			zio->io_error = ENOTSUP;
@@ -194,10 +203,13 @@ vdev_file_io_start(zio_t *zio)
 		return (ZIO_PIPELINE_CONTINUE);
 	}
 
+    vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
 	zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
 	    UIO_READ : UIO_WRITE, vf->vf_vnode, zio->io_data,
 	    zio->io_size, zio->io_offset, UIO_SYSSPACE,
 	    0, RLIM64_INFINITY, kcred, &resid);
+    vnode_put(vf->vf_vnode);
+
 
 	if (resid != 0 && zio->io_error == 0)
 		zio->io_error = ENOSPC;

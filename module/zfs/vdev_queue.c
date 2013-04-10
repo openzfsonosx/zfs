@@ -423,8 +423,9 @@ vdev_queue_io_done(zio_t *zio)
 
 	for (i = 0; i < zfs_vdev_ramp_rate; i++) {
 		zio_t *nio = vdev_queue_io_to_issue(vq, zfs_vdev_max_pending);
-		if (nio == NULL)
+		if (nio == NULL) {
 			break;
+        }
 		mutex_exit(&vq->vq_lock);
 		if (nio->io_done == vdev_queue_agg_io_done) {
 			zio_nowait(nio);
