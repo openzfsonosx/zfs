@@ -1392,6 +1392,7 @@ sa_handle_get_from_db(objset_t *os, dmu_buf_t *db, void *userp,
 	if (handle == NULL) {
 		sa_handle_t *newhandle;
 		handle = kmem_cache_alloc(sa_cache, KM_SLEEP);
+        printf("assigning %p\n", userp);
 		handle->sa_userp = userp;
 		handle->sa_bonus = db;
 		handle->sa_os = os;
@@ -1481,6 +1482,7 @@ sa_lookup_uio(sa_handle_t *hdl, sa_attr_type_t attr, uio_t *uio)
 	if ((error = sa_attr_op(hdl, &bulk, 1, SA_LOOKUP, NULL)) == 0) {
 		//error = uiomove((void *)bulk.sa_addr, MIN(bulk.sa_size,
         //   uio->uio_resid), UIO_READ, uio);
+        printf("sa_uiomove\n");
 		error = uiomove((void *)bulk.sa_addr, MIN(bulk.sa_size,
                          uio_resid(uio)), UIO_READ, uio);
 	}
@@ -1945,6 +1947,7 @@ sa_update_user(sa_handle_t *newhdl, sa_handle_t *oldhdl)
 void
 sa_set_userp(sa_handle_t *hdl, void *ptr)
 {
+    printf("assigning %p\n", ptr);
 	hdl->sa_userp = ptr;
 }
 
@@ -1957,7 +1960,13 @@ sa_get_db(sa_handle_t *hdl)
 void *
 sa_get_userdata(sa_handle_t *hdl)
 {
-	return (hdl->sa_userp);
+    void *result;
+
+    result = hdl->sa_userp;
+    printf("sa_get_userdata %p -> %p\n", hdl, result);
+    if (result < 0xffffffff) result = NULL;
+
+	return (result);
 }
 
 void

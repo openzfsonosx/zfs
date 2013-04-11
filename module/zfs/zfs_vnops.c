@@ -1480,6 +1480,8 @@ zfs_create(vnode_t *dvp, char *name, vattr_t *vap, vcexcl_t excl,
 	struct componentname  *cnp = ap->a_cnp;
 	vcexcl_t excl;
 	int  mode;
+    vsecattr_t *vsecp = NULL;
+
 #endif /* __APPLE__ */
         znode_t         *zp;
         znode_t         *dzp = VTOZ(dvp);
@@ -1490,6 +1492,8 @@ zfs_create(vnode_t *dvp, char *name, vattr_t *vap, vcexcl_t excl,
 	dmu_tx_t	*tx;
 	int		error;
 	uint64_t	zoid;
+    zfs_acl_ids_t   acl_ids;
+    boolean_t       have_acl = B_FALSE;
 
 	ZFS_ENTER(zfsvfs);
 
@@ -1506,6 +1510,8 @@ top:
 	}
 
 	if ((error = zfs_dirent_lock(&dl, dzp, cnp, &zp, 0))) {
+        if (have_acl)
+            zfs_acl_ids_free(&acl_ids);
 		if (strcmp(cnp->cn_nameptr, "..") == 0)
 			error = EISDIR;
 		ZFS_EXIT(zfsvfs);
@@ -1553,11 +1559,28 @@ top:
 		 */
 		if ((dzp->z_phys->zp_flags & ZFS_XATTR) &&
 		    (vap->va_type != VREG)) {
+            if (have_acl)
+                zfs_acl_ids_free(&acl_ids);
 			error = EINVAL;
 			goto out;
 		}
 
+        if (!have_acl && (error = zfs_acl_ids_create(dzp, 0, vap,
+                                        cr, vsecp, &acl_ids)) != 0)
+            goto out;
+        have_acl = B_TRUE;
+
+        if (zfs_acl_ids_overquota(zfsvfs, &acl_ids)) {
+            zfs_acl_ids_free(&acl_ids);
+            error = EDQUOT;
+            goto out;
+        }
+
 		tx = dmu_tx_create(os);
+
+        dmu_tx_hold_sa_create(tx, acl_ids.z_aclp->z_acl_bytes +
+                              ZFS_SA_BASE_ATTR_SIZE);
+
 		dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT);
 		dmu_tx_hold_bonus(tx, dzp->z_id);
 #ifdef __APPLE__
@@ -1577,17 +1600,19 @@ top:
 				dmu_tx_abort(tx);
 				goto top;
 			}
+            zfs_acl_ids_free(&acl_ids);
 			dmu_tx_abort(tx);
 			ZFS_EXIT(zfsvfs);
 			return (error);
 		}
-		zfs_mknode(dzp, vap, &zoid, tx, cr, 0, &zp, 0);
+		//zfs_mknode(dzp, vap, &zoid, tx, cr, 0, &zp, 0);
+        zfs_mknode(dzp, vap, tx, cr, 0, &zp, &acl_ids);
 		ASSERT(zp->z_id == zoid);
 		(void) zfs_link_create(dl, zp, tx, ZNEW);
 // XXX Why don't we just assign 'name' to 'cnp->cn_nameptr' somewhere above?
 #ifdef __APPLE__
 		zfs_log_create(zilog, tx, TX_CREATE, dzp, zp, cnp->cn_nameptr,
-                       NULL /*vsecp*/ , 0 /*acl_ids.z_fuidp*/, vap);
+                       NULL /*vsecp*/ , acl_ids.z_fuidp, vap);
 #else
 		zfs_log_create(zilog, tx, TX_CREATE, dzp, zp, name);
 #endif /* __APPLE__ */
@@ -1971,6 +1996,8 @@ zfs_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t **vpp, cred_t *cr)
 	uint64_t	zoid = 0;
 	dmu_tx_t	*tx;
 	int		error;
+    zfs_acl_ids_t   acl_ids;
+    vsecattr_t *vsecp = NULL;
 
 	ASSERT(vap->va_type == VDIR);
 
@@ -1986,6 +2013,14 @@ zfs_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t **vpp, cred_t *cr)
 		return (ENAMETOOLONG);
 	}
 #endif /* __APPLE__ */
+
+    if ((error = zfs_acl_ids_create(dzp, 0, vap, cr,
+                                    vsecp, &acl_ids)) != 0) {
+        ZFS_EXIT(zfsvfs);
+        return (error);
+    }
+
+
 top:
 	*vpp = NULL;
 
@@ -1994,6 +2029,7 @@ top:
 	 */
 #ifdef __APPLE__
 	if ((error = zfs_dirent_lock(&dl, dzp, cnp, &zp, ZNEW))) {
+        zfs_acl_ids_free(&acl_ids);
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
@@ -2012,12 +2048,27 @@ top:
 	}
 #endif /*!__APPLE__*/
 
+    if (zfs_acl_ids_overquota(zfsvfs, &acl_ids)) {
+        zfs_acl_ids_free(&acl_ids);
+        zfs_dirent_unlock(dl);
+        ZFS_EXIT(zfsvfs);
+        return (EDQUOT);
+    }
+
 	/*
 	 * Add a new entry to the directory.
 	 */
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_zap(tx, dzp->z_id, TRUE, dirname);
 	dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, FALSE, NULL);
+
+    if (!zfsvfs->z_use_sa && acl_ids.z_aclp->z_acl_bytes > ZFS_ACE_SPACE) {
+        dmu_tx_hold_write(tx, DMU_NEW_OBJECT, 0,
+                          acl_ids.z_aclp->z_acl_bytes);
+    }
+    dmu_tx_hold_sa_create(tx, acl_ids.z_aclp->z_acl_bytes +
+                          ZFS_SA_BASE_ATTR_SIZE);
+
 	if (dzp->z_phys->zp_flags & ZFS_INHERIT_ACE)
 		dmu_tx_hold_write(tx, DMU_NEW_OBJECT,
 		    0, SPA_MAXBLOCKSIZE);
@@ -2029,6 +2080,7 @@ top:
 			dmu_tx_abort(tx);
 			goto top;
 		}
+        zfs_acl_ids_free(&acl_ids);
 		dmu_tx_abort(tx);
 		ZFS_EXIT(zfsvfs);
 		return (error);
@@ -2037,8 +2089,8 @@ top:
 	/*
 	 * Create new node.
 	 */
-	zfs_mknode(dzp, vap, &zoid, tx, cr, 0, &zp, 0);
-
+	//zfs_mknode(dzp, vap, &zoid, tx, cr, 0, &zp, 0);
+    zfs_mknode(dzp, vap, tx, cr, 0, &zp, &acl_ids);
 	/*
 	 * Now put new name in parent dir.
 	 */
@@ -2049,7 +2101,8 @@ top:
 #endif /* !__APPLE__ */
 
 	zfs_log_create(zilog, tx, TX_MKDIR, dzp, zp, dirname,
-                   NULL /* vsecp */, 0 /*acl_ids.z_fuidp*/, vap);
+                   NULL /* vsecp */, acl_ids.z_fuidp, vap);
+    zfs_acl_ids_free(&acl_ids);
 	dmu_tx_commit(tx);
 
 #ifdef __APPLE__
@@ -3640,6 +3693,7 @@ zfs_symlink(vnode_t *dvp, char *name, vattr_t *vap, char *link, cred_t *cr)
 	uint64_t	zoid;
 	int		len = strlen(link);
 	int		error;
+    zfs_acl_ids_t   acl_ids;
 
 	ASSERT(vap->va_type == VLNK);
 
@@ -3664,6 +3718,12 @@ top:
 		return (ENAMETOOLONG);
 	}
 
+    if ((error = zfs_acl_ids_create(dzp, 0,
+                                    vap, cr, NULL, &acl_ids)) != 0) {
+        ZFS_EXIT(zfsvfs);
+        return (error);
+    }
+
 	/*
 	 * Attempt to lock directory; fail if entry already exists.
 	 */
@@ -3673,14 +3733,31 @@ top:
 	if (error = zfs_dirent_lock(&dl, dzp, name, &zp, ZNEW))
 #endif /* __APPLE__ */
 	{
+        zfs_acl_ids_free(&acl_ids);
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
+
+    if (zfs_acl_ids_overquota(zfsvfs, &acl_ids)) {
+        zfs_acl_ids_free(&acl_ids);
+        zfs_dirent_unlock(dl);
+        ZFS_EXIT(zfsvfs);
+        return (EDQUOT);
+    }
 
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_write(tx, DMU_NEW_OBJECT, 0, MAX(1, len));
 	dmu_tx_hold_bonus(tx, dzp->z_id);
 	dmu_tx_hold_zap(tx, dzp->z_id, TRUE, name);
+    dmu_tx_hold_sa_create(tx, acl_ids.z_aclp->z_acl_bytes +
+            ZFS_SA_BASE_ATTR_SIZE + len);
+
+    dmu_tx_hold_sa(tx, dzp->z_sa_hdl, B_FALSE);
+    if (!zfsvfs->z_use_sa && acl_ids.z_aclp->z_acl_bytes > ZFS_ACE_SPACE) {
+        dmu_tx_hold_write(tx, DMU_NEW_OBJECT, 0,
+                          acl_ids.z_aclp->z_acl_bytes);
+    }
+
 	if (dzp->z_phys->zp_flags & ZFS_INHERIT_ACE)
 		dmu_tx_hold_write(tx, DMU_NEW_OBJECT, 0, SPA_MAXBLOCKSIZE);
 	error = dmu_tx_assign(tx, zfsvfs->z_assign);
@@ -3691,6 +3768,7 @@ top:
 			dmu_tx_abort(tx);
 			goto top;
 		}
+        zfs_acl_ids_free(&acl_ids);
 		dmu_tx_abort(tx);
 		ZFS_EXIT(zfsvfs);
 		return (error);
@@ -3705,14 +3783,14 @@ top:
 	 */
 	zoid = 0;
 	if (sizeof (znode_phys_t) + len <= dmu_bonus_max()) {
-		zfs_mknode(dzp, vap, &zoid, tx, cr, 0, &zp, len);
+		//zfs_mknode(dzp, vap, &zoid, tx, cr, 0, &zp, len);
+        zfs_mknode(dzp, vap, tx, cr, 0, &zp, &acl_ids);
 		if (len != 0)
 			bcopy(link, zp->z_phys + 1, len);
 	} else {
 		dmu_buf_t *dbp;
 
-		zfs_mknode(dzp, vap, &zoid, tx, cr, 0, &zp, 0);
-
+        zfs_mknode(dzp, vap, tx, cr, 0, &zp, &acl_ids);
 		/*
 		 * Nothing can access the znode yet so no locking needed
 		 * for growing the znode's blocksize.
@@ -3737,6 +3815,8 @@ out:
 #endif
 	if (error == 0)
 		zfs_log_symlink(zilog, tx, TX_SYMLINK, dzp, zp, name, link);
+
+    zfs_acl_ids_free(&acl_ids);
 
 	dmu_tx_commit(tx);
 
@@ -4712,7 +4792,9 @@ top:
 	VATTR_INIT(&vattr);
 	VATTR_SET(&vattr, va_type, VREG);
 	VATTR_SET(&vattr, va_mode, mode & ~S_IFMT);
-	zfs_mknode(dzp, &vattr, &zoid, tx, cr, 0, &xzp, 0);
+
+	//zfs_mknode(dzp, &vattr, &zoid, tx, cr, 0, &xzp, 0);
+    zfs_mknode(dzp, &vattr, tx, cr, 0, &xzp, NULL);//FIXME
 
 	ASSERT(xzp->z_id == zoid);
 	(void) zfs_link_create(dl, xzp, tx, ZNEW);

@@ -688,6 +688,8 @@ zfs_domount(vfs_t *vfsp, char *osname, cred_t *cr)
 	ASSERT(vfsp);
 	ASSERT(osname);
 
+    printf("vfsops: domount\n");
+
 	/*
 	 * Initialize the zfs-specific filesystem structure.
 	 * Should probably make this a kmem cache, shuffle fields,
@@ -745,6 +747,7 @@ zfs_domount(vfs_t *vfsp, char *osname, cred_t *cr)
 	//error = dmu_objset_open(osname, DMU_OST_ZFS, mode, &zfsvfs->z_os);
 	error = dmu_objset_own(osname, DMU_OST_ZFS,
                            readonly ? B_TRUE : B_FALSE, &zfsvfs, &zfsvfs->z_os);
+    printf("dmu_objset_own: %d\n", error);
 	if (error == EROFS) {
 		mode = DS_MODE_PRIMARY | DS_MODE_READONLY;
         error = dmu_objset_own(osname, DMU_OST_ZFS,
@@ -756,10 +759,13 @@ zfs_domount(vfs_t *vfsp, char *osname, cred_t *cr)
 	if (error)
 		goto out;
 
+    printf("domount z_os %p\n", zfsvfs->z_os);
+
 #ifdef __APPLE__
 	if (error = zfs_init_fs(zfsvfs, &zp, vfs_context_ucred(ctx)))
 		goto out;
 
+    printf("domount 1\n");
 	/* The call to zfs_init_fs leaves the vnode held, release it here. */
 	vnode_put(ZTOV(zp));
 #else
@@ -769,6 +775,8 @@ zfs_domount(vfs_t *vfsp, char *osname, cred_t *cr)
 	/* The call to zfs_init_fs leaves the vnode held, release it here. */
 	VN_RELE(ZTOV(zp));
 #endif /* __APPLE__ */
+
+    printf("domount 2\n");
 
 	if (dmu_objset_is_snapshot(zfsvfs->z_os)) {
 		uint64_t xattr;
@@ -786,6 +794,7 @@ zfs_domount(vfs_t *vfsp, char *osname, cred_t *cr)
 #ifdef __APPLE__
 		if (!vfs_isrdonly(vfsp))
 			zfs_unlinked_drain(zfsvfs);
+        printf("domount 3\n");
         zfsvfs->z_log = zil_open(zfsvfs->z_os, zfs_get_data);
 #else
 		uint_t readonly;
@@ -850,6 +859,7 @@ zfs_domount(vfs_t *vfsp, char *osname, cred_t *cr)
 	zfsvfs->z_mount_time = tv.tv_sec;
 
 out:
+    printf("domount out %d\n", error);
 	if (error) {
 		if (zfsvfs->z_os)
             //		dmu_objset_close(zfsvfs->z_os);
@@ -1082,6 +1092,8 @@ zfs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 	uio_seg_t	fromspace = (uap->flags & MS_SYSSPACE) ?
 	    UIO_SYSSPACE : UIO_USERSPACE;
 #endif /* __APPLE__ */
+
+    printf("vfsops: vfs_mount\n");
 
 #ifdef __APPLE__
         /*

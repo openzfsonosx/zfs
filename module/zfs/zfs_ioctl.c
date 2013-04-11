@@ -5183,6 +5183,11 @@ u_int32_t k_maczfs_debug_stalk;
 
 #define ZFS_MAJOR  -24
 
+#include <sys/vdev_impl.h>
+#include <sys/zap_impl.h>
+#include <sys/sa_impl.h>
+#include <sys/zap_leaf.h>
+
 void
 zfs_ioctl_init(void)
 {
@@ -5209,6 +5214,17 @@ zfs_ioctl_init(void)
            "ZFS pool version %s, ZFS filesystem version %s\n",
            ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
            SPA_VERSION_STRING, ZPL_VERSION_STRING);
+    printf("bpobj %d bptree_phys %d bptree_entry_phys %d ddt_phys %d\n",
+           sizeof(struct bpobj_phys), sizeof(struct bptree_phys),
+           sizeof(struct bptree_entry_phys), sizeof(struct ddt_phys));
+    printf("objset_phys %d dnode_phys %d, dsl_dataset_phys %d dsl_deadlist_phys %d\n",
+           sizeof(struct objset_phys),sizeof(struct dnode_phys),sizeof(struct dsl_dataset_phys),sizeof(struct dsl_deadlist_phys));
+    printf("dsl_dir_phys %d dsl_scan_phys %d sa_hdr_phys %d spa_history_phys %d\n",
+           sizeof(struct dsl_dir_phys), sizeof(struct dsl_scan_phys), sizeof(struct sa_hdr_phys), sizeof(struct spa_history_phys));
+    printf("vdev_phys %d mzap_ent_phys %d mzap_phys %d zap_phys %d\n",
+           sizeof(struct vdev_phys), sizeof(struct mzap_ent_phys), sizeof(struct mzap_phys),  sizeof(struct zap_phys));
+    printf("zap_table_phys %d zap_leaf_phys %d znode_phys %d zfs_acl_phys_v0 %d zfs_acl_phys %d\n",
+           sizeof(struct zap_table_phys), sizeof(struct zap_leaf_phys),  sizeof(struct znode_phys),  sizeof(struct zfs_acl_phys_v0),  sizeof(struct zfs_acl_phys));
 
 }
 

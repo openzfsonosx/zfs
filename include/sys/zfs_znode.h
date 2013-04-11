@@ -242,6 +242,8 @@ typedef struct znode {
      */
     znode_phys_t    *z_phys;        /* pointer to persistent znode */
     dmu_buf_t       *z_dbuf;        /* buffer containing the z_phys */
+
+    uint64_t z_parent;
 } znode_t;
 
 

@@ -877,6 +877,7 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 	dmu_tx_t *tx;
 	uint64_t xoid;
 	int error;
+    zfs_acl_ids_t acl_ids;
 
 	*xvpp = NULL;
 
@@ -886,6 +887,14 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 		return (error);
 #endif /*!__APPLE__*/
 
+    if ((error = zfs_acl_ids_create(zp, IS_XATTR, vap, cr, NULL,
+                                    &acl_ids)) != 0)
+        return (error);
+    if (zfs_acl_ids_overquota(zfsvfs, &acl_ids)) {
+        zfs_acl_ids_free(&acl_ids);
+        return (EDQUOT);
+    }
+
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_bonus(tx, zp->z_id);
 	dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, FALSE, NULL);
@@ -893,17 +902,20 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 	if (error) {
 		if (error == ERESTART && zfsvfs->z_assign == TXG_NOWAIT)
 			dmu_tx_wait(tx);
+        zfs_acl_ids_free(&acl_ids);
 		dmu_tx_abort(tx);
 		return (error);
 	}
-	zfs_mknode(zp, vap, &xoid, tx, cr, IS_XATTR, &xzp, 0);
+	//zfs_mknode(zp, vap, &xoid, tx, cr, IS_XATTR, &xzp, 0);
+	zfs_mknode(zp, vap, tx, cr, IS_XATTR, &xzp, &acl_ids);
 	ASSERT(xzp->z_id == xoid);
 	ASSERT(xzp->z_phys->zp_parent == zp->z_id);
 	dmu_buf_will_dirty(zp->z_dbuf, tx);
 	zp->z_phys->zp_xattr = xoid;
 
 	(void) zfs_log_create(zfsvfs->z_log, tx, TX_MKXATTR, zp, xzp, "",
-                          NULL, NULL, vap);
+                          NULL, acl_ids.z_fuidp, vap);
+    zfs_acl_ids_free(&acl_ids);
 	dmu_tx_commit(tx);
 #ifdef __APPLE__
 	/*

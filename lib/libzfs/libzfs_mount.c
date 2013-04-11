@@ -485,7 +485,9 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #if LINUX
 	rc = do_mount(zfs_get_name(zhp), mountpoint, mntopts);
 #else
-    printf("zfs_mount: unused options: \"%s\"\n", mntopts);
+    printf("zfs_mount: '%s' unused options: \"%s\". Flags %04x\n",
+           mountpoint, mntopts, flags);
+
     mnt_args.fspec = zfs_get_name(zhp);
     rc = mount(MNTTYPE_ZFS, mountpoint, flags, &mnt_args);
 #endif
