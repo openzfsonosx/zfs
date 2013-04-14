@@ -40,6 +40,9 @@
 #include <sys/systeminfo.h>
 #include <sys/proc.h>
 #include <sys/kernel_types.h>
+#ifdef __APPLE__
+#include <sys/disk.h>
+#endif
 /*
  * Emulation of kernel services in userland.
  */
@@ -521,6 +524,50 @@ cv_broadcast(kcondvar_t *cv)
  * ZFS consumer of these interfaces).  We assert this is true, and then emulate
  * them by adding '/' in front of the path.
  */
+
+#ifdef __APPLE__
+/*
+ * We need to be able to get stats for block devices, which can't be done using
+ * fstat() on Mac OS X, and a fstat_blk() doesn't exists.  So we implement our
+ * own version based in ioctl().
+ */
+
+/* copied from (old) MacZFS usr/src/lib/libzfs/common/libzfs_util.c */
+off_t
+get_disk_size_libzpool(int fd)
+{
+	uint32_t blksize;
+	uint64_t blkcnt;
+	off_t d_size = 0;
+
+	if (ioctl(fd, DKIOCGETBLOCKSIZE, &blksize) < 0) {
+		return (-1);
+	}
+	if (ioctl(fd, DKIOCGETBLOCKCOUNT, &blkcnt) < 0) {
+		return (-1);
+	}
+
+	d_size = (off_t)((uint64_t)blksize * blkcnt);
+	return (d_size);
+}
+
+int fstat_blk(int fildes, struct stat *buf) {
+	int error = fstat(fildes, buf);
+	if (error != 0)
+		return error;
+
+	if (buf->st_mode & (S_IFBLK | S_IFCHR)) {
+		/*
+		 * We have a block (or character) special file.
+		 * We allow character special files, to also support /dev/rdisk* nodes.
+		 */
+		buf->st_size = get_disk_size_libzpool(fildes);
+		if (buf->st_size == -1)
+			return -1;
+	}
+	return 0;
+}
+#endif
 
 /*ARGSUSED*/
 int

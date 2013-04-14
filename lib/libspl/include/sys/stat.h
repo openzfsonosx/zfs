@@ -28,6 +28,9 @@
 
 #include_next <sys/stat.h>
 
+#ifdef __APPLE__
+#include <sys/disk.h>
+#endif
 #include <sys/mount.h> /* for BLKGETSIZE64 */
 
 /*
@@ -39,11 +42,28 @@ fstat64_blk(int fd, struct stat64 *st)
 	if (fstat64(fd, st) == -1)
 		return -1;
 
+#ifdef __APPLE__
+	/* In Mac OS X we need to use an ioctl to get the size of a block device */
+	if (st->st_mode & S_IFBLK) {
+		uint32_t blksize;
+		uint64_t blkcnt;
+
+		if (ioctl(fd, DKIOCGETBLOCKSIZE, &blksize) < 0) {
+			return (-1);
+		}
+		if (ioctl(fd, DKIOCGETBLOCKCOUNT, &blkcnt) < 0) {
+			return (-1);
+		}
+
+		st->st_size = (off_t)((uint64_t)blksize * blkcnt);
+	}
+#else
 	/* In Linux we need to use an ioctl to get the size of a block device */
 	if (S_ISBLK(st->st_mode)) {
 		if (ioctl(fd, BLKGETSIZE64, &st->st_size) != 0)
 			return -1;
 	}
+#endif
 
 	return 0;
 }
