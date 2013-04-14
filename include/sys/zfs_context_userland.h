@@ -108,7 +108,15 @@
 
 extern int aok;
 
+#ifdef __APPLE__
+/* on Mac OS X fstat doesn't work for block devices, so we need to implement
+ * our own ioctl based verion in kernel emulation. */
+struct stat;
+
+int fstat_blk(int fildes, struct stat *buf);
+#else
 #define fstat_blk fstat
+#endif
 
 /*
  * ZFS debugging
