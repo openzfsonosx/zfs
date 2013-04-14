@@ -11,6 +11,39 @@
  * into zfs_vnops_osx_lib.c.
  */
 
+/*
+ * XXX GENERAL COMPATIBILITY ISSUES
+ *
+ * 'name' is a common argument, but in OS X (and FreeBSD), we need to pass
+ * the componentname pointer, so other things can use them.  We should
+ * change the 'name' argument to be an opaque name pointer, and define
+ * OS-dependent macros that yield the desired results when needed.
+ *
+ * On OS X, VFS performs access checks before calling anything, so
+ * zfs_zaccess_* calls are not used.  Not true on FreeBSD, though.  Perhaps
+ * those calls should be conditionally #if 0'd?
+ *
+ * On OS X, VFS & I/O objects are often opaque, e.g. uio_t and vnode_t
+ * require using functions to access elements of an object.  Should convert
+ * the Solaris code to use macros on other platforms.
+ *
+ * OS X and FreeBSD appear to use similar zfs-vfs interfaces; see Apple's
+ * comment in zfs_remove() about the fact that VFS holds the last ref while
+ * in Solaris it's the ZFS code that does.  On FreeBSD, the code Apple
+ * refers to here results in a panic if the branch is actually taken.
+ *
+ * OS X uses vnode_put() in place of VN_RELE - needs a #define?
+ */
+
+#define	DECLARE_CRED(ap) \
+	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
+#define	DECLARE_CONTEXT(ap) \
+	caller_context_t *ct = (caller_context_t *)(ap)->a_context
+#define	DECLARE_CRED_AND_CONTEXT(ap)	\
+	DECLARE_CRED(ap);		\
+	DECLARE_CONTEXT(ap)
+
+
 static int
 zfs_vnop_open(ap)
 	struct vnop_open_args /* {
@@ -19,8 +52,7 @@ zfs_vnop_open(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
-	cred_t *cr = vfs_context_ucred(ap->a_context);
-	caller_context_t *ct = (caller_context_t *)ap->a_context;
+	DECLARE_CRED_AND_CONTEXT(ap);
 
 	return (zfs_open(&ap->a_vp, ap->a_mode, cr, ct));
 }
@@ -35,8 +67,7 @@ zfs_vnop_close(ap)
 {
 	int count = 1;
 	int offset = 0;
-	cred_t *cr = vfs_context_ucred(ap->a_context);
-	caller_context_t *ct = (caller_context_t *)ap->a_context;
+	DECLARE_CRED_AND_CONTEXT(ap);
 
 	return (zfs_close(ap->a_vp, ap->a_fflag, count, offset, cr, ct));
 }
@@ -89,8 +120,10 @@ zfs_vnop_read(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	int ioflag = zfs_ioflags(ap->a_ioflag);
+	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_read());
+	return (zfs_read(ap->a_vp, ap->a_uio, ioflag, cr, ct));
 }
 
 static int
@@ -102,8 +135,10 @@ zfs_vnop_write(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	int ioflag = zfs_ioflags(ap->a_ioflag);
+	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_write());
+	return (zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct));
 }
 
 static int
@@ -114,20 +149,37 @@ zfs_vnop_access(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	int error;
+	int mode = ap->a_mode;
 
-	return (zfs_access());
+	error = zfs_access_native_mode(ap->a_vp, &mode, ap->a_cred,
+	    ap->a_context);
+
+	/* XXX Check for other modes? */
+
+	return (error);
 }
 
 static int
 zfs_vnop_lookup(struct vnop_lookup_args *ap)
 	struct vnop_lookup_args /* {
-		struct vnode *a_vp;
-		int a_mode;
+		struct vnode *a_dvp;
+		struct vnode **a_vpp;
+		struct componentname *a_cnp;
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	struct componentname *cnp = ap->a_cnp;
+	DECLARE_CRED(ap);
+	int error;
 
-	return (zfs_lookup());
+	error = zfs_lookup(ap->a_dvp, cnp, ap->a_vpp,
+	    /*pnp*/NULL, /*flags*/0, /*rdir*/NULL, cr, ap->a_context,
+	    /*direntflags*/NULL, /*realpnp*/NULL);
+
+	/* XXX FreeBSD has some namecache stuff here. */
+
+	return (error);
 }
 
 static int
@@ -140,8 +192,15 @@ zfs_vnop_create(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	struct componentname *cnp = ap->a_cnp;
+	vattr_t *vap = ap->a_vap;
+	DECLARE_CRED(ap);
+	vcexcl_t excl;
 
-	return (zfs_create());
+	excl = (vap->va_vaflags & VA_EXCLUSIVE) ? EXCL : NONEXCL;
+
+	return (zfs_create(ap->a_dvp, cnp, vap, excl, mode, ap->a_vpp, cr,
+	    /*flag*/0, ap->a_context, /*vsecp*/NULL));
 }
 
 static int
@@ -154,8 +213,9 @@ zfs_vnop_remove(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_remove());
+	return (zfs_remove(ap->a_dvp, ap->a_cnp, cr, ct, /*flags*/0));
 }
 
 static int
@@ -168,8 +228,10 @@ zfs_vnop_mkdir(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_mkdir());
+	return (zfs_mkdir(ap->a_dvp, ap->a_cnp, vap, ap->a_vpp,
+	    cr, ct, /*flags*/0, /*vsecp*/NULL));
 }
 
 static int
@@ -182,7 +244,8 @@ zfs_vnop_rmdir(ap)
 	} */ *ap;
 {
 
-	return (zfs_rmdir());
+	return (zfs_rmdir(ap->a_dvp, ap->a_cnp, /*cwd*/NULL,
+	    cr, ct, /*flags*/0));
 }
 
 static int
@@ -196,8 +259,17 @@ zfs_vnop_readdir(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	/*
+	 * XXX This interface needs vfs_has_feature.
+	 * XXX zfs_readdir() also needs to grow support for passing back the
+	 *     number of entries (OSX/FreeBSD) and cookies (FreeBSD).
+	 *     However, it should be the responsibility of the OS caller to
+	 *     malloc/free space for that.
+	 */
 
-	return (zfs_readdir());
+	ap->a_numdirent = 0;
+	return (zfs_readdir(ap->a_vp, ap->a_uio, cr, ap->a_eofflag,
+	    ap->a_numdirent, /*a_cookies*/NULL));
 }
 
 static int
@@ -208,8 +280,18 @@ zfs_vnop_fsync(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	znode_t *zp = VTOZ(ap->a_vp);
 
-	return (zfs_fsync());
+	/*
+	 * Check if this znode has already been synced, freed, and recycled
+	 * by znode_pageout_func.
+	 *
+	 * XXX: What is this?  Substitute for Illumos vn_has_cached_data()?
+	 */
+	if (zp == NULL)
+		return (0);
+
+	return (zfs_fsync(ap->a_vp, ));
 }
 
 static int
@@ -220,6 +302,13 @@ zfs_vnop_getattr(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	/*
+	 * XXX This one requires modifying zfs_getattr(), unfortunately.
+	 *     There are two parts: the first section where we fill in vap
+	 *     from the znode, while holding its lock.  The second section
+	 *     where we fill in other stuff from the znode's dbuf and objset
+	 *     which doesn't require the znode lock.
+	 */
 
 	return (zfs_getattr());
 }
