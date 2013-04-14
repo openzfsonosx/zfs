@@ -458,6 +458,16 @@ enum ztest_object {
 	ZTEST_OBJECTS
 };
 
+#ifdef __APPLE__
+char *getexecname_fake = 0;
+#ifdef getexecname
+#undef getexecname
+char *getexecname(void) {
+	return getexecname_fake;
+}
+#endif
+#endif
+
 static void usage(boolean_t) __NORETURN;
 
 /*
@@ -735,10 +745,12 @@ process_options(int argc, char **argv)
 	if (strlen(altdir) > 0) {
 		char *cmd;
 		char *realaltdir;
+#ifndef __APPLE__
 		char *bin;
 		char *ztest;
 		char *isa;
 		int isalen;
+#endif
 
 		cmd = umem_alloc(MAXPATHLEN, UMEM_NOFAIL);
 		realaltdir = umem_alloc(MAXPATHLEN, UMEM_NOFAIL);
@@ -751,6 +763,16 @@ process_options(int argc, char **argv)
 		}
 		VERIFY(NULL != realpath(altdir, realaltdir));
 
+#ifdef __APPLE__
+		/* MacOSX doesn't have architecture dependent paths. */
+		/*
+		 * store the alternative ztest path unmodified *
+		 * don't set alternative library path, instead we hope the
+		 * binary will be link against the right lib.
+		 */
+		 strncpy(zo->zo_alt_ztest, cmd, sizeof (zo->zo_alt_ztest));
+		 strncpy(zo->zo_alt_ztest, "", sizeof (zo->zo_alt_libpath));
+#else
 		/*
 		 * 'cmd' should be of the form "<anything>/usr/bin/<isa>/ztest".
 		 * We want to extract <isa> to determine if we should use
@@ -774,7 +796,7 @@ process_options(int argc, char **argv)
 			fatal(B_TRUE, "invalid alternate lib directory %s",
 			    zo->zo_alt_libpath);
 		}
-
+#endif
 		umem_free(cmd, MAXPATHLEN);
 		umem_free(realaltdir, MAXPATHLEN);
 	}
@@ -6141,6 +6163,10 @@ main(int argc, char **argv)
 	char *fd_data_str = getenv("ZTEST_FD_DATA");
 
 	(void) setvbuf(stdout, NULL, _IOLBF, 0);
+
+#ifdef __APPLE__
+	getexecname_fake = strdup(argv[0]);
+#endif
 
 	ztest_fd_rand = open("/dev/urandom", O_RDONLY);
 	ASSERT3S(ztest_fd_rand, >=, 0);
