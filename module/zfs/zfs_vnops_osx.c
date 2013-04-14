@@ -243,6 +243,7 @@ zfs_vnop_rmdir(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	DECLARE_CRED_AND_CONTEXT(ap);
 
 	return (zfs_rmdir(ap->a_dvp, ap->a_cnp, /*cwd*/NULL,
 	    cr, ct, /*flags*/0));
@@ -259,6 +260,7 @@ zfs_vnop_readdir(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	DECLARE_CRED(cr);
 	/*
 	 * XXX This interface needs vfs_has_feature.
 	 * XXX zfs_readdir() also needs to grow support for passing back the
@@ -281,6 +283,7 @@ zfs_vnop_fsync(ap)
 	} */ *ap;
 {
 	znode_t *zp = VTOZ(ap->a_vp);
+	DECLARE_CRED_AND_CONTEXT(ap);
 
 	/*
 	 * Check if this znode has already been synced, freed, and recycled
@@ -291,7 +294,7 @@ zfs_vnop_fsync(ap)
 	if (zp == NULL)
 		return (0);
 
-	return (zfs_fsync(ap->a_vp, ));
+	return (zfs_fsync(ap->a_vp, /*flag*/0, cr, ct));
 }
 
 static int
@@ -302,6 +305,7 @@ zfs_vnop_getattr(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	DECLARE_CRED_AND_CONTEXT(ap);
 	/*
 	 * XXX This one requires modifying zfs_getattr(), unfortunately.
 	 *     There are two parts: the first section where we fill in vap
@@ -310,7 +314,7 @@ zfs_vnop_getattr(ap)
 	 *     which doesn't require the znode lock.
 	 */
 
-	return (zfs_getattr());
+	return (zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct));
 }
 
 static int
@@ -321,8 +325,9 @@ zfs_vnop_setattr(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_setattr());
+	return (zfs_setattr(ap->a_vp, ap->a_vap, /*flag*/0, cr, ct));
 }
 
 static int
