@@ -95,7 +95,7 @@ libzpool_la_LIBADD = \
 	$(top_builddir)/lib/libunicode/libunicode.la \
 	$(top_builddir)/lib/libuutil/libuutil.la
 
-libzpool_la_LDFLAGS = -pthread -version-info 1:1:0
+libzpool_la_LDFLAGS = -lz -pthread -version-info 1:1:0
 
 EXTRA_DIST = \
 	$(top_srcdir)/module/zfs/vdev_disk.c \
