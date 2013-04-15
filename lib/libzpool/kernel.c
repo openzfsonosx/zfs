@@ -581,6 +581,13 @@ vnode_put(vnode_t *vp)
 {
 	return 0;
 }
+
+vnode_t *
+getrootdir()
+{
+	return rootdir;
+}
+
 #endif
 
 /*ARGSUSED*/

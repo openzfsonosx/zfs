@@ -518,8 +518,12 @@ extern void vn_close(vnode_t *vp);
 #define	vn_rename(from, to, seg)	rename((from), (to))
 #define	vn_is_readonly(vp)		B_FALSE
 
+#ifdef __APPLE__
+vnode_t *getrootdir(void);
+#else
 extern vnode_t *rootdir;
 #define	getrootdir() rootdir
+#endif
 
 #include <sys/file.h>		/* for FREAD, FWRITE, etc */
 
