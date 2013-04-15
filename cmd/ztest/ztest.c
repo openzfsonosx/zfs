@@ -181,6 +181,9 @@ static const ztest_shared_opts_t ztest_opts_defaults = {
 	.zo_maxloops = 50,		/* max loops during spa_freeze() */
 	.zo_metaslab_gang_bang = 32 << 10
 };
+#ifdef __APPLE__
+volatile int ztest_forever = 0;
+#endif
 
 extern uint64_t metaslab_gang_bang;
 extern uint64_t metaslab_df_alloc_threshold;
@@ -604,6 +607,9 @@ usage(boolean_t requested)
 	    "\t[-F freezeloops (default: %llu)] max loops in spa_freeze()\n"
 	    "\t[-P passtime (default: %llu sec)] time per pass\n"
 	    "\t[-B alt_ztest (default: <none>)] alternate ztest path\n"
+#ifdef __APPLE__
+	    "\t[-D] wait in child process for GDB to attach.  (After attaching say 'set ztest_forever=0')\n"
+#endif
 	    "\t[-h] (print help)\n"
 	    "",
 	    zo->zo_pool,
@@ -639,7 +645,11 @@ process_options(int argc, char **argv)
 	bcopy(&ztest_opts_defaults, zo, sizeof (*zo));
 
 	while ((opt = getopt(argc, argv,
-	    "v:s:a:m:r:R:d:t:g:i:k:p:f:VET:P:hF:B:")) != EOF) {
+	    "v:s:a:m:r:R:d:t:g:i:k:p:f:VET:P:hF:B:"
+#ifdef __APPLE__
+	    "D"
+#endif
+	    )) != EOF) {
 		value = 0;
 		switch (opt) {
 		case 'v':
@@ -729,6 +739,11 @@ process_options(int argc, char **argv)
 		case 'h':
 			usage(B_TRUE);
 			break;
+#ifdef __APPLE__
+		case 'D':
+			ztest_forever = 1;
+			break;
+#endif
 		case '?':
 		default:
 			usage(B_FALSE);
@@ -6068,6 +6083,15 @@ exec_child(char *cmd, char *libpath, boolean_t ignorekill, int *statusp)
 		fatal(1, "fork failed");
 
 	if (pid == 0) {	/* child */
+		/* To debug the child with gdb, uncomment these lines
+		 * and then attach and do "set variable forever=0" */
+#ifdef __APPLE__
+		printf("forever=%d\npid=%lu\n", ztest_forever,(unsigned long)getpid());
+		while (ztest_forever) {
+			sleep(1);
+		}
+#endif
+
 		char *emptyargv[2] = { cmd, NULL };
 		char fd_data_str[12];
 
