@@ -2113,7 +2113,6 @@ arc_shrink(uint64_t bytes)
 		arc_adjust();
 }
 
-#if 0
 static void
 arc_kmem_reap_now(arc_reclaim_strategy_t strat, uint64_t bytes)
 {
@@ -2144,7 +2143,7 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat, uint64_t bytes)
 	kmem_cache_reap_now(buf_cache);
 	kmem_cache_reap_now(hdr_cache);
 }
-#endif
+
 /*
  * Unlike other ZFS implementations this thread is only responsible for
  * adapting the target ARC size on Linux.  The responsibility for memory
