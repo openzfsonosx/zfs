@@ -413,7 +413,17 @@ struct vnode {
 	uint64_t	v_size;
 	int		v_fd;
 	char		*v_path;
+#ifdef __APPLE__
+	ino_t v_id;
+#endif
 };
+
+#ifdef __APPLE__
+#define vnode_vid(vp) ((vp)->v_id)
+#define pwrite64 pwrite
+int vnode_getwithvid(vnode_t *vp, uint32_t id);
+int vnode_put(vnode_t *vp);
+#endif
 
 #undef vnode_t
 #define vnode_t struct vnode
