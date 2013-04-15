@@ -77,6 +77,9 @@ int zfs_recover;
 
 const char cmdname[] = "zdb";
 uint8_t dump_opt[256];
+#ifdef __APPLE__
+volatile int zdb_forever = 0;
+#endif
 
 typedef void object_viewer_t(objset_t *, uint64_t, void *data, size_t size);
 
@@ -3024,7 +3027,11 @@ main(int argc, char **argv)
 
 	dprintf_setup(&argc, argv);
 
-	while ((c = getopt(argc, argv, "bcdhilmsuCDRSAFLXevp:t:U:P")) != -1) {
+	while ((c = getopt(argc, argv, "bcdhilmsuCDRSAFLXevp:t:U:P"
+#ifdef __APPLE__
+	"Z"
+#endif
+	)) != -1) {
 		switch (c) {
 		case 'b':
 		case 'c':
@@ -3079,6 +3086,11 @@ main(int argc, char **argv)
 		case 'U':
 			spa_config_path = optarg;
 			break;
+#ifdef __APPLE__
+		case 'Z':
+			zdb_forever = 1;
+			break;
+#endif
 		default:
 			usage();
 			break;
@@ -3089,6 +3101,14 @@ main(int argc, char **argv)
 		(void) fprintf(stderr, "-p option requires use of -e\n");
 		usage();
 	}
+
+#ifdef __APPLE__
+	if (zdb_forever) {
+		fprintf(stderr, "zdb pid: %lu\n", (unsigned long)getpid());
+	}
+	while (zdb_forever != 0)
+	    sleep(1);
+#endif
 
 	kernel_init(FREAD);
 	if ((g_zfs = libzfs_init()) == NULL)

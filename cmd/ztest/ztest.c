@@ -158,6 +158,9 @@ typedef struct ztest_shared_opts {
 	uint64_t zo_time;
 	uint64_t zo_maxloops;
 	uint64_t zo_metaslab_gang_bang;
+#ifdef __APPLE__
+	int zo_attach_gdb;
+#endif
 } ztest_shared_opts_t;
 
 static const ztest_shared_opts_t ztest_opts_defaults = {
@@ -180,6 +183,10 @@ static const ztest_shared_opts_t ztest_opts_defaults = {
 	.zo_time = 300,			/* 5 minutes */
 	.zo_maxloops = 50,		/* max loops during spa_freeze() */
 	.zo_metaslab_gang_bang = 32 << 10
+#ifdef __APPLE__
+	,
+	.zo_attach_gdb = 0
+#endif
 };
 #ifdef __APPLE__
 volatile int ztest_forever = 0;
@@ -608,7 +615,10 @@ usage(boolean_t requested)
 	    "\t[-P passtime (default: %llu sec)] time per pass\n"
 	    "\t[-B alt_ztest (default: <none>)] alternate ztest path\n"
 #ifdef __APPLE__
-	    "\t[-D] wait in child process for GDB to attach.  (After attaching say 'set ztest_forever=0')\n"
+	    "\t[-D mask] wait in child process for GDB to attach.\n"
+	    "\t   mask is OR of 1 = wait in ztest before exec, 2 = wait in ztest\n"
+	    "\t   after exec, 4 = wait in zdb main.  (After attaching say \n"
+	    "'set ztest_forever=0' in GDB)\n"
 #endif
 	    "\t[-h] (print help)\n"
 	    "",
@@ -647,7 +657,7 @@ process_options(int argc, char **argv)
 	while ((opt = getopt(argc, argv,
 	    "v:s:a:m:r:R:d:t:g:i:k:p:f:VET:P:hF:B:"
 #ifdef __APPLE__
-	    "D"
+	    "D:"
 #endif
 	    )) != EOF) {
 		value = 0;
@@ -741,7 +751,7 @@ process_options(int argc, char **argv)
 			break;
 #ifdef __APPLE__
 		case 'D':
-			ztest_forever = 1;
+			zo->zo_attach_gdb = atoi(optarg);
 			break;
 #endif
 		case '?':
@@ -750,6 +760,10 @@ process_options(int argc, char **argv)
 			break;
 		}
 	}
+
+#ifdef __APPLE__
+	ztest_forever = zo->zo_attach_gdb;
+#endif
 
 	zo->zo_raidz_parity = MIN(zo->zo_raidz_parity, zo->zo_raidz - 1);
 
@@ -5273,13 +5287,19 @@ ztest_run_zdb(char *pool)
 		strcpy(bin, "/usr/sbin/zdb"); /* Installed */
 	} else if (strncmp(bin, "/sbin/ztest", 11) == 0) {
 		strcpy(bin, "/sbin/zdb"); /* Installed */
+	} else if (strncmp(bin, "/usr/local/sbin/ztest", 21) == 0) {
+		strcpy(bin, "/usr/local/sbin/zdb"); /* Installed */
 	} else {
 		strstr(bin, "/ztest/")[0] = '\0'; /* In-tree */
 		strcat(bin, "/zdb/zdb");
 	}
 
 	(void) sprintf(zdb,
+#ifdef __APPLE__
+	    (ztest_opts.zo_attach_gdb & 4) ? "%s -Z -bcc%s%s -U %s %s" : "%s -bcc%s%s -U %s %s",
+#else
 	    "%s -bcc%s%s -U %s %s",
+#endif
 	    bin,
 	    ztest_opts.zo_verbose >= 3 ? "s" : "",
 	    ztest_opts.zo_verbose >= 4 ? "v" : "",
@@ -6087,7 +6107,7 @@ exec_child(char *cmd, char *libpath, boolean_t ignorekill, int *statusp)
 		 * and then attach and do "set variable forever=0" */
 #ifdef __APPLE__
 		printf("forever=%d\npid=%lu\n", ztest_forever,(unsigned long)getpid());
-		while (ztest_forever) {
+		while (ztest_forever & 1) {
 			sleep(1);
 		}
 #endif
@@ -6208,6 +6228,13 @@ main(int argc, char **argv)
 		ztest_fd_data = atoi(fd_data_str);
 		setup_data();
 		bcopy(ztest_shared_opts, &ztest_opts, sizeof (ztest_opts));
+#ifdef __APPLE__
+		ztest_forever = ztest_opts.zo_attach_gdb;
+		printf("forever=%d\npid=%lu\n", ztest_forever,(unsigned long)getpid());
+		while (ztest_forever & 2) {
+			sleep(1);
+		}
+#endif
 	}
 	ASSERT3U(ztest_opts.zo_datasets, ==, ztest_shared_hdr->zh_ds_count);
 
