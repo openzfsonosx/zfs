@@ -618,7 +618,7 @@ usage(boolean_t requested)
 	    "\t[-D mask] wait in child process for GDB to attach.\n"
 	    "\t   mask is OR of 1 = wait in ztest before exec, 2 = wait in ztest\n"
 	    "\t   after exec, 4 = wait in zdb main.  (After attaching say \n"
-	    "'set ztest_forever=0' in GDB)\n"
+	    "\t   'set ztest_forever=0' in GDB)\n"
 #endif
 	    "\t[-h] (print help)\n"
 	    "",
@@ -6106,7 +6106,8 @@ exec_child(char *cmd, char *libpath, boolean_t ignorekill, int *statusp)
 		/* To debug the child with gdb, uncomment these lines
 		 * and then attach and do "set variable forever=0" */
 #ifdef __APPLE__
-		printf("forever=%d\npid=%lu\n", ztest_forever,(unsigned long)getpid());
+		if (ztest_forever & 3)
+			printf("forever=%d\npid=%lu\n", ztest_forever,(unsigned long)getpid());
 		while (ztest_forever & 1) {
 			sleep(1);
 		}
@@ -6230,7 +6231,8 @@ main(int argc, char **argv)
 		bcopy(ztest_shared_opts, &ztest_opts, sizeof (ztest_opts));
 #ifdef __APPLE__
 		ztest_forever = ztest_opts.zo_attach_gdb;
-		printf("forever=%d\npid=%lu\n", ztest_forever,(unsigned long)getpid());
+		if (ztest_forever & 3)
+			printf("forever=%d\npid=%lu\n", ztest_forever,(unsigned long)getpid());
 		while (ztest_forever & 2) {
 			sleep(1);
 		}
