@@ -567,6 +567,20 @@ int fstat_blk(int fildes, struct stat *buf) {
 	}
 	return 0;
 }
+
+/* vdev_file uses vnode_getwithid(), so supply a userspace version. */
+int
+vnode_getwithvid(vnode_t *vp, uint32_t id)
+{
+	return (vp->v_id == id) ? 0 : ENOENT;
+}
+
+/* vdev_file ses vnode_put(), supply a userspace version. */
+int
+vnode_put(vnode_t *vp)
+{
+	return 0;
+}
 #endif
 
 /*ARGSUSED*/
