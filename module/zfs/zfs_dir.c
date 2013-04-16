@@ -122,8 +122,8 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 	/*
 	 * Verify that we are not trying to lock '.', '..', or '.zfs'
 	 */
-	if (name[0] == '.' &&
-	    (name[1] == '\0' || (name[1] == '.' && name[2] == '\0')) ||
+	if ((name[0] == '.') &&
+	    ((name[1] == '\0') || ((name[1] == '.') && (name[2] == '\0'))) ||
 	    zfs_has_ctldir(dzp) && strcmp(name, ZFS_CTLDIR_NAME) == 0)
 		return (EEXIST);
 
@@ -235,8 +235,10 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 	 * See if there's an object by this name; if so, put a hold on it.
 	 */
 	if (flag & ZXATTR) {
-		zoid = dzp->z_phys->zp_xattr;
-		error = (zoid == 0 ? ENOENT : 0);
+		error = sa_lookup(dzp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs), &zoid,
+		    sizeof (zoid));
+		if (error == 0)
+			error = (zoid == 0 ? ENOENT : 0);
 	} else {
 #ifdef __APPLE__
 		/*
@@ -284,7 +286,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 				 * Add a negative entry into the VFS name cache
 				 */
 				if ((flag & ZNEW) == 0 &&
-				    (dzp->z_phys->zp_flags & ZFS_XATTR) == 0 &&
+				    (dzp->z_pflags & ZFS_XATTR) == 0 &&
 					(cnp) &&
 				    (cnp->cn_flags & MAKEENTRY) &&
 				    (cnp->cn_nameiop != CREATE) &&
@@ -310,7 +312,9 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 		if (error) {
 			zfs_dirent_unlock(dl);
 			return (error);
-		}
+		} else {
+            zfs_attach_vnode(*zpp);
+        }
 		if (!(flag & ZXATTR))
 #ifdef __APPLE__
 			if (cnp && cnp->cn_flags & MAKEENTRY)
@@ -373,6 +377,8 @@ zfs_dirlook(znode_t *dzp, char *name, vnode_t **vpp)
 	zfs_dirlock_t *dl;
 	znode_t *zp;
 	int error = 0;
+	uint64_t parent;
+
 #ifdef __APPLE__
 	char *name = cnp->cn_nameptr;
 #endif
@@ -386,14 +392,17 @@ zfs_dirlook(znode_t *dzp, char *name, vnode_t **vpp)
 		 * If we are a snapshot mounted under .zfs, return
 		 * the vp for the snapshot directory.
 		 */
-		if (dzp->z_phys->zp_parent == dzp->z_id &&
-		    zfsvfs->z_parent != zfsvfs) {
+		if ((error = sa_lookup(dzp->z_sa_hdl,
+		    SA_ZPL_PARENT(zfsvfs), &parent, sizeof (parent))) != 0)
+			return (error);
+		if (parent == dzp->z_id && zfsvfs->z_parent != zfsvfs) {
 			error = zfsctl_root_lookup(zfsvfs->z_parent->z_ctldir,
-			    "snapshot", vpp, NULL, 0, NULL, kcred);
+			    "snapshot", vpp, NULL, 0, NULL, kcred
+                                       /*, NULL, NULL, NULL*/);
 			return (error);
 		}
 		rw_enter(&dzp->z_parent_lock, RW_READER);
-		error = zfs_zget(zfsvfs, dzp->z_phys->zp_parent, &zp);
+		error = zfs_zget(zfsvfs, parent, &zp);
 		if (error == 0)
 			*vpp = ZTOV(zp);
 		rw_exit(&dzp->z_parent_lock);
@@ -455,7 +464,7 @@ zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 	znode_stalker(zp, N_zfs_nolink_add);
 #endif
 	ASSERT(zp->z_unlinked);
-	ASSERT3U(zp->z_phys->zp_links, ==, 0);
+	ASSERT3U(zp->z_links, ==, 0);
 
 	error = zap_add(zfsvfs->z_os, zfsvfs->z_unlinkedobj,
 	    zfs_unlinked_hexname(obj_name, zp->z_id), 8, 1, &zp->z_id, tx);
@@ -542,7 +551,6 @@ zfs_purgedir(znode_t *dzp)
 		error = zfs_zget_sans_vnode(zfsvfs,  ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
 		ASSERT3U(error, ==, 0);
 
-		ASSERT(S_ISREG(xzp->z_phys->zp_mode) || S_ISLNK(xzp->z_phys->zp_mode));
 #else
 		error = zfs_zget(zfsvfs,
 		    ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
@@ -552,10 +560,13 @@ zfs_purgedir(znode_t *dzp)
 		    (ZTOV(xzp)->v_type == VLNK));
 #endif /* __APPLE__ */
 		tx = dmu_tx_create(zfsvfs->z_os);
-		dmu_tx_hold_bonus(tx, dzp->z_id);
+		dmu_tx_hold_sa(tx, dzp->z_sa_hdl, B_FALSE);
 		dmu_tx_hold_zap(tx, dzp->z_id, FALSE, zap.za_name);
-		dmu_tx_hold_bonus(tx, xzp->z_id);
+		dmu_tx_hold_sa(tx, xzp->z_sa_hdl, B_FALSE);
 		dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, FALSE, NULL);
+		/* Is this really needed ? */
+		zfs_sa_upgrade_txholds(tx, xzp);
+
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
 			dmu_tx_abort(tx);
@@ -603,12 +614,13 @@ zfs_rmnode(znode_t *zp)
 	char		obj_name[17];
 	dmu_tx_t	*tx;
 	uint64_t	acl_obj;
+    uint64_t        xattr_obj;
 	int		error;
 
 #ifndef __APPLE__
 	ASSERT(ZTOV(zp)->v_count == 0);
 #endif /*!__APPLE__*/
-	ASSERT(zp->z_phys->zp_links == 0);
+	ASSERT(zp->z_links == 0);
 
 #ifdef ZFS_DEBUG
 	znode_stalker(zp, N_zfs_rmnode);
@@ -618,87 +630,107 @@ zfs_rmnode(znode_t *zp)
 	 * If this is an attribute directory, purge its contents.
 	 */
 #ifdef __APPLE__
-	if (S_ISDIR(zp->z_phys->zp_mode) && (zp->z_phys->zp_flags & ZFS_XATTR))
+	if (ZP_GET_VTYPE(zp) == VDIR && (zp->z_pflags & ZFS_XATTR))
 #else
-	if (ZTOV(zp)->v_type == VDIR && (zp->z_phys->zp_flags & ZFS_XATTR))
+        if (ZTOV(zp)->v_type == VDIR && (zp->z_phys->zp_flags & ZFS_XATTR))
 #endif
-	{
+            {
 		if (zfs_purgedir(zp) != 0) {
 			/*
 			 * Not enough space to delete some xattrs.
 			 * Leave it on the unlinked set.
 			 */
+            zfs_znode_dmu_fini(zp);
+            zfs_znode_free(zp);
 			return;
 		}
 	}
 
-	/*
-	 * If the file has extended attributes, we're going to unlink
-	 * the xattr dir.
-	 */
-	if (zp->z_phys->zp_xattr) {
-		error = zfs_zget(zfsvfs, zp->z_phys->zp_xattr, &xzp);
-		ASSERT(error == 0);
-	}
+    /*
+     * Free up all the data in the file.
+     */
+    error = dmu_free_long_range(os, zp->z_id, 0, DMU_OBJECT_END);
+    if (error) {
+        /*
+         * Not enough space.  Leave the file in the unlinked set.
+         */
+        zfs_znode_dmu_fini(zp);
+        zfs_znode_free(zp);
+        return;
+    }
 
-	acl_obj = zp->z_phys->zp_acl.z_acl_extern_obj;
+        /*
+         * If the file has extended attributes, we're going to unlink
+         * the xattr dir.
+         */
+        error = sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
+            &xattr_obj, sizeof (xattr_obj));
+        if (error == 0 && xattr_obj) {
+#ifdef __DARWIN__
+                error = zfs_zget(zfsvfs, xattr_obj, &xzp);
+#else
+                error = zfs_zget(zfsvfs, xattr_obj, &xzp);
+#endif
+                ASSERT(error == 0);
+        }
 
-	/*
-	 * Set up the transaction.
-	 */
-	tx = dmu_tx_create(os);
-	dmu_tx_hold_free(tx, zp->z_id, 0, DMU_OBJECT_END);
-	dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, FALSE, NULL);
-	if (xzp) {
-		dmu_tx_hold_bonus(tx, xzp->z_id);
-		dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, TRUE, NULL);
-	}
-	if (acl_obj)
-		dmu_tx_hold_free(tx, acl_obj, 0, DMU_OBJECT_END);
-	error = dmu_tx_assign(tx, TXG_WAIT);
-	if (error) {
-		/*
-		 * Not enough space to delete the file.  Leave it in the
-		 * unlinked set, leaking it until the fs is remounted (at
-		 * which point we'll call zfs_unlinked_drain() to process it).
-		 */
-		dmu_tx_abort(tx);
-#ifdef __APPLE__
-		/*XXX NOEL: double check this path logic. see radar 5182217.
-		 * This may be disturbing some of the evict logic
-		 * and hence causing the NULL ptr drefs seen every great while
-		 * in some of the test cases*/
-		zp->z_dbuf_held = 0;
-		ZFS_OBJ_HOLD_EXIT(zfsvfs, zp->z_id);
-		dmu_buf_rele(zp->z_dbuf, NULL);
-#endif /* __APPLE__ */
-		return;
-	}
 
-	if (xzp) {
-		dmu_buf_will_dirty(xzp->z_dbuf, tx);
-		mutex_enter(&xzp->z_lock);
-		xzp->z_unlinked = B_TRUE;	/* mark xzp for deletion */
-		xzp->z_phys->zp_links = 0;	/* no more links to it */
-		mutex_exit(&xzp->z_lock);
-		zfs_unlinked_add(xzp, tx);
-	}
+        acl_obj = zfs_external_acl(zp);
 
-	/* Remove this znode from the unlinked set */
-	error = zap_remove(os, zfsvfs->z_unlinkedobj,
-	    zfs_unlinked_hexname(obj_name, zp->z_id), tx);
-	ASSERT3U(error, ==, 0);
+        /*
+         * Set up the final transaction.
+         */
+        tx = dmu_tx_create(os);
+        dmu_tx_hold_free(tx, zp->z_id, 0, DMU_OBJECT_END);
+        dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, FALSE, NULL);
+        if (xzp) {
+                dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, TRUE, NULL);
+                dmu_tx_hold_sa(tx, xzp->z_sa_hdl, B_FALSE);
+        }
+        if (acl_obj)
+                dmu_tx_hold_free(tx, acl_obj, 0, DMU_OBJECT_END);
 
-	zfs_znode_delete(zp, tx);
+        zfs_sa_upgrade_txholds(tx, zp);
+        error = dmu_tx_assign(tx, TXG_WAIT);
+        if (error) {
+                /*
+                 * Not enough space to delete the file.  Leave it in the
+                 * unlinked set, leaking it until the fs is remounted (at
+                 * which point we'll call zfs_unlinked_drain() to process it).
+                 */
+                dmu_tx_abort(tx);
+                zfs_znode_dmu_fini(zp);
+                zfs_znode_free(zp);
+                goto out;
+        }
 
-	dmu_tx_commit(tx);
+        if (xzp) {
+                ASSERT(error == 0);
+                mutex_enter(&xzp->z_lock);
+                xzp->z_unlinked = B_TRUE;       /* mark xzp for deletion */
+                xzp->z_links = 0;       /* no more links to it */
+                VERIFY(0 == sa_update(xzp->z_sa_hdl, SA_ZPL_LINKS(zfsvfs),
+                    &xzp->z_links, sizeof (xzp->z_links), tx));
+                mutex_exit(&xzp->z_lock);
+                zfs_unlinked_add(xzp, tx);
+        }
 
-	if (xzp)
-		VN_RELE(ZTOV(xzp));
+        /* Remove this znode from the unlinked set */
+        VERIFY3U(0, ==,
+            zap_remove_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx));
+
+        zfs_znode_delete(zp, tx);
+
+        dmu_tx_commit(tx);
+out:
+        if (xzp)
+            VN_RELE(ZTOV(xzp));
+
 }
 
+
 static uint64_t
-zfs_dirent(znode_t *zp)
+    zfs_dirent(znode_t *zp, uint64_t mode)
 {
 	uint64_t de = zp->z_id;
 #ifdef __APPLE__
@@ -707,7 +739,7 @@ zfs_dirent(znode_t *zp)
 #else
 	if (zp->z_zfsvfs->z_version >= ZPL_VERSION_DIRENT_TYPE)
 #endif
-		de |= IFTODT((zp)->z_phys->zp_mode) << 60;
+		de |= IFTODT(mode) << 60;
 	return (de);
 }
 
@@ -718,18 +750,22 @@ int
 zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 {
 	znode_t *dzp = dl->dl_dzp;
+    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 #ifdef __APPLE__
 	uint64_t value;
 	/* OSX - don't access the vnode here since it might not be attached yet. */
-	int zp_is_dir = S_ISDIR(zp->z_phys->zp_mode);
+	//int zp_is_dir = S_ISDIR(zp->z_phys->zp_mode);
+    int zp_is_dir = S_ISDIR(zp->z_mode);
 #else
 	vnode_t *vp = ZTOV(zp);
 	uint64_t value;
 	int zp_is_dir = (vp->v_type == VDIR);
 #endif
+    sa_bulk_attr_t bulk[5];
+    uint64_t mtime[2], ctime[2];
+    int count = 0;
 	int error;
 
-	dmu_buf_will_dirty(zp->z_dbuf, tx);
 	mutex_enter(&zp->z_lock);
 
 	if (!(flag & ZRENAMING)) {
@@ -738,22 +774,49 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 			mutex_exit(&zp->z_lock);
 			return (ENOENT);
 		}
-		zp->z_phys->zp_links++;
+		zp->z_links++;
+        SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_LINKS(zfsvfs), NULL,
+                         &zp->z_links, sizeof (zp->z_links));
 	}
-	zp->z_phys->zp_parent = dzp->z_id;	/* dzp is now zp's parent */
 
-	if (!(flag & ZNEW))
-		zfs_time_stamper_locked(zp, STATE_CHANGED, tx);
+	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_PARENT(zfsvfs), NULL,
+	    &dzp->z_id, sizeof (dzp->z_id));
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
+                     &zp->z_pflags, sizeof (zp->z_pflags));
+
+	if (!(flag & ZNEW)) {
+        SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL,
+                         ctime, sizeof (ctime));
+        zfs_tstamp_update_setup(zp, STATE_CHANGED, mtime,
+                                ctime, B_TRUE);
+		//zfs_time_stamper_locked(zp, STATE_CHANGED, tx);
+    }
+    error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
+
 	mutex_exit(&zp->z_lock);
 
-	dmu_buf_will_dirty(dzp->z_dbuf, tx);
+
 	mutex_enter(&dzp->z_lock);
-	dzp->z_phys->zp_size++;			/* one dirent added */
-	dzp->z_phys->zp_links += zp_is_dir;	/* ".." link from zp */
-	zfs_time_stamper_locked(dzp, CONTENT_MODIFIED, tx);
+	dzp->z_size++;
+	dzp->z_links += zp_is_dir;
+
+    count = 0;
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_SIZE(zfsvfs), NULL,
+                     &dzp->z_size, sizeof (dzp->z_size));
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_LINKS(zfsvfs), NULL,
+                     &dzp->z_links, sizeof (dzp->z_links));
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL,
+                     mtime, sizeof (mtime));
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL,
+                     ctime, sizeof (ctime));
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
+                     &dzp->z_pflags, sizeof (dzp->z_pflags));
+    zfs_tstamp_update_setup(dzp, CONTENT_MODIFIED, mtime, ctime, B_TRUE);
+	//zfs_time_stamper_locked(dzp, CONTENT_MODIFIED, tx);
+    error = sa_bulk_update(dzp->z_sa_hdl, bulk, count, tx);
 	mutex_exit(&dzp->z_lock);
 
-	value = zfs_dirent(zp);
+	value = zfs_dirent(zp, zp->z_mode);
 	error = zap_add(zp->z_zfsvfs->z_os, dzp->z_id, dl->dl_name,
 	    8, 1, &value, tx);
 	ASSERT(error == 0);
@@ -764,6 +827,32 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 #endif
 	return (0);
 }
+
+
+static int
+zfs_dropname(zfs_dirlock_t *dl, znode_t *zp, znode_t *dzp, dmu_tx_t *tx,
+    int flag)
+{
+        int error;
+
+        if (zp->z_zfsvfs->z_norm) {
+                if (((zp->z_zfsvfs->z_case == ZFS_CASE_INSENSITIVE) &&
+                    (flag & ZCIEXACT)) ||
+                    ((zp->z_zfsvfs->z_case == ZFS_CASE_MIXED) &&
+                    !(flag & ZCILOOK)))
+                        error = zap_remove_norm(zp->z_zfsvfs->z_os,
+                            dzp->z_id, dl->dl_name, MT_EXACT, tx);
+                else
+                        error = zap_remove_norm(zp->z_zfsvfs->z_os,
+                            dzp->z_id, dl->dl_name, MT_FIRST, tx);
+        } else {
+                error = zap_remove(zp->z_zfsvfs->z_os,
+                    dzp->z_id, dl->dl_name, tx);
+        }
+
+        return (error);
+}
+
 
 /*
  * Unlink zp from dl, and mark zp for deletion if this was the last link.
@@ -777,13 +866,18 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 	boolean_t *unlinkedp)
 {
 	znode_t *dzp = dl->dl_dzp;
+    zfsvfs_t *zfsvfs = dzp->z_zfsvfs;
 	vnode_t *vp = ZTOV(zp);
 #ifdef __APPLE__
-	int zp_is_dir = S_ISDIR(zp->z_phys->zp_mode);
+	//int zp_is_dir = S_ISDIR(zp->z_phys->zp_mode);
+    int zp_is_dir = S_ISDIR(zp->z_mode);
 #else
 	int zp_is_dir = (vp->v_type == VDIR);
 #endif
 	boolean_t unlinked = B_FALSE;
+    sa_bulk_attr_t bulk[5];
+    uint64_t mtime[2], ctime[2];
+    int count = 0;
 	int error;
 
 #ifndef __APPLE__
@@ -791,21 +885,16 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 #endif
 
 	if (!(flag & ZRENAMING)) {
-		dmu_buf_will_dirty(zp->z_dbuf, tx);
 
-#ifdef __APPLE__
 		if (vp) {
-#endif /* __APPLE__ */
-		if (vn_vfswlock(vp))		/* prevent new mounts on zp */
-			return (EBUSY);
+            if (vn_vfswlock(vp))		/* prevent new mounts on zp */
+                return (EBUSY);
 
-		if (vn_ismntpt(vp)) {		/* don't remove mount point */
-			vn_vfsunlock(vp);
-			return (EBUSY);
-		}
-#ifdef __APPLE__
+            if (vn_ismntpt(vp)) {		/* don't remove mount point */
+                vn_vfsunlock(vp);
+                return (EBUSY);
+            }
 		} /* if (vp) */
-#endif /* __APPLE__ */
 
 		mutex_enter(&zp->z_lock);
 		if (zp_is_dir && !zfs_dirempty(zp)) {	/* dir not empty */
@@ -817,38 +906,84 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 			return (EEXIST);
 #endif
 		}
-		if (zp->z_phys->zp_links <= zp_is_dir) {
+
+
+        /*
+         * If we get here, we are going to try to remove the object.
+         * First try removing the name from the directory; if that
+         * fails, return the error.
+         */
+        error = zfs_dropname(dl, zp, dzp, tx, flag);
+        if (error != 0) {
+            mutex_exit(&zp->z_lock);
+            //vn_vfsunlock(vp);
+            return (error);
+        }
+
+
+		if (zp->z_links <= zp_is_dir) {
 #ifndef __APPLE__
 			zfs_panic_recover("zfs: link count on %s is %u, "
 			    "should be at least %u",
 			    zp->z_vnode->v_path ? zp->z_vnode->v_path :
-			    "<unknown>", (int)zp->z_phys->zp_links,
+			    "<unknown>", (int)zp->z_links,
 			    zp_is_dir + 1);
 #endif
-			zp->z_phys->zp_links = zp_is_dir + 1;
+			zp->z_links = zp_is_dir + 1;
 		}
-		if (--zp->z_phys->zp_links == zp_is_dir) {
+		if (--zp->z_links == zp_is_dir) {
 			zp->z_unlinked = B_TRUE;
-			zp->z_phys->zp_links = 0;
+			zp->z_links = 0;
 			unlinked = B_TRUE;
 		} else {
-			zfs_time_stamper_locked(zp, STATE_CHANGED, tx);
+            SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs),
+                             NULL, &ctime, sizeof (ctime));
+            SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs),
+                             NULL, &zp->z_pflags, sizeof (zp->z_pflags));
+            zfs_tstamp_update_setup(zp, STATE_CHANGED, mtime, ctime,
+                                    B_TRUE);
+			//zfs_time_stamper_locked(zp, STATE_CHANGED, tx);
 		}
+        SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_LINKS(zfsvfs),
+                         NULL, &zp->z_links, sizeof (zp->z_links));
+        error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
+        count = 0;
+        ASSERT(error == 0);
 		mutex_exit(&zp->z_lock);
 #ifndef __APPLE__
 		vn_vfsunlock(vp);
 #endif
-	}
+	} else {
+        error = zfs_dropname(dl, zp, dzp, tx, flag);
+        if (error != 0)
+            return (error);
+    }
 
-	dmu_buf_will_dirty(dzp->z_dbuf, tx);
 	mutex_enter(&dzp->z_lock);
-	dzp->z_phys->zp_size--;			/* one dirent removed */
-	dzp->z_phys->zp_links -= zp_is_dir;	/* ".." link from zp */
-	zfs_time_stamper_locked(dzp, CONTENT_MODIFIED, tx);
+	dzp->z_size--;		/* one dirent removed */
+	dzp->z_links -= zp_is_dir;	/* ".." link from zp */
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_LINKS(zfsvfs),
+                     NULL, &dzp->z_links, sizeof (dzp->z_links));
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_SIZE(zfsvfs),
+                     NULL, &dzp->z_size, sizeof (dzp->z_size));
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs),
+                     NULL, ctime, sizeof (ctime));
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs),
+                     NULL, mtime, sizeof (mtime));
+    SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs),
+                     NULL, &dzp->z_pflags, sizeof (dzp->z_pflags));
+    zfs_tstamp_update_setup(dzp, CONTENT_MODIFIED, mtime, ctime, B_TRUE);
+    error = sa_bulk_update(dzp->z_sa_hdl, bulk, count, tx);
+    ASSERT(error == 0);
+	//zfs_time_stamper_locked(dzp, CONTENT_MODIFIED, tx);
 	mutex_exit(&dzp->z_lock);
 
-	error = zap_remove(zp->z_zfsvfs->z_os, dzp->z_id, dl->dl_name, tx);
-	ASSERT(error == 0);
+    /* Inform VFS to dump this znode as soon as possible... */
+    if (unlinked && ZTOV(zp))
+        vnode_recycle(ZTOV(zp));
+
+	//error = zap_remove(zp->z_zfsvfs->z_os, dzp->z_id, dl->dl_name, tx);
+	//ASSERT(error == 0);
 
 	if (unlinkedp != NULL)
 		*unlinkedp = unlinked;
@@ -866,7 +1001,7 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 boolean_t
 zfs_dirempty(znode_t *dzp)
 {
-	return (dzp->z_phys->zp_size == 2 && dzp->z_dirlocks == 0);
+	return (dzp->z_size == 2 && dzp->z_dirlocks == 0);
 }
 
 int
@@ -878,6 +1013,7 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 	uint64_t xoid;
 	int error;
     zfs_acl_ids_t acl_ids;
+    boolean_t fuid_dirtied;
 
 	*xvpp = NULL;
 
@@ -894,39 +1030,49 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
         zfs_acl_ids_free(&acl_ids);
         return (EDQUOT);
     }
-
+top:
 	tx = dmu_tx_create(zfsvfs->z_os);
-	dmu_tx_hold_bonus(tx, zp->z_id);
-	dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, FALSE, NULL);
-	error = dmu_tx_assign(tx, zfsvfs->z_assign);
-	if (error) {
-		if (error == ERESTART && zfsvfs->z_assign == TXG_NOWAIT)
-			dmu_tx_wait(tx);
+        dmu_tx_hold_sa_create(tx, acl_ids.z_aclp->z_acl_bytes +
+            ZFS_SA_BASE_ATTR_SIZE);
+        dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_TRUE);
+        dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, FALSE, NULL);
+        fuid_dirtied = zfsvfs->z_fuid_dirty;
+        if (fuid_dirtied)
+                zfs_fuid_txhold(zfsvfs, tx);
+        error = dmu_tx_assign(tx, TXG_NOWAIT);
+        if (error) {
+                if (error == ERESTART) {
+                        dmu_tx_wait(tx);
+                        dmu_tx_abort(tx);
+                        goto top;
+                }
+                zfs_acl_ids_free(&acl_ids);
+                dmu_tx_abort(tx);
+                return (error);
+        }
+        zfs_mknode(zp, vap, tx, cr, IS_XATTR, &xzp, &acl_ids);
+
+        if (fuid_dirtied)
+                zfs_fuid_sync(zfsvfs, tx);
+        VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs), &xzp->z_id,
+            sizeof (xzp->z_id), tx));
+
+        (void) zfs_log_create(zfsvfs->z_log, tx, TX_MKXATTR, zp,
+            xzp, "", NULL, acl_ids.z_fuidp, vap);
+
         zfs_acl_ids_free(&acl_ids);
-		dmu_tx_abort(tx);
-		return (error);
-	}
-	//zfs_mknode(zp, vap, &xoid, tx, cr, IS_XATTR, &xzp, 0);
-	zfs_mknode(zp, vap, tx, cr, IS_XATTR, &xzp, &acl_ids);
-	ASSERT(xzp->z_id == xoid);
-	ASSERT(xzp->z_phys->zp_parent == zp->z_id);
-	dmu_buf_will_dirty(zp->z_dbuf, tx);
-	zp->z_phys->zp_xattr = xoid;
+        dmu_tx_commit(tx);
 
-	(void) zfs_log_create(zfsvfs->z_log, tx, TX_MKXATTR, zp, xzp, "",
-                          NULL, acl_ids.z_fuidp, vap);
-    zfs_acl_ids_free(&acl_ids);
-	dmu_tx_commit(tx);
-#ifdef __APPLE__
-	/*
-	 * Obtain and attach the vnode after committing the transaction
-	 */
-	zfs_attach_vnode(xzp);
+#ifdef __DARWIN__
+        /* Cleanup any znode we consumed during zfs_mknode() */
+        printf("ZFS_POSTPROCESS_ZP(xzp);\n");
+        zfs_attach_vnode(xzp);
 #endif
-	*xvpp = ZTOV(xzp);
+        *xvpp = ZTOV(xzp);
 
-	return (0);
+        return (0);
 }
+
 
 /*
  * Return a znode for the extended attribute directory for zp.
@@ -949,6 +1095,7 @@ zfs_get_xattrdir(znode_t *zp, vnode_t **xvpp, cred_t *cr, int flags)
 	zfs_dirlock_t	*dl;
 	vattr_t		va;
 	int		error;
+    printf("zfs_get_xattrdir\n");
 top:
 #ifdef __APPLE__
 	error = zfs_dirent_lock(&dl, zp, NULL, &xzp, ZXATTR);
@@ -964,7 +1111,7 @@ top:
 		return (0);
 	}
 
-	ASSERT(zp->z_phys->zp_xattr == 0);
+	//ASSERT(zp->z_phys->zp_xattr == 0);
 
 	if (!(flags & CREATE_XATTR_DIR)) {
 		zfs_dirent_unlock(dl);
@@ -994,8 +1141,7 @@ top:
 	va.va_mask = AT_TYPE | AT_MODE | AT_UID | AT_GID;
 	va.va_type = VDIR;
 	va.va_mode = S_IFDIR | S_ISVTX | 0777;
-	va.va_uid = (uid_t)zp->z_phys->zp_uid;
-	va.va_gid = (gid_t)zp->z_phys->zp_gid;
+	zfs_fuid_map_ids(zp, cr, &va.va_uid, &va.va_gid);
 
 	error = zfs_make_xattrdir(zp, &va, xvpp, cr);
 	zfs_dirent_unlock(dl);
@@ -1029,9 +1175,9 @@ zfs_sticky_remove_access(znode_t *zdp, znode_t *zp, cred_t *cr)
 	if (zdp->z_zfsvfs->z_assign >= TXG_INITIAL)	/* ZIL replay */
 		return (0);
 
-	if ((zdp->z_phys->zp_mode & S_ISVTX) == 0 ||
-	    (uid = crgetuid(cr)) == zdp->z_phys->zp_uid ||
-	    uid == zp->z_phys->zp_uid ||
+	if ((zdp->z_mode & S_ISVTX) == 0 ||
+	    (uid = crgetuid(cr)) == zdp->z_uid ||
+	    uid == zp->z_uid ||
 		(
 #ifdef __APPLE__
 	    vnode_isreg(ZTOV(zp)) &&

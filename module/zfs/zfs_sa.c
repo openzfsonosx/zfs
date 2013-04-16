@@ -128,14 +128,14 @@ zfs_sa_symlink(znode_t *zp, char *link, int len, dmu_tx_t *tx)
 void
 zfs_sa_get_scanstamp(znode_t *zp, xvattr_t *xvap)
 {
-#if 0
-	zfs_sb_t *zsb = ZTOZSB(zp);
+#if 1
+    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	xoptattr_t *xoap;
 
 	ASSERT(MUTEX_HELD(&zp->z_lock));
 	VERIFY((xoap = xva_getxoptattr(xvap)) != NULL);
 	if (zp->z_is_sa) {
-		if (sa_lookup(zp->z_sa_hdl, SA_ZPL_SCANSTAMP(zsb),
+		if (sa_lookup(zp->z_sa_hdl, SA_ZPL_SCANSTAMP(zfsvfs),
 		    &xoap->xoa_av_scanstamp,
 		    sizeof (xoap->xoa_av_scanstamp)) != 0)
 			return;
@@ -164,14 +164,14 @@ zfs_sa_get_scanstamp(znode_t *zp, xvattr_t *xvap)
 void
 zfs_sa_set_scanstamp(znode_t *zp, xvattr_t *xvap, dmu_tx_t *tx)
 {
-#if 0
-	zfs_sb_t *zsb = ZTOZSB(zp);
+#if 1
+    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	xoptattr_t *xoap;
 
 	ASSERT(MUTEX_HELD(&zp->z_lock));
 	VERIFY((xoap = xva_getxoptattr(xvap)) != NULL);
 	if (zp->z_is_sa)
-		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SCANSTAMP(zsb),
+		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SCANSTAMP(zfsvfs),
 		    &xoap->xoa_av_scanstamp,
 		    sizeof (xoap->xoa_av_scanstamp), tx));
 	else {
@@ -188,7 +188,7 @@ zfs_sa_set_scanstamp(znode_t *zp, xvattr_t *xvap, dmu_tx_t *tx)
 		    xoap->xoa_av_scanstamp, sizeof (xoap->xoa_av_scanstamp));
 
 		zp->z_pflags |= ZFS_BONUS_SCANSTAMP;
-		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_FLAGS(zsb),
+		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_FLAGS(zfsvfs),
 		    &zp->z_pflags, sizeof (uint64_t), tx));
 	}
 #endif
@@ -197,8 +197,8 @@ zfs_sa_set_scanstamp(znode_t *zp, xvattr_t *xvap, dmu_tx_t *tx)
 int
 zfs_sa_get_xattr(znode_t *zp)
 {
-#if 0
-	zfs_sb_t *zsb = ZTOZSB(zp);
+#if 1
+    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	char *obj;
 	int size;
 	int error;
@@ -207,7 +207,7 @@ zfs_sa_get_xattr(znode_t *zp)
 	ASSERT(!zp->z_xattr_cached);
 	ASSERT(zp->z_is_sa);
 
-	error = sa_size(zp->z_sa_hdl, SA_ZPL_DXATTR(zsb), &size);
+	error = sa_size(zp->z_sa_hdl, SA_ZPL_DXATTR(zfsvfs), &size);
 	if (error) {
 		if (error == ENOENT)
 			return nvlist_alloc(&zp->z_xattr_cached,
@@ -218,7 +218,7 @@ zfs_sa_get_xattr(znode_t *zp)
 
 	obj = sa_spill_alloc(KM_SLEEP);
 
-	error = sa_lookup(zp->z_sa_hdl, SA_ZPL_DXATTR(zsb), obj, size);
+	error = sa_lookup(zp->z_sa_hdl, SA_ZPL_DXATTR(zfsvfs), obj, size);
 	if (error == 0)
 		error = nvlist_unpack(obj, size, &zp->z_xattr_cached, KM_SLEEP);
 
@@ -231,8 +231,8 @@ zfs_sa_get_xattr(znode_t *zp)
 int
 zfs_sa_set_xattr(znode_t *zp)
 {
-#if 0
-	zfs_sb_t *zsb = ZTOZSB(zp);
+#if 1
+    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	dmu_tx_t *tx;
 	char *obj;
 	size_t size;
@@ -253,7 +253,7 @@ zfs_sa_set_xattr(znode_t *zp)
 	if (error)
 		goto out_free;
 
-	tx = dmu_tx_create(zsb->z_os);
+	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_sa_create(tx, size);
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_TRUE);
 
@@ -261,7 +261,7 @@ zfs_sa_set_xattr(znode_t *zp)
 	if (error) {
 		dmu_tx_abort(tx);
 	} else {
-		error = sa_update(zp->z_sa_hdl, SA_ZPL_DXATTR(zsb),
+		error = sa_update(zp->z_sa_hdl, SA_ZPL_DXATTR(zfsvfs),
 		    obj, size, tx);
 		if (error)
 			dmu_tx_abort(tx);
@@ -282,8 +282,6 @@ out:
  *
  * All new files will be created with the new format.
  */
-
-#define ZP_GET_VTYPE(ZP) vnode_vtype(ZTOV((ZP)))
 
 void
 zfs_sa_upgrade(sa_handle_t *hdl, dmu_tx_t *tx)

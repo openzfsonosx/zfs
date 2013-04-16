@@ -40,7 +40,7 @@ typedef int (*filldir_t)(void *, const char *, int, loff_t, loff_t, unsigned);
     struct nameidata;
     struct dentry;
     struct writeback_control;
-
+#if 0
 extern int zfs_open(struct inode *ip, int mode, int flag, cred_t *cr);
 extern int zfs_close(struct inode *ip, int flag, cred_t *cr);
 extern int zfs_read(struct inode *ip, uio_t *uio, int ioflag, cred_t *cr);
@@ -83,6 +83,8 @@ extern int zfs_putpage(struct inode *ip, struct page *pp,
 extern int zfs_dirty_inode(struct inode *ip, int flags);
 extern int zfs_map(struct inode *ip, offset_t off, caddr_t *addrp,
     size_t len, unsigned long vm_flags);
+#endif
+
 
 #ifdef	__cplusplus
 }
