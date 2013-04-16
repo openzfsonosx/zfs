@@ -1365,8 +1365,10 @@ sa_handle_destroy(sa_handle_t *hdl)
 
 	dmu_buf_rele(hdl->sa_bonus, NULL);
 
-	if (hdl->sa_spill)
-		dmu_buf_rele((dmu_buf_t *)hdl->sa_spill, NULL);
+	if (hdl->sa_spill) {
+        sa_spill_rele(hdl);
+		//dmu_buf_rele((dmu_buf_t *)hdl->sa_spill, NULL);
+    }
 	mutex_exit(&hdl->sa_lock);
 
 	kmem_cache_free(sa_cache, hdl);

@@ -428,7 +428,7 @@ zfs_set_slabel_policy(const char *name, char *strval, cred_t *cr)
 	/*
 	 * If the existing dataset label is nondefault, check if the
 	 * dataset is mounted (label cannot be changed while mounted).
-	 * Get the zfs_sb_t; if there isn't one, then the dataset isn't
+	 * Get the zfsvfs_t; if there isn't one, then the dataset isn't
 	 * mounted (or isn't a dataset, doesn't exist, ...).
 	 */
 	if (strcasecmp(ds_hexsl, ZFS_MLSLABEL_DEFAULT) != 0) {
@@ -1082,7 +1082,7 @@ put_nvlist(zfs_cmd_t *zc, nvlist_t *nvl)
 }
 
 static int
-get_zfs_sb(const char *dsname, zfs_sb_t **zsbp)
+get_zfs_sb(const char *dsname, zfsvfs_t **zsbp)
 {
 	objset_t *os;
 	int error;
@@ -1108,13 +1108,13 @@ get_zfs_sb(const char *dsname, zfs_sb_t **zsbp)
 }
 
 /*
- * Find a zfs_sb_t for a mounted filesystem, or create our own, in which
+ * Find a zfsvfs_t for a mounted filesystem, or create our own, in which
  * case its z_sb will be NULL, and it will be opened as the owner.
  * If 'writer' is set, the z_teardown_lock will be held for RW_WRITER,
  * which prevents all inode ops from running.
  */
 static int
-zfs_sb_hold(const char *name, void *tag, zfs_sb_t **zsbp, boolean_t writer)
+zfs_sb_hold(const char *name, void *tag, zfsvfs_t **zsbp, boolean_t writer)
 {
 	int error = 0;
 #if 0
@@ -1138,16 +1138,16 @@ zfs_sb_hold(const char *name, void *tag, zfs_sb_t **zsbp, boolean_t writer)
 }
 
 static void
-zfs_sb_rele(zfs_sb_t *zsb, void *tag)
+zfs_sb_rele(zfsvfs_t *zsb, void *tag)
 {
 	rrw_exit(&zsb->z_teardown_lock, tag);
 
-	if (zsb->z_sb) {
+	//if (zsb->z_sb) {
 		//deactivate_super(zsb->z_sb);
-	} else {
-		dmu_objset_disown(zsb->z_os, zsb);
+	//} else {
+	//	dmu_objset_disown(zsb->z_os, zsb);
 		//zfs_sb_free(zsb);
-	}
+	//}
 }
 
 static int
@@ -2093,7 +2093,7 @@ zfs_prop_set_userquota(const char *dsname, nvpair_t *pair)
 	zfs_userquota_prop_t type;
 	uint64_t rid;
 	uint64_t quota;
-	zfs_sb_t *zsb;
+	zfsvfs_t *zsb;
 	int err;
 
 	if (nvpair_type(pair) == DATA_TYPE_NVLIST) {
@@ -2180,7 +2180,7 @@ zfs_prop_set_special(const char *dsname, zprop_source_t source,
 		break;
 	case ZFS_PROP_VERSION:
 	{
-		zfs_sb_t *zsb;
+		zfsvfs_t *zsb;
 
 		if ((err = zfs_sb_hold(dsname, FTAG, &zsb, B_TRUE)) != 0)
 			break;
@@ -3115,7 +3115,7 @@ out:
 int
 zfs_unmount_snap(const char *name, void *arg)
 {
-	zfs_sb_t *zsb = NULL;
+	zfsvfs_t *zsb = NULL;
 	char *dsname;
 	char *snapname;
 	char *fullname;
@@ -3234,7 +3234,7 @@ zfs_ioc_rollback(zfs_cmd_t *zc)
 {
 	dsl_dataset_t *ds, *clone;
 	int error;
-	zfs_sb_t *zsb;
+	zfsvfs_t *zsb;
 	char *clone_name;
 
 	error = dsl_dataset_hold(zc->zc_name, FTAG, &ds);
@@ -3756,7 +3756,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 	    &zc->zc_action_handle);
 
 	if (error == 0) {
-		zfs_sb_t *zsb = NULL;
+		zfsvfs_t *zsb = NULL;
 
 		if (get_zfs_sb(tofs, &zsb) == 0) {
 			/* online recv */
@@ -4181,7 +4181,7 @@ zfs_ioc_promote(zfs_cmd_t *zc)
 static int
 zfs_ioc_userspace_one(zfs_cmd_t *zc)
 {
-	zfs_sb_t *zsb;
+	zfsvfs_t *zsb;
 	int error;
 
 	if (zc->zc_objset_type >= ZFS_NUM_USERQUOTA_PROPS)
@@ -4212,7 +4212,7 @@ zfs_ioc_userspace_one(zfs_cmd_t *zc)
 static int
 zfs_ioc_userspace_many(zfs_cmd_t *zc)
 {
-	zfs_sb_t *zsb;
+	zfsvfs_t *zsb;
 	int bufsize = zc->zc_nvlist_dst_size;
 	int error;
 	void *buf;
@@ -4252,7 +4252,7 @@ zfs_ioc_userspace_upgrade(zfs_cmd_t *zc)
 {
 	objset_t *os;
 	int error = 0;
-	zfs_sb_t *zsb;
+	zfsvfs_t *zsb;
 
 	if (get_zfs_sb(zc->zc_name, &zsb) == 0) {
 		if (!dmu_objset_userused_enabled(zsb->z_os)) {
@@ -4409,7 +4409,7 @@ zfs_smb_acl_purge(znode_t *dzp)
 {
 	zap_cursor_t	zc;
 	zap_attribute_t	zap;
-	zfs_sb_t *zsb = ZTOZSB(dzp);
+	zfsvfs_t *zsb = ZTOZSB(dzp);
 	int error;
 
 	for (zap_cursor_init(&zc, zsb->z_os, dzp->z_id);
@@ -4432,7 +4432,7 @@ zfs_ioc_smb_acl(zfs_cmd_t *zc)
 	znode_t *dzp;
 	vnode_t *resourcevp = NULL;
 	znode_t *sharedir;
-	zfs_sb_t *zsb;
+	zfsvfs_t *zsb;
 	nvlist_t *nvlist;
 	char *src, *target;
 	vattr_t vattr;
@@ -5183,6 +5183,11 @@ u_int32_t k_maczfs_debug_stalk;
 
 #define ZFS_MAJOR  -24
 
+#include <sys/vdev_impl.h>
+#include <sys/zap_impl.h>
+#include <sys/sa_impl.h>
+#include <sys/zap_leaf.h>
+
 void
 zfs_ioctl_init(void)
 {
@@ -5209,7 +5214,6 @@ zfs_ioctl_init(void)
            "ZFS pool version %s, ZFS filesystem version %s\n",
            ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
            SPA_VERSION_STRING, ZPL_VERSION_STRING);
-
 }
 
 void

@@ -38,7 +38,6 @@
 extern "C" {
 #endif
 
-struct zfs_sb;
 struct znode;
 
 typedef struct zfsvfs zfsvfs_t;
@@ -51,6 +50,14 @@ struct zfsvfs {
         uint64_t        z_unlinkedobj;  /* id of unlinked zapobj */
         uint64_t        z_max_blksz;    /* maximum block size for files */
         uint64_t        z_assign;       /* TXG_NOWAIT or set by zil_replay() */
+    uint64_t    z_fuid_obj; /* fuid table object number */
+    uint64_t    z_fuid_size;    /* fuid table size */
+    avl_tree_t  z_fuid_idx; /* fuid tree keyed by index */
+    avl_tree_t  z_fuid_domain;  /* fuid tree keyed by domain */
+    krwlock_t   z_fuid_lock;    /* fuid lock */
+    boolean_t   z_fuid_loaded;  /* fuid tables are loaded */
+    boolean_t   z_fuid_dirty;   /* need to sync fuid table ? */
+    struct zfs_fuid_info    *z_fuid_replay; /* fuid info for replay */
         zilog_t         *z_log;         /* intent log pointer */
         uint_t          z_acl_mode;     /* acl chmod/mode behavior */
         uint_t          z_acl_inherit;  /* acl inheritance behavior */
@@ -61,74 +68,32 @@ struct zfsvfs {
         boolean_t       z_unmounted;    /* unmounted */
         krwlock_t       z_unmount_lock;
         krwlock_t       z_unmount_inactive_lock;
+    rrwlock_t   z_teardown_lock;
         krwlock_t       z_teardown_inactive_lock;
         list_t          z_all_znodes;   /* all vnodes in the fs */
         kmutex_t        z_znodes_lock;  /* lock for z_all_znodes */
         struct vnode   *z_ctldir;      /* .zfs directory pointer */
+        struct vnode   *z_mtime_vp;            /* znode utilized for the fs mtime. */
         time_t          z_mount_time;           /* mount timestamp (for Spotlight) */
         time_t          z_last_unmount_time;    /* unmount timestamp (for Spotlight) */
         time_t          z_last_mtime_synced;    /* last fs mtime synced to disk */
-        struct vnode   *z_mtime_vp;            /* znode utilized for the fs mtime. */
         boolean_t       z_show_ctldir;  /* expose .zfs in the root dir */
         boolean_t       z_issnap;       /* true if this is a snapshot */
+        boolean_t       z_vscan;        /* virus scan on/off */
+        boolean_t       z_use_fuids;    /* version allows fuids */
         boolean_t       z_replay;       /* set during ZIL replay */
         boolean_t       z_use_sa;       /* version allow system attributes */
         uint64_t        z_version;
         uint64_t        z_shares_dir;   /* hidden shares dir */
+    kmutex_t    z_lock;
+    uint64_t    z_userquota_obj;
+    uint64_t    z_groupquota_obj;
+            uint64_t        z_replay_eof;   /* New end of file - replay only */
         sa_attr_type_t  *z_attr_table;  /* SA attr mapping->id */
-#define ZFS_OBJ_MTX_SZ  256
+#define ZFS_OBJ_MTX_SZ  64
         kmutex_t        z_hold_mtx[ZFS_OBJ_MTX_SZ];     /* znode hold locks */
 };
 
-typedef struct zfs_sb {
-	struct super_block *z_sb;	/* generic super_block */
-	//struct backing_dev_info z_bdi;	/* generic backing dev info */
-	struct zfs_sb	*z_parent;	/* parent fs */
-	objset_t	*z_os;		/* objset reference */
-	uint64_t	z_flags;	/* super_block flags */
-	uint64_t	z_root;		/* id of root znode */
-	uint64_t	z_unlinkedobj;	/* id of unlinked zapobj */
-	uint64_t	z_max_blksz;	/* maximum block size for files */
-	uint64_t	z_fuid_obj;	/* fuid table object number */
-	uint64_t	z_fuid_size;	/* fuid table size */
-	avl_tree_t	z_fuid_idx;	/* fuid tree keyed by index */
-	avl_tree_t	z_fuid_domain;	/* fuid tree keyed by domain */
-	krwlock_t	z_fuid_lock;	/* fuid lock */
-	boolean_t	z_fuid_loaded;	/* fuid tables are loaded */
-	boolean_t	z_fuid_dirty;   /* need to sync fuid table ? */
-	struct zfs_fuid_info	*z_fuid_replay; /* fuid info for replay */
-	zilog_t		*z_log;		/* intent log pointer */
-	uint_t		z_acl_inherit;	/* acl inheritance behavior */
-	zfs_case_t	z_case;		/* case-sense */
-	boolean_t	z_utf8;		/* utf8-only */
-	int		z_norm;		/* normalization flags */
-	boolean_t	z_atime;	/* enable atimes mount option */
-	boolean_t	z_unmounted;	/* unmounted */
-	rrwlock_t	z_teardown_lock;
-	krwlock_t	z_teardown_inactive_lock;
-	list_t		z_all_znodes;	/* all znodes in the fs */
-	uint64_t	z_nr_znodes;	/* number of znodes in the fs */
-	kmutex_t	z_znodes_lock;	/* lock for z_all_znodes */
-	struct inode	*z_ctldir;	/* .zfs directory inode */
-	avl_tree_t	z_ctldir_snaps;	/* .zfs/snapshot entries */
-	kmutex_t	z_ctldir_lock;	/* .zfs ctldir lock */
-	boolean_t	z_show_ctldir;	/* expose .zfs in the root dir */
-	boolean_t	z_issnap;	/* true if this is a snapshot */
-	boolean_t	z_vscan;	/* virus scan on/off */
-	boolean_t	z_use_fuids;	/* version allows fuids */
-	boolean_t	z_replay;	/* set during ZIL replay */
-	boolean_t	z_use_sa;	/* version allow system attributes */
-	boolean_t	z_xattr_sa;	/* allow xattrs to be stores as SA */
-	uint64_t	z_version;	/* ZPL version */
-	uint64_t	z_shares_dir;	/* hidden shares dir */
-	kmutex_t	z_lock;
-	uint64_t	z_userquota_obj;
-	uint64_t	z_groupquota_obj;
-	uint64_t	z_replay_eof;	/* New end of file - replay only */
-	sa_attr_type_t	*z_attr_table;	/* SA attr mapping->id */
-    //#define	ZFS_OBJ_MTX_SZ	256
-	kmutex_t	z_hold_mtx[ZFS_OBJ_MTX_SZ];	/* znode hold locks */
-} zfs_sb_t;
 
 #define	ZFS_SUPER_MAGIC	0x2fc12fc1
 
@@ -191,40 +156,38 @@ typedef struct zfid_long {
 
 extern uint_t zfs_fsyncer_key;
 
-extern int zfs_suspend_fs(zfs_sb_t *zsb);
-extern int zfs_resume_fs(zfs_sb_t *zsb, const char *osname);
-extern int zfs_userspace_one(zfs_sb_t *zsb, zfs_userquota_prop_t type,
-    const char *domain, uint64_t rid, uint64_t *valuep);
-extern int zfs_userspace_many(zfs_sb_t *zsb, zfs_userquota_prop_t type,
-    uint64_t *cookiep, void *vbuf, uint64_t *bufsizep);
-extern int zfs_set_userquota(zfs_sb_t *zsb, zfs_userquota_prop_t type,
-    const char *domain, uint64_t rid, uint64_t quota);
-extern boolean_t zfs_owner_overquota(zfs_sb_t *zsb, struct znode *,
+extern int zfs_suspend_fs(zfsvfs_t *zfsvfs);
+extern int zfs_resume_fs(zfsvfs_t *zfsvfs, const char *osname);
+extern int
+zfs_userspace_one(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
+                  const char *domain, uint64_t rid, uint64_t *valp);
+extern int
+zfs_set_userquota(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
+                  const char *domain, uint64_t rid, uint64_t quota);
+extern boolean_t zfs_owner_overquota(zfsvfs_t *zfsvfs, struct znode *,
     boolean_t isgroup);
-extern boolean_t zfs_fuid_overquota(zfs_sb_t *zsb, boolean_t isgroup,
-    uint64_t fuid);
+extern int
+zfs_userspace_many(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
+                   uint64_t *cookiep, void *vbuf, uint64_t *bufsizep);
+boolean_t
+    zfs_fuid_overquota(zfsvfs_t *zfsvfs, boolean_t isgroup, uint64_t fuid);
 extern int
 zfs_set_version(const char *name, uint64_t newvers);
 extern int zfs_get_zplprop(objset_t *os, zfs_prop_t prop,
     uint64_t *value);
-extern int zfs_sb_create(const char *name, zfs_sb_t **zsbp);
-extern int zfs_sb_setup(zfs_sb_t *zsb, boolean_t mounting);
-extern void zfs_sb_free(zfs_sb_t *zsb);
-extern int zfs_sb_prune(struct super_block *sb, unsigned long nr_to_scan,
-    int *objects);
-extern int zfs_sb_teardown(zfs_sb_t *zsb, boolean_t unmounting);
+extern int zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting);
 extern int zfs_check_global_label(const char *dsname, const char *hexsl);
-extern boolean_t zfs_is_readonly(zfs_sb_t *zsb);
+extern boolean_t zfs_is_readonly(zfsvfs_t *zfsvfs);
 
-extern int zfs_register_callbacks(zfs_sb_t *zsb);
-extern void zfs_unregister_callbacks(zfs_sb_t *zsb);
+extern int zfs_register_callbacks(zfsvfs_t *zfsvfs);
+extern void zfs_unregister_callbacks(zfsvfs_t *zfsvfs);
     //extern int zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx);
-extern void zfs_preumount(struct super_block *sb);
-extern int zfs_umount(struct super_block *sb);
-extern int zfs_remount(struct super_block *sb, int *flags, char *data);
-extern int zfs_root(zfs_sb_t *zsb, struct inode **ipp);
+extern void zfs_preumount(zfsvfs_t *sb);
+extern int zfs_umount(zfsvfs_t *sb);
+extern int zfs_remount(zfsvfs_t *sb, int *flags, char *data);
+extern int zfs_root(zfsvfs_t *zfsvfs, struct vnode **ipp);
     //extern int zfs_statvfs(struct dentry *dentry, struct kstatfs *statp);
-extern int zfs_vget(struct super_block *sb, struct inode **ipp, fid_t *fidp);
+extern int zfs_vget(zfsvfs_t *sb, struct vnode **ipp, fid_t *fidp);
 
 #ifdef	__cplusplus
 }

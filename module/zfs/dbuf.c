@@ -2262,9 +2262,10 @@ void *
 dmu_buf_get_user(dmu_buf_t *db_fake)
 {
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)db_fake;
+    void *result;
 	ASSERT(!refcount_is_zero(&db->db_holds));
-
-	return (db->db_user_ptr);
+    result = db->db_user_ptr;
+	return (result);
 }
 
 boolean_t

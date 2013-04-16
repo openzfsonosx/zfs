@@ -81,6 +81,9 @@ typedef enum zpl_attr {
 #define	ZFS_SA_BASE_ATTR_SIZE	(ZFS_OLD_ZNODE_PHYS_SIZE - \
     sizeof (zfs_acl_phys_t))
 
+#define ZP_GET_VTYPE(ZP) vnode_vtype(ZTOV((ZP)))
+
+
 #define	SA_MODE_OFFSET		0
 #define	SA_SIZE_OFFSET		8
 #define	SA_GEN_OFFSET		16
