@@ -603,6 +603,8 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
          * that there will be an i/o error and we will fail one of the
          * assertions below.
          */
+        printf("mknode vtype %d\n", vap->va_type);
+
         if (vap->va_type == VDIR) {
                 if (zfsvfs->z_replay) {
                         err = zap_create_claim_norm(zfsvfs->z_os, obj,
@@ -667,6 +669,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 
         parent = dzp->z_id;
         mode = acl_ids->z_mode;
+        printf("mode starting from 0x%04x\n", mode);
         if (flag & IS_XATTR)
                 pflags |= ZFS_XATTR;
 
@@ -785,6 +788,8 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 
         (*zpp)->z_pflags = pflags;
         (*zpp)->z_mode = mode;
+
+        printf("Assigning mode 0x%04x\n", mode);
 
         if (vap->va_mask & AT_XVATTR)
             zfs_xvattr_set(*zpp, (xvattr_t *)vap, tx);
@@ -938,7 +943,8 @@ zfs_attach_vnode(znode_t *zp)
 	vfsp.vnfs_cnp = cnp;
 #endif
 
-    printf("Attaching vnode type %d (VDIR %d)\n", vfsp.vnfs_vtype, VDIR);
+    printf("Attaching vnode type %d (VDIR %d): zmode 0x%04x\n",
+           vfsp.vnfs_vtype, VDIR, zp->z_mode);
     // This is a hack
     if (vfsp.vnfs_vtype == 0) vfsp.vnfs_vtype = VDIR;
 

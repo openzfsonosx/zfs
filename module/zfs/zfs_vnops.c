@@ -861,6 +861,18 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	int		max_blksz = zfsvfs->z_max_blksz;
 	int		error = 0;
 
+	arc_buf_t	*abuf;
+	iovec_t		*aiov;
+	xuio_t		*xuio = NULL;
+	int		i_iov = 0;
+	int		iovcnt = uio_iovcnt(uio);
+	iovec_t		*iovp = uio_curriovbase(uio);
+	int		write_eof;
+	int		count = 0;
+	sa_bulk_attr_t	bulk[4];
+	uint64_t	mtime[2], ctime[2];
+
+
     printf("vnop_write\n");
 	/*
 	 * Fasttrack empty write
@@ -873,6 +885,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		limit = MAXOFFSET_T;
 
 	ZFS_ENTER(zfsvfs);
+	ZFS_VERIFY_ZP(zp);
+
+	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL, &mtime, 16);
+	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL, &ctime, 16);
+	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_SIZE(zfsvfs), NULL,
+	    &zp->z_size, 8);
+	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
+	    &zp->z_pflags, 8);
 
 	/*
 	 * Pre-fault the pages to ensure slow (eg NFS) pages
@@ -970,6 +990,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 * and allows us to do more fine-grained space accounting.
 	 */
 	while (n > 0) {
+        abuf = NULL;
 		/*
 		 * Start a transaction.
 		 */
@@ -978,18 +999,69 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 #else
 		woff = uio->uio_loffset;
 #endif /* __APPLE__ */
+again:
+        if (zfs_owner_overquota(zfsvfs, zp, B_FALSE) ||
+		    zfs_owner_overquota(zfsvfs, zp, B_TRUE)) {
+			if (abuf != NULL)
+				dmu_return_arcbuf(abuf);
+			error = EDQUOT;
+			break;
+		}
+
+
+		if (xuio && abuf == NULL) {
+			ASSERT(i_iov < iovcnt);
+			aiov = &iovp[i_iov];
+			abuf = dmu_xuio_arcbuf(xuio, i_iov);
+			dmu_xuio_clear(xuio, i_iov);
+			DTRACE_PROBE3(zfs_cp_write, int, i_iov,
+			    iovec_t *, aiov, arc_buf_t *, abuf);
+			ASSERT((aiov->iov_base == abuf->b_data) ||
+			    ((char *)aiov->iov_base - (char *)abuf->b_data +
+			    aiov->iov_len == arc_buf_size(abuf)));
+			i_iov++;
+		} else if (abuf == NULL && n >= max_blksz &&
+		    woff >= zp->z_size &&
+		    P2PHASE(woff, max_blksz) == 0 &&
+		    zp->z_blksz == max_blksz) {
+			/*
+			 * This write covers a full block.  "Borrow" a buffer
+			 * from the dmu so that we can fill it before we enter
+			 * a transaction.  This avoids the possibility of
+			 * holding up the transaction if the data copy hangs
+			 * up on a pagefault (e.g., from an NFS server mapping).
+			 */
+			size_t cbytes;
+
+			abuf = dmu_request_arcbuf(sa_get_db(zp->z_sa_hdl),
+			    max_blksz);
+			ASSERT(abuf != NULL);
+			ASSERT(arc_buf_size(abuf) == max_blksz);
+			if (error = uiocopy(abuf->b_data, max_blksz,
+			    UIO_WRITE, uio, &cbytes)) {
+				dmu_return_arcbuf(abuf);
+				break;
+			}
+			ASSERT(cbytes == max_blksz);
+		}
+
+		/*
+		 * Start a transaction.
+		 */
 		tx = dmu_tx_create(zfsvfs->z_os);
-		dmu_tx_hold_bonus(tx, zp->z_id);
+		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 		dmu_tx_hold_write(tx, zp->z_id, woff, MIN(n, max_blksz));
-		error = dmu_tx_assign(tx, zfsvfs->z_assign);
+		zfs_sa_upgrade_txholds(tx, zp);
+		error = dmu_tx_assign(tx, TXG_NOWAIT);
 		if (error) {
-			if (error == ERESTART &&
-			    zfsvfs->z_assign == TXG_NOWAIT) {
+			if (error == ERESTART) {
 				dmu_tx_wait(tx);
 				dmu_tx_abort(tx);
-				continue;
+				goto again;
 			}
 			dmu_tx_abort(tx);
+			if (abuf != NULL)
+				dmu_return_arcbuf(abuf);
 			break;
 		}
 
@@ -1017,32 +1089,49 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * Perhaps we should use SPA_MAXBLOCKSIZE chunks?
 		 */
 		nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
-		rw_enter(&zp->z_map_lock, RW_READER);
 
-#ifdef __APPLE__
-		tx_bytes = uio_resid(uio);
-#else
-		tx_bytes = uio->uio_resid;
-#endif /* __APPLE__ */
-		if (vn_has_cached_data(vp)) {
-			rw_exit(&zp->z_map_lock);
-			error = mappedwrite(vp, nbytes, uio, tx);
-		} else {
-			error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
+		if (abuf == NULL) {
+			tx_bytes = uio_resid(uio);
+			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, nbytes, tx);
-			rw_exit(&zp->z_map_lock);
+			tx_bytes -= uio_resid(uio);
+		} else {
+			tx_bytes = nbytes;
+			ASSERT(xuio == NULL || tx_bytes == aiov->iov_len);
+			/*
+			 * If this is not a full block write, but we are
+			 * extending the file past EOF and this data starts
+			 * block-aligned, use assign_arcbuf().  Otherwise,
+			 * write via dmu_write().
+			 */
+			if (tx_bytes < max_blksz && (!write_eof ||
+			    aiov->iov_base != abuf->b_data)) {
+				ASSERT(xuio);
+				dmu_write(zfsvfs->z_os, zp->z_id, woff,
+				    aiov->iov_len, aiov->iov_base, tx);
+				dmu_return_arcbuf(abuf);
+				xuio_stat_wbuf_copied();
+			} else {
+				ASSERT(xuio || tx_bytes == max_blksz);
+				dmu_assign_arcbuf(sa_get_db(zp->z_sa_hdl),
+				    woff, abuf, tx);
+			}
+			ASSERT(tx_bytes <= uio_resid(uio));
+			uioskip(uio, tx_bytes);
 		}
-#ifdef __APPLE__
-		tx_bytes -= uio_resid(uio);
-#else
-		tx_bytes -= uio->uio_resid;
-#endif /* __APPLE__ */
+		if (tx_bytes && vn_has_cached_data(vp)) {
+            printf("zfs_write: update_pages missing\n");
+			//update_pages(vp, woff,
+            //  tx_bytes, zfsvfs->z_os, zp->z_id);
+		}
 
 		/*
 		 * If we made no progress, we're done.  If we made even
 		 * partial progress, update the znode and ZIL accordingly.
 		 */
 		if (tx_bytes == 0) {
+			(void) sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
+			    (void *)&zp->z_size, sizeof (uint64_t), tx);
 			dmu_tx_commit(tx);
 			ASSERT(error != 0);
 			break;
@@ -1055,37 +1144,46 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * It would be nice to to this after all writes have
 		 * been done, but that would still expose the ISUID/ISGID
 		 * to another app after the partial write is committed.
+		 *
+		 * Note: we don't call zfs_fuid_map_id() here because
+		 * user 0 is not an ephemeral uid.
 		 */
 		mutex_enter(&zp->z_acl_lock);
 		if ((zp->z_mode & (S_IXUSR | (S_IXUSR >> 3) |
 		    (S_IXUSR >> 6))) != 0 &&
 		    (zp->z_mode & (S_ISUID | S_ISGID)) != 0 &&
 		    secpolicy_vnode_setid_retain(cr,
-		    (zp->z_mode & S_ISUID) != 0 &&
-		    zp->z_uid == 0) != 0) {
+		    (zp->z_mode & S_ISUID) != 0 && zp->z_uid == 0) != 0) {
+			uint64_t newmode;
 			zp->z_mode &= ~(S_ISUID | S_ISGID);
+			newmode = zp->z_mode;
+			(void) sa_update(zp->z_sa_hdl, SA_ZPL_MODE(zfsvfs),
+			    (void *)&newmode, sizeof (uint64_t), tx);
 		}
 		mutex_exit(&zp->z_acl_lock);
 
-		/*
-		 * Update time stamp.  NOTE: This marks the bonus buffer as
-		 * dirty, so we don't have to do it again for zp_size.
-		 */
-		zfs_time_stamper(zp, CONTENT_MODIFIED, tx);
+		zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime,
+		    B_TRUE);
 
 		/*
 		 * Update the file size (zp_size) if it has changed;
 		 * account for possible concurrent updates.
 		 */
-#ifdef __APPLE__
-		while ((end_size = zp->z_size) < uio_offset(uio))
+		while ((end_size = zp->z_size) < uio_offset(uio)) {
 			(void) atomic_cas_64(&zp->z_size, end_size,
 			    uio_offset(uio));
-#else
-		while ((end_size = zp->z_size) < uio->uio_loffset)
-			(void) atomic_cas_64(&zp->z_size, end_size,
-			    uio->uio_loffset);
-#endif /* __APPLE__ */
+			ASSERT(error == 0);
+		}
+		/*
+		 * If we are replaying and eof is non zero then force
+		 * the file size to the specified eof. Note, there's no
+		 * concurrency during replay.
+		 */
+		if (zfsvfs->z_replay && zfsvfs->z_replay_eof != 0)
+			zp->z_size = zfsvfs->z_replay_eof;
+
+		error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
+
 		zfs_log_write(zilog, tx, TX_WRITE, zp, woff, tx_bytes, ioflag);
 		dmu_tx_commit(tx);
 
@@ -1093,7 +1191,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			break;
 		ASSERT(tx_bytes == nbytes);
 		n -= nbytes;
+
+		if (!xuio && n > 0)
+			zfs_prefault_write(MIN(n, max_blksz), uio);
 	}
+
+
+
 
 	zfs_range_unlock(rl);
 
@@ -2037,9 +2141,10 @@ zfs_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t **vpp, cred_t *cr)
 	dmu_tx_t	*tx;
 	int		error;
     zfs_acl_ids_t   acl_ids;
+	boolean_t	fuid_dirtied;
     vsecattr_t *vsecp = NULL;
 
-    printf("vnop_mkdir\n");
+    printf("vnop_mkdir: type %d\n", vap->va_type);
 
 	ASSERT(vap->va_type == VDIR);
 
@@ -2069,7 +2174,6 @@ zfs_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t **vpp, cred_t *cr)
         ZFS_EXIT(zfsvfs);
         return (error);
     }
-
 
 top:
 	*vpp = NULL;
@@ -2111,6 +2215,9 @@ top:
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_zap(tx, dzp->z_id, TRUE, dirname);
 	dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, FALSE, NULL);
+	fuid_dirtied = zfsvfs->z_fuid_dirty;
+	if (fuid_dirtied)
+		zfs_fuid_txhold(zfsvfs, tx);
 
     if (!zfsvfs->z_use_sa && acl_ids.z_aclp->z_acl_bytes > ZFS_ACE_SPACE) {
         dmu_tx_hold_write(tx, DMU_NEW_OBJECT, 0,
@@ -2141,6 +2248,10 @@ top:
 	 */
 	//zfs_mknode(dzp, vap, &zoid, tx, cr, 0, &zp, 0);
     zfs_mknode(dzp, vap, tx, cr, 0, &zp, &acl_ids);
+
+	if (fuid_dirtied)
+		zfs_fuid_sync(zfsvfs, tx);
+
 	/*
 	 * Now put new name in parent dir.
 	 */
@@ -3009,13 +3120,12 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr)
 	mutex_exit(&zp->z_lock);
 
     // va_iosize
-    sa_object_size(zp->z_sa_hdl, &vap->va_data_size, &vap->va_nblocks);
 
 	if (VATTR_IS_ACTIVE(vap, va_data_alloc) || VATTR_IS_ACTIVE(vap, va_total_alloc)) {
-		uint32_t  blksize;
-		u_longlong_t  nblks;
-		//dmu_object_size_from_db(zp->z_dbuf, &blksize, &nblks);
-		vap->va_data_alloc = (uint64_t)512LL * (uint64_t)nblks;
+        uint32_t  blksize;
+        u_longlong_t  nblks;
+        sa_object_size(zp->z_sa_hdl, &blksize, &nblks);
+        vap->va_data_alloc = (uint64_t)512LL * (uint64_t)nblks;
 		vap->va_total_alloc = vap->va_data_alloc;
 		vap->va_supported |= VNODE_ATTR_va_data_alloc |
 					VNODE_ATTR_va_total_alloc;
@@ -7143,6 +7253,8 @@ zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 				goto update;
 			}
 		}
+        printf("readdirattr vtype %d\n", vtype);
+
 		/*
 		 * Pack entries into attribute buffer.
 		 */
@@ -7457,6 +7569,7 @@ dirattrpack(attrinfo_t *aip, znode_t *zp)
 	attrgroup_t dirattr = aip->ai_attrlist->dirattr;
 	void *attrbufptr = *aip->ai_attrbufpp;
 	//u_int32_t entries;
+    printf("dirattrpack\n");
 
 	if (ATTR_DIR_LINKCOUNT & dirattr) {
 		*((u_int32_t *)attrbufptr) = 1;  /* no dir hard links */
@@ -7486,6 +7599,8 @@ fileattrpack(attrinfo_t *aip, zfsvfs_t *zfsvfs, znode_t *zp)
 	void *varbufptr = *aip->ai_varbufpp;
 	uint64_t allocsize = 0;
 	cred_t  *cr = (cred_t *)vfs_context_ucred(aip->ai_context);
+
+    printf("fileattrpack\n");
 
 	if ((ATTR_FILE_ALLOCSIZE | ATTR_FILE_DATAALLOCSIZE) & fileattr && zp) {
 		uint32_t  blksize;

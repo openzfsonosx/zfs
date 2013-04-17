@@ -176,6 +176,8 @@ zfs_vfs_sync(struct mount *mp, __unused int waitfor, __unused vfs_context_t cont
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 
+    printf("+vfs_sync\n");
+
 	ZFS_ENTER(zfsvfs);
 
 	/*
@@ -477,6 +479,23 @@ zfs_set_userquota(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
 	return (err);
 }
 EXPORT_SYMBOL(zfs_set_userquota);
+
+boolean_t
+zfs_owner_overquota(zfsvfs_t *zfsvfs, znode_t *zp, boolean_t isgroup)
+{
+	uint64_t fuid;
+	uint64_t quotaobj;
+
+	quotaobj = isgroup ? zfsvfs->z_groupquota_obj : zfsvfs->z_userquota_obj;
+
+	fuid = isgroup ? zp->z_gid : zp->z_uid;
+
+	if (quotaobj == 0 || zfsvfs->z_replay)
+		return (B_FALSE);
+
+	return (zfs_fuid_overquota(zfsvfs, isgroup, fuid));
+}
+
 
 
 int
