@@ -1752,7 +1752,8 @@ zfs_acl_ids_create(znode_t *dzp, int flag, vattr_t *vap, cred_t *cr,
 	boolean_t	inherited = B_FALSE;
 
 	bzero(acl_ids, sizeof (zfs_acl_ids_t));
-	acl_ids->z_mode = vap->va_mode;
+	acl_ids->z_mode = MAKEIMODE(vap->va_type, vap->va_mode);
+	//acl_ids->z_mode = vap->va_mode;
 
 	if (vsecp)
 		if ((error = zfs_vsec_2_aclp(zfsvfs, vap->va_mode, vsecp,
@@ -1813,6 +1814,7 @@ zfs_acl_ids_create(znode_t *dzp, int flag, vattr_t *vap, cred_t *cr,
 			}
 		}
 	}
+
 #endif /* HAVE_KSID */
 
 	/*
