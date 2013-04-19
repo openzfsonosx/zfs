@@ -511,6 +511,8 @@ zilog_is_dirty(zilog_t *zilog)
 	return (B_FALSE);
 }
 
+
+
 /*
  * Create an on-disk intent log.
  */
@@ -553,7 +555,7 @@ zil_create(zilog_t *zilog)
 
 		error = zio_alloc_zil(zilog->zl_spa, txg, &blk,
 		    ZIL_MIN_BLKSZ, B_TRUE);
-		fastwrite = TRUE;
+		//fastwrite = TRUE;
 
 		if (error == 0)
 			zil_init_log_chain(zilog, &blk);
@@ -854,6 +856,7 @@ zil_lwb_write_done(zio_t *zio)
 	lwb_t *lwb = zio->io_private;
 	zilog_t *zilog = lwb->lwb_zilog;
 	dmu_tx_t *tx = lwb->lwb_tx;
+
 
 	ASSERT(BP_GET_COMPRESS(zio->io_bp) == ZIO_COMPRESS_OFF);
 	ASSERT(BP_GET_TYPE(zio->io_bp) == DMU_OT_INTENT_LOG);
@@ -1532,8 +1535,9 @@ zil_commit_writer(zilog_t *zilog)
 		txg = itx->itx_lr.lrc_txg;
 		ASSERT(txg);
 
-		if (txg > spa_last_synced_txg(spa) || txg > spa_freeze_txg(spa))
+		if (txg > spa_last_synced_txg(spa) || txg > spa_freeze_txg(spa)) {
 			lwb = zil_lwb_commit(zilog, itx, lwb);
+        }
 		list_remove(&zilog->zl_itx_commit_list, itx);
 		kmem_free(itx, offsetof(itx_t, itx_lr)
 		    + itx->itx_lr.lrc_reclen);

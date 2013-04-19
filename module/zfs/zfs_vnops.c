@@ -44,7 +44,6 @@
 #include <sys/zfs_acl.h>
 #include <sys/zfs_ioctl.h>
 #include <sys/fs/zfs.h>
-#include <sys/dmu.h>
 #include <sys/spa.h>
 #include <sys/txg.h>
 #include <sys/dbuf.h>
@@ -1214,7 +1213,7 @@ again:
 		return (error);
 	}
 
-	if (ioflag & (FSYNC | FDSYNC))
+    //	if (ioflag & (FSYNC | FDSYNC))
 		zil_commit(zilog, zp->z_id);
 
 #ifdef __APPLE__
@@ -1223,6 +1222,8 @@ again:
 		ubc_setsize(vp, zp->z_size);
 	}
 #endif /* __APPLE__ */
+
+    printf("zfs_write: tx_bytes %lld\n", tx_bytes);
 
 	ZFS_EXIT(zfsvfs);
 	return (0);
@@ -1250,7 +1251,7 @@ static void
  * Get data to generate a TX_WRITE intent log record.
  */
 int
-zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
+OLDzfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 {
 	zfsvfs_t *zfsvfs = arg;
 	objset_t *os = zfsvfs->z_os;
@@ -1349,6 +1350,128 @@ out:
 	VN_RELE(ZTOV(zp));
 	return (error);
 }
+
+/*
+ * Get data to generate a TX_WRITE intent log record.
+ */
+int
+    zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
+{
+    zfsvfs_t *zfsvfs = arg;
+    objset_t *os = zfsvfs->z_os;
+    znode_t *zp;
+    uint64_t object = lr->lr_foid;
+    uint64_t offset = lr->lr_offset;
+    uint64_t size = lr->lr_length;
+    blkptr_t *bp = &lr->lr_blkptr;
+    dmu_buf_t *db;
+    zgd_t *zgd;
+    int error = 0;
+
+    ASSERT(zio != NULL);
+    ASSERT(size != 0);
+
+    printf("+zfs_get_data: size %lld\n", size);
+    /*
+     * Nothing to do if the file has been removed
+     */
+    if (zfs_zget(zfsvfs, object, &zp) != 0) {
+        return (ENOENT);
+    }
+
+    if (zp->z_unlinked || (zp->z_gen > lr->lr_common.lrc_txg)) {
+
+        /*
+         * Release the vnode asynchronously as we currently have the
+         * txg stopped from syncing.
+         */
+        VN_RELE(ZTOV(zp));
+        //  VN_RELE_ASYNC(ZTOV(zp),
+        //                dsl_pool_vnrele_taskq(dmu_objset_pool(os)));
+        return (ENOENT);
+    }
+
+    zgd = (zgd_t *)kmem_zalloc(sizeof (zgd_t), KM_SLEEP);
+    zgd->zgd_zilog = zfsvfs->z_log;
+    zgd->zgd_private = zp;
+    /*
+     * Write records come in two flavors: immediate and indirect.
+     * For small writes it's cheaper to store the data with the
+     * log record (immediate); for large writes it's cheaper to
+     * sync the data and get a pointer to it (indirect) so that
+     * we don't have to write the data twice.
+     */
+
+    if (buf != NULL) { /* immediate write */
+
+        zgd->zgd_rl = zfs_range_lock(zp, offset, size, RL_READER);
+        /* test for truncation needs to be done while range locked */
+        if (offset >= zp->z_size) {
+            error = ENOENT;
+        } else {
+            error = dmu_read(os, object, offset, size, buf,
+                             DMU_READ_NO_PREFETCH);
+        }
+        ASSERT(error == 0 || error == ENOENT);
+    } else { /* indirect write */
+        /*
+         * Have to lock the whole block to ensure when it's
+         * written out and it's checksum is being calculated
+         * that no one can change the data. We need to re-check
+         * blocksize after we get the lock in case it's changed!
+         */
+        for (;;) {
+            uint64_t blkoff;
+            size = zp->z_blksz;
+
+            blkoff = ISP2(size) ? P2PHASE(offset, size) : offset;
+            offset -= blkoff;
+            zgd->zgd_rl = zfs_range_lock(zp, offset, size,
+                                         RL_READER);
+            if (zp->z_blksz == size)
+                break;
+            offset += blkoff;
+            zfs_range_unlock(zgd->zgd_rl);
+        }
+        /* test for truncation needs to be done while range locked */
+        if (lr->lr_offset >= zp->z_size)
+            error = ENOENT;
+
+        if (error == 0)
+            error = dmu_buf_hold(os, object, offset, zgd, &db,
+                                 DMU_READ_NO_PREFETCH);
+
+        if (error == 0) {
+            zgd->zgd_db = db;
+            zgd->zgd_bp = bp;
+
+            ASSERT(db->db_offset == offset);
+            ASSERT(db->db_size == size);
+
+            error = dmu_sync(zio, lr->lr_common.lrc_txg,
+                             zfs_get_done, zgd);
+            /*
+             * On success, we need to wait for the write I/O
+             * initiated by dmu_sync() to complete before we can
+             * release this dbuf.  We will finish everything up
+             * in the zfs_get_done() callback.
+             */
+            if (error == 0)
+                return (0);
+            if (error == EALREADY) {
+                lr->lr_common.lrc_txtype = TX_WRITE2;
+                error = 0;
+            }
+        }
+    }
+
+    zfs_get_done(zgd, error);
+
+    printf("-zfs_get_data\n");
+    return (error);
+}
+
+
 
 /*ARGSUSED*/
 static int
@@ -1610,9 +1733,16 @@ zfs_create(vnode_t *dvp, char *name, vattr_t *vap, vcexcl_t excl,
 	int		error;
 	uint64_t	zoid;
     zfs_acl_ids_t   acl_ids;
+	boolean_t	fuid_dirtied;
     boolean_t       have_acl = B_FALSE;
 
-    printf("vnop_create\n");
+    printf("vnop_create: '%s'\n", cnp->cn_nameptr);
+
+	if (zfsvfs->z_use_fuids == B_FALSE &&
+	    (vsecp || (vap->va_mask & AT_XVATTR) ||
+	    IS_EPHEMERAL(crgetuid(cr)) || IS_EPHEMERAL(crgetgid(cr))))
+		return (EINVAL);
+
 	ZFS_ENTER(zfsvfs);
 
 top:
@@ -1699,20 +1829,20 @@ top:
         dmu_tx_hold_sa_create(tx, acl_ids.z_aclp->z_acl_bytes +
                               ZFS_SA_BASE_ATTR_SIZE);
 
-		dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT);
-		dmu_tx_hold_bonus(tx, dzp->z_id);
-#ifdef __APPLE__
+
+
+		fuid_dirtied = zfsvfs->z_fuid_dirty;
+		if (fuid_dirtied)
+			zfs_fuid_txhold(zfsvfs, tx);
 		dmu_tx_hold_zap(tx, dzp->z_id, TRUE, cnp->cn_nameptr);
-        dmu_tx_hold_sa(tx, dzp->z_sa_hdl, B_FALSE);
-#else
-		dmu_tx_hold_zap(tx, dzp->z_id, TRUE, name);
-#endif /* __APPLE__ */
-        if (!zfsvfs->z_use_sa) {
-		if (dzp->z_pflags & ZFS_INHERIT_ACE)
+		dmu_tx_hold_sa(tx, dzp->z_sa_hdl, B_FALSE);
+		if (!zfsvfs->z_use_sa &&
+		    acl_ids.z_aclp->z_acl_bytes > ZFS_ACE_SPACE) {
 			dmu_tx_hold_write(tx, DMU_NEW_OBJECT,
-			    0, SPA_MAXBLOCKSIZE);
-            }
-		error = dmu_tx_assign(tx, zfsvfs->z_assign);
+			    0, acl_ids.z_aclp->z_acl_bytes);
+		}
+		error = dmu_tx_assign(tx, TXG_NOWAIT);
+
 		if (error) {
 			zfs_dirent_unlock(dl);
 			if (error == ERESTART &&
@@ -1728,6 +1858,10 @@ top:
 		}
 		//zfs_mknode(dzp, vap, &zoid, tx, cr, 0, &zp, 0);
         zfs_mknode(dzp, vap, tx, cr, 0, &zp, &acl_ids);
+
+		if (fuid_dirtied)
+			zfs_fuid_sync(zfsvfs, tx);
+
 		ASSERT(zp->z_id == zoid);
 		(void) zfs_link_create(dl, zp, tx, ZNEW);
 // XXX Why don't we just assign 'name' to 'cnp->cn_nameptr' somewhere above?
@@ -1743,6 +1877,7 @@ top:
 		/*
 		 * OSX: Obtain and attach the vnode after committing the transaction
 		 */
+        printf("zfs_vnops attach 1\n");
 		zfs_attach_vnode(zp);
 #endif /* __APPLE__ */
 	} else {
@@ -1759,15 +1894,11 @@ top:
 		/*
 		 * Can't open a directory for writing.
 		 */
-#ifdef __APPLE__
 		if (vnode_isdir(ZTOV(zp)) && (mode & S_IWRITE))
-#else
-		if ((ZTOV(zp)->v_type == VDIR) && (mode & S_IWRITE))
-#endif /* __APPLE__ */
-		{
-			error = EISDIR;
-			goto out;
-		}
+            {
+                error = EISDIR;
+                goto out;
+            }
 		/*
 		 * Verify requested access to file.
 		 */
@@ -1785,31 +1916,22 @@ top:
 		/*
 		 * Truncate regular files if requested.
 		 */
-#ifdef __APPLE__
 		if (vnode_isreg(ZTOV(zp)) &&
 		    (zp->z_size != 0) &&
 		    (vap->va_mask & AT_SIZE) && (vap->va_size == 0))
-#else
-		if ((ZTOV(zp)->v_type == VREG) &&
-		    (vap->va_mask & AT_SIZE) && (vap->va_size == 0))
-#endif /* __APPLE__ */
-		{
-			error = zfs_freesp(zp, 0, 0, mode, TRUE);
-			if (error == ERESTART &&
-			    zfsvfs->z_assign == TXG_NOWAIT) {
-				/* NB: we already did dmu_tx_wait() */
-				zfs_dirent_unlock(dl);
-				VN_RELE(ZTOV(zp));
-				goto top;
-			}
-
+            {
+                /* we can't hold any locks when calling zfs_freesp() */
+                zfs_dirent_unlock(dl);
+                dl = NULL;
+                error = zfs_freesp(zp, 0, 0, mode, TRUE);
 #ifndef __APPLE__
-			if (error == 0) {
-				vnevent_create(ZTOV(zp));
-			}
+                if (error == 0) {
+                    vnevent_create(ZTOV(zp));
+                }
 #endif /* !__APPLE__ */
-		}
+            }
 	}
+
 out:
 
 	if (dl)
@@ -1841,6 +1963,10 @@ out:
 		}
 #endif /* __APPLE__ */
 	}
+
+	//if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
+	//	zil_commit(zilog, 0);
+
 
 	ZFS_EXIT(zfsvfs);
 	return (error);
@@ -1959,12 +2085,10 @@ top:
 	 */
         obj = zp->z_id;
 	tx = dmu_tx_create(zfsvfs->z_os);
-#ifdef __APPLE__
 	dmu_tx_hold_zap(tx, dzp->z_id, FALSE, cnp->cn_nameptr);
-#else
-	dmu_tx_hold_zap(tx, dzp->z_id, FALSE, name);
-#endif /* __APPLE__ */
-	dmu_tx_hold_bonus(tx, zp->z_id);
+	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+	zfs_sa_upgrade_txholds(tx, zp);
+	zfs_sa_upgrade_txholds(tx, dzp);
 	if (may_delete_now) {
         		toobig =
 		    zp->z_size > zp->z_blksz * DMU_MAX_DELETEBLKCNT;
@@ -2270,6 +2394,7 @@ top:
         /*
          * Obtain and attach the vnode after committing the transaction
          */
+        printf("zfs_vnops attach 2\n");
         zfs_attach_vnode(zp);
         *vpp = ZTOV(zp);
 #endif /* __APPLE__ */
@@ -2386,6 +2511,8 @@ top:
 	dmu_tx_hold_zap(tx, dzp->z_id, FALSE, name);
 	dmu_tx_hold_bonus(tx, zp->z_id);
 	dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, FALSE, NULL);
+	zfs_sa_upgrade_txholds(tx, zp);
+	zfs_sa_upgrade_txholds(tx, dzp);
 	error = dmu_tx_assign(tx, zfsvfs->z_assign);
 	if (error) {
 		rw_exit(&zp->z_parent_lock);
@@ -2486,9 +2613,10 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp)
 	boolean_t	isdotdir = B_TRUE;
 #endif /* __APPLE__ */
 
-    printf("vnop_readdir\n");
+    printf("+vnop_readdir\n");
 
 	ZFS_ENTER(zfsvfs);
+
     ZFS_VERIFY_ZP(zp);
 
     if ((error = sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
@@ -2798,6 +2926,8 @@ update:
 	uio->uio_loffset = offset;
 #endif /* __APPLE__ */
 	ZFS_EXIT(zfsvfs);
+    printf("-vnop_readdir\n");
+
 	return (error);
 }
 
@@ -4196,10 +4326,16 @@ top:
 	dmu_tx_hold_bonus(tx, sdzp->z_id);	/* nlink changes */
 	dmu_tx_hold_zap(tx, sdzp->z_id, FALSE, snm);
 	dmu_tx_hold_zap(tx, tdzp->z_id, TRUE, tnm);
-	if (sdzp != tdzp)
+	if (sdzp != tdzp) {
 		dmu_tx_hold_bonus(tx, tdzp->z_id);	/* nlink changes */
-	if (tzp)
+        zfs_sa_upgrade_txholds(tx, tdzp);
+    }
+	if (tzp) {
 		dmu_tx_hold_bonus(tx, tzp->z_id);	/* parent changes */
+        zfs_sa_upgrade_txholds(tx, tzp);
+    }
+
+    zfs_sa_upgrade_txholds(tx, szp);
 	dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, FALSE, NULL);
 	error = dmu_tx_assign(tx, zfsvfs->z_assign);
 	if (error) {
@@ -4431,6 +4567,7 @@ out:
         /*
          * Obtain and attach the vnode after committing the transaction
          */
+        printf("zfs_vnops attach 3\n");
         zfs_attach_vnode(zp);
 #endif
 
@@ -4479,6 +4616,7 @@ zfs_readlink(vnode_t *vp, uio_t *uio, cred_t *cr)
 	size_t		bufsz;
 	int		error;
 
+    printf("vnop_readline\n");
 	ZFS_ENTER(zfsvfs);
 
 #if 0
@@ -4925,7 +5063,9 @@ top:
 
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_write(tx, zp->z_id, off, len);
+
 	dmu_tx_hold_bonus(tx, zp->z_id);
+    zfs_sa_upgrade_txholds(tx, zp);
 	err = dmu_tx_assign(tx, zfsvfs->z_assign);
 	if (err != 0) {
 		if (err == ERESTART && zfsvfs->z_assign == TXG_NOWAIT) {
@@ -5410,6 +5550,7 @@ top:
 	/*
 	 * Obtain and attach the vnode after committing the transaction
 	 */
+    printf("zfs_vnops attach 4\n");
 	zfs_attach_vnode(xzp);
 
 	zfs_dirent_unlock(dl);
@@ -5543,13 +5684,16 @@ zfs_inactive(vnode_t *vp, cred_t *cr)
 	if (zp->z_atime_dirty && zp->z_unlinked == 0) {
 		dmu_tx_t *tx = dmu_tx_create(zfsvfs->z_os);
 
-		dmu_tx_hold_bonus(tx, zp->z_id);
+		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+		zfs_sa_upgrade_txholds(tx, zp);
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
 			dmu_tx_abort(tx);
 		} else {
 			//dmu_buf_will_dirty(zp->z_dbuf, tx);
 			mutex_enter(&zp->z_lock);
+			(void) sa_update(zp->z_sa_hdl, SA_ZPL_ATIME(zfsvfs),
+                             (void *)&zp->z_atime, sizeof (zp->z_atime), tx);
 			zp->z_atime_dirty = 0;
 			mutex_exit(&zp->z_lock);
 			dmu_tx_commit(tx);

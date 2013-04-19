@@ -189,6 +189,7 @@ zfs_vfs_sync(struct mount *mp, __unused int waitfor, __unused vfs_context_t cont
 	 *
 	 * Here we sync any mtime changes to this attribute.
 	 */
+#if 1
 	if (zfsvfs->z_mtime_vp != NULL) {
 		timestruc_t  mtime;
 		znode_t  *zp;
@@ -208,6 +209,7 @@ top:
 			error = dmu_tx_assign(tx, zfsvfs->z_assign);
 			if (error) {
 				if (error == ERESTART && zfsvfs->z_assign == TXG_NOWAIT) {
+                    printf(" vfs_sync restart\n");
 					dmu_tx_wait(tx);
 					dmu_tx_abort(tx);
 					goto top;
@@ -221,11 +223,15 @@ top:
 		}
 	}
 
+    printf(" zfs_vfs zil_commit: %p\n", zfsvfs->z_log);
+
 	if (zfsvfs->z_log != NULL)
 		zil_commit(zfsvfs->z_log, 0);
 	else
 		txg_wait_synced(dmu_objset_pool(zfsvfs->z_os), 0);
+#endif
 	ZFS_EXIT(zfsvfs);
+    printf("-vfs_sync\n");
 
 	return (0);
 }
@@ -730,6 +736,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
     int i;
     extern krwlock_t zfsvfs_lock; /* in zfs_znode.c */
 
+    printf("+zfsvfs_free\n");
     /*
      * This is a barrier to prevent the filesystem from going away in
      * zfs_znode_move() until we can safely ensure that the filesystem is
@@ -750,6 +757,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
     for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
         mutex_destroy(&zfsvfs->z_hold_mtx[i]);
     kmem_free(zfsvfs, sizeof (zfsvfs_t));
+    printf("-zfsvfs_free\n");
 }
 
 
@@ -2307,6 +2315,7 @@ zfs_freevfs(vfs_t *vfsp)
 	zfsvfs_t *zfsvfs = vfsp->vfs_data;
 	int i;
 
+    printf("+freevfs\n");
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
 
@@ -2317,6 +2326,7 @@ zfs_freevfs(vfs_t *vfsp)
 	kmem_free(zfsvfs, sizeof (zfsvfs_t));
 
 	atomic_add_32(&zfs_active_fs_count, -1);
+    printf("-freevfs\n");
 }
 #endif /* !__APPLE__ */
 

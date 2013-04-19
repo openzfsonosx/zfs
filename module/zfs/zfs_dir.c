@@ -313,7 +313,9 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 			zfs_dirent_unlock(dl);
 			return (error);
 		} else {
-            zfs_attach_vnode(*zpp);
+            // Should this be here?
+            //printf("zfs_dir attach 1\n");
+            //zfs_attach_vnode(*zpp);
         }
 		if (!(flag & ZXATTR))
 #ifdef __APPLE__
@@ -1063,11 +1065,11 @@ top:
         zfs_acl_ids_free(&acl_ids);
         dmu_tx_commit(tx);
 
-#ifdef __DARWIN__
         /* Cleanup any znode we consumed during zfs_mknode() */
         printf("ZFS_POSTPROCESS_ZP(xzp);\n");
+        printf("zfs_dir attach 2\n");
         zfs_attach_vnode(xzp);
-#endif
+
         *xvpp = ZTOV(xzp);
 
         return (0);

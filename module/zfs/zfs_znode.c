@@ -436,6 +436,9 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
         sa_bulk_attr_t bulk[9];
         int count = 0;
 
+        printf("zfs_znode_alloc blksize %d\n", blksz);
+        if (!blksz) blksz = 131072;
+
 	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
 
 	ASSERT(zp->z_dirlocks == NULL);
@@ -669,7 +672,6 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 
         parent = dzp->z_id;
         mode = acl_ids->z_mode;
-        printf("mode starting from 0x%04x\n", mode);
         if (flag & IS_XATTR)
                 pflags |= ZFS_XATTR;
 
@@ -788,8 +790,6 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 
         (*zpp)->z_pflags = pflags;
         (*zpp)->z_mode = mode;
-
-        printf("Assigning mode 0x%04x\n", mode);
 
         if (vap->va_mask & AT_XVATTR)
             zfs_xvattr_set(*zpp, (xvattr_t *)vap, tx);
@@ -943,8 +943,6 @@ zfs_attach_vnode(znode_t *zp)
 	vfsp.vnfs_cnp = cnp;
 #endif
 
-    printf("Attaching vnode type %d (VDIR %d): zmode 0x%04x\n",
-           vfsp.vnfs_vtype, VDIR, zp->z_mode);
     // This is a hack
     if (vfsp.vnfs_vtype == 0) vfsp.vnfs_vtype = VDIR;
 
@@ -988,6 +986,9 @@ zfs_attach_vnode(znode_t *zp)
 	 */
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &zp->z_vnode) != 0);
 
+    printf("Attaching vnode %p type %d: zmode 0x%04x\n", zp->z_vnode,
+           vfsp.vnfs_vtype, zp->z_mode);
+
 	vnode_settag(zp->z_vnode, VT_ZFS);
 
 	mutex_enter(&zp->z_lock);
@@ -1028,6 +1029,8 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 
 	*zpp = NULL;
 
+    printf("+zget %d\n", obj_num);
+
 #ifdef __APPLE__
 again:
 #endif
@@ -1037,6 +1040,7 @@ again:
     err = sa_buf_hold(zfsvfs->z_os, obj_num, NULL, &db);
     if (err) {
         ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+        printf("-zget nohold\n");
         return (err);
     }
 
@@ -1048,6 +1052,7 @@ again:
           doi.doi_bonus_size < sizeof (znode_phys_t)))) {
         sa_buf_rele(db, NULL);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+        printf("-zget no znode\n");
 		return (EINVAL);
     }
 
@@ -1081,12 +1086,15 @@ again:
              */
             uint32_t vid = zp->z_vid;
             vnode_t *vp = ZTOV(zp);
+            int holderr;
 
             sa_buf_rele(db, NULL);
             mutex_exit(&zp->z_lock);
             ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
-            if ((vp == NULL) || (vnode_getwithvid(vp, vid) != 0)) {
+            if ((vp == NULL) || ((holderr = vnode_getwithvid(vp, vid)) != 0)) {
+                printf("zfs_zget holderr %d\n", holderr);
+                if (holderr==EALREADY) return EALREADY;
                 goto again;
             }
 
@@ -1094,6 +1102,7 @@ again:
             err = sa_buf_hold(zfsvfs->z_os, obj_num, NULL, &db);
             if (err) {
                 ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+                printf("-zget nohold2\n");
                 return (err);
             }
             mutex_enter(&zp->z_lock);
@@ -1116,10 +1125,17 @@ again:
 		sa_buf_rele(db, NULL);
 		mutex_exit(&zp->z_lock);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+        printf("-zget exit 1\n");
 		return (err);
 	} // hdl
 
 
+
+    // BUG, for some reason our block size is not set, hanging IO
+    if (!doi.doi_data_block_size) {
+        printf("zfs_znode: would call znode_alloc with 0 blksz, fixing\n");
+        doi.doi_data_block_size = 131072;
+    }
 
     /*
      * Not found create new znode/vnode
@@ -1136,6 +1152,7 @@ again:
         list_insert_tail(&zfsvfs->z_all_znodes, zp);
         mutex_exit(&zfsvfs->z_znodes_lock);
     } else {
+        printf("zfs_znode attach 1\n");
         zfs_attach_vnode(zp);
     }
 
@@ -1144,6 +1161,7 @@ again:
     } else {
         *zpp = zp;
     }
+    printf("-zget \n");
     return (err);
 }
 

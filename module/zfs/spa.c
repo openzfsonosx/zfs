@@ -6206,6 +6206,7 @@ spa_sync(spa_t *spa, uint64_t txg)
 	 * If any async tasks have been requested, kick them off.
 	 */
 	spa_async_dispatch(spa);
+
 }
 
 /*

@@ -117,6 +117,8 @@ const dmu_object_byteswap_info_t dmu_ot_byteswap[DMU_BSWAP_NUMFUNCS] = {
 	{	zfs_acl_byteswap,	"acl"		}
 };
 
+
+
 int
 dmu_buf_hold(objset_t *os, uint64_t object, uint64_t offset,
     void *tag, dmu_buf_t **dbp, int flags)
@@ -2096,6 +2098,7 @@ dmu_buf_add_ref(dmu_buf_t *db, void* tag)
 {
     dbuf_add_ref((dmu_buf_impl_t *)db, tag);
 }
+
 
 void
 dmu_buf_rele(dmu_buf_t *db, void *tag)

@@ -191,6 +191,8 @@ zfs_log_create(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 	size_t namesize = strlen(name) + 1;
 	size_t fuidsz = 0;
 
+    if (!zilog) return;
+
 	if (zil_replaying(zilog, tx))
 		return;
 
@@ -481,6 +483,7 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 		lr->lr_length = len;
 		lr->lr_blkoff = 0;
 		BP_ZERO(&lr->lr_blkptr);
+        printf("zfs_log_write len %lld\n", len);
 
 		itx->itx_private = zp->z_zfsvfs;
 

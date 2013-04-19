@@ -5119,7 +5119,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	zc = (zfs_cmd_t *)data;
 	zc->zc_dev = dev;
 	error = zfs_ioc_vec[vec].zvec_secpolicy(zc, cr);
-	//printf("[zfs] got ioctl %d\n", vec);
+	printf("[zfs] got ioctl %d\n", vec);
 	//delay(hz);
 
 	/*
@@ -5152,7 +5152,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	 * Return the real error in zc_ioc_error so the ioctl call always
 	 * does a copyout of the zc data
 	 */
-	//printf("[zfs] ioctl done %d\n", error);
+	printf("[zfs] ioctl done %d\n", error);
 	//delay(hz);
 	zc->zc_ioc_error = error;
 	return (0);

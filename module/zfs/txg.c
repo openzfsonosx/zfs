@@ -36,6 +36,7 @@
 /*
  * Pool-wide transaction groups.
  */
+//#define dprintf printf
 
 static void txg_sync_thread(void *arg);
 static void txg_quiesce_thread(void *arg);
@@ -462,6 +463,7 @@ txg_sync_thread(void *arg)
 		txg = tx->tx_quiesced_txg;
 		tx->tx_quiesced_txg = 0;
 		tx->tx_syncing_txg = txg;
+
 		cv_broadcast(&tx->tx_quiesce_more_cv);
 
 		th = dsl_pool_txg_history_get(dp, txg);
@@ -475,12 +477,14 @@ txg_sync_thread(void *arg)
 
 		start = ddi_get_lbolt();
 		hrstart = gethrtime();
+
 		spa_sync(spa, txg);
 		delta = ddi_get_lbolt() - start;
 
 		mutex_enter(&tx->tx_sync_lock);
 		tx->tx_synced_txg = txg;
 		tx->tx_syncing_txg = 0;
+
 		cv_broadcast(&tx->tx_sync_done_cv);
 
 		/*
@@ -588,7 +592,6 @@ void
 txg_wait_synced(dsl_pool_t *dp, uint64_t txg)
 {
 	tx_state_t *tx = &dp->dp_tx;
-
 	mutex_enter(&tx->tx_sync_lock);
 	ASSERT(tx->tx_threads == 2);
 	if (txg == 0)
