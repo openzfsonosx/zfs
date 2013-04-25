@@ -342,8 +342,16 @@ zfs_vnop_rename(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	DECLARE_CRED_AND_CONTEXT(ap);
+	int error;
 
-	return (zfs_rename());
+	error = zfs_rename(ap->a_fdvp, ap->a_fcnp, ap->a_tdvp, ap->a_tcnp,
+	    cr, ct);
+
+	/* Remove entries from the namei cache. */
+	cache_purge(ap->a_tdvp);
+
+	return (error);
 }
 
 static int
@@ -357,8 +365,15 @@ zfs_vnop_symlink(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	DECLARE_CRED(ap);
+	int error;
 
-	return (zfs_symlink());
+	/* OS X doesn't need to set vap->va_mode? */
+	error = zfs_symlink(ap->a_dvp, ap->a_cnp, ap->a_vap, ap->a_target, cr);
+
+	/* XXX zfs_attach_vnode()? */
+
+	return (error);
 }
 
 static int
@@ -369,8 +384,9 @@ zfs_vnop_readlink(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	DECLARE_CRED(ap);
 
-	return (zfs_readlink());
+	return (zfs_readlink(ap->a_vp, ap->a_uio, cr));
 }
 
 static int
@@ -382,8 +398,21 @@ zfs_vnop_link(ap)
 		vfs_context_t a_context;
 	} */ *ap;
 {
+	DECLARE_CRED(ap);
 
-	return (zfs_link());
+	/* XXX Translate this inside zfs_link() instead. */
+	if (vnode_mount(ap->a_vp) != vnode_mount(ap->a_tdvp))
+		return (EXDEV);
+
+
+	/*
+	 * XXX Understand why Apple made this comparison in so many places
+	 * where others do not.
+	 */
+	if (cnp->cn_namelen >= ZAP_MAXNAMELEN)
+		return (ENAMETOOLONG);
+
+	return (zfs_link(ap->a_tdvp, ap->a_vp, ap->a_cnp, cr));
 }
 
 static int
@@ -399,6 +428,7 @@ zfs_vnop_pagein(ap)
 	} */ *ap;
 {
 
+	/* XXX Crib this from the Apple zfs_vnops.c. */
 	return (0);
 }
 
@@ -415,6 +445,10 @@ zfs_vnop_pageout(ap)
 	} */ *ap;
 {
 
+	/*
+	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
+	 * Break up that function into smaller bits so it can be reused.
+	 */
 	return (zfs_putapage());
 }
 

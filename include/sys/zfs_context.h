@@ -37,6 +37,17 @@
 
 typedef int minor_t;
 
+#define	vnevent_create(vp, ct)			do { } while (0)
+#define	vnevent_link(vp, ct)			do { } while (0)
+#define	vnevent_remove(vp, dvp, name, ct)	do { } while (0)
+#define	vnevent_rmdir(vp, dvp, name, ct)	do { } while (0)
+#define	vnevent_rename_src(vp, dvp, name, ct)	do { } while (0)
+#define	vnevent_rename_dest(vp, dvp, name, ct)	do { } while (0)
+#define	vnevent_rename_dest_dir(vp, ct)		do { } while (0)
+
+/* Do nothing with this VOP. */
+#define	VOP_REALVP(svp, realvpp)	1
+
 #ifdef _KERNEL
 
 #include <sys/zfs_context_kernel.h>
