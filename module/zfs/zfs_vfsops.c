@@ -1719,7 +1719,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
         mutex_enter(&zfsvfs->z_znodes_lock);
         // This code is currently broken, or rather, things are not
         // released correctly, so we end up here forever.
-#if 1
+#if 0
         for (zp = list_head(&zfsvfs->z_all_znodes); zp != NULL;
             zp = list_next(&zfsvfs->z_all_znodes, zp))
                 if (zp->z_sa_hdl) {
@@ -1864,7 +1864,7 @@ zfs_umount(vfs_t *vfsp, int fflag, cred_t *cr)
 		flags |= FORCECLOSE;
 
 	ret = vflush(mp, NULLVP, flags);
-
+    printf("umount flush: %d\n", ret);
 	/*
 	 * Mac OS X needs a file system modify time
 	 *
@@ -1925,6 +1925,7 @@ zfs_umount(vfs_t *vfsp, int fflag, cred_t *cr)
 #endif
 
     VERIFY(zfsvfs_teardown(zfsvfs, B_TRUE) == 0);
+
     os = zfsvfs->z_os;
 
 	//rw_enter(&zfsvfs->z_unmount_lock, RW_WRITER);

@@ -436,8 +436,10 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
         sa_bulk_attr_t bulk[9];
         int count = 0;
 
-        printf("zfs_znode_alloc blksize %d\n", blksz);
-        if (!blksz) blksz = 131072;
+        if (!blksz) {
+            blksz = 512;
+            printf("zfs_znode_alloc blksize is ZERO; fixed %d\n", blksz);
+        }
 
 	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
 
@@ -500,7 +502,6 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
         zp->z_mode = mode;
 
         zp->z_parent = parent;
-        zp->z_zfsvfs = zfsvfs;
 
 #if 0
         if (variant != ZA_TRANSIENT) {
@@ -515,6 +516,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
                 return (NULL);
             }
         }
+
 #endif
         mutex_enter(&zfsvfs->z_znodes_lock);
         list_insert_tail(&zfsvfs->z_all_znodes, zp);
@@ -523,7 +525,6 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
          * Everything else must be valid before assigning z_zfsvfs makes the
          * znode eligible for zfs_znode_move().
          */
-        zp->z_zfsvfs = zfsvfs;
         mutex_exit(&zfsvfs->z_znodes_lock);
 
         VFS_HOLD(zfsvfs->z_vfs);
@@ -606,7 +607,8 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
          * that there will be an i/o error and we will fail one of the
          * assertions below.
          */
-        printf("mknode vtype %d\n", vap->va_type);
+        printf("mknode vtype %d use_sa %d: obj_type %d\n", vap->va_type,
+               zfsvfs->z_use_sa, obj_type);
 
         if (vap->va_type == VDIR) {
                 if (zfsvfs->z_replay) {
@@ -915,6 +917,7 @@ zfs_attach_vnode(znode_t *zp)
 	vfsp.vnfs_str = "zfs";
 
     // parent is a uint?
+    if (!zfsvfs->z_vfs) printf("z_vfs should not be NULL here\n");
 	vfsp.vnfs_mp = zfsvfs->z_vfs;
 	//vfsp.vnfs_vtype = IFTOVT((mode_t)zp->z_mode);
 	vfsp.vnfs_vtype = IFTOVT((mode_t)zp->z_mode);
@@ -1125,16 +1128,18 @@ again:
 		sa_buf_rele(db, NULL);
 		mutex_exit(&zp->z_lock);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-        printf("-zget exit 1\n");
+
+        printf("-zget %d exit 1\n", obj_num);
 		return (err);
 	} // hdl
 
 
 
     // BUG, for some reason our block size is not set, hanging IO
-    if (!doi.doi_data_block_size) {
+    if (doi.doi_data_block_size == 0) {
         printf("zfs_znode: would call znode_alloc with 0 blksz, fixing\n");
-        doi.doi_data_block_size = 131072;
+        //doi.doi_data_block_size = 131072;
+        doi.doi_data_block_size = 512;
     }
 
     /*
@@ -1161,7 +1166,7 @@ again:
     } else {
         *zpp = zp;
     }
-    printf("-zget \n");
+    printf("-zget %d\n", obj_num);
     return (err);
 }
 
@@ -1198,6 +1203,8 @@ zfs_rezget(znode_t *zp)
 	int err;
 	int count = 0;
 	uint64_t gen;
+
+    printf("zfs_rezget\n");
 
 	ZFS_OBJ_HOLD_ENTER(zfsvfs, obj_num);
 
@@ -1321,6 +1328,8 @@ zfs_zinactive(znode_t *zp)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	uint64_t z_id = zp->z_id;
 
+    printf("zfs_zinactive\n");
+
 #ifdef __APPLE__
     //	ASSERT(/*zp->z_dbuf && */ zp->z_phys);
 #else
@@ -1379,6 +1388,7 @@ zfs_zinactive(znode_t *zp)
 
 	mutex_exit(&zp->z_lock);
     //	dmu_buf_rele(zp->z_dbuf, NULL);
+	zfs_znode_dmu_fini(zp);
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 #ifdef __APPLE__
         zfs_znode_free(zp);
@@ -1391,6 +1401,8 @@ void
 zfs_znode_free(znode_t *zp)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+    printf("znode_free zp %p vp %p\n", zp, ZTOV(zp));
 
 #ifdef __APPLE__
 	/*

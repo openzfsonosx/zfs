@@ -871,7 +871,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	sa_bulk_attr_t	bulk[4];
 	uint64_t	mtime[2], ctime[2];
 
-
     printf("vnop_write\n");
 	/*
 	 * Fasttrack empty write
@@ -960,6 +959,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		rl = zfs_range_lock(zp, woff, n, RL_WRITER);
 	}
 
+
 	if (woff >= limit) {
 		zfs_range_unlock(rl);
 		ZFS_EXIT(zfsvfs);
@@ -981,7 +981,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		return (error);
 	}
 #endif /* !__APPLE__ */
+
+	/* Will this write extend the file length? */
+	write_eof = (woff + n > zp->z_size);
+
 	end_size = MAX(zp->z_size, woff + n);
+
+    printf(" vnop_write: locked, write %d, endsz %lld\n", n, end_size);
 
 	/*
 	 * Write the file in reasonable size chunks.  Each chunk is written
@@ -1036,6 +1042,9 @@ again:
 			    max_blksz);
 			ASSERT(abuf != NULL);
 			ASSERT(arc_buf_size(abuf) == max_blksz);
+
+            printf(" vnop_write uiocopy %d\n", max_blksz);
+
 			if (error = uiocopy(abuf->b_data, max_blksz,
 			    UIO_WRITE, uio, &cbytes)) {
 				dmu_return_arcbuf(abuf);
@@ -1047,12 +1056,16 @@ again:
 		/*
 		 * Start a transaction.
 		 */
+        printf(" vnop_write hold_sa %d\n", max_blksz);
 		tx = dmu_tx_create(zfsvfs->z_os);
 		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 		dmu_tx_hold_write(tx, zp->z_id, woff, MIN(n, max_blksz));
 		zfs_sa_upgrade_txholds(tx, zp);
 		error = dmu_tx_assign(tx, TXG_NOWAIT);
+
 		if (error) {
+            printf(" vnop_write TX fail %d - retry\n", error);
+
 			if (error == ERESTART) {
 				dmu_tx_wait(tx);
 				dmu_tx_abort(tx);
@@ -1073,6 +1086,7 @@ again:
 		if (rl->r_len == UINT64_MAX) {
 			uint64_t new_blksz;
 
+            printf(" vnop_write range_reduce\n");
 			if (zp->z_blksz > max_blksz) {
 				ASSERT(!ISP2(zp->z_blksz));
 				new_blksz = MIN(end_size, SPA_MAXBLOCKSIZE);
@@ -1089,10 +1103,13 @@ again:
 		 */
 		nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
 
+        printf(" vnop_write nbytes %d abuf %p\n", nbytes, abuf);
 		if (abuf == NULL) {
 			tx_bytes = uio_resid(uio);
 			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, nbytes, tx);
+   <         printf(" vnop_write uio_dbuf before %d after %d\n",
+                   tx_bytes, -uio_resid(uio));
 			tx_bytes -= uio_resid(uio);
 		} else {
 			tx_bytes = nbytes;
@@ -1129,16 +1146,17 @@ again:
 		 * partial progress, update the znode and ZIL accordingly.
 		 */
 		if (tx_bytes == 0) {
+            printf(" vnop_write: no write, out\n");
 			(void) sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
 			    (void *)&zp->z_size, sizeof (uint64_t), tx);
 			dmu_tx_commit(tx);
 			ASSERT(error != 0);
 			break;
 		}
-
+        printf(" vnop_write uid juggle\n");
 		/*
 		 * Clear Set-UID/Set-GID bits on successful write if not
-		 * privileged and at least one of the excute bits is set.
+		 * privileged and at least one of the execute bits is set.
 		 *
 		 * It would be nice to to this after all writes have
 		 * been done, but that would still expose the ISUID/ISGID
@@ -1180,9 +1198,11 @@ again:
 		 */
 		if (zfsvfs->z_replay && zfsvfs->z_replay_eof != 0)
 			zp->z_size = zfsvfs->z_replay_eof;
+        printf(" vnop_write sa_update\n");
 
 		error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
 
+        printf(" vnop_write: commit\n");
 		zfs_log_write(zilog, tx, TX_WRITE, zp, woff, tx_bytes, ioflag);
 		dmu_tx_commit(tx);
 
@@ -1194,7 +1214,7 @@ again:
 		if (!xuio && n > 0)
 			zfs_prefault_write(MIN(n, max_blksz), uio);
 	}
-
+    printf(" vnop_write: loop done\n");
 
 
 
@@ -1213,7 +1233,8 @@ again:
 		return (error);
 	}
 
-    //	if (ioflag & (FSYNC | FDSYNC))
+    //    if (ioflag & (FSYNC | FDSYNC))
+    printf("vnop_write: zil_commit\n");
 		zil_commit(zilog, zp->z_id);
 
 #ifdef __APPLE__
@@ -1247,109 +1268,6 @@ static void
 	kmem_free(zgd, sizeof (zgd_t));
 }
 
-/*
- * Get data to generate a TX_WRITE intent log record.
- */
-int
-OLDzfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
-{
-	zfsvfs_t *zfsvfs = arg;
-	objset_t *os = zfsvfs->z_os;
-	znode_t *zp;
-	uint64_t off = lr->lr_offset;
-	dmu_buf_t *db;
-	rl_t *rl;
-	zgd_t *zgd;
-	int dlen = lr->lr_length;		/* length of user data */
-	int error = 0;
-
-	ASSERT(zio);
-	ASSERT(dlen != 0);
-
-    printf("vnop_getdata\n");
-	/*
-	 * Nothing to do if the file has been removed
-	 */
-	if (zfs_zget(zfsvfs, lr->lr_foid, &zp) != 0)
-		return (ENOENT);
-	if (zp->z_unlinked) {
-		VN_RELE(ZTOV(zp));
-		return (ENOENT);
-	}
-
-	/*
-	 * Write records come in two flavors: immediate and indirect.
-	 * For small writes it's cheaper to store the data with the
-	 * log record (immediate); for large writes it's cheaper to
-	 * sync the data and get a pointer to it (indirect) so that
-	 * we don't have to write the data twice.
-	 */
-	if (buf != NULL) { /* immediate write */
-		rl = zfs_range_lock(zp, off, dlen, RL_READER);
-		/* test for truncation needs to be done while range locked */
-		if (off >= zp->z_size) {
-			error = ENOENT;
-			goto out;
-		}
-		VERIFY(0 == dmu_read(os, lr->lr_foid, off, dlen, buf, DMU_READ_PREFETCH));
-	} else { /* indirect write */
-		uint64_t boff; /* block starting offset */
-
-		/*
-		 * Have to lock the whole block to ensure when it's
-		 * written out and it's checksum is being calculated
-		 * that no one can change the data. We need to re-check
-		 * blocksize after we get the lock in case it's changed!
-		 */
-		for (;;) {
-			if (ISP2(zp->z_blksz)) {
-				boff = P2ALIGN_TYPED(off, zp->z_blksz,
-				    uint64_t);
-			} else {
-				boff = 0;
-			}
-			dlen = zp->z_blksz;
-			rl = zfs_range_lock(zp, boff, dlen, RL_READER);
-			if (zp->z_blksz == dlen)
-				break;
-			zfs_range_unlock(rl);
-		}
-		/* test for truncation needs to be done while range locked */
-		if (off >= zp->z_size) {
-			error = ENOENT;
-			goto out;
-		}
-		zgd = (zgd_t *)kmem_alloc(sizeof (zgd_t), KM_SLEEP);
-		zgd->zgd_rl = rl;
-		zgd->zgd_zilog = zfsvfs->z_log;
-		zgd->zgd_bp = &lr->lr_blkptr;
-		VERIFY(0 == dmu_buf_hold(os, lr->lr_foid, boff, zgd, &db, DMU_READ_NO_PREFETCH));
-		ASSERT(boff == db->db_offset);
-		lr->lr_blkoff = off - boff;
-		error = dmu_sync(zio, /* db , &lr->lr_blkptr, */
-		    lr->lr_common.lrc_txg, zfs_get_done, zgd);
-		ASSERT((error && error != EINPROGRESS) ||
-		    lr->lr_length <= zp->z_blksz);
-		if (error == 0) {
-			//zil_add_vdev(zfsvfs->z_log,
-            //  DVA_GET_VDEV(BP_IDENTITY(&lr->lr_blkptr)));
-		}
-		/*
-		 * If we get EINPROGRESS, then we need to wait for a
-		 * write IO initiated by dmu_sync() to complete before
-		 * we can release this dbuf.  We will finish everything
-		 * up in the zfs_get_done() callback.
-		 */
-		if (error == EINPROGRESS)
-			return (0);
-		dmu_buf_rele(db, zgd);
-		kmem_free(zgd, sizeof (zgd_t));
-	}
-out:
-	zfs_range_unlock(rl);
-	VN_RELE(ZTOV(zp));
-	return (error);
-}
 
 /*
  * Get data to generate a TX_WRITE intent log record.
@@ -1780,6 +1698,8 @@ top:
 	} else {
 		/* possible VN_HOLD(zp) */
 		if (error = zfs_dirent_lock(&dl, dzp, name, &zp, 0)) {
+            if (have_acl)
+				zfs_acl_ids_free(&acl_ids);
 			if (strcmp(name, "..") == 0)
 				error = EISDIR;
 			ZFS_EXIT(zfsvfs);
@@ -1791,6 +1711,7 @@ top:
 	zoid = zp ? zp->z_id : -1ULL;
 
 	if (zp == NULL) {
+        uint64_t txtype;
 		/*
 		 * Create a new file object and update the directory
 		 * to reference it.
@@ -1865,12 +1786,15 @@ top:
 		ASSERT(zp->z_id == zoid);
 		(void) zfs_link_create(dl, zp, tx, ZNEW);
 // XXX Why don't we just assign 'name' to 'cnp->cn_nameptr' somewhere above?
-#ifdef __APPLE__
-		zfs_log_create(zilog, tx, TX_CREATE, dzp, zp, cnp->cn_nameptr,
-                       NULL /*vsecp*/ , acl_ids.z_fuidp, vap);
-#else
-		zfs_log_create(zilog, tx, TX_CREATE, dzp, zp, name);
-#endif /* __APPLE__ */
+
+        txtype = zfs_log_create_txtype(Z_FILE, vsecp, vap);
+		//if (flag & FIGNORECASE)
+		//	txtype |= TX_CI;
+
+		zfs_log_create(zilog, tx, txtype, dzp, zp, cnp->cn_nameptr,
+                       vsecp, acl_ids.z_fuidp, vap);
+		zfs_acl_ids_free(&acl_ids);
+
 		dmu_tx_commit(tx);
 
 #ifdef __APPLE__
@@ -1881,6 +1805,10 @@ top:
 		zfs_attach_vnode(zp);
 #endif /* __APPLE__ */
 	} else {
+		if (have_acl)
+			zfs_acl_ids_free(&acl_ids);
+		have_acl = B_FALSE;
+
 		/*
 		 * A directory entry already exists for this name.
 		 */
@@ -2269,6 +2197,7 @@ zfs_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t **vpp, cred_t *cr)
     vsecattr_t *vsecp = NULL;
 
     printf("vnop_mkdir: type %d\n", vap->va_type);
+    return EINVAL;
 
 	ASSERT(vap->va_type == VDIR);
 
@@ -2632,15 +2561,13 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp)
 	if (eofp == NULL)
 		eofp = &local_eof;
 
-#ifndef __APPLE__
 	/*
 	 * Check for valid iov_len.
 	 */
-	if (uio->uio_iov->iov_len <= 0) {
+    if (uio_curriovlen(uio) <= 0) {
 		ZFS_EXIT(zfsvfs);
 		return (EINVAL);
 	}
-#endif
 
 	/*
 	 * Quit if directory has been removed (posix)
@@ -2649,7 +2576,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp)
 		ZFS_EXIT(zfsvfs);
 		return (0);
 	}
-
+    error = 0;
 	os = zfsvfs->z_os;
 #ifdef __APPLE__
 	offset = uio_offset(uio);
@@ -4105,7 +4032,8 @@ zfs_rename_lock(znode_t *szp, znode_t *tdzp, znode_t *sdzp, zfs_zlock_t **zlpp)
 				return (error);
 			zl->zl_znode = zp;
 		}
-		oidp = &zp->z_parent;
+        (void) sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zp->z_zfsvfs),
+                         &oidp, sizeof (oidp));
 		rwlp = &zp->z_parent_lock;
 		rw = RW_READER;
 
@@ -5177,6 +5105,72 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
+    printf("vnop_inactive\n");
+
+	rw_enter(&zfsvfs->z_unmount_inactive_lock, RW_READER);
+
+	if (zp->z_sa_hdl == NULL) {
+		/*
+		 * The fs has been unmounted, or we did a
+		 * suspend/resume and this file no longer exists.
+		 */
+		if (vn_has_cached_data(vp)) {
+            //		(void) pvn_vplist_dirty(vp, 0, zfs_null_putapage,
+            //  B_INVAL, cr);
+		}
+
+		mutex_enter(&zp->z_lock);
+		//mutex_enter(&vp->v_lock);
+		//ASSERT(vp->v_count == 1);
+		//vp->v_count = 0;
+		//mutex_exit(&vp->v_lock);
+		mutex_exit(&zp->z_lock);
+        rw_exit(&zfsvfs->z_unmount_inactive_lock);
+        zfs_znode_free(zp);
+		return 0;
+	}
+	/*
+	 * Attempt to push any data in the page cache.  If this fails
+	 * we will get kicked out later in zfs_zinactive().
+	 */
+	if (vn_has_cached_data(vp)) {
+        //	(void) pvn_vplist_dirty(vp, 0, zfs_putapage, B_INVAL|B_ASYNC,
+        //   cr);
+	}
+
+	if (zp->z_atime_dirty && zp->z_unlinked == 0) {
+		dmu_tx_t *tx = dmu_tx_create(zfsvfs->z_os);
+        int error;
+		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+		zfs_sa_upgrade_txholds(tx, zp);
+		error = dmu_tx_assign(tx, TXG_WAIT);
+		if (error) {
+			dmu_tx_abort(tx);
+		} else {
+			mutex_enter(&zp->z_lock);
+			(void) sa_update(zp->z_sa_hdl, SA_ZPL_ATIME(zfsvfs),
+			    (void *)&zp->z_atime, sizeof (zp->z_atime), tx);
+			zp->z_atime_dirty = 0;
+			mutex_exit(&zp->z_lock);
+			dmu_tx_commit(tx);
+		}
+	}
+
+	zfs_zinactive(zp);
+
+	rw_exit(&zfsvfs->z_unmount_inactive_lock);
+	return (0);
+}
+
+static int
+OLDzfs_vnop_inactive(struct vnop_inactive_args *ap)
+{
+	vnode_t *vp = ap->a_vp;
+	znode_t *zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+    printf("vnop_inactive\n");
+
 	rw_enter(&zfsvfs->z_unmount_inactive_lock, RW_READER);
 
 #ifdef ZFS_DEBUG
@@ -5207,6 +5201,9 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 {
 	vnode_t *vp = ap->a_vp;
 	znode_t *zp = VTOZ(vp);
+
+    printf("vnop_reclaim\n");
+
 	if (zp == NULL)
 	{
 		// Issue 39
@@ -5233,8 +5230,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 		mutex_exit(&zp->z_lock);
 	} else {
 		mutex_exit(&zp->z_lock);
-        // FIXME< panic
-		//zfs_zinactive(zp);
+		zfs_zinactive(zp);
 	}
 
 	/* Mark the vnode as not used and NULL out the vp's data*/
