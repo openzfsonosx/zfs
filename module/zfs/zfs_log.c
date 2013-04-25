@@ -61,6 +61,37 @@
  * number and inserted in the in-memory list anchored in the zilog.
  */
 
+int
+zfs_log_create_txtype(zil_create_t type, vsecattr_t *vsecp, vattr_t *vap)
+{
+        int isxvattr = (vap->va_mask & AT_XVATTR);
+        switch (type) {
+        case Z_FILE:
+                if (vsecp == NULL && !isxvattr)
+                        return (TX_CREATE);
+                if (vsecp && isxvattr)
+                        return (TX_CREATE_ACL_ATTR);
+                if (vsecp)
+                        return (TX_CREATE_ACL);
+                else
+                        return (TX_CREATE_ATTR);
+                /*NOTREACHED*/
+        case Z_DIR:
+                if (vsecp == NULL && !isxvattr)
+                        return (TX_MKDIR);
+                if (vsecp && isxvattr)
+                        return (TX_MKDIR_ACL_ATTR);
+                if (vsecp)
+                        return (TX_MKDIR_ACL);
+                else
+                        return (TX_MKDIR_ATTR);
+        case Z_XATTRDIR:
+                return (TX_MKXATTR);
+        }
+        ASSERT(0);
+        return (TX_MAX_TYPE);
+}
+
 
 static void
 zfs_log_xvattr(lr_attr_t *lrattr, xvattr_t *xvap)

@@ -794,6 +794,10 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 		//zfs_time_stamper_locked(zp, STATE_CHANGED, tx);
     }
     error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
+    // Needed?
+#ifdef __APPLE__
+	zp->z_parent = dzp->z_id;
+#endif
 
 	mutex_exit(&zp->z_lock);
 
