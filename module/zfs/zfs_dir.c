@@ -619,6 +619,8 @@ zfs_rmnode(znode_t *zp)
     uint64_t        xattr_obj;
 	int		error;
 
+    printf("zfs_rmnode\n");
+
 #ifndef __APPLE__
 	ASSERT(ZTOV(zp)->v_count == 0);
 #endif /*!__APPLE__*/

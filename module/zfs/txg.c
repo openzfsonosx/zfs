@@ -36,7 +36,7 @@
 /*
  * Pool-wide transaction groups.
  */
-//#define dprintf printf
+#define dprintf printf
 
 static void txg_sync_thread(void *arg);
 static void txg_quiesce_thread(void *arg);
@@ -592,6 +592,7 @@ void
 txg_wait_synced(dsl_pool_t *dp, uint64_t txg)
 {
 	tx_state_t *tx = &dp->dp_tx;
+    printf("+txg_wait_synced\n");
 	mutex_enter(&tx->tx_sync_lock);
 	ASSERT(tx->tx_threads == 2);
 	if (txg == 0)
@@ -608,6 +609,7 @@ txg_wait_synced(dsl_pool_t *dp, uint64_t txg)
 		cv_wait(&tx->tx_sync_done_cv, &tx->tx_sync_lock);
 	}
 	mutex_exit(&tx->tx_sync_lock);
+    printf("-txg_wait_synced\n");
 }
 
 void

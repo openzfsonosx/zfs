@@ -1233,8 +1233,8 @@ again:
 		return (error);
 	}
 
-    //    if (ioflag & (FSYNC | FDSYNC))
-    printf("vnop_write: zil_commit\n");
+    if (ioflag & (FSYNC | FDSYNC))
+        // printf("vnop_write: zil_commit\n");
 		zil_commit(zilog, zp->z_id);
 
 #ifdef __APPLE__
@@ -2197,7 +2197,6 @@ zfs_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t **vpp, cred_t *cr)
     vsecattr_t *vsecp = NULL;
 
     printf("vnop_mkdir: type %d\n", vap->va_type);
-    return EINVAL;
 
 	ASSERT(vap->va_type == VDIR);
 
@@ -2284,6 +2283,7 @@ top:
 		    0, SPA_MAXBLOCKSIZE);
 	error = dmu_tx_assign(tx, zfsvfs->z_assign);
 	if (error) {
+        printf("dmu_tx fail %d\n", error);
 		zfs_dirent_unlock(dl);
 		if (error == ERESTART && zfsvfs->z_assign == TXG_NOWAIT) {
 			dmu_tx_wait(tx);
@@ -5107,7 +5107,7 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 
     printf("vnop_inactive\n");
 
-	rw_enter(&zfsvfs->z_unmount_inactive_lock, RW_READER);
+	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 
 	if (zp->z_sa_hdl == NULL) {
 		/*
@@ -5125,7 +5125,7 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 		//vp->v_count = 0;
 		//mutex_exit(&vp->v_lock);
 		mutex_exit(&zp->z_lock);
-        rw_exit(&zfsvfs->z_unmount_inactive_lock);
+        rw_exit(&zfsvfs->z_teardown_inactive_lock);
         zfs_znode_free(zp);
 		return 0;
 	}
@@ -5156,9 +5156,19 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 		}
 	}
 
-	zfs_zinactive(zp);
+	/*
+	 * Destroy the on-disk znode and flag the vnode to be recycled.
+	 * If this was a directory then zfs_link_destroy will have set
+	 * zp_links = 0
+	 */
+	if (zp->z_links == 0) {
+		vnode_recycle(vp);
+	}
 
-	rw_exit(&zfsvfs->z_unmount_inactive_lock);
+    //we definitely have a problem here
+    //zfs_zinactive(zp);
+
+	rw_exit(&zfsvfs->z_teardown_inactive_lock);
 	return (0);
 }
 
@@ -5171,14 +5181,14 @@ OLDzfs_vnop_inactive(struct vnop_inactive_args *ap)
 
     printf("vnop_inactive\n");
 
-	rw_enter(&zfsvfs->z_unmount_inactive_lock, RW_READER);
+	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 
 #ifdef ZFS_DEBUG
 	znode_stalker(zp, N_vnop_inactive);
 #endif
 	/* If we're force unmounting, go to reclaim */
 	if (zfsvfs->z_unmounted) {
-		rw_exit(&zfsvfs->z_unmount_inactive_lock);
+		rw_exit(&zfsvfs->z_teardown_inactive_lock);
 		return(0);
 	}
 
@@ -5191,7 +5201,7 @@ OLDzfs_vnop_inactive(struct vnop_inactive_args *ap)
 		vnode_recycle(vp);
 	}
 
-	rw_exit(&zfsvfs->z_unmount_inactive_lock);
+	rw_exit(&zfsvfs->z_teardown_inactive_lock);
 	return (0);
 }
 
@@ -5213,7 +5223,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-	rw_enter(&zfsvfs->z_unmount_inactive_lock, RW_READER);
+	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 
 #ifdef ZFS_DEBUG
 	znode_stalker(zp, N_vnop_reclaim);
@@ -5236,7 +5246,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	/* Mark the vnode as not used and NULL out the vp's data*/
 	vnode_removefsref(vp);
 	vnode_clearfsnode(vp);
-	rw_exit(&zfsvfs->z_unmount_inactive_lock);
+	rw_exit(&zfsvfs->z_teardown_inactive_lock);
 	return (0);
 }
 #endif /* __APPLE__ */
@@ -5638,68 +5648,6 @@ out:
 }
 #endif /* !__APPLE__ */
 
-#ifndef __APPLE__
-void
-zfs_inactive(vnode_t *vp, cred_t *cr)
-{
-	znode_t	*zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	int error;
-
-	rw_enter(&zfsvfs->z_unmount_inactive_lock, RW_READER);
-	if (zfsvfs->z_unmounted) {
-        //		ASSERT(zp->z_dbuf_held == 0);
-
-		if (vn_has_cached_data(vp)) {
-			(void) pvn_vplist_dirty(vp, 0, zfs_null_putapage,
-			    B_INVAL, cr);
-		}
-
-		mutex_enter(&zp->z_lock);
-		vp->v_count = 0; /* count arrives as 1 */
-        //		if (zp->z_dbuf == NULL) {
-		//	mutex_exit(&zp->z_lock);
-		//	zfs_znode_free(zp);
-		//} else {
-			mutex_exit(&zp->z_lock);
-            //}
-		rw_exit(&zfsvfs->z_unmount_inactive_lock);
-		VFS_RELE(zfsvfs->z_vfs);
-		return;
-	}
-
-	/*
-	 * Attempt to push any data in the page cache.  If this fails
-	 * we will get kicked out later in zfs_zinactive().
-	 */
-	if (vn_has_cached_data(vp)) {
-		(void) pvn_vplist_dirty(vp, 0, zfs_putapage, B_INVAL|B_ASYNC,
-		    cr);
-	}
-
-	if (zp->z_atime_dirty && zp->z_unlinked == 0) {
-		dmu_tx_t *tx = dmu_tx_create(zfsvfs->z_os);
-
-		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
-		zfs_sa_upgrade_txholds(tx, zp);
-		error = dmu_tx_assign(tx, TXG_WAIT);
-		if (error) {
-			dmu_tx_abort(tx);
-		} else {
-			//dmu_buf_will_dirty(zp->z_dbuf, tx);
-			mutex_enter(&zp->z_lock);
-			(void) sa_update(zp->z_sa_hdl, SA_ZPL_ATIME(zfsvfs),
-                             (void *)&zp->z_atime, sizeof (zp->z_atime), tx);
-			zp->z_atime_dirty = 0;
-			mutex_exit(&zp->z_lock);
-			dmu_tx_commit(tx);
-		}
-	}
-
-	zfs_zinactive(zp);
-	rw_exit(&zfsvfs->z_unmount_inactive_lock);
-}
-#endif /* !__APPLE__ */
 
 #ifndef __APPLE__
 /*

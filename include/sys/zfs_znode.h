@@ -278,17 +278,17 @@ typedef struct znode {
  * ZFS_EXIT() must be called before exitting the vop.
  * ZFS_VERIFY_ZP() verifies the znode is valid.
  */
-#define ZFS_ENTER(zfsvfs)                       \
+#define ZFS_ENTER(zfsvfs)                                               \
     {                                                                   \
-        if (rw_tryenter(&(zfsvfs)->z_unmount_lock, RW_READER) == 0)     \
-            return (EIO);                                               \
+        if (rw_tryenter(&(zfsvfs)->z_teardown_lock, RW_READER) == 0)   \
+            {printf("locked, returning EIO\n"); return (EIO);}          \
         if ((zfsvfs)->z_unmounted) {                                    \
             ZFS_EXIT(zfsvfs);                                           \
             return (EIO);                                               \
         }                                                               \
     }
 
-#define ZFS_EXIT(zfsvfs) rw_exit(&(zfsvfs)->z_unmount_lock)
+#define ZFS_EXIT(zfsvfs) rw_exit(&(zfsvfs)->z_teardown_lock)
 
 
 #define	ZFS_VERIFY_ZP(zp) \

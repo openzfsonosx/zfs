@@ -2072,6 +2072,7 @@ dbuf_hold_level(dnode_t *dn, int level, uint64_t blkid, void *tag)
 void
 dbuf_create_bonus(dnode_t *dn)
 {
+    //    printf("dbuf_create_bonus\n");
 	ASSERT(RW_WRITE_HELD(&dn->dn_struct_rwlock));
 
 	ASSERT(dn->dn_bonus == NULL);

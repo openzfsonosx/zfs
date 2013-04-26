@@ -1330,6 +1330,8 @@ zfs_zinactive(znode_t *zp)
 
     printf("zfs_zinactive\n");
 
+    if (ZTOV(zp) != NULLVP) printf("releasing with a non-NULL vp!\n");
+
 #ifdef __APPLE__
     //	ASSERT(/*zp->z_dbuf && */ zp->z_phys);
 #else
@@ -1379,30 +1381,31 @@ zfs_zinactive(znode_t *zp)
 #endif /* __APPLE__ */
 		return;
 	}
-#ifndef __APPLE__
-        ASSERT(zp->z_phys);
-        //        ASSERT(zp->z_dbuf_held);
-
-        //zp->z_dbuf_held = 0;
-#endif /* __APPLE__ */
 
 	mutex_exit(&zp->z_lock);
     //	dmu_buf_rele(zp->z_dbuf, NULL);
 	zfs_znode_dmu_fini(zp);
-	ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 #ifdef __APPLE__
         zfs_znode_free(zp);
 #else
         VFS_RELE(zfsvfs->z_vfs);
 #endif /* __APPLE__ */
+        // Moved after znode_free
+	ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 }
 
 void
 zfs_znode_free(znode_t *zp)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+    struct vnode *vp;
+
+    vp = ZTOV(zp);
 
     printf("znode_free zp %p vp %p\n", zp, ZTOV(zp));
+    //vnode_removefsref(vp);
+    vnode_clearfsnode(vp);
+    //vnode_recycle(vp);
 
 #ifdef __APPLE__
 	/*

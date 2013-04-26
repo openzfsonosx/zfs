@@ -280,6 +280,7 @@ dnode_byteswap(dnode_phys_t *dnp)
 		int off = (dnp->dn_nblkptr-1) * sizeof (blkptr_t);
 		size_t len = DN_MAX_BONUSLEN - off;
 		dmu_object_byteswap_t byteswap;
+        //        printf("dnode diff 1\n");
 		ASSERT(DMU_OT_IS_VALID(dnp->dn_bonustype));
 		byteswap = DMU_OT_BYTESWAP(dnp->dn_bonustype);
 		dmu_ot_byteswap[byteswap].ob_func(dnp->dn_bonus + off, len);
@@ -361,6 +362,8 @@ dnode_rm_spill(dnode_t *dn, dmu_tx_t *tx)
 static void
 dnode_setdblksz(dnode_t *dn, int size)
 {
+    //    printf("dnode_setdblksz %d\n", size);
+
 	ASSERT3U(P2PHASE(size, SPA_MINBLOCKSIZE), ==, 0);
 	ASSERT3U(size, <=, SPA_MAXBLOCKSIZE);
 	ASSERT3U(size, >=, SPA_MINBLOCKSIZE);
@@ -388,6 +391,9 @@ dnode_create(objset_t *os, dnode_phys_t *dnp, dmu_buf_impl_t *db,
 	dn->dn_dbuf = db;
 	dn->dn_handle = dnh;
 	dn->dn_phys = dnp;
+
+    //    printf("dnode_create: size %d object %d\n",
+    //      dnp->dn_datablkszsec, object);
 
 	if (dnp->dn_datablkszsec) {
 		dnode_setdblksz(dn, dnp->dn_datablkszsec << SPA_MINBLOCKSHIFT);

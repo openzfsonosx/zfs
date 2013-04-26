@@ -246,6 +246,8 @@ dmu_bonus_hold(objset_t *os, uint64_t object, void *tag, dmu_buf_t **dbp)
 	dmu_buf_impl_t *db;
 	int error;
 
+    //printf("+dmu_bonus_hold %d\n", object);
+
 	error = dnode_hold(os, object, FTAG, &dn);
 	if (error)
 		return (error);
@@ -277,6 +279,9 @@ dmu_bonus_hold(objset_t *os, uint64_t object, void *tag, dmu_buf_t **dbp)
 	VERIFY(0 == dbuf_read(db, NULL, DB_RF_MUST_SUCCEED | DB_RF_NOPREFETCH));
 
 	*dbp = &db->db;
+
+    //printf("-dmu_bonus_hold %d\n", object);
+
 	return (0);
 }
 
@@ -1918,6 +1923,8 @@ dmu_object_info_from_dnode(dnode_t *dn, dmu_object_info_t *doi)
 	mutex_enter(&dn->dn_mtx);
 
 	dnp = dn->dn_phys;
+
+    //printf("dmu: assigning doi_data_block_size %d\n", dn->dn_datablksz);
 
 	doi->doi_data_block_size = dn->dn_datablksz;
 	doi->doi_metadata_block_size = dn->dn_indblkshift ?

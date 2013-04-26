@@ -5996,6 +5996,7 @@ spa_sync(spa_t *spa, uint64_t txg)
 	int error;
 	int c;
 
+    printf("+spa_sync\n");
 	VERIFY(spa_writeable(spa));
 
 	/*
@@ -6206,6 +6207,8 @@ spa_sync(spa_t *spa, uint64_t txg)
 	 * If any async tasks have been requested, kick them off.
 	 */
 	spa_async_dispatch(spa);
+
+    printf("-spa_sync\n");
 
 }
 

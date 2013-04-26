@@ -532,6 +532,8 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
      */
     zfsvfs->z_vfs = NULL;
     zfsvfs->z_parent = zfsvfs;
+    // Setting this means largeIO will hang. Wonder why eh
+    //zfsvfs->z_assign = TXG_NOWAIT; // OLD?
     zfsvfs->z_max_blksz = SPA_MAXBLOCKSIZE;
     zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
     zfsvfs->z_os = os;
@@ -1619,6 +1621,8 @@ zfs_root(vfs_t *vfsp, vnode_t **vpp)
 	znode_t *rootzp;
 	int error;
 
+    printf("+vfs_root\n");
+
 	ZFS_ENTER(zfsvfs);
 
 	error = zfs_zget(zfsvfs, zfsvfs->z_root, &rootzp);
@@ -1626,6 +1630,7 @@ zfs_root(vfs_t *vfsp, vnode_t **vpp)
 		*vpp = ZTOV(rootzp);
 
 	ZFS_EXIT(zfsvfs);
+    printf("-vfs_root\n");
 	return (error);
 }
 
@@ -1746,8 +1751,8 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
          */
         if (unmounting) {
                 zfsvfs->z_unmounted = B_TRUE;
-                rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
                 rw_exit(&zfsvfs->z_teardown_inactive_lock);
+                rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
         }
 
         /*

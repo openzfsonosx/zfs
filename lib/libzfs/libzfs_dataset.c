@@ -767,6 +767,8 @@ libzfs_mnttab_add(libzfs_handle_t *hdl, const char *special,
 {
 	mnttab_node_t *mtn;
 
+    printf("mnttab ADDING '%s'\n", mountp);
+
 	mtn = zfs_alloc(hdl, sizeof (mnttab_node_t));
 	mtn->mtn_mt.mnt_special = zfs_strdup(hdl, special);
 	mtn->mtn_mt.mnt_mountp = zfs_strdup(hdl, mountp);

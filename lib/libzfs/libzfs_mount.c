@@ -1196,12 +1196,16 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 	int ret = -1;
 	int flags = (force ? MS_FORCE : 0);
 
+    printf("disable datasets\n");
+
 	namelen = strlen(zhp->zpool_name);
 
 	used = alloc = 0;
 	for (mntn = libzfs_mnttab_first(hdl); mntn != NULL;
 	     mntn = libzfs_mnttab_next(hdl, mntn)) {
 		struct mnttab *mt = &mntn->mtn_mt;
+
+        printf("disable_datasets: '%s'\n",mt->mnt_mountp);
 
 		/*
 		 * Ignore filesystems not within this pool.
