@@ -96,7 +96,7 @@ zrl_add(zrlock_t *zrl)
 
 	mutex_enter(&zrl->zr_mtx);
 	while (zrl->zr_refcount == ZRL_LOCKED) {
-		cv_wait(&zrl->zr_cv, &zrl->zr_mtx);
+        cv_wait(&zrl->zr_cv, &zrl->zr_mtx);
 	}
 	ASSERT(zrl->zr_refcount >= 0);
 	zrl->zr_refcount++;
@@ -113,6 +113,7 @@ zrl_remove(zrlock_t *zrl)
 	uint32_t n;
 
 	n = atomic_dec_32_nv((uint32_t *)&zrl->zr_refcount);
+    if (zrl->zr_refcount < 0) panic("under zero");
 	ASSERT((int32_t)n >= 0);
 #ifdef	ZFS_DEBUG
 	if (zrl->zr_owner == curthread) {

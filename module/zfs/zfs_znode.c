@@ -28,6 +28,8 @@
 
 /* Portions Copyright 2007 Jeremy Teo */
 
+/* Portions Copyright 2013 Jorgen Lundman */
+
 #ifdef _KERNEL
 #include <sys/types.h>
 #include <sys/param.h>
@@ -102,6 +104,7 @@ znode_pageout_func(dmu_buf_t *dbuf, void *user_ptr)
 {
 	znode_t *zp = user_ptr;
 
+    printf("pageout\n");
 #ifdef __APPLE__
 #ifdef ZFS_DEBUG
 	znode_stalker(zp, N_znode_pageout);
@@ -113,6 +116,7 @@ znode_pageout_func(dmu_buf_t *dbuf, void *user_ptr)
 	if (zp->z_zfsvfs && vfs_isforce(zp->z_zfsvfs->z_vfs)) {
 		mutex_exit(&zp->z_lock);
 		zfs_znode_free(zp);
+        return ;
 	} else {
         	mutex_exit(&zp->z_lock);
         }
@@ -124,6 +128,7 @@ znode_pageout_func(dmu_buf_t *dbuf, void *user_ptr)
 		mutex_exit(&zp->z_lock);
 		vn_invalid(vp);
 		zfs_znode_free(zp);
+        return;
 	} else {
 		/* signal force unmount that this znode can be freed */
 		//zp->z_dbuf = NULL;
@@ -1032,7 +1037,7 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 
 	*zpp = NULL;
 
-    printf("+zget %d\n", obj_num);
+    //    printf("+zget %d\n", obj_num);
 
 #ifdef __APPLE__
 again:
@@ -1129,7 +1134,7 @@ again:
 		mutex_exit(&zp->z_lock);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
-        printf("-zget %d exit 1\n", obj_num);
+        //        printf("-zget %d exit 1\n", obj_num);
 		return (err);
 	} // hdl
 
@@ -1166,7 +1171,7 @@ again:
     } else {
         *zpp = zp;
     }
-    printf("-zget %d\n", obj_num);
+    //    printf("-zget %d\n", obj_num);
     return (err);
 }
 
@@ -1307,6 +1312,8 @@ void zfs_znode_delete(znode_t *zp, dmu_tx_t *tx)
     uint64_t obj = zp->z_id;
     uint64_t acl_obj = zfs_external_acl(zp);
 
+    printf("znode_delete\n");
+
     ZFS_OBJ_HOLD_ENTER(zfsvfs, obj);
     if (acl_obj) {
         VERIFY(!zp->z_is_sa);
@@ -1330,8 +1337,6 @@ zfs_zinactive(znode_t *zp)
 
     printf("zfs_zinactive\n");
 
-    if (ZTOV(zp) != NULLVP) printf("releasing with a non-NULL vp!\n");
-
 #ifdef __APPLE__
     //	ASSERT(/*zp->z_dbuf && */ zp->z_phys);
 #else
@@ -1343,28 +1348,6 @@ zfs_zinactive(znode_t *zp)
 	ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
 
 	mutex_enter(&zp->z_lock);
-#ifndef __APPLE__
-	mutex_enter(&vp->v_lock);
-	vp->v_count--;
-	if (vp->v_count > 0 || vn_has_cached_data(vp)) {
-		/*
-		 * If the hold count is greater than zero, somebody has
-		 * obtained a new reference on this znode while we were
-		 * processing it here, so we are done.  If we still have
-		 * mapped pages then we are also done, since we don't
-		 * want to inactivate the znode until the pages get pushed.
-		 *
-		 * XXX - if vn_has_cached_data(vp) is true, but count == 0,
-		 * this seems like it would leave the znode hanging with
-		 * no chance to go inactive...
-		 */
-		mutex_exit(&vp->v_lock);
-		mutex_exit(&zp->z_lock);
-		ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
-		return;
-	}
-	mutex_exit(&vp->v_lock);
-#endif /* !__APPLE__ */
 
 	/*
 	 * If this was the last reference to a file with no links,
@@ -1374,23 +1357,13 @@ zfs_zinactive(znode_t *zp)
 		mutex_exit(&zp->z_lock);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 		zfs_rmnode(zp);
-#ifdef __APPLE__
 		zfs_znode_free(zp);
-#else
-                VFS_RELE(zfsvfs->z_vfs);
-#endif /* __APPLE__ */
 		return;
 	}
 
 	mutex_exit(&zp->z_lock);
-    //	dmu_buf_rele(zp->z_dbuf, NULL);
 	zfs_znode_dmu_fini(zp);
-#ifdef __APPLE__
-        zfs_znode_free(zp);
-#else
-        VFS_RELE(zfsvfs->z_vfs);
-#endif /* __APPLE__ */
-        // Moved after znode_free
+    //zfs_znode_free(zp);
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 }
 
@@ -1405,7 +1378,6 @@ zfs_znode_free(znode_t *zp)
     printf("znode_free zp %p vp %p\n", zp, ZTOV(zp));
     //vnode_removefsref(vp);
     vnode_clearfsnode(vp);
-    //vnode_recycle(vp);
 
 #ifdef __APPLE__
 	/*
@@ -1603,7 +1575,8 @@ zfs_grow_blocksize(znode_t *zp, uint64_t size, dmu_tx_t *tx)
 	ASSERT3U(error, ==, 0);
 
 	/* What blocksize did we actually get? */
-    //	dmu_object_size_from_db(zp->z_dbuf, &zp->z_blksz, &dummy);
+	dmu_object_size_from_db(sa_get_db(zp->z_sa_hdl), &zp->z_blksz, &dummy);
+
 }
 
 #ifndef __APPLE__

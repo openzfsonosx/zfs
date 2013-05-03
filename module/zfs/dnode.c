@@ -675,6 +675,7 @@ dnode_move_impl(dnode_t *odn, dnode_t *ndn)
 	ndn->dn_datablkshift = odn->dn_datablkshift;
 	ndn->dn_datablkszsec = odn->dn_datablkszsec;
 	ndn->dn_datablksz = odn->dn_datablksz;
+    printf("copy dn_datablksz %d\n", ndn->dn_datablksz);
 	ndn->dn_maxblkid = odn->dn_maxblkid;
 	bcopy(&odn->dn_next_nblkptr[0], &ndn->dn_next_nblkptr[0],
 	    sizeof (odn->dn_next_nblkptr));

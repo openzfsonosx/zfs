@@ -1375,8 +1375,7 @@ zio_wait(zio_t *zio)
 
 	return (error);
 }
-#endif
-#if 1
+#else
 int
 zio_wait(zio_t *zio)
 {

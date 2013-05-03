@@ -55,6 +55,7 @@
 #include <sys/utfconv.h>
 #include <sys/ubc.h>
 //#include <maczfs/maczfs_ubc.h>
+#include <sys/dmu_tx.h>
 
 /*
  * Programming rules.
@@ -1058,15 +1059,15 @@ again:
 		 */
         printf(" vnop_write hold_sa %d\n", max_blksz);
 		tx = dmu_tx_create(zfsvfs->z_os);
+
 		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 		dmu_tx_hold_write(tx, zp->z_id, woff, MIN(n, max_blksz));
 		zfs_sa_upgrade_txholds(tx, zp);
-		error = dmu_tx_assign(tx, TXG_NOWAIT);
+		error = dmu_tx_assign(tx, zfsvfs->z_assign);
 
 		if (error) {
             printf(" vnop_write TX fail %d - retry\n", error);
-
-			if (error == ERESTART) {
+			if ((error == ERESTART) && (zfsvfs->z_assign == TXG_NOWAIT)) {
 				dmu_tx_wait(tx);
 				dmu_tx_abort(tx);
 				goto again;
@@ -1086,7 +1087,6 @@ again:
 		if (rl->r_len == UINT64_MAX) {
 			uint64_t new_blksz;
 
-            printf(" vnop_write range_reduce\n");
 			if (zp->z_blksz > max_blksz) {
 				ASSERT(!ISP2(zp->z_blksz));
 				new_blksz = MIN(end_size, SPA_MAXBLOCKSIZE);
@@ -1106,6 +1106,11 @@ again:
         printf(" vnop_write nbytes %d abuf %p\n", nbytes, abuf);
 		if (abuf == NULL) {
 			tx_bytes = uio_resid(uio);
+            //  vnop_write hold_sa 131072
+            // vnop_write range_reduce
+            // vnop_write nbytes 31072 abuf 0
+            //  "zfs: accessing past end of object 15/9
+            // (size=100352 access=100000+31072)"@spl-err.c:48
 			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, nbytes, tx);
             printf(" vnop_write uio_dbuf before %d after %d\n",
@@ -1153,7 +1158,6 @@ again:
 			ASSERT(error != 0);
 			break;
 		}
-        printf(" vnop_write uid juggle\n");
 		/*
 		 * Clear Set-UID/Set-GID bits on successful write if not
 		 * privileged and at least one of the execute bits is set.
@@ -1198,11 +1202,9 @@ again:
 		 */
 		if (zfsvfs->z_replay && zfsvfs->z_replay_eof != 0)
 			zp->z_size = zfsvfs->z_replay_eof;
-        printf(" vnop_write sa_update\n");
 
 		error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
 
-        printf(" vnop_write: commit\n");
 		zfs_log_write(zilog, tx, TX_WRITE, zp, woff, tx_bytes, ioflag);
 		dmu_tx_commit(tx);
 
@@ -1214,9 +1216,6 @@ again:
 		if (!xuio && n > 0)
 			zfs_prefault_write(MIN(n, max_blksz), uio);
 	}
-    printf(" vnop_write: loop done\n");
-
-
 
 	zfs_range_unlock(rl);
 
@@ -3256,6 +3255,9 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
     sa_bulk_attr_t  bulk[7], xattr_bulk[7];
     int     count = 0, xattr_count = 0;
 
+    printf("vnop_setattr\n");
+
+
 #ifndef __APPLE__
 	if (mask == 0)
 		return (0);
@@ -5162,7 +5164,9 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 	 * zp_links = 0
 	 */
 	if (zp->z_links == 0) {
+        printf("inactive, links 0 release\n");
 		vnode_recycle(vp);
+        zfs_znode_free(zp);
 	}
 
     //we definitely have a problem here
@@ -5244,8 +5248,9 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	}
 
 	/* Mark the vnode as not used and NULL out the vp's data*/
-	vnode_removefsref(vp);
+		zfs_znode_free(zp); zp = NULL;
 	vnode_clearfsnode(vp);
+	vnode_removefsref(vp);
 	rw_exit(&zfsvfs->z_teardown_inactive_lock);
 	return (0);
 }

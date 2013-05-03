@@ -176,7 +176,7 @@ zfs_vfs_sync(struct mount *mp, __unused int waitfor, __unused vfs_context_t cont
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 
-    printf("+vfs_sync\n");
+    //    printf("+vfs_sync\n");
 
 	ZFS_ENTER(zfsvfs);
 
@@ -223,7 +223,7 @@ top:
 		}
 	}
 
-    printf(" zfs_vfs zil_commit: %p\n", zfsvfs->z_log);
+    //    printf(" zfs_vfs zil_commit: %p\n", zfsvfs->z_log);
 
 	if (zfsvfs->z_log != NULL)
 		zil_commit(zfsvfs->z_log, 0);
@@ -231,7 +231,7 @@ top:
 		txg_wait_synced(dmu_objset_pool(zfsvfs->z_os), 0);
 #endif
 	ZFS_EXIT(zfsvfs);
-    printf("-vfs_sync\n");
+    //    printf("-vfs_sync\n");
 
 	return (0);
 }
@@ -533,7 +533,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
     zfsvfs->z_vfs = NULL;
     zfsvfs->z_parent = zfsvfs;
     // Setting this means largeIO will hang. Wonder why eh
-    //zfsvfs->z_assign = TXG_NOWAIT; // OLD?
+    zfsvfs->z_assign = TXG_NOWAIT; // OLD?
     zfsvfs->z_max_blksz = SPA_MAXBLOCKSIZE;
     zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
     zfsvfs->z_os = os;
@@ -1621,7 +1621,7 @@ zfs_root(vfs_t *vfsp, vnode_t **vpp)
 	znode_t *rootzp;
 	int error;
 
-    printf("+vfs_root\n");
+    //    printf("+vfs_root\n");
 
 	ZFS_ENTER(zfsvfs);
 
@@ -1630,7 +1630,7 @@ zfs_root(vfs_t *vfsp, vnode_t **vpp)
 		*vpp = ZTOV(rootzp);
 
 	ZFS_EXIT(zfsvfs);
-    printf("-vfs_root\n");
+    //    printf("-vfs_root\n");
 	return (error);
 }
 
@@ -2227,114 +2227,6 @@ zfs_vfs_vptofh(vnode_t *vp, int *fhlenp, unsigned char *fhp, __unused vfs_contex
 
 
 
-
-#ifndef __APPLE__
-static int
-zfs_vget(vfs_t *vfsp, vnode_t **vpp, fid_t *fidp)
-{
-	zfsvfs_t	*zfsvfs = vfsp->vfs_data;
-	znode_t		*zp;
-	uint64_t	object = 0;
-	uint64_t	fid_gen = 0;
-	uint64_t	gen_mask;
-	uint64_t	zp_gen;
-	int 		i, err;
-
-	*vpp = NULL;
-
-	ZFS_ENTER(zfsvfs);
-
-	if (fidp->fid_len == LONG_FID_LEN) {
-		zfid_long_t	*zlfid = (zfid_long_t *)fidp;
-		uint64_t	objsetid = 0;
-		uint64_t	setgen = 0;
-
-		for (i = 0; i < sizeof (zlfid->zf_setid); i++)
-			objsetid |= ((uint64_t)zlfid->zf_setid[i]) << (8 * i);
-
-		for (i = 0; i < sizeof (zlfid->zf_setgen); i++)
-			setgen |= ((uint64_t)zlfid->zf_setgen[i]) << (8 * i);
-
-		ZFS_EXIT(zfsvfs);
-
-		err = zfsctl_lookup_objset(vfsp, objsetid, &zfsvfs);
-		if (err)
-			return (EINVAL);
-		ZFS_ENTER(zfsvfs);
-	}
-
-	if (fidp->fid_len == SHORT_FID_LEN || fidp->fid_len == LONG_FID_LEN) {
-		zfid_short_t	*zfid = (zfid_short_t *)fidp;
-
-		for (i = 0; i < sizeof (zfid->zf_object); i++)
-			object |= ((uint64_t)zfid->zf_object[i]) << (8 * i);
-
-		for (i = 0; i < sizeof (zfid->zf_gen); i++)
-			fid_gen |= ((uint64_t)zfid->zf_gen[i]) << (8 * i);
-	} else {
-		ZFS_EXIT(zfsvfs);
-		return (EINVAL);
-	}
-
-	/* A zero fid_gen means we are in the .zfs control directories */
-	if (fid_gen == 0 &&
-	    (object == ZFSCTL_INO_ROOT || object == ZFSCTL_INO_SNAPDIR)) {
-		*vpp = zfsvfs->z_ctldir;
-		ASSERT(*vpp != NULL);
-		if (object == ZFSCTL_INO_SNAPDIR) {
-			VERIFY(zfsctl_root_lookup(*vpp, "snapshot", vpp, NULL,
-			    0, NULL, NULL) == 0);
-		} else {
-			VN_HOLD(*vpp);
-		}
-		ZFS_EXIT(zfsvfs);
-		return (0);
-	}
-
-	gen_mask = -1ULL >> (64 - 8 * i);
-
-	zdprintf("getting %llu [%u mask %llx]\n", object, fid_gen, gen_mask);
-	if (err = zfs_zget(zfsvfs, object, &zp)) {
-		ZFS_EXIT(zfsvfs);
-		return (err);
-	}
-	zp_gen = zp->_gen & gen_mask;
-	if (zp_gen == 0)
-		zp_gen = 1;
-	if (zp->z_unlinked || zp_gen != fid_gen) {
-		zdprintf("znode gen (%u) != fid gen (%u)\n", zp_gen, fid_gen);
-		VN_RELE(ZTOV(zp));
-		ZFS_EXIT(zfsvfs);
-		return (EINVAL);
-	}
-
-	*vpp = ZTOV(zp);
-	ZFS_EXIT(zfsvfs);
-	return (0);
-}
-#endif /* !__APPLE__ */
-
-#ifndef __APPLE__
-static void
-zfs_freevfs(vfs_t *vfsp)
-{
-	zfsvfs_t *zfsvfs = vfsp->vfs_data;
-	int i;
-
-    printf("+freevfs\n");
-	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
-		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
-
-	mutex_destroy(&zfsvfs->z_znodes_lock);
-	list_destroy(&zfsvfs->z_all_znodes);
-	rw_destroy(&zfsvfs->z_unmount_lock);
-	rw_destroy(&zfsvfs->z_unmount_inactive_lock);
-	kmem_free(zfsvfs, sizeof (zfsvfs_t));
-
-	atomic_add_32(&zfs_active_fs_count, -1);
-    printf("-freevfs\n");
-}
-#endif /* !__APPLE__ */
 
 /*
  * VFS_INIT() initialization.  Note that there is no VFS_FINI(),
