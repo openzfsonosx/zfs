@@ -156,6 +156,7 @@ zfs_znode_cache_constructor(void *buf, void *cdrarg, int kmflags)
 	rw_init(&zp->z_map_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zp->z_parent_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zp->z_name_lock, NULL, RW_DEFAULT, NULL);
+	rw_init(&zp->z_xattr_lock, NULL, RW_DEFAULT, NULL);
 	mutex_init(&zp->z_acl_lock, NULL, MUTEX_DEFAULT, NULL);
 
 	mutex_init(&zp->z_range_lock, NULL, MUTEX_DEFAULT, NULL);
@@ -178,6 +179,7 @@ zfs_znode_cache_destructor(void *buf, void *cdarg)
 	rw_destroy(&zp->z_map_lock);
 	rw_destroy(&zp->z_parent_lock);
 	rw_destroy(&zp->z_name_lock);
+	rw_destroy(&zp->z_xattr_lock);
 	mutex_destroy(&zp->z_acl_lock);
 	avl_destroy(&zp->z_range_avl);
 	mutex_destroy(&zp->z_range_lock);
@@ -452,14 +454,15 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 
     zp->z_sa_hdl = NULL;
 	//zp->z_phys = db->db_data;
-	zp->z_zfsvfs = zfsvfs;
 	zp->z_unlinked = 0;
 	zp->z_atime_dirty = 0;
+
 #ifdef __APPLE__
 	zp->z_mmapped = 0;
 #else
 	zp->z_mapcnt = 0;
 #endif
+	zp->z_mapcnt = 0;
 	zp->z_last_itx = 0;
     zp->z_id = db->db_object;
 	zp->z_blksz = blksz;
@@ -467,8 +470,18 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_sync_cnt = 0;
     zp->z_acl_cached = NULL;
 
+    zp->z_is_zvol = 0;
+    zp->z_is_mapped = 0;
+    zp->z_is_ctldir = 0;
+    zp->z_vfs = NULL;
+    zp->z_xattr = 0;
+    zp->z_xattr_cached = NULL;
+    zp->z_xattr_parent = NULL;
+
 	zp->z_vnode = NULL;
 	zp->z_vid = 0;
+
+
 
 #ifdef ZFS_DEBUG
 	list_create(&zp->z_stalker, sizeof (findme_t),
@@ -530,6 +543,8 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
          * Everything else must be valid before assigning z_zfsvfs makes the
          * znode eligible for zfs_znode_move().
          */
+        zp->z_zfsvfs = zfsvfs;
+
         mutex_exit(&zfsvfs->z_znodes_lock);
 
         VFS_HOLD(zfsvfs->z_vfs);
@@ -1406,6 +1421,7 @@ zfs_znode_free(znode_t *zp)
 #endif /* ZFS_DEBUG */
 
 #endif __APPLE__
+    printf("znode_free %p\n", zp);
 
 	kmem_cache_free(znode_cache, zp);
 
@@ -1471,77 +1487,7 @@ zfs_tstamp_update_setup(znode_t *zp, uint_t flag, uint64_t mtime[2],
 }
 
 
-#if 0
-void
-zfs_time_stamper_locked(znode_t *zp, uint_t flag, dmu_tx_t *tx)
-{
-	timestruc_t	now;
 
-	ASSERT(MUTEX_HELD(&zp->z_lock));
-
-	gethrestime(&now);
-
-	if (tx) {
-        //		dmu_buf_will_dirty(zp->z_dbuf, tx);
-		zp->z_atime_dirty = 0;
-		zp->z_seq++;
-	} else {
-		zp->z_atime_dirty = 1;
-	}
-
-	if (flag & AT_ATIME)
-		ZFS_TIME_ENCODE(&now, zp->z_phys->zp_atime);
-
-	if (flag & AT_MTIME)
-		ZFS_TIME_ENCODE(&now, zp->z_phys->zp_mtime);
-
-	if (flag & AT_CTIME)
-		ZFS_TIME_ENCODE(&now, zp->z_phys->zp_ctime);
-
-#ifdef __APPLE__
-	/*
-	 * Mac OS X needs a file system modify time
-	 *
-	 * We use the mtime of the "com.apple.system.mtime"
-	 * extended attribute, which is associated with the
-	 * file system root directory.
-	 *
-	 * We take the znode mutex for this special file last.
-	 * No other section of code should ever hold this mutex
-	 * and attempt to acquire another znode mutex.
-	 */
-	if ((flag & AT_MTIME) &&
-	    (zp->z_zfsvfs->z_mtime_vp != NULL) &&
-	    (VTOZ(zp->z_zfsvfs->z_mtime_vp) != zp)) {
-		znode_t *mzp = VTOZ(zp->z_zfsvfs->z_mtime_vp);
-
-		mutex_enter(&mzp->z_lock);
-		ZFS_TIME_ENCODE(&now, mzp->z_phys->zp_mtime);
-		mutex_exit(&mzp->z_lock);
-	}
-#endif /* __APPLE__ */
-}
-#endif
-
-/*
- * Update the requested znode timestamps with the current time.
- * If we are in a transaction, then go ahead and mark the znode
- * dirty in the transaction so the timestamps will go to disk.
- * Otherwise, we will get pushed next time the znode is updated
- * in a transaction, or when this znode eventually goes inactive.
- *
- * Why is this OK?
- *  1 - Only the ACCESS time is ever updated outside of a transaction.
- *  2 - Multiple consecutive updates will be collapsed into a single
- *	znode update by the transaction grouping semantics of the DMU.
- */
-void
-zfs_time_stamper(znode_t *zp, uint_t flag, dmu_tx_t *tx)
-{
-	mutex_enter(&zp->z_lock);
-	//zfs_time_stamper_locked(zp, flag, tx);
-	mutex_exit(&zp->z_lock);
-}
 
 /*
  * Grow the block size for a file.
@@ -1728,11 +1674,6 @@ zfs_freesp(znode_t *zp, uint64_t off, uint64_t len, int flag, boolean_t log)
 		else if (end > size)
 			rlen = size - off;
 		VERIFY(0 == dmu_free_range(os, zp->z_id, off, rlen, tx));
-	}
-
-	if (log) {
-		zfs_time_stamper(zp, CONTENT_MODIFIED, tx);
-		zfs_log_truncate(zilog, tx, TX_TRUNCATE, zp, off, len);
 	}
 
 	zfs_range_unlock(rl);

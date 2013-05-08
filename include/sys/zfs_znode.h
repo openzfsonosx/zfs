@@ -335,9 +335,9 @@ typedef struct znode {
 #define	STATE_CHANGED		(AT_CTIME)
 #define	CONTENT_MODIFIED	(AT_MTIME | AT_CTIME)
 
-#define ZFS_ACCESSTIME_STAMP(zfsvfs, zp) \
-        if ((zfsvfs)->z_atime && !vfs_isrdonly(zfsvfs->z_vfs)) \
-                zfs_time_stamper(zp, ACCESSED, NULL)
+#define ZFS_ACCESSTIME_STAMP(zfsvfs, zp)                            \
+    if ((zfsvfs)->z_atime && !vfs_isrdonly(zfsvfs->z_vfs))          \
+        zfs_tstamp_update_setup(zp, ACCESSED, NULL, NULL, B_FALSE);
 
     extern int	zfs_init_fs(zfsvfs_t *, znode_t **, cred_t *);
 extern void	zfs_set_dataprop(objset_t *);

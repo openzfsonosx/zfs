@@ -793,7 +793,6 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
                          ctime, sizeof (ctime));
         zfs_tstamp_update_setup(zp, STATE_CHANGED, mtime,
                                 ctime, B_TRUE);
-		//zfs_time_stamper_locked(zp, STATE_CHANGED, tx);
     }
     error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
     // Needed?
@@ -820,7 +819,6 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
     SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
                      &dzp->z_pflags, sizeof (dzp->z_pflags));
     zfs_tstamp_update_setup(dzp, CONTENT_MODIFIED, mtime, ctime, B_TRUE);
-	//zfs_time_stamper_locked(dzp, CONTENT_MODIFIED, tx);
     error = sa_bulk_update(dzp->z_sa_hdl, bulk, count, tx);
 	mutex_exit(&dzp->z_lock);
 
@@ -950,7 +948,6 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
                              NULL, &zp->z_pflags, sizeof (zp->z_pflags));
             zfs_tstamp_update_setup(zp, STATE_CHANGED, mtime, ctime,
                                     B_TRUE);
-			//zfs_time_stamper_locked(zp, STATE_CHANGED, tx);
 		}
         SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_LINKS(zfsvfs),
                          NULL, &zp->z_links, sizeof (zp->z_links));
@@ -983,7 +980,6 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
     zfs_tstamp_update_setup(dzp, CONTENT_MODIFIED, mtime, ctime, B_TRUE);
     error = sa_bulk_update(dzp->z_sa_hdl, bulk, count, tx);
     ASSERT(error == 0);
-	//zfs_time_stamper_locked(dzp, CONTENT_MODIFIED, tx);
 	mutex_exit(&dzp->z_lock);
 
     /* Inform VFS to dump this znode as soon as possible... */
