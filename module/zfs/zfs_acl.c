@@ -2509,7 +2509,7 @@ zfs_zaccess(znode_t *zp, int mode, int flags, boolean_t skipaclchk, cred_t *cr)
 			 * Verify a lookup yields the same znode.
 			 */
 			ASSERT3S(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(
-			   zfsvfs), &parent, sizeof (parent)), ==, 0);
+			   zp->z_zfsvfs), &parent, sizeof (parent)), ==, 0);
 			ASSERT3U(check_zp->z_id, ==, parent);
 		} else {
 			rw_exit(&zp->z_xattr_lock);
