@@ -201,6 +201,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 		if ((flag & ZSHARED) && dl->dl_sharecnt != 0)
 			break;
 		cv_wait(&dl->dl_cv, &dzp->z_lock);
+        dl=NULL;
 	}
 
 #ifdef __APPLE__
@@ -308,6 +309,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 			zfs_dirent_unlock(dl);
 			return (EEXIST);
 		}
+		//error = zfs_zget_sans_vnode(zfsvfs, zoid, zpp);
 		error = zfs_zget(zfsvfs, zoid, zpp);
 		if (error) {
 			zfs_dirent_unlock(dl);
@@ -724,7 +726,7 @@ zfs_rmnode(znode_t *zp)
             zap_remove_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx));
 
         zfs_znode_delete(zp, tx);
-
+        // possibly this needs to call zinactive
         dmu_tx_commit(tx);
 out:
         if (xzp)

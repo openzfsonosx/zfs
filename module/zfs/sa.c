@@ -389,8 +389,10 @@ sa_attr_op(sa_handle_t *hdl, sa_bulk_attr_t *bulk, int count,
 
 		switch (data_op) {
 		case SA_LOOKUP:
-			if (bulk[i].sa_addr == NULL)
+			if (bulk[i].sa_addr == NULL) {
+                printf("sa_addr == NULL. i is %d and count %d\n", i, count);
 				return (ENOENT);
+            }
 			if (bulk[i].sa_data) {
 				SA_COPY_DATA(bulk[i].sa_data_func,
 				    bulk[i].sa_addr, bulk[i].sa_data,
@@ -1431,12 +1433,16 @@ sa_handle_get(objset_t *objset, uint64_t objid, void *userp,
 int
 sa_buf_hold(objset_t *objset, uint64_t obj_num, void *tag, dmu_buf_t **db)
 {
-	return (dmu_bonus_hold(objset, obj_num, tag, db));
+    int p;
+	p = (dmu_bonus_hold(objset, obj_num, tag, db));
+    //printf("sa_buf_hold %p\n", *db);
+    return p;
 }
 
 void
 sa_buf_rele(dmu_buf_t *db, void *tag)
 {
+    //printf("sa_buf_rele %p\n", db);
 	dmu_buf_rele(db, tag);
 }
 
@@ -1781,6 +1787,8 @@ sa_bulk_update_impl(sa_handle_t *hdl, sa_bulk_attr_t *bulk, int count,
 
 	ASSERT(hdl);
 	ASSERT(MUTEX_HELD(&hdl->sa_lock));
+
+    printf("sa_bulk_update count %d\n", count);
 
 	bonustype = SA_BONUSTYPE_FROM_DB(SA_GET_DB(hdl, SA_BONUS));
 	saved_spill = hdl->sa_spill;

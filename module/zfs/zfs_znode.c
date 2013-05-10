@@ -1007,14 +1007,20 @@ zfs_attach_vnode(znode_t *zp)
 	 * The rest of the code assumes we can always obtain a vnode.
 	 * So for now, just spin until we get one.
 	 */
+    if (zp->z_vnode) printf("why is vp already set? %p\n", zp->z_vnode);
+    if (zp->z_vid) printf("why is vid already set? %d\n", zp->z_vid);
+
+
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &zp->z_vnode) != 0);
 
-    printf("Attaching vnode %p type %d: zmode 0x%04x\n", zp->z_vnode,
+    printf("Attaching zp %p to vp %p type %d: zmode 0x%04x\n", zp, zp->z_vnode,
            vfsp.vnfs_vtype, zp->z_mode);
 
-	vnode_settag(zp->z_vnode, VT_ZFS);
-
 	mutex_enter(&zp->z_lock);
+	vnode_settag(zp->z_vnode, VT_ZFS);
+    //vfs_getnewfsid(zp->z_vnode); // ZEVO
+    //vnode_setmountedon(); // if block device
+    //vnode_makeimode();
 	zp->z_vid = vnode_vid(zp->z_vnode);
 	/* Wake up any waiters. */
 	cv_broadcast(&zp->z_cv);
@@ -1024,7 +1030,7 @@ zfs_attach_vnode(znode_t *zp)
 	mutex_enter(&zfsvfs->z_znodes_lock);
 	list_insert_tail(&zfsvfs->z_all_znodes, zp);
 	mutex_exit(&zfsvfs->z_znodes_lock);
-
+    printf("attach done\n");
 	return (0);
 }
 
@@ -1138,6 +1144,7 @@ again:
                 vnode_put(ZTOV(zp));
                 mutex_exit(&zp->z_lock);
                 ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+                printf("different vnode, loop\n");
                 goto again;
             }
 
@@ -1163,7 +1170,7 @@ again:
     }
 
     /*
-     * Not found create new znode/vnode
+     * Not found, create new znode/vnode
      */
     zp = zfs_znode_alloc(zfsvfs, db, doi.doi_data_block_size,
                          doi.doi_bonus_type, NULL);
@@ -1294,31 +1301,6 @@ zfs_rezget(znode_t *zp)
 	return (0);
 }
 
-#if 0
-void
-zfs_znode_delete(znode_t *zp, dmu_tx_t *tx)
-{
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	int error;
-
-	ZFS_OBJ_HOLD_ENTER(zfsvfs, zp->z_id);
-#ifdef __APPLE__
-#ifdef ZFS_DEBUG
-	znode_stalker(zp, N_znode_delete);
-#endif
-#endif /* __APPLE__ */
-	if (zp->z_phys->zp_acl.z_acl_extern_obj) {
-		error = dmu_object_free(zfsvfs->z_os,
-		    zp->z_phys->zp_acl.z_acl_extern_obj, tx);
-		ASSERT3U(error, ==, 0);
-	}
-	error = dmu_object_free(zfsvfs->z_os, zp->z_id, tx);
-	ASSERT3U(error, ==, 0);
-    //	zp->z_dbuf_held = 0;
-	ZFS_OBJ_HOLD_EXIT(zfsvfs, zp->z_id);
-    //	dmu_buf_rele(zp->z_dbuf, NULL);
-}
-#endif
 
 void zfs_znode_delete(znode_t *zp, dmu_tx_t *tx)
 {
@@ -1337,7 +1319,7 @@ void zfs_znode_delete(znode_t *zp, dmu_tx_t *tx)
     VERIFY(0 == dmu_object_free(os, obj, tx));
     zfs_znode_dmu_fini(zp);
     ZFS_OBJ_HOLD_EXIT(zfsvfs, obj);
-    zfs_znode_free(zp);
+    zfs_znode_free(zp); // ZOL does not call free
 }
 
 
@@ -1372,14 +1354,14 @@ zfs_zinactive(znode_t *zp)
 		mutex_exit(&zp->z_lock);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 		zfs_rmnode(zp);
-		zfs_znode_free(zp);
+		// zfs_znode_free(zp); !ZEVO
 		return;
 	}
 
 	mutex_exit(&zp->z_lock);
 	zfs_znode_dmu_fini(zp);
-    //zfs_znode_free(zp);
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
+    zfs_znode_free(zp); // ZEVO
 }
 
 void
@@ -1391,8 +1373,9 @@ zfs_znode_free(znode_t *zp)
     vp = ZTOV(zp);
 
     printf("znode_free zp %p vp %p\n", zp, ZTOV(zp));
-    //vnode_removefsref(vp);
+    vnode_removefsref(vp);
     vnode_clearfsnode(vp);
+    vnode_recycle(vp);
 
 #ifdef __APPLE__
 	/*

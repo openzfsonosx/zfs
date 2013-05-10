@@ -1,4 +1,25 @@
-Brian Behlendorf is the principle developer of the ZFS on Linux port.
+
+Darwin
+
+Jorgen Lundman is the principle developer of the ZFS on Darwin port.
+He works full time as a Unix Engineer at GMO Internet, Tokyo, Japan.
+
+  Jörgen Lundman <lundman@lundman.net>
+
+Additional Darwin work by
+
+  Will Andrews
+  Björn Kahl
+  Richard Yao
+  Daniel Bethe
+  Evan Lojewski
+  Don Brady
+
+Based heavily on previous work in MacZFS.
+
+
+Linux
+
 He works full time as a computer scientist at Lawrence Livermore
 National Laboratory on the ZFS and Lustre filesystems.  However,
 this port would not have been possible without the help of many
