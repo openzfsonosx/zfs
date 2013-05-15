@@ -61,8 +61,8 @@ extern boolean_t zfsctl_is_node(struct inode *ip);
 extern boolean_t zfsctl_is_snapdir(struct inode *ip);
 extern void zfsctl_inode_inactive(struct inode *ip);
 extern void zfsctl_inode_destroy(struct inode *ip);
-extern int zfsctl_create(zfs_sb_t *zsb);
-extern void zfsctl_destroy(zfs_sb_t *zsb);
+extern int zfsctl_create(zfsvfs_t *zsb);
+extern void zfsctl_destroy(zfsvfs_t *zsb);
 //extern struct inode *zfsctl_root(znode_t *zp);
 extern int zfsctl_fid(struct inode *ip, fid_t *fidp);
 
@@ -106,11 +106,11 @@ extern int zfsctl_snapdir_remove(struct inode *dip, char *name, cred_t *cr,
 extern int zfsctl_snapdir_mkdir(struct inode *dip, char *dirname, vattr_t *vap,
     struct inode **ipp, cred_t *cr, int flags);
 extern void zfsctl_snapdir_inactive(struct inode *ip);
-extern int zfsctl_unmount_snapshot(zfs_sb_t *zsb, char *name, int flags);
-extern int zfsctl_unmount_snapshots(zfs_sb_t *zsb, int flags, int *count);
+extern int zfsctl_unmount_snapshot(zfsvfs_t *zsb, char *name, int flags);
+extern int zfsctl_unmount_snapshots(zfsvfs_t *zsb, int flags, int *count);
 //extern int zfsctl_mount_snapshot(struct path *path, int flags);
-extern int zfsctl_lookup_objset(struct super_block *sb, uint64_t objsetid,
-    zfs_sb_t **zsb);
+extern int zfsctl_lookup_objset(struct mount *sb, uint64_t objsetid,
+    zfsvfs_t **zsb);
 
 /* zfsctl '.zfs/shares' functions */
 extern int zfsctl_shares_lookup(struct inode *dip, char *name,

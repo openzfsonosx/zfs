@@ -114,6 +114,8 @@ zfs_SOURCES = \
 	zfs_rlock.c \
 	zfs_vfsops.c \
 	zfs_vnops.c \
+	zfs_vnops_osx.c \
+	zfs_vnops_osx_lib.c \
 	zfs_znode.c \
 	zil.c \
 	zio.c \

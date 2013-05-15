@@ -33,7 +33,22 @@
  * refers to here results in a panic if the branch is actually taken.
  *
  * OS X uses vnode_put() in place of VN_RELE - needs a #define?
+ * (Already is, see vnode.h)
  */
+
+#include <sys/cred.h>
+#include <sys/vnode.h>
+#include <sys/zfs_dir.h>
+#include <sys/zfs_ioctl.h>
+#include <sys/fs/zfs.h>
+#include <sys/dmu.h>
+#include <sys/dmu_objset.h>
+#include <sys/spa.h>
+#include <sys/txg.h>
+#include <sys/dbuf.h>
+#include <sys/zap.h>
+#include <sys/sa.h>
+#include <sys/zfs_vnops.h>
 
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
@@ -44,13 +59,14 @@
 	DECLARE_CONTEXT(ap)
 
 
+
 static int
-zfs_vnop_open(ap)
+zfs_vnop_open(
 	struct vnop_open_args /* {
 		struct vnode *a_vp;
 		int a_mode;
 		vfs_context_t a_context;
-	} */ *ap;
+        } */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
 
@@ -58,12 +74,12 @@ zfs_vnop_open(ap)
 }
 
 static int
-zfs_vnop_close(ap)
+zfs_vnop_close(
 	struct vnop_close_args /* {
 		struct vnode *a_vp;
 		int a_fflag;
 		vfs_context_t a_context;
-	} */ *ap;
+        } */ *ap)
 {
 	int count = 1;
 	int offset = 0;
@@ -73,7 +89,7 @@ zfs_vnop_close(ap)
 }
 
 static int
-zfs_vnop_ioctl(ap)
+zfs_vnop_ioctl(
 	struct vnop_ioctl_args /* {
 		struct vnode *a_vp;
 		u_long a_command;
@@ -81,7 +97,7 @@ zfs_vnop_ioctl(ap)
 		int a_fflag;
 		kauth_cred_t a_cred;
 		struct proc *a_p;
-	} */ *ap;
+        } */ *ap)
 {
 	/* OS X has no use for zfs_ioctl(). */
 	znode_t *zp = VTOZ(ap->a_vp);
@@ -112,13 +128,13 @@ zfs_vnop_ioctl(ap)
 }
 
 static int
-zfs_vnop_read(ap)
+zfs_vnop_read(
 	struct vnop_read_args /* {
 		struct vnode *a_vp;
 		struct uio *a_uio;
 		int a_ioflag;
 		vfs_context_t a_context;
-	} */ *ap;
+        } */ *ap)
 {
 	int ioflag = zfs_ioflags(ap->a_ioflag);
 	DECLARE_CRED_AND_CONTEXT(ap);
@@ -127,13 +143,13 @@ zfs_vnop_read(ap)
 }
 
 static int
-zfs_vnop_write(ap)
+zfs_vnop_write(
 	struct vnop_write_args /* {
 		struct vnode *a_vp;
 		struct uio *a_uio;
 		int a_ioflag;
 		vfs_context_t a_context;
-	} */ *ap;
+        } */ *ap)
 {
 	int ioflag = zfs_ioflags(ap->a_ioflag);
 	DECLARE_CRED_AND_CONTEXT(ap);
@@ -142,40 +158,48 @@ zfs_vnop_write(ap)
 }
 
 static int
-zfs_vnop_access(ap)
+zfs_vnop_access(
 	struct vnop_access_args /* {
-		struct vnode *a_vp;
-		int a_mode;
-		vfs_context_t a_context;
-	} */ *ap;
+        struct vnodeop_desc *a_desc;
+        vnode_t a_vp;
+        int a_action;
+        vfs_context_t a_context;
+        } */ *ap)
 {
 	int error;
+#if 0 // FIXME
 	int mode = ap->a_mode;
 
 	error = zfs_access_native_mode(ap->a_vp, &mode, ap->a_cred,
 	    ap->a_context);
 
 	/* XXX Check for other modes? */
+#endif
 
 	return (error);
 }
 
 static int
-zfs_vnop_lookup(struct vnop_lookup_args *ap)
+zfs_vnop_lookup(
 	struct vnop_lookup_args /* {
 		struct vnode *a_dvp;
 		struct vnode **a_vpp;
 		struct componentname *a_cnp;
 		vfs_context_t a_context;
-	} */ *ap;
+        } */ *ap)
 {
 	struct componentname *cnp = ap->a_cnp;
 	DECLARE_CRED(ap);
 	int error;
 
-	error = zfs_lookup(ap->a_dvp, cnp, ap->a_vpp,
-	    /*pnp*/NULL, /*flags*/0, /*rdir*/NULL, cr, ap->a_context,
-	    /*direntflags*/NULL, /*realpnp*/NULL);
+    /*
+      extern int    zfs_lookup ( vnode_t *dvp, char *nm, vnode_t **vpp,
+                                 struct componentname *cnp, int nameiop,
+                                 cred_t *cr, kthread_t *td, int flags);
+    */
+	error = zfs_lookup(ap->a_dvp, cnp->cn_nameptr, ap->a_vpp,
+                       cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
+    /* flags can be LOOKUP_XATTR | FIGNORECASE */
 
 	/* XXX FreeBSD has some namecache stuff here. */
 
@@ -183,74 +207,93 @@ zfs_vnop_lookup(struct vnop_lookup_args *ap)
 }
 
 static int
-zfs_vnop_create(ap)
+zfs_vnop_create(
 	struct vnop_create_args /* {
 		struct vnode *a_dvp;
 		struct vnode **a_vpp;
 		struct componentname *a_cnp;
 		struct vnode_vattr *a_vap;
 		vfs_context_t a_context;
-	} */ *ap;
+        } */ *ap)
 {
 	struct componentname *cnp = ap->a_cnp;
 	vattr_t *vap = ap->a_vap;
 	DECLARE_CRED(ap);
 	vcexcl_t excl;
+    int mode=0; // FIXME
 
+    /*
+      extern int    zfs_create ( vnode_t *dvp, char *name, vattr_t *vap,
+                                 int excl, int mode, vnode_t **vpp,
+                                 cred_t *cr);
+    */
 	excl = (vap->va_vaflags & VA_EXCLUSIVE) ? EXCL : NONEXCL;
 
-	return (zfs_create(ap->a_dvp, cnp, vap, excl, mode, ap->a_vpp, cr,
-	    /*flag*/0, ap->a_context, /*vsecp*/NULL));
+	return (zfs_create(ap->a_dvp, cnp->cn_nameptr, vap, excl, mode,
+                       ap->a_vpp, cr));
 }
 
 static int
-zfs_vnop_remove(ap)
+zfs_vnop_remove(
 	struct vnop_remove_args /* {
 		struct vnode *a_dvp;
 		struct vnode *a_vp;
 		struct componentname *a_cnp;
 		int a_flags;
 		vfs_context_t a_context;
-	} */ *ap;
+        } */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_remove(ap->a_dvp, ap->a_cnp, cr, ct, /*flags*/0));
+    /*
+      extern int    zfs_remove ( vnode_t *dvp, char *name,
+                                 cred_t *cr, caller_context_t *ct, int flags);
+    */
+	return (zfs_remove(ap->a_dvp, ap->a_cnp->cn_nameptr, cr, ct, /*flags*/0));
 }
 
 static int
-zfs_vnop_mkdir(ap)
+zfs_vnop_mkdir(
 	struct vnop_mkdir_args /* {
 		struct vnode *a_dvp;
 		struct vnode **a_vpp;
 		struct componentname *a_cnp;
 		struct vnode_vattr *a_vap;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_mkdir(ap->a_dvp, ap->a_cnp, vap, ap->a_vpp,
+    /*
+      extern int    zfs_mkdir  ( vnode_t *dvp, char *dirname, vattr_t *vap,
+                           vnode_t **vpp, cred_t *cr,
+                           caller_context_t *ct, int flags, vsecattr_t *vsecp);
+    */
+	return (zfs_mkdir(ap->a_dvp, ap->a_cnp->cn_nameptr, ap->a_vap, ap->a_vpp,
 	    cr, ct, /*flags*/0, /*vsecp*/NULL));
 }
 
 static int
-zfs_vnop_rmdir(ap)
+zfs_vnop_rmdir(
 	struct vnop_rmdir_args /* {
 		struct vnode *a_dvp;
 		struct vnode *a_vp;
 		struct componentname *a_cnp;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_rmdir(ap->a_dvp, ap->a_cnp, /*cwd*/NULL,
+    /*
+      extern int    zfs_rmdir  ( vnode_t *dvp, char *name, vnode_t *cwd,
+                                 cred_t *cr, caller_context_t *ct, int flags);
+    */
+	return (zfs_rmdir(ap->a_dvp, ap->a_cnp->cn_nameptr, /*cwd*/NULL,
 	    cr, ct, /*flags*/0));
 }
 
 static int
-zfs_vnop_readdir(ap)
+zfs_vnop_readdir(
 	struct vnop_readdir_args /* {
 		vnode_t a_vp;
 		struct uio *a_uio;
@@ -258,9 +301,9 @@ zfs_vnop_readdir(ap)
 		int *a_eofflag;
 		int *a_numdirent;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
-	DECLARE_CRED(cr);
+	DECLARE_CRED(ap);
 	/*
 	 * XXX This interface needs vfs_has_feature.
 	 * XXX zfs_readdir() also needs to grow support for passing back the
@@ -268,19 +311,22 @@ zfs_vnop_readdir(ap)
 	 *     However, it should be the responsibility of the OS caller to
 	 *     malloc/free space for that.
 	 */
-
-	ap->a_numdirent = 0;
+    /*
+      extern int   zfs_readdir( vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp,
+                                int flags, int *a_numdirent);
+    */
+	*ap->a_numdirent = 0;
 	return (zfs_readdir(ap->a_vp, ap->a_uio, cr, ap->a_eofflag,
-	    ap->a_numdirent, /*a_cookies*/NULL));
+                        /*flags*/0, ap->a_numdirent));
 }
 
 static int
-zfs_vnop_fsync(ap)
+zfs_vnop_fsync(
 	struct vnop_fsync_args /* {
 		struct vnode *a_vp;
 		int a_waitfor;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 	znode_t *zp = VTOZ(ap->a_vp);
 	DECLARE_CRED_AND_CONTEXT(ap);
@@ -298,12 +344,12 @@ zfs_vnop_fsync(ap)
 }
 
 static int
-zfs_vnop_getattr(ap)
+zfs_vnop_getattr(
 	struct vnop_getattr_args /* {
 		struct vnode *a_vp;
 		struct vnode_vattr *a_vap;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
 	/*
@@ -318,12 +364,12 @@ zfs_vnop_getattr(ap)
 }
 
 static int
-zfs_vnop_setattr(ap)
+zfs_vnop_setattr(
 	struct vnop_setattr_args /* {
 		struct vnode *a_vp;
 		struct vnode_vattr *a_vap;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
 
@@ -331,7 +377,7 @@ zfs_vnop_setattr(ap)
 }
 
 static int
-zfs_vnop_rename(ap)
+zfs_vnop_rename(
 	struct vnop_rename_args /* {
 		struct vnode *a_fdvp;
 		struct vnode *a_fvp;
@@ -340,13 +386,17 @@ zfs_vnop_rename(ap)
 		struct vnode *a_tvp;
 		struct componentname *a_tcnp;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
 	int error;
 
-	error = zfs_rename(ap->a_fdvp, ap->a_fcnp, ap->a_tdvp, ap->a_tcnp,
-	    cr, ct);
+    /*
+      extern int zfs_rename(vnode_t *sdvp, char *snm, vnode_t *tdvp, char *tnm,
+                            cred_t *cr, caller_context_t *ct, int flags);
+    */
+	error = zfs_rename(ap->a_fdvp, ap->a_fcnp->cn_nameptr, ap->a_tdvp,
+                       ap->a_tcnp->cn_nameptr, cr, ct, /*flags*/0);
 
 	/* Remove entries from the namei cache. */
 	cache_purge(ap->a_tdvp);
@@ -355,7 +405,7 @@ zfs_vnop_rename(ap)
 }
 
 static int
-zfs_vnop_symlink(ap)
+zfs_vnop_symlink(
 	struct vnop_symlink_args /* {
 		struct vnode *a_dvp;
 		struct vnode **a_vpp;
@@ -363,42 +413,53 @@ zfs_vnop_symlink(ap)
 		struct vnode_vattr *a_vap;
 		char *a_target;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 	DECLARE_CRED(ap);
 	int error;
 
+    /*
+      extern int    zfs_symlink( vnode_t *dvp, vnode_t **vpp, char *name,
+                                 vattr_t *vap, char *link, cred_t *cr);
+    */
+
 	/* OS X doesn't need to set vap->va_mode? */
-	error = zfs_symlink(ap->a_dvp, ap->a_cnp, ap->a_vap, ap->a_target, cr);
+	error = zfs_symlink(ap->a_dvp, ap->a_vpp, ap->a_cnp->cn_nameptr,
+                        ap->a_vap, ap->a_target, cr);
 
 	/* XXX zfs_attach_vnode()? */
 
 	return (error);
 }
 
+
 static int
-zfs_vnop_readlink(ap)
+zfs_vnop_readlink(
 	struct vnop_readlink_args /* {
 		struct vnode *vp;
 		struct uio *uio;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
-	DECLARE_CRED(ap);
+	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_readlink(ap->a_vp, ap->a_uio, cr));
+    /*
+      extern int    zfs_readlink(vnode_t *vp, uio_t *uio,
+                                 cred_t *cr, caller_context_t *ct);
+    */
+	return (zfs_readlink(ap->a_vp, ap->a_uio, cr, ct));
 }
 
 static int
-zfs_vnop_link(ap)
+zfs_vnop_link(
 	struct vnop_link_args /* {
 		struct vnode *a_vp;
 		struct vnode *a_tdvp;
 		struct componentname *a_cnp;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
-	DECLARE_CRED(ap);
+	DECLARE_CRED_AND_CONTEXT(ap);
 
 	/* XXX Translate this inside zfs_link() instead. */
 	if (vnode_mount(ap->a_vp) != vnode_mount(ap->a_tdvp))
@@ -409,14 +470,21 @@ zfs_vnop_link(ap)
 	 * XXX Understand why Apple made this comparison in so many places
 	 * where others do not.
 	 */
-	if (cnp->cn_namelen >= ZAP_MAXNAMELEN)
+	if (ap->a_cnp->cn_namelen >= ZAP_MAXNAMELEN)
 		return (ENAMETOOLONG);
 
-	return (zfs_link(ap->a_tdvp, ap->a_vp, ap->a_cnp, cr));
+    /*
+      extern int    zfs_link   ( vnode_t *tdvp, vnode_t *svp, char *name,
+                                 cred_t *cr, caller_context_t *ct, int flags);
+
+    */
+
+	return (zfs_link(ap->a_tdvp, ap->a_vp, ap->a_cnp->cn_nameptr,
+                     cr, ct, /*flags*/0));
 }
 
 static int
-zfs_vnop_pagein(ap)
+zfs_vnop_pagein(
 	struct vnop_pagein_args /* {
 		struct vnode *a_vp;
 		upl_t a_pl;
@@ -425,7 +493,7 @@ zfs_vnop_pagein(ap)
 		size_t a_size;
 		int a_flags;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	/* XXX Crib this from the Apple zfs_vnops.c. */
@@ -433,7 +501,7 @@ zfs_vnop_pagein(ap)
 }
 
 static int
-zfs_vnop_pageout(ap)
+zfs_vnop_pageout(
 	struct vnop_pageout_args /* {
 		struct vnode *a_vp;
 		upl_t a_pl;
@@ -442,7 +510,7 @@ zfs_vnop_pageout(ap)
 		size_t a_size;
 		int a_flags;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	/*
@@ -453,52 +521,54 @@ zfs_vnop_pageout(ap)
 }
 
 static int
-zfs_vnop_mmap(ap)
+zfs_vnop_mmap(
 	struct vnop_mmap_args /* {
 		struct vnode *a_vp;
 		int a_fflags;
 		kauth_cred_t a_cred;
 		struct proc *a_p;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0); /* zfs_mmap? */
 }
 
 static int
-zfs_vnop_inactive(ap)
+zfs_vnop_inactive(
 	struct vnop_inactive_args /* {
 		struct vnode *a_vp;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
+    return 0;
 }
 
 static int
-zfs_vnop_reclaim(ap)
+zfs_vnop_reclaim(
 	struct vnop_reclaim_args /* {
 		struct vnode *a_vp;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
+    return 0;
 }
 
 static int
-zfs_vnop_mknod(ap)
+zfs_vnop_mknod(
 	struct vnop_mknod_args /* {
 		struct vnode *a_dvp;
 		struct vnode **a_vpp;
 		struct componentname *a_cnp;
 		struct vnode_vattr *vap;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (zfs_vnop_create((struct vnop_create_args *)ap));
 }
 
 static int
-zfs_vnop_allocate(ap)
+zfs_vnop_allocate(
 	struct vnop_allocate_args /* {
 		struct vnode *a_vp;
 		off_t a_length;
@@ -506,40 +576,40 @@ zfs_vnop_allocate(ap)
 		off_t *a_bytesallocated;
 		off_t a_offset;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_whiteout(ap)
+zfs_vnop_whiteout(
 	struct vnop_whiteout_args /* {
 		struct vnode *a_dvp;
 		struct componentname *a_cnp;
 		int a_flags;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_pathconf(ap)
+zfs_vnop_pathconf(
 	struct vnop_pathconf_args /* {
 		struct vnode *a_vp;
 		int a_name;
 		register_t *a_retval;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_getxattr(ap)
+zfs_vnop_getxattr(
 	struct vnop_getxattr_args /* {
 		struct vnodeop_desc *a_desc;
 		struct vnode *a_vp;
@@ -548,14 +618,14 @@ zfs_vnop_getxattr(ap)
 		size_t *a_size;
 		int a_options;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_setxattr(ap)
+zfs_vnop_setxattr(
 	struct vnop_setxattr_args /* {
 		struct vnodeop_desc *a_desc;
 		struct vnode *a_vp;
@@ -563,28 +633,28 @@ zfs_vnop_setxattr(ap)
 		struct uio *a_uio;
 		int a_options;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_removexattr(ap)
+zfs_vnop_removexattr(
 	struct vnop_removexattr_args /* {
 		struct vnodeop_desc *a_desc;
 		struct vnode *a_vp;
 		char *a_name;
 		int a_options;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_listxattr(ap)
+zfs_vnop_listxattr(
 	struct vnop_listxattr_args /* {
 		struct vnodeop_desc *a_desc;
 		struct vnode *a_vp;
@@ -593,7 +663,7 @@ zfs_vnop_listxattr(ap)
 		size_t *a_size;
 		int a_options;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
@@ -601,36 +671,36 @@ zfs_vnop_listxattr(ap)
 
 #ifdef HAVE_NAMED_STREAMS
 static int
-zfs_vnop_getnamedstream(ap)
+zfs_vnop_getnamedstream(
 	struct vnop_getnamedstream_args /* {
 		struct vnode *a_vp;
 		struct vnode **a_svpp;
 		char *a_name;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_makenamedstream_args(ap)
+zfs_vnop_makenamedstream_args(
 	struct vnop_makenamedstream_args /* {
 		struct vnode *a_vp;
 		struct vnode **a_svpp;
 		char *a_name;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_removenamedstream(ap)
+zfs_vnop_removenamedstream(
 	struct vnop_removenamedstream_args /* {
 		struct vnode *a_vp;
 		struct vnode **a_svpp;
 		char *a_name;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
@@ -638,56 +708,56 @@ zfs_vnop_removenamedstream(ap)
 #endif /* HAVE_NAMED_STREAMS */
 
 static int
-zfs_vnop_exchange(ap)
+zfs_vnop_exchange(
 	struct vnop_exchange_args /* {
 		struct vnode *a_fvp;
 		struct vnode *a_tvp;
 		int a_options;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_revoke(ap)
+zfs_vnop_revoke(
 	struct vnop_revoke_args /* {
 		struct vnode *a_vp;
 		int a_flags;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (vn_revoke(ap->a_vp, ap->a_flags, ap->a_context));
 }
 
 static int
-zfs_vnop_blktooff(ap)
+zfs_vnop_blktooff(
 	struct vnop_blktooff_args /* {
 		struct vnode *a_vp;
 		daddr64_t a_lblkno;
 		off_t *a_offset;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_offtoblk(ap)
+zfs_vnop_offtoblk(
 	struct vnop_offtoblk_args /* {
 		struct vnode *a_vp;
 		off_t a_offset;
 		daddr64_t *a_lblkno;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_blockmap(ap)
+zfs_vnop_blockmap(
 	struct vnop_blockmap_args /* {
 		struct vnode *a_vp;
 		off_t a_foffset;
@@ -696,24 +766,24 @@ zfs_vnop_blockmap(ap)
 		size_t *a_run;
 		void *a_poff;
 		int a_flags;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_strategy(ap)
+zfs_vnop_strategy(
 	struct vnop_strategy_args /* {
 		struct buf *a_bp;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_select(ap)
+zfs_vnop_select(
 	struct vnop_select_args /* {
 		struct vnode *a_vp;
 		int a_which;
@@ -721,14 +791,14 @@ zfs_vnop_select(ap)
 		kauth_cred_t a_cred;
 		void *a_wql;
 		struct proc *a_p;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
 
 static int
-zfs_vnop_readdirattr(ap)
+zfs_vnop_readdirattr(
 	struct vnop_readdirattr_args /* {
 		struct vnodeop_desc *a_desc;
 		struct vnode *a_vp;
@@ -740,11 +810,36 @@ zfs_vnop_readdirattr(ap)
 		int *a_eofflag;
 		u_long *a_actualcount;
 		vfs_context_t a_context;
-	} */ *ap;
+	} */ *ap)
 {
 
 	return (0);
 }
+
+
+/*
+ * Predeclare these here so that the compiler assumes that
+ * this is an "old style" function declaration that does
+ * not include arguments => we won't get type mismatch errors
+ * in the initializations that follow.
+ */
+static int zfs_inval();
+static int zfs_isdir();
+
+static int
+zfs_inval()
+{
+	return ((EINVAL));
+}
+
+static int
+zfs_isdir()
+{
+	return ((EISDIR));
+}
+
+
+#define VOPFUNC int (*)(void *)
 
 /* Directory vnode operations template */
 int (**zfs_dvnodeops) (void *);
@@ -895,3 +990,109 @@ struct vnodeopv_entry_desc zfs_evnodeops_template[] = {
 };
 struct vnodeopv_desc zfs_evnodeop_opv_desc =
 { &zfs_evnodeops, zfs_evnodeops_template };
+
+
+
+
+
+/*
+ * Alas, OSX does not let us create a vnode, and assign the vtype later
+ * and we do not know what type we want here.
+ */
+void getnewvnode_reverse(int num)
+{
+    return;
+}
+
+void getnewvnode_drop_reverse()
+{
+    return;
+}
+
+int getnewvnode(const char *tag, znode_t *zp, struct vnodeopv_entry_desc *vops,
+                struct vnode **vpp)
+{
+	struct vnode_fsparam vfsp;
+    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+	bzero(&vfsp, sizeof (vfsp));
+	vfsp.vnfs_str = tag;
+	vfsp.vnfs_mp = zfsvfs->z_vfs;
+	vfsp.vnfs_vtype = IFTOVT((mode_t)zp->z_mode);
+	vfsp.vnfs_fsnode = zp;
+	vfsp.vnfs_flags = VNFS_ADDFSREF;
+
+	/*
+	 * XXX HACK - workaround missing vnode_setnoflush() KPI...
+	 */
+	/* Tag system files */
+#if 0
+	if ((zp->z_flags & ZFS_XATTR) &&
+	    (zfsvfs->z_last_unmount_time == 0xBADC0DE) &&
+	    (zfsvfs->z_last_mtime_synced == zp->z_parent)) {
+		vfsp.vnfs_marksystem = 1;
+	}
+#endif
+
+	/* Tag root directory */
+	if (zp->z_id == zfsvfs->z_root) {
+		vfsp.vnfs_markroot = 1;
+	}
+
+	switch (vfsp.vnfs_vtype) {
+	case VDIR:
+		if (zp->z_pflags & ZFS_XATTR) {
+			vfsp.vnfs_vops = zfs_xdvnodeops;
+		} else {
+			vfsp.vnfs_vops = zfs_dvnodeops;
+		}
+		zp->z_zn_prefetch = B_TRUE; /* z_prefetch default is enabled */
+		break;
+	case VBLK:
+	case VCHR:
+        {
+            uint64_t rdev;
+            VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_RDEV(zfsvfs),
+                             &rdev, sizeof (rdev)) == 0);
+
+            vfsp.vnfs_rdev = zfs_cmpldev(rdev);
+        }
+		/*FALLTHROUGH*/
+	case VFIFO:
+	case VSOCK:
+		vfsp.vnfs_vops = zfs_fvnodeops;
+		break;
+	case VREG:
+		vfsp.vnfs_vops = zfs_fvnodeops;
+		vfsp.vnfs_filesize = zp->z_size;
+		break;
+	case VLNK:
+		vfsp.vnfs_vops = zfs_symvnodeops;
+#if 0
+		vfsp.vnfs_filesize = ???;
+#endif
+		break;
+	default:
+		vfsp.vnfs_vops = zfs_evnodeops;
+		break;
+	}
+
+    while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0);
+
+	vnode_settag(*vpp, VT_ZFS);
+
+	mutex_enter(&zp->z_lock);
+	zp->z_vid = vnode_vid(*vpp);
+	mutex_exit(&zp->z_lock);
+
+	/* Insert it on our list of active znodes */
+	mutex_enter(&zfsvfs->z_znodes_lock);
+	list_insert_tail(&zfsvfs->z_all_znodes, zp);
+	mutex_exit(&zfsvfs->z_znodes_lock);
+
+    return 0;
+}
+
+
+
+

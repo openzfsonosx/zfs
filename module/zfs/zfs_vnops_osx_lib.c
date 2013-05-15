@@ -2,9 +2,20 @@
  * This file is intended only for use by zfs_vnops_osx.c.  It should contain
  * a library of functions useful for vnode operations.
  */
+#include <sys/cred.h>
+#include <sys/vnode.h>
+#include <sys/zfs_dir.h>
+#include <sys/zfs_ioctl.h>
+#include <sys/fs/zfs.h>
+#include <sys/dmu.h>
+#include <sys/dmu_objset.h>
+#include <sys/spa.h>
+#include <sys/txg.h>
+#include <sys/dbuf.h>
+#include <sys/zap.h>
+#include <sys/sa.h>
+#include <sys/zfs_vnops.h>
 
-typedef enum vcexcl { NONEXCL, EXCL } vcexcl_t;
-typedef struct vnode_attr vattr_t;
 
 /* Originally from illumos:uts/common/sys/vfs.h */
 typedef uint64_t vfs_feature_t;
@@ -45,24 +56,51 @@ zfs_getattr_znode_locked(vattr_t *vap, znode_t *zp, cred_t *cr)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
+    uint64_t times[2];
+    uint64_t val;
 
-	vap->va_mode = pzp->zp_mode & MODEMASK;
-	vap->va_uid = pzp->zp_uid;
-	vap->va_gid = pzp->zp_gid;
-	vap->va_fsid = zp->z_zfsvfs->z_vfs->vfs_dev;
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zfsvfs),
+                     &val, sizeof (val)) == 0);
+	vap->va_mode = val & MODEMASK;
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_UID(zfsvfs),
+                     &val, sizeof (val)) == 0);
+	vap->va_uid = val;
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_GID(zfsvfs),
+                     &val, sizeof (val)) == 0);
+	vap->va_gid = val;
+	//vap->va_fsid = zp->z_zfsvfs->z_vfs->vfs_dev;
 
 	/* On OS X, the root directory id is always 2 */
 	vap->va_fileid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_id;
-	vap->va_nlink = pzp->zp_links;
-	vap->va_data_size = pzp->zp_size;
-	vap->va_total_size = pzp->zp_size;
-	vap->va_rdev = pzp->zp_rdev;
-	vap->va_gen = pzp->zp_gen;
 
-	ZFS_TIME_DECODE(&vap->va_create_time, pzp->zp_crtime);
-	ZFS_TIME_DECODE(&vap->va_access_time, pzp->zp_atime);
-	ZFS_TIME_DECODE(&vap->va_modify_time, pzp->zp_mtime);
-	ZFS_TIME_DECODE(&vap->va_change_time, pzp->zp_ctime);
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_LINKS(zfsvfs),
+                     &val, sizeof (val)) == 0);
+	vap->va_nlink = val;
+
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
+                     &val, sizeof (val)) == 0);
+	vap->va_data_size = val;
+	vap->va_total_size = val;
+
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_RDEV(zfsvfs),
+                     &val, sizeof (val)) == 0);
+	vap->va_rdev = val;
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_GEN(zfsvfs),
+                     &val, sizeof (val)) == 0);
+	vap->va_gen = val;
+
+    (void) sa_lookup(zp->z_sa_hdl, SA_ZPL_CRTIME(zfsvfs),
+                     times, sizeof (times));
+	ZFS_TIME_DECODE(&vap->va_create_time, times);
+    (void) sa_lookup(zp->z_sa_hdl, SA_ZPL_ATIME(zfsvfs),
+                     times, sizeof (times));
+	ZFS_TIME_DECODE(&vap->va_access_time, times);
+    (void) sa_lookup(zp->z_sa_hdl, SA_ZPL_MTIME(zfsvfs),
+                     times, sizeof (times));
+	ZFS_TIME_DECODE(&vap->va_modify_time, times);
+    (void) sa_lookup(zp->z_sa_hdl, SA_ZPL_CTIME(zfsvfs),
+                     times, sizeof (times));
+	ZFS_TIME_DECODE(&vap->va_change_time, times);
 
 	if (VATTR_IS_ACTIVE(vap, va_backup_time)) {
 		vap->va_backup_time.tv_sec = 0;
@@ -72,21 +110,26 @@ zfs_getattr_znode_locked(vattr_t *vap, znode_t *zp, cred_t *cr)
 	vap->va_flags = zfs_getbsdflags(zp);
 
 	/* On OS X, the root directory id is always 2 and its parent is 1 */
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+                     &val, sizeof (val)) == 0);
 	if (zp->z_id == zfsvfs->z_root)
 		vap->va_parentid = 1;
-	else if (pzp->zp_parent == zfsvfs->z_root)
+	else if (val == zfsvfs->z_root)
 		vap->va_parentid = 2;
 	else
-		vap->va_parentid = pzp->zp_parent;
+		vap->va_parentid = val;
 
 	vap->va_iosize = zp->z_blksz ? zp->z_blksz : zfsvfs->z_max_blksz;
 	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
 
-	if (VATTR_IS_ACTIVE(vap, va_nchildren) && vnode_isdir(vp))
-		VATTR_RETURN(vap, va_nchildren, pzp->zp_size - 2);
+	if (VATTR_IS_ACTIVE(vap, va_nchildren) && vnode_isdir(ZTOV(zp)))
+		VATTR_RETURN(vap, va_nchildren, vap->va_nlink - 2);
 
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
-		if (zp->z_phys->zp_acl.z_acl_count == 0) {
+
+        if (error = sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
+                              times, sizeof (times))) {
+            //		if (zp->z_phys->zp_acl.z_acl_count == 0) {
 			vap->va_acl = (kauth_acl_t) KAUTH_FILESEC_NONE;
 		} else {
 			error = zfs_getacl(zp, &vap->va_acl, B_TRUE, cr);
@@ -109,7 +152,7 @@ zfs_getattr_znode_unlocked(vattr_t *vap, struct vnode *vp)
 {
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	znode_phys_t *pzp = zp->z_phys;
+	//znode_phys_t *pzp = zp->z_phys;
 	int error;
 
 	if (VATTR_IS_ACTIVE(vap, va_data_alloc) ||
@@ -117,18 +160,26 @@ zfs_getattr_znode_unlocked(vattr_t *vap, struct vnode *vp)
 		uint32_t blocksize;
 		u_longlong_t nblks;
 
-		dmu_object_size_from_db(zp->z_dbuf, &blksize, &nblks);
+        sa_object_size(zp->z_sa_hdl, &blocksize, &nblks);
 		vap->va_data_alloc = (uint64_t)512LL * (uint64_t)nblks;
 		vap->va_total_alloc = vap->va_data_alloc;
 		vap->va_supported |= VNODE_ATTR_va_data_alloc;
 		vap->va_supported |= VNODE_ATTR_va_total_alloc;
 	}
+	if (zp->z_blksz == 0) {
+		/*
+		 * Block size hasn't been set; suggest maximal I/O transfers.
+		 */
+		vap->va_iosize = zfsvfs->z_max_blksz;
+    }
+#if 0
 	if (VATTR_IS_ACTIVE(vap, va_name) && !vnode_isvroot(vp)) {
 		error = zap_value_search(zfsvfs->z_os, pzp->zp_parent, zp->z_id,
 		    ZFS_DIRENT_OBJ(-1ULL), vap->va_name);
 		if (error == 0)
 			VATTR_SET_SUPPORTED(vap, va_name);
 	}
+#endif
 	return (0);
 }
 
@@ -167,8 +218,9 @@ int
 zfs_access_native_mode(struct vnode *vp, int *mode, cred_t *cr,
     caller_context_t *ct)
 {
-	int accmode = *mode & (VREAD|VWRITE|VEXEC|VAPPEND);
+	int accmode = *mode & (VREAD|VWRITE|VEXEC/*|VAPPEND*/);
 	int error = 0;
+    int flag = 0; // FIXME
 
 	if (accmode != 0)
 		error = zfs_access(vp, accmode, flag, cr, ct);

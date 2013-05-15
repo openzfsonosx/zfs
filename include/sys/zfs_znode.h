@@ -71,7 +71,7 @@ extern "C" {
 		pflags |= attr; \
 	else \
 		pflags &= ~attr; \
-	VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_FLAGS(ZTOZSB(zp)), \
+	VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs), \
 	    &pflags, sizeof (pflags), tx)); \
 }
 
@@ -192,7 +192,7 @@ typedef struct znode {
     struct vnode    *z_vnode;
 	uint64_t	z_id;		/* object ID for this znode */
 	kmutex_t	z_lock;		/* znode modification lock */
-    krwlock_t       z_map_lock;     /* page map lock */
+    //krwlock_t       z_map_lock;     /* page map lock */
 	krwlock_t	z_parent_lock;	/* parent lock for directories */
 	krwlock_t	z_name_lock;	/* "master" lock for dirent locks */
 	zfs_dirlock_t	*z_dirlocks;	/* directory entry lock list */
@@ -216,22 +216,28 @@ typedef struct znode {
 	uint32_t	z_sync_cnt;	/* synchronous open count */
 	kmutex_t	z_acl_lock;	/* acl data lock */
 	zfs_acl_t	*z_acl_cached;	/* cached acl */
+    // XATTR
 	krwlock_t	z_xattr_lock;	/* xattr data lock */
 	nvlist_t	*z_xattr_cached;/* cached xattrs */
 	struct znode	*z_xattr_parent;/* xattr parent znode */
+
 	list_node_t	z_link_node;	/* all znodes in fs link */
 	sa_handle_t	*z_sa_hdl;	/* handle to sa data */
 	boolean_t	z_is_sa;	/* are we native sa? */
+
 	boolean_t	z_is_zvol;	/* are we used by the zvol */
 	boolean_t	z_is_mapped;	/* are we mmap'ed */
 	boolean_t	z_is_ctldir;	/* are we .zfs entry */
 	//struct inode	z_inode;	/* generic vfs inode */
+
+
+    // Used in zfs_log? remove me?
     uint64_t        z_last_itx;     /* last ZIL itx on this znode */
 
     uint32_t        z_vid;
-    kcondvar_t      z_cv;           /* wait for vnode to be attached */
+    // kcondvar_t      z_cv;           /* wait for vnode to be attached */
     uint8_t         z_mmapped;      /* file has been memory mapped */
-    uint8_t         z_dbuf_held;    /* Is z_dbuf already held? */
+    // uint8_t         z_dbuf_held;    /* Is z_dbuf already held? */
 
 #ifdef ZFS_DEBUG
 	list_t		z_stalker;	/*vnode life tracker */
@@ -240,8 +246,9 @@ typedef struct znode {
     /*
      * These are dmu managed fields.
      */
-    znode_phys_t    *z_phys;        /* pointer to persistent znode */
-    dmu_buf_t       *z_dbuf;        /* buffer containing the z_phys */
+    // These should be removed!!
+    //znode_phys_t    *z_phys;        /* pointer to persistent znode */
+    //dmu_buf_t       *z_dbuf;        /* buffer containing the z_phys */
 } znode_t;
 
 
@@ -300,7 +307,7 @@ typedef struct znode {
 
 #define	ZFS_VERIFY_ZP(zp) \
 	if ((zp)->z_sa_hdl == NULL) { \
-		ZFS_EXIT(ZTOZSB(zp)); \
+		ZFS_EXIT((zp)->z_zfsvfs); \
 		return (EIO); \
 	}
 
@@ -381,14 +388,11 @@ extern void	zfs_zinactive(znode_t *);
 extern void	zfs_znode_delete(znode_t *, dmu_tx_t *);
 extern void	zfs_remove_op_tables(void);
 extern int	zfs_create_op_tables(void);
-extern int	zfs_sync(struct super_block *, int, cred_t *);
+extern int	zfs_sync(struct mount *, int, cred_t *);
 extern dev_t	zfs_cmpldev(uint64_t);
 extern int	zfs_get_zplprop(objset_t *os, zfs_prop_t prop, uint64_t *value);
 extern int	zfs_get_stats(objset_t *os, nvlist_t *nv);
 extern void	zfs_znode_dmu_fini(znode_t *);
-extern int	zfs_inode_alloc(struct super_block *, struct inode **ip);
-extern void	zfs_inode_destroy(struct inode *);
-extern void	zfs_inode_update(znode_t *);
 
 extern void zfs_log_create(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
     znode_t *dzp, znode_t *zp, char *name, vsecattr_t *, zfs_fuid_info_t *,
@@ -410,13 +414,17 @@ extern void zfs_log_truncate(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
     znode_t *zp, uint64_t off, uint64_t len);
 extern void zfs_log_setattr(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
     znode_t *zp, vattr_t *vap, uint_t mask_applied, zfs_fuid_info_t *fuidp);
-extern void zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
-                       znode_t *zp, int aclcnt, ace_t *z_ace, zfs_fuid_info_t *fuidp);
+
+extern void zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, znode_t *zp,
+                        vsecattr_t *vsecp, zfs_fuid_info_t *fuidp);
+
+//extern void zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
+//         znode_t *zp, int aclcnt, ace_t *z_ace, zfs_fuid_info_t *fuidp);
 //extern void zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, znode_t *zp,
 //   vsecattr_t *vsecp, zfs_fuid_info_t *fuidp);
 extern void zfs_xvattr_set(znode_t *zp, xvattr_t *xvap, dmu_tx_t *tx);
-extern void zfs_upgrade(zfs_sb_t *zsb, dmu_tx_t *tx);
-extern int zfs_create_share_dir(zfs_sb_t *zsb, dmu_tx_t *tx);
+extern void zfs_upgrade(zfsvfs_t *zsb, dmu_tx_t *tx);
+extern int zfs_create_share_dir(zfsvfs_t *zsb, dmu_tx_t *tx);
 
 #if defined(HAVE_UIO_RW)
 extern caddr_t zfs_map_page(page_t *, enum seg_rw);

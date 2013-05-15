@@ -188,6 +188,15 @@ typedef struct zfs_acl_ids {
 	struct zfs_fuid_info 	*z_fuidp;	/* for tracking fuids for log */
 } zfs_acl_ids_t;
 
+typedef struct trivial_acl {
+        uint32_t        allow0;         /* allow mask for bits only in owner */
+        uint32_t        deny1;          /* deny mask for bits not in owner */
+        uint32_t        deny2;          /* deny mask for bits not in group */
+        uint32_t        owner;          /* allow mask matching mode */
+        uint32_t        group;          /* allow mask matching mode */
+        uint32_t        everyone;       /* allow mask matching mode */
+} trivial_acl_t;
+
 /*
  * Property values for acl_mode and acl_inherit.
  *
@@ -209,7 +218,7 @@ struct zfs_sb;
 int zfs_acl_ids_create(struct znode *, int, vattr_t *,
     cred_t *, vsecattr_t *, zfs_acl_ids_t *);
 void zfs_acl_ids_free(zfs_acl_ids_t *);
-boolean_t zfs_acl_ids_overquota(struct zfs_sb *, zfs_acl_ids_t *);
+boolean_t zfs_acl_ids_overquota(zfsvfs_t *, zfs_acl_ids_t *);
 int zfs_getacl(struct znode *, kauth_acl_t *, boolean_t, cred_t *);
 int zfs_setacl(struct znode *, struct kauth_acl *, boolean_t, cred_t *);
 void zfs_acl_rele(void *);
@@ -221,7 +230,7 @@ int zfs_fastaccesschk_execute(struct znode *, cred_t *);
 extern int zfs_zaccess_rwx(struct znode *, mode_t, int, cred_t *);
 extern int zfs_zaccess_unix(struct znode *, mode_t, cred_t *);
 extern int zfs_acl_access(struct znode *, int, cred_t *);
-void zfs_acl_chmod_setattr(struct znode *, zfs_acl_t **, uint64_t);
+int zfs_acl_chmod_setattr(struct znode *, zfs_acl_t **, uint64_t);
 int zfs_zaccess_delete(struct znode *, struct znode *, cred_t *);
 int zfs_zaccess_rename(struct znode *, struct znode *,
     struct znode *, struct znode *, cred_t *cr);

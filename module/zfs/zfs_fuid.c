@@ -196,7 +196,7 @@ zfs_fuid_idx_domain(avl_tree_t *idx_tree, uint32_t idx)
  * Load the fuid table(s) into memory.
  */
 static void
-zfs_fuid_init(zfs_sb_t *zsb)
+zfs_fuid_init(zfsvfs_t *zsb)
 {
 	rw_enter(&zsb->z_fuid_lock, RW_WRITER);
 
@@ -223,7 +223,7 @@ zfs_fuid_init(zfs_sb_t *zsb)
  * sync out AVL trees to persistent storage.
  */
 void
-zfs_fuid_sync(zfs_sb_t *zsb, dmu_tx_t *tx)
+zfs_fuid_sync(zfsvfs_t *zsb, dmu_tx_t *tx)
 {
 	nvlist_t *nvp;
 	nvlist_t **fuids;
@@ -297,7 +297,7 @@ zfs_fuid_sync(zfs_sb_t *zsb, dmu_tx_t *tx)
  * and sync out the changes.
  */
 int
-zfs_fuid_find_by_domain(zfs_sb_t *zsb, const char *domain,
+zfs_fuid_find_by_domain(zfsvfs_t *zsb, const char *domain,
     char **retdomain, boolean_t addok)
 {
 	fuid_domain_t searchnode, *findnode;
@@ -362,7 +362,7 @@ retry:
  *
  */
 const char *
-zfs_fuid_find_by_idx(zfs_sb_t *zsb, uint32_t idx)
+zfs_fuid_find_by_idx(zfsvfs_t *zsb, uint32_t idx)
 {
 	char *domain;
 
@@ -392,7 +392,7 @@ zfs_fuid_map_ids(znode_t *zp, cred_t *cr, uid_t *uidp, uid_t *gidp)
 }
 
 uid_t
-zfs_fuid_map_id(zfs_sb_t *zsb, uint64_t fuid,
+zfs_fuid_map_id(zfsvfs_t *zsb, uint64_t fuid,
     cred_t *cr, zfs_fuid_type_t type)
 {
 #ifdef HAVE_KSID
@@ -498,7 +498,7 @@ zfs_fuid_node_add(zfs_fuid_info_t **fuidpp, const char *domain, uint32_t rid,
  * be used if it exists.
  */
 uint64_t
-zfs_fuid_create_cred(zfs_sb_t *zsb, zfs_fuid_type_t type,
+zfs_fuid_create_cred(zfsvfs_t *zsb, zfs_fuid_type_t type,
     cred_t *cr, zfs_fuid_info_t **fuidp)
 {
 	uint64_t	idx;
@@ -556,7 +556,7 @@ zfs_fuid_create_cred(zfs_sb_t *zsb, zfs_fuid_type_t type,
  * attached to the zsb of the file system.
  */
 uint64_t
-zfs_fuid_create(zfs_sb_t *zsb, uint64_t id, cred_t *cr,
+zfs_fuid_create(zfsvfs_t *zsb, uint64_t id, cred_t *cr,
     zfs_fuid_type_t type, zfs_fuid_info_t **fuidpp)
 {
 #ifdef HAVE_KSID
@@ -647,7 +647,7 @@ zfs_fuid_create(zfs_sb_t *zsb, uint64_t id, cred_t *cr,
 }
 
 void
-zfs_fuid_destroy(zfs_sb_t *zsb)
+zfs_fuid_destroy(zfsvfs_t *zsb)
 {
 	rw_enter(&zsb->z_fuid_lock, RW_WRITER);
 	if (!zsb->z_fuid_loaded) {
@@ -709,7 +709,7 @@ zfs_fuid_info_free(zfs_fuid_info_t *fuidp)
  * Will use a straight FUID compare when possible.
  */
 boolean_t
-zfs_groupmember(zfs_sb_t *zsb, uint64_t id, cred_t *cr)
+zfs_groupmember(zfsvfs_t *zsb, uint64_t id, cred_t *cr)
 {
 #ifdef HAVE_KSID
 	ksid_t		*ksid = crgetsid(cr, KSID_GROUP);
@@ -759,7 +759,7 @@ zfs_groupmember(zfs_sb_t *zsb, uint64_t id, cred_t *cr)
 }
 
 void
-zfs_fuid_txhold(zfs_sb_t *zsb, dmu_tx_t *tx)
+zfs_fuid_txhold(zfsvfs_t *zsb, dmu_tx_t *tx)
 {
 	if (zsb->z_fuid_obj == 0) {
 		dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT);
