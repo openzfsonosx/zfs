@@ -134,23 +134,27 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 	POINTER_INVALIDATE(&zp->z_zfsvfs);
 	ASSERT(!POINTER_IS_VALID(zp->z_zfsvfs));
 
+#ifndef __APPLE__
 	if (vfsp != NULL) {
-		error = getnewvnode("zfs", zp, &zfs_vnodeops, &vp);
+
+        /*
+         * OSX can only set v_type in the vnode_create call, so we need
+         * to know now what we will be creating.
+         */
+		error = getnewvnode("zfs", arg, &zfs_vnodeops, &vp,
+                            IFTOVT((mode_t)zp->z_mode));
 		if (error != 0 && (kmflags & KM_NOSLEEP))
 			return (-1);
 		ASSERT(error == 0);
-#ifndef __APPLE__
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 		zp->z_vnode = vp;
 		vp->v_data = (caddr_t)zp;
 		VN_LOCK_AREC(vp);
 		VN_LOCK_ASHARE(vp);
-#else
-		zp->z_vnode = vp;
-#endif
 	} else {
 		zp->z_vnode = NULL;
 	}
+#endif
 
 	list_link_init(&zp->z_link_node);
 
@@ -669,6 +673,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	uint64_t parent;
 	sa_bulk_attr_t bulk[9];
 	int count = 0;
+    struct vnodeopv_entry_desc *vops;
 
 	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
 	zfs_znode_cache_constructor(zp, zfsvfs->z_parent->z_vfs, 0);
@@ -690,7 +695,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_seq = 0x7A4653;
 	zp->z_sync_cnt = 0;
 
-	vp = ZTOV(zp);
+	vp = ZTOV(zp); /* Does nothing in OSX */
 
 	zfs_znode_sa_init(zfsvfs, zp, db, obj_type, hdl);
 
@@ -726,6 +731,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 
 	switch (vp->v_type) {
 	case VDIR:
+
 		zp->z_zn_prefetch = B_TRUE; /* z_prefetch default is enabled */
 		break;
 #ifdef sun
@@ -762,9 +768,16 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 		break;
 #endif	/* sun */
 	}
+
 	if (vp->v_type != VFIFO)
 		VN_LOCK_ASHARE(vp);
-#endif /* APPLE */
+
+
+#else /* APPLE */
+
+    zfs_znode_getvnode(zp, &vp); /* Assigns both vp and z_vnode */
+
+#endif /* Apple */
 
 	mutex_enter(&zfsvfs->z_znodes_lock);
 	list_insert_tail(&zfsvfs->z_all_znodes, zp);
@@ -850,7 +863,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 			err = zap_create_claim_norm(zfsvfs->z_os, obj,
 			    zfsvfs->z_norm, DMU_OT_DIRECTORY_CONTENTS,
 			    obj_type, bonuslen, tx);
-			ASSERT0(err);
+			ASSERT(err==0);
 		} else {
 			obj = zap_create_norm(zfsvfs->z_os,
 			    zfsvfs->z_norm, DMU_OT_DIRECTORY_CONTENTS,
@@ -861,7 +874,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 			err = dmu_object_claim(zfsvfs->z_os, obj,
 			    DMU_OT_PLAIN_FILE_CONTENTS, 0,
 			    obj_type, bonuslen, tx);
-			ASSERT0(err);
+			ASSERT(err==0);
 		} else {
 			obj = dmu_object_alloc(zfsvfs->z_os,
 			    DMU_OT_PLAIN_FILE_CONTENTS, 0,
@@ -1038,13 +1051,20 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	(*zpp)->z_pflags = pflags;
 	(*zpp)->z_mode = mode;
 
+#ifdef __APPLE__
+    {
+		struct vnode *vp;
+        zfs_znode_getvnode(*zpp, &vp); /* Assigns both vp and z_vnode */
+    }
+#endif
+
 	if (vap->va_mask & AT_XVATTR)
 		zfs_xvattr_set(*zpp, (xvattr_t *)vap, tx);
 
 	if (obj_type == DMU_OT_ZNODE ||
 	    acl_ids->z_aclp->z_version < ZFS_ACL_VERSION_FUID) {
 		err = zfs_aclset_common(*zpp, acl_ids->z_aclp, cr, tx);
-		ASSERT0(err);
+		ASSERT(err==0);
 	}
 #ifndef __APPLE__
 	if (!(flag & IS_ROOT_NODE)) {
@@ -1251,10 +1271,14 @@ again:
 		err = (ENOENT);
 	} else {
 		*zpp = zp;
+#ifdef __APPLE__
+        zfs_znode_getvnode(zp, &vp); /* Assigns both vp and z_vnode */
+#endif
 	}
 	if (err == 0) {
 		struct vnode *vp = ZTOV(zp);
 
+#ifndef __APPLE__ /* Already associated with mount from vnode_create */
 		err = insmntque(vp, zfsvfs->z_vfs);
 		if (err == 0)
 			VOP_UNLOCK(vp, 0);
@@ -1264,6 +1288,7 @@ again:
 			zfs_znode_free(zp);
 			*zpp = NULL;
 		}
+#endif
 	}
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 	getnewvnode_drop_reserve();
@@ -1510,7 +1535,7 @@ zfs_grow_blocksize(znode_t *zp, uint64_t size, dmu_tx_t *tx)
 
 	if (error == ENOTSUP)
 		return;
-	ASSERT0(error);
+	ASSERT(error==0);
 
 	/* What blocksize did we actually get? */
 	dmu_object_size_from_db(sa_get_db(zp->z_sa_hdl), &zp->z_blksz, &dummy);
@@ -1838,6 +1863,8 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	znode_t		*rootzp = NULL;
 #ifndef __APPLE__
 	struct vnode		vnode;
+#else
+    struct vnode *vp;
 #endif
 	vattr_t		vattr;
 	znode_t		*zp;
@@ -1929,6 +1956,8 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	vnode.v_type = VDIR;
 	vnode.v_data = rootzp;
 	rootzp->z_vnode = &vnode;
+#else
+    zfs_znode_getvnode(zp, &vp); /* Assigns both vp and z_vnode */
 #endif
 
 	zfsvfs.z_os = os;
@@ -1968,6 +1997,9 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	POINTER_INVALIDATE(&rootzp->z_zfsvfs);
 
 	sa_handle_destroy(rootzp->z_sa_hdl);
+#ifdef __APPLE__
+    vnode_put(vp);
+#endif
 	rootzp->z_vnode = NULL;
 	kmem_cache_free(znode_cache, rootzp);
 

@@ -103,6 +103,7 @@ zfs_SOURCES = \
 	zfeature_common.c \
 	zfs_acl.c \
 	zfs_byteswap.c \
+	zfs_ctldir.c \
 	zfs_debug.c \
 	zfs_dir.c \
 	zfs_fm.c \
@@ -111,7 +112,9 @@ zfs_SOURCES = \
 	zfs_log.c \
 	zfs_onexit.c \
 	zfs_osx.c \
+	zfs_replay.c \
 	zfs_rlock.c \
+	zfs_sa.c \
 	zfs_vfsops.c \
 	zfs_vnops.c \
 	zfs_vnops_osx.c \

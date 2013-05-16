@@ -302,6 +302,9 @@ typedef struct znode {
         }                                                               \
     }
 
+#define ZFS_ENTER_NOERROR(zfsvfs)                                       \
+        rw_enter(&(zfsvfs)->z_unmount_lock, RW_READER);
+
 #define ZFS_EXIT(zfsvfs) rw_exit(&(zfsvfs)->z_unmount_lock)
 
 
@@ -367,10 +370,13 @@ typedef struct znode {
 #define	ZFS_ACCESSTIME_STAMP(zsb, zp)                           \
 	if ((zsb)->z_atime && !(zfs_is_readonly(zsb)))                \
         	zfs_tstamp_update_setup(zp, ACCESSED, NULL, NULL, B_FALSE);
-#endif
 #define ZFS_ACCESSTIME_STAMP(zfsvfs, zp) \
         if ((zfsvfs)->z_atime && !vfs_isrdonly(zfsvfs->z_vfs)) \
                 zfs_time_stamper(zp, ACCESSED, NULL)
+#endif
+#define ZFS_ACCESSTIME_STAMP(zfsvfs, zp)                                \
+    if ((zfsvfs)->z_atime && !vfs_isrdonly(zfsvfs->z_vfs))              \
+        zfs_tstamp_update_setup(zp, ACCESSED, NULL, NULL, B_FALSE);
 
     extern int	zfs_init_fs(zfsvfs_t *, znode_t **, cred_t *);
 extern void	zfs_set_dataprop(objset_t *);

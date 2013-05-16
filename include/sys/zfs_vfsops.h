@@ -57,6 +57,7 @@ struct zfsvfs {
         krwlock_t	    z_fuid_lock;	/* fuid lock */
         boolean_t	    z_fuid_loaded;	/* fuid tables are loaded */
         boolean_t	    z_fuid_dirty;   /* need to sync fuid table ? */
+        struct zfs_fuid_info    *z_fuid_replay; /* fuid info for replay */
         uint64_t        z_assign;       /* TXG_NOWAIT or set by zil_replay() */
         zilog_t         *z_log;         /* intent log pointer */
         uint_t          z_acl_mode;     /* acl chmod/mode behavior */
@@ -175,6 +176,24 @@ extern int zfs_sb_setup(zfsvfs_t *zfsvfs, boolean_t mounting);
 extern void zfs_sb_free(zfsvfs_t *zfsvfs);
 extern int zfs_check_global_label(const char *dsname, const char *hexsl);
 extern boolean_t zfs_is_readonly(zfsvfs_t *zfsvfs);
+
+
+
+
+extern int  zfs_vfs_init (struct vfsconf *vfsp);
+extern int  zfs_vfs_start (struct mount *mp, int flags, vfs_context_t context);
+extern int  zfs_vfs_mount (struct mount *mp, vnode_t *devvp, user_addr_t data, vfs_context_t context);
+extern int  zfs_vfs_unmount (struct mount *mp, int mntflags, vfs_context_t context);
+extern int  zfs_vfs_root (struct mount *mp, vnode_t **vpp, vfs_context_t context);
+extern int  zfs_vfs_vget (struct mount *mp, ino64_t ino, vnode_t **vpp, vfs_context_t context);
+extern int  zfs_vfs_getattr (struct mount *mp, struct vfs_attr *fsap, vfs_context_t context);
+extern int  zfs_vfs_setattr (struct mount *mp, struct vfs_attr *fsap, vfs_context_t context);
+extern int  zfs_vfs_sync (struct mount *mp, int waitfor, vfs_context_t context);
+extern int  zfs_vfs_fhtovp (struct mount *mp, int fhlen, unsigned char *fhp, vnode_t **vpp, vfs_context_t context);
+extern int  zfs_vfs_vptofh (vnode_t *vp, int *fhlenp, unsigned char *fhp, vfs_context_t context);
+extern int  zfs_vfs_sysctl (int *name, u_int namelen, user_addr_t oldp, size_t *oldlenp,  user_addr_t newp, size_t newlen, vfs_context_t context);
+extern int  zfs_vfs_quotactl ( struct mount *mp, int cmds, uid_t uid, caddr_t datap, vfs_context_t context);
+
 
 
 #ifdef	__cplusplus

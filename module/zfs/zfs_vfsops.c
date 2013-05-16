@@ -95,92 +95,12 @@
 
 #ifdef __APPLE__
 
-static int  zfs_vfs_init (struct vfsconf *vfsp);
-static int  zfs_vfs_start (struct mount *mp, int flags, vfs_context_t context);
-static int  zfs_vfs_mount (struct mount *mp, vnode_t *devvp, user_addr_t data, vfs_context_t context);
-static int  zfs_vfs_unmount (struct mount *mp, int mntflags, vfs_context_t context);
-static int  zfs_vfs_root (struct mount *mp, vnode_t **vpp, vfs_context_t context);
-static int  zfs_vfs_vget (struct mount *mp, ino64_t ino, vnode_t **vpp, vfs_context_t context);
-static int  zfs_vfs_getattr (struct mount *mp, struct vfs_attr *fsap, vfs_context_t context);
-static int  zfs_vfs_setattr (struct mount *mp, struct vfs_attr *fsap, vfs_context_t context);
-static int  zfs_vfs_sync (struct mount *mp, int waitfor, vfs_context_t context);
-static int  zfs_vfs_fhtovp (struct mount *mp, int fhlen, unsigned char *fhp, vnode_t **vpp, vfs_context_t context);
-static int  zfs_vfs_vptofh (vnode_t *vp, int *fhlenp, unsigned char *fhp, vfs_context_t context);
-extern int  zfs_vfs_sysctl (int *name, u_int namelen, user_addr_t oldp, size_t *oldlenp,  user_addr_t newp, size_t newlen, vfs_context_t context);
-static int  zfs_vfs_quotactl ( struct mount *mp, int cmds, uid_t uid, caddr_t datap, vfs_context_t context);
-static void zfs_objset_close(zfsvfs_t *zfsvfs);
-static void zfs_freevfs(struct mount *vfsp);
-
 int  zfs_module_start(kmod_info_t *ki, void *data);
 int  zfs_module_stop(kmod_info_t *ki, void *data);
 
 
-/*
- * Mac OS X needs a file system modify time
- *
- * We use the mtime of the "com.apple.system.mtime"
- * extended attribute, which is associated with the
- * file system root directory.  This attribute has
- * no associated data.
- */
-#define ZFS_MTIME_XATTR		"com.apple.system.mtime"
+// move these structs to _osx once wrappers are updated
 
-extern int zfs_obtain_xattr(znode_t *, const char *, mode_t, cred_t *, vnode_t **, int);
-
-/*
- * zfs vfs operations.
- */
-static struct vfsops zfs_vfsops_template = {
-	zfs_vfs_mount,
-	zfs_vfs_start,
-	zfs_vfs_unmount,
-	zfs_vfs_root,
-	zfs_vfs_quotactl,
-	zfs_vfs_getattr,
-	zfs_vfs_sync,
-	zfs_vfs_vget,
-	zfs_vfs_fhtovp,
-	zfs_vfs_vptofh,
-	zfs_vfs_init,
-	zfs_vfs_sysctl,
-	zfs_vfs_setattr,
-	{NULL}
-};
-
-
-extern struct vnodeopv_desc zfs_dvnodeop_opv_desc;
-extern struct vnodeopv_desc zfs_fvnodeop_opv_desc;
-extern struct vnodeopv_desc zfs_symvnodeop_opv_desc;
-extern struct vnodeopv_desc zfs_xdvnodeop_opv_desc;
-extern struct vnodeopv_desc zfs_evnodeop_opv_desc;
-
-#define ZFS_VNOP_TBL_CNT	5
-
-static struct vnodeopv_desc *zfs_vnodeop_opv_desc_list[ZFS_VNOP_TBL_CNT] =
-{
-	&zfs_dvnodeop_opv_desc,
-	&zfs_fvnodeop_opv_desc,
-	&zfs_symvnodeop_opv_desc,
-	&zfs_xdvnodeop_opv_desc,
-	&zfs_evnodeop_opv_desc,
-};
-
-static vfstable_t zfs_vfsconf;
-
-/*
- * We need to keep a count of active fs's.
- * This is necessary to prevent our kext
- * from being unloaded after a umount -f
- */
-SInt32	zfs_active_fs_count = 0;
-
-extern void zfs_ioctl_init(void);
-extern void zfs_ioctl_fini(void);
-
-#endif
-
-
-#ifdef __APPLE__
 /*
  * ZFS file system features.
  */
@@ -249,9 +169,10 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		0, 0
 	}
 };
-#endif /* __APPLE__ */
 
-#ifdef __APPLE__
+
+
+
 /*
  * ZFS file system attributes (for getattrlist).
  */
@@ -314,20 +235,38 @@ const attribute_set_t zfs_attributes = {
 
 		0
 };
-#endif /* __APPLE__ */
+
+
+/*
+ * Mac OS X needs a file system modify time
+ *
+ * We use the mtime of the "com.apple.system.mtime"
+ * extended attribute, which is associated with the
+ * file system root directory.  This attribute has
+ * no associated data.
+ */
+#define ZFS_MTIME_XATTR		"com.apple.system.mtime"
+
+extern int zfs_obtain_xattr(znode_t *, const char *, mode_t, cred_t *, vnode_t **, int);
+
+
+/*
+ * We need to keep a count of active fs's.
+ * This is necessary to prevent our kext
+ * from being unloaded after a umount -f
+ */
+SInt32	zfs_active_fs_count = 0;
+
+extern void zfs_ioctl_init(void);
+extern void zfs_ioctl_fini(void);
+
+#endif
 
 
 
 
 
-
-
-
-
-
-
-
-static int
+int
 zfs_vfs_sync(struct mount *mp, __unused int waitfor, __unused vfs_context_t context)
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
@@ -1800,7 +1739,7 @@ getpoolname(const char *osname, char *poolname)
 }
 
 /*ARGSUSED*/
-static int
+int
 zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
               user_addr_t data, vfs_context_t context)
 {
@@ -2068,7 +2007,7 @@ out:
 	return (error);
 }
 
-static int
+int
 zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t context)
 {
     zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
@@ -2223,7 +2162,7 @@ zfs_vnode_lock(vnode_t *vp, int flags)
 	return (error);
 }
 
-static int
+int
 zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
@@ -2351,7 +2290,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 }
 
 /*ARGSUSED*/
-static int
+int
 zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 {
     zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
@@ -2554,7 +2493,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
  *
  * Use by NFS Server (readdirplus) and VFS (build_path)
  */
-static int
+int
 zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_t context)
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
@@ -2604,6 +2543,14 @@ CTASSERT(LONG_FID_LEN <= sizeof(struct fid));
 #endif
 
 #ifdef __APPLE__
+
+int
+zfs_vfs_setattr(__unused struct mount *mp, __unused struct vfs_attr *fsap, __unused vfs_context_t context)
+{
+	// 10a286 bits has an implementation of this
+	return (ENOTSUP);
+}
+
 /*
  * NFS Server File Handle File ID
  */
@@ -2617,7 +2564,7 @@ typedef struct zfs_zfid {
 /*
  * File handle to vnode pointer
  */
-static int
+int
 zfs_vfs_fhtovp(struct mount *mp, int fhlen, unsigned char *fhp,
                vnode_t **vpp, __unused vfs_context_t context)
 {
@@ -2674,7 +2621,7 @@ out:
  *
  * XXX Do we want to check the DSL sharenfs property?
  */
-static int
+int
 zfs_vfs_vptofh(vnode_t *vp, int *fhlenp, unsigned char *fhp, __unused vfs_context_t context)
 {
 	zfsvfs_t	*zfsvfs = vfs_fsprivate(vnode_mount(vp));
@@ -2802,13 +2749,15 @@ bail:
 		 * Since we couldn't reopen zfsvfs::z_os, or
 		 * setup the sa framework force unmount this file system.
 		 */
+#ifndef __APPLE__
 		if (vn_vfswlock(zfsvfs->z_vfs->vfs_vnodecovered) == 0)
 			(void) dounmount(zfsvfs->z_vfs,0 /*MS_FORCE*/, curthread);
+#endif
 	}
 	return (err);
 }
 
-static void
+void
 zfs_freevfs(struct mount *vfsp)
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
@@ -2951,14 +2900,16 @@ zfs_set_version(zfsvfs_t *zfsvfs, uint64_t newvers)
 
 		error = zap_add(os, MASTER_NODE_OBJ,
 		    ZFS_SA_ATTRS, 8, 1, &sa_obj, tx);
-		ASSERT0(error);
+		ASSERT(error==0);
 
 		VERIFY(0 == sa_set_sa_object(os, sa_obj));
 		sa_register_update_callback(os, zfs_sa_upgrade);
 	}
 
-	spa_history_log_internal_ds(dmu_objset_ds(os), "upgrade", tx,
-	    "from %llu to %llu", zfsvfs->z_version, newvers);
+	spa_history_internal_log(LOG_DS_UPGRADE,
+	    dmu_objset_spa(os), tx, CRED(),
+	    "oldver=%llu newver=%llu dataset = %llu", zfsvfs->z_version, newvers,
+	    dmu_objset_id(os));
 
 	dmu_tx_commit(tx);
 
@@ -3045,3 +2996,5 @@ zfsvfs_update_fromname(const char *oldname, const char *newname)
 
 }
 #endif
+
+

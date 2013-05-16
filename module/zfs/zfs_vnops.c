@@ -79,6 +79,7 @@
 #include <sys/utfconv.h>
 #include <sys/ubc.h>
 #include <sys/zfs_vnops.h>
+#include <sys/vnode.h>
 
 /*
  * Programming rules.
@@ -217,8 +218,10 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 	/*
 	 * Clean up any locks held by this process on the vp.
 	 */
+#ifndef __APPLE__
 	cleanlocks(vp, ddi_get_pid(), 0);
 	cleanshares(vp, ddi_get_pid());
+#endif
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
@@ -284,54 +287,7 @@ zfs_holey(vnode_t *vp, u_long cmd, offset_t *off)
 #endif
 
 
-#ifdef __APPLE__
-
-int
-zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
-{
-	znode_t	*zp = VTOZ(ap->a_vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	user_addr_t useraddr = CAST_USER_ADDR_T(ap->a_data);
-	int error;
-
-	ZFS_ENTER(zfsvfs);
-
-	switch (ap->a_command) {
-	case F_FULLFSYNC: {
-		struct vnop_fsync_args fsync_args;
-
-		fsync_args.a_vp = ap->a_vp;
-		fsync_args.a_waitfor = MNT_WAIT;
-		fsync_args.a_context = ap->a_context;
-		if ((error = zfs_vnop_fsync(&fsync_args)))
-			break;
-
-		if (zfsvfs->z_log != NULL)
-			zil_commit(zfsvfs->z_log, 0);
-		else
-			txg_wait_synced(dmu_objset_pool(zfsvfs->z_os), 0);
-		break;
-	}
-
-	case SPOTLIGHT_GET_MOUNT_TIME:
-		error = copyout(&zfsvfs->z_mount_time, useraddr,
-		                sizeof (zfsvfs->z_mount_time));
-		break;
-
-	case SPOTLIGHT_GET_UNMOUNT_TIME:
-		error = copyout(&zfsvfs->z_last_unmount_time, useraddr,
-		                sizeof (zfsvfs->z_last_unmount_time));
-		break;
-
-	default:
-		error = ENOTTY;
-	}
-
-	ZFS_EXIT(zfsvfs);
-	return (error);
-}
-#endif /* __APPLE */
-#if 0
+#ifndef __APPLE__
 /* ARGSUSED */
 int
 zfs_ioctl(vnode_t *vp, u_long com, intptr_t data, int flag, cred_t *cred,
@@ -1229,7 +1185,7 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 }
 
 /*ARGSUSED*/
-static int
+int
 zfs_access(vnode_t *vp, int mode, int flag, cred_t *cr,
     caller_context_t *ct)
 {
@@ -1436,14 +1392,16 @@ zfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct componentname *cnp,
 	if (error == 0 && (nm[0] != '.' || nm[1] != '\0')) {
 		int ltype = 0;
 
+#ifndef __APPLE__
 		if (cnp->cn_flags & ISDOTDOT) {
 			ltype = VOP_ISLOCKED(dvp);
 			VOP_UNLOCK(dvp, 0);
 		}
+#endif
 		ZFS_EXIT(zfsvfs);
 		error = zfs_vnode_lock(*vpp, 0/*cnp->cn_lkflags*/);
 		if (cnp->cn_flags & ISDOTDOT)
-			vn_lock(dvp, ltype /*| LK_RETRY*/);
+			vn_lock(dvp, ltype | LK_RETRY);
 		if (error != 0) {
 			VN_RELE(*vpp);
 			*vpp = NULL;
@@ -1524,10 +1482,12 @@ zfs_create(vnode_t *dvp, char *name, vattr_t *vap, int excl, int mode,
 	 * make sure file system is at proper version
 	 */
 
+#ifdef HAVE_KSID
 	ksid = crgetsid(cr, KSID_OWNER);
 	if (ksid)
 		uid = ksid_getid(ksid);
 	else
+#endif
 		uid = crgetuid(cr);
 
 	if (zfsvfs->z_use_fuids == B_FALSE &&
@@ -1857,7 +1817,7 @@ top:
 	    &xattr_obj, sizeof (xattr_obj));
 	if (error == 0 && xattr_obj) {
 		error = zfs_zget(zfsvfs, xattr_obj, &xzp);
-		ASSERT0(error);
+		ASSERT(error==0);
 		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_TRUE);
 		dmu_tx_hold_sa(tx, xzp->z_sa_hdl, B_FALSE);
 	}
@@ -1942,7 +1902,7 @@ top:
 				error = sa_update(zp->z_sa_hdl,
 				    SA_ZPL_XATTR(zfsvfs), &null_xattr,
 				    sizeof (uint64_t), tx);
-			ASSERT0(error);
+			ASSERT(error==0);
 		}
 #ifndef __APPLE__
 		VI_LOCK(vp);
@@ -2043,11 +2003,14 @@ zfs_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t **vpp, cred_t *cr,
 	 * make sure file system is at proper version
 	 */
 
+#ifdef HAVE_KSID
 	ksid = crgetsid(cr, KSID_OWNER);
 	if (ksid)
 		uid = ksid_getid(ksid);
 	else
+#endif
 		uid = crgetuid(cr);
+
 	if (zfsvfs->z_use_fuids == B_FALSE &&
 	    (vsecp || (vap->va_mask & AT_XVATTR) ||
 	    IS_EPHEMERAL(uid) || IS_EPHEMERAL(gid)))
@@ -3470,7 +3433,7 @@ top:
 		zp->z_mode = new_mode;
 		ASSERT3U((uintptr_t)aclp, !=, 0);
 		err = zfs_aclset_common(zp, aclp, cr, tx);
-		ASSERT0(err);
+		ASSERT(err==0);
 		if (zp->z_acl_cached)
 			zfs_acl_free(zp->z_acl_cached);
 		zp->z_acl_cached = aclp;
@@ -4000,7 +3963,7 @@ top:
 
 			error = sa_update(szp->z_sa_hdl, SA_ZPL_FLAGS(zfsvfs),
 			    (void *)&szp->z_pflags, sizeof (uint64_t), tx);
-			ASSERT0(error);
+			ASSERT(error==0);
 
 			error = zfs_link_destroy(sdl, szp, tx, ZRENAMING, NULL);
 			if (error == 0) {
@@ -5080,6 +5043,7 @@ zfs_delmap(vnode_t *vp, offset_t off, struct as *as, caddr_t addr,
 
 	return (0);
 }
+#endif	/* sun */
 
 /*
  * Free or allocate space in a file.  Currently, this function only
@@ -5102,8 +5066,8 @@ zfs_delmap(vnode_t *vp, offset_t off, struct as *as, caddr_t addr,
  *	vp - ctime|mtime updated
  */
 /* ARGSUSED */
-static int
-zfs_space(vnode_t *vp, int cmd, flock64_t *bfp, int flag,
+int
+zfs_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
     offset_t offset, cred_t *cr, caller_context_t *ct)
 {
 	znode_t		*zp = VTOZ(vp);
@@ -5118,11 +5082,12 @@ zfs_space(vnode_t *vp, int cmd, flock64_t *bfp, int flag,
 		ZFS_EXIT(zfsvfs);
 		return ((EINVAL));
 	}
-
+#ifndef __APPLE__
 	if (error = convoff(vp, bfp, 0, offset)) {
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
+#endif
 
 	if (bfp->l_len < 0) {
 		ZFS_EXIT(zfsvfs);
@@ -5138,10 +5103,10 @@ zfs_space(vnode_t *vp, int cmd, flock64_t *bfp, int flag,
 	return (error);
 }
 
+#if sun
 CTASSERT(sizeof(struct zfid_short) <= sizeof(struct fid));
 CTASSERT(sizeof(struct zfid_long) <= sizeof(struct fid));
-
-#endif	/* sun */
+#endif
 
 #ifndef __APPLE__
 /*ARGSUSED*/
@@ -5316,7 +5281,6 @@ zfs_getsecattr(vnode_t *vp, vsecattr_t *vsecp, int flag, cred_t *cr,
 #endif
 
 
-#ifndef __APPLE__
 /*ARGSUSED*/
 int
 zfs_setsecattr(vnode_t *vp, vsecattr_t *vsecp, int flag, cred_t *cr,
@@ -5325,7 +5289,7 @@ zfs_setsecattr(vnode_t *vp, vsecattr_t *vsecp, int flag, cred_t *cr,
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
-	boolean_t skipaclchk = (flag & ATTR_NOACLCHECK) ? B_TRUE : B_FALSE;
+	boolean_t skipaclchk = /*(flag & ATTR_NOACLCHECK) ? B_TRUE :*/ B_FALSE;
 	zilog_t	*zilog = zfsvfs->z_log;
 
 	ZFS_ENTER(zfsvfs);
@@ -5339,7 +5303,6 @@ zfs_setsecattr(vnode_t *vp, vsecattr_t *vsecp, int flag, cred_t *cr,
 	ZFS_EXIT(zfsvfs);
 	return (error);
 }
-#endif
 
 #ifdef sun
 /*

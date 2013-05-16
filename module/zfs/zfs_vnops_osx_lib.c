@@ -15,6 +15,7 @@
 #include <sys/zap.h>
 #include <sys/sa.h>
 #include <sys/zfs_vnops.h>
+#include <sys/stat.h>
 
 
 /* Originally from illumos:uts/common/sys/vfs.h */
@@ -214,6 +215,53 @@ dnlc_lookup(struct vnode *dvp, void *nameptr)
 	return (vp);
 }
 
+int dnlc_purge_vfsp(struct mount *mp, int flags)
+{
+    return 0;
+}
+
+void dnlc_remove(struct vnode *vp, char *name)
+{
+    cache_purge(vp);
+    return;
+}
+
+void dnlc_update(struct vnode *vp, char *name, struct vnode *tp)
+{
+    // If tp is NULL, it is a negative-cache entry
+    struct componentname cn;
+
+	bzero(&cn, sizeof (cn));
+	cn.cn_nameiop = CREATE;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_nameptr = (char *)name;
+	cn.cn_namelen = strlen(name);
+
+    cache_enter(vp, tp, &cn);
+    return;
+}
+
+int pn_alloc(pathname_t *p)
+{
+    return ENOTSUP;
+}
+
+int pn_free(pathname_t p)
+{
+    return ENOTSUP;
+}
+
+void *tsd_get(unsigned int key)
+{
+    return 0;
+}
+
+int
+tsd_set(uint_t key, void *value)
+{
+    return 1;
+}
+
 int
 zfs_access_native_mode(struct vnode *vp, int *mode, cred_t *cr,
     caller_context_t *ct)
@@ -255,7 +303,7 @@ zfs_vnop_ioctl_fullfsync(struct vnode *vp, vfs_context_t ct, zfsvfs_t *zfsvfs)
 		.a_context = ct,
 	};
 
-	error = zfs_vnop_fsync(&fsync_args);
+    error = zfs_fsync(vp, /*syncflag*/0, NULL, ct);
 	if (error)
 		return (error);
 
@@ -264,4 +312,247 @@ zfs_vnop_ioctl_fullfsync(struct vnode *vp, vfs_context_t ct, zfsvfs_t *zfsvfs)
 	else
 		txg_wait_synced(dmu_objset_pool(zfsvfs->z_os), 0);
 	return (0);
+}
+
+uint32_t
+zfs_getbsdflags(znode_t *zp)
+{
+	uint32_t  bsdflags = 0;
+    uint64_t zflags;
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs),
+                     &zflags, sizeof (zflags)) == 0);
+
+	if (zflags & ZFS_NODUMP)
+		bsdflags |= UF_NODUMP;
+	if (zflags & ZFS_IMMUTABLE)
+		bsdflags |= UF_IMMUTABLE;
+	if (zflags & ZFS_APPENDONLY)
+		bsdflags |= UF_APPEND;
+	if (zflags & ZFS_OPAQUE)
+		bsdflags |= UF_OPAQUE;
+	if (zflags & ZFS_HIDDEN)
+		bsdflags |= UF_HIDDEN;
+	if (zflags & ZFS_ARCHIVE)
+		bsdflags |= SF_ARCHIVED;
+
+	return (bsdflags);
+}
+
+void
+zfs_setbsdflags(znode_t *zp, uint32_t bsdflags)
+{
+    uint64_t zflags;
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs),
+                     &zflags, sizeof (zflags)) == 0);
+
+	if (bsdflags & UF_NODUMP)
+		zflags |= ZFS_NODUMP;
+	else
+		zflags &= ~ZFS_NODUMP;
+
+	if (bsdflags & UF_IMMUTABLE)
+		zflags |= ZFS_IMMUTABLE;
+	else
+		zflags &= ~ZFS_IMMUTABLE;
+
+	if (bsdflags & UF_APPEND)
+		zflags |= ZFS_APPENDONLY;
+	else
+		zflags &= ~ZFS_APPENDONLY;
+
+	if (bsdflags & UF_OPAQUE)
+		zflags |= ZFS_OPAQUE;
+	else
+		zflags &= ~ZFS_OPAQUE;
+
+	if (bsdflags & UF_HIDDEN)
+		zflags |= ZFS_HIDDEN;
+	else
+		zflags &= ~ZFS_HIDDEN;
+
+	if (bsdflags & SF_ARCHIVED)
+		zflags |= ZFS_ARCHIVE;
+	else
+		zflags &= ~ZFS_ARCHIVE;
+
+    zp->z_pflags = zflags;
+    /*
+    (void )sa_update(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs),
+                     (void *)&zp->z_pflags, sizeof (uint64_t), tx);
+    */
+}
+
+/*
+ * Lookup/Create an extended attribute entry.
+ *
+ * Input arguments:
+ *	dzp	- znode for hidden attribute directory
+ *	name	- name of attribute
+ *	flag	- ZNEW: if the entry already exists, fail with EEXIST.
+ *		  ZEXISTS: if the entry does not exist, fail with ENOENT.
+ *
+ * Output arguments:
+ *	vpp	- pointer to the vnode for the entry (NULL if there isn't one)
+ *
+ * Return value: 0 on success or errno value on failure.
+ */
+int
+zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
+                 vnode_t **vpp, int flag)
+{
+	znode_t  *xzp = NULL;
+	zfsvfs_t  *zfsvfs = dzp->z_zfsvfs;
+	zilog_t  *zilog;
+	zfs_dirlock_t  *dl;
+	dmu_tx_t  *tx;
+	struct vnode_attr  vattr;
+	uint64_t  zoid;
+	int error;
+	struct componentname cn;
+
+	/* zfs_dirent_lock() expects a component name */
+	bzero(&cn, sizeof (cn));
+	cn.cn_nameiop = LOOKUP;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_nameptr = (char *)name;
+	cn.cn_namelen = strlen(name);
+
+    ZFS_ENTER(zfsvfs);
+    ZFS_VERIFY_ZP(dzp);
+    zilog = zfsvfs->z_log;
+
+top:
+	/* Lock the attribute entry name. */
+	if ( (error = zfs_dirent_lock(&dl, dzp, &cn, &xzp, flag, NULL, NULL)) ) {
+		goto out;
+	}
+	/* If the name already exists, we're done. */
+	if (xzp != NULL) {
+		zfs_dirent_unlock(dl);
+		goto out;
+	}
+	tx = dmu_tx_create(zfsvfs->z_os);
+	dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT);
+	dmu_tx_hold_bonus(tx, dzp->z_id);
+	dmu_tx_hold_zap(tx, dzp->z_id, TRUE, (char *)name);
+
+#if 0 // FIXME
+	if (dzp->z_phys->zp_flags & ZFS_INHERIT_ACE) {
+		dmu_tx_hold_write(tx, DMU_NEW_OBJECT, 0, SPA_MAXBLOCKSIZE);
+	}
+#endif
+    zfs_sa_upgrade_txholds(tx, dzp);
+    zfs_sa_upgrade_txholds(tx, xzp);
+	error = dmu_tx_assign(tx, TXG_NOWAIT);
+	if (error) {
+		zfs_dirent_unlock(dl);
+		if ((error == ERESTART)) {
+			dmu_tx_wait(tx);
+			dmu_tx_abort(tx);
+			goto top;
+		}
+		dmu_tx_abort(tx);
+		goto out;
+	}
+
+	VATTR_INIT(&vattr);
+	VATTR_SET(&vattr, va_type, VREG);
+	VATTR_SET(&vattr, va_mode, mode & ~S_IFMT);
+	zfs_mknode(dzp, &vattr, tx, cr, 0, &xzp, 0);
+
+	ASSERT(xzp->z_id == zoid);
+	(void) zfs_link_create(dl, xzp, tx, ZNEW);
+	zfs_log_create(zilog, tx, TX_CREATE, dzp, xzp, (char *)name,
+                   NULL /* vsecp */, 0 /*acl_ids.z_fuidp*/, &vattr);
+	dmu_tx_commit(tx);
+
+	zfs_dirent_unlock(dl);
+out:
+	if (error == EEXIST)
+		error = ENOATTR;
+	if (xzp)
+		*vpp = ZTOV(xzp);
+
+    ZFS_EXIT(zfsvfs);
+	return (error);
+}
+
+/*
+ * ace_trivial:
+ * determine whether an ace_t acl is trivial
+ *
+ * Trivialness implies that the acl is composed of only
+ * owner, group, everyone entries.  ACL can't
+ * have read_acl denied, and write_owner/write_acl/write_attributes
+ * can only be owner@ entry.
+ */
+int
+ace_trivial_common(void *acep, int aclcnt,
+                   uint64_t (*walk)(void *, uint64_t, int aclcnt,
+                                    uint16_t *, uint16_t *, uint32_t *))
+{
+    return 1;
+}
+
+
+void
+acl_trivial_access_masks(mode_t mode, boolean_t isdir, trivial_acl_t *masks)
+{
+    uint32_t read_mask = ACE_READ_DATA;
+    uint32_t write_mask = ACE_WRITE_DATA|ACE_APPEND_DATA;
+    uint32_t execute_mask = ACE_EXECUTE;
+
+    (void) isdir;   /* will need this later */
+
+    masks->deny1 = 0;
+    if (!(mode & S_IRUSR) && (mode & (S_IRGRP|S_IROTH)))
+        masks->deny1 |= read_mask;
+    if (!(mode & S_IWUSR) && (mode & (S_IWGRP|S_IWOTH)))
+        masks->deny1 |= write_mask;
+    if (!(mode & S_IXUSR) && (mode & (S_IXGRP|S_IXOTH)))
+        masks->deny1 |= execute_mask;
+
+    masks->deny2 = 0;
+    if (!(mode & S_IRGRP) && (mode & S_IROTH))
+        masks->deny2 |= read_mask;
+    if (!(mode & S_IWGRP) && (mode & S_IWOTH))
+        masks->deny2 |= write_mask;
+    if (!(mode & S_IXGRP) && (mode & S_IXOTH))
+        masks->deny2 |= execute_mask;
+
+    masks->allow0 = 0;
+    if ((mode & S_IRUSR) && (!(mode & S_IRGRP) && (mode & S_IROTH)))
+        masks->allow0 |= read_mask;
+    if ((mode & S_IWUSR) && (!(mode & S_IWGRP) && (mode & S_IWOTH)))
+        masks->allow0 |= write_mask;
+    if ((mode & S_IXUSR) && (!(mode & S_IXGRP) && (mode & S_IXOTH)))
+        masks->allow0 |= execute_mask;
+
+    masks->owner = ACE_WRITE_ATTRIBUTES|ACE_WRITE_OWNER|ACE_WRITE_ACL|
+        ACE_WRITE_NAMED_ATTRS|ACE_READ_ACL|ACE_READ_ATTRIBUTES|
+        ACE_READ_NAMED_ATTRS|ACE_SYNCHRONIZE;
+    if (mode & S_IRUSR)
+        masks->owner |= read_mask;
+    if (mode & S_IWUSR)
+        masks->owner |= write_mask;
+    if (mode & S_IXUSR)
+        masks->owner |= execute_mask;
+
+    masks->group = ACE_READ_ACL|ACE_READ_ATTRIBUTES|ACE_READ_NAMED_ATTRS|
+        ACE_SYNCHRONIZE;
+    if (mode & S_IRGRP)
+        masks->group |= read_mask;
+    if (mode & S_IWGRP)
+        masks->group |= write_mask;
+    if (mode & S_IXGRP)
+        masks->group |= execute_mask;
+
+    masks->everyone = ACE_READ_ACL|ACE_READ_ATTRIBUTES|ACE_READ_NAMED_ATTRS|
+        ACE_SYNCHRONIZE;
+    if (mode & S_IROTH)
+        masks->everyone |= read_mask;
+    if (mode & S_IWOTH)
+        masks->everyone |= write_mask;
+    if (mode & S_IXOTH)
+        masks->everyone |= execute_mask;
 }

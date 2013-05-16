@@ -1083,6 +1083,39 @@ dsl_pool_user_release(dsl_pool_t *dp, uint64_t dsobj, const char *tag,
 	    tx, B_FALSE));
 }
 
+
+
+void
+dsl_pool_config_enter(dsl_pool_t *dp, void *tag)
+{
+    /*
+     * We use a "reentrant" reader-writer lock, but not reentrantly.
+     *
+     * The rrwlock can (with the track_all flag) track all reading threads,
+     * which is very useful for debugging which code path failed to release
+     * the lock, and for verifying that the *current* thread does hold
+     * the lock.
+     *
+     * (Unlike a rwlock, which knows that N threads hold it for
+     * read, but not *which* threads, so rw_held(RW_READER) returns TRUE
+     * if any thread holds it for read, even if this thread doesn't).
+     */
+    rw_enter(&dp->dp_config_rwlock, RW_READER);
+}
+
+void
+dsl_pool_config_exit(dsl_pool_t *dp, void *tag)
+{
+    rw_exit(&dp->dp_config_rwlock);
+}
+
+boolean_t
+dsl_pool_config_held(dsl_pool_t *dp)
+{
+    return (rw_lock_held(&dp->dp_config_rwlock));
+}
+
+
 #if defined(_KERNEL) && defined(HAVE_SPL)
 module_param(zfs_no_write_throttle, int, 0644);
 MODULE_PARM_DESC(zfs_no_write_throttle, "Disable write throttling");

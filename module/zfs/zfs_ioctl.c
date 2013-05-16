@@ -131,6 +131,8 @@ static int zfs_fill_zplprops_root(uint64_t, nvlist_t *, nvlist_t *,
     boolean_t *);
 int zfs_set_prop_nvlist(const char *, zprop_source_t, nvlist_t *, nvlist_t **);
 
+uint_t zfs_fsyncer_key;
+
 static void
 history_str_free(char *buf)
 {

@@ -49,6 +49,8 @@
 #include <sys/zap.h>
 #include <sys/sa.h>
 #include <sys/zfs_vnops.h>
+#include <sys/vfs.h>
+#include <sys/vfs_opreg.h>
 
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
@@ -58,6 +60,61 @@
 	DECLARE_CRED(ap);		\
 	DECLARE_CONTEXT(ap)
 
+
+/*
+ * zfs vfs operations.
+ */
+static struct vfsops zfs_vfsops_template = {
+	zfs_vfs_mount,
+	zfs_vfs_start,
+	zfs_vfs_unmount,
+	zfs_vfs_root,
+	zfs_vfs_quotactl,
+	zfs_vfs_getattr,
+	zfs_vfs_sync,
+	zfs_vfs_vget,
+	zfs_vfs_fhtovp,
+	zfs_vfs_vptofh,
+	zfs_vfs_init,
+	zfs_vfs_sysctl,
+	zfs_vfs_setattr,
+	{NULL}
+};
+extern struct vnodeopv_desc zfs_dvnodeop_opv_desc;
+extern struct vnodeopv_desc zfs_fvnodeop_opv_desc;
+extern struct vnodeopv_desc zfs_symvnodeop_opv_desc;
+extern struct vnodeopv_desc zfs_xdvnodeop_opv_desc;
+extern struct vnodeopv_desc zfs_evnodeop_opv_desc;
+
+#define ZFS_VNOP_TBL_CNT	5
+
+static struct vnodeopv_desc *zfs_vnodeop_opv_desc_list[ZFS_VNOP_TBL_CNT] =
+{
+	&zfs_dvnodeop_opv_desc,
+	&zfs_fvnodeop_opv_desc,
+	&zfs_symvnodeop_opv_desc,
+	&zfs_xdvnodeop_opv_desc,
+	&zfs_evnodeop_opv_desc,
+};
+
+static vfstable_t zfs_vfsconf;
+
+int zfs_vfs_init(__unused struct vfsconf *vfsp)
+{
+    return 0;
+}
+
+int
+zfs_vfs_start(__unused struct mount *mp, __unused int flags, __unused vfs_context_t context)
+{
+	return (0);
+}
+
+int
+zfs_vfs_quotactl(__unused struct mount *mp, __unused int cmds, __unused uid_t uid, __unused caddr_t datap, __unused vfs_context_t context)
+{
+	return (ENOTSUP);
+}
 
 
 static int
@@ -104,12 +161,14 @@ zfs_vnop_ioctl(
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	user_addr_t useraddr = CAST_USER_ADDR_T(ap->a_data);
 	int error;
+    DECLARE_CRED_AND_CONTEXT(ap);
 
 	ZFS_ENTER(zfsvfs);
 
 	switch(ap->a_command) {
 	case F_FULLFSYNC:
-		error = zfs_vnop_ioctl_fsync(ap->a_vp, ap->a_context, zfsvfs);
+        /* zfs_fsync also calls ZFS_ENTER */
+		error = zfs_fsync(ap->a_vp, /*flag*/0, cr, ct);
 		break;
 	case SPOTLIGHT_GET_MOUNT_TIME:
 		error = copyout(&zfsvfs->z_mount_time, useraddr,
@@ -517,7 +576,8 @@ zfs_vnop_pageout(
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
 	 * Break up that function into smaller bits so it can be reused.
 	 */
-	return (zfs_putapage());
+	//return (zfs_putapage());
+    return 0;
 }
 
 static int
@@ -540,7 +600,11 @@ zfs_vnop_inactive(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-    return 0;
+	vnode_t *vp = ap->a_vp;
+	DECLARE_CRED(ap);
+
+	zfs_inactive(vp, cr, NULL);
+	return (0);
 }
 
 static int
@@ -550,7 +614,36 @@ zfs_vnop_reclaim(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-    return 0;
+	vnode_t	*vp = ap->a_vp;
+	znode_t	*zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+	ASSERT(zp != NULL);
+
+	/* Destroy the vm object and flush associated pages. */
+#ifndef __APPLE__
+	vnode_destroy_vobject(vp);
+#endif
+
+	/*
+	 * z_teardown_inactive_lock protects from a race with
+	 * zfs_znode_dmu_fini in zfsvfs_teardown during
+	 * force unmount.
+	 */
+	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+	if (zp->z_sa_hdl == NULL)
+		zfs_znode_free(zp);
+	else
+		zfs_zinactive(zp);
+	rw_exit(&zfsvfs->z_teardown_inactive_lock);
+
+#ifndef __APPLE__
+	vp->v_data = NULL;
+#else
+    vnode_clearfsnode(vp); /* vp->v_data = NULL */
+	vnode_removefsref(vp); /* ADDREF from vnode_create */
+#endif
+	return (0);
 }
 
 static int
@@ -995,28 +1088,36 @@ struct vnodeopv_desc zfs_evnodeop_opv_desc =
 
 
 
+
 /*
  * Alas, OSX does not let us create a vnode, and assign the vtype later
- * and we do not know what type we want here.
+ * and we do not know what type we want here. Is there a way around this?
+ * We could allocate any old vnode, then recycle it to ensure a vnode is
+ * spare?
  */
-void getnewvnode_reverse(int num)
+void getnewvnode_reserve(int num)
 {
     return;
 }
 
-void getnewvnode_drop_reverse()
+void getnewvnode_drop_reserve()
 {
     return;
 }
 
-int getnewvnode(const char *tag, znode_t *zp, struct vnodeopv_entry_desc *vops,
-                struct vnode **vpp)
+/*
+ * Get new vnode for znode.
+ *
+ * This function uses zp->z_zfsvfs, zp->z_mode, zp->z_flags, zp->z_id
+ * and sets zp->z_vnode, zp->z_vid
+ */
+int zfs_znode_getvnode(znode_t *zp, struct vnode **vpp)
 {
 	struct vnode_fsparam vfsp;
     zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
 	bzero(&vfsp, sizeof (vfsp));
-	vfsp.vnfs_str = tag;
+	vfsp.vnfs_str = "zfs";
 	vfsp.vnfs_mp = zfsvfs->z_vfs;
 	vfsp.vnfs_vtype = IFTOVT((mode_t)zp->z_mode);
 	vfsp.vnfs_fsnode = zp;
@@ -1079,20 +1180,58 @@ int getnewvnode(const char *tag, znode_t *zp, struct vnodeopv_entry_desc *vops,
 
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0);
 
+    printf("Assigned zp %p with vp %p\n", zp, *vpp);
+
 	vnode_settag(*vpp, VT_ZFS);
 
-	mutex_enter(&zp->z_lock);
 	zp->z_vid = vnode_vid(*vpp);
-	mutex_exit(&zp->z_lock);
-
-	/* Insert it on our list of active znodes */
-	mutex_enter(&zfsvfs->z_znodes_lock);
-	list_insert_tail(&zfsvfs->z_all_znodes, zp);
-	mutex_exit(&zfsvfs->z_znodes_lock);
-
+    zp->z_vnode = *vpp;
+    /*
+     * FreeBSD version does not hold a ref on the new vnode
+     */
+    vnode_put(*vpp);
     return 0;
 }
 
 
+int zfs_vfsops_init(void)
+{
+	struct vfs_fsentry vfe;
+
+    zfs_init();
+
+	vfe.vfe_vfsops = &zfs_vfsops_template;
+	vfe.vfe_vopcnt = ZFS_VNOP_TBL_CNT;
+	vfe.vfe_opvdescs = zfs_vnodeop_opv_desc_list;
+
+	strlcpy(vfe.vfe_fsname, "zfs", MFSNAMELEN);
+
+	/*
+	 * Note: must set VFS_TBLGENERICMNTARGS with VFS_TBLLOCALVOL
+	 * to suppress local mount argument handling.
+	 */
+	vfe.vfe_flags = VFS_TBLTHREADSAFE |
+	                VFS_TBLNOTYPENUM |
+	                VFS_TBLLOCALVOL |
+	                VFS_TBL64BITREADY |
+	                VFS_TBLNATIVEXATTR |
+	                VFS_TBLGENERICMNTARGS|
+			VFS_TBLREADDIR_EXTENDED;
+	vfe.vfe_reserv[0] = 0;
+	vfe.vfe_reserv[1] = 0;
+
+	if (vfs_fsadd(&vfe, &zfs_vfsconf) != 0)
+		return KERN_FAILURE;
+	else
+		return KERN_SUCCESS;
+}
+
+int zfs_vfsops_fini(void)
+{
+
+    zfs_fini();
+
+    return vfs_fsremove(zfs_vfsconf);
+}
 
 

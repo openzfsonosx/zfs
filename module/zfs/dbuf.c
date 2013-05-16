@@ -2280,6 +2280,13 @@ dmu_buf_freeable(dmu_buf_t *dbuf)
 	return (res);
 }
 
+blkptr_t *
+dmu_buf_get_blkptr(dmu_buf_t *db)
+{
+    dmu_buf_impl_t *dbi = (dmu_buf_impl_t *)db;
+    return (dbi->db_blkptr);
+}
+
 static void
 dbuf_check_blkptr(dnode_t *dn, dmu_buf_impl_t *db)
 {
