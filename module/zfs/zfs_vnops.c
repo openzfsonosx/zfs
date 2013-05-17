@@ -1482,12 +1482,10 @@ zfs_create(vnode_t *dvp, char *name, vattr_t *vap, int excl, int mode,
 	 * make sure file system is at proper version
 	 */
 
-#ifdef HAVE_KSID
 	ksid = crgetsid(cr, KSID_OWNER);
 	if (ksid)
 		uid = ksid_getid(ksid);
 	else
-#endif
 		uid = crgetuid(cr);
 
 	if (zfsvfs->z_use_fuids == B_FALSE &&
@@ -2003,12 +2001,10 @@ zfs_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t **vpp, cred_t *cr,
 	 * make sure file system is at proper version
 	 */
 
-#ifdef HAVE_KSID
 	ksid = crgetsid(cr, KSID_OWNER);
 	if (ksid)
 		uid = ksid_getid(ksid);
 	else
-#endif
 		uid = crgetuid(cr);
 
 	if (zfsvfs->z_use_fuids == B_FALSE &&
@@ -2046,6 +2042,7 @@ zfs_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t **vpp, cred_t *cr,
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
+
 	/*
 	 * First make sure the new directory doesn't exist.
 	 *

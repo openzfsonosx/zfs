@@ -73,9 +73,10 @@ typedef enum zpl_attr {
 	ZPL_SYMLINK,
 	ZPL_SCANSTAMP,
 	ZPL_DACL_ACES,
-	ZPL_DXATTR,
+    //	ZPL_DXATTR,
 	ZPL_END
 } zpl_attr_t;
+
 
 #define	ZFS_OLD_ZNODE_PHYS_SIZE	0x108
 #define	ZFS_SA_BASE_ATTR_SIZE	(ZFS_OLD_ZNODE_PHYS_SIZE - \

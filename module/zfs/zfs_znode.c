@@ -694,6 +694,13 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_blksz = blksz;
 	zp->z_seq = 0x7A4653;
 	zp->z_sync_cnt = 0;
+	zp->z_is_zvol = 0;
+	zp->z_is_mapped = 0;
+	zp->z_is_ctldir = 0;
+	zp->z_last_itx = 0;
+	zp->z_vid = 0;
+	zp->z_uid = 0;
+	zp->z_gid = 0;
 
 	vp = ZTOV(zp); /* Does nothing in OSX */
 
@@ -775,7 +782,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 
 #else /* APPLE */
 
-    zfs_znode_getvnode(zp, &vp); /* Assigns both vp and z_vnode */
+    zfs_znode_getvnode(zp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
 
 #endif /* Apple */
 
@@ -1054,7 +1061,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 #ifdef __APPLE__
     {
 		struct vnode *vp;
-        zfs_znode_getvnode(*zpp, &vp); /* Assigns both vp and z_vnode */
+        zfs_znode_getvnode(*zpp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
     }
 #endif
 
@@ -1272,7 +1279,7 @@ again:
 	} else {
 		*zpp = zp;
 #ifdef __APPLE__
-        zfs_znode_getvnode(zp, &vp); /* Assigns both vp and z_vnode */
+        zfs_znode_getvnode(zp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
 #endif
 	}
 	if (err == 0) {
@@ -1957,7 +1964,7 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	vnode.v_data = rootzp;
 	rootzp->z_vnode = &vnode;
 #else
-    zfs_znode_getvnode(zp, &vp); /* Assigns both vp and z_vnode */
+    //zfs_znode_getvnode(rootzp, &vp); /* Assigns both vp and z_vnode */
 #endif
 
 	zfsvfs.z_os = os;
@@ -1997,9 +2004,6 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	POINTER_INVALIDATE(&rootzp->z_zfsvfs);
 
 	sa_handle_destroy(rootzp->z_sa_hdl);
-#ifdef __APPLE__
-    vnode_put(vp);
-#endif
 	rootzp->z_vnode = NULL;
 	kmem_cache_free(znode_cache, rootzp);
 

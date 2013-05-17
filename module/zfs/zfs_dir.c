@@ -57,13 +57,6 @@
 #include <sys/dnlc.h>
 #include <sys/extdirent.h>
 
-#ifdef __APPLE__
-#include <sys/spa.h>
-#include <sys/callb.h>
-#include <sys/dirent.h>
-#include <sys/utfconv.h>
-#endif
-
 /*
  * zfs_match_find() is used by zfs_dirent_lock() to peform zap lookups
  * of names after deciding which is the appropriate lookup interface.
@@ -141,7 +134,7 @@ zfs_match_find(zfsvfs_t *zfsvfs, znode_t *dzp, char *name, boolean_t exact,
  *	 but return znode pointers to a single match.
  */
 int
-zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, struct componentname *cnp, znode_t **zpp,
+zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
     int flag, int *direntflags, pathname_t *realpnp)
 {
 	zfsvfs_t	*zfsvfs = dzp->z_zfsvfs;
@@ -152,21 +145,9 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, struct componentname *cnp, z
 	vnode_t		*vp = NULL;
 	int		error = 0;
 	int		cmpflags;
-#ifdef __APPLE__
-        char            *name;
-        u_int8_t        *nfc_name = NULL;  /* NFC form of name */
-        int             nfc_namesize = 0;
-#endif
 
 	*zpp = NULL;
 	*dlpp = NULL;
-
-#ifdef __APPLE__
-    /* Note: cnp will be NULL for ZXATTR case */
-    name = cnp ? cnp->cn_nameptr : "";
-    if (cnp)
-        ASSERT(name[cnp->cn_namelen] == '\0');
-#endif
 
 	/*
 	 * Verify that we are not trying to lock '.', '..', or '.zfs'
@@ -174,35 +155,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, struct componentname *cnp, z
 	if (name[0] == '.' &&
 	    (name[1] == '\0' || (name[1] == '.' && name[2] == '\0')) ||
 	    zfs_has_ctldir(dzp) && strcmp(name, ZFS_CTLDIR_NAME) == 0)
-		return (EEXIST);
-
-#ifdef __APPLE__
-    /*
-     * Mac OS X: store non-ascii names in UTF-8 NFC (pre-composed) on disk.
-     *
-     * The NFC name ptr is stored in dl->dl_name (allocated here)
-     * and its freed by zfs_dirent_unlock (since dl_namesize != 0).
-     *
-     * Since NFC size will not expand, we can allocate the same sized buffer.
-     */
-    if (!is_ascii_str(name)) {
-        size_t outlen;
-
-        nfc_namesize = strlen(name) + 1;
-        nfc_name = kmem_alloc(nfc_namesize, KM_SLEEP);
-
-        if (utf8_normalizestr((const u_int8_t *)name, nfc_namesize, nfc_name,
-                              &outlen, nfc_namesize, UTF_PRECOMPOSED) == 0) {
-
-            /* Normalization succeeded, switch to NFC name. */
-            name = (char *)nfc_name;
-                } else {
-            /* Normalization failed, just use input name as-is. */
-            kmem_free(nfc_name, nfc_namesize);
-            nfc_name = NULL;
-        }
-    }
-#endif
+		return ((EEXIST));
 
 	/*
 	 * Case sensitivity and normalization preferences are set when
@@ -273,7 +226,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, struct componentname *cnp, z
 			mutex_exit(&dzp->z_lock);
 			if (!(flag & ZHAVELOCK))
 				rw_exit(&dzp->z_name_lock);
-			return (ENOENT);
+			return ((ENOENT));
 		}
 		for (dl = dzp->z_dirlocks; dl != NULL; dl = dl->dl_next) {
 			if ((u8_strcmp(name, dl->dl_name, 0, cmpflags,
@@ -284,13 +237,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, struct componentname *cnp, z
 			mutex_exit(&dzp->z_lock);
 			if (!(flag & ZHAVELOCK))
 				rw_exit(&dzp->z_name_lock);
-#ifdef __APPLE__
-            /* Release any unused NFC name before returning */
-            if (nfc_name) {
-                kmem_free(nfc_name, nfc_namesize);
-            }
-#endif
-			return (ENOENT);
+			return ((ENOENT));
 		}
 		if (dl == NULL)	{
 			size_t namesize;
@@ -310,32 +257,12 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, struct componentname *cnp, z
 			dl->dl_dzp = dzp;
 			dl->dl_next = dzp->z_dirlocks;
 			dzp->z_dirlocks = dl;
-#ifdef __APPLE__
-            /*
-             * Keep the NFC name around in dir lock by tagging it
-             * (setting nfc_namesize).
-             */
-            if (nfc_name) {
-                dl->dl_namesize = nfc_namesize;
-                nfc_name = NULL;  /* its now part of the dir lock */
-            }
-#endif
 			break;
 		}
 		if ((flag & ZSHARED) && dl->dl_sharecnt != 0)
 			break;
 		cv_wait(&dl->dl_cv, &dzp->z_lock);
 	}
-
-#ifdef __APPLE__
-    /*
-     * Release any unused NFC name (ie if we found a pre-existing lock entry)
-     */
-    if (nfc_name) {
-        kmem_free(nfc_name, nfc_namesize);
-        nfc_name = NULL;
-    }
-#endif
 
 	/*
 	 * If the z_name_lock was NOT held for this dirlock record it.
@@ -360,15 +287,15 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, struct componentname *cnp, z
 			error = (zoid == 0 ? ENOENT : 0);
 	} else {
 		if (update)
-			vp = dnlc_lookup(ZTOV(dzp), cnp); // OSX
+			vp = dnlc_lookup(ZTOV(dzp), name);
 		if (vp == DNLC_NO_VNODE) {
 			VN_RELE(vp);
-			error = ENOENT;
+			error = (ENOENT);
 		} else if (vp) {
 			if (flag & ZNEW) {
 				zfs_dirent_unlock(dl);
 				VN_RELE(vp);
-				return (EEXIST);
+				return ((EEXIST));
 			}
 			*dlpp = dl;
 			*zpp = VTOZ(vp);
@@ -386,7 +313,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, struct componentname *cnp, z
 	} else {
 		if (flag & ZNEW) {
 			zfs_dirent_unlock(dl);
-			return (EEXIST);
+			return ((EEXIST));
 		}
 		error = zfs_zget(zfsvfs, zoid, zpp);
 		if (error) {
@@ -441,7 +368,7 @@ zfs_dirent_unlock(zfs_dirlock_t *dl)
  *	special pseudo-directory.
  */
 int
-zfs_dirlook(znode_t *dzp, struct componentname *cnp, vnode_t **vpp, int flags,
+zfs_dirlook(znode_t *dzp, char *name, vnode_t **vpp, int flags,
     int *deflg, pathname_t *rpnp)
 {
 	zfs_dirlock_t *dl;
@@ -449,9 +376,6 @@ zfs_dirlook(znode_t *dzp, struct componentname *cnp, vnode_t **vpp, int flags,
 	int error = 0;
 	uint64_t parent;
 	int unlinked;
-#ifdef __APPLE__
-    char *name = cnp->cn_nameptr;
-#endif
 
 	if (name[0] == 0 || (name[0] == '.' && name[1] == 0)) {
 		mutex_enter(&dzp->z_lock);
@@ -473,11 +397,9 @@ zfs_dirlook(znode_t *dzp, struct componentname *cnp, vnode_t **vpp, int flags,
 		    SA_ZPL_PARENT(zfsvfs), &parent, sizeof (parent))) != 0)
 			return (error);
 		if (parent == dzp->z_id && zfsvfs->z_parent != zfsvfs) {
-#if 0
 			error = zfsctl_root_lookup(zfsvfs->z_parent->z_ctldir,
 			    "snapshot", vpp, NULL, 0, NULL, kcred,
 			    NULL, NULL, NULL);
-#endif
 			return (error);
 		}
 
@@ -501,7 +423,7 @@ zfs_dirlook(znode_t *dzp, struct componentname *cnp, vnode_t **vpp, int flags,
 		if (flags & FIGNORECASE)
 			zf |= ZCILOOK;
 
-		error = zfs_dirent_lock(&dl, dzp, cnp, &zp, zf, deflg, rpnp); // OSX
+		error = zfs_dirent_lock(&dl, dzp, name, &zp, zf, deflg, rpnp);
 		if (error == 0) {
 			*vpp = ZTOV(zp);
 			zfs_dirent_unlock(dl);
@@ -798,7 +720,7 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 		if (zp->z_unlinked) {	/* no new links to unlinked zp */
 			ASSERT(!(flag & (ZNEW | ZEXISTS)));
 			mutex_exit(&zp->z_lock);
-			return (ENOENT);
+			return ((ENOENT));
 		}
 		zp->z_links++;
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_LINKS(zfsvfs), NULL,
@@ -888,7 +810,7 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 	znode_t *dzp = dl->dl_dzp;
 	zfsvfs_t *zfsvfs = dzp->z_zfsvfs;
 	vnode_t *vp = ZTOV(zp);
-	int zp_is_dir = (vnode_isdir(vp));
+	int zp_is_dir = vnode_isdir((vp));
 	boolean_t unlinked = B_FALSE;
 	sa_bulk_attr_t bulk[5];
 	uint64_t mtime[2], ctime[2];
@@ -899,11 +821,11 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 
 	if (!(flag & ZRENAMING)) {
 		if (vn_vfswlock(vp))		/* prevent new mounts on zp */
-			return (EBUSY);
+			return ((EBUSY));
 
 		if (vn_ismntpt(vp)) {		/* don't remove mount point */
 			vn_vfsunlock(vp);
-			return (EBUSY);
+			return ((EBUSY));
 		}
 
 		mutex_enter(&zp->z_lock);
@@ -912,9 +834,9 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 			mutex_exit(&zp->z_lock);
 			vn_vfsunlock(vp);
 #ifdef illumos
-			return (EEXIST);
+			return ((EEXIST));
 #else
-			return (ENOTEMPTY);
+			return ((ENOTEMPTY));
 #endif
 		}
 
@@ -1016,7 +938,7 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 	 * In FreeBSD, access checking for creating an EA is being done
 	 * in zfs_setextattr(),
 	 */
-#ifndef __APPLE__
+#ifndef __FreeBSD__
 	if (error = zfs_zaccess(zp, ACE_WRITE_NAMED_ATTRS, 0, B_FALSE, cr))
 		return (error);
 #endif
@@ -1026,7 +948,7 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 		return (error);
 	if (zfs_acl_ids_overquota(zfsvfs, &acl_ids)) {
 		zfs_acl_ids_free(&acl_ids);
-		return (EDQUOT);
+		return ((EDQUOT));
 	}
 
 top:
@@ -1110,15 +1032,15 @@ top:
 	if (!(flags & CREATE_XATTR_DIR)) {
 		zfs_dirent_unlock(dl);
 #ifdef illumos
-		return (ENOENT);
+		return ((ENOENT));
 #else
-		return (ENOATTR);
+		return ((ENOATTR));
 #endif
 	}
 
-	if (vfs_isrdonly(zfsvfs->z_vfs)) {
+	if (vnode_isvroot(zfsvfs->z_vfs)) {
 		zfs_dirent_unlock(dl);
-		return (EROFS);
+		return ((EROFS));
 	}
 
 	/*
@@ -1180,7 +1102,7 @@ zfs_sticky_remove_access(znode_t *zdp, znode_t *zp, cred_t *cr)
 	fowner = zfs_fuid_map_id(zfsvfs, zp->z_uid, cr, ZFS_OWNER);
 
 	if ((uid = crgetuid(cr)) == downer || uid == fowner ||
-	    (vnode_isreg(ZTOV(zp))&&
+	    (vnode_isreg(ZTOV(zp)) &&
 	    zfs_zaccess(zp, ACE_WRITE_DATA, 0, B_FALSE, cr) == 0))
 		return (0);
 	else

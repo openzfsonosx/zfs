@@ -226,6 +226,7 @@ zfs_vnop_access(
         } */ *ap)
 {
 	int error;
+    printf("vnop_access\n");
 #if 0 // FIXME
 	int mode = ap->a_mode;
 
@@ -250,6 +251,8 @@ zfs_vnop_lookup(
 	struct componentname *cnp = ap->a_cnp;
 	DECLARE_CRED(ap);
 	int error;
+
+    printf("vnop_lookup\n");
 
     /*
       extern int    zfs_lookup ( vnode_t *dvp, char *nm, vnode_t **vpp,
@@ -281,6 +284,7 @@ zfs_vnop_create(
 	vcexcl_t excl;
     int mode=0; // FIXME
 
+    printf("vnop_create\n");
     /*
       extern int    zfs_create ( vnode_t *dvp, char *name, vattr_t *vap,
                                  int excl, int mode, vnode_t **vpp,
@@ -303,6 +307,7 @@ zfs_vnop_remove(
         } */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    printf("vnop_remove\n");
 
     /*
       extern int    zfs_remove ( vnode_t *dvp, char *name,
@@ -322,7 +327,12 @@ zfs_vnop_mkdir(
 	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    printf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
+#if 1 // Let's deny OSX fseventd for now */
+    if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".fseventsd"))
+        return EINVAL;
+#endif
     /*
       extern int    zfs_mkdir  ( vnode_t *dvp, char *dirname, vattr_t *vap,
                            vnode_t **vpp, cred_t *cr,
@@ -342,6 +352,7 @@ zfs_vnop_rmdir(
 	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    printf("vnop_rmdir\n");
 
     /*
       extern int    zfs_rmdir  ( vnode_t *dvp, char *name, vnode_t *cwd,
@@ -418,6 +429,7 @@ zfs_vnop_getattr(
 	 *     where we fill in other stuff from the znode's dbuf and objset
 	 *     which doesn't require the znode lock.
 	 */
+    printf("vnop_getattr\n");
 
 	return (zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct));
 }
@@ -432,6 +444,7 @@ zfs_vnop_setattr(
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
 
+    printf("vnop_setattr\n");
 	return (zfs_setattr(ap->a_vp, ap->a_vap, /*flag*/0, cr, ct));
 }
 
@@ -449,6 +462,7 @@ zfs_vnop_rename(
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
 	int error;
+    printf("vnop_rename\n");
 
     /*
       extern int zfs_rename(vnode_t *sdvp, char *snm, vnode_t *tdvp, char *tnm,
@@ -476,6 +490,7 @@ zfs_vnop_symlink(
 {
 	DECLARE_CRED(ap);
 	int error;
+    printf("vnop_symlink\n");
 
     /*
       extern int    zfs_symlink( vnode_t *dvp, vnode_t **vpp, char *name,
@@ -501,6 +516,7 @@ zfs_vnop_readlink(
 	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    printf("vnop_readlink\n");
 
     /*
       extern int    zfs_readlink(vnode_t *vp, uio_t *uio,
@@ -519,6 +535,7 @@ zfs_vnop_link(
 	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    printf("vnop_link\n");
 
 	/* XXX Translate this inside zfs_link() instead. */
 	if (vnode_mount(ap->a_vp) != vnode_mount(ap->a_tdvp))
@@ -1111,10 +1128,12 @@ void getnewvnode_drop_reserve()
  * This function uses zp->z_zfsvfs, zp->z_mode, zp->z_flags, zp->z_id
  * and sets zp->z_vnode, zp->z_vid
  */
-int zfs_znode_getvnode(znode_t *zp, struct vnode **vpp)
+int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 {
 	struct vnode_fsparam vfsp;
-    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+    printf("getvnode zp %p with vpp %p zfsvfs %p vfs %p\n",
+           zp, vpp, zfsvfs, zfsvfs->z_vfs);
 
 	bzero(&vfsp, sizeof (vfsp));
 	vfsp.vnfs_str = "zfs";
@@ -1189,7 +1208,7 @@ int zfs_znode_getvnode(znode_t *zp, struct vnode **vpp)
     /*
      * FreeBSD version does not hold a ref on the new vnode
      */
-    vnode_put(*vpp);
+    //vnode_put(*vpp);
     return 0;
 }
 

@@ -198,12 +198,19 @@ vfs_has_feature(vfs_t *vfsp, vfs_feature_t vfsft)
 }
 
 struct vnode *
-dnlc_lookup(struct vnode *dvp, void *nameptr)
+dnlc_lookup(struct vnode *dvp, char *name)
 {
-	struct componentname *cnp = (struct componentname *)nameptr;
+    struct componentname cn;
+    return DNLC_NO_VNODE;
+	bzero(&cn, sizeof (cn));
+	cn.cn_nameiop = LOOKUP;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_nameptr = (char *)name;
+	cn.cn_namelen = strlen(name);
+
 	struct vnode *vp;
 
-	switch(cache_lookup(dvp, &vp, cnp)) {
+	switch(cache_lookup(dvp, &vp, &cn)) {
 	case -1:
 		break;
 	case ENOENT:
@@ -226,8 +233,15 @@ void dnlc_remove(struct vnode *vp, char *name)
     return;
 }
 
+
+/*
+ *
+ * Disabled for now, I panic
+ *
+ */
 void dnlc_update(struct vnode *vp, char *name, struct vnode *tp)
 {
+    return ;
     // If tp is NULL, it is a negative-cache entry
     struct componentname cn;
 

@@ -1937,6 +1937,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		 * If the attribute isn't there, attempt to create it.
 		 */
 		zfsvfs = vfs_fsprivate(vfsp);
+        if (0)
 		if (zfsvfs->z_mtime_vp == NULL) {
 			vnode_t *rvp;
 			vnode_t *xdvp = NULLVP;
