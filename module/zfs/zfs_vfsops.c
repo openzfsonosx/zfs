@@ -1353,6 +1353,8 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 		error = zfsvfs_setup(zfsvfs, B_TRUE);
 	}
 
+
+	vfs_mountedfrom(vfsp, osname);
 #ifdef __APPLE__
 	/*
 	 * Record the mount time (for Spotlight)
@@ -1360,7 +1362,6 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	microtime(&tv);
 	zfsvfs->z_mount_time = tv.tv_sec;
 #else
-	vfs_mountedfrom(vfsp, osname);
 	/* Grab extra reference. */
 	VERIFY(VFS_ROOT(vfsp, LK_EXCLUSIVE, &vp) == 0);
 	VOP_UNLOCK(vp, 0);
@@ -1937,7 +1938,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		 * If the attribute isn't there, attempt to create it.
 		 */
 		zfsvfs = vfs_fsprivate(vfsp);
-        if (0)
 		if (zfsvfs->z_mtime_vp == NULL) {
 			vnode_t *rvp;
 			vnode_t *xdvp = NULLVP;
@@ -2013,6 +2013,8 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 {
     zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 	uint64_t refdbytes, availbytes, usedobjs, availobjs;
+
+    printf("vfs_getattr\n");
 
 #ifndef __APPLE__
 	statp->f_version = STATFS_VERSION;

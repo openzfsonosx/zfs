@@ -252,19 +252,21 @@ zfs_vnop_lookup(
 	DECLARE_CRED(ap);
 	int error;
 
-    printf("vnop_lookup\n");
+    printf("+vnop_lookup '%s'\n", cnp->cn_nameptr);
 
     /*
       extern int    zfs_lookup ( vnode_t *dvp, char *nm, vnode_t **vpp,
                                  struct componentname *cnp, int nameiop,
                                  cred_t *cr, kthread_t *td, int flags);
     */
+
 	error = zfs_lookup(ap->a_dvp, cnp->cn_nameptr, ap->a_vpp,
                        cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
     /* flags can be LOOKUP_XATTR | FIGNORECASE */
 
 	/* XXX FreeBSD has some namecache stuff here. */
 
+    printf("-vnop_lookup %d\n", error);
 	return (error);
 }
 
@@ -373,6 +375,7 @@ zfs_vnop_readdir(
 		vfs_context_t a_context;
 	} */ *ap)
 {
+    int error;
 	DECLARE_CRED(ap);
 	/*
 	 * XXX This interface needs vfs_has_feature.
@@ -385,9 +388,11 @@ zfs_vnop_readdir(
       extern int   zfs_readdir( vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp,
                                 int flags, int *a_numdirent);
     */
+    printf("+readdir\n");
 	*ap->a_numdirent = 0;
-	return (zfs_readdir(ap->a_vp, ap->a_uio, cr, ap->a_eofflag,
-                        /*flags*/0, ap->a_numdirent));
+	error = zfs_readdir(ap->a_vp, ap->a_uio, cr, ap->a_eofflag,
+                        ap->a_flags, ap->a_numdirent);
+    printf("-readdir %d (nument %d)\n", error, *ap->a_numdirent);
 }
 
 static int
@@ -421,6 +426,7 @@ zfs_vnop_getattr(
 		vfs_context_t a_context;
 	} */ *ap)
 {
+    int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
 	/*
 	 * XXX This one requires modifying zfs_getattr(), unfortunately.
@@ -429,9 +435,17 @@ zfs_vnop_getattr(
 	 *     where we fill in other stuff from the znode's dbuf and objset
 	 *     which doesn't require the znode lock.
 	 */
-    printf("vnop_getattr\n");
+    printf("+vnop_getattr zp %p vp %p\n",
+           VTOZ(ap->a_vp), ap->a_vp);
 
-	return (zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct));
+	error = zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct);
+
+    if (error) return error;
+
+    error = zfs_getattr_znode_unlocked(ap->a_vp, ap->a_vap);
+
+    printf("-vnop_getattr %d\n",error);
+    return error;
 }
 
 static int
@@ -620,6 +634,7 @@ zfs_vnop_inactive(
 	vnode_t *vp = ap->a_vp;
 	DECLARE_CRED(ap);
 
+    printf("vnop_inactive\n");
 	zfs_inactive(vp, cr, NULL);
 	return (0);
 }
@@ -636,6 +651,8 @@ zfs_vnop_reclaim(
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
 	ASSERT(zp != NULL);
+
+    printf("vnop_reclaim\n");
 
 	/* Destroy the vm object and flush associated pages. */
 #ifndef __APPLE__

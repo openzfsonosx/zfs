@@ -1196,6 +1196,8 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 	int locked;
 	int err;
 
+    printf("+zget %d\n", obj_num);
+
 	td = curthread;
 	getnewvnode_reserve(1);
 again:

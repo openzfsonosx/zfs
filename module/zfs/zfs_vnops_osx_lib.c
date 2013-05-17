@@ -35,7 +35,7 @@ typedef uint64_t vfs_feature_t;
 	( VNODE_ATTR_va_mode |		\
 	  VNODE_ATTR_va_uid |		\
 	  VNODE_ATTR_va_gid |		\
-	  VNODE_ATTR_va_fsid |		\
+      /* VNODE_ATTR_va_fsid |*/ \
 	  VNODE_ATTR_va_fileid |	\
 	  VNODE_ATTR_va_nlink |		\
 	  VNODE_ATTR_va_data_size |	\
@@ -149,39 +149,105 @@ zfs_getattr_znode_locked(vattr_t *vap, znode_t *zp, cred_t *cr)
 }
 
 int
-zfs_getattr_znode_unlocked(vattr_t *vap, struct vnode *vp)
+zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 {
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	//znode_phys_t *pzp = zp->z_phys;
-	int error;
+	int error = 0;
+	uint64_t	parent;
+    zfs_acl_phys_t acl;
 
-	if (VATTR_IS_ACTIVE(vap, va_data_alloc) ||
-	    VATTR_IS_ACTIVE(vap, va_total_alloc)) {
-		uint32_t blocksize;
-		u_longlong_t nblks;
+    printf("getattr_osx\n");
 
-        sa_object_size(zp->z_sa_hdl, &blocksize, &nblks);
+	ZFS_ENTER(zfsvfs);
+	/*
+	 * On Mac OS X we always export the root directory id as 2
+	 */
+	vap->va_fileid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_id;
+	vap->va_nlink = zp->z_links;
+	vap->va_data_size = zp->z_size;
+	vap->va_total_size = zp->z_size;
+	vap->va_gen = zp->z_gen;
+
+	/*
+	 * For Carbon compatibility, pretend to support this legacy/unused attribute
+	 */
+	if (VATTR_IS_ACTIVE(vap, va_backup_time)) {
+		vap->va_backup_time.tv_sec = 0;
+		vap->va_backup_time.tv_nsec = 0;
+		VATTR_SET_SUPPORTED(vap, va_backup_time);
+	}
+	vap->va_flags = zfs_getbsdflags(zp);
+	/*
+	 * On Mac OS X we always export the root directory id as 2
+     * and its parent as 1
+	 */
+	error = sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+                      &parent, sizeof (parent));
+
+    if (!error) {
+        if (zp->z_id == zfsvfs->z_root)
+            vap->va_parentid = 1;
+        else if (parent == zfsvfs->z_root)
+            vap->va_parentid = 2;
+        else
+            vap->va_parentid = parent;
+    }
+
+	vap->va_iosize = zp->z_blksz ? zp->z_blksz : zfsvfs->z_max_blksz;
+
+	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
+
+	/* Don't include '.' and '..' in the number of entries */
+	if (VATTR_IS_ACTIVE(vap, va_nchildren) && vnode_isdir(vp)) {
+		VATTR_RETURN(vap, va_nchildren, vap->va_nlink - 2);
+        printf("nchildren %d\n", vap->va_nlink - 2);
+    //VATTR_RETURN(vap, va_nchildren, zp->z_size - 2);
+    }
+
+	if (VATTR_IS_ACTIVE(vap, va_acl)) {
+        printf("want acl\n");
+        if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
+                      &acl, sizeof (zfs_acl_phys_t))) {
+            //if (zp->z_acl.z_acl_count == 0) {
+			vap->va_acl = (kauth_acl_t) KAUTH_FILESEC_NONE;
+		} else {
+			if ((error = zfs_getacl(zp, &vap->va_acl, B_TRUE, NULL))) {
+                printf("zfs_getacl returned error %d\n", error);
+                error = 0;
+				//ZFS_EXIT(zfsvfs);
+				//return (error);
+			}
+		}
+		VATTR_SET_SUPPORTED(vap, va_acl);
+		/* va_acl implies that va_uuuid and va_guuid are also supported. */
+		VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
+		VATTR_RETURN(vap, va_guuid, kauth_null_guid);
+    }
+
+	if (VATTR_IS_ACTIVE(vap, va_data_alloc) || VATTR_IS_ACTIVE(vap, va_total_alloc)) {
+		uint32_t  blksize;
+		u_longlong_t  nblks;
+        printf("setting total alloc\n");
+        sa_object_size(zp->z_sa_hdl, &blksize, &nblks);
 		vap->va_data_alloc = (uint64_t)512LL * (uint64_t)nblks;
 		vap->va_total_alloc = vap->va_data_alloc;
-		vap->va_supported |= VNODE_ATTR_va_data_alloc;
-		vap->va_supported |= VNODE_ATTR_va_total_alloc;
+		vap->va_supported |= VNODE_ATTR_va_data_alloc |
+					VNODE_ATTR_va_total_alloc;
 	}
-	if (zp->z_blksz == 0) {
-		/*
-		 * Block size hasn't been set; suggest maximal I/O transfers.
-		 */
-		vap->va_iosize = zfsvfs->z_max_blksz;
-    }
-#if 0
+
 	if (VATTR_IS_ACTIVE(vap, va_name) && !vnode_isvroot(vp)) {
-		error = zap_value_search(zfsvfs->z_os, pzp->zp_parent, zp->z_id,
-		    ZFS_DIRENT_OBJ(-1ULL), vap->va_name);
-		if (error == 0)
+		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+			 	    ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
 			VATTR_SET_SUPPORTED(vap, va_name);
+        printf("va_name set '%s'\n", vap->va_name);
 	}
-#endif
-	return (0);
+
+	vap->va_iosize = zp->z_blksz;
+
+	ZFS_EXIT(zfsvfs);
+	return (error);
 }
 
 boolean_t
@@ -201,7 +267,7 @@ struct vnode *
 dnlc_lookup(struct vnode *dvp, char *name)
 {
     struct componentname cn;
-    return DNLC_NO_VNODE;
+    //return DNLC_NO_VNODE;
 	bzero(&cn, sizeof (cn));
 	cn.cn_nameiop = LOOKUP;
 	cn.cn_flags = ISLASTCN;
@@ -241,9 +307,12 @@ void dnlc_remove(struct vnode *vp, char *name)
  */
 void dnlc_update(struct vnode *vp, char *name, struct vnode *tp)
 {
-    return ;
+    //return ;
     // If tp is NULL, it is a negative-cache entry
     struct componentname cn;
+
+    // OSX panics if you give empty(non-NULL) name
+    if (!name || !*name || !strlen(name)) return;
 
 	bzero(&cn, sizeof (cn));
 	cn.cn_nameiop = CREATE;
@@ -251,7 +320,7 @@ void dnlc_update(struct vnode *vp, char *name, struct vnode *tp)
 	cn.cn_nameptr = (char *)name;
 	cn.cn_namelen = strlen(name);
 
-    cache_enter(vp, tp, &cn);
+    cache_enter(vp, tp==DNLC_NO_VNODE?NULL:tp, &cn);
     return;
 }
 
@@ -451,7 +520,7 @@ top:
 	dmu_tx_hold_zap(tx, dzp->z_id, TRUE, (char *)name);
 
 #if 0 // FIXME
-	if (dzp->z_phys->zp_flags & ZFS_INHERIT_ACE) {
+	if (dzp->z_phys->z_flags & ZFS_INHERIT_ACE) {
 		dmu_tx_hold_write(tx, DMU_NEW_OBJECT, 0, SPA_MAXBLOCKSIZE);
 	}
 #endif

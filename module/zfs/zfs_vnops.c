@@ -2548,6 +2548,9 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			}
 			break;
 		}
+
+        //printf("readdir '%s' ext %d\n", zap.za_name, extended);
+
 		if (extended) {
 			/*
 			 * Add extended flag entry:
