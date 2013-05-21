@@ -50,7 +50,6 @@
 #include <sys/zfs_context.h>
 #include <sys/zfs_vfsops.h>
 #include <sys/sysctl.h>
-//#include <maczfs/kernel/maczfs_kernel.h>
 #endif /* __APPLE__ */
 
 #ifndef __APPLE__
@@ -61,21 +60,20 @@
 #include <sys/zfs_znode.h>
 #include <sys/zfs_dir.h>
 
-#ifdef __APPLE__
 #include <sys/zfs_ctldir.h>
 #include <sys/refcount.h>
-#else
 #include <sys/zil.h>
 #include <sys/fs/zfs.h>
 #include <sys/dmu.h>
 #include <sys/dsl_prop.h>
-#endif /* __APPLE__ */
 
 #include <sys/dmu_objset.h>
 #include <sys/dsl_dataset.h>
 #include <sys/dsl_deleg.h>
 #include <sys/spa.h>
 #include <sys/zap.h>
+
+#include <zfs_comutil.h>
 
 #ifndef __APPLE__
 #include <sys/varargs.h>
@@ -255,7 +253,7 @@ extern int zfs_obtain_xattr(znode_t *, const char *, mode_t, cred_t *, vnode_t *
  * This is necessary to prevent our kext
  * from being unloaded after a umount -f
  */
-SInt32	zfs_active_fs_count = 0;
+uint32_t	zfs_active_fs_count = 0;
 
 extern void zfs_ioctl_init(void);
 extern void zfs_ioctl_fini(void);
@@ -269,7 +267,6 @@ extern void zfs_ioctl_fini(void);
 int
 zfs_vfs_sync(struct mount *mp, __unused int waitfor, __unused vfs_context_t context)
 {
-	zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 
     spa_sync_allpools();
 
@@ -335,9 +332,9 @@ zfs_create_unique_device(dev_t *dev)
 static void
 atime_changed_cb(void *arg, uint64_t newval)
 {
+#if 0
 	zfsvfs_t *zfsvfs = arg;
 
-#if 0
 	if (newval == TRUE) {
 		zfsvfs->z_atime = TRUE;
 		//zfsvfs->z_vfs->vfs_flag &= ~MNT_NOATIME;
@@ -355,8 +352,8 @@ atime_changed_cb(void *arg, uint64_t newval)
 static void
 xattr_changed_cb(void *arg, uint64_t newval)
 {
-	zfsvfs_t *zfsvfs = arg;
 #if 0
+	zfsvfs_t *zfsvfs = arg;
 
 	if (newval == TRUE) {
 		/* XXX locking on vfs_flag? */
@@ -392,8 +389,8 @@ blksz_changed_cb(void *arg, uint64_t newval)
 static void
 readonly_changed_cb(void *arg, uint64_t newval)
 {
-	zfsvfs_t *zfsvfs = arg;
 #if 0
+	zfsvfs_t *zfsvfs = arg;
 	if (newval) {
 		/* XXX locking on vfs_flag? */
 		//zfsvfs->z_vfs->vfs_flag |= VFS_RDONLY;
@@ -411,8 +408,8 @@ readonly_changed_cb(void *arg, uint64_t newval)
 static void
 setuid_changed_cb(void *arg, uint64_t newval)
 {
-	zfsvfs_t *zfsvfs = arg;
 #if 0
+	zfsvfs_t *zfsvfs = arg;
 	if (newval == FALSE) {
 		//zfsvfs->z_vfs->vfs_flag |= VFS_NOSETUID;
 		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_SETUID);
@@ -428,8 +425,8 @@ setuid_changed_cb(void *arg, uint64_t newval)
 static void
 exec_changed_cb(void *arg, uint64_t newval)
 {
-	zfsvfs_t *zfsvfs = arg;
 #if 0
+	zfsvfs_t *zfsvfs = arg;
 	if (newval == FALSE) {
 		//zfsvfs->z_vfs->vfs_flag |= VFS_NOEXEC;
 		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_EXEC);
@@ -453,8 +450,8 @@ exec_changed_cb(void *arg, uint64_t newval)
 static void
 nbmand_changed_cb(void *arg, uint64_t newval)
 {
-	zfsvfs_t *zfsvfs = arg;
 #if 0
+	zfsvfs_t *zfsvfs = arg;
 	if (newval == FALSE) {
 		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_NBMAND);
 		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_NONBMAND, NULL, 0);
@@ -476,7 +473,7 @@ snapdir_changed_cb(void *arg, uint64_t newval)
 static void
 vscan_changed_cb(void *arg, uint64_t newval)
 {
-	zfsvfs_t *zfsvfs = arg;
+	//zfsvfs_t *zfsvfs = arg;
 
 	//zfsvfs->z_vscan = newval;
 }
@@ -786,6 +783,8 @@ zfs_userquota_prop_to_obj(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type)
 		return (zfsvfs->z_userquota_obj);
 	case ZFS_PROP_GROUPQUOTA:
 		return (zfsvfs->z_groupquota_obj);
+    default:
+        break;
 	}
 	return (0);
 }
@@ -1146,7 +1145,6 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 	 * operations out since we closed the ZIL.
 	 */
 	if (mounting) {
-		boolean_t readonly;
 
 		/*
 		 * During replay we remove the read only flag to
@@ -1255,11 +1253,12 @@ zfs_set_fuid_feature(zfsvfs_t *zfsvfs)
 static int
 zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx)
 {
-	uint64_t recordsize, fsid_guid;
 	int error = 0;
 	zfsvfs_t *zfsvfs;
+#ifndef __APPLE__
+	uint64_t recordsize, fsid_guid;
 	vnode_t *vp;
-#ifdef __APPLE__
+#else
 	struct timeval tv;
 #endif
 
@@ -1340,7 +1339,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 
 		atime_changed_cb(zfsvfs, B_FALSE);
 		readonly_changed_cb(zfsvfs, B_TRUE);
-		if (error = dsl_prop_get_integer(osname, "xattr", &pval, NULL))
+		if ((error = dsl_prop_get_integer(osname, "xattr", &pval, NULL)))
 			goto out;
 		xattr_changed_cb(zfsvfs, pval);
 		zfsvfs->z_issnap = B_TRUE;
@@ -1729,7 +1728,7 @@ getpoolname(const char *osname, char *poolname)
 	if (p == NULL) {
 		if (strlen(osname) >= MAXNAMELEN)
 			return (ENAMETOOLONG);
-		(void) strcpy(poolname, osname);
+		(void) strlcpy(poolname, osname, MAXNAMELEN);
 	} else {
 		if (p - osname >= MAXNAMELEN)
 			return (ENAMETOOLONG);
@@ -2297,9 +2296,9 @@ int
 zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 {
     zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
-	kthread_t *td = curthread;
+	//kthread_t *td = (kthread_t *)curthread;
 	objset_t *os;
-	cred_t *cr =  (cred_t *)vfs_context_ucred(context);
+	//cred_t *cr =  (cred_t *)vfs_context_ucred(context);
 	int ret;
 
 #ifndef __APPLE__
@@ -2633,7 +2632,7 @@ zfs_vfs_vptofh(vnode_t *vp, int *fhlenp, unsigned char *fhp, __unused vfs_contex
 	uint64_t	obj_num;
 	uint64_t	zp_gen;
 	int		i;
-	int		error;
+	//int		error;
 
 	if (*fhlenp < sizeof (zfs_zfid_t)) {
 		return (EOVERFLOW);

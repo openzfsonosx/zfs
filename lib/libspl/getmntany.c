@@ -150,11 +150,11 @@ int
 getextmntent(FILE *fp, struct extmnttab *mp, int len)
 {
 	int ret;
-	struct stat64 st;
+	struct stat st;
 
 	ret = getmntent(fp, (struct mnttab *) mp);
 	if (ret == 0) {
-		if (stat64(mp->mnt_mountp, &st) != 0) {
+		if (stat(mp->mnt_mountp, &st) != 0) {
 			mp->mnt_major = 0;
 			mp->mnt_minor = 0;
 			return ret;
@@ -234,7 +234,7 @@ openat64(int dirfd, const char *path, int flags, ...)
 }
 
 int
-fstatat64(int dirfd, const char *path, struct stat64 *statbuf, int flag)
+fstatat64(int dirfd, const char *path, struct stat *statbuf, int flag)
 {
 	int cwdfd, error;
 
@@ -242,9 +242,9 @@ fstatat64(int dirfd, const char *path, struct stat64 *statbuf, int flag)
 		return (-1);
 
 	if (flag == AT_SYMLINK_NOFOLLOW)
-		error = lstat64(path, statbuf);
+		error = lstat(path, statbuf);
 	else
-		error = stat64(path, statbuf);
+		error = stat(path, statbuf);
 
 	chdir_block_end(cwdfd);
 	return (error);

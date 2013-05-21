@@ -194,6 +194,11 @@ extern int  zfs_vfs_vptofh (vnode_t *vp, int *fhlenp, unsigned char *fhp, vfs_co
 extern int  zfs_vfs_sysctl (int *name, u_int namelen, user_addr_t oldp, size_t *oldlenp,  user_addr_t newp, size_t newlen, vfs_context_t context);
 extern int  zfs_vfs_quotactl ( struct mount *mp, int cmds, uid_t uid, caddr_t datap, vfs_context_t context);
 
+extern void zfs_init(void);
+extern void zfs_fini(void);
+
+extern int  zfs_vnode_lock(vnode_t *vp, int flags);
+extern void zfs_freevfs(struct mount *vfsp);
 
 
 #ifdef	__cplusplus

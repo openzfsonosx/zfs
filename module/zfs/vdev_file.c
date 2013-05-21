@@ -30,8 +30,8 @@
 #include <sys/zio.h>
 #include <sys/fs/zfs.h>
 #include <sys/fm/fs/zfs.h>
+#include <sys/vnode.h>
 
-#define vnode_t struct vnode
 
 /*
  * Virtual device vector for files.
@@ -49,15 +49,21 @@ vdev_file_rele(vdev_t *vd)
 	ASSERT(vd->vdev_path != NULL);
 }
 
+#ifdef _KERNEL
+extern int VOP_GETATTR(struct vnode *vp, vattr_t *vap, int flags, void *x3, void *x4);
+#endif
+
 static int
 vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
     uint64_t *ashift)
 {
 	vdev_file_t *vf;
-	vnode_t *vp;
+	struct vnode *vp;
 	vattr_t vattr;
 	int error = 0;
-    vnode_t *rootdir;
+    struct vnode *rootdir;
+
+    printf("vdev_file_open %p\n", vd->vdev_tsd);
 
 	/*
 	 * We must have a pathname, and it must be absolute.
@@ -75,6 +81,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		ASSERT(vd->vdev_reopening);
 		vf = vd->vdev_tsd;
         vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
+        printf("skip to open\n");
 		goto skip_open;
 	}
 
@@ -103,6 +110,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
     */
 
     rootdir = getrootdir();
+    printf("rootdir %p\n", rootdir);
 
     error = vn_openat(vd->vdev_path + 1,
                       UIO_SYSSPACE,
@@ -121,6 +129,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 
 	vf->vf_vnode = vp;
     vf->vf_vid = vnode_vid(vp);
+    printf("assigning vid %d\n", vf->vf_vid);
 
 #ifdef _KERNEL
 	/*
@@ -134,12 +143,17 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 
 #endif
 
+    // This call should probably not be required?
+    vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
+
 skip_open:
 	/*
 	 * Determine the physical size of the file.
 	 */
 	vattr.va_mask = AT_SIZE;
+    //vn_lock(vf->vf_vnode, LK_SHARED | LK_RETRY);
 	error = VOP_GETATTR(vf->vf_vnode, &vattr, 0, kcred, NULL);
+    //VN_UNLOCK(vf->vf_vnode);
 	if (error) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
         vnode_put(vf->vf_vnode);

@@ -52,6 +52,7 @@
 #include <sys/dnode.h>
 #include <sys/fs/zfs.h>
 #include <sys/kidmap.h>
+#include <sys/zfs_vnops.h>
 #endif /* _KERNEL */
 
 #include <sys/dmu.h>
@@ -127,9 +128,11 @@ static int
 zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 {
 	znode_t *zp = buf;
+#ifndef __APPLE__
 	vnode_t *vp;
 	vfs_t *vfsp = arg;
 	int error;
+#endif
 
 	POINTER_INVALIDATE(&zp->z_zfsvfs);
 	ASSERT(!POINTER_IS_VALID(zp->z_zfsvfs));
@@ -139,7 +142,9 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 
         /*
          * OSX can only set v_type in the vnode_create call, so we need
-         * to know now what we will be creating.
+         * to know now what we will be creating. So this call moved further
+         * down. We should consider restoring cache_constructor to the old
+         * automatic method.
          */
 		error = getnewvnode("zfs", arg, &zfs_vnodeops, &vp,
                             IFTOVT((mode_t)zp->z_mode));
@@ -509,13 +514,14 @@ zfs_create_op_tables()
 int
 zfs_create_share_dir(zfsvfs_t *zfsvfs, dmu_tx_t *tx)
 {
+	int error = 0;
+#if 0 // FIXME, uses vnode struct, not ptr
 	zfs_acl_ids_t acl_ids;
 	vattr_t vattr;
 	znode_t *sharezp;
 	struct vnode *vp, *vnode;
 	znode_t *zp;
-	int error = 0;
-#if 0 // FIXME, uses vnode struct, not ptr
+
 	vattr.va_mask = AT_MODE|AT_UID|AT_GID|AT_TYPE;
 	vattr.va_type = VDIR;
 	vattr.va_mode = S_IFDIR|0555;
@@ -673,7 +679,9 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	uint64_t parent;
 	sa_bulk_attr_t bulk[9];
 	int count = 0;
+#ifdef __FreeBSD__
     struct vnodeopv_entry_desc *vops;
+#endif
 
 	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
 	zfs_znode_cache_constructor(zp, zfsvfs->z_parent->z_vfs, 0);
@@ -1193,10 +1201,12 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 	struct vnode		*vp;
 	sa_handle_t	*hdl;
 	struct thread	*td;
+#ifndef __APPLE__
 	int locked;
+#endif
 	int err;
 
-    printf("+zget %d\n", obj_num);
+    printf("+zget %lld\n", obj_num);
 
 	td = curthread;
 	getnewvnode_reserve(1);
@@ -1285,9 +1295,9 @@ again:
 #endif
 	}
 	if (err == 0) {
+#ifndef __APPLE__ /* Already associated with mount from vnode_create */
 		struct vnode *vp = ZTOV(zp);
 
-#ifndef __APPLE__ /* Already associated with mount from vnode_create */
 		err = insmntque(vp, zfsvfs->z_vfs);
 		if (err == 0)
 			VOP_UNLOCK(vp, 0);
@@ -1707,7 +1717,9 @@ static int
 zfs_trunc(znode_t *zp, uint64_t end)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+#ifndef __APPLE__
 	struct vnode *vp = ZTOV(zp);
+#endif
 	dmu_tx_t *tx;
 	rl_t *rl;
 	int error;
@@ -1817,7 +1829,7 @@ zfs_freesp(znode_t *zp, uint64_t off, uint64_t len, int flag, boolean_t log)
 
 	if (MANDLOCK(vp, (mode_t)mode)) {
 		uint64_t length = (len ? len : zp->z_size - off);
-		if (error = chklock(vp, FWRITE, off, length, flag, NULL))
+		if ((error = chklock(vp, FWRITE, off, length, flag, NULL)))
 			return (error);
 	}
 
@@ -1872,8 +1884,6 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	znode_t		*rootzp = NULL;
 #ifndef __APPLE__
 	struct vnode		vnode;
-#else
-    struct vnode *vp;
 #endif
 	vattr_t		vattr;
 	znode_t		*zp;
@@ -2048,10 +2058,10 @@ zfs_grab_sa_handle(objset_t *osp, uint64_t obj, sa_handle_t **hdlp,
 		return (error);
 
 	dmu_object_info_from_db(*db, &doi);
-	if ((doi.doi_bonus_type != DMU_OT_SA &&
-	    doi.doi_bonus_type != DMU_OT_ZNODE) ||
-	    doi.doi_bonus_type == DMU_OT_ZNODE &&
-	    doi.doi_bonus_size < sizeof (znode_phys_t)) {
+	if (((doi.doi_bonus_type != DMU_OT_SA) &&
+         (doi.doi_bonus_type != DMU_OT_ZNODE)) ||
+	    (doi.doi_bonus_type == DMU_OT_ZNODE) &&
+	    (doi.doi_bonus_size < sizeof (znode_phys_t))) {
 		sa_buf_rele(*db, tag);
 		return ((ENOTSUP));
 	}
@@ -2186,7 +2196,7 @@ zfs_obj_to_path_impl(objset_t *osp, uint64_t obj, sa_handle_t *hdl,
 
 		component[0] = '/';
 		if (is_xattrdir) {
-			(void) sprintf(component + 1, "<xattrdir>");
+			(void) snprintf(component + 1, MAXNAMELEN+2, "<xattrdir>");
 		} else {
 			error = zap_value_search(osp, pobj, obj,
 			    ZFS_DIRENT_OBJ(-1ULL), component + 1);

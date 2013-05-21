@@ -795,7 +795,7 @@ zfs_get_pool_handle(const zfs_handle_t *zhp)
 zfs_handle_t *
 zfs_path_to_zhandle(libzfs_handle_t *hdl, char *path, zfs_type_t argtype)
 {
-	struct stat64 statbuf;
+	struct stat statbuf;
 	struct extmnttab entry;
 	int ret;
 
@@ -806,7 +806,7 @@ zfs_path_to_zhandle(libzfs_handle_t *hdl, char *path, zfs_type_t argtype)
 		return (zfs_open(hdl, path, argtype));
 	}
 
-	if (stat64(path, &statbuf) != 0) {
+	if (stat(path, &statbuf) != 0) {
 		(void) fprintf(stderr, "%s: %s\n", path, strerror(errno));
 		return (NULL);
 	}

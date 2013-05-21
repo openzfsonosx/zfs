@@ -19,6 +19,8 @@
 
 #include <sys/fs/zfs.h>
 #include <sys/zfs_znode.h>
+#include <sys/zvol.h>
+#include <sys/zfs_vnops.h>
 
 extern SInt32 zfs_active_fs_count;
 
@@ -34,8 +36,8 @@ extern int
 zfs_vfs_sysctl(int *name, __unused u_int namelen, user_addr_t oldp, size_t *oldlenp,
                user_addr_t newp, size_t newlen, __unused vfs_context_t context)
 {
-	int error;
 #if 0
+	int error;
 	switch(name[0]) {
 	case ZFS_SYSCTL_FOOTPRINT: {
 		zfs_footprint_stats_t *footprint;

@@ -70,9 +70,11 @@ extern int zfsctl_fid(struct vnode *ip, fid_t *fidp);
 
 
 /* zfsctl '.zfs' functions */
-//extern int zfsctl_root_lookup(struct inode *dip, char *name,
-//   struct inode **ipp, int flags, cred_t *cr, int *direntflags,
-//   pathname_t *realpnp);
+extern int zfsctl_root_lookup ( struct vnode *dvp,char *nm,struct vnode **vpp,
+                                pathname_t *pnp, int flags,struct vnode *rdir,
+                                cred_t *cr, caller_context_t *ct,
+                                int *direntflags, pathname_t *realpnp);
+extern vnode_t *zfsctl_root(znode_t *zp);
 
 /* zfsctl '.zfs/snapshot' functions */
 #if 0

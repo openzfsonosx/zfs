@@ -191,6 +191,9 @@ int dsl_pool_open_special_dir(dsl_pool_t *dp, const char *name, dsl_dir_t **);
 txg_history_t *dsl_pool_txg_history_add(dsl_pool_t *dp, uint64_t txg);
 txg_history_t *dsl_pool_txg_history_get(dsl_pool_t *dp, uint64_t txg);
 void dsl_pool_txg_history_put(txg_history_t *th);
+void dsl_pool_config_enter(dsl_pool_t *dp, void *tag);
+void dsl_pool_config_exit(dsl_pool_t *dp, void *tag);
+boolean_t dsl_pool_config_held(dsl_pool_t *dp);
 
 #ifdef	__cplusplus
 }

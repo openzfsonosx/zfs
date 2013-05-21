@@ -168,12 +168,12 @@ zfs_fuid_table_destroy(avl_tree_t *idx_tree, avl_tree_t *domain_tree)
 	void *cookie;
 
 	cookie = NULL;
-	while (domnode = avl_destroy_nodes(domain_tree, &cookie))
+	while ((domnode = avl_destroy_nodes(domain_tree, &cookie)))
 		ksiddomain_rele(domnode->f_ksid);
 
 	avl_destroy(domain_tree);
 	cookie = NULL;
-	while (domnode = avl_destroy_nodes(idx_tree, &cookie))
+	while ((domnode = avl_destroy_nodes(idx_tree, &cookie)))
 		kmem_free(domnode, sizeof (fuid_domain_t));
 	avl_destroy(idx_tree);
 }
@@ -505,8 +505,6 @@ zfs_fuid_create_cred(zfsvfs_t *zfsvfs, zfs_fuid_type_t type,
 	const char	*domain;
 	uid_t		id;
 
-    printf("+zfs_fuid_create_cred\n");
-
 	VERIFY(type == ZFS_OWNER || type == ZFS_GROUP);
 
 	ksid = crgetsid(cr, (type == ZFS_OWNER) ? KSID_OWNER : KSID_GROUP);
@@ -535,8 +533,6 @@ zfs_fuid_create_cred(zfsvfs_t *zfsvfs, zfs_fuid_type_t type,
 	domain = ksid_getdomain(ksid);
 
 	idx = zfs_fuid_find_by_domain(zfsvfs, domain, &kdomain, B_TRUE);
-
-    printf("create_cred before node_add\n");
 
 	zfs_fuid_node_add(fuidp, kdomain, rid, idx, id, type);
 
@@ -567,8 +563,6 @@ zfs_fuid_create(zfsvfs_t *zfsvfs, uint64_t id, cred_t *cr,
 	uint64_t idx = 0;
 	zfs_fuid_t *zfuid = NULL;
 	zfs_fuid_info_t *fuidp = NULL;
-
-    printf("+zfs_fuid_create: %u\n", id);
 
 	/*
 	 * If POSIX ID, or entry is already a FUID then
@@ -634,7 +628,6 @@ zfs_fuid_create(zfsvfs_t *zfsvfs, uint64_t id, cred_t *cr,
 
 	idx = zfs_fuid_find_by_domain(zfsvfs, domain, &kdomain, B_TRUE);
 
-    printf("create before node_add\n");
 	if (!zfsvfs->z_replay)
 		zfs_fuid_node_add(fuidpp, kdomain,
 		    rid, idx, id, type);
@@ -666,13 +659,11 @@ zfs_fuid_info_alloc(void)
 {
 	zfs_fuid_info_t *fuidp;
 
-    printf("fuid info alloc!\n");
 	fuidp = kmem_zalloc(sizeof (zfs_fuid_info_t), KM_SLEEP);
 	list_create(&fuidp->z_domains, sizeof (zfs_fuid_domain_t),
 	    offsetof(zfs_fuid_domain_t, z_next));
 	list_create(&fuidp->z_fuids, sizeof (zfs_fuid_t),
 	    offsetof(zfs_fuid_t, z_next));
-    printf("fuid info alloc=%p\n", fuidp);
 	return (fuidp);
 }
 

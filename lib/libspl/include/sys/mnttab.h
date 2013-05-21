@@ -80,6 +80,6 @@ extern int openat64(int, const char *, int, ...);
 #define	AT_SYMLINK_NOFOLLOW	0x100
 #define	AT_REMOVEDIR		0x200
 #define	AT_SYMLINK_FOLLOW	0x400
-extern int fstatat64(int, const char *, struct stat64 *, int);
+extern int fstatat64(int, const char *, struct stat *, int);
 
 #endif

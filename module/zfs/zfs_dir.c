@@ -154,9 +154,9 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 	/*
 	 * Verify that we are not trying to lock '.', '..', or '.zfs'
 	 */
-	if (name[0] == '.' &&
-	    (name[1] == '\0' || (name[1] == '.' && name[2] == '\0')) ||
-	    zfs_has_ctldir(dzp) && strcmp(name, ZFS_CTLDIR_NAME) == 0)
+	if ((name[0] == '.' &&
+         ((name[1] == '\0') || (name[1] == '.' && name[2] == '\0'))) ||
+	    zfs_has_ctldir(dzp) && (strcmp(name, ZFS_CTLDIR_NAME) == 0))
 		return ((EEXIST));
 
 	/*
@@ -941,7 +941,9 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 	int error;
 	zfs_acl_ids_t acl_ids;
 	boolean_t fuid_dirtied;
+#ifndef __APPLE__
 	uint64_t parent;
+#endif
 
 	*xvpp = NULL;
 
@@ -950,7 +952,7 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 	 * in zfs_setextattr(),
 	 */
 #ifndef __FreeBSD__
-	if (error = zfs_zaccess(zp, ACE_WRITE_NAMED_ATTRS, 0, B_FALSE, cr))
+	if ((error = zfs_zaccess(zp, ACE_WRITE_NAMED_ATTRS, 0, B_FALSE, cr)))
 		return (error);
 #endif
 
@@ -1049,7 +1051,7 @@ top:
 #endif
 	}
 
-	if (vnode_isvroot(zfsvfs->z_vfs)) {
+	if (vfs_isrdonly(zfsvfs->z_vfs)) {
 		zfs_dirent_unlock(dl);
 		return ((EROFS));
 	}

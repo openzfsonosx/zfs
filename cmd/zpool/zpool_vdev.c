@@ -373,14 +373,14 @@ is_whole_disk(const char *path)
  */
 static int
 is_shorthand_path(const char *arg, char *path,
-                  struct stat64 *statbuf, boolean_t *wholedisk)
+                  struct stat *statbuf, boolean_t *wholedisk)
 {
 	int error;
 
 	error = zfs_resolve_shortname(arg, path, MAXPATHLEN);
 	if (error == 0) {
 		*wholedisk = is_whole_disk(path);
-		if (*wholedisk || (stat64(path, statbuf) == 0))
+		if (*wholedisk || (stat(path, statbuf) == 0))
 			return (0);
 	}
 
@@ -404,7 +404,7 @@ static nvlist_t *
 make_leaf_vdev(nvlist_t *props, const char *arg, uint64_t is_log)
 {
 	char path[MAXPATHLEN];
-	struct stat64 statbuf;
+	struct stat statbuf;
 	nvlist_t *vdev = NULL;
 	char *type = NULL;
 	boolean_t wholedisk = B_FALSE;
@@ -431,7 +431,7 @@ make_leaf_vdev(nvlist_t *props, const char *arg, uint64_t is_log)
 		}
 
 		wholedisk = is_whole_disk(path);
-		if (!wholedisk && (stat64(path, &statbuf) != 0)) {
+		if (!wholedisk && (stat(path, &statbuf) != 0)) {
 			(void) fprintf(stderr,
 			    gettext("cannot open '%s': %s\n"),
 			    path, strerror(errno));
@@ -611,7 +611,7 @@ get_replication(nvlist_t *nvroot, boolean_t fatal)
 			for (c = 0; c < children; c++) {
 				nvlist_t *cnv = child[c];
 				char *path;
-				struct stat64 statbuf;
+				struct stat statbuf;
 				uint64_t size = -1ULL;
 				char *childtype;
 				int fd, err;
@@ -681,10 +681,10 @@ get_replication(nvlist_t *nvroot, boolean_t fatal)
 				 * this device altogether.
 				 */
 				if ((fd = open(path, O_RDONLY)) >= 0) {
-					err = fstat64(fd, &statbuf);
+					err = fstat(fd, &statbuf);
 					(void) close(fd);
 				} else {
-					err = stat64(path, &statbuf);
+					err = stat(path, &statbuf);
 				}
 
 				if (err != 0 ||
@@ -919,7 +919,7 @@ make_disks(zpool_handle_t *zhp, nvlist_t *nv)
 	char devpath[MAXPATHLEN];
 	char udevpath[MAXPATHLEN];
 	uint64_t wholedisk;
-	struct stat64 statbuf;
+	struct stat statbuf;
 	int ret;
 
 	verify(nvlist_lookup_string(nv, ZPOOL_CONFIG_TYPE, &type) == 0);
@@ -966,7 +966,7 @@ make_disks(zpool_handle_t *zhp, nvlist_t *nv)
 		(void) zfs_append_partition(udevpath, MAXPATHLEN);
 
 		if ((strncmp(udevpath, UDISK_ROOT, strlen(UDISK_ROOT)) == 0) &&
-		    (lstat64(udevpath, &statbuf) == 0) &&
+		    (lstat(udevpath, &statbuf) == 0) &&
 		    S_ISLNK(statbuf.st_mode))
 			(void) unlink(udevpath);
 

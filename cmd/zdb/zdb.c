@@ -1757,7 +1757,7 @@ static void
 dump_cachefile(const char *cachefile)
 {
 	int fd;
-	struct stat64 statbuf;
+	struct stat statbuf;
 	char *buf;
 	nvlist_t *config;
 
@@ -1767,7 +1767,7 @@ dump_cachefile(const char *cachefile)
 		exit(1);
 	}
 
-	if (fstat64(fd, &statbuf) != 0) {
+	if (fstat(fd, &statbuf) != 0) {
 		(void) printf("failed to stat '%s': %s\n", cachefile,
 		    strerror(errno));
 		exit(1);

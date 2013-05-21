@@ -82,6 +82,32 @@ extern int    zfs_readlink(vnode_t *vp, uio_t *uio,
                            cred_t *cr, caller_context_t *ct);
 extern int    zfs_link   ( vnode_t *tdvp, vnode_t *svp, char *name,
                            cred_t *cr, caller_context_t *ct, int flags);
+extern int    zfs_access ( vnode_t *vp, int mode, int flag, cred_t *cr,
+                           caller_context_t *ct);
+extern void   zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct);
+extern int    zfs_space  ( vnode_t *vp, int cmd, struct flock *bfp, int flag,
+                           offset_t offset, cred_t *cr, caller_context_t *ct);
+extern int    zfs_setsecattr(vnode_t *vp, vsecattr_t *vsecp, int flag,
+                             cred_t *cr, caller_context_t *ct);
+
+/* zfs_vops_osx.c calls */
+extern int    zfs_znode_getvnode( znode_t *zp, zfsvfs_t *zfsvfs,
+                                  struct vnode **vpp);
+extern void   getnewvnode_reserve( int num );
+extern void   getnewvnode_drop_reserve( void );
+extern int    zfs_vfsops_init(void);
+extern int    zfs_vfsops_fini(void);
+
+/* zfs_vnops_osx_lib calls */
+extern int    zfs_ioflags( int ap_ioflag );
+extern int    zfs_getattr_znode_unlocked ( struct vnode *vp, vattr_t *vap );
+extern int    pn_alloc   ( pathname_t *p );
+extern int    pn_free    ( pathname_t *p );
+extern int    ace_trivial_common(void *acep, int aclcnt,
+                                 uint64_t (*walk)(void *, uint64_t, int aclcnt,
+                                         uint16_t *, uint16_t *, uint32_t *));
+extern void   acl_trivial_access_masks(mode_t mode, boolean_t isdir,
+                                       trivial_acl_t *masks);
 
 
 #ifdef	__cplusplus

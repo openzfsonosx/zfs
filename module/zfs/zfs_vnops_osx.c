@@ -51,6 +51,7 @@
 #include <sys/zfs_vnops.h>
 #include <sys/vfs.h>
 #include <sys/vfs_opreg.h>
+#include <sys/zfs_vfsops.h>
 
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
@@ -393,6 +394,7 @@ zfs_vnop_readdir(
 	error = zfs_readdir(ap->a_vp, ap->a_uio, cr, ap->a_eofflag,
                         ap->a_flags, ap->a_numdirent);
     printf("-readdir %d (nument %d)\n", error, *ap->a_numdirent);
+    return error;
 }
 
 static int
@@ -428,15 +430,8 @@ zfs_vnop_getattr(
 {
     int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
-	/*
-	 * XXX This one requires modifying zfs_getattr(), unfortunately.
-	 *     There are two parts: the first section where we fill in vap
-	 *     from the znode, while holding its lock.  The second section
-	 *     where we fill in other stuff from the znode's dbuf and objset
-	 *     which doesn't require the znode lock.
-	 */
-    printf("+vnop_getattr zp %p vp %p\n",
-           VTOZ(ap->a_vp), ap->a_vp);
+    //printf("+vnop_getattr zp %p vp %p\n",
+    //      VTOZ(ap->a_vp), ap->a_vp);
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct);
 
@@ -444,7 +439,7 @@ zfs_vnop_getattr(
 
     error = zfs_getattr_znode_unlocked(ap->a_vp, ap->a_vap);
 
-    printf("-vnop_getattr %d\n",error);
+    //printf("-vnop_getattr %d\n",error);
     return error;
 }
 
@@ -457,9 +452,72 @@ zfs_vnop_setattr(
 	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    vattr_t *vap = ap->a_vap;
+    uint_t		mask = vap->va_mask;
+    int error;
 
-    printf("vnop_setattr\n");
-	return (zfs_setattr(ap->a_vp, ap->a_vap, /*flag*/0, cr, ct));
+    // Translate OSX requested mask to ZFS
+    if (VATTR_IS_ACTIVE(vap, va_data_size))
+        mask |= AT_SIZE;
+	if (VATTR_IS_ACTIVE(vap, va_mode) || VATTR_IS_ACTIVE(vap, va_acl))
+        mask |= AT_MODE;
+    if (VATTR_IS_ACTIVE(vap, va_uid))
+        mask |= AT_UID;
+    if (VATTR_IS_ACTIVE(vap, va_gid))
+        mask |= AT_GID;
+    if (VATTR_IS_ACTIVE(vap, va_access_time))
+        mask |= AT_ATIME;
+    if (VATTR_IS_ACTIVE(vap, va_modify_time))
+        mask |= AT_MTIME;
+    if (VATTR_IS_ACTIVE(vap, va_create_time))
+        mask |= AT_CTIME;
+    /*
+    if (VATTR_IS_ACTIVE(vap, va_backup_time))
+        mask |= AT_BTIME; // really?
+    if (VATTR_IS_ACTIVE(vap, va_flags))
+        mask |= AT_FLAGS; // really?
+    */
+
+    vap->va_mask = mask;
+	error = zfs_setattr(ap->a_vp, ap->a_vap, /*flag*/0, cr, ct);
+
+    printf("vnop_setattr: called with mask %04x, err=%d\n",
+           mask, error);
+
+    if (!error) {
+
+        // If successful, tell OSX which fields ZFS set.
+        if (VATTR_IS_ACTIVE(vap, va_data_size))
+            VATTR_SET_SUPPORTED(vap, va_data_size);
+        if (VATTR_IS_ACTIVE(vap, va_mode))
+            VATTR_SET_SUPPORTED(vap, va_mode);
+        if (VATTR_IS_ACTIVE(vap, va_acl))
+            VATTR_SET_SUPPORTED(vap, va_acl);
+        if (VATTR_IS_ACTIVE(vap, va_uid))
+            VATTR_SET_SUPPORTED(vap, va_uid);
+        if (VATTR_IS_ACTIVE(vap, va_gid))
+            VATTR_SET_SUPPORTED(vap, va_gid);
+        if (VATTR_IS_ACTIVE(vap, va_access_time))
+            VATTR_SET_SUPPORTED(vap, va_access_time);
+        if (VATTR_IS_ACTIVE(vap, va_modify_time))
+            VATTR_SET_SUPPORTED(vap, va_modify_time);
+        if (VATTR_IS_ACTIVE(vap, va_create_time))
+            VATTR_SET_SUPPORTED(vap, va_create_time);
+        if (VATTR_IS_ACTIVE(vap, va_backup_time))
+            VATTR_SET_SUPPORTED(vap, va_backup_time);
+        if (VATTR_IS_ACTIVE(vap, va_flags)) {
+            struct znode	*zp = VTOZ(ap->a_vp);
+            zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
+            ZFS_ENTER_NOERROR(zfsvfs);
+            zfs_setbsdflags(zp, vap->va_flags);
+            ZFS_EXIT(zfsvfs);
+            VATTR_SET_SUPPORTED(vap, va_flags);
+        }
+
+
+    }
+
+    return error;
 }
 
 static int
@@ -1229,7 +1287,9 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
     return 0;
 }
 
-
+/*
+ * Maybe these should live in vfsops
+ */
 int zfs_vfsops_init(void)
 {
 	struct vfs_fsentry vfe;

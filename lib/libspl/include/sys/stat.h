@@ -34,9 +34,9 @@
  * Emulate Solaris' behavior of returning the block device size in fstat64().
  */
 static inline int
-fstat64_blk(int fd, struct stat64 *st)
+fstat64_blk(int fd, struct stat *st)
 {
-	if (fstat64(fd, st) == -1)
+	if (fstat(fd, st) == -1)
 		return -1;
 
 	/* In Linux we need to use an ioctl to get the size of a block device */

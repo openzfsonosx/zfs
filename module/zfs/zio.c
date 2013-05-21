@@ -187,11 +187,13 @@ zio_init(void)
 			if (size == (1 << SPA_MINBLOCKSHIFT))
 				flags |= KMC_KMEM;
 
-			(void) sprintf(name, "zio_buf_%lu", (ulong_t)size);
+			(void) snprintf(name, sizeof(name), "zio_buf_%lu",
+                            (ulong_t)size);
 			zio_buf_cache[c] = kmem_cache_create(name, size,
 			    align, NULL, NULL, NULL, NULL, NULL, flags);
 
-			(void) sprintf(name, "zio_data_buf_%lu", (ulong_t)size);
+			(void) snprintf(name, sizeof(name), "zio_data_buf_%lu",
+                            (ulong_t)size);
 			zio_data_buf_cache[c] = kmem_cache_create(name, size,
 			    align, NULL, NULL, NULL, NULL,
 			    data_alloc_arena, flags);

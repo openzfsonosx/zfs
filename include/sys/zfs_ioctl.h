@@ -417,6 +417,11 @@ extern void *zfsdev_get_state(minor_t minor, enum zfsdev_state_type which);
 extern minor_t zfsdev_getminor(struct file *filp);
 extern minor_t zfsdev_minor_alloc(void);
 
+extern void zfs_ioctl_init(void);
+extern void zfs_ioctl_fini(void);
+
+
+
 #endif	/* _KERNEL */
 
 #ifdef	__cplusplus

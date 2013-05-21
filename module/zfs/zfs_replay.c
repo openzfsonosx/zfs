@@ -753,7 +753,7 @@ zfs_replay_truncate(zfsvfs_t *zsb, lr_truncate_t *lr, boolean_t byteswap)
 	fl.l_len = lr->lr_length;
 
 	error = zfs_space(ZTOV(zp), F_FREESP, &fl, FWRITE | FOFFMAX,
-	    lr->lr_offset, kcred);
+                      lr->lr_offset, kcred, NULL);
 
 	vnode_put(ZTOV(zp));
 
@@ -835,7 +835,7 @@ zfs_replay_acl_v0(zfsvfs_t *zsb, lr_acl_v0_t *lr, boolean_t byteswap)
 	vsa.vsa_aclflags = 0;
 	vsa.vsa_aclentp = ace;
 
-	error = zfs_setsecattr(ZTOV(zp), &vsa, 0, kcred);
+	error = zfs_setsecattr(ZTOV(zp), &vsa, 0, kcred, NULL);
 
 	vnode_put(ZTOV(zp));
 
@@ -893,7 +893,7 @@ zfs_replay_acl(zfsvfs_t *zsb, lr_acl_t *lr, boolean_t byteswap)
 		    lr->lr_fuidcnt, lr->lr_domcnt, 0, 0);
 	}
 
-	error = zfs_setsecattr(ZTOV(zp), &vsa, 0, kcred);
+	error = zfs_setsecattr(ZTOV(zp), &vsa, 0, kcred, NULL);
 
 	if (zsb->z_fuid_replay)
 		zfs_fuid_info_free(zsb->z_fuid_replay);

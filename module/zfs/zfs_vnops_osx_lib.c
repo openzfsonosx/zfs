@@ -128,8 +128,8 @@ zfs_getattr_znode_locked(vattr_t *vap, znode_t *zp, cred_t *cr)
 
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
 
-        if (error = sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
-                              times, sizeof (times))) {
+        if ((error = sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
+                               times, sizeof (times)))) {
             //		if (zp->z_phys->zp_acl.z_acl_count == 0) {
 			vap->va_acl = (kauth_acl_t) KAUTH_FILESEC_NONE;
 		} else {
@@ -158,7 +158,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	uint64_t	parent;
     zfs_acl_phys_t acl;
 
-    printf("getattr_osx\n");
+    //printf("getattr_osx\n");
 
 	ZFS_ENTER(zfsvfs);
 	/*
@@ -171,7 +171,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	vap->va_gen = zp->z_gen;
 
 	/*
-	 * For Carbon compatibility, pretend to support this legacy/unused attribute
+	 * For Carbon compatibility,pretend to support this legacy/unused attribute
 	 */
 	if (VATTR_IS_ACTIVE(vap, va_backup_time)) {
 		vap->va_backup_time.tv_sec = 0;
@@ -202,12 +202,10 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	/* Don't include '.' and '..' in the number of entries */
 	if (VATTR_IS_ACTIVE(vap, va_nchildren) && vnode_isdir(vp)) {
 		VATTR_RETURN(vap, va_nchildren, vap->va_nlink - 2);
-        printf("nchildren %d\n", vap->va_nlink - 2);
-    //VATTR_RETURN(vap, va_nchildren, zp->z_size - 2);
     }
 
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
-        printf("want acl\n");
+        //printf("want acl\n");
         if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
                       &acl, sizeof (zfs_acl_phys_t))) {
             //if (zp->z_acl.z_acl_count == 0) {
@@ -229,7 +227,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	if (VATTR_IS_ACTIVE(vap, va_data_alloc) || VATTR_IS_ACTIVE(vap, va_total_alloc)) {
 		uint32_t  blksize;
 		u_longlong_t  nblks;
-        printf("setting total alloc\n");
         sa_object_size(zp->z_sa_hdl, &blksize, &nblks);
 		vap->va_data_alloc = (uint64_t)512LL * (uint64_t)nblks;
 		vap->va_total_alloc = vap->va_data_alloc;
@@ -241,7 +238,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
 			 	    ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
 			VATTR_SET_SUPPORTED(vap, va_name);
-        printf("va_name set '%s'\n", vap->va_name);
 	}
 
 	vap->va_iosize = zp->z_blksz;
@@ -263,73 +259,13 @@ vfs_has_feature(vfs_t *vfsp, vfs_feature_t vfsft)
 	}
 }
 
-struct vnode *
-dnlc_lookup(struct vnode *dvp, char *name)
-{
-    struct componentname cn;
-    //return DNLC_NO_VNODE;
-	bzero(&cn, sizeof (cn));
-	cn.cn_nameiop = LOOKUP;
-	cn.cn_flags = ISLASTCN;
-	cn.cn_nameptr = (char *)name;
-	cn.cn_namelen = strlen(name);
-
-	struct vnode *vp;
-
-	switch(cache_lookup(dvp, &vp, &cn)) {
-	case -1:
-		break;
-	case ENOENT:
-		vp = DNLC_NO_VNODE;
-		break;
-	default:
-		vp = NULLVP;
-	}
-	return (vp);
-}
-
-int dnlc_purge_vfsp(struct mount *mp, int flags)
-{
-    return 0;
-}
-
-void dnlc_remove(struct vnode *vp, char *name)
-{
-    cache_purge(vp);
-    return;
-}
-
-
-/*
- *
- * Disabled for now, I panic
- *
- */
-void dnlc_update(struct vnode *vp, char *name, struct vnode *tp)
-{
-    //return ;
-    // If tp is NULL, it is a negative-cache entry
-    struct componentname cn;
-
-    // OSX panics if you give empty(non-NULL) name
-    if (!name || !*name || !strlen(name)) return;
-
-	bzero(&cn, sizeof (cn));
-	cn.cn_nameiop = CREATE;
-	cn.cn_flags = ISLASTCN;
-	cn.cn_nameptr = (char *)name;
-	cn.cn_namelen = strlen(name);
-
-    cache_enter(vp, tp==DNLC_NO_VNODE?NULL:tp, &cn);
-    return;
-}
 
 int pn_alloc(pathname_t *p)
 {
     return ENOTSUP;
 }
 
-int pn_free(pathname_t p)
+int pn_free(pathname_t *p)
 {
     return ENOTSUP;
 }
@@ -380,13 +316,8 @@ int
 zfs_vnop_ioctl_fullfsync(struct vnode *vp, vfs_context_t ct, zfsvfs_t *zfsvfs)
 {
 	int error;
-	struct vnop_fsync_args fsync_args = {
-		.a_vp = vp,
-		.a_waitfor = MNT_WAIT,
-		.a_context = ct,
-	};
 
-    error = zfs_fsync(vp, /*syncflag*/0, NULL, ct);
+    error = zfs_fsync(vp, /*syncflag*/0, NULL, (caller_context_t *)ct);
 	if (error)
 		return (error);
 
@@ -489,7 +420,6 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 	zfs_dirlock_t  *dl;
 	dmu_tx_t  *tx;
 	struct vnode_attr  vattr;
-	uint64_t  zoid;
 	int error;
 	struct componentname cn;
 
@@ -506,7 +436,8 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 
 top:
 	/* Lock the attribute entry name. */
-	if ( (error = zfs_dirent_lock(&dl, dzp, &cn, &xzp, flag, NULL, NULL)) ) {
+	if ( (error = zfs_dirent_lock(&dl, dzp, (char *)name, &xzp, flag,
+                                  NULL, NULL)) ) {
 		goto out;
 	}
 	/* If the name already exists, we're done. */
