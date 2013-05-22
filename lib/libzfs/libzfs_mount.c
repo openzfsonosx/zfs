@@ -538,6 +538,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 static int
 unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
 {
+    printf("Unmounting now\n");
     if (unmount(mountpoint, flags) != 0) {
 		return (zfs_error_fmt(hdl, EZFS_UMOUNTFAILED,
 		    dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),

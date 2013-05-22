@@ -143,17 +143,17 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 
 #endif
 
-    // This call should probably not be required?
-    vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
-
 skip_open:
 	/*
 	 * Determine the physical size of the file.
 	 */
+#if _KERNEL
 	vattr.va_mask = AT_SIZE;
-    //vn_lock(vf->vf_vnode, LK_SHARED | LK_RETRY);
+    vn_lock(vf->vf_vnode, LK_SHARED | LK_RETRY);
+    //vnode_getwithref(vf->vf_vnode);
 	error = VOP_GETATTR(vf->vf_vnode, &vattr, 0, kcred, NULL);
-    //VN_UNLOCK(vf->vf_vnode);
+    VN_UNLOCK(vf->vf_vnode);
+#endif
 	if (error) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
         vnode_put(vf->vf_vnode);

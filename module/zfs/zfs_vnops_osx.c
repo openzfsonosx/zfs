@@ -332,7 +332,7 @@ zfs_vnop_mkdir(
 	DECLARE_CRED_AND_CONTEXT(ap);
     printf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
-#if 1 // Let's deny OSX fseventd for now */
+#if 0 // Let's deny OSX fseventd for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".fseventsd"))
         return EINVAL;
 #endif
@@ -692,8 +692,9 @@ zfs_vnop_inactive(
 	vnode_t *vp = ap->a_vp;
 	DECLARE_CRED(ap);
 
-    printf("vnop_inactive\n");
+    printf("+vnop_inactive\n");
 	zfs_inactive(vp, cr, NULL);
+    printf("-vnop_inactive\n");
 	return (0);
 }
 
@@ -710,7 +711,7 @@ zfs_vnop_reclaim(
 
 	ASSERT(zp != NULL);
 
-    printf("vnop_reclaim\n");
+    printf("+vnop_reclaim %p\n", vp);
 
 	/* Destroy the vm object and flush associated pages. */
 #ifndef __APPLE__
@@ -723,6 +724,7 @@ zfs_vnop_reclaim(
 	 * force unmount.
 	 */
 	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+    printf("reclaim %p\n", zp->z_sa_hdl);
 	if (zp->z_sa_hdl == NULL)
 		zfs_znode_free(zp);
 	else
@@ -735,6 +737,7 @@ zfs_vnop_reclaim(
     vnode_clearfsnode(vp); /* vp->v_data = NULL */
 	vnode_removefsref(vp); /* ADDREF from vnode_create */
 #endif
+    printf("-reclaim\n");
 	return (0);
 }
 
@@ -1209,6 +1212,9 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 
     printf("getvnode zp %p with vpp %p zfsvfs %p vfs %p\n",
            zp, vpp, zfsvfs, zfsvfs->z_vfs);
+
+    if (zp->z_vnode)
+        panic("zp %p vnode already set\n", zp->z_vnode);
 
 	bzero(&vfsp, sizeof (vfsp));
 	vfsp.vnfs_str = "zfs";

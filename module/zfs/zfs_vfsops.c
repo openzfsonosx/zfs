@@ -627,8 +627,9 @@ zfs_register_callbacks(struct mount *vfsp)
 	    zfs_prop_to_name(ZFS_PROP_EXEC), exec_changed_cb, zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_SNAPDIR), snapdir_changed_cb, zfsvfs);
+    // This appears to be PROP_PRIVATE, investigate if we want this
 	//error = error ? error : dsl_prop_register(ds,
-	//    zfs_prop_to_name(ZFS_PROP_ACLMODE), acl_mode_changed_cb, zfsvfs);
+    //   zfs_prop_to_name(ZFS_PROP_ACLMODE), acl_mode_changed_cb, zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_ACLINHERIT), acl_inherit_changed_cb,
 	    zfsvfs);
@@ -1202,6 +1203,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 {
 	int i;
 
+    printf("+zfsvfs_free\n");
 	/*
 	 * This is a barrier to prevent the filesystem from going away in
 	 * zfs_znode_move() until we can safely ensure that the filesystem is
@@ -1222,6 +1224,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
 	kmem_free(zfsvfs, sizeof (zfsvfs_t));
+    printf("-zfsvfs_free\n");
 }
 
 static void
@@ -1411,8 +1414,9 @@ zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
 		VERIFY(dsl_prop_unregister(ds, "snapdir", snapdir_changed_cb,
 		    zfsvfs) == 0);
 
-		VERIFY(dsl_prop_unregister(ds, "aclmode", acl_mode_changed_cb,
-		    zfsvfs) == 0);
+        // See discussion in register_callbacks
+		//VERIFY(dsl_prop_unregister(ds, "aclmode", acl_mode_changed_cb,
+        //   zfsvfs) == 0);
 
 		VERIFY(dsl_prop_unregister(ds, "aclinherit",
 		    acl_inherit_changed_cb, zfsvfs) == 0);
@@ -2203,6 +2207,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 {
 	znode_t	*zp;
 
+    printf("+teardown\n");
 	rrw_enter(&zfsvfs->z_teardown_lock, RW_WRITER, FTAG);
 
 	if (!unmounting) {
@@ -2213,7 +2218,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		 * 'z_parent' is self referential for non-snapshots.
 		 */
 		(void) dnlc_purge_vfsp(zfsvfs->z_parent->z_vfs, 0);
-#ifdef FREEBSD_NAMECACHE
+#ifdef FREEBSD_NAMECACHE)
 		cache_purgevfs(zfsvfs->z_parent->z_vfs);
 #endif
 	}
@@ -2288,6 +2293,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		txg_wait_synced(dmu_objset_pool(zfsvfs->z_os), 0);
 	dmu_objset_evict_dbufs(zfsvfs->z_os);
 
+    printf("-teardown\n");
 	return (0);
 }
 
@@ -2300,6 +2306,8 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	objset_t *os;
 	//cred_t *cr =  (cred_t *)vfs_context_ucred(context);
 	int ret;
+
+    printf("+unmount\n");
 
 #ifndef __APPLE__
 	/*XXX NOEL: delegation admin stuffs, add back if we use delg. admin */
@@ -2446,6 +2454,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 #endif
 	zfs_freevfs(zfsvfs->z_vfs);
 
+    printf("-unmount\n");
 	return (0);
 }
 
@@ -2764,6 +2773,8 @@ zfs_freevfs(struct mount *vfsp)
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
 
+    printf("+freevfs\n");
+
 #ifdef sun
 	/*
 	 * If this is a snapshot, we have an extra VFS_HOLD on our parent
@@ -2778,6 +2789,7 @@ zfs_freevfs(struct mount *vfsp)
 	zfsvfs_free(zfsvfs);
 
 	atomic_add_32(&zfs_active_fs_count, -1);
+    printf("-freevfs\n");
 }
 
 #ifdef __i386__

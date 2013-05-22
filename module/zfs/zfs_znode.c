@@ -694,6 +694,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	 * Defer setting z_zfsvfs until the znode is ready to be a candidate for
 	 * the zfs_znode_move() callback.
 	 */
+    zp->z_vnode = NULL;
 	zp->z_sa_hdl = NULL;
 	zp->z_unlinked = 0;
 	zp->z_atime_dirty = 0;
@@ -1066,13 +1067,6 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	(*zpp)->z_pflags = pflags;
 	(*zpp)->z_mode = mode;
 
-#ifdef __APPLE__
-    {
-		struct vnode *vp;
-        zfs_znode_getvnode(*zpp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
-    }
-#endif
-
 	if (vap->va_mask & AT_XVATTR)
 		zfs_xvattr_set(*zpp, (xvattr_t *)vap, tx);
 
@@ -1290,9 +1284,6 @@ again:
 		err = (ENOENT);
 	} else {
 		*zpp = zp;
-#ifdef __APPLE__
-        zfs_znode_getvnode(zp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
-#endif
 	}
 	if (err == 0) {
 #ifndef __APPLE__ /* Already associated with mount from vnode_create */
@@ -1975,8 +1966,6 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	vnode.v_type = VDIR;
 	vnode.v_data = rootzp;
 	rootzp->z_vnode = &vnode;
-#else
-    //zfs_znode_getvnode(rootzp, &vp); /* Assigns both vp and z_vnode */
 #endif
 
 	zfsvfs.z_os = os;
