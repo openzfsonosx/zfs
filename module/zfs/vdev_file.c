@@ -57,9 +57,9 @@ static int
 vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
     uint64_t *ashift)
 {
+	static vattr_t vattr;
 	vdev_file_t *vf;
 	struct vnode *vp;
-	vattr_t vattr;
 	int error = 0;
     struct vnode *rootdir;
 
@@ -77,6 +77,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	 * Reopen the device if it's not currently open.  Otherwise,
 	 * just update the physical size of the device.
 	 */
+#ifdef _KERNEL
 	if (vd->vdev_tsd != NULL) {
 		ASSERT(vd->vdev_reopening);
 		vf = vd->vdev_tsd;
@@ -84,6 +85,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
         printf("skip to open\n");
 		goto skip_open;
 	}
+#endif
 
 	vf = vd->vdev_tsd = kmem_zalloc(sizeof (vdev_file_t), KM_PUSHPAGE);
 
@@ -110,7 +112,6 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
     */
 
     rootdir = getrootdir();
-    printf("rootdir %p\n", rootdir);
 
     error = vn_openat(vd->vdev_path + 1,
                       UIO_SYSSPACE,
@@ -128,41 +129,40 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	}
 
 	vf->vf_vnode = vp;
+#ifdef _KERNEL
     vf->vf_vid = vnode_vid(vp);
     printf("assigning vid %d\n", vf->vf_vid);
 
-#ifdef _KERNEL
 	/*
 	 * Make sure it's a regular file.
 	 */
 	if (!vnode_isreg(vp)) {
         vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
-        vnode_put(vf->vf_vnode);
+        VN_RELE(vf->vf_vnode);
         return (ENODEV);
     }
 
 #endif
 
+#if _KERNEL
 skip_open:
 	/*
 	 * Determine the physical size of the file.
 	 */
-#if _KERNEL
 	vattr.va_mask = AT_SIZE;
     vn_lock(vf->vf_vnode, LK_SHARED | LK_RETRY);
-    //vnode_getwithref(vf->vf_vnode);
 	error = VOP_GETATTR(vf->vf_vnode, &vattr, 0, kcred, NULL);
     VN_UNLOCK(vf->vf_vnode);
 #endif
 	if (error) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
-        vnode_put(vf->vf_vnode);
+        VN_RELE(vf->vf_vnode);
 		return (error);
 	}
 
 	*max_psize = *psize = vattr.va_size;
 	*ashift = SPA_MINBLOCKSHIFT;
-    vnode_put(vf->vf_vnode);
+    VN_RELE(vf->vf_vnode);
 
 	return (0);
 }

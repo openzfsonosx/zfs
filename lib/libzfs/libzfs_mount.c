@@ -490,7 +490,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
     rc = mount(MNTTYPE_ZFS, mountpoint, flags, &mnt_args);
 #endif
 
-
 	if (rc) {
 		/*
 		 * Generic errors are nasty, but there are just way too many
@@ -538,7 +537,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 static int
 unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
 {
-    printf("Unmounting now\n");
     if (unmount(mountpoint, flags) != 0) {
 		return (zfs_error_fmt(hdl, EZFS_UMOUNTFAILED,
 		    dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
@@ -557,6 +555,8 @@ zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
     struct mnttab search = { 0 }, entry;
     char *mntpt = NULL;
 
+    printf("zfs_unmount\n");
+
     /* check to see if need to unmount the filesystem */
     search.mnt_special = zhp->zfs_name;
     search.mnt_fstype = MNTTYPE_ZFS;
@@ -574,6 +574,7 @@ zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
         else
             mntpt = zfs_strdup(zhp->zfs_hdl, mountpoint);
 
+        printf("located '%s'\n", mntpt);
         /*
          * Unshare and unmount the filesystem
          */
@@ -601,7 +602,7 @@ zfs_unmountall(zfs_handle_t *zhp, int flags)
 {
 	prop_changelist_t *clp;
 	int ret;
-
+    printf("unmountall\n");
 	clp = changelist_gather(zhp, ZFS_PROP_MOUNTPOINT, 0, flags);
 	if (clp == NULL)
 		return (-1);
@@ -1198,9 +1199,33 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 	namelen = strlen(zhp->zpool_name);
 
 	used = alloc = 0;
+
+    /*
+     * It appears the userland AVL stuff is broken, the call to avl_first
+     * returns NULL when we want to export.
+     * Temporarily replaced with a call to list OS mounted filesystems
+     * and if type ZFS, check for unmount
+     */
+
+#if 0
 	for (mntn = libzfs_mnttab_first(hdl); mntn != NULL;
 	     mntn = libzfs_mnttab_next(hdl, mntn)) {
 		struct mnttab *mt = &mntn->mtn_mt;
+#else
+        struct statfs *sfsp;
+        int nitems;
+
+        nitems = getmntinfo(&sfsp, MNT_WAIT);
+
+        while (nitems-- > 0)
+            if (strcmp("zfs", sfsp[nitems].f_fstypename) == 0) {
+                struct mnttab *mt, tp;
+                tp.mnt_special = sfsp[nitems].f_mntfromname;
+                tp.mnt_mountp  = sfsp[nitems].f_mntonname;
+                tp.mnt_fstype  = sfsp[nitems].f_fstypename;
+                tp.mnt_mntopts = "";
+                mt = &tp;
+#endif
 
 		/*
 		 * Ignore filesystems not within this pool.
