@@ -637,6 +637,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		n -= nbytes;
 	}
 out:
+    printf("zfs_read %llu bytes\n", nbytes);
 	zfs_range_unlock(rl);
 
 	ZFS_ACCESSTIME_STAMP(zfsvfs, zp);
@@ -940,6 +941,7 @@ again:
 			uioskip(uio, tx_bytes);
 		}
 		if (tx_bytes && vn_has_cached_data(vp)) {
+            printf("we should add update_pages()\n");
 			//update_pages(vp, woff, tx_bytes, zfsvfs->z_os,
             //	    zp->z_id, uio->uio_segflg, tx);
 		}
@@ -1015,7 +1017,15 @@ again:
 		if (!xuio && n > 0)
 			uio_prefaultpages(MIN(n, max_blksz), uio);
 #endif	/* sun */
+#ifdef __APPLE__
+		if (!xuio && n > 0)
+			zfs_prefault_write(MIN(n, max_blksz), uio);
+#endif	/* sun */
+
+
 	}
+
+    printf("zfs_write wrote %llu\n", tx_bytes);
 
 	zfs_range_unlock(rl);
 
