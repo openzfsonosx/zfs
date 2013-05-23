@@ -358,6 +358,102 @@ zfs_unmap_page(struct sf_buf *sf)
 }
 #endif
 
+/*
+ * When a file is memory mapped, we must keep the IO data synchronized
+ * between the DMU cache and the memory mapped pages.  What this means:
+ *
+ * On Write:    If we find a memory mapped page, we write to *both*
+ *              the page and the dmu buffer.
+ */
+static int
+update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
+             dmu_tx_t *tx)
+{
+    znode_t *zp = VTOZ(vp);
+    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+    int len = nbytes;
+    int error = 0;
+    vm_offset_t vaddr = 0;
+    upl_t upl;
+    upl_page_info_t *pl = NULL;
+    off_t upl_start;
+    int upl_size;
+    int upl_page;
+    off_t off;
+
+    upl_start = uio_offset(uio);
+    off = upl_start & (PAGE_SIZE - 1);
+    upl_start &= ~PAGE_MASK;
+    upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
+
+    /*
+     * Create a UPL for the current range and map its
+     * page list into the kernel virtual address space.
+     */
+    if ( ubc_create_upl(vp, upl_start, upl_size, &upl, NULL,
+                        UPL_FILE_IO | UPL_SET_LITE) == KERN_SUCCESS ) {
+        pl = ubc_upl_pageinfo(upl);
+        ubc_upl_map(upl, &vaddr);
+    }
+
+    for (upl_page = 0; len > 0; ++upl_page) {
+        uint64_t bytes = MIN(PAGESIZE - off, len);
+        uint64_t woff = uio_offset(uio);
+        /*
+         * We don't want a new page to "appear" in the middle of
+         * the file update (because it may not get the write
+         * update data), so we grab a lock to block
+         * zfs_getpage().
+         */
+        // Bring these locks back in when we add mapped memory access
+        //rw_enter(&zp->z_map_lock, RW_WRITER);
+        if (pl && upl_valid_page(pl, upl_page)) {
+            //rw_exit(&zp->z_map_lock);
+            uio_setrw(uio, UIO_WRITE);
+            error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
+            if (error == 0) {
+                dmu_write(zfsvfs->z_os, zp->z_id,
+                          woff, bytes, (caddr_t)vaddr + off, tx);
+                /*
+                 * We don't need a ubc_upl_commit_range()
+                 * here since the dmu_write() effectively
+                 * pushed this page to disk.
+                 */
+            } else {
+                /*
+                 * page is now in an unknown state so dump it.
+                 */
+                ubc_upl_abort_range(upl, upl_start, PAGESIZE,
+                                    UPL_ABORT_DUMP_PAGES);
+            }
+        } else { // !upl_valid_page
+            error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
+                                  uio, bytes, tx);
+            //rw_exit(&zp->z_map_lock);
+        }
+        vaddr += PAGE_SIZE;
+        upl_start += PAGE_SIZE;
+        len -= bytes;
+        off = 0;
+        if (error)
+            break;
+    }
+
+    /*
+     * Unmap the page list and free the UPL.
+     */
+    if (pl) {
+        (void) ubc_upl_unmap(upl);
+        /*
+         * We want to abort here since due to dmu_write()
+         * we effectively didn't dirty any pages.
+         */
+        (void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+    }
+
+    return (error);
+}
+
 
 /*
  * Read with UIO_NOCOPY flag means that sendfile(2) requests
@@ -860,6 +956,7 @@ again:
 				dmu_return_arcbuf(abuf);
 				break;
 			}
+            printf("uiocopy said %llu == %llu\n", cbytes,max_blksz);
 			ASSERT(cbytes == max_blksz);
 		}
 
@@ -939,11 +1036,15 @@ again:
 			}
 			ASSERT(tx_bytes <= uio_resid(uio));
 			uioskip(uio, tx_bytes);
+            printf("uio_skip %lld bytes", tx_bytes);
 		}
 		if (tx_bytes && vn_has_cached_data(vp)) {
-            printf("we should add update_pages()\n");
-			//update_pages(vp, woff, tx_bytes, zfsvfs->z_os,
-            //	    zp->z_id, uio->uio_segflg, tx);
+#ifdef __APPLE__
+			update_pages(vp, tx_bytes, uio, tx);
+#else
+			update_pages(vp, woff, tx_bytes, zfsvfs->z_os,
+                         zp->z_id, uio->uio_segflg, tx);
+#endif
 		}
 
 		/*
@@ -1741,7 +1842,7 @@ zfs_remove(vnode_t *dvp, char *name, cred_t *cr, caller_context_t *ct,
 	uint64_t	obj = 0;
 	zfs_dirlock_t	*dl;
 	dmu_tx_t	*tx;
-	boolean_t	may_delete_now, delete_now = FALSE;
+	boolean_t	may_delete_now = FALSE, delete_now = FALSE;
 	boolean_t	unlinked, toobig = FALSE;
 	uint64_t	txtype;
 	pathname_t	*realnmp = NULL;
