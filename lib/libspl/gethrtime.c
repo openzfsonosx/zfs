@@ -24,8 +24,10 @@
  * Use is subject to license terms.
  */
 
-#include <sys/types.h>
+#define boolean_t notused_boolean_t
 #include <mach/mach_time.h>
+#undef boolean_t
+#include <sys/types.h>
 
 hrtime_t
 gethrtime(void)
