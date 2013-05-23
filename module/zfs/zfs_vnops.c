@@ -532,11 +532,11 @@ mappedread_sf(vnode_t *vp, int nbytes, uio_t *uio)
  * NOTE: We will always "break up" the IO into PAGESIZE uiomoves when
  *	the file is memory mapped.
  */
+#ifdef __FreeBSD__
 static int
 mappedread(vnode_t *vp, int nbytes, uio_t *uio)
 {
 	int error = 0;
-#ifndef __APPLE__
 	znode_t *zp = VTOZ(vp);
 	objset_t *os = zp->z_zfsvfs->z_os;
 	vm_object_t obj;
@@ -577,11 +577,67 @@ mappedread(vnode_t *vp, int nbytes, uio_t *uio)
 			break;
 	}
 	zfs_vmobject_wunlock(obj);
-#endif
 	return (error);
 }
+#endif
 
-offset_t zfs_read_chunk_size = 1024 * 1024; /* Tunable */
+static int
+mappedread(vnode_t *vp, int nbytes, struct uio *uio)
+{
+    znode_t *zp = VTOZ(vp);
+    objset_t *os = zp->z_zfsvfs->z_os;
+    int len = nbytes;
+    int error = 0;
+    vm_offset_t vaddr = 0;
+    upl_t upl;
+    upl_page_info_t *pl = NULL;
+    off_t upl_start;
+    int upl_size;
+    int upl_page;
+    off_t off;
+
+    upl_start = uio_offset(uio);
+    off = upl_start & PAGE_MASK;
+    upl_start &= ~PAGE_MASK;
+    upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
+
+    /*
+     * Create a UPL for the current range and map its
+     * page list into the kernel virtual address space.
+     */
+    if ( ubc_create_upl(vp, upl_start, upl_size, &upl, NULL,
+                        UPL_FILE_IO | UPL_SET_LITE) == KERN_SUCCESS ) {
+        pl = ubc_upl_pageinfo(upl);
+        ubc_upl_map(upl, &vaddr);
+    }
+
+    for (upl_page = 0; len > 0; ++upl_page) {
+        uint64_t bytes = MIN(PAGE_SIZE - off, len);
+        if (pl && upl_valid_page(pl, upl_page)) {
+            uio_setrw(uio, UIO_READ);
+            error = uiomove((caddr_t)vaddr + off, bytes, UIO_READ, uio);
+        } else {
+            error = dmu_read_uio(os, zp->z_id, uio, bytes);
+        }
+        vaddr += PAGE_SIZE;
+        len -= bytes;
+        off = 0;
+        if (error)
+            break;
+    }
+
+    /*
+     * Unmap the page list and free the UPL.
+     */
+    if (pl) {
+        (void) ubc_upl_unmap(upl);
+        (void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+    }
+
+    return (error);
+}
+
+offset_t zfs_read_chunk_size = MAX_UPL_TRANSFER * PAGE_SIZE; /* Tunable */
 
 /*
  * Read bytes from specified file into supplied buffer.
@@ -733,7 +789,6 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		n -= nbytes;
 	}
 out:
-    printf("zfs_read %llu bytes\n", nbytes);
 	zfs_range_unlock(rl);
 
 	ZFS_ACCESSTIME_STAMP(zfsvfs, zp);
@@ -956,7 +1011,6 @@ again:
 				dmu_return_arcbuf(abuf);
 				break;
 			}
-            printf("uiocopy said %llu == %llu\n", cbytes,max_blksz);
 			ASSERT(cbytes == max_blksz);
 		}
 
@@ -1036,7 +1090,6 @@ again:
 			}
 			ASSERT(tx_bytes <= uio_resid(uio));
 			uioskip(uio, tx_bytes);
-            printf("uio_skip %lld bytes", tx_bytes);
 		}
 		if (tx_bytes && vn_has_cached_data(vp)) {
 #ifdef __APPLE__
@@ -1125,8 +1178,6 @@ again:
 
 
 	}
-
-    printf("zfs_write wrote %llu\n", tx_bytes);
 
 	zfs_range_unlock(rl);
 
