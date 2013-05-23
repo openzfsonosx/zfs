@@ -197,9 +197,15 @@ zfs_vnop_read(
         } */ *ap)
 {
 	int ioflag = zfs_ioflags(ap->a_ioflag);
+    int error;
+    uint64_t resid;
+
 	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_read(ap->a_vp, ap->a_uio, ioflag, cr, ct));
+    resid=uio_resid(ap->a_uio);
+	error = zfs_read(ap->a_vp, ap->a_uio, ioflag, cr, ct);
+    printf("vnop_read(%d) ->%d\n", resid, error);
+	return error;
 }
 
 static int
@@ -212,9 +218,22 @@ zfs_vnop_write(
         } */ *ap)
 {
 	int ioflag = zfs_ioflags(ap->a_ioflag);
+    int error;
+    uint64_t resid;
 	DECLARE_CRED_AND_CONTEXT(ap);
 
-	return (zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct));
+    resid=uio_resid(ap->a_uio);
+	error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct);
+    printf("vnop_write(%d) ->%d\n", resid, error);
+#ifdef __APPLE__
+    /* Mac OS X: pageout requires that the UBC file size be current. */
+    /* Possibly, we could update it only if size has changed. */
+    //    if (tx_bytes != 0) {
+    //if (!error) {
+    //    ubc_setsize(ap->a_vp, zp->z_size);
+    //}
+#endif /* __APPLE__ */
+    return error;
 }
 
 static int
@@ -226,7 +245,7 @@ zfs_vnop_access(
         vfs_context_t a_context;
         } */ *ap)
 {
-	int error;
+	int error=ENOTSUP;
     printf("vnop_access\n");
 #if 0 // FIXME
 	int mode = ap->a_mode;

@@ -35,7 +35,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/mnttab.h>
-
 #include <sys/types.h>
 #include <sys/vnode.h>
 #include <sys/stat.h>

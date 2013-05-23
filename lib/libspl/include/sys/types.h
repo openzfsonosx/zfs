@@ -37,6 +37,8 @@
 #ifndef HAVE_INTTYPES
 #include <inttypes.h>
 
+// Stop OS boolean_t from being included
+#define _MACH_MACHINE_BOOLEAN_H_
 typedef enum boolean { B_FALSE, B_TRUE } boolean_t;
 
 typedef unsigned char	uchar_t;

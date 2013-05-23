@@ -146,8 +146,6 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 	int		error = 0;
 	int		cmpflags;
 
-    printf("zfs_dirent_lock '%s'\n", name);
-
 	*zpp = NULL;
 	*dlpp = NULL;
 
@@ -282,18 +280,15 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 	 * not the dzp's z_lock, that protects the name in the zap object.)
 	 * See if there's an object by this name; if so, put a hold on it.
 	 */
-    printf(" update %d\n", update);
 	if (flag & ZXATTR) {
 		error = sa_lookup(dzp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs), &zoid,
 		    sizeof (zoid));
-        printf(" sa_lookup %d\n", error);
 		if (error == 0)
 			error = (zoid == 0 ? ENOENT : 0);
 	} else {
 		if (update)
 			vp = dnlc_lookup(ZTOV(dzp), name);
 		if (vp == DNLC_NO_VNODE) {
-        printf(" NO_VNODE %d\n", error);
 			VN_RELE(vp);
 			error = (ENOENT);
 		} else if (vp) {
@@ -308,10 +303,8 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 		} else {
 			error = zfs_match_find(zfsvfs, dzp, name, exact,
 			    update, direntflags, realpnp, &zoid);
-            printf(" match_find %d\n", error);
 		}
 	}
-    printf("1 %d\n", error);
 	if (error) {
 		if (error != ENOENT || (flag & ZEXISTS)) {
 			zfs_dirent_unlock(dl);
@@ -385,8 +378,6 @@ zfs_dirlook(znode_t *dzp, char *name, vnode_t **vpp, int flags,
 	uint64_t parent;
 	int unlinked;
 
-    printf("+zfs_dirlook '%s'\n", name);
-
 	if (name[0] == 0 || (name[0] == '.' && name[1] == 0)) {
 		mutex_enter(&dzp->z_lock);
 		unlinked = dzp->z_unlinked;
@@ -445,7 +436,6 @@ zfs_dirlook(znode_t *dzp, char *name, vnode_t **vpp, int flags,
 	if ((flags & FIGNORECASE) && rpnp && !error)
 		(void) strlcpy(rpnp->pn_buf, name, rpnp->pn_bufsize);
 
-    printf("-zfs_dirlook %d\n", error);
 	return (error);
 }
 

@@ -52,7 +52,7 @@ int main(int argc, char **argv)
 	int fd, error = 0;
 	char zvol_name[ZFS_MAXNAMELEN], zvol_name_part[ZFS_MAXNAMELEN];
 	char *dev_name;
-	struct stat64 statbuf;
+	struct stat statbuf;
 	int dev_minor, dev_part;
 
 	if (argc < 2) {
@@ -61,7 +61,7 @@ int main(int argc, char **argv)
 	}
 
 	dev_name = argv[1];
-	error = stat64(dev_name, &statbuf);
+	error = stat(dev_name, &statbuf);
 	if (error != 0) {
 		printf("Unable to access device file: %s\n", dev_name);
 		return (errno);
