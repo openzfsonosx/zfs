@@ -1203,7 +1203,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 {
 	int i;
 
-    printf("+zfsvfs_free\n");
+    dprintf("+zfsvfs_free\n");
 	/*
 	 * This is a barrier to prevent the filesystem from going away in
 	 * zfs_znode_move() until we can safely ensure that the filesystem is
@@ -1224,7 +1224,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
 	kmem_free(zfsvfs, sizeof (zfsvfs_t));
-    printf("-zfsvfs_free\n");
+    dprintf("-zfsvfs_free\n");
 }
 
 static void
@@ -2017,7 +2017,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
     zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 	uint64_t refdbytes, availbytes, usedobjs, availobjs;
 
-    printf("vfs_getattr\n");
+    dprintf("vfs_getattr\n");
 
 #ifndef __APPLE__
 	statp->f_version = STATFS_VERSION;
@@ -2207,7 +2207,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 {
 	znode_t	*zp;
 
-    printf("+teardown\n");
+    dprintf("+teardown\n");
 	rrw_enter(&zfsvfs->z_teardown_lock, RW_WRITER, FTAG);
 
 	if (!unmounting) {
@@ -2293,7 +2293,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		txg_wait_synced(dmu_objset_pool(zfsvfs->z_os), 0);
 	dmu_objset_evict_dbufs(zfsvfs->z_os);
 
-    printf("-teardown\n");
+    dprintf("-teardown\n");
 	return (0);
 }
 
@@ -2307,7 +2307,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	//cred_t *cr =  (cred_t *)vfs_context_ucred(context);
 	int ret;
 
-    printf("+unmount\n");
+    dprintf("+unmount\n");
 
 #ifndef __APPLE__
 	/*XXX NOEL: delegation admin stuffs, add back if we use delg. admin */
@@ -2454,7 +2454,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 #endif
 	zfs_freevfs(zfsvfs->z_vfs);
 
-    printf("-unmount\n");
+    dprintf("-unmount\n");
 	return (0);
 }
 
@@ -2773,7 +2773,7 @@ zfs_freevfs(struct mount *vfsp)
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
 
-    printf("+freevfs\n");
+    dprintf("+freevfs\n");
 
 #ifdef sun
 	/*
@@ -2789,7 +2789,7 @@ zfs_freevfs(struct mount *vfsp)
 	zfsvfs_free(zfsvfs);
 
 	atomic_add_32(&zfs_active_fs_count, -1);
-    printf("-freevfs\n");
+    dprintf("-freevfs\n");
 }
 
 #ifdef __i386__

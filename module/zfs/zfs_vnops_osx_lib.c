@@ -212,7 +212,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 			vap->va_acl = (kauth_acl_t) KAUTH_FILESEC_NONE;
 		} else {
 			if ((error = zfs_getacl(zp, &vap->va_acl, B_TRUE, NULL))) {
-                printf("zfs_getacl returned error %d\n", error);
+                dprintf("zfs_getacl returned error %d\n", error);
                 error = 0;
 				//ZFS_EXIT(zfsvfs);
 				//return (error);

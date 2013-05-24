@@ -204,7 +204,7 @@ zfs_vnop_read(
 
     //resid=uio_resid(ap->a_uio);
 	error = zfs_read(ap->a_vp, ap->a_uio, ioflag, cr, ct);
-    //printf("vnop_read(%d) ->%d\n", resid, error);
+    //dprintf("vnop_read(%d) ->%d\n", resid, error);
 	return error;
 }
 
@@ -224,7 +224,7 @@ zfs_vnop_write(
 
     //resid=uio_resid(ap->a_uio);
 	error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct);
-    // printf("vnop_write(%d) ->%d\n", resid, error);
+    // dprintf("vnop_write(%d) ->%d\n", resid, error);
 #ifdef __APPLE__
     /* Mac OS X: pageout requires that the UBC file size be current. */
     /* Possibly, we could update it only if size has changed. */
@@ -246,7 +246,9 @@ zfs_vnop_access(
         } */ *ap)
 {
 	int error=ENOTSUP;
-    printf("vnop_access\n");
+
+    dprintf("vnop_access\n");
+
 #if 0 // FIXME
 	int mode = ap->a_mode;
 
@@ -289,7 +291,7 @@ zfs_vnop_lookup(
     bcopy(cnp->cn_nameptr, filename, cnp->cn_namelen);
 	filename[cnp->cn_namelen] = '\0';
 
-    printf("+vnop_lookup '%s'\n", filename);
+    dprintf("+vnop_lookup '%s'\n", filename);
 
 	error = zfs_lookup(ap->a_dvp, filename, ap->a_vpp,
                        cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
@@ -298,7 +300,7 @@ zfs_vnop_lookup(
 
 	/* XXX FreeBSD has some namecache stuff here. */
 
-    printf("-vnop_lookup %d\n", error);
+    dprintf("-vnop_lookup %d\n", error);
 	return (error);
 }
 
@@ -318,7 +320,7 @@ zfs_vnop_create(
 	vcexcl_t excl;
     int mode=0; // FIXME
 
-    printf("vnop_create\n");
+    dprintf("vnop_create\n");
     /*
       extern int    zfs_create ( vnode_t *dvp, char *name, vattr_t *vap,
                                  int excl, int mode, vnode_t **vpp,
@@ -341,7 +343,7 @@ zfs_vnop_remove(
         } */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
-    printf("vnop_remove\n");
+    dprintf("vnop_remove\n");
 
     /*
       extern int    zfs_remove ( vnode_t *dvp, char *name,
@@ -362,7 +364,7 @@ zfs_vnop_mkdir(
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
     int error;
-    printf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
+    dprintf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
 #if 0 // Let's deny OSX fseventd for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".fseventsd"))
@@ -388,7 +390,7 @@ zfs_vnop_rmdir(
 	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
-    printf("vnop_rmdir\n");
+    dprintf("vnop_rmdir\n");
 
     /*
       extern int    zfs_rmdir  ( vnode_t *dvp, char *name, vnode_t *cwd,
@@ -422,11 +424,11 @@ zfs_vnop_readdir(
       extern int   zfs_readdir( vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp,
                                 int flags, int *a_numdirent);
     */
-    printf("+readdir\n");
+    dprintf("+readdir\n");
 	*ap->a_numdirent = 0;
 	error = zfs_readdir(ap->a_vp, ap->a_uio, cr, ap->a_eofflag,
                         ap->a_flags, ap->a_numdirent);
-    printf("-readdir %d (nument %d)\n", error, *ap->a_numdirent);
+    dprintf("-readdir %d (nument %d)\n", error, *ap->a_numdirent);
     return error;
 }
 
@@ -463,7 +465,7 @@ zfs_vnop_getattr(
 {
     int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
-    //printf("+vnop_getattr zp %p vp %p\n",
+    //dprintf("+vnop_getattr zp %p vp %p\n",
     //      VTOZ(ap->a_vp), ap->a_vp);
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct);
@@ -472,7 +474,7 @@ zfs_vnop_getattr(
 
     error = zfs_getattr_znode_unlocked(ap->a_vp, ap->a_vap);
 
-    if (error) printf("-vnop_getattr '%p' %d\n", (ap->a_vp),error);
+    if (error) dprintf("-vnop_getattr '%p' %d\n", (ap->a_vp),error);
     return error;
 }
 
@@ -514,7 +516,7 @@ zfs_vnop_setattr(
     vap->va_mask = mask;
 	error = zfs_setattr(ap->a_vp, ap->a_vap, /*flag*/0, cr, ct);
 
-    printf("vnop_setattr: called with mask %04x, err=%d\n",
+    dprintf("vnop_setattr: called with mask %04x, err=%d\n",
            mask, error);
 
     if (!error) {
@@ -567,7 +569,7 @@ zfs_vnop_rename(
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
 	int error;
-    printf("vnop_rename\n");
+    dprintf("vnop_rename\n");
 
     /*
       extern int zfs_rename(vnode_t *sdvp, char *snm, vnode_t *tdvp, char *tnm,
@@ -592,7 +594,7 @@ zfs_vnop_symlink(
 {
 	DECLARE_CRED(ap);
 	int error;
-    printf("vnop_symlink\n");
+    dprintf("vnop_symlink\n");
 
     /*
       extern int    zfs_symlink( vnode_t *dvp, vnode_t **vpp, char *name,
@@ -618,7 +620,7 @@ zfs_vnop_readlink(
 	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
-    printf("vnop_readlink\n");
+    dprintf("vnop_readlink\n");
 
     /*
       extern int    zfs_readlink(vnode_t *vp, uio_t *uio,
@@ -638,7 +640,7 @@ zfs_vnop_link(
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
     int error;
-    printf("vnop_link\n");
+    dprintf("vnop_link\n");
 
 	/* XXX Translate this inside zfs_link() instead. */
 	if (vnode_mount(ap->a_vp) != vnode_mount(ap->a_tdvp))
@@ -727,9 +729,9 @@ zfs_vnop_inactive(
 	vnode_t *vp = ap->a_vp;
 	DECLARE_CRED(ap);
 
-    printf("+vnop_inactive\n");
+    dprintf("+vnop_inactive\n");
 	zfs_inactive(vp, cr, NULL);
-    printf("-vnop_inactive\n");
+    dprintf("-vnop_inactive\n");
 	return (0);
 }
 
@@ -746,7 +748,7 @@ zfs_vnop_reclaim(
 
 	ASSERT(zp != NULL);
 
-    printf("+vnop_reclaim %p\n", vp);
+    dprintf("+vnop_reclaim %p\n", vp);
 
 	/* Destroy the vm object and flush associated pages. */
 #ifndef __APPLE__
@@ -759,7 +761,7 @@ zfs_vnop_reclaim(
 	 * force unmount.
 	 */
 	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-    printf("reclaim %p\n", zp->z_sa_hdl);
+    dprintf("reclaim %p\n", zp->z_sa_hdl);
 	if (zp->z_sa_hdl == NULL)
 		zfs_znode_free(zp);
 	else
@@ -772,7 +774,7 @@ zfs_vnop_reclaim(
     vnode_clearfsnode(vp); /* vp->v_data = NULL */
 	vnode_removefsref(vp); /* ADDREF from vnode_create */
 #endif
-    printf("-reclaim\n");
+    dprintf("-reclaim\n");
 	return (0);
 }
 
@@ -1245,7 +1247,7 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 {
 	struct vnode_fsparam vfsp;
 
-    printf("getvnode zp %p with vpp %p zfsvfs %p vfs %p\n",
+    dprintf("getvnode zp %p with vpp %p zfsvfs %p vfs %p\n",
            zp, vpp, zfsvfs, zfsvfs->z_vfs);
 
     if (zp->z_vnode)
@@ -1315,7 +1317,7 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0);
 
-    printf("Assigned zp %p with vp %p\n", zp, *vpp);
+    dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
 
 	vnode_settag(*vpp, VT_ZFS);
 

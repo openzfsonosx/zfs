@@ -63,7 +63,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	int error = 0;
     struct vnode *rootdir;
 
-    printf("vdev_file_open %p\n", vd->vdev_tsd);
+    dprintf("vdev_file_open %p\n", vd->vdev_tsd);
 
 	/*
 	 * We must have a pathname, and it must be absolute.
@@ -82,7 +82,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		ASSERT(vd->vdev_reopening);
 		vf = vd->vdev_tsd;
         vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
-        printf("skip to open\n");
+        dprintf("skip to open\n");
 		goto skip_open;
 	}
 #endif
@@ -131,7 +131,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	vf->vf_vnode = vp;
 #ifdef _KERNEL
     vf->vf_vid = vnode_vid(vp);
-    printf("assigning vid %d\n", vf->vf_vid);
+    dprintf("assigning vid %d\n", vf->vf_vid);
 
 	/*
 	 * Make sure it's a regular file.

@@ -1200,7 +1200,7 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 #endif
 	int err;
 
-    printf("+zget %lld\n", obj_num);
+    dprintf("+zget %lld\n", obj_num);
 
 	td = curthread;
 	getnewvnode_reserve(1);

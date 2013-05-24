@@ -1627,8 +1627,6 @@ zfs_acl_ids_create(znode_t *dzp, int flag, vattr_t *vap, cred_t *cr,
 	boolean_t	need_chmod = B_TRUE;
 	boolean_t	inherited = B_FALSE;
 
-    printf("+acl_ids_create\n");
-
 	bzero(acl_ids, sizeof (zfs_acl_ids_t));
 	acl_ids->z_mode = MAKEIMODE(vap->va_type, vap->va_mode);
 
