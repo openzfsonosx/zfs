@@ -1580,7 +1580,7 @@ zfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct componentname *cnp,
 		ZFS_EXIT(zfsvfs);
 	}
 
-#ifdef FREEBSD_NAMECACHE
+#if defined (FREEBSD_NAMECACHE) || defined(__APPLE__)
 	/*
 	 * Insert name into cache (as non-existent) if appropriate.
 	 */
@@ -2420,7 +2420,7 @@ top:
 		return (error);
 	}
 
-#ifdef FREEBSD_NAMECACHE
+#if defined (FREEBSD_NAMECACHE) || defined(__APPLE__)
 	cache_purge(dvp);
 #endif
 
@@ -2437,7 +2437,7 @@ top:
 
 	rw_exit(&zp->z_parent_lock);
 	rw_exit(&zp->z_name_lock);
-#ifdef FREEBSD_NAMECACHE
+#if defined (FREEBSD_NAMECACHE) || defined(__APPLE__)
 	cache_purge(vp);
 #endif
 out:
@@ -4176,7 +4176,7 @@ top:
 				    ZRENAMING, NULL), ==, 0);
 			}
 		}
-#ifdef FREEBSD_NAMECACHE
+#if defined (FREEBSD_NAMECACHE) || defined(__APPLE__)
 		if (error == 0) {
 			cache_purge(sdvp);
 			cache_purge(tdvp);

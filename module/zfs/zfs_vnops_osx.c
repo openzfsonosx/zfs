@@ -562,9 +562,6 @@ zfs_vnop_rename(
 	error = zfs_rename(ap->a_fdvp, ap->a_fcnp->cn_nameptr, ap->a_tdvp,
                        ap->a_tcnp->cn_nameptr, cr, ct, /*flags*/0);
 
-	/* Remove entries from the namei cache. */
-	cache_purge(ap->a_tdvp);
-
 	return (error);
 }
 
@@ -626,6 +623,7 @@ zfs_vnop_link(
 	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    int error;
     printf("vnop_link\n");
 
 	/* XXX Translate this inside zfs_link() instead. */
@@ -646,8 +644,12 @@ zfs_vnop_link(
 
     */
 
-	return (zfs_link(ap->a_tdvp, ap->a_vp, ap->a_cnp->cn_nameptr,
-                     cr, ct, /*flags*/0));
+	error = zfs_link(ap->a_tdvp, ap->a_vp, ap->a_cnp->cn_nameptr,
+                     cr, ct, /*flags*/0);
+    if (!error)
+        vnode_setmultipath(ap->a_vp);
+
+    return error;
 }
 
 static int

@@ -3611,6 +3611,15 @@ next:
 static boolean_t zfs_ioc_recv_inject_err;
 #endif
 
+
+
+#if ZFS_LEOPARD_ONLY
+#define file_vnode_withvid(a, b, c) file_vnode(a, b)
+#endif
+
+
+
+
 /*
  * inputs:
  * zc_name		name of containing filesystem
@@ -3632,8 +3641,8 @@ static boolean_t zfs_ioc_recv_inject_err;
 static int
 zfs_ioc_recv(zfs_cmd_t *zc)
 {
-#if 0  // fixme
-	file_t *fp; // vnode_t or file_t
+#if 1  // fixme
+	file_t *fp = NULL; // vnode_t or file_t
 
 	objset_t *os;
 	dmu_recv_cookie_t drc;
@@ -3665,7 +3674,9 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 		return (error);
 
 	fd = zc->zc_cookie;
+#ifndef __APPLE__
 	fp = getf(fd);
+#endif
 	if (fp == NULL) {
 		nvlist_free(props);
 		return (EBADF);
@@ -3757,9 +3768,11 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 		props_error = EINVAL;
 	}
 
+#ifndef __APPLE__ // Find solution
 	off = fp->f_offset;
 	error = dmu_recv_stream(&drc, fp->f_vnode, &off, zc->zc_cleanup_fd,
 	    &zc->zc_action_handle);
+#endif
 
 	if (error == 0) {
 		zfsvfs_t *zsb = NULL;
@@ -3783,9 +3796,11 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 		}
 	}
 
+#ifndef __APPLE__ // Find solution
 	zc->zc_cookie = off - fp->f_offset;
 	if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
 		fp->f_offset = off;
+#endif
 
 #ifdef	DEBUG
 	if (zfs_ioc_recv_inject_err) {
@@ -3840,7 +3855,9 @@ out:
 	nvlist_free(props);
 	nvlist_free(origprops);
 	nvlist_free(errors);
+#ifndef __APPLE__
 	releasef(fd);
+#endif
 
 	if (error == 0)
 		error = props_error;
@@ -3864,7 +3881,6 @@ out:
 static int
 zfs_ioc_send(zfs_cmd_t *zc)
 {
-#if 0 // fixme
 	objset_t *fromsnap = NULL;
 	objset_t *tosnap;
 	int error;
@@ -3918,7 +3934,8 @@ zfs_ioc_send(zfs_cmd_t *zc)
 		error = dmu_send_estimate(tosnap, fromsnap, zc->zc_obj,
 		    &zc->zc_objset_type);
 	} else {
-		file_t *fp = getf(zc->zc_cookie);
+#ifndef __APPLE__ // Find solution
+		struct file *fp = getf(zc->zc_cookie);
 		if (fp == NULL) {
 			dsl_dataset_rele(ds, FTAG);
 			if (dsfrom)
@@ -3933,12 +3950,51 @@ zfs_ioc_send(zfs_cmd_t *zc)
 		if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
 			fp->f_offset = off;
 		releasef(zc->zc_cookie);
+#else
+#if 1
+
+
+        struct vnode *vp = NULL;
+
+        if (file_vnode_withvid(zc->zc_cookie, &vp, NULL)) {
+			dsl_dataset_rele(ds, FTAG);
+			if (dsfrom)
+				dsl_dataset_rele(dsfrom, FTAG);
+			return (EBADF);
+        }
+        printf("file_vnode %p\n", vp);
+        if ( (error = vnode_getwithref(vp)) ) {
+            file_drop(zc->zc_cookie);
+            dsl_dataset_rele(ds, FTAG);
+            if (dsfrom)
+                dsl_dataset_rele(dsfrom, FTAG);
+            return(error);
+        }
+        printf("getwith ref!\n");
+
+		//off = fp->f_offset;
+        off = 0;
+		error = dmu_send(tosnap, fromsnap, zc->zc_obj,
+		    zc->zc_cookie, vp, &off);
+
+        /* This was implemented as VOP_SEEK but we don't support that
+         * and all the SEEK does is this boundry checking
+         */
+        if ((off < 0 || off > MAXOFFSET_T))
+            error = EINVAL;
+        else
+            zc->zc_history_offset = off;
+
+        vnode_put(vp);
+        file_drop(zc->zc_cookie);
+        printf("done %d\n", error);
+#endif
+#endif
 	}
 	if (dsfrom)
 		dsl_dataset_rele(dsfrom, FTAG);
 	dsl_dataset_rele(ds, FTAG);
 	return (error);
-#endif
 }
 
 /*
@@ -3952,7 +4008,6 @@ zfs_ioc_send(zfs_cmd_t *zc)
 static int
 zfs_ioc_send_progress(zfs_cmd_t *zc)
 {
-#if 0
 	dsl_dataset_t *ds;
 	dmu_sendarg_t *dsp = NULL;
 	int error;
@@ -3970,11 +4025,11 @@ zfs_ioc_send_progress(zfs_cmd_t *zc)
 	 */
 
 	for (dsp = list_head(&ds->ds_sendstreams); dsp != NULL;
-	    dsp = list_next(&ds->ds_sendstreams, dsp)) {
+         dsp = list_next(&ds->ds_sendstreams, dsp)) {
 		if (dsp->dsa_outfd == zc->zc_cookie &&
-		    dsp->dsa_proc->group_leader == curproc->group_leader)
-			break;
-	}
+            dsp->dsa_proc == curproc)
+            break;
+    }
 
 	if (dsp != NULL)
 		zc->zc_cookie = *(dsp->dsa_off);
@@ -3984,7 +4039,6 @@ zfs_ioc_send_progress(zfs_cmd_t *zc)
 	mutex_exit(&ds->ds_sendstream_lock);
 	dsl_dataset_rele(ds, FTAG);
 	return (error);
-#endif
 }
 
 static int
