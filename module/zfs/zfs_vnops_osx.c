@@ -271,8 +271,8 @@ zfs_vnop_lookup(
 	struct componentname *cnp = ap->a_cnp;
 	DECLARE_CRED(ap);
 	int error;
+    char *filename = NULL;
 
-    printf("+vnop_lookup '%s'\n", cnp->cn_nameptr);
 
     /*
       extern int    zfs_lookup ( vnode_t *dvp, char *nm, vnode_t **vpp,
@@ -280,9 +280,21 @@ zfs_vnop_lookup(
                                  cred_t *cr, kthread_t *td, int flags);
     */
 
-	error = zfs_lookup(ap->a_dvp, cnp->cn_nameptr, ap->a_vpp,
+    /*
+     * The nameptr is not always null-terminated, so we need to ensure this
+     * is the case here.
+     */
+    MALLOC(filename, char *, cnp->cn_namelen+1, M_TEMP, M_WAITOK);
+    if (filename == NULL) return ENOMEM;
+    bcopy(cnp->cn_nameptr, filename, cnp->cn_namelen);
+	filename[cnp->cn_namelen] = '\0';
+
+    printf("+vnop_lookup '%s'\n", filename);
+
+	error = zfs_lookup(ap->a_dvp, filename, ap->a_vpp,
                        cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
     /* flags can be LOOKUP_XATTR | FIGNORECASE */
+    FREE(filename, M_TEMP);
 
 	/* XXX FreeBSD has some namecache stuff here. */
 
@@ -349,6 +361,7 @@ zfs_vnop_mkdir(
 	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    int error;
     printf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
 #if 0 // Let's deny OSX fseventd for now */
@@ -360,8 +373,9 @@ zfs_vnop_mkdir(
                            vnode_t **vpp, cred_t *cr,
                            caller_context_t *ct, int flags, vsecattr_t *vsecp);
     */
-	return (zfs_mkdir(ap->a_dvp, ap->a_cnp->cn_nameptr, ap->a_vap, ap->a_vpp,
-	    cr, ct, /*flags*/0, /*vsecp*/NULL));
+	error = zfs_mkdir(ap->a_dvp, ap->a_cnp->cn_nameptr, ap->a_vap, ap->a_vpp,
+	    cr, ct, /*flags*/0, /*vsecp*/NULL);
+    return error;
 }
 
 static int
@@ -458,7 +472,7 @@ zfs_vnop_getattr(
 
     error = zfs_getattr_znode_unlocked(ap->a_vp, ap->a_vap);
 
-    //printf("-vnop_getattr %d\n",error);
+    if (error) printf("-vnop_getattr '%p' %d\n", (ap->a_vp),error);
     return error;
 }
 
