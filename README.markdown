@@ -16,14 +16,12 @@ Note MacZFS's wiki on kernel development and panic decoding.
 
 KNOWN ISSUES.
 
-*) "zpool export" does not unmount. Issue "zfs umount POOL/FS" for all
-   filesystems first. Then "zpool export".
-
-*) Copy large file to POOL will hang.
-
 *) Large sections are missing. File attributes, ACLs, xattr, etc etc.
 
-*) Compiling with --enable-debug will cause double-fault panics.
+*) zfs send and zfs recv only works with file IO, no pipes.
+
+*) zfs clone is not correct
+
 
 
 ```
@@ -40,7 +38,6 @@ KNOWN ISSUES.
 Requesting load of /tmp/zfs.kext.
 /tmp/zfs.kext loaded successfully (or already loaded).
 
-: ZFS: Loaded module v0.01. Pool version -1
 : kobj_open_file: "/etc/zfs/zpool.cache", err 0 from vnode_open
 : ZFS: Loaded module v0.6.0-rc12alpha, ZFS pool version 5000, ZFS filesystem version 5
 
