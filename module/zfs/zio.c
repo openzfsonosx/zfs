@@ -1246,7 +1246,7 @@ zio_execute(zio_t *zio)
 	__zio_execute(zio);
 }
 
-__attribute__((always_inline))
+/* __attribute__((always_inline)) */
 static inline void
 __zio_execute(zio_t *zio)
 {
