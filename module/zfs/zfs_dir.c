@@ -931,7 +931,7 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 	int error;
 	zfs_acl_ids_t acl_ids;
 	boolean_t fuid_dirtied;
-#ifndef __APPLE__
+#ifdef DEBUG
 	uint64_t parent;
 #endif
 
