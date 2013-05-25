@@ -1432,13 +1432,35 @@ zfs_zinactive(znode_t *zp)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	uint64_t z_id = zp->z_id;
+    int is_held=0;
 
 	ASSERT(zp->z_sa_hdl);
 
+    /*
+     *
+     * We can sometimes end up with this stack:
+     * _zfs_mknode
+     *  ZFS_OBJ_HOLD_ENTER(zfsvfs, obj);
+     *  _zfs_znode_alloc
+     *    _zfs_znode_getvnode
+     *      _vnode_create
+     *        _zfs_vnop_reclaim
+     *          _zfs_zinactive
+     *            ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
+     *
+     * and we are here to protect against zget being called, it would
+     * then seem ok for us to check if this-process is already holding
+     * the lock (from zfs_znode_alloc) and don't bother trying to hold it
+     * again.
+     *
+     */
+
+    is_held = ZFS_OBJ_HELD(zfsvfs, z_id);
 	/*
 	 * Don't allow a zfs_zget() while were trying to release this znode
 	 */
-	ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
+    if (!is_held)
+        ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
 
 	mutex_enter(&zp->z_lock);
 
@@ -1448,14 +1470,16 @@ zfs_zinactive(znode_t *zp)
 	 */
 	if (zp->z_unlinked) {
 		mutex_exit(&zp->z_lock);
-		ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
+        if (!is_held)
+            ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 		zfs_rmnode(zp);
 		return;
 	}
 
 	mutex_exit(&zp->z_lock);
 	zfs_znode_dmu_fini(zp);
-	ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
+    if (!is_held)
+        ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 	zfs_znode_free(zp);
 }
 
