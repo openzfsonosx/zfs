@@ -3684,8 +3684,10 @@ top:
 			XVA_SET_REQ(xvap, XAT_AV_QUARANTINED);
 		}
 
+/*
 		if (XVA_ISSET_REQ(xvap, XAT_AV_SCANSTAMP))
 			ASSERT(vp->v_type == VREG);
+*/
 
 		zfs_xvattr_set(zp, xvap, tx);
 	}

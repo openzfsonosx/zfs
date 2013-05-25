@@ -550,8 +550,10 @@ zfs_purgedir(znode_t *dzp)
 			continue;
 		}
 
-		ASSERT((ZTOV(xzp)->v_type == VREG) ||
-		    (ZTOV(xzp)->v_type == VLNK));
+/*
+	    ASSERT((ZTOV(xzp)->v_type == VREG) ||
+		    (ZTOV(xzp)->v_type == VLNK));  
+*/
 
 		tx = dmu_tx_create(zfsvfs->z_os);
 		dmu_tx_hold_sa(tx, dzp->z_sa_hdl, B_FALSE);

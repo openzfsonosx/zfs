@@ -474,7 +474,9 @@ top:
 	VATTR_SET(&vattr, va_mode, mode & ~S_IFMT);
 	zfs_mknode(dzp, &vattr, tx, cr, 0, &xzp, 0);
 
+/*
 	ASSERT(xzp->z_id == zoid);
+*/
 	(void) zfs_link_create(dl, xzp, tx, ZNEW);
 	zfs_log_create(zilog, tx, TX_CREATE, dzp, xzp, (char *)name,
                    NULL /* vsecp */, 0 /*acl_ids.z_fuidp*/, &vattr);
