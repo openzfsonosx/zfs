@@ -609,7 +609,7 @@ zfs_znode_sa_init(zfsvfs_t *zfsvfs, znode_t *zp,
     dmu_buf_t *db, dmu_object_type_t obj_type, sa_handle_t *sa_hdl)
 {
 	ASSERT(!POINTER_IS_VALID(zp->z_zfsvfs) || (zfsvfs == zp->z_zfsvfs));
-	ASSERT(MUTEX_HELD(ZFS_OBJ_MUTEX(zfsvfs, zp->z_id)));
+	ASSERT(MUTEX_HELD(ZFS_OBJ_MUTEX(zp)));
 
 	mutex_enter(&zp->z_lock);
 
@@ -640,7 +640,7 @@ zfs_znode_sa_init(zfsvfs_t *zfsvfs, znode_t *zp,
 void
 zfs_znode_dmu_fini(znode_t *zp)
 {
-	ASSERT(MUTEX_HELD(ZFS_OBJ_MUTEX(zp->z_zfsvfs, zp->z_id)) ||
+	ASSERT(MUTEX_HELD(ZFS_OBJ_MUTEX(zp)) ||
 	    zp->z_unlinked ||
 	    RW_WRITE_HELD(&zp->z_zfsvfs->z_teardown_inactive_lock));
 
