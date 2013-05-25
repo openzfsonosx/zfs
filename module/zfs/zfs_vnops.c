@@ -836,9 +836,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	iovec_t		*aiov = NULL;
 	xuio_t		*xuio = NULL;
 	int		i_iov = 0;
-#ifndef __APPLE__
 	int		iovcnt = uio_iovcnt(uio);
-#endif
 	iovec_t		*iovp =  (iovec_t *)uio_curriovbase(uio);
 	int		write_eof;
 	int		count = 0;
