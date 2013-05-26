@@ -371,6 +371,15 @@ rw_enter(krwlock_t *rwlp, krw_t rw)
 	rwlp->rw_owner = curthread;
 }
 
+int
+rw_lock_held(krwlock_t *rwlp)
+{
+	/*
+	 * ### not sure about this one ###
+	 */
+	return (rwlp->rw_owner == curthread || rwlp->rw_readers > 0);
+}
+
 void
 rw_exit(krwlock_t *rwlp)
 {

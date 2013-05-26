@@ -281,6 +281,7 @@ typedef int krw_t;
 extern void rw_init(krwlock_t *rwlp, char *name, int type, void *arg);
 extern void rw_destroy(krwlock_t *rwlp);
 extern void rw_enter(krwlock_t *rwlp, krw_t rw);
+extern int rw_lock_held(krwlock_t *rwlp);
 extern int rw_tryenter(krwlock_t *rwlp, krw_t rw);
 extern int rw_tryupgrade(krwlock_t *rwlp);
 extern void rw_exit(krwlock_t *rwlp);
