@@ -1834,7 +1834,7 @@ dump_label(const char *dev)
 	vdev_label_t label;
 	char *path, *buf = label.vl_vdev_phys.vp_nvlist;
 	size_t buflen = sizeof (label.vl_vdev_phys.vp_nvlist);
-	struct stat64 statbuf;
+	struct stat statbuf;
 	uint64_t psize, ashift;
 	int len = strlen(dev) + 1;
 	int l;
@@ -1853,7 +1853,7 @@ dump_label(const char *dev)
 		exit(1);
 	}
 
-	if (fstat64_blk(fd, &statbuf) != 0) {
+	if (fstat_blk(fd, &statbuf) != 0) {
 		(void) printf("failed to stat '%s': %s\n", path,
 		    strerror(errno));
 		free(path);

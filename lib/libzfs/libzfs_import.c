@@ -861,14 +861,14 @@ label_offset(uint64_t size, int l)
 int
 zpool_read_label(int fd, nvlist_t **config)
 {
-	struct stat64 statbuf;
+	struct stat statbuf;
 	int l;
 	vdev_label_t *label;
 	uint64_t state, txg, size;
 
 	*config = NULL;
 
-	if (fstat64(fd, &statbuf) == -1)
+	if (fstat(fd, &statbuf) == -1)
 		return (0);
 	size = P2ALIGN_TYPED(statbuf.st_size, sizeof (vdev_label_t), uint64_t);
 
@@ -1005,7 +1005,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 	char path[MAXPATHLEN];
 	char *end, **dir = iarg->path;
 	size_t pathleft;
-	struct stat64 statbuf;
+	struct stat statbuf;
 	nvlist_t *ret = NULL, *config;
 	int fd;
 	pool_list_t pools = { 0 };
@@ -1224,7 +1224,7 @@ zpool_find_import_cached(libzfs_handle_t *hdl, const char *cachefile,
 {
 	char *buf;
 	int fd;
-	struct stat64 statbuf;
+	struct stat statbuf;
 	nvlist_t *raw, *src, *dst;
 	nvlist_t *pools;
 	nvpair_t *elem;
@@ -1241,7 +1241,7 @@ zpool_find_import_cached(libzfs_handle_t *hdl, const char *cachefile,
 		return (NULL);
 	}
 
-	if (fstat64(fd, &statbuf) != 0) {
+	if (fstat(fd, &statbuf) != 0) {
 		zfs_error_aux(hdl, "%s", strerror(errno));
 		(void) close(fd);
 		(void) zfs_error(hdl, EZFS_BADCACHE,

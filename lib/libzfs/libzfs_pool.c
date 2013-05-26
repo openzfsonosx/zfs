@@ -398,7 +398,7 @@ zpool_valid_proplist(libzfs_handle_t *hdl, const char *poolname,
 	char *strval;
 	uint64_t intval;
 	char *slash, *check;
-	struct stat64 statbuf;
+	struct stat statbuf;
 	zpool_handle_t *zhp;
 	nvlist_t *nvroot;
 
@@ -605,7 +605,7 @@ zpool_valid_proplist(libzfs_handle_t *hdl, const char *poolname,
 			*slash = '\0';
 
 			if (strval[0] != '\0' &&
-			    (stat64(strval, &statbuf) != 0 ||
+			    (stat(strval, &statbuf) != 0 ||
 			    !S_ISDIR(statbuf.st_mode))) {
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 				    "'%s' is not a valid directory"),
@@ -3968,7 +3968,7 @@ find_start_block(nvlist_t *config)
 int
 zpool_label_disk_wait(char *path, int timeout)
 {
-	struct stat64 statbuf;
+	struct stat statbuf;
 	int i;
 
 	/*
@@ -3981,7 +3981,7 @@ zpool_label_disk_wait(char *path, int timeout)
 		usleep(1000);
 
 		errno = 0;
-		if ((stat64(path, &statbuf) == 0) && (errno == 0))
+		if ((stat(path, &statbuf) == 0) && (errno == 0))
 			return (0);
 	}
 

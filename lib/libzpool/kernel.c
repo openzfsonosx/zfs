@@ -560,23 +560,6 @@ get_disk_size_libzpool(int fd)
 	return (d_size);
 }
 
-int fstat_blk(int fildes, struct stat *buf) {
-	int error = fstat(fildes, buf);
-	if (error != 0)
-		return error;
-
-	if (buf->st_mode & (S_IFBLK | S_IFCHR)) {
-		/*
-		 * We have a block (or character) special file.
-		 * We allow character special files, to also support /dev/rdisk* nodes.
-		 */
-		buf->st_size = get_disk_size_libzpool(fildes);
-		if (buf->st_size == -1)
-			return -1;
-	}
-	return 0;
-}
-
 /* vdev_file uses vnode_getwithid(), so supply a userspace version. */
 int
 vnode_getwithvid(vnode_t *vp, uint32_t id)
@@ -777,10 +760,10 @@ vn_close(vnode_t *vp)
 int
 fop_getattr(vnode_t *vp, vattr_t *vap)
 {
-	struct stat64 st;
+	struct stat st;
 	int err;
 
-	if (fstat64_blk(vp->v_fd, &st) == -1) {
+	if (fstat_blk(vp->v_fd, &st) == -1) {
 		err = errno;
 		close(vp->v_fd);
 		return (err);

@@ -30,21 +30,24 @@
 
 #ifdef __APPLE__
 #include <sys/disk.h>
+#ifndef _DARWIN_FEATURE_64_BIT_INODE
+#error Need 64 bit inode support
+#endif
 #endif
 #include <sys/mount.h> /* for BLKGETSIZE64 */
 
 /*
- * Emulate Solaris' behavior of returning the block device size in fstat64().
+ * Emulate Solaris' behavior of returning the block device size in fstat().
  */
 static inline int
-fstat64_blk(int fd, struct stat *st)
+fstat_blk(int fd, struct stat *st)
 {
 	if (fstat(fd, st) == -1)
 		return -1;
 
 #ifdef __APPLE__
 	/* In Mac OS X we need to use an ioctl to get the size of a block device */
-	if (st->st_mode & S_IFBLK) {
+	if (st->st_mode & (S_IFBLK | S_IFCHR)) {
 		uint32_t blksize;
 		uint64_t blkcnt;
 
