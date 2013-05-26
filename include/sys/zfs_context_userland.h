@@ -495,7 +495,7 @@ extern int fop_getattr(vnode_t *vp,
 
 #define	VOP_FSYNC(vp, f, cr, ct)	fsync((vp)->v_fd)
 
-#define	VN_RELE(vp)	vn_close(vp)
+#define	VN_RELE(vp)	/* for now, nothing, until we have a more complete emulation. */
 
 extern int vn_open(char *path, int x1, int oflags, int mode, vnode_t **vpp,
     int x2, int x3);
