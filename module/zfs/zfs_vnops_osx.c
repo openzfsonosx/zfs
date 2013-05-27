@@ -489,7 +489,7 @@ zfs_vnop_setattr(
 	DECLARE_CRED_AND_CONTEXT(ap);
     vattr_t *vap = ap->a_vap;
     uint_t		mask = vap->va_mask;
-    int error;
+    int error=0;
 
     // Translate OSX requested mask to ZFS
     if (VATTR_IS_ACTIVE(vap, va_data_size))
@@ -548,9 +548,9 @@ zfs_vnop_setattr(
             ZFS_EXIT(zfsvfs);
             VATTR_SET_SUPPORTED(vap, va_flags);
         }
-
-
     }
+    if (error)
+        printf("vnop_setattr return failure %d\n", error);
 
     return error;
 }
@@ -846,7 +846,7 @@ zfs_vnop_getxattr(
 	} */ *ap)
 {
 
-	return (0);
+	return (ENOTSUP);
 }
 
 static int
@@ -861,7 +861,7 @@ zfs_vnop_setxattr(
 	} */ *ap)
 {
 
-	return (0);
+	return (ENOTSUP);
 }
 
 static int
