@@ -521,7 +521,7 @@ ddi_create_minor_node(dev_info_t *dip, char *name, int spec_type,
         dip->devb = devfs_make_node(dev, DEVFS_BLOCK,  /* Make the node */
                                     UID_ROOT, GID_OPERATOR,
                                     0600, "disk_%s", dup);
-    // 0600, "disk3", dup);
+    //0600, "disk3", dup);
 
     printf("zvol: devfs_make_name '%s' said %p\n", dup);
 
@@ -1363,6 +1363,7 @@ zvol_open(dev_t devp, int flag, int otyp, cred_t *cr)
 		goto out;
 	}
 	if (zv->zv_flags & ZVOL_EXCL) {
+        printf("already open as exclusive\n");
 		err = EBUSY;
 		goto out;
 	}
@@ -1371,15 +1372,16 @@ zvol_open(dev_t devp, int flag, int otyp, cred_t *cr)
 			err = EBUSY;
 			goto out;
 		}
+        printf("setting exclusive\n");
 		zv->zv_flags |= ZVOL_EXCL;
 	}
 
 #if sun
 	if (zv->zv_open_count[otyp] == 0 || otyp == OTYP_LYR) {
 		zv->zv_open_count[otyp]++;
-		zv->zv_total_opens++;
 	}
 #endif
+    zv->zv_total_opens++;
 
 	mutex_exit(&zfsdev_state_lock);
 
@@ -1401,6 +1403,8 @@ zvol_close(dev_t dev, int flag, int otyp, cred_t *cr)
 	zvol_state_t *zv;
 	int error = 0;
 
+    printf("zvol_close(%d)\n", getminor(dev));
+
     // Minor 0 is the /dev/zfs control, not zvol.
     if (!getminor(dev)) return 0;
 
@@ -1415,6 +1419,7 @@ zvol_close(dev_t dev, int flag, int otyp, cred_t *cr)
 	if (zv->zv_flags & ZVOL_EXCL) {
 		ASSERT(zv->zv_total_opens == 1);
 		zv->zv_flags &= ~ZVOL_EXCL;
+        printf("clearing exclusive\n");
 	}
 
 	/*
@@ -2095,7 +2100,8 @@ zvol_get_volume_blocksize(dev_t dev)
     printf("zvol_get_volume_blocksize: %d\n",zv->zv_volblocksize );
 
     mutex_exit(&zfsdev_state_lock);
-	return (zv->zv_volblocksize);
+	//return (zv->zv_volblocksize);
+	return (512);
 }
 
 /*
@@ -2162,7 +2168,7 @@ zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
     u_int64_t *o;
 	zvol_state_t *zv;
 
-    printf("zvol_ioctl %d! %d\n", cmd, cmd&0xff);
+    printf("zvol_ioctl %d (isblk %d)\n", cmd&0xff, isblk);
 
     if (!getminor(dev)) return ENXIO;
 
@@ -2242,7 +2248,7 @@ zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
     case DKIOCGETBASE:
         printf("DKIOCGETBASE\n");
         /* What offset should we say? 0 is ok for FAT but to HFS */
-        *o = zv->zv_volblocksize * 1;
+        *o = zv->zv_volblocksize * 0;
         break;
 
     case DKIOCGETPHYSICALBLOCKSIZE:
@@ -2251,6 +2257,7 @@ zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
         break;
 
     case DKIOCGETTHROTTLEMASK:
+        printf("DKIOCGETTHROTTLEMASK\n");
         *o = 0;
         break;
 

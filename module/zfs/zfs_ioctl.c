@@ -5240,6 +5240,7 @@ static int
 zfsdev_bioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct proc *p)
 {
     int error;
+    printf("bioctl\n");
     error = proc_suser(p);                  /* Are we superman? */
     if (error) return (error);              /* Nope... */
     return (zvol_ioctl(dev, cmd, data, 1, NULL, NULL));
