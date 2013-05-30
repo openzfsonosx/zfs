@@ -44,7 +44,7 @@ extern void zvol_remove_minors(const char *);
 extern int zvol_set_volsize(const char *, uint64_t);
 extern int zvol_set_volblocksize(const char *, uint64_t);
 
-extern int zvol_open(dev_t *devp, int flag, int otyp, cred_t *cr);
+extern int zvol_open(dev_t dev, int flag, int otyp, cred_t *cr);
 extern int zvol_close(dev_t dev, int flag, int otyp, cred_t *cr);
 extern int zvol_read(dev_t dev, uio_t *uiop, cred_t *cr);
 extern int zvol_write(dev_t dev, uio_t *uiop, cred_t *cr);

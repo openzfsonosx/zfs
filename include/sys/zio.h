@@ -232,7 +232,7 @@ enum zio_wait_type {
  * graveyard) to indicate checksum errors and fragmentation.
  */
 #define	ECKSUM	EBADE
-#define	EFRAGS	EBADR
+#define	EFRAGS	EIDRM
 
 typedef void zio_done_func_t(zio_t *zio);
 

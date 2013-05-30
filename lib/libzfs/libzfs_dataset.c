@@ -712,7 +712,7 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 }
 
 static void
-libzfs_mnttab_root(const char *mountp)
+libzfs_mnttab_root(const char *mountpoint)
 {
 #if 0 // NOTYET
 	/* For a root file system, add a volume icon. */

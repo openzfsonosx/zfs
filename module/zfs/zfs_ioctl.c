@@ -5164,6 +5164,11 @@ zfsdev_release(struct inode *ino, struct file *filp)
 
 #define	CRED	((uintptr_t)NOCRED)
 
+enum zfs_soft_state_type {
+	ZSST_ZVOL,
+	ZSST_CTLDEV
+};
+#define getminor(X) minor((X))
 static int
 zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct proc *p)
 {
@@ -5171,6 +5176,17 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	uint_t vec;
 	int error, rc;
 	cred_t *cr;
+    minor_t minor = getminor(dev);
+
+    printf("ioctl minor %d\n", minor);
+
+    error = proc_suser(p);                  /* Are we superman? */
+    if (error) return (error);              /* Nope... */
+
+    // If minor > 0 it is an ioctl for zvol!
+    if (minor != 0 &&
+                     zfsdev_get_soft_state(minor, ZSST_CTLDEV) == NULL)
+        return (zvol_ioctl(dev, cmd, data, 0, NULL, NULL));
 
 	vec = cmd - ZFS_IOC;
 	if (vec >= sizeof(zfs_ioc_vec) / sizeof(zfs_ioc_vec[0]))
@@ -5218,6 +5234,28 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	return (0);
 }
 
+
+/* ioctl handler for block device. Relay to zvol */
+static int
+zfsdev_bioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct proc *p)
+{
+    return (zvol_ioctl(dev, cmd, data, 1, NULL, NULL));
+}
+
+
+extern int zvol_strategy(buf_t *bp);
+extern int zvol_get_volume_blocksize(dev_t dev);
+
+static struct bdevsw zfs_bdevsw = {
+    /* open */      zvol_open,
+    /* close */     zvol_close,
+    /* strategy */  zvol_strategy,
+    /* ioctl */     zfsdev_bioctl, /* block ioctl handler */
+    /* dump */      eno_dump,
+    /* psize */     zvol_get_volume_blocksize,
+    /* flags */     D_DISK,
+};
+
 static struct cdevsw zfs_cdevsw =
 {
         zvol_open,              /* open */
@@ -5233,11 +5271,14 @@ static struct cdevsw zfs_cdevsw =
         eno_strat,              /* strategy */
         eno_getc,               /* getc */
         eno_putc,               /* putc */
-        0                       /* type */
+        D_DISK                  /* type */
 };
 
+
+
 static int zfs_ioctl_installed = 0;
-static int zfs_major = 0;
+/*static*/ int zfs_major = 0; // Needed by zvol
+int zfs_bmajor=0;
 static void * zfs_devnode = NULL;
 u_int32_t k_maczfs_debug_stalk;
 
@@ -5251,7 +5292,17 @@ zfs_ioctl_init(void)
     if (zfs_ioctl_installed)
         return;
 
-    zfs_major = cdevsw_add(ZFS_MAJOR, &zfs_cdevsw);
+    //zfs_major = cdevsw_add(ZFS_MAJOR, &zfs_cdevsw);
+    //dev = zfs_major << 24;
+
+    //zfs_major = bdevsw_add(-1, &zfs_bdevsw);
+    zfs_bmajor = bdevsw_add(-1, &zfs_bdevsw);
+    zfs_major = cdevsw_add_with_bdev(-1, &zfs_cdevsw, zfs_bmajor);
+    dev = makedev(zfs_major, 0);/* Get the device number */
+
+    printf("ZFS ioctl setup. major %d, bmajor %d, dev %d\n",
+           zfs_major, zfs_bmajor, dev);
+
     if (zfs_major < 0) {
         printf("zfs_ioctl_init: failed to allocate a major number!\n");
         return;
@@ -5259,8 +5310,9 @@ zfs_ioctl_init(void)
     zfs_ioctl_installed = 1;
     k_maczfs_debug_stalk = 0;
 
-    dev = zfs_major << 24;
-    zfs_devnode = devfs_make_node(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL, 0666, "zfs", 0);
+    //dev = zfs_major << 24;
+    zfs_devnode = devfs_make_node(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
+                                  0666, "zfs", 0);
 
     spa_init(FREAD | FWRITE);
     zvol_init(); // Removd in 10a286
