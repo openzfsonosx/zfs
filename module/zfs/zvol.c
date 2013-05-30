@@ -515,13 +515,13 @@ ddi_create_minor_node(dev_info_t *dip, char *name, int spec_type,
 	if (spec_type == S_IFCHR)
         dip->devc = devfs_make_node(dev, DEVFS_CHAR,   /* Make the node */
                                     UID_ROOT, GID_OPERATOR,
-                                    //0600, "rdisk_%s", dup);
-                                    0600, "rdisk3", dup);
+                                    0600, "rdisk_%s", dup);
+    //0600, "rdisk3", dup);
 	else
         dip->devb = devfs_make_node(dev, DEVFS_BLOCK,  /* Make the node */
                                     UID_ROOT, GID_OPERATOR,
-                                    //0600, "disk_%s", dup);
-                                    0600, "disk3", dup);
+                                    0600, "disk_%s", dup);
+    // 0600, "disk3", dup);
 
     printf("zvol: devfs_make_name '%s' said %p\n", dup);
 
@@ -2288,44 +2288,6 @@ zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
 
     case DKIOCSYNCHRONIZECACHE:
         break;
-
-#ifdef __LP64__
-    case VNIOCDETACH32:
-    case VNIOCDETACH:
-#else
-    case VNIOCDETACH:
-    case VNIOCDETACH64:
-#endif
-        if (is_char) {
-            /* detach only on block device */
-            error = ENODEV;
-            break;
-        }
-        break;
-
-#ifdef __LP64__
-    case VNIOCATTACH32:
-    case VNIOCATTACH:
-#else
-    case VNIOCATTACH:
-    case VNIOCATTACH64:
-#endif
-        if (is_char) {
-            /* attach only on block device */
-            error = ENODEV;
-            break;
-        }
-        break;
-
-    case VNIOCGSET:   // vn_options |= *f
-        break;
-    case VNIOCGCLEAR: // vn_options &= ~(*f);
-        break;
-    case VNIOCUSET:   // sc_options |= *f;
-        break;
-    case VNIOCUCLEAR: // sc_options &= ~(*f);
-        break;
-
 
     default:
         printf("unknown ioctl: ENOTTY\n");

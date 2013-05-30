@@ -5239,6 +5239,9 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 static int
 zfsdev_bioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct proc *p)
 {
+    int error;
+    error = proc_suser(p);                  /* Are we superman? */
+    if (error) return (error);              /* Nope... */
     return (zvol_ioctl(dev, cmd, data, 1, NULL, NULL));
 }
 
@@ -5263,8 +5266,10 @@ static struct cdevsw zfs_cdevsw =
         zvol_read,              /* read */
         zvol_write,             /* write */
         zfsdev_ioctl,           /* ioctl */
-        (stop_fcn_t *)&nulldev, /* stop */
-        (reset_fcn_t *)&nulldev,/* reset */
+        //(stop_fcn_t *)&nulldev, /* stop */
+        //(reset_fcn_t *)&nulldev,/* reset */
+        eno_stop,
+        eno_reset,
         NULL,                   /* tty's */
         eno_select,             /* select */
         eno_mmap,               /* mmap */
