@@ -118,6 +118,7 @@ AC_CONFIG_FILES([
 	module/nvpair/Makefile
 	module/unicode/Makefile
 	module/zcommon/Makefile
+	module/zfs/KernelExports/Makefile
 	module/zfs/Makefile
 	module/zpios/Makefile
 	include/Makefile

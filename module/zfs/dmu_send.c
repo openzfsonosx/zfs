@@ -54,6 +54,13 @@ int zfs_send_corrupt_data = B_FALSE;
 
 static char *dmu_recv_tag = "dmu_recv_tag";
 
+#ifdef __APPLE__
+extern int fd_rdwr(int fd, enum uio_rw, uint64_t base, int64_t len,
+                   enum uio_seg, off_t offset, int io_flg, int64_t *aresid);
+#endif
+
+
+
 static int
 dump_bytes(dmu_sendarg_t *dsp, void *buf, int len)
 {
@@ -62,9 +69,17 @@ dump_bytes(dmu_sendarg_t *dsp, void *buf, int len)
 	ASSERT3U(len % 8, ==, 0);
 
 	fletcher_4_incremental_native(buf, len, &dsp->dsa_zc);
+#ifdef __APPLE__
+    /* We pass 'int fd' around instead, and call fd_fdwr as it handles
+     * both files and pipes */
+	dsp->dsa_err = fd_rdwr(dsp->dsa_fd, UIO_WRITE,
+                           (caddr_t)buf, len,
+                           UIO_SYSSPACE, 0, FAPPEND, &resid);
+#else
 	dsp->dsa_err = vn_rdwr(UIO_WRITE, dsp->dsa_vp,
 	    (caddr_t)buf, len,
 	    0, UIO_SYSSPACE, FAPPEND, RLIM64_INFINITY, CRED(), &resid);
+#endif
 
 	mutex_enter(&ds->ds_sendstream_lock);
 	*dsp->dsa_off += len;
@@ -389,9 +404,15 @@ backup_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp, arc_buf_t *pbuf,
 	return (err);
 }
 
+#ifdef __APPLE__
+int
+dmu_send(objset_t *tosnap, objset_t *fromsnap, boolean_t fromorigin,
+    int outfd, int fd, offset_t *off)
+#else
 int
 dmu_send(objset_t *tosnap, objset_t *fromsnap, boolean_t fromorigin,
     int outfd, vnode_t *vp, offset_t *off)
+#endif
 {
 	dsl_dataset_t *ds = tosnap->os_dsl_dataset;
 	dsl_dataset_t *fromds = fromsnap ? fromsnap->os_dsl_dataset : NULL;
@@ -470,7 +491,11 @@ dmu_send(objset_t *tosnap, objset_t *fromsnap, boolean_t fromorigin,
 	dsp = kmem_zalloc(sizeof (dmu_sendarg_t), KM_SLEEP);
 
 	dsp->dsa_drr = drr;
+#ifdef __APPLE__
+	dsp->dsa_fd = fd;
+#else
 	dsp->dsa_vp = vp;
+#endif
 	dsp->dsa_outfd = outfd;
 	dsp->dsa_proc = curproc;
 	dsp->dsa_os = tosnap;
@@ -912,7 +937,11 @@ dmu_recv_begin(char *tofs, char *tosnap, char *top_ds, struct drr_begin *drrb,
 struct restorearg {
 	int err;
 	int byteswap;
+#ifdef __APPLE__
+    int fd;
+#else
 	vnode_t *vp;
+#endif
 	char *buf;
 	uint64_t voff;
 	int bufsize; /* amount of memory allocated for buf */
@@ -966,11 +995,17 @@ restore_read(struct restorearg *ra, int len)
 	while (done < len) {
 		ssize_t resid;
 
+#ifdef __APPLE__
+		ra->err = fd_rdwr(ra->fd, UIO_READ,
+		    (caddr_t)ra->buf + done, len - done,
+            UIO_SYSSPACE, ra->voff, FAPPEND,
+		    &resid);
+#else
 		ra->err = vn_rdwr(UIO_READ, ra->vp,
 		    (caddr_t)ra->buf + done, len - done,
 		    ra->voff, UIO_SYSSPACE, FAPPEND,
 		    RLIM64_INFINITY, CRED(), &resid);
-
+#endif
 		if (resid == len - done)
 			ra->err = EINVAL;
 		ra->voff += len - done - resid;
@@ -1350,9 +1385,15 @@ restore_free(struct restorearg *ra, objset_t *os,
 /*
  * NB: callers *must* call dmu_recv_end() if this succeeds.
  */
+#ifdef __APPLE__
+int
+dmu_recv_stream(dmu_recv_cookie_t *drc, int fd, offset_t *voffp,
+    int cleanup_fd, uint64_t *action_handlep)
+#else
 int
 dmu_recv_stream(dmu_recv_cookie_t *drc, vnode_t *vp, offset_t *voffp,
     int cleanup_fd, uint64_t *action_handlep)
+#endif
 {
 	struct restorearg ra = { 0 };
 	dmu_replay_record_t *drr;
@@ -1390,7 +1431,11 @@ dmu_recv_stream(dmu_recv_cookie_t *drc, vnode_t *vp, offset_t *voffp,
 		drrb->drr_fromguid = BSWAP_64(drrb->drr_fromguid);
 	}
 
+#ifdef __APPLE__
+    ra.fd = fd;
+#else
 	ra.vp = vp;
+#endif
 	ra.voff = *voffp;
 	ra.bufsize = 1<<20;
 	ra.buf = vmem_alloc(ra.bufsize, KM_SLEEP);

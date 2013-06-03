@@ -256,7 +256,7 @@ typedef enum {
 typedef struct dmu_sendarg {
 	list_node_t dsa_link;
 	dmu_replay_record_t *dsa_drr;
-	vnode_t *dsa_vp;
+	vnode_t *dsa_fd;
 	int dsa_outfd;
 	struct proc *dsa_proc;
 	offset_t *dsa_off;

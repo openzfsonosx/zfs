@@ -27,7 +27,10 @@
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
+ * Portions Copyright 2013 Jorgen Lundman <lundman@lundman.net>
  */
+
+#define __APPLE_API_PRIVATE
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -3641,9 +3644,7 @@ static boolean_t zfs_ioc_recv_inject_err;
 static int
 zfs_ioc_recv(zfs_cmd_t *zc)
 {
-#if 1  // fixme
-	file_t *fp = NULL; // vnode_t or file_t
-
+    struct fileproc *fp = NULL;
 	objset_t *os;
 	dmu_recv_cookie_t drc;
 	boolean_t force = (boolean_t)zc->zc_guid;
@@ -3674,10 +3675,11 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 		return (error);
 
 	fd = zc->zc_cookie;
-#ifndef __APPLE__
-	fp = getf(fd);
-#endif
-	if (fp == NULL) {
+
+    // Lookup and lock fd
+    error = fp_lookup(curproc, fd, &fp, 0);
+
+	if (error || (fp == NULL)) {
 		nvlist_free(props);
 		return (EBADF);
 	}
@@ -3768,11 +3770,14 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 		props_error = EINVAL;
 	}
 
-#ifndef __APPLE__ // Find solution
-	off = fp->f_offset;
-	error = dmu_recv_stream(&drc, fp->f_vnode, &off, zc->zc_cleanup_fd,
+    /*
+     * No kernel KPI to get file offset, so it was passed in
+     */
+    if (zc->zc_history_offset)
+        off = zc->zc_history_offset;
+
+	error = dmu_recv_stream(&drc, fd, &off, zc->zc_cleanup_fd,
 	    &zc->zc_action_handle);
-#endif
 
 	if (error == 0) {
 		zfsvfs_t *zsb = NULL;
@@ -3855,15 +3860,12 @@ out:
 	nvlist_free(props);
 	nvlist_free(origprops);
 	nvlist_free(errors);
-#ifndef __APPLE__
-	releasef(fd);
-#endif
+    file_drop(curproc, fd, fp, 0);
 
 	if (error == 0)
 		error = props_error;
 
 	return (error);
-#endif
 }
 
 /*
@@ -3951,31 +3953,24 @@ zfs_ioc_send(zfs_cmd_t *zc)
 			fp->f_offset = off;
 		releasef(zc->zc_cookie);
 #else
-#if 1
+        struct fileproc *rfp;
 
-
-        struct vnode *vp = NULL;
-
-        if (file_vnode_withvid(zc->zc_cookie, &vp, NULL)) {
-			dsl_dataset_rele(ds, FTAG);
+        // Lookup and lock fd
+        if (fp_lookup(curproc, zc->zc_cookie,
+                      &rfp, 0)) {
+            dsl_dataset_rele(ds, FTAG);
 			if (dsfrom)
 				dsl_dataset_rele(dsfrom, FTAG);
 			return (EBADF);
         }
-        printf("file_vnode %p\n", vp);
-        if ( (error = vnode_getwithref(vp)) ) {
-            file_drop(zc->zc_cookie);
-            dsl_dataset_rele(ds, FTAG);
-            if (dsfrom)
-                dsl_dataset_rele(dsfrom, FTAG);
-            return(error);
-        }
-        printf("getwith ref!\n");
+        printf("fp_lookup OK\n");
 
-		//off = fp->f_offset;
-        off = 0;
+        /* Can't lookup the offset in OS X, so userland passes it to
+         * us instead. */
+		off = zc->zc_history_offset;
+        off = 0; // well, it will eventually
 		error = dmu_send(tosnap, fromsnap, zc->zc_obj,
-		    zc->zc_cookie, vp, &off);
+		    zc->zc_cookie, zc->zc_cookie, &off);
 
         /* This was implemented as VOP_SEEK but we don't support that
          * and all the SEEK does is this boundry checking
@@ -3985,10 +3980,8 @@ zfs_ioc_send(zfs_cmd_t *zc)
         else
             zc->zc_history_offset = off;
 
-        vnode_put(vp);
-        file_drop(zc->zc_cookie);
-        printf("done %d\n", error);
-#endif
+        file_drop(curproc, zc->zc_cookie, rfp, 0);
+        printf("send complete, err=%d\n", error);
 #endif
 	}
 	if (dsfrom)

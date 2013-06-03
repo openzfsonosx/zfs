@@ -10,6 +10,6 @@ for c in zdb zfs zpool ztest; do
 	export PATH=${topdir}/cmd/${c}/.libs:$PATH
 done
 
-echo PATH=$PATH
-echo DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH
+#echo PATH=$PATH
+#echo DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH
 exec ./cmd/$cmd/.libs/$cmd $*

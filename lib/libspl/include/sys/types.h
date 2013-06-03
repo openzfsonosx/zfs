@@ -69,6 +69,7 @@ typedef int		zoneid_t;
 typedef int		projid_t;
 
 typedef int		major_t;
+typedef uint_t	minor_t;
 
 typedef ushort_t o_mode_t; /* old file attribute type */
 
