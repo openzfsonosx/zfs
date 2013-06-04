@@ -214,7 +214,7 @@ zvol_check_volsize(uint64_t volsize, uint64_t blocksize)
 	if (volsize % blocksize != 0)
 		return (EINVAL);
 
-#ifdef _ILP32
+#ifdef _ILP32XXX
 	if (volsize - 1 > SPEC_MAXOFFSET_T)
 		return (EOVERFLOW);
 #endif
@@ -2389,3 +2389,4 @@ zvol_create_minors(const char *name)
     kmem_free(osname, MAXPATHLEN);
     return (0);
 }
+

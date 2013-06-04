@@ -27,6 +27,6 @@
 #ifndef _LIBSPL_UCRED_H
 #define _LIBSPL_UCRED_H
 
-typedef int ucred_t;
+//typedef int ucred_t;
 
 #endif

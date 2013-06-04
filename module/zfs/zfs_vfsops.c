@@ -2218,7 +2218,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		 * 'z_parent' is self referential for non-snapshots.
 		 */
 		(void) dnlc_purge_vfsp(zfsvfs->z_parent->z_vfs, 0);
-#ifdef FREEBSD_NAMECACHE)
+#ifdef FREEBSD_NAMECACHE
 		cache_purgevfs(zfsvfs->z_parent->z_vfs);
 #endif
 	}
@@ -2624,7 +2624,7 @@ out:
 	ZFS_EXIT(zfsvfs);
 	return (error);
 }
-#endif __APPLE__
+#endif //__APPLE__
 
 #ifdef __APPLE__
 /*
@@ -2799,7 +2799,8 @@ static int desiredvnodes_backup;
 static void
 zfs_vnodes_adjust(void)
 {
-#ifdef __i386__
+    // What is this?
+#ifdef __i386XXX__
 	int newdesiredvnodes;
 
 	desiredvnodes_backup = desiredvnodes;
@@ -2821,7 +2822,7 @@ static void
 zfs_vnodes_adjust_back(void)
 {
 
-#ifdef __i386__
+#ifdef __i386XXX__
 	desiredvnodes = desiredvnodes_backup;
 #endif
 }

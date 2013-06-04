@@ -43,13 +43,13 @@
 	<key>OSBundleLibraries</key>
 	<dict>
       <key>com.apple.kpi.libkern</key>
-      <string>12.0</string>
+      <string>10.0</string>
       <key>com.apple.kpi.bsd</key>
-      <string>12.0</string>
+      <string>10.0</string>
       <key>com.apple.kpi.mach</key>
-      <string>12.0</string>
+      <string>10.0</string>
       <key>com.apple.kpi.unsupported</key>
-      <string>12.0</string>
+      <string>10.0</string>
       <key>net.lundman.kernel.dependecies</key>
       <string>10.0.0</string>
       <key>net.lundman.spl</key>

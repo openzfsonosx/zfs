@@ -9,7 +9,7 @@ noinst_PROGRAMS = kextsymboltool
 kextsymboltool_SOURCES = \
 	$(top_srcdir)/module/zfs/KernelExports/kextsymboltool.c
 
-kextsymboltool_LDFLAGS = -lc++
+kextsymboltool_LDFLAGS = -lstdc++
 
 KernelExports: zfs.exports
 	./kextsymboltool -arch x86_64 -import allsymbols -export zfs.exports -output KernelExports_64
