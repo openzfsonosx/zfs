@@ -2464,6 +2464,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	znode_t		*zp;
 	int 		err;
 
+    printf("vget get %d\n", ino);
 	/*
 	 * zfs_zget() can't operate on virtual entries like .zfs/ or
 	 * .zfs/snapshot/ directories, that's why we return EOPNOTSUPP.
@@ -2473,28 +2474,29 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	    (zfsvfs->z_shares_dir != 0 && ino == zfsvfs->z_shares_dir))
 		return (EOPNOTSUPP);
 
-	ZFS_ENTER(zfsvfs);
 	err = zfs_zget(zfsvfs, ino, &zp);
 	/* Don't expose EA objects! */
 	if (zp->z_pflags & ZFS_XATTR) {
-		VN_RELE(ZTOV(zp));
 		err = ENOENT;
+        goto out;
 	}
 	if (err == 0 && zp->z_unlinked) {
-		VN_RELE(ZTOV(zp));
 		err = EINVAL;
+        goto out;
 	}
-	if (err == 0)
-		*vpp = ZTOV(zp);
-	ZFS_EXIT(zfsvfs);
-	if (err == 0)
-		err = zfs_vnode_lock(*vpp, 0/*flags*/);
+
+    *vpp = ZTOV(zp);
+
+    err = zfs_vnode_lock(*vpp, 0/*flags*/);
+
+    if (vnode_isvroot(*vpp))
+        goto out;
+
+ out:
+    VN_RELE(ZTOV(zp));
 	if (err != 0)
 		*vpp = NULL;
-#ifndef __APPLE__
-	else
-		(*vpp)->v_hash = ino;
-#endif
+    printf("vget return %d\n");
 	return (err);
 }
 
@@ -2509,7 +2511,7 @@ zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 	int error;
-
+    return ENOTSUP;
 	ZFS_ENTER(zfsvfs);
 
 	/*
