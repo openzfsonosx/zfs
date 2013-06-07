@@ -123,8 +123,6 @@ system_taskq_init(void)
 }
 
 
-
-
 kern_return_t zfs_start (kmod_info_t * ki, void * d)
 {
 

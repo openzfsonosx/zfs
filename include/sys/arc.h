@@ -153,7 +153,7 @@ void l2arc_stop(void);
 
 /* Global tunings */
 extern int zfs_write_limit_shift;
-extern unsigned long zfs_write_limit_max;
+extern uint64_t zfs_write_limit_max;
 extern kmutex_t zfs_write_limit_lock;
 
 #ifdef	__cplusplus

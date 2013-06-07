@@ -5171,7 +5171,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	cred_t *cr;
     minor_t minor = getminor(dev);
 
-    printf("ioctl minor %d\n", minor);
+    //printf("ioctl minor %d\n", minor);
 
     error = proc_suser(p);                  /* Are we superman? */
     if (error) return (error);              /* Nope... */

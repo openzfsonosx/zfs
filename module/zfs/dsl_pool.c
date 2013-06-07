@@ -50,7 +50,7 @@ int zfs_txg_synctime_ms = 1000;		/* target millisecs to sync a txg */
 int zfs_txg_history = 60;		/* statistics for the last N txgs */
 
 unsigned long zfs_write_limit_min = 32 << 20;	/* min write limit is 32MB */
-unsigned long zfs_write_limit_max = 0;		/* max data payload per txg */
+uint64_t zfs_write_limit_max = 0;		/* max data payload per txg */
 unsigned long zfs_write_limit_inflated = 0;
 unsigned long zfs_write_limit_override = 0;
 

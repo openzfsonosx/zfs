@@ -184,9 +184,10 @@ static boolean_t arc_warm;
 /*
  * These tunables are for performance analysis.
  */
-unsigned long zfs_arc_max = 0;
-unsigned long zfs_arc_min = 0;
-unsigned long zfs_arc_meta_limit = 0;
+//uint64_t zfs_arc_max = 2147483648 / 32;
+uint64_t zfs_arc_max = 0;
+uint64_t zfs_arc_min = 0;
+uint64_t zfs_arc_meta_limit = 0;
 int zfs_arc_grow_retry = 0;
 int zfs_arc_shrink_shift = 0;
 int zfs_arc_p_min_shift = 0;
@@ -2113,7 +2114,6 @@ arc_shrink(uint64_t bytes)
 		arc_adjust();
 }
 
-#ifndef _KERNEL
 static void
 arc_kmem_reap_now(arc_reclaim_strategy_t strat, uint64_t bytes)
 {
@@ -2122,6 +2122,8 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat, uint64_t bytes)
 	kmem_cache_t		*prev_data_cache = NULL;
 	extern kmem_cache_t	*zio_buf_cache[];
 	extern kmem_cache_t	*zio_data_buf_cache[];
+
+    //printf("arc_kmem_reap_now: %llu\n", bytes);
 
 	/*
 	 * An aggressive reclamation will shrink the cache size as well as
@@ -2144,7 +2146,6 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat, uint64_t bytes)
 	kmem_cache_reap_now(buf_cache);
 	kmem_cache_reap_now(hdr_cache);
 }
-#endif
 
 /*
  * Unlike other ZFS implementations this thread is only responsible for
@@ -2158,6 +2159,8 @@ arc_adapt_thread(void *arg __unused)
 {
 	callb_cpr_t		cpr;
 	int64_t			prune;
+    arc_reclaim_strategy_t  last_reclaim = ARC_RECLAIM_CONS;
+    clock_t                 growtime = 0;
 
 	CALLB_CPR_INIT(&cpr, &arc_reclaim_thr_lock, callb_generic_cpr, FTAG);
 
@@ -2188,9 +2191,36 @@ arc_adapt_thread(void *arg __unused)
 		}
 #endif /* !_KERNEL */
 
+#ifdef __APPLE__
+        if (arc_evict_needed(0)) {
+
+            if (arc_no_grow) {
+                if (last_reclaim == ARC_RECLAIM_CONS) {
+                    last_reclaim = ARC_RECLAIM_AGGR;
+                } else {
+                    last_reclaim = ARC_RECLAIM_CONS;
+                }
+            } else {
+                arc_no_grow = TRUE;
+                last_reclaim = ARC_RECLAIM_AGGR;
+                membar_producer();
+            }
+
+            /* reset the growth delay for every reclaim */
+            growtime = ddi_get_lbolt() + (arc_grow_retry * hz);
+
+            arc_kmem_reap_now(last_reclaim, 0);
+            arc_warm = B_TRUE;
+
+        } else if (arc_no_grow && ddi_get_lbolt() >= growtime) {
+            arc_no_grow = FALSE;
+        }
+
+#else
 		/* No recent memory pressure allow the ARC to grow. */
 		if (arc_no_grow && ddi_get_lbolt() >= arc_grow_time)
 			arc_no_grow = FALSE;
+#endif
 
 		/*
 		 * Keep meta data usage within limits, arc_shrink() is not
@@ -3551,14 +3581,25 @@ arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
 	return (zio);
 }
 
+extern unsigned int vm_page_free_count;
+
 static int
 arc_memory_throttle(uint64_t reserve, uint64_t inflight_data, uint64_t txg)
 {
 #ifdef _KERNEL
+
+    if (arc_size > arc_c) {
+        static int firsttime=1;
+        if (firsttime) {
+            firsttime=0;
+            printf("throttle - reclaim started\n");
+        }
+
+    }
 #if 0
-	uint64_t available_memory;
+	uint64_t available_memory = 0;
 	/* Easily reclaimable memory (free + inactive + arc-evictable) */
-	available_memory = ptob(spl_kmem_availrmem()) + arc_evictable_memory();
+	//available_memory = ptob(spl_kmem_availrmem()) + arc_evictable_memory();
 
 	if (available_memory <= zfs_write_limit_max) {
 		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
@@ -3698,7 +3739,7 @@ arc_init(void)
 	arc_min_prefetch_lifespan = 1 * hz;
 
 	/* Start out with 1/8 of all memory */
-	arc_c = physmem * PAGESIZE / 8;
+	arc_c = physmem * PAGESIZE / 10; // was 8
 
 #ifdef _KERNEL
 	/*
@@ -3717,8 +3758,16 @@ arc_init(void)
 
 	/* set min cache to 1/32 of all memory, or 64MB, whichever is more */
 	arc_c_min = MAX(arc_c / 4, 64<<20);
+
+    /*
+     * With iozone testing, on 2GB VM, OSX needs the default max /4. Possibly
+     * this can be higher over 4GB. More testing needed*/
 	/* set max to 1/2 of all memory */
+#ifdef __APPLE__
+	arc_c_max = MAX(arc_c * 2, arc_c_max);
+#else
 	arc_c_max = MAX(arc_c * 4, arc_c_max);
+#endif
 
 	/*
 	 * Allow the tunables to override our calculations if they are
@@ -3728,6 +3777,9 @@ arc_init(void)
 		arc_c_max = zfs_arc_max;
 	if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max)
 		arc_c_min = zfs_arc_min;
+
+    printf("arc_c_max set to %llu. arc_c is %llu\n", arc_c_max,
+           arc_c);
 
 	arc_c = arc_c_max;
 	arc_p = (arc_c >> 1);
