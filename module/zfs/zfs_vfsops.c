@@ -2464,7 +2464,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	znode_t		*zp;
 	int 		err;
 
-    printf("vget get %d\n", ino);
+    dprintf("vget get %d\n", ino);
 	/*
 	 * zfs_zget() can't operate on virtual entries like .zfs/ or
 	 * .zfs/snapshot/ directories, that's why we return EOPNOTSUPP.
@@ -2475,12 +2475,18 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 		return (EOPNOTSUPP);
 
 	err = zfs_zget(zfsvfs, ino, &zp);
+
+    if (err) {
+        dprintf("zget failed %d\n", err);
+        return err;
+    }
+
 	/* Don't expose EA objects! */
 	if (zp->z_pflags & ZFS_XATTR) {
 		err = ENOENT;
         goto out;
 	}
-	if (err == 0 && zp->z_unlinked) {
+	if (zp->z_unlinked) {
 		err = EINVAL;
         goto out;
 	}
@@ -2493,10 +2499,15 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
         goto out;
 
  out:
-    VN_RELE(ZTOV(zp));
+    /*
+     * We do not release the vp here in vget, if we do, we panic with io_count
+     * != 1
+     *
+     * VN_RELE(ZTOV(zp));
+     */
 	if (err != 0)
 		*vpp = NULL;
-    printf("vget return %d\n");
+    dprintf("vget return %d\n", err);
 	return (err);
 }
 
@@ -2511,7 +2522,7 @@ zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 	int error;
-    return ENOTSUP;
+
 	ZFS_ENTER(zfsvfs);
 
 	/*

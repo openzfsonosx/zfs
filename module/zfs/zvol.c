@@ -1825,10 +1825,12 @@ zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
         *f = zv->zv_volblocksize;
         break;
 
+#ifdef DKIOCGETTHROTTLEMASK
     case DKIOCGETTHROTTLEMASK:
         printf("DKIOCGETTHROTTLEMASK\n");
         *o = 0;
         break;
+#endif
 
     case DKIOCGETMAXBYTECOUNTREAD:
         *o = SPA_MAXBLOCKSIZE;
@@ -1838,17 +1840,21 @@ zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
         *o = SPA_MAXBLOCKSIZE;
         break;
 
+#ifdef DKIOCUNMAP
     case DKIOCUNMAP:
         *f = 0;
         break;
+#endif
 
     case DKIOCGETFEATURES:
         *f = 0;
         break;
 
+#ifdef DKIOCISSOLIDSTATE
     case DKIOCISSOLIDSTATE:
         *f = 0;
         break;
+#endif
 
     case DKIOCISVIRTUAL:
         *f = 1;

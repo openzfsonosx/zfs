@@ -1222,9 +1222,7 @@ again:
 	    doi.doi_bonus_size < sizeof (znode_phys_t)))) {
 		sa_buf_rele(db, NULL);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-#ifdef __FreeBSD__
 		getnewvnode_drop_reserve();
-#endif
 		return ((EINVAL));
 	}
 
@@ -1257,6 +1255,7 @@ again:
 
 		if (err == 0) {
 
+            dprintf("attaching vnode %p\n", vp);
             if ((vnode_getwithvid(vp, zp->z_vid) != 0)) {
                 goto again;
             }
@@ -1302,6 +1301,7 @@ again:
 	}
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 	getnewvnode_drop_reserve();
+    dprintf("zget returning %d\n", err);
 	return (err);
 }
 
