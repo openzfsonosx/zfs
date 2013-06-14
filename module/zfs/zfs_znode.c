@@ -74,6 +74,8 @@ SYSCTL_INT(_debug_sizeof, OID_AUTO, znode, CTLFLAG_RD, 0, sizeof(znode_t),
     "sizeof(znode_t)");
 #endif
 
+//#define dprintf printf
+
 /*
  * Define ZNODE_STATS to turn on statistic gathering. By default, it is only
  * turned on when DEBUG is also defined.
@@ -164,6 +166,7 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 	list_link_init(&zp->z_link_node);
 
 	mutex_init(&zp->z_lock, NULL, MUTEX_DEFAULT, NULL);
+    rw_init(&zp->z_map_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zp->z_parent_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zp->z_name_lock, NULL, RW_DEFAULT, NULL);
 	mutex_init(&zp->z_acl_lock, NULL, MUTEX_DEFAULT, NULL);
@@ -189,6 +192,7 @@ zfs_znode_cache_destructor(void *buf, void *arg)
 	vn_free(ZTOV(zp));
 	ASSERT(!list_link_active(&zp->z_link_node));
 	mutex_destroy(&zp->z_lock);
+    rw_destroy(&zp->z_map_lock);
 	rw_destroy(&zp->z_parent_lock);
 	rw_destroy(&zp->z_name_lock);
 	mutex_destroy(&zp->z_acl_lock);
@@ -710,6 +714,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_vid = 0;
 	zp->z_uid = 0;
 	zp->z_gid = 0;
+	zp->z_size = 0;
 
 	vp = ZTOV(zp); /* Does nothing in OSX */
 
@@ -1609,6 +1614,8 @@ zfs_extend(znode_t *zp, uint64_t end)
 	uint64_t newblksz;
 	int error;
 
+    printf("zfs_extend: %llu\n", end);
+
 	/*
 	 * We will change zp_size, lock the whole file.
 	 */
@@ -1732,9 +1739,7 @@ static int
 zfs_trunc(znode_t *zp, uint64_t end)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-#ifndef __APPLE__
 	struct vnode *vp = ZTOV(zp);
-#endif
 	dmu_tx_t *tx;
 	rl_t *rl;
 	int error;

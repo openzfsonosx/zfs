@@ -192,7 +192,6 @@ typedef struct znode {
     struct vnode    *z_vnode;
 	uint64_t	z_id;		/* object ID for this znode */
 	kmutex_t	z_lock;		/* znode modification lock */
-    //krwlock_t       z_map_lock;     /* page map lock */
 	krwlock_t	z_parent_lock;	/* parent lock for directories */
 	krwlock_t	z_name_lock;	/* "master" lock for dirent locks */
 	zfs_dirlock_t	*z_dirlocks;	/* directory entry lock list */
@@ -230,13 +229,14 @@ typedef struct znode {
 	boolean_t	z_is_ctldir;	/* are we .zfs entry */
 	//struct inode	z_inode;	/* generic vfs inode */
 
+    krwlock_t       z_map_lock;     /* page map lock */
 
     // Used in zfs_log? remove me?
     uint64_t        z_last_itx;     /* last ZIL itx on this znode */
 
     uint32_t        z_vid;
     // kcondvar_t      z_cv;           /* wait for vnode to be attached */
-    uint8_t         z_mmapped;      /* file has been memory mapped */
+    //uint8_t         z_mmapped;      /* file has been memory mapped */
     // uint8_t         z_dbuf_held;    /* Is z_dbuf already held? */
 
 #ifdef ZFS_DEBUG

@@ -1941,7 +1941,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		 * If the attribute isn't there, attempt to create it.
 		 */
 		zfsvfs = vfs_fsprivate(vfsp);
-		if (zfsvfs->z_mtime_vp == NULL) {
+        if (zfsvfs->z_mtime_vp == NULL) {
 			vnode_t *rvp;
 			vnode_t *xdvp = NULLVP;
 			vnode_t *xvp = NULLVP;
@@ -2418,9 +2418,11 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	}
 #endif
 
+    dprintf("teardown\n");
 	VERIFY(zfsvfs_teardown(zfsvfs, B_TRUE) == 0);
 	os = zfsvfs->z_os;
 
+    dprintf("OS %p\n", os);
 	/*
 	 * z_os will be NULL if there was an error in
 	 * attempting to reopen zfsvfs.
@@ -2452,6 +2454,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			VN_RELE(svp);
 	}
 #endif
+    dprintf("freevfs\n");
 	zfs_freevfs(zfsvfs->z_vfs);
 
     dprintf("-unmount\n");

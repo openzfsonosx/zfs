@@ -82,6 +82,8 @@
 #include <sys/zfs_vfsops.h>
 #include <sys/vnode.h>
 
+#define dprintf printf
+
 /*
  * Programming rules.
  *
@@ -381,6 +383,8 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     int upl_page;
     off_t off;
 
+    dprintf("update_pages %llu\n", nbytes);
+
     upl_start = uio_offset(uio);
     off = upl_start & (PAGE_SIZE - 1);
     upl_start &= ~PAGE_MASK;
@@ -596,6 +600,8 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     int upl_page;
     off_t off;
 
+    dprintf("zfs_mappedread: %d\n", nbytes);
+
     upl_start = uio_offset(uio);
     off = upl_start & PAGE_MASK;
     upl_start &= ~PAGE_MASK;
@@ -793,6 +799,7 @@ out:
 
 	ZFS_ACCESSTIME_STAMP(zfsvfs, zp);
 	ZFS_EXIT(zfsvfs);
+    if (error) dprintf("zfs_read returning error %d\n", error);
 	return (error);
 }
 
@@ -964,6 +971,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 * in a separate transaction; this keeps the intent log records small
 	 * and allows us to do more fine-grained space accounting.
 	 */
+    dprintf("zfs_write: resid/n %llu\n", n);
+
 	while (n > 0) {
 		abuf = NULL;
 		woff = uio_offset(uio);
@@ -977,6 +986,7 @@ again:
 		}
 
 		if (xuio && abuf == NULL) {
+            dprintf("  xuio  \n");
 			ASSERT(i_iov < iovcnt);
 			aiov = &iovp[i_iov];
 			abuf = dmu_xuio_arcbuf(xuio, i_iov);
@@ -1004,6 +1014,7 @@ again:
 			    max_blksz);
 			ASSERT(abuf != NULL);
 			ASSERT(arc_buf_size(abuf) == max_blksz);
+            dprintf("  uiocopy  \n");
 			if ((error = uiocopy(abuf->b_data, max_blksz,
                                  UIO_WRITE, uio, &cbytes))) {
 				dmu_return_arcbuf(abuf);
@@ -1087,6 +1098,7 @@ again:
 				    woff, abuf, tx);
 			}
 			ASSERT(tx_bytes <= uio_resid(uio));
+            dprintf("  uioskip  \n");
 			uioskip(uio, tx_bytes);
 		}
 		if (tx_bytes && vn_has_cached_data(vp)) {
@@ -1176,6 +1188,9 @@ again:
 
 
 	}
+
+    dprintf("zfs_write done remainder %llu\n", n);
+
 
 	zfs_range_unlock(rl);
 
@@ -3147,6 +3162,8 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
+    dprintf("+setattr: zp %p, vp %p\n", zp, vp);
+
 	zilog = zfsvfs->z_log;
 
 	/*
@@ -3736,6 +3753,8 @@ out:
 out2:
 	if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
 		zil_commit(zilog, 0);
+
+    dprintf("-setattr: zp %p size %llu\n", zp, zp->z_size);
 
 	ZFS_EXIT(zfsvfs);
 	return (err);
@@ -5104,6 +5123,8 @@ out:
  *	zfs_addmap() updates z_mapcnt
  */
 /*ARGSUSED*/
+/* Apple version is in zfs_vnops_osx.c */
+#ifdef __FreeBSD__
 static int
 zfs_map(vnode_t *vp, offset_t off, struct as *as, caddr_t *addrp,
     size_t len, uchar_t prot, uchar_t maxprot, uint_t flags, cred_t *cr,
@@ -5177,6 +5198,7 @@ zfs_map(vnode_t *vp, offset_t off, struct as *as, caddr_t *addrp,
 	ZFS_EXIT(zfsvfs);
 	return (error);
 }
+#endif
 
 /* ARGSUSED */
 static int

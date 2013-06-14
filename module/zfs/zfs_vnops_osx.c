@@ -61,6 +61,7 @@
 	DECLARE_CRED(ap);		\
 	DECLARE_CONTEXT(ap)
 
+#define dprintf printf
 
 /*
  * zfs vfs operations.
@@ -224,14 +225,13 @@ zfs_vnop_write(
 
     //resid=uio_resid(ap->a_uio);
 	error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct);
-    // dprintf("vnop_write(%d) ->%d\n", resid, error);
 #ifdef __APPLE__
     /* Mac OS X: pageout requires that the UBC file size be current. */
     /* Possibly, we could update it only if size has changed. */
     //    if (tx_bytes != 0) {
-    //if (!error) {
-    //    ubc_setsize(ap->a_vp, zp->z_size);
-    //}
+    if (!error) {
+        ubc_setsize(ap->a_vp, VTOZ(ap->a_vp)->z_size);
+    }
 #endif /* __APPLE__ */
     return error;
 }
@@ -283,19 +283,25 @@ zfs_vnop_lookup(
     */
 
     /*
-     * The nameptr is not always null-terminated, so we need to ensure this
-     * is the case here.
+     * Darwin uses namelen as an optimisation, for example it can be
+     * set to 5 for the string "alpha/beta" to look up "alpha". In this
+     * case we need to copy it out to null-terminate.
      */
-    MALLOC(filename, char *, cnp->cn_namelen+1, M_TEMP, M_WAITOK);
-    if (filename == NULL) return ENOMEM;
-    bcopy(cnp->cn_nameptr, filename, cnp->cn_namelen);
-	filename[cnp->cn_namelen] = '\0';
+    if (cnp->cn_nameptr[cnp->cn_namelen] != 0) {
+        MALLOC(filename, char *, cnp->cn_namelen+1, M_TEMP, M_WAITOK);
+        if (filename == NULL) return ENOMEM;
+        bcopy(cnp->cn_nameptr, filename, cnp->cn_namelen);
+        filename[cnp->cn_namelen] = '\0';
 
-    dprintf("+vnop_lookup '%s'\n", filename);
+    }
 
-	error = zfs_lookup(ap->a_dvp, filename, ap->a_vpp,
-                       cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
+    dprintf("+vnop_lookup '%s'\n", filename ? filename : cnp->cn_nameptr);
+
+	error = zfs_lookup(ap->a_dvp,
+                       filename ? filename : cnp->cn_nameptr,
+                       ap->a_vpp, cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
     /* flags can be LOOKUP_XATTR | FIGNORECASE */
+
     FREE(filename, M_TEMP);
 
 	/* XXX FreeBSD has some namecache stuff here. */
@@ -320,7 +326,7 @@ zfs_vnop_create(
 	vcexcl_t excl;
     int mode=0; // FIXME
 
-    dprintf("vnop_create\n");
+    dprintf("vnop_create: '%s'\n", cnp->cn_nameptr);
     /*
       extern int    zfs_create ( vnode_t *dvp, char *name, vattr_t *vap,
                                  int excl, int mode, vnode_t **vpp,
@@ -366,8 +372,12 @@ zfs_vnop_mkdir(
     int error;
     dprintf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
-#if 0 // Let's deny OSX fseventd for now */
+#if 1 // Let's deny OSX fseventd for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".fseventsd"))
+        return EINVAL;
+#endif
+#if 1 //spotlight for now */
+    if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".Spotlight-V100"))
         return EINVAL;
 #endif
     /*
@@ -465,8 +475,8 @@ zfs_vnop_getattr(
 {
     int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
-    //dprintf("+vnop_getattr zp %p vp %p\n",
-    //      VTOZ(ap->a_vp), ap->a_vp);
+    dprintf("+vnop_getattr zp %p vp %p\n",
+            VTOZ(ap->a_vp), ap->a_vp);
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct);
 
@@ -516,8 +526,8 @@ zfs_vnop_setattr(
     vap->va_mask = mask;
 	error = zfs_setattr(ap->a_vp, ap->a_vap, /*flag*/0, cr, ct);
 
-    dprintf("vnop_setattr: called with mask %04x, err=%d\n",
-           mask, error);
+    dprintf("vnop_setattr: called on vp %p with mask %04x, err=%d\n",
+            ap->a_vp, mask, error);
 
     if (!error) {
 
@@ -680,9 +690,111 @@ zfs_vnop_pagein(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-
 	/* XXX Crib this from the Apple zfs_vnops.c. */
-	return (0);
+    vnode_t         *vp = ap->a_vp;
+    offset_t        off = ap->a_f_offset;
+    size_t          len = ap->a_size;
+    upl_t           upl = ap->a_pl;
+    vm_offset_t     upl_offset = ap->a_pl_offset;
+    znode_t         *zp = VTOZ(vp);
+    zfsvfs_t        *zfsvfs = zp->z_zfsvfs;
+    vm_offset_t     vaddr;
+    int             flags = ap->a_flags;
+    int             need_unlock = 0;
+    int             error = 0;
+
+    dprintf("+vnop_pagein\n");
+
+    if (upl == (upl_t)NULL)
+        panic("zfs_vnop_pagein: no upl!");
+
+    if (len <= 0) {
+        printf("zfs_vnop_pagein: invalid size %ld", len);
+        if (!(flags & UPL_NOCOMMIT))
+            (void) ubc_upl_abort(upl, 0);
+        return (EINVAL);
+    }
+
+    ZFS_ENTER(zfsvfs);
+
+    // Can we trust the z_size here, or do we look it up?
+	//error = sa_lookup(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
+    //                &zp->z_size, sizeof (zp->z_size));
+
+
+    ASSERT(vn_has_cached_data(vp));
+    //ASSERT(zp->z_dbuf_held && zp->z_phys);
+    /* can't fault past EOF */
+    if ((off < 0) || (off >= zp->z_size) ||
+        (len & PAGE_MASK) || (upl_offset & PAGE_MASK)) {
+        ZFS_EXIT(zfsvfs);
+        if (!(flags & UPL_NOCOMMIT))
+            ubc_upl_abort_range(upl, upl_offset, len,
+                                UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY);
+        return (EFAULT);
+    }
+
+    /*
+     * If we already own the lock, then we must be page faulting
+     * in the middle of a write to this file (i.e., we are writing
+     * to this file using data from a mapped region of the file).
+     */
+    if (!rw_write_held(&zp->z_map_lock)) {
+        rw_enter(&zp->z_map_lock, RW_WRITER);
+        need_unlock = TRUE;
+    }
+
+    ubc_upl_map(upl, &vaddr);
+    vaddr += upl_offset;
+    /*
+     * Fill pages with data from the file.
+     */
+    while (len > 0) {
+        if (len < PAGESIZE)
+            break;
+
+        error = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, off, PAGESIZE,
+                         (void *)vaddr, DMU_READ_PREFETCH);
+        if (error) {
+            printf("zfs_vnop_pagein: dmu_read err %d\n", error);
+            break;
+        }
+        off += PAGESIZE;
+        vaddr += PAGESIZE;
+        if (len > PAGESIZE)
+            len -= PAGESIZE;
+        else
+            len = 0;
+    }
+    ubc_upl_unmap(upl);
+
+    if (!(flags & UPL_NOCOMMIT)) {
+        if (error) {
+            ubc_upl_abort_range(upl, upl_offset, ap->a_size,
+                                UPL_ABORT_ERROR |
+                                UPL_ABORT_FREE_ON_EMPTY);
+        } else {
+            ubc_upl_commit_range(upl, upl_offset, ap->a_size,
+                                 UPL_COMMIT_CLEAR_DIRTY |
+                                 UPL_COMMIT_FREE_ON_EMPTY);
+        }
+    }
+    ZFS_ACCESSTIME_STAMP(zfsvfs, zp);
+
+    /*
+     * We can't grab the range lock for the page as reader which would
+     * stop truncation as this leads to deadlock. So we need to recheck
+     * the file size.
+     */
+    if (ap->a_f_offset >= zp->z_size) {
+        error = EFAULT;
+    }
+    if (need_unlock) {
+        rw_exit(&zp->z_map_lock);
+    }
+
+    ZFS_EXIT(zfsvfs);
+    return (error);
 }
 
 static int
@@ -698,12 +810,13 @@ zfs_vnop_pageout(
 	} */ *ap)
 {
 
+    dprintf("+vnop_pageout\n");
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
 	 * Break up that function into smaller bits so it can be reused.
 	 */
 	//return (zfs_putapage());
-    return 0;
+    return ENOTSUP;
 }
 
 static int
@@ -715,8 +828,25 @@ zfs_vnop_mmap(
 		struct proc *a_p;
 	} */ *ap)
 {
+    vnode_t *vp = ap->a_vp;
+    znode_t *zp = VTOZ(vp);
+    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-	return (0); /* zfs_mmap? */
+    dprintf("+vnop_mmap\n");
+
+    ZFS_ENTER(zfsvfs);
+
+    if ( !vnode_isreg(vp) ) {
+        ZFS_EXIT(zfsvfs);
+        return (ENODEV);
+    }
+
+	mutex_enter(&zp->z_lock);
+    zp->z_is_mapped = 1;
+	mutex_exit(&zp->z_lock);
+
+    ZFS_EXIT(zfsvfs);
+    return (0);
 }
 
 static int
@@ -845,7 +975,7 @@ zfs_vnop_getxattr(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-
+    dprintf("getxattr vp %p : ENOTSUP\n", ap->a_vp);
 	return (ENOTSUP);
 }
 
@@ -860,7 +990,7 @@ zfs_vnop_setxattr(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-
+    dprintf("setxattr vp %p : ENOTSUP\n", ap->a_vp);
 	return (ENOTSUP);
 }
 
@@ -874,8 +1004,8 @@ zfs_vnop_removexattr(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-
-	return (0);
+    dprintf("removexattr vp %p : ENOTSUP\n", ap->a_vp);
+	return (ENOTSUP);
 }
 
 static int
@@ -890,7 +1020,7 @@ zfs_vnop_listxattr(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-
+    dprintf("listxattr vp %p : ENOTSUP\n", ap->a_vp);
 	return (0);
 }
 
@@ -977,8 +1107,8 @@ zfs_vnop_offtoblk(
 		daddr64_t *a_lblkno;
 	} */ *ap)
 {
-
-	return (0);
+    dprintf("+vnop_offtoblk\n");
+	return (ENOTSUP);
 }
 
 static int
@@ -993,8 +1123,8 @@ zfs_vnop_blockmap(
 		int a_flags;
 	} */ *ap)
 {
-
-	return (0);
+    dprintf("+vnop_blackmap\n");
+	return (ENOTSUP);
 }
 
 static int
