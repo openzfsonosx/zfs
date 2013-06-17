@@ -52,6 +52,7 @@
 #include <sys/vfs.h>
 #include <sys/vfs_opreg.h>
 #include <sys/zfs_vfsops.h>
+#include <sys/zfs_rlock.h>
 
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
@@ -727,6 +728,7 @@ zfs_vnop_pagein(
     /* can't fault past EOF */
     if ((off < 0) || (off >= zp->z_size) ||
         (len & PAGE_MASK) || (upl_offset & PAGE_MASK)) {
+        dprintf("past EOF\n");
         ZFS_EXIT(zfsvfs);
         if (!(flags & UPL_NOCOMMIT))
             ubc_upl_abort_range(upl, upl_offset, len,
@@ -809,14 +811,150 @@ zfs_vnop_pageout(
 		vfs_context_t a_context;
 	} */ *ap)
 {
+    vnode_t *vp = ap->a_vp;
+    int             flags = ap->a_flags;
+    upl_t           upl = ap->a_pl;
+    vm_offset_t     upl_offset = ap->a_pl_offset;
+    size_t          len = ap->a_size;
+    offset_t        off = ap->a_f_offset;
+    znode_t         *zp = VTOZ(vp);
+    zfsvfs_t        *zfsvfs = zp->z_zfsvfs;
+    zilog_t         *zilog = zfsvfs->z_log;
+    dmu_tx_t        *tx;
+    rl_t            *rl;
+    uint64_t        filesz;
+    int             err;
 
     dprintf("+vnop_pageout\n");
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
 	 * Break up that function into smaller bits so it can be reused.
 	 */
-	//return (zfs_putapage());
-    return ENOTSUP;
+
+    if (zfsvfs == NULL) {
+        if (!(flags & UPL_NOCOMMIT))
+            ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES |
+                          UPL_ABORT_FREE_ON_EMPTY);
+        return (ENXIO);
+    }
+
+    ZFS_ENTER(zfsvfs);
+
+    ASSERT(vn_has_cached_data(vp));
+    ASSERT(zp->z_dbuf_held && zp->z_phys);
+
+    if (upl == (upl_t)NULL) {
+        panic("zfs_vnop_pageout: no upl!");
+    }
+    if (len <= 0) {
+        printf("zfs_vnop_pageout: invalid size %ld", len);
+        if (!(flags & UPL_NOCOMMIT))
+            (void) ubc_upl_abort(upl, 0);
+        err = EINVAL;
+        goto exit;
+    }
+    if (vnode_vfsisrdonly(vp)) {
+        if (!(flags & UPL_NOCOMMIT))
+            ubc_upl_abort_range(upl, upl_offset, len,
+                                UPL_ABORT_FREE_ON_EMPTY);
+        err = EROFS;
+        goto exit;
+    }
+    filesz = zp->z_size; /* get consistent copy of zp_size */
+    if ((off < 0) || (off >= filesz) ||
+        (off & PAGE_MASK_64) || (len & PAGE_MASK)) {
+        if (!(flags & UPL_NOCOMMIT))
+            ubc_upl_abort_range(upl, upl_offset, len,
+                                UPL_ABORT_FREE_ON_EMPTY);
+        err = EINVAL;
+        goto exit;
+    }
+    len = MIN(len, filesz - off);
+ top:
+    rl = zfs_range_lock(zp, off, len, RL_WRITER);
+    /*
+     * Can't push pages past end-of-file.
+     */
+    filesz = zp->z_size;
+    if (off >= filesz) {
+        /* ignore all pages */
+        err = 0;
+        goto out;
+    } else if (off + len > filesz) {
+#if 0
+        int npages = btopr(filesz - off);
+        page_t *trunc;
+
+        page_list_break(&pp, &trunc, npages);
+        /* ignore pages past end of file */
+        if (trunc)
+            pvn_write_done(trunc,  flags);
+#endif
+        len = filesz - off;
+    }
+
+    tx = dmu_tx_create(zfsvfs->z_os);
+    dmu_tx_hold_write(tx, zp->z_id, off, len);
+    dmu_tx_hold_bonus(tx, zp->z_id);
+    err = dmu_tx_assign(tx, TXG_NOWAIT);
+    if (err != 0) {
+        if (err == ERESTART) {
+            zfs_range_unlock(rl);
+            dmu_tx_wait(tx);
+            dmu_tx_abort(tx);
+            goto top;
+        }
+        dmu_tx_abort(tx);
+        goto out;
+    }
+    if (len <= PAGESIZE) {
+        caddr_t va;
+        ASSERT3U(len, <=, PAGESIZE);
+        ubc_upl_map(upl, (vm_offset_t *)&va);
+        va += upl_offset;
+        dmu_write(zfsvfs->z_os, zp->z_id, off, len, va, tx);
+        ubc_upl_unmap(upl);
+    } else {
+        err = dmu_write_pages(zfsvfs->z_os, zp->z_id, off, len, upl, tx);
+    }
+
+	if (err == 0) {
+		uint64_t mtime[2], ctime[2];
+		sa_bulk_attr_t bulk[3];
+		int count = 0;
+
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL,
+		    &mtime, 16);
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL,
+		    &ctime, 16);
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
+		    &zp->z_pflags, 8);
+		zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime,
+		    B_TRUE);
+		zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, off, len, 0);
+	}
+    dmu_tx_commit(tx);
+
+ out:
+    zfs_range_unlock(rl);
+    if (flags & UPL_IOSYNC)
+        zil_commit(zfsvfs->z_log, zp->z_id);
+
+    if (!(flags & UPL_NOCOMMIT)) {
+        if (err)
+            ubc_upl_abort_range(upl, upl_offset, ap->a_size,
+                                UPL_ABORT_ERROR |
+                                UPL_ABORT_FREE_ON_EMPTY);
+        else
+            ubc_upl_commit_range(upl, upl_offset, ap->a_size,
+                                 UPL_COMMIT_CLEAR_DIRTY |
+                                 UPL_COMMIT_FREE_ON_EMPTY);
+    }
+ exit:
+    ZFS_EXIT(zfsvfs);
+
+    return (err);
+
 }
 
 static int
