@@ -422,6 +422,7 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 	struct vnode_attr  vattr;
 	int error;
 	struct componentname cn;
+	zfs_acl_ids_t	acl_ids;
 
 	/* zfs_dirent_lock() expects a component name */
 	bzero(&cn, sizeof (cn));
@@ -434,10 +435,19 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
     ZFS_VERIFY_ZP(dzp);
     zilog = zfsvfs->z_log;
 
+	VATTR_INIT(&vattr);
+	VATTR_SET(&vattr, va_type, VREG);
+	VATTR_SET(&vattr, va_mode, mode & ~S_IFMT);
+
+	if ((error = zfs_acl_ids_create(dzp, 0,
+	    &vattr, cr, NULL, &acl_ids)) != 0) {
+		ZFS_EXIT(zfsvfs);
+		return (error);
+	}
 top:
 	/* Lock the attribute entry name. */
 	if ( (error = zfs_dirent_lock(&dl, dzp, (char *)name, &xzp, flag,
-                                  NULL, NULL)) ) {
+                                  NULL, &cn)) ) {
 		goto out;
 	}
 	/* If the name already exists, we're done. */
@@ -446,17 +456,18 @@ top:
 		goto out;
 	}
 	tx = dmu_tx_create(zfsvfs->z_os);
-	dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT);
-	dmu_tx_hold_bonus(tx, dzp->z_id);
+	dmu_tx_hold_sa(tx, dzp->z_sa_hdl, B_FALSE);
+	dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, FALSE, NULL);
+	//dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT);
+	//dmu_tx_hold_bonus(tx, dzp->z_id);
 	dmu_tx_hold_zap(tx, dzp->z_id, TRUE, (char *)name);
 
-#if 0 // FIXME
-	if (dzp->z_phys->z_flags & ZFS_INHERIT_ACE) {
+#if 1 // FIXME
+	if (dzp->z_pflags & ZFS_INHERIT_ACE) {
 		dmu_tx_hold_write(tx, DMU_NEW_OBJECT, 0, SPA_MAXBLOCKSIZE);
 	}
 #endif
     zfs_sa_upgrade_txholds(tx, dzp);
-    zfs_sa_upgrade_txholds(tx, xzp);
 	error = dmu_tx_assign(tx, TXG_NOWAIT);
 	if (error) {
 		zfs_dirent_unlock(dl);
@@ -469,10 +480,7 @@ top:
 		goto out;
 	}
 
-	VATTR_INIT(&vattr);
-	VATTR_SET(&vattr, va_type, VREG);
-	VATTR_SET(&vattr, va_mode, mode & ~S_IFMT);
-	zfs_mknode(dzp, &vattr, tx, cr, 0, &xzp, 0);
+	zfs_mknode(dzp, &vattr, tx, cr, 0, &xzp, &acl_ids);
 
 /*
 	ASSERT(xzp->z_id == zoid);
@@ -480,6 +488,7 @@ top:
 	(void) zfs_link_create(dl, xzp, tx, ZNEW);
 	zfs_log_create(zilog, tx, TX_CREATE, dzp, xzp, (char *)name,
                    NULL /* vsecp */, 0 /*acl_ids.z_fuidp*/, &vattr);
+    zfs_acl_ids_free(&acl_ids);
 	dmu_tx_commit(tx);
 
 	zfs_dirent_unlock(dl);

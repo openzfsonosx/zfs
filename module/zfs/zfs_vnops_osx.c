@@ -23,7 +23,7 @@
  * zfs_zaccess_* calls are not used.  Not true on FreeBSD, though.  Perhaps
  * those calls should be conditionally #if 0'd?
  *
- * On OS X, VFS & I/O objects are often opaque, e.g. uio_t and vnode_t
+ * On OS X, VFS & I/O objects are often opaque, e.g. uio_t and struct vnode
  * require using functions to access elements of an object.  Should convert
  * the Solaris code to use macros on other platforms.
  *
@@ -53,6 +53,10 @@
 #include <sys/vfs_opreg.h>
 #include <sys/zfs_vfsops.h>
 #include <sys/zfs_rlock.h>
+
+#include <sys/xattr.h>
+#include <sys/utfconv.h>
+#include <sys/ubc.h>
 
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
@@ -241,7 +245,7 @@ static int
 zfs_vnop_access(
 	struct vnop_access_args /* {
         struct vnodeop_desc *a_desc;
-        vnode_t a_vp;
+        struct vnode a_vp;
         int a_action;
         vfs_context_t a_context;
         } */ *ap)
@@ -278,7 +282,7 @@ zfs_vnop_lookup(
 
 
     /*
-      extern int    zfs_lookup ( vnode_t *dvp, char *nm, vnode_t **vpp,
+      extern int    zfs_lookup ( struct vnode *dvp, char *nm, struct vnode **vpp,
                                  struct componentname *cnp, int nameiop,
                                  cred_t *cr, kthread_t *td, int flags);
     */
@@ -329,8 +333,8 @@ zfs_vnop_create(
 
     dprintf("vnop_create: '%s'\n", cnp->cn_nameptr);
     /*
-      extern int    zfs_create ( vnode_t *dvp, char *name, vattr_t *vap,
-                                 int excl, int mode, vnode_t **vpp,
+      extern int    zfs_create ( struct vnode *dvp, char *name, vattr_t *vap,
+                                 int excl, int mode, struct vnode **vpp,
                                  cred_t *cr);
     */
 	excl = (vap->va_vaflags & VA_EXCLUSIVE) ? EXCL : NONEXCL;
@@ -353,7 +357,7 @@ zfs_vnop_remove(
     dprintf("vnop_remove\n");
 
     /*
-      extern int    zfs_remove ( vnode_t *dvp, char *name,
+      extern int    zfs_remove ( struct vnode *dvp, char *name,
                                  cred_t *cr, caller_context_t *ct, int flags);
     */
 	return (zfs_remove(ap->a_dvp, ap->a_cnp->cn_nameptr, cr, ct, /*flags*/0));
@@ -382,8 +386,8 @@ zfs_vnop_mkdir(
         return EINVAL;
 #endif
     /*
-      extern int    zfs_mkdir  ( vnode_t *dvp, char *dirname, vattr_t *vap,
-                           vnode_t **vpp, cred_t *cr,
+      extern int    zfs_mkdir  ( struct vnode *dvp, char *dirname, vattr_t *vap,
+                           struct vnode **vpp, cred_t *cr,
                            caller_context_t *ct, int flags, vsecattr_t *vsecp);
     */
 	error = zfs_mkdir(ap->a_dvp, ap->a_cnp->cn_nameptr, ap->a_vap, ap->a_vpp,
@@ -404,7 +408,7 @@ zfs_vnop_rmdir(
     dprintf("vnop_rmdir\n");
 
     /*
-      extern int    zfs_rmdir  ( vnode_t *dvp, char *name, vnode_t *cwd,
+      extern int    zfs_rmdir  ( struct vnode *dvp, char *name, struct vnode *cwd,
                                  cred_t *cr, caller_context_t *ct, int flags);
     */
 	return (zfs_rmdir(ap->a_dvp, ap->a_cnp->cn_nameptr, /*cwd*/NULL,
@@ -414,7 +418,7 @@ zfs_vnop_rmdir(
 static int
 zfs_vnop_readdir(
 	struct vnop_readdir_args /* {
-		vnode_t a_vp;
+		struct vnode a_vp;
 		struct uio *a_uio;
 		int a_flags;
 		int *a_eofflag;
@@ -432,7 +436,7 @@ zfs_vnop_readdir(
 	 *     malloc/free space for that.
 	 */
     /*
-      extern int   zfs_readdir( vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp,
+      extern int   zfs_readdir( struct vnode *vp, uio_t *uio, cred_t *cr, int *eofp,
                                 int flags, int *a_numdirent);
     */
     dprintf("+readdir\n");
@@ -583,7 +587,7 @@ zfs_vnop_rename(
     dprintf("vnop_rename\n");
 
     /*
-      extern int zfs_rename(vnode_t *sdvp, char *snm, vnode_t *tdvp, char *tnm,
+      extern int zfs_rename(struct vnode *sdvp, char *snm, struct vnode *tdvp, char *tnm,
                             cred_t *cr, caller_context_t *ct, int flags);
     */
 	error = zfs_rename(ap->a_fdvp, ap->a_fcnp->cn_nameptr, ap->a_tdvp,
@@ -608,7 +612,7 @@ zfs_vnop_symlink(
     dprintf("vnop_symlink\n");
 
     /*
-      extern int    zfs_symlink( vnode_t *dvp, vnode_t **vpp, char *name,
+      extern int    zfs_symlink( struct vnode *dvp, struct vnode **vpp, char *name,
                                  vattr_t *vap, char *link, cred_t *cr);
     */
 
@@ -634,7 +638,7 @@ zfs_vnop_readlink(
     dprintf("vnop_readlink\n");
 
     /*
-      extern int    zfs_readlink(vnode_t *vp, uio_t *uio,
+      extern int    zfs_readlink(struct vnode *vp, uio_t *uio,
                                  cred_t *cr, caller_context_t *ct);
     */
 	return (zfs_readlink(ap->a_vp, ap->a_uio, cr, ct));
@@ -666,7 +670,7 @@ zfs_vnop_link(
 		return (ENAMETOOLONG);
 
     /*
-      extern int    zfs_link   ( vnode_t *tdvp, vnode_t *svp, char *name,
+      extern int    zfs_link   ( struct vnode *tdvp, struct vnode *svp, char *name,
                                  cred_t *cr, caller_context_t *ct, int flags);
 
     */
@@ -692,7 +696,7 @@ zfs_vnop_pagein(
 	} */ *ap)
 {
 	/* XXX Crib this from the Apple zfs_vnops.c. */
-    vnode_t         *vp = ap->a_vp;
+    struct vnode         *vp = ap->a_vp;
     offset_t        off = ap->a_f_offset;
     size_t          len = ap->a_size;
     upl_t           upl = ap->a_pl;
@@ -811,7 +815,7 @@ zfs_vnop_pageout(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-    vnode_t *vp = ap->a_vp;
+    struct vnode *vp = ap->a_vp;
     int             flags = ap->a_flags;
     upl_t           upl = ap->a_pl;
     vm_offset_t     upl_offset = ap->a_pl_offset;
@@ -819,7 +823,6 @@ zfs_vnop_pageout(
     offset_t        off = ap->a_f_offset;
     znode_t         *zp = VTOZ(vp);
     zfsvfs_t        *zfsvfs = zp->z_zfsvfs;
-    zilog_t         *zilog = zfsvfs->z_log;
     dmu_tx_t        *tx;
     rl_t            *rl;
     uint64_t        filesz;
@@ -841,7 +844,7 @@ zfs_vnop_pageout(
     ZFS_ENTER(zfsvfs);
 
     ASSERT(vn_has_cached_data(vp));
-    ASSERT(zp->z_dbuf_held && zp->z_phys);
+    ASSERT(zp->z_dbuf_held);
 
     if (upl == (upl_t)NULL) {
         panic("zfs_vnop_pageout: no upl!");
@@ -966,7 +969,7 @@ zfs_vnop_mmap(
 		struct proc *a_p;
 	} */ *ap)
 {
-    vnode_t *vp = ap->a_vp;
+    struct vnode *vp = ap->a_vp;
     znode_t *zp = VTOZ(vp);
     zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
@@ -994,7 +997,7 @@ zfs_vnop_inactive(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-	vnode_t *vp = ap->a_vp;
+	struct vnode *vp = ap->a_vp;
 	DECLARE_CRED(ap);
 
     dprintf("+vnop_inactive\n");
@@ -1010,7 +1013,7 @@ zfs_vnop_reclaim(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-	vnode_t	*vp = ap->a_vp;
+	struct vnode	*vp = ap->a_vp;
 	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
@@ -1113,8 +1116,75 @@ zfs_vnop_getxattr(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-    dprintf("getxattr vp %p : ENOTSUP\n", ap->a_vp);
-	return (ENOTSUP);
+	DECLARE_CRED(ap);
+	struct vnode *vp = ap->a_vp;
+	struct vnode *xdvp = NULLVP;
+	struct vnode *xvp = NULLVP;
+	znode_t  *zp = VTOZ(vp);
+	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
+    struct uio *uio = ap->a_uio;
+	struct componentname  cn;
+	int  error;
+
+    dprintf("+getxattr vp %p\n", ap->a_vp);
+
+	ZFS_ENTER(zfsvfs);
+
+	/*
+	 * Recursive attributes are not allowed.
+	 */
+	if (zp->z_pflags & ZFS_XATTR) {
+		error = EINVAL;
+		goto out;
+	}
+
+#if 0
+	if (zp->z_xattr == 0) {
+		error = ENOATTR;
+		goto out;
+	}
+#endif
+
+	/* Grab the hidden attribute directory vnode. */
+	if ( (error = zfs_get_xattrdir(zp, &xdvp, cr, 0)) ) {
+		goto out;
+	}
+
+	bzero(&cn, sizeof (cn));
+	cn.cn_nameiop = LOOKUP;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_nameptr = (char *)ap->a_name;
+	cn.cn_namelen = strlen(cn.cn_nameptr);
+
+	/* Lookup the attribute name. */
+	if ( (error = zfs_dirlook(VTOZ(xdvp), ap->a_name, &xvp, 0, NULL, &cn)) ) {
+		if (error == ENOENT)
+			error = ENOATTR;
+		goto out;
+	}
+
+	/* Read the attribute data. */
+	if (uio == NULL) {
+		znode_t  *xzp = VTOZ(xvp);
+
+		mutex_enter(&xzp->z_lock);
+		*ap->a_size = (size_t)xzp->z_size;
+		mutex_exit(&xzp->z_lock);
+	} else {
+		error = VNOP_READ(xvp, uio, 0, ap->a_context);
+	}
+out:
+	if (xvp) {
+		vnode_put(xvp);
+	}
+	if (xdvp) {
+		vnode_put(xdvp);
+	}
+	ZFS_EXIT(zfsvfs);
+
+    dprintf("-getxattr vp %p : %d\n", ap->a_vp, error);
+
+	return (error);
 }
 
 static int
@@ -1128,8 +1198,67 @@ zfs_vnop_setxattr(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-    dprintf("setxattr vp %p : ENOTSUP\n", ap->a_vp);
-	return (ENOTSUP);
+	DECLARE_CRED(ap);
+	struct vnode *vp = ap->a_vp;
+	struct vnode *xdvp = NULLVP;
+	struct vnode *xvp = NULLVP;
+	znode_t  *zp = VTOZ(vp);
+	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
+	struct uio *uio = ap->a_uio;
+	int  flag;
+	int  error;
+
+    dprintf("+setxattr vp %p\n", ap->a_vp);
+
+	ZFS_ENTER(zfsvfs);
+
+	/*
+	 * Recursive attributes are not allowed.
+	 */
+	if (zp->z_pflags & ZFS_XATTR) {
+		error = EINVAL;
+		goto out;
+	}
+
+	if (strlen(ap->a_name) >= ZAP_MAXNAMELEN) {
+		error = ENAMETOOLONG;
+		goto out;
+	}
+
+	/* Grab the hidden attribute directory vnode. */
+	if ( (error = zfs_get_xattrdir(zp, &xdvp, cr, CREATE_XATTR_DIR)) ) {
+		goto out;
+	}
+
+	if (ap->a_options & XATTR_CREATE)
+		flag = ZNEW;     /* expect no pre-existing entry */
+	else if (ap->a_options & XATTR_REPLACE)
+		flag = ZEXISTS;  /* expect an existing entry */
+	else
+		flag = 0;
+
+	/* Lookup or create the named attribute. */
+	error = zfs_obtain_xattr(VTOZ(xdvp), ap->a_name,
+	                         VTOZ(vp)->z_mode, cr, &xvp, flag);
+	if (error)
+		goto out;
+
+	/* Write the attribute data. */
+	ASSERT(uio != NULL);
+	error = VNOP_WRITE(xvp, uio, 0, ap->a_context);
+
+out:
+	if (xdvp) {
+		vnode_put(xdvp);
+	}
+	if (xvp) {
+		vnode_put(xvp);
+	}
+	ZFS_EXIT(zfsvfs);
+
+    dprintf("-setxattr vp %p: err %d\n", ap->a_vp, error);
+
+	return (error);
 }
 
 static int
@@ -1142,8 +1271,70 @@ zfs_vnop_removexattr(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-    dprintf("removexattr vp %p : ENOTSUP\n", ap->a_vp);
-	return (ENOTSUP);
+	DECLARE_CRED_AND_CONTEXT(ap);
+
+	struct vnode *vp = ap->a_vp;
+	struct vnode *xdvp = NULLVP;
+	struct vnode *xvp = NULLVP;
+	znode_t  *zp = VTOZ(vp);
+	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
+	struct vnop_remove_args  args;
+	struct componentname  cn;
+	int  error;
+
+
+    dprintf("+removexattr vp %p\n", ap->a_vp);
+
+	ZFS_ENTER(zfsvfs);
+
+	/*
+	 * Recursive attributes are not allowed.
+	 */
+	if (zp->z_pflags & ZFS_XATTR) {
+		error = EINVAL;
+		goto out;
+	}
+
+#if 0
+	if (zp->z_phys->zp_xattr == 0) {
+		error = ENOATTR;
+		goto out;
+	}
+#endif
+
+	/* Grab the hidden attribute directory vnode. */
+	if ( (error = zfs_get_xattrdir(zp, &xdvp, cr, 0)) ) {
+		goto out;
+	}
+
+	bzero(&cn, sizeof (cn));
+	cn.cn_nameiop = DELETE;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_nameptr = (char *)ap->a_name;
+	cn.cn_namelen = strlen(cn.cn_nameptr);
+
+	/* Lookup the attribute name. */
+	if ( (error = zfs_dirlook(VTOZ(xdvp), ap->a_name, &xvp, 0, NULL, &cn)) ) {
+		if (error == ENOENT)
+			error = ENOATTR;
+		goto out;
+	}
+
+	error = zfs_remove(xdvp, ap->a_name, cr, ct, /*flags*/0);
+
+out:
+	if (xvp) {
+		vnode_put(xvp);
+	}
+	if (xdvp) {
+		vnode_put(xdvp);
+	}
+	ZFS_EXIT(zfsvfs);
+
+    dprintf("-removexattr vp %p: error %d\n", ap->a_vp, error);
+
+	return (error);
+
 }
 
 static int
@@ -1158,8 +1349,93 @@ zfs_vnop_listxattr(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-    dprintf("listxattr vp %p : ENOTSUP\n", ap->a_vp);
-	return (0);
+	DECLARE_CRED(ap);
+	struct vnode *vp = ap->a_vp;
+	struct vnode *xdvp = NULLVP;
+	znode_t  *zp = VTOZ(vp);
+	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
+	struct uio *uio = ap->a_uio;
+	zap_cursor_t  zc;
+	zap_attribute_t  za;
+	objset_t  *os;
+	size_t size = 0;
+	char  *nameptr;
+	char  nfd_name[ZAP_MAXNAMELEN];
+	size_t  namelen;
+	int  error = 0;
+
+    dprintf("+listxattr vp %p\n", ap->a_vp);
+
+	ZFS_ENTER(zfsvfs);
+
+	/*
+	 * Recursive attributes are not allowed.
+	 */
+	if (zp->z_pflags & ZFS_XATTR) {
+		error = EINVAL;
+		goto out;
+	}
+
+	/* Do we even have any attributes? */
+#if 0
+	if (zp->z_phys->zp_xattr == 0) {
+		goto out;  /* all done */
+	}
+#endif
+
+	/* Grab the hidden attribute directory vnode. */
+	if (zfs_get_xattrdir(zp, &xdvp, cr, 0) != 0) {
+		goto out;
+	}
+	os = zfsvfs->z_os;
+
+	for (zap_cursor_init(&zc, os, VTOZ(xdvp)->z_id);
+	     zap_cursor_retrieve(&zc, &za) == 0;
+	     zap_cursor_advance(&zc)) {
+
+		if (xattr_protected(za.za_name))
+			continue;     /* skip */
+
+		/*
+		 * Mac OS X: non-ascii names are UTF-8 NFC on disk
+		 * so convert to NFD before exporting them.
+		 */
+		namelen = strlen(za.za_name);
+		if (!is_ascii_str(za.za_name) &&
+		    utf8_normalizestr((const u_int8_t *)za.za_name, namelen,
+				      (u_int8_t *)nfd_name, &namelen,
+				      sizeof (nfd_name), UTF_DECOMPOSED) == 0) {
+			nameptr = nfd_name;
+		} else {
+			nameptr = &za.za_name[0];
+		}
+
+		++namelen;  /* account for NULL termination byte */
+		if (uio == NULL) {
+			size += namelen;
+		} else {
+			if (namelen > uio_resid(uio)) {
+				error = ERANGE;
+				break;
+			}
+			error = uiomove((caddr_t)nameptr, namelen, UIO_READ, uio);
+			if (error) {
+				break;
+			}
+		}
+	}
+	zap_cursor_fini(&zc);
+out:
+	if (uio == NULL) {
+		*ap->a_size = size;
+	}
+	if (xdvp) {
+		vnode_put(xdvp);
+	}
+	ZFS_EXIT(zfsvfs);
+
+    dprintf("-listxattr vp %p: error %d\n", ap->a_vp, error);
+	return (error);
 }
 
 #ifdef HAVE_NAMED_STREAMS
@@ -1171,8 +1447,52 @@ zfs_vnop_getnamedstream(
 		char *a_name;
 	} */ *ap)
 {
+	DECLARE_CRED_AND_CONTEXT(ap);
+	struct vnode *vp = ap->a_vp;
+	struct vnode **svpp = ap->a_svpp;
+	struct vnode *xdvp = NULLVP;
+	znode_t  *zp = VTOZ(vp);
+	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
+	struct componentname  cn;
+	int  error = ENOATTR;
 
-	return (0);
+    dprintf("+getnamedstream vp %p\n", ap->a_vp);
+
+	*svpp = NULLVP;
+	ZFS_ENTER(zfsvfs);
+
+	/*
+	 * Mac OS X only supports the "com.apple.ResourceFork" stream.
+	 */
+	if (bcmp(ap->a_name, XATTR_RESOURCEFORK_NAME, sizeof(XATTR_RESOURCEFORK_NAME)) != 0 /*||
+                                                                                          zp->z_phys->zp_xattr == 0*/) {
+		goto out;
+	}
+
+	/* Grab the hidden attribute directory vnode. */
+	if (zfs_get_xattrdir(zp, &xdvp, cr, 0) != 0) {
+		goto out;
+	}
+
+	bzero(&cn, sizeof (cn));
+	cn.cn_nameiop = LOOKUP;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_nameptr = (char *)ap->a_name;
+	cn.cn_namelen = strlen(cn.cn_nameptr);
+
+	/* Lookup the attribute name. */
+	if ( (error = zfs_dirlook(VTOZ(xdvp), ap->a_name, svpp, 0, NULL, &cn)) ) {
+		if (error == ENOENT)
+			error = ENOATTR;
+	}
+out:
+	if (xdvp) {
+		vnode_put(xdvp);
+	}
+	ZFS_EXIT(zfsvfs);
+
+    dprintf("-getnamedstream vp %p: error %d\n", ap->a_vp, error);
+	return (error);
 }
 
 static int
@@ -1183,8 +1503,61 @@ zfs_vnop_makenamedstream_args(
 		char *a_name;
 	} */ *ap)
 {
+	DECLARE_CRED_AND_CONTEXT(ap);
+	struct vnode *vp = ap->a_vp;
+	struct vnode *xdvp = NULLVP;
+	znode_t  *zp = VTOZ(vp);
+	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
+	struct componentname  cn;
+	struct vnode_attr  vattr;
+	struct vnop_create_args  args;
+	int  error = 0;
 
-	return (0);
+    dprintf("+makenamedstream vp %p\n", ap->a_vp);
+
+	*ap->a_svpp = NULLVP;
+	ZFS_ENTER(zfsvfs);
+
+	/* Only regular files can have a resource fork stream. */
+	if ( !vnode_isreg(vp) ) {
+		error = EPERM;
+		goto out;
+	}
+
+	/*
+	 * Mac OS X only supports the "com.apple.ResourceFork" stream.
+	 */
+	if (bcmp(ap->a_name, XATTR_RESOURCEFORK_NAME, sizeof(XATTR_RESOURCEFORK_NAME)) != 0) {
+		error = ENOATTR;
+		goto out;
+	}
+
+	/* Grab the hidden attribute directory vnode. */
+	if ( (error = zfs_get_xattrdir(zp, &xdvp, cr, CREATE_XATTR_DIR)) ) {
+		goto out;
+	}
+
+	bzero(&cn, sizeof (cn));
+	cn.cn_nameiop = CREATE;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_nameptr = (char *)ap->a_name;
+	cn.cn_namelen = strlen(cn.cn_nameptr);
+
+	VATTR_INIT(&vattr);
+	VATTR_SET(&vattr, va_type, VREG);
+	VATTR_SET(&vattr, va_mode, VTOZ(vp)->z_mode & ~S_IFMT);
+
+	error = zfs_create(xdvp, ap->a_name, &vattr, NONEXCL, VTOZ(vp)->z_mode,
+                       ap->a_svpp, cr);
+
+out:
+	if (xdvp) {
+		vnode_put(xdvp);
+	}
+	ZFS_EXIT(zfsvfs);
+
+    dprintf("-makenamedstream vp %p: error %d\n", ap->a_vp, error);
+	return (error);
 }
 
 static int
@@ -1195,8 +1568,28 @@ zfs_vnop_removenamedstream(
 		char *a_name;
 	} */ *ap)
 {
+	struct vnode *svp = ap->a_svp;
+	znode_t  *zp = VTOZ(svp);
+	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
+	int error = 0;
 
-	return (0);
+	ZFS_ENTER(zfsvfs);
+
+	/*
+	 * Mac OS X only supports the "com.apple.ResourceFork" stream.
+	 */
+	if (bcmp(ap->a_name, XATTR_RESOURCEFORK_NAME, sizeof(XATTR_RESOURCEFORK_NAME)) != 0) {
+		error = ENOATTR;
+		goto out;
+	}
+
+	/* ### MISING CODE ### */
+	printf("zfs_vnop_removenamedstream\n");
+	error = EPERM;
+out:
+	ZFS_EXIT(zfsvfs);
+
+	return (ENOTSUP);
 }
 #endif /* HAVE_NAMED_STREAMS */
 
