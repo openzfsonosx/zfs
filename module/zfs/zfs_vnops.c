@@ -3621,6 +3621,17 @@ top:
 			err = zfs_acl_chown_setattr(attrzp);
 			ASSERT(err == 0);
 		}
+
+        /*
+         * When importing ZEVO volumes, and 'chown' is used, we end up calling
+         * SA_LOOKUP with 'sa_addr' == NULL. Unsure why this happens, for
+         * now, we shall stick a plaster over this open-fracture
+         */
+        if (err == 2) {
+            printf("setattr: triggered SA_LOOKUP == NULL problem\n");
+            err = 0;
+        }
+
 	}
 
 	if (mask & AT_MODE) {

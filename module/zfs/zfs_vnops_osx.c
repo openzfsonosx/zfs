@@ -386,7 +386,7 @@ zfs_vnop_mkdir(
         return EINVAL;
 #endif
     /*
-      extern int    zfs_mkdir  ( struct vnode *dvp, char *dirname, vattr_t *vap,
+      extern int    zfs_mkdir ( struct vnode *dvp, char *dirname, vattr_t *vap,
                            struct vnode **vpp, cred_t *cr,
                            caller_context_t *ct, int flags, vsecattr_t *vsecp);
     */
