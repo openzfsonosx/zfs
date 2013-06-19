@@ -910,11 +910,11 @@ void fileattrpack(attrinfo_t *aip, zfsvfs_t *zfsvfs, znode_t *zp)
 		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
 	}
 	if (ATTR_FILE_DEVTYPE & fileattr) {
-        uint64_t mode, val;
+        uint64_t mode, val=0;
         VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zfsvfs),
                          &mode, sizeof(mode)) == 0);
-        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_RDEV(zfsvfs),
-                         &val, sizeof(val)) == 0);
+        sa_lookup(zp->z_sa_hdl, SA_ZPL_RDEV(zfsvfs),
+                  &val, sizeof(val));
 		if (S_ISBLK(mode) || S_ISCHR(mode))
 			*((u_int32_t *)attrbufptr) = (u_int32_t)val;
 		else
@@ -935,10 +935,10 @@ void fileattrpack(attrinfo_t *aip, zfsvfs_t *zfsvfs, znode_t *zp)
 	if ((ATTR_FILE_RSRCLENGTH | ATTR_FILE_RSRCALLOCSIZE) & fileattr) {
 		uint64_t rsrcsize = 0;
         uint64_t xattr;
-        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
-                         &xattr, sizeof(xattr)) == 0);
 
-		if (xattr) {
+        if (!sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
+                       &xattr, sizeof(xattr)) &&
+            xattr) {
 			vnode_t *xdvp = NULLVP;
 			vnode_t *xvp = NULLVP;
 			struct componentname  cn;
@@ -1107,13 +1107,14 @@ void getfinderinfo(znode_t *zp, cred_t *cr, finderinfo_t *fip)
 	struct uio		*auio = NULL;
 	struct componentname  cn;
 	int		error;
+    uint64_t xattr = 0;
 
-    uint64_t xattr;
-    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zp->z_zfsvfs),
-                     &xattr, sizeof(xattr)) == 0);
-	if (xattr == 0) {
+    if (sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zp->z_zfsvfs),
+                   &xattr, sizeof(xattr)) ||
+        (xattr == 0)) {
         goto nodata;
     }
+
 	auio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
 	if (auio == NULL) {
 		goto nodata;
