@@ -17,6 +17,10 @@
 #include <sys/zfs_vnops.h>
 #include <sys/stat.h>
 
+#include <sys/unistd.h>
+#include <sys/xattr.h>
+#include <sys/utfconv.h>
+
 
 /* Originally from illumos:uts/common/sys/vfs.h */
 typedef uint64_t vfs_feature_t;
@@ -31,25 +35,25 @@ typedef uint64_t vfs_feature_t;
 #define	VFSFT_REPARSE		0x100000100	/* Supports reparse point */
 #define	VFSFT_ZEROCOPY_SUPPORTED 0x100000200	/* Supports loaning buffers */
 
-#define	ZFS_SUPPORTED_VATTRS		\
-	( VNODE_ATTR_va_mode |		\
-	  VNODE_ATTR_va_uid |		\
-	  VNODE_ATTR_va_gid |		\
-      /* VNODE_ATTR_va_fsid |*/ \
-	  VNODE_ATTR_va_fileid |	\
-	  VNODE_ATTR_va_nlink |		\
-	  VNODE_ATTR_va_data_size |	\
-	  VNODE_ATTR_va_total_size |	\
-	  VNODE_ATTR_va_rdev |		\
-	  VNODE_ATTR_va_gen |		\
-	  VNODE_ATTR_va_create_time |	\
-	  VNODE_ATTR_va_access_time |	\
-	  VNODE_ATTR_va_modify_time |	\
-	  VNODE_ATTR_va_change_time |	\
-	  VNODE_ATTR_va_flags |		\
-	  VNODE_ATTR_va_parentid |	\
-	  VNODE_ATTR_va_iosize |	\
-	0)
+#define	ZFS_SUPPORTED_VATTRS                    \
+	( VNODE_ATTR_va_mode |                      \
+	  VNODE_ATTR_va_uid |                       \
+	  VNODE_ATTR_va_gid |                       \
+      /* VNODE_ATTR_va_fsid |*/                 \
+	  VNODE_ATTR_va_fileid |                    \
+	  VNODE_ATTR_va_nlink |                     \
+	  VNODE_ATTR_va_data_size |                 \
+	  VNODE_ATTR_va_total_size |                \
+	  VNODE_ATTR_va_rdev |                      \
+	  VNODE_ATTR_va_gen |                       \
+	  VNODE_ATTR_va_create_time |               \
+	  VNODE_ATTR_va_access_time |               \
+	  VNODE_ATTR_va_modify_time |               \
+	  VNODE_ATTR_va_change_time |               \
+	  VNODE_ATTR_va_flags |                     \
+	  VNODE_ATTR_va_parentid |                  \
+	  VNODE_ATTR_va_iosize |                    \
+      0)
 
 /* For part 1 of zfs_getattr() */
 int
@@ -153,7 +157,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 {
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	//znode_phys_t *pzp = zp->z_phys;
 	int error = 0;
 	uint64_t	parent;
     zfs_acl_phys_t acl;
@@ -231,12 +234,12 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		vap->va_data_alloc = (uint64_t)512LL * (uint64_t)nblks;
 		vap->va_total_alloc = vap->va_data_alloc;
 		vap->va_supported |= VNODE_ATTR_va_data_alloc |
-					VNODE_ATTR_va_total_alloc;
+            VNODE_ATTR_va_total_alloc;
 	}
 
 	if (VATTR_IS_ACTIVE(vap, va_name) && !vnode_isvroot(vp)) {
 		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-			 	    ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
+                             ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
 			VATTR_SET_SUPPORTED(vap, va_name);
 	}
 
@@ -283,7 +286,7 @@ tsd_set(uint_t key, void *value)
 
 int
 zfs_access_native_mode(struct vnode *vp, int *mode, cred_t *cr,
-    caller_context_t *ct)
+                       caller_context_t *ct)
 {
 	int accmode = *mode & (VREAD|VWRITE|VEXEC/*|VAPPEND*/);
 	int error = 0;
@@ -391,8 +394,8 @@ zfs_setbsdflags(znode_t *zp, uint32_t bsdflags)
 
     zp->z_pflags = zflags;
     /*
-    (void )sa_update(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs),
-                     (void *)&zp->z_pflags, sizeof (uint64_t), tx);
+      (void )sa_update(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs),
+      (void *)&zp->z_pflags, sizeof (uint64_t), tx);
     */
 }
 
@@ -440,11 +443,11 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 	VATTR_SET(&vattr, va_mode, mode & ~S_IFMT);
 
 	if ((error = zfs_acl_ids_create(dzp, 0,
-	    &vattr, cr, NULL, &acl_ids)) != 0) {
+                                    &vattr, cr, NULL, &acl_ids)) != 0) {
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
-top:
+ top:
 	/* Lock the attribute entry name. */
 	if ( (error = zfs_dirent_lock(&dl, dzp, (char *)name, &xzp, flag,
                                   NULL, &cn)) ) {
@@ -482,9 +485,9 @@ top:
 
 	zfs_mknode(dzp, &vattr, tx, cr, 0, &xzp, &acl_ids);
 
-/*
-	ASSERT(xzp->z_id == zoid);
-*/
+    /*
+      ASSERT(xzp->z_id == zoid);
+    */
 	(void) zfs_link_create(dl, xzp, tx, ZNEW);
 	zfs_log_create(zilog, tx, TX_CREATE, dzp, xzp, (char *)name,
                    NULL /* vsecp */, 0 /*acl_ids.z_fuidp*/, &vattr);
@@ -492,7 +495,7 @@ top:
 	dmu_tx_commit(tx);
 
 	zfs_dirent_unlock(dl);
-out:
+ out:
 	if (error == EEXIST)
 		error = ENOATTR;
 	if (xzp)
@@ -580,4 +583,646 @@ acl_trivial_access_masks(mode_t mode, boolean_t isdir, trivial_acl_t *masks)
         masks->everyone |= write_mask;
     if (mode & S_IXOTH)
         masks->everyone |= execute_mask;
+}
+
+void commonattrpack(attrinfo_t *aip, zfsvfs_t *zfsvfs, znode_t *zp,
+                    const char *name, ino64_t objnum, enum vtype vtype,
+                    boolean_t user64)
+{
+	attrgroup_t commonattr = aip->ai_attrlist->commonattr;
+	void *attrbufptr = *aip->ai_attrbufpp;
+	void *varbufptr = *aip->ai_varbufpp;
+	struct mount *mp = zfsvfs->z_vfs;
+	cred_t  *cr = (cred_t *)vfs_context_ucred(aip->ai_context);
+	finderinfo_t finderinfo;
+
+    /*
+     * We should probably combine all the sa_lookup into a bulk
+     * lookup operand.
+     */
+
+	finderinfo.fi_flags = 0;
+
+	if (ATTR_CMN_NAME & commonattr) {
+		nameattrpack(aip, name, strlen(name));
+		attrbufptr = *aip->ai_attrbufpp;
+		varbufptr = *aip->ai_varbufpp;
+	}
+	if (ATTR_CMN_DEVID & commonattr) {
+		*((dev_t *)attrbufptr) = vfs_statfs(mp)->f_fsid.val[0];
+		attrbufptr = ((dev_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_FSID & commonattr) {
+		*((fsid_t *)attrbufptr) = vfs_statfs(mp)->f_fsid;
+		attrbufptr = ((fsid_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_OBJTYPE & commonattr) {
+		*((fsobj_type_t *)attrbufptr) = vtype;
+		attrbufptr = ((fsobj_type_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_OBJTAG & commonattr) {
+		*((fsobj_tag_t *)attrbufptr) = VT_ZFS;
+		attrbufptr = ((fsobj_tag_t *)attrbufptr) + 1;
+	}
+	/*
+	 * Note: ATTR_CMN_OBJID is lossy (only 32 bits).
+	 */
+	if ((ATTR_CMN_OBJID | ATTR_CMN_OBJPERMANENTID) & commonattr) {
+		u_int32_t fileid;
+		/*
+		 * On Mac OS X we always export the root directory id as 2
+		 */
+		fileid = (objnum == zfsvfs->z_root) ? 2 : objnum;
+
+		if (ATTR_CMN_OBJID & commonattr) {
+			((fsobj_id_t *)attrbufptr)->fid_objno = fileid;
+			((fsobj_id_t *)attrbufptr)->fid_generation = 0;
+			attrbufptr = ((fsobj_id_t *)attrbufptr) + 1;
+		}
+		if (ATTR_CMN_OBJPERMANENTID & commonattr) {
+			((fsobj_id_t *)attrbufptr)->fid_objno = fileid;
+			((fsobj_id_t *)attrbufptr)->fid_generation = 0;
+			attrbufptr = ((fsobj_id_t *)attrbufptr) + 1;
+		}
+	}
+	/*
+	 * Note: ATTR_CMN_PAROBJID is lossy (only 32 bits).
+	 */
+	if (ATTR_CMN_PAROBJID & commonattr) {
+		uint64_t parentid;
+
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+                         &parentid, sizeof (parentid)) == 0);
+
+		/*
+		 * On Mac OS X we always export the root
+		 * directory id as 2 and its parent as 1
+		 */
+		if (zp && zp->z_id == zfsvfs->z_root)
+			parentid = 1;
+		else if (parentid == zfsvfs->z_root)
+			parentid = 2;
+
+		ASSERT(parentid != 0);
+
+		((fsobj_id_t *)attrbufptr)->fid_objno = (uint32_t)parentid;
+		((fsobj_id_t *)attrbufptr)->fid_generation = 0;
+		attrbufptr = ((fsobj_id_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_SCRIPT & commonattr) {
+		*((text_encoding_t *)attrbufptr) = kTextEncodingMacUnicode;
+		attrbufptr = ((text_encoding_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_CRTIME & commonattr) {
+        uint64_t times[2];
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_CRTIME(zfsvfs),
+                         times, sizeof(times)) == 0);
+		if (user64) {
+			ZFS_TIME_DECODE((timespec_user64_t *)attrbufptr,
+			                times);
+			attrbufptr = ((timespec_user64_t *)attrbufptr) + 1;
+		} else {
+			ZFS_TIME_DECODE((timespec_user32_t *)attrbufptr,
+			                times);
+			attrbufptr = ((timespec_user32_t *)attrbufptr) + 1;
+		}
+	}
+	if (ATTR_CMN_MODTIME & commonattr) {
+        uint64_t times[2];
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_MTIME(zfsvfs),
+                         times, sizeof(times)) == 0);
+		if (user64) {
+			ZFS_TIME_DECODE((timespec_user64_t *)attrbufptr,
+			                times);
+			attrbufptr = ((timespec_user64_t *)attrbufptr) + 1;
+		} else {
+			ZFS_TIME_DECODE((timespec_user32_t *)attrbufptr,
+			                times);
+			attrbufptr = ((timespec_user32_t *)attrbufptr) + 1;
+		}
+	}
+	if (ATTR_CMN_CHGTIME & commonattr) {
+        uint64_t times[2];
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_CTIME(zfsvfs),
+                         times, sizeof(times)) == 0);
+		if (user64) {
+			ZFS_TIME_DECODE((timespec_user64_t *)attrbufptr,
+			                times);
+			attrbufptr = ((timespec_user64_t *)attrbufptr) + 1;
+		} else {
+			ZFS_TIME_DECODE((timespec_user32_t *)attrbufptr,
+			                times);
+			attrbufptr = ((timespec_user32_t *)attrbufptr) + 1;
+		}
+	}
+	if (ATTR_CMN_ACCTIME & commonattr) {
+        uint64_t times[2];
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_ATIME(zfsvfs),
+                         times, sizeof(times)) == 0);
+		if (user64) {
+			ZFS_TIME_DECODE((timespec_user64_t *)attrbufptr,
+			                times);
+			attrbufptr = ((timespec_user64_t *)attrbufptr) + 1;
+		} else {
+			ZFS_TIME_DECODE((timespec_user32_t *)attrbufptr,
+			                times);
+			attrbufptr = ((timespec_user32_t *)attrbufptr) + 1;
+		}
+	}
+	if (ATTR_CMN_BKUPTIME & commonattr) {
+		/* legacy attribute -- just pass zero */
+		if (user64) {
+			((timespec_user64_t *)attrbufptr)->tv_sec = 0;
+			((timespec_user64_t *)attrbufptr)->tv_nsec = 0;
+			attrbufptr = ((timespec_user64_t *)attrbufptr) + 1;
+		}  else {
+			((timespec_user32_t *)attrbufptr)->tv_sec = 0;
+			((timespec_user32_t *)attrbufptr)->tv_nsec = 0;
+			attrbufptr = ((timespec_user32_t *)attrbufptr) + 1;
+		}
+	}
+	if (ATTR_CMN_FNDRINFO & commonattr) {
+        uint64_t val;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_FLAGS(zfsvfs),
+                         &val, sizeof(val)) == 0);
+		getfinderinfo(zp, cr, &finderinfo);
+		/* Shadow ZFS_HIDDEN to Finder Info's invisible bit */
+		if (val & ZFS_HIDDEN) {
+			finderinfo.fi_flags |=
+				OSSwapHostToBigConstInt16(kIsInvisible);
+		}
+		bcopy(&finderinfo, attrbufptr, sizeof (finderinfo));
+		attrbufptr = (char *)attrbufptr + 32;
+	}
+	if (ATTR_CMN_OWNERID & commonattr) {
+        uint64_t val;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_UID(zfsvfs),
+                         &val, sizeof(val)) == 0);
+		*((uid_t *)attrbufptr) = val;
+		attrbufptr = ((uid_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_GRPID & commonattr) {
+        uint64_t val;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_GID(zfsvfs),
+                         &val, sizeof(val)) == 0);
+		*((gid_t *)attrbufptr) = val;
+		attrbufptr = ((gid_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_ACCESSMASK & commonattr) {
+        uint64_t val;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zfsvfs),
+                         &val, sizeof(val)) == 0);
+		*((u_int32_t *)attrbufptr) = val;
+		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_FLAGS & commonattr) {
+		u_int32_t flags = zfs_getbsdflags(zp);
+
+		/* Shadow Finder Info's invisible bit to UF_HIDDEN */
+		if ((ATTR_CMN_FNDRINFO & commonattr) &&
+		    (OSSwapBigToHostInt16(finderinfo.fi_flags) & kIsInvisible))
+			flags |= UF_HIDDEN;
+
+		*((u_int32_t *)attrbufptr) = flags;
+		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_USERACCESS & commonattr) {
+		u_int32_t user_access = 0;
+        uint64_t val;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_FLAGS(zfsvfs),
+                         &val, sizeof(val)) == 0);
+
+		user_access = getuseraccess(zp, aip->ai_context);
+
+		/* Also consider READ-ONLY file system. */
+		if (vfs_flags(mp) & MNT_RDONLY) {
+			user_access &= ~W_OK;
+		}
+
+		/* Locked objects are not writable either */
+		if ((val & ZFS_IMMUTABLE) &&
+		    (vfs_context_suser(aip->ai_context) != 0)) {
+			user_access &= ~W_OK;
+		}
+
+		*((u_int32_t *)attrbufptr) = user_access;
+		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_FILEID & commonattr) {
+		/*
+		 * On Mac OS X we always export the root directory id as 2
+		 */
+		if (objnum == zfsvfs->z_root)
+			objnum = 2;
+
+		*((u_int64_t *)attrbufptr) = objnum;
+		attrbufptr = ((u_int64_t *)attrbufptr) + 1;
+	}
+	if (ATTR_CMN_PARENTID & commonattr) {
+		uint64_t parentid;
+
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+                         &parentid, sizeof (parentid)) == 0);
+
+		/*
+		 * On Mac OS X we always export the root
+		 * directory id as 2 and its parent as 1
+		 */
+		if (zp && zp->z_id == zfsvfs->z_root)
+			parentid = 1;
+		else if (parentid == zfsvfs->z_root)
+			parentid = 2;
+
+		ASSERT(parentid != 0);
+
+		*((u_int64_t *)attrbufptr) = parentid;
+		attrbufptr = ((u_int64_t *)attrbufptr) + 1;
+	}
+
+	*aip->ai_attrbufpp = attrbufptr;
+	*aip->ai_varbufpp = varbufptr;
+}
+
+void dirattrpack(attrinfo_t *aip, znode_t *zp)
+{
+	attrgroup_t dirattr = aip->ai_attrlist->dirattr;
+	void *attrbufptr = *aip->ai_attrbufpp;
+
+	if (ATTR_DIR_LINKCOUNT & dirattr) {
+		*((u_int32_t *)attrbufptr) = 1;  /* no dir hard links */
+		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
+	}
+	if (ATTR_DIR_ENTRYCOUNT & dirattr) {
+        uint64_t val;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
+                         &val, sizeof(val)) == 0);
+		*((u_int32_t *)attrbufptr) = (uint32_t)val;
+		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
+	}
+	if (ATTR_DIR_MOUNTSTATUS & dirattr && zp) {
+		vnode_t *vp = ZTOV(zp);
+
+		if (vp != NULL && vnode_mountedhere(vp) != NULL)
+			*((u_int32_t *)attrbufptr) = DIR_MNTSTATUS_MNTPOINT;
+		else
+			*((u_int32_t *)attrbufptr) = 0;
+		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
+	}
+	*aip->ai_attrbufpp = attrbufptr;
+}
+
+void fileattrpack(attrinfo_t *aip, zfsvfs_t *zfsvfs, znode_t *zp)
+{
+	attrgroup_t fileattr = aip->ai_attrlist->fileattr;
+	void *attrbufptr = *aip->ai_attrbufpp;
+	void *varbufptr = *aip->ai_varbufpp;
+	uint64_t allocsize = 0;
+	cred_t  *cr = (cred_t *)vfs_context_ucred(aip->ai_context);
+
+	if ((ATTR_FILE_ALLOCSIZE | ATTR_FILE_DATAALLOCSIZE) & fileattr && zp) {
+		uint32_t  blksize;
+		u_longlong_t  nblks;
+
+		sa_object_size(zp->z_sa_hdl, &blksize, &nblks);
+		allocsize = (uint64_t)512LL * (uint64_t)nblks;
+	}
+	if (ATTR_FILE_LINKCOUNT & fileattr) {
+        uint64_t val;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_LINKS(zfsvfs),
+                         &val, sizeof(val)) == 0);
+		*((u_int32_t *)attrbufptr) = val;
+		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
+	}
+	if (ATTR_FILE_TOTALSIZE & fileattr) {
+        uint64_t val;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
+                         &val, sizeof(val)) == 0);
+		*((off_t *)attrbufptr) = val;
+		attrbufptr = ((off_t *)attrbufptr) + 1;
+	}
+	if (ATTR_FILE_ALLOCSIZE & fileattr) {
+		*((off_t *)attrbufptr) = allocsize;
+		attrbufptr = ((off_t *)attrbufptr) + 1;
+	}
+	if (ATTR_FILE_IOBLOCKSIZE & fileattr && zp) {
+		*((u_int32_t *)attrbufptr) =
+            zp->z_blksz ? zp->z_blksz : zfsvfs->z_max_blksz;
+		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
+	}
+	if (ATTR_FILE_DEVTYPE & fileattr) {
+        uint64_t mode, val;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zfsvfs),
+                         &mode, sizeof(mode)) == 0);
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_RDEV(zfsvfs),
+                         &val, sizeof(val)) == 0);
+		if (S_ISBLK(mode) || S_ISCHR(mode))
+			*((u_int32_t *)attrbufptr) = (u_int32_t)val;
+		else
+			*((u_int32_t *)attrbufptr) = 0;
+		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
+	}
+	if (ATTR_FILE_DATALENGTH & fileattr) {
+        uint64_t val;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
+                         &val, sizeof(val)) == 0);
+		*((off_t *)attrbufptr) = val;
+		attrbufptr = ((off_t *)attrbufptr) + 1;
+	}
+	if (ATTR_FILE_DATAALLOCSIZE & fileattr) {
+		*((off_t *)attrbufptr) = allocsize;
+		attrbufptr = ((off_t *)attrbufptr) + 1;
+	}
+	if ((ATTR_FILE_RSRCLENGTH | ATTR_FILE_RSRCALLOCSIZE) & fileattr) {
+		uint64_t rsrcsize = 0;
+        uint64_t xattr;
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
+                         &xattr, sizeof(xattr)) == 0);
+
+		if (xattr) {
+			vnode_t *xdvp = NULLVP;
+			vnode_t *xvp = NULLVP;
+			struct componentname  cn;
+
+			bzero(&cn, sizeof (cn));
+			cn.cn_nameiop = LOOKUP;
+			cn.cn_flags = ISLASTCN;
+			cn.cn_nameptr = XATTR_RESOURCEFORK_NAME;
+			cn.cn_namelen = strlen(cn.cn_nameptr);
+
+			/* Grab the hidden attribute directory vnode. */
+			if (zfs_get_xattrdir(zp, &xdvp, cr, 0) == 0 &&
+			    zfs_dirlook(VTOZ(xdvp), cn.cn_nameptr, &xvp, 0, NULL,
+                            &cn) == 0) {
+				rsrcsize = VTOZ(xvp)->z_size;
+			}
+			if (xvp)
+				vnode_put(xvp);
+			if (xdvp)
+				vnode_put(xdvp);
+		}
+		if (ATTR_FILE_RSRCLENGTH & fileattr) {
+			*((off_t *)attrbufptr) = rsrcsize;
+			attrbufptr = ((off_t *)attrbufptr) + 1;
+		}
+		if (ATTR_FILE_RSRCALLOCSIZE & fileattr) {
+			*((off_t *)attrbufptr) = roundup(rsrcsize, 512);
+			attrbufptr = ((off_t *)attrbufptr) + 1;
+		}
+	}
+	*aip->ai_attrbufpp = attrbufptr;
+	*aip->ai_varbufpp = varbufptr;
+}
+
+void nameattrpack(attrinfo_t *aip, const char *name, int namelen)
+{
+	void *varbufptr;
+	struct attrreference * attr_refptr;
+	u_int32_t attrlen;
+	size_t nfdlen, freespace;
+
+	varbufptr = *aip->ai_varbufpp;
+	attr_refptr = (struct attrreference *)(*aip->ai_attrbufpp);
+
+	freespace = (char*)aip->ai_varbufend - (char*)varbufptr;
+	/*
+	 * Mac OS X: non-ascii names are UTF-8 NFC on disk
+	 * so convert to NFD before exporting them.
+	 */
+	namelen = strlen(name);
+	if (is_ascii_str(name) ||
+	    utf8_normalizestr((const u_int8_t *)name, namelen,
+                          (u_int8_t *)varbufptr, &nfdlen,
+                          freespace, UTF_DECOMPOSED) != 0) {
+		/* ASCII or normalization failed, just copy zap name. */
+		strncpy((char *)varbufptr, name, MIN(freespace, namelen+1));
+	} else {
+		/* Normalization succeeded (already in buffer). */
+		namelen = nfdlen;
+	}
+	attrlen = namelen + 1;
+	attr_refptr->attr_dataoffset = (char *)varbufptr - (char *)attr_refptr;
+	attr_refptr->attr_length = attrlen;
+	/*
+	 * Advance beyond the space just allocated and
+	 * round up to the next 4-byte boundary:
+	 */
+	varbufptr = ((char *)varbufptr) + attrlen + ((4 - (attrlen & 3)) & 3);
+	++attr_refptr;
+
+	*aip->ai_attrbufpp = attr_refptr;
+	*aip->ai_varbufpp = varbufptr;
+}
+
+int getpackedsize(struct attrlist *alp, boolean_t user64)
+{
+	attrgroup_t attrs;
+	int timespecsize;
+	int size = 0;
+
+	timespecsize = user64 ? sizeof(timespec_user64_t) :
+        sizeof(timespec_user32_t);
+
+	if ((attrs = alp->commonattr) != 0) {
+		if (attrs & ATTR_CMN_NAME)
+			size += sizeof(struct attrreference);
+		if (attrs & ATTR_CMN_DEVID)
+			size += sizeof(dev_t);
+		if (attrs & ATTR_CMN_FSID)
+			size += sizeof(fsid_t);
+		if (attrs & ATTR_CMN_OBJTYPE)
+			size += sizeof(fsobj_type_t);
+		if (attrs & ATTR_CMN_OBJTAG)
+			size += sizeof(fsobj_tag_t);
+		if (attrs & ATTR_CMN_OBJID)
+			size += sizeof(fsobj_id_t);
+		if (attrs & ATTR_CMN_OBJPERMANENTID)
+			size += sizeof(fsobj_id_t);
+		if (attrs & ATTR_CMN_PAROBJID)
+			size += sizeof(fsobj_id_t);
+		if (attrs & ATTR_CMN_SCRIPT)
+			size += sizeof(text_encoding_t);
+		if (attrs & ATTR_CMN_CRTIME)
+			size += timespecsize;
+		if (attrs & ATTR_CMN_MODTIME)
+			size += timespecsize;
+		if (attrs & ATTR_CMN_CHGTIME)
+			size += timespecsize;
+		if (attrs & ATTR_CMN_ACCTIME)
+			size += timespecsize;
+		if (attrs & ATTR_CMN_BKUPTIME)
+			size += timespecsize;
+		if (attrs & ATTR_CMN_FNDRINFO)
+			size += 32 * sizeof(u_int8_t);
+		if (attrs & ATTR_CMN_OWNERID)
+			size += sizeof(uid_t);
+		if (attrs & ATTR_CMN_GRPID)
+			size += sizeof(gid_t);
+		if (attrs & ATTR_CMN_ACCESSMASK)
+			size += sizeof(u_int32_t);
+		if (attrs & ATTR_CMN_FLAGS)
+			size += sizeof(u_int32_t);
+		if (attrs & ATTR_CMN_USERACCESS)
+			size += sizeof(u_int32_t);
+		if (attrs & ATTR_CMN_FILEID)
+			size += sizeof(u_int64_t);
+		if (attrs & ATTR_CMN_PARENTID)
+			size += sizeof(u_int64_t);
+	}
+	if ((attrs = alp->dirattr) != 0) {
+		if (attrs & ATTR_DIR_LINKCOUNT)
+			size += sizeof(u_int32_t);
+		if (attrs & ATTR_DIR_ENTRYCOUNT)
+			size += sizeof(u_int32_t);
+		if (attrs & ATTR_DIR_MOUNTSTATUS)
+			size += sizeof(u_int32_t);
+	}
+	if ((attrs = alp->fileattr) != 0) {
+		if (attrs & ATTR_FILE_LINKCOUNT)
+			size += sizeof(u_int32_t);
+		if (attrs & ATTR_FILE_TOTALSIZE)
+			size += sizeof(off_t);
+		if (attrs & ATTR_FILE_ALLOCSIZE)
+			size += sizeof(off_t);
+		if (attrs & ATTR_FILE_IOBLOCKSIZE)
+			size += sizeof(u_int32_t);
+		if (attrs & ATTR_FILE_DEVTYPE)
+			size += sizeof(u_int32_t);
+		if (attrs & ATTR_FILE_DATALENGTH)
+			size += sizeof(off_t);
+		if (attrs & ATTR_FILE_DATAALLOCSIZE)
+			size += sizeof(off_t);
+		if (attrs & ATTR_FILE_RSRCLENGTH)
+			size += sizeof(off_t);
+		if (attrs & ATTR_FILE_RSRCALLOCSIZE)
+			size += sizeof(off_t);
+	}
+	return (size);
+}
+
+
+void getfinderinfo(znode_t *zp, cred_t *cr, finderinfo_t *fip)
+{
+	vnode_t	*xdvp = NULLVP;
+	vnode_t	*xvp = NULLVP;
+	struct uio		*auio = NULL;
+	struct componentname  cn;
+	int		error;
+
+    uint64_t xattr;
+    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zp->z_zfsvfs),
+                     &xattr, sizeof(xattr)) == 0);
+	if (xattr == 0) {
+        goto nodata;
+    }
+	auio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
+	if (auio == NULL) {
+		goto nodata;
+	}
+	uio_addiov(auio, CAST_USER_ADDR_T(fip), sizeof (finderinfo_t));
+
+	/*
+	 * Grab the hidden attribute directory vnode.
+	 *
+	 * XXX - switch to embedded Finder Info when it becomes available
+	 */
+	if ((error = zfs_get_xattrdir(zp, &xdvp, cr, 0))) {
+		goto out;
+	}
+
+	bzero(&cn, sizeof (cn));
+	cn.cn_nameiop = LOOKUP;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_nameptr = XATTR_FINDERINFO_NAME;
+	cn.cn_namelen = strlen(cn.cn_nameptr);
+
+	if ((error = zfs_dirlook(VTOZ(xdvp), cn.cn_nameptr, &xvp, 0, NULL, &cn))) {
+		goto out;
+	}
+	error = dmu_read_uio(zp->z_zfsvfs->z_os, VTOZ(xvp)->z_id, auio,
+	                     sizeof (finderinfo_t));
+out:
+	if (auio)
+		uio_free(auio);
+	if (xvp)
+		vnode_put(xvp);
+	if (xdvp)
+		vnode_put(xdvp);
+	if (error == 0)
+		return;
+nodata:
+	bzero(fip, sizeof (finderinfo_t));
+}
+
+#define KAUTH_DIR_WRITE     (KAUTH_VNODE_ACCESS | KAUTH_VNODE_ADD_FILE | \
+                             KAUTH_VNODE_ADD_SUBDIRECTORY | \
+                             KAUTH_VNODE_DELETE_CHILD)
+
+#define KAUTH_DIR_READ      (KAUTH_VNODE_ACCESS | KAUTH_VNODE_LIST_DIRECTORY)
+
+#define KAUTH_DIR_EXECUTE   (KAUTH_VNODE_ACCESS | KAUTH_VNODE_SEARCH)
+
+#define KAUTH_FILE_WRITE    (KAUTH_VNODE_ACCESS | KAUTH_VNODE_WRITE_DATA)
+
+#define KAUTH_FILE_READ     (KAUTH_VNODE_ACCESS | KAUTH_VNODE_READ_DATA)
+
+#define KAUTH_FILE_EXECUTE  (KAUTH_VNODE_ACCESS | KAUTH_VNODE_EXECUTE)
+
+/*
+ * Compute the same user access value as getattrlist(2)
+ */
+u_int32_t getuseraccess(znode_t *zp, vfs_context_t ctx)
+{
+	vnode_t	*vp;
+	u_int32_t	user_access = 0;
+    zfs_acl_phys_t acl_phys;
+    int error;
+	/* Only take the expensive vnode_authorize path when we have an ACL */
+
+    error = sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zp->z_zfsvfs),
+                      &acl_phys, sizeof (acl_phys));
+
+	if (error || acl_phys.z_acl_count == 0) {
+		kauth_cred_t	cred = vfs_context_ucred(ctx);
+		uint64_t		obj_uid;
+		uint64_t    	obj_mode;
+
+		/* User id 0 (root) always gets access. */
+		if (!vfs_context_suser(ctx)) {
+			return (R_OK | W_OK | X_OK);
+		}
+
+        sa_lookup(zp->z_sa_hdl, SA_ZPL_UID(zp->z_zfsvfs),
+                  &obj_uid, sizeof (obj_uid));
+        sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zp->z_zfsvfs),
+                  &obj_mode, sizeof (obj_mode));
+
+		//obj_uid = pzp->zp_uid;
+		obj_mode = obj_mode & MODEMASK;
+		if (obj_uid == UNKNOWNUID) {
+			obj_uid = kauth_cred_getuid(cred);
+		}
+		if ((obj_uid == kauth_cred_getuid(cred)) ||
+		    (obj_uid == UNKNOWNUID)) {
+			return (((u_int32_t)obj_mode & S_IRWXU) >> 6);
+		}
+		/* Otherwise, settle for 'others' access. */
+		return ((u_int32_t)obj_mode & S_IRWXO);
+	}
+	vp = ZTOV(zp);
+	if (vnode_isdir(vp)) {
+		if (vnode_authorize(vp, NULLVP, KAUTH_DIR_WRITE, ctx) == 0)
+			user_access |= W_OK;
+		if (vnode_authorize(vp, NULLVP, KAUTH_DIR_READ, ctx) == 0)
+			user_access |= R_OK;
+		if (vnode_authorize(vp, NULLVP, KAUTH_DIR_EXECUTE, ctx) == 0)
+			user_access |= X_OK;
+	} else {
+		if (vnode_authorize(vp, NULLVP, KAUTH_FILE_WRITE, ctx) == 0)
+			user_access |= W_OK;
+		if (vnode_authorize(vp, NULLVP, KAUTH_FILE_READ, ctx) == 0)
+			user_access |= R_OK;
+		if (vnode_authorize(vp, NULLVP, KAUTH_FILE_EXECUTE, ctx) == 0)
+			user_access |= X_OK;
+	}
+	return (user_access);
 }
