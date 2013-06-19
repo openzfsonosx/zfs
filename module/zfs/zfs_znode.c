@@ -1204,6 +1204,7 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 	int locked;
 #endif
 	int err;
+    int release_lock = 1;
 
     dprintf("+zget %lld\n", obj_num);
 
@@ -1211,7 +1212,20 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 	getnewvnode_reserve(1);
 again:
 	*zpp = NULL;
-	ZFS_OBJ_HOLD_ENTER(zfsvfs, obj_num);
+    /*
+     * The following stack can happen;
+     * zfs_zget() -> zfs_znode_alloc() -> zfs_znode_getvnode()
+     * -> vnode_create() -> vnode_rele_ext() -> vflush() -> zfs_fsync
+     * -> zil_commit() -> zil_commit_writer() -> zfs_get_data() -> zfs_zget()
+     *
+     * And we lock against ourselves. Only take lock if we don't already own
+     * it here.
+     */
+
+    if (ZFS_OBJ_HELD(zfsvfs, obj_num))
+        release_lock = 0;
+    else
+        ZFS_OBJ_HOLD_ENTER(zfsvfs, obj_num);
 
 	err = sa_buf_hold(zfsvfs->z_os, obj_num, NULL, &db);
 	if (err) {
@@ -1226,7 +1240,8 @@ again:
 	    (doi.doi_bonus_type == DMU_OT_ZNODE &&
 	    doi.doi_bonus_size < sizeof (znode_phys_t)))) {
 		sa_buf_rele(db, NULL);
-		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+        if (release_lock)
+            ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 		getnewvnode_drop_reserve();
 		return ((EINVAL));
 	}
@@ -1256,7 +1271,8 @@ again:
 		sa_buf_rele(db, NULL);
 
 		mutex_exit(&zp->z_lock);
-		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+        if (release_lock)
+            ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
 		if (err == 0) {
 
@@ -1304,7 +1320,8 @@ again:
 		}
 #endif
 	}
-	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+    if (release_lock)
+        ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 	getnewvnode_drop_reserve();
     dprintf("zget returning %d\n", err);
 	return (err);

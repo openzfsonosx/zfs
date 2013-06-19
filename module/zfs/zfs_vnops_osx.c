@@ -1382,9 +1382,9 @@ zfs_vnop_listxattr(
 	}
 
 	/* Do we even have any attributes? */
-    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
-                     &xattr, sizeof(xattr)) == 0);
-	if (xattr == 0) {
+    if (sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
+                  &xattr, sizeof(xattr))
+        || (xattr == 0)) {
 		goto out;  /* all done */
 	}
 
