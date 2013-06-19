@@ -1614,8 +1614,6 @@ zfs_extend(znode_t *zp, uint64_t end)
 	uint64_t newblksz;
 	int error;
 
-    printf("zfs_extend: %llu\n", end);
-
 	/*
 	 * We will change zp_size, lock the whole file.
 	 */

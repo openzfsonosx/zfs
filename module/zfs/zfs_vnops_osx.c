@@ -66,7 +66,7 @@
 	DECLARE_CRED(ap);		\
 	DECLARE_CONTEXT(ap)
 
-#define dprintf printf
+//#define dprintf printf
 
 /*
  * zfs vfs operations.
@@ -480,8 +480,8 @@ zfs_vnop_getattr(
 {
     int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
-    dprintf("+vnop_getattr zp %p vp %p\n",
-            VTOZ(ap->a_vp), ap->a_vp);
+    //dprintf("+vnop_getattr zp %p vp %p\n",
+    //      VTOZ(ap->a_vp), ap->a_vp);
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct);
 
@@ -1000,9 +1000,9 @@ zfs_vnop_inactive(
 	struct vnode *vp = ap->a_vp;
 	DECLARE_CRED(ap);
 
-    dprintf("+vnop_inactive\n");
+    //dprintf("+vnop_inactive\n");
 	zfs_inactive(vp, cr, NULL);
-    dprintf("-vnop_inactive\n");
+    //dprintf("-vnop_inactive\n");
 	return (0);
 }
 
@@ -1074,6 +1074,7 @@ zfs_vnop_allocate(
 		vfs_context_t a_context;
 	} */ *ap)
 {
+    dprintf("vnop_allocate: 0\n");
 
 	return (0);
 }
@@ -1087,8 +1088,9 @@ zfs_vnop_whiteout(
 		vfs_context_t a_context;
 	} */ *ap)
 {
+    dprintf("vnop_whiteout: ENOTSUP\n");
 
-	return (0);
+	return (ENOTSUP);
 }
 
 static int
@@ -1100,6 +1102,7 @@ zfs_vnop_pathconf(
 		vfs_context_t a_context;
 	} */ *ap)
 {
+    dprintf("vnop_patchconf: 0\n");
 
 	return (0);
 }
@@ -1602,8 +1605,8 @@ zfs_vnop_exchange(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-
-	return (0);
+    dprintf("vnop_exchange: ENOTSUP\n");
+	return (ENOTSUP);
 }
 
 static int
@@ -1626,7 +1629,7 @@ zfs_vnop_blktooff(
 		off_t *a_offset;
 	} */ *ap)
 {
-
+    dprintf("vnop_blktooff: 0\n");
 	return (0);
 }
 
@@ -1654,7 +1657,7 @@ zfs_vnop_blockmap(
 		int a_flags;
 	} */ *ap)
 {
-    dprintf("+vnop_blackmap\n");
+    dprintf("+vnop_blockmap\n");
 	return (ENOTSUP);
 }
 
@@ -1664,6 +1667,7 @@ zfs_vnop_strategy(
 		struct buf *a_bp;
 	} */ *ap)
 {
+    dprintf("vnop_strategy: 0\n");
 
 	return (0);
 }
@@ -1679,6 +1683,7 @@ zfs_vnop_select(
 		struct proc *a_p;
 	} */ *ap)
 {
+    dprintf("vnop_select: 0\n");
 
 	return (0);
 }
@@ -1698,8 +1703,8 @@ zfs_vnop_readdirattr(
 		vfs_context_t a_context;
 	} */ *ap)
 {
-
-	return (0);
+    dprintf("vnop_readdirattr ENOTSUP\n");
+	return (ENOTSUP);
 }
 
 

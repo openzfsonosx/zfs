@@ -82,7 +82,7 @@
 #include <sys/zfs_vfsops.h>
 #include <sys/vnode.h>
 
-#define dprintf printf
+//#define dprintf printf
 
 /*
  * Programming rules.
@@ -1049,7 +1049,7 @@ again:
 		 * on the first iteration since zfs_range_reduce() will
 		 * shrink down r_len to the appropriate size.
 		 */
-		if (rl->r_len == UINT64_MAX) {
+		if ((rl->r_len == UINT64_MAX)) {
 			uint64_t new_blksz;
 
 			if (zp->z_blksz > max_blksz) {
@@ -2106,7 +2106,7 @@ top:
 		 * frees the entire znode as part of the dmu's
 		 * evict func during the sync thread
 		 */
-        printf("zfs_remove: vnode_recycle\n");
+        dprintf("zfs_remove: vnode_recycle\n");
 		zfs_znode_delete(zp, tx);
         vnode_removefsref(vp);
         vnode_clearfsnode(vp);
