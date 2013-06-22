@@ -37,6 +37,7 @@ LINKFLAGS_KMOD = \
 	-nostdlib \
 	-lkmodc++ \
 	-lkmod \
+	-lcpp_kext \
 	-lcc_kext
 
 bin_PROGRAMS = zfs.kext
@@ -130,6 +131,7 @@ zfs_SOURCES = \
 	zle.c \
 	zrlock.c \
 	zvol.c \
+	zvolIO.cpp \
 	../avl/avl.c \
 	../nvpair/fnvpair.c \
 	../nvpair/nvpair.c \
@@ -146,6 +148,7 @@ zfs_SOURCES = \
 	../zcommon/zprop_common.c
 
 zfs_CPPFLAGS=$(CFLAGS_KMOD)
+zfs_CXXFLAGS=$(CFLAGS_KMOD)
 zfs_LDFLAGS=$(LINKFLAGS_KMOD)
 
 dist_noinst_DATA = $(PLIST_STRING) $(INFO_PLIST)

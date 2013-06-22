@@ -27,11 +27,36 @@
 #define	_SYS_ZVOL_H
 
 #include <sys/zfs_context.h>
+#include <sys/zfs_znode.h>
+
+#ifdef	__cplusplus
+extern "C" {
+#endif
 
 #define	ZVOL_OBJ		1ULL
 #define	ZVOL_ZAP_OBJ		2ULL
 
+
 #ifdef _KERNEL
+/*
+ * The in-core state of each volume.
+ */
+typedef struct zvol_state {
+	char		zv_name[MAXPATHLEN]; /* pool/dd name */
+	uint64_t	zv_volsize;	/* amount of space we advertise */
+	uint64_t	zv_volblocksize; /* volume block size */
+	minor_t		zv_minor;	/* minor number */
+	uint8_t		zv_min_bs;	/* minimum addressable block shift */
+	uint8_t		zv_flags;	/* readonly, dumpified, etc. */
+	objset_t	*zv_objset;	/* objset handle */
+	uint32_t	zv_open_count[OTYPCNT];	/* open counts */
+	uint32_t	zv_total_opens;	/* total open count */
+	zilog_t		*zv_zilog;	/* ZIL handle */
+	list_t		zv_extents;	/* List of extents for dump */
+	znode_t		zv_znode;	/* for range locking */
+	dmu_buf_t	*zv_dbuf;	/* bonus handle */
+} zvol_state_t;
+
 
 extern int zvol_check_volsize(uint64_t volsize, uint64_t blocksize);
 extern int zvol_check_volblocksize(uint64_t volblocksize);
@@ -53,4 +78,9 @@ extern int zvol_init(void);
 extern void zvol_fini(void);
 
 #endif /* _KERNEL */
+
+#ifdef	__cplusplus
+}
+#endif
+
 #endif /* _SYS_ZVOL_H */

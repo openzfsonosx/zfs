@@ -115,6 +115,17 @@ typedef enum drr_headertype {
 
 #define	DRR_IS_DEDUP_CAPABLE(flags)	((flags) & DRR_CHECKSUM_DEDUP)
 
+		struct drr_begin {
+			uint64_t drr_magic;
+			uint64_t drr_versioninfo; /* was drr_version */
+			uint64_t drr_creation_time;
+			dmu_objset_type_t drr_type;
+			uint32_t drr_flags;
+			uint64_t drr_toguid;
+			uint64_t drr_fromguid;
+			char drr_toname[MAXNAMELEN];
+		} ;
+
 /*
  * zfs ioctl command structure
  */
@@ -126,6 +137,8 @@ typedef struct dmu_replay_record {
 	} drr_type;
 	uint32_t drr_payloadlen;
 	union {
+		struct drr_begin drr_begin;
+#if 0
 		struct drr_begin {
 			uint64_t drr_magic;
 			uint64_t drr_versioninfo; /* was drr_version */
@@ -136,6 +149,7 @@ typedef struct dmu_replay_record {
 			uint64_t drr_fromguid;
 			char drr_toname[MAXNAMELEN];
 		} drr_begin;
+#endif
 		struct drr_end {
 			zio_cksum_t drr_checksum;
 			uint64_t drr_toguid;

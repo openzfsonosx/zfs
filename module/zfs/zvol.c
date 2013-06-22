@@ -149,24 +149,6 @@ typedef struct zvol_extent {
 	uint64_t	ze_nblks;	/* number of blocks in extent */
 } zvol_extent_t;
 
-/*
- * The in-core state of each volume.
- */
-typedef struct zvol_state {
-	char		zv_name[MAXPATHLEN]; /* pool/dd name */
-	uint64_t	zv_volsize;	/* amount of space we advertise */
-	uint64_t	zv_volblocksize; /* volume block size */
-	minor_t		zv_minor;	/* minor number */
-	uint8_t		zv_min_bs;	/* minimum addressable block shift */
-	uint8_t		zv_flags;	/* readonly, dumpified, etc. */
-	objset_t	*zv_objset;	/* objset handle */
-	uint32_t	zv_open_count[OTYPCNT];	/* open counts */
-	uint32_t	zv_total_opens;	/* total open count */
-	zilog_t		*zv_zilog;	/* ZIL handle */
-	list_t		zv_extents;	/* List of extents for dump */
-	znode_t		zv_znode;	/* for range locking */
-	dmu_buf_t	*zv_dbuf;	/* bonus handle */
-} zvol_state_t;
 
 /*
  * zvol specific flags
@@ -543,6 +525,11 @@ zvol_create_minor(const char *name)
 	(void) ddi_prop_update_string(minor, zfs_dip, ZVOL_PROP_NAME,
 	    (char *)name);
 
+    /*
+     * This is the old BSD kernel interface to create the /dev/nodes, now
+     * we use IOKit to create an IOBlockStorageDevice.
+     */
+#if 0
 	if (ddi_create_minor_node(zfs_dip, name, S_IFCHR,
 	    minor, DDI_PSEUDO, zfs_major) == DDI_FAILURE) {
 		ddi_soft_state_free(zfsdev_state, minor);
@@ -559,7 +546,7 @@ zvol_create_minor(const char *name)
 		mutex_exit(&zfsdev_state_lock);
 		return (EAGAIN);
 	}
-
+#endif
 	zs = ddi_get_soft_state(zfsdev_state, minor);
     printf("ddi_get_soft_state: %p\n", zs);
 	zs->zss_type = ZSST_ZVOL;
@@ -588,6 +575,9 @@ zvol_create_minor(const char *name)
 	}
 	dmu_objset_disown(os, FTAG);
 	zv->zv_objset = NULL;
+
+    // Call IOKit to create a new ZVOL device
+    zvolCreateNewDevice(zv);
 
 	zvol_minors++;
 
@@ -1420,19 +1410,16 @@ zvol_dump(dev_t dev, caddr_t addr, daddr_t blkno, int nblocks)
 	return (error);
 }
 
-/*ARGSUSED*/
+
 int
-zvol_read(dev_t dev, uio_t *uio, cred_t *cr)
+zvol_read_impl(zvol_state_t *zv, uio_t *uio, cred_t *cr)
 {
-	minor_t minor = getminor(dev);
-	zvol_state_t *zv;
 	uint64_t volsize;
 	rl_t *rl;
 	int error = 0;
 
     printf("zvol_read\n");
 
-	zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
 	if (zv == NULL)
 		return (ENXIO);
 
@@ -1441,11 +1428,13 @@ zvol_read(dev_t dev, uio_t *uio, cred_t *cr)
 	    (uio_offset(uio) < 0 || uio_offset(uio) >= volsize))
 		return (EIO);
 
+#if 0
 	if (zv->zv_flags & ZVOL_DUMPIFIED) {
 		error = physio(zvol_strategy, NULL, dev, B_READ,
                        zvol_minphys, uio, zv->zv_volblocksize);
 		return (error);
 	}
+#endif
 
 	rl = zfs_range_lock(&zv->zv_znode, uio_offset(uio), uio_resid(uio),
 	    RL_READER);
@@ -1468,12 +1457,26 @@ zvol_read(dev_t dev, uio_t *uio, cred_t *cr)
 	return (error);
 }
 
+
 /*ARGSUSED*/
 int
-zvol_write(dev_t dev, uio_t *uio, cred_t *cr)
+zvol_read(dev_t dev, uio_t *uio, cred_t *cr)
 {
 	minor_t minor = getminor(dev);
 	zvol_state_t *zv;
+	uint64_t volsize;
+	rl_t *rl;
+	int error = 0;
+
+	zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
+    return zvol_read_impl(zv, uio, cr);
+}
+
+
+
+int
+zvol_write_impl(zvol_state_t *zv, uio_t *uio, cred_t *cr)
+{
 	uint64_t volsize;
 	rl_t *rl;
 	int error = 0;
@@ -1481,7 +1484,6 @@ zvol_write(dev_t dev, uio_t *uio, cred_t *cr)
 
     printf("zvol_write\n");
 
-	zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
 	if (zv == NULL)
 		return (ENXIO);
 
@@ -1490,11 +1492,13 @@ zvol_write(dev_t dev, uio_t *uio, cred_t *cr)
 	    (uio_offset(uio) < 0 || uio_offset(uio) >= volsize))
 		return (EIO);
 
+#if 0
 	if (zv->zv_flags & ZVOL_DUMPIFIED) {
 		error = physio(zvol_strategy, NULL, dev, B_WRITE,
                        zvol_minphys, uio, zv->zv_volblocksize);
 		return (error);
 	}
+#endif
 
 	sync = !(zv->zv_flags & ZVOL_WCE) ||
 	    (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS);
@@ -1527,6 +1531,23 @@ zvol_write(dev_t dev, uio_t *uio, cred_t *cr)
 	if (sync)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
 	return (error);
+}
+
+
+/*ARGSUSED*/
+int
+zvol_write(dev_t dev, uio_t *uio, cred_t *cr)
+{
+	minor_t minor = getminor(dev);
+	zvol_state_t *zv;
+	uint64_t volsize;
+	rl_t *rl;
+	int error = 0;
+	boolean_t sync;
+
+	zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
+
+    return zvol_write_impl(zv, uio, cr);
 }
 
 int
@@ -2347,7 +2368,7 @@ zvol_create_minors(const char *name)
         //dsl_dataset_long_hold(os->os_dsl_dataset, FTAG);
         //dsl_pool_rele(dmu_objset_pool(os), FTAG);
         if ((error = zvol_create_minor(name)) == 0)
-            /*error = zvol_create_snapshots(os, name)*/;
+            /*error = zvol_create_snapsho<ts(os, name)*/;
         else {
             printf("ZFS WARNING: Unable to create ZVOL %s (error=%d).\n",
                    name, error);

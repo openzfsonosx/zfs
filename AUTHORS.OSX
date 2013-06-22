@@ -1,0 +1,58 @@
+
+Jörgen Lundman is the principle developer of the ZFS on Apple OS X port.
+He works full time as a Unix Engineer at GMO Internet, Tokyo, Japan.
+This port would not have been possible without the help of many
+others who have contributed their time, effort, and insight.
+
+  Jorgen Lundman <lundman@lundman.net>
+
+First and foremost the hard working ZFS developers at Sun/Oracle.
+They are responsible for the bulk of the code in this project and
+without their efforts there never would have been a ZFS filesystem.
+
+  The ZFS Development Team at Sun/Oracle
+
+
+The Apple OS X port was made easier by the great work of ZFS On Linux,
+and more information on that project can be found in the 'AUTHORS' file.
+
+  ZFS On Linux by Lawrence Livermore National Laboratory
+
+
+Large parts come from the original work in MacZFS, and the excellent work
+of those early developers.
+
+  [More details here]
+  MacZFS http://code.google.com/p/maczfs/
+
+
+VFS layer and glue comes from the FreeBSD project, who has done a excellent
+job connecting the BSD and SYSV kernels together.
+
+  FreeBSD http://www.freebsd.org/
+
+
+Additional assistance has been given by people online, reluctant and sometimes
+willingly,
+
+  Richard Yao
+  Björn Kahl
+  Will Andrews
+  Don Brady
+  Evan Lojewski
+  Daniel Bethe
+
+
+The flexible and welcoming attitude toward Open Source by GMO Internet,
+Tokyo, Japan has been an intergral part of this project.
+
+  GMO Internet, Inc. http://www.gmo.jp/
+
+
+The book [OS X and iOS Kernel Programming] has been useful when working out
+the internals of the newer IOKit section of the Apple OS X kernel. Available
+on Amazon.
+
+   Ole Henry Halvorsen (Author)  http://osxkernel.com/
+   Douglas Clarke (Author)
+
