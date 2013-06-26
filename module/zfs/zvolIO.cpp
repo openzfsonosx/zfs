@@ -196,6 +196,7 @@ char* net_lundman_zfs_zvol_device::getProductString(void)
 
 IOReturn net_lundman_zfs_zvol_device::reportBlockSize(UInt64 *blockSize)
 {
+  IOLog("reportBlockSize %llu\n", zv->zv_volblocksize);
   *blockSize = zv->zv_volblocksize;
   return kIOReturnSuccess;
 }
@@ -295,4 +296,3 @@ IOReturn  net_lundman_zfs_zvol_device::setWriteCacheState(bool enabled)
 {
     return kIOReturnSuccess;
 }
-

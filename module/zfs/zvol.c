@@ -88,7 +88,7 @@
 #include "zfs_namecheck.h"
 
 
-dev_info_t zfs_dip_real;
+dev_info_t zfs_dip_real = { 0 };
 dev_info_t *zfs_dip = &zfs_dip_real;
 extern int zfs_major;
 extern int zfs_bmajor;
