@@ -7,158 +7,30 @@
 #include <sys/zvol.h>
 
 #include <sys/zvolIO.h>
-
-extern "C" {
-  kern_return_t zfs_start (kmod_info_t * ki, void * d);
-  kern_return_t zfs_stop (kmod_info_t * ki, void * d);
-};
-
-/*
- * Can those with more C++ experience clean this up?
- */
-static void *global_c_interface = NULL;
+#include <IOKit/storage/IOBlockStorageDevice.h>
 
 
-// Define the superclass.
-#define super IOService
-
-OSDefineMetaClassAndStructors(net_lundman_zfs_zvol, IOService)
-
-
-bool net_lundman_zfs_zvol::init (OSDictionary* dict)
-{
-    bool res = super::init(dict);
-    IOLog("IOKitTest::init\n");
-    printf("zvolio:init\n");
-    global_c_interface = (void *)this;
-    zfs_start(NULL, NULL);
-    return res;
-}
-
-
-void net_lundman_zfs_zvol::free (void)
-{
-    IOLog("IOKitTest::free\n");
-    zfs_stop(NULL, NULL);
-    global_c_interface = NULL;
-    super::free();
-}
-
-
-IOService* net_lundman_zfs_zvol::probe (IOService* provider, SInt32* score)
-{
-    IOService *res = super::probe(provider, score);
-    IOLog("IOKitTest::probe\n");
-    return res;
-}
-
-
-
-bool net_lundman_zfs_zvol::start (IOService *provider)
-{
-    bool res = super::start(provider);
-    IOLog("IOKitTest::start\n");
-
-    // Allocate an IOBlockStorageDevice nub.
-    // If you want one created on load.
-    //if (createBlockStorageDevice(16*1024*1024, "TestVolume") == false)
-    //  return false;
-
-    return res;
-}
-
-void net_lundman_zfs_zvol::stop (IOService *provider)
-{
-    IOLog("IOKitTest::stop\n");
-    super::stop(provider);
-}
-
-bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
-{
-    net_lundman_zfs_zvol_device *nub = NULL;
-    bool            result = false;
-
-    // Allocate a new IOBlockStorageDevice nub.
-    nub = new net_lundman_zfs_zvol_device;
-    if (nub == NULL)
-        goto bail;
-
-    // Call the custom init method (passing the overall disk size).
-    if (nub->init(zv->zv_volsize) == false)
-        goto bail;
-
-    // Attach the IOBlockStorageDevice to the this driver.
-    // This call increments the reference count of the nub object,
-    // so we can release our reference at function exit.
-    if (nub->attach(this) == false)
-        goto bail;
-
-    // Allow the upper level drivers to match against the IOBlockStorageDevice.
-    nub->registerService();
-    result = true;
- bail:
-    // Unconditionally release the nub object.
-    if (nub != NULL)
-        nub->release();
-    return result;
-}
-
-extern "C" int zvolCreateNewDevice(zvol_state_t *zv);
-
-int zvolCreateNewDevice(zvol_state_t *zv)
-{
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createBlockStorageDevice(zv);
-    return 0;
-}
-
-
-IOByteCount net_lundman_zfs_zvol::performRead (IOMemoryDescriptor* dstDesc,
-                                               UInt64 byteOffset,
-                                               UInt64 byteCount)
-{
-    return dstDesc->writeBytes(0, (void*)((uintptr_t)m_buffer + byteOffset),
-                               byteCount);
-}
-
-IOByteCount net_lundman_zfs_zvol::performWrite (IOMemoryDescriptor* srcDesc,
-                                                UInt64 byteOffset,
-                                                UInt64 byteCount)
-{
-    return srcDesc->readBytes(0, (void*)((uintptr_t)m_buffer + byteOffset), byteCount);
-}
-
-
-
-
-
-
-
-
-#undef super
 /*
  * Device
  */
 
-#include <IOKit/storage/IOBlockStorageDevice.h>
 
 // Define the superclass
 #define super IOBlockStorageDevice
 
-OSDefineMetaClassAndStructors(net_lundman_zfs_zvol_device, IOBlockStorageDevice)
-
-#define kDiskBlockSize          512
+OSDefineMetaClassAndStructors(net_lundman_zfs_zvol_device,IOBlockStorageDevice)
 
 
-bool net_lundman_zfs_zvol_device::init(UInt64 diskSize,
+bool net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
                                        OSDictionary *properties)
 {
     printf("zolio_device:init\n");
     if (super::init(properties) == false)
         return false;
-    m_blockCount = diskSize / kDiskBlockSize;
-    this->setProperty(kIOBSDNameKey, "zvol"); // doesnt work
-	//this->setProperty(kIOBSDNameKey, "nbd");
-    //this->setProperty(kIOBSDMajorKey, 92);
+
+    zv = c_zv;
+    // Is it safe/ok to keep a pointer reference like this?
+    zv->zv_iokitdev = (void *) this;
 
     return true;
 }
@@ -181,6 +53,120 @@ void net_lundman_zfs_zvol_device::detach(IOService* provider)
     super::detach(provider);
 }
 
+
+
+
+bool net_lundman_zfs_zvol_device::handleOpen( IOService *client,
+                                              IOOptionBits options,
+                                              void *argument)
+{
+  IOStorageAccess access = (IOStorageAccess) (uint64_t) argument;
+
+  if (super::handleOpen(client, options, argument) == false)
+    return false;
+
+  /*
+   * It was the hope that openHandle would indicate the type of open required
+   * such that we can set FREAD/FWRITE/ZVOL_EXCL as needed, but alas,
+   * "access" is always 0 here.
+   */
+
+  switch (access) {
+
+  case kIOStorageAccessReader:
+    IOLog("handleOpen: readOnly\n");
+    zv->zv_openflags = FREAD;
+    zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL);
+    break;
+
+  case kIOStorageAccessReaderWriter:
+    IOLog("handleOpen: options %04x\n", options);
+    zv->zv_openflags = FWRITE | ZVOL_EXCL;
+    break;
+
+  default:
+    //IOLog("handleOpen with unknown access %04lu - guessing\n", access);
+    zv->zv_openflags = FWRITE;
+  }
+
+  if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL))
+    return false;
+
+  return true;
+}
+
+
+
+void net_lundman_zfs_zvol_device::handleClose( IOService *client,
+                                               IOOptionBits options)
+{
+  super::handleClose(client, options);
+
+  IOLog("handleClose\n");
+  zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
+}
+
+
+IOReturn net_lundman_zfs_zvol_device::doAsyncReadWrite(
+    IOMemoryDescriptor *buffer, UInt64 block, UInt64 nblks,
+    IOStorageAttributes *attributes, IOStorageCompletion *completion)
+{
+    IODirection               direction;
+    IOByteCount               actualByteCount;
+
+    // Return errors for incoming I/O if we have been terminated.
+    if (isInactive() == true)
+        return kIOReturnNotAttached;
+
+    // These variables are set in zvol_first_open(), which should have been
+    // called already.
+    if (!zv->zv_objset || !zv->zv_dbuf)
+      return kIOReturnNotAttached;
+
+    // Ensure the block range being targeted is within the disk’s capacity.
+    if ((block + nblks)*zv->zv_volblocksize > zv->zv_volsize)
+        return kIOReturnBadArgument;
+
+    // Get the buffer’s direction, whether the operation is a read or a write.
+    direction = buffer->getDirection();
+    if ((direction != kIODirectionIn) && (direction != kIODirectionOut))
+        return kIOReturnBadArgument;
+
+    //IOLog("ReadWrite offset blocks %llu len blocks %llu: current_task %p = kernel_task %p\n",
+    //      block, nblks, current_task(), kernel_task);
+
+    // Perform the read or write operation through the transport driver.
+    actualByteCount = (nblks*zv->zv_volblocksize);
+
+    if (direction == kIODirectionIn) {
+
+      if (zvol_read_iokit(zv,
+                          (block*zv->zv_volblocksize),
+                          actualByteCount,
+                          (void *)buffer))
+        actualByteCount = 0;
+
+    } else {
+
+      if (zvol_write_iokit(zv,
+                           (block*zv->zv_volblocksize),
+                            actualByteCount,
+                           (void *)buffer))
+        actualByteCount = 0;
+
+    }
+
+    //IOLog("ActualByteCount %llu\n", actualByteCount);
+
+    // Call the completion function.
+    (completion->action)(completion->target, completion->parameter, kIOReturnSuccess,
+                         actualByteCount);
+    return kIOReturnSuccess;
+}
+
+
+
+
 UInt32 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
                                                           UInt32 capacitiesMaxCount) const
 {
@@ -191,26 +177,35 @@ UInt32 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
     // The caller may provide a NULL array if it wishes to query
     // the number of formats that we support.
     if (capacities != NULL)
-        capacities[0] = m_blockCount * kDiskBlockSize;
+      //capacities[0] = m_blockCount * kDiskBlockSize;
+      capacities[0] = zv->zv_volsize;
+    IOLog("returning size %llu\n", zv->zv_volsize);
     return 1;
 }
 
+
+
 char* net_lundman_zfs_zvol_device::getProductString(void)
 {
-    if (zv && zv->zv_name) return zv->zv_name;
-    return (char*)"ZVolume";
+  IOLog("getProduct %p\n", zv);
+  if (zv && zv->zv_name) return zv->zv_name;
+  return (char*)"ZVolume";
 }
+
+
 
 IOReturn net_lundman_zfs_zvol_device::reportBlockSize(UInt64 *blockSize)
 {
-    *blockSize = kDiskBlockSize;
-    return kIOReturnSuccess;
+  *blockSize = zv->zv_volblocksize;
+  return kIOReturnSuccess;
 }
+
 IOReturn net_lundman_zfs_zvol_device::reportMaxValidBlock(UInt64 *maxBlock)
 {
-    *maxBlock = m_blockCount-1;
-    return kIOReturnSuccess;
+  *maxBlock = (zv->zv_volsize / zv->zv_volblocksize) -1;
+  return kIOReturnSuccess;
 }
+
 IOReturn net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent, bool
    *changedState)
 {
@@ -219,6 +214,7 @@ IOReturn net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent, bool
     *changedState = false;
     return kIOReturnSuccess;
 }
+
 IOReturn net_lundman_zfs_zvol_device::reportPollRequirements(bool *pollRequired,
    bool *pollIsExpensive)
 {
@@ -226,48 +222,13 @@ IOReturn net_lundman_zfs_zvol_device::reportPollRequirements(bool *pollRequired,
     *pollIsExpensive = false;
     return kIOReturnSuccess;
 }
+
 IOReturn net_lundman_zfs_zvol_device::reportRemovability(bool *isRemovable)
 {
     *isRemovable = true;
     return kIOReturnSuccess;
 }
-IOReturn net_lundman_zfs_zvol_device::doAsyncReadWrite(
-    IOMemoryDescriptor *buffer, UInt64 block, UInt64 nblks,
-    IOStorageAttributes *attributes, IOStorageCompletion *completion)
-{
-    IODirection               direction;
-    IOByteCount               actualByteCount;
-    // Return errors for incoming I/O if we have been terminated.
-    if (isInactive() == true)
-        return kIOReturnNotAttached;
-    // Ensure the block range being targeted is within the disk’s capacity.
-    if ((block + nblks) > m_blockCount)
-        return kIOReturnBadArgument;
-    // Get the buffer’s direction, which indicates whether the operation is a read or a write.
-    direction = buffer->getDirection();
-    if ((direction != kIODirectionIn) && (direction != kIODirectionOut))
-        return kIOReturnBadArgument;
-    // Perform the read or write operation through the transport driver.
-    if (direction == kIODirectionIn) {
 
-      //if (!zvol_read(zv, uio, cr)) {
-      if (0) {
-
-      } else {
-        actualByteCount = 0;
-      }
-
-        actualByteCount = m_provider->performRead(buffer, (block*kDiskBlockSize),
-                                                  (nblks*kDiskBlockSize));
-    } else {
-        actualByteCount = m_provider->performWrite(buffer, (block*kDiskBlockSize),
-                                                   (nblks*kDiskBlockSize));
-    }
-    // Call the completion function.
-    (completion->action)(completion->target, completion->parameter, kIOReturnSuccess,
-                         actualByteCount);
-    return kIOReturnSuccess;
-}
 
 
 
@@ -334,3 +295,4 @@ IOReturn  net_lundman_zfs_zvol_device::setWriteCacheState(bool enabled)
 {
     return kIOReturnSuccess;
 }
+

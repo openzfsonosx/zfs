@@ -1389,6 +1389,155 @@ dmu_write_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size,
 
 	return (err);
 }
+
+/*
+ * Support function for IOKit, iomem is an IOMemoryDescriptor passed back
+ * into zvolIO.cpp
+ */
+int
+dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
+               uint64_t *size, void *iomem)
+{
+	dmu_buf_t **dbp;
+	int numbufs, i, err = 0;
+
+	/*
+	 * NB: we could do this block-at-a-time, but it's nice
+	 * to be reading in parallel.
+	 */
+	//err = dmu_buf_hold_array(os, object, uio->uio_loffset, size, TRUE, FTAG,
+    //   &numbufs, &dbp);
+	err = dmu_buf_hold_array(os, object, *offset, *size, TRUE, FTAG,
+	    &numbufs, &dbp);
+	if (err)
+		return (err);
+
+	for (i = 0; i < numbufs; i++) {
+		int tocpy;
+		int bufoff;
+		dmu_buf_t *db = dbp[i];
+        uint64_t done;
+
+		ASSERT(size > 0);
+
+		//bufoff = uio->uio_loffset - db->db_offset;
+		bufoff = *offset - db->db_offset;
+		tocpy = (int)MIN(db->db_size - bufoff, *size);
+
+        /*
+          err = uiomove((char *)db->db_data + bufoff, tocpy,
+          UIO_READ, uio);
+        */
+
+        done = zvolIO_kit_read(iomem,
+                               (char *)db->db_data + bufoff,
+                               tocpy);
+        if (done > 0) {
+            *offset += done;
+            *size -= done;
+        }
+
+		if (done < 0) {
+            err = EIO;
+			break;
+        }
+
+		//size -= tocpy;
+	}
+	dmu_buf_rele_array(dbp, numbufs, FTAG);
+
+	return (err);
+}
+
+
+static int
+dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset,
+                      uint64_t *size, void *iomem, dmu_tx_t *tx)
+{
+	dmu_buf_t **dbp;
+	int numbufs;
+	int err = 0;
+	int i;
+
+	//err = dmu_buf_hold_array_by_dnode(dn, uio->uio_loffset, size,
+    //   FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
+	err = dmu_buf_hold_array_by_dnode(dn, *offset, *size,
+	    FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
+	if (err)
+		return (err);
+
+	for (i = 0; i < numbufs; i++) {
+		int tocpy;
+		int bufoff;
+        uint64_t done;
+		dmu_buf_t *db = dbp[i];
+
+		ASSERT(size > 0);
+
+		//bufoff = uio->uio_loffset - db->db_offset;
+		bufoff = *offset - db->db_offset;
+		tocpy = (int)MIN(db->db_size - bufoff, *size);
+
+		ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
+
+		if (tocpy == db->db_size)
+			dmu_buf_will_fill(db, tx);
+		else
+			dmu_buf_will_dirty(db, tx);
+
+		/*
+		 * XXX uiomove could block forever (eg.nfs-backed
+		 * pages).  There needs to be a uiolockdown() function
+		 * to lock the pages in memory, so that uiomove won't
+		 * block.
+		 */
+        /*
+		err = uiomove((char *)db->db_data + bufoff, tocpy,
+		    UIO_WRITE, uio);
+        */
+		done = zvolIO_kit_write(iomem,
+                                (char *)db->db_data + bufoff,
+                                tocpy);
+
+        if (tocpy == db->db_size)
+			dmu_buf_fill_done(db, tx);
+
+        if (done > 0) {
+            *offset += done;
+            *size -= done;
+        }
+
+		if (done < 0) {
+            err = EIO;
+			break;
+        }
+	}
+
+	dmu_buf_rele_array(dbp, numbufs, FTAG);
+	return (err);
+}
+
+
+int
+dmu_write_iokit_dbuf(dmu_buf_t *zdb, uint64_t *offset, uint64_t *size,
+                     void *iomem,
+                     dmu_tx_t *tx)
+{
+	dmu_buf_impl_t *db = (dmu_buf_impl_t *)zdb;
+	dnode_t *dn;
+	int err;
+
+	if (size == 0)
+		return (0);
+
+	DB_DNODE_ENTER(db);
+	dn = DB_DNODE(db);
+	err = dmu_write_iokit_dnode(dn, offset, size, iomem, tx);
+	DB_DNODE_EXIT(db);
+
+	return (err);
+}
+
 #endif /* _KERNEL */
 
 int

@@ -1,3 +1,5 @@
+#ifndef ZVOLIO_H_INCLUDED
+#define ZVOLIO_H_INCLUDED
 
 #include <IOKit/IOService.h>
 
@@ -15,7 +17,9 @@ class net_lundman_zfs_zvol : public IOService
   virtual IOService*  probe (IOService* provider, SInt32* score);
   virtual bool        start (IOService* provider);
   virtual void        stop  (IOService* provider);
-  virtual bool        createBlockStorageDevice (zvol_state_t *zv);
+  virtual bool        createBlockStorageDevice  (zvol_state_t *zv);
+  virtual bool        destroyBlockStorageDevice (zvol_state_t *zv);
+  virtual bool        updateVolSize             (zvol_state_t *zv);
   virtual IOByteCount performRead (IOMemoryDescriptor* dstDesc,
                                    UInt64 byteOffset,
                                    UInt64 byteCount);
@@ -32,12 +36,11 @@ class net_lundman_zfs_zvol_device : public IOBlockStorageDevice
 {
     OSDeclareDefaultStructors(net_lundman_zfs_zvol_device)
 private:
-    UInt64                     m_blockCount;
     net_lundman_zfs_zvol      *m_provider;
     zvol_state_t *zv;
 
 public:
-    virtual bool      init(UInt64 diskSize, OSDictionary* properties = 0);
+    virtual bool      init(zvol_state_t *c_zv, OSDictionary* properties = 0);
     virtual bool      attach(IOService* provider);
     virtual void      detach(IOService* provider);
     virtual IOReturn  doEjectMedia(void);
@@ -66,4 +69,8 @@ public:
                                        UInt64 block, UInt64 nblks,
                                        IOStorageAttributes *attributes,
                                        IOStorageCompletion *completion);
+    virtual bool handleOpen( IOService *client, IOOptionBits options, void *access);
+    virtual void handleClose( IOService *client, IOOptionBits options);
 };
+
+#endif

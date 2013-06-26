@@ -114,7 +114,7 @@ zfs_SOURCES = \
 	zfs_ioctl.c \
 	zfs_log.c \
 	zfs_onexit.c \
-	zfs_osx.c \
+	zfs_osx.cpp \
 	zfs_replay.c \
 	zfs_rlock.c \
 	zfs_sa.c \

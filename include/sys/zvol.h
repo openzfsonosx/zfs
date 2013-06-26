@@ -38,6 +38,16 @@ extern "C" {
 
 
 #ifdef _KERNEL
+
+/*
+ * zvol specific flags
+ */
+#define	ZVOL_RDONLY	0x1
+#define	ZVOL_DUMPIFIED	0x2
+#define	ZVOL_EXCL	0x4
+#define	ZVOL_WCE	0x8
+
+
 /*
  * The in-core state of each volume.
  */
@@ -55,6 +65,8 @@ typedef struct zvol_state {
 	list_t		zv_extents;	/* List of extents for dump */
 	znode_t		zv_znode;	/* for range locking */
 	dmu_buf_t	*zv_dbuf;	/* bonus handle */
+    void        *zv_iokitdev; /* C++ reference to IOKit class */
+    uint64_t    zv_openflags; /* Remember flags used at open */
 } zvol_state_t;
 
 
@@ -76,6 +88,25 @@ extern int zvol_write(dev_t dev, uio_t *uiop, cred_t *cr);
 
 extern int zvol_init(void);
 extern void zvol_fini(void);
+
+    /* C helper functions for C++ */
+extern int zvol_open_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr);
+extern int zvol_close_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr);
+
+extern int zvol_read_iokit (zvol_state_t *zv, uint64_t offset, uint64_t count,
+                            void *iomem);
+extern int zvol_write_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count,
+                            void *iomem);
+
+
+    /* These functions live in zvolIO.cpp to be called from C */
+extern uint64_t zvolIO_kit_read (void *iomem, char *address, uint64_t len);
+extern uint64_t zvolIO_kit_write(void *iomem, char *address, uint64_t len);
+extern int      zvolRemoveDevice(zvol_state_t *zv);
+extern int      zvolCreateNewDevice(zvol_state_t *zv);
+extern int      zvolSetVolsize(zvol_state_t *zv);
+
+
 
 #endif /* _KERNEL */
 

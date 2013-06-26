@@ -1,5 +1,5 @@
 
-Jörgen Lundman is the principle developer of the ZFS on Apple OS X port.
+Jörgen Lundman is the principal developer of the ZFS on Apple OS X port.
 He works full time as a Unix Engineer at GMO Internet, Tokyo, Japan.
 This port would not have been possible without the help of many
 others who have contributed their time, effort, and insight.
@@ -22,9 +22,7 @@ and more information on that project can be found in the 'AUTHORS' file.
 Large parts come from the original work in MacZFS, and the excellent work
 of those early developers.
 
-  [More details here]
-  MacZFS http://code.google.com/p/maczfs/
-
+  MacZFS http://maczfs.org/
 
 VFS layer and glue comes from the FreeBSD project, who has done a excellent
 job connecting the BSD and SYSV kernels together.
@@ -38,13 +36,12 @@ willingly,
   Richard Yao
   Björn Kahl
   Will Andrews
-  Don Brady
   Evan Lojewski
   Daniel Bethe
 
 
 The flexible and welcoming attitude toward Open Source by GMO Internet,
-Tokyo, Japan has been an intergral part of this project.
+Tokyo, Japan has been an integral part of this project.
 
   GMO Internet, Inc. http://www.gmo.jp/
 
