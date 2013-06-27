@@ -10,9 +10,9 @@ the latest Macports.
 See https://github.com/zfs-osx/ and http://MacZFS.org/ for more information.
 Note MacZFS's wiki on kernel development and panic decoding.
 
-
+```
 # git clone https://github.com/zfs-osx/zfs.git
-
+```
 
 KNOWN ISSUES.
 
@@ -22,15 +22,15 @@ KNOWN ISSUES.
 Please note that 'llvm-gcc' or 'clang' has to be used for compiling KEXTs.
 Pure 'gcc' will produce instable builds.
 
+```
  # ./configure CC=clang CXX=clang++
 or
  # ./configure CC=llvm-gcc CXX=llvm-g++
-
+```
 
 
 
 ```
-
 # ./autogen.sh
 # ./configure CC=clang CXX=clang++ --with-spl=/path/to/your/spl
 # make
