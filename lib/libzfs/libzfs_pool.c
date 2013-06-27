@@ -4120,7 +4120,7 @@ zpool_label_disk(libzfs_handle_t *hdl, zpool_handle_t *zhp, char *name)
 		efi_free(vtoc);
 
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, "try using "
-		    "parted(8) and then provide a specific slice: %d"), rval);
+		    "pdisk(9) and then provide a specific slice: %d"), rval);
 		return (zfs_error(hdl, EZFS_LABELFAILED, errbuf));
 	}
 

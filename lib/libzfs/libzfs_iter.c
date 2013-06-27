@@ -106,12 +106,15 @@ zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 	zfs_cmd_t zc = { "\0", "\0", "\0", "\0", 0 };
 	zfs_handle_t *nzhp;
 	int ret;
+    uint64_t allocated_size;
 
 	if (zhp->zfs_type != ZFS_TYPE_FILESYSTEM)
 		return (0);
 
 	if (zcmd_alloc_dst_nvlist(zhp->zfs_hdl, &zc, 0) != 0)
 		return (-1);
+
+    allocated_size = zc.zc_nvlist_dst_size;
 
 	while ((ret = zfs_do_list_ioctl(zhp, ZFS_IOC_DATASET_LIST_NEXT,
 	    &zc)) == 0) {
@@ -128,6 +131,9 @@ zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 			zcmd_free_nvlists(&zc);
 			return (ret);
 		}
+
+        zc.zc_nvlist_dst_size = allocated_size;
+
 	}
 	zcmd_free_nvlists(&zc);
 	return ((ret < 0) ? ret : 0);

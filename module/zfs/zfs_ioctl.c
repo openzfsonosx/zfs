@@ -1956,7 +1956,7 @@ static int
 zfs_ioc_dataset_list_next(zfs_cmd_t *zc)
 {
 	objset_t *os;
-	int error;
+	int error = 0;
 	char *p;
 	size_t orig_len = strlen(zc->zc_name);
 

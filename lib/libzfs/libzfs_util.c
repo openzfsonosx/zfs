@@ -1085,6 +1085,10 @@ zcmd_read_dst_nvlist(libzfs_handle_t *hdl, zfs_cmd_t *zc, nvlist_t **nvlp)
 	return (0);
 }
 
+/*
+ * OSX will return error=0 on error, but set zc_ioc_error to the real
+ * error code, we will then move that to errno, and return -1.
+ */
 int
 zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 {
@@ -1095,10 +1099,12 @@ zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 	error = ioctl(hdl->libzfs_fd, request, zc);
 
         /* normal path, zfsdev_ioctl returns the real error in zc_ioc_error */
-	if (error == 0)
-		error = errno = zc->zc_ioc_error;
-	else
+	if ((error == 0) && zc->zc_ioc_error) {
+		error = -1;
+        errno = zc->zc_ioc_error;
+    } else if (error) {
 		errno = error;
+    }
 
 	if (hdl->libzfs_log_str) {
 		free(hdl->libzfs_log_str);
