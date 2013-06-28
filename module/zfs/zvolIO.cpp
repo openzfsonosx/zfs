@@ -24,15 +24,15 @@ OSDefineMetaClassAndStructors(net_lundman_zfs_zvol_device,IOBlockStorageDevice)
 bool net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
                                        OSDictionary *properties)
 {
-    printf("zolio_device:init\n");
-    if (super::init(properties) == false)
-        return false;
+  dprintf("zolio_device:init\n");
+  if (super::init(properties) == false)
+    return false;
 
-    zv = c_zv;
-    // Is it safe/ok to keep a pointer reference like this?
-    zv->zv_iokitdev = (void *) this;
+  zv = c_zv;
+  // Is it safe/ok to keep a pointer reference like this?
+  zv->zv_iokitdev = (void *) this;
 
-    return true;
+  return true;
 }
 
 
@@ -102,7 +102,7 @@ void net_lundman_zfs_zvol_device::handleClose( IOService *client,
 {
   super::handleClose(client, options);
 
-  IOLog("handleClose\n");
+  //IOLog("handleClose\n");
   zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
 }
 
@@ -179,7 +179,7 @@ UInt32 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
     if (capacities != NULL)
       //capacities[0] = m_blockCount * kDiskBlockSize;
       capacities[0] = zv->zv_volsize;
-    IOLog("returning size %llu\n", zv->zv_volsize);
+    //IOLog("returning size %llu\n", zv->zv_volsize);
     return 1;
 }
 
@@ -187,7 +187,7 @@ UInt32 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
 
 char* net_lundman_zfs_zvol_device::getProductString(void)
 {
-  IOLog("getProduct %p\n", zv);
+  //IOLog("getProduct %p\n", zv);
   if (zv && zv->zv_name) return zv->zv_name;
   return (char*)"ZVolume";
 }
@@ -196,7 +196,7 @@ char* net_lundman_zfs_zvol_device::getProductString(void)
 
 IOReturn net_lundman_zfs_zvol_device::reportBlockSize(UInt64 *blockSize)
 {
-  IOLog("reportBlockSize %llu\n", zv->zv_volblocksize);
+  //IOLog("reportBlockSize %llu\n", zv->zv_volblocksize);
   *blockSize = zv->zv_volblocksize;
   return kIOReturnSuccess;
 }

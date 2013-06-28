@@ -1010,7 +1010,6 @@ zpool_open_canfail(libzfs_handle_t *hdl, const char *pool)
 		zpool_close(zhp);
 		return (NULL);
 	}
-
 	return (zhp);
 }
 

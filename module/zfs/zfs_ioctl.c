@@ -5299,8 +5299,8 @@ zfs_ioctl_init(void)
     zfs_major = cdevsw_add_with_bdev(-1, &zfs_cdevsw, zfs_bmajor);
     dev = makedev(zfs_major, 0);/* Get the device number */
 
-    printf("ZFS ioctl setup. major %d, bmajor %d, dev %d\n",
-           zfs_major, zfs_bmajor, dev);
+    //printf("ZFS ioctl setup. major %d, bmajor %d, dev %d\n",
+    //     zfs_major, zfs_bmajor, dev);
 
     if (zfs_major < 0) {
         printf("zfs_ioctl_init: failed to allocate a major number!\n");

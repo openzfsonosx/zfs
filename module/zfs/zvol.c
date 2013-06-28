@@ -488,7 +488,7 @@ zvol_create_minor(const char *name)
 	char chrbuf[30], blkbuf[30];
 	int error;
 
-    printf("zvol_create_minor: '%s'\n", name);
+    dprintf("zvol_create_minor: '%s'\n", name);
 
 	mutex_enter(&zfsdev_state_lock);
 
@@ -637,7 +637,7 @@ zvol_first_open(zvol_state_t *zv)
 	int error;
 	uint64_t readonly;
 
-    printf("zvol_first_open: '%s'\n", zv->zv_name);
+    dprintf("zvol_first_open: '%s'\n", zv->zv_name);
 
 	/* lie and say we're read-only */
 	error = dmu_objset_own(zv->zv_name, DMU_OST_ZVOL, B_TRUE,
@@ -669,7 +669,7 @@ zvol_first_open(zvol_state_t *zv)
 		zv->zv_flags |= ZVOL_RDONLY;
 	else
 		zv->zv_flags &= ~ZVOL_RDONLY;
-    printf("first_open %d\n", error);
+    dprintf("first_open %d\n", error);
 	return (error);
 }
 
@@ -850,7 +850,7 @@ zvol_set_volsize(const char *name, uint64_t volsize)
 	uint64_t readonly;
 	boolean_t owned = B_FALSE;
 
-    printf("zvol_set_volsize %llu\n", volsize);
+    dprintf("zvol_set_volsize %llu\n", volsize);
 
 	error = dsl_prop_get_integer(name,
 	    zfs_prop_to_name(ZFS_PROP_READONLY), &readonly, NULL);
@@ -913,7 +913,7 @@ zvol_open_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr)
 		goto out;
 	}
 	if (zv->zv_flags & ZVOL_EXCL) {
-        printf("already open as exclusive\n");
+        dprintf("already open as exclusive\n");
 		err = EBUSY;
 		goto out;
 	}
@@ -922,7 +922,7 @@ zvol_open_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr)
 			err = EBUSY;
 			goto out;
 		}
-        printf("setting exclusive\n");
+        dprintf("setting exclusive\n");
 		zv->zv_flags |= ZVOL_EXCL;
 	}
 
@@ -935,13 +935,13 @@ zvol_open_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr)
 
 	mutex_exit(&zfsdev_state_lock);
 
-    printf("zol_open()->%d\n", err);
+    dprintf("zol_open()->%d\n", err);
 	return (err);
 out:
 	if (zv->zv_total_opens == 0)
 		zvol_last_close(zv);
 	mutex_exit(&zfsdev_state_lock);
-    printf("zol_open(x)->%d\n", err);
+    dprintf("zol_open(x)->%d\n", err);
 	return (err);
 }
 
@@ -956,13 +956,13 @@ zvol_open(dev_t devp, int flag, int otyp, cred_t *cr)
     // Minor 0 is the /dev/zfs control, not zvol.
     if (!getminor(devp)) return 0;
 
-    printf("zvol_open: minor %d\n", getminor(devp));
+    dprintf("zvol_open: minor %d\n", getminor(devp));
 
 	mutex_enter(&zfsdev_state_lock);
 
 	zv = zfsdev_get_soft_state(getminor(devp), ZSST_ZVOL);
 	if (zv == NULL) {
-        printf("zv is NULL\n");
+        dprintf("zv is NULL\n");
 		mutex_exit(&zfsdev_state_lock);
 		return (ENXIO);
 	}
@@ -984,7 +984,7 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr)
 	if (zv->zv_flags & ZVOL_EXCL) {
 		ASSERT(zv->zv_total_opens == 1);
 		zv->zv_flags &= ~ZVOL_EXCL;
-        printf("clearing exclusive\n");
+        dprintf("clearing exclusive\n");
 	}
 
 	/*
@@ -1017,7 +1017,7 @@ zvol_close(dev_t dev, int flag, int otyp, cred_t *cr)
     // Minor 0 is the /dev/zfs control, not zvol.
     if (!getminor(dev)) return 0;
 
-    printf("zvol_close(%d)\n", getminor(dev));
+    dprintf("zvol_close(%d)\n", getminor(dev));
 
 	mutex_enter(&zfsdev_state_lock);
 
@@ -1287,7 +1287,7 @@ zvol_strategy(buf_t *bp)
 	boolean_t is_dump;
 	boolean_t sync;
 
-    printf("zvol_strategy\n");
+    dprintf("zvol_strategy\n");
 
 	if (getminor(buf_device(bp)) == 0) {
 		error = EINVAL;
@@ -1772,7 +1772,7 @@ int
 zvol_get_volume_size(dev_t dev)
 {
 	zvol_state_t *zv;
-    printf("zvol_get_volume_size\n");
+    dprintf("zvol_get_volume_size\n");
 
     // Minor 0 is the /dev/zfs control, not zvol.
     if (!getminor(dev)) return ENXIO;
@@ -1781,7 +1781,7 @@ zvol_get_volume_size(dev_t dev)
 
 	zv = zfsdev_get_soft_state(getminor(dev), ZSST_ZVOL);
 	if (zv == NULL) {
-        printf("zv is NULL\n");
+        dprintf("zv is NULL\n");
 		mutex_exit(&zfsdev_state_lock);
 		return (ENXIO);
 	}
@@ -1795,7 +1795,7 @@ int
 zvol_get_volume_blocksize(dev_t dev)
 {
 	zvol_state_t *zv;
-    printf("zvol_get_volume_blocksize\n");
+    dprintf("zvol_get_volume_blocksize\n");
 
     // Minor 0 is the /dev/zfs control, not zvol.
     if (!getminor(dev)) return ENXIO;
@@ -1804,12 +1804,12 @@ zvol_get_volume_blocksize(dev_t dev)
 
 	zv = zfsdev_get_soft_state(getminor(dev), ZSST_ZVOL);
 	if (zv == NULL) {
-        printf("zv is NULL\n");
+        dprintf("zv is NULL\n");
 		mutex_exit(&zfsdev_state_lock);
 		return (ENXIO);
 	}
 
-    printf("zvol_get_volume_blocksize: %d\n",zv->zv_volblocksize );
+    dprintf("zvol_get_volume_blocksize: %d\n",zv->zv_volblocksize );
 
     mutex_exit(&zfsdev_state_lock);
 	//return (zv->zv_volblocksize);
@@ -1886,7 +1886,7 @@ zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
 
 	zv = zfsdev_get_soft_state(getminor(dev), ZSST_ZVOL);
 	if (zv == NULL) {
-        printf("zv is NULL\n");
+        dprintf("zv is NULL\n");
 		mutex_exit(&zfsdev_state_lock);
 		return (ENXIO);
 	}
@@ -1897,32 +1897,32 @@ zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
     switch (cmd) {
 
     case DKIOCGETMAXBLOCKCOUNTREAD:
-        printf("DKIOCGETMAXBLOCKCOUNTREAD\n");
+        dprintf("DKIOCGETMAXBLOCKCOUNTREAD\n");
         *o = 32;
         break;
 
     case DKIOCGETMAXBLOCKCOUNTWRITE:
-        printf("DKIOCGETMAXBLOCKCOUNTWRITE\n");
+        dprintf("DKIOCGETMAXBLOCKCOUNTWRITE\n");
         *o = 32;
         break;
 
     case DKIOCGETMAXSEGMENTCOUNTREAD:
-        printf("DKIOCGETMAXSEGMENTCOUNTREAD\n");
+        dprintf("DKIOCGETMAXSEGMENTCOUNTREAD\n");
         *o = 32;
         break;
 
     case DKIOCGETMAXSEGMENTCOUNTWRITE:
-        printf("DKIOCGETMAXSEGMENTCOUNTWRITE\n");
+        dprintf("DKIOCGETMAXSEGMENTCOUNTWRITE\n");
         *o = 32;
         break;
 
     case DKIOCGETBLOCKSIZE:
-        printf("DKIOCGETBLOCKSIZE: %llu\n", zv->zv_volblocksize);
+        dprintf("DKIOCGETBLOCKSIZE: %llu\n", zv->zv_volblocksize);
         *f = zv->zv_volblocksize;
         break;
 
     case DKIOCSETBLOCKSIZE:
-        printf("DKIOCSETBLOCKSIZE %lu\n", *f);
+        dprintf("DKIOCSETBLOCKSIZE %lu\n", *f);
 
         if (!isblk) {
             error = ENODEV;  /* We can only do this for a block */
@@ -1935,40 +1935,40 @@ zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
         }
 
         zv->zv_volblocksize = (uint64_t)*f;    /* set the new block size */
-        printf("setblocksize changed: %llu\n", zv->zv_volblocksize);
+        dprintf("setblocksize changed: %llu\n", zv->zv_volblocksize);
         break;
 
     case DKIOCISWRITABLE:
-        printf("DKIOCISWRITABLE\n");
+        dprintf("DKIOCISWRITABLE\n");
         *f = 1;
         break;
 
     case DKIOCGETBLOCKCOUNT32:
-        printf("DKIOCGETBLOCKCOUNT32: %lu\n",
+        dprintf("DKIOCGETBLOCKCOUNT32: %lu\n",
                (uint32_t)zv->zv_volsize / zv->zv_volblocksize);
         *f = (uint32_t)zv->zv_volsize / zv->zv_volblocksize;
         break;
 
     case DKIOCGETBLOCKCOUNT:
-        printf("DKIOCGETBLOCKCOUNT: %llu\n",
+        dprintf("DKIOCGETBLOCKCOUNT: %llu\n",
                zv->zv_volsize / zv->zv_volblocksize);
         *o = (uint64_t)zv->zv_volsize / zv->zv_volblocksize;
         break;
 
     case DKIOCGETBASE:
-        printf("DKIOCGETBASE\n");
+        dprintf("DKIOCGETBASE\n");
         /* What offset should we say? 0 is ok for FAT but to HFS */
         *o = zv->zv_volblocksize * 0;
         break;
 
     case DKIOCGETPHYSICALBLOCKSIZE:
-        printf("DKIOCGETPHYSICALBLOCKSIZE\n");
+        dprintf("DKIOCGETPHYSICALBLOCKSIZE\n");
         *f = zv->zv_volblocksize;
         break;
 
 #ifdef DKIOCGETTHROTTLEMASK
     case DKIOCGETTHROTTLEMASK:
-        printf("DKIOCGETTHROTTLEMASK\n");
+        dprintf("DKIOCGETTHROTTLEMASK\n");
         *o = 0;
         break;
 #endif
@@ -2013,14 +2013,14 @@ zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
         break;
 
     default:
-        printf("unknown ioctl: ENOTTY\n");
+        dprintf("unknown ioctl: ENOTTY\n");
         error = ENOTTY;
         break;
     }
 
 
     mutex_exit(&zfsdev_state_lock);
-    printf("zvol_ioctl returning %d\n", error);
+    dprintf("zvol_ioctl returning %d\n", error);
     return(error);
 
 
@@ -2217,11 +2217,11 @@ zvol_busy(void)
 int
 zvol_init(void)
 {
-    printf("zvol_init\n");
+    dprintf("zvol_init\n");
 	VERIFY(ddi_soft_state_init(&zfsdev_state, sizeof (zfs_soft_state_t),
 	    1) == 0);
 	mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
-    printf("zfsdev_state: %p\n", zfsdev_state);
+    dprintf("zfsdev_state: %p\n", zfsdev_state);
     return 0;
 }
 

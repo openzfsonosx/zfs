@@ -209,6 +209,7 @@ is_mounted(libzfs_handle_t *zfs_hdl, const char *special, char **where)
 {
     struct mnttab search = { 0 }, entry;
 
+#if 0
     /*
      * Search for the entry in /etc/mnttab.  We don't bother getting the
      * mountpoint, as we can just search for the special device.  This will
@@ -223,6 +224,16 @@ is_mounted(libzfs_handle_t *zfs_hdl, const char *special, char **where)
 
     if (where != NULL)
         *where = zfs_strdup(zfs_hdl, entry.mnt_mountp);
+#else
+
+        if (libzfs_mnttab_find(zfs_hdl, special, &entry) != 0)
+                return (B_FALSE);
+
+        if (where != NULL)
+                *where = zfs_strdup(zfs_hdl, entry.mnt_mountp);
+
+#endif
+
 
     return (B_TRUE);
 }
@@ -552,17 +563,23 @@ unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
 int
 zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
 {
+    libzfs_handle_t *hdl = zhp->zfs_hdl;
     struct mnttab search = { 0 }, entry;
     char *mntpt = NULL;
 
     printf("zfs_unmount\n");
 
     /* check to see if need to unmount the filesystem */
+
+#if 0
     search.mnt_special = zhp->zfs_name;
     search.mnt_fstype = MNTTYPE_ZFS;
-
     if (mountpoint != NULL || ((zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) &&
                                getmntany(zhp->zfs_hdl->libzfs_mnttab, &entry, &search) == 0)) {
+#else
+        if (mountpoint != NULL || ((zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) &&
+                                   libzfs_mnttab_find(hdl, zhp->zfs_name, &entry) == 0)) {
+#endif
         /*
          * mountpoint may have come from a call to
          * getmnt/getmntany if it isn't NULL. If it is NULL,
@@ -1206,27 +1223,9 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
      * Temporarily replaced with a call to list OS mounted filesystems
      * and if type ZFS, check for unmount
      */
-
-#if 0
 	for (mntn = libzfs_mnttab_first(hdl); mntn != NULL;
 	     mntn = libzfs_mnttab_next(hdl, mntn)) {
 		struct mnttab *mt = &mntn->mtn_mt;
-#else
-        struct statfs *sfsp;
-        int nitems;
-
-        nitems = getmntinfo(&sfsp, MNT_WAIT);
-
-        while (nitems-- > 0)
-            if (strcmp("zfs", sfsp[nitems].f_fstypename) == 0) {
-                struct mnttab *mt, tp;
-                tp.mnt_special = sfsp[nitems].f_mntfromname;
-                tp.mnt_mountp  = sfsp[nitems].f_mntonname;
-                tp.mnt_fstype  = sfsp[nitems].f_fstypename;
-                tp.mnt_mntopts = "";
-                mt = &tp;
-#endif
-
 		/*
 		 * Ignore filesystems not within this pool.
 		 */

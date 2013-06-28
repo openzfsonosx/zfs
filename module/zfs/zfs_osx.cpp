@@ -151,7 +151,7 @@ system_taskq_init(void)
 bool net_lundman_zfs_zvol::init (OSDictionary* dict)
 {
     bool res = super::init(dict);
-    IOLog("ZFS::init\n");
+    //IOLog("ZFS::init\n");
     global_c_interface = (void *)this;
     return res;
 }
@@ -159,7 +159,7 @@ bool net_lundman_zfs_zvol::init (OSDictionary* dict)
 
 void net_lundman_zfs_zvol::free (void)
 {
-    IOLog("ZFS::free\n");
+  //IOLog("ZFS::free\n");
     global_c_interface = NULL;
     super::free();
 }
@@ -168,7 +168,7 @@ void net_lundman_zfs_zvol::free (void)
 IOService* net_lundman_zfs_zvol::probe (IOService* provider, SInt32* score)
 {
     IOService *res = super::probe(provider, score);
-    IOLog("ZFS::probe\n");
+    //IOLog("ZFS::probe\n");
     return res;
 }
 
@@ -244,7 +244,7 @@ bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
 
     if (!zv) goto bail;
 
-    IOLog("createBlock size %llu\n", zv->zv_volsize);
+    //IOLog("createBlock size %llu\n", zv->zv_volsize);
 
     // Allocate a new IOBlockStorageDevice nub.
     nub = new net_lundman_zfs_zvol_device;
@@ -279,7 +279,7 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
 
     if (zv->zv_iokitdev) {
 
-      IOLog("removeBlockdevice\n");
+      //IOLog("removeBlockdevice\n");
 
       nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
 
@@ -301,7 +301,7 @@ bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
     if (zv->zv_iokitdev) {
       nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
 
-      IOLog("Attempting to update volsize\n");
+      //IOLog("Attempting to update volsize\n");
       nub->retain();
       nub->registerService();
       nub->release();

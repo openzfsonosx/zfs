@@ -627,13 +627,6 @@ libzfs_mnttab_cache_compare(const void *arg1, const void *arg2)
 	return (rv > 0 ? 1 : -1);
 }
 
-void
-libzfs_mnttab_init(libzfs_handle_t *hdl)
-{
-	assert(avl_numnodes(&hdl->libzfs_mnttab_cache) == 0);
-	avl_create(&hdl->libzfs_mnttab_cache, libzfs_mnttab_cache_compare,
-	    sizeof (mnttab_node_t), offsetof(mnttab_node_t, mtn_node));
-}
 
 void
 libzfs_mnttab_update(libzfs_handle_t *hdl)
@@ -648,11 +641,21 @@ libzfs_mnttab_update(libzfs_handle_t *hdl)
 	}
 	while (--nitems >= 0) {
 
-		if (strcmp(sfsp->f_fstypename, MNTTYPE_ZFS) != 0)
+		if (strcmp(sfsp[nitems].f_fstypename, MNTTYPE_ZFS) != 0)
 			continue;
-		libzfs_mnttab_add(hdl, sfsp->f_mntfromname, sfsp->f_mntonname,
+		libzfs_mnttab_add(hdl, sfsp[nitems].f_mntfromname, sfsp[nitems].f_mntonname,
 		    NULL);
 	}
+}
+
+void
+libzfs_mnttab_init(libzfs_handle_t *hdl)
+{
+	assert(avl_numnodes(&hdl->libzfs_mnttab_cache) == 0);
+	avl_create(&hdl->libzfs_mnttab_cache, libzfs_mnttab_cache_compare,
+	    sizeof (mnttab_node_t), offsetof(mnttab_node_t, mtn_node));
+
+    libzfs_mnttab_update(hdl);
 }
 
 void
