@@ -28,8 +28,8 @@ CFLAGS_KMOD = \
 	-DZFS_META_RELEASE=\"@ZFS_META_RELEASE@\" \
 	-I$(top_srcdir)/include \
 	-I@SPL_OBJ@ -I@SPL_OBJ@/include \
-	-I/System/Library/Frameworks/Kernel.framework/PrivateHeaders \
-	-I/System/Library/Frameworks/Kernel.framework/Headers
+	-I/System/Library/Frameworks/Kernel.framework/Headers \
+	-I/System/Library/Frameworks/Kernel.framework/PrivateHeaders
 
 LINKFLAGS_KMOD = \
 	-Xlinker \
