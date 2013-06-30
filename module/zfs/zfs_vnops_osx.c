@@ -846,7 +846,7 @@ zfs_vnop_pageout(
     ZFS_ENTER(zfsvfs);
 
     ASSERT(vn_has_cached_data(vp));
-    ASSERT(zp->z_dbuf_held);
+    /* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
     if (upl == (upl_t)NULL) {
         panic("zfs_vnop_pageout: no upl!");
