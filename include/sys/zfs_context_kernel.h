@@ -30,6 +30,10 @@
 #ifndef _SYS_ZFS_CONTEXT_KERNEL_H
 #define	_SYS_ZFS_CONTEXT_KERNEL_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifdef _KERNEL
 
 #include <sys/note.h>
@@ -100,4 +104,9 @@ typedef struct direntry dirent64_t;
 extern u_int32_t k_maczfs_debug_stalk;
 
 #endif /* _KERNEL */
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif	/* _SYS_ZFS_CONTEXT_H */
