@@ -308,7 +308,8 @@ zfs_vnop_lookup(
                        ap->a_vpp, cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
     /* flags can be LOOKUP_XATTR | FIGNORECASE */
 
-    FREE(filename, M_TEMP);
+    if (filename)
+        FREE(filename, M_TEMP);
 
 	/* XXX FreeBSD has some namecache stuff here. */
 
