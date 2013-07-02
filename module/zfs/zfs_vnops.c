@@ -971,7 +971,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 * in a separate transaction; this keeps the intent log records small
 	 * and allows us to do more fine-grained space accounting.
 	 */
-    dprintf("zfs_write: resid/n %llu : offset %llu\n", n,uio_offset(uio) );
+    dprintf("zfs_write: resid/n %llu : offset %llu (rl_len %llu) blksz %llu\n",
+           n,uio_offset(uio), rl->r_len, zp->z_blksz );
 
 	while (n > 0) {
 		abuf = NULL;
@@ -1052,12 +1053,17 @@ again:
 		if ((rl->r_len == UINT64_MAX)) {
 			uint64_t new_blksz;
 
+            /* Find new blksz in power of 2 */
+            new_blksz = 1 << (highbit(end_size)+1);
+
 			if (zp->z_blksz > max_blksz) {
 				ASSERT(!ISP2(zp->z_blksz));
-				new_blksz = MIN(end_size, SPA_MAXBLOCKSIZE);
+				new_blksz = MIN(new_blksz, SPA_MAXBLOCKSIZE);
 			} else {
-				new_blksz = MIN(end_size, max_blksz);
+				new_blksz = MIN(new_blksz, max_blksz);
 			}
+
+            dprintf("growing buffer to %llu\n", new_blksz);
 			zfs_grow_blocksize(zp, new_blksz, tx);
 			zfs_range_reduce(rl, woff, n);
 		}
