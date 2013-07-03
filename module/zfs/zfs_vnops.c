@@ -388,7 +388,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     upl_start &= ~PAGE_MASK;
     upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
 
-    printf("update_pages %llu - %llu (adjusted %llu - %llu)\n",
+    dprintf("update_pages %llu - %llu (adjusted %llu - %llu)\n",
            uio_offset(uio), nbytes, upl_start, upl_size);
     /*
      * Create a UPL for the current range and map its
@@ -1120,13 +1120,13 @@ again:
 		if (tx_bytes && vn_has_cached_data(vp)) {
 #ifdef __APPLE__
             if (uio_copy) {
-                printf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
+                dprintf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
                        woff, uio_offset(uio_copy), tx_bytes, uio_iovcnt(uio_copy));
                 update_pages(vp, tx_bytes, uio_copy, tx);
                 uio_free(uio_copy);
                 uio_copy = NULL;
             } else {
-                printf("Updatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
+                dprintf("Updatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
                        woff, uio_offset(uio), tx_bytes, uio_iovcnt(uio));
                 uio_setoffset(uio, woff);
                 update_pages(vp, tx_bytes, uio, tx);
