@@ -1834,6 +1834,7 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 		struct mnttab entry;
 
 		if (libzfs_mnttab_find(hdl, zhp->zfs_name, &entry) == 0) {
+            if (!entry.mnt_mntopts) return -1;
 			zhp->zfs_mntopts = zfs_strdup(hdl,
 			    entry.mnt_mntopts);
 			if (zhp->zfs_mntopts == NULL)
