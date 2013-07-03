@@ -39,8 +39,16 @@ extern "C" {
 /*
  * Spotlight specific fcntl()'s
  */
+
+// Older defines
 #define SPOTLIGHT_GET_MOUNT_TIME	(FCNTL_FS_SPECIFIC_BASE + 0x00002)
 #define SPOTLIGHT_GET_UNMOUNT_TIME	(FCNTL_FS_SPECIFIC_BASE + 0x00003)
+
+// Newer defines, will these need a OSX version test to compile on older?
+#define SPOTLIGHT_IOC_GET_MOUNT_TIME              _IOR('h', 18, u_int32_t)
+#define SPOTLIGHT_FSCTL_GET_MOUNT_TIME            IOCBASECMD(SPOTLIGHT_IOC_GET_MOUNT_TIME)
+#define SPOTLIGHT_IOC_GET_LAST_MTIME              _IOR('h', 19, u_int32_t)
+#define SPOTLIGHT_FSCTL_GET_LAST_MTIME            IOCBASECMD(SPOTLIGHT_IOC_GET_LAST_MTIME)
 
 /*
  * Account for user timespec structure differences

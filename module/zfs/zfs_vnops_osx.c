@@ -168,8 +168,10 @@ zfs_vnop_ioctl(
 	znode_t *zp = VTOZ(ap->a_vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	user_addr_t useraddr = CAST_USER_ADDR_T(ap->a_data);
-	int error;
+	int error = 0;
     DECLARE_CRED_AND_CONTEXT(ap);
+
+    dprintf("vnop_ioctl %08lx\n", ap->a_command);
 
 	ZFS_ENTER(zfsvfs);
 
@@ -179,17 +181,20 @@ zfs_vnop_ioctl(
 		error = zfs_fsync(ap->a_vp, /*flag*/0, cr, ct);
 		break;
 	case SPOTLIGHT_GET_MOUNT_TIME:
-		error = copyout(&zfsvfs->z_mount_time, useraddr,
-		    sizeof(zfsvfs->z_mount_time));
+    case SPOTLIGHT_FSCTL_GET_MOUNT_TIME:
+		//error = copyout(&zfsvfs->z_mount_time, useraddr,
+        //  sizeof(zfsvfs->z_mount_time));
+        *(uint32_t *)ap->a_data = zfsvfs->z_mount_time;
 		break;
 	case SPOTLIGHT_GET_UNMOUNT_TIME:
-		error = copyout(&zfsvfs->z_last_unmount_time, useraddr,
-		    sizeof(zfsvfs->z_last_unmount_time));
+    case SPOTLIGHT_FSCTL_GET_LAST_MTIME:
+		//error = copyout(&zfsvfs->z_last_unmount_time, useraddr,
+        //  sizeof(zfsvfs->z_last_unmount_time));
+        *(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
 		break;
 	default:
 		error = ENOTTY;
 	}
-
 	ZFS_EXIT(zfsvfs);
 	return (error);
 }
@@ -228,6 +233,8 @@ zfs_vnop_write(
     int error;
     //uint64_t resid;
 	DECLARE_CRED_AND_CONTEXT(ap);
+
+    //    printf("zfs_vnop_write( uio numvec = %d)\n", uio_iovcnt(ap->a_uio));
 
     //resid=uio_resid(ap->a_uio);
 	error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct);
@@ -710,13 +717,14 @@ zfs_vnop_pagein(
     int             need_unlock = 0;
     int             error = 0;
 
-    dprintf("+vnop_pagein\n");
+    dprintf("+vnop_pagein: off %llx size %llu\n",
+           off, len);
 
     if (upl == (upl_t)NULL)
         panic("zfs_vnop_pagein: no upl!");
 
     if (len <= 0) {
-        printf("zfs_vnop_pagein: invalid size %ld", len);
+        dprintf("zfs_vnop_pagein: invalid size %ld", len);
         if (!(flags & UPL_NOCOMMIT))
             (void) ubc_upl_abort(upl, 0);
         return (EINVAL);
@@ -753,6 +761,7 @@ zfs_vnop_pagein(
     }
 
     ubc_upl_map(upl, &vaddr);
+    dprintf("vaddr %p with upl_off %llx\n", vaddr, upl_offset);
     vaddr += upl_offset;
     /*
      * Fill pages with data from the file.
@@ -761,6 +770,7 @@ zfs_vnop_pagein(
         if (len < PAGESIZE)
             break;
 
+        dprintf("reading from off %llx into address %p\n", off, vaddr);
         error = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, off, PAGESIZE,
                          (void *)vaddr, DMU_READ_PREFETCH);
         if (error) {
@@ -802,6 +812,7 @@ zfs_vnop_pagein(
     }
 
     ZFS_EXIT(zfsvfs);
+    dprintf("-pagein %d\n", error);
     return (error);
 }
 
@@ -830,7 +841,8 @@ zfs_vnop_pageout(
     uint64_t        filesz;
     int             err;
 
-    dprintf("+vnop_pageout\n");
+    dprintf("+vnop_pageout: off 0x%llx len %llu upl_off 0x%llx: blksz %llu, z_size %llu\n",
+           off, len, upl_offset, zp->z_blksz, zp->z_size);
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
 	 * Break up that function into smaller bits so it can be reused.
@@ -852,7 +864,7 @@ zfs_vnop_pageout(
         panic("zfs_vnop_pageout: no upl!");
     }
     if (len <= 0) {
-        printf("zfs_vnop_pageout: invalid size %ld", len);
+        dprintf("zfs_vnop_pageout: invalid size %ld", len);
         if (!(flags & UPL_NOCOMMIT))
             (void) ubc_upl_abort(upl, 0);
         err = EINVAL;
@@ -912,6 +924,28 @@ zfs_vnop_pageout(
         dmu_tx_abort(tx);
         goto out;
     }
+    /*
+     * If zfs_range_lock() over-locked we grow the blocksize
+     * and then reduce the lock range.  This will only happen
+     * on the first iteration since zfs_range_reduce() will
+     * shrink down r_len to the appropriate size.
+     */
+    //if ((rl->r_len == UINT64_MAX)) {
+    if (off + len > zp->z_blksz) {
+        uint64_t new_blksz;
+        uint64_t end_size = MAX(zp->z_size, off + len);
+
+        if (zp->z_blksz > zfsvfs->z_max_blksz) {
+            ASSERT(!ISP2(zp->z_blksz));
+            new_blksz = MIN(end_size, SPA_MAXBLOCKSIZE);
+        } else {
+            new_blksz = MIN(end_size, zfsvfs->z_max_blksz);
+        }
+        dprintf("growing blocksize %llu\n", new_blksz);
+        zfs_grow_blocksize(zp, new_blksz, tx);
+        zfs_range_reduce(rl, off, len);
+    }
+
     if (len <= PAGESIZE) {
         caddr_t va;
         ASSERT3U(len, <=, PAGESIZE);
@@ -958,6 +992,7 @@ zfs_vnop_pageout(
  exit:
     ZFS_EXIT(zfsvfs);
 
+    dprintf("pageout err %d\n", err);
     return (err);
 
 }

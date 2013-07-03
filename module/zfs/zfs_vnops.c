@@ -383,13 +383,13 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     int upl_page;
     off_t off;
 
-    dprintf("update_pages %llu\n", nbytes);
-
     upl_start = uio_offset(uio);
     off = upl_start & (PAGE_SIZE - 1);
     upl_start &= ~PAGE_MASK;
     upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
 
+    printf("update_pages %llu - %llu (adjusted %llu - %llu)\n",
+           uio_offset(uio), nbytes, upl_start, upl_size);
     /*
      * Create a UPL for the current range and map its
      * page list into the kernel virtual address space.
@@ -409,12 +409,11 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
          * update data), so we grab a lock to block
          * zfs_getpage().
          */
-        // Bring these locks back in when we add mapped memory access
-        //rw_enter(&zp->z_map_lock, RW_WRITER);
+        rw_enter(&zp->z_map_lock, RW_WRITER);
         if (pl && upl_valid_page(pl, upl_page)) {
-            //rw_exit(&zp->z_map_lock);
+            rw_exit(&zp->z_map_lock);
             uio_setrw(uio, UIO_WRITE);
-            error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
+           error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
             if (error == 0) {
                 dmu_write(zfsvfs->z_os, zp->z_id,
                           woff, bytes, (caddr_t)vaddr + off, tx);
@@ -433,8 +432,15 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
         } else { // !upl_valid_page
             error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
                                   uio, bytes, tx);
-            //rw_exit(&zp->z_map_lock);
+
+            rw_exit(&zp->z_map_lock);
         }
+
+        /* If we have no more buffers, Darwin stops to update offset, we
+           Need to manually update it in this case */
+        //if (uio_iovcnt(uio) == 0)
+        //  uio_setoffset(uio, woff + bytes);
+
         vaddr += PAGE_SIZE;
         upl_start += PAGE_SIZE;
         len -= bytes;
@@ -849,7 +855,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	int		count = 0;
 	sa_bulk_attr_t	bulk[4];
 	uint64_t	mtime[2], ctime[2];
-
+    struct uio *uio_copy = NULL;
 	/*
 	 * Fasttrack empty write
 	 */
@@ -1015,12 +1021,14 @@ again:
 			    max_blksz);
 			ASSERT(abuf != NULL);
 			ASSERT(arc_buf_size(abuf) == max_blksz);
-            dprintf("  uiocopy  \n");
+            dprintf("  uiocopy  before %llu\n", uio_offset(uio));
 			if ((error = uiocopy(abuf->b_data, max_blksz,
                                  UIO_WRITE, uio, &cbytes))) {
 				dmu_return_arcbuf(abuf);
 				break;
 			}
+            dprintf("  uiocopy  after %llu cbytes %llu\n",
+                   uio_offset(uio), cbytes);
 			ASSERT(cbytes == max_blksz);
 		}
 
@@ -1052,15 +1060,11 @@ again:
 		 */
 		if ((rl->r_len == UINT64_MAX)) {
 			uint64_t new_blksz;
-
-            /* Find new blksz in power of 2 */
-            new_blksz = 1 << (highbit(end_size)+1);
-
 			if (zp->z_blksz > max_blksz) {
 				ASSERT(!ISP2(zp->z_blksz));
-				new_blksz = MIN(new_blksz, SPA_MAXBLOCKSIZE);
+				new_blksz = MIN(end_size, SPA_MAXBLOCKSIZE);
 			} else {
-				new_blksz = MIN(new_blksz, max_blksz);
+				new_blksz = MIN(end_size, max_blksz);
 			}
 
             dprintf("growing buffer to %llu\n", new_blksz);
@@ -1078,10 +1082,15 @@ again:
 			vnode_pager_setsize(vp, woff + nbytes);
 
 		if (abuf == NULL) {
+
+            if ( vn_has_cached_data(vp) )
+                uio_copy = uio_duplicate(uio);
+
 			tx_bytes = uio_resid(uio);
 			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, nbytes, tx);
 			tx_bytes -= uio_resid(uio);
+
 		} else {
 			tx_bytes = nbytes;
 			ASSERT(xuio == NULL || tx_bytes == aiov->iov_len);
@@ -1104,12 +1113,25 @@ again:
 				    woff, abuf, tx);
 			}
 			ASSERT(tx_bytes <= uio_resid(uio));
-            dprintf("  uioskip  \n");
+            dprintf("  uioskip  before %llu\n", uio_offset(uio));
 			uioskip(uio, tx_bytes);
+            dprintf("  uioskip  after %llu\n", uio_offset(uio));
 		}
 		if (tx_bytes && vn_has_cached_data(vp)) {
 #ifdef __APPLE__
-			update_pages(vp, tx_bytes, uio, tx);
+            if (uio_copy) {
+                printf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
+                       woff, uio_offset(uio_copy), tx_bytes, uio_iovcnt(uio_copy));
+                update_pages(vp, tx_bytes, uio_copy, tx);
+                uio_free(uio_copy);
+                uio_copy = NULL;
+            } else {
+                printf("Updatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
+                       woff, uio_offset(uio), tx_bytes, uio_iovcnt(uio));
+                uio_setoffset(uio, woff);
+                update_pages(vp, tx_bytes, uio, tx);
+            }
+            //uio_setoffset(uio, woff+tx_bytes);
 #else
 			update_pages(vp, woff, tx_bytes, zfsvfs->z_os,
                          zp->z_id, uio->uio_segflg, tx);

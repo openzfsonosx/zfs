@@ -330,13 +330,13 @@ do_mount(const char *src, const char *mntpt, char *opts)
 static int
 do_unmount(const char *mntpt, int flags)
 {
-	char force_opt[] = "-f";
+	char force_opt[] = "force";
 	char lazy_opt[] = "-l";
 	char *argv[7] = {
-	    "/bin/umount",
-	    "-t", MNTTYPE_ZFS,
+	    "/usr/sbin/diskutil",
+	    "unmount",
 	    NULL, NULL, NULL, NULL };
-	int rc, count = 3;
+	int rc, count = 2;
 
 	if (flags & MS_FORCE) {
 		argv[count] = force_opt;
@@ -548,11 +548,22 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 static int
 unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
 {
+    int error;
+#if 0
+    error = unmount(mountpoint, flags);
     if (unmount(mountpoint, flags) != 0) {
 		return (zfs_error_fmt(hdl, EZFS_UMOUNTFAILED,
 		    dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
 		    mountpoint));
 	}
+#else
+    error = do_unmount(mountpoint, flags);
+    if (error != 0) {
+        return (zfs_error_fmt(hdl, EZFS_UMOUNTFAILED,
+                              dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
+                    mountpoint));
+    }
+#endif
 
 	return (0);
 }

@@ -1287,6 +1287,12 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 
 
 #ifdef __APPLE__
+	/*
+	 * Record the mount time (for Spotlight)
+	 */
+	microtime(&tv);
+	zfsvfs->z_mount_time = tv.tv_sec;
+
 	vfs_setfsprivate(vfsp, zfsvfs);
 #else
 	if (error = dsl_prop_get_integer(osname, "recordsize", &recordsize,
@@ -1358,11 +1364,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 
 	vfs_mountedfrom(vfsp, osname);
 #ifdef __APPLE__
-	/*
-	 * Record the mount time (for Spotlight)
-	 */
-	microtime(&tv);
-	zfsvfs->z_mount_time = tv.tv_sec;
+
 #else
 	/* Grab extra reference. */
 	VERIFY(VFS_ROOT(vfsp, LK_EXCLUSIVE, &vp) == 0);
@@ -1985,12 +1987,13 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
                 goto out;
             }
             gethrestime(&now);
-            //ZFS_TIME_ENCODE(&now, VTOZ(xvp)->zp_mtime);
+
+            ZFS_TIME_ENCODE(&now, VTOZ(xvp)->z_atime);
 			vnode_put(xdvp);
 			vnode_ref(xvp);
 
 			zfsvfs->z_mtime_vp = xvp;
-			//ZFS_TIME_DECODE(&modify_time, VTOZ(xvp)->zp_mtime);
+			ZFS_TIME_DECODE(&modify_time, VTOZ(xvp)->z_atime);
 			zfsvfs->z_last_unmount_time = modify_time.tv_sec;
 			zfsvfs->z_last_mtime_synced = modify_time.tv_sec;
 
@@ -2361,7 +2364,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	/*
 	 * Flush all the files.
 	 */
-	ret = vflush(mp, NULLVP, (mntflags & MNT_FORCE) ? FORCECLOSE : 0);
+	ret = vflush(mp, NULLVP, (mntflags & MNT_FORCE) ? FORCECLOSE : 0|SKIPSYSTEM);
 	if (ret != 0) {
 		if (!zfsvfs->z_issnap) {
 			zfsctl_create(zfsvfs);
