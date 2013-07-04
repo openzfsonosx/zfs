@@ -453,7 +453,7 @@ dmu_buf_hold_array_by_dnode(dnode_t *dn, uint64_t offset, uint64_t length,
 	return (0);
 }
 
-static int
+int
 dmu_buf_hold_array(objset_t *os, uint64_t object, uint64_t offset,
     uint64_t length, int read, void *tag, int *numbufsp, dmu_buf_t ***dbpp)
 {
@@ -1540,67 +1540,6 @@ dmu_write_iokit_dbuf(dmu_buf_t *zdb, uint64_t *offset, uint64_t *size,
 
 #endif /* _KERNEL */
 
-int
-dmu_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
-    struct page *pp, dmu_tx_t *tx)
-{
-#ifdef NOTYET
-    dmu_buf_t **dbp;
-    int numbufs, i;
-    int err;
-
-    if (size == 0)
-        return (0);
-
-    err = dmu_buf_hold_array(os, object, offset, size,
-                             FALSE, FTAG, &numbufs, &dbp);
-    if (err)
-        return (err);
-
-    for (i = 0; i < numbufs; i++) {
-        int tocpy, copied, thiscpy;
-        int bufoff;
-        dmu_buf_t *db = dbp[i];
-        caddr_t va;
-
-        ASSERT(size > 0);
-        ASSERT3U(db->db_size, >=, PAGESIZE);
-
-        bufoff = offset - db->db_offset;
-        tocpy = (int)MIN(db->db_size - bufoff, size);
-
-        ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
-        if (tocpy == db->db_size)
-            dmu_buf_will_fill(db, tx);
-        else
-            dmu_buf_will_dirty(db, tx);
-
-
-        ubc_upl_map((upl_t)pp, (vm_offset_t *)&va);
-        for (copied = 0; copied < tocpy; copied += PAGESIZE) {
-            thiscpy = MIN(PAGESIZE, tocpy - copied);
-            bcopy(va, (char *)db->db_data + bufoff, thiscpy);
-            va += PAGESIZE;
-            bufoff += PAGESIZE;
-        }
-        ubc_upl_unmap((upl_t)pp);
-
-
-        if (tocpy == db->db_size)
-            dmu_buf_fill_done(db, tx);
-
-        if (err)
-            break;
-
-        offset += tocpy;
-        size -= tocpy;
-    }
-    dmu_buf_rele_array(dbp, numbufs, FTAG);
-    return (err);
-#else
-    return (-1);
-#endif
-}
 
 
 /*

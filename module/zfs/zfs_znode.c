@@ -1760,7 +1760,6 @@ zfs_trunc(znode_t *zp, uint64_t end)
 	int error;
 	sa_bulk_attr_t bulk[2];
 	int count = 0;
-
 	/*
 	 * We will change zp_size, lock the whole file.
 	 */

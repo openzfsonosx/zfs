@@ -572,6 +572,10 @@ zfs_vnop_setattr(
             ZFS_EXIT(zfsvfs);
             VATTR_SET_SUPPORTED(vap, va_flags);
         }
+        /*
+        if (VATTR_IS_ACTIVE(vap, va_flags))
+            VATTR_SET_SUPPORTED(vap, va_flags);
+        */
     }
     if (error)
         printf("vnop_setattr return failure %d\n", error);
@@ -712,7 +716,7 @@ zfs_vnop_pagein(
     vm_offset_t     upl_offset = ap->a_pl_offset;
     znode_t         *zp = VTOZ(vp);
     zfsvfs_t        *zfsvfs = zp->z_zfsvfs;
-    vm_offset_t     vaddr;
+    vm_offset_t     vaddr = NULL;
     int             flags = ap->a_flags;
     int             need_unlock = 0;
     int             error = 0;
@@ -732,17 +736,13 @@ zfs_vnop_pagein(
 
     ZFS_ENTER(zfsvfs);
 
-    // Can we trust the z_size here, or do we look it up?
-	//error = sa_lookup(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
-    //                &zp->z_size, sizeof (zp->z_size));
-
 
     ASSERT(vn_has_cached_data(vp));
     //ASSERT(zp->z_dbuf_held && zp->z_phys);
     /* can't fault past EOF */
     if ((off < 0) || (off >= zp->z_size) ||
         (len & PAGE_MASK) || (upl_offset & PAGE_MASK)) {
-        dprintf("past EOF\n");
+        dprintf("past EOF or size error\n");
         ZFS_EXIT(zfsvfs);
         if (!(flags & UPL_NOCOMMIT))
             ubc_upl_abort_range(upl, upl_offset, len,
@@ -768,9 +768,10 @@ zfs_vnop_pagein(
      */
     while (len > 0) {
         if (len < PAGESIZE)
-            break;
+              break;
 
-        dprintf("reading from off %llx into address %p\n", off, vaddr);
+        dprintf("pagein from off 0x%llx into address %p (len %u)\n",
+               off, vaddr, len);
         error = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, off, PAGESIZE,
                          (void *)vaddr, DMU_READ_PREFETCH);
         if (error) {
@@ -812,9 +813,72 @@ zfs_vnop_pagein(
     }
 
     ZFS_EXIT(zfsvfs);
-    dprintf("-pagein %d\n", error);
+    if (error) printf("-pagein %d\n", error);
     return (error);
 }
+
+
+
+int
+osx_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
+    struct page *pp, dmu_tx_t *tx)
+{
+    dmu_buf_t **dbp;
+    int numbufs, i;
+    int err;
+
+    if (size == 0)
+        return (0);
+
+    err = dmu_buf_hold_array(os, object, offset, size,
+                             FALSE, FTAG, &numbufs, &dbp);
+    if (err)
+        return (err);
+
+    for (i = 0; i < numbufs; i++) {
+        int tocpy, copied, thiscpy;
+        int bufoff;
+        dmu_buf_t *db = dbp[i];
+        caddr_t va;
+
+        ASSERT(size > 0);
+        ASSERT3U(db->db_size, >=, PAGESIZE);
+
+        bufoff = offset - db->db_offset;
+        tocpy = (int)MIN(db->db_size - bufoff, size);
+
+        ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
+        if (tocpy == db->db_size)
+            dmu_buf_will_fill(db, tx);
+        else
+            dmu_buf_will_dirty(db, tx);
+
+
+        ubc_upl_map((upl_t)pp, (vm_offset_t *)&va);
+        for (copied = 0; copied < tocpy; copied += PAGESIZE) {
+            thiscpy = MIN(PAGESIZE, tocpy - copied);
+            bcopy(va, (char *)db->db_data + bufoff, thiscpy);
+            va += PAGESIZE;
+            bufoff += PAGESIZE;
+        }
+        ubc_upl_unmap((upl_t)pp);
+
+
+        if (tocpy == db->db_size)
+            dmu_buf_fill_done(db, tx);
+
+        if (err)
+            break;
+
+        offset += tocpy;
+        size -= tocpy;
+    }
+    dmu_buf_rele_array(dbp, numbufs, FTAG);
+    return (err);
+}
+
+
+
 
 static int
 zfs_vnop_pageout(
@@ -839,7 +903,7 @@ zfs_vnop_pageout(
     dmu_tx_t        *tx;
     rl_t            *rl;
     uint64_t        filesz;
-    int             err;
+    int             err = 0;
 
     dprintf("+vnop_pageout: off 0x%llx len %llu upl_off 0x%llx: blksz %llu, z_size %llu\n",
            off, len, upl_offset, zp->z_blksz, zp->z_size);
@@ -922,30 +986,9 @@ zfs_vnop_pageout(
             goto top;
         }
         dmu_tx_abort(tx);
+        printf("aborting\n");
         goto out;
     }
-    /*
-     * If zfs_range_lock() over-locked we grow the blocksize
-     * and then reduce the lock range.  This will only happen
-     * on the first iteration since zfs_range_reduce() will
-     * shrink down r_len to the appropriate size.
-     */
-    //if ((rl->r_len == UINT64_MAX)) {
-    if (off + len > zp->z_blksz) {
-        uint64_t new_blksz;
-        uint64_t end_size = MAX(zp->z_size, off + len);
-
-        if (zp->z_blksz > zfsvfs->z_max_blksz) {
-            ASSERT(!ISP2(zp->z_blksz));
-            new_blksz = MIN(end_size, SPA_MAXBLOCKSIZE);
-        } else {
-            new_blksz = MIN(end_size, zfsvfs->z_max_blksz);
-        }
-        dprintf("growing blocksize %llu\n", new_blksz);
-        zfs_grow_blocksize(zp, new_blksz, tx);
-        zfs_range_reduce(rl, off, len);
-    }
-
     if (len <= PAGESIZE) {
         caddr_t va;
         ASSERT3U(len, <=, PAGESIZE);
@@ -954,7 +997,8 @@ zfs_vnop_pageout(
         dmu_write(zfsvfs->z_os, zp->z_id, off, len, va, tx);
         ubc_upl_unmap(upl);
     } else {
-        err = dmu_write_pages(zfsvfs->z_os, zp->z_id, off, len, upl, tx);
+        err = osx_write_pages(zfsvfs->z_os, zp->z_id, off, len, upl, tx);
+        if (err)printf("dmu_write say %d\n", err);
     }
 
 	if (err == 0) {
@@ -992,7 +1036,7 @@ zfs_vnop_pageout(
  exit:
     ZFS_EXIT(zfsvfs);
 
-    dprintf("pageout err %d\n", err);
+    if (err) printf("pageout err %d\n", err);
     return (err);
 
 }
@@ -1681,8 +1725,17 @@ zfs_vnop_offtoblk(
 		daddr64_t *a_lblkno;
 	} */ *ap)
 {
+    znode_t *zp;
+    zfsvfs_t *zfsvfs;
     dprintf("+vnop_offtoblk\n");
-	return (ENOTSUP);
+    if (ap->a_vp == NULL)
+        return (EINVAL);
+    zp = VTOZ(ap->a_vp);
+    if (!zp) return (EINVAL);
+    zfsvfs = zp->z_zfsvfs;
+    if (!zfsvfs) return (EINVAL);
+    *ap->a_lblkno = (daddr64_t)(ap->a_offset / zfsvfs->z_max_blksz);
+    return 0;
 }
 
 static int

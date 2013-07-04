@@ -367,7 +367,7 @@ zfs_unmap_page(struct sf_buf *sf)
  * On Write:    If we find a memory mapped page, we write to *both*
  *              the page and the dmu buffer.
  */
-static int
+static void
 update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
              dmu_tx_t *tx)
 {
@@ -388,8 +388,8 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     upl_start &= ~PAGE_MASK;
     upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
 
-    dprintf("update_pages %llu - %llu (adjusted %llu - %llu)\n",
-           uio_offset(uio), nbytes, upl_start, upl_size);
+    dprintf("update_pages %llu - %llu (adjusted %llu - %llu): off %llu\n",
+           uio_offset(uio), nbytes, upl_start, upl_size, off);
     /*
      * Create a UPL for the current range and map its
      * page list into the kernel virtual address space.
@@ -416,7 +416,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
            error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
             if (error == 0) {
                 dmu_write(zfsvfs->z_os, zp->z_id,
-                          woff, bytes, (caddr_t)vaddr + off, tx);
+                        woff, bytes, (caddr_t)vaddr + off, tx);
                 /*
                  * We don't need a ubc_upl_commit_range()
                  * here since the dmu_write() effectively
@@ -431,15 +431,10 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
             }
         } else { // !upl_valid_page
             error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
-                                  uio, bytes, tx);
+                                uio, bytes, tx);
 
             rw_exit(&zp->z_map_lock);
         }
-
-        /* If we have no more buffers, Darwin stops to update offset, we
-           Need to manually update it in this case */
-        //if (uio_iovcnt(uio) == 0)
-        //  uio_setoffset(uio, woff + bytes);
 
         vaddr += PAGE_SIZE;
         upl_start += PAGE_SIZE;
@@ -461,7 +456,6 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
         (void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
     }
 
-    return (error);
 }
 
 
@@ -606,12 +600,15 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     int upl_page;
     off_t off;
 
-    dprintf("zfs_mappedread: %d\n", nbytes);
 
     upl_start = uio_offset(uio);
     off = upl_start & PAGE_MASK;
     upl_start &= ~PAGE_MASK;
     upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
+
+    dprintf("zfs_mappedread: %llu - %d (adj %llu - %llu)\n",
+            uio_offset(uio), nbytes,
+            upl_start, upl_size);
 
     /*
      * Create a UPL for the current range and map its
@@ -627,10 +624,17 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
         uint64_t bytes = MIN(PAGE_SIZE - off, len);
         if (pl && upl_valid_page(pl, upl_page)) {
             uio_setrw(uio, UIO_READ);
+
+            dprintf("uiomove to addy %p (%llu) for %llu bytes\n", vaddr+off,
+                   off, bytes);
+
             error = uiomove((caddr_t)vaddr + off, bytes, UIO_READ, uio);
         } else {
+            dprintf("dmu_read to addy %llu for %llu bytes\n",
+                   uio_offset(uio), bytes);
             error = dmu_read_uio(os, zp->z_id, uio, bytes);
         }
+
         vaddr += PAGE_SIZE;
         len -= bytes;
         off = 0;
@@ -1113,9 +1117,7 @@ again:
 				    woff, abuf, tx);
 			}
 			ASSERT(tx_bytes <= uio_resid(uio));
-            dprintf("  uioskip  before %llu\n", uio_offset(uio));
 			uioskip(uio, tx_bytes);
-            dprintf("  uioskip  after %llu\n", uio_offset(uio));
 		}
 		if (tx_bytes && vn_has_cached_data(vp)) {
 #ifdef __APPLE__
@@ -1126,7 +1128,7 @@ again:
                 uio_free(uio_copy);
                 uio_copy = NULL;
             } else {
-                dprintf("Updatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
+                printf("XXXXUpdatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
                        woff, uio_offset(uio), tx_bytes, uio_iovcnt(uio));
                 uio_setoffset(uio, woff);
                 update_pages(vp, tx_bytes, uio, tx);
@@ -1134,7 +1136,7 @@ again:
             //uio_setoffset(uio, woff+tx_bytes);
 #else
 			update_pages(vp, woff, tx_bytes, zfsvfs->z_os,
-                         zp->z_id, uio->uio_segflg, tx);
+                         zp->z_id, 0, tx);
 #endif
 		}
 
@@ -4798,6 +4800,8 @@ zfs_putpage(vnode_t *vp, offset_t off, size_t len, int flags, cred_t *cr,
 	uint_t		blksz;
 	rl_t		*rl;
 	int		error = 0;
+
+    dprintf("putpage\n");
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
