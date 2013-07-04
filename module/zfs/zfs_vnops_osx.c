@@ -533,9 +533,26 @@ zfs_vnop_setattr(
     /*
     if (VATTR_IS_ACTIVE(vap, va_backup_time))
         mask |= AT_BTIME; // really?
-    if (VATTR_IS_ACTIVE(vap, va_flags))
-        mask |= AT_FLAGS; // really?
     */
+    if (VATTR_IS_ACTIVE(vap, va_flags)) {
+        znode_t *zp = VTOZ(ap->a_vp);
+        mask |= AT_MODE; // really?
+        // OS X can set flags without mode, so we need to look up mode in that
+        // case.
+        if (!VATTR_IS_ACTIVE(vap, va_mode)) {
+            uint64_t mode;
+            dprintf("fetching MODE for FLAGS\n");
+            (void) sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zp->z_zfsvfs),
+                             &mode, sizeof (mode));
+            vap->va_mode = mode;
+        }
+        // Map OS X file flags to zfs file flags
+        zfs_setbsdflags(zp, vap->va_flags);
+        dprintf("OSX flags %08lx changed to ZFS %04lx\n", vap->va_flags,
+               zp->z_pflags);
+        vap->va_flags = zp->z_pflags;
+
+    }
 
     vap->va_mask = mask;
 	error = zfs_setattr(ap->a_vp, ap->a_vap, /*flag*/0, cr, ct);
@@ -565,17 +582,8 @@ zfs_vnop_setattr(
         if (VATTR_IS_ACTIVE(vap, va_backup_time))
             VATTR_SET_SUPPORTED(vap, va_backup_time);
         if (VATTR_IS_ACTIVE(vap, va_flags)) {
-            struct znode	*zp = VTOZ(ap->a_vp);
-            zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
-            ZFS_ENTER_NOERROR(zfsvfs);
-            zfs_setbsdflags(zp, vap->va_flags);
-            ZFS_EXIT(zfsvfs);
             VATTR_SET_SUPPORTED(vap, va_flags);
         }
-        /*
-        if (VATTR_IS_ACTIVE(vap, va_flags))
-            VATTR_SET_SUPPORTED(vap, va_flags);
-        */
     }
     if (error)
         printf("vnop_setattr return failure %d\n", error);

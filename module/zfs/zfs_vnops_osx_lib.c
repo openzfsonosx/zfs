@@ -352,6 +352,8 @@ zfs_getbsdflags(znode_t *zp)
 	if (zflags & ZFS_ARCHIVE)
 		bsdflags |= SF_ARCHIVED;
 
+    dprintf("getbsd changing zfs %08lx to osx %08lx\n",
+           zflags, bsdflags);
 	return (bsdflags);
 }
 
@@ -393,6 +395,9 @@ zfs_setbsdflags(znode_t *zp, uint32_t bsdflags)
 		zflags &= ~ZFS_ARCHIVE;
 
     zp->z_pflags = zflags;
+    dprintf("setbsd changing osx %08lx to zfs %08lx\n",
+           bsdflags, zflags);
+
     /*
       (void )sa_update(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs),
       (void *)&zp->z_pflags, sizeof (uint64_t), tx);
