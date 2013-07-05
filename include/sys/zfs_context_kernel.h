@@ -36,7 +36,7 @@ extern "C" {
 
 #ifdef _KERNEL
 
-#include <sys/note.h>
+    //#include <sys/note.h>
 #include <sys/types.h>
 #include <sys/t_lock.h>
 #include <sys/atomic.h>
