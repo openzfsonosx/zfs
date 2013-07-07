@@ -166,6 +166,9 @@ zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
 	cp -f KernelExports/Info.plist zfs.kext/Contents/Plugins/KernelExports.kext/
 	cp -f KernelExports/version.plist zfs.kext/Contents/Plugins/KernelExports.kext/
 	kextlibs -undef-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/ || echo Ignoring errors
+	mkdir -p KernelExports.kext/Contents/MacOS
+	cp -f KernelExports/KernelExports KernelExports.kext/Contents/MacOS/
+	cp -f KernelExports/Info.plist KernelExports.kext/Contents/
 
 # Show more information if there are linking problems.
 debug-kext-linking:
