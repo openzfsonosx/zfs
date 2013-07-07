@@ -179,7 +179,7 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
     bool res = super::start(provider);
 
 
-    printf("ZFS: Loading module ...\n");
+    printf("%s","ZFS: Loading module ...\n");
 
 	/*
 	 * Initialize znode cache, vnode ops, etc...
@@ -212,7 +212,7 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 
     super::stop(provider);
 
-    printf("ZFS: Attempting to unload ...\n");
+    printf("%s", "ZFS: Attempting to unload ...\n");
 
 #if 0
 	if (zfs_active_fs_count != 0 ||
@@ -233,7 +233,7 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 	//sysctl_unregister_oid(&sysctl__debug_maczfs_stalk);
     //	sysctl_unregister_oid(&sysctl__debug_maczfs);
 
-    printf("ZFS: Unloaded module\n");
+    printf("%s", "ZFS: Unloaded module\n");
 
 }
 
