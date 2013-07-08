@@ -741,6 +741,9 @@ libzfs_init(void)
 	zfs_prop_init();
 	zpool_prop_init();
 	zpool_feature_init();
+#ifdef __APPLE__
+	libshare_init();
+#endif
 	libzfs_mnttab_init(hdl);
 
 	return (hdl);

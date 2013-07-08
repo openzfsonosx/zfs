@@ -100,8 +100,19 @@ sa_init(int init_service)
 	return ((sa_handle_t)impl_handle);
 }
 
+/*
+ * Don't run libshare init as static initializer: It will try to use a
+ * not-yet-initialize libzfs and fail.  Instead, we call it at the end
+ * of libzfs_init. 
+ * Note: Also changes libzfs_init in libzfs/libzfs_util.c
+ */
+#ifndef __APPLE__ 
 __attribute__((constructor)) static void
 libshare_init(void)
+#else
+void
+libshare_init(void)
+#endif
 {
 	libshare_nfs_init();
 	libshare_smb_init();
@@ -112,7 +123,9 @@ libshare_init(void)
 	 * might be out of sync with the NFS kernel exports (e.g. due to reboots
 	 * or users manually removing shares)
 	 */
+#ifndef __APPLE__
 	sa_fini(sa_init(0));
+#endif
 }
 
 static void
