@@ -846,14 +846,14 @@ zfs_append_partition(char *path, size_t max_len)
 		if (len + 6 >= max_len)
 			return (-1);
 
-		(void) strcat(path, "-part1");
-		len += 6;
+		(void) strcat(path, "s1");
+		len += 2;
 	} else {
 		if (len + 2 >= max_len)
 			return (-1);
 
 		if (isdigit(path[len-1])) {
-			(void) strcat(path, "p1");
+			(void) strcat(path, "s1");
 			len += 2;
 		} else {
 			(void) strcat(path, "1");

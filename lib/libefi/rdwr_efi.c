@@ -43,6 +43,11 @@
 #include <linux/fs.h>
 #endif
 
+#ifdef __APPLE__
+#include <sys/disk.h>
+#include <sys/fcntl.h>
+#endif
+
 static struct uuid_to_ptag {
 	struct uuid	uuid;
 } conversion_array[] = {
@@ -132,15 +137,15 @@ read_disk_info(int fd, diskaddr_t *capacity, uint_t *lbsize)
 	int sector_size;
 	unsigned long long capacity_size;
 
-    //        if (ioctl(fd, BLKSSZGET, &sector_size) < 0)
-    //           return (-1);
+    if (ioctl(fd, DKIOCGETBLOCKSIZE, &sector_size) < 0)
+        return (-1);
 
-	//if (ioctl(fd, BLKGETSIZE64, &capacity_size) < 0)
-	//	return (-1);
-    return -1;
+	if (ioctl(fd, DKIOCGETBLOCKCOUNT, &capacity_size) < 0)
+		return (-1);
 
 	*lbsize = (uint_t)sector_size;
-	*capacity = (diskaddr_t)(capacity_size / sector_size);
+	*capacity = (diskaddr_t)(capacity_size);
+	//*capacity = (diskaddr_t)(capacity_size / sector_size);
 
 	return (0);
 }
@@ -148,10 +153,10 @@ read_disk_info(int fd, diskaddr_t *capacity, uint_t *lbsize)
 static int
 efi_get_info(int fd, struct dk_cinfo *dki_info)
 {
+	int rval = 0;
 #if defined(__linux__)
 	char *path;
 	char *dev_path;
-	int rval = 0;
 
 	memset(dki_info, 0, sizeof(*dki_info));
 
@@ -236,9 +241,38 @@ efi_get_info(int fd, struct dk_cinfo *dki_info)
 	}
 
 	free(dev_path);
-#else
-	if (ioctl(fd, DKIOCINFO, (caddr_t)dki_info) == -1)
-		goto error;
+#elif __APPLE__
+    // DKIOCISVIRTUAL 32bit
+    // DKIOCISSOLIDSTATE 32bit
+    char pathbuf[PATH_MAX];
+    if (fcntl(fd, F_GETPATH, pathbuf) >= 0) {
+
+        if ((strncmp(pathbuf, "/dev/disk", 9) == 0) ||
+            (strncmp(pathbuf, "/dev/rdisk", 10) == 0)) {
+            strcpy(dki_info->dki_cname, "disk");
+            dki_info->dki_ctype = DKC_DIRECT;
+            rval = sscanf(pathbuf, "/dev/%[a-zA-Z]s%hu",
+                          dki_info->dki_dname,
+                          &dki_info->dki_partition);
+
+            switch (rval) {
+            case 0:
+                errno = EINVAL;
+                goto error;
+            case 1:
+                dki_info->dki_partition = 0;
+            }
+        }
+    }
+
+#ifdef DKIOCISVIRTUAL
+    if (!ioctl(fd, DKIOCISVIRTUAL, &is_virtual) < 0) {
+        if (is_virtual) {
+            dki_info->dki_ctype = DKC_VBD;
+        }
+    }
+#endif
+
 #endif
 	return (0);
 error:
@@ -386,7 +420,7 @@ efi_ioctl(int fd, int cmd, dk_efi_t *dk_ioc)
 {
 	void *data = dk_ioc->dki_data;
 	int error;
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 	diskaddr_t capacity;
 	uint_t lbsize;
 
@@ -477,8 +511,10 @@ efi_ioctl(int fd, int cmd, dk_efi_t *dk_ioc)
 			return error;
 
 		/* Ensure any local disk cache is also flushed */
+#if defined (__linux__)
 		if (ioctl(fd, BLKFLSBUF, 0) == -1)
 			return error;
+#endif
 
 		error = 0;
 		break;
@@ -491,6 +527,7 @@ efi_ioctl(int fd, int cmd, dk_efi_t *dk_ioc)
 		return -1;
 	}
 #else
+
 	dk_ioc->dki_data_64 = (uint64_t)(uintptr_t)data;
 	error = ioctl(fd, cmd, (void *)dk_ioc);
 	dk_ioc->dki_data = data;
@@ -1116,10 +1153,11 @@ efi_write(int fd, struct dk_gpt *vtoc)
 	int			md_flag = 0;
 	int			nblocks;
 	diskaddr_t		lba_backup_gpt_hdr;
+    fprintf(stderr, "efi_write mate3\r\n");
 
 	if ((rval = efi_get_info(fd, &dki_info)) != 0)
 		return rval;
-
+    fprintf(stderr, "efi_write mate\r\n");
 	/* check if we are dealing wih a metadevice */
 	if ((strncmp(dki_info.dki_cname, "pseudo", 7) == 0) &&
 	    (strncmp(dki_info.dki_dname, "md", 3) == 0)) {
