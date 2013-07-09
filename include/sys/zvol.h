@@ -100,8 +100,8 @@ extern int zvol_write_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count,
 
 
     /* These functions live in zvolIO.cpp to be called from C */
-extern uint64_t zvolIO_kit_read (void *iomem, char *address, uint64_t len);
-extern uint64_t zvolIO_kit_write(void *iomem, char *address, uint64_t len);
+extern uint64_t zvolIO_kit_read (void *iomem, uint64_t offset, char *address, uint64_t len);
+extern uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t len);
 extern int      zvolRemoveDevice(zvol_state_t *zv);
 extern int      zvolCreateNewDevice(zvol_state_t *zv);
 extern int      zvolSetVolsize(zvol_state_t *zv);

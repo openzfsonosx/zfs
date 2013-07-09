@@ -15,13 +15,12 @@
  */
 
 
-#define dprintf printf
+//#define dprintf IOLog
 
 // Define the superclass
 #define super IOBlockStorageDevice
 
 OSDefineMetaClassAndStructors(net_lundman_zfs_zvol_device,IOBlockStorageDevice)
-
 
 bool net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
                                        OSDictionary *properties)
@@ -109,7 +108,6 @@ void net_lundman_zfs_zvol_device::handleClose( IOService *client,
   //IOLog("handleClose\n");
   zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
 }
-
 
 IOReturn net_lundman_zfs_zvol_device::doAsyncReadWrite(
     IOMemoryDescriptor *buffer, UInt64 block, UInt64 nblks,
@@ -333,3 +331,8 @@ IOReturn  net_lundman_zfs_zvol_device::setWriteCacheState(bool enabled)
     dprintf("setWriteCache\n");
     return kIOReturnSuccess;
 }
+
+
+// getMediaBlockSize()
+//getDeviceTypeName
+// 	status = messageClients ( type, arg, sizeof ( IOMediaState ) );

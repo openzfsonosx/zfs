@@ -87,7 +87,7 @@
 
 #include "zfs_namecheck.h"
 
-#define dprintf printf
+//#define dprintf printf
 
 dev_info_t zfs_dip_real = { 0 };
 dev_info_t *zfs_dip = &zfs_dip_real;
@@ -1594,6 +1594,9 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count, void *iomem)
 		/* don't read past the end */
 		if (bytes > volsize - offset)
 			bytes = volsize - offset;
+
+        dprintf("zvol_read_iokit: offset %llu len %llu bytes %llu\n",
+                offset, count, bytes);
 
 		error =  dmu_read_iokit(zv->zv_objset, ZVOL_OBJ, &offset, &bytes,
                                 iomem);

@@ -47,6 +47,8 @@
 #include <sys/ubc.h>
 #endif
 
+#include <sys/zvol.h>
+
 const dmu_object_type_info_t dmu_ot[DMU_OT_NUMTYPES] = {
 	{	DMU_BSWAP_UINT8,	TRUE,	"unallocated"		},
 	{	DMU_BSWAP_ZAP,		TRUE,	"object directory"	},
@@ -1400,7 +1402,7 @@ dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
 {
 	dmu_buf_t **dbp;
 	int numbufs, i, err = 0;
-
+    uint64_t memoffset = 0;
 	/*
 	 * NB: we could do this block-at-a-time, but it's nice
 	 * to be reading in parallel.
@@ -1412,38 +1414,45 @@ dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
 	if (err)
 		return (err);
 
-	for (i = 0; i < numbufs; i++) {
-		int tocpy;
-		int bufoff;
-		dmu_buf_t *db = dbp[i];
-        uint64_t done;
+    dprintf("dmu_read_iokit: offset %llu size %llu\n", *offset, *size);
 
-		ASSERT(size > 0);
+	while (*size > 0) {
 
-		//bufoff = uio->uio_loffset - db->db_offset;
-		bufoff = *offset - db->db_offset;
-		tocpy = (int)MIN(db->db_size - bufoff, *size);
+        for (i = 0; i < numbufs; i++) {
+            int tocpy;
+            int bufoff;
+            dmu_buf_t *db = dbp[i];
+            uint64_t done;
 
-        /*
-          err = uiomove((char *)db->db_data + bufoff, tocpy,
-          UIO_READ, uio);
-        */
+            ASSERT(size > 0);
 
-        done = zvolIO_kit_read(iomem,
-                               (char *)db->db_data + bufoff,
-                               tocpy);
-        if (done > 0) {
-            *offset += done;
-            *size -= done;
+            //bufoff = uio->uio_loffset - db->db_offset;
+            bufoff = *offset - db->db_offset;
+            tocpy = (int)MIN(db->db_size - bufoff, *size);
+
+            /*
+              err = uiomove((char *)db->db_data + bufoff, tocpy,
+              UIO_READ, uio);
+            */
+
+            done = zvolIO_kit_read(iomem,
+                                   memoffset,
+                                   (char *)db->db_data + bufoff,
+                                   tocpy);
+            if (done > 0) {
+                (*offset) += done;
+                (*size) -= done;
+                memoffset += done;
+            }
+
+            if (done < 0) {
+                err = EIO;
+                break;
+            }
+
+            //size -= tocpy;
         }
-
-		if (done < 0) {
-            err = EIO;
-			break;
-        }
-
-		//size -= tocpy;
-	}
+    }
 	dmu_buf_rele_array(dbp, numbufs, FTAG);
 
 	return (err);
@@ -1458,6 +1467,7 @@ dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset,
 	int numbufs;
 	int err = 0;
 	int i;
+    uint64_t memoffset = 0;
 
 	//err = dmu_buf_hold_array_by_dnode(dn, uio->uio_loffset, size,
     //   FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
@@ -1466,52 +1476,57 @@ dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset,
 	if (err)
 		return (err);
 
-	for (i = 0; i < numbufs; i++) {
-		int tocpy;
-		int bufoff;
-        uint64_t done;
-		dmu_buf_t *db = dbp[i];
+    while(*size > 0) {
 
-		ASSERT(size > 0);
+        for (i = 0; i < numbufs; i++) {
+            int tocpy;
+            int bufoff;
+            uint64_t done;
+            dmu_buf_t *db = dbp[i];
 
-		//bufoff = uio->uio_loffset - db->db_offset;
-		bufoff = *offset - db->db_offset;
-		tocpy = (int)MIN(db->db_size - bufoff, *size);
+            ASSERT(size > 0);
 
-		ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
+            //bufoff = uio->uio_loffset - db->db_offset;
+            bufoff = *offset - db->db_offset;
+            tocpy = (int)MIN(db->db_size - bufoff, *size);
 
-		if (tocpy == db->db_size)
-			dmu_buf_will_fill(db, tx);
-		else
-			dmu_buf_will_dirty(db, tx);
+            ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
 
-		/*
-		 * XXX uiomove could block forever (eg.nfs-backed
-		 * pages).  There needs to be a uiolockdown() function
-		 * to lock the pages in memory, so that uiomove won't
-		 * block.
-		 */
-        /*
-		err = uiomove((char *)db->db_data + bufoff, tocpy,
-		    UIO_WRITE, uio);
-        */
-		done = zvolIO_kit_write(iomem,
-                                (char *)db->db_data + bufoff,
-                                tocpy);
+            if (tocpy == db->db_size)
+                dmu_buf_will_fill(db, tx);
+            else
+                dmu_buf_will_dirty(db, tx);
 
-        if (tocpy == db->db_size)
+            /*
+             * XXX uiomove could block forever (eg.nfs-backed
+             * pages).  There needs to be a uiolockdown() function
+             * to lock the pages in memory, so that uiomove won't
+             * block.
+             */
+            /*
+              err = uiomove((char *)db->db_data + bufoff, tocpy,
+              UIO_WRITE, uio);
+            */
+            done = zvolIO_kit_write(iomem,
+                                    memoffset,
+                                    (char *)db->db_data + bufoff,
+                                    tocpy);
+
+            if (tocpy == db->db_size)
 			dmu_buf_fill_done(db, tx);
 
-        if (done > 0) {
-            *offset += done;
-            *size -= done;
-        }
+            if (done > 0) {
+                *offset += done;
+                *size -= done;
+                memoffset += done;
+            }
 
-		if (done < 0) {
-            err = EIO;
-			break;
+            if (done < 0) {
+                err = EIO;
+                break;
+            }
         }
-	}
+    }
 
 	dmu_buf_rele_array(dbp, numbufs, FTAG);
 	return (err);
