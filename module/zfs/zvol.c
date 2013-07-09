@@ -87,6 +87,7 @@
 
 #include "zfs_namecheck.h"
 
+#define dprintf printf
 
 dev_info_t zfs_dip_real = { 0 };
 dev_info_t *zfs_dip = &zfs_dip_real;
@@ -523,7 +524,7 @@ zvol_create_minor(const char *name)
      * This is the old BSD kernel interface to create the /dev/nodes, now
      * we also use IOKit to create an IOBlockStorageDevice.
      */
-#if 1
+#if 0
 	if (ddi_create_minor_node(zfs_dip, name, S_IFCHR,
 	    minor, DDI_PSEUDO, zfs_major) == DDI_FAILURE) {
 		ddi_soft_state_free(zfsdev_state, minor);
@@ -599,8 +600,10 @@ zvol_remove_zv(zvol_state_t *zv)
     // Call IOKit to remove the ZVOL device
     zvolRemoveDevice(zv);
 
+#if 0
 	ddi_remove_minor_node(zfs_dip, NULL);
 	ddi_remove_minor_node(zfs_dip, NULL);
+#endif
 
 	avl_destroy(&zv->zv_znode.z_range_avl);
 	mutex_destroy(&zv->zv_znode.z_range_lock);
