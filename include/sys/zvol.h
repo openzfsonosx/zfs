@@ -67,6 +67,7 @@ typedef struct zvol_state {
 	dmu_buf_t	*zv_dbuf;	/* bonus handle */
     void        *zv_iokitdev; /* C++ reference to IOKit class */
     uint64_t    zv_openflags; /* Remember flags used at open */
+	char		zv_bsdname[MAXPATHLEN]; /* 'rdiskX' name, use [1] for diskX */
 } zvol_state_t;
 
 
@@ -98,6 +99,9 @@ extern int zvol_read_iokit (zvol_state_t *zv, uint64_t offset, uint64_t count,
 extern int zvol_write_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count,
                             void *iomem);
 
+extern void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk,
+                             const char *bsd_rdisk);
+extern void zvol_remove_symlink(zvol_state_t *zv);
 
     /* These functions live in zvolIO.cpp to be called from C */
 extern uint64_t zvolIO_kit_read (void *iomem, uint64_t offset, char *address, uint64_t len);

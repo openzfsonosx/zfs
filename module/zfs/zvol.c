@@ -573,7 +573,6 @@ zvol_create_minor(const char *name)
     // Call IOKit to create a new ZVOL device, we like the size being
     // set here.
 	error = zap_lookup(os, ZVOL_ZAP_OBJ, "size", 8, 1, &zv->zv_volsize);
-    zvolCreateNewDevice(zv);
 
 	dmu_objset_disown(os, FTAG);
 	zv->zv_objset = NULL;
@@ -581,6 +580,9 @@ zvol_create_minor(const char *name)
 	zvol_minors++;
 
 	mutex_exit(&zfsdev_state_lock);
+
+    // The iokit framework may call Open, so we can not be locked.
+    zvolCreateNewDevice(zv);
 
 	return (0);
 }
@@ -2541,3 +2543,180 @@ zvol_create_minors(const char *name)
     return (0);
 }
 
+
+/*
+ * Due to OS X limitations in /dev, we create a symlink for "/dev/zvol" to
+ * "/var/run/zfs" (if we can) and for each pool, create the traditional
+ * ZFS Volume symlinks.
+ *
+ * Ie, for ZVOL $POOL/$VOLUME
+ * BSDName /dev/disk2 /dev/rdisk2
+ * /dev/zvol -> /var/run/zfs
+ * /var/run/zfs/zvol/dsk/$POOL/$VOLUME -> /dev/disk2
+ * /var/run/zfs/zvol/rdsk/$POOL/$VOLUME -> /dev/rdisk2
+ *
+ * Note, we do not create symlinks for the partitioned slices.
+ *
+ */
+#define ZVOL_ROOT "/var/run"
+
+void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rdisk)
+{
+#ifndef _KERNEL
+    struct stat sb;
+    char path[MAXPATHLEN], *copy, *r;
+
+    if (stat(ZVOL_ROOT, &sb)) return; // No /var/run? Quit, we don't create it
+
+    snprintf(path, sizeof(path),
+             "%s/zfs", ZVOL_ROOT);
+
+    if (stat(path, &sb)) { // No "zfs".
+
+        if (mkdir(path, 0755)) {
+            printf("ZFS: Error failed to create '%s'.\n", path);
+            return;
+        }
+    }
+    if (!S_ISDIR(sb.st_mode)) {
+        printf("ZFS: Error '%s' is not a directory.\n", path);
+        return;
+    }
+
+    snprintf(path, sizeof(path),
+             "%s/zfs/zvol", ZVOL_ROOT);
+    if (stat(path, &sb)) { // No "zfs".
+        if (mkdir(path, 0755)) {
+            printf("ZFS: Error failed to create '%s'.\n", path);
+            return;
+        }
+    }
+
+    snprintf(path, sizeof(path),
+             "%s/zfs/zvol/dsk", ZVOL_ROOT);
+    if (stat(path, &sb)) { // No "zfs".
+        if (mkdir(path, 0755)) {
+            printf("ZFS: Error failed to create '%s'.\n", path);
+            return;
+        }
+    }
+    snprintf(path, sizeof(path),
+             "%s/zfs/zvol/rdsk", ZVOL_ROOT);
+    if (stat(path, &sb)) { // No "zfs".
+        if (mkdir(path, 0755)) {
+            printf("ZFS: Error failed to create '%s'.\n", path);
+            return;
+        }
+    }
+
+    // Alas, zv_name is "pool/name".
+    copy = spa_strdup(zv->zv_name);
+    if (!copy) return;
+
+
+    // As long as we find a "/", create the directory
+    r = copy;
+    while ((r = strchr(r, '/'))) {
+
+        *r = 0;
+
+        snprintf(path, sizeof(path),
+                 "%s/zfs/zvol/dsk/%s", ZVOL_ROOT, copy);
+        if (stat(path, &sb)) { // No "zfs".
+            if (mkdir(path, 0755)) {
+                printf("ZFS: Error failed to create '%s'.\n", path);
+                return;
+            }
+        }
+        snprintf(path, sizeof(path),
+                 "%s/zfs/zvol/rdsk/%s", ZVOL_ROOT, copy);
+        if (stat(path, &sb)) { // No "zfs".
+            if (mkdir(path, 0755)) {
+                printf("ZFS: Error failed to create '%s'.\n", path);
+                return;
+            }
+        }
+
+        *r = '/';
+        r++;
+    }
+
+    // Finished with last '/' (or there were none), 'r' now points to
+    // just the dataset name.
+    snprintf(path, sizeof(path),
+             "%s/zfs/zvol/dsk/%s", ZVOL_ROOT, copy);
+
+    if (symlink(bsd_disk, path)) {
+        printf("ZFS: Error failed to create symlink '%s' -> '%s'\n",
+               path, bsd_disk);
+    }
+
+    snprintf(path, sizeof(path),
+             "%s/zfs/zvol/rdsk/%s", ZVOL_ROOT, copy);
+
+    if (symlink(bsd_rdisk, path)) {
+        printf("ZFS: Error failed to create symlink '%s' -> '%s'\n",
+               path, bsd_rdisk);
+    }
+
+    spa_strfree(copy);
+
+
+    /*
+     * Now, make sure the /dev/zvol symlink exists
+     */
+
+    if (stat("/dev/zvol", &sb)) {
+
+        snprintf(path, sizeof(path),
+                 "%s/zfs/zvol", ZVOL_ROOT);
+
+        if (symlink(path, "/dev/zvol")) {
+            printf("ZFS: Error failed to create symlink '/dev/zvol' -> '%s'\n",
+                   path);
+        }
+        return;
+    }
+
+    if (!S_ISLNK(sb.st_mode)) {
+        printf("ZFS: Error failed to create symlink '/dev/zvol' - it already exists and is not a symlink\n");
+    }
+#else
+
+    /*
+      Works
+      *
+      vnode_getattr(NULL, NULL, NULL);
+      *
+
+      Does not work
+      *
+      VNOP_MKDIR(NULL, NULL, NULL, NULL, NULL);
+      VNOP_REMOVE(NULL, NULL, NULL, 0, NULL);
+      VNOP_COMPOUND_REMOVE(NULL, NULL, NULL, 0, NULL, NULL);
+      VNOP_GETATTR(NULL, NULL, NULL);
+      vn_mkdir(NULL, NULL, NULL, NULL, NULL);
+      vnode_mkdir(NULL, NULL, NULL, NULL, NULL);
+      *
+      */
+    //VNOP_SYMLINK(NULL, NULL, NULL, NULL, NULL, NULL);
+
+#endif
+
+}
+
+
+void zvol_remove_symlink(zvol_state_t *zv)
+{
+#ifndef _KERNEL
+    char path[MAXPATHLEN];
+
+    snprintf(path, sizeof(path),
+             "%s/zfs/zvol/dsk/%s", ZVOL_ROOT, zv->zv_name);
+    unlink(path);
+
+    snprintf(path, sizeof(path),
+             "%s/zfs/zvol/rdsk/%s", ZVOL_ROOT, zv->zv_name);
+    unlink(path);
+#endif
+}

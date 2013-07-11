@@ -15,7 +15,7 @@
  */
 
 
-//#define dprintf IOLog
+#define dprintf IOLog
 
 // Define the superclass
 #define super IOBlockStorageDevice
@@ -44,8 +44,33 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
     m_provider = OSDynamicCast(net_lundman_zfs_zvol, provider);
     if (m_provider == NULL)
         return false;
+
     return true;
 }
+
+
+void net_lundman_zfs_zvol_device::getBSDName(void)
+{
+
+  IORegistryEntry *ioregdevice = OSDynamicCast ( IORegistryEntry, this );
+  if(ioregdevice) {
+    OSObject *bsdnameosobj;
+    bsdnameosobj = ioregdevice->getProperty(kIOBSDNameKey,
+                                            gIOServicePlane,
+                                            kIORegistryIterateRecursively);
+    if(bsdnameosobj) {
+      OSString* bsdnameosstr = OSDynamicCast(OSString, bsdnameosobj);
+      IOLog("The bsd name is ... %s\n", bsdnameosstr->getCStringNoCopy());
+      if (zv) {
+        zv->zv_bsdname[0] = 'r'; // for 'rdiskX'.
+        strlcpy(&zv->zv_bsdname[1], bsdnameosstr->getCStringNoCopy(),
+                sizeof(zv->zv_bsdname)-1);
+        IOLog("name assigned '%s'\n", zv->zv_bsdname);
+      }
+    }
+  }
+}
+
 
 void net_lundman_zfs_zvol_device::detach(IOService* provider)
 {
@@ -53,8 +78,6 @@ void net_lundman_zfs_zvol_device::detach(IOService* provider)
         m_provider = NULL;
     super::detach(provider);
 }
-
-
 
 
 bool net_lundman_zfs_zvol_device::handleOpen( IOService *client,
@@ -151,7 +174,7 @@ IOReturn net_lundman_zfs_zvol_device::doAsyncReadWrite(
     dprintf("%s offset @block %llu numblocks %llu: blksz %llu\n",
             direction == kIODirectionIn ? "Read" : "Write",
             block, nblks, zv->zv_volblocksize);
-
+    //IOLog("getMediaBlockSize is %llu\n", m_provider->getMediaBlockSize());
     // Perform the read or write operation through the transport driver.
     actualByteCount = (nblks*zv->zv_volblocksize);
 
@@ -197,7 +220,7 @@ UInt32 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
     // the number of formats that we support.
     if (capacities != NULL)
       //capacities[0] = m_blockCount * kDiskBlockSize;
-      capacities[0] = zv->zv_volsize - zv->zv_volblocksize;
+      capacities[0] = zv->zv_volsize;
     dprintf("returning capacity[0] size %llu\n", zv->zv_volsize);
     return 1;
 }
@@ -232,7 +255,7 @@ IOReturn net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent, bool
 {
     *mediaPresent = true;
 
-    *changedState = true;
+    *changedState = false;
     dprintf("reportMediaState\n");
     return kIOReturnSuccess;
 }
@@ -240,7 +263,7 @@ IOReturn net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent, bool
 IOReturn net_lundman_zfs_zvol_device::reportPollRequirements(bool *pollRequired,
    bool *pollIsExpensive)
 {
-    *pollRequired = true;
+    *pollRequired = false;
     *pollIsExpensive = false;
     dprintf("reportPollReq\n");
     return kIOReturnSuccess;
@@ -277,6 +300,9 @@ IOReturn  net_lundman_zfs_zvol_device::doLockUnlockMedia(bool doLock)
 IOReturn  net_lundman_zfs_zvol_device::doSynchronizeCache(void)
 {
     dprintf("doSync\n");
+    if (zv && zv->zv_zilog) {
+      zil_commit(zv->zv_zilog, ZVOL_OBJ);
+    }
     return kIOReturnSuccess;
 }
 
@@ -301,7 +327,9 @@ char     *net_lundman_zfs_zvol_device::getAdditionalDeviceInfoString(void)
 IOReturn  net_lundman_zfs_zvol_device::reportEjectability(bool *isEjectable)
 {
     dprintf("reportEjecta\n");
-    *isEjectable = true;
+    // Which do we prefer? If you eject it, you can't get volume back until
+    // you import it again.
+    *isEjectable = false;
     return kIOReturnSuccess;
 }
 
@@ -315,7 +343,10 @@ IOReturn  net_lundman_zfs_zvol_device::reportLockability(bool *isLockable)
 IOReturn  net_lundman_zfs_zvol_device::reportWriteProtection(bool *isWriteProtected)
 {
     dprintf("reportWritePro\n");
-    *isWriteProtected = false;
+    if (zv && (zv->zv_flags & ZVOL_RDONLY))
+      *isWriteProtected = true;
+    else
+      *isWriteProtected = false;
     return kIOReturnSuccess;
 }
 

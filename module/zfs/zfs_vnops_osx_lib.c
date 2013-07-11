@@ -349,9 +349,13 @@ zfs_getbsdflags(znode_t *zp)
 		bsdflags |= UF_OPAQUE;
 	if (zflags & ZFS_HIDDEN)
 		bsdflags |= UF_HIDDEN;
+    /*
+     * Due to every file getting archive set automatically, and OSX
+     * don't let you move/copy it as a user, we disable archive connection
+     * for now
 	if (zflags & ZFS_ARCHIVE)
 		bsdflags |= SF_ARCHIVED;
-
+    */
     dprintf("getbsd changing zfs %08lx to osx %08lx\n",
            zflags, bsdflags);
 	return (bsdflags);
@@ -389,10 +393,12 @@ zfs_setbsdflags(znode_t *zp, uint32_t bsdflags)
 	else
 		zflags &= ~ZFS_HIDDEN;
 
+    /*
 	if (bsdflags & SF_ARCHIVED)
 		zflags |= ZFS_ARCHIVE;
 	else
 		zflags &= ~ZFS_ARCHIVE;
+    */
 
     zp->z_pflags = zflags;
     dprintf("setbsd changing osx %08lx to zfs %08lx\n",

@@ -179,7 +179,7 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
     bool res = super::start(provider);
 
 
-    printf("%s","ZFS: Loading module ...\n");
+    IOLog("ZFS: Loading module ... \n");
 
 	/*
 	 * Initialize znode cache, vnode ops, etc...
@@ -212,7 +212,7 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 
     super::stop(provider);
 
-    printf("%s", "ZFS: Attempting to unload ...\n");
+    IOLog("ZFS: Attempting to unload ...\n");
 
 #if 0
 	if (zfs_active_fs_count != 0 ||
@@ -233,7 +233,7 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 	//sysctl_unregister_oid(&sysctl__debug_maczfs_stalk);
     //	sysctl_unregister_oid(&sysctl__debug_maczfs);
 
-    printf("%s", "ZFS: Unloaded module\n");
+    IOLog("ZFS: Unloaded module\n");
 
 }
 
@@ -262,14 +262,23 @@ bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
         goto bail;
 
     // Allow the upper level drivers to match against the IOBlockStorageDevice.
-    nub->registerService();
+    /*
+     * We here use Synchronous, so that all services are attached now, then
+     * we can go look for the BSDName. We need this to create the correct
+     * symlinks.
+     */
+    nub->registerService( kIOServiceSynchronous);
+
+    nub->getBSDName();
+
     result = true;
 
  bail:
     // Unconditionally release the nub object.
     if (nub != NULL)
         nub->release();
-    return result;
+
+   return result;
 }
 
 bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
@@ -285,6 +294,9 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
 
       zv->zv_iokitdev = NULL;
       zv = NULL;
+
+
+      zvol_remove_symlink(zv);
 
       nub->terminate();
     }
