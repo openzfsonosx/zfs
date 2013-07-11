@@ -2544,6 +2544,183 @@ zvol_create_minors(const char *name)
 }
 
 
+
+/*
+ * Attempt to create new directories starting from "root" (will not be created)
+ * handling all sub directory creations required
+ */
+int zvol_mkdir_path(char *root, char *newdirs)
+{
+    // zvol_mkdir_path("/var/run" "zfs/zvol/dsk" will assume /var/run should
+    // already exist, and if not, fail. Then create zfs/ zfs/zvol/ as needed.
+    int error;
+    vfs_context_t vctx;
+    struct vnode *dvp, *vp;
+    struct componentname cn;
+    struct vnode_attr vap;
+    char *current_directory = NULL, *r;
+
+    IOLog("zvol_mkdir_path: checking '%s' exists: to make '%s'\n",
+          root, newdirs);
+
+    vctx = vfs_context_create((vfs_context_t)0);
+
+    error = vnode_lookup(root, 0, &dvp, vctx);
+
+    if ( error ) {
+        vfs_context_rele(vctx);
+        return ENOENT;
+    }
+
+    // Now, build up the paths in "newdirs" and create as required.
+
+    // 'newdirs' should not start with "/", skip them now.
+    while(*newdirs == '/') newdirs++;
+
+    current_directory = newdirs;
+
+    bzero(&cn, sizeof(cn));
+    // We make it be the fullname, and use the cn_namelen to lookup parts
+    cn.cn_nameiop = LOOKUP;
+    cn.cn_flags = FOLLOW;
+    cn.cn_pnbuf = current_directory;
+    cn.cn_pnlen = sizeof(current_directory);
+    cn.cn_nameptr = cn.cn_pnbuf;
+    cn.cn_namelen = strlen(current_directory);
+
+    r = NULL;
+
+    // We run through this once, even if there is no slash.
+    do {
+
+        IOLog("Assigning '%s'\n", current_directory);
+
+        cn.cn_pnbuf = current_directory;
+        cn.cn_nameptr = cn.cn_pnbuf;
+        cn.cn_namelen = strlen(current_directory);
+
+        r = strchr(current_directory, '/');
+        if (r) { // partial
+            cn.cn_namelen = r - current_directory;
+        }
+
+        IOLog("Working on the '%*.*s' part.\n",
+              cn.cn_namelen, cn.cn_namelen, cn.cn_nameptr);
+
+        // Check if it exists
+        vp = NULL;
+        error = VNOP_LOOKUP(dvp, &vp, &cn, vctx);
+
+        if (!error) {
+            // It exists!
+            IOLog("'%*.*s' exists!\n", cn.cn_namelen, cn.cn_namelen,
+                  cn.cn_nameptr);
+        } else {
+            // Does not exist, mkdir it.
+
+            IOLog("mkdir '%*.*s'\n", cn.cn_namelen, cn.cn_namelen,
+                  cn.cn_nameptr);
+
+            VATTR_INIT(&vap);
+            VATTR_SET(&vap, va_type, VDIR);
+            VATTR_SET(&vap, va_uid, 0);
+            VATTR_SET(&vap, va_gid, 0);
+            VATTR_SET(&vap, va_mode, S_IRUSR | S_IXUSR | S_IWUSR |
+                      S_IRGRP | S_IXGRP |
+                      S_IROTH | S_IXOTH);
+
+            error = vnode_authorize(dvp, NULL, KAUTH_VNODE_ADD_SUBDIRECTORY,
+                                    vctx);
+            IOLog("vnode_auth %d\n", error);
+            if (!error) error = vnode_authattr_new(dvp, &vap, 0, vctx);
+            IOLog("vnode_authattr %d\n", error);
+
+            vp = NULL;
+            if (!error) error = VNOP_MKDIR(dvp, &vp, &cn, &vap, vctx);
+
+            if (error) {
+                IOLog("Failed to create '%s' in directory '%s': %d\n",
+                      cn.cn_nameptr, current_directory, error);
+                break;
+            }
+
+        } // !LOOKUP
+
+        // Release previous parent directory, and assign this to be dvp
+        vnode_put(dvp);
+        dvp = vp;
+
+        IOLog("dvp is now %p\n", dvp);
+        if (!dvp) break;
+        // Update the current dir, if there is "dir//dir" skip additional
+        // slashes.
+        while(r && (*r == '/')) r++;
+
+        current_directory = r;
+
+    } while(current_directory && *current_directory);
+
+    if (dvp)
+        vnode_put(dvp);
+    vfs_context_rele(vctx);
+    return 0;
+}
+
+int zvol_symlink(char *root, char *existing_target, char *create_target)
+{
+
+    int error;
+    vfs_context_t vctx;
+    struct vnode *vp, *dvp;
+    struct componentname cn;
+    struct vnode_attr vap;
+
+    IOLog("Trying to make symlink for '%s/%s' -> '%s'\n",
+          root, create_target, existing_target);
+
+    vctx = vfs_context_create((vfs_context_t)0);
+
+    error = vnode_lookup(root, 0, &dvp, vctx);
+
+    if ( error ) {
+        IOLog("No root\n");
+        vfs_context_rele(vctx);
+        return ENOENT;
+    }
+
+    bzero(&cn, sizeof(cn));
+    cn.cn_nameiop = LOOKUP;
+    cn.cn_flags = FOLLOW;
+    cn.cn_pnbuf = create_target;
+    cn.cn_pnlen = sizeof(create_target);
+    cn.cn_nameptr = cn.cn_pnbuf;
+    cn.cn_namelen = strlen(create_target);
+
+    //error = vnode_authattr_new(vp, &vap, 0, vctx);
+    VATTR_INIT(&vap);
+    VATTR_SET(&vap, va_type, VLNK);
+    VATTR_SET(&vap, va_uid, 0);
+    VATTR_SET(&vap, va_gid, 0);
+    VATTR_SET(&vap, va_mode, S_IRUSR | S_IXUSR | S_IWUSR |
+              S_IRGRP | S_IXGRP |
+              S_IROTH | S_IXOTH);
+
+    error = vnode_authorize(dvp, NULL, KAUTH_VNODE_ADD_FILE, vctx);
+    IOLog("vnode_auth %d\n", error);
+    if (!error) error = vnode_authattr_new(dvp, &vap, 0, vctx);
+    IOLog("vnode_authattr %d\n", error);
+    if (!error) error = VNOP_SYMLINK(dvp, &vp,&cn, &vap, existing_target,vctx);
+
+    IOLog("Symlink creation said %d vp %p\n", error, vp);
+
+    if (!error)
+        vnode_put(vp);
+    vfs_context_rele(vctx);
+    vnode_put(dvp);
+    return error;
+
+}
+
 /*
  * Due to OS X limitations in /dev, we create a symlink for "/dev/zvol" to
  * "/var/run/zfs" (if we can) and for each pool, create the traditional
@@ -2562,146 +2739,37 @@ zvol_create_minors(const char *name)
 
 void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rdisk)
 {
-#ifndef _KERNEL
-    struct stat sb;
-    char path[MAXPATHLEN], *copy, *r;
 
-    if (stat(ZVOL_ROOT, &sb)) return; // No /var/run? Quit, we don't create it
-
-    snprintf(path, sizeof(path),
-             "%s/zfs", ZVOL_ROOT);
-
-    if (stat(path, &sb)) { // No "zfs".
-
-        if (mkdir(path, 0755)) {
-            printf("ZFS: Error failed to create '%s'.\n", path);
-            return;
-        }
-    }
-    if (!S_ISDIR(sb.st_mode)) {
-        printf("ZFS: Error '%s' is not a directory.\n", path);
-        return;
-    }
-
-    snprintf(path, sizeof(path),
-             "%s/zfs/zvol", ZVOL_ROOT);
-    if (stat(path, &sb)) { // No "zfs".
-        if (mkdir(path, 0755)) {
-            printf("ZFS: Error failed to create '%s'.\n", path);
-            return;
-        }
-    }
-
-    snprintf(path, sizeof(path),
-             "%s/zfs/zvol/dsk", ZVOL_ROOT);
-    if (stat(path, &sb)) { // No "zfs".
-        if (mkdir(path, 0755)) {
-            printf("ZFS: Error failed to create '%s'.\n", path);
-            return;
-        }
-    }
-    snprintf(path, sizeof(path),
-             "%s/zfs/zvol/rdsk", ZVOL_ROOT);
-    if (stat(path, &sb)) { // No "zfs".
-        if (mkdir(path, 0755)) {
-            printf("ZFS: Error failed to create '%s'.\n", path);
-            return;
-        }
-    }
+    char path[MAXPATHLEN];
+    char bsdname[MAXPATHLEN];
+    char *copy, *r;
 
     // Alas, zv_name is "pool/name".
+    if (!zv) return;
+
     copy = spa_strdup(zv->zv_name);
     if (!copy) return;
 
-
-    // As long as we find a "/", create the directory
-    r = copy;
-    while ((r = strchr(r, '/'))) {
-
+    if ((r = strrchr(copy, '/'))) {
         *r = 0;
-
+        r++;
         snprintf(path, sizeof(path),
                  "%s/zfs/zvol/dsk/%s", ZVOL_ROOT, copy);
-        if (stat(path, &sb)) { // No "zfs".
-            if (mkdir(path, 0755)) {
-                printf("ZFS: Error failed to create '%s'.\n", path);
-                return;
-            }
-        }
+    } else {
         snprintf(path, sizeof(path),
-                 "%s/zfs/zvol/rdsk/%s", ZVOL_ROOT, copy);
-        if (stat(path, &sb)) { // No "zfs".
-            if (mkdir(path, 0755)) {
-                printf("ZFS: Error failed to create '%s'.\n", path);
-                return;
-            }
-        }
-
-        *r = '/';
-        r++;
+                 "%s/zfs/zvol/dsk", ZVOL_ROOT);
     }
 
-    // Finished with last '/' (or there were none), 'r' now points to
-    // just the dataset name.
-    snprintf(path, sizeof(path),
-             "%s/zfs/zvol/dsk/%s", ZVOL_ROOT, copy);
+    zvol_mkdir_path(ZVOL_ROOT, &path[strlen(ZVOL_ROOT)+1]);
 
-    if (symlink(bsd_disk, path)) {
-        printf("ZFS: Error failed to create symlink '%s' -> '%s'\n",
-               path, bsd_disk);
-    }
+    // Create symlink
+    if (!r) r = copy;
 
-    snprintf(path, sizeof(path),
-             "%s/zfs/zvol/rdsk/%s", ZVOL_ROOT, copy);
+    snprintf(bsdname, sizeof(bsdname), "/dev/%s", bsd_disk);
 
-    if (symlink(bsd_rdisk, path)) {
-        printf("ZFS: Error failed to create symlink '%s' -> '%s'\n",
-               path, bsd_rdisk);
-    }
+    zvol_symlink(path, bsdname, r);
 
     spa_strfree(copy);
-
-
-    /*
-     * Now, make sure the /dev/zvol symlink exists
-     */
-
-    if (stat("/dev/zvol", &sb)) {
-
-        snprintf(path, sizeof(path),
-                 "%s/zfs/zvol", ZVOL_ROOT);
-
-        if (symlink(path, "/dev/zvol")) {
-            printf("ZFS: Error failed to create symlink '/dev/zvol' -> '%s'\n",
-                   path);
-        }
-        return;
-    }
-
-    if (!S_ISLNK(sb.st_mode)) {
-        printf("ZFS: Error failed to create symlink '/dev/zvol' - it already exists and is not a symlink\n");
-    }
-#else
-
-    /*
-      Works
-      *
-      vnode_getattr(NULL, NULL, NULL);
-      *
-
-      Does not work
-      *
-      VNOP_MKDIR(NULL, NULL, NULL, NULL, NULL);
-      VNOP_REMOVE(NULL, NULL, NULL, 0, NULL);
-      VNOP_COMPOUND_REMOVE(NULL, NULL, NULL, 0, NULL, NULL);
-      VNOP_GETATTR(NULL, NULL, NULL);
-      vn_mkdir(NULL, NULL, NULL, NULL, NULL);
-      vnode_mkdir(NULL, NULL, NULL, NULL, NULL);
-      *
-      */
-    //VNOP_SYMLINK(NULL, NULL, NULL, NULL, NULL, NULL);
-
-#endif
 
 }
 

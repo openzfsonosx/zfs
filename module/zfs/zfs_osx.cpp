@@ -271,6 +271,8 @@ bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
 
     nub->getBSDName();
 
+    zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
+
     result = true;
 
  bail:
