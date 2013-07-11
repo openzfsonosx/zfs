@@ -2758,7 +2758,6 @@ static void
 zfs_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx)
 {
 	zfs_creat_t *zct = arg;
-    printf("+ zfs_create_cb\n");
     /*
      * We have a clash between OSX and ZOL versions here. In the newer
      * ZOL version, zfs_create_fs() now takes a zplprop list to create
@@ -2768,7 +2767,6 @@ zfs_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx)
 
 	zfs_create_fs(os, cr, zct->zct_zplprops, tx);
 	//zfs_create_fs(os, cr, ZPL_VERSION_5, tx);
-    printf("- zfs_create_cb\n");
 }
 
 #define	ZFS_PROP_UNDEFINED	((uint64_t)-1)
@@ -3963,7 +3961,6 @@ zfs_ioc_send(zfs_cmd_t *zc)
 				dsl_dataset_rele(dsfrom, FTAG);
 			return (EBADF);
         }
-        printf("fp_lookup OK\n");
 
         /* Can't lookup the offset in OS X, so userland passes it to
          * us instead. */
@@ -3981,7 +3978,7 @@ zfs_ioc_send(zfs_cmd_t *zc)
             zc->zc_history_offset = off;
 
         file_drop(curproc, zc->zc_cookie, rfp, 0);
-        printf("send complete, err=%d\n", error);
+
 #endif
 	}
 	if (dsfrom)
@@ -5233,7 +5230,6 @@ static int
 zfsdev_bioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct proc *p)
 {
     int error;
-    printf("bioctl\n");
     error = proc_suser(p);                  /* Are we superman? */
     if (error) return (error);              /* Nope... */
     return (zvol_ioctl(dev, cmd, data, 1, NULL, NULL));

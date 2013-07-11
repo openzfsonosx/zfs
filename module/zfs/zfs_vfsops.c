@@ -2132,9 +2132,14 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	if (VFSATTR_IS_ACTIVE(fsap, f_vol_name)) {
 		spa_t *spa = dmu_objset_spa(zfsvfs->z_os);
 		spa_config_enter(spa, SCL_ALL, FTAG, RW_READER);
-		strlcpy(fsap->f_vol_name, spa_name(spa), MAXPATHLEN);
+
+        strlcpy(fsap->f_vol_name, vfs_statfs(zfsvfs->z_vfs)->f_mntfromname,
+                MAXPATHLEN);
+
+		//strlcpy(fsap->f_vol_name, spa_name(spa), MAXPATHLEN);
 		spa_config_exit(spa, SCL_ALL, FTAG);
 		VFSATTR_SET_SUPPORTED(fsap, f_vol_name);
+        IOLog("Sending back name '%s'\n", fsap->f_vol_name);
 	}
 	VFSATTR_RETURN(fsap, f_fssubtype, 0);
 	VFSATTR_RETURN(fsap, f_signature, 0x5a21);  /* 'Z!' */
