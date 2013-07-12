@@ -2560,8 +2560,8 @@ int zvol_mkdir_path(char *root, char *newdirs)
     struct vnode_attr vap;
     char *current_directory = NULL, *r;
 
-    IOLog("zvol_mkdir_path: checking '%s' exists: to make '%s'\n",
-          root, newdirs);
+    //IOLog("zvol_mkdir_path: checking '%s' exists: to make '%s'\n",
+    //    root, newdirs);
 
     vctx = vfs_context_create((vfs_context_t)0);
 
@@ -2593,7 +2593,7 @@ int zvol_mkdir_path(char *root, char *newdirs)
     // We run through this once, even if there is no slash.
     do {
 
-        IOLog("Assigning '%s'\n", current_directory);
+        //IOLog("Assigning '%s'\n", current_directory);
 
         cn.cn_pnbuf = current_directory;
         cn.cn_nameptr = cn.cn_pnbuf;
@@ -2604,8 +2604,8 @@ int zvol_mkdir_path(char *root, char *newdirs)
             cn.cn_namelen = r - current_directory;
         }
 
-        IOLog("Working on the '%*.*s' part.\n",
-              cn.cn_namelen, cn.cn_namelen, cn.cn_nameptr);
+        //IOLog("Working on the '%*.*s' part.\n",
+        //    cn.cn_namelen, cn.cn_namelen, cn.cn_nameptr);
 
         // Check if it exists
         vp = NULL;
@@ -2613,13 +2613,13 @@ int zvol_mkdir_path(char *root, char *newdirs)
 
         if (!error) {
             // It exists!
-            IOLog("'%*.*s' exists!\n", cn.cn_namelen, cn.cn_namelen,
-                  cn.cn_nameptr);
+            //IOLog("'%*.*s' exists!\n", cn.cn_namelen, cn.cn_namelen,
+            //    cn.cn_nameptr);
         } else {
             // Does not exist, mkdir it.
 
-            IOLog("mkdir '%*.*s'\n", cn.cn_namelen, cn.cn_namelen,
-                  cn.cn_nameptr);
+            //IOLog("mkdir '%*.*s'\n", cn.cn_namelen, cn.cn_namelen,
+            //    cn.cn_nameptr);
 
             VATTR_INIT(&vap);
             VATTR_SET(&vap, va_type, VDIR);
@@ -2631,9 +2631,9 @@ int zvol_mkdir_path(char *root, char *newdirs)
 
             error = vnode_authorize(dvp, NULL, KAUTH_VNODE_ADD_SUBDIRECTORY,
                                     vctx);
-            IOLog("vnode_auth %d\n", error);
+            //IOLog("vnode_auth %d\n", error);
             if (!error) error = vnode_authattr_new(dvp, &vap, 0, vctx);
-            IOLog("vnode_authattr %d\n", error);
+            //  IOLog("vnode_authattr %d\n", error);
 
             vp = NULL;
             if (!error) error = VNOP_MKDIR(dvp, &vp, &cn, &vap, vctx);
@@ -2650,7 +2650,7 @@ int zvol_mkdir_path(char *root, char *newdirs)
         vnode_put(dvp);
         dvp = vp;
 
-        IOLog("dvp is now %p\n", dvp);
+        //  IOLog("dvp is now %p\n", dvp);
         if (!dvp) break;
         // Update the current dir, if there is "dir//dir" skip additional
         // slashes.
@@ -2675,15 +2675,15 @@ int zvol_symlink(char *root, char *existing_target, char *create_target)
     struct componentname cn;
     struct vnode_attr vap;
 
-    IOLog("Trying to make symlink for '%s/%s' -> '%s'\n",
-          root, create_target, existing_target);
+    //IOLog("Trying to make symlink for '%s/%s' -> '%s'\n",
+    //    root, create_target, existing_target);
 
     vctx = vfs_context_create((vfs_context_t)0);
 
     error = vnode_lookup(root, 0, &dvp, vctx);
 
     if ( error ) {
-        IOLog("No root\n");
+        //  IOLog("No root\n");
         vfs_context_rele(vctx);
         return ENOENT;
     }
@@ -2706,12 +2706,12 @@ int zvol_symlink(char *root, char *existing_target, char *create_target)
               S_IROTH | S_IXOTH);
 
     error = vnode_authorize(dvp, NULL, KAUTH_VNODE_ADD_FILE, vctx);
-    IOLog("vnode_auth %d\n", error);
+    //IOLog("vnode_auth %d\n", error);
     if (!error) error = vnode_authattr_new(dvp, &vap, 0, vctx);
-    IOLog("vnode_authattr %d\n", error);
+    //IOLog("vnode_authattr %d\n", error);
     if (!error) error = VNOP_SYMLINK(dvp, &vp,&cn, &vap, existing_target,vctx);
 
-    IOLog("Symlink creation said %d vp %p\n", error, vp);
+    //IOLog("Symlink creation said %d vp %p\n", error, vp);
 
     if (!error)
         vnode_put(vp);
@@ -2720,6 +2720,61 @@ int zvol_symlink(char *root, char *existing_target, char *create_target)
     return error;
 
 }
+
+/*
+ * Delete a file. 'root' is the directory it should be in, and
+ * 'target' is just the filename.
+ */
+int zvol_unlink(char *root, char *target)
+{
+    int error;
+    vfs_context_t vctx;
+    struct vnode *vp, *dvp;
+    struct componentname cn;
+    struct vnode_attr vap;
+
+    //IOLog("Trying to delete '%s' inside directory '%s'\n",
+    //    root, target);
+
+    vctx = vfs_context_create((vfs_context_t)0);
+
+    error = vnode_lookup(root, 0, &dvp, vctx);
+
+    if ( error ) {
+        //  IOLog("No root\n");
+        vfs_context_rele(vctx);
+        return ENOENT;
+    }
+
+    // Get the file's vp
+    bzero(&cn, sizeof(cn));
+    cn.cn_nameiop = DELETE;
+    cn.cn_flags = FOLLOW;
+    cn.cn_pnbuf = target;
+    cn.cn_pnlen = sizeof(target);
+    cn.cn_nameptr = cn.cn_pnbuf;
+    cn.cn_namelen = strlen(target);
+
+    vp = NULL;
+    error = VNOP_LOOKUP(dvp, &vp, &cn, vctx);
+    if (error)
+        goto out;
+
+    error = VNOP_REMOVE(dvp, vp, &cn, 0, vctx);
+
+    //IOLog("Remove said %d vp %p\n", error, vp);
+
+    // LOOKUP succeeded, even if REMOVE might fail, we release vp
+    vnode_put(vp);
+
+ out:
+    vfs_context_rele(vctx);
+    vnode_put(dvp);
+
+    return error;
+}
+
+
 
 /*
  * Due to OS X limitations in /dev, we create a symlink for "/dev/zvol" to
@@ -2741,6 +2796,7 @@ void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rd
 {
 
     char path[MAXPATHLEN];
+    char rpath[MAXPATHLEN];
     char bsdname[MAXPATHLEN];
     char *copy, *r;
 
@@ -2755,19 +2811,36 @@ void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rd
         r++;
         snprintf(path, sizeof(path),
                  "%s/zfs/zvol/dsk/%s", ZVOL_ROOT, copy);
+        snprintf(rpath, sizeof(rpath),
+                 "%s/zfs/zvol/rdsk/%s", ZVOL_ROOT, copy);
     } else {
         snprintf(path, sizeof(path),
                  "%s/zfs/zvol/dsk", ZVOL_ROOT);
+        snprintf(rpath, sizeof(rpath),
+                 "%s/zfs/zvol/rdsk", ZVOL_ROOT);
     }
 
-    zvol_mkdir_path(ZVOL_ROOT, &path[strlen(ZVOL_ROOT)+1]);
+    zvol_mkdir_path(ZVOL_ROOT,  &path[strlen(ZVOL_ROOT)+1]);
+    zvol_mkdir_path(ZVOL_ROOT, &rpath[strlen(ZVOL_ROOT)+1]);
 
     // Create symlink
     if (!r) r = copy;
 
     snprintf(bsdname, sizeof(bsdname), "/dev/%s", bsd_disk);
 
+    // Delete it first, to make sure it is always correct
+    zvol_unlink(path, r);
+
+    // Create symlink
     zvol_symlink(path, bsdname, r);
+
+    snprintf(bsdname, sizeof(bsdname), "/dev/%s", bsd_rdisk);
+
+    // Delete it first, to make sure it is always correct
+    zvol_unlink(rpath, r);
+
+    // Create symlink
+    zvol_symlink(rpath, bsdname, r);
 
     spa_strfree(copy);
 
@@ -2776,15 +2849,34 @@ void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rd
 
 void zvol_remove_symlink(zvol_state_t *zv)
 {
-#ifndef _KERNEL
     char path[MAXPATHLEN];
+    char rpath[MAXPATHLEN];
+    char *copy, *r;
 
-    snprintf(path, sizeof(path),
-             "%s/zfs/zvol/dsk/%s", ZVOL_ROOT, zv->zv_name);
-    unlink(path);
+    if (!zv) return;
 
-    snprintf(path, sizeof(path),
-             "%s/zfs/zvol/rdsk/%s", ZVOL_ROOT, zv->zv_name);
-    unlink(path);
-#endif
+    copy = spa_strdup(zv->zv_name);
+    if (!copy) return;
+
+    if ((r = strrchr(copy, '/'))) {
+        *r = 0;
+        r++;
+        snprintf(path, sizeof(path),
+                 "%s/zfs/zvol/dsk/%s", ZVOL_ROOT, copy);
+        snprintf(rpath, sizeof(rpath),
+                 "%s/zfs/zvol/rdsk/%s", ZVOL_ROOT, copy);
+    } else {
+        snprintf(path, sizeof(path),
+                 "%s/zfs/zvol/dsk", ZVOL_ROOT);
+        snprintf(rpath, sizeof(rpath),
+                 "%s/zfs/zvol/rdsk", ZVOL_ROOT);
+    }
+
+    // Create symlink
+    if (!r) r = copy;
+
+    zvol_unlink(path, r);
+    zvol_unlink(rpath, r);
+
+    spa_strfree(copy);
 }

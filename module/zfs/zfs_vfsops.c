@@ -2139,7 +2139,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		//strlcpy(fsap->f_vol_name, spa_name(spa), MAXPATHLEN);
 		spa_config_exit(spa, SCL_ALL, FTAG);
 		VFSATTR_SET_SUPPORTED(fsap, f_vol_name);
-        IOLog("Sending back name '%s'\n", fsap->f_vol_name);
+
 	}
 	VFSATTR_RETURN(fsap, f_fssubtype, 0);
 	VFSATTR_RETURN(fsap, f_signature, 0x5a21);  /* 'Z!' */

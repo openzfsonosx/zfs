@@ -294,11 +294,10 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
 
       nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
 
+      zvol_remove_symlink(zv);
+
       zv->zv_iokitdev = NULL;
       zv = NULL;
-
-
-      zvol_remove_symlink(zv);
 
       nub->terminate();
     }
