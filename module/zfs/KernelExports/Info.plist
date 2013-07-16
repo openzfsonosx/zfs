@@ -9,7 +9,7 @@
         <key>CFBundleGetInfoString</key>
         <string>Mach Kernel Pseudoextension, Apple Computer Inc, 12.0.0</string>
         <key>CFBundleIdentifier</key>
-        <string>net.lundman.kernel.dependecies</string>
+        <string>net.lundman.kernel.dependencies</string>
         <key>CFBundleInfoDictionaryVersion</key>
         <string>6.0</string>
         <key>CFBundleName</key>
@@ -21,7 +21,7 @@
         <key>CFBundleSignature</key>
         <string>????</string>
         <key>CFBundleVersion</key>
-        <string>12.0.0</string>
+        <string>10.0.0</string>
         <key>OSBundleCompatibleVersion</key>
         <string>8.0.0d0</string>
         <key>OSBundleRequired</key>

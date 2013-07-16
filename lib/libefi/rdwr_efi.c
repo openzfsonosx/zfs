@@ -1153,11 +1153,10 @@ efi_write(int fd, struct dk_gpt *vtoc)
 	int			md_flag = 0;
 	int			nblocks;
 	diskaddr_t		lba_backup_gpt_hdr;
-    fprintf(stderr, "efi_write mate3\r\n");
 
 	if ((rval = efi_get_info(fd, &dki_info)) != 0)
 		return rval;
-    fprintf(stderr, "efi_write mate\r\n");
+
 	/* check if we are dealing wih a metadevice */
 	if ((strncmp(dki_info.dki_cname, "pseudo", 7) == 0) &&
 	    (strncmp(dki_info.dki_dname, "md", 3) == 0)) {
