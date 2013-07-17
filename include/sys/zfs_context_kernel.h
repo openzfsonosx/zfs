@@ -103,6 +103,12 @@ typedef struct direntry dirent64_t;
 
 extern u_int32_t k_maczfs_debug_stalk;
 
+
+#define SEC_TO_TICK(sec)        ((sec) * hz)
+#define MSEC_TO_TICK(msec)      ((msec) / (MILLISEC / hz))
+#define USEC_TO_TICK(usec)      ((usec) / (MICROSEC / hz))
+#define NSEC_TO_TICK(usec)      ((usec) / (NANOSEC / hz))
+
 #endif /* _KERNEL */
 
 #ifdef __cplusplus

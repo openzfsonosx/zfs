@@ -24,6 +24,7 @@
  */
 /*
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -140,12 +141,17 @@ taskq_dispatch(taskq_t *tq, task_func_t func, void *arg, uint_t tqflags)
 	t->tqent_prev->tqent_next = t;
 	t->tqent_func = func;
 	t->tqent_arg = arg;
-
-	ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
-
+	t->tqent_flags = 0;
 	cv_signal(&tq->tq_dispatch_cv);
 	mutex_exit(&tq->tq_lock);
 	return (1);
+}
+
+taskqid_t
+taskq_dispatch_delay(taskq_t *tq,  task_func_t func, void *arg, uint_t tqflags,
+    clock_t expire_time)
+{
+	return (0);
 }
 
 int
@@ -203,6 +209,12 @@ taskq_wait(taskq_t *tq)
 	while (tq->tq_task.tqent_next != &tq->tq_task || tq->tq_active != 0)
 		cv_wait(&tq->tq_wait_cv, &tq->tq_lock);
 	mutex_exit(&tq->tq_lock);
+}
+
+void
+taskq_wait_id(taskq_t *tq, taskqid_t id)
+{
+	taskq_wait(tq);
 }
 
 static void
@@ -338,6 +350,12 @@ taskq_member(taskq_t *tq, kthread_t *t)
 			return (1);
 
 	return (0);
+}
+
+int
+taskq_cancel_id(taskq_t *tq, taskqid_t id)
+{
+	return (ENOENT);
 }
 
 void

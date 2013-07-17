@@ -4,7 +4,6 @@ dnl #
 AC_DEFUN([ZFS_AC_CONFIG_KERNEL], [
 	ZFS_AC_KERNEL
 	ZFS_AC_SPL
-
 	AC_SUBST(KERNELMAKE_PARAMS)
 
 
@@ -37,7 +36,7 @@ AC_DEFUN([ZFS_AC_MODULE_SYMVERS], [
 		AS_IF([test ! -f "$LINUX_OBJ/$LINUX_SYMBOLS"], [
 			AC_MSG_ERROR([
 	*** Please make sure the kernel devel package for your distribution
-	*** is installed.  If your building with a custom kernel make sure the
+	*** is installed.  If you are building with a custom kernel, make sure the
 	*** kernel is configured, built, and the '--with-linux=PATH' configure
 	*** option refers to the location of the kernel source.])
 		])
@@ -98,7 +97,7 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 	AS_IF([test ! -d "$kernelsrc"], [
 		AC_MSG_ERROR([
 	*** Please make sure the kernel devel package for your distribution
-	*** is installed then try again.  If that fails you can specify the
+	*** is installed and then try again.  If that fails, you can specify the
 	*** location of the kernel source with the '--with-linux=PATH' option.])
 	])
 
@@ -162,54 +161,6 @@ echo "gooba $kernsrcver"
 	ZFS_AC_MODULE_SYMVERS
 ])
 
-dnl #
-dnl # Detect name used for the additional SPL Module.symvers file.  If one
-dnl # does not exist this is likely because the SPL has been configured
-dnl # but not built.  The '--with-spl-timeout' option can be passed
-dnl # to pause here, waiting for the file to appear from a concurrently
-dnl # building SPL package.  If the file does not appear in time, a good
-dnl # guess is made as to what this file will be named based on what it
-dnl # is named in the kernel build products.  This file will first be
-dnl # used at link time so if the guess is wrong the build will fail
-dnl # then.  This unfortunately means the ZFS package does not contain a
-dnl # reliable mechanism to detect symbols exported by the SPL at
-dnl # configure time.
-dnl #
-AC_DEFUN([ZFS_AC_SPL_MODULE_SYMVERS], [
-	AC_ARG_WITH([spl-timeout],
-		AS_HELP_STRING([--with-spl-timeout=SECS],
-		[Wait SECS for symvers file to appear  @<:@default=0@:>@]),
-		[timeout="$withval"], [timeout=0])
-
-	AC_MSG_CHECKING([spl file name for module symbols])
-	SPL_SYMBOLS=NONE
-
-	while true; do
-		AS_IF([test -r $SPL_OBJ/Module.symvers], [
-			SPL_SYMBOLS=Module.symvers
-		], [test -r $SPL_OBJ/Modules.symvers], [
-			SPL_SYMBOLS=Modules.symvers
-		], [test -r $SPL_OBJ/module/Module.symvers], [
-			SPL_SYMBOLS=Module.symvers
-		], [test -r $SPL_OBJ/module/Modules.symvers], [
-			SPL_SYMBOLS=Modules.symvers
-		])
-
-		AS_IF([test $SPL_SYMBOLS != NONE -o $timeout -le 0], [
-			break;
-		], [
-			sleep 1
-			timeout=$((timeout-1))
-		])
-	done
-
-	AS_IF([test "$SPL_SYMBOLS" = NONE], [
-		SPL_SYMBOLS=$LINUX_SYMBOLS
-	])
-
-	AC_MSG_RESULT([$SPL_SYMBOLS])
-	AC_SUBST(SPL_SYMBOLS)
-])
 
 dnl #
 dnl # Detect the SPL module to be built against
@@ -225,6 +176,10 @@ AC_DEFUN([ZFS_AC_SPL], [
 		[Path to spl build objects]),
 		[splbuild="$withval"])
 
+	AC_ARG_WITH([spl-timeout],
+		AS_HELP_STRING([--with-spl-timeout=SECS],
+		[Wait SECS for SPL header and symver file @<:@default=0@:>@]),
+		[timeout="$withval"], [timeout=0])
 
 	AC_MSG_CHECKING([spl source directory])
 	AS_IF([test -z "$splsrc"], [
@@ -287,7 +242,46 @@ AC_DEFUN([ZFS_AC_SPL], [
 		AC_MSG_RESULT([Not found])
 		AC_MSG_ERROR([*** Cannot determine SPL object directory])
 	])
+
+	dnl #
+	dnl # The existence of the spl_config.h is used to identify a valid
+	dnl # spl object directory.  In many cases the object and source
+	dnl # directory are the same, however the objects may also reside
+	dnl # is a subdirectory named after the kernel version.
+	dnl #
+	dnl # This file is supposed to be available after DKMS finishes
+	dnl # building the SPL kernel module for the target kernel.  The
+	dnl # '--with-spl-timeout' option can be passed to pause here,
+	dnl # waiting for the file to appear from a concurrently building
+	dnl # SPL package.
+	dnl #
+	AC_MSG_CHECKING([spl build directory])
+	while true; do
+		AS_IF([test -z "$splbuild"], [
+			AS_IF([ test -e "${splsrc}/${LINUX_VERSION}/spl_config.h" ], [
+				splbuild="${splsrc}/${LINUX_VERSION}"
+			], [ test -e "${splsrc}/spl_config.h" ], [
+				splbuild="${splsrc}"
+			], [
+				splbuild="[Not found]"
+			])
+		])
+		AS_IF([test -e "$splbuild/spl_config.h" -o $timeout -le 0], [
+			break;
+		], [
+			sleep 1
+			timeout=$((timeout-1))
+		])
+	done
+
 	AC_MSG_RESULT([$splbuild])
+	AS_IF([ ! test -e "$splbuild/spl_config.h"], [
+		AC_MSG_ERROR([
+	*** Please make sure the kmod spl devel <kernel> package for your
+	*** distribution is installed then try again.  If that fails you
+	*** can specify the location of the spl objects with the
+	*** '--with-spl-obj=PATH' option.])
+	])
 
 	AC_MSG_CHECKING([spl source version])
 	AS_IF([test -r $splbuild/spl_config.h &&
@@ -316,7 +310,47 @@ AC_DEFUN([ZFS_AC_SPL], [
 	AC_SUBST(SPL_OBJ)
 	AC_SUBST(SPL_VERSION)
 
-	ZFS_AC_SPL_MODULE_SYMVERS
+	dnl #
+	dnl # Detect the name used for the SPL Module.symvers file.  If one
+	dnl # does not exist this is likely because the SPL has been configured
+	dnl # but not built.  The '--with-spl-timeout' option can be passed
+	dnl # to pause here, waiting for the file to appear from a concurrently
+	dnl # building SPL package.  If the file does not appear in time, a good
+	dnl # guess is made as to what this file will be named based on what it
+	dnl # is named in the kernel build products.  This file will first be
+	dnl # used at link time so if the guess is wrong the build will fail
+	dnl # then.  This unfortunately means the ZFS package does not contain a
+	dnl # reliable mechanism to detect symbols exported by the SPL at
+	dnl # configure time.
+	dnl #
+	AC_MSG_CHECKING([spl file name for module symbols])
+	SPL_SYMBOLS=NONE
+
+	while true; do
+		AS_IF([test -r $SPL_OBJ/Module.symvers], [
+			SPL_SYMBOLS=Module.symvers
+		], [test -r $SPL_OBJ/Modules.symvers], [
+			SPL_SYMBOLS=Modules.symvers
+		], [test -r $SPL_OBJ/module/Module.symvers], [
+			SPL_SYMBOLS=Module.symvers
+		], [test -r $SPL_OBJ/module/Modules.symvers], [
+			SPL_SYMBOLS=Modules.symvers
+		])
+
+		AS_IF([test $SPL_SYMBOLS != NONE -o $timeout -le 0], [
+			break;
+		], [
+			sleep 1
+			timeout=$((timeout-1))
+		])
+	done
+
+	AS_IF([test "$SPL_SYMBOLS" = NONE], [
+		SPL_SYMBOLS=$LINUX_SYMBOLS
+	])
+
+	AC_MSG_RESULT([$SPL_SYMBOLS])
+	AC_SUBST(SPL_SYMBOLS)
 ])
 
 dnl #
@@ -430,7 +464,7 @@ AC_DEFUN([ZFS_LINUX_COMPILE_IFELSE], [
 	modpost_flag=''
 	test "x$enable_linux_builtin" = xyes && modpost_flag='modpost=true' # fake modpost stage
 	AS_IF(
-		[AC_TRY_COMMAND(cp conftest.c build && make [$2] -C $LINUX_OBJ EXTRA_CFLAGS="-Werror-implicit-function-declaration $EXTRA_KCFLAGS" $ARCH_UM M=$PWD/build $modpost_flag) >/dev/null && AC_TRY_COMMAND([$3])],
+		[AC_TRY_COMMAND(cp conftest.c build && make [$2] -C $LINUX_OBJ EXTRA_CFLAGS="-Werror $EXTRA_KCFLAGS" $ARCH_UM M=$PWD/build $modpost_flag) >/dev/null && AC_TRY_COMMAND([$3])],
 		[$4],
 		[_AC_MSG_LOG_CONFTEST m4_ifvaln([$5],[$5])]
 	)

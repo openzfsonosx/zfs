@@ -64,6 +64,7 @@ static int zpool_do_destroy(int, char **);
 
 static int zpool_do_add(int, char **);
 static int zpool_do_remove(int, char **);
+static int zpool_do_labelclear(int, char **);
 
 static int zpool_do_list(int, char **);
 static int zpool_do_iostat(int, char **);
@@ -124,6 +125,7 @@ typedef enum {
 	HELP_HISTORY,
 	HELP_IMPORT,
 	HELP_IOSTAT,
+	HELP_LABELCLEAR,
 	HELP_LIST,
 	HELP_OFFLINE,
 	HELP_ONLINE,
@@ -162,6 +164,8 @@ static zpool_command_t command_table[] = {
 	{ NULL },
 	{ "add",	zpool_do_add,		HELP_ADD		},
 	{ "remove",	zpool_do_remove,	HELP_REMOVE		},
+	{ NULL },
+	{ "labelclear",	zpool_do_labelclear,	HELP_LABELCLEAR		},
 	{ NULL },
 	{ "list",	zpool_do_list,		HELP_LIST		},
 	{ "iostat",	zpool_do_iostat,	HELP_IOSTAT		},
@@ -234,6 +238,8 @@ get_usage(zpool_help_t idx) {
 	case HELP_IOSTAT:
 		return (gettext("\tiostat [-v] [-T d|u] [pool] ... [interval "
 		    "[count]]\n"));
+	case HELP_LABELCLEAR:
+		return (gettext("\tlabelclear [-f] <vdev>\n"));
 	case HELP_LIST:
 		return (gettext("\tlist [-H] [-o property[,...]] "
 		    "[-T d|u] [pool] ... [interval [count]]\n"));
@@ -247,7 +253,7 @@ get_usage(zpool_help_t idx) {
 	case HELP_REMOVE:
 		return (gettext("\tremove <pool> <device> ...\n"));
 	case HELP_REOPEN:
-		return (""); /* Undocumented command */
+		return (gettext("\treopen <pool>\n"));
 	case HELP_SCRUB:
 		return (gettext("\tscrub [-s] <pool> ...\n"));
 	case HELP_STATUS:
@@ -638,6 +644,127 @@ zpool_do_remove(int argc, char **argv)
 		if (zpool_vdev_remove(zhp, argv[i]) != 0)
 			ret = 1;
 	}
+
+	return (ret);
+}
+
+/*
+ * zpool labelclear <vdev>
+ *
+ * Verifies that the vdev is not active and zeros out the label information
+ * on the device.
+ */
+int
+zpool_do_labelclear(int argc, char **argv)
+{
+	char *vdev, *name;
+	int c, fd = -1, ret = 0;
+	pool_state_t state;
+	boolean_t inuse = B_FALSE;
+	boolean_t force = B_FALSE;
+
+	/* check options */
+	while ((c = getopt(argc, argv, "f")) != -1) {
+		switch (c) {
+		case 'f':
+			force = B_TRUE;
+			break;
+		default:
+			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
+			    optopt);
+			usage(B_FALSE);
+		}
+	}
+
+	argc -= optind;
+	argv += optind;
+
+	/* get vdev name */
+	if (argc < 1) {
+		(void) fprintf(stderr, gettext("missing vdev device name\n"));
+		usage(B_FALSE);
+	}
+
+	vdev = argv[0];
+	if ((fd = open(vdev, O_RDWR)) < 0) {
+		(void) fprintf(stderr, gettext("Unable to open %s\n"), vdev);
+		return (B_FALSE);
+	}
+
+	name = NULL;
+	if (zpool_in_use(g_zfs, fd, &state, &name, &inuse) != 0) {
+		if (force)
+			goto wipe_label;
+
+		(void) fprintf(stderr,
+		    gettext("Unable to determine pool state for %s\n"
+		    "Use -f to force the clearing any label data\n"), vdev);
+
+		return (1);
+	}
+
+	if (inuse) {
+		switch (state) {
+		default:
+		case POOL_STATE_ACTIVE:
+		case POOL_STATE_SPARE:
+		case POOL_STATE_L2CACHE:
+			(void) fprintf(stderr,
+			    gettext("labelclear operation failed.\n"
+			    "\tVdev %s is a member (%s), of pool \"%s\".\n"
+			    "\tTo remove label information from this device, "
+			    "export or destroy\n\tthe pool, or remove %s from "
+			    "the configuration of this pool\n\tand retry the "
+			    "labelclear operation.\n"),
+			    vdev, zpool_pool_state_to_name(state), name, vdev);
+			ret = 1;
+			goto errout;
+
+		case POOL_STATE_EXPORTED:
+			if (force)
+				break;
+
+			(void) fprintf(stderr,
+			    gettext("labelclear operation failed.\n\tVdev "
+			    "%s is a member of the exported pool \"%s\".\n"
+			    "\tUse \"zpool labelclear -f %s\" to force the "
+			    "removal of label\n\tinformation.\n"),
+			    vdev, name, vdev);
+			ret = 1;
+			goto errout;
+
+		case POOL_STATE_POTENTIALLY_ACTIVE:
+			if (force)
+				break;
+
+			(void) fprintf(stderr,
+			    gettext("labelclear operation failed.\n"
+			    "\tVdev %s is a member of the pool \"%s\".\n"
+			    "\tThis pool is unknown to this system, but may "
+			    "be active on\n\tanother system. Use "
+			    "\'zpool labelclear -f %s\' to force the\n"
+			    "\tremoval of label information.\n"),
+			    vdev, name, vdev);
+			ret = 1;
+			goto errout;
+
+		case POOL_STATE_DESTROYED:
+			/* inuse should never be set for a destroyed pool... */
+			break;
+		}
+	}
+
+wipe_label:
+	if (zpool_clear_label(fd) != 0) {
+		(void) fprintf(stderr,
+		    gettext("Label clear failed on vdev %s\n"), vdev);
+		ret = 1;
+	}
+
+errout:
+	close(fd);
+	if (name != NULL)
+		free(name);
 
 	return (ret);
 }
@@ -3613,22 +3740,37 @@ zpool_do_reguid(int argc, char **argv)
  * zpool reopen <pool>
  *
  * Reopen the pool so that the kernel can update the sizes of all vdevs.
- *
- * NOTE: This command is currently undocumented.  If the command is ever
- * exposed then the appropriate usage() messages will need to be made.
  */
 int
 zpool_do_reopen(int argc, char **argv)
 {
+	int c;
 	int ret = 0;
 	zpool_handle_t *zhp;
 	char *pool;
 
+	/* check options */
+	while ((c = getopt(argc, argv, "")) != -1) {
+		switch (c) {
+		case '?':
+			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
+			    optopt);
+			usage(B_FALSE);
+		}
+	}
+
 	argc--;
 	argv++;
 
-	if (argc != 1)
-		return (2);
+	if (argc < 1) {
+		(void) fprintf(stderr, gettext("missing pool name\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc > 1) {
+		(void) fprintf(stderr, gettext("too many arguments\n"));
+		usage(B_FALSE);
+	}
 
 	pool = argv[0];
 	if ((zhp = zpool_open_canfail(g_zfs, pool)) == NULL)
@@ -3726,7 +3868,7 @@ print_scan_status(pool_scan_stat_t *ps)
 	double fraction_done;
 	char processed_buf[7], examined_buf[7], total_buf[7], rate_buf[7];
 
-	(void) printf(gettext(" scan: "));
+	(void) printf(gettext("  scan: "));
 
 	/* If there's never been a scan, there's not much to say. */
 	if (ps == NULL || ps->pss_func == POOL_SCAN_NONE ||
@@ -3914,10 +4056,16 @@ print_dedup_stats(nvlist_t *config)
 	 * table continue processing the stats.
 	 */
 	if (nvlist_lookup_uint64_array(config, ZPOOL_CONFIG_DDT_OBJ_STATS,
-	    (uint64_t **)&ddo, &c) != 0 || ddo->ddo_count == 0)
+	    (uint64_t **)&ddo, &c) != 0)
 		return;
 
 	(void) printf("\n");
+	(void) printf(gettext(" dedup: "));
+	if (ddo->ddo_count == 0) {
+		(void) printf(gettext("no DDT entries\n"));
+		return;
+	}
+
 	(void) printf("DDT entries %llu, size %llu on disk, %llu in core\n",
 	    (u_longlong_t)ddo->ddo_count,
 	    (u_longlong_t)ddo->ddo_dspace,
@@ -3965,7 +4113,10 @@ status_callback(zpool_handle_t *zhp, void *data)
 	 * If we were given 'zpool status -x', only report those pools with
 	 * problems.
 	 */
-	if (reason == ZPOOL_STATUS_OK && cbp->cb_explain) {
+	if (cbp->cb_explain &&
+	    (reason == ZPOOL_STATUS_OK ||
+	    reason == ZPOOL_STATUS_VERSION_OLDER ||
+	    reason == ZPOOL_STATUS_FEAT_DISABLED)) {
 		if (!cbp->cb_allpools) {
 			(void) printf(gettext("pool '%s' is healthy\n"),
 			    zpool_get_name(zhp));
@@ -4085,8 +4236,8 @@ status_callback(zpool_handle_t *zhp, void *data)
 		    "but some features are unavailable.\n"));
 		(void) printf(gettext("action: Upgrade the pool using 'zpool "
 		    "upgrade'.  Once this is done, the\n\tpool will no longer "
-		    "be accessible on software that does not support feature\n"
-		    "\tflags.\n"));
+		    "be accessible on software that does not support\n\t"
+		    "feature flags.\n"));
 		break;
 
 	case ZPOOL_STATUS_VERSION_NEWER:
@@ -5220,6 +5371,7 @@ zpool_do_events_next(ev_opts_t *opts)
 			zpool_do_events_nvprint(nvl, 8);
 			printf(gettext("\n"));
 		}
+		(void) fflush(stdout);
 
 		nvlist_free(nvl);
 	}

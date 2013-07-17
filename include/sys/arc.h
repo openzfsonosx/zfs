@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #ifndef	_SYS_ARC_H
@@ -59,7 +60,7 @@ struct arc_buf {
 	arc_buf_hdr_t		*b_hdr;
 	arc_buf_t		*b_next;
 	kmutex_t		b_evict_lock;
-	krwlock_t		b_data_lock;
+    krwlock_t       b_data_lock;
 	void			*b_data;
 	arc_evict_func_t	*b_efunc;
 	void			*b_private;
@@ -103,12 +104,11 @@ void arc_buf_add_ref(arc_buf_t *buf, void *tag);
 int arc_buf_remove_ref(arc_buf_t *buf, void *tag);
 int arc_buf_size(arc_buf_t *buf);
 void arc_release(arc_buf_t *buf, void *tag);
-int arc_release_bp(arc_buf_t *buf, void *tag, blkptr_t *bp, spa_t *spa,
-    zbookmark_t *zb);
 int arc_released(arc_buf_t *buf);
 int arc_has_callback(arc_buf_t *buf);
 void arc_buf_freeze(arc_buf_t *buf);
 void arc_buf_thaw(arc_buf_t *buf);
+boolean_t arc_buf_eviction_needed(arc_buf_t *buf);
 #ifdef ZFS_DEBUG
 int arc_referenced(arc_buf_t *buf);
 #endif
@@ -126,6 +126,7 @@ zio_t *arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
 
 arc_prune_t *arc_add_prune_callback(arc_prune_func_t *func, void *_private);
 void arc_remove_prune_callback(arc_prune_t *p);
+void arc_freed(spa_t *spa, const blkptr_t *bp);
 
 void arc_set_callback(arc_buf_t *buf, arc_evict_func_t *func, void *_private);
 int arc_buf_evict(arc_buf_t *buf);

@@ -707,10 +707,10 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_blksz = blksz;
 	zp->z_seq = 0x7A4653;
 	zp->z_sync_cnt = 0;
+
 	zp->z_is_zvol = 0;
 	zp->z_is_mapped = 0;
 	zp->z_is_ctldir = 0;
-	zp->z_last_itx = 0;
 	zp->z_vid = 0;
 	zp->z_uid = 0;
 	zp->z_gid = 0;
@@ -1348,8 +1348,20 @@ zfs_rezget(znode_t *zp)
 		zfs_acl_free(zp->z_acl_cached);
 		zp->z_acl_cached = NULL;
 	}
-
 	mutex_exit(&zp->z_acl_lock);
+
+	rw_enter(&zp->z_xattr_lock, RW_WRITER);
+	if (zp->z_xattr_cached) {
+		nvlist_free(zp->z_xattr_cached);
+		zp->z_xattr_cached = NULL;
+	}
+
+	if (zp->z_xattr_parent) {
+		VN_RELE(ZTOI(zp->z_xattr_parent));
+		zp->z_xattr_parent = NULL;
+	}
+	rw_exit(&zp->z_xattr_lock);
+
 	ASSERT(zp->z_sa_hdl == NULL);
 	err = sa_buf_hold(zfsvfs->z_os, obj_num, NULL, &db);
 	if (err) {

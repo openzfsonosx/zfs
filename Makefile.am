@@ -1,11 +1,19 @@
+
+ACLOCAL_AMFLAGS = -I config
+
 include $(top_srcdir)/config/rpm.am
 include $(top_srcdir)/config/deb.am
 include $(top_srcdir)/config/tgz.am
-include $(top_srcdir)/config/arch.am
 
 SUBDIRS = include
 if CONFIG_KERNEL
 SUBDIRS += module
+
+extradir = /usr/src/zfs-$(VERSION)
+extra_HEADERS = zfs.release.in zfs_config.h.in
+
+kerneldir = /usr/src/zfs-$(VERSION)/$(LINUX_VERSION)
+nodist_kernel_HEADERS = zfs.release zfs_config.h
 endif
 if CONFIG_USER
 SUBDIRS += dracut udev etc man scripts lib cmd
@@ -13,12 +21,9 @@ endif
 
 
 AUTOMAKE_OPTIONS = foreign
-EXTRA_DIST  = autogen.sh zfs.spec.in zfs-modules.spec.in
+EXTRA_DIST  = autogen.sh copy-builtin
 EXTRA_DIST += config/config.awk config/rpm.am config/deb.am config/tgz.am
-EXTRA_DIST += META DISCLAIMER COPYRIGHT README.markdown
-EXTRA_DIST += OPENSOLARIS.LICENSE ZFS.RELEASE
-EXTRA_DIST += dkms.postinst copy-builtin
-noinst_HEADERS = zfs_config.h zfs.release
+EXTRA_DIST += META DISCLAIMER COPYRIGHT README.markdown OPENSOLARIS.LICENSE
 
 distclean-local::
 	-$(RM) -R autom4te*.cache
@@ -43,6 +48,7 @@ install-data-local:
 	done
 endif
 
+
 ctags:
 	$(RM) $(top_srcdir)/tags
 	find $(top_srcdir) -name .git -prune -o -name '*.[hc]' | xargs ctags
@@ -54,5 +60,5 @@ etags:
 tags: ctags etags
 
 pkg: @DEFAULT_PACKAGE@
-pkg-modules: @DEFAULT_PACKAGE@-modules
+pkg-kmod: @DEFAULT_PACKAGE@-kmod
 pkg-utils: @DEFAULT_PACKAGE@-utils

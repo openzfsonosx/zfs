@@ -276,12 +276,7 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 			aflags |= ARC_L2CACHE;
 
 		dprintf_bp(os->os_rootbp, "reading %s", "");
-		/*
-		 * XXX when bprewrite scrub can change the bp,
-		 * and this is called from dmu_objset_open_ds_os, the bp
-		 * could change, and we'll need a lock.
-		 */
-		err = dsl_read_nolock(NULL, spa, os->os_rootbp,
+		err = arc_read(NULL, spa, os->os_rootbp, NULL,
 		    arc_getbuf_func, &os->os_phys_buf,
 		    ZIO_PRIORITY_SYNC_READ, ZIO_FLAG_CANFAIL, &aflags, &zb);
 		if (err) {
@@ -1119,8 +1114,7 @@ dmu_objset_sync(objset_t *os, zio_t *pio, dmu_tx_t *tx)
 	SET_BOOKMARK(&zb, os->os_dsl_dataset ?
 	    os->os_dsl_dataset->ds_object : DMU_META_OBJSET,
 	    ZB_ROOT_OBJECT, ZB_ROOT_LEVEL, ZB_ROOT_BLKID);
-	VERIFY3U(0, ==, arc_release_bp(os->os_phys_buf, &os->os_phys_buf,
-	    os->os_rootbp, os->os_spa, &zb));
+	arc_release(os->os_phys_buf, &os->os_phys_buf);
 
 	dmu_write_policy(os, NULL, 0, 0, &zp);
 
@@ -1573,39 +1567,10 @@ dmu_snapshot_list_next(objset_t *os, int namelen, char *name,
 	return (0);
 }
 
-/*
- * Determine the objset id for a given snapshot name.
- */
 int
-dmu_snapshot_id(objset_t *os, const char *snapname, uint64_t *idp)
+dmu_snapshot_lookup(objset_t *os, const char *name, uint64_t *value)
 {
-	dsl_dataset_t *ds = os->os_dsl_dataset;
-	zap_cursor_t cursor;
-	zap_attribute_t attr;
-	int error;
-
-	if (ds->ds_phys->ds_snapnames_zapobj == 0)
-		return (ENOENT);
-
-	zap_cursor_init(&cursor, ds->ds_dir->dd_pool->dp_meta_objset,
-	    ds->ds_phys->ds_snapnames_zapobj);
-
-	error = zap_cursor_move_to_key(&cursor, snapname, MT_EXACT);
-	if (error) {
-		zap_cursor_fini(&cursor);
-		return (error);
-	}
-
-	error = zap_cursor_retrieve(&cursor, &attr);
-	if (error) {
-		zap_cursor_fini(&cursor);
-		return (error);
-	}
-
-	*idp = attr.za_first_integer;
-	zap_cursor_fini(&cursor);
-
-	return (0);
+	return dsl_dataset_snap_lookup(os->os_dsl_dataset, name, value);
 }
 
 int
@@ -1701,7 +1666,7 @@ dmu_objset_find_spa(spa_t *spa, const char *name,
 	}
 
 	thisobj = dd->dd_phys->dd_head_dataset_obj;
-	attr = kmem_alloc(sizeof (zap_attribute_t), KM_SLEEP);
+	attr = kmem_alloc(sizeof (zap_attribute_t), KM_PUSHPAGE);
 	dp = dd->dd_pool;
 
 	/*
@@ -1794,8 +1759,8 @@ dmu_objset_prefetch(const char *name, void *arg)
 			SET_BOOKMARK(&zb, ds->ds_object, ZB_ROOT_OBJECT,
 			    ZB_ROOT_LEVEL, ZB_ROOT_BLKID);
 
-			(void) dsl_read_nolock(NULL, dsl_dataset_get_spa(ds),
-			    &ds->ds_phys->ds_bp, NULL, NULL,
+			(void) arc_read(NULL, dsl_dataset_get_spa(ds),
+                            &ds->ds_phys->ds_bp, NULL, NULL, NULL,
 			    ZIO_PRIORITY_ASYNC_READ,
 			    ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
 			    &aflags, &zb);

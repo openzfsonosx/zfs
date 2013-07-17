@@ -486,13 +486,7 @@ extern int spa_scan_stop(spa_t *spa);
 extern void spa_sync(spa_t *spa, uint64_t txg); /* only for DMU use */
 extern void spa_sync_allpools(void);
 
-/*
- * DEFERRED_FREE must be large enough that regular blocks are not
- * deferred.  XXX so can't we change it back to 1?
- */
-#define	SYNC_PASS_DEFERRED_FREE	2	/* defer frees after this pass */
-#define	SYNC_PASS_DONT_COMPRESS	4	/* don't compress after this pass */
-#define	SYNC_PASS_REWRITE	1	/* rewrite new bps after this pass */
+extern int zfs_sync_pass_deferred_free;
 
 /* spa namespace global mutex */
 extern kmutex_t spa_namespace_lock;
@@ -570,6 +564,7 @@ extern int spa_offline_log(spa_t *spa);
 
 /* Log claim callback */
 extern void spa_claim_notify(zio_t *zio);
+extern void spa_deadman(void *);
 
 /* Accessor functions */
 extern boolean_t spa_shutting_down(spa_t *spa);
@@ -604,6 +599,7 @@ extern boolean_t spa_suspended(spa_t *spa);
 extern uint64_t spa_bootfs(spa_t *spa);
 extern uint64_t spa_delegation(spa_t *spa);
 extern objset_t *spa_meta_objset(spa_t *spa);
+extern uint64_t spa_deadman_synctime(spa_t *spa);
 
 /* Miscellaneous support routines */
 extern void spa_activate_mos_feature(spa_t *spa, const char *feature);

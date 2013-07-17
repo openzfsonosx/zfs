@@ -71,7 +71,7 @@ zpl_dentry_obtain_alias(struct inode *ip)
 	result = d_alloc_anon(ip);
 
 	if (result == NULL) {
-		iput(ip);
+		VN_RELE(ip);
 		result = ERR_PTR(-ENOMEM);
 	}
 #endif /* HAVE_D_OBTAIN_ALIAS */

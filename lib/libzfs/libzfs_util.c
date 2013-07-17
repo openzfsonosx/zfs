@@ -732,10 +732,22 @@ libzfs_init(void)
 			(void) fprintf(stderr,
 			     gettext("Verify the ZFS module stack is "
 			     "loaded by running '" MODLOAD_CMD "' as root.\n"));
+        free(hdl);
+        return (NULL);
+    }
 
+#ifdef HAVE_SETMNTENT
+	if ((hdl->libzfs_mnttab = setmntent(MNTTAB, "r")) == NULL) {
+#else
+	if ((hdl->libzfs_mnttab = fopen(MNTTAB, "r")) == NULL) {
+#endif
+		(void) close(hdl->libzfs_fd);
+		(void) fprintf(stderr,
+		    gettext("mtab is not present at %s.\n"), MNTTAB);
 		free(hdl);
 		return (NULL);
 	}
+
 	hdl->libzfs_mnttab_enable = B_TRUE;
 
 	zfs_prop_init();
@@ -744,6 +756,7 @@ libzfs_init(void)
 #ifdef __APPLE__
 	libshare_init();
 #endif
+
 	libzfs_mnttab_init(hdl);
 
 	return (hdl);

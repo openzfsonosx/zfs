@@ -37,6 +37,7 @@
 #include <sys/sunldi.h>
 #endif /*__APPLE__*/
 
+
 /*
  * Virtual device vector for disks.
  */
@@ -101,6 +102,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 	if (error) {
 		goto out;
 	}
+
 	if (!vnode_isblk(devvp)) {
 		error = ENOTBLK;
 		goto out;

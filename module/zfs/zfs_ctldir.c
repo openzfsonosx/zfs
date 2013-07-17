@@ -222,19 +222,75 @@ zfsctl_is_node(vnode_t *vp)
  * Return the inode number associated with the 'snapshot' or
  * 'shares' directory.
  */
-/* ARGSUSED */
-static ino64_t
-zfsctl_root_inode_cb(vnode_t *vp, int index)
+#ifdef __linux__
+static struct inode *
+zfsctl_inode_alloc(zfs_sb_t *zsb, uint64_t id,
+    const struct file_operations *fops, const struct inode_operations *ops)
 {
-	zfsvfs_t *zfsvfs = VTOZ(vp)->z_zfsvfs;
+	struct timespec now = current_fs_time(zsb->z_sb);
+	struct inode *ip;
+	znode_t *zp;
 
-	ASSERT(index <= 2);
+	ip = new_inode(zsb->z_sb);
+	if (ip == NULL)
+		return (NULL);
 
-	if (index == 0)
-		return (ZFSCTL_INO_SNAPDIR);
+	zp = ITOZ(ip);
+	ASSERT3P(zp->z_dirlocks, ==, NULL);
+	ASSERT3P(zp->z_acl_cached, ==, NULL);
+	ASSERT3P(zp->z_xattr_cached, ==, NULL);
+	zp->z_id = id;
+	zp->z_unlinked = 0;
+	zp->z_atime_dirty = 0;
+	zp->z_zn_prefetch = 0;
+	zp->z_moved = 0;
+	zp->z_sa_hdl = NULL;
+	zp->z_blksz = 0;
+	zp->z_seq = 0;
+	zp->z_mapcnt = 0;
+	zp->z_gen = 0;
+	zp->z_size = 0;
+	zp->z_atime[0] = 0;
+	zp->z_atime[1] = 0;
+	zp->z_links = 0;
+	zp->z_pflags = 0;
+	zp->z_uid = 0;
+	zp->z_gid = 0;
+	zp->z_mode = 0;
+	zp->z_sync_cnt = 0;
+	zp->z_is_zvol = B_FALSE;
+	zp->z_is_mapped = B_FALSE;
+	zp->z_is_ctldir = B_TRUE;
+	zp->z_is_sa = B_FALSE;
+	zp->z_is_stale = B_FALSE;
+	ip->i_ino = id;
+	ip->i_mode = (S_IFDIR | S_IRUGO | S_IXUGO);
+	ip->i_uid = 0;
+	ip->i_gid = 0;
+	ip->i_blkbits = SPA_MINBLOCKSHIFT;
+	ip->i_atime = now;
+	ip->i_mtime = now;
+	ip->i_ctime = now;
+	ip->i_fop = fops;
+	ip->i_op = ops;
 
-	return (zfsvfs->z_shares_dir);
+	if (insert_inode_locked(ip)) {
+		unlock_new_inode(ip);
+		VN_RELE(ip);
+		return (NULL);
+	}
+
+	mutex_enter(&zsb->z_znodes_lock);
+	list_insert_tail(&zsb->z_all_znodes, zp);
+	zsb->z_nr_znodes++;
+	membar_producer();
+	mutex_exit(&zsb->z_znodes_lock);
+
+	unlock_new_inode(ip);
+
+	return (ip);
 }
+#endif
 
 /*
  * Create the '.zfs' directory.  This directory is cached as part of the VFS
@@ -681,13 +737,7 @@ zfsctl_unmount_snap(zfs_snapentry_t *sep, int fflags, cred_t *cr)
 
 	ASSERT(vn_ismntpt(svp));
 
-	/* this will be dropped by dounmount() */
-	if ((error = vn_vfswlock(svp)) != 0)
-		return (error);
-
-#ifdef sun
-	VN_HOLD(svp);
-	error = dounmount(vn_mountedvfs(svp), fflags, cr);
+	error = dmu_snapshot_lookup(zsb->z_os, name, &id);
 	if (error) {
 		VN_RELE(svp);
 		return (error);
@@ -704,11 +754,8 @@ zfsctl_unmount_snap(zfs_snapentry_t *sep, int fflags, cred_t *cr)
 	kmem_free(sep->se_name, strlen(sep->se_name) + 1);
 	kmem_free(sep, sizeof (zfs_snapentry_t));
 
-	return (0);
-#else	/* !sun */
 	return (dounmount(vn_mountedvfs(svp), fflags, curthread));
 #endif	/* !sun */
-#endif
     return 0;
 }
 
@@ -998,7 +1045,17 @@ zfsctl_snapdir_lookup(ap)
 	if (MUTEX_HELD(&sdp->sd_lock))
 		return (SET_ERROR(ENOENT));
 
-	ZFS_ENTER(zfsvfs);
+/*
+ * Attempt to unmount a snapshot by making a call to user space.
+ * There is no assurance that this can or will succeed, is just a
+ * best effort.  In the case where it does fail, perhaps because
+ * it's in use, the unmount will fail harmlessly.
+ */
+#define SET_UNMOUNT_CMD \
+	"exec 0</dev/null " \
+	"     1>/dev/null " \
+	"     2>/dev/null; " \
+	"umount -t zfs -n %s'%s'"
 
 	if (gfs_lookup_dot(vpp, dvp, zfsvfs->z_ctldir, nm) == 0) {
 		ZFS_EXIT(zfsvfs);
@@ -1025,34 +1082,10 @@ zfsctl_snapdir_lookup(ap)
 #endif
 	}
 
-	mutex_enter(&sdp->sd_lock);
-	search.se_name = (char *)nm;
-	if ((sep = avl_find(&sdp->sd_snaps, &search, &where)) != NULL) {
-		*vpp = sep->se_root;
-		VN_HOLD(*vpp);
-		err = traverse(vpp, LK_EXCLUSIVE | LK_RETRY);
-		if (err != 0) {
-			VN_RELE(*vpp);
-			*vpp = NULL;
-		} else if (*vpp == sep->se_root) {
-			/*
-			 * The snapshot was unmounted behind our backs,
-			 * try to remount it.
-			 */
-			VERIFY(zfsctl_snapshot_zname(dvp, nm, MAXNAMELEN, snapname) == 0);
-			goto domount;
-		} else {
-			/*
-			 * VROOT was set during the traverse call.  We need
-			 * to clear it since we're pretending to be part
-			 * of our parent's vfs.
-			 */
-			(*vpp)->v_flag &= ~VROOT;
-		}
-		mutex_exit(&sdp->sd_lock);
-		ZFS_EXIT(zfsvfs);
-		return (err);
-	}
+	argv[2] = kmem_asprintf(SET_UNMOUNT_CMD,
+	    flags & MNT_FORCE ? "-f " : "", sep->se_path);
+	error = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
+	strfree(argv[2]);
 
 	/*
 	 * The requested snapshot is not currently mounted, look it up.
@@ -1206,9 +1239,19 @@ zfsctl_snapdir_readdir_cb(vnode_t *vp, void *dp, int *eofp,
 	if (flags & V_RDDIR_ENTFLAGS) {
 		edirent_t *eodp = dp;
 
-		(void) strcpy(eodp->ed_name, snapname);
-		eodp->ed_ino = ZFSCTL_INO_SNAP(id);
-		eodp->ed_eflags = case_conflict ? ED_CASE_CONFLICT : 0;
+	search.se_name = name;
+	sep = avl_find(&zsb->z_ctldir_snaps, &search, NULL);
+	if (sep) {
+		avl_remove(&zsb->z_ctldir_snaps, sep);
+		mutex_exit(&zsb->z_ctldir_lock);
+
+		error = __zfsctl_unmount_snapshot(sep, flags);
+
+		mutex_enter(&zsb->z_ctldir_lock);
+		if (error == EBUSY)
+			avl_add(&zsb->z_ctldir_snaps, sep);
+		else
+			zfsctl_sep_free(sep);
 	} else {
 		struct dirent64 *odp = dp;
 
@@ -1325,6 +1368,21 @@ zfsctl_shares_getattr(ap)
 	cred_t *cr = ap->a_cred;
 	zfsvfs_t *zfsvfs = vp->v_vfsp->vfs_data;
 	znode_t *dzp;
+	sep = avl_first(&zsb->z_ctldir_snaps);
+	while (sep != NULL) {
+		next = AVL_NEXT(&zsb->z_ctldir_snaps, sep);
+		avl_remove(&zsb->z_ctldir_snaps, sep);
+		mutex_exit(&zsb->z_ctldir_lock);
+
+		error = __zfsctl_unmount_snapshot(sep, flags);
+
+		mutex_enter(&zsb->z_ctldir_lock);
+		if (error == EBUSY) {
+			avl_add(&zsb->z_ctldir_snaps, sep);
+			(*count)++;
+		} else {
+			zfsctl_sep_free(sep);
+		}
 
 	ZFS_ENTER(zfsvfs);
 	if (zfsvfs->z_shares_dir == 0) {
@@ -1506,29 +1564,21 @@ zfsctl_snapshot_inactive(ap)
 	int locked;
 	vnode_t *dvp;
 
-	if (vp->v_count > 0)
-		goto end;
-
-	VERIFY(gfs_dir_lookup(vp, "..", &dvp, cr, 0, NULL, NULL) == 0);
-	sdp = dvp->v_data;
-	VOP_UNLOCK(dvp, 0);
-
-	if (!(locked = MUTEX_HELD(&sdp->sd_lock)))
-		mutex_enter(&sdp->sd_lock);
-
-	ASSERT(!vn_ismntpt(vp));
-
-	sep = avl_first(&sdp->sd_snaps);
-	while (sep != NULL) {
-		next = AVL_NEXT(&sdp->sd_snaps, sep);
-
-		if (sep->se_root == vp) {
-			avl_remove(&sdp->sd_snaps, sep);
-			kmem_free(sep->se_name, strlen(sep->se_name) + 1);
-			kmem_free(sep, sizeof (zfs_snapentry_t));
-			break;
-		}
-		sep = next;
+	/*
+	 * Attempt to mount the snapshot from user space.  Normally this
+	 * would be done using the vfs_kern_mount() function, however that
+	 * function is marked GPL-only and cannot be used.  On error we
+	 * careful to log the real error to the console and return EISDIR
+	 * to safely abort the automount.  This should be very rare.
+	 */
+	argv[2] = kmem_asprintf(SET_MOUNT_CMD, full_name, full_path);
+	error = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
+	strfree(argv[2]);
+	if (error) {
+		printk("ZFS: Unable to automount %s at %s: %d\n",
+		    full_name, full_path, error);
+		error = EISDIR;
+		goto error;
 	}
 	ASSERT(sep != NULL);
 
@@ -1725,9 +1775,11 @@ zfsctl_lookup_objset(vfs_t *vfsp, uint64_t objsetid, zfsvfs_t **zfsvfsp)
 	mutex_enter(&sdp->sd_lock);
 	sep = avl_first(&sdp->sd_snaps);
 	while (sep != NULL) {
-		vp = sep->se_root;
-		zcp = vp->v_data;
-		if (zcp->zc_id == objsetid)
+		error = dmu_snapshot_lookup(zsb->z_os, sep->se_name, &id);
+		if (error)
+			goto out;
+
+		if (id == objsetid)
 			break;
 
 		sep = AVL_NEXT(&sdp->sd_snaps, sep);

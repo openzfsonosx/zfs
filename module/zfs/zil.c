@@ -212,7 +212,7 @@ zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
 	SET_BOOKMARK(&zb, bp->blk_cksum.zc_word[ZIL_ZC_OBJSET],
 	    ZB_ZIL_OBJECT, ZB_ZIL_LEVEL, bp->blk_cksum.zc_word[ZIL_ZC_SEQ]);
 
-	error = dsl_read_nolock(NULL, zilog->zl_spa, bp, arc_getbuf_func, &abuf,
+	error = arc_read(NULL, zilog->zl_spa, bp, NULL, arc_getbuf_func, &abuf,
 	    ZIO_PRIORITY_SYNC_READ, zio_flags, &aflags, &zb);
 
 	if (error == 0) {
@@ -288,7 +288,7 @@ zil_read_log_data(zilog_t *zilog, const lr_write_t *lr, void *wbuf)
 	SET_BOOKMARK(&zb, dmu_objset_id(zilog->zl_os), lr->lr_foid,
 	    ZB_ZIL_LEVEL, lr->lr_offset / BP_GET_LSIZE(bp));
 
-	error = arc_read_nolock(NULL, zilog->zl_spa, bp, arc_getbuf_func, &abuf,
+	error = arc_read(NULL, zilog->zl_spa, bp, NULL, arc_getbuf_func, &abuf,
 	    ZIO_PRIORITY_SYNC_READ, zio_flags, &aflags, &zb);
 
 	if (error == 0) {
@@ -1163,7 +1163,7 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 	lwb->lwb_nused += reclen + dlen;
 	lwb->lwb_max_txg = MAX(lwb->lwb_max_txg, txg);
 	ASSERT3U(lwb->lwb_nused, <=, lwb->lwb_sz);
-	ASSERT3U(P2PHASE(lwb->lwb_nused, sizeof (uint64_t)), ==, 0);
+	ASSERT0(P2PHASE(lwb->lwb_nused, sizeof (uint64_t)));
 
 	return (lwb);
 }
@@ -1959,7 +1959,7 @@ zil_resume(zilog_t *zilog)
 }
 
 typedef struct zil_replay_arg {
-	zil_replay_func_t **zr_replay;
+	zil_replay_func_t *zr_replay;
 	void		*zr_arg;
 	boolean_t	zr_byteswap;
 	char		*zr_lr;
@@ -2078,7 +2078,7 @@ zil_incr_blks(zilog_t *zilog, blkptr_t *bp, void *arg, uint64_t claim_txg)
  * If this dataset has a non-empty intent log, replay it and destroy it.
  */
 void
-zil_replay(objset_t *os, void *arg, zil_replay_func_t *replay_func[TX_MAX_TYPE])
+zil_replay(objset_t *os, void *arg, zil_replay_func_t replay_func[TX_MAX_TYPE])
 {
 	zilog_t *zilog = dmu_objset_zil(os);
 	const zil_header_t *zh = zilog->zl_header;

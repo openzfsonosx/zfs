@@ -136,15 +136,6 @@ parse_option(char *mntopt, unsigned long *mntflags,
 		if (strncmp(name, opt->name, strlen(name)) == 0) {
 			*mntflags |= opt->mntmask;
 			*zfsflags |= opt->zfsmask;
-
-			/* MS_USERS implies default user options */
-			if (opt->mntmask & (MS_USERS))
-				*mntflags |= (MS_NOEXEC|MS_NOSUID|MS_NODEV);
-
-			/* MS_OWNER|MS_GROUP imply default owner options */
-			if (opt->mntmask & (MS_OWNER | MS_GROUP))
-				*mntflags |= (MS_NOSUID|MS_NODEV);
-
 			error = 0;
 			goto out;
 		}
@@ -225,17 +216,57 @@ out:
 }
 
 /*
- * If a file or directory in your current working directory is named
- * 'dataset' then mount(8) will prepend your current working directory
- * to dataset.  The is no way to prevent this behavior so we simply
- * check for it and strip the prepended patch when it is added.
+ * Return the pool/dataset to mount given the name passed to mount.  This
+ * is expected to be of the form pool/dataset, however may also refer to
+ * a block device if that device contains a valid zfs label.
  */
 static char *
 parse_dataset(char *dataset)
 {
 	char cwd[PATH_MAX];
+	struct stat64 statbuf;
+	int error;
 	int len;
 
+	/*
+	 * We expect a pool/dataset to be provided, however if we're
+	 * given a device which is a member of a zpool we attempt to
+	 * extract the pool name stored in the label.  Given the pool
+	 * name we can mount the root dataset.
+	 */
+	error = stat64(dataset, &statbuf);
+	if (error == 0) {
+		nvlist_t *config;
+		char *name;
+		int fd;
+
+		fd = open(dataset, O_RDONLY);
+		if (fd < 0)
+			goto out;
+
+		error = zpool_read_label(fd, &config);
+		(void) close(fd);
+		if (error)
+			goto out;
+
+		error = nvlist_lookup_string(config,
+		    ZPOOL_CONFIG_POOL_NAME, &name);
+		if (error) {
+			nvlist_free(config);
+		} else {
+			dataset = strdup(name);
+			nvlist_free(config);
+			return (dataset);
+		}
+	}
+out:
+	/*
+	 * If a file or directory in your current working directory is
+	 * named 'dataset' then mount(8) will prepend your current working
+	 * directory to the dataset.  There is no way to prevent this
+	 * behavior so we simply check for it and strip the prepended
+	 * patch when it is added.
+	 */
 	if (getcwd(cwd, PATH_MAX) == NULL)
 		return (dataset);
 
@@ -385,7 +416,8 @@ main(int argc, char **argv)
 	/* canonicalize the mount point */
 	if (realpath(argv[1], mntpoint) == NULL) {
 		(void) fprintf(stderr, gettext("filesystem '%s' cannot be "
-		    "mounted due to a canonicalization failure.\n"), dataset);
+		    "mounted at '%s' due to canonicalization error %d.\n"),
+		    dataset, argv[1], errno);
 		return (MOUNT_SYSERR);
 	}
 
@@ -487,7 +519,8 @@ main(int argc, char **argv)
 		return (MOUNT_USAGE);
 	}
 
-	if (!zfsutil && strcmp(legacy, ZFS_MOUNTPOINT_LEGACY) && !remount) {
+	if (!zfsutil && !(remount || fake) &&
+	    strcmp(legacy, ZFS_MOUNTPOINT_LEGACY)) {
 		(void) fprintf(stderr, gettext(
 		    "filesystem '%s' cannot be mounted using 'mount'.\n"
 		    "Use 'zfs set mountpoint=%s' or 'zfs mount %s'.\n"

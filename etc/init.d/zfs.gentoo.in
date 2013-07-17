@@ -3,11 +3,23 @@
 # Released under the 2-clause BSD license.
 # $Header: /var/cvsroot/gentoo-x86/sys-fs/zfs/files/zfs,v 0.9 2011/04/30 10:13:43 devsk Exp $
 
+if [ -z "$init" ]; then
+    # Not interactive
+    grep -Eqi 'zfs=off|zfs=no' /proc/cmdline && exit 3
+fi
+
 depend()
 {
+	# Try to allow people to mix and match fstab with ZFS in a way that makes sense.
+	if [ "$(mountinfo -s /)" = 'zfs' ]
+	then
+		before localmount
+	else
+		after localmount
+	fi
+
 	# bootmisc will log to /var which may be a different zfs than root.
-	before net bootmisc
-	after udev localmount
+	before bootmisc logger
 	keyword -lxc -openvz -prefix -vserver
 }
 

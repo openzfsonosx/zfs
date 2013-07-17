@@ -1,0 +1,28 @@
+# Maintainer: Prakash Surya <surya1@llnl.gov>
+pkgname=
+pkgver=0.6.0
+pkgrel=rc12
+pkgdesc="Contains the libzfs library and support utilities for the zfs file system."
+arch=(x86_64)
+url="git://github.com/zfsonlinux/zfs.git"
+license=(CDDL)
+depends=('spl' 'zlib' 'e2fsprogs')
+backup=('etc/zfs/zdev.conf')
+source=(-0.6.0.tar.gz)
+
+build() {
+	cd $srcdir/-0.6.0
+	./configure --with-config=user \
+	            --prefix=/ \
+	            --sysconfdir=/etc \
+	            --libexecdir=/usr/libexec \
+	            --datadir=/usr/share \
+	            --includedir=/usr/include \
+	            --with-udevdir=/lib/udev
+	make
+}
+
+package() {
+	cd $srcdir/-0.6.0
+	make DESTDIR=$pkgdir install
+}

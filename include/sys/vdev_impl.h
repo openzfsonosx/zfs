@@ -67,7 +67,7 @@ typedef void	vdev_state_change_func_t(vdev_t *vd, int, int);
 typedef void	vdev_hold_func_t(vdev_t *vd);
 typedef void	vdev_rele_func_t(vdev_t *vd);
 
-typedef struct vdev_ops {
+typedef const struct vdev_ops {
 	vdev_open_func_t		*vdev_op_open;
 	vdev_close_func_t		*vdev_op_close;
 	vdev_asize_func_t		*vdev_op_asize;
@@ -105,6 +105,8 @@ struct vdev_queue {
 	avl_tree_t	vq_read_tree;
 	avl_tree_t	vq_write_tree;
 	avl_tree_t	vq_pending_tree;
+	uint64_t	vq_io_complete_ts;
+	uint64_t	vq_io_delta_ts;
 	list_t		vq_io_list;
 	kmutex_t	vq_lock;
 };

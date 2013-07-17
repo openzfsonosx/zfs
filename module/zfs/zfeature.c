@@ -403,7 +403,7 @@ boolean_t
 spa_feature_is_enabled(spa_t *spa, zfeature_info_t *feature)
 {
 	int err;
-	uint64_t refcount;
+	uint64_t refcount = 0;
 
 	if (spa_version(spa) < SPA_VERSION_FEATURES)
 		return (B_FALSE);
@@ -419,7 +419,7 @@ boolean_t
 spa_feature_is_active(spa_t *spa, zfeature_info_t *feature)
 {
 	int err;
-	uint64_t refcount;
+	uint64_t refcount = 0;
 
 	if (spa_version(spa) < SPA_VERSION_FEATURES)
 		return (B_FALSE);

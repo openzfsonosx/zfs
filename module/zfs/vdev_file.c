@@ -25,6 +25,7 @@
 
 #include <sys/zfs_context.h>
 #include <sys/spa.h>
+#include <sys/spa_impl.h>
 #include <sys/vdev_file.h>
 #include <sys/vdev_impl.h>
 #include <sys/zio.h>
@@ -191,47 +192,48 @@ vdev_file_close(vdev_t *vd)
 static int
 vdev_file_io_start(zio_t *zio)
 {
-	vdev_t *vd = zio->io_vd;
+    vdev_t *vd = zio->io_vd;
     vdev_file_t *vf = vd->vdev_tsd;
-	ssize_t resid = 0;
+    ssize_t resid = 0;
 
 
-	if (zio->io_type == ZIO_TYPE_IOCTL) {
+    if (zio->io_type == ZIO_TYPE_IOCTL) {
 
         if (!vdev_readable(vd)) {
             zio->io_error = ENXIO;
             return (ZIO_PIPELINE_CONTINUE);
         }
 
-		switch (zio->io_cmd) {
-		case DKIOCFLUSHWRITECACHE:
+        switch (zio->io_cmd) {
+        case DKIOCFLUSHWRITECACHE:
             vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
-			zio->io_error = VOP_FSYNC(vf->vf_vnode, FSYNC | FDSYNC,
-			    kcred, NULL);
+            zio->io_error = VOP_FSYNC(vf->vf_vnode, FSYNC | FDSYNC,
+                                      kcred, NULL);
             vnode_put(vf->vf_vnode);
-			break;
-		default:
-			zio->io_error = ENOTSUP;
-		}
+                        break;
+        default:
+            zio->io_error = ENOTSUP;
+        }
 
-		return (ZIO_PIPELINE_CONTINUE);
-	}
+        return (ZIO_PIPELINE_CONTINUE);
+    }
 
     vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
-	zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
-	    UIO_READ : UIO_WRITE, vf->vf_vnode, zio->io_data,
-	    zio->io_size, zio->io_offset, UIO_SYSSPACE,
-	    0, RLIM64_INFINITY, kcred, &resid);
+    zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
+                            UIO_READ : UIO_WRITE, vf->vf_vnode, zio->io_data,
+                            zio->io_size, zio->io_offset, UIO_SYSSPACE,
+                            0, RLIM64_INFINITY, kcred, &resid);
     vnode_put(vf->vf_vnode);
 
 
-	if (resid != 0 && zio->io_error == 0)
-		zio->io_error = ENOSPC;
+    if (resid != 0 && zio->io_error == 0)
+        zio->io_error = ENOSPC;
 
-	zio_interrupt(zio);
+    zio_interrupt(zio);
 
-	return (ZIO_PIPELINE_STOP);
+    return (ZIO_PIPELINE_STOP);
 }
+
 
 /* ARGSUSED */
 static void

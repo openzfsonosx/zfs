@@ -80,9 +80,9 @@
  * types of locks: 1) the hash table lock array, and 2) the
  * arc list locks.
  *
- * Buffers do not have their own mutexs, rather they rely on the
- * hash table mutexs for the bulk of their protection (i.e. most
- * fields in the arc_buf_hdr_t are protected by these mutexs).
+ * Buffers do not have their own mutexes, rather they rely on the
+ * hash table mutexes for the bulk of their protection (i.e. most
+ * fields in the arc_buf_hdr_t are protected by these mutexes).
  *
  * buf_hash_find() returns the appropriate mutex (held) when it
  * locates the requested buffer in the hash table.  It returns
@@ -191,6 +191,8 @@ uint64_t zfs_arc_meta_limit = 0;
 int zfs_arc_grow_retry = 0;
 int zfs_arc_shrink_shift = 0;
 int zfs_arc_p_min_shift = 0;
+int zfs_arc_memory_throttle_disable = 1;
+int zfs_disable_dup_eviction = 0;
 int zfs_arc_meta_prune = 0;
 
 /*
@@ -309,6 +311,9 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_size;
 	kstat_named_t arcstat_l2_hdr_size;
 	kstat_named_t arcstat_memory_throttle_count;
+	kstat_named_t arcstat_duplicate_buffers;
+	kstat_named_t arcstat_duplicate_buffers_size;
+	kstat_named_t arcstat_duplicate_reads;
 	kstat_named_t arcstat_memory_direct_count;
 	kstat_named_t arcstat_memory_indirect_count;
 	kstat_named_t arcstat_no_grow;
@@ -389,6 +394,9 @@ static arc_stats_t arc_stats = {
 	{ "l2_size",			KSTAT_DATA_UINT64 },
 	{ "l2_hdr_size",		KSTAT_DATA_UINT64 },
 	{ "memory_throttle_count",	KSTAT_DATA_UINT64 },
+	{ "duplicate_buffers",		KSTAT_DATA_UINT64 },
+	{ "duplicate_buffers_size",	KSTAT_DATA_UINT64 },
+	{ "duplicate_reads",		KSTAT_DATA_UINT64 },
 	{ "memory_direct_count",	KSTAT_DATA_UINT64 },
 	{ "memory_indirect_count",	KSTAT_DATA_UINT64 },
 	{ "arc_no_grow",		KSTAT_DATA_UINT64 },
@@ -878,7 +886,7 @@ buf_cons(void *vbuf, void *unused, int kmflag)
 
 	bzero(buf, sizeof (arc_buf_t));
 	mutex_init(&buf->b_evict_lock, NULL, MUTEX_DEFAULT, NULL);
-	rw_init(&buf->b_data_lock, NULL, RW_DEFAULT, NULL);
+    rw_init(&buf->b_data_lock, NULL, RW_DEFAULT, NULL);
 	arc_space_consume(sizeof (arc_buf_t), ARC_SPACE_HDRS);
 
 	return (0);
@@ -908,7 +916,7 @@ buf_dest(void *vbuf, void *unused)
 	arc_buf_t *buf = vbuf;
 
 	mutex_destroy(&buf->b_evict_lock);
-	rw_destroy(&buf->b_data_lock);
+    rw_destroy(&buf->b_data_lock);
 	arc_space_return(sizeof (arc_buf_t), ARC_SPACE_HDRS);
 }
 
@@ -1071,7 +1079,7 @@ add_reference(arc_buf_hdr_t *ab, kmutex_t *hash_lock, void *tag)
 		ASSERT(list_link_active(&ab->b_arc_node));
 		list_remove(list, ab);
 		if (GHOST_STATE(ab->b_state)) {
-			ASSERT3U(ab->b_datacnt, ==, 0);
+			ASSERT(ab->b_datacnt==0);
 			ASSERT3P(ab->b_buf, ==, NULL);
 			delta = ab->b_size;
 		}
@@ -1371,6 +1379,17 @@ arc_buf_clone(arc_buf_t *from)
 	hdr->b_buf = buf;
 	arc_get_data_buf(buf);
 	bcopy(from->b_data, buf->b_data, size);
+
+	/*
+	 * This buffer already exists in the arc so create a duplicate
+	 * copy for the caller.  If the buffer is associated with user data
+	 * then track the size and number of duplicates.  These stats will be
+	 * updated as duplicate buffers are created and destroyed.
+	 */
+	if (hdr->b_type == ARC_BUFC_DATA) {
+		ARCSTAT_BUMP(arcstat_duplicate_buffers);
+		ARCSTAT_INCR(arcstat_duplicate_buffers_size, size);
+	}
 	hdr->b_datacnt += 1;
 	return (buf);
 }
@@ -1469,6 +1488,16 @@ arc_buf_destroy(arc_buf_t *buf, boolean_t recycle, boolean_t all)
 		ASSERT3U(state->arcs_size, >=, size);
 		atomic_add_64(&state->arcs_size, -size);
 		buf->b_data = NULL;
+
+		/*
+		 * If we're destroying a duplicate buffer make sure
+		 * that the appropriate statistics are updated.
+		 */
+		if (buf->b_hdr->b_datacnt > 1 &&
+		    buf->b_hdr->b_type == ARC_BUFC_DATA) {
+			ARCSTAT_BUMPDOWN(arcstat_duplicate_buffers);
+			ARCSTAT_INCR(arcstat_duplicate_buffers_size, -size);
+		}
 		ASSERT(buf->b_hdr->b_datacnt > 0);
 		buf->b_hdr->b_datacnt -= 1;
 	}
@@ -1617,7 +1646,7 @@ int
 arc_buf_remove_ref(arc_buf_t *buf, void* tag)
 {
 	arc_buf_hdr_t *hdr = buf->b_hdr;
-	kmutex_t *hash_lock = HDR_LOCK(hdr);
+	kmutex_t *hash_lock = NULL;
 	int no_callback = (buf->b_efunc == NULL);
 
 	if (hdr->b_state == arc_anon) {
@@ -1626,6 +1655,7 @@ arc_buf_remove_ref(arc_buf_t *buf, void* tag)
 		return (no_callback);
 	}
 
+	hash_lock = HDR_LOCK(hdr);
 	mutex_enter(hash_lock);
 	hdr = buf->b_hdr;
 	ASSERT3P(hash_lock, ==, HDR_LOCK(hdr));
@@ -1651,6 +1681,48 @@ int
 arc_buf_size(arc_buf_t *buf)
 {
 	return (buf->b_hdr->b_size);
+}
+
+/*
+ * Called from the DMU to determine if the current buffer should be
+ * evicted. In order to ensure proper locking, the eviction must be initiated
+ * from the DMU. Return true if the buffer is associated with user data and
+ * duplicate buffers still exist.
+ */
+boolean_t
+arc_buf_eviction_needed(arc_buf_t *buf)
+{
+	arc_buf_hdr_t *hdr;
+	boolean_t evict_needed = B_FALSE;
+
+	if (zfs_disable_dup_eviction)
+		return (B_FALSE);
+
+	mutex_enter(&buf->b_evict_lock);
+	hdr = buf->b_hdr;
+	if (hdr == NULL) {
+		/*
+		 * We are in arc_do_user_evicts(); let that function
+		 * perform the eviction.
+		 */
+		ASSERT(buf->b_data == NULL);
+		mutex_exit(&buf->b_evict_lock);
+		return (B_FALSE);
+	} else if (buf->b_data == NULL) {
+		/*
+		 * We have already been added to the arc eviction list;
+		 * recommend eviction.
+		 */
+		ASSERT3P(hdr, ==, &arc_eviction_hdr);
+		mutex_exit(&buf->b_evict_lock);
+		return (B_TRUE);
+	}
+
+	if (hdr->b_datacnt > 1 && hdr->b_type == ARC_BUFC_DATA)
+		evict_needed = B_TRUE;
+
+	mutex_exit(&buf->b_evict_lock);
+	return (evict_needed);
 }
 
 /*
@@ -1703,7 +1775,7 @@ arc_evict(arc_state_t *state, uint64_t spa, int64_t bytes, boolean_t recycle,
 		hash_lock = HDR_LOCK(ab);
 		have_lock = MUTEX_HELD(hash_lock);
 		if (have_lock || mutex_tryenter(hash_lock)) {
-			ASSERT3U(refcount_count(&ab->b_refcnt), ==, 0);
+			ASSERT0(refcount_count(&ab->b_refcnt));
 			ASSERT(ab->b_datacnt > 0);
 			while (ab->b_buf) {
 				arc_buf_t *buf = ab->b_buf;
@@ -2685,7 +2757,7 @@ arc_access(arc_buf_hdr_t *buf, kmutex_t *hash_lock)
 			 * This is a prefetch access...
 			 * move this block back to the MRU state.
 			 */
-			ASSERT3U(refcount_count(&buf->b_refcnt), ==, 0);
+			ASSERT0(refcount_count(&buf->b_refcnt));
 			new_state = arc_mru;
 		}
 
@@ -2769,10 +2841,10 @@ arc_read_done(zio_t *zio)
 	if (BP_SHOULD_BYTESWAP(zio->io_bp) && zio->io_error == 0) {
 		dmu_object_byteswap_t bswap =
 		    DMU_OT_BYTESWAP(BP_GET_TYPE(zio->io_bp));
-		arc_byteswap_func_t *func = BP_GET_LEVEL(zio->io_bp) > 0 ?
-		    byteswap_uint64_array :
-		    dmu_ot_byteswap[bswap].ob_func;
-		func(buf->b_data, hdr->b_size);
+		if (BP_GET_LEVEL(zio->io_bp) > 0)
+		    byteswap_uint64_array(buf->b_data, hdr->b_size);
+		else
+		    dmu_ot_byteswap[bswap].ob_func(buf->b_data, hdr->b_size);
 	}
 
 	arc_cksum_compute(buf, B_FALSE);
@@ -2791,8 +2863,10 @@ arc_read_done(zio_t *zio)
 	abuf = buf;
 	for (acb = callback_list; acb; acb = acb->acb_next) {
 		if (acb->acb_done) {
-			if (abuf == NULL)
+			if (abuf == NULL) {
+				ARCSTAT_BUMP(arcstat_duplicate_reads);
 				abuf = arc_buf_clone(buf);
+			}
 			acb->acb_buf = abuf;
 			abuf = NULL;
 		}
@@ -2856,7 +2930,7 @@ arc_read_done(zio_t *zio)
 }
 
 /*
- * "Read" the block block at the specified DVA (in bp) via the
+ * "Read" the block at the specified DVA (in bp) via the
  * cache.  If the block is found in the cache, invoke the provided
  * callback immediately and return.  Note that the `zio' parameter
  * in the callback will be NULL in this case, since no IO was
@@ -2872,42 +2946,12 @@ arc_read_done(zio_t *zio)
  *
  * arc_read_done() will invoke all the requested "done" functions
  * for readers of this block.
- *
- * Normal callers should use arc_read and pass the arc buffer and offset
- * for the bp.  But if you know you don't need locking, you can use
- * arc_read_bp.
  */
 int
-arc_read(zio_t *pio, spa_t *spa, const blkptr_t *bp, arc_buf_t *pbuf,
-    arc_done_func_t *done, void *private, int priority, int zio_flags,
-    uint32_t *arc_flags, const zbookmark_t *zb)
-{
-	int err;
-
-	if (pbuf == NULL) {
-		/*
-		 * XXX This happens from traverse callback funcs, for
-		 * the objset_phys_t block.
-		 */
-		return (arc_read_nolock(pio, spa, bp, done, private, priority,
-		    zio_flags, arc_flags, zb));
-	}
-
-	ASSERT(!refcount_is_zero(&pbuf->b_hdr->b_refcnt));
-	ASSERT3U((char *)bp - (char *)pbuf->b_data, <, pbuf->b_hdr->b_size);
-	rw_enter(&pbuf->b_data_lock, RW_READER);
-
-	err = arc_read_nolock(pio, spa, bp, done, private, priority,
-	    zio_flags, arc_flags, zb);
-	rw_exit(&pbuf->b_data_lock);
-
-	return (err);
-}
-
-int
 arc_read_nolock(zio_t *pio, spa_t *spa, const blkptr_t *bp,
-    arc_done_func_t *done, void *private, int priority, int zio_flags,
-    uint32_t *arc_flags, const zbookmark_t *zb)
+        arc_done_func_t *done, void *private, int priority, int zio_flags,
+        uint32_t *arc_flags, const zbookmark_t *zb)
+
 {
 	arc_buf_hdr_t *hdr;
 	arc_buf_t *buf = NULL;
@@ -3026,7 +3070,7 @@ top:
 			/* this block is in the ghost cache */
 			ASSERT(GHOST_STATE(hdr->b_state));
 			ASSERT(!HDR_IO_IN_PROGRESS(hdr));
-			ASSERT3U(refcount_count(&hdr->b_refcnt), ==, 0);
+			ASSERT0(refcount_count(&hdr->b_refcnt));
 			ASSERT(hdr->b_buf == NULL);
 
 			/* if this is a prefetch, we don't have a reference */
@@ -3161,6 +3205,34 @@ top:
 	return (0);
 }
 
+
+int
+arc_read(zio_t *pio, spa_t *spa, const blkptr_t *bp, arc_buf_t *pbuf,
+    arc_done_func_t *done, void *private, int priority, int zio_flags,
+    uint32_t *arc_flags, const zbookmark_t *zb)
+{
+    int err;
+
+    if (pbuf == NULL) {
+        /*
+         * XXX This happens from traverse callback funcs, for
+         * the objset_phys_t block.
+         */
+        return (arc_read_nolock(pio, spa, bp, done, private, priority,
+                                zio_flags, arc_flags, zb));
+    }
+
+    ASSERT(!refcount_is_zero(&pbuf->b_hdr->b_refcnt));
+    ASSERT3U((char *)bp - (char *)pbuf->b_data, <, pbuf->b_hdr->b_size);
+    rw_enter(&pbuf->b_data_lock, RW_READER);
+
+    err = arc_read_nolock(pio, spa, bp, done, private, priority,
+                          zio_flags, arc_flags, zb);
+    rw_exit(&pbuf->b_data_lock);
+
+    return (err);
+}
+
 arc_prune_t *
 arc_add_prune_callback(arc_prune_func_t *func, void *private)
 {
@@ -3203,6 +3275,34 @@ arc_set_callback(arc_buf_t *buf, arc_evict_func_t *func, void *private)
 
 	buf->b_efunc = func;
 	buf->b_private = private;
+}
+
+/*
+ * Notify the arc that a block was freed, and thus will never be used again.
+ */
+void
+arc_freed(spa_t *spa, const blkptr_t *bp)
+{
+	arc_buf_hdr_t *hdr;
+	kmutex_t *hash_lock;
+	uint64_t guid = spa_load_guid(spa);
+
+	hdr = buf_hash_find(guid, BP_IDENTITY(bp), BP_PHYSICAL_BIRTH(bp),
+	    &hash_lock);
+	if (hdr == NULL)
+		return;
+	if (HDR_BUF_AVAILABLE(hdr)) {
+		arc_buf_t *buf = hdr->b_buf;
+		add_reference(hdr, hash_lock, FTAG);
+		hdr->b_flags &= ~ARC_BUF_AVAILABLE;
+		mutex_exit(hash_lock);
+
+		arc_release(buf, FTAG);
+		(void) arc_buf_remove_ref(buf, FTAG);
+	} else {
+		mutex_exit(hash_lock);
+	}
+
 }
 
 /*
@@ -3362,6 +3462,16 @@ arc_release(arc_buf_t *buf, void *tag)
 			ASSERT3U(*size, >=, hdr->b_size);
 			atomic_add_64(size, -hdr->b_size);
 		}
+
+		/*
+		 * We're releasing a duplicate user data buffer, update
+		 * our statistics accordingly.
+		 */
+		if (hdr->b_type == ARC_BUFC_DATA) {
+			ARCSTAT_BUMPDOWN(arcstat_duplicate_buffers);
+			ARCSTAT_INCR(arcstat_duplicate_buffers_size,
+			    -hdr->b_size);
+		}
 		hdr->b_datacnt -= 1;
 		arc_cksum_verify(buf);
 
@@ -3405,19 +3515,6 @@ arc_release(arc_buf_t *buf, void *tag)
 		ARCSTAT_INCR(arcstat_l2_size, -buf_size);
 		mutex_exit(&l2arc_buflist_mtx);
 	}
-}
-
-/*
- * Release this buffer.  If it does not match the provided BP, fill it
- * with that block's contents.
- */
-/* ARGSUSED */
-int
-arc_release_bp(arc_buf_t *buf, void *tag, blkptr_t *bp, spa_t *spa,
-    zbookmark_t *zb)
-{
-	arc_release(buf, tag);
-	return (0);
 }
 
 int
@@ -4699,7 +4796,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 	mutex_exit(&l2arc_buflist_mtx);
 
 	if (pio == NULL) {
-		ASSERT3U(write_sz, ==, 0);
+		ASSERT0(write_sz);
 		kmem_cache_free(hdr_cache, head);
 		return (0);
 	}
@@ -5022,6 +5119,12 @@ MODULE_PARM_DESC(zfs_arc_shrink_shift, "log2(fraction of arc to reclaim)");
 
 module_param(zfs_arc_p_min_shift, int, 0444);
 MODULE_PARM_DESC(zfs_arc_p_min_shift, "arc_c shift to calc min/max arc_p");
+
+module_param(zfs_disable_dup_eviction, int, 0644);
+MODULE_PARM_DESC(zfs_disable_dup_eviction, "disable duplicate buffer eviction");
+
+module_param(zfs_arc_memory_throttle_disable, int, 0644);
+MODULE_PARM_DESC(zfs_arc_memory_throttle_disable, "disable memory throttle");
 
 module_param(l2arc_write_max, ulong, 0444);
 MODULE_PARM_DESC(l2arc_write_max, "Max write bytes per interval");

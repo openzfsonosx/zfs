@@ -48,6 +48,7 @@ libzpool_la_SOURCES = \
 	$(top_srcdir)/module/zfs/fm.c \
 	$(top_srcdir)/module/zfs/gzip.c \
 	$(top_srcdir)/module/zfs/lzjb.c \
+	$(top_srcdir)/module/zfs/lz4.c \
 	$(top_srcdir)/module/zfs/metaslab.c \
 	$(top_srcdir)/module/zfs/refcount.c \
 	$(top_srcdir)/module/zfs/rrwlock.c \
@@ -93,7 +94,8 @@ libzpool_la_SOURCES = \
 
 libzpool_la_LIBADD = \
 	$(top_builddir)/lib/libunicode/libunicode.la \
-	$(top_builddir)/lib/libuutil/libuutil.la
+	$(top_builddir)/lib/libuutil/libuutil.la \
+	$(top_builddir)/lib/libnvpair/libnvpair.la
 
 libzpool_la_LDFLAGS = -lz -pthread -version-info 1:1:0
 

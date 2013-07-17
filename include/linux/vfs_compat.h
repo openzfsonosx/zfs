@@ -95,6 +95,14 @@ bdi_setup_and_register(struct backing_dev_info *bdi,char *name,unsigned int cap)
 #endif /* HAVE_BDI && !HAVE_BDI_SETUP_AND_REGISTER */
 
 /*
+ * 2.6.38 API change,
+ * LOOKUP_RCU flag introduced to distinguish rcu-walk from ref-walk cases.
+ */
+#ifndef LOOKUP_RCU
+#define LOOKUP_RCU      0x0
+#endif /* LOOKUP_RCU */
+
+/*
  * 3.2-rc1 API change,
  * Add set_nlink() if it is not exported by the Linux kernel.
  *
@@ -140,5 +148,30 @@ typedef	int		zpl_umode_t;
 #else
 #define zpl_sget(type, cmp, set, fl, mtd)	sget(type, cmp, set, mtd)
 #endif /* HAVE_5ARG_SGET */
+
+#define ZFS_IOC_GETFLAGS	FS_IOC_GETFLAGS
+#define ZFS_IOC_SETFLAGS	FS_IOC_SETFLAGS
+
+#if defined(SEEK_HOLE) && defined(SEEK_DATA) && !defined(HAVE_LSEEK_EXECUTE)
+static inline loff_t
+lseek_execute(struct file *filp, struct inode *inode,
+	      loff_t offset, loff_t maxsize)
+{
+	if (offset < 0 && !(filp->f_mode & FMODE_UNSIGNED_OFFSET))
+		return (-EINVAL);
+
+	if (offset > maxsize)
+		return (-EINVAL);
+
+	if (offset != filp->f_pos) {
+		spin_lock(&filp->f_lock);
+		filp->f_pos = offset;
+		filp->f_version = 0;
+		spin_unlock(&filp->f_lock);
+	}
+
+	return (offset);
+}
+#endif /* SEEK_HOLE && SEEK_DATA && !HAVE_LSEEK_EXECUTE */
 
 #endif /* _ZFS_VFS_H */

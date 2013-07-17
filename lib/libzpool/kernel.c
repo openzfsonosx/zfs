@@ -183,8 +183,7 @@ zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func, void *arg,
 	 * on Linux.
 	 */
 
-	stack = PTHREAD_STACK_MIN + MAX(stksize, STACK_SIZE) * 4 +
-			EXTRA_GUARD_BYTES;
+	stack = PTHREAD_STACK_MIN + MAX(stksize, STACK_SIZE) * 4;
 
 	VERIFY3S(pthread_attr_init(&attr), ==, 0);
 	VERIFY3S(pthread_attr_setstacksize(&attr, stack), ==, 0);
@@ -468,6 +467,13 @@ cv_wait(kcondvar_t *cv, kmutex_t *mp)
 	mp->m_owner = curthread;
 }
 
+void
+cv_wait_io(kcondvar_t *cv, kmutex_t *mp)
+{
+    cv_wait(cv, mp);
+}
+
+
 clock_t
 cv_timedwait(kcondvar_t *cv, kmutex_t *mp, clock_t abstime)
 {
@@ -588,7 +594,7 @@ vn_open(char *path, int x1, int flags, int mode, vnode_t **vpp, int x2, int x3)
 {
 	int fd;
 	vnode_t *vp;
-	int old_umask;
+	int old_umask = 0;
 	char *realpath;
 	struct stat st;
 	int err;

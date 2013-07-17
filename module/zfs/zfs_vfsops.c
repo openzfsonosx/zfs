@@ -76,6 +76,8 @@
 #include <zfs_comutil.h>
 
 #ifndef __APPLE__
+#include <sys/sa.h>
+#include <sys/sa_impl.h>
 #include <sys/varargs.h>
 #include <sys/policy.h>
 #include <sys/atomic.h>
@@ -88,6 +90,10 @@
 #include <sys/sunddi.h>
 #include <sys/dnlc.h>
 #endif /* !__APPLE__ */
+#include <sys/dmu_objset.h>
+#include <sys/spa_boot.h>
+#include <sys/zpl.h>
+#include "zfs_comutil.h"
 
 
 
@@ -694,6 +700,8 @@ static int
 zfs_space_delta_cb(dmu_object_type_t bonustype, void *data,
     uint64_t *userp, uint64_t *groupp)
 {
+	int error = 0;
+
 	/*
 	 * Is it a valid type of object to track?
 	 */
@@ -2232,6 +2240,14 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	}
 
 	/*
+	 * If someone has not already unmounted this file system,
+	 * drain the iput_taskq to ensure all active references to the
+	 * zfs_sb_t have been handled only then can it be safely destroyed.
+	 */
+	if (zfsvfs->z_os)
+		taskq_wait(dsl_pool_iput_taskq(dmu_objset_pool(zfsvfs->z_os)));
+
+	/*
 	 * Close the zil. NB: Can't close the zil while zfs_inactive
 	 * threads are blocked as zil_close can call zfs_inactive.
 	 */
@@ -2254,9 +2270,9 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	}
 
 	/*
-	 * At this point there are no vops active, and any new vops will
-	 * fail with EIO since we have z_teardown_lock for writer (only
-	 * relavent for forced unmount).
+	 * At this point there are no VFS ops active, and any new VFS ops
+	 * will fail with EIO since we have z_teardown_lock for writer (only
+	 * relevant for forced unmount).
 	 *
 	 * Release all holds on dbufs.
 	 */
@@ -2270,9 +2286,9 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	mutex_exit(&zfsvfs->z_znodes_lock);
 
 	/*
-	 * If we are unmounting, set the unmounted flag and let new vops
+	 * If we are unmounting, set the unmounted flag and let new VFS ops
 	 * unblock.  zfs_inactive will have the unmounted behavior, and all
-	 * other vops will fail with EIO.
+	 * other VFS ops will fail with EIO.
 	 */
 	if (unmounting) {
 		zfsvfs->z_unmounted = B_TRUE;
@@ -2761,10 +2777,13 @@ zfs_resume_fs(zfsvfs_t *zfsvfs, const char *osname)
 		zfs_set_fuid_feature(zfsvfs);
 
 		/*
-		 * Attempt to re-establish all the active znodes with
-		 * their dbufs.  If a zfs_rezget() fails, then we'll let
-		 * any potential callers discover that via ZFS_ENTER_VERIFY_VP
-		 * when they try to use their znode.
+		 * Attempt to re-establish all the active inodes with their
+		 * dbufs.  If a zfs_rezget() fails, then we unhash the inode
+		 * and mark it stale.  This prevents a collision if a new
+		 * inode/object is created which must use the same inode
+		 * number.  The stale inode will be be released when the
+		 * VFS prunes the dentry holding the remaining references
+		 * on the stale inode.
 		 */
 		mutex_enter(&zfsvfs->z_znodes_lock);
 		for (zp = list_head(&zfsvfs->z_all_znodes); zp;

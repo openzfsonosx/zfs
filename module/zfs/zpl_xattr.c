@@ -137,7 +137,7 @@ zpl_xattr_list_dir(xattr_filldir_t *xf, cred_t *cr)
 
 	/* Fill provided buffer via zpl_zattr_filldir helper */
 	error = -zfs_readdir(dxip, (void *)xf, zpl_xattr_filldir, &pos, cr);
-	iput(dxip);
+	VN_RELE(dxip);
 
 	return (error);
 }
@@ -225,13 +225,18 @@ zpl_xattr_get_dir(struct inode *ip, const char *name, void *value,
 		goto out;
 	}
 
+	if (size < i_size_read(xip)) {
+		error = -ERANGE;
+		goto out;
+	}
+
 	error = zpl_read_common(xip, value, size, 0, UIO_SYSSPACE, 0, cr);
 out:
 	if (xip)
-		iput(xip);
+		VN_RELE(xip);
 
 	if (dxip)
-		iput(dxip);
+		VN_RELE(dxip);
 
 	return (error);
 }
@@ -263,9 +268,12 @@ zpl_xattr_get_sa(struct inode *ip, const char *name, void *value, size_t size)
 	if (!size)
 		return (nv_size);
 
-	memcpy(value, nv_value, MIN(size, nv_size));
+	if (size < nv_size)
+		return (-ERANGE);
 
-	return (MIN(size, nv_size));
+	memcpy(value, nv_value, nv_size);
+
+	return (nv_size);
 }
 
 static int
@@ -280,7 +288,7 @@ __zpl_xattr_get(struct inode *ip, const char *name, void *value, size_t size,
 
 	if (zsb->z_use_sa && zp->z_is_sa) {
 		error = zpl_xattr_get_sa(ip, name, value, size);
-		if (error >= 0)
+		if (error != -ENOENT)
 			goto out;
 	}
 
@@ -369,10 +377,10 @@ out:
 		kmem_free(vap, sizeof(vattr_t));
 
 	if (xip)
-		iput(xip);
+		VN_RELE(xip);
 
 	if (dxip)
-		iput(dxip);
+		VN_RELE(dxip);
 
 	if (error == -ENOENT)
 		error = -ENODATA;

@@ -544,7 +544,6 @@ get_configs(libzfs_handle_t *hdl, pool_list_t *pl, boolean_t active_ok)
 				    ZPOOL_CONFIG_POOL_NAME);
 				fnvlist_add_string(config,
 				    ZPOOL_CONFIG_POOL_NAME, name);
-
 				if (nvlist_lookup_uint64(tmp,
 				    ZPOOL_CONFIG_POOL_TXG, &pool_txg) == 0)
 					fnvlist_add_uint64(config,
@@ -906,6 +905,36 @@ zpool_read_label(int fd, nvlist_t **config)
 	return (0);
 }
 
+/*
+ * Given a file descriptor, clear (zero) the label information.  This function
+ * is used in the appliance stack as part of the ZFS sysevent module and
+ * to implement the "zpool labelclear" command.
+ */
+int
+zpool_clear_label(int fd)
+{
+	struct stat statbuf;
+	int l;
+	vdev_label_t *label;
+	uint64_t size;
+
+	if (fstat_blk(fd, &statbuf) == -1)
+		return (0);
+	size = P2ALIGN_TYPED(statbuf.st_size, sizeof (vdev_label_t), uint64_t);
+
+	if ((label = calloc(sizeof (vdev_label_t), 1)) == NULL)
+		return (-1);
+
+	for (l = 0; l < VDEV_LABELS; l++) {
+		if (pwrite64(fd, label, sizeof (vdev_label_t),
+		    label_offset(size, l)) != sizeof (vdev_label_t))
+			return (-1);
+	}
+
+	free(label);
+	return (0);
+}
+
 #ifdef HAVE_LIBBLKID
 /*
  * Use libblkid to quickly search for zfs devices
@@ -980,7 +1009,6 @@ err_blkid1:
 char *
 zpool_default_import_path[DEFAULT_IMPORT_PATH_SIZE] = {
 	"/dev/disk/by-vdev",	/* Custom rules, use first if they exist */
-	"/dev/disk/zpool",	/* Custom rules, use first if they exist */
 	"/dev/mapper",		/* Use multipath devices before components */
 	"/dev/disk/by-uuid",	/* Single unique entry and persistent */
 	"/dev/disk/by-id",	/* May be multiple entries and persistent */

@@ -658,6 +658,13 @@ user_addr_t uio_curriovbase( struct uio *a_uio );
 int uio_iovcnt( struct uio *a_uio );
 
 
+
+#define SEC_TO_TICK(sec)        ((sec) * hz)
+#define MSEC_TO_TICK(msec)      ((msec) / (MILLISEC / hz))
+#define USEC_TO_TICK(usec)      ((usec) / (MICROSEC / hz))
+#define NSEC_TO_TICK(usec)      ((usec) / (NANOSEC / hz))
+
+
 #endif /* !_KERNEL */
 
 

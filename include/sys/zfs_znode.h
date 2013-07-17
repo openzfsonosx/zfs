@@ -227,28 +227,17 @@ typedef struct znode {
 	boolean_t	z_is_zvol;	/* are we used by the zvol */
 	boolean_t	z_is_mapped;	/* are we mmap'ed */
 	boolean_t	z_is_ctldir;	/* are we .zfs entry */
-	//struct inode	z_inode;	/* generic vfs inode */
 
     krwlock_t       z_map_lock;     /* page map lock */
 
-    // Used in zfs_log? remove me?
-    uint64_t        z_last_itx;     /* last ZIL itx on this znode */
-
     uint32_t        z_vid;
-    // kcondvar_t      z_cv;           /* wait for vnode to be attached */
-    //uint8_t         z_mmapped;      /* file has been memory mapped */
-    // uint8_t         z_dbuf_held;    /* Is z_dbuf already held? */
 
 #ifdef ZFS_DEBUG
 	list_t		z_stalker;	/*vnode life tracker */
 #endif
 
-    /*
-     * These are dmu managed fields.
-     */
-    // These should be removed!!
-    //znode_phys_t    *z_phys;        /* pointer to persistent znode */
-    //dmu_buf_t       *z_dbuf;        /* buffer containing the z_phys */
+	boolean_t	z_is_stale;	/* are we stale due to rollback? */
+
 } znode_t;
 
 
@@ -440,7 +429,7 @@ extern void zfs_unmap_page(page_t *, caddr_t);
 #endif /* HAVE_UIO_RW */
 
 extern zil_get_data_t zfs_get_data;
-extern zil_replay_func_t *zfs_replay_vector[TX_MAX_TYPE];
+extern zil_replay_func_t zfs_replay_vector[TX_MAX_TYPE];
 extern int zfsfstype;
 extern void zfs_znode_free(znode_t *zp);
 void zfs_perm_init(znode_t *zp, znode_t *parent, int flag,
