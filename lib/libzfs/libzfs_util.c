@@ -951,7 +951,6 @@ zfs_strcmp_shortname(char *name, char *cmp_name, int wholedisk)
 
 	if (env)
 		free(envdup);
-
 	return (error);
 }
 
