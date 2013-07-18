@@ -358,7 +358,7 @@ spa_config_generate(spa_t *spa, vdev_t *vd, uint64_t txg, int getstats)
 
 
 #ifdef	_KERNEL
-	//hostid = zone_get_hostid(NULL);
+	hostid = zone_get_hostid(NULL);
 #else	/* _KERNEL */
 	/*
 	 * We're emulating the system's hostid in userland, so we can't use

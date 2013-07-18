@@ -132,18 +132,25 @@ system_taskq_fini(void)
         taskq_destroy(system_taskq);
 }
 
+
+extern char hostname[MAXHOSTNAMELEN];
+#include <sys/utsname.h>
+#include <string.h>
+
 void
 system_taskq_init(void)
 {
+
     system_taskq = taskq_create("system_taskq",
                                 system_taskq_size * max_ncpus,
                                 minclsyspri, 4, 512,
                                 TASKQ_DYNAMIC | TASKQ_PREPOPULATE);
+
+
+    strlcpy(utsname.nodename, hostname, sizeof(utsname.nodename));
 }
 
 } // Extern "C"
-
-
 
 
 

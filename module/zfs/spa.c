@@ -2415,7 +2415,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 			    ZPOOL_CONFIG_HOSTNAME, &hostname) == 0);
 
 #ifdef	_KERNEL
-			//myhostid = zone_get_hostid(NULL);
+			myhostid = zone_get_hostid(NULL);
 #else	/* _KERNEL */
 			/*
 			 * We're emulating the system's hostid in userland, so
