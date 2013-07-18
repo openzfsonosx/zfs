@@ -149,6 +149,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 	 * Take the device's minimum transfer size into account.
 	 */
 	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
+    vd->vdev_ashift = *ashift;
 
     printf("Device is %llu bytes in size, and ashift=%d\n", *size,
            *ashift);
@@ -342,10 +343,13 @@ vdev_disk_io_start(zio_t *zio)
 	buf_setflags(bp, flags);
 	buf_setcount(bp, zio->io_size);
 	buf_setdataptr(bp, (uintptr_t)zio->io_data);
-	//buf_setlblkno(bp, lbtodb(zio->io_offset));
-	//buf_setblkno(bp, lbtodb(zio->io_offset));
-	buf_setlblkno(bp, zio->io_offset/4096);
-	buf_setblkno(bp, zio->io_offset/4096);
+    if (vd->vdev_ashift) {
+        buf_setlblkno(bp, zio->io_offset>>vd->vdev_ashift);
+        buf_setblkno(bp,  zio->io_offset>>vd->vdev_ashift);
+    } else {
+        buf_setlblkno(bp, lbtodb(zio->io_offset));
+        buf_setblkno(bp, lbtodb(zio->io_offset));
+    }
 	buf_setsize(bp, zio->io_size);
     printf(" offset 0x%llx is reading block 0x%x\n",
            zio->io_offset, lbtodb(zio->io_offset));
