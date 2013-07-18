@@ -105,6 +105,9 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 		error = ENOTBLK;
 		goto out;
 	}
+
+    printf("OPENED '%s'\n", vd->vdev_path);
+
 	/* ### APPLE TODO ### */
 	/* vnode_authorize devvp for KAUTH_VNODE_READ_DATA and
 	 * KAUTH_VNODE_WRITE_DATA
@@ -146,6 +149,9 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 	 * Take the device's minimum transfer size into account.
 	 */
 	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
+
+    printf("Device is %llu bytes in size, and ashift=%d\n", *size,
+           *ashift);
 
 	/*
 	 * Clear the nowritecache bit, so that on a vdev_reopen() we will

@@ -191,6 +191,8 @@ vdev_label_read(zio_t *zio, vdev_t *vd, int l, void *buf, uint64_t offset,
         first = 0;
         struct vnode *rootdir, *vp;
 
+        memset(buf, 0, size);
+
         printf("reading %lu from @%llx (vdev label offset %llx)\n", size, offset,
                vdev_label_offset(vd->vdev_psize, l, offset));
         error = zio_wait(zio_read_phys(zio, vd,
