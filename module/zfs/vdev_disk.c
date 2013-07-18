@@ -106,8 +106,6 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 		goto out;
 	}
 
-    printf("OPENED '%s'\n", vd->vdev_path);
-
 	/* ### APPLE TODO ### */
 	/* vnode_authorize devvp for KAUTH_VNODE_READ_DATA and
 	 * KAUTH_VNODE_WRITE_DATA
@@ -150,9 +148,6 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 	 */
 	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
     vd->vdev_ashift = *ashift;
-
-    printf("Device is %llu bytes in size, and ashift=%d\n", *size,
-           *ashift);
 
 	/*
 	 * Clear the nowritecache bit, so that on a vdev_reopen() we will
@@ -209,15 +204,9 @@ vdev_disk_io_intr(struct buf *bp, void *arg)
 
     zio->io_error = buf_error(bp);
 
-    if (zio->io_error)
-        printf("IOkit gave error %d\n", zio->io_error);
-
 	if (zio->io_error == 0 && buf_resid(bp) != 0) {
-        printf("No error, but resid is %llx.\n", buf_resid(bp));
 		zio->io_error = EIO;
-	} else {
-        printf("IO OK\n");
-    }
+	}
 	buf_free(bp);
 	//zio_next_stage_async(zio);
     zio_interrupt(zio);
@@ -351,8 +340,6 @@ vdev_disk_io_start(zio_t *zio)
         buf_setblkno(bp, lbtodb(zio->io_offset));
     }
 	buf_setsize(bp, zio->io_size);
-    printf(" offset 0x%llx is reading block 0x%x\n",
-           zio->io_offset, lbtodb(zio->io_offset));
 	if (buf_setcallback(bp, vdev_disk_io_intr, zio) != 0)
 		panic("vdev_disk_io_start: buf_setcallback failed\n");
 
