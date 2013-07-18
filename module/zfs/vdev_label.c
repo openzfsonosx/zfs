@@ -216,7 +216,8 @@ vdev_label_read(zio_t *zio, vdev_t *vd, int l, void *buf, uint64_t offset,
 
     }
 
-	zio_nowait(zio_read_phys(zio, vd,
+	//zio_nowait(zio_read_phys(zio, vd,
+	zio_wait(zio_read_phys(zio, vd,
 	    vdev_label_offset(vd->vdev_psize, l, offset),
 	    size, buf, ZIO_CHECKSUM_LABEL, done, private,
 	    ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));

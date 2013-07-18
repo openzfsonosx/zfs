@@ -306,7 +306,7 @@ vdev_disk_io_start(zio_t *zio)
     //		return;
 
 	flags = (zio->io_type == ZIO_TYPE_READ ? B_READ : B_WRITE);
-	flags |= B_NOCACHE;
+	//flags |= B_NOCACHE;
 
 	if (zio->io_flags & ZIO_FLAG_FAILFAST)
 		flags |= B_FAILFAST;
@@ -332,9 +332,6 @@ vdev_disk_io_start(zio_t *zio)
 	ASSERT(bp != NULL);
 	ASSERT(zio->io_data != NULL);
 	ASSERT(zio->io_size != 0);
-
-    if (zio->io_size == 8192)
-        zio->io_size = 4096;
 
 	buf_setflags(bp, flags);
 	buf_setcount(bp, zio->io_size);
