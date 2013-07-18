@@ -245,14 +245,14 @@ efi_get_info(int fd, struct dk_cinfo *dki_info)
     // DKIOCISVIRTUAL 32bit
     // DKIOCISSOLIDSTATE 32bit
     char pathbuf[PATH_MAX];
+    int poi;
     if (fcntl(fd, F_GETPATH, pathbuf) >= 0) {
 
-        if ((strncmp(pathbuf, "/dev/disk", 9) == 0) ||
-            (strncmp(pathbuf, "/dev/rdisk", 10) == 0)) {
+        if ((strncmp(pathbuf, "/dev/disk", 9) == 0)) {
             strcpy(dki_info->dki_cname, "disk");
             dki_info->dki_ctype = DKC_DIRECT;
-            rval = sscanf(pathbuf, "/dev/%[a-zA-Z]s%hu",
-                          dki_info->dki_dname,
+            rval = sscanf(pathbuf, "/dev/disk%hus%hu",
+                          &poi,
                           &dki_info->dki_partition);
 
             switch (rval) {
@@ -262,7 +262,25 @@ efi_get_info(int fd, struct dk_cinfo *dki_info)
             case 1:
                 dki_info->dki_partition = 0;
             }
+            strlcpy(dki_info->dki_dname,
+                    &pathbuf[5],
+                    sizeof(dki_info->dki_dname));
         }
+
+        /*
+         * rdisk in OSX do not have partitions, also it will fail. Use disk
+         */
+        if ((strncmp(pathbuf, "/dev/rdisk", 10) == 0)) {
+            strcpy(dki_info->dki_cname, "disk");
+            dki_info->dki_ctype = DKC_DIRECT;
+            dki_info->dki_partition = 0;
+
+            rval = sscanf(pathbuf, "/dev/r%[a-zA-Z0-9]",
+                          dki_info->dki_dname);
+        }
+
+        //fprintf(stderr, "rval %d, name '%s' and part %d\n",
+        //      rval, dki_info->dki_dname,dki_info->dki_partition);
     }
 
 #ifdef DKIOCISVIRTUAL
@@ -313,7 +331,7 @@ efi_alloc_and_init(int fd, uint32_t nparts, struct dk_gpt **vtoc)
 	if (read_disk_info(fd, &capacity, &lbsize) != 0)
 		return (-1);
 
-#if defined(__linux__)
+    //#if defined(__linux__)
 	if (efi_get_info(fd, &dki_info) != 0)
 		return (-1);
 
@@ -324,7 +342,7 @@ efi_alloc_and_init(int fd, uint32_t nparts, struct dk_gpt **vtoc)
 	    (dki_info.dki_ctype == DKC_VBD) ||
 	    (dki_info.dki_ctype == DKC_UNKNOWN))
 		return (-1);
-#endif
+    //#endif
 
 	nblocks = NBLOCKS(nparts, lbsize);
 	if ((nblocks * lbsize) < EFI_MIN_ARRAY_SIZE + lbsize) {

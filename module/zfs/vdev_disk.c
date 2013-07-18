@@ -107,6 +107,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 		error = ENOTBLK;
 		goto out;
 	}
+
 	/* ### APPLE TODO ### */
 	/* vnode_authorize devvp for KAUTH_VNODE_READ_DATA and
 	 * KAUTH_VNODE_WRITE_DATA
@@ -148,6 +149,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 	 * Take the device's minimum transfer size into account.
 	 */
 	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
+    vd->vdev_ashift = *ashift;
 
 	/*
 	 * Clear the nowritecache bit, so that on a vdev_reopen() we will
@@ -202,7 +204,9 @@ vdev_disk_io_intr(struct buf *bp, void *arg)
 {
 	zio_t *zio = (zio_t *)arg;
 
-	if ((zio->io_error = buf_error(bp)) == 0 && buf_resid(bp) != 0) {
+    zio->io_error = buf_error(bp);
+
+	if (zio->io_error == 0 && buf_resid(bp) != 0) {
 		zio->io_error = EIO;
 	}
 	buf_free(bp);
@@ -300,7 +304,7 @@ vdev_disk_io_start(zio_t *zio)
     //		return;
 
 	flags = (zio->io_type == ZIO_TYPE_READ ? B_READ : B_WRITE);
-	flags |= B_NOCACHE;
+	//flags |= B_NOCACHE;
 
 	if (zio->io_flags & ZIO_FLAG_FAILFAST)
 		flags |= B_FAILFAST;
@@ -330,8 +334,13 @@ vdev_disk_io_start(zio_t *zio)
 	buf_setflags(bp, flags);
 	buf_setcount(bp, zio->io_size);
 	buf_setdataptr(bp, (uintptr_t)zio->io_data);
-	buf_setlblkno(bp, lbtodb(zio->io_offset));
-	buf_setblkno(bp, lbtodb(zio->io_offset));
+    if (vd->vdev_ashift) {
+        buf_setlblkno(bp, zio->io_offset>>vd->vdev_ashift);
+        buf_setblkno(bp,  zio->io_offset>>vd->vdev_ashift);
+    } else {
+        buf_setlblkno(bp, lbtodb(zio->io_offset));
+        buf_setblkno(bp, lbtodb(zio->io_offset));
+    }
 	buf_setsize(bp, zio->io_size);
 	if (buf_setcallback(bp, vdev_disk_io_intr, zio) != 0)
 		panic("vdev_disk_io_start: buf_setcallback failed\n");

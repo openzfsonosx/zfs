@@ -174,7 +174,7 @@ zvol_size_changed(zvol_state_t *zv, uint64_t volsize)
 	VERIFY(ddi_prop_update_int64(dev, zfs_dip,
 	    "Size", volsize) == DDI_SUCCESS);
 	VERIFY(ddi_prop_update_int64(dev, zfs_dip,
-	    "Nblocks", lbtodb(volsize)) == DDI_SUCCESS);
+	    "Nblocks", volsize / zv_zv_volblocksize) == DDI_SUCCESS);
 
     //zvolSetVolsize(zv);
 
