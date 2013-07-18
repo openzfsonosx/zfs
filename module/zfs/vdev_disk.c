@@ -345,6 +345,8 @@ vdev_disk_io_start(zio_t *zio)
 	buf_setlblkno(bp, lbtodb(zio->io_offset));
 	buf_setblkno(bp, lbtodb(zio->io_offset));
 	buf_setsize(bp, zio->io_size);
+    printf(" offset 0xllx is reading block %x\n",
+           zio->io_offset, lbtodb(zio->io_offset));
 	if (buf_setcallback(bp, vdev_disk_io_intr, zio) != 0)
 		panic("vdev_disk_io_start: buf_setcallback failed\n");
 
