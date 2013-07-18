@@ -189,6 +189,7 @@ vdev_label_read(zio_t *zio, vdev_t *vd, int l, void *buf, uint64_t offset,
     if (first) {
         int error=0;
         first = 0;
+        struct vnode *rootdir, *vp;
 
         printf("reading %lu from @%llx (vdev label offset %llx)\n", size, offset,
                vdev_label_offset(vd->vdev_psize, l, offset));
@@ -197,6 +198,26 @@ vdev_label_read(zio_t *zio, vdev_t *vd, int l, void *buf, uint64_t offset,
                                size, buf, ZIO_CHECKSUM_OFF, NULL, NULL,
                                ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));
         printf("reading returned = %d\n", error);
+
+
+        rootdir = getrootdir();
+        error = vn_openat("tmp/block.dump", UIO_SYSSPACE,
+                          O_CREAT|O_TRUNC|FOFFMAX, 0644,
+                          &vp, 0, 0, rootdir);
+        if (!error) {
+            ssize_t resid = 0;
+
+            printf("Created /tmp/block.dump\n");
+
+            error = vn_rdwr(UIO_WRITE, vp, buf, size, 0, UIO_SYSSPACE,
+                            0, RLIM64_INFINITY, kcred, &resid);
+            printf("wrote %ld - error %d - resid %ld\n",
+                   size, error, resid);
+            (void) VOP_CLOSE(vp, O_CREAT|O_TRUNC|FOFFMAX, 1, 0,
+                             kcred, NULL);
+            //vnode_put(vp);
+        } else printf("error %d\n", error);
+
 
         printf("reading %lu from @%llx (LABEL CHECKSUM)\n", size, offset,
                vdev_label_offset(vd->vdev_psize, l, offset));
@@ -216,8 +237,7 @@ vdev_label_read(zio_t *zio, vdev_t *vd, int l, void *buf, uint64_t offset,
 
     }
 
-	//zio_nowait(zio_read_phys(zio, vd,
-	zio_wait(zio_read_phys(zio, vd,
+	zio_nowait(zio_read_phys(zio, vd,
 	    vdev_label_offset(vd->vdev_psize, l, offset),
 	    size, buf, ZIO_CHECKSUM_LABEL, done, private,
 	    ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));
