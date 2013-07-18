@@ -181,9 +181,70 @@ static void
 vdev_label_read(zio_t *zio, vdev_t *vd, int l, void *buf, uint64_t offset,
 	uint64_t size, zio_done_func_t *done, void *private, int flags)
 {
+    static int first = 1;
 	ASSERT(spa_config_held(zio->io_spa, SCL_STATE_ALL, RW_WRITER) ==
 	    SCL_STATE_ALL);
 	ASSERT(flags & ZIO_FLAG_CONFIG_WRITER);
+
+    if (first) {
+        int error=0;
+        first = 0;
+        printf("reading 8192 from @0\n");
+        error = zio_wait(zio_read_phys(zio, vd,
+                               0,
+                               8192, buf, ZIO_CHECKSUM_OFF, NULL, NULL,
+                               ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));
+        printf("reading 8192 from @0 = %d\n", error);
+
+        printf("reading 4096 from @0\n");
+        error = zio_wait(zio_read_phys(zio, vd,
+                               0,
+                               4096, buf, ZIO_CHECKSUM_OFF, NULL, NULL,
+                               ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));
+        printf("reading 4096 from @0 = %d\n", error);
+        printf("reading 512 from @0\n");
+        error = zio_wait(zio_read_phys(zio, vd,
+                               0,
+                               512, buf, ZIO_CHECKSUM_OFF, NULL, NULL,
+                               ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));
+        printf("reading 512 from @0 = %d\n", error);
+
+        printf("reading %lu from @%llx (vdev label offset %llx)\n", size, offset,
+               vdev_label_offset(vd->vdev_psize, l, offset));
+        error = zio_wait(zio_read_phys(zio, vd,
+                               offset,
+                               size, buf, ZIO_CHECKSUM_OFF, NULL, NULL,
+                               ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));
+        printf("reading returned = %d\n", error);
+
+        printf("reading 4096 from @%llx \n", size, offset);
+        error = zio_wait(zio_read_phys(zio, vd,
+                               offset,
+                               size, buf, ZIO_CHECKSUM_OFF, NULL, NULL,
+                               ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));
+        printf("reading returned = %d\n", error);
+
+
+        printf("reading 8192 from @0x200000\n");
+        error = zio_wait(zio_read_phys(zio, vd,
+                               0x200000,
+                               8192, buf, ZIO_CHECKSUM_OFF, NULL, NULL,
+                               ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));
+        printf("reading 8192 from @0 = %d\n", error);
+
+        printf("reading 4096 from @0x200000\n");
+        error = zio_wait(zio_read_phys(zio, vd,
+                               0x200000,
+                               4096, buf, ZIO_CHECKSUM_OFF, NULL, NULL,
+                               ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));
+        printf("reading 4096 from @0 = %d\n", error);
+        printf("reading 512 from @0x200000\n");
+        error = zio_wait(zio_read_phys(zio, vd,
+                               0x200000,
+                               512, buf, ZIO_CHECKSUM_OFF, NULL, NULL,
+                               ZIO_PRIORITY_SYNC_READ, flags, B_TRUE));
+        printf("reading 512 from @0 = %d\n", error);
+    }
 
 	zio_nowait(zio_read_phys(zio, vd,
 	    vdev_label_offset(vd->vdev_psize, l, offset),

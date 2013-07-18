@@ -200,9 +200,17 @@ vdev_disk_io_intr(struct buf *bp, void *arg)
 {
 	zio_t *zio = (zio_t *)arg;
 
-	if ((zio->io_error = buf_error(bp)) == 0 && buf_resid(bp) != 0) {
+    zio->io_error = buf_error(bp);
+
+    if (zio->io_error)
+        printf("IOkit gave error %d\n", zio->io_error);
+
+	if (zio->io_error == 0 && buf_resid(bp) != 0) {
+        printf("No error, but resid is %llx.\n", buf_resid(bp));
 		zio->io_error = EIO;
-	}
+	} else {
+        printf("IO OK\n");
+    }
 	buf_free(bp);
 	//zio_next_stage_async(zio);
     zio_interrupt(zio);
@@ -324,6 +332,9 @@ vdev_disk_io_start(zio_t *zio)
 	ASSERT(bp != NULL);
 	ASSERT(zio->io_data != NULL);
 	ASSERT(zio->io_size != 0);
+
+    if (zio->io_size == 8192)
+        zio->io_size = 4096;
 
 	buf_setflags(bp, flags);
 	buf_setcount(bp, zio->io_size);
