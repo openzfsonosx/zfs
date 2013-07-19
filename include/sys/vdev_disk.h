@@ -34,6 +34,7 @@
 typedef struct vdev_disk {
     char            *vd_minor;
     struct vnode    *vd_devvp;
+    uint64_t	vd_ashift;
 } vdev_disk_t;
 
 #define lbtodb(bytes)                   /* calculates (bytes / DEV_BSIZE) */ \

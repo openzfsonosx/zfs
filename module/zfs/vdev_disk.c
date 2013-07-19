@@ -149,7 +149,15 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 	 * Take the device's minimum transfer size into account.
 	 */
 	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
-    vd->vdev_ashift = *ashift;
+
+    /*
+     * Setting the vdev_ashift did in fact break the pool for import
+     * on ZEVO. This puts the logic into question. It appears that vdev_top
+     * will also then change. It then panics in space_map from metaslab_alloc
+     */
+    //vd->vdev_ashift = *ashift;
+    dvd->vd_ashift = *ashift;
+
 
 	/*
 	 * Clear the nowritecache bit, so that on a vdev_reopen() we will
@@ -334,9 +342,9 @@ vdev_disk_io_start(zio_t *zio)
 	buf_setflags(bp, flags);
 	buf_setcount(bp, zio->io_size);
 	buf_setdataptr(bp, (uintptr_t)zio->io_data);
-    if (vd->vdev_ashift) {
-        buf_setlblkno(bp, zio->io_offset>>vd->vdev_ashift);
-        buf_setblkno(bp,  zio->io_offset>>vd->vdev_ashift);
+    if (dvd->vd_ashift) {
+        buf_setlblkno(bp, zio->io_offset>>dvd->vd_ashift);
+        buf_setblkno(bp,  zio->io_offset>>dvd->vd_ashift);
     } else {
         buf_setlblkno(bp, lbtodb(zio->io_offset));
         buf_setblkno(bp, lbtodb(zio->io_offset));
