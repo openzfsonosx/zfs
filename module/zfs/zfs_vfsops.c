@@ -130,7 +130,9 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_INT_ADVLOCK |
 		VOL_CAP_INT_FLOCK |
 		VOL_CAP_INT_EXTENDED_SECURITY |
+#if NAMEDSTREAMS
 		VOL_CAP_INT_NAMEDSTREAMS |
+#endif
 		VOL_CAP_INT_EXTENDED_ATTR ,
 
 		0 , 0
@@ -167,7 +169,9 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_INT_EXTENDED_SECURITY |
 		VOL_CAP_INT_USERACCESS |
 		VOL_CAP_INT_MANLOCK |
+#if NAMEDSTREAMS
 		VOL_CAP_INT_NAMEDSTREAMS |
+#endif
 		VOL_CAP_INT_EXTENDED_ATTR ,
 
 		0, 0
@@ -1934,6 +1938,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		if (strpbrk(osname, "/"))
 			vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DONTBROWSE));
 
+        //vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
 		/* Indicate to VFS that we support ACLs. */
 		vfs_setextendedsecurity(vfsp);
 
@@ -2150,8 +2155,19 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 
 	}
 	VFSATTR_RETURN(fsap, f_fssubtype, 0);
-	VFSATTR_RETURN(fsap, f_signature, 0x5a21);  /* 'Z!' */
+
+    /* According to joshade over at
+     * https://github.com/joshado/liberate-applefileserver/blob/master/liberate.m
+     * the following values need to be returned for it to be considered
+     * by Apple's AFS.
+     */
+
+	//VFSATTR_RETURN(fsap, f_signature, 0x5a21);  /* 'Z!' */
+	//VFSATTR_RETURN(fsap, f_carbon_fsid, 0);
+	VFSATTR_RETURN(fsap, f_signature, 18475);  /*  */
 	VFSATTR_RETURN(fsap, f_carbon_fsid, 0);
+
+
 #else /* OpenSolaris */
 	statp->f_ffree = MIN(availobjs, statp->f_bfree);
 	statp->f_files = statp->f_ffree + usedobjs;

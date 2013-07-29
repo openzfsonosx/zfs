@@ -999,7 +999,7 @@ visit_indirect(spa_t *spa, const dnode_phys_t *dnp,
 		arc_buf_t *buf;
 		uint64_t fill = 0;
 
-		err = arc_read(NULL, spa, bp, NULL, arc_getbuf_func, &buf,
+		err = arc_read(NULL, spa, bp, arc_getbuf_func, &buf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL, &flags, zb);
 		if (err)
 			return (err);

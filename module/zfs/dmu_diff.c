@@ -132,7 +132,7 @@ diff_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 		int blksz = BP_GET_LSIZE(bp);
 		int i;
 
-		if (arc_read(NULL, spa, bp, NULL, arc_getbuf_func, &abuf,
+		if (arc_read(NULL, spa, bp, arc_getbuf_func, &abuf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL,
 		    &aflags, zb) != 0)
 			return (EIO);

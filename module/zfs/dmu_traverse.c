@@ -200,7 +200,7 @@ traverse_prefetch_metadata(traverse_data_t *td,
 	if (BP_GET_LEVEL(bp) == 0 && BP_GET_TYPE(bp) != DMU_OT_DNODE)
 		return;
 
-	(void) arc_read(NULL, td->td_spa, bp, NULL, NULL, NULL,
+	(void) arc_read(NULL, td->td_spa, bp, NULL, NULL,
 	    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL, &flags, zb);
 }
 
@@ -263,7 +263,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		blkptr_t *cbp;
 		int epb = BP_GET_LSIZE(bp) >> SPA_BLKPTRSHIFT;
 
-		err = arc_read(NULL, td->td_spa, bp, NULL, arc_getbuf_func, &buf,
+		err = arc_read(NULL, td->td_spa, bp, arc_getbuf_func, &buf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL, &flags, zb);
 		if (err)
 			return (err);
@@ -293,7 +293,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		int i;
 		int epb = BP_GET_LSIZE(bp) >> DNODE_SHIFT;
 
-		err = arc_read(NULL, td->td_spa, bp, NULL, arc_getbuf_func, &buf,
+		err = arc_read(NULL, td->td_spa, bp, arc_getbuf_func, &buf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL, &flags, zb);
 		if (err)
 			return (err);
@@ -319,7 +319,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		objset_phys_t *osp;
 		dnode_phys_t *dnp;
 
-		err = arc_read(NULL, td->td_spa, bp, NULL, arc_getbuf_func, &buf,
+		err = arc_read(NULL, td->td_spa, bp, arc_getbuf_func, &buf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL, &flags, zb);
 		if (err)
 			return (err);
@@ -448,7 +448,7 @@ traverse_prefetcher(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	cv_broadcast(&pfd->pd_cv);
 	mutex_exit(&pfd->pd_mtx);
 
-	(void) arc_read(NULL, spa, bp, NULL, NULL, NULL, ZIO_PRIORITY_ASYNC_READ,
+	(void) arc_read(NULL, spa, bp, NULL, NULL, ZIO_PRIORITY_ASYNC_READ,
 	    ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE, &aflags, zb);
 
 	return (0);

@@ -113,12 +113,14 @@ boolean_t arc_buf_eviction_needed(arc_buf_t *buf);
 int arc_referenced(arc_buf_t *buf);
 #endif
 
-int arc_read(zio_t *pio, spa_t *spa, const blkptr_t *bp, arc_buf_t *pbuf,
+int arc_read(zio_t *pio, spa_t *spa, const blkptr_t *bp,
     arc_done_func_t *done, void *_private, int priority, int zio_flags,
     uint32_t *arc_flags, const zbookmark_t *zb);
+#if 0
 int arc_read_nolock(zio_t *pio, spa_t *spa, const blkptr_t *bp,
     arc_done_func_t *done, void *_private, int priority, int flags,
     uint32_t *arc_flags, const zbookmark_t *zb);
+#endif
 zio_t *arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
     blkptr_t *bp, arc_buf_t *buf, boolean_t l2arc, const zio_prop_t *zp,
     arc_done_func_t *ready, arc_done_func_t *done, void *_private,

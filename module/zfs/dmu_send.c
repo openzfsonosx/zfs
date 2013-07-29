@@ -375,7 +375,7 @@ backup_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 		uint32_t aflags = ARC_WAIT;
 		arc_buf_t *abuf;
 
-		if (arc_read(NULL, spa, bp, NULL, arc_getbuf_func, &abuf,
+		if (arc_read(NULL, spa, bp, arc_getbuf_func, &abuf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL,
 		    &aflags, zb) != 0)
 			return (EIO);
@@ -394,7 +394,7 @@ backup_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 		arc_buf_t *abuf;
 		int blksz = BP_GET_LSIZE(bp);
 
-		if (arc_read(NULL, spa, bp, NULL, arc_getbuf_func, &abuf,
+		if (arc_read(NULL, spa, bp, arc_getbuf_func, &abuf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL,
 		    &aflags, zb) != 0)
 			return (EIO);
@@ -406,7 +406,7 @@ backup_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 		arc_buf_t *abuf;
 		int blksz = BP_GET_LSIZE(bp);
 
-		if (arc_read(NULL, spa, bp, NULL, arc_getbuf_func, &abuf,
+		if (arc_read(NULL, spa, bp, arc_getbuf_func, &abuf,
 		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL,
 		    &aflags, zb) != 0) {
 			if (zfs_send_corrupt_data) {

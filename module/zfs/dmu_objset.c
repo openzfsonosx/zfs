@@ -276,7 +276,7 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 			aflags |= ARC_L2CACHE;
 
 		dprintf_bp(os->os_rootbp, "reading %s", "");
-		err = arc_read(NULL, spa, os->os_rootbp, NULL,
+		err = arc_read(NULL, spa, os->os_rootbp,
 		    arc_getbuf_func, &os->os_phys_buf,
 		    ZIO_PRIORITY_SYNC_READ, ZIO_FLAG_CANFAIL, &aflags, &zb);
 		if (err) {
@@ -1760,7 +1760,7 @@ dmu_objset_prefetch(const char *name, void *arg)
 			    ZB_ROOT_LEVEL, ZB_ROOT_BLKID);
 
 			(void) arc_read(NULL, dsl_dataset_get_spa(ds),
-                            &ds->ds_phys->ds_bp, NULL, NULL, NULL,
+                            &ds->ds_phys->ds_bp, NULL, NULL,
 			    ZIO_PRIORITY_ASYNC_READ,
 			    ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
 			    &aflags, &zb);

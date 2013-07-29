@@ -368,7 +368,8 @@ dsl_read(zio_t *pio, spa_t *spa, const blkptr_t *bpp, arc_buf_t *pbuf,
     arc_done_func_t *done, void *private, int priority, int zio_flags,
     uint32_t *arc_flags, const zbookmark_t *zb)
 {
-	return (arc_read(pio, spa, bpp, pbuf, done, private,
+    printf("dsl_read called?\n");
+	return (arc_read(pio, spa, bpp, done, private,
 	    priority, zio_flags, arc_flags, zb));
 }
 
@@ -377,7 +378,7 @@ dsl_read_nolock(zio_t *pio, spa_t *spa, const blkptr_t *bpp,
     arc_done_func_t *done, void *private, int priority, int zio_flags,
     uint32_t *arc_flags, const zbookmark_t *zb)
 {
-	return (arc_read_nolock(pio, spa, bpp, done, private,
+	return (arc_read(pio, spa, bpp, done, private,
 	    priority, zio_flags, arc_flags, zb));
 }
 
@@ -551,7 +552,7 @@ dsl_scan_prefetch(dsl_scan_t *scn, arc_buf_t *buf, blkptr_t *bp,
 
 	SET_BOOKMARK(&czb, objset, object, BP_GET_LEVEL(bp), blkid);
 
-	(void) arc_read(scn->scn_zio_root, scn->scn_dp->dp_spa, bp, NULL,
+	(void) arc_read(scn->scn_zio_root, scn->scn_dp->dp_spa, bp,
 	    NULL, NULL, ZIO_PRIORITY_ASYNC_READ,
 	    ZIO_FLAG_CANFAIL | ZIO_FLAG_SCAN_THREAD, &flags, &czb);
 }
@@ -610,7 +611,7 @@ dsl_scan_recurse(dsl_scan_t *scn, dsl_dataset_t *ds, dmu_objset_type_t ostype,
 		blkptr_t *cbp;
 		int epb = BP_GET_LSIZE(bp) >> SPA_BLKPTRSHIFT;
 
-		err = arc_read(NULL, dp->dp_spa, bp, NULL, arc_getbuf_func, bufp,
+		err = arc_read(NULL, dp->dp_spa, bp, arc_getbuf_func, bufp,
 		    ZIO_PRIORITY_ASYNC_READ, zio_flags, &flags, zb);
 		if (err) {
 			scn->scn_phys.scn_errors++;
@@ -632,7 +633,7 @@ dsl_scan_recurse(dsl_scan_t *scn, dsl_dataset_t *ds, dmu_objset_type_t ostype,
 	} else if (BP_GET_TYPE(bp) == DMU_OT_USERGROUP_USED) {
 		uint32_t flags = ARC_WAIT;
 
-		err = arc_read(NULL, dp->dp_spa, bp, NULL, arc_getbuf_func, bufp,
+		err = arc_read(NULL, dp->dp_spa, bp, arc_getbuf_func, bufp,
 		    ZIO_PRIORITY_ASYNC_READ, zio_flags, &flags, zb);
 		if (err) {
 			scn->scn_phys.scn_errors++;
@@ -644,7 +645,7 @@ dsl_scan_recurse(dsl_scan_t *scn, dsl_dataset_t *ds, dmu_objset_type_t ostype,
 		int i, j;
 		int epb = BP_GET_LSIZE(bp) >> DNODE_SHIFT;
 
-		err = arc_read(NULL, dp->dp_spa, bp, NULL, arc_getbuf_func, bufp,
+		err = arc_read(NULL, dp->dp_spa, bp, arc_getbuf_func, bufp,
 		    ZIO_PRIORITY_ASYNC_READ, zio_flags, &flags, zb);
 		if (err) {
 			scn->scn_phys.scn_errors++;
@@ -666,7 +667,7 @@ dsl_scan_recurse(dsl_scan_t *scn, dsl_dataset_t *ds, dmu_objset_type_t ostype,
 		uint32_t flags = ARC_WAIT;
 		objset_phys_t *osp;
 
-		err = arc_read(NULL, dp->dp_spa, bp, NULL, arc_getbuf_func, bufp,
+		err = arc_read(NULL, dp->dp_spa, bp, arc_getbuf_func, bufp,
 		    ZIO_PRIORITY_ASYNC_READ, zio_flags, &flags, zb);
 		if (err) {
 			scn->scn_phys.scn_errors++;

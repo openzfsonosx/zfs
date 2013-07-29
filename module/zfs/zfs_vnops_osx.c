@@ -69,6 +69,9 @@
 
 //#define dprintf printf
 
+// Move this somewhere else, maybe autoconf?
+#define HAVE_NAMED_STREAMS 1
+
 /*
  * zfs vfs operations.
  */
@@ -134,8 +137,13 @@ zfs_vnop_open(
         } */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    int err = 0;
 
-	return (zfs_open(&ap->a_vp, ap->a_mode, cr, ct));
+	err = zfs_open(&ap->a_vp, ap->a_mode, cr, ct);
+
+    if (err) printf("zfs_open() failed %d\n", err);
+
+    return err;
 }
 
 static int
@@ -1555,8 +1563,8 @@ zfs_vnop_getnamedstream(
 	*svpp = NULLVP;
 	ZFS_ENTER(zfsvfs);
 
-    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
-                     &xattr, sizeof(xattr)) == 0);
+    sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
+                     &xattr, sizeof(xattr));
 	/*
 	 * Mac OS X only supports the "com.apple.ResourceFork" stream.
 	 */
@@ -1591,7 +1599,7 @@ out:
 }
 
 static int
-zfs_vnop_makenamedstream_args(
+zfs_vnop_makenamedstream(
 	struct vnop_makenamedstream_args /* {
 		struct vnode *a_vp;
 		struct vnode **a_svpp;

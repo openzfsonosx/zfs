@@ -73,6 +73,9 @@
 SYSCTL_INT(_debug_sizeof, OID_AUTO, znode, CTLFLAG_RD, 0, sizeof(znode_t),
     "sizeof(znode_t)");
 #endif
+void
+zfs_release_sa_handle(sa_handle_t *hdl, dmu_buf_t *db, void *tag);
+
 
 //#define dprintf printf
 
@@ -1063,13 +1066,14 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
          * zfs_znode_alloc(), as it may call either of vnop_reclaim, or
          * vnop_fsync.
          */
+        //zfs_release_sa_handle(sa_hdl, db, FTAG);
         ZFS_OBJ_HOLD_EXIT(zfsvfs, obj);
 		*zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, sa_hdl);
 		ASSERT(*zpp != NULL);
         ZFS_OBJ_HOLD_ENTER(zfsvfs, obj);
-        VERIFY(0 == sa_buf_hold(zfsvfs->z_os, obj, NULL, &db));
-        VERIFY(0 == sa_handle_get_from_db(zfsvfs->z_os, db, NULL,
-                                          SA_HDL_SHARED, &sa_hdl));
+        //VERIFY(0 == sa_buf_hold(zfsvfs->z_os, obj, NULL, &db));
+        //VERIFY(0 == sa_handle_get_from_db(zfsvfs->z_os, db, NULL,
+        //                                  SA_HDL_SHARED, &sa_hdl));
 	} else {
 		/*
 		 * If we are creating the root node, the "parent" we
@@ -1268,35 +1272,43 @@ again:
 		 * know about the znode.
 		 */
 
-		ASSERT3P(zp, !=, NULL);
+        /*
+         * We can only call getwithvid if vp is not NULL
+         */
+        if (!zp || !zp->z_vid || !ZTOV(zp)) {
+            getnewvnode_drop_reserve();
+            return (ENOENT);
+        }
 
-		mutex_enter(&zp->z_lock);
-		ASSERT3U(zp->z_id, ==, obj_num);
-		if (zp->z_unlinked) {
-			err = (ENOENT);
-		} else {
-			vp = ZTOV(zp);
-			*zpp = zp;
-			err = 0;
-		}
-		sa_buf_rele(db, NULL);
+        ASSERT3P(zp, !=, NULL);
 
-		mutex_exit(&zp->z_lock);
+        mutex_enter(&zp->z_lock);
+        ASSERT3U(zp->z_id, ==, obj_num);
+        if (zp->z_unlinked) {
+            err = (ENOENT);
+        } else {
+            vp = ZTOV(zp);
+            *zpp = zp;
+            err = 0;
+        }
+        sa_buf_rele(db, NULL);
+
+        mutex_exit(&zp->z_lock);
         if (release_lock)
             ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
-		if (err == 0) {
+        if (err == 0) {
 
             dprintf("attaching vnode %p\n", vp);
             if ((vnode_getwithvid(vp, zp->z_vid) != 0)) {
                 goto again;
             }
 
-		}
+        }
 
-		getnewvnode_drop_reserve();
-		return (err);
-	}
+        getnewvnode_drop_reserve();
+        return (err);
+    }
 
 	/*
 	 * Not found create new znode/vnode
@@ -1486,6 +1498,28 @@ zfs_zinactive(znode_t *zp)
 
 	ASSERT(zp->z_sa_hdl);
 
+    /*
+panic(cpu 1 caller 0xffffff7f99ddf318): "mutex_enter: locking against myself!"@spl-mutex.c:108
+Backtrace (CPU 1), Frame : Return Address
+0xffffff805dd5b4c0 : 0xffffff801861d626 mach_kernel : _panic + 0xc6
+0xffffff805dd5b530 : 0xffffff7f99ddf318 net.lundman.spl : _spl_mutex_enter + 0x78
+0xffffff805dd5b550 : 0xffffff7f99ec6a27 net.lundman.zfs : _zfs_zinactive + 0x47
+0xffffff805dd5b580 : 0xffffff7f99ebb789 net.lundman.zfs : _zfs_vnop_reclaim + 0xa9
+0xffffff805dd5b5c0 : 0xffffff801871332c mach_kernel : _VNOP_RECLAIM + 0x2c
+0xffffff805dd5b5f0 : 0xffffff80186f16dc mach_kernel : _vflush + 0x7cc
+0xffffff805dd5b640 : 0xffffff80186f0cd1 mach_kernel : _vnode_rele_ext + 0x351
+0xffffff805dd5b680 : 0xffffff80186f7ac6 mach_kernel : _vfs_addtrigger + 0x2a6
+0xffffff805dd5b6b0 : 0xffffff80186efa5e mach_kernel : _vnode_create + 0x15e
+0xffffff805dd5b770 : 0xffffff80188f108b mach_kernel : _hfs_getnewvnode + 0x68b
+0xffffff805dd5b870 : 0xffffff80188f9262 mach_kernel : _hfs_vnop_lookup + 0x342
+0xffffff805dd5ba90 : 0xffffff8018711504 mach_kernel : _VNOP_LOOKUP + 0x34
+0xffffff805dd5bad0 : 0xffffff80186eb43c mach_kernel : _lookup + 0x22c
+0xffffff805dd5bb50 : 0xffffff80186eae1e mach_kernel : _namei + 0x5ae
+0xffffff805dd5bc10 : 0xffffff8018705732 mach_kernel : _munge_user32_stat64 + 0x8f2
+0xffffff805dd5bd90 : 0xffffff80186fe0fc mach_kernel : _stat64 + 0x8c
+0xffffff805dd5bf50 : 0xffffff80189e16aa mach_kernel : _unix_syscall64 + 0x20a
+0xffffff805dd5bfb0 : 0xffffff80186ce9c3 mach_kernel : _hndl_unix_scall64 + 0x13
+     */
     ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
 
 	mutex_enter(&zp->z_lock);

@@ -6,4 +6,5 @@ _VNOP_REMOVE
 _VNOP_LOOKUP
 _VNOP_SYMLINK
 _hostname
-
+_vm_page_free_count
+_vm_page_speculative_count

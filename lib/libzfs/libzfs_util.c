@@ -670,6 +670,12 @@ libzfs_run_process(const char *path, char *argv[], int flags)
 
 		close(devnull_fd);
 
+        { int i;
+        fprintf(stderr, "Running process: ");
+        for (i = 0; argv[i]; i++)
+            fprintf(stderr, "'%s' ", argv[i]);
+        fprintf(stderr, "\r\n");
+        }
 		(void) execvp(path, argv);
 		_exit(-1);
 	} else if (pid > 0) {

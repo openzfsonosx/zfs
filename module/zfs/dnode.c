@@ -370,7 +370,7 @@ dnode_setdblksz(dnode_t *dn, int size)
 	dn->dn_datablkszsec = size >> SPA_MINBLOCKSHIFT;
 	dn->dn_datablkshift = ISP2(size) ? highbit(size - 1) : 0;
 }
-
+int dnode_other = 0;
 static dnode_t *
 dnode_create(objset_t *os, dnode_phys_t *dnp, dmu_buf_impl_t *db,
     uint64_t object, dnode_handle_t *dnh)
@@ -423,6 +423,8 @@ dnode_create(objset_t *os, dnode_phys_t *dnp, dmu_buf_impl_t *db,
 	mutex_exit(&os->os_lock);
 
 	arc_space_consume(sizeof (dnode_t), ARC_SPACE_OTHER);
+    dnode_other++;
+
 	return (dn);
 }
 
@@ -472,6 +474,7 @@ dnode_destroy(dnode_t *dn)
 	dmu_zfetch_rele(&dn->dn_zfetch);
 	kmem_cache_free(dnode_cache, dn);
 	arc_space_return(sizeof (dnode_t), ARC_SPACE_OTHER);
+    dnode_other--;
 }
 
 void

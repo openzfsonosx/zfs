@@ -558,6 +558,8 @@ dbuf_read_done(zio_t *zio, arc_buf_t *buf, void *vdb)
 	cv_broadcast(&db->db_changed);
 	dbuf_rele_and_unlock(db, NULL);
 }
+int bonusholds=0;
+int dmubufholds=0;
 
 static void
 dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
@@ -582,6 +584,7 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
 		ASSERT3U(bonuslen, <=, db->db.db_size);
 		db->db.db_data = zio_buf_alloc(DN_MAX_BONUSLEN);
 		arc_space_consume(DN_MAX_BONUSLEN, ARC_SPACE_OTHER);
+        bonusholds++;
 		if (bonuslen < DN_MAX_BONUSLEN)
 			bzero(db->db.db_data, DN_MAX_BONUSLEN);
 		if (bonuslen)
@@ -628,7 +631,7 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
 
 	dbuf_add_ref(db, NULL);
 
-	(void) arc_read(zio, spa, db->db_blkptr, NULL,
+	(void) arc_read(zio, spa, db->db_blkptr,
 	    dbuf_read_done, db, ZIO_PRIORITY_SYNC_READ,
 	    (*flags & DB_RF_CANFAIL) ? ZIO_FLAG_CANFAIL : ZIO_FLAG_MUSTSUCCEED,
 	    &aflags, &zb);
@@ -783,6 +786,7 @@ dbuf_fix_old_data(dmu_buf_impl_t *db, uint64_t txg)
 		/* Note that the data bufs here are zio_bufs */
 		dr->dt.dl.dr_data = zio_buf_alloc(DN_MAX_BONUSLEN);
 		arc_space_consume(DN_MAX_BONUSLEN, ARC_SPACE_OTHER);
+        bonusholds++;
 		bcopy(db->db.db_data, dr->dt.dl.dr_data, DN_MAX_BONUSLEN);
 	} else if (refcount_count(&db->db_holds) > db->db_dirtycnt) {
 		int size = db->db.db_size;
@@ -1580,6 +1584,7 @@ dbuf_clear(dmu_buf_impl_t *db)
 		if (db->db_blkid == DMU_BONUS_BLKID) {
 			zio_buf_free(db->db.db_data, DN_MAX_BONUSLEN);
 			arc_space_return(DN_MAX_BONUSLEN, ARC_SPACE_OTHER);
+            bonusholds--;
 		}
 		db->db.db_data = NULL;
 		db->db_state = DB_UNCACHED;
@@ -1741,6 +1746,7 @@ dbuf_create(dnode_t *dn, uint8_t level, uint64_t blkid,
 		db->db_state = DB_UNCACHED;
 		/* the bonus dbuf is not placed in the hash table */
 		arc_space_consume(sizeof (dmu_buf_impl_t), ARC_SPACE_OTHER);
+        dmubufholds++;
 		return (db);
 	} else if (blkid == DMU_SPILL_BLKID) {
 		db->db.db_size = (blkptr != NULL) ?
@@ -1772,6 +1778,7 @@ dbuf_create(dnode_t *dn, uint8_t level, uint64_t blkid,
 	db->db_state = DB_UNCACHED;
 	mutex_exit(&dn->dn_dbufs_mtx);
 	arc_space_consume(sizeof (dmu_buf_impl_t), ARC_SPACE_OTHER);
+    dmubufholds++;
 
 	if (parent && parent != dn->dn_dbuf)
 		dbuf_add_ref(parent, db);
@@ -1851,6 +1858,7 @@ dbuf_destroy(dmu_buf_impl_t *db)
 
 	kmem_cache_free(dbuf_cache, db);
 	arc_space_return(sizeof (dmu_buf_impl_t), ARC_SPACE_OTHER);
+    dmubufholds--;
 }
 
 void
@@ -1888,7 +1896,7 @@ dbuf_prefetch(dnode_t *dn, uint64_t blkid)
 			    dn->dn_object, 0, blkid);
 
 			(void) arc_read(NULL, dn->dn_objset->os_spa,
-                            bp, NULL, NULL, NULL, priority,
+                            bp, NULL, NULL, priority,
 			    ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
 			    &aflags, &zb);
 		}
@@ -2436,6 +2444,7 @@ dbuf_sync_leaf(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 		if (*datap != db->db.db_data) {
 			zio_buf_free(*datap, DN_MAX_BONUSLEN);
 			arc_space_return(DN_MAX_BONUSLEN, ARC_SPACE_OTHER);
+            bonusholds--;
 		}
 		db->db_data_pending = NULL;
 		drp = &db->db_last_dirty;
