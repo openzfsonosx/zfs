@@ -473,7 +473,9 @@ zfs_vnop_fsync(
 	} */ *ap)
 {
 	znode_t *zp = VTOZ(ap->a_vp);
+    zfsvfs_t *zfsvfs;
 	DECLARE_CRED_AND_CONTEXT(ap);
+    int err;
 
 	/*
 	 * Check if this znode has already been synced, freed, and recycled
@@ -484,7 +486,23 @@ zfs_vnop_fsync(
 	if (zp == NULL)
 		return (0);
 
-	return (zfs_fsync(ap->a_vp, /*flag*/0, cr, ct));
+    zfsvfs = zp->z_zfsvfs;
+
+    /*
+     * Because vnode_create() can end up calling fsync, which means we would
+     * sit around waiting for dmu_tx, while higher up in this thread may
+     * have called vnode_create(), while waiting for dmu_tx. We have wrapped
+     * the vnode_create() call with a lock, so we can ignore fsync while
+     * inside vnode_create().
+     */
+
+    if (mutex_owner(&zfsvfs->z_lock)) {
+        //printf("skipping fsync due to lock\n");
+        return 0;
+    }
+
+	err = zfs_fsync(ap->a_vp, /*flag*/0, cr, ct);
+    return err;
 }
 
 static int
@@ -2316,7 +2334,10 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 		break;
 	}
 
+    // Try locking, in case vnode_create() calls fsync.
+    mutex_enter(&zfsvfs->z_lock);
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0);
+    mutex_exit(&zfsvfs->z_lock);
 
     dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
 
