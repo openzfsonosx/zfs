@@ -1215,9 +1215,6 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 	struct vnode		*vp;
 	sa_handle_t	*hdl;
 	struct thread	*td;
-#ifndef __APPLE__
-	int locked;
-#endif
 	int err;
     int release_lock = 1;
 
@@ -1237,10 +1234,7 @@ again:
      * it here.
      */
 
-    if (ZFS_OBJ_HELD(zfsvfs, obj_num))
-        release_lock = 0;
-    else
-        ZFS_OBJ_HOLD_ENTER(zfsvfs, obj_num);
+    ZFS_OBJ_HOLD_ENTER(zfsvfs, obj_num);
 
 	err = sa_buf_hold(zfsvfs->z_os, obj_num, NULL, &db);
 	if (err) {
@@ -1255,8 +1249,7 @@ again:
 	    (doi.doi_bonus_type == DMU_OT_ZNODE &&
 	    doi.doi_bonus_size < sizeof (znode_phys_t)))) {
 		sa_buf_rele(db, NULL);
-        if (release_lock)
-            ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+        ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 		getnewvnode_drop_reserve();
 		return ((EINVAL));
 	}
@@ -1294,8 +1287,7 @@ again:
         sa_buf_rele(db, NULL);
 
         mutex_exit(&zp->z_lock);
-        if (release_lock)
-            ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+        ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
         if (err == 0) {
 
