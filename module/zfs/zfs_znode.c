@@ -1320,6 +1320,7 @@ again:
      * vnop_fsync.
      */
     ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+    zp = NULL;
 	zp = zfs_znode_alloc(zfsvfs, db, doi.doi_data_block_size,
 	    doi.doi_bonus_type, NULL);
 

@@ -496,8 +496,8 @@ zfs_vnop_fsync(
      * inside vnode_create().
      */
 
-    if (mutex_owner(&zfsvfs->z_lock)) {
-        //printf("skipping fsync due to lock\n");
+    // Defer syncs if we are coming through vnode_create()
+    if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
         return 0;
     }
 
@@ -1140,6 +1140,20 @@ zfs_vnop_reclaim(
 #ifndef __APPLE__
 	vnode_destroy_vobject(vp);
 #endif
+
+    /*
+     * Calls into vnode_create() can trigger reclaim and since we are
+     * likely to hold locks while inside vnode_create(), we need to defer
+     * reclaims until later.
+     */
+    if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
+        printf("reclaim: leaking zp %p\n", zp);
+        zp->z_vnode = NULL;
+        vnode_clearfsnode(vp); /* vp->v_data = NULL */
+        vnode_removefsref(vp); /* ADDREF from vnode_create */
+        return 0;
+    }
+
 
 	/*
 	 * z_teardown_inactive_lock protects from a race with
@@ -2334,10 +2348,13 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 		break;
 	}
 
-    // Try locking, in case vnode_create() calls fsync.
-    mutex_enter(&zfsvfs->z_lock);
+    /*
+     * vnode_create() has a habit of calling both vnop_reclaim() and
+     * vnop_fsync(), which can create havok as we are already holding locks.
+     */
+    mutex_enter(&zfsvfs->z_vnode_create_lock);
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0);
-    mutex_exit(&zfsvfs->z_lock);
+    mutex_exit(&zfsvfs->z_vnode_create_lock);
 
     dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
 
