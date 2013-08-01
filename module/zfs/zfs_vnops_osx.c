@@ -58,6 +58,8 @@
 #include <sys/xattr.h>
 #include <sys/utfconv.h>
 #include <sys/ubc.h>
+#include <sys/callb.h>
+
 
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
@@ -394,11 +396,11 @@ zfs_vnop_mkdir(
     int error;
     dprintf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
-#if 0 // Let's deny OSX fseventd for now */
+#if 1 // Let's deny OSX fseventd for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".fseventsd"))
         return EINVAL;
 #endif
-#if 0 //spotlight for now */
+#if 1 //spotlight for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".Spotlight-V100"))
         return EINVAL;
 #endif
@@ -1121,6 +1123,76 @@ zfs_vnop_inactive(
 	return (0);
 }
 
+
+/*
+ * Thread started to deal with any nodes in z_reclaim_nodes
+ */
+void vnop_reclaim_thread(void *arg)
+{
+    znode_t *zp;
+	callb_cpr_t		cpr;
+    zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
+
+#ifdef VERBOSE_RECLAIM
+    int count = 0;
+    printf("ZFS: reclaim thread is alive!\n");
+#endif
+
+	CALLB_CPR_INIT(&cpr, &zfsvfs->z_reclaim_thr_lock, callb_generic_cpr, FTAG);
+
+	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
+
+	while (zfsvfs->z_reclaim_thread_exit == FALSE) {
+
+        while (1) {
+
+            mutex_enter(&zfsvfs->z_vnode_create_lock);
+
+            zp = list_head(&zfsvfs->z_reclaim_znodes);
+            if (zp)
+                list_remove(&zfsvfs->z_reclaim_znodes, zp);
+            mutex_exit(&zfsvfs->z_vnode_create_lock);
+
+            if (!zp) break; // Go back to sleeping
+
+#ifdef VERBOSE_RECLAIM
+            count++;
+#endif
+            rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+            if (zp->z_sa_hdl == NULL)
+                zfs_znode_free(zp);
+            else
+                zfs_zinactive(zp);
+            rw_exit(&zfsvfs->z_teardown_inactive_lock);
+
+        } // forever
+
+#ifdef VERBOSE_RECLAIM
+        if (count)
+            printf("reclaim_thr: released %d nodes\n", count);
+        count = 0;
+#endif
+
+
+		/* block until needed, or one second, whichever is shorter */
+		CALLB_CPR_SAFE_BEGIN(&cpr);
+		(void) cv_timedwait(&zfsvfs->z_reclaim_thr_cv,
+		    &zfsvfs->z_reclaim_thr_lock, (ddi_get_lbolt() + hz));
+		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_reclaim_thr_lock);
+
+    } // while thread should run
+
+#ifdef VERBOSE_RECLAIM
+    printf("ZFS: reclaim thread is quitting!\n");
+#endif
+
+    zfsvfs->z_reclaim_thread_exit = FALSE;
+	cv_broadcast(&zfsvfs->z_reclaim_thr_cv);
+	CALLB_CPR_EXIT(&cpr);		/* drops zfsvfs->z_reclaim_thr_lock */
+
+    thread_exit();
+}
+
 static int
 zfs_vnop_reclaim(
 	struct vnop_reclaim_args /* {
@@ -1141,41 +1213,32 @@ zfs_vnop_reclaim(
 	vnode_destroy_vobject(vp);
 #endif
 
+    vnode_clearfsnode(vp); /* vp->v_data = NULL */
+    vnode_removefsref(vp); /* ADDREF from vnode_create */
+
     /*
      * Calls into vnode_create() can trigger reclaim and since we are
      * likely to hold locks while inside vnode_create(), we need to defer
      * reclaims until later.
      */
+
+    // We always grab vnode_create_lock before znodes_lock
+    mutex_enter(&zfsvfs->z_znodes_lock);
+    zp->z_vnode = NULL;
+    list_remove(&zfsvfs->z_all_znodes, zp); //XXX
+    mutex_exit(&zfsvfs->z_znodes_lock);
+
+    // We might already holding vnode_create_lock
     if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
-        printf("reclaim: leaking zp %p\n", zp);
-        zp->z_vnode = NULL;
-        vnode_clearfsnode(vp); /* vp->v_data = NULL */
-        vnode_removefsref(vp); /* ADDREF from vnode_create */
-        return 0;
+        list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
+    } else {
+        mutex_enter(&zfsvfs->z_vnode_create_lock);
+        list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
+        mutex_exit(&zfsvfs->z_vnode_create_lock);
     }
 
-
-	/*
-	 * z_teardown_inactive_lock protects from a race with
-	 * zfs_znode_dmu_fini in zfsvfs_teardown during
-	 * force unmount.
-	 */
-	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-    dprintf("reclaim %p\n", zp->z_sa_hdl);
-	if (zp->z_sa_hdl == NULL)
-		zfs_znode_free(zp);
-	else
-		zfs_zinactive(zp);
-	rw_exit(&zfsvfs->z_teardown_inactive_lock);
-
-#ifndef __APPLE__
-	vp->v_data = NULL;
-#else
-    vnode_clearfsnode(vp); /* vp->v_data = NULL */
-	vnode_removefsref(vp); /* ADDREF from vnode_create */
-#endif
-    dprintf("-reclaim\n");
-	return (0);
+	cv_signal(&zfsvfs->z_reclaim_thr_cv);
+    return 0;
 }
 
 static int

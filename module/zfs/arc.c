@@ -2586,7 +2586,7 @@ arc_reclaim_thread(void *dummy __unused)
 
 		/* block until needed, or one second, whichever is shorter */
 		CALLB_CPR_SAFE_BEGIN(&cpr);
-		(void) cv_timedwait(&arc_reclaim_thr_cv,
+		(void) cv_timedwait_interruptible(&arc_reclaim_thr_cv,
 		    &arc_reclaim_thr_lock, (ddi_get_lbolt() + hz));
 		CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_thr_lock);
 	}
@@ -3395,6 +3395,8 @@ arc_freed(spa_t *spa, const blkptr_t *bp)
     kmutex_t *hash_lock;
     uint64_t guid = spa_load_guid(spa);
 
+    dprintf("+arc_freed\n");
+
     hdr = buf_hash_find(guid, BP_IDENTITY(bp), BP_PHYSICAL_BIRTH(bp),
                         &hash_lock);
     if (hdr == NULL)
@@ -3411,6 +3413,7 @@ arc_freed(spa_t *spa, const blkptr_t *bp)
         mutex_exit(hash_lock);
     }
 
+    dprintf("-arc_freed\n");
 }
 
 /*

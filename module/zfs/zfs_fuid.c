@@ -709,6 +709,8 @@ zfs_groupmember(zfsvfs_t *zfsvfs, uint64_t id, cred_t *cr)
 #endif	/* !sun */
 	uid_t		gid;
 
+    if (!cr) return FALSE;
+
 #ifdef sun
 	if (ksid && ksidlist) {
 		int 		i;

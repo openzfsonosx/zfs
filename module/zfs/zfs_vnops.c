@@ -2076,6 +2076,8 @@ top:
 		ASSERT0(vp->v_count);
 		VI_UNLOCK(vp);
 #else
+        /* None of this code is run on Apple, see delete_now panic above */
+
         /* Release the hold zfs_zget put on the vnode */
 		vnode_put(vp);
 

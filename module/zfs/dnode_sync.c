@@ -418,7 +418,7 @@ dnode_evict_dbufs(dnode_t *dn)
 		 */
 		mutex_exit(&dn->dn_dbufs_mtx);
 		if (evicting)
-			delay(1);
+			delay(hz);
 		pass++;
 		if ((pass % 100) == 0)
 			dprintf("Exceeded %d passes evicting dbufs\n", pass);

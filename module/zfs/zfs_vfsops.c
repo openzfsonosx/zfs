@@ -95,7 +95,7 @@
 #include <sys/zpl.h>
 #include "zfs_comutil.h"
 
-
+//#define dprintf printf
 
 #ifdef __APPLE__
 
@@ -1117,13 +1117,21 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	mutex_init(&zfsvfs->z_znodes_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&zfsvfs->z_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&zfsvfs->z_vnode_create_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&zfsvfs->z_reclaim_thr_lock, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&zfsvfs->z_reclaim_thr_cv, NULL, CV_DEFAULT, NULL);
 	list_create(&zfsvfs->z_all_znodes, sizeof (znode_t),
+	    offsetof(znode_t, z_link_node));
+	list_create(&zfsvfs->z_reclaim_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_node));
 	rrw_init(&zfsvfs->z_teardown_lock/*, B_FALSE*/);
 	rw_init(&zfsvfs->z_teardown_inactive_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zfsvfs->z_fuid_lock, NULL, RW_DEFAULT, NULL);
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_init(&zfsvfs->z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
+
+    zfsvfs->z_reclaim_thread_exit = FALSE;
+	(void) thread_create(NULL, 0, vnop_reclaim_thread, zfsvfs, 0, &p0,
+	    TS_RUN, minclsyspri);
 
 	*zfvp = zfsvfs;
 	return (0);
@@ -1223,15 +1231,28 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	 * not unmounted. We consider the filesystem valid before the barrier
 	 * and invalid after the barrier.
 	 */
-	rw_enter(&zfsvfs_lock, RW_READER);
-	rw_exit(&zfsvfs_lock);
+	//rw_enter(&zfsvfs_lock, RW_READER);
+	//rw_exit(&zfsvfs_lock);
 
 	zfs_fuid_destroy(zfsvfs);
+
+    printf("stopping reclaim thread\n");
+	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
+    zfsvfs->z_reclaim_thread_exit = TRUE;
+	cv_signal(&zfsvfs->z_reclaim_thr_cv);
+	while (zfsvfs->z_reclaim_thread_exit == TRUE)
+		cv_wait(&zfsvfs->z_reclaim_thr_cv, &zfsvfs->z_reclaim_thr_lock);
+	mutex_exit(&zfsvfs->z_reclaim_thr_lock);
+
+	mutex_destroy(&zfsvfs->z_reclaim_thr_lock);
+	cv_destroy(&zfsvfs->z_reclaim_thr_cv);
+    printf("Stopped, then releasing node.\n");
 
 	mutex_destroy(&zfsvfs->z_znodes_lock);
 	mutex_destroy(&zfsvfs->z_lock);
 	mutex_destroy(&zfsvfs->z_vnode_create_lock);
 	list_destroy(&zfsvfs->z_all_znodes);
+	list_destroy(&zfsvfs->z_reclaim_znodes);
 	rrw_destroy(&zfsvfs->z_teardown_lock);
 	rw_destroy(&zfsvfs->z_teardown_inactive_lock);
 	rw_destroy(&zfsvfs->z_fuid_lock);
@@ -2474,14 +2495,19 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		 * Unset the objset user_ptr.
 		 */
 		mutex_enter(&os->os_user_ptr_lock);
+        dprintf("mutex\n");
 		dmu_objset_set_user(os, NULL);
+        dprintf("set\n");
 		mutex_exit(&os->os_user_ptr_lock);
 
 		/*
 		 * Finally release the objset
 		 */
+        dprintf("disown\n");
 		dmu_objset_disown(os, zfsvfs);
 	}
+
+    dprintf("OS released\n");
 
 	/*
 	 * We can now safely destroy the '.zfs' directory node.
@@ -2521,9 +2547,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
     /* We can not be locked during zget. */
 
-    ZFS_EXIT(zfsvfs);
 	err = zfs_zget(zfsvfs, ino, &zp);
-	ZFS_ENTER(zfsvfs);
 
     if (err) {
         dprintf("zget failed %d\n", err);

@@ -730,7 +730,6 @@ dsl_dataset_disown(dsl_dataset_t *ds, void *tag)
 {
 	ASSERT((ds->ds_owner == tag && ds->ds_dbuf) ||
 	    (DSL_DATASET_IS_DESTROYED(ds) && ds->ds_dbuf == NULL));
-
 	mutex_enter(&ds->ds_lock);
 	ds->ds_owner = NULL;
 	if (RW_WRITE_HELD(&ds->ds_rwlock)) {

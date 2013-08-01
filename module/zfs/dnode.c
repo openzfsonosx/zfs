@@ -929,15 +929,20 @@ void
 dnode_special_close(dnode_handle_t *dnh)
 {
 	dnode_t *dn = dnh->dnh_dnode;
-
+    int count = 0;
 	/*
 	 * Wait for final references to the dnode to clear.  This can
 	 * only happen if the arc is asyncronously evicting state that
 	 * has a hold on this dnode while we are trying to evict this
 	 * dnode.
 	 */
-	while (refcount_count(&dn->dn_holds) > 0)
-		delay(1);
+	while (refcount_count(&dn->dn_holds) > 0) {
+		delay(hz);
+        if (count++ > 5) {
+            printf("dnode: ARC release bug triggered: %p -- sorry\n", dn);
+            count = 0;
+        }
+    }
 	zrl_add(&dnh->dnh_zrlock);
 	dnode_destroy(dn); /* implicit zrl_remove() */
 	zrl_destroy(&dnh->dnh_zrlock);

@@ -587,6 +587,10 @@ zfs_purgedir(znode_t *dzp)
 }
 
 
+/*
+ * This function is either called directly from reclaim, or in a delayed
+ * manner, so the value of zp->z_vnode may be NULL.
+ */
 void
 zfs_rmnode(znode_t *zp)
 {
@@ -604,7 +608,7 @@ zfs_rmnode(znode_t *zp)
 	/*
 	 * If this is an attribute directory, purge its contents.
 	 */
-	if (ZTOV(zp) != NULL && vnode_isdir(ZTOV(zp)) &&
+	if (IFTOVT((mode_t)zp->z_mode) == VDIR &&
 	    (zp->z_pflags & ZFS_XATTR)) {
 
 		error = zap_count(os, zp->z_id, &count);

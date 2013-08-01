@@ -85,6 +85,10 @@ struct zfsvfs {
         uint64_t        z_shares_dir;   /* hidden shares dir */
         kmutex_t	    z_lock;
         kmutex_t	    z_vnode_create_lock;
+        list_t          z_reclaim_znodes;/* all reclaimed vnodes in the fs*/
+        boolean_t       z_reclaim_thread_exit;
+        kmutex_t		z_reclaim_thr_lock;
+        kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
         uint64_t	    z_replay_eof;	/* New end of file - replay only */
