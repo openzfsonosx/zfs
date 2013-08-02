@@ -1135,7 +1135,7 @@ void vnop_reclaim_thread(void *arg)
 
 #ifdef VERBOSE_RECLAIM
     int count = 0;
-    printf("ZFS: reclaim thread is alive!\n");
+    printf("ZFS: reclaim %p thread is alive!\n", zfsvfs);
 #endif
 
 	CALLB_CPR_INIT(&cpr, &zfsvfs->z_reclaim_thr_lock, callb_generic_cpr, FTAG);
@@ -1169,7 +1169,7 @@ void vnop_reclaim_thread(void *arg)
 
 #ifdef VERBOSE_RECLAIM
         if (count)
-            printf("reclaim_thr: released %d nodes\n", count);
+            printf("reclaim_thr: %p released %d nodes\n", zfsvfs, count);
         count = 0;
 #endif
 
@@ -1183,7 +1183,7 @@ void vnop_reclaim_thread(void *arg)
     } // while thread should run
 
 #ifdef VERBOSE_RECLAIM
-    printf("ZFS: reclaim thread is quitting!\n");
+    printf("ZFS: reclaim thread %p is quitting!\n", zfsvfs);
 #endif
 
     zfsvfs->z_reclaim_thread_exit = FALSE;
