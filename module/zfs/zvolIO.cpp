@@ -15,7 +15,7 @@
  */
 
 
-#define dprintf IOLog
+//#define dprintf IOLog
 
 // Define the superclass
 #define super IOBlockStorageDevice
@@ -60,12 +60,12 @@ void net_lundman_zfs_zvol_device::getBSDName(void)
                                             kIORegistryIterateRecursively);
     if(bsdnameosobj) {
       OSString* bsdnameosstr = OSDynamicCast(OSString, bsdnameosobj);
-      IOLog("The bsd name is ... %s\n", bsdnameosstr->getCStringNoCopy());
+      IOLog("zvol: bsd name is '%s'\n", bsdnameosstr->getCStringNoCopy());
       if (zv) {
         zv->zv_bsdname[0] = 'r'; // for 'rdiskX'.
         strlcpy(&zv->zv_bsdname[1], bsdnameosstr->getCStringNoCopy(),
                 sizeof(zv->zv_bsdname)-1);
-        IOLog("name assigned '%s'\n", zv->zv_bsdname);
+        //IOLog("name assigned '%s'\n", zv->zv_bsdname);
       }
     }
   }
@@ -100,13 +100,13 @@ bool net_lundman_zfs_zvol_device::handleOpen( IOService *client,
   switch (access) {
 
   case kIOStorageAccessReader:
-    IOLog("handleOpen: readOnly\n");
+    //IOLog("handleOpen: readOnly\n");
     zv->zv_openflags = FREAD;
     zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL);
     break;
 
   case kIOStorageAccessReaderWriter:
-    IOLog("handleOpen: options %04x\n", options);
+    //IOLog("handleOpen: options %04x\n", options);
     zv->zv_openflags = FWRITE | ZVOL_EXCL;
     break;
 
