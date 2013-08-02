@@ -396,11 +396,11 @@ zfs_vnop_mkdir(
     int error;
     dprintf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
-#if 1 // Let's deny OSX fseventd for now */
+#if 0 // Let's deny OSX fseventd for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".fseventsd"))
         return EINVAL;
 #endif
-#if 1 //spotlight for now */
+#if 0 //spotlight for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".Spotlight-V100"))
         return EINVAL;
 #endif
@@ -1133,6 +1133,7 @@ void vnop_reclaim_thread(void *arg)
 	callb_cpr_t		cpr;
     zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
 
+    //#define VERBOSE_RECLAIM
 #ifdef VERBOSE_RECLAIM
     int count = 0;
     printf("ZFS: reclaim %p thread is alive!\n", zfsvfs);
@@ -1142,8 +1143,7 @@ void vnop_reclaim_thread(void *arg)
 
 	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
 
-	while (zfsvfs->z_reclaim_thread_exit == FALSE) {
-
+    while (1) {
         while (1) {
 
             mutex_enter(&zfsvfs->z_vnode_create_lock);
@@ -1153,7 +1153,8 @@ void vnop_reclaim_thread(void *arg)
                 list_remove(&zfsvfs->z_reclaim_znodes, zp);
             mutex_exit(&zfsvfs->z_vnode_create_lock);
 
-            if (!zp) break; // Go back to sleeping
+            /* Only exit thread once list is empty */
+            if (!zp) break;
 
 #ifdef VERBOSE_RECLAIM
             count++;
@@ -1165,14 +1166,16 @@ void vnop_reclaim_thread(void *arg)
                 zfs_zinactive(zp);
             rw_exit(&zfsvfs->z_teardown_inactive_lock);
 
-        } // forever
+        } // until empty
 
 #ifdef VERBOSE_RECLAIM
         if (count)
-            printf("reclaim_thr: %p released %d nodes\n", zfsvfs, count);
+            printf("reclaim_thr: %p nodes released: %d\n", zfsvfs, count);
         count = 0;
 #endif
 
+        /* Allow us to quit, since list is empty */
+        if (zfsvfs->z_reclaim_thread_exit == TRUE) break;
 
 		/* block until needed, or one second, whichever is shorter */
 		CALLB_CPR_SAFE_BEGIN(&cpr);
@@ -1180,7 +1183,7 @@ void vnop_reclaim_thread(void *arg)
 		    &zfsvfs->z_reclaim_thr_lock, (ddi_get_lbolt() + hz));
 		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_reclaim_thr_lock);
 
-    } // while thread should run
+    } // forever
 
 #ifdef VERBOSE_RECLAIM
     printf("ZFS: reclaim thread %p is quitting!\n", zfsvfs);
@@ -1237,6 +1240,11 @@ zfs_vnop_reclaim(
         mutex_exit(&zfsvfs->z_vnode_create_lock);
     }
 
+    /*
+     * Which is better, the reclaim thread triggering frequently, with mostly
+     * 1 node to reclaim each time, many times a second.
+     * Or, only once per second, and about ~1600 nodes?
+     */
 	cv_signal(&zfsvfs->z_reclaim_thr_cv);
     return 0;
 }

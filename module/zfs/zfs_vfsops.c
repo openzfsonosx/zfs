@@ -1236,7 +1236,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 
 	zfs_fuid_destroy(zfsvfs);
 
-    printf("stopping reclaim thread\n");
+    dprintf("stopping reclaim thread\n");
 	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
     zfsvfs->z_reclaim_thread_exit = TRUE;
 	cv_signal(&zfsvfs->z_reclaim_thr_cv);
@@ -1246,7 +1246,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 
 	mutex_destroy(&zfsvfs->z_reclaim_thr_lock);
 	cv_destroy(&zfsvfs->z_reclaim_thr_cv);
-    printf("Stopped, then releasing node.\n");
+    dprintf("Stopped, then releasing node.\n");
 
 	mutex_destroy(&zfsvfs->z_znodes_lock);
 	mutex_destroy(&zfsvfs->z_lock);
@@ -2456,6 +2456,14 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			}
 		}
 	}
+
+    dprintf("Signalling reclaim sync\n");
+	/* We just did final sync, tell reclaim to mop it up */
+    cv_signal(&zfsvfs->z_reclaim_thr_cv);
+    /* Not the classiest sync control ... */
+    delay(hz);
+
+
 #endif
 
 #ifdef sun

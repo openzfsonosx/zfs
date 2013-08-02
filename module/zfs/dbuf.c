@@ -296,7 +296,7 @@ dbuf_init(void)
 	 * with an average 4K block size.  The table will take up
 	 * totalmem*sizeof(void*)/4K (i.e. 2MB/GB with 8-byte pointers).
 	 */
-	while (hsize * 4096 < physmem * PAGESIZE)
+	while (hsize * 4096 < (uint64_t)physmem * PAGESIZE)
 		hsize <<= 1;
 
 retry:
@@ -1037,7 +1037,6 @@ dbuf_release_bp(dmu_buf_impl_t *db)
 	ASSERT(arc_released(os->os_phys_buf) ||
 	    list_link_active(&os->os_dsl_dataset->ds_synced_link));
 	ASSERT(db->db_parent == NULL || arc_released(db->db_parent->db_buf));
-
 	(void) arc_release(db->db_buf, db);
 }
 
