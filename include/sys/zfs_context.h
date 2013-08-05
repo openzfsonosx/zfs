@@ -62,5 +62,6 @@
 #define MAX_UPL_TRANSFER 256
 #endif
 
+#define ZVOL_ROOT "/var/run"
 
 #endif	/* _SYS_ZFS_CONTEXT_H */

@@ -355,6 +355,33 @@ do_unmount(const char *mntpt, int flags)
 }
 
 static int
+do_unmount_volume(const char *mntpt, int flags)
+{
+	char force_opt[] = "force";
+	char lazy_opt[] = "-l";
+	char *argv[7] = {
+	    "/usr/sbin/diskutil",
+	    "unmountDisk",
+	    NULL, NULL, NULL, NULL };
+	int rc, count = 2;
+
+	if (flags & MS_FORCE) {
+		argv[count] = force_opt;
+		count++;
+	}
+
+	if (flags & MS_DETACH) {
+		argv[count] = lazy_opt;
+		count++;
+	}
+
+	argv[count] = (char *)mntpt;
+	rc = libzfs_run_process(argv[0], argv, STDOUT_VERBOSE|STDERR_VERBOSE);
+
+	return (rc ? EINVAL : 0);
+}
+
+static int
 zfs_add_option(zfs_handle_t *zhp, char *options, int len,
     zfs_prop_t prop, char *on, char *off)
 {
@@ -602,7 +629,7 @@ zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
         else
             mntpt = zfs_strdup(zhp->zfs_hdl, mountpoint);
 
-        printf("located '%s'\n", mntpt);
+        //printf("located '%s'\n", mntpt);
         /*
          * Unshare and unmount the filesystem
          */
@@ -615,7 +642,8 @@ zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
             return (-1);
         }
         free(mntpt);
-    }
+
+        }
 
     return (0);
 }
@@ -630,7 +658,7 @@ zfs_unmountall(zfs_handle_t *zhp, int flags)
 {
 	prop_changelist_t *clp;
 	int ret;
-    printf("unmountall\n");
+
 	clp = changelist_gather(zhp, ZFS_PROP_MOUNTPOINT, 0, flags);
 	if (clp == NULL)
 		return (-1);
@@ -1204,6 +1232,39 @@ mountpoint_compare(const void *a, const void *b)
 	return (strcmp(mountb, mounta));
 }
 
+
+int zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
+{
+
+    if (zfs_get_type(nzhp) == ZFS_TYPE_VOLUME) {
+        char *volume = NULL;
+        printf("Attempting to eject volume '%s'\n",
+               zfs_get_name(nzhp));
+        // /var/run/zfs/zvol/dsk/$POOL/$volume
+        volume = zfs_asprintf(nzhp,
+                              "%s/zfs/zvol/dsk/%s",
+                              ZVOL_ROOT, zfs_get_name(nzhp));
+        if (volume) {
+            /* Unfortunately, diskutil does not handle our symlink to
+             * /dev/diskX - so we need to readlink() to find the path */
+            char dstlnk[MAXPATHLEN];
+            int ret;
+
+            ret = readlink(volume, dstlnk, sizeof(dstlnk));
+            if (ret > 0) {
+                dstlnk[ret] = 0;
+                do_unmount_volume(dstlnk, 0);
+            }
+            free(volume);
+        }
+    }
+
+    (void) zfs_iter_children(nzhp, zpool_disable_volumes, NULL);
+    zfs_close(nzhp);
+    return (0);
+}
+
+
 /*
  * Unshare and unmount all datasets within the given pool.  We don't want to
  * rely on traversing the DSL to discover the filesystems within the pool,
@@ -1327,6 +1388,8 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 		if (datasets[i])
 			remove_mountpoint(datasets[i]);
 	}
+
+    zfs_iter_root(hdl, zpool_disable_volumes, NULL);
 
 	ret = 0;
 out:

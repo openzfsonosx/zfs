@@ -2831,7 +2831,6 @@ int zvol_unlink(char *root, char *target)
  * Note, we do not create symlinks for the partitioned slices.
  *
  */
-#define ZVOL_ROOT "/var/run"
 
 void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rdisk)
 {
