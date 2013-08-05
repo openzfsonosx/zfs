@@ -1498,8 +1498,8 @@ zfs_vnop_removexattr(
 		goto out;
 	}
 
-    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
-                     &xattr, sizeof(xattr)) == 0);
+    sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
+                     &xattr, sizeof(xattr));
 	if (xattr == 0) {
 		error = ENOATTR;
 		goto out;

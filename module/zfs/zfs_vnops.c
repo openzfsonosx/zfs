@@ -3197,6 +3197,12 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	 * handle times greater than 2039.  This check should be removed
 	 * once large timestamps are fully supported.
 	 */
+
+    /*
+     * This test now hinders NFS from working as expected. Most like the
+     * 32bit timestamp issues have already been fixed.
+     */
+#if 0
 	if (mask & (AT_ATIME | AT_MTIME)) {
 		if (((mask & AT_ATIME) && TIMESPEC_OVERFLOW(&vap->va_atime)) ||
 		    ((mask & AT_MTIME) && TIMESPEC_OVERFLOW(&vap->va_mtime))) {
@@ -3204,6 +3210,7 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 			return ((EOVERFLOW));
 		}
 	}
+#endif
 
 top:
 	attrzp = NULL;
