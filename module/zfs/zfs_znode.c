@@ -1527,7 +1527,6 @@ zfs_znode_free(znode_t *zp)
 	}
 
 	kmem_cache_free(znode_cache, zp);
-    XX_numznodes--;
 
 	VFS_RELE(zfsvfs->z_vfs);
 }

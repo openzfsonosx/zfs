@@ -2395,7 +2395,7 @@ arc_reclaim_needed(void)
         return (1);
 #endif
 
-    return (1);
+    return (0);
 }
 
 #ifdef _KERNEL

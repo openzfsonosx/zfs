@@ -1146,9 +1146,7 @@ void vnop_reclaim_thread(void *arg)
 	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
 
     while (1) {
-#ifdef _KERNEL
-        printf("HEARTBEAT %d\n", XX_reclaims);
-#endif
+
         while (1) {
 
             mutex_enter(&zfsvfs->z_vnode_create_lock);
