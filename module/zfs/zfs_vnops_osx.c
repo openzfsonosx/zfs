@@ -1123,6 +1123,8 @@ zfs_vnop_inactive(
 	return (0);
 }
 
+#ifdef _KERNEL
+uint64_t vnop_num_reclaims=0;
 
 /*
  * Thread started to deal with any nodes in z_reclaim_nodes
@@ -1144,6 +1146,9 @@ void vnop_reclaim_thread(void *arg)
 	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
 
     while (1) {
+#ifdef _KERNEL
+        printf("HEARTBEAT %d\n", XX_reclaims);
+#endif
         while (1) {
 
             mutex_enter(&zfsvfs->z_vnode_create_lock);
@@ -1158,6 +1163,9 @@ void vnop_reclaim_thread(void *arg)
 
 #ifdef VERBOSE_RECLAIM
             count++;
+#endif
+#ifdef _KERNEL
+            atomic_dec_64(&vnop_num_reclaims);
 #endif
             rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
             if (zp->z_sa_hdl == NULL)
@@ -1179,8 +1187,9 @@ void vnop_reclaim_thread(void *arg)
 
 		/* block until needed, or one second, whichever is shorter */
 		CALLB_CPR_SAFE_BEGIN(&cpr);
-		(void) cv_timedwait(&zfsvfs->z_reclaim_thr_cv,
-		    &zfsvfs->z_reclaim_thr_lock, (ddi_get_lbolt() + hz));
+		(void) cv_timedwait_interruptible(&zfsvfs->z_reclaim_thr_cv,
+                                          &zfsvfs->z_reclaim_thr_lock,
+                                          (ddi_get_lbolt() + hz));
 		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_reclaim_thr_lock);
 
     } // forever
@@ -1195,6 +1204,7 @@ void vnop_reclaim_thread(void *arg)
 
     thread_exit();
 }
+#endif
 
 static int
 zfs_vnop_reclaim(
@@ -1206,7 +1216,7 @@ zfs_vnop_reclaim(
 	struct vnode	*vp = ap->a_vp;
 	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-
+    static int has_warned = 0;
 	ASSERT(zp != NULL);
 
     dprintf("+vnop_reclaim %p\n", vp);
@@ -1231,6 +1241,9 @@ zfs_vnop_reclaim(
     list_remove(&zfsvfs->z_all_znodes, zp); //XXX
     mutex_exit(&zfsvfs->z_znodes_lock);
 
+#ifdef _KERNEL
+    atomic_inc_64(&vnop_num_reclaims);
+#endif
     // We might already holding vnode_create_lock
     if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
         list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
@@ -1240,12 +1253,18 @@ zfs_vnop_reclaim(
         mutex_exit(&zfsvfs->z_vnode_create_lock);
     }
 
+    if (!has_warned && vnop_num_reclaims > 10000) {
+        has_warned = 1;
+        printf("ZFS: Reclaim thread appears dead (%llu) -- good luck\n",
+               vnop_num_reclaims);
+    }
+
     /*
      * Which is better, the reclaim thread triggering frequently, with mostly
      * 1 node to reclaim each time, many times a second.
      * Or, only once per second, and about ~1600 nodes?
      */
-	cv_signal(&zfsvfs->z_reclaim_thr_cv);
+    cv_broadcast(&zfsvfs->z_reclaim_thr_cv);
     return 0;
 }
 

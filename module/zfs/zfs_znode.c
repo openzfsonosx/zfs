@@ -745,6 +745,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 		zfs_vnode_forget(vp);
 		zp->z_vnode = NULL;
 		kmem_cache_free(znode_cache, zp);
+        printf("weird out triggered\n");
 		return (NULL);
 	}
 
@@ -908,6 +909,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 
 	getnewvnode_reserve(1);
 	ZFS_OBJ_HOLD_ENTER(zfsvfs, obj);
+
 	VERIFY(0 == sa_buf_hold(zfsvfs->z_os, obj, NULL, &db));
 
 	/*
@@ -1105,6 +1107,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 		KASSERT(err == 0, ("insmntque() failed: error %d", err));
 	}
 #endif
+
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj);
 	getnewvnode_drop_reserve();
 }
@@ -1258,6 +1261,7 @@ again:
          * We can only call getwithvid if vp is not NULL
          */
         if (!zp || !zp->z_vid || !ZTOV(zp)) {
+            sa_buf_rele(db, NULL);
             ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
             getnewvnode_drop_reserve();
             return (ENOENT);
@@ -1304,11 +1308,6 @@ again:
 	 * bonus buffer.
 	 */
 
-    /*
-     * We must not hold any locks while calling vnode_create inside
-     * zfs_znode_alloc(), as it may call either of vnop_reclaim, or
-     * vnop_fsync.
-     */
     zp = NULL;
 	zp = zfs_znode_alloc(zfsvfs, db, doi.doi_data_block_size,
 	    doi.doi_bonus_type, NULL);
@@ -1352,6 +1351,8 @@ zfs_rezget(znode_t *zp)
 	int err;
 	int count = 0;
 	uint64_t gen;
+
+    panic("we dont use rezget\n");
 
 	ZFS_OBJ_HOLD_ENTER(zfsvfs, obj_num);
 
@@ -1526,6 +1527,7 @@ zfs_znode_free(znode_t *zp)
 	}
 
 	kmem_cache_free(znode_cache, zp);
+    XX_numznodes--;
 
 	VFS_RELE(zfsvfs->z_vfs);
 }
@@ -2081,7 +2083,6 @@ zfs_sa_setup(objset_t *osp, sa_attr_type_t **sa_table)
 	error = sa_setup(osp, sa_obj, zfs_attr_table, ZPL_END, sa_table);
 	return (error);
 }
-
 static int
 zfs_grab_sa_handle(objset_t *osp, uint64_t obj, sa_handle_t **hdlp,
     dmu_buf_t **db, void *tag)
@@ -2106,7 +2107,6 @@ zfs_grab_sa_handle(objset_t *osp, uint64_t obj, sa_handle_t **hdlp,
 		sa_buf_rele(*db, tag);
 		return (error);
 	}
-
 	return (0);
 }
 

@@ -942,6 +942,7 @@ dnode_special_close(dnode_handle_t *dnh)
             printf("dnode: ARC release bug triggered: %p (%lld)-- sorry\n", dn,
                    refcount_count(&dn->dn_holds));
             count = 0;
+            refcount_remove(&dn->dn_holds, NULL);
             //            panic("BOOOOOOOM");
         }
     }
