@@ -1187,7 +1187,7 @@ void vnop_reclaim_thread(void *arg)
 		CALLB_CPR_SAFE_BEGIN(&cpr);
 		(void) cv_timedwait_interruptible(&zfsvfs->z_reclaim_thr_cv,
                                           &zfsvfs->z_reclaim_thr_lock,
-                                          (ddi_get_lbolt() + hz));
+                                          (ddi_get_lbolt() + (hz>>1)));
 		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_reclaim_thr_lock);
 
     } // forever
@@ -1251,7 +1251,7 @@ zfs_vnop_reclaim(
         mutex_exit(&zfsvfs->z_vnode_create_lock);
     }
 
-    if (!has_warned && vnop_num_reclaims > 10000) {
+    if (!has_warned && vnop_num_reclaims > 20000) {
         has_warned = 1;
         printf("ZFS: Reclaim thread appears dead (%llu) -- good luck\n",
                vnop_num_reclaims);
@@ -1262,7 +1262,14 @@ zfs_vnop_reclaim(
      * 1 node to reclaim each time, many times a second.
      * Or, only once per second, and about ~1600 nodes?
      */
-    cv_broadcast(&zfsvfs->z_reclaim_thr_cv);
+
+    /*
+     * As it turns out, possibly from the high frequency that reclaims are
+     * called, calling either cv_signal() or cv_broadcast() here will
+     * eventually halt the reclaim thread (cv_wait never returns).
+     * So, we let the reclaim thread wake up when it wants to.
+     */
+    //cv_broadcast(&zfsvfs->z_reclaim_thr_cv);
     return 0;
 }
 

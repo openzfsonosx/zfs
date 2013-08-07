@@ -2398,14 +2398,6 @@ arc_reclaim_needed(void)
     return (0);
 }
 
-#ifdef _KERNEL
-extern int dnode_other;
-extern int XX_sa;
-extern int XX_znode;
-extern int XX_dmu;
-extern int XX_numznodes;
-extern uint64_t vnop_num_reclaims;
-#endif
 
 static void
 arc_reclaim_thread(void *dummy __unused)
@@ -2468,7 +2460,7 @@ arc_reclaim_thread(void *dummy __unused)
         arc_adjust();
 
 
-#ifdef _KERNEL
+#ifdef _KARNEL
         {
             clock_t now;
             static clock_t then = 0;
