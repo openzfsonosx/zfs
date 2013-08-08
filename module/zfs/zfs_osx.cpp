@@ -217,18 +217,21 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 void net_lundman_zfs_zvol::stop (IOService *provider)
 {
 
-    super::stop(provider);
-
-    IOLog("ZFS: Attempting to unload ...\n");
 
 #if 0
+  // You can not stop unload :(
 	if (zfs_active_fs_count != 0 ||
 	    spa_busy() ||
 	    zvol_busy()) {
 
-		return KERN_FAILURE;   /* ZFS Still busy! */
+      IOLog("ZFS: Can not unload as we have filesystems mounted.\n");
+      return;
 	}
 #endif
+    IOLog("ZFS: Attempting to unload ...\n");
+
+    super::stop(provider);
+
 
     system_taskq_fini();
 

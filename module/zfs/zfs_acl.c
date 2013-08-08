@@ -1767,18 +1767,21 @@ zfs_acl_ids_overquota(zfsvfs_t *zfsvfs, zfs_acl_ids_t *acl_ids)
 	    zfs_fuid_overquota(zfsvfs, B_TRUE, acl_ids->z_fgid));
 }
 
+#ifndef __APPLE__
 /*
  * Retrieve a files ACL
  */
 int
 zfs_getacl(znode_t *zp, kauth_acl_t  *vsecp, boolean_t skipaclchk, cred_t *cr)
 {
-#if 0 // FIXME OSX
+#if 1 // FIXME OSX
 	zfs_acl_t	*aclp;
 	ulong_t		mask;
 	int		error;
 	int 		count = 0;
 	int		largeace = 0;
+
+
 	mask = vsecp->vsa_mask & (VSA_ACE | VSA_ACECNT |
 	    VSA_ACE_ACLFLAGS | VSA_ACE_ALLTYPES);
 
@@ -1868,6 +1871,129 @@ zfs_getacl(znode_t *zp, kauth_acl_t  *vsecp, boolean_t skipaclchk, cred_t *cr)
 	return (0);
 }
 
+#else // APPLE
+
+int
+zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
+           cred_t *cr)
+{
+    zfs_acl_t       *aclp;
+    kauth_acl_t  k_acl;
+    u_int32_t  ace_flags = 0;
+    kauth_ace_rights_t  rights = 0;
+    guid_t          *guidp;
+    uid_t           who;
+    uint32_t        access_mask;
+    uint16_t        flags;
+    uint16_t        type;
+    int             i;
+    int             error;
+    void *zacep = NULL;
+
+    mutex_enter(&zp->z_acl_lock);
+
+    error = zfs_acl_node_read(zp, B_FALSE, &aclp, B_TRUE);
+    if (error != 0) {
+        mutex_exit(&zp->z_acl_lock);
+        return (error);
+    }
+    if ((k_acl = kauth_acl_alloc(aclp->z_acl_count)) == NULL) {
+        mutex_exit(&zp->z_acl_lock);
+        *aclpp = (kauth_acl_t) KAUTH_FILESEC_NONE;
+        return (ENOMEM);
+    }
+
+    k_acl->acl_entrycount = aclp->z_acl_count;
+    k_acl->acl_flags = 0;
+    *aclpp = k_acl;
+
+    /*
+     * Translate Open Solaris ACEs to Mac OS X ACEs
+     */
+    while (zacep = zfs_acl_next_ace(aclp, zacep,
+                                    &who, &access_mask, &flags, &type)) {
+        //for (i = 0; i < aclp->z_acl_count; i++) {
+        //who = aclp->z_acl[i].a_who;
+        /* Note Mac OS X GUID is a 128-bit identifier */
+        guidp = &k_acl->acl_ace[i].ace_applicable;
+
+        /* Try to get a guid from our uid */
+        if (kauth_cred_uid2guid(who, guidp) != 0) {
+            /* Try using gid */
+            if (kauth_cred_gid2guid(who, guidp) != 0) {
+                /* XXX - What else can we do here? */
+                bzero(guidp, sizeof (guid_t));
+            }
+        }
+        //access_mask = aclp->z_acl[i].a_access_mask;
+        if (access_mask & ACE_READ_DATA)
+            rights |= KAUTH_VNODE_READ_DATA;
+        if (access_mask & ACE_WRITE_DATA)
+            rights |= KAUTH_VNODE_WRITE_DATA;
+        if (access_mask & ACE_APPEND_DATA)
+            rights |= KAUTH_VNODE_APPEND_DATA;
+        if (access_mask & ACE_READ_NAMED_ATTRS)
+            rights |= KAUTH_VNODE_READ_EXTATTRIBUTES;
+        if (access_mask & ACE_WRITE_NAMED_ATTRS)
+            rights |= KAUTH_VNODE_WRITE_EXTATTRIBUTES;
+        if (access_mask & ACE_EXECUTE)
+            rights |= KAUTH_VNODE_EXECUTE;
+        if (access_mask & ACE_DELETE_CHILD)
+            rights |= KAUTH_VNODE_DELETE_CHILD;
+        if (access_mask & ACE_READ_ATTRIBUTES)
+            rights |= KAUTH_VNODE_READ_ATTRIBUTES;
+        if (access_mask & ACE_WRITE_ATTRIBUTES)
+            rights |= KAUTH_VNODE_WRITE_ATTRIBUTES;
+        if (access_mask & ACE_DELETE)
+            rights |= KAUTH_VNODE_DELETE;
+        if (access_mask & ACE_READ_ACL)
+            rights |= KAUTH_VNODE_READ_SECURITY;
+        if (access_mask & ACE_WRITE_ACL)
+            rights |= KAUTH_VNODE_WRITE_SECURITY;
+        if (access_mask & ACE_WRITE_OWNER)
+            rights |= KAUTH_VNODE_TAKE_OWNERSHIP;
+        if (access_mask & ACE_SYNCHRONIZE)
+            rights |= KAUTH_VNODE_SYNCHRONIZE;
+        k_acl->acl_ace[i].ace_rights = rights;
+
+        //flags = aclp->z_acl[i].a_flags;
+        if (flags & ACE_FILE_INHERIT_ACE)
+            ace_flags |= KAUTH_ACE_FILE_INHERIT;
+        if (flags & ACE_DIRECTORY_INHERIT_ACE)
+            ace_flags |= KAUTH_ACE_DIRECTORY_INHERIT;
+        if (flags & ACE_NO_PROPAGATE_INHERIT_ACE)
+            ace_flags |= KAUTH_ACE_LIMIT_INHERIT;
+        if (flags & ACE_INHERIT_ONLY_ACE)
+            ace_flags |= KAUTH_ACE_ONLY_INHERIT;
+
+        //type = aclp->z_acl[i].a_type;
+        switch(type) {
+        case ACE_ACCESS_ALLOWED_ACE_TYPE:
+            ace_flags |= KAUTH_ACE_PERMIT;
+            break;
+        case ACE_ACCESS_DENIED_ACE_TYPE:
+            ace_flags |= KAUTH_ACE_DENY;
+            break;
+        case ACE_SYSTEM_AUDIT_ACE_TYPE:
+            ace_flags |= KAUTH_ACE_AUDIT;
+            break;
+        case ACE_SYSTEM_ALARM_ACE_TYPE:
+            ace_flags |= KAUTH_ACE_ALARM;
+            break;
+        }
+        k_acl->acl_ace[i].ace_flags = ace_flags;
+    }
+    mutex_exit(&zp->z_acl_lock);
+
+    zfs_acl_free(aclp);
+
+    return (0);
+}
+
+#endif
+
+
+#ifndef __OPPLE__
 int
 zfs_vsec_2_aclp(zfsvfs_t *zfsvfs, umode_t obj_mode,
     vsecattr_t *vsecp, cred_t *cr, zfs_fuid_info_t **fuidp, zfs_acl_t **zaclp)
@@ -1923,16 +2049,79 @@ zfs_vsec_2_aclp(zfsvfs_t *zfsvfs, umode_t obj_mode,
 	return (0);
 }
 
+#else //APPLE
+
+int
+zfs_vsec_2_aclp(zfsvfs_t *zfsvfs, umode_t obj_mode,
+                struct kauth_acl *k_acl, cred_t *cr,
+                zfs_fuid_info_t **fuidp, zfs_acl_t **zaclp)
+{
+	zfs_acl_t *aclp;
+	zfs_acl_node_t *aclnode;
+	int aclcnt = k_acl->acl_entrycount;
+	int error;
+
+    // Is this still the current state?
+	if (aclcnt > MAX_ACL_ENTRIES || aclcnt <= 0)
+		return (EINVAL);
+
+	aclp = zfs_acl_alloc(zfs_acl_version(zfsvfs->z_version));
+
+	aclp->z_hints = 0;
+	aclnode = zfs_acl_node_alloc(aclcnt * sizeof (zfs_object_ace_t));
+	if (aclp->z_version == ZFS_ACL_VERSION_INITIAL) {
+		if ((error = zfs_copy_ace_2_oldace(obj_mode, aclp,
+		    (ace_t *)k_acl->acl_ace, aclnode->z_acldata,
+		    aclcnt, &aclnode->z_size)) != 0) {
+			zfs_acl_free(aclp);
+			zfs_acl_node_free(aclnode);
+			return (error);
+		}
+	} else {
+		if ((error = zfs_copy_ace_2_fuid(zfsvfs, obj_mode, aclp,
+		    k_acl->acl_ace, aclnode->z_acldata, aclcnt,
+		    &aclnode->z_size, fuidp, cr)) != 0) {
+			zfs_acl_free(aclp);
+			zfs_acl_node_free(aclnode);
+			return (error);
+		}
+	}
+	aclp->z_acl_bytes = aclnode->z_size;
+	aclnode->z_ace_count = aclcnt;
+	aclp->z_acl_count = aclcnt;
+	list_insert_head(&aclp->z_acl, aclnode);
+
+	/*
+	 * If flags are being set then add them to z_hints
+	 */
+#ifndef __APPLE__
+	if (vsecp->vsa_mask & VSA_ACE_ACLFLAGS) {
+		if (vsecp->vsa_aclflags & ACL_PROTECTED)
+			aclp->z_hints |= ZFS_ACL_PROTECTED;
+		if (vsecp->vsa_aclflags & ACL_DEFAULTED)
+			aclp->z_hints |= ZFS_ACL_DEFAULTED;
+		if (vsecp->vsa_aclflags & ACL_AUTO_INHERIT)
+			aclp->z_hints |= ZFS_ACL_AUTO_INHERIT;
+	}
+#endif
+
+	*zaclp = aclp;
+
+	return (0);
+}
+
+#endif // APPLE
+
 /*
  * Set a files ACL
  */
 int
 zfs_setacl(znode_t *zp, struct kauth_acl *vsecp, boolean_t skipaclchk, cred_t *cr)
 {
-#if 0
+#if 1
 	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
 	zilog_t		*zilog = zfsvfs->z_log;
-	ulong_t		mask = vsecp->vsa_mask & (VSA_ACE | VSA_ACECNT);
+	//ulong_t		mask = vsecp->vsa_mask & (VSA_ACE | VSA_ACECNT);
 	dmu_tx_t	*tx;
 	int		error;
 	zfs_acl_t	*aclp;
@@ -1940,8 +2129,8 @@ zfs_setacl(znode_t *zp, struct kauth_acl *vsecp, boolean_t skipaclchk, cred_t *c
 	boolean_t	fuid_dirtied;
 	uint64_t	acl_obj;
 
-	if (mask == 0)
-		return (ENOSYS);
+	//if (mask == 0)
+	//	return (ENOSYS);
 
 	if (zp->z_pflags & ZFS_IMMUTABLE)
 		return (EPERM);
@@ -1949,7 +2138,7 @@ zfs_setacl(znode_t *zp, struct kauth_acl *vsecp, boolean_t skipaclchk, cred_t *c
 	if (error = zfs_zaccess(zp, ACE_WRITE_ACL, 0, skipaclchk, cr))
 		return (error);
 
-	error = zfs_vsec_2_aclp(zfsvfs, ZTOV(zp)->v_type, vsecp, cr, &fuidp,
+	error = zfs_vsec_2_aclp(zfsvfs, vnode_vtype(ZTOV(zp)), vsecp, cr, &fuidp,
 	    &aclp);
 	if (error)
 		return (error);
@@ -1958,10 +2147,10 @@ zfs_setacl(znode_t *zp, struct kauth_acl *vsecp, boolean_t skipaclchk, cred_t *c
 	 * If ACL wide flags aren't being set then preserve any
 	 * existing flags.
 	 */
-	if (!(vsecp->vsa_mask & VSA_ACE_ACLFLAGS)) {
-		aclp->z_hints |=
-		    (zp->z_pflags & V4_ACL_WIDE_FLAGS);
-	}
+	//if (!(vsecp->vsa_mask & VSA_ACE_ACLFLAGS)) {
+	//	aclp->z_hints |=
+	//	    (zp->z_pflags & V4_ACL_WIDE_FLAGS);
+	//}
 top:
 	mutex_enter(&zp->z_acl_lock);
 	mutex_enter(&zp->z_lock);
@@ -2030,6 +2219,8 @@ done:
 #endif
     return 0;
 }
+
+
 
 /*
  * Check accesses of interest (AoI) against attributes of the dataset

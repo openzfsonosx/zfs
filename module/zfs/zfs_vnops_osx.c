@@ -546,7 +546,7 @@ zfs_vnop_setattr(
     // Translate OSX requested mask to ZFS
     if (VATTR_IS_ACTIVE(vap, va_data_size))
         mask |= AT_SIZE;
-	if (VATTR_IS_ACTIVE(vap, va_mode) || VATTR_IS_ACTIVE(vap, va_acl))
+	if (VATTR_IS_ACTIVE(vap, va_mode))
         mask |= AT_MODE;
     if (VATTR_IS_ACTIVE(vap, va_uid))
         mask |= AT_UID;
@@ -562,24 +562,40 @@ zfs_vnop_setattr(
     if (VATTR_IS_ACTIVE(vap, va_backup_time))
         mask |= AT_BTIME; // really?
     */
+    /*
+     * Both 'flags' and 'acl' can come to ZFS set, but without 'mode' set
+     * however, ZFS assumes 'mode' is set as well.
+     * We need to look up 'mode' in this case.
+     */
+
+    if ((VATTR_IS_ACTIVE(vap, va_flags) ||
+         VATTR_IS_ACTIVE(vap, va_acl)) &&
+        !VATTR_IS_ACTIVE(vap, va_mode)) {
+
+        znode_t *zp = VTOZ(ap->a_vp);
+        uint64_t mode;
+
+        mask |= AT_MODE;
+
+        dprintf("fetching MODE for FLAGS\n");
+        (void) sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zp->z_zfsvfs),
+                         &mode, sizeof (mode));
+        vap->va_mode = mode;
+    }
+
     if (VATTR_IS_ACTIVE(vap, va_flags)) {
         znode_t *zp = VTOZ(ap->a_vp);
-        mask |= AT_MODE; // really?
-        // OS X can set flags without mode, so we need to look up mode in that
-        // case.
-        if (!VATTR_IS_ACTIVE(vap, va_mode)) {
-            uint64_t mode;
-            dprintf("fetching MODE for FLAGS\n");
-            (void) sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zp->z_zfsvfs),
-                             &mode, sizeof (mode));
-            vap->va_mode = mode;
-        }
+
         // Map OS X file flags to zfs file flags
         zfs_setbsdflags(zp, vap->va_flags);
         dprintf("OSX flags %08lx changed to ZFS %04lx\n", vap->va_flags,
-               zp->z_pflags);
+                zp->z_pflags);
         vap->va_flags = zp->z_pflags;
 
+    }
+
+	if (VATTR_IS_ACTIVE(vap, va_acl)) {
+        mask |= AT_ACL;
     }
 
     vap->va_mask = mask;
@@ -1251,11 +1267,13 @@ zfs_vnop_reclaim(
         mutex_exit(&zfsvfs->z_vnode_create_lock);
     }
 
+#if 0
     if (!has_warned && vnop_num_reclaims > 20000) {
         has_warned = 1;
         printf("ZFS: Reclaim thread appears dead (%llu) -- good luck\n",
                vnop_num_reclaims);
     }
+#endif
 
     /*
      * Which is better, the reclaim thread triggering frequently, with mostly

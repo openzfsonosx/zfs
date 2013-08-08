@@ -112,6 +112,8 @@ extern int      zvolRemoveDevice(zvol_state_t *zv);
 extern int      zvolCreateNewDevice(zvol_state_t *zv);
 extern int      zvolSetVolsize(zvol_state_t *zv);
 
+extern int zvol_busy(void);
+
 
 
 #endif /* _KERNEL */

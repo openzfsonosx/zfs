@@ -209,6 +209,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
         //printf("want acl\n");
+#if 0
         if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
                       &acl, sizeof (zfs_acl_phys_t))) {
             //if (zp->z_acl.z_acl_count == 0) {
@@ -221,10 +222,21 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 				//return (error);
 			}
 		}
+#endif
+
+        printf("Calling getacl\n");
+        if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
+            printf("zfs_getacl returned error %d\n", error);
+            error = 0;
+        }
+
 		VATTR_SET_SUPPORTED(vap, va_acl);
 		/* va_acl implies that va_uuuid and va_guuid are also supported. */
 		VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
 		VATTR_RETURN(vap, va_guuid, kauth_null_guid);
+
+
+
     }
 
 	if (VATTR_IS_ACTIVE(vap, va_data_alloc) || VATTR_IS_ACTIVE(vap, va_total_alloc)) {

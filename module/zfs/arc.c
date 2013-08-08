@@ -2438,14 +2438,10 @@ arc_reclaim_thread(void *dummy __unused)
             }
             arc_kmem_reap_now(last_reclaim, 1024780);
 
-            if (arc_warm == B_FALSE)
-                printf("arc is warm\n");
-
             arc_warm = B_TRUE;
 
         } else if (arc_no_grow && ddi_get_lbolt() >= growtime) {
             arc_no_grow = FALSE;
-            printf("Allowing grow\n");
         }
 
         /*
@@ -4061,6 +4057,13 @@ arc_init(void)
 	/* set max to 1/2 of all memory */
 	arc_c_max = MAX(arc_c * 4, arc_c_max);
 
+
+    if ((physmem * PAGE_SIZE) < (4ULL*1024ULL*1024ULL*1024ULL)) {
+        arc_c_max >>= 2;
+        printf("ZFS: Further decreasing ARC on low memory system (%llu)\n",
+               arc_c_max);
+    }
+
 	/*
 	 * Allow the tunables to override our calculations if they are
 	 * reasonable (ie. over 64MB)
@@ -4070,8 +4073,6 @@ arc_init(void)
 	if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max)
 		arc_c_min = zfs_arc_min;
 
-    arc_c_max >>= 2;
-    printf("arc_c_max set to %llu\n", arc_c_max);
 
 	arc_c = arc_c_max;
 	arc_p = (arc_c >> 1);

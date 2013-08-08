@@ -82,7 +82,7 @@
 #include <sys/zfs_vfsops.h>
 #include <sys/vnode.h>
 
-//#define dprintf printf
+#define dprintf printf
 
 /*
  * Programming rules.
@@ -3482,6 +3482,29 @@ top:
 		}
 	}
 	tx = dmu_tx_create(zfsvfs->z_os);
+
+    /*
+     * ACLs are currently not working, there appears to be two implementations
+     * here, one is old MacZFS "zfs_setacl" and the other is ZFS (FBSD?)
+     * with zfs_external_acl().
+     */
+
+	if (mask & AT_ACL) {
+
+        if ((vap->va_acl != (kauth_acl_t) KAUTH_FILESEC_NONE) &&
+            (vap->va_acl->acl_entrycount != KAUTH_FILESEC_NOACL)) {
+            printf("Calling setacl\n");
+            if ((err = zfs_setacl(zp, vap->va_acl, cr, tx)))
+                printf("setattr: setacl failed: %d\n", err);
+        } else {
+            struct kauth_acl blank_acl;
+
+            bzero(&blank_acl, sizeof blank_acl);
+            if ((err = zfs_setacl(zp, &blank_acl, cr, tx)))
+                printf("setattr: setacl failed: %d\n", err);
+        }
+    }
+
 
 	if (mask & AT_MODE) {
 		uint64_t pmode = zp->z_mode;
