@@ -224,7 +224,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		}
 #endif
 
-        printf("Calling getacl\n");
+        dprintf("Calling getacl\n");
         if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
             printf("zfs_getacl returned error %d\n", error);
             error = 0;

@@ -3493,7 +3493,7 @@ top:
 
         if ((vap->va_acl != (kauth_acl_t) KAUTH_FILESEC_NONE) &&
             (vap->va_acl->acl_entrycount != KAUTH_FILESEC_NOACL)) {
-            printf("Calling setacl\n");
+            //printf("Calling setacl\n");
             if ((err = zfs_setacl(zp, vap->va_acl, cr, tx)))
                 printf("setattr: setacl failed: %d\n", err);
         } else {
