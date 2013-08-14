@@ -82,7 +82,7 @@
 #include <sys/zfs_vfsops.h>
 #include <sys/vnode.h>
 
-#define dprintf printf
+//#define dprintf printf
 
 /*
  * Programming rules.
