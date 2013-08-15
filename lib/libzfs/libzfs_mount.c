@@ -1238,6 +1238,7 @@ int zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
 
     // Same pool?
     if (nzhp && nzhp->zpool_hdl && zpool_get_name(nzhp->zpool_hdl) &&
+        data &&
         !strcmp(zpool_get_name(nzhp->zpool_hdl), (char *)data)) {
         if (zfs_get_type(nzhp) == ZFS_TYPE_VOLUME) {
             char *volume = NULL;
