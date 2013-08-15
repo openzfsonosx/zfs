@@ -1917,7 +1917,6 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
         //who = aclp->z_acl[i].a_who;
         /* Note Mac OS X GUID is a 128-bit identifier */
         guidp = &k_acl->acl_ace[i].ace_applicable;
-        i++;
 
         /* Try to get a guid from our uid */
         if (kauth_cred_uid2guid(who, guidp) != 0) {
@@ -1984,6 +1983,7 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
             break;
         }
         k_acl->acl_ace[i].ace_flags = ace_flags;
+        i++;
     }
     mutex_exit(&zp->z_acl_lock);
 
