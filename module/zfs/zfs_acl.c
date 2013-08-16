@@ -2120,7 +2120,7 @@ zfs_vsec_2_aclp(zfsvfs_t *zfsvfs, umode_t obj_mode,
 
 
 
-#ifdef 0
+#if 1
 /*
  * Set a files ACL
  */
