@@ -2118,6 +2118,9 @@ zfs_vsec_2_aclp(zfsvfs_t *zfsvfs, umode_t obj_mode,
 
 #endif // APPLE
 
+
+
+#ifdef 0
 /*
  * Set a files ACL
  */
@@ -2226,6 +2229,13 @@ done:
     return 0;
 }
 
+
+#else
+
+
+
+
+#endif
 
 
 /*
