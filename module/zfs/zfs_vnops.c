@@ -3118,6 +3118,7 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
             /* If we couldn't generate a uid, try for a gid */
             if (kauth_cred_guid2gid(guidp, &who) != 0) {
                 *nentries=0;
+                printf("returning due to guid2gid\n");
                 return;
             }
         }

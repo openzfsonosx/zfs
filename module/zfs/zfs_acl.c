@@ -1873,6 +1873,39 @@ zfs_getacl(znode_t *zp, kauth_acl_t  *vsecp, boolean_t skipaclchk, cred_t *cr)
 
 #else // APPLE
 
+void
+nfsacl_set_wellknown(int wkg, guid_t *guid)
+{
+        static char     fingerprint[] = {0xab, 0xcd, 0xef, 0xab, 0xcd, 0xef, 0xab, 0xcd, 0xef, 0xab, 0xcd, 0xef};
+
+        /*
+         * All WKGs begin with the same 12 bytes.
+         */
+        bcopy(fingerprint, (void *)guid, 12);
+        /*
+         * The final 4 bytes are our code (in network byte order).
+         */
+        switch (wkg) {
+        case 4:
+                *((u_int32_t *)&guid->g_guid[12]) = BE_32(0x0000000c);
+                break;
+        case 3:
+                *((u_int32_t *)&guid->g_guid[12]) = BE_32(0xfffffffe);
+                break;
+        case 1:
+                *((u_int32_t *)&guid->g_guid[12]) = BE_32(0x0000000a);
+                break;
+        case 2:
+                *((u_int32_t *)&guid->g_guid[12]) = BE_32(0x00000010);
+        };
+}
+
+#define KAUTH_WKG_NOT           0       /* not a well-known GUID */
+#define KAUTH_WKG_OWNER         1
+#define KAUTH_WKG_GROUP         2
+#define KAUTH_WKG_NOBODY        3
+#define KAUTH_WKG_EVERYBODY     4
+
 int
 zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
            cred_t *cr)
@@ -1922,14 +1955,25 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
         /* Note Mac OS X GUID is a 128-bit identifier */
         guidp = &k_acl->acl_ace[i].ace_applicable;
 
+	uint16_t entry_type;
+        if ( who == -1 ) {
+           entry_type = ((zfs_ace_t *)zacep)->z_hdr.z_flags & ACE_TYPE_FLAGS;
+           if ( entry_type == ACE_OWNER ) {
+              nfsacl_set_wellknown(KAUTH_WKG_OWNER, guidp);
+           } else if ( entry_type == OWNING_GROUP ) {
+              nfsacl_set_wellknown(KAUTH_WKG_GROUP, guidp);
+           } else if ( entry_type == ACE_EVERYONE ) {
+              nfsacl_set_wellknown(KAUTH_WKG_EVERYBODY, guidp);
+           }
         /* Try to get a guid from our uid */
-        if (kauth_cred_uid2guid(who, guidp) != 0) {
+        } else if (kauth_cred_uid2guid(who, guidp) != 0) {
             /* Try using gid */
             if (kauth_cred_gid2guid(who, guidp) != 0) {
                 /* XXX - What else can we do here? */
                 bzero(guidp, sizeof (guid_t));
             }
         }
+
         //access_mask = aclp->z_acl[i].a_access_mask;
         if (access_mask & ACE_READ_DATA)
             rights |= KAUTH_VNODE_READ_DATA;
