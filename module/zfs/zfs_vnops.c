@@ -3772,6 +3772,7 @@ top:
 
 	}
 
+#if 0
 	if (mask & AT_MODE) {
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MODE(zfsvfs), NULL,
 		    &new_mode, sizeof (new_mode));
@@ -3784,7 +3785,7 @@ top:
 		zp->z_acl_cached = aclp;
 		aclp = NULL;
 	}
-
+#endif
 
 	if (mask & AT_ATIME) {
 		ZFS_TIME_ENCODE(&vap->va_atime, zp->z_atime);
