@@ -577,7 +577,7 @@ zfs_vnop_setattr(
 
         mask |= AT_MODE;
 
-        dprintf("fetching MODE for FLAGS\n");
+        printf("fetching MODE for FLAGS or ACL\n");
         (void) sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zp->z_zfsvfs),
                          &mode, sizeof (mode));
         vap->va_mode = mode;

@@ -660,13 +660,11 @@ zfs_vnode_forget(struct vnode *vp)
 {
 
 	/* copied from insmntque_stddtr */
-    vnode_clearfsnode(vp);
-	//vp->v_data = NULL;
-	//vp->v_op = &dead_vnodeops;
-	//vgone(vp);
-	//vput(vp);
-    vnode_put(vp);
-    vnode_recycle(vp);
+    if (vp) {
+        vnode_clearfsnode(vp);
+        vnode_put(vp);
+        vnode_recycle(vp);
+    }
 }
 
 /*

@@ -3106,7 +3106,7 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
 
     for (i = 0; i < *nentries; i++) {
         //entry = &(aclp->acl_entry[i]);
-        printf("aces %d\n", i);
+        dprintf("aces %d\n", i);
 
         ace = &(aces[i]);
 
@@ -3118,7 +3118,7 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
             /* If we couldn't generate a uid, try for a gid */
             if (kauth_cred_guid2gid(guidp, &who) != 0) {
                 *nentries=0;
-                printf("returning due to guid2gid\n");
+                dprintf("returning due to guid2gid\n");
                 return;
             }
         }
@@ -3604,7 +3604,7 @@ top:
             ace_t	*aaclp;
             struct kauth_acl *kauth;
 
-            printf("Calling setacl\n");
+            dprintf("Calling setacl\n");
 
             vsecattr.vsa_mask = VSA_ACE;
 
@@ -3615,7 +3615,7 @@ top:
             aaclp = vsecattr.vsa_aclentp;
             vsecattr.vsa_aclentsz = aclbsize;
 
-            printf("aces_from_acl %d entries\n", kauth->acl_entrycount);
+            dprintf("aces_from_acl %d entries\n", kauth->acl_entrycount);
             aces_from_acl(vsecattr.vsa_aclentp, &vsecattr.vsa_aclcnt, kauth);
 
             err = zfs_setacl(zp, &vsecattr, cr, NULL);
@@ -3624,13 +3624,13 @@ top:
 
             //if ((err = zfs_setacl(zp, , cr, tx)))
             //if (err)
-                printf("setattr: setacl said: %d\n", err);
+            dprintf("setattr: setacl said: %d\n", err);
         } else {
             struct kauth_acl blank_acl;
 
             bzero(&blank_acl, sizeof blank_acl);
             if ((err = zfs_setacl(zp, &blank_acl, cr, tx)))
-                printf("setattr: setacl failed: %d\n", err);
+                dprintf("setattr: setacl failed: %d\n", err);
         }
     }
 
@@ -3772,11 +3772,12 @@ top:
 
 	}
 
-#if 0
 	if (mask & AT_MODE) {
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MODE(zfsvfs), NULL,
 		    &new_mode, sizeof (new_mode));
 		zp->z_mode = new_mode;
+    }
+#if 0
 		ASSERT3U((uintptr_t)aclp, !=, 0);
 		err = zfs_aclset_common(zp, aclp, cr, tx);
 		ASSERT(err==0);

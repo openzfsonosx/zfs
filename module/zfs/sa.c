@@ -1291,6 +1291,8 @@ sa_build_index(sa_handle_t *hdl, sa_buf_type_t buftype)
 	sa_os_t *sa = hdl->sa_os->os_sa;
 	sa_idx_tab_t *idx_tab;
 
+    if (!sa) return 0;
+
 	sa_hdr_phys = SA_GET_HDR(hdl, buftype);
 
 	mutex_enter(&sa->sa_lock);
