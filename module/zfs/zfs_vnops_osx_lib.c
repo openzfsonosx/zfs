@@ -1355,13 +1355,13 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
             flags |= ACE_OWNER;
             break;
         case KAUTH_WKG_GROUP:
-            flags |= ACE_GROUP;
-        case KAUTH_WKG_NOBODY:
+            flags |= ACE_GROUP|ACE_IDENTIFIER_GROUP;
             break;
         case KAUTH_WKG_EVERYBODY:
             flags |= ACE_EVERYONE;
             break;
 
+        case KAUTH_WKG_NOBODY:
         default:
             /* Try to get a uid from supplied guid */
             if (kauth_cred_guid2uid(guidp, &who) != 0) {
@@ -1433,8 +1433,8 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
             break;
         }
         ace->a_type = type;
-        dprintf("  ACL: type %04x, mask %04x, flags %04x\n",
-                type, mask, flags);
+        dprintf("  ACL: %d type %04x, mask %04x, flags %04x, who %d\n",
+               i, type, mask, flags, who);
     }
 
 }

@@ -560,9 +560,8 @@ zfs_ace_valid(umode_t obj_mode, zfs_acl_t *aclp, uint16_t type, uint16_t iflags)
 
 	if (iflags & (ACE_INHERIT_ONLY_ACE|ACE_NO_PROPAGATE_INHERIT_ACE)) {
 		if ((iflags & (ACE_FILE_INHERIT_ACE|
-		    ACE_DIRECTORY_INHERIT_ACE)) == 0) {
+		    ACE_DIRECTORY_INHERIT_ACE)) == 0)
 			return (B_FALSE);
-		}
 	}
 
 	return (B_TRUE);
@@ -682,7 +681,7 @@ zfs_copy_ace_2_fuid(zfsvfs_t *zfsvfs, umode_t obj_mode, zfs_acl_t *aclp,
 		 * Make sure ACE is valid
 		 */
 		if (zfs_ace_valid(obj_mode, aclp, aceptr->z_hdr.z_type,
-		    aceptr->z_hdr.z_flags) != B_TRUE)
+                          aceptr->z_hdr.z_flags) != B_TRUE)
 			return (EINVAL);
 
 		switch (acep->a_type) {
@@ -1798,6 +1797,8 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
         return (ENOMEM);
     }
 
+    dprintf("acl_count %d\n",aclp->z_acl_count);
+
     k_acl->acl_entrycount = aclp->z_acl_count;
     k_acl->acl_flags = 0;
     *aclpp = k_acl;
@@ -1808,8 +1809,6 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
     i = 0;
     while (zacep = zfs_acl_next_ace(aclp, zacep,
                                     &who, &access_mask, &flags, &type)) {
-        uint16_t entry_type;
-
         rights = 0;
         ace_flags = 0;
 
@@ -1818,19 +1817,23 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
         if (flags & ACE_OWNER) {
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_OWNER, guidp);
-        } else if (flags & ACE_GROUP) {
+        } else if (flags & OWNING_GROUP) {
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_GROUP, guidp);
         } else if (flags & ACE_EVERYONE) {
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_EVERYBODY, guidp);
             /* Try to get a guid from our uid */
-        } else if (kauth_cred_uid2guid(who, guidp) != 0) {
-            /* Try using gid then ... */
-            if (kauth_cred_gid2guid(who, guidp) != 0) {
-                /* XXX - What else can we do here? */
-                bzero(guidp, sizeof (guid_t));
+        } else {
+
+            if (kauth_cred_uid2guid(who, guidp) != 0) {
+                /* Try using gid then ... */
+                if (kauth_cred_gid2guid(who, guidp) != 0) {
+                    /* XXX - What else can we do here? */
+                    bzero(guidp, sizeof (guid_t));
+                }
             }
+
         }
 
         //access_mask = aclp->z_acl[i].a_access_mask;
@@ -2060,7 +2063,6 @@ done:
 	mutex_exit(&zp->z_acl_lock);
 
 	return (error);
-    return 0;
 }
 
 

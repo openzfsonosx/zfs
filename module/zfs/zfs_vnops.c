@@ -3516,14 +3516,14 @@ top:
             dprintf("aces_from_acl %d entries\n", kauth->acl_entrycount);
             aces_from_acl(vsecattr.vsa_aclentp, &vsecattr.vsa_aclcnt, kauth);
 
-            err = zfs_setacl(zp, &vsecattr, cr, NULL);
+            err = zfs_setacl(zp, &vsecattr, B_TRUE, cr);
             kmem_free(aaclp, aclbsize);
 
         } else {
             struct kauth_acl blank_acl;
 
             bzero(&blank_acl, sizeof blank_acl);
-            if ((err = zfs_setacl(zp, &blank_acl, cr, tx)))
+            if ((err = zfs_setacl(zp, &blank_acl, B_TRUE, cr)))
                 dprintf("setattr: setacl failed: %d\n", err);
         }
     }
