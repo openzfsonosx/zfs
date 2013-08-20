@@ -3526,7 +3526,7 @@ top:
             if ((err = zfs_setacl(zp, &blank_acl, B_TRUE, cr)))
                 dprintf("setattr: setacl failed: %d\n", err);
         }
-    }
+        }
 
 
 	if (mask & AT_MODE) {
@@ -3675,7 +3675,21 @@ top:
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MODE(zfsvfs), NULL,
 		    &new_mode, sizeof (new_mode));
 		zp->z_mode = new_mode;
-    }
+		/*
+         	 * Mode change needs to trigger corresponding update to trivial ACLs.
+         	 * ACL change already does this, and another call to zfs_aclset_common
+		 * would overwrite our explicit ACL changes.
+         	 */
+		if(!(mask & AT_ACL)) {
+                       ASSERT3U((uintptr_t)aclp, !=, 0);
+                       err = zfs_aclset_common(zp, aclp, cr, tx);
+                       ASSERT(err==0);
+                       if (zp->z_acl_cached)
+                       zfs_acl_free(zp->z_acl_cached);
+                       zp->z_acl_cached = aclp;
+                       aclp = NULL;
+		}
+	}
 
 	if (mask & AT_ATIME) {
 		ZFS_TIME_ENCODE(&vap->va_atime, zp->z_atime);

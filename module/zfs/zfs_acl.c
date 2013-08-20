@@ -1445,10 +1445,14 @@ zfs_acl_chmod_setattr(znode_t *zp, zfs_acl_t **aclp, uint64_t mode)
 
 	mutex_enter(&zp->z_acl_lock);
 	mutex_enter(&zp->z_lock);
+#if 0
 	if (zp->z_zfsvfs->z_acl_mode == ZFS_ACL_DISCARD)
 		*aclp = zfs_acl_alloc(zfs_acl_version_zp(zp));
 	else
 		error = zfs_acl_node_read(zp, B_TRUE, aclp, B_TRUE);
+#endif
+	//We will default to ZFS_ACL_PASSTHROUGH behavior until aclmode is brought back.
+	 error = zfs_acl_node_read(zp, B_TRUE, aclp, B_TRUE);
 
 	if (error == 0) {
 		(*aclp)->z_hints = zp->z_pflags & V4_ACL_WIDE_FLAGS;
