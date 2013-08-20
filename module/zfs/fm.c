@@ -131,16 +131,16 @@ fm_printf(int depth, int c, int cols, const char *format, ...)
 	va_end(ap);
 
 	if (c + width >= cols) {
-		console_printf("\n");
+		printf("\n");
 		c = 0;
 		if (format[0] != ' ' && depth > 0) {
-			console_printf(" ");
+			printf(" ");
 			c++;
 		}
 	}
 
 	va_start(ap, format);
-	console_vprintf(format, ap);
+	vprintf(format, ap);
 	va_end(ap);
 
 	return ((c + width) % cols);
@@ -403,15 +403,15 @@ fm_nvprint(nvlist_t *nvl)
 	char *class;
 	int c = 0;
 
-	console_printf("\n");
+	printf("\n");
 
 	if (nvlist_lookup_string(nvl, FM_CLASS, &class) == 0)
 		c = fm_printf(0, c, zfs_zevent_cols, "%s", class);
 
 	if (fm_nvprintr(nvl, 0, c, zfs_zevent_cols) != 0)
-		console_printf("\n");
+		printf("\n");
 
-	console_printf("\n");
+	printf("\n");
 }
 
 static zevent_t *
