@@ -3085,108 +3085,6 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 
 
 
-void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
-{
-    int i;
-    const struct acl_entry *entry;
-    ace_t *ace;
-    guid_t          *guidp;
-    kauth_ace_rights_t  ace_rights;
-    uid_t  who;
-    uint32_t  mask = 0;
-    uint16_t  flags = 0;
-    uint16_t  type = 0;
-    u_int32_t  ace_flags;
-
-    *nentries = k_acl->acl_entrycount;
-
-    bzero(aces, sizeof(*aces) * *nentries);
-
-    //*nentries = aclp->acl_cnt;
-
-    for (i = 0; i < *nentries; i++) {
-        //entry = &(aclp->acl_entry[i]);
-        dprintf("aces %d\n", i);
-
-        ace = &(aces[i]);
-
-        /* Note Mac OS X GUID is a 128-bit identifier */
-        guidp = &k_acl->acl_ace[i].ace_applicable;
-
-        /* Try to get a uid from supplied guid */
-        if (kauth_cred_guid2uid(guidp, &who) != 0) {
-            /* If we couldn't generate a uid, try for a gid */
-            if (kauth_cred_guid2gid(guidp, &who) != 0) {
-                *nentries=0;
-                dprintf("returning due to guid2gid\n");
-                return;
-            }
-        }
-        ace->a_who = who;
-
-        ace_rights = k_acl->acl_ace[i].ace_rights;
-        if (ace_rights & KAUTH_VNODE_READ_DATA)
-            mask |= ACE_READ_DATA;
-        if (ace_rights & KAUTH_VNODE_WRITE_DATA)
-            mask |= ACE_WRITE_DATA;
-        if (ace_rights & KAUTH_VNODE_APPEND_DATA)
-            mask |= ACE_APPEND_DATA;
-        if (ace_rights & KAUTH_VNODE_READ_EXTATTRIBUTES)
-            mask |= ACE_READ_NAMED_ATTRS;
-        if (ace_rights & KAUTH_VNODE_WRITE_EXTATTRIBUTES)
-            mask |= ACE_WRITE_NAMED_ATTRS;
-        if (ace_rights & KAUTH_VNODE_EXECUTE)
-            mask |= ACE_EXECUTE;
-        if (ace_rights & KAUTH_VNODE_DELETE_CHILD)
-            mask |= ACE_DELETE_CHILD;
-        if (ace_rights & KAUTH_VNODE_READ_ATTRIBUTES)
-            mask |= ACE_READ_ATTRIBUTES;
-        if (ace_rights & KAUTH_VNODE_WRITE_ATTRIBUTES)
-            mask |= ACE_WRITE_ATTRIBUTES;
-        if (ace_rights & KAUTH_VNODE_DELETE)
-            mask |= ACE_DELETE;
-        if (ace_rights & KAUTH_VNODE_READ_SECURITY)
-            mask |= ACE_READ_ACL;
-        if (ace_rights & KAUTH_VNODE_WRITE_SECURITY)
-            mask |= ACE_WRITE_ACL;
-        if (ace_rights & KAUTH_VNODE_TAKE_OWNERSHIP)
-            mask |= ACE_WRITE_OWNER;
-        if (ace_rights & KAUTH_VNODE_SYNCHRONIZE)
-            mask |= ACE_SYNCHRONIZE;
-        ace->a_access_mask = mask;
-
-        ace_flags = k_acl->acl_ace[i].ace_flags;
-        if (ace_flags & KAUTH_ACE_FILE_INHERIT)
-            flags |= ACE_FILE_INHERIT_ACE;
-        if (ace_flags & KAUTH_ACE_DIRECTORY_INHERIT)
-            flags |= ACE_DIRECTORY_INHERIT_ACE;
-        if (ace_flags & KAUTH_ACE_LIMIT_INHERIT)
-            flags |= ACE_NO_PROPAGATE_INHERIT_ACE;
-        if (ace_flags & KAUTH_ACE_ONLY_INHERIT)
-            flags |= ACE_INHERIT_ONLY_ACE;
-        ace->a_flags = flags;
-
-        switch(ace_flags & KAUTH_ACE_KINDMASK) {
-        case KAUTH_ACE_PERMIT:
-            type = ACE_ACCESS_ALLOWED_ACE_TYPE;
-            break;
-        case KAUTH_ACE_DENY:
-            type = ACE_ACCESS_DENIED_ACE_TYPE;
-            break;
-        case KAUTH_ACE_AUDIT:
-            type = ACE_SYSTEM_AUDIT_ACE_TYPE;
-            break;
-        case KAUTH_ACE_ALARM:
-            type = ACE_SYSTEM_ALARM_ACE_TYPE;
-            break;
-        }
-        ace->a_type = type;
-    }
-
-}
-
-
-
 
 /*
  * Set the file attributes to the values contained in the
@@ -3621,10 +3519,6 @@ top:
             err = zfs_setacl(zp, &vsecattr, cr, NULL);
             kmem_free(aaclp, aclbsize);
 
-
-            //if ((err = zfs_setacl(zp, , cr, tx)))
-            //if (err)
-            dprintf("setattr: setacl said: %d\n", err);
         } else {
             struct kauth_acl blank_acl;
 
@@ -3777,16 +3671,6 @@ top:
 		    &new_mode, sizeof (new_mode));
 		zp->z_mode = new_mode;
     }
-#if 0
-		ASSERT3U((uintptr_t)aclp, !=, 0);
-		err = zfs_aclset_common(zp, aclp, cr, tx);
-		ASSERT(err==0);
-		if (zp->z_acl_cached)
-			zfs_acl_free(zp->z_acl_cached);
-		zp->z_acl_cached = aclp;
-		aclp = NULL;
-	}
-#endif
 
 	if (mask & AT_ATIME) {
 		ZFS_TIME_ENCODE(&vap->va_atime, zp->z_atime);

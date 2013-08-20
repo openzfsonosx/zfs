@@ -563,8 +563,8 @@ zfs_vnop_setattr(
         mask |= AT_BTIME; // really?
     */
     /*
-     * Both 'flags' and 'acl' can come to ZFS set, but without 'mode' set
-     * however, ZFS assumes 'mode' is set as well.
+     * Both 'flags' and 'acl' can come to setattr, but without 'mode' set
+     * however, ZFS assumes 'mode' is also set.
      * We need to look up 'mode' in this case.
      */
 
@@ -577,7 +577,7 @@ zfs_vnop_setattr(
 
         mask |= AT_MODE;
 
-        printf("fetching MODE for FLAGS or ACL\n");
+        dprintf("fetching MODE for FLAGS or ACL\n");
         (void) sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zp->z_zfsvfs),
                          &mode, sizeof (mode));
         vap->va_mode = mode;

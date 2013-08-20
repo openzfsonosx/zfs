@@ -218,6 +218,26 @@ extern int   getpackedsize(struct attrlist *alp, boolean_t user64);
 extern void  getfinderinfo(znode_t *zp, cred_t *cr, finderinfo_t *fip);
 extern uint32_t getuseraccess(znode_t *zp, vfs_context_t ctx);
 
+    /*
+     * OSX ACL Helper funcions
+     *
+     * OSX uses 'guids' for the 'who' part of ACLs, and uses a 'well known'
+     * binary sequence to signify the special rules of "owner", "group" and
+     * "everybody". We translate between this "well-known" guid and ZFS'
+     * flags ACE_OWNER, ACE_GROUP and ACE_EVERYBODY.
+     *
+     */
+#define KAUTH_WKG_NOT           0       /* not a well-known GUID */
+#define KAUTH_WKG_OWNER         1
+#define KAUTH_WKG_GROUP         2
+#define KAUTH_WKG_NOBODY        3
+#define KAUTH_WKG_EVERYBODY     4
+
+extern int kauth_wellknown_guid(guid_t *guid);
+extern void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl);
+extern void nfsacl_set_wellknown(int wkg, guid_t *guid);
+
+
 
 
 #ifdef	__cplusplus

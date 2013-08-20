@@ -1767,144 +1767,6 @@ zfs_acl_ids_overquota(zfsvfs_t *zfsvfs, zfs_acl_ids_t *acl_ids)
 	    zfs_fuid_overquota(zfsvfs, B_TRUE, acl_ids->z_fgid));
 }
 
-#ifndef __APPLE__
-/*
- * Retrieve a files ACL
- */
-int
-zfs_getacl(znode_t *zp, kauth_acl_t  *vsecp, boolean_t skipaclchk, cred_t *cr)
-{
-#if 1 // FIXME OSX
-	zfs_acl_t	*aclp;
-	ulong_t		mask;
-	int		error;
-	int 		count = 0;
-	int		largeace = 0;
-
-
-	mask = vsecp->vsa_mask & (VSA_ACE | VSA_ACECNT |
-	    VSA_ACE_ACLFLAGS | VSA_ACE_ALLTYPES);
-
-	if (mask == 0)
-		return (ENOSYS);
-
-	if (error = zfs_zaccess(zp, ACE_READ_ACL, 0, skipaclchk, cr))
-		return (error);
-
-	mutex_enter(&zp->z_acl_lock);
-
-	error = zfs_acl_node_read(zp, B_FALSE, &aclp, B_FALSE);
-	if (error != 0) {
-		mutex_exit(&zp->z_acl_lock);
-		return (error);
-	}
-
-	/*
-	 * Scan ACL to determine number of ACEs
-	 */
-	if ((zp->z_pflags & ZFS_ACL_OBJ_ACE) && !(mask & VSA_ACE_ALLTYPES)) {
-		void *zacep = NULL;
-		uint64_t who;
-		uint32_t access_mask;
-		uint16_t type, iflags;
-
-		while (zacep = zfs_acl_next_ace(aclp, zacep,
-		    &who, &access_mask, &iflags, &type)) {
-			switch (type) {
-			case ACE_ACCESS_ALLOWED_OBJECT_ACE_TYPE:
-			case ACE_ACCESS_DENIED_OBJECT_ACE_TYPE:
-			case ACE_SYSTEM_AUDIT_OBJECT_ACE_TYPE:
-			case ACE_SYSTEM_ALARM_OBJECT_ACE_TYPE:
-				largeace++;
-				continue;
-			default:
-				count++;
-			}
-		}
-		vsecp->vsa_aclcnt = count;
-	} else
-		count = (int)aclp->z_acl_count;
-
-	if (mask & VSA_ACECNT) {
-		vsecp->vsa_aclcnt = count;
-	}
-
-	if (mask & VSA_ACE) {
-		size_t aclsz;
-
-		aclsz = count * sizeof (ace_t) +
-		    sizeof (ace_object_t) * largeace;
-
-		vsecp->vsa_aclentp = kmem_alloc(aclsz, KM_SLEEP);
-		vsecp->vsa_aclentsz = aclsz;
-
-		if (aclp->z_version == ZFS_ACL_VERSION_FUID)
-			zfs_copy_fuid_2_ace(zp->z_zfsvfs, aclp, cr,
-			    vsecp->vsa_aclentp, !(mask & VSA_ACE_ALLTYPES));
-		else {
-			zfs_acl_node_t *aclnode;
-			void *start = vsecp->vsa_aclentp;
-
-			for (aclnode = list_head(&aclp->z_acl); aclnode;
-			    aclnode = list_next(&aclp->z_acl, aclnode)) {
-				bcopy(aclnode->z_acldata, start,
-				    aclnode->z_size);
-				start = (caddr_t)start + aclnode->z_size;
-			}
-			ASSERT((caddr_t)start - (caddr_t)vsecp->vsa_aclentp ==
-			    aclp->z_acl_bytes);
-		}
-	}
-	if (mask & VSA_ACE_ACLFLAGS) {
-		vsecp->vsa_aclflags = 0;
-		if (zp->z_pflags & ZFS_ACL_DEFAULTED)
-			vsecp->vsa_aclflags |= ACL_DEFAULTED;
-		if (zp->z_pflags & ZFS_ACL_PROTECTED)
-			vsecp->vsa_aclflags |= ACL_PROTECTED;
-		if (zp->z_pflags & ZFS_ACL_AUTO_INHERIT)
-			vsecp->vsa_aclflags |= ACL_AUTO_INHERIT;
-	}
-
-	mutex_exit(&zp->z_acl_lock);
-#endif
-
-	return (0);
-}
-
-#else // APPLE
-
-void
-nfsacl_set_wellknown(int wkg, guid_t *guid)
-{
-        static char     fingerprint[] = {0xab, 0xcd, 0xef, 0xab, 0xcd, 0xef, 0xab, 0xcd, 0xef, 0xab, 0xcd, 0xef};
-
-        /*
-         * All WKGs begin with the same 12 bytes.
-         */
-        bcopy(fingerprint, (void *)guid, 12);
-        /*
-         * The final 4 bytes are our code (in network byte order).
-         */
-        switch (wkg) {
-        case 4:
-                *((u_int32_t *)&guid->g_guid[12]) = BE_32(0x0000000c);
-                break;
-        case 3:
-                *((u_int32_t *)&guid->g_guid[12]) = BE_32(0xfffffffe);
-                break;
-        case 1:
-                *((u_int32_t *)&guid->g_guid[12]) = BE_32(0x0000000a);
-                break;
-        case 2:
-                *((u_int32_t *)&guid->g_guid[12]) = BE_32(0x00000010);
-        };
-}
-
-#define KAUTH_WKG_NOT           0       /* not a well-known GUID */
-#define KAUTH_WKG_OWNER         1
-#define KAUTH_WKG_GROUP         2
-#define KAUTH_WKG_NOBODY        3
-#define KAUTH_WKG_EVERYBODY     4
 
 int
 zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
@@ -1946,28 +1808,25 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
     i = 0;
     while (zacep = zfs_acl_next_ace(aclp, zacep,
                                     &who, &access_mask, &flags, &type)) {
+        uint16_t entry_type;
 
         rights = 0;
         ace_flags = 0;
 
-        //for (i = 0; i < aclp->z_acl_count; i++) {
-        //who = aclp->z_acl[i].a_who;
-        /* Note Mac OS X GUID is a 128-bit identifier */
         guidp = &k_acl->acl_ace[i].ace_applicable;
 
-	uint16_t entry_type;
-        if ( who == -1 ) {
-           entry_type = ((zfs_ace_t *)zacep)->z_hdr.z_flags & ACE_TYPE_FLAGS;
-           if ( entry_type == ACE_OWNER ) {
-              nfsacl_set_wellknown(KAUTH_WKG_OWNER, guidp);
-           } else if ( entry_type == OWNING_GROUP ) {
-              nfsacl_set_wellknown(KAUTH_WKG_GROUP, guidp);
-           } else if ( entry_type == ACE_EVERYONE ) {
-              nfsacl_set_wellknown(KAUTH_WKG_EVERYBODY, guidp);
-           }
-        /* Try to get a guid from our uid */
+        if (flags & ACE_OWNER) {
+            who = -1;
+            nfsacl_set_wellknown(KAUTH_WKG_OWNER, guidp);
+        } else if (flags & ACE_GROUP) {
+            who = -1;
+            nfsacl_set_wellknown(KAUTH_WKG_GROUP, guidp);
+        } else if (flags & ACE_EVERYONE) {
+            who = -1;
+            nfsacl_set_wellknown(KAUTH_WKG_EVERYBODY, guidp);
+            /* Try to get a guid from our uid */
         } else if (kauth_cred_uid2guid(who, guidp) != 0) {
-            /* Try using gid */
+            /* Try using gid then ... */
             if (kauth_cred_gid2guid(who, guidp) != 0) {
                 /* XXX - What else can we do here? */
                 bzero(guidp, sizeof (guid_t));
@@ -2040,10 +1899,7 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
     return (0);
 }
 
-#endif
 
-
-#ifndef __OPPLE__
 int
 zfs_vsec_2_aclp(zfsvfs_t *zfsvfs, umode_t obj_mode,
     vsecattr_t *vsecp, cred_t *cr, zfs_fuid_info_t **fuidp, zfs_acl_t **zaclp)
@@ -2099,79 +1955,14 @@ zfs_vsec_2_aclp(zfsvfs_t *zfsvfs, umode_t obj_mode,
 	return (0);
 }
 
-#else //APPLE
-
-int
-zfs_vsec_2_aclp(zfsvfs_t *zfsvfs, umode_t obj_mode,
-                struct kauth_acl *k_acl, cred_t *cr,
-                zfs_fuid_info_t **fuidp, zfs_acl_t **zaclp)
-{
-	zfs_acl_t *aclp;
-	zfs_acl_node_t *aclnode;
-	int aclcnt = k_acl->acl_entrycount;
-	int error;
-
-    // Is this still the current state?
-	if (aclcnt > MAX_ACL_ENTRIES || aclcnt <= 0)
-		return (EINVAL);
-
-	aclp = zfs_acl_alloc(zfs_acl_version(zfsvfs->z_version));
-
-	aclp->z_hints = 0;
-	aclnode = zfs_acl_node_alloc(aclcnt * sizeof (zfs_object_ace_t));
-	if (aclp->z_version == ZFS_ACL_VERSION_INITIAL) {
-		if ((error = zfs_copy_ace_2_oldace(obj_mode, aclp,
-		    (ace_t *)k_acl->acl_ace, aclnode->z_acldata,
-		    aclcnt, &aclnode->z_size)) != 0) {
-			zfs_acl_free(aclp);
-			zfs_acl_node_free(aclnode);
-			return (error);
-		}
-	} else {
-		if ((error = zfs_copy_ace_2_fuid(zfsvfs, obj_mode, aclp,
-		    k_acl->acl_ace, aclnode->z_acldata, aclcnt,
-		    &aclnode->z_size, fuidp, cr)) != 0) {
-			zfs_acl_free(aclp);
-			zfs_acl_node_free(aclnode);
-			return (error);
-		}
-	}
-	aclp->z_acl_bytes = aclnode->z_size;
-	aclnode->z_ace_count = aclcnt;
-	aclp->z_acl_count = aclcnt;
-	list_insert_head(&aclp->z_acl, aclnode);
-
-	/*
-	 * If flags are being set then add them to z_hints
-	 */
-#ifndef __APPLE__
-	if (vsecp->vsa_mask & VSA_ACE_ACLFLAGS) {
-		if (vsecp->vsa_aclflags & ACL_PROTECTED)
-			aclp->z_hints |= ZFS_ACL_PROTECTED;
-		if (vsecp->vsa_aclflags & ACL_DEFAULTED)
-			aclp->z_hints |= ZFS_ACL_DEFAULTED;
-		if (vsecp->vsa_aclflags & ACL_AUTO_INHERIT)
-			aclp->z_hints |= ZFS_ACL_AUTO_INHERIT;
-	}
-#endif
-
-	*zaclp = aclp;
-
-	return (0);
-}
-
-#endif // APPLE
 
 
-
-#if 1
 /*
  * Set a files ACL
  */
 int
 zfs_setacl(znode_t *zp, struct kauth_acl *vsecp, boolean_t skipaclchk, cred_t *cr)
 {
-#if 1
 	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
 	zilog_t		*zilog = zfsvfs->z_log;
 	//ulong_t		mask = vsecp->vsa_mask & (VSA_ACE | VSA_ACECNT);
@@ -2269,17 +2060,8 @@ done:
 	mutex_exit(&zp->z_acl_lock);
 
 	return (error);
-#endif
     return 0;
 }
-
-
-#else
-
-
-
-
-#endif
 
 
 /*

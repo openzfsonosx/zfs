@@ -1250,3 +1250,192 @@ u_int32_t getuseraccess(znode_t *zp, vfs_context_t ctx)
 	}
 	return (user_access);
 }
+
+
+
+static unsigned char fingerprint[] = {0xab, 0xcd, 0xef, 0xab, 0xcd, 0xef,
+                                      0xab, 0xcd, 0xef, 0xab, 0xcd, 0xef};
+
+/*
+ * Convert "Well Known" GUID to enum type.
+ */
+int kauth_wellknown_guid(guid_t *guid)
+{
+    uint32_t last = 0;
+    int i;
+
+    if (memcmp(fingerprint, guid->g_guid, sizeof(fingerprint)))
+        return KAUTH_WKG_NOT;
+
+    last = BE_32(*((u_int32_t *)&guid->g_guid[12]));
+
+    switch(last) {
+    case 0x0c:
+        return KAUTH_WKG_EVERYBODY;
+    case 0x0a:
+        return KAUTH_WKG_OWNER;
+    case 0x10:
+        return KAUTH_WKG_GROUP;
+    case 0xFFFFFFFE:
+        return KAUTH_WKG_NOBODY;
+    }
+
+    return KAUTH_WKG_NOT;
+}
+
+
+/*
+ * Set GUID to "well known" guid, based on enum type
+ */
+void nfsacl_set_wellknown(int wkg, guid_t *guid)
+{
+    /*
+     * All WKGs begin with the same 12 bytes.
+     */
+    bcopy(fingerprint, (void *)guid, 12);
+    /*
+     * The final 4 bytes are our code (in network byte order).
+     */
+    switch (wkg) {
+    case 4:
+        *((u_int32_t *)&guid->g_guid[12]) = BE_32(0x0000000c);
+        break;
+    case 3:
+        *((u_int32_t *)&guid->g_guid[12]) = BE_32(0xfffffffe);
+        break;
+    case 1:
+        *((u_int32_t *)&guid->g_guid[12]) = BE_32(0x0000000a);
+        break;
+    case 2:
+        *((u_int32_t *)&guid->g_guid[12]) = BE_32(0x00000010);
+    };
+}
+
+
+/*
+ * Convert Darwin ACL list, into ZFS ACL "aces" list.
+ */
+void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
+{
+    int i;
+    const struct acl_entry *entry;
+    ace_t *ace;
+    guid_t          *guidp;
+    kauth_ace_rights_t  ace_rights;
+    uid_t  who;
+    uint32_t  mask = 0;
+    uint16_t  flags = 0;
+    uint16_t  type = 0;
+    u_int32_t  ace_flags;
+    int wkg;
+
+    *nentries = k_acl->acl_entrycount;
+
+    bzero(aces, sizeof(*aces) * *nentries);
+
+    //*nentries = aclp->acl_cnt;
+
+    for (i = 0; i < *nentries; i++) {
+        //entry = &(aclp->acl_entry[i]);
+        dprintf("aces %d\n", i);
+
+        flags = 0;
+        mask  = 0;
+
+
+        ace = &(aces[i]);
+
+        /* Note Mac OS X GUID is a 128-bit identifier */
+        guidp = &k_acl->acl_ace[i].ace_applicable;
+
+        who = -1;
+        wkg = kauth_wellknown_guid(guidp);
+        switch(wkg) {
+        case KAUTH_WKG_OWNER:
+            flags |= ACE_OWNER;
+            break;
+        case KAUTH_WKG_GROUP:
+            flags |= ACE_GROUP;
+        case KAUTH_WKG_NOBODY:
+            break;
+        case KAUTH_WKG_EVERYBODY:
+            flags |= ACE_EVERYONE;
+            break;
+
+        default:
+            /* Try to get a uid from supplied guid */
+            if (kauth_cred_guid2uid(guidp, &who) != 0) {
+                /* If we couldn't generate a uid, try for a gid */
+                if (kauth_cred_guid2gid(guidp, &who) != 0) {
+                    *nentries=0;
+                    dprintf("returning due to guid2gid\n");
+                    return;
+                }
+            }
+        }
+
+        ace->a_who = who;
+
+        ace_rights = k_acl->acl_ace[i].ace_rights;
+        if (ace_rights & KAUTH_VNODE_READ_DATA)
+            mask |= ACE_READ_DATA;
+        if (ace_rights & KAUTH_VNODE_WRITE_DATA)
+            mask |= ACE_WRITE_DATA;
+        if (ace_rights & KAUTH_VNODE_APPEND_DATA)
+            mask |= ACE_APPEND_DATA;
+        if (ace_rights & KAUTH_VNODE_READ_EXTATTRIBUTES)
+            mask |= ACE_READ_NAMED_ATTRS;
+        if (ace_rights & KAUTH_VNODE_WRITE_EXTATTRIBUTES)
+            mask |= ACE_WRITE_NAMED_ATTRS;
+        if (ace_rights & KAUTH_VNODE_EXECUTE)
+            mask |= ACE_EXECUTE;
+        if (ace_rights & KAUTH_VNODE_DELETE_CHILD)
+            mask |= ACE_DELETE_CHILD;
+        if (ace_rights & KAUTH_VNODE_READ_ATTRIBUTES)
+            mask |= ACE_READ_ATTRIBUTES;
+        if (ace_rights & KAUTH_VNODE_WRITE_ATTRIBUTES)
+            mask |= ACE_WRITE_ATTRIBUTES;
+        if (ace_rights & KAUTH_VNODE_DELETE)
+            mask |= ACE_DELETE;
+        if (ace_rights & KAUTH_VNODE_READ_SECURITY)
+            mask |= ACE_READ_ACL;
+        if (ace_rights & KAUTH_VNODE_WRITE_SECURITY)
+            mask |= ACE_WRITE_ACL;
+        if (ace_rights & KAUTH_VNODE_TAKE_OWNERSHIP)
+            mask |= ACE_WRITE_OWNER;
+        if (ace_rights & KAUTH_VNODE_SYNCHRONIZE)
+            mask |= ACE_SYNCHRONIZE;
+        ace->a_access_mask = mask;
+
+        ace_flags = k_acl->acl_ace[i].ace_flags;
+        if (ace_flags & KAUTH_ACE_FILE_INHERIT)
+            flags |= ACE_FILE_INHERIT_ACE;
+        if (ace_flags & KAUTH_ACE_DIRECTORY_INHERIT)
+            flags |= ACE_DIRECTORY_INHERIT_ACE;
+        if (ace_flags & KAUTH_ACE_LIMIT_INHERIT)
+            flags |= ACE_NO_PROPAGATE_INHERIT_ACE;
+        if (ace_flags & KAUTH_ACE_ONLY_INHERIT)
+            flags |= ACE_INHERIT_ONLY_ACE;
+        ace->a_flags = flags;
+
+        switch(ace_flags & KAUTH_ACE_KINDMASK) {
+        case KAUTH_ACE_PERMIT:
+            type = ACE_ACCESS_ALLOWED_ACE_TYPE;
+            break;
+        case KAUTH_ACE_DENY:
+            type = ACE_ACCESS_DENIED_ACE_TYPE;
+            break;
+        case KAUTH_ACE_AUDIT:
+            type = ACE_SYSTEM_AUDIT_ACE_TYPE;
+            break;
+        case KAUTH_ACE_ALARM:
+            type = ACE_SYSTEM_ALARM_ACE_TYPE;
+            break;
+        }
+        ace->a_type = type;
+        dprintf("  ACL: type %04x, mask %04x, flags %04x\n",
+                type, mask, flags);
+    }
+
+}
+

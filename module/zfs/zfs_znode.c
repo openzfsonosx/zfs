@@ -743,7 +743,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 		zfs_vnode_forget(vp);
 		zp->z_vnode = NULL;
 		kmem_cache_free(znode_cache, zp);
-        printf("weird out triggered\n");
+        printf("znode_alloc: sa_bulk_lookup failed - aborting\n");
 		return (NULL);
 	}
 
