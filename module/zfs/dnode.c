@@ -938,7 +938,7 @@ dnode_special_close(dnode_handle_t *dnh)
 	 */
 	while (refcount_count(&dn->dn_holds) > 0) {
 		delay(hz);
-        if (count++ > 9) {
+        if (count++ > 3) {
             printf("dnode: ARC release bug triggered: %p (%lld)-- sorry\n", dn,
                    refcount_count(&dn->dn_holds));
             count = 0;
@@ -1046,7 +1046,7 @@ dnode_hold_impl(objset_t *os, uint64_t object, int flag,
 			return (EEXIST);
 		DNODE_VERIFY(dn);
 		(void) refcount_add(&dn->dn_holds, tag);
-        dprintf("dnode: +dn_hold %d\n", refcount_count(&dn->dn_holds));
+
 		*dnp = dn;
 		return (0);
 	}
@@ -1173,7 +1173,7 @@ dnode_add_ref(dnode_t *dn, void *tag)
 		return (FALSE);
 	}
 	VERIFY(1 < refcount_add(&dn->dn_holds, tag));
-    dprintf("dnode: 3+dn_hold %d\n", refcount_count(&dn->dn_holds));
+
 	mutex_exit(&dn->dn_mtx);
 	return (TRUE);
 }

@@ -1172,8 +1172,10 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 		 * During replay we remove the read only flag to
 		 * allow replays to succeed.
 		 */
+#if 0
 		if (!vfs_isrdonly(zfsvfs->z_vfs))
 			zfs_unlinked_drain(zfsvfs);
+#endif
 
 		/*
 		 * Parse and replay the intent log.
