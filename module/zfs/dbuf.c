@@ -1785,10 +1785,6 @@ dbuf_create(dnode_t *dn, uint8_t level, uint64_t blkid,
 	ASSERT(dn->dn_object == DMU_META_DNODE_OBJECT ||
 	    refcount_count(&dn->dn_holds) > 0);
 	(void) refcount_add(&dn->dn_holds, db);
-
-    //if (refcount_count(&dn->dn_holds) == 17 && (dn->dn_object == 0))
-    //  panic("refcountx 17");
-
 	(void) atomic_inc_32_nv(&dn->dn_dbufs_count);
 
 	dprintf_dbuf(db, "db=%p\n", db);

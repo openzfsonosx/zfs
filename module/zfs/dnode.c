@@ -938,7 +938,7 @@ dnode_special_close(dnode_handle_t *dnh)
 	 */
 	while (refcount_count(&dn->dn_holds) > 0) {
 		delay(hz);
-        if (count++ > 3) {
+        if (count++ > 9) {
             printf("dnode: ARC release bug triggered: %p (%lld)-- sorry\n", dn,
                    refcount_count(&dn->dn_holds));
             count = 0;
