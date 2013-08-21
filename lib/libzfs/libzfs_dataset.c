@@ -21,10 +21,10 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2010 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
  * Copyright (c) 2012 DEY Storage Systems, Inc.  All rights reserved.
  * Copyright (c) 2012 Pawel Jakub Dawidek <pawel@dawidek.net>.
+ * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <ctype.h>
@@ -628,7 +628,7 @@ libzfs_mnttab_cache_compare(const void *arg1, const void *arg2)
 }
 
 
-void
+int
 libzfs_mnttab_update(libzfs_handle_t *hdl)
 {
 	int nitems;
@@ -640,12 +640,13 @@ libzfs_mnttab_update(libzfs_handle_t *hdl)
 		abort();
 	}
 	while (--nitems >= 0) {
-
 		if (strcmp(sfsp[nitems].f_fstypename, MNTTYPE_ZFS) != 0)
 			continue;
 		libzfs_mnttab_add(hdl, sfsp[nitems].f_mntfromname, sfsp[nitems].f_mntonname,
 		    NULL);
 	}
+
+	return (0);
 }
 
 void
@@ -687,13 +688,18 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 {
 	mnttab_node_t find;
 	mnttab_node_t *mtn;
+	int error;
 
 	if (!hdl->libzfs_mnttab_enable) {
 		struct mnttab srch = { 0 };
 
 		if (avl_numnodes(&hdl->libzfs_mnttab_cache))
 			libzfs_mnttab_fini(hdl);
-		rewind(hdl->libzfs_mnttab);
+
+		/* Reopen MNTTAB to prevent reading stale data from open file */
+		if (freopen(MNTTAB, "r", hdl->libzfs_mnttab) == NULL)
+			return (ENOENT);
+
 		srch.mnt_special = (char *)fsname;
 		srch.mnt_fstype = MNTTYPE_ZFS;
 		if (getmntany(hdl->libzfs_mnttab, entry, &srch) == 0)
@@ -703,7 +709,8 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 	}
 
 	if (avl_numnodes(&hdl->libzfs_mnttab_cache) == 0)
-		libzfs_mnttab_update(hdl);
+		if ((error = libzfs_mnttab_update(hdl)) != 0)
+			return (error);
 
 	find.mtn_mt.mnt_special = (char *)fsname;
 	mtn = avl_find(&hdl->libzfs_mnttab_cache, &find, NULL);
@@ -4400,34 +4407,40 @@ zfs_userspace(zfs_handle_t *zhp, zfs_userquota_prop_t type,
     zfs_userspace_cb_t func, void *arg)
 {
 	zfs_cmd_t zc = { "\0", "\0", "\0", "\0", 0 };
-	int error;
 	zfs_useracct_t buf[100];
+	libzfs_handle_t *hdl = zhp->zfs_hdl;
+	int ret;
 
 	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
 
 	zc.zc_objset_type = type;
 	zc.zc_nvlist_dst = (uintptr_t)buf;
 
-	/* CONSTCOND */
-	while (1) {
+	for (;;) {
 		zfs_useracct_t *zua = buf;
 
 		zc.zc_nvlist_dst_size = sizeof (buf);
-		error = zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_USERSPACE_MANY, &zc);
-		if (error || zc.zc_nvlist_dst_size == 0)
+		if (zfs_ioctl(hdl, ZFS_IOC_USERSPACE_MANY, &zc) != 0) {
+			char errbuf[ZFS_MAXNAMELEN + 32];
+
+			(void) snprintf(errbuf, sizeof (errbuf),
+			    dgettext(TEXT_DOMAIN,
+			    "cannot get used/quota for %s"), zc.zc_name);
+			return (zfs_standard_error_fmt(hdl, errno, errbuf));
+		}
+		if (zc.zc_nvlist_dst_size == 0)
 			break;
 
 		while (zc.zc_nvlist_dst_size > 0) {
-			error = func(arg, zua->zu_domain, zua->zu_rid,
-			    zua->zu_space);
-			if (error != 0)
-				return (error);
+			if ((ret = func(arg, zua->zu_domain, zua->zu_rid,
+			    zua->zu_space)) != 0)
+				return (ret);
 			zua++;
 			zc.zc_nvlist_dst_size -= sizeof (zfs_useracct_t);
 		}
 	}
 
-	return (error);
+	return (0);
 }
 
 int

@@ -812,6 +812,10 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_zfsvfs = zfsvfs;
 	mutex_exit(&zfsvfs->z_znodes_lock);
 
+    // ZOL-0.6.2 calls
+	//dmu_object_size_from_db(sa_get_db(zp->z_sa_hdl), &blksize,
+	//    (u_longlong_t *)&ip->i_blocks);
+
 	VFS_HOLD(zfsvfs->z_vfs);
 	return (zp);
 }

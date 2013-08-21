@@ -508,6 +508,7 @@ static int
 zfs_register_callbacks(struct mount *vfsp)
 {
 	struct dsl_dataset *ds = NULL;
+
 	objset_t *os = NULL;
 	zfsvfs_t *zfsvfs = NULL;
 	uint64_t nbmand;
