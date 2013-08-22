@@ -1959,11 +1959,15 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	if (error == 0) {
 		zfsvfs_t *zfsvfs = NULL;
 
+		//Prerequisite for Spotlight use with a given dataset.
+		//This should be controlled by a dataset property with a name like "finderbrowse"
+		#if 0
 		/* Make the Finder treat sub file systems just like a folder */
 		if (strpbrk(osname, "/"))
 			vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DONTBROWSE));
+		#endif
 
-        //vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
+        	//vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
 		/* Indicate to VFS that we support ACLs. */
 		vfs_setextendedsecurity(vfsp);
 
@@ -2170,14 +2174,28 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	if (VFSATTR_IS_ACTIVE(fsap, f_vol_name)) {
 		spa_t *spa = dmu_objset_spa(zfsvfs->z_os);
 		spa_config_enter(spa, SCL_ALL, FTAG, RW_READER);
+		
+		/*
+		 * Finder volume name is set to the basename of the mountpoint path,
+		 * unless the mountpoint path is "/" or NULL, in which case we use
+		 * the f_mntfromname, such as "MyPool/mydataset"
+		 */
+		char *volname = strrchr(vfs_statfs(zfsvfs->z_vfs)->f_mntonname, '/');
+		if (volname && (*(&volname[1]) != '\0')) {
+			strlcpy(fsap->f_vol_name, &volname[1], MAXPATHLEN);
+		} else {
+			strlcpy(fsap->f_vol_name, vfs_statfs(zfsvfs->z_vfs)->f_mntfromname,
+				MAXPATHLEN);
+		}
 
-        strlcpy(fsap->f_vol_name, vfs_statfs(zfsvfs->z_vfs)->f_mntfromname,
-                MAXPATHLEN);
-
+		/*
+		 * Old MacZFS way. Post OS X 10.6 would show pool name as the 
+		 * volume name for all mounted datasets in Finder.
+		 */
 		//strlcpy(fsap->f_vol_name, spa_name(spa), MAXPATHLEN);
+
 		spa_config_exit(spa, SCL_ALL, FTAG);
 		VFSATTR_SET_SUPPORTED(fsap, f_vol_name);
-
 	}
 	VFSATTR_RETURN(fsap, f_fssubtype, 0);
 
