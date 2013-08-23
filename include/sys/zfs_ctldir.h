@@ -47,16 +47,9 @@
         (zfs_has_ctldir(zdp) && \
         ((zdp)->z_zfsvfs->z_show_ctldir))
 
-typedef struct {
-	char			*se_name;
-	char			*se_path;
-	struct vnode		*se_inode;
-	taskqid_t		se_taskqid;
-	avl_node_t		se_node;
-} zfs_snapentry_t;
 
 /* zfsctl generic functions */
-extern int snapentry_compare(const void *a, const void *b);
+//extern int snapentry_compare(const void *a, const void *b);
 extern boolean_t zfsctl_is_node(struct vnode *ip);
 extern boolean_t zfsctl_is_snapdir(struct vnode *ip);
 extern void zfsctl_inode_inactive(struct vnode *ip);
