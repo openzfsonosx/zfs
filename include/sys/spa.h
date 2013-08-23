@@ -710,13 +710,6 @@ extern boolean_t spa_debug_enabled(spa_t *spa);
 
 extern int spa_mode_global;			/* mode, e.g. FREAD | FWRITE */
 
-
-
-extern void spa_history_internal_log(history_internal_events_t event,
-                                     spa_t *spa, dmu_tx_t *tx, cred_t *cr,
-                                     const char *fmt, ...);
-
-
 #ifdef	__cplusplus
 }
 #endif

@@ -1127,11 +1127,15 @@ zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 		errno = error;
 	}
 
-	if (hdl->libzfs_log_str) {
-		free(hdl->libzfs_log_str);
-		hdl->libzfs_log_str = NULL;
-	}
-	zc->zc_history = 0;
+	/*
+	 * libzfs_log_str is still needed by the above ioctl to copy the
+	 * history string out of userland into the kernel.
+	 * if (hdl->libzfs_log_str) {
+	 * 	free(hdl->libzfs_log_str);
+	 * 	hdl->libzfs_log_str = NULL;
+	 * }
+	 * zc->zc_history = 0;
+	 */
 
 	return (error);
 }
