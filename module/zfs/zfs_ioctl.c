@@ -152,13 +152,15 @@ static char *
 history_str_get(zfs_cmd_t *zc)
 {
 	char *buf;
+	//Darwin requires that the third argument to copyinstr not be NULL.
+	size_t len = 0;
 
 	if (zc->zc_history == 0)
 		return (NULL);
 
 	buf = kmem_alloc(HIS_MAX_RECORD_LEN, KM_SLEEP | KM_NODEBUG);
 	if (copyinstr((void *)(uintptr_t)zc->zc_history,
-	    buf, HIS_MAX_RECORD_LEN, NULL) != 0) {
+	    buf, HIS_MAX_RECORD_LEN, &len) != 0) {
 		history_str_free(buf);
 		return (NULL);
 	}
