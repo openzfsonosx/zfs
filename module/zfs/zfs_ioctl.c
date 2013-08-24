@@ -3764,6 +3764,9 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 	char *tosnap;
 	char tofs[ZFS_MAXNAMELEN];
 	boolean_t first_recvd_props = B_FALSE;
+    struct fileproc *rfp;
+    struct vnode *vpp;
+    uint32_t vipd;
 
 	if (dataset_namecheck(zc->zc_value, NULL, NULL) != 0 ||
 	    strchr(zc->zc_value, '@') == NULL ||
@@ -3782,9 +3785,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 	fd = zc->zc_cookie;
 
     // Lookup and lock fd
-    error = fp_lookup(curproc, fd, &fp, 0);
-
-	if (error || (fp == NULL)) {
+    if (file_vnode_withvid(zc->zc_cookie, &vpp, &vipd)) {
 		nvlist_free(props);
 		return (EBADF);
 	}
@@ -3881,7 +3882,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
     if (zc->zc_history_offset)
         off = zc->zc_history_offset;
 
-	error = dmu_recv_stream(&drc, fd, &off, zc->zc_cleanup_fd,
+	error = dmu_recv_stream(&drc, vpp, &off, zc->zc_cleanup_fd,
 	    &zc->zc_action_handle);
 
 	if (error == 0) {
@@ -3965,7 +3966,7 @@ out:
 	nvlist_free(props);
 	nvlist_free(origprops);
 	nvlist_free(errors);
-    file_drop(curproc, fd, fp, 0);
+    file_drop(fd);
 
 	if (error == 0)
 		error = props_error;
@@ -4058,14 +4059,16 @@ zfs_ioc_send(zfs_cmd_t *zc)
 			fp->f_offset = off;
 		releasef(zc->zc_cookie);
 #else
-        struct fileproc *rfp;
 
-        // Lookup and lock fd
-        if (fp_lookup(curproc, zc->zc_cookie,
-                      &rfp, 0)) {
+        struct fileproc *rfp;
+        struct vnode *vpp;
+        uint32_t vipd;
+
+        if (file_vnode_withvid(zc->zc_cookie, &vpp, &vipd)) {
             dsl_dataset_rele(ds, FTAG);
 			if (dsfrom)
 				dsl_dataset_rele(dsfrom, FTAG);
+            printf("ZFS: Failed to call fp_lookup on fd %d\n", zc->zc_cookie);
 			return (EBADF);
         }
 
@@ -4073,8 +4076,9 @@ zfs_ioc_send(zfs_cmd_t *zc)
          * us instead. */
 		off = zc->zc_history_offset;
         off = 0; // well, it will eventually
+
 		error = dmu_send(tosnap, fromsnap, zc->zc_obj,
-		    zc->zc_cookie, zc->zc_cookie, &off);
+		    zc->zc_cookie, vpp, &off);
 
         /* This was implemented as VOP_SEEK but we don't support that
          * and all the SEEK does is this boundry checking
@@ -4084,7 +4088,7 @@ zfs_ioc_send(zfs_cmd_t *zc)
         else
             zc->zc_history_offset = off;
 
-        file_drop(curproc, zc->zc_cookie, rfp, 0);
+        file_drop(zc->zc_cookie);
 
 #endif
 	}
