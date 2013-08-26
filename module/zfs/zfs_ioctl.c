@@ -155,7 +155,7 @@ history_str_get(zfs_cmd_t *zc)
 	//Darwin requires that the third argument to copyinstr not be NULL.
 	size_t len = 0;
 
-	if (zc->zc_history == 0)
+	if (zc->zc_history == NULL)
 		return (NULL);
 
 	buf = kmem_alloc(HIS_MAX_RECORD_LEN, KM_SLEEP | KM_NODEBUG);

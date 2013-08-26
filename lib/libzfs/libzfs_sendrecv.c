@@ -3236,6 +3236,12 @@ zfs_receive_impl(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 	featureflags = DMU_GET_FEATUREFLAGS(drrb->drr_versioninfo);
 	hdrtype = DMU_GET_STREAM_HDRTYPE(drrb->drr_versioninfo);
 
+    if (featureflags & DMU_BACKUP_FEATURE_SPILLBLOCKS) {
+        fprintf(stderr, "Warning: receive stream has Spill Blocks set which may be incompatible with this version.\r\n");
+        featureflags &= ~DMU_BACKUP_FEATURE_SPILLBLOCKS;
+    }
+
+
 	if (!DMU_STREAM_SUPPORTED(featureflags) ||
 	    (hdrtype != DMU_SUBSTREAM && hdrtype != DMU_COMPOUNDSTREAM)) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,

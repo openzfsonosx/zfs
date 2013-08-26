@@ -765,6 +765,8 @@ libzfs_init(void)
 
 	libzfs_mnttab_init(hdl);
 
+    //fprintf(stderr, "make_dataset_handle %p\r\n", hdl->libzfs_log_str);
+
 	return (hdl);
 }
 
@@ -1116,6 +1118,8 @@ zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 {
 	int error;
 
+    //fprintf(stderr, "zc_history set to %p '%s'\r\n", hdl->libzfs_log_str,
+    //      hdl->libzfs_log_str);
 	zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
 	error = ioctl(hdl->libzfs_fd, request, zc);
 
