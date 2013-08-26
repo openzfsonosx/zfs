@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  */
 
 #ifndef	_SYS_ARC_H
@@ -79,6 +80,7 @@ typedef enum arc_buf_contents {
 #define	ARC_PREFETCH	(1 << 3)	/* I/O is a prefetch */
 #define	ARC_CACHED	(1 << 4)	/* I/O was already in cache */
 #define	ARC_L2CACHE	(1 << 5)	/* cache in L2ARC */
+#define	ARC_L2COMPRESS	(1 << 6)	/* compress in L2ARC */
 
 /*
  * The following breakdows of arc_size exist for kstat only.
@@ -93,8 +95,6 @@ typedef enum arc_space_type {
 
 void arc_space_consume(uint64_t space, arc_space_type_t type);
 void arc_space_return(uint64_t space, arc_space_type_t type);
-void *arc_data_buf_alloc(uint64_t space);
-void arc_data_buf_free(void *buf, uint64_t space);
 arc_buf_t *arc_buf_alloc(spa_t *spa, int size, void *tag,
     arc_buf_contents_t type);
 arc_buf_t *arc_loan_buf(spa_t *spa, int size);
@@ -122,9 +122,9 @@ int arc_read_nolock(zio_t *pio, spa_t *spa, const blkptr_t *bp,
     uint32_t *arc_flags, const zbookmark_t *zb);
 #endif
 zio_t *arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
-    blkptr_t *bp, arc_buf_t *buf, boolean_t l2arc, const zio_prop_t *zp,
-    arc_done_func_t *ready, arc_done_func_t *done, void *_private,
-    int priority, int zio_flags, const zbookmark_t *zb);
+    blkptr_t *bp, arc_buf_t *buf, boolean_t l2arc, boolean_t l2arc_compress,
+    const zio_prop_t *zp, arc_done_func_t *ready, arc_done_func_t *done,
+    void *_private, int priority, int zio_flags, const zbookmark_t *zb);
 
 arc_prune_t *arc_add_prune_callback(arc_prune_func_t *func, void *_private);
 void arc_remove_prune_callback(arc_prune_t *p);

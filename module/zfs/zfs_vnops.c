@@ -2779,6 +2779,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			odp->d_namlen = namelen;
 			odp->d_reclen = reclen = DIRENT_RECLEN(namelen, extended);
 		}
+
 		outcount += reclen;
 		bufptr += reclen;
 		numdirent++;
