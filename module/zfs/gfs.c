@@ -43,9 +43,15 @@
 #include <sys/vnode.h>
 #include <sys/cred.h>
 
+#include <sys/zfs_context.h>
+
 #include <sys/gfs.h>
 
 #define LK_EXCLUSIVE 0
+
+#define VI_LOCK(x)
+#define VI_UNLOCK(x)
+
 
 /*
  * Generic pseudo-filesystem routines.
@@ -245,7 +251,7 @@ gfs_readdir_init(gfs_readdir_state_t *st, int name_max, int ureclen,
 		dirent_size = EDIRENT_RECLEN(st->grd_namlen);
 	else
 #endif
-		dirent_size = DIRENT64_RECLEN(st->grd_namlen);
+		dirent_size = DIRENT_RECLEN(st->grd_namlen, 0);
 	st->grd_dirent = kmem_zalloc(dirent_size, KM_SLEEP);
 	st->grd_parent = parent;
 	st->grd_self = self;
@@ -280,7 +286,7 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
     {
 		dp = st->grd_dirent;
 		namlen = strlen(dp->d_name);
-		reclen = DIRENT64_RECLEN(namlen);
+		reclen = DIRENT_RECLEN(namlen,0);
 	}
 
 	if (reclen > uio_resid(uiop)) {
@@ -434,7 +440,7 @@ gfs_readdir_fini(gfs_readdir_state_t *st, int error, int *eofp, int eof)
 		dirent_size = EDIRENT_RECLEN(st->grd_namlen);
 	else
 #endif
-		dirent_size = DIRENT64_RECLEN(st->grd_namlen);
+		dirent_size = DIRENT_RECLEN(st->grd_namlen,0);
 	kmem_free(st->grd_dirent, dirent_size);
 	if (error > 0)
 		return (error);
@@ -489,21 +495,38 @@ gfs_lookup_dot(vnode_t **vpp, vnode_t *dvp, vnode_t *pvp, const char *nm)
  * 	- Hold the parent
  */
 vnode_t *
-gfs_file_create(size_t size, vnode_t *pvp, vfs_t *vfsp, vnodeops_t *ops)
+gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops)
 {
 	gfs_file_t *fp;
-	vnode_t *vp;
+	struct vnode *vp;
 	int error;
+	struct vnode_fsparam vfsp;
 
 	/*
 	 * Allocate vnode and internal data structure
 	 */
 	fp = kmem_zalloc(size, KM_SLEEP);
-	error = getnewvnode("zfs", vfsp, ops, &vp);
+
+
+   	bzero(&vfsp, sizeof (vfsp));
+	vfsp.vnfs_str = "zfsctl";
+	vfsp.vnfs_mp = vfs;
+	vfsp.vnfs_vtype = VREG;
+	vfsp.vnfs_fsnode = fp;
+	vfsp.vnfs_flags = VNFS_ADDFSREF;
+    vfsp.vnfs_vops = ops;
+	//error = getnewvnode("zfs", vfsp, ops, &vp);
+
 	ASSERT(error == 0);
-	vn_lock(vp, /*LK_EXCLUSIVE |*/ LK_RETRY);
+	//vn_lock(vp, /*LK_EXCLUSIVE |*/ LK_RETRY);
 	//vp->v_data = (caddr_t)fp;
-    vnode_setfsnode(vp, fp);
+    //vnode_setfsnode(vp, fp);
+
+
+    //mutex_enter(&zfsvfs->z_vnode_create_lock);
+    while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0);
+    //mutex_exit(&zfsvfs->z_vnode_create_lock);
+	vnode_settag(vp, VT_ZFS);
 
 	/*
 	 * Set up various pointers
@@ -605,7 +628,7 @@ gfs_root_create(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino,
 	    maxlen, readdir_cb, lookup_cb);
 	/* Manually set the inode */
 	((gfs_file_t *)vnode_fsnode(vp))->gfs_ino = ino;
-	vp->v_flag |= VROOT;
+	//vp->v_flag |= VROOT;
 
 	return (vp);
 }
@@ -651,7 +674,7 @@ gfs_file_inactive(vnode_t *vp)
 	gfs_dir_t *dp = NULL;
 	void *data;
 
-	if (fp->gfs_parent == NULL || (vp->v_flag & V_XATTRDIR))
+	if (fp->gfs_parent == NULL /*|| (vp->v_flag & V_XATTRDIR)*/)
 		goto found;
 
 	/*
@@ -800,7 +823,7 @@ gfs_dir_lookup_dynamic(gfs_lookup_cb callback, gfs_dir_t *dp,
 	 * The callback for extended attributes returns a vnode
 	 * with v_data from an underlying fs.
 	 */
-	if (ret == 0 && !IS_XATTRDIR(dvp)) {
+	if (ret == 0 /*&& !IS_XATTRDIR(dvp)*/) {
 		fp = (gfs_file_t *)((vnode_fsnode(*vpp)));
 		fp->gfs_index = -1;
 		fp->gfs_ino = ino;
@@ -938,11 +961,13 @@ gfs_dir_lookup(vnode_t *dvp, const char *nm, vnode_t **vpp, cred_t *cr,
 		return (0);
 
 	casecheck = (flags & FIGNORECASE) != 0 && direntflags != NULL;
+#if 0 //FIXME
 	if (vfs_has_feature(dvp->v_vfsp, VFSFT_NOCASESENSITIVE) ||
 	    (flags & FIGNORECASE))
 		compare = strcasecmp;
 	else
 		compare = strcmp;
+#endif
 
 	gfs_dir_lock(dp);
 
@@ -1113,7 +1138,7 @@ gfs_vop_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, pathname_t *pnp,
 /* ARGSUSED */
 int
 gfs_vop_readdir(ap)
-	struct vop_readdir_args /* {
+	struct vnop_readdir_args /* {
 		struct vnode *a_vp;
 		struct uio *a_uio;
 		struct ucred *a_cred;
@@ -1124,20 +1149,20 @@ gfs_vop_readdir(ap)
 {
 	vnode_t *vp = ap->a_vp;
 	uio_t *uiop = ap->a_uio;
-	cred_t *cr = ap->a_cred;
+	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
 	int *eofp = ap->a_eofflag;
 	int ncookies = 0;
 	u_long *cookies = NULL;
 	int error;
 
-	if (ap->a_ncookies) {
+	if (ap->a_numdirent) {
 		/*
 		 * Minimum entry size is dirent size and 1 byte for a file name.
 		 */
-		ncookies = uiop->uio_resid / (sizeof(struct dirent) - sizeof(((struct dirent *)NULL)->d_name) + 1);
-		cookies = malloc(ncookies * sizeof(u_long), M_TEMP, M_WAITOK);
-		*ap->a_cookies = cookies;
-		*ap->a_ncookies = ncookies;
+		ncookies = uio_resid(uiop) / (sizeof(struct dirent) - sizeof(((struct dirent *)NULL)->d_name) + 1);
+		//cookies = malloc(ncookies * sizeof(u_long), M_TEMP, M_WAITOK);
+		//*ap->a_cookies = cookies;
+		*ap->a_numdirent = ncookies;
 	}
 
 	error = gfs_dir_readdir(vp, uiop, eofp, &ncookies, &cookies, NULL,
@@ -1145,12 +1170,12 @@ gfs_vop_readdir(ap)
 
 	if (error == 0) {
 		/* Subtract unused cookies */
-		if (ap->a_ncookies)
-			*ap->a_ncookies -= ncookies;
-	} else if (ap->a_ncookies) {
-		free(*ap->a_cookies, M_TEMP);
-		*ap->a_cookies = NULL;
-		*ap->a_ncookies = 0;
+		if (ap->a_numdirent)
+			*ap->a_numdirent -= ncookies;
+	} else if (ap->a_numdirent) {
+		//free(*ap->a_cookies, M_TEMP);
+		//*ap->a_cookies = NULL;
+		*ap->a_numdirent = 0;
 	}
 
 	return (error);
@@ -1240,7 +1265,7 @@ gfs_vop_map(vnode_t *vp, offset_t off, struct as *as, caddr_t *addrp,
 /* ARGSUSED */
 int
 gfs_vop_inactive(ap)
-	struct vop_inactive_args /* {
+	struct vnop_inactive_args /* {
 		struct vnode *a_vp;
 		struct thread *a_td;
 	} */ *ap;
