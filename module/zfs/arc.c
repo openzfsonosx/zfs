@@ -2206,7 +2206,6 @@ arc_adjust_meta(int64_t adj, boolean_t may_prune)
 	int64_t delta;
     int64_t adjustment = adj;
 
-	/* Evict MRU+MFU meta data to ghost lists */
 	if (adjustment > 0 && arc_mru->arcs_lsize[ARC_BUFC_METADATA] > 0) {
 		delta = MIN(arc_mru->arcs_lsize[ARC_BUFC_METADATA], adjustment);
 		arc_evict(arc_mru, 0, delta, FALSE, ARC_BUFC_METADATA);
@@ -2217,20 +2216,6 @@ arc_adjust_meta(int64_t adj, boolean_t may_prune)
 	if (adjustment > 0 && arc_mfu->arcs_lsize[ARC_BUFC_METADATA] > 0) {
 		delta = MIN(arc_mfu->arcs_lsize[ARC_BUFC_METADATA], adjustment);
 		arc_evict(arc_mfu, 0, delta, FALSE, ARC_BUFC_METADATA);
-	}
-
-	/* Evict ghost MRU+MFU meta data */
-	adjustment = tmp;
-
-	if (adjustment > 0 && arc_mru_ghost->arcs_size > 0) {
-		delta = MIN(arc_mru_ghost->arcs_size, adjustment);
-		arc_evict_ghost(arc_mru_ghost, 0, delta, ARC_BUFC_METADATA);
-		adjustment -= delta;
-	}
-
-	if (adjustment > 0 && arc_mfu_ghost->arcs_size > 0) {
-		delta = MIN(arc_mfu_ghost->arcs_size, adjustment);
-		arc_evict_ghost(arc_mfu_ghost, 0, delta, ARC_BUFC_METADATA);
 		adjustment -= delta;
 	}
 
