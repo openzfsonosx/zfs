@@ -59,7 +59,7 @@ extern const struct file_operations zpl_file_operations;
 extern const struct file_operations zpl_dir_file_operations;
 
 /* zpl_super.c */
-extern void zpl_prune_sbs(int64_t bytes_to_scan, void *private);
+extern void zpl_prune_sbs(int64_t bytes_to_scan, void *);
 
 typedef struct zpl_mount_data {
 	const char *z_osname;	/* Dataset name */
@@ -100,6 +100,7 @@ extern const struct inode_operations zpl_ops_shares;
 }
 
 #else
+typedef int (*filldir_t)(void *, const char *, int, loff_t, uint64_t, unsigned);
 
 typedef struct dir_context {
 	void *dirent;
@@ -113,41 +114,49 @@ typedef struct dir_context {
 	.pos = _pos,					\
 }
 
-static inline bool
+static inline boolean_t
 dir_emit(struct dir_context *ctx, const char *name, int namelen,
     uint64_t ino, unsigned type)
 {
 	return ctx->actor(ctx->dirent, name, namelen, ctx->pos, ino, type) == 0;
 }
 
-static inline bool
+static inline boolean_t
 dir_emit_dot(struct file *file, struct dir_context *ctx)
 {
+#ifdef __APPLE__
+    return B_FALSE;
+#else
 	return ctx->actor(ctx->dirent, ".", 1, ctx->pos,
 	    file->f_path.dentry->d_inode->i_ino, DT_DIR) == 0;
+#endif
 }
 
-static inline bool
+static inline boolean_t
 dir_emit_dotdot(struct file *file, struct dir_context *ctx)
 {
+#ifdef __APPLE__
+    return B_FALSE;
+#else
 	return ctx->actor(ctx->dirent, "..", 2, ctx->pos,
 	    parent_ino(file->f_path.dentry), DT_DIR) == 0;
+#endif
 }
 
-static inline bool
+static inline boolean_t
 dir_emit_dots(struct file *file, struct dir_context *ctx)
 {
 	if (ctx->pos == 0) {
 		if (!dir_emit_dot(file, ctx))
-			return false;
+			return B_FALSE;
 		ctx->pos = 1;
 	}
 	if (ctx->pos == 1) {
 		if (!dir_emit_dotdot(file, ctx))
-			return false;
+			return B_FALSE;
 		ctx->pos = 2;
 	}
-	return true;
+	return B_TRUE;
 }
 #endif /* HAVE_VFS_ITERATE */
 

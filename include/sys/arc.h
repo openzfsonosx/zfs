@@ -122,9 +122,9 @@ int arc_read_nolock(zio_t *pio, spa_t *spa, const blkptr_t *bp,
     uint32_t *arc_flags, const zbookmark_t *zb);
 #endif
 zio_t *arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
-    blkptr_t *bp, arc_buf_t *buf, boolean_t l2arc, const zio_prop_t *zp,
-    arc_done_func_t *ready, arc_done_func_t *done, void *_private,
-    int priority, int zio_flags, const zbookmark_t *zb);
+    blkptr_t *bp, arc_buf_t *buf, boolean_t l2arc, boolean_t l2arc_compress,
+    const zio_prop_t *zp, arc_done_func_t *ready, arc_done_func_t *done,
+    void *_private, int priority, int zio_flags, const zbookmark_t *zb);
 
 arc_prune_t *arc_add_prune_callback(arc_prune_func_t *func, void *_private);
 void arc_remove_prune_callback(arc_prune_t *p);

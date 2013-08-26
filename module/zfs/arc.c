@@ -171,7 +171,7 @@ int zfs_arc_shrink_shift = 5;
  * minimum lifespan of a prefetch block in clock ticks
  * (initialized in arc_init())
  */
-int zfs_arc_min_prefetch_lifespan = HZ;
+int zfs_arc_min_prefetch_lifespan = hz;
 
 /* disable arc proactive arc throttle due to low memory */
 int zfs_arc_memory_throttle_disable = 1;
@@ -2434,7 +2434,7 @@ arc_reclaim_thread(void *dummy __unused)
             }
 
             /* reset the growth delay for every reclaim */
-            growtime = ddi_get_lbolt() + (arc_grow_retry * hz);
+            growtime = ddi_get_lbolt() + (zfs_arc_grow_retry * hz);
             if (last_reclaim == ARC_RECLAIM_CONS) {
                 /*
                  * If needfree is TRUE our vm_lowmem hook

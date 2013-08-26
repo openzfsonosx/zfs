@@ -67,8 +67,8 @@
 #include <libintl.h>
 #include <libnvpair.h>
 #include <limits.h>
-#include <scsi/scsi.h>
-#include <scsi/sg.h>
+//#include <scsi/scsi.h>
+//#include <scsi/sg.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -156,6 +156,7 @@ static const int vdev_disk_database_size =
 #define	INQ_REPLY_LEN	96
 #define	INQ_CMD_LEN	6
 
+#ifdef __LINUX__
 static boolean_t
 check_sector_size_database(char *path, int *sector_size)
 {
@@ -203,6 +204,32 @@ check_sector_size_database(char *path, int *sector_size)
 
 	return (B_FALSE);
 }
+#endif
+
+
+#ifdef __APPLE__
+// FIXME
+static boolean_t
+check_sector_size_database(char *path, int *sector_size)
+{
+    char diskname[256] = {0};
+    int i, error = 0;
+
+	if (error < 0)
+		return (B_FALSE);
+
+	for (i = 0; i < vdev_disk_database_size; i++) {
+		if (memcmp(diskname, vdev_disk_database[i].id, 24))
+			continue;
+
+		*sector_size = vdev_disk_database[i].sector_size;
+		return (B_TRUE);
+	}
+
+	return (B_FALSE);
+}
+#endif
+
 
 /*PRINTFLIKE1*/
 static void
