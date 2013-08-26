@@ -227,15 +227,15 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
         dprintf("Calling getacl\n");
         if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
-            printf("zfs_getacl returned error %d\n", error);
+            dprintf("zfs_getacl returned error %d\n", error);
             error = 0;
+        } else {
+
+            VATTR_SET_SUPPORTED(vap, va_acl);
+            /* va_acl implies that va_uuuid and va_guuid are also supported. */
+            VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
+            VATTR_RETURN(vap, va_guuid, kauth_null_guid);
         }
-
-		VATTR_SET_SUPPORTED(vap, va_acl);
-		/* va_acl implies that va_uuuid and va_guuid are also supported. */
-		VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
-		VATTR_RETURN(vap, va_guuid, kauth_null_guid);
-
 
     }
 
