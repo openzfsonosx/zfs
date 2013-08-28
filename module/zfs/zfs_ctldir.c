@@ -220,12 +220,12 @@ zfsctl_fini(void)
 boolean_t
 zfsctl_is_node(struct vnode *vp)
 {
-	return (vn_matchops(vp, zfsctl_ops_root) ||
-	    vn_matchops(vp, zfsctl_ops_snapdir) ||
-	    vn_matchops(vp, zfsctl_ops_snapshot) ||
-	    vn_matchops(vp, zfsctl_ops_shares) ||
-	    vn_matchops(vp, zfsctl_ops_shares_dir));
-
+	//return (vn_matchops(vp, zfsctl_ops_root) ||
+    //  vn_matchops(vp, zfsctl_ops_snapdir) ||
+    //  vn_matchops(vp, zfsctl_ops_snapshot) ||
+    //  vn_matchops(vp, zfsctl_ops_shares) ||
+    //  vn_matchops(vp, zfsctl_ops_shares_dir));
+    return B_TRUE;
 }
 
 /*
@@ -576,6 +576,8 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
 	return (err);
 }
 
+
+
 #ifdef sun
 static int
 zfsctl_pathconf(struct vnode *vp, int cmd, ulong_t *valp, cred_t *cr,
@@ -737,9 +739,15 @@ zfsctl_unmount_snap(zfs_snapentry_t *sep, int fflags, cred_t *cr)
 	kmem_free(sep, sizeof (zfs_snapentry_t));
 
 	return (0);
-#else	/* !sun */
-	return (dounmount(vn_mountedvfs(svp), fflags, curthread));
 #endif	/* !sun */
+#ifdef __FreeBSD__
+	return (dounmount(vn_mountedvfs(svp), fflags, curthread));
+#endif	/* !FreeBSD */
+#ifdef __APPLE__
+	return (zfs_vfs_unmount(vnode_mount(svp), fflags, vfs_context_current()));
+#endif	/* !FreeBSD */
+
+
 }
 
 #ifdef sun
@@ -755,7 +763,7 @@ zfsctl_rename_snap(zfsctl_snapdir_t *sdp, zfs_snapentry_t *sep, const char *nm)
 	ASSERT(MUTEX_HELD(&sdp->sd_lock));
 	ASSERT(sep != NULL);
 
-	vfsp = vn_mountedvfs(sep->se_root);
+	vfsp = vnode_mount(sep->se_root);
 	ASSERT(vfsp != NULL);
 
 	vfs_lock_wait(vfsp);
@@ -953,7 +961,8 @@ zfsctl_snapdir_mkdir(struct vnode *dvp, char *dirname, vattr_t *vap, struct vnod
 		    B_FALSE, B_FALSE, -1);
 		if (err)
 			return (err);
-		err = lookupnameat(dirname, seg, 0/*follow*/, NULL, vpp, dvp);
+        err = zfsctl_snapdir_lookup(dvp, dirname, vpp,
+                                    0, cr, NULL, NULL);
 	}
 
 	return (err);
@@ -975,6 +984,7 @@ zfsctl_freebsd_snapdir_mkdir(ap)
 	return (zfsctl_snapdir_mkdir(ap->a_dvp, ap->a_cnp->cn_nameptr, NULL,
 	    ap->a_vpp, cr, NULL, 0, NULL));
 }
+
 
 /*
  * Lookup entry point for the 'snapshot' directory.  Try to open the
@@ -1062,7 +1072,11 @@ zfsctl_snapdir_lookup(ap)
 	if ((sep = avl_find(&sdp->sd_snaps, &search, &where)) != NULL) {
 		*vpp = sep->se_root;
 		VN_HOLD(*vpp);
-		err = traverse(vpp, /*LK_EXCLUSIVE |*/ LK_RETRY);
+
+
+		//err = traverse(vpp, /*LK_EXCLUSIVE |*/ LK_RETRY);
+
+
 		if (err) {
 			VN_RELE(*vpp);
 			*vpp = NULL;
@@ -1129,7 +1143,27 @@ domount:
 	(void) snprintf(mountpoint, mountpoint_len,
 	    "%s/" ZFS_CTLDIR_NAME "/snapshot/%s",
                     vfs_statfs(vnode_mount(dvp))->f_mntonname, nm);
+
+#ifdef __FreeBSD__
 	err = mount_snapshot(curthread, vpp, "zfs", mountpoint, snapname, 0);
+#endif
+#ifdef __APPLE__
+
+    //err = zfs_vfs_mount(, vpp, user_addr_t data, vfs_context_t context)
+
+	//error = zfs_domount(vfsp, 0, osname, context);
+
+    //error  = mount
+    {
+
+        //err = kernel_mount("ZFS", vpp, vpp, mountpoint,
+        //                 snapname, 0, 0, 0, vfs_context_current());
+    }
+
+    printf("Would call mount here on '%s' for '%s'\n", mountpoint, snapname);
+
+#endif
+
 	kmem_free(mountpoint, mountpoint_len);
 	if (err == 0) {
 		/*
@@ -1600,9 +1634,9 @@ zfsctl_traverse_begin(struct vnode **vpp, int lktype)
 
 	VN_HOLD(*vpp);
 	/* Snapshot should be already mounted, but just in case. */
-	if (vn_mountedvfs(*vpp) == NULL)
-		return (ENOENT);
-	return (traverse(vpp, lktype));
+    if (vnode_mount(*vpp) == NULL)
+        return (ENOENT);
+	//return (traverse(vpp, lktype));
 }
 
 static void
@@ -1780,7 +1814,11 @@ zfsctl_lookup_objset(vfs_t *vfsp, uint64_t objsetid, zfsvfs_t **zfsvfsp)
 		 * and returns the ZFS vnode mounted on top of the GFS node.
 		 * This ZFS vnode is the root of the vfs for objset 'objsetid'.
 		 */
-		error = traverse(&vp, LK_SHARED | LK_RETRY);
+		//error = traverse(&vp, LK_SHARED | LK_RETRY);
+        //sbp = zpl_sget(&zpl_fs_type, zfsctl_test_super,
+        //             zfsctl_set_super, 0, &id);
+        // FIXME
+
 		if (error == 0) {
 			if (vp == sep->se_root)
 				error = EINVAL;
