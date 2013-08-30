@@ -495,7 +495,7 @@ gfs_lookup_dot(vnode_t **vpp, vnode_t *dvp, vnode_t *pvp, const char *nm)
  * 	- Hold the parent
  */
 vnode_t *
-gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops)
+gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enum vtype type)
 {
 	gfs_file_t *fp;
 	struct vnode *vp;
@@ -509,11 +509,12 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops)
 
 
    	bzero(&vfsp, sizeof (vfsp));
-	vfsp.vnfs_str = "zfsctl";
+	vfsp.vnfs_str = "zfs";
 	vfsp.vnfs_mp = vfs;
-	vfsp.vnfs_vtype = VREG;
+	vfsp.vnfs_vtype = type;
 	vfsp.vnfs_fsnode = fp;
 	vfsp.vnfs_flags = VNFS_ADDFSREF;
+    printf("ops set to %p\n", ops);
     vfsp.vnfs_vops = ops;
 	//error = getnewvnode("zfs", vfsp, ops, &vp);
 
@@ -584,7 +585,7 @@ gfs_dir_create(size_t struct_size, vnode_t *pvp, vfs_t *vfsp, vnodeops_t *ops,
 	gfs_dir_t *dp;
 	gfs_dirent_t *de;
 
-	vp = gfs_file_create(struct_size, pvp, vfsp, ops);
+	vp = gfs_file_create(struct_size, pvp, vfsp, ops, VDIR);
 	//vp->v_type = VDIR; // Can only be set at create FIXME
 
 	dp = vnode_fsnode(vp);
@@ -606,6 +607,8 @@ gfs_dir_create(size_t struct_size, vnode_t *pvp, vfs_t *vfsp, vnodeops_t *ops,
 	dp->gfsd_inode = inode_cb;
 
 	mutex_init(&dp->gfsd_lock, NULL, MUTEX_DEFAULT, NULL);
+
+    printf("woo retuning %p\n", vp);
 
 	return (vp);
 }
@@ -643,7 +646,7 @@ gfs_root_create(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino,
 vnode_t *
 gfs_root_create_file(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino)
 {
-	vnode_t	*vp = gfs_file_create(size, NULL, ops);
+	vnode_t	*vp = gfs_file_create(size, NULL, ops, VREG);
 
 	((gfs_file_t *)vnode_fsnode(vp))->gfs_ino = ino;
 

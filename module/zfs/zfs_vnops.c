@@ -2500,6 +2500,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
     char		*bufptr;
     boolean_t	isdotdir = B_TRUE;
 
+    dprintf("+zfs_readdir\n");
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
@@ -2593,6 +2594,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 	/*
 	 * Transform to file-system independent format
 	 */
+
 	outcount = 0;
 	while (outcount < bytes_wanted) {
 		ino64_t objnum;
@@ -2617,11 +2619,14 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			zap.za_normalization_conflict = 0;
 			objnum = parent;
 			type = DT_DIR;
+#if 1
 		} else if (offset == 2 && zfs_show_ctldir(zp)) {
+            dprintf("Inserting '%s'\n", ZFS_CTLDIR_NAME);
 			(void) strlcpy(zap.za_name, ZFS_CTLDIR_NAME, MAXNAMELEN);
 			zap.za_normalization_conflict = 0;
 			objnum = ZFSCTL_INO_ROOT;
 			type = DT_DIR;
+#endif
 		} else {
 #ifdef __APPLE__
 			/* This is not a special case directory */
@@ -2829,6 +2834,9 @@ update:
 	if (a_numdirent)
         *a_numdirent = numdirent;
 	ZFS_EXIT(zfsvfs);
+
+    dprintf("-zfs_readdir: num %d\n", numdirent);
+
 	return (error);
 }
 
