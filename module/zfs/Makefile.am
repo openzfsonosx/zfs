@@ -30,7 +30,8 @@ CFLAGS_KMOD = \
 	-I$(top_srcdir)/include \
 	-I@SPL_OBJ@ -I@SPL_OBJ@/include \
 	-I/System/Library/Frameworks/Kernel.framework/Headers \
-	-I/System/Library/Frameworks/Kernel.framework/PrivateHeaders
+	-I/System/Library/Frameworks/Kernel.framework/PrivateHeaders \
+	-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework/Headers
 
 LINKFLAGS_KMOD = \
 	-Xlinker \
@@ -38,7 +39,6 @@ LINKFLAGS_KMOD = \
 	-nostdlib \
 	-lkmodc++ \
 	-lkmod \
-	-lcpp_kext \
 	-lcc_kext
 
 bin_PROGRAMS = zfs.kext

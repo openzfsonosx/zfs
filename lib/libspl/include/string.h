@@ -29,8 +29,7 @@
 
 #include_next <string.h>
 
-extern size_t strlcat(char *dst, const char *src, size_t dstsize);
-extern size_t strlcpy(char *dst, const char *src, size_t len);
+//kept for Snow Leopard
 extern size_t strnlen(const char *str, size_t maxlen);
 
 #endif
