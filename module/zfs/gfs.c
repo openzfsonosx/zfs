@@ -243,15 +243,16 @@ gfs_readdir_init(gfs_readdir_state_t *st, int name_max, int ureclen,
 	    (uio_offset(uiop) % ureclen) != 0)
 		return (EINVAL);
 
+
 	st->grd_ureclen = ureclen;
 	st->grd_oresid = uio_resid(uiop);
 	st->grd_namlen = name_max;
-#ifndef __APPLE__
-	if (flags & V_RDDIR_ENTFLAGS)
-		dirent_size = EDIRENT_RECLEN(st->grd_namlen);
+
+    if (flags & VNODE_READDIR_EXTENDED)
+		dirent_size = DIRENT_RECLEN(st->grd_namlen, 1);
 	else
-#endif
 		dirent_size = DIRENT_RECLEN(st->grd_namlen, 0);
+
 	st->grd_dirent = kmem_zalloc(dirent_size, KM_SLEEP);
 	st->grd_parent = parent;
 	st->grd_self = self;
@@ -274,16 +275,13 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
 {
 	int reclen, namlen;
 	dirent64_t *dp;
+    //boolean_t   extended = (flags & VNODE_READDIR_EXTENDED);
 
-#ifndef __APPLE__
-	edirent_t *edp;
-	if (st->grd_flags & V_RDDIR_ENTFLAGS) {
-		edp = st->grd_dirent;
-		namlen = strlen(edp->ed_name);
-		reclen = EDIRENT_RECLEN(namlen);
-	} else
-#endif
-    {
+	if (st->grd_flags & VNODE_READDIR_EXTENDED) {
+		dp = st->grd_dirent;
+		namlen = strlen(dp->d_name);
+		reclen = DIRENT_RECLEN(namlen, 1);
+	} else {
 		dp = st->grd_dirent;
 		namlen = strlen(dp->d_name);
 		reclen = DIRENT_RECLEN(namlen,0);
@@ -299,17 +297,16 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
 		return (-1);
 	}
 
-#ifndef __APPLE__
-	if (st->grd_flags & V_RDDIR_ENTFLAGS) {
-		edp->ed_off = next;
-		edp->ed_reclen = (ushort_t)reclen;
-	} else
-#endif
-    {
-		/* XXX: This can change in the future. */
-		dp->d_reclen = (ushort_t)reclen;
+	if (st->grd_flags & VNODE_READDIR_EXTENDED) {
+		dp->d_seekoff = next;
 		dp->d_type = DT_DIR;
 		dp->d_namlen = namlen;
+		dp->d_reclen = (ushort_t)reclen;
+	} else {
+		/* XXX: This can change in the future. */
+		dp->d_type = DT_DIR;
+		dp->d_namlen = namlen;
+		dp->d_reclen = (ushort_t)reclen;
 	}
 
 	if (uiomove((caddr_t)st->grd_dirent, reclen, UIO_READ, uiop))
@@ -345,16 +342,15 @@ gfs_readdir_emit(gfs_readdir_state_t *st, uio_t *uiop, offset_t voff,
 {
 	offset_t off = (voff + 2) * st->grd_ureclen;
 
-#ifndef __APPLE__
-	if (st->grd_flags & V_RDDIR_ENTFLAGS) {
-		edirent_t *edp = st->grd_dirent;
+	if (st->grd_flags & VNODE_READDIR_EXTENDED) {
+		dirent64_t *dp = st->grd_dirent;
 
-		edp->ed_ino = ino;
-		(void) strncpy(edp->ed_name, name, st->grd_namlen);
-		edp->ed_eflags = eflags;
-	} else
-#endif
-    {
+		dp->d_ino = ino;
+		(void) strncpy(dp->d_name, name, st->grd_namlen);
+
+		//dp->d_flags = eflags;
+
+	} else {
 		dirent64_t *dp = st->grd_dirent;
 
 		dp->d_ino = ino;
@@ -436,12 +432,10 @@ int
 gfs_readdir_fini(gfs_readdir_state_t *st, int error, int *eofp, int eof)
 {
 	size_t dirent_size;
-#ifndef __APPLE__
-	if (st->grd_flags & V_RDDIR_ENTFLAGS)
-		dirent_size = EDIRENT_RECLEN(st->grd_namlen);
+	if (st->grd_flags & VNODE_READDIR_EXTENDED)
+		dirent_size = DIRENT_RECLEN(st->grd_namlen, 1);
 	else
-#endif
-		dirent_size = DIRENT_RECLEN(st->grd_namlen,0);
+		dirent_size = DIRENT_RECLEN(st->grd_namlen, 0);
 	kmem_free(st->grd_dirent, dirent_size);
 	if (error > 0)
 		return (error);
@@ -1153,11 +1147,12 @@ gfs_vop_readdir(ap)
 	} */ *ap;
 {
 	vnode_t *vp = ap->a_vp;
-	uio_t *uiop = ap->a_uio;
+	struct uio *uiop = ap->a_uio;
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
 	int *eofp = ap->a_eofflag;
 	int ncookies = 0;
 	u_long *cookies = NULL;
+	u_long *a_cookies = NULL;
 	int error;
 
 	if (ap->a_numdirent) {
@@ -1165,9 +1160,13 @@ gfs_vop_readdir(ap)
 		 * Minimum entry size is dirent size and 1 byte for a file name.
 		 */
 		ncookies = uio_resid(uiop) / (sizeof(struct dirent) - sizeof(((struct dirent *)NULL)->d_name) + 1);
-		//cookies = malloc(ncookies * sizeof(u_long), M_TEMP, M_WAITOK);
-		//*ap->a_cookies = cookies;
+
+		cookies = MALLOC(cookies, u_long *, ncookies * sizeof(u_long),
+                         M_TEMP, M_WAITOK);
+		a_cookies = cookies;
 		*ap->a_numdirent = ncookies;
+        printf("Setting ncookies to %d and offset at %08lx\n", ncookies,
+               uio_offset(uiop));
 	}
 
 	error = gfs_dir_readdir(vp, uiop, eofp, &ncookies, &cookies, NULL,
@@ -1178,10 +1177,15 @@ gfs_vop_readdir(ap)
 		if (ap->a_numdirent)
 			*ap->a_numdirent -= ncookies;
 	} else if (ap->a_numdirent) {
-		//free(*ap->a_cookies, M_TEMP);
 		//*ap->a_cookies = NULL;
 		*ap->a_numdirent = 0;
 	}
+
+    if (cookies)
+		FREE(a_cookies, M_TEMP);
+
+    printf("Returning readdir with numdirent as %d: new offset %08lx\n",
+           *ap->a_numdirent, uio_offset(uiop));
 
 	return (error);
 }
