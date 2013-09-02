@@ -287,6 +287,7 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
 		dp = st->grd_dirent;
 		namlen = strlen(dp->d_name);
 		reclen = DIRENT_RECLEN(namlen,0);
+        printf("trying to add '%s'\n", dp->d_name);
 	}
 
 	if (reclen > uio_resid(uiop)) {
@@ -632,6 +633,7 @@ gfs_root_create(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino,
 	/* Manually set the inode */
 	((gfs_file_t *)vnode_fsnode(vp))->gfs_ino = ino;
 	//vp->v_flag |= VROOT;
+    // FIXME
 
 	return (vp);
 }
@@ -969,8 +971,8 @@ gfs_dir_lookup(vnode_t *dvp, const char *nm, vnode_t **vpp, cred_t *cr,
 	    (flags & FIGNORECASE))
 		compare = strcasecmp;
 	else
-		compare = strcmp;
 #endif
+		compare = strcmp;
 
 	gfs_dir_lock(dp);
 

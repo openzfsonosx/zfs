@@ -155,7 +155,7 @@ static gfs_opsvec_t zfsctl_opsvec[] = {
 	{ ".zfs", zfsctl_tops_root, &zfsctl_ops_root },
 	{ ".zfs/snapshot", zfsctl_tops_snapdir, &zfsctl_ops_snapdir },
 	{ ".zfs/snapshot/vnode", zfsctl_tops_snapshot, &zfsctl_ops_snapshot },
-	{ ".zfs/shares", zfsctl_tops_shares, &zfsctl_ops_shares_dir },
+    { ".zfs/shares", zfsctl_tops_shares, &zfsctl_ops_shares_dir },
 	{ ".zfs/shares/vnode", zfsctl_tops_shares, &zfsctl_ops_shares },
 	{ NULL }
 };
@@ -266,7 +266,6 @@ zfsctl_create(zfsvfs_t *zfsvfs)
     printf("zfsctl_create\n");
 
 	vp = gfs_root_create(sizeof (zfsctl_node_t), zfsvfs->z_vfs,
-                         //&zfsctl_ops_root, ZFSCTL_INO_ROOT, zfsctl_root_entries,
 	    zfsctl_ops_root_dvnodeops, ZFSCTL_INO_ROOT, zfsctl_root_entries,
 	    zfsctl_root_inode_cb, MAXNAMELEN, NULL, NULL);
 	zcp = vnode_fsnode(vp);
@@ -287,6 +286,7 @@ zfsctl_create(zfsvfs_t *zfsvfs)
 	 */
 	//vp->v_vflag &= ~VV_ROOT;
 
+    printf("zfsctl: rootvp is %p\n", vp);
 	zfsvfs->z_ctldir = vp;
 
 	VOP_UNLOCK(vp, 0);
@@ -300,6 +300,7 @@ zfsctl_create(zfsvfs_t *zfsvfs)
 void
 zfsctl_destroy(zfsvfs_t *zfsvfs)
 {
+    printf("zfsctl: releasing rootvp %p\n", zfsvfs->z_ctldir);
 	VN_RELE(zfsvfs->z_ctldir);
 	zfsvfs->z_ctldir = NULL;
 }
@@ -380,6 +381,14 @@ zfsctl_common_getattr(struct vnode *vp, vattr_t *vap)
 	timestruc_t	now;
 
     printf("zfsctl: +getattr\n");
+
+#ifdef __APPLE__
+    VATTR_SET_SUPPORTED(vap, va_mode);
+    VATTR_SET_SUPPORTED(vap, va_uid);
+    VATTR_SET_SUPPORTED(vap, va_gid);
+    VATTR_SET_SUPPORTED(vap, va_data_size);
+    VATTR_SET_SUPPORTED(vap, va_access_time);
+#endif
 
 	vap->va_uid = 0;
 	vap->va_gid = 0;
@@ -488,6 +497,8 @@ zfsctl_common_reclaim(ap)
 {
 	struct vnode *vp = ap->a_vp;
 
+    printf("zfsctl: reclaim %vp\n", vp);
+
 	/*
 	 * Destroy the vm object and flush associated pages.
 	 */
@@ -536,6 +547,10 @@ zfsctl_root_getattr(ap)
 
     printf("zfsctl: +root_getattr\n");
 	ZFS_ENTER(zfsvfs);
+#ifdef __APPLE__
+    VATTR_SET_SUPPORTED(vap, va_modify_time);
+    VATTR_SET_SUPPORTED(vap, va_create_time);
+#endif
 	vap->va_nodeid = ZFSCTL_INO_ROOT;
 	vap->va_nlink = vap->va_size = NROOT_ENTRIES;
 	vap->va_mtime = vap->va_ctime = zcp->zc_cmtime;

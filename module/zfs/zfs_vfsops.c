@@ -2524,7 +2524,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	 */
 	if (zfsvfs->z_ctldir != NULL)
 		zfsctl_destroy(zfsvfs);
-#ifndef __APPLE__
+#if 0
 	if (zfsvfs->z_issnap) {
 		vnode_t *svp = vfsp->mnt_vnodecovered;
 
@@ -2532,6 +2532,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			VN_RELE(svp);
 	}
 #endif
+
     dprintf("freevfs\n");
 	zfs_freevfs(zfsvfs->z_vfs);
 
