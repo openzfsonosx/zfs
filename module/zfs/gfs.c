@@ -24,8 +24,6 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #include <sys/types.h>
 #include <sys/pathname.h>
 #include <sys/zfs_context.h>
@@ -171,7 +169,6 @@ gfs_get_parent_ino(vnode_t *dvp, cred_t *cr, caller_context_t *ct,
 {
 	vnode_t *parent;
 	gfs_dir_t *dp = vnode_fsnode(dvp);
-	int error;
 
 	*ino = dp->gfsd_file.gfs_ino;
 	parent = dp->gfsd_file.gfs_parent;
@@ -238,6 +235,7 @@ gfs_readdir_init(gfs_readdir_state_t *st, int name_max, int ureclen,
     uio_t *uiop, ino64_t parent, ino64_t self, int flags)
 {
 	size_t dirent_size;
+    boolean_t   extended = (flags & VNODE_READDIR_EXTENDED);
 
 	if (uio_offset(uiop) < 0 || uio_resid(uiop) <= 0 ||
 	    (uio_offset(uiop) % ureclen) != 0)
@@ -248,10 +246,7 @@ gfs_readdir_init(gfs_readdir_state_t *st, int name_max, int ureclen,
 	st->grd_oresid = uio_resid(uiop);
 	st->grd_namlen = name_max;
 
-    if (flags & VNODE_READDIR_EXTENDED)
-		dirent_size = DIRENT_RECLEN(st->grd_namlen, 1);
-	else
-		dirent_size = DIRENT_RECLEN(st->grd_namlen, 0);
+    dirent_size = DIRENT_RECLEN(st->grd_namlen, extended);
 
 	st->grd_dirent = kmem_zalloc(dirent_size, KM_SLEEP);
 	st->grd_parent = parent;
@@ -275,18 +270,15 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
 {
 	int reclen, namlen;
 	dirent64_t *dp;
-    //boolean_t   extended = (flags & VNODE_READDIR_EXTENDED);
+    boolean_t   extended = (st->grd_flags & VNODE_READDIR_EXTENDED);
 
-	if (st->grd_flags & VNODE_READDIR_EXTENDED) {
-		dp = st->grd_dirent;
-		namlen = strlen(dp->d_name);
-		reclen = DIRENT_RECLEN(namlen, 1);
-	} else {
-		dp = st->grd_dirent;
-		namlen = strlen(dp->d_name);
-		reclen = DIRENT_RECLEN(namlen,0);
-        printf("trying to add '%s'\n", dp->d_name);
-	}
+    dp = st->grd_dirent;
+    namlen = strlen(dp->d_name);
+    reclen = DIRENT_RECLEN(namlen, extended);
+
+    printf("trying to add '%s': extended %d isascii %d: next %lld\n",
+           dp->d_name, st->grd_flags & VNODE_READDIR_EXTENDED,
+           is_ascii_str(dp->d_name), next);
 
 	if (reclen > uio_resid(uiop)) {
 		/*
@@ -297,8 +289,13 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
 		return (-1);
 	}
 
-	if (st->grd_flags & VNODE_READDIR_EXTENDED) {
+	if (extended) {
+        // d_fileno
+
+        // /* NOTE: d_seekoff is the offset for the *next* entry */
+        //next = &(dp->d_seekoff);
 		dp->d_seekoff = next;
+
 		dp->d_type = DT_DIR;
 		dp->d_namlen = namlen;
 		dp->d_reclen = (ushort_t)reclen;
@@ -321,6 +318,8 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
 		KASSERT(*ncookies >= 0, ("ncookies=%d", *ncookies));
 	}
 
+    printf("Copied out %d bytes\n", reclen);
+
 	return (0);
 }
 
@@ -341,11 +340,13 @@ gfs_readdir_emit(gfs_readdir_state_t *st, uio_t *uiop, offset_t voff,
     ino64_t ino, const char *name, int eflags, int *ncookies, u_long **cookies)
 {
 	offset_t off = (voff + 2) * st->grd_ureclen;
+    boolean_t   extended = (st->grd_flags & VNODE_READDIR_EXTENDED);
 
-	if (st->grd_flags & VNODE_READDIR_EXTENDED) {
+	if (extended) {
 		dirent64_t *dp = st->grd_dirent;
 
 		dp->d_ino = ino;
+		dp->d_fileno = ino;
 		(void) strncpy(dp->d_name, name, st->grd_namlen);
 
 		//dp->d_flags = eflags;
@@ -354,6 +355,7 @@ gfs_readdir_emit(gfs_readdir_state_t *st, uio_t *uiop, offset_t voff,
 		dirent64_t *dp = st->grd_dirent;
 
 		dp->d_ino = ino;
+		dp->d_fileno = ino;
 		(void) strncpy(dp->d_name, name, st->grd_namlen);
 	}
 
@@ -432,10 +434,9 @@ int
 gfs_readdir_fini(gfs_readdir_state_t *st, int error, int *eofp, int eof)
 {
 	size_t dirent_size;
-	if (st->grd_flags & VNODE_READDIR_EXTENDED)
-		dirent_size = DIRENT_RECLEN(st->grd_namlen, 1);
-	else
-		dirent_size = DIRENT_RECLEN(st->grd_namlen, 0);
+    boolean_t   extended = (st->grd_flags & VNODE_READDIR_EXTENDED);
+
+    dirent_size = DIRENT_RECLEN(st->grd_namlen, extended);
 	kmem_free(st->grd_dirent, dirent_size);
 	if (error > 0)
 		return (error);
@@ -494,7 +495,6 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 {
 	gfs_file_t *fp;
 	struct vnode *vp;
-	int error;
 	struct vnode_fsparam vfsp;
 
 	/*
@@ -1154,23 +1154,42 @@ gfs_vop_readdir(ap)
 	u_long *cookies = NULL;
 	u_long *a_cookies = NULL;
 	int error;
+    boolean_t   extended = (ap->a_flags & VNODE_READDIR_EXTENDED);
+
+#if 0
+    /* This is from hfs_vnops.c - we may need to implement it as well.
+     *   nfs_cookies = extended && (ap->a_flags & VNODE_READDIR_REQSEEKOFF);
+     */
+    /* Pick up cnid hint (if any). */
+    if (nfs_cookies) {
+        cnid_hint = (cnid_t)(uio_offset(uio) >> 32);
+        uio_setoffset(uio, uio_offset(uio) & 0x00000000ffffffffLL);
+        if (cnid_hint == INT_MAX) { /* searching pass the last item */
+            eofflag = 1;
+            goto out;
+        }
+    }
+#endif
 
 	if (ap->a_numdirent) {
 		/*
 		 * Minimum entry size is dirent size and 1 byte for a file name.
 		 */
-		ncookies = uio_resid(uiop) / (sizeof(struct dirent) - sizeof(((struct dirent *)NULL)->d_name) + 1);
+		ncookies = uio_resid(uiop) / (sizeof(dirent64_t) - sizeof(((dirent64_t *)NULL)->d_name) + 1);
 
 		cookies = MALLOC(cookies, u_long *, ncookies * sizeof(u_long),
                          M_TEMP, M_WAITOK);
 		a_cookies = cookies;
 		*ap->a_numdirent = ncookies;
-        printf("Setting ncookies to %d and offset at %08lx\n", ncookies,
-               uio_offset(uiop));
+        printf("Setting ncookies to %d and offset at %08llx, userspace %d. extended %d\n",
+               ncookies,
+               uio_offset(uiop),
+               uio_isuserspace(uiop),
+               extended);
 	}
 
 	error = gfs_dir_readdir(vp, uiop, eofp, &ncookies, &cookies, NULL,
-	    cr, 0);
+	    cr, ap->a_flags);
 
 	if (error == 0) {
 		/* Subtract unused cookies */
@@ -1181,11 +1200,12 @@ gfs_vop_readdir(ap)
 		*ap->a_numdirent = 0;
 	}
 
+
     if (cookies)
 		FREE(a_cookies, M_TEMP);
 
-    printf("Returning readdir with numdirent as %d: new offset %08lx\n",
-           *ap->a_numdirent, uio_offset(uiop));
+    printf("Returning readdir with numdirent as %d: new offset %08llx: eof %d\n",
+           *ap->a_numdirent, uio_offset(uiop), *eofp);
 
 	return (error);
 }

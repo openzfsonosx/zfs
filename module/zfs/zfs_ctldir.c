@@ -1696,7 +1696,7 @@ zfsctl_snapshot_getattr(ap)
 	struct vnode *vp = ap->a_vp;
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
 	int err;
-
+    return ENOTSUP;
     printf("zfsctl: +snapshot_getattr\n");
 	err = zfsctl_traverse_begin(&vp, LK_SHARED | LK_RETRY);
 	if (err == 0)
