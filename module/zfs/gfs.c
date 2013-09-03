@@ -340,24 +340,12 @@ gfs_readdir_emit(gfs_readdir_state_t *st, uio_t *uiop, offset_t voff,
     ino64_t ino, const char *name, int eflags, int *ncookies, u_long **cookies)
 {
 	offset_t off = (voff + 2) * st->grd_ureclen;
-    boolean_t   extended = (st->grd_flags & VNODE_READDIR_EXTENDED);
+    //boolean_t   extended = (st->grd_flags & VNODE_READDIR_EXTENDED);
+    dirent64_t *dp = st->grd_dirent;
 
-	if (extended) {
-		dirent64_t *dp = st->grd_dirent;
-
-		dp->d_ino = ino;
-		dp->d_fileno = ino;
-		(void) strncpy(dp->d_name, name, st->grd_namlen);
-
-		//dp->d_flags = eflags;
-
-	} else {
-		dirent64_t *dp = st->grd_dirent;
-
-		dp->d_ino = ino;
-		dp->d_fileno = ino;
-		(void) strncpy(dp->d_name, name, st->grd_namlen);
-	}
+    dp->d_ino = ino;
+    dp->d_fileno = ino;
+    (void) strncpy(dp->d_name, name, st->grd_namlen);
 
 	/*
 	 * Inter-entry offsets are invalid, so we assume a record size of

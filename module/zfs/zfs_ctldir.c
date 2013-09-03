@@ -178,6 +178,64 @@ static gfs_dirent_t zfsctl_root_entries[] = {
     sizeof (gfs_dirent_t)) + 1)
 
 int (**zfsctl_ops_root_dvnodeops) (void *);
+int (**zfsctl_ops_snapdir_dvnodeops) (void *);
+int (**zfsctl_ops_snapshot_dvnodeops) (void *);
+
+#define LK_EXCLUSIVE 0
+
+int
+traverse(struct vnode **cvpp, int lktype)
+{
+    struct vnode *cvp;
+    struct vnode *tvp;
+    vfs_t *vfsp;
+    int error;
+
+    cvp = *cvpp;
+    tvp = NULL;
+
+    /*
+     * If this vnode is mounted on, then we transparently indirect
+     * to the vnode which is the root of the mounted file system.
+     * Before we do this we must check that an unmount is not in
+     * progress on this vnode.
+     */
+
+    for (;;) {
+        /*
+         * Reached the end of the mount chain?
+         */
+        vfsp = vnode_mount(cvp);
+        if (vfsp == NULL)
+            break;
+        error = vfs_busy(vfsp, 0);
+        /*
+         * tvp is NULL for *cvpp vnode, which we can't unlock.
+         */
+        if (tvp != NULL)
+            VN_RELE(cvp);
+        else
+            VN_RELE(cvp);
+        if (error)
+            return (error);
+
+        /*
+         * The read lock must be held across the call to VFS_ROOT() to
+         * prevent a concurrent unmount from destroying the vfs.
+         */
+        error = VFS_ROOT(vfsp, lktype, &tvp);
+        vfs_unbusy(vfsp);
+        if (error != 0)
+            return (error);
+        cvp = tvp;
+    }
+
+    *cvpp = cvp;
+    return (0);
+}
+
+
+
 
 /*
  * Initialize the various GFS pieces we'll need to create and manipulate .zfs
@@ -1105,7 +1163,7 @@ zfsctl_snapdir_lookup(ap)
 		VN_HOLD(*vpp);
 
 
-		//err = traverse(vpp, /*LK_EXCLUSIVE |*/ LK_RETRY);
+		err = traverse(vpp, LK_EXCLUSIVE | LK_RETRY);
 
 
 		if (err) {
@@ -1351,7 +1409,7 @@ zfsctl_mknode_snapdir(struct vnode *pvp)
 	zfsctl_snapdir_t *sdp;
 
 	vp = gfs_dir_create(sizeof (zfsctl_snapdir_t), pvp, vnode_mount(pvp),
-	    &zfsctl_ops_snapdir, NULL, NULL, MAXNAMELEN,
+        zfsctl_ops_snapdir_dvnodeops, NULL, NULL, MAXNAMELEN,
 	    zfsctl_snapdir_readdir_cb, NULL);
 	sdp = vnode_fsnode(vp);
 	sdp->sd_node.zc_id = ZFSCTL_INO_SNAPDIR;
@@ -1541,7 +1599,6 @@ static struct vop_vector zfsctl_ops_shares = {
 
 #ifdef __APPLE__
 
-int (**zfsctl_ops_snapdir_dvnodeops) (void *);
 static struct vnodeopv_entry_desc zfsctl_ops_snapdir_template[] = {
 	{&vnop_default_desc, 	(VOPFUNC)vn_default_error },
 	{&vnop_open_desc,	(VOPFUNC)zfsctl_common_open},
@@ -1596,7 +1653,7 @@ zfsctl_snapshot_mknode(struct vnode *pvp, uint64_t objset)
 	zfsctl_node_t *zcp;
 #if 1
 	vp = gfs_dir_create(sizeof (zfsctl_node_t), pvp, vnode_mount(pvp),
-	    &zfsctl_ops_snapshot, NULL, NULL, MAXNAMELEN, NULL, NULL);
+	    zfsctl_ops_snapshot_dvnodeops, NULL, NULL, MAXNAMELEN, NULL, NULL);
 	VN_HOLD(vp);
 	zcp = vnode_fsnode(vp);
 	zcp->zc_id = objset;
@@ -1672,7 +1729,7 @@ zfsctl_traverse_begin(struct vnode **vpp, int lktype)
         return (ENOENT);
     return NULL;
     // return VFS_ROOT(*vpp);
-	//return (traverse(vpp, lktype));
+	return (traverse(vpp, lktype));
 }
 
 static void
@@ -1680,9 +1737,9 @@ zfsctl_traverse_end(struct vnode *vp, int err)
 {
 
 	if (err == 0)
-        ;//		VN_RELE(vp);
+        VN_RELE(vp);
 	else
-        ; //	VN_RELE(vp);
+        VN_RELE(vp);
 }
 
 static int
@@ -1696,7 +1753,7 @@ zfsctl_snapshot_getattr(ap)
 	struct vnode *vp = ap->a_vp;
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
 	int err;
-    return ENOTSUP;
+
     printf("zfsctl: +snapshot_getattr\n");
 	err = zfsctl_traverse_begin(&vp, LK_SHARED | LK_RETRY);
 	if (err == 0)
@@ -1817,13 +1874,12 @@ static struct vop_vector zfsctl_ops_snapshot = {
 #endif
 
 #ifdef __APPLE__
-int (**zfsctl_ops_snapshot_dvnodeops) (void *);
 static struct vnodeopv_entry_desc zfsctl_ops_snapshot_template[] = {
 	{&vnop_default_desc, 	(VOPFUNC)vn_default_error },
 	{&vnop_inactive_desc,	(VOPFUNC)zfsctl_snapshot_inactive},
-	{&vnop_lookup_desc,	    (VOPFUNC)zfsctl_snapshot_lookup},
-	{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
-	{&vnop_getattr_desc,	(VOPFUNC)zfsctl_snapshot_getattr},
+	//{&vnop_lookup_desc,	    (VOPFUNC)zfsctl_snapshot_lookup},
+	//{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
+	//{&vnop_getattr_desc,	(VOPFUNC)zfsctl_snapshot_getattr},
 	{NULL, (VOPFUNC)NULL }
 };
 struct vnodeopv_desc zfsctl_ops_snapshot =
@@ -1868,7 +1924,7 @@ zfsctl_lookup_objset(vfs_t *vfsp, uint64_t objsetid, zfsvfs_t **zfsvfsp)
 		 * and returns the ZFS vnode mounted on top of the GFS node.
 		 * This ZFS vnode is the root of the vfs for objset 'objsetid'.
 		 */
-		//error = traverse(&vp, LK_SHARED | LK_RETRY);
+		error = traverse(&vp, LK_SHARED | LK_RETRY);
         //sbp = zpl_sget(&zpl_fs_type, zfsctl_test_super,
         //             zfsctl_set_super, 0, &id);
         // FIXME

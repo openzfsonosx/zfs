@@ -1,6 +1,5 @@
 _fp_lookup
 _fd_rdwr
-_fp_drop
 _VNOP_MKDIR
 _VNOP_REMOVE
 _VNOP_LOOKUP
@@ -8,3 +7,4 @@ _VNOP_SYMLINK
 _hostname
 _vm_page_free_count
 _vm_page_speculative_count
+_VFS_ROOT
