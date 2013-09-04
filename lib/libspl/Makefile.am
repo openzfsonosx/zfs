@@ -1,5 +1,7 @@
 include $(top_srcdir)/config/Rules.am
 
+AUTOMAKE_OPTIONS = subdir-objects
+
 AM_CFLAGS += $(DEBUG_STACKFLAGS) $(FRAME_LARGER_THAN)
 
 SUBDIRS = include $(TARGET_ASM_DIR)
@@ -14,17 +16,17 @@ AM_CCASFLAGS = \
 noinst_LTLIBRARIES = libspl.la
 
 libspl_la_SOURCES = \
-	$(top_srcdir)/lib/libspl/gethrtime.c \
-	$(top_srcdir)/lib/libspl/gethrestime.c \
-	$(top_srcdir)/lib/libspl/getmntany.c \
-	$(top_srcdir)/lib/libspl/list.c \
-	$(top_srcdir)/lib/libspl/mkdirp.c \
-	$(top_srcdir)/lib/libspl/strnlen.c \
-	$(top_srcdir)/lib/libspl/timestamp.c \
-	$(top_srcdir)/lib/libspl/zone.c \
-	$(top_srcdir)/lib/libspl/xdr.c \
-	$(top_srcdir)/lib/libspl/$(TARGET_ASM_DIR)/atomic.S \
-	$(top_srcdir)/lib/libspl/include/sys/list.h \
-	$(top_srcdir)/lib/libspl/include/sys/list_impl.h
+	gethrtime.c \
+	gethrestime.c \
+	getmntany.c \
+	list.c \
+	mkdirp.c \
+	strnlen.c \
+	timestamp.c \
+	zone.c \
+	xdr.c \
+	asm-generic/atomic.S \
+	include/sys/list.h \
+	include/sys/list_impl.h
 
 #libspl_la_LDFLAGS = -lrt

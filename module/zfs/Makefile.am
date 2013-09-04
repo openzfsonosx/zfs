@@ -1,5 +1,7 @@
 include $(top_srcdir)/config/Rules.am
 
+AUTOMAKE_OPTIONS = subdir-objects
+
 INFO_PLIST = Info.plist
 PLIST_STRING = InfoPlist.strings
 
@@ -29,9 +31,7 @@ CFLAGS_KMOD = \
 	-DZFS_META_RELEASE=\"@ZFS_META_RELEASE@\" \
 	-I$(top_srcdir)/include \
 	-I@SPL_OBJ@ -I@SPL_OBJ@/include \
-	-I/System/Library/Frameworks/Kernel.framework/Headers \
-	-I/System/Library/Frameworks/Kernel.framework/PrivateHeaders \
-	-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework/Headers
+	-I@KERNELSRC@
 
 LINKFLAGS_KMOD = \
 	-Xlinker \
