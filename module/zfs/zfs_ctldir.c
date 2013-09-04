@@ -1244,13 +1244,12 @@ domount:
 
     //error  = mount
     {
-
         //err = kernel_mount("ZFS", vpp, vpp, mountpoint,
         //                 snapname, 0, 0, 0, vfs_context_current());
     }
 
     printf("Would call mount here on '%s' for '%s'\n", mountpoint, snapname);
-
+    err = ENOTSUP;
 #endif
 
 	kmem_free(mountpoint, mountpoint_len);

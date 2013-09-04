@@ -1350,8 +1350,6 @@ zfs_rezget(znode_t *zp)
 	int count = 0;
 	uint64_t gen;
 
-    panic("we dont use rezget\n");
-
 	ZFS_OBJ_HOLD_ENTER(zfsvfs, obj_num);
 
 	mutex_enter(&zp->z_acl_lock);

@@ -95,7 +95,7 @@
 #include <sys/zpl.h>
 #include "zfs_comutil.h"
 
-//#define dprintf printf
+#define dprintf printf
 
 #ifdef __APPLE__
 
