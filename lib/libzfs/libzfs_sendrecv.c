@@ -1680,9 +1680,15 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 	}
 
 #ifdef __APPLE__
+    /*
+     * close(newstdout) must come after the pthread_join, not before.
+     * When newstdout was closed before pthread_join, the FIFO would
+     * often be inadvertently closed by the other thread before all
+     * of the data had made it through, thereby corrupting the send.
+     */
     close(sdd.outfd);
-    close(newstdout);
     pthread_join(osxtid, NULL);
+    close(newstdout);
 #endif
 
 	return (err || sdd.err);
