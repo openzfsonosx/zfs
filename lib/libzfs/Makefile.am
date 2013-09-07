@@ -1,5 +1,7 @@
 include $(top_srcdir)/config/Rules.am
 
+AUTOMAKE_OPTIONS = subdir-objects
+
 DEFAULT_INCLUDES += \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/lib/libspl/include
@@ -7,19 +9,19 @@ DEFAULT_INCLUDES += \
 lib_LTLIBRARIES = libzfs.la
 
 libzfs_la_SOURCES = \
-	$(top_srcdir)/lib/libzfs/libzfs_changelist.c \
-	$(top_srcdir)/lib/libzfs/libzfs_config.c \
-	$(top_srcdir)/lib/libzfs/libzfs_dataset.c \
-	$(top_srcdir)/lib/libzfs/libzfs_diff.c \
-	$(top_srcdir)/lib/libzfs/libzfs_fru.c \
-	$(top_srcdir)/lib/libzfs/libzfs_graph.c \
-	$(top_srcdir)/lib/libzfs/libzfs_import.c \
-	$(top_srcdir)/lib/libzfs/libzfs_iter.c \
-	$(top_srcdir)/lib/libzfs/libzfs_mount.c \
-	$(top_srcdir)/lib/libzfs/libzfs_pool.c \
-	$(top_srcdir)/lib/libzfs/libzfs_sendrecv.c \
-	$(top_srcdir)/lib/libzfs/libzfs_status.c \
-	$(top_srcdir)/lib/libzfs/libzfs_util.c
+	libzfs_changelist.c \
+	libzfs_config.c \
+	libzfs_dataset.c \
+	libzfs_diff.c \
+	libzfs_fru.c \
+	libzfs_graph.c \
+	libzfs_import.c \
+	libzfs_iter.c \
+	libzfs_mount.c \
+	libzfs_pool.c \
+	libzfs_sendrecv.c \
+	libzfs_status.c \
+	libzfs_util.c
 
 libzfs_la_LIBADD = \
 	$(top_builddir)/lib/libshare/libshare.la \

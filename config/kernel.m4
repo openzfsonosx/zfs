@@ -61,13 +61,26 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 		[Path to kernel build objects]),
 		[kernelbuild="$withval"])
 	AC_MSG_CHECKING([kernel source directory])
+		AS_IF([test -z "$kernelsrc"], [
+			tmpdir=`xcrun --show-sdk-path`
+                	AS_IF([test -d "$tmpdir/System/Library/Frameworks/Kernel.framework/Headers"], [
+                        	kernelsrc="$tmpdir/System/Library/Frameworks/Kernel.framework"])
+        	])
 	AS_IF([test -z "$kernelsrc"], [
-		AS_IF([test -d "/System/Library/Frameworks/Kernel.framework"], [
+		AS_IF([test -d "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework"], [
+			kernelsrc="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework"])
+	])
+	AS_IF([test -z "$kernelsrc"], [
+		AS_IF([test -d "/System/Library/Frameworks/Kernel.framework/Headers"], [
 			kernelsrc="/System/Library/Frameworks/Kernel.framework"])
 	])
 	AS_IF([test -z "$kernelsrc"], [
-		AS_IF([test -d "/System/Library/Frameworks/Kernel.framework"], [
-			kernelsrc="/System/Library/Frameworks/Kernel.framework"])
+		AS_IF([test -d "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework"], [
+                        kernelsrc="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework"])
+		AS_IF([test -z "$kernelsrc"], [
+                	AS_IF([test -d "/System/Library/Frameworks/Kernel.framework/Headers"], [
+                        	kernelsrc="/System/Library/Frameworks/Kernel.framework"])
+        	])
 		AS_IF([test -e "/lib/modules/$(uname -r)/source"], [
 			headersdir="/lib/modules/$(uname -r)/source"
 			sourcelink=$(readlink -f "$headersdir")
@@ -126,13 +139,13 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 	], [test -r $utsrelease3 && fgrep -q UTS_RELEASE $utsrelease3], [
 		utsrelease=generated/utsrelease.h
 	])
-echo "booga $utsrelease $utsrelease1"
+
 	AS_IF([test "$utsrelease"], [
 		kernsrcver=`(echo "#include <$utsrelease>";
 		             echo "kernsrcver=OSRELEASE") |
 		             cpp -I$kernelbuild/Headers |
 		             grep "^kernsrcver=" | cut -d \" -f 2`
-echo "gooba $kernsrcver"
+
 		AS_IF([test -z "$kernsrcver"], [
 			AC_MSG_RESULT([Not found])
 			AC_MSG_ERROR([*** Cannot determine kernel version.])
@@ -153,10 +166,12 @@ echo "gooba $kernsrcver"
 	LINUX=${kernelsrc}
 	LINUX_OBJ=${kernelbuild}
 	LINUX_VERSION=${kernsrcver}
+	KERNELSRC="${kernelsrc}/Headers"
 
 	AC_SUBST(LINUX)
 	AC_SUBST(LINUX_OBJ)
 	AC_SUBST(LINUX_VERSION)
+	AC_SUBST(KERNELSRC)
 
 	ZFS_AC_MODULE_SYMVERS
 ])

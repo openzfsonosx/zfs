@@ -20,6 +20,7 @@
 *~
 *.swp
 .deps
+.dirstamp
 .libs
 .DS_Store
 modules.order

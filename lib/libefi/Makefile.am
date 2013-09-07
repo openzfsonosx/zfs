@@ -1,5 +1,7 @@
 include $(top_srcdir)/config/Rules.am
 
+AUTOMAKE_OPTIONS = subdir-objects
+
 AM_CFLAGS += $(DEBUG_STACKFLAGS) $(FRAME_LARGER_THAN)
 
 DEFAULT_INCLUDES += \
@@ -9,4 +11,4 @@ DEFAULT_INCLUDES += \
 noinst_LTLIBRARIES = libefi.la
 
 libefi_la_SOURCES = \
-	$(top_srcdir)/lib/libefi/rdwr_efi.c
+	rdwr_efi.c

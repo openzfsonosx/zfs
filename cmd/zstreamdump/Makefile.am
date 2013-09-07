@@ -1,5 +1,7 @@
 include $(top_srcdir)/config/Rules.am
 
+AUTOMAKE_OPTIONS = subdir-objects
+
 DEFAULT_INCLUDES += \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/lib/libspl/include
@@ -7,7 +9,7 @@ DEFAULT_INCLUDES += \
 sbin_PROGRAMS = zstreamdump
 
 zstreamdump_SOURCES = \
-	$(top_srcdir)/cmd/zstreamdump/zstreamdump.c
+	zstreamdump.c
 
 zstreamdump_LDADD = \
 	$(top_builddir)/lib/libnvpair/libnvpair.la \

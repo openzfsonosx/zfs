@@ -162,7 +162,7 @@ struct dk_geom {
  */
 #define	DKIOCGGEOM	(DKIOC|1)		/* Get geometry */
 #define	DKIOCINFO	(DKIOC|3)		/* Get info */
-#define	DKIOCEJECT	(DKIOC|6)		/* Generic 'eject' */
+    //#define	DKIOCEJECT	(DKIOC|6)		/* Generic 'eject' */
 #define	DKIOCGVTOC	(DKIOC|11)		/* Get VTOC */
 #define	DKIOCSVTOC	(DKIOC|12)		/* Set VTOC & Write to Disk */
 

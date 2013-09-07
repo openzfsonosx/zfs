@@ -59,6 +59,7 @@
 #include <sys/utfconv.h>
 #include <sys/ubc.h>
 #include <sys/callb.h>
+#include <sys/unistd.h>
 
 
 #define	DECLARE_CRED(ap) \
@@ -1349,16 +1350,61 @@ zfs_vnop_whiteout(
 
 static int
 zfs_vnop_pathconf(
-	struct vnop_pathconf_args /* {
-		struct vnode *a_vp;
-		int a_name;
-		register_t *a_retval;
-		vfs_context_t a_context;
-	} */ *ap)
+        struct vnop_pathconf_args /* {
+                struct vnode *a_vp;
+                int a_name;
+                register_t *a_retval;
+                vfs_context_t a_context;
+        } */ *ap)
 {
-    dprintf("vnop_patchconf: 0\n");
+        dprintf("+vnop_pathconf a_name %d\n", ap->a_name);
+        int32_t  *valp = ap->a_retval;
+        int error = 0;
 
-	return (0);
+        switch (ap->a_name) {
+        case _PC_LINK_MAX:
+                *valp = INT_MAX;
+                break;
+
+        case _PC_PIPE_BUF:
+                *valp = PIPE_BUF;
+                break;
+
+        case _PC_CHOWN_RESTRICTED:
+                *valp = 200112;  /* POSIX */
+                break;
+
+        case _PC_NO_TRUNC:
+                *valp = 200112;  /* POSIX */
+                break;
+
+        case _PC_NAME_MAX:
+        case _PC_NAME_CHARS_MAX:
+                *valp = ZAP_MAXNAMELEN - 1;  /* 255 */
+                break;
+
+        case _PC_PATH_MAX:
+        case _PC_SYMLINK_MAX:
+                *valp = PATH_MAX;  /* 1024 */
+                break;
+
+        case _PC_CASE_SENSITIVE:
+                *valp = 1;
+                break;
+
+        case _PC_CASE_PRESERVING:
+                *valp = 1;
+                break;
+
+        case _PC_FILESIZEBITS:
+                *valp = 64;
+                break;
+
+        default:
+                error = EINVAL;
+        }
+        dprintf("-vnop_patchconf vp %p : %d\n", ap->a_vp, error);
+        return error;
 }
 
 static int

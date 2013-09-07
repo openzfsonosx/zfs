@@ -241,7 +241,7 @@ get_usage(zpool_help_t idx) {
 	case HELP_LABELCLEAR:
 		return (gettext("\tlabelclear [-f] <vdev>\n"));
 	case HELP_LIST:
-		return (gettext("\tlist [-H] [-o property[,...]] "
+		return (gettext("\tlist [-Hv] [-o property[,...]] "
 		    "[-T d|u] [pool] ... [interval [count]]\n"));
 	case HELP_OFFLINE:
 		return (gettext("\toffline [-t] <pool> <device> ...\n"));
@@ -3060,7 +3060,7 @@ int
 zpool_do_list(int argc, char **argv)
 {
 	int c;
-	int ret;
+	int ret = 0;
 	list_cbdata_t cb = { 0 };
 	static char default_props[] =
 	    "name,size,allocated,free,capacity,dedupratio,"

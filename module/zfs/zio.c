@@ -84,9 +84,6 @@ kmem_cache_t *zio_data_buf_cache[SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT];
 int zio_bulk_flags = 0;
 int zio_delay_max = ZIO_DELAY_MAX;
 
-#ifdef _KERNEL
-extern vmem_t *zio_alloc_arena;
-#endif
 extern int zfs_mg_alloc_failures;
 
 /*
@@ -156,9 +153,6 @@ zio_init(void)
 	size_t c;
 	vmem_t *data_alloc_arena = NULL;
 
-#ifdef _KERNEL
-	data_alloc_arena = zio_alloc_arena;
-#endif
 	zio_cache = kmem_cache_create("zio_cache", sizeof (zio_t), 0,
 	    zio_cons, zio_dest, NULL, NULL, NULL, KMC_KMEM);
 	zio_link_cache = kmem_cache_create("zio_link_cache",
@@ -1325,12 +1319,14 @@ __zio_execute(zio_t *zio)
 		/*
 		 * If we executing in the context of the tx_sync_thread,
 		 * or we are performing pool initialization outside of a
-		 * zio_taskq[ZIO_TASKQ_ISSUE] context.  Then issue the zio
-		 * async to minimize stack usage for these deep call paths.
+		 * zio_taskq[ZIO_TASKQ_ISSUE|ZIO_TASKQ_ISSUE_HIGH] context.
+		 * Then issue the zio asynchronously to minimize stack usage
+		 * for these deep call paths.
 		 */
 		if ((dp && curthread == dp->dp_tx.tx_sync_thread) ||
 		    (dp && spa_is_initializing(dp->dp_spa) &&
-		    !zio_taskq_member(zio, ZIO_TASKQ_ISSUE))) {
+		    !zio_taskq_member(zio, ZIO_TASKQ_ISSUE) &&
+		    !zio_taskq_member(zio, ZIO_TASKQ_ISSUE_HIGH))) {
 			zio_taskq_dispatch(zio, ZIO_TASKQ_ISSUE, cut);
 			return;
 		}

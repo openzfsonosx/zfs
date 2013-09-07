@@ -1038,6 +1038,59 @@ send_progress_thread(void *arg)
 	}
 }
 
+
+#ifdef __APPLE__
+static void *
+osx_send_pipe(void *arg)
+{
+    int fd = *(int *)arg;
+    unsigned char buffer[4096];
+    uint64_t bytes =0;
+    int red, wrote;
+
+    // Make it blocking again for simpler code
+    fcntl(fd, F_SETFL,
+          (fcntl(fd, F_GETFL) & ~O_NONBLOCK));
+
+    while(1) {
+        red = read(fd, buffer, sizeof(buffer));
+        if (red > 0)
+            wrote = write(fileno(stdout), buffer, red);
+
+        if (red <= 0) break;
+        if (wrote <= 0) break;
+        bytes += wrote;
+    }
+    fflush(stdout);
+    return(NULL);
+}
+
+static void *
+osx_recv_pipe(void *arg)
+{
+    int fd = *(int *)arg;
+    unsigned char buffer[4096];
+    uint64_t bytes =0;
+    int red, wrote;
+
+    // Make it blocking again for simpler code
+    fcntl(fd, F_SETFL,
+          (fcntl(fd, F_GETFL) & ~O_NONBLOCK));
+
+    while(1) {
+        red = read(fileno(stdin), buffer, sizeof(buffer));
+        if (red > 0)
+            wrote = write(fd, buffer, red);
+
+        if (red <= 0) break;
+        if (wrote <= 0) break;
+        bytes += wrote;
+    }
+
+    return (NULL);
+}
+#endif
+
 static int
 dump_snapshot(zfs_handle_t *zhp, void *arg)
 {
@@ -1391,6 +1444,10 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 	static uint64_t holdseq;
 	int spa_version;
 	pthread_t tid;
+#ifdef __APPLE__
+	pthread_t osxtid;
+    int newstdout;
+#endif
 	int pipefd[2];
 	dedup_arg_t dda = { 0 };
 	int featureflags = 0;
@@ -1520,6 +1577,23 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 		sdd.outfd = pipefd[0];
 	else
 		sdd.outfd = outfd;
+
+#ifdef __APPLE__
+    char *name = strdup("/tmp/.zfs.pipe.XXXXXXXX");
+    mktemp(name);
+    if (!mkfifo(name,0600)) {
+        newstdout = open(name, O_RDONLY|O_NONBLOCK);
+        sdd.outfd = open(name, O_WRONLY);
+        if ((err = pthread_create(&osxtid, NULL,
+                                  osx_send_pipe, &newstdout))) {
+            zfs_close(zhp);
+            return (err);
+        }
+        unlink(name);
+        free(name);
+    }
+#endif
+
 	sdd.replicate = flags->replicate;
 	sdd.doall = flags->doall;
 	sdd.fromorigin = flags->fromorigin;
@@ -1605,6 +1679,18 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 		}
 	}
 
+#ifdef __APPLE__
+    /*
+     * close(newstdout) must come after the pthread_join, not before.
+     * When newstdout was closed before pthread_join, the FIFO would
+     * often be inadvertently closed by the other thread before all
+     * of the data had made it through, thereby corrupting the send.
+     */
+    close(sdd.outfd);
+    pthread_join(osxtid, NULL);
+    close(newstdout);
+#endif
+
 	return (err || sdd.err);
 
 stderr_out:
@@ -1615,7 +1701,7 @@ err_out:
 	if (flags->dedup) {
 		(void) pthread_cancel(tid);
 		(void) pthread_join(tid, NULL);
-		(void) close(pipefd[0]);
+        		(void) close(pipefd[0]);
 	}
 	return (err);
 }
@@ -2536,6 +2622,10 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 	nvlist_t *snapprops_nvlist = NULL;
 	zprop_errflags_t prop_errflags;
 	boolean_t recursive;
+#ifdef __APPLE__
+	pthread_t osxtid;
+    int newstdin;
+#endif
 
 	begin_time = time(NULL);
 
@@ -2837,6 +2927,21 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 
 	zc.zc_begin_record = drr_noswap->drr_u.drr_begin;
 	zc.zc_cookie = infd;
+
+#ifdef __APPLE__
+    char *name = strdup("/tmp/.zfs.pipe.XXXXXXXX");
+    mktemp(name);
+    if (!mkfifo(name,0600)) {
+        zc.zc_cookie = open(name, O_RDONLY|O_NONBLOCK);
+        newstdin = open(name, O_WRONLY);
+        if ((err = pthread_create(&osxtid, NULL,
+                                  osx_recv_pipe, &newstdin))) {
+        }
+        unlink(name);
+        free(name);
+    }
+#endif
+
 	zc.zc_guid = flags->force;
 	if (flags->verbose) {
 		(void) printf("%s %s stream of %s into %s\n",
@@ -3062,6 +3167,12 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 		    buf1, delta, buf2);
 	}
 
+#ifdef __APPLE__
+    close(zc.zc_cookie);
+    close(newstdin);
+    pthread_join(osxtid, NULL);
+#endif
+
 	return (0);
 }
 
@@ -3130,6 +3241,12 @@ zfs_receive_impl(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 
 	featureflags = DMU_GET_FEATUREFLAGS(drrb->drr_versioninfo);
 	hdrtype = DMU_GET_STREAM_HDRTYPE(drrb->drr_versioninfo);
+
+    if (featureflags & DMU_BACKUP_FEATURE_SPILLBLOCKS) {
+        fprintf(stderr, "Warning: receive stream has Spill Blocks set which may be incompatible with this version.\r\n");
+        featureflags &= ~DMU_BACKUP_FEATURE_SPILLBLOCKS;
+    }
+
 
 	if (!DMU_STREAM_SUPPORTED(featureflags) ||
 	    (hdrtype != DMU_SUBSTREAM && hdrtype != DMU_COMPOUNDSTREAM)) {

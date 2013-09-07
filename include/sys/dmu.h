@@ -816,7 +816,7 @@ void dmu_traverse_objset(objset_t *os, uint64_t txg_start,
 
 int
 dmu_send(objset_t *tosnap, objset_t *fromsnap, boolean_t fromorigin,
-         int outfd, int fd, offset_t *off);
+         int outfd, struct vnode *fd, offset_t *off);
 int dmu_send_estimate(objset_t *tosnap, objset_t *fromsnap, boolean_t orign,
     uint64_t *sizep);
 
@@ -840,7 +840,7 @@ typedef struct dmu_recv_cookie {
 
 int dmu_recv_begin(char *tofs, char *tosnap, char *topds, struct drr_begin *,
     boolean_t force, objset_t *origin, dmu_recv_cookie_t *);
-int dmu_recv_stream(dmu_recv_cookie_t *drc, int fd, offset_t *voffp,
+int dmu_recv_stream(dmu_recv_cookie_t *drc, struct vnode *fd, offset_t *voffp,
     int cleanup_fd, uint64_t *action_handlep);
 int dmu_recv_end(dmu_recv_cookie_t *drc);
 
@@ -850,6 +850,8 @@ int dmu_diff(objset_t *tosnap, objset_t *fromsnap, struct vnode *vp,
 /* CRC64 table */
 #define	ZFS_CRC64_POLY	0xC96C5795D7870F42ULL	/* ECMA-182, reflected form */
 extern uint64_t zfs_crc64_table[256];
+
+extern int zfs_mdcomp_disable;
 
 #ifdef	__cplusplus
 }

@@ -1,5 +1,7 @@
 include $(top_srcdir)/config/Rules.am
 
+AUTOMAKE_OPTIONS = subdir-objects
+
 DEFAULT_INCLUDES += \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/lib/libspl/include
@@ -7,11 +9,11 @@ DEFAULT_INCLUDES += \
 sbin_PROGRAMS = zpool
 
 zpool_SOURCES = \
-	$(top_srcdir)/cmd/zpool/zpool_iter.c \
-	$(top_srcdir)/cmd/zpool/zpool_main.c \
-	$(top_srcdir)/cmd/zpool/zpool_util.c \
-	$(top_srcdir)/cmd/zpool/zpool_util.h \
-	$(top_srcdir)/cmd/zpool/zpool_vdev.c
+	zpool_iter.c \
+	zpool_main.c \
+	zpool_util.c \
+	zpool_util.h \
+	zpool_vdev.c
 
 zpool_LDADD = \
 	$(top_builddir)/lib/libnvpair/libnvpair.la \

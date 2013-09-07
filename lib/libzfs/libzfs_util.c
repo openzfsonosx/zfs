@@ -765,6 +765,8 @@ libzfs_init(void)
 
 	libzfs_mnttab_init(hdl);
 
+    //fprintf(stderr, "make_dataset_handle %p\r\n", hdl->libzfs_log_str);
+
 	return (hdl);
 }
 
@@ -1110,28 +1112,34 @@ zcmd_read_dst_nvlist(libzfs_handle_t *hdl, zfs_cmd_t *zc, nvlist_t **nvlp)
  * OSX will return error=0 on error, but set zc_ioc_error to the real
  * error code, we will then move that to errno, and return -1.
  */
+
 int
 zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 {
 	int error;
 
-	//zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
-	zc->zc_history = 0;
+    //fprintf(stderr, "zc_history set to %p '%s'\r\n", hdl->libzfs_log_str,
+    //      hdl->libzfs_log_str);
+	zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
 	error = ioctl(hdl->libzfs_fd, request, zc);
 
-        /* normal path, zfsdev_ioctl returns the real error in zc_ioc_error */
+	/* normal path, zfsdev_ioctl returns the real error in zc_ioc_error */
 	if ((error == 0) && zc->zc_ioc_error) {
 		error = -1;
-        errno = zc->zc_ioc_error;
-    } else if (error) {
+		errno = zc->zc_ioc_error;
+	} else if (error) {
 		errno = error;
-    }
-
-	if (hdl->libzfs_log_str) {
-		free(hdl->libzfs_log_str);
-		hdl->libzfs_log_str = NULL;
 	}
-	zc->zc_history = 0;
+
+	/*
+	 * libzfs_log_str is still needed by the above ioctl to copy the
+	 * history string out of userland into the kernel.
+	 * if (hdl->libzfs_log_str) {
+	 * 	free(hdl->libzfs_log_str);
+	 * 	hdl->libzfs_log_str = NULL;
+	 * }
+	 * zc->zc_history = 0;
+	 */
 
 	return (error);
 }

@@ -82,6 +82,23 @@ typedef enum drr_headertype {
 #define	DMU_BACKUP_FEATURE_DEDUPPROPS	(0x2)
 #define	DMU_BACKUP_FEATURE_SA_SPILL	(0x4)
 
+    /* Unsure what Oracle called this bit */
+#define	DMU_BACKUP_FEATURE_SPILLBLOCKS	(0x20)
+    /*
+NOTE 3:  Fix to 7097870 (spill block can be dropped in some situations during
+         incremental receive) introduces backward incompatibility with zfs
+         send/recv.  I.e., ZFS streams created with this patch will not be
+         receivable with older ZFS versions and it will fail with below error
+         message in destination host:
+
+         "cannot receive: stream has unsupported feature, feature flags = 24"
+
+         This change is to allow important fix in ZFS to avoid metadata
+         corruptions related to ACL.  An upgrade to same or greater version
+         of ZFS is required in destination for ZFS streams to work properly.
+    */
+
+
 /*
  * Mask of all supported backup features
  */

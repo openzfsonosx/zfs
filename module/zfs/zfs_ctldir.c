@@ -295,7 +295,6 @@ zfsctl_is_node(struct vnode *vp)
 static ino64_t
 zfsctl_root_inode_cb(struct vnode *vp, int index)
 {
-	//zfsvfs_t *zfsvfs = vp->v_vfsp->vfs_data;
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(vp));
 
 	ASSERT(index <= 2);
