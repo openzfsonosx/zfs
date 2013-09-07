@@ -1,5 +1,7 @@
 include $(top_srcdir)/config/Rules.am
 
+AUTOMAKE_OPTIONS = subdir-objects
+
 DEFAULT_INCLUDES += \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/lib/libspl/include
@@ -7,7 +9,7 @@ DEFAULT_INCLUDES += \
 noinst_PROGRAMS = kextsymboltool
 
 kextsymboltool_SOURCES = \
-	$(top_srcdir)/module/zfs/KernelExports/kextsymboltool.c
+	kextsymboltool.c
 
 kextsymboltool_LDFLAGS = -lstdc++
 
