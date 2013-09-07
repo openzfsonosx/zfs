@@ -1290,6 +1290,8 @@ gfs_vop_inactive(ap)
 	vnode_t *vp = ap->a_vp;
 	gfs_file_t *fp = vnode_fsnode(vp);
 
+    printf("gfs_vop_inactive\n");
+
 	if (fp->gfs_type == GFS_DIR)
 		gfs_dir_inactive(vp);
 	else
@@ -1297,6 +1299,8 @@ gfs_vop_inactive(ap)
 
 	VI_LOCK(vp);
 	vnode_clearfsnode(vp);
+    vnode_removefsref(vp); /* ADDREF from vnode_create */
+
 	VI_UNLOCK(vp);
 	kmem_free(fp, fp->gfs_size);
 

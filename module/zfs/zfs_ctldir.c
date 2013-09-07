@@ -347,6 +347,8 @@ zfsctl_create(zfsvfs_t *zfsvfs)
     printf("zfsctl: rootvp is %p\n", vp);
 	zfsvfs->z_ctldir = vp;
 
+	VN_RELE(zfsvfs->z_ctldir);
+
 	VOP_UNLOCK(vp, 0);
 }
 
@@ -359,7 +361,7 @@ void
 zfsctl_destroy(zfsvfs_t *zfsvfs)
 {
     printf("zfsctl: releasing rootvp %p\n", zfsvfs->z_ctldir);
-	VN_RELE(zfsvfs->z_ctldir);
+	//VN_RELE(zfsvfs->z_ctldir);
 	zfsvfs->z_ctldir = NULL;
 }
 
@@ -555,7 +557,7 @@ zfsctl_common_reclaim(ap)
 {
 	struct vnode *vp = ap->a_vp;
 
-    printf("zfsctl: reclaim %vp\n", vp);
+    printf("zfsctl: reclaim vp %p\n", vp);
 
 	/*
 	 * Destroy the vm object and flush associated pages.
@@ -633,6 +635,10 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(dvp));
 	int err;
 
+    printf("dvp %p\n", dvp);
+
+    if (!zfsvfs) return 0;
+
 	/*
 	 * No extended attributes allowed under .zfs
 	 */
@@ -643,9 +649,15 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
 
 	ZFS_ENTER(zfsvfs);
 
+    err = vnode_getwithref(zfsvfs->z_vfs);
+    if (err) {
+        printf("zfsctl: getwithref said %d\n", err);
+        return err;
+    }
+
 	if (strcmp(nm, "..") == 0) {
-		//err = VFS_ROOT(dvp->v_vfsp, LK_EXCLUSIVE, vpp);
-        err = zfs_vfs_root(zfsvfs->z_vfs, vpp, NULL);
+		err = VFS_ROOT(vnode_mount(dvp), LK_EXCLUSIVE, vpp);
+        //err = zfs_vfs_root(zfsvfs->z_vfs, vpp, NULL);
 		if (err == 0)
 			VN_RELE(*vpp);
         //VOP_UNLOCK(*vpp, 0);
@@ -653,6 +665,8 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
 		err = gfs_vop_lookup(dvp, nm, vpp, pnp, flags, rdir,
 		    cr, ct, direntflags, realpnp);
 	}
+
+    VN_RELE(zfsvfs->z_vfs);
 
 	ZFS_EXIT(zfsvfs);
 
@@ -832,11 +846,12 @@ zfsctl_unmount_snap(zfs_snapentry_t *sep, int fflags, cred_t *cr)
 	return (dounmount(vn_mountedvfs(svp), fflags, curthread));
 #endif	/* !FreeBSD */
 #ifdef __APPLE__
-	return (zfs_vfs_unmount(vnode_mount(svp), fflags, vfs_context_current()));
-#endif	/* !FreeBSD */
+	//return (zfs_vfs_unmount(vnode_mount(svp), fflags, vfs_context_current()));
+    printf("Would unmount snapshots here\n");
+#endif	/* !APPLE */
 
     // vfs_unmountbyfsid
-
+    return 0;
 }
 
 #ifdef sun
@@ -1877,7 +1892,7 @@ static struct vnodeopv_entry_desc zfsctl_ops_snapshot_template[] = {
 	{&vnop_default_desc, 	(VOPFUNC)vn_default_error },
 	{&vnop_inactive_desc,	(VOPFUNC)zfsctl_snapshot_inactive},
 	//{&vnop_lookup_desc,	    (VOPFUNC)zfsctl_snapshot_lookup},
-	//{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
+	{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
 	//{&vnop_getattr_desc,	(VOPFUNC)zfsctl_snapshot_getattr},
 	{NULL, (VOPFUNC)NULL }
 };
@@ -1962,13 +1977,16 @@ zfsctl_umount_snapshots(vfs_t *vfsp, int fflags, cred_t *cr)
 	zfsctl_snapdir_t *sdp;
 	zfs_snapentry_t *sep, *next;
 	int error;
-
+    return 0;
 	ASSERT(zfsvfs->z_ctldir != NULL);
 	error = zfsctl_root_lookup(zfsvfs->z_ctldir, "snapshot", &dvp,
 	    NULL, 0, NULL, cr, NULL, NULL, NULL);
+    printf("root_lookup %d\n", error);
 	if (error != 0)
 		return (error);
+
 	sdp = vnode_fsnode(dvp);
+    if (!sdp) return 0;
 
 	mutex_enter(&sdp->sd_lock);
 
@@ -2003,6 +2021,8 @@ zfsctl_umount_snapshots(vfs_t *vfsp, int fflags, cred_t *cr)
 
 	mutex_exit(&sdp->sd_lock);
 	VN_RELE(dvp);
+
+    printf("umount_snapshot err %d\n", error);
 
 	return (error);
 }

@@ -2369,7 +2369,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
     zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 	//kthread_t *td = (kthread_t *)curthread;
 	objset_t *os;
-	//cred_t *cr =  (cred_t *)vfs_context_ucred(context);
+	cred_t *cr =  (cred_t *)vfs_context_ucred(context);
 	int ret;
 
     dprintf("+unmount\n");
@@ -2396,22 +2396,28 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	 * Unmount any snapshots mounted under .zfs before unmounting the
 	 * dataset itself.
 	 */
-#ifndef __APPLE__
+#ifndef __OPPLE__
 	if (zfsvfs->z_ctldir != NULL) {
+        dprintf("z_ctldir check\n");
 		if ((ret = zfsctl_umount_snapshots(zfsvfs->z_vfs, 0 /*fflag*/, cr)) != 0)
 			return (ret);
-		ret = vflush(zfsvfs->z_vfs, NULLVP, 0);
-		ASSERT(ret == EBUSY);
-		if (!(fflag & MS_FORCE)) {
-			if (zfsvfs->z_ctldir->v_count > 1)
+        dprintf("vflush 1\n");
+        ret = vflush(zfsvfs->z_ctldir, NULLVP, (mntflags & MNT_FORCE) ? FORCECLOSE : 0|SKIPSYSTEM);
+		//ret = vflush(zfsvfs->z_vfs, NULLVP, 0);
+		//ASSERT(ret == EBUSY);
+		if (!(mntflags & MNT_FORCE)) {
+			if (vnode_isinuse(zfsvfs->z_ctldir, 1)) {
+                dprintf("zfsctl vp still in use %p\n", zfsvfs->z_ctldir);
 				return (EBUSY);
-			ASSERT(zfsvfs->z_ctldir->v_count == 1);
+            }
+			//ASSERT(zfsvfs->z_ctldir->v_count == 1);
 		}
+        dprintf("z_ctldir destroy\n");
 		zfsctl_destroy(zfsvfs);
 		ASSERT(zfsvfs->z_ctldir == NULL);
 	}
 
-	if (fflag & MS_FORCE) {
+	if (mntflags & MNT_FORCE) {
 		/*
 		 * Mark file system as unmounted before calling
 		 * vflush(FORCECLOSE). This way we ensure no future vnops
