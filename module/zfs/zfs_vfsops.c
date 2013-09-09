@@ -360,9 +360,9 @@ xattr_changed_cb(void *arg, uint64_t newval)
 
 	if (newval == TRUE) {
 		/* XXX locking on vfs_flag? */
-        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
-	} else {
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
+	} else {
+        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
 	}
 }
 
