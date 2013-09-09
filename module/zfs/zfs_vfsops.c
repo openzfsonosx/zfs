@@ -342,45 +342,28 @@ zfs_create_unique_device(dev_t *dev)
 static void
 atime_changed_cb(void *arg, uint64_t newval)
 {
-#if 0
 	zfsvfs_t *zfsvfs = arg;
 
 	if (newval == TRUE) {
 		zfsvfs->z_atime = TRUE;
-		//zfsvfs->z_vfs->vfs_flag &= ~MNT_NOATIME;
-		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_NOATIME);
-		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_ATIME, NULL, 0);
+        vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOATIME);
 	} else {
 		zfsvfs->z_atime = FALSE;
-		//zfsvfs->z_vfs->vfs_flag |= MNT_NOATIME;
-		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_ATIME);
-		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_NOATIME, NULL, 0);
+        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOATIME);
 	}
-#endif
 }
 
 static void
 xattr_changed_cb(void *arg, uint64_t newval)
 {
-#if 0
 	zfsvfs_t *zfsvfs = arg;
 
 	if (newval == TRUE) {
 		/* XXX locking on vfs_flag? */
-#ifdef TODO
-		zfsvfs->z_vfs->vfs_flag |= VFS_XATTR;
-#endif
-		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_NOXATTR);
-		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_XATTR, NULL, 0);
+        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
 	} else {
-		/* XXX locking on vfs_flag? */
-#ifdef TODO
-		zfsvfs->z_vfs->vfs_flag &= ~VFS_XATTR;
-#endif
-		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_XATTR);
-		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_NOXATTR, NULL, 0);
+        vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
 	}
-#endif
 }
 
 static void
@@ -399,54 +382,49 @@ blksz_changed_cb(void *arg, uint64_t newval)
 static void
 readonly_changed_cb(void *arg, uint64_t newval)
 {
-#if 0
 	zfsvfs_t *zfsvfs = arg;
-	if (newval) {
+	if (newval == TRUE) {
 		/* XXX locking on vfs_flag? */
-		//zfsvfs->z_vfs->vfs_flag |= VFS_RDONLY;
-		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_RW);
-		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_RO, NULL, 0);
+
+        // We need to release the mtime_vp when readonly, as it will not
+        // call VNOP_SYNC in RDONLY.
+
+        if (zfsvfs->z_mtime_vp) {
+            vnode_rele(zfsvfs->z_mtime_vp);
+            vnode_recycle(zfsvfs->z_mtime_vp);
+            zfsvfs->z_mtime_vp = NULL;
+        }
+
+        // Flush any writes
+        //vflush(mp, NULLVP, SKIPSYSTEM);
+
+        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_RDONLY);
 	} else {
-		/* XXX locking on vfs_flag? */
-		//zfsvfs->z_vfs->vfs_flag &= ~VFS_RDONLY;
-		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_RO);
-		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_RW, NULL, 0);
+        // FIXME, we don7t re-open mtime_vp here.
+        vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_RDONLY);
 	}
-#endif
 }
 
 static void
 setuid_changed_cb(void *arg, uint64_t newval)
 {
-#if 0
 	zfsvfs_t *zfsvfs = arg;
 	if (newval == FALSE) {
-		//zfsvfs->z_vfs->vfs_flag |= VFS_NOSETUID;
-		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_SETUID);
-		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_NOSETUID, NULL, 0);
+        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOSUID);
 	} else {
-		//zfsvfs->z_vfs->vfs_flag &= ~VFS_NOSETUID;
-		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_NOSETUID);
-		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_SETUID, NULL, 0);
+        vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOSUID);
 	}
-#endif
 }
 
 static void
 exec_changed_cb(void *arg, uint64_t newval)
 {
-#if 0
 	zfsvfs_t *zfsvfs = arg;
 	if (newval == FALSE) {
-		//zfsvfs->z_vfs->vfs_flag |= VFS_NOEXEC;
-		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_EXEC);
-		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_NOEXEC, NULL, 0);
+        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOEXEC);
 	} else {
-		//zfsvfs->z_vfs->vfs_flag &= ~VFS_NOEXEC;
-		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_NOEXEC);
-		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_EXEC, NULL, 0);
+        vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOEXEC);
 	}
-#endif
 }
 
 /*
@@ -1962,11 +1940,11 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 		//Prerequisite for Spotlight use with a given dataset.
 		//This should be controlled by a dataset property with a name like "finderbrowse"
-		#if 0
+#if 0
 		/* Make the Finder treat sub file systems just like a folder */
 		if (strpbrk(osname, "/"))
 			vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DONTBROWSE));
-		#endif
+#endif
 
         	//vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
 		/* Indicate to VFS that we support ACLs. */
@@ -2033,13 +2011,15 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
             ZFS_TIME_ENCODE(&now, VTOZ(xvp)->z_atime);
 			vnode_put(xdvp);
-			vnode_ref(xvp);
+            /* Can't hold a ref if we are readonly. */
+            if (!vfs_isrdonly(vfsp)) {
+                vnode_ref(xvp);
 
-			zfsvfs->z_mtime_vp = xvp;
-			ZFS_TIME_DECODE(&modify_time, VTOZ(xvp)->z_atime);
-			zfsvfs->z_last_unmount_time = modify_time.tv_sec;
-			zfsvfs->z_last_mtime_synced = modify_time.tv_sec;
-
+                zfsvfs->z_mtime_vp = xvp;
+            }
+            ZFS_TIME_DECODE(&modify_time, VTOZ(xvp)->z_atime);
+            zfsvfs->z_last_unmount_time = modify_time.tv_sec;
+            zfsvfs->z_last_mtime_synced = modify_time.tv_sec;
 			/*
 			 * Keep this referenced vnode from impeding an unmount.
 			 *
@@ -2175,7 +2155,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	if (VFSATTR_IS_ACTIVE(fsap, f_vol_name)) {
 		spa_t *spa = dmu_objset_spa(zfsvfs->z_os);
 		spa_config_enter(spa, SCL_ALL, FTAG, RW_READER);
-		
+
 		/*
 		 * Finder volume name is set to the basename of the mountpoint path,
 		 * unless the mountpoint path is "/" or NULL, in which case we use
@@ -2190,7 +2170,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		}
 
 		/*
-		 * Old MacZFS way. Post OS X 10.6 would show pool name as the 
+		 * Old MacZFS way. Post OS X 10.6 would show pool name as the
 		 * volume name for all mounted datasets in Finder.
 		 */
 		//strlcpy(fsap->f_vol_name, spa_name(spa), MAXPATHLEN);
