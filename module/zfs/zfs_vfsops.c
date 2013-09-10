@@ -665,9 +665,9 @@ zfs_register_callbacks(struct mount *vfsp)
 	    zfs_prop_to_name(ZFS_PROP_VSCAN), vscan_changed_cb, zfsvfs);
 #ifdef __APPLE__
 	error = error ? error : dsl_prop_register(ds,
-	    zfs_prop_to_name(ZFS_PROP_FINDERBROWSE), finderbrowse_changed_cb, zfsvfs);
+	    zfs_prop_to_name(ZFS_PROP_APPLE_BROWSE), finderbrowse_changed_cb, zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
-	    zfs_prop_to_name(ZFS_PROP_IGNOREOWNER), ignoreowner_changed_cb, zfsvfs);
+	    zfs_prop_to_name(ZFS_PROP_APPLE_IGNOREOWNER), ignoreowner_changed_cb, zfsvfs);
 #endif
 	dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 	if (error)
@@ -728,9 +728,9 @@ unregister:
 	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_VSCAN),
 	    vscan_changed_cb, zfsvfs);
 #ifdef __APPLE__
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_FINDERBROWSE),
+	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_APPLE_BROWSE),
 	    finderbrowse_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_IGNOREOWNER),
+	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_APPLE_IGNOREOWNER),
 	    ignoreowner_changed_cb, zfsvfs);
 #endif
 	return (error);
@@ -1499,9 +1499,9 @@ zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
 		VERIFY(dsl_prop_unregister(ds, "vscan",
 		    vscan_changed_cb, zfsvfs) == 0);
 #ifdef __APPLE__
-		VERIFY(dsl_prop_unregister(ds, "finderbrowse",
+		VERIFY(dsl_prop_unregister(ds, "com.apple.browse",
 		    finderbrowse_changed_cb, zfsvfs) == 0);
-		VERIFY(dsl_prop_unregister(ds, "ignoreowner",
+		VERIFY(dsl_prop_unregister(ds, "com.apple.ignoreowner",
 		    ignoreowner_changed_cb, zfsvfs) == 0);
 #endif
 	}

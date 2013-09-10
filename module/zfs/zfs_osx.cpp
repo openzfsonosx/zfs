@@ -1,6 +1,7 @@
 
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
+#include <IOKit/IOKitKeys.h>
 
 #include <sys/zfs_ioctl.h>
 #include <sys/zfs_znode.h>
@@ -11,6 +12,8 @@
 #include <sys/zfs_vnops.h>
 #include <sys/taskq.h>
 
+
+#include <libkern/sysctl.h>
 
 
 extern "C" {
@@ -150,6 +153,46 @@ system_taskq_init(void)
     strlcpy(utsname.nodename, hostname, sizeof(utsname.nodename));
 }
 
+/*
+ * fnv_32a_str - perform a 32 bit Fowler/Noll/Vo FNV-1a hash on a string
+ *
+ * input:
+ *	str	- string to hash
+ *	hval	- previous hash value or 0 if first call
+ *
+ * returns:
+ *	32 bit hash as a static hash type
+ *
+ * NOTE: To use the recommended 32 bit FNV-1a hash, use FNV1_32A_INIT as the
+ *  	 hval arg on the first call to either fnv_32a_buf() or fnv_32a_str().
+ */
+#define FNV1_32A_INIT ((uint32_t)0x811c9dc5)
+uint32_t
+fnv_32a_str(const char *str, uint32_t hval)
+{
+    unsigned char *s = (unsigned char *)str;	/* unsigned string */
+
+    /*
+     * FNV-1a hash each octet in the buffer
+     */
+    while (*s) {
+
+	/* xor the bottom with the current octet */
+	hval ^= (uint32_t)*s++;
+
+	/* multiply by the 32 bit FNV magic prime mod 2^32 */
+#if defined(NO_FNV_GCC_OPTIMIZATION)
+	hval *= FNV_32_PRIME;
+#else
+	hval += (hval<<1) + (hval<<4) + (hval<<7) + (hval<<8) + (hval<<24);
+#endif
+    }
+
+    /* return our new hash value */
+    return hval;
+}
+
+
 } // Extern "C"
 
 
@@ -210,6 +253,37 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
      */
     system_taskq_init();
 
+
+    /*
+     * hostid is left as 0 on OSX, and left to be set if developers wish to
+     * use it. If it is 0, we will hash the hardware.uuid into a 32 bit
+     * value and set the hostid.
+     */
+    if (!zone_get_hostid(NULL)) {
+      uint32_t myhostid = 0;
+      IORegistryEntry *ioregroot =  IORegistryEntry::getRegistryRoot();
+      if(ioregroot) {
+        //IOLog("ioregroot is '%s'\n", ioregroot->getName(gIOServicePlane));
+        IORegistryEntry *macmodel = ioregroot->getChildEntry(gIOServicePlane);
+        if(macmodel) {
+          //IOLog("macmodel is '%s'\n", macmodel->getName(gIOServicePlane));
+          OSObject *ioplatformuuidobj;
+          //ioplatformuuidobj = ioregroot->getProperty("IOPlatformUUID", gIOServicePlane, kIORegistryIterateRecursively);
+          ioplatformuuidobj = macmodel->getProperty(kIOPlatformUUIDKey);
+          if(ioplatformuuidobj) {
+            OSString *ioplatformuuidstr = OSDynamicCast(OSString, ioplatformuuidobj);
+            //IOLog("IOPlatformUUID is '%s'\n", ioplatformuuidstr->getCStringNoCopy());
+
+            myhostid = fnv_32a_str(ioplatformuuidstr->getCStringNoCopy(),
+                                   FNV1_32A_INIT);
+
+            sysctlbyname("kern.hostid", NULL, NULL, &myhostid, sizeof(myhostid));
+            printf("ZFS: hostid set to %08x from UUID '%s'\n",
+                   myhostid, ioplatformuuidstr->getCStringNoCopy());
+          }
+        }
+      }
+    }
 
     return res;
 }
