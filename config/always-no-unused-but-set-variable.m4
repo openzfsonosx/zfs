@@ -10,11 +10,11 @@ AC_DEFUN([ZFS_AC_CONFIG_ALWAYS_NO_UNUSED_BUT_SET_VARIABLE], [
 	AC_MSG_CHECKING([for -Wno-unused-but-set-variable support])
 
 	saved_flags="$CFLAGS"
-	CFLAGS="$CFLAGS -Wunused-but-set-variable"
+	CFLAGS="$CFLAGS"
 
 	AC_RUN_IFELSE([AC_LANG_PROGRAM([], [])],
 	[
-		NO_UNUSED_BUT_SET_VARIABLE=-Wno-unused-but-set-variable
+		NO_UNUSED_BUT_SET_VARIABLE=
 		AC_MSG_RESULT([yes])
 	],
 	[
