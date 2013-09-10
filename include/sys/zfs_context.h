@@ -62,6 +62,13 @@
 #define MAX_UPL_TRANSFER 256
 #endif
 
+
+struct zfs_mount_args {
+    const char      *fspec;         /* block special device to mount */
+    uint64_t     flags;
+};
+
+
 #define ZVOL_ROOT "/var/run"
 
 #endif	/* _SYS_ZFS_CONTEXT_H */
