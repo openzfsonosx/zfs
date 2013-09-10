@@ -2081,7 +2081,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 			vnode_put(xdvp);
             /* Can't hold a ref if we are readonly. */
             if (!vfs_isrdonly(vfsp)) {
-                vnode_ref(xvp);
+
+                //vnode_ref(xvp);
 
                 zfsvfs->z_mtime_vp = xvp;
             }
@@ -2519,7 +2520,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			zfsvfs->z_mtime_vp = NULL;
 
 			if (vnode_get(mvp) == 0) {
-				vnode_rele(mvp);
+				//vnode_rele(mvp);
 				vnode_recycle(mvp);
 				vnode_put(mvp);
 			}
