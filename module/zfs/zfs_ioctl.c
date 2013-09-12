@@ -5309,10 +5309,18 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 		case POOL_NAME:
 			if (pool_namecheck(zc->zc_name, NULL, NULL) != 0)
 				error = EINVAL;
+			else
+				error = pool_status_check(zc->zc_name,
+				    zfs_ioc_vec[vec].zvec_namecheck, 
+				    zfs_ioc_vec[vec].zvec_pool_check);
 			break;
 		case DATASET_NAME:
 			if (dataset_namecheck(zc->zc_name, NULL, NULL) != 0)
 				error = EINVAL;
+			else
+				error = pool_status_check(zc->zc_name,
+				    zfs_ioc_vec[vec].zvec_namecheck, 
+				    zfs_ioc_vec[vec].zvec_pool_check);
 			break;
 		case NO_NAME:
 			break;

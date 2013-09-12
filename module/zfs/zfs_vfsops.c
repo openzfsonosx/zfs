@@ -389,11 +389,18 @@ readonly_changed_cb(void *arg, uint64_t newval)
         // We need to release the mtime_vp when readonly, as it will not
         // call VNOP_SYNC in RDONLY.
 
-        if (zfsvfs->z_mtime_vp) {
-            vnode_rele(zfsvfs->z_mtime_vp);
-            vnode_recycle(zfsvfs->z_mtime_vp);
-            zfsvfs->z_mtime_vp = NULL;
-        }
+	if (zfsvfs->z_mtime_vp != NULL) {
+		vnode_t *mvp;
+
+		mvp = zfsvfs->z_mtime_vp;
+		zfsvfs->z_mtime_vp = NULL;
+
+		if (vnode_get(mvp) == 0) {
+			//vnode_rele(mvp);
+			vnode_recycle(mvp);
+			vnode_put(mvp);
+		}
+	}
 
         // Flush any writes
         //vflush(mp, NULLVP, SKIPSYSTEM);
@@ -673,6 +680,8 @@ zfs_register_callbacks(struct mount *vfsp)
 	if (error)
 		goto unregister;
 
+	if (do_readonly)
+		readonly_changed_cb(zfsvfs, readonly);
 #if 0
 	/*
 	 * Invoke our callbacks to restore temporary mount options.
