@@ -406,6 +406,16 @@ zfs_prop_init(void)
 	zprop_register_impl(ZFS_PROP_CREATION, "creation", PROP_TYPE_NUMBER, 0,
 	    NULL, PROP_READONLY, ZFS_TYPE_DATASET,
 	    "<date>", "CREATION", B_FALSE, B_TRUE, NULL);
+
+#ifdef __APPLE__
+    /* Apple specific properties */
+	zprop_register_index(ZFS_PROP_APPLE_BROWSE, "com.apple.browse", 1,PROP_INHERIT,
+        ZFS_TYPE_FILESYSTEM, "on | off", "COM.APPLE.BROWSE", boolean_table);
+	zprop_register_index(ZFS_PROP_APPLE_IGNOREOWNER, "com.apple.ignoreowner", 0, PROP_INHERIT,
+	    ZFS_TYPE_FILESYSTEM, "on | off", "COM.APPLE.IGNOREOWNER", boolean_table);
+#endif
+
+
 }
 
 boolean_t

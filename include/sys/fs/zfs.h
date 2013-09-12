@@ -129,6 +129,10 @@ typedef enum {
 	ZFS_PROP_WRITTEN,
 	ZFS_PROP_CLONES,
 	ZFS_PROP_SNAPDEV,
+#ifdef __APPLE__
+    ZFS_PROP_APPLE_BROWSE,
+    ZFS_PROP_APPLE_IGNOREOWNER,
+#endif
 	ZFS_NUM_PROPS
 } zfs_prop_t;
 

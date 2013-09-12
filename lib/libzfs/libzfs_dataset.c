@@ -1586,9 +1586,11 @@ zfs_prop_set(zfs_handle_t *zhp, const char *propname, const char *propval)
 			 * if one of the options handled by the generic
 			 * Linux namespace layer has been modified.
 			 */
+#ifdef __LINUX__
 			if (zfs_is_namespace_prop(prop) &&
 			    zfs_is_mounted(zhp, NULL))
 				ret = zfs_mount(zhp, MNTOPT_REMOUNT, 0);
+#endif
 		}
 	}
 

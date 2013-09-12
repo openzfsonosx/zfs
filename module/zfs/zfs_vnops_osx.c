@@ -1899,6 +1899,20 @@ out:
 }
 #endif /* HAVE_NAMED_STREAMS */
 
+
+/*
+ * The Darwin kernel's HFS+ appears to implement this by two methods,
+ *
+ * if (ap->a_options & FSOPT_EXCHANGE_DATA_ONLY) is set
+ *    ** Copy the data of the files over (including rsrc)
+ *
+ * if not set
+ *    ** exchange FileID between the two nodes, copy over vnode information
+ *       like that of *time records, uid/gid, flags, mode, linkcount,
+ *       finderinfo, c_desc, c_attr, c_flag, and cache_purge().
+ *
+ * This call is deprecated in 10.8
+ */
 static int
 zfs_vnop_exchange(
 	struct vnop_exchange_args /* {
@@ -1908,6 +1922,35 @@ zfs_vnop_exchange(
 		vfs_context_t a_context;
 	} */ *ap)
 {
+    vnode_t *fvp = ap->a_fvp;
+    vnode_t *tvp = ap->a_tvp;
+    znode_t  *fzp;
+    znode_t  *tzp;
+    zfsvfs_t  *zfsvfs;
+
+    /* The files must be on the same volume. */
+    if (vnode_mount(fvp) != vnode_mount(tvp))
+        return (EXDEV);
+
+    if (fvp == tvp)
+        return (EINVAL);
+
+    /* Only normal files can be exchanged. */
+    if (!vnode_isreg(fvp) || !vnode_isreg(tvp))
+        return (EINVAL);
+
+    fzp = VTOZ(fvp);
+    // tzp = VTOZ(tvp);
+    zfsvfs = fzp->z_zfsvfs;
+
+    ZFS_ENTER(zfsvfs);
+
+
+    /* ADD MISSING CODE HERE */
+
+    ZFS_EXIT(zfsvfs);
+
+
     dprintf("vnop_exchange: ENOTSUP\n");
 	return (ENOTSUP);
 }

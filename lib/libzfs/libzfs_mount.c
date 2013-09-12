@@ -115,10 +115,6 @@ zfs_share_proto_t share_all_proto[] = {
 	PROTO_END
 };
 
-struct zfs_mount_args {
-    const char      *fspec;         /* block special device to mount */
-    int     flags;
-};
 
 /*
  * Search the sharetab for the given mountpoint and protocol, returning
@@ -381,6 +377,7 @@ do_unmount_volume(const char *mntpt, int flags)
 	return (rc ? EINVAL : 0);
 }
 
+#ifdef __LINUX__
 static int
 zfs_add_option(zfs_handle_t *zhp, char *options, int len,
     zfs_prop_t prop, char *on, char *off)
@@ -403,32 +400,45 @@ zfs_add_option(zfs_handle_t *zhp, char *options, int len,
 
 	return (0);
 }
+#endif
 
 static int
-zfs_add_options(zfs_handle_t *zhp, char *options, int len)
+zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
 {
 	int error = 0;
+    char *source;
+	uint64_t value;
 
-	error = zfs_add_option(zhp, options, len,
-	    ZFS_PROP_ATIME, MNTOPT_ATIME, MNTOPT_NOATIME);
-	error = error ? error : zfs_add_option(zhp, options, len,
-	    ZFS_PROP_DEVICES, MNTOPT_DEVICES, MNTOPT_NODEVICES);
-	error = error ? error : zfs_add_option(zhp, options, len,
-	    ZFS_PROP_EXEC, MNTOPT_EXEC, MNTOPT_NOEXEC);
-	error = error ? error : zfs_add_option(zhp, options, len,
-	    ZFS_PROP_READONLY, MNTOPT_RO, MNTOPT_RW);
-	error = error ? error : zfs_add_option(zhp, options, len,
-	    ZFS_PROP_SETUID, MNTOPT_SETUID, MNTOPT_NOSETUID);
-	error = error ? error : zfs_add_option(zhp, options, len,
-	    ZFS_PROP_XATTR, MNTOPT_XATTR, MNTOPT_NOXATTR);
-	error = error ? error : zfs_add_option(zhp, options, len,
-	    ZFS_PROP_NBMAND, MNTOPT_NBMAND, MNTOPT_NONBMAND);
+	value = getprop_uint64(zhp, ZFS_PROP_ATIME, &source);
+    if (!value) *flags |= MNT_NOATIME;
+	value = getprop_uint64(zhp, ZFS_PROP_DEVICES, &source);
+    if (!value) *flags |= MNT_NODEV;
+	value = getprop_uint64(zhp, ZFS_PROP_EXEC, &source);
+    if (!value) *flags |= MNT_NOEXEC;
+	value = getprop_uint64(zhp, ZFS_PROP_READONLY, &source);
+    if (value) *flags |= MNT_RDONLY;
+	value = getprop_uint64(zhp, ZFS_PROP_SETUID, &source);
+    if (!value) *flags |= MNT_NOSUID;
+	value = getprop_uint64(zhp, ZFS_PROP_XATTR, &source);
+    if (!value) *flags |= MNT_NOUSERXATTR;
+    /*
+	value = getprop_uint64(zhp, ZFS_PROP_NBMAND, &source);
+    if (!value) *flags |= MNT_NOXATTR;
+
+	value = getprop_uint64(zhp, ZFS_PROP_FINDERBROWSE, &source);
+    if (!value) *flags |= MNT_DONTBROWSE;
+
+	value = getprop_uint64(zhp, ZFS_PROP_IGNOREOWNER, &source);
+    if (value) *flags |= MNT_IGNORE_OWNERSHIP;
+    */
 
 	return (error);
 }
 
 /*
  * Mount the given filesystem.
+ *
+ * 'flags' appears pretty much always 0 here.
  */
 int
 zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
@@ -455,8 +465,15 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	/*
 	 * If the pool is imported read-only then all mounts must be read-only
 	 */
+#ifdef __LINUX__
 	if (zpool_get_prop_int(zhp->zpool_hdl, ZPOOL_PROP_READONLY, NULL))
 		(void) strlcat(mntopts, "," MNTOPT_RO, sizeof (mntopts));
+#endif
+#ifdef __APPLE__
+	if (zpool_get_prop_int(zhp->zpool_hdl, ZPOOL_PROP_READONLY, NULL))
+		flags |= MNT_RDONLY;
+#endif
+
 
 	/*
 	 * Append default mount options which apply to the mount point.
@@ -465,7 +482,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	 * given a super block there is no back reference to update the per
 	 * mount point options.
 	 */
-	rc = zfs_add_options(zhp, mntopts, sizeof (mntopts));
+	rc = zfs_add_options(zhp, &flags);
 	if (rc) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "default options unavailable"));
@@ -502,7 +519,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
                 fprintf(stderr, "New mountpoint '%s'\n", mountpoint);
                 free(parent_name);
                 zfs_close(zhp_parent);
-                flags |= MNT_RDONLY;
             } // zfs_open
         } // if r
     } else // snapshot
@@ -552,8 +568,10 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #if LINUX
 	rc = do_mount(zfs_get_name(zhp), mountpoint, mntopts);
 #else
-    printf("zfs_mount: unused options: \"%s\".\n", mntopts);
+    //printf("zfs_mount: un used options: \"%s\"\n", mntopts);
+    //fprintf(stderr, "zfs_mount: flags are %04x \n", flags);
     mnt_args.fspec = zfs_get_name(zhp);
+    mnt_args.flags = flags;
     rc = mount(MNTTYPE_ZFS, mountpoint, flags, &mnt_args);
 #endif
 
@@ -1199,7 +1217,6 @@ zpool_enable_datasets(zpool_handle_t *zhp, const char *mntopts, int flags)
 	zfs_handle_t *zfsp;
 	int i, ret = -1;
 	int *good;
-
 	/*
 	 * Gather all non-snap datasets within the pool.
 	 */
