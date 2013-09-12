@@ -485,6 +485,8 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 	struct vnode *vp;
 	struct vnode_fsparam vfsp;
 
+    printf("gfs_file_create: vtype %d\n", type);
+
 	/*
 	 * Allocate vnode and internal data structure
 	 */
@@ -567,6 +569,8 @@ gfs_dir_create(size_t struct_size, vnode_t *pvp, vfs_t *vfsp, vnodeops_t *ops,
 	vnode_t *vp;
 	gfs_dir_t *dp;
 	gfs_dirent_t *de;
+
+    printf("gfs_dir_create\n");
 
 	vp = gfs_file_create(struct_size, pvp, vfsp, ops, VDIR);
 	//vp->v_type = VDIR; // Can only be set at create FIXME

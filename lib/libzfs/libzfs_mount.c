@@ -478,9 +478,38 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	 * Append zfsutil option so the mount helper allow the mount
 	 */
 	//strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
+    char *r = NULL;
+    if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT) {
+        char *parent_name = strdup(zhp->zfs_name);
+        zfs_handle_t *zhp_parent;
+        fprintf(stderr, "Is a snappy\r\n");
+        r = strchr(parent_name, '@');
+        if (r) {
 
-	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL))
+            *r = 0;
+
+            fprintf(stderr, "open parent: '%s' %p\r\n", parent_name,
+                    zhp->zpool_hdl);
+            if ((zhp_parent = zfs_open(zhp->zfs_hdl, parent_name,
+                                       ZFS_TYPE_FILESYSTEM)) != NULL) {
+                fprintf(stderr, "get parent mount\r\n");
+                zfs_prop_get(zhp_parent, ZFS_PROP_MOUNTPOINT, mountpoint,
+                             sizeof(mountpoint),
+                             NULL, NULL, 0, B_FALSE);
+                strcat(mountpoint, "/.zfs/snapshot/");
+                strcat(mountpoint, &r[1]);
+                strcpy(mountpoint, "/mnt");
+                fprintf(stderr, "New mountpoint '%s'\n", mountpoint);
+                free(parent_name);
+                zfs_close(zhp_parent);
+                flags |= MNT_RDONLY;
+            } // zfs_open
+        } // if r
+    } else // snapshot
+
+	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL)) {
 		return (0);
+    }
 
 	/* Create the directory if it doesn't already exist */
 	if (lstat(mountpoint, &buf) != 0) {
@@ -523,7 +552,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #if LINUX
 	rc = do_mount(zfs_get_name(zhp), mountpoint, mntopts);
 #else
-    printf("zfs_mount: unused options: \"%s\"\n", mntopts);
+    printf("zfs_mount: unused options: \"%s\".\n", mntopts);
     mnt_args.fspec = zfs_get_name(zhp);
     rc = mount(MNTTYPE_ZFS, mountpoint, flags, &mnt_args);
 #endif
