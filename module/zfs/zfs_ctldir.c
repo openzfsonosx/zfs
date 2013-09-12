@@ -80,14 +80,6 @@
 #include <sys/mount.h>
 #include <sys/sunddi.h>
 
-/*
- * This header includes mount_internal.h, sem_internal.h and semaphore.h
- * which are not included in OS X header path. We have those as empty files
- * to work around this.
- */
-#include <sys/sysproto.h>
-
-
 #include "zfs_namecheck.h"
 
 //typedef struct vnodeopv_entry_desc vop_vector;
