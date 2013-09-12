@@ -6164,8 +6164,18 @@ unshare_unmount(int op, int argc, char **argv)
 			    flags, B_FALSE));
 
 		if ((zhp = zfs_open(g_zfs, argv[0],
-		    ZFS_TYPE_FILESYSTEM)) == NULL)
+                            ZFS_TYPE_FILESYSTEM)) == NULL) {
+#ifdef __APPLE__
+            /* Temporarily, allow unmounting snapshots */
+            if ((zhp = zfs_open(g_zfs, argv[0],
+                                ZFS_TYPE_SNAPSHOT)) != NULL) {
+                ret = zfs_unmount(zhp, NULL, flags);
+                zfs_close(zhp);
+                return ret;
+            }
+#endif
 			return (1);
+        }
 
 		verify(zfs_prop_get(zhp, op == OP_SHARE ?
 		    ZFS_PROP_SHARENFS : ZFS_PROP_MOUNTPOINT,

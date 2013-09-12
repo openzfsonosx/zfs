@@ -400,7 +400,7 @@ readonly_changed_cb(void *arg, uint64_t newval)
 
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_RDONLY);
 	} else {
-        // FIXME, we don7t re-open mtime_vp here.
+        // FIXME, we don't re-open mtime_vp here.
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_RDONLY);
 	}
 }
@@ -1419,6 +1419,8 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	if (dmu_objset_is_snapshot(zfsvfs->z_os)) {
 		uint64_t pval;
 
+        printf("objset is snapshot\n");
+
 		atime_changed_cb(zfsvfs, B_FALSE);
 		readonly_changed_cb(zfsvfs, B_TRUE);
 		if ((error = dsl_prop_get_integer(osname, "xattr", &pval, NULL)))
@@ -2068,6 +2070,9 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 			 */
 			zfsvfs->z_last_unmount_time = 0xBADC0DE;
 			zfsvfs->z_last_mtime_synced = VTOZ(xdvp)->z_id;
+
+			if (!vfs_isrdonly(vfsp)) {
+
 			flag = vfs_isrdonly(vfsp) ? 0 : ZEXISTS;
 			/* Lookup or create the named attribute. */
 			if ( zfs_obtain_xattr(VTOZ(xdvp), ZFS_MTIME_XATTR,
@@ -2078,10 +2083,12 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
                 vnode_put(xdvp);
                 goto out;
             }
+
             gethrestime(&now);
 
             ZFS_TIME_ENCODE(&now, VTOZ(xvp)->z_atime);
 			vnode_put(xdvp);
+
             /* Can't hold a ref if we are readonly. */
             if (!vfs_isrdonly(vfsp)) {
 
@@ -2101,6 +2108,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 			vnode_setnoflush(xvp);
 #endif
 			vnode_put(xvp);
+            } // readonly
+
 		}
 	}
 #endif /* __APPLE__ */
