@@ -50,6 +50,9 @@
 #define VI_LOCK(x)
 #define VI_UNLOCK(x)
 
+#define ZFS_VNODE_ROOT   (1<<0)
+#define ZFS_VNODE_SYSTEM (1<<1)
+
 
 /*
  * Generic pseudo-filesystem routines.
@@ -479,7 +482,7 @@ gfs_lookup_dot(vnode_t **vpp, vnode_t *dvp, vnode_t *pvp, const char *nm)
  * 	- Hold the parent
  */
 vnode_t *
-gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enum vtype type)
+gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enum vtype type, int flags)
 {
 	gfs_file_t *fp;
 	struct vnode *vp;
@@ -501,6 +504,10 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 	vfsp.vnfs_flags = VNFS_ADDFSREF;
     printf("ops set to %p\n", ops);
     vfsp.vnfs_vops = ops;
+    if (flags & ZFS_VNODE_SYSTEM)
+        vfsp.vnfs_marksystem = 1;
+    if (flags & ZFS_VNODE_ROOT)
+        vfsp.vnfs_markroot = 1;
 	//error = getnewvnode("zfs", vfsp, ops, &vp);
 
 	ASSERT(error == 0);
@@ -513,6 +520,8 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0);
     //mutex_exit(&zfsvfs->z_vnode_create_lock);
 	vnode_settag(vp, VT_ZFS);
+    printf("new vnode %p system %d root %d: vfs %p\n",
+           vp, vfsp.vnfs_marksystem, vfsp.vnfs_markroot, vfs);
 
 	/*
 	 * Set up various pointers
@@ -564,7 +573,7 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 vnode_t *
 gfs_dir_create(size_t struct_size, vnode_t *pvp, vfs_t *vfsp, vnodeops_t *ops,
     gfs_dirent_t *entries, gfs_inode_cb inode_cb, int maxlen,
-    gfs_readdir_cb readdir_cb, gfs_lookup_cb lookup_cb)
+               gfs_readdir_cb readdir_cb, gfs_lookup_cb lookup_cb, int flags)
 {
 	vnode_t *vp;
 	gfs_dir_t *dp;
@@ -572,7 +581,7 @@ gfs_dir_create(size_t struct_size, vnode_t *pvp, vfs_t *vfsp, vnodeops_t *ops,
 
     printf("gfs_dir_create\n");
 
-	vp = gfs_file_create(struct_size, pvp, vfsp, ops, VDIR);
+	vp = gfs_file_create(struct_size, pvp, vfsp, ops, VDIR, flags);
 	//vp->v_type = VDIR; // Can only be set at create FIXME
 
 	dp = vnode_fsnode(vp);
@@ -615,7 +624,8 @@ gfs_root_create(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino,
 
 	VFS_HOLD(vfsp);
 	vp = gfs_dir_create(size, NULL, vfsp, ops, entries, inode_cb,
-	    maxlen, readdir_cb, lookup_cb);
+                        maxlen, readdir_cb, lookup_cb,
+                        ZFS_VNODE_SYSTEM);
 	/* Manually set the inode */
 	((gfs_file_t *)vnode_fsnode(vp))->gfs_ino = ino;
 	//vp->v_flag |= VROOT;
@@ -664,6 +674,8 @@ gfs_file_inactive(vnode_t *vp)
 	gfs_file_t *fp = vnode_fsnode(vp);
 	gfs_dir_t *dp = NULL;
 	void *data;
+
+    if (!fp) return NULL;
 
 	if (fp->gfs_parent == NULL /*|| (vp->v_flag & V_XATTRDIR)*/)
 		goto found;
@@ -1294,7 +1306,9 @@ gfs_vop_inactive(ap)
 	vnode_t *vp = ap->a_vp;
 	gfs_file_t *fp = vnode_fsnode(vp);
 
-    printf("gfs_vop_inactive\n");
+    printf("+gfs_vop_inactive\n");
+
+    if (!fp) return 0;
 
 	if (fp->gfs_type == GFS_DIR)
 		gfs_dir_inactive(vp);
@@ -1302,11 +1316,11 @@ gfs_vop_inactive(ap)
 		gfs_file_inactive(vp);
 
 	VI_LOCK(vp);
-	vnode_clearfsnode(vp);
-    vnode_removefsref(vp); /* ADDREF from vnode_create */
 
+    //vnode_recycle(vp);
 	VI_UNLOCK(vp);
 	kmem_free(fp, fp->gfs_size);
 
+    printf("-gfs_vop_inactive\n");
 	return (0);
 }

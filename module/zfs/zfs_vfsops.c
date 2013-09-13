@@ -389,12 +389,13 @@ readonly_changed_cb(void *arg, uint64_t newval)
         // We need to release the mtime_vp when readonly, as it will not
         // call VNOP_SYNC in RDONLY.
 
+#if 0
         if (zfsvfs->z_mtime_vp) {
             vnode_rele(zfsvfs->z_mtime_vp);
             vnode_recycle(zfsvfs->z_mtime_vp);
             zfsvfs->z_mtime_vp = NULL;
         }
-
+#endif
         // Flush any writes
         //vflush(mp, NULLVP, SKIPSYSTEM);
 
@@ -1421,6 +1422,8 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 
         printf("objset is snapshot\n");
 
+        vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_AUTOMOUNTED));
+
 		atime_changed_cb(zfsvfs, B_FALSE);
 		readonly_changed_cb(zfsvfs, B_TRUE);
 		if ((error = dsl_prop_get_integer(osname, "xattr", &pval, NULL)))
@@ -2017,14 +2020,15 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 
 
-        vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_AUTOMOUNTED));
-
         	//vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
 		/* Indicate to VFS that we support ACLs. */
 		vfs_setextendedsecurity(vfsp);
 
 		/* Advisory locking should be handled at the VFS layer */
 		vfs_setlocklocal(vfsp);
+
+
+#if 0
 
 		/*
 		 * Mac OS X needs a file system modify time
@@ -2111,6 +2115,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
             } // readonly
 
 		}
+#endif
+
 	}
 #endif /* __APPLE__ */
 
@@ -2213,15 +2219,19 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		VFSATTR_SET_SUPPORTED(fsap, f_create_time);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_modify_time)) {
+#if 0
 		if (zfsvfs->z_mtime_vp != NULL) {
 			znode_t *mzp;
 
 			mzp = VTOZ(zfsvfs->z_mtime_vp);
 			//ZFS_TIME_DECODE(&fsap->f_modify_time, mzp->zp_mtime);
 		} else {
+#endif
 			fsap->f_modify_time.tv_sec = 0;
 			fsap->f_modify_time.tv_nsec = 0;
+#if 0
 		}
+#endif
 		VFSATTR_SET_SUPPORTED(fsap, f_modify_time);
 	}
 	/*
@@ -2494,6 +2504,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		}
         dprintf("z_ctldir destroy\n");
 		zfsctl_destroy(zfsvfs);
+        dprintf("z_ctldir destroy done\n");
 		ASSERT(zfsvfs->z_ctldir == NULL);
 	}
 
@@ -2512,7 +2523,8 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	/*
 	 * Flush all the files.
 	 */
-	ret = vflush(mp, NULLVP, (mntflags & MNT_FORCE) ? FORCECLOSE : 0|SKIPSYSTEM);
+	ret = vflush(mp, NULLVP, (mntflags & MNT_FORCE) ? FORCECLOSE|SKIPSYSTEM : SKIPSYSTEM);
+    printf("after flush 2\n");
 	if (ret != 0) {
 		if (!zfsvfs->z_issnap) {
 			zfsctl_create(zfsvfs);
@@ -2530,6 +2542,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	 *
 	 * Here we need to release the ref we took on z_mtime_vp during mount.
 	 */
+#if 0
 	if ((ret == 0) || (mntflags & MNT_FORCE)) {
 		if (zfsvfs->z_mtime_vp != NULL) {
 			vnode_t *mvp;
@@ -2544,6 +2557,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			}
 		}
 	}
+#endif
 
     dprintf("Signalling reclaim sync\n");
 	/* We just did final sync, tell reclaim to mop it up */

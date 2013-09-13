@@ -343,11 +343,13 @@ zfsctl_create(zfsvfs_t *zfsvfs)
 	 */
 	//vp->v_vflag &= ~VV_ROOT;
 
-    printf("zfsctl: rootvp is %p\n", vp);
 	zfsvfs->z_ctldir = vp;
 
+    printf("zfsctl: rootvp is %p adding ref\n", vp);
     vnode_ref(zfsvfs->z_ctldir); // Hold an usercount ref
 	VN_RELE(zfsvfs->z_ctldir); // release iocount ref (vnode_put)
+
+    printf("vnode_iocount is %d\n", ((uint32_t *)vp)[23]);
 
 	VOP_UNLOCK(vp, 0);
 }
@@ -360,12 +362,21 @@ zfsctl_create(zfsvfs_t *zfsvfs)
 void
 zfsctl_destroy(zfsvfs_t *zfsvfs)
 {
+    struct vnode *vp;
     printf("zfsctl: releasing rootvp %p\n", zfsvfs->z_ctldir);
 	//VN_RELE(zfsvfs->z_ctldir);
-    vnode_get(zfsvfs->z_ctldir);
-    vnode_rele(zfsvfs->z_ctldir);
-    vnode_put(zfsvfs->z_ctldir);
+    vp = zfsvfs->z_ctldir;
 	zfsvfs->z_ctldir = NULL;
+    printf("vnode_iocount2 is %d\n", ((uint32_t *)vp)[23]);
+    if (!vnode_getwithref(vp)) {
+        printf("vnode_rele\n");
+        vnode_rele(vp);
+        printf("vnode_put\n");
+        vnode_put(vp);
+        printf("done\n");
+        printf("vnode_iocount3 is %d\n", ((uint32_t *)vp)[23]);
+
+    }
 }
 
 /*
@@ -376,6 +387,7 @@ struct vnode *
 zfsctl_root(znode_t *zp)
 {
 	ASSERT(zfs_has_ctldir(zp));
+    printf("zfsctl_root hold\n");
 	VN_HOLD(zp->z_zfsvfs->z_ctldir);
 	return (zp->z_zfsvfs->z_ctldir);
 }
@@ -560,20 +572,22 @@ zfsctl_common_reclaim(ap)
 {
 	struct vnode *vp = ap->a_vp;
 
-    printf("zfsctl: reclaim vp %p\n", vp);
+    printf("zfsctl: +reclaim vp %p\n", vp);
 
 	/*
 	 * Destroy the vm object and flush associated pages.
 	 */
-#if __APPLE__
-    vnode_clearfsnode(vp); /* vp->v_data = NULL */
+#ifdef __APPLE__
     vnode_removefsref(vp); /* ADDREF from vnode_create */
+    vnode_clearfsnode(vp); /* vp->v_data = NULL */
+    printf("vnode_iocount4 is %d\n", ((uint32_t *)vp)[23]);
 #else
 	vnode_destroy_vobject(vp);
 	VI_LOCK(vp);
 	vp->v_data = NULL;
 	VI_UNLOCK(vp);
 #endif
+    printf("zfsctl: -reclaim vp %p\n", vp);
 	return (0);
 }
 
@@ -652,7 +666,7 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
 
 	ZFS_ENTER(zfsvfs);
 
-    err = vnode_get(zfsvfs->z_ctldir);
+    err = vnode_getwithref(zfsvfs->z_ctldir);
     if (err) {
         printf("zfsctl: getwithref said %d\n", err);
         return err;
@@ -1480,7 +1494,7 @@ zfsctl_mknode_snapdir(struct vnode *pvp)
 
 	vp = gfs_dir_create(sizeof (zfsctl_snapdir_t), pvp, vnode_mount(pvp),
         zfsctl_ops_snapdir_dvnodeops, NULL, NULL, MAXNAMELEN,
-	    zfsctl_snapdir_readdir_cb, NULL);
+                        zfsctl_snapdir_readdir_cb, NULL, 0);
 	sdp = vnode_fsnode(vp);
 	sdp->sd_node.zc_id = ZFSCTL_INO_SNAPDIR;
 	sdp->sd_node.zc_cmtime = ((zfsctl_node_t *)vnode_fsnode(pvp))->zc_cmtime;
@@ -1726,7 +1740,7 @@ zfsctl_snapshot_mknode(struct vnode *pvp, uint64_t objset)
 #if 1
     printf("+snapshot_mknode\n");
 	vp = gfs_dir_create(sizeof (zfsctl_node_t), pvp, vnode_mount(pvp),
-	    zfsctl_ops_snapshot_dvnodeops, NULL, NULL, MAXNAMELEN, NULL, NULL);
+         zfsctl_ops_snapshot_dvnodeops, NULL, NULL, MAXNAMELEN, NULL, NULL, 0);
 	VN_HOLD(vp);
 	zcp = vnode_fsnode(vp);
 	zcp->zc_id = objset;
