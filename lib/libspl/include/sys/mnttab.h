@@ -69,12 +69,19 @@ struct extmnttab {
 	uint_t mnt_minor;
 };
 
-extern int getmntany(FILE *fp, struct mnttab *mgetp, struct mnttab *mrefp);
-extern char *mntopt(char **p);
-extern char *hasmntopt(struct mnttab *mnt, char *opt);
-extern int getmntent(FILE *fp, struct mnttab *mgetp);
+//Replacing with FreeBSD versions
+//extern int getmntany(FILE *fp, struct mnttab *mgetp, struct mnttab *mrefp);
+//extern char *mntopt(char **p);
+//extern char *hasmntopt(struct mnttab *mnt, char *opt);
+//extern int getmntent(FILE *fp, struct mnttab *mgetp);
 extern DIR *fdopendir(int fd);
 extern int openat64(int, const char *, int, ...);
+
+//From FreeBSD
+extern int getmntany(FILE *fd, struct mnttab *mgetp, struct mnttab *mrefp);
+extern int getmntent(FILE *fp, struct mnttab *mp);
+extern char *hasmntopt(struct mnttab *mnt, char *opt);
+extern void statfs2mnttab(struct statfs *sfs, struct mnttab *mp);
 
 #define	AT_FDCWD		-100
 #define	AT_SYMLINK_NOFOLLOW	0x100

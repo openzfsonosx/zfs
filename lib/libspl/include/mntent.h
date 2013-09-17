@@ -132,6 +132,8 @@ extern "C" {
 #define	MNTOPT_RESTRICT	"restrict"	/* restricted autofs mount */
 #define	MNTOPT_BROWSE	"browse"	/* browsable autofs mount */
 #define	MNTOPT_NOBROWSE	"nobrowse"	/* non-browsable autofs mount */
+#define MNTOPT_OWNERS	"owners"	/* VFS will not ignore ownership information on filesystem objects */
+#define MNTOPT_NOOWNERS	"noowners"	/* VFS will ignore ownership information on filesystem objects */
 
 #ifdef	__cplusplus
 }

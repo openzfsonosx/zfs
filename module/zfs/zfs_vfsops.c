@@ -599,10 +599,10 @@ zfs_register_callbacks(struct mount *vfsp)
 		do_finderbrowse = B_TRUE;
 	}
 	if (vfs_optionisset(vfsp, MNT_IGNORE_OWNERSHIP, NULL)) {
-		ignoreowner = B_FALSE;
+		ignoreowner = B_TRUE;
 		do_ignoreowner = B_TRUE;
 	} else {
-		ignoreowner = B_TRUE;
+		ignoreowner = B_FALSE;
 		do_ignoreowner = B_TRUE;
 	}
 

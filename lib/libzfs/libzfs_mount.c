@@ -421,15 +421,14 @@ zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
     if (!value) *flags |= MNT_NOSUID;
 	value = getprop_uint64(zhp, ZFS_PROP_XATTR, &source);
     if (!value) *flags |= MNT_NOUSERXATTR;
+	value = getprop_uint64(zhp, ZFS_PROP_APPLE_BROWSE, &source);
+    if (!value) *flags |= MNT_DONTBROWSE;
+        value = getprop_uint64(zhp, ZFS_PROP_APPLE_IGNOREOWNER, &source);
+    if (value) *flags |= MNT_IGNORE_OWNERSHIP;
+	
     /*
 	value = getprop_uint64(zhp, ZFS_PROP_NBMAND, &source);
     if (!value) *flags |= MNT_NOXATTR;
-
-	value = getprop_uint64(zhp, ZFS_PROP_FINDERBROWSE, &source);
-    if (!value) *flags |= MNT_DONTBROWSE;
-
-	value = getprop_uint64(zhp, ZFS_PROP_IGNOREOWNER, &source);
-    if (value) *flags |= MNT_IGNORE_OWNERSHIP;
     */
 
 	return (error);

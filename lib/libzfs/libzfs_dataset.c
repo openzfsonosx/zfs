@@ -38,7 +38,11 @@
 #include <stddef.h>
 #include <zone.h>
 #include <fcntl.h>
+#ifndef __APPLE__
 #include <sys/mntent.h>
+#else
+#include <mntent.h>
+#endif
 #include <sys/mount.h>
 #include <priv.h>
 #include <pwd.h>
@@ -613,6 +617,7 @@ libzfs_mnttab_next(libzfs_handle_t *hdl, mnttab_node_t *cur)
 	return (AVL_NEXT(&hdl->libzfs_mnttab_cache, cur));
 }
 
+
 static int
 libzfs_mnttab_cache_compare(const void *arg1, const void *arg2)
 {
@@ -628,6 +633,7 @@ libzfs_mnttab_cache_compare(const void *arg1, const void *arg2)
 }
 
 
+#if 0
 int
 libzfs_mnttab_update(libzfs_handle_t *hdl)
 {
@@ -648,6 +654,32 @@ libzfs_mnttab_update(libzfs_handle_t *hdl)
 
 	return (0);
 }
+#endif
+
+
+//From FreeBSD
+int
+libzfs_mnttab_update(libzfs_handle_t *hdl)
+{
+	struct mnttab entry;
+
+	rewind(hdl->libzfs_mnttab);
+	while (getmntent(hdl->libzfs_mnttab, &entry) == 0) {
+		mnttab_node_t *mtn;
+
+		if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
+			continue;
+		mtn = zfs_alloc(hdl, sizeof (mnttab_node_t));
+		mtn->mtn_mt.mnt_special = zfs_strdup(hdl, entry.mnt_special);
+		mtn->mtn_mt.mnt_mountp = zfs_strdup(hdl, entry.mnt_mountp);
+		mtn->mtn_mt.mnt_fstype = zfs_strdup(hdl, entry.mnt_fstype);
+		mtn->mtn_mt.mnt_mntopts = zfs_strdup(hdl, entry.mnt_mntopts);
+		//printf("entry.mnt_mntopts is %s\n", entry.mnt_mntopts);
+		avl_add(&hdl->libzfs_mnttab_cache, mtn);
+	}
+	return (0);
+}
+
 
 void
 libzfs_mnttab_init(libzfs_handle_t *hdl)
@@ -656,7 +688,7 @@ libzfs_mnttab_init(libzfs_handle_t *hdl)
 	avl_create(&hdl->libzfs_mnttab_cache, libzfs_mnttab_cache_compare,
 	    sizeof (mnttab_node_t), offsetof(mnttab_node_t, mtn_node));
 
-    libzfs_mnttab_update(hdl);
+    libzfs_mnttab_update(hdl); //Do we need this?
 }
 
 void
@@ -771,6 +803,7 @@ libzfs_mnttab_root(const char *mountpoint)
 #endif
 }
 
+
 void
 libzfs_mnttab_add(libzfs_handle_t *hdl, const char *special,
     const char *mountp, const char *mntopts)
@@ -789,6 +822,7 @@ libzfs_mnttab_add(libzfs_handle_t *hdl, const char *special,
 		libzfs_mnttab_root(mountp);
 }
 
+
 void
 libzfs_mnttab_remove(libzfs_handle_t *hdl, const char *fsname)
 {
@@ -796,7 +830,7 @@ libzfs_mnttab_remove(libzfs_handle_t *hdl, const char *fsname)
 	mnttab_node_t *ret;
 
 	find.mtn_mt.mnt_special = (char *)fsname;
-	if ((ret = avl_find(&hdl->libzfs_mnttab_cache, (void *)&find, NULL))) {
+	if (ret = avl_find(&hdl->libzfs_mnttab_cache, (void *)&find, NULL)) {
 		avl_remove(&hdl->libzfs_mnttab_cache, ret);
 		free(ret->mtn_mt.mnt_special);
 		free(ret->mtn_mt.mnt_mountp);
@@ -1828,6 +1862,17 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 		mntopt_on = MNTOPT_NBMAND;
 		mntopt_off = MNTOPT_NONBMAND;
 		break;
+#ifdef __APPLE__
+	case ZFS_PROP_APPLE_BROWSE:
+		mntopt_on = MNTOPT_BROWSE;
+		mntopt_off = MNTOPT_NOBROWSE;
+		break;
+
+	case ZFS_PROP_APPLE_IGNOREOWNER:
+		mntopt_on = MNTOPT_NOOWNERS;
+		mntopt_off = MNTOPT_OWNERS; 
+		break;
+#endif
 	default:
 		break;
 	}
@@ -1848,6 +1893,7 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 			    entry.mnt_mntopts);
 			if (zhp->zfs_mntopts == NULL)
 				return (-1);
+			//printf("Found options: %s\n", zhp->zfs_mntopts);
 		}
 
 		zhp->zfs_mntcheck = B_TRUE;
@@ -1866,6 +1912,10 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 	case ZFS_PROP_SETUID:
 	case ZFS_PROP_XATTR:
 	case ZFS_PROP_NBMAND:
+#ifdef __APPLE__
+        case ZFS_PROP_APPLE_BROWSE:
+        case ZFS_PROP_APPLE_IGNOREOWNER:
+#endif
 		*val = getprop_uint64(zhp, prop, source);
 
 		if (received)
