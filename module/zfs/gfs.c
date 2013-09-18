@@ -167,10 +167,10 @@ gfs_make_opsvec(gfs_opsvec_t *vec)
  * inode number of the given vnode in preparation for calling gfs_readdir_init.
  */
 int
-gfs_get_parent_ino(vnode_t *dvp, cred_t *cr, caller_context_t *ct,
+gfs_get_parent_ino(struct vnode *dvp, cred_t *cr, caller_context_t *ct,
     ino64_t *pino, ino64_t *ino)
 {
-	vnode_t *parent;
+	struct vnode *parent;
 	gfs_dir_t *dp = vnode_fsnode(dvp);
 
 	*ino = dp->gfsd_file.gfs_ino;
@@ -442,7 +442,7 @@ gfs_readdir_fini(gfs_readdir_state_t *st, int error, int *eofp, int eof)
  * Performs a basic check for "." and ".." directory entries.
  */
 int
-gfs_lookup_dot(vnode_t **vpp, vnode_t *dvp, vnode_t *pvp, const char *nm)
+gfs_lookup_dot(struct vnode **vpp, struct vnode *dvp, struct vnode *pvp, const char *nm)
 {
 	if (*nm == '\0' || strcmp(nm, ".") == 0) {
 		VN_HOLD(dvp);
@@ -481,7 +481,7 @@ gfs_lookup_dot(vnode_t **vpp, vnode_t *dvp, vnode_t *pvp, const char *nm)
  * 	- Initialize necessary fields in the vnode
  * 	- Hold the parent
  */
-vnode_t *
+struct vnode *
 gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enum vtype type, int flags)
 {
 	gfs_file_t *fp;
@@ -539,8 +539,8 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 	/*
 	 * Initialize vnode and hold parent.
 	 */
-	if (pvp)
-		VN_HOLD(pvp);
+	//if (pvp)
+	//	VN_HOLD(pvp);
 
 	return (vp);
 }
@@ -570,12 +570,12 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
  *
  * This function also performs the same initialization as gfs_file_create().
  */
-vnode_t *
-gfs_dir_create(size_t struct_size, vnode_t *pvp, vfs_t *vfsp, vnodeops_t *ops,
+struct vnode *
+gfs_dir_create(size_t struct_size, struct vnode *pvp, vfs_t *vfsp, vnodeops_t *ops,
     gfs_dirent_t *entries, gfs_inode_cb inode_cb, int maxlen,
                gfs_readdir_cb readdir_cb, gfs_lookup_cb lookup_cb, int flags)
 {
-	vnode_t *vp;
+	struct vnode *vp;
 	gfs_dir_t *dp;
 	gfs_dirent_t *de;
 
@@ -613,23 +613,24 @@ gfs_dir_create(size_t struct_size, vnode_t *pvp, vfs_t *vfsp, vnodeops_t *ops,
  * gfs_root_create(): create a root vnode for a GFS filesystem
  *
  * Similar to gfs_dir_create(), this creates a root vnode for a filesystem.  The
- * only difference is that it takes a vfs_t instead of a vnode_t as its parent.
+ * only difference is that it takes a vfs_t instead of a struct vnode as its parent.
  */
-vnode_t *
+struct vnode *
 gfs_root_create(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino,
     gfs_dirent_t *entries, gfs_inode_cb inode_cb, int maxlen,
     gfs_readdir_cb readdir_cb, gfs_lookup_cb lookup_cb)
 {
-	vnode_t *vp;
+	struct vnode *vp;
 
 	VFS_HOLD(vfsp);
 	vp = gfs_dir_create(size, NULL, vfsp, ops, entries, inode_cb,
                         maxlen, readdir_cb, lookup_cb,
-                        ZFS_VNODE_SYSTEM);
+                        ZFS_VNODE_ROOT);
 	/* Manually set the inode */
 	((gfs_file_t *)vnode_fsnode(vp))->gfs_ino = ino;
 	//vp->v_flag |= VROOT;
     // FIXME
+    //vnode_setnoflush(vp);
 
 	return (vp);
 }
@@ -641,10 +642,10 @@ gfs_root_create(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino,
  * Similar to gfs_root_create(), this creates a root vnode for a file to
  * be the pseudo-filesystem.
  */
-vnode_t *
+struct vnode *
 gfs_root_create_file(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino)
 {
-	vnode_t	*vp = gfs_file_create(size, NULL, ops, VREG);
+	struct vnode	*vp = gfs_file_create(size, NULL, ops, VREG);
 
 	((gfs_file_t *)vnode_fsnode(vp))->gfs_ino = ino;
 
@@ -667,7 +668,7 @@ gfs_root_create_file(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino)
  * returned.  Otherwise, a pointer to the private data is returned.
  */
 void *
-gfs_file_inactive(vnode_t *vp)
+gfs_file_inactive(struct vnode *vp)
 {
 	int i;
 	gfs_dirent_t *ge = NULL;
@@ -729,6 +730,7 @@ found:
 	/*
 	 * Free vnode and release parent
 	 */
+    printf("freeing vp %p and parent %p\n", vp, fp->gfs_parent);
 	if (fp->gfs_parent) {
 		if (dp)
 			gfs_dir_unlock(dp);
@@ -752,7 +754,7 @@ found:
  * Same as above, but for directories.
  */
 void *
-gfs_dir_inactive(vnode_t *vp)
+gfs_dir_inactive(struct vnode *vp)
 {
 	gfs_dir_t *dp;
 
@@ -783,7 +785,7 @@ gfs_dir_inactive(vnode_t *vp)
  * callback, which is passed to this function as the first argument.
  * The arguments to the callback are:
  *
- * int gfs_lookup_cb(vnode_t *pvp, const char *nm, vnode_t **vpp, cred_t *cr,
+ * int gfs_lookup_cb(struct vnode *pvp, const char *nm, struct vnode **vpp, cred_t *cr,
  *     int flags, int *deflgs, pathname_t *rpnp);
  *
  *	pvp	- parent vnode
@@ -804,7 +806,7 @@ gfs_dir_inactive(vnode_t *vp)
  */
 static int
 gfs_dir_lookup_dynamic(gfs_lookup_cb callback, gfs_dir_t *dp,
-    const char *nm, vnode_t *dvp, vnode_t **vpp, cred_t *cr, int flags,
+    const char *nm, struct vnode *dvp, struct vnode **vpp, cred_t *cr, int flags,
     int *direntflags, pathname_t *realpnp)
 {
 	gfs_file_t *fp;
@@ -857,11 +859,11 @@ gfs_dir_lookup_dynamic(gfs_lookup_cb callback, gfs_dir_t *dp,
  */
 static int
 gfs_dir_lookup_static(int (*compare)(const char *, const char *),
-    gfs_dir_t *dp, const char *nm, vnode_t *dvp, int *idx,
-    vnode_t **vpp, pathname_t *rpnp)
+    gfs_dir_t *dp, const char *nm, struct vnode *dvp, int *idx,
+    struct vnode **vpp, pathname_t *rpnp)
 {
 	gfs_dirent_t *ge;
-	vnode_t *vp = NULL;
+	struct vnode *vp = NULL;
 	int i;
 
 	ASSERT(GFS_DIR_LOCKED(dp));
@@ -892,6 +894,7 @@ gfs_dir_lookup_static(int (*compare)(const char *, const char *),
 			 * for this entry, we discard the result in favor of
 			 * the cached vnode.
 			 */
+            printf("lookup_static\n");
 			gfs_dir_unlock(dp);
 			vp = ge->gfse_ctor(dvp);
 			gfs_dir_lock(dp);
@@ -914,7 +917,7 @@ gfs_dir_lookup_static(int (*compare)(const char *, const char *),
 					 * directory lock; its inactive routine
 					 * will try to lock this directory.
 					 */
-					vnode_t *oldvp = vp;
+					struct vnode *oldvp = vp;
 					vp = ge->gfse_vnode;
 					VN_HOLD(vp);
 
@@ -948,15 +951,17 @@ gfs_dir_lookup_static(int (*compare)(const char *, const char *),
  * This function returns 0 on success, non-zero on error.
  */
 int
-gfs_dir_lookup(vnode_t *dvp, const char *nm, vnode_t **vpp, cred_t *cr,
+gfs_dir_lookup(struct vnode *dvp, const char *nm, struct vnode **vpp, cred_t *cr,
     int flags, int *direntflags, pathname_t *realpnp)
 {
 	gfs_dir_t *dp = vnode_fsnode(dvp);
 	boolean_t casecheck;
-	vnode_t *dynvp = NULL;
-	vnode_t *vp = NULL;
+	struct vnode *dynvp = NULL;
+	struct vnode *vp = NULL;
 	int (*compare)(const char *, const char *);
 	int error, idx;
+
+    printf("gfs_dir_lookup\n");
 
 	ASSERT(dvp->v_type == VDIR);
 
@@ -989,10 +994,11 @@ gfs_dir_lookup(vnode_t *dvp, const char *nm, vnode_t **vpp, cred_t *cr,
 			}
 		}
 	}
-
+#if 0
 	if ((error || casecheck) && dp->gfsd_lookup)
 		error = gfs_dir_lookup_dynamic(dp->gfsd_lookup, dp, nm, dvp,
 		    &dynvp, cr, flags, direntflags, vp ? NULL : realpnp);
+#endif
 
 	if (vp && dynvp) {
 		/* static and dynamic entries are case-insensitive conflict */
@@ -1030,7 +1036,7 @@ out:
  * specified.  This avoids having to create every vnode and call VOP_GETATTR()
  * when reading the directory.  This function has the following arguments:
  *
- *	ino_t gfs_inode_cb(vnode_t *vp, int index);
+ *	ino_t gfs_inode_cb(struct vnode *vp, int index);
  *
  * 	vp	- vnode for the directory
  * 	index	- index in original gfs_dirent_t array
@@ -1041,7 +1047,7 @@ out:
  * This is significantly more complex, thanks to the particulars of
  * VOP_READDIR().
  *
- *	int gfs_readdir_cb(vnode_t *vp, void *dp, int *eofp,
+ *	int gfs_readdir_cb(struct vnode *vp, void *dp, int *eofp,
  *	    offset_t *off, offset_t *nextoff, void *data, int flags)
  *
  *	vp	- directory vnode
@@ -1062,7 +1068,7 @@ out:
  *	Return 0 on success, or error on failure.
  */
 int
-gfs_dir_readdir(vnode_t *dvp, uio_t *uiop, int *eofp, int *ncookies,
+gfs_dir_readdir(struct vnode *dvp, uio_t *uiop, int *eofp, int *ncookies,
     u_long **cookies, void *data, cred_t *cr, int flags)
 {
 	gfs_readdir_state_t gstate;
@@ -1125,8 +1131,8 @@ gfs_dir_readdir(vnode_t *dvp, uio_t *uiop, int *eofp, int *ncookies,
  */
 /* ARGSUSED */
 int
-gfs_vop_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, pathname_t *pnp,
-    int flags, vnode_t *rdir, cred_t *cr, caller_context_t *ct,
+gfs_vop_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *pnp,
+    int flags, struct vnode *rdir, cred_t *cr, caller_context_t *ct,
     int *direntflags, pathname_t *realpnp)
 {
 	return (gfs_dir_lookup(dvp, nm, vpp, cr, flags, direntflags, realpnp));
@@ -1150,7 +1156,7 @@ gfs_vop_readdir(ap)
 		u_long **a_cookies;
 	} */ *ap;
 {
-	vnode_t *vp = ap->a_vp;
+	struct vnode *vp = ap->a_vp;
 	struct uio *uiop = ap->a_uio;
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
 	int *eofp = ap->a_eofflag;
@@ -1227,7 +1233,7 @@ gfs_vop_readdir(ap)
  */
 /* ARGSUSED */
 int
-gfs_vop_map(vnode_t *vp, offset_t off, struct as *as, caddr_t *addrp,
+gfs_vop_map(struct vnode *vp, offset_t off, struct as *as, caddr_t *addrp,
     size_t len, uchar_t prot, uchar_t maxprot, uint_t flags, cred_t *cred,
     caller_context_t *ct)
 {
@@ -1303,21 +1309,23 @@ gfs_vop_inactive(ap)
 		struct thread *a_td;
 	} */ *ap;
 {
-	vnode_t *vp = ap->a_vp;
+	struct vnode *vp = ap->a_vp;
 	gfs_file_t *fp = vnode_fsnode(vp);
 
     printf("+gfs_vop_inactive\n");
 
     if (!fp) return 0;
-
+#if 1
 	if (fp->gfs_type == GFS_DIR)
 		gfs_dir_inactive(vp);
 	else
 		gfs_file_inactive(vp);
+#endif
 
 	VI_LOCK(vp);
 
-    //vnode_recycle(vp);
+    vnode_clearfsnode(vp);
+    vnode_recycle(vp);
 	VI_UNLOCK(vp);
 	kmem_free(fp, fp->gfs_size);
 

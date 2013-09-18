@@ -2489,10 +2489,12 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 #ifndef __OPPLE__
 	if (zfsvfs->z_ctldir != NULL) {
         dprintf("z_ctldir check\n");
+
 		if ((ret = zfsctl_umount_snapshots(zfsvfs->z_vfs, 0 /*fflag*/, cr)) != 0)
 			return (ret);
+
         dprintf("vflush 1\n");
-        ret = vflush(zfsvfs->z_ctldir, NULLVP, (mntflags & MNT_FORCE) ? FORCECLOSE : 0|SKIPSYSTEM);
+        ret = vflush(zfsvfs->z_vfs, zfsvfs->z_ctldir, (mntflags & MNT_FORCE) ? FORCECLOSE : 0|SKIPSYSTEM);
 		//ret = vflush(zfsvfs->z_vfs, NULLVP, 0);
 		//ASSERT(ret == EBUSY);
 		if (!(mntflags & MNT_FORCE)) {
@@ -2527,8 +2529,8 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
     printf("after flush 2\n");
 	if (ret != 0) {
 		if (!zfsvfs->z_issnap) {
-			zfsctl_create(zfsvfs);
-			ASSERT(zfsvfs->z_ctldir != NULL);
+			//zfsctl_create(zfsvfs);
+			//ASSERT(zfsvfs->z_ctldir != NULL);
 		}
 		return (ret);
 	}

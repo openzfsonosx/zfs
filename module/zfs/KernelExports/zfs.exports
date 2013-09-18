@@ -8,3 +8,5 @@ _hostname
 _vm_page_free_count
 _vm_page_speculative_count
 _VFS_ROOT
+_vnode_setnoflush
+_vnode_clearnoflush

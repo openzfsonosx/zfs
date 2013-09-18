@@ -523,7 +523,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
                              NULL, NULL, 0, B_FALSE);
                 strcat(mountpoint, "/.zfs/snapshot/");
                 strcat(mountpoint, &r[1]);
-                strcpy(mountpoint, "/mnt");
+                //                strcpy(mountpoint, "/mnt");
                 fprintf(stderr, "New mountpoint '%s'\n", mountpoint);
                 free(parent_name);
                 zfs_close(zhp_parent);
