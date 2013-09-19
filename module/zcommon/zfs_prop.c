@@ -409,6 +409,7 @@ zfs_prop_init(void)
 
 #ifdef __APPLE__
     /* Apple specific properties */
+
 	zprop_register_index(ZFS_PROP_APPLE_BROWSE, "com.apple.browse", 1,PROP_INHERIT,
         ZFS_TYPE_FILESYSTEM, "on | off", "COM.APPLE.BROWSE", boolean_table);
 	zprop_register_index(ZFS_PROP_APPLE_IGNOREOWNER, "com.apple.ignoreowner", 0, PROP_INHERIT,

@@ -69,10 +69,12 @@
 #include <strings.h>
 #include <unistd.h>
 #include <zone.h>
-#include <sys/mntent.h>
+#include <mntent.h>
+//#include <sys/mntent.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <libzfs.h>
+#include <sys/mnttab.h>
 
 #include "libzfs_impl.h"
 
@@ -402,6 +404,7 @@ zfs_add_option(zfs_handle_t *zhp, char *options, int len,
 }
 #endif
 
+#if 0
 static int
 zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
 {
@@ -410,27 +413,152 @@ zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
 	uint64_t value;
 
 	value = getprop_uint64(zhp, ZFS_PROP_ATIME, &source);
-    if (!value) *flags |= MNT_NOATIME;
+    if (!value) *flags |=  MNT_NOATIME;
+    else        *flags &= ~MNT_NOATIME;
 	value = getprop_uint64(zhp, ZFS_PROP_DEVICES, &source);
-    if (!value) *flags |= MNT_NODEV;
+    if (!value) *flags |=  MNT_NODEV;
+    else        *flags &= ~MNT_NODEV;
 	value = getprop_uint64(zhp, ZFS_PROP_EXEC, &source);
-    if (!value) *flags |= MNT_NOEXEC;
+    if (!value) *flags |=  MNT_NOEXEC;
+    else        *flags &= ~MNT_NOEXEC;
 	value = getprop_uint64(zhp, ZFS_PROP_READONLY, &source);
-    if (value) *flags |= MNT_RDONLY;
+    if (value)  *flags |=  MNT_RDONLY;
+    else        *flags &= ~MNT_RDONLY;
 	value = getprop_uint64(zhp, ZFS_PROP_SETUID, &source);
-    if (!value) *flags |= MNT_NOSUID;
+    if (!value) *flags |=  MNT_NOSUID;
+    else        *flags &= ~MNT_NOSUID;
 	value = getprop_uint64(zhp, ZFS_PROP_XATTR, &source);
-    if (!value) *flags |= MNT_NOUSERXATTR;
+    if (!value) *flags |=  MNT_NOUSERXATTR;
+    else        *flags &= ~MNT_NOUSERXATTR;
 	value = getprop_uint64(zhp, ZFS_PROP_APPLE_BROWSE, &source);
-    if (!value) *flags |= MNT_DONTBROWSE;
+    if (!value) *flags |=  MNT_DONTBROWSE;
+    else        *flags &= ~MNT_DONTBROWSE;
         value = getprop_uint64(zhp, ZFS_PROP_APPLE_IGNOREOWNER, &source);
-    if (value) *flags |= MNT_IGNORE_OWNERSHIP;
+    if (value)  *flags |=  MNT_IGNORE_OWNERSHIP;
+    else        *flags &= ~MNT_IGNORE_OWNERSHIP;
 	
     /*
 	value = getprop_uint64(zhp, ZFS_PROP_NBMAND, &source);
     if (!value) *flags |= MNT_NOXATTR;
     */
 
+	return (error);
+}
+#endif
+
+
+static int
+zfs_add_option(zfs_handle_t *zhp, char *options, uint64_t *flags, zfs_prop_t prop, uint64_t mnt_flag_const, char *on, char* off, int inverted)
+{
+	char *source;
+	uint64_t value;
+
+	//printf("zhp %p : options %s : *flags %llx : mnt_flag_const %llx : on %s : off %s : inverted %d\n", zhp, options, *flags, mnt_flag_const, on, off, inverted);
+
+	if ((strstr(options, on) != NULL) || (strstr(options, off) != NULL))
+		return (0);
+
+	value = getprop_uint64(zhp, prop, &source);
+	if (value && !inverted) {
+		*flags |= mnt_flag_const;
+	} else if (value && inverted) {
+		*flags &= ~mnt_flag_const;
+	} else if (!value && !inverted) {
+		*flags &= ~mnt_flag_const;
+	} else if (!value && inverted) {
+		*flags |= mnt_flag_const;
+	}
+
+	return(0);
+}
+
+
+static int
+option_into_flags(char *optstr, uint64_t *flagsptr)
+{
+	int error = 0;
+	if (!flagsptr || !optstr) return -1;
+
+	if (strcmp(optstr, MNTOPT_RO) == 0) {
+		*flagsptr |=  MNT_RDONLY;
+	} else if (strcmp(optstr, MNTOPT_RW) == 0) {
+		*flagsptr &= ~MNT_RDONLY;
+	} else if (strcmp(optstr, MNTOPT_NOSUID) == 0) {
+		*flagsptr |=  MNT_NOSUID;
+	} else if (strcmp(optstr, MNTOPT_SUID) == 0) {
+		*flagsptr &= ~MNT_NOSUID;
+	} else if (strcmp(optstr, MNTOPT_UPDATE) == 0) {
+		*flagsptr |=  MNT_UPDATE;
+	} else if (strcmp(optstr, MNTOPT_NOUPDATE) == 0) {
+		*flagsptr &= ~MNT_UPDATE;
+	} else if (strcmp(optstr, MNTOPT_NOATIME) == 0) {
+		*flagsptr |=  MNT_NOATIME;
+	} else if (strcmp(optstr, MNTOPT_ATIME) == 0) {
+		*flagsptr &= ~MNT_NOATIME;
+	} else if (strcmp(optstr, MNTOPT_NOXATTR) == 0) {
+		*flagsptr |=  MNT_NOUSERXATTR;
+	} else if (strcmp(optstr, MNTOPT_XATTR) == 0) {
+		*flagsptr &= ~MNT_NOUSERXATTR;
+	} else if (strcmp(optstr, MNTOPT_NOEXEC) == 0) {
+		*flagsptr |=  MNT_NOEXEC;
+	} else if (strcmp(optstr, MNTOPT_EXEC) == 0) {
+		*flagsptr &= ~MNT_NOEXEC;
+	} else if (strcmp(optstr, MNTOPT_NOBROWSE) == 0) {
+		*flagsptr |=  MNT_DONTBROWSE;
+	} else if (strcmp(optstr, MNTOPT_BROWSE) == 0) {
+		*flagsptr &= ~MNT_DONTBROWSE;
+	} else if (strcmp(optstr, MNTOPT_NOOWNERS) == 0) {
+		*flagsptr |=  MNT_IGNORE_OWNERSHIP;
+	} else if (strcmp(optstr, MNTOPT_OWNERS) == 0) {
+		*flagsptr &= ~MNT_IGNORE_OWNERSHIP;
+	} else if (strcmp(optstr, MNTOPT_NODEVICES) == 0) {
+		*flagsptr |= MNT_NODEV;
+	} else if (strcmp(optstr, MNTOPT_DEVICES) == 0) {
+		*flagsptr &= ~MNT_NODEV;
+	} else {
+		printf("unrecognized option: %s\n", optstr);
+	}
+	return error;
+}
+
+static int
+options_into_flags(char *optsptr, uint64_t *flagsptr)
+{
+	int error = 0;
+	if (!flagsptr) return -1;
+	if (!optsptr) return -1;
+	char *optsstr = "";
+	char *p = "";
+	if (optsptr) optsstr = strdup(optsptr);
+	assert(optsstr != NULL);
+
+	p = optsstr;
+	for (char *token = NULL; p != '\0' ; ) {
+		token=strsep(&p, ",/ ");
+		if (token) option_into_flags(token, flagsptr);
+	}
+	if(optsstr) free(optsstr);
+	return error;
+}
+
+static int
+zfs_add_options(zfs_handle_t *zhp, char *options, uint64_t *flags)
+{
+	int error = 0;
+
+	if((!options) || strcmp(options, "") == 0) return 0;
+
+	error = options_into_flags(options, flags);
+
+	error = error ? error : zfs_add_option(zhp, options, flags, ZFS_PROP_ATIME, MNT_NOATIME, MNTOPT_ATIME, MNTOPT_NOATIME, 1);
+	error = error ? error : zfs_add_option(zhp, options, flags, ZFS_PROP_DEVICES, MNT_NODEV, MNTOPT_DEVICES, MNTOPT_NODEVICES, 1);
+	error = error ? error : zfs_add_option(zhp, options, flags, ZFS_PROP_EXEC, MNT_NOEXEC, MNTOPT_EXEC, MNTOPT_NOEXEC, 1);
+	error = error ? error : zfs_add_option(zhp, options, flags, ZFS_PROP_READONLY, MNT_RDONLY, MNTOPT_RO, MNTOPT_RW, 0);
+	error = error ? error : zfs_add_option(zhp, options, flags, ZFS_PROP_SETUID, MNT_NOSUID, MNTOPT_SUID, MNTOPT_NOSUID, 1);
+	error = error ? error : zfs_add_option(zhp, options, flags, ZFS_PROP_XATTR, MNT_NOUSERXATTR, MNTOPT_XATTR, MNTOPT_NOXATTR, 1);
+	error = error ? error : zfs_add_option(zhp, options, flags, ZFS_PROP_APPLE_BROWSE, MNT_DONTBROWSE, MNTOPT_BROWSE, MNTOPT_NOBROWSE, 1);
+	error = error ? error : zfs_add_option(zhp, options, flags, ZFS_PROP_APPLE_IGNOREOWNER, MNT_IGNORE_OWNERSHIP, MNTOPT_OWNERS, MNTOPT_NOOWNERS, 0 );
+	
 	return (error);
 }
 
@@ -440,8 +568,9 @@ zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
  * 'flags' appears pretty much always 0 here.
  */
 int
-zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
+zfs_mount(zfs_handle_t *zhp, const char *options, int a_flags)
 {
+	uint64_t flags = (uint64_t)a_flags;
 	struct stat buf;
 	char mountpoint[ZFS_MAXPROPLEN];
 	char mntopts[MNT_LINE_MAX];
@@ -453,7 +582,8 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #endif
 
 	if (options == NULL) {
-		(void) strlcpy(mntopts, MNTOPT_DEFAULTS, sizeof (mntopts));
+		//(void) strlcpy(mntopts, MNTOPT_DEFAULTS, sizeof (mntopts));
+		mntopts[0] = '\0';
 	} else {
 		(void) strlcpy(mntopts, options, sizeof (mntopts));
 	}
@@ -469,8 +599,10 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 		(void) strlcat(mntopts, "," MNTOPT_RO, sizeof (mntopts));
 #endif
 #ifdef __APPLE__
-	if (zpool_get_prop_int(zhp->zpool_hdl, ZPOOL_PROP_READONLY, NULL))
+	if (zpool_get_prop_int(zhp->zpool_hdl, ZPOOL_PROP_READONLY, NULL)) {
 		flags |= MNT_RDONLY;
+		(void) strlcat(mntopts, "," MNTOPT_RO, sizeof (mntopts));
+	}
 #endif
 
 
@@ -481,7 +613,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	 * given a super block there is no back reference to update the per
 	 * mount point options.
 	 */
-	rc = zfs_add_options(zhp, &flags);
+	rc = zfs_add_options(zhp, mntopts, &flags);
 	if (rc) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "default options unavailable"));
@@ -489,7 +621,12 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 		    dgettext(TEXT_DOMAIN, "cannot mount '%s'"),
 		    mountpoint));
 	}
-
+	
+	struct statfs m_statfs;
+	struct mnttab m_mnttab;
+	m_statfs.f_flags=flags;
+	statfs2mnttab(&m_statfs, &m_mnttab);
+	strlcpy(mntopts, m_mnttab.mnt_mntopts, sizeof (mntopts));
 	/*
 	 * Append zfsutil option so the mount helper allow the mount
 	 */
@@ -583,6 +720,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 		libzfs_mnttab_remove(hdl, zhp->zfs_name);
 
 	/* add the mounted entry into our cache */
+	libzfs_mnttab_update(hdl);
 	libzfs_mnttab_add(hdl, zfs_get_name(zhp), mountpoint, mntopts);
 	return (0);
 }

@@ -320,10 +320,14 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 		OPTADD(MNTOPT_RO);
 	else
 		OPTADD(MNTOPT_RW);
+	if (flags & MNT_NODEV)
+		OPTADD(MNTOPT_NODEVICES);
+	else
+		OPTADD(MNTOPT_DEVICES);
 	if (flags & MNT_NOSUID)
 		OPTADD(MNTOPT_NOSUID);
 	else
-		OPTADD(MNTOPT_SETUID);
+		OPTADD(MNTOPT_SUID);
 	if (flags & MNT_UPDATE)
 		OPTADD(MNTOPT_REMOUNT);
 	if (flags & MNT_NOATIME)
@@ -376,14 +380,14 @@ statfs_init(void)
 	allfs = getfsstat(NULL, 0, MNT_WAIT);
 	if (allfs == -1)
 		goto fail;
-	gsfs = malloc(sizeof(gsfs[0]) * allfs * 2);
+	gsfs = (struct statfs *)malloc(sizeof(gsfs[0]) * allfs * 2);
 	if (gsfs == NULL)
 		goto fail;
 	allfs = getfsstat(gsfs, (long)(sizeof(gsfs[0]) * allfs * 2),
                       MNT_WAIT);
 	if (allfs == -1)
 		goto fail;
-	sfs = realloc(gsfs, allfs * sizeof(gsfs[0]));
+	sfs = (struct statfs *)realloc(gsfs, allfs * sizeof(gsfs[0]));
 	if (sfs != NULL)
 		gsfs = sfs;
 	return (0);
@@ -442,7 +446,9 @@ getmntent(FILE *fp, struct mnttab *mp)
 	}
 	if (nfs >= allfs)
 		return (-1);
+	//printf("&gsfs[nfs]->f_flags is %llx\n", (&gsfs[nfs])->f_flags);
 	statfs2mnttab(&gsfs[nfs], mp);
+	//printf("getmntent : mp->mnt_mntopts is %s\n", mp->mnt_mntopts);
 	if (lseek(fileno(fp), 1, SEEK_CUR) == -1)
 		return (errno);
 	return (0);

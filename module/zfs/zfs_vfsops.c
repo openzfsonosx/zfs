@@ -674,9 +674,9 @@ zfs_register_callbacks(struct mount *vfsp)
 	if (error)
 		goto unregister;
 
-	if (do_readonly)
-		readonly_changed_cb(zfsvfs, readonly);
-#if 0
+	//if (do_readonly)
+	//	readonly_changed_cb(zfsvfs, readonly);
+//#if 0
 	/*
 	 * Invoke our callbacks to restore temporary mount options.
 	 */
@@ -696,7 +696,7 @@ zfs_register_callbacks(struct mount *vfsp)
 		ignoreowner_changed_cb(zfsvfs, ignoreowner);
 
 	nbmand_changed_cb(zfsvfs, nbmand);
-#endif
+//#endif
 
 	return (0);
 
@@ -1874,6 +1874,10 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
     dprintf("vfs_mount: options %04x path '%s'\n",
             mnt_args.flags, mnt_args.fspec);
+
+   //OS X discards the NOUSERXATTR flag, so restore it. What other flags does OS X discard?
+   vfs_setflags(vfsp, mnt_args.flags);
+
 #endif
 
 #ifdef illumos

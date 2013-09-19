@@ -674,7 +674,6 @@ libzfs_mnttab_update(libzfs_handle_t *hdl)
 		mtn->mtn_mt.mnt_mountp = zfs_strdup(hdl, entry.mnt_mountp);
 		mtn->mtn_mt.mnt_fstype = zfs_strdup(hdl, entry.mnt_fstype);
 		mtn->mtn_mt.mnt_mntopts = zfs_strdup(hdl, entry.mnt_mntopts);
-		//printf("entry.mnt_mntopts is %s\n", entry.mnt_mntopts);
 		avl_add(&hdl->libzfs_mnttab_cache, mtn);
 	}
 	return (0);
@@ -688,7 +687,7 @@ libzfs_mnttab_init(libzfs_handle_t *hdl)
 	avl_create(&hdl->libzfs_mnttab_cache, libzfs_mnttab_cache_compare,
 	    sizeof (mnttab_node_t), offsetof(mnttab_node_t, mtn_node));
 
-    libzfs_mnttab_update(hdl); //Do we need this?
+//    libzfs_mnttab_update(hdl); //Do we need this?
 }
 
 void
@@ -721,7 +720,6 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 	mnttab_node_t find;
 	mnttab_node_t *mtn;
 	int error;
-
 	if (!hdl->libzfs_mnttab_enable) {
 		struct mnttab srch = { 0 };
 
@@ -751,6 +749,7 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 		return (0);
 	}
 	return (ENOENT);
+
 }
 
 static void
@@ -818,8 +817,8 @@ libzfs_mnttab_add(libzfs_handle_t *hdl, const char *special,
 		mtn->mtn_mt.mnt_mntopts = zfs_strdup(hdl, mntopts);
 	avl_add(&hdl->libzfs_mnttab_cache, mtn);
 
-	if (strcmp(mountp, "/") == 0)
-		libzfs_mnttab_root(mountp);
+	//if (strcmp(mountp, "/") == 0)
+	//	libzfs_mnttab_root(mountp);
 }
 
 
@@ -1505,7 +1504,7 @@ zfs_is_namespace_prop(zfs_prop_t prop)
 	case ZFS_PROP_SETUID:
 	case ZFS_PROP_READONLY:
 	case ZFS_PROP_XATTR:
-	case ZFS_PROP_NBMAND:
+	//case ZFS_PROP_NBMAND:
 		return (B_TRUE);
 
 	default:
@@ -1849,8 +1848,8 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 		break;
 
 	case ZFS_PROP_SETUID:
-		mntopt_on = MNTOPT_SETUID;
-		mntopt_off = MNTOPT_NOSETUID;
+		mntopt_on = MNTOPT_SUID;
+		mntopt_off = MNTOPT_NOSUID;
 		break;
 
 	case ZFS_PROP_XATTR:
@@ -1893,7 +1892,6 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 			    entry.mnt_mntopts);
 			if (zhp->zfs_mntopts == NULL)
 				return (-1);
-			//printf("Found options: %s\n", zhp->zfs_mntopts);
 		}
 
 		zhp->zfs_mntcheck = B_TRUE;
@@ -1911,7 +1909,7 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 	case ZFS_PROP_READONLY:
 	case ZFS_PROP_SETUID:
 	case ZFS_PROP_XATTR:
-	case ZFS_PROP_NBMAND:
+//	case ZFS_PROP_NBMAND:
 #ifdef __APPLE__
         case ZFS_PROP_APPLE_BROWSE:
         case ZFS_PROP_APPLE_IGNOREOWNER:

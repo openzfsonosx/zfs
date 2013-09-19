@@ -54,6 +54,7 @@ extern "C" {
 #define	MNTTYPE_AUTOFS	"autofs"	/* Automounter ``file'' system */
 #define	MNTTYPE_MNTFS	"mntfs"		/* In-kernel mnttab */
 #define	MNTTYPE_DEV	"dev"		/* /dev file system */
+#define	MNTTYPE_NODEV	"nodev"		/* /dev file system */
 #define	MNTTYPE_CTFS	"ctfs"		/* Contract file system */
 #define	MNTTYPE_OBJFS	"objfs"		/* Kernel object file system */
 #define	MNTTYPE_SHAREFS	"sharefs"	/* Kernel sharetab file system */
@@ -61,6 +62,7 @@ extern "C" {
 
 #define	MNTOPT_RO	"ro"		/* Read only */
 #define	MNTOPT_RW	"rw"		/* Read/write */
+#define MNTOPT_RDONLY   "rdonly"	/* Read only */
 #define	MNTOPT_RQ	"rq"		/* Read/write with quotas */
 #define	MNTOPT_QUOTA	"quota"		/* Check quotas */
 #define	MNTOPT_NOQUOTA	"noquota"	/* Don't check quotas */
@@ -70,8 +72,8 @@ extern "C" {
 #define	MNTOPT_HARD	"hard"		/* Hard mount */
 #define	MNTOPT_SUID	"suid"		/* Both setuid and devices allowed */
 #define	MNTOPT_NOSUID	"nosuid"	/* Neither setuid nor devices allowed */
-#define	MNTOPT_DEVICES	"devices"	/* Device-special allowed */
-#define	MNTOPT_NODEVICES	"nodevices"	/* Device-special disallowed */
+#define	MNTOPT_DEVICES	"dev"	/* Device-special allowed */
+#define	MNTOPT_NODEVICES	"nodev"	/* Device-special disallowed */
 #define	MNTOPT_SETUID	"setuid"	/* Set uid allowed */
 #define	MNTOPT_NOSETUID	"nosetuid"	/* Set uid not allowed */
 #define	MNTOPT_GRPID	"grpid"		/* SysV-compatible gid on create */
@@ -134,6 +136,15 @@ extern "C" {
 #define	MNTOPT_NOBROWSE	"nobrowse"	/* non-browsable autofs mount */
 #define MNTOPT_OWNERS	"owners"	/* VFS will not ignore ownership information on filesystem objects */
 #define MNTOPT_NOOWNERS	"noowners"	/* VFS will ignore ownership information on filesystem objects */
+#define MNTOPT_UPDATE   "update"        /**/
+#define MNTOPT_NOUPDATE "noupdate"      /**/
+
+#define MOUNT_FILEIO    0x10            /* Error updating/locking /etc/mtab */
+#define MOUNT_USER      0x08            /* Interrupted by user (EINTR) */
+#define MOUNT_SOFTWARE  0x04            /* Internal mount bug */
+#define MOUNT_SYSERR    0x02            /* System error (ENOMEM, etc) */
+#define MOUNT_USAGE     0x01            /* Invalid invocation or permissions */
+
 
 #ifdef	__cplusplus
 }
