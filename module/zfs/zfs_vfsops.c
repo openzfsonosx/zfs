@@ -2486,7 +2486,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	 * Unmount any snapshots mounted under .zfs before unmounting the
 	 * dataset itself.
 	 */
-#ifndef __OPPLE__
 	if (zfsvfs->z_ctldir != NULL) {
         dprintf("z_ctldir check\n");
 
@@ -2520,7 +2519,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		zfsvfs->z_unmounted = B_TRUE;
 		rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
 	}
-#endif
 
 	/*
 	 * Flush all the files.

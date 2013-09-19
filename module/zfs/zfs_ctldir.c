@@ -225,9 +225,9 @@ traverse(struct vnode **cvpp, int lktype)
          * tvp is NULL for *cvpp vnode, which we can't unlock.
          */
         if (tvp != NULL)
-            VN_RELE(cvp);
+            VN_RELE(cvp); // vput
         else
-            VN_RELE(cvp);
+            vnode_rele(cvp); // vrele
         if (error)
             return (error);
 
@@ -245,6 +245,12 @@ traverse(struct vnode **cvpp, int lktype)
         vfs_unbusy(vfsp);
         if (error != 0)
             return (error);
+
+        if (tvp == cvp) {
+            printf("loop detected, abort\n");
+            break;
+        }
+
         cvp = tvp;
     }
 
@@ -702,10 +708,13 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
 
 	if (strcmp(nm, "..") == 0) {
         //err = zfs_vfs_root(vnode_mount(dvp), vpp, NULL);
+#if 1
         err = VFS_ROOT(vnode_mount(dvp), LK_EXCLUSIVE, vpp);
-        //err = zfs_vfs_root(zfsvfs->z_vfs, vpp, NULL);
+#else
+        err = zfs_vfs_root(zfsvfs->z_vfs, vpp, NULL);
 		if (err == 0)
 			VN_RELE(*vpp);
+#endif
         //VOP_UNLOCK(*vpp, 0);
 	} else {
 		err = gfs_vop_lookup(dvp, nm, vpp, pnp, flags, rdir,
@@ -1979,12 +1988,20 @@ static struct vop_vector zfsctl_ops_snapshot = {
 static struct vnodeopv_entry_desc zfsctl_ops_snapshot_template[] = {
 	{&vnop_default_desc, 	(VOPFUNC)vn_default_error },
 	{&vnop_inactive_desc,	(VOPFUNC)zfsctl_snapshot_inactive},
-	//{&vnop_lookup_desc,	    (VOPFUNC)zfsctl_snapshot_lookup},
 	{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
 
-
-    // Special helpers for mounting to occur
+    /*
+     * In normal ZFS, the ".zfs/snashot/snap", the "snap" is immediately
+     * mounted over, so these vnodeops are not used. But in OSX, since we
+     * are unable to mount from the kernel, we need to define enough vnodeops
+     * such that userland mount call will succeed.
+     */
 	{&vnop_getattr_desc,	(VOPFUNC)zfsctl_root_getattr},
+    {&vnop_revoke_desc,     (VOPFUNC)err_revoke },
+    {&vnop_fsync_desc,      (VOPFUNC)nop_fsync },
+
+	{&vnop_lookup_desc,	(VOPFUNC)zfsctl_freebsd_root_lookup},
+
 
 	{NULL, (VOPFUNC)NULL }
 };
