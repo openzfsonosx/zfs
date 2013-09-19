@@ -425,6 +425,7 @@ static int
 zfsctl_common_open(struct vnop_open_args *ap)
 {
 	int flags = ap->a_mode;
+    printf("zfsctl_open\n");
 
 	if (flags & FWRITE)
 		return (EACCES);
@@ -456,6 +457,7 @@ zfsctl_common_access(ap)
 	} */ *ap;
 {
 	int accmode = ap->a_action;
+    printf("zfsctl_access\n");
 
 #ifdef TODO
 	if (flags & V_ACE_MASK) {
@@ -659,6 +661,7 @@ zfsctl_root_getattr(ap)
 	vap->va_ctime = vap->va_ctime;
 
 	zfsctl_common_getattr(vp, vap);
+
 	ZFS_EXIT(zfsvfs);
 
     printf("zfsctl: -root_getattr\n");
@@ -1311,16 +1314,17 @@ domount:
 #endif
 #ifdef __APPLE__
 
-    vnode_put(*vpp);
+    vnode_put(*vpp); // VN_HOLD
+    vnode_put(*vpp); // vnode_create
 
     printf("Would call mount here on '%s' for '%s'\n", mountpoint, snapname);
 
 
-	*vpp = gfs_dir_create(sizeof (zfsctl_snapdir_t), dvp, vnode_mount(dvp),
+	//*vpp = gfs_dir_create(sizeof (zfsctl_snapdir_t), dvp, vnode_mount(dvp),
     //     zfsctl_ops_root_dvnodeops, ZFSCTL_INO_ROOT, zfsctl_root_entries,
     //     zfsctl_root_inode_cb, MAXNAMELEN, NULL, NULL);
-      zfsctl_ops_snapdir_dvnodeops, NULL, NULL, MAXNAMELEN,
-      zfsctl_snapdir_readdir_cb, NULL, 0);
+    //                    zfsctl_ops_snapdir_dvnodeops, NULL, NULL, MAXNAMELEN,
+    //                    zfsctl_snapdir_readdir_cb, NULL, 0);
 
 #endif
 
@@ -1605,6 +1609,7 @@ zfsctl_snapdir_inactive(ap)
 	zfsctl_snapdir_t *sdp = vnode_fsnode(vp);
 	zfs_snapentry_t *sep;
 
+    printf("zfsctl_snapdir_inactive\n");
 	/*
 	 * On forced unmount we have to free snapshots from here.
 	 */
@@ -1770,6 +1775,8 @@ zfsctl_snapshot_inactive(ap)
 	int locked;
 	struct vnode *dvp;
 
+    printf("zfsctl_snapshot_inacive\n");
+
 	if (vnode_isinuse(vp,1))
 		goto end;
 
@@ -1899,6 +1906,8 @@ zfsctl_snapshot_lookup(ap)
 	ASSERT(dvp->v_type == VDIR);
 	ASSERT(zfsvfs->z_ctldir != NULL);
 
+    printf("zfsctl_snapshot_lookup 'snapshot'\n");
+
 	error = zfsctl_root_lookup(zfsvfs->z_ctldir, "snapshot", vpp,
 	    NULL, 0, NULL, cr, NULL, NULL, NULL);
 	if (error == 0)
@@ -1972,7 +1981,11 @@ static struct vnodeopv_entry_desc zfsctl_ops_snapshot_template[] = {
 	{&vnop_inactive_desc,	(VOPFUNC)zfsctl_snapshot_inactive},
 	//{&vnop_lookup_desc,	    (VOPFUNC)zfsctl_snapshot_lookup},
 	{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
-	//{&vnop_getattr_desc,	(VOPFUNC)zfsctl_snapshot_getattr},
+
+
+    // Special helpers for mounting to occur
+	{&vnop_getattr_desc,	(VOPFUNC)zfsctl_root_getattr},
+
 	{NULL, (VOPFUNC)NULL }
 };
 struct vnodeopv_desc zfsctl_ops_snapshot =

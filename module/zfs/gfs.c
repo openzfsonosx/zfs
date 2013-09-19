@@ -735,7 +735,7 @@ found:
 		if (dp)
 			gfs_dir_unlock(dp);
 		VOP_UNLOCK(vp, 0);
-		VN_RELE(fp->gfs_parent);
+        //		VN_RELE(fp->gfs_parent);
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	} else {
 		ASSERT(vp->v_vfsp != NULL);
