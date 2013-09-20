@@ -62,7 +62,8 @@ extern "C" {
 
 #define	MNTOPT_RO	"ro"		/* Read only */
 #define	MNTOPT_RW	"rw"		/* Read/write */
-#define MNTOPT_RDONLY   "rdonly"	/* Read only */
+#define	MNTOPT_RDONLY	"rdonly"	/* Read only */
+#define	MNTOPT_READONLY	"readonly"	/* Read only */
 #define	MNTOPT_RQ	"rq"		/* Read/write with quotas */
 #define	MNTOPT_QUOTA	"quota"		/* Check quotas */
 #define	MNTOPT_NOQUOTA	"noquota"	/* Don't check quotas */
@@ -72,8 +73,10 @@ extern "C" {
 #define	MNTOPT_HARD	"hard"		/* Hard mount */
 #define	MNTOPT_SUID	"suid"		/* Both setuid and devices allowed */
 #define	MNTOPT_NOSUID	"nosuid"	/* Neither setuid nor devices allowed */
-#define	MNTOPT_DEVICES	"dev"	/* Device-special allowed */
-#define	MNTOPT_NODEVICES	"nodev"	/* Device-special disallowed */
+#define MNTOPT_DEVICES	"devices"	/* Device-special allowed */
+#define MNTOPT_NODEVICES "nodevices"	/* Device-special disallowed */
+#define	MNTOPT_DEV	"dev"		/* Device-special allowed */
+#define	MNTOPT_NODEV	"nodev"		/* Device-special disallowed */
 #define	MNTOPT_SETUID	"setuid"	/* Set uid allowed */
 #define	MNTOPT_NOSETUID	"nosetuid"	/* Set uid not allowed */
 #define	MNTOPT_GRPID	"grpid"		/* SysV-compatible gid on create */
@@ -136,8 +139,7 @@ extern "C" {
 #define	MNTOPT_NOBROWSE	"nobrowse"	/* non-browsable autofs mount */
 #define MNTOPT_OWNERS	"owners"	/* VFS will not ignore ownership information on filesystem objects */
 #define MNTOPT_NOOWNERS	"noowners"	/* VFS will ignore ownership information on filesystem objects */
-#define MNTOPT_UPDATE   "update"        /**/
-#define MNTOPT_NOUPDATE "noupdate"      /**/
+#define MNTOPT_UPDATE	"update"	/* not a real mount, just an update */
 
 #define MOUNT_FILEIO    0x10            /* Error updating/locking /etc/mtab */
 #define MOUNT_USER      0x08            /* Interrupted by user (EINTR) */

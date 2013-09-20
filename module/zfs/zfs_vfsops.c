@@ -674,9 +674,6 @@ zfs_register_callbacks(struct mount *vfsp)
 	if (error)
 		goto unregister;
 
-	//if (do_readonly)
-	//	readonly_changed_cb(zfsvfs, readonly);
-//#if 0
 	/*
 	 * Invoke our callbacks to restore temporary mount options.
 	 */
@@ -696,7 +693,6 @@ zfs_register_callbacks(struct mount *vfsp)
 		ignoreowner_changed_cb(zfsvfs, ignoreowner);
 
 	nbmand_changed_cb(zfsvfs, nbmand);
-//#endif
 
 	return (0);
 

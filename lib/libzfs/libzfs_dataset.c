@@ -687,7 +687,7 @@ libzfs_mnttab_init(libzfs_handle_t *hdl)
 	avl_create(&hdl->libzfs_mnttab_cache, libzfs_mnttab_cache_compare,
 	    sizeof (mnttab_node_t), offsetof(mnttab_node_t, mtn_node));
 
-//    libzfs_mnttab_update(hdl); //Do we need this?
+	libzfs_mnttab_update(hdl); //zpool export gets pool busy error if we don't have this. Why?
 }
 
 void
@@ -752,10 +752,11 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 
 }
 
+
+#if 0 // NOTYET
 static void
 libzfs_mnttab_root(const char *mountpoint)
 {
-#if 0 // NOTYET
 	/* For a root file system, add a volume icon. */
 	ssize_t attrsize;
 	uint16_t finderinfo[16];
@@ -799,8 +800,8 @@ libzfs_mnttab_root(const char *mountpoint)
 			fclose(dstfp);
 	}
 	free(path);
-#endif
 }
+#endif
 
 
 void
@@ -829,7 +830,7 @@ libzfs_mnttab_remove(libzfs_handle_t *hdl, const char *fsname)
 	mnttab_node_t *ret;
 
 	find.mtn_mt.mnt_special = (char *)fsname;
-	if (ret = avl_find(&hdl->libzfs_mnttab_cache, (void *)&find, NULL)) {
+	if (((ret = avl_find(&hdl->libzfs_mnttab_cache, (void *)&find, NULL)))) {
 		avl_remove(&hdl->libzfs_mnttab_cache, ret);
 		free(ret->mtn_mt.mnt_special);
 		free(ret->mtn_mt.mnt_mountp);
@@ -1493,6 +1494,7 @@ zfs_setprop_error(libzfs_handle_t *hdl, zfs_prop_t prop, int err,
 	}
 }
 
+#ifdef __LINUX__
 static boolean_t
 zfs_is_namespace_prop(zfs_prop_t prop)
 {
@@ -1511,6 +1513,7 @@ zfs_is_namespace_prop(zfs_prop_t prop)
 		return (B_FALSE);
 	}
 }
+#endif
 
 /*
  * Given a property name and value, set the property for the given dataset.
@@ -1833,8 +1836,8 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 		break;
 
 	case ZFS_PROP_DEVICES:
-		mntopt_on = MNTOPT_DEVICES;
-		mntopt_off = MNTOPT_NODEVICES;
+		mntopt_on = MNTOPT_DEV;
+		mntopt_off = MNTOPT_NODEV;
 		break;
 
 	case ZFS_PROP_EXEC:

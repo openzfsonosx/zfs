@@ -74,6 +74,7 @@ struct extmnttab {
 //extern char *mntopt(char **p);
 //extern char *hasmntopt(struct mnttab *mnt, char *opt);
 //extern int getmntent(FILE *fp, struct mnttab *mgetp);
+extern int getextmntent(FILE *fp, struct extmnttab *mp, int len);
 extern DIR *fdopendir(int fd);
 extern int openat64(int, const char *, int, ...);
 
