@@ -1996,11 +1996,11 @@ static struct vnodeopv_entry_desc zfsctl_ops_snapshot_template[] = {
      * are unable to mount from the kernel, we need to define enough vnodeops
      * such that userland mount call will succeed.
      */
-	{&vnop_getattr_desc,	(VOPFUNC)zfsctl_root_getattr},
+	{&vnop_getattr_desc,	(VOPFUNC)zfsctl_snapdir_getattr},
     {&vnop_revoke_desc,     (VOPFUNC)err_revoke },
     {&vnop_fsync_desc,      (VOPFUNC)nop_fsync },
 
-	{&vnop_lookup_desc,	(VOPFUNC)zfsctl_freebsd_root_lookup},
+	{&vnop_lookup_desc,	    (VOPFUNC)zfsctl_snapdir_lookup},
 
 
 	{NULL, (VOPFUNC)NULL }
