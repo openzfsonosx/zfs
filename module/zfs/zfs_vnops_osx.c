@@ -500,6 +500,8 @@ zfs_vnop_fsync(
 
     zfsvfs = zp->z_zfsvfs;
 
+    if (!zfsvfs) return 0;
+
     /*
      * Because vnode_create() can end up calling fsync, which means we would
      * sit around waiting for dmu_tx, while higher up in this thread may
@@ -1396,6 +1398,7 @@ zfs_vnop_pathconf(
                 *valp = 1;
                 break;
 
+        case _PC_XATTR_SIZE_BITS:
         case _PC_FILESIZEBITS:
                 *valp = 64;
                 break;

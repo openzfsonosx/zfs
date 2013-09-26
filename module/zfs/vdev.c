@@ -2449,7 +2449,7 @@ vdev_is_dead(vdev_t *vd)
 boolean_t
 vdev_readable(vdev_t *vd)
 {
-	return (!vdev_is_dead(vd) && !vd->vdev_cant_read);
+	return (vd && !vdev_is_dead(vd) && !vd->vdev_cant_read);
 }
 
 boolean_t
