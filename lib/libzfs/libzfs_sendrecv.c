@@ -1445,7 +1445,7 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 	int spa_version;
 	pthread_t tid;
 #ifdef __APPLE__
-	pthread_t osxtid;
+	pthread_t osxtid = 0;
     int newstdout;
 #endif
 	int pipefd[2];
@@ -1579,6 +1579,7 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 		sdd.outfd = outfd;
 
 #ifdef __APPLE__
+    //fprintf(stderr, "zfs_send: opening pipe\r\n");
     char *name = strdup("/tmp/.zfs.pipe.XXXXXXXX");
     mktemp(name);
     if (!mkfifo(name,0600)) {
@@ -1593,6 +1594,7 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
         free(name);
     }
 #endif
+
 
 	sdd.replicate = flags->replicate;
 	sdd.doall = flags->doall;
@@ -1703,6 +1705,13 @@ err_out:
 		(void) pthread_join(tid, NULL);
         		(void) close(pipefd[0]);
 	}
+#ifdef __APPLE__
+    if (osxtid) {
+        close(sdd.outfd);
+        pthread_join(osxtid, NULL);
+        close(newstdout);
+    }
+#endif
 	return (err);
 }
 

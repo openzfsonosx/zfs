@@ -959,11 +959,29 @@ zfs_secpolicy_userspace_upgrade(zfs_cmd_t *zc, cred_t *cr)
 	    NULL, cr));
 }
 
+/*
+* Determine name of filesystem, given name of snapshot.
+* buf must be at least MAXNAMELEN bytes
+*/
+int
+dmu_fsname(const char *snapname, char *buf)
+{
+char *atp = strchr(snapname, '@');
+if (atp == NULL)
+return (EINVAL);
+if (atp - snapname >= MAXNAMELEN)
+return (ENAMETOOLONG);
+(void) strlcpy(buf, snapname, atp - snapname + 1);
+return (0);
+}
+
 static int
 zfs_secpolicy_hold(zfs_cmd_t *zc, cred_t *cr)
 {
-	return (zfs_secpolicy_write_perms(zc->zc_name,
-	    ZFS_DELEG_PERM_HOLD, cr));
+    int error;
+    error = zfs_secpolicy_write_perms(zc->zc_value,
+                                      ZFS_DELEG_PERM_HOLD, cr);
+    return (error);
 }
 
 static int
@@ -5276,7 +5294,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	zfs_cmd_t *zc;
 	uint_t vec;
 	int error, rc;
-	cred_t *cr;
+	cred_t *cr = vfs_context_current();
     minor_t minor = getminor(dev);
 
     //printf("ioctl minor %d\n", minor);
@@ -5311,7 +5329,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 				error = EINVAL;
 			else
 				error = pool_status_check(zc->zc_name,
-				    zfs_ioc_vec[vec].zvec_namecheck, 
+				    zfs_ioc_vec[vec].zvec_namecheck,
 				    zfs_ioc_vec[vec].zvec_pool_check);
 			break;
 		case DATASET_NAME:
@@ -5319,7 +5337,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 				error = EINVAL;
 			else
 				error = pool_status_check(zc->zc_name,
-				    zfs_ioc_vec[vec].zvec_namecheck, 
+				    zfs_ioc_vec[vec].zvec_namecheck,
 				    zfs_ioc_vec[vec].zvec_pool_check);
 			break;
 		case NO_NAME:
