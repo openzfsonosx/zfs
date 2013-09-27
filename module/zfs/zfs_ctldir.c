@@ -200,6 +200,7 @@ traverse(struct vnode **cvpp, int lktype)
     struct vnode *tvp;
     vfs_t *vfsp;
     int error;
+    int loop = 0;
 
     printf("+traverse\n");
 
@@ -217,7 +218,8 @@ traverse(struct vnode **cvpp, int lktype)
         /*
          * Reached the end of the mount chain?
          */
-        vfsp = vnode_mount(cvp);
+        //vfsp = vnode_mount(cvp);
+        vfsp = vnode_mountedhere(cvp);
         if (vfsp == NULL)
             break;
         error = vfs_busy(vfsp, 0);
@@ -226,8 +228,10 @@ traverse(struct vnode **cvpp, int lktype)
          */
         if (tvp != NULL)
             VN_RELE(cvp); // vput
+        /*
         else
             vnode_rele(cvp); // vrele
+        */
         if (error)
             return (error);
 
@@ -246,12 +250,13 @@ traverse(struct vnode **cvpp, int lktype)
         if (error != 0)
             return (error);
 
-        if (tvp == cvp) {
+        cvp = tvp;
+
+        if (loop++>5) {
             printf("loop detected, abort\n");
             break;
         }
 
-        cvp = tvp;
     }
 
     printf("-traverse\n");
@@ -309,6 +314,7 @@ zfsctl_is_node(struct vnode *vp)
     //  vn_matchops(vp, zfsctl_ops_snapshot) ||
     //  vn_matchops(vp, zfsctl_ops_shares) ||
     //  vn_matchops(vp, zfsctl_ops_shares_dir));
+    printf("is_node %p\n", vp);
     return B_TRUE;
 }
 
@@ -706,6 +712,7 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
         return err;
     }
 
+#if 0
 	if (strcmp(nm, "..") == 0) {
         //err = zfs_vfs_root(vnode_mount(dvp), vpp, NULL);
 #if 1
@@ -717,9 +724,10 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
 #endif
         //VOP_UNLOCK(*vpp, 0);
 	} else {
+#endif
 		err = gfs_vop_lookup(dvp, nm, vpp, pnp, flags, rdir,
 		    cr, ct, direntflags, realpnp);
-	}
+        //	}
 
     //VN_RELE(zfsvfs->z_vfs);
     vnode_put(zfsvfs->z_ctldir);
@@ -898,8 +906,8 @@ zfsctl_unmount_snap(zfs_snapentry_t *sep, int fflags, cred_t *cr)
 	 * zfsctl_snapdir_inactive(), which would cause us to destroy
 	 * the sd_lock mutex held by our caller.
 	 */
-	ASSERT(svp->v_count == 1);
-	gfs_vop_inactive(svp, cr, NULL);
+	//ASSERT(svp->v_count == 1);
+	//gfs_vop_inactive(svp, cr, NULL); <- this call takes a struct
 
 	kmem_free(sep->se_name, strlen(sep->se_name) + 1);
 	kmem_free(sep, sizeof (zfs_snapentry_t));
@@ -1201,6 +1209,10 @@ zfsctl_snapdir_lookup(ap)
     printf("zfsctl_snapdir_lookup '%s'\n", nm);
 
 	ASSERT(vnode_isdir(dvp));
+
+    if (!strcmp(nm, ".autodiskmounted")) return EINVAL;
+
+
 
 	*vpp = NULL;
 
@@ -2086,7 +2098,9 @@ zfsctl_umount_snapshots(vfs_t *vfsp, int fflags, cred_t *cr)
 	zfsctl_snapdir_t *sdp;
 	zfs_snapentry_t *sep, *next;
 	int error;
-    return 0;
+
+    printf("unmount_snapshots\n");
+
 	ASSERT(zfsvfs->z_ctldir != NULL);
 	error = zfsctl_root_lookup(zfsvfs->z_ctldir, "snapshot", &dvp,
 	    NULL, 0, NULL, cr, NULL, NULL, NULL);

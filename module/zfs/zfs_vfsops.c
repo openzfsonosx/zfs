@@ -2486,8 +2486,8 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	 * Unmount any snapshots mounted under .zfs before unmounting the
 	 * dataset itself.
 	 */
+    dprintf("z_ctldir check: %p\n",zfsvfs->z_ctldir );
 	if (zfsvfs->z_ctldir != NULL) {
-        dprintf("z_ctldir check\n");
 
 		if ((ret = zfsctl_umount_snapshots(zfsvfs->z_vfs, 0 /*fflag*/, cr)) != 0)
 			return (ret);
@@ -2508,6 +2508,23 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
         dprintf("z_ctldir destroy done\n");
 		ASSERT(zfsvfs->z_ctldir == NULL);
 	}
+
+#if 0
+    // If we are ourselves a snapshot
+	if (dmu_objset_is_snapshot(zfsvfs->z_os)) {
+        struct vnode *vp;
+        printf("We are unmounting a snapshot\n");
+        vp = vfs_vnodecovered(zfsvfs->z_vfs);
+        if (vp) {
+            struct vnop_inactive_args ap;
+            ap.a_vp = vp;
+            printf(".. telling gfs layer\n");
+            gfs_dir_inactive(&ap);
+            printf("..and put\n");
+            vnode_put(vp);
+        }
+    }
+#endif
 
 	if (mntflags & MNT_FORCE) {
 		/*
