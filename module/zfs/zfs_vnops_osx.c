@@ -1388,7 +1388,10 @@ zfs_vnop_pathconf(
         case _PC_CASE_PRESERVING:
                 *valp = 1;
                 break;
-
+                /* OSX 10.6 does not define this */
+#ifndef _PC_XATTR_SIZE_BITS
+#define _PC_XATTR_SIZE_BITS   26
+#endif
         case _PC_XATTR_SIZE_BITS:
         case _PC_FILESIZEBITS:
                 *valp = 64;
