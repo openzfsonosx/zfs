@@ -179,6 +179,7 @@ gfs_get_parent_ino(struct vnode *dvp, cred_t *cr, caller_context_t *ct,
 	if (parent == NULL) {
 		*pino = *ino;		/* root of filesystem */
 #ifdef TODO
+        // vnode_isnamedstream()
 	} else if (dvp->v_flag & V_XATTRDIR) {
 		vattr_t va;
 
@@ -457,7 +458,7 @@ gfs_lookup_dot(struct vnode **vpp, struct vnode *dvp, struct vnode *pvp, const c
 			VN_HOLD(pvp);
 			*vpp = pvp;
 		}
-		vn_lock(*vpp, LK_EXCLUSIVE | LK_RETRY);
+		//vn_lock(*vpp, LK_EXCLUSIVE | LK_RETRY);
 		return (0);
 	}
 
@@ -539,9 +540,10 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 	/*
 	 * Initialize vnode and hold parent.
 	 */
-	//if (pvp)
-	//	VN_HOLD(pvp);
-
+	if (pvp) {
+        VN_HOLD(pvp);
+        printf("abount to put vp %p to 0 -> %d\n", pvp, ((uint32_t *)pvp)[23]);
+    }
 	return (vp);
 }
 
@@ -713,7 +715,7 @@ found:
 	if (vp->v_flag & V_XATTRDIR)
 		VI_LOCK(fp->gfs_parent);
 #endif
-	VI_LOCK(vp);
+	VN_HOLD(vp);
 	/*
 	 * Really remove this vnode
 	 */
@@ -725,7 +727,7 @@ found:
 		 */
 		ge->gfse_vnode = NULL;
 	}
-	VI_UNLOCK(vp);
+	VN_RELE(vp);
 
 	/*
 	 * Free vnode and release parent
@@ -734,8 +736,8 @@ found:
 	if (fp->gfs_parent) {
 		if (dp)
 			gfs_dir_unlock(dp);
-		VOP_UNLOCK(vp, 0);
-        //		VN_RELE(fp->gfs_parent);
+		//VOP_UNLOCK(vp, 0);
+        VN_RELE(fp->gfs_parent);
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	} else {
 		ASSERT(vp->v_vfsp != NULL);
@@ -969,8 +971,8 @@ gfs_dir_lookup(struct vnode *dvp, const char *nm, struct vnode **vpp, cred_t *cr
 		return (0);
 
 	casecheck = (flags & FIGNORECASE) != 0 && direntflags != NULL;
-#if 0 //FIXME
-	if (vfs_has_feature(dvp->v_vfsp, VFSFT_NOCASESENSITIVE) ||
+#if 1 //FIXME
+	if (/*vfs_has_feature(vnode_mount(dvp), VFSFT_NOCASESENSITIVE) ||*/
 	    (flags & FIGNORECASE))
 		compare = strcasecmp;
 	else
@@ -1322,11 +1324,9 @@ gfs_vop_inactive(ap)
 		gfs_file_inactive(vp);
 #endif
 
-	VI_LOCK(vp);
-
     vnode_clearfsnode(vp);
     vnode_recycle(vp);
-	VI_UNLOCK(vp);
+
 	kmem_free(fp, fp->gfs_size);
 
     printf("-gfs_vop_inactive\n");
