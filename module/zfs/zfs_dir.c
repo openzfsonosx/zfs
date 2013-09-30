@@ -560,7 +560,7 @@ zfs_rmnode(znode_t *zp)
 	if (IFTOVT((mode_t)zp->z_mode) == VDIR &&
 	    (zp->z_pflags & ZFS_XATTR)) {
 
-        if (zfs_purgedir(zp) != 0) {
+        if (!ZTOV(zp) || zfs_purgedir(zp) != 0) {
             /*
              * Not enough space to delete some xattrs.
              * Leave it in the unlinked set.
