@@ -1388,17 +1388,31 @@ zfs_vnop_pathconf(
         case _PC_CASE_PRESERVING:
                 *valp = 1;
                 break;
+
                 /* OSX 10.6 does not define this */
 #ifndef _PC_XATTR_SIZE_BITS
 #define _PC_XATTR_SIZE_BITS   26
 #endif
+                /*
+                 * Even though ZFS has 64 bit limit on XATTR size,
+                 * there would appear to be a limit in SMB2 that the bit size
+                 * returned has to be 18, or we will get error from most XATTR
+                 * calls (STATUS_ALLOTTED_SPACE_EXCEEDED)
+                 */
+#ifndef AD_XATTR_SIZE_BITS
+#define AD_XATTR_SIZE_BITS 18
+#endif
         case _PC_XATTR_SIZE_BITS:
+                *valp = AD_XATTR_SIZE_BITS;
+                break;
+
         case _PC_FILESIZEBITS:
                 *valp = 64;
                 break;
 
         default:
-                error = EINVAL;
+            printf("ZFS: unknown pathconf %d called.\n", ap->a_name);
+            error = EINVAL;
         }
         dprintf("-vnop_patchconf vp %p : %d\n", ap->a_vp, error);
         return error;
@@ -1734,6 +1748,8 @@ out:
 		vnode_put(xdvp);
 	}
 	ZFS_EXIT(zfsvfs);
+
+    if (error == 34) error = 0;
 
     dprintf("-listxattr vp %p: error %d\n", ap->a_vp, error);
 	return (error);
