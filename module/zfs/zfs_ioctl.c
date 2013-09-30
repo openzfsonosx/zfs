@@ -959,22 +959,6 @@ zfs_secpolicy_userspace_upgrade(zfs_cmd_t *zc, cred_t *cr)
 	    NULL, cr));
 }
 
-/*
-* Determine name of filesystem, given name of snapshot.
-* buf must be at least MAXNAMELEN bytes
-*/
-int
-dmu_fsname(const char *snapname, char *buf)
-{
-char *atp = strchr(snapname, '@');
-if (atp == NULL)
-return (EINVAL);
-if (atp - snapname >= MAXNAMELEN)
-return (ENAMETOOLONG);
-(void) strlcpy(buf, snapname, atp - snapname + 1);
-return (0);
-}
-
 static int
 zfs_secpolicy_hold(zfs_cmd_t *zc, cred_t *cr)
 {
