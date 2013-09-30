@@ -95,7 +95,7 @@
 #include <sys/zpl.h>
 #include "zfs_comutil.h"
 
-#define dprintf printf
+//#define dprintf printf
 
 #ifdef __APPLE__
 
@@ -1420,7 +1420,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	if (dmu_objset_is_snapshot(zfsvfs->z_os)) {
 		uint64_t pval;
 
-        printf("objset is snapshot\n");
+        dprintf("objset is snapshot\n");
 
         vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_AUTOMOUNTED));
 
@@ -2541,7 +2541,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	 * Flush all the files.
 	 */
 	ret = vflush(mp, NULLVP, (mntflags & MNT_FORCE) ? FORCECLOSE|SKIPSYSTEM : SKIPSYSTEM);
-    printf("after flush 2\n");
+
 	if (ret != 0) {
 		if (!zfsvfs->z_issnap) {
 			//zfsctl_create(zfsvfs);

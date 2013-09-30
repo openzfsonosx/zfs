@@ -507,24 +507,19 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
         char *r = NULL;
         char *parent_name = strdup(zhp->zfs_name);
         zfs_handle_t *zhp_parent;
-        fprintf(stderr, "Is a snappy\r\n");
         r = strchr(parent_name, '@');
         if (r) {
 
             *r = 0;
 
-            fprintf(stderr, "open parent: '%s' %p\r\n", parent_name,
-                    zhp->zpool_hdl);
             if ((zhp_parent = zfs_open(zhp->zfs_hdl, parent_name,
                                        ZFS_TYPE_FILESYSTEM)) != NULL) {
-                fprintf(stderr, "get parent mount\r\n");
                 zfs_prop_get(zhp_parent, ZFS_PROP_MOUNTPOINT, mountpoint,
                              sizeof(mountpoint),
                              NULL, NULL, 0, B_FALSE);
                 strcat(mountpoint, "/.zfs/snapshot/");
                 strcat(mountpoint, &r[1]);
-                //strcpy(mountpoint, "/ASD/.zfs");
-                fprintf(stderr, "New mountpoint '%s'\n", mountpoint);
+                fprintf(stderr, "ZFS: snapshot mountpoint '%s'\n", mountpoint);
                 free(parent_name);
                 zfs_close(zhp_parent);
             } // zfs_open

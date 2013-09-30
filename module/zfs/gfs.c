@@ -280,7 +280,7 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
     namlen = strlen(dp->d_name);
     reclen = DIRENT_RECLEN(namlen, extended);
 
-    printf("trying to add '%s': extended %d isascii %d: next %lld\n",
+    dprintf("trying to add '%s': extended %d isascii %d: next %lld\n",
            dp->d_name, st->grd_flags & VNODE_READDIR_EXTENDED,
            is_ascii_str(dp->d_name), next);
 
@@ -322,7 +322,7 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
 		KASSERT(*ncookies >= 0, ("ncookies=%d", *ncookies));
 	}
 
-    printf("Copied out %d bytes\n", reclen);
+    dprintf("Copied out %d bytes\n", reclen);
 
 	return (0);
 }
@@ -489,7 +489,7 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 	struct vnode *vp;
 	struct vnode_fsparam vfsp;
 
-    printf("gfs_file_create: vtype %d\n", type);
+    dprintf("gfs_file_create: vtype %d\n", type);
 
 	/*
 	 * Allocate vnode and internal data structure
@@ -503,7 +503,7 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 	vfsp.vnfs_vtype = type;
 	vfsp.vnfs_fsnode = fp;
 	vfsp.vnfs_flags = VNFS_ADDFSREF;
-    printf("ops set to %p\n", ops);
+
     vfsp.vnfs_vops = ops;
     if (flags & ZFS_VNODE_SYSTEM)
         vfsp.vnfs_marksystem = 1;
@@ -521,7 +521,7 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0);
     //mutex_exit(&zfsvfs->z_vnode_create_lock);
 	vnode_settag(vp, VT_ZFS);
-    printf("new vnode %p system %d root %d: vfs %p\n",
+    dprintf("new vnode %p system %d root %d: vfs %p\n",
            vp, vfsp.vnfs_marksystem, vfsp.vnfs_markroot, vfs);
 
 	/*
@@ -541,8 +541,9 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 	 * Initialize vnode and hold parent.
 	 */
 	if (pvp) {
+        //printf("Skipping lock of parent %p\n", pvp);
         VN_HOLD(pvp);
-        printf("abount to put vp %p to 0 -> %d\n", pvp, ((uint32_t *)pvp)[23]);
+        dprintf("parent hold pvp %p to 0 -> %d\n", pvp, ((uint32_t *)pvp)[23]);
     }
 	return (vp);
 }
@@ -581,7 +582,7 @@ gfs_dir_create(size_t struct_size, struct vnode *pvp, vfs_t *vfsp, vnodeops_t *o
 	gfs_dir_t *dp;
 	gfs_dirent_t *de;
 
-    printf("gfs_dir_create\n");
+    dprintf("gfs_dir_create\n");
 
 	vp = gfs_file_create(struct_size, pvp, vfsp, ops, VDIR, flags);
 	//vp->v_type = VDIR; // Can only be set at create FIXME
@@ -606,7 +607,7 @@ gfs_dir_create(size_t struct_size, struct vnode *pvp, vfs_t *vfsp, vnodeops_t *o
 
 	mutex_init(&dp->gfsd_lock, NULL, MUTEX_DEFAULT, NULL);
 
-    printf("woo retuning %p\n", vp);
+    dprintf("woo retuning %p\n", vp);
 
 	return (vp);
 }
@@ -732,7 +733,7 @@ found:
 	/*
 	 * Free vnode and release parent
 	 */
-    printf("freeing vp %p and parent %p\n", vp, fp->gfs_parent);
+    dprintf("freeing vp %p and parent %p\n", vp, fp->gfs_parent);
 	if (fp->gfs_parent) {
 		if (dp)
 			gfs_dir_unlock(dp);
@@ -896,7 +897,7 @@ gfs_dir_lookup_static(int (*compare)(const char *, const char *),
 			 * for this entry, we discard the result in favor of
 			 * the cached vnode.
 			 */
-            printf("lookup_static\n");
+            dprintf("lookup_static\n");
 			gfs_dir_unlock(dp);
 			vp = ge->gfse_ctor(dvp);
 			gfs_dir_lock(dp);
@@ -963,7 +964,7 @@ gfs_dir_lookup(struct vnode *dvp, const char *nm, struct vnode **vpp, cred_t *cr
 	int (*compare)(const char *, const char *);
 	int error, idx;
 
-    printf("gfs_dir_lookup\n");
+    dprintf("gfs_dir_lookup\n");
 
 	ASSERT(dvp->v_type == VDIR);
 
@@ -1193,7 +1194,7 @@ gfs_vop_readdir(ap)
                          M_TEMP, M_WAITOK);
 		a_cookies = cookies;
 		*ap->a_numdirent = ncookies;
-        printf("Setting ncookies to %d and offset at %08llx, userspace %d. extended %d\n",
+        dprintf("Setting ncookies to %d and offset at %08llx, userspace %d. extended %d\n",
                ncookies,
                uio_offset(uiop),
                uio_isuserspace(uiop),
@@ -1216,7 +1217,7 @@ gfs_vop_readdir(ap)
     if (cookies)
 		FREE(a_cookies, M_TEMP);
 
-    printf("Returning readdir with numdirent as %d: new offset %08llx: eof %d\n",
+    dprintf("Returning readdir with numdirent as %d: new offset %08llx: eof %d\n",
            *ap->a_numdirent, uio_offset(uiop), *eofp);
 
 	return (error);
@@ -1314,7 +1315,7 @@ gfs_vop_inactive(ap)
 	struct vnode *vp = ap->a_vp;
 	gfs_file_t *fp = vnode_fsnode(vp);
 
-    printf("+gfs_vop_inactive\n");
+    dprintf("+gfs_vop_inactive\n");
 
     if (!fp) return 0;
 #if 1
@@ -1329,6 +1330,6 @@ gfs_vop_inactive(ap)
 
 	kmem_free(fp, fp->gfs_size);
 
-    printf("-gfs_vop_inactive\n");
+    dprintf("-gfs_vop_inactive\n");
 	return (0);
 }
