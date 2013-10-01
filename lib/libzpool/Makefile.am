@@ -42,11 +42,13 @@ libzpool_la_SOURCES = \
 	../../module/zfs/dsl_dataset.c \
 	../../module/zfs/dsl_deadlist.c \
 	../../module/zfs/dsl_deleg.c \
+	../../module/zfs/dsl_destroy.c \
 	../../module/zfs/dsl_dir.c \
 	../../module/zfs/dsl_pool.c \
 	../../module/zfs/dsl_prop.c \
 	../../module/zfs/dsl_scan.c \
 	../../module/zfs/dsl_synctask.c \
+	../../module/zfs/dsl_userhold.c \
 	../../module/zfs/fm.c \
 	../../module/zfs/gzip.c \
 	../../module/zfs/lzjb.c \

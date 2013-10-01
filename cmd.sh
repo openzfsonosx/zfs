@@ -3,7 +3,7 @@ cmd=$1
 shift
 
 topdir=`pwd`
-for lib in nvpair uutil zpool zfs; do
+for lib in nvpair uutil zpool zfs zfs_core; do
 	export DYLD_LIBRARY_PATH=$topdir/lib/lib${lib}/.libs:$DYLD_LIBRARY_PATH
 done
 for c in zdb zfs zpool ztest; do

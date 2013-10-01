@@ -106,7 +106,7 @@ namespace_reload(libzfs_handle_t *hdl)
 	nvlist_t *config;
 	config_node_t *cn;
 	nvpair_t *elem;
-	zfs_cmd_t zc = { "\0", "\0", "\0", "\0", 0 };
+	zfs_cmd_t zc = {"\0"};
 	void *cookie;
 
 	if (hdl->libzfs_ns_gen == 0) {
@@ -262,7 +262,8 @@ zpool_get_features(zpool_handle_t *zhp)
 int
 zpool_refresh_stats(zpool_handle_t *zhp, boolean_t *missing)
 {
-	zfs_cmd_t zc;
+	zfs_cmd_t zc = {"\0"};
+
 	int error;
 	nvlist_t *config;
 	libzfs_handle_t *hdl = zhp->zpool_hdl;
