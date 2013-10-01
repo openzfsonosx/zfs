@@ -82,6 +82,7 @@ zfs_onexit_init(zfs_onexit_t **zop)
 	mutex_init(&zo->zo_lock, NULL, MUTEX_DEFAULT, NULL);
 	list_create(&zo->zo_actions, sizeof (zfs_onexit_action_node_t),
 	    offsetof(zfs_onexit_action_node_t, za_link));
+    printf("onexit_init\n");
 }
 
 void
@@ -102,6 +103,7 @@ zfs_onexit_destroy(zfs_onexit_t *zo)
 	list_destroy(&zo->zo_actions);
 	mutex_destroy(&zo->zo_lock);
 	kmem_free(zo, sizeof (zfs_onexit_t));
+    printf("onexit_destroy\n");
 }
 
 static int
@@ -123,21 +125,30 @@ zfs_onexit_minor_to_state(minor_t minor, zfs_onexit_t **zo)
 int
 zfs_onexit_fd_hold(int fd, minor_t *minorp)
 {
-	file_t *fp;
+	file_t *fp = NULL;
 	zfs_onexit_t *zo;
 
-	//fp = getf(fd);
-	if (fp == NULL)
-		return (EBADF);
+    struct vnode *vpp;
+    uint32_t vipd;
+
+    return 0; // Not implemented
+
+    if (file_vnode_withvid(fd, &vpp, &vipd))
+        return EBADF;
 
 	//*minorp = zfsdev_getminor(fp->f_file);
+    printf("onexit_fd_hold (%d -> %p)\n", fd, vpp);
+
 	return (zfs_onexit_minor_to_state(*minorp, &zo));
 }
 
 void
 zfs_onexit_fd_rele(int fd)
 {
+    return; // Not implemented
 	//releasef(fd);
+    printf("onexit_fd_rele %d\n", fd);
+    file_drop(fd);
 }
 
 /*

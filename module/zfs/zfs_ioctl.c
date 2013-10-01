@@ -963,7 +963,7 @@ static int
 zfs_secpolicy_hold(zfs_cmd_t *zc, cred_t *cr)
 {
     int error;
-    error = zfs_secpolicy_write_perms(zc->zc_value,
+    error = zfs_secpolicy_write_perms(zc->zc_name,
                                       ZFS_DELEG_PERM_HOLD, cr);
     return (error);
 }
@@ -4064,7 +4064,6 @@ zfs_ioc_send(zfs_cmd_t *zc)
 		releasef(zc->zc_cookie);
 #else
 
-        struct fileproc *rfp;
         struct vnode *vpp;
         uint32_t vipd;
 
@@ -4794,7 +4793,6 @@ zfs_ioc_hold(zfs_cmd_t *zc)
 		zfs_onexit_fd_rele(zc->zc_cleanup_fd);
 	}
 	dsl_dataset_rele(ds, FTAG);
-
 	return (error);
 }
 
@@ -5298,7 +5296,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	zc = (zfs_cmd_t *)data;
 	zc->zc_dev = dev;
 	error = zfs_ioc_vec[vec].zvec_secpolicy(zc, cr);
-	//printf("[zfs] got ioctl %d\n", vec);
+	//printf("[zfs] got ioctl %d (err %d)\n", vec, error);
 	//delay(hz);
 
 	/*

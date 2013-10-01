@@ -1870,7 +1870,7 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 
 	case ZFS_PROP_APPLE_IGNOREOWNER:
 		mntopt_on = MNTOPT_NOOWNERS;
-		mntopt_off = MNTOPT_OWNERS; 
+		mntopt_off = MNTOPT_OWNERS;
 		break;
 #endif
 	default:

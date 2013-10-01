@@ -1579,7 +1579,6 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 		sdd.outfd = outfd;
 
 #ifdef __APPLE__
-    //fprintf(stderr, "zfs_send: opening pipe\r\n");
     char *name = strdup("/tmp/.zfs.pipe.XXXXXXXX");
     mktemp(name);
     if (!mkfifo(name,0600)) {
