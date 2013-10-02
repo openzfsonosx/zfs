@@ -1221,20 +1221,20 @@ dsl_pool_config_enter(dsl_pool_t *dp, void *tag)
 	 * read, but not *which* threads, so rw_held(RW_READER) returns TRUE
 	 * if any thread holds it for read, even if this thread doesn't).
 	 */
-	ASSERT(!rw_held(&dp->dp_config_rwlock, RW_READER));
-	rw_enter(&dp->dp_config_rwlock, RW_READER);
+	ASSERT(!rrw_held(&dp->dp_config_rwlock, RW_READER));
+	rrw_enter(&dp->dp_config_rwlock, RW_READER, tag);
 }
 
 void
 dsl_pool_config_exit(dsl_pool_t *dp, void *tag)
 {
-    rw_exit(&dp->dp_config_rwlock);
+    rrw_exit(&dp->dp_config_rwlock, tag);
 }
 
 boolean_t
 dsl_pool_config_held(dsl_pool_t *dp)
 {
-    return (rw_lock_held(&dp->dp_config_rwlock));
+    return (RRW_LOCK_HELD(&dp->dp_config_rwlock));
 }
 
 

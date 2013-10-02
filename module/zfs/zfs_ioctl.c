@@ -4945,6 +4945,8 @@ zfs_ioc_events_next(zfs_cmd_t *zc)
 	uint64_t dropped = 0;
 	int error = 0;
 
+    return ENOTSUP;
+
 	//error = zfs_zevent_fd_hold(zc->zc_cleanup_fd, &minor, &ze);
 	if (error != 0)
 		return (error);

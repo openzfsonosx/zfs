@@ -110,7 +110,7 @@ rrn_add(rrwlock_t *rrl, void *tag)
 	//VERIFY(tsd_set(rrw_tsd_key, rn) == 0);
 	rn->rn_next = tsd_get(rrw_tsd_key);
 	rn->rn_tag = tag;
-	VERIFY(tsd_set(rrw_tsd_key, rn) == 0);
+	//VERIFY(tsd_set(rrw_tsd_key, rn) == 0);
 }
 
 /*
@@ -268,7 +268,6 @@ boolean_t
 rrw_held(rrwlock_t *rrl, krw_t rw)
 {
 	boolean_t held;
-
 	mutex_enter(&rrl->rr_lock);
 	if (rw == RW_WRITER) {
 		held = (rrl->rr_writer == (kthread_t *)curthread);
