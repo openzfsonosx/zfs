@@ -74,7 +74,6 @@ struct dsl_dataset;
 typedef struct objset objset_t;
 typedef struct dmu_tx dmu_tx_t;
 typedef struct dsl_dir dsl_dir_t;
-typedef struct dsl_dataset dsl_dataset_t;
 
 typedef enum dmu_object_byteswap {
 	DMU_BSWAP_UINT8,
@@ -820,8 +819,6 @@ void dmu_traverse_objset(objset_t *os, uint64_t txg_start,
 int
 dmu_send(const char *tosnap, const char *fromsnap,
          int outfd, struct vnode *fd, offset_t *off);
-int dmu_send_estimate(dsl_dataset_t *ds, dsl_dataset_t *fromds,
-    uint64_t *sizep);
 
 
 int dmu_diff(const char *tosnap_name, const char *fromsnap_name,

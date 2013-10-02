@@ -92,6 +92,11 @@
 #define ZFS_DEBUG_STR  "(beta)"
 
 
+#ifdef __APPLE__
+extern int file_vnode_withvid(int, struct vnode **, uint32_t *);
+extern int file_drop(int);
+#endif
+
 kmutex_t zfsdev_state_lock;
 list_t zfsdev_state_list;
 
@@ -103,8 +108,7 @@ extern uint_t rrw_tsd_key;
 static uint_t zfs_allow_log_key;
 
 typedef int zfs_ioc_legacy_func_t(zfs_cmd_t *);
-typedef int zfs_ioc_func_t(zfs_cmd_t *);
-//typedef int zfs_ioc_func_t(const char *, nvlist_t *, nvlist_t *);
+typedef int zfs_ioc_func_t(const char *, nvlist_t *, nvlist_t *);
 typedef int zfs_secpolicy_func_t(zfs_cmd_t *, nvlist_t *, cred_t *);
 
 typedef enum {
@@ -120,11 +124,13 @@ typedef enum {
 } zfs_ioc_poolcheck_t;
 
 typedef struct zfs_ioc_vec {
+    zfs_ioc_legacy_func_t	*zvec_legacy_func;
     zfs_ioc_func_t	*zvec_func;
     zfs_secpolicy_func_t	*zvec_secpolicy;
     zfs_ioc_namecheck_t	zvec_namecheck;
-    boolean_t	zvec_his_log;
+    boolean_t	zvec_allow_log;
     zfs_ioc_poolcheck_t	zvec_pool_check;
+    boolean_t   zvec_smush_outnvlist;
 } zfs_ioc_vec_t;
 
 
@@ -164,11 +170,11 @@ history_str_get(zfs_cmd_t *zc)
 	//Darwin requires that the third argument to copyinstr not be NULL.
 	size_t len = 0;
 
-	if (zc->zc_history == NULL)
+	if (zc->zc_history == 0)
 		return (NULL);
 
 	buf = kmem_alloc(HIS_MAX_RECORD_LEN, KM_SLEEP | KM_NODEBUG);
-	if (copyinstr((void *)(uintptr_t)zc->zc_history,
+	if (copyinstr((user_addr_t)(uintptr_t)zc->zc_history,
 	    buf, HIS_MAX_RECORD_LEN, &len) != 0) {
 		history_str_free(buf);
 		return (NULL);
@@ -1182,7 +1188,7 @@ get_nvlist(uint64_t nvl, uint64_t size, int iflag, nvlist_t **nvp)
 
 	packed = kmem_alloc(size, KM_SLEEP | KM_NODEBUG);
 
-	if ((error = xcopyin((void *)(uintptr_t)nvl, packed, size, iflag)) != 0) {
+	if ((error = xcopyin((user_addr_t)(uintptr_t)nvl, packed, size, iflag)) != 0) {
 		kmem_free(packed, size);
 		return (error);
 	}
@@ -1250,7 +1256,7 @@ put_nvlist(zfs_cmd_t *zc, nvlist_t *nvl)
 		error = ENOMEM;
 	} else {
 		packed = fnvlist_pack(nvl, &size);
-		if (xcopyout(packed, (void *)(uintptr_t)zc->zc_nvlist_dst,
+		if (xcopyout(packed, (user_addr_t)(uintptr_t)zc->zc_nvlist_dst,
 		    size, zc->zc_iflags) != 0)
 			error = EFAULT;
 		fnvlist_pack_free(packed, size);
@@ -1623,7 +1629,7 @@ zfs_ioc_pool_get_history(zfs_cmd_t *zc)
 	if ((error = spa_history_get(spa, &zc->zc_history_offset,
 	    &zc->zc_history_len, hist_buf)) == 0) {
 		error = xcopyout(hist_buf,
-		    (void *)(uintptr_t)zc->zc_history,
+		    (user_addr_t)(uintptr_t)zc->zc_history,
 		    zc->zc_history_len, zc->zc_iflags);
 	}
 
@@ -3937,7 +3943,7 @@ static boolean_t zfs_ioc_recv_inject_err;
 static int
 zfs_ioc_recv(zfs_cmd_t *zc)
 {
-	objset_t *os;
+	//objset_t *os;
 	dmu_recv_cookie_t drc;
 	boolean_t force = (boolean_t)zc->zc_guid;
 	int fd;
@@ -3951,7 +3957,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 	char *tosnap;
 	char tofs[ZFS_MAXNAMELEN];
 	boolean_t first_recvd_props = B_FALSE;
-    struct fileproc *rfp;
+    //struct fileproc *rfp;
     struct vnode *vpp;
     uint32_t vipd;
 
@@ -4532,7 +4538,7 @@ zfs_ioc_userspace_many(zfs_cmd_t *zc)
 
 	if (error == 0) {
 		error = xcopyout(buf,
-		    (void *)(uintptr_t)zc->zc_nvlist_dst,
+		    (user_addr_t)(uintptr_t)zc->zc_nvlist_dst,
                          zc->zc_nvlist_dst_size, 0);
 	}
 	vmem_free(buf, bufsize);
@@ -4933,11 +4939,11 @@ zfs_ioc_release(const char *pool, nvlist_t *holds, nvlist_t *errlist)
 static int
 zfs_ioc_events_next(zfs_cmd_t *zc)
 {
-	zfs_zevent_t *ze;
+	zfs_zevent_t *ze = NULL;
 	nvlist_t *event = NULL;
-	minor_t minor;
+	//minor_t minor;
 	uint64_t dropped = 0;
-	int error;
+	int error = 0;
 
 	//error = zfs_zevent_fd_hold(zc->zc_cleanup_fd, &minor, &ze);
 	if (error != 0)
@@ -5467,153 +5473,156 @@ zfs_ioctl_init(void)
 #endif
 
 
-
+/*
+ *    New-func, legacy-func, secpolicy-func, name-check, allow-log,
+ *             pool-check, smush-outnvl
+ */
 static zfs_ioc_vec_t zfs_ioc_vec[] = {
-    { zfs_ioc_pool_create, zfs_secpolicy_config, POOL_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_pool_destroy,	zfs_secpolicy_config, POOL_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_pool_import, zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_pool_export, zfs_secpolicy_config, POOL_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_pool_configs,	zfs_secpolicy_none, NO_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_pool_stats, zfs_secpolicy_read, POOL_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_pool_tryimport, zfs_secpolicy_config, NO_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_pool_scan, zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_pool_freeze, zfs_secpolicy_config, NO_NAME, B_FALSE,
-      POOL_CHECK_READONLY },
-    { zfs_ioc_pool_upgrade,	zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_pool_get_history, zfs_secpolicy_config, POOL_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_vdev_add, zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_vdev_remove, zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_vdev_set_state, zfs_secpolicy_config,	POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_vdev_attach, zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_vdev_detach, zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_vdev_setpath,	zfs_secpolicy_config, POOL_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_vdev_setfru,	zfs_secpolicy_config, POOL_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_objset_stats,	zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_objset_zplprops, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_dataset_list_next, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_snapshot_list_next, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_set_prop, zfs_secpolicy_none, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_create_minor, zfs_secpolicy_config, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_remove_minor, zfs_secpolicy_config, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_create, zfs_secpolicy_create, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_destroy, zfs_secpolicy_destroy, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_rollback, zfs_secpolicy_rollback, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_rename, zfs_secpolicy_rename,	DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_recv, zfs_secpolicy_recv, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_send, zfs_secpolicy_send, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_inject_fault,	zfs_secpolicy_inject, NO_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_clear_fault, zfs_secpolicy_inject, NO_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_inject_list_next, zfs_secpolicy_inject, NO_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_error_log, zfs_secpolicy_inject, POOL_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_clear, zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_promote, zfs_secpolicy_promote, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_destroy_snaps, zfs_secpolicy_destroy_recursive,
-      DATASET_NAME, B_TRUE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_destroy_snaps_nvl, zfs_secpolicy_destroy_recursive,
-      DATASET_NAME, B_TRUE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_snapshot, zfs_secpolicy_snapshot, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_dsobj_to_dsname, zfs_secpolicy_diff, POOL_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_obj_to_path, zfs_secpolicy_diff, DATASET_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_pool_set_props, zfs_secpolicy_config,	POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_pool_get_props, zfs_secpolicy_read, POOL_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_set_fsacl, zfs_secpolicy_set_fsacl, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_get_fsacl, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_share, zfs_secpolicy_share, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_inherit_prop, zfs_secpolicy_inherit_prop, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_smb_acl, zfs_secpolicy_smb_acl, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_userspace_one, zfs_secpolicy_userspace_one, DATASET_NAME,
-      B_FALSE, POOL_CHECK_NONE },
-    { zfs_ioc_userspace_many, zfs_secpolicy_userspace_many, DATASET_NAME,
-      B_FALSE, POOL_CHECK_NONE },
-    { zfs_ioc_userspace_upgrade, zfs_secpolicy_userspace_upgrade,
-      DATASET_NAME, B_FALSE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_hold, zfs_secpolicy_hold, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_release, zfs_secpolicy_release, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_get_holds, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_objset_recvd_props, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_vdev_split, zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_next_obj, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_diff, zfs_secpolicy_diff, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_tmp_snapshot, zfs_secpolicy_tmp_snapshot, DATASET_NAME,
-      B_FALSE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_obj_to_stats, zfs_secpolicy_diff, DATASET_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_events_next, zfs_secpolicy_config, NO_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_events_clear, zfs_secpolicy_config, NO_NAME, B_FALSE,
-      POOL_CHECK_NONE },
-    { zfs_ioc_pool_reguid, zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY },
-    { zfs_ioc_space_written, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_space_snaps, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_pool_reopen, zfs_secpolicy_config, POOL_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_send_progress, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_NONE },
+    { zfs_ioc_pool_create, NULL, zfs_secpolicy_config, POOL_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_pool_destroy,	NULL, zfs_secpolicy_config, POOL_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_pool_import, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_pool_export, NULL, zfs_secpolicy_config, POOL_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_pool_configs,	NULL, zfs_secpolicy_none, NO_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_pool_stats, NULL, zfs_secpolicy_read, POOL_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_pool_tryimport, NULL, zfs_secpolicy_config, NO_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_pool_scan, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_pool_freeze, NULL, zfs_secpolicy_config, NO_NAME, B_FALSE,
+      POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_pool_upgrade,	NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_pool_get_history, NULL, zfs_secpolicy_config, POOL_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_vdev_add, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_vdev_remove, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_vdev_set_state, NULL, zfs_secpolicy_config,	POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_vdev_attach, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_vdev_detach, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_vdev_setpath,	NULL, zfs_secpolicy_config, POOL_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_vdev_setfru,	NULL, zfs_secpolicy_config, POOL_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_objset_stats,	NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { zfs_ioc_objset_zplprops, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_dataset_list_next, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { zfs_ioc_snapshot_list_next, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { zfs_ioc_set_prop, NULL, zfs_secpolicy_none, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_create_minor, NULL, zfs_secpolicy_config, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_remove_minor, NULL, zfs_secpolicy_config, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { NULL, zfs_ioc_create, zfs_secpolicy_create, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE },
+    { zfs_ioc_destroy, NULL, zfs_secpolicy_destroy, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_rollback, NULL, zfs_secpolicy_rollback, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_rename, NULL, zfs_secpolicy_rename,	DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_recv, NULL, zfs_secpolicy_recv, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_send, NULL, zfs_secpolicy_send, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_inject_fault,	NULL, zfs_secpolicy_inject, NO_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_clear_fault, NULL, zfs_secpolicy_inject, NO_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_inject_list_next, NULL, zfs_secpolicy_inject, NO_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_error_log, NULL, zfs_secpolicy_inject, POOL_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_clear, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_promote, NULL, zfs_secpolicy_promote, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { NULL, zfs_ioc_destroy_snaps, zfs_secpolicy_destroy_recursive,
+      DATASET_NAME, B_TRUE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE},
+    { zfs_ioc_destroy_snaps_nvl, NULL, zfs_secpolicy_destroy_recursive,
+      DATASET_NAME, B_TRUE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { NULL, zfs_ioc_snapshot, zfs_secpolicy_snapshot, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE },
+    { zfs_ioc_dsobj_to_dsname, NULL, zfs_secpolicy_diff, POOL_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_obj_to_path, NULL, zfs_secpolicy_diff, DATASET_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { zfs_ioc_pool_set_props, NULL, zfs_secpolicy_config,	POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_pool_get_props, NULL, zfs_secpolicy_read, POOL_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_set_fsacl, NULL, zfs_secpolicy_set_fsacl, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_get_fsacl, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_share, NULL, zfs_secpolicy_share, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_inherit_prop, NULL, zfs_secpolicy_inherit_prop, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_smb_acl, NULL, zfs_secpolicy_smb_acl, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_userspace_one, NULL, zfs_secpolicy_userspace_one, DATASET_NAME,
+      B_FALSE, POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_userspace_many, NULL, zfs_secpolicy_userspace_many, DATASET_NAME,
+      B_FALSE, POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_userspace_upgrade, NULL, zfs_secpolicy_userspace_upgrade,
+      DATASET_NAME, B_FALSE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { NULL, zfs_ioc_hold, zfs_secpolicy_hold, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE },
+    { NULL, zfs_ioc_release, zfs_secpolicy_release, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE },
+    { NULL, zfs_ioc_get_holds, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { zfs_ioc_objset_recvd_props, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_vdev_split, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_next_obj, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_diff, NULL, zfs_secpolicy_diff, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_tmp_snapshot, NULL, zfs_secpolicy_tmp_snapshot, DATASET_NAME,
+      B_FALSE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_obj_to_stats, NULL, zfs_secpolicy_diff, DATASET_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { zfs_ioc_events_next, NULL, zfs_secpolicy_config, NO_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_events_clear, NULL, zfs_secpolicy_config, NO_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_pool_reguid, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    { zfs_ioc_space_written, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { NULL, zfs_ioc_space_snaps, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { zfs_ioc_pool_reopen, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { zfs_ioc_send_progress, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
 
-    { zfs_ioc_log_history, zfs_secpolicy_log_history, NO_NAME, B_FALSE,
-      POOL_CHECK_READONLY },
-    { zfs_ioc_send_new, zfs_secpolicy_send_new, DATASET_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_send_space, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
-      POOL_CHECK_SUSPENDED },
-    { zfs_ioc_clone, zfs_secpolicy_create_clone, DATASET_NAME, B_TRUE,
-      POOL_CHECK_SUSPENDED },
+    { NULL, zfs_ioc_log_history, zfs_secpolicy_log_history, NO_NAME, B_FALSE,
+      POOL_CHECK_READONLY, B_FALSE },
+    { NULL, zfs_ioc_send_new, zfs_secpolicy_send_new, DATASET_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { NULL, zfs_ioc_send_space, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
+      POOL_CHECK_SUSPENDED, B_FALSE },
+    { NULL, zfs_ioc_clone, zfs_secpolicy_create_clone, DATASET_NAME, B_TRUE,
+      POOL_CHECK_SUSPENDED, B_TRUE },
 };
 
 
@@ -5680,6 +5689,7 @@ zfsdev_getminor(struct file *filp)
     //	ASSERT(filp->private_data != NULL);
 
     //	return (((zfsdev_state_t *)filp->private_data)->zs_minor);
+    return 0;
 }
 
 /*
@@ -5735,7 +5745,7 @@ zfsdev_state_init(struct file *filp)
 static int
 zfsdev_state_destroy(struct file *filp)
 {
-	zfsdev_state_t *zs;
+	zfsdev_state_t *zs = NULL;
 
 	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 	//ASSERT(filp->private_data != NULL);
@@ -5751,7 +5761,7 @@ zfsdev_state_destroy(struct file *filp)
 }
 
 static int
-zfsdev_open(struct inode *ino, struct file *filp)
+zfsdev_open(struct vnode *ino, struct file *filp)
 {
 	int error;
 
@@ -5763,7 +5773,7 @@ zfsdev_open(struct inode *ino, struct file *filp)
 }
 
 static int
-zfsdev_release(struct inode *ino, struct file *filp)
+zfsdev_release(struct vnode *ino, struct file *filp)
 {
 	int error;
 
@@ -5774,22 +5784,19 @@ zfsdev_release(struct inode *ino, struct file *filp)
 	return (-error);
 }
 
-#define	CRED	((uintptr_t)NOCRED)
+//#define	CRED	((uintptr_t)NOCRED)
 
-enum zfs_soft_state_type {
-	ZSST_ZVOL,
-	ZSST_CTLDEV
-};
 #define getminor(X) minor((X))
 static int
 zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct proc *p)
 {
 	zfs_cmd_t *zc;
 	uint_t vec;
-	int error, rc;
+	int error;
 	cred_t *cr = vfs_context_current();
     minor_t minor = getminor(dev);
     nvlist_t *innvl = NULL;
+    nvlist_t *outnvl = NULL;
 
     //printf("ioctl minor %d\n", minor);
 
@@ -5802,21 +5809,26 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
         return (zvol_ioctl(dev, cmd, data, 0, NULL, NULL));
 
 	vec = cmd - ZFS_IOC;
-	if (vec >= sizeof(zfs_ioc_vec) / sizeof(zfs_ioc_vec[0]))
-		return (EINVAL);
-
-
-    if (zc->zc_nvlist_src_size != 0) {
-        error = get_nvlist(zc->zc_nvlist_src, zc->zc_nvlist_src_size,
-                           zc->zc_iflags, &innvl);
-        if (error != 0)
-            return EINVAL;
+	if (vec >= sizeof(zfs_ioc_vec) / sizeof(zfs_ioc_vec[0])) {
+        return (EINVAL);
     }
 
 	zc = (zfs_cmd_t *)data;
 	zc->zc_dev = dev;
+
+	dprintf("[zfs] got ioctl %d nvlist_sz %d (err %d)\n", vec,
+            zc->zc_nvlist_src_size, error);
+
+    if (zc->zc_nvlist_src_size != 0) {
+        error = get_nvlist(zc->zc_nvlist_src, zc->zc_nvlist_src_size,
+                           zc->zc_iflags, &innvl);
+        if (error != 0) {
+            zc->zc_ioc_error = EINVAL;
+            return (0);
+        }
+    }
+
 	error = zfs_ioc_vec[vec].zvec_secpolicy(zc, innvl, cr);
-	//printf("[zfs] got ioctl %d (err %d)\n", vec, error);
 	//delay(hz);
 
 	/*
@@ -5847,15 +5859,49 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 		}
 	}
 
+    /* Legacy function take 1 argument. New style take 3. */
+	if (error == 0) {
 
-	if (error == 0 && zfs_ioc_vec[vec].zvec_his_log == B_TRUE)
+        if (zfs_ioc_vec[vec].zvec_func != NULL)  {
+            int puterror = 0;
+
+            VERIFY0(nvlist_alloc(&outnvl, NV_UNIQUE_NAME, KM_PUSHPAGE));
+            error = zfs_ioc_vec[vec].zvec_func(zc->zc_name, innvl, outnvl);
+
+            // Send the outnvl back
+            if (!nvlist_empty(outnvl) || zc->zc_nvlist_dst_size != 0) {
+                int smusherror = 0;
+                if (zfs_ioc_vec[vec].zvec_smush_outnvlist) {
+                    smusherror = nvlist_smush(outnvl,
+                                              zc->zc_nvlist_dst_size);
+                }
+                if (smusherror == 0)
+                    puterror = put_nvlist(zc, outnvl);
+            }
+
+            if (puterror != 0)
+                error = puterror;
+
+            nvlist_free(outnvl);
+
+        } else { /* New or Legacy style call */
+
+            error = zfs_ioc_vec[vec].zvec_legacy_func(zc);
+
+        }
+    }
+
+	if (error == 0 && zfs_ioc_vec[vec].zvec_allow_log == B_TRUE)
 		zfs_log_history(zc);
+
+
+    nvlist_free(innvl);
 
 	/*
 	 * Return the real error in zc_ioc_error so the ioctl call always
 	 * does a copyout of the zc data
 	 */
-	//printf("[zfs] ioctl done %d\n", error);
+	dprintf("[zfs] ioctl done %d\n", error);
 	//delay(hz);
 	zc->zc_ioc_error = error;
 	return (0);
@@ -5872,9 +5918,6 @@ zfsdev_bioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pr
     return (zvol_ioctl(dev, cmd, data, 1, NULL, NULL));
 }
 
-
-extern int zvol_strategy(buf_t *bp);
-extern int zvol_get_volume_blocksize(dev_t dev);
 
 static struct bdevsw zfs_bdevsw = {
     /* open */      zvol_open,

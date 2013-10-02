@@ -268,6 +268,9 @@ void dsl_dataset_set_refreservation_sync_impl(dsl_dataset_t *ds,
     zprop_source_t source, uint64_t value, dmu_tx_t *tx);
 int dsl_dataset_rollback(const char *fsname);
 
+int dmu_send_estimate(dsl_dataset_t *ds, dsl_dataset_t *fromds,
+    uint64_t *sizep);
+
 #ifdef ZFS_DEBUG
 #define	dprintf_ds(ds, fmt, ...) do { \
 	if (zfs_flags & ZFS_DEBUG_DPRINTF) { \
