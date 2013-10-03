@@ -178,10 +178,6 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 	avl_create(&zp->z_range_avl, zfs_range_compare,
 	    sizeof (rl_t), offsetof(rl_t, r_node));
 
-    rw_init(&zp->z_xattr_lock, NULL, RW_DEFAULT, NULL);
-
-    zp->z_xattr_cached = NULL;
-    zp->z_xattr_parent = NULL;
 	zp->z_dirlocks = NULL;
 	zp->z_acl_cached = NULL;
 	zp->z_moved = 0;
@@ -198,7 +194,6 @@ zfs_znode_cache_destructor(void *buf, void *arg)
 	ASSERT(ZTOV(zp) == NULL);
 	vn_free(ZTOV(zp));
 	ASSERT(!list_link_active(&zp->z_link_node));
-    rw_destroy(&zp->z_xattr_lock);
 	mutex_destroy(&zp->z_lock);
     rw_destroy(&zp->z_map_lock);
 	rw_destroy(&zp->z_parent_lock);
@@ -1369,7 +1364,7 @@ zfs_rezget(znode_t *zp)
 	mutex_exit(&zp->z_acl_lock);
 
     dprintf("rezget: %p %p %p\n", zp, zp->z_xattr_lock,zp->z_xattr_parent);
-
+#ifdef __LINUX__
 	rw_enter(&zp->z_xattr_lock, RW_WRITER);
 	if (zp->z_xattr_cached) {
 		nvlist_free(zp->z_xattr_cached);
@@ -1381,6 +1376,7 @@ zfs_rezget(znode_t *zp)
 		zp->z_xattr_parent = NULL;
 	}
 	rw_exit(&zp->z_xattr_lock);
+#endif
 
 	ASSERT(zp->z_sa_hdl == NULL);
 	err = sa_buf_hold(zfsvfs->z_os, obj_num, NULL, &db);
