@@ -691,6 +691,8 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
 	zfs_znode_cache_constructor(zp, zfsvfs->z_parent->z_vfs, 0);
 
+	mutex_enter(&zp->z_lock);
+
 	ASSERT(zp->z_dirlocks == NULL);
 	ASSERT(!POINTER_IS_VALID(zp->z_zfsvfs));
 	zp->z_moved = 0;
@@ -716,6 +718,8 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_uid = 0;
 	zp->z_gid = 0;
 	zp->z_size = 0;
+
+	mutex_exit(&zp->z_lock);
 
 	vp = ZTOV(zp); /* Does nothing in OSX */
 
