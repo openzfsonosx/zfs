@@ -19,12 +19,13 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
+ * Use is subject to license terms.
+ * Portions Copyright 2008 Apple Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * Copyright (c) 2012 by Delphix. All rights reserved.
- */
+
+#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #include <sys/refcount.h>
 #include <sys/rrwlock.h>
@@ -72,26 +73,51 @@
  */
 
 /* global key for TSD */
+#ifndef __APPLE__
 uint_t rrw_tsd_key;
+#endif /* !__APPLE__ */
 
 typedef struct rrw_node {
-	struct rrw_node *rn_next;
-	rrwlock_t *rn_rrl;
-	void *rn_tag;
+	struct rrw_node	*rn_next;
+	rrwlock_t	*rn_rrl;
+#ifdef __APPLE__
+	/*
+	 * Since OS X doesn't have Thread Specific Data KPIs,
+	 * just keep all the nodes in the rrwlock_t itself.
+	 * We must therefore match on rn_thread when looking
+	 * for any nodes associated with the current thread.
+	 */
+	kthread_t	*rn_thread;
+#endif /* __APPLE__ */
 } rrw_node_t;
+
+
+#ifndef KERNEL
+#define current_thread(x) 0
+#endif
 
 static rrw_node_t *
 rrn_find(rrwlock_t *rrl)
 {
-	//rrw_node_t *rn;
+	rrw_node_t *rn;
+#ifdef __APPLE__
+	kthread_t *t = current_thread();
+#endif
 
 	if (refcount_count(&rrl->rr_linked_rcount) == 0)
 		return (NULL);
+#ifdef __APPLE__
+	for (rn = rrl->rr_node_list; rn != NULL; rn = rn->rn_next) {
+		if (rn->rn_thread == t)
+			return (rn);
+	}
+#else
+	for (rn = tsd_get(rrw_tsd_key); rn != NULL; rn = rn->rn_next) {
+		if (rn->rn_rrl == rrl)
+			return (rn);
+	}
+#endif /* __APPLE__ */
 
-	//for (rn = tsd_get(rrw_tsd_key); rn != NULL; rn = rn->rn_next) {
-	//	if (rn->rn_rrl == rrl)
-	//		return (rn);
-	//}
 	return (NULL);
 }
 
@@ -99,18 +125,20 @@ rrn_find(rrwlock_t *rrl)
  * Add a node to the head of the singly linked list.
  */
 static void
-rrn_add(rrwlock_t *rrl, void *tag)
+rrn_add(rrwlock_t *rrl)
 {
 	rrw_node_t *rn;
 
-	rn = kmem_alloc(sizeof (*rn), KM_PUSHPAGE);
+	rn = kmem_alloc(sizeof (*rn), KM_SLEEP);
 	rn->rn_rrl = rrl;
-
-	//rn->rn_next = tsd_get(rrw_tsd_key);
-	//VERIFY(tsd_set(rrw_tsd_key, rn) == 0);
+#ifdef __APPLE__
+	rn->rn_next = rrl->rr_node_list ? rrl->rr_node_list : NULL;
+	rn->rn_thread = current_thread();
+	rrl->rr_node_list = rn;
+#else
 	rn->rn_next = tsd_get(rrw_tsd_key);
-	rn->rn_tag = tag;
-	//VERIFY(tsd_set(rrw_tsd_key, rn) == 0);
+	VERIFY(tsd_set(rrw_tsd_key, rn) == 0);
+#endif /* __APPLE__ */
 }
 
 /*
@@ -118,16 +146,34 @@ rrn_add(rrwlock_t *rrl, void *tag)
  * thread's list and return TRUE; otherwise return FALSE.
  */
 static boolean_t
-rrn_find_and_remove(rrwlock_t *rrl, void *tag)
+rrn_find_and_remove(rrwlock_t *rrl)
 {
-	//rrw_node_t *rn;
-	//rrw_node_t *prev = NULL;
+	rrw_node_t *rn;
+	rrw_node_t *prev = NULL;
+
+#ifdef __APPLE__
+	kthread_t *t = current_thread();
 
 	if (refcount_count(&rrl->rr_linked_rcount) == 0)
 		return (B_FALSE);
-#if 0
+
+	for (rn = rrl->rr_node_list; rn != NULL; rn = rn->rn_next) {
+		if (rn->rn_thread == t) {
+			if (prev)
+				prev->rn_next = rn->rn_next;
+			else
+				rrl->rr_node_list = rn->rn_next;
+			kmem_free(rn, sizeof (*rn));
+			return (B_TRUE);
+		}
+		prev = rn;
+	}
+#else
+	if (refcount_count(&rrl->rr_linked_rcount) == 0)
+		return (0);
+
 	for (rn = tsd_get(rrw_tsd_key); rn != NULL; rn = rn->rn_next) {
-		if (rn->rn_rrl == rrl && rn->rn_tag == tag) {
+		if (rn->rn_rrl == rrl) {
 			if (prev)
 				prev->rn_next = rn->rn_next;
 			else
@@ -150,7 +196,7 @@ rrw_init(rrwlock_t *rrl, boolean_t track_all)
 	refcount_create(&rrl->rr_anon_rcount);
 	refcount_create(&rrl->rr_linked_rcount);
 	rrl->rr_writer_wanted = B_FALSE;
-	rrl->rr_track_all = track_all;
+    rrl->rr_track_all = track_all;
 }
 
 void
@@ -167,26 +213,17 @@ void
 rrw_enter_read(rrwlock_t *rrl, void *tag)
 {
 	mutex_enter(&rrl->rr_lock);
-#if !defined(DEBUG) && defined(_KERNEL)
-	if (rrl->rr_writer == NULL && !rrl->rr_writer_wanted &&
-	    !rrl->rr_track_all) {
-		rrl->rr_anon_rcount.rc_count++;
-		mutex_exit(&rrl->rr_lock);
-		return;
-	}
-	DTRACE_PROBE(zfs__rrwfastpath__rdmiss);
-#endif
 	ASSERT(rrl->rr_writer != curthread);
 	ASSERT(refcount_count(&rrl->rr_anon_rcount) >= 0);
 
-	while (rrl->rr_writer != NULL || (rrl->rr_writer_wanted &&
+	while (rrl->rr_writer || (rrl->rr_writer_wanted &&
 	    refcount_is_zero(&rrl->rr_anon_rcount) &&
 	    rrn_find(rrl) == NULL))
 		cv_wait(&rrl->rr_cv, &rrl->rr_lock);
 
-	if (rrl->rr_writer_wanted || rrl->rr_track_all) {
+	if (rrl->rr_writer_wanted) {
 		/* may or may not be a re-entrant enter */
-		rrn_add(rrl, tag);
+		rrn_add(rrl);
 		(void) refcount_add(&rrl->rr_linked_rcount, tag);
 	} else {
 		(void) refcount_add(&rrl->rr_anon_rcount, tag);
@@ -208,7 +245,7 @@ rrw_enter_write(rrwlock_t *rrl)
 		cv_wait(&rrl->rr_cv, &rrl->rr_lock);
 	}
 	rrl->rr_writer_wanted = B_FALSE;
-	rrl->rr_writer = (kthread_t *)curthread;
+	rrl->rr_writer = curthread;
 	mutex_exit(&rrl->rr_lock);
 }
 
@@ -225,30 +262,19 @@ void
 rrw_exit(rrwlock_t *rrl, void *tag)
 {
 	mutex_enter(&rrl->rr_lock);
-#if !defined(DEBUG) && defined(_KERNEL)
-	if (!rrl->rr_writer && rrl->rr_linked_rcount.rc_count == 0) {
-		rrl->rr_anon_rcount.rc_count--;
-		if (rrl->rr_anon_rcount.rc_count == 0)
-			cv_broadcast(&rrl->rr_cv);
-		mutex_exit(&rrl->rr_lock);
-		return;
-	}
-	DTRACE_PROBE(zfs__rrwfastpath__exitmiss);
-#endif
 	ASSERT(!refcount_is_zero(&rrl->rr_anon_rcount) ||
 	    !refcount_is_zero(&rrl->rr_linked_rcount) ||
 	    rrl->rr_writer != NULL);
 
 	if (rrl->rr_writer == NULL) {
-		int64_t count;
-		if (rrn_find_and_remove(rrl, tag)) {
-			count = refcount_remove(&rrl->rr_linked_rcount, tag);
+		if (rrn_find_and_remove(rrl)) {
+			if (refcount_remove(&rrl->rr_linked_rcount, tag) == 0)
+				cv_broadcast(&rrl->rr_cv);
+
 		} else {
-			ASSERT(!rrl->rr_track_all);
-			count = refcount_remove(&rrl->rr_anon_rcount, tag);
+			if (refcount_remove(&rrl->rr_anon_rcount, tag) == 0)
+				cv_broadcast(&rrl->rr_cv);
 		}
-		if (count == 0)
-			cv_broadcast(&rrl->rr_cv);
 	} else {
 		ASSERT(rrl->rr_writer == curthread);
 		ASSERT(refcount_is_zero(&rrl->rr_anon_rcount) &&
@@ -259,33 +285,19 @@ rrw_exit(rrwlock_t *rrl, void *tag)
 	mutex_exit(&rrl->rr_lock);
 }
 
-/*
- * If the lock was created with track_all, rrw_held(RW_READER) will return
- * B_TRUE iff the current thread has the lock for reader.  Otherwise it may
- * return B_TRUE if any thread has the lock for reader.
- */
 boolean_t
 rrw_held(rrwlock_t *rrl, krw_t rw)
 {
 	boolean_t held;
+
 	mutex_enter(&rrl->rr_lock);
 	if (rw == RW_WRITER) {
-		held = (rrl->rr_writer == (kthread_t *)curthread);
+		held = (rrl->rr_writer == curthread);
 	} else {
 		held = (!refcount_is_zero(&rrl->rr_anon_rcount) ||
-		    rrn_find(rrl) != NULL);
+		    !refcount_is_zero(&rrl->rr_linked_rcount));
 	}
 	mutex_exit(&rrl->rr_lock);
 
 	return (held);
-}
-
-void
-rrw_tsd_destroy(void *arg)
-{
-	rrw_node_t *rn = arg;
-	if (rn != NULL) {
-		panic("thread %p terminating with rrw lock %p held",
-		    (void *)curthread, (void *)rn->rn_rrl);
-	}
 }

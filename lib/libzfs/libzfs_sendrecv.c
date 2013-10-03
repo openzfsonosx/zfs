@@ -1085,6 +1085,14 @@ osx_recv_pipe(void *arg)
         bytes += wrote;
     }
 
+#if 0
+    fprintf(stderr, "recv_pipe complete: %llu bytes.(red %d, wrote %d)\r\n",
+            bytes, red, wrote);
+    memset(buffer, 0, sizeof(buffer));
+
+    while(write(fd, buffer, sizeof(buffer)) > 0) ;
+    close(fd);
+#endif
     return (NULL);
 }
 #endif

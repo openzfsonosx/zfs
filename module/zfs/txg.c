@@ -538,7 +538,7 @@ txg_sync_thread(void *arg)
 		vdev_get_stats(spa->spa_root_vdev, &th->th_vs1);
 		dsl_pool_txg_history_put(th);
 
-		dprintf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
+		dprintf("sync: txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
 		    txg, tx->tx_quiesce_txg_waiting, tx->tx_sync_txg_waiting);
 		mutex_exit(&tx->tx_sync_lock);
 

@@ -61,6 +61,9 @@ typedef struct rrwlock {
 	refcount_t	rr_linked_rcount;
 	boolean_t	rr_writer_wanted;
 	boolean_t	rr_track_all;
+#ifdef __APPLE__
+    struct rrw_node *rr_node_list;
+#endif
 } rrwlock_t;
 
 /*

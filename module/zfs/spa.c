@@ -2108,7 +2108,6 @@ spa_load(spa_t *spa, spa_load_state_t state, spa_import_type_t type,
  * Load an existing storage pool, using the pool's builtin spa_config as a
  * source of configuration information.
  */
-__attribute__((always_inline))
 static inline int
 spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
     spa_load_state_t state, spa_import_type_t type, boolean_t mosconfig,
@@ -6248,6 +6247,7 @@ spa_sync(spa_t *spa, uint64_t txg)
 	 * config cache (see spa_vdev_add() for a complete description).
 	 * If there *are* dirty vdevs, sync the uberblock to all vdevs.
 	 */
+
 	for (;;) {
 		/*
 		 * We hold SCL_STATE to prevent vdev open/close/etc.

@@ -79,17 +79,9 @@ dump_bytes_strategy(void *arg)
 	ASSERT0(dbi->dbi_len % 8);
 
 	fletcher_4_incremental_native(dbi->dbi_buf, dbi->dbi_len, &dsp->dsa_zc);
-#ifdef __XPPLE__
-    /* We pass 'int fd' around instead, and call fd_fdwr as it handles
-     * both files and pipes */
-	dsp->dsa_err = fd_rdwr(dsp->dsa_fd, UIO_WRITE,
-                           (uint64_t)dbi->dbi_buf, dbi->dbi_len,
-                           UIO_SYSSPACE, 0, 0, (int64_t *)&resid);
-#else
 	dsp->dsa_err = vn_rdwr(UIO_WRITE, dsp->dsa_vp,
 	    (caddr_t)dbi->dbi_buf, dbi->dbi_len,
 	    0, UIO_SYSSPACE, FAPPEND, RLIM64_INFINITY, CRED(), &resid);
-#endif
 
 	mutex_enter(&ds->ds_sendstream_lock);
 	*dsp->dsa_off += dbi->dbi_len;
@@ -509,11 +501,7 @@ dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *ds,
 	dsp = kmem_zalloc(sizeof (dmu_sendarg_t), KM_SLEEP);
 
 	dsp->dsa_drr = drr;
-#ifdef __XPPLE__
-	dsp->dsa_fd = fd;
-#else
 	dsp->dsa_vp = vp;
-#endif
 	dsp->dsa_outfd = outfd;
 	dsp->dsa_proc = curproc;
 	dsp->dsa_os = os;
@@ -1024,17 +1012,11 @@ restore_read(struct restorearg *ra, int len)
 	while (done < len) {
 		ssize_t resid;
 
-#ifdef __XAPPLE__
-		ra->err = fd_rdwr(ra->fd, UIO_READ,
-		    (caddr_t)ra->buf + done, len - done,
-            UIO_SYSSPACE, ra->voff, FAPPEND,
-		    &resid);
-#else
 		ra->err = vn_rdwr(UIO_READ, ra->vp,
 		    (caddr_t)ra->buf + done, len - done,
 		    ra->voff, UIO_SYSSPACE, FAPPEND,
 		    RLIM64_INFINITY, CRED(), &resid);
-#endif
+
 		if (resid == len - done)
 			ra->err = EINVAL;
 		ra->voff += len - done - resid;

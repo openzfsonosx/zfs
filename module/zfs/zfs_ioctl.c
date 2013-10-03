@@ -5500,6 +5500,7 @@ static zfs_ioc_vec_t zfs_ioc_vec[] = {
       POOL_CHECK_READONLY, B_FALSE },
     { zfs_ioc_pool_upgrade,	NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
       POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    // 10
     { zfs_ioc_pool_get_history, NULL, zfs_secpolicy_config, POOL_NAME, B_FALSE,
       POOL_CHECK_NONE, B_FALSE },
     { zfs_ioc_vdev_add, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
@@ -5520,6 +5521,7 @@ static zfs_ioc_vec_t zfs_ioc_vec[] = {
       POOL_CHECK_SUSPENDED, B_FALSE },
     { zfs_ioc_objset_zplprops, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
       POOL_CHECK_NONE, B_FALSE },
+    // 20
     { zfs_ioc_dataset_list_next, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
       POOL_CHECK_SUSPENDED, B_FALSE },
     { zfs_ioc_snapshot_list_next, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
@@ -5540,6 +5542,7 @@ static zfs_ioc_vec_t zfs_ioc_vec[] = {
       POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
     { zfs_ioc_recv, NULL, zfs_secpolicy_recv, DATASET_NAME, B_TRUE,
       POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    // 30
     { zfs_ioc_send, NULL, zfs_secpolicy_send, DATASET_NAME, B_FALSE,
       POOL_CHECK_NONE, B_FALSE },
     { zfs_ioc_inject_fault,	NULL, zfs_secpolicy_inject, NO_NAME, B_FALSE,
@@ -5554,7 +5557,7 @@ static zfs_ioc_vec_t zfs_ioc_vec[] = {
       POOL_CHECK_NONE, B_FALSE },
     { zfs_ioc_promote, NULL, zfs_secpolicy_promote, DATASET_NAME, B_TRUE,
       POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
-    { NULL, zfs_ioc_destroy_snaps, zfs_secpolicy_destroy_recursive,
+    { NULL, zfs_ioc_destroy_snaps, zfs_secpolicy_destroy_snaps,
       DATASET_NAME, B_TRUE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE},
     { zfs_ioc_destroy_snaps_nvl, NULL, zfs_secpolicy_destroy_recursive,
       DATASET_NAME, B_TRUE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
@@ -5861,11 +5864,15 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 		}
 	}
 
+   dprintf("ioctl secpolicy %d\n", error);
+
     /* Legacy function take 1 argument. New style take 3. */
 	if (error == 0) {
 
         if (zfs_ioc_vec[vec].zvec_func != NULL)  {
             int puterror = 0;
+
+            dprintf("New call type!\n");
 
             VERIFY0(nvlist_alloc(&outnvl, NV_UNIQUE_NAME, KM_PUSHPAGE));
             error = zfs_ioc_vec[vec].zvec_func(zc->zc_name, innvl, outnvl);
@@ -5873,6 +5880,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
             // Send the outnvl back
             if (!nvlist_empty(outnvl) || zc->zc_nvlist_dst_size != 0) {
                 int smusherror = 0;
+                dprintf("smushing!\n");
                 if (zfs_ioc_vec[vec].zvec_smush_outnvlist) {
                     smusherror = nvlist_smush(outnvl,
                                               zc->zc_nvlist_dst_size);
@@ -5884,6 +5892,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
             if (puterror != 0)
                 error = puterror;
 
+            dprintf("New call type done %d\n", error);
             nvlist_free(outnvl);
 
         } else { /* New or Legacy style call */
