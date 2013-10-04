@@ -1113,6 +1113,8 @@ zfsctl_snapdir_mkdir(struct vnode *dvp, char *dirname, vattr_t *vap, struct vnod
 	//static enum symfollow follow = NO_FOLLOW;
 	static enum uio_seg seg = UIO_SYSSPACE;
 
+    return ENOTSUP;
+
 	if (snapshot_namecheck(dirname, NULL, NULL) != 0)
 		return (EILSEQ);
 
@@ -1125,8 +1127,8 @@ zfsctl_snapdir_mkdir(struct vnode *dvp, char *dirname, vattr_t *vap, struct vnod
 		return (err);
 
 	if (err == 0) {
-		err = dmu_objset_snapshot(name, dirname, NULL, NULL,
-		    B_FALSE, B_FALSE, -1);
+        //		err = dmu_objset_snapshot(name, dirname, NULL, NULL,
+        //  B_FALSE, B_FALSE, -1);
 		if (err)
 			return (err);
         err = zfsctl_snapdir_lookup(dvp, dirname, vpp,
