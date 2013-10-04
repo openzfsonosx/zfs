@@ -174,6 +174,7 @@ zpl_umount_begin(struct super_block *sb)
 	 * Best effort to unmount snapshots in .zfs/snapshot/.  Normally this
 	 * isn't required because snapshots have the MNT_SHRINKABLE flag set.
 	 */
+    printf("zpl_super called\n");
 	if (zsb->z_ctldir)
 		(void) zfsctl_unmount_snapshots(zsb, MNT_FORCE, &count);
 }

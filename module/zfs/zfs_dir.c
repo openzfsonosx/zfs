@@ -398,6 +398,7 @@ zfs_dirlook(znode_t *dzp, char *name, vnode_t **vpp, int flags,
 		    SA_ZPL_PARENT(zfsvfs), &parent, sizeof (parent))) != 0)
 			return (error);
 		if (parent == dzp->z_id && zfsvfs->z_parent != zfsvfs) {
+            printf("zfs_dir calling zfsctl\n");
 			error = zfsctl_root_lookup(zfsvfs->z_parent->z_ctldir,
 			    "snapshot", vpp, NULL, 0, NULL, kcred,
 			    NULL, NULL, NULL);

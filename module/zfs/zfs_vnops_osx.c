@@ -100,7 +100,13 @@ extern struct vnodeopv_desc zfs_symvnodeop_opv_desc;
 extern struct vnodeopv_desc zfs_xdvnodeop_opv_desc;
 extern struct vnodeopv_desc zfs_evnodeop_opv_desc;
 
-#define ZFS_VNOP_TBL_CNT	5
+extern struct vnodeopv_desc zfsctl_ops_root;
+extern struct vnodeopv_desc zfsctl_ops_snapdir;
+extern struct vnodeopv_desc zfsctl_ops_snapshot;
+
+#define ZFS_VNOP_TBL_CNT	8
+
+
 
 static struct vnodeopv_desc *zfs_vnodeop_opv_desc_list[ZFS_VNOP_TBL_CNT] =
 {
@@ -109,6 +115,9 @@ static struct vnodeopv_desc *zfs_vnodeop_opv_desc_list[ZFS_VNOP_TBL_CNT] =
 	&zfs_symvnodeop_opv_desc,
 	&zfs_xdvnodeop_opv_desc,
 	&zfs_evnodeop_opv_desc,
+    &zfsctl_ops_root,
+    &zfsctl_ops_snapdir,
+    &zfsctl_ops_snapshot,
 };
 
 static vfstable_t zfs_vfsconf;
@@ -397,11 +406,11 @@ zfs_vnop_mkdir(
     int error;
     dprintf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
-#if 0 // Let's deny OSX fseventd for now */
+#if 1 // Let's deny OSX fseventd for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".fseventsd"))
         return EINVAL;
 #endif
-#if 0 //spotlight for now */
+#if 1 //spotlight for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".Spotlight-V100"))
         return EINVAL;
 #endif
@@ -1388,7 +1397,6 @@ zfs_vnop_pathconf(
         case _PC_CASE_PRESERVING:
                 *valp = 1;
                 break;
-
                 /* OSX 10.6 does not define this */
 #ifndef _PC_XATTR_SIZE_BITS
 #define _PC_XATTR_SIZE_BITS   26

@@ -401,7 +401,7 @@ readonly_changed_cb(void *arg, uint64_t newval)
 
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_RDONLY);
 	} else {
-        // FIXME, we don7t re-open mtime_vp here.
+        // FIXME, we don't re-open mtime_vp here.
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_RDONLY);
 	}
 }
@@ -2019,6 +2019,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		zfsvfs_t *zfsvfs = NULL;
 
 
+
         	//vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
 		/* Indicate to VFS that we support ACLs. */
 		vfs_setextendedsecurity(vfsp);
@@ -2073,6 +2074,9 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 			 */
 			zfsvfs->z_last_unmount_time = 0xBADC0DE;
 			zfsvfs->z_last_mtime_synced = VTOZ(xdvp)->z_id;
+
+			if (!vfs_isrdonly(vfsp)) {
+
 			flag = vfs_isrdonly(vfsp) ? 0 : ZEXISTS;
 			/* Lookup or create the named attribute. */
 			if ( zfs_obtain_xattr(VTOZ(xdvp), ZFS_MTIME_XATTR,
@@ -2083,10 +2087,12 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
                 vnode_put(xdvp);
                 goto out;
             }
+
             gethrestime(&now);
 
             ZFS_TIME_ENCODE(&now, VTOZ(xvp)->z_atime);
 			vnode_put(xdvp);
+
             /* Can't hold a ref if we are readonly. */
             if (!vfs_isrdonly(vfsp)) {
 
@@ -2106,6 +2112,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 			vnode_setnoflush(xvp);
 #endif
 			vnode_put(xvp);
+            } // readonly
+
 		}
 #endif
 
@@ -2451,7 +2459,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
     zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 	//kthread_t *td = (kthread_t *)curthread;
 	objset_t *os;
-	//cred_t *cr =  (cred_t *)vfs_context_ucred(context);
+	cred_t *cr =  (cred_t *)vfs_context_ucred(context);
 	int ret;
 
     dprintf("+unmount\n");
@@ -2478,22 +2486,47 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	 * Unmount any snapshots mounted under .zfs before unmounting the
 	 * dataset itself.
 	 */
-#ifndef __APPLE__
+    dprintf("z_ctldir check: %p\n",zfsvfs->z_ctldir );
 	if (zfsvfs->z_ctldir != NULL) {
+
 		if ((ret = zfsctl_umount_snapshots(zfsvfs->z_vfs, 0 /*fflag*/, cr)) != 0)
 			return (ret);
-		ret = vflush(zfsvfs->z_vfs, NULLVP, 0);
-		ASSERT(ret == EBUSY);
-		if (!(fflag & MS_FORCE)) {
-			if (zfsvfs->z_ctldir->v_count > 1)
+
+        dprintf("vflush 1\n");
+        ret = vflush(zfsvfs->z_vfs, zfsvfs->z_ctldir, (mntflags & MNT_FORCE) ? FORCECLOSE : 0|SKIPSYSTEM);
+		//ret = vflush(zfsvfs->z_vfs, NULLVP, 0);
+		//ASSERT(ret == EBUSY);
+		if (!(mntflags & MNT_FORCE)) {
+			if (vnode_isinuse(zfsvfs->z_ctldir, 1)) {
+                dprintf("zfsctl vp still in use %p\n", zfsvfs->z_ctldir);
 				return (EBUSY);
-			ASSERT(zfsvfs->z_ctldir->v_count == 1);
+            }
+			//ASSERT(zfsvfs->z_ctldir->v_count == 1);
 		}
+        dprintf("z_ctldir destroy\n");
 		zfsctl_destroy(zfsvfs);
+        dprintf("z_ctldir destroy done\n");
 		ASSERT(zfsvfs->z_ctldir == NULL);
 	}
 
-	if (fflag & MS_FORCE) {
+#if 0
+    // If we are ourselves a snapshot
+	if (dmu_objset_is_snapshot(zfsvfs->z_os)) {
+        struct vnode *vp;
+        printf("We are unmounting a snapshot\n");
+        vp = vfs_vnodecovered(zfsvfs->z_vfs);
+        if (vp) {
+            struct vnop_inactive_args ap;
+            ap.a_vp = vp;
+            printf(".. telling gfs layer\n");
+            gfs_dir_inactive(&ap);
+            printf("..and put\n");
+            vnode_put(vp);
+        }
+    }
+#endif
+
+	if (mntflags & MNT_FORCE) {
 		/*
 		 * Mark file system as unmounted before calling
 		 * vflush(FORCECLOSE). This way we ensure no future vnops
@@ -2503,17 +2536,16 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		zfsvfs->z_unmounted = B_TRUE;
 		rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
 	}
-#endif
 
 	/*
 	 * Flush all the files.
 	 */
-	//ret = vflush(mp, NULLVP, (mntflags & MNT_FORCE) ? FORCECLOSE : 0|SKIPSYSTEM);
 	ret = vflush(mp, NULLVP, (mntflags & MNT_FORCE) ? FORCECLOSE|SKIPSYSTEM : SKIPSYSTEM);
+
 	if (ret != 0) {
 		if (!zfsvfs->z_issnap) {
-			zfsctl_create(zfsvfs);
-			ASSERT(zfsvfs->z_ctldir != NULL);
+			//zfsctl_create(zfsvfs);
+			//ASSERT(zfsvfs->z_ctldir != NULL);
 		}
 		return (ret);
 	}
@@ -2609,7 +2641,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	 */
 	if (zfsvfs->z_ctldir != NULL)
 		zfsctl_destroy(zfsvfs);
-#ifndef __APPLE__
+#if 0
 	if (zfsvfs->z_issnap) {
 		vnode_t *svp = vfsp->mnt_vnodecovered;
 
@@ -2617,6 +2649,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			VN_RELE(svp);
 	}
 #endif
+
     dprintf("freevfs\n");
 	zfs_freevfs(zfsvfs->z_vfs);
 

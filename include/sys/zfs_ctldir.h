@@ -47,16 +47,9 @@
         (zfs_has_ctldir(zdp) && \
         ((zdp)->z_zfsvfs->z_show_ctldir))
 
-typedef struct {
-	char			*se_name;
-	char			*se_path;
-	struct vnode		*se_inode;
-	taskqid_t		se_taskqid;
-	avl_node_t		se_node;
-} zfs_snapentry_t;
 
 /* zfsctl generic functions */
-extern int snapentry_compare(const void *a, const void *b);
+//extern int snapentry_compare(const void *a, const void *b);
 extern boolean_t zfsctl_is_node(struct vnode *ip);
 extern boolean_t zfsctl_is_snapdir(struct vnode *ip);
 extern void zfsctl_inode_inactive(struct vnode *ip);
@@ -74,7 +67,7 @@ extern int zfsctl_root_lookup ( struct vnode *dvp,char *nm,struct vnode **vpp,
                                 pathname_t *pnp, int flags,struct vnode *rdir,
                                 cred_t *cr, caller_context_t *ct,
                                 int *direntflags, pathname_t *realpnp);
-extern vnode_t *zfsctl_root(znode_t *zp);
+extern struct vnode *zfsctl_root(znode_t *zp);
 
 /* zfsctl '.zfs/snapshot' functions */
 #if 0

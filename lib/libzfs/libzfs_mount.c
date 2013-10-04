@@ -495,8 +495,40 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	 */
 	//strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
 
-	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL))
+#ifdef __APPLE__
+    /*
+     * Temporarily we work around letting snapshots be mounted with 'zfs mount'
+     * until we can find a way to issue mounts from the kernel.
+     * Strip off the "@name" part, to look up the parent dataset's mountpoint
+     * then append the ".zfs/snapshot/name" part to the mountpoint.
+     */
+    if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT) {
+        char *r = NULL;
+        char *parent_name = strdup(zhp->zfs_name);
+        zfs_handle_t *zhp_parent;
+        r = strchr(parent_name, '@');
+        if (r) {
+
+            *r = 0;
+
+            if ((zhp_parent = zfs_open(zhp->zfs_hdl, parent_name,
+                                       ZFS_TYPE_FILESYSTEM)) != NULL) {
+                zfs_prop_get(zhp_parent, ZFS_PROP_MOUNTPOINT, mountpoint,
+                             sizeof(mountpoint),
+                             NULL, NULL, 0, B_FALSE);
+                strcat(mountpoint, "/.zfs/snapshot/");
+                strcat(mountpoint, &r[1]);
+                fprintf(stderr, "ZFS: snapshot mountpoint '%s'\n", mountpoint);
+                free(parent_name);
+                zfs_close(zhp_parent);
+            } // zfs_open
+        } // if r
+    } else // snapshot
+#endif
+    /* WARNING ^^^ DANGLING "ELSE" ABOVE */
+	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL)) {
 		return (0);
+    }
 
 	/* Create the directory if it doesn't already exist */
 	if (lstat(mountpoint, &buf) != 0) {
@@ -623,19 +655,15 @@ zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
     struct mnttab search = { 0 }, entry;
     char *mntpt = NULL;
 
-    printf("zfs_unmount\n");
-
     /* check to see if need to unmount the filesystem */
 
-#if 0
-    search.mnt_special = zhp->zfs_name;
-    search.mnt_fstype = MNTTYPE_ZFS;
-    if (mountpoint != NULL || ((zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) &&
-                               getmntany(zhp->zfs_hdl->libzfs_mnttab, &entry, &search) == 0)) {
-#else
-        if (mountpoint != NULL || ((zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) &&
-                                   libzfs_mnttab_find(hdl, zhp->zfs_name, &entry) == 0)) {
-#endif
+    if (mountpoint != NULL ||
+        (
+         ((zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) ||
+          (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT)) &&
+         libzfs_mnttab_find(hdl, zhp->zfs_name, &entry) == 0)
+        ) {
+
         /*
          * mountpoint may have come from a call to
          * getmnt/getmntany if it isn't NULL. If it is NULL,
@@ -647,7 +675,8 @@ zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
         else
             mntpt = zfs_strdup(zhp->zfs_hdl, mountpoint);
 
-        //printf("located '%s'\n", mntpt);
+        //printf("located '%s' '%s' '%s'\n", mntpt,
+        //     entry.mnt_special, entry.mnt_mountp);
         /*
          * Unshare and unmount the filesystem
          */

@@ -5444,6 +5444,9 @@ share_mount_one(zfs_handle_t *zhp, int op, int flags, char *protocol,
 	uint64_t zoned, canmount;
 	boolean_t shared_nfs, shared_smb;
 
+    /*
+     * We will allow snapshot for a short time as well on OSX
+     */
 	assert(zfs_get_type(zhp) & ZFS_TYPE_FILESYSTEM);
 
 	/*
@@ -5800,6 +5803,17 @@ share_mount(int op, int argc, char **argv)
 			    options);
 			zfs_close(zhp);
 		}
+#ifdef __APPLE__
+		if ((zhp = zfs_open(g_zfs, argv[0],
+		    ZFS_TYPE_SNAPSHOT)) == NULL) {
+			ret = 1;
+		} else {
+            printf("Calling zfs_mount\n");
+            ret = zfs_mount(zhp, options, flags|MNT_RDONLY);
+
+			zfs_close(zhp);
+		}
+#endif
 	}
 
 	return (ret);
@@ -6150,8 +6164,18 @@ unshare_unmount(int op, int argc, char **argv)
 			    flags, B_FALSE));
 
 		if ((zhp = zfs_open(g_zfs, argv[0],
-		    ZFS_TYPE_FILESYSTEM)) == NULL)
+                            ZFS_TYPE_FILESYSTEM)) == NULL) {
+#ifdef __APPLE__
+            /* Temporarily, allow unmounting snapshots */
+            if ((zhp = zfs_open(g_zfs, argv[0],
+                                ZFS_TYPE_SNAPSHOT)) != NULL) {
+                ret = zfs_unmount(zhp, NULL, flags);
+                zfs_close(zhp);
+                return ret;
+            }
+#endif
 			return (1);
+        }
 
 		verify(zfs_prop_get(zhp, op == OP_SHARE ?
 		    ZFS_PROP_SHARENFS : ZFS_PROP_MOUNTPOINT,

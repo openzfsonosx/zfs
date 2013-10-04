@@ -73,6 +73,7 @@ zfs_SOURCES = \
 	dsl_scan.c \
 	dsl_synctask.c \
 	fm.c \
+	gfs.c \
 	gzip.c \
 	lzjb.c \
 	lz4.c \

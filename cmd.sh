@@ -12,4 +12,4 @@ done
 
 #echo PATH=$PATH
 #echo DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH
-exec ./cmd/$cmd/.libs/$cmd $*
+exec ./cmd/$cmd/.libs/$cmd "$@"
