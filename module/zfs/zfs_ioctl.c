@@ -6017,7 +6017,6 @@ zfs_ioctl_fini(void)
         return;
     }
 
-    zvol_fini(); // Removed in 10a286
     spa_fini();
 
     if (zfs_devnode) {
