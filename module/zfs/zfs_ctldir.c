@@ -76,6 +76,8 @@
 #include <sys/gfs.h>
 #include <sys/stat.h>
 #include <sys/dmu.h>
+#include <sys/dsl_destroy.h>
+
 #include <sys/dsl_deleg.h>
 #include <sys/mount.h>
 #include <sys/sunddi.h>
@@ -980,6 +982,7 @@ zfsctl_snapdir_rename(struct vnode *sdvp, char *snm, struct vnode *tdvp, char *t
 	zfs_snapentry_t search, *sep;
 	zfsvfs_t *zfsvfs;
 	avl_index_t where;
+
 	char from[MAXNAMELEN], to[MAXNAMELEN];
 	char real[MAXNAMELEN];
 	int err;

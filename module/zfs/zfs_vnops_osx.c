@@ -1053,7 +1053,6 @@ zfs_vnop_pageout(
             goto top;
         }
         dmu_tx_abort(tx);
-        printf("aborting\n");
         goto out;
     }
     if (len <= PAGESIZE) {

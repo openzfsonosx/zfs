@@ -204,6 +204,9 @@ extern void zfs_fini(void);
 extern int  zfs_vnode_lock(vnode_t *vp, int flags);
 extern void zfs_freevfs(struct mount *vfsp);
 
+extern int  zfsvfs_create(const char *osname, zfsvfs_t **zfvp);
+extern void zfsvfs_free(zfsvfs_t *zfsvfs);
+
 
 #ifdef	__cplusplus
 }

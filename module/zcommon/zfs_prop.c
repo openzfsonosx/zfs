@@ -122,6 +122,14 @@ zfs_prop_init(void)
 		{ NULL }
 	};
 
+    static zprop_index_t acl_mode_table[] = {
+        { "discard",    ZFS_ACL_DISCARD },
+        { "discard",    ZFS_ACL_GROUPMASK }, /* bkwrd compatability */
+        { "passthrough", ZFS_ACL_PASSTHROUGH },
+        { "mask", ZFS_ACL_MASKED },
+        { NULL }
+    };
+
 	static zprop_index_t case_table[] = {
 		{ "sensitive",		ZFS_CASE_SENSITIVE },
 		{ "insensitive",	ZFS_CASE_INSENSITIVE },
@@ -230,6 +238,9 @@ zfs_prop_init(void)
 	    ZFS_ACL_RESTRICTED, PROP_INHERIT, ZFS_TYPE_FILESYSTEM,
 	    "discard | noallow | restricted | passthrough | passthrough-x",
 	    "ACLINHERIT", acl_inherit_table);
+    zprop_register_index(ZFS_PROP_ACLMODE, "aclmode",
+        ZFS_ACL_DISCARD, PROP_INHERIT, ZFS_TYPE_FILESYSTEM,
+        "discard | mask | passthrough", "ACLMODE", acl_mode_table);
 	zprop_register_index(ZFS_PROP_COPIES, "copies", 1, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
 	    "1 | 2 | 3", "COPIES", copies_table);
@@ -394,13 +405,6 @@ zfs_prop_init(void)
 	    PROP_READONLY, ZFS_TYPE_DATASET, "UNIQUE");
 	zprop_register_hidden(ZFS_PROP_OBJSETID, "objsetid", PROP_TYPE_NUMBER,
 	    PROP_READONLY, ZFS_TYPE_DATASET, "OBJSETID");
-
-	/*
-	 * Property to be removed once libbe is integrated
-	 */
-	zprop_register_hidden(ZFS_PROP_PRIVATE, "priv_prop",
-	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_FILESYSTEM,
-	    "PRIV_PROP");
 
 	/* oddball properties */
 	zprop_register_impl(ZFS_PROP_CREATION, "creation", PROP_TYPE_NUMBER, 0,

@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 #ifndef	_SYS_ZFS_IOCTL_H
@@ -42,6 +43,15 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
+
+/*
+ * The structures in this file are passed between userland and the
+ * kernel.  Userland may be running a 32-bit process, while the kernel
+ * is 64-bit.  Therefore, these structures need to compile the same in
+ * 32-bit and 64-bit.  This means not using type "long", and adding
+ * explicit padding so that the 32-bit structure will not be packed more
+ * tightly than the 64-bit structure (which requires 64-bit alignment).
+ */
 
 /*
  * Property values for snapdir
@@ -311,22 +321,28 @@ typedef enum zfs_case {
 } zfs_case_t;
 
 typedef struct zfs_cmd {
-	char		zc_name[MAXPATHLEN];
-	char		zc_value[MAXPATHLEN * 2];
-	char		zc_string[MAXNAMELEN];
-	char		zc_top_ds[MAXPATHLEN];
-	uint64_t	zc_guid;
-	uint64_t	zc_nvlist_conf;		/* really (char *) */
-	uint64_t	zc_nvlist_conf_size;
+	char		zc_name[MAXPATHLEN];	/* name of pool or dataset */
 	uint64_t	zc_nvlist_src;		/* really (char *) */
 	uint64_t	zc_nvlist_src_size;
 	uint64_t	zc_nvlist_dst;		/* really (char *) */
 	uint64_t	zc_nvlist_dst_size;
+	boolean_t	zc_nvlist_dst_filled;	/* put an nvlist in dst? */
+	int		zc_pad2;
+
+	/*
+	 * The following members are for legacy ioctls which haven't been
+	 * converted to the new method.
+	 */
+	uint64_t	zc_history;		/* really (char *) */
+	char		zc_value[MAXPATHLEN * 2];
+	char		zc_string[MAXNAMELEN];
+	uint64_t	zc_guid;
+	uint64_t	zc_nvlist_conf;		/* really (char *) */
+	uint64_t	zc_nvlist_conf_size;
 	uint64_t	zc_cookie;
 	uint64_t	zc_objset_type;
 	uint64_t	zc_perm_action;
-	uint64_t 	zc_history;		/* really (char *) */
-	uint64_t 	zc_history_len;
+	uint64_t	zc_history_len;
 	uint64_t	zc_history_offset;
 	uint64_t	zc_obj;
 	uint64_t	zc_iflags;		/* internal to zfs(7fs) */
@@ -354,7 +370,7 @@ typedef struct zfs_cmd {
 #define	ZFS_IOC		_IOWR('Z', 0, struct zfs_cmd)
 
 typedef enum zfs_ioc {
-	ZFS_IOC_POOL_CREATE = ZFS_IOC,
+	ZFS_IOC_POOL_CREATE = ZFS_IOC, // 0
 	ZFS_IOC_POOL_DESTROY,
 	ZFS_IOC_POOL_IMPORT,
 	ZFS_IOC_POOL_EXPORT,
@@ -364,7 +380,7 @@ typedef enum zfs_ioc {
 	ZFS_IOC_POOL_SCAN,
 	ZFS_IOC_POOL_FREEZE,
 	ZFS_IOC_POOL_UPGRADE,
-	ZFS_IOC_POOL_GET_HISTORY,
+	ZFS_IOC_POOL_GET_HISTORY,      // 10
 	ZFS_IOC_VDEV_ADD,
 	ZFS_IOC_VDEV_REMOVE,
 	ZFS_IOC_VDEV_SET_STATE,
@@ -374,7 +390,7 @@ typedef enum zfs_ioc {
 	ZFS_IOC_VDEV_SETFRU,
 	ZFS_IOC_OBJSET_STATS,
 	ZFS_IOC_OBJSET_ZPLPROPS,
-	ZFS_IOC_DATASET_LIST_NEXT,
+	ZFS_IOC_DATASET_LIST_NEXT,   //  20
 	ZFS_IOC_SNAPSHOT_LIST_NEXT,
 	ZFS_IOC_SET_PROP,
 	ZFS_IOC_CREATE_MINOR,
@@ -384,16 +400,17 @@ typedef enum zfs_ioc {
 	ZFS_IOC_ROLLBACK,
 	ZFS_IOC_RENAME,
 	ZFS_IOC_RECV,
-	ZFS_IOC_SEND,
+	ZFS_IOC_SEND,                // 30
 	ZFS_IOC_INJECT_FAULT,
 	ZFS_IOC_CLEAR_FAULT,
 	ZFS_IOC_INJECT_LIST_NEXT,
 	ZFS_IOC_ERROR_LOG,
 	ZFS_IOC_CLEAR,
 	ZFS_IOC_PROMOTE,
+    ZFS_IOC_DESTROY_SNAPS,
 	ZFS_IOC_DESTROY_SNAPS_NVL,
 	ZFS_IOC_SNAPSHOT,
-	ZFS_IOC_DSOBJ_TO_DSNAME,
+	ZFS_IOC_DSOBJ_TO_DSNAME,   //  40
 	ZFS_IOC_OBJ_TO_PATH,
 	ZFS_IOC_POOL_SET_PROPS,
 	ZFS_IOC_POOL_GET_PROPS,
@@ -421,6 +438,10 @@ typedef enum zfs_ioc {
 	ZFS_IOC_SPACE_SNAPS,
 	ZFS_IOC_POOL_REOPEN,
 	ZFS_IOC_SEND_PROGRESS,
+    ZFS_IOC_LOG_HISTORY,
+    ZFS_IOC_SEND_NEW,
+    ZFS_IOC_SEND_SPACE,
+    ZFS_IOC_CLONE,
 } zfs_ioc_t;
 
 typedef struct zfs_useracct {
@@ -442,11 +463,8 @@ typedef struct zfs_creat {
 	nvlist_t	*zct_props;
 } zfs_creat_t;
 
-extern int zfs_secpolicy_snapshot_perms(const char *name, cred_t *cr);
-extern int zfs_secpolicy_rename_perms(const char *from,
-    const char *to, cred_t *cr);
-extern int zfs_secpolicy_destroy_perms(const char *name, cred_t *cr);
-extern int zfs_unmount_snap(const char *, void *);
+extern void zfs_unmount_snap(const char *);
+extern void zfs_destroy_unmount_origin(const char *);
 
 enum zfsdev_state_type {
 	ZST_ONEXIT,

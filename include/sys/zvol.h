@@ -70,6 +70,16 @@ typedef struct zvol_state {
 	char		zv_bsdname[MAXPATHLEN]; /* 'rdiskX' name, use [1] for diskX */
 } zvol_state_t;
 
+enum zfs_soft_state_type {
+	ZSST_ZVOL,
+	ZSST_CTLDEV
+};
+
+typedef struct zfs_soft_state {
+	enum zfs_soft_state_type zss_type;
+	void *zss_data;
+} zfs_soft_state_t;
+
 
 extern int zvol_check_volsize(uint64_t volsize, uint64_t blocksize);
 extern int zvol_check_volblocksize(uint64_t volblocksize);
@@ -77,24 +87,28 @@ extern int zvol_get_stats(objset_t *os, nvlist_t *nv);
 extern boolean_t zvol_is_zvol(const char *);
 extern void zvol_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx);
 extern int zvol_create_minor(const char *);
-extern int zvol_create_minors(const char *);
+extern int zvol_create_minors(char *);
 extern int zvol_remove_minor(const char *);
 extern void zvol_remove_minors(const char *);
 extern int zvol_set_volsize(const char *, uint64_t);
 extern int zvol_set_volblocksize(const char *, uint64_t);
 extern int zvol_set_snapdev(const char *, uint64_t);
 
-extern int zvol_open(dev_t dev, int flag, int otyp, cred_t *cr);
-extern int zvol_close(dev_t dev, int flag, int otyp, cred_t *cr);
-extern int zvol_read(dev_t dev, uio_t *uiop, cred_t *cr);
-extern int zvol_write(dev_t dev, uio_t *uiop, cred_t *cr);
+extern int zvol_open(dev_t dev, int flag, int otyp, struct proc *p);
+extern int zvol_close(dev_t dev, int flag, int otyp, struct proc *p);
+extern int zvol_read(dev_t dev, struct uio *uiop, int p);
+extern int zvol_write(dev_t dev, struct uio *uiop, int p);
 
 extern int zvol_init(void);
 extern void zvol_fini(void);
+extern int zvol_ioctl(dev_t, int, caddr_t, int isblk, cred_t *, int *rvalp);
+extern void *zfsdev_get_soft_state(minor_t, enum zfs_soft_state_type which);
+extern void zvol_strategy(struct buf *bp);
 
     /* C helper functions for C++ */
-extern int zvol_open_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr);
-extern int zvol_close_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr);
+extern int zvol_open_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p);
+extern int zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p);
+extern int zvol_get_volume_blocksize(dev_t dev);
 
 extern int zvol_read_iokit (zvol_state_t *zv, uint64_t offset, uint64_t count,
                             void *iomem);

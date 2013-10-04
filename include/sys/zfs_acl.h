@@ -210,6 +210,7 @@ typedef struct trivial_acl {
 #define	ZFS_ACL_PASSTHROUGH	3
 #define	ZFS_ACL_RESTRICTED	4
 #define	ZFS_ACL_PASSTHROUGH_X	5
+#define ZFS_ACL_MASKED          6
 
 struct znode;
 struct zfs_sb;

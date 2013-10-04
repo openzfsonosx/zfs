@@ -436,7 +436,7 @@ typedef int zil_parse_blk_func_t(zilog_t *zilog, blkptr_t *bp, void *arg,
     uint64_t txg);
 typedef int zil_parse_lr_func_t(zilog_t *zilog, lr_t *lr, void *arg,
     uint64_t txg);
-typedef int (*const zil_replay_func_t)(void *, char *, boolean_t);
+typedef int (*zil_replay_func_t)(void *, char *, boolean_t);
 typedef int zil_get_data_t(void *arg, lr_write_t *lr, char *dbuf, zio_t *zio);
 
 extern int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
@@ -470,8 +470,8 @@ extern int	zil_check_log_chain(const char *osname, void *txarg);
 extern void	zil_sync(zilog_t *zilog, dmu_tx_t *tx);
 extern void	zil_clean(zilog_t *zilog, uint64_t synced_txg);
 
-extern int	zil_suspend(zilog_t *zilog);
-extern void	zil_resume(zilog_t *zilog);
+extern int	zil_suspend(const char *osname, void **cookiep);
+extern void	zil_resume(void *cookie);
 
 extern void	zil_add_block(zilog_t *zilog, const blkptr_t *bp);
 extern int	zil_bp_tree_add(zilog_t *zilog, const blkptr_t *bp);

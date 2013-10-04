@@ -26,6 +26,7 @@
 #include <sys/nvpair.h>
 #include <sys/kmem.h>
 #include <sys/debug.h>
+#include <sys/param.h>
 #ifndef _KERNEL
 #include <stdlib.h>
 #endif
@@ -112,6 +113,18 @@ void
 fnvlist_merge(nvlist_t *dst, nvlist_t *src)
 {
 	VERIFY3U(nvlist_merge(dst, src, KM_SLEEP), ==, 0);
+}
+
+size_t
+fnvlist_num_pairs(nvlist_t *nvl)
+{
+	size_t count = 0;
+	nvpair_t *pair;
+
+	for (pair = nvlist_next_nvpair(nvl, 0); pair != NULL;
+	    pair = nvlist_next_nvpair(nvl, pair))
+		count++;
+	return (count);
 }
 
 void
@@ -501,6 +514,7 @@ EXPORT_SYMBOL(fnvlist_alloc);
 EXPORT_SYMBOL(fnvlist_free);
 EXPORT_SYMBOL(fnvlist_size);
 EXPORT_SYMBOL(fnvlist_pack);
+EXPORT_SYMBOL(fnvlist_pack_free);
 EXPORT_SYMBOL(fnvlist_unpack);
 EXPORT_SYMBOL(fnvlist_dup);
 EXPORT_SYMBOL(fnvlist_merge);
@@ -562,5 +576,6 @@ EXPORT_SYMBOL(fnvpair_value_int64);
 EXPORT_SYMBOL(fnvpair_value_uint64);
 EXPORT_SYMBOL(fnvpair_value_string);
 EXPORT_SYMBOL(fnvpair_value_nvlist);
+EXPORT_SYMBOL(fnvlist_num_pairs);
 
 #endif

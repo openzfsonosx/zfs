@@ -1363,6 +1363,8 @@ zfs_rezget(znode_t *zp)
 	}
 	mutex_exit(&zp->z_acl_lock);
 
+    dprintf("rezget: %p %p %p\n", zp, zp->z_xattr_lock,zp->z_xattr_parent);
+#ifdef __LINUX__
 	rw_enter(&zp->z_xattr_lock, RW_WRITER);
 	if (zp->z_xattr_cached) {
 		nvlist_free(zp->z_xattr_cached);
@@ -1374,6 +1376,7 @@ zfs_rezget(znode_t *zp)
 		zp->z_xattr_parent = NULL;
 	}
 	rw_exit(&zp->z_xattr_lock);
+#endif
 
 	ASSERT(zp->z_sa_hdl == NULL);
 	err = sa_buf_hold(zfsvfs->z_os, obj_num, NULL, &db);
@@ -2210,10 +2213,10 @@ zfs_obj_to_path_impl(objset_t *osp, uint64_t obj, sa_handle_t *hdl,
 	sa_hdl = hdl;
 
 	for (;;) {
-		uint64_t pobj;
+		uint64_t pobj = 0;
 		char component[MAXNAMELEN + 2];
 		size_t complen;
-		int is_xattrdir;
+		int is_xattrdir = 0;
 
 		if (prevdb)
 			zfs_release_sa_handle(prevhdl, prevdb, FTAG);

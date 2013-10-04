@@ -67,11 +67,13 @@ zfs_SOURCES = \
 	dsl_dataset.c \
 	dsl_deadlist.c \
 	dsl_deleg.c \
+	dsl_destroy.c \
 	dsl_dir.c \
 	dsl_pool.c \
 	dsl_prop.c \
 	dsl_scan.c \
 	dsl_synctask.c \
+	dsl_userhold.c \
 	fm.c \
 	gfs.c \
 	gzip.c \

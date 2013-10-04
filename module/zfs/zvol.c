@@ -100,16 +100,6 @@ extern int zfs_bmajor;
  * a zvol. Depending on the value of zss_type, zss_data points to either
  * a zvol_state_t or a zfs_onexit_t.
  */
-enum zfs_soft_state_type {
-	ZSST_ZVOL,
-	ZSST_CTLDEV
-};
-
-typedef struct zfs_soft_state {
-	enum zfs_soft_state_type zss_type;
-	void *zss_data;
-} zfs_soft_state_t;
-
 
 
 /*
@@ -430,7 +420,7 @@ zvol_replay_write(zvol_state_t *zv, lr_write_t *lr, boolean_t byteswap)
 
 /* ARGSUSED */
 static int
-zvol_replay_err(zvol_state_t *zv, lr_t *lr, boolean_t byteswap)
+zvol_replay_err(void *zv, char *lr, boolean_t byteswap)
 {
 	return (ENOTSUP);
 }
@@ -440,7 +430,7 @@ zvol_replay_err(zvol_state_t *zv, lr_t *lr, boolean_t byteswap)
  * Only TX_WRITE and TX_TRUNCATE are needed for zvol.
  */
 zil_replay_func_t *zvol_replay_vector[TX_MAX_TYPE] = {
-	zvol_replay_err,	/* 0 no such transaction type */
+    zvol_replay_err,	/* 0 no such transaction type */
 	zvol_replay_err,	/* TX_CREATE */
 	zvol_replay_err,	/* TX_MKDIR */
 	zvol_replay_err,	/* TX_MKXATTR */
@@ -941,7 +931,7 @@ out:
 
 
 int
-zvol_open_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr)
+zvol_open_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 {
 	int err = 0;
 
@@ -995,7 +985,7 @@ out:
 
 /*ARGSUSED*/
 int
-zvol_open(dev_t devp, int flag, int otyp, cred_t *cr)
+zvol_open(dev_t devp, int flag, int otyp, struct proc *p)
 {
 	zvol_state_t *zv;
 
@@ -1014,14 +1004,14 @@ zvol_open(dev_t devp, int flag, int otyp, cred_t *cr)
 	}
 
     mutex_exit(&zfsdev_state_lock); // Is there a race here?
-    return zvol_open_impl(zv, flag, otyp, cr);
+    return zvol_open_impl(zv, flag, otyp, p);
 }
 
 
 
 
 int
-zvol_close_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr)
+zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 {
 	int error = 0;
 
@@ -1055,7 +1045,7 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, cred_t *cr)
 
 /*ARGSUSED*/
 int
-zvol_close(dev_t dev, int flag, int otyp, cred_t *cr)
+zvol_close(dev_t dev, int flag, int otyp, struct proc *p)
 {
 	minor_t minor = getminor(dev);
 	zvol_state_t *zv;
@@ -1074,7 +1064,7 @@ zvol_close(dev_t dev, int flag, int otyp, cred_t *cr)
 	}
 
     mutex_exit(&zfsdev_state_lock); // Is there a race here..
-    return zvol_close_impl(zv, flag, otyp, cr);
+    return zvol_close_impl(zv, flag, otyp, p);
 }
 
 static void
@@ -1277,6 +1267,7 @@ zvol_dumpio_vdev(vdev_t *vd, void *addr, uint64_t offset, uint64_t size,
 		    doread ? B_READ : B_WRITE));
 	}
 #endif
+    return ENOTSUP;
 }
 
 static int
@@ -1318,8 +1309,8 @@ zvol_dumpio(zvol_state_t *zv, void *addr, uint64_t offset, uint64_t size,
 	return (error);
 }
 
-int
-zvol_strategy(buf_t *bp)
+void
+zvol_strategy(struct buf *bp)
 {
 	zfs_soft_state_t *zs = NULL;
 	zvol_state_t *zv;
@@ -1348,7 +1339,7 @@ zvol_strategy(buf_t *bp)
 	if (error) {
 		bioerror(bp, error);
 		biodone(bp);
-		return (0);
+		return ;
 	}
 
 	zv = zs->zss_data;
@@ -1356,7 +1347,7 @@ zvol_strategy(buf_t *bp)
 	if (!(buf_flags(bp) & B_READ) && (zv->zv_flags & ZVOL_RDONLY)) {
 		bioerror(bp, EROFS);
 		biodone(bp);
-		return (0);
+		return ;
 	}
 
 	off = ldbtob(buf_lblkno(bp));
@@ -1376,7 +1367,7 @@ zvol_strategy(buf_t *bp)
 	if (resid > 0 && (off < 0 || off >= volsize)) {
 		bioerror(bp, EIO);
 		biodone(bp);
-		return (0);
+		return ;
 	}
 
 	is_dump = zv->zv_flags & ZVOL_DUMPIFIED;
@@ -1433,7 +1424,7 @@ zvol_strategy(buf_t *bp)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
 	biodone(bp);
 
-	return (0);
+	return ;
 }
 
 /*
@@ -1490,7 +1481,7 @@ zvol_dump(dev_t dev, caddr_t addr, daddr_t blkno, int nblocks)
 
 /*ARGSUSED*/
 int
-zvol_read(dev_t dev, uio_t *uio, cred_t *cr)
+zvol_read(dev_t dev, struct uio *uio, int p)
 {
 	minor_t minor = getminor(dev);
 	zvol_state_t *zv;
@@ -1539,7 +1530,7 @@ zvol_read(dev_t dev, uio_t *uio, cred_t *cr)
 
 /*ARGSUSED*/
 int
-zvol_write(dev_t dev, uio_t *uio, cred_t *cr)
+zvol_write(dev_t dev, struct uio *uio, int p)
 {
 	minor_t minor = getminor(dev);
 	zvol_state_t *zv;
@@ -2516,7 +2507,7 @@ zvol_dump_fini(zvol_state_t *zv)
 
 
 int
-zvol_create_minors(const char *name)
+zvol_create_minors(char *name)
 {
     uint64_t cookie;
     objset_t *os;
