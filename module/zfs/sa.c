@@ -1311,7 +1311,7 @@ sa_build_index(sa_handle_t *hdl, sa_buf_type_t buftype)
             printf("sa_magic is incorrect (%08x != %08x). hdl %p buftype %02x\n",
                    sa_hdr_phys->sa_magic, SA_MAGIC,
                    hdl, buftype);
-
+            delay(hz*2);
             return 0;
         }
 
