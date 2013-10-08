@@ -2594,7 +2594,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 	/*
 	 * Transform to file-system independent format
 	 */
-	zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
+	//zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
 
 	outcount = 0;
 	while (outcount < bytes_wanted) {
@@ -2622,7 +2622,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			type = DT_DIR;
 #if 1
 		} else if (offset == 2 && zfs_show_ctldir(zp)) {
-            printf("Inserting '%s'\n", ZFS_CTLDIR_NAME);
+            //printf("Inserting '%s'\n", ZFS_CTLDIR_NAME);
 			(void) strlcpy(zap.za_name, ZFS_CTLDIR_NAME, MAXNAMELEN);
 			zap.za_normalization_conflict = 0;
 			objnum = ZFSCTL_INO_ROOT;

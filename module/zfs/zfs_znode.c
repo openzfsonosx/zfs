@@ -688,7 +688,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
     struct vnodeopv_entry_desc *vops;
 #endif
 
-	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
+	zp = kmem_cache_alloc(znode_cache, KM_SLEEP|KM_ZERO);
 	zfs_znode_cache_constructor(zp, zfsvfs->z_parent->z_vfs, 0);
 
 	ASSERT(zp->z_dirlocks == NULL);
