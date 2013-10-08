@@ -1762,8 +1762,6 @@ out:
 	}
 	ZFS_EXIT(zfsvfs);
 
-    if (error == 34) error = 0;
-
     dprintf("-listxattr vp %p: error %d\n", ap->a_vp, error);
 	return (error);
 }
