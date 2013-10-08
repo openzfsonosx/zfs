@@ -1288,8 +1288,11 @@ sa_build_index(sa_handle_t *hdl, sa_buf_type_t buftype)
 	sa_hdr_phys_t *sa_hdr_phys;
 	dmu_buf_impl_t *db = SA_GET_DB(hdl, buftype);
 	dmu_object_type_t bonustype = SA_BONUSTYPE_FROM_DB(db);
-	sa_os_t *sa = hdl->sa_os->os_sa;
+	sa_os_t *sa;
 	sa_idx_tab_t *idx_tab;
+
+    if (!hdl) panic("ZFS: hdl is NULL");
+    sa = hdl->sa_os->os_sa;
 
     if (!sa) return 0;
 
@@ -1302,7 +1305,16 @@ sa_build_index(sa_handle_t *hdl, sa_buf_type_t buftype)
 	/* only check if not old znode */
 	if (IS_SA_BONUSTYPE(bonustype) && sa_hdr_phys->sa_magic != SA_MAGIC &&
 	    sa_hdr_phys->sa_magic != 0) {
-		VERIFY(BSWAP_32(sa_hdr_phys->sa_magic) == SA_MAGIC);
+
+		//VERIFY(BSWAP_32(sa_hdr_phys->sa_magic) == SA_MAGIC);
+		if (BSWAP_32(sa_hdr_phys->sa_magic) != SA_MAGIC) {
+            printf("sa_magic is incorrect (%08x != %08x). hdl %p buftype %02x\n",
+                   sa_hdr_phys->sa_magic, SA_MAGIC,
+                   hdl, buftype);
+
+            return 0;
+        }
+
 		sa_byteswap(hdl, buftype);
 	}
 
