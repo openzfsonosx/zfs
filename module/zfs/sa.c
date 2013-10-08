@@ -1312,7 +1312,7 @@ sa_build_index(sa_handle_t *hdl, sa_buf_type_t buftype)
                    sa_hdr_phys->sa_magic, SA_MAGIC,
                    hdl, buftype);
             delay(hz*2);
-            return 0;
+            return -1;
         }
 
 		sa_byteswap(hdl, buftype);
