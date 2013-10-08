@@ -988,6 +988,12 @@ zfs_vnop_pageout(
 
     ZFS_ENTER(zfsvfs);
 
+    // Defer syncs if we are coming through vnode_create()
+    if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
+        ZFS_EXIT(zfsvfs);
+        return ENXIO;
+    }
+
     ASSERT(vn_has_cached_data(vp));
     /* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
