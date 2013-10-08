@@ -204,6 +204,8 @@ zfs_znode_cache_destructor(void *buf, void *arg)
 
 	ASSERT(zp->z_dirlocks == NULL);
 	ASSERT(zp->z_acl_cached == NULL);
+
+    memset(zp, 0xfe, sizeof(zp));
 }
 
 #ifdef	ZNODE_STATS
