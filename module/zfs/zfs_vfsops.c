@@ -458,7 +458,6 @@ static void
 snapdir_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-
 	zfsvfs->z_show_ctldir = newval;
 }
 
@@ -1498,9 +1497,8 @@ zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
 		VERIFY(dsl_prop_unregister(ds, "snapdir", snapdir_changed_cb,
 		    zfsvfs) == 0);
 
-        // See discussion in register_callbacks
-		//VERIFY(dsl_prop_unregister(ds, "aclmode", acl_mode_changed_cb,
-        //   zfsvfs) == 0);
+		VERIFY(dsl_prop_unregister(ds, "aclmode", acl_mode_changed_cb,
+            zfsvfs) == 0);
 
 		VERIFY(dsl_prop_unregister(ds, "aclinherit",
 		    acl_inherit_changed_cb, zfsvfs) == 0);
