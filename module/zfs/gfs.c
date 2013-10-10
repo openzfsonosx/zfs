@@ -607,8 +607,6 @@ gfs_dir_create(size_t struct_size, struct vnode *pvp, vfs_t *vfsp, vnodeops_t *o
 
 	mutex_init(&dp->gfsd_lock, NULL, MUTEX_DEFAULT, NULL);
 
-    dprintf("woo retuning %p\n", vp);
-
 	return (vp);
 }
 
@@ -631,6 +629,8 @@ gfs_root_create(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino,
                         ZFS_VNODE_ROOT);
 	/* Manually set the inode */
 	((gfs_file_t *)vnode_fsnode(vp))->gfs_ino = ino;
+    printf(".zfs created returning %p; ino %d\n", vp, ino);
+
 	//vp->v_flag |= VROOT;
     // FIXME
     //vnode_setnoflush(vp);
@@ -1312,24 +1312,7 @@ gfs_vop_inactive(ap)
 		struct thread *a_td;
 	} */ *ap;
 {
-	struct vnode *vp = ap->a_vp;
-	gfs_file_t *fp = vnode_fsnode(vp);
-
-    dprintf("+gfs_vop_inactive\n");
-
-    if (!fp) return 0;
-#if 1
-	if (fp->gfs_type == GFS_DIR)
-		gfs_dir_inactive(vp);
-	else
-		gfs_file_inactive(vp);
-#endif
-
-    vnode_clearfsnode(vp);
-    vnode_recycle(vp);
-
-	kmem_free(fp, fp->gfs_size);
-
-    dprintf("-gfs_vop_inactive\n");
+    /* Inactive is not used the same on Darwin, logic moved to
+     * reclaim */
 	return (0);
 }

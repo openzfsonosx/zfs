@@ -6,7 +6,7 @@
  * You may not use this file except in compliance with the License.
  *
  * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
- * or http://www.opensolaris.org/os/licensing.
+ * or http://www.opensolaris.orgetattr/os/licensing.
  * See the License for the specific language governing permissions
  * and limitations under the License.
  *
@@ -84,7 +84,7 @@
 
 #include "zfs_namecheck.h"
 
-//#define dprintf printf
+#define dprintf printf
 
 
 #ifdef __APPLE__
@@ -499,7 +499,7 @@ zfsctl_common_getattr(struct vnode *vp, vattr_t *vap)
 {
 	timestruc_t	now;
 
-    dprintf("zfsctl: +getattr\n");
+    dprintf("zfsctl: +getattr: %p\n", vp);
 
 #ifdef __APPLE__
     VATTR_SET_SUPPORTED(vap, va_mode);
@@ -507,6 +507,7 @@ zfsctl_common_getattr(struct vnode *vp, vattr_t *vap)
     VATTR_SET_SUPPORTED(vap, va_gid);
     VATTR_SET_SUPPORTED(vap, va_data_size);
     VATTR_SET_SUPPORTED(vap, va_access_time);
+    VATTR_SET_SUPPORTED(vap, va_dirlinkcount);
 #endif
 
 	vap->va_uid = 0;
@@ -517,16 +518,23 @@ zfsctl_common_getattr(struct vnode *vp, vattr_t *vap)
 	 * blocksize or allocated blocks.
 	 */
     //	vap->va_blksize = 0;
-    vap->va_data_alloc = 0;
-    vap->va_total_alloc = 0;
+    vap->va_data_alloc = 512;
+    vap->va_total_alloc = 512;
+    vap->va_data_size = 0;
+    vap->va_total_size = 0;
 	vap->va_nblocks = 0;
 	//vap->va_seq = 0;
 	vap->va_gen = 0;
-    // CALL statvfs to get FSID here
-	vap->va_fsid = vfs_statfs(vnode_mount(vp))->f_fsid.val[0];
+
 	vap->va_mode = S_IRUSR | S_IXUSR | S_IRGRP | S_IXGRP |
 	    S_IROTH | S_IXOTH;
 	vap->va_type = VDIR;
+
+	if (VATTR_IS_ACTIVE(vap, va_nchildren) && vnode_isdir(vp)) {
+		VATTR_RETURN(vap, va_nchildren, vap->va_nlink - 2);
+    }
+    vap->va_iosize = 512;
+
 	/*
 	 * We live in the now (for atime).
 	 */
@@ -615,6 +623,7 @@ zfsctl_common_reclaim(ap)
 	} */ *ap;
 {
 	struct vnode *vp = ap->a_vp;
+	gfs_file_t *fp = vnode_fsnode(vp);
 
     dprintf("zfsctl: +reclaim vp %p\n", vp);
 
@@ -627,12 +636,15 @@ zfsctl_common_reclaim(ap)
      * called, so if we get here and still have a "v_data" (fsnode) attached,
      * we call vnop_inactive first, to unlock the parent, release the node etc.
      */
-    if (vnode_fsnode(vp)) {
-        struct vnop_inactive_args ias;
-        dprintf("Calling inactive first\n");
-        ias.a_vp = vp;
-        gfs_vop_inactive(&ias);
-        dprintf(".. back to reclaim\n");
+    if (fp) {
+
+        if (fp->gfs_type == GFS_DIR)
+            gfs_dir_inactive(vp);
+        else
+            gfs_file_inactive(vp);
+
+        kmem_free(fp, fp->gfs_size);
+
     }
 
     vnode_removefsref(vp); /* ADDREF from vnode_create */
@@ -644,6 +656,7 @@ zfsctl_common_reclaim(ap)
 	vp->v_data = NULL;
 	VI_UNLOCK(vp);
 #endif
+
     dprintf("zfsctl: -reclaim vp %p\n", vp);
 	return (0);
 }
@@ -679,16 +692,28 @@ zfsctl_root_getattr(ap)
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(vp));
 	zfsctl_node_t *zcp = vnode_fsnode(vp);
 
-    dprintf("zfsctl: +root_getattr\n");
+    dprintf("zfsctl: +root_getattr: %p: active %04x\n", vp, vap->va_active );
 	ZFS_ENTER(zfsvfs);
 #ifdef __APPLE__
     VATTR_SET_SUPPORTED(vap, va_modify_time);
     VATTR_SET_SUPPORTED(vap, va_create_time);
+    VATTR_SET_SUPPORTED(vap, va_fsid);
+    VATTR_SET_SUPPORTED(vap, va_parentid);
+    VATTR_SET_SUPPORTED(vap, va_fileid); // SPL: va_nodeid
+    VATTR_CLEAR_SUPPORTED(vap, va_acl);
 #endif
+    // CALL statvfs to get FSID here
+	vap->va_fsid = vfs_statfs(vnode_mount(vp))->f_fsid.val[0];
 	vap->va_nodeid = ZFSCTL_INO_ROOT;
 	vap->va_nlink = vap->va_size = NROOT_ENTRIES;
 	vap->va_mtime = vap->va_ctime = zcp->zc_cmtime;
 	vap->va_ctime = vap->va_ctime;
+    vap->va_parentid = 2;
+	if (VATTR_IS_ACTIVE(vap, va_name) && vap->va_name) {
+        printf("zfsctl wants name\n");
+        strcpy(vap->va_name, ".zfs");
+        VATTR_SET_SUPPORTED(vap, va_name);
+    }
 
 	zfsctl_common_getattr(vp, vap);
 
@@ -2014,6 +2039,7 @@ static struct vnodeopv_entry_desc zfsctl_ops_snapshot_template[] = {
 
 	{&vnop_lookup_desc,	    (VOPFUNC)zfsctl_snapdir_lookup},
 
+	{&vnop_readdir_desc,	(VOPFUNC)gfs_vop_readdir},
 
 	{NULL, (VOPFUNC)NULL }
 };

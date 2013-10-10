@@ -410,11 +410,11 @@ zfs_vnop_mkdir(
     int error;
     dprintf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
-#if 0 // Let's deny OSX fseventd for now */
+#if 1 // Let's deny OSX fseventd for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".fseventsd"))
         return EINVAL;
 #endif
-#if 0 //spotlight for now */
+#if 1 //spotlight for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".Spotlight-V100"))
         return EINVAL;
 #endif
@@ -472,10 +472,15 @@ zfs_vnop_readdir(
       extern int   zfs_readdir( struct vnode *vp, uio_t *uio, cred_t *cr, int *eofp,
                                 int flags, int *a_numdirent);
     */
-    dprintf("+readdir\n");
+    dprintf("+readdir: %p\n", ap->a_vp);
 	*ap->a_numdirent = 0;
 	error = zfs_readdir(ap->a_vp, ap->a_uio, cr, ap->a_eofflag,
                         ap->a_flags, ap->a_numdirent);
+
+    // .zfs dirs can be completely empty
+    if (*ap->a_numdirent == 0)
+        *ap->a_numdirent = 2; // . and ..
+
     dprintf("-readdir %d (nument %d)\n", error, *ap->a_numdirent);
     return error;
 }
