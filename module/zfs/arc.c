@@ -208,6 +208,11 @@ SYSCTL_QUAD(_zfs, OID_AUTO, arc_max, CTLFLAG_RW,
             &zfs_arc_max, "Maximum ARC size");
 SYSCTL_QUAD(_zfs, OID_AUTO, arc_min, CTLFLAG_RW,
             &zfs_arc_min, "Minimum ARC size")
+
+extern int debug_vnop_osx_printf;
+SYSCTL_INT(_zfs, OID_AUTO, vnops_osx_debug,
+           CTLFLAG_RW, &debug_vnop_osx_printf, 0,
+           "Debug printf");
 #endif
 
 
@@ -5709,6 +5714,8 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs_mfu_ghost_metadata_lsize);
     sysctl_register_oid(&sysctl__zfs_mfu_ghost_data_lsize);
     sysctl_register_oid(&sysctl__zfs_l2c_only_size);
+
+    sysctl_register_oid(&sysctl__zfs_vnops_osx_debug);
 }
 
 void arc_unregister_oids(void)
@@ -5742,5 +5749,7 @@ void arc_unregister_oids(void)
     sysctl_unregister_oid(&sysctl__zfs_mfu_ghost_metadata_lsize);
     sysctl_unregister_oid(&sysctl__zfs_mfu_ghost_data_lsize);
     sysctl_unregister_oid(&sysctl__zfs_l2c_only_size);
+
+    sysctl_unregister_oid(&sysctl__zfs_vnops_osx_debug);
 }
 #endif

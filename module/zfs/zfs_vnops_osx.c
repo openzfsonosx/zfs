@@ -61,6 +61,10 @@
 #include <sys/callb.h>
 #include <sys/unistd.h>
 
+#ifdef _KERNEL
+#include <sys/sysctl.h>
+int debug_vnop_osx_printf = 0;
+#endif
 
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
@@ -70,7 +74,7 @@
 	DECLARE_CRED(ap);		\
 	DECLARE_CONTEXT(ap)
 
-//#define dprintf printf
+#define dprintf if(debug_vnop_osx_printf)printf
 
 // Move this somewhere else, maybe autoconf?
 #define HAVE_NAMED_STREAMS 1
@@ -406,11 +410,11 @@ zfs_vnop_mkdir(
     int error;
     dprintf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
-#if 1 // Let's deny OSX fseventd for now */
+#if 0 // Let's deny OSX fseventd for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".fseventsd"))
         return EINVAL;
 #endif
-#if 1 //spotlight for now */
+#if 0 //spotlight for now */
     if (ap->a_cnp->cn_nameptr && !strcmp(ap->a_cnp->cn_nameptr,".Spotlight-V100"))
         return EINVAL;
 #endif
@@ -2370,7 +2374,7 @@ struct vnodeopv_entry_desc zfs_dvnodeops_template[] = {
 	{&vnop_setxattr_desc,	(VOPFUNC)zfs_vnop_setxattr},
 	{&vnop_removexattr_desc,(VOPFUNC)zfs_vnop_removexattr},
 	{&vnop_listxattr_desc,	(VOPFUNC)zfs_vnop_listxattr},
-	{&vnop_readdirattr_desc, (VOPFUNC)zfs_vnop_readdirattr},
+    {&vnop_readdirattr_desc, (VOPFUNC)zfs_vnop_readdirattr},
 	{NULL, (VOPFUNC)NULL }
 };
 struct vnodeopv_desc zfs_dvnodeop_opv_desc =
@@ -2649,5 +2653,6 @@ int zfs_vfsops_fini(void)
 
     return vfs_fsremove(zfs_vfsconf);
 }
+
 
 
