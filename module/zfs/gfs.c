@@ -402,6 +402,7 @@ top:
 		    ".", 0, ncookies, cookies)) == 0)
 			goto top;
 	} else if (off == 1) {
+        dprintf("Sending out .. with id %d\n", st->grd_parent);
 		if ((error = gfs_readdir_emit(st, uiop, voff, st->grd_parent,
 		    "..", 0, ncookies, cookies)) == 0)
 			goto top;
@@ -450,6 +451,7 @@ gfs_lookup_dot(struct vnode **vpp, struct vnode *dvp, struct vnode *pvp, const c
 		*vpp = dvp;
 		return (0);
 	} else if (strcmp(nm, "..") == 0) {
+        dprintf("gfs_lookup_dotdot\n");
 		if (pvp == NULL) {
 			ASSERT(dvp->v_flag & VROOT);
 			VN_HOLD(dvp);
@@ -527,6 +529,7 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 	/*
 	 * Set up various pointers
 	 */
+	fp->gfs_ino = vnode_vid(vp);
 	fp->gfs_vnode = vp;
 	fp->gfs_parent = pvp;
 	fp->gfs_size = size;
@@ -626,14 +629,15 @@ gfs_root_create(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino,
 	VFS_HOLD(vfsp);
 	vp = gfs_dir_create(size, NULL, vfsp, ops, entries, inode_cb,
                         maxlen, readdir_cb, lookup_cb,
-                        ZFS_VNODE_ROOT);
+                        ZFS_VNODE_SYSTEM);
 	/* Manually set the inode */
 	((gfs_file_t *)vnode_fsnode(vp))->gfs_ino = ino;
-    printf(".zfs created returning %p; ino %d\n", vp, ino);
+    dprintf(".zfs created returning %p; ino %d\n", vp, ino);
 
-	//vp->v_flag |= VROOT;
-    // FIXME
-    //vnode_setnoflush(vp);
+    /*
+     * Since we created the .zfs node as VSYSTEM, we have to manually
+     * call vnode_recycle() as done in zfsctl_destroy().
+     */
 
 	return (vp);
 }

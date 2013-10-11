@@ -5877,7 +5877,7 @@ share_mount(int op, int argc, char **argv)
 		    ZFS_TYPE_SNAPSHOT)) == NULL) {
 			ret = 1;
 		} else {
-            printf("Calling zfs_mount\n");
+
             ret = zfs_mount(zhp, options, flags|MNT_RDONLY);
 
 			zfs_close(zhp);

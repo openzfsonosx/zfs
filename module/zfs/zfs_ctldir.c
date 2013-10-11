@@ -84,7 +84,7 @@
 
 #include "zfs_namecheck.h"
 
-#define dprintf printf
+//#define dprintf printf
 
 
 #ifdef __APPLE__
@@ -368,6 +368,7 @@ zfsctl_create(zfsvfs_t *zfsvfs)
      * waiting for the usercount ref to be released). We then release the
      * VROOT vnode in zfsctl_destroy, and release the usercount ref.
      */
+
 	vp = gfs_root_create(sizeof (zfsctl_node_t), zfsvfs->z_vfs,
 	    zfsctl_ops_root_dvnodeops, ZFSCTL_INO_ROOT, zfsctl_root_entries,
 	    zfsctl_root_inode_cb, MAXNAMELEN, NULL, NULL);
@@ -379,18 +380,22 @@ zfsctl_create(zfsvfs_t *zfsvfs)
     VERIFY(0 == sa_lookup(VTOZ(rvp)->z_sa_hdl, SA_ZPL_CRTIME(zfsvfs),
                           &crtime, sizeof (crtime)));
     ZFS_TIME_DECODE(&zcp->zc_cmtime, crtime);
+
     VN_RELE(rvp);
 
+#ifdef __LINUX__
     /*
      * We're only faking the fact that we have a root of a filesystem for
      * the sake of the GFS interfaces.  Undo the flag manipulation it did
      * for us.
      */
-    //vp->v_vflag &= ~VV_ROOT;
+    vp->v_vflag &= ~VV_ROOT;
+#endif
+    /* In OSX we mark the node VSYSTEM instead */
 
     zfsvfs->z_ctldir = vp;
 
-    dprintf("zfsctl: rootvp is %p adding ref\n", vp);
+    dprintf("zfsctl: .zfs vp is %p adding ref: parentvp %p\n", vp, rvp);
 
     // Change these to ZFS/SPL macros
     vnode_ref(zfsvfs->z_ctldir); // Hold an usercount ref
@@ -412,11 +417,12 @@ zfsctl_destroy(zfsvfs_t *zfsvfs)
     dprintf("zfsctl: releasing rootvp %p\n", zfsvfs->z_ctldir);
     vp = zfsvfs->z_ctldir;
 	zfsvfs->z_ctldir = NULL;
-    dprintf("vnode_iocount2 is %d\n", ((uint32_t *)vp)[23]);
     if (vp && !vnode_getwithref(vp)) {
-        dprintf("vnode_rele\n");
         vnode_rele(vp);
-        dprintf("abount to put vp to 0 -> %d\n", ((uint32_t *)vp)[23]);
+        // Only if VSYSTEM
+        vnode_clearfsnode(vp);
+        vnode_recycle(vp);
+        //
         vnode_put(vp);
     }
 }
@@ -445,7 +451,7 @@ zfsctl_common_open(struct vnop_open_args *ap)
     dprintf("zfsctl_open\n");
 
 	if (flags & FWRITE)
-		return (EACCES);
+        return (EACCES);
 
 	return (0);
 }
@@ -506,10 +512,16 @@ zfsctl_common_getattr(struct vnode *vp, vattr_t *vap)
     VATTR_SET_SUPPORTED(vap, va_uid);
     VATTR_SET_SUPPORTED(vap, va_gid);
     VATTR_SET_SUPPORTED(vap, va_data_size);
+    VATTR_SET_SUPPORTED(vap, va_total_size);
+    VATTR_SET_SUPPORTED(vap, va_data_alloc);
+    VATTR_SET_SUPPORTED(vap, va_total_alloc);
     VATTR_SET_SUPPORTED(vap, va_access_time);
     VATTR_SET_SUPPORTED(vap, va_dirlinkcount);
+    VATTR_SET_SUPPORTED(vap, va_flags);
 #endif
 
+    vap->va_dirlinkcount = 3;
+    vap->va_nlink = 3;
 	vap->va_uid = 0;
 	vap->va_gid = 0;
 	vap->va_rdev = 0;
@@ -633,8 +645,8 @@ zfsctl_common_reclaim(ap)
 #ifdef __APPLE__
     /*
      * It would appear that Darwin does not guarantee that vnop_inactive is
-     * called, so if we get here and still have a "v_data" (fsnode) attached,
-     * we call vnop_inactive first, to unlock the parent, release the node etc.
+     * always called, but reclaim is used instead. All release happens in here
+     * and inactive callbacks are mostly empty.
      */
     if (fp) {
 
@@ -698,7 +710,6 @@ zfsctl_root_getattr(ap)
     VATTR_SET_SUPPORTED(vap, va_modify_time);
     VATTR_SET_SUPPORTED(vap, va_create_time);
     VATTR_SET_SUPPORTED(vap, va_fsid);
-    VATTR_SET_SUPPORTED(vap, va_parentid);
     VATTR_SET_SUPPORTED(vap, va_fileid); // SPL: va_nodeid
     VATTR_CLEAR_SUPPORTED(vap, va_acl);
 #endif
@@ -708,9 +719,8 @@ zfsctl_root_getattr(ap)
 	vap->va_nlink = vap->va_size = NROOT_ENTRIES;
 	vap->va_mtime = vap->va_ctime = zcp->zc_cmtime;
 	vap->va_ctime = vap->va_ctime;
-    vap->va_parentid = 2;
+
 	if (VATTR_IS_ACTIVE(vap, va_name) && vap->va_name) {
-        printf("zfsctl wants name\n");
         strcpy(vap->va_name, ".zfs");
         VATTR_SET_SUPPORTED(vap, va_name);
     }
@@ -751,6 +761,7 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
 
 	if (strcmp(nm, "..") == 0) {
         err = VFS_ROOT(vnode_mount(dvp), LK_EXCLUSIVE, vpp);
+        printf(".. returning vp %p\n", vpp);
 	} else {
 		err = gfs_vop_lookup(dvp, nm, vpp, pnp, flags, rdir,
 		    cr, ct, direntflags, realpnp);
@@ -1622,7 +1633,9 @@ zfsctl_snapdir_getattr(ap)
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(vp));
 	zfsctl_snapdir_t *sdp = vnode_fsnode(vp);
 
-    dprintf("zfsctl: +snapdir_getattr: %p\n", vp);
+    dprintf("zfsctl: +snapdir_getattr: %p: (v_data %p)\n", vp, sdp);
+
+    if (!sdp) return ENOENT;
 
 	ZFS_ENTER(zfsvfs);
 	zfsctl_common_getattr(vp, vap);
@@ -1633,6 +1646,9 @@ zfsctl_snapdir_getattr(ap)
 #ifdef __APPLE__
     VATTR_SET_SUPPORTED(vap, va_modify_time);
     VATTR_SET_SUPPORTED(vap, va_create_time);
+    VATTR_SET_SUPPORTED(vap, va_nlink);
+    VATTR_SET_SUPPORTED(vap, va_fileid);
+    VATTR_CLEAR_SUPPORTED(vap, va_acl);
 #endif
 	ZFS_EXIT(zfsvfs);
     dprintf("zfsctl: -snapdir_getattr\n");
@@ -1642,7 +1658,7 @@ zfsctl_snapdir_getattr(ap)
 
 /* ARGSUSED */
 static int
-zfsctl_snapdir_inactive(ap)
+zfsctl_snapdir_reclaim(ap)
 	struct vnop_inactive_args /* {
 		struct vnode *a_vp;
 		struct thread *a_td;
@@ -1754,8 +1770,8 @@ static struct vnodeopv_entry_desc zfsctl_ops_snapdir_template[] = {
 	{&vnop_readdir_desc,	(VOPFUNC)gfs_vop_readdir},
 	//{&vnop_readdirattr_desc, (VOPFUNC)zfs_vnop_readdirattr},
 	{&vnop_lookup_desc,	(VOPFUNC)zfsctl_snapdir_lookup},
-	{&vnop_inactive_desc,	(VOPFUNC)zfsctl_snapdir_inactive},
-	{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
+	{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_snapdir_reclaim},
+    //	{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
 	{NULL, (VOPFUNC)NULL }
 };
 struct vnodeopv_desc zfsctl_ops_snapdir =
