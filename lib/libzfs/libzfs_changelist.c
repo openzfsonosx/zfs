@@ -190,6 +190,7 @@ changelist_postfix(prop_changelist_t *clp)
 	 * datasets before mounting the children.  We walk all datasets even if
 	 * there are errors.
 	 */
+
 	for (cn = uu_list_last(clp->cl_list); cn != NULL;
 	    cn = uu_list_prev(clp->cl_list, cn)) {
 
@@ -235,8 +236,10 @@ changelist_postfix(prop_changelist_t *clp)
 
 			if (zfs_mount(cn->cn_handle, NULL, 0) != 0)
 				errors++;
-			else
+			else {
 				mounted = TRUE;
+                printf("Mount successful\n");
+            }
 		}
 
 		/*
