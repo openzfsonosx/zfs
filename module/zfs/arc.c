@@ -3942,7 +3942,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t inflight_data, uint64_t txg)
 	available_memory = ptob(spl_kmem_availrmem()) + arc_evictable_memory();
 #endif
 #ifdef __APPLE__
-    available_memory = kmem_size() - kmem_used();
+    available_memory = kmem_avail();
     available_memory >>= 2;
 #endif
 
