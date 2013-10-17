@@ -137,7 +137,6 @@ system_taskq_fini(void)
 }
 
 
-extern char hostname[MAXHOSTNAMELEN];
 #include <sys/utsname.h>
 #include <string.h>
 
@@ -151,7 +150,6 @@ system_taskq_init(void)
                                 TASKQ_DYNAMIC | TASKQ_PREPOPULATE);
 
 
-    strlcpy(utsname.nodename, hostname, sizeof(utsname.nodename));
 }
 
 /*
@@ -223,8 +221,6 @@ IOService* net_lundman_zfs_zvol::probe (IOService* provider, SInt32* score)
     return res;
 }
 
-
-
 bool net_lundman_zfs_zvol::start (IOService *provider)
 {
     bool res = super::start(provider);
@@ -246,7 +242,6 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
 
     zfs_vfsops_init();
-
 
     /*
      * When is the best time to start the system_taskq? It is strictly

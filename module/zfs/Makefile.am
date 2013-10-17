@@ -5,8 +5,6 @@ AUTOMAKE_OPTIONS = subdir-objects
 INFO_PLIST = Info.plist
 PLIST_STRING = InfoPlist.strings
 
-SUBDIRS=KernelExports
-
 ZFS_META_VERSION = @ZFS_META_VERSION@
 ZFS_DEBUG_STR = @ZFS_DEBUG_STR@
 
@@ -165,14 +163,7 @@ zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
 	cp -f $(INFO_PLIST) zfs.kext/Contents/
 	cp -f $(PLIST_STRING) zfs.kext/Contents/Resources/English.lproj/
 	cp -f zfs zfs.kext/Contents/MacOS/
-	mkdir -p zfs.kext/Contents/Plugins/KernelExports.kext/
-	cp -f KernelExports/KernelExports zfs.kext/Contents/Plugins/KernelExports.kext/
-	cp -f KernelExports/Info.plist zfs.kext/Contents/Plugins/KernelExports.kext/
-	cp -f KernelExports/version.plist zfs.kext/Contents/Plugins/KernelExports.kext/
 	kextlibs -undef-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/ || echo Ignoring errors
-	mkdir -p KernelExports.kext/Contents/MacOS
-	cp -f KernelExports/KernelExports KernelExports.kext/Contents/MacOS/
-	cp -f KernelExports/Info.plist KernelExports.kext/Contents/
 
 # Show more information if there are linking problems.
 debug-kext-linking:

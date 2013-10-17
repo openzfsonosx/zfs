@@ -70,8 +70,6 @@
 		<string>10.0</string>
 		<key>com.apple.iokit.IOStorageFamily</key>
 		<string>1.6</string>
-		<key>net.lundman.kernel.dependencies</key>
-		<string>10.0.0</string>
 		<key>net.lundman.spl</key>
 		<string>1.0.0</string>
 	</dict>

@@ -87,14 +87,6 @@
 //#define dprintf printf
 
 
-#ifdef __APPLE__
-extern int VFS_ROOT(mount_t, struct vnode **, vfs_context_t);
-#define VFS_ROOT(V, L, VP) VFS_ROOT((V), (VP), vfs_context_current())
-//        //error = VFS_ROOT(vfsp, lktype, &tvp);
-//        error = zfs_vfs_root(vfsp, &tvp, NULL);
-#endif
-
-
 
 //typedef struct vnodeopv_entry_desc vop_vector;
 #define vop_vector vnodeopv_entry_desc

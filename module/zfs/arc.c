@@ -216,10 +216,6 @@ SYSCTL_INT(_zfs, OID_AUTO, vnops_osx_debug,
 #endif
 
 
-#ifdef __APPLE__
-extern unsigned int vm_page_free_count;
-extern unsigned int vm_page_speculative_count;
-#endif
 
 /*
  * Note that buffers can be in one of 6 states:
@@ -2390,16 +2386,8 @@ arc_reclaim_needed(void)
 #else   /* !sun */
 
 #ifdef _KERNEL
-
-#ifdef __APPLE__
-    if ( ((vm_page_free_count + vm_page_speculative_count) *
-          PAGE_SIZE) > (kmem_size() * 2) / 4)
-        return 1;
-#endif
-
-
-    //if (kmem_used() > (kmem_size() * 3) / 4)
-    //      return (1);
+    if (kmem_used() > (kmem_size() * 2) / 4)
+        return (1);
 #endif
 
 #endif  /* sun */
@@ -3954,8 +3942,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t inflight_data, uint64_t txg)
 	available_memory = ptob(spl_kmem_availrmem()) + arc_evictable_memory();
 #endif
 #ifdef __APPLE__
-    available_memory = (vm_page_free_count + vm_page_speculative_count) *
-        PAGE_SIZE;
+    available_memory = kmem_size() - kmem_used();
     available_memory >>= 2;
 #endif
 
@@ -5716,6 +5703,7 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs_l2c_only_size);
 
     sysctl_register_oid(&sysctl__zfs_vnops_osx_debug);
+
 }
 
 void arc_unregister_oids(void)
