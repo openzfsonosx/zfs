@@ -1229,7 +1229,8 @@ void vnop_reclaim_thread(void *arg)
         if (zfsvfs->z_reclaim_thread_exit == TRUE) break;
 
 		/* block until needed, or one second, whichever is shorter */
-#if RECLAIM_SIGNAL
+#if 1
+        //RECLAIM_SIGNAL
 		CALLB_CPR_SAFE_BEGIN(&cpr);
 		(void) cv_timedwait_interruptible(&zfsvfs->z_reclaim_thr_cv,
                                           &zfsvfs->z_reclaim_thr_lock,
