@@ -4103,11 +4103,14 @@ arc_init(void)
 	arc_c_max = MAX(arc_c * 4, arc_c_max);
 
 
-    if ((physmem * PAGE_SIZE) < (4ULL*1024ULL*1024ULL*1024ULL)) {
+    if ((physmem * PAGE_SIZE) <= (4ULL*1024ULL*1024ULL*1024ULL)) {
         arc_c_max >>= 2;
         printf("ZFS: Further decreasing ARC on low memory system (%llu)\n",
                arc_c_max);
     }
+
+    printf("ZFS: ARC limit set to (arc_c_max): %llu\n",
+           arc_c_max);
 
 	/*
 	 * Allow the tunables to override our calculations if they are
