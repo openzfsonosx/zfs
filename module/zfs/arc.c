@@ -2386,6 +2386,7 @@ arc_reclaim_needed(void)
 #else   /* !sun */
 
 #ifdef _KERNEL
+    if (spl_vm_pool_low()) return 1;
     if (kmem_used() > (kmem_size() * 2) / 4)
         return (1);
 #endif
@@ -4102,12 +4103,11 @@ arc_init(void)
 	/* set max to 1/2 of all memory */
 	arc_c_max = MAX(arc_c * 4, arc_c_max);
 
-
-    if ((physmem * PAGE_SIZE) <= (4ULL*1024ULL*1024ULL*1024ULL)) {
-        arc_c_max >>= 2;
-        printf("ZFS: Further decreasing ARC on low memory system (%llu)\n",
-               arc_c_max);
-    }
+    //if ((physmem * PAGE_SIZE) <= (4ULL*1024ULL*1024ULL*1024ULL)) {
+    //arc_c_max >>= 1;
+        //printf("ZFS: Further decreasing ARC on low memory system (%llu)\n",
+        //     arc_c_max);
+        //}
 
     printf("ZFS: ARC limit set to (arc_c_max): %llu\n",
            arc_c_max);
