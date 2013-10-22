@@ -1071,10 +1071,6 @@ osx_recv_pipe(void *arg)
     uint64_t bytes =0;
     int red, wrote;
 
-    // Make it blocking again for simpler code
-    fcntl(fd, F_SETFL,
-          (fcntl(fd, F_GETFL) & ~O_NONBLOCK));
-
     while(1) {
         red = read(fileno(stdin), buffer, sizeof(buffer));
         if (red > 0)
@@ -1086,12 +1082,9 @@ osx_recv_pipe(void *arg)
     }
 
 #if 0
+    perror("recv_pipe");
     fprintf(stderr, "recv_pipe complete: %llu bytes.(red %d, wrote %d)\r\n",
             bytes, red, wrote);
-    memset(buffer, 0, sizeof(buffer));
-
-    while(write(fd, buffer, sizeof(buffer)) > 0) ;
-    close(fd);
 #endif
     return (NULL);
 }
@@ -2635,10 +2628,6 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 	nvlist_t *snapprops_nvlist = NULL;
 	zprop_errflags_t prop_errflags;
 	boolean_t recursive;
-#ifdef __APPLE__
-	pthread_t osxtid;
-    int newstdin;
-#endif
 
 	begin_time = time(NULL);
 
@@ -2940,20 +2929,6 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 	zc.zc_begin_record = drr_noswap->drr_u.drr_begin;
 	zc.zc_cookie = infd;
 
-#ifdef __APPLE__
-    char *name = strdup("/tmp/.zfs.pipe.XXXXXXXX");
-    mktemp(name);
-    if (!mkfifo(name,0600)) {
-        zc.zc_cookie = open(name, O_RDONLY|O_NONBLOCK);
-        newstdin = open(name, O_WRONLY);
-        if ((err = pthread_create(&osxtid, NULL,
-                                  osx_recv_pipe, &newstdin))) {
-        }
-        unlink(name);
-        free(name);
-    }
-#endif
-
 	zc.zc_guid = flags->force;
 	if (flags->verbose) {
 		(void) printf("%s %s stream of %s into %s\n",
@@ -3179,12 +3154,6 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 		    buf1, delta, buf2);
 	}
 
-#ifdef __APPLE__
-    close(zc.zc_cookie);
-    close(newstdin);
-    pthread_join(osxtid, NULL);
-#endif
-
 	return (0);
 }
 
@@ -3313,9 +3282,29 @@ zfs_receive(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 	int err;
 	int cleanup_fd;
 	uint64_t action_handle = 0;
+#ifdef __APPLE__
+	pthread_t osxtid;
+    int newstdin;
+#endif
 
 	cleanup_fd = open(ZFS_DEV, O_RDWR);
 	VERIFY(cleanup_fd >= 0);
+
+#ifdef __APPLE__
+    char *name = strdup("/tmp/.zfs.pipe.XXXXXXXX");
+    mktemp(name);
+    if (!mkfifo(name,0600)) {
+        infd = open(name, O_RDONLY|O_NONBLOCK);
+        newstdin = open(name, O_WRONLY);
+        fcntl(infd, F_SETFL,
+              (fcntl(infd, F_GETFL) & ~O_NONBLOCK));
+        if ((err = pthread_create(&osxtid, NULL,
+                                  osx_recv_pipe, &newstdin))) {
+        }
+        unlink(name);
+        free(name);
+    }
+#endif
 
 	err = zfs_receive_impl(hdl, tosnap, flags, infd, NULL, NULL,
 	    stream_avl, &top_zfs, cleanup_fd, &action_handle);
@@ -3342,6 +3331,13 @@ zfs_receive(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 	}
 	if (top_zfs)
 		free(top_zfs);
+
+#ifdef __APPLE__
+    close(infd);
+    close(newstdin);
+    pthread_join(osxtid, NULL);
+#endif
+
 
 	return (err);
 }

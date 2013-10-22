@@ -3331,17 +3331,15 @@ zfs_unmount_snap(const char *snapname)
 {
 	zfsvfs_t *zsb = NULL;
 	char *dsname;
-	char *fullname;
+	//char *fullname = NULL;
 	char *ptr;
     int error;
 
     if ((ptr = strchr(snapname, '@')) == NULL)
         return;
 
-	dsname = spa_strdup(snapname);
-	dsname[ptr - snapname] = '\0';
-	snapname = spa_strdup(ptr + 1);
-	fullname = kmem_asprintf("%s@%s", dsname, snapname);
+    dsname = kmem_alloc(ptr - snapname + 1, KM_SLEEP);
+    strlcpy(dsname, snapname, ptr - snapname + 1);
 
 	error = zfsvfs_hold(dsname, FTAG, &zsb, B_FALSE);
 	if (error == 0) {
@@ -3353,9 +3351,7 @@ zfs_unmount_snap(const char *snapname)
 			error = 0;
 	}
 
-	strfree(dsname);
-	strfree(fullname);
-
+    kmem_free(dsname, ptr - snapname + 1);
 	return;
 }
 
