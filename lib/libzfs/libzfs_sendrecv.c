@@ -1038,11 +1038,14 @@ send_progress_thread(void *arg)
 
 
 #ifdef __APPLE__
+
+#define OSX_PIPE_SIZE 65536
+
 static void *
 osx_send_pipe(void *arg)
 {
     int fd = *(int *)arg;
-    unsigned char buffer[4096];
+    unsigned char buffer[OSX_PIPE_SIZE];
     uint64_t bytes =0;
     int red, wrote;
 
@@ -1067,7 +1070,7 @@ static void *
 osx_recv_pipe(void *arg)
 {
     int fd = *(int *)arg;
-    unsigned char buffer[4096];
+    unsigned char buffer[OSX_PIPE_SIZE];
     uint64_t bytes =0;
     int red, wrote;
 
