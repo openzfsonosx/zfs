@@ -151,7 +151,7 @@ static kmutex_t		arc_reclaim_thr_lock;
 static kcondvar_t	arc_reclaim_thr_cv;	/* used to signal reclaim thr */
 static uint8_t		arc_thread_exit;
 
-#ifdef __OPPLE__
+#if defined (__OPPLE__) && defined(_KERNEL)
 static kmutex_t		arc_vmpressure_thr_lock;
 static kcondvar_t	arc_vmpressure_thr_cv;	/* used to signal reclaim thr */
 static uint8_t		vmpressure_thread_exit = 0;
