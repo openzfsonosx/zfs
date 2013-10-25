@@ -4157,11 +4157,9 @@ arc_init(void)
 	/* set max to 1/2 of all memory */
 	arc_c_max = MAX(arc_c * 4, arc_c_max);
 
-    if ((physmem * PAGE_SIZE) <= (4ULL*1024ULL*1024ULL*1024ULL)) {
-        arc_c_max >>= 2;
-        printf("ZFS: Further decreasing ARC on low memory system (%llu)\n",
-               arc_c_max);
-    }
+    // We have to be a little more concervative on OSX. But those dedicating
+    // to ZFS can always bring it up using sysctl.
+    arc_c_max >>= 3;
 
     // 2GB system, ARC at about 82329600;
 
