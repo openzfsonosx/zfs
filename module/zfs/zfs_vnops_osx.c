@@ -523,6 +523,7 @@ zfs_vnop_fsync(
     if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
         return 0;
     }
+    if (zfsvfs->z_vnode_create_lockX) return 0;
 
 	err = zfs_fsync(ap->a_vp, /*flag*/0, cr, ct);
     return err;
@@ -797,7 +798,7 @@ zfs_vnop_pagein(
     int             need_unlock = 0;
     int             error = 0;
 
-    dprintf("+vnop_pagein: off %llx size %llu\n",
+    printf("+vnop_pagein: off %llx size %llu\n",
            off, len);
 
     if (upl == (upl_t)NULL)
@@ -818,7 +819,7 @@ zfs_vnop_pagein(
     /* can't fault past EOF */
     if ((off < 0) || (off >= zp->z_size) ||
         (len & PAGE_MASK) || (upl_offset & PAGE_MASK)) {
-        dprintf("past EOF or size error\n");
+        printf("past EOF or size error\n");
         ZFS_EXIT(zfsvfs);
         if (!(flags & UPL_NOCOMMIT))
             ubc_upl_abort_range(upl, upl_offset, len,
@@ -889,7 +890,7 @@ zfs_vnop_pagein(
     }
 
     ZFS_EXIT(zfsvfs);
-    if (error) printf("-pagein %d\n", error);
+    if (error) ;printf("-pagein %d\n", error);
     return (error);
 }
 
@@ -981,7 +982,7 @@ zfs_vnop_pageout(
     uint64_t        filesz;
     int             err = 0;
 
-    dprintf("+vnop_pageout: off 0x%llx len %llu upl_off 0x%llx: blksz %llu, z_size %llu\n",
+    printf("+vnop_pageout: off 0x%llx len %llu upl_off 0x%llx: blksz %llu, z_size %llu\n",
            off, len, upl_offset, zp->z_blksz, zp->z_size);
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
@@ -995,13 +996,24 @@ zfs_vnop_pageout(
         return (ENXIO);
     }
 
-    ZFS_ENTER(zfsvfs);
 
     // Defer syncs if we are coming through vnode_create()
     if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
-        ZFS_EXIT(zfsvfs);
+        if (!(flags & UPL_NOCOMMIT))
+            ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES |
+                          UPL_ABORT_FREE_ON_EMPTY);
         return ENXIO;
     }
+    // Defer syncs if we are coming through vnode_create()
+    if (zfsvfs->z_vnode_create_lockX) {
+        printf("zfs: awkward pageout exit\n");
+        if (!(flags & UPL_NOCOMMIT))
+            ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES |
+                          UPL_ABORT_FREE_ON_EMPTY);
+        return ENXIO;
+    }
+
+    ZFS_ENTER(zfsvfs);
 
     ASSERT(vn_has_cached_data(vp));
     /* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
@@ -1117,7 +1129,7 @@ zfs_vnop_pageout(
  exit:
     ZFS_EXIT(zfsvfs);
 
-    if (err) printf("pageout err %d\n", err);
+    if (err); printf("pageout err %d\n", err);
     return (err);
 
 }
@@ -1135,7 +1147,7 @@ zfs_vnop_mmap(
     znode_t *zp = VTOZ(vp);
     zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-    dprintf("+vnop_mmap\n");
+    printf("+vnop_mmap\n");
 
     ZFS_ENTER(zfsvfs);
 
@@ -1149,6 +1161,7 @@ zfs_vnop_mmap(
 	mutex_exit(&zp->z_lock);
 
     ZFS_EXIT(zfsvfs);
+    printf("-vnop_mmap\n");
     return (0);
 }
 
@@ -2606,9 +2619,11 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
      * vnode_create() has a habit of calling both vnop_reclaim() and
      * vnop_fsync(), which can create havok as we are already holding locks.
      */
-    mutex_enter(&zfsvfs->z_vnode_create_lock);
+    //mutex_enter(&zfsvfs->z_vnode_create_lock);
+    atomic_add_64(&zfsvfs->z_vnode_create_lockX, 1);
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0);
-    mutex_exit(&zfsvfs->z_vnode_create_lock);
+    atomic_sub_64(&zfsvfs->z_vnode_create_lockX, 1);
+    //mutex_exit(&zfsvfs->z_vnode_create_lock);
 
     dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
 
