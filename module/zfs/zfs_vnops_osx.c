@@ -798,7 +798,7 @@ zfs_vnop_pagein(
     int             need_unlock = 0;
     int             error = 0;
 
-    printf("+vnop_pagein: off %llx size %llu\n",
+    dprintf("+vnop_pagein: off %llx size %llu\n",
            off, len);
 
     if (upl == (upl_t)NULL)
@@ -819,7 +819,7 @@ zfs_vnop_pagein(
     /* can't fault past EOF */
     if ((off < 0) || (off >= zp->z_size) ||
         (len & PAGE_MASK) || (upl_offset & PAGE_MASK)) {
-        printf("past EOF or size error\n");
+        dprintf("past EOF or size error\n");
         ZFS_EXIT(zfsvfs);
         if (!(flags & UPL_NOCOMMIT))
             ubc_upl_abort_range(upl, upl_offset, len,
@@ -890,7 +890,7 @@ zfs_vnop_pagein(
     }
 
     ZFS_EXIT(zfsvfs);
-    if (error) ;printf("-pagein %d\n", error);
+    if (error) printf("-pagein %d\n", error);
     return (error);
 }
 
@@ -982,7 +982,7 @@ zfs_vnop_pageout(
     uint64_t        filesz;
     int             err = 0;
 
-    printf("+vnop_pageout: off 0x%llx len %llu upl_off 0x%llx: blksz %llu, z_size %llu\n",
+    dprintf("+vnop_pageout: off 0x%llx len %llu upl_off 0x%llx: blksz %llu, z_size %llu\n",
            off, len, upl_offset, zp->z_blksz, zp->z_size);
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
@@ -1129,7 +1129,7 @@ zfs_vnop_pageout(
  exit:
     ZFS_EXIT(zfsvfs);
 
-    if (err); printf("pageout err %d\n", err);
+    if (err) printf("pageout err %d\n", err);
     return (err);
 
 }
@@ -1147,7 +1147,7 @@ zfs_vnop_mmap(
     znode_t *zp = VTOZ(vp);
     zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-    printf("+vnop_mmap\n");
+    dprintf("+vnop_mmap\n");
 
     ZFS_ENTER(zfsvfs);
 
@@ -1161,7 +1161,7 @@ zfs_vnop_mmap(
 	mutex_exit(&zp->z_lock);
 
     ZFS_EXIT(zfsvfs);
-    printf("-vnop_mmap\n");
+    dprintf("-vnop_mmap\n");
     return (0);
 }
 
