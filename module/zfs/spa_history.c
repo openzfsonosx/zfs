@@ -494,7 +494,7 @@ spa_history_log_internal(spa_t *spa, const char *operation,
 
 	va_start(adx, fmt);
 	VERIFY0(nvlist_alloc(&nvl, NV_UNIQUE_NAME, KM_PUSHPAGE));
-	log_internal(nvl, operation, spa, htx, fmt, adx);
+	//log_internal(nvl, operation, spa, htx, fmt, adx);
 	va_end(adx);
 
 	/* if we didn't get a tx from the caller, commit the one we made */

@@ -2459,10 +2459,14 @@ arc_vmpressure_thread(void *dummy __unused)
 static void
 arc_reclaim_thread(void *dummy __unused)
 {
+#ifdef _KERNEL
     clock_t                 growtime = 0;
     arc_reclaim_strategy_t  last_reclaim = ARC_RECLAIM_CONS;
     callb_cpr_t             cpr;
     int64_t                 prune;
+    kern_return_t kr;
+    uint64_t amount;
+    unsigned int num_pages;
 
     CALLB_CPR_INIT(&cpr, &arc_reclaim_thr_lock, callb_generic_cpr, FTAG);
 
@@ -2493,7 +2497,17 @@ arc_reclaim_thread(void *dummy __unused)
                 arc_no_grow = TRUE;
                 last_reclaim = ARC_RECLAIM_AGGR;
             }
-            arc_kmem_reap_now(last_reclaim, 1024780);
+
+            kr = mach_vm_pressure_monitor(FALSE, 0,
+                                          NULL, &num_pages);
+            if (kr == KERN_SUCCESS)
+                amount = num_pages * PAGE_SIZE;
+            else
+                amount = 1024780;
+
+            printf("ARC reclaim: %llu\n", amount);
+
+            arc_kmem_reap_now(last_reclaim, amount);
 
             arc_warm = B_TRUE;
 
@@ -2544,6 +2558,7 @@ arc_reclaim_thread(void *dummy __unused)
     arc_thread_exit = 0;
     cv_broadcast(&arc_reclaim_thr_cv);
     CALLB_CPR_EXIT(&cpr);           /* drops arc_reclaim_thr_lock */
+#endif
     thread_exit();
 }
 
