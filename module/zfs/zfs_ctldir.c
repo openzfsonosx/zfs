@@ -87,14 +87,6 @@
 //#define dprintf printf
 
 
-#ifdef __APPLE__
-extern int VFS_ROOT(mount_t, struct vnode **, vfs_context_t);
-#define VFS_ROOT(V, L, VP) VFS_ROOT((V), (VP), vfs_context_current())
-//        //error = VFS_ROOT(vfsp, lktype, &tvp);
-//        error = zfs_vfs_root(vfsp, &tvp, NULL);
-#endif
-
-
 
 //typedef struct vnodeopv_entry_desc vop_vector;
 #define vop_vector vnodeopv_entry_desc
@@ -947,8 +939,11 @@ zfsctl_unmount_snap(zfs_snapentry_t *sep, int fflags, cred_t *cr)
     iap.a_vp = svp;
 	gfs_vop_inactive(&iap);
 
+    dprintf("zfsctldir: Releasing '%s'\n", sep->se_name);
 	kmem_free(sep->se_name, strlen(sep->se_name) + 1);
+    sep->se_name = NULL;
 	kmem_free(sep, sizeof (zfs_snapentry_t));
+    sep = NULL;
 
 	return (0);
 }
@@ -1081,7 +1076,7 @@ zfsctl_snapdir_remove(struct vnode *dvp, char *name, struct vnode *cwd, cred_t *
     caller_context_t *ct, int flags)
 {
 	zfsctl_snapdir_t *sdp = vnode_fsnode(dvp);
-	zfs_snapentry_t *sep;
+	zfs_snapentry_t *sep = NULL;
 	zfs_snapentry_t search;
 	zfsvfs_t *zfsvfs;
 	char snapname[MAXNAMELEN];

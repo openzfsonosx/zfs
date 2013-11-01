@@ -151,6 +151,12 @@ static kmutex_t		arc_reclaim_thr_lock;
 static kcondvar_t	arc_reclaim_thr_cv;	/* used to signal reclaim thr */
 static uint8_t		arc_thread_exit;
 
+#if defined (__OPPLE__) && defined(_KERNEL)
+static kmutex_t		arc_vmpressure_thr_lock;
+static kcondvar_t	arc_vmpressure_thr_cv;	/* used to signal reclaim thr */
+static uint8_t		vmpressure_thread_exit = 0;
+#endif
+
 /* number of bytes to prune from caches when at arc_meta_limit is reached */
 int zfs_arc_meta_prune = 1048576;
 
@@ -216,10 +222,6 @@ SYSCTL_INT(_zfs, OID_AUTO, vnops_osx_debug,
 #endif
 
 
-#ifdef __APPLE__
-extern unsigned int vm_page_free_count;
-extern unsigned int vm_page_speculative_count;
-#endif
 
 /*
  * Note that buffers can be in one of 6 states:
@@ -2391,15 +2393,10 @@ arc_reclaim_needed(void)
 
 #ifdef _KERNEL
 
-#ifdef __APPLE__
-    if ( ((vm_page_free_count + vm_page_speculative_count) *
-          PAGE_SIZE) > (kmem_size() * 2) / 4)
-        return 1;
-#endif
+    if (spl_vm_pool_low()) return 1;
 
-
-    //if (kmem_used() > (kmem_size() * 3) / 4)
-    //      return (1);
+    if (kmem_used() > (kmem_size() * 2) / 4)
+        return (1);
 #endif
 
 #endif  /* sun */
@@ -2413,13 +2410,63 @@ arc_reclaim_needed(void)
 }
 
 
+#if defined (__OPPLE__) && defined(_KERNEL)
+extern kern_return_t mach_vm_pressure_monitor(
+         boolean_t       wait_for_pressure,
+         unsigned int    nsecs_monitored,
+         unsigned int    *pages_reclaimed_p,
+         unsigned int    *pages_wanted_p);
+static void
+arc_vmpressure_thread(void *dummy __unused)
+{
+    callb_cpr_t             cpr;
+    kern_return_t kr;
+
+    CALLB_CPR_INIT(&cpr, &arc_vmpressure_thr_lock, callb_generic_cpr, FTAG);
+
+    mutex_enter(&arc_vmpressure_thr_lock);
+    printf("arc: pressure thread is starting\n");
+
+    while (vmpressure_thread_exit == 0) {
+
+        kr = mach_vm_pressure_monitor(TRUE, 5,
+                                      NULL, NULL);
+        if (kr == KERN_SUCCESS) {
+            printf("We were signalled pressure!\n");
+        }
+
+        /* block until needed, or one second, whichever is shorter */
+        CALLB_CPR_SAFE_BEGIN(&cpr);
+        (void) cv_timedwait_interruptible(&arc_vmpressure_thr_cv,
+                                          &arc_vmpressure_thr_lock,
+                                          (ddi_get_lbolt() + hz));
+        CALLB_CPR_SAFE_END(&cpr, &arc_vmpressure_thr_lock);
+
+        printf("vmpressure heartbeat\n");
+
+    }
+
+    printf("arc: vmpressure thread exit\n");
+
+    vmpressure_thread_exit = 0;
+    cv_broadcast(&arc_vmpressure_thr_cv);
+    CALLB_CPR_EXIT(&cpr);
+    thread_exit();
+}
+#endif
+
+
 static void
 arc_reclaim_thread(void *dummy __unused)
 {
+#ifdef _KERNEL
     clock_t                 growtime = 0;
     arc_reclaim_strategy_t  last_reclaim = ARC_RECLAIM_CONS;
     callb_cpr_t             cpr;
     int64_t                 prune;
+    kern_return_t kr;
+    uint64_t amount;
+    unsigned int num_pages;
 
     CALLB_CPR_INIT(&cpr, &arc_reclaim_thr_lock, callb_generic_cpr, FTAG);
 
@@ -2450,7 +2497,17 @@ arc_reclaim_thread(void *dummy __unused)
                 arc_no_grow = TRUE;
                 last_reclaim = ARC_RECLAIM_AGGR;
             }
-            arc_kmem_reap_now(last_reclaim, 1024780);
+
+            kr = mach_vm_pressure_monitor(FALSE, 0,
+                                          NULL, &num_pages);
+            if (kr == KERN_SUCCESS)
+                amount = num_pages * PAGE_SIZE;
+            else
+                amount = 1024780;
+
+            printf("ARC reclaim: %llu\n", amount);
+
+            arc_kmem_reap_now(last_reclaim, amount);
 
             arc_warm = B_TRUE;
 
@@ -2501,6 +2558,7 @@ arc_reclaim_thread(void *dummy __unused)
     arc_thread_exit = 0;
     cv_broadcast(&arc_reclaim_thr_cv);
     CALLB_CPR_EXIT(&cpr);           /* drops arc_reclaim_thr_lock */
+#endif
     thread_exit();
 }
 
@@ -3954,9 +4012,8 @@ arc_memory_throttle(uint64_t reserve, uint64_t inflight_data, uint64_t txg)
 	available_memory = ptob(spl_kmem_availrmem()) + arc_evictable_memory();
 #endif
 #ifdef __APPLE__
-    available_memory = (vm_page_free_count + vm_page_speculative_count) *
-        PAGE_SIZE;
-    available_memory >>= 2;
+    available_memory = kmem_avail();
+    //available_memory >>= 2;
 #endif
 
 	if (available_memory <= zfs_write_limit_max) {
@@ -4115,12 +4172,14 @@ arc_init(void)
 	/* set max to 1/2 of all memory */
 	arc_c_max = MAX(arc_c * 4, arc_c_max);
 
+    // We have to be a little more concervative on OSX. But those dedicating
+    // to ZFS can always bring it up using sysctl.
+    arc_c_max >>= 3;
 
-    if ((physmem * PAGE_SIZE) < (4ULL*1024ULL*1024ULL*1024ULL)) {
-        arc_c_max >>= 2;
-        printf("ZFS: Further decreasing ARC on low memory system (%llu)\n",
-               arc_c_max);
-    }
+    // 2GB system, ARC at about 82329600;
+
+    printf("ZFS: ARC limit set to (arc_c_max): %llu\n",
+           arc_c_max);
 
 	/*
 	 * Allow the tunables to override our calculations if they are
@@ -4210,6 +4269,13 @@ arc_init(void)
 	(void) thread_create(NULL, 0, arc_reclaim_thread, NULL, 0, &p0,
 	    TS_RUN, minclsyspri);
 
+#if defined (__OPPLE__) && defined(_KERNEL)
+	mutex_init(&arc_vmpressure_thr_lock, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&arc_vmpressure_thr_cv, NULL, CV_DEFAULT, NULL);
+    (void) thread_create(NULL, 0, arc_vmpressure_thread, NULL, 0, &p0,
+                         TS_RUN, minclsyspri);
+#endif
+
 	arc_dead = FALSE;
 	arc_warm = B_FALSE;
 
@@ -4239,6 +4305,16 @@ arc_fini(void)
 		cv_wait(&arc_reclaim_thr_cv, &arc_reclaim_thr_lock);
 	mutex_exit(&arc_reclaim_thr_lock);
 
+#if defined (__OPPLE__) && defined(_KERNEL)
+    printf("Quitting vmpressure thread\n");
+	mutex_enter(&arc_vmpressure_thr_lock);
+	vmpressure_thread_exit = 1;
+	while (vmpressure_thread_exit != 0)
+		cv_wait(&arc_vmpressure_thr_cv, &arc_vmpressure_thr_lock);
+	mutex_exit(&arc_vmpressure_thr_lock);
+    printf("Quit vmpressure thread\n");
+#endif
+
 	arc_flush(NULL);
 
 	arc_dead = TRUE;
@@ -4262,6 +4338,10 @@ arc_fini(void)
 	mutex_destroy(&arc_eviction_mtx);
 	mutex_destroy(&arc_reclaim_thr_lock);
 	cv_destroy(&arc_reclaim_thr_cv);
+#if defined (__OPPLE__) && defined(_KERNEL)
+	mutex_destroy(&arc_vmpressure_thr_lock);
+	cv_destroy(&arc_vmpressure_thr_cv);
+#endif
 
 	list_destroy(&arc_mru->arcs_list[ARC_BUFC_METADATA]);
 	list_destroy(&arc_mru_ghost->arcs_list[ARC_BUFC_METADATA]);
@@ -5716,6 +5796,7 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs_l2c_only_size);
 
     sysctl_register_oid(&sysctl__zfs_vnops_osx_debug);
+
 }
 
 void arc_unregister_oids(void)

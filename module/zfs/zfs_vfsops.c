@@ -3140,8 +3140,7 @@ zfs_set_version(zfsvfs_t *zfsvfs, uint64_t newvers)
 		sa_register_update_callback(os, zfs_sa_upgrade);
 	}
 
-	spa_history_log_internal(LOG_DS_UPGRADE,
-	    dmu_objset_spa(os), tx,
+	spa_history_log_internal(dmu_objset_spa(os), "upgrade", tx,
 	    "oldver=%llu newver=%llu dataset = %llu", zfsvfs->z_version, newvers,
 	    dmu_objset_id(os));
 

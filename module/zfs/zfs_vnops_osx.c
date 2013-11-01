@@ -523,6 +523,7 @@ zfs_vnop_fsync(
     if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
         return 0;
     }
+    if (zfsvfs->z_vnode_create_lockX) return 0;
 
 	err = zfs_fsync(ap->a_vp, /*flag*/0, cr, ct);
     return err;
@@ -995,13 +996,24 @@ zfs_vnop_pageout(
         return (ENXIO);
     }
 
-    ZFS_ENTER(zfsvfs);
 
     // Defer syncs if we are coming through vnode_create()
     if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
-        ZFS_EXIT(zfsvfs);
+        if (!(flags & UPL_NOCOMMIT))
+            ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES |
+                          UPL_ABORT_FREE_ON_EMPTY);
         return ENXIO;
     }
+    // Defer syncs if we are coming through vnode_create()
+    if (zfsvfs->z_vnode_create_lockX) {
+        printf("zfs: awkward pageout exit\n");
+        if (!(flags & UPL_NOCOMMIT))
+            ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES |
+                          UPL_ABORT_FREE_ON_EMPTY);
+        return ENXIO;
+    }
+
+    ZFS_ENTER(zfsvfs);
 
     ASSERT(vn_has_cached_data(vp));
     /* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
@@ -1149,6 +1161,7 @@ zfs_vnop_mmap(
 	mutex_exit(&zp->z_lock);
 
     ZFS_EXIT(zfsvfs);
+    dprintf("-vnop_mmap\n");
     return (0);
 }
 
@@ -1229,12 +1242,18 @@ void vnop_reclaim_thread(void *arg)
         if (zfsvfs->z_reclaim_thread_exit == TRUE) break;
 
 		/* block until needed, or one second, whichever is shorter */
+#if 1
+        //RECLAIM_SIGNAL
 		CALLB_CPR_SAFE_BEGIN(&cpr);
 		(void) cv_timedwait_interruptible(&zfsvfs->z_reclaim_thr_cv,
                                           &zfsvfs->z_reclaim_thr_lock,
                                           (ddi_get_lbolt() + (hz>>1)));
 		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_reclaim_thr_lock);
+#else
 
+        delay(hz>>1);
+
+#endif
     } // forever
 
 #ifdef VERBOSE_RECLAIM
@@ -1296,7 +1315,7 @@ zfs_vnop_reclaim(
         mutex_exit(&zfsvfs->z_vnode_create_lock);
     }
 
-#if 0
+#if 1
     if (!has_warned && vnop_num_reclaims > 20000) {
         has_warned = 1;
         printf("ZFS: Reclaim thread appears dead (%llu) -- good luck\n",
@@ -1311,12 +1330,13 @@ zfs_vnop_reclaim(
      */
 
     /*
-     * As it turns out, possibly from the high frequency that reclaims are
-     * called, calling either cv_signal() or cv_broadcast() here will
-     * eventually halt the reclaim thread (cv_wait never returns).
-     * So, we let the reclaim thread wake up when it wants to.
+     * We can either signal the reclaim-thread to wake up for each node
+     * or let it sleep for its own timeout and process nodes in bunches.
+     * We should measure which method is better.
      */
-    //cv_broadcast(&zfsvfs->z_reclaim_thr_cv);
+#ifdef RECLAIM_SIGNAL
+    cv_signal(&zfsvfs->z_reclaim_thr_cv);
+#endif
     return 0;
 }
 
@@ -2599,9 +2619,11 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
      * vnode_create() has a habit of calling both vnop_reclaim() and
      * vnop_fsync(), which can create havok as we are already holding locks.
      */
-    mutex_enter(&zfsvfs->z_vnode_create_lock);
+    //mutex_enter(&zfsvfs->z_vnode_create_lock);
+    atomic_add_64(&zfsvfs->z_vnode_create_lockX, 1);
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0);
-    mutex_exit(&zfsvfs->z_vnode_create_lock);
+    atomic_sub_64(&zfsvfs->z_vnode_create_lockX, 1);
+    //mutex_exit(&zfsvfs->z_vnode_create_lock);
 
     dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
 

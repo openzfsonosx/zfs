@@ -2641,7 +2641,7 @@ int zvol_mkdir_path(char *root, char *newdirs)
 
         // Check if it exists
         vp = NULL;
-        error = VNOP_LOOKUP(dvp, &vp, &cn, vctx);
+        error = VOP_LOOKUP(dvp, &vp, &cn, vctx);
 
         if (!error) {
             // It exists!
@@ -2668,7 +2668,7 @@ int zvol_mkdir_path(char *root, char *newdirs)
             //  IOLog("vnode_authattr %d\n", error);
 
             vp = NULL;
-            if (!error) error = VNOP_MKDIR(dvp, &vp, &cn, &vap, vctx);
+            if (!error) error = VOP_MKDIR(dvp, &vp, &cn, &vap, vctx);
 
             if (error) {
                 IOLog("Failed to create '%s' in directory '%s': %d\n",
@@ -2741,7 +2741,7 @@ int zvol_symlink(char *root, char *existing_target, char *create_target)
     //IOLog("vnode_auth %d\n", error);
     if (!error) error = vnode_authattr_new(dvp, &vap, 0, vctx);
     //IOLog("vnode_authattr %d\n", error);
-    if (!error) error = VNOP_SYMLINK(dvp, &vp,&cn, &vap, existing_target,vctx);
+    if (!error) error = VOP_SYMLINK(dvp, &vp,&cn, &vap, existing_target,vctx);
 
     //IOLog("Symlink creation said %d vp %p\n", error, vp);
 
@@ -2788,11 +2788,11 @@ int zvol_unlink(char *root, char *target)
     cn.cn_namelen = strlen(target);
 
     vp = NULL;
-    error = VNOP_LOOKUP(dvp, &vp, &cn, vctx);
+    error = VOP_LOOKUP(dvp, &vp, &cn, vctx);
     if (error)
         goto out;
 
-    error = VNOP_REMOVE(dvp, vp, &cn, 0, vctx);
+    error = VOP_REMOVE(dvp, vp, &cn, 0, vctx);
 
     //IOLog("Remove said %d vp %p\n", error, vp);
 

@@ -3504,6 +3504,7 @@ top:
 	if (mask & AT_ACL) {
 
         if ((vap->va_acl != (kauth_acl_t) KAUTH_FILESEC_NONE) &&
+            (vap->va_acl->acl_entrycount > 0) &&
             (vap->va_acl->acl_entrycount != KAUTH_FILESEC_NOACL)) {
 
             vsecattr_t      vsecattr;
