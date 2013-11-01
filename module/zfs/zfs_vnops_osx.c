@@ -283,17 +283,22 @@ zfs_vnop_access(
         } */ *ap)
 {
 	int error=ENOTSUP;
+	int action = ap->a_action;
+    int mode = 0;
+	DECLARE_CRED_AND_CONTEXT(ap);
 
-    dprintf("vnop_access\n");
+    // KAUTH_VNODE_READ_EXTATTRIBUTES as well?
+    // KAUTH_VNODE_WRITE_EXTATTRIBUTES
+    if (action & KAUTH_VNODE_READ_DATA)
+        mode |= VREAD;
+    if (action & KAUTH_VNODE_WRITE_DATA)
+        mode |= VWRITE;
+    if (action & KAUTH_VNODE_EXECUTE)
+        mode |= VEXEC;
 
-#if 0 // FIXME
-	int mode = ap->a_mode;
+    printf("vnop_access: action %04x -> mode %04x\n", action, mode);
 
-	error = zfs_access_native_mode(ap->a_vp, &mode, ap->a_cred,
-	    ap->a_context);
-
-	/* XXX Check for other modes? */
-#endif
+    error = zfs_access(ap->a_vp, mode, 0, cr, ct);
 
 	return (error);
 }

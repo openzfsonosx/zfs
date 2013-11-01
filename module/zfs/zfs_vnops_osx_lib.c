@@ -125,6 +125,9 @@ zfs_getattr_znode_locked(vattr_t *vap, znode_t *zp, cred_t *cr)
 		vap->va_parentid = val;
 
 	vap->va_iosize = zp->z_blksz ? zp->z_blksz : zfsvfs->z_max_blksz;
+    VATTR_SET_SUPPORTED(vap, va_iosize);
+    printf("stat blksize set to %d\n", vap->va_iosize);
+
 	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
 
 	if (VATTR_IS_ACTIVE(vap, va_nchildren) && vnode_isdir(ZTOV(zp)))
@@ -199,6 +202,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
     }
 
 	vap->va_iosize = zp->z_blksz ? zp->z_blksz : zfsvfs->z_max_blksz;
+    VATTR_SET_SUPPORTED(vap, va_iosize);
 
 	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
 

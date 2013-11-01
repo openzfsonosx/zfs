@@ -3074,7 +3074,7 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 
 #ifdef __APPLE__
 #else
-
+    uint64_t blksize, nblocks;
 
 	sa_object_size(zp->z_sa_hdl, &blksize, &nblocks);
 	vap->va_blksize = blksize;
