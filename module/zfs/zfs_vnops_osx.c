@@ -1181,6 +1181,8 @@ zfs_vnop_inactive(
 	DECLARE_CRED(ap);
 
     //dprintf("+vnop_inactive\n");
+    if (zfsvfs->z_vnode_create_lockX) return 0;
+
 	zfs_inactive(vp, cr, NULL);
     //dprintf("-vnop_inactive\n");
 	return (0);
