@@ -1,4 +1,3 @@
-
 /*
  * OS X ZFS vnode operation wrappers.
  *
@@ -1178,6 +1177,8 @@ zfs_vnop_inactive(
 	} */ *ap)
 {
 	struct vnode *vp = ap->a_vp;
+	znode_t *zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	DECLARE_CRED(ap);
 
     //dprintf("+vnop_inactive\n");
