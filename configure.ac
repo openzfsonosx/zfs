@@ -147,6 +147,9 @@ AC_CONFIG_FILES([
 	rpm/generic/zfs.spec
 	rpm/generic/zfs-kmod.spec
 	rpm/generic/zfs-dkms.spec
+	zfs_bundle/Makefile
+	zfs_bundle/mount_zfs/Makefile
+	zfs_bundle/zfs_util/Makefile
 	zfs-script-config.sh
 	zfs.release
 ])
