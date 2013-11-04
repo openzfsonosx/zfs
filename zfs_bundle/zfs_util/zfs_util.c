@@ -428,15 +428,21 @@ main(int argc, char **argv)
 		else syslog(LOG_NOTICE, "FSUC_PROBE returned invalid probe status : %d", ret);
 		break;
 	case 'k':
-		ret = zfs_probe(blkdevice, B_TRUE, &outuuid);
-		//fprintf(stdout, "%s", "00112233445566778899AABBCCDDEEFF");
-		//fprintf(stdout, "%llX", outuuid);
+#ifdef __SPECIFY_VOLUME_UUID__
+		/*
+		 * Need to modify this to adhere to format XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+		 * but even that still confuses Spotlight.
+		 */
+		fprintf(stdout, "%llX", outuuid);
 		char myuuid[64];
 		sprintf(myuuid, "%llX", outuuid);
 		(void) fwrite(myuuid, sizeof(char), strlen(myuuid), stdout);
 		
 		if (outuuid != 0ULL)
 			ret = FSUR_IO_SUCCESS;
+#endif /* __SPECIFY_VOLUME_UUID__ */
+
+			ret = FSUR_IO_FAIL;
 		break;
 	case 's':
 		//Set a UUID
