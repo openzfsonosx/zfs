@@ -445,6 +445,12 @@ mount_zfs_import(const char *devpath, const char *mountpoint)
 
 	syslog(LOG_NOTICE, "zpool_import ret %d", ret);
 
+	if (ret != 0) {
+		syslog(LOG_NOTICE, "devpath %s : zpool_import failed, "
+		    "skipping zpool_enable_datasets", devpath);
+		goto out;
+	}
+
 	char *name = NULL;
 	verify(nvlist_lookup_string(config,
 	    ZPOOL_CONFIG_POOL_NAME, &name) == 0);
@@ -461,9 +467,15 @@ mount_zfs_import(const char *devpath, const char *mountpoint)
 //	syslog(LOG_NOTICE, "mntdir %s", mntdir);
 	
 	//for now, not passing in diskarbitrationd's nodev,noowners,nosuid
-        if (zpool_get_state(zhp) != POOL_STATE_UNAVAIL &&
-            zpool_enable_datasets(zhp, NULL, MS_OVERLAY) != 0) {
-                ret = 1;
+        if (zpool_get_state(zhp) != POOL_STATE_UNAVAIL) {
+		syslog(LOG_NOTICE, "devpath %s has privilege of "
+		    "calling zpool_enable_datasets for pool %s", devpath, name);
+		int enabledatasetserr = zpool_enable_datasets(zhp, NULL, MS_OVERLAY);
+		syslog(LOG_NOTICE, "enabledatasetserr %d : devpath %s : pool %s",
+		    enabledatasetserr, devpath, name);
+		if (enabledatasetserr != 0) {
+			ret = 1;
+		}
         }
         zpool_close(zhp);
 out:
