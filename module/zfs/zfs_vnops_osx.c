@@ -215,7 +215,12 @@ zfs_vnop_ioctl(
         //  sizeof(zfsvfs->z_last_unmount_time));
         *(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
 		break;
+    case F_RDADVISE:
+        dprintf("vnop_ioctl: F_RDADVISE\n");
+        break;
 	default:
+        dprintf("vnop_ioctl: Unknown ioctl %02x (%d)\n", ap->a_command,
+               ap->a_command);
 		error = ENOTTY;
 	}
 	ZFS_EXIT(zfsvfs);

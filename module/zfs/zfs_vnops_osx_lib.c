@@ -202,6 +202,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
     }
 
 	vap->va_iosize = zp->z_blksz ? zp->z_blksz : zfsvfs->z_max_blksz;
+	//vap->va_iosize = 512;
     VATTR_SET_SUPPORTED(vap, va_iosize);
 
 	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
@@ -258,8 +259,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
                              ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
 			VATTR_SET_SUPPORTED(vap, va_name);
 	}
-
-	vap->va_iosize = zp->z_blksz;
 
 	ZFS_EXIT(zfsvfs);
 	return (error);
