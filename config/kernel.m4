@@ -60,6 +60,10 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 		AS_HELP_STRING([--with-linux-obj=PATH],
 		[Path to kernel build objects]),
 		[kernelbuild="$withval"])
+	AS_IF([test -z "$kernelsrc"], [
+		AS_IF([test -d "/System/Library/Frameworks/Kernel.framework/Headers"], [
+			kernelsrc="/System/Library/Frameworks/Kernel.framework"])
+	])
 	AC_MSG_CHECKING([kernel source directory])
 		AS_IF([test -z "$kernelsrc"], [
 			tmpdir=`xcrun --show-sdk-path`
@@ -69,10 +73,6 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 	AS_IF([test -z "$kernelsrc"], [
 		AS_IF([test -d "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework"], [
 			kernelsrc="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework"])
-	])
-	AS_IF([test -z "$kernelsrc"], [
-		AS_IF([test -d "/System/Library/Frameworks/Kernel.framework/Headers"], [
-			kernelsrc="/System/Library/Frameworks/Kernel.framework"])
 	])
 	AS_IF([test -z "$kernelsrc"], [
 		AS_IF([test -d "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework"], [
