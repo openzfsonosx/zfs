@@ -159,7 +159,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_FMT_PATH_FROM_ID ,
 
 		/* Interface capabilities we know about: */
-		VOL_CAP_INT_SEARCHFS |
+		//VOL_CAP_INT_SEARCHFS |
 		VOL_CAP_INT_ATTRLIST |
 		VOL_CAP_INT_NFSEXPORT |
         /*	VOL_CAP_INT_READDIRATTR |*/
@@ -1371,6 +1371,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	 */
 	microtime(&tv);
 	zfsvfs->z_mount_time = tv.tv_sec;
+	zfsvfs->z_last_unmount_time = tv.tv_sec;
 
 	vfs_setfsprivate(vfsp, zfsvfs);
 #else

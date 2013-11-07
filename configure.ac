@@ -50,8 +50,9 @@ AC_PROG_INSTALL
 dnl save $CFLAGS since AC_PROG_CC likes to insert "-g -O2"
 dnl if $CFLAGS is blank
 cflags_save="$CFLAGS"
-AC_PROG_CC
-AC_PROG_CXX
+AC_PROG_CC([clang gcc cc])
+AC_PROG_CXX([clang++ g++ c++])
+AC_PROG_OBJC([clang gcc cc])
 CFLAGS="$cflags_save"
 AC_PROG_LIBTOOL
 AM_PROG_CC_C_O
@@ -117,6 +118,7 @@ AC_CONFIG_FILES([
 	cmd/zvol_id/Makefile
 	cmd/vdev_id/Makefile
 	cmd/arcstat/Makefile
+	cmd/zeventd/Makefile
 	module/Makefile
 	module/avl/Makefile
 	module/nvpair/Makefile

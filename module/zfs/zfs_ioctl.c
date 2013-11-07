@@ -6003,6 +6003,10 @@ zfs_ioctl_init(void)
            ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
            SPA_VERSION_STRING, ZPL_VERSION_STRING);
 
+
+    spl_notification_send(SPL_CLASS_NOTIFY, SPL_SUBCLASS_INFO,
+                          SPL_EVENT_ZFS_LOAD);
+
 }
 
 void
@@ -6012,6 +6016,9 @@ zfs_ioctl_fini(void)
         printf("zfs_ioctl_fini: sorry we're busy\n");
         return;
     }
+
+    spl_notification_send(SPL_CLASS_NOTIFY, SPL_SUBCLASS_INFO,
+                          SPL_EVENT_ZFS_UNLOAD);
 
     spa_fini();
 
