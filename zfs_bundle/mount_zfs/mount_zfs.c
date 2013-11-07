@@ -506,8 +506,9 @@ main(int argc, char **argv)
 	progname = argv[0];
 		
 	syslog(LOG_NOTICE, "progname %s", progname);
-	for (int i = 0; i < argc; i++) {
-		syslog(LOG_NOTICE, "argv[%d]: %s\n", i, argv[i]);
+	int argindex;
+	for (argindex = 0; argindex < argc; argindex++) {
+		syslog(LOG_NOTICE, "argv[%d]: %s\n", argindex, argv[argindex]);
 	}
 		
 	int ch;

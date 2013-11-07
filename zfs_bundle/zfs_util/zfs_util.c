@@ -366,8 +366,9 @@ main(int argc, char **argv)
 
 	setlogmask(LOG_UPTO(LOG_NOTICE));
 
-        for (int i = 0; i < argc; i++) {
-                syslog(LOG_NOTICE, "argv[%d]: %s\n", i, argv[i]);
+        int argindex;
+        for (argindex = 0; argindex < argc; argindex++) {
+                syslog(LOG_NOTICE, "argv[%d]: %s\n", argindex, argv[argindex]);
         }
 
 	char  blkdevice[MAXPATHLEN];
