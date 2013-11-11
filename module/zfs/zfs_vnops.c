@@ -2748,7 +2748,8 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			                      (u_int8_t *)odp->d_name, &nfdlen,
 			                      MAXPATHLEN-1, UTF_DECOMPOSED) != 0) {
 				/* ASCII or normalization failed, just copy zap name. */
-				(void) bcopy(zap.za_name, odp->d_name, namelen + 1);
+                if ((namelen > 0) && odp->d_name)
+                    (void) bcopy(zap.za_name, odp->d_name, namelen + 1);
 			} else {
 				/* Normalization succeeded (already in buffer). */
 				namelen = nfdlen;
@@ -2776,7 +2777,8 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			                      (u_int8_t *)odp->d_name, &nfdlen,
 			                      MAXNAMLEN, UTF_DECOMPOSED) != 0) {
 				/* ASCII or normalization failed, just copy zap name. */
-				(void) bcopy(zap.za_name, odp->d_name, namelen + 1);
+                if ((namelen > 0) && odp->d_name)
+                    (void) bcopy(zap.za_name, odp->d_name, namelen + 1);
 			} else {
 				/* Normalization succeeded (already in buffer). */
 				namelen = nfdlen;
