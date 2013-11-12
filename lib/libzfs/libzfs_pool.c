@@ -1954,6 +1954,25 @@ zpool_scan(zpool_handle_t *zhp, pool_scan_func_t func)
 	}
 }
 
+#ifdef illumos
+
+/*
+ * This provides a very minimal check whether a given string is likely a
+ * c#t#d# style string.  Users of this are expected to do their own
+ * verification of the s# part.
+ */
+#define		CTD_CHECK(str)  (str && str[0] == 'c' && isdigit(str[1]))
+
+#elif __APPLE__
+
+#define		BSD_NAME_CHECK(str)	(str && \
+					    str[0] == 'd' && \
+					    str[1] == 'i' && \
+					    str[2] == 's' && \
+					    str[3] == 'k' && \
+					    isdigit(str[4]))
+#endif	/* illumos */
+
 /*
  * Find a vdev that matches the search criteria specified. We use the
  * the nvpair name to determine how we should look for the device.
@@ -3351,6 +3370,7 @@ set_path(zpool_handle_t *zhp, nvlist_t *nv, const char *path)
 	(void) zfs_ioctl(zhp->zpool_hdl, ZFS_IOC_VDEV_SETPATH, &zc);
 }
 
+#ifdef __LINUX__
 /*
  * Remove partition suffix from a vdev path.  Partition suffixes may take three
  * forms: "-partX", "pX", or "X", where X is a string of digits.  The second
@@ -3379,6 +3399,7 @@ strip_partition(libzfs_handle_t *hdl, char *path)
 	}
 	return (tmp);
 }
+#endif /* __LINUX__ */
 
 #define	PATH_BUF_LEN	64
 
@@ -3468,7 +3489,43 @@ zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
 		 */
 		if (nvlist_lookup_uint64(nv, ZPOOL_CONFIG_WHOLE_DISK,
 		    &value) == 0 && value) {
+			int pathlen = strlen(path);
+			char *tmp = zfs_strdup(hdl, path);
+#ifdef illumos
+			/*
+			 * If it starts with c#, and ends with "s0", chop
+			 * the "s0" off, or if it ends with "s0/old", remove
+			 * the "s0" from the middle.
+			 */
+			if (CTD_CHECK(tmp)) {
+				if (strcmp(&tmp[pathlen - 2], "s0") == 0) {
+					tmp[pathlen - 2] = '\0';
+				} else if (pathlen > 6 &&
+				    strcmp(&tmp[pathlen - 6], "s0/old") == 0) {
+					(void) strcpy(&tmp[pathlen - 6],
+					    "/old");
+				}
+			}
+			return (tmp);
+#elif __APPLE__
+			if (BSD_NAME_CHECK(tmp)) {
+				char *slice = NULL, *d = NULL;
+				slice = strrchr(tmp, 's');
+				if ((slice != NULL) &&
+				    (&slice[0] > &tmp[1]) && isdigit(*(&slice[-1]))) {
+					d = &slice[1];
+				}
+				if ((slice != NULL) && (d != NULL) && (*d != '\0')) {
+					for (; isdigit(*d); d = &d[1]);
+					if (*d == '\0') {
+						*slice = '\0';
+					}
+				}
+			}
+			return (tmp);
+#elif __LINUX__
 			return strip_partition(hdl, path);
+#endif	/* illumos */
 		}
 	} else {
 		verify(nvlist_lookup_string(nv, ZPOOL_CONFIG_TYPE, &path) == 0);
