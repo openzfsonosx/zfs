@@ -574,6 +574,8 @@ zvol_create_minor(const char *name)
     // The iokit framework may call Open, so we can not be locked.
     zvolCreateNewDevice(zv);
 
+
+
 	return (0);
 }
 
@@ -676,13 +678,16 @@ zvol_first_open(zvol_state_t *zv)
 		zv->zv_flags |= ZVOL_RDONLY;
 	else
 		zv->zv_flags &= ~ZVOL_RDONLY;
-    dprintf("first_open %d\n", error);
+
 	return (error);
 }
 
 void
 zvol_last_close(zvol_state_t *zv)
 {
+
+    dprintf("zvol_last_close\n");
+
 	zil_close(zv->zv_zilog);
 	zv->zv_zilog = NULL;
 
@@ -1004,6 +1009,7 @@ zvol_open(dev_t devp, int flag, int otyp, struct proc *p)
 	}
 
     mutex_exit(&zfsdev_state_lock); // Is there a race here?
+
     return zvol_open_impl(zv, flag, otyp, p);
 }
 
@@ -1016,6 +1022,8 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 	int error = 0;
 
 	mutex_enter(&zfsdev_state_lock);
+
+    dprintf("zvol_close_impl\n");
 
 	if (zv->zv_flags & ZVOL_EXCL) {
 		ASSERT(zv->zv_total_opens == 1);
@@ -1651,6 +1659,7 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count, void *iomem)
  * IOKit write operations will pass IOMemoryDescriptor along here, so
  * that we can call io->readBytes to write into IOKit zvolumes.
  */
+
 int
 zvol_write_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count,void *iomem)
 {
@@ -2522,6 +2531,7 @@ zvol_create_minors(char *name)
                name, error);
         return (error);
     }
+
     if (dmu_objset_type(os) == DMU_OST_ZVOL) {
         //dsl_dataset_long_hold(os->os_dsl_dataset, FTAG);
         //dsl_pool_rele(dmu_objset_pool(os), FTAG);
@@ -2532,7 +2542,8 @@ zvol_create_minors(char *name)
                    name, error);
         }
         //dsl_dataset_long_rele(os->os_dsl_dataset, FTAG);
-        dsl_dataset_rele(os->os_dsl_dataset, FTAG);
+        //dsl_dataset_rele(os->os_dsl_dataset, FTAG);
+        dmu_objset_rele(os, FTAG);
         return (error);
     }
     if (dmu_objset_type(os) != DMU_OST_ZFS) {

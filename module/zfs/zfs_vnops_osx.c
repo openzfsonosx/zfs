@@ -219,8 +219,9 @@ zfs_vnop_ioctl(
         dprintf("vnop_ioctl: F_RDADVISE\n");
         break;
 	default:
-        dprintf("vnop_ioctl: Unknown ioctl %02x (%d)\n", ap->a_command,
-               ap->a_command);
+        dprintf("vnop_ioctl: Unknown ioctl %02x ('%c' + %u)\n", ap->a_command,
+               (ap->a_command&0xff00)>>8,
+               ap->a_command&0xff);
 		error = ENOTTY;
 	}
 	ZFS_EXIT(zfsvfs);

@@ -2809,7 +2809,7 @@ zfs_ioc_pool_get_props(zfs_cmd_t *zc)
 static int
 zfs_ioc_create_minor(zfs_cmd_t *zc)
 {
-	return (zvol_create_minor(zc->zc_name));
+    return (zvol_create_minor(zc->zc_name));
 }
 
 /*

@@ -425,7 +425,7 @@ zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
     if (!value) *flags |= MNT_DONTBROWSE;
         value = getprop_uint64(zhp, ZFS_PROP_APPLE_IGNOREOWNER, &source);
     if (value) *flags |= MNT_IGNORE_OWNERSHIP;
-	
+
     /*
 	value = getprop_uint64(zhp, ZFS_PROP_NBMAND, &source);
     if (!value) *flags |= MNT_NOXATTR;
@@ -1286,6 +1286,7 @@ int zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
     if (nzhp && nzhp->zpool_hdl && zpool_get_name(nzhp->zpool_hdl) &&
         data &&
         !strcmp(zpool_get_name(nzhp->zpool_hdl), (char *)data)) {
+
         if (zfs_get_type(nzhp) == ZFS_TYPE_VOLUME) {
             char *volume = NULL;
             printf("Attempting to eject volume '%s'\n",
@@ -1310,7 +1311,7 @@ int zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
         }
     }
 
-    (void) zfs_iter_children(nzhp, zpool_disable_volumes, NULL);
+    (void) zfs_iter_children(nzhp, zpool_disable_volumes, data);
     zfs_close(nzhp);
     return (0);
 }
@@ -1441,6 +1442,7 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 	}
 
     // Surely there exists a better way to iterate a POOL to find its ZVOLs?
+    printf("Attempting to unmount ZFS Volumes...\n");
     zfs_iter_root(hdl, zpool_disable_volumes, zpool_get_name(zhp));
 
 	ret = 0;
