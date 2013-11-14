@@ -5752,8 +5752,8 @@ zfsdev_state_destroy(struct file *filp)
 	//ASSERT(filp->private_data != NULL);
 
 	//zs = filp->private_data;
-	zfs_onexit_destroy(zs->zs_onexit);
-	zfs_zevent_destroy(zs->zs_zevent);
+	//zfs_onexit_destroy(zs->zs_onexit);
+	//zfs_zevent_destroy(zs->zs_zevent);
 
 	list_remove(&zfsdev_state_list, zs);
 	kmem_free(zs, sizeof(zfsdev_state_t));

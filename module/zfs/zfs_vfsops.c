@@ -125,6 +125,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		/* Interface capabilities we support: */
 		VOL_CAP_INT_ATTRLIST |
 		VOL_CAP_INT_NFSEXPORT |
+		VOL_CAP_INT_SEARCHFS |
         /*	VOL_CAP_INT_READDIRATTR |*/
         /* As the readdirattr function has not been updated since maczfs,
          * it has been decided to disable this functionality, Darwin will
@@ -163,9 +164,9 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_INT_ATTRLIST |
 		VOL_CAP_INT_NFSEXPORT |
         /*	VOL_CAP_INT_READDIRATTR |*/
-		VOL_CAP_INT_EXCHANGEDATA |
-		VOL_CAP_INT_COPYFILE |
-		VOL_CAP_INT_ALLOCATE |
+        VOL_CAP_INT_EXCHANGEDATA |
+        VOL_CAP_INT_COPYFILE |
+        VOL_CAP_INT_ALLOCATE |
 		VOL_CAP_INT_VOL_RENAME |
 		VOL_CAP_INT_ADVLOCK |
 		VOL_CAP_INT_FLOCK |

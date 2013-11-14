@@ -2107,7 +2107,7 @@ zfs_vnop_select(
 {
     dprintf("vnop_select: 0\n");
 
-	return (0);
+	return (1);
 }
 
 static int
@@ -2356,6 +2356,33 @@ zfs_vnop_readdirattr(
 }
 
 
+int
+zfs_vnop_searchfs(ap)
+     struct vnop_searchfs_args *ap; /*
+                                      struct vnodeop_desc *a_desc;
+                                      struct vnode *a_vp;
+                                      void *a_searchparams1;
+                                      void *a_searchparams2;
+                                      struct attrlist *a_searchattrs;
+                                      u_long a_maxmatches;
+                                      struct timeval *a_timelimit;
+                                      struct attrlist *a_returnattrs;
+                                      u_long *a_nummatches;
+                                      u_long a_scriptcode;
+                                      u_long a_options;
+                                      struct uio *a_uio;
+                                      struct searchstate *a_searchstate;
+                                      vfs_context_t a_context;
+                                    */
+{
+    printf("+vnop_searchfs called, type %d\n",
+           vnode_vtype(ap->a_vp));
+    *(ap->a_nummatches) = 0;
+    return ENOTSUP;
+}
+
+
+
 /*
  * Predeclare these here so that the compiler assumes that
  * this is an "old style" function declaration that does
@@ -2414,6 +2441,7 @@ struct vnodeopv_entry_desc zfs_dvnodeops_template[] = {
 	{&vnop_removexattr_desc,(VOPFUNC)zfs_vnop_removexattr},
 	{&vnop_listxattr_desc,	(VOPFUNC)zfs_vnop_listxattr},
     {&vnop_readdirattr_desc, (VOPFUNC)zfs_vnop_readdirattr},
+    {&vnop_searchfs_desc,    (VOPFUNC)zfs_vnop_searchfs},
 	{NULL, (VOPFUNC)NULL }
 };
 struct vnodeopv_desc zfs_dvnodeop_opv_desc =
@@ -2456,6 +2484,7 @@ struct vnodeopv_entry_desc zfs_fvnodeops_template[] = {
 	{&vnop_makenamedstream_desc,	(VOPFUNC)zfs_vnop_makenamedstream},
 	{&vnop_removenamedstream_desc,	(VOPFUNC)zfs_vnop_removenamedstream},
 #endif
+    {&vnop_searchfs_desc,    (VOPFUNC)zfs_vnop_searchfs},
 	{NULL, (VOPFUNC)NULL }
 };
 struct vnodeopv_desc zfs_fvnodeop_opv_desc =

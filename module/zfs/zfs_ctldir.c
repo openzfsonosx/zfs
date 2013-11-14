@@ -1502,7 +1502,7 @@ zfsctl_shares_readdir(ap)
 	int *eofp = ap->a_eofflag;
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(vp));
 	znode_t *dzp;
-	int error;
+	int error = 0;
     ulong *cookies;
 
 	ZFS_ENTER(zfsvfs);

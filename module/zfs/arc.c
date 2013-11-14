@@ -4002,7 +4002,7 @@ static int
 arc_memory_throttle(uint64_t reserve, uint64_t inflight_data, uint64_t txg)
 {
 #ifdef _KERNEL
-	uint64_t available_memory;
+	uint64_t available_memory = 0;
 
 	if (zfs_arc_memory_throttle_disable)
 		return (0);

@@ -2100,7 +2100,7 @@ zfs_zaccess_dataset_check(znode_t *zp, uint32_t v4_mode)
 #ifdef sun
 	if ((v4_mode & (ACE_DELETE | ACE_DELETE_CHILD)) &&
 	    (zp->z_pflags & ZFS_NOUNLINK)) {
-		return (EPERM));
+		return (EPERM);
 	}
 #else
 	/*

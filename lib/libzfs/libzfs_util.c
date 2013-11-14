@@ -1008,7 +1008,7 @@ zfs_strcmp_pathname(char *name, char *cmp, int wholedisk)
 	if (name[0] != '/')
 		return zfs_strcmp_shortname(name, cmp_name, wholedisk);
 
-	strncpy(path_name, name, MAXPATHLEN);
+	strlcpy(path_name, name, MAXPATHLEN);
 	path_len = strlen(path_name);
 	cmp_len = strlen(cmp_name);
 

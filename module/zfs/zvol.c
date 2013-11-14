@@ -2577,6 +2577,7 @@ zvol_create_minors(char *name)
         if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
             printf("ZFS WARNING: Unable to put hold on %s (error=%d).\n",
                    name, error);
+            kmem_free(osname, MAXPATHLEN);
             return (error);
         }
     }
