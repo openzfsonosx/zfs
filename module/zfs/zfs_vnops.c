@@ -2478,8 +2478,8 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 #ifndef __APPLE__
 	iovec_t		*iovp;
 #endif
-	//edirent_t	*eodp;
-	dirent64_t	*odp;
+	dirent64_t	*eodp;
+	dirent_t	*odp;
 	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
 	objset_t	*os;
 	caddr_t		outbuf;
@@ -2500,7 +2500,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
     char		*bufptr;
     boolean_t	isdotdir = B_TRUE;
 
-    dprintf("+zfs_readdir\n");
+    dprintf("+zfs_readdir (extended %d)\n", extended);
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
@@ -2732,11 +2732,11 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			/*
 			 * Add extended flag entry:
 			 */
-			odp = (dirent64_t  *)bufptr;
+			eodp = (dirent64_t  *)bufptr;
 			/* NOTE: d_seekoff is the offset for the *next* entry */
-			next = &(odp->d_seekoff);
-			odp->d_ino = objnum;
-			odp->d_type = dtype;
+			next = &(eodp->d_seekoff);
+			eodp->d_ino = objnum;
+			eodp->d_type = dtype;
 
 			/*
 			 * Mac OS X: non-ascii names are UTF-8 NFC on disk
@@ -2745,25 +2745,25 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			namelen = strlen(zap.za_name);
 			if (ascii ||
 			    utf8_normalizestr((const u_int8_t *)zap.za_name, namelen,
-			                      (u_int8_t *)odp->d_name, &nfdlen,
+			                      (u_int8_t *)eodp->d_name, &nfdlen,
 			                      MAXPATHLEN-1, UTF_DECOMPOSED) != 0) {
 				/* ASCII or normalization failed, just copy zap name. */
-                if ((namelen > 0) && odp->d_name)
-                    (void) bcopy(zap.za_name, odp->d_name, namelen + 1);
+                if ((namelen > 0) && eodp->d_name)
+                    (void) bcopy(zap.za_name, eodp->d_name, namelen + 1);
 			} else {
 				/* Normalization succeeded (already in buffer). */
 				namelen = nfdlen;
 			}
-			odp->d_namlen = namelen;
-			odp->d_reclen = reclen = DIRENT_RECLEN(namelen, extended);
+			eodp->d_namlen = namelen;
+			eodp->d_reclen = reclen = DIRENT_RECLEN(namelen, extended);
 
 		} else {
 			/*
 			 * Add normal entry:
 			 */
 
-			//odp = (dirent_t  *)bufptr;
-			odp = (dirent64_t  *)bufptr;
+			odp = (dirent_t  *)bufptr;
+			//odp = (dirent64_t  *)bufptr;
 			odp->d_ino = objnum;
 			odp->d_type = dtype;
 

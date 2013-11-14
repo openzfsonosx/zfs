@@ -2222,19 +2222,14 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		VFSATTR_SET_SUPPORTED(fsap, f_create_time);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_modify_time)) {
-#if 0
-		if (zfsvfs->z_mtime_vp != NULL) {
-			znode_t *mzp;
+        timestruc_t  now;
+        uint64_t        mtime[2];
 
-			mzp = VTOZ(zfsvfs->z_mtime_vp);
-			//ZFS_TIME_DECODE(&fsap->f_modify_time, mzp->zp_mtime);
-		} else {
-#endif
-			fsap->f_modify_time.tv_sec = 0;
-			fsap->f_modify_time.tv_nsec = 0;
-#if 0
-		}
-#endif
+        gethrestime(&now);
+        ZFS_TIME_ENCODE(&now, mtime);
+        //fsap->f_modify_time = mtime;
+        ZFS_TIME_DECODE(&fsap->f_modify_time, mtime);
+
 		VFSATTR_SET_SUPPORTED(fsap, f_modify_time);
 	}
 	/*

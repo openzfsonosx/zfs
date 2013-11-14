@@ -171,6 +171,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	 * On Mac OS X we always export the root directory id as 2
 	 */
 	vap->va_fileid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_id;
+	//vap->va_fileid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_vid;
 	vap->va_nlink = zp->z_links;
 	vap->va_data_size = zp->z_size;
 	vap->va_total_size = zp->z_size;
@@ -211,6 +212,9 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	if (VATTR_IS_ACTIVE(vap, va_nchildren) && vnode_isdir(vp)) {
 		VATTR_RETURN(vap, va_nchildren, vap->va_nlink - 2);
     }
+	if (VATTR_IS_ACTIVE(vap, va_dirlinkcount) && vnode_isdir(vp)) {
+		VATTR_RETURN(vap, va_dirlinkcount, vap->va_nlink);
+    }
 
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
         //printf("want acl\n");
@@ -229,6 +233,9 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		}
 
 #endif
+        VATTR_SET_SUPPORTED(vap, va_acl);
+        VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
+        VATTR_RETURN(vap, va_guuid, kauth_null_guid);
 
         dprintf("Calling getacl\n");
         if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
