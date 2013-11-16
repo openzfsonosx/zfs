@@ -154,6 +154,8 @@ zfs_CPPFLAGS=$(CFLAGS_KMOD)
 zfs_CXXFLAGS=$(CFLAGS_KMOD)
 zfs_LDFLAGS=$(LINKFLAGS_KMOD)
 
+KERNEL_MODDIR = $(DESTDIR)@KERNEL_MODPREFIX@/zfs.kext
+
 dist_noinst_DATA = $(PLIST_STRING) $(INFO_PLIST)
 
 zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
@@ -170,12 +172,13 @@ debug-kext-linking:
 	kextlibs -all-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/
 
 install-exec-local: zfs.kext
-	rm -rf /System/Library/Extensions/zfs.kext
-	rsync -r zfs.kext/ /System/Library/Extensions/zfs.kext/
-	chown -R root:wheel /System/Library/Extensions/zfs.kext/
+	rm -rf $(KERNEL_MODDIR)
+	mkdir -p $(KERNEL_MODDIR)
+	rsync -r zfs.kext/ $(KERNEL_MODDIR)
+	chown -R root:wheel $(KERNEL_MODDIR)
 	@echo
-	@echo "To load module: kextload -v /System/Library/Extensions/zfs.kext"
-	@echo "To uninstall module: rm -rf /System/Library/Extensions/zfs.kext"
+	@echo "To load module: kextload -v $(KERNEL_MODDIR)"
+	@echo "To uninstall module: rm -rf $(KERNEL_MODDIR)"
 	@echo
 
 clean:
