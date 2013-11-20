@@ -7,7 +7,7 @@ atomic_SOURCE = atomic.c
 atomic_ASM = atomic.S
 
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
-	  $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -fPIC
+	  $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -fPIC -g0
 EXTRA_DIST = $(atomic_SOURCE)
 
 # Generates assembly to simplify inclusion in ../Makefile.am
