@@ -233,7 +233,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		}
 
 #endif
-        VATTR_SET_SUPPORTED(vap, va_acl);
+      //VATTR_SET_SUPPORTED(vap, va_acl);
         VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
         VATTR_RETURN(vap, va_guuid, kauth_null_guid);
 
