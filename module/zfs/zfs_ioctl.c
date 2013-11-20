@@ -5659,17 +5659,33 @@ zfsdev_get_state_impl(minor_t minor, enum zfsdev_state_type which)
 
 	for (zs = list_head(&zfsdev_state_list); zs != NULL;
 	     zs = list_next(&zfsdev_state_list, zs)) {
-        //		if (zs->zs_minor == minor) {
-		//	switch (which) {
-		//		case ZST_ONEXIT:  return (zs->zs_onexit);
-		//		case ZST_ZEVENT:  return (zs->zs_zevent);
-		//		case ZST_ALL:     return (zs);
-		//	}
-        //}
+	  if (zs->zs_minor == minor) {
+	    switch (which) {
+	    case ZST_ONEXIT:  return (zs->zs_onexit);
+	    case ZST_ZEVENT:  return (zs->zs_zevent);
+	    case ZST_ALL:     return (zs);
+	    }
+	  }
 	}
 
 	return NULL;
 }
+
+static void *
+zfsdev_minor_find(dev_t dev)
+{
+  zfsdev_state_t *zs;
+
+  ASSERT(MUTEX_HELD(&zfsdev_state_lock));
+
+  for (zs = list_head(&zfsdev_state_list); zs != NULL;
+       zs = list_next(&zfsdev_state_list, zs))
+    if (zs->zs_dev == dev)
+      return (zs);
+
+    return NULL;
+}
+
 
 void *
 zfsdev_get_state(minor_t minor, enum zfsdev_state_type which)
@@ -5684,13 +5700,20 @@ zfsdev_get_state(minor_t minor, enum zfsdev_state_type which)
 }
 
 minor_t
-zfsdev_getminor(struct file *filp)
+zfsdev_getminor(dev_t dev)
 {
-	ASSERT(filp != NULL);
-    //	ASSERT(filp->private_data != NULL);
+  zfsdev_state_t *zs = NULL;
 
-    //	return (((zfsdev_state_t *)filp->private_data)->zs_minor);
-    return 0;
+  ASSERT(filp != NULL);
+#ifdef __APPLE__
+  zs = zfsdev_minor_find(dev);
+  if (!zs) return -1;
+#else
+  ASSERT(filp->private_data != NULL);
+  zs = filp->private_data;
+#endif
+
+  return (zs->zs_minor);
 }
 
 /*
@@ -5717,8 +5740,16 @@ zfsdev_minor_alloc(void)
 	return (0);
 }
 
+
+
+/*
+ * In apple we have to map the *filp to the ZFS "zs" node, in a list we
+ * maintain in the kernel. This is due to the lack of "private_data" in the
+ * filp structure.
+ */
+
 static int
-zfsdev_state_init(struct file *filp)
+zfsdev_state_init(dev_t dev)
 {
 	zfsdev_state_t *zs;
 	minor_t minor;
@@ -5731,9 +5762,15 @@ zfsdev_state_init(struct file *filp)
 
 	zs = kmem_zalloc( sizeof(zfsdev_state_t), KM_SLEEP);
 
-	zs->zs_file = filp;
-	//zs->zs_minor = minor;
-	//filp->private_data = zs;
+#ifdef __APPLE__
+	zs->zs_dev = dev;
+    printf("created zs %p\n", zs);
+#endif
+	zs->zs_minor = minor;
+
+#ifndef __APPLE__
+	filp->private_data = zs;
+#endif
 
 	zfs_onexit_init((zfs_onexit_t **)&zs->zs_onexit);
 	zfs_zevent_init((zfs_zevent_t **)&zs->zs_zevent);
@@ -5744,42 +5781,63 @@ zfsdev_state_init(struct file *filp)
 }
 
 static int
-zfsdev_state_destroy(struct file *filp)
+zfsdev_state_destroy(dev_t dev)
 {
 	zfsdev_state_t *zs = NULL;
 
 	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 	//ASSERT(filp->private_data != NULL);
 
-	//zs = filp->private_data;
-	//zfs_onexit_destroy(zs->zs_onexit);
-	//zfs_zevent_destroy(zs->zs_zevent);
+#ifdef __APPLE__
+	zs = zfsdev_minor_find(dev);
+#else
+	zs = filp->private_data;
+#endif
+	if (!zs) return 0;
 
+    printf("destroying zs %p\n", zs);
+
+	zfs_onexit_destroy(zs->zs_onexit);
+	zfs_zevent_destroy(zs->zs_zevent);
 	list_remove(&zfsdev_state_list, zs);
 	kmem_free(zs, sizeof(zfsdev_state_t));
 
 	return 0;
 }
 
-static int
-zfsdev_open(struct vnode *ino, struct file *filp)
+static int zfsdev_open(dev_t dev, int flags, int devtype,
+		       struct proc *p)
+//static int
+//zfsdev_open(struct vnode *ino, struct file *filp)
 {
 	int error;
 
+	printf("zfsdev_open, flag %02X devtype %d, proc is %p: thread %p\n",
+           flags, devtype, p, current_thread());
+
+    if (zfsdev_minor_find(p)) {
+        printf("zs already exists\n");
+        return 0;
+    }
+
 	mutex_enter(&zfsdev_state_lock);
-	error = zfsdev_state_init(filp);
+	error = zfsdev_state_init(p);
 	mutex_exit(&zfsdev_state_lock);
 
 	return (-error);
 }
 
-static int
-zfsdev_release(struct vnode *ino, struct file *filp)
+static int zfsdev_release(dev_t dev, int flags, int devtype,
+			  struct proc *p)
+//static int
+//zfsdev_release(struct vnode *ino, struct file *filp)
 {
 	int error;
 
+	printf("zfsdev_release, flag %02X devtype %d, dev is %p, thread %p\n",
+           flags, devtype, p, current_thread());
 	mutex_enter(&zfsdev_state_lock);
-	error = zfsdev_state_destroy(filp);
+	error = zfsdev_state_destroy(p);
 	mutex_exit(&zfsdev_state_lock);
 
 	return (-error);
@@ -5938,8 +5996,8 @@ static struct bdevsw zfs_bdevsw = {
 
 static struct cdevsw zfs_cdevsw =
 {
-        zvol_open,              /* open */
-        zvol_close,             /* close */
+        zfsdev_open,            /* open */
+        zfsdev_release,         /* close */
         zvol_read,              /* read */
         zvol_write,             /* write */
         zfsdev_ioctl,           /* ioctl */
@@ -5975,6 +6033,11 @@ zfs_ioctl_init(void)
 
     //zfs_major = cdevsw_add(ZFS_MAJOR, &zfs_cdevsw);
     //dev = zfs_major << 24;
+    printf("init zfsdev_state_lock\n");
+    mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
+    list_create(&zfsdev_state_list, sizeof (zfsdev_state_t),
+		offsetof(zfsdev_state_t, zs_next));
+
 
     //zfs_major = bdevsw_add(-1, &zfs_bdevsw);
     zfs_bmajor = bdevsw_add(-1, &zfs_bdevsw);
@@ -6008,6 +6071,7 @@ zfs_ioctl_init(void)
 void
 zfs_ioctl_fini(void)
 {
+
     if (spa_busy() || zvol_busy() || zio_injection_enabled) {
         printf("zfs_ioctl_fini: sorry we're busy\n");
         return;
@@ -6019,10 +6083,15 @@ zfs_ioctl_fini(void)
         devfs_remove(zfs_devnode);
         zfs_devnode = NULL;
     }
+
     if (zfs_major) {
         cdevsw_remove(zfs_major, &zfs_cdevsw);
         zfs_major = 0;
     }
+
+    printf("fini zfsdev_state_lock\n");
+  mutex_destroy(&zfsdev_state_lock);
+  list_destroy(&zfsdev_state_list);
 }
 
 

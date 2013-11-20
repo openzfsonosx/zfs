@@ -130,23 +130,26 @@ zfs_onexit_fd_hold(int fd, minor_t *minorp)
 
     struct vnode *vpp;
     uint32_t vipd;
+    vattr_t va;
 
-    return 0; // Not implemented
+    printf("onexit fd hold %d\n", fd);
 
     if (file_vnode_withvid(fd, &vpp, &vipd))
         return EBADF;
 
-	//*minorp = zfsdev_getminor(fp->f_file);
-    printf("onexit_fd_hold (%d -> %p)\n", fd, vpp);
+#ifdef __APPLE__
+    *minorp = zfsdev_getminor(current_proc());
+#else
+    *minorp = zfsdev_getminor(fp->f_file);
+#endif
+    printf("onexit_fd_hold (%d -> %04x)\n", fd, *minorp);
 
-	return (zfs_onexit_minor_to_state(*minorp, &zo));
+    return (zfs_onexit_minor_to_state(*minorp, &zo));
 }
 
 void
 zfs_onexit_fd_rele(int fd)
 {
-    return; // Not implemented
-	//releasef(fd);
     printf("onexit_fd_rele %d\n", fd);
     file_drop(fd);
 }
