@@ -79,7 +79,7 @@ dump_bytes_strategy(void *arg)
 	ASSERT0(dbi->dbi_len % 8);
 
 	fletcher_4_incremental_native(dbi->dbi_buf, dbi->dbi_len, &dsp->dsa_zc);
-	dsp->dsa_err = vn_rdwr(UIO_WRITE, dsp->dsa_vp,
+	dsp->dsa_err = spl_vn_rdwr(UIO_WRITE, dsp->dsa_vp,
 	    (caddr_t)dbi->dbi_buf, dbi->dbi_len,
 	    0, UIO_SYSSPACE, FAPPEND, RLIM64_INFINITY, CRED(), &resid);
 

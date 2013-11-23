@@ -1062,6 +1062,7 @@ osx_send_pipe(void *arg)
         if (wrote <= 0) break;
         bytes += wrote;
     }
+
     fflush(stdout);
     return(NULL);
 }
@@ -1583,42 +1584,10 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 #ifdef __APPLE__
     char *name = strdup("/tmp/.zfs.pipe.XXXXXXXX");
     mktemp(name);
-#if SUPERMEGACOOLTESTTHINGY
     if (!mkfifo(name,0600)) {
-#else
-    {
-        struct sockaddr_un address;
-        int socket_fd, connection_fd;
-        socklen_t address_length;
-        pid_t child;
-
-        socket_fd = socket(PF_UNIX, SOCK_STREAM, 0);
-        if(socket_fd < 0)
-            fprintf(stderr,"socket failed \r\n");
-
-        unlink(name);
-        memset(&address, 0, sizeof(struct sockaddr_un));
-        address.sun_family = AF_UNIX;
-        strlcpy(address.sun_path, UNIX_PATH_MAX, name);
-
-        if(bind(socket_fd,
-                (struct sockaddr *) &address,
-                sizeof(struct sockaddr_un)) != 0)
-            fprintf(stderr,"bind failed \r\n");
-
-        if(listen(socket_fd, 5) != 0)
-            fprintf(stderr,"listen failed \r\n");
 
         newstdout = open(name, O_RDONLY|O_NONBLOCK);
-        if ((sdd.outfd = accept(socket_fd,
-                                (struct sockaddr *) &address,
-                                &address_length)) > -1)
-            fprintf(stderr,"accept failed \r\n");
-
-        sdd.outfd = socket_fd;
-#endif
-
-        //sdd.outfd = open(name, O_WRONLY);
+        sdd.outfd = open(name, O_WRONLY);
 
         if ((err = pthread_create(&osxtid, NULL,
                                   osx_send_pipe, &newstdout))) {

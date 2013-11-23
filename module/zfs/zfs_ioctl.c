@@ -4211,19 +4211,18 @@ zfs_ioc_send(zfs_cmd_t *zc)
                 dsl_dataset_rele(tosnap, FTAG);
                 dsl_pool_rele(dp, FTAG);
         } else {
-            struct vnode *vp;
-            uint32_t vipd;
+            file_t *fp = getf(zc->zc_cookie);
+            if (fp == NULL)
+                return (SET_ERROR(EBADF));
 
-            if (file_vnode_withvid(zc->zc_cookie, &vp, &vipd))
-                return (EBADF);
-
-            //off = fp->f_offset;
+            off = fp->f_offset;
             error = dmu_send_obj(zc->zc_name, zc->zc_sendobj,
-                                 zc->zc_fromobj, zc->zc_cookie, vp, &off);
+                                 zc->zc_fromobj, zc->zc_cookie, fp->f_vnode, &off);
 
-            //if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
-            //  fp->f_offset = off;
-            file_drop(zc->zc_cookie);
+            if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
+                fp->f_offset = off;
+            releasef(zc->zc_cookie);
+
         }
         return (error);
 }
