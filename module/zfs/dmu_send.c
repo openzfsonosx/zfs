@@ -58,11 +58,6 @@ int zfs_send_corrupt_data = B_FALSE;
 static char *dmu_recv_tag = "dmu_recv_tag";
 static const char *recv_clone_name = "%recv";
 
-#ifdef __APPLE__
-extern int fd_rdwr(int fd, enum uio_rw, uint64_t base, int64_t len,
-                   enum uio_seg, off_t offset, int io_flg, int64_t *aresid);
-#endif
-
 typedef struct dump_bytes_io {
 	dmu_sendarg_t	*dbi_dsp;
 	void		*dbi_buf;
@@ -79,7 +74,7 @@ dump_bytes_strategy(void *arg)
 	ASSERT0(dbi->dbi_len % 8);
 
 	fletcher_4_incremental_native(dbi->dbi_buf, dbi->dbi_len, &dsp->dsa_zc);
-	dsp->dsa_err = spl_vn_rdwr(UIO_WRITE, dsp->dsa_vp,
+	dsp->dsa_err = VN_RDWR(UIO_WRITE, dsp->dsa_vp,
 	    (caddr_t)dbi->dbi_buf, dbi->dbi_len,
 	    0, UIO_SYSSPACE, FAPPEND, RLIM64_INFINITY, CRED(), &resid);
 
@@ -1012,7 +1007,7 @@ restore_read(struct restorearg *ra, int len)
 	while (done < len) {
 		ssize_t resid;
 
-		ra->err = spl_vn_rdwr(UIO_READ, ra->vp,
+		ra->err = VN_RDWR(UIO_READ, ra->vp,
 		    (caddr_t)ra->buf + done, len - done,
 		    ra->voff, UIO_SYSSPACE, FAPPEND,
 		    RLIM64_INFINITY, CRED(), &resid);
