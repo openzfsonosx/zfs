@@ -4213,14 +4213,14 @@ zfs_ioc_send(zfs_cmd_t *zc)
         } else {
             file_t *fp = getf(zc->zc_cookie);
             if (fp == NULL)
-                return (SET_ERROR(EBADF));
+                return EBADF;
 
             off = fp->f_offset;
             error = dmu_send_obj(zc->zc_name, zc->zc_sendobj,
                                  zc->zc_fromobj, zc->zc_cookie, fp->f_vnode, &off);
 
-            if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
-                fp->f_offset = off;
+            //if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
+            //    fp->f_offset = off;
             releasef(zc->zc_cookie);
 
         }
