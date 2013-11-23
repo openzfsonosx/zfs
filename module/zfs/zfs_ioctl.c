@@ -4255,7 +4255,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
     if (error == 0) {
         zfsvfs_t *zsb = NULL;
 
-        if (get_zfs_sb(tofs, &zsb) == 0) {
+        if (getzfsvfs(tofs, &zsb) == 0) {
             /* online recv */
             int end_err;
 
