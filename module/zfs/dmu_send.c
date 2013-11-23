@@ -1012,7 +1012,7 @@ restore_read(struct restorearg *ra, int len)
 	while (done < len) {
 		ssize_t resid;
 
-		ra->err = vn_rdwr(UIO_READ, ra->vp,
+		ra->err = spl_vn_rdwr(UIO_READ, ra->vp,
 		    (caddr_t)ra->buf + done, len - done,
 		    ra->voff, UIO_SYSSPACE, FAPPEND,
 		    RLIM64_INFINITY, CRED(), &resid);
