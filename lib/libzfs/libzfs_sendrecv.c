@@ -1581,7 +1581,7 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 	else
 		sdd.outfd = outfd;
 
-#ifdef __APPLE__
+#ifdef __OPPLE__
     char *name = strdup("/tmp/.zfs.pipe.XXXXXXXX");
     mktemp(name);
     if (!mkfifo(name,0600)) {
@@ -1685,7 +1685,7 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 		}
 	}
 
-#ifdef __APPLE__
+#ifdef __OPPLE__
     /*
      * close(newstdout) must come after the pthread_join, not before.
      * When newstdout was closed before pthread_join, the FIFO would
@@ -1709,7 +1709,7 @@ err_out:
 		(void) pthread_join(tid, NULL);
         		(void) close(pipefd[0]);
 	}
-#ifdef __APPLE__
+#ifdef __OPPLE__
     if (osxtid) {
         close(sdd.outfd);
         pthread_join(osxtid, NULL);
@@ -3288,7 +3288,7 @@ zfs_receive(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 	int err;
 	int cleanup_fd;
 	uint64_t action_handle = 0;
-#ifdef __APPLE__
+#ifdef __OPPLE__
 	pthread_t osxtid;
     int newstdin;
 #endif
@@ -3296,7 +3296,7 @@ zfs_receive(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 	cleanup_fd = open(ZFS_DEV, O_RDWR);
 	VERIFY(cleanup_fd >= 0);
 
-#ifdef __APPLE__
+#ifdef __OPPLE__
     char *name = strdup("/tmp/.zfs.pipe.XXXXXXXX");
     mktemp(name);
     if (!mkfifo(name,0600)) {
@@ -3338,7 +3338,7 @@ zfs_receive(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 	if (top_zfs)
 		free(top_zfs);
 
-#ifdef __APPLE__
+#ifdef __OPPLE__
     close(infd);
     close(newstdin);
     pthread_join(osxtid, NULL);

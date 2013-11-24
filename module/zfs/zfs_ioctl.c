@@ -4413,8 +4413,10 @@ zfs_ioc_send(zfs_cmd_t *zc)
             error = dmu_send_obj(zc->zc_name, zc->zc_sendobj,
                                  zc->zc_fromobj, zc->zc_cookie, fp->f_vnode, &off);
 
+            if (error) printf("dmu_send_obj returns %d\n");
+
             //if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
-            //    fp->f_offset = off;
+            fp->f_offset = off;
             releasef(zc->zc_cookie);
 
         }
