@@ -3937,7 +3937,7 @@ static boolean_t zfs_ioc_recv_inject_err;
  * zc_action_handle	handle for this guid/ds mapping
  */
 static int
-zfs_ioc_recv(zfs_cmd_t *zc)
+zfs_ioc_recvX(zfs_cmd_t *zc)
 {
 	//objset_t *os;
 	dmu_recv_cookie_t drc;
@@ -4140,6 +4140,200 @@ out:
 	return (error);
 }
 
+static int
+zfs_ioc_recv(zfs_cmd_t *zc)
+{
+    file_t *fp;
+    dmu_recv_cookie_t drc;
+    boolean_t force = (boolean_t)zc->zc_guid;
+    int fd;
+    int error = 0;
+    int props_error = 0;
+    nvlist_t *errors;
+    offset_t off;
+    nvlist_t *props = NULL; /* sent properties */
+    nvlist_t *origprops = NULL; /* existing properties */
+    char *origin = NULL;
+    char *tosnap;
+    char tofs[ZFS_MAXNAMELEN];
+    boolean_t first_recvd_props = B_FALSE;
+
+    if (dataset_namecheck(zc->zc_value, NULL, NULL) != 0 ||
+        strchr(zc->zc_value, '@') == NULL ||
+        strchr(zc->zc_value, '%'))
+        return (EINVAL);
+
+    (void) strcpy(tofs, zc->zc_value);
+    tosnap = strchr(tofs, '@');
+    *tosnap++ = '\0';
+
+    if (zc->zc_nvlist_src != 0 &&
+        (error = get_nvlist(zc->zc_nvlist_src, zc->zc_nvlist_src_size,
+                            zc->zc_iflags, &props)) != 0)
+        return (error);
+
+    fd = zc->zc_cookie;
+    fp = getf(fd);
+    if (fp == NULL) {
+        nvlist_free(props);
+        return (EBADF);
+    }
+
+    VERIFY(nvlist_alloc(&errors, NV_UNIQUE_NAME, KM_SLEEP) == 0);
+
+    if (zc->zc_string[0])
+        origin = zc->zc_string;
+
+    error = dmu_recv_begin(tofs, tosnap,
+                           &zc->zc_begin_record, force, origin, &drc);
+    if (error != 0)
+        goto out;
+
+    /*
+     * Set properties before we receive the stream so that they are applied
+     * to the new data. Note that we must call dmu_recv_stream() if
+     * dmu_recv_begin() succeeds.
+     */
+    if (props != NULL && !drc.drc_newfs) {
+        if (spa_version(dsl_dataset_get_spa(drc.drc_ds)) >=
+                    SPA_VERSION_RECVD_PROPS &&
+            !dsl_prop_get_hasrecvd(tofs))
+            first_recvd_props = B_TRUE;
+
+        /*
+         * If new received properties are supplied, they are to
+         * completely replace the existing received properties, so stash
+         * away the existing ones.
+         */
+        if (dsl_prop_get_received(tofs, &origprops) == 0) {
+            nvlist_t *errlist = NULL;
+            /*
+             * Don't bother writing a property if its value won't
+             * change (and avoid the unnecessary security checks).
+             *
+             * The first receive after SPA_VERSION_RECVD_PROPS is a
+             * special case where we blow away all local properties
+             * regardless.
+             */
+            if (!first_recvd_props)
+                props_reduce(props, origprops);
+            if (zfs_check_clearable(tofs, origprops, &errlist) != 0)
+                (void) nvlist_merge(errors, errlist, 0);
+            nvlist_free(errlist);
+
+            if (clear_received_props(tofs, origprops,
+                                     first_recvd_props ? NULL : props) != 0)
+                zc->zc_obj |= ZPROP_ERR_NOCLEAR;
+        } else {
+            zc->zc_obj |= ZPROP_ERR_NOCLEAR;
+        }
+    }
+
+    if (props != NULL) {
+        props_error = dsl_prop_set_hasrecvd(tofs);
+
+        if (props_error == 0) {
+            (void) zfs_set_prop_nvlist(tofs, ZPROP_SRC_RECEIVED,
+                                       props, errors);
+        }
+    }
+
+    if (zc->zc_nvlist_dst_size != 0 &&
+        (nvlist_smush(errors, zc->zc_nvlist_dst_size) != 0 ||
+         put_nvlist(zc, errors) != 0)) {
+        /*
+         * Caller made zc->zc_nvlist_dst less than the minimum expected
+         * size or supplied an invalid address.
+         */
+        props_error = EINVAL;
+    }
+
+    off = fp->f_offset;
+    error = dmu_recv_stream(&drc, fp->f_vnode, &off, zc->zc_cleanup_fd,
+                            &zc->zc_action_handle);
+
+    if (error == 0) {
+        zfsvfs_t *zsb = NULL;
+
+        if (getzfsvfs(tofs, &zsb) == 0) {
+            /* online recv */
+            int end_err;
+
+            error = zfs_suspend_fs(zsb);
+            /*
+             * If the suspend fails, then the recv_end will
+             * likely also fail, and clean up after itself.
+             */
+            end_err = dmu_recv_end(&drc);
+            if (error == 0)
+                error = zfs_resume_fs(zsb, tofs);
+            error = error ? error : end_err;
+            //deactivate_super(zsb->z_sb);
+        } else {
+            error = dmu_recv_end(&drc);
+        }
+    }
+
+    zc->zc_cookie = off - fp->f_offset;
+    //if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
+    //  fp->f_offset = off;
+
+#ifdef        DEBUG
+    if (zfs_ioc_recv_inject_err) {
+        zfs_ioc_recv_inject_err = B_FALSE;
+        error = 1;
+    }
+#endif
+    /*
+     * On error, restore the original props.
+     */
+    if (error != 0 && props != NULL && !drc.drc_newfs) {
+        if (clear_received_props(tofs, props, NULL) != 0) {
+            /*
+             * We failed to clear the received properties.
+             * Since we may have left a $recvd value on the
+             * system, we can't clear the $hasrecvd flag.
+             */
+            zc->zc_obj |= ZPROP_ERR_NORESTORE;
+        } else if (first_recvd_props) {
+            dsl_prop_unset_hasrecvd(tofs);
+        }
+
+        if (origprops == NULL && !drc.drc_newfs) {
+            /* We failed to stash the original properties. */
+            zc->zc_obj |= ZPROP_ERR_NORESTORE;
+        }
+
+        /*
+         * dsl_props_set() will not convert RECEIVED to LOCAL on or
+         * after SPA_VERSION_RECVD_PROPS, so we need to specify LOCAL
+         * explictly if we're restoring local properties cleared in the
+         * first new-style receive.
+         */
+        if (origprops != NULL &&
+            zfs_set_prop_nvlist(tofs, (first_recvd_props ?
+                                       ZPROP_SRC_LOCAL : ZPROP_SRC_RECEIVED),
+                                origprops, NULL) != 0) {
+            /*
+             * We stashed the original properties but failed to
+             * restore them.
+             */
+            zc->zc_obj |= ZPROP_ERR_NORESTORE;
+        }
+    }
+ out:
+    nvlist_free(props);
+    nvlist_free(origprops);
+    nvlist_free(errors);
+    releasef(fd);
+
+    if (error == 0)
+        error = props_error;
+
+    return (error);
+}
+
+
 /*
  * inputs:
  * zc_name	name of snapshot to send
@@ -4211,19 +4405,18 @@ zfs_ioc_send(zfs_cmd_t *zc)
                 dsl_dataset_rele(tosnap, FTAG);
                 dsl_pool_rele(dp, FTAG);
         } else {
-            struct vnode *vp;
-            uint32_t vipd;
+            file_t *fp = getf(zc->zc_cookie);
+            if (fp == NULL)
+                return EBADF;
 
-            if (file_vnode_withvid(zc->zc_cookie, &vp, &vipd))
-                return (EBADF);
-
-            //off = fp->f_offset;
+            off = fp->f_offset;
             error = dmu_send_obj(zc->zc_name, zc->zc_sendobj,
-                                 zc->zc_fromobj, zc->zc_cookie, vp, &off);
+                                 zc->zc_fromobj, zc->zc_cookie, fp->f_vnode, &off);
 
             //if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
-            //  fp->f_offset = off;
-            file_drop(zc->zc_cookie);
+            fp->f_offset = off;
+            releasef(zc->zc_cookie);
+
         }
         return (error);
 }
@@ -5659,17 +5852,33 @@ zfsdev_get_state_impl(minor_t minor, enum zfsdev_state_type which)
 
 	for (zs = list_head(&zfsdev_state_list); zs != NULL;
 	     zs = list_next(&zfsdev_state_list, zs)) {
-        //		if (zs->zs_minor == minor) {
-		//	switch (which) {
-		//		case ZST_ONEXIT:  return (zs->zs_onexit);
-		//		case ZST_ZEVENT:  return (zs->zs_zevent);
-		//		case ZST_ALL:     return (zs);
-		//	}
-        //}
+	  if (zs->zs_minor == minor) {
+	    switch (which) {
+	    case ZST_ONEXIT:  return (zs->zs_onexit);
+	    case ZST_ZEVENT:  return (zs->zs_zevent);
+	    case ZST_ALL:     return (zs);
+	    }
+	  }
 	}
 
 	return NULL;
 }
+
+static void *
+zfsdev_minor_find(dev_t dev)
+{
+  zfsdev_state_t *zs;
+
+  ASSERT(MUTEX_HELD(&zfsdev_state_lock));
+
+  for (zs = list_head(&zfsdev_state_list); zs != NULL;
+       zs = list_next(&zfsdev_state_list, zs))
+    if (zs->zs_dev == dev)
+      return (zs);
+
+    return NULL;
+}
+
 
 void *
 zfsdev_get_state(minor_t minor, enum zfsdev_state_type which)
@@ -5684,13 +5893,20 @@ zfsdev_get_state(minor_t minor, enum zfsdev_state_type which)
 }
 
 minor_t
-zfsdev_getminor(struct file *filp)
+zfsdev_getminor(dev_t dev)
 {
-	ASSERT(filp != NULL);
-    //	ASSERT(filp->private_data != NULL);
+  zfsdev_state_t *zs = NULL;
 
-    //	return (((zfsdev_state_t *)filp->private_data)->zs_minor);
-    return 0;
+  ASSERT(filp != NULL);
+#ifdef __APPLE__
+  zs = zfsdev_minor_find(dev);
+  if (!zs) return -1;
+#else
+  ASSERT(filp->private_data != NULL);
+  zs = filp->private_data;
+#endif
+
+  return (zs->zs_minor);
 }
 
 /*
@@ -5717,8 +5933,16 @@ zfsdev_minor_alloc(void)
 	return (0);
 }
 
+
+
+/*
+ * In apple we have to map the *filp to the ZFS "zs" node, in a list we
+ * maintain in the kernel. This is due to the lack of "private_data" in the
+ * filp structure.
+ */
+
 static int
-zfsdev_state_init(struct file *filp)
+zfsdev_state_init(dev_t dev)
 {
 	zfsdev_state_t *zs;
 	minor_t minor;
@@ -5731,9 +5955,15 @@ zfsdev_state_init(struct file *filp)
 
 	zs = kmem_zalloc( sizeof(zfsdev_state_t), KM_SLEEP);
 
-	zs->zs_file = filp;
-	//zs->zs_minor = minor;
-	//filp->private_data = zs;
+#ifdef __APPLE__
+	zs->zs_dev = dev;
+    dprintf("created zs %p\n", zs);
+#endif
+	zs->zs_minor = minor;
+
+#ifndef __APPLE__
+	filp->private_data = zs;
+#endif
 
 	zfs_onexit_init((zfs_onexit_t **)&zs->zs_onexit);
 	zfs_zevent_init((zfs_zevent_t **)&zs->zs_zevent);
@@ -5744,42 +5974,63 @@ zfsdev_state_init(struct file *filp)
 }
 
 static int
-zfsdev_state_destroy(struct file *filp)
+zfsdev_state_destroy(dev_t dev)
 {
 	zfsdev_state_t *zs = NULL;
 
 	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 	//ASSERT(filp->private_data != NULL);
 
-	//zs = filp->private_data;
-	//zfs_onexit_destroy(zs->zs_onexit);
-	//zfs_zevent_destroy(zs->zs_zevent);
+#ifdef __APPLE__
+	zs = zfsdev_minor_find(dev);
+#else
+	zs = filp->private_data;
+#endif
+	if (!zs) return 0;
 
+    dprintf("destroying zs %p\n", zs);
+
+	zfs_onexit_destroy(zs->zs_onexit);
+	zfs_zevent_destroy(zs->zs_zevent);
 	list_remove(&zfsdev_state_list, zs);
 	kmem_free(zs, sizeof(zfsdev_state_t));
 
 	return 0;
 }
 
-static int
-zfsdev_open(struct vnode *ino, struct file *filp)
+static int zfsdev_open(dev_t dev, int flags, int devtype,
+		       struct proc *p)
+//static int
+//zfsdev_open(struct vnode *ino, struct file *filp)
 {
 	int error;
 
+	dprintf("zfsdev_open, flag %02X devtype %d, proc is %p: thread %p\n",
+           flags, devtype, p, current_thread());
+
+    if (zfsdev_minor_find(p)) {
+        dprintf("zs already exists\n");
+        return 0;
+    }
+
 	mutex_enter(&zfsdev_state_lock);
-	error = zfsdev_state_init(filp);
+	error = zfsdev_state_init(p);
 	mutex_exit(&zfsdev_state_lock);
 
 	return (-error);
 }
 
-static int
-zfsdev_release(struct vnode *ino, struct file *filp)
+static int zfsdev_release(dev_t dev, int flags, int devtype,
+			  struct proc *p)
+//static int
+//zfsdev_release(struct vnode *ino, struct file *filp)
 {
 	int error;
 
+	dprintf("zfsdev_release, flag %02X devtype %d, dev is %p, thread %p\n",
+           flags, devtype, p, current_thread());
 	mutex_enter(&zfsdev_state_lock);
-	error = zfsdev_state_destroy(filp);
+	error = zfsdev_state_destroy(p);
 	mutex_exit(&zfsdev_state_lock);
 
 	return (-error);
@@ -5938,8 +6189,8 @@ static struct bdevsw zfs_bdevsw = {
 
 static struct cdevsw zfs_cdevsw =
 {
-        zvol_open,              /* open */
-        zvol_close,             /* close */
+        zfsdev_open,            /* open */
+        zfsdev_release,         /* close */
         zvol_read,              /* read */
         zvol_write,             /* write */
         zfsdev_ioctl,           /* ioctl */
@@ -5975,6 +6226,10 @@ zfs_ioctl_init(void)
 
     //zfs_major = cdevsw_add(ZFS_MAJOR, &zfs_cdevsw);
     //dev = zfs_major << 24;
+    mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
+    list_create(&zfsdev_state_list, sizeof (zfsdev_state_t),
+		offsetof(zfsdev_state_t, zs_next));
+
 
     //zfs_major = bdevsw_add(-1, &zfs_bdevsw);
     zfs_bmajor = bdevsw_add(-1, &zfs_bdevsw);
@@ -6008,6 +6263,7 @@ zfs_ioctl_init(void)
 void
 zfs_ioctl_fini(void)
 {
+
     if (spa_busy() || zvol_busy() || zio_injection_enabled) {
         printf("zfs_ioctl_fini: sorry we're busy\n");
         return;
@@ -6019,10 +6275,14 @@ zfs_ioctl_fini(void)
         devfs_remove(zfs_devnode);
         zfs_devnode = NULL;
     }
+
     if (zfs_major) {
         cdevsw_remove(zfs_major, &zfs_cdevsw);
         zfs_major = 0;
     }
+
+    mutex_destroy(&zfsdev_state_lock);
+    list_destroy(&zfsdev_state_list);
 }
 
 

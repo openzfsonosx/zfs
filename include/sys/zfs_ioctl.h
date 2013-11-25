@@ -474,14 +474,14 @@ enum zfsdev_state_type {
 
 typedef struct zfsdev_state {
         list_node_t             zs_next;        /* next zfsdev_state_t link */
-	struct file		*zs_file;	/* associated file struct */
-    //	minor_t			zs_minor;	/* made up minor number */
+	dev_t   		zs_dev;	/* associated file struct */
+  	minor_t			zs_minor;	/* made up minor number */
 	void			*zs_onexit;	/* onexit data */
 	void			*zs_zevent;	/* zevent data */
 } zfsdev_state_t;
 
 extern void *zfsdev_get_state(minor_t minor, enum zfsdev_state_type which);
-extern minor_t zfsdev_getminor(struct file *filp);
+extern minor_t zfsdev_getminor(dev_t dev);
 extern minor_t zfsdev_minor_alloc(void);
 
 extern void zfs_ioctl_init(void);

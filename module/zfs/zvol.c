@@ -2269,7 +2269,7 @@ zvol_init(void)
     dprintf("zvol_init\n");
 	VERIFY(ddi_soft_state_init(&zfsdev_state, sizeof (zfs_soft_state_t),
 	    1) == 0);
-	mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
+	//mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
     dprintf("zfsdev_state: %p\n", zfsdev_state);
     return 0;
 }
@@ -2277,7 +2277,7 @@ zvol_init(void)
 void
 zvol_fini(void)
 {
-	mutex_destroy(&zfsdev_state_lock);
+	//mutex_destroy(&zfsdev_state_lock);
 	ddi_soft_state_fini(&zfsdev_state);
 }
 
