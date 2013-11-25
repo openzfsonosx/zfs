@@ -4413,8 +4413,6 @@ zfs_ioc_send(zfs_cmd_t *zc)
             error = dmu_send_obj(zc->zc_name, zc->zc_sendobj,
                                  zc->zc_fromobj, zc->zc_cookie, fp->f_vnode, &off);
 
-            if (error) printf("dmu_send_obj returns %d\n");
-
             //if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
             fp->f_offset = off;
             releasef(zc->zc_cookie);
@@ -5959,7 +5957,7 @@ zfsdev_state_init(dev_t dev)
 
 #ifdef __APPLE__
 	zs->zs_dev = dev;
-    printf("created zs %p\n", zs);
+    dprintf("created zs %p\n", zs);
 #endif
 	zs->zs_minor = minor;
 
@@ -5990,7 +5988,7 @@ zfsdev_state_destroy(dev_t dev)
 #endif
 	if (!zs) return 0;
 
-    printf("destroying zs %p\n", zs);
+    dprintf("destroying zs %p\n", zs);
 
 	zfs_onexit_destroy(zs->zs_onexit);
 	zfs_zevent_destroy(zs->zs_zevent);
@@ -6007,11 +6005,11 @@ static int zfsdev_open(dev_t dev, int flags, int devtype,
 {
 	int error;
 
-	printf("zfsdev_open, flag %02X devtype %d, proc is %p: thread %p\n",
+	dprintf("zfsdev_open, flag %02X devtype %d, proc is %p: thread %p\n",
            flags, devtype, p, current_thread());
 
     if (zfsdev_minor_find(p)) {
-        printf("zs already exists\n");
+        dprintf("zs already exists\n");
         return 0;
     }
 
@@ -6029,7 +6027,7 @@ static int zfsdev_release(dev_t dev, int flags, int devtype,
 {
 	int error;
 
-	printf("zfsdev_release, flag %02X devtype %d, dev is %p, thread %p\n",
+	dprintf("zfsdev_release, flag %02X devtype %d, dev is %p, thread %p\n",
            flags, devtype, p, current_thread());
 	mutex_enter(&zfsdev_state_lock);
 	error = zfsdev_state_destroy(p);
@@ -6228,7 +6226,6 @@ zfs_ioctl_init(void)
 
     //zfs_major = cdevsw_add(ZFS_MAJOR, &zfs_cdevsw);
     //dev = zfs_major << 24;
-    printf("init zfsdev_state_lock\n");
     mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
     list_create(&zfsdev_state_list, sizeof (zfsdev_state_t),
 		offsetof(zfsdev_state_t, zs_next));
@@ -6284,9 +6281,8 @@ zfs_ioctl_fini(void)
         zfs_major = 0;
     }
 
-    printf("fini zfsdev_state_lock\n");
-  mutex_destroy(&zfsdev_state_lock);
-  list_destroy(&zfsdev_state_list);
+    mutex_destroy(&zfsdev_state_lock);
+    list_destroy(&zfsdev_state_list);
 }
 
 

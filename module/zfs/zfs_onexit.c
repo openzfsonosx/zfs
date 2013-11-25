@@ -82,7 +82,6 @@ zfs_onexit_init(zfs_onexit_t **zop)
 	mutex_init(&zo->zo_lock, NULL, MUTEX_DEFAULT, NULL);
 	list_create(&zo->zo_actions, sizeof (zfs_onexit_action_node_t),
 	    offsetof(zfs_onexit_action_node_t, za_link));
-    printf("onexit_init\n");
 }
 
 void
@@ -103,7 +102,6 @@ zfs_onexit_destroy(zfs_onexit_t *zo)
 	list_destroy(&zo->zo_actions);
 	mutex_destroy(&zo->zo_lock);
 	kmem_free(zo, sizeof (zfs_onexit_t));
-    printf("onexit_destroy\n");
 }
 
 static int
@@ -127,14 +125,11 @@ zfs_onexit_fd_hold(int fd, minor_t *minorp)
 {
 	file_t *fp = NULL;
 	zfs_onexit_t *zo;
-
-    struct vnode *vpp;
     uint32_t vipd;
     vattr_t va;
 
-    printf("onexit fd hold %d\n", fd);
-
-    if (file_vnode_withvid(fd, &vpp, &vipd))
+    fp = getf(fd);
+    if (fp == NULL)
         return EBADF;
 
 #ifdef __APPLE__
@@ -142,16 +137,13 @@ zfs_onexit_fd_hold(int fd, minor_t *minorp)
 #else
     *minorp = zfsdev_getminor(fp->f_file);
 #endif
-    printf("onexit_fd_hold (%d -> %04x)\n", fd, *minorp);
-
     return (zfs_onexit_minor_to_state(*minorp, &zo));
 }
 
 void
 zfs_onexit_fd_rele(int fd)
 {
-    printf("onexit_fd_rele %d\n", fd);
-    file_drop(fd);
+    releasef(fd);
 }
 
 /*
