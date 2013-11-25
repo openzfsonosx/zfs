@@ -120,6 +120,7 @@ lzc_ioctl(zfs_ioc_t ioc, const char *name,
 {
 	zfs_cmd_t zc = {"\0"};
 	int error = 0;
+	int ioctl_err = 0;
 	char *packed;
 	size_t size;
 
@@ -142,7 +143,18 @@ lzc_ioctl(zfs_ioc_t ioc, const char *name,
 		}
 	}
 
-	while (ioctl(g_fd, ioc, &zc) != 0) {
+	while ((ioctl_err = ioctl(g_fd, ioc, &zc)) != 0 || zc.zc_ioc_error != 0) {
+		if (zc.zc_ioc_error != 0) {
+			errno = zc.zc_ioc_error;
+		} else if (ioctl_err != -1) {
+			dprintf("ioctl should return 0, or both return -1 and set errno, "
+			   "but instead : ioctl_err %d : errno %d\n", ioctl_err, errno);
+			errno = ioctl_err;
+		} else if (ioctl_err == -1 && errno == 0) {
+			dprintf("ioctl returned -1, so errno should have been nonzero.\n");
+			errno = -1;
+		}
+
 		if (errno == ENOMEM && resultp != NULL) {
 			free((void *)(uintptr_t)zc.zc_nvlist_dst);
 			zc.zc_nvlist_dst_size *= 2;
