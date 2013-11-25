@@ -1442,7 +1442,6 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 	}
 
     // Surely there exists a better way to iterate a POOL to find its ZVOLs?
-    printf("Attempting to unmount ZFS Volumes...\n");
     zfs_iter_root(hdl, zpool_disable_volumes, zpool_get_name(zhp));
 
 	ret = 0;

@@ -1066,6 +1066,7 @@ again:
 			ASSERT(tx_bytes <= uio_resid(uio));
 			uioskip(uio, tx_bytes);
 		}
+
 		if (tx_bytes && vn_has_cached_data(vp)) {
 #ifdef __APPLE__
             if (uio_copy) {

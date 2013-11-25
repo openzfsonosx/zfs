@@ -263,18 +263,19 @@ zfs_vnop_write(
     //uint64_t resid;
 	DECLARE_CRED_AND_CONTEXT(ap);
 
-    //    printf("zfs_vnop_write( uio numvec = %d)\n", uio_iovcnt(ap->a_uio));
+    dprintf("zfs_vnop_write( uio numvec = %d:a_ioflag 0x%lx, ioflag 0x%lx)\n",
+            uio_iovcnt(ap->a_uio), ap->a_ioflag,ioflag );
 
     //resid=uio_resid(ap->a_uio);
 	error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct);
-#ifdef __APPLE__
+
     /* Mac OS X: pageout requires that the UBC file size be current. */
     /* Possibly, we could update it only if size has changed. */
     //    if (tx_bytes != 0) {
     if (!error) {
         ubc_setsize(ap->a_vp, VTOZ(ap->a_vp)->z_size);
     }
-#endif /* __APPLE__ */
+
     return error;
 }
 
@@ -301,7 +302,7 @@ zfs_vnop_access(
     if (action & KAUTH_VNODE_EXECUTE)
         mode |= VEXEC;
 
-    printf("vnop_access: action %04x -> mode %04x\n", action, mode);
+    dprintf("vnop_access: action %04x -> mode %04x\n", action, mode);
 
     error = zfs_access(ap->a_vp, mode, 0, cr, ct);
 
@@ -803,12 +804,13 @@ zfs_vnop_pagein(
     vm_offset_t     upl_offset = ap->a_pl_offset;
     znode_t         *zp = VTOZ(vp);
     zfsvfs_t        *zfsvfs = zp->z_zfsvfs;
-    vm_offset_t     vaddr = NULL;
+    caddr_t vaddr = NULL;
+    //vm_offset_t     vaddr = NULL;
     int             flags = ap->a_flags;
     int             need_unlock = 0;
     int             error = 0;
 
-    dprintf("+vnop_pagein: off %llx size %llu\n",
+    dprintf("+vnop_pagein: off 0x%llx size 0x%llx\n",
            off, len);
 
     if (upl == (upl_t)NULL)
@@ -848,7 +850,7 @@ zfs_vnop_pagein(
     }
 
     ubc_upl_map(upl, &vaddr);
-    dprintf("vaddr %p with upl_off %llx\n", vaddr, upl_offset);
+    dprintf("vaddr %p with upl_off 0x%llx\n", vaddr, upl_offset);
     vaddr += upl_offset;
     /*
      * Fill pages with data from the file.
@@ -857,7 +859,7 @@ zfs_vnop_pagein(
         if (len < PAGESIZE)
               break;
 
-        dprintf("pagein from off 0x%llx into address %p (len %u)\n",
+        dprintf("pagein from off 0x%llx into address %p (len 0x%lx)\n",
                off, vaddr, len);
         error = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, off, PAGESIZE,
                          (void *)vaddr, DMU_READ_PREFETCH);
@@ -865,12 +867,15 @@ zfs_vnop_pagein(
             printf("zfs_vnop_pagein: dmu_read err %d\n", error);
             break;
         }
+
         off += PAGESIZE;
         vaddr += PAGESIZE;
-        if (len > PAGESIZE)
+        if (len >= PAGESIZE)
             len -= PAGESIZE;
-        else
+        else {
+            if (len) printf("Warning len was not 0 = %d\n", len);
             len = 0;
+        }
     }
     ubc_upl_unmap(upl);
 
@@ -992,7 +997,7 @@ zfs_vnop_pageout(
     uint64_t        filesz;
     int             err = 0;
 
-    dprintf("+vnop_pageout: off 0x%llx len %llu upl_off 0x%llx: blksz %llu, z_size %llu\n",
+    dprintf("+vnop_pageout: off 0x%llx len ox%llx upl_off 0x%llx: blksz ox%llx, z_size 0x%llx\n",
            off, len, upl_offset, zp->z_blksz, zp->z_size);
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
@@ -1006,14 +1011,6 @@ zfs_vnop_pageout(
         return (ENXIO);
     }
 
-
-    // Defer syncs if we are coming through vnode_create()
-    if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
-        if (!(flags & UPL_NOCOMMIT))
-            ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES |
-                          UPL_ABORT_FREE_ON_EMPTY);
-        return ENXIO;
-    }
     // Defer syncs if we are coming through vnode_create()
     if (zfsvfs->z_vnode_create_lockX) {
         printf("zfs: awkward pageout exit\n");
@@ -1092,17 +1089,39 @@ zfs_vnop_pageout(
         dmu_tx_abort(tx);
         goto out;
     }
+
+#if 0
     if (len <= PAGESIZE) {
         caddr_t va;
+        printf("len is 0x%llx so dmu_write\n", len);
         ASSERT3U(len, <=, PAGESIZE);
         ubc_upl_map(upl, (vm_offset_t *)&va);
         va += upl_offset;
         dmu_write(zfsvfs->z_os, zp->z_id, off, len, va, tx);
         ubc_upl_unmap(upl);
     } else {
+        printf("osx_write_pages: off 0x%llx\n", off);
         err = osx_write_pages(zfsvfs->z_os, zp->z_id, off, len, upl, tx);
         if (err)printf("dmu_write say %d\n", err);
     }
+#else
+    ssize_t done = 0;
+    caddr_t va;
+
+    ubc_upl_map(upl, (vm_offset_t *)&va);
+    va += upl_offset;
+    while (len > 0) {
+        ssize_t sz = MIN(len, PAGESIZE);
+
+        dmu_write(zfsvfs->z_os, zp->z_id, off, sz, va, tx);
+        va += sz;
+        off += sz;
+        len -= sz;
+    }
+    ubc_upl_unmap(upl);
+
+#endif
+
 
 	if (err == 0) {
 		uint64_t mtime[2], ctime[2];
@@ -1172,6 +1191,43 @@ zfs_vnop_mmap(
 
     ZFS_EXIT(zfsvfs);
     dprintf("-vnop_mmap\n");
+    return (0);
+}
+
+static int
+zfs_vnop_mnomap(
+	struct vnop_mnomap_args /* {
+		struct vnode *a_vp;
+		int a_fflags;
+		kauth_cred_t a_cred;
+		struct proc *a_p;
+	} */ *ap)
+{
+    struct vnode *vp = ap->a_vp;
+    znode_t *zp = VTOZ(vp);
+    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+    dprintf("+vnop_mnomap\n");
+
+    ZFS_ENTER(zfsvfs);
+
+    if ( !vnode_isreg(vp) ) {
+        ZFS_EXIT(zfsvfs);
+        return (ENODEV);
+    }
+
+	mutex_enter(&zp->z_lock);
+    /*
+     * If a file as been mmaped even once, it needs to keep "z_is_mapped" high
+     * because it will potentially keep pages in the UPL cache we need to
+     * update on writes. We can either drop the UPL pages here, or simply
+     * keep updating both places on zfs_write().
+     */
+    //zp->z_is_mapped = 0;
+	mutex_exit(&zp->z_lock);
+
+    ZFS_EXIT(zfsvfs);
+    dprintf("-vnop_mnomap\n");
     return (0);
 }
 
@@ -2468,6 +2524,7 @@ struct vnodeopv_entry_desc zfs_fvnodeops_template[] = {
 	{&vnop_pagein_desc,	(VOPFUNC)zfs_vnop_pagein},
 	{&vnop_pageout_desc,	(VOPFUNC)zfs_vnop_pageout},
 	{&vnop_mmap_desc,	(VOPFUNC)zfs_vnop_mmap},
+	{&vnop_mnomap_desc,	(VOPFUNC)zfs_vnop_mnomap},
 	{&vnop_blktooff_desc,	(VOPFUNC)zfs_vnop_blktooff},
 	{&vnop_offtoblk_desc,	(VOPFUNC)zfs_vnop_offtoblk},
 	{&vnop_blockmap_desc,	(VOPFUNC)zfs_vnop_blockmap},
