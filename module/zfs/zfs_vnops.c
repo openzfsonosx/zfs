@@ -1078,10 +1078,8 @@ again:
             } else {
                 dprintf("XXXXUpdatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
                        woff, uio_offset(uio), tx_bytes, uio_iovcnt(uio));
-                uio_setoffset(uio, woff);
                 update_pages(vp, tx_bytes, uio, tx);
             }
-            //uio_setoffset(uio, woff+tx_bytes);
 #else
 			update_pages(vp, woff, tx_bytes, zfsvfs->z_os,
                          zp->z_id, 0, tx);
@@ -1137,6 +1135,7 @@ again:
                                  uio_offset(uio));
 			ASSERT(error == 0);
 		}
+
 		/*
 		 * If we are replaying and eof is non zero then force
 		 * the file size to the specified eof. Note, there's no

@@ -263,8 +263,11 @@ zfs_vnop_write(
     //uint64_t resid;
 	DECLARE_CRED_AND_CONTEXT(ap);
 
-    dprintf("zfs_vnop_write( uio numvec = %d:a_ioflag 0x%lx, ioflag 0x%lx)\n",
-            uio_iovcnt(ap->a_uio), ap->a_ioflag,ioflag );
+    dprintf("zfs_vnop_write(vp %p, offset 0x%llx size 0x%llx\n",
+            ap->a_vp,
+            uio_offset(ap->a_uio),
+            uio_resid(ap->a_uio));
+
 
     //resid=uio_resid(ap->a_uio);
 	error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct);
@@ -910,7 +913,12 @@ zfs_vnop_pagein(
 }
 
 
-
+/*
+ *
+ * This function is faulty and is no longer called.
+ * Test case: fsx -S 1385394297
+ *
+ */
 int
 osx_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
     struct page *pp, dmu_tx_t *tx)
