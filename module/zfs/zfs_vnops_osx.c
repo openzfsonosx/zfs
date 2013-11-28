@@ -213,7 +213,7 @@ zfs_vnop_ioctl(
     case SPOTLIGHT_FSCTL_GET_LAST_MTIME:
 		//error = copyout(&zfsvfs->z_last_unmount_time, useraddr,
         //  sizeof(zfsvfs->z_last_unmount_time));
-        *(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
+        *(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time - (60*60*48);
 		break;
     case F_RDADVISE:
         dprintf("vnop_ioctl: F_RDADVISE\n");
@@ -2058,6 +2058,8 @@ zfs_vnop_exchange(
     znode_t  *fzp;
     znode_t  *tzp;
     zfsvfs_t  *zfsvfs;
+
+    printf("+vnop_exchange missing\n");
 
     /* The files must be on the same volume. */
     if (vnode_mount(fvp) != vnode_mount(tvp))

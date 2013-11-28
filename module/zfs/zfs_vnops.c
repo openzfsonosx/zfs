@@ -2737,7 +2737,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			next = &(eodp->d_seekoff);
 			eodp->d_ino = objnum;
 			eodp->d_type = dtype;
-
+            //printf("dirlist ino %d (%s)\n", objnum, zap.za_name);
 			/*
 			 * Mac OS X: non-ascii names are UTF-8 NFC on disk
 			 * so convert to NFD before exporting them.

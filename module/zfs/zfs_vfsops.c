@@ -125,7 +125,8 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		/* Interface capabilities we support: */
 		VOL_CAP_INT_ATTRLIST |
 		VOL_CAP_INT_NFSEXPORT |
-		VOL_CAP_INT_SEARCHFS |
+		//VOL_CAP_INT_SEARCHFS |
+        VOL_CAP_INT_EXCHANGEDATA |
         /*	VOL_CAP_INT_READDIRATTR |*/
         /* As the readdirattr function has not been updated since maczfs,
          * it has been decided to disable this functionality, Darwin will
@@ -2305,7 +2306,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 int
 zfs_vnode_lock(vnode_t *vp, int flags)
 {
-	int error;
+	int error = 0;
 
 	ASSERT(vp != NULL);
 
@@ -2659,9 +2660,18 @@ static int
 zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 {
 	znode_t		*zp;
-	int 		err;
+	int 		err = 0;
+    struct vnode *dvp = NULL;
+
 
     dprintf("vget get %d\n", ino);
+
+    if (ino == ZFSCTL_INO_ROOT) {
+        *vpp = zfsvfs->z_ctldir;
+        vnode_get(*vpp);
+        return 0;
+    }
+
 	/*
 	 * zfs_zget() can't operate on virtual entries like .zfs/ or
 	 * .zfs/snapshot/ directories, that's why we return EOPNOTSUPP.
@@ -2671,18 +2681,26 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	    (zfsvfs->z_shares_dir != 0 && ino == zfsvfs->z_shares_dir))
 		return (EOPNOTSUPP);
 
+    /*
+     * On Mac OS X we always export the root directory id as 2
+     * and its parent as 1
+     */
+    if (!ino || ino == 2 || ino == 1)
+        ino = zfsvfs->z_root;
+
     /* We can not be locked during zget. */
 
 	err = zfs_zget(zfsvfs, ino, &zp);
 
     if (err) {
-        dprintf("zget failed %d\n", err);
+        printf("zget failed %d\n", err);
         return err;
     }
 
 	/* Don't expose EA objects! */
 	if (zp->z_pflags & ZFS_XATTR) {
 		err = ENOENT;
+        vnode_put(ZTOV(zp));
         goto out;
 	}
 	if (zp->z_unlinked) {
@@ -2696,6 +2714,44 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
     if (vnode_isvroot(*vpp))
         goto out;
+
+
+    /*
+     * If this znode didn't just come from the cache then
+     * it won't have a valid identity (parent and name).
+     *
+     * Manually fix its identity here (normally done by namei lookup).
+     */
+    if ((dvp = vnode_getparent(*vpp)) == NULL) {
+
+		uint64_t parentid = 0;
+
+        sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+                  &parentid, sizeof (parentid));
+
+        if (parentid != 0 &&
+            zfs_vget_internal(zfsvfs, parentid, &dvp)) {
+            goto out;
+        }
+        if ( vnode_isdir(dvp) ) {
+            char objname[ZAP_MAXNAMELEN];  /* 256 bytes */
+            int flags = VNODE_UPDATE_PARENT;
+
+            /* Look for znode's name in its parent's zap */
+            if ( zap_value_search(zfsvfs->z_os,
+                                  parentid,
+                                  zp->z_id,
+                                  ZFS_DIRENT_OBJ(-1ULL),
+                                  objname) == 0 ) {
+                flags |= VNODE_UPDATE_NAME;
+            }
+
+            /* Update the znode's parent and name */
+            vnode_update_identity(*vpp, dvp, objname, 0, 0, flags);
+        }
+    }
+    /* All done with znode's parent */
+    vnode_put(dvp);
 
  out:
     /*
@@ -2720,7 +2776,7 @@ int
 zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_t context)
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
-	int error;
+	int error = 0;
 
 	ZFS_ENTER(zfsvfs);
 
@@ -2734,7 +2790,9 @@ zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_
 		ZFS_EXIT(zfsvfs);
 		return (ENOENT);
 	}
+    //if (!ino) ino = 2;
 	error = zfs_vget_internal(zfsvfs, ino, vpp);
+    if (error) printf("zfs_vget(ino %d) failed %d\n", ino, error);
 
 	ZFS_EXIT(zfsvfs);
 	return (error);

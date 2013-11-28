@@ -2393,7 +2393,9 @@ arc_reclaim_needed(void)
 
 #ifdef _KERNEL
 
-    if (spl_vm_pool_low()) return 1;
+    if (spl_vm_pool_low()) {
+        return 1;
+    }
 
     if (kmem_used() > (kmem_size() * 2) / 4)
         return (1);
@@ -2504,8 +2506,6 @@ arc_reclaim_thread(void *dummy __unused)
                 amount = num_pages * PAGE_SIZE;
             else
                 amount = 1024780;
-
-            printf("ARC reclaim: %llu\n", amount);
 
             arc_kmem_reap_now(last_reclaim, amount);
 
