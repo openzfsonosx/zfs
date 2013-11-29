@@ -10,6 +10,6 @@ libzfs_core_la_SOURCES = \
 	libzfs_core.c
 
 libzfs_core_la_LIBADD = \
-	libnvpair.la
+	$(top_builddir)/lib/libnvpair/libnvpair.la
 
 libzfs_core_la_LDFLAGS = -pthread -version-info 1:1:0
