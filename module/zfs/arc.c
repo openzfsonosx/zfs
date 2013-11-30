@@ -650,23 +650,28 @@ struct ht_lock {
 #endif
 };
 
+#ifdef __LP64__
 #define	BUF_LOCKS 256
+#else
+#define	BUF_LOCKS 256
+#endif
 typedef struct buf_hash_table {
 	uint64_t ht_mask;
 	arc_buf_hdr_t **ht_table;
 	struct ht_lock ht_locks[BUF_LOCKS];
 } buf_hash_table_t;
 
-static buf_hash_table_t buf_hash_table;
+static buf_hash_table_t *buf_hash_table = NULL;
 
 #define	BUF_HASH_INDEX(spa, dva, birth) \
-	(buf_hash(spa, dva, birth) & buf_hash_table.ht_mask)
-#define	BUF_HASH_LOCK_NTRY(idx) (buf_hash_table.ht_locks[idx & (BUF_LOCKS-1)])
+	(buf_hash(spa, dva, birth) & buf_hash_table->ht_mask)
+#define	BUF_HASH_LOCK_NTRY(idx) (buf_hash_table->ht_locks[(uint64_t)idx & (BUF_LOCKS-1ULL)])
 #define	BUF_HASH_LOCK(idx)	(&(BUF_HASH_LOCK_NTRY(idx).ht_lock))
 #define	HDR_LOCK(hdr) \
 	(BUF_HASH_LOCK(BUF_HASH_INDEX(hdr->b_spa, &hdr->b_dva, hdr->b_birth)))
 
-uint64_t zfs_crc64_table[256];
+//uint64_t zfs_crc64_table[256];
+uint64_t *zfs_crc64_table = NULL;
 
 /*
  * Level 2 ARC
@@ -879,7 +884,7 @@ buf_hash_find(uint64_t spa, const dva_t *dva, uint64_t birth, kmutex_t **lockp)
 	arc_buf_hdr_t *buf;
 
 	mutex_enter(hash_lock);
-	for (buf = buf_hash_table.ht_table[idx]; buf != NULL;
+	for (buf = buf_hash_table->ht_table[idx]; buf != NULL;
 	    buf = buf->b_hash_next) {
 		if (BUF_EQUAL(spa, dva, birth, buf)) {
 			*lockp = hash_lock;
@@ -908,14 +913,14 @@ buf_hash_insert(arc_buf_hdr_t *buf, kmutex_t **lockp)
 	ASSERT(!HDR_IN_HASH_TABLE(buf));
 	*lockp = hash_lock;
 	mutex_enter(hash_lock);
-	for (fbuf = buf_hash_table.ht_table[idx], i = 0; fbuf != NULL;
+	for (fbuf = buf_hash_table->ht_table[idx], i = 0; fbuf != NULL;
 	    fbuf = fbuf->b_hash_next, i++) {
 		if (BUF_EQUAL(buf->b_spa, &buf->b_dva, buf->b_birth, fbuf))
 			return (fbuf);
 	}
 
-	buf->b_hash_next = buf_hash_table.ht_table[idx];
-	buf_hash_table.ht_table[idx] = buf;
+	buf->b_hash_next = buf_hash_table->ht_table[idx];
+	buf_hash_table->ht_table[idx] = buf;
 	buf->b_flags |= ARC_IN_HASH_TABLE;
 
 	/* collect some hash table performance data */
@@ -942,7 +947,7 @@ buf_hash_remove(arc_buf_hdr_t *buf)
 	ASSERT(MUTEX_HELD(BUF_HASH_LOCK(idx)));
 	ASSERT(HDR_IN_HASH_TABLE(buf));
 
-	bufp = &buf_hash_table.ht_table[idx];
+	bufp = &buf_hash_table->ht_table[idx];
 	while ((fbuf = *bufp) != buf) {
 		ASSERT(fbuf != NULL);
 		bufp = &fbuf->b_hash_next;
@@ -954,8 +959,8 @@ buf_hash_remove(arc_buf_hdr_t *buf)
 	/* collect some hash table performance data */
 	ARCSTAT_BUMPDOWN(arcstat_hash_elements);
 
-	if (buf_hash_table.ht_table[idx] &&
-	    buf_hash_table.ht_table[idx]->b_hash_next == NULL)
+	if (buf_hash_table->ht_table[idx] &&
+	    buf_hash_table->ht_table[idx]->b_hash_next == NULL)
 		ARCSTAT_BUMPDOWN(arcstat_hash_chains);
 }
 
@@ -973,16 +978,18 @@ buf_fini(void)
 #if defined(_KERNEL) && defined(HAVE_SPL)
 	/* Large allocations which do not require contiguous pages
 	 * should be using vmem_free() in the linux kernel */
-	vmem_free(buf_hash_table.ht_table,
-	    (buf_hash_table.ht_mask + 1) * sizeof (void *));
+	vmem_free(buf_hash_table->ht_table,
+	    (buf_hash_table->ht_mask + 1) * sizeof (void *));
 #else
-	kmem_free(buf_hash_table.ht_table,
-	    (buf_hash_table.ht_mask + 1) * sizeof (void *));
+	kmem_free(buf_hash_table->ht_table,
+	    (buf_hash_table->ht_mask + 1) * sizeof (void *));
 #endif
 	for (i = 0; i < BUF_LOCKS; i++)
-		mutex_destroy(&buf_hash_table.ht_locks[i].ht_lock);
+		mutex_destroy(&buf_hash_table->ht_locks[i].ht_lock);
 	kmem_cache_destroy(hdr_cache);
 	kmem_cache_destroy(buf_cache);
+	kmem_free(zfs_crc64_table, sizeof(uint64_t) * 256);
+	kmem_free(buf_hash_table, sizeof(buf_hash_table_t));
 }
 
 /*
@@ -1055,6 +1062,8 @@ buf_init(void)
 	uint64_t hsize = 1ULL << 12;
 	int i, j;
 
+	buf_hash_table = kmem_zalloc(sizeof(buf_hash_table_t), KM_SLEEP);
+
 	/*
 	 * The hash table is big enough to fill all of physical memory
 	 * with an average 64K block size.  The table will take up
@@ -1063,17 +1072,18 @@ buf_init(void)
 	while (hsize * 65536 < physmem * PAGESIZE)
 		hsize <<= 1;
 retry:
-	buf_hash_table.ht_mask = hsize - 1;
+	buf_hash_table->ht_mask = hsize - 1ULL;
+
 #if defined(_KERNEL) && defined(HAVE_SPL)
 	/* Large allocations which do not require contiguous pages
 	 * should be using vmem_alloc() in the linux kernel */
-	buf_hash_table.ht_table =
+	buf_hash_table->ht_table =
 	    vmem_zalloc(hsize * sizeof (void*), KM_SLEEP);
 #else
-	buf_hash_table.ht_table =
+	buf_hash_table->ht_table =
 	    kmem_zalloc(hsize * sizeof (void*), KM_NOSLEEP);
 #endif
-	if (buf_hash_table.ht_table == NULL) {
+	if (buf_hash_table->ht_table == NULL) {
 		ASSERT(hsize > (1ULL << 8));
 		hsize >>= 1;
 		goto retry;
@@ -1084,12 +1094,14 @@ retry:
 	buf_cache = kmem_cache_create("arc_buf_t", sizeof (arc_buf_t),
 	    0, buf_cons, buf_dest, NULL, NULL, NULL, 0);
 
-	for (i = 0; i < 256; i++)
+	zfs_crc64_table = (uint64_t *)kmem_zalloc(sizeof(uint64_t) * 256, KM_SLEEP);
+
+	for (i = 0; i < 256; i++) 
 		for (ct = zfs_crc64_table + i, *ct = i, j = 8; j > 0; j--)
-			*ct = (*ct >> 1) ^ (-(*ct & 1) & ZFS_CRC64_POLY);
+			*ct = ((*ct) >> 1) ^ (-((*ct) & 1) & ZFS_CRC64_POLY);
 
 	for (i = 0; i < BUF_LOCKS; i++) {
-		mutex_init(&buf_hash_table.ht_locks[i].ht_lock,
+		mutex_init(&buf_hash_table->ht_locks[i].ht_lock,
 		    NULL, MUTEX_DEFAULT, NULL);
 	}
 }
