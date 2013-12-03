@@ -430,6 +430,7 @@ check_disk(const char *path, blkid_cache cache, int force,
 		    uuid_is_null((uchar_t *)&vtoc->efi_parts[i].p_guid))
 			continue;
 
+#if defined(__linux__)
 		if (strncmp(path, UDISK_ROOT, strlen(UDISK_ROOT)) == 0)
 			(void) snprintf(slice_path, sizeof (slice_path),
 			    "%s%s%d", path, "-part", i+1);
@@ -437,6 +438,10 @@ check_disk(const char *path, blkid_cache cache, int force,
 			(void) snprintf(slice_path, sizeof (slice_path),
 			    "%s%s%d", path, isdigit(path[strlen(path)-1]) ?
 			    "p" : "", i+1);
+#elif __APPLE__
+		(void) snprintf(slice_path, sizeof (slice_path),
+		    "%s%s%d", path, "s", i+1);
+#endif
 
 		err = check_slice(slice_path, cache, force, isspare);
 		if (err)
