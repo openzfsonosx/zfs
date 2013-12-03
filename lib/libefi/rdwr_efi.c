@@ -245,13 +245,13 @@ efi_get_info(int fd, struct dk_cinfo *dki_info)
     // DKIOCISVIRTUAL 32bit
     // DKIOCISSOLIDSTATE 32bit
     char pathbuf[PATH_MAX];
-    int poi;
+    ushort_t poi;
     if (fcntl(fd, F_GETPATH, pathbuf) >= 0) {
 
         if ((strncmp(pathbuf, "/dev/disk", 9) == 0)) {
             strcpy(dki_info->dki_cname, "disk");
             dki_info->dki_ctype = DKC_DIRECT;
-            rval = sscanf(pathbuf, "/dev/disk%dus%hu",
+            rval = sscanf(pathbuf, "/dev/disk%hus%hu",
                           &poi,
                           &dki_info->dki_partition);
 
