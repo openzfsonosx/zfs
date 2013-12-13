@@ -153,26 +153,6 @@ getmntent(FILE *fp, struct mnttab *mgetp)
 #endif
 
 
-int
-getextmntent(FILE *fp, struct extmnttab *mp, int len)
-{
-	int ret;
-	struct stat st;
-
-	ret = getmntent(fp, (struct mnttab *) mp);
-	if (ret == 0) {
-		if (stat(mp->mnt_mountp, &st) != 0) {
-			mp->mnt_major = 0;
-			mp->mnt_minor = 0;
-			return ret;
-		}
-		mp->mnt_major = major(st.st_dev);
-		mp->mnt_minor = minor(st.st_dev);
-	}
-
-	return ret;
-}
-
 DIR *
 fdopendir(int fd)
 {
@@ -447,4 +427,3 @@ getmntent(FILE *fp, struct mnttab *mp)
 		return (errno);
 	return (0);
 }
-

@@ -739,9 +739,9 @@ libzfs_init(void)
 			(void) fprintf(stderr,
 			     gettext("Verify the ZFS module stack is "
 			     "loaded by running '" MODLOAD_CMD "' as root.\n"));
-        free(hdl);
-        return (NULL);
-    }
+		free(hdl);
+		return (NULL);
+	}
 
 #ifdef HAVE_SETMNTENT
 	if ((hdl->libzfs_mnttab = setmntent(MNTTAB, "r")) == NULL) {
@@ -755,12 +755,16 @@ libzfs_init(void)
 		return (NULL);
 	}
 
-	hdl->libzfs_mnttab_enable = B_TRUE;
+#ifdef SHARETAB
+	hdl->libzfs_sharetab = fopen(ZFS_EXPORTS_PATH, "r");
+#endif
 
 	if (libzfs_core_init() != 0) {
 		(void) close(hdl->libzfs_fd);
 		(void) fclose(hdl->libzfs_mnttab);
+#ifdef SHARETAB
 		(void) fclose(hdl->libzfs_sharetab);
+#endif
 		free(hdl);
 		return (NULL);
 	}
@@ -768,11 +772,10 @@ libzfs_init(void)
 	zfs_prop_init();
 	zpool_prop_init();
 	zpool_feature_init();
+	libzfs_mnttab_init(hdl);
 #ifdef __APPLE__
 	libshare_init();
 #endif
-
-	libzfs_mnttab_init(hdl);
 
     //fprintf(stderr, "make_dataset_handle %p\r\n", hdl->libzfs_log_str);
 
@@ -843,6 +846,7 @@ zfs_path_to_zhandle(libzfs_handle_t *hdl, char *path, zfs_type_t argtype)
 		return (NULL);
 	}
 
+#ifdef sun
 	rewind(hdl->libzfs_mnttab);
 	while ((ret = getextmntent(hdl->libzfs_mnttab, &entry, 0)) == 0) {
 		if (makedevice(entry.mnt_major, entry.mnt_minor) ==
@@ -850,6 +854,19 @@ zfs_path_to_zhandle(libzfs_handle_t *hdl, char *path, zfs_type_t argtype)
 			break;
 		}
 	}
+#else
+	{
+		struct statfs sfs;
+
+		ret = statfs(path, &sfs);
+		if (ret == 0)
+			statfs2mnttab(&sfs, &entry);
+		else {
+			(void) fprintf(stderr, "%s: %s\n", path,
+			    strerror(errno));
+		}
+        }
+#endif        /* sun */
 	if (ret != 0) {
 		return (NULL);
 	}

@@ -5835,7 +5835,7 @@ share_mount(int op, int argc, char **argv)
 
 		free(dslist);
 	} else if (argc == 0) {
-		mnttab_node_t *mntn;
+		struct mnttab entry;
 
 		if ((op == OP_SHARE) || (options != NULL)) {
 			(void) fprintf(stderr, gettext("missing filesystem "
@@ -5848,12 +5848,14 @@ share_mount(int op, int argc, char **argv)
 		 * mounts.  We hide any snapshots, since they are controlled
 		 * automatically.
 		 */
-		for (mntn = libzfs_mnttab_first(g_zfs); mntn;
-		     mntn = libzfs_mnttab_next(g_zfs, mntn)) {
-			struct mnttab *mt = &mntn->mtn_mt;
-			if (strchr(mt->mnt_special, '@') == NULL)
-				(void) printf("%-30s  %s\n",
-				    mt->mnt_special, mt->mnt_mountp);
+		rewind(mnttab_file);
+		while (getmntent(mnttab_file, &entry) == 0) {
+			if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0 ||
+			    strchr(entry.mnt_special, '@') != NULL)
+				continue;
+
+			(void) printf("%-30s  %s\n", entry.mnt_special,
+			    entry.mnt_mountp);
 		}
 	} else {
 		zfs_handle_t *zhp;
@@ -5864,30 +5866,27 @@ share_mount(int op, int argc, char **argv)
 			usage(B_FALSE);
 		}
 
-		if ((zhp = zfs_open(g_zfs, argv[0],
-		    ZFS_TYPE_FILESYSTEM)) == NULL) {
+		/* Temporarily, allow mounting snapshots on OS X */
+		if ( (zhp = zfs_open(g_zfs, argv[0],
+		    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT)) == NULL) {
 			ret = 1;
 		} else {
-			ret = share_mount_one(zhp, op, flags, NULL, B_TRUE,
-			    options);
+			if(zhp->zfs_type & ZFS_TYPE_SNAPSHOT) {
+				if(zfs_is_mounted(zhp, NULL)) {
+					(void) fprintf(stderr, gettext("cannot mount "
+					    "'%s': snapshot already mounted\n"),
+					    zfs_get_name(zhp));
+					ret = 1;
+				} else {
+					ret = zfs_mount(zhp, options, flags|MNT_RDONLY);
+				}
+			} else {
+				//ZFS_TYPE_FILESYSTEM
+				ret = share_mount_one(zhp, op, flags, NULL, B_TRUE, options);
+			}
 			zfs_close(zhp);
 		}
-#ifdef __APPLE__
-        if (ret == 1) { // Only if dataset mount failed...
-
-            if ((zhp = zfs_open(g_zfs, argv[0],
-                                ZFS_TYPE_SNAPSHOT)) == NULL) {
-                ret = 1;
-            } else {
-
-            ret = zfs_mount(zhp, options, flags|MNT_RDONLY);
-
-			zfs_close(zhp);
-            }
-        }
-#endif
 	}
-
 	return (ret);
 }
 
@@ -5962,12 +5961,24 @@ unshare_unmount_path(int op, char *path, int flags, boolean_t is_manual)
 	/*
 	 * Search for the given (major,minor) pair in the mount table.
 	 */
+#ifdef sun
 	rewind(mnttab_file);
 	while ((ret = getextmntent(mnttab_file, &entry, 0)) == 0) {
 		if (entry.mnt_major == major(statbuf.st_dev) &&
 		    entry.mnt_minor == minor(statbuf.st_dev))
 			break;
 	}
+#else
+	{
+		struct statfs sfs;
+		if (statfs(path, &sfs) != 0) {
+			(void) fprintf(stderr, "%s: %s\n", path,
+			    strerror(errno));
+			ret = -1;
+		}
+		statfs2mnttab(&sfs, &entry);
+	}
+#endif
 	if (ret != 0) {
 		if (op == OP_SHARE) {
 			(void) fprintf(stderr, gettext("cannot %s '%s': not "
@@ -6097,12 +6108,12 @@ unshare_unmount(int op, int argc, char **argv)
 		 * the special type (dataset name), and walk the result in
 		 * reverse to make sure to get any snapshots first.
 		 */
+		struct mnttab entry;
 		uu_avl_pool_t *pool;
 		uu_avl_t *tree = NULL;
 		unshare_unmount_node_t *node;
 		uu_avl_index_t idx;
 		uu_avl_walk_t *walk;
-		mnttab_node_t *mntn;
 
 		if (argc != 0) {
 			(void) fprintf(stderr, gettext("too many arguments\n"));
@@ -6116,19 +6127,18 @@ unshare_unmount(int op, int argc, char **argv)
 		    ((tree = uu_avl_create(pool, NULL, UU_DEFAULT)) == NULL))
 			nomem();
 
-		for (mntn = libzfs_mnttab_first(g_zfs); mntn;
-		     mntn = libzfs_mnttab_next(g_zfs, mntn)) {
-			struct mnttab *mt = &mntn->mtn_mt;
+		rewind(mnttab_file);
+		while (getmntent(mnttab_file, &entry) == 0) {
 
 			/* ignore non-ZFS entries */
-			if (strcmp(mt->mnt_fstype, MNTTYPE_ZFS) != 0)
+			if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
 				continue;
 
 			/* ignore snapshots */
-			if (strchr(mt->mnt_special, '@') != NULL)
+			if (strchr(entry.mnt_special, '@') != NULL)
 				continue;
 
-			if ((zhp = zfs_open(g_zfs, mt->mnt_special,
+			if ((zhp = zfs_open(g_zfs, entry.mnt_special,
 			    ZFS_TYPE_FILESYSTEM)) == NULL) {
 				ret = 1;
 				continue;
@@ -6167,7 +6177,7 @@ unshare_unmount(int op, int argc, char **argv)
 
 			node = safe_malloc(sizeof (unshare_unmount_node_t));
 			node->un_zhp = zhp;
-			node->un_mountp = safe_strdup(mt->mnt_mountp);
+			node->un_mountp = safe_strdup(entry.mnt_mountp);
 
 			uu_avl_node_init(node, &node->un_avlnode, pool);
 
@@ -6235,19 +6245,25 @@ unshare_unmount(int op, int argc, char **argv)
 			return (unshare_unmount_path(op, argv[0],
 			    flags, B_FALSE));
 
+		/* Temporarily, allow unmounting snapshots on OS X */
 		if ((zhp = zfs_open(g_zfs, argv[0],
-                            ZFS_TYPE_FILESYSTEM)) == NULL) {
-#ifdef __APPLE__
-            /* Temporarily, allow unmounting snapshots */
-            if ((zhp = zfs_open(g_zfs, argv[0],
-                                ZFS_TYPE_SNAPSHOT)) != NULL) {
-                ret = zfs_unmount(zhp, NULL, flags);
-                zfs_close(zhp);
-                return ret;
-            }
-#endif
-			return (1);
-        }
+                    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT)) == NULL) {
+			return 1;
+		} else {
+			if(zhp->zfs_type & ZFS_TYPE_SNAPSHOT) {
+				if(!zfs_is_mounted(zhp, NULL)) {
+					(void) fprintf(stderr, gettext("cannot "
+					    "unmount snapshot '%s': not currently "
+					    "mounted\n"),
+					    zfs_get_name(zhp));
+					return 1;
+				} else {
+					ret = zfs_unmount(zhp, NULL, flags);
+					zfs_close(zhp);
+					return ret;
+				}
+			}
+		}
 
 		verify(zfs_prop_get(zhp, op == OP_SHARE ?
 		    ZFS_PROP_SHARENFS : ZFS_PROP_MOUNTPOINT,
@@ -6430,13 +6446,29 @@ int
 main(int argc, char **argv)
 {
 	int ret = 0;
-	int i = 0;
+	int i;
 	char *cmdname;
 
 	(void) setlocale(LC_ALL, "");
 	//(void) textdomain(TEXT_DOMAIN);
 
 	opterr = 0;
+
+	if ((g_zfs = libzfs_init()) == NULL) {
+                (void) fprintf(stderr, gettext("internal error: failed to "
+                    "initialize ZFS library\n"));
+                return (1);
+        }
+
+	zfs_save_arguments(argc, argv, history_str, sizeof (history_str));
+
+	libzfs_print_on_error(g_zfs, B_TRUE);
+
+	if ((mnttab_file = fopen(MNTTAB, "r")) == NULL) {
+                (void) fprintf(stderr, gettext("internal error: unable to "
+                    "open %s\n"), MNTTAB);
+                return (1);
+        }
 
 	/*
 	 * Make sure the user has specified some command.
@@ -6473,15 +6505,6 @@ main(int argc, char **argv)
 	    (strcmp(cmdname, "--help") == 0))
 		usage(B_TRUE);
 
-	if ((g_zfs = libzfs_init()) == NULL)
-		return (1);
-
-	mnttab_file = g_zfs->libzfs_mnttab;
-
-	zfs_save_arguments(argc, argv, history_str, sizeof (history_str));
-
-	libzfs_print_on_error(g_zfs, B_TRUE);
-
 	/*
 	 * Run the appropriate command.
 	 */
@@ -6499,10 +6522,14 @@ main(int argc, char **argv)
 		usage(B_FALSE);
 		ret = 1;
 	}
-	libzfs_fini(g_zfs);
+	libzfs_mnttab_cache(g_zfs, B_FALSE);
+
+	(void) fclose(mnttab_file);
 
 	if (ret == 0 && log_history)
 		(void) zpool_log_history(g_zfs, history_str);
+
+	libzfs_fini(g_zfs);
 
 	/*
 	 * The 'ZFS_ABORT' environment variable causes us to dump core on exit

@@ -606,17 +606,10 @@ zfs_close(zfs_handle_t *zhp)
 	free(zhp);
 }
 
-mnttab_node_t *
-libzfs_mnttab_first(libzfs_handle_t *hdl)
-{
-	return (avl_first(&hdl->libzfs_mnttab_cache));
-}
-mnttab_node_t *
-libzfs_mnttab_next(libzfs_handle_t *hdl, mnttab_node_t *cur)
-{
-	return (AVL_NEXT(&hdl->libzfs_mnttab_cache, cur));
-}
-
+typedef struct mnttab_node {
+        struct mnttab mtn_mt;
+        avl_node_t mtn_node;
+} mnttab_node_t;
 
 static int
 libzfs_mnttab_cache_compare(const void *arg1, const void *arg2)
@@ -631,7 +624,6 @@ libzfs_mnttab_cache_compare(const void *arg1, const void *arg2)
 		return (0);
 	return (rv > 0 ? 1 : -1);
 }
-
 
 #if 0
 int
@@ -656,28 +648,11 @@ libzfs_mnttab_update(libzfs_handle_t *hdl)
 }
 #endif
 
-
 //From FreeBSD
-int
+void
 libzfs_mnttab_update(libzfs_handle_t *hdl)
 {
 	struct mnttab entry;
-
-	mnttab_node_t *mtn;
-	void *cookie = NULL;
-
-    /*
-     * At unmount (changing mountpoint) we need to empty the nodes in the
-     * list first, then re-add as needed.
-     */
-	while ((mtn = avl_destroy_nodes(&hdl->libzfs_mnttab_cache, &cookie))) {
-		free(mtn->mtn_mt.mnt_special);
-		free(mtn->mtn_mt.mnt_mountp);
-		free(mtn->mtn_mt.mnt_fstype);
-		if (mtn->mtn_mt.mnt_mntopts)
-			free(mtn->mtn_mt.mnt_mntopts);
-		free(mtn);
-	}
 
 	rewind(hdl->libzfs_mnttab);
 	while (getmntent(hdl->libzfs_mnttab, &entry) == 0) {
@@ -692,9 +667,7 @@ libzfs_mnttab_update(libzfs_handle_t *hdl)
 		mtn->mtn_mt.mnt_mntopts = zfs_strdup(hdl, entry.mnt_mntopts);
 		avl_add(&hdl->libzfs_mnttab_cache, mtn);
 	}
-	return (0);
 }
-
 
 void
 libzfs_mnttab_init(libzfs_handle_t *hdl)
@@ -702,8 +675,6 @@ libzfs_mnttab_init(libzfs_handle_t *hdl)
 	assert(avl_numnodes(&hdl->libzfs_mnttab_cache) == 0);
 	avl_create(&hdl->libzfs_mnttab_cache, libzfs_mnttab_cache_compare,
 	    sizeof (mnttab_node_t), offsetof(mnttab_node_t, mtn_node));
-
-    libzfs_mnttab_update(hdl); //Do we need this?
 }
 
 void
@@ -735,20 +706,13 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 {
 	mnttab_node_t find;
 	mnttab_node_t *mtn;
-	int error;
-
-    libzfs_mnttab_update(hdl);
 
 	if (!hdl->libzfs_mnttab_enable) {
 		struct mnttab srch = { 0 };
 
 		if (avl_numnodes(&hdl->libzfs_mnttab_cache))
 			libzfs_mnttab_fini(hdl);
-
-		/* Reopen MNTTAB to prevent reading stale data from open file */
-		if (freopen(MNTTAB, "r", hdl->libzfs_mnttab) == NULL)
-			return (ENOENT);
-
+		rewind(hdl->libzfs_mnttab);
 		srch.mnt_special = (char *)fsname;
 		srch.mnt_fstype = MNTTYPE_ZFS;
 		if (getmntany(hdl->libzfs_mnttab, entry, &srch) == 0)
@@ -758,8 +722,7 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 	}
 
 	if (avl_numnodes(&hdl->libzfs_mnttab_cache) == 0)
-		if ((error = libzfs_mnttab_update(hdl)) != 0)
-			return (error);
+		libzfs_mnttab_update(hdl);
 
 	find.mtn_mt.mnt_special = (char *)fsname;
 	mtn = avl_find(&hdl->libzfs_mnttab_cache, &find, NULL);
@@ -820,13 +783,14 @@ libzfs_mnttab_root(const char *mountpoint)
 #endif
 }
 
-
 void
 libzfs_mnttab_add(libzfs_handle_t *hdl, const char *special,
     const char *mountp, const char *mntopts)
 {
 	mnttab_node_t *mtn;
 
+	if (avl_numnodes(&hdl->libzfs_mnttab_cache) == 0)
+		return;
 	mtn = zfs_alloc(hdl, sizeof (mnttab_node_t));
 	mtn->mtn_mt.mnt_special = zfs_strdup(hdl, special);
 	mtn->mtn_mt.mnt_mountp = zfs_strdup(hdl, mountp);
@@ -834,11 +798,7 @@ libzfs_mnttab_add(libzfs_handle_t *hdl, const char *special,
 	if (mntopts != NULL)
 		mtn->mtn_mt.mnt_mntopts = zfs_strdup(hdl, mntopts);
 	avl_add(&hdl->libzfs_mnttab_cache, mtn);
-
-	if (strcmp(mountp, "/") == 0)
-		libzfs_mnttab_root(mountp);
 }
-
 
 void
 libzfs_mnttab_remove(libzfs_handle_t *hdl, const char *fsname)
@@ -852,7 +812,8 @@ libzfs_mnttab_remove(libzfs_handle_t *hdl, const char *fsname)
 		free(ret->mtn_mt.mnt_special);
 		free(ret->mtn_mt.mnt_mountp);
 		free(ret->mtn_mt.mnt_fstype);
-		free(ret->mtn_mt.mnt_mntopts);
+		if (ret->mtn_mt.mnt_mntopts != NULL)
+			free(ret->mtn_mt.mnt_mntopts);
 		free(ret);
 	}
 }

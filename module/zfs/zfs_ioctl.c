@@ -93,8 +93,12 @@
 
 
 #ifdef __APPLE__
+#define MNTTAB "/etc/mtab"
+
 extern int file_vnode_withvid(int, struct vnode **, uint32_t *);
 extern int file_drop(int);
+
+static int mnttab_file_create(void);
 #endif
 
 kmutex_t zfsdev_state_lock;
@@ -6216,6 +6220,30 @@ u_int32_t k_maczfs_debug_stalk;
 
 #define ZFS_MAJOR  -24
 
+#ifdef __APPLE__
+static int
+mnttab_file_create(void)
+{
+	int error = 0;
+	size_t buflen;
+	char *buf;
+	vnode_t *vp;
+	int oflags = FCREAT;
+
+	if ((error = vn_open(MNTTAB, UIO_SYSSPACE,
+	    oflags, 0644, &vp, CRCREAT, 0)) == 0) {
+		if ((error =VOP_FSYNC(vp, FSYNC, kcred,
+		    NULL)) == 0) {
+			error = VOP_CLOSE(vp, oflags, 1, 0,
+			    kcred, NULL);
+		}
+	}
+	if (!error)
+		printf("mnttab_file_create : error %d\n", error);
+	return error;
+}
+#endif
+
 void
 zfs_ioctl_init(void)
 {
@@ -6235,6 +6263,9 @@ zfs_ioctl_init(void)
     zfs_bmajor = bdevsw_add(-1, &zfs_bdevsw);
     zfs_major = cdevsw_add_with_bdev(-1, &zfs_cdevsw, zfs_bmajor);
     dev = makedev(zfs_major, 0);/* Get the device number */
+#ifdef __APPLE__
+    (void) mnttab_file_create();
+#endif
 
     //printf("ZFS ioctl setup. major %d, bmajor %d, dev %d\n",
     //     zfs_major, zfs_bmajor, dev);

@@ -79,6 +79,7 @@ compress_slashes(const char *src, char *dest)
 	*dest = '\0';
 }
 
+#if 0
 /*
  * Given a full path to a file, translate into a dataset name and a relative
  * path within the dataset.  'dataset' must be at least MAXNAMELEN characters,
@@ -158,6 +159,64 @@ parse_pathname(const char *inpath, char *dataset, char *relpath,
 	(void) strcpy(relpath, rel);
 
 	return (0);
+}
+#endif
+
+//From FreeBSD
+static int
+parse_pathname(const char *inpath, char *dataset, char *relpath,
+    struct stat *statbuf)
+{
+        struct statfs sfs;
+        const char *rel;
+        char fullpath[MAXPATHLEN];
+
+        compress_slashes(inpath, fullpath);
+
+        if (fullpath[0] != '/') {
+                (void) fprintf(stderr, "invalid object '%s': must be full "
+                    "path\n", fullpath);
+                usage();
+                return (-1);
+        }
+
+        if (strlen(fullpath) >= MAXPATHLEN) {
+                (void) fprintf(stderr, "invalid object; pathname too long\n");
+                return (-1);
+        }
+
+        if (stat(fullpath, statbuf) != 0) {
+                (void) fprintf(stderr, "cannot open '%s': %s\n",
+                    fullpath, strerror(errno));
+                return (-1);
+        }
+
+        if (statfs(fullpath, &sfs) == -1) {
+                (void) fprintf(stderr, "cannot find mountpoint for '%s': %s\n",
+                    fullpath, strerror(errno));
+                return (-1);
+        }
+
+        if (strcmp(sfs.f_fstypename, MNTTYPE_ZFS) != 0) {
+                (void) fprintf(stderr, "invalid path '%s': not a ZFS "
+                    "filesystem\n", fullpath);
+                return (-1);
+        }
+
+        if (strncmp(fullpath, sfs.f_mntonname, strlen(sfs.f_mntonname)) != 0) {
+                (void) fprintf(stderr, "invalid path '%s': mountpoint "
+                    "doesn't match path\n", fullpath);
+                return (-1);
+        }
+
+        (void) strcpy(dataset, sfs.f_mntfromname);
+
+        rel = fullpath + strlen(sfs.f_mntonname);
+        if (rel[0] == '/')
+                rel++;
+        (void) strcpy(relpath, rel);
+
+        return (0);
 }
 
 /*

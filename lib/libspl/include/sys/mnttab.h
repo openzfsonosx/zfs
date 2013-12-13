@@ -52,22 +52,10 @@ struct mnttab {
 	char *mnt_mountp;
 	char *mnt_fstype;
 	char *mnt_mntopts;
-};
-
-/*
- * NOTE: fields in extmnttab should match struct mnttab till new fields
- * are encountered, this allows hasmntopt to work properly when its arg is
- * a pointer to an extmnttab struct cast to a mnttab struct pointer.
- */
-
-struct extmnttab {
-	char *mnt_special;
-	char *mnt_mountp;
-	char *mnt_fstype;
-	char *mnt_mntopts;
 	uint_t mnt_major;
 	uint_t mnt_minor;
 };
+#define        extmnttab        mnttab
 
 //Replacing with FreeBSD versions
 //extern int getmntany(FILE *fp, struct mnttab *mgetp, struct mnttab *mrefp);
@@ -81,6 +69,7 @@ extern int openat64(int, const char *, int, ...);
 extern int getmntany(FILE *fd, struct mnttab *mgetp, struct mnttab *mrefp);
 extern int getmntent(FILE *fp, struct mnttab *mp);
 extern char *hasmntopt(struct mnttab *mnt, char *opt);
+
 extern void statfs2mnttab(struct statfs *sfs, struct mnttab *mp);
 
 #define	AT_FDCWD		-100

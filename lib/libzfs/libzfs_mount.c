@@ -203,35 +203,15 @@ dir_is_empty(const char *dirname)
 boolean_t
 is_mounted(libzfs_handle_t *zfs_hdl, const char *special, char **where)
 {
-    struct mnttab search = { 0 }, entry;
+	struct mnttab entry;
 
-#if 0
-    /*
-     * Search for the entry in /etc/mnttab.  We don't bother getting the
-     * mountpoint, as we can just search for the special device.  This will
-     * also let us find mounts when the mountpoint is 'legacy'.
-     */
-    search.mnt_special = (char *)special;
-    search.mnt_fstype = MNTTYPE_ZFS;
+	if (libzfs_mnttab_find(zfs_hdl, special, &entry) != 0)
+		return (B_FALSE);
 
-    if (getmntany(zfs_hdl->libzfs_mnttab, &entry, &search) != 0) {
-        return (B_FALSE);
-    }
+	if (where != NULL)
+		*where = zfs_strdup(zfs_hdl, entry.mnt_mountp);
 
-    if (where != NULL)
-        *where = zfs_strdup(zfs_hdl, entry.mnt_mountp);
-#else
-
-        if (libzfs_mnttab_find(zfs_hdl, special, &entry) != 0)
-                return (B_FALSE);
-
-        if (where != NULL)
-                *where = zfs_strdup(zfs_hdl, entry.mnt_mountp);
-
-#endif
-
-
-    return (B_TRUE);
+	return (B_TRUE);
 }
 
 boolean_t
@@ -688,6 +668,7 @@ zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
             (void) zfs_share_nfs(zhp);
             return (-1);
         }
+        libzfs_mnttab_remove(hdl, zhp->zfs_name);
         free(mntpt);
 
         }
@@ -1328,35 +1309,27 @@ int
 zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 {
 	int used, alloc;
+	struct mnttab entry;
 	size_t namelen;
 	char **mountpoints = NULL;
 	zfs_handle_t **datasets = NULL;
 	libzfs_handle_t *hdl = zhp->zpool_hdl;
-	mnttab_node_t *mntn;
 	int i;
 	int ret = -1;
 	int flags = (force ? MS_FORCE : 0);
 
 	namelen = strlen(zhp->zpool_name);
 
+	rewind(hdl->libzfs_mnttab);
 	used = alloc = 0;
-
-    /*
-     * It appears the userland AVL stuff is broken, the call to avl_first
-     * returns NULL when we want to export.
-     * Temporarily replaced with a call to list OS mounted filesystems
-     * and if type ZFS, check for unmount
-     */
-	for (mntn = libzfs_mnttab_first(hdl); mntn != NULL;
-	     mntn = libzfs_mnttab_next(hdl, mntn)) {
-		struct mnttab *mt = &mntn->mtn_mt;
+	while (getmntent(hdl->libzfs_mnttab, &entry) == 0) {
 		/*
 		 * Ignore filesystems not within this pool.
 		 */
-		if (mt->mnt_mountp == NULL ||
-		    strncmp(mt->mnt_special, zhp->zpool_name, namelen) != 0 ||
-		    (mt->mnt_special[namelen] != '/' &&
-		    mt->mnt_special[namelen] != '\0'))
+		if (entry.mnt_fstype == NULL ||
+		    strncmp(entry.mnt_special, zhp->zpool_name, namelen) != 0 ||
+		    (entry.mnt_special[namelen] != '/' &&
+		    entry.mnt_special[namelen] != '\0'))
 			continue;
 
 		/*
@@ -1393,16 +1366,16 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 			}
 		}
 
-		mountpoints[used] = zfs_strdup(hdl, mt->mnt_mountp);
-		if (mountpoints[used] == NULL)
-			goto out;
+               if ((mountpoints[used] = zfs_strdup(hdl,
+                    entry.mnt_mountp)) == NULL)
+                        goto out;
 
 		/*
 		 * This is allowed to fail, in case there is some I/O error.  It
 		 * is only used to determine if we need to remove the underlying
 		 * mountpoint, so failure is not fatal.
 		 */
-		datasets[used] = make_dataset_handle(hdl, mt->mnt_special);
+		datasets[used] = make_dataset_handle(hdl, entry.mnt_special);
 
 		used++;
 	}
