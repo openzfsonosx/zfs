@@ -409,7 +409,7 @@ IOByteCount net_lundman_zfs_zvol::performRead (IOMemoryDescriptor* dstDesc,
                                                UInt64 byteOffset,
                                                UInt64 byteCount)
 {
-  //IOLog("performRead offset %llu count %llu\n", byteOffset, byteCount);
+  IOLog("performRead offset %llu count %llu\n", byteOffset, byteCount);
     return dstDesc->writeBytes(0, (void*)((uintptr_t)m_buffer + byteOffset),
                                byteCount);
 }
@@ -421,7 +421,7 @@ IOByteCount net_lundman_zfs_zvol::performWrite (IOMemoryDescriptor* srcDesc,
                                                 UInt64 byteOffset,
                                                 UInt64 byteCount)
 {
-  //IOLog("performWrite offset %llu count %llu\n", byteOffset, byteCount);
+  IOLog("performWrite offset %llu count %llu\n", byteOffset, byteCount);
     return srcDesc->readBytes(0, (void*)((uintptr_t)m_buffer + byteOffset), byteCount);
 }
 
@@ -452,7 +452,7 @@ int zvolSetVolsize(zvol_state_t *zv)
 uint64_t zvolIO_kit_read(void *iomem, uint64_t offset, char *address, uint64_t len)
 {
   IOByteCount done;
-  //IOLog("zvolIO_kit_read offset %p count %llu to offset %llu\n",
+  //IOLog("zvolIO_kit_read offset %p count %llx to offset %llx\n",
   //    address, len, offset);
   done=static_cast<IOMemoryDescriptor*>(iomem)->writeBytes(offset,
                                                            (void *)address,
@@ -463,7 +463,7 @@ uint64_t zvolIO_kit_read(void *iomem, uint64_t offset, char *address, uint64_t l
 uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t len)
 {
   IOByteCount done;
-  //IOLog("zvolIO_kit_write offset %p count %llu to offset %llu\n",
+  //IOLog("zvolIO_kit_write offset %p count %llx to offset %llx\n",
   //    address, len, offset);
   done=static_cast<IOMemoryDescriptor*>(iomem)->readBytes(offset,
                                                           (void *)address,

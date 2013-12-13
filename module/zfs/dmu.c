@@ -1399,23 +1399,24 @@ dmu_write_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size,
  */
 int
 dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
+               uint64_t position,
                uint64_t *size, void *iomem)
 {
 	dmu_buf_t **dbp;
 	int numbufs, i, err = 0;
-    uint64_t memoffset = 0;
 	/*
 	 * NB: we could do this block-at-a-time, but it's nice
 	 * to be reading in parallel.
 	 */
 	//err = dmu_buf_hold_array(os, object, uio->uio_loffset, size, TRUE, FTAG,
     //   &numbufs, &dbp);
-	err = dmu_buf_hold_array(os, object, *offset, *size, TRUE, FTAG,
+	err = dmu_buf_hold_array(os, object, position+*offset, *size, TRUE, FTAG,
 	    &numbufs, &dbp);
 	if (err)
 		return (err);
 
-    dprintf("dmu_read_iokit: offset %llu size %llu\n", *offset, *size);
+    dprintf("dmu_read_iokit: memoffset %llu offset %llu size %llu\n",
+           *offset, position+*offset, *size);
 
 	while (*size > 0) {
 
@@ -1428,7 +1429,7 @@ dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
             ASSERT(size > 0);
 
             //bufoff = uio->uio_loffset - db->db_offset;
-            bufoff = *offset - db->db_offset;
+            bufoff = (position+*offset) - db->db_offset;
             tocpy = (int)MIN(db->db_size - bufoff, *size);
 
             /*
@@ -1437,13 +1438,16 @@ dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
             */
 
             done = zvolIO_kit_read(iomem,
-                                   memoffset,
+                                   *offset,
                                    (char *)db->db_data + bufoff,
                                    tocpy);
+            if (done != tocpy)
+                printf("iokit signalled short read %d != %d\n",
+                       tocpy, done);
+
             if (done > 0) {
                 (*offset) += done;
                 (*size) -= done;
-                memoffset += done;
             }
 
             if (done < 0) {
@@ -1461,21 +1465,23 @@ dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
 
 
 static int
-dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset,
+dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset, uint64_t position,
                       uint64_t *size, void *iomem, dmu_tx_t *tx)
 {
 	dmu_buf_t **dbp;
 	int numbufs;
 	int err = 0;
 	int i;
-    uint64_t memoffset = 0;
 
 	//err = dmu_buf_hold_array_by_dnode(dn, uio->uio_loffset, size,
     //   FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
-	err = dmu_buf_hold_array_by_dnode(dn, *offset, *size,
+	err = dmu_buf_hold_array_by_dnode(dn, *offset+position, *size,
 	    FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
 	if (err)
 		return (err);
+
+    dprintf("dmu_write_iokit_done: memoffset %llu offset %llu size %llu\n",
+           *offset, *offset + position, *size);
 
     while(*size > 0) {
 
@@ -1488,7 +1494,7 @@ dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset,
             ASSERT(size > 0);
 
             //bufoff = uio->uio_loffset - db->db_offset;
-            bufoff = *offset - db->db_offset;
+            bufoff = (position + *offset) - db->db_offset;
             tocpy = (int)MIN(db->db_size - bufoff, *size);
 
             ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
@@ -1509,17 +1515,20 @@ dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset,
               UIO_WRITE, uio);
             */
             done = zvolIO_kit_write(iomem,
-                                    memoffset,
+                                    *offset,
                                     (char *)db->db_data + bufoff,
                                     tocpy);
 
             if (tocpy == db->db_size)
-			dmu_buf_fill_done(db, tx);
+                dmu_buf_fill_done(db, tx);
+
+            if (done != tocpy)
+                printf("iokit signalled short write %d != %d\n",
+                       tocpy, done);
 
             if (done > 0) {
                 *offset += done;
                 *size -= done;
-                memoffset += done;
             }
 
             if (done < 0) {
@@ -1535,7 +1544,8 @@ dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset,
 
 
 int
-dmu_write_iokit_dbuf(dmu_buf_t *zdb, uint64_t *offset, uint64_t *size,
+dmu_write_iokit_dbuf(dmu_buf_t *zdb, uint64_t *offset, uint64_t position,
+                     uint64_t *size,
                      void *iomem,
                      dmu_tx_t *tx)
 {
@@ -1548,7 +1558,7 @@ dmu_write_iokit_dbuf(dmu_buf_t *zdb, uint64_t *offset, uint64_t *size,
 
 	DB_DNODE_ENTER(db);
 	dn = DB_DNODE(db);
-	err = dmu_write_iokit_dnode(dn, offset, size, iomem, tx);
+	err = dmu_write_iokit_dnode(dn, offset, position, size, iomem, tx);
 	DB_DNODE_EXIT(db);
 
 	return (err);

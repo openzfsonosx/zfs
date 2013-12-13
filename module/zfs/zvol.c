@@ -1606,18 +1606,19 @@ zvol_write(dev_t dev, struct uio *uio, int p)
  * that we can call io->writeBytes to read into IOKit zvolumes.
  */
 int
-zvol_read_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count, void *iomem)
+zvol_read_iokit(zvol_state_t *zv, uint64_t position, uint64_t count, void *iomem)
 {
 	uint64_t volsize;
 	rl_t *rl;
 	int error = 0;
+    uint64_t offset = 0;
 
 	if (zv == NULL)
 		return (ENXIO);
 
 	volsize = zv->zv_volsize;
 	if (count > 0 &&
-	    (offset < 0 || offset >= volsize))
+	    (position < 0 || position >= volsize))
 		return (EIO);
 
 #if 0
@@ -1627,21 +1628,25 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count, void *iomem)
 		return (error);
 	}
 #endif
+    //printf("zvol_read_iokit(offset 0x%llx bytes 0x%llx)\n", offset, count);
 
-	rl = zfs_range_lock(&zv->zv_znode, offset, count,
+	rl = zfs_range_lock(&zv->zv_znode, position, count,
 	    RL_READER);
-	while (count > 0 && offset < volsize) {
+	while (count > 0 && (position+offset) < volsize) {
 		uint64_t bytes = MIN(count, DMU_MAX_ACCESS >> 1);
 
 		/* don't read past the end */
-		if (bytes > volsize - offset)
-			bytes = volsize - offset;
+		if (bytes > volsize - (position + offset))
+			bytes = volsize - (position + offset);
 
-        dprintf("zvol_read_iokit: offset %llu len %llu bytes %llu\n",
-                offset, count, bytes);
+        dprintf("zvol_read_iokit: position %llu offset %llu len %llu bytes %llu\n",
+               position, offset, count, bytes);
 
-		error =  dmu_read_iokit(zv->zv_objset, ZVOL_OBJ, &offset, &bytes,
+		error =  dmu_read_iokit(zv->zv_objset, ZVOL_OBJ, &offset, position,
+                                &bytes,
                                 iomem);
+        if (bytes) printf("weird, read bytes remaining 0x%llx\n", bytes);
+
 		if (error) {
 			/* convert checksum errors into IO errors */
 			if (error == ECKSUM)
@@ -1651,6 +1656,11 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count, void *iomem)
         count -= MIN(count, DMU_MAX_ACCESS >> 1) - bytes;
 	}
 	zfs_range_unlock(rl);
+
+    if (error || count)
+        printf("zvol_read_iokit not right error %d and count %d\n",
+               error, count);
+
 	return (error);
 }
 
@@ -1661,19 +1671,21 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count, void *iomem)
  */
 
 int
-zvol_write_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count,void *iomem)
+zvol_write_iokit(zvol_state_t *zv, uint64_t position,
+                 uint64_t count,void *iomem)
 {
 	uint64_t volsize;
 	rl_t *rl;
 	int error = 0;
 	boolean_t sync;
+    uint64_t offset = 0;
 
 	if (zv == NULL)
 		return (ENXIO);
 
 	volsize = zv->zv_volsize;
 	if (count > 0 &&
-	    (offset < 0 || offset >= volsize))
+	    (position < 0 || position >= volsize))
 		return (EIO);
 
 #if 0
@@ -1684,18 +1696,21 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count,void *iomem)
 	}
 #endif
 
+    dprintf("zvol_write_iokit(position %llu offset 0x%llx bytes 0x%llx)\n",
+           position, offset, count);
+
 	sync = !(zv->zv_flags & ZVOL_WCE) ||
 	    (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS);
 
-	rl = zfs_range_lock(&zv->zv_znode, offset, count,
+	rl = zfs_range_lock(&zv->zv_znode, position, count,
 	    RL_WRITER);
-	while (count > 0 && offset < volsize) {
+	while (count > 0 && (position + offset) < volsize) {
 		uint64_t bytes = MIN(count, DMU_MAX_ACCESS >> 1);
 		uint64_t off = offset;
 		dmu_tx_t *tx = dmu_tx_create(zv->zv_objset);
 
-		if (bytes > volsize - off)	/* don't write past the end */
-			bytes = volsize - off;
+		if (bytes > volsize - (position + off))	/* don't write past the end */
+			bytes = volsize - (position + off);
 
 		dmu_tx_hold_write(tx, ZVOL_OBJ, off, bytes);
 		error = dmu_tx_assign(tx, TXG_WAIT);
@@ -1704,7 +1719,10 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count,void *iomem)
 			break;
 		}
 
-		error = dmu_write_iokit_dbuf(zv->zv_dbuf, &offset, &bytes, iomem, tx);
+		error = dmu_write_iokit_dbuf(zv->zv_dbuf, &offset, position,
+                                     &bytes, iomem, tx);
+        if (bytes) printf("weird, bytes remaining 0x%llx\n", bytes);
+
 		if (error == 0) {
             count -= MIN(count, DMU_MAX_ACCESS >> 1) + bytes;
 			zvol_log_write(zv, tx, off, bytes, sync);
@@ -1717,6 +1735,11 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count,void *iomem)
 	zfs_range_unlock(rl);
 	if (sync)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
+
+    if (error || count)
+        printf("zvol_write_iokit not right error %d and count %d\n",
+               error, count);
+
 	return (error);
 }
 
