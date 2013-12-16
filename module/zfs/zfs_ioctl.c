@@ -6238,7 +6238,7 @@ mnttab_file_create(void)
 			    kcred, NULL);
 		}
 	}
-	if (!error)
+	if (error)
 		printf("mnttab_file_create : error %d\n", error);
 	return error;
 }
