@@ -475,40 +475,9 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	 */
 	//strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
 
-#ifdef __APPLE__
-    /*
-     * Temporarily we work around letting snapshots be mounted with 'zfs mount'
-     * until we can find a way to issue mounts from the kernel.
-     * Strip off the "@name" part, to look up the parent dataset's mountpoint
-     * then append the ".zfs/snapshot/name" part to the mountpoint.
-     */
-    if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT) {
-        char *r = NULL;
-        char *parent_name = strdup(zhp->zfs_name);
-        zfs_handle_t *zhp_parent;
-        r = strchr(parent_name, '@');
-        if (r) {
-
-            *r = 0;
-
-            if ((zhp_parent = zfs_open(zhp->zfs_hdl, parent_name,
-                                       ZFS_TYPE_FILESYSTEM)) != NULL) {
-                zfs_prop_get(zhp_parent, ZFS_PROP_MOUNTPOINT, mountpoint,
-                             sizeof(mountpoint),
-                             NULL, NULL, 0, B_FALSE);
-                strcat(mountpoint, "/.zfs/snapshot/");
-                strcat(mountpoint, &r[1]);
-                fprintf(stderr, "ZFS: snapshot mountpoint '%s'\n", mountpoint);
-                free(parent_name);
-                zfs_close(zhp_parent);
-            } // zfs_open
-        } // if r
-    } else // snapshot
-#endif
-    /* WARNING ^^^ DANGLING "ELSE" ABOVE */
 	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL)) {
 		return (0);
-    }
+	}
 
 	/* Create the directory if it doesn't already exist */
 	if (lstat(mountpoint, &buf) != 0) {
@@ -589,6 +558,11 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 		    dgettext(TEXT_DOMAIN, "cannot mount '%s'"),
 		    zhp->zfs_name));
 	}
+
+#ifdef __APPLE__
+	if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT)
+		fprintf(stderr, "ZFS: snapshot mountpoint '%s'\n", mountpoint);
+#endif
 
 	/* remove the mounted entry before re-adding on remount */
 	if (remount)

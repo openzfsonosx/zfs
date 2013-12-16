@@ -2263,6 +2263,36 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 			    relpath[0] != '\0'))
 				str++;
 
+#ifdef __APPLE__
+			//Temporarily allowing snapshot mounting
+			if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT) {
+				const char *secondhalf = strchr(relpath, '@');
+				if(secondhalf) {
+					size_t len = secondhalf - relpath;
+					if (len > 0) {
+						char *firsthalf =
+						    (char *)malloc(len);
+						memcpy(firsthalf, relpath, len);
+						firsthalf[len] = '\0';
+						(void) snprintf(propbuf,
+						    proplen,
+						    "%s%s/%s/.zfs/snapshot/%s",
+						    root, str, firsthalf,
+						    &secondhalf[1]);
+						free(firsthalf);
+					} else {
+						(void) snprintf(propbuf,
+						    proplen,
+						    "%s%s/.zfs/snapshot/%s",
+						    root, str, &secondhalf[1]);
+					}
+				} else {
+					fprintf(stderr, "snapshot '%s' has "
+					    "no '@'\n", zhp->zfs_name);
+					abort();
+				}
+			} else {
+#endif
 			if (relpath[0] == '\0')
 				(void) snprintf(propbuf, proplen, "%s%s",
 				    root, str);
@@ -2270,6 +2300,9 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 				(void) snprintf(propbuf, proplen, "%s%s%s%s",
 				    root, str, relpath[0] == '@' ? "" : "/",
 				    relpath);
+#ifdef __APPLE__
+			}
+#endif
 		} else {
 			/* 'legacy' or 'none' */
 			(void) strlcpy(propbuf, str, proplen);

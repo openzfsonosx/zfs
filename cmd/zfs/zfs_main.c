@@ -6000,7 +6000,11 @@ unshare_unmount_path(int op, char *path, int flags, boolean_t is_manual)
 	}
 
 	if ((zhp = zfs_open(g_zfs, entry.mnt_special,
+#ifdef __APPLE__
+	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT)) == NULL)
+#else
 	    ZFS_TYPE_FILESYSTEM)) == NULL)
+#endif
 		return (1);
 
 	ret = 1;
@@ -6134,12 +6138,20 @@ unshare_unmount(int op, int argc, char **argv)
 			if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
 				continue;
 
+#ifdef __APPLE__
+			/* Temporarily allowing snapshot mount/unmount. */
+#else
 			/* ignore snapshots */
 			if (strchr(entry.mnt_special, '@') != NULL)
 				continue;
+#endif
 
 			if ((zhp = zfs_open(g_zfs, entry.mnt_special,
+#ifdef __APPLE__
+			    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT)) == NULL) {
+#else
 			    ZFS_TYPE_FILESYSTEM)) == NULL) {
+#endif
 				ret = 1;
 				continue;
 			}

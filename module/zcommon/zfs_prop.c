@@ -292,7 +292,11 @@ zfs_prop_init(void)
 
 	/* readonly index (boolean) properties */
 	zprop_register_index(ZFS_PROP_MOUNTED, "mounted", 0, PROP_READONLY,
+#ifdef __APPLE__
+	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT, "yes | no", "MOUNTED", boolean_table);
+#else
 	    ZFS_TYPE_FILESYSTEM, "yes | no", "MOUNTED", boolean_table);
+#endif
 	zprop_register_index(ZFS_PROP_DEFER_DESTROY, "defer_destroy", 0,
 	    PROP_READONLY, ZFS_TYPE_SNAPSHOT, "yes | no", "DEFER_DESTROY",
 	    boolean_table);
@@ -318,7 +322,11 @@ zfs_prop_init(void)
 	zprop_register_string(ZFS_PROP_CLONES, "clones", NULL, PROP_READONLY,
 	    ZFS_TYPE_SNAPSHOT, "<dataset>[,...]", "CLONES");
 	zprop_register_string(ZFS_PROP_MOUNTPOINT, "mountpoint", "/",
+#ifdef __APPLE__
+	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT, "<path> | legacy | none",
+#else
 	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM, "<path> | legacy | none",
+#endif
 	    "MOUNTPOINT");
 	zprop_register_string(ZFS_PROP_SHARENFS, "sharenfs", "off",
 	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM, "on | off | share(1M) options",
