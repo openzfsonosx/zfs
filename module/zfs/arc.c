@@ -1096,7 +1096,7 @@ retry:
 
 	zfs_crc64_table = (uint64_t *)kmem_zalloc(sizeof(uint64_t) * 256, KM_SLEEP);
 
-	for (i = 0; i < 256; i++) 
+	for (i = 0; i < 256; i++)
 		for (ct = zfs_crc64_table + i, *ct = i, j = 8; j > 0; j--)
 			*ct = ((*ct) >> 1) ^ (-((*ct) & 1) & ZFS_CRC64_POLY);
 
@@ -2484,6 +2484,7 @@ arc_reclaim_thread(void *dummy __unused)
 
     mutex_enter(&arc_reclaim_thr_lock);
     while (arc_thread_exit == 0) {
+
         if (arc_reclaim_needed()) {
 
             if (arc_no_grow) {
@@ -2514,10 +2515,11 @@ arc_reclaim_thread(void *dummy __unused)
                                           NULL, &num_pages);
             if (kr == KERN_SUCCESS)
                 amount = num_pages * PAGE_SIZE;
-            else
+
+            if (!amount)
                 amount = 1024780;
 
-            printf("ARC reclaim: %llu\n", amount);
+            dprintf("ARC reclaim: %llu\n", amount);
 
             arc_kmem_reap_now(last_reclaim, amount);
 

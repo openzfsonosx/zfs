@@ -164,14 +164,7 @@ skip_open:
 	*max_psize = *psize = vattr.va_size;
 
 
-    if (1) {
-        *ashift = SPA_MINBLOCKSHIFT;
-    } else {
-        printf("Pretending to be 4k\n");
-        *ashift = 12;
-        vd->vdev_ashift = 12;
-    }
-
+    *ashift = SPA_MINBLOCKSHIFT;
     VN_RELE(vf->vf_vnode);
 
 	return (0);

@@ -467,6 +467,61 @@ zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 }
 
 
+
+/*
+* Clean up any znodes that had no links when we either crashed or
+* (force) umounted the file system.
+*/
+void
+zfs_unlinked_drain(zfsvfs_t *zfsvfs)
+{
+        zap_cursor_t        zc;
+        zap_attribute_t zap;
+        dmu_object_info_t doi;
+        znode_t                *zp;
+        int                error;
+
+        /*
+         * Interate over the contents of the unlinked set.
+         */
+        for (zap_cursor_init(&zc, zfsvfs->z_os, zfsvfs->z_unlinkedobj);
+         zap_cursor_retrieve(&zc, &zap) == 0;
+         zap_cursor_advance(&zc)) {
+
+                /*
+                 * See what kind of object we have in list
+                 */
+
+                error = dmu_object_info(zfsvfs->z_os,
+                 zap.za_first_integer, &doi);
+                if (error != 0)
+                        continue;
+
+                ASSERT((doi.doi_type == DMU_OT_PLAIN_FILE_CONTENTS) ||
+                 (doi.doi_type == DMU_OT_DIRECTORY_CONTENTS));
+                /*
+                 * We need to re-mark these list entries for deletion,
+                 * so we pull them back into core and set zp->z_unlinked.
+                 */
+                error = zfs_zget(zfsvfs, zap.za_first_integer, &zp);
+
+                /*
+                 * We may pick up znodes that are already marked for deletion.
+                 * This could happen during the purge of an extended attribute
+                 * directory. All we need to do is skip over them, since they
+                 * are already in the system marked z_unlinked.
+                 */
+                if (error != 0)
+                        continue;
+
+                zp->z_unlinked = B_TRUE;
+                VN_RELE(ZTOV(zp));
+        }
+        zap_cursor_fini(&zc);
+}
+
+
+
 /*
  * Delete the entire contents of a directory.  Return a count
  * of the number of entries that could not be deleted. If we encounter
