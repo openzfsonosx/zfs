@@ -23,7 +23,7 @@ ztest_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID)
 
 
 ztest_static_SOURCES = \
-	$(top_srcdir)/cmd/ztest/ztest.c
+	ztest.c
 
 ztest_static_LDADD = \
 	$(top_builddir)/lib/libnvpair/libnvpair.la \

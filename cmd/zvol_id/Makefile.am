@@ -13,4 +13,4 @@ DEFAULT_INCLUDES += \
 udev_PROGRAMS = zvol_id
 
 zvol_id_SOURCES = \
-	$(top_srcdir)/cmd/zvol_id/zvol_id_main.c
+	zvol_id_main.c
