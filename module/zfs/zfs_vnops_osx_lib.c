@@ -39,7 +39,7 @@ typedef uint64_t vfs_feature_t;
 	( VNODE_ATTR_va_mode |                      \
 	  VNODE_ATTR_va_uid |                       \
 	  VNODE_ATTR_va_gid |                       \
-      /* VNODE_ATTR_va_fsid |*/                 \
+      VNODE_ATTR_va_fsid |                      \
 	  VNODE_ATTR_va_fileid |                    \
 	  VNODE_ATTR_va_nlink |                     \
 	  VNODE_ATTR_va_data_size |                 \
@@ -50,9 +50,14 @@ typedef uint64_t vfs_feature_t;
 	  VNODE_ATTR_va_access_time |               \
 	  VNODE_ATTR_va_modify_time |               \
 	  VNODE_ATTR_va_change_time |               \
+	  VNODE_ATTR_va_backup_time |               \
 	  VNODE_ATTR_va_flags |                     \
 	  VNODE_ATTR_va_parentid |                  \
 	  VNODE_ATTR_va_iosize |                    \
+      VNODE_ATTR_va_filerev |                   \
+      VNODE_ATTR_va_type    |                   \
+      VNODE_ATTR_va_encoding |                  \
+      VNODE_ATTR_va_addedtime |                 \
       0)
 
 /* For part 1 of zfs_getattr() */
@@ -184,7 +189,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		vap->va_backup_time.tv_sec = 0;
 		vap->va_backup_time.tv_nsec = 0;
 		VATTR_SET_SUPPORTED(vap, va_backup_time);
-	}
+    }
 	vap->va_flags = zfs_getbsdflags(zp);
 	/*
 	 * On Mac OS X we always export the root directory id as 2
@@ -205,8 +210,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	vap->va_iosize = zp->z_blksz ? zp->z_blksz : zfsvfs->z_max_blksz;
 	//vap->va_iosize = 512;
     VATTR_SET_SUPPORTED(vap, va_iosize);
-
-	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
 
 	/* Don't include '.' and '..' in the number of entries */
 	if (VATTR_IS_ACTIVE(vap, va_nchildren) && vnode_isdir(vp)) {
@@ -261,11 +264,34 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
             VNODE_ATTR_va_total_alloc;
 	}
 
-	if (VATTR_IS_ACTIVE(vap, va_name) && !vnode_isvroot(vp)) {
+	if (VATTR_IS_ACTIVE(vap, va_name)) {
+        vap->va_name[0] = 0;
 		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
                              ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
 			VATTR_SET_SUPPORTED(vap, va_name);
 	}
+
+	if (VATTR_IS_ACTIVE(vap, va_filerev)) {
+        VATTR_RETURN(vap, va_filerev, 0);
+    }
+	if (VATTR_IS_ACTIVE(vap, va_linkid)) {
+        VATTR_RETURN(vap, va_linkid, 0);
+    }
+	if (VATTR_IS_ACTIVE(vap, va_fsid)) {
+        VATTR_RETURN(vap, va_fsid, vfs_statfs(zfsvfs->z_vfs)->f_fsid.val[0]);
+    }
+	if (VATTR_IS_ACTIVE(vap, va_type)) {
+        VATTR_RETURN(vap, va_type, vnode_vtype(ZTOV(zp)));
+    }
+	if (VATTR_IS_ACTIVE(vap, va_encoding)) {
+        VATTR_RETURN(vap, va_encoding, kTextEncodingMacUnicode);
+    }
+	if (VATTR_IS_ACTIVE(vap, va_addedtime)) {
+        VATTR_RETURN(vap, va_addedtime, vap->va_ctime);
+    }
+
+
+	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
 
 	ZFS_EXIT(zfsvfs);
 	return (error);

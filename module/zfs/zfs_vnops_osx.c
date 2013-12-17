@@ -78,6 +78,9 @@ int debug_vnop_osx_printf = 0;
 // Move this somewhere else, maybe autoconf?
 #define HAVE_NAMED_STREAMS 1
 
+//#define WITH_SEARCHFS
+
+
 /*
  * zfs vfs operations.
  */
@@ -326,12 +329,16 @@ zfs_vnop_lookup(
 	int error;
     char *filename = NULL;
 
+    *ap->a_vpp = NULL;	/* In case we return an error */
 
-    /*
-      extern int    zfs_lookup ( struct vnode *dvp, char *nm, struct vnode **vpp,
-                                 struct componentname *cnp, int nameiop,
-                                 cred_t *cr, kthread_t *td, int flags);
-    */
+	error = cache_lookup(ap->a_dvp, ap->a_vpp, cnp);
+	if (error) {
+		/* We found a cache entry, positive or negative. */
+		if (error == -1)	/* Positive entry? */
+			error = 0;		/* Yes.  Caller expects no error */
+		return error;
+	}
+
 
     /*
      * Darwin uses namelen as an optimisation, for example it can be
@@ -356,7 +363,22 @@ zfs_vnop_lookup(
     if (filename)
         FREE(filename, M_TEMP);
 
-	/* XXX FreeBSD has some namecache stuff here. */
+    if (error == ENOENT) {
+        if ((ap->a_cnp->cn_nameiop == CREATE || ap->a_cnp->cn_nameiop == RENAME) &&
+            (cnp->cn_flags & ISLASTCN)) {
+            printf("create/rename early out\n");
+            error = EJUSTRETURN;
+            goto exit;
+        }
+
+        /*
+		 * Insert name into cache (as non-existent) if appropriate.
+		 */
+		if ((cnp->cn_flags & MAKEENTRY) && ap->a_cnp->cn_nameiop != CREATE)
+			cache_enter(ap->a_dvp, *ap->a_vpp, ap->a_cnp);
+    } // ENOENT
+
+ exit:
 
     dprintf("-vnop_lookup %d\n", error);
 	return (error);
@@ -377,6 +399,7 @@ zfs_vnop_create(
 	DECLARE_CRED(ap);
 	vcexcl_t excl;
     int mode=0; // FIXME
+    int error;
 
     dprintf("vnop_create: '%s'\n", cnp->cn_nameptr);
     /*
@@ -386,8 +409,13 @@ zfs_vnop_create(
     */
 	excl = (vap->va_vaflags & VA_EXCLUSIVE) ? EXCL : NONEXCL;
 
-	return (zfs_create(ap->a_dvp, cnp->cn_nameptr, vap, excl, mode,
-                       ap->a_vpp, cr));
+	error = zfs_create(ap->a_dvp, cnp->cn_nameptr, vap, excl, mode,
+                       ap->a_vpp, cr);
+    if (!error)
+        cache_purge_negatives(ap->a_dvp);
+
+
+    return error;
 }
 
 static int
@@ -401,13 +429,16 @@ zfs_vnop_remove(
         } */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    int error;
     dprintf("vnop_remove\n");
 
     /*
       extern int    zfs_remove ( struct vnode *dvp, char *name,
                                  cred_t *cr, caller_context_t *ct, int flags);
     */
-	return (zfs_remove(ap->a_dvp, ap->a_cnp->cn_nameptr, cr, ct, /*flags*/0));
+	error = zfs_remove(ap->a_dvp, ap->a_cnp->cn_nameptr, cr, ct, /*flags*/0);
+    if (!error) cache_purge(ap->a_vp);
+    return error;
 }
 
 static int
@@ -439,6 +470,9 @@ zfs_vnop_mkdir(
     */
 	error = zfs_mkdir(ap->a_dvp, ap->a_cnp->cn_nameptr, ap->a_vap, ap->a_vpp,
 	    cr, ct, /*flags*/0, /*vsecp*/NULL);
+
+    if (!error) cache_purge_negatives(ap->a_dvp);
+
     return error;
 }
 
@@ -452,14 +486,19 @@ zfs_vnop_rmdir(
 	} */ *ap)
 {
 	DECLARE_CRED_AND_CONTEXT(ap);
+    int error;
     dprintf("vnop_rmdir\n");
 
     /*
       extern int    zfs_rmdir  ( struct vnode *dvp, char *name, struct vnode *cwd,
                                  cred_t *cr, caller_context_t *ct, int flags);
     */
-	return (zfs_rmdir(ap->a_dvp, ap->a_cnp->cn_nameptr, /*cwd*/NULL,
-	    cr, ct, /*flags*/0));
+	error = zfs_rmdir(ap->a_dvp, ap->a_cnp->cn_nameptr, /*cwd*/NULL,
+	    cr, ct, /*flags*/0);
+
+    if (!error) cache_purge(ap->a_vp);
+
+    return error;
 }
 
 static int
@@ -563,6 +602,7 @@ zfs_vnop_getattr(
     error = zfs_getattr_znode_unlocked(ap->a_vp, ap->a_vap);
 
     if (error) dprintf("-vnop_getattr '%p' %d\n", (ap->a_vp),error);
+
     return error;
 }
 
@@ -697,9 +737,10 @@ zfs_vnop_rename(
 	error = zfs_rename(ap->a_fdvp, ap->a_fcnp->cn_nameptr, ap->a_tdvp,
                        ap->a_tcnp->cn_nameptr, cr, ct, /*flags*/0);
 
+    if (!error) cache_purge_negatives(ap->a_tdvp);
+
 	return (error);
 }
-
 static int
 zfs_vnop_symlink(
 	struct vnop_symlink_args /* {
@@ -724,6 +765,7 @@ zfs_vnop_symlink(
 	error = zfs_symlink(ap->a_dvp, ap->a_vpp, ap->a_cnp->cn_nameptr,
                         ap->a_vap, ap->a_target, cr);
 
+    if (!error) cache_purge_negatives(ap->a_dvp);
 	/* XXX zfs_attach_vnode()? */
 
 	return (error);
@@ -1365,6 +1407,11 @@ zfs_vnop_reclaim(
 #ifndef __APPLE__
 	vnode_destroy_vobject(vp);
 #endif
+
+    /*
+     * Purge old data structures associated with the denode.
+     */
+    cache_purge(vp);
 
     vnode_clearfsnode(vp); /* vp->v_data = NULL */
     vnode_removefsref(vp); /* ADDREF from vnode_create */
@@ -2420,6 +2467,7 @@ zfs_vnop_readdirattr(
 }
 
 
+#ifdef WITH_SEARCHFS
 int
 zfs_vnop_searchfs(ap)
      struct vnop_searchfs_args *ap; /*
@@ -2444,7 +2492,7 @@ zfs_vnop_searchfs(ap)
     *(ap->a_nummatches) = 0;
     return ENOTSUP;
 }
-
+#endif
 
 
 /*
@@ -2505,7 +2553,9 @@ struct vnodeopv_entry_desc zfs_dvnodeops_template[] = {
 	{&vnop_removexattr_desc,(VOPFUNC)zfs_vnop_removexattr},
 	{&vnop_listxattr_desc,	(VOPFUNC)zfs_vnop_listxattr},
     {&vnop_readdirattr_desc, (VOPFUNC)zfs_vnop_readdirattr},
+#ifdef WITH_SEARCHFS
     {&vnop_searchfs_desc,    (VOPFUNC)zfs_vnop_searchfs},
+#endif
 	{NULL, (VOPFUNC)NULL }
 };
 struct vnodeopv_desc zfs_dvnodeop_opv_desc =
@@ -2549,7 +2599,9 @@ struct vnodeopv_entry_desc zfs_fvnodeops_template[] = {
 	{&vnop_makenamedstream_desc,	(VOPFUNC)zfs_vnop_makenamedstream},
 	{&vnop_removenamedstream_desc,	(VOPFUNC)zfs_vnop_removenamedstream},
 #endif
+#ifdef WITH_SEARCHFS
     {&vnop_searchfs_desc,    (VOPFUNC)zfs_vnop_searchfs},
+#endif
 	{NULL, (VOPFUNC)NULL }
 };
 struct vnodeopv_desc zfs_fvnodeop_opv_desc =

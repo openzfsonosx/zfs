@@ -2401,9 +2401,11 @@ arc_reclaim_needed(void)
         (btop(vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC)) >> 2))
         return (1);
 #endif
-#else   /* !sun */
 
-#ifdef _KERNEL
+#endif  /* sun */
+
+
+#ifdef __APPLE__
 
     if (spl_vm_pool_low()) return 1;
 
@@ -2411,9 +2413,9 @@ arc_reclaim_needed(void)
         return (1);
 #endif
 
-#endif  /* sun */
 
-#else
+
+#else /* _KERNEL */
     if (spa_get_random(100) == 0)
         return (1);
 #endif
