@@ -58,6 +58,8 @@ typedef uint64_t vfs_feature_t;
       VNODE_ATTR_va_type    |                   \
       VNODE_ATTR_va_encoding |                  \
       VNODE_ATTR_va_addedtime |                 \
+	  VNODE_ATTR_va_uuuid |                       \
+	  VNODE_ATTR_va_guuid |                       \
       0)
 
 /* For part 1 of zfs_getattr() */
@@ -264,12 +266,14 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
             VNODE_ATTR_va_total_alloc;
 	}
 
+#if 0
 	if (VATTR_IS_ACTIVE(vap, va_name)) {
         vap->va_name[0] = 0;
 		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
                              ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
 			VATTR_SET_SUPPORTED(vap, va_name);
 	}
+#endif
 
 	if (VATTR_IS_ACTIVE(vap, va_filerev)) {
         VATTR_RETURN(vap, va_filerev, 0);
@@ -290,6 +294,12 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         VATTR_RETURN(vap, va_addedtime, vap->va_ctime);
     }
 
+	if (VATTR_IS_ACTIVE(vap, va_uuuid)) {
+        kauth_cred_uid2guid(zp->z_uid, &vap->va_uuuid);
+    }
+	if (VATTR_IS_ACTIVE(vap, va_guuid)) {
+        kauth_cred_uid2guid(zp->z_gid, &vap->va_guuid);
+    }
 
 	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
 
