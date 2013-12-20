@@ -331,6 +331,7 @@ zfs_vnop_lookup(
 
     *ap->a_vpp = NULL;	/* In case we return an error */
 
+#if 1
 	error = cache_lookup(ap->a_dvp, ap->a_vpp, cnp);
 	if (error) {
 		/* We found a cache entry, positive or negative. */
@@ -338,7 +339,7 @@ zfs_vnop_lookup(
 			error = 0;		/* Yes.  Caller expects no error */
 		return error;
 	}
-
+#endif
 
     /*
      * Darwin uses namelen as an optimisation, for example it can be
@@ -363,6 +364,7 @@ zfs_vnop_lookup(
     if (filename)
         FREE(filename, M_TEMP);
 
+#if 1
     if (error == ENOENT) {
         if ((ap->a_cnp->cn_nameiop == CREATE || ap->a_cnp->cn_nameiop == RENAME) &&
             (cnp->cn_flags & ISLASTCN)) {
@@ -377,6 +379,7 @@ zfs_vnop_lookup(
 		if ((cnp->cn_flags & MAKEENTRY) && ap->a_cnp->cn_nameiop != CREATE)
 			cache_enter(ap->a_dvp, *ap->a_vpp, ap->a_cnp);
     } // ENOENT
+#endif
 
  exit:
 

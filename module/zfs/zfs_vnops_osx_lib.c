@@ -266,20 +266,18 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
             VNODE_ATTR_va_total_alloc;
 	}
 
-#if 0
-	if (VATTR_IS_ACTIVE(vap, va_name)) {
+	if (VATTR_IS_ACTIVE(vap, va_name) && !vnode_isvroot(vp)) {
         vap->va_name[0] = 0;
 		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
                              ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
 			VATTR_SET_SUPPORTED(vap, va_name);
 	}
-#endif
 
 	if (VATTR_IS_ACTIVE(vap, va_filerev)) {
         VATTR_RETURN(vap, va_filerev, 0);
     }
 	if (VATTR_IS_ACTIVE(vap, va_linkid)) {
-        VATTR_RETURN(vap, va_linkid, 0);
+        VATTR_RETURN(vap, va_linkid, vap->va_fileid);
     }
 	if (VATTR_IS_ACTIVE(vap, va_fsid)) {
         VATTR_RETURN(vap, va_fsid, vfs_statfs(zfsvfs->z_vfs)->f_fsid.val[0]);
@@ -293,7 +291,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	if (VATTR_IS_ACTIVE(vap, va_addedtime)) {
         VATTR_RETURN(vap, va_addedtime, vap->va_ctime);
     }
-
 	if (VATTR_IS_ACTIVE(vap, va_uuuid)) {
         kauth_cred_uid2guid(zp->z_uid, &vap->va_uuuid);
     }

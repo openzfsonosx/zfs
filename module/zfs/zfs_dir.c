@@ -481,6 +481,8 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
         znode_t                *zp;
         int                error;
 
+        printf("ZFS: unlinked drain\n");
+
         /*
          * Interate over the contents of the unlinked set.
          */
@@ -518,6 +520,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
                 VN_RELE(ZTOV(zp));
         }
         zap_cursor_fini(&zc);
+        printf("ZFS: unlinked drain completed.\n");
 }
 
 

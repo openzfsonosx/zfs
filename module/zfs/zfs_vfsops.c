@@ -125,7 +125,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		/* Interface capabilities we support: */
 		VOL_CAP_INT_ATTRLIST |
 		VOL_CAP_INT_NFSEXPORT |
-		VOL_CAP_INT_SEARCHFS |
+		//VOL_CAP_INT_SEARCHFS |
         /*	VOL_CAP_INT_READDIRATTR |*/
         /* As the readdirattr function has not been updated since maczfs,
          * it has been decided to disable this functionality, Darwin will
@@ -1215,7 +1215,7 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 		 * During replay we remove the read only flag to
 		 * allow replays to succeed.
 		 */
-#if 1
+#if 0
 		if (!vfs_isrdonly(zfsvfs->z_vfs))
 			zfs_unlinked_drain(zfsvfs);
 #endif
@@ -2023,7 +2023,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 
 
-        	//vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
+        vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
 		/* Indicate to VFS that we support ACLs. */
 		vfs_setextendedsecurity(vfsp);
 
