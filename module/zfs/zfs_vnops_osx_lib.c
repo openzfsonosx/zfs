@@ -217,8 +217,17 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	if (VATTR_IS_ACTIVE(vap, va_nchildren) && vnode_isdir(vp)) {
 		VATTR_RETURN(vap, va_nchildren, vap->va_nlink - 2);
     }
+
+	/*
+	 * va_dirlinkcount is the count of directory hard links. When a file
+	 * system does not support ATTR_DIR_LINKCOUNT, xnu will default to 1.
+	 * Since we claim to support ATTR_DIR_LINKCOUNT both as valid and as
+	 * native, we'll just return 1. We set 1 for this value in dirattrpack
+	 * as well. If in the future ZFS actually supports directory hard links,
+	 * we can return a real value.
+	 */
 	if (VATTR_IS_ACTIVE(vap, va_dirlinkcount) && vnode_isdir(vp)) {
-		VATTR_RETURN(vap, va_dirlinkcount, vap->va_nlink);
+		VATTR_RETURN(vap, va_dirlinkcount, 1);
     }
 
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
