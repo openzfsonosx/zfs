@@ -512,7 +512,7 @@ zfsctl_common_getattr(struct vnode *vp, vattr_t *vap)
     VATTR_SET_SUPPORTED(vap, va_flags);
 #endif
 
-    vap->va_dirlinkcount = 3;
+    vap->va_dirlinkcount = 1; //directory hard links.
     vap->va_nlink = 3;
 	vap->va_uid = 0;
 	vap->va_gid = 0;
