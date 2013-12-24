@@ -57,7 +57,6 @@ typedef uint64_t vfs_feature_t;
       VNODE_ATTR_va_filerev |                   \
       VNODE_ATTR_va_type    |                   \
       VNODE_ATTR_va_encoding |                  \
-      VNODE_ATTR_va_addedtime |                 \
 	  VNODE_ATTR_va_uuuid |                       \
 	  VNODE_ATTR_va_guuid |                       \
       0)
@@ -288,9 +287,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	if (VATTR_IS_ACTIVE(vap, va_encoding)) {
         VATTR_RETURN(vap, va_encoding, kTextEncodingMacUnicode);
     }
+#ifdef VNODE_ATTR_va_addedtime
 	if (VATTR_IS_ACTIVE(vap, va_addedtime)) {
         VATTR_RETURN(vap, va_addedtime, vap->va_ctime);
     }
+#endif
 	if (VATTR_IS_ACTIVE(vap, va_uuuid)) {
         kauth_cred_uid2guid(zp->z_uid, &vap->va_uuuid);
     }
