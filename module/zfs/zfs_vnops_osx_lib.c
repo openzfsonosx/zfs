@@ -274,11 +274,24 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
             VNODE_ATTR_va_total_alloc;
 	}
 
-	if (VATTR_IS_ACTIVE(vap, va_name) && !vnode_isvroot(vp)) {
+	if (VATTR_IS_ACTIVE(vap, va_name)) {
         vap->va_name[0] = 0;
-		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-                             ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
-			VATTR_SET_SUPPORTED(vap, va_name);
+
+        if (!vnode_isvroot(vp)) {
+            if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+                                 ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
+                VATTR_SET_SUPPORTED(vap, va_name);
+        } else {
+            /*
+             * The vroot objects must return a unique name for Finder to
+             * be able to distringuish between mounts. For this reason
+             * we simply return the fullname, from the statfs mountedfrom
+             */
+            strlcpy(vap->va_name,
+                    vfs_statfs(vnode_mount(vp))->f_mntfromname,
+                    MAXPATHLEN);
+            VATTR_SET_SUPPORTED(vap, va_name);
+        }
 	}
 
 	if (VATTR_IS_ACTIVE(vap, va_filerev)) {

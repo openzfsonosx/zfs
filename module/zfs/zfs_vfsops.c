@@ -50,6 +50,7 @@
 #include <sys/zfs_context.h>
 #include <sys/zfs_vfsops.h>
 #include <sys/sysctl.h>
+#include <libkern/crypto/md5.h>
 #endif /* __APPLE__ */
 
 #ifndef __APPLE__
@@ -2127,6 +2128,8 @@ out:
 	return (error);
 }
 
+
+
 int
 zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t context)
 {
@@ -2135,16 +2138,11 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 
     dprintf("vfs_getattr\n");
 
-#ifndef __APPLE__
-	statp->f_version = STATFS_VERSION;
-#endif
-
 	ZFS_ENTER(zfsvfs);
 
 	dmu_objset_space(zfsvfs->z_os,
 	    &refdbytes, &availbytes, &usedobjs, &availobjs);
 
-#ifdef __APPLE__
 	VFSATTR_RETURN(fsap, f_objcount, usedobjs);
 	VFSATTR_RETURN(fsap, f_maxobjcount, 0x7fffffffffffffff);
 	/*
@@ -2153,37 +2151,25 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	 */
 	VFSATTR_RETURN(fsap, f_filecount, usedobjs - (usedobjs / 4));
 	VFSATTR_RETURN(fsap, f_dircount, usedobjs / 4);
-#endif /* __APPLE__ */
 
 	/*
 	 * The underlying storage pool actually uses multiple block sizes.
 	 * We report the fragsize as the smallest block size we support,
 	 * and we report our blocksize as the filesystem's maximum blocksize.
 	 */
-#ifdef __APPLE__
 	VFSATTR_RETURN(fsap, f_bsize, 1UL << SPA_MINBLOCKSHIFT);
 	VFSATTR_RETURN(fsap, f_iosize, zfsvfs->z_max_blksz);
-#else
-	statp->f_bsize = SPA_MINBLOCKSIZE;
-	statp->f_iosize = zfsvfs->z_vfs->mnt_stat.f_iosize;
-#endif
 
 	/*
 	 * The following report "total" blocks of various kinds in the
 	 * file system, but reported in terms of f_frsize - the
 	 * "fragment" size.
 	 */
-#ifdef __APPLE__
 	VFSATTR_RETURN(fsap, f_blocks,
 	               (u_int64_t)((refdbytes + availbytes) >> SPA_MINBLOCKSHIFT));
 	VFSATTR_RETURN(fsap, f_bfree, (u_int64_t)(availbytes >> SPA_MINBLOCKSHIFT));
 	VFSATTR_RETURN(fsap, f_bavail, fsap->f_bfree);  /* no root reservation */
 	VFSATTR_RETURN(fsap, f_bused, fsap->f_blocks - fsap->f_bfree);
-#else
-	statp->f_blocks = (refdbytes + availbytes) >> SPA_MINBLOCKSHIFT;
-	statp->f_bfree = availbytes / statp->f_bsize;
-	statp->f_bavail = statp->f_bfree; /* no root reservation */
-#endif
 
 	/*
 	 * statvfs() should really be called statufs(), because it assumes
@@ -2193,13 +2179,8 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	 * For f_ffree, report the smaller of the number of object available
 	 * and the number of blocks (each object will take at least a block).
 	 */
-#ifdef __APPLE__
 	VFSATTR_RETURN(fsap, f_ffree, (u_int64_t)MIN(availobjs, fsap->f_bfree));
 	VFSATTR_RETURN(fsap, f_files,  fsap->f_ffree + usedobjs);
-
-#if 0
-	statp->f_flag = vf_to_stf(vfsp->vfs_flag);
-#endif
 
 	if (VFSATTR_IS_ACTIVE(fsap, f_fsid)) {
 		VFSATTR_RETURN(fsap, f_fsid, vfs_statfs(mp)->f_fsid);
@@ -2241,10 +2222,8 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		fsap->f_backup_time.tv_nsec = 0;
 		VFSATTR_SET_SUPPORTED(fsap, f_backup_time);
 	}
-	if (VFSATTR_IS_ACTIVE(fsap, f_vol_name)) {
-		spa_t *spa = dmu_objset_spa(zfsvfs->z_os);
-		spa_config_enter(spa, SCL_ALL, FTAG, RW_READER);
 
+	if (VFSATTR_IS_ACTIVE(fsap, f_vol_name)) {
 		/*
 		 * Finder volume name is set to the basename of the mountpoint path,
 		 * unless the mountpoint path is "/" or NULL, in which case we use
@@ -2252,19 +2231,12 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		 */
 		char *volname = strrchr(vfs_statfs(zfsvfs->z_vfs)->f_mntonname, '/');
 		if (volname && (*(&volname[1]) != '\0')) {
-			strlcpy(fsap->f_vol_name, &volname[1], MAXPATHLEN);
+            strlcpy(fsap->f_vol_name, &volname[1], MAXPATHLEN);
 		} else {
 			strlcpy(fsap->f_vol_name, vfs_statfs(zfsvfs->z_vfs)->f_mntfromname,
 				MAXPATHLEN);
 		}
 
-		/*
-		 * Old MacZFS way. Post OS X 10.6 would show pool name as the
-		 * volume name for all mounted datasets in Finder.
-		 */
-		//strlcpy(fsap->f_vol_name, spa_name(spa), MAXPATHLEN);
-
-		spa_config_exit(spa, SCL_ALL, FTAG);
 		VFSATTR_SET_SUPPORTED(fsap, f_vol_name);
 	}
 	VFSATTR_RETURN(fsap, f_fssubtype, 0);
@@ -2274,31 +2246,20 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
      * the following values need to be returned for it to be considered
      * by Apple's AFS.
      */
-
-	//VFSATTR_RETURN(fsap, f_signature, 0x5a21);  /* 'Z!' */
-	//VFSATTR_RETURN(fsap, f_carbon_fsid, 0);
 	VFSATTR_RETURN(fsap, f_signature, 18475);  /*  */
 	VFSATTR_RETURN(fsap, f_carbon_fsid, 0);
-
-
-#else /* OpenSolaris */
-	statp->f_ffree = MIN(availobjs, statp->f_bfree);
-	statp->f_files = statp->f_ffree + usedobjs;
-
-	/*
-	 * We're a zfs filesystem.
-	 */
-	(void) strlcpy(statp->f_fstypename, "zfs", sizeof(statp->f_fstypename));
-
-	strlcpy(statp->f_mntfromname, vfsp->mnt_stat.f_mntfromname,
-	    sizeof(statp->f_mntfromname));
-	strlcpy(statp->f_mntonname, vfsp->mnt_stat.f_mntonname,
-	    sizeof(statp->f_mntonname));
-
-	statp->f_namemax = ZFS_MAXNAMELEN;
-#endif
+    // Make up a UUID here, based on the name
+	if (VFSATTR_IS_ACTIVE(fsap, f_uuid)) {
+        MD5_CTX  md5c;
+        char *fromname = vfs_statfs(zfsvfs->z_vfs)->f_mntfromname;
+        MD5Init( &md5c );
+        MD5Update( &md5c, fromname, strlen(fromname));
+        MD5Final( fsap->f_uuid, &md5c );
+        VFSATTR_SET_SUPPORTED(fsap, f_uuid);
+    }
 
 	ZFS_EXIT(zfsvfs);
+
 	return (0);
 }
 

@@ -2487,6 +2487,32 @@ arc_reclaim_thread(void *dummy __unused)
     mutex_enter(&arc_reclaim_thr_lock);
     while (arc_thread_exit == 0) {
 
+#ifdef __APPLE__
+#ifdef _KERNEL
+        static uint64_t last_zfs_arc_max = 0;
+        // Detect changes of arc stats from sysctl
+        if (zfs_arc_max != last_zfs_arc_max) {
+            last_zfs_arc_max = zfs_arc_max;
+
+            /*
+             * Allow the tunables to override our calculations if they are
+             * reasonable (ie. over 64MB)
+             */
+            if (zfs_arc_max > 64<<20 && zfs_arc_max < physmem * PAGESIZE)
+                arc_c_max = zfs_arc_max;
+            //if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max)
+            //arc_c_min = zfs_arc_min;
+            arc_c = arc_c_max;
+            arc_p = (arc_c >> 1);
+
+            /* limit meta-data to 1/4 of the arc capacity */
+            arc_meta_limit = arc_c_max / 4;
+            arc_meta_max = 0;
+            printf("ARC: updating arc_max=%llx\n", arc_c_max);
+        }
+#endif
+#endif
+
         if (arc_reclaim_needed()) {
 
             if (arc_no_grow) {
@@ -4195,8 +4221,10 @@ arc_init(void)
 
     // 2GB system, ARC at about 82329600;
 
+#ifdef _KERNEL
     printf("ZFS: ARC limit set to (arc_c_max): %llu\n",
            arc_c_max);
+#endif
 
 	/*
 	 * Allow the tunables to override our calculations if they are
