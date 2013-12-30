@@ -96,6 +96,10 @@
 #include <sys/zpl.h>
 #include "zfs_comutil.h"
 
+#ifndef __APPLE_SECURITY_XATTR__
+#define __APPLE_SECURITY_XATTR__
+#endif
+
 //#define dprintf printf
 
 #ifdef __APPLE__
@@ -185,11 +189,14 @@ const vol_capabilities_attr_t zfs_capabilities = {
 
 
 
-
 /*
  * ZFS file system attributes (for getattrlist).
  */
+#ifdef __APPLE_SECURITY_XATTR__
+const attribute_set_t zfs_attributes_valid = {
+#else
 const attribute_set_t zfs_attributes = {
+#endif /* __APPLE_SECURITY_XATTR__ */
 		ATTR_CMN_NAME	|
 		ATTR_CMN_DEVID	|
 		ATTR_CMN_FSID	|
@@ -249,6 +256,67 @@ const attribute_set_t zfs_attributes = {
 		0
 };
 
+#ifdef __APPLE_SECURITY_XATTR__
+const attribute_set_t zfs_attributes_native = {
+                ATTR_CMN_NAME   |
+                ATTR_CMN_DEVID  |
+                ATTR_CMN_FSID   |
+                ATTR_CMN_OBJTYPE |
+                ATTR_CMN_OBJTAG |
+                ATTR_CMN_OBJID  |
+                ATTR_CMN_OBJPERMANENTID |
+                ATTR_CMN_PAROBJID |
+                ATTR_CMN_CRTIME |
+                ATTR_CMN_MODTIME |
+                ATTR_CMN_CHGTIME |
+                ATTR_CMN_ACCTIME |
+                ATTR_CMN_BKUPTIME |
+                ATTR_CMN_FNDRINFO |
+                ATTR_CMN_OWNERID |
+                ATTR_CMN_GRPID  |
+                ATTR_CMN_ACCESSMASK |
+                ATTR_CMN_FLAGS  |
+                ATTR_CMN_USERACCESS |
+                //ATTR_CMN_EXTENDED_SECURITY |
+                ATTR_CMN_UUID |
+                ATTR_CMN_GRPUUID ,
+
+                ATTR_VOL_FSTYPE |
+                ATTR_VOL_SIGNATURE |
+                ATTR_VOL_SIZE   |
+                ATTR_VOL_SPACEFREE |
+                ATTR_VOL_SPACEAVAIL |
+                ATTR_VOL_MINALLOCATION |
+                ATTR_VOL_ALLOCATIONCLUMP |
+                ATTR_VOL_IOBLOCKSIZE |
+                ATTR_VOL_OBJCOUNT |
+                ATTR_VOL_FILECOUNT |
+                ATTR_VOL_DIRCOUNT |
+                ATTR_VOL_MAXOBJCOUNT |
+                ATTR_VOL_MOUNTPOINT |
+                ATTR_VOL_NAME   |
+                ATTR_VOL_MOUNTFLAGS |
+                ATTR_VOL_MOUNTEDDEVICE |
+                ATTR_VOL_CAPABILITIES |
+                ATTR_VOL_ATTRIBUTES ,
+
+                ATTR_DIR_LINKCOUNT |
+                ATTR_DIR_ENTRYCOUNT |
+                ATTR_DIR_MOUNTSTATUS ,
+
+                ATTR_FILE_LINKCOUNT |
+                ATTR_FILE_TOTALSIZE |
+                ATTR_FILE_ALLOCSIZE |
+                /* ATTR_FILE_IOBLOCKSIZE */
+                ATTR_FILE_DEVTYPE |
+                ATTR_FILE_DATALENGTH |
+                ATTR_FILE_DATAALLOCSIZE |
+                ATTR_FILE_RSRCLENGTH |
+                ATTR_FILE_RSRCALLOCSIZE ,
+
+                0
+};
+#endif /* __APPLE_SECURITY_XATTR__ */
 
 /*
  * Mac OS X needs a file system modify time
@@ -2190,8 +2258,13 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		VFSATTR_SET_SUPPORTED(fsap, f_capabilities);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_attributes)) {
+#ifdef __APPLE_SECURITY_XATTR__
+		bcopy(&zfs_attributes_valid, &fsap->f_attributes.validattr, sizeof (zfs_attributes_valid));
+		bcopy(&zfs_attributes_native, &fsap->f_attributes.nativeattr, sizeof (zfs_attributes_native));
+#else
 		bcopy(&zfs_attributes, &fsap->f_attributes.validattr, sizeof (zfs_attributes));
 		bcopy(&zfs_attributes, &fsap->f_attributes.nativeattr, sizeof (zfs_attributes));
+#endif /* __APPLE_SECURITY_XATTR__ */
 		VFSATTR_SET_SUPPORTED(fsap, f_attributes);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_create_time)) {

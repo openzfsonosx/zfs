@@ -60,6 +60,10 @@
 #include <sys/callb.h>
 #include <sys/unistd.h>
 
+#ifndef __APPLE_SECURITY_XATTR__
+#define __APPLE_SECURITY_XATTR__
+#endif
+
 #ifdef _KERNEL
 #include <sys/sysctl.h>
 int debug_vnop_osx_printf = 0;
@@ -647,10 +651,13 @@ zfs_vnop_setattr(
      * We need to look up 'mode' in this case.
      */
 
+#ifndef __APPLE_SECURITY_XATTR__
     if ((VATTR_IS_ACTIVE(vap, va_flags) ||
          VATTR_IS_ACTIVE(vap, va_acl)) &&
         !VATTR_IS_ACTIVE(vap, va_mode)) {
-
+#else
+	if (VATTR_IS_ACTIVE(vap, va_flags)) {
+#endif /* !__APPLE_SECURITY_XATTR__ */
         znode_t *zp = VTOZ(ap->a_vp);
         uint64_t mode;
 
@@ -676,9 +683,11 @@ zfs_vnop_setattr(
 
     }
 
+#ifndef __APPLE_SECURITY_XATTR__
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
         mask |= AT_ACL;
     }
+#endif /* !__APPLE_SECURITY_XATTR__ */
 
     vap->va_mask = mask;
 	error = zfs_setattr(ap->a_vp, ap->a_vap, /*flag*/0, cr, ct);
@@ -693,8 +702,10 @@ zfs_vnop_setattr(
             VATTR_SET_SUPPORTED(vap, va_data_size);
         if (VATTR_IS_ACTIVE(vap, va_mode))
             VATTR_SET_SUPPORTED(vap, va_mode);
+#ifndef __APPLE_SECURITY_XATTR__
         if (VATTR_IS_ACTIVE(vap, va_acl))
             VATTR_SET_SUPPORTED(vap, va_acl);
+#endif /* !__APPLE_SECURITY_XATTR__ */
         if (VATTR_IS_ACTIVE(vap, va_uid))
             VATTR_SET_SUPPORTED(vap, va_uid);
         if (VATTR_IS_ACTIVE(vap, va_gid))

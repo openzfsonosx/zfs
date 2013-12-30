@@ -21,6 +21,10 @@
 #include <sys/xattr.h>
 #include <sys/utfconv.h>
 
+#ifndef __APPLE_SECURITY_XATTR__
+#define __APPLE_SECURITY_XATTR__
+#endif
+
 
 /* Originally from illumos:uts/common/sys/vfs.h */
 typedef uint64_t vfs_feature_t;
@@ -139,6 +143,7 @@ zfs_getattr_znode_locked(vattr_t *vap, znode_t *zp, cred_t *cr)
 	if (VATTR_IS_ACTIVE(vap, va_nchildren) && vnode_isdir(ZTOV(zp)))
 		VATTR_RETURN(vap, va_nchildren, vap->va_nlink - 2);
 
+#ifndef __APPLE_SECURITY_XATTR__
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
 
         if ((error = sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
@@ -158,6 +163,7 @@ zfs_getattr_znode_locked(vattr_t *vap, znode_t *zp, cred_t *cr)
 			VATTR_RETURN(vap, va_guuid, kauth_null_guid);
 		}
 	}
+#endif /* !__APPLE_SECURITY_XATTR__ */
 	return (0);
 }
 
@@ -229,6 +235,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		VATTR_RETURN(vap, va_dirlinkcount, 1);
     }
 
+#ifndef __APPLE_SECURITY_XATTR__
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
         //printf("want acl\n");
 #if 0
@@ -247,9 +254,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
 #endif
       //VATTR_SET_SUPPORTED(vap, va_acl);
+#endif /* !__APPLE_SECURITY_XATTR__ */
         VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
         VATTR_RETURN(vap, va_guuid, kauth_null_guid);
 
+#ifndef __APPLE_SECURITY_XATTR__
         dprintf("Calling getacl\n");
         if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
             dprintf("zfs_getacl returned error %d\n", error);
@@ -261,8 +270,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
             VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
             VATTR_RETURN(vap, va_guuid, kauth_null_guid);
         }
-
     }
+#endif /* !__APPLE_SECURITY_XATTR__ */
 
 	if (VATTR_IS_ACTIVE(vap, va_data_alloc) || VATTR_IS_ACTIVE(vap, va_total_alloc)) {
 		uint32_t  blksize;
@@ -1377,7 +1386,7 @@ void nfsacl_set_wellknown(int wkg, guid_t *guid)
     };
 }
 
-
+#ifndef __APPLE_SECURITY_XATTR__
 /*
  * Convert Darwin ACL list, into ZFS ACL "aces" list.
  */
@@ -1504,4 +1513,4 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
     }
 
 }
-
+#endif /* !__APPLE_SECURITY_XATTR__ */

@@ -82,6 +82,10 @@
 #include <sys/zfs_vfsops.h>
 #include <sys/vnode.h>
 
+#ifndef __APPLE_SECURITY_XATTR__
+#define __APPLE_SECURITY_XATTR__
+#endif
+
 //#define dprintf printf
 
 /*
@@ -2894,7 +2898,11 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	uint64_t mtime[2], ctime[2], crtime[2], rdev;
 	xvattr_t *xvap = (xvattr_t *)vap;	/* vap may be an xvattr_t * */
 	xoptattr_t *xoap = NULL;
+#ifndef __APPLE_SECURITY_XATTR__
 	boolean_t skipaclchk = /*(flags & ATTR_NOACLCHECK) ? B_TRUE :*/ B_FALSE;
+#else
+	boolean_t skipaclchk = B_TRUE;
+#endif /* !__APPLE_SECURITY_XATTR__ */
 	sa_bulk_attr_t bulk[4];
 	int count = 0;
 
@@ -2915,6 +2923,7 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 		return (error);
 	}
 
+#ifndef __APPLE_SECURITY_XATTR__
 	/*
 	 * If ACL is trivial don't bother looking for ACE_READ_ATTRIBUTES.
 	 * Also, if we are the owner don't bother, since owner should
@@ -2928,6 +2937,7 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 			return (error);
 		}
 	}
+#endif /* !__APPLE_SECURITY_XATTR__ */
 
 	/*
 	 * Return all attributes.  It's cheaper to provide the answer
@@ -3141,7 +3151,11 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	xvattr_t *xvap = (xvattr_t *)vap;	/* vap may be an xvattr_t * */
 	xoptattr_t	*xoap;
 	zfs_acl_t	*aclp;
+#ifndef __APPLE_SECURITY_XATTR__
 	boolean_t skipaclchk = /*(flags & ATTR_NOACLCHECK) ? B_TRUE :*/ B_FALSE;
+#else
+	boolean_t skipaclchk = B_TRUE;
+#endif /* !__APPLE_SECURITY_XATTR__ */
 	boolean_t	fuid_dirtied = B_FALSE;
 	sa_bulk_attr_t	bulk[7], xattr_bulk[7];
 	int		count = 0, xattr_count = 0;
@@ -3507,6 +3521,7 @@ top:
 	}
 	tx = dmu_tx_create(zfsvfs->z_os);
 
+#ifndef __APPLE_SECURITY_XATTR__
     /*
      * ACLs are currently not working, there appears to be two implementations
      * here, one is old MacZFS "zfs_setacl" and the other is ZFS (FBSD?)
@@ -3550,6 +3565,7 @@ top:
         }
         }
 
+#endif /* !__APPLE_SECURITY_XATTR__ */
 
 	if (mask & AT_MODE) {
 		uint64_t pmode = zp->z_mode;
