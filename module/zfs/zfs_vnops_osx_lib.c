@@ -24,6 +24,10 @@
 
 extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
 
+#ifndef __APPLE_SECURITY_XATTR__
+#define __APPLE_SECURITY_XATTR__
+#endif
+
 
 /* Originally from illumos:uts/common/sys/vfs.h */
 typedef uint64_t vfs_feature_t;
@@ -183,6 +187,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
+#ifndef __APPLE_SECURITY_XATTR__
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
         //printf("want acl\n");
         VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
@@ -201,6 +206,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         }
 
     }
+#endif /* !__APPLE_SECURITY_XATTR__ */
 
     mutex_enter(&zp->z_lock);
 
@@ -1584,7 +1590,7 @@ void nfsacl_set_wellknown(int wkg, guid_t *guid)
     };
 }
 
-
+#ifndef __APPLE_SECURITY_XATTR__
 /*
  * Convert Darwin ACL list, into ZFS ACL "aces" list.
  */
@@ -1717,6 +1723,7 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
     }
 
 }
+#endif /* !__APPLE_SECURITY_XATTR__ */
 
 void finderinfo_update(uint8_t *finderinfo, znode_t *zp)
 {

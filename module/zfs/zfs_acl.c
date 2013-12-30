@@ -53,6 +53,10 @@
 #include <sys/sa.h>
 //#include <acl/acl_common.h>
 
+#ifndef __APPLE_SECURITY_XATTR__
+#define __APPLE_SECURITY_XATTR__
+#endif
+
 #define	ALLOW	ACE_ACCESS_ALLOWED_ACE_TYPE
 #define	DENY	ACE_ACCESS_DENIED_ACE_TYPE
 #define	MAX_ACE_TYPE	ACE_SYSTEM_ALARM_CALLBACK_OBJECT_ACE_TYPE
@@ -1173,8 +1177,10 @@ zfs_acl_chown_setattr(znode_t *zp)
 
 	error = zfs_acl_node_read(zp, B_TRUE, &aclp, B_FALSE);
 	if (error == 0 && aclp->z_acl_count > 0)
+#ifndef __APPLE_SECURITY_XATTR__
 		zp->z_mode = zfs_mode_compute(zp->z_mode, aclp,
 		    &zp->z_pflags, zp->z_uid, zp->z_gid);
+#endif /* !__APPLE_SECURITY_XATTR__ */
 
 	/*
 	 * Some ZFS implementations (ZEVO) create neither a ZNODE_ACL
@@ -1209,12 +1215,14 @@ zfs_aclset_common(znode_t *zp, zfs_acl_t *aclp, cred_t *cr, dmu_tx_t *tx)
 	uint64_t		ctime[2];
 	int			count = 0;
 
+#ifndef __APPLE_SECURITY_XATTR__
 	mode = zp->z_mode;
 
 	mode = zfs_mode_compute(mode, aclp, &zp->z_pflags,
 	    zp->z_uid, zp->z_gid);
 
 	zp->z_mode = mode;
+#endif /* !__APPLE_SECURITY_XATTR__ */
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MODE(zfsvfs), NULL,
 	    &mode, sizeof (mode));
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
@@ -1760,9 +1768,11 @@ zfs_acl_ids_create(znode_t *dzp, int flag, vattr_t *vap, cred_t *cr,
 	}
 
 	if (inherited || vsecp) {
+#ifndef __APPLE_SECURITY_XATTR__
 		acl_ids->z_mode = zfs_mode_compute(acl_ids->z_mode,
 		    acl_ids->z_aclp, &acl_ids->z_aclp->z_hints,
 		    acl_ids->z_fuid, acl_ids->z_fgid);
+#endif /* !__APPLE_SECURITY_XATTR__ */
 		if (ace_trivial_common(acl_ids->z_aclp, 0, zfs_ace_walk) == 0)
 			acl_ids->z_aclp->z_hints |= ZFS_ACL_TRIVIAL;
 	}
