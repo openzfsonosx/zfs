@@ -293,6 +293,11 @@ zpool_refresh_stats(zpool_handle_t *zhp, boolean_t *missing)
 				zcmd_free_nvlists(&zc);
 				return (-1);
 			}
+		} else if (errno == EPERM) {
+			zcmd_free_nvlists(&zc);
+			return (zfs_standard_error(hdl, errno,
+			    dgettext(TEXT_DOMAIN, "failed to refresh "
+			    "pool stats")));
 		} else {
 			zcmd_free_nvlists(&zc);
 			if (errno == ENOENT || errno == EINVAL)
