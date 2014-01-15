@@ -485,6 +485,7 @@ spa_history_log_internal(spa_t *spa, const char *operation,
 
 	/* create a tx if we didn't get one */
 	if (tx == NULL) {
+        if (!spa_get_dsl(spa)) return;
 		htx = dmu_tx_create_dd(spa_get_dsl(spa)->dp_mos_dir);
 		if (dmu_tx_assign(htx, TXG_WAIT) != 0) {
 			dmu_tx_abort(htx);

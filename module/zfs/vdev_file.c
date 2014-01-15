@@ -161,9 +161,14 @@ skip_open:
 		return (error);
 	}
 
+#ifdef _KERNEL
 	*max_psize = *psize = vattr.va_size;
-
-
+#else
+    /* userland's vn_open() will get the device size for us, so we can
+     * just look it up - there is argument for a userland VOP_GETATTR to make
+     * this function cleaner. */
+	*max_psize = *psize = vp->v_size;
+#endif
     *ashift = SPA_MINBLOCKSHIFT;
     VN_RELE(vf->vf_vnode);
 
