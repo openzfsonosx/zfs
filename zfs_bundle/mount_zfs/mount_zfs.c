@@ -425,6 +425,11 @@ mount_zfs_import(const char *devpath, const char *mountpoint)
 	pools = zpool_search_import(g_zfs, &idata);
 	syslog(LOG_NOTICE, "pools %p", pools);
 
+	if (pools == NULL) {
+		syslog(LOG_NOTICE, "pool already imported or not available");
+		goto out;
+	}
+
 	elem = NULL;
 	elem = nvlist_next_nvpair(pools, elem);
 	verify(nvpair_value_nvlist(elem, &config) == 0);
