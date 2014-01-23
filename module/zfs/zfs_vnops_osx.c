@@ -331,7 +331,7 @@ zfs_vnop_lookup(
 
     *ap->a_vpp = NULL;	/* In case we return an error */
 
-#if 1
+#if 0
 	error = cache_lookup(ap->a_dvp, ap->a_vpp, cnp);
 	if (error) {
 		/* We found a cache entry, positive or negative. */
@@ -364,7 +364,7 @@ zfs_vnop_lookup(
     if (filename)
         FREE(filename, M_TEMP);
 
-#if 1
+#if 0
     if (error == ENOENT) {
         if ((ap->a_cnp->cn_nameiop == CREATE || ap->a_cnp->cn_nameiop == RENAME) &&
             (cnp->cn_flags & ISLASTCN)) {
