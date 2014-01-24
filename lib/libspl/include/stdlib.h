@@ -27,7 +27,7 @@
 #include_next <stdlib.h>
 
 #ifndef _LIBSPL_STDLIB_H
-#define _LIBSPL_STDLIB_H
+#define	_LIBSPL_STDLIB_H
 
 #define	getexecname getprogname
 

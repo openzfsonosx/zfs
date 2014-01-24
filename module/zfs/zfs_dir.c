@@ -155,7 +155,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 	if ((name[0] == '.' &&
          ((name[1] == '\0') || (name[1] == '.' && name[2] == '\0'))) ||
 	    (zfs_has_ctldir(dzp) && (strcmp(name, ZFS_CTLDIR_NAME) == 0)))
-		return ((EEXIST));
+		return (SET_ERROR(EEXIST));
 
 	/*
 	 * Case sensitivity and normalization preferences are set when
@@ -226,7 +226,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 			mutex_exit(&dzp->z_lock);
 			if (!(flag & ZHAVELOCK))
 				rw_exit(&dzp->z_name_lock);
-			return ((ENOENT));
+			return (SET_ERROR(ENOENT));
 		}
 		for (dl = dzp->z_dirlocks; dl != NULL; dl = dl->dl_next) {
 			if ((u8_strcmp(name, dl->dl_name, 0, cmpflags,
@@ -237,7 +237,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 			mutex_exit(&dzp->z_lock);
 			if (!(flag & ZHAVELOCK))
 				rw_exit(&dzp->z_name_lock);
-			return ((ENOENT));
+			return (SET_ERROR(ENOENT));
 		}
 		if (dl == NULL)	{
 			size_t namesize;
@@ -284,18 +284,18 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 		error = sa_lookup(dzp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs), &zoid,
 		    sizeof (zoid));
 		if (error == 0)
-			error = (zoid == 0 ? ENOENT : 0);
+			error = (zoid == 0 ? SET_ERROR(ENOENT) : 0);
 	} else {
 		if (update)
 			vp = dnlc_lookup(ZTOV(dzp), name);
 		if (vp == DNLC_NO_VNODE) {
 			VN_RELE(vp);
-			error = (ENOENT);
+			error = SET_ERROR(ENOENT);
 		} else if (vp) {
 			if (flag & ZNEW) {
 				zfs_dirent_unlock(dl);
 				VN_RELE(vp);
-				return ((EEXIST));
+				return (SET_ERROR(EEXIST));
 			}
 			*dlpp = dl;
 			*zpp = VTOZ(vp);
@@ -313,7 +313,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 	} else {
 		if (flag & ZNEW) {
 			zfs_dirent_unlock(dl);
-			return ((EEXIST));
+			return (SET_ERROR(EEXIST));
 		}
 		error = zfs_zget(zfsvfs, zoid, zpp);
 
@@ -738,7 +738,7 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 		if (zp->z_unlinked) {	/* no new links to unlinked zp */
 			ASSERT(!(flag & (ZNEW | ZEXISTS)));
 			mutex_exit(&zp->z_lock);
-			return ((ENOENT));
+			return (SET_ERROR(ENOENT));
 		}
 		zp->z_links++;
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_LINKS(zfsvfs), NULL,
@@ -851,11 +851,7 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 		if (zp_is_dir && !zfs_dirempty(zp)) {
 			mutex_exit(&zp->z_lock);
 			vn_vfsunlock(vp);
-#ifdef illumos
-			return ((EEXIST));
-#else
-			return ((ENOTEMPTY));
-#endif
+			return (SET_ERROR(ENOTEMPTY));
 		}
 
 		/*
@@ -968,10 +964,9 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 		return (error);
 	if (zfs_acl_ids_overquota(zfsvfs, &acl_ids)) {
 		zfs_acl_ids_free(&acl_ids);
-		return ((EDQUOT));
+		return (SET_ERROR(EDQUOT));
 	}
 
-top:
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_sa_create(tx, acl_ids.z_aclp->z_acl_bytes +
 	    ZFS_SA_BASE_ATTR_SIZE);
@@ -980,13 +975,8 @@ top:
 	fuid_dirtied = zfsvfs->z_fuid_dirty;
 	if (fuid_dirtied)
 		zfs_fuid_txhold(zfsvfs, tx);
-	error = dmu_tx_assign(tx, TXG_NOWAIT);
+	error = dmu_tx_assign(tx, TXG_WAIT);
 	if (error) {
-		if (error == ERESTART) {
-			dmu_tx_wait(tx);
-			dmu_tx_abort(tx);
-			goto top;
-		}
 		zfs_acl_ids_free(&acl_ids);
 		dmu_tx_abort(tx);
 		return (error);
@@ -1051,16 +1041,16 @@ top:
 
 	if (!(flags & CREATE_XATTR_DIR)) {
 		zfs_dirent_unlock(dl);
-#ifdef illumos
-		return ((ENOENT));
+#ifdef __APPLE__
+		return (SET_ERROR(ENOATTR));
 #else
-		return ((ENOATTR));
+		return (SET_ERROR(ENOENT));
 #endif
 	}
 
 	if (vfs_isrdonly(zfsvfs->z_vfs)) {
 		zfs_dirent_unlock(dl);
-		return ((EROFS));
+		return (SET_ERROR(EROFS));
 	}
 
 	/*

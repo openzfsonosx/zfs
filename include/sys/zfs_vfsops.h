@@ -108,7 +108,7 @@ struct zfsvfs {
  * this the inode->i_nlink member is defined as an unsigned int.  To be
  * safe we use 2^31-1 as the limit.
  */
-#define ZFS_LINK_MAX		((1U << 31) - 1U)
+#define	ZFS_LINK_MAX		((1U << 31) - 1U)
 
 /*
  * Normal filesystems (those not under .zfs/snapshot) have a total

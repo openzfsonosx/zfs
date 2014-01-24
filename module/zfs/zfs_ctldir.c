@@ -22,6 +22,16 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 Pawel Jakub Dawidek <pawel@dawidek.net>.
  * All rights reserved.
+ * Copyright (C) 2011 Lawrence Livermore National Security, LLC.
+ * Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
+ * LLNL-CODE-403049.
+ * Rewritten for Linux by:
+ *   Rohan Puri <rohan.puri15@gmail.com>
+ *   Brian Behlendorf <behlendorf1@llnl.gov>
+ * Copyright (c) 2013 by Delphix. All rights reserved.
+ *
+ * Rewritten for OSX by (based on FreeBSD)
+ *   Jorgen Lundman <lundman@lundman.net>
  */
 
 /*
@@ -619,6 +629,11 @@ zfsctl_shares_fid(ap)
 }
 #endif
 
+/*
+ * Gets the full dataset name that corresponds to the given snapshot name
+ * Example:
+ * 	zfsctl_snapshot_zname("snap1") -> "mypool/myfs@snap1"
+ */
 static int
 zfsctl_common_reclaim(ap)
 	struct vnop_reclaim_args /* {
@@ -664,18 +679,6 @@ zfsctl_common_reclaim(ap)
     dprintf("zfsctl: -reclaim vp %p\n", vp);
 	return (0);
 }
-
-/*
- * .zfs inode namespace
- *
- * We need to generate unique inode numbers for all files and directories
- * within the .zfs pseudo-filesystem.  We use the following scheme:
- *
- * 	ENTRY			ZFSCTL_INODE
- * 	.zfs			1
- * 	.zfs/snapshot		2
- * 	.zfs/snapshot/<snap>	objectid(snap)
- */
 
 #define	ZFSCTL_INO_SNAP(id)	(id)
 
@@ -1046,7 +1049,17 @@ zfsctl_snapdir_rename(struct vnode *sdvp, char *snm, struct vnode *tdvp, char *t
 	 * Cannot move snapshots out of the snapdir.
 	 */
 	if (sdvp != tdvp)
-		return (EINVAL);
+		error = SET_ERROR(EINVAL);
+		goto out;
+	}
+
+	/*
+	 * No-op when names are identical.
+	 */
+	if (strcmp(snm, tnm) == 0) {
+		error = 0;
+		goto out;
+	}
 
 	if (strcmp(snm, tnm) == 0)
 		return (0);
@@ -1147,7 +1160,9 @@ zfsctl_snapdir_mkdir(struct vnode *dvp, char *dirname, vattr_t *vap, struct vnod
     return ENOTSUP;
 
 	if (snapshot_namecheck(dirname, NULL, NULL) != 0)
-		return (EILSEQ);
+		error = SET_ERROR(EILSEQ);
+		goto out;
+	}
 
 	dmu_objset_name(zfsvfs->z_os, name);
 

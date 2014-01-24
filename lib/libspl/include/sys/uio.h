@@ -49,15 +49,15 @@ typedef struct iovec iovec_t;
 
 #if 0
 typedef enum uio_rw {
-	UIO_READ =      0,
-	UIO_WRITE =     1,
+	UIO_READ =	0,
+	UIO_WRITE =	1,
 } uio_rw_t;
 #endif
 
 typedef enum uio_seg {
-	UIO_USERSPACE = 0,
-	UIO_SYSSPACE =  1,
-	UIO_USERISPACE= 2,
+	UIO_USERSPACE =	0,
+	UIO_SYSSPACE =	1,
+	UIO_USERISPACE = 2,
 } uio_seg_t;
 
 
@@ -110,7 +110,7 @@ typedef struct xuio {
 	} xu_ext;
 } xuio_t;
 
-#define XUIO_XUZC_PRIV(xuio)	xuio->xu_ext.xu_zc.xu_zc_priv
-#define XUIO_XUZC_RW(xuio)	xuio->xu_ext.xu_zc.xu_zc_rw
+#define	XUIO_XUZC_PRIV(xuio)	xuio->xu_ext.xu_zc.xu_zc_priv
+#define	XUIO_XUZC_RW(xuio)	xuio->xu_ext.xu_zc.xu_zc_rw
 
 #endif	/* _SYS_UIO_H */

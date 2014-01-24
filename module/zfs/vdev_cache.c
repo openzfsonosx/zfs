@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2013 by Delphix. All rights reserved.
+ */
 
 #include <sys/zfs_context.h>
 #include <sys/spa.h>
@@ -253,36 +256,36 @@ vdev_cache_read(zio_t *zio)
 	vdev_cache_t *vc = &zio->io_vd->vdev_cache;
 	vdev_cache_entry_t *ve, *ve_search;
 	uint64_t cache_offset = P2ALIGN(zio->io_offset, VCBS);
-	ASSERTV(uint64_t cache_phase = P2PHASE(zio->io_offset, VCBS);)
 	zio_t *fio;
+	ASSERTV(uint64_t cache_phase = P2PHASE(zio->io_offset, VCBS));
 
 	ASSERT(zio->io_type == ZIO_TYPE_READ);
 
 	if (zio->io_flags & ZIO_FLAG_DONT_CACHE)
-		return (EINVAL);
+		return (SET_ERROR(EINVAL));
 
 	if (zio->io_size > zfs_vdev_cache_max)
-		return (EOVERFLOW);
+		return (SET_ERROR(EOVERFLOW));
 
 	/*
 	 * If the I/O straddles two or more cache blocks, don't cache it.
 	 */
 	if (P2BOUNDARY(zio->io_offset, zio->io_size, VCBS))
-		return (EXDEV);
+		return (SET_ERROR(EXDEV));
 
 	ASSERT(cache_phase + zio->io_size <= VCBS);
 
 	mutex_enter(&vc->vc_lock);
 
-	ve_search = kmem_alloc(sizeof(vdev_cache_entry_t), KM_PUSHPAGE);
+	ve_search = kmem_alloc(sizeof (vdev_cache_entry_t), KM_PUSHPAGE);
 	ve_search->ve_offset = cache_offset;
 	ve = avl_find(&vc->vc_offset_tree, ve_search, NULL);
-	kmem_free(ve_search, sizeof(vdev_cache_entry_t));
+	kmem_free(ve_search, sizeof (vdev_cache_entry_t));
 
 	if (ve != NULL) {
 		if (ve->ve_missed_update) {
 			mutex_exit(&vc->vc_lock);
-			return (ESTALE);
+			return (SET_ERROR(ESTALE));
 		}
 
 		if ((fio = ve->ve_fill_io) != NULL) {
@@ -305,11 +308,11 @@ vdev_cache_read(zio_t *zio)
 
 	if (ve == NULL) {
 		mutex_exit(&vc->vc_lock);
-		return (ENOMEM);
+		return (SET_ERROR(ENOMEM));
 	}
 
 	fio = zio_vdev_delegated_io(zio->io_vd, cache_offset,
-	    ve->ve_data, VCBS, ZIO_TYPE_READ, ZIO_PRIORITY_CACHE_FILL,
+	    ve->ve_data, VCBS, ZIO_TYPE_READ, ZIO_PRIORITY_NOW,
 	    ZIO_FLAG_DONT_CACHE, vdev_cache_fill, ve);
 
 	ve->ve_fill_io = fio;

@@ -216,9 +216,8 @@ zfs_log_fuid_domains(zfs_fuid_info_t *fuidp, void *start)
 }
 
 /*
- * zfs_log_create() is used to handle TX_CREATE, TX_CREATE_ATTR, TX_MKDIR,
- * TX_MKDIR_ATTR and TX_MKXATTR
- * transactions.
+ * Handles TX_CREATE, TX_CREATE_ATTR, TX_MKDIR, TX_MKDIR_ATTR and
+ * TK_MKXATTR transactions.
  *
  * TX_CREATE and TX_MKDIR are standard creates, but they may have FUID
  * domain information appended prior to the name.  In this case the
@@ -243,7 +242,11 @@ zfs_log_create(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 	itx_t *itx;
 	lr_create_t *lr;
 	lr_acl_create_t *lracl;
+<<<<<<< HEAD
 	size_t aclsize = (vsecp != NULL) ? vsecp->vsa_aclentsz : 0;
+=======
+	size_t aclsize = 0;
+>>>>>>> upstream/master
 	size_t xvatsize = 0;
 	size_t txsize;
 	xvattr_t *xvap = (xvattr_t *)vap;
@@ -345,7 +348,7 @@ zfs_log_create(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 }
 
 /*
- * zfs_log_remove() handles both TX_REMOVE and TX_RMDIR transactions.
+ * Handles both TX_REMOVE and TX_RMDIR transactions.
  */
 void
 zfs_log_remove(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
@@ -369,7 +372,7 @@ zfs_log_remove(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 }
 
 /*
- * zfs_log_link() handles TX_LINK transactions.
+ * Handles TX_LINK transactions.
  */
 void
 zfs_log_link(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
@@ -392,7 +395,7 @@ zfs_log_link(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 }
 
 /*
- * zfs_log_symlink() handles TX_SYMLINK transactions.
+ * Handles TX_SYMLINK transactions.
  */
 void
 zfs_log_symlink(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
@@ -424,7 +427,7 @@ zfs_log_symlink(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 }
 
 /*
- * zfs_log_rename() handles TX_RENAME transactions.
+ * Handles TX_RENAME transactions.
  */
 void
 zfs_log_rename(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
@@ -450,21 +453,32 @@ zfs_log_rename(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 }
 
 /*
- * zfs_log_write() handles TX_WRITE transactions.
+ * zfs_log_write() handles TX_WRITE transactions. The specified callback is
+ * called as soon as the write is on stable storage (be it via a DMU sync or a
+ * ZIL commit).
  */
 ssize_t zfs_immediate_write_sz = 32768;
 
 void
+<<<<<<< HEAD
 zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 	znode_t *zp, offset_t off, ssize_t resid, int ioflag)
+=======
+zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
+	znode_t *zp, offset_t off, ssize_t resid, int ioflag,
+	zil_callback_t callback, void *callback_data)
+>>>>>>> upstream/master
 {
 	itx_wr_state_t write_state;
 	boolean_t slogging;
 	uintptr_t fsync_cnt;
 	ssize_t immediate_write_sz;
 
-	if (zil_replaying(zilog, tx) || zp->z_unlinked)
+	if (zil_replaying(zilog, tx) || zp->z_unlinked) {
+		if (callback != NULL)
+			callback(callback_data);
 		return;
+	}
 
 	immediate_write_sz = (zilog->zl_logbias == ZFS_LOGBIAS_THROUGHPUT)
 	    ? 0 : zfs_immediate_write_sz;
@@ -521,6 +535,8 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 		    (fsync_cnt == 0))
 			itx->itx_sync = B_FALSE;
 
+		itx->itx_callback = callback;
+		itx->itx_callback_data = callback_data;
 		zil_itx_assign(zilog, itx, tx);
 
 		off += len;
@@ -529,7 +545,7 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 }
 
 /*
- * zfs_log_truncate() handles TX_TRUNCATE transactions.
+ * Handles TX_TRUNCATE transactions.
  */
 void
 zfs_log_truncate(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
@@ -552,7 +568,7 @@ zfs_log_truncate(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 }
 
 /*
- * zfs_log_setattr() handles TX_SETATTR transactions.
+ * Handles TX_SETATTR transactions.
  */
 void
 zfs_log_setattr(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
@@ -614,7 +630,7 @@ zfs_log_setattr(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 }
 
 /*
- * zfs_log_acl() handles TX_ACL transactions.
+ * Handles TX_ACL transactions.
  */
 void
 zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, znode_t *zp,

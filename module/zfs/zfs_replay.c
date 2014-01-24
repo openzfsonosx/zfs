@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 Cyril Plisko. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -73,7 +74,7 @@ zfs_init_vattr(vattr_t *vap, uint64_t mask, uint64_t mode,
 static int
 zfs_replay_error(zfsvfs_t *zsb, lr_t *lr, boolean_t byteswap)
 {
-	return (ENOTSUP);
+	return (SET_ERROR(ENOTSUP));
 }
 
 static void
@@ -387,7 +388,7 @@ zfs_replay_create_acl(zfsvfs_t *zsb, lr_acl_create_t *lracl, boolean_t byteswap)
                           &ip, kcred, NULL, vflg, &vsec);
 		break;
 	default:
-		error = ENOTSUP;
+		error = SET_ERROR(ENOTSUP);
 	}
 
 bail:
@@ -513,7 +514,7 @@ zfs_replay_create(zfsvfs_t *zsb, lr_create_t *lr, boolean_t byteswap)
 		    link, kcred);
 		break;
 	default:
-		error = ENOTSUP;
+		error = SET_ERROR(ENOTSUP);
 	}
 
 out:
@@ -553,7 +554,7 @@ zfs_replay_remove(zfsvfs_t *zsb, lr_remove_t *lr, boolean_t byteswap)
 		error = zfs_rmdir(ZTOV(dzp), name, NULL, kcred, NULL, vflg);
 		break;
 	default:
-		error = ENOTSUP;
+		error = SET_ERROR(ENOTSUP);
 	}
 
 	vnode_put(ZTOV(dzp));

@@ -23,6 +23,11 @@
  * Use is subject to license terms.
  * Portions Copyright 2007 Apple Inc. All rights reserved.
  * Use is subject to license terms.
+ * Copyright (C) 2008-2010 Lawrence Livermore National Security, LLC.
+ * Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
+ * Rewritten for Linux by Brian Behlendorf <behlendorf1@llnl.gov>.
+ * LLNL-CODE-403049.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -261,7 +266,7 @@ vdev_disk_io_start(zio_t *zio)
 				break;
 
 			if (vd->vdev_nowritecache) {
-				zio->io_error = ENOTSUP;
+				zio->io_error = SET_ERROR(ENOTSUP);
 				break;
 			}
 
@@ -296,7 +301,7 @@ vdev_disk_io_start(zio_t *zio)
 			break;
 
 		default:
-			zio->io_error = ENOTSUP;
+			zio->io_error = SET_ERROR(ENOTSUP);
 		}
 
 		//zio_next_stage_async(zio);

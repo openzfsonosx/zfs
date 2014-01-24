@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -180,8 +180,8 @@ feature_is_supported(objset_t *os, uint64_t obj, uint64_t desc_obj,
 	zap_attribute_t *za;
 	char *buf;
 
-	zc = kmem_alloc(sizeof(zap_cursor_t), KM_SLEEP);
-	za = kmem_alloc(sizeof(zap_attribute_t), KM_SLEEP);
+	zc = kmem_alloc(sizeof (zap_cursor_t), KM_SLEEP);
+	za = kmem_alloc(sizeof (zap_attribute_t), KM_SLEEP);
 	buf = kmem_alloc(MAXPATHLEN, KM_SLEEP);
 
 	supported = B_TRUE;
@@ -215,8 +215,8 @@ feature_is_supported(objset_t *os, uint64_t obj, uint64_t desc_obj,
 	zap_cursor_fini(zc);
 
 	kmem_free(buf, MAXPATHLEN);
-	kmem_free(za, sizeof(zap_attribute_t));
-	kmem_free(zc, sizeof(zap_cursor_t));
+	kmem_free(za, sizeof (zap_attribute_t));
+	kmem_free(zc, sizeof (zap_cursor_t));
 
 	return (supported);
 }
@@ -234,13 +234,13 @@ feature_get_refcount(objset_t *os, uint64_t read_obj, uint64_t write_obj,
 	 * have been allocated yet.  Act as though all features are disabled.
 	 */
 	if (zapobj == 0)
-		return (ENOTSUP);
+		return (SET_ERROR(ENOTSUP));
 
 	err = zap_lookup(os, zapobj, feature->fi_guid, sizeof (uint64_t), 1,
 	    &refcount);
 	if (err != 0) {
 		if (err == ENOENT)
-			return (ENOTSUP);
+			return (SET_ERROR(ENOTSUP));
 		else
 			return (err);
 	}
@@ -281,16 +281,16 @@ feature_do_action(objset_t *os, uint64_t read_obj, uint64_t write_obj,
 		break;
 	case FEATURE_ACTION_INCR:
 		if (error == ENOENT)
-			return (ENOTSUP);
+			return (SET_ERROR(ENOTSUP));
 		if (refcount == UINT64_MAX)
-			return (EOVERFLOW);
+			return (SET_ERROR(EOVERFLOW));
 		refcount++;
 		break;
 	case FEATURE_ACTION_DECR:
 		if (error == ENOENT)
-			return (ENOTSUP);
+			return (SET_ERROR(ENOTSUP));
 		if (refcount == 0)
-			return (EOVERFLOW);
+			return (SET_ERROR(EOVERFLOW));
 		refcount--;
 		break;
 	default:

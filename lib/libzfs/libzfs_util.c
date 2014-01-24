@@ -685,12 +685,12 @@ libzfs_run_process(const char *path, char *argv[], int flags)
 		while ((rc = waitpid(pid, &status, 0)) == -1 &&
 			errno == EINTR);
 		if (rc < 0 || !WIFEXITED(status))
-			return -1;
+			return (-1);
 
-		return WEXITSTATUS(status);
+		return (WEXITSTATUS(status));
 	}
 
-	return -1;
+	return (-1);
 }
 
 int
@@ -734,7 +734,7 @@ libzfs_init(void)
 
 	if ((hdl->libzfs_fd = open(ZFS_DEV, O_RDWR)) < 0) {
 		(void) fprintf(stderr, gettext("Unable to open %s: %s.\n"),
-			       ZFS_DEV, strerror(errno));
+		    ZFS_DEV, strerror(errno));
 		if (errno == ENOENT)
 			(void) fprintf(stderr,
 			     gettext("Verify the ZFS module stack is "
@@ -981,7 +981,7 @@ zfs_strcmp_shortname(char *name, char *cmp_name, int wholedisk)
 		if (wholedisk)
 			path_len = zfs_append_partition(path_name, MAXPATHLEN);
 
-		if ((path_len == cmp_len) && !strcmp(path_name, cmp_name)) {
+		if ((path_len == cmp_len) && strcmp(path_name, cmp_name) == 0) {
 			error = 0;
 			break;
 		}
@@ -1023,7 +1023,7 @@ zfs_strcmp_pathname(char *name, char *cmp, int wholedisk)
 	}
 
 	if (name[0] != '/')
-		return zfs_strcmp_shortname(name, cmp_name, wholedisk);
+		return (zfs_strcmp_shortname(name, cmp_name, wholedisk));
 
 	strlcpy(path_name, name, MAXPATHLEN);
 	path_len = strlen(path_name);
@@ -1414,10 +1414,10 @@ str2shift(libzfs_handle_t *hdl, const char *buf)
 	 */
 	if (buf[1] == '\0' ||
 	    (toupper(buf[0]) != 'B' &&
-	     ((toupper(buf[1]) == 'B' && buf[2] == '\0') ||
-	      (toupper(buf[1]) == 'I' && toupper(buf[2]) == 'B' &&
-	       buf[3] == '\0'))))
-		return (10*i);
+	    ((toupper(buf[1]) == 'B' && buf[2] == '\0') ||
+	    (toupper(buf[1]) == 'I' && toupper(buf[2]) == 'B' &&
+	    buf[3] == '\0'))))
+		return (10 * i);
 
 	if (hdl)
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,

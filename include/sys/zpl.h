@@ -74,6 +74,36 @@ extern struct file_system_type zpl_fs_type;
 extern ssize_t zpl_xattr_list(struct dentry *dentry, char *buf, size_t size);
 extern int zpl_xattr_security_init(struct inode *ip, struct inode *dip,
     const struct qstr *qstr);
+#if defined(CONFIG_FS_POSIX_ACL)
+extern int zpl_set_acl(struct inode *ip, int type, struct posix_acl *acl);
+extern struct posix_acl *zpl_get_acl(struct inode *ip, int type);
+#if !defined(HAVE_GET_ACL)
+#if defined(HAVE_CHECK_ACL_WITH_FLAGS)
+extern int zpl_check_acl(struct inode *inode, int mask, unsigned int flags);
+#elif defined(HAVE_CHECK_ACL)
+extern int zpl_check_acl(struct inode *inode, int mask);
+#elif defined(HAVE_PERMISSION_WITH_NAMEIDATA)
+extern int zpl_permission(struct inode *ip, int mask, struct nameidata *nd);
+#elif defined(HAVE_PERMISSION)
+extern int zpl_permission(struct inode *ip, int mask);
+#endif /*  HAVE_CHECK_ACL | HAVE_PERMISSION */
+#endif /* HAVE_GET_ACL */
+
+extern int zpl_init_acl(struct inode *ip, struct inode *dir);
+extern int zpl_chmod_acl(struct inode *ip);
+#else
+static inline int
+zpl_init_acl(struct inode *ip, struct inode *dir)
+{
+	return (0);
+}
+
+static inline int
+zpl_chmod_acl(struct inode *ip)
+{
+	return (0);
+}
+#endif /* CONFIG_FS_POSIX_ACL */
 
 //extern xattr_handler_t *zpl_xattr_handlers[];
 
@@ -94,7 +124,7 @@ extern const struct inode_operations zpl_ops_shares;
 
 #ifdef HAVE_VFS_ITERATE
 
-#define DIR_CONTEXT_INIT(_dirent, _actor, _pos) {	\
+#define	DIR_CONTEXT_INIT(_dirent, _actor, _pos) {	\
 	.actor = _actor,				\
 	.pos = _pos,					\
 }
@@ -108,7 +138,7 @@ typedef struct dir_context {
 	loff_t pos;
 } dir_context_t;
 
-#define DIR_CONTEXT_INIT(_dirent, _actor, _pos) {	\
+#define	DIR_CONTEXT_INIT(_dirent, _actor, _pos) {	\
 	.dirent = _dirent,				\
 	.actor = _actor,				\
 	.pos = _pos,					\
@@ -118,7 +148,8 @@ static inline boolean_t
 dir_emit(struct dir_context *ctx, const char *name, int namelen,
     uint64_t ino, unsigned type)
 {
-	return ctx->actor(ctx->dirent, name, namelen, ctx->pos, ino, type) == 0;
+	return (ctx->actor(ctx->dirent, name, namelen, ctx->pos, ino, type)
+		== 0);
 }
 
 static inline boolean_t
@@ -148,15 +179,15 @@ dir_emit_dots(struct file *file, struct dir_context *ctx)
 {
 	if (ctx->pos == 0) {
 		if (!dir_emit_dot(file, ctx))
-			return B_FALSE;
+			return (false);
 		ctx->pos = 1;
 	}
 	if (ctx->pos == 1) {
 		if (!dir_emit_dotdot(file, ctx))
-			return B_FALSE;
+			return (false);
 		ctx->pos = 2;
 	}
-	return B_TRUE;
+	return (true);
 }
 #endif /* HAVE_VFS_ITERATE */
 

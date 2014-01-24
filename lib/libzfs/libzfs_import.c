@@ -168,7 +168,7 @@ fix_paths(nvlist_t *nv, name_entry_t *names)
 			}
 
 			if ((strlen(path) == strlen(ne->ne_name)) &&
-			    !strncmp(path, ne->ne_name, strlen(path))) {
+			    strncmp(path, ne->ne_name, strlen(path)) == 0) {
 				best = ne;
 				break;
 			}
@@ -970,7 +970,7 @@ zpool_find_import_blkid(libzfs_handle_t *hdl, pool_list_t *pools)
 		goto err_blkid2;
 	}
 
-	err = blkid_dev_set_search(iter, "TYPE", "zfs");
+	err = blkid_dev_set_search(iter, "TYPE", "zfs_member");
 	if (err != 0) {
 		(void) zfs_error_fmt(hdl, EZFS_BADCACHE,
 		    dgettext(TEXT_DOMAIN, "blkid_dev_set_search() %d"), err);
@@ -1002,7 +1002,7 @@ err_blkid3:
 err_blkid2:
 	blkid_put_cache(cache);
 err_blkid1:
-	return err;
+	return (err);
 }
 #endif /* HAVE_LIBBLKID */
 
@@ -1130,14 +1130,14 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			 *            when access from Xen dom0.
 			 */
 			if ((strncmp(name, "watchdog", 8) == 0) ||
-			    (strncmp(name, "fuse", 4) == 0)     ||
-			    (strncmp(name, "ppp", 3) == 0)      ||
-			    (strncmp(name, "tty", 3) == 0)      ||
-			    (strncmp(name, "vcs", 3) == 0)      ||
-			    (strncmp(name, "parport", 7) == 0)  ||
-			    (strncmp(name, "lp", 2) == 0)       ||
-			    (strncmp(name, "fd", 2) == 0)       ||
-			    (strncmp(name, "hpet", 4) == 0)     ||
+			    (strncmp(name, "fuse", 4) == 0) ||
+			    (strncmp(name, "ppp", 3) == 0) ||
+			    (strncmp(name, "tty", 3) == 0) ||
+			    (strncmp(name, "vcs", 3) == 0) ||
+			    (strncmp(name, "parport", 7) == 0) ||
+			    (strncmp(name, "lp", 2) == 0) ||
+			    (strncmp(name, "fd", 2) == 0) ||
+			    (strncmp(name, "hpet", 4) == 0) ||
 			    (strncmp(name, "core", 4) == 0))
 				continue;
 
@@ -1170,7 +1170,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 				    ZPOOL_CONFIG_POOL_NAME, &pname) == 0)) {
 
 					if (strcmp(iarg->poolname, pname))
-					       matched = B_FALSE;
+						matched = B_FALSE;
 
 				} else if (iarg->guid != 0) {
 					uint64_t this_guid;

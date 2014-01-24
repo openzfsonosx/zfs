@@ -277,8 +277,8 @@ fm_nvprintr(nvlist_t *nvl, int d, int c, int cols)
 			c = fm_printf(d + 1, c, cols, "[ ");
 			(void) nvpair_value_int8_array(nvp, &val, &nelem);
 			for (i = 0; i < nelem; i++)
-			        c = fm_printf(d + 1, c, cols, "0x%llx ",
-					      (u_longlong_t)val[i]);
+				c = fm_printf(d + 1, c, cols, "0x%llx ",
+				    (u_longlong_t)val[i]);
 
 			c = fm_printf(d + 1, c, cols, "]");
 			break;
@@ -291,8 +291,8 @@ fm_nvprintr(nvlist_t *nvl, int d, int c, int cols)
 			c = fm_printf(d + 1, c, cols, "[ ");
 			(void) nvpair_value_uint8_array(nvp, &val, &nelem);
 			for (i = 0; i < nelem; i++)
-			        c = fm_printf(d + 1, c, cols, "0x%llx ",
-					      (u_longlong_t)val[i]);
+				c = fm_printf(d + 1, c, cols, "0x%llx ",
+				    (u_longlong_t)val[i]);
 
 			c = fm_printf(d + 1, c, cols, "]");
 			break;
@@ -305,8 +305,8 @@ fm_nvprintr(nvlist_t *nvl, int d, int c, int cols)
 			c = fm_printf(d + 1, c, cols, "[ ");
 			(void) nvpair_value_int16_array(nvp, &val, &nelem);
 			for (i = 0; i < nelem; i++)
-			        c = fm_printf(d + 1, c, cols, "0x%llx ",
-					      (u_longlong_t)val[i]);
+				c = fm_printf(d + 1, c, cols, "0x%llx ",
+				    (u_longlong_t)val[i]);
 
 			c = fm_printf(d + 1, c, cols, "]");
 			break;
@@ -319,8 +319,8 @@ fm_nvprintr(nvlist_t *nvl, int d, int c, int cols)
 			c = fm_printf(d + 1, c, cols, "[ ");
 			(void) nvpair_value_uint16_array(nvp, &val, &nelem);
 			for (i = 0; i < nelem; i++)
-			        c = fm_printf(d + 1, c, cols, "0x%llx ",
-					      (u_longlong_t)val[i]);
+				c = fm_printf(d + 1, c, cols, "0x%llx ",
+				    (u_longlong_t)val[i]);
 
 			c = fm_printf(d + 1, c, cols, "]");
 			break;
@@ -333,8 +333,8 @@ fm_nvprintr(nvlist_t *nvl, int d, int c, int cols)
 			c = fm_printf(d + 1, c, cols, "[ ");
 			(void) nvpair_value_int32_array(nvp, &val, &nelem);
 			for (i = 0; i < nelem; i++)
-			        c = fm_printf(d + 1, c, cols, "0x%llx ",
-					      (u_longlong_t)val[i]);
+			c = fm_printf(d + 1, c, cols, "0x%llx ",
+			    (u_longlong_t)val[i]);
 
 			c = fm_printf(d + 1, c, cols, "]");
 			break;
@@ -347,8 +347,8 @@ fm_nvprintr(nvlist_t *nvl, int d, int c, int cols)
 			c = fm_printf(d + 1, c, cols, "[ ");
 			(void) nvpair_value_uint32_array(nvp, &val, &nelem);
 			for (i = 0; i < nelem; i++)
-			        c = fm_printf(d + 1, c, cols, "0x%llx ",
-					      (u_longlong_t)val[i]);
+				c = fm_printf(d + 1, c, cols, "0x%llx ",
+				    (u_longlong_t)val[i]);
 
 			c = fm_printf(d + 1, c, cols, "]");
 			break;
@@ -361,8 +361,8 @@ fm_nvprintr(nvlist_t *nvl, int d, int c, int cols)
 			c = fm_printf(d + 1, c, cols, "[ ");
 			(void) nvpair_value_int64_array(nvp, &val, &nelem);
 			for (i = 0; i < nelem; i++)
-			        c = fm_printf(d + 1, c, cols, "0x%llx ",
-					      (u_longlong_t)val[i]);
+				c = fm_printf(d + 1, c, cols, "0x%llx ",
+				    (u_longlong_t)val[i]);
 
 			c = fm_printf(d + 1, c, cols, "]");
 			break;
@@ -375,8 +375,8 @@ fm_nvprintr(nvlist_t *nvl, int d, int c, int cols)
 			c = fm_printf(d + 1, c, cols, "[ ");
 			(void) nvpair_value_uint64_array(nvp, &val, &nelem);
 			for (i = 0; i < nelem; i++)
-			        c = fm_printf(d + 1, c, cols, "0x%llx ",
-					      (u_longlong_t)val[i]);
+				c = fm_printf(d + 1, c, cols, "0x%llx ",
+				    (u_longlong_t)val[i]);
 
 			c = fm_printf(d + 1, c, cols, "]");
 			break;
@@ -419,15 +419,15 @@ zfs_zevent_alloc(void)
 {
 	zevent_t *ev;
 
-	ev = kmem_zalloc(sizeof(zevent_t), KM_PUSHPAGE);
+	ev = kmem_zalloc(sizeof (zevent_t), KM_PUSHPAGE);
 	if (ev == NULL)
-		return NULL;
+		return (NULL);
 
-	list_create(&ev->ev_ze_list, sizeof(zfs_zevent_t),
+	list_create(&ev->ev_ze_list, sizeof (zfs_zevent_t),
 		    offsetof(zfs_zevent_t, ze_node));
 	list_link_init(&ev->ev_node);
 
-	return ev;
+	return (ev);
 }
 
 static void
@@ -437,7 +437,7 @@ zfs_zevent_free(zevent_t *ev)
 	ev->ev_cb(ev->ev_nvl, ev->ev_detector);
 
 	list_destroy(&ev->ev_ze_list);
-	kmem_free(ev, sizeof(zevent_t));
+	kmem_free(ev, sizeof (zevent_t));
 }
 
 static void
@@ -525,7 +525,7 @@ zfs_zevent_post(nvlist_t *nvl, nvlist_t *detector, zevent_cb_t *cb)
 		return;
 	}
 
-        ev->ev_nvl = nvl;
+	ev->ev_nvl = nvl;
 	ev->ev_detector = detector;
 	ev->ev_cb = cb;
 
@@ -554,12 +554,12 @@ zfs_zevent_fd_hold(int fd, minor_t *minorp, zfs_zevent_t **ze)
 	file_t *fp;
 	int error;
 
-        fp = getf(fd);
-        if (fp == NULL)
-                return (EBADF);
+	fp = getf(fd);
+	if (fp == NULL)
+		return (EBADF);
 
-        *minorp = zfsdev_getminor(fp->f_file);
-        error = zfs_zevent_minor_to_state(*minorp, ze);
+	*minorp = zfsdev_getminor(fp->f_file);
+	error = zfs_zevent_minor_to_state(*minorp, ze);
 
 	if (error)
 		zfs_zevent_fd_rele(fd);
@@ -582,7 +582,7 @@ zfs_zevent_fd_rele(int fd)
  */
 int
 zfs_zevent_next(zfs_zevent_t *ze, nvlist_t **event, uint64_t *event_size,
-                uint64_t *dropped)
+    uint64_t *dropped)
 {
 	zevent_t *ev;
 	size_t size;
@@ -597,8 +597,10 @@ zfs_zevent_next(zfs_zevent_t *ze, nvlist_t **event, uint64_t *event_size,
 			goto out;
 		}
 	} else {
-		/* Existing stream continue with the next element and remove
-		 * ourselves from the wait queue for the previous element */
+		/*
+		 * Existing stream continue with the next element and remove
+		 * ourselves from the wait queue for the previous element
+		 */
 		ev = list_prev(&zevent_list, ze->ze_zevent);
 		if (ev == NULL) {
 			error = ENOENT;
@@ -624,7 +626,7 @@ zfs_zevent_next(zfs_zevent_t *ze, nvlist_t **event, uint64_t *event_size,
 out:
 	mutex_exit(&zevent_lock);
 
-	return error;
+	return (error);
 }
 
 int
@@ -648,7 +650,7 @@ zfs_zevent_wait(zfs_zevent_t *ze)
 out:
 	mutex_exit(&zevent_lock);
 
-	return error;
+	return (error);
 }
 
 void
@@ -1520,7 +1522,8 @@ fm_init(void)
 	}
 
 	mutex_init(&zevent_lock, NULL, MUTEX_DEFAULT, NULL);
-	list_create(&zevent_list, sizeof(zevent_t), offsetof(zevent_t, ev_node));
+	list_create(&zevent_list, sizeof (zevent_t),
+	    offsetof(zevent_t, ev_node));
 	cv_init(&zevent_cv, NULL, CV_DEFAULT, NULL);
 }
 

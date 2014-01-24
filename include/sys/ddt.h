@@ -63,16 +63,15 @@ enum ddt_class {
  */
 typedef struct ddt_key {
 	zio_cksum_t	ddk_cksum;	/* 256-bit block checksum */
-	uint64_t	ddk_prop;	/* LSIZE, PSIZE, compression */
+	/*
+	 * Encoded with logical & physical size, and compression, as follows:
+	 *   +-------+-------+-------+-------+-------+-------+-------+-------+
+	 *   |   0   |   0   |   0   | comp  |     PSIZE     |     LSIZE     |
+	 *   +-------+-------+-------+-------+-------+-------+-------+-------+
+	 */
+	uint64_t	ddk_prop;
 } ddt_key_t;
 
-/*
- * ddk_prop layout:
- *
- *	+-------+-------+-------+-------+-------+-------+-------+-------+
- *	|   0	|   0	|   0	| comp	|     PSIZE	|     LSIZE	|
- *	+-------+-------+-------+-------+-------+-------+-------+-------+
- */
 #define	DDK_GET_LSIZE(ddk)	\
 	BF64_GET_SB((ddk)->ddk_prop, 0, 16, SPA_MINBLOCKSHIFT, 1)
 #define	DDK_SET_LSIZE(ddk, x)	\
@@ -217,6 +216,8 @@ extern void ddt_decompress(uchar_t *src, void *dst, size_t s_len, size_t d_len);
 extern ddt_t *ddt_select(spa_t *spa, const blkptr_t *bp);
 extern void ddt_enter(ddt_t *ddt);
 extern void ddt_exit(ddt_t *ddt);
+extern void ddt_init(void);
+extern void ddt_fini(void);
 extern ddt_entry_t *ddt_lookup(ddt_t *ddt, const blkptr_t *bp, boolean_t add);
 extern void ddt_prefetch(spa_t *spa, const blkptr_t *bp);
 extern void ddt_remove(ddt_t *ddt, ddt_entry_t *dde);

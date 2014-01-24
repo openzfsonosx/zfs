@@ -39,6 +39,7 @@
 #define	MOUNT_FILEIO	0x10		/* Error updating/locking /etc/mtab */
 #define	MOUNT_FAIL	0x20		/* Mount failed */
 #define	MOUNT_SOMEOK	0x40		/* At least on mount succeeded */
+#define	MOUNT_BUSY	0x80		/* Mount failed due to EBUSY */
 
 #define	MNTOPT_ASYNC	"async"		/* all I/O is asynchronous */
 #define	MNTOPT_ATIME	"atime"		/* update atime for files */
@@ -46,7 +47,6 @@
 #define	MNTOPT_AUTO	"auto"		/* automount */
 #define	MNTOPT_NOAUTO	"noauto"	/* do not automount */
 #define	MNTOPT_CONTEXT	"context"	/* selinux context */
-#define	MNTOPT_NOCONTEXT "nocontext"	/* No selinux context (zfs-only) */
 #define	MNTOPT_FSCONTEXT "fscontext"	/* selinux fscontext */
 #define	MNTOPT_DEFCONTEXT "defcontext"	/* selinux defcontext */
 #define	MNTOPT_ROOTCONTEXT "rootcontext" /* selinux rootcontext */
@@ -92,9 +92,11 @@
 #define	MNTOPT_NOXATTR	"noxattr"	/* disable extended attributes */
 #define	MNTOPT_COMMENT	"comment"	/* comment */
 #define	MNTOPT_ZFSUTIL	"zfsutil"	/* called by zfs utility */
+#define	MNTOPT_ACL	"acl"		/* passed by util-linux-2.24 mount */
+#define	MNTOPT_NOACL	"noacl"		/* likewise */
+#define	MNTOPT_POSIXACL	"posixacl"	/* likewise */
 
-#define ZS_COMMENT	0x00000000	/* comment */
-#define ZS_ZFSUTIL	0x00000001	/* caller is zfs(8) */
-#define ZS_NOCONTEXT	0x00000002	/* do not add selinux context */
+#define	ZS_COMMENT	0x00000000	/* comment */
+#define	ZS_ZFSUTIL	0x00000001	/* caller is zfs(8) */
 
 #endif	/* _SYS_MNTENT_H */

@@ -27,7 +27,7 @@
 .\" Copyright 2012 Nexenta Systems, Inc. All Rights Reserved.
 .\" Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
 .\"
-.TH zfs 8 "Jan 10, 2013" "ZFS pool 28, filesystem 5" "System Administration Commands"
+.TH zfs 8 "Nov 19, 2013" "ZFS pool 28, filesystem 5" "System Administration Commands"
 .SH NAME
 zfs \- configures ZFS file systems
 .SH SYNOPSIS
@@ -95,8 +95,8 @@ zfs \- configures ZFS file systems
 
 .LP
 .nf
-\fBzfs\fR \fBlist\fR [\fB-r\fR|\fB-d\fR \fIdepth\fR][\fB-H\fR][\fB-o\fR \fIproperty\fR[,...]] [\fB-t\fR \fItype\fR[,...]]
-     [\fB-s\fR \fIproperty\fR] ... [\fB-S\fR \fIproperty\fR] ... [\fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR|\fIsnap\fR] ...
+\fBzfs\fR \fBlist\fR [\fB-r\fR|\fB-d\fR \fIdepth\fR][\fB-Hp\fR][\fB-o\fR \fIproperty\fR[,\fIproperty\fR]...] [\fB-t\fR \fItype\fR[,\fItype\fR]..]
+     [\fB-s\fR \fIproperty\fR] ... [\fB-S\fR \fIproperty\fR] ... [\fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR] ...
 .fi
 
 .LP
@@ -244,7 +244,6 @@ zfs \- configures ZFS file systems
 \fBzfs\fR \fBdiff\fR [\fB-FHt\fR] \fIsnapshot\fR \fIsnapshot|filesystem\fR
 
 .SH DESCRIPTION
-.sp
 .LP
 The \fBzfs\fR command configures \fBZFS\fR datasets within a \fBZFS\fR storage pool, as described in \fBzpool\fR(8). A dataset is identified by a unique path within the \fBZFS\fR namespace. For example:
 .sp
@@ -295,7 +294,6 @@ A read-only version of a file system or volume at a given point in time. It is s
 .RE
 
 .SS "ZFS File System Hierarchy"
-.sp
 .LP
 A \fBZFS\fR storage pool is a logical collection of devices that provide space for datasets. A storage pool is also the root of the \fBZFS\fR file system hierarchy.
 .sp
@@ -305,17 +303,15 @@ The root of the pool can be accessed as a file system, such as mounting and unmo
 .LP
 See \fBzpool\fR(8) for more information on creating and administering pools.
 .SS "Snapshots"
-.sp
 .LP
 A snapshot is a read-only copy of a file system or volume. Snapshots can be created extremely quickly, and initially consume no additional space within the pool. As data within the active dataset changes, the snapshot consumes more data than would otherwise be shared with the active dataset.
 .sp
 .LP
-Snapshots can have arbitrary names. Snapshots of volumes can be cloned or rolled back, but cannot be accessed independently.
+Snapshots can have arbitrary names. Snapshots of volumes can be cloned or rolled back.  Visibility is determined by the \fBsnapdev\fR property of the parent volume.
 .sp
 .LP
 File system snapshots can be accessed under the \fB\&.zfs/snapshot\fR directory in the root of the file system. Snapshots are automatically mounted on demand and may be unmounted at regular intervals. The visibility of the \fB\&.zfs\fR directory can be controlled by the \fBsnapdir\fR property.
 .SS "Clones"
-.sp
 .LP
 A clone is a writable volume or file system whose initial contents are the same as another dataset. As with snapshots, creating a clone is nearly instantaneous, and initially consumes no additional space.
 .sp
@@ -325,7 +321,6 @@ Clones can only be created from a snapshot. When a snapshot is cloned, it create
 .LP
 The clone parent-child dependency relationship can be reversed by using the \fBpromote\fR subcommand. This causes the "origin" file system to become a clone of the specified file system, which makes it possible to destroy the file system that the clone was created from.
 .SS "Mount Points"
-.sp
 .LP
 Creating a \fBZFS\fR file system is a simple operation, so the number of file systems per system is likely to be numerous. To cope with this, \fBZFS\fR automatically manages mounting and unmounting file systems without the need to edit the \fB/etc/fstab\fR file. All automatically managed file systems are mounted by \fBZFS\fR at boot time.
 .sp
@@ -341,11 +336,9 @@ A file system \fBmountpoint\fR property of \fBnone\fR prevents the file system f
 .LP
 If needed, \fBZFS\fR file systems can also be managed with traditional tools (\fBmount\fR, \fBumount\fR, \fB/etc/fstab\fR). If a file system's mount point is set to \fBlegacy\fR, \fBZFS\fR makes no attempt to manage the file system, and the administrator is responsible for mounting and unmounting the file system.
 .SS "Deduplication"
-.sp
 .LP
 Deduplication is the process for removing redundant data at the block-level, reducing the total amount of data stored. If a file system has the \fBdedup\fR property enabled, duplicate data blocks are removed synchronously.  The result is that only unique data is stored and common components are shared among files.
 .SS "Native Properties"
-.sp
 .LP
 Properties are divided into two types, native properties and user-defined (or "user") properties. Native properties either export internal statistics or control \fBZFS\fR behavior. In addition, native properties are either editable or read-only. User properties have no effect on \fBZFS\fR behavior, but you can use them to annotate datasets in a way that is meaningful in your environment. For more information about user properties, see the "User Properties" section, below.
 .sp
@@ -430,6 +423,40 @@ This property is \fBon\fR if the snapshot has been marked for deferred destructi
 .sp
 .ne 2
 .mk
+.na
+\fB\fBlogicalreferenced\fR\fR
+.ad
+.sp .6
+.RS 4n
+The amount of space that is "logically" accessible by this dataset.  See
+the \fBreferenced\fR property.  The logical space ignores the effect of
+the \fBcompression\fR and \fBcopies\fR properties, giving a quantity
+closer to the amount of data that applications see.  However, it does
+include space consumed by metadata.
+.sp
+This property can also be referred to by its shortened column name,
+\fBlrefer\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fBlogicalused\fR\fR
+.ad
+.sp .6
+.RS 4n
+The amount of space that is "logically" consumed by this dataset and all
+its descendents.  See the \fBused\fR property.  The logical space
+ignores the effect of the \fBcompression\fR and \fBcopies\fR properties,
+giving a quantity closer to the amount of data that applications see.
+However, it does include space consumed by metadata.
+.sp
+This property can also be referred to by its shortened column name,
+\fBlused\fR.
+.RE
+
+.sp
+.ne 2
 .na
 \fB\fBmounted\fR\fR
 .ad
@@ -676,17 +703,31 @@ The following native properties can be used to change the behavior of a \fBZFS\f
 Controls how \fBACL\fR entries are inherited when files and directories are created. A file system with an \fBaclinherit\fR property of \fBdiscard\fR does not inherit any \fBACL\fR entries. A file system with an \fBaclinherit\fR property value of \fBnoallow\fR only inherits inheritable \fBACL\fR entries that specify "deny" permissions. The property value \fBrestricted\fR (the default) removes the \fBwrite_acl\fR and \fBwrite_owner\fR permissions when the \fBACL\fR entry is inherited. A file system with an \fBaclinherit\fR property value of \fBpassthrough\fR inherits all inheritable \fBACL\fR entries without any modifications made to the \fBACL\fR entries when they are inherited. A file system with an \fBaclinherit\fR property value of \fBpassthrough-x\fR has the same meaning as \fBpassthrough\fR, except that the \fBowner@\fR, \fBgroup@\fR, and \fBeveryone@\fR \fBACE\fRs inherit the execute permission only if the file creation mode also requests the execute bit.
 .sp
 When the property value is set to \fBpassthrough\fR, files are created with a mode determined by the inheritable \fBACE\fRs. If no inheritable \fBACE\fRs exist that affect the mode, then the mode is set in accordance to the requested mode from the application.
+.sp
+The \fBaclinherit\fR property does not apply to Posix ACLs.
 .RE
 
 .sp
 .ne 2
 .mk
 .na
-\fB\fBaclmode\fR=\fBdiscard\fR | \fBgroupmask\fR | \fBpassthrough\fR\fR
+\fB\fBacltype\fR=\fBnoacl\fR | \fBposixacl\fR \fR
 .ad
 .sp .6
 .RS 4n
-Controls how an \fBACL\fR is modified during \fBchmod\fR(2). A file system with an \fBaclmode\fR property of \fBdiscard\fR deletes all \fBACL\fR entries that do not represent the mode of the file. An \fBaclmode\fR property of \fBgroupmask\fR (the default) reduces user or group permissions. The permissions are reduced, such that they are no greater than the group permission bits, unless it is a user entry that has the same \fBUID\fR as the owner of the file or directory. In this case, the \fBACL\fR permissions are reduced so that they are no greater than owner permission bits. A file system with an \fBaclmode\fR property of \fBpassthrough\fR indicates that no changes are made to the \fBACL\fR other than generating the necessary \fBACL\fR entries to represent the new mode of the file or directory.
+Controls whether ACLs are enabled and if so what type of ACL to use.  When
+a file system has the \fBacltype\fR property set to \fBnoacl\fR (the default)
+then ACLs are disabled.  Setting the \fBacltype\fR property to \fBposixacl\fR
+indicates Posix ACLs should be used.  Posix ACLs are specific to Linux and
+are not functional on other platforms.  Posix ACLs are stored as an xattr and
+therefore will not overwrite any existing ZFS/NFSv4 ACLs which may be set.
+Currently only \fBposixacls\fR are supported on Linux.
+.sp
+To obtain the best performance when setting \fBposixacl\fR users are strongly
+encouraged to set the \fBxattr=sa\fR property.  This will result in the
+Posix ACL being stored more efficiently on disk.  But as a consequence of this
+all new xattrs will only be accessable from ZFS implementations which support
+the \fBxattr=sa\fR property.  See the \fBxattr\fR property for more details.
 .RE
 
 .sp
@@ -1176,11 +1217,33 @@ Controls whether regular files should be scanned for viruses when a file is open
 .ne 2
 .mk
 .na
-\fB\fBxattr\fR=\fBon\fR | \fBoff\fR\fR
+\fB\fBxattr\fR=\fBon\fR | \fBoff\fR | \fBsa\fR\fR
 .ad
 .sp .6
 .RS 4n
-Controls whether extended attributes are enabled for this file system. The default value is \fBon\fR.
+Controls whether extended attributes are enabled for this file system.  Two
+styles of extended attributes are supported either directory based or system
+attribute based.
+.sp
+The default value of \fBon\fR enables directory based extended attributes.
+This style of xattr imposes no practical limit on either the size or number of
+xattrs which may be set on a file.  Although under Linux the \fBgetxattr\fR(2)
+and \fBsetxattr\fR(2) system calls limit the maximum xattr size to 64K.  This
+is the most compatible style of xattr and it is supported by the majority of
+ZFS implementations.
+.sp
+System attribute based xattrs may be enabled by setting the value to \fBsa\fR.
+The key advantage of this type of xattr is improved performance.  Storing
+xattrs as system attributes significantly decreases the amount of disk IO
+required.  Up to 64K of xattr data may be stored per file in the space reserved
+for system attributes.  If there is not enough space available for an xattr then
+it will be automatically written as a directory based xattr.  System attribute
+based xattrs are not accessable on platforms which do not support the
+\fBxattr=sa\fR feature.
+.sp
+The use of system attribute based xattrs is strongly encouraged for users of
+SELinux or Posix ACLs.  Both of these features heavily rely of xattrs and
+benefit significantly from the reduced xattr access time.
 .RE
 
 .sp
@@ -1235,8 +1298,53 @@ Indicates whether the file system should reject file names that include characte
 .sp
 .LP
 The \fBcasesensitivity\fR, \fBnormalization\fR, and \fButf8only\fR properties are also new permissions that can be assigned to non-privileged users by using the \fBZFS\fR delegated administration feature.
-.SS "Temporary Mount Point Properties"
+.RE
+
 .sp
+.ne 2
+.mk
+.na
+\fB\fBcontext\fR=\fBSELinux_User:SElinux_Role:Selinux_Type:Sensitivity_Level\fR\fR
+.ad
+.sp .6
+.RS 4n
+This flag sets the SELinux context for all files in the filesytem under the mountpoint for that filesystem.  See \fBselinux\fR(8) for more information.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBfscontext\fR=\fBSELinux_User:SElinux_Role:Selinux_Type:Sensitivity_Level\fR\fR
+.ad
+.sp .6
+.RS 4n
+This flag sets the SELinux context for the filesytem being mounted.  See \fBselinux\fR(8) for more information.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBdefntext\fR=\fBSELinux_User:SElinux_Role:Selinux_Type:Sensitivity_Level\fR\fR
+.ad
+.sp .6
+.RS 4n
+This flag sets the SELinux context for unlabeled files.  See \fBselinux\fR(8) for more information.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBrootcontext\fR=\fBSELinux_User:SElinux_Role:Selinux_Type:Sensitivity_Level\fR\fR
+.ad
+.sp .6
+.RS 4n
+This flag sets the SELinux context for the root inode of the filesystem.  See \fBselinux\fR(8) for more information.
+.RE
+
+.SS "Temporary Mount Point Properties"
 .LP
 When a file system is mounted, either through \fBmount\fR(8) for legacy mounts or the \fBzfs mount\fR command for normal file systems, its mount options are set according to its properties. The correlation between properties and mount options is as follows:
 .sp
@@ -1256,7 +1364,6 @@ When a file system is mounted, either through \fBmount\fR(8) for legacy mounts o
 .LP
 In addition, these options can be set on a per-mount basis using the \fB-o\fR option, without affecting the property that is stored on disk. The values specified on the command line override the values stored in the dataset. The \fB-nosuid\fR option is an alias for \fBnodevices,nosetuid\fR. These properties are reported as "temporary" by the \fBzfs get\fR command. If the properties are changed while the dataset is mounted, the new setting overrides any temporary settings.
 .SS "User Properties"
-.sp
 .LP
 In addition to the standard native properties, \fBZFS\fR supports arbitrary user properties. User properties have no effect on \fBZFS\fR behavior, but applications or administrators can use them to annotate datasets (file systems, volumes, and snapshots).
 .sp
@@ -1269,14 +1376,12 @@ When making programmatic use of user properties, it is strongly suggested to use
 .LP
 The values of user properties are arbitrary strings, are always inherited, and are never validated. All of the commands that operate on properties (\fBzfs list\fR, \fBzfs get\fR, \fBzfs set\fR, and so forth) can be used to manipulate both native properties and user properties. Use the \fBzfs inherit\fR command to clear a user property . If the property is not defined in any parent dataset, it is removed entirely. Property values are limited to 1024 characters.
 .SS "ZFS Volumes as Swap"
-.sp
 .LP
 \fBZFS\fR volumes may be used as Linux swap devices.  After creating the volume
 with the \fBzfs create\fR command set up and enable the swap area using the
 \fBmkswap\fR(8) and \fBswapon\fR(8) commands.  Do not swap to a file on a
 \fBZFS\fR file system. A \fBZFS\fR swap file configuration is not supported.
 .SH SUBCOMMANDS
-.sp
 .LP
 All subcommands that modify state are logged persistently to the pool in their original form.
 .sp
@@ -1736,11 +1841,11 @@ Recursively rename the snapshots of all descendent datasets. Snapshots are the o
 .ne 2
 .mk
 .na
-\fB\fBzfs\fR \fBlist\fR [\fB-r\fR|\fB-d\fR \fIdepth\fR] [\fB-H\fR] [\fB-o\fR \fIproperty\fR[,\fI\&...\fR]] [ \fB-t\fR \fItype\fR[,\fI\&...\fR]] [ \fB-s\fR \fIproperty\fR ] ... [ \fB-S\fR \fIproperty\fR ] ... [\fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR|\fIsnap\fR] ...\fR
+\fB\fBzfs\fR \fBlist\fR [\fB-r\fR|\fB-d\fR \fIdepth\fR] [\fB-Hp\fR] [\fB-o\fR \fIproperty\fR[,\fI\&...\fR]] [ \fB-t\fR \fItype\fR[,\fI\&...\fR]] [ \fB-s\fR \fIproperty\fR ] ... [ \fB-S\fR \fIproperty\fR ] ... [\fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR] ...\fR
 .ad
 .sp .6
 .RS 4n
-Lists the property information for the given datasets in tabular form. If specified, you can list property information by the absolute pathname or the relative pathname. By default, all file systems and volumes are displayed. Snapshots are displayed if the \fBlistsnaps\fR property is \fBon\fR (the default is \fBoff\fR) . The following fields are displayed, \fBname,used,available,referenced,mountpoint\fR.
+Lists the property information for the given datasets in tabular form. If specified, you can list property information by the absolute pathname or the relative pathname. By default, all file systems and volumes are displayed. Snapshots are displayed if the \fBlistsnaps\fR property is \fBon\fR (the default is \fBoff\fR). When listing hundreds or thousands of snapshots performance can be improved by restricting the output to only the name.  In that case, it is recommended to use \fB-o name -s name\fR. The following fields are displayed by default, \fBname,used,available,referenced,mountpoint\fR.
 .sp
 .ne 2
 .mk
@@ -1750,6 +1855,16 @@ Lists the property information for the given datasets in tabular form. If specif
 .sp .6
 .RS 4n
 Used for scripting mode. Do not print headers and separate fields by a single tab instead of arbitrary white space.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-p\fR\fR
+.sp .6
+.RS 4n
+Display numbers in parsable (exact) values.
 .RE
 
 .sp
@@ -1865,7 +1980,7 @@ Same as the \fB-s\fR option, but sorts by property in descending order.
 .ad
 .sp .6
 .RS 4n
-A comma-separated list of types to display, where \fItype\fR is one of \fBfilesystem\fR, \fBsnapshot\fR , \fBvolume\fR, or \fBall\fR. For example, specifying \fB-t snapshot\fR displays only snapshots.
+A comma-separated list of types to display, where \fItype\fR is one of \fBfilesystem\fR, \fBsnapshot\fR, \fBsnap\fR, \fBvolume\fR, or \fBall\fR. For example, specifying \fB-t snapshot\fR displays only snapshots.
 .RE
 
 .RE
@@ -1883,8 +1998,7 @@ Sets the property to the given value for each dataset. Only some properties can 
 
 .sp
 .ne 2
-.mk
-.na
+.mk .na
 \fB\fBzfs get\fR [\fB-r\fR|\fB-d\fR \fIdepth\fR] [\fB-Hp\fR] [\fB-o\fR \fIfield\fR[,...] [\fB-t\fR \fItype\fR[,...]] [\fB-s\fR \fIsource\fR[,...] "\fIall\fR" | \fIproperty\fR[,...] \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR ...\fR
 .ad
 .sp .6
@@ -1968,7 +2082,7 @@ A comma-separated list of sources to display. Those properties coming from a sou
 .ad
 .sp .6
 .RS 4n
-Display numbers in parseable (exact) values.
+Display numbers in parsable (exact) values.
 .RE
 
 .RE
@@ -2674,8 +2788,8 @@ userprop         other          Allows changing any user property
 userquota        other          Allows accessing any userquota@... property
 userused         other          Allows reading any userused@... property
 
+acltype          property
 aclinherit       property       
-aclmode          property       
 atime            property       
 canmount         property       
 casesensitivity  property       
@@ -2908,7 +3022,7 @@ F       Regular file
 .ad
 .sp .6
 .RS 4n
-Give more parseable tab-separated output, without header lines and without arrows.
+Give more parsable tab-separated output, without header lines and without arrows.
 .RE
 .sp
 .ne 2
@@ -3046,7 +3160,7 @@ pool/home/bob  setuid                on                     default
 pool/home/bob  readonly              off                    default
 pool/home/bob  zoned                 off                    default
 pool/home/bob  snapdir               hidden                 default
-pool/home/bob  aclmode               groupmask              default
+pool/home/bob  acltype               off                    default
 pool/home/bob  aclinherit            restricted             default
 pool/home/bob  canmount              on                     default
 pool/home/bob  shareiscsi            off                    default
@@ -3421,7 +3535,6 @@ M       F       /tank/test/modified
 .sp
 
 .SH EXIT STATUS
-.sp
 .LP
 The following exit values are returned:
 .sp
@@ -3458,6 +3571,5 @@ Invalid command line options were specified.
 .RE
 
 .SH SEE ALSO
-.sp
 .LP
 \fBchmod\fR(2), \fBfsync\fR(2), \fBgzip\fR(1), \fBmount\fR(8), \fBssh\fR(1), \fBstat\fR(2), \fBwrite\fR(2), \fBzpool\fR(8)

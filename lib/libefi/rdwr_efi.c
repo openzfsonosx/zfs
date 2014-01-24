@@ -92,7 +92,8 @@ struct dk_map2  default_vtoc_map[NDKMAP] = {
 
 #if defined(_SUNOS_VTOC_16)
 
-#if defined(i386) || defined(__amd64) || defined(__arm) || defined(__powerpc)
+#if defined(i386) || defined(__amd64) || defined(__arm) || \
+    defined(__powerpc) || defined(__sparc)
 	{	V_BOOT,		V_UNMNT	},		/* i - 8 */
 	{	V_ALTSCTR,	0	},		/* j - 9 */
 
@@ -158,7 +159,7 @@ efi_get_info(int fd, struct dk_cinfo *dki_info)
 	char *path;
 	char *dev_path;
 
-	memset(dki_info, 0, sizeof(*dki_info));
+	memset(dki_info, 0, sizeof (*dki_info));
 
 	path = calloc(PATH_MAX, 1);
 	if (path == NULL)
@@ -188,44 +189,44 @@ efi_get_info(int fd, struct dk_cinfo *dki_info)
 		strcpy(dki_info->dki_cname, "sd");
 		dki_info->dki_ctype = DKC_SCSI_CCS;
 		rval = sscanf(dev_path, "/dev/%[a-zA-Z]%hu",
-			      dki_info->dki_dname,
-			      &dki_info->dki_partition);
+		    dki_info->dki_dname,
+		    &dki_info->dki_partition);
 	} else if ((strncmp(dev_path, "/dev/hd", 7) == 0)) {
 		strcpy(dki_info->dki_cname, "hd");
 		dki_info->dki_ctype = DKC_DIRECT;
 		rval = sscanf(dev_path, "/dev/%[a-zA-Z]%hu",
-			      dki_info->dki_dname,
-			      &dki_info->dki_partition);
+		    dki_info->dki_dname,
+		    &dki_info->dki_partition);
 	} else if ((strncmp(dev_path, "/dev/md", 7) == 0)) {
 		strcpy(dki_info->dki_cname, "pseudo");
 		dki_info->dki_ctype = DKC_MD;
 		rval = sscanf(dev_path, "/dev/%[a-zA-Z0-9]p%hu",
-			      dki_info->dki_dname,
-			      &dki_info->dki_partition);
+		    dki_info->dki_dname,
+		    &dki_info->dki_partition);
 	} else if ((strncmp(dev_path, "/dev/vd", 7) == 0)) {
 		strcpy(dki_info->dki_cname, "vd");
 		dki_info->dki_ctype = DKC_MD;
 		rval = sscanf(dev_path, "/dev/%[a-zA-Z]%hu",
-			      dki_info->dki_dname,
-			      &dki_info->dki_partition);
+		    dki_info->dki_dname,
+		    &dki_info->dki_partition);
 	} else if ((strncmp(dev_path, "/dev/dm-", 8) == 0)) {
 		strcpy(dki_info->dki_cname, "pseudo");
 		dki_info->dki_ctype = DKC_VBD;
 		rval = sscanf(dev_path, "/dev/%[a-zA-Z0-9-]p%hu",
-			      dki_info->dki_dname,
-			      &dki_info->dki_partition);
+		    dki_info->dki_dname,
+		    &dki_info->dki_partition);
 	} else if ((strncmp(dev_path, "/dev/ram", 8) == 0)) {
 		strcpy(dki_info->dki_cname, "pseudo");
 		dki_info->dki_ctype = DKC_PCMCIA_MEM;
 		rval = sscanf(dev_path, "/dev/%[a-zA-Z0-9]p%hu",
-			      dki_info->dki_dname,
-			      &dki_info->dki_partition);
+		    dki_info->dki_dname,
+		    &dki_info->dki_partition);
 	} else if ((strncmp(dev_path, "/dev/loop", 9) == 0)) {
 		strcpy(dki_info->dki_cname, "pseudo");
 		dki_info->dki_ctype = DKC_VBD;
 		rval = sscanf(dev_path, "/dev/%[a-zA-Z0-9]p%hu",
-			      dki_info->dki_dname,
-			      &dki_info->dki_partition);
+		    dki_info->dki_dname,
+		    &dki_info->dki_partition);
 	} else {
 		strcpy(dki_info->dki_dname, "unknown");
 		strcpy(dki_info->dki_cname, "unknown");
@@ -448,10 +449,10 @@ efi_ioctl(int fd, int cmd, dk_efi_t *dk_ioc)
 	 */
 	if (read_disk_info(fd, &capacity, &lbsize) == -1) {
 		if (efi_debug)
-			fprintf(stderr,"unable to read disk info: %d",errno);
+			fprintf(stderr, "unable to read disk info: %d", errno);
 
 		errno = EIO;
-		return -1;
+		return (-1);
 	}
 
 	switch (cmd) {
@@ -459,7 +460,7 @@ efi_ioctl(int fd, int cmd, dk_efi_t *dk_ioc)
 		if (lbsize == 0) {
 			if (efi_debug)
 				(void) fprintf(stderr, "DKIOCGETEFI assuming "
-					       "LBA %d bytes\n", DEV_BSIZE);
+				    "LBA %d bytes\n", DEV_BSIZE);
 
 			lbsize = DEV_BSIZE;
 		}
@@ -468,24 +469,24 @@ efi_ioctl(int fd, int cmd, dk_efi_t *dk_ioc)
 		if (error == -1) {
 			if (efi_debug)
 				(void) fprintf(stderr, "DKIOCGETEFI lseek "
-				               "error: %d\n", errno);
-			return error;
+				    "error: %d\n", errno);
+			return (error);
 		}
 
 		error = read(fd, data, dk_ioc->dki_length);
 		if (error == -1) {
 			if (efi_debug)
 				(void) fprintf(stderr, "DKIOCGETEFI read "
-				               "error: %d\n", errno);
-			return error;
+				    "error: %d\n", errno);
+			return (error);
 		}
 
 		if (error != dk_ioc->dki_length) {
 			if (efi_debug)
 				(void) fprintf(stderr, "DKIOCGETEFI short "
-					       "read of %d bytes\n", error);
+				    "read of %d bytes\n", error);
 			errno = EIO;
-			return -1;
+			return (-1);
 		}
 		error = 0;
 		break;
@@ -494,46 +495,45 @@ efi_ioctl(int fd, int cmd, dk_efi_t *dk_ioc)
 		if (lbsize == 0) {
 			if (efi_debug)
 				(void) fprintf(stderr, "DKIOCSETEFI unknown "
-					       "LBA size\n");
+				    "LBA size\n");
 			errno = EIO;
-			return -1;
+			return (-1);
 		}
 
 		error = lseek(fd, dk_ioc->dki_lba * lbsize, SEEK_SET);
 		if (error == -1) {
 			if (efi_debug)
 				(void) fprintf(stderr, "DKIOCSETEFI lseek "
-				               "error: %d\n", errno);
-			return error;
+				    "error: %d\n", errno);
+			return (error);
 		}
 
 		error = write(fd, data, dk_ioc->dki_length);
 		if (error == -1) {
 			if (efi_debug)
 				(void) fprintf(stderr, "DKIOCSETEFI write "
-				               "error: %d\n", errno);
-			return error;
+				    "error: %d\n", errno);
+			return (error);
 		}
 
 		if (error != dk_ioc->dki_length) {
 			if (efi_debug)
 				(void) fprintf(stderr, "DKIOCSETEFI short "
-					       "write of %d bytes\n", error);
+				    "write of %d bytes\n", error);
 			errno = EIO;
-			return -1;
+			return (-1);
 		}
 
 		/* Sync the new EFI table to disk */
 		error = fsync(fd);
 		if (error == -1)
-			return error;
+			return (error);
 
 		/* Ensure any local disk cache is also flushed */
 #if defined (__linux__)
 		if (ioctl(fd, BLKFLSBUF, 0) == -1)
-			return error;
+			return (error);
 #endif
-
 		error = 0;
 		break;
 
@@ -542,7 +542,7 @@ efi_ioctl(int fd, int cmd, dk_efi_t *dk_ioc)
 			(void) fprintf(stderr, "unsupported ioctl()\n");
 
 		errno = EIO;
-		return -1;
+		return (-1);
 	}
 #else
 
@@ -553,7 +553,8 @@ efi_ioctl(int fd, int cmd, dk_efi_t *dk_ioc)
 	return (error);
 }
 
-int efi_rescan(int fd)
+int
+efi_rescan(int fd)
 {
 #if defined(__linux__)
 	int retry = 5;
@@ -563,7 +564,7 @@ int efi_rescan(int fd)
 	while ((error = ioctl(fd, BLKRRPART)) != 0) {
 		if (--retry == 0) {
 			(void) fprintf(stderr, "the kernel failed to rescan "
-				       "the partition table: %d\n", errno);
+			    "the partition table: %d\n", errno);
 			return (-1);
 		}
 	}
@@ -604,7 +605,7 @@ check_label(int fd, dk_efi_t *dk_ioc)
 	efi->efi_gpt_HeaderCRC32 = 0;
 	len_t headerSize = (len_t)LE_32(efi->efi_gpt_HeaderSize);
 
-	if(headerSize < EFI_MIN_LABEL_SIZE || headerSize > EFI_LABEL_SIZE) {
+	if (headerSize < EFI_MIN_LABEL_SIZE || headerSize > EFI_LABEL_SIZE) {
 		if (efi_debug)
 			(void) fprintf(stderr,
 				"Invalid EFI HeaderSize %llu.  Assuming %d.\n",
@@ -646,7 +647,7 @@ efi_read(int fd, struct dk_gpt *vtoc)
 	 * get the partition number for this file descriptor.
 	 */
 	if ((rval = efi_get_info(fd, &dki_info)) != 0)
-		return rval;
+		return (rval);
 
 	if ((strncmp(dki_info.dki_cname, "pseudo", 7) == 0) &&
 	    (strncmp(dki_info.dki_dname, "md", 3) == 0)) {
@@ -664,8 +665,8 @@ efi_read(int fd, struct dk_gpt *vtoc)
 	if (read_disk_info(fd, &capacity, &lbsize) == -1) {
 		if (efi_debug) {
 			(void) fprintf(stderr,
-				       "unable to read disk info: %d",
-				       errno);
+			    "unable to read disk info: %d",
+			    errno);
 		}
 		return (VT_EINVAL);
 	}
@@ -698,7 +699,7 @@ efi_read(int fd, struct dk_gpt *vtoc)
 	}
 
 	if (posix_memalign((void **)&dk_ioc.dki_data,
-		           disk_info.dki_lbsize, label_len))
+	    disk_info.dki_lbsize, label_len))
 		return (VT_ERROR);
 
 	memset(dk_ioc.dki_data, 0, label_len);
@@ -1173,7 +1174,7 @@ efi_write(int fd, struct dk_gpt *vtoc)
 	diskaddr_t		lba_backup_gpt_hdr;
 
 	if ((rval = efi_get_info(fd, &dki_info)) != 0)
-		return rval;
+		return (rval);
 
 	/* check if we are dealing wih a metadevice */
 	if ((strncmp(dki_info.dki_cname, "pseudo", 7) == 0) &&
@@ -1212,7 +1213,7 @@ efi_write(int fd, struct dk_gpt *vtoc)
 	 */
 	lba_backup_gpt_hdr = vtoc->efi_last_u_lba + 1 + nblocks;
 	if (posix_memalign((void **)&dk_ioc.dki_data,
-		           vtoc->efi_lbasize, dk_ioc.dki_length))
+	    vtoc->efi_lbasize, dk_ioc.dki_length))
 		return (VT_ERROR);
 
 	memset(dk_ioc.dki_data, 0, dk_ioc.dki_length);

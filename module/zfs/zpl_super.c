@@ -44,7 +44,7 @@ zpl_inode_alloc(struct super_block *sb)
 static void
 zpl_inode_destroy(struct inode *ip)
 {
-        ASSERT(atomic_read(&ip->i_count) == 0);
+	ASSERT(atomic_read(&ip->i_count) == 0);
 	zfs_inode_destroy(ip);
 }
 
@@ -180,28 +180,50 @@ zpl_umount_begin(struct super_block *sb)
 }
 
 /*
- * The Linux VFS automatically handles the following flags:
- * MNT_NOSUID, MNT_NODEV, MNT_NOEXEC, MNT_NOATIME, MNT_READONLY
+ * ZFS specific features must be explicitly handled here, the VFS will
+ * automatically handled the following generic functionality.
+ *
+ *   MNT_NOSUID,
+ *   MNT_NODEV,
+ *   MNT_NOEXEC,
+ *   MNT_NOATIME,
+ *   MNT_NODIRATIME,
+ *   MNT_READONLY,
+ *   MNT_STRICTATIME,
+ *   MS_SYNCHRONOUS,
+ *   MS_DIRSYNC,
+ *   MS_MANDLOCK.
  */
+static int
+__zpl_show_options(struct seq_file *seq, zfs_sb_t *zsb)
+{
+	seq_printf(seq, ",%s", zsb->z_flags & ZSB_XATTR ? "xattr" : "noxattr");
+
+#ifdef CONFIG_FS_POSIX_ACL
+	switch (zsb->z_acl_type) {
+	case ZFS_ACLTYPE_POSIXACL:
+		seq_puts(seq, ",posixacl");
+		break;
+	default:
+		seq_puts(seq, ",noacl");
+		break;
+	}
+#endif /* CONFIG_FS_POSIX_ACL */
+
+	return (0);
+}
+
 #ifdef HAVE_SHOW_OPTIONS_WITH_DENTRY
 static int
 zpl_show_options(struct seq_file *seq, struct dentry *root)
 {
-	zfs_sb_t *zsb = root->d_sb->s_fs_info;
-
-	seq_printf(seq, ",%s", zsb->z_flags & ZSB_XATTR ? "xattr" : "noxattr");
-
-	return (0);
+	return (__zpl_show_options(seq, root->d_sb->s_fs_info));
 }
 #else
 static int
 zpl_show_options(struct seq_file *seq, struct vfsmount *vfsp)
 {
-	zfs_sb_t *zsb = vfsp->mnt_sb->s_fs_info;
-
-	seq_printf(seq, ",%s", zsb->z_flags & ZSB_XATTR ? "xattr" : "noxattr");
-
-	return (0);
+	return (__zpl_show_options(seq, vfsp->mnt_sb->s_fs_info));
 }
 #endif /* HAVE_SHOW_OPTIONS_WITH_DENTRY */
 
@@ -223,7 +245,7 @@ zpl_mount(struct file_system_type *fs_type, int flags,
 {
 	zpl_mount_data_t zmd = { osname, data };
 
-	return mount_nodev(fs_type, flags, &zmd, zpl_fill_super);
+	return (mount_nodev(fs_type, flags, &zmd, zpl_fill_super));
 }
 #else
 static int
@@ -232,7 +254,7 @@ zpl_get_sb(struct file_system_type *fs_type, int flags,
 {
 	zpl_mount_data_t zmd = { osname, data };
 
-	return get_sb_nodev(fs_type, flags, &zmd, zpl_fill_super, mnt);
+	return (get_sb_nodev(fs_type, flags, &zmd, zpl_fill_super, mnt));
 }
 #endif /* HAVE_MOUNT_NODEV */
 
@@ -266,14 +288,12 @@ zpl_prune_sb(struct super_block *sb, void *arg)
 
 	error = -zfs_sb_prune(sb, *(unsigned long *)arg, &objects);
 	ASSERT3S(error, <=, 0);
-
-	return;
 }
 
 void
 zpl_prune_sbs(int64_t bytes_to_scan, void *private)
 {
-	unsigned long nr_to_scan = (bytes_to_scan / sizeof(znode_t));
+	unsigned long nr_to_scan = (bytes_to_scan / sizeof (znode_t));
 
 	iterate_supers_type(&zpl_fs_type, zpl_prune_sb, &nr_to_scan);
 	kmem_reap();
@@ -290,11 +310,11 @@ zpl_prune_sbs(int64_t bytes_to_scan, void *private)
 void
 zpl_prune_sbs(int64_t bytes_to_scan, void *private)
 {
-	unsigned long nr_to_scan = (bytes_to_scan / sizeof(znode_t));
+	unsigned long nr_to_scan = (bytes_to_scan / sizeof (znode_t));
 
-        shrink_dcache_memory(nr_to_scan, GFP_KERNEL);
-        shrink_icache_memory(nr_to_scan, GFP_KERNEL);
-        kmem_reap();
+	shrink_dcache_memory(nr_to_scan, GFP_KERNEL);
+	shrink_icache_memory(nr_to_scan, GFP_KERNEL);
+	kmem_reap();
 }
 #endif /* HAVE_SHRINK */
 
@@ -323,7 +343,7 @@ zpl_nr_cached_objects(struct super_block *sb)
 static void
 zpl_free_cached_objects(struct super_block *sb, int nr_to_scan)
 {
-	arc_adjust_meta(nr_to_scan * sizeof(znode_t));
+	arc_adjust_meta(nr_to_scan * sizeof (znode_t), B_FALSE);
 }
 #endif /* HAVE_FREE_CACHED_OBJECTS */
 

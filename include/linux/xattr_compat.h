@@ -24,7 +24,9 @@
  */
 
 #ifndef _ZFS_XATTR_H
-#define _ZFS_XATTR_H
+#define	_ZFS_XATTR_H
+
+#include <linux/posix_acl_xattr.h>
 
 /*
  * 2.6.35 API change,
@@ -45,19 +47,19 @@ typedef struct xattr_handler		xattr_handler_t;
  * instead of an inode, and a handler_flags argument was added.
  */
 #ifdef HAVE_DENTRY_XATTR_GET
-#define ZPL_XATTR_GET_WRAPPER(fn)					\
+#define	ZPL_XATTR_GET_WRAPPER(fn)					\
 static int								\
 fn(struct dentry *dentry, const char *name, void *buffer, size_t size,	\
     int unused_handler_flags)						\
 {									\
-	return __ ## fn(dentry->d_inode, name, buffer, size);		\
+	return (__ ## fn(dentry->d_inode, name, buffer, size));		\
 }
 #else
-#define ZPL_XATTR_GET_WRAPPER(fn)					\
+#define	ZPL_XATTR_GET_WRAPPER(fn)					\
 static int								\
 fn(struct inode *ip, const char *name, void *buffer, size_t size)	\
 {									\
-	return __ ## fn(ip, name, buffer, size);			\
+	return (__ ## fn(ip, name, buffer, size));			\
 }
 #endif /* HAVE_DENTRY_XATTR_GET */
 
@@ -67,29 +69,62 @@ fn(struct inode *ip, const char *name, void *buffer, size_t size)	\
  * instead of an inode, and a handler_flags argument was added.
  */
 #ifdef HAVE_DENTRY_XATTR_SET
-#define ZPL_XATTR_SET_WRAPPER(fn)					\
+#define	ZPL_XATTR_SET_WRAPPER(fn)					\
 static int								\
 fn(struct dentry *dentry, const char *name, const void *buffer,		\
     size_t size, int flags, int unused_handler_flags)			\
 {									\
-	return __ ## fn(dentry->d_inode, name, buffer, size, flags);	\
+	return (__ ## fn(dentry->d_inode, name, buffer, size, flags));	\
 }
 #else
-#define ZPL_XATTR_SET_WRAPPER(fn)					\
+#define	ZPL_XATTR_SET_WRAPPER(fn)					\
 static int								\
 fn(struct inode *ip, const char *name, const void *buffer,		\
     size_t size, int flags)						\
 {									\
-	return __ ## fn(ip, name, buffer, size, flags);			\
+	return (__ ## fn(ip, name, buffer, size, flags));		\
 }
 #endif /* HAVE_DENTRY_XATTR_SET */
 
 #ifdef HAVE_6ARGS_SECURITY_INODE_INIT_SECURITY
-#define zpl_security_inode_init_security(ip, dip, qstr, nm, val, len)	\
+#define	zpl_security_inode_init_security(ip, dip, qstr, nm, val, len)	\
 	security_inode_init_security(ip, dip, qstr, nm, val, len)
 #else
-#define zpl_security_inode_init_security(ip, dip, qstr, nm, val, len)	\
+#define	zpl_security_inode_init_security(ip, dip, qstr, nm, val, len)	\
 	security_inode_init_security(ip, dip, nm, val, len)
 #endif /* HAVE_6ARGS_SECURITY_INODE_INIT_SECURITY */
+
+/*
+ * Linux 3.7 API change. posix_acl_{from,to}_xattr gained the user_ns
+ * parameter.  For the HAVE_POSIX_ACL_FROM_XATTR_USERNS version the
+ * userns _may_ not be correct because it's used outside the RCU.
+ */
+#ifdef HAVE_POSIX_ACL_FROM_XATTR_USERNS
+static inline struct posix_acl *
+zpl_acl_from_xattr(const void *value, int size)
+{
+	return (posix_acl_from_xattr(CRED()->user_ns, value, size));
+}
+
+static inline int
+zpl_acl_to_xattr(struct posix_acl *acl, void *value, int size)
+{
+	return (posix_acl_to_xattr(CRED()->user_ns, acl, value, size));
+}
+
+#else
+
+static inline struct posix_acl *
+zpl_acl_from_xattr(const void *value, int size)
+{
+	return (posix_acl_from_xattr(value, size));
+}
+
+static inline int
+zpl_acl_to_xattr(struct posix_acl *acl, void *value, int size)
+{
+	return (posix_acl_to_xattr(acl, value, size));
+}
+#endif /* HAVE_POSIX_ACL_FROM_XATTR_USERNS */
 
 #endif /* _ZFS_XATTR_H */

@@ -28,7 +28,7 @@
 
 /*
  * This file contains the code to implement file range locking in
- * ZFS, although there isn't much specific to ZFS (all that comes to mind
+ * ZFS, although there isn't much specific to ZFS (all that comes to mind is
  * support for growing the blocksize).
  *
  * Interface
@@ -550,7 +550,7 @@ zfs_range_unlock(rl_t *rl)
 	ASSERT(rl->r_type == RL_WRITER || rl->r_type == RL_READER);
 	ASSERT(rl->r_cnt == 1 || rl->r_cnt == 0);
 	ASSERT(!rl->r_proxy);
-	list_create(&free_list, sizeof(rl_t), offsetof(rl_t, rl_node));
+	list_create(&free_list, sizeof (rl_t), offsetof(rl_t, rl_node));
 
 	mutex_enter(&zp->z_range_lock);
 	if (rl->r_type == RL_WRITER) {

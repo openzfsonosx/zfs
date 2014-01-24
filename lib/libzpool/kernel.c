@@ -82,7 +82,7 @@ thread_init(void)
 	VERIFY3S(pthread_key_create(&kthread_key, NULL), ==, 0);
 
 	/* Create entry for primary kthread */
-	kt = umem_zalloc(sizeof(kthread_t), UMEM_NOFAIL);
+	kt = umem_zalloc(sizeof (kthread_t), UMEM_NOFAIL);
 	kt->t_tid = pthread_self();
 	kt->t_func = NULL;
 
@@ -101,7 +101,7 @@ thread_fini(void)
 	ASSERT(pthread_equal(kt->t_tid, pthread_self()));
 	ASSERT3P(kt->t_func, ==, NULL);
 
-	umem_free(kt, sizeof(kthread_t));
+	umem_free(kt, sizeof (kthread_t));
 
 	/* Wait for all threads to exit via thread_exit() */
 	VERIFY3S(pthread_mutex_lock(&kthread_lock), ==, 0);
@@ -125,7 +125,7 @@ zk_thread_current(void)
 
 	ASSERT3P(kt, !=, NULL);
 
-	return kt;
+	return (kt);
 }
 
 void *
@@ -145,12 +145,12 @@ zk_thread_helper(void *arg)
 	/* Unreachable, thread must exit with thread_exit() */
 	abort();
 
-	return NULL;
+	return (NULL);
 }
 
 kthread_t *
 zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func, void *arg,
-	      size_t len, proc_t *pp, int state, pri_t pri, int detachstate)
+    size_t len, proc_t *pp, int state, pri_t pri, int detachstate)
 {
 	kthread_t *kt;
 	pthread_attr_t attr;
@@ -158,7 +158,7 @@ zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func, void *arg,
 
 	ASSERT3S(state & ~TS_RUN, ==, 0);
 
-	kt = umem_zalloc(sizeof(kthread_t), UMEM_NOFAIL);
+	kt = umem_zalloc(sizeof (kthread_t), UMEM_NOFAIL);
 	kt->t_func = func;
 	kt->t_arg = arg;
 
@@ -196,7 +196,7 @@ zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func, void *arg,
 
 	VERIFY3S(pthread_attr_destroy(&attr), ==, 0);
 
-	return kt;
+	return (kt);
 }
 
 void
@@ -206,7 +206,7 @@ zk_thread_exit(void)
 
 	ASSERT(pthread_equal(kt->t_tid, pthread_self()));
 
-	umem_free(kt, sizeof(kthread_t));
+	umem_free(kt, sizeof (kthread_t));
 
 	pthread_mutex_lock(&kthread_lock);
 	kthread_nr--;
@@ -232,8 +232,8 @@ zk_thread_join(kt_did_t tid)
  */
 /*ARGSUSED*/
 kstat_t *
-kstat_create(char *module, int instance, char *name, char *class,
-    uchar_t type, ulong_t ndata, uchar_t ks_flag)
+kstat_create(const char *module, int instance, const char *name,
+    const char *class, uchar_t type, ulong_t ndata, uchar_t ks_flag)
 {
 	return (NULL);
 }
@@ -246,6 +246,43 @@ kstat_install(kstat_t *ksp)
 /*ARGSUSED*/
 void
 kstat_delete(kstat_t *ksp)
+{}
+
+/*ARGSUSED*/
+void
+kstat_waitq_enter(kstat_io_t *kiop)
+{}
+
+/*ARGSUSED*/
+void
+kstat_waitq_exit(kstat_io_t *kiop)
+{}
+
+/*ARGSUSED*/
+void
+kstat_runq_enter(kstat_io_t *kiop)
+{}
+
+/*ARGSUSED*/
+void
+kstat_runq_exit(kstat_io_t *kiop)
+{}
+
+/*ARGSUSED*/
+void
+kstat_waitq_to_runq(kstat_io_t *kiop)
+{}
+
+/*ARGSUSED*/
+void
+kstat_runq_back_to_waitq(kstat_io_t *kiop)
+{}
+
+void
+kstat_set_raw_ops(kstat_t *ksp,
+    int (*headers)(char *buf, size_t size),
+    int (*data)(char *buf, size_t size, void *data),
+    void *(*addr)(kstat_t *ksp, loff_t index))
 {}
 
 /*
@@ -515,6 +552,41 @@ top:
 	return (1);
 }
 
+/*ARGSUSED*/
+clock_t
+cv_timedwait_hires(kcondvar_t *cv, kmutex_t *mp, hrtime_t tim, hrtime_t res,
+    int flag)
+{
+	int error;
+	timestruc_t ts;
+	hrtime_t delta;
+
+	ASSERT(flag == 0);
+
+top:
+	delta = tim - gethrtime();
+	if (delta <= 0)
+		return (-1);
+
+	ts.tv_sec = delta / NANOSEC;
+	ts.tv_nsec = delta % NANOSEC;
+
+	ASSERT(mutex_owner(mp) == curthread);
+	mp->m_owner = NULL;
+	error = pthread_cond_timedwait(&cv->cv, &mp->m_lock, &ts);
+	mp->m_owner = curthread;
+
+	if (error == ETIME)
+		return (-1);
+
+	if (error == EINTR)
+		goto top;
+
+	ASSERT(error == 0);
+
+	return (1);
+}
+
 void
 cv_signal(kcondvar_t *cv)
 {
@@ -737,7 +809,7 @@ vn_rdwr(int uio, vnode_t *vp, void *addr, ssize_t len, offset_t offset,
 		 * (memory or disk) due to O_DIRECT, so we abort() in order to
 		 * catch the offender.
 		 */
-		 abort();
+		abort();
 	}
 #endif
 	if (rc == -1)
