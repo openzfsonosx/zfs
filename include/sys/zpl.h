@@ -179,15 +179,15 @@ dir_emit_dots(struct file *file, struct dir_context *ctx)
 {
 	if (ctx->pos == 0) {
 		if (!dir_emit_dot(file, ctx))
-			return (false);
+			return (B_FALSE);
 		ctx->pos = 1;
 	}
 	if (ctx->pos == 1) {
 		if (!dir_emit_dotdot(file, ctx))
-			return (false);
+			return (B_FALSE);
 		ctx->pos = 2;
 	}
-	return (true);
+	return (B_TRUE);
 }
 #endif /* HAVE_VFS_ITERATE */
 

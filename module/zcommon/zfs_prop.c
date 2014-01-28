@@ -243,9 +243,11 @@ zfs_prop_init(void)
 	zprop_register_index(ZFS_PROP_SNAPDEV, "snapdev", ZFS_SNAPDEV_HIDDEN,
 	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
 	    "hidden | visible", "SNAPDEV", snapdev_table);
+#ifdef LINUX
 	zprop_register_index(ZFS_PROP_ACLTYPE, "acltype", ZFS_ACLTYPE_OFF,
 	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT,
 	    "noacl | posixacl", "ACLTYPE", acltype_table);
+#endif
 	zprop_register_index(ZFS_PROP_ACLINHERIT, "aclinherit",
 	    ZFS_ACL_RESTRICTED, PROP_INHERIT, ZFS_TYPE_FILESYSTEM,
 	    "discard | noallow | restricted | passthrough | passthrough-x",
@@ -351,6 +353,7 @@ zfs_prop_init(void)
 	zprop_register_string(ZFS_PROP_MLSLABEL, "mlslabel",
 	    ZFS_MLSLABEL_DEFAULT, PROP_INHERIT, ZFS_TYPE_DATASET,
 	    "<sensitivity label>", "MLSLABEL");
+#ifdef LINUX
 	zprop_register_string(ZFS_PROP_SELINUX_CONTEXT, "context",
 	    "none", PROP_DEFAULT, ZFS_TYPE_DATASET, "<selinux context>",
 	    "CONTEXT");
@@ -363,6 +366,7 @@ zfs_prop_init(void)
 	zprop_register_string(ZFS_PROP_SELINUX_ROOTCONTEXT, "rootcontext",
 	    "none", PROP_DEFAULT, ZFS_TYPE_DATASET, "<selinux rootcontext>",
 	    "ROOTCONTEXT");
+#endif
 
 	/* readonly number properties */
 	zprop_register_number(ZFS_PROP_USED, "used", 0, PROP_READONLY,

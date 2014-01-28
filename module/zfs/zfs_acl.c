@@ -1161,7 +1161,7 @@ zfs_acl_chown_setattr(znode_t *zp)
 	int error;
 	zfs_acl_t *aclp;
 
-	if (ZTOZSB(zp)->z_acl_type == ZFS_ACLTYPE_POSIXACL)
+	if (zp->z_zfsvfs->z_acl_mode == ZFS_ACLTYPE_POSIXACL)
 		return (0);
 
 	ASSERT(MUTEX_HELD(&zp->z_lock));
@@ -1786,35 +1786,6 @@ zfs_acl_ids_overquota(zfsvfs_t *zfsvfs, zfs_acl_ids_t *acl_ids)
 	    zfs_fuid_overquota(zfsvfs, B_TRUE, acl_ids->z_fgid));
 }
 
-/*
- * Retrieve a file's ACL
- */
-int
-zfs_getacl(znode_t *zp, vsecattr_t *vsecp, boolean_t skipaclchk, cred_t *cr)
-{
-	zfs_acl_t	*aclp;
-	ulong_t		mask;
-	int		error;
-	int 		count = 0;
-	int		largeace = 0;
-
-	mask = vsecp->vsa_mask & (VSA_ACE | VSA_ACECNT |
-	    VSA_ACE_ACLFLAGS | VSA_ACE_ALLTYPES);
-
-	if (mask == 0)
-		return (SET_ERROR(ENOSYS));
-
-	if ((error = zfs_zaccess(zp, ACE_READ_ACL, 0, skipaclchk, cr)))
-		return (error);
-
-	mutex_enter(&zp->z_acl_lock);
-
-	error = zfs_acl_node_read(zp, B_FALSE, &aclp, B_FALSE);
-	if (error != 0) {
-		mutex_exit(&zp->z_acl_lock);
-		return (error);
-	}
->>>>>>> upstream/master
 
 int
 zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
@@ -2141,6 +2112,10 @@ zfs_zaccess_dataset_check(znode_t *zp, uint32_t v4_mode)
           (zp->z_pflags & ZFS_IMMUTABLE)))) {
 		return (EPERM);
 	}
+#ifdef sun
+        if ((v4_mode & (ACE_DELETE | ACE_DELETE_CHILD)) &&
+         (zp->z_pflags & ZFS_NOUNLINK)) {
+                return (EPERM);
 #else
 	/*
 	 * In FreeBSD we allow to modify directory's content is ZFS_NOUNLINK
@@ -2484,7 +2459,7 @@ zfs_zaccess(znode_t *zp, int mode, int flags, boolean_t skipaclchk, cred_t *cr)
 			 * child xattr znodes have been destroyed and
 			 * release their references in zfs_inode_destroy().
 			 */
-			error = zfs_zget(ZTOZSB(zp), parent, &check_zp);
+			error = zfs_zget(ZTOZFS(zp), parent, &check_zp);
 			if (error)
 				return (error);
 

@@ -6551,12 +6551,10 @@ main(int argc, char **argv)
 		usage(B_FALSE);
 		ret = 1;
 	}
-<<<<<<< HEAD
+
 	libzfs_mnttab_cache(g_zfs, B_FALSE);
 
 	(void) fclose(mnttab_file);
-=======
->>>>>>> upstream/master
 
 	if (ret == 0 && log_history)
 		(void) zpool_log_history(g_zfs, history_str);

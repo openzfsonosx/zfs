@@ -373,8 +373,8 @@ xattr_changed_cb(void *arg, uint64_t newval)
 static void
 acltype_changed_cb(void *arg, uint64_t newval)
 {
-	zfs_sb_t *zsb = arg;
-
+	zfsvfs_t *zsb = arg;
+#ifdef LINUX
 	switch (newval) {
 	case ZFS_ACLTYPE_OFF:
 		zsb->z_acl_type = ZFS_ACLTYPE_OFF;
@@ -392,6 +392,7 @@ acltype_changed_cb(void *arg, uint64_t newval)
 	default:
 		break;
 	}
+#endif
 }
 
 static void
@@ -1117,9 +1118,9 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 		goto out;
 	zfsvfs->z_case = (uint_t)zval;
 
-	if ((error = zfs_get_zplprop(os, ZFS_PROP_ACLTYPE, &zval)) != 0)
+	if ((error = zfs_get_zplprop(os, ZFS_PROP_ACLMODE, &zval)) != 0)
 		goto out;
-	zsb->z_acl_type = (uint_t)zval;
+	zfsvfs->z_acl_mode = (uint_t)zval;
 
 	/*
 	 * Fold case on file systems that are always or sometimes case
@@ -1532,7 +1533,7 @@ zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
             zfsvfs) == 0);
 
 		VERIFY(dsl_prop_unregister(ds, "acltype", acltype_changed_cb,
-		    zsb) == 0);
+		    zfsvfs) == 0);
 
 		VERIFY(dsl_prop_unregister(ds, "aclinherit",
 		    acl_inherit_changed_cb, zfsvfs) == 0);
@@ -2857,13 +2858,6 @@ zfs_vfs_vptofh(vnode_t *vp, int *fhlenp, unsigned char *fhp, __unused vfs_contex
 	if (zp_gen == 0)
 		zp_gen = 1;
 
-	if (zp->z_unlinked || zp_gen != fid_gen) {
-		dprintf("znode gen (%u) != fid gen (%u)\n", zp_gen, fid_gen);
-		vnode_put(ZTOV(zp));
-		ZFS_EXIT(zfsvfs);
-		return (SET_ERROR(EINVAL));
-	}
-
 	/*
 	 * Store the object and gen numbers in an endian neutral manner
 	 */
@@ -2966,7 +2960,6 @@ zfs_resume_fs(zfsvfs_t *zfsvfs, const char *osname)
 		}
 		mutex_exit(&zfsvfs->z_znodes_lock);
 	}
-	mutex_exit(&zsb->z_znodes_lock);
 
 bail:
 	/* release the VOPs */
@@ -3186,7 +3179,7 @@ zfs_get_zplprop(objset_t *os, zfs_prop_t prop, uint64_t *value)
 		case ZFS_PROP_CASE:
 			*value = ZFS_CASE_SENSITIVE;
 			break;
-		case ZFS_PROP_ACLTYPE:
+		case ZFS_PROP_ACLMODE:
 			*value = ZFS_ACLTYPE_OFF;
 			break;
 		default:
@@ -3228,15 +3221,8 @@ zfsvfs_update_fromname(const char *oldname, const char *newname)
 	}
 	mtx_unlock(&mountlist_mtx);
 #endif
-
-void
-zfs_fini(void)
-{
-	taskq_wait(system_taskq);
-	unregister_filesystem(&zpl_fs_type);
-	zfs_znode_fini();
-	zfsctl_fini();
 }
+
 #endif
 
 

@@ -1116,7 +1116,7 @@ retry:
 	 * Large allocations which do not require contiguous pages
 	 * should be using vmem_alloc() in the linux kernel
 	 */
-	buf_hash_table.ht_table =
+	buf_hash_table->ht_table =
 	    vmem_zalloc(hsize * sizeof (void*), KM_SLEEP);
 #else
 	buf_hash_table->ht_table =
@@ -2034,7 +2034,9 @@ arc_evict(arc_state_t *state, uint64_t spa, int64_t bytes, boolean_t recycle,
 			list_insert_after(list, ab, &marker);
 			mutex_exit(&evicted_state->arcs_mtx);
 			mutex_exit(&state->arcs_mtx);
+#ifdef LINUX
 			kpreempt(KPREEMPT_SYNC);
+#endif
 			mutex_enter(&state->arcs_mtx);
 			mutex_enter(&evicted_state->arcs_mtx);
 			ab_prev = list_prev(list, &marker);
@@ -2178,7 +2180,9 @@ top:
 		if (count++ > arc_evict_iterations) {
 			list_insert_after(list, ab, &marker);
 			mutex_exit(&state->arcs_mtx);
+#ifdef LINUX
 			kpreempt(KPREEMPT_SYNC);
+#endif
 			mutex_enter(&state->arcs_mtx);
 			ab_prev = list_prev(list, &marker);
 			list_remove(list, &marker);
@@ -3831,6 +3835,35 @@ arc_set_callback(arc_buf_t *buf, arc_evict_func_t *func, void *private)
 	buf->b_efunc = func;
 	buf->b_private = private;
 }
+
+/*
+ * Notify the arc that a block was freed, and thus will never be used again.
+ */
+void
+arc_freed(spa_t *spa, const blkptr_t *bp)
+{
+        arc_buf_hdr_t *hdr;
+        kmutex_t *hash_lock;
+        uint64_t guid = spa_load_guid(spa);
+
+        hdr = buf_hash_find(guid, BP_IDENTITY(bp), BP_PHYSICAL_BIRTH(bp),
+            &hash_lock);
+        if (hdr == NULL)
+                return;
+        if (HDR_BUF_AVAILABLE(hdr)) {
+                arc_buf_t *buf = hdr->b_buf;
+                add_reference(hdr, hash_lock, FTAG);
+                hdr->b_flags &= ~ARC_BUF_AVAILABLE;
+                mutex_exit(hash_lock);
+
+                arc_release(buf, FTAG);
+                (void) arc_buf_remove_ref(buf, FTAG);
+        } else {
+                mutex_exit(hash_lock);
+        }
+
+}
+
 
 /*
  * This is used by the DMU to let the ARC know that a buffer is

@@ -265,6 +265,8 @@ nvlist_nvflag(nvlist_t *nvl)
 static nv_alloc_t *
 nvlist_nv_alloc(int kmflag)
 {
+    nv_alloc_t *nva = nv_alloc_nosleep;
+
 #if defined(_KERNEL) && !defined(_BOOT)
 	switch (kmflag) {
 	case KM_SLEEP:

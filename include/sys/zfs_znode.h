@@ -408,7 +408,7 @@ extern void zfs_log_rename(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 extern void zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
     znode_t *zp, offset_t off, ssize_t len, int ioflag,
     zil_callback_t callback, void *callback_data);
-extern void zfs_log_truncate(zilog_t *zilog, dmu_tx_t *tx, int txtype,
+extern void zfs_log_truncate(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
     znode_t *zp, uint64_t off, uint64_t len);
 extern void zfs_log_setattr(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
     znode_t *zp, vattr_t *vap, uint_t mask_applied, zfs_fuid_info_t *fuidp);

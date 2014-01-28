@@ -694,7 +694,7 @@ zfs_get_parent(const char *datasetname, char *parent, int parentsize)
 }
 
 int
-zfs_secpolicy_destroy_perms(const char *name, nvlist_t *innvl, cred_t *cr)
+zfs_secpolicy_destroy_perms(const char *name, cred_t *cr)
 {
 	int error;
 
@@ -709,7 +709,7 @@ zfs_secpolicy_destroy_perms(const char *name, nvlist_t *innvl, cred_t *cr)
 static int
 zfs_secpolicy_destroy(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 {
-	return (zfs_secpolicy_destroy_perms(zc->zc_name, innvl, cr));
+	return (zfs_secpolicy_destroy_perms(zc->zc_name, cr));
 }
 
 /*
@@ -742,7 +742,7 @@ zfs_secpolicy_destroy_snaps(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 
 		if (error == 0) {
 			error = zfs_secpolicy_destroy_perms(nvpair_name(pair),
-                                                innvl, cr);
+                                                cr);
 		} else if (error == ENOENT) {
 			/*
 			 * Ignore any snapshots that don't exist (we consider
@@ -774,9 +774,9 @@ zfs_secpolicy_destroy_recursive(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 
     dsname = kmem_asprintf("%s@", zc->zc_name);
 
-    error = zfs_secpolicy_destroy_perms(dsname, innvl, cr);
+    error = zfs_secpolicy_destroy_perms(dsname, cr);
     if (error == ENOENT)
-        error = zfs_secpolicy_destroy_perms(zc->zc_name, innvl, cr);
+        error = zfs_secpolicy_destroy_perms(zc->zc_name, cr);
 
     strfree(dsname);
     return (error);
@@ -886,7 +886,7 @@ zfs_secpolicy_recv(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 
 
 int
-zfs_secpolicy_snapshot_perms(const char *name, nvlist_t *innvl, cred_t *cr)
+zfs_secpolicy_snapshot_perms(const char *name, cred_t *cr)
 {
 	return (zfs_secpolicy_write_perms(name,
 	    ZFS_DELEG_PERM_SNAPSHOT, cr));
@@ -915,7 +915,7 @@ zfs_secpolicy_snapshot(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 			break;
 		}
 		*atp = '\0';
-		error = zfs_secpolicy_snapshot_perms(name, innvl, cr);
+		error = zfs_secpolicy_snapshot_perms(name, cr);
 		*atp = '@';
 		if (error != 0)
 			break;
@@ -1159,7 +1159,7 @@ zfs_secpolicy_tmp_snapshot(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 	    ZFS_DELEG_PERM_DIFF, cr)) == 0)
 		return (0);
 
-	error = zfs_secpolicy_snapshot_perms(zc->zc_name, innvl, cr);
+	error = zfs_secpolicy_snapshot_perms(zc->zc_name, cr);
 	if (error == 0)
 		error = zfs_secpolicy_hold(zc, innvl, cr);
 	if (error == 0)
@@ -3339,7 +3339,7 @@ zfs_unmount_snap(const char *snapname)
     int error;
 
     if ((ptr = strchr(snapname, '@')) == NULL)
-        return;
+        return 0;
 
     dsname = kmem_alloc(ptr - snapname + 1, KM_SLEEP);
     strlcpy(dsname, snapname, ptr - snapname + 1);
@@ -3523,7 +3523,7 @@ zfs_ioc_rollback(const char *fsname, nvlist_t *args, nvlist_t *outnvl)
 	zfsvfs_t *zsb;
 	int error;
 
-	if (getzfsvfs(zc->zc_name, &zsb) == 0) {
+	if (getzfsvfs(fsname, &zsb) == 0) {
 		error = zfs_suspend_fs(zsb);
 		if (error == 0) {
 			int resume_err;
@@ -4282,13 +4282,13 @@ zfs_ioc_recv(zfs_cmd_t *zc)
              * If the suspend fails, then the recv_end will
              * likely also fail, and clean up after itself.
              */
-            end_err = dmu_recv_end(&drc);
+            end_err = dmu_recv_end(&drc, zsb);
             if (error == 0)
                 error = zfs_resume_fs(zsb, tofs);
             error = error ? error : end_err;
             //deactivate_super(zsb->z_sb);
         } else {
-            error = dmu_recv_end(&drc);
+            error = dmu_recv_end(&drc, zsb);
         }
     }
 
@@ -6160,19 +6160,6 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 		zfs_log_history(zc);
 
 out:
-	nvlist_free(innvl);
-	rc = ddi_copyout(zc, (void *)arg, sizeof (zfs_cmd_t), flag);
-	if (error == 0 && rc != 0)
-		error = SET_ERROR(EFAULT);
-	if (error == 0 && vec->zvec_allow_log) {
-		char *s = tsd_get(zfs_allow_log_key);
-		if (s != NULL)
-			strfree(s);
-		(void) tsd_set(zfs_allow_log_key, saved_poolname);
-	} else {
-		if (saved_poolname != NULL)
-			kmem_free(saved_poolname, len);
-	}
 
     nvlist_free(innvl);
 
@@ -6196,6 +6183,7 @@ zfsdev_compat_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
 #define	zfsdev_compat_ioctl	NULL
 #endif
 
+#ifdef LINUX
 static const struct file_operations zfsdev_fops = {
 	.open		= zfsdev_open,
 	.release	= zfsdev_release,
@@ -6209,6 +6197,7 @@ static struct miscdevice zfs_misc = {
 	.name		= ZFS_DRIVER,
 	.fops		= &zfsdev_fops,
 };
+#endif
 
 /* ioctl handler for block device. Relay to zvol */
 static int
@@ -6282,6 +6271,7 @@ mnttab_file_create(void)
 		printf("mnttab_file_create : error %d\n", error);
 	return error;
 }
+#endif
 
 #ifdef DEBUG
 #define	ZFS_DEBUG_STR	" (DEBUG mode)"

@@ -242,11 +242,7 @@ zfs_log_create(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 	itx_t *itx;
 	lr_create_t *lr;
 	lr_acl_create_t *lracl;
-<<<<<<< HEAD
 	size_t aclsize = (vsecp != NULL) ? vsecp->vsa_aclentsz : 0;
-=======
-	size_t aclsize = 0;
->>>>>>> upstream/master
 	size_t xvatsize = 0;
 	size_t txsize;
 	xvattr_t *xvap = (xvattr_t *)vap;
@@ -460,14 +456,9 @@ zfs_log_rename(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 ssize_t zfs_immediate_write_sz = 32768;
 
 void
-<<<<<<< HEAD
-zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
-	znode_t *zp, offset_t off, ssize_t resid, int ioflag)
-=======
 zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 	znode_t *zp, offset_t off, ssize_t resid, int ioflag,
 	zil_callback_t callback, void *callback_data)
->>>>>>> upstream/master
 {
 	itx_wr_state_t write_state;
 	boolean_t slogging;

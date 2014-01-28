@@ -1189,7 +1189,8 @@ zfs_vnop_pageout(
 		    &zp->z_pflags, 8);
 		zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime,
 		    B_TRUE);
-		zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, off, len, 0);
+		zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, off, len, 0,
+                      NULL, NULL);
 	}
     dmu_tx_commit(tx);
 

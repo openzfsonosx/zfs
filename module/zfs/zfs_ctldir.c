@@ -1153,12 +1153,12 @@ zfsctl_snapdir_mkdir(struct vnode *dvp, char *dirname, vattr_t *vap, struct vnod
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(dvp));
 	char name[MAXNAMELEN];
-	int err;
+	int err, error;
 	//static enum symfollow follow = NO_FOLLOW;
 	static enum uio_seg seg = UIO_SYSSPACE;
 
     return ENOTSUP;
-
+#if 0
 	if (snapshot_namecheck(dirname, NULL, NULL) != 0)
 		error = SET_ERROR(EILSEQ);
 		goto out;
@@ -1180,8 +1180,9 @@ zfsctl_snapdir_mkdir(struct vnode *dvp, char *dirname, vattr_t *vap, struct vnod
         err = zfsctl_snapdir_lookup(dvp, dirname, vpp,
                                     0, cr, NULL, NULL);
 	}
-
+out:
 	return (err);
+#endif
 }
 
 static int

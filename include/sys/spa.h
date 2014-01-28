@@ -542,7 +542,7 @@ typedef struct spa_stats_history {
 	uint64_t		count;
 	uint64_t		size;
 	kstat_t			*kstat;
-	void			*private;
+	void			*_private;
 	list_t			list;
 } spa_stats_history_t;
 

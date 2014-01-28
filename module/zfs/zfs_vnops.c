@@ -883,6 +883,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	    (((xuio_t *)uio)->xu_type == UIOTYPE_ZEROCOPY))
 		xuio = (xuio_t *)uio;
 	else
+#endif
 		zfs_prefault_write(MIN(n, max_blksz), uio);
 #endif	/* sun */
 
@@ -5443,9 +5444,8 @@ zfs_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 	 * operates directly on inodes, so we need to check access rights.
 	 */
 	if ((error = zfs_zaccess(zp, ACE_WRITE_DATA, 0, B_FALSE, cr))) {
-		ZFS_EXIT(zsb);
+		ZFS_EXIT(zfsvfs);
 		return (error);
->>>>>>> upstream/master
 	}
 
 	off = bfp->l_start;

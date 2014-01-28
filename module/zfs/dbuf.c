@@ -1934,7 +1934,7 @@ dbuf_prefetch(dnode_t *dn, uint64_t blkid, zio_priority_t prio)
 			    dn->dn_object, 0, blkid);
 
 			(void) arc_read(NULL, dn->dn_objset->os_spa,
-                            bp, NULL, NULL, priority,
+                            bp, NULL, NULL, prio,
 			    ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
 			    &aflags, &zb);
 		}
