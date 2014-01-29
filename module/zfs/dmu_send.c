@@ -74,7 +74,11 @@ dump_bytes_strategy(void *arg)
 	ASSERT0(dbi->dbi_len % 8);
 
 	fletcher_4_incremental_native(dbi->dbi_buf, dbi->dbi_len, &dsp->dsa_zc);
+#ifdef _KERNEL
 	dsp->dsa_err = spl_vn_rdwr(UIO_WRITE, dsp->dsa_vp,
+#else
+	dsp->dsa_err = vn_rdwr(UIO_WRITE, dsp->dsa_vp,
+#endif
 	    (caddr_t)dbi->dbi_buf, dbi->dbi_len,
 	    0, UIO_SYSSPACE, FAPPEND, RLIM64_INFINITY, CRED(), &resid);
 
@@ -1056,7 +1060,11 @@ restore_read(struct restorearg *ra, int len)
 	while (done < len) {
 		ssize_t resid;
 
+#ifdef _KERNEL
 		ra->err = spl_vn_rdwr(UIO_READ, ra->vp,
+#else
+		ra->err = vn_rdwr(UIO_READ, ra->vp,
+#endif
 		    (caddr_t)ra->buf + done, len - done,
 		    ra->voff, UIO_SYSSPACE, FAPPEND,
 		    RLIM64_INFINITY, CRED(), &resid);

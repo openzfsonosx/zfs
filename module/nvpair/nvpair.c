@@ -265,21 +265,15 @@ nvlist_nvflag(nvlist_t *nvl)
 static nv_alloc_t *
 nvlist_nv_alloc(int kmflag)
 {
-    nv_alloc_t *nva = nv_alloc_nosleep;
-
 #if defined(_KERNEL) && !defined(_BOOT)
 	switch (kmflag) {
 	case KM_SLEEP:
-		nva = nv_alloc_sleep;
-		break;
-#ifdef __linux__
+        return (nv_alloc_sleep);
+#ifdef LINUX
+        /* OSX maps this to KM_SLEEP */
 	case KM_PUSHPAGE:
-		nva = nv_alloc_pushpage;
-		break;
+        return (nv_alloc_pushpage);
 #endif
-	case KM_NOSLEEP:
-		nva = nv_alloc_nosleep;
-		break;
 	default:
 		return (nv_alloc_nosleep);
 	}

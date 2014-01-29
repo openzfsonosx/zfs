@@ -73,6 +73,7 @@
 #include <sys/list.h>
 #include <sys/uio.h>
 #include <sys/zfs_debug.h>
+#include <sys/zfs_delay.h>
 #include <sys/sdt.h>
 #include <sys/kstat.h>
 #include <sys/u8_textprep.h>

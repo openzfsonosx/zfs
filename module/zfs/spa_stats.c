@@ -92,7 +92,7 @@ spa_read_history_data(char *buf, size_t size, void *data)
  * ssh->lock will be held until ksp->ks_ndata entries are processed.
  */
 static void *
-spa_read_history_addr(kstat_t *ksp, loff_t n)
+spa_read_history_addr(kstat_t *ksp, off_t n)
 {
 	spa_t *spa = ksp->ks_private;
 	spa_stats_history_t *ssh = &spa->spa_stats.read_history;
@@ -100,11 +100,11 @@ spa_read_history_addr(kstat_t *ksp, loff_t n)
 	ASSERT(MUTEX_HELD(&ssh->lock));
 
 	if (n == 0)
-		ssh->private = list_tail(&ssh->list);
-	else if (ssh->private)
-		ssh->private = list_prev(&ssh->list, ssh->private);
+		ssh->_private = list_tail(&ssh->list);
+	else if (ssh->_private)
+		ssh->_private = list_prev(&ssh->list, ssh->_private);
 
-	return (ssh->private);
+	return (ssh->_private);
 }
 
 /*
@@ -147,7 +147,7 @@ spa_read_history_init(spa_t *spa)
 
 	ssh->count = 0;
 	ssh->size = 0;
-	ssh->private = NULL;
+	ssh->_private = NULL;
 
 	(void) snprintf(name, KSTAT_STRLEN, "zfs/%s", spa_name(spa));
 	name[KSTAT_STRLEN-1] = '\0';
@@ -215,7 +215,9 @@ spa_read_history_add(spa_t *spa, const zbookmark_t *zb, uint32_t aflags)
 	srh->level  = zb->zb_level;
 	srh->blkid  = zb->zb_blkid;
 	srh->aflags = aflags;
+#ifdef LINUX
 	srh->pid    = getpid();
+#endif
 
 	mutex_enter(&ssh->lock);
 
@@ -317,7 +319,7 @@ spa_txg_history_data(char *buf, size_t size, void *data)
  * ssh->lock will be held until ksp->ks_ndata entries are processed.
  */
 static void *
-spa_txg_history_addr(kstat_t *ksp, loff_t n)
+spa_txg_history_addr(kstat_t *ksp, off_t n)
 {
 	spa_t *spa = ksp->ks_private;
 	spa_stats_history_t *ssh = &spa->spa_stats.txg_history;
@@ -325,11 +327,11 @@ spa_txg_history_addr(kstat_t *ksp, loff_t n)
 	ASSERT(MUTEX_HELD(&ssh->lock));
 
 	if (n == 0)
-		ssh->private = list_tail(&ssh->list);
-	else if (ssh->private)
-		ssh->private = list_prev(&ssh->list, ssh->private);
+		ssh->_private = list_tail(&ssh->list);
+	else if (ssh->_private)
+		ssh->_private = list_prev(&ssh->list, ssh->_private);
 
-	return (ssh->private);
+	return (ssh->_private);
 }
 
 /*
@@ -374,7 +376,7 @@ spa_txg_history_init(spa_t *spa)
 
 	ssh->count = 0;
 	ssh->size = 0;
-	ssh->private = NULL;
+	ssh->_private = NULL;
 
 	(void) snprintf(name, KSTAT_STRLEN, "zfs/%s", spa_name(spa));
 	name[KSTAT_STRLEN-1] = '\0';
@@ -534,11 +536,11 @@ spa_tx_assign_update(kstat_t *ksp, int rw)
 
 	if (rw == KSTAT_WRITE) {
 		for (i = 0; i < ssh->count; i++)
-			((kstat_named_t *)ssh->private)[i].value.ui64 = 0;
+			((kstat_named_t *)ssh->_private)[i].value.ui64 = 0;
 	}
 
 	for (i = ssh->count; i > 0; i--)
-		if (((kstat_named_t *)ssh->private)[i-1].value.ui64 != 0)
+		if (((kstat_named_t *)ssh->_private)[i-1].value.ui64 != 0)
 			break;
 
 	ksp->ks_ndata = i;
@@ -560,13 +562,13 @@ spa_tx_assign_init(spa_t *spa)
 
 	ssh->count = 42; /* power of two buckets for 1ns to 2,199s */
 	ssh->size = ssh->count * sizeof (kstat_named_t);
-	ssh->private = kmem_alloc(ssh->size, KM_SLEEP);
+	ssh->_private = kmem_alloc(ssh->size, KM_SLEEP);
 
 	(void) snprintf(name, KSTAT_STRLEN, "zfs/%s", spa_name(spa));
 	name[KSTAT_STRLEN-1] = '\0';
 
 	for (i = 0; i < ssh->count; i++) {
-		ks = &((kstat_named_t *)ssh->private)[i];
+		ks = &((kstat_named_t *)ssh->_private)[i];
 		ks->data_type = KSTAT_DATA_UINT64;
 		ks->value.ui64 = 0;
 		(void) snprintf(ks->name, KSTAT_STRLEN, "%llu ns",
@@ -579,7 +581,7 @@ spa_tx_assign_init(spa_t *spa)
 
 	if (ksp) {
 		ksp->ks_lock = &ssh->lock;
-		ksp->ks_data = ssh->private;
+		ksp->ks_data = ssh->_private;
 		ksp->ks_ndata = ssh->count;
 		ksp->ks_data_size = ssh->size;
 		ksp->ks_private = spa;
@@ -598,7 +600,7 @@ spa_tx_assign_destroy(spa_t *spa)
 	if (ksp)
 		kstat_delete(ksp);
 
-	kmem_free(ssh->private, ssh->size);
+	kmem_free(ssh->_private, ssh->size);
 	mutex_destroy(&ssh->lock);
 }
 
@@ -611,7 +613,7 @@ spa_tx_assign_add_nsecs(spa_t *spa, uint64_t nsecs)
 	while (((1 << idx) < nsecs) && (idx < ssh->size - 1))
 		idx++;
 
-	atomic_inc_64(&((kstat_named_t *)ssh->private)[idx].value.ui64);
+	atomic_inc_64(&((kstat_named_t *)ssh->_private)[idx].value.ui64);
 }
 
 /*

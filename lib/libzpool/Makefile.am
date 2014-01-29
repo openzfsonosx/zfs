@@ -27,6 +27,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/bpobj.c \
 	../../module/zfs/bptree.c \
 	../../module/zfs/dbuf.c \
+	../../module/zfs/dbuf_stats.c \
 	../../module/zfs/ddt.c \
 	../../module/zfs/ddt_zap.c \
 	../../module/zfs/dmu.c \
@@ -64,6 +65,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/spa_errlog.c \
 	../../module/zfs/spa_history.c \
 	../../module/zfs/spa_misc.c \
+	../../module/zfs/spa_stats.c \
 	../../module/zfs/space_map.c \
 	../../module/zfs/txg.c \
 	../../module/zfs/uberblock.c \

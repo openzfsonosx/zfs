@@ -62,6 +62,7 @@
 #define MAX_UPL_TRANSFER 256
 #endif
 
+#define      getcomm()                       "unknown"
 
 struct zfs_mount_args {
     const char      *fspec;         /* block special device to mount */

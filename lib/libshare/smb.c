@@ -62,6 +62,8 @@
 
 static boolean_t smb_available(void);
 
+smb_share_t *smb_shares = NULL;
+
 static sa_fstype_t *smb_fstype;
 
 /*

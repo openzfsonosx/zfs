@@ -638,6 +638,36 @@ zvol_remove_minor(const char *name)
 	return (rc);
 }
 
+/*
+ * Rename a block device minor mode for the specified volume.
+ */
+static void
+__zvol_rename_minor(zvol_state_t *zv, const char *newname)
+{
+#ifdef LINUX
+    int readonly = get_disk_ro(zv->zv_disk);
+#endif
+
+    ASSERT(MUTEX_HELD(&zvol_state_lock));
+
+    strlcpy(zv->zv_name, newname, sizeof (zv->zv_name));
+
+#ifdef LINUX
+    /*
+     * The block device's read-only state is briefly changed causing
+     * a KOBJ_CHANGE uevent to be issued.  This ensures udev detects
+     * the name change and fixes the symlinks.  This does not change
+     * ZVOL_RDONLY in zv->zv_flags so the actual read-only state never
+     * changes.  This would normally be done using kobject_uevent() but
+     * that is a GPL-only symbol which is why we need this workaround.
+     */
+    set_disk_ro(zv->zv_disk, !readonly);
+    set_disk_ro(zv->zv_disk, readonly);
+#endif
+}
+
+
+
 int
 zvol_first_open(zvol_state_t *zv)
 {
@@ -794,6 +824,51 @@ zvol_remove_minors(const char *name)
 
 	mutex_exit(&zfsdev_state_lock);
 }
+
+/*
+ * Rename minors for specified dataset including children and snapshots.
+ */
+void
+zvol_rename_minors(const char *oldname, const char *newname)
+{
+    zvol_state_t *zv, *zv_next;
+    int oldnamelen, newnamelen;
+    char *name;
+
+#ifdef LINUX
+    if (zvol_inhibit_dev)
+        return;
+#endif
+
+    oldnamelen = strlen(oldname);
+    newnamelen = strlen(newname);
+    name = kmem_alloc(MAXNAMELEN, KM_PUSHPAGE);
+
+	mutex_enter(&zfsdev_state_lock);
+
+#ifdef LINUX
+    for (zv = list_head(&zvol_state_list); zv != NULL; zv = zv_next) {
+        zv_next = list_next(&zvol_state_list, zv);
+
+        if (strcmp(zv->zv_name, oldname) == 0) {
+            __zvol_rename_minor(zv, newname);
+        } else if (strncmp(zv->zv_name, oldname, oldnamelen) == 0 &&
+                   (zv->zv_name[oldnamelen] == '/' ||
+                    zv->zv_name[oldnamelen] == '@')) {
+            snprintf(name, MAXNAMELEN, "%s%c%s", newname,
+                     zv->zv_name[oldnamelen],
+                     zv->zv_name + oldnamelen + 1);
+            __zvol_rename_minor(zv, name);
+        }
+    }
+#endif
+
+    mutex_exit(&zfsdev_state_lock);
+
+    kmem_free(name, MAXNAMELEN);
+}
+
+
 
 static int
 zvol_update_live_volsize(zvol_state_t *zv, uint64_t volsize)

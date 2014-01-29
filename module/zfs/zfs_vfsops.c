@@ -1532,9 +1532,6 @@ zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
 		VERIFY(dsl_prop_unregister(ds, "aclmode", acl_mode_changed_cb,
             zfsvfs) == 0);
 
-		VERIFY(dsl_prop_unregister(ds, "acltype", acltype_changed_cb,
-		    zfsvfs) == 0);
-
 		VERIFY(dsl_prop_unregister(ds, "aclinherit",
 		    acl_inherit_changed_cb, zfsvfs) == 0);
 

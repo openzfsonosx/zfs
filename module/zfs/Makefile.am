@@ -50,6 +50,7 @@ zfs_SOURCES = \
 	bpobj.c \
 	bptree.c \
 	dbuf.c \
+	dbuf_stats.c \
 	ddt.c \
 	ddt_zap.c \
 	dmu.c \
@@ -88,6 +89,7 @@ zfs_SOURCES = \
 	spa_errlog.c \
 	spa_history.c \
 	spa_misc.c \
+	spa_stats.c \
 	space_map.c \
 	txg.c \
 	uberblock.c \

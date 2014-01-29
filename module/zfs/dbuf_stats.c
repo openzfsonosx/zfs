@@ -162,7 +162,7 @@ dbuf_stats_hash_table_data(char *buf, size_t size, void *data)
 }
 
 static void *
-dbuf_stats_hash_table_addr(kstat_t *ksp, loff_t n)
+dbuf_stats_hash_table_addr(kstat_t *ksp, off_t n)
 {
 	dbuf_stats_t *dsh = ksp->ks_private;
 

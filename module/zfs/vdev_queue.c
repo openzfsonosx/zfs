@@ -389,11 +389,13 @@ vdev_queue_io_add(vdev_queue_t *vq, zio_t *zio)
 	ASSERT3U(zio->io_priority, <, ZIO_PRIORITY_NUM_QUEUEABLE);
 	avl_add(&vq->vq_class[zio->io_priority].vqc_queued_tree, zio);
 
+#ifdef LINUX
 	if (ssh->kstat != NULL) {
 		mutex_enter(&ssh->lock);
 		kstat_waitq_enter(ssh->kstat->ks_data);
 		mutex_exit(&ssh->lock);
 	}
+#endif
 }
 
 static void
@@ -405,11 +407,13 @@ vdev_queue_io_remove(vdev_queue_t *vq, zio_t *zio)
 	ASSERT3U(zio->io_priority, <, ZIO_PRIORITY_NUM_QUEUEABLE);
 	avl_remove(&vq->vq_class[zio->io_priority].vqc_queued_tree, zio);
 
+#ifdef LINUX
 	if (ssh->kstat != NULL) {
 		mutex_enter(&ssh->lock);
 		kstat_waitq_exit(ssh->kstat->ks_data);
 		mutex_exit(&ssh->lock);
 	}
+#endif
 }
 
 static void
@@ -423,11 +427,13 @@ vdev_queue_pending_add(vdev_queue_t *vq, zio_t *zio)
 	vq->vq_class[zio->io_priority].vqc_active++;
 	avl_add(&vq->vq_active_tree, zio);
 
+#ifdef LINUX
 	if (ssh->kstat != NULL) {
 		mutex_enter(&ssh->lock);
 		kstat_runq_enter(ssh->kstat->ks_data);
 		mutex_exit(&ssh->lock);
 	}
+#endif
 }
 
 static void
@@ -441,6 +447,7 @@ vdev_queue_pending_remove(vdev_queue_t *vq, zio_t *zio)
 	vq->vq_class[zio->io_priority].vqc_active--;
 	avl_remove(&vq->vq_active_tree, zio);
 
+#ifdef LINUX
 	if (ssh->kstat != NULL) {
 		kstat_io_t *ksio = ssh->kstat->ks_data;
 
@@ -455,6 +462,7 @@ vdev_queue_pending_remove(vdev_queue_t *vq, zio_t *zio)
 		}
 		mutex_exit(&ssh->lock);
 	}
+#endif
 }
 
 static void
