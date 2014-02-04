@@ -2631,17 +2631,17 @@ zvol_create_minors(char *name)
     }
 
     if (dmu_objset_type(os) == DMU_OST_ZVOL) {
-        //dsl_dataset_long_hold(os->os_dsl_dataset, FTAG);
-        //dsl_pool_rele(dmu_objset_pool(os), FTAG);
+        /* In OSX, create_minor() will call IOKit, which may end up
+         * calling zvol_first_open(), so we can not hold a lock here.
+         */
+        dmu_objset_rele(os, FTAG);
+
         if ((error = zvol_create_minor(name)) == 0)
-            /*error = zvol_create_snapsho<ts(os, name)*/;
+            /*error = zvol_create_snapshots(os, name)*/;
         else {
             printf("ZFS WARNING: Unable to create ZVOL %s (error=%d).\n",
                    name, error);
         }
-        //dsl_dataset_long_rele(os->os_dsl_dataset, FTAG);
-        //dsl_dataset_rele(os->os_dsl_dataset, FTAG);
-        dmu_objset_rele(os, FTAG);
         return (error);
     }
     if (dmu_objset_type(os) != DMU_OST_ZFS) {
