@@ -224,12 +224,13 @@ vdev_file_io_start(zio_t *zio)
         return (ZIO_PIPELINE_CONTINUE);
     }
 
-    vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
-    zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
-                            UIO_READ : UIO_WRITE, vf->vf_vnode, zio->io_data,
-                            zio->io_size, zio->io_offset, UIO_SYSSPACE,
-                            0, RLIM64_INFINITY, kcred, &resid);
-    vnode_put(vf->vf_vnode);
+    if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
+        zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
+                           UIO_READ : UIO_WRITE, vf->vf_vnode, zio->io_data,
+                           zio->io_size, zio->io_offset, UIO_SYSSPACE,
+                           0, RLIM64_INFINITY, kcred, &resid);
+        vnode_put(vf->vf_vnode);
+    }
 
     if (resid != 0 && zio->io_error == 0)
         zio->io_error = SET_ERROR(ENOSPC);
