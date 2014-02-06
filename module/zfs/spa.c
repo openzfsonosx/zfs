@@ -156,6 +156,11 @@ boolean_t	spa_create_process = B_TRUE;	/* no process ==> no sysdc */
  */
 #define	TRYIMPORT_NAME	"$import"
 
+
+#ifdef __APPLE__
+extern int spa_osx_create_devs(const char *dsname, void *arg);
+#endif
+
 /*
  * ==========================================================================
  * SPA properties routines
@@ -3864,6 +3869,7 @@ out:
 
 #endif
 
+
 /*
  * Import a non-root pool into the system.
  */
@@ -4042,6 +4048,13 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	 * We kick off an async task to handle this for us.
 	 */
 	spa_async_request(spa, SPA_ASYNC_AUTOEXPAND);
+
+
+#ifdef _KERNEL
+#ifdef __APPLE__
+    spa_osx_create_nodes(spa_name(spa));
+#endif
+#endif
 
 	mutex_exit(&spa_namespace_lock);
 	spa_history_log_version(spa, "import");

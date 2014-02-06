@@ -89,6 +89,7 @@ zfs_SOURCES = \
 	spa_errlog.c \
 	spa_history.c \
 	spa_misc.c \
+	spa_osx.c \
 	spa_stats.c \
 	space_map.c \
 	txg.c \
