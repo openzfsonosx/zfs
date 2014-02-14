@@ -331,12 +331,14 @@ zfs_vnop_lookup(
 
     *ap->a_vpp = NULL;	/* In case we return an error */
 
-#if 0
+#if 1
 	error = cache_lookup(ap->a_dvp, ap->a_vpp, cnp);
 	if (error) {
 		/* We found a cache entry, positive or negative. */
 		if (error == -1)	/* Positive entry? */
 			error = 0;		/* Yes.  Caller expects no error */
+        dprintf("+vnop_lookup (cache) %s\n",
+                error?"negative":"positive");
 		return error;
 	}
 #endif
@@ -361,14 +363,11 @@ zfs_vnop_lookup(
                        ap->a_vpp, cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
     /* flags can be LOOKUP_XATTR | FIGNORECASE */
 
-    if (filename)
-        FREE(filename, M_TEMP);
-
-#if 0
+#if 1
     if (error == ENOENT) {
         if ((ap->a_cnp->cn_nameiop == CREATE || ap->a_cnp->cn_nameiop == RENAME) &&
             (cnp->cn_flags & ISLASTCN)) {
-            printf("create/rename early out\n");
+            dprintf("create/rename early out\n");
             error = EJUSTRETURN;
             goto exit;
         }
@@ -376,10 +375,17 @@ zfs_vnop_lookup(
         /*
 		 * Insert name into cache (as non-existent) if appropriate.
 		 */
-		if ((cnp->cn_flags & MAKEENTRY) && ap->a_cnp->cn_nameiop != CREATE)
+		if ((cnp->cn_flags & MAKEENTRY) && ap->a_cnp->cn_nameiop != CREATE) {
 			cache_enter(ap->a_dvp, *ap->a_vpp, ap->a_cnp);
+            dprintf("Negative-cache made for '%s'\n",
+                    filename ? filename : cnp->cn_nameptr);
+        }
     } // ENOENT
 #endif
+
+    if (filename)
+        FREE(filename, M_TEMP);
+
 
  exit:
 
@@ -740,7 +746,17 @@ zfs_vnop_rename(
 	error = zfs_rename(ap->a_fdvp, ap->a_fcnp->cn_nameptr, ap->a_tdvp,
                        ap->a_tcnp->cn_nameptr, cr, ct, /*flags*/0);
 
-    if (!error) cache_purge_negatives(ap->a_tdvp);
+    if (!error) {
+        cache_purge_negatives(ap->a_tdvp);
+        cache_purge(ap->a_fvp);
+        /*
+        cache_purge(sdvp);
+        cache_purge(tdvp);
+        cache_purge(ZTOV(szp));
+        if (tzp)
+            cache_purge(ZTOV(tzp));
+        */
+    }
 
 	return (error);
 }
@@ -2844,6 +2860,3 @@ int zfs_vfsops_fini(void)
 
     return vfs_fsremove(zfs_vfsconf);
 }
-
-
-
