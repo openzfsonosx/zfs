@@ -328,6 +328,7 @@ zfs_vnop_lookup(
 	DECLARE_CRED(ap);
 	int error;
     char *filename = NULL;
+    int negative_cache = 0;
 
     *ap->a_vpp = NULL;	/* In case we return an error */
 
@@ -335,12 +336,14 @@ zfs_vnop_lookup(
 	error = cache_lookup(ap->a_dvp, ap->a_vpp, cnp);
 	if (error) {
 		/* We found a cache entry, positive or negative. */
-		if (error == -1)	/* Positive entry? */
+		if (error == -1) {	/* Positive entry? */
 			error = 0;		/* Yes.  Caller expects no error */
-        dprintf("+vnop_lookup (cache) %s\n",
-                error?"negative":"positive");
-		return error;
-	}
+            return error;
+        } else {
+            negative_cache = 1;
+            //return error;
+        }
+    }
 #endif
 
     /*
@@ -382,6 +385,12 @@ zfs_vnop_lookup(
         }
     } // ENOENT
 #endif
+
+    if (!error && negative_cache) {
+        printf("[ZFS] Incorrect negative_cache entry for '%s'\n",
+               filename ? filename : cnp->cn_nameptr);
+        cache_purge_negatives(ap->a_dvp);
+    }
 
     if (filename)
         FREE(filename, M_TEMP);
