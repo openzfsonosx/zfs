@@ -233,9 +233,13 @@ SYSCTL_QUAD(_zfs, OID_AUTO, arc_min, CTLFLAG_RW,
             &zfs_arc_min, "Minimum ARC size")
 
 extern int debug_vnop_osx_printf;
-SYSCTL_INT(_zfs, OID_AUTO, vnops_osx_debug,
+SYSCTL_INT(_zfs, OID_AUTO, vnop_osx_debug,
            CTLFLAG_RW, &debug_vnop_osx_printf, 0,
            "Debug printf");
+extern int zfs_vnop_ignore_negatives;
+SYSCTL_INT(_zfs, OID_AUTO, vnop_ignore_negatives,
+           CTLFLAG_RW, &zfs_vnop_ignore_negatives, 0,
+           "Ignore negative cache hits");
 #endif
 
 
@@ -6085,7 +6089,8 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs_mfu_ghost_data_lsize);
     sysctl_register_oid(&sysctl__zfs_l2c_only_size);
 
-    sysctl_register_oid(&sysctl__zfs_vnops_osx_debug);
+    sysctl_register_oid(&sysctl__zfs_vnop_osx_debug);
+    sysctl_register_oid(&sysctl__zfs_vnop_ignore_negatives);
 
 }
 
@@ -6121,6 +6126,7 @@ void arc_unregister_oids(void)
     sysctl_unregister_oid(&sysctl__zfs_mfu_ghost_data_lsize);
     sysctl_unregister_oid(&sysctl__zfs_l2c_only_size);
 
-    sysctl_unregister_oid(&sysctl__zfs_vnops_osx_debug);
+    sysctl_unregister_oid(&sysctl__zfs_vnop_osx_debug);
+    sysctl_unregister_oid(&sysctl__zfs_vnop_ignore_negatives);
 }
 #endif
