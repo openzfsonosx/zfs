@@ -2887,7 +2887,6 @@ zfs_suspend_fs(zfsvfs_t *zfsvfs)
 
 	if ((error = zfsvfs_teardown(zfsvfs, B_FALSE)) != 0)
 		return (error);
-	dmu_objset_disown(zfsvfs->z_os, zfsvfs);
 
 	return (0);
 }
@@ -2896,72 +2895,77 @@ zfs_suspend_fs(zfsvfs_t *zfsvfs)
  * Reopen zfsvfs_t::z_os and release VOPs.
  */
 int
-zfs_resume_fs(zfsvfs_t *zfsvfs, const char *osname)
+zfs_resume_fs(zfsvfs_t *zsb, const char *osname)
 {
 	int err, err2;
 	znode_t *zp;
 	uint64_t sa_obj = 0;
 
-	ASSERT(RRW_WRITE_HELD(&zfsvfs->z_teardown_lock));
-	ASSERT(RW_WRITE_HELD(&zfsvfs->z_teardown_inactive_lock));
+	ASSERT(RRW_WRITE_HELD(&zsb->z_teardown_lock));
+	ASSERT(RW_WRITE_HELD(&zsb->z_teardown_inactive_lock));
 
-	err = dmu_objset_own(osname, DMU_OST_ZFS, B_FALSE, zfsvfs,
-	    &zfsvfs->z_os);
-	if (err) {
-		zfsvfs->z_os = NULL;
-	} else {
-		znode_t *zp;
-		uint64_t sa_obj = 0;
+	/*
+	 * We already own this, so just hold and rele it to update the
+	 * objset_t, as the one we had before may have been evicted.
+	 */
+	VERIFY0(dmu_objset_hold(osname, zsb, &zsb->z_os));
+	VERIFY3P(zsb->z_os->os_dsl_dataset->ds_owner, ==, zsb);
+	VERIFY(dsl_dataset_long_held(zsb->z_os->os_dsl_dataset));
+	dmu_objset_rele(zsb->z_os, zsb);
 
-		/*
-		 * Make sure version hasn't changed
-		 */
+	/*
+	 * Make sure version hasn't changed
+	 */
 
-		err = zfs_get_zplprop(zfsvfs->z_os, ZFS_PROP_VERSION,
-		    &zfsvfs->z_version);
+	err = zfs_get_zplprop(zsb->z_os, ZFS_PROP_VERSION,
+	    &zsb->z_version);
 
-		if (err)
-			goto bail;
+	if (err)
+		goto bail;
 
-		err = zap_lookup(zfsvfs->z_os, MASTER_NODE_OBJ,
-		    ZFS_SA_ATTRS, 8, 1, &sa_obj);
+	err = zap_lookup(zsb->z_os, MASTER_NODE_OBJ,
+	    ZFS_SA_ATTRS, 8, 1, &sa_obj);
 
-		if (err && zfsvfs->z_version >= ZPL_VERSION_SA)
-			goto bail;
+	if (err && zsb->z_version >= ZPL_VERSION_SA)
+		goto bail;
 
-		if ((err = sa_setup(zfsvfs->z_os, sa_obj,
-		    zfs_attr_table,  ZPL_END, &zfsvfs->z_attr_table)) != 0)
-			goto bail;
+	if ((err = sa_setup(zsb->z_os, sa_obj,
+	    zfs_attr_table,  ZPL_END, &zsb->z_attr_table)) != 0)
+		goto bail;
 
-		if (zfsvfs->z_version >= ZPL_VERSION_SA)
-			sa_register_update_callback(zfsvfs->z_os,
-			    zfs_sa_upgrade);
+	if (zsb->z_version >= ZPL_VERSION_SA)
+		sa_register_update_callback(zsb->z_os,
+		    zfs_sa_upgrade);
 
-		VERIFY(zfsvfs_setup(zfsvfs, B_FALSE) == 0);
+    VERIFY(zfsvfs_setup(zsb, B_FALSE) == 0);
 
-		zfs_set_fuid_feature(zfsvfs);
+	zfs_set_fuid_feature(zsb);
+	//zsb->z_rollback_time = jiffies;
 
-		/*
-		 * Attempt to re-establish all the active inodes with their
-		 * dbufs.  If a zfs_rezget() fails, then we unhash the inode
-		 * and mark it stale.  This prevents a collision if a new
-		 * inode/object is created which must use the same inode
-		 * number.  The stale inode will be be released when the
-		 * VFS prunes the dentry holding the remaining references
-		 * on the stale inode.
-		 */
-		mutex_enter(&zfsvfs->z_znodes_lock);
-		for (zp = list_head(&zfsvfs->z_all_znodes); zp;
-		    zp = list_next(&zfsvfs->z_all_znodes, zp)) {
-			(void) zfs_rezget(zp);
+	/*
+	 * Attempt to re-establish all the active inodes with their
+	 * dbufs.  If a zfs_rezget() fails, then we unhash the inode
+	 * and mark it stale.  This prevents a collision if a new
+	 * inode/object is created which must use the same inode
+	 * number.  The stale inode will be be released when the
+	 * VFS prunes the dentry holding the remaining references
+	 * on the stale inode.
+	 */
+	mutex_enter(&zsb->z_znodes_lock);
+	for (zp = list_head(&zsb->z_all_znodes); zp;
+	    zp = list_next(&zsb->z_all_znodes, zp)) {
+		err2 = zfs_rezget(zp);
+		if (err2) {
+			//remove_inode_hash(ZTOI(zp));
+			zp->z_is_stale = B_TRUE;
 		}
-		mutex_exit(&zfsvfs->z_znodes_lock);
 	}
+	mutex_exit(&zsb->z_znodes_lock);
 
 bail:
-	/* release the VOPs */
-	rw_exit(&zfsvfs->z_teardown_inactive_lock);
-	rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
+	/* release the VFS ops */
+	rw_exit(&zsb->z_teardown_inactive_lock);
+	rrw_exit(&zsb->z_teardown_lock, FTAG);
 
 	if (err) {
 		/*
@@ -2969,12 +2973,13 @@ bail:
 		 * unmount this file system.
 		 */
 #ifndef __APPLE__
-		if (vn_vfswlock(zfsvfs->z_vfs->vfs_vnodecovered) == 0)
-			(void) dounmount(zfsvfs->z_vfs,0 /*MS_FORCE*/, curthread);
+		if (zsb->z_os)
+			(void) zfs_umount(zsb->z_sb);
 #endif
 	}
 	return (err);
 }
+
 
 void
 zfs_freevfs(struct mount *vfsp)
@@ -3221,5 +3226,3 @@ zfsvfs_update_fromname(const char *oldname, const char *newname)
 }
 
 #endif
-
-

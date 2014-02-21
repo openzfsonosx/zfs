@@ -3532,7 +3532,7 @@ zfs_ioc_rollback(const char *fsname, nvlist_t *args, nvlist_t *outnvl)
 			resume_err = zfs_resume_fs(zsb, fsname);
 			error = error ? error : resume_err;
 		}
-		//deactivate_super(zsb->z_sb);
+        VFS_RELE(zfsvfs->z_vfs);
 	} else {
 		error = dsl_dataset_rollback(fsname, NULL, outnvl);
 	}
@@ -5732,7 +5732,7 @@ static zfs_ioc_vec_t zfs_ioc_vec[] = {
       POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE },
     { zfs_ioc_destroy, NULL, zfs_secpolicy_destroy, DATASET_NAME, B_TRUE,
       POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
-    { zfs_ioc_rollback, NULL, zfs_secpolicy_rollback, DATASET_NAME, B_TRUE,
+    { NULL, zfs_ioc_rollback, zfs_secpolicy_rollback, DATASET_NAME, B_TRUE,
       POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
     { zfs_ioc_rename, NULL, zfs_secpolicy_rename,	DATASET_NAME, B_TRUE,
       POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
@@ -6352,5 +6352,3 @@ zfs_ioctl_fini(void)
     mutex_destroy(&zfsdev_state_lock);
     list_destroy(&zfsdev_state_list);
 }
-
-
