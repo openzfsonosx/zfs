@@ -1259,6 +1259,8 @@ again:
 
 	}
 
+
+
 	hdl = dmu_buf_get_user(db);
 	if (hdl != NULL) {
 		zp  = sa_get_userdata(hdl);
@@ -1271,13 +1273,47 @@ again:
 		 */
 
         /*
+         * We have this strange race in OSX where vnop_reclaim has been called
+         * so we released vp, and placed zp on reclaim list. But reclaim has
+         * not yet removed it from the reclaim-list so it is still around.
+         * When we detect this here, we force a reclaim right now, then go
+         * a head and allocate a new zp
+         */
+
+        /*
          * We can only call getwithvid if vp is not NULL
          */
-        if (!zp || !zp->z_vid || !ZTOV(zp)) {
+        if (!ZTOV(zp)) {
+            extern uint64_t vnop_num_reclaims;
+
+            /* Clean up locks */
             sa_buf_rele(db, NULL);
             ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
             getnewvnode_drop_reserve();
-            return (ENOENT);
+
+            printf("Found stray zp %p release + recalling zget \n",
+                   zp);
+
+            /* remove zp from reclaim list now */
+            mutex_enter(&zfsvfs->z_vnode_create_lock);
+            list_remove(&zfsvfs->z_reclaim_znodes, zp);
+            mutex_exit(&zfsvfs->z_vnode_create_lock);
+#ifdef _KERNEL
+            atomic_dec_64(&vnop_num_reclaims);
+#endif
+
+            /* release it now */
+            rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+            if (zp->z_sa_hdl == NULL)
+                zfs_znode_free(zp);
+            else
+                zfs_zinactive(zp);
+            rw_exit(&zfsvfs->z_teardown_inactive_lock);
+
+            /* Call zget again, so we end up in the section below this one
+             * and create a new zp/vp
+             */
+            return zfs_zget(zfsvfs, obj_num, zpp);
         }
 
         ASSERT3P(zp, !=, NULL);
