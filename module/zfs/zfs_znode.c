@@ -75,6 +75,8 @@ SYSCTL_INT(_debug_sizeof, OID_AUTO, znode, CTLFLAG_RD, 0, sizeof(znode_t),
 #endif
 void
 zfs_release_sa_handle(sa_handle_t *hdl, dmu_buf_t *db, void *tag);
+extern uint64_t vnop_num_reclaims;
+
 
 
 //#define dprintf printf
@@ -1235,6 +1237,7 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 
 	td = curthread;
 	getnewvnode_reserve(1);
+
 again:
 	*zpp = NULL;
 
@@ -1272,6 +1275,41 @@ again:
 		 * know about the znode.
 		 */
 
+        ASSERT3P(zp, !=, NULL);
+
+        /*
+         * We can only call getwithvid if vp is not NULL
+         */
+        if (ZTOV(zp)) {
+            /* Standard ZFS code here */
+
+            mutex_enter(&zp->z_lock);
+            ASSERT3U(zp->z_id, ==, obj_num);
+            if (zp->z_unlinked) {
+                err = (ENOENT);
+            } else {
+                vp = ZTOV(zp);
+                *zpp = zp;
+                err = 0;
+            }
+            sa_buf_rele(db, NULL);
+
+            mutex_exit(&zp->z_lock);
+            ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+
+            if (err == 0) {
+
+                dprintf("attaching vnode %p\n", vp);
+                if ((vnode_getwithvid(vp, zp->z_vid) != 0)) {
+                    goto again;
+                }
+
+            }
+
+            getnewvnode_drop_reserve();
+            return (err);
+        }
+
         /*
          * We have this strange race in OSX where vnop_reclaim has been called
          * so we released vp, and placed zp on reclaim list. But reclaim has
@@ -1280,70 +1318,38 @@ again:
          * a head and allocate a new zp
          */
 
-        /*
-         * We can only call getwithvid if vp is not NULL
-         */
-        if (!ZTOV(zp)) {
-            extern uint64_t vnop_num_reclaims;
+        /* VP is NULL */
 
-            /* Clean up locks */
-            sa_buf_rele(db, NULL);
-            ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-            getnewvnode_drop_reserve();
+        /* Clean up locks */
+        sa_buf_rele(db, NULL);
+        ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+        getnewvnode_drop_reserve();
 
-            printf("Found stray zp %p release + recalling zget \n",
-                   zp);
+        printf("Found stray zp %p without vp, correcting\n",
+               zp);
 
-            /* remove zp from reclaim list now */
-            mutex_enter(&zfsvfs->z_vnode_create_lock);
-            list_remove(&zfsvfs->z_reclaim_znodes, zp);
-            mutex_exit(&zfsvfs->z_vnode_create_lock);
+        /* remove zp from reclaim list now */
+        mutex_enter(&zfsvfs->z_vnode_create_lock);
+        list_remove(&zfsvfs->z_reclaim_znodes, zp);
+        mutex_exit(&zfsvfs->z_vnode_create_lock);
 #ifdef _KERNEL
-            atomic_dec_64(&vnop_num_reclaims);
+        atomic_dec_64(&vnop_num_reclaims);
 #endif
 
-            /* release it now */
-            rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-            if (zp->z_sa_hdl == NULL)
-                zfs_znode_free(zp);
-            else
-                zfs_zinactive(zp);
-            rw_exit(&zfsvfs->z_teardown_inactive_lock);
+        /* release it now */
+        rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+        if (zp->z_sa_hdl == NULL)
+            zfs_znode_free(zp);
+        else
+            zfs_zinactive(zp);
+        rw_exit(&zfsvfs->z_teardown_inactive_lock);
 
-            /* Call zget again, so we end up in the section below this one
-             * and create a new zp/vp
-             */
-            return zfs_zget(zfsvfs, obj_num, zpp);
-        }
+        /*
+         * Loop so that we end up below allocating a new vp
+         */
+        goto again;
 
-        ASSERT3P(zp, !=, NULL);
-
-        mutex_enter(&zp->z_lock);
-        ASSERT3U(zp->z_id, ==, obj_num);
-        if (zp->z_unlinked) {
-            err = (ENOENT);
-        } else {
-            vp = ZTOV(zp);
-            *zpp = zp;
-            err = 0;
-        }
-        sa_buf_rele(db, NULL);
-
-        mutex_exit(&zp->z_lock);
-        ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-
-        if (err == 0) {
-
-            dprintf("attaching vnode %p\n", vp);
-            if ((vnode_getwithvid(vp, zp->z_vid) != 0)) {
-                goto again;
-            }
-
-        }
-
-        getnewvnode_drop_reserve();
-        return (err);
-    }
+    } /* HDL != NULL */
 
 	/*
 	 * Not found create new znode/vnode

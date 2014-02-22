@@ -376,7 +376,7 @@ zfs_vnop_lookup(
                        ap->a_vpp, cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
     /* flags can be LOOKUP_XATTR | FIGNORECASE */
 
-#if 0
+#if 1
     /*
      * It appears that VFS layer adds negative cache entries for us, so
      * we do not need to add them here, or they are duplicated.
@@ -411,9 +411,9 @@ zfs_vnop_lookup(
     }
 
  exit:
+
     if (filename)
         FREE(filename, M_TEMP);
-
 
     dprintf("-vnop_lookup %d\n", error);
 	return (error);
@@ -562,6 +562,7 @@ zfs_vnop_readdir(
     */
     dprintf("+readdir: %p\n", ap->a_vp);
 	*ap->a_numdirent = 0;
+
 	error = zfs_readdir(ap->a_vp, ap->a_uio, cr, ap->a_eofflag,
                         ap->a_flags, ap->a_numdirent);
 
@@ -769,12 +770,12 @@ zfs_vnop_rename(
       extern int zfs_rename(struct vnode *sdvp, char *snm, struct vnode *tdvp, char *tnm,
                             cred_t *cr, caller_context_t *ct, int flags);
     */
-        cache_purge_negatives(ap->a_fdvp);
-        cache_purge_negatives(ap->a_tdvp);
 	error = zfs_rename(ap->a_fdvp, ap->a_fcnp->cn_nameptr, ap->a_tdvp,
                        ap->a_tcnp->cn_nameptr, cr, ct, /*flags*/0);
 
     if (!error) {
+        cache_purge_negatives(ap->a_fdvp);
+        cache_purge_negatives(ap->a_tdvp);
         cache_purge(ap->a_fvp);
         if (ap->a_tvp)
             cache_purge(ap->a_tvp);
