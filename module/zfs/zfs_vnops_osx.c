@@ -333,7 +333,7 @@ zfs_vnop_lookup(
 
     *ap->a_vpp = NULL;	/* In case we return an error */
 
-#if 1
+#if 0
     /*
      * cache_lookup() returns 0 for no-entry
      * -1 for cache found (a_vpp set)
@@ -376,7 +376,7 @@ zfs_vnop_lookup(
                        ap->a_vpp, cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
     /* flags can be LOOKUP_XATTR | FIGNORECASE */
 
-#if 1
+#if 0
     /*
      * It appears that VFS layer adds negative cache entries for us, so
      * we do not need to add them here, or they are duplicated.
