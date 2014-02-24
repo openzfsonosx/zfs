@@ -169,6 +169,7 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 #endif
 
 	list_link_init(&zp->z_link_node);
+	list_link_init(&zp->z_link_reclaim_node);
 
 	mutex_init(&zp->z_lock, NULL, MUTEX_DEFAULT, NULL);
     rw_init(&zp->z_map_lock, NULL, RW_DEFAULT, NULL);
@@ -714,6 +715,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_is_zvol = 0;
 	zp->z_is_mapped = 0;
 	zp->z_is_ctldir = 0;
+    zp->z_reclaimed = B_FALSE;
 	zp->z_vid = 0;
 	zp->z_uid = 0;
 	zp->z_gid = 0;
@@ -1329,12 +1331,14 @@ again:
                zp);
 
         /* remove zp from reclaim list now */
-        mutex_enter(&zfsvfs->z_vnode_create_lock);
-        list_remove(&zfsvfs->z_reclaim_znodes, zp);
-        mutex_exit(&zfsvfs->z_vnode_create_lock);
+        mutex_enter(&zfsvfs->z_reclaim_list_lock);
+        if (zp->z_reclaimed) {
+            list_remove(&zfsvfs->z_reclaim_znodes, zp);
 #ifdef _KERNEL
-        atomic_dec_64(&vnop_num_reclaims);
+            atomic_dec_64(&vnop_num_reclaims);
 #endif
+        }
+        mutex_exit(&zfsvfs->z_reclaim_list_lock);
 
         /* release it now */
         rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
@@ -1343,7 +1347,7 @@ again:
         else
             zfs_zinactive(zp);
         rw_exit(&zfsvfs->z_teardown_inactive_lock);
-
+        zp = NULL;
         /*
          * Loop so that we end up below allocating a new vp
          */
@@ -2084,6 +2088,9 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	mutex_init(&zfsvfs.z_znodes_lock, NULL, MUTEX_DEFAULT, NULL);
 	list_create(&zfsvfs.z_all_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_node));
+	mutex_init(&zfsvfs.z_reclaim_list_lock, NULL, MUTEX_DEFAULT, NULL);
+	list_create(&zfsvfs.z_reclaim_znodes, sizeof (znode_t),
+	    offsetof(znode_t, z_link_reclaim_node));
 
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_init(&zfsvfs.z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);

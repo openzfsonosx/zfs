@@ -240,6 +240,14 @@ extern int zfs_vnop_ignore_negatives;
 SYSCTL_INT(_zfs, OID_AUTO, vnop_ignore_negatives,
            CTLFLAG_RW, &zfs_vnop_ignore_negatives, 0,
            "Ignore negative cache hits");
+extern int zfs_vnop_ignore_positives;
+SYSCTL_INT(_zfs, OID_AUTO, vnop_ignore_positives,
+           CTLFLAG_RW, &zfs_vnop_ignore_positives, 0,
+           "Ignore positive cache hits");
+extern int zfs_vnop_create_negatives;
+SYSCTL_INT(_zfs, OID_AUTO, vnop_create_negatives,
+           CTLFLAG_RW, &zfs_vnop_create_negatives, 0,
+           "Create negative cache entries");
 #endif
 
 
@@ -6091,6 +6099,8 @@ void arc_register_oids(void)
 
     sysctl_register_oid(&sysctl__zfs_vnop_osx_debug);
     sysctl_register_oid(&sysctl__zfs_vnop_ignore_negatives);
+    sysctl_register_oid(&sysctl__zfs_vnop_ignore_positives);
+    sysctl_register_oid(&sysctl__zfs_vnop_create_negatives);
 
 }
 
@@ -6128,5 +6138,7 @@ void arc_unregister_oids(void)
 
     sysctl_unregister_oid(&sysctl__zfs_vnop_osx_debug);
     sysctl_unregister_oid(&sysctl__zfs_vnop_ignore_negatives);
+    sysctl_unregister_oid(&sysctl__zfs_vnop_ignore_positives);
+    sysctl_unregister_oid(&sysctl__zfs_vnop_create_negatives);
 }
 #endif

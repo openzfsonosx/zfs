@@ -64,6 +64,8 @@
 #include <sys/sysctl.h>
 int debug_vnop_osx_printf = 0;
 int zfs_vnop_ignore_negatives = 0;
+int zfs_vnop_ignore_positives = 0;
+int zfs_vnop_create_negatives = 1;
 #endif
 
 #define	DECLARE_CRED(ap) \
@@ -333,7 +335,7 @@ zfs_vnop_lookup(
 
     *ap->a_vpp = NULL;	/* In case we return an error */
 
-#if 0
+#if 1
     /*
      * cache_lookup() returns 0 for no-entry
      * -1 for cache found (a_vpp set)
@@ -344,9 +346,11 @@ zfs_vnop_lookup(
 	if (error) {
 
 		/* We found a cache entry, positive or negative. */
-		if (error == -1) 	/* Positive entry? */
-			return 0;		/* Yes.  Caller expects no error */
-
+		if (error == -1) {	/* Positive entry? */
+            if (!zfs_vnop_ignore_positives)
+                return 0;		/* Yes.  Caller expects no error */
+            vnode_put(*ap->a_vpp); /* Release iocount held by cache_lookip */
+        }
         /* Negatives are only followed if not CREATE, from HFS+. */
         if (cnp->cn_nameiop != CREATE) {
             if (!zfs_vnop_ignore_negatives)
@@ -376,12 +380,12 @@ zfs_vnop_lookup(
                        ap->a_vpp, cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
     /* flags can be LOOKUP_XATTR | FIGNORECASE */
 
-#if 0
+#if 1
     /*
      * It appears that VFS layer adds negative cache entries for us, so
      * we do not need to add them here, or they are duplicated.
      */
-    if (error == ENOENT) {
+    if ((error == ENOENT) && zfs_vnop_create_negatives) {
 
         if ((ap->a_cnp->cn_nameiop == CREATE || ap->a_cnp->cn_nameiop == RENAME ||
              (ap->a_cnp->cn_nameiop == DELETE &&
@@ -404,11 +408,13 @@ zfs_vnop_lookup(
     } // ENOENT
 #endif
 
+#if 0
     if (!error && negative_cache) {
         printf("[ZFS] Incorrect negative_cache entry for '%s'\n",
                filename ? filename : cnp->cn_nameptr);
         cache_purge_negatives(ap->a_dvp);
     }
+#endif
 
  exit:
 
@@ -608,11 +614,7 @@ zfs_vnop_fsync(
      * inside vnode_create().
      */
 
-    // Defer syncs if we are coming through vnode_create()
-    if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
-        return 0;
-    }
-    if (zfsvfs->z_vnode_create_lockX) return 0;
+    if (zfsvfs->z_vnode_create_depth) return 0;
 
 	err = zfs_fsync(ap->a_vp, /*flag*/0, cr, ct);
     return err;
@@ -1104,7 +1106,7 @@ zfs_vnop_pageout(
     }
 
     // Defer syncs if we are coming through vnode_create()
-    if (zfsvfs->z_vnode_create_lockX) {
+    if (zfsvfs->z_vnode_create_depth) {
         printf("zfs: awkward pageout exit\n");
         if (!(flags & UPL_NOCOMMIT))
             ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES |
@@ -1337,7 +1339,7 @@ zfs_vnop_inactive(
 	DECLARE_CRED(ap);
 
     //dprintf("+vnop_inactive\n");
-    if (zfsvfs->z_vnode_create_lockX) return 0;
+    if (zfsvfs->z_vnode_create_depth) return 0;
 
 	zfs_inactive(vp, cr, NULL);
     //dprintf("-vnop_inactive\n");
@@ -1370,12 +1372,14 @@ void vnop_reclaim_thread(void *arg)
 
         while (1) {
 
-            mutex_enter(&zfsvfs->z_vnode_create_lock);
+            mutex_enter(&zfsvfs->z_reclaim_list_lock);
 
             zp = list_head(&zfsvfs->z_reclaim_znodes);
-            if (zp)
+            if (zp) {
                 list_remove(&zfsvfs->z_reclaim_znodes, zp);
-            mutex_exit(&zfsvfs->z_vnode_create_lock);
+                zp->z_reclaimed = B_FALSE;
+            }
+            mutex_exit(&zfsvfs->z_reclaim_list_lock);
 
             /* Only exit thread once list is empty */
             if (!zp) break;
@@ -1397,7 +1401,7 @@ void vnop_reclaim_thread(void *arg)
 
 #ifdef VERBOSE_RECLAIM
         if (count)
-            printf("reclaim_thr: %p nodes released: %d\n", zfsvfs, count);
+            printf("reclaim_thr: %p nodes released: %d (in list %llu)\n", zfsvfs, count, vnop_num_reclaims);
         count = 0;
 #endif
 
@@ -1465,23 +1469,20 @@ zfs_vnop_reclaim(
      * reclaims until later.
      */
 
-    // We always grab vnode_create_lock before znodes_lock
     mutex_enter(&zfsvfs->z_znodes_lock);
     zp->z_vnode = NULL;
     list_remove(&zfsvfs->z_all_znodes, zp); //XXX
     mutex_exit(&zfsvfs->z_znodes_lock);
 
+
+    mutex_enter(&zfsvfs->z_reclaim_list_lock);
+    list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
+    zp->z_reclaimed = B_TRUE;
+    mutex_exit(&zfsvfs->z_reclaim_list_lock);
+
 #ifdef _KERNEL
     atomic_inc_64(&vnop_num_reclaims);
 #endif
-    // We might already holding vnode_create_lock
-    if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
-        list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
-    } else {
-        mutex_enter(&zfsvfs->z_vnode_create_lock);
-        list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
-        mutex_exit(&zfsvfs->z_vnode_create_lock);
-    }
 
 #if 1
     if (!has_warned && vnop_num_reclaims > 20000) {
@@ -2822,11 +2823,9 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
      * vnode_create() has a habit of calling both vnop_reclaim() and
      * vnop_fsync(), which can create havok as we are already holding locks.
      */
-    //mutex_enter(&zfsvfs->z_vnode_create_lock);
-    atomic_add_64(&zfsvfs->z_vnode_create_lockX, 1);
+    atomic_add_64(&zfsvfs->z_vnode_create_depth, 1);
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0);
-    atomic_sub_64(&zfsvfs->z_vnode_create_lockX, 1);
-    //mutex_exit(&zfsvfs->z_vnode_create_lock);
+    atomic_sub_64(&zfsvfs->z_vnode_create_depth, 1);
 
     dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
 
@@ -2834,10 +2833,7 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 
 	zp->z_vid = vnode_vid(*vpp);
     zp->z_vnode = *vpp;
-    /*
-     * FreeBSD version does not hold a ref on the new vnode
-     */
-    //vnode_put(*vpp);
+
     return 0;
 }
 
