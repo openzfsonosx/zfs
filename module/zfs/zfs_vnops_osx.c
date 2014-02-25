@@ -76,8 +76,6 @@ int zfs_vnop_create_negatives = 1;
 	DECLARE_CRED(ap);		\
 	DECLARE_CONTEXT(ap)
 
-#define dprintf if(debug_vnop_osx_printf)printf
-
 // Move this somewhere else, maybe autoconf?
 #define HAVE_NAMED_STREAMS 1
 
@@ -220,7 +218,8 @@ zfs_vnop_ioctl(
         dprintf("vnop_ioctl: F_RDADVISE\n");
         break;
 	default:
-        dprintf("vnop_ioctl: Unknown ioctl %02x ('%c' + %u)\n", ap->a_command,
+        dprintf("vnop_ioctl: Unknown ioctl %02lx ('%ul' + %ul)\n", 
+               ap->a_command,
                (ap->a_command&0xff00)>>8,
                ap->a_command&0xff);
 		error = ENOTTY;
@@ -700,7 +699,7 @@ zfs_vnop_setattr(
 
         // Map OS X file flags to zfs file flags
         zfs_setbsdflags(zp, vap->va_flags);
-        dprintf("OSX flags %08lx changed to ZFS %04lx\n", vap->va_flags,
+        dprintf("OSX flags %08x changed to ZFS %04llx\n", vap->va_flags,
                 zp->z_pflags);
         vap->va_flags = zp->z_pflags;
 
@@ -894,7 +893,7 @@ zfs_vnop_pagein(
     int             need_unlock = 0;
     int             error = 0;
 
-    dprintf("+vnop_pagein: off 0x%llx size 0x%llx\n",
+    dprintf("+vnop_pagein: off 0x%llx size 0x%zx\n",
            off, len);
 
     if (upl == (upl_t)NULL)
@@ -934,7 +933,7 @@ zfs_vnop_pagein(
     }
 
     ubc_upl_map(upl, &vaddr);
-    dprintf("vaddr %p with upl_off 0x%llx\n", vaddr, upl_offset);
+    dprintf("vaddr %p with upl_off 0x%lx\n", vaddr, upl_offset);
     vaddr += upl_offset;
     /*
      * Fill pages with data from the file.
@@ -957,7 +956,6 @@ zfs_vnop_pagein(
         if (len >= PAGESIZE)
             len -= PAGESIZE;
         else {
-            if (len) printf("Warning len was not 0 = %d\n", len);
             len = 0;
         }
     }
@@ -1086,7 +1084,7 @@ zfs_vnop_pageout(
     uint64_t        filesz;
     int             err = 0;
 
-    dprintf("+vnop_pageout: off 0x%llx len ox%llx upl_off 0x%llx: blksz ox%llx, z_size 0x%llx\n",
+    dprintf("+vnop_pageout: off 0x%llx len ox%zx upl_off 0x%lx: blksz ox%ux, z_size 0x%llx\n",
            off, len, upl_offset, zp->z_blksz, zp->z_size);
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
