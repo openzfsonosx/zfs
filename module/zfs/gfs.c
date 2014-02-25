@@ -811,6 +811,7 @@ gfs_dir_inactive(struct vnode *vp)
  *
  * 	Returns 0 on success, non-zero on error.
  */
+#if 0 // unused function
 static int
 gfs_dir_lookup_dynamic(gfs_lookup_cb callback, gfs_dir_t *dp,
     const char *nm, struct vnode *dvp, struct vnode **vpp, cred_t *cr, int flags,
@@ -843,6 +844,7 @@ gfs_dir_lookup_dynamic(gfs_lookup_cb callback, gfs_dir_t *dp,
 
 	return (ret);
 }
+#endif
 
 /*
  * gfs_dir_lookup_static()

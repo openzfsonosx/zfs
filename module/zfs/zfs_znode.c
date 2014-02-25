@@ -110,6 +110,7 @@ krwlock_t zfsvfs_lock;
 static kmem_cache_t *znode_cache = NULL;
 
 /*ARGSUSED*/
+#if 0 // unused function
 static void
 znode_evict_error(dmu_buf_t *dbuf, void *user_ptr)
 {
@@ -119,6 +120,7 @@ znode_evict_error(dmu_buf_t *dbuf, void *user_ptr)
 	 */
 	panic("evicting znode %p\n", user_ptr);
 }
+#endif
 
 extern struct vop_vector zfs_vnodeops;
 extern struct vop_vector zfs_fifoops;

@@ -160,7 +160,7 @@ struct vnodeopv_desc zfsctl_ops_snapshot;
 #endif
 
 static struct vnode *zfsctl_mknode_snapdir(struct vnode *);
-static struct vnode *zfsctl_mknode_shares(struct vnode *);
+//static struct vnode *zfsctl_mknode_shares(struct vnode *);
 static struct vnode *zfsctl_snapshot_mknode(struct vnode *, uint64_t objset);
 static int zfsctl_unmount_snap(zfs_snapentry_t *, int, cred_t *);
 
@@ -1892,6 +1892,7 @@ end:
 	return (gfs_vop_inactive(&iap));
 }
 
+#if 0 // unused function
 static int
 zfsctl_traverse_begin(struct vnode **vpp, int lktype)
 {
@@ -1932,6 +1933,7 @@ zfsctl_snapshot_getattr(ap)
     dprintf("zfsctl: XXX -snapshot_getattr\n");
 	return (err);
 }
+#endif 
 
 #ifndef __APPLE__
 static int
@@ -1952,6 +1954,7 @@ zfsctl_snapshot_fid(ap)
 }
 #endif
 
+#if 0 // unused function
 static int
 zfsctl_snapshot_lookup(ap)
 	struct vnop_lookup_args /* {
@@ -1984,6 +1987,7 @@ zfsctl_snapshot_lookup(ap)
 		vn_lock(*vpp, /*LK_EXCLUSIVE |*/ LK_RETRY);
 	return (error);
 }
+#endif 
 
 #ifndef __APPLE__
 static int

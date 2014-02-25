@@ -370,6 +370,7 @@ xattr_changed_cb(void *arg, uint64_t newval)
 	}
 }
 
+#if 0 // unused function
 static void
 acltype_changed_cb(void *arg, uint64_t newval)
 {
@@ -393,6 +394,7 @@ acltype_changed_cb(void *arg, uint64_t newval)
 	}
 #endif
 }
+#endif
 
 static void
 blksz_changed_cb(void *arg, uint64_t newval)
@@ -464,6 +466,7 @@ exec_changed_cb(void *arg, uint64_t newval)
  * This property isn't registered via dsl_prop_register(), but this callback
  * will be called when a file system is first mounted
  */
+#if 0 // unused function
 static void
 nbmand_changed_cb(void *arg, uint64_t newval)
 {
@@ -478,6 +481,7 @@ nbmand_changed_cb(void *arg, uint64_t newval)
 	}
 #endif
 }
+#endif
 
 static void
 snapdir_changed_cb(void *arg, uint64_t newval)

@@ -151,9 +151,9 @@ extern int zfs_set_prop_nvlist(const char *, zprop_source_t,
     nvlist_t *, nvlist_t *);
 static int zvol_remove_zv(zvol_state_t *);
 static int zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio);
-static int zvol_dumpify(zvol_state_t *zv);
-static int zvol_dump_fini(zvol_state_t *zv);
-static int zvol_dump_init(zvol_state_t *zv, boolean_t resize);
+//static int zvol_dumpify(zvol_state_t *zv);
+//static int zvol_dump_fini(zvol_state_t *zv);
+//static int zvol_dump_init(zvol_state_t *zv, boolean_t resize);
 
 static void
 zvol_size_changed(zvol_state_t *zv, uint64_t volsize)
@@ -248,6 +248,7 @@ struct maparg {
 	uint64_t	ma_blks;
 };
 
+#if 0 // unused function
 /*ARGSUSED*/
 static int
 zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
@@ -288,6 +289,7 @@ zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	list_insert_tail(&ma->ma_zv->zv_extents, ze);
 	return (0);
 }
+#endif
 
 static void
 zvol_free_extents(zvol_state_t *zv)
@@ -300,6 +302,7 @@ zvol_free_extents(zvol_state_t *zv)
 	}
 }
 
+#if 0 // unused function
 static int
 zvol_get_lbas(zvol_state_t *zv)
 {
@@ -322,6 +325,7 @@ zvol_get_lbas(zvol_state_t *zv)
 
 	return (0);
 }
+#endif
 
 /* ARGSUSED */
 void
@@ -642,6 +646,7 @@ zvol_remove_minor(const char *name)
 /*
  * Rename a block device minor mode for the specified volume.
  */
+#if 0 //unused function
 static void
 __zvol_rename_minor(zvol_state_t *zv, const char *newname)
 {
@@ -666,6 +671,7 @@ __zvol_rename_minor(zvol_state_t *zv, const char *newname)
     set_disk_ro(zv->zv_disk, readonly);
 #endif
 }
+#endif
 
 
 
@@ -1308,6 +1314,8 @@ zvol_log_write(zvol_state_t *zv, dmu_tx_t *tx, offset_t off, ssize_t resid,
 	}
 }
 
+#if 0 // unused function
+
 static int
 zvol_dumpio_vdev(vdev_t *vd, void *addr, uint64_t offset, uint64_t size,
     boolean_t doread, boolean_t isdump)
@@ -1355,6 +1363,8 @@ zvol_dumpio_vdev(vdev_t *vd, void *addr, uint64_t offset, uint64_t size,
 #endif
     return ENOTSUP;
 }
+
+#endif
 
 static int
 zvol_dumpio(zvol_state_t *zv, void *addr, uint64_t offset, uint64_t size,
@@ -1996,6 +2006,7 @@ zvol_log_write_minor(void *minor_hdl, dmu_tx_t *tx, offset_t off, ssize_t resid,
 /*
  * Log a DKIOCFREE/free-long-range to the ZIL with TX_TRUNCATE.
  */
+#if 0 // unused function
 static void
 zvol_log_truncate(zvol_state_t *zv, dmu_tx_t *tx, uint64_t off, uint64_t len,
     boolean_t sync)
@@ -2016,6 +2027,7 @@ zvol_log_truncate(zvol_state_t *zv, dmu_tx_t *tx, uint64_t off, uint64_t len,
 	itx->itx_sync = sync;
 	zil_itx_assign(zilog, itx, tx);
 }
+#endif
 
 /*
  * Dirtbag ioctls to support mkfs(1M) for UFS filesystems.  See dkio(7I).
@@ -2382,6 +2394,7 @@ zvol_fini(void)
 	ddi_soft_state_fini(&zfsdev_state);
 }
 
+#if 0 // unused function
 static int
 zvol_dump_init(zvol_state_t *zv, boolean_t resize)
 {
@@ -2614,6 +2627,7 @@ zvol_dump_fini(zvol_state_t *zv)
 	return (0);
 }
 
+#endif
 
 
 int

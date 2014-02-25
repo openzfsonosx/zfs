@@ -641,12 +641,14 @@ zfs_ace_walk(void *datap, uint64_t cookie, int aclcnt,
 	return ((uint64_t)(uintptr_t)acep);
 }
 
+#if 0 // unused function
 static zfs_acl_node_t *
 zfs_acl_curr_node(zfs_acl_t *aclp)
 {
 	ASSERT(aclp->z_curr_node);
 	return (aclp->z_curr_node);
 }
+#endif
 
 /*
  * Copy ACE to internal ZFS format.
@@ -715,6 +717,7 @@ zfs_copy_ace_2_fuid(zfsvfs_t *zfsvfs, umode_t obj_mode, zfs_acl_t *aclp,
 /*
  * Copy ZFS ACEs to fixed size ace_t layout
  */
+#if 0 // unused function
 static void
 zfs_copy_fuid_2_ace(zfsvfs_t *zfsvfs, zfs_acl_t *aclp, cred_t *cr,
     void *datap, int filter)
@@ -771,6 +774,7 @@ zfs_copy_fuid_2_ace(zfsvfs_t *zfsvfs, zfs_acl_t *aclp, cred_t *cr,
 		acep = (ace_t *)((caddr_t)acep + ace_size);
 	}
 }
+#endif
 
 static int
 zfs_copy_ace_2_oldace(umode_t obj_mode, zfs_acl_t *aclp, ace_t *acep,

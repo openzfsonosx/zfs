@@ -3948,6 +3948,7 @@ static boolean_t zfs_ioc_recv_inject_err;
  * zc_obj		zprop_errflags_t
  * zc_action_handle	handle for this guid/ds mapping
  */
+#if 0 // unused function
 static int
 zfs_ioc_recvX(zfs_cmd_t *zc)
 {
@@ -4157,6 +4158,7 @@ out:
 
 	return (error);
 }
+#endif
 
 static int
 zfs_ioc_recv(zfs_cmd_t *zc)

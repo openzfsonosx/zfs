@@ -5989,6 +5989,7 @@ const fs_operation_def_t zfs_evnodeops_template[] = {
 };
 #endif	/* sun */
 
+#if 0 // unused function
 static int
 ioflags(int ioflags)
 {
@@ -6003,6 +6004,8 @@ ioflags(int ioflags)
 
 	return (flags);
 }
+#endif
+
 
 #ifdef __FreeBSD__
 static int
