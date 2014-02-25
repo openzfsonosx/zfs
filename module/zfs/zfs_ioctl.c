@@ -6159,7 +6159,6 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	if (error == 0 && zfs_ioc_vec[vec].zvec_allow_log == B_TRUE)
 		zfs_log_history(zc);
 
-out:
 
     nvlist_free(innvl);
 
@@ -6254,8 +6253,6 @@ static int
 mnttab_file_create(void)
 {
 	int error = 0;
-	size_t buflen;
-	char *buf;
 	vnode_t *vp;
 	int oflags = FCREAT;
 

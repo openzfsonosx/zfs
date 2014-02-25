@@ -373,7 +373,6 @@ xattr_changed_cb(void *arg, uint64_t newval)
 static void
 acltype_changed_cb(void *arg, uint64_t newval)
 {
-	zfsvfs_t *zsb = arg;
 #ifdef LINUX
 	switch (newval) {
 	case ZFS_ACLTYPE_OFF:
@@ -542,7 +541,6 @@ zfs_register_callbacks(struct mount *vfsp)
 
 	objset_t *os = NULL;
 	zfsvfs_t *zfsvfs = NULL;
-	uint64_t nbmand = 0;
 	boolean_t readonly = B_FALSE;
 	boolean_t do_readonly = B_FALSE;
 	boolean_t setuid = B_FALSE;
@@ -642,6 +640,8 @@ zfs_register_callbacks(struct mount *vfsp)
 	 * at mount time.
 	 */
 #ifdef __LINUX__
+	uint64_t nbmand = 0;
+
 	if (vfs_optionisset(vfsp, MNTOPT_NONBMAND, NULL)) {
 		nbmand = B_FALSE;
 	} else if (vfs_optionisset(vfsp, MNTOPT_NBMAND, NULL)) {
@@ -2051,7 +2051,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	if (error)
 		printf("zfs_vfs_mount: error %d\n", error);
 	if (error == 0) {
-		zfsvfs_t *zfsvfs = NULL;
 
 
 
@@ -2075,7 +2074,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		 * Here we need to take a ref on z_mtime_vp to keep it around.
 		 * If the attribute isn't there, attempt to create it.
 		 */
-		zfsvfs = vfs_fsprivate(vfsp);
+
+		zfsvfs_t *zfsvfs =vfs_fsprivate(vfsp);
         if (zfsvfs->z_mtime_vp == NULL) {
 			vnode_t *rvp;
 			vnode_t *xdvp = NULLVP;

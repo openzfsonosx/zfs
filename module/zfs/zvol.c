@@ -294,7 +294,7 @@ zvol_free_extents(zvol_state_t *zv)
 {
 	zvol_extent_t *ze;
 
-	while (ze = list_head(&zv->zv_extents)) {
+	while ((ze = list_head(&zv->zv_extents))) {
 		list_remove(&zv->zv_extents, ze);
 		kmem_free(ze, sizeof (zvol_extent_t));
 	}
@@ -476,7 +476,6 @@ zvol_create_minor(const char *name)
 	objset_t *os;
 	dmu_object_info_t doi;
 	minor_t minor = 0;
-	char chrbuf[30], blkbuf[30];
 	int error;
 
     dprintf("zvol_create_minor: '%s'\n", name);
@@ -515,6 +514,8 @@ zvol_create_minor(const char *name)
      * we also use IOKit to create an IOBlockStorageDevice.
      */
 #if 0
+	char chrbuf[30], blkbuf[30];
+
 	if (ddi_create_minor_node(zfs_dip, name, S_IFCHR,
 	    minor, DDI_PSEUDO, zfs_major) == DDI_FAILURE) {
 		ddi_soft_state_free(zfsdev_state, minor);
@@ -831,7 +832,6 @@ zvol_remove_minors(const char *name)
 void
 zvol_rename_minors(const char *oldname, const char *newname)
 {
-    zvol_state_t *zv, *zv_next;
     int oldnamelen, newnamelen;
     char *name;
 
@@ -847,6 +847,8 @@ zvol_rename_minors(const char *oldname, const char *newname)
 	mutex_enter(&zfsdev_state_lock);
 
 #ifdef LINUX
+    zvol_state_t *zv, *zv_next;
+
     for (zv = list_head(&zvol_state_list); zv != NULL; zv = zv_next) {
         zv_next = list_next(&zvol_state_list, zv);
 
@@ -1310,10 +1312,11 @@ static int
 zvol_dumpio_vdev(vdev_t *vd, void *addr, uint64_t offset, uint64_t size,
     boolean_t doread, boolean_t isdump)
 {
-	vdev_disk_t *dvd;
-	int c;
-	int numerrors = 0;
 #if sun
+	vdev_disk_t *dvd;
+	int numerrors = 0;
+	int c;
+
 	for (c = 0; c < vd->vdev_children; c++) {
 		ASSERT(vd->vdev_ops == &vdev_mirror_ops ||
 		    vd->vdev_ops == &vdev_replacing_ops ||
@@ -2873,7 +2876,6 @@ int zvol_unlink(char *root, char *target)
     vfs_context_t vctx;
     struct vnode *vp, *dvp;
     struct componentname cn;
-    struct vnode_attr vap;
 
     //IOLog("Trying to delete '%s' inside directory '%s'\n",
     //    root, target);

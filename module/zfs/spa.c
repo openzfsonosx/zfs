@@ -3756,7 +3756,7 @@ spa_import_rootpool(char *devpath, char *devid)
 	spa_t *spa;
 	vdev_t *rvd, *bvd /*, *avd = NULL*/;
 	nvlist_t *config = NULL, *nvtop;
-	uint64_t guid, txg;
+	uint64_t guid = 0, txg;
 	char *pname;
 	int error;
 

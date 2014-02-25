@@ -157,8 +157,6 @@ static struct vop_vector zfsctl_ops_shares_dir;
 struct vnodeopv_desc zfsctl_ops_root;
 struct vnodeopv_desc zfsctl_ops_snapdir;
 struct vnodeopv_desc zfsctl_ops_snapshot;
-static struct vnodeopv_desc zfsctl_ops_shares;
-static struct vnodeopv_desc zfsctl_ops_shares_dir;
 #endif
 
 static struct vnode *zfsctl_mknode_snapdir(struct vnode *);
@@ -1151,14 +1149,14 @@ static int
 zfsctl_snapdir_mkdir(struct vnode *dvp, char *dirname, vattr_t *vap, struct vnode  **vpp,
     cred_t *cr, caller_context_t *cc, int flags, vsecattr_t *vsecp)
 {
+    return ENOTSUP;
+#if 0
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(dvp));
 	char name[MAXNAMELEN];
 	int err, error;
 	//static enum symfollow follow = NO_FOLLOW;
 	static enum uio_seg seg = UIO_SYSSPACE;
 
-    return ENOTSUP;
-#if 0
 	if (snapshot_namecheck(dirname, NULL, NULL) != 0)
 		error = SET_ERROR(EILSEQ);
 		goto out;
@@ -1924,7 +1922,6 @@ zfsctl_snapshot_getattr(ap)
 	} */ *ap;
 {
 	struct vnode *vp = ap->a_vp;
-	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
 	int err;
 
     dprintf("zfsctl: XXX +snapshot_getattr\n");

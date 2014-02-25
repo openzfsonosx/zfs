@@ -1566,21 +1566,17 @@ zfs_zinactive(znode_t *zp)
 void
 zfs_znode_free(znode_t *zp)
 {
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
 	ASSERT(zp->z_sa_hdl == NULL);
 	zp->z_vnode = NULL;
 #if 0
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	mutex_enter(&zfsvfs->z_znodes_lock);
 	POINTER_INVALIDATE(&zp->z_zfsvfs);
 	list_remove(&zfsvfs->z_all_znodes, zp);
 	mutex_exit(&zfsvfs->z_znodes_lock);
-#else
-    //mutex_enter(&zfsvfs->z_vnode_create_lock);
-	POINTER_INVALIDATE(&zp->z_zfsvfs);
-	//list_remove(&zfsvfs->z_reclaim_znodes, zp);
-    //mutex_exit(&zfsvfs->z_vnode_create_lock);
 #endif
+
 	if (zp->z_acl_cached) {
 		zfs_acl_free(zp->z_acl_cached);
 		zp->z_acl_cached = NULL;
@@ -1710,7 +1706,7 @@ zfs_extend(znode_t *zp, uint64_t end)
 		zfs_range_unlock(rl);
 		return (0);
 	}
-top:
+
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	zfs_sa_upgrade_txholds(tx, zp);

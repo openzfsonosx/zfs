@@ -608,7 +608,6 @@ zfs_rmnode(znode_t *zp)
 	dmu_tx_t	*tx;
 	uint64_t	acl_obj;
 	uint64_t	xattr_obj;
-	uint64_t	count;
 	int		error;
 
 	ASSERT(zp->z_links == 0);

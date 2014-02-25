@@ -1827,8 +1827,8 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
      * Translate Open Solaris ACEs to Mac OS X ACEs
      */
     i = 0;
-    while (zacep = zfs_acl_next_ace(aclp, zacep,
-                                    &who, &access_mask, &flags, &type)) {
+    while ((zacep = zfs_acl_next_ace(aclp, zacep,
+                                    &who, &access_mask, &flags, &type))) {
         rights = 0;
         ace_flags = 0;
 
@@ -2003,7 +2003,7 @@ zfs_setacl(znode_t *zp, struct kauth_acl *vsecp, boolean_t skipaclchk, cred_t *c
 	if (zp->z_pflags & ZFS_IMMUTABLE)
 		return (SET_ERROR(EPERM));
 
-	if (error = zfs_zaccess(zp, ACE_WRITE_ACL, 0, skipaclchk, cr))
+	if ((error = zfs_zaccess(zp, ACE_WRITE_ACL, 0, skipaclchk, cr)))
 		return (error);
 
 	error = zfs_vsec_2_aclp(zfsvfs, vnode_vtype(ZTOV(zp)), vsecp, cr, &fuidp,
@@ -2079,7 +2079,7 @@ top:
 	if (fuidp)
 		zfs_fuid_info_free(fuidp);
 	dmu_tx_commit(tx);
-done:
+
 	mutex_exit(&zp->z_lock);
 	mutex_exit(&zp->z_acl_lock);
 
@@ -2425,7 +2425,7 @@ zfs_zaccess(znode_t *zp, int mode, int flags, boolean_t skipaclchk, cred_t *cr)
 	int		error;
 	int		is_attr;
 	boolean_t 	check_privs;
-	znode_t		*xzp;
+	znode_t		*xzp = NULL;
 	znode_t 	*check_zp = zp;
 	mode_t		needed_bits;
 	uid_t		owner;

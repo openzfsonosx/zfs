@@ -1171,7 +1171,6 @@ gfs_vop_readdir(ap)
 	u_long *cookies = NULL;
 	u_long *a_cookies = NULL;
 	int error;
-    boolean_t   extended = (ap->a_flags & VNODE_READDIR_EXTENDED);
 
 #if 0
     /* This is from hfs_vnops.c - we may need to implement it as well.

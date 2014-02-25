@@ -168,7 +168,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error = 0;
 	uint64_t	parent;
-    zfs_acl_phys_t acl;
 
     //printf("getattr_osx\n");
 
@@ -232,6 +231,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
         //printf("want acl\n");
 #if 0
+        zfs_acl_phys_t acl;
+
         if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
                       &acl, sizeof (zfs_acl_phys_t))) {
             //if (zp->z_acl.z_acl_count == 0) {
@@ -563,7 +564,7 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 	error = dmu_tx_assign(tx, TXG_NOWAIT);
 	if (error) {
 		zfs_dirent_unlock(dl);
-		if ((error == ERESTART)) {
+		if (error == ERESTART) {
 			dmu_tx_wait(tx);
 			dmu_tx_abort(tx);
 			goto top;
@@ -1328,7 +1329,6 @@ static unsigned char fingerprint[] = {0xab, 0xcd, 0xef, 0xab, 0xcd, 0xef,
 int kauth_wellknown_guid(guid_t *guid)
 {
     uint32_t last = 0;
-    int i;
 
     if (memcmp(fingerprint, guid->g_guid, sizeof(fingerprint)))
         return KAUTH_WKG_NOT;
@@ -1384,7 +1384,6 @@ void nfsacl_set_wellknown(int wkg, guid_t *guid)
 void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
 {
     int i;
-    const struct acl_entry *entry;
     ace_t *ace;
     guid_t          *guidp;
     kauth_ace_rights_t  ace_rights;
