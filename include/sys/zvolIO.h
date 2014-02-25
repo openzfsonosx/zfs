@@ -17,6 +17,7 @@ class net_lundman_zfs_zvol : public IOService
   virtual IOService*  probe (IOService* provider, SInt32* score);
   virtual bool        start (IOService* provider);
   virtual void        stop  (IOService* provider);
+  virtual IOReturn    doEjectMedia(void *nub);
   virtual bool        createBlockStorageDevice  (zvol_state_t *zv);
   virtual bool        destroyBlockStorageDevice (zvol_state_t *zv);
   virtual bool        updateVolSize             (zvol_state_t *zv);

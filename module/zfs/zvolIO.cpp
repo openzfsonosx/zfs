@@ -115,8 +115,12 @@ bool net_lundman_zfs_zvol_device::handleOpen( IOService *client,
     zv->zv_openflags = FWRITE;
   }
 
-  if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL))
+  if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL)) {
+    dprintf("Open failed\n");
     return false;
+  }
+
+  dprintf("Open done\n");
 
   return true;
 }
@@ -130,6 +134,7 @@ void net_lundman_zfs_zvol_device::handleClose( IOService *client,
 
   //IOLog("handleClose\n");
   zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
+
 }
 
 IOReturn net_lundman_zfs_zvol_device::doAsyncReadWrite(
@@ -282,6 +287,10 @@ IOReturn net_lundman_zfs_zvol_device::reportRemovability(bool *isRemovable)
 IOReturn net_lundman_zfs_zvol_device::doEjectMedia(void)
 {
     dprintf("ejectMedia\n");
+
+    //this->m_provider->doEjectMedia(this);
+    this->m_provider->doEjectMedia(zv);
+
     return kIOReturnSuccess;
 }
 
