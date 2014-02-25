@@ -714,7 +714,7 @@ zfsctl_root_getattr(ap)
 	vap->va_ctime = vap->va_ctime;
 
 	if (VATTR_IS_ACTIVE(vap, va_name) && vap->va_name) {
-        strcpy(vap->va_name, ".zfs");
+        (void)strlcpy(vap->va_name, ".zfs", MAXPATHLEN);
         VATTR_SET_SUPPORTED(vap, va_name);
     }
 
@@ -1353,7 +1353,7 @@ zfsctl_snapdir_lookup(ap)
 
 	sep = kmem_alloc(sizeof (zfs_snapentry_t), KM_SLEEP);
 	sep->se_name = kmem_alloc(strlen(nm) + 1, KM_SLEEP);
-	(void) strcpy(sep->se_name, nm);
+	(void) strlcpy(sep->se_name, nm, strlen(nm) + 1);
     dprintf("Calling snapshot_mknode for '%s'\n", snapname);
 	*vpp = sep->se_root = zfsctl_snapshot_mknode(dvp, dmu_objset_id(snap));
 
@@ -1487,7 +1487,7 @@ zfsctl_snapdir_readdir_cb(struct vnode *vp, void *dp, int *eofp,
 	}
 
     odp=dp;
-    (void) strcpy(odp->d_name, snapname);
+    (void) strlcpy(odp->d_name, snapname, MAXPATHLEN);
     odp->d_ino = ZFSCTL_INO_SNAP(id);
 
 	*nextp = cookie;

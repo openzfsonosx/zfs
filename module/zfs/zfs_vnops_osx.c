@@ -2372,7 +2372,7 @@ zfs_vnop_readdirattr(
             offset = 2;
             continue;
         } else if (offset == 2 && zfs_show_ctldir(zp)) {
-            (void) strcpy(zap.za_name, ZFS_CTLDIR_NAME);
+            (void) strlcpy(zap.za_name, ZFS_CTLDIR_NAME, MAXNAMELEN);
             objnum = ZFSCTL_INO_ROOT;
             vtype = VDIR;
         } else {
