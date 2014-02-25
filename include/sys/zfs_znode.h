@@ -272,11 +272,6 @@ typedef struct znode {
 #define ZTOV(ZP) ((ZP)->z_vnode)
 #define VTOZ(VP)        ((znode_t *)vnode_fsnode((VP)))
 
-// Should we rename these to ZTOV, VTOZ ?
-#define	ZTOI(znode)	(&((znode)->z_vnode))
-#define	ITOZ(inode)	(container_of((vnode), znode_t, z_vnode))
-#define	ZTOZSB(znode)	((zfs_sb_t *)(ZTOI(znode)->i_sb->s_fs_info))
-#define	ITOZSB(inode)	((zfs_sb_t *)((vnode)->i_sb->s_fs_info))
 
 #define	S_ISDEV(mode)	(S_ISCHR(mode) || S_ISBLK(mode) || S_ISFIFO(mode))
 

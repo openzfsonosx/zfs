@@ -2803,10 +2803,6 @@ arc_reclaim_thread(void *dummy __unused)
          * used to avoid collapsing the arc_c value when only the
          * arc_meta_limit is being exceeded.
          */
-        prune = (int64_t)arc_meta_used - (int64_t)arc_meta_limit;
-        if (prune > 0)
-            arc_adjust_meta(prune, B_TRUE);
-
         arc_adjust();
 
 

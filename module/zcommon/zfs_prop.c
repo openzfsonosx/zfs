@@ -276,8 +276,10 @@ zfs_prop_init(void)
 	/* inherit index (boolean) properties */
 	zprop_register_index(ZFS_PROP_ATIME, "atime", 1, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM, "on | off", "ATIME", boolean_table);
+#ifdef LINUX
 	zprop_register_index(ZFS_PROP_RELATIME, "relatime", 0, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM, "on | off", "RELATIME", boolean_table);
+#endif
 	zprop_register_index(ZFS_PROP_DEVICES, "devices", 1, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT, "on | off", "DEVICES",
 	    boolean_table);

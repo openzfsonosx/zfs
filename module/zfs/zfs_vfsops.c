@@ -360,7 +360,9 @@ atime_changed_cb(void *arg, uint64_t newval)
 static void
 relatime_changed_cb(void *arg, uint64_t newval)
 {
+#ifdef LINUX
 	((zfs_sb_t *)arg)->z_relatime = newval;
+#endif
 }
 
 static void
@@ -1519,8 +1521,10 @@ zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
 		VERIFY(dsl_prop_unregister(ds, "atime", atime_changed_cb,
 		    zfsvfs) == 0);
 
+#ifdef LINUX
 		VERIFY(dsl_prop_unregister(ds, "relatime", relatime_changed_cb,
 		    zsb) == 0);
+#endif
 
 		VERIFY(dsl_prop_unregister(ds, "xattr", xattr_changed_cb,
 		    zfsvfs) == 0);

@@ -1612,6 +1612,7 @@ zfs_compare_timespec(struct timespec *t1, struct timespec *t2)
 static inline boolean_t
 zfs_atime_need_update(znode_t *zp, timestruc_t *now)
 {
+#ifdef LINUX
 	if (!ZTOZSB(zp)->z_relatime)
 		return (B_TRUE);
 
@@ -1628,7 +1629,7 @@ zfs_atime_need_update(znode_t *zp, timestruc_t *now)
 
 	if ((long)now->tv_sec - ZTOI(zp)->i_atime.tv_sec >= 24*60*60)
 		return (B_TRUE);
-
+#endif
 	return (B_FALSE);
 }
 
@@ -1664,20 +1665,6 @@ zfs_tstamp_update_setup(znode_t *zp, uint_t flag, uint64_t mtime[2],
 	 * that if the flag was set somewhere else, we should leave it alone
 	 * here.
 	 */
-	if (flag & ATTR_ATIME) {
-		if (zfs_atime_need_update(zp, &now)) {
-			ZFS_TIME_ENCODE(&now, zp->z_atime);
-			ZTOI(zp)->i_atime.tv_sec = zp->z_atime[0];
-			ZTOI(zp)->i_atime.tv_nsec = zp->z_atime[1];
-			zp->z_atime_dirty = 1;
-		}
-	} else {
-		zp->z_atime_dirty = 0;
-		zp->z_seq++;
-	} else {
-		zp->z_atime_dirty = 1;
-	}
-
 	if (flag & AT_ATIME) {
 		ZFS_TIME_ENCODE(&now, zp->z_atime);
 #ifdef LINUX
