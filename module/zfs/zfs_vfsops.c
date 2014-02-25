@@ -358,6 +358,12 @@ atime_changed_cb(void *arg, uint64_t newval)
 }
 
 static void
+relatime_changed_cb(void *arg, uint64_t newval)
+{
+	((zfs_sb_t *)arg)->z_relatime = newval;
+}
+
+static void
 xattr_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
@@ -1512,6 +1518,9 @@ zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
 		ds = dmu_objset_ds(os);
 		VERIFY(dsl_prop_unregister(ds, "atime", atime_changed_cb,
 		    zfsvfs) == 0);
+
+		VERIFY(dsl_prop_unregister(ds, "relatime", relatime_changed_cb,
+		    zsb) == 0);
 
 		VERIFY(dsl_prop_unregister(ds, "xattr", xattr_changed_cb,
 		    zfsvfs) == 0);

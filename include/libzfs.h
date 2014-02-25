@@ -316,6 +316,7 @@ typedef enum {
 	ZPOOL_STATUS_IO_FAILURE_WAIT,	/* failed I/O, failmode 'wait' */
 	ZPOOL_STATUS_IO_FAILURE_CONTINUE, /* failed I/O, failmode 'continue' */
 	ZPOOL_STATUS_BAD_LOG,		/* cannot read log chain(s) */
+	ZPOOL_STATUS_ERRATA,		/* informational errata available */
 
 	/*
 	 * If the pool has unsupported features but can still be opened in
@@ -351,8 +352,10 @@ typedef enum {
 	ZPOOL_STATUS_OK
 } zpool_status_t;
 
-extern zpool_status_t zpool_get_status(zpool_handle_t *, char **);
-extern zpool_status_t zpool_import_status(nvlist_t *, char **);
+extern zpool_status_t zpool_get_status(zpool_handle_t *, char **,
+    zpool_errata_t *);
+extern zpool_status_t zpool_import_status(nvlist_t *, char **,
+    zpool_errata_t *);
 extern void zpool_dump_ddt(const ddt_stat_t *dds, const ddt_histogram_t *ddh);
 
 /*
