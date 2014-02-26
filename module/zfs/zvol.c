@@ -815,9 +815,11 @@ zvol_remove_minors(const char *name)
 	char *namebuf;
 	minor_t minor;
 
-	namebuf = kmem_zalloc(strlen(name) + 2, KM_SLEEP);
+        size_t name_buf_len = strlen(name) + 2;
+
+	namebuf = kmem_zalloc(name_buf_len, KM_SLEEP);
 	(void) strncpy(namebuf, name, strlen(name));
-	(void) strcat(namebuf, "/");
+	(void) strlcat(namebuf, "/", name_buf_len);
 	mutex_enter(&zfsdev_state_lock);
 	for (minor = 1; minor <= ZFSDEV_MAX_MINOR; minor++) {
 

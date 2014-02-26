@@ -904,8 +904,8 @@ zfsctl_snapshot_zname(struct vnode *vp, const char *name, int len, char *zname)
 	dmu_objset_name(os, zname);
 	if (strlen(zname) + 1 + strlen(name) >= len)
 		return (ENAMETOOLONG);
-	(void) strcat(zname, "@");
-	(void) strcat(zname, name);
+	(void) strlcat(zname, "@", len);
+	(void) strlcat(zname, name, len);
 	return (0);
 }
 
