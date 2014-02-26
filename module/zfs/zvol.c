@@ -2628,7 +2628,7 @@ zvol_dump_fini(zvol_state_t *zv)
 
 
 int
-zvol_create_minors(char *name)
+zvol_create_minors(const char *name)
 {
     uint64_t cookie;
     objset_t *os;
