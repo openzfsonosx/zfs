@@ -158,7 +158,7 @@ static int zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio);
 static void
 zvol_size_changed(zvol_state_t *zv, uint64_t volsize)
 {
-	dev_t dev = makedevice(zfs_major, zv->zv_minor);
+	(void)makedevice(zfs_major, zv->zv_minor);
 
 	zv->zv_volsize = volsize;
 	VERIFY(ddi_prop_update_int64(dev, zfs_dip,
@@ -368,17 +368,20 @@ zvol_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx)
  * implement DKIOCFREE/free-long-range.
  */
 static int
-zvol_replay_truncate(zvol_state_t *zv, lr_truncate_t *lr, boolean_t byteswap)
+zvol_replay_truncate(void *zv, char *lr, boolean_t byteswap)
 {
+        zvol_state_t *the_zv = (zvol_state_t*)zv;
+        lr_truncate_t *the_lr = (lr_truncate_t*)lr;
+
 	uint64_t offset, length;
 
 	if (byteswap)
-		byteswap_uint64_array(lr, sizeof (*lr));
+		byteswap_uint64_array(the_lr, sizeof (*the_lr));
 
-	offset = lr->lr_offset;
-	length = lr->lr_length;
+	offset = the_lr->lr_offset;
+	length = the_lr->lr_length;
 
-	return (dmu_free_long_range(zv->zv_objset, ZVOL_OBJ, offset, length));
+	return (dmu_free_long_range(the_zv->zv_objset, ZVOL_OBJ, offset, length));
 }
 
 /*
@@ -386,9 +389,12 @@ zvol_replay_truncate(zvol_state_t *zv, lr_truncate_t *lr, boolean_t byteswap)
  * after a system failure
  */
 static int
-zvol_replay_write(zvol_state_t *zv, lr_write_t *lr, boolean_t byteswap)
+zvol_replay_write(void *zv, char *lr, boolean_t byteswap)
 {
-	objset_t *os = zv->zv_objset;
+        zvol_state_t *the_zv = (zvol_state_t*)zv;
+        lr_write_t *the_lr = (lr_write_t*)lr;
+
+	objset_t *os = the_zv->zv_objset;
 	char *data = (char *)(lr + 1);	/* data follows lr_write_t */
 	uint64_t offset, length;
 	dmu_tx_t *tx;
@@ -397,12 +403,12 @@ zvol_replay_write(zvol_state_t *zv, lr_write_t *lr, boolean_t byteswap)
 	if (byteswap)
 		byteswap_uint64_array(lr, sizeof (*lr));
 
-	offset = lr->lr_offset;
-	length = lr->lr_length;
+	offset = the_lr->lr_offset;
+	length = the_lr->lr_length;
 
 	/* If it's a dmu_sync() block, write the whole block */
-	if (lr->lr_common.lrc_reclen == sizeof (lr_write_t)) {
-		uint64_t blocksize = BP_GET_LSIZE(&lr->lr_blkptr);
+	if (the_lr->lr_common.lrc_reclen == sizeof (lr_write_t)) {
+		uint64_t blocksize = BP_GET_LSIZE(&the_lr->lr_blkptr);
 		if (length < blocksize) {
 			offset -= offset % blocksize;
 			length = blocksize;
@@ -433,7 +439,7 @@ zvol_replay_err(void *zv, char *lr, boolean_t byteswap)
  * Callback vectors for replaying records.
  * Only TX_WRITE and TX_TRUNCATE are needed for zvol.
  */
-zil_replay_func_t *zvol_replay_vector[TX_MAX_TYPE] = {
+zil_replay_func_t zvol_replay_vector[TX_MAX_TYPE] = {
     zvol_replay_err,	/* 0 no such transaction type */
 	zvol_replay_err,	/* TX_CREATE */
 	zvol_replay_err,	/* TX_MKDIR */
@@ -1462,7 +1468,7 @@ zvol_strategy(struct buf *bp)
     buf_map(bp, &addr);
 	resid = buf_count(bp);
 
-	if (resid > 0 && (off < 0 || off >= volsize)) {
+	if (resid > 0 && (off >= volsize)) {
 		bioerror(bp, EIO);
 		biodone(bp);
 		return ;
@@ -1708,7 +1714,7 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t position, uint64_t count, void *iomem
 
 	volsize = zv->zv_volsize;
 	if (count > 0 &&
-	    (position < 0 || position >= volsize))
+	    (position >= volsize))
 		return (EIO);
 
 #if 0
@@ -1718,7 +1724,6 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t position, uint64_t count, void *iomem
 		return (error);
 	}
 #endif
-    //printf("zvol_read_iokit(offset 0x%llx bytes 0x%llx)\n", offset, count);
 
 	rl = zfs_range_lock(&zv->zv_znode, position, count,
 	    RL_READER);
@@ -1735,7 +1740,6 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t position, uint64_t count, void *iomem
 		error =  dmu_read_iokit(zv->zv_objset, ZVOL_OBJ, &offset, position,
                                 &bytes,
                                 iomem);
-        if (bytes) printf("weird, read bytes remaining 0x%llx\n", bytes);
 
 		if (error) {
 			/* convert checksum errors into IO errors */
@@ -1746,10 +1750,6 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t position, uint64_t count, void *iomem
         count -= MIN(count, DMU_MAX_ACCESS >> 1) - bytes;
 	}
 	zfs_range_unlock(rl);
-
-    if (error || count)
-        printf("zvol_read_iokit not right error %d and count %d\n",
-               error, count);
 
 	return (error);
 }
@@ -1775,7 +1775,7 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 
 	volsize = zv->zv_volsize;
 	if (count > 0 &&
-	    (position < 0 || position >= volsize))
+	    (position >= volsize))
 		return (EIO);
 
 #if 0
@@ -1811,7 +1811,6 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 
 		error = dmu_write_iokit_dbuf(zv->zv_dbuf, &offset, position,
                                      &bytes, iomem, tx);
-        if (bytes) printf("weird, bytes remaining 0x%llx\n", bytes);
 
 		if (error == 0) {
             count -= MIN(count, DMU_MAX_ACCESS >> 1) + bytes;
@@ -1825,10 +1824,6 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 	zfs_range_unlock(rl);
 	if (sync)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
-
-    if (error || count)
-        printf("zvol_write_iokit not right error %d and count %d\n",
-               error, count);
 
 	return (error);
 }
@@ -2037,7 +2032,7 @@ zvol_log_truncate(zvol_state_t *zv, dmu_tx_t *tx, uint64_t off, uint64_t len,
  */
 /*ARGSUSED*/
 int
-zvol_ioctl(dev_t dev, int cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
+zvol_ioctl(dev_t dev, unsigned long cmd, caddr_t data, int isblk, cred_t *cr, int *rvalp)
 {
     int error = 0;
     u_int32_t *f;
@@ -2800,8 +2795,8 @@ int zvol_mkdir_path(char *root, char *newdirs)
             if (!error) error = VOP_MKDIR(dvp, &vp, &cn, &vap, vctx);
 
             if (error) {
-                IOLog("Failed to create '%s' in directory '%s': %d\n",
-                      cn.cn_nameptr, current_directory, error);
+                //IOLog("Failed to create '%s' in directory '%s': %d\n",
+                //      cn.cn_nameptr, current_directory, error);
                 break;
             }
 

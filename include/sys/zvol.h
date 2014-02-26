@@ -102,7 +102,7 @@ extern int zvol_write(dev_t dev, struct uio *uiop, int p);
 
 extern int zvol_init(void);
 extern void zvol_fini(void);
-extern int zvol_ioctl(dev_t, int, caddr_t, int isblk, cred_t *, int *rvalp);
+extern int zvol_ioctl(dev_t, unsigned long, caddr_t, int isblk, cred_t *, int *rvalp);
 extern void *zfsdev_get_soft_state(minor_t, enum zfs_soft_state_type which);
 extern void zvol_strategy(struct buf *bp);
 
