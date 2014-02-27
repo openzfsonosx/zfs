@@ -1337,6 +1337,11 @@ again:
 #ifdef _KERNEL
             atomic_dec_64(&vnop_num_reclaims);
 #endif
+            zp->z_reclaimed = B_FALSE;
+        } else { /* Not on the reclaim list, most likely reclaim_thr ate it
+                  * before us, retry */
+            mutex_exit(&zfsvfs->z_reclaim_list_lock);
+            goto retry;
         }
         mutex_exit(&zfsvfs->z_reclaim_list_lock);
 

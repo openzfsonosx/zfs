@@ -1377,7 +1377,7 @@ void vnop_reclaim_thread(void *arg)
             zp = list_head(&zfsvfs->z_reclaim_znodes);
             if (zp) {
                 list_remove(&zfsvfs->z_reclaim_znodes, zp);
-                zp->z_reclaimed = B_FALSE;
+                if (zp) zp->z_reclaimed = B_FALSE;
             }
             mutex_exit(&zfsvfs->z_reclaim_list_lock);
 
