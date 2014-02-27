@@ -1341,7 +1341,7 @@ again:
         } else { /* Not on the reclaim list, most likely reclaim_thr ate it
                   * before us, retry */
             mutex_exit(&zfsvfs->z_reclaim_list_lock);
-            goto retry;
+            goto again;
         }
         mutex_exit(&zfsvfs->z_reclaim_list_lock);
 
