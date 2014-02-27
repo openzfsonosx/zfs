@@ -1327,7 +1327,7 @@ again:
         ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
         getnewvnode_drop_reserve();
 
-        printf("Found stray zp %p without vp, correcting\n",
+        dprintf("Found stray zp %p without vp, correcting\n",
                zp);
 
         /* remove zp from reclaim list now */
