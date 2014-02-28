@@ -76,6 +76,9 @@ int zfs_vnop_create_negatives = 1;
 	DECLARE_CRED(ap);		\
 	DECLARE_CONTEXT(ap)
 
+#undef dprintf
+#define dprintf if(debug_vnop_osx_printf)printf
+
 // Move this somewhere else, maybe autoconf?
 #define HAVE_NAMED_STREAMS 1
 
