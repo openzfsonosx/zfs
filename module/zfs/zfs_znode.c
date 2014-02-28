@@ -1327,9 +1327,6 @@ again:
         ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
         getnewvnode_drop_reserve();
 
-        dprintf("Found stray zp %p without vp, correcting\n",
-               zp);
-
         /* remove zp from reclaim list now */
         mutex_enter(&zfsvfs->z_reclaim_list_lock);
         if (zp->z_reclaimed) {
@@ -1338,21 +1335,25 @@ again:
             atomic_dec_64(&vnop_num_reclaims);
 #endif
             zp->z_reclaimed = B_FALSE;
+            dprintf("Found stray zp %p without vp, correcting\n", zp);
+
+
         } else { /* Not on the reclaim list, most likely reclaim_thr ate it
                   * before us, retry */
-            mutex_exit(&zfsvfs->z_reclaim_list_lock);
-            goto again;
+            zp = NULL;
         }
         mutex_exit(&zfsvfs->z_reclaim_list_lock);
 
-        /* release it now */
-        rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-        if (zp->z_sa_hdl == NULL)
-            zfs_znode_free(zp);
-        else
-            zfs_zinactive(zp);
-        rw_exit(&zfsvfs->z_teardown_inactive_lock);
-        zp = NULL;
+        /* if we got one, release it now */
+        if (zp) {
+            rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+            if (zp->z_sa_hdl == NULL)
+                zfs_znode_free(zp);
+            else
+                zfs_zinactive(zp);
+            rw_exit(&zfsvfs->z_teardown_inactive_lock);
+            zp = NULL;
+        }
         /*
          * Loop so that we end up below allocating a new vp
          */
