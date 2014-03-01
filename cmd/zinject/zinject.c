@@ -148,6 +148,10 @@
 
 #include <libzfs.h>
 
+#ifdef __APPLE__
+#include <libzfs_impl.h>
+#endif
+
 #undef verify	/* both libzfs.h and zfs_context.h want to define this */
 
 #include "zinject.h"
@@ -297,8 +301,14 @@ iter_handlers(int (*func)(int, const char *, zinject_record_t *, void *),
 {
 	zfs_cmd_t zc = { 0 };
 	int ret;
+#ifdef __APPLE__
+	libzfs_handle_t hdl;
+	hdl.libzfs_fd = zfs_fd;
 
+	while (zfs_ioctl(&hdl, ZFS_IOC_INJECT_LIST_NEXT, &zc) == 0)
+#else
 	while (ioctl(zfs_fd, ZFS_IOC_INJECT_LIST_NEXT, &zc) == 0)
+#endif
 		if ((ret = func((int)zc.zc_guid, zc.zc_name,
 		    &zc.zc_inject_record, data)) != 0)
 			return (ret);
