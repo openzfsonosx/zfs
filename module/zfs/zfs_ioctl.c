@@ -2307,7 +2307,7 @@ zfs_prop_set_special(const char *dsname, zprop_source_t source,
 
 			zc = kmem_zalloc(sizeof (zfs_cmd_t),
 			    KM_SLEEP | KM_NODEBUG);
-			(void) strcpy(zc->zc_name, dsname);
+			(void) strlcpy(zc->zc_name, dsname, MAXPATHLEN);
 			(void) zfs_ioc_userspace_upgrade(zc);
 			kmem_free(zc, sizeof (zfs_cmd_t));
 		}
@@ -3817,12 +3817,12 @@ zfs_check_clearable(char *dataset, nvlist_t *props, nvlist_t **errlist)
 	VERIFY(nvlist_alloc(&errors, NV_UNIQUE_NAME, KM_SLEEP) == 0);
 
 	zc = kmem_alloc(sizeof (zfs_cmd_t), KM_SLEEP | KM_NODEBUG);
-	(void) strcpy(zc->zc_name, dataset);
+	(void) strlcpy(zc->zc_name, dataset, MAXPATHLEN);
 	pair = nvlist_next_nvpair(props, NULL);
 	while (pair != NULL) {
 		next_pair = nvlist_next_nvpair(props, pair);
 
-		(void) strcpy(zc->zc_value, nvpair_name(pair));
+		(void) strlcpy(zc->zc_value, nvpair_name(pair), MAXPATHLEN * 2);
 		if ((err = zfs_check_settable(dataset, pair, CRED())) != 0 ||
 		    (err = zfs_secpolicy_inherit_prop(zc, NULL, CRED())) != 0) {
 			VERIFY(nvlist_remove_nvpair(props, pair) == 0);
@@ -3948,6 +3948,7 @@ static boolean_t zfs_ioc_recv_inject_err;
  * zc_obj		zprop_errflags_t
  * zc_action_handle	handle for this guid/ds mapping
  */
+#if 0 // unused function
 static int
 zfs_ioc_recvX(zfs_cmd_t *zc)
 {
@@ -4157,6 +4158,7 @@ out:
 
 	return (error);
 }
+#endif
 
 static int
 zfs_ioc_recv(zfs_cmd_t *zc)
@@ -4181,7 +4183,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
         strchr(zc->zc_value, '%'))
         return (EINVAL);
 
-    (void) strcpy(tofs, zc->zc_value);
+    (void) strlcpy(tofs, zc->zc_value, ZFS_MAXNAMELEN);
     tosnap = strchr(tofs, '@');
     *tosnap++ = '\0';
 
@@ -4860,7 +4862,7 @@ zfs_ioc_tmp_snapshot(zfs_cmd_t *zc)
 	error = dsl_dataset_snapshot_tmp(zc->zc_name, snap_name, minor,
 	    hold_name);
 	if (error == 0)
-		(void) strcpy(zc->zc_value, snap_name);
+		(void) strlcpy(zc->zc_value, snap_name, MAXPATHLEN * 2);
 	strfree(snap_name);
 	strfree(hold_name);
 	zfs_onexit_fd_rele(zc->zc_cleanup_fd);
@@ -6159,7 +6161,6 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pro
 	if (error == 0 && zfs_ioc_vec[vec].zvec_allow_log == B_TRUE)
 		zfs_log_history(zc);
 
-out:
 
     nvlist_free(innvl);
 
@@ -6254,8 +6255,6 @@ static int
 mnttab_file_create(void)
 {
 	int error = 0;
-	size_t buflen;
-	char *buf;
 	vnode_t *vp;
 	int oflags = FCREAT;
 

@@ -76,6 +76,7 @@ int zfs_vnop_create_negatives = 1;
 	DECLARE_CRED(ap);		\
 	DECLARE_CONTEXT(ap)
 
+#undef dprintf
 #define dprintf if(debug_vnop_osx_printf)printf
 
 // Move this somewhere else, maybe autoconf?
@@ -196,7 +197,6 @@ zfs_vnop_ioctl(
 	/* OS X has no use for zfs_ioctl(). */
 	znode_t *zp = VTOZ(ap->a_vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	user_addr_t useraddr = CAST_USER_ADDR_T(ap->a_data);
 	int error = 0;
     DECLARE_CRED_AND_CONTEXT(ap);
 
@@ -211,21 +211,18 @@ zfs_vnop_ioctl(
 		break;
 	case SPOTLIGHT_GET_MOUNT_TIME:
     case SPOTLIGHT_FSCTL_GET_MOUNT_TIME:
-		//error = copyout(&zfsvfs->z_mount_time, useraddr,
-        //  sizeof(zfsvfs->z_mount_time));
         *(uint32_t *)ap->a_data = zfsvfs->z_mount_time;
 		break;
 	case SPOTLIGHT_GET_UNMOUNT_TIME:
     case SPOTLIGHT_FSCTL_GET_LAST_MTIME:
-		//error = copyout(&zfsvfs->z_last_unmount_time, useraddr,
-        //  sizeof(zfsvfs->z_last_unmount_time));
         *(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
 		break;
     case F_RDADVISE:
         dprintf("vnop_ioctl: F_RDADVISE\n");
         break;
 	default:
-        dprintf("vnop_ioctl: Unknown ioctl %02x ('%c' + %u)\n", ap->a_command,
+        dprintf("vnop_ioctl: Unknown ioctl %02lx ('%ul' + %ul)\n", 
+               ap->a_command,
                (ap->a_command&0xff00)>>8,
                ap->a_command&0xff);
 		error = ENOTTY;
@@ -705,7 +702,7 @@ zfs_vnop_setattr(
 
         // Map OS X file flags to zfs file flags
         zfs_setbsdflags(zp, vap->va_flags);
-        dprintf("OSX flags %08lx changed to ZFS %04lx\n", vap->va_flags,
+        dprintf("OSX flags %08x changed to ZFS %04llx\n", vap->va_flags,
                 zp->z_pflags);
         vap->va_flags = zp->z_pflags;
 
@@ -899,7 +896,7 @@ zfs_vnop_pagein(
     int             need_unlock = 0;
     int             error = 0;
 
-    dprintf("+vnop_pagein: off 0x%llx size 0x%llx\n",
+    dprintf("+vnop_pagein: off 0x%llx size 0x%zx\n",
            off, len);
 
     if (upl == (upl_t)NULL)
@@ -939,7 +936,7 @@ zfs_vnop_pagein(
     }
 
     ubc_upl_map(upl, &vaddr);
-    dprintf("vaddr %p with upl_off 0x%llx\n", vaddr, upl_offset);
+    dprintf("vaddr %p with upl_off 0x%lx\n", vaddr, upl_offset);
     vaddr += upl_offset;
     /*
      * Fill pages with data from the file.
@@ -962,7 +959,6 @@ zfs_vnop_pagein(
         if (len >= PAGESIZE)
             len -= PAGESIZE;
         else {
-            if (len) printf("Warning len was not 0 = %d\n", len);
             len = 0;
         }
     }
@@ -1091,7 +1087,7 @@ zfs_vnop_pageout(
     uint64_t        filesz;
     int             err = 0;
 
-    dprintf("+vnop_pageout: off 0x%llx len ox%llx upl_off 0x%llx: blksz ox%llx, z_size 0x%llx\n",
+    dprintf("+vnop_pageout: off 0x%llx len ox%zx upl_off 0x%lx: blksz ox%ux, z_size 0x%llx\n",
            off, len, upl_offset, zp->z_blksz, zp->z_size);
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
@@ -1199,7 +1195,6 @@ zfs_vnop_pageout(
         if (err)printf("dmu_write say %d\n", err);
     }
 #else
-    ssize_t done = 0;
     caddr_t va;
 
     ubc_upl_map(upl, (vm_offset_t *)&va);
@@ -1803,7 +1798,6 @@ zfs_vnop_removexattr(
 	struct vnode *xvp = NULLVP;
 	znode_t  *zp = VTOZ(vp);
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
-	struct vnop_remove_args  args;
 	struct componentname  cn;
 	int  error;
     uint64_t xattr;
@@ -1973,7 +1967,7 @@ zfs_vnop_getnamedstream(
 		char *a_name;
 	} */ *ap)
 {
-	DECLARE_CRED_AND_CONTEXT(ap);
+	DECLARE_CRED(ap);
 	struct vnode *vp = ap->a_vp;
 	struct vnode **svpp = ap->a_svpp;
 	struct vnode *xdvp = NULLVP;
@@ -2031,14 +2025,13 @@ zfs_vnop_makenamedstream(
 		char *a_name;
 	} */ *ap)
 {
-	DECLARE_CRED_AND_CONTEXT(ap);
+	DECLARE_CRED(ap);
 	struct vnode *vp = ap->a_vp;
 	struct vnode *xdvp = NULLVP;
 	znode_t  *zp = VTOZ(vp);
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
 	struct componentname  cn;
 	struct vnode_attr  vattr;
-	struct vnop_create_args  args;
 	int  error = 0;
 
     dprintf("+makenamedstream vp %p\n", ap->a_vp);
@@ -2147,7 +2140,6 @@ zfs_vnop_exchange(
     vnode_t *fvp = ap->a_fvp;
     vnode_t *tvp = ap->a_tvp;
     znode_t  *fzp;
-    znode_t  *tzp;
     zfsvfs_t  *zfsvfs;
 
     /* The files must be on the same volume. */
@@ -2162,7 +2154,6 @@ zfs_vnop_exchange(
         return (EINVAL);
 
     fzp = VTOZ(fvp);
-    // tzp = VTOZ(tvp);
     zfsvfs = fzp->z_zfsvfs;
 
     ZFS_ENTER(zfsvfs);
@@ -2291,7 +2282,6 @@ zfs_vnop_readdirattr(
     int             maxcount = ap->a_maxcount;
     uint64_t        offset = (uint64_t)uio_offset(uio);
     u_int32_t       fixedsize;
-    u_int32_t       defaultvariablesize;
     u_int32_t       maxsize;
     u_int32_t       attrbufsize;
     void            *attrbufptr = NULL;
@@ -2385,7 +2375,7 @@ zfs_vnop_readdirattr(
             offset = 2;
             continue;
         } else if (offset == 2 && zfs_show_ctldir(zp)) {
-            (void) strcpy(zap.za_name, ZFS_CTLDIR_NAME);
+            (void) strlcpy(zap.za_name, ZFS_CTLDIR_NAME, MAXNAMELEN);
             objnum = ZFSCTL_INO_ROOT;
             vtype = VDIR;
         } else {

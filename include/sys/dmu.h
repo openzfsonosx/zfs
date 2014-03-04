@@ -617,6 +617,10 @@ void dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	const void *buf, dmu_tx_t *tx);
 void dmu_prealloc(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	dmu_tx_t *tx);
+int dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
+               uint64_t position,
+               uint64_t *size, void *iomem);
+
 #ifdef _KERNEL
     //#include <linux/blkdev_compat.h>
 int dmu_read_req(objset_t *os, uint64_t object, struct request *req);
@@ -627,6 +631,11 @@ int dmu_write_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size,
 	dmu_tx_t *tx);
 int dmu_write_uio_dbuf(dmu_buf_t *zdb, struct uio *uio, uint64_t size,
 	dmu_tx_t *tx);
+int
+dmu_write_iokit_dbuf(dmu_buf_t *zdb, uint64_t *offset, uint64_t position,
+                     uint64_t *size,
+                     void *iomem,
+                     dmu_tx_t *tx);
 int
 dmu_buf_hold_array(objset_t *os, uint64_t object, uint64_t offset,
      uint64_t length, int read, void *tag, int *numbufsp, dmu_buf_t ***dbpp);

@@ -87,7 +87,7 @@ extern int zvol_get_stats(objset_t *os, nvlist_t *nv);
 extern boolean_t zvol_is_zvol(const char *);
 extern void zvol_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx);
 extern int zvol_create_minor(const char *name);
-extern int zvol_create_minors(char *name);
+extern int zvol_create_minors(const char *name);
 extern int zvol_remove_minor(const char *name);
 extern void zvol_remove_minors(const char *name);
 extern void zvol_rename_minors(const char *oldname, const char *newname);
@@ -102,7 +102,7 @@ extern int zvol_write(dev_t dev, struct uio *uiop, int p);
 
 extern int zvol_init(void);
 extern void zvol_fini(void);
-extern int zvol_ioctl(dev_t, int, caddr_t, int isblk, cred_t *, int *rvalp);
+extern int zvol_ioctl(dev_t, unsigned long, caddr_t, int isblk, cred_t *, int *rvalp);
 extern void *zfsdev_get_soft_state(minor_t, enum zfs_soft_state_type which);
 extern void zvol_strategy(struct buf *bp);
 

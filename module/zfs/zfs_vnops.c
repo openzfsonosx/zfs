@@ -948,7 +948,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	while (n > 0) {
 		abuf = NULL;
 		woff = uio_offset(uio);
-again:
+
 		if (zfs_owner_overquota(zfsvfs, zp, B_FALSE) ||
 		    zfs_owner_overquota(zfsvfs, zp, B_TRUE)) {
 			if (abuf != NULL)
@@ -1018,7 +1018,7 @@ again:
 		 * on the first iteration since zfs_range_reduce() will
 		 * shrink down r_len to the appropriate size.
 		 */
-		if ((rl->r_len == UINT64_MAX)) {
+		if (rl->r_len == UINT64_MAX) {
 			uint64_t new_blksz;
 			if (zp->z_blksz > max_blksz) {
 				ASSERT(!ISP2(zp->z_blksz));
@@ -5989,6 +5989,7 @@ const fs_operation_def_t zfs_evnodeops_template[] = {
 };
 #endif	/* sun */
 
+#if 0 // unused function
 static int
 ioflags(int ioflags)
 {
@@ -6003,6 +6004,8 @@ ioflags(int ioflags)
 
 	return (flags);
 }
+#endif
+
 
 #ifdef __FreeBSD__
 static int

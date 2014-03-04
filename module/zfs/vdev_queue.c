@@ -383,14 +383,16 @@ vdev_queue_fini(vdev_t *vd)
 static void
 vdev_queue_io_add(vdev_queue_t *vq, zio_t *zio)
 {
+#ifdef LINUX
 	spa_t *spa = zio->io_spa;
 	spa_stats_history_t *ssh = &spa->spa_stats.io_history;
+#endif
 
 	ASSERT3U(zio->io_priority, <, ZIO_PRIORITY_NUM_QUEUEABLE);
 	avl_add(&vq->vq_class[zio->io_priority].vqc_queued_tree, zio);
 
 #ifdef LINUX
-	if (ssh->kstat != NULL) {
+    if (ssh->kstat != NULL) {
 		mutex_enter(&ssh->lock);
 		kstat_waitq_enter(ssh->kstat->ks_data);
 		mutex_exit(&ssh->lock);
@@ -401,8 +403,10 @@ vdev_queue_io_add(vdev_queue_t *vq, zio_t *zio)
 static void
 vdev_queue_io_remove(vdev_queue_t *vq, zio_t *zio)
 {
+#ifdef LINUX
 	spa_t *spa = zio->io_spa;
 	spa_stats_history_t *ssh = &spa->spa_stats.io_history;
+#endif
 
 	ASSERT3U(zio->io_priority, <, ZIO_PRIORITY_NUM_QUEUEABLE);
 	avl_remove(&vq->vq_class[zio->io_priority].vqc_queued_tree, zio);
@@ -419,8 +423,11 @@ vdev_queue_io_remove(vdev_queue_t *vq, zio_t *zio)
 static void
 vdev_queue_pending_add(vdev_queue_t *vq, zio_t *zio)
 {
+
+#ifdef LINUX
 	spa_t *spa = zio->io_spa;
 	spa_stats_history_t *ssh = &spa->spa_stats.io_history;
+#endif
 
 	ASSERT(MUTEX_HELD(&vq->vq_lock));
 	ASSERT3U(zio->io_priority, <, ZIO_PRIORITY_NUM_QUEUEABLE);
@@ -439,8 +446,10 @@ vdev_queue_pending_add(vdev_queue_t *vq, zio_t *zio)
 static void
 vdev_queue_pending_remove(vdev_queue_t *vq, zio_t *zio)
 {
+#ifdef LINUX
 	spa_t *spa = zio->io_spa;
 	spa_stats_history_t *ssh = &spa->spa_stats.io_history;
+#endif
 
 	ASSERT(MUTEX_HELD(&vq->vq_lock));
 	ASSERT3U(zio->io_priority, <, ZIO_PRIORITY_NUM_QUEUEABLE);

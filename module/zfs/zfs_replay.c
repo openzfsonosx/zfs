@@ -628,7 +628,7 @@ zfs_replay_write(zfsvfs_t *zsb, lr_write_t *lr, boolean_t byteswap)
 {
 	char *data = (char *)(lr + 1);	/* data follows lr_write_t */
 	znode_t	*zp;
-	int error, written;
+	int error;
 	uint64_t eod, offset, length;
     ssize_t resid;
 

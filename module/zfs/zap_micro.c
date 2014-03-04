@@ -954,7 +954,7 @@ again:
 		if (mze->mze_name[0] == 0) {
 			mze->mze_value = value;
 			mze->mze_cd = cd;
-			(void) strcpy(mze->mze_name, zn->zn_key_orig);
+			(void) strlcpy(mze->mze_name, zn->zn_key_orig, MZAP_NAME_LEN);
 			zap->zap_m.zap_num_entries++;
 			zap->zap_m.zap_alloc_next = i+1;
 			if (zap->zap_m.zap_alloc_next ==
@@ -1296,7 +1296,7 @@ zap_cursor_retrieve(zap_cursor_t *zc, zap_attribute_t *za)
 			za->za_integer_length = 8;
 			za->za_num_integers = 1;
 			za->za_first_integer = mzep->mze_value;
-			(void) strcpy(za->za_name, mzep->mze_name);
+			(void) strlcpy(za->za_name, mzep->mze_name, MAXNAMELEN);
 			zc->zc_hash = mze->mze_hash;
 			zc->zc_cd = mze->mze_cd;
 			err = 0;
