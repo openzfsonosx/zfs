@@ -165,6 +165,7 @@ zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
 	mkdir -p zfs.kext/Contents/Resources/English.lproj zfs.kext/Contents/MacOS
 	cp -f $(INFO_PLIST) zfs.kext/Contents/
 	cp -f $(PLIST_STRING) zfs.kext/Contents/Resources/English.lproj/
+	cp -f $(top_srcdir)/VolumeIcon.icns zfs.kext/Contents/Resources/
 	cp -f zfs zfs.kext/Contents/MacOS/
 	kextlibs -undef-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/ || echo Ignoring errors
 

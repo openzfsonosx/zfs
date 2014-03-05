@@ -746,55 +746,7 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 	return (ENOENT);
 }
 
-static void
-libzfs_mnttab_root(const char *mountpoint)
-{
-#if 0 // NOTYET
-	/* For a root file system, add a volume icon. */
-	ssize_t attrsize;
-	uint16_t finderinfo[16];
-	struct stat sbuf;
-	char *path;
 
-	/* Tag the root directory as having a custom icon. */
-	attrsize = getxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
-	    sizeof (finderinfo), 0, 0);
-	if (attrsize != sizeof (finderinfo))
-		(void) memset(&finderinfo, 0, sizeof(finderinfo));
-	finderinfo[4] |= OSSwapHostToBigInt16(0x0400);
-
-	(void) setxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
-	    sizeof (finderinfo), 0, 0);
-
-	if (asprintf(&path, "%s/%s", mountpoint, MOUNT_POINT_CUSTOM_ICON) == -1)
-		return;
-	if ((stat(path, &sbuf) != 0 || sbuf.st_size == 0) &&
-	    (stat(CUSTOM_ICON_PATH, &sbuf) == 0 && sbuf.st_size > 0)) {
-		FILE *dstfp, srcfp;
-		void *buf;
-
-		srcfp = fopen(CUSTOM_ICON_PATH, "r");
-		dstfp = fopen(path, "w");
-		if (srcfp && dstfp) {
-			/* Copy the custom icon to the root directory */
-			buf = malloc(sbuf.st_size);
-			if (fread(buf, 1, sbuf.st_size, srcfile) == sbuf.st_size)
-				(void) fwrite(buf, 1, sbuf.st_size, file);
-			free(buf);
-			/* Init the custom icon's Finder Info. */
-			(void) memset(&finderinfo, 0, sizeof (finderinfo));
-			finderinfo[4] = OSSwapHostToBigInt16(0x4000);
-			(void) setxattr(path, XATTR_FINDERINFO_NAME,
-			    &finderinfo, sizeof (finderinfo), 0, 0);
-		}
-		if (srcfp)
-			fclose(srcfp);
-		if (dstfp)
-			fclose(dstfp);
-	}
-	free(path);
-#endif
-}
 
 void
 libzfs_mnttab_add(libzfs_handle_t *hdl, const char *special,
