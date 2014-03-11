@@ -449,13 +449,13 @@ zfs_mount_seticon(const char *mountpoint)
     }
 
     /* check if we can read in the default ZFS icon, one of two paths
-     * trying new paths first, as the second path should get rare with time
+     * trying new path first, as the second path should get rare with time
      */
     srcfp = fopen(CUSTOM_ICON_PATH_MAVERICKS, "r");
     if (!srcfp)
         srcfp = fopen(CUSTOM_ICON_PATH_LEGACY, "r");
 
-    /* No icon, of well, its cosmetics, so just give up */
+    /* No icon, oh well, its cosmetics, so just give up */
     if (!srcfp) {
         free(path);
         return;
