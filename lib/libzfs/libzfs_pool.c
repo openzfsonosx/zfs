@@ -4072,19 +4072,15 @@ zpool_label_disk_check(char *path)
 	struct dk_gpt *vtoc;
 	int fd, err;
 
-    printf("checking path '%s'\n", path);
-
 	if ((fd = open(path, O_RDWR|O_DIRECT)) < 0)
 		return (errno);
 
 	if ((err = efi_alloc_and_read(fd, &vtoc)) != 0) {
-    printf("efi allo %d\n", err);
 		(void) close(fd);
 		return (err);
 	}
 
 	if (vtoc->efi_flags & EFI_GPT_PRIMARY_CORRUPT) {
-    printf("efi flags %d\n",vtoc->efi_flags );
 		efi_free(vtoc);
 		(void) close(fd);
 		return (EIDRM);
