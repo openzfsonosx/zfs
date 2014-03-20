@@ -326,9 +326,12 @@ zfs_probe(const char *devpath, boolean_t id_only, uint64_t *outguid)
 
 			
 //#ifdef __AUTOIMPORT_ONLY_STATUS_OK__
-			int reason;
 			char *msgid;
-			reason = zpool_import_status(found_config, &msgid);
+			zpool_status_t reason;
+			zpool_errata_t errata;
+
+			reason = zpool_import_status(found_config, &msgid, errata);
+
 			if (reason != ZPOOL_STATUS_OK) {
 				result = FSUR_UNRECOGNIZED;
 				syslog(LOG_NOTICE, "zpool_import_status "
