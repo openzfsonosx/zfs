@@ -28,9 +28,8 @@
 
 #include <syslog.h>
 
-//#define HAVE_IOCTL_IN_SYS_IOCTL_H 1
-#include <libzfs.h>
 
+//#define HAVE_IOCTL_IN_SYS_IOCTL_H 1
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/param.h>
@@ -49,6 +48,9 @@
 #include <sys/nvpair.h>
 #include <sys/fs/zfs.h>
 
+#include <sys/zfs_context.h>
+#include <libzfs.h>
+#include <libzfs_impl.h>
 
 #define RAWDEV_PREFIX	"/dev/r"
 #define ZFS_COMMAND	"/usr/local/sbin/zfs"
@@ -57,6 +59,8 @@
 
 const char *progname;
 libzfs_handle_t *g_zfs;
+
+static FILE *mnttab_file;
 
 
 #ifdef __ZFSUTIL__
@@ -362,11 +366,104 @@ out:
 }
 #endif
 
+static int
+mount_zfs_import_dataset(const char *dataset, const char *mountpoint)
+{
+	zfs_handle_t *zhp;
+	int flags = 0;
+	char mntopts[MNT_LINE_MAX];
+	struct zfs_mount_args mnt_args;
+	int rc = 0;
+	libzfs_handle_t *hdl;
+
+	(void) strlcpy(mntopts, MNTOPT_DEFAULTS, sizeof (mntopts));
+
+	if ((g_zfs = libzfs_init()) == NULL) {
+                (void) fprintf(stderr, gettext("internal error: failed to "
+                    "initialize ZFS library\n"));
+                return (1);
+        }
+
+	libzfs_mnttab_cache(g_zfs, B_TRUE);
+
+	libzfs_print_on_error(g_zfs, B_TRUE);
+
+
+	if ((mnttab_file = fopen(MNTTAB, "r")) == NULL) {
+                (void) fprintf(stderr, gettext("internal error: unable to "
+                    "open %s\n"), MNTTAB);
+                return (1);
+        }
+
+
+	if ( (zhp = zfs_open(g_zfs, dataset,
+		    ZFS_TYPE_FILESYSTEM)) == NULL) {
+		rc = 1;
+	} else {
+		hdl = zhp->zfs_hdl;
+		mnt_args.fspec = zfs_get_name(zhp);
+		mnt_args.flags = flags;
+		rc = mount(MNTTYPE_ZFS, mountpoint, flags, &mnt_args);
+
+		if (rc) {
+			/*
+			 * Generic errors are nasty, but there are just way too many
+			 * from mount(), and they're well-understood.  We pick a few
+			 * common ones to improve upon.
+			 */
+			if (rc == EBUSY) {
+				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+				    "mountpoint or dataset is busy"));
+			} else if (rc == EPERM) {
+				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+				    "Insufficient privileges"));
+			} else if (rc == ENOTSUP) {
+				char buf[256];
+				int spa_version;
+
+				VERIFY(zfs_spa_version(zhp, &spa_version) == 0);
+				(void) snprintf(buf, sizeof (buf),
+				    dgettext(TEXT_DOMAIN, "Can't mount a version %lld "
+				    "file system on a version %d pool. Pool must be"
+				    " upgraded to mount this file system."),
+				    (u_longlong_t)zfs_prop_get_int(zhp,
+				    ZFS_PROP_VERSION), spa_version);
+				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, buf));
+			} else {
+				zfs_error_aux(hdl, strerror(rc));
+			}
+			return (zfs_error_fmt(hdl, EZFS_MOUNTFAILED,
+			    dgettext(TEXT_DOMAIN, "cannot mount '%s'"),
+			    zhp->zfs_name));
+		}
+
+#ifdef __APPLE__
+		zfs_mount_seticon(mountpoint);
+#endif
+
+		/* add the mounted entry into our cache */
+		libzfs_mnttab_add(hdl, zfs_get_name(zhp), mountpoint, mntopts);
+
+		zfs_close(zhp);
+	}
+
+	libzfs_mnttab_cache(g_zfs, B_FALSE);
+	(void) fclose(mnttab_file);
+
+	libzfs_fini(g_zfs);
+
+	if (getenv("ZFS_ABORT") != NULL) {
+		(void) printf("dumping core by request\n");
+		abort();
+	}
+
+	return rc;
+}
 
 static int
-mount_zfs_import(const char *devpath, const char *mountpoint)
+mount_zfs_import_device(const char *devpath, const char *mountpoint)
 {
-        syslog(LOG_NOTICE, "+mount_zfs_import : devpath %s", devpath);
+        syslog(LOG_NOTICE, "+mount_zfs_import_device : devpath %s", devpath);
         nvlist_t *labelconfig = NULL;
         uint64_t searchguid = 0;
         int ret = 1;
@@ -487,7 +584,7 @@ out:
 	if(g_zfs != NULL)
 		libzfs_fini(g_zfs);
 
-        syslog(LOG_NOTICE, "-mount_zfs_import : ret %d", ret);
+        syslog(LOG_NOTICE, "-mount_zfs_import_device : ret %d", ret);
 	
 	return ret;
 }
@@ -504,7 +601,7 @@ main(int argc, char **argv)
 	setlogmask(LOG_UPTO(LOG_NOTICE));
 	char  blkdevice[MAXPATHLEN];
 	char  *cp = NULL;
-	char  *devname = NULL;
+	char  *special = NULL;
 	struct stat  sb;
 	int ret = -1;
 		
@@ -542,34 +639,43 @@ main(int argc, char **argv)
 	argv += optind;
 
 	if (argv[0] != NULL) {
-		devname = argv[0];
+		special = argv[0];
 	}
 	if (argv[1] != NULL) {
 		strlcat(mountpoint, argv[1], sizeof(mountpoint));
 	}
 
 	syslog(LOG_NOTICE, "mntopts %s", mntopts);
-	syslog(LOG_NOTICE, "devname %s", devname);
+	syslog(LOG_NOTICE, "special %s", special);
 	syslog(LOG_NOTICE, "mounpoint %s", mountpoint);
 
-	cp = strrchr(devname, '/');
-	if (cp != 0)
-		devname = cp + 1;
-	if (*devname == 'r')
-		devname++;
-	(void) sprintf(blkdevice, "%s%s", _PATH_DEV, devname);
-	syslog(LOG_NOTICE, "blkdevice is %s", blkdevice);
-	if (stat(blkdevice, &sb) != 0) {
-		syslog(LOG_NOTICE, "%s: stat %s failed, %s", 
-		    progname, blkdevice, strerror(errno));
-		ret = 1;
-	} else {
-		ret = 0;
-	}
+	if (*(&special[0]) == '/' &&
+	    *(&special[1]) == 'd' &&
+	    *(&special[2]) == 'e' &&
+	    *(&special[3]) == 'v') {
+		cp = strrchr(special, '/');
+		if (cp != 0)
+			special = cp + 1;
+		if (*special == 'r')
+			special++;
+		(void) sprintf(blkdevice, "%s%s", _PATH_DEV, special);
+	printf("blkdevice is %s\n", blkdevice);
+		syslog(LOG_NOTICE, "blkdevice is %s", blkdevice);
+		if (stat(blkdevice, &sb) != 0) {
+			syslog(LOG_NOTICE, "%s: stat %s failed, %s",
+			    progname, blkdevice, strerror(errno));
+			ret = 1;
+		} else {
+			ret = 0;
+		}
 
-	closelog();
-	ret = mount_zfs_import(blkdevice, mountpoint);
+		closelog();
+		ret = mount_zfs_import_device(blkdevice, mountpoint);
 	
+	} else {
+		//hopefully if it's not a device it's a dataset
+		ret = mount_zfs_import_dataset(special, mountpoint);
+	}
 	return ret;
 #if 0
 	setlogmask(LOG_UPTO(LOG_NOTICE));
@@ -581,7 +687,7 @@ main(int argc, char **argv)
 	char  blkdevice[MAXPATHLEN];
 	char  what;
 	char  *cp;
-	char  *devname;
+	char  *special;
 	struct stat  sb;
 	int  ret = FSUR_INVAL;
 
@@ -612,13 +718,13 @@ main(int argc, char **argv)
 	}
 #endif /* __OLDNEWFSSIMULATION__ */
 
-	devname = argv[1];
-	cp = strrchr(devname, '/');
+	special = argv[1];
+	cp = strrchr(special, '/');
 	if (cp != 0)
-		devname = cp + 1;
-	if (*devname == 'r')
-		devname++;
-	(void) sprintf(blkdevice, "%s%s", _PATH_DEV, devname);
+		special = cp + 1;
+	if (*special == 'r')
+		special++;
+	(void) sprintf(blkdevice, "%s%s", _PATH_DEV, special);
 	syslog(LOG_NOTICE, "blkdevice is %s", blkdevice);
 
 	if (stat(blkdevice, &sb) != 0) {

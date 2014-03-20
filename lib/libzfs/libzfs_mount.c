@@ -428,7 +428,7 @@ zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
  * On OSX we can set the icon to a Open ZFS specific one, just to be extra
  * shiny
  */
-static void
+void
 zfs_mount_seticon(const char *mountpoint)
 {
 	/* For a root file system, add a volume icon. */
