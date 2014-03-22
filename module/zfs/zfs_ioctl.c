@@ -31,6 +31,7 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Portions Copyright 2013 Jorgen Lundman <lundman@lundman.net>
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
+ * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
 #define __APPLE_API_PRIVATE
@@ -1424,8 +1425,7 @@ zfs_ioc_pool_destroy(zfs_cmd_t *zc)
 	int error;
 	zfs_log_history(zc);
 	error = spa_destroy(zc->zc_name);
-	if (error == 0)
-		zvol_remove_minors(zc->zc_name);
+
 	return (error);
 }
 
@@ -1477,8 +1477,7 @@ zfs_ioc_pool_export(zfs_cmd_t *zc)
 
 	zfs_log_history(zc);
 	error = spa_export(zc->zc_name, NULL, force, hardforce);
-	if (error == 0)
-		zvol_remove_minors(zc->zc_name);
+
 	return (error);
 }
 
@@ -2318,7 +2317,7 @@ zfs_prop_set_special(const char *dsname, zprop_source_t source,
 		err = zvol_set_volsize(dsname, intval);
 		break;
 	case ZFS_PROP_SNAPDEV:
-		err = zvol_set_snapdev(dsname, intval);
+		err = zvol_set_snapdev(dsname, source, intval);
 		break;
 	case ZFS_PROP_VERSION:
 		{
@@ -3114,12 +3113,6 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 		if (error != 0)
 			(void) dsl_destroy_head(fsname);
 	}
-
-#ifdef _KERNEL
-	if (error == 0 && type == DMU_OST_ZVOL)
-		zvol_create_minors(fsname);
-#endif
-
 	return (error);
 }
 
@@ -3162,12 +3155,6 @@ zfs_ioc_clone(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 		if (error != 0)
 			(void) dsl_destroy_head(fsname);
 	}
-
-#ifdef _KERNEL
-	if (error == 0)
-		zvol_create_minors(fsname);
-#endif
-
 	return (error);
 }
 
@@ -3229,11 +3216,6 @@ zfs_ioc_snapshot(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 	}
 
 	error = dsl_dataset_snapshot(snaps, props, outnvl);
-
-#ifdef _KERNEL
-	if (error == 0)
-		zvol_create_minors(poolname);
-#endif
 
 	return (error);
 }
@@ -3368,7 +3350,6 @@ zfs_ioc_destroy_snaps(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 	for (pair = nvlist_next_nvpair(snaps, NULL); pair != NULL;
 	    pair = nvlist_next_nvpair(snaps, pair)) {
 		(void) zfs_unmount_snap(nvpair_name(pair));
-		(void) zvol_remove_minor(nvpair_name(pair));
 	}
 
 	return (dsl_destroy_snapshots_nvl(snaps, defer, outnvl));
@@ -3494,8 +3475,7 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 		err = dsl_destroy_snapshot(zc->zc_name, zc->zc_defer_destroy);
 	else
 		err = dsl_destroy_head(zc->zc_name);
-	if (zc->zc_objset_type == DMU_OST_ZVOL && err == 0)
-		(void) zvol_remove_minor(zc->zc_name);
+
 	return (err);
 }
 
@@ -4173,11 +4153,6 @@ zfs_ioc_recv(zfs_cmd_t *zc)
         zfs_ioc_recv_inject_err = B_FALSE;
         error = 1;
     }
-#endif
-
-#ifdef _KERNEL
-	if (error == 0)
-		zvol_create_minors(tofs);
 #endif
 
     /*
@@ -6323,16 +6298,14 @@ zfs_ioctl_osx_init(void)
 		return (0);
 #endif
 
+	if ((error = -zvol_init()) != 0)
+		return (error);
+
 	spa_init(FREAD | FWRITE);
 #ifndef __APPLE__
 	zfs_init();
 #endif
-#if defined(linux) || defined(__APPLE__)
-	if ((error = zvol_init()) != 0)
-		goto out1;
-#else
-	zvol_init();
-#endif
+
 	zfs_ioctl_init();
 
 #ifdef illumos
@@ -6344,7 +6317,7 @@ zfs_ioctl_osx_init(void)
 	}
 #elif defined(linux) || defined(__APPLE__)
 	if ((error = zfs_attach()) != 0)
-		goto out2;
+		goto out;
 #endif
 
 	tsd_create(&zfs_fsyncer_key, NULL);
@@ -6372,11 +6345,10 @@ zfs_ioctl_osx_init(void)
 	return (0);
 
 #if defined(linux) || defined(__APPLE__)
-out2:
-	(void) zvol_fini();
-out1:
+out:
 	zfs_fini();
 	spa_fini();
+	(void) zvol_fini();
 
 	printf("ZFS: Failed to Load ZFS Filesystem v%s-%s%s"
 	    ", rc = %d\n", ZFS_META_VERSION, ZFS_META_RELEASE,
@@ -6400,13 +6372,14 @@ zfs_ioctl_osx_fini(void)
 
 	kstat_osx_fini();
 
+	zvol_fini();
+
 #ifdef illumos
 	if ((error = mod_remove(&modlinkage)) != 0)
 		return (error);
 #elif defined(linux) || defined(__APPLE__)
 	zfs_detach();
 #endif
-	zvol_fini();
 #ifndef __APPLE__
 	zfs_fini();
 #endif

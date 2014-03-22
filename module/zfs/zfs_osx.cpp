@@ -267,7 +267,6 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     system_taskq_fini();
 
     zfs_ioctl_osx_fini();
-    zvol_fini();
     zfs_vfsops_fini();
 
     sysctl_unregister_oid(&sysctl__zfs_kext_version);
