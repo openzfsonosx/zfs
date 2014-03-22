@@ -62,11 +62,21 @@
 #include <sys/dnode.h>
 #include <sys/dsl_dataset.h>
 #include <sys/dsl_prop.h>
-#include <sys/zap.h>
-#include <sys/zfeature.h>
-#include <sys/zil_impl.h>
-#include <sys/zio.h>
-#include <sys/zfs_rlock.h>
+#include <sys/dsl_dir.h>
+#include <sys/dkio.h>
+// #include <sys/efi_partition.h>
+#include <sys/byteorder.h>
+#include <sys/pathname.h>
+#include <sys/ddi.h>
+#include <sys/sunddi.h>
+#include <sys/crc32.h>
+#include <sys/dirent.h>
+#include <sys/policy.h>
+#include <sys/fs/zfs.h>
+#include <sys/zfs_ioctl.h>
+#include <sys/mkdev.h>
+#include <sys/zil.h>
+#include <sys/refcount.h>
 #include <sys/zfs_znode.h>
 #include <sys/spa_impl.h>
 #include <sys/zfs_rlock.h>
@@ -78,9 +88,19 @@
 #include <sys/dbuf.h>
 #include <sys/dmu_tx.h>
 
-unsigned int zvol_inhibit_dev = 0;
-unsigned int zvol_major = ZVOL_MAJOR;
-unsigned long zvol_max_discard_blocks = 16384;
+#include "zfs_namecheck.h"
+
+uint64_t zvol_inhibit_dev = 0;
+dev_info_t zfs_dip_real = { 0 };
+dev_info_t *zfs_dip = &zfs_dip_real;
+extern int zfs_major;
+extern int zfs_bmajor;
+
+/*
+ * ZFS minor numbers can refer to either a control device instance or
+ * a zvol. Depending on the value of zss_type, zss_data points to either
+ * a zvol_state_t or a zfs_onexit_t.
+ */
 
 static kmutex_t zvol_state_lock;
 static list_t zvol_state_list;
@@ -957,14 +977,55 @@ zvol_remove_minors_impl(const char *name)
 		zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
 		if (zv == NULL)
 			continue;
-		if (strncmp(namebuf, zv->zv_name, strlen(namebuf)) == 0) {
-			mutex_exit(&zfsdev_state_lock);
+
+		if (name == NULL || strcmp(zv->zv_name, name) == 0 ||
+			(strncmp(zv->zv_name, name, namelen) == 0 &&
+			 (zv->zv_name[namelen] == '/' ||
+			  zv->zv_name[namelen] == '@'))) {
+
+			/* If in use, leave alone */
+			if (zv->zv_open_count > 0)
+				continue;
+			// We had to drop this lock or we would deadlock against
+			// ourselves due to IOKit, but, since this is now ASYNC
+			// it should in theory no longer be needed?
+			//mutex_exit(&zfsdev_state_lock);
 			zvolRemoveDevice(zv);
-			mutex_enter(&zfsdev_state_lock);
+			//mutex_enter(&zfsdev_state_lock);
 			(void) zvol_remove_zv(zv);
 		}
 	}
-	kmem_free(namebuf, name_buf_len);
+	mutex_exit(&zfsdev_state_lock);
+}
+
+
+/* Remove minor for this specific snapshot only */
+#if 0
+static void
+zvol_remove_minor_impl(const char *name)
+{
+	zvol_state_t *zv, *zv_next;
+
+	if (zvol_inhibit_dev)
+		return;
+
+	if (strchr(name, '@') == NULL)
+		return;
+
+	mutex_enter(&zfsdev_state_lock);
+
+	for (zv = list_head(&zvol_state_list); zv != NULL; zv = zv_next) {
+		zv_next = list_next(&zvol_state_list, zv);
+
+		if (strcmp(zv->zv_name, name) == 0) {
+			/* If in use, leave alone */
+			if (zv->zv_open_count > 0)
+				continue;
+			zvol_remove(zv);
+			zvol_free(zv);
+			break;
+		}
+	}
 
 	mutex_exit(&zfsdev_state_lock);
 }
@@ -1189,6 +1250,190 @@ zvol_set_snapdev_impl(const char *dsname, uint64_t snapdev)
 static zvol_task_t *
 zvol_task_alloc(zvol_async_op_t op, const char *name1, const char *name2,
 				uint64_t snapdev)
+{
+	zvol_task_t *task;
+	char *delim;
+
+	/* Never allow tasks on hidden names. */
+	if (name1[0] == '$')
+		return (NULL);
+
+	task = kmem_zalloc(sizeof (zvol_task_t), KM_SLEEP);
+	task->op = op;
+	task->snapdev = snapdev;
+	delim = strchr(name1, '/');
+	strlcpy(task->pool, name1, delim ? (delim - name1 + 1) : MAXNAMELEN);
+
+	strlcpy(task->name1, name1, MAXNAMELEN);
+	if (name2 != NULL)
+		strlcpy(task->name2, name2, MAXNAMELEN);
+
+	return (task);
+}
+
+static void
+zvol_task_free(zvol_task_t *task)
+{
+	kmem_free(task, sizeof (zvol_task_t));
+}
+
+/*
+ * The worker thread function performed asynchronously.
+ */
+static void
+zvol_task_cb(void *param)
+{
+       zvol_task_t *task = (zvol_task_t *)param;
+
+       switch (task->op) {
+       case ZVOL_ASYNC_CREATE_MINORS:
+               (void) zvol_create_minors_impl(task->name1);
+               break;
+       case ZVOL_ASYNC_REMOVE_MINORS:
+               zvol_remove_minors_impl(task->name1);
+               break;
+       case ZVOL_ASYNC_RENAME_MINORS:
+               zvol_rename_minors_impl(task->name1, task->name2);
+               break;
+       case ZVOL_ASYNC_SET_SNAPDEV:
+               zvol_set_snapdev_impl(task->name1, task->snapdev);
+               break;
+       default:
+               VERIFY(0);
+               break;
+       }
+
+       zvol_task_free(task);
+}
+
+typedef struct zvol_set_snapdev_arg {
+	const char *zsda_name;
+	uint64_t zsda_value;
+	zprop_source_t zsda_source;
+	dmu_tx_t *zsda_tx;
+} zvol_set_snapdev_arg_t;
+
+/*
+ * Sanity check the dataset for safe use by the sync task.  No additional
+ * conditions are imposed.
+ */
+static int
+zvol_set_snapdev_check(void *arg, dmu_tx_t *tx)
+{
+	zvol_set_snapdev_arg_t *zsda = arg;
+	dsl_pool_t *dp = dmu_tx_pool(tx);
+	dsl_dir_t *dd;
+	int error;
+
+	error = dsl_dir_hold(dp, zsda->zsda_name, FTAG, &dd, NULL);
+	if (error != 0)
+		return (error);
+
+	dsl_dir_rele(dd, FTAG);
+
+	return (error);
+}
+
+static int
+zvol_set_snapdev_sync_cb(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
+{
+	zvol_set_snapdev_arg_t *zsda = arg;
+	char dsname[MAXNAMELEN];
+	zvol_task_t *task;
+
+	dsl_dataset_name(ds, dsname);
+	dsl_prop_set_sync_impl(ds, zfs_prop_to_name(ZFS_PROP_SNAPDEV),
+						   zsda->zsda_source, sizeof (zsda->zsda_value), 1,
+						   &zsda->zsda_value, zsda->zsda_tx);
+
+	task = zvol_task_alloc(ZVOL_ASYNC_SET_SNAPDEV, dsname,
+						   NULL, zsda->zsda_value);
+	if (task == NULL)
+		return (0);
+
+	(void) taskq_dispatch(dp->dp_spa->spa_zvol_taskq, zvol_task_cb,
+						  task, TQ_SLEEP);
+	return (0);
+}
+
+/*
+ * Traverse all child snapshot datasets and apply snapdev appropriately.
+ */
+static void
+zvol_set_snapdev_sync(void *arg, dmu_tx_t *tx)
+{
+	zvol_set_snapdev_arg_t *zsda = arg;
+	dsl_pool_t *dp = dmu_tx_pool(tx);
+	dsl_dir_t *dd;
+
+	VERIFY0(dsl_dir_hold(dp, zsda->zsda_name, FTAG, &dd, NULL));
+	zsda->zsda_tx = tx;
+
+	dmu_objset_find_dp(dp, dd->dd_object, zvol_set_snapdev_sync_cb,
+					   zsda, DS_FIND_CHILDREN);
+
+	dsl_dir_rele(dd, FTAG);
+}
+
+int
+zvol_set_snapdev(const char *ddname, zprop_source_t source, uint64_t snapdev)
+{
+	zvol_set_snapdev_arg_t zsda;
+
+	zsda.zsda_name = ddname;
+	zsda.zsda_source = source;
+	zsda.zsda_value = snapdev;
+	return (dsl_sync_task(ddname, zvol_set_snapdev_check,
+						  zvol_set_snapdev_sync, &zsda, 0, ZFS_SPACE_CHECK_NONE));
+}
+
+void
+zvol_create_minors(spa_t *spa, const char *name, boolean_t async)
+{
+	zvol_task_t *task;
+	taskqid_t id;
+
+	task = zvol_task_alloc(ZVOL_ASYNC_CREATE_MINORS, name, NULL, ~0ULL);
+	if (task == NULL)
+		return;
+
+	id = taskq_dispatch(spa->spa_zvol_taskq, zvol_task_cb, task, TQ_SLEEP);
+	if ((async == B_FALSE) && (id != 0))
+		taskq_wait(spa->spa_zvol_taskq);
+}
+
+void
+zvol_remove_minors(spa_t *spa, const char *name, boolean_t async)
+{
+	zvol_task_t *task;
+	taskqid_t id;
+
+	task = zvol_task_alloc(ZVOL_ASYNC_REMOVE_MINORS, name, NULL, ~0ULL);
+	if (task == NULL)
+		return;
+	id = taskq_dispatch(spa->spa_zvol_taskq, zvol_task_cb, task, TQ_SLEEP);
+	if ((async == B_FALSE) && (id != 0))
+		taskq_wait(spa->spa_zvol_taskq);
+}
+
+void
+zvol_rename_minors(spa_t *spa, const char *name1, const char *name2,
+				   boolean_t async)
+{
+	zvol_task_t *task;
+	taskqid_t id;
+
+	task = zvol_task_alloc(ZVOL_ASYNC_RENAME_MINORS, name1, name2, ~0ULL);
+	if (task == NULL)
+		return;
+
+	id = taskq_dispatch(spa->spa_zvol_taskq, zvol_task_cb, task, TQ_SLEEP);
+	if ((async == B_FALSE) && (id != 0))
+		taskq_wait(spa->spa_zvol_taskq);
+}
+
+int
+zvol_set_volsize(const char *name, uint64_t volsize)
 {
 	zvol_task_t *task;
 	char *delim;
@@ -2502,11 +2747,174 @@ zvol_init(void)
 void
 zvol_fini(void)
 {
-	zvol_remove_minors(NULL);
-	blk_unregister_region(MKDEV(zvol_major, 0), 1UL << MINORBITS);
-	unregister_blkdev(zvol_major, ZVOL_DRIVER);
-	mutex_destroy(&zvol_state_lock);
-	list_destroy(&zvol_state_list);
+	zvol_remove_minors_impl(NULL);
+#ifdef illumos
+	mutex_destroy(&zfsdev_state_lock);
+#endif
+	ddi_soft_state_fini(&zfsdev_state);
+}
+
+#if 0 // unused function
+static int
+zvol_dump_init(zvol_state_t *zv, boolean_t resize)
+{
+	dmu_tx_t *tx;
+	int error = 0;
+	objset_t *os = zv->zv_objset;
+	nvlist_t *nv = NULL;
+	uint64_t version = spa_version(dmu_objset_spa(zv->zv_objset));
+
+	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
+	error = dmu_free_long_range(zv->zv_objset, ZVOL_OBJ, 0,
+	    DMU_OBJECT_END);
+	/* wait for dmu_free_long_range to actually free the blocks */
+	txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
+
+	tx = dmu_tx_create(os);
+	dmu_tx_hold_zap(tx, ZVOL_ZAP_OBJ, TRUE, NULL);
+	dmu_tx_hold_bonus(tx, ZVOL_OBJ);
+	error = dmu_tx_assign(tx, TXG_WAIT);
+	if (error) {
+		dmu_tx_abort(tx);
+		return (error);
+	}
+
+	/*
+	 * If we are resizing the dump device then we only need to
+	 * update the refreservation to match the newly updated
+	 * zvolsize. Otherwise, we save off the original state of the
+	 * zvol so that we can restore them if the zvol is ever undumpified.
+	 */
+	if (resize) {
+		error = zap_update(os, ZVOL_ZAP_OBJ,
+		    zfs_prop_to_name(ZFS_PROP_REFRESERVATION), 8, 1,
+		    &zv->zv_volsize, tx);
+	} else {
+		uint64_t checksum, compress, refresrv, vbs, dedup;
+
+		error = dsl_prop_get_integer(zv->zv_name,
+		    zfs_prop_to_name(ZFS_PROP_COMPRESSION), &compress, NULL);
+		error = error ? error : dsl_prop_get_integer(zv->zv_name,
+		    zfs_prop_to_name(ZFS_PROP_CHECKSUM), &checksum, NULL);
+		error = error ? error : dsl_prop_get_integer(zv->zv_name,
+		    zfs_prop_to_name(ZFS_PROP_REFRESERVATION), &refresrv, NULL);
+		error = error ? error : dsl_prop_get_integer(zv->zv_name,
+		    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE), &vbs, NULL);
+		if (version >= SPA_VERSION_DEDUP) {
+			error = error ? error :
+			    dsl_prop_get_integer(zv->zv_name,
+			    zfs_prop_to_name(ZFS_PROP_DEDUP), &dedup, NULL);
+		}
+
+		error = error ? error : zap_update(os, ZVOL_ZAP_OBJ,
+		    zfs_prop_to_name(ZFS_PROP_COMPRESSION), 8, 1,
+		    &compress, tx);
+		error = error ? error : zap_update(os, ZVOL_ZAP_OBJ,
+		    zfs_prop_to_name(ZFS_PROP_CHECKSUM), 8, 1, &checksum, tx);
+		error = error ? error : zap_update(os, ZVOL_ZAP_OBJ,
+		    zfs_prop_to_name(ZFS_PROP_REFRESERVATION), 8, 1,
+		    &refresrv, tx);
+		error = error ? error : zap_update(os, ZVOL_ZAP_OBJ,
+		    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE), 8, 1,
+		    &vbs, tx);
+		error = error ? error : dmu_object_set_blocksize(
+		    os, ZVOL_OBJ, SPA_MAXBLOCKSIZE, 0, tx);
+		if (version >= SPA_VERSION_DEDUP) {
+			error = error ? error : zap_update(os, ZVOL_ZAP_OBJ,
+			    zfs_prop_to_name(ZFS_PROP_DEDUP), 8, 1,
+			    &dedup, tx);
+		}
+		if (error == 0)
+			zv->zv_volblocksize = SPA_MAXBLOCKSIZE;
+	}
+	dmu_tx_commit(tx);
+
+	/*
+	 * We only need update the zvol's property if we are initializing
+	 * the dump area for the first time.
+	 */
+	if (!resize) {
+		VERIFY(nvlist_alloc(&nv, NV_UNIQUE_NAME, KM_SLEEP) == 0);
+		VERIFY(nvlist_add_uint64(nv,
+		    zfs_prop_to_name(ZFS_PROP_REFRESERVATION), 0) == 0);
+		VERIFY(nvlist_add_uint64(nv,
+		    zfs_prop_to_name(ZFS_PROP_COMPRESSION),
+		    ZIO_COMPRESS_OFF) == 0);
+		VERIFY(nvlist_add_uint64(nv,
+		    zfs_prop_to_name(ZFS_PROP_CHECKSUM),
+		    ZIO_CHECKSUM_OFF) == 0);
+		if (version >= SPA_VERSION_DEDUP) {
+			VERIFY(nvlist_add_uint64(nv,
+			    zfs_prop_to_name(ZFS_PROP_DEDUP),
+			    ZIO_CHECKSUM_OFF) == 0);
+		}
+
+		error = zfs_set_prop_nvlist(zv->zv_name, ZPROP_SRC_LOCAL,
+		    nv, NULL);
+		nvlist_free(nv);
+
+		if (error)
+			return (error);
+	}
+
+	/* Allocate the space for the dump */
+	error = zvol_prealloc(zv);
+	return (error);
+}
+
+static int
+zvol_dumpify(zvol_state_t *zv)
+{
+	int error = 0;
+	uint64_t dumpsize = 0;
+	dmu_tx_t *tx;
+	objset_t *os = zv->zv_objset;
+
+	if (zv->zv_flags & ZVOL_RDONLY)
+		return (EROFS);
+
+	if (zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ, ZVOL_DUMPSIZE,
+	    8, 1, &dumpsize) != 0 ||
+	    dumpsize != zv->zv_volsize) {
+
+		boolean_t resize = (dumpsize > 0);
+
+		if ((error = zvol_dump_init(zv, resize)) != 0) {
+			(void) zvol_dump_fini(zv);
+			return (error);
+		}
+	}
+
+	/*
+	 * Build up our lba mapping.
+	 */
+	error = zvol_get_lbas(zv);
+	if (error) {
+		(void) zvol_dump_fini(zv);
+		return (error);
+	}
+
+	tx = dmu_tx_create(os);
+	dmu_tx_hold_zap(tx, ZVOL_ZAP_OBJ, TRUE, NULL);
+	error = dmu_tx_assign(tx, TXG_WAIT);
+	if (error) {
+		dmu_tx_abort(tx);
+		(void) zvol_dump_fini(zv);
+		return (error);
+	}
+
+	zv->zv_flags |= ZVOL_DUMPIFIED;
+	error = zap_update(os, ZVOL_ZAP_OBJ, ZVOL_DUMPSIZE, 8, 1,
+	    &zv->zv_volsize, tx);
+	dmu_tx_commit(tx);
+
+	if (error) {
+		(void) zvol_dump_fini(zv);
+		return (error);
+	}
+
+	txg_wait_synced(dmu_objset_pool(os), 0);
+	return (0);
 }
 
 
@@ -2577,8 +2985,10 @@ zvol_fini(void)
 #endif
 
 
+
+#if 0
 int
-zvol_create_minors(const char *name)
+XXXXXzvol_create_minors(const char *name)
 {
 	uint64_t cookie;
 	objset_t *os;
@@ -2653,6 +3063,7 @@ zvol_create_minors(const char *name)
 }
 
 
+#endif
 
 
 /*
