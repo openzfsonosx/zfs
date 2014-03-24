@@ -1,13 +1,11 @@
-This is a very early alpha of ZFS on OSX, to be the next generation of MacZFS.
-Test this with the expectation of a kernel panic.
+
+OpenZFS on OS X (O3X) brings OpenZFS features to Apple's OS X.
 
 ** zfs.kext depends upon spl.kext, so start with that repository.
 
-It is tested primarily on Mac OS 10.8.4 and secondarily on 10.6.8, with
-the latest Macports.
+It is tested primarily on Mac OS X Mavericks.
 
-See https://github.com/zfs-osx/ and http://openzfsonosx.org/ for more information.
-Note MacZFS's wiki on kernel development and panic decoding.
+See http://openzfsonosx.org/ for more information.
 
 ```
 # git clone https://github.com/zfs-osx/zfs.git
@@ -19,7 +17,7 @@ KNOWN ISSUES.
 
 
 Please note that 'llvm-gcc' or 'clang' has to be used for compiling KEXTs.
-Pure 'gcc' will produce instable builds.
+Pure 'gcc' will produce unstable builds.
 
 ```
  # ./configure CC=clang CXX=clang++
@@ -42,8 +40,13 @@ or
 Requesting load of /tmp/zfs.kext.
 /tmp/zfs.kext loaded successfully (or already loaded).
 
-: kobj_open_file: "/etc/zfs/zpool.cache", err 0 from vnode_open
-: ZFS: Loaded module v0.6.0-rc12alpha, ZFS pool version 5000, ZFS filesystem version 5
+: ZFS: Loading module ... 
+: ZFS: ARC limit set to (arc_c_max): 1073741824
+: kobj_open_file: "/etc/zfs/zpool.cache", err 2 from vnode_open
+: ZFS: Loaded module v0.6.2-rc1_2_g691a603, ZFS pool version 5000, ZFS filesystem version 5
+: ZFS filesystem version: 5
+: ZFS: hostid set to 9e5e1b35 from UUID 'C039E802-1F44-5F62-B3A2-5E252F3EFF2A'
+
 
 bash-3.2# ls -l /dev/zfs
 crw-rw-rw-  1 root  wheel   33,   0 Feb 27 17:20 /dev/zfs
