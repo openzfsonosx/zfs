@@ -1,4 +1,3 @@
-
 This is a very early alpha of ZFS on OSX, to be the next generation of MacZFS.
 Test this with the expectation of a kernel panic.
 
@@ -7,7 +6,7 @@ Test this with the expectation of a kernel panic.
 It is tested primarily on Mac OS 10.8.4 and secondarily on 10.6.8, with
 the latest Macports.
 
-See https://github.com/zfs-osx/ and http://MacZFS.org/ for more information.
+See https://github.com/zfs-osx/ and http://openzfsonosx.org/ for more information.
 Note MacZFS's wiki on kernel development and panic decoding.
 
 ```
