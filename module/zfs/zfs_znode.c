@@ -1296,9 +1296,9 @@ again:
                 *zpp = zp;
                 err = 0;
             }
-            sa_buf_rele(db, NULL);
 
             mutex_exit(&zp->z_lock);
+            sa_buf_rele(db, NULL);
             ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
             if (err == 0) {
