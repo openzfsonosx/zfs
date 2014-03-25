@@ -1,22 +1,18 @@
 
 OpenZFS on OS X (O3X) brings OpenZFS features to Apple's OS X.
 
-** zfs.kext depends upon spl.kext, so start with that repository.
+** zfs.kext depends upon spl.kext, so start with that repository:
+https://github.com/openzfsonosx/spl.git
 
 It is tested primarily on Mac OS X Mavericks.
 
 See http://openzfsonosx.org/ for more information.
 
-```
-# git clone https://github.com/zfs-osx/zfs.git
-```
+Open Issues:
 
-KNOWN ISSUES.
+  https://github.com/openzfsonosx/zfs/issues?state=open
 
-  https://github.com/zfs-osx/zfs/issues?state=open
-
-
-Please note that 'llvm-gcc' or 'clang' has to be used for compiling KEXTs.
+Please note that 'llvm-gcc' or 'clang' should be used for compiling the KEXTs.
 Pure 'gcc' will produce unstable builds.
 
 ```
@@ -25,7 +21,9 @@ or
  # ./configure CC=llvm-gcc CXX=llvm-g++
 ```
 
-
+```
+# git clone https://github.com/openzfsonosx/zfs.git
+```
 
 ```
 # ./autogen.sh
@@ -37,9 +35,7 @@ or
 
 # kextload -r /tmp/ -v /tmp/zfs.kext/
 
-Requesting load of /tmp/zfs.kext.
-/tmp/zfs.kext loaded successfully (or already loaded).
-
+In system log:
 : ZFS: Loading module ... 
 : ZFS: ARC limit set to (arc_c_max): 1073741824
 : kobj_open_file: "/etc/zfs/zpool.cache", err 2 from vnode_open
@@ -47,16 +43,13 @@ Requesting load of /tmp/zfs.kext.
 : ZFS filesystem version: 5
 : ZFS: hostid set to 9e5e1b35 from UUID 'C039E802-1F44-5F62-B3A2-5E252F3EFF2A'
 
-
 bash-3.2# ls -l /dev/zfs
 crw-rw-rw-  1 root  wheel   33,   0 Feb 27 17:20 /dev/zfs
-
 
 # ./zpool.sh status
 no pools available
 
-
-# ./zpool.sh create BOOM /Users/lundman/osx.zfs/diskimage.bin
+# ./zpool.sh create BOOM /Users/lundman/openzfsonosx/diskimage.bin
 zfs_mount: unused options: "defaults,atime,dev,exec,rw,suid,xattr,nomand,zfsutil"
 
 # df -h
@@ -76,7 +69,7 @@ drwxr-xr-x  2 root  wheel  2 Apr  4 16:45 THIS.DIRECTORY.IS.ON.ZFS
 
 # ./zpool.sh export BOOM
 
-# ./zpool.sh import -d /Users/lundman/osx.zfs/
+# ./zpool.sh import -d /Users/lundman/openzfsonosx/
    pool: BOOM
      id: 17559987915944145476
   state: ONLINE
@@ -86,7 +79,7 @@ drwxr-xr-x  2 root  wheel  2 Apr  4 16:45 THIS.DIRECTORY.IS.ON.ZFS
         BOOM                             ONLINE
           /Users/lundman/pool-image.bin  ONLINE
 
-# ./zpool.sh import -d /Users/lundman/osx.zfs/ BOOM
+# ./zpool.sh import -d /Users/lundman/openzfsonosx/ BOOM
 
 # ls -l /BOOM/
 total 3
@@ -96,7 +89,6 @@ drwxr-xr-x  2 root  wheel  2 Apr  4 16:45 THIS.DIRECTORY.IS.ON.ZFS
 # ./zpool.sh import -d ~/image/ FROMSOLARIS
 NAME          SIZE  ALLOC   FREE    CAP  DEDUP  HEALTH  ALTROOT
 FROMSOLARIS   123M   354K   123M     0%  1.00x  ONLINE  -
-
 
 ```
 
