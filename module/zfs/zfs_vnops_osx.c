@@ -905,7 +905,7 @@ zfs_vnop_pagein(
     int             need_unlock = 0;
     int             error = 0;
 
-    dprintf("+vnop_pagein: off 0x%llx size 0x%zx\n",
+    dprintf("+vnop_pagein: off 0x%llx size 0x%llx\n",
            off, len);
 
     if (upl == (upl_t)NULL)
@@ -951,11 +951,13 @@ zfs_vnop_pagein(
      * Fill pages with data from the file.
      */
     while (len > 0) {
-        if (len < PAGESIZE)
-              break;
 
         dprintf("pagein from off 0x%llx into address %p (len 0x%lx)\n",
                off, vaddr, len);
+
+        if (len < PAGESIZE)
+              break;
+
         error = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, off, PAGESIZE,
                          (void *)vaddr, DMU_READ_PREFETCH);
         if (error) {
@@ -1096,7 +1098,7 @@ zfs_vnop_pageout(
     uint64_t        filesz;
     int             err = 0;
 
-    dprintf("+vnop_pageout: off 0x%llx len ox%zx upl_off 0x%lx: blksz ox%ux, z_size 0x%llx\n",
+    dprintf("+vnop_pageout: off 0x%llx len 0x%x upl_off 0x%lx: blksz 0x%llx, z_size 0x%llx\n",
            off, len, upl_offset, zp->z_blksz, zp->z_size);
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
@@ -1128,7 +1130,6 @@ zfs_vnop_pageout(
         panic("zfs_vnop_pageout: no upl!");
     }
     if (len <= 0) {
-        dprintf("zfs_vnop_pageout: invalid size %ld", len);
         if (!(flags & UPL_NOCOMMIT))
             (void) ubc_upl_abort(upl, 0);
         err = EINVAL;
@@ -1141,7 +1142,9 @@ zfs_vnop_pageout(
         err = EROFS;
         goto exit;
     }
+
     filesz = zp->z_size; /* get consistent copy of zp_size */
+
     if ((off < 0) || (off >= filesz) ||
         (off & PAGE_MASK_64) || (len & PAGE_MASK)) {
         if (!(flags & UPL_NOCOMMIT))
@@ -1150,6 +1153,19 @@ zfs_vnop_pageout(
         err = EINVAL;
         goto exit;
     }
+
+
+    uint64_t pgsize = roundup(filesz, PAGESIZE);
+
+     /* Any whole pages beyond the end of the while we abort */
+    if ((ap->a_size + ap->a_f_offset) > pgsize) {
+        printf("pageout: abort outside pages (rounded 0x%llx > UPLlen 0x%llx\n",
+               pgsize, ap->a_size + ap->a_f_offset);
+       ubc_upl_abort_range(upl, pgsize,
+                            pgsize - (ap->a_size + ap->a_f_offset),
+                            UPL_ABORT_FREE_ON_EMPTY);
+    }
+
     len = MIN(len, filesz - off);
  top:
     rl = zfs_range_lock(zp, off, len, RL_WRITER);
@@ -1189,36 +1205,38 @@ zfs_vnop_pageout(
         goto out;
     }
 
-#if 0
-    if (len <= PAGESIZE) {
-        caddr_t va;
-        printf("len is 0x%llx so dmu_write\n", len);
-        ASSERT3U(len, <=, PAGESIZE);
-        ubc_upl_map(upl, (vm_offset_t *)&va);
-        va += upl_offset;
-        dmu_write(zfsvfs->z_os, zp->z_id, off, len, va, tx);
-        ubc_upl_unmap(upl);
-    } else {
-        printf("osx_write_pages: off 0x%llx\n", off);
-        err = osx_write_pages(zfsvfs->z_os, zp->z_id, off, len, upl, tx);
-        if (err)printf("dmu_write say %d\n", err);
-    }
-#else
     caddr_t va;
 
     ubc_upl_map(upl, (vm_offset_t *)&va);
     va += upl_offset;
-    while (len > 0) {
-        ssize_t sz = MIN(len, PAGESIZE);
-
+    while (len >= PAGESIZE) {
+        ssize_t sz = PAGESIZE;
+        dprintf("pageout: dmu_write off 0x%llx size 0x%llx\n", off, sz);
         dmu_write(zfsvfs->z_os, zp->z_id, off, sz, va, tx);
         va += sz;
         off += sz;
         len -= sz;
     }
-    ubc_upl_unmap(upl);
 
-#endif
+    /* The last, possibly partial block, needs to have the data zeroed which
+     * would extend past the size of the file
+     */
+    if (len > 0) {
+        ssize_t sz = len;
+
+        dprintf("pageout: dmu_writeX off 0x%llx size 0x%llx\n", off, sz);
+        dmu_write(zfsvfs->z_os, zp->z_id, off, sz, va, tx);
+
+        va += sz;
+        off += sz;
+        len -= sz;
+
+        /* Zero out the remainder of the PAGE that didnt fit in filesize */
+        bzero(va, PAGESIZE-sz);
+        dprintf("zero last 0x%llx bytes.\n", PAGESIZE-sz);
+
+    }
+    ubc_upl_unmap(upl);
 
 
 	if (err == 0) {
