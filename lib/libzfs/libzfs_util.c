@@ -700,7 +700,7 @@ libzfs_load_module(const char *module)
 	char *modpath = NULL;
 	int ret;
 
-	ret = asprintf(&modpath, "/System/Library/Extensions/%s.kext", module);
+	ret = asprintf(&modpath, "%s/%s.kext", KERNEL_MODPREFIX, module);
 	if (ret == -1)
 		return (errno);
 	ret = 0;
@@ -714,7 +714,7 @@ libzfs_load_module(const char *module)
 }
 
 #define	MODLOAD_CMD \
-	"/sbin/kextload /System/Library/Extensions/zfs.kext"
+	"/sbin/kextload " KERNEL_MODPREFIX "/zfs.kext"
 
 libzfs_handle_t *
 libzfs_init(void)

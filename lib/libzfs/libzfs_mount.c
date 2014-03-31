@@ -420,12 +420,14 @@ zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
 
 
 #define MOUNT_POINT_CUSTOM_ICON ".VolumeIcon.icns"
-#define CUSTOM_ICON_PATH_LEGACY "/System/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns"
-#define CUSTOM_ICON_PATH_MAVERICKS "/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns"
+// RJVB 20140331: now that we use KERNEL_MODPREFIX it is no longer necessary to look in 2 locations:
+// #define CUSTOM_ICON_PATH_LEGACY "/System/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns"
+// #define CUSTOM_ICON_PATH_MAVERICKS "/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns"
+#define CUSTOM_ICON_PATH KERNEL_MODPREFIX "/zfs.kext/Contents/Resources/VolumeIcon.icns"
 
 #ifdef __APPLE__
 /*
- * On OSX we can set the icon to a Open ZFS specific one, just to be extra
+ * On OSX we can set the icon to an Open ZFS specific one, just to be extra
  * shiny
  */
 static void
@@ -448,12 +450,8 @@ zfs_mount_seticon(const char *mountpoint)
         return;
     }
 
-    /* check if we can read in the default ZFS icon, one of two paths
-     * trying new path first, as the second path should get rare with time
-     */
-    srcfp = fopen(CUSTOM_ICON_PATH_MAVERICKS, "r");
-    if (!srcfp)
-        srcfp = fopen(CUSTOM_ICON_PATH_LEGACY, "r");
+    /* check if we can read in the default ZFS icon */
+    srcfp = fopen(CUSTOM_ICON_PATH, "r");
 
     /* No icon, oh well, its cosmetics, so just give up */
     if (!srcfp) {

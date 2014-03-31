@@ -24,8 +24,6 @@ CFLAGS_KMOD = \
 	-DNeXT \
 	-DNAMEDSTREAMS=1 \
 	-DHAVE_SPL=1 \
-	-DZFS_META_VERSION=\"@ZFS_META_VERSION@\" \
-	-DZFS_META_RELEASE=\"@ZFS_META_RELEASE@\" \
 	-I$(top_srcdir)/include \
 	-I@SPL_OBJ@ -I@SPL_OBJ@/include \
 	-I@KERNELSRC@
