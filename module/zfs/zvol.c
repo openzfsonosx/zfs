@@ -2635,8 +2635,8 @@ zvol_create_minors(const char *name)
     char *osname, *p;
     int error, len;
 
-    //if (dataset_name_hidden(name))
-    //   return (0);
+    if (dataset_name_hidden(name))
+        return (0);
 
     if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
         printf("ZFS WARNING: Unable to put hold on %s (error=%d).\n",

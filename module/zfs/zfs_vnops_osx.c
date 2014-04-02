@@ -62,10 +62,15 @@
 
 #ifdef _KERNEL
 #include <sys/sysctl.h>
-int debug_vnop_osx_printf = 0;
-int zfs_vnop_ignore_negatives = 0;
-int zfs_vnop_ignore_positives = 0;
-int zfs_vnop_create_negatives = 1;
+unsigned int debug_vnop_osx_printf = 0;
+unsigned int zfs_vnop_ignore_negatives = 0;
+unsigned int zfs_vnop_ignore_positives = 0;
+unsigned int zfs_vnop_create_negatives = 1;
+/*
+ * Default kern.maxvnodes = 66560,
+ * allow ZFS to use half the system?
+ */
+unsigned int zfs_vnop_reclaim_throttle = 33280;
 #endif
 
 #define	DECLARE_CRED(ap) \
@@ -116,6 +121,7 @@ extern struct vnodeopv_desc zfsctl_ops_snapshot;
 
 #define ZFS_VNOP_TBL_CNT	8
 
+static void zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs);
 
 
 static struct vnodeopv_desc *zfs_vnodeop_opv_desc_list[ZFS_VNOP_TBL_CNT] =
@@ -221,7 +227,7 @@ zfs_vnop_ioctl(
         dprintf("vnop_ioctl: F_RDADVISE\n");
         break;
 	default:
-        dprintf("vnop_ioctl: Unknown ioctl %02lx ('%ul' + %ul)\n", 
+        dprintf("vnop_ioctl: Unknown ioctl %02lx ('%ul' + %ul)\n",
                ap->a_command,
                (ap->a_command&0xff00)>>8,
                ap->a_command&0xff);
@@ -417,6 +423,9 @@ zfs_vnop_lookup(
 
     if (filename)
         FREE(filename, M_TEMP);
+
+    if (!error && ap->a_vpp && *ap->a_vpp && VTOZ(*ap->a_vpp))
+        zfs_vnop_throttle_reclaim(VTOZ(*ap->a_vpp)->z_zfsvfs);
 
     dprintf("-vnop_lookup %d\n", error);
 	return (error);
@@ -1103,7 +1112,7 @@ zfs_vnop_pageout(
 
     // Defer syncs if we are coming through vnode_create()
     if (zfsvfs->z_vnode_create_depth) {
-        printf("zfs: awkward pageout exit\n");
+        printf("zfs: pageout dropping request due to vnode_create\n");
         if (!(flags & UPL_NOCOMMIT))
             ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES |
                           UPL_ABORT_FREE_ON_EMPTY);
@@ -1501,8 +1510,35 @@ zfs_vnop_reclaim(
 #ifdef RECLAIM_SIGNAL
     cv_signal(&zfsvfs->z_reclaim_thr_cv);
 #endif
+
     return 0;
 }
+
+static void zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs)
+{
+    int count = 0;
+
+    /* Attempt to throttle. If the list grows "large" we need to slow down
+     * the vnode_create() process until it is manageable.
+     */
+    while (vnop_num_reclaims > zfs_vnop_reclaim_throttle) {
+        count++;
+        if (zfsvfs)
+            cv_signal(&zfsvfs->z_reclaim_thr_cv);
+        /*
+         * Instead of a blind delay, should we use cv_timedwait() and have
+         * reclaim thread signal back once it is under the limit?
+         */
+        delay(hz>>4);
+    }
+
+    if (count)
+        printf("ZFS: Delaying due to reclaim size (vnop_reclaim_throttle) times %u\n",
+               count);
+
+}
+
+
 
 static int
 zfs_vnop_mknod(

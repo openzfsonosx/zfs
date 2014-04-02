@@ -235,25 +235,29 @@ SYSCTL_QUAD(_zfs, OID_AUTO, arc_max, CTLFLAG_RW,
 SYSCTL_QUAD(_zfs, OID_AUTO, arc_min, CTLFLAG_RW,
             &zfs_arc_min, "Minimum ARC size")
 
-extern int debug_vnop_osx_printf;
+extern unsigned int debug_vnop_osx_printf;
 SYSCTL_INT(_zfs, OID_AUTO, vnop_osx_debug,
            CTLFLAG_RW, &debug_vnop_osx_printf, 0,
            "Debug printf");
-extern int zfs_vnop_ignore_negatives;
+extern unsigned int zfs_vnop_ignore_negatives;
 SYSCTL_INT(_zfs, OID_AUTO, vnop_ignore_negatives,
            CTLFLAG_RW, &zfs_vnop_ignore_negatives, 0,
            "Ignore negative cache hits");
-extern int zfs_vnop_ignore_positives;
+extern unsigned int zfs_vnop_ignore_positives;
 SYSCTL_INT(_zfs, OID_AUTO, vnop_ignore_positives,
            CTLFLAG_RW, &zfs_vnop_ignore_positives, 0,
            "Ignore positive cache hits");
-extern int zfs_vnop_create_negatives;
+extern unsigned int zfs_vnop_create_negatives;
 SYSCTL_INT(_zfs, OID_AUTO, vnop_create_negatives,
            CTLFLAG_RW, &zfs_vnop_create_negatives, 0,
            "Create negative cache entries");
 extern uint64_t vnop_num_reclaims;
 SYSCTL_QUAD(_zfs, OID_AUTO, reclaim_list, CTLFLAG_RD,
             &vnop_num_reclaims, "Num of reclaim nodes in list")
+extern unsigned int zfs_vnop_reclaim_throttle;
+SYSCTL_INT(_zfs, OID_AUTO, vnop_reclaim_throttle,
+           CTLFLAG_RW, &zfs_vnop_reclaim_throttle, 0,
+           "Throttle IO when reclaim list hits this size");
 #endif
 
 
@@ -6183,6 +6187,7 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs_vnop_ignore_positives);
     sysctl_register_oid(&sysctl__zfs_vnop_create_negatives);
     sysctl_register_oid(&sysctl__zfs_reclaim_list);
+    sysctl_register_oid(&sysctl__zfs_vnop_reclaim_throttle);
 
 }
 
@@ -6223,5 +6228,6 @@ void arc_unregister_oids(void)
     sysctl_unregister_oid(&sysctl__zfs_vnop_ignore_positives);
     sysctl_unregister_oid(&sysctl__zfs_vnop_create_negatives);
     sysctl_unregister_oid(&sysctl__zfs_reclaim_list);
+    sysctl_unregister_oid(&sysctl__zfs_vnop_reclaim_throttle);
 }
 #endif
