@@ -2,7 +2,8 @@
 cmd=$1
 shift
 
-topdir=`pwd`
+from=`dirname $0`
+topdir=`cd ${from}; pwd`
 for lib in nvpair uutil zpool zfs zfs_core; do
 	export DYLD_LIBRARY_PATH=$topdir/lib/lib${lib}/.libs:$DYLD_LIBRARY_PATH
 done
@@ -12,4 +13,4 @@ done
 
 #echo PATH=$PATH
 #echo DYLD_LIBRARY_PATH=$DYLD_LIBRARY_PATH
-exec ./cmd/$cmd/.libs/$cmd "$@"
+exec ${topdir}/cmd/$cmd/.libs/$cmd "$@"
