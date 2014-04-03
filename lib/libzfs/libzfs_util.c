@@ -701,6 +701,11 @@ libzfs_load_module(const char *module)
 	struct stat s1, s2;
 	int ret;
 
+
+    /* Check if zfs is already loaded */
+    if (stat("/dev/zfs", &s1) == 0) return 0;
+
+
 	// the good old default is to expect kexts in /System/Library/Extensions :
 	if( asprintf(&modpath, "/System/Library/Extensions/%s.kext", module) > 0 ){
 		ret = stat( modpath, &s1 );
