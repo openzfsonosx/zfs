@@ -2254,7 +2254,7 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 					size_t len = secondhalf - relpath;
 					if (len > 0) {
 						char *firsthalf =
-						    (char *)malloc(len);
+						    (char *)malloc(len+1);
 						memcpy(firsthalf, relpath, len);
 						firsthalf[len] = '\0';
 						(void) snprintf(propbuf,
