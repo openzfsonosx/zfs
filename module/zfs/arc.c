@@ -4541,7 +4541,7 @@ arc_init(void)
 
     // We have to be a little more concervative on OSX. But those dedicating
     // to ZFS can always bring it up using sysctl.
-    //    arc_c_max >>= 3;
+    arc_c_max >>= 1;
     //arc_c_max >>= 3;
 
     // 2GB system, ARC at about 82329600;
