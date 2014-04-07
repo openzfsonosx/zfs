@@ -2356,12 +2356,23 @@ zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
  * Note, if 'unmounting' if FALSE, we return with the 'z_teardown_lock'
  * and 'z_teardown_inactive_lock' held.
  */
+extern uint64_t vnop_num_reclaims;
 static int
 zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 {
 	znode_t	*zp;
+   /*
+     * We have experienced deadlocks with dmu_recv_end happening between
+     * suspend_fs() and resume_fs(). Clearly something is not quite ready
+     * so we will wait for pools to be synced first.
+     * It could also be related to the reclaim-list size.
+     * This is considered a temporary solution until we can work out
+     * the full issue.
+     */
 
-	/*
+    while(vnop_num_reclaims > 0) delay(hz>>1);
+
+ 	/*
 	 * If someone has not already unmounted this file system,
 	 * drain the iput_taskq to ensure all active references to the
 	 * zfs_sb_t have been handled only then can it be safely destroyed.
@@ -2429,8 +2440,8 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	 */
 	if (unmounting) {
 		zfsvfs->z_unmounted = B_TRUE;
-		rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
+		rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
 	}
 
 	/*

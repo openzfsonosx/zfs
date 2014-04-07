@@ -1329,6 +1329,11 @@ again:
         ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
         getnewvnode_drop_reserve();
 
+        printf("Waiting on zp %p to die!\n", zp);
+        delay(hz>>1);
+        goto again;
+
+
         /* remove zp from reclaim list now */
         mutex_enter(&zfsvfs->z_reclaim_list_lock);
         if (zp->z_reclaimed) {

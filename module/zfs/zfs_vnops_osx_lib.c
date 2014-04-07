@@ -172,6 +172,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
     //printf("getattr_osx\n");
 
 	ZFS_ENTER(zfsvfs);
+    if (!zp->z_sa_hdl) {
+        ZFS_EXIT(zfsvfs);
+        return EIO;
+    }
+
 	/*
 	 * On Mac OS X we always export the root directory id as 2
 	 */
@@ -418,8 +423,9 @@ zfs_getbsdflags(znode_t *zp)
 {
 	uint32_t  bsdflags = 0;
     uint64_t zflags;
-    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs),
-                     &zflags, sizeof (zflags)) == 0);
+    if (zp->z_sa_hdl)
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs),
+                         &zflags, sizeof (zflags)) == 0);
 
 	if (zflags & ZFS_NODUMP)
 		bsdflags |= UF_NODUMP;
@@ -1506,4 +1512,3 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
     }
 
 }
-
