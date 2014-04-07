@@ -258,6 +258,10 @@ extern unsigned int zfs_vnop_reclaim_throttle;
 SYSCTL_INT(_zfs, OID_AUTO, vnop_reclaim_throttle,
            CTLFLAG_RW, &zfs_vnop_reclaim_throttle, 0,
            "Throttle IO when reclaim list hits this size");
+extern unsigned int zfs_vnop_vdev_ashift;
+SYSCTL_INT(_zfs, OID_AUTO, vnop_vdev_ashift,
+           CTLFLAG_RW, &zfs_vnop_vdev_ashift, 0,
+           "Enable vdev ashift");
 #endif
 
 
@@ -4537,7 +4541,7 @@ arc_init(void)
 
     // We have to be a little more concervative on OSX. But those dedicating
     // to ZFS can always bring it up using sysctl.
-    arc_c_max >>= 3;
+    //    arc_c_max >>= 3;
     //arc_c_max >>= 3;
 
     // 2GB system, ARC at about 82329600;
@@ -6188,6 +6192,7 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs_vnop_create_negatives);
     sysctl_register_oid(&sysctl__zfs_reclaim_list);
     sysctl_register_oid(&sysctl__zfs_vnop_reclaim_throttle);
+    sysctl_register_oid(&sysctl__zfs_vnop_vdev_ashift);
 
 }
 
@@ -6229,5 +6234,6 @@ void arc_unregister_oids(void)
     sysctl_unregister_oid(&sysctl__zfs_vnop_create_negatives);
     sysctl_unregister_oid(&sysctl__zfs_reclaim_list);
     sysctl_unregister_oid(&sysctl__zfs_vnop_reclaim_throttle);
+    sysctl_unregister_oid(&sysctl__zfs_vnop_vdev_ashift);
 }
 #endif
