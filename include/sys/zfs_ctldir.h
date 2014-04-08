@@ -95,6 +95,8 @@ extern int zfsctl_shares_lookup(struct vnode *dip, char *name,
 extern void zfsctl_init(void);
 extern void zfsctl_fini(void);
 
+extern int zfsctl_umount_snapshots(vfs_t *vfsp, int fflags, cred_t *cr);
+
 /*
  * These inodes numbers are reserved for the .zfs control directory.
  * It is important that they be no larger that 48-bits because only

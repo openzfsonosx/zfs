@@ -95,6 +95,9 @@
 #include <sys/zpl.h>
 #include "zfs_comutil.h"
 
+#include <sys/zfs_vnops.h>
+#include <sys/systeminfo.h>
+
 //#define dprintf printf
 
 #ifdef __APPLE__
@@ -277,14 +280,85 @@ extern void zfs_ioctl_fini(void);
 
 
 
+struct synccb {
+    caller_context_t *ct;
+    kauth_cred_t cr;
+    int waitfor;
+    int error;
+};
+
+static int
+zfs_sync_callback(struct vnode *vp, void *cargs)
+{
+    struct synccb *cb = (struct synccb *) cargs;
+    int error;
+
+    /* ZFS doesn't actually use any of the args */
+    error = zfs_fsync(vp, cb->waitfor, (cred_t *)cb->cr, cb->ct);
+
+    if (error)
+        cb->error = error;
+
+    return (VNODE_RETURNED);
+}
+
 
 int
-zfs_vfs_sync(struct mount *mp, __unused int waitfor, __unused vfs_context_t context)
+zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t context)
 {
+    struct synccb cb;
 
-    spa_sync_allpools();
+    /*
+     * Data integrity is job one. We don't want a compromised kernel
+     * writing to the storage pool, so we never sync during panic.
+     */
+    if (spl_panicstr())
+        return (0);
 
-	return (0);
+    if (vfsp != NULL) {
+        /*
+         * Sync a specific filesystem.
+         */
+        zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
+        dsl_pool_t *dp;
+        int error;
+
+        cb.waitfor = waitfor;
+        cb.ct = NULL;
+        cb.cr = kauth_cred_get();
+        cb.error = 0;
+
+        error = vnode_iterate(vfsp, 0, zfs_sync_callback, (void *)&cb);
+        if (error != 0)
+            return (error);
+
+        ZFS_ENTER(zfsvfs);
+        dp = dmu_objset_pool(zfsvfs->z_os);
+
+        /*
+         * If the system is shutting down, then skip any
+         * filesystems which may exist on a suspended pool.
+         */
+        if (spl_system_inshutdown() && spa_suspended(dp->dp_spa)) {
+            ZFS_EXIT(zfsvfs);
+            return (0);
+        }
+
+        if (zfsvfs->z_log != NULL)
+            zil_commit(zfsvfs->z_log, 0);
+
+        ZFS_EXIT(zfsvfs);
+    } else {
+        /*
+         * Sync all ZFS filesystems. This is what happens when you
+         * run sync(1M). Unlike other filesystems, ZFS honors the
+         * request by waiting for all pools to commit all dirty data.
+         */
+        spa_sync_allpools();
+    }
+
+    return (0);
+
 }
 
 
@@ -357,13 +431,13 @@ atime_changed_cb(void *arg, uint64_t newval)
 	}
 }
 
+#ifdef LINUX
 static void
 relatime_changed_cb(void *arg, uint64_t newval)
 {
-#ifdef LINUX
 	((zfs_sb_t *)arg)->z_relatime = newval;
-#endif
 }
+#endif
 
 static void
 xattr_changed_cb(void *arg, uint64_t newval)
