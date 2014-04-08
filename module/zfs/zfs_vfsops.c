@@ -2246,6 +2246,11 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	}
 #endif /* __APPLE__ */
 
+
+    /* Lock kext in kernel while mounted */
+    OSKextRetainKextWithLoadTag(OSKextGetCurrentLoadTag());
+
+
 out:
 	return (error);
 }
@@ -2743,6 +2748,9 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 
     dprintf("freevfs\n");
 	zfs_freevfs(zfsvfs->z_vfs);
+
+    /* Unlock kext in kernel */
+    OSKextReleaseKextWithLoadTag(OSKextGetCurrentLoadTag());
 
     dprintf("-unmount\n");
 	return (0);
