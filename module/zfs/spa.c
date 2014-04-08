@@ -1108,6 +1108,12 @@ spa_activate(spa_t *spa, int mode)
 	avl_create(&spa->spa_errlist_last,
 	    spa_error_entry_compare, sizeof (spa_error_entry_t),
 	    offsetof(spa_error_entry_t, se_avl));
+
+#ifdef _KERNEL
+    /* Lock kext in kernel while mounted */
+    OSKextRetainKextWithLoadTag(OSKextGetCurrentLoadTag());
+#endif
+
 }
 
 /*
@@ -1180,6 +1186,12 @@ spa_deactivate(spa_t *spa)
 		thread_join(spa->spa_did);
 		spa->spa_did = 0;
 	}
+
+#ifdef _KERNEL
+    /* Unlock kext in kernel */
+    OSKextReleaseKextWithLoadTag(OSKextGetCurrentLoadTag());
+#endif
+
 }
 
 /*
