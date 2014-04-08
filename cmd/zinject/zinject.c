@@ -301,7 +301,7 @@ iter_handlers(int (*func)(int, const char *, zinject_record_t *, void *),
 {
 	zfs_cmd_t zc = {"\0"};
 	int ret;
-#ifdef __APPLE__
+
 	libzfs_handle_t hdl;
 	hdl.libzfs_fd = zfs_fd;
 

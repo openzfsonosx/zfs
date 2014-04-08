@@ -883,6 +883,7 @@ zfs_path_to_zhandle(libzfs_handle_t *hdl, char *path, zfs_type_t argtype)
 		return (NULL);
 	}
 
+#ifdef sun
 	/* Reopen MNTTAB to prevent reading stale data from open file */
 	if (freopen(MNTTAB, "r", hdl->libzfs_mnttab) == NULL)
 		return (NULL);

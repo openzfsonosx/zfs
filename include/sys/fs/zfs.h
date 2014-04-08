@@ -793,20 +793,6 @@ typedef struct ddt_histogram {
      */
 #define	ZVOL_DEFAULT_BLOCKSIZE	4096
 
-#if 0
-	/*
-	 * Linux - 3/64 numbers reserved.
-	 */
-	ZFS_IOC_LINUX = ('Z' << 8) + 0x80,
-	ZFS_IOC_EVENTS_NEXT,
-	ZFS_IOC_EVENTS_CLEAR,
-	ZFS_IOC_EVENTS_SEEK,
-
-	/*
-	 * FreeBSD - 1/64 numbers reserved.
-	 */
-	ZFS_IOC_FREEBSD = ('Z' << 8) + 0xC0,
-#endif
 
 /*
  * zvol ioctl to get dataset name

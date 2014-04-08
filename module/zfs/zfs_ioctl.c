@@ -5144,13 +5144,11 @@ zfs_ioc_events_next(zfs_cmd_t *zc)
 {
 	zfs_zevent_t *ze = NULL;
 	nvlist_t *event = NULL;
-	//minor_t minor;
+	minor_t minor;
 	uint64_t dropped = 0;
 	int error = 0;
 
-    return ENOTSUP;
-
-	//error = zfs_zevent_fd_hold(zc->zc_cleanup_fd, &minor, &ze);
+	error = zfs_zevent_fd_hold(zc->zc_cleanup_fd, &minor, &ze);
 	if (error != 0)
 		return (error);
 
@@ -5787,6 +5785,7 @@ static zfs_ioc_vec_t zfs_ioc_vec[] = {
       DATASET_NAME, B_TRUE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
     { NULL, zfs_ioc_snapshot, zfs_secpolicy_snapshot, DATASET_NAME, B_TRUE,
       POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE },
+    // 40
     { zfs_ioc_dsobj_to_dsname, NULL, zfs_secpolicy_diff, POOL_NAME, B_FALSE,
       POOL_CHECK_NONE, B_FALSE },
     { zfs_ioc_obj_to_path, NULL, zfs_secpolicy_diff, DATASET_NAME, B_FALSE,
@@ -5807,6 +5806,7 @@ static zfs_ioc_vec_t zfs_ioc_vec[] = {
       POOL_CHECK_NONE, B_FALSE },
     { zfs_ioc_userspace_one, NULL, zfs_secpolicy_userspace_one, DATASET_NAME,
       B_FALSE, POOL_CHECK_NONE, B_FALSE },
+    // 50
     { zfs_ioc_userspace_many, NULL, zfs_secpolicy_userspace_many, DATASET_NAME,
       B_FALSE, POOL_CHECK_NONE, B_FALSE },
     { zfs_ioc_userspace_upgrade, NULL, zfs_secpolicy_userspace_upgrade,
@@ -5827,12 +5827,9 @@ static zfs_ioc_vec_t zfs_ioc_vec[] = {
       POOL_CHECK_NONE, B_FALSE },
     { zfs_ioc_tmp_snapshot, NULL, zfs_secpolicy_tmp_snapshot, DATASET_NAME,
       B_FALSE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
+    // 60
     { zfs_ioc_obj_to_stats, NULL, zfs_secpolicy_diff, DATASET_NAME, B_FALSE,
       POOL_CHECK_SUSPENDED, B_FALSE },
-    { zfs_ioc_events_next, NULL, zfs_secpolicy_config, NO_NAME, B_FALSE,
-      POOL_CHECK_NONE, B_FALSE },
-    { zfs_ioc_events_clear, NULL, zfs_secpolicy_config, NO_NAME, B_FALSE,
-      POOL_CHECK_NONE, B_FALSE },
     { zfs_ioc_pool_reguid, NULL, zfs_secpolicy_config, POOL_NAME, B_TRUE,
       POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE },
     { zfs_ioc_space_written, NULL, zfs_secpolicy_read, DATASET_NAME, B_FALSE,
@@ -5852,6 +5849,15 @@ static zfs_ioc_vec_t zfs_ioc_vec[] = {
       POOL_CHECK_SUSPENDED, B_FALSE },
     { NULL, zfs_ioc_clone, zfs_secpolicy_create_clone, DATASET_NAME, B_TRUE,
       POOL_CHECK_SUSPENDED, B_TRUE },
+
+    /* Linux events start at 0x80 */
+    { zfs_ioc_events_next, NULL, zfs_secpolicy_config, NO_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_events_clear, NULL, zfs_secpolicy_config, NO_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+    { zfs_ioc_events_seek, NULL, zfs_secpolicy_config, NO_NAME, B_FALSE,
+      POOL_CHECK_NONE, B_FALSE },
+
 };
 
 
