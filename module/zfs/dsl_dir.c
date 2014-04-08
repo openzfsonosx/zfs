@@ -636,6 +636,7 @@ dsl_dir_tempreserve_impl(dsl_dir_t *dd, uint64_t asize, boolean_t netfree,
 		    asize, est_inflight, &used_on_disk, &ref_rsrv);
 		if (error) {
 			mutex_exit(&dd->dd_lock);
+			DMU_TX_STAT_BUMP(dmu_tx_quota);
 			return (error);
 		}
 	}
@@ -684,6 +685,7 @@ dsl_dir_tempreserve_impl(dsl_dir_t *dd, uint64_t asize, boolean_t netfree,
 		    used_on_disk>>10, est_inflight>>10,
 		    quota>>10, asize>>10, retval);
 		mutex_exit(&dd->dd_lock);
+		DMU_TX_STAT_BUMP(dmu_tx_quota);
 		return (SET_ERROR(retval));
 	}
 
@@ -809,6 +811,10 @@ dsl_dir_tempreserve_clear(void *tr_cookie, dmu_tx_t *tx)
  * or free space, for example when dirtying data. Be conservative; it's okay
  * to write less space or free more, but we don't want to write more or free
  * less than the amount specified.
+ *
+ * NOTE: The behavior of this function is identical to the Illumos / FreeBSD
+ * version however it has been adjusted to use an iterative rather then
+ * recursive algorithm to minimize stack usage.
  */
 void
 dsl_dir_willuse_space(dsl_dir_t *dd, int64_t space, dmu_tx_t *tx)
@@ -816,20 +822,22 @@ dsl_dir_willuse_space(dsl_dir_t *dd, int64_t space, dmu_tx_t *tx)
 	int64_t parent_space;
 	uint64_t est_used;
 
-	mutex_enter(&dd->dd_lock);
-	if (space > 0)
-		dd->dd_space_towrite[tx->tx_txg & TXG_MASK] += space;
+	do {
+		mutex_enter(&dd->dd_lock);
+		if (space > 0)
+			dd->dd_space_towrite[tx->tx_txg & TXG_MASK] += space;
 
-	est_used = dsl_dir_space_towrite(dd) + dd->dd_phys->dd_used_bytes;
-	parent_space = parent_delta(dd, est_used, space);
-	mutex_exit(&dd->dd_lock);
+		est_used = dsl_dir_space_towrite(dd) +
+		    dd->dd_phys->dd_used_bytes;
+		parent_space = parent_delta(dd, est_used, space);
+		mutex_exit(&dd->dd_lock);
 
-	/* Make sure that we clean up dd_space_to* */
-	dsl_dir_dirty(dd, tx);
+		/* Make sure that we clean up dd_space_to* */
+		dsl_dir_dirty(dd, tx);
 
-	/* XXX this is potentially expensive and unnecessary... */
-	if (parent_space && dd->dd_parent)
-		dsl_dir_willuse_space(dd->dd_parent, parent_space, tx);
+		dd = dd->dd_parent;
+		space = parent_space;
+	} while (space && dd);
 }
 
 /* call from syncing context when we actually write/free space for this dd */

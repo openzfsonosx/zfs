@@ -2014,7 +2014,7 @@ zpool_do_import(int argc, char **argv)
 	char *endptr;
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":aCc:d:DEfFmnNo:rR:T:VX")) != -1) {
+	while ((c = getopt(argc, argv, ":aCc:d:DEfFmnNo:R:tT:VX")) != -1) {
 		switch (c) {
 		case 'a':
 			do_all = B_TRUE;
@@ -2076,6 +2076,10 @@ zpool_do_import(int argc, char **argv)
 			    ZPOOL_PROP_CACHEFILE), "none", &props, B_TRUE))
 				goto error;
 			break;
+		case 't':
+			flags |= ZFS_IMPORT_TEMP_NAME;
+			break;
+
 		case 'T':
 			errno = 0;
 			txg = strtoull(optarg, &endptr, 10);
@@ -5435,7 +5439,18 @@ zpool_do_events_nvprint(nvlist_t *nvl, int depth)
 			break;
 			}
 
-		case DATA_TYPE_STRING_ARRAY:
+		case DATA_TYPE_STRING_ARRAY: {
+			char **str;
+			uint_t i, nelem;
+
+			(void) nvpair_value_string_array(nvp, &str, &nelem);
+			for (i = 0; i < nelem; i++)
+				printf(gettext("\"%s\" "),
+				    str[i] ? str[i] : "<NULL>");
+
+			break;
+			}
+
 		case DATA_TYPE_BOOLEAN_ARRAY:
 		case DATA_TYPE_BYTE_ARRAY:
 		case DATA_TYPE_DOUBLE:
@@ -5452,17 +5467,17 @@ static int
 zpool_do_events_next(ev_opts_t *opts)
 {
 	nvlist_t *nvl;
-	int cleanup_fd, ret, dropped;
+	int zevent_fd, ret, dropped;
 
-	cleanup_fd = open(ZFS_DEV, O_RDWR);
-	VERIFY(cleanup_fd >= 0);
+	zevent_fd = open(ZFS_DEV, O_RDWR);
+	VERIFY(zevent_fd >= 0);
 
 	if (!opts->scripted)
 		(void) printf(gettext("%-30s %s\n"), "TIME", "CLASS");
 
 	while (1) {
 		ret = zpool_events_next(g_zfs, &nvl, &dropped,
-		    !!opts->follow, cleanup_fd);
+		    (opts->follow ? ZEVENT_NONE : ZEVENT_NONBLOCK), zevent_fd);
 		if (ret || nvl == NULL)
 			break;
 
@@ -5480,7 +5495,7 @@ zpool_do_events_next(ev_opts_t *opts)
 		nvlist_free(nvl);
 	}
 
-	VERIFY(0 == close(cleanup_fd));
+	VERIFY(0 == close(zevent_fd));
 
 	return (ret);
 }
