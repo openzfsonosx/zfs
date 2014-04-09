@@ -2,9 +2,16 @@
 #
 # Log the zevent via syslog.
 #
+
+# OS X notification script.
+function notify {
+	/usr/bin/osascript -e 'display notification "'"$1"'" with title "'"$2"'"'
+}
+
+
 if [ -d /etc/zfs ]; then
 
-    if [ -f /etc/zfs/zpool.cache.tmp ]; then
+	if [ -f /etc/zfs/zpool.cache.tmp ]; then
 
 	rm -qf /etc/zfs/zpool.cache
 	mv /etc/zfs/zpool.cache.tmp /etc/zfs/zpool.cache
@@ -13,7 +20,9 @@ if [ -d /etc/zfs ]; then
 	    eid="${ZEVENT_EID}" class="${ZEVENT_SUBCLASS}" \
 	    "${ZEVENT_POOL:+pool=$ZEVENT_POOL}"
 
-    fi
+	notify "zpool.cache file has been renamed" "config.sync"
+
+	fi
 
 fi
 echo 0
