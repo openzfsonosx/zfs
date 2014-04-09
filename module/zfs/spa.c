@@ -4062,6 +4062,9 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	zvol_create_minors(pool);
 #endif
 
+	spa_event_notify(spa, NULL, FM_EREPORT_ZFS_POOL_IMPORT);
+
+
 	return (0);
 }
 

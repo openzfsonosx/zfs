@@ -46,6 +46,8 @@ dist_zedexec_SCRIPTS = \
 	$(top_srcdir)/cmd/zed/zed.d/io-email.sh \
 	$(top_srcdir)/cmd/zed/zed.d/io-spare.sh \
 	$(top_srcdir)/cmd/zed/zed.d/resilver.finish-email.sh \
+	$(top_srcdir)/cmd/zed/zed.d/zpool.import.sh \
+	$(top_srcdir)/cmd/zed/zed.d/zpool.destroy.sh \
 	$(top_srcdir)/cmd/zed/zed.d/scrub.finish-email.sh
 
 zedconfdefaults = \
@@ -57,6 +59,8 @@ zedconfdefaults = \
 	io-email.sh \
 	io-spare.sh \
 	resilver.finish-email.sh \
+	zpool.import.sh \
+	zpool.destroy.sh \
 	scrub.finish-email.sh
 
 install-data-local:
