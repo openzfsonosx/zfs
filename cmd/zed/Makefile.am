@@ -1,5 +1,7 @@
 include $(top_srcdir)/config/Rules.am
 
+AUTOMAKE_OPTIONS = subdir-objects
+
 DEFAULT_INCLUDES += \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/lib/libspl/include
@@ -7,20 +9,20 @@ DEFAULT_INCLUDES += \
 sbin_PROGRAMS = zed
 
 zed_SOURCES = \
-	$(top_srcdir)/cmd/zed/zed.c \
-	$(top_srcdir)/cmd/zed/zed.h \
-	$(top_srcdir)/cmd/zed/zed_conf.c \
-	$(top_srcdir)/cmd/zed/zed_conf.h \
-	$(top_srcdir)/cmd/zed/zed_event.c \
-	$(top_srcdir)/cmd/zed/zed_event.h \
-	$(top_srcdir)/cmd/zed/zed_exec.c \
-	$(top_srcdir)/cmd/zed/zed_exec.h \
-	$(top_srcdir)/cmd/zed/zed_file.c \
-	$(top_srcdir)/cmd/zed/zed_file.h \
-	$(top_srcdir)/cmd/zed/zed_log.c \
-	$(top_srcdir)/cmd/zed/zed_log.h \
-	$(top_srcdir)/cmd/zed/zed_strings.c \
-	$(top_srcdir)/cmd/zed/zed_strings.h
+	zed.c \
+	zed.h \
+	zed_conf.c \
+	zed_conf.h \
+	zed_event.c \
+	zed_event.h \
+	zed_exec.c \
+	zed_exec.h \
+	zed_file.c \
+	zed_file.h \
+	zed_log.c \
+	zed_log.h \
+	zed_strings.c \
+	zed_strings.h
 
 zed_LDADD = \
 	$(top_builddir)/lib/libavl/libavl.la \
