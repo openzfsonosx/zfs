@@ -96,6 +96,7 @@ extern void zfsctl_init(void);
 extern void zfsctl_fini(void);
 
 extern int zfsctl_umount_snapshots(vfs_t *vfsp, int fflags, cred_t *cr);
+extern void zfs_ereport_snapshot_post(const char *subclass, spa_t *spa, const char *name);
 
 /*
  * These inodes numbers are reserved for the .zfs control directory.

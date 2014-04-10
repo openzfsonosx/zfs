@@ -114,7 +114,7 @@ int  zfs_module_stop(kmod_info_t *ki, void *data);
 const vol_capabilities_attr_t zfs_capabilities = {
 	{
 		/* Format capabilities we support: */
-		VOL_CAP_FMT_PERSISTENTOBJECTIDS |
+        /*	VOL_CAP_FMT_PERSISTENTOBJECTIDS |*/
 		VOL_CAP_FMT_SYMBOLICLINKS |
 		VOL_CAP_FMT_HARDLINKS |
 		VOL_CAP_FMT_SPARSE_FILES |
@@ -123,7 +123,8 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_FMT_FAST_STATFS |
 		VOL_CAP_FMT_2TB_FILESIZE |
 		VOL_CAP_FMT_HIDDEN_FILES |
-		VOL_CAP_FMT_PATH_FROM_ID,
+		/*VOL_CAP_FMT_PATH_FROM_ID*/
+        0,
 
 		/* Interface capabilities we support: */
 		VOL_CAP_INT_ATTRLIST |
@@ -292,6 +293,10 @@ zfs_sync_callback(struct vnode *vp, void *cargs)
 {
     struct synccb *cb = (struct synccb *) cargs;
     int error;
+
+
+    /* The .zfs vnode is special, skip it */
+    if (zfsctl_is_node(vp)) return (VNODE_RETURNED);
 
     /* ZFS doesn't actually use any of the args */
     error = zfs_fsync(vp, cb->waitfor, (cred_t *)cb->cr, cb->ct);
@@ -1570,7 +1575,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	VOP_UNLOCK(vp, 0);
 #endif
 
-#if 0 // Want .zfs or not
+#if 1 // Want .zfs or not
 	if (!zfsvfs->z_issnap)
 		zfsctl_create(zfsvfs);
 #endif

@@ -1376,6 +1376,12 @@ domount:
 
     dprintf("Would call mount here on '%s' for '%s'\n", mountpoint, snapname);
 
+#ifdef _KERNEL
+
+    zfs_ereport_snapshot_post(FM_EREPORT_ZFS_SNAPSHOT_MOUNT,
+                              dmu_objset_spa(zfsvfs->z_os), snapname);
+
+#endif
 
 	//*vpp = gfs_dir_create(sizeof (zfsctl_snapdir_t), dvp, vnode_mount(dvp),
     //     zfsctl_ops_root_dvnodeops, ZFSCTL_INO_ROOT, zfsctl_root_entries,
@@ -1933,7 +1939,7 @@ zfsctl_snapshot_getattr(ap)
     dprintf("zfsctl: XXX -snapshot_getattr\n");
 	return (err);
 }
-#endif 
+#endif
 
 #ifndef __APPLE__
 static int
@@ -1987,7 +1993,7 @@ zfsctl_snapshot_lookup(ap)
 		vn_lock(*vpp, /*LK_EXCLUSIVE |*/ LK_RETRY);
 	return (error);
 }
-#endif 
+#endif
 
 #ifndef __APPLE__
 static int

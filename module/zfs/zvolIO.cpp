@@ -276,7 +276,7 @@ IOReturn net_lundman_zfs_zvol_device::reportPollRequirements(bool *pollRequired,
 
 IOReturn net_lundman_zfs_zvol_device::reportRemovability(bool *isRemovable)
 {
-    *isRemovable = true;
+    *isRemovable = false;
     dprintf("reportRemova\n");
     return kIOReturnSuccess;
 }

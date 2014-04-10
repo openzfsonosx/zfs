@@ -121,6 +121,8 @@ extern "C" {
 #define	FM_EREPORT_RESOURCE_AUTOREPLACE		"autoreplace"
 #define	FM_EREPORT_RESOURCE_STATECHANGE		"statechange"
 
+#define	FM_EREPORT_ZFS_SNAPSHOT_MOUNT		"snapshot.mount"
+
 #ifdef	__cplusplus
 }
 #endif

@@ -522,7 +522,7 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
     //mutex_enter(&zfsvfs->z_vnode_create_lock);
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0);
     //mutex_exit(&zfsvfs->z_vnode_create_lock);
-	vnode_settag(vp, VT_ZFS);
+	vnode_settag(vp, VT_OTHER);
     dprintf("new vnode %p system %d root %d: vfs %p\n",
            vp, vfsp.vnfs_marksystem, vfsp.vnfs_markroot, vfs);
 

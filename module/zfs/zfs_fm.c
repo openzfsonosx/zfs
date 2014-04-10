@@ -924,6 +924,27 @@ zfs_post_state_change(spa_t *spa, vdev_t *vd)
 	zfs_post_common(spa, vd, FM_EREPORT_RESOURCE_STATECHANGE);
 }
 
+
+void
+zfs_ereport_snapshot_post(const char *subclass, spa_t *spa, const char *name)
+{
+#ifdef _KERNEL
+	nvlist_t *ereport = NULL;
+	nvlist_t *detector = NULL;
+
+	zfs_ereport_start(&ereport, &detector,
+                      subclass,
+                      spa, NULL, NULL, 0, 0);
+
+	if (ereport == NULL) return;
+
+    VERIFY0(nvlist_add_string(ereport, "snapshot_name", name));
+
+    /* Cleanup is handled by the callback function */
+    zfs_zevent_post(ereport, detector, zfs_zevent_post_cb);
+#endif
+}
+
 #if defined(_KERNEL) && defined(HAVE_SPL)
 EXPORT_SYMBOL(zfs_ereport_post);
 EXPORT_SYMBOL(zfs_ereport_post_checksum);
