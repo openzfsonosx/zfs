@@ -703,7 +703,7 @@ libzfs_load_module(const char *module)
 
 
     /* Check if zfs is already loaded */
-    if (stat("/dev/zfs", &s1) == 0) return 0;
+    if (stat(ZFS_DEV, &s1) == 0) return 0;
 
 
 	// the good old default is to expect kexts in /System/Library/Extensions :
@@ -741,6 +741,11 @@ libzfs_load_module(const char *module)
 		if (!libzfs_module_loaded(module)){
 			// fprintf( stderr, gettext("Executing `%s %s`\n"), argv[0], argv[1] );
 			ret = libzfs_run_process("/sbin/kextload", argv, 0);
+			if (ret == 0) {
+				int try = 0;
+				while (stat(ZFS_DEV, &s1) && try < 7)
+					(void) usleep(++try*100000);
+			}
 		}
 	}
 
