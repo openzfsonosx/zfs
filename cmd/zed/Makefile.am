@@ -69,12 +69,8 @@ zedconfdefaults = \
 
 install-data-local:
 	$(MKDIR_P) "$(DESTDIR)$(zedconfdir)"
-	$(MKDIR_P) "$(runstatedir)"
 	for f in $(zedconfdefaults); do \
 	  test -f "$(DESTDIR)$(zedconfdir)/$${f}" -o \
 	       -L "$(DESTDIR)$(zedconfdir)/$${f}" || \
 	    ln -s "$(zedexecdir)/$${f}" "$(DESTDIR)$(zedconfdir)"; \
 	done
-
-install-data-hook:
-	chmod 755 "$(DESTDIR)$(zedconfdir)/zed.rc"
