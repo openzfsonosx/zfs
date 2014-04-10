@@ -36,10 +36,6 @@
 	<string>0452</string>
 	<key>DTXcodeBuild</key>
 	<string>4G2008a</string>
-	<key>OSBundleCompatibleVersion</key>
-	<string>1.0.0</string>
-	<key>NSHumanReadableCopyright</key>
-	<string>CDDL (ZFS), BSD (FreeBSD)</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>net.lundman.zfs</key>
@@ -56,20 +52,24 @@
 			<string>IOKit</string>
 		</dict>
 	</dict>
+	<key>NSHumanReadableCopyright</key>
+	<string>CDDL (ZFS), BSD (FreeBSD)</string>
+	<key>OSBundleCompatibleVersion</key>
+	<string>1.0.0</string>
 	<key>OSBundleLibraries</key>
 	<dict>
-		<key>com.apple.kpi.libkern</key>
-		<string>10.0</string>
+		<key>com.apple.iokit.IOStorageFamily</key>
+		<string>1.6</string>
 		<key>com.apple.kpi.bsd</key>
+		<string>10.0</string>
+		<key>com.apple.kpi.iokit</key>
+		<string>10.0</string>
+		<key>com.apple.kpi.libkern</key>
 		<string>10.0</string>
 		<key>com.apple.kpi.mach</key>
 		<string>10.0</string>
 		<key>com.apple.kpi.unsupported</key>
 		<string>10.0</string>
-		<key>com.apple.kpi.iokit</key>
-		<string>10.0</string>
-		<key>com.apple.iokit.IOStorageFamily</key>
-		<string>1.6</string>
 		<key>net.lundman.spl</key>
 		<string>1.0.0</string>
 	</dict>
