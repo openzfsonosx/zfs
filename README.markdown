@@ -30,7 +30,7 @@ or
 # ./configure CC=clang CXX=clang++ --with-spl=/path/to/your/spl
 # make
 
-# rsync -ar --delete module/zfs/zfs.kext/ /tmp/zfs.kext/
+# rsync -a --delete module/zfs/zfs.kext/ /tmp/zfs.kext/
 # chown -R root:wheel /tmp/zfs.kext
 
 # kextload -r /tmp/ -v /tmp/zfs.kext/
