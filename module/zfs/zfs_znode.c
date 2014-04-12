@@ -1296,19 +1296,21 @@ again:
                 err = 0;
             }
 
-            mutex_exit(&zp->z_lock);
-            sa_buf_rele(db, NULL);
-            ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-
             if (err == 0) {
 
                 dprintf("attaching vnode %p\n", vp);
                 if ((vnode_getwithvid(vp, zp->z_vid) != 0)) {
-                    goto again;
+                  mutex_exit(&zp->z_lock);
+                  sa_buf_rele(db, NULL);
+                  ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+                  printf("zfs: woah vnode_getwithvid failed\n");
+                  goto again;
                 }
 
             }
-
+            mutex_exit(&zp->z_lock);
+            sa_buf_rele(db, NULL);
+            ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
             getnewvnode_drop_reserve();
             return (err);
         }

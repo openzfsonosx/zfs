@@ -1575,7 +1575,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	VOP_UNLOCK(vp, 0);
 #endif
 
-#if 1 // Want .zfs or not
+#if 0 // Want .zfs or not
 	if (!zfsvfs->z_issnap)
 		zfsctl_create(zfsvfs);
 #endif
@@ -2671,6 +2671,8 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		}
 	}
 #endif
+
+    while(vnop_num_reclaims > 0) delay(hz>>1);
 
     dprintf("Signalling reclaim sync\n");
 	/* We just did final sync, tell reclaim to mop it up */
