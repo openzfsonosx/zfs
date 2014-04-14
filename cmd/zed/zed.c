@@ -217,6 +217,7 @@ main(int argc, char *argv[])
 	if (zed_conf_read_state(zcp, &saved_eid, saved_etime) < 0)
 		exit(EXIT_FAILURE);
 
+ retry:
 	zed_event_init(zcp);
 	zed_event_seek(zcp, saved_eid, saved_etime);
 
@@ -229,6 +230,10 @@ main(int argc, char *argv[])
 	}
 	zed_log_msg(LOG_NOTICE, "Exiting");
 	zed_event_fini(zcp);
+	if (zcp->do_force) {
+		_got_exit = 0;
+		goto retry;
+	}
 	zed_conf_destroy(zcp);
 	zed_log_fini();
 	exit(EXIT_SUCCESS);

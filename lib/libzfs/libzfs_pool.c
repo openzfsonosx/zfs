@@ -3871,8 +3871,13 @@ zpool_events_next(libzfs_handle_t *hdl, nvlist_t **nvp,
 retry:
 	if (zfs_ioctl(hdl, ZFS_IOC_EVENTS_NEXT, &zc) != 0) {
 		switch (errno) {
+#ifdef	__APPLE__
+		case ENODEV:
+			/* fall through */
+			error = errno;
+#endif
 		case ESHUTDOWN:
-			error = zfs_error_fmt(hdl, EZFS_POOLUNAVAIL,
+			(void) zfs_error_fmt(hdl, EZFS_POOLUNAVAIL,
 			    dgettext(TEXT_DOMAIN, "zfs shutdown"));
 			goto out;
 		case ENOENT:
