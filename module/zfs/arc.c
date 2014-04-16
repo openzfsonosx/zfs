@@ -262,6 +262,14 @@ extern unsigned int zfs_vnop_vdev_ashift;
 SYSCTL_INT(_zfs, OID_AUTO, vnop_vdev_ashift,
            CTLFLAG_RW, &zfs_vnop_vdev_ashift, 0,
            "Enable vdev ashift");
+extern unsigned int zfs_vfs_suspend_fs_begin_delay;
+SYSCTL_INT(_zfs, OID_AUTO, vfs_suspend_fs_begin_delay,
+           CTLFLAG_RW, &zfs_vfs_suspend_fs_begin_delay, 0,
+           "Delay at beginning of zfs_suspend_fs in seconds");
+extern unsigned zfs_vfs_suspend_fs_end_delay;
+SYSCTL_INT(_zfs, OID_AUTO, vfs_suspend_fs_end_delay,
+           CTLFLAG_RW, &zfs_vfs_suspend_fs_end_delay, 0,
+           "Delay at end of zfs_suspend_fs in seconds");
 #endif
 
 
@@ -6195,6 +6203,8 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs_reclaim_list);
     sysctl_register_oid(&sysctl__zfs_vnop_reclaim_throttle);
     sysctl_register_oid(&sysctl__zfs_vnop_vdev_ashift);
+    sysctl_register_oid(&sysctl__zfs_vfs_suspend_fs_begin_delay);
+    sysctl_register_oid(&sysctl__zfs_vfs_suspend_fs_end_delay);
 
 }
 
@@ -6237,5 +6247,7 @@ void arc_unregister_oids(void)
     sysctl_unregister_oid(&sysctl__zfs_reclaim_list);
     sysctl_unregister_oid(&sysctl__zfs_vnop_reclaim_throttle);
     sysctl_unregister_oid(&sysctl__zfs_vnop_vdev_ashift);
+    sysctl_unregister_oid(&sysctl__zfs_vfs_suspend_fs_begin_delay);
+    sysctl_unregister_oid(&sysctl__zfs_vfs_suspend_fs_end_delay);
 }
 #endif
