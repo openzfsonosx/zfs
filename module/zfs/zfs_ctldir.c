@@ -1409,9 +1409,17 @@ domount:
 
 
         // VFS_RELE(vfsp); // not needed, HELD from domount() call
-        vnode_put(*vpp); // release the anchor vp hold
+        dprintf("snapdir_lookup vp %p iocount is %d\n",
+                *vpp, ((uint32_t *)*vpp)[23]);
 
-        dprintf("snapdir_lookup vp iocount is %d\n",((uint32_t *)*vpp)[23]);
+        /* In non-OSX, we hold the 'vp' which is the place to mount
+         * call the mount(), which gets us a new 'vpp'. Then they
+         * release one of them, and return the other with iocount
+         * In OSX: we don't call mount() and don't get a new 'vpp', so
+         * we retain the iocount
+         */
+        //vnode_put(*vpp); // release the anchor vp hold
+
 	}
     dprintf("mootex\n");
 	mutex_exit(&sdp->sd_lock);
