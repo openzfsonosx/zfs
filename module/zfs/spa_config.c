@@ -190,6 +190,7 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 		(void) VOP_CLOSE(vp, oflags, 1, 0, kcred, NULL);
 	}
 
+
 	(void) vn_remove(temp, UIO_SYSSPACE, RMFILE);
 
 	kmem_free(buf, buflen);
@@ -269,6 +270,9 @@ spa_config_sync(spa_t *target, boolean_t removing, boolean_t postsysevent)
 		}
 
 		spa_config_write(dp, nvl);
+        if ((nvl == NULL) && postsysevent)
+            spa_event_notify(target, NULL, FM_EREPORT_ZFS_CONFIG_REMOVE);
+
 		nvlist_free(nvl);
 	}
 
