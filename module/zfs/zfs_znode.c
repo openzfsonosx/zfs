@@ -717,11 +717,11 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_is_zvol = 0;
 	zp->z_is_mapped = 0;
 	zp->z_is_ctldir = 0;
-    zp->z_reclaimed = B_FALSE;
 	zp->z_vid = 0;
 	zp->z_uid = 0;
 	zp->z_gid = 0;
 	zp->z_size = 0;
+    zp->z_finder_hardlink_name[0] = 0;
 
 	vp = ZTOV(zp); /* Does nothing in OSX */
 
@@ -1334,38 +1334,6 @@ again:
         delay(hz>>1);
         goto again;
 
-
-        /* remove zp from reclaim list now */
-        mutex_enter(&zfsvfs->z_reclaim_list_lock);
-        if (zp->z_reclaimed) {
-            list_remove(&zfsvfs->z_reclaim_znodes, zp);
-#ifdef _KERNEL
-            atomic_dec_64(&vnop_num_reclaims);
-#endif
-            zp->z_reclaimed = B_FALSE;
-            dprintf("Found stray zp %p without vp, correcting\n", zp);
-
-
-        } else { /* Not on the reclaim list, most likely reclaim_thr ate it
-                  * before us, retry */
-            zp = NULL;
-        }
-        mutex_exit(&zfsvfs->z_reclaim_list_lock);
-
-        /* if we got one, release it now */
-        if (zp) {
-            rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-            if (zp->z_sa_hdl == NULL)
-                zfs_znode_free(zp);
-            else
-                zfs_zinactive(zp);
-            rw_exit(&zfsvfs->z_teardown_inactive_lock);
-            zp = NULL;
-        }
-        /*
-         * Loop so that we end up below allocating a new vp
-         */
-        goto again;
 
     } /* HDL != NULL */
 

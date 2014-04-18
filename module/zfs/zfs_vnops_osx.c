@@ -350,14 +350,17 @@ zfs_vnop_lookup(
 
 		/* We found a cache entry, positive or negative. */
 		if (error == -1) {	/* Positive entry? */
-            if (!zfs_vnop_ignore_positives)
+
+            if (!zfs_vnop_ignore_positives) {
                 return 0;		/* Yes.  Caller expects no error */
+            }
             vnode_put(*ap->a_vpp); /* Release iocount held by cache_lookip */
         }
         /* Negatives are only followed if not CREATE, from HFS+. */
         if (cnp->cn_nameiop != CREATE) {
-            if (!zfs_vnop_ignore_negatives)
+            if (!zfs_vnop_ignore_negatives) {
                 return error;
+            }
             negative_cache = 1;
         }
     }
@@ -374,6 +377,8 @@ zfs_vnop_lookup(
         bcopy(cnp->cn_nameptr, filename, cnp->cn_namelen);
         filename[cnp->cn_namelen] = '\0';
     }
+
+
 
     dprintf("+vnop_lookup '%s' %s\n", filename ? filename : cnp->cn_nameptr,
             negative_cache ? "negative_cache":"");
@@ -418,6 +423,23 @@ zfs_vnop_lookup(
         cache_purge_negatives(ap->a_dvp);
     }
 #endif
+
+    if (!error && ap->a_vpp && *ap->a_vpp && VTOZ(*ap->a_vpp)) {
+        znode_t *zp = VTOZ(*ap->a_vpp);
+
+        /*
+         * hard link references?
+         * Read the comment in zfs_getattr_znode_unlocked for the reason for
+         * this hackery.
+         */
+        if (zp->z_links > 1) {
+            dprintf("vnop_lookup: %p has refs %u\n",
+                   *ap->a_vpp, zp->z_links);
+            strlcpy(zp->z_finder_hardlink_name,
+                    filename ? filename : cnp->cn_nameptr,
+                    MAXPATHLEN);
+        }
+    }
 
  exit:
 
@@ -636,8 +658,8 @@ zfs_vnop_getattr(
 {
     int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
-    //dprintf("+vnop_getattr zp %p vp %p\n",
-    //      VTOZ(ap->a_vp), ap->a_vp);
+    dprintf("+vnop_getattr zp %p vp %p\n",
+           VTOZ(ap->a_vp), ap->a_vp);
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct);
 
@@ -1399,7 +1421,6 @@ void vnop_reclaim_thread(void *arg)
             zp = list_head(&zfsvfs->z_reclaim_znodes);
             if (zp) {
                 list_remove(&zfsvfs->z_reclaim_znodes, zp);
-                if (zp) zp->z_reclaimed = B_FALSE;
             }
             mutex_exit(&zfsvfs->z_reclaim_list_lock);
 
@@ -1499,7 +1520,6 @@ zfs_vnop_reclaim(
 
     mutex_enter(&zfsvfs->z_reclaim_list_lock);
     list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
-    zp->z_reclaimed = B_TRUE;
     mutex_exit(&zfsvfs->z_reclaim_list_lock);
 
 #ifdef _KERNEL
@@ -2457,6 +2477,25 @@ zfs_vnop_readdirattr(
             }
         }
 
+        /* Grab znode if required */
+        if (prefetch) {
+            dmu_prefetch(zfsvfs->z_os, objnum, 0, 0);
+            if ((error = zfs_zget(zfsvfs, objnum, &tmp_zp)) == 0) {
+                if (vtype == VNON)
+                    vtype = IFTOVT(tmp_zp->z_mode); // SA_LOOKUP?
+            } else {
+                tmp_zp = NULL;
+                error = ENXIO;
+                goto skip_entry;
+                /*
+                 * Currently ".zfs" entry is skipped, as we have no methods
+                 * to pack that into the attrs (all helper functions take
+                 * znode_t *, and .zfs is not). Add dummy .zfs code here if
+                 * it is desirable to show .zfs in Finder.
+                 */
+            }
+        }
+
         /*
          * Setup for the next item's attribute list
          */
@@ -2465,18 +2504,6 @@ zfs_vnop_readdirattr(
         attrinfo.ai_attrbufpp = &attrptr;
         attrinfo.ai_varbufpp = &varptr;
 
-        /* Grab znode if required */
-        if (prefetch) {
-            dmu_prefetch(zfsvfs->z_os, objnum, 0, 0);
-            if (zfs_zget(zfsvfs, objnum, &tmp_zp) == 0) {
-                if (vtype == VNON)
-                    vtype = IFTOVT(tmp_zp->z_mode); // SA_LOOKUP?
-            } else {
-                tmp_zp = NULL;
-                error = ENXIO;
-                goto update;
-            }
-        }
         /*
          * Pack entries into attribute buffer.
          */
@@ -2517,6 +2544,7 @@ zfs_vnop_readdirattr(
             /*
              * Move to the next entry, fill in the previous offset.
              */
+        skip_entry:
             if ((offset > 2) ||
                 (offset == 2 && !zfs_show_ctldir(zp))) {
                 zap_cursor_advance(&zc);

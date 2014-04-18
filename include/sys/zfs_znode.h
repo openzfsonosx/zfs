@@ -222,7 +222,6 @@ typedef struct znode {
 	nvlist_t	*z_xattr_cached; /* cached xattrs */
 	struct znode	*z_xattr_parent; /* xattr parent znode */
 	list_node_t	z_link_node;	/* all znodes in fs link */
-	list_node_t	z_link_reclaim_node;	/* all reclaim znodes in fs link */
 	sa_handle_t	*z_sa_hdl;	/* handle to sa data */
 	boolean_t	z_is_sa;	/* are we native sa? */
 
@@ -230,11 +229,14 @@ typedef struct znode {
 	boolean_t	z_is_mapped;	/* are we mmap'ed */
 	boolean_t	z_is_ctldir;	/* are we .zfs entry */
 
-    boolean_t   z_reclaimed;    /* placed in the reclaim list */
+    krwlock_t   z_map_lock;     /* page map lock */
 
-    krwlock_t       z_map_lock;     /* page map lock */
-
-    uint32_t        z_vid;
+#ifdef __APPLE__
+	list_node_t	z_link_reclaim_node;	/* all reclaim znodes in fs link */
+    uint32_t    z_vid;  /* OSX vnode_vid */
+    /* Track vnop_lookup name for Finder - not for anything else */
+    char        z_finder_hardlink_name[MAXPATHLEN];
+#endif
 
 #ifdef ZFS_DEBUG
 	list_t		z_stalker;	/*vnode life tracker */

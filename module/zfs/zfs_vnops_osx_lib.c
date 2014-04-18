@@ -290,6 +290,25 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
                                  ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
                 VATTR_SET_SUPPORTED(vap, va_name);
 #endif
+            /*
+             * Finder (Carbon) relies on getattr returning the correct name
+             * for hardlinks to work, so we store the lookup name in
+             * vnop_lookup if file references are high, then set the
+             * return name here.
+             * If we also want ATTR_CMN_* lookups to work, we need to
+             * set a unique va_linkid for each entry, and based on the
+             * linkid in the lookup, return the correct name.
+             */
+
+            if ((zp->z_links > 1) && zp->z_finder_hardlink_name[0]) {
+                strlcpy(vap->va_name, zp->z_finder_hardlink_name,
+                        MAXPATHLEN);
+                VATTR_SET_SUPPORTED(vap, va_name);
+                dprintf("getattr %p : return name '%s'\n", vp,
+                       vap->va_name);
+            }
+
+
         } else {
             /*
              * The vroot objects must return a unique name for Finder to
