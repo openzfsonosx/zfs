@@ -1383,6 +1383,13 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 		if (entry.mnt_fstype == NULL ||
 		    strncmp(entry.mnt_special, zhp->zpool_name, namelen) != 0 ||
 		    (entry.mnt_special[namelen] != '/' &&
+#ifdef __APPLE__
+		    /*
+		     * On OS X, '@' is possible too since we're temporarily
+		     * allowing manual snapshot mounting.
+		     */
+		    entry.mnt_special[namelen] != '@' &&
+#endif /* __APPLE__ */
 		    entry.mnt_special[namelen] != '\0'))
 			continue;
 
