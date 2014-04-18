@@ -698,6 +698,11 @@ zfs_vnop_setattr(
         mask |= AT_ATIME;
     if (VATTR_IS_ACTIVE(vap, va_modify_time))
         mask |= AT_MTIME;
+    /*
+     * We abuse AT_CTIME here, to function as a place holder for
+     * "creation time", since you are not allowed to change "change time" in
+     * POSIX, and we don't have a AT_CRTIME.
+     */
     if (VATTR_IS_ACTIVE(vap, va_create_time))
         mask |= AT_CTIME;
     /*
@@ -766,6 +771,8 @@ zfs_vnop_setattr(
             VATTR_SET_SUPPORTED(vap, va_access_time);
         if (VATTR_IS_ACTIVE(vap, va_modify_time))
             VATTR_SET_SUPPORTED(vap, va_modify_time);
+        if (VATTR_IS_ACTIVE(vap, va_change_time))
+            VATTR_SET_SUPPORTED(vap, va_change_time);
         if (VATTR_IS_ACTIVE(vap, va_create_time))
             VATTR_SET_SUPPORTED(vap, va_create_time);
         if (VATTR_IS_ACTIVE(vap, va_backup_time))
