@@ -1800,7 +1800,7 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
     u_int32_t  ace_flags = 0;
     kauth_ace_rights_t  rights = 0;
     guid_t          *guidp;
-    uid_t           who;
+    uint64_t        who;
     uint32_t        access_mask;
     uint16_t        flags;
     uint16_t        type;
