@@ -387,7 +387,7 @@ zfs_add_option(zfs_handle_t *zhp, char *options, int len,
 #endif
 
 static int
-zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
+zfs_add_options(zfs_handle_t *zhp, int *flags)
 {
 	int error = 0;
     char *source;
