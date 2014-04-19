@@ -317,13 +317,9 @@ zfsctl_fini(void)
 boolean_t
 zfsctl_is_node(struct vnode *vp)
 {
-	//return (vn_matchops(vp, zfsctl_ops_root) ||
-    //  vn_matchops(vp, zfsctl_ops_snapdir) ||
-    //  vn_matchops(vp, zfsctl_ops_snapshot) ||
-    //  vn_matchops(vp, zfsctl_ops_shares) ||
-    //  vn_matchops(vp, zfsctl_ops_shares_dir));
-    dprintf("is_node %p\n", vp);
-    return B_TRUE;
+    if (vnode_tag(vp) == VT_OTHER)
+        return B_TRUE;
+    return B_FALSE;
 }
 
 /*
@@ -1268,10 +1264,17 @@ zfsctl_snapdir_lookup(ap)
 
 	ZFS_ENTER(zfsvfs);
 
+    // Returns a hold
 	if (gfs_lookup_dot(vpp, dvp, zfsvfs->z_ctldir, nm) == 0) {
 		ZFS_EXIT(zfsvfs);
 		return (0);
 	}
+
+    if (vpp && *vpp)
+        dprintf("snapdir_lookup vp %p iocount is %d at exit\n",
+                *vpp, ((uint32_t *)*vpp)[23]);
+    else
+        dprintf("snapdir_lookup vp NULL\n");
 
 	if (flags & FIGNORECASE) {
 		boolean_t conflict = B_FALSE;
@@ -1281,6 +1284,7 @@ zfsctl_snapdir_lookup(ap)
 		if (err == 0) {
 			strlcpy(nm, real, sizeof(nm));
 		} else if (err != ENOTSUP) {
+            dprintf("exit1\n");
 			ZFS_EXIT(zfsvfs);
 			return (err);
 		}
@@ -1321,6 +1325,7 @@ zfsctl_snapdir_lookup(ap)
 		}
 		mutex_exit(&sdp->sd_lock);
 		ZFS_EXIT(zfsvfs);
+        dprintf("exit2\n");
 		return (err);
 	}
 
@@ -1336,6 +1341,7 @@ zfsctl_snapdir_lookup(ap)
 		 * forcing EILSEQ to ENOENT.
 		 * Since shell ultimately passes "*" or "?" as name to lookup
 		 */
+        dprintf("exit3\n");
 		return (err == EILSEQ ? ENOENT : err);
 	}
 	if (dmu_objset_hold(snapname, FTAG, &snap) != 0) {
@@ -1348,6 +1354,7 @@ zfsctl_snapdir_lookup(ap)
 			err = ENOENT;
 		}
 		ZFS_EXIT(zfsvfs);
+        dprintf("exit4\n");
 		return (err);
 	}
 
@@ -1361,6 +1368,12 @@ zfsctl_snapdir_lookup(ap)
 
 	dmu_objset_rele(snap, FTAG);
 domount:
+    if (vpp && *vpp)
+        dprintf("snapdir_lookup domount vp %p iocount is %d at exit\n",
+                *vpp, ((uint32_t *)*vpp)[23]);
+    else
+        dprintf("domount NULL\n");
+
     // vfs_statfs(vfsp)->f_mntfromname
 	mountpoint_len = strlen(vfs_statfs(vnode_mount(dvp))->f_mntonname) +
 	    strlen("/" ZFS_CTLDIR_NAME "/snapshot/") + strlen(nm) + 1;
@@ -1402,15 +1415,10 @@ domount:
 		 * without requiring manual mounts of <snapname>.
 		 */
 		//ASSERT(VTOZ(*vpp)->z_zfsvfs != zfsvfs);
-        dprintf("ASSert\n");
         // Not a znode in apple
 		//VTOZ(*vpp)->z_zfsvfs->z_parent = zfsvfs;
-        dprintf("VTOZ\n");
-
 
         // VFS_RELE(vfsp); // not needed, HELD from domount() call
-        dprintf("snapdir_lookup vp %p iocount is %d\n",
-                *vpp, ((uint32_t *)*vpp)[23]);
 
         /* In non-OSX, we hold the 'vp' which is the place to mount
          * call the mount(), which gets us a new 'vpp'. Then they
@@ -1418,17 +1426,18 @@ domount:
          * In OSX: we don't call mount() and don't get a new 'vpp', so
          * we retain the iocount
          */
-        //vnode_put(*vpp); // release the anchor vp hold
+        vnode_put(*vpp); // release the anchor vp hold
 
 	}
-    dprintf("mootex\n");
 	mutex_exit(&sdp->sd_lock);
 	ZFS_EXIT(zfsvfs);
 	if (err != 0) {
         VN_RELE(*vpp);
 		*vpp = NULL;
     }
-    dprintf("snapdir_lookup returning with %d\n", err);
+    //dprintf("snapdir_lookup returning with %d\n", err);
+    dprintf("snapdir_lookup vp %p iocount is %d at exit\n",
+            *vpp, ((uint32_t *)*vpp)[23]);
 	return (err);
 }
 
