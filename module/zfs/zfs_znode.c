@@ -1332,6 +1332,7 @@ again:
 
         printf("Waiting on zp %p to die!\n", zp);
         //delay(hz>>1);
+        cv_signal(&zfsvfs->z_reclaim_thr_cv);
         while(!list_is_empty(&zfsvfs->z_reclaim_znodes)) delay(hz >> 2);
         goto again;
 
