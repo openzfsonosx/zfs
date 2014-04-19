@@ -3202,7 +3202,7 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	zfs_acl_t	*aclp;
 	boolean_t skipaclchk = /*(flags & ATTR_NOACLCHECK) ? B_TRUE :*/ B_FALSE;
 	boolean_t	fuid_dirtied = B_FALSE;
-	sa_bulk_attr_t	bulk[8], xattr_bulk[7];
+	sa_bulk_attr_t	bulk[10], xattr_bulk[10];
 	int		count = 0, xattr_count = 0;
 
 	if (mask == 0)
@@ -3866,6 +3866,7 @@ top:
 		mutex_exit(&attrzp->z_lock);
 	}
 out:
+
 	if (err == 0 && attrzp) {
 		err2 = sa_bulk_update(attrzp->z_sa_hdl, xattr_bulk,
 		    xattr_count, tx);

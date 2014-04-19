@@ -256,9 +256,9 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
         VATTR_RETURN(vap, va_guuid, kauth_null_guid);
 
-        dprintf("Calling getacl\n");
+        //dprintf("Calling getacl\n");
         if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
-            dprintf("zfs_getacl returned error %d\n", error);
+            //  dprintf("zfs_getacl returned error %d\n", error);
             error = 0;
         } else {
 
@@ -298,14 +298,19 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
              * If we also want ATTR_CMN_* lookups to work, we need to
              * set a unique va_linkid for each entry, and based on the
              * linkid in the lookup, return the correct name.
+             * It is set in zfs_finder_keep_hardlink()
              */
 
-            if ((zp->z_links > 1) && zp->z_finder_hardlink_name[0]) {
+            if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG) &&
+                zp->z_finder_hardlink_name[0]) {
+
                 strlcpy(vap->va_name, zp->z_finder_hardlink_name,
                         MAXPATHLEN);
                 VATTR_SET_SUPPORTED(vap, va_name);
-                dprintf("getattr %p : return name '%s'\n", vp,
-                       vap->va_name);
+
+                dprintf("getattr: %p return name '%s':%04x\n", vp,
+                       vap->va_name,
+                       vap->va_linkid);
             }
 
 
@@ -322,11 +327,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         }
 	}
 
+    if (VATTR_IS_ACTIVE(vap, va_linkid)) {
+        VATTR_RETURN(vap, va_linkid, vap->va_fileid);
+    }
 	if (VATTR_IS_ACTIVE(vap, va_filerev)) {
         VATTR_RETURN(vap, va_filerev, 0);
-    }
-	if (VATTR_IS_ACTIVE(vap, va_linkid)) {
-        VATTR_RETURN(vap, va_linkid, vap->va_fileid);
     }
 	if (VATTR_IS_ACTIVE(vap, va_fsid)) {
         VATTR_RETURN(vap, va_fsid, vfs_statfs(zfsvfs->z_vfs)->f_fsid.val[0]);

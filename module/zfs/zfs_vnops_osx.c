@@ -321,6 +321,28 @@ zfs_vnop_access(
 	return (error);
 }
 
+
+void zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
+{
+    if (vp && VTOZ(vp)) {
+        znode_t *zp = VTOZ(vp);
+
+        /*
+         * hard link references?
+         * Read the comment in zfs_getattr_znode_unlocked for the reason for
+         * this hackery.
+         */
+        if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) {
+            dprintf("keep_hardlink: %p has refs %u\n",
+                    vp, zp->z_links);
+            strlcpy(zp->z_finder_hardlink_name,
+                    filename,
+                    MAXPATHLEN);
+        }
+    }
+}
+
+
 static int
 zfs_vnop_lookup(
 	struct vnop_lookup_args /* {
@@ -338,6 +360,18 @@ zfs_vnop_lookup(
 
     *ap->a_vpp = NULL;	/* In case we return an error */
 
+    /*
+     * Darwin uses namelen as an optimisation, for example it can be
+     * set to 5 for the string "alpha/beta" to look up "alpha". In this
+     * case we need to copy it out to null-terminate.
+     */
+    if (cnp->cn_nameptr[cnp->cn_namelen] != 0) {
+        MALLOC(filename, char *, cnp->cn_namelen+1, M_TEMP, M_WAITOK);
+        if (filename == NULL) return ENOMEM;
+        bcopy(cnp->cn_nameptr, filename, cnp->cn_namelen);
+        filename[cnp->cn_namelen] = '\0';
+    }
+
 #if 1
     /*
      * cache_lookup() returns 0 for no-entry
@@ -352,32 +386,22 @@ zfs_vnop_lookup(
 		if (error == -1) {	/* Positive entry? */
 
             if (!zfs_vnop_ignore_positives) {
-                return 0;		/* Yes.  Caller expects no error */
+                error = 0;
+                goto exit;      /* Positive cache, return it */
             }
+
             vnode_put(*ap->a_vpp); /* Release iocount held by cache_lookip */
         }
+
         /* Negatives are only followed if not CREATE, from HFS+. */
         if (cnp->cn_nameiop != CREATE) {
             if (!zfs_vnop_ignore_negatives) {
-                return error;
+                goto exit; /* Negative cache hit */
             }
             negative_cache = 1;
         }
     }
 #endif
-
-    /*
-     * Darwin uses namelen as an optimisation, for example it can be
-     * set to 5 for the string "alpha/beta" to look up "alpha". In this
-     * case we need to copy it out to null-terminate.
-     */
-    if (cnp->cn_nameptr[cnp->cn_namelen] != 0) {
-        MALLOC(filename, char *, cnp->cn_namelen+1, M_TEMP, M_WAITOK);
-        if (filename == NULL) return ENOMEM;
-        bcopy(cnp->cn_nameptr, filename, cnp->cn_namelen);
-        filename[cnp->cn_namelen] = '\0';
-    }
-
 
 
     dprintf("+vnop_lookup '%s' %s\n", filename ? filename : cnp->cn_nameptr,
@@ -424,25 +448,13 @@ zfs_vnop_lookup(
     }
 #endif
 
-    if (!error && ap->a_vpp && *ap->a_vpp && VTOZ(*ap->a_vpp)) {
-        znode_t *zp = VTOZ(*ap->a_vpp);
-
-        /*
-         * hard link references?
-         * Read the comment in zfs_getattr_znode_unlocked for the reason for
-         * this hackery.
-         */
-        if (zp->z_links > 1) {
-            dprintf("vnop_lookup: %p has refs %u\n",
-                   *ap->a_vpp, zp->z_links);
-            strlcpy(zp->z_finder_hardlink_name,
-                    filename ? filename : cnp->cn_nameptr,
-                    MAXPATHLEN);
-        }
-    }
 
  exit:
 
+    /* Set both for lookup and positive cache */
+    if (!error)
+        zfs_finder_keep_hardlink(*ap->a_vpp,
+                                 filename ? filename : cnp->cn_nameptr);
     if (filename)
         FREE(filename, M_TEMP);
 
@@ -658,8 +670,8 @@ zfs_vnop_getattr(
 {
     int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
-    dprintf("+vnop_getattr zp %p vp %p\n",
-           VTOZ(ap->a_vp), ap->a_vp);
+    //dprintf("+vnop_getattr zp %p vp %p\n",
+    //     VTOZ(ap->a_vp), ap->a_vp);
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct);
 
@@ -1727,7 +1739,7 @@ zfs_vnop_getxattr(
 	struct componentname  cn;
 	int  error;
 
-    dprintf("+getxattr vp %p\n", ap->a_vp);
+    //dprintf("+getxattr vp %p\n", ap->a_vp);
 
 	ZFS_ENTER(zfsvfs);
 
@@ -1783,7 +1795,7 @@ out:
 	}
 	ZFS_EXIT(zfsvfs);
 
-    dprintf("-getxattr vp %p : %d\n", ap->a_vp, error);
+    //dprintf("-getxattr vp %p : %d\n", ap->a_vp, error);
 
 	return (error);
 }
@@ -2912,6 +2924,14 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 
 	zp->z_vid = vnode_vid(*vpp);
     zp->z_vnode = *vpp;
+
+    /*
+     * OSX Finder is hardlink agnostic, so we need to mark vp's that
+     * are hardlinks, so that it forces a lookup each time, ignoring
+     * the name cache.
+     */
+    if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG))
+        vnode_setmultipath(*vpp);
 
     return 0;
 }
