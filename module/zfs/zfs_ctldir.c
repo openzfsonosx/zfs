@@ -1189,7 +1189,7 @@ zfsctl_freebsd_snapdir_mkdir(ap)
         } */ *ap;
 {
 
-	ASSERT(ap->a_cnp->cn_flags & SAVENAME);
+//	ASSERT(ap->a_cnp->cn_flags & SAVENAME);
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
 
 	return (zfsctl_snapdir_mkdir(ap->a_dvp, ap->a_cnp->cn_nameptr, NULL,

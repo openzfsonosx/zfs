@@ -1617,7 +1617,7 @@ zfs_atime_need_update(znode_t *zp, timestruc_t *now)
  * Prepare to update znode time stamps.
  *
  *	IN:	zp	- znode requiring timestamp update
- *		flag	- ATTR_MTIME, ATTR_CTIME, ATTR_ATIME flags
+ *		flag	- AT_MTIME, AT_CTIME, AT_ATIME flags
  *		have_tx	- true of caller is creating a new txg
  *
  *	OUT:	zp	- new atime (via underlying inode's i_atime)
@@ -1627,7 +1627,7 @@ zfs_atime_need_update(znode_t *zp, timestruc_t *now)
  * NOTE: The arguments are somewhat redundant.  The following condition
  * is always true:
  *
- *		have_tx == !(flag & ATTR_ATIME)
+ *		have_tx == !(flag & AT_ATIME)
  */
 void
 zfs_tstamp_update_setup(znode_t *zp, uint_t flag, uint64_t mtime[2],
@@ -1635,7 +1635,7 @@ zfs_tstamp_update_setup(znode_t *zp, uint_t flag, uint64_t mtime[2],
 {
 	timestruc_t	now;
 
-	ASSERT(have_tx == !(flag & ATTR_ATIME));
+	ASSERT(have_tx == !(flag & AT_ATIME));
 	gethrestime(&now);
 
 	/*

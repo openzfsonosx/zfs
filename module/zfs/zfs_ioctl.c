@@ -5726,11 +5726,11 @@ zfsdev_getminor(dev_t dev)
 {
   zfsdev_state_t *zs = NULL;
 
-  ASSERT(filp != NULL);
 #ifdef __APPLE__
   zs = zfsdev_minor_find(dev);
   if (!zs) return -1;
 #else
+  ASSERT(filp != NULL);
   ASSERT(filp->private_data != NULL);
   zs = filp->private_data;
 #endif

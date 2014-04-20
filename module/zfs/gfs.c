@@ -453,7 +453,7 @@ gfs_lookup_dot(struct vnode **vpp, struct vnode *dvp, struct vnode *pvp, const c
 	} else if (strcmp(nm, "..") == 0) {
         dprintf("gfs_lookup_dotdot\n");
 		if (pvp == NULL) {
-			ASSERT(dvp->v_flag & VROOT);
+			ASSERT(vnode_isroot(dvp));
 			VN_HOLD(dvp);
 			*vpp = dvp;
 		} else {
@@ -513,7 +513,7 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
         vfsp.vnfs_markroot = 1;
 	//error = getnewvnode("zfs", vfsp, ops, &vp);
 
-	ASSERT(error == 0);
+	//ASSERT(error == 0);
 	//vn_lock(vp, /*LK_EXCLUSIVE |*/ LK_RETRY);
 	//vp->v_data = (caddr_t)fp;
     //vnode_setfsnode(vp, fp);
@@ -745,8 +745,8 @@ found:
         VN_RELE(fp->gfs_parent);
 		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	} else {
-		ASSERT(vp->v_vfsp != NULL);
-		VFS_RELE(vp->v_vfsp);
+		ASSERT(vnode_mount(vp) != NULL);
+		VFS_RELE(vnode_mount(vp));
 	}
 #ifdef TODO
 	if (vp->v_flag & V_XATTRDIR)
@@ -765,7 +765,7 @@ gfs_dir_inactive(struct vnode *vp)
 {
 	gfs_dir_t *dp;
 
-	ASSERT(vp->v_type == VDIR);
+	ASSERT(vnode_isdir(vp));
 
 	if ((dp = gfs_file_inactive(vp)) != NULL) {
 		mutex_destroy(&dp->gfsd_lock);
@@ -972,7 +972,7 @@ gfs_dir_lookup(struct vnode *dvp, const char *nm, struct vnode **vpp, cred_t *cr
 
     dprintf("gfs_dir_lookup\n");
 
-	ASSERT(dvp->v_type == VDIR);
+	ASSERT(vnode_isdir(dvp));
 
 	if (gfs_lookup_dot(vpp, dvp, dp->gfsd_file.gfs_parent, nm) == 0)
 		return (0);

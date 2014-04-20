@@ -37,6 +37,8 @@
  * https://labs.omniti.com/trac/portableumem
  */
 
+#include <sys/sysmacros.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 
