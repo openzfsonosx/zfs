@@ -157,12 +157,6 @@ static kmutex_t		arc_reclaim_thr_lock;
 static kcondvar_t	arc_reclaim_thr_cv;	/* used to signal reclaim thr */
 static uint8_t		arc_thread_exit;
 
-#if defined (__OPPLE__) && defined(_KERNEL)
-static kmutex_t		arc_vmpressure_thr_lock;
-static kcondvar_t	arc_vmpressure_thr_cv;	/* used to signal reclaim thr */
-static uint8_t		vmpressure_thread_exit = 0;
-#endif
-
 /* number of bytes to prune from caches when at arc_meta_limit is reached */
 int zfs_arc_meta_prune = 1048576;
 
@@ -2684,52 +2678,6 @@ arc_reclaim_needed(void)
 }
 
 
-#if defined (__OPPLE__) && defined(_KERNEL)
-extern kern_return_t mach_vm_pressure_monitor(
-         boolean_t       wait_for_pressure,
-         unsigned int    nsecs_monitored,
-         unsigned int    *pages_reclaimed_p,
-         unsigned int    *pages_wanted_p);
-static void
-arc_vmpressure_thread(void *dummy __unused)
-{
-    callb_cpr_t             cpr;
-    kern_return_t kr;
-
-    CALLB_CPR_INIT(&cpr, &arc_vmpressure_thr_lock, callb_generic_cpr, FTAG);
-
-    mutex_enter(&arc_vmpressure_thr_lock);
-    printf("arc: pressure thread is starting\n");
-
-    while (vmpressure_thread_exit == 0) {
-
-        kr = mach_vm_pressure_monitor(TRUE, 5,
-                                      NULL, NULL);
-        if (kr == KERN_SUCCESS) {
-            printf("We were signalled pressure!\n");
-        }
-
-        /* block until needed, or one second, whichever is shorter */
-        CALLB_CPR_SAFE_BEGIN(&cpr);
-        (void) cv_timedwait_interruptible(&arc_vmpressure_thr_cv,
-                                          &arc_vmpressure_thr_lock,
-                                          (ddi_get_lbolt() + hz));
-        CALLB_CPR_SAFE_END(&cpr, &arc_vmpressure_thr_lock);
-
-        printf("vmpressure heartbeat\n");
-
-    }
-
-    printf("arc: vmpressure thread exit\n");
-
-    vmpressure_thread_exit = 0;
-    cv_broadcast(&arc_vmpressure_thr_cv);
-    CALLB_CPR_EXIT(&cpr);
-    thread_exit();
-}
-#endif
-
-
 static void
 arc_reclaim_thread(void *dummy __unused)
 {
@@ -4653,12 +4601,6 @@ arc_init(void)
 	(void) thread_create(NULL, 0, arc_reclaim_thread, NULL, 0, &p0,
 	    TS_RUN, minclsyspri);
 
-#if defined (__OPPLE__) && defined(_KERNEL)
-	mutex_init(&arc_vmpressure_thr_lock, NULL, MUTEX_DEFAULT, NULL);
-	cv_init(&arc_vmpressure_thr_cv, NULL, CV_DEFAULT, NULL);
-    (void) thread_create(NULL, 0, arc_vmpressure_thread, NULL, 0, &p0,
-                         TS_RUN, minclsyspri);
-#endif
 
 	arc_dead = FALSE;
 	arc_warm = B_FALSE;
@@ -4704,16 +4646,6 @@ arc_fini(void)
 		cv_wait(&arc_reclaim_thr_cv, &arc_reclaim_thr_lock);
 	mutex_exit(&arc_reclaim_thr_lock);
 
-#if defined (__OPPLE__) && defined(_KERNEL)
-    printf("Quitting vmpressure thread\n");
-	mutex_enter(&arc_vmpressure_thr_lock);
-	vmpressure_thread_exit = 1;
-	while (vmpressure_thread_exit != 0)
-		cv_wait(&arc_vmpressure_thr_cv, &arc_vmpressure_thr_lock);
-	mutex_exit(&arc_vmpressure_thr_lock);
-    printf("Quit vmpressure thread\n");
-#endif
-
 	arc_flush(NULL);
 
 	arc_dead = TRUE;
@@ -4737,10 +4669,6 @@ arc_fini(void)
 	mutex_destroy(&arc_eviction_mtx);
 	mutex_destroy(&arc_reclaim_thr_lock);
 	cv_destroy(&arc_reclaim_thr_cv);
-#if defined (__OPPLE__) && defined(_KERNEL)
-	mutex_destroy(&arc_vmpressure_thr_lock);
-	cv_destroy(&arc_vmpressure_thr_cv);
-#endif
 
 	list_destroy(&arc_mru->arcs_list[ARC_BUFC_METADATA]);
 	list_destroy(&arc_mru_ghost->arcs_list[ARC_BUFC_METADATA]);
