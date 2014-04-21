@@ -1043,7 +1043,7 @@ zfs_valid_proplist(libzfs_handle_t *hdl, zfs_type_t type, nvlist_t *nvl,
 			goto error;
 		}
 
-		if (!zfs_prop_valid_for_type(prop, type)) {
+		if (!zfs_prop_valid_for_type(prop, type, B_FALSE)) {
 			zfs_error_aux(hdl,
 			    dgettext(TEXT_DOMAIN, "'%s' does not "
 			    "apply to datasets of this type"), propname);
@@ -1802,7 +1802,7 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 	/*
 	 * Check to see if the value applies to this type
 	 */
-	if (!zfs_prop_valid_for_type(prop, zhp->zfs_type))
+	if (!zfs_prop_valid_for_type(prop, zhp->zfs_type, B_FALSE))
 		return (zfs_error(hdl, EZFS_PROPTYPE, errbuf));
 
 	/*
@@ -1952,6 +1952,14 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 	boolean_t received = zfs_is_recvd_props_mode(zhp);
 
 	*source = NULL;
+
+	/*
+	 * If the property is being fetched for a snapshot, check whether
+	 * the property is valid for the snapshot's head dataset type.
+	 */
+	if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT &&
+		!zfs_prop_valid_for_type(prop, zhp->zfs_head_type, B_TRUE))
+			return (-1);
 
 	switch (prop) {
 	case ZFS_PROP_ATIME:
@@ -2344,7 +2352,7 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 	/*
 	 * Check to see if this property applies to our object
 	 */
-	if (!zfs_prop_valid_for_type(prop, zhp->zfs_type))
+	if (!zfs_prop_valid_for_type(prop, zhp->zfs_type, B_FALSE))
 		return (-1);
 
 	if (received && zfs_prop_readonly(prop))
@@ -2749,7 +2757,7 @@ zfs_prop_get_numeric(zfs_handle_t *zhp, zfs_prop_t prop, uint64_t *value,
 	/*
 	 * Check to see if this property applies to our object
 	 */
-	if (!zfs_prop_valid_for_type(prop, zhp->zfs_type)) {
+	if (!zfs_prop_valid_for_type(prop, zhp->zfs_type, B_FALSE)) {
 		return (zfs_error_fmt(zhp->zfs_hdl, EZFS_PROPTYPE,
 		    dgettext(TEXT_DOMAIN, "cannot get property '%s'"),
 		    zfs_prop_to_name(prop)));
