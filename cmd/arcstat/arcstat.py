@@ -51,7 +51,7 @@ import re
 import copy
 
 from decimal import Decimal
-from signal import signal, SIGINT
+from signal import signal, SIGINT, SIG_DFL
 
 cols = {
     # HDR:        [Size, Scale, Description]
@@ -90,6 +90,7 @@ cols = {
     "l2read":     [6, 1000, "Total L2ARC accesses per second"],
     "l2hit%":     [6, 100, "L2ARC access hit percentage"],
     "l2miss%":    [7, 100, "L2ARC access miss percentage"],
+    "l2asize":    [7, 1024, "Actual (compressed) size of the L2ARC"],
     "l2size":     [6, 1024, "Size of the L2ARC"],
     "l2bytes":    [7, 1024, "bytes read per second from the L2ARC"],
 }
@@ -229,11 +230,20 @@ def print_header():
         sys.stdout.write("%*s%s" % (cols[col][0], col, sep))
     sys.stdout.write("\n")
 
+def get_terminal_lines():
+    try:
+        import fcntl, termios, struct
+        data = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, '1234')
+        sz = struct.unpack('hh', data)
+        return sz[0]
+    except:
+        pass
 
 def init():
     global sint
     global count
     global hdr
+    global hdr_intr
     global xhdr
     global opfile
     global sep
@@ -302,6 +312,10 @@ def init():
 
     if xflag:
         hdr = xhdr
+
+    lines = get_terminal_lines()
+    if lines:
+        hdr_intr = lines - 3
 
     # check if L2ARC exists
     snap_stats()
@@ -394,12 +408,9 @@ def calculate():
         v["l2hit%"] = 100 * v["l2hits"] / v["l2read"] if v["l2read"] > 0 else 0
 
         v["l2miss%"] = 100 - v["l2hit%"] if v["l2read"] > 0 else 0
+        v["l2asize"] = cur["l2_asize"]
         v["l2size"] = cur["l2_size"]
         v["l2bytes"] = d["l2_read_bytes"] / sint
-
-
-def sighandler():
-    sys.exit(0)
 
 
 def main():
@@ -414,7 +425,7 @@ def main():
     if count > 0:
         count_flag = 1
 
-    signal(SIGINT, sighandler)
+    signal(SIGINT, SIG_DFL)
     while True:
         if i == 0:
             print_header()

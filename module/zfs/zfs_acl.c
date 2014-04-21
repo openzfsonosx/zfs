@@ -641,12 +641,14 @@ zfs_ace_walk(void *datap, uint64_t cookie, int aclcnt,
 	return ((uint64_t)(uintptr_t)acep);
 }
 
+#if 0 // unused function
 static zfs_acl_node_t *
 zfs_acl_curr_node(zfs_acl_t *aclp)
 {
 	ASSERT(aclp->z_curr_node);
 	return (aclp->z_curr_node);
 }
+#endif
 
 /*
  * Copy ACE to internal ZFS format.
@@ -715,6 +717,7 @@ zfs_copy_ace_2_fuid(zfsvfs_t *zfsvfs, umode_t obj_mode, zfs_acl_t *aclp,
 /*
  * Copy ZFS ACEs to fixed size ace_t layout
  */
+#if 0 // unused function
 static void
 zfs_copy_fuid_2_ace(zfsvfs_t *zfsvfs, zfs_acl_t *aclp, cred_t *cr,
     void *datap, int filter)
@@ -771,6 +774,7 @@ zfs_copy_fuid_2_ace(zfsvfs_t *zfsvfs, zfs_acl_t *aclp, cred_t *cr,
 		acep = (ace_t *)((caddr_t)acep + ace_size);
 	}
 }
+#endif
 
 static int
 zfs_copy_ace_2_oldace(umode_t obj_mode, zfs_acl_t *aclp, ace_t *acep,
@@ -1796,7 +1800,7 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
     u_int32_t  ace_flags = 0;
     kauth_ace_rights_t  rights = 0;
     guid_t          *guidp;
-    uid_t           who;
+    uint64_t        who;
     uint32_t        access_mask;
     uint16_t        flags;
     uint16_t        type;
@@ -1827,8 +1831,8 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
      * Translate Open Solaris ACEs to Mac OS X ACEs
      */
     i = 0;
-    while (zacep = zfs_acl_next_ace(aclp, zacep,
-                                    &who, &access_mask, &flags, &type)) {
+    while ((zacep = zfs_acl_next_ace(aclp, zacep,
+                                    &who, &access_mask, &flags, &type))) {
         rights = 0;
         ace_flags = 0;
 
@@ -2003,7 +2007,7 @@ zfs_setacl(znode_t *zp, struct kauth_acl *vsecp, boolean_t skipaclchk, cred_t *c
 	if (zp->z_pflags & ZFS_IMMUTABLE)
 		return (SET_ERROR(EPERM));
 
-	if (error = zfs_zaccess(zp, ACE_WRITE_ACL, 0, skipaclchk, cr))
+	if ((error = zfs_zaccess(zp, ACE_WRITE_ACL, 0, skipaclchk, cr)))
 		return (error);
 
 	error = zfs_vsec_2_aclp(zfsvfs, vnode_vtype(ZTOV(zp)), vsecp, cr, &fuidp,
@@ -2079,7 +2083,7 @@ top:
 	if (fuidp)
 		zfs_fuid_info_free(fuidp);
 	dmu_tx_commit(tx);
-done:
+
 	mutex_exit(&zp->z_lock);
 	mutex_exit(&zp->z_acl_lock);
 
@@ -2425,7 +2429,7 @@ zfs_zaccess(znode_t *zp, int mode, int flags, boolean_t skipaclchk, cred_t *cr)
 	int		error;
 	int		is_attr;
 	boolean_t 	check_privs;
-	znode_t		*xzp;
+	znode_t		*xzp = NULL;
 	znode_t 	*check_zp = zp;
 	mode_t		needed_bits;
 	uid_t		owner;

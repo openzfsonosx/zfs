@@ -293,8 +293,12 @@ typedef struct zinject_record {
 #define	ZINJECT_FLUSH_ARC	0x2
 #define	ZINJECT_UNLOAD_SPA	0x4
 
+#define	ZEVENT_NONE		0x0
 #define	ZEVENT_NONBLOCK		0x1
 #define	ZEVENT_SIZE		1024
+
+#define	ZEVENT_SEEK_START	0
+#define	ZEVENT_SEEK_END		UINT64_MAX
 
 typedef enum zinject_type {
 	ZINJECT_UNINITIALIZED,
@@ -436,8 +440,6 @@ typedef enum zfs_ioc {
 	ZFS_IOC_DIFF,
 	ZFS_IOC_TMP_SNAPSHOT,
 	ZFS_IOC_OBJ_TO_STATS,
-	ZFS_IOC_EVENTS_NEXT,
-	ZFS_IOC_EVENTS_CLEAR,
 	ZFS_IOC_POOL_REGUID,
 	ZFS_IOC_SPACE_WRITTEN,
 	ZFS_IOC_SPACE_SNAPS,
@@ -447,6 +449,24 @@ typedef enum zfs_ioc {
     ZFS_IOC_SEND_NEW,
     ZFS_IOC_SEND_SPACE,
     ZFS_IOC_CLONE,
+
+	/*
+	 * Linux - 3/64 numbers reserved.
+	 */
+    /* In OS X we define an array matching this list, so having
+     * gaps is awkward
+     */
+	/*ZFS_IOC_LINUX = 0x80, */
+	ZFS_IOC_EVENTS_NEXT,
+	ZFS_IOC_EVENTS_CLEAR,
+	ZFS_IOC_EVENTS_SEEK,
+
+	/*
+	 * FreeBSD - 1/64 numbers reserved.
+	 */
+	/* ZFS_IOC_FREEBSD = 0xC0, */
+
+
 } zfs_ioc_t;
 
 typedef struct zfs_useracct {

@@ -212,10 +212,11 @@ vdev_file_io_start(zio_t *zio)
 
         switch (zio->io_cmd) {
         case DKIOCFLUSHWRITECACHE:
-            vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
-            zio->io_error = VOP_FSYNC(vf->vf_vnode, FSYNC | FDSYNC,
-                                      kcred, NULL);
-            vnode_put(vf->vf_vnode);
+            if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
+                zio->io_error = VOP_FSYNC(vf->vf_vnode, FSYNC | FDSYNC,
+                                          kcred, NULL);
+                vnode_put(vf->vf_vnode);
+            }
             break;
         default:
             zio->io_error = SET_ERROR(ENOTSUP);

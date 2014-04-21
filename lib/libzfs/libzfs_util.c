@@ -698,23 +698,65 @@ libzfs_load_module(const char *module)
 {
 	char *argv[4] = {"/sbin/kextload", NULL, (char *)0};
 	char *modpath = NULL;
+	struct stat s1, s2;
 	int ret;
 
-	ret = asprintf(&modpath, "/System/Library/Extensions/%s.kext", module);
-	if (ret == -1)
-		return (errno);
-	ret = 0;
 
-	argv[1] = modpath;
-	if (!libzfs_module_loaded(module))
-		ret = libzfs_run_process("/sbin/kextload", argv, 0);
+    /* Check if zfs is already loaded */
+    if (stat(ZFS_DEV, &s1) == 0) return 0;
 
-	free(modpath);
+
+	// the good old default is to expect kexts in /System/Library/Extensions :
+	if( asprintf(&modpath, "/System/Library/Extensions/%s.kext", module) > 0 ){
+		ret = stat( modpath, &s1 );
+	}
+	else{
+		ret = 1;
+	}
+	// KERNEL_MODPREFIX holds the actual default location determined at boot time,
+	// it will be accepted with extra checks if different from /S/L/E
+	if( strncmp( KERNEL_MODPREFIX, "/System/Library/Extensions", 26 ) ){
+		if( asprintf(&modpath, "%s/%s.kext", KERNEL_MODPREFIX, module) == -1 ){
+			return (errno);
+		}
+		else{
+			// check if the kext exists in the actual default location, and no duplicate is present
+			// in the other location supported by Apple's auto-loading scheme
+			int ret2 = stat( modpath, &s2 );
+			if( ret2 ){
+				(void) fprintf( stderr, gettext("Error: %s does not exist\n"), modpath );
+				return errno;
+			}
+			else if( ret == 0 ){
+				(void) fprintf( stderr, gettext( "Error: %s.kext exists in both /Library/Extensions and in /System/Library/Extensions!\n"),
+										  module );
+				return EPERM;
+			}
+		}
+	}
+
+	if( ret == 0 ){
+		// we have a candidate
+		argv[1] = modpath;
+		if (!libzfs_module_loaded(module)){
+			// fprintf( stderr, gettext("Executing `%s %s`\n"), argv[0], argv[1] );
+			ret = libzfs_run_process("/sbin/kextload", argv, 0);
+			if (ret == 0) {
+				int try = 0;
+				while (stat(ZFS_DEV, &s1) && try < 7)
+					(void) usleep(++try*100000);
+			}
+		}
+	}
+
+	if( modpath ){
+		free(modpath);
+	}
 	return (ret);
 }
 
 #define	MODLOAD_CMD \
-	"/sbin/kextload /System/Library/Extensions/zfs.kext"
+	"/sbin/kextload " KERNEL_MODPREFIX "/zfs.kext"
 
 libzfs_handle_t *
 libzfs_init(void)
@@ -847,7 +889,10 @@ zfs_path_to_zhandle(libzfs_handle_t *hdl, char *path, zfs_type_t argtype)
 	}
 
 #ifdef sun
-	rewind(hdl->libzfs_mnttab);
+	/* Reopen MNTTAB to prevent reading stale data from open file */
+	if (freopen(MNTTAB, "r", hdl->libzfs_mnttab) == NULL)
+		return (NULL);
+
 	while ((ret = getextmntent(hdl->libzfs_mnttab, &entry, 0)) == 0) {
 		if (makedevice(entry.mnt_major, entry.mnt_minor) ==
 		    statbuf.st_dev) {

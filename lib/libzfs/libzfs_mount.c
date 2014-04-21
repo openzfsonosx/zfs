@@ -73,6 +73,8 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <libzfs.h>
+#include <fcntl.h>
+#include <sys/xattr.h>
 
 #include "libzfs_impl.h"
 
@@ -385,7 +387,7 @@ zfs_add_option(zfs_handle_t *zhp, char *options, int len,
 #endif
 
 static int
-zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
+zfs_add_options(zfs_handle_t *zhp, int *flags)
 {
 	int error = 0;
     char *source;
@@ -415,6 +417,77 @@ zfs_add_options(zfs_handle_t *zhp, uint64_t *flags)
 
 	return (error);
 }
+
+
+#define MOUNT_POINT_CUSTOM_ICON ".VolumeIcon.icns"
+// RJVB 20140331: now that we use KERNEL_MODPREFIX it is no longer necessary to look in 2 locations:
+// #define CUSTOM_ICON_PATH_LEGACY "/System/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns"
+// #define CUSTOM_ICON_PATH_MAVERICKS "/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns"
+#define CUSTOM_ICON_PATH KERNEL_MODPREFIX "/zfs.kext/Contents/Resources/VolumeIcon.icns"
+
+#ifdef __APPLE__
+/*
+ * On OSX we can set the icon to an Open ZFS specific one, just to be extra
+ * shiny
+ */
+static void
+zfs_mount_seticon(const char *mountpoint)
+{
+	/* For a root file system, add a volume icon. */
+	ssize_t attrsize;
+	uint16_t finderinfo[16];
+	struct stat sbuf;
+	char *path;
+    FILE *dstfp, *srcfp;
+    unsigned char buf[1024];
+    unsigned int red;
+
+    /* Check if we already have a custom icon, if so, leave it alone */
+	if (asprintf(&path, "%s/%s", mountpoint, MOUNT_POINT_CUSTOM_ICON) == -1)
+		return;
+	if ((stat(path, &sbuf) == 0 && sbuf.st_size > 0)) {
+        free(path);
+        return;
+    }
+
+    /* check if we can read in the default ZFS icon */
+    srcfp = fopen(CUSTOM_ICON_PATH, "r");
+
+    /* No icon, oh well, its cosmetics, so just give up */
+    if (!srcfp) {
+        free(path);
+        return;
+    }
+
+    /* Open the output icon */
+    dstfp = fopen(path, "w");
+    if (!dstfp) {
+        fclose(srcfp);
+        free(path);
+        return;
+    }
+
+
+    /* Copy icon */
+    while ((red = fread(buf, 1, sizeof(buf), srcfp)) > 0)
+        (void) fwrite(buf, 1, red, dstfp);
+
+    fclose(srcfp);
+
+	/* Tag the root directory as having a custom icon. */
+	attrsize = getxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
+	    sizeof (finderinfo), 0, 0);
+	if (attrsize != sizeof (finderinfo))
+		(void) memset(&finderinfo, 0, sizeof(finderinfo));
+	finderinfo[4] |= BE_16(0x0400);
+
+	(void) setxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
+	    sizeof (finderinfo), 0, 0);
+
+    fclose(dstfp);
+	free(path);
+}
+#endif
 
 /*
  * Mount the given filesystem.
@@ -564,6 +637,8 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #ifdef __APPLE__
 	if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT)
 		fprintf(stderr, "ZFS: snapshot mountpoint '%s'\n", mountpoint);
+
+    zfs_mount_seticon(mountpoint);
 #endif
 
 	/* remove the mounted entry before re-adding on remount */
@@ -1296,7 +1371,10 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 
 	namelen = strlen(zhp->zpool_name);
 
-	rewind(hdl->libzfs_mnttab);
+	/* Reopen MNTTAB to prevent reading stale data from open file */
+	if (freopen(MNTTAB, "r", hdl->libzfs_mnttab) == NULL)
+		return (ENOENT);
+
 	used = alloc = 0;
 	while (getmntent(hdl->libzfs_mnttab, &entry) == 0) {
 		/*
@@ -1305,6 +1383,13 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 		if (entry.mnt_fstype == NULL ||
 		    strncmp(entry.mnt_special, zhp->zpool_name, namelen) != 0 ||
 		    (entry.mnt_special[namelen] != '/' &&
+#ifdef __APPLE__
+		    /*
+		     * On OS X, '@' is possible too since we're temporarily
+		     * allowing manual snapshot mounting.
+		     */
+		    entry.mnt_special[namelen] != '@' &&
+#endif /* __APPLE__ */
 		    entry.mnt_special[namelen] != '\0'))
 			continue;
 

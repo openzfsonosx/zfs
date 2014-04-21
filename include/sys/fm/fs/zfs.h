@@ -37,9 +37,11 @@ extern "C" {
 #define	FM_EREPORT_ZFS_DATA			"data"
 #define	FM_EREPORT_ZFS_DELAY			"delay"
 #define	FM_EREPORT_ZFS_CONFIG_SYNC		"config.sync"
+#define	FM_EREPORT_ZFS_CONFIG_REMOVE	"config.remove"
 #define	FM_EREPORT_ZFS_POOL			"zpool"
 #define	FM_EREPORT_ZFS_POOL_DESTROY		"zpool.destroy"
 #define	FM_EREPORT_ZFS_POOL_REGUID		"zpool.reguid"
+#define	FM_EREPORT_ZFS_POOL_IMPORT		"zpool.import"
 #define	FM_EREPORT_ZFS_DEVICE_UNKNOWN		"vdev.unknown"
 #define	FM_EREPORT_ZFS_DEVICE_OPEN_FAILED	"vdev.open_failed"
 #define	FM_EREPORT_ZFS_DEVICE_CORRUPT_DATA	"vdev.corrupt_data"
@@ -75,6 +77,11 @@ extern "C" {
 #define	FM_EREPORT_PAYLOAD_ZFS_VDEV_ASHIFT	"vdev_ashift"
 #define	FM_EREPORT_PAYLOAD_ZFS_VDEV_COMP_TS	"vdev_complete_ts"
 #define	FM_EREPORT_PAYLOAD_ZFS_VDEV_DELTA_TS	"vdev_delta_ts"
+#define	FM_EREPORT_PAYLOAD_ZFS_VDEV_SPARE_PATHS	"vdev_spare_paths"
+#define	FM_EREPORT_PAYLOAD_ZFS_VDEV_SPARE_GUIDS	"vdev_spare_guids"
+#define	FM_EREPORT_PAYLOAD_ZFS_VDEV_READ_ERRORS	"vdev_read_errors"
+#define	FM_EREPORT_PAYLOAD_ZFS_VDEV_WRITE_ERRORS "vdev_write_errors"
+#define	FM_EREPORT_PAYLOAD_ZFS_VDEV_CKSUM_ERRORS "vdev_cksum_errors"
 #define	FM_EREPORT_PAYLOAD_ZFS_PARENT_GUID	"parent_guid"
 #define	FM_EREPORT_PAYLOAD_ZFS_PARENT_TYPE	"parent_type"
 #define	FM_EREPORT_PAYLOAD_ZFS_PARENT_PATH	"parent_path"
@@ -114,6 +121,8 @@ extern "C" {
 #define	FM_EREPORT_RESOURCE_REMOVED		"removed"
 #define	FM_EREPORT_RESOURCE_AUTOREPLACE		"autoreplace"
 #define	FM_EREPORT_RESOURCE_STATECHANGE		"statechange"
+
+#define	FM_EREPORT_ZFS_SNAPSHOT_MOUNT		"snapshot.mount"
 
 #ifdef	__cplusplus
 }

@@ -3045,7 +3045,6 @@ zio_ready(zio_t *zio)
 static int
 zio_done(zio_t *zio)
 {
-    spa_t *spa = zio->io_spa;
 	zio_t *pio, *pio_next;
 	int c, w;
 

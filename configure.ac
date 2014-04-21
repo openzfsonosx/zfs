@@ -77,6 +77,9 @@ AC_CONFIG_FILES([
 	etc/Makefile
 	etc/init.d/Makefile
 	etc/zfs/Makefile
+	etc/systemd/Makefile
+	etc/systemd/system/Makefile
+	etc/modules-load.d/Makefile
 	man/Makefile
 	man/man1/Makefile
 	man/man5/Makefile
@@ -118,6 +121,7 @@ AC_CONFIG_FILES([
 	cmd/vdev_id/Makefile
 	cmd/arcstat/Makefile
 	cmd/dbufstat/Makefile
+	cmd/zed/Makefile
 	module/Makefile
 	module/avl/Makefile
 	module/nvpair/Makefile

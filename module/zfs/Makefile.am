@@ -16,7 +16,6 @@ CFLAGS_KMOD = \
 	-Wall \
 	-nostdinc \
 	-mkernel \
-	-fno-builtin-printf \
 	-D_KERNEL \
 	-DKERNEL \
 	-DKERNEL_PRIVATE \
@@ -25,8 +24,6 @@ CFLAGS_KMOD = \
 	-DNeXT \
 	-DNAMEDSTREAMS=1 \
 	-DHAVE_SPL=1 \
-	-DZFS_META_VERSION=\"@ZFS_META_VERSION@\" \
-	-DZFS_META_RELEASE=\"@ZFS_META_RELEASE@\" \
 	-I$(top_srcdir)/include \
 	-I@SPL_OBJ@ -I@SPL_OBJ@/include \
 	-I@KERNELSRC@
@@ -167,6 +164,7 @@ zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
 	mkdir -p zfs.kext/Contents/Resources/English.lproj zfs.kext/Contents/MacOS
 	cp -f $(INFO_PLIST) zfs.kext/Contents/
 	cp -f $(PLIST_STRING) zfs.kext/Contents/Resources/English.lproj/
+	cp -f $(top_srcdir)/VolumeIcon.icns zfs.kext/Contents/Resources/
 	cp -f zfs zfs.kext/Contents/MacOS/
 	kextlibs -undef-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/ || echo Ignoring errors
 

@@ -948,7 +948,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	while (n > 0) {
 		abuf = NULL;
 		woff = uio_offset(uio);
-again:
+
 		if (zfs_owner_overquota(zfsvfs, zp, B_FALSE) ||
 		    zfs_owner_overquota(zfsvfs, zp, B_TRUE)) {
 			if (abuf != NULL)
@@ -1018,7 +1018,7 @@ again:
 		 * on the first iteration since zfs_range_reduce() will
 		 * shrink down r_len to the appropriate size.
 		 */
-		if ((rl->r_len == UINT64_MAX)) {
+		if (rl->r_len == UINT64_MAX) {
 			uint64_t new_blksz;
 			if (zp->z_blksz > max_blksz) {
 				ASSERT(!ISP2(zp->z_blksz));
@@ -1579,7 +1579,7 @@ zfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct componentname *cnp,
 		ZFS_EXIT(zfsvfs);
 	}
 
-#if defined (FREEBSD_NAMECACHE) || defined(__APPLE__)
+#if defined (FREEBSD_NAMECACHE)
 	/*
 	 * Insert name into cache (as non-existent) if appropriate.
 	 */
@@ -2431,7 +2431,7 @@ top:
 		return (error);
 	}
 
-#if defined (FREEBSD_NAMECACHE) || defined(__APPLE__)
+#if defined (FREEBSD_NAMECACHE)
 	cache_purge(dvp);
 #endif
 
@@ -2448,7 +2448,7 @@ top:
 
 	rw_exit(&zp->z_parent_lock);
 	rw_exit(&zp->z_name_lock);
-#if defined (FREEBSD_NAMECACHE) || defined(__APPLE__)
+#if defined (FREEBSD_NAMECACHE)
 	cache_purge(vp);
 #endif
 out:
@@ -3192,7 +3192,7 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	uint64_t	new_mode;
 	uint64_t	new_uid, new_gid;
 	uint64_t	xattr_obj;
-	uint64_t	mtime[2], ctime[2];
+	uint64_t	mtime[2], ctime[2], crtime[2];
 	znode_t		*attrzp;
 	int		need_policy = FALSE;
 	int		err, err2;
@@ -3202,7 +3202,7 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	zfs_acl_t	*aclp;
 	boolean_t skipaclchk = /*(flags & ATTR_NOACLCHECK) ? B_TRUE :*/ B_FALSE;
 	boolean_t	fuid_dirtied = B_FALSE;
-	sa_bulk_attr_t	bulk[7], xattr_bulk[7];
+	sa_bulk_attr_t	bulk[10], xattr_bulk[10];
 	int		count = 0, xattr_count = 0;
 
 	if (mask == 0)
@@ -3781,6 +3781,15 @@ top:
 		    mtime, sizeof (mtime));
 	}
 
+#ifdef __APPLE__
+    /* CTIME overloaded to mean CRTIME */
+	if (mask & AT_CTIME) {
+		ZFS_TIME_ENCODE(&vap->va_crtime, crtime);
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CRTIME(zfsvfs), NULL,
+		    crtime, sizeof (crtime));
+	}
+#endif
+
 	/* XXX - shouldn't this be done *before* the ATIME/MTIME checks? */
 	if (mask & AT_SIZE && !(mask & AT_MTIME)) {
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs),
@@ -3857,6 +3866,7 @@ top:
 		mutex_exit(&attrzp->z_lock);
 	}
 out:
+
 	if (err == 0 && attrzp) {
 		err2 = sa_bulk_update(attrzp->z_sa_hdl, xattr_bulk,
 		    xattr_count, tx);
@@ -4328,7 +4338,7 @@ top:
 				    ZRENAMING, NULL), ==, 0);
 			}
 		}
-#if defined (FREEBSD_NAMECACHE) || defined(__APPLE__)
+#if defined (FREEBSD_NAMECACHE)
 		if (error == 0) {
 			cache_purge(sdvp);
 			cache_purge(tdvp);
@@ -5989,6 +5999,7 @@ const fs_operation_def_t zfs_evnodeops_template[] = {
 };
 #endif	/* sun */
 
+#if 0 // unused function
 static int
 ioflags(int ioflags)
 {
@@ -6003,6 +6014,8 @@ ioflags(int ioflags)
 
 	return (flags);
 }
+#endif
+
 
 #ifdef __FreeBSD__
 static int

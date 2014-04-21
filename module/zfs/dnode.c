@@ -952,7 +952,7 @@ dnode_special_close(dnode_handle_t *dnh)
                    refcount_count(&dn->dn_holds));
             //            panic("BOOOOOOOM");
             count = 0;
-            refcount_remove(&dn->dn_holds, NULL);
+            //refcount_remove(&dn->dn_holds, NULL);
         }
     }
 	zrl_add(&dnh->dnh_zrlock);

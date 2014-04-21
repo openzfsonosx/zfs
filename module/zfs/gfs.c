@@ -522,7 +522,7 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
     //mutex_enter(&zfsvfs->z_vnode_create_lock);
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0);
     //mutex_exit(&zfsvfs->z_vnode_create_lock);
-	vnode_settag(vp, VT_ZFS);
+	vnode_settag(vp, VT_OTHER);
     dprintf("new vnode %p system %d root %d: vfs %p\n",
            vp, vfsp.vnfs_marksystem, vfsp.vnfs_markroot, vfs);
 
@@ -811,6 +811,7 @@ gfs_dir_inactive(struct vnode *vp)
  *
  * 	Returns 0 on success, non-zero on error.
  */
+#if 0 // unused function
 static int
 gfs_dir_lookup_dynamic(gfs_lookup_cb callback, gfs_dir_t *dp,
     const char *nm, struct vnode *dvp, struct vnode **vpp, cred_t *cr, int flags,
@@ -843,6 +844,7 @@ gfs_dir_lookup_dynamic(gfs_lookup_cb callback, gfs_dir_t *dp,
 
 	return (ret);
 }
+#endif
 
 /*
  * gfs_dir_lookup_static()
@@ -1171,7 +1173,6 @@ gfs_vop_readdir(ap)
 	u_long *cookies = NULL;
 	u_long *a_cookies = NULL;
 	int error;
-    boolean_t   extended = (ap->a_flags & VNODE_READDIR_EXTENDED);
 
 #if 0
     /* This is from hfs_vnops.c - we may need to implement it as well.

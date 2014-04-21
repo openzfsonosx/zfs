@@ -168,11 +168,15 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error = 0;
 	uint64_t	parent;
-    zfs_acl_phys_t acl;
 
     //printf("getattr_osx\n");
 
 	ZFS_ENTER(zfsvfs);
+    if (!zp->z_sa_hdl) {
+        ZFS_EXIT(zfsvfs);
+        return EIO;
+    }
+
 	/*
 	 * On Mac OS X we always export the root directory id as 2
 	 */
@@ -232,6 +236,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
         //printf("want acl\n");
 #if 0
+        zfs_acl_phys_t acl;
+
         if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
                       &acl, sizeof (zfs_acl_phys_t))) {
             //if (zp->z_acl.z_acl_count == 0) {
@@ -250,9 +256,9 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
         VATTR_RETURN(vap, va_guuid, kauth_null_guid);
 
-        dprintf("Calling getacl\n");
+        //dprintf("Calling getacl\n");
         if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
-            dprintf("zfs_getacl returned error %d\n", error);
+            //  dprintf("zfs_getacl returned error %d\n", error);
             error = 0;
         } else {
 
@@ -278,9 +284,36 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         vap->va_name[0] = 0;
 
         if (!vnode_isvroot(vp)) {
+            /* Lets not supply name as zap_cursor can cause panic */
+#if 0
             if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
                                  ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
                 VATTR_SET_SUPPORTED(vap, va_name);
+#endif
+            /*
+             * Finder (Carbon) relies on getattr returning the correct name
+             * for hardlinks to work, so we store the lookup name in
+             * vnop_lookup if file references are high, then set the
+             * return name here.
+             * If we also want ATTR_CMN_* lookups to work, we need to
+             * set a unique va_linkid for each entry, and based on the
+             * linkid in the lookup, return the correct name.
+             * It is set in zfs_finder_keep_hardlink()
+             */
+
+            if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG) &&
+                zp->z_finder_hardlink_name[0]) {
+
+                strlcpy(vap->va_name, zp->z_finder_hardlink_name,
+                        MAXPATHLEN);
+                VATTR_SET_SUPPORTED(vap, va_name);
+
+                dprintf("getattr: %p return name '%s':%04x\n", vp,
+                       vap->va_name,
+                       vap->va_linkid);
+            }
+
+
         } else {
             /*
              * The vroot objects must return a unique name for Finder to
@@ -294,11 +327,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         }
 	}
 
+    if (VATTR_IS_ACTIVE(vap, va_linkid)) {
+        VATTR_RETURN(vap, va_linkid, vap->va_fileid);
+    }
 	if (VATTR_IS_ACTIVE(vap, va_filerev)) {
         VATTR_RETURN(vap, va_filerev, 0);
-    }
-	if (VATTR_IS_ACTIVE(vap, va_linkid)) {
-        VATTR_RETURN(vap, va_linkid, vap->va_fileid);
     }
 	if (VATTR_IS_ACTIVE(vap, va_fsid)) {
         VATTR_RETURN(vap, va_fsid, vfs_statfs(zfsvfs->z_vfs)->f_fsid.val[0]);
@@ -414,8 +447,9 @@ zfs_getbsdflags(znode_t *zp)
 {
 	uint32_t  bsdflags = 0;
     uint64_t zflags;
-    VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs),
-                     &zflags, sizeof (zflags)) == 0);
+    if (zp->z_sa_hdl)
+        VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_FLAGS(zp->z_zfsvfs),
+                         &zflags, sizeof (zflags)) == 0);
 
 	if (zflags & ZFS_NODUMP)
 		bsdflags |= UF_NODUMP;
@@ -563,7 +597,7 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 	error = dmu_tx_assign(tx, TXG_NOWAIT);
 	if (error) {
 		zfs_dirent_unlock(dl);
-		if ((error == ERESTART)) {
+		if (error == ERESTART) {
 			dmu_tx_wait(tx);
 			dmu_tx_abort(tx);
 			goto top;
@@ -1328,7 +1362,6 @@ static unsigned char fingerprint[] = {0xab, 0xcd, 0xef, 0xab, 0xcd, 0xef,
 int kauth_wellknown_guid(guid_t *guid)
 {
     uint32_t last = 0;
-    int i;
 
     if (memcmp(fingerprint, guid->g_guid, sizeof(fingerprint)))
         return KAUTH_WKG_NOT;
@@ -1384,7 +1417,6 @@ void nfsacl_set_wellknown(int wkg, guid_t *guid)
 void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
 {
     int i;
-    const struct acl_entry *entry;
     ace_t *ace;
     guid_t          *guidp;
     kauth_ace_rights_t  ace_rights;
@@ -1504,4 +1536,3 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
     }
 
 }
-

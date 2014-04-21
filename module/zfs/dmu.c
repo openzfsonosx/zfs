@@ -1451,18 +1451,10 @@ dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
                                    *offset,
                                    (char *)db->db_data + bufoff,
                                    tocpy);
-            if (done != tocpy)
-                printf("iokit signalled short read %d != %d\n",
-                       tocpy, done);
 
             if (done > 0) {
                 (*offset) += done;
                 (*size) -= done;
-            }
-
-            if (done < 0) {
-                err = EIO;
-                break;
             }
 
             //size -= tocpy;
@@ -1532,18 +1524,9 @@ dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset, uint64_t position,
             if (tocpy == db->db_size)
                 dmu_buf_fill_done(db, tx);
 
-            if (done != tocpy)
-                printf("iokit signalled short write %d != %d\n",
-                       tocpy, done);
-
             if (done > 0) {
                 *offset += done;
                 *size -= done;
-            }
-
-            if (done < 0) {
-                err = EIO;
-                break;
             }
         }
     }

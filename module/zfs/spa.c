@@ -1113,6 +1113,12 @@ spa_activate(spa_t *spa, int mode)
 	avl_create(&spa->spa_errlist_last,
 	    spa_error_entry_compare, sizeof (spa_error_entry_t),
 	    offsetof(spa_error_entry_t, se_avl));
+
+#ifdef _KERNEL
+    /* Lock kext in kernel while mounted */
+    OSKextRetainKextWithLoadTag(OSKextGetCurrentLoadTag());
+#endif
+
 }
 
 /*
@@ -1185,6 +1191,12 @@ spa_deactivate(spa_t *spa)
 		thread_join(spa->spa_did);
 		spa->spa_did = 0;
 	}
+
+#ifdef _KERNEL
+    /* Unlock kext in kernel */
+    OSKextReleaseKextWithLoadTag(OSKextGetCurrentLoadTag());
+#endif
+
 }
 
 /*
@@ -1386,7 +1398,7 @@ spa_load_spares(spa_t *spa)
 	 * validate each vdev on the spare list.  If the vdev also exists in the
 	 * active configuration, then we also mark this vdev as an active spare.
 	 */
-	spa->spa_spares.sav_vdevs = kmem_alloc(nspares * sizeof (void *),
+	spa->spa_spares.sav_vdevs = kmem_zalloc(nspares * sizeof (void *),
 	    KM_PUSHPAGE);
 	for (i = 0; i < spa->spa_spares.sav_count; i++) {
 		VERIFY(spa_config_parse(spa, &vd, spares[i], NULL, 0,
@@ -3761,7 +3773,7 @@ spa_import_rootpool(char *devpath, char *devid)
 	spa_t *spa;
 	vdev_t *rvd, *bvd /*, *avd = NULL*/;
 	nvlist_t *config = NULL, *nvtop;
-	uint64_t guid, txg;
+	uint64_t guid = 0, txg;
 	char *pname;
 	int error;
 
@@ -4063,6 +4075,9 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	zvol_create_minors(pool);
 #endif
 
+	spa_event_notify(spa, NULL, FM_EREPORT_ZFS_POOL_IMPORT);
+
+
 	return (0);
 }
 
@@ -4108,6 +4123,8 @@ spa_tryimport(nvlist_t *tryconfig)
 		    spa->spa_uberblock.ub_timestamp) == 0);
 		VERIFY(nvlist_add_nvlist(config, ZPOOL_CONFIG_LOAD_INFO,
 		    spa->spa_load_info) == 0);
+		VERIFY(nvlist_add_uint64(config, ZPOOL_CONFIG_ERRATA,
+		    spa->spa_errata) == 0);
 
 		/*
 		 * If the bootfs property exists on this pool then we

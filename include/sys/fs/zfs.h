@@ -146,6 +146,14 @@ typedef enum {
     ZFS_PROP_APPLE_BROWSE,
     ZFS_PROP_APPLE_IGNOREOWNER,
 #endif
+#ifdef LINUX
+	ZFS_PROP_ACLTYPE,
+	ZFS_PROP_SELINUX_CONTEXT,
+	ZFS_PROP_SELINUX_FSCONTEXT,
+	ZFS_PROP_SELINUX_DEFCONTEXT,
+	ZFS_PROP_SELINUX_ROOTCONTEXT,
+	ZFS_PROP_RELATIME,
+#endif
 	ZFS_NUM_PROPS
 } zfs_prop_t;
 
@@ -546,6 +554,7 @@ typedef struct zpool_rewind_policy {
 #define	ZPOOL_CONFIG_CAN_RDONLY		"can_rdonly"	/* not stored on disk */
 #define	ZPOOL_CONFIG_FEATURES_FOR_READ	"features_for_read"
 #define	ZPOOL_CONFIG_FEATURE_STATS	"feature_stats"	/* not stored on disk */
+#define	ZPOOL_CONFIG_ERRATA		"errata"	/* not stored on disk */
 /*
  * The persistent vdev state is stored as separate values rather than a single
  * 'vdev_state' entry.  This is because a device can be in multiple states, such
@@ -702,6 +711,17 @@ typedef enum dsl_scan_state {
 	DSS_NUM_STATES
 } dsl_scan_state_t;
 
+/*
+ * Errata described by http://zfsonlinux.org/msg/ZFS-8000-ER.  The ordering
+ * of this enum must be maintained to ensure the errata identifiers map to
+ * the correct documentation.  New errata may only be appended to the list
+ * and must contain corresponding documentation at the above link.
+ */
+typedef enum zpool_errata {
+	ZPOOL_ERRATA_NONE,
+	ZPOOL_ERRATA_ZOL_2094_SCRUB,
+	ZPOOL_ERRATA_ZOL_2094_ASYNC_DESTROY,
+} zpool_errata_t;
 
 /*
  * Vdev statistics.  Note: all fields should be 64-bit because this
@@ -773,19 +793,6 @@ typedef struct ddt_histogram {
      */
 #define	ZVOL_DEFAULT_BLOCKSIZE	4096
 
-#if 0
-	/*
-	 * Linux - 3/64 numbers reserved.
-	 */
-	ZFS_IOC_LINUX = ('Z' << 8) + 0x80,
-	ZFS_IOC_EVENTS_NEXT,
-	ZFS_IOC_EVENTS_CLEAR,
-
-	/*
-	 * FreeBSD - 1/64 numbers reserved.
-	 */
-	ZFS_IOC_FREEBSD = ('Z' << 8) + 0xC0,
-#endif
 
 /*
  * zvol ioctl to get dataset name
@@ -850,6 +857,7 @@ typedef enum {
 #define	ZFS_IMPORT_ANY_HOST	0x2
 #define	ZFS_IMPORT_MISSING_LOG	0x4
 #define	ZFS_IMPORT_ONLY		0x8
+#define	ZFS_IMPORT_TEMP_NAME	0x10
 
 /*
  * Sysevent payload members.  ZFS will generate the following sysevents with the

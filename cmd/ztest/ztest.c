@@ -6092,6 +6092,7 @@ ztest_init(ztest_shared_t *zs)
 	}
 	VERIFY3U(0, ==, spa_create(ztest_opts.zo_pool, nvroot, props, NULL));
 	nvlist_free(nvroot);
+	nvlist_free(props);
 
 	VERIFY3U(0, ==, spa_open(ztest_opts.zo_pool, &spa, FTAG));
 	zs->zs_metaslab_sz =
@@ -6142,7 +6143,7 @@ setup_hdr(void)
 
 	hdr = (void *)mmap(0, P2ROUNDUP(sizeof (*hdr), getpagesize()),
 	    PROT_READ | PROT_WRITE, MAP_SHARED, ztest_fd_data, 0);
-	ASSERT(hdr != MAP_FAILED);
+	VERIFY3P(hdr, !=, MAP_FAILED);
 
 	VERIFY3U(0, ==, ftruncate(ztest_fd_data, sizeof (ztest_shared_hdr_t)));
 
@@ -6169,14 +6170,14 @@ setup_data(void)
 
 	hdr = (void *)mmap(0, P2ROUNDUP(sizeof (*hdr), getpagesize()),
 	    PROT_READ, MAP_SHARED, ztest_fd_data, 0);
-	ASSERT(hdr != MAP_FAILED);
+	VERIFY3P(hdr, !=, MAP_FAILED);
 
 	size = shared_data_size(hdr);
 
 	(void) munmap((caddr_t)hdr, P2ROUNDUP(sizeof (*hdr), getpagesize()));
 	hdr = ztest_shared_hdr = (void *)mmap(0, P2ROUNDUP(size, getpagesize()),
 	    PROT_READ | PROT_WRITE, MAP_SHARED, ztest_fd_data, 0);
-	ASSERT(hdr != MAP_FAILED);
+	VERIFY3P(hdr, !=, MAP_FAILED);
 	buf = (uint8_t *)hdr;
 
 	offset = hdr->zh_hdr_size;

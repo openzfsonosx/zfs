@@ -75,6 +75,8 @@ SYSCTL_INT(_debug_sizeof, OID_AUTO, znode, CTLFLAG_RD, 0, sizeof(znode_t),
 #endif
 void
 zfs_release_sa_handle(sa_handle_t *hdl, dmu_buf_t *db, void *tag);
+extern uint64_t vnop_num_reclaims;
+
 
 
 //#define dprintf printf
@@ -108,6 +110,7 @@ krwlock_t zfsvfs_lock;
 static kmem_cache_t *znode_cache = NULL;
 
 /*ARGSUSED*/
+#if 0 // unused function
 static void
 znode_evict_error(dmu_buf_t *dbuf, void *user_ptr)
 {
@@ -117,6 +120,7 @@ znode_evict_error(dmu_buf_t *dbuf, void *user_ptr)
 	 */
 	panic("evicting znode %p\n", user_ptr);
 }
+#endif
 
 extern struct vop_vector zfs_vnodeops;
 extern struct vop_vector zfs_fifoops;
@@ -167,6 +171,7 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 #endif
 
 	list_link_init(&zp->z_link_node);
+	list_link_init(&zp->z_link_reclaim_node);
 
 	mutex_init(&zp->z_lock, NULL, MUTEX_DEFAULT, NULL);
     rw_init(&zp->z_map_lock, NULL, RW_DEFAULT, NULL);
@@ -716,6 +721,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_uid = 0;
 	zp->z_gid = 0;
 	zp->z_size = 0;
+    zp->z_finder_hardlink_name[0] = 0;
 
 	vp = ZTOV(zp); /* Does nothing in OSX */
 
@@ -1235,6 +1241,7 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 
 	td = curthread;
 	getnewvnode_reserve(1);
+
 again:
 	*zpp = NULL;
 
@@ -1256,12 +1263,13 @@ again:
         ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 		getnewvnode_drop_reserve();
 		return ((EINVAL));
-
 	}
+
+
 
 	hdl = dmu_buf_get_user(db);
 	if (hdl != NULL) {
-		zp  = sa_get_userdata(hdl);
+		zp = sa_get_userdata(hdl);
 
 
 		/*
@@ -1270,44 +1278,66 @@ again:
 		 * know about the znode.
 		 */
 
+        ASSERT3P(zp, !=, NULL);
+
         /*
          * We can only call getwithvid if vp is not NULL
          */
-        if (!zp || !zp->z_vid || !ZTOV(zp)) {
+        if (ZTOV(zp)) {
+            /* Standard ZFS code here */
+
+            mutex_enter(&zp->z_lock);
+            ASSERT3U(zp->z_id, ==, obj_num);
+            if (zp->z_unlinked) {
+                err = (ENOENT);
+            } else {
+                vp = ZTOV(zp);
+                *zpp = zp;
+                err = 0;
+            }
+
+            if (err == 0) {
+
+                dprintf("attaching vnode %p\n", vp);
+                if ((vnode_getwithvid(vp, zp->z_vid) != 0)) {
+                  mutex_exit(&zp->z_lock);
+                  sa_buf_rele(db, NULL);
+                  ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+                  printf("zfs: woah vnode_getwithvid failed\n");
+                  goto again;
+                }
+
+            }
+            mutex_exit(&zp->z_lock);
             sa_buf_rele(db, NULL);
             ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
             getnewvnode_drop_reserve();
-            return (ENOENT);
+            return (err);
         }
 
-        ASSERT3P(zp, !=, NULL);
+        /*
+         * We have this strange race in OSX where vnop_reclaim has been called
+         * so we released vp, and placed zp on reclaim list. But reclaim has
+         * not yet removed it from the reclaim-list so it is still around.
+         * When we detect this here, we force a reclaim right now, then go
+         * a head and allocate a new zp
+         */
 
-        mutex_enter(&zp->z_lock);
-        ASSERT3U(zp->z_id, ==, obj_num);
-        if (zp->z_unlinked) {
-            err = (ENOENT);
-        } else {
-            vp = ZTOV(zp);
-            *zpp = zp;
-            err = 0;
-        }
+        /* VP is NULL */
+
+        /* Clean up locks */
         sa_buf_rele(db, NULL);
-
-        mutex_exit(&zp->z_lock);
         ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-
-        if (err == 0) {
-
-            dprintf("attaching vnode %p\n", vp);
-            if ((vnode_getwithvid(vp, zp->z_vid) != 0)) {
-                goto again;
-            }
-
-        }
-
         getnewvnode_drop_reserve();
-        return (err);
-    }
+
+        printf("Waiting on zp %p to die!\n", zp);
+        //delay(hz>>1);
+        cv_signal(&zfsvfs->z_reclaim_thr_cv);
+        while(!list_is_empty(&zfsvfs->z_reclaim_znodes)) delay(hz >> 2);
+        goto again;
+
+
+    } /* HDL != NULL */
 
 	/*
 	 * Not found create new znode/vnode
@@ -1520,21 +1550,17 @@ zfs_zinactive(znode_t *zp)
 void
 zfs_znode_free(znode_t *zp)
 {
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
 	ASSERT(zp->z_sa_hdl == NULL);
 	zp->z_vnode = NULL;
 #if 0
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	mutex_enter(&zfsvfs->z_znodes_lock);
 	POINTER_INVALIDATE(&zp->z_zfsvfs);
 	list_remove(&zfsvfs->z_all_znodes, zp);
 	mutex_exit(&zfsvfs->z_znodes_lock);
-#else
-    //mutex_enter(&zfsvfs->z_vnode_create_lock);
-	POINTER_INVALIDATE(&zp->z_zfsvfs);
-	//list_remove(&zfsvfs->z_reclaim_znodes, zp);
-    //mutex_exit(&zfsvfs->z_vnode_create_lock);
 #endif
+
 	if (zp->z_acl_cached) {
 		zfs_acl_free(zp->z_acl_cached);
 		zp->z_acl_cached = NULL;
@@ -1545,21 +1571,80 @@ zfs_znode_free(znode_t *zp)
 	VFS_RELE(zfsvfs->z_vfs);
 }
 
+static inline int
+zfs_compare_timespec(struct timespec *t1, struct timespec *t2)
+{
+	if (t1->tv_sec < t2->tv_sec)
+		return (-1);
+
+	if (t1->tv_sec > t2->tv_sec)
+		return (1);
+
+	return (t1->tv_nsec - t2->tv_nsec);
+}
+
+/*
+ *  Determine whether the znode's atime must be updated.  The logic mostly
+ *  duplicates the Linux kernel's relatime_need_update() functionality.
+ *  This function is only called if the underlying filesystem actually has
+ *  atime updates enabled.
+ */
+static inline boolean_t
+zfs_atime_need_update(znode_t *zp, timestruc_t *now)
+{
+#ifdef LINUX
+	if (!ZTOZSB(zp)->z_relatime)
+		return (B_TRUE);
+
+	/*
+	 * In relatime mode, only update the atime if the previous atime
+	 * is earlier than either the ctime or mtime or if at least a day
+	 * has passed since the last update of atime.
+	 */
+	if (zfs_compare_timespec(&ZTOI(zp)->i_mtime, &ZTOI(zp)->i_atime) >= 0)
+		return (B_TRUE);
+
+	if (zfs_compare_timespec(&ZTOI(zp)->i_ctime, &ZTOI(zp)->i_atime) >= 0)
+		return (B_TRUE);
+
+	if ((long)now->tv_sec - ZTOI(zp)->i_atime.tv_sec >= 24*60*60)
+		return (B_TRUE);
+#endif
+	return (B_FALSE);
+}
+
+/*
+ * Prepare to update znode time stamps.
+ *
+ *	IN:	zp	- znode requiring timestamp update
+ *		flag	- ATTR_MTIME, ATTR_CTIME, ATTR_ATIME flags
+ *		have_tx	- true of caller is creating a new txg
+ *
+ *	OUT:	zp	- new atime (via underlying inode's i_atime)
+ *		mtime	- new mtime
+ *		ctime	- new ctime
+ *
+ * NOTE: The arguments are somewhat redundant.  The following condition
+ * is always true:
+ *
+ *		have_tx == !(flag & ATTR_ATIME)
+ */
 void
 zfs_tstamp_update_setup(znode_t *zp, uint_t flag, uint64_t mtime[2],
     uint64_t ctime[2], boolean_t have_tx)
 {
 	timestruc_t	now;
 
+	ASSERT(have_tx == !(flag & ATTR_ATIME));
 	gethrestime(&now);
 
-	if (have_tx) {	/* will sa_bulk_update happen really soon? */
-		zp->z_atime_dirty = 0;
-		zp->z_seq++;
-	} else {
-		zp->z_atime_dirty = 1;
-	}
-
+	/*
+	 * NOTE: The following test intentionally does not update z_atime_dirty
+	 * in the case where an ATIME update has been requested but for which
+	 * the update is omitted due to relatime logic.  The rationale being
+	 * that if the flag was set somewhere else, we should leave it alone
+	 * here.
+	 */
 	if (flag & AT_ATIME) {
 		ZFS_TIME_ENCODE(&now, zp->z_atime);
 #ifdef LINUX
@@ -1664,7 +1749,7 @@ zfs_extend(znode_t *zp, uint64_t end)
 		zfs_range_unlock(rl);
 		return (0);
 	}
-top:
+
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	zfs_sa_upgrade_txholds(tx, zp);
@@ -2042,6 +2127,9 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	mutex_init(&zfsvfs.z_znodes_lock, NULL, MUTEX_DEFAULT, NULL);
 	list_create(&zfsvfs.z_all_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_node));
+	mutex_init(&zfsvfs.z_reclaim_list_lock, NULL, MUTEX_DEFAULT, NULL);
+	list_create(&zfsvfs.z_reclaim_znodes, sizeof (znode_t),
+	    offsetof(znode_t, z_link_reclaim_node));
 
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_init(&zfsvfs.z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);

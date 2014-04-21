@@ -12,6 +12,7 @@
 #include <sys/zfs_vnops.h>
 #include <sys/taskq.h>
 
+#include <libkern/version.h>
 
 #include <libkern/sysctl.h>
 
@@ -227,7 +228,6 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 
 
     IOLog("ZFS: Loading module ... \n");
-
 	/*
 	 * Initialize znode cache, vnode ops, etc...
 	 */
@@ -308,7 +308,7 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     zfs_ioctl_fini();
     zvol_fini();
     zfs_vfsops_fini();
-	zfs_znode_fini();
+    zfs_znode_fini();
 
 	//sysctl_unregister_oid(&sysctl__debug_maczfs_stalk);
     //	sysctl_unregister_oid(&sysctl__debug_maczfs);
@@ -316,6 +316,26 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     IOLog("ZFS: Unloaded module\n");
 
 }
+
+
+IOReturn net_lundman_zfs_zvol::doEjectMedia(void *arg1)
+{
+  zvol_state_t *nub = (zvol_state_t *)arg1;
+  IOLog("block svc ejecting\n");
+  if(nub) {
+
+    // Only 10.6 needs special work to eject
+    if ((version_major == 10) &&
+	(version_minor == 8))
+      destroyBlockStorageDevice(nub);    
+
+  }
+
+  IOLog("block svc ejected\n");
+  return kIOReturnSuccess;
+}
+
+
 
 bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
 {
@@ -351,7 +371,9 @@ bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
 
     nub->getBSDName();
 
-    zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
+    if ((version_major != 10) &&
+	(version_minor != 8))
+      zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
 
     result = true;
 
@@ -374,8 +396,10 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
 
       nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
 
-      zvol_remove_symlink(zv);
-
+      if ((version_major != 10) &&
+	  (version_minor != 8))
+	zvol_remove_symlink(zv);
+      
       zv->zv_iokitdev = NULL;
       zv = NULL;
 

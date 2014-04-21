@@ -62,7 +62,15 @@
 
 #ifdef _KERNEL
 #include <sys/sysctl.h>
-int debug_vnop_osx_printf = 0;
+unsigned int debug_vnop_osx_printf = 0;
+unsigned int zfs_vnop_ignore_negatives = 0;
+unsigned int zfs_vnop_ignore_positives = 0;
+unsigned int zfs_vnop_create_negatives = 1;
+/*
+ * Default kern.maxvnodes = 66560,
+ * allow ZFS to use half the system?
+ */
+unsigned int zfs_vnop_reclaim_throttle = 33280;
 #endif
 
 #define	DECLARE_CRED(ap) \
@@ -73,6 +81,7 @@ int debug_vnop_osx_printf = 0;
 	DECLARE_CRED(ap);		\
 	DECLARE_CONTEXT(ap)
 
+#undef dprintf
 #define dprintf if(debug_vnop_osx_printf)printf
 
 // Move this somewhere else, maybe autoconf?
@@ -112,6 +121,7 @@ extern struct vnodeopv_desc zfsctl_ops_snapshot;
 
 #define ZFS_VNOP_TBL_CNT	8
 
+static void zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs);
 
 
 static struct vnodeopv_desc *zfs_vnodeop_opv_desc_list[ZFS_VNOP_TBL_CNT] =
@@ -193,7 +203,6 @@ zfs_vnop_ioctl(
 	/* OS X has no use for zfs_ioctl(). */
 	znode_t *zp = VTOZ(ap->a_vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	user_addr_t useraddr = CAST_USER_ADDR_T(ap->a_data);
 	int error = 0;
     DECLARE_CRED_AND_CONTEXT(ap);
 
@@ -208,21 +217,18 @@ zfs_vnop_ioctl(
 		break;
 	case SPOTLIGHT_GET_MOUNT_TIME:
     case SPOTLIGHT_FSCTL_GET_MOUNT_TIME:
-		//error = copyout(&zfsvfs->z_mount_time, useraddr,
-        //  sizeof(zfsvfs->z_mount_time));
         *(uint32_t *)ap->a_data = zfsvfs->z_mount_time;
 		break;
 	case SPOTLIGHT_GET_UNMOUNT_TIME:
     case SPOTLIGHT_FSCTL_GET_LAST_MTIME:
-		//error = copyout(&zfsvfs->z_last_unmount_time, useraddr,
-        //  sizeof(zfsvfs->z_last_unmount_time));
         *(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
 		break;
     case F_RDADVISE:
         dprintf("vnop_ioctl: F_RDADVISE\n");
         break;
 	default:
-        dprintf("vnop_ioctl: Unknown ioctl %02x ('%c' + %u)\n", ap->a_command,
+        dprintf("vnop_ioctl: Unknown ioctl %02lx ('%ul' + %ul)\n",
+               ap->a_command,
                (ap->a_command&0xff00)>>8,
                ap->a_command&0xff);
 		error = ENOTTY;
@@ -315,6 +321,28 @@ zfs_vnop_access(
 	return (error);
 }
 
+
+void zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
+{
+    if (vp && VTOZ(vp)) {
+        znode_t *zp = VTOZ(vp);
+
+        /*
+         * hard link references?
+         * Read the comment in zfs_getattr_znode_unlocked for the reason for
+         * this hackery.
+         */
+        if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) {
+            dprintf("keep_hardlink: %p has refs %u\n",
+                    vp, zp->z_links);
+            strlcpy(zp->z_finder_hardlink_name,
+                    filename,
+                    MAXPATHLEN);
+        }
+    }
+}
+
+
 static int
 zfs_vnop_lookup(
 	struct vnop_lookup_args /* {
@@ -328,18 +356,9 @@ zfs_vnop_lookup(
 	DECLARE_CRED(ap);
 	int error;
     char *filename = NULL;
+    int negative_cache = 0;
 
     *ap->a_vpp = NULL;	/* In case we return an error */
-
-#if 0
-	error = cache_lookup(ap->a_dvp, ap->a_vpp, cnp);
-	if (error) {
-		/* We found a cache entry, positive or negative. */
-		if (error == -1)	/* Positive entry? */
-			error = 0;		/* Yes.  Caller expects no error */
-		return error;
-	}
-#endif
 
     /*
      * Darwin uses namelen as an optimisation, for example it can be
@@ -351,37 +370,96 @@ zfs_vnop_lookup(
         if (filename == NULL) return ENOMEM;
         bcopy(cnp->cn_nameptr, filename, cnp->cn_namelen);
         filename[cnp->cn_namelen] = '\0';
-
     }
 
-    dprintf("+vnop_lookup '%s'\n", filename ? filename : cnp->cn_nameptr);
+#if 1
+    /*
+     * cache_lookup() returns 0 for no-entry
+     * -1 for cache found (a_vpp set)
+     * ENOENT for negative cache
+     */
+	error = cache_lookup(ap->a_dvp, ap->a_vpp, cnp);
+
+	if (error) {
+
+		/* We found a cache entry, positive or negative. */
+		if (error == -1) {	/* Positive entry? */
+
+            if (!zfs_vnop_ignore_positives) {
+                error = 0;
+                goto exit;      /* Positive cache, return it */
+            }
+
+            vnode_put(*ap->a_vpp); /* Release iocount held by cache_lookip */
+        }
+
+        /* Negatives are only followed if not CREATE, from HFS+. */
+        if (cnp->cn_nameiop != CREATE) {
+            if (!zfs_vnop_ignore_negatives) {
+                goto exit; /* Negative cache hit */
+            }
+            negative_cache = 1;
+        }
+    }
+#endif
+
+
+    dprintf("+vnop_lookup '%s' %s\n", filename ? filename : cnp->cn_nameptr,
+            negative_cache ? "negative_cache":"");
 
 	error = zfs_lookup(ap->a_dvp,
                        filename ? filename : cnp->cn_nameptr,
                        ap->a_vpp, cnp, cnp->cn_nameiop, cr, /*flags*/ 0);
     /* flags can be LOOKUP_XATTR | FIGNORECASE */
 
-    if (filename)
-        FREE(filename, M_TEMP);
+#if 1
+    /*
+     * It appears that VFS layer adds negative cache entries for us, so
+     * we do not need to add them here, or they are duplicated.
+     */
+    if ((error == ENOENT) && zfs_vnop_create_negatives) {
 
-#if 0
-    if (error == ENOENT) {
-        if ((ap->a_cnp->cn_nameiop == CREATE || ap->a_cnp->cn_nameiop == RENAME) &&
+        if ((ap->a_cnp->cn_nameiop == CREATE || ap->a_cnp->cn_nameiop == RENAME ||
+             (ap->a_cnp->cn_nameiop == DELETE &&
+              (cnp->cn_flags & DOWHITEOUT) &&
+              (cnp->cn_flags & ISWHITEOUT))) &&
             (cnp->cn_flags & ISLASTCN)) {
-            printf("create/rename early out\n");
             error = EJUSTRETURN;
             goto exit;
         }
 
+
         /*
 		 * Insert name into cache (as non-existent) if appropriate.
 		 */
-		if ((cnp->cn_flags & MAKEENTRY) && ap->a_cnp->cn_nameiop != CREATE)
-			cache_enter(ap->a_dvp, *ap->a_vpp, ap->a_cnp);
+		if ((cnp->cn_flags & MAKEENTRY) && ap->a_cnp->cn_nameiop != CREATE) {
+			cache_enter(ap->a_dvp, NULL, ap->a_cnp);
+            dprintf("Negative-cache made for '%s'\n",
+                    filename ? filename : cnp->cn_nameptr);
+        }
     } // ENOENT
 #endif
 
+#if 0
+    if (!error && negative_cache) {
+        printf("[ZFS] Incorrect negative_cache entry for '%s'\n",
+               filename ? filename : cnp->cn_nameptr);
+        cache_purge_negatives(ap->a_dvp);
+    }
+#endif
+
+
  exit:
+
+    /* Set both for lookup and positive cache */
+    if (!error)
+        zfs_finder_keep_hardlink(*ap->a_vpp,
+                                 filename ? filename : cnp->cn_nameptr);
+    if (filename)
+        FREE(filename, M_TEMP);
+
+    if (!error && ap->a_vpp && *ap->a_vpp && VTOZ(*ap->a_vpp))
+        zfs_vnop_throttle_reclaim(VTOZ(*ap->a_vpp)->z_zfsvfs);
 
     dprintf("-vnop_lookup %d\n", error);
 	return (error);
@@ -417,7 +495,6 @@ zfs_vnop_create(
     if (!error)
         cache_purge_negatives(ap->a_dvp);
 
-
     return error;
 }
 
@@ -441,6 +518,7 @@ zfs_vnop_remove(
     */
 	error = zfs_remove(ap->a_dvp, ap->a_cnp->cn_nameptr, cr, ct, /*flags*/0);
     if (!error) cache_purge(ap->a_vp);
+
     return error;
 }
 
@@ -530,6 +608,7 @@ zfs_vnop_readdir(
     */
     dprintf("+readdir: %p\n", ap->a_vp);
 	*ap->a_numdirent = 0;
+
 	error = zfs_readdir(ap->a_vp, ap->a_uio, cr, ap->a_eofflag,
                         ap->a_flags, ap->a_numdirent);
 
@@ -575,11 +654,7 @@ zfs_vnop_fsync(
      * inside vnode_create().
      */
 
-    // Defer syncs if we are coming through vnode_create()
-    if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
-        return 0;
-    }
-    if (zfsvfs->z_vnode_create_lockX) return 0;
+    if (zfsvfs->z_vnode_create_depth) return 0;
 
 	err = zfs_fsync(ap->a_vp, /*flag*/0, cr, ct);
     return err;
@@ -596,7 +671,7 @@ zfs_vnop_getattr(
     int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
     //dprintf("+vnop_getattr zp %p vp %p\n",
-    //      VTOZ(ap->a_vp), ap->a_vp);
+    //     VTOZ(ap->a_vp), ap->a_vp);
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /*flags*/0, cr, ct);
 
@@ -635,6 +710,11 @@ zfs_vnop_setattr(
         mask |= AT_ATIME;
     if (VATTR_IS_ACTIVE(vap, va_modify_time))
         mask |= AT_MTIME;
+    /*
+     * We abuse AT_CTIME here, to function as a place holder for
+     * "creation time", since you are not allowed to change "change time" in
+     * POSIX, and we don't have a AT_CRTIME.
+     */
     if (VATTR_IS_ACTIVE(vap, va_create_time))
         mask |= AT_CTIME;
     /*
@@ -670,7 +750,7 @@ zfs_vnop_setattr(
 
         // Map OS X file flags to zfs file flags
         zfs_setbsdflags(zp, vap->va_flags);
-        dprintf("OSX flags %08lx changed to ZFS %04lx\n", vap->va_flags,
+        dprintf("OSX flags %08x changed to ZFS %04llx\n", vap->va_flags,
                 zp->z_pflags);
         vap->va_flags = zp->z_pflags;
 
@@ -703,6 +783,8 @@ zfs_vnop_setattr(
             VATTR_SET_SUPPORTED(vap, va_access_time);
         if (VATTR_IS_ACTIVE(vap, va_modify_time))
             VATTR_SET_SUPPORTED(vap, va_modify_time);
+        if (VATTR_IS_ACTIVE(vap, va_change_time))
+            VATTR_SET_SUPPORTED(vap, va_change_time);
         if (VATTR_IS_ACTIVE(vap, va_create_time))
             VATTR_SET_SUPPORTED(vap, va_create_time);
         if (VATTR_IS_ACTIVE(vap, va_backup_time))
@@ -740,7 +822,13 @@ zfs_vnop_rename(
 	error = zfs_rename(ap->a_fdvp, ap->a_fcnp->cn_nameptr, ap->a_tdvp,
                        ap->a_tcnp->cn_nameptr, cr, ct, /*flags*/0);
 
-    if (!error) cache_purge_negatives(ap->a_tdvp);
+    if (!error) {
+        cache_purge_negatives(ap->a_fdvp);
+        cache_purge_negatives(ap->a_tdvp);
+        cache_purge(ap->a_fvp);
+        if (ap->a_tvp)
+            cache_purge(ap->a_tvp);
+    }
 
 	return (error);
 }
@@ -898,17 +986,19 @@ zfs_vnop_pagein(
     }
 
     ubc_upl_map(upl, &vaddr);
-    dprintf("vaddr %p with upl_off 0x%llx\n", vaddr, upl_offset);
+    dprintf("vaddr %p with upl_off 0x%lx\n", vaddr, upl_offset);
     vaddr += upl_offset;
     /*
      * Fill pages with data from the file.
      */
     while (len > 0) {
-        if (len < PAGESIZE)
-              break;
 
         dprintf("pagein from off 0x%llx into address %p (len 0x%lx)\n",
                off, vaddr, len);
+
+        if (len < PAGESIZE)
+              break;
+
         error = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, off, PAGESIZE,
                          (void *)vaddr, DMU_READ_PREFETCH);
         if (error) {
@@ -921,7 +1011,6 @@ zfs_vnop_pagein(
         if (len >= PAGESIZE)
             len -= PAGESIZE;
         else {
-            if (len) printf("Warning len was not 0 = %d\n", len);
             len = 0;
         }
     }
@@ -1050,7 +1139,7 @@ zfs_vnop_pageout(
     uint64_t        filesz;
     int             err = 0;
 
-    dprintf("+vnop_pageout: off 0x%llx len ox%llx upl_off 0x%llx: blksz ox%llx, z_size 0x%llx\n",
+    dprintf("+vnop_pageout: off 0x%llx len 0x%x upl_off 0x%lx: blksz 0x%llx, z_size 0x%llx\n",
            off, len, upl_offset, zp->z_blksz, zp->z_size);
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
@@ -1065,8 +1154,8 @@ zfs_vnop_pageout(
     }
 
     // Defer syncs if we are coming through vnode_create()
-    if (zfsvfs->z_vnode_create_lockX) {
-        printf("zfs: awkward pageout exit\n");
+    if (zfsvfs->z_vnode_create_depth) {
+        printf("zfs: pageout dropping request due to vnode_create\n");
         if (!(flags & UPL_NOCOMMIT))
             ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES |
                           UPL_ABORT_FREE_ON_EMPTY);
@@ -1082,7 +1171,6 @@ zfs_vnop_pageout(
         panic("zfs_vnop_pageout: no upl!");
     }
     if (len <= 0) {
-        dprintf("zfs_vnop_pageout: invalid size %ld", len);
         if (!(flags & UPL_NOCOMMIT))
             (void) ubc_upl_abort(upl, 0);
         err = EINVAL;
@@ -1095,7 +1183,9 @@ zfs_vnop_pageout(
         err = EROFS;
         goto exit;
     }
+
     filesz = zp->z_size; /* get consistent copy of zp_size */
+
     if ((off < 0) || (off >= filesz) ||
         (off & PAGE_MASK_64) || (len & PAGE_MASK)) {
         if (!(flags & UPL_NOCOMMIT))
@@ -1104,6 +1194,19 @@ zfs_vnop_pageout(
         err = EINVAL;
         goto exit;
     }
+
+
+    uint64_t pgsize = roundup(filesz, PAGESIZE);
+
+     /* Any whole pages beyond the end of the while we abort */
+    if ((ap->a_size + ap->a_f_offset) > pgsize) {
+        printf("pageout: abort outside pages (rounded 0x%llx > UPLlen 0x%llx\n",
+               pgsize, ap->a_size + ap->a_f_offset);
+       ubc_upl_abort_range(upl, pgsize,
+                            pgsize - (ap->a_size + ap->a_f_offset),
+                            UPL_ABORT_FREE_ON_EMPTY);
+    }
+
     len = MIN(len, filesz - off);
  top:
     rl = zfs_range_lock(zp, off, len, RL_WRITER);
@@ -1143,37 +1246,38 @@ zfs_vnop_pageout(
         goto out;
     }
 
-#if 0
-    if (len <= PAGESIZE) {
-        caddr_t va;
-        printf("len is 0x%llx so dmu_write\n", len);
-        ASSERT3U(len, <=, PAGESIZE);
-        ubc_upl_map(upl, (vm_offset_t *)&va);
-        va += upl_offset;
-        dmu_write(zfsvfs->z_os, zp->z_id, off, len, va, tx);
-        ubc_upl_unmap(upl);
-    } else {
-        printf("osx_write_pages: off 0x%llx\n", off);
-        err = osx_write_pages(zfsvfs->z_os, zp->z_id, off, len, upl, tx);
-        if (err)printf("dmu_write say %d\n", err);
-    }
-#else
-    ssize_t done = 0;
     caddr_t va;
 
     ubc_upl_map(upl, (vm_offset_t *)&va);
     va += upl_offset;
-    while (len > 0) {
-        ssize_t sz = MIN(len, PAGESIZE);
-
+    while (len >= PAGESIZE) {
+        ssize_t sz = PAGESIZE;
+        dprintf("pageout: dmu_write off 0x%llx size 0x%llx\n", off, sz);
         dmu_write(zfsvfs->z_os, zp->z_id, off, sz, va, tx);
         va += sz;
         off += sz;
         len -= sz;
     }
-    ubc_upl_unmap(upl);
 
-#endif
+    /* The last, possibly partial block, needs to have the data zeroed which
+     * would extend past the size of the file
+     */
+    if (len > 0) {
+        ssize_t sz = len;
+
+        dprintf("pageout: dmu_writeX off 0x%llx size 0x%llx\n", off, sz);
+        dmu_write(zfsvfs->z_os, zp->z_id, off, sz, va, tx);
+
+        va += sz;
+        off += sz;
+        len -= sz;
+
+        /* Zero out the remainder of the PAGE that didnt fit in filesize */
+        bzero(va, PAGESIZE-sz);
+        dprintf("zero last 0x%llx bytes.\n", PAGESIZE-sz);
+
+    }
+    ubc_upl_unmap(upl);
 
 
 	if (err == 0) {
@@ -1298,7 +1402,7 @@ zfs_vnop_inactive(
 	DECLARE_CRED(ap);
 
     //dprintf("+vnop_inactive\n");
-    if (zfsvfs->z_vnode_create_lockX) return 0;
+    if (zfsvfs->z_vnode_create_depth) return 0;
 
 	zfs_inactive(vp, cr, NULL);
     //dprintf("-vnop_inactive\n");
@@ -1331,12 +1435,13 @@ void vnop_reclaim_thread(void *arg)
 
         while (1) {
 
-            mutex_enter(&zfsvfs->z_vnode_create_lock);
+            mutex_enter(&zfsvfs->z_reclaim_list_lock);
 
             zp = list_head(&zfsvfs->z_reclaim_znodes);
-            if (zp)
+            if (zp) {
                 list_remove(&zfsvfs->z_reclaim_znodes, zp);
-            mutex_exit(&zfsvfs->z_vnode_create_lock);
+            }
+            mutex_exit(&zfsvfs->z_reclaim_list_lock);
 
             /* Only exit thread once list is empty */
             if (!zp) break;
@@ -1358,7 +1463,7 @@ void vnop_reclaim_thread(void *arg)
 
 #ifdef VERBOSE_RECLAIM
         if (count)
-            printf("reclaim_thr: %p nodes released: %d\n", zfsvfs, count);
+            printf("reclaim_thr: %p nodes released: %d (in list %llu)\n", zfsvfs, count, vnop_num_reclaims);
         count = 0;
 #endif
 
@@ -1426,28 +1531,24 @@ zfs_vnop_reclaim(
      * reclaims until later.
      */
 
-    // We always grab vnode_create_lock before znodes_lock
     mutex_enter(&zfsvfs->z_znodes_lock);
     zp->z_vnode = NULL;
     list_remove(&zfsvfs->z_all_znodes, zp); //XXX
     mutex_exit(&zfsvfs->z_znodes_lock);
 
+
+    mutex_enter(&zfsvfs->z_reclaim_list_lock);
+    list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
+    mutex_exit(&zfsvfs->z_reclaim_list_lock);
+
 #ifdef _KERNEL
     atomic_inc_64(&vnop_num_reclaims);
 #endif
-    // We might already holding vnode_create_lock
-    if (mutex_owner(&zfsvfs->z_vnode_create_lock)) {
-        list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
-    } else {
-        mutex_enter(&zfsvfs->z_vnode_create_lock);
-        list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
-        mutex_exit(&zfsvfs->z_vnode_create_lock);
-    }
 
 #if 1
     if (!has_warned && vnop_num_reclaims > 20000) {
         has_warned = 1;
-        printf("ZFS: Reclaim thread appears dead (%llu) -- good luck\n",
+        printf("ZFS: Reclaim thread is being slow (%llu)\n",
                vnop_num_reclaims);
     }
 #endif
@@ -1466,8 +1567,35 @@ zfs_vnop_reclaim(
 #ifdef RECLAIM_SIGNAL
     cv_signal(&zfsvfs->z_reclaim_thr_cv);
 #endif
+
     return 0;
 }
+
+static void zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs)
+{
+    int count = 0;
+
+    /* Attempt to throttle. If the list grows "large" we need to slow down
+     * the vnode_create() process until it is manageable.
+     */
+    while (vnop_num_reclaims > zfs_vnop_reclaim_throttle) {
+        count++;
+        if (zfsvfs)
+            cv_signal(&zfsvfs->z_reclaim_thr_cv);
+        /*
+         * Instead of a blind delay, should we use cv_timedwait() and have
+         * reclaim thread signal back once it is under the limit?
+         */
+        delay(hz>>4);
+    }
+
+    if (count)
+        printf("ZFS: Delaying due to reclaim size (vnop_reclaim_throttle) times %u\n",
+               count);
+
+}
+
+
 
 static int
 zfs_vnop_mknod(
@@ -1611,7 +1739,7 @@ zfs_vnop_getxattr(
 	struct componentname  cn;
 	int  error;
 
-    dprintf("+getxattr vp %p\n", ap->a_vp);
+    //dprintf("+getxattr vp %p\n", ap->a_vp);
 
 	ZFS_ENTER(zfsvfs);
 
@@ -1667,7 +1795,7 @@ out:
 	}
 	ZFS_EXIT(zfsvfs);
 
-    dprintf("-getxattr vp %p : %d\n", ap->a_vp, error);
+    //dprintf("-getxattr vp %p : %d\n", ap->a_vp, error);
 
 	return (error);
 }
@@ -1763,7 +1891,6 @@ zfs_vnop_removexattr(
 	struct vnode *xvp = NULLVP;
 	znode_t  *zp = VTOZ(vp);
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
-	struct vnop_remove_args  args;
 	struct componentname  cn;
 	int  error;
     uint64_t xattr;
@@ -1933,7 +2060,7 @@ zfs_vnop_getnamedstream(
 		char *a_name;
 	} */ *ap)
 {
-	DECLARE_CRED_AND_CONTEXT(ap);
+	DECLARE_CRED(ap);
 	struct vnode *vp = ap->a_vp;
 	struct vnode **svpp = ap->a_svpp;
 	struct vnode *xdvp = NULLVP;
@@ -1991,14 +2118,13 @@ zfs_vnop_makenamedstream(
 		char *a_name;
 	} */ *ap)
 {
-	DECLARE_CRED_AND_CONTEXT(ap);
+	DECLARE_CRED(ap);
 	struct vnode *vp = ap->a_vp;
 	struct vnode *xdvp = NULLVP;
 	znode_t  *zp = VTOZ(vp);
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
 	struct componentname  cn;
 	struct vnode_attr  vattr;
-	struct vnop_create_args  args;
 	int  error = 0;
 
     dprintf("+makenamedstream vp %p\n", ap->a_vp);
@@ -2107,7 +2233,6 @@ zfs_vnop_exchange(
     vnode_t *fvp = ap->a_fvp;
     vnode_t *tvp = ap->a_tvp;
     znode_t  *fzp;
-    znode_t  *tzp;
     zfsvfs_t  *zfsvfs;
 
     /* The files must be on the same volume. */
@@ -2122,7 +2247,6 @@ zfs_vnop_exchange(
         return (EINVAL);
 
     fzp = VTOZ(fvp);
-    // tzp = VTOZ(tvp);
     zfsvfs = fzp->z_zfsvfs;
 
     ZFS_ENTER(zfsvfs);
@@ -2251,7 +2375,6 @@ zfs_vnop_readdirattr(
     int             maxcount = ap->a_maxcount;
     uint64_t        offset = (uint64_t)uio_offset(uio);
     u_int32_t       fixedsize;
-    u_int32_t       defaultvariablesize;
     u_int32_t       maxsize;
     u_int32_t       attrbufsize;
     void            *attrbufptr = NULL;
@@ -2345,7 +2468,7 @@ zfs_vnop_readdirattr(
             offset = 2;
             continue;
         } else if (offset == 2 && zfs_show_ctldir(zp)) {
-            (void) strcpy(zap.za_name, ZFS_CTLDIR_NAME);
+            (void) strlcpy(zap.za_name, ZFS_CTLDIR_NAME, MAXNAMELEN);
             objnum = ZFSCTL_INO_ROOT;
             vtype = VDIR;
         } else {
@@ -2373,6 +2496,25 @@ zfs_vnop_readdirattr(
             }
         }
 
+        /* Grab znode if required */
+        if (prefetch) {
+            dmu_prefetch(zfsvfs->z_os, objnum, 0, 0);
+            if ((error = zfs_zget(zfsvfs, objnum, &tmp_zp)) == 0) {
+                if (vtype == VNON)
+                    vtype = IFTOVT(tmp_zp->z_mode); // SA_LOOKUP?
+            } else {
+                tmp_zp = NULL;
+                error = ENXIO;
+                goto skip_entry;
+                /*
+                 * Currently ".zfs" entry is skipped, as we have no methods
+                 * to pack that into the attrs (all helper functions take
+                 * znode_t *, and .zfs is not). Add dummy .zfs code here if
+                 * it is desirable to show .zfs in Finder.
+                 */
+            }
+        }
+
         /*
          * Setup for the next item's attribute list
          */
@@ -2381,18 +2523,6 @@ zfs_vnop_readdirattr(
         attrinfo.ai_attrbufpp = &attrptr;
         attrinfo.ai_varbufpp = &varptr;
 
-        /* Grab znode if required */
-        if (prefetch) {
-            dmu_prefetch(zfsvfs->z_os, objnum, 0, 0);
-            if (zfs_zget(zfsvfs, objnum, &tmp_zp) == 0) {
-                if (vtype == VNON)
-                    vtype = IFTOVT(tmp_zp->z_mode); // SA_LOOKUP?
-            } else {
-                tmp_zp = NULL;
-                error = ENXIO;
-                goto update;
-            }
-        }
         /*
          * Pack entries into attribute buffer.
          */
@@ -2433,6 +2563,7 @@ zfs_vnop_readdirattr(
             /*
              * Move to the next entry, fill in the previous offset.
              */
+        skip_entry:
             if ((offset > 2) ||
                 (offset == 2 && !zfs_show_ctldir(zp))) {
                 zap_cursor_advance(&zc);
@@ -2783,11 +2914,9 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
      * vnode_create() has a habit of calling both vnop_reclaim() and
      * vnop_fsync(), which can create havok as we are already holding locks.
      */
-    //mutex_enter(&zfsvfs->z_vnode_create_lock);
-    atomic_add_64(&zfsvfs->z_vnode_create_lockX, 1);
+    atomic_add_64(&zfsvfs->z_vnode_create_depth, 1);
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0);
-    atomic_sub_64(&zfsvfs->z_vnode_create_lockX, 1);
-    //mutex_exit(&zfsvfs->z_vnode_create_lock);
+    atomic_sub_64(&zfsvfs->z_vnode_create_depth, 1);
 
     dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
 
@@ -2795,10 +2924,15 @@ int zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 
 	zp->z_vid = vnode_vid(*vpp);
     zp->z_vnode = *vpp;
+
     /*
-     * FreeBSD version does not hold a ref on the new vnode
+     * OSX Finder is hardlink agnostic, so we need to mark vp's that
+     * are hardlinks, so that it forces a lookup each time, ignoring
+     * the name cache.
      */
-    //vnode_put(*vpp);
+    if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG))
+        vnode_setmultipath(*vpp);
+
     return 0;
 }
 
@@ -2844,6 +2978,3 @@ int zfs_vfsops_fini(void)
 
     return vfs_fsremove(zfs_vfsconf);
 }
-
-
-

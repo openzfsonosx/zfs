@@ -48,10 +48,8 @@ dmu_tx_stats_t dmu_tx_stats = {
 	{ "dmu_tx_error",		KSTAT_DATA_UINT64 },
 	{ "dmu_tx_suspended",		KSTAT_DATA_UINT64 },
 	{ "dmu_tx_group",		KSTAT_DATA_UINT64 },
-	{ "dmu_tx_how",			KSTAT_DATA_UINT64 },
 	{ "dmu_tx_memory_reserve",	KSTAT_DATA_UINT64 },
 	{ "dmu_tx_memory_reclaim",	KSTAT_DATA_UINT64 },
-	{ "dmu_tx_memory_inflight",	KSTAT_DATA_UINT64 },
 	{ "dmu_tx_dirty_throttle",	KSTAT_DATA_UINT64 },
 	{ "dmu_tx_dirty_delay",		KSTAT_DATA_UINT64 },
 	{ "dmu_tx_dirty_over_max",	KSTAT_DATA_UINT64 },
@@ -656,8 +654,15 @@ dmu_tx_hold_free(dmu_tx_t *tx, uint64_t object, uint64_t off, uint64_t len)
 		uint64_t end = (off + len) >> shift;
 		uint64_t i;
 
-		ASSERT(dn->dn_datablkshift != 0);
 		ASSERT(dn->dn_indblkshift != 0);
+
+		/*
+		 * dnode_reallocate() can result in an object with indirect
+		 * blocks having an odd data block size.  In this case,
+		 * just check the single block.
+		 */
+		if (dn->dn_datablkshift == 0)
+			start = end = 0;
 
 		zio = zio_root(tx->tx_pool->dp_spa,
 		    NULL, NULL, ZIO_FLAG_CANFAIL);
@@ -1246,15 +1251,12 @@ dmu_tx_unassign(dmu_tx_t *tx)
 int
 dmu_tx_assign(dmu_tx_t *tx, txg_how_t txg_how)
 {
-	hrtime_t before;
 	int err;
 
 	ASSERT(tx->tx_txg == 0);
 	ASSERT(txg_how == TXG_WAIT || txg_how == TXG_NOWAIT ||
 	    txg_how == TXG_WAITED);
 	ASSERT(!dsl_pool_sync_context(tx->tx_pool));
-
-	before = gethrtime();
 
 	if (txg_how == TXG_WAITED)
 		tx->tx_waited = B_TRUE;
@@ -1273,8 +1275,6 @@ dmu_tx_assign(dmu_tx_t *tx, txg_how_t txg_how)
 
 	txg_rele_to_quiesce(&tx->tx_txgh);
 
-	spa_tx_assign_add_nsecs(tx->tx_pool->dp_spa, gethrtime() - before);
-
 	return (0);
 }
 
@@ -1283,9 +1283,12 @@ dmu_tx_wait(dmu_tx_t *tx)
 {
 	spa_t *spa = tx->tx_pool->dp_spa;
 	dsl_pool_t *dp = tx->tx_pool;
+	hrtime_t before;
 
 	ASSERT(tx->tx_txg == 0);
 	ASSERT(!dsl_pool_config_held(tx->tx_pool));
+
+	before = gethrtime();
 
 	if (tx->tx_wait_dirty) {
 		uint64_t dirty;
@@ -1338,6 +1341,8 @@ dmu_tx_wait(dmu_tx_t *tx)
 		 */
 		txg_wait_open(tx->tx_pool, tx->tx_lasttried_txg + 1);
 	}
+
+	spa_tx_assign_add_nsecs(spa, gethrtime() - before);
 }
 
 void

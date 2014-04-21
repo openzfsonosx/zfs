@@ -157,12 +157,10 @@ static struct vop_vector zfsctl_ops_shares_dir;
 struct vnodeopv_desc zfsctl_ops_root;
 struct vnodeopv_desc zfsctl_ops_snapdir;
 struct vnodeopv_desc zfsctl_ops_snapshot;
-static struct vnodeopv_desc zfsctl_ops_shares;
-static struct vnodeopv_desc zfsctl_ops_shares_dir;
 #endif
 
 static struct vnode *zfsctl_mknode_snapdir(struct vnode *);
-static struct vnode *zfsctl_mknode_shares(struct vnode *);
+//static struct vnode *zfsctl_mknode_shares(struct vnode *);
 static struct vnode *zfsctl_snapshot_mknode(struct vnode *, uint64_t objset);
 static int zfsctl_unmount_snap(zfs_snapentry_t *, int, cred_t *);
 
@@ -319,13 +317,9 @@ zfsctl_fini(void)
 boolean_t
 zfsctl_is_node(struct vnode *vp)
 {
-	//return (vn_matchops(vp, zfsctl_ops_root) ||
-    //  vn_matchops(vp, zfsctl_ops_snapdir) ||
-    //  vn_matchops(vp, zfsctl_ops_snapshot) ||
-    //  vn_matchops(vp, zfsctl_ops_shares) ||
-    //  vn_matchops(vp, zfsctl_ops_shares_dir));
-    dprintf("is_node %p\n", vp);
-    return B_TRUE;
+    if (vnode_tag(vp) == VT_OTHER)
+        return B_TRUE;
+    return B_FALSE;
 }
 
 /*
@@ -716,7 +710,7 @@ zfsctl_root_getattr(ap)
 	vap->va_ctime = vap->va_ctime;
 
 	if (VATTR_IS_ACTIVE(vap, va_name) && vap->va_name) {
-        strcpy(vap->va_name, ".zfs");
+        (void)strlcpy(vap->va_name, ".zfs", MAXPATHLEN);
         VATTR_SET_SUPPORTED(vap, va_name);
     }
 
@@ -906,8 +900,8 @@ zfsctl_snapshot_zname(struct vnode *vp, const char *name, int len, char *zname)
 	dmu_objset_name(os, zname);
 	if (strlen(zname) + 1 + strlen(name) >= len)
 		return (ENAMETOOLONG);
-	(void) strcat(zname, "@");
-	(void) strcat(zname, name);
+	(void) strlcat(zname, "@", len);
+	(void) strlcat(zname, name, len);
 	return (0);
 }
 
@@ -1151,14 +1145,14 @@ static int
 zfsctl_snapdir_mkdir(struct vnode *dvp, char *dirname, vattr_t *vap, struct vnode  **vpp,
     cred_t *cr, caller_context_t *cc, int flags, vsecattr_t *vsecp)
 {
+    return ENOTSUP;
+#if 0
 	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(dvp));
 	char name[MAXNAMELEN];
 	int err, error;
 	//static enum symfollow follow = NO_FOLLOW;
 	static enum uio_seg seg = UIO_SYSSPACE;
 
-    return ENOTSUP;
-#if 0
 	if (snapshot_namecheck(dirname, NULL, NULL) != 0)
 		error = SET_ERROR(EILSEQ);
 		goto out;
@@ -1270,10 +1264,17 @@ zfsctl_snapdir_lookup(ap)
 
 	ZFS_ENTER(zfsvfs);
 
+    // Returns a hold
 	if (gfs_lookup_dot(vpp, dvp, zfsvfs->z_ctldir, nm) == 0) {
 		ZFS_EXIT(zfsvfs);
 		return (0);
 	}
+
+    if (vpp && *vpp)
+        dprintf("snapdir_lookup vp %p iocount is %d at exit\n",
+                *vpp, ((uint32_t *)*vpp)[23]);
+    else
+        dprintf("snapdir_lookup vp NULL\n");
 
 	if (flags & FIGNORECASE) {
 		boolean_t conflict = B_FALSE;
@@ -1283,6 +1284,7 @@ zfsctl_snapdir_lookup(ap)
 		if (err == 0) {
 			strlcpy(nm, real, sizeof(nm));
 		} else if (err != ENOTSUP) {
+            dprintf("exit1\n");
 			ZFS_EXIT(zfsvfs);
 			return (err);
 		}
@@ -1323,6 +1325,7 @@ zfsctl_snapdir_lookup(ap)
 		}
 		mutex_exit(&sdp->sd_lock);
 		ZFS_EXIT(zfsvfs);
+        dprintf("exit2\n");
 		return (err);
 	}
 
@@ -1338,6 +1341,7 @@ zfsctl_snapdir_lookup(ap)
 		 * forcing EILSEQ to ENOENT.
 		 * Since shell ultimately passes "*" or "?" as name to lookup
 		 */
+        dprintf("exit3\n");
 		return (err == EILSEQ ? ENOENT : err);
 	}
 	if (dmu_objset_hold(snapname, FTAG, &snap) != 0) {
@@ -1350,12 +1354,13 @@ zfsctl_snapdir_lookup(ap)
 			err = ENOENT;
 		}
 		ZFS_EXIT(zfsvfs);
+        dprintf("exit4\n");
 		return (err);
 	}
 
 	sep = kmem_alloc(sizeof (zfs_snapentry_t), KM_SLEEP);
 	sep->se_name = kmem_alloc(strlen(nm) + 1, KM_SLEEP);
-	(void) strcpy(sep->se_name, nm);
+	(void) strlcpy(sep->se_name, nm, strlen(nm) + 1);
     dprintf("Calling snapshot_mknode for '%s'\n", snapname);
 	*vpp = sep->se_root = zfsctl_snapshot_mknode(dvp, dmu_objset_id(snap));
 
@@ -1363,6 +1368,12 @@ zfsctl_snapdir_lookup(ap)
 
 	dmu_objset_rele(snap, FTAG);
 domount:
+    if (vpp && *vpp)
+        dprintf("snapdir_lookup domount vp %p iocount is %d at exit\n",
+                *vpp, ((uint32_t *)*vpp)[23]);
+    else
+        dprintf("domount NULL\n");
+
     // vfs_statfs(vfsp)->f_mntfromname
 	mountpoint_len = strlen(vfs_statfs(vnode_mount(dvp))->f_mntonname) +
 	    strlen("/" ZFS_CTLDIR_NAME "/snapshot/") + strlen(nm) + 1;
@@ -1378,6 +1389,12 @@ domount:
 
     dprintf("Would call mount here on '%s' for '%s'\n", mountpoint, snapname);
 
+#ifdef _KERNEL
+
+    zfs_ereport_snapshot_post(FM_EREPORT_ZFS_SNAPSHOT_MOUNT,
+                              dmu_objset_spa(zfsvfs->z_os), snapname);
+
+#endif
 
 	//*vpp = gfs_dir_create(sizeof (zfsctl_snapdir_t), dvp, vnode_mount(dvp),
     //     zfsctl_ops_root_dvnodeops, ZFSCTL_INO_ROOT, zfsctl_root_entries,
@@ -1398,25 +1415,29 @@ domount:
 		 * without requiring manual mounts of <snapname>.
 		 */
 		//ASSERT(VTOZ(*vpp)->z_zfsvfs != zfsvfs);
-        dprintf("ASSert\n");
         // Not a znode in apple
 		//VTOZ(*vpp)->z_zfsvfs->z_parent = zfsvfs;
-        dprintf("VTOZ\n");
-
 
         // VFS_RELE(vfsp); // not needed, HELD from domount() call
+
+        /* In non-OSX, we hold the 'vp' which is the place to mount
+         * call the mount(), which gets us a new 'vpp'. Then they
+         * release one of them, and return the other with iocount
+         * In OSX: we don't call mount() and don't get a new 'vpp', so
+         * we retain the iocount
+         */
         vnode_put(*vpp); // release the anchor vp hold
 
-        dprintf("snapdir_lookup vp iocount is %d\n",((uint32_t *)*vpp)[23]);
 	}
-    dprintf("mootex\n");
 	mutex_exit(&sdp->sd_lock);
 	ZFS_EXIT(zfsvfs);
 	if (err != 0) {
         VN_RELE(*vpp);
 		*vpp = NULL;
     }
-    dprintf("snapdir_lookup returning with %d\n", err);
+    //dprintf("snapdir_lookup returning with %d\n", err);
+    dprintf("snapdir_lookup vp %p iocount is %d at exit\n",
+            *vpp, ((uint32_t *)*vpp)[23]);
 	return (err);
 }
 
@@ -1489,7 +1510,7 @@ zfsctl_snapdir_readdir_cb(struct vnode *vp, void *dp, int *eofp,
 	}
 
     odp=dp;
-    (void) strcpy(odp->d_name, snapname);
+    (void) strlcpy(odp->d_name, snapname, MAXPATHLEN);
     odp->d_ino = ZFSCTL_INO_SNAP(id);
 
 	*nextp = cookie;
@@ -1894,6 +1915,7 @@ end:
 	return (gfs_vop_inactive(&iap));
 }
 
+#if 0 // unused function
 static int
 zfsctl_traverse_begin(struct vnode **vpp, int lktype)
 {
@@ -1924,7 +1946,6 @@ zfsctl_snapshot_getattr(ap)
 	} */ *ap;
 {
 	struct vnode *vp = ap->a_vp;
-	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
 	int err;
 
     dprintf("zfsctl: XXX +snapshot_getattr\n");
@@ -1935,6 +1956,7 @@ zfsctl_snapshot_getattr(ap)
     dprintf("zfsctl: XXX -snapshot_getattr\n");
 	return (err);
 }
+#endif
 
 #ifndef __APPLE__
 static int
@@ -1955,6 +1977,7 @@ zfsctl_snapshot_fid(ap)
 }
 #endif
 
+#if 0 // unused function
 static int
 zfsctl_snapshot_lookup(ap)
 	struct vnop_lookup_args /* {
@@ -1987,6 +2010,7 @@ zfsctl_snapshot_lookup(ap)
 		vn_lock(*vpp, /*LK_EXCLUSIVE |*/ LK_RETRY);
 	return (error);
 }
+#endif
 
 #ifndef __APPLE__
 static int

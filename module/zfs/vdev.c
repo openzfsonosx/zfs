@@ -1076,15 +1076,13 @@ vdev_open_child(void *arg)
 static boolean_t
 vdev_uses_zvols(vdev_t *vd)
 {
-	int c;
-
 #ifdef _KERNEL
 	if (zvol_is_zvol(vd->vdev_path))
 		return (B_TRUE);
 #endif
 
 #if 0
-	for (c = 0; c < vd->vdev_children; c++)
+	for (int c = 0; c < vd->vdev_children; c++)
 		if (vdev_uses_zvols(vd->vdev_child[c]))
 			return (B_TRUE);
 #endif

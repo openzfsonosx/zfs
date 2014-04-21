@@ -171,6 +171,7 @@ int zprop_expand_list(libzfs_handle_t *hdl, zprop_list_t **plp,
  * mounted.
  */
 #define	CL_GATHER_MOUNT_ALWAYS	1
+#define	CL_GATHER_SKIP_SNAPSHOT	2
 
 typedef struct prop_changelist prop_changelist_t;
 

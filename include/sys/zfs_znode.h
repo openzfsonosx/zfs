@@ -229,9 +229,14 @@ typedef struct znode {
 	boolean_t	z_is_mapped;	/* are we mmap'ed */
 	boolean_t	z_is_ctldir;	/* are we .zfs entry */
 
-    krwlock_t       z_map_lock;     /* page map lock */
+    krwlock_t   z_map_lock;     /* page map lock */
 
-    uint32_t        z_vid;
+#ifdef __APPLE__
+	list_node_t	z_link_reclaim_node;	/* all reclaim znodes in fs link */
+    uint32_t    z_vid;  /* OSX vnode_vid */
+    /* Track vnop_lookup name for Finder - not for anything else */
+    char        z_finder_hardlink_name[MAXPATHLEN];
+#endif
 
 #ifdef ZFS_DEBUG
 	list_t		z_stalker;	/*vnode life tracker */
@@ -269,11 +274,6 @@ typedef struct znode {
 #define ZTOV(ZP) ((ZP)->z_vnode)
 #define VTOZ(VP)        ((znode_t *)vnode_fsnode((VP)))
 
-// Should we rename these to ZTOV, VTOZ ?
-#define	ZTOI(znode)	(&((znode)->z_vnode))
-#define	ITOZ(inode)	(container_of((vnode), znode_t, z_vnode))
-#define	ZTOZSB(znode)	((zfs_sb_t *)(ZTOI(znode)->i_sb->s_fs_info))
-#define	ITOZSB(inode)	((zfs_sb_t *)((vnode)->i_sb->s_fs_info))
 
 #define	S_ISDEV(mode)	(S_ISCHR(mode) || S_ISBLK(mode) || S_ISFIFO(mode))
 

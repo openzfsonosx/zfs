@@ -62,7 +62,9 @@ extern "C" {
 #include <sys/time.h>
 #include <vm/seg_kmem.h>
 #include <sys/zone.h>
+#include <sys/sdt.h>
 #include <sys/zfs_debug.h>
+#include <sys/zfs_delay.h>
 #include <sys/fm/fs/zfs.h>
 #include <sys/sunddi.h>
 #include <sys/ctype.h>

@@ -22,6 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2014 RackTop Systems.
  */
 
 #include <sys/dmu_objset.h>
@@ -1437,7 +1438,7 @@ get_clones_stat(dsl_dataset_t *ds, nvlist_t *nv)
 	 * Only trust it if it has the right number of entries.
 	 */
 	if (ds->ds_phys->ds_next_clones_obj != 0) {
-		ASSERT0(zap_count(mos, ds->ds_phys->ds_next_clones_obj,
+		VERIFY0(zap_count(mos, ds->ds_phys->ds_next_clones_obj,
 		    &count));
 	}
 	if (count != ds->ds_phys->ds_num_children - 1)
@@ -1805,6 +1806,12 @@ dsl_dataset_rollback_check(void *arg, dmu_tx_t *tx)
 	error = dsl_dataset_hold(dp, ddra->ddra_fsname, FTAG, &ds);
 	if (error != 0)
 		return (error);
+
+    if (ds->ds_owner == NULL) {
+        printf("ds_owner is NULL, but FTAG isnt %p\n", FTAG);
+        dsl_dataset_rele(ds, FTAG);
+        return EINVAL;
+    }
 
 	/* must not be a snapshot */
 	if (dsl_dataset_is_snapshot(ds)) {
