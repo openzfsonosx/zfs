@@ -8,7 +8,7 @@
 
 #include <sys/zvolIO.h>
 #include <IOKit/storage/IOBlockStorageDevice.h>
-
+#include <IOKit/storage/IOStorageProtocolCharacteristics.h>
 
 /*
  * Device
@@ -41,11 +41,50 @@ bool net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
 
 bool net_lundman_zfs_zvol_device::attach(IOService* provider)
 {
+    OSDictionary		*	protocolCharacteristics = 0;
+	OSString			*	dataString				= 0;
+
     if (super::attach(provider) == false)
         return false;
     m_provider = OSDynamicCast(net_lundman_zfs_zvol, provider);
     if (m_provider == NULL)
         return false;
+
+    /*
+     * We want to set some additional properties for ZVOLs, in
+     * particular, "Virtual Device", and type "File" (or is Internal better?)
+     * Finally "Generic" type.
+     */
+
+    protocolCharacteristics = OSDictionary::withCapacity(3);
+    if (!protocolCharacteristics) {
+      IOLog("failed to create dictionary for protocolCharacteristics.\n");
+      return true;
+    }
+
+    dataString = OSString::withCString(kIOPropertyPhysicalInterconnectTypeVirtual);
+    if (!dataString) {
+      IOLog( "could not create interconnect type string\n" );
+      return true;
+    }
+    protocolCharacteristics->setObject(kIOPropertyPhysicalInterconnectTypeKey, dataString);
+    dataString->release();
+    dataString = 0;
+
+    dataString = OSString::withCString(kIOPropertyInterconnectFileKey);
+    if (!dataString) {
+      IOLog( "PGPdiskDriver::createNub: could not create interconnect location string\n" );
+      return true;
+    }
+    protocolCharacteristics->setObject(kIOPropertyPhysicalInterconnectLocationKey, dataString);
+    dataString->release();
+    dataString = 0;
+
+    setProperty( kIOPropertyProtocolCharacteristicsKey, protocolCharacteristics );
+    protocolCharacteristics->release();
+    protocolCharacteristics = 0;
+
+    setProperty( kIOBlockStorageDeviceTypeKey, kIOBlockStorageDeviceTypeGeneric );
 
     return true;
 }

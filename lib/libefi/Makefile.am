@@ -10,5 +10,7 @@ DEFAULT_INCLUDES += \
 
 noinst_LTLIBRARIES = libefi.la
 
+libefi_la_LDFLAGS= -framework DiskArbitration -framework CoreServices
+
 libefi_la_SOURCES = \
 	rdwr_efi.c

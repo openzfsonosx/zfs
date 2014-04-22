@@ -46,6 +46,9 @@
 #ifdef __APPLE__
 #include <sys/disk.h>
 #include <sys/fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int osx_device_isvirtual(char *pathbuf);
 #endif
 
 static struct uuid_to_ptag {
@@ -288,13 +291,11 @@ efi_get_info(int fd, struct dk_cinfo *dki_info)
         //      rval, dki_info->dki_dname,dki_info->dki_partition);
     }
 
-#ifdef DKIOCISVIRTUAL
-    if (!ioctl(fd, DKIOCISVIRTUAL, &is_virtual) < 0) {
-        if (is_virtual) {
-            dki_info->dki_ctype = DKC_VBD;
-        }
-    }
-#endif
+    if (osx_device_isvirtual(pathbuf)) {
+        dki_info->dki_ctype = DKC_VBD;
+        fprintf(stderr, "'%s' is virtual\r\n", pathbuf);
+    } else
+        fprintf(stderr, "'%s' is nawt virtual\r\n", pathbuf);
 
 #endif
 	return (0);
@@ -1544,3 +1545,111 @@ efi_auto_sense(int fd, struct dk_gpt **vtoc)
 	(*vtoc)->efi_parts[8].p_tag = V_RESERVED;
 	return (0);
 }
+
+
+#ifdef __APPLE__
+#include <DiskArbitration/DiskArbitration.h>
+#include <IOKit/storage/IOStorageProtocolCharacteristics.h>
+
+static const CFStringRef CoreStorageGPTGUID = CFSTR("53746F72-6167-11AA-AA11-00306543ECAC");
+static const CFStringRef CoreStorage = CFSTR("CoreStorage");
+
+typedef struct {
+	DASessionRef session;
+	DADiskRef disk;
+} DADiskSession;
+
+Boolean
+CFDictionaryValueIfPresentMatchesSubstring(CFDictionaryRef dict, CFStringRef key, CFStringRef substr)
+{
+	Boolean ret = false;
+	CFStringRef existing;
+	if (dict && CFDictionaryGetValueIfPresent(dict, key, (const void **)&existing)) {
+		CFRange range = CFStringFind(existing, substr, kCFCompareCaseInsensitive);
+		if (range.location != kCFNotFound) ret = true;
+	}
+	return ret;
+}
+
+int
+setupDADiskSession(DADiskSession *ds, const char *bsdName)
+{
+	int err = 0;
+
+	ds->session = DASessionCreate(NULL);
+	if (ds->session == NULL) {
+		err = EINVAL;
+	}
+
+	if (err == 0) {
+		ds->disk = DADiskCreateFromBSDName(NULL, ds->session, bsdName);
+		if (ds->disk == NULL) {
+			err = EINVAL;
+		}
+	}
+	return err;
+}
+
+void
+teardownDADiskSession(DADiskSession *ds)
+{
+	if (ds->session != NULL) CFRelease(ds->session);
+	if (ds->disk != NULL) CFRelease(ds->disk);
+}
+
+
+int isPathMatchForKeyAndSubstr(char *path, CFStringRef key, CFStringRef substr, Boolean *isMatch)
+{
+	if (!isMatch) return -1;
+
+	int error = 0;
+	DADiskSession ds = { 0 };
+	if ((error = setupDADiskSession(&ds, path)) == 0) {
+		CFDictionaryRef descDict = NULL;
+		if((descDict = DADiskCopyDescription(ds.disk)) != NULL) {
+			*isMatch = CFDictionaryValueIfPresentMatchesSubstring(descDict, key, substr);
+		} else {
+			error = -1;
+			fprintf(stderr, "no DADiskCopyDescription for path %s\n", path);
+			*isMatch = false;
+		}
+	}
+	teardownDADiskSession(&ds);
+	return error;
+}
+
+int osx_device_isvirtual(char *pathbuf)
+{
+  char symlink[MAXPATHLEN];
+  char *name;
+  int size;
+  struct stat stbf;
+  Boolean isCSPV = false;
+  Boolean isVIRT = false;
+
+  name = pathbuf;
+
+  // If pathbuf is a symlink, we need to read it
+  if (!lstat(pathbuf, &stbf) && S_ISLNK(stbf.st_mode)) {
+    size = readlink(pathbuf, symlink, sizeof(symlink));
+    if ((size > 0) && (size < sizeof(symlink))) {
+      symlink[size] = 0;
+      name = symlink;
+    }
+  }
+
+  //fprintf(stderr, "Checking path '%s'\n", name);
+
+  isPathMatchForKeyAndSubstr(name, kDADiskDescriptionMediaContentKey,
+                           CoreStorageGPTGUID,
+                           &isCSPV);
+  isPathMatchForKeyAndSubstr(name, kDADiskDescriptionDeviceProtocolKey,
+                             CFSTR(kIOPropertyPhysicalInterconnectTypeVirtual),
+                             &isVIRT);
+  //fprintf(stderr, "Is coldstorage %d is virtual %d\n", isCSPV,isVIRT);
+
+  return isCSPV && isVIRT;
+}
+
+
+#endif
