@@ -1,3 +1,2 @@
 
-SUBDIRS=zfs
-
+SUBDIRS=zfs ZFSDriver

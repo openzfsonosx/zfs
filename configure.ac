@@ -129,6 +129,7 @@ AC_CONFIG_FILES([
 	module/zcommon/Makefile
 	module/zfs/Makefile
 	module/zpios/Makefile
+	module/ZFSDriver/Makefile
 	include/Makefile
 	include/sys/Makefile
 	include/sys/fs/Makefile

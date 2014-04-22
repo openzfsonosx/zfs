@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleExecutable</key>
+	<string>${EXECUTABLE_NAME}</string>
+	<key>CFBundleIconFile</key>
+	<string></string>
+	<key>CFBundleIdentifier</key>
+	<string>com.osxkernel.${PRODUCT_NAME:rfc1034identifier}</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>${PRODUCT_NAME}</string>
+	<key>CFBundlePackageType</key>
+	<string>KEXT</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>IOKitPersonalities</key>
+	<dict>
+		<key>ZFSLabelScheme</key>
+		<dict>
+			<key>CFBundleIdentifier</key>
+			<string>com.osxkernel.${PRODUCT_NAME:rfc1034identifier}</string>
+			<key>IOClass</key>
+			<string>ZFSLabelScheme</string>
+			<key>IOMatchCategory</key>
+			<string>IOStorage</string>
+			<key>IOProbeScore</key>
+			<integer>500</integer>
+			<key>IOProviderClass</key>
+			<string>IOMedia</string>
+			<key>IOPropertyMatch</key>
+			<dict>
+				<key>Content Hint</key>
+				<string>6A898CC3-1DD2-11B2-99A6-080020736631</string>
+			</dict>
+		</dict>
+		<key>ZFSProxyMediaScheme</key>
+		<dict>
+			<key>CFBundleIdentifier</key>
+			<string>com.osxkernel.${PRODUCT_NAME:rfc1034identifier}</string>
+			<key>IOClass</key>
+			<string>ZFSProxyMediaScheme</string>
+			<key>IOMatchCategory</key>
+			<string>IOStorage</string>
+			<key>IOProbeScore</key>
+			<integer>500</integer>
+			<key>IOProviderClass</key>
+			<string>IOMedia</string>
+			<key>IOPropertyMatch</key>
+			<array>
+				<dict>
+					<key>Content Hint</key>
+					<string>zfs_pool_proxy</string>
+				</dict>
+				<dict>
+					<key>Content Hint</key>
+					<string>zfs_filesystem_proxy</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2011 __MyCompanyName__. All rights reserved.</string>
+	<key>OSBundleLibraries</key>
+	<dict>
+		<key>com.apple.iokit.IOStorageFamily</key>
+		<string>1.6</string>
+		<key>com.apple.kpi.iokit</key>
+		<string>9.0.0</string>
+		<key>com.apple.kpi.libkern</key>
+		<string>9.0.0</string>
+	</dict>
+</dict>
+</plist>
