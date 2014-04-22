@@ -1807,11 +1807,11 @@ dsl_dataset_rollback_check(void *arg, dmu_tx_t *tx)
 	if (error != 0)
 		return (error);
 
-    if (ds->ds_owner == NULL) {
-        printf("ds_owner is NULL, but FTAG isnt %p\n", FTAG);
-        dsl_dataset_rele(ds, FTAG);
-        return EINVAL;
-    }
+	if (ddra->ddra_owner != NULL && ds->ds_owner == NULL) {
+		printf("ds_owner is NULL, but FTAG isnt %p\n", FTAG);
+		dsl_dataset_rele(ds, FTAG);
+		return EINVAL;
+	}
 
 	/* must not be a snapshot */
 	if (dsl_dataset_is_snapshot(ds)) {
