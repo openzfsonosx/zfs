@@ -1648,7 +1648,7 @@ int osx_device_isvirtual(char *pathbuf)
                              &isVIRT);
   //fprintf(stderr, "Is coldstorage %d is virtual %d\n", isCSPV,isVIRT);
 
-  return isCSPV && isVIRT;
+  return isCSPV || isVIRT;
 }
 
 
