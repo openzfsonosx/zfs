@@ -3020,6 +3020,12 @@ zfs_suspend_fs(zfsvfs_t *zfsvfs)
 		dprintf("Warning: No delay at end of zfs_suspend_fs\n");
 #endif /* __APPLE__ */
 
+    /*
+     * For rollback and similar, we need to flush the name cache
+     */
+    dnlc_purge_vfsp(zfsvfs->z_vfs, 0);
+
+
 	return (0);
 }
 
