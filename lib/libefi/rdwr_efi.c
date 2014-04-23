@@ -295,7 +295,7 @@ efi_get_info(int fd, struct dk_cinfo *dki_info)
 			    dki_info->dki_partition);
 	}
 
-	if (osx_device_isvirtual(pathbuf)) {
+	if (osx_device_isvirtual(dki_info->dki_dname)) {
 		dki_info->dki_ctype = DKC_VBD;
 		if (efi_debug)
 			(void) fprintf(stderr,
@@ -1562,6 +1562,8 @@ efi_auto_sense(int fd, struct dk_gpt **vtoc)
 
 static const CFStringRef CoreStorageLogicalVolumeMediaPathSubstring =
     CFSTR("CoreStoragePhysical/CoreStorageGroup");
+static const CFStringRef VirtualInterfaceDeviceProtocolSubstring =
+    CFSTR(kIOPropertyPhysicalInterconnectTypeVirtual);
 
 typedef struct {
 	DASessionRef session;
@@ -1614,7 +1616,7 @@ teardownDADiskSession(DADiskSession *ds)
 
 
 int
-isPathMatchForKeyAndSubstr(char *path, CFStringRef key, CFStringRef substr,
+isDeviceMatchForKeyAndSubstr(char *device, CFStringRef key, CFStringRef substr,
     Boolean *isMatch)
 {
 	int error;
@@ -1623,7 +1625,7 @@ isPathMatchForKeyAndSubstr(char *path, CFStringRef key, CFStringRef substr,
 	if (!isMatch)
 		return (-1);
 
-	if ((error = setupDADiskSession(&ds, path)) == 0) {
+	if ((error = setupDADiskSession(&ds, device)) == 0) {
 		CFDictionaryRef descDict = NULL;
 		if((descDict = DADiskCopyDescription(ds.disk)) != NULL) {
 			*isMatch =
@@ -1632,8 +1634,8 @@ isPathMatchForKeyAndSubstr(char *path, CFStringRef key, CFStringRef substr,
 		} else {
 			error = -1;
 			(void) fprintf(stderr,
-			    "no DADiskCopyDescription for path %s\n",
-			    path);
+			    "no DADiskCopyDescription for device %s\n",
+			    device);
 			*isMatch = false;
 		}
 	}
@@ -1642,36 +1644,27 @@ isPathMatchForKeyAndSubstr(char *path, CFStringRef key, CFStringRef substr,
 	return (error);
 }
 
+/* 
+ * Caller is responsible for supplying a /dev/disk* block device path
+ * or the BSD name (disk*).
+ */
 int
-osx_device_isvirtual(char *pathbuf)
+osx_device_isvirtual(char *device)
 {
-	char symlink[MAXPATHLEN];
-	char *name;
-	int size;
-	struct stat stbf;
 	Boolean isCoreStorageLV = false;
 	Boolean isVirtualInterface = false;
 
-	name = pathbuf;
-
-	/* If pathbuf is a symlink, we need to read it. */
-	if (!lstat(pathbuf, &stbf) && S_ISLNK(stbf.st_mode)) {
-		size = readlink(pathbuf, symlink, sizeof(symlink));
-		if ((size > 0) && (size < sizeof(symlink))) {
-			symlink[size] = 0;
-			name = symlink;
-		}
-	}
-
 	if (efi_debug)
-		(void) fprintf(stderr, "Checking path '%s'\n", name);
+		(void) fprintf(stderr, "Checking if '%s' is virtual\n", device);
 
-	isPathMatchForKeyAndSubstr(name, kDADiskDescriptionMediaPathKey,
+	isDeviceMatchForKeyAndSubstr(device,
+	    kDADiskDescriptionMediaPathKey,
 	    CoreStorageLogicalVolumeMediaPathSubstring,
 	    &isCoreStorageLV);
 
-	isPathMatchForKeyAndSubstr(name, kDADiskDescriptionDeviceProtocolKey,
-	    CFSTR(kIOPropertyPhysicalInterconnectTypeVirtual),
+	isDeviceMatchForKeyAndSubstr(device,
+	    kDADiskDescriptionDeviceProtocolKey,
+	    VirtualInterfaceDeviceProtocolSubstring,
 	    &isVirtualInterface);
 
 	if (efi_debug)
