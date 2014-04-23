@@ -679,6 +679,7 @@ __zvol_rename_minor(zvol_state_t *zv, const char *newname)
 #endif
 
 
+#include <sys/spa_impl.h>
 
 int
 zvol_first_open(zvol_state_t *zv)
@@ -687,8 +688,16 @@ zvol_first_open(zvol_state_t *zv)
 	uint64_t volsize;
 	int error;
 	uint64_t readonly;
+    spa_t *spa;
 
     dprintf("zvol_first_open: '%s'\n", zv->zv_name);
+
+    /* Check if we are suspended first */
+    spa = spa_lookup(zv->zv_name);
+    if (spa && spa->spa_async_suspended) {
+        printf("zvol_first_open: spa suspended, denying open\n");
+        return EBUSY;
+    }
 
 	/* lie and say we're read-only */
 	error = dmu_objset_own(zv->zv_name, DMU_OST_ZVOL, B_TRUE,
