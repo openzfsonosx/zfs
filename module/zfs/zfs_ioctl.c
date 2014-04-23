@@ -101,7 +101,6 @@ extern int file_drop(int);
 static int mnttab_file_create(void);
 #endif
 
-kmutex_t zfsdev_state_lock;
 list_t zfsdev_state_list;
 
 extern void zfs_init(void);
@@ -5677,7 +5676,7 @@ zfsdev_get_state_impl(minor_t minor, enum zfsdev_state_type which)
 {
 	zfsdev_state_t *zs;
 
-	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
 	for (zs = list_head(&zfsdev_state_list); zs != NULL;
 	     zs = list_next(&zfsdev_state_list, zs)) {
@@ -5698,7 +5697,7 @@ zfsdev_minor_find(dev_t dev)
 {
   zfsdev_state_t *zs;
 
-  ASSERT(MUTEX_HELD(&zfsdev_state_lock));
+  ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
   for (zs = list_head(&zfsdev_state_list); zs != NULL;
        zs = list_next(&zfsdev_state_list, zs))
@@ -5714,9 +5713,9 @@ zfsdev_get_state(minor_t minor, enum zfsdev_state_type which)
 {
 	void *ptr;
 
-	mutex_enter(&zfsdev_state_lock);
+	mutex_enter(&spa_namespace_lock);
 	ptr = zfsdev_get_state_impl(minor, which);
-	mutex_exit(&zfsdev_state_lock);
+	mutex_exit(&spa_namespace_lock);
 
 	return (ptr);
 }
@@ -5748,7 +5747,7 @@ zfsdev_minor_alloc(void)
 	static minor_t last_minor = 0;
 	minor_t m;
 
-	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
 	for (m = last_minor + 1; m != last_minor; m++) {
 		if (m > ZFSDEV_MAX_MINOR)
@@ -5776,7 +5775,7 @@ zfsdev_state_init(dev_t dev)
 	zfsdev_state_t *zs;
 	minor_t minor;
 
-	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
 	minor = zfsdev_minor_alloc();
 	if (minor == 0)
@@ -5807,7 +5806,7 @@ zfsdev_state_destroy(dev_t dev)
 {
 	zfsdev_state_t *zs = NULL;
 
-	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 	//ASSERT(filp->private_data != NULL);
 
 #ifdef __APPLE__
@@ -5842,9 +5841,9 @@ static int zfsdev_open(dev_t dev, int flags, int devtype,
         return 0;
     }
 
-	mutex_enter(&zfsdev_state_lock);
+	mutex_enter(&spa_namespace_lock);
 	error = zfsdev_state_init(p);
-	mutex_exit(&zfsdev_state_lock);
+	mutex_exit(&spa_namespace_lock);
 
 	return (-error);
 }
@@ -5858,9 +5857,9 @@ static int zfsdev_release(dev_t dev, int flags, int devtype,
 
 	dprintf("zfsdev_release, flag %02X devtype %d, dev is %p, thread %p\n",
            flags, devtype, p, current_thread());
-	mutex_enter(&zfsdev_state_lock);
+	mutex_enter(&spa_namespace_lock);
 	error = zfsdev_state_destroy(p);
-	mutex_exit(&zfsdev_state_lock);
+	mutex_exit(&spa_namespace_lock);
 
 	return (-error);
 }
@@ -6108,7 +6107,6 @@ zfs_ioctl_init(void)
 
     //zfs_major = cdevsw_add(ZFS_MAJOR, &zfs_cdevsw);
     //dev = zfs_major << 24;
-    mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
     list_create(&zfsdev_state_list, sizeof (zfsdev_state_t),
 		offsetof(zfsdev_state_t, zs_next));
 
@@ -6168,6 +6166,5 @@ zfs_ioctl_fini(void)
         zfs_major = 0;
     }
 
-    mutex_destroy(&zfsdev_state_lock);
     list_destroy(&zfsdev_state_list);
 }
