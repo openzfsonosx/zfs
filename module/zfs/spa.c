@@ -1242,6 +1242,9 @@ spa_config_parse(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent,
 	return (0);
 }
 
+boolean_t spa_exporting_vdevs = B_FALSE;
+
+
 /*
  * Opposite of spa_load().
  */
@@ -1293,6 +1296,8 @@ spa_unload(spa_t *spa)
 	 */
 	spa_l2cache_drop(spa);
 
+    spa_exporting_vdevs = B_TRUE;
+
 	/*
 	 * Close all vdevs.
 	 */
@@ -1327,6 +1332,8 @@ spa_unload(spa_t *spa)
 		spa->spa_l2cache.sav_config = NULL;
 	}
 	spa->spa_l2cache.sav_count = 0;
+
+    spa_exporting_vdevs = B_FALSE;
 
 	spa->spa_async_suspended = 0;
 
@@ -2901,10 +2908,29 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 	 * up calling spa_open() again.  The real fix is to figure out how to
 	 * avoid dsl_dir_open() calling this in the first place.
 	 */
-	if (mutex_owner(&spa_namespace_lock) != curthread) {
-		mutex_enter(&spa_namespace_lock);
+#ifdef __APPLE__
+    /*
+     * Alas, our recursion call comes from IOKit, and is a different thread
+     */
+    if (spa_exporting_vdevs == B_TRUE) {
+        locked = B_FALSE;
+    } else {
+        if (mutex_owner(&spa_namespace_lock) != curthread) {
+            mutex_enter(&spa_namespace_lock);
+            locked = B_TRUE;
+        }
+    }
+
+#else /* !APPLE */
+
+    if (mutex_owner(&spa_namespace_lock) != curthread) {
+        mutex_enter(&spa_namespace_lock);
 		locked = B_TRUE;
 	}
+
+#endif
+
+
 
 	if ((spa = spa_lookup(pool)) == NULL) {
 		if (locked)

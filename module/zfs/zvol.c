@@ -678,8 +678,7 @@ __zvol_rename_minor(zvol_state_t *zv, const char *newname)
 }
 #endif
 
-
-#include <sys/spa_impl.h>
+extern boolean_t spa_exporting_vdevs;
 
 int
 zvol_first_open(zvol_state_t *zv)
@@ -688,16 +687,8 @@ zvol_first_open(zvol_state_t *zv)
 	uint64_t volsize;
 	int error;
 	uint64_t readonly;
-    spa_t *spa;
 
     dprintf("zvol_first_open: '%s'\n", zv->zv_name);
-
-    /* Check if we are suspended first */
-    spa = spa_lookup(zv->zv_name);
-    if (spa && spa_suspended(spa)) {
-        printf("zvol_first_open: spa suspended, denying open\n");
-        return EBUSY;
-    }
 
 	/* lie and say we're read-only */
 	error = dmu_objset_own(zv->zv_name, DMU_OST_ZVOL, B_TRUE,
@@ -1040,16 +1031,16 @@ zvol_open_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 	int err = 0;
     int locked = 1;
 
-    if (mutex_owner(&spa_namespace_lock))
-        locked = 0;
-    else
-        mutex_enter(&spa_namespace_lock);
+    //if (mutex_owner(&spa_namespace_lock))
+    //  locked = 0;
+    //else
+    //  mutex_enter(&spa_namespace_lock);
 
 	if (zv->zv_total_opens == 0)
 		err = zvol_first_open(zv);
 
 	if (err) {
-		if (locked) mutex_exit(&spa_namespace_lock);
+        //	if (locked) mutex_exit(&spa_namespace_lock);
 		return (err);
 	}
 	if ((flag & FWRITE) && (zv->zv_flags & ZVOL_RDONLY)) {
@@ -1077,14 +1068,14 @@ zvol_open_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 #endif
     zv->zv_total_opens++;
 
-	if (locked) mutex_exit(&spa_namespace_lock);
+    //	if (locked) mutex_exit(&spa_namespace_lock);
 
     dprintf("zol_open()->%d\n", err);
 	return (err);
 out:
 	if (zv->zv_total_opens == 0)
 		zvol_last_close(zv);
-	if (locked) mutex_exit(&spa_namespace_lock);
+	//if (locked) mutex_exit(&spa_namespace_lock);
     dprintf("zol_open(x)->%d\n", err);
 	return (err);
 }
@@ -1125,10 +1116,10 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 	int error = 0;
     int locked = 1;
 
-    if (mutex_owner(&spa_namespace_lock))
-        locked = 0;
-    else
-        mutex_enter(&spa_namespace_lock);
+    //if (mutex_owner(&spa_namespace_lock))
+    //    locked = 0;
+    //else
+    //    mutex_enter(&spa_namespace_lock);
 
     dprintf("zvol_close_impl\n");
 
@@ -1154,7 +1145,7 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 	if (zv->zv_total_opens == 0)
 		zvol_last_close(zv);
 
-	if (locked) mutex_exit(&spa_namespace_lock);
+	//if (locked) mutex_exit(&spa_namespace_lock);
 	return (error);
 }
 
