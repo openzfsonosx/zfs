@@ -694,7 +694,7 @@ zvol_first_open(zvol_state_t *zv)
 
     /* Check if we are suspended first */
     spa = spa_lookup(zv->zv_name);
-    if (spa && spa->spa_async_suspended) {
+    if (spa && spa_suspended(spa)) {
         printf("zvol_first_open: spa suspended, denying open\n");
         return EBUSY;
     }
