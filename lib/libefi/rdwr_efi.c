@@ -307,7 +307,6 @@ efi_get_info(int fd, struct dk_cinfo *dki_info)
 			    "'%s' is not virtual\n",
 			    pathbuf);
 	}
-
 #endif
 	return (0);
 error:
@@ -1561,9 +1560,8 @@ efi_auto_sense(int fd, struct dk_gpt **vtoc)
 #include <DiskArbitration/DiskArbitration.h>
 #include <IOKit/storage/IOStorageProtocolCharacteristics.h>
 
-static const CFStringRef CoreStorage = CFSTR("CoreStorage");
-static const CFStringRef CoreStorageGPTGUID =
-    CFSTR("53746F72-6167-11AA-AA11-00306543ECAC");
+static const CFStringRef CoreStorageLogicalVolumeMediaPathSubstring =
+    CFSTR("CoreStoragePhysical/CoreStorageGroup");
 
 typedef struct {
 	DASessionRef session;
@@ -1651,8 +1649,8 @@ osx_device_isvirtual(char *pathbuf)
 	char *name;
 	int size;
 	struct stat stbf;
-	Boolean isCSPV = false;
-	Boolean isVirtual = false;
+	Boolean isCoreStorageLV = false;
+	Boolean isVirtualInterface = false;
 
 	name = pathbuf;
 
@@ -1668,20 +1666,20 @@ osx_device_isvirtual(char *pathbuf)
 	if (efi_debug)
 		(void) fprintf(stderr, "Checking path '%s'\n", name);
 
-	isPathMatchForKeyAndSubstr(name, kDADiskDescriptionMediaContentKey,
-	    CoreStorageGPTGUID,
-	    &isCSPV);
+	isPathMatchForKeyAndSubstr(name, kDADiskDescriptionMediaPathKey,
+	    CoreStorageLogicalVolumeMediaPathSubstring,
+	    &isCoreStorageLV);
 
 	isPathMatchForKeyAndSubstr(name, kDADiskDescriptionDeviceProtocolKey,
 	    CFSTR(kIOPropertyPhysicalInterconnectTypeVirtual),
-	    &isVirtual);
+	    &isVirtualInterface);
 
 	if (efi_debug)
 		(void) fprintf(stderr,
-		    "Is CoreStorage %d : Is virtual %d\n",
-		    isCSPV,
-		    isVirtual);
+		    "Is CoreStorage LV %d : is virtual interface %d\n",
+		    isCoreStorageLV,
+		    isVirtualInterface);
 
-	return (isCSPV || isVirtual);
+	return (isCoreStorageLV || isVirtualInterface);
 }
 #endif
