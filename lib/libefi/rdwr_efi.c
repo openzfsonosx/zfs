@@ -291,11 +291,13 @@ efi_get_info(int fd, struct dk_cinfo *dki_info)
         //      rval, dki_info->dki_dname,dki_info->dki_partition);
     }
 
-    if (osx_device_isvirtual(pathbuf)) {
+    if (!osx_device_isvirtual(pathbuf)) {
         dki_info->dki_ctype = DKC_VBD;
-        fprintf(stderr, "'%s' is virtual\r\n", pathbuf);
+        if (efi_debug)
+            (void) fprintf(stderr, "'%s' is virtual\n", pathbuf);
     } else
-        fprintf(stderr, "'%s' is nawt virtual\r\n", pathbuf);
+        if (efi_debug)
+            (void) fprintf(stderr, "'%s' is not virtual\n", pathbuf);
 
 #endif
 	return (0);
