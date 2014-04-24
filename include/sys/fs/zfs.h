@@ -786,12 +786,7 @@ typedef struct ddt_histogram {
 
 #define	ZVOL_PROP_NAME		"name"
 
-    /*
-     * The gpt partitioning tool in OSX has an upper limit of 4096 -
-     * Volumes of greater block size can be made to work, but we will
-     * set the default to the block size that works in most cases.
-     */
-#define	ZVOL_DEFAULT_BLOCKSIZE	4096
+#define	ZVOL_DEFAULT_BLOCKSIZE	8192
 
 
 /*
