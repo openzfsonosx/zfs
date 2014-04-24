@@ -3467,6 +3467,16 @@ zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
 				devid_str_free(newdevid);
 		}
 
+#ifdef illumos
+		if (strncmp(path, "/dev/dsk/", 9) == 0)
+			path += 9;
+#elif __APPLE__
+		if (strncmp(path, "/dev/disk", 9) == 0 ||
+		    strncmp(path, "/dev/rdisk", 10) == 0)
+			path += 5;
+		else if (strncmp(path, "/private/var", 12) == 0)
+			path += 8;
+#elif __LINUX__
 		/*
 		 * For a block device only use the name.
 		 */
@@ -3475,6 +3485,7 @@ zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
 			path = strrchr(path, '/');
 			path++;
 		}
+#endif
 
 		/*
 		 * Remove the partition from the path it this is a whole disk.
