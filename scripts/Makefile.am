@@ -54,3 +54,15 @@ check:
 	@$(ZPIOS_SANITY)
 	@$(ZFS) -u
 	@echo
+
+install-data-local:
+	@echo
+	$(INSTALL) org.openzfsonosx.zed.service.plist $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist
+	$(INSTALL) zed.service.sh $(DESTDIR)/usr/local/sbin/zed.service.sh
+	$(DESTDIR)/bin/launchctl load -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist || echo "Ignoring errors"
+
+uninstall-local:
+	@echo
+	$(DESTDIR)/bin/launchctl unload -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist || echo "Ignoring errors"
+	@rm -f $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist
+	@rm -f $(DESTDIR)/usr/local/sbin/zed.service.sh
