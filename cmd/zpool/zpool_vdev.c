@@ -87,6 +87,15 @@
 #include "zpool_util.h"
 #include <sys/zfs_context.h>
 
+#ifdef illumos
+#define	DISK_ROOT	"/dev/dsk"
+#define	RDISK_ROOT	"/dev/rdsk"
+#define	BACKUP_SLICE	"s2"
+#elif __APPLE__
+#define RDISK_ROOT "/dev/r"
+#include <paths.h>
+#endif
+
 /*
  * For any given vdev specification, we can have multiple errors.  The
  * vdev_error() function keeps track of whether we have seen an error yet, and
@@ -218,6 +227,12 @@ static const int vdev_disk_database_size =
 
 #define	INQ_REPLY_LEN	96
 #define	INQ_CMD_LEN	6
+
+#ifdef DEBUG
+int zpool_vdev_debug = 1;
+#else
+int zpool_vdev_debug = 0;
+#endif
 
 #ifdef __LINUX__
 static boolean_t
@@ -547,6 +562,105 @@ check_device(const char *path, boolean_t force,
 	return (check_disk(path, cache, force, isspare, iswholedisk));
 }
 
+#ifdef __APPLE__
+/*
+ * Searches "/dev" for a device node whose dev_t matches dev.
+ *
+ * On success, the result is a C string that contains the Posix
+ * path to the dev node.  The caller is responsible for disposing
+ * of this string using "free".  On error, the result is NULL.
+ */
+
+static const char*
+osx_find_dev_string(dev_t dev)
+{
+	int err;
+	int junk;
+	const char *result;
+	DIR *dir;
+	struct dirent *this_dir_ent;
+	char this_dir_ent_path[MAXPATHLEN];
+	struct stat sb;
+
+	result = NULL;
+
+	dir = opendir(_PATH_DEV);
+
+	if (dir != NULL) {
+		do {
+			this_dir_ent = readdir(dir);
+
+			if (this_dir_ent != NULL) {
+				/*
+				 * Only interested in character or block device
+				 * drivers.
+				 */
+				if ((this_dir_ent->d_type == DT_CHR) ||
+				    (this_dir_ent->d_type == DT_BLK)) {
+					/*
+					 * Construct the full path to the dev
+					 * node.
+					 */
+					snprintf(this_dir_ent_path,
+					    sizeof(this_dir_ent_path),
+					    _PATH_DEV "%.*s",
+					    this_dir_ent->d_namlen,
+					    this_dir_ent->d_name);
+
+					err = stat(this_dir_ent_path, &sb);
+					if (err == 0) {
+#if 0
+						fprintf(stderr,
+						    "%s %08x\n",
+						    this_dir_ent_path,
+						    sb.st_rdev);
+#endif
+						if (sb.st_rdev == dev) {
+							char *tmp;
+
+							/*
+							 * We have a match.
+							 * Allocate a C string,
+							 * copy the name into
+							 * it, and set up to the
+							 * return it to our
+							 * caller.  We can't use
+							 * strdup because
+							 * there's no guarantee
+							 * that
+							 * this_dir_ent->d_name
+							 * is null terminated.
+							 */
+
+							tmp = (char *) malloc(
+							    this_dir_ent->
+							    d_namlen + 1);
+							assert(tmp != NULL);
+
+							memcpy(tmp,
+							    this_dir_ent->
+							        d_name,
+							    this_dir_ent->
+							        d_namlen);
+
+							tmp[this_dir_ent->
+							    d_namlen] = 0;
+
+							result = tmp;
+						}
+					}
+				}
+			}
+		} while ((result == NULL) && (this_dir_ent != NULL));
+
+		junk = closedir(dir);
+		assert(junk == 0);
+	}
+
+	return result;
+}
+#endif
+
 /*
  * By "whole disk" we mean an entire physical disk (something we can
  * label, toggle the write cache on, etc.) as opposed to the full
@@ -556,19 +670,107 @@ check_device(const char *path, boolean_t force,
  * it isn't.
  */
 static boolean_t
-is_whole_disk(const char *path)
+is_whole_disk(const char *arg)
 {
 	struct dk_gpt *label;
-	int fd;
+	int	fd;
+#ifdef illumos
+	char	path[MAXPATHLEN];
 
+	(void) snprintf(path, sizeof (path), "%s%s%s",
+	    RDISK_ROOT, strrchr(arg, '/'), BACKUP_SLICE);
+	if ((fd = open(path, O_RDWR | O_NDELAY)) < 0)
+		return (B_FALSE);
+	if (efi_alloc_and_init(fd, EFI_NUMPAR, &label) != 0) {
+		(void) close(fd);
+		return (B_FALSE);
+	}
+#elif __APPLE__
+	char    path[MAXPATHLEN];
+	const char *devstr;
+
+	boolean_t isdisk = !strncmp(arg, "/dev/disk", 9) && isdigit(arg[9]);
+	boolean_t isrdisk = !strncmp(arg, "/dev/rdisk", 10) && isdigit(arg[10]);
+
+	if (!isdisk && !isrdisk) {
+		if (zpool_vdev_debug)
+			fprintf(stderr,
+			    "arg '%s' is neither /dev/disk nor /dev/rdisk\n",
+			    arg);
+		struct stat stbf;
+		stat(path, &stbf);
+		devstr = osx_find_dev_string(stbf.st_rdev);
+		if (zpool_vdev_debug)
+			fprintf(stderr,
+			    "stbf.st_rdev d %d : devstr s %s\n",
+			    stbf.st_rdev,
+			    devstr);
+	} else
+		devstr = NULL;
+
+	if (devstr) {
+		isdisk = !strncmp(arg, "disk", 4) && isdigit(arg[4]);
+		isrdisk = !strncmp(arg, "rdisk", 5) && isdigit(arg[5]);
+		if (zpool_vdev_debug)
+		    fprintf(stderr, "using devstr %s\n", devstr);
+		if (isrdisk)
+			(void) snprintf(path, sizeof (path), "%s/%s",
+                            DISK_ROOT, devstr);
+		else
+			(void) snprintf(path, sizeof (path), "%s%s",
+			    RDISK_ROOT, devstr);
+	} else {
+		if (zpool_vdev_debug)
+			fprintf(stderr, "using arg %s\n", arg);
+		if (isrdisk)
+			(void) snprintf(path, sizeof (path), "%s",
+                            arg);
+		else
+			(void) snprintf(path, sizeof (path), "%s%s",
+			    RDISK_ROOT, &strrchr(arg, '/')[1]);
+	}
+	if (zpool_vdev_debug)
+		fprintf(stderr,
+		    "Trying to open path '%s' rdwr\n",
+		    path);
+	if ((fd = open(path, O_RDWR | O_NDELAY)) < 0) {
+		/* try what we were given */
+		if (devstr != NULL) {
+			if (zpool_vdev_debug) {
+				fprintf(stderr,
+				    "Trying to open original arg '%s' rdonly"
+				     " instead\n",
+				    arg);
+			}
+			if ((fd = open(arg, O_RDONLY|O_DIRECT)) < 0) {
+				free((void *)devstr);
+				return (B_FALSE);
+			}
+		} else {
+			if (devstr)
+				free((void *)devstr);
+			return (B_FALSE);
+		}
+	}
+
+	if (efi_alloc_and_init(fd, EFI_NUMPAR, &label) != 0) {
+		(void) close(fd);
+		if (devstr)
+			free((void *)devstr);
+		return (B_FALSE);
+	}
+#elif __LINUX__
 	if ((fd = open(path, O_RDONLY|O_DIRECT)) < 0)
 		return (B_FALSE);
 	if (efi_alloc_and_init(fd, EFI_NUMPAR, &label) != 0) {
 		(void) close(fd);
 		return (B_FALSE);
 	}
+#endif
 	efi_free(label);
 	(void) close(fd);
+	if (devstr)
+		free((void *)devstr);
 	return (B_TRUE);
 }
 
