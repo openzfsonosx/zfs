@@ -23,6 +23,7 @@ if [ -d /etc/zfs ]; then
 	notify "zpool.cache file has been renamed" "config.sync"
 
 	fi
-
+else
+	mkdir -p /etc/zfs
 fi
 echo 0
