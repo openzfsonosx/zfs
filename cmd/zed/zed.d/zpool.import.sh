@@ -17,6 +17,8 @@ if [ "${ZEVENT_SUBCLASS}" = "zpool.import" ]; then
 	cmd="import"
 else
 	cmd="export"
+    rm -f "/var/run/zfs/zvol/dsk/${ZEVENT_POOL}/*"
+    rm -f "/var/run/zfs/zvol/rdsk/${ZEVENT_POOL}/*"
 fi
 
 logger -t "${ZED_SYSLOG_TAG:=zed}" \

@@ -945,6 +945,41 @@ zfs_ereport_snapshot_post(const char *subclass, spa_t *spa, const char *name)
 #endif
 }
 
+void
+zfs_ereport_zvol_post(const char *subclass, const char *name, const char *bsd,
+                      const char *rbsd)
+{
+#ifdef _KERNEL
+	nvlist_t *ereport = NULL;
+	nvlist_t *detector = NULL;
+    char *r;
+    spa_t *spa;
+
+    spa = spa_lookup(name);
+    if (!spa) return;
+
+	zfs_ereport_start(&ereport, &detector,
+                      subclass,
+                      spa, NULL, NULL, 0, 0);
+
+	if (ereport == NULL) return;
+
+    VERIFY0(nvlist_add_string(ereport, "BSD_disk", bsd));
+    VERIFY0(nvlist_add_string(ereport, "BSD_rdisk", rbsd));
+
+    r = strchr(name, '/');
+    if (r && r[1]) {
+        VERIFY0(nvlist_add_string(ereport, "DATASET", &r[1]));
+    }
+
+    /* Cleanup is handled by the callback function */
+    zfs_zevent_post(ereport, detector, zfs_zevent_post_cb);
+#endif
+}
+
+
+
+
 #if defined(_KERNEL) && defined(HAVE_SPL)
 EXPORT_SYMBOL(zfs_ereport_post);
 EXPORT_SYMBOL(zfs_ereport_post_checksum);

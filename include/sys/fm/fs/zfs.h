@@ -124,6 +124,9 @@ extern "C" {
 
 #define	FM_EREPORT_ZFS_SNAPSHOT_MOUNT		"snapshot.mount"
 
+#define	FM_EREPORT_ZVOL_CREATE_SYMLINK		"zvol.create"
+#define	FM_EREPORT_ZVOL_REMOVE_SYMLINK		"zvol.remove"
+
 #ifdef	__cplusplus
 }
 #endif

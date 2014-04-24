@@ -327,7 +327,7 @@ IOReturn net_lundman_zfs_zvol::doEjectMedia(void *arg1)
     // Only 10.6 needs special work to eject
     if ((version_major == 10) &&
 	(version_minor == 8))
-      destroyBlockStorageDevice(nub);    
+      destroyBlockStorageDevice(nub);
 
   }
 
@@ -396,10 +396,8 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
 
       nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
 
-      if ((version_major != 10) &&
-	  (version_minor != 8))
-	zvol_remove_symlink(zv);
-      
+      zvol_remove_symlink(zv);
+
       zv->zv_iokitdev = NULL;
       zv = NULL;
 
@@ -494,9 +492,3 @@ uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t 
                                                           len);
   return done;
 }
-
-
-
-
-
-
