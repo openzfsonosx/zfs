@@ -63,6 +63,8 @@ install-data-local:
 
 uninstall-local:
 	@echo
+	$(MKDIR_P) $(DESTDIR)/Library/LaunchDaemons
 	$(DESTDIR)/bin/launchctl unload -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist || echo "Ignoring errors"
+	$(MKDIR_P) $(DESTDIR)/usr/local/sbin
 	@rm -f $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist
 	@rm -f $(DESTDIR)/usr/local/sbin/zed.service.sh
