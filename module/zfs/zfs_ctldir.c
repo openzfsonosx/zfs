@@ -1391,8 +1391,11 @@ domount:
 
 #ifdef _KERNEL
 
-    zfs_ereport_snapshot_post(FM_EREPORT_ZFS_SNAPSHOT_MOUNT,
-                              dmu_objset_spa(zfsvfs->z_os), snapname);
+    /*
+     * The world isn't ready for this yet
+     zfs_ereport_snapshot_post(FM_EREPORT_ZFS_SNAPSHOT_MOUNT,
+     dmu_objset_spa(zfsvfs->z_os), snapname);
+    */
 
 #endif
 
