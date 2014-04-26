@@ -643,9 +643,25 @@ zvol_remove_minor(const char *name)
 		mutex_exit(&spa_namespace_lock);
 		return (ENXIO);
 	}
+	zvol_remove_minor_symlink(name);
 	rc = zvol_remove_zv(zv);
+	if (rc != 0)
+		zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
 	mutex_exit(&spa_namespace_lock);
 	return (rc);
+}
+
+int
+zvol_remove_minor_symlink(const char *name)
+{
+        zvol_state_t *zv;
+        int rc;
+
+        if ((zv = zvol_minor_lookup(name)) == NULL)
+                return (ENXIO);
+
+	zvol_remove_symlink(zv);
+        return (rc);
 }
 
 /*
@@ -837,6 +853,29 @@ zvol_remove_minors(const char *name)
 	kmem_free(namebuf, strlen(name) + 2);
 
 	mutex_exit(&spa_namespace_lock);
+}
+
+void
+zvol_remove_minors_symlink(const char *name)
+{
+        zvol_state_t *zv;
+        char *namebuf;
+        minor_t minor;
+
+        size_t name_buf_len = strlen(name) + 2;
+
+        namebuf = kmem_zalloc(name_buf_len, KM_SLEEP);
+        (void) strncpy(namebuf, name, strlen(name));
+        (void) strlcat(namebuf, "/", name_buf_len);
+        for (minor = 1; minor <= ZFSDEV_MAX_MINOR; minor++) {
+
+                zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
+                if (zv == NULL)
+                        continue;
+                if (strncmp(namebuf, zv->zv_name, strlen(namebuf)) == 0)
+			zvol_remove_symlink(zv);
+        }
+        kmem_free(namebuf, strlen(name) + 2);
 }
 
 /*
@@ -2736,5 +2775,5 @@ void zvol_remove_symlink(zvol_state_t *zv)
     if (!zv || !zv->zv_name) return;
 
     zfs_ereport_zvol_post(FM_EREPORT_ZVOL_REMOVE_SYMLINK,
-                          zv->zv_name, NULL, NULL);
+                          zv->zv_name, &zv->zv_bsdname[1], zv->zv_bsdname);
 }

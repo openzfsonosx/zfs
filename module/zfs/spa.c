@@ -3020,7 +3020,7 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 #ifdef _KERNEL
 	if (firstopen) {
 		zvol_create_minors(spa->spa_name);
-    }
+	}
 #endif
 
 	*spapp = spa;
@@ -4279,6 +4279,9 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 		}
 	}
 
+#ifdef _KERNEL
+	zvol_remove_minors_symlink(pool);
+#endif
 	spa_event_notify(spa, NULL, FM_EREPORT_ZFS_POOL_DESTROY);
 
 	if (spa->spa_state != POOL_STATE_UNINITIALIZED) {
