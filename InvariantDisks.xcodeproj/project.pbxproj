@@ -31,20 +31,20 @@
 
 /* Begin PBXFileReference section */
 		70C63F24190CF5E800929DAE /* InvariantDisks */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = InvariantDisks; sourceTree = BUILT_PRODUCTS_DIR; };
-		70C63F27190CF5E800929DAE /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
-		70C63F30190CF78800929DAE /* IDCLI.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDCLI.cpp; sourceTree = "<group>"; };
-		70C63F31190CF78800929DAE /* IDCLI.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDCLI.hpp; sourceTree = "<group>"; };
-		70C63F33190CF87400929DAE /* IDException.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDException.cpp; sourceTree = "<group>"; };
-		70C63F34190CF87400929DAE /* IDException.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDException.hpp; sourceTree = "<group>"; };
+		70C63F27190CF5E800929DAE /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; path = main.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
+		70C63F30190CF78800929DAE /* IDCLI.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; path = IDCLI.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
+		70C63F31190CF78800929DAE /* IDCLI.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; lineEnding = 0; path = IDCLI.hpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
+		70C63F33190CF87400929DAE /* IDException.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; path = IDException.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
+		70C63F34190CF87400929DAE /* IDException.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; lineEnding = 0; path = IDException.hpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
 		70C63F43190CFFA500929DAE /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		70C63F45190CFFAC00929DAE /* DiskArbitration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DiskArbitration.framework; path = System/Library/Frameworks/DiskArbitration.framework; sourceTree = SDKROOT; };
-		70C63F49190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDDiskArbitrationDispatcher.cpp; sourceTree = "<group>"; };
-		70C63F4A190D1AEF00929DAE /* IDDiskArbitrationDispatcher.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDDiskArbitrationDispatcher.hpp; sourceTree = "<group>"; };
-		70C63F4C190D1B4200929DAE /* IDDiskArbitrationHandler.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = IDDiskArbitrationHandler.hpp; sourceTree = "<group>"; };
-		70C63F4D190D2AA000929DAE /* IDDiskArbitrationLogger.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDDiskArbitrationLogger.cpp; sourceTree = "<group>"; };
-		70C63F4E190D2AA000929DAE /* IDDiskArbitrationLogger.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDDiskArbitrationLogger.hpp; sourceTree = "<group>"; };
-		70C63F50190D2CC900929DAE /* IDDiskArbitrationUtils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDDiskArbitrationUtils.cpp; sourceTree = "<group>"; };
-		70C63F51190D2CC900929DAE /* IDDiskArbitrationUtils.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDDiskArbitrationUtils.hpp; sourceTree = "<group>"; };
+		70C63F49190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; path = IDDiskArbitrationDispatcher.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
+		70C63F4A190D1AEF00929DAE /* IDDiskArbitrationDispatcher.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; lineEnding = 0; path = IDDiskArbitrationDispatcher.hpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objcpp; };
+		70C63F4C190D1B4200929DAE /* IDDiskArbitrationHandler.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; lineEnding = 0; path = IDDiskArbitrationHandler.hpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
+		70C63F4D190D2AA000929DAE /* IDDiskArbitrationLogger.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; path = IDDiskArbitrationLogger.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
+		70C63F4E190D2AA000929DAE /* IDDiskArbitrationLogger.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; lineEnding = 0; path = IDDiskArbitrationLogger.hpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objcpp; };
+		70C63F50190D2CC900929DAE /* IDDiskArbitrationUtils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; path = IDDiskArbitrationUtils.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
+		70C63F51190D2CC900929DAE /* IDDiskArbitrationUtils.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; lineEnding = 0; path = IDDiskArbitrationUtils.hpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objcpp; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
