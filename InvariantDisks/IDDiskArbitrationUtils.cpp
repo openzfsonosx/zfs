@@ -30,6 +30,7 @@ namespace ID
 			<< "MediaName=\"" << disk.mediaName << "\", "
 			<< "MediaPath=\"" << disk.mediaPath << "\", "
 			<< "DeviceGUID=\"" << disk.deviceGUID << "\", "
+			<< "DevicePath=\"" << disk.devicePath << "\", "
 			<< "BusName=\"" << disk.busName << "\", "
 			<< "BusPath=\"" << disk.busPath << "\""
 			<< ")";
@@ -84,6 +85,7 @@ namespace ID
 		info.mediaName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaNameKey);
 		info.mediaPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaPathKey);
 		info.deviceGUID = stringFromDictionary<CFDataRef>(descDict, kDADiskDescriptionDeviceGUIDKey);
+		info.devicePath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionDevicePathKey);
 		info.busName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionBusNameKey);
 		info.busPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionBusPathKey);
 		CFRelease(descDict);

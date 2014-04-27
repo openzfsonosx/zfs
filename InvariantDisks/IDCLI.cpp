@@ -14,6 +14,7 @@
 #include "IDException.hpp"
 #include "IDDiskArbitrationDispatcher.hpp"
 #include "IDDiskInfoLogger.hpp"
+#include "IDMediaPathLinker.hpp"
 
 #include <vector>
 #include <string>
@@ -58,7 +59,7 @@ namespace ID
 		DispatchSource signalSourceINT;
 		DispatchSource signalSourceTERM;
 		bool showHelp = false;
-		std::string basePath = "/var/run/disks";
+		std::string basePath = "/var/run/disk";
 		CFRunLoopRef runloop = nullptr;
 	};
 
@@ -87,6 +88,7 @@ namespace ID
 		}
 		DiskArbitrationDispatcher dispatcher;
 		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout));
+		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path"));
 		dispatcher.start();
 		CFRunLoopRun();
 		{
@@ -109,5 +111,14 @@ namespace ID
 		// -h
 		if (std::count(args.begin(), args.end(), "-h"))
 			m_impl->showHelp = true;
+		// -p
+		auto p = std::find(args.begin(), args.end(), "-p");
+		if (p != args.end())
+		{
+			++p;
+			if (p == args.end())
+				throw Exception("-p <path> requires a path argument");
+			m_impl->basePath = *p;
+		}
 	}
 }

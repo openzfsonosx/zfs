@@ -30,6 +30,7 @@ namespace ID
 		std::string mediaName;
 		std::string mediaPath;
 		std::string deviceGUID;
+		std::string devicePath;
 		std::string busName;
 		std::string busPath;
 	};
