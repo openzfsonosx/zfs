@@ -17,6 +17,7 @@
 		70C63F52190D2CC900929DAE /* IDDiskArbitrationUtils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F50190D2CC900929DAE /* IDDiskArbitrationUtils.cpp */; };
 		70C63F55190D4A4300929DAE /* IDMediaPathLinker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F53190D4A4300929DAE /* IDMediaPathLinker.cpp */; };
 		70C63F58190D574000929DAE /* IDFileUtils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F56190D574000929DAE /* IDFileUtils.cpp */; };
+		70C63F5A190D713B00929DAE /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70C63F59190D713B00929DAE /* IOKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -51,6 +52,7 @@
 		70C63F54190D4A4300929DAE /* IDMediaPathLinker.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDMediaPathLinker.hpp; sourceTree = "<group>"; };
 		70C63F56190D574000929DAE /* IDFileUtils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDFileUtils.cpp; sourceTree = "<group>"; };
 		70C63F57190D574000929DAE /* IDFileUtils.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDFileUtils.hpp; sourceTree = "<group>"; };
+		70C63F59190D713B00929DAE /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,6 +60,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				70C63F5A190D713B00929DAE /* IOKit.framework in Frameworks */,
 				70C63F46190CFFAC00929DAE /* DiskArbitration.framework in Frameworks */,
 				70C63F44190CFFA500929DAE /* CoreFoundation.framework in Frameworks */,
 			);
@@ -109,6 +112,7 @@
 		70C63F47190D15FE00929DAE /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				70C63F59190D713B00929DAE /* IOKit.framework */,
 				70C63F45190CFFAC00929DAE /* DiskArbitration.framework */,
 				70C63F43190CFFA500929DAE /* CoreFoundation.framework */,
 			);

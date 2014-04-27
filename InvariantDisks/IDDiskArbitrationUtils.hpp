@@ -24,11 +24,13 @@ namespace ID
 		std::string volumeKind;
 		std::string volumeUUID;
 		std::string volumeName;
+		std::string volumePath;
 		std::string mediaKind;
 		std::string mediaUUID;
 		std::string mediaBSDName;
 		std::string mediaName;
 		std::string mediaPath;
+		std::string mediaContent;
 		std::string deviceGUID;
 		std::string devicePath;
 		std::string busName;

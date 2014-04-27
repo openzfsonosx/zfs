@@ -24,11 +24,13 @@ namespace ID
 			<< "VolumeKind=\"" << disk.volumeKind << "\", "
 			<< "VolumeUUID=\"" << disk.volumeUUID << "\", "
 			<< "VolumeName=\"" << disk.volumeName << "\", "
+			<< "VolumePath=\"" << disk.volumePath << "\", "
 			<< "MediaKind=\"" << disk.mediaKind << "\", "
 			<< "MediaUUID=\"" << disk.mediaUUID << "\", "
 			<< "MediaBSDName=\"" << disk.mediaBSDName << "\", "
 			<< "MediaName=\"" << disk.mediaName << "\", "
 			<< "MediaPath=\"" << disk.mediaPath << "\", "
+			<< "MediaContent=\"" << disk.mediaContent << "\", "
 			<< "DeviceGUID=\"" << disk.deviceGUID << "\", "
 			<< "DevicePath=\"" << disk.devicePath << "\", "
 			<< "BusName=\"" << disk.busName << "\", "
@@ -48,6 +50,14 @@ namespace ID
 			CFStringGetBytes(str, strRange, kCFStringEncodingUTF8, 0, false,
 							 reinterpret_cast<UInt8*>(&result[0]), strBytes, nullptr);
 		}
+		return result;
+	}
+
+	std::string to_string(CFURLRef url)
+	{
+		CFStringRef str = CFURLCopyPath(url);
+		std::string result = to_string(str);
+		CFRelease(str);
 		return result;
 	}
 
@@ -72,6 +82,17 @@ namespace ID
 		return std::string();
 	}
 
+	int64_t numberFromDictionary(CFDictionaryRef dict, CFStringRef key)
+	{
+		if (CFNumberRef value = static_cast<CFNumberRef>(CFDictionaryGetValue(dict, key)))
+		{
+			int64_t number = 0;
+			CFNumberGetValue(value, kCFNumberSInt64Type, &number);
+			return number;
+		}
+		return 0;
+	}
+
 	DiskInformation getDiskInformation(DADiskRef disk)
 	{
 		DiskInformation info;
@@ -79,16 +100,26 @@ namespace ID
 		info.volumeKind = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionVolumeKindKey);
 		info.volumeUUID = stringFromDictionary<CFUUIDRef>(descDict, kDADiskDescriptionVolumeUUIDKey);
 		info.volumeName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionVolumeNameKey);
+		info.volumePath = stringFromDictionary<CFURLRef>(descDict, kDADiskDescriptionVolumePathKey);
 		info.mediaKind = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaKindKey);
 		info.mediaUUID = stringFromDictionary<CFUUIDRef>(descDict, kDADiskDescriptionMediaUUIDKey);
 		info.mediaBSDName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaBSDNameKey);
 		info.mediaName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaNameKey);
 		info.mediaPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaPathKey);
+		info.mediaContent = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaContentKey);
 		info.deviceGUID = stringFromDictionary<CFDataRef>(descDict, kDADiskDescriptionDeviceGUIDKey);
 		info.devicePath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionDevicePathKey);
 		info.busName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionBusNameKey);
 		info.busPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionBusPathKey);
 		CFRelease(descDict);
+		io_service_t io = DADiskCopyIOMedia(disk);
+		CFMutableDictionaryRef ioDict = nullptr;
+		if (IORegistryEntryCreateCFProperties(io, &ioDict, kCFAllocatorDefault, 0) == kIOReturnSuccess)
+		{
+			// TODO: Pick out useful IOKit properties
+			CFRelease(ioDict);
+		}
+		IOObjectRelease(io);
 		return info;
 	}
 }
