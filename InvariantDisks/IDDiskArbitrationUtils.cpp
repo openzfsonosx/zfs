@@ -1,0 +1,89 @@
+//
+//  IDDiskArbitrationUtils.cpp
+//  InvariantDisks
+//
+//  Created by cbreak on 2014.04.27.
+//  Copyright (c) 2014 the-color-black.net. All rights reserved.
+//
+
+#include "IDDiskArbitrationUtils.hpp"
+
+namespace ID
+{
+	std::ostream & operator<<(std::ostream & os, DADiskRef disk)
+	{
+		return os << getDiskInformation(disk);
+	}
+
+	std::ostream & operator<<(std::ostream & os, DiskInformation const & disk)
+	{
+		return os << "Disk: ("
+			<< "VolumeKind=\"" << disk.volumeKind << "\", "
+			<< "VolumeUUID=\"" << disk.volumeUUID << "\", "
+			<< "VolumeName=\"" << disk.volumeName << "\", "
+			<< "MediaKind=\"" << disk.mediaKind << "\", "
+			<< "MediaUUID=\"" << disk.mediaUUID << "\", "
+			<< "MediaBSDName=\"" << disk.mediaBSDName << "\", "
+			<< "MediaName=\"" << disk.mediaName << "\", "
+			<< "MediaPath=\"" << disk.mediaPath << "\", "
+			<< "DeviceGUID=\"" << disk.deviceGUID << "\", "
+			<< "BusName=\"" << disk.busName << "\", "
+			<< "BusPath=\"" << disk.busPath << "\""
+			<< ")";
+	}
+
+	std::string to_string(CFStringRef str)
+	{
+		std::string result;
+		CFRange strRange = CFRangeMake(0, CFStringGetLength(str));
+		CFIndex strBytes = 0;
+		CFStringGetBytes(str, strRange, kCFStringEncodingUTF8, 0, false, nullptr, 0, &strBytes);
+		if (strBytes > 0)
+		{
+			result.resize(static_cast<size_t>(strBytes), '\0');
+			CFStringGetBytes(str, strRange, kCFStringEncodingUTF8, 0, false,
+							 reinterpret_cast<UInt8*>(&result[0]), strBytes, nullptr);
+		}
+		return result;
+	}
+
+	std::string to_string(CFDataRef data)
+	{
+		return std::string(reinterpret_cast<char const *>(CFDataGetBytePtr(data)), CFDataGetLength(data));
+	}
+
+	std::string to_string(CFUUIDRef uuid)
+	{
+		CFStringRef str = CFUUIDCreateString(kCFAllocatorDefault, uuid);
+		std::string result = to_string(str);
+		CFRelease(str);
+		return result;
+	}
+
+	template<typename T>
+	std::string stringFromDictionary(CFDictionaryRef dict, CFStringRef key)
+	{
+		if (T value = static_cast<T>(CFDictionaryGetValue(dict, key)))
+			return to_string(value);
+		return std::string();
+	}
+
+	DiskInformation getDiskInformation(DADiskRef disk)
+	{
+		DiskInformation info;
+		CFDictionaryRef descDict = DADiskCopyDescription(disk);
+		info.volumeKind = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionVolumeKindKey);
+		info.volumeUUID = stringFromDictionary<CFUUIDRef>(descDict, kDADiskDescriptionVolumeUUIDKey);
+		info.volumeName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionVolumeNameKey);
+		info.mediaKind = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaKindKey);
+		info.mediaUUID = stringFromDictionary<CFUUIDRef>(descDict, kDADiskDescriptionMediaUUIDKey);
+		info.mediaBSDName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaBSDNameKey);
+		info.mediaName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaNameKey);
+		info.mediaPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaPathKey);
+		info.deviceGUID = stringFromDictionary<CFDataRef>(descDict, kDADiskDescriptionDeviceGUIDKey);
+		info.busName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionBusNameKey);
+		info.busPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionBusPathKey);
+		CFRelease(descDict);
+		return info;
+	}
+}

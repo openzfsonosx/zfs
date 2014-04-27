@@ -9,6 +9,8 @@
 #include "IDCLI.hpp"
 
 #include "IDException.hpp"
+#include "IDDiskArbitrationDispatcher.hpp"
+#include "IDDIskArbitrationLogger.hpp"
 
 #include <vector>
 #include <string>
@@ -80,6 +82,9 @@ namespace ID
 				throw Exception("CLI already running");
 			m_impl->runloop = CFRunLoopGetCurrent();
 		}
+		DiskArbitrationDispatcher dispatcher;
+		dispatcher.addHandler(std::make_shared<DiskArbitrationLogger>(std::cout));
+		dispatcher.start();
 		CFRunLoopRun();
 		{
 			std::lock_guard<std::mutex> lock(m_impl->mutex);

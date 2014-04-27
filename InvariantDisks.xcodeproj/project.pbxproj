@@ -12,6 +12,9 @@
 		70C63F35190CF87400929DAE /* IDException.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F33190CF87400929DAE /* IDException.cpp */; };
 		70C63F44190CFFA500929DAE /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70C63F43190CFFA500929DAE /* CoreFoundation.framework */; };
 		70C63F46190CFFAC00929DAE /* DiskArbitration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70C63F45190CFFAC00929DAE /* DiskArbitration.framework */; };
+		70C63F4B190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F49190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp */; };
+		70C63F4F190D2AA000929DAE /* IDDiskArbitrationLogger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F4D190D2AA000929DAE /* IDDiskArbitrationLogger.cpp */; };
+		70C63F52190D2CC900929DAE /* IDDiskArbitrationUtils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F50190D2CC900929DAE /* IDDiskArbitrationUtils.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -35,6 +38,13 @@
 		70C63F34190CF87400929DAE /* IDException.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDException.hpp; sourceTree = "<group>"; };
 		70C63F43190CFFA500929DAE /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		70C63F45190CFFAC00929DAE /* DiskArbitration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DiskArbitration.framework; path = System/Library/Frameworks/DiskArbitration.framework; sourceTree = SDKROOT; };
+		70C63F49190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDDiskArbitrationDispatcher.cpp; sourceTree = "<group>"; };
+		70C63F4A190D1AEF00929DAE /* IDDiskArbitrationDispatcher.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDDiskArbitrationDispatcher.hpp; sourceTree = "<group>"; };
+		70C63F4C190D1B4200929DAE /* IDDiskArbitrationHandler.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = IDDiskArbitrationHandler.hpp; sourceTree = "<group>"; };
+		70C63F4D190D2AA000929DAE /* IDDiskArbitrationLogger.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDDiskArbitrationLogger.cpp; sourceTree = "<group>"; };
+		70C63F4E190D2AA000929DAE /* IDDiskArbitrationLogger.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDDiskArbitrationLogger.hpp; sourceTree = "<group>"; };
+		70C63F50190D2CC900929DAE /* IDDiskArbitrationUtils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDDiskArbitrationUtils.cpp; sourceTree = "<group>"; };
+		70C63F51190D2CC900929DAE /* IDDiskArbitrationUtils.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDDiskArbitrationUtils.hpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +85,13 @@
 				70C63F31190CF78800929DAE /* IDCLI.hpp */,
 				70C63F33190CF87400929DAE /* IDException.cpp */,
 				70C63F34190CF87400929DAE /* IDException.hpp */,
+				70C63F50190D2CC900929DAE /* IDDiskArbitrationUtils.cpp */,
+				70C63F51190D2CC900929DAE /* IDDiskArbitrationUtils.hpp */,
+				70C63F4C190D1B4200929DAE /* IDDiskArbitrationHandler.hpp */,
+				70C63F4D190D2AA000929DAE /* IDDiskArbitrationLogger.cpp */,
+				70C63F4E190D2AA000929DAE /* IDDiskArbitrationLogger.hpp */,
+				70C63F49190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp */,
+				70C63F4A190D1AEF00929DAE /* IDDiskArbitrationDispatcher.hpp */,
 			);
 			path = InvariantDisks;
 			sourceTree = "<group>";
@@ -160,7 +177,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				70C63F32190CF78800929DAE /* IDCLI.cpp in Sources */,
+				70C63F52190D2CC900929DAE /* IDDiskArbitrationUtils.cpp in Sources */,
 				70C63F35190CF87400929DAE /* IDException.cpp in Sources */,
+				70C63F4B190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp in Sources */,
+				70C63F4F190D2AA000929DAE /* IDDiskArbitrationLogger.cpp in Sources */,
 				70C63F28190CF5E800929DAE /* main.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
