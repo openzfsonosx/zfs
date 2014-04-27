@@ -13,7 +13,7 @@
 
 #include "IDException.hpp"
 #include "IDDiskArbitrationDispatcher.hpp"
-#include "IDDIskArbitrationLogger.hpp"
+#include "IDDiskInfoLogger.hpp"
 
 #include <vector>
 #include <string>
@@ -86,7 +86,7 @@ namespace ID
 			m_impl->runloop = CFRunLoopGetCurrent();
 		}
 		DiskArbitrationDispatcher dispatcher;
-		dispatcher.addHandler(std::make_shared<DiskArbitrationLogger>(std::cout));
+		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout));
 		dispatcher.start();
 		CFRunLoopRun();
 		{
