@@ -69,7 +69,6 @@ namespace ID
 			try
 			{
 				mediaPath = m_base + "/" + mediaPath;
-				std::string devicePath = "/dev/" + di.mediaBSDName;
 				std::cout << "Removing symlink: \"" << mediaPath << "\"" << std::endl;
 				removeSymlink(mediaPath);
 			}

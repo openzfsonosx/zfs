@@ -33,15 +33,14 @@ namespace ID
 	void createPath(std::string const & path)
 	{
 		size_t slashIdx = 0;
-		while ((slashIdx = path.find('/', slashIdx+1)) != std::string::npos)
+		do
 		{
-			int err = mkdir(path.substr(0, slashIdx).c_str(), 0744); // octal mode
+			slashIdx = path.find('/', slashIdx+1);
+			int err = mkdir(path.substr(0, slashIdx).c_str(), 0755); // octal mode
 			if (err != 0 && errno != EEXIST)
 				throw Exception("Error creating Directory: " + path);
 		}
-		int err = mkdir(path.c_str(), 0744); // octal mode
-		if (err != 0 && errno != EEXIST)
-			throw Exception("Error creating Directory: " + path);
+		while (slashIdx != std::string::npos);
 	}
 
 	void createSymlink(std::string const & link, std::string const & target)
