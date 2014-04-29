@@ -749,7 +749,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 		zfs_vnode_forget(vp);
 		zp->z_vnode = NULL;
 		kmem_cache_free(znode_cache, zp);
-        printf("znode_alloc: sa_bulk_lookup failed - aborting\n");
+        dprintf("znode_alloc: sa_bulk_lookup failed - aborting\n");
 		return (NULL);
 	}
 
@@ -1303,7 +1303,7 @@ again:
                   mutex_exit(&zp->z_lock);
                   sa_buf_rele(db, NULL);
                   ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-                  printf("zfs: woah vnode_getwithvid failed\n");
+                  dprintf("zfs: woah vnode_getwithvid failed\n");
                   goto again;
                 }
 
@@ -1330,7 +1330,7 @@ again:
         ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
         getnewvnode_drop_reserve();
 
-        printf("Waiting on zp %p to die!\n", zp);
+        dprintf("Waiting on zp %p to die!\n", zp);
         //delay(hz>>1);
         cv_signal(&zfsvfs->z_reclaim_thr_cv);
         while(!list_is_empty(&zfsvfs->z_reclaim_znodes)) delay(hz >> 2);
