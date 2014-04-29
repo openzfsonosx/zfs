@@ -42,6 +42,7 @@ bool net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
 bool net_lundman_zfs_zvol_device::attach(IOService* provider)
 {
     OSDictionary		*	protocolCharacteristics = 0;
+    OSDictionary		*	deviceCharacteristics   = 0;
 	OSString			*	dataString				= 0;
 
     if (super::attach(provider) == false)
@@ -54,6 +55,8 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
      * We want to set some additional properties for ZVOLs, in
      * particular, "Virtual Device", and type "File" (or is Internal better?)
      * Finally "Generic" type.
+     *
+     * These properties are defined in *protocol* characteristics
      */
 
     protocolCharacteristics = OSDictionary::withCapacity(3);
@@ -83,6 +86,47 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
     setProperty( kIOPropertyProtocolCharacteristicsKey, protocolCharacteristics );
     protocolCharacteristics->release();
     protocolCharacteristics = 0;
+    
+    /*
+     * We want to set some additional properties for ZVOLs, in
+     * particular, logical block size (volblocksize) of the
+     * underlying ZVOL, and 'physical' block size presented by
+     * the virtual disk.
+     *
+     * These properties are defined in *device* characteristics
+     */
+    
+    deviceCharacteristics = OSDictionary::withCapacity(2);
+    if (!deviceCharacteristics) {
+        IOLog("failed to create dictionary for deviceCharacteristics.\n");
+        return true;
+    }
+
+    // Set physical block size to ZVOL_BSIZE (512b)
+    deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey,
+                                     OSNumber::withNumber(ZVOL_BSIZE,8*sizeof(ZVOL_BSIZE)) );
+    
+    dprintf( "physicalBlockSize %llu\n", OSNumber::withNumber(ZVOL_BSIZE,
+                                                              8*sizeof(ZVOL_BSIZE))->unsigned64BitValue());
+    
+    // Set logical block size to match volblocksize property
+    deviceCharacteristics->setObject(kIOPropertyLogicalBlockSizeKey,
+                                     OSNumber::withNumber(zv->zv_volblocksize,8*sizeof(zv->zv_volblocksize)) );
+    
+    dprintf( "logicalBlockSize %llu\n", OSNumber::withNumber(zv->zv_volblocksize,
+                                                             8*sizeof(zv->zv_volblocksize))->unsigned64BitValue());
+    
+    setProperty( kIOPropertyDeviceCharacteristicsKey, deviceCharacteristics );
+    deviceCharacteristics->release();
+    deviceCharacteristics = 0;
+    
+    /*
+     * Finally "Generic" type, set as a device property.
+     * Tried setting this to the string "ZVOL" however the OS
+     * does not recognize it as a block storage device.
+     * This would probably be possible by extending the
+     * IOBlockStorage Device / Driver relationship.
+     */
 
     setProperty( kIOBlockStorageDeviceTypeKey, kIOBlockStorageDeviceTypeGeneric );
 
