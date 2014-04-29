@@ -505,6 +505,7 @@ zfsctl_common_getattr(struct vnode *vp, vattr_t *vap)
 
 #ifdef __APPLE__
     VATTR_SET_SUPPORTED(vap, va_mode);
+    VATTR_SET_SUPPORTED(vap, va_type);
     VATTR_SET_SUPPORTED(vap, va_uid);
     VATTR_SET_SUPPORTED(vap, va_gid);
     VATTR_SET_SUPPORTED(vap, va_data_size);
@@ -1354,7 +1355,7 @@ zfsctl_snapdir_lookup(ap)
 			err = ENOENT;
 		}
 		ZFS_EXIT(zfsvfs);
-        dprintf("exit4\n");
+        dprintf("exit4: failed to hold '%s'\n", snapname);
 		return (err);
 	}
 
@@ -2094,6 +2095,9 @@ static struct vnodeopv_entry_desc zfsctl_ops_snapshot_template[] = {
 	{&vnop_lookup_desc,	    (VOPFUNC)zfsctl_snapdir_lookup},
 
 	{&vnop_readdir_desc,	(VOPFUNC)gfs_vop_readdir},
+
+	{&vnop_open_desc,	(VOPFUNC)zfsctl_common_open},
+	{&vnop_close_desc,	(VOPFUNC)zfsctl_common_close},
 
 	{NULL, (VOPFUNC)NULL }
 };
