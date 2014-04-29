@@ -233,20 +233,23 @@ changelist_postfix(prop_changelist_t *clp)
 		    ((sharenfs || sharesmb || clp->cl_waslegacy) &&
 		    (zfs_prop_get_int(cn->cn_handle,
 		    ZFS_PROP_CANMOUNT) == ZFS_CANMOUNT_ON)))) {
-#if __APPLE__
-            /* Do not mount snapshots. On OSX zfs_mount allow snapshots to
-             * be mounted, so we need to explicitly skip them here */
-            if (!(clp->cl_gflags & CL_GATHER_SKIP_SNAPSHOT) ||
-                zfs_get_type(cn->cn_handle) != ZFS_TYPE_SNAPSHOT) {
+#ifdef __APPLE__
+			/*
+			 * Do not mount snapshots. On OS X zfs_mount allows
+			 * snapshots to be mounted, so we need to explicitly
+			 * skip them here.
+			 */
+			if (!(clp->cl_gflags & CL_GATHER_SKIP_SNAPSHOT) ||
+			    zfs_get_type(cn->cn_handle) != ZFS_TYPE_SNAPSHOT) {
 #endif
-                if (zfs_mount(cn->cn_handle, NULL, 0) != 0)
-                    errors++;
-                else {
-                    mounted = TRUE;
-                    printf("Mount successful\n");
-                }
-#if __APPLE__
-            }
+				if (zfs_mount(cn->cn_handle, NULL, 0) != 0)
+					errors++;
+				else {
+					mounted = TRUE;
+					printf("Mount successful\n");
+				}
+#ifdef __APPLE__
+			}
 #endif
 		}
 
