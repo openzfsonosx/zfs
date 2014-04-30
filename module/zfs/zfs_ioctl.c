@@ -1294,6 +1294,11 @@ getzfsvfs(const char *dsname, zfsvfs_t **zfvp)
     return (error);
 }
 
+int
+dataset_getzfsvfs(const char *dsname, void **zfvp)
+{
+	return getzfsvfs(dsname, zfvp);
+}
 
 /*
  * Find a zfsvfs_t for a mounted filesystem, or create our own, in which

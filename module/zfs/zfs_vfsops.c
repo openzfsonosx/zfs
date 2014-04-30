@@ -84,12 +84,12 @@
 #include <sys/mkdev.h>
 #include <sys/modctl.h>
 #include <sys/refstr.h>
-#include <sys/zfs_ioctl.h>
 #include <sys/zfs_ctldir.h>
 #include <sys/bootconf.h>
 #include <sys/sunddi.h>
 #include <sys/dnlc.h>
 #endif /* !__APPLE__ */
+#include <sys/zfs_ioctl.h>
 #include <sys/dmu_objset.h>
 #include <sys/spa_boot.h>
 #include <sys/zpl.h>
@@ -1550,6 +1550,22 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 
 	if (dmu_objset_is_snapshot(zfsvfs->z_os)) {
 		uint64_t pval;
+		char fsname[MAXNAMELEN];
+
+		dmu_fsname(osname, fsname);
+		zfsvfs_t *fs_zfsvfs;
+		error = dataset_getzfsvfs(fsname, (void **)&fs_zfsvfs);
+		if (error == 0) {
+			if (fs_zfsvfs->z_unmounted)
+				error = SET_ERROR(EINVAL);
+			VFS_RELE(fs_zfsvfs->z_vfs);
+		}
+		if (error) {
+			printf("file system '%s' is unmounted : error %d\n",
+			    fsname,
+			    error);
+			goto out;
+		}
 
         vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_AUTOMOUNTED));
 

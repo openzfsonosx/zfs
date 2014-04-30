@@ -553,7 +553,12 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	//strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
 
 	/* Create the directory if it doesn't already exist */
+#ifdef __APPLE__
+	if (zfs_get_type(zhp) != ZFS_TYPE_SNAPSHOT &&
+	    lstat(mountpoint, &buf) != 0) {
+#else
 	if (lstat(mountpoint, &buf) != 0) {
+#endif
 		char path[MAXPATHLEN];
 		FILE *fp;
 
@@ -593,11 +598,12 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #if LINUX
 	rc = do_mount(zfs_get_name(zhp), mountpoint, mntopts);
 #else
-    //printf("zfs_mount: un used options: \"%s\"\n", mntopts);
-    //fprintf(stderr, "zfs_mount: flags are %04x \n", flags);
-    mnt_args.fspec = zfs_get_name(zhp);
-    mnt_args.flags = flags;
-    rc = mount(MNTTYPE_ZFS, mountpoint, flags, &mnt_args);
+	//printf("zfs_mount: un used options: \"%s\"\n", mntopts);
+	//fprintf(stderr, "zfs_mount: flags are %04x \n", flags);
+	mnt_args.fspec = zfs_get_name(zhp);
+	mnt_args.flags = flags;
+	if ((rc = mount(MNTTYPE_ZFS, mountpoint, flags, &mnt_args)) == -1)
+		rc = errno;
 #endif
 
 	if (rc) {
@@ -624,6 +630,13 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 			    (u_longlong_t)zfs_prop_get_int(zhp,
 			    ZFS_PROP_VERSION), spa_version);
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, buf));
+#ifdef __APPLE__
+		} else if (((rc == ESRCH) || (rc == EINVAL) ||
+		    (rc == ENOENT && lstat(mountpoint, &buf) != 0)) &&
+		    zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT) {
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "The parent file system must be mounted first."));
+#endif
 		} else {
 			zfs_error_aux(hdl, strerror(rc));
 		}
@@ -636,7 +649,8 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT)
 		fprintf(stderr, "ZFS: snapshot mountpoint '%s'\n", mountpoint);
 
-    zfs_mount_seticon(mountpoint);
+	if (!(flags & MNT_RDONLY))
+		zfs_mount_seticon(mountpoint);
 #endif
 
 	/* remove the mounted entry before re-adding on remount */
