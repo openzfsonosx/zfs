@@ -111,6 +111,8 @@ extern u_int32_t k_maczfs_debug_stalk;
 #define USEC_TO_TICK(usec)      ((usec) / (MICROSEC / hz))
 #define NSEC_TO_TICK(usec)      ((usec) / (NANOSEC / hz))
 
+/* Silence redefine message */
+#undef zfs_sleep_until
 #define zfs_sleep_until(wakeup)                                         \
     do {                                                                \
         hrtime_t delta = wakeup - gethrtime();                          \
