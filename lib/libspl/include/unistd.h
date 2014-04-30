@@ -44,4 +44,6 @@
 #define	issetugid() (geteuid() == 0 || getegid() == 0)
 #endif
 
+int fdatasync(int fd);
+
 #endif /* _LIBSPL_UNISTD_H */

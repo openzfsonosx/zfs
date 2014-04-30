@@ -528,6 +528,8 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 		flags |= MNT_RDONLY;
 #endif
 
+	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL))
+		return (0);
 
 	/*
 	 * Append default mount options which apply to the mount point.
@@ -549,10 +551,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	 * Append zfsutil option so the mount helper allow the mount
 	 */
 	//strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
-
-	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL)) {
-		return (0);
-	}
 
 	/* Create the directory if it doesn't already exist */
 	if (lstat(mountpoint, &buf) != 0) {
