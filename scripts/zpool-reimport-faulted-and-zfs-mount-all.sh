@@ -51,11 +51,28 @@ if [ ! -c "$ZFS_DEV" -o x"$(pgrep "$ZED_PROG_NAME")" = x ] ; then
 	fi
 fi
 
-"$ZPOOL" list -H | awk -v faulted=FAULTED '$7 == faulted{print $1;}' |\
+"$ZPOOL" list -H | awk -F '\t' -v faulted=FAULTED '$7 == faulted{print $1;}' |\
 while read p ; do
 	reimport_msg=$(printf "Trying to reimport %s\n" "$p")
 	syslog_echo "$reimport_msg"
-	"$ZPOOL" export "$p" && "$ZPOOL" import -N "$p"
+	"$ZPOOL" export "$p"
+	rc=$?
+	if [ $rc -ne 0 ] ; then
+		msg=$(printf "Failed to export %s : error %s\n" "$p" "$rc")
+		syslog_echo "$msg"
+	else
+		"$ZPOOL" import -N "$p"
+		rc=$?
+		if [ $rc -ne 0 ] ; then
+			msg=$(printf "Failed to re-import %s : error %s\n" "$p" "$rc")
+			syslog_echo "$msg"
+		fi
+	fi
 done
 
 zfs mount -a
+rc=$?
+if [ $rc -ne 0 ] ; then
+	msg=$(printf "Trouble during 'zfs_mount -a' : error %s\n" "$rc")
+	syslog_echo "$msg"
+fi
