@@ -16,6 +16,7 @@ AM_CCASFLAGS = \
 noinst_LTLIBRARIES = libspl.la
 
 libspl_la_SOURCES = \
+	fdatasync.c \
 	gethrtime.c \
 	gethrestime.c \
 	getmntany.c \
