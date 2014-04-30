@@ -7,6 +7,7 @@
 #include <sys/zvol.h>
 
 #include <sys/zvolIO.h>
+#include <IOKit/IOKitKeys.h>
 #include <IOKit/storage/IOBlockStorageDevice.h>
 #include <IOKit/storage/IOStorageProtocolCharacteristics.h>
 
@@ -44,6 +45,8 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
     OSDictionary		*	protocolCharacteristics = 0;
     OSDictionary		*	deviceCharacteristics   = 0;
 	OSString			*	dataString				= 0;
+    OSNumber			*	dataNumber				= 0;
+    uint64_t                minSegmentSize          = 0;
 
     if (super::attach(provider) == false)
         return false;
@@ -102,23 +105,39 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
         return true;
     }
 
-    // Set physical block size to ZVOL_BSIZE (512b)
-    deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey,
-                                     OSNumber::withNumber(ZVOL_BSIZE,8*sizeof(ZVOL_BSIZE)) );
+    /* Set physical block size to ZVOL_BSIZE (512b) */
+    dataNumber =    OSNumber::withNumber(ZVOL_BSIZE,8*sizeof(ZVOL_BSIZE));
+    deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey, dataNumber);
+dprintf( "physicalBlockSize %llu\n", dataNumber->unsigned64BitValue());
+    dataNumber->release();
+    dataNumber = 0;
     
-    dprintf( "physicalBlockSize %llu\n", OSNumber::withNumber(ZVOL_BSIZE,
-                                                              8*sizeof(ZVOL_BSIZE))->unsigned64BitValue());
+    /* Set logical block size to match volblocksize property */
+    dataNumber =    OSNumber::withNumber(zv->zv_volblocksize,8*sizeof(zv->zv_volblocksize));
+    deviceCharacteristics->setObject(kIOPropertyLogicalBlockSizeKey, dataNumber);
+dprintf( "logicalBlockSize %llu\n", dataNumber->unsigned64BitValue());
+    dataNumber->release();
+    dataNumber = 0;
     
-    // Set logical block size to match volblocksize property
-    deviceCharacteristics->setObject(kIOPropertyLogicalBlockSizeKey,
-                                     OSNumber::withNumber(zv->zv_volblocksize,8*sizeof(zv->zv_volblocksize)) );
-    
-    dprintf( "logicalBlockSize %llu\n", OSNumber::withNumber(zv->zv_volblocksize,
-                                                             8*sizeof(zv->zv_volblocksize))->unsigned64BitValue());
-    
+    /* Apply these characteristics */
     setProperty( kIOPropertyDeviceCharacteristicsKey, deviceCharacteristics );
     deviceCharacteristics->release();
     deviceCharacteristics = 0;
+    
+    /* 
+     * Set Minimum transfer segment size if the block size is smaller than 4k
+     */
+    if( zv->zv_volblocksize > 4096 ) {
+        setProperty( kIOMinimumSegmentAlignmentByteCountKey, 1, 1 );
+//        minSegmentSize = zv->zv_volblocksize / ( ZVOL_BSIZE * 4 );
+        /* Minimum is the default of 4 */
+//        if ( minSegmentSize > 4 ) {
+//            dataNumber =    OSNumber::withNumber(minSegmentSize,8*sizeof(minSegmentSize));
+//            setProperty( kIOMinimumSegmentAlignmentByteCountKey, minSegmentSize, sizeof(minSegmentSize) );
+//            dataNumber->release();
+//            dataNumber = 0;
+//        }
+    }
     
     /*
      * Finally "Generic" type, set as a device property.
@@ -335,6 +354,11 @@ IOReturn net_lundman_zfs_zvol_device::reportBlockSize(UInt64 *blockSize)
 
 IOReturn net_lundman_zfs_zvol_device::reportMaxValidBlock(UInt64 *maxBlock)
 {
+  if (ZVOL_BSIZE == 0 ) {
+    /* Avoid divide by zero */
+    return kIOReturnNotAttached;
+  }
+    
   *maxBlock = (zv->zv_volsize / (ZVOL_BSIZE))-1 ; //-1
   dprintf("reportMaxValidBlock %llu\n", *maxBlock);
   return kIOReturnSuccess;
