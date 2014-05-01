@@ -5,6 +5,9 @@ export ZED_PROG_NAME=zed
 export ZED_PATH=/usr/local/sbin/zed
 export ERRNO_PATH=/usr/include/sys/errno.h
 export ZPOOL=/usr/local/sbin/zpool
+export ZPOOL_CACHE=/etc/zfs/zpool.cache
+
+[ -f "$ZPOOL_CACHE" ] && cp "$ZPOOL_CACHE" "$ZPOOL_CACHE".bak
 
 syslog_echo()
 {
@@ -15,7 +18,6 @@ errno_exit()
 {
 	str_error=$1
 	numeric_val=$(awk -v pat=$str_error '$0 ~ pat{print $3}' "$ERRNO_PATH")
-	perror "$numeric_val"
 	exit "$numeric_val"
 }
 

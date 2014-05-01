@@ -59,12 +59,19 @@ install-data-local:
 	@echo
 	$(MKDIR_P) $(DESTDIR)/Library/LaunchDaemons
 	$(INSTALL) org.openzfsonosx.zed.service.plist $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist
+	$(INSTALL) org.openzfsonosx.zpool-autoimport.plist $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zpool-autoimport.plist
 	$(MKDIR_P) $(DESTDIR)/usr/local/sbin
 	$(INSTALL) zed.service.sh $(DESTDIR)/usr/local/sbin/zed.service.sh
+	$(INSTALL) zpool-autoimport.sh $(DESTDIR)/usr/local/sbin/zpool-autoimport.sh
 	$(DESTDIR)/bin/launchctl load -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist || echo "Ignoring errors"
+	$(DESTDIR)/bin/launchctl load -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zpool-autoimport.plist || echo "Ignoring errors"
 
 uninstall-local:
 	@echo
 	$(DESTDIR)/bin/launchctl unload -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist || echo "Ignoring errors"
+	$(DESTDIR)/bin/launchctl unload -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zpool-autoimport.plist || echo "Ignoring errors"
 	@rm -f $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist
+	@rm -f $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zpool-autoimport.plist
 	@rm -f $(DESTDIR)/usr/local/sbin/zed.service.sh
+	@rm -f $(DESTDIR)/usr/local/sbin/zpool-autoimport.sh
+
