@@ -50,9 +50,11 @@
 #define VI_LOCK(x)
 #define VI_UNLOCK(x)
 
+
 #define ZFS_VNODE_ROOT   (1<<0)
 #define ZFS_VNODE_SYSTEM (1<<1)
 
+//#define dprintf printf
 
 /*
  * Generic pseudo-filesystem routines.
@@ -280,10 +282,6 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
     namlen = strlen(dp->d_name);
     reclen = DIRENT_RECLEN(namlen, extended);
 
-    dprintf("trying to add '%s': extended %d isascii %d: next %lld\n",
-           dp->d_name, st->grd_flags & VNODE_READDIR_EXTENDED,
-           is_ascii_str(dp->d_name), next);
-
 	if (reclen > uio_resid(uiop)) {
 		/*
 		 * Error if no entries were returned yet
@@ -321,8 +319,6 @@ gfs_readdir_emit_int(gfs_readdir_state_t *st, uio_t *uiop, offset_t next,
 		(*ncookies)--;
 		KASSERT(*ncookies >= 0, ("ncookies=%d", *ncookies));
 	}
-
-    dprintf("Copied out %d bytes\n", reclen);
 
 	return (0);
 }
@@ -402,7 +398,6 @@ top:
 		    ".", 0, ncookies, cookies)) == 0)
 			goto top;
 	} else if (off == 1) {
-        dprintf("Sending out .. with id %d\n", st->grd_parent);
 		if ((error = gfs_readdir_emit(st, uiop, voff, st->grd_parent,
 		    "..", 0, ncookies, cookies)) == 0)
 			goto top;
@@ -451,7 +446,6 @@ gfs_lookup_dot(struct vnode **vpp, struct vnode *dvp, struct vnode *pvp, const c
 		*vpp = dvp;
 		return (0);
 	} else if (strcmp(nm, "..") == 0) {
-        dprintf("gfs_lookup_dotdot\n");
 		if (pvp == NULL) {
 			ASSERT(vnode_isroot(dvp));
 			VN_HOLD(dvp);
@@ -460,7 +454,6 @@ gfs_lookup_dot(struct vnode **vpp, struct vnode *dvp, struct vnode *pvp, const c
 			VN_HOLD(pvp);
 			*vpp = pvp;
 		}
-		//vn_lock(*vpp, LK_EXCLUSIVE | LK_RETRY);
 		return (0);
 	}
 
@@ -511,20 +504,24 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
         vfsp.vnfs_marksystem = 1;
     if (flags & ZFS_VNODE_ROOT)
         vfsp.vnfs_markroot = 1;
-	//error = getnewvnode("zfs", vfsp, ops, &vp);
 
-	//ASSERT(error == 0);
-	//vn_lock(vp, /*LK_EXCLUSIVE |*/ LK_RETRY);
-	//vp->v_data = (caddr_t)fp;
-    //vnode_setfsnode(vp, fp);
+#ifdef __FreeBSD__
+	error = getnewvnode("zfs", vfsp, ops, &vp);
 
+	ASSERT(error == 0);
+	vn_lock(vp, /*LK_EXCLUSIVE |*/ LK_RETRY);
+	vp->v_data = (caddr_t)fp;
+    vnode_setfsnode(vp, fp);
 
-    //mutex_enter(&zfsvfs->z_vnode_create_lock);
+#else // APPLE
+
     while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0);
-    //mutex_exit(&zfsvfs->z_vnode_create_lock);
+
 	vnode_settag(vp, VT_OTHER);
     dprintf("new vnode %p system %d root %d: vfs %p\n",
            vp, vfsp.vnfs_marksystem, vfsp.vnfs_markroot, vfs);
+
+#endif
 
 	/*
 	 * Set up various pointers
@@ -534,20 +531,24 @@ gfs_file_create(size_t size, struct vnode *pvp, vfs_t *vfs, vnodeops_t *ops, enu
 	fp->gfs_parent = pvp;
 	fp->gfs_size = size;
 	fp->gfs_type = GFS_FILE;
-
-	//vp->v_vflag |= VV_FORCEINSMQ;
-	//error = insmntque(vp, vfsp);
-	//vp->v_vflag &= ~VV_FORCEINSMQ;
-	//KASSERT(error == 0, ("insmntque() failed: error %d", error));
+#ifndef __APPLE__
+	vp->v_vflag |= VV_FORCEINSMQ;
+	error = insmntque(vp, vfsp);
+	vp->v_vflag &= ~VV_FORCEINSMQ;
+	KASSERT(error == 0, ("insmntque() failed: error %d", error));
+#endif
 
 	/*
 	 * Initialize vnode and hold parent.
 	 */
+#ifndef __APPLE__
 	if (pvp) {
         //printf("Skipping lock of parent %p\n", pvp);
+
         VN_HOLD(pvp);
-        dprintf("parent hold pvp %p to 0 -> %d\n", pvp, ((uint32_t *)pvp)[23]);
     }
+#endif
+
 	return (vp);
 }
 
@@ -588,7 +589,9 @@ gfs_dir_create(size_t struct_size, struct vnode *pvp, vfs_t *vfsp, vnodeops_t *o
     dprintf("gfs_dir_create\n");
 
 	vp = gfs_file_create(struct_size, pvp, vfsp, ops, VDIR, flags);
-	//vp->v_type = VDIR; // Can only be set at create FIXME
+#ifndef __APPLE__
+	vp->v_type = VDIR;
+#endif
 
 	dp = vnode_fsnode(vp);
 	dp->gfsd_file.gfs_type = GFS_DIR;
@@ -632,7 +635,6 @@ gfs_root_create(size_t size, vfs_t *vfsp, vnodeops_t *ops, ino64_t ino,
                         ZFS_VNODE_SYSTEM);
 	/* Manually set the inode */
 	((gfs_file_t *)vnode_fsnode(vp))->gfs_ino = ino;
-    dprintf(".zfs created returning %p; ino %d\n", vp, ino);
 
     /*
      * Since we created the .zfs node as VSYSTEM, we have to manually
@@ -720,11 +722,14 @@ found:
 	if (vp->v_flag & V_XATTRDIR)
 		VI_LOCK(fp->gfs_parent);
 #endif
-	VN_HOLD(vp);
+
+    // vp is already help by caller to reclaim
+	VI_LOCK(vp);
 	/*
 	 * Really remove this vnode
 	 */
 	data = vnode_fsnode(vp);
+#ifdef sun
 	if (ge != NULL) {
 		/*
 		 * If this was a statically cached entry, simply set the
@@ -732,18 +737,19 @@ found:
 		 */
 		ge->gfse_vnode = NULL;
 	}
-	VN_RELE(vp);
+#endif
+    VI_UNLOCK(vp);
 
 	/*
 	 * Free vnode and release parent
 	 */
-    dprintf("freeing vp %p and parent %p\n", vp, fp->gfs_parent);
 	if (fp->gfs_parent) {
 		if (dp)
 			gfs_dir_unlock(dp);
-		//VOP_UNLOCK(vp, 0);
+#ifndef __APPLE__
         VN_RELE(fp->gfs_parent);
-		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
+#endif
+
 	} else {
 		ASSERT(vnode_mount(vp) != NULL);
 		VFS_RELE(vnode_mount(vp));
@@ -903,7 +909,6 @@ gfs_dir_lookup_static(int (*compare)(const char *, const char *),
 			 * for this entry, we discard the result in favor of
 			 * the cached vnode.
 			 */
-            dprintf("lookup_static\n");
 			gfs_dir_unlock(dp);
 			vp = ge->gfse_ctor(dvp);
 			gfs_dir_lock(dp);
@@ -969,8 +974,6 @@ gfs_dir_lookup(struct vnode *dvp, const char *nm, struct vnode **vpp, cred_t *cr
 	struct vnode *vp = NULL;
 	int (*compare)(const char *, const char *);
 	int error, idx;
-
-    dprintf("gfs_dir_lookup\n");
 
 	ASSERT(vnode_isdir(dvp));
 
@@ -1199,11 +1202,6 @@ gfs_vop_readdir(ap)
                          M_TEMP, M_WAITOK);
 		a_cookies = cookies;
 		*ap->a_numdirent = ncookies;
-        dprintf("Setting ncookies to %d and offset at %08llx, userspace %d. extended %d\n",
-               ncookies,
-               uio_offset(uiop),
-               uio_isuserspace(uiop),
-               extended);
 	}
 
 	error = gfs_dir_readdir(vp, uiop, eofp, &ncookies, &cookies, NULL,
@@ -1221,9 +1219,6 @@ gfs_vop_readdir(ap)
 
     if (cookies)
 		FREE(a_cookies, M_TEMP);
-
-    dprintf("Returning readdir with numdirent as %d: new offset %08llx: eof %d\n",
-           *ap->a_numdirent, uio_offset(uiop), *eofp);
 
 	return (error);
 }
