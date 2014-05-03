@@ -416,8 +416,6 @@ zfs_dirlook(znode_t *dzp, char *name, vnode_t **vpp, int flags,
 			*vpp = ZTOV(zp);
 		rw_exit(&dzp->z_parent_lock);
 	} else if (zfs_has_ctldir(dzp) && strcmp(name, ZFS_CTLDIR_NAME) == 0) {
-        if (!zfs_show_ctldir(dzp))
-            return ENOENT;
 		*vpp = zfsctl_root(dzp);
 	} else {
 		int zf;
