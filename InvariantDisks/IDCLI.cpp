@@ -16,6 +16,7 @@
 #include "IDDiskInfoLogger.hpp"
 #include "IDMediaPathLinker.hpp"
 #include "IDUUIDLinker.hpp"
+#include "IDSerialLinker.hpp"
 
 #include <vector>
 #include <string>
@@ -91,6 +92,7 @@ namespace ID
 		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout));
 		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path"));
 		dispatcher.addHandler(std::make_shared<UUIDLinker>(m_impl->basePath + "/by-id"));
+		dispatcher.addHandler(std::make_shared<SerialLinker>(m_impl->basePath + "/by-serial"));
 		dispatcher.start();
 		CFRunLoopRun();
 		{
