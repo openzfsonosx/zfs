@@ -578,6 +578,7 @@ snapdir_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
 	zfsvfs->z_show_ctldir = newval;
+    dnlc_purge_vfsp(zfsvfs->z_vfs, 0);
 }
 
 static void
@@ -1580,6 +1581,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 		mutex_enter(&zfsvfs->z_os->os_user_ptr_lock);
 		dmu_objset_set_user(zfsvfs->z_os, zfsvfs);
 		mutex_exit(&zfsvfs->z_os->os_user_ptr_lock);
+
 	} else {
 		error = zfsvfs_setup(zfsvfs, B_TRUE);
 	}
@@ -1595,8 +1597,9 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 #endif
 
 #if 1 // Want .zfs or not
-	if (!zfsvfs->z_issnap)
+	if (!zfsvfs->z_issnap) {
 		zfsctl_create(zfsvfs);
+    }
 #endif
 out:
 	if (error) {
@@ -2620,7 +2623,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		}
         dprintf("z_ctldir destroy\n");
 		zfsctl_destroy(zfsvfs);
-        dprintf("z_ctldir destroy done\n");
 		ASSERT(zfsvfs->z_ctldir == NULL);
 	}
 
