@@ -26,15 +26,20 @@ namespace ID
 			<< "\tVolumeName=\"" << disk.volumeName << "\"\n"
 			<< "\tVolumePath=\"" << disk.volumePath << "\"\n"
 			<< "\tMediaKind=\"" << disk.mediaKind << "\"\n"
+			<< "\tMediaType=\"" << disk.mediaType  << "\"\n"
 			<< "\tMediaUUID=\"" << disk.mediaUUID << "\"\n"
 			<< "\tMediaBSDName=\"" << disk.mediaBSDName << "\"\n"
 			<< "\tMediaName=\"" << disk.mediaName << "\"\n"
 			<< "\tMediaPath=\"" << disk.mediaPath << "\"\n"
 			<< "\tMediaContent=\"" << disk.mediaContent << "\"\n"
+			<< "\tMedia(Whole,Leaf,Writable)=(" << disk.mediaWhole << ", "
+				<< disk.mediaLeaf << ", " << disk.mediaWritable << ")\n"
 			<< "\tDeviceGUID=\"" << disk.deviceGUID << "\"\n"
 			<< "\tDevicePath=\"" << disk.devicePath << "\"\n"
+			<< "\tDeviceModel=\"" << disk.deviceModel << "\"\n"
 			<< "\tBusName=\"" << disk.busName << "\"\n"
 			<< "\tBusPath=\"" << disk.busPath << "\"\n"
+			<< "\tIOSerial=\"" << disk.ioSerial << "\"\n"
 			<< ")";
 	}
 
@@ -74,6 +79,22 @@ namespace ID
 		return result;
 	}
 
+	std::string to_string(CFTypeRef variant)
+	{
+		if (!variant)
+			return std::string();
+		CFTypeID typeID = CFGetTypeID(variant);
+		if (typeID == CFStringGetTypeID())
+			return to_string(CFStringRef(variant));
+		else if (typeID == CFURLGetTypeID())
+			return to_string(CFURLRef(variant));
+		else if (typeID == CFDataGetTypeID())
+			return to_string(CFDataRef(variant));
+		else if (typeID == CFUUIDGetTypeID())
+			return to_string(CFUUIDRef(variant));
+		return std::string();
+	}
+
 	template<typename T>
 	std::string stringFromDictionary(CFDictionaryRef dict, CFStringRef key)
 	{
@@ -93,26 +114,56 @@ namespace ID
 		return 0;
 	}
 
+	bool boolFromDictionary(CFDictionaryRef dict, CFStringRef key)
+	{
+		if (CFBooleanRef value = static_cast<CFBooleanRef>(CFDictionaryGetValue(dict, key)))
+		{
+			return CFBooleanGetValue(value);
+		}
+		return false;
+	}
+
+	std::string stringFromIOObjectWithParents(io_object_t ioObject, CFStringRef key)
+	{
+		std::string result;
+		CFTypeRef serial = IORegistryEntrySearchCFProperty(ioObject, kIOServicePlane, key,
+			kCFAllocatorDefault, kIORegistryIterateRecursively | kIORegistryIterateParents);
+		if (serial)
+		{
+			result = to_string(serial);
+			CFRelease(serial);
+		}
+		return result;
+	}
+
 	DiskInformation getDiskInformation(DADiskRef disk)
 	{
 		DiskInformation info;
+		// DiskArbitration
 		CFDictionaryRef descDict = DADiskCopyDescription(disk);
 		info.volumeKind = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionVolumeKindKey);
 		info.volumeUUID = stringFromDictionary<CFUUIDRef>(descDict, kDADiskDescriptionVolumeUUIDKey);
 		info.volumeName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionVolumeNameKey);
 		info.volumePath = stringFromDictionary<CFURLRef>(descDict, kDADiskDescriptionVolumePathKey);
 		info.mediaKind = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaKindKey);
+		info.mediaType = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaTypeKey);
 		info.mediaUUID = stringFromDictionary<CFUUIDRef>(descDict, kDADiskDescriptionMediaUUIDKey);
 		info.mediaBSDName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaBSDNameKey);
 		info.mediaName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaNameKey);
 		info.mediaPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaPathKey);
 		info.mediaContent = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaContentKey);
+		info.mediaWhole = boolFromDictionary(descDict, kDADiskDescriptionMediaWholeKey);
+		info.mediaLeaf = boolFromDictionary(descDict, kDADiskDescriptionMediaLeafKey);
+		info.mediaWritable = boolFromDictionary(descDict, kDADiskDescriptionMediaWritableKey);
 		info.deviceGUID = stringFromDictionary<CFDataRef>(descDict, kDADiskDescriptionDeviceGUIDKey);
 		info.devicePath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionDevicePathKey);
+		info.deviceModel = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionDeviceModelKey);
 		info.busName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionBusNameKey);
 		info.busPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionBusPathKey);
 		CFRelease(descDict);
+		// IOKit
 		io_service_t io = DADiskCopyIOMedia(disk);
+		info.ioSerial = stringFromIOObjectWithParents(io, CFSTR("Serial Number"));
 		CFMutableDictionaryRef ioDict = nullptr;
 		if (IORegistryEntryCreateCFProperties(io, &ioDict, kCFAllocatorDefault, 0) == kIOReturnSuccess)
 		{

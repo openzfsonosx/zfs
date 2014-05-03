@@ -26,15 +26,21 @@ namespace ID
 		std::string volumeName;
 		std::string volumePath;
 		std::string mediaKind;
+		std::string mediaType;
 		std::string mediaUUID;
 		std::string mediaBSDName;
 		std::string mediaName;
 		std::string mediaPath;
 		std::string mediaContent;
+		bool mediaWhole;
+		bool mediaLeaf;
+		bool mediaWritable;
 		std::string deviceGUID;
 		std::string devicePath;
+		std::string deviceModel;
 		std::string busName;
 		std::string busPath;
+		std::string ioSerial;
 	};
 
 	DiskInformation getDiskInformation(DADiskRef disk);
