@@ -20,21 +20,21 @@ namespace ID
 
 	std::ostream & operator<<(std::ostream & os, DiskInformation const & disk)
 	{
-		return os << "Disk: ("
-			<< "VolumeKind=\"" << disk.volumeKind << "\", "
-			<< "VolumeUUID=\"" << disk.volumeUUID << "\", "
-			<< "VolumeName=\"" << disk.volumeName << "\", "
-			<< "VolumePath=\"" << disk.volumePath << "\", "
-			<< "MediaKind=\"" << disk.mediaKind << "\", "
-			<< "MediaUUID=\"" << disk.mediaUUID << "\", "
-			<< "MediaBSDName=\"" << disk.mediaBSDName << "\", "
-			<< "MediaName=\"" << disk.mediaName << "\", "
-			<< "MediaPath=\"" << disk.mediaPath << "\", "
-			<< "MediaContent=\"" << disk.mediaContent << "\", "
-			<< "DeviceGUID=\"" << disk.deviceGUID << "\", "
-			<< "DevicePath=\"" << disk.devicePath << "\", "
-			<< "BusName=\"" << disk.busName << "\", "
-			<< "BusPath=\"" << disk.busPath << "\""
+		return os << "Disk: (\n"
+			<< "\tVolumeKind=\"" << disk.volumeKind << "\"\n"
+			<< "\tVolumeUUID=\"" << disk.volumeUUID << "\"\n"
+			<< "\tVolumeName=\"" << disk.volumeName << "\"\n"
+			<< "\tVolumePath=\"" << disk.volumePath << "\"\n"
+			<< "\tMediaKind=\"" << disk.mediaKind << "\"\n"
+			<< "\tMediaUUID=\"" << disk.mediaUUID << "\"\n"
+			<< "\tMediaBSDName=\"" << disk.mediaBSDName << "\"\n"
+			<< "\tMediaName=\"" << disk.mediaName << "\"\n"
+			<< "\tMediaPath=\"" << disk.mediaPath << "\"\n"
+			<< "\tMediaContent=\"" << disk.mediaContent << "\"\n"
+			<< "\tDeviceGUID=\"" << disk.deviceGUID << "\"\n"
+			<< "\tDevicePath=\"" << disk.devicePath << "\"\n"
+			<< "\tBusName=\"" << disk.busName << "\"\n"
+			<< "\tBusPath=\"" << disk.busPath << "\"\n"
 			<< ")";
 	}
 

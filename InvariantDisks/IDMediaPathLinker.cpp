@@ -27,7 +27,7 @@ namespace ID
 
 	static std::string prefixDevice = "IODeviceTree:/";
 
-	std::string filterMediaPath(std::string const & mediaPath)
+	static std::string filterMediaPath(std::string const & mediaPath)
 	{
 		if (mediaPath.size() < prefixDevice.size())
 			return std::string();
