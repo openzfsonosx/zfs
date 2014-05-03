@@ -12,6 +12,7 @@
 #include "IDDiskArbitrationDispatcher.hpp"
 
 #include "IDDiskArbitrationHandler.hpp"
+#include "IDDiskArbitrationUtils.hpp"
 
 #include <DiskArbitration/DiskArbitration.h>
 
@@ -89,15 +90,17 @@ namespace ID
 
 	void DiskArbitrationDispatcher::diskAppeared(DADiskRef disk) const
 	{
+		DiskInformation info = getDiskInformation(disk);
 		std::lock_guard<std::mutex> lock(m_impl->mutex);
 		for (auto const & handler: m_impl->handler)
-			handler->diskAppeared(disk);
+			handler->diskAppeared(disk, info);
 	}
 
 	void DiskArbitrationDispatcher::diskDisappeared(DADiskRef disk) const
 	{
+		DiskInformation info = getDiskInformation(disk);
 		std::lock_guard<std::mutex> lock(m_impl->mutex);
 		for (auto const & handler: m_impl->handler)
-			handler->diskDisappeared(disk);
+			handler->diskDisappeared(disk, info);
 	}
 }

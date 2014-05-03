@@ -16,14 +16,16 @@
 
 namespace ID
 {
+	class DiskInformation;
+
 	class DiskArbitrationHandler
 	{
 	public:
 		virtual ~DiskArbitrationHandler() = default;
 
 	public:
-		virtual void diskAppeared(DADiskRef disk) = 0;
-		virtual void diskDisappeared(DADiskRef disk) = 0;
+		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) = 0;
+		virtual void diskDisappeared(DADiskRef disk, DiskInformation const & info) = 0;
 	};
 }
 

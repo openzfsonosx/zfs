@@ -24,13 +24,13 @@ namespace ID
 	{
 	}
 
-	void DiskInfoLogger::diskAppeared(DADiskRef disk)
+	void DiskInfoLogger::diskAppeared(DADiskRef /*disk*/, DiskInformation const & info)
 	{
-		m_logStream << "Disk Appeared: " << disk << std::endl;
+		m_logStream << "Disk Appeared: " << info << std::endl;
 	}
 
-	void DiskInfoLogger::diskDisappeared(DADiskRef disk)
+	void DiskInfoLogger::diskDisappeared(DADiskRef /*disk*/, DiskInformation const & info)
 	{
-		m_logStream << "Disk Disappeared: " << disk << std::endl;
+		m_logStream << "Disk Disappeared: " << info << std::endl;
 	}
 }

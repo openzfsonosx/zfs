@@ -24,8 +24,8 @@ namespace ID
 		DiskInfoLogger(std::ostream & stream);
 
 	public:
-		virtual void diskAppeared(DADiskRef disk) override;
-		virtual void diskDisappeared(DADiskRef disk) override;
+		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;
+		virtual void diskDisappeared(DADiskRef disk, DiskInformation const & info) override;
 
 	private:
 		std::ostream & m_logStream;

@@ -40,9 +40,8 @@ namespace ID
 		return filteredPath;
 	}
 
-	void MediaPathLinker::diskAppeared(DADiskRef disk)
+	void MediaPathLinker::diskAppeared(DADiskRef disk, DiskInformation const & di)
 	{
-		DiskInformation di = getDiskInformation(disk);
 		std::string mediaPath = filterMediaPath(di.mediaPath);
 		if (!mediaPath.empty() && !di.mediaBSDName.empty())
 		{
@@ -60,9 +59,8 @@ namespace ID
 		}
 	}
 
-	void MediaPathLinker::diskDisappeared(DADiskRef disk)
+	void MediaPathLinker::diskDisappeared(DADiskRef disk, DiskInformation const & di)
 	{
-		DiskInformation di = getDiskInformation(disk);
 		std::string mediaPath = filterMediaPath(di.mediaPath);
 		if (!mediaPath.empty())
 		{
