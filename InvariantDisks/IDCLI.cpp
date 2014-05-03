@@ -15,6 +15,7 @@
 #include "IDDiskArbitrationDispatcher.hpp"
 #include "IDDiskInfoLogger.hpp"
 #include "IDMediaPathLinker.hpp"
+#include "IDUUIDLinker.hpp"
 
 #include <vector>
 #include <string>
@@ -89,6 +90,7 @@ namespace ID
 		DiskArbitrationDispatcher dispatcher;
 		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout));
 		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path"));
+		dispatcher.addHandler(std::make_shared<UUIDLinker>(m_impl->basePath + "/by-id"));
 		dispatcher.start();
 		CFRunLoopRun();
 		{

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		700AE3C91915139C00929DAE /* IDUUIDLinker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 700AE3C71915139C00929DAE /* IDUUIDLinker.cpp */; };
 		70C63F28190CF5E800929DAE /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F27190CF5E800929DAE /* main.cpp */; };
 		70C63F32190CF78800929DAE /* IDCLI.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F30190CF78800929DAE /* IDCLI.cpp */; };
 		70C63F35190CF87400929DAE /* IDException.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F33190CF87400929DAE /* IDException.cpp */; };
@@ -33,6 +34,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		700AE3C71915139C00929DAE /* IDUUIDLinker.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDUUIDLinker.cpp; sourceTree = "<group>"; };
+		700AE3C81915139C00929DAE /* IDUUIDLinker.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDUUIDLinker.hpp; sourceTree = "<group>"; };
 		70C63F24190CF5E800929DAE /* InvariantDisks */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = InvariantDisks; sourceTree = BUILT_PRODUCTS_DIR; };
 		70C63F27190CF5E800929DAE /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; path = main.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
 		70C63F30190CF78800929DAE /* IDCLI.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; path = IDCLI.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
@@ -101,6 +104,8 @@
 				70C63F4E190D2AA000929DAE /* IDDiskInfoLogger.hpp */,
 				70C63F53190D4A4300929DAE /* IDMediaPathLinker.cpp */,
 				70C63F54190D4A4300929DAE /* IDMediaPathLinker.hpp */,
+				700AE3C71915139C00929DAE /* IDUUIDLinker.cpp */,
+				700AE3C81915139C00929DAE /* IDUUIDLinker.hpp */,
 				70C63F49190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp */,
 				70C63F4A190D1AEF00929DAE /* IDDiskArbitrationDispatcher.hpp */,
 				70C63F56190D574000929DAE /* IDFileUtils.cpp */,
@@ -190,6 +195,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				700AE3C91915139C00929DAE /* IDUUIDLinker.cpp in Sources */,
 				70C63F32190CF78800929DAE /* IDCLI.cpp in Sources */,
 				70C63F52190D2CC900929DAE /* IDDiskArbitrationUtils.cpp in Sources */,
 				70C63F55190D4A4300929DAE /* IDMediaPathLinker.cpp in Sources */,
