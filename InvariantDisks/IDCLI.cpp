@@ -19,10 +19,12 @@
 #include "IDSerialLinker.hpp"
 
 #include <vector>
+#include <map>
 #include <string>
 #include <iostream>
 #include <algorithm>
 #include <thread>
+#include <functional>
 
 #include <CoreFoundation/CoreFoundation.h>
 
@@ -110,23 +112,32 @@ namespace ID
 			CFRunLoopStop(m_impl->runloop);
 	}
 
+	struct CLIFlagHandler
+	{
+		size_t argCount;
+		std::function<void(char **)> func;
+	};
+
 	void CLI::parse(int & argc, char ** argv)
 	{
-		std::vector<std::string> args(argv, argv + argc);
-		// -h
-		if (std::count(args.begin(), args.end(), "-h"))
-			m_impl->showHelp = true;
-		// -v
-		if (std::count(args.begin(), args.end(), "-v"))
-			m_impl->verbose = true;
-		// -p
-		auto p = std::find(args.begin(), args.end(), "-p");
-		if (p != args.end())
+		// Command Line Parsing
+		std::map<std::string, CLIFlagHandler> cliFlags =
 		{
-			++p;
-			if (p == args.end())
-				throw Exception("-p <path> requires a path argument");
-			m_impl->basePath = *p;
+			{"-h", { 0, [&](char **){ m_impl->showHelp = true; }}},
+			{"-v", { 0, [&](char **){ m_impl->verbose = true; }}},
+			{"-p", { 1, [&](char ** a){ m_impl->basePath = a[1]; }}}
+		};
+		for (int argIdx = 0; argIdx < argc; ++argIdx)
+		{
+			auto flagIt = cliFlags.find(argv[argIdx]);
+			if (flagIt != cliFlags.end())
+			{
+				CLIFlagHandler const & f = flagIt->second;
+				if (argIdx + f.argCount >= argc)
+					Throw<Exception>() << "Flag " << argv[argIdx] << " requires " << f.argCount << " arguments";
+				f.func(&argv[argIdx]);
+				argIdx += f.argCount;
+			}
 		}
 	}
 }
