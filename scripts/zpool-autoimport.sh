@@ -4,6 +4,7 @@ export ZFS_DEV=/dev/zfs
 export ZED_PROG_NAME=zed
 export ZED_PATH=/usr/local/sbin/zed
 export ERRNO_PATH=/usr/include/sys/errno.h
+export ZFS=/usr/local/sbin/zfs
 export ZPOOL=/usr/local/sbin/zpool
 export ZPOOL_CACHE=/etc/zfs/zpool.cache
 
@@ -72,9 +73,9 @@ while read p ; do
 	fi
 done
 
-zfs mount -a
+"$ZFS" mount -a
 rc=$?
 if [ $rc -ne 0 ] ; then
-	msg=$(printf "Trouble during 'zfs_mount -a' : error %s\n" "$rc")
+	msg=$(printf "Trouble during 'zfs mount -a' : error %s\n" "$rc")
 	syslog_echo "$msg"
 fi
