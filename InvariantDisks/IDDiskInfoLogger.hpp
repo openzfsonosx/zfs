@@ -21,14 +21,18 @@ namespace ID
 	class DiskInfoLogger : public DiskArbitrationHandler
 	{
 	public:
-		DiskInfoLogger(std::ostream & stream);
+		DiskInfoLogger(std::ostream & stream, bool verbose = false);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;
 		virtual void diskDisappeared(DADiskRef disk, DiskInformation const & info) override;
 
 	private:
+		void printDisk(DiskInformation const & info) const;
+
+	private:
 		std::ostream & m_logStream;
+		bool m_verbose;
 	};
 }
 

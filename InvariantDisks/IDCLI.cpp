@@ -61,6 +61,7 @@ namespace ID
 		DispatchSource signalSourceINT;
 		DispatchSource signalSourceTERM;
 		bool showHelp = false;
+		bool verbose = false;
 		std::string basePath = "/var/run/disk";
 		CFRunLoopRef runloop = nullptr;
 	};
@@ -89,7 +90,7 @@ namespace ID
 			m_impl->runloop = CFRunLoopGetCurrent();
 		}
 		DiskArbitrationDispatcher dispatcher;
-		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout));
+		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout, m_impl->verbose));
 		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path"));
 		dispatcher.addHandler(std::make_shared<UUIDLinker>(m_impl->basePath + "/by-id"));
 		dispatcher.addHandler(std::make_shared<SerialLinker>(m_impl->basePath + "/by-serial"));
@@ -115,6 +116,9 @@ namespace ID
 		// -h
 		if (std::count(args.begin(), args.end(), "-h"))
 			m_impl->showHelp = true;
+		// -v
+		if (std::count(args.begin(), args.end(), "-v"))
+			m_impl->verbose = true;
 		// -p
 		auto p = std::find(args.begin(), args.end(), "-p");
 		if (p != args.end())
