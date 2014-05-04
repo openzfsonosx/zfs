@@ -75,7 +75,6 @@
 #include <sys/list.h>
 #include <sys/uio.h>
 #include <sys/zfs_debug.h>
-#include <sys/zfs_delay.h>
 #include <sys/sdt.h>
 #include <sys/kstat.h>
 #include <sys/u8_textprep.h>
@@ -669,6 +668,14 @@ void ksiddomain_rele(ksiddomain_t *);
 #define	ddi_log_sysevent(_a, _b, _c, _d, _e, _f, _g) \
 	sysevent_post_event(_c, _d, _b, "libzpool", _e, _f)
 
+#define	zfs_sleep_until(wakeup)						\
+	do {								\
+		hrtime_t delta = wakeup - gethrtime();			\
+		struct timespec ts;					\
+		ts.tv_sec = delta / NANOSEC;				\
+		ts.tv_nsec = delta % NANOSEC;				\
+		(void) nanosleep(&ts, NULL);				\
+	} while (0)
 
 // OSX uio API
 struct uio *uio_create(
