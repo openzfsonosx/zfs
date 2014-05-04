@@ -19,17 +19,6 @@
 
 namespace ID
 {
-	static void throwOnError(int error, char const * command)
-	{
-		if (error)
-		{
-			Throw<Exception> e;
-			e << "Error executing " << command << ": " << strerror(errno);
-		}
-	}
-
-#define EXEC_THROW(c) throwOnError((c), #c)
-
 	void createPath(std::string const & path)
 	{
 		size_t slashIdx = 0;
@@ -45,14 +34,26 @@ namespace ID
 
 	void createSymlink(std::string const & link, std::string const & target)
 	{
-		// Remove old symlink if it exists
-		if (access(link.c_str(), F_OK) == 0)
-			EXEC_THROW(unlink(link.c_str()));
-		EXEC_THROW(symlink(target.c_str(), link.c_str()));
+		if (link.empty() || target.empty())
+			throw Exception("Can not create symlink with empty path");
+		removeSymlink(link);
+		int err = symlink(target.c_str(), link.c_str());
+		if (err != 0)
+		{
+			Throw<Exception> e;
+			e << "Error creating symlink " << link << " pointing to " << target << ": " << strerror(err);
+		}
 	}
 
 	void removeSymlink(std::string const & link)
 	{
-		EXEC_THROW(unlink(link.c_str()));
+		if (link.empty())
+			throw Exception("Can not remove symlink with empty path");
+		int err = unlink(link.c_str());
+		if (err != 0 && errno != ENOENT)
+		{
+			Throw<Exception> e;
+			e << "Error removing symlink " << link << ": " << strerror(err);
+		}
 	}
 }
