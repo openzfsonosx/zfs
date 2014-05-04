@@ -32,6 +32,9 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXFileReference section */
+		AD4EF516191405E100AC522D /* vdev_iokit.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = vdev_iokit.h; sourceTree = "<group>"; };
+		AD4EF518191413C300AC522D /* vdev_iokit_util.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = vdev_iokit_util.cpp; sourceTree = "<group>"; };
+		AD4EF519191413F300AC522D /* vdev_iokit.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = vdev_iokit.c; sourceTree = "<group>"; };
 		D6F4409318E9BDFB002AB1F4 /* aclocal.m4 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = aclocal.m4; path = ../aclocal.m4; sourceTree = SOURCE_ROOT; };
 		D6F4409418E9BDFB002AB1F4 /* autogen.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; name = autogen.sh; path = ../autogen.sh; sourceTree = SOURCE_ROOT; };
 		D6F4409518E9BDFB002AB1F4 /* configure */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; name = configure; path = ../configure; sourceTree = SOURCE_ROOT; };
@@ -670,7 +673,6 @@
 		D6F4434D18E9BE67002AB1F4 /* zfs_ioctl.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = zfs_ioctl.c; sourceTree = "<group>"; };
 		D6F4434E18E9BE67002AB1F4 /* zfs_log.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = zfs_log.c; sourceTree = "<group>"; };
 		D6F4434F18E9BE67002AB1F4 /* zfs_onexit.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = zfs_onexit.c; sourceTree = "<group>"; };
-		D6F4435018E9BE67002AB1F4 /* zfs_osx.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = zfs_osx.c; sourceTree = "<group>"; };
 		D6F4435118E9BE67002AB1F4 /* zfs_osx.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = zfs_osx.cpp; sourceTree = "<group>"; };
 		D6F4435218E9BE67002AB1F4 /* zfs_replay.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = zfs_replay.c; sourceTree = "<group>"; };
 		D6F4435318E9BE67002AB1F4 /* zfs_rlock.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = zfs_rlock.c; sourceTree = "<group>"; };
@@ -1324,6 +1326,7 @@
 				D6F441D218E9BE67002AB1F4 /* uuid.h */,
 				D6F441D318E9BE67002AB1F4 /* vdev.h */,
 				D6F441D418E9BE67002AB1F4 /* vdev_disk.h */,
+				AD4EF516191405E100AC522D /* vdev_iokit.h */,
 				D6F441D518E9BE67002AB1F4 /* vdev_file.h */,
 				D6F441D618E9BE67002AB1F4 /* vdev_impl.h */,
 				D6F441D718E9BE67002AB1F4 /* xvattr.h */,
@@ -1930,6 +1933,8 @@
 				D6F4433718E9BE67002AB1F4 /* vdev.c */,
 				D6F4433818E9BE67002AB1F4 /* vdev_cache.c */,
 				D6F4433918E9BE67002AB1F4 /* vdev_disk.c */,
+				AD4EF519191413F300AC522D /* vdev_iokit.c */,
+				AD4EF518191413C300AC522D /* vdev_iokit_util.cpp */,
 				D6F4433A18E9BE67002AB1F4 /* vdev_file.c */,
 				D6F4433B18E9BE67002AB1F4 /* vdev_label.c */,
 				D6F4433C18E9BE67002AB1F4 /* vdev_mirror.c */,
@@ -1952,7 +1957,6 @@
 				D6F4434D18E9BE67002AB1F4 /* zfs_ioctl.c */,
 				D6F4434E18E9BE67002AB1F4 /* zfs_log.c */,
 				D6F4434F18E9BE67002AB1F4 /* zfs_onexit.c */,
-				D6F4435018E9BE67002AB1F4 /* zfs_osx.c */,
 				D6F4435118E9BE67002AB1F4 /* zfs_osx.cpp */,
 				D6F4435218E9BE67002AB1F4 /* zfs_replay.c */,
 				D6F4435318E9BE67002AB1F4 /* zfs_rlock.c */,
@@ -2155,6 +2159,8 @@
 /* Begin PBXProject section */
 		08FB7793FE84155DC02AAC07 /* Project object */ = {
 			isa = PBXProject;
+			attributes = {
+			};
 			buildConfigurationList = 1DEB919308733D9F0010E9CD /* Build configuration list for PBXProject "zfs" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = English;

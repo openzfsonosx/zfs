@@ -1,27 +1,45 @@
 
+/*
+ * Apple IOKit (c++)
+ */
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>
-
-#include <sys/zfs_ioctl.h>
-#include <sys/zfs_znode.h>
-#include <sys/zvol.h>
-
-#include <sys/zvolIO.h>
-
-#include <sys/zfs_vnops.h>
-#include <sys/taskq.h>
 
 #include <libkern/version.h>
 
 #include <libkern/sysctl.h>
 
+/*
+ *  zvol IOKit (c++ with extern c)
+ */
 
+#include <sys/zvolIO.h>
+
+/*
+ *  ZFS internal
+ */
+
+#ifdef __cplusplus
 extern "C" {
+#endif
+    
+#include <sys/zfs_ioctl.h>
+#include <sys/zfs_znode.h>
+#include <sys/zvol.h>
+
+#include <sys/zfs_vnops.h>
+#include <sys/taskq.h>
+
+
   extern kern_return_t _start(kmod_info_t *ki, void *data);
   extern kern_return_t _stop(kmod_info_t *ki, void *data);
 
-};
+    
+#ifdef __cplusplus
+}   /* extern "C" */
+#endif
+
   __attribute__((visibility("default"))) KMOD_EXPLICIT_DECL(net.lundman.zfs, "1.0.0", _start, _stop)
   __private_extern__ kmod_start_func_t *_realmain = 0;
   __private_extern__ kmod_stop_func_t  *_antimain = 0;
@@ -44,7 +62,11 @@ OSDefineMetaClassAndStructors(net_lundman_zfs_zvol, IOService)
  * Some left over functions from zfs_osx.c, left as C until cleaned up
  */
 
+#ifdef __cplusplus
 extern "C" {
+#endif
+
+
 
 extern SInt32 zfs_active_fs_count;
 
@@ -192,9 +214,9 @@ fnv_32a_str(const char *str, uint32_t hval)
     return hval;
 }
 
-
-} // Extern "C"
-
+#ifdef __cplusplus
+} /* Extern "C" */
+#endif
 
 
 
@@ -449,7 +471,10 @@ IOByteCount net_lundman_zfs_zvol::performWrite (IOMemoryDescriptor* srcDesc,
 /*
  * C language interfaces
  */
-
+#ifdef __cplusplus
+extern "C" {
+#endif
+    
 int zvolCreateNewDevice(zvol_state_t *zv)
 {
     static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createBlockStorageDevice(zv);
@@ -490,3 +515,7 @@ uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t 
                                                           len);
   return done;
 }
+
+#ifdef __cplusplus
+}   /* extern "C" */
+#endif

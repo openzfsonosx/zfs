@@ -44,7 +44,11 @@
 #include <sys/zil.h>
 #include <sys/ddt.h>
 #include <sys/vdev_impl.h>
+#ifdef _KERNEL
+#include <sys/vdev_iokit.h>
+#else
 #include <sys/vdev_disk.h>
+#endif
 #include <sys/metaslab.h>
 #include <sys/metaslab_impl.h>
 #include <sys/uberblock_impl.h>
