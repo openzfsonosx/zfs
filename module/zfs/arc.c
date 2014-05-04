@@ -148,6 +148,15 @@
 #include <zfs_fletcher.h>
 #include <sys/sysctl.h>
 
+#ifdef __APPLE__
+#include <mach/kern_return.h>
+extern kern_return_t mach_vm_pressure_monitor(
+        boolean_t       wait_for_pressure,
+        unsigned int    nsecs_monitored,
+        unsigned int    *pages_reclaimed_p,
+        unsigned int    *pages_wanted_p);
+#endif /* __APPLE__ */
+
 #ifndef _KERNEL
 /* set with ZFS_DEBUG=watch, to enable watchpoints on frozen buffers */
 boolean_t arc_watch = B_FALSE;
