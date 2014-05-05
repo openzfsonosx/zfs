@@ -94,7 +94,7 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
      * We want to set some additional properties for ZVOLs, in
      * particular, logical block size (volblocksize) of the
      * underlying ZVOL, and 'physical' block size presented by
-     * the virtual disk.
+     * the virtual disk. Also set physical bytes per sector.
      *
      * These properties are defined in *device* characteristics
      */
@@ -119,18 +119,44 @@ dprintf( "logicalBlockSize %llu\n", dataNumber->unsigned64BitValue());
     dataNumber->release();
     dataNumber = 0;
     
+    /* Set physical bytes per sector to match volblocksize property */
+    dataNumber =    OSNumber::withNumber((uint64_t)(8*ZVOL_BSIZE),8*sizeof(uint64_t));
+    deviceCharacteristics->setObject(kIOPropertyBytesPerPhysicalSectorKey, dataNumber);
+    dprintf( "physicalBytesPerSector %llu\n", dataNumber->unsigned64BitValue());
+    dataNumber->release();
+    dataNumber = 0;
+    
     /* Apply these characteristics */
     setProperty( kIOPropertyDeviceCharacteristicsKey, deviceCharacteristics );
     deviceCharacteristics->release();
     deviceCharacteristics = 0;
+
+    /*
+     * Set transfer limits:
+     *
+     *  Maximum transfer size (bytes)
+     *  Maximum transfer block count
+     *  Maximum transfer block size (bytes)
+     *  Maximum transfer segment count
+     *  Maximum transfer segment size (bytes)
+     *  Minimum transfer segment size (bytes)
+     *
+     *  We will need to establish safe
+     *   defaults for all / per volblocksize
+     *
+     *  Example: setProperty( kIOMinimumSegmentAlignmentByteCountKey, 1, 1 );
+     */
+
     
-    /* 
+    /*
      * Set Minimum transfer segment size if the block size is smaller than 4k
      */
+/*
     if( zv->zv_volblocksize > 4096 ) {
         setProperty( kIOMinimumSegmentAlignmentByteCountKey, 1, 1 );
+
 //        minSegmentSize = zv->zv_volblocksize / ( ZVOL_BSIZE * 4 );
-        /* Minimum is the default of 4 */
+        // Minimum is the default of 4
 //        if ( minSegmentSize > 4 ) {
 //            dataNumber =    OSNumber::withNumber(minSegmentSize,8*sizeof(minSegmentSize));
 //            setProperty( kIOMinimumSegmentAlignmentByteCountKey, minSegmentSize, sizeof(minSegmentSize) );
@@ -138,6 +164,7 @@ dprintf( "logicalBlockSize %llu\n", dataNumber->unsigned64BitValue());
 //            dataNumber = 0;
 //        }
     }
+  */
     
     /*
      * Finally "Generic" type, set as a device property.
