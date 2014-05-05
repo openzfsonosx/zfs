@@ -101,7 +101,12 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 
     
     /*
-     *  XXX - Replace with IOKit lookup if needed
+     *  XXX - Replace with IOKit lookup -
+     *       currently in vdev_iokit_util.cpp
+     *
+     *   1 physpath - IOService path, or file path
+     *   2 path - file path
+     *   3 guid - vdev guid
      */
 	/* ### APPLE TODO ### */
 	/* ddi_devid_str_decode */
@@ -122,7 +127,10 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 	}
      */
 
-    vdev_iokit_handle_open( vd, size, max_size, ashift);
+    error = vdev_iokit_handle_open( vd, size, max_size, ashift);
+    if (error) {
+		goto out;
+	}
     
     /*
      if (!vnode_isblk(devvp)) {
@@ -208,6 +216,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 	 * Clear the nowritecache bit, so that on a vdev_reopen() we will
 	 * try again.
 	 */
+    
 	vd->vdev_nowritecache = B_FALSE;
 	vd->vdev_tsd = dvd;
     /*
@@ -493,6 +502,9 @@ vdev_iokit_io_done(zio_t *zio)
      *  By attaching to the IOMedia device, we can both check
      *   the status via IOKit functions, and be informed of
      *   device changes.
+     *
+     *  Call an IOKit helper function to check the IOMedia
+     *   device - status, properties, and/or ioctl.
      */
     
 #ifndef __APPLE__

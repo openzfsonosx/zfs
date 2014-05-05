@@ -35,8 +35,8 @@
 typedef struct vdev_iokit {
 //    char            *vd_minor;
 //    struct vnode    *vd_devvp;
-    void *      vd_iokit_hl;    /* vdev IOKit handle */
-    uint64_t	vd_ashift;      /* ashift alignment */
+    uintptr_t *     vd_iokit_hl;    /* vdev IOKit handle */
+    uint64_t        vd_ashift;      /* ashift alignment */
 } vdev_iokit_t;
 
 #ifndef lbtodb

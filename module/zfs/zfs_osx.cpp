@@ -416,12 +416,14 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
 
       //IOLog("removeBlockdevice\n");
 
-      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
+//      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
+      nub = OSDynamicCast(net_lundman_zfs_zvol_device, zv->zv_iokitdev);
 
       zv->zv_iokitdev = NULL;
       zv = NULL;
-
-      nub->terminate();
+        
+      if (nub)
+          nub->terminate(kIOServiceSynchronous);
     }
 
     return result;
@@ -434,11 +436,15 @@ bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
 
     // Is it ok to keep a pointer reference to the nub like this?
     if (zv->zv_iokitdev) {
-      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
+//      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
+      nub = OSDynamicCast(net_lundman_zfs_zvol_device, zv->zv_iokitdev);
 
+      if (!nub)
+          return false;
+        
       //IOLog("Attempting to update volsize\n");
       nub->retain();
-      nub->registerService();
+      nub->registerService(kIOServiceSynchronous);
       nub->release();
     }
     return true;
@@ -477,20 +483,47 @@ extern "C" {
     
 int zvolCreateNewDevice(zvol_state_t *zv)
 {
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createBlockStorageDevice(zv);
-    return 0;
+    //static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createBlockStorageDevice(zv);
+    net_lundman_zfs_zvol * zfsProvider = 0;
+    zfsProvider = OSDynamicCast( net_lundman_zfs_zvol, global_c_interface );
+    
+    if(zfsProvider) {
+        zfsProvider->createBlockStorageDevice(zv);
+        return 0;
+    } else {
+        IOLog( "ZFS: zvolCreateNewDevice: Failed to locate zfs IOProvider\n" );
+        return 1;
+    }
 }
 
 int zvolRemoveDevice(zvol_state_t *zv)
 {
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyBlockStorageDevice(zv);
-    return 0;
+//    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyBlockStorageDevice(zv);
+    net_lundman_zfs_zvol * zfsProvider = 0;
+    zfsProvider = OSDynamicCast( net_lundman_zfs_zvol, global_c_interface );
+    
+    if(zfsProvider) {
+        zfsProvider->destroyBlockStorageDevice(zv);
+        return 0;
+    } else {
+        IOLog( "ZFS: zvolRemoveDevice: Failed to locate zfs IOProvider\n" );
+        return 1;
+    }
 }
 
 int zvolSetVolsize(zvol_state_t *zv)
 {
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->updateVolSize(zv);
-    return 0;
+//    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->updateVolSize(zv);
+    net_lundman_zfs_zvol * zfsProvider = 0;
+    zfsProvider = OSDynamicCast( net_lundman_zfs_zvol, global_c_interface );
+    
+    if(zfsProvider) {
+        zfsProvider->updateVolSize(zv);
+        return 0;
+    } else {
+        IOLog( "ZFS: zvolSetVolsize: Failed to locate zfs IOProvider\n" );
+        return 1;
+    }
 }
 
 
@@ -499,6 +532,12 @@ uint64_t zvolIO_kit_read(void *iomem, uint64_t offset, char *address, uint64_t l
   IOByteCount done;
   //IOLog("zvolIO_kit_read offset %p count %llx to offset %llx\n",
   //    address, len, offset);
+    
+    /* 
+     * XXX - Is is safer and/or slower to use OSDynamicCast here?
+     *  would allow for an error check instead of a panic. Don't
+     *  know if there would be a performance hit.
+     */
   done=static_cast<IOMemoryDescriptor*>(iomem)->writeBytes(offset,
                                                            (void *)address,
                                                            len);
