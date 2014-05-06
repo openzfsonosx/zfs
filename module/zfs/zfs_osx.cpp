@@ -416,8 +416,8 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
 
       //IOLog("removeBlockdevice\n");
 
-//      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
-      nub = OSDynamicCast(net_lundman_zfs_zvol_device, zv->zv_iokitdev);
+      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
+//      nub = OSDynamicCast(net_lundman_zfs_zvol_device, zv->zv_iokitdev);
 
       zv->zv_iokitdev = NULL;
       zv = NULL;
@@ -436,8 +436,8 @@ bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
 
     // Is it ok to keep a pointer reference to the nub like this?
     if (zv->zv_iokitdev) {
-//      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
-      nub = OSDynamicCast(net_lundman_zfs_zvol_device, zv->zv_iokitdev);
+      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
+//      nub = OSDynamicCast(net_lundman_zfs_zvol_device, zv->zv_iokitdev);
 
       if (!nub)
           return false;
@@ -480,12 +480,99 @@ IOByteCount net_lundman_zfs_zvol::performWrite (IOMemoryDescriptor* srcDesc,
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+net_lundman_zfs_zvol * zfsGetService()
+{
+    IORegistryIterator * registryIterator = 0;
+    OSIterator * newIterator;
+    IORegistryEntry * currentEntry = 0;
+    OSDictionary * matchDict = 0;
+    OSOrderedSet * allServices = 0;
+    net_lundman_zfs_zvol * zfs_service = 0;
+    
+    matchDict =     IOService::serviceMatching( "net_lundman_zfs_zvol", 0 );
+    IOLog("zfsGetService: create matchingDict\n");
+    
+    if ( matchDict ) {
+        IOLog("zfsGetService: matchingDict\n");
+        
+        newIterator = IOService::getMatchingServices(matchDict);
+        matchDict->release();
+        matchDict = 0;
+        
+        if( newIterator ) {
+            IOLog("zfsGetService: iterator\n");
+            registryIterator = OSDynamicCast(IORegistryIterator, newIterator);
+            
+            if (registryIterator) {
+                IOLog("zfsGetService: registryIterator\n");
+                zfs_service = OSDynamicCast( net_lundman_zfs_zvol, registryIterator->getCurrentEntry() );
+                
+                registryIterator->release();
+                registryIterator = 0;
+            }
+        }
+    }
+    IOLog("zfsGetService: zfs_service? [%p]\n", zfs_service);
+    
+    /* Should be matched, go to plan B if not */
+    if (zfs_service == 0) {
+        registryIterator->iterateOver(gIOServicePlane,kIORegistryIterateRecursively);
+        IOLog("zfsGetService: registryIterator 2\n");
+        if (!registryIterator)
+            return 0;
+        
+        do {
+            if(allServices)
+                allServices->release();
+            
+            allServices = registryIterator->iterateAll();
+        } while (! registryIterator->isValid() );
+        
+        IOLog("zfsGetService: allServices\n");
+        registryIterator->release();
+        registryIterator = 0;
+        
+        if (!allServices)
+            return 0;
+        IOLog("zfsGetService: entering while loop\n");
+        while( ( currentEntry = OSDynamicCast(IORegistryEntry,
+                                              allServices->getFirstObject() ) ) ) {
+            // Remove from the set immidiately
+            allServices->removeObject(currentEntry);
+            IOLog("zfsGetService: currentEntry: [%p]\n", currentEntry);
+            
+            if (currentEntry) {
+                if( strncmp("net_lundman_zfs_zvol\0",currentEntry->getName(),
+                            sizeof("net_lundman_zfs_zvol\0") ) ) {
+                    zfs_service = OSDynamicCast( net_lundman_zfs_zvol, currentEntry );
+                    IOLog("zfsGetService: match: [%p]\n", zfs_service);
+                }
+                
+                currentEntry->release();
+                currentEntry = 0;
+                
+                if (zfs_service) /* Found service */
+                    break;
+            }
+            IOLog("zfsGetService: While looped [%p]\n", currentEntry);
+        }
+        
+        allServices->release();
+        allServices = 0;
+    }
+    IOLog("zfsGetService: zfs_service 2? [%p] \n", zfs_service);
+    
+    return zfs_service;
+}
     
 int zvolCreateNewDevice(zvol_state_t *zv)
 {
     //static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createBlockStorageDevice(zv);
     net_lundman_zfs_zvol * zfsProvider = 0;
-    zfsProvider = OSDynamicCast( net_lundman_zfs_zvol, global_c_interface );
+    zfsProvider = zfsGetService();
+    if(!zfsProvider)
+        zfsProvider = static_cast<net_lundman_zfs_zvol *>(global_c_interface);
     
     if(zfsProvider) {
         zfsProvider->createBlockStorageDevice(zv);
@@ -500,7 +587,9 @@ int zvolRemoveDevice(zvol_state_t *zv)
 {
 //    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyBlockStorageDevice(zv);
     net_lundman_zfs_zvol * zfsProvider = 0;
-    zfsProvider = OSDynamicCast( net_lundman_zfs_zvol, global_c_interface );
+    zfsProvider = zfsGetService();
+    if(!zfsProvider)
+        zfsProvider = static_cast<net_lundman_zfs_zvol *>(global_c_interface);
     
     if(zfsProvider) {
         zfsProvider->destroyBlockStorageDevice(zv);
@@ -515,7 +604,9 @@ int zvolSetVolsize(zvol_state_t *zv)
 {
 //    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->updateVolSize(zv);
     net_lundman_zfs_zvol * zfsProvider = 0;
-    zfsProvider = OSDynamicCast( net_lundman_zfs_zvol, global_c_interface );
+    zfsProvider = zfsGetService();
+    if(!zfsProvider)
+        zfsProvider = static_cast<net_lundman_zfs_zvol *>(global_c_interface);
     
     if(zfsProvider) {
         zfsProvider->updateVolSize(zv);

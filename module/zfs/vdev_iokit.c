@@ -53,14 +53,16 @@ unsigned int zfs_iokit_vdev_ashift = 0;
 static int
 vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 {
-	vdev_iokit_t *dvd = NULL;
 	//vnode_t *devvp = NULLVP;  /* Old device vnode */
-	vfs_context_t context = NULL;
-	uint64_t blkcnt;
-	uint32_t blksize;
-	int fmode = 0;
+//	vfs_context_t context = NULL;
+//	uint64_t blkcnt;
+//	uint32_t blksize;
+//	int fmode = 0;
 	int error = 0;
-
+vdev_iokit_log_ptr( "vdev_iokit_open: vd:",         vd );
+vdev_iokit_log_num( "vdev_iokit_open: size:",       *size );
+vdev_iokit_log_num( "vdev_iokit_open: maxsize:",    *max_size );
+vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
 	/*
 	 * We must have a pathname, and it must be absolute.
 	 */
@@ -68,10 +70,6 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 		vd->vdev_stat.vs_aux = VDEV_AUX_BAD_LABEL;
 		return (EINVAL);
 	}
-
-	dvd = kmem_zalloc(sizeof (vdev_iokit_t), KM_SLEEP);
-    if (dvd == NULL)
-        return ENOMEM;
 
     /*
      * ### APPLE TODO ###
@@ -111,7 +109,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 	/* ### APPLE TODO ### */
 	/* ddi_devid_str_decode */
     
-    /* No longer needed as-is, do IOKit initialization here if necessary
+    /* No longer needed as-is, do IOKit initialization here if necessary */
     /*
 	context = vfs_context_create((vfs_context_t)0);
      */
@@ -128,7 +126,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
      */
 
     error = vdev_iokit_handle_open( vd, size, max_size, ashift);
-    if (error) {
+    if (error != 0) {
 		goto out;
 	}
     
@@ -192,11 +190,11 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 	 * If we own the whole disk, try to enable disk write caching.
 	 */
 
-    /* Leave as is? */
+    /* Also handle in IOKit open */
 	/*
 	 * Take the device's minimum transfer size into account.
 	 */
-	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
+	//*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
 
     /*
      *  XXX - check
@@ -207,7 +205,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
      * will also then change. It then panics in space_map from metaslab_alloc
      */
     //vd->vdev_ashift = *ashift;
-    dvd->vd_ashift = *ashift;
+    //dvd->vd_ashift = *ashift;
 
     /*
      *  XXX - As-is but remove devvp
@@ -217,8 +215,6 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 	 * try again.
 	 */
     
-	vd->vdev_nowritecache = B_FALSE;
-	vd->vdev_tsd = dvd;
     /*
 	dvd->vd_devvp = devvp;
      */
@@ -228,8 +224,6 @@ out:
 		if (devvp)
 			vnode_close(devvp, fmode, context);
          */
-		if (dvd)
-			kmem_free(dvd, sizeof (vdev_iokit_t));
 
 		/*
 		 * Since the open has failed, vd->vdev_tsd should
@@ -253,7 +247,7 @@ static void
 vdev_iokit_close(vdev_t *vd)
 {
 	vdev_iokit_t *dvd = vd->vdev_tsd;
-
+vdev_iokit_log_ptr( "vdev_iokit_close: vd:",    vd );
 	if (dvd == NULL)
 		return;
     
@@ -279,24 +273,11 @@ vdev_iokit_close(vdev_t *vd)
 	vd->vdev_tsd = NULL;
 }
 
-static void
-vdev_iokit_io_intr(struct buf *bp, void *arg)
+void
+vdev_iokit_ioctl_done(void *zio_arg, const int error)
 {
-	zio_t *zio = (zio_t *)arg;
-
-    zio->io_error = buf_error(bp);
-
-	if (zio->io_error == 0 && buf_resid(bp) != 0) {
-		zio->io_error = EIO;
-	}
-	buf_free(bp);
-	//zio_next_stage_async(zio);
-    zio_interrupt(zio);
-}
-
-static void
-vdev_iokit_ioctl_done(void *zio_arg, int error)
-{
+vdev_iokit_log_ptr( "vdev_iokit_ioctl_done: zio_arg:",    zio_arg );
+vdev_iokit_log_num( "vdev_iokit_ioctl_done: error:",      error );
 	zio_t *zio = zio_arg;
 
 	zio->io_error = error;
@@ -309,11 +290,11 @@ static int
 vdev_iokit_io_start(zio_t *zio)
 {
 	vdev_t *vd = zio->io_vd;
-	vdev_disk_t *dvd = vd->vdev_tsd;
-	struct buf *bp;
-	vfs_context_t context;
-	int flags, error = 0;
-
+//	vdev_iokit_t *dvd = vd->vdev_tsd;
+//	struct buf *bp;
+//	vfs_context_t context;
+	int error = 0;
+vdev_iokit_log_ptr( "vdev_iokit_io_start: zio:", zio );
 	if (zio->io_type == ZIO_TYPE_IOCTL) {
 		zio_vdev_io_bypass(zio);
 
@@ -351,8 +332,13 @@ vdev_iokit_io_start(zio_t *zio)
 			error = VNOP_IOCTL(dvd->vd_devvp, DKIOCSYNCHRONIZECACHE, NULL, FWRITE, context);
              */
                 
-            vdev_iokit_ioctl( zio, dvd );
+            vdev_iokit_sync( vd, zio );
                 
+//
+//
+//            vdev_iokit_ioctl( vd, zio );
+//
+//
             /*
              *  XXX - No context needed
              */
@@ -361,14 +347,14 @@ vdev_iokit_io_start(zio_t *zio)
              */
                 
 			if (error == 0)
-				vdev_disk_ioctl_done(zio, error);
+				vdev_iokit_ioctl_done(zio, error);
 			else
 				error = ENOTSUP;
 
 			if (error == 0) {
 				/*
 				 * The ioctl will be done asychronously,
-				 * and will call vdev_disk_ioctl_done()
+				 * and will call vdev_iokit_ioctl_done()
 				 * upon completion.
 				 */
 				return ZIO_PIPELINE_STOP;
@@ -403,13 +389,13 @@ vdev_iokit_io_start(zio_t *zio)
     //		return;
 
     /*
-     *  XXX - Add nocache?
+     *  XXX
      */
-	flags = (zio->io_type == ZIO_TYPE_READ ? B_READ : B_WRITE);
+//	flags = (zio->io_type == ZIO_TYPE_READ ? B_READ : B_WRITE);
 	//flags |= B_NOCACHE;
 
-	if (zio->io_flags & ZIO_FLAG_FAILFAST)
-		flags |= B_FAILFAST;
+//	if (zio->io_flags & ZIO_FLAG_FAILFAST)
+//		flags |= B_FAILFAST;
 
 	/*
 	 * Check the state of this device to see if it has been offlined or
@@ -471,8 +457,8 @@ vdev_iokit_io_start(zio_t *zio)
      *  XXX - Instead pass the callback to IOKit
      */
     /*
-	if (buf_setcallback(bp, vdev_disk_io_intr, zio) != 0)
-		panic("vdev_disk_io_start: buf_setcallback failed\n");
+	if (buf_setcallback(bp, vdev_iokit_io_intr, zio) != 0)
+		panic("vdev_iokit_io_start: buf_setcallback failed\n");
      */
     
     /*
@@ -485,7 +471,7 @@ vdev_iokit_io_start(zio_t *zio)
 	error = VNOP_STRATEGY(bp);
      */
     
-    vdev_iokit_strategy( zio );
+    error =     vdev_iokit_strategy( vd, zio );
     
 	ASSERT(error == 0);
 
@@ -495,7 +481,7 @@ vdev_iokit_io_start(zio_t *zio)
 static void
 vdev_iokit_io_done(zio_t *zio)
 {
-
+vdev_iokit_log_ptr( "vdev_iokit_io_done: zio:", zio );
     /*
      *  XXX - TO DO
      *
@@ -517,18 +503,37 @@ vdev_iokit_io_done(zio_t *zio)
 	if (zio->io_error == EIO) {
 		state = DKIO_NONE;
 		if (ldi_ioctl(dvd->vd_lh, DKIOCSTATE, (intptr_t)&state,
-		    FKIOCTL, kcred, NULL) == 0 &&
+                      FKIOCTL, kcred, NULL) == 0 &&
 		    state != DKIO_INSERTED) {
 			vd->vdev_remove_wanted = B_TRUE;
 			spa_async_request(zio->io_spa, SPA_ASYNC_REMOVE);
 		}
 	}
 #endif /* !__APPLE__ */
-
+    
 	//zio_next_stage(zio);
 }
 
-vdev_ops_t vdev_disk_ops = {
+#if 0
+static void
+vdev_iokit_io_intr(struct buf *bp, void *arg)
+{
+vdev_iokit_log_ptr( "vdev_iokit_io_intr: bp:",  bp );
+vdev_iokit_log_ptr( "vdev_iokit_io_intr: arg:", arg );
+	zio_t *zio = (zio_t *)arg;
+    
+    zio->io_error = buf_error(bp);
+    
+	if (zio->io_error == 0 && buf_resid(bp) != 0) {
+		zio->io_error = EIO;
+	}
+	buf_free(bp);
+	//zio_next_stage_async(zio);
+    zio_interrupt(zio);
+}
+#endif
+
+vdev_ops_t vdev_iokit_ops = {
 	vdev_iokit_open,
 	vdev_iokit_close,
 	vdev_default_asize,

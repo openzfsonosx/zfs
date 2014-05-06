@@ -2,6 +2,7 @@
 #define ZVOLIO_H_INCLUDED
 
 #include <IOKit/IOService.h>
+#include <sys/zvol.h>
 
 class net_lundman_zfs_zvol : public IOService
 {
@@ -31,6 +32,17 @@ class net_lundman_zfs_zvol : public IOService
 };
 
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+    
+    net_lundman_zfs_zvol * zfsGetService();
+    
+#ifdef __cplusplus
+}
+#endif
+
+        
 #include <IOKit/storage/IOBlockStorageDevice.h>
 
 class net_lundman_zfs_zvol_device : public IOBlockStorageDevice
