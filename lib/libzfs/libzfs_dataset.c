@@ -2802,25 +2802,6 @@ zfs_prop_get_written(zfs_handle_t *zhp, const char *propname,
 	return (0);
 }
 
-int
-zfs_get_snapused_int(zfs_handle_t *firstsnap, zfs_handle_t *lastsnap,
-    uint64_t *usedp)
-{
-	int err;
-	zfs_cmd_t zc = { "\0", "\0", "\0", "\0", 0 };
-
-	(void) strlcpy(zc.zc_name, lastsnap->zfs_name, sizeof (zc.zc_name));
-	(void) strlcpy(zc.zc_value, firstsnap->zfs_name, sizeof (zc.zc_value));
-
-	err = zfs_ioctl(lastsnap->zfs_hdl, ZFS_IOC_SPACE_SNAPS, &zc);
-	if (err)
-		return (err);
-
-	*usedp = zc.zc_cookie;
-
-	return (0);
-}
-
 /*
  * Returns the name of the given zfs handle.
  */
