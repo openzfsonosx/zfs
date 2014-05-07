@@ -38,11 +38,10 @@
 #include <IOKit/IOTypes.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
 
-typedef struct vdev_io_context {
+typedef struct vdev_iokit_context {
     IOBufferMemoryDescriptor *      buffer;
-    zio_t *                         zio;
     IOStorageCompletion             completion;
-} vdev_io_context_t;
+} vdev_iokit_context_t;
 
 #endif /* C++ */
 
@@ -51,47 +50,60 @@ extern "C" {
 #endif /* C++ */
 
 typedef struct vdev_iokit {
-//    char            *vd_minor;
-//    struct vnode    *vd_devvp;
-    uintptr_t *     vd_iokit_hl;    /* IOMedia service handle */
-    uintptr_t *     vd_client_hl;   /* IOProvider zfs handle */
-    uint64_t        vd_ashift;      /* ashift alignment */
+    uintptr_t *     vd_iokit_hl;        /* IOMedia service handle */
+    uintptr_t *     vd_zfs_hl;          /* IOProvider zfs handle */
+	boolean_t       vd_offline;         /* device has gone offline */
+//  uint64_t        vd_ashift;          /* ashift alignment */
+//  boolean_t       vd_is_open;         /* Handle already open? */
 } vdev_iokit_t;
-    
-#ifndef lbtodb
-#define lbtodb(bytes)                   /* calculates (bytes / DEV_BSIZE) */ \
-        ((unsigned long long)(bytes) >> DEV_BSHIFT)
-#endif /* lbtodb */
-#ifndef ldbtob
-#define ldbtob(db)                      /* calculates (db * DEV_BSIZE) */ \
-        ((unsigned long long)(db) << DEV_BSHIFT)
-#endif /* ldbtob */
 
 /*
  * C language interfaces
  */
 
-extern void vdev_iokit_log( char * logString );
-extern void vdev_iokit_log_ptr( char * logString, void * logPtr );
-extern void vdev_iokit_log_num( char * logString, uint64_t logNum );
+extern void vdev_iokit_log(char *);
+extern void vdev_iokit_log_ptr(char *, void *);
+extern void vdev_iokit_log_num(char *, uint64_t);
     
-extern uintptr_t * vdev_iokit_find_by_path( vdev_t * vd, char * diskPath );
-
-extern uintptr_t * vdev_iokit_find_by_guid( vdev_t * vd );
-
-extern int vdev_iokit_handle_open (vdev_t * vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift);
-
-extern int vdev_iokit_handle_close (vdev_t * vd);
+void vdev_iokit_alloc(vdev_t *);
+void vdev_iokit_free(vdev_t *);
     
-extern int vdev_iokit_ioctl( vdev_t * vd, zio_t * zio );
-
-extern int vdev_iokit_sync( vdev_t * vd, zio_t * zio );
-
-extern void vdev_iokit_ioctl_done(void *zio_arg, const int error);
+static void vdev_disk_hold(vdev_t *);
+static void vdev_disk_rele(vdev_t *);
     
-extern int vdev_iokit_strategy( vdev_t * vd, zio_t * zio );
+int vdev_iokit_find_by_path(vdev_t *, char *);
 
-extern void vdev_iokit_io_intr( void * target, void * parameter, kern_return_t status, UInt64 actualByteCount );
+int vdev_iokit_find_by_guid(vdev_t *);
+    
+extern int vdev_iokit_physpath(vdev_t *, char *)
+
+extern int vdev_iokit_open (vdev_t *, uint64_t *, uint64_t *, uint64_t *);
+
+extern int vdev_iokit_close (vdev_t *);
+
+extern int vdev_iokit_sync(vdev_t *, zio_t *);
+
+extern int vdev_iokit_status(vdev_t *);
+    
+extern int vdev_iokit_ioctl(vdev_t *, zio_t *);
+
+extern void vdev_iokit_ioctl_done(void *, void *, kern_return_t, UInt64);
+    
+extern int vdev_iokit_strategy(vdev_t *, zio_t *);
+
+extern void vdev_iokit_io_intr(void *, void *, kern_return_t, UInt64);
+
+/* Extern for raidz dumps, not needed */
+extern int vdev_disk_physio(vdev_t *,
+                            caddr_t, size_t, uint64_t, int, boolean_t);
+    
+/*
+ * Since vdev_iokit.c is not compiled into libzpool, this function should only be
+ * defined in the zfs kernel module.
+ */
+#ifdef _KERNEL
+    extern int vdev_disk_iokit_physio(uintptr_t *, caddr_t, size_t, uint64_t, int);
+#endif
     
 #ifdef __cplusplus
 }   /* extern "C" */

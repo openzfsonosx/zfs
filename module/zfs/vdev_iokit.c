@@ -50,37 +50,186 @@ unsigned int zfs_iokit_vdev_ashift = 0;
  * Virtual device vector for disks via Mac OS X IOKit.
  */
 
+void vdev_iokit_alloc( vdev_t * vd )
+{
+    vdev_iokit_t * dvd = 0;
+    
+    if (!vd)
+        return;
+    
+    dvd = vd->vdev_tsd =    kmem_alloc(sizeof(vdev_iokit_t), KM_SLEEP);
+    
+    dvd->vd_iokit_hl =  0;
+    dvd->vd_zfs_hl =    0;
+    dvd->vd_offline =   false;
+}
+
+void vdev_iokit_free( vdev_t * vd )
+{
+    vdev_iokit_t * dvd = 0;
+    
+    if (!vd)
+        return;
+    
+    dvd = vd->vdev_tsd;
+    
+    if (!dvd)
+        return;
+    
+    dvd->vd_iokit_hl = 0;
+    dvd->vd_client_hl = 0;
+    dvd->vd_offline =   false;
+    
+    kmem_free(dvd, sizeof (vdev_iokit_t));
+    vd->vdev_tsd = 0;
+}
+
+static void
+vdev_disk_hold(vdev_t *vd)
+{
+    vdev_iokit_t * dvd = 0;
+    
+    if (!vd)
+        return;
+    
+	ASSERT(spa_config_held(vd->vdev_spa, SCL_STATE, RW_WRITER));
+    
+	/*
+	 * We must have a pathname, and it must be absolute.
+	 */
+	if (vd->vdev_path == NULL || vd->vdev_path[0] != '/')
+		return;
+    
+	/*
+	 * Only prefetch path and devid info if the device has
+	 * never been opened.
+	 */
+	if (vd->vdev_tsd != NULL)
+		return;
+    
+    dvd = (vdev_iokit_t *)(vd->vdev_tsd);
+    
+    if (!dvd)
+        return;
+    
+	if (vd->vdev_wholedisk == -1ULL) {
+		size_t len = strlen(vd->vdev_path) + 3;
+		char *buf = kmem_alloc(len, KM_SLEEP);
+        
+		(void) snprintf(buf, len, "%ss0", vd->vdev_path);
+        
+		(void) iokit_hl_from_path(buf, &(dvd->vd_iokit_hl));
+		kmem_free(buf, len);
+	}
+    
+	if (vd->vdev_name_vp == NULL)
+		(void) iokit_hl_from_path(vd->vdev_path, &(dvd->vd_iokit_hl));
+    
+    /* XXX - TO DO
+     *  Populate and use devids if possible
+     */
+    /*
+     if (vd->vdev_devid != NULL &&
+     ddi_devid_str_decode(vd->vdev_devid, &devid, &minor) == 0) {
+     (void) ldi_vp_from_devid(devid, minor, &vd->vdev_devid_vp);
+     ddi_devid_str_free(minor);
+     ddi_devid_free(devid);
+     }
+     */
+}
+
+static void
+vdev_disk_rele(vdev_t *vd)
+{
+    vdev_iokit_t * dvd = 0;
+
+    if (!vd)
+        return;
+
+    dvd = (vdev_iokit_t *)(vd->vdev_tsd);
+    
+    if (!dvd)
+        return;
+    
+	ASSERT(spa_config_held(vd->vdev_spa, SCL_STATE, RW_WRITER));
+    
+	if (dvd->vd_iokit_hl) {
+        
+		vdev_iokit_release(vd);
+        
+        //  async( vd, dsl_pool_vnrele_taskq(vd->vdev_spa->spa_dsl_pool));
+        
+		dvd->vd_iokit_hl =  NULL;
+	}
+}
+
+/* IOKit doesn't involve the VFS layer to close disks, however we might
+ * still need to do this asynchronously to avoid deadlocks
+ */
+/*
+ * Like vn_rele() except if we are going to call VOP_INACTIVE() then do it
+ * asynchronously using a taskq. This can avoid deadlocks caused by re-entering
+ * the file system as a result of releasing the vnode. Note, file systems
+ * already have to handle the race where the vnode is incremented before the
+ * inactive routine is called and does its locking.
+ *
+ * Warning: Excessive use of this routine can lead to performance problems.
+ * This is because taskqs throttle back allocation if too many are created.
+ */
+#if 0
+void
+vdev_iokit_hl_rele_async(vdev_t *vd, taskq_t *taskq)
+{
+	mutex_enter(&vd->v_lock);
+	if (vd->v_count == 1) {
+		mutex_exit(&vp->v_lock);
+		VERIFY(taskq_dispatch(taskq, (task_func_t *)vdev_iokit_release,
+                              vd, TQ_SLEEP) != NULL);
+		return;
+	}
+	vp->v_count--;
+	mutex_exit(&vp->v_lock);
+}
+#endif
+
 static int
 vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 {
-	//vnode_t *devvp = NULLVP;  /* Old device vnode */
-//	vfs_context_t context = NULL;
 //	uint64_t blkcnt;
 //	uint32_t blksize;
 //	int fmode = 0;
+    
+    vdev_disk_t *dvd = 0;
 	int error = 0;
 vdev_iokit_log_ptr( "vdev_iokit_open: vd:",         vd );
 vdev_iokit_log_num( "vdev_iokit_open: size:",       *size );
 vdev_iokit_log_num( "vdev_iokit_open: maxsize:",    *max_size );
 vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
-	/*
+    /*
 	 * We must have a pathname, and it must be absolute.
 	 */
 	if (vd->vdev_path == NULL || vd->vdev_path[0] != '/') {
 		vd->vdev_stat.vs_aux = VDEV_AUX_BAD_LABEL;
-		return (EINVAL);
+		return (SET_ERROR(EINVAL));
 	}
+    
+    if (vd)
+        dvd = vd->vdev_tsd;
+	
+    if (dvd != NULL) {
+        
+        ASSERT(vd->vdev_reopening);
+        goto skip_open;
+        
+    }
+    
+    vdev_disk_alloc(vd);
+    dvd = vd->vdev_tsd;
 
     /*
-     * ### APPLE TODO ###
-     *
-     *  XXX - This may need to be handled a bit differently for
-     *   changed device paths, possibly referencing the vdev by GUID
-     */
-	/*
 	 * When opening a disk device, we want to preserve the user's original
 	 * intent.  We always want to open the device by the path the user gave
-	 * us, even if it is one of multiple paths to the save device.  But we
+	 * us, even if it is one of multiple paths to the same device.  But we
 	 * also want to be able to survive disks being removed/recabled.
 	 * Therefore the sequence of opening devices is:
 	 *
@@ -92,11 +241,98 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
 	 *
 	 * 3. Otherwise, the device may have moved.  Try opening the device
 	 *    by the devid instead.
-	 *
 	 */
     
+    error = EINVAL;		/* presume failure */
+    
+    if (vd->vdev_path != NULL) {
+        
+		if (vd->vdev_wholedisk == -1ULL) {
+			size_t len = strlen(vd->vdev_path) + 3;
+			char *buf = kmem_alloc(len, KM_SLEEP);
+            
+			(void) snprintf(buf, len, "%ss0", vd->vdev_path);
+            
+			error = iokit_open_by_path(buf, spa_mode(spa),
+                                       &dvd->vd_iokit_hl);
+            
+			if (error == 0) {
+				spa_strfree(vd->vdev_path);
+				vd->vdev_path = buf;
+				vd->vdev_wholedisk = 1ULL;
+			} else {
+				kmem_free(buf, len);
+			}
+		}
+        
+		/*
+		 * If we have not yet opened the device, try to open it by the
+		 * specified path.
+		 */
+		if (error != 0) {
+			error = iokit_open_by_path(vd->vdev_path, spa_mode(spa),
+                                       &dvd->vd_iokit_hl);
+		}
+        
+        /*
+		 * If we succeeded in opening the device, but 'vdev_wholedisk'
+		 * is not yet set, then this must be a slice.
+		 */
+		if (error == 0 && vd->vdev_wholedisk == -1ULL)
+			vd->vdev_wholedisk = 0;
+    }
+    
+    /*
+	 * If all else fails, then try opening by physical path (if available)
+	 * or the logical path (if we failed due to the devid check).  While not
+	 * as reliable as the devid, this will give us something, and the higher
+	 * level vdev validation will prevent us from opening the wrong device.
+	 */
+	if (error) {
+        
+		if (vd->vdev_physpath != NULL) {
+			error = iokit_open_by_path(vd->vdev_physpath, spa_mode(spa),
+                                       &dvd->vd_iokit_hl);
+        }
+        
+		/*
+		 * Note that we don't support the legacy auto-wholedisk support
+		 * as above.  This hasn't been used in a very long time and we
+		 * don't need to propagate its oddities to this edge condition.
+		 */
+        /*  This is redundant, but will attempt the open again after
+         *   the previous attempts by path and physpath
+         */
+		if (error && vd->vdev_path != NULL) {
+			error = iokit_open_by_path(vd->vdev_path, spa_mode(spa),
+                                       &dvd->vd_iokit_hl);
+        }
+	}
+    
+    /* If it couldn't be opened, back out now */
+    if (error) {
+		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
+		return (error);
+	}
+    
+    /*
+	 * Once a device is opened, verify that the physical device path (if
+	 * available) is up to date.
+	 */
+    char *physpath = 0;
+    
+    physpath = kmem_alloc(MAXPATHLEN, KM_SLEEP);
 
-
+    if (vdev_iokit_physpath(vd, physpath) == 0 &&
+        (vd->vdev_physpath == NULL ||
+         strcmp(vd->vdev_physpath, physpath) != 0)) {
+            
+            if (vd->vdev_physpath) {
+                spa_strfree(vd->vdev_physpath);
+            }
+        vd->vdev_physpath = spa_strdup(physpath);
+    }
+    kmem_free(physpath, MAXPATHLEN);
     
     /*
      *  XXX - Replace with IOKit lookup -
@@ -109,11 +345,7 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
 	/* ### APPLE TODO ### */
 	/* ddi_devid_str_decode */
     
-    /* No longer needed as-is, do IOKit initialization here if necessary */
-    /*
-	context = vfs_context_create((vfs_context_t)0);
-     */
-    
+
     /*
      *  XXX - Obtain an opened/referenced IOKit handle for the device
      */
@@ -124,6 +356,10 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
 		goto out;
 	}
      */
+    
+    error = EINVAL;		/* presume failure */
+    
+    
 
     error = vdev_iokit_handle_open( vd, size, max_size, ashift);
     if (error != 0) {
@@ -247,30 +483,26 @@ static void
 vdev_iokit_close(vdev_t *vd)
 {
 	vdev_iokit_t *dvd = vd->vdev_tsd;
+    
 vdev_iokit_log_ptr( "vdev_iokit_close: vd:",    vd );
-	if (dvd == NULL)
+vdev_iokit_log_ptr( "vdev_iokit_close: dvd:",    dvd );
+vdev_iokit_log_num( "vdev_iokit_close: reopening:",    vd->vdev_reopening );
+    
+    if (vd->vdev_reopening || dvd == NULL)
 		return;
     
     /*
      *  XXX - Replace with IOKit handle close
      */
     
-    vdev_iokit_handle_close( vd );
-    
-/*
-	if (dvd->vd_devvp != NULL) {
-		vfs_context_t context;
-
-		context = vfs_context_create((vfs_context_t)0);
-
-		(void) vnode_close(dvd->vd_devvp, spa_mode(vd->vdev_spa), context);
-		(void) vfs_context_rele(context);
-
+    if (dvd->vd_iokit_hl != NULL) {
+        vdev_iokit_handle_close( vd, spa_mode(vd->vdev_spa) );
+		dvd->vd_iokit_hl = NULL;
 	}
-*/
     
-	kmem_free(dvd, sizeof (vdev_iokit_t));
-	vd->vdev_tsd = NULL;
+	vd->vdev_delayed_close = B_FALSE;
+    
+	vdev_disk_free(vd);
 }
 
 void
@@ -481,7 +713,6 @@ vdev_iokit_log_ptr( "vdev_iokit_io_start: zio:", zio );
 static void
 vdev_iokit_io_done(zio_t *zio)
 {
-vdev_iokit_log_ptr( "vdev_iokit_io_done: zio:", zio );
     /*
      *  XXX - TO DO
      *
@@ -492,26 +723,30 @@ vdev_iokit_log_ptr( "vdev_iokit_io_done: zio:", zio );
      *  Call an IOKit helper function to check the IOMedia
      *   device - status, properties, and/or ioctl.
      */
+    vdev_t * vd = 0;
+    vdev_iokit_t * dvd = 0;
+ 
+    vdev_iokit_log_ptr( "vdev_iokit_io_done: zio:", zio );
     
-#ifndef __APPLE__
-	/*
-	 * XXX- NOEL TODO
-	 * If the device returned EIO, then attempt a DKIOCSTATE ioctl to see if
-	 * the device has been removed.  If this is the case, then we trigger an
-	 * asynchronous removal of the device.
-	 */
+    if (!zio)
+        return;
+    
+	vd = zio->io_vd;
+
+    if (!vd)
+        return;
+    
+    dvd = vd->vd_iokit_hl;
+    
+    if (!dvd)
+        return;
+    
 	if (zio->io_error == EIO) {
-		state = DKIO_NONE;
-		if (ldi_ioctl(dvd->vd_lh, DKIOCSTATE, (intptr_t)&state,
-                      FKIOCTL, kcred, NULL) == 0 &&
-		    state != DKIO_INSERTED) {
+        if ( !vdev_iokit_status() ) {
 			vd->vdev_remove_wanted = B_TRUE;
 			spa_async_request(zio->io_spa, SPA_ASYNC_REMOVE);
-		}
-	}
-#endif /* !__APPLE__ */
-    
-	//zio_next_stage(zio);
+        }
+    }
 }
 
 #if 0
@@ -540,8 +775,8 @@ vdev_ops_t vdev_iokit_ops = {
 	vdev_iokit_io_start,
 	vdev_iokit_io_done,
 	NULL /* vdev_op_state_change */,
-	NULL /* vdev_op_hold */,
-	NULL /* vdev_op_rele */,
+	vdev_iokit_hold
+	vdev_iokit_rele
 	VDEV_TYPE_DISK,	/* name of this vdev type */
 	B_TRUE			/* leaf vdev */
 };
