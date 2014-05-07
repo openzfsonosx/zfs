@@ -1303,7 +1303,7 @@ zfsctl_snapdir_lookup(ap)
 
 	ZFS_ENTER(zfsvfs);
 
-    // Returns a hold
+    // Returns if LOCK is held, otherwise we do not hold vpp
 	if (gfs_lookup_dot(vpp, dvp, zfsvfs->z_ctldir, nm) == 0) {
 		ZFS_EXIT(zfsvfs);
 		return (0);
@@ -1318,7 +1318,6 @@ zfsctl_snapdir_lookup(ap)
 			strlcpy(nm, real, sizeof(nm));
 		} else if (err != ENOTSUP) {
             printf("exit1\n");
-            VN_RELE(*vpp); // XXXXX
 			ZFS_EXIT(zfsvfs);
 			return (err);
 		}
@@ -1378,7 +1377,6 @@ zfsctl_snapdir_lookup(ap)
 		 * Since shell ultimately passes "*" or "?" as name to lookup
 		 */
         printf("exit3\n");
-            VN_RELE(*vpp); // XXXXX
 		return (err == EILSEQ ? ENOENT : err);
 	}
 	if (dmu_objset_hold(snapname, FTAG, &snap) != 0) {
@@ -1392,8 +1390,6 @@ zfsctl_snapdir_lookup(ap)
 		}
 		ZFS_EXIT(zfsvfs);
         printf("exit4: failed to hold '%s'\n", snapname);
-
-            VN_RELE(*vpp); // XXXXX
 		return (err);
 	}
 
