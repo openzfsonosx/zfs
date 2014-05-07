@@ -1561,7 +1561,7 @@ efi_auto_sense(int fd, struct dk_gpt **vtoc)
 #include <IOKit/storage/IOStorageProtocolCharacteristics.h>
 
 static const CFStringRef CoreStorageLogicalVolumeMediaPathSubstring =
-    CFSTR("CoreStoragePhysical/CoreStorageGroup");
+    CFSTR("/CoreStoragePhysical/");
 static const CFStringRef VirtualInterfaceDeviceProtocolSubstring =
     CFSTR(kIOPropertyPhysicalInterconnectTypeVirtual);
 

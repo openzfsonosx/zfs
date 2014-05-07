@@ -78,6 +78,7 @@
 #include <sys/sysdc.h>
 #include <sys/zone.h>
 #include <sys/vnode.h>
+#include <libkern/OSKextLib.h>
 #endif	/* _KERNEL */
 
 #include "zfs_prop.h"

@@ -40,8 +40,8 @@
 #include <libzfs_core.h>
 
 #define	MOUNT_POINT_COOKIE		".autodiskmounted"
-#define	MOUNT_POINT_CUSTOMICON		".VolumeIcon.icns"
-#define	CUSTOM_ICON_PATH		"/System/Library/Filesystems/zfs.fs/Contents/Resources/VolumeIcon.icns"
+#define	MOUNT_POINT_CUSTOM_ICON		".VolumeIcon.icns"
+#define	CUSTOM_ICON_PATH		KERNEL_MODPREFIX "/zfs.kext/Contents/Resources/VolumeIcon.icns"
 
 #if defined(HAVE_LIBTOPO)
 #include <fm/libtopo.h>
