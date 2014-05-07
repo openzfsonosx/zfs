@@ -1317,7 +1317,8 @@ zfsctl_snapdir_lookup(ap)
 		if (err == 0) {
 			strlcpy(nm, real, sizeof(nm));
 		} else if (err != ENOTSUP) {
-            dprintf("exit1\n");
+            printf("exit1\n");
+            VN_RELE(*vpp); // XXXXX
 			ZFS_EXIT(zfsvfs);
 			return (err);
 		}
@@ -1336,17 +1337,19 @@ zfsctl_snapdir_lookup(ap)
 		*vpp = sep->se_root;
 		VN_HOLD(*vpp);
 		err = traverse(vpp, LK_EXCLUSIVE | LK_RETRY);
-        dprintf("zfsctl_lookup traverse say %d\n", err);
+        printf("zfsctl_lookup traverse say %d\n", err);
 
 		if (err) {
 			VN_RELE(*vpp);
 			*vpp = NULL;
+            printf("vnrele\n");
 		} else if (*vpp == sep->se_root) {
 			/*
 			 * The snapshot was unmounted behind our backs,
 			 * try to remount it.
 			 */
 			VERIFY(zfsctl_snapshot_zname(dvp, nm, MAXNAMELEN, snapname) == 0);
+            printf("goto domount\n");
 			goto domount;
 		} else {
 			/*
@@ -1358,7 +1361,7 @@ zfsctl_snapdir_lookup(ap)
 		}
 		mutex_exit(&sdp->sd_lock);
 		ZFS_EXIT(zfsvfs);
-        dprintf("exit2\n");
+        printf("exit2\n");
 		return (err);
 	}
 
@@ -1374,7 +1377,8 @@ zfsctl_snapdir_lookup(ap)
 		 * forcing EILSEQ to ENOENT.
 		 * Since shell ultimately passes "*" or "?" as name to lookup
 		 */
-        dprintf("exit3\n");
+        printf("exit3\n");
+            VN_RELE(*vpp); // XXXXX
 		return (err == EILSEQ ? ENOENT : err);
 	}
 	if (dmu_objset_hold(snapname, FTAG, &snap) != 0) {
@@ -1387,17 +1391,18 @@ zfsctl_snapdir_lookup(ap)
 			err = ENOENT;
 		}
 		ZFS_EXIT(zfsvfs);
-        dprintf("exit4: failed to hold '%s'\n", snapname);
+        printf("exit4: failed to hold '%s'\n", snapname);
 
+            VN_RELE(*vpp); // XXXXX
 		return (err);
 	}
 
 	sep = kmem_alloc(sizeof (zfs_snapentry_t), KM_SLEEP);
 	sep->se_name = kmem_alloc(strlen(nm) + 1, KM_SLEEP);
 	(void) strlcpy(sep->se_name, nm, strlen(nm) + 1);
-    printf("must not exist, Calling snapshot_mknode for '%s'\n", snapname);
+    printf("**** must not exist, Calling snapshot_mknode for '%s'\n", snapname);
+    VN_RELE(*vpp);
 	*vpp = sep->se_root = zfsctl_snapshot_mknode(dvp, dmu_objset_id(snap));
-    VN_HOLD(*vpp);
 	avl_insert(&sdp->sd_snaps, sep, where);
 
 	dmu_objset_rele(snap, FTAG);
@@ -1432,7 +1437,7 @@ domount:
      * references here, and return the other.
      */
 
-        VN_RELE(*vpp);
+    // VN_RELE(*vpp);
 
     /*
      * The world isn't ready for this yet
@@ -1470,12 +1475,18 @@ domount:
     /*
      * Gross hack for now, fix meeeee
      */
-    if ((err == 0) || (((uint32_t *)*vpp)[23]==0)) {
+    if ((err == 0) && (((uint32_t *)*vpp)[23]==0)) {
             VN_HOLD(*vpp);
             printf("Uhoh, was about to return vp %p with iocount==0!\n",
                    *vpp);
         }
 
+    if ((err == 0) && (((uint32_t *)*vpp)[23]==2)) {
+            VN_RELE(*vpp);
+            printf("Uhoh, was about to return vp %p with iocount==2!\n",
+                   *vpp);
+        }
+    printf("Lookup complete: %d %p\n", err, err==0?*vpp:NULL);
 	return (err);
 }
 
