@@ -6,7 +6,7 @@
 	<string>org.openzfsonosx.zed.service</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/usr/local/sbin/zed.service.sh</string>
+		<string>@sbindir@/zed.service.sh</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
