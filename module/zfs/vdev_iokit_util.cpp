@@ -18,15 +18,23 @@
 #define info_delay 50
 #define error_delay 250
 
-extern void vdev_iokit_log( char * logString ) {
+extern void vdev_iokit_log( char * logString )
+{
     IOLog( "ZFS: vdev log: %s\n", logString );
 }
 
-extern void vdev_iokit_log_ptr( char * logString, void * logPtr ) {
+extern void vdev_iokit_log_str(char * logString1, char * logString2)
+{
+    IOLog( "ZFS: vdev log: %s {%s}\n", logString1, logString2 );
+}
+
+extern void vdev_iokit_log_ptr( char * logString, void * logPtr )
+{
     IOLog( "ZFS: vdev log: %s [%p]\n", logString, logPtr );
 }
 
-extern void vdev_iokit_log_num( char * logString, uint64_t logNum ) {
+extern void vdev_iokit_log_num( char * logString, uint64_t logNum )
+{
     IOLog( "ZFS: vdev log: %s (%llu)\n", logString, logNum );
 }
 

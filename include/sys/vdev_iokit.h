@@ -62,6 +62,7 @@ typedef struct vdev_iokit {
  */
 
 extern void vdev_iokit_log(char *);
+extern void vdev_iokit_log_str(char *, char *);
 extern void vdev_iokit_log_ptr(char *, void *);
 extern void vdev_iokit_log_num(char *, uint64_t);
     
