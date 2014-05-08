@@ -60,7 +60,7 @@ typedef struct vdev_disk_buf {
 #endif /*!__APPLE__*/
 
 static int
-vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
+vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize, uint64_t *ashift)
 {
 	vdev_disk_t *dvd = NULL;
 	vnode_t *devvp = NULLVP;
@@ -146,7 +146,8 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 		error = EINVAL;
 		goto out;
 	}
-	*size = blkcnt * (uint64_t)blksize;
+	*psize = blkcnt * (uint64_t)blksize;
+    *max_psize = *psize;
 
 	/*
 	 *  ### APPLE TODO ###
@@ -157,14 +158,6 @@ vdev_disk_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 	 * Take the device's minimum transfer size into account.
 	 */
 	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
-
-    /*
-     * Setting the vdev_ashift did in fact break the pool for import
-     * on ZEVO. This puts the logic into question. It appears that vdev_top
-     * will also then change. It then panics in space_map from metaslab_alloc
-     */
-    //vd->vdev_ashift = *ashift;
-    dvd->vd_ashift = *ashift;
 
 
 	/*
@@ -350,15 +343,7 @@ vdev_disk_io_start(zio_t *zio)
 	buf_setflags(bp, flags);
 	buf_setcount(bp, zio->io_size);
 	buf_setdataptr(bp, (uintptr_t)zio->io_data);
-
-    if (zfs_vnop_vdev_ashift && vd->vdev_ashift) {
-        buf_setlblkno(bp, zio->io_offset>>vd->vdev_ashift);
-        buf_setblkno(bp,  zio->io_offset>>vd->vdev_ashift);
-    } else {
-        buf_setlblkno(bp, lbtodb(zio->io_offset));
-        buf_setblkno(bp, lbtodb(zio->io_offset));
-    }
-
+    buf_setlblkno(bp, lbtodb(zio->io_offset));
 	buf_setsize(bp, zio->io_size);
 	if (buf_setcallback(bp, vdev_disk_io_intr, zio) != 0)
 		panic("vdev_disk_io_start: buf_setcallback failed\n");
