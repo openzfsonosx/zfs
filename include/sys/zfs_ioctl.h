@@ -496,7 +496,6 @@ extern int zfs_unmount_snap(const char *);
 extern void zfs_destroy_unmount_origin(const char *);
 
 extern boolean_t dataset_name_hidden(const char *name);
-extern int dataset_getzfsvfs(const char *dsname, void **zfvp);
 
 enum zfsdev_state_type {
 	ZST_ONEXIT,

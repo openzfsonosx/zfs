@@ -571,7 +571,7 @@ zfs_zevent_fd_hold(int fd, minor_t *minorp, zfs_zevent_t **ze)
 		return (EBADF);
 
 #ifdef __APPLE__
-    *minorp = zfsdev_getminor(current_proc());
+    *minorp = zfsdev_getminor((int)current_proc());
 #else
     *minorp = zfsdev_getminor(fp->f_file);
 #endif

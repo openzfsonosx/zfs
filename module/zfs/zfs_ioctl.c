@@ -145,6 +145,8 @@ static const char *userquota_perms[] = {
 	ZFS_DELEG_PERM_GROUPQUOTA,
 };
 
+extern int getzfsvfs(const char *dsname, zfsvfs_t **zfvp);
+
 static int zfs_ioc_userspace_upgrade(zfs_cmd_t *zc);
 static int zfs_check_settable(const char *name, nvpair_t *property,
     cred_t *cr);
@@ -1268,7 +1270,7 @@ put_nvlist(zfs_cmd_t *zc, nvlist_t *nvl)
 
 
 
-static int
+int
 getzfsvfs(const char *dsname, zfsvfs_t **zfvp)
 {
     objset_t *os;
@@ -1294,11 +1296,6 @@ getzfsvfs(const char *dsname, zfsvfs_t **zfvp)
     return (error);
 }
 
-int
-dataset_getzfsvfs(const char *dsname, void **zfvp)
-{
-	return getzfsvfs(dsname, zfvp);
-}
 
 /*
  * Find a zfsvfs_t for a mounted filesystem, or create our own, in which
@@ -5841,13 +5838,13 @@ static int zfsdev_open(dev_t dev, int flags, int devtype,
 	dprintf("zfsdev_open, flag %02X devtype %d, proc is %p: thread %p\n",
            flags, devtype, p, current_thread());
 
-    if (zfsdev_minor_find(p)) {
+    if (zfsdev_minor_find((dev_t)p)) {
         dprintf("zs already exists\n");
         return 0;
     }
 
 	mutex_enter(&spa_namespace_lock);
-	error = zfsdev_state_init(p);
+	error = zfsdev_state_init((dev_t)p);
 	mutex_exit(&spa_namespace_lock);
 
 	return (-error);
@@ -5863,7 +5860,7 @@ static int zfsdev_release(dev_t dev, int flags, int devtype,
 	dprintf("zfsdev_release, flag %02X devtype %d, dev is %p, thread %p\n",
            flags, devtype, p, current_thread());
 	mutex_enter(&spa_namespace_lock);
-	error = zfsdev_state_destroy(p);
+	error = zfsdev_state_destroy((dev_t)p);
 	mutex_exit(&spa_namespace_lock);
 
 	return (-error);

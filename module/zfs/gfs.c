@@ -1198,8 +1198,8 @@ gfs_vop_readdir(ap)
 		 */
 		ncookies = uio_resid(uiop) / (sizeof(dirent64_t) - sizeof(((dirent64_t *)NULL)->d_name) + 1);
 
-		cookies = MALLOC(cookies, u_long *, ncookies * sizeof(u_long),
-                         M_TEMP, M_WAITOK);
+		MALLOC(cookies, u_long *, ncookies * sizeof(u_long),
+               M_TEMP, M_WAITOK);
 		a_cookies = cookies;
 		*ap->a_numdirent = ncookies;
 	}

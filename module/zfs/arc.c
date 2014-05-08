@@ -212,7 +212,9 @@ int arc_lotsfree_percent = 10;
 static int arc_dead;
 
 /* expiration time for arc_no_grow */
+#ifdef __LINUX__
 static clock_t arc_grow_time = 0;
+#endif
 
 /*
  * The arc has filled available memory and has now warmed up.
@@ -2380,6 +2382,7 @@ arc_adjust(void)
  * the arc_meta_limit and reclaim buffers which are pinned in the cache
  * by higher layers.  (i.e. the zpl)
  */
+#ifdef __LINUX__
 static void
 arc_do_user_prune(int64_t adjustment)
 {
@@ -2415,6 +2418,7 @@ arc_do_user_prune(int64_t adjustment)
 	ARCSTAT_BUMP(arcstat_prune);
 	mutex_exit(&arc_prune_mtx);
 }
+#endif
 
 static void
 arc_do_user_evicts(void)
@@ -2444,6 +2448,7 @@ arc_do_user_evicts(void)
  * This is only used to enforce the tunable arc_meta_limit, if we are
  * unable to evict enough buffers notify the user via the prune callback.
  */
+#ifdef __LINUX__
 static void
 arc_adjust_meta(void)
 {
@@ -2501,6 +2506,7 @@ arc_adjust_meta(void)
 	if (arc_meta_used > arc_meta_limit)
 		arc_do_user_prune(zfs_arc_meta_prune);
 }
+#endif
 
 /*
  * Flush all *evictable* data from the cache for the given spa.
@@ -2694,7 +2700,6 @@ arc_reclaim_thread(void *dummy __unused)
     clock_t                 growtime = 0;
     arc_reclaim_strategy_t  last_reclaim = ARC_RECLAIM_CONS;
     callb_cpr_t             cpr;
-    int64_t                 prune;
     kern_return_t kr;
     uint64_t amount;
     unsigned int num_pages;
@@ -2818,7 +2823,7 @@ arc_reclaim_thread(void *dummy __unused)
 }
 
 
-
+#ifdef __LINUX__
 /*
  * Unlike other ZFS implementations this thread is only responsible for
  * adapting the target ARC size on Linux.  The responsibility for memory
@@ -2904,6 +2909,7 @@ arc_adapt_thread(void)
 	CALLB_CPR_EXIT(&cpr);		/* drops arc_reclaim_thr_lock */
 	thread_exit();
 }
+#endif // linux
 
 #ifdef _KERNEL
 /*
@@ -2951,6 +2957,7 @@ arc_adapt_thread(void)
  *         already below arc_c_min, evicting any more would only
  *         increase this negative difference.
  */
+#ifdef __LINUX__
 static uint64_t
 arc_evictable_memory(void) {
 	uint64_t arc_clean =
@@ -2970,6 +2977,7 @@ arc_evictable_memory(void) {
 
 	return (ghost_clean + MAX((int64_t)arc_size - (int64_t)arc_c_min, 0));
 }
+#endif
 
 #ifdef __LINUX__
 static int
@@ -5769,7 +5777,7 @@ l2arc_release_cdata_buf(arc_buf_hdr_t *ab)
  * heart of the L2ARC.
  */
 static void
-l2arc_feed_thread(void)
+l2arc_feed_thread(void *notused)
 {
 	callb_cpr_t cpr;
 	l2arc_dev_t *dev;

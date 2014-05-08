@@ -345,9 +345,6 @@ vdev_disk_io_start(zio_t *zio)
 	buf_setcount(bp, zio->io_size);
 	buf_setdataptr(bp, (uintptr_t)zio->io_data);
 
-    size_t  contig_bytes;
-    daddr64_t blkno;
-
     /*
      * Map offset to blcknumber, based on physical block number.
      * (512, 4096, ..). If we fail to map, default back to

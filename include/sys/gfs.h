@@ -44,7 +44,8 @@ extern "C" {
 
 #define	GFS_CACHE_VNODE		0x1
 
-typedef struct vnodeopv_entry_desc vnodeops_t;
+typedef int (*vnodeops_t)(void *);
+
 
 typedef struct gfs_dirent {
 	char			*gfse_name;	/* entry name */

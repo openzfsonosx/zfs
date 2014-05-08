@@ -107,6 +107,7 @@ unsigned int zfs_vfs_suspend_fs_end_delay = 2;
 
 int  zfs_module_start(kmod_info_t *ki, void *data);
 int  zfs_module_stop(kmod_info_t *ki, void *data);
+extern int getzfsvfs(const char *dsname, zfsvfs_t **zfvp);
 
 
 // move these structs to _osx once wrappers are updated
@@ -1552,10 +1553,10 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	if (dmu_objset_is_snapshot(zfsvfs->z_os)) {
 		uint64_t pval;
 		char fsname[MAXNAMELEN];
+		zfsvfs_t *fs_zfsvfs;
 
 		dmu_fsname(osname, fsname);
-		zfsvfs_t *fs_zfsvfs;
-		error = dataset_getzfsvfs(fsname, (void **)&fs_zfsvfs);
+		error = getzfsvfs(fsname, &fs_zfsvfs);
 		if (error == 0) {
 			if (fs_zfsvfs->z_unmounted)
 				error = SET_ERROR(EINVAL);

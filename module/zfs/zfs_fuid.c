@@ -555,10 +555,10 @@ uint64_t
 zfs_fuid_create(zfsvfs_t *zfsvfs, uint64_t id, cred_t *cr,
     zfs_fuid_type_t type, zfs_fuid_info_t **fuidpp)
 {
-	const char *domain;
+	const char *domain = NULL;
 	char *kdomain;
 	uint32_t fuid_idx = FUID_INDEX(id);
-	uint32_t rid;
+	uint32_t rid = 0;
 	idmap_stat status;
 	uint64_t idx = 0;
 	zfs_fuid_t *zfuid = NULL;

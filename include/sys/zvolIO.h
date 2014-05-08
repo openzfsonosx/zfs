@@ -8,7 +8,6 @@ class net_lundman_zfs_zvol : public IOService
   OSDeclareDefaultStructors(net_lundman_zfs_zvol)
 
   private:
-    void *m_memoryDesc;
     void *m_buffer;
 
   public:

@@ -360,7 +360,8 @@ zfsctl_create(zfsvfs_t *zfsvfs)
      */
 
 	vp = gfs_root_create(sizeof (zfsctl_node_t), zfsvfs->z_vfs,
-	    zfsctl_ops_root_dvnodeops, ZFSCTL_INO_ROOT, zfsctl_root_entries,
+                         zfsctl_ops_root_dvnodeops,
+                         ZFSCTL_INO_ROOT, zfsctl_root_entries,
 	    zfsctl_root_inode_cb, MAXNAMELEN, NULL, NULL);
 
     zcp = vnode_fsnode(vp);
@@ -462,38 +463,6 @@ zfsctl_common_close(struct vnop_close_args *ap)
 }
 
 
-/*
- * Common open routine.  Disallow any write access.
- */
-/* ARGSUSED */
-//extern unsigned int debug_vnop_osx_printf;
-
-static int
-zfsctl_common_openX(struct vnop_open_args *ap)
-{
-	int flags = ap->a_mode;
-
-    dprintf("zfsctl_open: %p on %p\n",
-           ap->a_vp, vnode_mountedhere(ap->a_vp));
-
-    //if (debug_vnop_osx_printf)
-        //        panic("BOOOOM");
-
-	if (flags & FWRITE)
-        return (EACCES);
-
-	return (0);
-}
-
-/*
- * Common close routine.  Nothing to do here.
- */
-/* ARGSUSED */
-static int
-zfsctl_common_closeX(struct vnop_close_args *ap)
-{
-	return (0);
-}
 
 /*
  * Common access routine.  Disallow writes.
