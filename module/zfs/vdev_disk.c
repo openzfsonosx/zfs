@@ -343,6 +343,7 @@ vdev_disk_io_start(zio_t *zio)
 	buf_setflags(bp, flags);
 	buf_setcount(bp, zio->io_size);
 	buf_setdataptr(bp, (uintptr_t)zio->io_data);
+    buf_setblkno(bp, lbtodb(zio->io_offset));
     buf_setlblkno(bp, lbtodb(zio->io_offset));
 	buf_setsize(bp, zio->io_size);
 	if (buf_setcallback(bp, vdev_disk_io_intr, zio) != 0)
