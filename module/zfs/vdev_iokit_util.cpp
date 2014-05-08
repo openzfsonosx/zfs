@@ -43,6 +43,7 @@ static inline void vdev_iokit_context_free( vdev_iokit_context_t * io_context );
 static inline vdev_iokit_context_t * vdev_iokit_context_alloc( zio_t * zio )
 {
     vdev_iokit_context_t * io_context = 0;
+    IOMemoryDescriptor * newDescriptor = 0;
     
 //vdev_iokit_log_ptr( "vdev_iokit_context_alloc: zio", zio );
     
@@ -58,10 +59,26 @@ static inline vdev_iokit_context_t * vdev_iokit_context_alloc( zio_t * zio )
         return 0;
     }
     
-    io_context->zio = zio;
+    io_context->zio =   zio;
     
-    io_context->buffer =    (IOBufferMemoryDescriptor*)IOBufferMemoryDescriptor::withAddress( zio->io_data, zio->io_size,
+    newDescriptor =     IOBufferMemoryDescriptor::withAddress( zio->io_data, zio->io_size,
+                                                              (zio->io_type == ZIO_TYPE_WRITE ? kIODirectionOut : kIODirectionIn) );
+
+    io_context->buffer =    (IOBufferMemoryDescriptor*)newDescriptor;
+    
+    newDescriptor =     0;
+    
+    /*
+    IOBufferMemoryDescriptor::inTaskWithOptions( kernel_task,
+                                                (zio->io_type == ZIO_TYPE_WRITE ? kIODirectionOut : kIODirectionIn) | kIOMapInhibitCache,
+                                                 zio->io_size,
+                                                 1 // alignment
+                                                    );
+     */
+/*
+    IOBufferMemoryDescriptor::withAddress( zio->io_data, zio->io_size,
                                                          (zio->io_type == ZIO_TYPE_WRITE ? kIODirectionOut : kIODirectionIn) );
+  */
     
     if (io_context->buffer == NULL) {
         IOLog("ZFS: vdev_iokit_strategy: Couldn't allocate a memory buffer [%p]\n", io_context);
@@ -827,20 +844,16 @@ vdev_iokit_handle_open(vdev_t * vd)
         result = vdev_hl->open(zfsProvider, 0, kIOStorageAccessReader);
         
 //IOLog("ZFS: vdev_iokit_handle_open: open: readonly %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
-        if (result == 1) {
-            /* DEBUGGING */
-            vdev_iokit_sync(vd,0);
-        }
-        
     } else {
     
         result = vdev_hl->open(zfsProvider, 0, kIOStorageAccessReaderWriter);
         
 //IOLog("ZFS: vdev_iokit_handle_open: open: read/write %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
-        if (result == 1) {
-            /* DEBUGGING */
-            vdev_iokit_sync(vd,0);
-        }
+    }
+    
+    if (result == 1) {
+        /* DEBUGGING */
+        vdev_iokit_sync(vd,0);
     }
     
 skip_open:
@@ -925,9 +938,15 @@ IOLog( "vdev_iokit_handle_close: invalid vd or vdev_tsd [%p]\n", vd );
     vdev_hl =     (IOMedia *)(dvd->vd_iokit_hl);
 
     if ( vdev_hl ) {
+        /* Do a sync */
+        vdev_iokit_sync(vd,0);
+        
         /* Close the user client handle */
         vdev_hl->close(zfsProvider, 0);
+        
+        /* Wait for IOKit to settle down */
         (void) vdev_hl->waitQuiet();
+        
 //IOLog( "vdev_iokit_handle_close: vdev_hl has %d references", vdev_hl->getRetainCount() );
         if( vdev_hl->getRetainCount() > 0 ) {
             vdev_hl->release();
@@ -1180,32 +1199,46 @@ IOLog( "vdev_iokit_ioctl: zfsProvider has %d references", zfsProvider->getRetain
 int vdev_iokit_sync( vdev_t * vd, zio_t * zio )
 {
     vdev_iokit_t * dvd =    0;
-    IOService * vdev_hl =   0;
-    uint64_t timeout =      5000000000; // 5 * 10^3 nanoseconds
+    IOMedia * vdev_hl =     0;
+    IOService * zfs_hl =    0;
+//    uint64_t timeout =      5000000000; // 5 * 10^3 nanoseconds
     int result =            EINVAL;
-
     
 //IOLog( "vdev_iokit_sync: [%p] [%p]\n", vd, zio );
     
-    if (vd && vd->vdev_tsd && vd->vdev_tsd) {
+    if (!vd || !vd->vdev_tsd)
+        return EINVAL;
         
-        dvd =       static_cast<vdev_iokit_t *>(vd->vdev_tsd);
         
-        if (dvd && dvd->vd_iokit_hl) {
-            
-            vdev_hl = (IOService *)(dvd->vd_iokit_hl);
-            
-            if (vdev_hl) {
-//IOLog( "vdev_iokit_sync: do sync\n" );
-                result = vdev_hl->waitQuiet( timeout );
-//IOLog( "vdev_iokit_sync: done [%d]\n", result );
-                if ( result == kIOReturnTimeout ) {
-                    result = ETIMEDOUT;
-                } else {
-                    result = 0;
-                }
-            }
-        }
+    dvd =       static_cast<vdev_iokit_t *>(vd->vdev_tsd);
+    
+    if (!dvd || !dvd->vd_iokit_hl) {
+        dvd =   0;
+        return EINVAL;
+    }
+
+    vdev_hl =   (IOMedia*)(dvd->vd_iokit_hl);
+    
+    if (!vdev_hl) {
+        return EINVAL;
+    }
+    
+    zfs_hl =    (IOService*)dvd->vd_zfs_hl;
+    
+    if (!zfs_hl) {
+        return EINVAL;
+    }
+    
+    //IOLog( "vdev_iokit_sync: do sync\n" );
+
+    result =  vdev_hl->synchronizeCache( zfs_hl );
+
+    //IOLog( "vdev_iokit_sync: done [%d]\n", result );
+    
+    if ( result == kIOReturnTimeout ) {
+        result = ETIMEDOUT;
+    } else {
+        result = 0;
     }
     
     dvd = 0;
@@ -1321,8 +1354,10 @@ vdev_iokit_strategy( vdev_t * vd, zio_t * zio )
      error = VNOP_STRATEGY(bp);
      */
 
+    /* Prepare the IOMemoryDescriptor (wires memory) */
+    io_context->buffer->prepare(kIODirectionNone);
+    
 //IOLog( "vdev_iokit_strategy: starting op [%p] [%p]\n", vd, zio );
-IOSleep(10);
     if (zio->io_type == ZIO_TYPE_WRITE) {
 //IOLog( "vdev_iokit_strategy: write (%llu,%llu)\n", zio->io_offset, zio->io_size );
         vdev_hl->IOMedia::write(zfsProvider, zio->io_offset, io_context->buffer, 0, &(io_context->completion) );
@@ -1355,6 +1390,9 @@ extern void vdev_iokit_io_intr( void * target, void * parameter, kern_return_t s
     
     if (!zio)
         return;
+    
+    /* Teardown the IOMemoryDescriptor */
+    io_context->buffer->complete();
     
     io_context->zio = 0;
     
