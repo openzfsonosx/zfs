@@ -418,13 +418,6 @@ zfs_add_options(zfs_handle_t *zhp, int *flags)
 	return (error);
 }
 
-
-#define MOUNT_POINT_CUSTOM_ICON ".VolumeIcon.icns"
-// RJVB 20140331: now that we use KERNEL_MODPREFIX it is no longer necessary to look in 2 locations:
-// #define CUSTOM_ICON_PATH_LEGACY "/System/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns"
-// #define CUSTOM_ICON_PATH_MAVERICKS "/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns"
-#define CUSTOM_ICON_PATH KERNEL_MODPREFIX "/zfs.kext/Contents/Resources/VolumeIcon.icns"
-
 #ifdef __APPLE__
 /*
  * On OSX we can set the icon to an Open ZFS specific one, just to be extra

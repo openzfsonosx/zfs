@@ -1,1 +1,5 @@
 common.sh
+org.openzfsonosx.zed.service.plist
+org.openzfsonosx.zpool-autoimport.plist
+zed.service.sh
+zpool-autoimport.sh

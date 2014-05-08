@@ -75,7 +75,6 @@
 #include <sys/kobj.h>
 #include <sys/time.h>
 #include <sys/zfs_ioctl.h>
-#include <i386/cpuid.h>
 
 int zfs_zevent_len_max = 0;
 int zfs_zevent_cols = 80;
@@ -1500,12 +1499,9 @@ uint64_t
 fm_ena_generate(uint64_t timestamp, uchar_t format)
 {
 	uint64_t ena;
-    uint32_t cpu_id;
 
 	kpreempt_disable();
-    // FIXME
-    cpuid(&cpu_id);
-	ena = fm_ena_generate_cpu(timestamp, cpu_id, format);
+	ena = fm_ena_generate_cpu(timestamp, getcpuid(), format);
 	kpreempt_enable();
 
 	return (ena);

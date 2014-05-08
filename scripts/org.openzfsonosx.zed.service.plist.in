@@ -6,10 +6,14 @@
 	<string>org.openzfsonosx.zed.service</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/usr/local/sbin/zed.service.sh</string>
+		<string>@sbindir@/zed.service.sh</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
+	<key>StandardErrorPath</key>
+	<string>/private/var/log/openzfsonosx.err</string>
+	<key>StandardOutPath</key>
+	<string>/private/var/log/openzfsonosx.log</string>
 	<key>WatchPaths</key>
 	<array>
 		<string>/dev/zfs</string>

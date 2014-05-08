@@ -1317,7 +1317,6 @@ zfsctl_snapdir_lookup(ap)
 		if (err == 0) {
 			strlcpy(nm, real, sizeof(nm));
 		} else if (err != ENOTSUP) {
-            printf("exit1\n");
 			ZFS_EXIT(zfsvfs);
 			return (err);
 		}
@@ -1336,7 +1335,6 @@ zfsctl_snapdir_lookup(ap)
 		*vpp = sep->se_root;
 		VN_HOLD(*vpp);
 		err = traverse(vpp, LK_EXCLUSIVE | LK_RETRY);
-        printf("zfsctl_lookup traverse say %d\n", err);
 
 		if (err) {
 			VN_RELE(*vpp);
@@ -1360,7 +1358,6 @@ zfsctl_snapdir_lookup(ap)
 		}
 		mutex_exit(&sdp->sd_lock);
 		ZFS_EXIT(zfsvfs);
-        printf("exit2\n");
 		return (err);
 	}
 
@@ -1376,7 +1373,6 @@ zfsctl_snapdir_lookup(ap)
 		 * forcing EILSEQ to ENOENT.
 		 * Since shell ultimately passes "*" or "?" as name to lookup
 		 */
-        printf("exit3\n");
 		return (err == EILSEQ ? ENOENT : err);
 	}
 	if (dmu_objset_hold(snapname, FTAG, &snap) != 0) {
@@ -1389,14 +1385,13 @@ zfsctl_snapdir_lookup(ap)
 			err = ENOENT;
 		}
 		ZFS_EXIT(zfsvfs);
-        printf("exit4: failed to hold '%s'\n", snapname);
 		return (err);
 	}
 
 	sep = kmem_alloc(sizeof (zfs_snapentry_t), KM_SLEEP);
 	sep->se_name = kmem_alloc(strlen(nm) + 1, KM_SLEEP);
 	(void) strlcpy(sep->se_name, nm, strlen(nm) + 1);
-    printf("**** must not exist, Calling snapshot_mknode for '%s'\n", snapname);
+    dprintf("must not exist, Calling snapshot_mknode for '%s'\n", snapname);
     VN_RELE(*vpp);
 	*vpp = sep->se_root = zfsctl_snapshot_mknode(dvp, dmu_objset_id(snap));
 	avl_insert(&sdp->sd_snaps, sep, where);
@@ -1418,7 +1413,7 @@ domount:
 
 #ifdef __APPLE__
 
-    printf("Would call mount here on '%s' for '%s': mounted%p\n",
+    printf("Would call mount here on '%s' for '%s': mountedhere %p\n",
             mountpoint, snapname, vnode_mountedhere(*vpp));
 
 #ifdef _KERNEL
@@ -1445,7 +1440,6 @@ domount:
 #endif // APPLE
 
 	kmem_free(mountpoint, mountpoint_len);
-    dprintf("free\n");
 	if (err == 0) {
 		/*
 		 * Fix up the root vnode mounted on .zfs/snapshot/<snapname>.
@@ -1471,6 +1465,7 @@ domount:
     /*
      * Gross hack for now, fix meeeee
      */
+#if DEBUG
     if ((err == 0) && (((uint32_t *)*vpp)[23]==0)) {
             VN_HOLD(*vpp);
             printf("Uhoh, was about to return vp %p with iocount==0!\n",
@@ -1482,7 +1477,8 @@ domount:
             printf("Uhoh, was about to return vp %p with iocount==2!\n",
                    *vpp);
         }
-    printf("Lookup complete: %d %p\n", err, err==0?*vpp:NULL);
+#endif
+    dprintf("Lookup complete: %d %p\n", err, err==0?*vpp:NULL);
 	return (err);
 }
 
