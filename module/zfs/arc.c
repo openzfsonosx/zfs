@@ -261,10 +261,6 @@ extern unsigned int zfs_vnop_reclaim_throttle;
 SYSCTL_INT(_zfs, OID_AUTO, vnop_reclaim_throttle,
            CTLFLAG_RW, &zfs_vnop_reclaim_throttle, 0,
            "Throttle IO when reclaim list hits this size");
-extern unsigned int zfs_vnop_vdev_ashift;
-SYSCTL_INT(_zfs, OID_AUTO, vnop_vdev_ashift,
-           CTLFLAG_RW, &zfs_vnop_vdev_ashift, 0,
-           "Enable vdev ashift");
 extern unsigned int zfs_vfs_suspend_fs_begin_delay;
 SYSCTL_INT(_zfs, OID_AUTO, vfs_suspend_fs_begin_delay,
            CTLFLAG_RW, &zfs_vfs_suspend_fs_begin_delay, 0,
@@ -6139,7 +6135,6 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs_vnop_create_negatives);
     sysctl_register_oid(&sysctl__zfs_reclaim_list);
     sysctl_register_oid(&sysctl__zfs_vnop_reclaim_throttle);
-    sysctl_register_oid(&sysctl__zfs_vnop_vdev_ashift);
     sysctl_register_oid(&sysctl__zfs_vfs_suspend_fs_begin_delay);
     sysctl_register_oid(&sysctl__zfs_vfs_suspend_fs_end_delay);
 
@@ -6183,7 +6178,6 @@ void arc_unregister_oids(void)
     sysctl_unregister_oid(&sysctl__zfs_vnop_create_negatives);
     sysctl_unregister_oid(&sysctl__zfs_reclaim_list);
     sysctl_unregister_oid(&sysctl__zfs_vnop_reclaim_throttle);
-    sysctl_unregister_oid(&sysctl__zfs_vnop_vdev_ashift);
     sysctl_unregister_oid(&sysctl__zfs_vfs_suspend_fs_begin_delay);
     sysctl_unregister_oid(&sysctl__zfs_vfs_suspend_fs_end_delay);
 }

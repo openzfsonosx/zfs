@@ -43,9 +43,6 @@
 #endif /*__APPLE__*/
 
 
-unsigned int zfs_vnop_vdev_ashift = 0;
-
-
 /*
  * Virtual device vector for disks.
  */
