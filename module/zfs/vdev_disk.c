@@ -148,7 +148,8 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize, uint64_t *ashif
 	}
 	*psize = blkcnt * (uint64_t)blksize;
     *max_psize = *psize;
-
+    dvd->vd_ashift = highbit(blksize)-1;
+    dprintf("vdev_disk: Device %p ashift set to %d\n", devvp, dvd->vd_ashift);
 	/*
 	 *  ### APPLE TODO ###
 	 * If we own the whole disk, try to enable disk write caching.
@@ -343,8 +344,18 @@ vdev_disk_io_start(zio_t *zio)
 	buf_setflags(bp, flags);
 	buf_setcount(bp, zio->io_size);
 	buf_setdataptr(bp, (uintptr_t)zio->io_data);
-    buf_setblkno(bp, lbtodb(zio->io_offset));
-    buf_setlblkno(bp, lbtodb(zio->io_offset));
+
+    size_t  contig_bytes;
+    daddr64_t blkno;
+
+    /*
+     * Map offset to blcknumber, based on physical block number.
+     * (512, 4096, ..). If we fail to map, default back to
+     * standard 512. lbtodb() is fixed at 512.
+     */
+    buf_setblkno(bp, zio->io_offset >> dvd->vd_ashift);
+    buf_setlblkno(bp, zio->io_offset >> dvd->vd_ashift);
+
 	buf_setsize(bp, zio->io_size);
 	if (buf_setcallback(bp, vdev_disk_io_intr, zio) != 0)
 		panic("vdev_disk_io_start: buf_setcallback failed\n");
