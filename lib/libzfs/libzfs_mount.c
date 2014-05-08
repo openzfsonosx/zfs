@@ -1329,7 +1329,7 @@ int zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
             printf("Attempting to eject volume '%s'\n",
                    zfs_get_name(nzhp));
             // /var/run/zfs/zvol/dsk/$POOL/$volume
-            volume = zfs_asprintf(nzhp,
+            volume = zfs_asprintf(nzhp->zfs_hdl,
                                   "%s/zfs/zvol/dsk/%s",
                                   ZVOL_ROOT, zfs_get_name(nzhp));
             if (volume) {
