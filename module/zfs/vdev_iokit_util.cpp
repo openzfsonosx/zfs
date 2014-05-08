@@ -18,74 +18,85 @@
 #define info_delay 50
 #define error_delay 250
 
-extern void vdev_iokit_log( char * logString )
+extern void vdev_iokit_log(const char * logString)
 {
-    IOLog( "ZFS: vdev log: %s\n", logString );
+    IOLog( "ZFS: vdev: %s\n", logString );
 }
 
-extern void vdev_iokit_log_str(char * logString1, char * logString2)
+extern void vdev_iokit_log_str(const char * logString1, const char * logString2)
 {
-    IOLog( "ZFS: vdev log: %s {%s}\n", logString1, logString2 );
+    IOLog( "ZFS: vdev: %s {%s}\n", logString1, logString2 );
 }
 
-extern void vdev_iokit_log_ptr( char * logString, void * logPtr )
+extern void vdev_iokit_log_ptr(const char * logString, const void * logPtr)
 {
-    IOLog( "ZFS: vdev log: %s [%p]\n", logString, logPtr );
+    IOLog( "ZFS: vdev: %s [%p]\n", logString, logPtr );
 }
 
-extern void vdev_iokit_log_num( char * logString, uint64_t logNum )
+extern void vdev_iokit_log_num(const char * logString, const uint64_t logNum)
 {
-    IOLog( "ZFS: vdev log: %s (%llu)\n", logString, logNum );
+    IOLog( "ZFS: vdev: %s (%llu)\n", logString, logNum );
 }
 
-void vdev_iokit_context_alloc( zio_t * zio )
+static inline void vdev_iokit_context_free( vdev_iokit_context_t * io_context );
+
+static inline vdev_iokit_context_t * vdev_iokit_context_alloc( zio_t * zio )
 {
     vdev_iokit_context_t * io_context = 0;
     
 vdev_iokit_log_ptr( "vdev_iokit_context_alloc: zio", zio );
     
     if (!zio)
-        return;
+        return 0;
     
-    io_context = zio->io_tsd =    kmem_alloc(sizeof(vdev_iokit_context_t), KM_PUSHPAGE);
+    // KM_PUSHPAGE for IO context
+    io_context =     static_cast<vdev_iokit_context_t*>( kmem_alloc(
+                                sizeof(vdev_iokit_context_t),KM_PUSHPAGE) );
     
-    io_context->
+    if (!io_context) {
+        vdev_iokit_log_ptr("vdev_iokit_context_alloc: couldn't alloc an io_context_t for zio\n", zio);
+        return 0;
+    }
+    
+    io_context->zio = zio;
+    
+    io_context->buffer =    (IOBufferMemoryDescriptor*)IOBufferMemoryDescriptor::withAddress( zio->io_data, zio->io_size,
+                                                         (zio->io_type == ZIO_TYPE_WRITE ? kIODirectionOut : kIODirectionIn) );
+    
+    if (io_context->buffer == NULL) {
+        IOLog("ZFS: vdev_iokit_strategy: Couldn't allocate a memory buffer [%p]\n", io_context);
+        vdev_iokit_context_free(io_context);
+    }
+    
+    return io_context;
 }
 
-void vdev_iokit_context_free( zio_t * zio )
+static inline void vdev_iokit_context_free( vdev_iokit_context_t * io_context )
 {
-    vdev_iokit_context_t * io_context = 0;
+vdev_iokit_log_ptr( "vdev_iokit_context_free: io_context", io_context );
     
-vdev_iokit_log_ptr( "vdev_iokit_context_free: zio", zio );
-    
-    if (!zio)
+    if (!io_context || !io_context->zio)
         return;
-    
-    io_context =        static_cast<vdev_iokit_context_t*>(zio->io_tsd);
-    
-    if(!io_context)
-        return;
-    
+
     //    if (zio->io_flags & ZIO_FLAG_FAILFAST) {
     //
     //    }
-    
-    if (io_context) {
 
-        if (io_context->buffer) {
-            io_context->buffer->release();
-            io_context->buffer = 0;
-        }
-        
-        kmem_free(io_context,sizeof(io_context));
+    io_context->zio = 0;
+    
+    if (io_context->buffer) {
+        io_context->buffer->release();
+        io_context->buffer = 0;
     }
+        
+    kmem_free(io_context,sizeof(io_context));
     
     io_context = 0;
     
     return;
 }
 
-extern IOService * vdev_iokit_get_service_hl()
+extern IOService * vdev_iokit_get_service()
 {
     IORegistryIterator * registryIterator = 0;
     OSIterator * newIterator = 0;
@@ -104,31 +115,32 @@ extern IOService * vdev_iokit_get_service_hl()
             currentEntry = 0;
             return zfs_service;
         } else {
+IOLog( "vdev_iokit_get_service: currentEntry has %d references", currentEntry->getRetainCount() );
             currentEntry->release();
             currentEntry = 0;
         }
     }
     
-    IOLog("vdev_iokit_get_service_hl: zfs_service1? [%p]\n", zfs_service);
+    IOLog("vdev_iokit_get_service: zfs_service1? [%p]\n", zfs_service);
     
     matchDict =     IOService::resourceMatching( "net_lundman_zfs_zvol", 0 );
-    IOLog("vdev_iokit_get_service_hl: create resourceMatching matchingDict...\n");
+    IOLog("vdev_iokit_get_service: create resourceMatching matchingDict...\n");
     
     if ( matchDict ) {
-//        IOLog("vdevGetService: matchingDict [%p]\n", matchDict);
+//        IOLog("vdev_iokit_get_service: matchingDict [%p]\n", matchDict);
         
         newIterator = IOService::getMatchingServices(matchDict);
         matchDict->release();
         matchDict = 0;
         
-        IOLog("vdev_iokit_get_service_hl: iterator %p\n", newIterator);
+        IOLog("vdev_iokit_get_service: iterator %p\n", newIterator);
         if( newIterator ) {
             registryIterator = OSDynamicCast(IORegistryIterator, newIterator);
-            IOLog("vdev_iokit_get_service_hl: registryIterator [%p]\n", registryIterator);
+            IOLog("vdev_iokit_get_service: registryIterator [%p]\n", registryIterator);
             if (registryIterator) {
 
                 zfs_service = OSDynamicCast( IOService, registryIterator->getCurrentEntry() );
-                IOLog("vdev_iokit_get_service_hl: zfs_service-during? [%p]\n", zfs_service);
+                IOLog("vdev_iokit_get_service: zfs_service-during? [%p]\n", zfs_service);
                 
                 if (zfs_service)
                     zfs_service->retain();
@@ -138,14 +150,14 @@ extern IOService * vdev_iokit_get_service_hl()
             }
         }
     }
-    IOLog("vdev_iokit_get_service_hl: zfs_service2? [%p]\n", zfs_service);
+    IOLog("vdev_iokit_get_service: zfs_service2? [%p]\n", zfs_service);
     
     /* Should be matched, go to plan B if not */
     if (!zfs_service) {
         registryIterator = IORegistryIterator::iterateOver(gIOServicePlane,kIORegistryIterateRecursively);
-        IOLog("vdev_iokit_get_service_hl: registryIterator 2 %p\n", registryIterator);
+        IOLog("vdev_iokit_get_service: registryIterator 2 %p\n", registryIterator);
         if (!registryIterator) {
-            IOLog("vdev_iokit_get_service_hl: couldn't iterate over service plane %p\n", registryIterator);
+            IOLog("vdev_iokit_get_service: couldn't iterate over service plane %p\n", registryIterator);
         } else {
         
             do {
@@ -155,13 +167,13 @@ extern IOService * vdev_iokit_get_service_hl()
                 allServices = registryIterator->iterateAll();
             } while (! registryIterator->isValid() );
             
-            IOLog("vdev_iokit_get_service_hl: allServices %p\n", allServices);
+            IOLog("vdev_iokit_get_service: allServices %p\n", allServices);
             registryIterator->release();
             registryIterator = 0;
         }
         
         if (!allServices) {
-            IOLog("vdev_iokit_get_service_hl: couldn't get service list from iterator %p\n", registryIterator);
+            IOLog("vdev_iokit_get_service: couldn't get service list from iterator %p\n", registryIterator);
             return 0;
         }
         
@@ -179,7 +191,7 @@ extern IOService * vdev_iokit_get_service_hl()
                     if(entryName->isEqualTo("net_lundman_zfs_zvol") ) {
                         zfs_service = OSDynamicCast( IOService, currentEntry );
                         zfs_service->retain();
-                        IOLog("vdevGetService: match: [%p]\n", zfs_service);
+                        IOLog("vdev_iokit_get_service: match: [%p]\n", zfs_service);
                     }
                     entryName->release();
                     entryName = 0;
@@ -199,11 +211,11 @@ extern IOService * vdev_iokit_get_service_hl()
         allServices->release();
         allServices = 0;
     }
-    IOLog("vdev_iokit_get_service_hl: zfs_service 3? [%p] \n", zfs_service);
+    IOLog("vdev_iokit_get_service: zfs_service 3? [%p] \n", zfs_service);
     
     return zfs_service;
 
-} /* vdev_iokit_get_service_hl */
+} /* vdev_iokit_get_service */
 
 /*
  * We want to match on all disks or volumes that
@@ -317,7 +329,7 @@ int vdev_iokit_find_by_path(vdev_t * vd, char * diskPath)
     OSObject * bsdnameosobj = 0;
     OSString * bsdnameosstr = 0;
     char * diskName = 0;
-    uintptr_t * diskIOMedia = 0;
+    uintptr_t * vdev_hl = 0;
     vdev_iokit_t * dvd = 0;
     
     if ( !vd || !diskPath ) {
@@ -325,17 +337,17 @@ int vdev_iokit_find_by_path(vdev_t * vd, char * diskPath)
         return EINVAL;
     }
     
+    dvd =       static_cast<vdev_iokit_t*>(vd->vdev_tsd);
+    
+    if (!dvd)
+        return EINVAL;
+    
     allDisks = vdev_iokit_get_disks();
     
     if (!allDisks) {
         IOLog( "ZFS: vdev_iokit_find_by_path: failed to browse disks\n" );
         return EINVAL;
     }
-    
-    dvd = vd->vdev_tsd;
-    
-    if (!dvd)
-        return EINVAL;
     
     diskName = strrchr( diskPath, '/' );
     
@@ -351,19 +363,6 @@ int vdev_iokit_find_by_path(vdev_t * vd, char * diskPath)
          */
         diskName = diskPath;
     }
-
-    /*
-    if( allDisks->getCount() > 0 ) {
-        // Lazy allocate, and only if there will be work to do
-        buffer = IOBufferMemoryDescriptor::withCapacity(labelSize, kIODirectionIn);
-        
-        if (buffer == NULL) {
-            IOLog("ZFS: vdev_iokit_find_by_path: Couldn't allocate a memory buffer\n");
-            IOSleep( error_delay );
-            return false;
-        }
-    }
-    */
 
     while ( allDisks->getCount() > 0 ) {
         
@@ -408,21 +407,23 @@ int vdev_iokit_find_by_path(vdev_t * vd, char * diskPath)
     
     if (matchedDisk) {
 //        IOLog("ZFS: vdev_iokit_find_by_guid: casting matching disk %p\n", matchedDisk);
-        diskIOMedia = (uintptr_t*)matchedDisk;
-//        IOLog("ZFS: vdev_iokit_find_by_guid: cast matching disk %p\n", diskIOMedia);
+        vdev_hl = (uintptr_t*)matchedDisk;
+//        IOLog("ZFS: vdev_iokit_find_by_guid: cast matching disk %p\n", vdev_hl);
         matchedDisk = 0;
     }
+
+IOLog("ZFS: vdev_iokit_find_by_path: matched disk_1 %p (%d)\n", vdev_hl, ((IOMedia*)vdev_hl)->getRetainCount());
     
     if (allDisks) {
         allDisks->release();
         allDisks = 0;
     }
     
-    IOLog("ZFS: vdev_iokit_find_by_path: matched disk %p\n", diskIOMedia);
+IOLog("ZFS: vdev_iokit_find_by_path: matched disk_2 %p\n", vdev_hl);
+ 
+    dvd->vd_iokit_hl =      vdev_hl;
     
-    dvd->vd_iokit_hl =      diskIOMedia;
-    
-    return (diskIOMedia != 0);
+    return (vdev_hl != 0);
 }
 
 /* Returned object will have a reference count and should be released */
@@ -432,13 +433,12 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
     OSOrderedSet * allDisks = 0;
     IOMedia * currentDisk = 0;
     IOMedia * matchedDisk = 0;
-    uintptr_t * diskIOMedia = 0;
+    uintptr_t * vdev_hl = 0;
     UInt64 labelSize =  VDEV_SKIP_SIZE + VDEV_PHYS_SIZE;
     IOBufferMemoryDescriptor* buffer = 0;
     nvlist_t * config = 0;
     
     char * diskPath = 0;
-    char * diskName = 0;
 
     uint64_t guid = 0;
     
@@ -454,12 +454,13 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
     if ( !vd || !vd->vdev_path )
         return EINVAL;
     
-    dvd = vd->vdev_tsd;
+    dvd =       static_cast<vdev_iokit_t*>(vd->vdev_tsd);
     
     if (!dvd)
         return EINVAL;
     
-    zfsProvider = dvd->vd_zfs_hl;
+    zfsProvider = (IOService *)dvd->vd_zfs_hl;
+    
     if ( !zfsProvider )
         return EINVAL;
     
@@ -504,7 +505,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
             IOLog("ZFS: vdev_iokit_find_by_guid: Disk %s is already open!\n", diskPath);
         }
         
-    IOLog("ZFS: vdev_iokit_find_by_guid: Issuing open...\n", diskPath);
+    IOLog("ZFS: vdev_iokit_find_by_guid: Issuing open...\n");
         //error = ((IOMedia*)currentDisk)->open(zfsProvider,0,kIOStorageAccessReader);
         result = currentDisk->open(zfsProvider,0,kIOStorageAccessReader);
         
@@ -649,7 +650,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
         currentDisk = 0;
         
         if (matchedDisk) {
-            dvd->vd_iokit_hl = matchedDisk;
+            dvd->vd_iokit_hl = (uintptr_t*)matchedDisk;
             return 0;
         }
         
@@ -660,12 +661,14 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
     
     if (matchedDisk) {
         IOLog("ZFS: vdev_iokit_find_by_guid: casting matching disk %p\n", matchedDisk);
-        diskIOMedia = (uintptr_t*)matchedDisk;
-        IOLog("ZFS: vdev_iokit_find_by_guid: casting matching disk %p\n", diskIOMedia);
+        vdev_hl = (uintptr_t*)matchedDisk;
+        IOLog("ZFS: vdev_iokit_find_by_guid: casting matching disk %p\n", vdev_hl);
         matchedDisk = 0;
+IOLog( "vdev_iokit_find_by_guid: matchedDisk has %d references 1", matchedDisk->getRetainCount() );
     }
     
     if( buffer ) {
+IOLog( "vdev_iokit_find_by_guid: buffer has %d references", buffer->getRetainCount() );
         buffer->release();
     }
     buffer = 0;
@@ -675,31 +678,36 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
         allDisks = 0;
     }
     
+IOLog( "vdev_iokit_find_by_guid: matchedDisk has %d references 2", matchedDisk->getRetainCount() );
+    
     if (zfsProvider) {
+IOLog( "vdev_iokit_find_by_guid: zfsProvider has %d references", zfsProvider->getRetainCount() );
         zfsProvider->release();
         zfsProvider = 0;
     }
 
-    IOLog("ZFS: vdev_iokit_find_by_guid: matched disk %p\n", diskIOMedia);
-    return diskIOMedia;
+    IOLog("ZFS: vdev_iokit_find_by_guid: matched disk handle %p\n", vdev_hl);
+    dvd->vd_iokit_hl =      (uintptr_t*)vdev_hl;
+    
+    return (vdev_hl != 0);
 }
 
 extern int vdev_iokit_physpath(vdev_t * vd, char * physpath)
 {
     vdev_iokit_t * dvd = 0;
-    IOMedia * diskIOMedia = 0;
+    IOMedia * vdev_hl = 0;
     
-    if (!vd !! !physpath)
+    if (!vd || !physpath)
         return EINVAL;
     
-    dvd = static_cast<vdev_iokit_t *>(vd->vdev_tsd);
+    dvd =       static_cast<vdev_iokit_t *>(vd->vdev_tsd);
     
     if (!dvd || !dvd->vd_iokit_hl)
         return EINVAL;
 
-    diskIOMedia = (IOMedia *)dvd->vd_iokit_hl;
+    vdev_hl = (IOMedia *)dvd->vd_iokit_hl;
 
-    if (!diskIOMedia)
+    if (!vdev_hl)
         return EINVAL;
     
     /* Get the 'Content' description from IOKit
@@ -711,14 +719,14 @@ extern int vdev_iokit_physpath(vdev_t * vd, char * physpath)
      * However APM and MBR, and a real whold-disk
      *   vdev, will not have Content filled.
      */
-    physpath =  diskIOMedia->getContent();
+    strlcat(physpath,vdev_hl->getContent(),strlen(vdev_hl->getContent()));
     
     /* If there isn't a hint and it is not Apple_HFS */
     if (strlen(physpath) > 1 && strncmp("Apple_HFS", physpath,10) != 0 )
         return 0;
     
     /* Re-use the current path */
-    physpath = sprintf( "%s", vd->vdev_path );
+    strlcat(physpath,vd->vdev_path,strlen(vd->vdev_path));
     return 0;
 }
 
@@ -734,63 +742,32 @@ extern "C" {
  * C language interfaces
  */
 
-int
-vdev_iokit_handle_open(vdev_t * vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
+extern int
+vdev_iokit_handle_open(vdev_t * vd)
 {
     IOService * zfsProvider = 0;
-    IOMedia * vdev_disk = 0;
-    uintptr_t * matched_disk = 0;
+    IOMedia * vdev_hl = 0;
     boolean_t result = false;
-    uint64_t blksize = 0;
     vdev_iokit_t *dvd = 0;
     int error = 0;
     
-IOLog( "vdev_iokit_handle_open: [%p]:(%llu,%llu,%llu)\n", vd, *size, *max_size, *ashift );
+IOLog( "vdev_iokit_handle_open: [%p]\n", vd );
     
     if (!vd || !vd->vdev_tsd)
         return EINVAL;
     
-    dvd = static_cast<vdev_iokit_t *>(vd->vdev_tsd);
+    dvd =       static_cast<vdev_iokit_t *>(vd->vdev_tsd);
     
     if (!dvd)
         return EINVAL;
     
-    zfsProvider = dvd->vd_zfs_hl;
+    zfsProvider = (IOService *)dvd->vd_zfs_hl;
     
     if ( !zfsProvider )
         return EINVAL;
     
-    if (vd && vd->vdev_tsd) {
-        
-    
-        /* If re-opening a disk, skip the IOKit
-         * open and just recheck disk size */
-        if (!(dvd->vd_is_open) || !(dvd->vd_iokit_hl) ) {
-			/*
-			 * If we are opening a device in its offline notify
-			 * context, the LDI handle was just closed. Clean
-			 * up the LDI event callbacks and free vd->vdev_tsd.
-			 */
-			vdev_iokit_free(dvd);
-		} else {
-			ASSERT(vd->vdev_reopening);
-			goto skipopen;
-		}
-        
-        if( vd->vdev_reopening ) {
-            goto skipopen;
-        }
-        
-    }
-    
-    if (!dvd) {
-        dvd = (vdev_iokit_t*)kmem_zalloc(sizeof (vdev_iokit_t), KM_SLEEP);
-    }
-    
-    if (dvd == NULL) {
-        error = EINVAL;
-        goto error;
-    }
+#if 0
+    uintptr_t * matched_disk = 0;
     
     IOLog("ZFS: vdev_iokit_handle_open: Trying by path\n");
     matched_disk = vdev_iokit_find_by_path( vd, vd->vdev_path );
@@ -813,10 +790,14 @@ IOLog( "vdev_iokit_handle_open: [%p]:(%llu,%llu,%llu)\n", vd, *size, *max_size, 
         goto error;
     }
     
-    vdev_disk = (IOMedia *)matched_disk;
+    matched_disk->release();
+    matched_disk = 0;
+#endif
     
-    if ( ! vdev_disk ) {
-        IOLog("ZFS: vdev_iokit_handle_open: Couldn't cast matched_disk to vdev_disk\n");
+    vdev_hl = (IOMedia *)dvd->vd_iokit_hl;
+    
+    if ( ! vdev_hl ) {
+        IOLog("ZFS: vdev_iokit_handle_open: Couldn't cast dvd->vd_iokit_hl handle to vdev_hl\n");
         error = EINVAL;
         goto error;
     }
@@ -827,13 +808,12 @@ IOLog( "vdev_iokit_handle_open: [%p]:(%llu,%llu,%llu)\n", vd, *size, *max_size, 
 //    dvd->vd_keep_open = true;
     
     /* Check if the media is in use
-     * update vd_is_open while here
      */
-    result = dvd->vd_is_open = vdev_disk->isOpen(zfsProvider);
+    result =        vdev_hl->isOpen(zfsProvider);
     
     if (result == true) {
-        IOLog("ZFS: vdev_iokit_handle_open: Disk is already open\n");
-        goto skipopen;
+        IOLog("ZFS: vdev_iokit_handle_open: Disk %s is already open [%p]\n", vd->vdev_path, dvd->vd_iokit_hl);
+        goto skip_open;
     }
 
     /*
@@ -842,107 +822,122 @@ IOLog( "vdev_iokit_handle_open: [%p]:(%llu,%llu,%llu)\n", vd, *size, *max_size, 
      *      kIOStorageAccessReader
      */
 
-    if (!dvd->vd_is_open) {
-        result = vdev_disk->open(zfsProvider, 0, kIOStorageAccessReaderWriter);
-        IOLog("ZFS: vdev_iokit_handle_open: open: %u\n", result);
-        if (result == 1) {
-            (void) vdev_disk->makeUsable();
-            (void) vdev_disk->waitQuiet();
-        }
+    if ( spa_mode(vd->vdev_spa) == FREAD ) {
 
-        dvd->vd_is_open = true;
+        result = vdev_hl->open(zfsProvider, 0, kIOStorageAccessReader);
+        
+IOLog("ZFS: vdev_iokit_handle_open: open: readonly %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
+        if (result == 1) {
+            /* DEBUGGING */
+            vdev_iokit_sync(vd,0);
+//            (void) vdev_hl->waitQuiet();
+//            (void) vdev_hl->makeUsable();
+        }
+        
     } else {
-        IOLog("ZFS: vdev_iokit_handle_open: vd_is_open was already true, didn't open: %u\n", result);
+    
+        result = vdev_hl->open(zfsProvider, 0, kIOStorageAccessReaderWriter);
+        
+IOLog("ZFS: vdev_iokit_handle_open: open: read/write %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
+        if (result == 1) {
+            /* DEBUGGING */
+            vdev_iokit_sync(vd,0);
+//            (void) vdev_hl->waitQuiet();
+//            (void) vdev_hl->makeUsable();
+        }
     }
     
-skipopen:
-    
-    *size =             vdev_disk->getSize();
-    IOLog("ZFS: vdev_iokit_handle_open: size %llu\n", *size);
-    
-    blksize =           vdev_disk->getPreferredBlockSize();
-    if (blksize <= 0) {
-        IOLog("ZFS: vdev_iokit_handle_open: Couldn't get blocksize %u %p\n", result, matched_disk);
-        blksize = SPA_MINBLOCKSIZE;
-    }
-    
-    *ashift = dvd->vd_ashift =    highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
-    IOLog("ZFS: vdev_iokit_handle_open: ashift %llu\n", dvd->vd_ashift);
-    
-    vd->vdev_nowritecache = B_FALSE;
+skip_open:
     
     if (result == 1) {
         IOLog("ZFS: vdev_iokit_handle_open: success\n");
-        dvd->vd_iokit_hl = (uintptr_t *)matched_disk;
-        dvd->vd_client_hl = (uintptr_t *)zfsProvider;
+        dvd->vd_iokit_hl =  (uintptr_t *)dvd->vd_iokit_hl;
+        dvd->vd_zfs_hl =    (uintptr_t *)zfsProvider;
         
         /* If there is a different iokit_t, clean it up */
         if ( vd->vdev_tsd && ( vd->vdev_tsd != (void*)dvd ) ) {
-            vdev_iokit_free( static_cast<vdev_iokit_t*>(vd->vdev_tsd) );
-        }
             
+IOLog("ZFS: vdev_iokit_handle_open: clearing vdev_tsd... Wait this shouldn't happen! [%p]->[%p]\n", vd->vdev_tsd, dvd);
+            
+            vdev_iokit_free(vd);
+        }
+        
+        /* Save the new vdev_iokit info */
         vd->vdev_tsd = dvd;
+        
+        goto out;
+        
     } else {
+        
         IOLog("ZFS: vdev_iokit_handle_open: fail\n");
         error = EINVAL;
         goto error;
+        
     }
     
 error:
     if (error) {
-        if (matched_disk)
-            ((OSObject*)matched_disk)->release();
+        if (dvd->vd_iokit_hl) {
+IOLog( "vdev_iokit_handle_open: in_error: dvd->vd_iokit_hl has %d references", ((IOMedia*)dvd->vd_iokit_hl)->getRetainCount() );
+//            ((OSObject*)dvd->vd_iokit_hl)->release();
+        }
         
-        if (zfsProvider)
+        if (zfsProvider) {
+IOLog( "vdev_iokit_handle_open: in_error: zfsProvider has %d references", zfsProvider->getRetainCount() );
             zfsProvider->release();
+        }
         
-        vdev_iokit_free(dvd);
+        vdev_iokit_free(vd);
         
         return error;
     }
 
+out:
     zfsProvider = 0;
-    vdev_disk = 0;
-    matched_disk = 0;
+    vdev_hl = 0;
     
     /* Success */
     return 0;
 }
 
-int
-vdev_iokit_handle_close(vdev_t * vd )
+extern int
+vdev_iokit_handle_close(vdev_t * vd)
 {
     IOService * zfsProvider = 0;
-    IOMedia * vdev_disk = 0;
+    IOMedia * vdev_hl = 0;
     vdev_iokit_t * dvd = 0;
+    
 IOLog( "vdev_iokit_handle_close: [%p]\n", vd );
+    
     if ( !vd || !vd->vdev_tsd ) {
 IOLog( "vdev_iokit_handle_close: invalid vd or vdev_tsd [%p]\n", vd );
         return EINVAL;
     }
     
-    dvd =           static_cast<vdev_iokit_t *>(vd->vdev_tsd);
+    dvd =       static_cast<vdev_iokit_t *>(vd->vdev_tsd);
     
     if (vd->vdev_reopening || dvd == NULL)
 		return 0;
     
-    zfsProvider =   (IOService *)(dvd->vd_client_hl);
+    zfsProvider =   (IOService *)(dvd->vd_zfs_hl);
     
     if ( !zfsProvider ) {
         IOLog( "vdev_iokit_handle_close: invalid zfsProvider [%p]\n", zfsProvider );
         return EINVAL;
     }
 
-    vdev_disk =     (IOMedia *)(dvd->vd_iokit_hl);
+    vdev_hl =     (IOMedia *)(dvd->vd_iokit_hl);
 
-    if ( vdev_disk ) {
+    if ( vdev_hl ) {
         /* Close the user client handle */
-        vdev_disk->close(zfsProvider, 0);
-        (void) vdev_disk->waitQuiet();
-        vdev_disk->release();
-        vdev_disk = 0;
+        vdev_hl->close(zfsProvider, 0);
+        (void) vdev_hl->waitQuiet();
+IOLog( "vdev_iokit_handle_close: vdev_hl has %d references", vdev_hl->getRetainCount() );
+        if( vdev_hl->getRetainCount() > 0 ) {
+            vdev_hl->release();
+        }
+        vdev_hl = 0;
         
-        dvd->vd_is_open = false;
         dvd->vd_iokit_hl = 0;
     }
 
@@ -952,12 +947,13 @@ IOLog( "vdev_iokit_handle_close: invalid vd or vdev_tsd [%p]\n", vd );
 IOLog( "vdev_iokit_handle_close: finished\n" );
     /* clean up */
     if (zfsProvider) {
+IOLog( "vdev_iokit_handle_close: zfsProvider has %d references", zfsProvider->getRetainCount() );
         zfsProvider->release();
         zfsProvider = 0;
     }
-    vdev_disk = 0;
+    vdev_hl = 0;
     
-    vdev_iokit_free(dvd);
+    vdev_iokit_free(vd);
     
     return 0;
 }
@@ -974,56 +970,129 @@ IOLog( "vdev_iokit_handle_close: finished\n" );
  * We can't have more than 1 thread calling handle_close
  * on an IOKit handle.
  */
+#if 0       /* NOT CURRENTLY USED */
 void
 vdev_iokit_hl_rele(vdev_t * vd)
 {
     vdev_iokit_t * dvd = 0;
-    IOMedia * diskIOMedia = 0;
+    IOMedia * vdev_hl = 0;
     
     if (!vd)
         return;
     
-    dvd = vd->vdev_tsd;
+    dvd =       static_cast<vdev_iokit_t*>(vd->vdev_tsd);
     
     if (!dvd)
         return;
     
-    diskIOMedia = (IOMedia *)dvd->vd_iokit_hl;
+    vdev_hl = (IOMedia *)dvd->vd_iokit_hl;
+    
+    if (!vdev_hl) {
+        dvd = 0;
+        return;
+    }
     
     VERIFY( dvd->vd_count > 1 );
     dvd->vd_count--;
     
-    VERIFY( diskIOMedia->isOpen(dvd->vd_zfs_hl) != 0 );
+    VERIFY( vdev_hl->isOpen(dvd->vd_zfs_hl) != 0 );
     
     /*
      mutex_enter(&vp->v_lock);
      */
     
     if ( dvd->vd_count == 1 &&
-         diskIOMedia->lockPhysicalExtents(dvd->vd_zfs_hl) ) {
+         vdev_hl->lockPhysicalExtents(dvd->vd_zfs_hl) ) {
         
-        diskIOMedia->close(dvd->vd_zfs_hl, 0);
+        vdev_hl->close(dvd->vd_zfs_hl, 0);
         
-        diskIOMedia->unlockPhysicalExtents(dvd->vd_zfs_hl);
+        vdev_hl->unlockPhysicalExtents(dvd->vd_zfs_hl);
     }
+    
+    /* cleanup */
+    dvd = 0;
+    vdev_hl = 0;
 }
+#endif
 
-int
-iokit_hl_from_path(vdev_t * vd)
+extern int
+vdev_iokit_open_by_path(vdev_t * vd, char * path)
 {
     vdev_iokit_t * dvd = 0;
-    
+IOLog("vdev_iokit_open_by_path: vd, path [%p] {%s}\n", vd, path);
     /* This should be called with no vdev_tsd */
-    if (!vd || vd->vdev_tsd != 0)
+//    if (!vd || vd->vdev_tsd != 0)
+//        return EINVAL;
+//    vdev_iokit_alloc(vd);
+    
+    dvd =       static_cast<vdev_iokit_t *>(vd->vdev_tsd);
+    
+    if (!dvd) {
+IOLog("vdev_iokit_open_by_path: couldn't get vd->vdev_tsd [%p]\n", vd);
+        return EINVAL;
+    }
+    
+    dvd->vd_zfs_hl =        (uintptr_t *)vdev_iokit_get_service();
+    
+    if (!dvd->vd_zfs_hl) {
+IOLog("vdev_iokit_open_by_path: couldn't get dvd->vd_zfs_hl [%p]\n", vd);
+        vdev_iokit_free(vd);
+        return EINVAL;
+    }
+    
+    if ( vdev_iokit_find_by_path(vd, path) == 0 ) {
+IOLog("vdev_iokit_open_by_path: found disk by path [%p]\n", dvd->vd_iokit_hl);
+        if (!dvd->vd_iokit_hl) {
+IOLog("vdev_iokit_open_by_path: ...or not\n");
+            /* error */
+            vdev_iokit_free(vd);
+            return EIO;
+        }
+    }
+    
+    /* Open the device handle */
+    vdev_iokit_handle_open(vd);
+    
+    dvd = 0;
+    return 0;
+}
+    
+extern int
+vdev_iokit_get_size(vdev_t * vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
+{
+    vdev_iokit_t * dvd = 0;
+    IOMedia * vdev_hl = 0;
+    uint64_t blksize = 0;
+    
+    if (!vd || !vd->vdev_tsd)
         return EINVAL;
     
-    vdev_iokit_alloc(vd);
+IOLog( "vdev_iokit_get_size: [%p]:(%llu,%llu,%llu)\n", vd, *size, *max_size, *ashift );
     
-    dvd = static_cast<vdev_iokit_t *>(vd->vdev_tsd);
+    dvd =       static_cast<vdev_iokit_t*>(vd->vdev_tsd);
     
-    dvd->vd_client_hl =     vdevGetService();
+    if (!dvd)
+        return EINVAL;
     
-    dvd->vd_iokit_hl =      vdev_iokit_find_by_path(vd, vd->vdev_path);
+    vdev_hl =           (IOMedia *)dvd->vd_iokit_hl;
+
+    *size =             vdev_hl->getSize();
+    IOLog("ZFS: vdev_iokit_get_size: size %llu\n", *size);
+    
+    blksize =           vdev_hl->getPreferredBlockSize();
+    if (blksize <= 0) {
+        IOLog("ZFS: vdev_iokit_get_size: Couldn't get blocksize %p\n", vdev_hl);
+        blksize = SPA_MINBLOCKSIZE;
+    }
+    
+    *ashift =           highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
+    IOLog("ZFS: vdev_iokit_get_size: ashift %llu\n", *ashift);
+    
+    /* cleanup */
+    dvd = 0;
+    vdev_hl = 0;
+    
+    return 0;
 }
     
 /* Return 0 on success,
@@ -1031,26 +1100,28 @@ iokit_hl_from_path(vdev_t * vd)
 extern int vdev_iokit_status( vdev_t * vd )
 {
     vdev_iokit_t * dvd = 0;
-    IOMedia * vdev_disk = 0;
+    IOMedia * vdev_hl = 0;
     
     if (!vd)
         return EINVAL;
 
-    dvd = static_cast<vdev_iokit_t*>(vd_vdev_tsd);
+    dvd =       static_cast<vdev_iokit_t*>(vd->vdev_tsd);
     
     if (!vd->vdev_tsd)
         return EINVAL;
     
-    vdev_disk = (IOMedia *)dvd->vd_iokit_hl;
+    vdev_hl = (IOMedia *)dvd->vd_iokit_hl;
     
-    if (!vdev_disk)
+    if (!vdev_hl)
         return EINVAL;
     
-    if (vdev_disk->isFormatted() == false)
+    if (vdev_hl->isFormatted() == false)
         return EIO;
     
-    return 0;
+    dvd = 0;
+    vdev_hl = 0;
     
+    return 0;
 }
 
 int vdev_iokit_ioctl( vdev_t * vd, zio_t * zio )
@@ -1067,17 +1138,17 @@ int vdev_iokit_ioctl( vdev_t * vd, zio_t * zio )
     IOService * zfsProvider = 0;
      */
     
-    IOMedia * vdev_disk = 0;
+    IOMedia * vdev_hl = 0;
     vdev_iokit_t * dvd = 0;
 IOLog( "vdev_iokit_ioctl: [%p] [%p]\n", vd, zio );
     if ( !vd || !vd->vdev_tsd )
         return EINVAL;
     
-    dvd =           (vdev_iokit_t *)(vd->vdev_tsd);
+    dvd =       static_cast<vdev_iokit_t*>(vd->vdev_tsd);
     
-    vdev_disk =     (IOMedia *)(dvd->vd_iokit_hl);
+    vdev_hl =   (IOMedia *)(dvd->vd_iokit_hl);
     
-    if ( ! vdev_disk )
+    if ( ! vdev_hl )
         return EINVAL;
 
     /* 
@@ -1085,7 +1156,7 @@ IOLog( "vdev_iokit_ioctl: [%p] [%p]\n", vd, zio );
      *
      */
     /*
-    zfsProvider =   (IOService *)(dvd->vd_client_hl);
+    zfsProvider =   (IOService *)(dvd->vd_zfs_hl);
     if ( !zfsProvider )
         return EINVAL;
     */
@@ -1097,10 +1168,14 @@ IOLog( "vdev_iokit_ioctl: [%p] [%p]\n", vd, zio );
 
     /*
     if (zfsProvider) {
+IOLog( "vdev_iokit_ioctl: zfsProvider has %d references", zfsProvider->getRetainCount() );
         zfsProvider->release();
         zfsProvider = 0;
     }
     */
+    
+    dvd = 0;
+    vdev_hl = 0;
     
     return 0;
 }
@@ -1108,22 +1183,25 @@ IOLog( "vdev_iokit_ioctl: [%p] [%p]\n", vd, zio );
     
 int vdev_iokit_sync( vdev_t * vd, zio_t * zio )
 {
-    uint64_t timeout =     5000000000; // 5 * 10^3 nanoseconds
-    int result = EINVAL;
+    vdev_iokit_t * dvd =    0;
+    IOService * vdev_hl =   0;
+    uint64_t timeout =      5000000000; // 5 * 10^3 nanoseconds
+    int result =            EINVAL;
+
     
 IOLog( "vdev_iokit_sync: [%p] [%p]\n", vd, zio );
     
     if (vd && vd->vdev_tsd && vd->vdev_tsd) {
         
-        vdev_iokit_t * dvd = static_cast<vdev_iokit_t *>(vd->vdev_tsd);
+        dvd =       static_cast<vdev_iokit_t *>(vd->vdev_tsd);
         
         if (dvd && dvd->vd_iokit_hl) {
             
-            IOService * diskIOMedia = (IOService *)(dvd->vd_iokit_hl);
+            vdev_hl = (IOService *)(dvd->vd_iokit_hl);
             
-            if (diskIOMedia) {
+            if (vdev_hl) {
 IOLog( "vdev_iokit_sync: do sync\n" );
-                result = diskIOMedia->waitQuiet( timeout );
+                result = vdev_hl->waitQuiet( timeout );
 IOLog( "vdev_iokit_sync: done [%d]\n", result );
                 if ( result == kIOReturnTimeout ) {
                     result = ETIMEDOUT;
@@ -1134,6 +1212,9 @@ IOLog( "vdev_iokit_sync: done [%d]\n", result );
         }
     }
     
+    dvd = 0;
+    vdev_hl = 0;
+    
     return result;
 }
 
@@ -1142,41 +1223,29 @@ vdev_iokit_strategy( vdev_t * vd, zio_t * zio )
 {
     IOService * zfsProvider = 0;
     vdev_iokit_context_t * io_context = 0;
-    IOMedia * vdev_disk = 0;
+    IOMedia * vdev_hl = 0;
 	vdev_iokit_t *dvd = 0;
 IOLog( "vdev_iokit_strategy: [%p] [%p]\n", vd, zio );
     if (!vd || !zio)
         return EINVAL;
     
-    dvd =   (vdev_iokit_t *)(vd->vdev_tsd);
+    dvd =       static_cast<vdev_iokit_t *>(vd->vdev_tsd);
     
     if (!dvd)
         return EINVAL;
     
-    vdev_disk = (IOMedia *)(dvd->vd_iokit_hl);
+    vdev_hl = (IOMedia *)(dvd->vd_iokit_hl);
     
-    if(!vdev_disk)
+    if(!vdev_hl)
         return EINVAL;
     
 	ASSERT(zio->io_data != NULL);
 	ASSERT(zio->io_size != 0);
     
-    zfsProvider =   (IOService *)(dvd->vd_client_hl);
+    zfsProvider =   (IOService *)(dvd->vd_zfs_hl);
 
     if ( !zfsProvider )
         return EINVAL;
-    
-    if (!dvd->vd_is_open) {
-        /* XXX - TO DO
-         *  Check and open as kIOStorageAccessReader for reads
-         *  Check and elevate to kIOStorageAccessReaderWriter for writes
-         */
-        if ( ! vdev_disk->open(zfsProvider, 0, kIOStorageAccessReaderWriter) ) {
-            return EINVAL;
-        }
-        IOLog("ZFS: vdev_iokit_strategy: open: %p\n", vdev_disk);
-        dvd->vd_is_open = true;
-    }
     
     /* Lazy allocate, and only if there will be work to do.
         Allocate buffer on zio mapped range
@@ -1198,14 +1267,10 @@ IOLog( "vdev_iokit_strategy: [%p] [%p]\n", vd, zio );
      
      */
     
-    io_context =            (vdev_iokit_context_t*)kmem_alloc(sizeof(vdev_iokit_context_t), KM_PUSHPAGE);
-    
-    io_context->buffer =    (IOBufferMemoryDescriptor*)IOBufferMemoryDescriptor::withAddress( zio->io_data, zio->io_size,
-                                          (zio->io_type == ZIO_TYPE_WRITE ? kIODirectionOut : kIODirectionIn) );
-    
-    if (io_context->buffer == NULL) {
-        IOLog("ZFS: vdev_iokit_strategy: Couldn't allocate a memory buffer\n");
-//        IOSleep( error_delay );
+    io_context =            vdev_iokit_context_alloc(zio);
+
+    if (!io_context) {
+        IOLog("ZFS: vdev_iokit_strategy: Couldn't allocate an IO Context [%p]\n", zio);
         return ENOMEM;
     }
     
@@ -1243,58 +1308,6 @@ IOLog( "vdev_iokit_strategy: [%p] [%p]\n", vd, zio );
         
         /*  callback -> async  */
         
-        /*
-         struct IOStorageCompletion {
-             void *target;
-             IOStorageCompletionAction action;
-             void *parameter;
-         };
-         
-         Fields
-         
-         target
-             Opaque client-supplied pointer (or an instance pointer for a C++ callback).
-         action
-             Completion routine to call on completion of the data transfer.
-         parameter
-             Opaque client-supplied pointer.
-         
-         Discussion
-             The IOStorageCompletion structure describes the C (or C++) completion routine that is called once an asynchronous storage operation completes. The values passed for the target and parameter fields will be passed to the routine when it is called.
-         
-         Availability
-             Available in OS X v10.6 and later.
-         Declared In
-             IOStorage.h
-         
-         IOStorageCompletionAction
-         typedef void ( *IOStorageCompletionAction ) (
-             void *target,
-             void *parameter,
-             IOReturn status,
-             UInt64 actualByteCount
-         );
-         
-         Parameters
-         
-         target
-             Opaque client-supplied pointer (or an instance pointer for a C++ callback).
-         parameter
-             Opaque client-supplied pointer.
-         status
-             Status of the data transfer.
-         actualByteCount
-             Actual number of bytes transferred in the data transfer.
-         
-         Discussion
-             The IOStorageCompletionAction declaration describes the C (or C++) completion routine that is called once an asynchronous storage operation completes.
-         
-         Availability
-             Available in OS X v10.6 and later.
-         Declared In
-             IOStorage.h
-         */
-        
 //    } else {
         
         /*  callback -> sync  */
@@ -1313,39 +1326,18 @@ IOLog( "vdev_iokit_strategy: [%p] [%p]\n", vd, zio );
      */
 
 IOLog( "vdev_iokit_strategy: starting op [%p] [%p]\n", vd, zio );
+IOSleep(10);
     if (zio->io_type == ZIO_TYPE_WRITE) {
 IOLog( "vdev_iokit_strategy: write (%llu,%llu)\n", zio->io_offset, zio->io_size );
-        vdev_disk->IOMedia::write(zfsProvider, zio->io_offset, io_context->buffer, 0, &(io_context->completion) );
+        vdev_hl->IOMedia::write(zfsProvider, zio->io_offset, io_context->buffer, 0, &(io_context->completion) );
     } else {
 IOLog( "vdev_iokit_strategy: read (%llu,%llu)\n", zio->io_offset, zio->io_size );
-        vdev_disk->IOMedia::read(zfsProvider, zio->io_offset, io_context->buffer, 0, &(io_context->completion) );
+        vdev_hl->IOMedia::read(zfsProvider, zio->io_offset, io_context->buffer, 0, &(io_context->completion) );
     }
-    /*
-    read / write
-     
-    virtual void read(  IOService *client, UInt64 byteStart, IOMemoryDescriptor *buffer,
-                        IOStorageAttributes *attributes, IOStorageCompletion *completion);
-     
-    virtual void write( IOService *client, UInt64 byteStart, IOMemoryDescriptor *buffer,
-                        IOStorageAttributes *attributes, IOStorageCompletion *completion);
-     
-    Parameters
-     
-    client
-        Client requesting the read / write.
-    byteStart
-        Starting byte offset for the data transfer.
-    buffer
-        Buffer for the data transfer. The size of the buffer implies the size of the data transfer.
-    attributes
-        Attributes of the data transfer. See IOStorageAttributes. It is the responsibility of the callee to maintain the information for the duration of the data transfer, as necessary.
-    completion
-        Completion routine to call once the data transfer is complete. It is the responsibility of the callee to maintain the information for the duration of the data transfer, as necessary.
-     
-    Discussion
-        Read / write data from the storage object at the specified byte offset into / out of the specified buffer, asynchronously. When the operation completes, the caller will be notified via the specified completion action.
-        The buffer will be retained for the duration of the read / write.
-     */
+
+    io_context = 0;
+    dvd = 0;
+    vdev_hl = 0;
     
     return 0;
 }
@@ -1356,26 +1348,30 @@ extern void vdev_iokit_io_intr( void * target, void * parameter, kern_return_t s
     zio_t * zio = 0;
     
 IOLog( "vdev_iokit_io_intr: [%p] [%p] (%d, %llu)\n", target, parameter, status, actualByteCount );
-    
+
     io_context =        static_cast<vdev_iokit_context_t*>(parameter);
     
-    if(!io_context) {
-        zio_interrupt(NULL);
-        return;
+    if (!io_context) {
+        IOLog( "vdev_iokit_io_intr: Invalid context [%p]\n", io_context );
     }
     
-    if(!io_context->zio) {
-        zio_interrupt(NULL);
+    zio =               static_cast<zio_t*>(io_context->zio);
+    
+    if (!zio)
         return;
-    }
     
-    vdev_iokit_context_free(zio);
+    io_context->zio = 0;
     
-    if( status != 0 )
+    vdev_iokit_context_free(io_context);
+    io_context = 0;
+    
+    if ( status != 0 )
         zio->io_error = EIO;
     
 	//zio_next_stage_async(zio);
     zio_interrupt(zio);
+
+    zio = 0;
     
     return;
 }

@@ -45,6 +45,10 @@
 
 unsigned int zfs_iokit_vdev_ashift = 0;
 
+extern void vdev_iokit_log(const char *);
+extern void vdev_iokit_log_str(const char *, const char *);
+extern void vdev_iokit_log_ptr(const char *, const void *);
+extern void vdev_iokit_log_num(const char *, const uint64_t);
 
 /*
  * Virtual device vector for disks via Mac OS X IOKit.
@@ -53,21 +57,26 @@ unsigned int zfs_iokit_vdev_ashift = 0;
 void vdev_iokit_alloc( vdev_t * vd )
 {
     vdev_iokit_t * dvd = 0;
-    
+vdev_iokit_log_ptr( "vdev_iokit_alloc: vd", vd );
     if (!vd)
         return;
     
-    dvd = vd->vdev_tsd =    kmem_alloc(sizeof(vdev_iokit_t), KM_SLEEP);
+    // KM_SLEEP for vdev context
+    dvd =    (vdev_iokit_t *)kmem_alloc(sizeof(vdev_iokit_t), KM_SLEEP);
     
     dvd->vd_iokit_hl =  0;
     dvd->vd_zfs_hl =    0;
-    dvd->vd_offline =   false;
+    dvd->vd_offline =   0;
+    
+    vd->vdev_tsd =      (void*)(dvd);
+    
+vdev_iokit_log_ptr( "vdev_iokit_alloc: vd->vdev_tsd", vd->vdev_tsd );
 }
 
 void vdev_iokit_free( vdev_t * vd )
 {
     vdev_iokit_t * dvd = 0;
-    
+vdev_iokit_log_ptr( "vdev_iokit_free: vd", vd );
     if (!vd)
         return;
     
@@ -76,21 +85,38 @@ void vdev_iokit_free( vdev_t * vd )
     if (!dvd)
         return;
     
+    if (dvd->vd_iokit_hl)
+vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->vd_iokit_hl", dvd->vd_iokit_hl );
+    if (dvd->vd_zfs_hl)
+vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->vd_zfs_hl", dvd->vd_zfs_hl );
+    
     dvd->vd_iokit_hl = 0;
-    dvd->vd_client_hl = 0;
-    dvd->vd_offline =   false;
+    dvd->vd_zfs_hl = 0;
+    dvd->vd_offline =   0;
     
     kmem_free(dvd, sizeof (vdev_iokit_t));
     vd->vdev_tsd = 0;
 }
 
-static void
-vdev_disk_hold(vdev_t *vd)
+extern void
+vdev_iokit_state_change(vdev_t * vd, int faulted, int degraded)
+{
+vdev_iokit_log_ptr( "vdev_iokit_state_change: vd", vd );
+    
+}
+
+extern void
+vdev_iokit_hold(vdev_t * vd)
 {
     vdev_iokit_t * dvd = 0;
+vdev_iokit_log_ptr( "vdev_iokit_hold: vd", vd );
     
     if (!vd)
         return;
+    
+vdev_iokit_log_num( "vdev_iokit_hold: spa mode:",   spa_mode(vd->vdev_spa) );
+vdev_iokit_log_num( "vdev_iokit_hold: vd state:",   vd->vdev_state );
+vdev_iokit_log_num( "vdev_iokit_hold: prevstate:",  vd->vdev_prevstate );
     
 	ASSERT(spa_config_held(vd->vdev_spa, SCL_STATE, RW_WRITER));
     
@@ -109,8 +135,13 @@ vdev_disk_hold(vdev_t *vd)
     
     dvd = (vdev_iokit_t *)(vd->vdev_tsd);
     
+vdev_iokit_log_ptr( "vdev_iokit_hold: dvd:",        dvd);
+    
     if (!dvd)
         return;
+
+vdev_iokit_log_ptr( "vdev_iokit_hold: iokit_hl:",   dvd->vd_iokit_hl);
+vdev_iokit_log_ptr( "vdev_iokit_hold: zfs_hl:",     dvd->vd_zfs_hl);
     
 	if (vd->vdev_wholedisk == -1ULL) {
 		size_t len = strlen(vd->vdev_path) + 3;
@@ -118,12 +149,12 @@ vdev_disk_hold(vdev_t *vd)
         
 		(void) snprintf(buf, len, "%ss0", vd->vdev_path);
         
-		(void) iokit_hl_from_path(buf, &(dvd->vd_iokit_hl));
+		(void) vdev_iokit_open_by_path(vd, buf);
 		kmem_free(buf, len);
 	}
     
 	if (vd->vdev_name_vp == NULL)
-		(void) iokit_hl_from_path(vd->vdev_path, &(dvd->vd_iokit_hl));
+		(void) vdev_iokit_open_by_path(vd, vd->vdev_path);
     
     /* XXX - TO DO
      *  Populate and use devids if possible
@@ -138,24 +169,33 @@ vdev_disk_hold(vdev_t *vd)
      */
 }
 
-static void
-vdev_disk_rele(vdev_t *vd)
+extern void
+vdev_iokit_rele(vdev_t * vd)
 {
     vdev_iokit_t * dvd = 0;
-
+vdev_iokit_log_ptr( "vdev_iokit_rele: vd", vd );
     if (!vd)
         return;
 
     dvd = (vdev_iokit_t *)(vd->vdev_tsd);
     
+vdev_iokit_log_num( "vdev_iokit_rele: spa mode:",   spa_mode(vd->vdev_spa) );
+vdev_iokit_log_num( "vdev_iokit_rele: vd state:",   vd->vdev_state );
+vdev_iokit_log_num( "vdev_iokit_rele: prevstate:",  vd->vdev_prevstate );
+
+vdev_iokit_log_ptr( "vdev_iokit_rele: dvd:",        dvd);
+    
     if (!dvd)
         return;
+    
+vdev_iokit_log_ptr( "vdev_iokit_rele: iokit_hl:",   dvd->vd_iokit_hl);
+vdev_iokit_log_ptr( "vdev_iokit_rele: zfs_hl:",     dvd->vd_zfs_hl);
     
 	ASSERT(spa_config_held(vd->vdev_spa, SCL_STATE, RW_WRITER));
     
 	if (dvd->vd_iokit_hl) {
         
-		vdev_iokit_release(vd);
+		//vdev_iokit_release(vd);
         
         //  async( vd, dsl_pool_vnrele_taskq(vd->vdev_spa->spa_dsl_pool));
         
@@ -176,7 +216,7 @@ vdev_disk_rele(vdev_t *vd)
  * Warning: Excessive use of this routine can lead to performance problems.
  * This is because taskqs throttle back allocation if too many are created.
  */
-#if 0
+#if 0           /* NOT CURRENTLY USED */
 void
 vdev_iokit_hl_rele_async(vdev_t *vd, taskq_t *taskq)
 {
@@ -192,19 +232,23 @@ vdev_iokit_hl_rele_async(vdev_t *vd, taskq_t *taskq)
 }
 #endif
 
-static int
+extern int
 vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 {
 //	uint64_t blkcnt;
 //	uint32_t blksize;
 //	int fmode = 0;
-    
-    vdev_disk_t *dvd = 0;
+    vdev_iokit_t *dvd = 0;
 	int error = 0;
+    
+    if (!vd)
+        return EINVAL;
+    
 vdev_iokit_log_ptr( "vdev_iokit_open: vd:",         vd );
-vdev_iokit_log_num( "vdev_iokit_open: size:",       *size );
-vdev_iokit_log_num( "vdev_iokit_open: maxsize:",    *max_size );
-vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
+vdev_iokit_log_num( "vdev_iokit_open: spa mode:",   spa_mode(vd->vdev_spa) );
+vdev_iokit_log_num( "vdev_iokit_open: vd state:",   vd->vdev_state );
+vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
+    
     /*
 	 * We must have a pathname, and it must be absolute.
 	 */
@@ -213,18 +257,22 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
 		return (SET_ERROR(EINVAL));
 	}
     
-    if (vd)
-        dvd = vd->vdev_tsd;
+    dvd = vd->vdev_tsd;
 	
     if (dvd != NULL) {
+vdev_iokit_log_ptr( "vdev_iokit_open: dvd:",        dvd);
+vdev_iokit_log_ptr( "vdev_iokit_open: iokit_hl:",   dvd->vd_iokit_hl);
+vdev_iokit_log_ptr( "vdev_iokit_open: zfs_hl:",     dvd->vd_zfs_hl);
         
         ASSERT(vd->vdev_reopening);
         goto skip_open;
-        
     }
     
-    vdev_disk_alloc(vd);
-    dvd = vd->vdev_tsd;
+    vdev_iokit_alloc(vd);
+    dvd = (vdev_iokit_t*)(vd->vdev_tsd);
+    
+    if(!dvd)
+        return ENOMEM;
 
     /*
 	 * When opening a disk device, we want to preserve the user's original
@@ -253,8 +301,7 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
             
 			(void) snprintf(buf, len, "%ss0", vd->vdev_path);
             
-			error = iokit_open_by_path(buf, spa_mode(spa),
-                                       &dvd->vd_iokit_hl);
+			error = vdev_iokit_open_by_path(vd, buf);
             
 			if (error == 0) {
 				spa_strfree(vd->vdev_path);
@@ -270,8 +317,7 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
 		 * specified path.
 		 */
 		if (error != 0) {
-			error = iokit_open_by_path(vd->vdev_path, spa_mode(spa),
-                                       &dvd->vd_iokit_hl);
+			error = vdev_iokit_open_by_path(vd, vd->vdev_path);
 		}
         
         /*
@@ -291,8 +337,7 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
 	if (error) {
         
 		if (vd->vdev_physpath != NULL) {
-			error = iokit_open_by_path(vd->vdev_physpath, spa_mode(spa),
-                                       &dvd->vd_iokit_hl);
+			error = vdev_iokit_open_by_path(vd, vd->vdev_physpath);
         }
         
 		/*
@@ -304,8 +349,7 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
          *   the previous attempts by path and physpath
          */
 		if (error && vd->vdev_path != NULL) {
-			error = iokit_open_by_path(vd->vdev_path, spa_mode(spa),
-                                       &dvd->vd_iokit_hl);
+			error = vdev_iokit_open_by_path(vd, vd->vdev_path);
         }
 	}
     
@@ -357,14 +401,15 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
 	}
      */
     
-    error = EINVAL;		/* presume failure */
-    
-    
+    if (!dvd->vd_iokit_hl) {
+        error = EINVAL;		/* presume failure */
 
-    error = vdev_iokit_handle_open( vd, size, max_size, ashift);
-    if (error != 0) {
-		goto out;
-	}
+        error = vdev_iokit_handle_open(vd);
+        
+        if (error != 0) {
+            goto out;
+        }
+    }
     
     /*
      if (!vnode_isblk(devvp)) {
@@ -373,23 +418,20 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
      }
      */
 
+skip_open:
     
-    
-    /*
-     *  XXX - This will not be necessary through IOKit
-     */
-	/* ### APPLE TODO ### */
-	/* vnode_authorize devvp for KAUTH_VNODE_READ_DATA and
-	 * KAUTH_VNODE_WRITE_DATA
+	/*
+	 * Determine the actual size of the device.
 	 */
-
+    vdev_iokit_get_size(vd, size, max_size, ashift);
+    
     /*
-     *  XXX - Not necessary here - however this must be
-     *   handled by IOKit when opening the device
+     *  XXX - Not necessary here - already done
+     *   by IOKit when opening the device handle
      */
 	/*
-	 * Disallow opening of a device that is currently in use.
-	 * Flush out any old buffers remaining from a previous use.
+	 *  Disallow opening of a device that is currently in use.
+	 *  Flush out any old buffers remaining from a previous use.
 	 */
     /*
 	if ((error = vfs_mountedon(devvp))) {
@@ -404,12 +446,10 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
 	}
      */
     
+    
     /*
-     *  XXX - Much simpler call can get this info from IOKit
+     * Done above in vdev_iokit_get_size
      */
-	/*
-	 * Determine the actual size of the device.
-	 */
     /*
 	if (VNOP_IOCTL(devvp, DKIOCGETBLOCKSIZE, (caddr_t)&blksize, 0, context)
 	       	!= 0 || VNOP_IOCTL(devvp, DKIOCGETBLOCKCOUNT, (caddr_t)&blkcnt,
@@ -421,19 +461,25 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
 	*size = blkcnt * (uint64_t)blksize;
      */
 
+    
+    
 	/*
 	 *  ### APPLE TODO ###
 	 * If we own the whole disk, try to enable disk write caching.
 	 */
 
-    /* Also handle in IOKit open */
+    
+    
+    /*
+     * Done above in vdev_iokit_get_size
+     */
 	/*
 	 * Take the device's minimum transfer size into account.
 	 */
 	//*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
 
     /*
-     *  XXX - check
+     *  XXX - not a problem with this IOKit interface...
      */
     /*
      * Setting the vdev_ashift did in fact break the pool for import
@@ -443,23 +489,21 @@ vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
     //vd->vdev_ashift = *ashift;
     //dvd->vd_ashift = *ashift;
 
-    /*
-     *  XXX - As-is but remove devvp
-     */
 	/*
 	 * Clear the nowritecache bit, so that on a vdev_reopen() we will
 	 * try again.
 	 */
-    
-    /*
-	dvd->vd_devvp = devvp;
-     */
+	vd->vdev_nowritecache = B_FALSE;
+ 
 out:
 	if (error) {
-        /*
-		if (devvp)
-			vnode_close(devvp, fmode, context);
-         */
+        if (dvd->vd_iokit_hl) {
+vdev_iokit_log_ptr( "vdev_iokit_open: bailing on handle open, trying to close handle [%p]", dvd->vd_iokit_hl );
+            vdev_iokit_handle_close(vd);
+        }
+        
+        /* Clear vdev_tsd, see below */
+        vdev_iokit_free(vd);
 
 		/*
 		 * Since the open has failed, vd->vdev_tsd should
@@ -468,48 +512,53 @@ out:
 		 */
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 	}
-    /*
-     *  XXX - No longer needed
-     */
-    /*
-	if (context) {
-		(void) vfs_context_rele(context);
-	}
-     */
+    
+    vdev_iokit_log_num( "vdev_iokit_open: size:",       *size );
+    vdev_iokit_log_num( "vdev_iokit_open: maxsize:",    *max_size );
+    vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
+    
+    vdev_iokit_log_ptr( "vdev_iokit_open: dvd:",        dvd);
+    vdev_iokit_log_ptr( "vdev_iokit_open: iokit_hl:",   dvd->vd_iokit_hl);
+    vdev_iokit_log_ptr( "vdev_iokit_open: zfs_hl:",     dvd->vd_zfs_hl);
+
 	return (error);
 }
 
-static void
+extern void
 vdev_iokit_close(vdev_t *vd)
 {
+vdev_iokit_log_ptr( "vdev_iokit_close: vd:",            vd );
+    
 	vdev_iokit_t *dvd = vd->vdev_tsd;
     
-vdev_iokit_log_ptr( "vdev_iokit_close: vd:",    vd );
-vdev_iokit_log_ptr( "vdev_iokit_close: dvd:",    dvd );
-vdev_iokit_log_num( "vdev_iokit_close: reopening:",    vd->vdev_reopening );
+vdev_iokit_log_ptr( "vdev_iokit_close: dvd:",           dvd );
+vdev_iokit_log_num( "vdev_iokit_close: reopening:",     vd->vdev_reopening );
+vdev_iokit_log_num( "vdev_iokit_close: spa mode:",      spa_mode(vd->vdev_spa) );
+vdev_iokit_log_num( "vdev_iokit_close: vd state:",      vd->vdev_state );
+vdev_iokit_log_num( "vdev_iokit_close: prevstate:",     vd->vdev_prevstate );
     
     if (vd->vdev_reopening || dvd == NULL)
 		return;
     
-    /*
-     *  XXX - Replace with IOKit handle close
-     */
-    
     if (dvd->vd_iokit_hl != NULL) {
-        vdev_iokit_handle_close( vd, spa_mode(vd->vdev_spa) );
+        /* Close the iokit handle */
+        vdev_iokit_handle_close(vd);
+        
 		dvd->vd_iokit_hl = NULL;
 	}
     
 	vd->vdev_delayed_close = B_FALSE;
     
-	vdev_disk_free(vd);
+	vdev_iokit_free(vd);
+    
+    return;
 }
 
-void
+extern void
 vdev_iokit_ioctl_done(void *zio_arg, const int error)
 {
-vdev_iokit_log_ptr( "vdev_iokit_ioctl_done: zio_arg:",    zio_arg );
-vdev_iokit_log_num( "vdev_iokit_ioctl_done: error:",      error );
+vdev_iokit_log_ptr( "vdev_iokit_ioctl_done: zio_arg:",  zio_arg );
+vdev_iokit_log_num( "vdev_iokit_ioctl_done: error:",    error );
 	zio_t *zio = zio_arg;
 
 	zio->io_error = error;
@@ -518,7 +567,7 @@ vdev_iokit_log_num( "vdev_iokit_ioctl_done: error:",      error );
     zio_interrupt(zio);
 }
 
-static int
+extern int
 vdev_iokit_io_start(zio_t *zio)
 {
 	vdev_t *vd = zio->io_vd;
@@ -563,7 +612,9 @@ vdev_iokit_log_ptr( "vdev_iokit_io_start: zio:", zio );
             /*
 			error = VNOP_IOCTL(dvd->vd_devvp, DKIOCSYNCHRONIZECACHE, NULL, FWRITE, context);
              */
+            
                 
+            /* Use IOKit to sync the disk */
             vdev_iokit_sync( vd, zio );
                 
 //
@@ -710,7 +761,7 @@ vdev_iokit_log_ptr( "vdev_iokit_io_start: zio:", zio );
     return (ZIO_PIPELINE_STOP);
 }
 
-static void
+extern void
 vdev_iokit_io_done(zio_t *zio)
 {
     /*
@@ -724,25 +775,30 @@ vdev_iokit_io_done(zio_t *zio)
      *   device - status, properties, and/or ioctl.
      */
     vdev_t * vd = 0;
-    vdev_iokit_t * dvd = 0;
  
-    vdev_iokit_log_ptr( "vdev_iokit_io_done: zio:", zio );
+vdev_iokit_log_ptr( "vdev_iokit_io_done: zio:", zio );
     
     if (!zio)
         return;
-    
-	vd = zio->io_vd;
 
+	vd = zio->io_vd;
+    
     if (!vd)
         return;
     
-    dvd = vd->vd_iokit_hl;
-    
-    if (!dvd)
-        return;
+    /*     Not needed, currently
+     *
+//    vdev_iokit_t * dvd = 0;
+//
+//    dvd = vd->vdev_tsd;
+//    
+//    if (!dvd)
+//        return;
+     *
+     */
     
 	if (zio->io_error == EIO) {
-        if ( !vdev_iokit_status() ) {
+        if ( !vdev_iokit_status(vd) ) {
 			vd->vdev_remove_wanted = B_TRUE;
 			spa_async_request(zio->io_spa, SPA_ASYNC_REMOVE);
         }
@@ -750,7 +806,7 @@ vdev_iokit_io_done(zio_t *zio)
 }
 
 #if 0
-static void
+extern void
 vdev_iokit_io_intr(struct buf *bp, void *arg)
 {
 vdev_iokit_log_ptr( "vdev_iokit_io_intr: bp:",  bp );
@@ -774,9 +830,9 @@ vdev_ops_t vdev_iokit_ops = {
 	vdev_default_asize,
 	vdev_iokit_io_start,
 	vdev_iokit_io_done,
-	NULL /* vdev_op_state_change */,
-	vdev_iokit_hold
-	vdev_iokit_rele
-	VDEV_TYPE_DISK,	/* name of this vdev type */
-	B_TRUE			/* leaf vdev */
+	vdev_iokit_state_change,  /* vdev_op_state_change */
+	vdev_iokit_hold,
+	vdev_iokit_rele,
+	VDEV_TYPE_DISK,         /* name of this vdev type */
+	B_TRUE                  /* leaf vdev */
 };
