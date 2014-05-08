@@ -44,7 +44,7 @@ static inline vdev_iokit_context_t * vdev_iokit_context_alloc( zio_t * zio )
 {
     vdev_iokit_context_t * io_context = 0;
     
-vdev_iokit_log_ptr( "vdev_iokit_context_alloc: zio", zio );
+//vdev_iokit_log_ptr( "vdev_iokit_context_alloc: zio", zio );
     
     if (!zio)
         return 0;
@@ -73,7 +73,7 @@ vdev_iokit_log_ptr( "vdev_iokit_context_alloc: zio", zio );
 
 static inline void vdev_iokit_context_free( vdev_iokit_context_t * io_context )
 {
-vdev_iokit_log_ptr( "vdev_iokit_context_free: io_context", io_context );
+//vdev_iokit_log_ptr( "vdev_iokit_context_free: io_context", io_context );
     
     if (!io_context || !io_context->zio)
         return;
@@ -115,16 +115,16 @@ extern IOService * vdev_iokit_get_service()
             currentEntry = 0;
             return zfs_service;
         } else {
-IOLog( "vdev_iokit_get_service: currentEntry has %d references", currentEntry->getRetainCount() );
+//IOLog( "vdev_iokit_get_service: currentEntry has %d references", currentEntry->getRetainCount() );
             currentEntry->release();
             currentEntry = 0;
         }
     }
     
-    IOLog("vdev_iokit_get_service: zfs_service1? [%p]\n", zfs_service);
+//    IOLog("vdev_iokit_get_service: zfs_service1? [%p]\n", zfs_service);
     
     matchDict =     IOService::resourceMatching( "net_lundman_zfs_zvol", 0 );
-    IOLog("vdev_iokit_get_service: create resourceMatching matchingDict...\n");
+//    IOLog("vdev_iokit_get_service: create resourceMatching matchingDict...\n");
     
     if ( matchDict ) {
 //        IOLog("vdev_iokit_get_service: matchingDict [%p]\n", matchDict);
@@ -133,14 +133,14 @@ IOLog( "vdev_iokit_get_service: currentEntry has %d references", currentEntry->g
         matchDict->release();
         matchDict = 0;
         
-        IOLog("vdev_iokit_get_service: iterator %p\n", newIterator);
+//        IOLog("vdev_iokit_get_service: iterator %p\n", newIterator);
         if( newIterator ) {
             registryIterator = OSDynamicCast(IORegistryIterator, newIterator);
-            IOLog("vdev_iokit_get_service: registryIterator [%p]\n", registryIterator);
+//            IOLog("vdev_iokit_get_service: registryIterator [%p]\n", registryIterator);
             if (registryIterator) {
 
                 zfs_service = OSDynamicCast( IOService, registryIterator->getCurrentEntry() );
-                IOLog("vdev_iokit_get_service: zfs_service-during? [%p]\n", zfs_service);
+//                IOLog("vdev_iokit_get_service: zfs_service-during? [%p]\n", zfs_service);
                 
                 if (zfs_service)
                     zfs_service->retain();
@@ -150,12 +150,12 @@ IOLog( "vdev_iokit_get_service: currentEntry has %d references", currentEntry->g
             }
         }
     }
-    IOLog("vdev_iokit_get_service: zfs_service2? [%p]\n", zfs_service);
+//    IOLog("vdev_iokit_get_service: zfs_service2? [%p]\n", zfs_service);
     
     /* Should be matched, go to plan B if not */
     if (!zfs_service) {
         registryIterator = IORegistryIterator::iterateOver(gIOServicePlane,kIORegistryIterateRecursively);
-        IOLog("vdev_iokit_get_service: registryIterator 2 %p\n", registryIterator);
+//        IOLog("vdev_iokit_get_service: registryIterator 2 %p\n", registryIterator);
         if (!registryIterator) {
             IOLog("vdev_iokit_get_service: couldn't iterate over service plane %p\n", registryIterator);
         } else {
@@ -167,7 +167,7 @@ IOLog( "vdev_iokit_get_service: currentEntry has %d references", currentEntry->g
                 allServices = registryIterator->iterateAll();
             } while (! registryIterator->isValid() );
             
-            IOLog("vdev_iokit_get_service: allServices %p\n", allServices);
+//            IOLog("vdev_iokit_get_service: allServices %p\n", allServices);
             registryIterator->release();
             registryIterator = 0;
         }
@@ -191,7 +191,7 @@ IOLog( "vdev_iokit_get_service: currentEntry has %d references", currentEntry->g
                     if(entryName->isEqualTo("net_lundman_zfs_zvol") ) {
                         zfs_service = OSDynamicCast( IOService, currentEntry );
                         zfs_service->retain();
-                        IOLog("vdev_iokit_get_service: match: [%p]\n", zfs_service);
+//                        IOLog("vdev_iokit_get_service: match: [%p]\n", zfs_service);
                     }
                     entryName->release();
                     entryName = 0;
@@ -211,7 +211,7 @@ IOLog( "vdev_iokit_get_service: currentEntry has %d references", currentEntry->g
         allServices->release();
         allServices = 0;
     }
-    IOLog("vdev_iokit_get_service: zfs_service 3? [%p] \n", zfs_service);
+//    IOLog("vdev_iokit_get_service: zfs_service 3? [%p] \n", zfs_service);
     
     return zfs_service;
 
@@ -386,7 +386,7 @@ int vdev_iokit_find_by_path(vdev_t * vd, char * diskPath)
             
             /* Check if the name matches */
             if ( bsdnameosstr->isEqualTo(diskName) ) {
-                IOLog("ZFS: vdev_iokit_find_by_path: Found matching disk\n");
+//                IOLog("ZFS: vdev_iokit_find_by_path: Found matching disk\n");
 //                IOSleep( info_delay );
                 
                 matchedDisk = currentDisk;
@@ -412,14 +412,14 @@ int vdev_iokit_find_by_path(vdev_t * vd, char * diskPath)
         matchedDisk = 0;
     }
 
-IOLog("ZFS: vdev_iokit_find_by_path: matched disk_1 %p (%d)\n", vdev_hl, ((IOMedia*)vdev_hl)->getRetainCount());
+//IOLog("ZFS: vdev_iokit_find_by_path: matched disk_1 %p (%d)\n", vdev_hl, ((IOMedia*)vdev_hl)->getRetainCount());
     
     if (allDisks) {
         allDisks->release();
         allDisks = 0;
     }
     
-IOLog("ZFS: vdev_iokit_find_by_path: matched disk_2 %p\n", vdev_hl);
+//IOLog("ZFS: vdev_iokit_find_by_path: matched disk_2 %p\n", vdev_hl);
  
     dvd->vd_iokit_hl =      vdev_hl;
     
@@ -490,7 +490,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
             goto nextDisk;
         }
         
-        IOLog( "ZFS: vdev_iokit_find_by_guid: Getting vdev guid\n" );
+//        IOLog( "ZFS: vdev_iokit_find_by_guid: Getting vdev guid\n" );
 //        IOSleep( info_delay );
         
         // Determine whether media device is formatted.
@@ -505,7 +505,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
             IOLog("ZFS: vdev_iokit_find_by_guid: Disk %s is already open!\n", diskPath);
         }
         
-    IOLog("ZFS: vdev_iokit_find_by_guid: Issuing open...\n");
+//    IOLog("ZFS: vdev_iokit_find_by_guid: Issuing open...\n");
         //error = ((IOMedia*)currentDisk)->open(zfsProvider,0,kIOStorageAccessReader);
         result = currentDisk->open(zfsProvider,0,kIOStorageAccessReader);
         
@@ -541,7 +541,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
             if (offset > s)
                 break;
             
-            IOLog("ZFS: vdev_iokit_find_by_guid: Reading from disk %s, %llu, %p, %llu\n", diskPath, offset, buffer, labelSize);
+//            IOLog("ZFS: vdev_iokit_find_by_guid: Reading from disk %s, %llu, %p, %llu\n", diskPath, offset, buffer, labelSize);
             
             if( currentDisk->read(zfsProvider, offset, buffer, NULL,
                                   (UInt64 *) NULL ) != kIOReturnSuccess ) {
@@ -565,7 +565,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
                 continue;
             }
             
-            IOLog("ZFS: vdev_iokit_find_by_guid: Copied buffer into label %p\n", label);
+//            IOLog("ZFS: vdev_iokit_find_by_guid: Copied buffer into label %p\n", label);
             
             if (nvlist_unpack(label->vl_vdev_phys.vp_nvlist,
                               sizeof (label->vl_vdev_phys.vp_nvlist), &config, 0) != 0) {
@@ -573,7 +573,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
                 config = NULL;
                 continue;
             }
-            IOLog("ZFS: vdev_iokit_find_by_guid: Unpacked nvlist label %p\n", label);
+//            IOLog("ZFS: vdev_iokit_find_by_guid: Unpacked nvlist label %p\n", label);
             
             /* Check the pool_name */
             if ((nvlist_lookup_string(config, ZPOOL_CONFIG_POOL_NAME,
@@ -583,7 +583,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
                 config = NULL;
                 continue;
             }
-            IOLog("ZFS: vdev_iokit_find_by_guid: Found config for %s at %s\n", pool_name, diskPath);
+//            IOLog("ZFS: vdev_iokit_find_by_guid: Found config for %s at %s\n", pool_name, diskPath);
             
             if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_STATE,
                                      &state) != 0 || state >= POOL_STATE_DESTROYED) {
@@ -592,7 +592,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
                 config = NULL;
                 continue;
             }
-            IOLog("ZFS: vdev_iokit_find_by_guid: Pool state %s: %llu\n", pool_name, state);
+//            IOLog("ZFS: vdev_iokit_find_by_guid: Pool state %s: %llu\n", pool_name, state);
             
             if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_TXG,
                                      &txg) != 0 || txg == 0) {
@@ -602,7 +602,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
                 continue;
             }
             
-            IOLog("ZFS: vdev_iokit_find_by_guid: Pool txg %s: %llu\n", pool_name, txg);
+//            IOLog("ZFS: vdev_iokit_find_by_guid: Pool txg %s: %llu\n", pool_name, txg);
             
             if ( txg > besttxg ) {
                 nvlist_free(bestconfig);
@@ -614,7 +614,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
             }
         }
         
-        IOLog("ZFS: vdev_iokit_find_by_guid: Freeing label %p\n", label);
+//        IOLog("ZFS: vdev_iokit_find_by_guid: Freeing label %p\n", label);
         
         kmem_free(label, sizeof (vdev_label_t));
         
@@ -624,11 +624,11 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
         }
         
         if(guid > 0) {
-            IOLog("ZFS: vdev_iokit_find_by_guid: guid is '%llu'\n", guid);
+//            IOLog("ZFS: vdev_iokit_find_by_guid: guid is '%llu'\n", guid);
             
             /* Check if the guid matches */
             if ( guid == vd->vdev_guid ) {
-                IOLog("ZFS: vdev_iokit_find_by_guid: Found matching disk\n");
+//                IOLog("ZFS: vdev_iokit_find_by_guid: Found matching disk\n");
                 
                 matchedDisk = currentDisk;
                 matchedDisk->retain();
@@ -638,7 +638,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
             IOLog("ZFS: vdev_iokit_find_by_guid: Couldn't get guid\n");
         }
         
-        IOLog("ZFS: vdev_iokit_find_by_guid: nextDisk / cleanup\n");
+//        IOLog("ZFS: vdev_iokit_find_by_guid: nextDisk / cleanup\n");
         
         /* clean up */
         if(config) {
@@ -660,15 +660,15 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
     nextDisk:
     
     if (matchedDisk) {
-        IOLog("ZFS: vdev_iokit_find_by_guid: casting matching disk %p\n", matchedDisk);
+//        IOLog("ZFS: vdev_iokit_find_by_guid: casting matching disk %p\n", matchedDisk);
         vdev_hl = (uintptr_t*)matchedDisk;
-        IOLog("ZFS: vdev_iokit_find_by_guid: casting matching disk %p\n", vdev_hl);
+//        IOLog("ZFS: vdev_iokit_find_by_guid: casting matching disk %p\n", vdev_hl);
         matchedDisk = 0;
-IOLog( "vdev_iokit_find_by_guid: matchedDisk has %d references 1", matchedDisk->getRetainCount() );
+//IOLog( "vdev_iokit_find_by_guid: matchedDisk has %d references 1", matchedDisk->getRetainCount() );
     }
     
     if( buffer ) {
-IOLog( "vdev_iokit_find_by_guid: buffer has %d references", buffer->getRetainCount() );
+//IOLog( "vdev_iokit_find_by_guid: buffer has %d references", buffer->getRetainCount() );
         buffer->release();
     }
     buffer = 0;
@@ -678,15 +678,15 @@ IOLog( "vdev_iokit_find_by_guid: buffer has %d references", buffer->getRetainCou
         allDisks = 0;
     }
     
-IOLog( "vdev_iokit_find_by_guid: matchedDisk has %d references 2", matchedDisk->getRetainCount() );
+//IOLog( "vdev_iokit_find_by_guid: matchedDisk has %d references 2", matchedDisk->getRetainCount() );
     
     if (zfsProvider) {
-IOLog( "vdev_iokit_find_by_guid: zfsProvider has %d references", zfsProvider->getRetainCount() );
+//IOLog( "vdev_iokit_find_by_guid: zfsProvider has %d references", zfsProvider->getRetainCount() );
         zfsProvider->release();
         zfsProvider = 0;
     }
 
-    IOLog("ZFS: vdev_iokit_find_by_guid: matched disk handle %p\n", vdev_hl);
+//    IOLog("ZFS: vdev_iokit_find_by_guid: matched disk handle %p\n", vdev_hl);
     dvd->vd_iokit_hl =      (uintptr_t*)vdev_hl;
     
     return (vdev_hl != 0);
@@ -751,7 +751,7 @@ vdev_iokit_handle_open(vdev_t * vd)
     vdev_iokit_t *dvd = 0;
     int error = 0;
     
-IOLog( "vdev_iokit_handle_open: [%p]\n", vd );
+//IOLog( "vdev_iokit_handle_open: [%p]\n", vd );
     
     if (!vd || !vd->vdev_tsd)
         return EINVAL;
@@ -826,31 +826,27 @@ IOLog( "vdev_iokit_handle_open: [%p]\n", vd );
 
         result = vdev_hl->open(zfsProvider, 0, kIOStorageAccessReader);
         
-IOLog("ZFS: vdev_iokit_handle_open: open: readonly %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
+//IOLog("ZFS: vdev_iokit_handle_open: open: readonly %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
         if (result == 1) {
             /* DEBUGGING */
             vdev_iokit_sync(vd,0);
-//            (void) vdev_hl->waitQuiet();
-//            (void) vdev_hl->makeUsable();
         }
         
     } else {
     
         result = vdev_hl->open(zfsProvider, 0, kIOStorageAccessReaderWriter);
         
-IOLog("ZFS: vdev_iokit_handle_open: open: read/write %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
+//IOLog("ZFS: vdev_iokit_handle_open: open: read/write %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
         if (result == 1) {
             /* DEBUGGING */
             vdev_iokit_sync(vd,0);
-//            (void) vdev_hl->waitQuiet();
-//            (void) vdev_hl->makeUsable();
         }
     }
     
 skip_open:
     
     if (result == 1) {
-        IOLog("ZFS: vdev_iokit_handle_open: success\n");
+//        IOLog("ZFS: vdev_iokit_handle_open: success\n");
         dvd->vd_iokit_hl =  (uintptr_t *)dvd->vd_iokit_hl;
         dvd->vd_zfs_hl =    (uintptr_t *)zfsProvider;
         
@@ -878,12 +874,12 @@ IOLog("ZFS: vdev_iokit_handle_open: clearing vdev_tsd... Wait this shouldn't hap
 error:
     if (error) {
         if (dvd->vd_iokit_hl) {
-IOLog( "vdev_iokit_handle_open: in_error: dvd->vd_iokit_hl has %d references", ((IOMedia*)dvd->vd_iokit_hl)->getRetainCount() );
+//IOLog( "vdev_iokit_handle_open: in_error: dvd->vd_iokit_hl has %d references", ((IOMedia*)dvd->vd_iokit_hl)->getRetainCount() );
 //            ((OSObject*)dvd->vd_iokit_hl)->release();
         }
         
         if (zfsProvider) {
-IOLog( "vdev_iokit_handle_open: in_error: zfsProvider has %d references", zfsProvider->getRetainCount() );
+//IOLog( "vdev_iokit_handle_open: in_error: zfsProvider has %d references", zfsProvider->getRetainCount() );
             zfsProvider->release();
         }
         
@@ -907,7 +903,7 @@ vdev_iokit_handle_close(vdev_t * vd)
     IOMedia * vdev_hl = 0;
     vdev_iokit_t * dvd = 0;
     
-IOLog( "vdev_iokit_handle_close: [%p]\n", vd );
+//IOLog( "vdev_iokit_handle_close: [%p]\n", vd );
     
     if ( !vd || !vd->vdev_tsd ) {
 IOLog( "vdev_iokit_handle_close: invalid vd or vdev_tsd [%p]\n", vd );
@@ -932,7 +928,7 @@ IOLog( "vdev_iokit_handle_close: invalid vd or vdev_tsd [%p]\n", vd );
         /* Close the user client handle */
         vdev_hl->close(zfsProvider, 0);
         (void) vdev_hl->waitQuiet();
-IOLog( "vdev_iokit_handle_close: vdev_hl has %d references", vdev_hl->getRetainCount() );
+//IOLog( "vdev_iokit_handle_close: vdev_hl has %d references", vdev_hl->getRetainCount() );
         if( vdev_hl->getRetainCount() > 0 ) {
             vdev_hl->release();
         }
@@ -944,10 +940,10 @@ IOLog( "vdev_iokit_handle_close: vdev_hl has %d references", vdev_hl->getRetainC
     /* Reset keep_open flag */
 //    dvd->vd_keep_open = false;
     
-IOLog( "vdev_iokit_handle_close: finished\n" );
+//IOLog( "vdev_iokit_handle_close: finished\n" );
     /* clean up */
     if (zfsProvider) {
-IOLog( "vdev_iokit_handle_close: zfsProvider has %d references", zfsProvider->getRetainCount() );
+//IOLog( "vdev_iokit_handle_close: zfsProvider has %d references", zfsProvider->getRetainCount() );
         zfsProvider->release();
         zfsProvider = 0;
     }
@@ -1019,7 +1015,7 @@ extern int
 vdev_iokit_open_by_path(vdev_t * vd, char * path)
 {
     vdev_iokit_t * dvd = 0;
-IOLog("vdev_iokit_open_by_path: vd, path [%p] {%s}\n", vd, path);
+//IOLog("vdev_iokit_open_by_path: vd, path [%p] {%s}\n", vd, path);
     /* This should be called with no vdev_tsd */
 //    if (!vd || vd->vdev_tsd != 0)
 //        return EINVAL;
@@ -1041,9 +1037,9 @@ IOLog("vdev_iokit_open_by_path: couldn't get dvd->vd_zfs_hl [%p]\n", vd);
     }
     
     if ( vdev_iokit_find_by_path(vd, path) == 0 ) {
-IOLog("vdev_iokit_open_by_path: found disk by path [%p]\n", dvd->vd_iokit_hl);
+//IOLog("vdev_iokit_open_by_path: found disk by path [%p]\n", dvd->vd_iokit_hl);
         if (!dvd->vd_iokit_hl) {
-IOLog("vdev_iokit_open_by_path: ...or not\n");
+IOLog("vdev_iokit_open_by_path: Couldn't open disk by path {%s}\n", path);
             /* error */
             vdev_iokit_free(vd);
             return EIO;
@@ -1067,7 +1063,7 @@ vdev_iokit_get_size(vdev_t * vd, uint64_t *size, uint64_t *max_size, uint64_t *a
     if (!vd || !vd->vdev_tsd)
         return EINVAL;
     
-IOLog( "vdev_iokit_get_size: [%p]:(%llu,%llu,%llu)\n", vd, *size, *max_size, *ashift );
+//IOLog( "vdev_iokit_get_size: [%p]:(%llu,%llu,%llu)\n", vd, *size, *max_size, *ashift );
     
     dvd =       static_cast<vdev_iokit_t*>(vd->vdev_tsd);
     
@@ -1077,7 +1073,7 @@ IOLog( "vdev_iokit_get_size: [%p]:(%llu,%llu,%llu)\n", vd, *size, *max_size, *as
     vdev_hl =           (IOMedia *)dvd->vd_iokit_hl;
 
     *size =             vdev_hl->getSize();
-    IOLog("ZFS: vdev_iokit_get_size: size %llu\n", *size);
+//    IOLog("ZFS: vdev_iokit_get_size: size %llu\n", *size);
     
     blksize =           vdev_hl->getPreferredBlockSize();
     if (blksize <= 0) {
@@ -1086,7 +1082,7 @@ IOLog( "vdev_iokit_get_size: [%p]:(%llu,%llu,%llu)\n", vd, *size, *max_size, *as
     }
     
     *ashift =           highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
-    IOLog("ZFS: vdev_iokit_get_size: ashift %llu\n", *ashift);
+//    IOLog("ZFS: vdev_iokit_get_size: ashift %llu\n", *ashift);
     
     /* cleanup */
     dvd = 0;
@@ -1189,7 +1185,7 @@ int vdev_iokit_sync( vdev_t * vd, zio_t * zio )
     int result =            EINVAL;
 
     
-IOLog( "vdev_iokit_sync: [%p] [%p]\n", vd, zio );
+//IOLog( "vdev_iokit_sync: [%p] [%p]\n", vd, zio );
     
     if (vd && vd->vdev_tsd && vd->vdev_tsd) {
         
@@ -1200,9 +1196,9 @@ IOLog( "vdev_iokit_sync: [%p] [%p]\n", vd, zio );
             vdev_hl = (IOService *)(dvd->vd_iokit_hl);
             
             if (vdev_hl) {
-IOLog( "vdev_iokit_sync: do sync\n" );
+//IOLog( "vdev_iokit_sync: do sync\n" );
                 result = vdev_hl->waitQuiet( timeout );
-IOLog( "vdev_iokit_sync: done [%d]\n", result );
+//IOLog( "vdev_iokit_sync: done [%d]\n", result );
                 if ( result == kIOReturnTimeout ) {
                     result = ETIMEDOUT;
                 } else {
@@ -1225,7 +1221,7 @@ vdev_iokit_strategy( vdev_t * vd, zio_t * zio )
     vdev_iokit_context_t * io_context = 0;
     IOMedia * vdev_hl = 0;
 	vdev_iokit_t *dvd = 0;
-IOLog( "vdev_iokit_strategy: [%p] [%p]\n", vd, zio );
+//IOLog( "vdev_iokit_strategy: [%p] [%p]\n", vd, zio );
     if (!vd || !zio)
         return EINVAL;
     
@@ -1325,13 +1321,13 @@ IOLog( "vdev_iokit_strategy: [%p] [%p]\n", vd, zio );
      error = VNOP_STRATEGY(bp);
      */
 
-IOLog( "vdev_iokit_strategy: starting op [%p] [%p]\n", vd, zio );
+//IOLog( "vdev_iokit_strategy: starting op [%p] [%p]\n", vd, zio );
 IOSleep(10);
     if (zio->io_type == ZIO_TYPE_WRITE) {
-IOLog( "vdev_iokit_strategy: write (%llu,%llu)\n", zio->io_offset, zio->io_size );
+//IOLog( "vdev_iokit_strategy: write (%llu,%llu)\n", zio->io_offset, zio->io_size );
         vdev_hl->IOMedia::write(zfsProvider, zio->io_offset, io_context->buffer, 0, &(io_context->completion) );
     } else {
-IOLog( "vdev_iokit_strategy: read (%llu,%llu)\n", zio->io_offset, zio->io_size );
+//IOLog( "vdev_iokit_strategy: read (%llu,%llu)\n", zio->io_offset, zio->io_size );
         vdev_hl->IOMedia::read(zfsProvider, zio->io_offset, io_context->buffer, 0, &(io_context->completion) );
     }
 
@@ -1347,7 +1343,7 @@ extern void vdev_iokit_io_intr( void * target, void * parameter, kern_return_t s
     vdev_iokit_context_t * io_context = 0;
     zio_t * zio = 0;
     
-IOLog( "vdev_iokit_io_intr: [%p] [%p] (%d, %llu)\n", target, parameter, status, actualByteCount );
+//IOLog( "vdev_iokit_io_intr: [%p] [%p] (%d, %llu)\n", target, parameter, status, actualByteCount );
 
     io_context =        static_cast<vdev_iokit_context_t*>(parameter);
     

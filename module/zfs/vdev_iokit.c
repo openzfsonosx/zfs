@@ -57,7 +57,7 @@ extern void vdev_iokit_log_num(const char *, const uint64_t);
 void vdev_iokit_alloc( vdev_t * vd )
 {
     vdev_iokit_t * dvd = 0;
-vdev_iokit_log_ptr( "vdev_iokit_alloc: vd", vd );
+//vdev_iokit_log_ptr( "vdev_iokit_alloc: vd", vd );
     if (!vd)
         return;
     
@@ -70,13 +70,13 @@ vdev_iokit_log_ptr( "vdev_iokit_alloc: vd", vd );
     
     vd->vdev_tsd =      (void*)(dvd);
     
-vdev_iokit_log_ptr( "vdev_iokit_alloc: vd->vdev_tsd", vd->vdev_tsd );
+//vdev_iokit_log_ptr( "vdev_iokit_alloc: vd->vdev_tsd", vd->vdev_tsd );
 }
 
 void vdev_iokit_free( vdev_t * vd )
 {
     vdev_iokit_t * dvd = 0;
-vdev_iokit_log_ptr( "vdev_iokit_free: vd", vd );
+//vdev_iokit_log_ptr( "vdev_iokit_free: vd", vd );
     if (!vd)
         return;
     
@@ -86,9 +86,9 @@ vdev_iokit_log_ptr( "vdev_iokit_free: vd", vd );
         return;
     
     if (dvd->vd_iokit_hl)
-vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->vd_iokit_hl", dvd->vd_iokit_hl );
+//vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->vd_iokit_hl", dvd->vd_iokit_hl );
     if (dvd->vd_zfs_hl)
-vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->vd_zfs_hl", dvd->vd_zfs_hl );
+//vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->vd_zfs_hl", dvd->vd_zfs_hl );
     
     dvd->vd_iokit_hl = 0;
     dvd->vd_zfs_hl = 0;
@@ -244,10 +244,10 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
     if (!vd)
         return EINVAL;
     
-vdev_iokit_log_ptr( "vdev_iokit_open: vd:",         vd );
-vdev_iokit_log_num( "vdev_iokit_open: spa mode:",   spa_mode(vd->vdev_spa) );
-vdev_iokit_log_num( "vdev_iokit_open: vd state:",   vd->vdev_state );
-vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
+//vdev_iokit_log_ptr( "vdev_iokit_open: vd:",         vd );
+//vdev_iokit_log_num( "vdev_iokit_open: spa mode:",   spa_mode(vd->vdev_spa) );
+//vdev_iokit_log_num( "vdev_iokit_open: vd state:",   vd->vdev_state );
+//vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
     
     /*
 	 * We must have a pathname, and it must be absolute.
@@ -260,9 +260,9 @@ vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
     dvd = vd->vdev_tsd;
 	
     if (dvd != NULL) {
-vdev_iokit_log_ptr( "vdev_iokit_open: dvd:",        dvd);
-vdev_iokit_log_ptr( "vdev_iokit_open: iokit_hl:",   dvd->vd_iokit_hl);
-vdev_iokit_log_ptr( "vdev_iokit_open: zfs_hl:",     dvd->vd_zfs_hl);
+//vdev_iokit_log_ptr( "vdev_iokit_open: dvd:",        dvd);
+//vdev_iokit_log_ptr( "vdev_iokit_open: iokit_hl:",   dvd->vd_iokit_hl);
+//vdev_iokit_log_ptr( "vdev_iokit_open: zfs_hl:",     dvd->vd_zfs_hl);
         
         ASSERT(vd->vdev_reopening);
         goto skip_open;
@@ -513,13 +513,13 @@ vdev_iokit_log_ptr( "vdev_iokit_open: bailing on handle open, trying to close ha
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 	}
     
-    vdev_iokit_log_num( "vdev_iokit_open: size:",       *size );
-    vdev_iokit_log_num( "vdev_iokit_open: maxsize:",    *max_size );
-    vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
+//    vdev_iokit_log_num( "vdev_iokit_open: size:",       *size );
+//    vdev_iokit_log_num( "vdev_iokit_open: maxsize:",    *max_size );
+//    vdev_iokit_log_num( "vdev_iokit_open: ashift:",     *ashift );
     
-    vdev_iokit_log_ptr( "vdev_iokit_open: dvd:",        dvd);
-    vdev_iokit_log_ptr( "vdev_iokit_open: iokit_hl:",   dvd->vd_iokit_hl);
-    vdev_iokit_log_ptr( "vdev_iokit_open: zfs_hl:",     dvd->vd_zfs_hl);
+//    vdev_iokit_log_ptr( "vdev_iokit_open: dvd:",        dvd);
+//    vdev_iokit_log_ptr( "vdev_iokit_open: iokit_hl:",   dvd->vd_iokit_hl);
+//    vdev_iokit_log_ptr( "vdev_iokit_open: zfs_hl:",     dvd->vd_zfs_hl);
 
 	return (error);
 }
@@ -527,15 +527,15 @@ vdev_iokit_log_ptr( "vdev_iokit_open: bailing on handle open, trying to close ha
 extern void
 vdev_iokit_close(vdev_t *vd)
 {
-vdev_iokit_log_ptr( "vdev_iokit_close: vd:",            vd );
+//vdev_iokit_log_ptr( "vdev_iokit_close: vd:",            vd );
     
 	vdev_iokit_t *dvd = vd->vdev_tsd;
     
-vdev_iokit_log_ptr( "vdev_iokit_close: dvd:",           dvd );
-vdev_iokit_log_num( "vdev_iokit_close: reopening:",     vd->vdev_reopening );
-vdev_iokit_log_num( "vdev_iokit_close: spa mode:",      spa_mode(vd->vdev_spa) );
-vdev_iokit_log_num( "vdev_iokit_close: vd state:",      vd->vdev_state );
-vdev_iokit_log_num( "vdev_iokit_close: prevstate:",     vd->vdev_prevstate );
+//vdev_iokit_log_ptr( "vdev_iokit_close: dvd:",           dvd );
+//vdev_iokit_log_num( "vdev_iokit_close: reopening:",     vd->vdev_reopening );
+//vdev_iokit_log_num( "vdev_iokit_close: spa mode:",      spa_mode(vd->vdev_spa) );
+//vdev_iokit_log_num( "vdev_iokit_close: vd state:",      vd->vdev_state );
+//vdev_iokit_log_num( "vdev_iokit_close: prevstate:",     vd->vdev_prevstate );
     
     if (vd->vdev_reopening || dvd == NULL)
 		return;
@@ -557,8 +557,8 @@ vdev_iokit_log_num( "vdev_iokit_close: prevstate:",     vd->vdev_prevstate );
 extern void
 vdev_iokit_ioctl_done(void *zio_arg, const int error)
 {
-vdev_iokit_log_ptr( "vdev_iokit_ioctl_done: zio_arg:",  zio_arg );
-vdev_iokit_log_num( "vdev_iokit_ioctl_done: error:",    error );
+//vdev_iokit_log_ptr( "vdev_iokit_ioctl_done: zio_arg:",  zio_arg );
+//vdev_iokit_log_num( "vdev_iokit_ioctl_done: error:",    error );
 	zio_t *zio = zio_arg;
 
 	zio->io_error = error;
@@ -575,7 +575,7 @@ vdev_iokit_io_start(zio_t *zio)
 //	struct buf *bp;
 //	vfs_context_t context;
 	int error = 0;
-vdev_iokit_log_ptr( "vdev_iokit_io_start: zio:", zio );
+//vdev_iokit_log_ptr( "vdev_iokit_io_start: zio:", zio );
 	if (zio->io_type == ZIO_TYPE_IOCTL) {
 		zio_vdev_io_bypass(zio);
 
@@ -776,7 +776,7 @@ vdev_iokit_io_done(zio_t *zio)
      */
     vdev_t * vd = 0;
  
-vdev_iokit_log_ptr( "vdev_iokit_io_done: zio:", zio );
+//vdev_iokit_log_ptr( "vdev_iokit_io_done: zio:", zio );
     
     if (!zio)
         return;
@@ -809,8 +809,8 @@ vdev_iokit_log_ptr( "vdev_iokit_io_done: zio:", zio );
 extern void
 vdev_iokit_io_intr(struct buf *bp, void *arg)
 {
-vdev_iokit_log_ptr( "vdev_iokit_io_intr: bp:",  bp );
-vdev_iokit_log_ptr( "vdev_iokit_io_intr: arg:", arg );
+//vdev_iokit_log_ptr( "vdev_iokit_io_intr: bp:",  bp );
+//vdev_iokit_log_ptr( "vdev_iokit_io_intr: arg:", arg );
 	zio_t *zio = (zio_t *)arg;
     
     zio->io_error = buf_error(bp);
