@@ -547,15 +547,10 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 	dmu_tx_t  *tx;
 	struct vnode_attr  vattr;
 	int error;
-	pathname_t cn;
+	pathname_t cn = { 0 };
 	zfs_acl_ids_t	acl_ids;
 
 	/* zfs_dirent_lock() expects a component name */
-	bzero(&cn, sizeof (cn));
-	//cn.cn_nameiop = LOOKUP;
-	//cn.cn_flags = ISLASTCN;
-	cn.pn_buf = (char *)name;
-	cn.pn_bufsize = strlen(name);
 
     ZFS_ENTER(zfsvfs);
     ZFS_VERIFY_ZP(dzp);
@@ -570,6 +565,10 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
+
+	cn.pn_buf = spa_strdup(name);
+	cn.pn_bufsize = strlen(name);
+
  top:
 	/* Lock the attribute entry name. */
 	if ( (error = zfs_dirent_lock(&dl, dzp, (char *)name, &xzp, flag,
@@ -619,6 +618,9 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 
 	zfs_dirent_unlock(dl);
  out:
+    if (cn.pn_buf)
+        spa_strfree(cn.pn_buf);
+
 	if (error == EEXIST)
 		error = ENOATTR;
 	if (xzp)
@@ -1064,12 +1066,9 @@ void fileattrpack(attrinfo_t *aip, zfsvfs_t *zfsvfs, znode_t *zp)
             xattr) {
 			vnode_t *xdvp = NULLVP;
 			vnode_t *xvp = NULLVP;
-			pathname_t cn;
+			pathname_t cn = { 0 };
 
-			bzero(&cn, sizeof (cn));
-			//cn.cn_nameiop = LOOKUP;
-			//cn.cn_flags = ISLASTCN;
-			cn.pn_buf = XATTR_RESOURCEFORK_NAME;
+			cn.pn_buf = spa_strdup(XATTR_RESOURCEFORK_NAME);
 			cn.pn_bufsize = strlen(cn.pn_buf);
 
 			/* Grab the hidden attribute directory vnode. */
@@ -1078,6 +1077,8 @@ void fileattrpack(attrinfo_t *aip, zfsvfs_t *zfsvfs, znode_t *zp)
                             &cn) == 0) {
 				rsrcsize = VTOZ(xvp)->z_size;
 			}
+            spa_strfree(cn.pn_buf);
+
 			if (xvp)
 				vnode_put(xvp);
 			if (xdvp)
@@ -1228,7 +1229,7 @@ void getfinderinfo(znode_t *zp, cred_t *cr, finderinfo_t *fip)
 	vnode_t	*xdvp = NULLVP;
 	vnode_t	*xvp = NULLVP;
 	struct uio		*auio = NULL;
-	pathname_t  cn;
+	pathname_t  cn = { 0 };
 	int		error;
     uint64_t xattr = 0;
 
@@ -1253,10 +1254,7 @@ void getfinderinfo(znode_t *zp, cred_t *cr, finderinfo_t *fip)
 		goto out;
 	}
 
-	bzero(&cn, sizeof (cn));
-	//cn.cn_nameiop = LOOKUP;
-	//cn.cn_flags = ISLASTCN;
-	cn.pn_buf = XATTR_FINDERINFO_NAME;
+	cn.pn_buf = spa_strdup(XATTR_FINDERINFO_NAME);
 	cn.pn_bufsize = strlen(cn.pn_buf);
 
 	if ((error = zfs_dirlook(VTOZ(xdvp), cn.pn_buf, &xvp, 0, NULL, &cn))) {
@@ -1265,6 +1263,8 @@ void getfinderinfo(znode_t *zp, cred_t *cr, finderinfo_t *fip)
 	error = dmu_read_uio(zp->z_zfsvfs->z_os, VTOZ(xvp)->z_id, auio,
 	                     sizeof (finderinfo_t));
 out:
+    if (cn.pn_buf)
+        spa_strfree(cn.pn_buf);
 	if (auio)
 		uio_free(auio);
 	if (xvp)

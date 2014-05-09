@@ -1736,8 +1736,7 @@ zfs_vnop_getxattr(
 	znode_t  *zp = VTOZ(vp);
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
     struct uio *uio = ap->a_uio;
-	//struct componentname  cn;
-	pathname_t cn;
+	pathname_t cn = { 0 };
 	int  error;
 
     //dprintf("+getxattr vp %p\n", ap->a_vp);
@@ -1764,10 +1763,7 @@ zfs_vnop_getxattr(
 		goto out;
 	}
 
-	bzero(&cn, sizeof (cn));
-	//cn.cn_nameiop = LOOKUP;
-	//cn.cn_flags = ISLASTCN;
-	cn.pn_buf = (char *)ap->a_name;
+	cn.pn_buf = (char *)spa_strdup(ap->a_name);
 	cn.pn_bufsize = strlen(cn.pn_buf);
 
 	/* Lookup the attribute name. */
@@ -1788,6 +1784,8 @@ zfs_vnop_getxattr(
 		error = VNOP_READ(xvp, uio, 0, ap->a_context);
 	}
 out:
+    if (cn.pn_buf)
+        spa_strfree(cn.pn_buf);
 	if (xvp) {
 		vnode_put(xvp);
 	}
@@ -1892,8 +1890,7 @@ zfs_vnop_removexattr(
 	struct vnode *xvp = NULLVP;
 	znode_t  *zp = VTOZ(vp);
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
-	//struct componentname  cn;
-	pathname_t cn;
+	pathname_t cn = { 0 };
 	int  error;
     uint64_t xattr;
 
@@ -1921,10 +1918,7 @@ zfs_vnop_removexattr(
 		goto out;
 	}
 
-	bzero(&cn, sizeof (cn));
-	//cn.cn_nameiop = DELETE;
-	//cn.cn_flags = ISLASTCN;
-	cn.pn_buf = (char *)ap->a_name;
+	cn.pn_buf = (char *)spa_strdup(ap->a_name);
 	cn.pn_bufsize = strlen(cn.pn_buf);
 
 	/* Lookup the attribute name. */
@@ -1937,6 +1931,9 @@ zfs_vnop_removexattr(
 	error = zfs_remove(xdvp, (char *)ap->a_name, cr, ct, /*flags*/0);
 
 out:
+    if (cn.pn_buf)
+        spa_strfree(cn.pn_buf);
+
 	if (xvp) {
 		vnode_put(xvp);
 	}
@@ -2068,7 +2065,7 @@ zfs_vnop_getnamedstream(
 	struct vnode *xdvp = NULLVP;
 	znode_t  *zp = VTOZ(vp);
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
-	pathname_t cn;
+	pathname_t cn = { 0 };
 	int  error = ENOATTR;
     uint64_t xattr;
 
@@ -2091,10 +2088,7 @@ zfs_vnop_getnamedstream(
 		goto out;
 	}
 
-	bzero(&cn, sizeof (cn));
-	//cn.cn_nameiop = LOOKUP;
-	//cn.cn_flags = ISLASTCN;
-	cn.pn_buf = (char *)ap->a_name;
+	cn.pn_buf = spa_strdup(ap->a_name);
 	cn.pn_bufsize = strlen(cn.pn_buf);
 
 	/* Lookup the attribute name. */
@@ -2102,6 +2096,8 @@ zfs_vnop_getnamedstream(
 		if (error == ENOENT)
 			error = ENOATTR;
 	}
+    spa_strfree(cn.pn_buf);
+
 out:
 	if (xdvp) {
 		vnode_put(xdvp);
