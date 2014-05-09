@@ -1711,7 +1711,6 @@ zfsctl_snapdir_reclaim(ap)
 	zfs_snapentry_t *sep;
 
     vnode_removefsref(vp);
-    vnode_recycle(vp);
 
     if (!sdp) return 0;
 
