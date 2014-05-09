@@ -1,8 +1,6 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
-launchddaemon_DATA = \
-	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.zed.service.plist \
-	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.zpool-autoimport.plist
+include $(top_srcdir)/etc/launchd/daemons/launchd-daemons.am
 
 EXTRA_DIST = \
 	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.zed.service.plist.in \
@@ -19,19 +17,3 @@ $(launchddaemon_DATA):
 
 distclean-local::
 	-$(RM) $(launchddaemon_DATA)
-
-install-exec-hook::
-	@echo
-	$(DESTDIR)/bin/launchctl load \
-		$(DESTDIR)$(launchddaemondir)/org.openzfsonosx.zed.service.plist \
-		|| echo "Ignoring errors loading org.openzfsonosx.zed.service.plist"
-	$(DESTDIR)/bin/launchctl load \
-		$(DESTDIR)/$(launchddaemondir)/org.openzfsonosx.zpool-autoimport.plist \
-		|| echo "Ignoring errors loading org.openzfsonosx.zpool-autoimport.plist"
-
-uninstall-local::
-	@echo
-	$(DESTDIR)/bin/launchctl remove org.openzfsonosx.zed.service \
-		|| echo "Ignoring errors removing job org.openzfsonosx.zed.service"
-	$(DESTDIR)/bin/launchctl remove org.openzfsonosx.zpool-autoimport \
-		|| echo "Ignoring errors removing job org.openzfsonosx.zpool-autoimport"
