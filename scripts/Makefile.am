@@ -22,19 +22,6 @@ ZIMPORT=$(top_builddir)/scripts/zimport.sh
 ZTEST=$(top_builddir)/cmd/ztest/ztest
 ZPIOS_SANITY=$(top_builddir)/scripts/zpios-sanity.sh
 
-subst = $(SED) \
-	-e 's:@sbindir[@]:$(sbindir):g' \
-	-e 's:@sysconfdir[@]:$(sysconfdir):g'
-
-%.plist: %.plist.in Makefile
-	$(subst) $< > $@
-
-%.sh: %.sh.in Makefile
-	$(subst) $< > $@
-
-zplists = org.openzfsonosx.zed.service.plist org.openzfsonosx.zpool-autoimport.plist
-zscripts = zpool-autoimport.sh zed.service.sh
-
 check:
 	@$(ZFS) -u
 	@echo
@@ -67,29 +54,3 @@ check:
 	@$(ZPIOS_SANITY)
 	@$(ZFS) -u
 	@echo
-
-all-local: $(zplists) $(zscripts)
-
-clean-local:
-	-rm -f $(zplists) $(zscripts)
-
-install-data-local: all-local
-	@echo
-	$(MKDIR_P) $(DESTDIR)/Library/LaunchDaemons
-	$(INSTALL_DATA) org.openzfsonosx.zed.service.plist $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist
-	$(INSTALL_DATA) org.openzfsonosx.zpool-autoimport.plist $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zpool-autoimport.plist
-	$(MKDIR_P) $(DESTDIR)$(sbindir)
-	$(INSTALL) zed.service.sh $(DESTDIR)$(sbindir)/zed.service.sh
-	$(INSTALL) zpool-autoimport.sh $(DESTDIR)$(sbindir)/zpool-autoimport.sh
-	$(DESTDIR)/bin/launchctl load -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist || echo "Ignoring errors"
-	$(DESTDIR)/bin/launchctl load -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zpool-autoimport.plist || echo "Ignoring errors"
-
-uninstall-local:
-	@echo
-	$(DESTDIR)/bin/launchctl unload -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist || echo "Ignoring errors"
-	$(DESTDIR)/bin/launchctl unload -w $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zpool-autoimport.plist || echo "Ignoring errors"
-	@rm -f $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zed.service.plist
-	@rm -f $(DESTDIR)/Library/LaunchDaemons/org.openzfsonosx.zpool-autoimport.plist
-	@rm -f $(DESTDIR)$(sbindir)/zed.service.sh
-	@rm -f $(DESTDIR)$(sbindir)/zpool-autoimport.sh
-

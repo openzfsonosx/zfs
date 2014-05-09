@@ -6,7 +6,7 @@
 	<string>org.openzfsonosx.zpool-autoimport</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>@sbindir@/zpool-autoimport.sh</string>
+		<string>@launchdscriptdir@/zpool-autoimport.sh</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

@@ -1251,7 +1251,7 @@ zfsctl_snapdir_lookup(ap)
 	ASSERT(ap->a_cnp->cn_namelen < sizeof(nm));
 	strlcpy(nm, ap->a_cnp->cn_nameptr, ap->a_cnp->cn_namelen + 1);
 
-    printf("zfsctl_snapdir_lookup '%s'\n", nm);
+    dprintf("zfsctl_snapdir_lookup '%s'\n", nm);
 
 	ASSERT(vnode_isdir(dvp));
 
@@ -1308,14 +1308,14 @@ zfsctl_snapdir_lookup(ap)
 		if (err) {
 			VN_RELE(*vpp);
 			*vpp = NULL;
-            printf("vnrele\n");
+            dprintf("vnrele\n");
 		} else if (*vpp == sep->se_root) {
 			/*
 			 * The snapshot was unmounted behind our backs,
 			 * try to remount it.
 			 */
 			VERIFY(zfsctl_snapshot_zname(dvp, nm, MAXNAMELEN, snapname) == 0);
-            printf("goto domount\n");
+            dprintf("goto domount\n");
 			goto domount;
 		} else {
 			/*
@@ -1382,7 +1382,7 @@ domount:
 
 #ifdef __APPLE__
 
-    printf("Would call mount here on '%s' for '%s': mountedhere %p\n",
+    dprintf("Would call mount here on '%s' for '%s': mountedhere %p\n",
             mountpoint, snapname, vnode_mountedhere(*vpp));
 
 #ifdef _KERNEL
