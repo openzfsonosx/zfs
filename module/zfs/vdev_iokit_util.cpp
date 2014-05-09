@@ -66,6 +66,8 @@ static inline vdev_iokit_context_t * vdev_iokit_context_alloc( zio_t * zio )
 
     io_context->buffer =    (IOBufferMemoryDescriptor*)newDescriptor;
     
+    IOLog("ZFS: vdev_iokit_context_alloc: io_context->buffer has %d refs\n", io_context->buffer->getRetainCount());
+
     newDescriptor =     0;
     
     /*
@@ -90,11 +92,12 @@ static inline vdev_iokit_context_t * vdev_iokit_context_alloc( zio_t * zio )
 
 static inline void vdev_iokit_context_free( vdev_iokit_context_t * io_context )
 {
-//vdev_iokit_log_ptr( "vdev_iokit_context_free: io_context", io_context );
-    
-    if (!io_context || !io_context->zio)
+    if (!io_context) {
+        IOLog("ZFS: vdev_iokit_context_free: invalid io_context [%p]\n", io_context);
+        IOSleep(100);
         return;
-
+    }
+    
     //    if (zio->io_flags & ZIO_FLAG_FAILFAST) {
     //
     //    }
@@ -102,11 +105,17 @@ static inline void vdev_iokit_context_free( vdev_iokit_context_t * io_context )
     io_context->zio = 0;
     
     if (io_context->buffer) {
+        if (io_context->buffer->getRetainCount() > 1) {
+            IOLog("ZFS: vdev_iokit_context_free: io_context->buffer has more than 1 ref: (%d)\n", io_context->buffer->getRetainCount());
+            IOSleep(100);
+        }
+        
         io_context->buffer->release();
+        
         io_context->buffer = 0;
     }
-        
-    kmem_free(io_context,sizeof(io_context));
+    
+    kmem_free(io_context,sizeof(vdev_iokit_context_t));
     
     io_context = 0;
     
@@ -677,11 +686,8 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
     nextDisk:
     
     if (matchedDisk) {
-//        IOLog("ZFS: vdev_iokit_find_by_guid: casting matching disk %p\n", matchedDisk);
         vdev_hl = (uintptr_t*)matchedDisk;
-//        IOLog("ZFS: vdev_iokit_find_by_guid: casting matching disk %p\n", vdev_hl);
         matchedDisk = 0;
-//IOLog( "vdev_iokit_find_by_guid: matchedDisk has %d references 1", matchedDisk->getRetainCount() );
     }
     
     if( buffer ) {
@@ -1388,8 +1394,10 @@ extern void vdev_iokit_io_intr( void * target, void * parameter, kern_return_t s
     
     zio =               static_cast<zio_t*>(io_context->zio);
     
-    if (!zio)
+    if (!zio) {
+        IOLog( "vdev_iokit_io_intr: Invalid zio [%p]\n", zio );
         return;
+    }
     
     /* Teardown the IOMemoryDescriptor */
     io_context->buffer->complete();
@@ -1402,7 +1410,6 @@ extern void vdev_iokit_io_intr( void * target, void * parameter, kern_return_t s
     if ( status != 0 )
         zio->io_error = EIO;
     
-	//zio_next_stage_async(zio);
     zio_interrupt(zio);
 
     zio = 0;
