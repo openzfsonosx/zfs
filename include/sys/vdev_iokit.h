@@ -36,10 +36,10 @@
 #include <IOKit/storage/IOBlockStorageDevice.h>
 #include <IOKit/storage/IOMedia.h>
 #include <IOKit/IOTypes.h>
-#include <IOKit/IOBufferMemoryDescriptor.h>
+#include <IOKit/IOMemoryDescriptor.h>
 
 typedef struct vdev_iokit_context {
-    IOBufferMemoryDescriptor *      buffer;
+    IOMemoryDescriptor *      buffer;
     IOStorageCompletion             completion;
     zio_t *                         zio;
 } vdev_iokit_context_t;
@@ -54,6 +54,9 @@ typedef struct vdev_iokit {
     uintptr_t *     vd_iokit_hl;        /* IOMedia service handle */
     uintptr_t *     vd_zfs_hl;          /* IOProvider zfs handle */
 	boolean_t       vd_offline;         /* device has gone offline */
+    void *          in_command_pool;    /* IOCommandPool for reads */
+    void *          out_command_pool;   /* IOCommandPool for writes */
+    void *          command_set;        /* OSSet to hold all commands */
 //  uint64_t        vd_ashift;          /* ashift alignment */
 } vdev_iokit_t;
 

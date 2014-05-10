@@ -35,6 +35,8 @@
 		AD4EF516191405E100AC522D /* vdev_iokit.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = vdev_iokit.h; sourceTree = "<group>"; };
 		AD4EF518191413C300AC522D /* vdev_iokit_util.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = vdev_iokit_util.cpp; sourceTree = "<group>"; };
 		AD4EF519191413F300AC522D /* vdev_iokit.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = vdev_iokit.c; sourceTree = "<group>"; };
+		AD88AB17191C5B0100AC522D /* vdev_iokit_context.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = vdev_iokit_context.cpp; sourceTree = "<group>"; };
+		ADE4E435191D6C77000E8F96 /* vdev_iokit_context.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = vdev_iokit_context.h; sourceTree = "<group>"; };
 		D6F4409318E9BDFB002AB1F4 /* aclocal.m4 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = aclocal.m4; path = ../aclocal.m4; sourceTree = SOURCE_ROOT; };
 		D6F4409418E9BDFB002AB1F4 /* autogen.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; name = autogen.sh; path = ../autogen.sh; sourceTree = SOURCE_ROOT; };
 		D6F4409518E9BDFB002AB1F4 /* configure */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; name = configure; path = ../configure; sourceTree = SOURCE_ROOT; };
@@ -1327,6 +1329,7 @@
 				D6F441D318E9BE67002AB1F4 /* vdev.h */,
 				D6F441D418E9BE67002AB1F4 /* vdev_disk.h */,
 				AD4EF516191405E100AC522D /* vdev_iokit.h */,
+				ADE4E435191D6C77000E8F96 /* vdev_iokit_context.h */,
 				D6F441D518E9BE67002AB1F4 /* vdev_file.h */,
 				D6F441D618E9BE67002AB1F4 /* vdev_impl.h */,
 				D6F441D718E9BE67002AB1F4 /* xvattr.h */,
@@ -1935,6 +1938,7 @@
 				D6F4433918E9BE67002AB1F4 /* vdev_disk.c */,
 				AD4EF519191413F300AC522D /* vdev_iokit.c */,
 				AD4EF518191413C300AC522D /* vdev_iokit_util.cpp */,
+				AD88AB17191C5B0100AC522D /* vdev_iokit_context.cpp */,
 				D6F4433A18E9BE67002AB1F4 /* vdev_file.c */,
 				D6F4433B18E9BE67002AB1F4 /* vdev_label.c */,
 				D6F4433C18E9BE67002AB1F4 /* vdev_mirror.c */,

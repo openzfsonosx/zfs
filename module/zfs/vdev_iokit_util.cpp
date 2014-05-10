@@ -6,10 +6,12 @@
 #include <IOKit/IOTypes.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>
-#include <IOKit/IOBufferMemoryDescriptor.h>
+#include <IOKit/IOMemoryDescriptor.h>
+#include <IOKit/IOWorkLoop.h>
 
-#include <sys/vdev_iokit.h>
 #include <sys/vdev_impl.h>
+#include <sys/vdev_iokit.h>
+#include <sys/vdev_iokit_context.h>
 
 /*
  * IOKit C++ functions
@@ -59,42 +61,45 @@ static inline vdev_iokit_context_t * vdev_iokit_context_alloc( zio_t * zio )
         return 0;
     }
     
-    io_context->zio =   zio;
-    
-    newDescriptor =     IOBufferMemoryDescriptor::withAddress( zio->io_data, zio->io_size,
+    newDescriptor =     IOMemoryDescriptor::withAddress( zio->io_data, zio->io_size,
                                                               (zio->io_type == ZIO_TYPE_WRITE ? kIODirectionOut : kIODirectionIn) );
-
-    io_context->buffer =    (IOBufferMemoryDescriptor*)newDescriptor;
     
-    IOLog("ZFS: vdev_iokit_context_alloc: io_context->buffer has %d refs\n", io_context->buffer->getRetainCount());
+    if (!newDescriptor) {
+        vdev_iokit_log_ptr("vdev_iokit_context_alloc: couldn't alloc a memorydescriptor for zio\n", zio);
+        goto error;
+    }
+
+    io_context->buffer =    (IOMemoryDescriptor*)newDescriptor;
+    
+    vdev_iokit_log_num("ZFS: vdev_iokit_context_alloc: io_context->buffer has %d refs\n",
+                       io_context->buffer->getRetainCount());
 
     newDescriptor =     0;
     
-    /*
-    IOBufferMemoryDescriptor::inTaskWithOptions( kernel_task,
-                                                (zio->io_type == ZIO_TYPE_WRITE ? kIODirectionOut : kIODirectionIn) | kIOMapInhibitCache,
-                                                 zio->io_size,
-                                                 1 // alignment
-                                                    );
-     */
-/*
-    IOBufferMemoryDescriptor::withAddress( zio->io_data, zio->io_size,
-                                                         (zio->io_type == ZIO_TYPE_WRITE ? kIODirectionOut : kIODirectionIn) );
-  */
-    
     if (io_context->buffer == NULL) {
-        IOLog("ZFS: vdev_iokit_strategy: Couldn't allocate a memory buffer [%p]\n", io_context);
+        vdev_iokit_log_ptr("ZFS: vdev_iokit_strategy: Couldn't allocate a memory buffer\n", io_context);
         vdev_iokit_context_free(io_context);
     }
     
+    io_context->zio =   zio;
+    
     return io_context;
+    
+error:
+    if (io_context) {
+        if(io_context->zio)
+            io_context->zio = 0;
+        
+        io_context = 0;
+    }
+
+    return 0;
 }
 
 static inline void vdev_iokit_context_free( vdev_iokit_context_t * io_context )
 {
     if (!io_context) {
         IOLog("ZFS: vdev_iokit_context_free: invalid io_context [%p]\n", io_context);
-        IOSleep(100);
         return;
     }
     
@@ -107,7 +112,6 @@ static inline void vdev_iokit_context_free( vdev_iokit_context_t * io_context )
     if (io_context->buffer) {
         if (io_context->buffer->getRetainCount() > 1) {
             IOLog("ZFS: vdev_iokit_context_free: io_context->buffer has more than 1 ref: (%d)\n", io_context->buffer->getRetainCount());
-            IOSleep(100);
         }
         
         io_context->buffer->release();
@@ -120,6 +124,273 @@ static inline void vdev_iokit_context_free( vdev_iokit_context_t * io_context )
     io_context = 0;
     
     return;
+}
+
+static inline net_lundman_vdev_io_context * vdev_iokit_get_context( zio_t * zio )
+{
+    bool blocking =                 false;
+    vdev_iokit_t * dvd =            0;
+    IOCommandPool * command_pool =  0;
+    
+    if (!zio || !(zio->io_vd) || !(zio->io_vd->vdev_tsd))
+        return 0;
+    
+    dvd =       static_cast<vdev_iokit_t*>(zio->io_vd->vdev_tsd);
+    
+    if (!dvd ) {
+        IOLog("vdev_iokit_get_context: invalid dvd: [%p]", dvd );
+        return 0;
+    }
+    
+    if (zio->io_type == ZIO_TYPE_WRITE ) {
+        command_pool =  ((IOCommandPool *) dvd->out_command_pool);
+    } else {
+        command_pool =  ((IOCommandPool *) dvd->in_command_pool);
+    }
+    
+    if (!command_pool) {
+        IOLog("vdev_iokit_get_context: invalid command_pool: [%p] [%p]", dvd->in_command_pool, dvd->out_command_pool );
+        return 0;
+    }
+
+    /*
+     * Negate the value of failfast in
+     *  zio->io_flags
+     *
+     * For fail-fast, get a context
+     *  without blocking - can return 0.
+     * Otherwise block and guarantee a
+     *  returned IOCommand.
+     */
+    
+    blocking =                      ! (zio->io_flags & ZIO_FLAG_FAILFAST);
+    
+    return                          (net_lundman_vdev_io_context*)command_pool->getCommand(blocking);
+}
+
+static inline void vdev_iokit_return_context( zio_t * zio, net_lundman_vdev_io_context * io_context )
+{
+    vdev_iokit_t * dvd =            0;
+    IOCommandPool * command_pool =  0;
+    
+    if (!zio || !zio->io_vd || !zio->io_vd->vdev_tsd)
+        return;
+    
+    dvd =       static_cast<vdev_iokit_t*>(zio->io_vd->vdev_tsd);
+    
+    if (!dvd)
+        return;
+    
+    if (zio->io_type == ZIO_TYPE_WRITE ) {
+        command_pool =  ((IOCommandPool *) dvd->out_command_pool);
+    } else {
+        command_pool =  ((IOCommandPool *) dvd->in_command_pool);
+    }
+    
+    if (!command_pool)
+        return;
+    
+    ((IOCommandPool *) command_pool)->returnCommand(io_context);
+}
+
+static inline int vdev_iokit_context_pool_free( vdev_t *vd );
+
+static inline int vdev_iokit_context_pool_alloc( vdev_t *vd )
+{
+    vdev_iokit_t * dvd =            0;
+    OSSet * new_set =               0;
+    IOWorkLoop * work_loop =        0;
+    IOCommandPool * new_in_pool =   0;
+    IOCommandPool * new_out_pool =  0;
+    net_lundman_vdev_io_context * new_context = 0;
+    int preallocate =               8;
+    int error =                     EINVAL;
+
+    if (!vd) {
+        //IOLog("ZFS: vdev_iokit_context_pool_alloc: vd [%p]\n", vd);
+        return EINVAL;
+    }
+    
+    dvd =                   static_cast<vdev_iokit_t*>(vd->vdev_tsd);
+
+    if (!dvd) {
+        //IOLog("ZFS: vdev_iokit_context_pool_alloc: dvd [%p]\n", dvd);
+        return EINVAL;
+    }
+    
+    /* Allocate command set */
+    new_set =               OSSet::withCapacity(preallocate);
+    if (!new_set) {
+        error = ENOMEM;
+        goto error;
+    }
+    
+    /* Allocate read work loop */
+    work_loop =             IOWorkLoop::workLoopWithOptions(IOWorkLoop::kPreciousStack);
+    if (!work_loop) {
+        error = ENOMEM;
+        goto error;
+    }
+    
+    /* Allocate read command pool */
+    new_in_pool =           IOCommandPool::withWorkLoop(work_loop);
+    if (!new_in_pool) {
+        error = ENOMEM;
+        
+        work_loop->release();
+        work_loop =         0;
+        
+        goto error;
+    }
+    
+    /* Allocate write work loop */
+    work_loop =             IOWorkLoop::workLoopWithOptions(IOWorkLoop::kPreciousStack);
+    if (!work_loop) {
+        error = ENOMEM;
+        goto error;
+    }
+    
+    new_out_pool =          IOCommandPool::withWorkLoop(work_loop);
+    if (!new_out_pool) {
+        error = ENOMEM;
+        
+        work_loop->release();
+        work_loop =         0;
+        
+        new_in_pool->release();
+        new_in_pool =       0;
+        
+        goto error;
+    }
+    
+    /* IOCommandPool holds a reference to the
+     * workloop now, cleanup the pointer.
+     * Holding the pointer would result
+     * in it being freed below.
+     */
+    work_loop =             0;
+    
+    /* Pre-allocate contexts for reads and writes */
+    for ( int i = 0; i < preallocate; i++ ) {
+        new_context =       (net_lundman_vdev_io_context*)net_lundman_vdev_io_context::withDirection(kIODirectionIn);
+        
+        if (!new_context) {
+            error = ENOMEM;
+            goto error;
+        }
+        
+        new_set->setObject( new_context );
+        
+        new_in_pool->returnCommand( new_context );
+        
+        new_context->release();
+    }
+    for ( int i = 0; i < preallocate; i++ ) {
+        new_context =       (net_lundman_vdev_io_context*)net_lundman_vdev_io_context::withDirection(kIODirectionOut);
+        
+        if (!new_context) {
+            error = ENOMEM;
+            goto error;
+        }
+        
+        new_set->setObject( new_context );
+        
+        new_out_pool->returnCommand( new_context );
+        
+        new_context->release();
+    }
+    
+    new_context =   0;
+    
+    dvd->command_set =          new_set;
+    new_set =       0;
+    
+    dvd->in_command_pool =      new_in_pool;
+    new_in_pool =   0;
+    
+    dvd->out_command_pool =     new_out_pool;
+    new_out_pool =  0;
+    
+    dvd =           0;
+    
+    return 0;
+    
+error:
+    IOLog("ZFS: vdev_iokit_context_pool_alloc: error\n");
+    
+    vdev_iokit_context_pool_free(vd);
+    
+    return error;
+}
+
+static inline int vdev_iokit_context_pool_free( vdev_t *vd )
+{
+    vdev_iokit_t * dvd =            0;
+    IOCommandPool * command_pool =  0;
+    OSSet * command_set =           0;
+    OSObject * currentObj =         0;
+    
+    if (!vd)
+        return EINVAL;
+    
+    dvd =                       static_cast<vdev_iokit_t*>(vd->vdev_tsd);
+    
+    if (!dvd)
+        return EINVAL;
+    
+    if (dvd->in_command_pool) {
+        command_pool =          (IOCommandPool*)dvd->in_command_pool;
+        
+        command_pool->release();
+        
+        command_pool =          0;
+        
+        dvd->in_command_pool =  0;
+    }
+    if (dvd->out_command_pool) {
+        command_pool =          (IOCommandPool*)dvd->out_command_pool;
+        
+        command_pool->release();
+        
+        command_pool =          0;
+        
+        dvd->out_command_pool = 0;
+    }
+
+    if (dvd->command_set) {
+        command_set =           (OSSet*)dvd->command_set;
+
+//        do {
+//            
+//            currentObj =        command_set->getAnyObject();
+//            
+//            if (!currentObj)
+//                break;
+//            
+//            IOLog ("ZFS: vdev_iokit_context_pool_free: retain count [%p] (%d)\n",
+//                   currentObj, currentObj->getRetainCount());
+//            
+//            if (currentObj->getRetainCount() > 1) {
+//                currentObj->release();
+//            }
+//            
+//            command_set->removeObject(currentObj);
+//            
+//            currentObj =        0;
+//            
+//        } while(command_set->getCount() > 0);
+        
+        /* This will release all of the contained IOCommands */
+        command_set->flushCollection();
+        
+        command_set->release();
+        
+        command_set =           0;
+        
+        dvd->command_set =      0;
+    }
+    
+    return 0;
 }
 
 extern IOService * vdev_iokit_get_service()
@@ -351,7 +622,7 @@ int vdev_iokit_find_by_path(vdev_t * vd, char * diskPath)
     OSOrderedSet * allDisks = 0;
     IORegistryEntry * currentDisk = 0;
     IORegistryEntry * matchedDisk = 0;
-    //IOBufferMemoryDescriptor* buffer = 0;
+    //IOMemoryDescriptor* buffer = 0;
     OSObject * bsdnameosobj = 0;
     OSString * bsdnameosstr = 0;
     char * diskName = 0;
@@ -461,7 +732,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
     IOMedia * matchedDisk = 0;
     uintptr_t * vdev_hl = 0;
     UInt64 labelSize =  VDEV_SKIP_SIZE + VDEV_PHYS_SIZE;
-    IOBufferMemoryDescriptor* buffer = 0;
+    IOMemoryDescriptor* buffer = 0;
     nvlist_t * config = 0;
     
     char * diskPath = 0;
@@ -497,7 +768,7 @@ int vdev_iokit_find_by_guid( vdev_t * vd )
     
     if( allDisks->getCount() > 0 ) {
         /* Lazy allocate, and only if there will be work to do */
-        buffer = IOBufferMemoryDescriptor::withCapacity(labelSize, kIODirectionIn);
+//        buffer = IOMemoryDescriptor::withCapacity(labelSize, kIODirectionIn);
         
         if (buffer == NULL) {
             IOLog("ZFS: vdev_iokit_find_by_guid: Couldn't allocate a memory buffer\n");
@@ -774,7 +1045,7 @@ vdev_iokit_handle_open(vdev_t * vd)
     vdev_iokit_t *dvd = 0;
     int error = 0;
     
-//IOLog( "vdev_iokit_handle_open: [%p]\n", vd );
+//    IOLog( "vdev_iokit_handle_open: [%p]\n", vd );
     
     if (!vd || !vd->vdev_tsd)
         return EINVAL;
@@ -788,7 +1059,7 @@ vdev_iokit_handle_open(vdev_t * vd)
     
     if ( !zfsProvider )
         return EINVAL;
-    
+
 #if 0
     uintptr_t * matched_disk = 0;
     
@@ -825,11 +1096,6 @@ vdev_iokit_handle_open(vdev_t * vd)
         goto error;
     }
     
-    /* Specify that the iokit handle
-     * should be kept open
-     */
-//    dvd->vd_keep_open = true;
-    
     /* Check if the media is in use
      */
     result =        vdev_hl->isOpen(zfsProvider);
@@ -848,57 +1114,66 @@ vdev_iokit_handle_open(vdev_t * vd)
     if ( spa_mode(vd->vdev_spa) == FREAD ) {
 
         result = vdev_hl->open(zfsProvider, 0, kIOStorageAccessReader);
-        
-//IOLog("ZFS: vdev_iokit_handle_open: open: readonly %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
+       
+        /*
+            IOLog("ZFS: vdev_iokit_handle_open: open: readonly %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
+         */
     } else {
     
         result = vdev_hl->open(zfsProvider, 0, kIOStorageAccessReaderWriter);
         
-//IOLog("ZFS: vdev_iokit_handle_open: open: read/write %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
+        /*
+            IOLog("ZFS: vdev_iokit_handle_open: open: read/write %u %s [%p]\n", result, vd->vdev_path, dvd->vd_iokit_hl);
+         */
     }
     
-    if (result == 1) {
-        /* DEBUGGING */
-        vdev_iokit_sync(vd,0);
+    if (result == 0)
+        goto error;
+    
+    /* If there is a different iokit_t, clean it up */
+    if ( vd->vdev_tsd && ( vd->vdev_tsd != (void*)dvd ) ) {
+        
+        IOLog("ZFS: vdev_iokit_handle_open: clearing vdev_tsd... Wait this shouldn't happen! [%p]->[%p]\n", vd->vdev_tsd, dvd);
+        
+        vdev_iokit_free(vd);
     }
+    
+    /* Allocate several io_context objects */
+    if( vdev_iokit_context_pool_alloc(vd) != 0 )
+        goto error;
+    
+    /* Sync the disk if needed */
+    vdev_iokit_sync(vd,0);
     
 skip_open:
+
+    /*
+        IOLog("ZFS: vdev_iokit_handle_open: success\n");
+     */
+//    dvd->vd_iokit_hl =  (uintptr_t *)dvd->vd_iokit_hl;
     
-    if (result == 1) {
-//        IOLog("ZFS: vdev_iokit_handle_open: success\n");
-        dvd->vd_iokit_hl =  (uintptr_t *)dvd->vd_iokit_hl;
-        dvd->vd_zfs_hl =    (uintptr_t *)zfsProvider;
-        
-        /* If there is a different iokit_t, clean it up */
-        if ( vd->vdev_tsd && ( vd->vdev_tsd != (void*)dvd ) ) {
-            
-IOLog("ZFS: vdev_iokit_handle_open: clearing vdev_tsd... Wait this shouldn't happen! [%p]->[%p]\n", vd->vdev_tsd, dvd);
-            
-            vdev_iokit_free(vd);
-        }
-        
-        /* Save the new vdev_iokit info */
-        vd->vdev_tsd = dvd;
-        
-        goto out;
-        
-    } else {
-        
-        IOLog("ZFS: vdev_iokit_handle_open: fail\n");
-        error = EINVAL;
-        goto error;
-        
-    }
+    dvd->vd_zfs_hl =    (uintptr_t *)zfsProvider;
+    
+    goto out;
     
 error:
+    
+    IOLog("ZFS: vdev_iokit_handle_open: fail\n");
+    error = EINVAL;
+    
     if (error) {
+        
         if (dvd->vd_iokit_hl) {
-//IOLog( "vdev_iokit_handle_open: in_error: dvd->vd_iokit_hl has %d references", ((IOMedia*)dvd->vd_iokit_hl)->getRetainCount() );
-//            ((OSObject*)dvd->vd_iokit_hl)->release();
+            
+            IOLog( "vdev_iokit_handle_open: in_error: dvd->vd_iokit_hl has %d references", ((IOMedia*)dvd->vd_iokit_hl)->getRetainCount() );
+            
+            /*((OSObject*)dvd->vd_iokit_hl)->release();*/
         }
         
         if (zfsProvider) {
-//IOLog( "vdev_iokit_handle_open: in_error: zfsProvider has %d references", zfsProvider->getRetainCount() );
+            
+            IOLog( "vdev_iokit_handle_open: in_error: zfsProvider has %d references", zfsProvider->getRetainCount() );
+            
             zfsProvider->release();
         }
         
@@ -925,7 +1200,7 @@ vdev_iokit_handle_close(vdev_t * vd)
 //IOLog( "vdev_iokit_handle_close: [%p]\n", vd );
     
     if ( !vd || !vd->vdev_tsd ) {
-IOLog( "vdev_iokit_handle_close: invalid vd or vdev_tsd [%p]\n", vd );
+        IOLog( "vdev_iokit_handle_close: invalid vd or vdev_tsd [%p]\n", vd );
         return EINVAL;
     }
     
@@ -953,22 +1228,25 @@ IOLog( "vdev_iokit_handle_close: invalid vd or vdev_tsd [%p]\n", vd );
         /* Wait for IOKit to settle down */
         (void) vdev_hl->waitQuiet();
         
-//IOLog( "vdev_iokit_handle_close: vdev_hl has %d references", vdev_hl->getRetainCount() );
         if( vdev_hl->getRetainCount() > 0 ) {
+IOLog( "vdev_iokit_handle_close: vdev_hl has %d references", vdev_hl->getRetainCount() );
             vdev_hl->release();
         }
         vdev_hl = 0;
         
         dvd->vd_iokit_hl = 0;
     }
-
+    
+    /* Teardown context pool */
+    vdev_iokit_context_pool_free(vd);
+    
     /* Reset keep_open flag */
 //    dvd->vd_keep_open = false;
     
 //IOLog( "vdev_iokit_handle_close: finished\n" );
     /* clean up */
     if (zfsProvider) {
-//IOLog( "vdev_iokit_handle_close: zfsProvider has %d references", zfsProvider->getRetainCount() );
+IOLog( "vdev_iokit_handle_close: zfsProvider has %d references", zfsProvider->getRetainCount() );
         zfsProvider->release();
         zfsProvider = 0;
     }
@@ -1049,14 +1327,14 @@ vdev_iokit_open_by_path(vdev_t * vd, char * path)
     dvd =       static_cast<vdev_iokit_t *>(vd->vdev_tsd);
     
     if (!dvd) {
-IOLog("vdev_iokit_open_by_path: couldn't get vd->vdev_tsd [%p]\n", vd);
+        IOLog("vdev_iokit_open_by_path: couldn't get vd->vdev_tsd [%p]\n", vd);
         return EINVAL;
     }
     
     dvd->vd_zfs_hl =        (uintptr_t *)vdev_iokit_get_service();
     
     if (!dvd->vd_zfs_hl) {
-IOLog("vdev_iokit_open_by_path: couldn't get dvd->vd_zfs_hl [%p]\n", vd);
+        IOLog("vdev_iokit_open_by_path: couldn't get dvd->vd_zfs_hl [%p]\n", vd);
         vdev_iokit_free(vd);
         return EINVAL;
     }
@@ -1064,7 +1342,7 @@ IOLog("vdev_iokit_open_by_path: couldn't get dvd->vd_zfs_hl [%p]\n", vd);
     if ( vdev_iokit_find_by_path(vd, path) == 0 ) {
 //IOLog("vdev_iokit_open_by_path: found disk by path [%p]\n", dvd->vd_iokit_hl);
         if (!dvd->vd_iokit_hl) {
-IOLog("vdev_iokit_open_by_path: Couldn't open disk by path {%s}\n", path);
+            IOLog("vdev_iokit_open_by_path: Couldn't open disk by path {%s}\n", path);
             /* error */
             vdev_iokit_free(vd);
             return EIO;
@@ -1072,7 +1350,11 @@ IOLog("vdev_iokit_open_by_path: Couldn't open disk by path {%s}\n", path);
     }
     
     /* Open the device handle */
-    vdev_iokit_handle_open(vd);
+    if ( vdev_iokit_handle_open(vd) != 0 ) {
+        vdev_iokit_handle_close(vd);
+        vdev_iokit_free(vd);
+        return EIO;
+    }
     
     dvd = 0;
     return 0;
@@ -1257,7 +1539,7 @@ int
 vdev_iokit_strategy( vdev_t * vd, zio_t * zio )
 {
     IOService * zfsProvider = 0;
-    vdev_iokit_context_t * io_context = 0;
+    net_lundman_vdev_io_context * io_context = 0;
     IOMedia * vdev_hl = 0;
 	vdev_iokit_t *dvd = 0;
 //IOLog( "vdev_iokit_strategy: [%p] [%p]\n", vd, zio );
@@ -1302,16 +1584,21 @@ vdev_iokit_strategy( vdev_t * vd, zio_t * zio )
      
      */
     
-    io_context =            vdev_iokit_context_alloc(zio);
+    io_context =            (net_lundman_vdev_io_context *)vdev_iokit_get_context(zio);
 
     if (!io_context) {
-        IOLog("ZFS: vdev_iokit_strategy: Couldn't allocate an IO Context [%p]\n", zio);
-        return ENOMEM;
+        IOLog("ZFS: vdev_iokit_strategy: Couldn't get an IO Context [%p]\n", zio);
+        
+        /* If all IO_contexts are in use, try the IO again */
+        return EAGAIN;
+//        return ENOMEM;
     }
     
+    /*
     io_context->completion.target = 0;
     io_context->completion.parameter = io_context;
     io_context->completion.action =  (IOStorageCompletionAction) &vdev_iokit_io_intr;
+    */
     
 #if 0   /*  Disabled  */
     /*  Calculate physical / logical block number  */
@@ -1359,9 +1646,13 @@ vdev_iokit_strategy( vdev_t * vd, zio_t * zio )
      }
      error = VNOP_STRATEGY(bp);
      */
+    
+    /* Configure the context */
+    io_context->configure(zio);
 
     /* Prepare the IOMemoryDescriptor (wires memory) */
-    io_context->buffer->prepare(kIODirectionNone);
+    io_context->prepare();
+    //(zio->io_type == ZIO_TYPE_WRITE ? kIODirectionOut : kIODirectionIn)
     
 //IOLog( "vdev_iokit_strategy: starting op [%p] [%p]\n", vd, zio );
     if (zio->io_type == ZIO_TYPE_WRITE) {
@@ -1381,18 +1672,18 @@ vdev_iokit_strategy( vdev_t * vd, zio_t * zio )
     
 extern void vdev_iokit_io_intr( void * target, void * parameter, kern_return_t status, UInt64 actualByteCount )
 {
-    vdev_iokit_context_t * io_context = 0;
+    net_lundman_vdev_io_context * io_context = 0;
     zio_t * zio = 0;
     
 //IOLog( "vdev_iokit_io_intr: [%p] [%p] (%d, %llu)\n", target, parameter, status, actualByteCount );
 
-    io_context =        static_cast<vdev_iokit_context_t*>(parameter);
+    io_context =        (net_lundman_vdev_io_context*)parameter;
     
     if (!io_context) {
         IOLog( "vdev_iokit_io_intr: Invalid context [%p]\n", io_context );
     }
     
-    zio =               static_cast<zio_t*>(io_context->zio);
+    zio =               io_context->zio;
     
     if (!zio) {
         IOLog( "vdev_iokit_io_intr: Invalid zio [%p]\n", zio );
@@ -1400,11 +1691,12 @@ extern void vdev_iokit_io_intr( void * target, void * parameter, kern_return_t s
     }
     
     /* Teardown the IOMemoryDescriptor */
-    io_context->buffer->complete();
+    io_context->complete();
     
-    io_context->zio = 0;
+    /* Reset the IOMemoryDescriptor */
+    io_context->reset();
     
-    vdev_iokit_context_free(io_context);
+    vdev_iokit_return_context(zio, io_context);
     io_context = 0;
     
     if ( status != 0 )

@@ -64,9 +64,12 @@ void vdev_iokit_alloc( vdev_t * vd )
     // KM_SLEEP for vdev context
     dvd =    (vdev_iokit_t *)kmem_alloc(sizeof(vdev_iokit_t), KM_SLEEP);
     
-    dvd->vd_iokit_hl =  0;
-    dvd->vd_zfs_hl =    0;
-    dvd->vd_offline =   0;
+    dvd->vd_iokit_hl =      0;
+    dvd->vd_zfs_hl =        0;
+    dvd->vd_offline =       0;
+    dvd->in_command_pool =  0;
+    dvd->out_command_pool = 0;
+    dvd->command_set =      0;
     
     vd->vdev_tsd =      (void*)(dvd);
     
@@ -85,14 +88,34 @@ void vdev_iokit_free( vdev_t * vd )
     if (!dvd)
         return;
     
-    if (dvd->vd_iokit_hl)
-//vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->vd_iokit_hl", dvd->vd_iokit_hl );
-    if (dvd->vd_zfs_hl)
-//vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->vd_zfs_hl", dvd->vd_zfs_hl );
+    if (dvd->vd_iokit_hl) {
+vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->vd_iokit_hl", dvd->vd_iokit_hl );
+    }
+    if (dvd->vd_zfs_hl) {
+vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->vd_zfs_hl", dvd->vd_zfs_hl );
+    }
     
     dvd->vd_iokit_hl = 0;
     dvd->vd_zfs_hl = 0;
     dvd->vd_offline =   0;
+    
+    if (dvd->in_command_pool) {
+vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->in_command_pool", dvd->in_command_pool );
+    }
+    
+    dvd->in_command_pool = 0;
+
+    if (dvd->out_command_pool) {
+vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->out_command_pool", dvd->out_command_pool );
+    }
+    
+    dvd->out_command_pool = 0;
+    
+    if (dvd->command_set) {
+vdev_iokit_log_ptr( "vdev_iokit_free: leaking dvd->command_set", dvd->command_set );
+    }
+
+    dvd->command_set =  0;
     
     kmem_free(dvd, sizeof (vdev_iokit_t));
     vd->vdev_tsd = 0;
@@ -244,7 +267,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
     if (!vd)
         return EINVAL;
     
-//vdev_iokit_log_ptr( "vdev_iokit_open: vd:",         vd );
+vdev_iokit_log_ptr( "vdev_iokit_open: vd:",         vd );
 //vdev_iokit_log_num( "vdev_iokit_open: spa mode:",   spa_mode(vd->vdev_spa) );
 //vdev_iokit_log_num( "vdev_iokit_open: vd state:",   vd->vdev_state );
 //vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
@@ -527,7 +550,7 @@ vdev_iokit_log_ptr( "vdev_iokit_open: bailing on handle open, trying to close ha
 extern void
 vdev_iokit_close(vdev_t *vd)
 {
-//vdev_iokit_log_ptr( "vdev_iokit_close: vd:",            vd );
+vdev_iokit_log_ptr( "vdev_iokit_close: vd:",            vd );
     
 	vdev_iokit_t *dvd = vd->vdev_tsd;
     
