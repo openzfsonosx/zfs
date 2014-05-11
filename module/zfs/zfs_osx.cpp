@@ -1165,8 +1165,9 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
             nvlist_t * newconfig = spa_tryimport(config);
             
             if ( newconfig ) {
-                nvlist_free(config);
-                config = newconfig;
+                nvlist_free(newconfig);
+                //nvlist_free(config);
+                //config = newconfig;
                 IOLog("zfs_mountroot: Using tryimport config %s\n", pool_name);
                 IOSleep( info_delay );
                 
