@@ -6121,7 +6121,7 @@ zfs_ioctl_init(void)
     zfs_major = cdevsw_add_with_bdev(-1, &zfs_cdevsw, zfs_bmajor);
     dev = makedev(zfs_major, 0);/* Get the device number */
 #ifdef __APPLE__
-    (void) mnttab_file_create();
+//    (void) mnttab_file_create();
 #endif
 
     //printf("ZFS ioctl setup. major %d, bmajor %d, dev %d\n",
@@ -6135,8 +6135,8 @@ zfs_ioctl_init(void)
     k_maczfs_debug_stalk = 0;
 
     //dev = zfs_major << 24;
-    zfs_devnode = devfs_make_node(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
-                                  0666, "zfs", 0);
+//    zfs_devnode = devfs_make_node(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
+//                                  0666, "zfs", 0);
 
     spa_init(FREAD | FWRITE);
     zvol_init(); // Removd in 10a286

@@ -28,6 +28,8 @@ class net_lundman_zfs_zvol : public IOService
   virtual IOByteCount performWrite (IOMemoryDescriptor* srcDesc,
                                     UInt64 byteOffset,
                                     UInt64 byteCount);
+  virtual bool        zfs_check_mountroot();
+  virtual bool        zfs_mountroot( /*vfs_t *vfsp, enum whymountroot why*/ );
 
 };
 

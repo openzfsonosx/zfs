@@ -2685,7 +2685,7 @@ zvol_create_minors(const char *name)
         return (0);
 
     if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
-        printf("ZFS WARNING: Unable to put hold on %s (error=%d).\n",
+        printf("ZFS WARNING 1: Unable to put hold on %s (error=%d).\n",
                name, error);
         return (error);
     }
@@ -2733,7 +2733,7 @@ zvol_create_minors(const char *name)
         dmu_objset_rele(os, FTAG);
         (void)zvol_create_minors(osname);
         if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
-            printf("ZFS WARNING: Unable to put hold on %s (error=%d).\n",
+            printf("ZFS WARNING 2: Unable to put hold on %s (error=%d).\n",
                    name, error);
             kmem_free(osname, MAXPATHLEN);
             return (error);
