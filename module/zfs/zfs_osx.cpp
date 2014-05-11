@@ -17,6 +17,14 @@
 
 #include <sys/zvolIO.h>
 
+#define ZFS_DEBUG_STR  "(beta)"
+
+#ifdef DEBUG
+#define	ZFS_DEBUG_STR	" (DEBUG mode)"
+#else
+#define	ZFS_DEBUG_STR	""
+#endif
+
 /*
  *  ZFS internal
  */
@@ -264,10 +272,11 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 	 */
 	zfs_znode_init();
 
-	/*
-	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
-	 */
-	zfs_ioctl_init();
+    /*
+     *  Initialize spa, dmu, arc, prep zvol
+     */
+    spa_init(FREAD | FWRITE);
+    zvol_init(); // Removd in 10a286
 
 	///sysctl_register_oid(&sysctl__debug_maczfs);
 	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
@@ -279,7 +288,6 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
      * speaking not used by SPL, but by ZFS. ZFS should really start it?
      */
     system_taskq_init();
-
 
     /*
      * hostid is left as 0 on OSX, and left to be set if developers wish to
@@ -312,6 +320,11 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
       }
     }
     
+    printf("ZFS: Loaded module v%s-%s%s, "
+           "ZFS pool version %s, ZFS filesystem version %s\n",
+           ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
+           SPA_VERSION_STRING, ZPL_VERSION_STRING);
+    
     /* Check if ZFS should try to mount root */
     IOLog("Checking if root pool should be imported...");
     if( ( res && zfs_check_mountroot() ) == true ) {
@@ -320,6 +333,13 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
         res = zfs_mountroot();
     }
 
+	/*
+	 * Initialize /dev/zfs,
+     *      this used to call spa_init->dmu_init->arc_init-> etc
+     *      needed to be moved after mountroot
+	 */
+	zfs_ioctl_init();
+    
     return res;
 }
 
