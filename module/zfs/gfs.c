@@ -447,7 +447,9 @@ gfs_lookup_dot(struct vnode **vpp, struct vnode *dvp, struct vnode *pvp, const c
 		return (0);
 	} else if (strcmp(nm, "..") == 0) {
 		if (pvp == NULL) {
+#if 0 //fixme
 			ASSERT(vnode_isroot(dvp));
+#endif
 			VN_HOLD(dvp);
 			*vpp = dvp;
 		} else {
