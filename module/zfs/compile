@@ -6,7 +6,7 @@ ABS_PATH="$(pwd)"
 cd - >/dev/null
 echo $ABS_PATH
 
-CFLAGS="-Wall -nostdinc -mkernel -D_KERNEL -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT -I$ABS_PATH/include -I$ABS_PATH/../spl/include -I/System/Library/Frameworks/Kernel.framework/PrivateHeaders -I/System/Library/Frameworks/Kernel.framework/Headers -DZFS_META_VERSION=\"0.6.0\" -DZFS_META_RELEASE=\"rc12\" -DZFS_DEBUG_STR=\"alpha\" -DHAVE_SPL=1 -DNAMEDSTREAMS=1"
+CFLAGS="-Wall -nostdinc -mkernel -D_KERNEL -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT -I$ABS_PATH/include -I$ABS_PATH/../spl/include -I/System/Library/Frameworks/Kernel.framework/PrivateHeaders -I/System/Library/Frameworks/Kernel.framework/Headers -DZFS_META_VERSION=\"0.6.0\" -DZFS_META_RELEASE=\"rc12\" -DHAVE_SPL=1 -DNAMEDSTREAMS=1"
 
 # Two ## means the source file still needs to be ported.
 #gcc $CFLAGS -o zvol.o -c zvol.c
