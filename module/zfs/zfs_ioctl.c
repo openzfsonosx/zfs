@@ -5108,8 +5108,7 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 	offset_t off;
 	char *fromname = NULL;
 	int fd;
-    struct vnode *vp;
-    uint32_t vipd;
+    file_t *fp;
 
 	error = nvlist_lookup_int32(innvl, "fd", &fd);
 	if (error != 0)
@@ -5117,17 +5116,21 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 
 	(void) nvlist_lookup_string(innvl, "fromsnap", &fromname);
 
-    if (file_vnode_withvid(fd, &vp, &vipd))
+    fp = getf(fd);
+    if (!fp)
 		return (SET_ERROR(EBADF));
 
-	//off = fp->f_offset;
-	error = dmu_send(snapname, fromname, fd, vp, &off);
+#ifndef __APPLE__
+	off = fp->f_offset;
+#endif
+	error = dmu_send(snapname, fromname, fd, fp->f_vnode, &off);
 
-	//if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
-	//	fp->f_offset = off;
+#ifndef __APPLE__
+	if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
+		fp->f_offset = off;
+#endif
 
-    //	releasef(fd);
-    file_drop(fd);
+    releasef(fd);
 	return (error);
 }
 
