@@ -14,7 +14,6 @@ $(launchdscript_SCRIPTS):
 		-e 's,@sbindir\@,$(sbindir),g' \
 		-e 's,@sysconfdir\@,$(sysconfdir),g' \
 		-e 's,@launchdscriptdir\@,$(launchdscriptdir),g' \
-		-e 's,@reversedns\@,$(ZFS_INIT_LAUNCHD_REVERSE_DNS),g' \
 		'$@.in' >'$@'
 
 distclean-local::
