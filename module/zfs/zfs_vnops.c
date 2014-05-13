@@ -959,7 +959,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (xuio && abuf == NULL) {
             dprintf("  xuio  \n");
+#if 0 //fixme
 			ASSERT(i_iov < iovcnt);
+#endif
 			aiov = &iovp[i_iov];
 			abuf = dmu_xuio_arcbuf(xuio, i_iov);
 			dmu_xuio_clear(xuio, i_iov);

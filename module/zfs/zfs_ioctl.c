@@ -89,9 +89,6 @@
 #include "zfs_deleg.h"
 #include "zfs_comutil.h"
 
-#define ZFS_DEBUG_STR  "(beta)"
-
-
 #ifdef __APPLE__
 #define MNTTAB "/etc/mtab"
 
