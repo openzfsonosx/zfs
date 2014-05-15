@@ -384,16 +384,6 @@ int pn_free(pathname_t *p)
     return ENOTSUP;
 }
 
-void *tsd_get(unsigned int key)
-{
-    return 0;
-}
-
-int
-tsd_set(uint_t key, void *value)
-{
-    return 1;
-}
 
 int
 zfs_access_native_mode(struct vnode *vp, int *mode, cred_t *cr,

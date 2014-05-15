@@ -236,7 +236,7 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 	/*
 	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
 	 */
-	zfs_ioctl_init();
+	zfs_ioctl_osx_init();
 
 	///sysctl_register_oid(&sysctl__debug_maczfs);
 	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
@@ -305,7 +305,7 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 
     system_taskq_fini();
 
-    zfs_ioctl_fini();
+    zfs_ioctl_osx_fini();
     zvol_fini();
     zfs_vfsops_fini();
     zfs_znode_fini();

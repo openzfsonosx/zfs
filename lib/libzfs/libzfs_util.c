@@ -1195,6 +1195,7 @@ zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 	//zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
 	int original_errno = errno;
 	errno = 0;
+	fprintf(stderr, "sending ioctl %x\r\n", request - ZFS_IOC_FIRST);
 	error = ioctl(hdl->libzfs_fd, request, zc);
 
 	/* normal path, zfsdev_ioctl returns the real error in zc_ioc_error */
