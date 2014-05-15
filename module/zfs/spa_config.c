@@ -84,8 +84,6 @@ spa_config_load(void)
 	struct _buf *file;
 	uint64_t fsize;
 
-	printf("spa_config_load\n");
-
 	if (zfs_autoimport_disable)
 		return;
 

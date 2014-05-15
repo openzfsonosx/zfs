@@ -143,7 +143,6 @@ lzc_ioctl(zfs_ioc_t ioc, const char *name,
 			goto out;
 		}
 	}
-	fprintf(stderr, "lcz_ioctl %x\r\n", ioc);
 
 	while ((ioctl_err = ioctl(g_fd, ioc, &zc)) != 0 || zc.zc_ioc_error != 0) {
 		if (zc.zc_ioc_error != 0) {

@@ -1422,8 +1422,6 @@ zfs_ioc_pool_import(zfs_cmd_t *zc)
 	uint64_t guid;
 	int error;
 
-	printf("zfs_ioc_pool_import\n");
-
 	if ((error = get_nvlist(zc->zc_nvlist_conf, zc->zc_nvlist_conf_size,
 							zc->zc_iflags, &config)) != 0)
 		return (error);
@@ -1504,8 +1502,6 @@ zfs_ioc_pool_stats(zfs_cmd_t *zc)
 
 	error = spa_get_stats(zc->zc_name, &config, zc->zc_value,
 						  sizeof (zc->zc_value));
-	printf("get_stats %d\n", error);
-
 	if (config != NULL) {
 		ret = put_nvlist(zc, config);
 		nvlist_free(config);
@@ -3291,7 +3287,7 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 	poolname = tsd_get(zfs_allow_log_key);
 	(void) tsd_set(zfs_allow_log_key, NULL);
 	if (!poolname) {
-		printf("Would panic here as poolname is NULL\n");
+		dprintf("Would panic here as poolname is NULL\n");
 		return 0;
 	}
 	error = spa_open(poolname, &spa, FTAG);
@@ -5727,7 +5723,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
         return (zvol_ioctl(dev, cmd, arg, 0, NULL, NULL));
 
 	vecnum = cmd - ZFS_IOC_FIRST;
-	printf("[zfs] got ioctl %lx (%lx)\n", vecnum, vecnum);
+	dprintf("[zfs] got ioctl %lx (%lx)\n", vecnum, vecnum);
 
 	if (vecnum >= sizeof (zfs_ioc_vec) / sizeof (zfs_ioc_vec[0])) {
 		return (-SET_ERROR(EINVAL));
@@ -5747,23 +5743,18 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 	flag |= FKIOCTL;
 #endif
 
-	printf("copy in %p\n", zc);
 	error = ddi_copyin((void *)arg, zc, sizeof (zfs_cmd_t), flag);
 	if (error != 0) {
-		printf("copyin error %d\n", error);
 		error = SET_ERROR(EFAULT);
 		goto out;
 	}
 
 	zc->zc_dev = dev;
 
-	printf("copyin ok\n");
-
 	zc->zc_iflags = flag & FKIOCTL;
     if (zc->zc_nvlist_src_size != 0) {
         error = get_nvlist(zc->zc_nvlist_src, zc->zc_nvlist_src_size,
                            zc->zc_iflags, &innvl);
-		printf("get_nvlist size %d ret %d\n", zc->zc_nvlist_src_size, error);
         if (error != 0) {
 			goto out;
             zc->zc_ioc_error = EINVAL;
@@ -5798,21 +5789,23 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 		break;
 	}
 
+#ifdef __APPLE__
+	if (error == 0)
+		error = vec->zvec_secpolicy(zc, innvl, CRED());
+#else
 	if (error == 0 && !(flag & FKIOCTL))
 		error = vec->zvec_secpolicy(zc, innvl, CRED());
+#endif
 
-	printf("ioctl secpolicy %d\n", error);
+	dprintf("ioctl secpolicy %d\n", error);
 
 	if (error != 0)
 		goto out;
 
-	printf("zc_name: '%s'\n", zc->zc_name);
 	/* legacy ioctls can modify zc_name */
 	len = strcspn(zc->zc_name, "/@#") + 1;
 	saved_poolname = kmem_alloc(len, KM_SLEEP);
 	(void) strlcpy(saved_poolname, zc->zc_name, len);
-
-	printf("zc_namex: '%s'\n", zc->zc_name);
 
 	if (vec->zvec_func != NULL) {
 		nvlist_t *outnvl;
@@ -5821,7 +5814,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 		nvlist_t *lognv = NULL;
 
 		ASSERT(vec->zvec_legacy_func == NULL);
-		printf("new-style '%s'\n", vec->zvec_name);
+		dprintf("new-style '%s'\n", vec->zvec_name);
 		/*
 		 * Add the innvl to the lognv before calling the func,
 		 * in case the func changes the innvl.
@@ -5860,45 +5853,50 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 				puterror = put_nvlist(zc, outnvl);
 		}
 
-		printf("puterror %d\n", puterror);
-
 		if (puterror != 0)
 			error = puterror;
 
 		nvlist_free(outnvl);
 	} else {
-		printf("legacy: %p\n",vec->zvec_legacy_func );
+		dprintf("legacy: %p\n",vec->zvec_legacy_func );
 		error = vec->zvec_legacy_func(zc);
 	}
 
  out:
-	printf("out with %d\n", error);
 
 	nvlist_free(innvl);
 	rc = ddi_copyout(zc, (void *)arg, sizeof (zfs_cmd_t), flag);
-	if (error == 0 && rc != 0)
+	if (error == 0 && rc != 0) {
+		dprintf("ddi_copyout fault\n");
 		error = SET_ERROR(EFAULT);
+	}
 	if (error == 0 && vec->zvec_allow_log) {
-		printf("allow_log set, saving poolname\n");
 		char *s = tsd_get(zfs_allow_log_key);
 		if (s != NULL)
 			strfree(s);
 		(void) tsd_set(zfs_allow_log_key, saved_poolname);
 	} else {
-		printf("allow_log not set, releasing poolname\n");
 		if (saved_poolname != NULL)
 			kmem_free(saved_poolname, len);
 	}
 
 	kmem_free(zc, sizeof (zfs_cmd_t));
+	zc = NULL;
 
+#ifdef __APPLE__
 	/*
 	 * Return the real error in zc_ioc_error so the ioctl call always
 	 * does a copyout of the zc data
 	 */
-	printf("[zfs] ioctl done %d\n", error);
-	//delay(hz);
-	zc->zc_ioc_error = error;
+	/*
+	 * This is a bit naughty, we need to set the return error code, but
+	 * we have already called "ddi_copyout". But we also know that in Darwin
+	 * ioctl does the actual copyout, and we use FKIOCTL here. So we can
+	 * change it directly.
+	 */
+	((zfs_cmd_t *)arg)->zc_ioc_error = error;
+#endif
+	dprintf("ioctl out result %d\n", error);
 	return (0);
 }
 

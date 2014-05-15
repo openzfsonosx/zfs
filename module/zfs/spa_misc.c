@@ -1622,7 +1622,6 @@ spa_busy(void)
 void
 spa_init(int mode)
 {
-	printf("spa_init\n");
 	mutex_init(&spa_namespace_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa_spare_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa_l2cache_lock, NULL, MUTEX_DEFAULT, NULL);
@@ -1675,8 +1674,6 @@ spa_init(int mode)
 void
 spa_fini(void)
 {
-	printf("spa_fini\n");
-
 	l2arc_stop();
 
 	spa_evict_all();
