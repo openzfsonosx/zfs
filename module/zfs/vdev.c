@@ -574,6 +574,10 @@ vdev_free(vdev_t *vd)
 {
 	int c, t;
 	spa_t *spa = vd->vdev_spa;
+    
+#ifdef _KERNEL
+    vdev_iokit_log_ptr("ZFS: vdev_free: Freeing vd", vd);
+#endif
 
 	/*
 	 * vdev_free() implies closing the vdev first.  This is simpler than

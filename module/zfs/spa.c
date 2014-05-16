@@ -1755,6 +1755,10 @@ spa_config_valid(spa_t *spa, nvlist_t *config)
 			vdev_reopen(tvd);
 		}
 	}
+    
+#ifdef _KERNEL
+    vdev_iokit_log_ptr("ZFS: spa_config_valid: Freeing mrvd", mrvd);
+#endif
 	vdev_free(mrvd);
 	spa_config_exit(spa, SCL_ALL, FTAG);
 
@@ -2221,11 +2225,12 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	 * existing pool, the labels haven't yet been updated so we skip
 	 * validation for now.
 	 */
+printf("ZFS: spa_load_impl: vdev_validate(rvd, mosconfig) with (type) = (%p, %d) (%d)\n", rvd, mosconfig, type);
 	if (type != SPA_IMPORT_ASSEMBLE) {
 		spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
 		error = vdev_validate(rvd, mosconfig);
 		spa_config_exit(spa, SCL_ALL, FTAG);
-
+printf("ZFS: spa_load_impl: vdev_validate result: (error, rvd->vdev_state) = (%d, %llu)\n", error, rvd->vdev_state);
 		if (error != 0)
 			return (error);
 
@@ -2243,6 +2248,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	 */
 	if (ub->ub_txg == 0) {
 		nvlist_free(label);
+printf("ZFS: spa_load_impl: vdev_uberblock_load result: (ub, ub->ub_txg) = (%p, %llu)\n", ub, ub->ub_txg);
 		return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, ENXIO));
 	}
 
@@ -2264,6 +2270,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		if (label == NULL || nvlist_lookup_nvlist(label,
 		    ZPOOL_CONFIG_FEATURES_FOR_READ, &features) != 0) {
 			nvlist_free(label);
+printf("ZFS: spa_load_impl: ZPOOL_CONFIG_FEATURES_FOR_READ result: (label, features) = (%p, %p)\n", label, features);
 			return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA,
 			    ENXIO));
 		}
@@ -2319,8 +2326,11 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	 */
 	if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_VDEV_CHILDREN,
 	    &children) != 0 && mosconfig && type != SPA_IMPORT_ASSEMBLE &&
-	    rvd->vdev_guid_sum != ub->ub_guid_sum)
+	    rvd->vdev_guid_sum != ub->ub_guid_sum) {
+printf("ZFS: spa_load_impl: VDEV_AUX_BAD_GUID_SUM: (children, mosconfig, type, rvd->vdev_guid_sum, ub->ub_guid_sum) = (%llu, %d, %d, %llu, %llu)\n",
+       children, mosconfig, type, rvd->vdev_guid_sum, ub->ub_guid_sum);
 		return (spa_vdev_err(rvd, VDEV_AUX_BAD_GUID_SUM, ENXIO));
+    }
 
 	if (type != SPA_IMPORT_ASSEMBLE && spa->spa_config_splitting) {
 		spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
@@ -2643,6 +2653,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 			return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, EIO));
 
 		if (!spa_config_valid(spa, nvconfig)) {
+printf("ZFS: spa_load_impl: spa_config_valid result: fail (spa, nvconfig) = (%p, %p)\n", spa, nvconfig);
 			nvlist_free(nvconfig);
 			return (spa_vdev_err(rvd, VDEV_AUX_BAD_GUID_SUM,
 			    ENXIO));
@@ -2654,10 +2665,13 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		 * root vdev.  If it can't be opened, it indicates one or
 		 * more toplevel vdevs are faulted.
 		 */
-		if (rvd->vdev_state <= VDEV_STATE_CANT_OPEN)
+		if (rvd->vdev_state <= VDEV_STATE_CANT_OPEN) {
+printf("ZFS: spa_load_impl: toplevel vdev fault: (rvd->vdev_state) = (%llu)\n", rvd->vdev_state);
 			return (SET_ERROR(ENXIO));
+        }
 
 		if (spa_check_logs(spa)) {
+printf("ZFS: spa_load_impl: VDEV_AUX_BAD_LOG: (spa) = (%p)\n", spa);
 			*ereport = FM_EREPORT_ZFS_LOG_REPLAY;
 			return (spa_vdev_err(rvd, VDEV_AUX_BAD_LOG, ENXIO));
 		}
@@ -2679,9 +2693,11 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	 * to start pushing transactions.
 	 */
 	if (state != SPA_LOAD_TRYIMPORT) {
-		if ((error = spa_load_verify(spa)))
+		if ((error = spa_load_verify(spa))) {
+printf("ZFS: spa_load_impl: spa_load_verify result: (spa, error) = (%p, %d)\n", spa, error);
 			return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA,
 			    error));
+        }
 	}
 
 	if (spa_writeable(spa) && (state == SPA_LOAD_RECOVER ||
@@ -3333,6 +3349,10 @@ spa_validate_aux_devs(spa_t *spa, nvlist_t *nvroot, uint64_t crtxg, int mode,
 			goto out;
 
 		if (!vd->vdev_ops->vdev_op_leaf) {
+            
+#ifdef _KERNEL
+            vdev_iokit_log_ptr("ZFS: spa_validate_aux_devs: Freeing vd", vd);
+#endif
 			vdev_free(vd);
 			error = SET_ERROR(EINVAL);
 			goto out;
@@ -3357,7 +3377,9 @@ spa_validate_aux_devs(spa_t *spa, nvlist_t *nvroot, uint64_t crtxg, int mode,
 			VERIFY(nvlist_add_uint64(dev[i], ZPOOL_CONFIG_GUID,
 			    vd->vdev_guid) == 0);
 		}
-
+#ifdef _KERNEL
+        vdev_iokit_log_ptr("ZFS: spa_validate_aux_devs: Freeing vd", vd);
+#endif
 		vdev_free(vd);
 
 		if (error &&
@@ -3700,20 +3722,26 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
  * during the system boot up time.
  */
 
-#if 0
+//extern int vdev_disk_read_rootlabel(char *, char *, nvlist_t **);
 
-extern int vdev_disk_read_rootlabel(char *, char *, nvlist_t **);
-
-static nvlist_t *
-spa_generate_rootconf(char *devpath, char *devid, uint64_t *guid)
+extern nvlist_t *
+spa_generate_rootconf(void *vdev_tsd, uint64_t *guid)
+/*(char *devpath, char *devid, uint64_t *guid)*/
 {
 	nvlist_t *config;
 	nvlist_t *nvtop, *nvroot;
 	uint64_t pgid;
+    vdev_iokit_t * dvd = (vdev_iokit_t *)vdev_tsd;
 
-	if (vdev_disk_read_rootlabel(devpath, devid, &config) != 0)
+    if(!dvd)
+        return 0;
+    /*
+	if (vdev_iokit_read_rootlabel(devpath, devid, &config) != 0)
 		return (NULL);
-
+     */
+    if (vdev_iokit_read_label(dvd, &config) != 0)
+		return 0;
+    
 	/*
 	 * Add this top-level vdev to the child array.
 	 */
@@ -3760,7 +3788,7 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 		nvlist_t *label;
 		uint64_t label_txg;
 
-		if (vdev_disk_read_rootlabel(vd->vdev_physpath, vd->vdev_devid,
+		if (vdev_iokit_read_rootlabel(vd->vdev_physpath, vd->vdev_devid,
 		    &label) != 0)
 			return;
 
@@ -3778,8 +3806,6 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 	}
 }
 
-#endif
-
 /*
  * Import a root pool.
  *
@@ -3793,10 +3819,12 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
  *	"/pci@1f,0/ide@d/disk@0,0:a"
  */
 int
-spa_import_rootpool(char *devpath, char *devid)
+spa_import_rootpool(void *vdev_tsd)
+/*(char *devpath, char *devid)*/
 {
+    vdev_iokit_t *dvd =     (vdev_iokit_t *)vdev_tsd;
 	spa_t *spa;
-	vdev_t *rvd, *bvd /*, *avd = NULL*/;
+	vdev_t *rvd, *bvd, *avd = NULL;
 	nvlist_t *config = NULL, *nvtop;
 	uint64_t guid = 0, txg;
 	char *pname;
@@ -3806,6 +3834,8 @@ spa_import_rootpool(char *devpath, char *devid)
 	 * Read the label from the boot device and generate a configuration.
 	 */
 	//config = spa_generate_rootconf(devpath, devid, &guid);
+    config = spa_generate_rootconf(dvd, &guid);
+    
 #if defined(_OBP) && defined(_KERNEL)
 	if (config == NULL) {
 		if (strstr(devpath, "/iscsi/ssd") != NULL) {
@@ -3815,9 +3845,14 @@ spa_import_rootpool(char *devpath, char *devid)
 		}
 	}
 #endif
+    
 	if (config == NULL) {
+        /*
 		cmn_err(CE_NOTE, "Cannot read the pool label from '%s'",
 		    devpath);
+         */
+        cmn_err(CE_NOTE, "Cannot read the pool label from '%p'",
+                dvd);
 		return (SET_ERROR(EIO));
 	}
 
@@ -3864,11 +3899,10 @@ spa_import_rootpool(char *devpath, char *devid)
 		error = SET_ERROR(ENOENT);
 		goto out;
 	}
-
+    
 	/*
 	 * Determine if there is a better boot device.
 	 */
-#if 0
 	avd = bvd;
 	spa_alt_rootvdev(rvd, &avd, &txg);
 	if (avd != bvd) {
@@ -3877,8 +3911,7 @@ spa_import_rootpool(char *devpath, char *devid)
 		error = SET_ERROR(EINVAL);
 		goto out;
 	}
-#endif
-
+    
 	/*
 	 * If the boot device is part of a spare vdev then ensure that
 	 * we're booting off the active spare.
@@ -3892,14 +3925,24 @@ spa_import_rootpool(char *devpath, char *devid)
 		error = SET_ERROR(EINVAL);
 		goto out;
 	}
-
+    
+//    if (spa_state(spa) > POOL_STATE_ACTIVE)
+//        spa_activate(spa, spa_mode(spa));
+    
 	error = 0;
 out:
 	spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
-	vdev_free(rvd);
+    if (rvd) {
+        vdev_free(rvd);
+        rvd = 0;
+    }
 	spa_config_exit(spa, SCL_ALL, FTAG);
 	mutex_exit(&spa_namespace_lock);
 
+#ifdef _KERNEL
+	zvol_create_minors(pname);
+#endif
+    
 	nvlist_free(config);
 	return (error);
 }
@@ -3981,6 +4024,8 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 
 	error = spa_load_best(spa, state, B_TRUE, policy.zrp_txg,
 	    policy.zrp_request);
+    
+printf("spa_import: spa_load_best (%d)\n", error);
 
 	/*
 	 * Propagate anything learned while loading the pool and pass it
@@ -4020,6 +4065,7 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 
 	if (error != 0 || (props && spa_writeable(spa) &&
 	    (error = spa_prop_set(spa, props)))) {
+printf("spa_import: validation failed? (%d)\n", error);
 		spa_unload(spa);
 		spa_deactivate(spa);
 		spa_remove(spa);
@@ -4400,6 +4446,9 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 		 */
 		for (id = 0; id < rvd->vdev_children; id++) {
 			if (rvd->vdev_child[id]->vdev_ishole) {
+#ifdef _KERNEL
+                vdev_iokit_log_num("ZFS: vdev_free: rvd child is hole", id);
+#endif
 				vdev_free(rvd->vdev_child[id]);
 				break;
 			}

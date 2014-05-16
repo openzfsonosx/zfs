@@ -5,6 +5,8 @@
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>
+#include <IOKit/IODeviceTreeSupport.h>
+#include <IOKit/IOPlatformExpert.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
 
 #include <libkern/version.h>
@@ -44,6 +46,7 @@ extern "C" {
 #include <sys/nvpair.h>
 #include <sys/vdev.h>
 #include <sys/vdev_impl.h>
+#include <sys/vdev_iokit.h>
 #include <sys/spa_impl.h>
 //#include <sys/spa_config.h>
 #include <sys/spa_boot.h>
@@ -267,6 +270,7 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 
 
     IOLog("ZFS: Loading module ... \n");
+
 	/*
 	 * Initialize znode cache, vnode ops, etc...
 	 */
@@ -275,8 +279,11 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
     /*
      *  Initialize spa, dmu, arc, prep zvol
      */
-    spa_init(FREAD | FWRITE);
-    zvol_init(); // Removd in 10a286
+    /* XXX TO DO - check spa / zvol status, not ioctl */
+	if (!(spa_mode_global & FWRITE)) {
+        spa_init(FREAD | FWRITE);
+        zvol_init(); // Removd in 10a286
+    }
 
 	///sysctl_register_oid(&sysctl__debug_maczfs);
 	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
@@ -320,6 +327,13 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
       }
     }
     
+	/*
+	 * Initialize /dev/zfs,
+     *      this used to call spa_init (then ->dmu_init->arc_init-> etc)
+     *      needed to be moved after mountroot
+	 */   /*Testing */
+	zfs_ioctl_init();
+    
     printf("ZFS: Loaded module v%s-%s%s, "
            "ZFS pool version %s, ZFS filesystem version %s\n",
            ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
@@ -328,17 +342,13 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
     /* Check if ZFS should try to mount root */
     IOLog("Checking if root pool should be imported...");
     if( ( res && zfs_check_mountroot() ) == true ) {
-        IOLog("Trying to import root pool...");
+        IOLog("Artificial delay for 2 seconds...\n");
+        IOSleep(2000);
+        
+        IOLog("Trying to import root pool...\n");
         /* Looks good, give it a go */
         res = zfs_mountroot();
     }
-
-	/*
-	 * Initialize /dev/zfs,
-     *      this used to call spa_init->dmu_init->arc_init-> etc
-     *      needed to be moved after mountroot
-	 */
-	zfs_ioctl_init();
     
     return res;
 }
@@ -384,43 +394,41 @@ bool net_lundman_zfs_zvol::zfs_check_mountroot()
      * and/or check if root is mounted (IORegistry?)
      * Use PE Boot Args to determine the root pool name.
      */
-    const int arglen = 256;
-    char zfs_boot[arglen];
+    char zfs_boot[MAXPATHLEN];
     bool result = false;
     
-    PE_parse_boot_argn( "zfs_boot", &zfs_boot, sizeof(zfs_boot) );
+    result =    PE_parse_boot_argn( "zfs_boot", &zfs_boot, sizeof(zfs_boot) );
     //IOLog( "Raw zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
     
-    result =    ( strlen(zfs_boot) > 0 );
+    result =    (result && zfs_boot && strlen(zfs_boot) > 0);
     
     if ( !result ) {
-        PE_parse_boot_argn( "rd", &zfs_boot, sizeof(zfs_boot) );
-        result =    (strlen(zfs_boot) > 0 && strncmp(zfs_boot,"zfs:",4));
+        result =    PE_parse_boot_argn( "rd", &zfs_boot, sizeof(zfs_boot) );
+        result =    (result && zfs_boot && strlen(zfs_boot) > 0 && strncmp(zfs_boot,"zfs:",4));
         //IOLog( "Raw rd: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
     }
     if ( !result ) {
-        PE_parse_boot_argn( "rootdev", &zfs_boot, sizeof(zfs_boot) );
-        result =    (strlen(zfs_boot) > 0 && strncmp(zfs_boot,"zfs:",4));
+        result =    PE_parse_boot_argn( "rootdev", &zfs_boot, sizeof(zfs_boot) );
+        result =    (result && zfs_boot && strlen(zfs_boot) > 0 && strncmp(zfs_boot,"zfs:",4));
         //IOLog( "Raw rootdev: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
     }
     
     //IOSleep( error_delay );
     
     if ( result ) {
-        //        IOLog( "Got zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
+        IOLog( "Got zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
     } else {
-        //        IOLog( "No zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
+        IOLog( "No zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
     }
     
     return result;
     
 }
 
-#define error_delay 1000
-#define info_delay 50
+#define error_delay 500
+#define info_delay 10
 bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why*/ )
 {
-    
     /*              EDITORIAL / README
      *
      * The filesystem that we mount as root is defined in the
@@ -449,7 +457,6 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
      *
      */
     
-    
     /*
      *           TO DO -- TO DO -- TO DO
      *
@@ -475,43 +482,41 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
      * mount the bootfs dataset as a union mount on top
      * of a ramdisk if necessary.
      */
+
+    char * strptr =         0;
+    vdev_iokit_t * dvd =    0;
+    nvlist_t * newconfig =  0;
+    nvlist_t * config =     0;
+
+    char zfs_boot[MAXPATHLEN];
+    char zfs_pool[MAXPATHLEN];
+    char zfs_root[MAXPATHLEN];
     
-    IORegistryIterator * registryIterator = 0;
-    IORegistryEntry * currentEntry = 0;
-    OSOrderedSet * allDisks = 0;
+    int split =             0;
+    bool result =           false;
+    uint64_t guid =         0;
+    uint64_t importFlags =  0;
+
+//    char * diskPath =       0;
     
-    const int arglen = 256;
-    int split = 0;
-    UInt64 labelSize;
-    char * strptr = NULL;
-    
-    char zfs_boot[arglen];
-    char zfs_pool[arglen];
-    char zfs_root[arglen];
-    
-    char diskName[arglen];
-    char diskPath[arglen];
-    
-    bool result = false;
-    
-    PE_parse_boot_argn( "zfs_boot", &zfs_boot, sizeof(zfs_boot) );
+    PE_parse_boot_argn( "zfs_boot", zfs_boot, MAXPATHLEN );
     
     result =    ( strlen(zfs_boot) > 0 );
     
     if ( !result ) {
-        PE_parse_boot_argn( "rd", &zfs_boot, sizeof(zfs_boot) );
+        PE_parse_boot_argn( "rd", zfs_boot, sizeof(zfs_boot) );
         result =    (strlen(zfs_boot) > 0 && strncmp(zfs_boot,"zfs:",4));
         //        strptr = zfs_boot + 4;
     }
     if ( !result ) {
-        PE_parse_boot_argn( "rootdev", &zfs_boot, sizeof(zfs_boot) );
+        PE_parse_boot_argn( "rootdev", zfs_boot, sizeof(zfs_boot) );
         result =    (strlen(zfs_boot) > 0 && strncmp(zfs_boot,"zfs:",4));
         //        strptr = zfs_boot + 4;
     }
     
     if ( !result ) {
         IOLog( "Invalid zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-        IOSleep( error_delay );
+//        IOSleep( error_delay );
         return false;
     }
     
@@ -551,16 +556,16 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
     strptr = strchr( zfs_boot, '\0' );
     if ( strptr == NULL ) {
         IOLog( "Invalid zfs_boot: Not null terminated : [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-        IOSleep( error_delay );
+//        IOSleep( error_delay );
     }
     
     // Error checking, should be longer than 1 character
     if ( strlen(strptr) == 1 ) {
         IOLog( "Invalid zfs_boot: Only null character : [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-        IOSleep( error_delay );
+//        IOSleep( error_delay );
     } else {
         IOLog( "Valid zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-        IOSleep( info_delay );
+//        IOSleep( info_delay );
     }
     
     // Find first '/' in the boot arg
@@ -569,7 +574,7 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
     // If leading '/', return error
     if ( strptr == (zfs_boot) ) {
         IOLog( "Invalid zfs_boot: starts with '/' : [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-        IOSleep( error_delay );
+//        IOSleep( error_delay );
         strptr = NULL;
         return false;
     }
@@ -577,16 +582,15 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
     // If trailing '/', return error
     if ( strptr == ( zfs_boot + strlen(zfs_boot) - 1 )  ) {
         IOLog( "Invalid zfs_boot: ends with '/' : [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-        IOSleep( error_delay );
+//        IOSleep( error_delay );
         strptr = NULL;
         return false;
     }
     
-    split = strlen(zfs_boot) - strlen(strptr);
-    
     //    if ( split > 0 && split < strlen(zfs_boot) ) {
-    if ( strptr > zfs_boot ) {
+    if ( strptr && strptr > zfs_boot ) {
         //strpbrk(search.spa_name, "/@")
+        split = strlen(zfs_boot) - strlen(strptr);
         strlcpy( zfs_pool, zfs_boot, split+1 );
         strlcpy( zfs_root, strptr+1, strlen(strptr) );
     } else {
@@ -597,24 +601,23 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
     // Find last @ in zfs_root ds
     strptr = strrchr( zfs_root, '@' );
     
-    //    split = strlen(zfs_root) - strlen(strptr);
-    
     //    if ( split > 0 && split < strlen(zfs_boot) ) {
-    if ( strptr > zfs_root ) {
+    if (strptr && strptr > zfs_root) {
+        split = strlen(zfs_root) - strlen(strptr);
         strptr += split;
         strlcpy( zfs_root, strptr, split );
     }
     
     IOLog( "Will attempt to import zfs_pool: [%llu] %s\n", (uint64_t)strlen(zfs_pool), zfs_pool );
-    IOSleep( info_delay );
+//    IOSleep( info_delay );
     
-    result = ( strlen(zfs_pool) > 0 );
+    result = ( zfs_pool && strlen(zfs_pool) > 0 );
     
     /* Cleanup strptr */
     //bzero(strptr,strlen(strptr));
     
     IOLog( "Will attempt to mount zfs_root:  [%llu] %s\n", (uint64_t)strlen(zfs_root), zfs_root );
-    IOSleep( info_delay );
+//    IOSleep( info_delay );
     
     /*
      * We want to match on all disks or volumes that
@@ -622,642 +625,100 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
      *
      */
     
-    registryIterator = IORegistryIterator::iterateOver( IORegistryEntry::getPlane( kIODeviceTreePlane ),
-                                                       kIORegistryIterateRecursively );
-    
-    //IOLog( "may have iterator\n");
-    //IOSleep( info_delay );
-    
-    
-    if(!registryIterator) {
-        IOLog( "could not get ioregistry iterator from IOKit\n");
-        IOSleep( error_delay );
-        registryIterator = 0;
+    if(vdev_iokit_alloc(&dvd) != 0) {
+        IOLog( "Couldn't allocate dvd [%p]\n", dvd);
         return false;
     }
     
-    if(allDisks) {
-        /* clean up */
-        allDisks->release();
-        allDisks = 0;
+    if (vdev_iokit_find_pool(dvd, zfs_pool) != 0 ||
+        !dvd || !dvd->vd_iokit_hl) {
+        
+        IOLog( "Couldn't locate pool by name {%s}\n", zfs_pool);
+        vdev_iokit_free(&dvd);
+        return false;
+    }
+        
+    IOLog( "Found pool, importing: [%p]\n", dvd->vd_iokit_hl );
+    
+    if (spa_import_rootpool(dvd) != 0) {
+        IOLog( "Couldn't import pool by handle [%p]\n", dvd);
+        vdev_iokit_free(&dvd);
+        return false;
     }
     
-    //IOLog( "iterateAll\n");
-    //IOSleep( info_delay );
-    /* Grab all matching records */
-    allDisks = registryIterator->iterateAll();
+    vdev_iokit_free(&dvd);
+
+//    config = spa_generate_rootconf(dvd, &guid);
+//
+//    IOLog("zfs_mountroot: rootconf [%p]\n", config);
+//
+//    vdev_iokit_free(&dvd);
+//
+//    newconfig = spa_tryimport(config);
+//
+//    IOLog("zfs_mountroot: newconfig [%p]\n", newconfig);
+//
+//    importFlags =   ( ZFS_IMPORT_ONLY | ZFS_IMPORT_ANY_HOST |
+//                        ZFS_IMPORT_VERBATIM | ZFS_IMPORT_MISSING_LOG );
+//    importFlags =   ( ZFS_IMPORT_ONLY | ZFS_IMPORT_ANY_HOST | ZFS_IMPORT_MISSING_LOG );
+//
+//    
+//    if ( spa_import(zfs_pool, newconfig,  NULL, importFlags) == 0 ) {
+//        IOLog("zfs_mountroot: newconfig succeeded\n", newconfig);
+//    } else {
+//        IOLog("zfs_mountroot: newconfig failed\n", newconfig);
+//
+//        if ( spa_import(zfs_pool, config,  NULL, importFlags) == 0 ) {
+//            IOLog("zfs_mountroot: config succeeded\n", config);
+//        } else {
+//            IOLog("zfs_mountroot: config failed\n", config);
+//        }
+//    }
+//
+//    if ( newconfig ) {
+//        nvlist_free(newconfig);
+//    }
+//    
+//    if (config) {
+//        nvlist_free(config);
+//    }
+
     
-    //IOLog( "iterateAll done\n");
-    //IOSleep( info_delay );
+//    IOLog( "pool imported? [%p]\n", dvd->vd_iokit_hl );
+    IOLog( "pool imported?\n" );
     
-    if (registryIterator) {
-        /* clean up */
-        registryIterator->release();
-        registryIterator = 0;
+    spa_t * spa =   0;
+    mutex_enter(&spa_namespace_lock);
+    spa = spa_lookup(zfs_pool);
+    if (spa) {
+        IOLog( "spa [%p]\n", spa );
+        IOLog( "spa state (%llu)\n", (uint64_t)spa->spa_state );
+        if (spa_state(spa) > POOL_STATE_ACTIVE)
+            spa_open(zfs_pool, &spa, FTAG);
+    } else {
+        IOLog( "no spa\n" );
     }
+    spa = NULL;
+    mutex_exit(&spa_namespace_lock);
     
-    //IOLog( "while allDisks\n");
-    //IOSleep( info_delay );
+    IOLog( "zvol_create_minors in 5 sec\n" );
+    IOSleep(5000);
+    zvol_create_minors(zfs_boot);
     
-    /* Loop through all the items in allDisks */
-    while ( allDisks->getCount() > 0 ) {
-        
-        /*
-         * Grab the first object in the set.
-         * (could just as well be the last object)
-         */
-        currentEntry = static_cast<IORegistryEntry*>(allDisks->getFirstObject());
-        //IOLog( "Converted regEntry\n" );
-        //IOSleep( info_delay );
-        
-        if(!currentEntry) {
-            IOLog( "Error checking vdev disks\n" );
-            IOSleep( error_delay );
-            /* clean up */
-            currentEntry = 0;
-            allDisks->release();
-            allDisks = 0;
-            return false;
-        }
-        
-        /* Remove current item from ordered set */
-        allDisks->removeObject( currentEntry );
-        //IOLog( "Removed current from allDisks\n" );
-        //IOSleep( info_delay );
-        
-        if (!currentEntry) {
-            IOLog( "removeObject destroyed currentEntry?\n" );
-            IOSleep( error_delay );
-            /* clean up */
-            currentEntry = 0;
-            allDisks->release();
-            allDisks = 0;
-            return false;
-        }
-        
-        //IOLog("zfs_mountroot: Getting 'Leaf' property\n" );
-        //IOSleep( info_delay );
-        
-        /* Check 'Leaf' property */
-        OSObject * matchObject = currentEntry->getProperty(kIOMediaLeafKey);
-        //IOLog("zfs_mountroot: Got 'Leaf' matchObject '%p'\n", matchObject );
-        //IOSleep( info_delay );
-        OSBoolean * matchBool = OSDynamicCast( OSBoolean, matchObject );
-        //IOLog("zfs_mountroot: Got 'Leaf' matchBool '%p'\n", matchBool );
-        //IOSleep( info_delay );
-        
-        result =     ( matchBool && matchBool->getValue() == true );
-        
-        matchObject = 0;
-        matchBool = 0;
-        
-        if( matchBool ) {
-            IOLog("zfs_mountroot: 'Leaf' property is '%d'\n", matchBool->getValue() );
-            IOSleep( error_delay );
-        } else {
-            //IOLog("zfs_mountroot: matchBool is empty\n" );
-            //IOSleep( info_delay );
-        }
-        
-        if( result == false ) {
-            //IOLog("zfs_mountroot: Disk %s is not a leaf\n", diskName );
-            //IOSleep( info_delay );
-            currentEntry = 0;
-            continue;
-        }
-        
-        IOLog( "zfs_mountroot: Getting bsd name\n" );
-        IOSleep( info_delay );
-        OSObject * bsdnameosobj =    currentEntry->getProperty(kIOBSDNameKey,
-                                                               gIOServicePlane,
-                                                               kIORegistryIterateRecursively);
-        OSString * bsdnameosstr =    OSDynamicCast(OSString, bsdnameosobj);
-        IOLog("zfs_mountroot: bsd name is '%s'\n", bsdnameosstr->getCStringNoCopy());
-        IOSleep( info_delay );
-        
-        
-        IOLog( "zfs_mountroot: Getting device major number\n" );
-        IOSleep( info_delay );
-        OSObject * bsdmajorobj =    currentEntry->getProperty(kIOBSDMajorKey,
-                                                              gIOServicePlane,
-                                                              kIORegistryIterateRecursively);
-        OSNumber * bsdmajornumber =    OSDynamicCast(OSNumber, bsdmajorobj);
-        IOLog("zfs_mountroot: bsd major is '%llu'\n", bsdmajornumber->unsigned64BitValue());
-        IOSleep( info_delay );
-        
-        
-        IOLog( "zfs_mountroot: Getting device minor number\n" );
-        IOSleep( info_delay );
-        OSObject * bsdminorobj =    currentEntry->getProperty(kIOBSDMinorKey,
-                                                              gIOServicePlane,
-                                                              kIORegistryIterateRecursively);
-        OSNumber * bsdminornumber =    OSDynamicCast(OSNumber, bsdminorobj);
-        IOLog("zfs_mountroot: bsd minor is '%llu'\n", bsdminornumber->unsigned64BitValue());
-        IOSleep( info_delay );
-        
-        
-        
-        //        strlcpy( diskName, bsdnameosstr->getCStringNoCopy(), bsdnameosstr->getLength()-1 );
-        
-        
-        IOLog("zfs_mountroot: strncpy\n");
-        IOSleep( info_delay );
-        /* Start with '/dev' */
-        strncpy( diskPath, "/dev/\0", 6 );
-        IOLog("zfs_mountroot: strncpy done '%s'\n", diskPath);
-        IOSleep( info_delay );
-        
-        /*
-         * Add "r" before the BSD node name from the I/O Registry
-         * to specify the raw disk node. The raw disk node receives
-         * I/O requests directly and does not go through the
-         * buffer cache.
-         */
-        //        strlcat( diskPath, "r", 1 );
-        //strlen(diskName)
-        
-        strncat( diskPath, bsdnameosstr->getCStringNoCopy(), bsdnameosstr->getLength());
-        IOLog( "Got bsd path %s\n", diskPath );
-        IOSleep( info_delay );
-        
-        result = (strlen(diskPath) > 0);
-        
-        if(!result) {
-            IOLog( "Couldn't get BSD path for %s\n", diskName );
-            IOSleep( error_delay );
-            /* clean up */
-        }
-        
-        IOLog( "BSD path: %s\n", diskPath );
-        IOSleep( info_delay );
-        
-        /*
-         *
-         * Finally, check the disk for bootpool nvlist
-         *
-         * get vdev nvlist from disk
-         *
-         * import
-         *
-         * break from loop (and clean up) on success
-         *
-         */
-        
-        IOMedia * currentDisk = static_cast<IOMedia*>(currentEntry);
-        IOBufferMemoryDescriptor* buffer = 0;
-        nvlist_t * config = 0;
-        
-        nvlist_t *nvtop, *nvroot, **child;
-        uint64_t pgid, guid;
-        uint_t children;
-        spa_t * spa;
-        
-        char * pool_name = 0;
-        char * tmpPath = 0;
-        vdev_label_t * label;
-        uint64_t s, size;
-        int l;
-        int error = -1;
-        
-        //IOLog("zfs_mountroot: Checking if disk %s is formatted...\n", diskPath);
-        //IOSleep( info_delay );
-        
-        // Determine whether this media is formatted.
-        if ( currentDisk->isFormatted() != true ) {
-            IOLog("zfs_mountroot: Disk %s not formatted\n", diskPath);
-            IOSleep( error_delay );
-            result = false;
-            goto nextDisk;
-        }
-        
-        if ( currentDisk->isOpen(0) ) {
-            IOLog("zfs_mountroot: Disk %s is already open!\n", diskPath);
-            IOSleep( error_delay );
-        }
-        
-        //IOLog("zfs_mountroot: Opening handle for disk %s\n", diskPath);
-        //IOSleep( info_delay );
-        
-        //error = ((IOMedia*)currentEntry)->open(this,0,kIOStorageAccessReader);
-        result = currentDisk->open(this,0,kIOStorageAccessReader);
-        
-        /* If the disk could not be opened, skip to the next one */
-        if (!result) {
-            IOLog("zfs_mountroot: Disk %s couldn't be opened for reading\n", diskPath);
-            IOSleep( error_delay );
-            result = false;
-            goto nextDisk;
-        }
-        
-        //IOLog("zfs_mountroot: Getting size of disk %s\n", diskPath);
-        //IOSleep( info_delay );
-        
-        /* Get size */
-        s = currentDisk->getSize();
-        
-        //IOLog("zfs_mountroot: Got size %llu\n", s);
-        //IOSleep( info_delay );
-        
-        if( s <= 0 ) {
-            IOLog("zfs_mountroot: Couldn't get size of disk %s\n", diskPath);
-            IOSleep( error_delay );
-        }
-        
-        labelSize = VDEV_SKIP_SIZE + VDEV_PHYS_SIZE;
-        // Allocate a vdev_label_t-sized buffer to hold data read from disk.
-        //sizeof (vdev_label_t)
-        buffer = IOBufferMemoryDescriptor::withCapacity(labelSize, kIODirectionIn);
-        
-        if (buffer == NULL) {
-            IOLog("zfs_mountroot: Couldn't allocate a memory buffer\n");
-            IOSleep( error_delay );
-            result = false;
-            goto nextDisk;
-        }
-        
-        size = P2ALIGN_TYPED(s, sizeof (vdev_label_t), uint64_t);
-        label = (vdev_label_t*)kmem_alloc(sizeof (vdev_label_t), KM_SLEEP);
-        
-        config = NULL;
-        for (l = 0; l < VDEV_LABELS; l++) {
-            nvlist_t * bestconfig = 0;
-            uint64_t besttxg = 0;
-            uint64_t offset, state, txg = 0;
-            
-            /* read vdev label */
-            offset = vdev_label_offset(size, l, 0);
-            
-            //                if (vdev_disk_iokit_physio(vd_lh, (caddr_t)label,
-            //                                           VDEV_SKIP_SIZE + VDEV_PHYS_SIZE, offset, B_READ) != 0) {
-            
-            
-            
-            IOLog("zfs_mountroot: Reading from disk %s, %llu, %p, %llu\n", diskPath, offset, buffer, labelSize);
-            IOSleep( info_delay );
-            
-            if( currentDisk->read(this, offset, buffer, NULL,
-                                  (UInt64 *) NULL ) != kIOReturnSuccess ) {
-                IOLog("zfs_mountroot: Couldn't read from disk %s\n", diskPath);
-                IOSleep( info_delay );
-                (void) currentDisk->close(this,kIOStorageAccessReader);
-                nvlist_free(config);
-                config = NULL;
-                result = false;
-                goto nextDisk;
-                //continue;
-            }
-            
-            //IOLog("zfs_mountroot: Closing disk %s\n", diskPath);
-            //IOSleep( info_delay );
-            
-            (void) currentDisk->close(this,kIOStorageAccessReader);
-            
-            //IOLog("zfs_mountroot: Closed disk %s\n", diskPath);
-            //IOSleep( info_delay );
-            
-            if( buffer->readBytes(0,label,buffer->getLength()) == 0 ) {
-                IOLog("zfs_mountroot: Failed to copy from memory buffer to label_t\n");
-                IOSleep( info_delay );
-                result = false;
-                goto nextDisk;
-            }
-            
-            IOLog("zfs_mountroot: Copied buffer into label %p\n", label);
-            IOSleep( info_delay );
-            
-            if (nvlist_unpack(label->vl_vdev_phys.vp_nvlist,
-                              sizeof (label->vl_vdev_phys.vp_nvlist), &config, 0) != 0) {
-                IOLog("zfs_mountroot: Couldn't unpack nvlist label %p\n", label);
-                IOSleep( info_delay );
-                config = NULL;
-                continue;
-            }
-            IOLog("zfs_mountroot: Unpacked nvlist label %p\n", label);
-            IOSleep( info_delay );
-            
-            /* Check the pool_name to see if it matches zfs_boot */
-            if ((nvlist_lookup_string(config, ZPOOL_CONFIG_POOL_NAME,
-                                      &pool_name) != 0 || strncmp(pool_name,zfs_pool,strlen(zfs_pool)) ) ) {
-                IOLog("zfs_mountroot: Found config for %s, but it didn't match %s\n", pool_name, zfs_pool);
-                IOSleep( info_delay );
-                nvlist_free(config);
-                config = NULL;
-                continue;
-            }
-            IOLog("zfs_mountroot: Found config for %s at %s\n", pool_name, diskPath);
-            IOSleep( info_delay );
-            
-            if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_STATE,
-                                     &state) != 0 || state >= POOL_STATE_DESTROYED) {
-                IOLog("zfs_mountroot: Couldn't read pool %s state\n", pool_name);
-                IOSleep( info_delay );
-                nvlist_free(config);
-                config = NULL;
-                continue;
-            }
-            IOLog("zfs_mountroot: Pool state %s: %llu\n", pool_name, state);
-            IOSleep( info_delay );
-            
-            if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_TXG,
-                                     &txg) != 0 || txg == 0) {
-                IOLog("zfs_mountroot: Couldn't read pool %s txg number\n", pool_name);
-                IOSleep( info_delay );
-                nvlist_free(config);
-                config = NULL;
-                continue;
-            }
-            
-            IOLog("zfs_mountroot: Pool txg %s: %llu\n", pool_name, txg);
-            IOSleep( info_delay );
-            
-            if ( txg > besttxg ) {
-                nvlist_free(bestconfig);
-                besttxg = txg;
-                bestconfig = config;
-                
-                /* Found a valid config, keep looping */
-                break;
-            }
-        }
-        
-        IOLog("zfs_mountroot: Freeing label %p\n", label);
-        IOSleep( info_delay );
-        
-        kmem_free(label, sizeof (vdev_label_t));
-        
-        if (config == NULL) {
-            error = SET_ERROR(EIDRM);
-            IOLog("zfs_mountroot: Invalid config? %p\n", label);
-            IOSleep( error_delay );
-        }
-        
-        IOLog("zfs_mountroot: Adding root vdev to config %p\n", label);
-        IOSleep( info_delay );
-        
-        /*
-         * Add this top-level vdev to the child array.
-         */
-        VERIFY(nvlist_lookup_nvlist(config,
-                                    ZPOOL_CONFIG_VDEV_TREE, &nvtop) == 0);
-        VERIFY(nvlist_lookup_uint64(config,
-                                    ZPOOL_CONFIG_POOL_GUID, &pgid) == 0);
-        VERIFY(nvlist_lookup_uint64(config,
-                                    ZPOOL_CONFIG_GUID, &guid) == 0);
-        
-        IOLog("zfs_mountroot: Pool guids %s, %llu, %llu\n", pool_name, pgid, guid);
-        IOSleep( info_delay );
-        IOLog("zfs_mountroot: Adding top-level vdevs to root vdev %p\n", label);
-        IOSleep( info_delay );
-        
-        /*
-         * Put this pool's top-level vdevs into a root vdev.
-         */
-        /*  KM_PUSHPAGE instead of KM_SLEEP? */
-        
-        VERIFY(nvlist_alloc(&nvroot,
-                            NV_UNIQUE_NAME, KM_SLEEP) == 0);
-        //VDEV_TYPE_DISK
-        VERIFY(nvlist_add_string(nvroot,
-                                 ZPOOL_CONFIG_TYPE, VDEV_TYPE_ROOT) == 0);
-        VERIFY(nvlist_add_uint64(nvroot,
-                                 ZPOOL_CONFIG_ID, 0ULL) == 0);
-        
-        VERIFY(nvlist_add_uint64(nvroot,
-                                 ZPOOL_CONFIG_GUID, pgid) == 0);
-        /*
-         * The last thing to do is add the vdev guid -> path
-         * mappings so that we can fix up the configuration
-         * as necessary before doing the import.
-         */
-        /*
-         
-         pool_list_t *pl;
-         
-         if ( pl == NULL ) {
-         if( ( pl = kmem_alloc(sizeof(pool_list_t),KM_PUSHPAGE)) == NULL ) {
-         IOLog( "Couldn't allocate a pool_list_t for pool list" );
-         IOSleep(error_delay);
-         return false;
-         }
-         
-         pl.ne_guid = 0;
-         pl.ne_order = 0;
-         pl.ne_next = NULL;
-         pl.names = NULL;
-         }
-         
-         name_entry_t *ne;
-         
-         if ((ne = kmem_alloc(sizeof (name_entry_t),KM_PUSHPAGE)) == NULL) {
-         IOLog( "Couldn't allocate a name_entry for current vdev" );
-         IOSleep(error_delay);
-         }
-         
-         if ((ne->ne_name = zfs_strdup(hdl, path)) == NULL) {
-         free(ne);
-         return (-1);
-         }
-         
-         ne->ne_guid = guid;
-         ne->ne_order = order;
-         ne->ne_next = pl->names;
-         pl->names = ne;
-         */
-        
-        /*
-         //        if (nvlist_lookup_string(nv, ZPOOL_CONFIG_PATH, &path) != 0)
-         //            path = NULL;
-         //        if (nvlist_add_string(nv, ZPOOL_CONFIG_PATH, best->ne_name) != 0)
-         //            return (-1);
-         
-         //        VERIFY(nvlist_add_nvlist_array(nvroot,
-         //                                       ZPOOL_CONFIG_CHILDREN, &nvtop, 1) == 0);
-         
-         //      Adjust the vdev path accordingly
-         //        fix_paths(config, pl);
-         */
-        
-        if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_CHILDREN,
-                                       &child, &children) == 0) {
-            for (int c = 0; c < children; c++)
-            {
-                if (child[c] && nvlist_add_string(child[c],
-                                                  ZPOOL_CONFIG_PATH, diskPath) == 0) {
-                    if(nvlist_lookup_string(child[c], ZPOOL_CONFIG_PATH, &tmpPath) != 0) {
-                        IOLog("zfs_mountroot: failed to fix path for child vdev %p", child[c]);
-                        IOSleep(error_delay);
-                    }
-                }
-            }
-        } else {
-            if(nvlist_lookup_string(nvtop, ZPOOL_CONFIG_PATH, &tmpPath) != 0) {
-                IOLog("zfs_mountroot: tmpPath before is %s\n", tmpPath);
-                IOSleep(info_delay);
-            }
-            if(nvlist_lookup_string(nvtop, ZPOOL_CONFIG_PHYS_PATH, &tmpPath) != 0) {
-                IOLog("zfs_mountroot: physPath before is %s\n", tmpPath);
-                IOSleep(info_delay);
-            }
-            if (nvlist_add_string(nvtop, ZPOOL_CONFIG_PATH, diskPath) == 0) {
-                if(nvlist_lookup_string(nvtop, ZPOOL_CONFIG_PATH, &tmpPath) != 0) {
-                    IOLog("zfs_mountroot: failed to fix path for root vdev %s", diskPath);
-                    IOSleep(error_delay);
-                } else {
-                    IOLog("zfs_mountroot: tmpPath after is %s\n", tmpPath);
-                    IOSleep(info_delay);
-                }
-                if(nvlist_lookup_string(nvtop, ZPOOL_CONFIG_PHYS_PATH, &tmpPath) != 0) {
-                    IOLog("zfs_mountroot: physPath after is %s\n", tmpPath);
-                    IOSleep(info_delay);
-                }
-            }
-            
-            
-        }
-        
-        IOLog("zfs_mountroot: vdev guid %s, %llu, %llu\n", pool_name, pgid, guid);
-        IOSleep( info_delay );
-        
-        
-        VERIFY(nvlist_add_nvlist_array(nvroot,
-                                       ZPOOL_CONFIG_CHILDREN, &nvtop, 1) == 0);
-        
-        /*
-         * Replace the existing vdev_tree with the new root vdev in
-         * this pool's configuration (remove the old, add the new).
-         */
-        IOLog("zfs_mountroot: nvlist shuffle %s\n", pool_name);
-        IOSleep( info_delay );
-        
-        
-        VERIFY(nvlist_add_nvlist(config,
-                                 ZPOOL_CONFIG_VDEV_TREE, nvroot) == 0);
-        nvlist_free(nvroot);
-        
-        IOLog("zfs_mountroot: Checking status...\n");
-        IOSleep( info_delay );
-        
-        /* If the rootlabel has been found, try to import the pool */
-        if ( error != 0 && config ) {
-            
-            
-            /*
-             IOLog("zfs_mountroot: entering mutex %s...\n", pool_name);
-             IOSleep( info_delay );
-             mutex_enter(&spa_namespace_lock);
-             IOLog("zfs_mountroot: Opening pool config %s...\n", pool_name);
-             IOSleep( info_delay );
-             spa = spa_add(pool_name, config, NULL);
-             spa->spa_is_root = B_TRUE;
-             spa->spa_import_flags = ZFS_IMPORT_VERBATIM;
-             
-             IOLog("zfs_mountroot: exiting mutex %s...\n", pool_name);
-             IOSleep( info_delay );
-             mutex_exit(&spa_namespace_lock);
-             
-             IOLog("zfs_mountroot: Trying to importing pool %s...\n", pool_name);
-             IOSleep( info_delay );
-             
-             config = spa_tryimport( config );
-             
-             if ( config ) {
-             IOLog("zfs_mountroot: Tryimport succeeded %s\n", pool_name);
-             IOSleep( info_delay );
-             } else {
-             IOLog("zfs_mountroot: Tryimport failed %s\n", pool_name);
-             IOSleep( info_delay );
-             }
-             */
-            
-            /*
-             #define	ZFS_IMPORT_NORMAL	0x0
-             #define	ZFS_IMPORT_VERBATIM	0x1
-             #define	ZFS_IMPORT_ANY_HOST	0x2
-             #define	ZFS_IMPORT_MISSING_LOG	0x4
-             #define	ZFS_IMPORT_ONLY		0x8
-             #define	ZFS_IMPORT_TEMP_NAME	0x10
-             */
-            /*
-             * (ZFS_IMPORT_VERBATIM | ZFS_IMPORT_ONLY |
-             *  ZFS_IMPORT_ANY_HOST | ZFS_IMPORT_MISSING_LOG )
-             */
-            
-            nvlist_t * newconfig = spa_tryimport(config);
-            
-            if ( newconfig ) {
-                nvlist_free(newconfig);
-                //nvlist_free(config);
-                //config = newconfig;
-                IOLog("zfs_mountroot: Using tryimport config %s\n", pool_name);
-                IOSleep( info_delay );
-                
-                uint64_t importFlags =   ( ZFS_IMPORT_ONLY | ZFS_IMPORT_ANY_HOST |
-                                          ZFS_IMPORT_MISSING_LOG );
-                result = ( spa_import(pool_name, config,  NULL, importFlags  ) == 0 );
-                
-                IOLog("zfs_mountroot: May have imported pool %s: %d\n", pool_name, result);
-                IOSleep( info_delay );
-                
-                if ( !result ) {
-                    IOLog("zfs_mountroot: Failure importing pool %s!\n", pool_name);
-                    IOSleep( error_delay );
-                }
-            }
-            
-            spa_t *list = spa_by_guid(pgid, guid);
-            
-            if( list ) {
-                IOLog("zfs_mountroot: pool seems to be imported %p\n", list);
-                IOSleep( error_delay );
-                result = true;
-            } else {
-                IOLog("zfs_mountroot: Couldn't locate pool by guid / vdev_guid %s\n", pool_name);
-                IOSleep( error_delay );
-                result = false;
-            }
-            
-            //            spa_t * spa = NULL;
-            //            result = spa_open(pool_name, &spa, FTAG);
-            
-            //            if (!result) {
-            //IOLog("zfs_mountroot: Failure opening pool %s!\n", pool_name);
-            //IOSleep( error_delay );
-            //            }
-            
-            goto nextDisk;
-            
-        }
-        
-    nextDisk:
-        IOLog("zfs_mountroot: nextDisk / cleanup\n");
-        IOSleep( info_delay );
-        
-        /* clean up */
-        if( !result )
-            nvlist_free(config);
-        if( buffer )
-            buffer->release();
-        buffer = 0;
-        
-        currentDisk = 0;
-        //if( currentEntry )
-        //currentEntry->release();
-        currentEntry = 0;
-        
-        if ( result )
-            break;
-        
+    IOLog( "zvol_create_minors complete?\n" );
+    
+    mutex_enter(&spa_namespace_lock);
+    spa = spa_lookup(zfs_pool);
+    if (spa) {
+        IOLog( "spa [%p]\n", spa );
+        IOLog( "spa state (%llu)\n", (uint64_t)spa->spa_state );
+    } else {
+        IOLog( "no spa\n" );
     }
-    IOLog("zfs_mountroot: Final cleanup\n");
-    IOSleep( info_delay );
+    spa = NULL;
+    mutex_exit(&spa_namespace_lock);
     
-    /* Final clean up */
-    if( allDisks ) {
-        /* clean up */
-        allDisks->release();
-        allDisks = 0;
-    }
-    return result;
+    return true;
 }
 
 IOReturn net_lundman_zfs_zvol::doEjectMedia(void *arg1)
@@ -1276,8 +737,6 @@ IOReturn net_lundman_zfs_zvol::doEjectMedia(void *arg1)
   IOLog("block svc ejected\n");
   return kIOReturnSuccess;
 }
-
-
 
 bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
 {
@@ -1549,10 +1008,10 @@ uint64_t zvolIO_kit_read(void *iomem, uint64_t offset, char *address, uint64_t l
      *  would allow for an error check instead of a panic. Don't
      *  know if there would be a performance hit.
      */
-  done=static_cast<IOMemoryDescriptor*>(iomem)->writeBytes(offset,
-                                                           (void *)address,
-                                                           len);
-  return done;
+  done=((IOMemoryDescriptor*)iomem)->writeBytes(offset,
+                                                (void *)address,
+                                                len);
+return done;
 }
 
 uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t len)
@@ -1560,9 +1019,9 @@ uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t 
   IOByteCount done;
   //IOLog("zvolIO_kit_write offset %p count %llx to offset %llx\n",
   //    address, len, offset);
-  done=static_cast<IOMemoryDescriptor*>(iomem)->readBytes(offset,
-                                                          (void *)address,
-                                                          len);
+  done=((IOMemoryDescriptor*)iomem)->readBytes(offset,
+                                               (void *)address,
+                                               len);
   return done;
 }
 
