@@ -69,7 +69,7 @@ inline bool net_lundman_vdev_io_context::initWithTransfer(zio_t * new_zio)
     
     /* Pre-initialize */
     if ( !init() ) {
-        IOLog( "ZFS: initWithTransfer: failed\n" );
+        vdev_iokit_log("ZFS: initWithTransfer: failed");
         return false;
     }
     
@@ -98,7 +98,7 @@ inline bool net_lundman_vdev_io_context::initWithDirection(IODirection new_direc
 {
     /* Pre-initialize */
     if ( !init() ) {
-        IOLog( "ZFS: initWithDirection: failed\n" );
+        vdev_iokit_log("ZFS: initWithDirection: failed");
         return false;
     }
     
