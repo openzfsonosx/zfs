@@ -100,6 +100,7 @@
 #include <libkern/crypto/md5.h>
 #include <sys/zfs_vnops.h>
 #include <sys/systeminfo.h>
+#include <sys/zfs_mount.h>
 #endif /* __APPLE__ */
 
 //#define dprintf printf

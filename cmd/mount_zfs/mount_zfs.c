@@ -31,7 +31,7 @@
 #include <sys/stat.h>
 #include <libzfs.h>
 #include <locale.h>
-#include <sys/zfs_context.h>
+#include <sys/zfs_mount.h>
 #include <mntent.h>
 
 #if 0

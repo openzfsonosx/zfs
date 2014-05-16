@@ -80,6 +80,7 @@
 
 #include <libshare.h>
 #include <sys/systeminfo.h>
+#include <sys/zfs_mount.h>
 #define	MAXISALEN	257	/* based on sysinfo(2) man page */
 
 static int zfs_share_proto(zfs_handle_t *, zfs_share_proto_t *);
