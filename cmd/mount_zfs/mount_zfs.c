@@ -31,11 +31,22 @@
 #include <sys/stat.h>
 #include <libzfs.h>
 #include <locale.h>
+#include <sys/zfs_context.h>
+#include <mntent.h>
 
+#if 0
+struct mntent {
+	char *mnt_fsname;   /* name of mounted filesystem */
+	char *mnt_dir;      /* filesystem path prefix */
+	char *mnt_type;     /* mount type (see mntent.h) */
+	char *mnt_opts;     /* mount options (see mntent.h) */
+	int   mnt_freq;     /* dump frequency in days */
+	int   mnt_passno;   /* pass number on parallel fsck */
+};
+#endif
 
 // THIS FILE IS VERY LINUX, MAKE OSX VERSION
 
-#if 0
 
 libzfs_handle_t *g_zfs;
 
@@ -55,7 +66,7 @@ static const option_map_t option_map[] = {
 	{ MNTOPT_GROUP,		MS_GROUP,	ZS_COMMENT	},
 	{ MNTOPT_NETDEV,	MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_NOFAIL,	MS_COMMENT,	ZS_COMMENT	},
-	{ MNTOPT_NOSUID,	MS_NOSUID,	ZS_COMMENT	},
+	{ MNTOPT_NOSETUID,	MS_NOSUID,	ZS_COMMENT	},
 	{ MNTOPT_OWNER,		MS_OWNER,	ZS_COMMENT	},
 	{ MNTOPT_REMOUNT,	MS_REMOUNT,	ZS_COMMENT	},
 	{ MNTOPT_RO,		MS_RDONLY,	ZS_COMMENT	},
@@ -224,7 +235,7 @@ static char *
 parse_dataset(char *dataset)
 {
 	char cwd[PATH_MAX];
-	struct stat64 statbuf;
+	struct stat statbuf;
 	int error;
 	int len;
 
@@ -234,7 +245,7 @@ parse_dataset(char *dataset)
 	 * extract the pool name stored in the label.  Given the pool
 	 * name we can mount the root dataset.
 	 */
-	error = stat64(dataset, &statbuf);
+	error = stat(dataset, &statbuf);
 	if (error == 0) {
 		nvlist_t *config;
 		char *name;
@@ -279,6 +290,7 @@ out:
 	return (dataset);
 }
 
+#ifdef __LINUX__
 /*
  * Update the mtab_* code to use the libmount library when it is commonly
  * available otherwise fallback to legacy mode.  The mount(8) utility will
@@ -338,10 +350,33 @@ mtab_update(char *dataset, char *mntpoint, char *type, char *mntopts)
 
 	return (MOUNT_SUCCESS);
 }
-
-
 #endif
 
+#ifdef __LINUX__
+static void
+__zfs_selinux_setcontext(const char *name, const char *context, char *mntopts,
+    char *mtabopt)
+{
+	char tmp[MNT_LINE_MAX];
+
+	snprintf(tmp, MNT_LINE_MAX, ",%s=\"%s\"", name, context);
+	strlcat(mntopts, tmp, MNT_LINE_MAX);
+	strlcat(mtabopt, tmp, MNT_LINE_MAX);
+}
+
+static void
+zfs_selinux_setcontext(zfs_handle_t *zhp, zfs_prop_t zpt, const char *name,
+    char *mntopts, char *mtabopt)
+{
+	char context[ZFS_MAXPROPLEN];
+
+	if (zfs_prop_get(zhp, zpt, context, sizeof (context),
+	    NULL, NULL, 0, B_FALSE) == 0) {
+		if (strcmp(context, "none") != 0)
+		    __zfs_selinux_setcontext(name, context, mntopts, mtabopt);
+	}
+}
+#endif
 
 int
 main(int argc, char **argv)
@@ -357,12 +392,8 @@ main(int argc, char **argv)
 	int sloppy = 0, fake = 0, verbose = 0, nomtab = 0, zfsutil = 0;
 	int error, c;
 
-    return -1;
-
-#if 0
-
 	(void) setlocale(LC_ALL, "");
-	(void) textdomain(TEXT_DOMAIN);
+	//(void) textdomain(TEXT_DOMAIN);
 
 	opterr = 0;
 
@@ -473,6 +504,7 @@ main(int argc, char **argv)
 		return (MOUNT_USAGE);
 	}
 
+#ifdef __LINUX__
 	/*
 	 * Checks to see if the ZFS_PROP_SELINUX_CONTEXT exists
 	 * if it does, create a tmp variable in case it's needed
@@ -496,6 +528,7 @@ main(int argc, char **argv)
 			    prop, mntopts, mtabopt);
 		}
 	}
+#endif
 
 	/* treat all snapshots as legacy mount points */
 	if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT)
@@ -538,8 +571,15 @@ main(int argc, char **argv)
 	}
 
 	if (!fake) {
+#ifdef __LINUX__
 		error = mount(dataset, mntpoint, MNTTYPE_ZFS,
 		    mntflags, mntopts);
+#elif __APPLE__
+		struct zfs_mount_args mnt_args;
+		mnt_args.fspec = dataset;
+		mnt_args.flags = mntflags;
+		error = mount(MNTTYPE_ZFS, mntpoint, mntflags, &mnt_args);
+#endif
 		if (error) {
 			switch (errno) {
 			case ENOENT:
@@ -557,14 +597,19 @@ main(int argc, char **argv)
 				return (MOUNT_USAGE);
 			}
 		}
+
+#ifdef __APPLE__
+		zfs_mount_seticon(mntpoint);
+#endif
 	}
 
+#ifdef __LINUX__
 	if (!nomtab && mtab_is_writeable()) {
 		error = mtab_update(dataset, mntpoint, MNTTYPE_ZFS, mtabopt);
 		if (error)
 			return (error);
 	}
+#endif
 
 	return (MOUNT_SUCCESS);
-#endif
 }

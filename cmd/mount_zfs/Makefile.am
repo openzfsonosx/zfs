@@ -11,7 +11,7 @@ DEFAULT_INCLUDES += \
 # because this path is hardcoded in the mount(8) for security reasons.
 #
 sbindir=/sbin
-sbin_PROGRAMS = mount.zfs
+sbin_PROGRAMS = mount_zfs
 
 mount_zfs_SOURCES = \
 	mount_zfs.c

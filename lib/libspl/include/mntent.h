@@ -26,15 +26,16 @@
  *		All Rights Reserved
  */
 
-#ifndef _SYS_MNTENT_H
-#define	_SYS_MNTENT_H
+#ifndef _LIBSPL_MNTENT_H
+#define	_LIBSPL_MNTENT_H
 
+#include <sys/mntent.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
-#define	MNTTAB		"/etc/mnttab"
+//#define	MNTTAB		"/etc/mnttab"
 #define	VFSTAB		"/etc/vfstab"
 #define	MNTMAXSTR	128
 
@@ -68,12 +69,12 @@ extern "C" {
 #define	MNTOPT_SOFT	"soft"		/* Soft mount */
 #define	MNTOPT_SEMISOFT	"semisoft"	/* partial soft, uncommited interface */
 #define	MNTOPT_HARD	"hard"		/* Hard mount */
-#define	MNTOPT_SUID	"suid"		/* Both setuid and devices allowed */
-#define	MNTOPT_NOSUID	"nosuid"	/* Neither setuid nor devices allowed */
-#define	MNTOPT_DEVICES	"devices"	/* Device-special allowed */
-#define	MNTOPT_NODEVICES	"nodevices"	/* Device-special disallowed */
-#define	MNTOPT_SETUID	"setuid"	/* Set uid allowed */
-#define	MNTOPT_NOSETUID	"nosetuid"	/* Set uid not allowed */
+//#define	MNTOPT_SUID	"suid"		/* Both setuid and devices allowed */
+//#define	MNTOPT_NOSUID	"nosuid"	/* Neither setuid nor devices allowed */
+//#define	MNTOPT_DEVICES	"devices"	/* Device-special allowed */
+//#define	MNTOPT_NODEVICES "nodevices"	/* Device-special disallowed */
+//#define	MNTOPT_SETUID	"setuid"	/* Set uid allowed */
+//#define	MNTOPT_NOSETUID	"nosetuid"	/* Set uid not allowed */
 #define	MNTOPT_GRPID	"grpid"		/* SysV-compatible gid on create */
 #define	MNTOPT_REMOUNT	"remount"	/* Change mount options */
 #define	MNTOPT_NOSUB	"nosub"		/* Disallow mounts on subdirs */
@@ -121,10 +122,10 @@ extern "C" {
 #define	MNTOPT_NOATIME  "noatime"	/* do not update atime for files */
 #define	MNTOPT_GLOBAL	"global"	/* Cluster-wide global mount */
 #define	MNTOPT_NOGLOBAL	"noglobal"	/* Mount local to single node */
-#define	MNTOPT_DFRATIME	"dfratime"	/* Deferred access time updates */
-#define	MNTOPT_NODFRATIME "nodfratime"	/* No Deferred access time updates */
-#define	MNTOPT_NBMAND	"nbmand"	/* allow non-blocking mandatory locks */
-#define	MNTOPT_NONBMAND	"nonbmand"	/* deny non-blocking mandatory locks */
+//#define	MNTOPT_DFRATIME	"dfratime"	/* Deferred access time updates */
+//#define	MNTOPT_NODFRATIME "nodfratime"	/* No Deferred access time updates */
+//#define	MNTOPT_NBMAND	"nbmand"	/* allow non-blocking mandatory locks */
+//#define	MNTOPT_NONBMAND	"nonbmand"	/* deny non-blocking mandatory locks */
 #define	MNTOPT_XATTR	"xattr"		/* enable extended attributes */
 #define	MNTOPT_NOXATTR	"noxattr"	/* disable extended attributes */
 #define	MNTOPT_EXEC	"exec"		/* enable executables */
@@ -139,4 +140,4 @@ extern "C" {
 }
 #endif
 
-#endif	/* _SYS_MNTENT_H */
+#endif	/* _LIBSPL_MNTENT_H */

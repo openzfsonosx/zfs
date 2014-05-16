@@ -703,6 +703,9 @@ extern boolean_t zfs_is_mounted(zfs_handle_t *, char **);
 extern int zfs_mount(zfs_handle_t *, const char *, int);
 extern int zfs_unmount(zfs_handle_t *, const char *, int);
 extern int zfs_unmountall(zfs_handle_t *, int);
+#ifdef __APPLE__
+extern void zfs_mount_seticon(const char *);
+#endif
 
 /*
  * Share support functions.

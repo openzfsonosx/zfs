@@ -301,7 +301,7 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 	else
 		OPTADD(MNTOPT_RW);
 	if (flags & MNT_NOSUID)
-		OPTADD(MNTOPT_NOSUID);
+		OPTADD(MNTOPT_NOSETUID);
 	else
 		OPTADD(MNTOPT_SETUID);
 	if (flags & MNT_UPDATE)
