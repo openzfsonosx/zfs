@@ -82,13 +82,6 @@
 #include <sys/sunddi.h>
 #include <sys/debug.h>
 
-#ifdef HAVE_GETTEXT
-#include <libintl.h>
-#else
-#define	gettext(str) (str)
-#define	dgettext(domain, str) (str)
-#endif
-
 /*
  * Stack
  */

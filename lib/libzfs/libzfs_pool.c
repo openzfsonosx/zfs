@@ -29,7 +29,7 @@
 #include <errno.h>
 #include <devid.h>
 #include <fcntl.h>
-//#include <libintl.h>
+#include <libintl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>

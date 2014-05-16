@@ -26,7 +26,7 @@
  * Portions Copyright 2007 Ramprakash Jelari
  */
 
-//#include <libintl.h>
+#include <libintl.h>
 #include <libuutil.h>
 #include <stddef.h>
 #include <stdlib.h>

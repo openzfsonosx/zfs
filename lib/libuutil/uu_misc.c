@@ -27,7 +27,7 @@
 
 #include <assert.h>
 #include <errno.h>
-//#include <libintl.h>
+#include <libintl.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
