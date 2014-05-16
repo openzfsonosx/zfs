@@ -1756,9 +1756,9 @@ spa_config_valid(spa_t *spa, nvlist_t *config)
 		}
 	}
     
-#ifdef _KERNEL
-    vdev_iokit_log_ptr("ZFS: spa_config_valid: Freeing mrvd", mrvd);
-#endif
+//#ifdef _KERNEL
+//    vdev_iokit_log_ptr("ZFS: spa_config_valid: Freeing mrvd", mrvd);
+//#endif
 	vdev_free(mrvd);
 	spa_config_exit(spa, SCL_ALL, FTAG);
 
@@ -3350,9 +3350,9 @@ spa_validate_aux_devs(spa_t *spa, nvlist_t *nvroot, uint64_t crtxg, int mode,
 
 		if (!vd->vdev_ops->vdev_op_leaf) {
             
-#ifdef _KERNEL
-            vdev_iokit_log_ptr("ZFS: spa_validate_aux_devs: Freeing vd", vd);
-#endif
+//#ifdef _KERNEL
+//            vdev_iokit_log_ptr("ZFS: spa_validate_aux_devs: Freeing vd", vd);
+//#endif
 			vdev_free(vd);
 			error = SET_ERROR(EINVAL);
 			goto out;
@@ -3377,9 +3377,9 @@ spa_validate_aux_devs(spa_t *spa, nvlist_t *nvroot, uint64_t crtxg, int mode,
 			VERIFY(nvlist_add_uint64(dev[i], ZPOOL_CONFIG_GUID,
 			    vd->vdev_guid) == 0);
 		}
-#ifdef _KERNEL
-        vdev_iokit_log_ptr("ZFS: spa_validate_aux_devs: Freeing vd", vd);
-#endif
+//#ifdef _KERNEL
+//        vdev_iokit_log_ptr("ZFS: spa_validate_aux_devs: Freeing vd", vd);
+//#endif
 		vdev_free(vd);
 
 		if (error &&
@@ -4446,9 +4446,9 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 		 */
 		for (id = 0; id < rvd->vdev_children; id++) {
 			if (rvd->vdev_child[id]->vdev_ishole) {
-#ifdef _KERNEL
-                vdev_iokit_log_num("ZFS: vdev_free: rvd child is hole", id);
-#endif
+//#ifdef _KERNEL
+//                vdev_iokit_log_num("ZFS: vdev_free: rvd child is hole", id);
+//#endif
 				vdev_free(rvd->vdev_child[id]);
 				break;
 			}

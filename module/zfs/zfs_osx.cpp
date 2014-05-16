@@ -340,12 +340,12 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
            SPA_VERSION_STRING, ZPL_VERSION_STRING);
     
     /* Check if ZFS should try to mount root */
-    IOLog("Checking if root pool should be imported...");
+//    IOLog("Checking if root pool should be imported...");
     if( ( res && zfs_check_mountroot() ) == true ) {
-        IOLog("Artificial delay for 2 seconds...\n");
-        IOSleep(2000);
+//        IOLog("Artificial delay for 2 seconds...\n");
+//        IOSleep(2000);
         
-        IOLog("Trying to import root pool...\n");
+//        IOLog("Trying to import root pool...\n");
         /* Looks good, give it a go */
         res = zfs_mountroot();
     }
@@ -455,9 +455,7 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
      * then forcible root-mount, possibly using an overlay.
      * Other options may include grub2+zfs, Chameleon, Chimera, etc.
      *
-     */
-    
-    /*
+     *
      *           TO DO -- TO DO -- TO DO
      *
      * - Use PE Boot Args to determine the root pool name.
@@ -470,12 +468,19 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
      * - Use IORegistry to locate vdevs - DONE
      *
      * - Call functions in vdev_disk.c or spa_boot.c
-     * to locate the pool, import it.
+     * to locate the pool, import it. - DONE
      *    Cloned these functions into this giant function.
-     *    Needs to be abstracted.
+     *    Needs to be abstracted. - DONE
      *
+     * - Present single zvol as specified in zfs_boot?
+     *    Currently all zvols are made available on import.
      *
-     * Case 1: Present zvol for the Root volume
+     * - Provide sample Boot.plist
+     *    ${PREFIX}/share/zfs/com.apple.Boot.plist
+     *    Install to:
+     *    /Library/Preferences/SystemConfiguration/com.apple.Boot.plist
+     *
+     * Case 1: Present zvol for the Root volume - DONE
      *
      * Case 2: Similar to meklort's FSRoot method,
      * register vfs_fsadd, and mount root;
@@ -519,38 +524,6 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
 //        IOSleep( error_delay );
         return false;
     }
-    
-    /*
-     char *slashp;
-     uint64_t objnum;
-     int error;
-     
-     if (*bpath == 0 || *bpath == '/')
-     return (EINVAL);
-     
-     (void) strcpy(outpath, bpath);
-     
-     slashp = strchr(bpath, '/');
-     
-     // if no '/', just return the pool name
-     if (slashp == NULL) {
-     return (0);
-     }
-     
-     // if not a number, just return the root dataset name
-     if (str_to_uint64(slashp+1, &objnum)) {
-     return (0);
-     }
-     
-     *slashp = '\0';
-     error = dsl_dsobj_to_dsname(bpath, objnum, outpath);
-     *slashp = '/';
-     
-     return (error);
-     
-     //			(void) strlcat(name, "@", MAXPATHLEN);
-     
-     */
     
     // Error checking, should be longer than 1 character and null terminated
     strptr = strchr( zfs_boot, '\0' );
@@ -685,38 +658,38 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
 
     
 //    IOLog( "pool imported? [%p]\n", dvd->vd_iokit_hl );
-    IOLog( "pool imported?\n" );
+//    IOLog( "pool imported?\n" );
     
-    spa_t * spa =   0;
-    mutex_enter(&spa_namespace_lock);
-    spa = spa_lookup(zfs_pool);
-    if (spa) {
-        IOLog( "spa [%p]\n", spa );
-        IOLog( "spa state (%llu)\n", (uint64_t)spa->spa_state );
-        if (spa_state(spa) > POOL_STATE_ACTIVE)
-            spa_open(zfs_pool, &spa, FTAG);
-    } else {
-        IOLog( "no spa\n" );
-    }
-    spa = NULL;
-    mutex_exit(&spa_namespace_lock);
-    
-    IOLog( "zvol_create_minors in 5 sec\n" );
-    IOSleep(5000);
-    zvol_create_minors(zfs_boot);
-    
-    IOLog( "zvol_create_minors complete?\n" );
-    
-    mutex_enter(&spa_namespace_lock);
-    spa = spa_lookup(zfs_pool);
-    if (spa) {
-        IOLog( "spa [%p]\n", spa );
-        IOLog( "spa state (%llu)\n", (uint64_t)spa->spa_state );
-    } else {
-        IOLog( "no spa\n" );
-    }
-    spa = NULL;
-    mutex_exit(&spa_namespace_lock);
+//    spa_t * spa =   0;
+//    mutex_enter(&spa_namespace_lock);
+//    spa = spa_lookup(zfs_pool);
+//    if (spa) {
+//        IOLog( "spa [%p]\n", spa );
+//        IOLog( "spa state (%llu)\n", (uint64_t)spa->spa_state );
+//        if (spa_state(spa) > POOL_STATE_ACTIVE)
+//            spa_open(zfs_pool, &spa, FTAG);
+//    } else {
+//        IOLog( "no spa\n" );
+//    }
+//    spa = NULL;
+//    mutex_exit(&spa_namespace_lock);
+//    
+//    IOLog( "zvol_create_minors in 5 sec\n" );
+//    IOSleep(5000);
+//    zvol_create_minors(zfs_boot);
+//    
+//    IOLog( "zvol_create_minors complete?\n" );
+//    
+//    mutex_enter(&spa_namespace_lock);
+//    spa = spa_lookup(zfs_pool);
+//    if (spa) {
+//        IOLog( "spa [%p]\n", spa );
+//        IOLog( "spa state (%llu)\n", (uint64_t)spa->spa_state );
+//    } else {
+//        IOLog( "no spa\n" );
+//    }
+//    spa = NULL;
+//    mutex_exit(&spa_namespace_lock);
     
     return true;
 }

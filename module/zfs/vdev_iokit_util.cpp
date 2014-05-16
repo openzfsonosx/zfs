@@ -23,25 +23,25 @@
 extern void vdev_iokit_log(const char * logString)
 {
     IOLog( "ZFS: vdev: %s\n", logString );
-    IOSleep(info_delay);
+//    IOSleep(info_delay);
 }
 
 extern void vdev_iokit_log_str(const char * logString1, const char * logString2)
 {
     IOLog( "ZFS: vdev: %s {%s}\n", logString1, logString2 );
-    IOSleep(info_delay);
+//    IOSleep(info_delay);
 }
 
 extern void vdev_iokit_log_ptr(const char * logString, const void * logPtr)
 {
     IOLog( "ZFS: vdev: %s [%p]\n", logString, logPtr );
-    IOSleep(info_delay);
+//    IOSleep(info_delay);
 }
 
 extern void vdev_iokit_log_num(const char * logString, const uint64_t logNum)
 {
     IOLog( "ZFS: vdev: %s (%llu)\n", logString, logNum );
-    IOSleep(info_delay);
+//    IOSleep(info_delay);
 }
 
 #if 0
@@ -62,7 +62,7 @@ static inline vdev_iokit_context_t * vdev_iokit_context_alloc( zio_t * zio )
                                 sizeof(vdev_iokit_context_t),KM_NOSLEEP) );
     
     if (!io_context) {
-        vdev_iokit_log_ptr("vdev_iokit_context_alloc: couldn't alloc an io_context_t for zio\n", zio);
+//        vdev_iokit_log_ptr("vdev_iokit_context_alloc: couldn't alloc an io_context_t for zio\n", zio);
         return 0;
     }
     
@@ -70,7 +70,7 @@ static inline vdev_iokit_context_t * vdev_iokit_context_alloc( zio_t * zio )
                                                               (zio->io_type == ZIO_TYPE_WRITE ? kIODirectionOut : kIODirectionIn) );
     
     if (!newDescriptor) {
-        vdev_iokit_log_ptr("vdev_iokit_context_alloc: couldn't alloc a memorydescriptor for zio\n", zio);
+//        vdev_iokit_log_ptr("vdev_iokit_context_alloc: couldn't alloc a memorydescriptor for zio\n", zio);
         goto error;
     }
 
@@ -105,7 +105,7 @@ error:
 static inline void vdev_iokit_context_free(vdev_iokit_context_t * io_context)
 {
     if (!io_context) {
-        vdev_iokit_log("ZFS: vdev_iokit_context_free: invalid io_context");
+//        vdev_iokit_log("ZFS: vdev_iokit_context_free: invalid io_context");
         return;
     }
     
@@ -116,9 +116,9 @@ static inline void vdev_iokit_context_free(vdev_iokit_context_t * io_context)
     io_context->zio = 0;
     
     if (io_context->buffer) {
-        if (io_context->buffer->getRetainCount() > 1) {
-            vdev_iokit_log_num("ZFS: vdev_iokit_context_free: io_context->buffer references:", io_context->buffer->getRetainCount());
-        }
+//        if (io_context->buffer->getRetainCount() > 1) {
+//            vdev_iokit_log_num("ZFS: vdev_iokit_context_free: io_context->buffer references:", io_context->buffer->getRetainCount());
+//        }
         
         io_context->buffer->release();
         
@@ -317,7 +317,7 @@ extern int vdev_iokit_context_pool_alloc( vdev_iokit_t * dvd )
     return 0;
     
 error:
-    vdev_iokit_log("ZFS: vdev_iokit_context_pool_alloc: error");
+//    vdev_iokit_log("ZFS: vdev_iokit_context_pool_alloc: error");
     
     vdev_iokit_context_pool_free(dvd);
     
@@ -516,7 +516,7 @@ extern OSOrderedSet * vdev_iokit_get_disks()
                                                        kIORegistryIterateRecursively );
     
     if(!registryIterator) {
-        vdev_iokit_log( "ZFS: vdev_iokit_get_disks: could not get ioregistry iterator from IOKit\n");
+//        vdev_iokit_log( "ZFS: vdev_iokit_get_disks: could not get ioregistry iterator from IOKit\n");
         registryIterator = 0;
         return 0;
     }
@@ -612,14 +612,14 @@ int vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath)
     char * diskName =               0;
     
     if ( !dvd || !diskPath ) {
-        vdev_iokit_log( "ZFS: vdev_iokit_find_by_path: called with invalid dvd or diskPath\n" );
+//        vdev_iokit_log( "ZFS: vdev_iokit_find_by_path: called with invalid dvd or diskPath\n" );
         return EINVAL;
     }
     
     allDisks = vdev_iokit_get_disks();
     
     if (!allDisks) {
-        vdev_iokit_log( "ZFS: vdev_iokit_find_by_path: failed to browse disks\n" );
+//        vdev_iokit_log( "ZFS: vdev_iokit_find_by_path: failed to browse disks\n" );
         return EINVAL;
     }
     
@@ -654,7 +654,7 @@ int vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath)
         
         /* Couldn't cast? */
         if (!currentDisk) {
-            vdev_iokit_log("ZFS: vdev_iokit_find_by_path: Couldn't cast currentEntry as an IOMedia handle");
+//            vdev_iokit_log("ZFS: vdev_iokit_find_by_path: Couldn't cast currentEntry as an IOMedia handle");
             
             currentEntry->release();
             currentEntry =  0;
@@ -678,7 +678,7 @@ int vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath)
         }
         
         if(!bsdnameosstr) {
-            vdev_iokit_log("ZFS: vdev_iokit_find_by_path: Couldn't get bsd name");
+//            vdev_iokit_log("ZFS: vdev_iokit_find_by_path: Couldn't get bsd name");
             currentDisk->release();
             currentDisk =   0;
             continue;
@@ -687,7 +687,7 @@ int vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath)
         
         /* Check if the name matches */
         if ( bsdnameosstr->isEqualTo(diskName) ) {
-            vdev_iokit_log_str("ZFS: vdev_iokit_find_by_path: Found matching disk:", bsdnameosstr->getCStringNoCopy());
+//            vdev_iokit_log_str("ZFS: vdev_iokit_find_by_path: Found matching disk:", bsdnameosstr->getCStringNoCopy());
             
             if (matchedDisk) {
                 matchedDisk->release();
@@ -766,7 +766,7 @@ int vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
         
         /* Couldn't cast? */
         if (!currentDisk) {
-            vdev_iokit_log("ZFS: vdev_iokit_find_by_guid: Couldn't cast currentEntry as an IOMedia handle");
+//            vdev_iokit_log("ZFS: vdev_iokit_find_by_guid: Couldn't cast currentEntry as an IOMedia handle");
             
             currentEntry->release();
             currentEntry =      0;
@@ -825,7 +825,7 @@ int vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
         }
         
         /* Non-match will have looped by now */
-        vdev_iokit_log_ptr("ZFS: vdev_iokit_find_by_guid: Found matching disk", currentDisk);
+//        vdev_iokit_log_ptr("ZFS: vdev_iokit_find_by_guid: Found matching disk", currentDisk);
         
         besttxg = txg;
         
@@ -888,7 +888,7 @@ extern int vdev_iokit_find_pool(vdev_iokit_t * dvd, char * pool_name)
     allDisks =      vdev_iokit_get_disks();
     
     if (!allDisks || allDisks->getCount() == 0) {
-        vdev_iokit_log_ptr("ZFS: vdev_iokit_find_pool: Couldn't get allDisks", dvd);
+//        vdev_iokit_log_ptr("ZFS: vdev_iokit_find_pool: Couldn't get allDisks", dvd);
         return ENOENT;
     }
     
@@ -907,7 +907,7 @@ extern int vdev_iokit_find_pool(vdev_iokit_t * dvd, char * pool_name)
         
         /* Couldn't cast? */
         if (!currentDisk) {
-            vdev_iokit_log("ZFS: vdev_iokit_find_pool: Couldn't cast currentEntry as an IOMedia handle");
+//            vdev_iokit_log("ZFS: vdev_iokit_find_pool: Couldn't cast currentEntry as an IOMedia handle");
             
             currentEntry->release();
             currentEntry =      0;
@@ -1069,7 +1069,7 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)         /*vdev_t * vd)*
     IOMedia * vdev_hl = 0;
     int error = 0;
     
-    vdev_iokit_log_ptr( "vdev_iokit_handle_open: dvd:   ", dvd );
+//    vdev_iokit_log_ptr( "vdev_iokit_handle_open: dvd:   ", dvd );
     
     if (!dvd || !dvd->vd_iokit_hl || !dvd->vd_zfs_hl)
         return EINVAL;
@@ -1077,18 +1077,18 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)         /*vdev_t * vd)*
     vdev_hl = (IOMedia *)dvd->vd_iokit_hl;
     
     if (!vdev_hl) {
-        vdev_iokit_log("ZFS: vdev_iokit_handle_open: Invalid vdev_hl");
+//        vdev_iokit_log("ZFS: vdev_iokit_handle_open: Invalid vdev_hl");
         error = EINVAL;
         goto error;
     }
     
-    vdev_iokit_log_ptr( "vdev_iokit_handle_open: handle:", dvd->vd_iokit_hl );
+//    vdev_iokit_log_ptr( "vdev_iokit_handle_open: handle:", dvd->vd_iokit_hl );
     
 #if 0
     /* Check if the media is in use by ZFS */
     if (vdev_hl->isOpen((IOService *)dvd->vd_zfs_hl) == true) {
-        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: ZFS is already using disk:", dvd);
-        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: handle:", vdev_hl);
+//        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: ZFS is already using disk:", dvd);
+//        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: handle:", vdev_hl);
         
         /* Only need to issue another open for write access */
         if (fmode == FREAD) {
@@ -1107,8 +1107,8 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)         /*vdev_t * vd)*
     
     /* Check if device is already open (by any clients, including ZFS) */
     if (vdev_hl->isOpen(0) == true) {
-        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: Disk is in use:", dvd);
-        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: handle:", vdev_hl);
+//        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: Disk is in use:", dvd);
+//        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: handle:", vdev_hl);
         error = EBUSY;
         goto error;
     }
@@ -1118,7 +1118,7 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)         /*vdev_t * vd)*
         vdev_hl->isWritable() == false) {
         
         vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: Disk is not writeable:", dvd);
-        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: handle:", vdev_hl);
+//        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: handle:", vdev_hl);
         error = ENODEV;
         goto error;
     }
@@ -1128,7 +1128,7 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)         /*vdev_t * vd)*
                                    kIOStorageAccessReader :
                                    kIOStorageAccessReaderWriter)) == false) {
                                    
-        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: Open handle failed", vdev_hl);
+//        vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: Open handle failed", vdev_hl);
         goto error;
     }
 
@@ -1142,7 +1142,7 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)         /*vdev_t * vd)*
     
         /* Allocate several io_context objects */
         if( vdev_iokit_context_pool_alloc(dvd) != 0 ) {
-            vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: couldn't allocate context pools:", dvd);
+//            vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: couldn't allocate context pools:", dvd);
             goto error;
         }
     }
@@ -1152,7 +1152,7 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)         /*vdev_t * vd)*
     
 error:
     
-    vdev_iokit_log("ZFS: vdev_iokit_handle_open: fail");
+//    vdev_iokit_log("ZFS: vdev_iokit_handle_open: fail");
     if (error == 0)
         error = EIO;
     
@@ -1171,7 +1171,7 @@ out:
 extern int
 vdev_iokit_handle_close(vdev_iokit_t *dvd, int fmode = 0)
 {
-    vdev_iokit_log_ptr( "vdev_iokit_handle_close: dvd:  ", dvd );
+//    vdev_iokit_log_ptr( "vdev_iokit_handle_close: dvd:  ", dvd );
 //    vdev_iokit_log_num( "vdev_iokit_handle_close: fmode:", fmode );
     
     if (!dvd || !dvd->vd_zfs_hl || !dvd->vd_iokit_hl)
@@ -1197,7 +1197,7 @@ vdev_iokit_open_by_path(vdev_iokit_t * dvd, char * path)
     if (vdev_iokit_find_by_path(dvd, path) != 0 ||
         !dvd->vd_iokit_hl) {
         
-        vdev_iokit_log_str("vdev_iokit_open_by_path: Couldn't find disk by path", path);
+//        vdev_iokit_log_str("vdev_iokit_open_by_path: Couldn't find disk by path", path);
         return ENOENT;
     }
 //vdev_iokit_log_num("ZFS: vdev_iokit_open_by_path: hl refs:", ((OSObject*)dvd->vd_iokit_hl)->getRetainCount() );
@@ -1212,7 +1212,7 @@ vdev_iokit_open_by_path(vdev_iokit_t * dvd, char * path)
         
         return 0;
     } else {
-        vdev_iokit_log_ptr("vdev_iokit_open_by_path: found disk but couldn't open handle:", dvd->vd_iokit_hl);
+//        vdev_iokit_log_ptr("vdev_iokit_open_by_path: found disk but couldn't open handle:", dvd->vd_iokit_hl);
         return EIO;
     }
 }
@@ -1224,21 +1224,21 @@ vdev_iokit_open_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 //    vdev_iokit_log_num("ZFS: vdev_iokit_open_by_guid: guid:", guid);
 
     if (!dvd || guid == 0) {
-        vdev_iokit_log("vdev_iokit_open_by_guid: couldn't get dvd");
+//        vdev_iokit_log("vdev_iokit_open_by_guid: couldn't get dvd");
         return EINVAL;
     }
     
     if (vdev_iokit_find_by_guid(dvd, guid) != 0 ||
         !dvd->vd_iokit_hl) {
         
-        vdev_iokit_log_num("vdev_iokit_open_by_guid: Couldn't find disk by guid", guid);
+//        vdev_iokit_log_num("vdev_iokit_open_by_guid: Couldn't find disk by guid", guid);
         return ENOENT;
     }
 //vdev_iokit_log_num("ZFS: vdev_iokit_open_by_guid: hl refs:", ((OSObject*)dvd->vd_iokit_hl)->getRetainCount() );
     
     /* Open the device handle */
     if (vdev_iokit_handle_open(dvd) == 0) {
-        vdev_iokit_log_ptr("vdev_iokit_open_by_guid: found disk and opened handle:", dvd->vd_iokit_hl);
+//        vdev_iokit_log_ptr("vdev_iokit_open_by_guid: found disk and opened handle:", dvd->vd_iokit_hl);
         
 //vdev_iokit_log_num("ZFS: vdev_iokit_open_by_guid: hl refs:", ((OSObject*)dvd->vd_iokit_hl)->getRetainCount() );
         /* Now that the handle is open, drop the ref */
@@ -1246,7 +1246,7 @@ vdev_iokit_open_by_guid(vdev_iokit_t * dvd, uint64_t guid)
         
         return 0;
     } else {
-        vdev_iokit_log_ptr("vdev_iokit_open_by_guid: found disk but couldn't open handle:", dvd->vd_iokit_hl);
+//        vdev_iokit_log_ptr("vdev_iokit_open_by_guid: found disk but couldn't open handle:", dvd->vd_iokit_hl);
         return EIO;
     }
 }
@@ -1271,7 +1271,7 @@ vdev_iokit_get_size(vdev_iokit_t * dvd, uint64_t *size, uint64_t *max_size, uint
     if (ashift != 0) {
         blksize =           ((IOMedia *)dvd->vd_iokit_hl)->getPreferredBlockSize();
         if (blksize <= 0) {
-            vdev_iokit_log_ptr("ZFS: vdev_iokit_get_size: Couldn't get blocksize. handle:", dvd->vd_iokit_hl);
+//            vdev_iokit_log_ptr("ZFS: vdev_iokit_get_size: Couldn't get blocksize. handle:", dvd->vd_iokit_hl);
             blksize = SPA_MINBLOCKSIZE;
         }
         
@@ -1285,7 +1285,7 @@ vdev_iokit_get_size(vdev_iokit_t * dvd, uint64_t *size, uint64_t *max_size, uint
  * EINVAL or EIO as needed */
 extern int vdev_iokit_status( vdev_iokit_t * dvd )
 {
-    vdev_iokit_log_ptr("ZFS: vdev_iokit_status: dvd", dvd);
+//    vdev_iokit_log_ptr("ZFS: vdev_iokit_status: dvd", dvd);
     
     if (!dvd)
         return EINVAL;
@@ -1451,14 +1451,14 @@ extern void vdev_iokit_io_intr( void * target, void * parameter, kern_return_t s
     io_context =        (net_lundman_vdev_io_context*)parameter;
     
     if (!io_context) {
-        vdev_iokit_log("ZFS: vdev_iokit_io_intr: Invalid IO context");
+//        vdev_iokit_log("ZFS: vdev_iokit_io_intr: Invalid IO context");
     }
     
     zio =               io_context->zio;
 //vdev_iokit_log_ptr( "ZFS: vdev_iokit_io_intr: zio:", zio );
     
     if (!zio) {
-        vdev_iokit_log("ZFS: vdev_iokit_io_intr: Invalid zio");
+//        vdev_iokit_log("ZFS: vdev_iokit_io_intr: Invalid zio");
         return;
     }
     

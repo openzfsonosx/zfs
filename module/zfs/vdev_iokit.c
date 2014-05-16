@@ -243,18 +243,18 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
     if (!vd)
         return EINVAL;
     
-vdev_iokit_log_ptr( "vdev_iokit_open: vd:",         vd );
-vdev_iokit_log_ptr( "vdev_iokit_open: vd->vdev_tsd:", vd->vdev_tsd );
-vdev_iokit_log_num( "vdev_iokit_open: reopening:", vd->vdev_reopening );
-vdev_iokit_log_num( "vdev_iokit_open: spa mode:",   spa_mode(vd->vdev_spa) );
-vdev_iokit_log_num( "vdev_iokit_open: vd state:",   vd->vdev_state );
-vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
+//vdev_iokit_log_ptr( "vdev_iokit_open: vd:",         vd );
+//vdev_iokit_log_ptr( "vdev_iokit_open: vd->vdev_tsd:", vd->vdev_tsd );
+//vdev_iokit_log_num( "vdev_iokit_open: reopening:", vd->vdev_reopening );
+//vdev_iokit_log_num( "vdev_iokit_open: spa mode:",   spa_mode(vd->vdev_spa) );
+//vdev_iokit_log_num( "vdev_iokit_open: vd state:",   vd->vdev_state );
+//vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
     
     /*
 	 * We must have a pathname, and it must be absolute.
 	 */
 	if (vd->vdev_path == NULL || vd->vdev_path[0] != '/') {
-        vdev_iokit_log_str( "vdev_iokit_open: invalid path:", vd->vdev_path );
+//        vdev_iokit_log_str( "vdev_iokit_open: invalid path:", vd->vdev_path );
 		vd->vdev_stat.vs_aux = VDEV_AUX_BAD_LABEL;
 		return (SET_ERROR(EINVAL));
 	}
@@ -265,7 +265,7 @@ vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
 //            goto skip_open;
 //        } else {
         }
-        vdev_iokit_log( "vdev_iokit_open: busy" );
+//        vdev_iokit_log( "vdev_iokit_open: busy" );
         error = EBUSY;
         goto out;
     }
@@ -274,7 +274,7 @@ vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
     dvd = (vdev_iokit_t*)(vd->vdev_tsd);
     
     if(error != 0 || !dvd) {
-        vdev_iokit_log_ptr( "vdev_iokit_open: error allocating dvd", dvd );
+//        vdev_iokit_log_ptr( "vdev_iokit_open: error allocating dvd", dvd );
         return (error != 0 ? error : ENOMEM);
     }
 
@@ -305,7 +305,7 @@ vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
             
 			(void) snprintf(buf, len, "%ss0", vd->vdev_path);
 
-            vdev_iokit_log_str( "vdev_iokit_open: path+s0 1", buf );
+//            vdev_iokit_log_str( "vdev_iokit_open: path+s0 1", buf );
 			error = vdev_iokit_open_by_path(dvd, buf);
             
 			if (error == 0) {
@@ -322,7 +322,7 @@ vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
 		 * specified path.
 		 */
 		if (error != 0) {
-            vdev_iokit_log_str( "vdev_iokit_open: path 1", vd->vdev_path );
+//            vdev_iokit_log_str( "vdev_iokit_open: path 1", vd->vdev_path );
 			error = vdev_iokit_open_by_path(dvd, vd->vdev_path);
 		}
         
@@ -343,7 +343,7 @@ vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
 	if (error) {
         
 		if (vd->vdev_physpath != NULL) {
-            vdev_iokit_log_str( "vdev_iokit_open: physpath 2", vd->vdev_physpath );
+//            vdev_iokit_log_str( "vdev_iokit_open: physpath 2", vd->vdev_physpath );
 			error = vdev_iokit_open_by_path(dvd, vd->vdev_physpath);
         }
         
@@ -356,19 +356,19 @@ vdev_iokit_log_num( "vdev_iokit_open: prevstate:",  vd->vdev_prevstate );
          *   the previous attempts by path and physpath
          */
 		if (error && vd->vdev_path != NULL) {
-            vdev_iokit_log_str( "vdev_iokit_open: path 2", vd->vdev_path );
+//            vdev_iokit_log_str( "vdev_iokit_open: path 2", vd->vdev_path );
 			error = vdev_iokit_open_by_path(dvd, vd->vdev_path);
         }
         
         if (error && vd->vdev_guid != 0) {
-            vdev_iokit_log_num( "vdev_iokit_open: guid 2", vd->vdev_guid );
+//            vdev_iokit_log_num( "vdev_iokit_open: guid 2", vd->vdev_guid );
 			error = vdev_iokit_open_by_guid(dvd, vd->vdev_guid);
         }
 	}
     
     /* If it couldn't be opened, back out now */
     if (error != 0) {
-        vdev_iokit_log( "vdev_iokit_open: couldn't find/open vd" );
+//        vdev_iokit_log( "vdev_iokit_open: couldn't find/open vd" );
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 		return (error);
 	}
@@ -441,7 +441,7 @@ skip_open:
 	 * Determine the actual size of the device.
 	 */
     if( vdev_iokit_get_size(dvd, size, max_size, ashift) != 0 ) {
-        vdev_iokit_log( "vdev_iokit_open: couldn't get size" );
+//        vdev_iokit_log( "vdev_iokit_open: couldn't get size" );
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 		error = ENXIO;
         goto out;
@@ -489,7 +489,7 @@ skip_open:
         
         /* Allocate several io_context objects */
         if( vdev_iokit_context_pool_alloc(dvd) != 0 ) {
-            vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: couldn't allocate context pools:", dvd);
+//            vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: couldn't allocate context pools:", dvd);
             error =     ENOMEM;
             goto out;
         }
@@ -531,11 +531,11 @@ skip_open:
 out:
 	if (error != 0) {
         if (dvd->vd_iokit_hl) {
-            vdev_iokit_log_ptr( "vdev_iokit_open: bailing on handle open, trying to close handle [%p]", dvd->vd_iokit_hl );
+//            vdev_iokit_log_ptr( "vdev_iokit_open: bailing on handle open, trying to close handle [%p]", dvd->vd_iokit_hl );
             vdev_iokit_handle_close(dvd, spa_mode(vd->vdev_spa));
         }
         
-        vdev_iokit_log_ptr( "vdev_iokit_open: couldn't open", dvd );
+//        vdev_iokit_log_ptr( "vdev_iokit_open: couldn't open", dvd );
         
         /* Clear vdev_tsd, see below */
         vdev_iokit_free(&dvd);
@@ -555,15 +555,15 @@ out:
 extern void
 vdev_iokit_close(vdev_t *vd)
 {
-vdev_iokit_log_ptr( "vdev_iokit_close: vd:",            vd );
+//vdev_iokit_log_ptr( "vdev_iokit_close: vd:",            vd );
     
 	vdev_iokit_t *dvd =     0;
     
-vdev_iokit_log_ptr( "vdev_iokit_close: vd->vdev_tsd:",  vd->vdev_tsd );
-vdev_iokit_log_num( "vdev_iokit_close: reopening:",     vd->vdev_reopening );
-vdev_iokit_log_num( "vdev_iokit_close: spa mode:",      spa_mode(vd->vdev_spa) );
-vdev_iokit_log_num( "vdev_iokit_close: vd state:",      vd->vdev_state );
-vdev_iokit_log_num( "vdev_iokit_close: prevstate:",     vd->vdev_prevstate );
+//vdev_iokit_log_ptr( "vdev_iokit_close: vd->vdev_tsd:",  vd->vdev_tsd );
+//vdev_iokit_log_num( "vdev_iokit_close: reopening:",     vd->vdev_reopening );
+//vdev_iokit_log_num( "vdev_iokit_close: spa mode:",      spa_mode(vd->vdev_spa) );
+//vdev_iokit_log_num( "vdev_iokit_close: vd state:",      vd->vdev_state );
+//vdev_iokit_log_num( "vdev_iokit_close: prevstate:",     vd->vdev_prevstate );
     
 //    if (!vd || !vd->vdev_tsd || vd->vdev_reopening)
 //		return;
@@ -807,7 +807,7 @@ vdev_iokit_io_start(zio_t *zio)
     error =     vdev_iokit_strategy( dvd, zio );
     
 	if (error != 0) {
-        vdev_iokit_log_num( "vdev_iokit_io_start: error returned by vdev_iokit_strategy (%d)", error );
+//        vdev_iokit_log_num( "vdev_iokit_io_start: error returned by vdev_iokit_strategy (%d)", error );
     }
 
     return (ZIO_PIPELINE_STOP);
@@ -887,12 +887,12 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
     error =     vdev_iokit_handle_open(dvd, FREAD);
     
     if (error != 0) {
-        vdev_iokit_log_num("ZFS: vdev_iokit_read_label: Couldn't open handle. error:", error);
+//        vdev_iokit_log_num("ZFS: vdev_iokit_read_label: Couldn't open handle. error:", error);
 		return (SET_ERROR(EIO));
     }
     
 	if (vdev_iokit_get_size(dvd, &s, 0, 0) != 0) {
-        vdev_iokit_log("ZFS: vdev_iokit_read_label: Couldn't get disk size");
+//        vdev_iokit_log("ZFS: vdev_iokit_read_label: Couldn't get disk size");
         /* Close the disk */
 		(void) vdev_iokit_handle_close(dvd, FREAD);
 		return (SET_ERROR(EIO));
@@ -916,12 +916,12 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
         
         /* If label is outside disk boundaries, we're done */
         if (offset > s || offset+labelsize > s) {
-            vdev_iokit_log("ZFS: vdev_iokit_read_label: Outside disk boundaries, next...");
+//            vdev_iokit_log("ZFS: vdev_iokit_read_label: Outside disk boundaries, next...");
             break;
         }
         
 		if (vdev_iokit_physio(dvd, (void*)label, labelsize, offset, FREAD) != 0) {
-            vdev_iokit_log("ZFS: vdev_iokit_read_label: Couldn't do physio");
+//            vdev_iokit_log("ZFS: vdev_iokit_read_label: Couldn't do physio");
 			continue;
         }
         
@@ -961,8 +961,8 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
 			continue;
 		}
         
-        vdev_iokit_log_ptr("ZFS: vdev_iokit_read_label: valid label found", label);
-        vdev_iokit_log_ptr("ZFS: vdev_iokit_read_label: valid config found", config);
+//        vdev_iokit_log_ptr("ZFS: vdev_iokit_read_label: valid label found", label);
+//        vdev_iokit_log_ptr("ZFS: vdev_iokit_read_label: valid config found", config);
         break;
 	}
     
