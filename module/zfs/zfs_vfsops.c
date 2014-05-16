@@ -28,52 +28,40 @@
 /* Portions Copyright 2013 Jorgen Lundman */
 
 #include <sys/types.h>
-#include <sys/syslimits.h>
-#include <sys/param.h>
-
-#include <sys/systm.h>
 
 #ifndef __APPLE__
+#include <sys/param.h>
+#include <sys/systm.h>
 #include <sys/sysmacros.h>
 #include <sys/kmem.h>
 #include <sys/pathname.h>
+#include <sys/vnode.h>
 #include <sys/vfs.h>
 #include <sys/vfs_opreg.h>
 #include <sys/mntent.h>
-#endif /* !__APPLE__ */
-
 #include <sys/mount.h>
-#include <sys/vnode.h>
-
-#ifdef __APPLE__
-#include <sys/zfs_context.h>
-#include <sys/zfs_vfsops.h>
-#include <sys/sysctl.h>
-#include <libkern/crypto/md5.h>
-#endif /* __APPLE__ */
-
-#ifndef __APPLE__
 #include <sys/cmn_err.h>
 #include "fs/fs_subr.h"
+#include <sys/zfs_znode.h>
 #endif /* !__APPLE__ */
 
-#include <sys/zfs_znode.h>
 #include <sys/zfs_dir.h>
 
-#include <sys/zfs_ctldir.h>
-#include <sys/refcount.h>
+#ifndef __APPLE__
 #include <sys/zil.h>
 #include <sys/fs/zfs.h>
 #include <sys/dmu.h>
-#include <sys/dsl_prop.h>
+#endif /* !__APPLE__ */
 
-#include <sys/dmu_objset.h>
+#include <sys/dsl_prop.h>
 #include <sys/dsl_dataset.h>
+
+#ifndef __APPLE__
 #include <sys/dsl_deleg.h>
 #include <sys/spa.h>
-#include <sys/zap.h>
+#endif /* !__APPLE__ */
 
-#include <zfs_comutil.h>
+#include <sys/zap.h>
 
 #ifndef __APPLE__
 #include <sys/sa.h>
@@ -84,19 +72,35 @@
 #include <sys/mkdev.h>
 #include <sys/modctl.h>
 #include <sys/refstr.h>
+#include <sys/zfs_ioctl.h>
+#endif /* !__APPLE__ */
+
 #include <sys/zfs_ctldir.h>
+
+#ifndef __APPLE__
+#include <sys/zfs_fuid.h>
 #include <sys/bootconf.h>
 #include <sys/sunddi.h>
 #include <sys/dnlc.h>
 #endif /* !__APPLE__ */
-#include <sys/zfs_ioctl.h>
+
 #include <sys/dmu_objset.h>
+
+#ifndef __APPLE__
 #include <sys/spa_boot.h>
+#endif /* !__APPLE__ */
+
+#ifdef __LINUX__
 #include <sys/zpl.h>
+#endif /* __LINUX__ */
+
 #include "zfs_comutil.h"
 
+#ifdef __APPLE__
+#include <libkern/crypto/md5.h>
 #include <sys/zfs_vnops.h>
 #include <sys/systeminfo.h>
+#endif /* __APPLE__ */
 
 //#define dprintf printf
 
