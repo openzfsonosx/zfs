@@ -1437,6 +1437,7 @@ zfs_setprop_error(libzfs_handle_t *hdl, zfs_prop_t prop, int err,
 	}
 }
 
+#ifdef __LINUX__
 static boolean_t
 zfs_is_namespace_prop(zfs_prop_t prop)
 {
@@ -1458,6 +1459,7 @@ zfs_is_namespace_prop(zfs_prop_t prop)
 		return (B_FALSE);
 	}
 }
+#endif /* __LINUX__ */
 
 /*
  * Given a property name and value, set the property for the given dataset.
@@ -1682,6 +1684,7 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 		 */
 		(void) get_stats(zhp);
 
+#ifdef __LINUX__
 		/*
 		 * Remount the filesystem to propagate the change
 		 * if one of the options handled by the generic
@@ -1690,6 +1693,7 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 		if (zfs_is_namespace_prop(prop) &&
 		    zfs_is_mounted(zhp, NULL))
 			ret = zfs_mount(zhp, MNTOPT_REMOUNT, 0);
+#endif /* __LINUX__ */
 	}
 
 error:
