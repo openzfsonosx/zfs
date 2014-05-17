@@ -60,7 +60,7 @@ extern "C" {
 #define	MNTTYPE_SHAREFS	"sharefs"	/* Kernel sharetab file system */
 
 
-#define	MNTOPT_RO	"ro"		/* Read only */
+#define	MNTOPT_RO	"rdonly"	/* Read only */
 #define	MNTOPT_RW	"rw"		/* Read/write */
 #define	MNTOPT_RQ	"rq"		/* Read/write with quotas */
 #define	MNTOPT_QUOTA	"quota"		/* Check quotas */

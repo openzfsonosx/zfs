@@ -80,7 +80,6 @@
 
 #include <libshare.h>
 #include <sys/systeminfo.h>
-#include <sys/zfs_mount.h>
 #define	MAXISALEN	257	/* based on sysinfo(2) man page */
 
 static int zfs_share_proto(zfs_handle_t *, zfs_share_proto_t *);
@@ -362,7 +361,6 @@ do_unmount_volume(const char *mntpt, int flags)
 	return (rc ? EINVAL : 0);
 }
 
-#ifdef __LINUX__
 static int
 zfs_add_option(zfs_handle_t *zhp, char *options, int len,
     zfs_prop_t prop, char *on, char *off)
@@ -385,43 +383,37 @@ zfs_add_option(zfs_handle_t *zhp, char *options, int len,
 
 	return (0);
 }
-#endif
 
 static int
-zfs_add_options(zfs_handle_t *zhp, int *flags)
+zfs_add_options(zfs_handle_t *zhp, char *options, int len)
 {
 	int error = 0;
-    char *source;
-	uint64_t value;
 
-	value = getprop_uint64(zhp, ZFS_PROP_ATIME, &source);
-    if (!value) *flags |= MNT_NOATIME;
-	value = getprop_uint64(zhp, ZFS_PROP_DEVICES, &source);
-    if (!value) *flags |= MNT_NODEV;
-	value = getprop_uint64(zhp, ZFS_PROP_EXEC, &source);
-    if (!value) *flags |= MNT_NOEXEC;
-	value = getprop_uint64(zhp, ZFS_PROP_READONLY, &source);
-    if (value) *flags |= MNT_RDONLY;
-	value = getprop_uint64(zhp, ZFS_PROP_SETUID, &source);
-    if (!value) *flags |= MNT_NOSUID;
-	value = getprop_uint64(zhp, ZFS_PROP_XATTR, &source);
-    if (!value) *flags |= MNT_NOUSERXATTR;
-	value = getprop_uint64(zhp, ZFS_PROP_APPLE_BROWSE, &source);
-    if (!value) *flags |= MNT_DONTBROWSE;
-        value = getprop_uint64(zhp, ZFS_PROP_APPLE_IGNOREOWNER, &source);
-    if (value) *flags |= MNT_IGNORE_OWNERSHIP;
-
-    /*
-	value = getprop_uint64(zhp, ZFS_PROP_NBMAND, &source);
-    if (!value) *flags |= MNT_NOXATTR;
-    */
+	error = zfs_add_option(zhp, options, len,
+	    ZFS_PROP_ATIME, MNTOPT_ATIME, MNTOPT_NOATIME);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_DEVICES, MNTOPT_DEVICES, MNTOPT_NODEVICES);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_EXEC, MNTOPT_EXEC, MNTOPT_NOEXEC);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_READONLY, MNTOPT_RO, MNTOPT_RW);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_SETUID, MNTOPT_SETUID, MNTOPT_NOSETUID);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_XATTR, MNTOPT_XATTR, MNTOPT_NOXATTR);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_NBMAND, MNTOPT_NBMAND, MNTOPT_NONBMAND);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_APPLE_BROWSE, MNTOPT_BROWSE, MNTOPT_NOBROWSE);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_APPLE_IGNOREOWNER, MNTOPT_OWNERS, MNTOPT_NOOWNERS);
 
 	return (error);
 }
 
 #ifdef __APPLE__
 /*
- * On OSX we can set the icon to an Open ZFS specific one, just to be extra
+ * On OS X we can set the icon to an Open ZFS specific one, just to be extra
  * shiny
  */
 void
@@ -497,7 +489,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	int remount, rc;
 #ifdef __APPLE__
-    struct zfs_mount_args mnt_args;
     char  path[MAXPATHLEN];
 #endif
 
@@ -513,14 +504,8 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	/*
 	 * If the pool is imported read-only then all mounts must be read-only
 	 */
-#ifdef __LINUX__
 	if (zpool_get_prop_int(zhp->zpool_hdl, ZPOOL_PROP_READONLY, NULL))
 		(void) strlcat(mntopts, "," MNTOPT_RO, sizeof (mntopts));
-#endif
-#ifdef __APPLE__
-	if (zpool_get_prop_int(zhp->zpool_hdl, ZPOOL_PROP_READONLY, NULL))
-		flags |= MNT_RDONLY;
-#endif
 
 	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL))
 		return (0);
@@ -532,7 +517,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	 * given a super block there is no back reference to update the per
 	 * mount point options.
 	 */
-	rc = zfs_add_options(zhp, &flags);
+	rc = zfs_add_options(zhp, mntopts, sizeof (mntopts));
 	if (rc) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 		    "default options unavailable"));
@@ -544,7 +529,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	/*
 	 * Append zfsutil option so the mount helper allow the mount
 	 */
-	//strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
+	strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
 
 	/* Create the directory if it doesn't already exist */
 #ifdef __APPLE__
@@ -564,15 +549,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 			    mountpoint));
 		}
 
-#if 0   // FIXME, removed. it seems odd we first create a file
-        // then we check the dir is empty
-
-		/* Create the mountpoint cookie file. */
-		snprintf(path, MAXPATHLEN, "%s/%s", mountpoint, MOUNT_POINT_COOKIE);
-		fp = fopen(path, "w");
-		if (fp)
-			fclose(fp);
-#endif
 	}
 
 	/*
@@ -589,16 +565,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	}
 
 	/* perform the mount */
-#if LINUX
 	rc = do_mount(zfs_get_name(zhp), mountpoint, mntopts);
-#else
-	//printf("zfs_mount: un used options: \"%s\"\n", mntopts);
-	//fprintf(stderr, "zfs_mount: flags are %04x \n", flags);
-	mnt_args.fspec = zfs_get_name(zhp);
-	mnt_args.flags = flags;
-	if ((rc = mount(MNTTYPE_ZFS, mountpoint, flags, &mnt_args)) == -1)
-		rc = errno;
-#endif
 
 	if (rc) {
 		/*
@@ -642,9 +609,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #ifdef __APPLE__
 	if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT)
 		fprintf(stderr, "ZFS: snapshot mountpoint '%s'\n", mountpoint);
-
-	if (!(flags & MNT_RDONLY))
-		zfs_mount_seticon(mountpoint);
 #endif
 
 	/* remove the mounted entry before re-adding on remount */

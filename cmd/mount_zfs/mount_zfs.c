@@ -31,22 +31,10 @@
 #include <sys/stat.h>
 #include <libzfs.h>
 #include <locale.h>
+
+#ifdef __APPLE__
 #include <sys/zfs_mount.h>
-#include <mntent.h>
-
-#if 0
-struct mntent {
-	char *mnt_fsname;   /* name of mounted filesystem */
-	char *mnt_dir;      /* filesystem path prefix */
-	char *mnt_type;     /* mount type (see mntent.h) */
-	char *mnt_opts;     /* mount options (see mntent.h) */
-	int   mnt_freq;     /* dump frequency in days */
-	int   mnt_passno;   /* pass number on parallel fsck */
-};
-#endif
-
-// THIS FILE IS VERY LINUX, MAKE OSX VERSION
-
+#endif /* __APPLE__ */
 
 libzfs_handle_t *g_zfs;
 
@@ -60,27 +48,31 @@ static const option_map_t option_map[] = {
 	/* Canonicalized filesystem independent options from mount(8) */
 	{ MNTOPT_NOAUTO,	MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_DEFAULTS,	MS_COMMENT,	ZS_COMMENT	},
-	{ MNTOPT_NODEVICES,	MS_NODEV,	ZS_COMMENT	},
+	{ MNTOPT_DEVICES,	MS_COMMENT,	ZS_COMMENT	},
+	{ MNTOPT_NODEVICES,	MNT_NODEV,	ZS_COMMENT	},
+	{ MNTOPT_DEVICES,	MNT_NODEV,	ZS_COMMENT	},
 	{ MNTOPT_DIRSYNC,	MS_DIRSYNC,	ZS_COMMENT	},
-	{ MNTOPT_NOEXEC,	MS_NOEXEC,	ZS_COMMENT	},
+	{ MNTOPT_EXEC,		MS_COMMENT,	ZS_COMMENT	},
+	{ MNTOPT_NOEXEC,	MNT_NOEXEC,	ZS_COMMENT	},
 	{ MNTOPT_GROUP,		MS_GROUP,	ZS_COMMENT	},
 	{ MNTOPT_NETDEV,	MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_NOFAIL,	MS_COMMENT,	ZS_COMMENT	},
-	{ MNTOPT_NOSETUID,	MS_NOSUID,	ZS_COMMENT	},
+	{ MNTOPT_SETUID,	MS_COMMENT,	ZS_COMMENT	},
+	{ MNTOPT_NOSETUID,	MNT_NOSUID,	ZS_COMMENT	},
 	{ MNTOPT_OWNER,		MS_OWNER,	ZS_COMMENT	},
-	{ MNTOPT_REMOUNT,	MS_REMOUNT,	ZS_COMMENT	},
-	{ MNTOPT_RO,		MS_RDONLY,	ZS_COMMENT	},
+	{ MNTOPT_REMOUNT,	MNT_UPDATE,	ZS_COMMENT	},
+	{ MNTOPT_RO,		MNT_RDONLY,	ZS_COMMENT	},
 	{ MNTOPT_RW,		MS_COMMENT,	ZS_COMMENT	},
-	{ MNTOPT_SYNC,		MS_SYNCHRONOUS,	ZS_COMMENT	},
+	{ MNTOPT_SYNC,		MNT_SYNCHRONOUS, ZS_COMMENT	},
+	{ MNTOPT_ASYNC,		MNT_ASYNC,	ZS_COMMENT	},
 	{ MNTOPT_USER,		MS_USERS,	ZS_COMMENT	},
 	{ MNTOPT_USERS,		MS_USERS,	ZS_COMMENT	},
 	/* acl flags passed with util-linux-2.24 mount command */
 	{ MNTOPT_ACL,		MS_POSIXACL,	ZS_COMMENT	},
 	{ MNTOPT_NOACL,		MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_POSIXACL,	MS_POSIXACL,	ZS_COMMENT	},
-#ifdef MS_NOATIME
-	{ MNTOPT_NOATIME,	MS_NOATIME,	ZS_COMMENT	},
-#endif
+	{ MNTOPT_ATIME,		MS_COMMENT,	ZS_COMMENT	},
+	{ MNTOPT_NOATIME,	MNT_NOATIME,	ZS_COMMENT	},
 #ifdef MS_NODIRATIME
 	{ MNTOPT_NODIRATIME,	MS_NODIRATIME,	ZS_COMMENT	},
 #endif
@@ -98,7 +90,8 @@ static const option_map_t option_map[] = {
 	{ MNTOPT_IVERSION,	MS_I_VERSION,	ZS_COMMENT	},
 #endif
 #ifdef MS_MANDLOCK
-	{ MNTOPT_NBMAND,	MS_MANDLOCK,	ZS_COMMENT	},
+	{ MNTOPT_NBMAND,	MS_COMMENT,	ZS_COMMENT	},
+	{ MNTOPT_NONBMAND,	MS_COMMENT,	ZS_COMMENT	},
 #endif
 	/* Valid options not found in mount(8) */
 	{ MNTOPT_BIND,		MS_BIND,	ZS_COMMENT	},
@@ -112,11 +105,50 @@ static const option_map_t option_map[] = {
 #ifdef MS_SILENT
 	{ MNTOPT_QUIET,		MS_SILENT,	ZS_COMMENT	},
 #endif
+	{ MNTOPT_NOOWNERS,	MNT_IGNORE_OWNERSHIP, ZS_COMMENT },
+	{ MNTOPT_OWNERS,	MS_COMMENT,	ZS_COMMENT	},
+	{ MNTOPT_BROWSE,	MS_COMMENT,	ZS_COMMENT	},
+	{ MNTOPT_NOBROWSE,	MNT_DONTBROWSE,	ZS_COMMENT	},
+	{ MNTOPT_NOXATTR,	MNT_NOUSERXATTR, ZS_COMMENT	},
 	/* Custom zfs options */
 	{ MNTOPT_XATTR,		MS_COMMENT,	ZS_COMMENT	},
-	{ MNTOPT_NOXATTR,	MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_ZFSUTIL,	MS_COMMENT,	ZS_ZFSUTIL	},
 	{ NULL,			0,		0		} };
+
+#if 0
+static int
+zfs_add_options(zfs_handle_t *zhp, int *flags)
+{
+	int error = 0;
+    char *source;
+	uint64_t value;
+
+	value = getprop_uint64(zhp, ZFS_PROP_ATIME, &source);
+    if (!value) *flags |= MNT_NOATIME;
+	value = getprop_uint64(zhp, ZFS_PROP_DEVICES, &source);
+    if (!value) *flags |= MNT_NODEV;
+	value = getprop_uint64(zhp, ZFS_PROP_EXEC, &source);
+    if (!value) *flags |= MNT_NOEXEC;
+	value = getprop_uint64(zhp, ZFS_PROP_READONLY, &source);
+    if (value) *flags |= MNT_RDONLY;
+	value = getprop_uint64(zhp, ZFS_PROP_SETUID, &source);
+    if (!value) *flags |= MNT_NOSUID;
+	value = getprop_uint64(zhp, ZFS_PROP_XATTR, &source);
+    if (!value) *flags |= MNT_NOUSERXATTR;
+	value = getprop_uint64(zhp, ZFS_PROP_APPLE_BROWSE, &source);
+    if (!value) *flags |= MNT_DONTBROWSE;
+        value = getprop_uint64(zhp, ZFS_PROP_APPLE_IGNOREOWNER, &source);
+    if (value) *flags |= MNT_IGNORE_OWNERSHIP;
+
+    /*
+	value = getprop_uint64(zhp, ZFS_PROP_NBMAND, &source);
+    if (!value) *flags |= MNT_NOXATTR;
+    */
+
+	return (error);
+}
+#endif
+
 
 /*
  * Break the mount option in to a name/value pair.  The name is
@@ -413,7 +445,9 @@ main(int argc, char **argv)
 			verbose++;
 			break;
 		case 'o':
-			(void) strlcpy(mntopts, optarg, sizeof (mntopts));
+			//(void) strlcpy(mntopts, optarg, sizeof (mntopts));
+			strlcat(mntopts, optarg, MNT_LINE_MAX);
+			strlcat(mntopts, ",", MNT_LINE_MAX);
 			break;
 		case 'h':
 		case '?':
@@ -424,6 +458,10 @@ main(int argc, char **argv)
 			return (MOUNT_USAGE);
 		}
 	}
+
+	char *lastcomma = strrchr(mntopts, ',');
+	if (*(&lastcomma[1]) == '\0')
+		*lastcomma = '\0';
 
 	argc -= optind;
 	argv += optind;
@@ -575,10 +613,14 @@ main(int argc, char **argv)
 		error = mount(dataset, mntpoint, MNTTYPE_ZFS,
 		    mntflags, mntopts);
 #elif __APPLE__
+		fprintf(stderr, "mount_zfs: options: '%s'\n", mntopts);
+		fprintf(stderr, "zfs_mount: mntflags are  %04lx \n", mntflags);
 		struct zfs_mount_args mnt_args;
 		mnt_args.fspec = dataset;
 		mnt_args.flags = mntflags;
 		error = mount(MNTTYPE_ZFS, mntpoint, mntflags, &mnt_args);
+		if (error == -1)
+			error = errno;
 #endif
 		if (error) {
 			switch (errno) {
@@ -599,7 +641,8 @@ main(int argc, char **argv)
 		}
 
 #ifdef __APPLE__
-		zfs_mount_seticon(mntpoint);
+		if (!(mntflags & MNT_RDONLY))
+			zfs_mount_seticon(mntpoint);
 #endif
 	}
 

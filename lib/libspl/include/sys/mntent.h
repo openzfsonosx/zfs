@@ -62,8 +62,8 @@
 #define	MNTOPT_NOGROUP	"nogroup"	/* do not allow group mount */
 #define	MNTOPT_IVERSION	"iversion"	/* update inode version */
 #define	MNTOPT_NOIVERSION "noiversion"	/* do not update inode version */
-#define	MNTOPT_NBMAND	"mand"		/* allow non-blocking mandatory locks */
-#define	MNTOPT_NONBMAND	"nomand"	/* deny non-blocking mandatory locks */
+#define	MNTOPT_NBMAND	"nbmand"	/* allow non-blocking mandatory locks */
+#define	MNTOPT_NONBMAND	"nonbmand"	/* deny non-blocking mandatory locks */
 #define	MNTOPT_NETDEV	"_netdev"	/* network device */
 #define	MNTOPT_NOFAIL	"nofail"	/* no failure */
 #define	MNTOPT_RELATIME	"relatime"	/* allow relative time updates */
@@ -75,7 +75,7 @@
 #define	MNTOPT_OWNER	"owner"		/* allow owner mount */
 #define	MNTOPT_NOOWNER	"noowner"	/* do not allow owner mount */
 #define	MNTOPT_REMOUNT	"remount"	/* change mount options */
-#define	MNTOPT_RO	"ro"		/* read only */
+#define	MNTOPT_RO	"rdonly"	/* read only */
 #define	MNTOPT_RW	"rw"		/* read/write */
 #define	MNTOPT_SYNC	"sync"		/* all I/O is synchronous */
 #define	MNTOPT_USER	"user"		/* allow user mount */
