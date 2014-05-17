@@ -1316,43 +1316,43 @@ mountpoint_compare(const void *a, const void *b)
 }
 
 
-int zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
+int
+zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
 {
-
-    // Same pool?
-    if (nzhp && nzhp->zpool_hdl && zpool_get_name(nzhp->zpool_hdl) &&
-        data &&
-        !strcmp(zpool_get_name(nzhp->zpool_hdl), (char *)data)) {
-
-        if (zfs_get_type(nzhp) == ZFS_TYPE_VOLUME) {
-            char *volume = NULL;
-            printf("Attempting to eject volume '%s'\n",
-                   zfs_get_name(nzhp));
-            // /var/run/zfs/zvol/dsk/$POOL/$volume
-            volume = zfs_asprintf(nzhp->zfs_hdl,
-                                  "%s/zfs/zvol/dsk/%s",
-                                  ZVOL_ROOT, zfs_get_name(nzhp));
-            if (volume) {
-                /* Unfortunately, diskutil does not handle our symlink to
-                 * /dev/diskX - so we need to readlink() to find the path */
-                char dstlnk[MAXPATHLEN];
-                int ret;
-
-                ret = readlink(volume, dstlnk, sizeof(dstlnk));
-                if (ret > 0) {
-                    dstlnk[ret] = 0;
-                    do_unmount_volume(dstlnk, 0);
-                }
-                free(volume);
-            }
-        }
-    }
-
-    (void) zfs_iter_children(nzhp, zpool_disable_volumes, data);
-    zfs_close(nzhp);
-    return (0);
+	// Same pool?
+	if (nzhp && nzhp->zpool_hdl && zpool_get_name(nzhp->zpool_hdl) &&
+	    data && !strcmp(zpool_get_name(nzhp->zpool_hdl), (char *)data)) {
+		if (zfs_get_type(nzhp) == ZFS_TYPE_VOLUME) {
+			char *volume = NULL;
+			/*
+			 *	/var/run/zfs/zvol/dsk/$POOL/$volume
+			 */
+			volume = zfs_asprintf(nzhp->zfs_hdl,
+			    "%s/zfs/zvol/dsk/%s",
+			    ZVOL_ROOT,
+			    zfs_get_name(nzhp));
+			if (volume) {
+				/* Unfortunately, diskutil does not handle our
+				 * symlink to /dev/diskX - so we need to
+				 * readlink() to find the path
+				 */
+				char dstlnk[MAXPATHLEN];
+				int ret;
+				ret = readlink(volume, dstlnk, sizeof(dstlnk));
+				if (ret > 0) {
+					printf("Attempting to eject volume "
+					    "'%s'\n", zfs_get_name(nzhp));
+					dstlnk[ret] = '\0';
+					do_unmount_volume(dstlnk, 0);
+				}
+				free(volume);
+			}
+		}
+	}
+	(void) zfs_iter_children(nzhp, zpool_disable_volumes, data);
+	zfs_close(nzhp);
+	return (0);
 }
-
 
 /*
  * Unshare and unmount all datasets within the given pool.  We don't want to

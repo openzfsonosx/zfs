@@ -90,8 +90,9 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
 }
 
 
-void net_lundman_zfs_zvol_device::getBSDName(void)
+int net_lundman_zfs_zvol_device::getBSDName(void)
 {
+  int err = 0;
 
   IORegistryEntry *ioregdevice = OSDynamicCast ( IORegistryEntry, this );
   if(ioregdevice) {
@@ -107,9 +108,14 @@ void net_lundman_zfs_zvol_device::getBSDName(void)
         strlcpy(&zv->zv_bsdname[1], bsdnameosstr->getCStringNoCopy(),
                 sizeof(zv->zv_bsdname)-1);
         //IOLog("name assigned '%s'\n", zv->zv_bsdname);
-      }
-    }
-  }
+      } else
+        err = -1;
+    } else
+      err = -1;
+  } else
+    err = -1;
+
+  return (err);
 }
 
 

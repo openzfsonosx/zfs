@@ -71,7 +71,7 @@ public:
                                        IOStorageCompletion *completion);
     virtual bool handleOpen( IOService *client, IOOptionBits options, void *access);
     virtual void handleClose( IOService *client, IOOptionBits options);
-    virtual void getBSDName();
+    virtual int getBSDName();
 };
 
 #endif
