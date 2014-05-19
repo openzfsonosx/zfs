@@ -5714,9 +5714,11 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 
 	//printf("ioctl minor %d\n", minor);
 
+#ifdef __OPPLE__
 	error = proc_suser(p);			/* Are we superman? */
 	if (error)
 		return (error);			/* Nope... */
+#endif /* __OPPLE__ */
 
 	// If minor > 0 it is an ioctl for zvol!
 	if (minor != 0 &&
@@ -5930,9 +5932,11 @@ static struct miscdevice zfs_misc = {
 static int
 zfsdev_bioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct proc *p)
 {
+#ifdef __OPPLE__
     int error;
     error = proc_suser(p);                  /* Are we superman? */
     if (error) return (error);              /* Nope... */
+#endif /* __OPPLE__ */
     return (zvol_ioctl(dev, cmd, data, 1, NULL, NULL));
 }
 
@@ -5985,7 +5989,7 @@ mnttab_file_create(void)
 	int oflags = FCREAT;
 
 	if ((error = vn_open(MNTTAB, UIO_SYSSPACE,
-						 oflags, 0644, &vp, CRCREAT, 0)) == 0) {
+						 oflags, 0666, &vp, CRCREAT, 0)) == 0) {
 		if ((error =VOP_FSYNC(vp, FSYNC, kcred,
 							  NULL)) == 0) {
 			error = VOP_CLOSE(vp, oflags, 1, 0,

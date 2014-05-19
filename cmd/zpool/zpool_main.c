@@ -5770,7 +5770,11 @@ main(int argc, char **argv)
 	if ((strcmp(cmdname, "-?") == 0) || strcmp(cmdname, "--help") == 0)
 		usage(B_TRUE);
 
-	if (getuid()) printf("ZFS requires 'root' user permission to work on OS X.\nPreceed the command with 'sudo' and try again.\n");
+#ifdef __OPPLE__
+	if (getuid())
+		printf("ZFS requires 'root' user permission to work on OS X.\n"
+		    "Precede the command with 'sudo' and try again.\n");
+#endif /* __OPPLE__ */
 
 	if ((g_zfs = libzfs_init()) == NULL)
 		return (1);
