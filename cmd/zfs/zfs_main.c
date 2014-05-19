@@ -70,6 +70,10 @@
 #include "zfs_comutil.h"
 #include "libzfs_impl.h"
 
+#ifdef __APPLE__
+#include <sys/zfs_mount.h>
+#endif /* __APPLE__ */
+
 libzfs_handle_t *g_zfs;
 
 static FILE *mnttab_file;
@@ -5888,26 +5892,29 @@ share_mount(int op, int argc, char **argv)
 		}
 
 		/* Temporarily, allow mounting snapshots on OS X */
-		if ( (zhp = zfs_open(g_zfs, argv[0],
+		if ((zhp = zfs_open(g_zfs, argv[0],
 		    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT)) == NULL) {
 			ret = 1;
 		} else {
 			if(zhp->zfs_type & ZFS_TYPE_SNAPSHOT) {
 				if(zfs_is_mounted(zhp, NULL)) {
-					(void) fprintf(stderr, gettext("cannot mount "
-					    "'%s': snapshot already mounted\n"),
-					    zfs_get_name(zhp));
+					(void) fprintf(stderr, gettext("cannot "
+					    "mount '%s': snapshot already "
+					    "mounted\n"), zfs_get_name(zhp));
 					ret = 1;
 				} else {
-					ret = zfs_mount(zhp, options, flags|MNT_RDONLY);
+					ret = zfs_mount(zhp, options,
+					    MS_RDONLY | flags);
 				}
 			} else {
-				//ZFS_TYPE_FILESYSTEM
-				ret = share_mount_one(zhp, op, flags, NULL, B_TRUE, options);
+				/* ZFS_TYPE_FILESYSTEM */
+				ret = share_mount_one(zhp, op, flags, NULL,
+				    B_TRUE, options);
 			}
 			zfs_close(zhp);
 		}
 	}
+
 	return (ret);
 }
 
@@ -6389,6 +6396,147 @@ zfs_do_unshare(int argc, char **argv)
 	return (unshare_unmount(OP_SHARE, argc, argv));
 }
 
+
+/*
+ * Called when invoked as mount_zfs.  Do the mount if the mountpoint is
+ * 'legacy'.  Otherwise, complain that user should be using 'zfs mount'.
+ */
+static int
+manual_mount(int argc, char **argv)
+{
+	zfs_handle_t *zhp;
+	char mountpoint[ZFS_MAXPROPLEN];
+	char mntopts[MNT_LINE_MAX] = { '\0' };
+	int ret = 0;
+	int c;
+	int flags = 0;
+	char *dataset, *path;
+
+	/* check options */
+	while ((c = getopt(argc, argv, ":mo:O")) != -1) {
+		switch (c) {
+		case 'o':
+			(void) strlcat(mntopts, optarg, sizeof (mntopts));
+			(void) strlcat(mntopts, ",", sizeof (mntopts));
+			break;
+		case 'O':
+			flags |= MS_OVERLAY;
+			break;
+		case 'm':
+			flags |= MS_NOMNTTAB;
+			break;
+		case ':':
+			(void) fprintf(stderr, gettext("missing argument for "
+			    "'%c' option\n"), optopt);
+			usage(B_FALSE);
+			break;
+		case '?':
+			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
+			    optopt);
+			(void) fprintf(stderr, gettext("usage: mount [-o opts] "
+			    "<path>\n"));
+			return (2);
+		}
+	}
+
+	char *lastcomma = strrchr(mntopts, ',');
+	if (lastcomma && (*(&lastcomma[1]) == '\0'))
+		*lastcomma = '\0';
+
+	argc -= optind;
+	argv += optind;
+
+	/* check that we only have two arguments */
+	if (argc != 2) {
+		if (argc == 0)
+			(void) fprintf(stderr, gettext("missing dataset "
+			    "argument\n"));
+		else if (argc == 1)
+			(void) fprintf(stderr,
+			    gettext("missing mountpoint argument\n"));
+		else
+			(void) fprintf(stderr, gettext("too many arguments\n"));
+		(void) fprintf(stderr, "usage: mount <dataset> <mountpoint>\n");
+		return (2);
+	}
+
+	dataset = argv[0];
+	path = argv[1];
+
+	/* try to open the dataset */
+	if ((zhp = zfs_open(g_zfs, dataset, ZFS_TYPE_FILESYSTEM)) == NULL)
+		return (1);
+
+	(void) zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT, mountpoint,
+	    sizeof (mountpoint), NULL, NULL, 0, B_FALSE);
+
+	/* check for legacy mountpoint and complain appropriately */
+	ret = 0;
+	if (strcmp(mountpoint, ZFS_MOUNTPOINT_LEGACY) == 0) {
+		if (zmount(dataset, path, MS_OPTIONSTR | flags, MNTTYPE_ZFS,
+		    NULL, 0, mntopts, sizeof (mntopts)) != 0) {
+			(void) fprintf(stderr, gettext("mount failed: %s\n"),
+			    strerror(errno));
+			ret = 1;
+		}
+	} else {
+		(void) fprintf(stderr, gettext("filesystem '%s' cannot be "
+		    "mounted using 'mount -t zfs'\n"), dataset);
+		(void) fprintf(stderr, gettext("Use 'zfs set mountpoint=%s' "
+		    "instead.\n"), path);
+		(void) fprintf(stderr, gettext("If you must use 'mount -t zfs' "
+		    "or /etc/fstab, use 'zfs set mountpoint=legacy'.\n"));
+		(void) fprintf(stderr, gettext("See zfs(1M) for more "
+		    "information.\n"));
+		ret = 1;
+	}
+
+	return (ret);
+}
+
+/*
+ * Called when invoked as /etc/fs/zfs/umount.  Unlike a manual mount, we allow
+ * unmounts of non-legacy filesystems, as this is the dominant administrative
+ * interface.
+ */
+static int
+manual_unmount(int argc, char **argv)
+{
+	int flags = 0;
+	int c;
+
+	/* check options */
+	while ((c = getopt(argc, argv, "f")) != -1) {
+		switch (c) {
+		case 'f':
+			flags = MS_FORCE;
+			break;
+		case '?':
+			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
+			    optopt);
+			(void) fprintf(stderr, gettext("usage: unmount [-f] "
+			    "<path>\n"));
+			return (2);
+		}
+	}
+
+	argc -= optind;
+	argv += optind;
+
+	/* check arguments */
+	if (argc != 1) {
+		if (argc == 0)
+			(void) fprintf(stderr, gettext("missing path "
+			    "argument\n"));
+		else
+			(void) fprintf(stderr, gettext("too many arguments\n"));
+		(void) fprintf(stderr, gettext("usage: unmount [-f] <path>\n"));
+		return (2);
+	}
+
+	return (unshare_unmount_path(OP_MOUNT, argv[0], flags, B_TRUE));
+}
+
 static int
 find_command_idx(char *command, int *idx)
 {
@@ -6481,11 +6629,14 @@ zfs_do_diff(int argc, char **argv)
 	return (err != 0);
 }
 
+extern char *basename(char *path);
+
 int
 main(int argc, char **argv)
 {
 	int ret = 0;
 	int i;
+	char *progname;
 	char *cmdname;
 
 	(void) setlocale(LC_ALL, "");
@@ -6510,59 +6661,68 @@ main(int argc, char **argv)
         }
 
 	/*
-	 * Make sure the user has specified some command.
+	 * This command also doubles as the /sbin/mount_zfs program (mount -t zfs).
+	 * Determine if we should take this behavior based on argv[0].
 	 */
-	if (argc < 2) {
-		(void) fprintf(stderr, gettext("missing command\n"));
-		usage(B_FALSE);
-	}
-
-	cmdname = argv[1];
-
-	/*
-	 * The 'umount' command is an alias for 'unmount'
-	 */
-	if (strcmp(cmdname, "umount") == 0)
-		cmdname = "unmount";
-
-	/*
-	 * The 'recv' command is an alias for 'receive'
-	 */
-	if (strcmp(cmdname, "recv") == 0)
-		cmdname = "receive";
-
-	/*
-	 * The 'snap' command is an alias for 'snapshot'
-	 */
-	if (strcmp(cmdname, "snap") == 0)
-		cmdname = "snapshot";
-
-	/*
-	 * Special case '-?'
-	 */
-	if ((strcmp(cmdname, "-?") == 0) ||
-	    (strcmp(cmdname, "--help") == 0))
-		usage(B_TRUE);
-
-	/*
-	 * Run the appropriate command.
-	 */
-	libzfs_mnttab_cache(g_zfs, B_TRUE);
-	if (find_command_idx(cmdname, &i) == 0) {
-		current_command = &command_table[i];
-		ret = command_table[i].func(argc - 1, argv + 1);
-	} else if (strchr(cmdname, '=') != NULL) {
-		verify(find_command_idx("set", &i) == 0);
-		current_command = &command_table[i];
-		ret = command_table[i].func(argc, argv);
+	progname = basename(argv[0]);
+	if (strcmp(progname, "mount_zfs") == 0) {
+		ret = manual_mount(argc, argv);
+	} else if (strcmp(progname, "umount_zfs") == 0) {
+		ret = manual_unmount(argc, argv);
 	} else {
-		(void) fprintf(stderr, gettext("unrecognized "
-		    "command '%s'\n"), cmdname);
-		usage(B_FALSE);
-		ret = 1;
-	}
+		/*
+		 * Make sure the user has specified some command.
+		 */
+		if (argc < 2) {
+			(void) fprintf(stderr, gettext("missing command\n"));
+			usage(B_FALSE);
+		}
 
-	libzfs_mnttab_cache(g_zfs, B_FALSE);
+		cmdname = argv[1];
+
+		/*
+		 * The 'umount' command is an alias for 'unmount'
+		 */
+		if (strcmp(cmdname, "umount") == 0)
+			cmdname = "unmount";
+
+		/*
+		 * The 'recv' command is an alias for 'receive'
+		 */
+		if (strcmp(cmdname, "recv") == 0)
+			cmdname = "receive";
+
+		/*
+		 * The 'snap' command is an alias for 'snapshot'
+		 */
+		if (strcmp(cmdname, "snap") == 0)
+			cmdname = "snapshot";
+
+		/*
+		 * Special case '-?'
+		 */
+		if ((strcmp(cmdname, "-?") == 0) ||
+		    (strcmp(cmdname, "--help") == 0))
+			usage(B_TRUE);
+
+		/*
+		 * Run the appropriate command.
+		 */
+		libzfs_mnttab_cache(g_zfs, B_TRUE);
+		if (find_command_idx(cmdname, &i) == 0) {
+			current_command = &command_table[i];
+			ret = command_table[i].func(argc - 1, argv + 1);
+		} else if (strchr(cmdname, '=') != NULL) {
+			verify(find_command_idx("set", &i) == 0);
+			current_command = &command_table[i];
+			ret = command_table[i].func(argc, argv);
+		} else {
+			(void) fprintf(stderr, gettext("unrecognized "
+			    "command '%s'\n"), cmdname);
+			usage(B_FALSE);
+		}
+		libzfs_mnttab_cache(g_zfs, B_FALSE);
+	}
 
 	(void) fclose(mnttab_file);
 

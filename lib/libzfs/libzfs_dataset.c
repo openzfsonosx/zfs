@@ -67,6 +67,10 @@
 #include "libzfs_impl.h"
 #include "zfs_deleg.h"
 
+#ifdef __APPLE__
+#include <sys/zfs_mount.h>
+#endif /* __APPLE__ */
+
 static int userquota_propname_decode(const char *propname, boolean_t zoned,
     zfs_userquota_prop_t *typep, char *domain, int domainlen, uint64_t *ridp);
 

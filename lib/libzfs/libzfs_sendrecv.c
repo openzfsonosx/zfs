@@ -58,6 +58,10 @@
 #include <sys/ddt.h>
 #include <sys/socket.h>
 
+#ifdef __APPLE__
+#include <sys/zfs_mount.h>
+#endif /* __APPLE__ */
+
 /* in libzfs_dataset.c */
 extern void zfs_setprop_error(libzfs_handle_t *, zfs_prop_t, int, char *);
 

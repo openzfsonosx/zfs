@@ -48,6 +48,10 @@
 #include "zfs_comutil.h"
 #include "zfeature_common.h"
 
+#ifdef __APPLE__
+#include <sys/zfs_mount.h>
+#endif /* __APPLE__ */
+
 static int read_efi_label(nvlist_t *config, diskaddr_t *sb);
 
 typedef struct prop_flags {

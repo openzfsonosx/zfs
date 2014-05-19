@@ -782,6 +782,11 @@ extern boolean_t libzfs_fru_compare(libzfs_handle_t *, const char *,
 extern boolean_t libzfs_fru_notself(libzfs_handle_t *, const char *);
 extern int zpool_fru_set(zpool_handle_t *, uint64_t, const char *);
 
+#ifndef sun
+extern int zmount(const char *, const char *, int, char *, char *, int, char *,
+    int);
+#endif	/* !sun */
+
 #ifdef	__cplusplus
 }
 #endif

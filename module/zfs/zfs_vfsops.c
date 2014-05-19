@@ -100,6 +100,7 @@
 #include <libkern/crypto/md5.h>
 #include <sys/zfs_vnops.h>
 #include <sys/systeminfo.h>
+#include <sys/zfs_mount.h>
 #endif /* __APPLE__ */
 
 //#define dprintf printf
@@ -1994,9 +1995,12 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
               user_addr_t data, vfs_context_t context)
 {
 	cred_t		*cr =  (cred_t *)vfs_context_ucred(context);
-	char		*osname;
+	char		*osname = NULL;
+	char		*options = NULL;
 	int		error = 0;
 	int		canwrite;
+	int		mflag;
+	int		flags = 0;
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
@@ -2029,9 +2033,35 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
                                 MAXPATHLEN, &osnamelen)) )
             goto out;
     }
+	mflag = mnt_args.mflag;
 
-    dprintf("vfs_mount: options %04x path '%s'\n",
-            mnt_args.flags, mnt_args.fspec);
+	options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
+
+	error = copyin((user_addr_t)mnt_args.optptr, (caddr_t)options,
+	    mnt_args.optlen);
+
+	dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
+	    " options %s\n",
+	    mnt_args.fspec,
+	    mnt_args.mflag,
+	    mnt_args.optptr,
+	    mnt_args.optlen,
+	    options);
+
+	if (mflag & MS_RDONLY)
+		flags |= MNT_RDONLY;
+
+	if (mflag & MS_OVERLAY)
+		flags |= MNT_UNION;
+
+	if (mflag & MS_FORCE)
+		flags |= MNT_FORCE;
+
+	if (mflag & MS_REMOUNT)
+		flags |= MNT_UPDATE;
+
+	vfs_setflags(vfsp, (uint64_t)flags);
+
 #endif
 
 #ifdef illumos
@@ -2279,6 +2309,13 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 #endif /* __APPLE__ */
 
 out:
+#ifdef __APPLE__
+	if (osname)
+		kmem_free(osname, MAXPATHLEN);
+
+	if (options)
+		kmem_free(options, mnt_args.optlen);
+#endif
 	return (error);
 }
 

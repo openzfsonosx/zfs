@@ -49,7 +49,10 @@
 
 #include "libzfs_impl.h"
 #include "zfs_prop.h"
-#include "zfeature_common.h"
+#
+#ifdef __APPLE__
+#include <sys/zfs_mount.h>
+#endif /* __APPLE__ */include "zfeature_common.h"
 
 int
 libzfs_errno(libzfs_handle_t *hdl)
