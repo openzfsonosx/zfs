@@ -284,14 +284,10 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 	zfs_znode_init();
 
     /*
-     *  Initialize spa, dmu, arc, prep zvol
-     */
-    /* XXX TO DO - check spa / zvol status, not ioctl */
-	if (!(spa_mode_global & FWRITE)) {
-        spa_init(FREAD | FWRITE);
-        zvol_init(); // Removd in 10a286
-    }
-
+	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
+	 */
+	zfs_ioctl_osx_init();
+    
 	///sysctl_register_oid(&sysctl__debug_maczfs);
 	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
 
@@ -333,16 +329,6 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
         }
       }
     }
-    
-	/*
-	 * Initialize /dev/zfs,
-     *      this used to call spa_init (then ->dmu_init->arc_init-> etc)
-     *      needed to be moved after mountroot
-     *  Works fine during early boot - as long as IOBSD is loaded first.
-     *   See info.plist.
-     *  Could be reset as it was prior to splitting spa_init and zvol_init
-	 */
-	zfs_ioctl_osx_init();
     
     printf("ZFS: Loaded module v%s-%s%s, "
            "ZFS pool version %s, ZFS filesystem version %s\n",
