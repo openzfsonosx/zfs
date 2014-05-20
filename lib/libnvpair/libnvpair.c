@@ -25,12 +25,7 @@
 
 #include <unistd.h>
 #include <strings.h>
-#ifdef HAVE_GETTEXT
 #include <libintl.h>
-#else
-#define	gettext(str)		(str)
-#define	dgettext(domain, str)	(str)
-#endif
 #include <sys/types.h>
 #include <sys/inttypes.h>
 #include <stdarg.h>

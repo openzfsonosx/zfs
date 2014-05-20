@@ -28,7 +28,7 @@
 
 #include "libuutil_common.h"
 
-//#include <libintl.h>
+#include <libintl.h>
 #include <limits.h>
 #include <string.h>
 #include <stdlib.h>

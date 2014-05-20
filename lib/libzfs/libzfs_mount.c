@@ -63,7 +63,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <libgen.h>
-//#include <libintl.h>
+#include <libintl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -81,6 +81,12 @@
 #include <libshare.h>
 #include <sys/systeminfo.h>
 #define	MAXISALEN	257	/* based on sysinfo(2) man page */
+
+#ifdef __APPLE__
+#include <sys/zfs_mount.h>
+#endif /* __APPLE__ */
+
+//#dprintf printf
 
 static int zfs_share_proto(zfs_handle_t *, zfs_share_proto_t *);
 zfs_share_type_t zfs_is_shared_proto(zfs_handle_t *, char **,
@@ -273,6 +279,7 @@ zfs_is_mountable(zfs_handle_t *zhp, char *buf, size_t buflen,
  * http://www.kernel.org/pub/linux/utils/util-linux/libmount-docs/index.html
  */
 
+#ifdef __LINUX__
 static int
 do_mount(const char *src, const char *mntpt, char *opts)
 {
@@ -306,12 +313,15 @@ do_mount(const char *src, const char *mntpt, char *opts)
 
 	return (0);
 }
+#endif /* __LINUX__ */
 
 static int
 do_unmount(const char *mntpt, int flags)
 {
 	char force_opt[] = "force";
+#ifdef __LINUX__
 	char lazy_opt[] = "-l";
+#endif /* __LINUX__ */
 	char *argv[7] = {
 	    "/usr/sbin/diskutil",
 	    "unmount",
@@ -323,10 +333,12 @@ do_unmount(const char *mntpt, int flags)
 		count++;
 	}
 
+#ifdef __LINUX__
 	if (flags & MS_DETACH) {
 		argv[count] = lazy_opt;
 		count++;
 	}
+#endif /* __LINUX__ */
 
 	argv[count] = (char *)mntpt;
 	rc = libzfs_run_process(argv[0], argv, STDOUT_VERBOSE|STDERR_VERBOSE);
@@ -338,7 +350,9 @@ static int
 do_unmount_volume(const char *mntpt, int flags)
 {
 	char force_opt[] = "force";
+#ifdef __LINUX__
 	char lazy_opt[] = "-l";
+#endif /* __LINUX__ */
 	char *argv[7] = {
 	    "/usr/sbin/diskutil",
 	    "unmountDisk",
@@ -350,10 +364,12 @@ do_unmount_volume(const char *mntpt, int flags)
 		count++;
 	}
 
+#ifdef __LINUX__
 	if (flags & MS_DETACH) {
 		argv[count] = lazy_opt;
 		count++;
 	}
+#endif /* __LINUX__ */
 
 	argv[count] = (char *)mntpt;
 	rc = libzfs_run_process(argv[0], argv, STDOUT_VERBOSE|STDERR_VERBOSE);
@@ -384,46 +400,30 @@ zfs_add_option(zfs_handle_t *zhp, char *options, int len,
 
 	return (0);
 }
-#endif
 
 static int
-zfs_add_options(zfs_handle_t *zhp, int *flags)
+zfs_add_options(zfs_handle_t *zhp, char *options, int len)
 {
 	int error = 0;
-    char *source;
-	uint64_t value;
 
-	value = getprop_uint64(zhp, ZFS_PROP_ATIME, &source);
-    if (!value) *flags |= MNT_NOATIME;
-	value = getprop_uint64(zhp, ZFS_PROP_DEVICES, &source);
-    if (!value) *flags |= MNT_NODEV;
-	value = getprop_uint64(zhp, ZFS_PROP_EXEC, &source);
-    if (!value) *flags |= MNT_NOEXEC;
-	value = getprop_uint64(zhp, ZFS_PROP_READONLY, &source);
-    if (value) *flags |= MNT_RDONLY;
-	value = getprop_uint64(zhp, ZFS_PROP_SETUID, &source);
-    if (!value) *flags |= MNT_NOSUID;
-	value = getprop_uint64(zhp, ZFS_PROP_XATTR, &source);
-    if (!value) *flags |= MNT_NOUSERXATTR;
-	value = getprop_uint64(zhp, ZFS_PROP_APPLE_BROWSE, &source);
-    if (!value) *flags |= MNT_DONTBROWSE;
-        value = getprop_uint64(zhp, ZFS_PROP_APPLE_IGNOREOWNER, &source);
-    if (value) *flags |= MNT_IGNORE_OWNERSHIP;
-
-    /*
-	value = getprop_uint64(zhp, ZFS_PROP_NBMAND, &source);
-    if (!value) *flags |= MNT_NOXATTR;
-    */
+	error = zfs_add_option(zhp, options, len,
+	    ZFS_PROP_ATIME, MNTOPT_ATIME, MNTOPT_NOATIME);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_DEVICES, MNTOPT_DEVICES, MNTOPT_NODEVICES);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_EXEC, MNTOPT_EXEC, MNTOPT_NOEXEC);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_READONLY, MNTOPT_RO, MNTOPT_RW);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_SETUID, MNTOPT_SETUID, MNTOPT_NOSETUID);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_XATTR, MNTOPT_XATTR, MNTOPT_NOXATTR);
+	error = error ? error : zfs_add_option(zhp, options, len,
+	    ZFS_PROP_NBMAND, MNTOPT_NBMAND, MNTOPT_NONBMAND);
 
 	return (error);
 }
-
-
-#define MOUNT_POINT_CUSTOM_ICON ".VolumeIcon.icns"
-// RJVB 20140331: now that we use KERNEL_MODPREFIX it is no longer necessary to look in 2 locations:
-// #define CUSTOM_ICON_PATH_LEGACY "/System/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns"
-// #define CUSTOM_ICON_PATH_MAVERICKS "/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns"
-#define CUSTOM_ICON_PATH KERNEL_MODPREFIX "/zfs.kext/Contents/Resources/VolumeIcon.icns"
+#endif /* __LINUX */
 
 #ifdef __APPLE__
 /*
@@ -501,14 +501,10 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	char mountpoint[ZFS_MAXPROPLEN];
 	char mntopts[MNT_LINE_MAX];
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
-	int remount, rc;
-#ifdef __APPLE__
-    struct zfs_mount_args mnt_args;
-    char  path[MAXPATHLEN];
-#endif
+	int remount;
 
 	if (options == NULL) {
-		(void) strlcpy(mntopts, MNTOPT_DEFAULTS, sizeof (mntopts));
+		mntopts[0] = '\0';
 	} else {
 		(void) strlcpy(mntopts, options, sizeof (mntopts));
 	}
@@ -522,15 +518,15 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #ifdef __LINUX__
 	if (zpool_get_prop_int(zhp->zpool_hdl, ZPOOL_PROP_READONLY, NULL))
 		(void) strlcat(mntopts, "," MNTOPT_RO, sizeof (mntopts));
-#endif
-#ifdef __APPLE__
+#else
 	if (zpool_get_prop_int(zhp->zpool_hdl, ZPOOL_PROP_READONLY, NULL))
-		flags |= MNT_RDONLY;
-#endif
+		flags |= MS_RDONLY;
+#endif /* __LINUX__ */
 
 	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL))
 		return (0);
 
+#ifdef __LINUX__
 	/*
 	 * Append default mount options which apply to the mount point.
 	 * This is done because under Linux (unlike Solaris) multiple mount
@@ -550,7 +546,8 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	/*
 	 * Append zfsutil option so the mount helper allow the mount
 	 */
-	//strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
+	strlcat(mntopts, "," MNTOPT_ZFSUTIL, sizeof (mntopts));
+#endif /* __LINUX__ */
 
 	/* Create the directory if it doesn't already exist */
 #ifdef __APPLE__
@@ -559,9 +556,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #else
 	if (lstat(mountpoint, &buf) != 0) {
 #endif
-		char path[MAXPATHLEN];
-		FILE *fp;
-
 		if (mkdirp(mountpoint, 0755) != 0) {
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "failed to create mountpoint"));
@@ -570,15 +564,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 			    mountpoint));
 		}
 
-#if 0   // FIXME, removed. it seems odd we first create a file
-        // then we check the dir is empty
-
-		/* Create the mountpoint cookie file. */
-		snprintf(path, MAXPATHLEN, "%s/%s", mountpoint, MOUNT_POINT_COOKIE);
-		fp = fopen(path, "w");
-		if (fp)
-			fclose(fp);
-#endif
 	}
 
 	/*
@@ -595,30 +580,27 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	}
 
 	/* perform the mount */
-#if LINUX
+#ifdef __LINUX__
 	rc = do_mount(zfs_get_name(zhp), mountpoint, mntopts);
-#else
-	//printf("zfs_mount: un used options: \"%s\"\n", mntopts);
-	//fprintf(stderr, "zfs_mount: flags are %04x \n", flags);
-	mnt_args.fspec = zfs_get_name(zhp);
-	mnt_args.flags = flags;
-	if ((rc = mount(MNTTYPE_ZFS, mountpoint, flags, &mnt_args)) == -1)
-		rc = errno;
-#endif
-
-	if (rc) {
+#elif defined(__APPLE__) || defined (__FREEBSD__)
+	if (zmount(zfs_get_name(zhp), mountpoint, MS_OPTIONSTR | flags,
+	    MNTTYPE_ZFS, NULL, 0, mntopts, sizeof (mntopts)) != 0) {
+#elif defined(__illumos__)
+	if (mount(zfs_get_name(zhp), mountpoint, MS_OPTIONSTR | flags,
+	    MNTTYPE_ZFS, NULL, 0, mntopts, sizeof (mntopts)) != 0) {
+#endif /* __LINUX__*/
 		/*
 		 * Generic errors are nasty, but there are just way too many
 		 * from mount(), and they're well-understood.  We pick a few
 		 * common ones to improve upon.
 		 */
-		if (rc == EBUSY) {
+		if (errno == EBUSY) {
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "mountpoint or dataset is busy"));
-		} else if (rc == EPERM) {
+		} else if (errno == EPERM) {
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "Insufficient privileges"));
-		} else if (rc == ENOTSUP) {
+		} else if (errno == ENOTSUP) {
 			char buf[256];
 			int spa_version;
 
@@ -631,14 +613,14 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 			    ZFS_PROP_VERSION), spa_version);
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, buf));
 #ifdef __APPLE__
-		} else if (((rc == ESRCH) || (rc == EINVAL) ||
-		    (rc == ENOENT && lstat(mountpoint, &buf) != 0)) &&
+		} else if (((errno == ESRCH) || (errno == EINVAL) ||
+		    (errno == ENOENT && lstat(mountpoint, &buf) != 0)) &&
 		    zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT) {
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "The parent file system must be mounted first."));
 #endif
 		} else {
-			zfs_error_aux(hdl, strerror(rc));
+			zfs_error_aux(hdl, strerror(errno));
 		}
 		return (zfs_error_fmt(hdl, EZFS_MOUNTFAILED,
 		    dgettext(TEXT_DOMAIN, "cannot mount '%s'"),
@@ -649,7 +631,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT)
 		fprintf(stderr, "ZFS: snapshot mountpoint '%s'\n", mountpoint);
 
-	if (!(flags & MNT_RDONLY))
+	if (!(flags & MS_RDONLY))
 		zfs_mount_seticon(mountpoint);
 #endif
 
@@ -694,49 +676,56 @@ unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
 int
 zfs_unmount(zfs_handle_t *zhp, const char *mountpoint, int flags)
 {
-    libzfs_handle_t *hdl = zhp->zfs_hdl;
-    struct mnttab search = { 0 }, entry;
-    char *mntpt = NULL;
+	libzfs_handle_t *hdl = zhp->zfs_hdl;
+#ifdef __LINUX__
+	struct mnttab search = { 0 }, entry;
+#else
+	struct mnttab entry;
+#endif /* __LINUX__ */
+	char *mntpt = NULL;
 
-    /* check to see if need to unmount the filesystem */
+	/* check to see if need to unmount the filesystem */
+	if (mountpoint != NULL ||
+	    (((zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) ||
+	    (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT)) &&
+	    libzfs_mnttab_find(hdl, zhp->zfs_name, &entry) == 0)) {
 
-    if (mountpoint != NULL ||
-        (
-         ((zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM) ||
-          (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT)) &&
-         libzfs_mnttab_find(hdl, zhp->zfs_name, &entry) == 0)
-        ) {
+		/*
+		 * mountpoint may have come from a call to
+		 * getmnt/getmntany if it isn't NULL. If it is NULL,
+		 * we know it comes from getmntany which can then get
+		 * overwritten later. We strdup it to play it safe.
+		 */
+		if (mountpoint == NULL)
+			mntpt = zfs_strdup(zhp->zfs_hdl, entry.mnt_mountp);
+		else
+			mntpt = zfs_strdup(zhp->zfs_hdl, mountpoint);
 
-        /*
-         * mountpoint may have come from a call to
-         * getmnt/getmntany if it isn't NULL. If it is NULL,
-         * we know it comes from getmntany which can then get
-         * overwritten later. We strdup it to play it safe.
-         */
-        if (mountpoint == NULL)
-            mntpt = zfs_strdup(zhp->zfs_hdl, entry.mnt_mountp);
-        else
-            mntpt = zfs_strdup(zhp->zfs_hdl, mountpoint);
+		/*
+		 * Unshare and unmount the filesystem
+		 */
+#ifdef __illumos__
+		if (zfs_unshare_proto(zhp, mntpt, share_all_proto) != 0)
+#else
+		if (zfs_unshare_nfs(zhp, mntpt) != 0)
+#endif
+		return (-1);
 
-        //printf("located '%s' '%s' '%s'\n", mntpt,
-        //     entry.mnt_special, entry.mnt_mountp);
-        /*
-         * Unshare and unmount the filesystem
-         */
-        if (zfs_unshare_nfs(zhp, mntpt) != 0)
-            return (-1);
+		if (unmount_one(hdl, mntpt, flags) != 0) {
+			free(mntpt);
+#ifdef __illumos__
+			(void) zfs_shareall(zhp);
+#else
+			(void) zfs_share_nfs(zhp);
+#endif
+			return (-1);
+		}
+		libzfs_mnttab_remove(hdl, zhp->zfs_name);
+		free(mntpt);
 
-        if (unmount_one(zhp->zfs_hdl, mntpt, flags) != 0) {
-            free(mntpt);
-            (void) zfs_share_nfs(zhp);
-            return (-1);
-        }
-        libzfs_mnttab_remove(hdl, zhp->zfs_name);
-        free(mntpt);
+	}
 
-        }
-
-    return (0);
+	return (0);
 }
 
 /*
@@ -1323,43 +1312,43 @@ mountpoint_compare(const void *a, const void *b)
 }
 
 
-int zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
+int
+zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
 {
-
-    // Same pool?
-    if (nzhp && nzhp->zpool_hdl && zpool_get_name(nzhp->zpool_hdl) &&
-        data &&
-        !strcmp(zpool_get_name(nzhp->zpool_hdl), (char *)data)) {
-
-        if (zfs_get_type(nzhp) == ZFS_TYPE_VOLUME) {
-            char *volume = NULL;
-            printf("Attempting to eject volume '%s'\n",
-                   zfs_get_name(nzhp));
-            // /var/run/zfs/zvol/dsk/$POOL/$volume
-            volume = zfs_asprintf(nzhp,
-                                  "%s/zfs/zvol/dsk/%s",
-                                  ZVOL_ROOT, zfs_get_name(nzhp));
-            if (volume) {
-                /* Unfortunately, diskutil does not handle our symlink to
-                 * /dev/diskX - so we need to readlink() to find the path */
-                char dstlnk[MAXPATHLEN];
-                int ret;
-
-                ret = readlink(volume, dstlnk, sizeof(dstlnk));
-                if (ret > 0) {
-                    dstlnk[ret] = 0;
-                    do_unmount_volume(dstlnk, 0);
-                }
-                free(volume);
-            }
-        }
-    }
-
-    (void) zfs_iter_children(nzhp, zpool_disable_volumes, data);
-    zfs_close(nzhp);
-    return (0);
+	// Same pool?
+	if (nzhp && nzhp->zpool_hdl && zpool_get_name(nzhp->zpool_hdl) &&
+	    data && !strcmp(zpool_get_name(nzhp->zpool_hdl), (char *)data)) {
+		if (zfs_get_type(nzhp) == ZFS_TYPE_VOLUME) {
+			char *volume = NULL;
+			/*
+			 *	/var/run/zfs/zvol/dsk/$POOL/$volume
+			 */
+			volume = zfs_asprintf(nzhp->zfs_hdl,
+			    "%s/zfs/zvol/dsk/%s",
+			    ZVOL_ROOT,
+			    zfs_get_name(nzhp));
+			if (volume) {
+				/* Unfortunately, diskutil does not handle our
+				 * symlink to /dev/diskX - so we need to
+				 * readlink() to find the path
+				 */
+				char dstlnk[MAXPATHLEN];
+				int ret;
+				ret = readlink(volume, dstlnk, sizeof(dstlnk));
+				if (ret > 0) {
+					printf("Attempting to eject volume "
+					    "'%s'\n", zfs_get_name(nzhp));
+					dstlnk[ret] = '\0';
+					do_unmount_volume(dstlnk, 0);
+				}
+				free(volume);
+			}
+		}
+	}
+	(void) zfs_iter_children(nzhp, zpool_disable_volumes, data);
+	zfs_close(nzhp);
+	return (0);
 }
-
 
 /*
  * Unshare and unmount all datasets within the given pool.  We don't want to
@@ -1488,7 +1477,7 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 	}
 
     // Surely there exists a better way to iterate a POOL to find its ZVOLs?
-    zfs_iter_root(hdl, zpool_disable_volumes, zpool_get_name(zhp));
+    zfs_iter_root(hdl, zpool_disable_volumes, (void *) zpool_get_name(zhp));
 
 	ret = 0;
 out:

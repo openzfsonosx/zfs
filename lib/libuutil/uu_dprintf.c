@@ -29,7 +29,7 @@
 #include "libuutil_common.h"
 
 #include <errno.h>
-//#include <libintl.h>
+#include <libintl.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>

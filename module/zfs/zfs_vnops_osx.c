@@ -227,7 +227,7 @@ zfs_vnop_ioctl(
         dprintf("vnop_ioctl: F_RDADVISE\n");
         break;
 	default:
-        dprintf("vnop_ioctl: Unknown ioctl %02lx ('%ul' + %ul)\n",
+        dprintf("vnop_ioctl: Unknown ioctl %02lx ('%lu' + %lu)\n",
                ap->a_command,
                (ap->a_command&0xff00)>>8,
                ap->a_command&0xff);
@@ -333,7 +333,7 @@ void zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
          * this hackery.
          */
         if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) {
-            dprintf("keep_hardlink: %p has refs %u\n",
+            dprintf("keep_hardlink: %p has refs %llu\n",
                     vp, zp->z_links);
             strlcpy(zp->z_finder_hardlink_name,
                     filename,
@@ -946,7 +946,7 @@ zfs_vnop_pagein(
     int             need_unlock = 0;
     int             error = 0;
 
-    dprintf("+vnop_pagein: off 0x%llx size 0x%llx\n",
+    dprintf("+vnop_pagein: off 0x%llx size 0x%lx\n",
            off, len);
 
     if (upl == (upl_t)NULL)
@@ -985,7 +985,7 @@ zfs_vnop_pagein(
         need_unlock = TRUE;
     }
 
-    ubc_upl_map(upl, &vaddr);
+    ubc_upl_map(upl, (vm_offset_t *)&vaddr);
     dprintf("vaddr %p with upl_off 0x%lx\n", vaddr, upl_offset);
     vaddr += upl_offset;
     /*
@@ -1139,7 +1139,7 @@ zfs_vnop_pageout(
     uint64_t        filesz;
     int             err = 0;
 
-    dprintf("+vnop_pageout: off 0x%llx len 0x%x upl_off 0x%lx: blksz 0x%llx, z_size 0x%llx\n",
+    dprintf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: blksz 0x%x, z_size 0x%llx\n",
            off, len, upl_offset, zp->z_blksz, zp->z_size);
 	/*
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
@@ -1252,7 +1252,7 @@ zfs_vnop_pageout(
     va += upl_offset;
     while (len >= PAGESIZE) {
         ssize_t sz = PAGESIZE;
-        dprintf("pageout: dmu_write off 0x%llx size 0x%llx\n", off, sz);
+        dprintf("pageout: dmu_write off 0x%llx size 0x%lx\n", off, sz);
         dmu_write(zfsvfs->z_os, zp->z_id, off, sz, va, tx);
         va += sz;
         off += sz;
@@ -1265,7 +1265,7 @@ zfs_vnop_pageout(
     if (len > 0) {
         ssize_t sz = len;
 
-        dprintf("pageout: dmu_writeX off 0x%llx size 0x%llx\n", off, sz);
+        dprintf("pageout: dmu_writeX off 0x%llx size 0x%lx\n", off, sz);
         dmu_write(zfsvfs->z_os, zp->z_id, off, sz, va, tx);
 
         va += sz;
@@ -1274,7 +1274,7 @@ zfs_vnop_pageout(
 
         /* Zero out the remainder of the PAGE that didnt fit in filesize */
         bzero(va, PAGESIZE-sz);
-        dprintf("zero last 0x%llx bytes.\n", PAGESIZE-sz);
+        dprintf("zero last 0x%lx bytes.\n", PAGESIZE-sz);
 
     }
     ubc_upl_unmap(upl);
@@ -1736,7 +1736,7 @@ zfs_vnop_getxattr(
 	znode_t  *zp = VTOZ(vp);
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
     struct uio *uio = ap->a_uio;
-	struct componentname  cn;
+	pathname_t cn = { 0 };
 	int  error;
 
     //dprintf("+getxattr vp %p\n", ap->a_vp);
@@ -1763,14 +1763,11 @@ zfs_vnop_getxattr(
 		goto out;
 	}
 
-	bzero(&cn, sizeof (cn));
-	cn.cn_nameiop = LOOKUP;
-	cn.cn_flags = ISLASTCN;
-	cn.cn_nameptr = (char *)ap->a_name;
-	cn.cn_namelen = strlen(cn.cn_nameptr);
+	cn.pn_buf = (char *)spa_strdup(ap->a_name);
+	cn.pn_bufsize = strlen(cn.pn_buf);
 
 	/* Lookup the attribute name. */
-	if ( (error = zfs_dirlook(VTOZ(xdvp), ap->a_name, &xvp, 0, NULL, &cn)) ) {
+	if ( (error = zfs_dirlook(VTOZ(xdvp), (char *)ap->a_name, &xvp, 0, NULL, &cn)) ) {
 		if (error == ENOENT)
 			error = ENOATTR;
 		goto out;
@@ -1787,6 +1784,8 @@ zfs_vnop_getxattr(
 		error = VNOP_READ(xvp, uio, 0, ap->a_context);
 	}
 out:
+    if (cn.pn_buf)
+        spa_strfree(cn.pn_buf);
 	if (xvp) {
 		vnode_put(xvp);
 	}
@@ -1891,7 +1890,7 @@ zfs_vnop_removexattr(
 	struct vnode *xvp = NULLVP;
 	znode_t  *zp = VTOZ(vp);
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
-	struct componentname  cn;
+	pathname_t cn = { 0 };
 	int  error;
     uint64_t xattr;
 
@@ -1919,22 +1918,22 @@ zfs_vnop_removexattr(
 		goto out;
 	}
 
-	bzero(&cn, sizeof (cn));
-	cn.cn_nameiop = DELETE;
-	cn.cn_flags = ISLASTCN;
-	cn.cn_nameptr = (char *)ap->a_name;
-	cn.cn_namelen = strlen(cn.cn_nameptr);
+	cn.pn_buf = (char *)spa_strdup(ap->a_name);
+	cn.pn_bufsize = strlen(cn.pn_buf);
 
 	/* Lookup the attribute name. */
-	if ( (error = zfs_dirlook(VTOZ(xdvp), ap->a_name, &xvp, 0, NULL, &cn)) ) {
+	if ( (error = zfs_dirlook(VTOZ(xdvp), (char *)ap->a_name, &xvp, 0, NULL, &cn)) ) {
 		if (error == ENOENT)
 			error = ENOATTR;
 		goto out;
 	}
 
-	error = zfs_remove(xdvp, ap->a_name, cr, ct, /*flags*/0);
+	error = zfs_remove(xdvp, (char *)ap->a_name, cr, ct, /*flags*/0);
 
 out:
+    if (cn.pn_buf)
+        spa_strfree(cn.pn_buf);
+
 	if (xvp) {
 		vnode_put(xvp);
 	}
@@ -2066,7 +2065,7 @@ zfs_vnop_getnamedstream(
 	struct vnode *xdvp = NULLVP;
 	znode_t  *zp = VTOZ(vp);
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
-	struct componentname  cn;
+	pathname_t cn = { 0 };
 	int  error = ENOATTR;
     uint64_t xattr;
 
@@ -2089,17 +2088,16 @@ zfs_vnop_getnamedstream(
 		goto out;
 	}
 
-	bzero(&cn, sizeof (cn));
-	cn.cn_nameiop = LOOKUP;
-	cn.cn_flags = ISLASTCN;
-	cn.cn_nameptr = (char *)ap->a_name;
-	cn.cn_namelen = strlen(cn.cn_nameptr);
+	cn.pn_buf = spa_strdup(ap->a_name);
+	cn.pn_bufsize = strlen(cn.pn_buf);
 
 	/* Lookup the attribute name. */
-	if ( (error = zfs_dirlook(VTOZ(xdvp), ap->a_name, svpp, 0, NULL, &cn)) ) {
+	if ( (error = zfs_dirlook(VTOZ(xdvp), (char *)ap->a_name, svpp, 0, NULL, &cn)) ) {
 		if (error == ENOENT)
 			error = ENOATTR;
 	}
+    spa_strfree(cn.pn_buf);
+
 out:
 	if (xdvp) {
 		vnode_put(xdvp);
@@ -2161,7 +2159,7 @@ zfs_vnop_makenamedstream(
 	VATTR_SET(&vattr, va_type, VREG);
 	VATTR_SET(&vattr, va_mode, VTOZ(vp)->z_mode & ~S_IFMT);
 
-	error = zfs_create(xdvp, ap->a_name, &vattr, NONEXCL, VTOZ(vp)->z_mode,
+	error = zfs_create(xdvp, (char *)ap->a_name, &vattr, NONEXCL, VTOZ(vp)->z_mode,
                        ap->a_svpp, cr);
 
 out:

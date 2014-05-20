@@ -389,7 +389,6 @@ zfs_dirlook(znode_t *dzp, char *name, vnode_t **vpp, int flags,
 		VN_HOLD(*vpp);
 	} else if (name[0] == '.' && name[1] == '.' && name[2] == 0) {
 		zfsvfs_t *zfsvfs = dzp->z_zfsvfs;
-
 		/*
 		 * If we are a snapshot mounted under .zfs, return
 		 * the vp for the snapshot directory.

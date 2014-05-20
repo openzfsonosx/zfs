@@ -1270,6 +1270,7 @@ vdev_open(vdev_t *vd)
 		vd->vdev_max_asize = max_asize;
 		if (vd->vdev_ashift == 0)
 			vd->vdev_ashift = ashift;
+
 	} else {
 		/*
 		 * Detect if the alignment requirement has increased.

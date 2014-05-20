@@ -28,7 +28,10 @@
 #define	_LIBSPL_PRIV_H
 
 #include <sys/types.h>
+#include <unistd.h>
+#include <assert.h>
 
+#ifdef __LINUX__
 /* Couldn't find this definition in OpenGrok */
 #define	PRIV_SYS_CONFIG	"sys_config"
 
@@ -40,7 +43,17 @@ typedef enum priv_op {
 	PRIV_OFF,
 	PRIV_SET
 } priv_op_t;
+#endif /* __LINUX__ */
 
-static inline boolean_t priv_ineffect(const char *priv) { return B_TRUE; }
+#define	PRIV_SYS_CONFIG	0
+
+static __inline int
+priv_ineffect(int priv)
+{
+
+	assert(priv == PRIV_SYS_CONFIG);
+	return (geteuid() == 0);
+}
+
 
 #endif

@@ -973,6 +973,8 @@ extern u_int32_t k_maczfs_debug_stalk;
 extern size_t zfs_kallocmap_size;
 extern size_t zfs_kernelmap_size;
 
+
+
 #ifdef	__cplusplus
 }
 #endif

@@ -407,7 +407,7 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     
     system_taskq_fini();
 
-    zfs_ioctl_fini();
+    zfs_ioctl_osx_fini();
     zvol_fini();
     zfs_vfsops_fini();
     zfs_znode_fini();
@@ -764,13 +764,13 @@ bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
      */
     nub->registerService( kIOServiceSynchronous);
 
-    nub->getBSDName();
-
-    if ((version_major != 10) &&
-	(version_minor != 8))
-      zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
-
-    result = true;
+    if (nub->getBSDName() == 0) {
+        if ((version_major != 10) &&
+            (version_minor != 8))
+            zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
+            result = true;
+    } else
+        result = false;
 
  bail:
     // Unconditionally release the nub object.

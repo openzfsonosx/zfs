@@ -71,7 +71,7 @@ int zfs_autoimport_disable = 0;
 
 /*
  * Called when the module is first loaded, this routine loads the configuration
- * file into the SPA namespace.  It does not actually open or load the pools; it
+ * file into the SPA namespace. It does not actually open or load the pools; it
  * only populates the namespace.
  */
 void
