@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
  *	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T
@@ -29,7 +29,7 @@
 #ifndef _SYS_MNTENT_H
 #define	_SYS_MNTENT_H
 
-
+#ifdef illumos
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -40,6 +40,7 @@ extern "C" {
 
 #define	MNTTYPE_ZFS	"zfs"		/* ZFS file system */
 #define	MNTTYPE_UFS	"ufs"		/* Unix file system */
+#define	MNTTYPE_SMBFS	"smbfs"		/* SMBFS file system */
 #define	MNTTYPE_NFS	"nfs"		/* NFS file system */
 #define	MNTTYPE_NFS3	"nfs3"		/* NFS Version 3 file system */
 #define	MNTTYPE_NFS4	"nfs4"		/* NFS Version 4 file system */
@@ -132,11 +133,129 @@ extern "C" {
 #define	MNTOPT_RESTRICT	"restrict"	/* restricted autofs mount */
 #define	MNTOPT_BROWSE	"browse"	/* browsable autofs mount */
 #define	MNTOPT_NOBROWSE	"nobrowse"	/* non-browsable autofs mount */
-#define MNTOPT_OWNERS	"owners"	/* VFS will not ignore ownership information on filesystem objects */
-#define MNTOPT_NOOWNERS	"noowners"	/* VFS will ignore ownership information on filesystem objects */
+#define	MNTOPT_ZONE	"zone"	/* zone name - set only for non global zones */
 
 #ifdef	__cplusplus
 }
 #endif
+
+#elif __APPLE__
+
+#define	MNTMAXSTR	128
+
+#define	MNTTYPE_ZFS	"zfs"		/* ZFS file system */
+
+#define	MNTOPT_RW	"rw"		/* Read/write */
+#define	MNTOPT_RDONLY	"rdonly"	/* read only filesystem */
+#define	MNTOPT_SYNCHRONOUS "sync"	/* file system written synchronously */
+#define	MNTOPT_EXEC	"exec"		/* enable executables */
+#define	MNTOPT_NOEXEC	"noexec"	/* can't exec from filesystem */
+#define	MNTOPT_SUID	"suid"		/* Set uid allowed */
+#define	MNTOPT_NOSUID	"nosuid"	/* don't honor setuid bits on fs */
+#define	MNTOPT_DEV	"dev"		/* Device-special allowed */
+#define	MNTOPT_NODEV	"nodev"		/* don't interpret special files */
+#define	MNTOPT_UNION	"union"		/* union with underlying filesystem */
+#define	MNTOPT_ASYNC	"async"		/* file system written asynchronously */
+#if 0
+#define	MNT_CPROTECT	0x00000080	/* file system supports content protection */
+#endif
+
+/*
+ * NFS export related mount options.
+ */
+#if 0
+#define	MNT_EXPORTED	0x00000100	/* file system is exported */
+#endif
+
+/*
+ * MAC labeled / "quarantined" flag
+ */
+#if 0
+#define	MNT_QUARANTINE	0x00000400	/* file system is quarantined */
+#endif
+
+/*
+ * Flags set by internal operations.
+ */
+#if 0
+#define	MNT_LOCAL	0x00001000	/* filesystem is stored locally */
+#define	MNT_QUOTA	0x00002000	/* quotas are enabled on filesystem */
+#define	MNT_ROOTFS	0x00004000	/* identifies the root filesystem */
+#define	MNT_DOVOLFS	0x00008000	/* FS supports volfs (deprecated flag in Mac OS X 10.5) */
+#endif
+
+
+#define	MNTOPT_BROWSE	"nobrowse"	/* file system is not appropriate path to user data */
+#define	MNTOPT_DONTBROWSE "nobrowse"	/* file system is not appropriate path to user data */
+#define	MNTOPT_IGNORE_OWNERSHIP "noowners"	/* VFS will ignore ownership information on filesystem objects */
+#define	MNTOPT_DONTIGNORE_OWNERSHIP "owners"	/* VFS will not ignore ownership information on filesystem objects */
+#define	MNTOPT_AUTOMOUNTED "auto"	/* filesystem was mounted by automounter */
+#define	MNTOPT_NOAUTOMOUNTED "noauto"	/* This filesystem should be skipped when mount is run with the -a flag. */
+#if 0
+#define	MNT_JOURNALED	0x00800000	/* filesystem is journaled */
+#endif
+#define	MNTOPT_USERXATTR	"xattr"	/* Don't allow user extended attributes */
+#define	MNTOPT_NOUSERXATTR	"noxattr" /* Don't allow user extended attributes */
+#if 0
+#define	MNT_DEFWRITE	0x02000000	/* filesystem should defer writes */
+#define	MNT_MULTILABEL	0x04000000	/* MAC support for individual labels */
+#endif
+#define	MNTOPT_ATIME	"atime"		/* update atime for files */
+#define	MNTOPT_NOATIME	"noatime"	/* disable update of file access time */
+#if 0
+#ifdef BSD_KERNEL_PRIVATE
+#define	MNT_IMGSRC_BY_INDEX	0x20000000 see sys/imgsrc.h */
+#endif /* BSD_KERNEL_PRIVATE */
+
+/* backwards compatibility only */
+#define	MNT_UNKNOWNPERMISSIONS	MNT_IGNORE_OWNERSHIP
+
+/*
+ * XXX I think that this could now become (~(MNT_CMDFLAGS))
+ * but the 'mount' program may need changing to handle this.
+ */
+#define	MNT_VISFLAGMASK	(MNT_RDONLY	| MNT_SYNCHRONOUS | MNT_NOEXEC	| \
+			MNT_NOSUID	| MNT_NODEV	| MNT_UNION	| \
+			MNT_ASYNC	| MNT_EXPORTED	| MNT_QUARANTINE | \
+			MNT_LOCAL	| MNT_QUOTA | \
+			MNT_ROOTFS	| MNT_DOVOLFS	| MNT_DONTBROWSE | \
+			MNT_IGNORE_OWNERSHIP | MNT_AUTOMOUNTED | MNT_JOURNALED | \
+			MNT_NOUSERXATTR | MNT_DEFWRITE	| MNT_MULTILABEL | \
+			MNT_NOATIME | MNT_CPROTECT)
+#endif
+/*
+ * External filesystem command modifier flags.
+ * Unmount can use the MNTOPT_FORCE flag.
+ * XXX These are not STATES and really should be somewhere else.
+ * External filesystem control flags.
+ */
+#define	MNTOPT_UPDATE	"update"	/* not a real mount, just an update */
+#if 0
+#define	MNT_NOBLOCK	0x00020000	/* don't block unmount if not responding */
+#define	MNT_RELOAD	0x00040000	/* reload filesystem data */
+#endif
+#define	MNTOPT_FORCE	"force"	/* force unmount or readonly change */
+#if 0
+#define	MNT_CMDFLAGS	(MNT_UPDATE|MNT_NOBLOCK|MNT_RELOAD|MNT_FORCE)
+#endif
+
+#define	MNTOPT_NBMAND	"nbmand"	/* allow non-blocking mandatory locks */
+#define	MNTOPT_NONBMAND	"nonbmand"	/* deny non-blocking mandatory locks */
+#define	MNTOPT_REMOUNT	"remount"	/* Change mount options */
+
+#define	MNTOPT_RO	MNTOPT_RDONLY
+#define	MNTOPT_DEVICES	MNTOPT_DEV
+#define	MNTOPT_NODEVICES MNTOPT_NODEV
+#define	MNTOPT_SETUID	MNTOPT_SUID
+#define	MNTOPT_NOSETUID	MNTOPT_NOSUID
+#define	MNTOPT_NODEVICES MNTOPT_NODEV
+#define	MNTOPT_DEVICES	MNTOPT_DEV
+#define	MNTOPT_XATTR	MNTOPT_USERXATTR
+#define	MNTOPT_NOXATTR	MNTOPT_NOUSERXATTR
+#define MNTOPT_NOBROWSE	MNTOPT_DONTBROWSE
+#define MNTOPT_OWNERS	MNTOPT_DONTIGNORE_OWNERSHIP
+#define MNTOPT_NOOWNERS	MNTOPT_IGNORE_OWNERSHIP
+
+#endif /* illumos */
 
 #endif	/* _SYS_MNTENT_H */

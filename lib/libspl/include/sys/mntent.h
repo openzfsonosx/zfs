@@ -26,6 +26,10 @@
  *		All Rights Reserved
  */
 
+#include_next <sys/mntent.h>
+
+#ifdef	__LINUX__
+
 #ifndef _SYS_MNTENT_H
 #define	_SYS_MNTENT_H
 
@@ -100,3 +104,5 @@
 #define	ZS_ZFSUTIL	0x00000001	/* caller is zfs(8) */
 
 #endif	/* _SYS_MNTENT_H */
+
+#endif	/* __LINUX__ */

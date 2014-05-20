@@ -30,7 +30,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <mntent.h>
+#include <sys/mntent.h>
 #include <ctype.h> /* for isspace() */
 #include <errno.h>
 #include <unistd.h>
@@ -310,6 +310,10 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 		OPTADD(MNTOPT_NOATIME);
 	else
 		OPTADD(MNTOPT_ATIME);
+	if (flags & MNT_NODEV)
+		OPTADD(MNTOPT_NODEVICES);
+	else
+		OPTADD(MNTOPT_DEVICES);
 #ifdef __FreeBSD__
 	OPTADD(MNTOPT_NOXATTR);
 #endif

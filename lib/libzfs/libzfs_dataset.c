@@ -40,11 +40,7 @@
 #include <stddef.h>
 #include <zone.h>
 #include <fcntl.h>
-#ifndef __APPLE__
 #include <sys/mntent.h>
-#else
-#include <mntent.h>
-#endif
 #include <sys/mount.h>
 #include <priv.h>
 #include <pwd.h>

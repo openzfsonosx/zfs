@@ -501,7 +501,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	char mountpoint[ZFS_MAXPROPLEN];
 	char mntopts[MNT_LINE_MAX];
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
-	int remount;
+	int remount, rc;
 
 	if (options == NULL) {
 		mntopts[0] = '\0';
@@ -582,9 +582,13 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	/* perform the mount */
 #ifdef __LINUX__
 	rc = do_mount(zfs_get_name(zhp), mountpoint, mntopts);
+	if (rc) {
 #elif defined(__APPLE__) || defined (__FREEBSD__)
-	if (zmount(zfs_get_name(zhp), mountpoint, MS_OPTIONSTR | flags,
-	    MNTTYPE_ZFS, NULL, 0, mntopts, sizeof (mntopts)) != 0) {
+	printf("before mount: mntopts p %p mntopts %s\n", mntopts, mntopts);
+	rc = zmount(zfs_get_name(zhp), mountpoint, MS_OPTIONSTR | flags,
+	    MNTTYPE_ZFS, NULL, 0, mntopts, sizeof (mntopts));
+	printf("after mount: mntopts p %p mntopts %s\n", mntopts, mntopts);
+	if (rc) {
 #elif defined(__illumos__)
 	if (mount(zfs_get_name(zhp), mountpoint, MS_OPTIONSTR | flags,
 	    MNTTYPE_ZFS, NULL, 0, mntopts, sizeof (mntopts)) != 0) {

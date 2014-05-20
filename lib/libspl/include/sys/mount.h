@@ -23,7 +23,6 @@
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
-
 #ifndef _LIBSPL_SYS_MOUNT_H
 #define	_LIBSPL_SYS_MOUNT_H
 

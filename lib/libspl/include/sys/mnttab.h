@@ -32,7 +32,7 @@
 
 #include <stdio.h>
 #include <dirent.h>
-#include <mntent.h>
+#include <sys/mntent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
