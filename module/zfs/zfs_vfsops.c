@@ -36,7 +36,11 @@
 #include <sys/kmem.h>
 #include <sys/pathname.h>
 #include <sys/vnode.h>
+#endif /* !__APPLE__ */
+
 #include <sys/vfs.h>
+
+#ifndef __APPLE__
 #include <sys/vfs_opreg.h>
 #endif /* !__APPLE__ */
 
