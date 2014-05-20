@@ -349,40 +349,7 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
            ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
            SPA_VERSION_STRING, ZPL_VERSION_STRING);
 
-    /* Check if ZFS should try to mount root */
-    IOLog("Checking if root pool should be imported...");
-    
-    if( res == false || zfs_check_mountroot() == false ) {
-        return res;
-    }
-    
-    /* Looks good, give it a go */
-    mountTimer =    IOTimerEventSource::timerEventSource(this, mountTimerFired);
-    
-    if (!mountTimer) {
-        IOLog("ZFS: Couldn't create mountTimer\n");
-        return false;
-    }
-    
-    res = getWorkLoop()->addEventSource(mountTimer);
-    
-    mountedRootPool =       false;
-    
-    if (res == kIOReturnSuccess) {
-        /*
-         IOReturn     setTimeoutMS(UInt32 ms);
-         IOReturn     setTimeoutUS(UInt32 us);
-         IOReturn     setTimeout(UInt32 interval, UInt32 scale_factor = kNanosecondScale);
-         */
-        IOLog("Setting mountTimer for 1 second...\n");
-        
-        mountTimer->setTimeoutMS(1000);
-    } else {
-        IOLog("Couldn't add mountTimer event source\n");
-    }
-    
-    /* At this point, always return true */
-    return true;
+    return res;
 }
 
 void net_lundman_zfs_zvol::stop (IOService *provider)
