@@ -49,15 +49,13 @@
 			<key>IOProviderClass</key>
 			<string>IOResources</string>
 			<key>IOResourceMatch</key>
-			<string>IOBSD</string>
+			<string>IOKit</string>
 		</dict>
 	</dict>
 	<key>NSHumanReadableCopyright</key>
 	<string>CDDL (ZFS), BSD (FreeBSD)</string>
 	<key>OSBundleCompatibleVersion</key>
 	<string>1.0.0</string>
-	<key>OSBundleRequired</key>
-	<string>Local-Root</string>
 	<key>OSBundleLibraries</key>
 	<dict>
 		<key>com.apple.iokit.IOStorageFamily</key>

@@ -342,7 +342,7 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
      *   See info.plist.
      *  Could be reset as it was prior to splitting spa_init and zvol_init
 	 */
-	zfs_ioctl_init();
+	zfs_ioctl_osx_init();
     
     printf("ZFS: Loaded module v%s-%s%s, "
            "ZFS pool version %s, ZFS filesystem version %s\n",
