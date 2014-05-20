@@ -321,11 +321,6 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
         }
       }
     }
-    
-    printf("ZFS: Loaded module v%s-%s%s, "
-           "ZFS pool version %s, ZFS filesystem version %s\n",
-           ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
-           SPA_VERSION_STRING, ZPL_VERSION_STRING);
 
     /* Check if ZFS should try to mount root */
     IOLog("Checking if root pool should be imported...");
