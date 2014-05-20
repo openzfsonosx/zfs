@@ -45,9 +45,9 @@
 #endif /* !__APPLE__ */
 
 #include <sys/mntent.h>
+#include <sys/mount.h>
 
 #ifndef __APPLE__
-#include <sys/mount.h>
 #include <sys/cmn_err.h>
 #include "fs/fs_subr.h"
 #include <sys/zfs_znode.h>
@@ -108,869 +108,12 @@
 #include <libkern/crypto/md5.h>
 #include <sys/zfs_vnops.h>
 #include <sys/systeminfo.h>
-#include <sys/zfs_mount.h>
+#include <sys/fstyp.h>
 #endif /* __APPLE__ */
 
 //#define dprintf printf
 
-//illumos defines their vfssw[] in /usr/src/uts/common/os/vfs_conf.c
-struct vfssw vfssw[] = {
-	{ "BADVFS" },				/* invalid */
-	{ "specfs" },				/* SPECFS */
-	{ "ufs" },				/* UFS */
-	{ "fifofs" },				/* FIFOFS */
-	{ "namefs" },				/* NAMEFS */
-	{ "proc" },				/* PROCFS */
-	{ "samfs" },				/* QFS */
-	{ "nfs" },				/* NFS Version 2 */
-	{ "zfs" },				/* ZFS */
-	{ "hsfs" },				/* HSFS */
-	{ "lofs" },				/* LOFS */
-	{ "tmpfs" },				/* TMPFS */
-	{ "fd" },				/* FDFS */
-	{ "pcfs" },				/* PCFS */
-	{ "swapfs" /*, swapinit*/ },		/* SWAPFS */
-	{ "mntfs" },				/* MNTFS */
-	{ "devfs" },				/* DEVFS */
-	{ "dev" },				/* DEV */
-	{ "ctfs" },				/* CONTRACTFS */
-	{ "objfs" },				/* OBJFS */
-	{ "sharefs" },				/* SHAREFS */
-	{ "dcfs" },				/* DCFS */
-	{ "smbfs" },				/* SMBFS */
-	{ "" },					/* reserved for loadable fs */
-	{ "" },
-	{ "" },
-	{ "" },
-	{ "" },
-	{ "" },
-	{ "" },
-	{ "" },
-	{ "" },
-	{ "" },
-	{ "" },
-	{ "" },
-	{ "" },
-};
-
-const int nfstype = (sizeof (vfssw) / sizeof (vfssw[0]));
-
-
-#define	FSTYPSZ		16	/* max size of fs identifier */
-
-#define	MAX_MNTOPT_STR	1024	/* max length of mount options string */
-
-static char ** vfs_mergecancelopts(const mntopt_t *, const mntopt_t *);
-static void vfs_clearmntopt_nolock(mntopts_t *, const char *, int);
-static void vfs_setmntopt_nolock(mntopts_t *, const char *,
-    const char *, int, int);
-static int  vfs_optionisset_nolock(const mntopts_t *, const char *, char **);
-static void vfs_freeopt(mntopt_t *);
-static void vfs_swapopttbl_nolock(mntopts_t *, mntopts_t *);
-static void vfs_swapopttbl(mntopts_t *, mntopts_t *);
-static void vfs_copyopt(const mntopt_t *s, mntopt_t *d);
-static void vfs_copyopttbl_extend(const mntopts_t *, mntopts_t *, int);
-static void vfs_createopttbl_extend(mntopts_t *, const char *,
-    const mntopts_t *);
-static char **vfs_copycancelopt_extend(char **const, int);
-static void vfs_freecancelopt(char **);
-static int zfs_vfsinit(int, char *);
-
-static char **
-vfs_mergecancelopts(const mntopt_t *mop1, const mntopt_t *mop2)
-{
-	dprintf("+vfs_mergecancelopts\n");
-	int c1 = 0;
-	int c2 = 0;
-	char **result;
-	char **sp1, **sp2, **dp;
-
-	/*
-	 * First we count both lists of cancel options.
-	 * If either is NULL or has no elements, we return a copy of
-	 * the other.
-	 */
-	if (mop1->mo_cancel != NULL) {
-		for (; mop1->mo_cancel[c1] != NULL; c1++)
-			/* count cancel options in mop1 */;
-	}
-
-	if (c1 == 0)
-		return (vfs_copycancelopt_extend(mop2->mo_cancel, 0));
-
-	if (mop2->mo_cancel != NULL) {
-		for (; mop2->mo_cancel[c2] != NULL; c2++)
-			/* count cancel options in mop2 */;
-	}
-
-	result = vfs_copycancelopt_extend(mop1->mo_cancel, c2);
-
-	if (c2 == 0)
-		return (result);
-
-	/*
-	 * When we get here, we've got two sets of cancel options;
-	 * we need to merge the two sets.  We know that the result
-	 * array has "c1+c2+1" entries and in the end we might shrink
-	 * it.
-	 * Result now has a copy of the c1 entries from mop1; we'll
-	 * now lookup all the entries of mop2 in mop1 and copy it if
-	 * it is unique.
-	 * This operation is O(n^2) but it's only called once per
-	 * filesystem per duplicate option.  This is a situation
-	 * which doesn't arise with the filesystems in ON and
-	 * n is generally 1.
-	 */
-
-	dp = &result[c1];
-	for (sp2 = mop2->mo_cancel; *sp2 != NULL; sp2++) {
-		for (sp1 = mop1->mo_cancel; *sp1 != NULL; sp1++) {
-			if (strcmp(*sp1, *sp2) == 0)
-				break;
-		}
-		if (*sp1 == NULL) {
-			/*
-			 * Option *sp2 not found in mop1, so copy it.
-			 * The calls to vfs_copycancelopt_extend()
-			 * guarantee that there's enough room.
-			 */
-			*dp = kmem_alloc(strlen(*sp2) + 1, KM_SLEEP);
-			(void) strcpy(*dp++, *sp2);
-		}
-	}
-	if (dp != &result[c1+c2]) {
-		size_t bytes = (dp - result + 1) * sizeof (char *);
-		char **nres = kmem_alloc(bytes, KM_SLEEP);
-
-		bcopy(result, nres, bytes);
-		kmem_free(result, (c1 + c2 + 1) * sizeof (char *));
-		result = nres;
-	}
-	dprintf("-vfs_mergecancelopts\n");
-	return (result);
-}
-
-/*
- * Merge two mount option tables (outer and inner) into one.  This is very
- * similar to "merging" global variables and automatic variables in C.
- *
- * This isn't (and doesn't have to be) fast.
- *
- * This function is *not* for general use by filesystems.
- *
- * Note: caller is responsible for locking the vfs list, if needed,
- *       to protect omo, imo & dmo.
- */
-void
-vfs_mergeopttbl(const mntopts_t *omo, const mntopts_t *imo, mntopts_t *dmo)
-{
-	dprintf("+vfs_mergeopttbl\n");
-
-	if(omo != NULL && imo != NULL) {
-		dprintf("omo count %d : imo count %d\n", omo->mo_count, imo->mo_count);
-	}
-
-	uint_t i, count;
-	mntopt_t *mop, *motbl;
-	uint_t freeidx;
-
-	/*
-	 * First determine how much space we need to allocate.
-	 */
-	count = omo->mo_count;
-	for (i = 0; i < imo->mo_count; i++) {
-		if (imo->mo_list[i].mo_flags & MO_EMPTY)
-			continue;
-		if (vfs_hasopt(omo, imo->mo_list[i].mo_name) == NULL)
-			count++;
-	}
-	ASSERT(count >= omo->mo_count &&
-	    count <= omo->mo_count + imo->mo_count);
-	motbl = kmem_alloc(count * sizeof (mntopt_t), KM_SLEEP);
-	for (i = 0; i < omo->mo_count; i++)
-		vfs_copyopt(&omo->mo_list[i], &motbl[i]);
-	freeidx = omo->mo_count;
-	for (i = 0; i < imo->mo_count; i++) {
-		if (imo->mo_list[i].mo_flags & MO_EMPTY)
-			continue;
-		if ((mop = vfs_hasopt(omo, imo->mo_list[i].mo_name)) != NULL) {
-			char **newcanp;
-			uint_t index = mop - omo->mo_list;
-
-			newcanp = vfs_mergecancelopts(mop, &motbl[index]);
-
-			vfs_freeopt(&motbl[index]);
-			vfs_copyopt(&imo->mo_list[i], &motbl[index]);
-
-			vfs_freecancelopt(motbl[index].mo_cancel);
-			motbl[index].mo_cancel = newcanp;
-		} else {
-			/*
-			 * If it's a new option, just copy it over to the first
-			 * free location.
-			 */
-			vfs_copyopt(&imo->mo_list[i], &motbl[freeidx++]);
-		}
-	}
-	dmo->mo_count = count;
-	dmo->mo_list = motbl;
-	dprintf("-vfs_mergeopttbl\n");
-}
-
-
-
-/*
- * Functions to set and clear mount options in a mount options table.
- */
-
-/*
- * Clear a mount option, if it exists.
- *
- * The update_mnttab arg indicates whether mops is part of a vfs that is on
- * the vfs list.
- */
-static void
-vfs_clearmntopt_nolock(mntopts_t *mops, const char *opt, int update_mnttab)
-{
-	dprintf("+vfs_clearmntopt_nolock\n");
-	struct mntopt *mop;
-	uint_t i, count;
-
-	//ASSERT(!update_mnttab || RW_WRITE_HELD(&vfslist));
-	ASSERT(!update_mnttab);
-
-	count = mops->mo_count;
-	dprintf("mops mo_count is %d\n", count);
-	for (i = 0; i < count; i++) {
-		mop = &mops->mo_list[i];
-
-		if (mop->mo_flags & MO_EMPTY)
-			continue;
-		if (strcmp(opt, mop->mo_name))
-			continue;
-		mop->mo_flags &= ~MO_SET;
-		if (mop->mo_arg != NULL) {
-			kmem_free(mop->mo_arg, strlen(mop->mo_arg) + 1);
-		}
-		mop->mo_arg = NULL;
-		//if (update_mnttab)
-		//	vfs_mnttab_modtimeupd();
-		break;
-	}
-	dprintf("-vfs_clearmntopt_nolock\n");
-}
-
-void
-vfs_clearmntopt(zfsvfs_t *zfsvfs, const char *opt)
-{
-	dprintf("+vfs_clearmntopt\n");
-
-	int gotlock = 0;
-
-#if 0
-	if (VFS_ON_LIST(vfsp)) {
-		gotlock = 1;
-		vfs_list_lock();
-	}
-	zfsvfs_t *zfsvfs = vfsp->vfs_data;
-	zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
-	mntopts_t *mops = vfsp.vfs_mntopts;
-#endif
-
-	vfs_clearmntopt_nolock(&zfsvfs->vfs_mntopts, opt, gotlock);
-#if 0
-	if (gotlock)
-		vfs_list_unlock();
-#endif
-	dprintf("-vfs_clearmntopt\n");
-}
-
-
-/*
- * Set a mount option on.  If it's not found in the table, it's silently
- * ignored.  If the option has MO_IGNORE set, it is still set unless the
- * VFS_NOFORCEOPT bit is set in the flags.  Also, VFS_DISPLAY/VFS_NODISPLAY flag
- * bits can be used to toggle the MO_NODISPLAY bit for the option.
- * If the VFS_CREATEOPT flag bit is set then the first option slot with
- * MO_EMPTY set is created as the option passed in.
- *
- * The update_mnttab arg indicates whether mops is part of a vfs that is on
- * the vfs list.
- */
-static void
-vfs_setmntopt_nolock(mntopts_t *mops, const char *opt,
-    const char *arg, int flags, int update_mnttab)
-{
-	dprintf("+vfs_setmntopt_nolock\n");
-        mntopt_t *mop;
-        uint_t i, count;
-        char *sp;
-
-        //ASSERT(!update_mnttab || RW_WRITE_HELD(&vfslist));
-        ASSERT(!update_mnttab);
-
-        if (flags & VFS_CREATEOPT) {
-                if (vfs_hasopt(mops, opt) != NULL) {
-                        flags &= ~VFS_CREATEOPT;
-                }
-        }
-        count = mops->mo_count;
-	dprintf("mops mo_count is %d\n", count);
-        for (i = 0; i < count; i++) {
-                mop = &mops->mo_list[i];
-
-                if (mop->mo_flags & MO_EMPTY) {
-                        if ((flags & VFS_CREATEOPT) == 0)
-                                continue;
-                        sp = kmem_alloc(strlen(opt) + 1, KM_SLEEP);
-                        (void) strcpy(sp, opt);
-                        mop->mo_name = sp;
-                        if (arg != NULL)
-                                mop->mo_flags = MO_HASVALUE;
-                        else
-                                mop->mo_flags = 0;
-                } else if (strcmp(opt, mop->mo_name)) {
-                        continue;
-                }
-                if ((mop->mo_flags & MO_IGNORE) && (flags & VFS_NOFORCEOPT))
-                        break;
-                if (arg != NULL && (mop->mo_flags & MO_HASVALUE) != 0) {
-                        sp = kmem_alloc(strlen(arg) + 1, KM_SLEEP);
-                        (void) strcpy(sp, arg);
-                } else {
-                        sp = NULL;
-                }
-                if (mop->mo_arg != NULL)
-                        kmem_free(mop->mo_arg, strlen(mop->mo_arg) + 1);
-                mop->mo_arg = sp;
-                if (flags & VFS_DISPLAY)
-                        mop->mo_flags &= ~MO_NODISPLAY;
-                if (flags & VFS_NODISPLAY)
-                        mop->mo_flags |= MO_NODISPLAY;
-                mop->mo_flags |= MO_SET;
-                if (mop->mo_cancel != NULL) {
-                        char **cp;
-
-                        for (cp = mop->mo_cancel; *cp != NULL; cp++)
-                                vfs_clearmntopt_nolock(mops, *cp, 0);
-                }
-                //if (update_mnttab)
-                //        vfs_mnttab_modtimeupd();
-                break;
-        }
-	dprintf("-vfs_setmntopt_nolock\n");
-}
-
-void
-vfs_setmntopt(zfsvfs_t *zfsvfs, const char *opt, const char *arg, int flags)
-{
-	dprintf("+vfs_setmntopt\n");
-
-        int gotlock = 0;
-
-        //if (VFS_ON_LIST(vfsp)) {
-        //        gotlock = 1;
-        //        vfs_list_lock();
-        //}
-        vfs_setmntopt_nolock(&zfsvfs->vfs_mntopts, opt, arg, flags, gotlock);
-        //if (gotlock)
-        //        vfs_list_unlock();
-	dprintf("-vfs_setmntopt\n");
-
-}
-
-void
-vfs_parsemntopts(mntopts_t *mops, char *osp, int create)
-{
-	dprintf("+vfs_parsemntopts\n");
-	char *s = osp, *p, *nextop, *valp, *cp, *ep;
-	int setflg = VFS_NOFORCEOPT;
-
-	if (osp == NULL)
-		return;
-	while (*s != '\0') {
-		p = strchr(s, ',');	/* find next option */
-		if (p == NULL) {
-			cp = NULL;
-			p = s + strlen(s);
-		} else {
-			cp = p;		/* save location of comma */
-			*p++ = '\0';	/* mark end and point to next option */
-		}
-		nextop = p;
-		p = strchr(s, '=');	/* look for value */
-		if (p == NULL) {
-			valp = NULL;	/* no value supplied */
-		} else {
-			ep = p;		/* save location of equals */
-			*p++ = '\0';	/* end option and point to value */
-			valp = p;
-		}
-		/*
-		 * set option into options table
-		 */
-		if (create)
-			setflg |= VFS_CREATEOPT;
-		vfs_setmntopt_nolock(mops, s, valp, setflg, 0);
-		if (cp != NULL)
-			*cp = ',';	/* restore the comma */
-		if (valp != NULL)
-			*ep = '=';	/* restore the equals */
-		s = nextop;
-	}
-	dprintf("-vfs_parsemntopts\n");
-}
-
-/*
- * Function to inquire if an option exists in a mount options table.
- * Returns a pointer to the option if it exists, else NULL.
- *
- * This function is *not* for general use by filesystems.
- *
- * Note: caller is responsible for locking the vfs list, if needed,
- *       to protect mops.
- */
-struct mntopt *
-vfs_hasopt(const mntopts_t *mops, const char *opt)
-{
-        dprintf("+vfs_hasopt\n");
-        struct mntopt *mop;
-        uint_t i, count;
-
-        count = mops->mo_count;
-        for (i = 0; i < count; i++) {
-                mop = &mops->mo_list[i];
-
-                if (mop->mo_flags & MO_EMPTY)
-                        continue;
-                if (strcmp(opt, mop->mo_name) == 0)
-                {
-                        dprintf("-vfs_hasopt 1\n");
-                        return (mop);
-                }
-        }
-        dprintf("-vfs_hasopt 2\n");
-        return (NULL);
-}
-
-/*
- * Function to inquire if an option is set in a mount options table.
- * Returns non-zero if set and fills in the arg pointer with a pointer to
- * the argument string or NULL if there is no argument string.
- */
-static int
-vfs_optionisset_nolock(const mntopts_t *mops, const char *opt, char **argp)
-{
-	dprintf("+vfs_optionisset_nolock\n");
-	struct mntopt *mop;
-	uint_t i, count;
-
-	count = mops->mo_count;
-	for (i = 0; i < count; i++) {
-		mop = &mops->mo_list[i];
-
-		if (mop->mo_flags & MO_EMPTY)
-			continue;
-		if (strcmp(opt, mop->mo_name))
-			continue;
-		if ((mop->mo_flags & MO_SET) == 0) {
-			dprintf("-vfs_optionisset_nolock ret 0 1st\n");
-			return (0);
-		}
-		if (argp != NULL && (mop->mo_flags & MO_HASVALUE) != 0)
-			*argp = mop->mo_arg;
-		dprintf("-vfs_optionisset_nolock ret 1\n");
-		return (1);
-	}
-	dprintf("-vfs_optionisset_nolock ret 0 2nd\n");
-	return (0);
-}
-
-
-int
-vfs_optionisset(const zfsvfs_t *zfsvfs, const char *opt, char **argp)
-{
-	dprintf("+vfs_optionisset\n");
-	int ret;
-
-	//vfs_list_read_lock();
-	ret = vfs_optionisset_nolock(&zfsvfs->vfs_mntopts, opt, argp);
-	//vfs_list_unlock();
-	dprintf("-vfs_optionisset\n");
-	return (ret);
-}
-
-/*
- * Construct a comma separated string of the options set in the given
- * mount table, return the string in the given buffer.  Return non-zero if
- * the buffer would overflow.
- *
- * This function is *not* for general use by filesystems.
- *
- * Note: caller is responsible for locking the vfs list, if needed,
- *       to protect mp.
- */
-int
-vfs_buildoptionstr(const mntopts_t *mp, char *buf, int len)
-{
-	char *cp;
-	uint_t i;
-
-	buf[0] = '\0';
-	cp = buf;
-	for (i = 0; i < mp->mo_count; i++) {
-		struct mntopt *mop;
-
-		mop = &mp->mo_list[i];
-		if (mop->mo_flags & MO_SET) {
-			int optlen, comma = 0;
-
-			if (buf[0] != '\0')
-				comma = 1;
-			optlen = strlen(mop->mo_name);
-			if (strlen(buf) + comma + optlen + 1 > len)
-				goto err;
-			if (comma)
-				*cp++ = ',';
-			(void) strcpy(cp, mop->mo_name);
-			cp += optlen;
-			/*
-			 * Append option value if there is one
-			 */
-			if (mop->mo_arg != NULL) {
-				int arglen;
-
-				arglen = strlen(mop->mo_arg);
-				if (strlen(buf) + arglen + 2 > len)
-					goto err;
-				*cp++ = '=';
-				(void) strcpy(cp, mop->mo_arg);
-				cp += arglen;
-			}
-		}
-	}
-	return (0);
-err:
-	return (EOVERFLOW);
-}
-
-/*
- * Create an empty options table with enough empty slots to hold all
- * The options in the options string passed as an argument.
- * Potentially prepend another options table.
- *
- * Note: caller is responsible for locking the vfs list, if needed,
- *       to protect mops.
- */
-static void
-vfs_createopttbl_extend(mntopts_t *mops, const char *opts,
-    const mntopts_t *mtmpl)
-{
-	dprintf("+vfs_createopttbl_extend\n");
-	const char *s = opts;
-	uint_t count;
-
-	if (opts == NULL || *opts == '\0') {
-		count = 0;
-	} else {
-		count = 1;
-
-		/*
-		 * Count number of options in the string
-		 */
-		for (s = strchr(s, ','); s != NULL; s = strchr(s, ',')) {
-			count++;
-			s++;
-		}
-	}
-	vfs_copyopttbl_extend(mtmpl, mops, count);
-	dprintf("-vfs_createopttbl_extend\n");
-}
-
-/*
- * Swap two mount options tables
- */
-static void
-vfs_swapopttbl_nolock(mntopts_t *optbl1, mntopts_t *optbl2)
-{
-	uint_t tmpcnt;
-	mntopt_t *tmplist;
-
-	tmpcnt = optbl2->mo_count;
-	tmplist = optbl2->mo_list;
-	optbl2->mo_count = optbl1->mo_count;
-	optbl2->mo_list = optbl1->mo_list;
-	optbl1->mo_count = tmpcnt;
-	optbl1->mo_list = tmplist;
-}
-
-static void
-vfs_swapopttbl(mntopts_t *optbl1, mntopts_t *optbl2)
-{
-	//vfs_list_lock();
-	vfs_swapopttbl_nolock(optbl1, optbl2);
-	//vfs_mnttab_modtimeupd();
-	//vfs_list_unlock();
-}
-
-static char **
-vfs_copycancelopt_extend(char **const moc, int extend)
-{
-	int i = 0;
-	int j;
-	char **result;
-
-	if (moc != NULL) {
-		for (; moc[i] != NULL; i++)
-			/* count number of options to cancel */;
-	}
-
-	if (i + extend == 0)
-		return (NULL);
-
-	result = kmem_alloc((i + extend + 1) * sizeof (char *), KM_SLEEP);
-
-	for (j = 0; j < i; j++) {
-		result[j] = kmem_alloc(strlen(moc[j]) + 1, KM_SLEEP);
-		(void) strcpy(result[j], moc[j]);
-	}
-	for (; j <= i + extend; j++)
-		result[j] = NULL;
-
-	return (result);
-}
-
-
-static void
-vfs_copyopt(const mntopt_t *s, mntopt_t *d)
-{
-	char *sp, *dp;
-
-	d->mo_flags = s->mo_flags;
-	d->mo_data = s->mo_data;
-	sp = s->mo_name;
-	if (sp != NULL) {
-		dp = kmem_alloc(strlen(sp) + 1, KM_SLEEP);
-		(void) strcpy(dp, sp);
-		d->mo_name = dp;
-	} else {
-		d->mo_name = NULL; /* should never happen */
-	}
-
-	d->mo_cancel = vfs_copycancelopt_extend(s->mo_cancel, 0);
-
-	sp = s->mo_arg;
-	if (sp != NULL) {
-		dp = kmem_alloc(strlen(sp) + 1, KM_SLEEP);
-		(void) strcpy(dp, sp);
-		d->mo_arg = dp;
-	} else {
-		d->mo_arg = NULL;
-	}
-}
-
-/*
- * Copy a mount options table, possibly allocating some spare
- * slots at the end.  It is permissible to copy_extend the NULL table.
- */
-static void
-vfs_copyopttbl_extend(const mntopts_t *smo, mntopts_t *dmo, int extra)
-{
-	dprintf("+vfs_copyopttbl_extend\n");
-	uint_t i, count;
-	mntopt_t *motbl;
-
-	/*
-	 * Clear out any existing stuff in the options table being initialized
-	 */
-	vfs_freeopttbl(dmo);
-	count = (smo == NULL) ? 0 : smo->mo_count;
-	if ((count + extra) == 0)	/* nothing to do */
-		return;
-	dmo->mo_count = count + extra;
-	motbl = kmem_zalloc((count + extra) * sizeof (mntopt_t), KM_SLEEP);
-	dmo->mo_list = motbl;
-	for (i = 0; i < count; i++) {
-		vfs_copyopt(&smo->mo_list[i], &motbl[i]);
-	}
-	for (i = count; i < count + extra; i++) {
-		motbl[i].mo_flags = MO_EMPTY;
-	}
-	dprintf("-vfs_copyopttbl_extend\n");
-}
-
-
-
-/*
- * Copy a mount options table.
- *
- * This function is *not* for general use by filesystems.
- *
- * Note: caller is responsible for locking the vfs list, if needed,
- *       to protect smo and dmo.
- */
-void
-vfs_copyopttbl(const mntopts_t *smo, mntopts_t *dmo)
-{
-	vfs_copyopttbl_extend(smo, dmo, 0);
-}
-
-
-static void
-vfs_freecancelopt(char **moc)
-{
-	dprintf("+vfs_freecancelopt\n");
-	if (moc != NULL) {
-		int ccnt = 0;
-		char **cp;
-
-		for (cp = moc; *cp != NULL; cp++) {
-			kmem_free(*cp, strlen(*cp) + 1);
-			ccnt++;
-		}
-		kmem_free(moc, (ccnt + 1) * sizeof (char *));
-	}
-	dprintf("-vfs_freecancelopt\n");
-}
-
-static void
-vfs_freeopt(mntopt_t *mop)
-{
-	dprintf("+vfs_freeopt\n");
-	if (mop->mo_name != NULL)
-		kmem_free(mop->mo_name, strlen(mop->mo_name) + 1);
-
-	vfs_freecancelopt(mop->mo_cancel);
-
-	if (mop->mo_arg != NULL)
-		kmem_free(mop->mo_arg, strlen(mop->mo_arg) + 1);
-	dprintf("-vfs_freeopt\n");
-}
-
-/*
- * Free a mount options table
- *
- * This function is *not* for general use by filesystems.
- *
- * Note: caller is responsible for locking the vfs list, if needed,
- *       to protect mp.
- */
-void
-vfs_freeopttbl(mntopts_t *mp)
-{
-	dprintf("+vfs_freeopttbl\n");
-	uint_t i, count;
-
-	count = mp->mo_count;
-	for (i = 0; i < count; i++) {
-		vfs_freeopt(&mp->mo_list[i]);
-	}
-	if (count) {
-		kmem_free(mp->mo_list, sizeof (mntopt_t) * count);
-		mp->mo_count = 0;
-		mp->mo_list = NULL;
-	}
-	dprintf("-vfs_freeopttbl\n");
-}
-
-/*
- * Find a vfssw entry given a file system type name.
- * Try to autoload the filesystem if it's not found.
- * If it's installed, return the vfssw locked to prevent unloading.
- */
-struct vfssw *
-vfs_getvfssw(const char *type)
-{
-	struct vfssw *vswp;
-	const char *modname;
-
-	//RLOCK_VFSSW();
-	vswp = vfs_getvfsswbyname(type);
-#if 0
-	modname = vfs_to_modname(type);
-
-	if (rootdir == NULL) {
-		/*
-		 * If we haven't yet loaded the root file system, then our
-		 * _init won't be called until later. Allocate vfssw entry,
-		 * because mod_installfs won't be called.
-		 */
-		if (vswp == NULL) {
-			RUNLOCK_VFSSW();
-			WLOCK_VFSSW();
-			if ((vswp = vfs_getvfsswbyname(type)) == NULL) {
-				if ((vswp = allocate_vfssw(type)) == NULL) {
-					WUNLOCK_VFSSW();
-					return (NULL);
-				}
-			}
-			WUNLOCK_VFSSW();
-			RLOCK_VFSSW();
-		}
-		if (!VFS_INSTALLED(vswp)) {
-			RUNLOCK_VFSSW();
-			(void) modloadonly("fs", modname);
-		} else
-			RUNLOCK_VFSSW();
-		return (vswp);
-	}
-
-	/*
-	 * Try to load the filesystem.  Before calling modload(), we drop
-	 * our lock on the VFS switch table, and pick it up after the
-	 * module is loaded.  However, there is a potential race:  the
-	 * module could be unloaded after the call to modload() completes
-	 * but before we pick up the lock and drive on.  Therefore,
-	 * we keep reloading the module until we've loaded the module
-	 * _and_ we have the lock on the VFS switch table.
-	 */
-	while (vswp == NULL || !VFS_INSTALLED(vswp)) {
-		RUNLOCK_VFSSW();
-		if (modload("fs", modname) == -1)
-			return (NULL);
-		RLOCK_VFSSW();
-		if (vswp == NULL)
-			if ((vswp = vfs_getvfsswbyname(type)) == NULL)
-				break;
-	}
-	RUNLOCK_VFSSW();
-#endif
-	return (vswp);
-}
-
-/*
- * Find a vfssw entry given a file system type name.
- */
-struct vfssw *
-vfs_getvfsswbyname(const char *type)
-{
-	struct vfssw *vswp;
-
-//	ASSERT(VFSSW_LOCKED());
-	if (type == NULL || *type == '\0')
-		return (NULL);
-
-	for (vswp = &vfssw[1]; vswp < &vfssw[nfstype]; vswp++) {
-		if (strcmp(type, vswp->vsw_name) == 0) {
-			vfs_refvfssw(vswp);
-			return (vswp);
-		}
-	}
-
-	return (NULL);
-}
-
-/*
- * Reference a vfssw entry.
- */
-void
-vfs_refvfssw(struct vfssw *vswp)
-{
-	dprintf("vfs_refvfssw\n");
-	//mutex_enter(&vswp->vsw_lock);
-	//vswp->vsw_count++;
-	//mutex_exit(&vswp->vsw_lock);
-}
+int zfsfstype;
 
 #ifdef __APPLE__
 
@@ -1155,70 +298,6 @@ extern void zfs_ioctl_fini(void);
 #endif
 
 
-/*
- * Table for generic options recognized in the VFS layer and acted
- * on at this level before parsing file system specific options.
- * The nosuid option is stronger than any of the devices and setuid
- * options, so those are canceled when nosuid is seen.
- *
- * All options which are added here need to be added to the
- * list of standard options in usr/src/cmd/fs.d/fslib.c as well.
- */
-/*
- * VFS Mount options table
- */
-#define MNTOPT_RW "rw"
-static char *ro_cancel[] = { MNTOPT_RW, NULL };
-static char *rw_cancel[] = { MNTOPT_RO, NULL };
-static char *suid_cancel[] = { MNTOPT_NOSUID, NULL };
-static char *nosuid_cancel[] = { MNTOPT_SUID, MNTOPT_DEVICES, MNTOPT_NODEVICES,
-    MNTOPT_NOSETUID, MNTOPT_SETUID, NULL };
-static char *devices_cancel[] = { MNTOPT_NODEVICES, NULL };
-static char *nodevices_cancel[] = { MNTOPT_DEVICES, NULL };
-static char *setuid_cancel[] = { MNTOPT_NOSETUID, NULL };
-static char *nosetuid_cancel[] = { MNTOPT_SETUID, NULL };
-static char *nbmand_cancel[] = { MNTOPT_NONBMAND, NULL };
-static char *nonbmand_cancel[] = { MNTOPT_NBMAND, NULL };
-static char *exec_cancel[] = { MNTOPT_NOEXEC, NULL };
-static char *noexec_cancel[] = { MNTOPT_EXEC, NULL };
-
-static const mntopt_t mntopts[] = {
-/*
- *	option name		cancel options		default arg	flags
- */
-	{ MNTOPT_REMOUNT,	NULL,			NULL,
-		MO_NODISPLAY, (void *)0 },
-	{ MNTOPT_RO,		ro_cancel,		NULL,		0,
-		(void *)0 },
-	{ MNTOPT_RW,		rw_cancel,		NULL,		0,
-		(void *)0 },
-	{ MNTOPT_SUID,		suid_cancel,		NULL,		0,
-		(void *)0 },
-	{ MNTOPT_NOSUID,	nosuid_cancel,		NULL,		0,
-		(void *)0 },
-	{ MNTOPT_DEVICES,	devices_cancel,		NULL,		0,
-		(void *)0 },
-	{ MNTOPT_NODEVICES,	nodevices_cancel,	NULL,		0,
-		(void *)0 },
-	{ MNTOPT_SETUID,	setuid_cancel,		NULL,		0,
-		(void *)0 },
-	{ MNTOPT_NOSETUID,	nosetuid_cancel,	NULL,		0,
-		(void *)0 },
-	{ MNTOPT_NBMAND,	nbmand_cancel,		NULL,		0,
-		(void *)0 },
-	{ MNTOPT_NONBMAND,	nonbmand_cancel,	NULL,		0,
-		(void *)0 },
-	{ MNTOPT_EXEC,		exec_cancel,		NULL,		0,
-		(void *)0 },
-	{ MNTOPT_NOEXEC,	noexec_cancel,		NULL,		0,
-		(void *)0 },
-};
-
-const mntopts_t vfs_mntopts = {
-	sizeof (mntopts) / sizeof (mntopt_t),
-	(mntopt_t *)&mntopts[0]
-};
-
 static char *noatime_cancel[] = { MNTOPT_ATIME, NULL };
 static char *atime_cancel[] = { MNTOPT_NOATIME, NULL };
 static char *noxattr_cancel[] = { MNTOPT_XATTR, NULL };
@@ -1230,7 +309,7 @@ static char *noowners_cancel[] = { MNTOPT_OWNERS, NULL };
 static char *owners_cancel[] = { MNTOPT_NOOWNERS, NULL };
 #endif
 
-static mntopt_t zmntopts[] = {
+static mntopt_t mntopts[] = {
 	{ MNTOPT_NOXATTR, noxattr_cancel, NULL, 0, NULL },
 	{ MNTOPT_XATTR, xattr_cancel, NULL, 0, NULL },
 	{ MNTOPT_NOATIME, noatime_cancel, NULL, 0, NULL },
@@ -1244,8 +323,8 @@ static mntopt_t zmntopts[] = {
 };
 
 static mntopts_t zfs_mntopts = {
-	sizeof (zmntopts) / sizeof (mntopt_t),
-	zmntopts
+	sizeof (mntopts) / sizeof (mntopt_t),
+	mntopts
 };
 
 struct synccb {
@@ -1273,15 +352,6 @@ zfs_sync_callback(struct vnode *vp, void *cargs)
 
     return (VNODE_RETURNED);
 }
-
-static vfsdef_t vfw = {
-        VFSDEF_VERSION,
-        MNTTYPE_ZFS,
-        zfs_vfsinit,
-        VSW_HASPROTO|VSW_CANRWRO|VSW_CANREMOUNT|VSW_VOLATILEDEV|VSW_STATS|
-            VSW_XID|VSW_ZMOUNT,
-        &zfs_mntopts
-};
 
 int
 zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t context)
@@ -1406,13 +476,13 @@ atime_changed_cb(void *arg, uint64_t newval)
 	if (newval == TRUE) {
 		zfsvfs->z_atime = TRUE;
 		vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOATIME);
-		vfs_clearmntopt(zfsvfs, MNTOPT_NOATIME);
-		vfs_setmntopt(zfsvfs, MNTOPT_ATIME, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOATIME);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_ATIME, NULL, 0);
 	} else {
 		zfsvfs->z_atime = FALSE;
 		vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOATIME);
-		vfs_clearmntopt(zfsvfs, MNTOPT_ATIME);
-		vfs_setmntopt(zfsvfs, MNTOPT_NOATIME, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_ATIME);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOATIME, NULL, 0);
 	}
 	dprintf("-atime_changed_cb\n");
 }
@@ -1434,13 +504,13 @@ xattr_changed_cb(void *arg, uint64_t newval)
 	if (newval == TRUE) {
 		/* XXX locking on vfs_flag? */
 		vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
-		vfs_clearmntopt(zfsvfs, MNTOPT_NOXATTR);
-		vfs_setmntopt(zfsvfs, MNTOPT_XATTR, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOXATTR);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_XATTR, NULL, 0);
 	} else {
 		/* XXX locking on vfs_flag? */
 		vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
-		vfs_clearmntopt(zfsvfs, MNTOPT_XATTR);
-		vfs_setmntopt(zfsvfs, MNTOPT_NOXATTR, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_XATTR);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOXATTR, NULL, 0);
 	}
 	dprintf("-xattr_changed_cb\n");
 }
@@ -1494,13 +564,13 @@ readonly_changed_cb(void *arg, uint64_t newval)
 	if (newval) {
 		/* XXX locking on vfs_flag? */
 		vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_RDONLY);
-		vfs_clearmntopt(zfsvfs, MNTOPT_RW);
-		vfs_setmntopt(zfsvfs, MNTOPT_RO, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_RW);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_RO, NULL, 0);
 	} else {
 		/* XXX locking on vfs_flag? */
 		vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_RDONLY);
-		vfs_clearmntopt(zfsvfs, MNTOPT_RO);
-		vfs_setmntopt(zfsvfs, MNTOPT_RW, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_RO);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_RW, NULL, 0);
 	}
 	dprintf("-readonly_changed_cb\n");
 }
@@ -1542,12 +612,12 @@ devices_changed_cb(void *arg, uint64_t newval)
 
 	if (newval == FALSE) {
 		vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NODEV);
-		vfs_clearmntopt(zfsvfs, MNTOPT_DEVICES);
-		vfs_setmntopt(zfsvfs, MNTOPT_NODEVICES, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_DEVICES);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NODEVICES, NULL, 0);
 	} else {
 		vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NODEV);
-		vfs_clearmntopt(zfsvfs, MNTOPT_NODEVICES);
-		vfs_setmntopt(zfsvfs, MNTOPT_DEVICES, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NODEVICES);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_DEVICES, NULL, 0);
 	}
 	dprintf("-devices_changed_cb\n");
 }
@@ -1560,12 +630,12 @@ setuid_changed_cb(void *arg, uint64_t newval)
 
 	if (newval == FALSE) {
 		vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOSUID);
-		vfs_clearmntopt(zfsvfs, MNTOPT_SETUID);
-		vfs_setmntopt(zfsvfs, MNTOPT_NOSETUID, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_SETUID);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOSETUID, NULL, 0);
 	} else {
 		vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOSUID);
-		vfs_clearmntopt(zfsvfs, MNTOPT_NOSETUID);
-		vfs_setmntopt(zfsvfs, MNTOPT_SETUID, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOSETUID);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_SETUID, NULL, 0);
 	}
 	dprintf("-setuid_changed_cb\n");
 }
@@ -1578,12 +648,12 @@ exec_changed_cb(void *arg, uint64_t newval)
 
 	if (newval == FALSE) {
 		vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOEXEC);
-		vfs_clearmntopt(zfsvfs, MNTOPT_EXEC);
-		vfs_setmntopt(zfsvfs, MNTOPT_NOEXEC, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_EXEC);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOEXEC, NULL, 0);
 	} else {
 		vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOEXEC);
-		vfs_clearmntopt(zfsvfs, MNTOPT_NOEXEC);
-		vfs_setmntopt(zfsvfs, MNTOPT_EXEC, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOEXEC);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_EXEC, NULL, 0);
 	}
 	dprintf("-exec_changed_cb\n");
 }
@@ -1604,12 +674,12 @@ nbmand_changed_cb(void *arg, uint64_t newval)
 	zfsvfs_t *zfsvfs = arg;
 	if (newval == FALSE) {
 		zfsvfs->z_nbmand = FALSE;
-		vfs_clearmntopt(zfsvfs, MNTOPT_NBMAND);
-		vfs_setmntopt(zfsvfs, MNTOPT_NONBMAND, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NBMAND);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NONBMAND, NULL, 0);
 	} else {
 		zfsvfs->z_nbmand = TRUE;
-		vfs_clearmntopt(zfsvfs, MNTOPT_NONBMAND);
-		vfs_setmntopt(zfsvfs, MNTOPT_NBMAND, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NONBMAND);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NBMAND, NULL, 0);
 	}
 	dprintf("-nbmand_changed_cb\n");
 }
@@ -1665,13 +735,13 @@ finderbrowse_changed_cb(void *arg, uint64_t newval)
 	if (newval == TRUE) {
 		/* XXX locking on vfs_flag? */
 		vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_DONTBROWSE);
-		vfs_clearmntopt(zfsvfs, MNTOPT_NOBROWSE);
-		vfs_setmntopt(zfsvfs, MNTOPT_BROWSE, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOBROWSE);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_BROWSE, NULL, 0);
 	} else {
 		/* XXX locking on vfs_flag? */
 		vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_DONTBROWSE);
-		vfs_clearmntopt(zfsvfs, MNTOPT_BROWSE);
-		vfs_setmntopt(zfsvfs, MNTOPT_NOBROWSE, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_BROWSE);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOBROWSE, NULL, 0);
 	}
 	dprintf("-finderbrowse_changed_cb\n");
 }
@@ -1685,13 +755,13 @@ ignoreowner_changed_cb(void *arg, uint64_t newval)
 	if (newval) {
 		/* XXX locking on vfs_flag? */
 		vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_IGNORE_OWNERSHIP);
-		vfs_clearmntopt(zfsvfs, MNTOPT_OWNERS);
-		vfs_setmntopt(zfsvfs, MNTOPT_NOOWNERS, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_OWNERS);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOOWNERS, NULL, 0);
 	} else {
 		/* XXX locking on vfs_flag? */
 		vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_IGNORE_OWNERSHIP);
-		vfs_clearmntopt(zfsvfs, MNTOPT_NOOWNERS);
-		vfs_setmntopt(zfsvfs, MNTOPT_OWNERS, NULL, 0);
+		vfs_clearmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOOWNERS);
+		vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_OWNERS, NULL, 0);
 	}
 	dprintf("-ignoreowner_changed_cb\n");
 }
@@ -1743,79 +813,78 @@ zfs_register_callbacks(struct mount *vfsp)
 	 * restore them after we register the callbacks.
 	 */
 
-	if (vfs_optionisset(zfsvfs, MNTOPT_RO, NULL) ||
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_RO, NULL) ||
 	    !spa_writeable(dmu_objset_spa(os))) {
 		readonly = B_TRUE;
 		do_readonly = B_TRUE;
-	} else if (vfs_optionisset(zfsvfs, MNTOPT_RW, NULL)) {
+	} else if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_RW, NULL)) {
 		readonly = B_FALSE;
 		do_readonly = B_TRUE;
 	}
-	if (vfs_optionisset(zfsvfs, MNTOPT_NOSUID, NULL)) {
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOSUID, NULL)) {
 		devices = B_FALSE;
 		setuid = B_FALSE;
 		do_devices = B_TRUE;
 		do_setuid = B_TRUE;
 	} else {
-		if (vfs_optionisset(zfsvfs, MNTOPT_NODEVICES, NULL)) {
+		if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NODEVICES, NULL)) {
 			devices = B_FALSE;
 			do_devices = B_TRUE;
-		} else if (vfs_optionisset(zfsvfs, MNTOPT_DEVICES, NULL)) {
+		} else if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_DEVICES, NULL)) {
 			devices = B_TRUE;
 			do_devices = B_TRUE;
 		}
 
-		if (vfs_optionisset(zfsvfs, MNTOPT_NOSETUID, NULL)) {
+		if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOSETUID, NULL)) {
 			setuid = B_FALSE;
 			do_setuid = B_TRUE;
-		} else if (vfs_optionisset(zfsvfs, MNTOPT_SETUID, NULL)) {
+		} else if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_SETUID, NULL)) {
 			setuid = B_TRUE;
 			do_setuid = B_TRUE;
 		}
 	}
-	if (vfs_optionisset(zfsvfs, MNTOPT_NOEXEC, NULL)) {
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOEXEC, NULL)) {
 		exec = B_FALSE;
 		do_exec = B_TRUE;
-	} else if (vfs_optionisset(zfsvfs, MNTOPT_EXEC, NULL)) {
+	} else if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_EXEC, NULL)) {
 		exec = B_TRUE;
 		do_exec = B_TRUE;
 	}
-	if (vfs_optionisset(zfsvfs, MNTOPT_NOXATTR, NULL)) {
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOXATTR, NULL)) {
 		xattr = B_FALSE;
 		do_xattr = B_TRUE;
-	} else if (vfs_optionisset(zfsvfs, MNTOPT_XATTR, NULL)) {
+	} else if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_XATTR, NULL)) {
 		xattr = B_TRUE;
 		do_xattr = B_TRUE;
 	}
-	if (vfs_optionisset(zfsvfs, MNTOPT_NOATIME, NULL)) {
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOATIME, NULL)) {
 		atime = B_FALSE;
 		do_atime = B_TRUE;
-	} else if (vfs_optionisset(zfsvfs, MNTOPT_ATIME, NULL)) {
+	} else if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_ATIME, NULL)) {
 		atime = B_TRUE;
 		do_atime = B_TRUE;
 	}
 #ifdef __APPLE__
-	if (vfs_optionisset(zfsvfs, MNTOPT_NOBROWSE, NULL)) {
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOBROWSE, NULL)) {
 		finderbrowse = B_FALSE;
 		do_finderbrowse = B_TRUE;
-	} else if (vfs_optionisset(zfsvfs, MNTOPT_BROWSE, NULL)) {
+	} else if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_BROWSE, NULL)) {
 		finderbrowse = B_TRUE;
 		do_finderbrowse = B_TRUE;
 	}
-	if (vfs_optionisset(zfsvfs, MNTOPT_NOOWNERS, NULL)) {
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOOWNERS, NULL)) {
 		ignoreowner = B_TRUE;
 		do_ignoreowner = B_TRUE;
-	} else if (vfs_optionisset(zfsvfs, MNTOPT_OWNERS, NULL)){
+	} else if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_OWNERS, NULL)){
 		ignoreowner = B_FALSE;
 		do_ignoreowner = B_TRUE;
 	}
 #endif
 
 
+#define vfs_flagisset(X, Y) (vfs_flags(X)&(Y))
 #if 0
-#define vfs_optionisset_old(X, Y, Z) (vfs_flags(X)&(Y))
-
-	if (vfs_optionisset(vfsp, MNT_RDONLY, NULL) ||
+	if (vfs_flagisset(vfsp, MNT_RDONLY) ||
 		!spa_writeable(dmu_objset_spa(os))) {
 		readonly = B_TRUE;
 		do_readonly = B_TRUE;
@@ -1823,42 +892,42 @@ zfs_register_callbacks(struct mount *vfsp)
 		readonly = B_FALSE;
 		do_readonly = B_TRUE;
 	}
-	if (vfs_optionisset(vfsp, MNT_NOSUID, NULL)) {
+	if (vfs_flagisset(vfsp, MNT_NOSUID)) {
 		setuid = B_FALSE;
 		do_setuid = B_TRUE;
 	} else {
 		setuid = B_TRUE;
 		do_setuid = B_TRUE;
 	}
-	if (vfs_optionisset(vfsp, MNT_NOEXEC, NULL)) {
+	if (vfs_flagisset(vfsp, MNT_NOEXEC)) {
 		exec = B_FALSE;
 		do_exec = B_TRUE;
 	} else {
 		exec = B_TRUE;
 		do_exec = B_TRUE;
 	}
-	if (vfs_optionisset(vfsp, MNT_NOUSERXATTR, NULL)) {
+	if (vfs_flagisset(vfsp, MNT_NOUSERXATTR)) {
 		xattr = B_FALSE;
 		do_xattr = B_TRUE;
 	} else {
 		xattr = B_TRUE;
 		do_xattr = B_TRUE;
 	}
-	if (vfs_optionisset(zfsvfs, MNTOPT_NOATIME, NULL)) {
+	if (vfs_flagisset(vfsp, MNT_NOATIME)) {
 		atime = B_FALSE;
 		do_atime = B_TRUE;
-	} else (vfs_optionisset(zfsvfs, MNTOPT_ATIME, NULL)) {
+	} else {
 		atime = B_TRUE;
 		do_atime = B_TRUE;
 	}
-	if (vfs_optionisset(vfsp, MNT_DONTBROWSE, NULL)) {
+	if (vfs_flagisset(vfsp, MNT_DONTBROWSE)) {
 		finderbrowse = B_FALSE;
 		do_finderbrowse = B_TRUE;
 	} else {
 		finderbrowse = B_TRUE;
 		do_finderbrowse = B_TRUE;
 	}
-	if (vfs_optionisset(vfsp, MNT_IGNORE_OWNERSHIP, NULL)) {
+	if (vfs_flagisset(vfsp, MNT_IGNORE_OWNERSHIP)) {
 		ignoreowner = B_TRUE;
 		do_ignoreowner = B_TRUE;
 	} else {
@@ -2308,6 +1377,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	uint64_t zval;
 	int i, error;
 	uint64_t sa_obj;
+	illumos_vfs_t *illumos_vfs;
 
 	zfsvfs = kmem_zalloc(sizeof (zfsvfs_t), KM_SLEEP);
 
@@ -2321,6 +1391,8 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 		return (error);
 	}
 
+	illumos_vfs = kmem_zalloc(sizeof (illumos_vfs_t), KM_SLEEP);
+
 	/*
 	 * Initialize the zfs-specific filesystem structure.
 	 * Should probably make this a kmem cache, shuffle fields,
@@ -2331,6 +1403,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	zfsvfs->z_max_blksz = SPA_MAXBLOCKSIZE;
 	zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
 	zfsvfs->z_os = os;
+	zfsvfs->z_illumos_vfs = illumos_vfs;
 
 	error = zfs_get_zplprop(os, ZFS_PROP_VERSION, &zfsvfs->z_version);
 	if (error) {
@@ -2452,6 +1525,9 @@ out:
 	dmu_objset_disown(os, zfsvfs);
 	*zfvp = NULL;
 	kmem_free(zfsvfs, sizeof (zfsvfs_t));
+#ifdef __APPLE__
+	kmem_free(illumos_vfs, sizeof (illumos_vfs_t));
+#endif /* __APPLE__ */
 	return (error);
 }
 
@@ -2572,6 +1648,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	rw_destroy(&zfsvfs->z_fuid_lock);
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
+	kmem_free(zfsvfs->z_illumos_vfs, sizeof (illumos_vfs_t));
 	kmem_free(zfsvfs, sizeof (zfsvfs_t));
     dprintf("-zfsvfs_free\n");
 }
@@ -2603,7 +1680,8 @@ zfs_set_fuid_feature(zfsvfs_t *zfsvfs)
 }
 
 static int
-zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx,  mntopts_t *mnt_mntopts)
+zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx,
+     mntopts_t *mnt_mntopts)
 {
 	int error = 0;
 	zfsvfs_t *zfsvfs;
@@ -2621,8 +1699,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	if (error)
 		return (error);
 	zfsvfs->z_vfs = vfsp;
-
-	vfs_swapopttbl(mnt_mntopts, &zfsvfs->vfs_mntopts);
+	vfs_swapopttbl(mnt_mntopts, &zfsvfs->z_illumos_vfs->vfs_mntopts);
 
 #ifdef illumos
 	/* Initialize the generic filesystem structure. */
@@ -2729,6 +1806,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 
 	} else {
 		error = zfsvfs_setup(zfsvfs, B_TRUE);
+		printf("zfsvfs_setup ret %d\n", error);
 	}
 
 
@@ -2754,6 +1832,7 @@ out:
 		atomic_add_32(&zfs_active_fs_count, 1);
 	}
 
+printf("returning %d\n", error);
 	return (error);
 }
 
@@ -3131,6 +2210,17 @@ getpoolname(const char *osname, char *poolname)
 }
 #endif
 
+
+static int zfs_vfsinit(int fstype, char *name);
+static vfsdef_t vfw = {
+        VFSDEF_VERSION,
+        MNTTYPE_ZFS,
+        zfs_vfsinit,
+        VSW_HASPROTO|VSW_CANRWRO|VSW_CANREMOUNT|VSW_VOLATILEDEV|VSW_STATS|
+            VSW_XID|VSW_ZMOUNT,
+        &zfs_mntopts
+};
+
 /*ARGSUSED*/
 int
 zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
@@ -3138,11 +2228,11 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 {
 	cred_t		*cr =  (cred_t *)vfs_context_ucred(context);
 	char		*osname = NULL;
-	char		*options = NULL;
 	int		error = 0;
 	int		canwrite;
 	int		mflag;
 	int		flags = 0;
+printf("error %d\n", error);
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
@@ -3195,11 +2285,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		}
 	}
 
-	dprintf("inargs is %s\n", inargs);
-	dprintf("1 optlenp %p optlen %d\n", &optlen, optlen);
-	optlen = mnt_args.optlen;
-	dprintf("2 optlenp %p optlen %d\n", &optlen, optlen);
-
         // Copy over the string
         if ( (error = copyinstr((user_addr_t)mnt_args.fspec, osname,
                                 MAXPATHLEN, &osnamelen)) )
@@ -3207,18 +2292,13 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
     }
 	mflag = mnt_args.mflag;
 
-	options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
-
-	error = copyin((user_addr_t)mnt_args.optptr, (caddr_t)options,
-	    mnt_args.optlen);
-
-	dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
-	    " options %s\n",
+	printf("vfs_mount: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
+	    " inargs %s\n",
 	    mnt_args.fspec,
 	    mnt_args.mflag,
 	    mnt_args.optptr,
 	    mnt_args.optlen,
-	    options);
+	    inargs);
 
 	if (mflag & MS_RDONLY)
 		flags |= MNT_RDONLY;
@@ -3234,8 +2314,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 	vfs_setflags(vfsp, (uint64_t)flags);
 
-    dprintf("vfs_mount: options %04x path '%s'\n",
-            mnt_args.flags, mnt_args.fspec);
+    printf("vfs_mount: options %04x path '%s'\n",
+            flags, mnt_args.fspec);
 
     dprintf("optsp %p, opts %s optlen %d\n", opts, opts, optlen);
     dprintf("inargsp %p, inargs %s inargslen %d\n", inargs, inargs, inargslen);
@@ -3260,17 +2340,20 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
     if ((vswp = vfs_getvfssw(fsname)) == NULL)
         return (EINVAL);
 
-    dprintf("vswp %p : vsw_optprotop %p : mo_count %d\n", vswp, &vswp->vsw_optproto, (&vswp->vsw_optproto)->mo_count);
+    printf("vswp %p : vsw_optprotop %p : mo_count %d\n", vswp, &vswp->vsw_optproto, (&vswp->vsw_optproto)->mo_count);
+printf("vfs_mntopts.mo_count %d\n", vfs_mntopts.mo_count);
     //if ( &vswp->vsw_optproto == NULL) {
         vfs_mergeopttbl(&vfs_mntopts, vfw.optproto,
 		    &vswp->vsw_optproto);
     //}
 
+printf("&vswp->vsw_optproto %p : (&vswp->vsw_optproto)->mo_count %d\n", &vswp->vsw_optproto, (&vswp->vsw_optproto)->mo_count);
     if ( &vswp->vsw_optproto != NULL ) {
         vfs_copyopttbl(&vswp->vsw_optproto, &mnt_mntopts);
     }
 
     vfs_parsemntopts(&mnt_mntopts, inargs, 0);
+printf("inargs p %p : inargs s %s\n", inargs, inargs);
 
 //    if (uap->flags & MS_OPTIONSTR) {
 //        if (!(vswp->vsw_flag & VSW_HASPROTO)) {
@@ -3315,6 +2398,7 @@ MNT_UPDATE
 
 #ifdef __APPLE__
     int mntflags = vfs_flags(vfsp);
+printf("mntflags %llu\n", vfs_flags(vfsp));
 
     if (mntflags & MNT_UPDATE) //same as MS_REMOUNT?
         vfs_setmntopt_nolock(&mnt_mntopts, MNTOPT_REMOUNT, NULL, 0, 0);
@@ -3495,8 +2579,12 @@ MNT_UPDATE
 			goto out;
 	}
 #endif
-
+	printf("+zfs_domount vfs_flags(vfsp) %llu\n", vfs_flags(vfsp));
 	error = zfs_domount(vfsp, 0, osname, context, &mnt_mntopts);
+	printf("-zfs_domount vfs_flags(vfsp) %llu\n", vfs_flags(vfsp));
+printf("browse : %llu\n", vfs_flags(vfsp)&MNT_DONTBROWSE);
+
+        zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
 
 #ifdef sun
 	/*
@@ -3620,13 +2708,12 @@ MNT_UPDATE
 #endif
 
 #ifdef __APPLE__
-        zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
         //Checking mnt_mntopts is connected to vfsp's zfsvfs_t
-        dprintf("zfsvfs %p : &zfsvfs->vfs_mntopts %p : &mnt_mntopts %p\n", zfsvfs, &zfsvfs->vfs_mntopts, &mnt_mntopts);
+        printf("zfsvfs %p : &zfsvfs->z_illumos_vfs->vfs_mntopts %p : &mnt_mntopts %p\n", zfsvfs, &zfsvfs->z_illumos_vfs->vfs_mntopts, &mnt_mntopts);
         if (vfs_flags(vfsp) & MNT_RDONLY)
-            vfs_setmntopt(zfsvfs, MNTOPT_RO, NULL, 0);
+            vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_RO, NULL, 0);
         if (vfs_flags(vfsp) & MNT_NOSUID)
-            vfs_setmntopt(zfsvfs, MNTOPT_NOSUID, NULL, 0);
+            vfs_setmntopt(zfsvfs->z_illumos_vfs, MNTOPT_NOSUID, NULL, 0);
 #endif
 
     if (error) {
@@ -3639,7 +2726,7 @@ MNT_UPDATE
             vfs_swapopttbl(&mnt_mntopts, &vfsp->vfs_mntopts);
 #endif
 #ifdef __APPLE__
-            vfs_swapopttbl(&mnt_mntopts, &zfsvfs->vfs_mntopts);
+            vfs_swapopttbl(&mnt_mntopts, &zfsvfs->z_illumos_vfs->vfs_mntopts);
 #endif
 #ifdef illumos
             vfs_setmntpoint(vfsp, refstr_value(oldmntpt),
@@ -3730,38 +2817,39 @@ MNT_UPDATE
             vfsp->vfs_flag &= ~VFS_NOEXEC;
 #endif
 #ifdef __APPLE__
-        if (vfs_optionisset(zfsvfs, MNTOPT_RO, NULL))
-            vfs_setflags(vfsp, (uint64_t)MNT_RDONLY);
+	printf("vfs_flagisset(vfsp, MNT_NOATIME) llu %llu\n", vfs_flagisset(vfsp, MNT_NOATIME));
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_RO, NULL))
+		vfs_setflags(vfsp, (uint64_t)MNT_RDONLY);
+	else
+		vfs_clearflags(vfsp, (uint64_t)MNT_RDONLY);
+        if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOSUID, NULL))
+		vfs_setflags(vfsp, (uint64_t)MNT_NOSUID);
         else
-            vfs_clearflags(vfsp, (uint64_t)MNT_RDONLY);
-        if (vfs_optionisset(zfsvfs, MNTOPT_NOSUID, NULL)) {
-            //vfs_setflags(vfsp, (uint64_t)MNT_NOSETUID | (uint64_t)MNT_NODEV);
-            vfs_setflags(vfsp, (uint64_t)MNT_NOSUID | (uint64_t)MNT_NODEV);
-        } else {
-            if (vfs_optionisset(zfsvfs, MNTOPT_NODEVICES, NULL))
+		vfs_clearflags(vfsp, (uint64_t)MNT_NOSUID);
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NODEV, NULL))
                 vfs_setflags(vfsp, (uint64_t)MNT_NODEV);
-            else
-                vfs_clearflags(vfsp, (uint64_t)MNT_NODEV);
-            if (vfs_optionisset(zfsvfs, MNTOPT_NOSETUID, NULL))
-                //vfs_setflags(vfsp, (uint64_t)MNT_NOSETUID);
-                vfs_setflags(vfsp, (uint64_t)MNT_NOSUID);
-            else
-                //vfs_clearflags(vfsp, (uint64_t)MNT_NOSETUID);
-                vfs_clearflags(vfsp, (uint64_t)MNT_NOSUID);
-        }
-	if (vfs_optionisset(zfsvfs, MNTOPT_NODEVICES, NULL))
-                vfs_setflags(vfsp, (uint64_t)MNT_NODEV);
-            else
-                vfs_clearflags(vfsp, (uint64_t)MNT_NODEV);
-	printf("MNT_NODEV is %d\n", MNT_NODEV);
-        if (vfs_optionisset(zfsvfs, MNTOPT_XATTR, NULL))
-            vfs_clearflags(vfsp, (uint64_t)MNT_NOUSERXATTR);
-        else
-            vfs_setflags(vfsp, (uint64_t)MNT_NOUSERXATTR);
-        if (vfs_optionisset(zfsvfs, MNTOPT_NOEXEC, NULL))
-            vfs_setflags(vfsp, (uint64_t)MNT_NOEXEC);
-        else
-            vfs_clearflags(vfsp, (uint64_t)MNT_NOEXEC);
+	else
+		vfs_clearflags(vfsp, (uint64_t)MNT_NODEV);
+        if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOUSERXATTR, NULL))
+		vfs_setflags(vfsp, (uint64_t)MNT_NOUSERXATTR);
+	else
+		vfs_clearflags(vfsp, (uint64_t)MNT_NOUSERXATTR);
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOEXEC, NULL))
+		vfs_setflags(vfsp, (uint64_t)MNT_NOEXEC);
+	else
+		vfs_clearflags(vfsp, (uint64_t)MNT_NOEXEC);
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_NOATIME, NULL))
+		vfs_setflags(vfsp, (uint64_t)MNT_NOATIME);
+	else
+		vfs_clearflags(vfsp, (uint64_t)MNT_NOATIME);
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_DONTBROWSE, NULL))
+		vfs_setflags(vfsp, (uint64_t)MNT_DONTBROWSE);
+	else
+		vfs_clearflags(vfsp, (uint64_t)MNT_DONTBROWSE);
+	if (vfs_optionisset(zfsvfs->z_illumos_vfs, MNTOPT_IGNORE_OWNERSHIP, NULL))
+		vfs_setflags(vfsp, (uint64_t)MNT_IGNORE_OWNERSHIP);
+	else
+		vfs_clearflags(vfsp, (uint64_t)MNT_IGNORE_OWNERSHIP);
 #endif
 #ifdef illumos
         /*
@@ -3782,22 +2870,15 @@ MNT_UPDATE
 #endif
 #ifdef __APPLE__
         size_t copyoutlen = 0;
-        copyout_error = vfs_buildoptionstr(&zfsvfs->vfs_mntopts, inargs, optlen);
+        copyout_error = vfs_buildoptionstr(&zfsvfs->z_illumos_vfs->vfs_mntopts, inargs, optlen);
         if (copyout_error == 0) {
             copyout_error = copyoutstr(inargs, (user_addr_t)opts, optlen, &copyoutlen);
         }
-        dprintf("inargs p %p inargs %s opts p %p opts %s optlen %d copyoutlen %d\n",
+        printf("inargs p %p inargs %s opts p %p opts %s optlen %d copyoutlen %lu\n",
                inargs, inargs, opts, opts, optlen, copyoutlen);
 #endif
     }
 out:
-#ifdef __APPLE__
-	if (osname)
-		kmem_free(osname, MAXPATHLEN);
-
-	if (options)
-		kmem_free(options, mnt_args.optlen);
-#endif
 #ifdef illumos
     vfs_freeopttbl(&mnt_mntopts);
     if (resource != NULL)
@@ -3823,7 +2904,9 @@ out:
     }
 #endif
 #ifdef __APPLE__
-    vfs_freeopttbl(&mnt_mntopts);
+	vfs_freeopttbl(&mnt_mntopts);
+	if (osname)
+		kmem_free(osname, MAXPATHLEN);
     ASSERT(vswp != NULL);
     //vfs_unrefvfssw(vswp);
     if (inargs != opts)
@@ -4766,34 +3849,36 @@ zfs_vnodes_adjust_back(void)
 static int
 zfs_vfsinit(int fstype, char *name)
 {
-	int error = 0;
+//	int error = 0;
 
-//	zfsfstype = fstype;
+	zfsfstype = fstype;
 
-//	/*
-//	 * Setup vfsops and vnodeops tables.
-//	 */
-//	error = vfs_setfsops(fstype, zfs_vfsops_template, &zfs_vfsops);
-//	if (error != 0) {
-//		cmn_err(CE_WARN, "zfs: bad vfs ops template");
-//	}
+#if 0
+	/*
+	 * Setup vfsops and vnodeops tables.
+	 */
+	error = vfs_setfsops(fstype, zfs_vfsops_template, &zfs_vfsops);
+	if (error != 0) {
+		cmn_err(CE_WARN, "zfs: bad vfs ops template");
+	}
 
-//	error = zfs_create_op_tables();
-//	if (error) {
-//		zfs_remove_op_tables();
-//		cmn_err(CE_WARN, "zfs: bad vnode ops template");
-//		(void) vfs_freevfsops_by_type(zfsfstype);
-//		return (error);
-//	}
-//
-//	mutex_init(&zfs_dev_mtx, NULL, MUTEX_DEFAULT, NULL);
+	error = zfs_create_op_tables();
+	if (error) {
+		zfs_remove_op_tables();
+		cmn_err(CE_WARN, "zfs: bad vnode ops template");
+		(void) vfs_freevfsops_by_type(zfsfstype);
+		return (error);
+	}
 
-//	/*
-//	 * Unique major number for all zfs mounts.
-//	 * If we run out of 32-bit minors, we'll getudev() another major.
-//	 */
-//	zfs_major = ddi_name_to_major(ZFS_DRIVER);
-//	zfs_minor = ZFS_MIN_MINOR;
+	mutex_init(&zfs_dev_mtx, NULL, MUTEX_DEFAULT, NULL);
+
+	/*
+	 * Unique major number for all zfs mounts.
+	 * If we run out of 32-bit minors, we'll getudev() another major.
+	 */
+	zfs_major = ddi_name_to_major(ZFS_DRIVER);
+	zfs_minor = ZFS_MIN_MINOR;
+#endif
 
 	return (0);
 }
@@ -4982,5 +4067,4 @@ zfsvfs_update_fromname(const char *oldname, const char *newname)
 	mtx_unlock(&mountlist_mtx);
 #endif
 }
-
 #endif

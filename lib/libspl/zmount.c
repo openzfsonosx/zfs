@@ -32,7 +32,6 @@
 #ifdef __APPLE__
 
 #include <sys/mount.h>
-#include <sys/zfs_mount.h>
 
 int
 zmount(const char *spec, const char *dir, int mflag, char *fstype,

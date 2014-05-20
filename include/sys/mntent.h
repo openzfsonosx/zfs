@@ -185,7 +185,7 @@ extern "C" {
 #endif
 
 
-#define	MNTOPT_BROWSE	"nobrowse"	/* file system is not appropriate path to user data */
+#define	MNTOPT_BROWSE	"browse"	/* file system is not appropriate path to user data */
 #define	MNTOPT_DONTBROWSE "nobrowse"	/* file system is not appropriate path to user data */
 #define	MNTOPT_IGNORE_OWNERSHIP "noowners"	/* VFS will ignore ownership information on filesystem objects */
 #define	MNTOPT_DONTIGNORE_OWNERSHIP "owners"	/* VFS will not ignore ownership information on filesystem objects */

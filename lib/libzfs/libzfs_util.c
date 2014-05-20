@@ -49,9 +49,9 @@
 
 #include "libzfs_impl.h"
 #include "zfs_prop.h"
-#
+
 #ifdef __APPLE__
-#include <sys/zfs_mount.h>
+#include <sys/mount.h>
 #endif /* __APPLE__ */include "zfeature_common.h"
 
 int

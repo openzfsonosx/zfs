@@ -102,6 +102,7 @@ zfs_SOURCES = \
 	vdev_raidz.c \
 	vdev_root.c \
 	vfs.c \
+	vfs_conf.c \
 	zap.c \
 	zap_leaf.c \
 	zap_micro.c \

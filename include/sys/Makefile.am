@@ -28,8 +28,10 @@ COMMON_H = \
 	$(top_srcdir)/include/sys/dsl_synctask.h \
 	$(top_srcdir)/include/sys/dsl_userhold.h \
 	$(top_srcdir)/include/sys/efi_partition.h \
+	$(top_srcdir)/include/sys/fstyp.h \
 	$(top_srcdir)/include/sys/metaslab.h \
 	$(top_srcdir)/include/sys/metaslab_impl.h \
+	$(top_srcdir)/include/sys/mount.h \
 	$(top_srcdir)/include/sys/nvpair.h \
 	$(top_srcdir)/include/sys/nvpair_impl.h \
 	$(top_srcdir)/include/sys/refcount.h \
@@ -66,7 +68,6 @@ COMMON_H = \
 	$(top_srcdir)/include/sys/zfs_delay.h \
 	$(top_srcdir)/include/sys/zfs_dir.h \
 	$(top_srcdir)/include/sys/zfs_fuid.h \
-	$(top_srcdir)/include/sys/zfs_mount.h \
 	$(top_srcdir)/include/sys/zfs_rlock.h \
 	$(top_srcdir)/include/sys/zfs_sa.h \
 	$(top_srcdir)/include/sys/zfs_stat.h \

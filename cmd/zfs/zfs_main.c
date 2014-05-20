@@ -70,10 +70,6 @@
 #include "zfs_comutil.h"
 #include "libzfs_impl.h"
 
-#ifdef __APPLE__
-#include <sys/zfs_mount.h>
-#endif /* __APPLE__ */
-
 libzfs_handle_t *g_zfs;
 
 static FILE *mnttab_file;
