@@ -505,13 +505,6 @@ cv_wait(kcondvar_t *cv, kmutex_t *mp)
 	mp->m_owner = curthread;
 }
 
-void
-cv_wait_io(kcondvar_t *cv, kmutex_t *mp)
-{
-    cv_wait(cv, mp);
-}
-
-
 clock_t
 cv_timedwait(kcondvar_t *cv, kmutex_t *mp, clock_t abstime)
 {

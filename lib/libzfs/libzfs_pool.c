@@ -29,7 +29,7 @@
 #include <errno.h>
 #include <devid.h>
 #include <fcntl.h>
-//#include <libintl.h>
+#include <libintl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -47,6 +47,10 @@
 #include "libzfs_impl.h"
 #include "zfs_comutil.h"
 #include "zfeature_common.h"
+
+#ifdef __APPLE__
+#include <sys/zfs_mount.h>
+#endif /* __APPLE__ */
 
 static int read_efi_label(nvlist_t *config, diskaddr_t *sb);
 
@@ -746,6 +750,7 @@ zpool_set_prop(zpool_handle_t *zhp, const char *propname, const char *propval)
 		return (-1);
 	}
 
+	fprintf(stderr, "pool_set_props\r\n");
 	ret = zfs_ioctl(zhp->zpool_hdl, ZFS_IOC_POOL_SET_PROPS, &zc);
 
 	zcmd_free_nvlists(&zc);

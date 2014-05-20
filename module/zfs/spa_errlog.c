@@ -181,7 +181,7 @@ process_error_log(spa_t *spa, uint64_t obj, void *addr, size_t *count)
 
 		name_to_bookmark(za.za_name, &zb);
 
-		if (copyout(&zb, (char *) addr +
+		if (copyout(&zb, (user_addr_t) addr +
 		    (*count - 1) * sizeof (zbookmark_t),
 		    sizeof (zbookmark_t)) != 0) {
 			zap_cursor_fini(&zc);
@@ -206,7 +206,7 @@ process_error_list(avl_tree_t *list, void *addr, size_t *count)
 		if (*count == 0)
 			return (SET_ERROR(ENOMEM));
 
-		if (copyout(&se->se_bookmark, (char *)addr +
+		if (copyout(&se->se_bookmark, (user_addr_t)addr +
 		    (*count - 1) * sizeof (zbookmark_t),
 		    sizeof (zbookmark_t)) != 0)
 			return (SET_ERROR(EFAULT));

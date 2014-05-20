@@ -31,7 +31,7 @@
 
 #include <ctype.h>
 #include <errno.h>
-//#include <libintl.h>
+#include <libintl.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,6 +66,10 @@
 #include "zfs_prop.h"
 #include "libzfs_impl.h"
 #include "zfs_deleg.h"
+
+#ifdef __APPLE__
+#include <sys/zfs_mount.h>
+#endif /* __APPLE__ */
 
 static int userquota_propname_decode(const char *propname, boolean_t zoned,
     zfs_userquota_prop_t *typep, char *domain, int domainlen, uint64_t *ridp);
@@ -772,7 +776,7 @@ libzfs_mnttab_remove(libzfs_handle_t *hdl, const char *fsname)
 	mnttab_node_t *ret;
 
 	find.mtn_mt.mnt_special = (char *)fsname;
-	if (ret = avl_find(&hdl->libzfs_mnttab_cache, (void *)&find, NULL)) {
+	if ((ret = avl_find(&hdl->libzfs_mnttab_cache, (void *)&find, NULL))) {
 		avl_remove(&hdl->libzfs_mnttab_cache, ret);
 		free(ret->mtn_mt.mnt_special);
 		free(ret->mtn_mt.mnt_mountp);
@@ -1437,6 +1441,7 @@ zfs_setprop_error(libzfs_handle_t *hdl, zfs_prop_t prop, int err,
 	}
 }
 
+#ifdef __LINUX__
 static boolean_t
 zfs_is_namespace_prop(zfs_prop_t prop)
 {
@@ -1458,6 +1463,7 @@ zfs_is_namespace_prop(zfs_prop_t prop)
 		return (B_FALSE);
 	}
 }
+#endif /* __LINUX__ */
 
 /*
  * Given a property name and value, set the property for the given dataset.
@@ -1682,6 +1688,7 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 		 */
 		(void) get_stats(zhp);
 
+#ifdef __LINUX__
 		/*
 		 * Remount the filesystem to propagate the change
 		 * if one of the options handled by the generic
@@ -1690,6 +1697,7 @@ zfs_prop_inherit(zfs_handle_t *zhp, const char *propname, boolean_t received)
 		if (zfs_is_namespace_prop(prop) &&
 		    zfs_is_mounted(zhp, NULL))
 			ret = zfs_mount(zhp, MNTOPT_REMOUNT, 0);
+#endif /* __LINUX__ */
 	}
 
 error:
@@ -2798,25 +2806,6 @@ zfs_prop_get_written(zfs_handle_t *zhp, const char *propname,
 	} else {
 		zfs_nicenum(propvalue, propbuf, proplen);
 	}
-
-	return (0);
-}
-
-int
-zfs_get_snapused_int(zfs_handle_t *firstsnap, zfs_handle_t *lastsnap,
-    uint64_t *usedp)
-{
-	int err;
-	zfs_cmd_t zc = { "\0", "\0", "\0", "\0", 0 };
-
-	(void) strlcpy(zc.zc_name, lastsnap->zfs_name, sizeof (zc.zc_name));
-	(void) strlcpy(zc.zc_value, firstsnap->zfs_name, sizeof (zc.zc_value));
-
-	err = zfs_ioctl(lastsnap->zfs_hdl, ZFS_IOC_SPACE_SNAPS, &zc);
-	if (err)
-		return (err);
-
-	*usedp = zc.zc_cookie;
 
 	return (0);
 }

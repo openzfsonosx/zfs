@@ -43,7 +43,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <unistd.h>
-//#include <libintl.h>
+#include <libintl.h>
 #include <libuutil.h>
 
 #include "libzfs_impl.h"

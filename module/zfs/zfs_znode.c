@@ -1571,6 +1571,7 @@ zfs_znode_free(znode_t *zp)
 	VFS_RELE(zfsvfs->z_vfs);
 }
 
+#ifdef LINUX
 static inline int
 zfs_compare_timespec(struct timespec *t1, struct timespec *t2)
 {
@@ -1582,6 +1583,7 @@ zfs_compare_timespec(struct timespec *t1, struct timespec *t2)
 
 	return (t1->tv_nsec - t2->tv_nsec);
 }
+#endif
 
 /*
  *  Determine whether the znode's atime must be updated.  The logic mostly
@@ -1589,10 +1591,10 @@ zfs_compare_timespec(struct timespec *t1, struct timespec *t2)
  *  This function is only called if the underlying filesystem actually has
  *  atime updates enabled.
  */
+#ifdef LINUX
 static inline boolean_t
 zfs_atime_need_update(znode_t *zp, timestruc_t *now)
 {
-#ifdef LINUX
 	if (!ZTOZSB(zp)->z_relatime)
 		return (B_TRUE);
 
@@ -1609,9 +1611,9 @@ zfs_atime_need_update(znode_t *zp, timestruc_t *now)
 
 	if ((long)now->tv_sec - ZTOI(zp)->i_atime.tv_sec >= 24*60*60)
 		return (B_TRUE);
-#endif
 	return (B_FALSE);
 }
+#endif
 
 /*
  * Prepare to update znode time stamps.

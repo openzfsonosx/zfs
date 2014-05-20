@@ -27,15 +27,16 @@
 /*
  * Generic wrapper to sleep until a given time.
  */
-#define	zfs_sleep_until(wakeup)         \
-  do {                                                  \
-      hrtime_t delta = wakeup - gethrtime();			\
-                                                        \
-      if (delta > 0) {                                  \
-          unsigned long delta_us;                       \
-          delta_us = delta / (NANOSEC / MICROSEC);      \
-          usleep(delta_us);                             \
-      }                                                 \
-  } while (0)
+#define	zfs_sleep_until(wakeup)						\
+	do {								\
+		hrtime_t delta = wakeup - gethrtime();			\
+									\
+		if (delta > 0) {					\
+			struct timespec ts;				\
+			ts.tv_sec = delta / NANOSEC;			\
+			ts.tv_nsec = delta % NANOSEC;			\
+			(void) msleep(NULL, NULL, PWAIT, "zfs_sleep_until", &ts);	\
+		}							\
+	} while (0)
 
 #endif	/* _SYS_FS_ZFS_DELAY_H */

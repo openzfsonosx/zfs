@@ -65,6 +65,7 @@ COMMON_H = \
 	$(top_srcdir)/include/sys/zfs_delay.h \
 	$(top_srcdir)/include/sys/zfs_dir.h \
 	$(top_srcdir)/include/sys/zfs_fuid.h \
+	$(top_srcdir)/include/sys/zfs_mount.h \
 	$(top_srcdir)/include/sys/zfs_rlock.h \
 	$(top_srcdir)/include/sys/zfs_sa.h \
 	$(top_srcdir)/include/sys/zfs_stat.h \

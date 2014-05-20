@@ -22,3 +22,11 @@ zfs_LDADD = \
 	$(top_builddir)/lib/libzfs_core/libzfs_core.la
 
 zfs_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID)
+
+install-exec-hook:
+	/bin/ln -f $(DESTDIR)$(sbindir)/zfs $(DESTDIR)/sbin/mount_zfs
+	/bin/ln -f $(DESTDIR)$(sbindir)/zfs $(DESTDIR)/sbin/umount_zfs
+
+uninstall-hook:
+	-$(RM) $(DESTDIR)/sbin/mount_zfs
+	-$(RM) $(DESTDIR)/sbin/umount_zfs

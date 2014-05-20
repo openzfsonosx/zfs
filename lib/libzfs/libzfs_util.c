@@ -49,7 +49,10 @@
 
 #include "libzfs_impl.h"
 #include "zfs_prop.h"
-#include "zfeature_common.h"
+#
+#ifdef __APPLE__
+#include <sys/zfs_mount.h>
+#endif /* __APPLE__ */include "zfeature_common.h"
 
 int
 libzfs_errno(libzfs_handle_t *hdl)
@@ -1188,11 +1191,6 @@ zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 {
 	int error;
 
-    //fprintf(stderr, "zc_history set to %p '%s'\r\n", hdl->libzfs_log_str,
-    //      hdl->libzfs_log_str);
-
-
-	//zc->zc_history = (uint64_t)(uintptr_t)hdl->libzfs_log_str;
 	int original_errno = errno;
 	errno = 0;
 	error = ioctl(hdl->libzfs_fd, request, zc);
@@ -1204,16 +1202,6 @@ zfs_ioctl(libzfs_handle_t *hdl, int request, zfs_cmd_t *zc)
 	} else if (error != -1) {
 		errno = original_errno;
 	}
-
-	/*
-	 * libzfs_log_str is still needed by the above ioctl to copy the
-	 * history string out of userland into the kernel.
-	 * if (hdl->libzfs_log_str) {
-	 * 	free(hdl->libzfs_log_str);
-	 * 	hdl->libzfs_log_str = NULL;
-	 * }
-	 * zc->zc_history = 0;
-	 */
 
 	return (error);
 }

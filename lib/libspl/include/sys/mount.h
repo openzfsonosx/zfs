@@ -67,6 +67,7 @@
 #define	MS_GROUP	(MS_NOSUID|MS_NODEV)
 #define	MS_COMMENT	0
 
+#ifdef __LINUX__
 /*
  * Older glibc <sys/mount.h> headers did not define all the available
  * umount2(2) flags.  Both MNT_FORCE and MNT_DETACH are supported in the
@@ -90,5 +91,10 @@
  * provide a flag (-O) to mount over a non empty directory.
  */
 #define	MS_OVERLAY	0x00000004
+
+#define	MS_RDONLY	0x0001	/* Read-only */
+#define	MS_OPTIONSTR	0x0100	/* Data is an in/out option string */
+#define	MS_NOMNTTAB	0x0800	/* Don't show mount in mnttab */
+#endif /* __LINUX__ */
 
 #endif /* _LIBSPL_SYS_MOUNT_H */

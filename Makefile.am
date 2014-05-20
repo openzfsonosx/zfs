@@ -4,6 +4,9 @@ ACLOCAL_AMFLAGS = -I config
 include $(top_srcdir)/config/rpm.am
 include $(top_srcdir)/config/deb.am
 include $(top_srcdir)/config/tgz.am
+if CONFIG_USER
+include $(top_srcdir)/etc/launchd/daemons/launchd-daemons.am
+endif
 
 SUBDIRS = include
 if CONFIG_KERNEL
@@ -66,3 +69,24 @@ tags: ctags etags
 pkg: @DEFAULT_PACKAGE@
 pkg-kmod: @DEFAULT_PACKAGE@-kmod
 pkg-utils: @DEFAULT_PACKAGE@-utils
+
+if CONFIG_USER
+install-data-hook::
+	@echo
+	for plistfile in $(launchddaemon_DATA); do \
+		bn=`basename "$$plistfile"`; \
+		echo "Attempting to load $$bn ..."; \
+		$(DESTDIR)/bin/launchctl load -w \
+		$(DESTDIR)$(launchddaemondir)/"$$bn" \
+		    || echo "Ignoring errors"; \
+	done
+
+uninstall-hook::
+	@echo
+	for plistfile in $(launchddaemon_DATA); do \
+		label=`defaults read "$$PWD"/"$$plistfile" Label`; \
+		echo "Attempting to remove $$label ..."; \
+		$(DESTDIR)/bin/launchctl remove "$$label" \
+		    || echo "Ignoring errors"; \
+	done
+endif

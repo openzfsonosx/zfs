@@ -655,7 +655,7 @@ int
 zvol_remove_minor_symlink(const char *name)
 {
         zvol_state_t *zv;
-        int rc;
+        int rc=0;
 
         if ((zv = zvol_minor_lookup(name)) == NULL)
                 return (ENXIO);
@@ -1068,7 +1068,7 @@ int
 zvol_open_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 {
 	int err = 0;
-    int locked = 1;
+    //int locked = 1;
 
     //if (mutex_owner(&spa_namespace_lock))
     //  locked = 0;
@@ -1153,7 +1153,7 @@ int
 zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 {
 	int error = 0;
-    int locked = 1;
+    //int locked = 1;
 
     //if (mutex_owner(&spa_namespace_lock))
     //    locked = 0;

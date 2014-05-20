@@ -346,6 +346,7 @@ mtab_update(char *dataset, char *mntpoint, char *type, char *mntopts)
 int
 main(int argc, char **argv)
 {
+#if 0
 	zfs_handle_t *zhp;
 	char prop[ZFS_MAXPROPLEN];
 	char mntopts[MNT_LINE_MAX] = { '\0' };
@@ -356,6 +357,7 @@ main(int argc, char **argv)
 	unsigned long mntflags = 0, zfsflags = 0, remount = 0;
 	int sloppy = 0, fake = 0, verbose = 0, nomtab = 0, zfsutil = 0;
 	int error, c;
+#endif
 
     return -1;
 

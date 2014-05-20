@@ -555,7 +555,7 @@ out:
 extern void
 vdev_iokit_close(vdev_t *vd)
 {
-vdev_iokit_log_ptr( "vdev_iokit_close: vd:",            vd );
+//vdev_iokit_log_ptr( "vdev_iokit_close: vd:",            vd );
     
 	vdev_iokit_t *dvd =     0;
     

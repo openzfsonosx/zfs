@@ -373,13 +373,27 @@ typedef struct zfs_cmd {
     uint64_t        zc_dev;      /* OSX doesn't have ddi_driver_major*/
 } zfs_cmd_t;
 
+
 /*
  * /dev/zfs ioctl numbers.
  */
-#define	ZFS_IOC		_IOWR('Z', 0, struct zfs_cmd)
 
+//#define	ZFS_IOC		_IOWR('Z', 0, struct zfs_cmd)
 typedef enum zfs_ioc {
-	ZFS_IOC_POOL_CREATE = ZFS_IOC, // 0
+	/*
+	 * Illumos - 69/128 numbers reserved.
+	 */
+#ifdef __APPLE__
+	/*
+	 * Apple encodes IN+OUT, and size of struct in the request cmd,
+	 * and does the copyin/copyout before calling zfsdev_ioctl
+	 */
+	ZFS_IOC_FIRST =	_IOWR('Z', 0, struct zfs_cmd),
+#else
+	ZFS_IOC_FIRST =	('Z' << 8),
+#endif
+	ZFS_IOC = ZFS_IOC_FIRST,
+	ZFS_IOC_POOL_CREATE = ZFS_IOC_FIRST,
 	ZFS_IOC_POOL_DESTROY,
 	ZFS_IOC_POOL_IMPORT,
 	ZFS_IOC_POOL_EXPORT,
@@ -389,7 +403,7 @@ typedef enum zfs_ioc {
 	ZFS_IOC_POOL_SCAN,
 	ZFS_IOC_POOL_FREEZE,
 	ZFS_IOC_POOL_UPGRADE,
-	ZFS_IOC_POOL_GET_HISTORY,      // 10
+	ZFS_IOC_POOL_GET_HISTORY,
 	ZFS_IOC_VDEV_ADD,
 	ZFS_IOC_VDEV_REMOVE,
 	ZFS_IOC_VDEV_SET_STATE,
@@ -399,27 +413,23 @@ typedef enum zfs_ioc {
 	ZFS_IOC_VDEV_SETFRU,
 	ZFS_IOC_OBJSET_STATS,
 	ZFS_IOC_OBJSET_ZPLPROPS,
-	ZFS_IOC_DATASET_LIST_NEXT,   //  20
+	ZFS_IOC_DATASET_LIST_NEXT,
 	ZFS_IOC_SNAPSHOT_LIST_NEXT,
 	ZFS_IOC_SET_PROP,
-	ZFS_IOC_CREATE_MINOR,
-	ZFS_IOC_REMOVE_MINOR,
 	ZFS_IOC_CREATE,
 	ZFS_IOC_DESTROY,
 	ZFS_IOC_ROLLBACK,
 	ZFS_IOC_RENAME,
 	ZFS_IOC_RECV,
-	ZFS_IOC_SEND,                // 30
+	ZFS_IOC_SEND,
 	ZFS_IOC_INJECT_FAULT,
 	ZFS_IOC_CLEAR_FAULT,
 	ZFS_IOC_INJECT_LIST_NEXT,
 	ZFS_IOC_ERROR_LOG,
 	ZFS_IOC_CLEAR,
 	ZFS_IOC_PROMOTE,
-    ZFS_IOC_DESTROY_SNAPS,
-	ZFS_IOC_DESTROY_SNAPS_NVL,
 	ZFS_IOC_SNAPSHOT,
-	ZFS_IOC_DSOBJ_TO_DSNAME,   //  40
+	ZFS_IOC_DSOBJ_TO_DSNAME,
 	ZFS_IOC_OBJ_TO_PATH,
 	ZFS_IOC_POOL_SET_PROPS,
 	ZFS_IOC_POOL_GET_PROPS,
@@ -440,23 +450,25 @@ typedef enum zfs_ioc {
 	ZFS_IOC_DIFF,
 	ZFS_IOC_TMP_SNAPSHOT,
 	ZFS_IOC_OBJ_TO_STATS,
-	ZFS_IOC_POOL_REGUID,
 	ZFS_IOC_SPACE_WRITTEN,
 	ZFS_IOC_SPACE_SNAPS,
+	ZFS_IOC_DESTROY_SNAPS,
+	ZFS_IOC_POOL_REGUID,
 	ZFS_IOC_POOL_REOPEN,
 	ZFS_IOC_SEND_PROGRESS,
-    ZFS_IOC_LOG_HISTORY,
-    ZFS_IOC_SEND_NEW,
-    ZFS_IOC_SEND_SPACE,
-    ZFS_IOC_CLONE,
+	ZFS_IOC_LOG_HISTORY,
+	ZFS_IOC_SEND_NEW,
+	ZFS_IOC_SEND_SPACE,
+	ZFS_IOC_CLONE,
 
 	/*
 	 * Linux - 3/64 numbers reserved.
 	 */
-    /* In OS X we define an array matching this list, so having
-     * gaps is awkward
-     */
-	/*ZFS_IOC_LINUX = 0x80, */
+#ifdef __APPLE__
+	ZFS_IOC_LINUX =	_IOWR('Z', 0, struct zfs_cmd) + 0x80,
+#else
+	ZFS_IOC_LINUX = ('Z' << 8) + 0x80,
+#endif
 	ZFS_IOC_EVENTS_NEXT,
 	ZFS_IOC_EVENTS_CLEAR,
 	ZFS_IOC_EVENTS_SEEK,
@@ -464,10 +476,15 @@ typedef enum zfs_ioc {
 	/*
 	 * FreeBSD - 1/64 numbers reserved.
 	 */
-	/* ZFS_IOC_FREEBSD = 0xC0, */
+#ifdef __APPLE__
+	ZFS_IOC_FREEBSD = _IOWR('Z', 0, struct zfs_cmd) + 0xC0,
+#else
+	ZFS_IOC_FREEBSD = ('Z' << 8) + 0xC0,
+#endif
 
-
+	ZFS_IOC_LAST
 } zfs_ioc_t;
+
 
 typedef struct zfs_useracct {
 	char zu_domain[256];
@@ -496,7 +513,6 @@ extern int zfs_unmount_snap(const char *);
 extern void zfs_destroy_unmount_origin(const char *);
 
 extern boolean_t dataset_name_hidden(const char *name);
-extern int dataset_getzfsvfs(const char *dsname, void **zfvp);
 
 enum zfsdev_state_type {
 	ZST_ONEXIT,
@@ -516,8 +532,8 @@ extern void *zfsdev_get_state(minor_t minor, enum zfsdev_state_type which);
 extern minor_t zfsdev_getminor(dev_t dev);
 extern minor_t zfsdev_minor_alloc(void);
 
-extern void zfs_ioctl_init(void);
-extern void zfs_ioctl_fini(void);
+extern void zfs_ioctl_osx_init(void);
+extern void zfs_ioctl_osx_fini(void);
 
 
 

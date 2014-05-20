@@ -100,7 +100,7 @@ rrn_find(rrwlock_t *rrl)
 {
 	rrw_node_t *rn;
 #ifdef __APPLE__
-	kthread_t *t = current_thread();
+	kthread_t *t = (kthread_t *)current_thread();
 #endif
 
 	if (refcount_count(&rrl->rr_linked_rcount) == 0)
@@ -132,7 +132,7 @@ rrn_add(rrwlock_t *rrl)
 	rn->rn_rrl = rrl;
 #ifdef __APPLE__
 	rn->rn_next = rrl->rr_node_list ? rrl->rr_node_list : NULL;
-	rn->rn_thread = current_thread();
+	rn->rn_thread = (kthread_t *)current_thread();
 	rrl->rr_node_list = rn;
 #else
 	rn->rn_next = tsd_get(rrw_tsd_key);
@@ -151,7 +151,7 @@ rrn_find_and_remove(rrwlock_t *rrl)
 	rrw_node_t *prev = NULL;
 
 #ifdef __APPLE__
-	kthread_t *t = current_thread();
+	kthread_t *t = (kthread_t *)current_thread();
 
 	if (refcount_count(&rrl->rr_linked_rcount) == 0)
 		return (B_FALSE);
@@ -244,7 +244,7 @@ rrw_enter_write(rrwlock_t *rrl)
 		cv_wait(&rrl->rr_cv, &rrl->rr_lock);
 	}
 	rrl->rr_writer_wanted = B_FALSE;
-	rrl->rr_writer = curthread;
+	rrl->rr_writer = (kthread_t *)curthread;
 	mutex_exit(&rrl->rr_lock);
 }
 
@@ -291,7 +291,7 @@ rrw_held(rrwlock_t *rrl, krw_t rw)
 
 	mutex_enter(&rrl->rr_lock);
 	if (rw == RW_WRITER) {
-		held = (rrl->rr_writer == curthread);
+		held = (rrl->rr_writer == (kthread_t *)curthread);
 	} else {
 		held = (!refcount_is_zero(&rrl->rr_anon_rcount) ||
 		    !refcount_is_zero(&rrl->rr_linked_rcount));

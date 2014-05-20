@@ -28,52 +28,40 @@
 /* Portions Copyright 2013 Jorgen Lundman */
 
 #include <sys/types.h>
-#include <sys/syslimits.h>
-#include <sys/param.h>
-
-#include <sys/systm.h>
 
 #ifndef __APPLE__
+#include <sys/param.h>
+#include <sys/systm.h>
 #include <sys/sysmacros.h>
 #include <sys/kmem.h>
 #include <sys/pathname.h>
+#include <sys/vnode.h>
 #include <sys/vfs.h>
 #include <sys/vfs_opreg.h>
 #include <sys/mntent.h>
-#endif /* !__APPLE__ */
-
 #include <sys/mount.h>
-#include <sys/vnode.h>
-
-#ifdef __APPLE__
-#include <sys/zfs_context.h>
-#include <sys/zfs_vfsops.h>
-#include <sys/sysctl.h>
-#include <libkern/crypto/md5.h>
-#endif /* __APPLE__ */
-
-#ifndef __APPLE__
 #include <sys/cmn_err.h>
 #include "fs/fs_subr.h"
+#include <sys/zfs_znode.h>
 #endif /* !__APPLE__ */
 
-#include <sys/zfs_znode.h>
 #include <sys/zfs_dir.h>
 
-#include <sys/zfs_ctldir.h>
-#include <sys/refcount.h>
+#ifndef __APPLE__
 #include <sys/zil.h>
 #include <sys/fs/zfs.h>
 #include <sys/dmu.h>
-#include <sys/dsl_prop.h>
+#endif /* !__APPLE__ */
 
-#include <sys/dmu_objset.h>
+#include <sys/dsl_prop.h>
 #include <sys/dsl_dataset.h>
+
+#ifndef __APPLE__
 #include <sys/dsl_deleg.h>
 #include <sys/spa.h>
-#include <sys/zap.h>
+#endif /* !__APPLE__ */
 
-#include <zfs_comutil.h>
+#include <sys/zap.h>
 
 #ifndef __APPLE__
 #include <sys/sa.h>
@@ -84,19 +72,36 @@
 #include <sys/mkdev.h>
 #include <sys/modctl.h>
 #include <sys/refstr.h>
+#include <sys/zfs_ioctl.h>
+#endif /* !__APPLE__ */
+
 #include <sys/zfs_ctldir.h>
+
+#ifndef __APPLE__
+#include <sys/zfs_fuid.h>
 #include <sys/bootconf.h>
 #include <sys/sunddi.h>
 #include <sys/dnlc.h>
 #endif /* !__APPLE__ */
-#include <sys/zfs_ioctl.h>
+
 #include <sys/dmu_objset.h>
+
+#ifndef __APPLE__
 #include <sys/spa_boot.h>
+#endif /* !__APPLE__ */
+
+#ifdef __LINUX__
 #include <sys/zpl.h>
+#endif /* __LINUX__ */
+
 #include "zfs_comutil.h"
 
+#ifdef __APPLE__
+#include <libkern/crypto/md5.h>
 #include <sys/zfs_vnops.h>
 #include <sys/systeminfo.h>
+#include <sys/zfs_mount.h>
+#endif /* __APPLE__ */
 
 //#define dprintf printf
 
@@ -107,6 +112,7 @@ unsigned int zfs_vfs_suspend_fs_end_delay = 2;
 
 int  zfs_module_start(kmod_info_t *ki, void *data);
 int  zfs_module_stop(kmod_info_t *ki, void *data);
+extern int getzfsvfs(const char *dsname, zfsvfs_t **zfvp);
 
 
 // move these structs to _osx once wrappers are updated
@@ -578,6 +584,7 @@ snapdir_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
 	zfsvfs->z_show_ctldir = newval;
+    dnlc_purge_vfsp(zfsvfs->z_vfs, 0);
 }
 
 static void
@@ -1551,10 +1558,10 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	if (dmu_objset_is_snapshot(zfsvfs->z_os)) {
 		uint64_t pval;
 		char fsname[MAXNAMELEN];
+		zfsvfs_t *fs_zfsvfs;
 
 		dmu_fsname(osname, fsname);
-		zfsvfs_t *fs_zfsvfs;
-		error = dataset_getzfsvfs(fsname, (void **)&fs_zfsvfs);
+		error = getzfsvfs(fsname, &fs_zfsvfs);
 		if (error == 0) {
 			if (fs_zfsvfs->z_unmounted)
 				error = SET_ERROR(EINVAL);
@@ -1580,6 +1587,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 		mutex_enter(&zfsvfs->z_os->os_user_ptr_lock);
 		dmu_objset_set_user(zfsvfs->z_os, zfsvfs);
 		mutex_exit(&zfsvfs->z_os->os_user_ptr_lock);
+
 	} else {
 		error = zfsvfs_setup(zfsvfs, B_TRUE);
 	}
@@ -1595,8 +1603,9 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 #endif
 
 #if 1 // Want .zfs or not
-	if (!zfsvfs->z_issnap)
+	if (!zfsvfs->z_issnap) {
 		zfsctl_create(zfsvfs);
+    }
 #endif
 out:
 	if (error) {
@@ -1986,9 +1995,12 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
               user_addr_t data, vfs_context_t context)
 {
 	cred_t		*cr =  (cred_t *)vfs_context_ucred(context);
-	char		*osname;
+	char		*osname = NULL;
+	char		*options = NULL;
 	int		error = 0;
 	int		canwrite;
+	int		mflag;
+	int		flags = 0;
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
@@ -2021,9 +2033,35 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
                                 MAXPATHLEN, &osnamelen)) )
             goto out;
     }
+	mflag = mnt_args.mflag;
 
-    dprintf("vfs_mount: options %04x path '%s'\n",
-            mnt_args.flags, mnt_args.fspec);
+	options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
+
+	error = copyin((user_addr_t)mnt_args.optptr, (caddr_t)options,
+	    mnt_args.optlen);
+
+	dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
+	    " options %s\n",
+	    mnt_args.fspec,
+	    mnt_args.mflag,
+	    mnt_args.optptr,
+	    mnt_args.optlen,
+	    options);
+
+	if (mflag & MS_RDONLY)
+		flags |= MNT_RDONLY;
+
+	if (mflag & MS_OVERLAY)
+		flags |= MNT_UNION;
+
+	if (mflag & MS_FORCE)
+		flags |= MNT_FORCE;
+
+	if (mflag & MS_REMOUNT)
+		flags |= MNT_UPDATE;
+
+	vfs_setflags(vfsp, (uint64_t)flags);
+
 #endif
 
 #ifdef illumos
@@ -2271,6 +2309,13 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 #endif /* __APPLE__ */
 
 out:
+#ifdef __APPLE__
+	if (osname)
+		kmem_free(osname, MAXPATHLEN);
+
+	if (options)
+		kmem_free(options, mnt_args.optlen);
+#endif
 	return (error);
 }
 
@@ -2620,7 +2665,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		}
         dprintf("z_ctldir destroy\n");
 		zfsctl_destroy(zfsvfs);
-        dprintf("z_ctldir destroy done\n");
 		ASSERT(zfsvfs->z_ctldir == NULL);
 	}
 

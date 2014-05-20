@@ -458,7 +458,7 @@ log_internal(nvlist_t *nvl, const char *operation, spa_t *spa,
 	msg = kmem_alloc(size, KM_PUSHPAGE);
 	va_end(adx1);
 	va_copy(adx1, adx);
-	(void) vsprintf(msg, fmt, adx1);
+	(void) vsnprintf(msg, size, fmt, adx1);
 	va_end(adx1);
 	fnvlist_add_string(nvl, ZPOOL_HIST_INT_STR, msg);
 	kmem_free(msg, size);

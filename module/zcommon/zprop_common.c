@@ -140,6 +140,7 @@ zprop_register_hidden(int prop, const char *name, zprop_type_t type,
 /*
  * A comparison function we can use to order indexes into property tables.
  */
+#ifndef _KERNEL
 static int
 zprop_compare(const void *arg1, const void *arg2)
 {
@@ -155,6 +156,7 @@ zprop_compare(const void *arg1, const void *arg2)
 
 	return (p1ro ? -1 : 1);
 }
+#endif
 
 /*
  * Iterate over all properties in the given property table, calling back

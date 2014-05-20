@@ -28,7 +28,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <strings.h>
-//#include <libintl.h>
+#include <libintl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
