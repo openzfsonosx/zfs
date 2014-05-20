@@ -254,18 +254,18 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 	 * We must have a pathname, and it must be absolute.
 	 */
 	if (vd->vdev_path == NULL || vd->vdev_path[0] != '/') {
-        vdev_iokit_log_str( "vdev_iokit_open: invalid path:", vd->vdev_path );
+//        vdev_iokit_log_str( "vdev_iokit_open: invalid path:", vd->vdev_path );
 		vd->vdev_stat.vs_aux = VDEV_AUX_BAD_LABEL;
 		return (SET_ERROR(EINVAL));
 	}
 	
     if (vd->vdev_tsd) {
-//        if (vd->vdev_reopening) {
-//            vdev_iokit_log( "vdev_iokit_open: reopening (unhandled)" );
+        if (vd->vdev_reopening) {
+            vdev_iokit_log( "vdev_iokit_open: reopening (unhandled)" );
 //            goto skip_open;
 //        } else {
-//        }
-        vdev_iokit_log( "vdev_iokit_open: busy" );
+        }
+//        vdev_iokit_log( "vdev_iokit_open: busy" );
         error = EBUSY;
         goto out;
     }
@@ -274,7 +274,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
     dvd = (vdev_iokit_t*)(vd->vdev_tsd);
     
     if(error != 0 || !dvd) {
-        vdev_iokit_log_ptr( "vdev_iokit_open: error allocating dvd", dvd );
+//        vdev_iokit_log_ptr( "vdev_iokit_open: error allocating dvd", dvd );
         return (error != 0 ? error : ENOMEM);
     }
 
@@ -489,7 +489,7 @@ skip_open:
         
         /* Allocate several io_context objects */
         if( vdev_iokit_context_pool_alloc(dvd) != 0 ) {
-            vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: couldn't allocate context pools:", dvd);
+//            vdev_iokit_log_ptr("ZFS: vdev_iokit_handle_open: couldn't allocate context pools:", dvd);
             error =     ENOMEM;
             goto out;
         }
@@ -571,8 +571,8 @@ vdev_iokit_close(vdev_t *vd)
     if (!vd || !vd->vdev_tsd)
 		return;
     
-//    if (vd->vdev_reopening)
-//        vdev_iokit_log( "vdev_iokit_close: reopening (unhandled)" );
+    if (vd->vdev_reopening)
+        vdev_iokit_log( "vdev_iokit_close: reopening (unhandled)" );
     
     dvd =       (vdev_iokit_t *)vd->vdev_tsd;
     
@@ -806,9 +806,9 @@ vdev_iokit_io_start(zio_t *zio)
     
     error =     vdev_iokit_strategy( dvd, zio );
     
-//	if (error != 0) {
+	if (error != 0) {
 //        vdev_iokit_log_num( "vdev_iokit_io_start: error returned by vdev_iokit_strategy (%d)", error );
-//    }
+    }
 
     return (ZIO_PIPELINE_STOP);
 }
