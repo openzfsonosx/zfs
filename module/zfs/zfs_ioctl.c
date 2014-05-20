@@ -6060,14 +6060,8 @@ zfs_ioctl_osx_init(void)
     zfs_devnode = devfs_make_node(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
                                   0666, "zfs", 0);
     
-    /*
-     *  Initialize spa, dmu, arc, prep zvol
-     */
-    /* XXX TO DO - check spa / zvol status, not ioctl */
-	if (!(spa_mode_global & FWRITE)) {
-        spa_init(FREAD | FWRITE);
-        zvol_init(); // Removd in 10a286
-    }
+    spa_init(FREAD | FWRITE);
+    zvol_init(); // Removd in 10a286
     
     zfs_ioctl_init();
 

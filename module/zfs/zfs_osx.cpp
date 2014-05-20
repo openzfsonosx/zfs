@@ -21,14 +21,6 @@
 
 #include <sys/zvolIO.h>
 
-#define ZFS_DEBUG_STR  "(beta)"
-
-#ifdef DEBUG
-#define	ZFS_DEBUG_STR	" (DEBUG mode)"
-#else
-#define	ZFS_DEBUG_STR	""
-#endif
-
 /*
  *  ZFS internal
  */
