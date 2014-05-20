@@ -9,8 +9,8 @@ class net_lundman_zfs_zvol : public IOService
   OSDeclareDefaultStructors(net_lundman_zfs_zvol)
 
   private:
-    void *m_memoryDesc;
-    void *m_buffer;
+    bool mountedRootPool;
+    IOTimerEventSource * mountTimer;
 
   public:
   virtual bool        init  (OSDictionary* dictionary = NULL);
@@ -22,14 +22,19 @@ class net_lundman_zfs_zvol : public IOService
   virtual bool        createBlockStorageDevice  (zvol_state_t *zv);
   virtual bool        destroyBlockStorageDevice (zvol_state_t *zv);
   virtual bool        updateVolSize             (zvol_state_t *zv);
-  virtual IOByteCount performRead (IOMemoryDescriptor* dstDesc,
-                                   UInt64 byteOffset,
-                                   UInt64 byteCount);
-  virtual IOByteCount performWrite (IOMemoryDescriptor* srcDesc,
-                                    UInt64 byteOffset,
-                                    UInt64 byteCount);
   virtual bool        zfs_check_mountroot();
-  virtual bool        zfs_mountroot( /*vfs_t *vfsp, enum whymountroot why*/ );
+  virtual bool        zfs_mountroot();
+    
+    /*
+//  virtual bool        zfs_register_disk_notifier();
+//  static IOReturn     zfs_mountroot_callback(OSObject*, void*, void*, void*, void*);
+//  static bool         matchedDisk_callback(void*, void*, IOService*, IONotifier*);
+    */
+    
+  virtual bool        isRootMounted();
+  virtual void        clearMountTimer();
+  static void         mountTimerFired(OSObject*, IOTimerEventSource*);
+
 
 };
 

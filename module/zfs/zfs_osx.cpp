@@ -8,6 +8,8 @@
 #include <IOKit/IODeviceTreeSupport.h>
 #include <IOKit/IOPlatformExpert.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
+//#include <IOKit/IOWorkLoop.h>
+#include <IOKit/IOTimerEventSource.h>
 
 #include <libkern/version.h>
 
@@ -50,6 +52,8 @@ extern "C" {
 #include <sys/spa_impl.h>
 //#include <sys/spa_config.h>
 #include <sys/spa_boot.h>
+    
+//#include <kern/clock.h>
 
 
   extern kern_return_t _start(kmod_info_t *ki, void *data);
@@ -245,6 +249,9 @@ bool net_lundman_zfs_zvol::init (OSDictionary* dict)
     bool res = super::init(dict);
     //IOLog("ZFS::init\n");
     global_c_interface = (void *)this;
+    
+    mountTimer =        0;
+    
     return res;
 }
 
@@ -270,6 +277,7 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 
 
     IOLog("ZFS: Loading module ... \n");
+    IOSleep(1000);
 
 	/*
 	 * Initialize znode cache, vnode ops, etc...
@@ -331,7 +339,9 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 	 * Initialize /dev/zfs,
      *      this used to call spa_init (then ->dmu_init->arc_init-> etc)
      *      needed to be moved after mountroot
-	 */   /*Testing */
+     *  Works fine during early boot - as long as IOBSD is loaded first.
+     *   See info.plist
+	 */
 	zfs_ioctl_init();
     
     printf("ZFS: Loaded module v%s-%s%s, "
@@ -339,18 +349,66 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
            ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
            SPA_VERSION_STRING, ZPL_VERSION_STRING);
     
-    /* Check if ZFS should try to mount root */
-//    IOLog("Checking if root pool should be imported...");
-    if( ( res && zfs_check_mountroot() ) == true ) {
-//        IOLog("Artificial delay for 2 seconds...\n");
-//        IOSleep(2000);
-        
-//        IOLog("Trying to import root pool...\n");
-        /* Looks good, give it a go */
-        res = zfs_mountroot();
+    if( res == false || zfs_check_mountroot() == false ) {
+        return res;
     }
     
-    return res;
+    mountTimer =    IOTimerEventSource::timerEventSource(this, mountTimerFired);
+    
+    if (!mountTimer) {
+        IOLog("ZFS: Couldn't create mountTimer\n");
+        return false;
+    }
+    
+    res = getWorkLoop()->addEventSource(mountTimer);
+    
+    mountedRootPool =       false;
+    
+    if (res == kIOReturnSuccess) {
+        /*
+         IOReturn     setTimeoutMS(UInt32 ms);
+         IOReturn     setTimeoutUS(UInt32 us);
+         IOReturn     setTimeout(UInt32 interval, UInt32 scale_factor = kNanosecondScale);
+         */
+        IOLog("Setting mountTimer for 1 second...\n");
+        
+        mountTimer->setTimeoutMS(1000);
+    } else {
+        IOLog("Couldn't add mountTimer event source\n");
+    }
+
+
+//    IOLog("Artificial delay for 2 seconds...\n");
+//    IOSleep(2000);
+//    
+/* Check if ZFS should try to mount root */
+//    IOLog("Checking if root pool should be imported...");
+    
+//        IOLog("Trying to import root pool...\n");
+    
+    /* Looks good, give it a go */
+//    if( zfs_mountroot() == true ) {
+//        IOLog("Successfully imported root pool\n");
+//    } else {
+//        IOLog("Could not import root pool, adding notification handler\n");
+
+    /*
+        IOLog("adding notification handler\n");
+    
+
+    
+        if( zfs_register_disk_notifier() == true ) {
+            IOLog("notification handler registered\n");
+        } else {
+            IOLog("notification handler failed\n");
+        }
+     
+     */
+    
+//    }
+    
+    /* At this point, always return true */
+    return true;
 }
 
 void net_lundman_zfs_zvol::stop (IOService *provider)
@@ -371,7 +429,8 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 
     super::stop(provider);
 
-
+    clearMountTimer();
+    
     system_taskq_fini();
 
     zfs_ioctl_fini();
@@ -396,6 +455,25 @@ bool net_lundman_zfs_zvol::zfs_check_mountroot()
      */
     char zfs_boot[MAXPATHLEN];
     bool result = false;
+    
+    /* Ugly hack to determine if this is early boot */
+    uint64_t uptime =   0;
+
+    clock_get_uptime(&uptime); /* uptime since boot in nanoseconds */
+    
+    IOLog("ZFS: zfs_check_mountroot: uptime (%llu)\n", uptime);
+    IOSleep(100);
+    
+    /* 3 billion nanoseconds ~= 3 seconds */
+    if (uptime >= 3LLU<<30) {
+        IOLog("ZFS: zfs_check_mountroot: Already booted\n");
+        IOSleep(100);
+        
+        return false;
+    } else {
+        IOLog("ZFS: zfs_check_mountroot: Boot time\n");
+        IOSleep(100);
+    }
     
     result =    PE_parse_boot_argn( "zfs_boot", &zfs_boot, sizeof(zfs_boot) );
     //IOLog( "Raw zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
@@ -427,7 +505,7 @@ bool net_lundman_zfs_zvol::zfs_check_mountroot()
 
 #define error_delay 500
 #define info_delay 10
-bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why*/ )
+bool net_lundman_zfs_zvol::zfs_mountroot()
 {
     /*              EDITORIAL / README
      *
@@ -497,11 +575,17 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
     char zfs_pool[MAXPATHLEN];
     char zfs_root[MAXPATHLEN];
     
+    int attempt =           0;
+    int max_attempts =      1; /* Search up to 100 times */
+    int retry_delay =       250; /* in milliseconds */
     int split =             0;
     bool result =           false;
     uint64_t guid =         0;
     uint64_t importFlags =  0;
 
+    if (mountedRootPool == true)
+        return false;
+    
 //    char * diskPath =       0;
     
     PE_parse_boot_argn( "zfs_boot", zfs_boot, MAXPATHLEN );
@@ -603,24 +687,49 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
         return false;
     }
     
-    if (vdev_iokit_find_pool(dvd, zfs_pool) != 0 ||
-        !dvd || !dvd->vd_iokit_hl) {
+    IOLog( "Searching for pool by name {%s}\n", zfs_pool);
+    
+    for (attempt=0; attempt < max_attempts; attempt++) {
         
+        if (vdev_iokit_find_pool(dvd, zfs_pool) == 0 &&
+            dvd != 0 && dvd->vd_iokit_hl != 0) {
+            
+            IOLog( "\nFound pool {%s}, importing handle: [%p]\n", zfs_pool, dvd->vd_iokit_hl );
+            break;
+        }
+        
+        IOLog(".");
+        /* Delay between attempts */
+        IOSleep(retry_delay);
+    }
+    
+    if (dvd->vd_iokit_hl == 0) {
         IOLog( "Couldn't locate pool by name {%s}\n", zfs_pool);
         vdev_iokit_free(&dvd);
         return false;
     }
-        
-    IOLog( "Found pool, importing: [%p]\n", dvd->vd_iokit_hl );
     
-    if (spa_import_rootpool(dvd) != 0) {
+    /* Only retry pool import up to 10 times */
+    for (attempt=0; attempt < 10; attempt++) {
+        
+        if (spa_import_rootpool(dvd) == 0) {
+            IOLog( "Imported pool {%s}\n", zfs_pool );
+            mountedRootPool =      true;
+            
+            break;
+        }
+        
         IOLog( "Couldn't import pool by handle [%p]\n", dvd);
-        vdev_iokit_free(&dvd);
-        return false;
+        
+        /* Delay between attempts */
+        IOSleep(retry_delay);
     }
     
     vdev_iokit_free(&dvd);
+    
+    return true;
 
+    /*  XXX - Old tryimport -> import
 //    config = spa_generate_rootconf(dvd, &guid);
 //
 //    IOLog("zfs_mountroot: rootconf [%p]\n", config);
@@ -690,9 +799,139 @@ bool net_lundman_zfs_zvol::zfs_mountroot(   /*vfs_t *vfsp, enum whymountroot why
 //    }
 //    spa = NULL;
 //    mutex_exit(&spa_namespace_lock);
+    */
+}
+
+bool net_lundman_zfs_zvol::isRootMounted()
+{
+    return mountedRootPool;
+}
+
+void net_lundman_zfs_zvol::mountTimerFired(OSObject* owner, IOTimerEventSource* sender)
+{
+    bool result =   false;
+    net_lundman_zfs_zvol * driver =    0;
+    
+    if (!owner) {
+        IOLog("ZFS: mountTimerFired: Called without owner\n");
+        return;
+    }
+    
+    driver =    OSDynamicCast(net_lundman_zfs_zvol,owner);
+    
+    if (!driver) {
+        IOLog("ZFS: mountTimerFired: Couldn't cast driver object\n");
+        return;
+    }
+
+    result =    driver->isRootMounted();
+    
+    if (result == true) {
+        IOLog("ZFS: mountTimerFired: Root pool already mounted\n");
+        driver->clearMountTimer();
+        return;
+    }
+    
+    result =    driver->zfs_mountroot();
+    
+    if(result == true) {
+        IOLog("ZFS: mountTimerFired: Successfully mounted root pool\n");
+        driver->clearMountTimer();
+        return;
+    }
+    
+    IOLog("ZFS: mountTimerFired: root pool not found, retrying after .1 second...\n");
+    sender->setTimeoutMS(100);
+}
+
+void net_lundman_zfs_zvol::clearMountTimer()
+{
+    if (!mountTimer)
+        return;
+    
+    IOLog("ZFS: clearMountTimer: Resetting and removing timer\n");
+    mountTimer->cancelTimeout();
+    mountTimer->release();
+    mountTimer =    0;
+}
+
+#if 0 /* Disabled */
+
+bool net_lundman_zfs_zvol::zfs_register_disk_notifier()
+{
+    const OSSymbol * leafProp =     OSSymbol::withCString( "Leaf" );
+    const OSBoolean * matchBool =   OSBoolean::withBoolean(true);
+//    const char * className =        "IOMedia";
+    OSDictionary * matchDict =      0;
+    IONotifier * diskNotifier =     0;
+    
+    matchDict =     IOService::serviceMatching(kIOMediaClass);
+    
+    IOService::propertyMatching(leafProp, matchBool, matchDict);
+    
+//    diskNotifier =  addMatchingNotification(gIOFirstMatchNotification, matchDict, net_lundman_zfs_zvol::matchedDisk_callback, this, 0, 0);
+    
+    this->getWorkLoop()->runAction(net_lundman_zfs_zvol::zfs_mountroot_callback, this, 0, 0 );
+    
+    leafProp->release();
+    matchBool->release();
+    matchDict->release();
+    matchDict =     0;
     
     return true;
 }
+
+bool
+net_lundman_zfs_zvol::matchedDisk_callback(void* target, void* refCon, IOService* newService, IONotifier* notifier)
+{
+    net_lundman_zfs_zvol * zfs_service =    0;
+    
+    if (!target || !newService || !notifier)
+        return false;
+    
+    zfs_service =   (net_lundman_zfs_zvol*)target;
+    
+    zfs_service->getWorkLoop()->runAction(net_lundman_zfs_zvol::zfs_mountroot_callback, zfs_service, notifier, 0 );
+    
+    return true;
+    
+
+    
+//    if (zfs_service->zfs_mountroot() == true) {
+//        IOLog ("Successfully mounted root pool, removing notification handler\n");
+//        
+//        notifier->remove();
+//        notifier =      0;
+//        
+//        return true;
+//    } else {
+//        IOLog ("Couldn't mount root pool\n");
+//        return false;
+//    }
+}
+
+IOReturn
+net_lundman_zfs_zvol::zfs_mountroot_callback(OSObject* target, void* notifier, void* arg2, void* arg3, void* arg4)
+{
+    IONotifier * diskNotifier =     0;
+    
+    if (notifier) {
+        diskNotifier =      (IONotifier*) notifier;
+    }
+    
+    if ( ((net_lundman_zfs_zvol*)target)->zfs_mountroot() == true ) {
+        if (diskNotifier) {
+            diskNotifier->remove();
+            diskNotifier =          0;
+        }
+        
+        return kIOReturnSuccess;
+    } else {
+        return kIOReturnError;
+    }
+}
+
+#endif /* Disabled */
 
 IOReturn net_lundman_zfs_zvol::doEjectMedia(void *arg1)
 {
@@ -802,29 +1041,6 @@ bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
     return true;
 }
 
-/*
- * Not used
- */
-IOByteCount net_lundman_zfs_zvol::performRead (IOMemoryDescriptor* dstDesc,
-                                               UInt64 byteOffset,
-                                               UInt64 byteCount)
-{
-  IOLog("performRead offset %llu count %llu\n", byteOffset, byteCount);
-    return dstDesc->writeBytes(0, (void*)((uintptr_t)m_buffer + byteOffset),
-                               byteCount);
-}
-
-/*
- * Not used
- */
-IOByteCount net_lundman_zfs_zvol::performWrite (IOMemoryDescriptor* srcDesc,
-                                                UInt64 byteOffset,
-                                                UInt64 byteCount)
-{
-  IOLog("performWrite offset %llu count %llu\n", byteOffset, byteCount);
-    return srcDesc->readBytes(0, (void*)((uintptr_t)m_buffer + byteOffset), byteCount);
-}
-
 
 /*
  * C language interfaces
@@ -922,7 +1138,7 @@ int zvolCreateNewDevice(zvol_state_t *zv)
 {
     //static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createBlockStorageDevice(zv);
     net_lundman_zfs_zvol * zfsProvider = 0;
-    zfsProvider = zfsGetService();
+    zfsProvider = (net_lundman_zfs_zvol*)vdev_iokit_get_service();
     if(!zfsProvider)
         zfsProvider = static_cast<net_lundman_zfs_zvol *>(global_c_interface);
     
@@ -939,7 +1155,7 @@ int zvolRemoveDevice(zvol_state_t *zv)
 {
 //    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyBlockStorageDevice(zv);
     net_lundman_zfs_zvol * zfsProvider = 0;
-    zfsProvider = zfsGetService();
+    zfsProvider = (net_lundman_zfs_zvol*)vdev_iokit_get_service();
     if(!zfsProvider)
         zfsProvider = static_cast<net_lundman_zfs_zvol *>(global_c_interface);
     
@@ -956,7 +1172,7 @@ int zvolSetVolsize(zvol_state_t *zv)
 {
 //    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->updateVolSize(zv);
     net_lundman_zfs_zvol * zfsProvider = 0;
-    zfsProvider = zfsGetService();
+    zfsProvider = (net_lundman_zfs_zvol*)vdev_iokit_get_service();
     if(!zfsProvider)
         zfsProvider = static_cast<net_lundman_zfs_zvol *>(global_c_interface);
     
