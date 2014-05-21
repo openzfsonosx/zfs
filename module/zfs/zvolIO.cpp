@@ -28,7 +28,7 @@ OSDefineMetaClassAndStructors(net_lundman_zfs_zvol_device,IOBlockStorageDevice)
 bool net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
                                        OSDictionary *properties)
 {
-  dprintf("zolio_device:init\n");
+  dprintf("zvolIO_device:init\n");
   if (super::init(properties) == false)
     return false;
 
@@ -79,7 +79,7 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
 
     dataString = OSString::withCString(kIOPropertyInterconnectFileKey);
     if (!dataString) {
-      IOLog( "PGPdiskDriver::createNub: could not create interconnect location string\n" );
+      IOLog( "could not create interconnect location string\n" );
       return true;
     }
     protocolCharacteristics->setObject(kIOPropertyPhysicalInterconnectLocationKey, dataString);
