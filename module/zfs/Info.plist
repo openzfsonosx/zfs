@@ -46,6 +46,13 @@
 			<string>net_lundman_zfs_zvol</string>
 			<key>IOMatchCategory</key>
 			<string>net_lundman_zfs_zvol</string>
+			<key>IOMediaIcon</key>
+			<dict>
+				<key>CFBundleIdentifier</key>
+				<string>net.lundman.zfs</string>
+				<key>IOBundleResourceFile</key>
+				<string>VolumeIcon.icns</string>
+			</dict>
 			<key>IOProviderClass</key>
 			<string>IOResources</string>
 			<key>IOResourceMatch</key>
