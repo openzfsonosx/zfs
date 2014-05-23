@@ -42,6 +42,7 @@
 #include <sys/mnttab.h>
 #include <sys/mntent.h>
 #include <sys/types.h>
+
 #include <sys/wait.h>
 
 #include <libzfs.h>
@@ -49,10 +50,11 @@
 
 #include "libzfs_impl.h"
 #include "zfs_prop.h"
-#
+#include "zfeature_common.h"
+
 #ifdef __APPLE__
 #include <sys/zfs_mount.h>
-#endif /* __APPLE__ */include "zfeature_common.h"
+#endif /* __APPLE__ */
 
 int
 libzfs_errno(libzfs_handle_t *hdl)
