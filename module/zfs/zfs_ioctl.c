@@ -89,8 +89,6 @@
 #include "zfs_deleg.h"
 #include "zfs_comutil.h"
 
-#define ZFS_DEBUG_STR  "(beta)"
-
 #ifdef __APPLE__
 #define MNTTAB "/etc/mtab"
 
@@ -6057,6 +6055,16 @@ zfs_ioctl_osx_init(void)
     //dev = zfs_major << 24;
     zfs_devnode = devfs_make_node(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
                                   0666, "zfs", 0);
+
+    spa_init(FREAD | FWRITE);
+    zvol_init(); // Removd in 10a286
+
+    zfs_ioctl_init();
+
+    printf("ZFS: Loaded module v%s-%s%s, "
+           "ZFS pool version %s, ZFS filesystem version %s\n",
+           ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
+           SPA_VERSION_STRING, ZPL_VERSION_STRING);
 
 }
 

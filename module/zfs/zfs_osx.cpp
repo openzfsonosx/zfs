@@ -1,7 +1,4 @@
 
-/*
- * Apple IOKit (c++)
- */
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>
@@ -36,7 +33,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-    
+
 #include <sys/zfs_ioctl.h>
 #include <sys/zfs_znode.h>
 #include <sys/zvol.h>
@@ -50,16 +47,13 @@ extern "C" {
 #include <sys/vdev_impl.h>
 #include <sys/vdev_iokit.h>
 #include <sys/spa_impl.h>
-//#include <sys/spa_config.h>
 #include <sys/spa_boot.h>
-    
+//#include <sys/spa_config.h>
 //#include <kern/clock.h>
-
 
   extern kern_return_t _start(kmod_info_t *ki, void *data);
   extern kern_return_t _stop(kmod_info_t *ki, void *data);
 
-    
 #ifdef __cplusplus
 }   /* extern "C" */
 #endif
@@ -89,8 +83,6 @@ OSDefineMetaClassAndStructors(net_lundman_zfs_zvol, IOService)
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-
 
 extern SInt32 zfs_active_fs_count;
 
@@ -249,9 +241,6 @@ bool net_lundman_zfs_zvol::init (OSDictionary* dict)
     bool res = super::init(dict);
     //IOLog("ZFS::init\n");
     global_c_interface = (void *)this;
-    
-    mountTimer =        0;
-    
     return res;
 }
 
@@ -277,20 +266,15 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 
 
     IOLog("ZFS: Loading module ... \n");
-
 	/*
 	 * Initialize znode cache, vnode ops, etc...
 	 */
 	zfs_znode_init();
 
-    /*
-     *  Initialize spa, dmu, arc, prep zvol
-     */
-    /* XXX TO DO - check spa / zvol status, not ioctl */
-	if (!(spa_mode_global & FWRITE)) {
-        spa_init(FREAD | FWRITE);
-        zvol_init(); // Removd in 10a286
-    }
+	/*
+	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
+	 */
+	zfs_ioctl_osx_init();
 
 	///sysctl_register_oid(&sysctl__debug_maczfs);
 	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
@@ -302,6 +286,7 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
      * speaking not used by SPL, but by ZFS. ZFS should really start it?
      */
     system_taskq_init();
+
 
     /*
      * hostid is left as 0 on OSX, and left to be set if developers wish to
@@ -333,21 +318,6 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
         }
       }
     }
-    
-	/*
-	 * Initialize /dev/zfs,
-     *      this used to call spa_init (then ->dmu_init->arc_init-> etc)
-     *      needed to be moved after mountroot
-     *  Works fine during early boot - as long as IOBSD is loaded first.
-     *   See info.plist.
-     *  Could be reset as it was prior to splitting spa_init and zvol_init
-	 */
-	zfs_ioctl_osx_init();
-    
-    printf("ZFS: Loaded module v%s-%s%s, "
-           "ZFS pool version %s, ZFS filesystem version %s\n",
-           ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
-           SPA_VERSION_STRING, ZPL_VERSION_STRING);
 
     return res;
 }
@@ -370,8 +340,7 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 
     super::stop(provider);
 
-    clearMountTimer();
-    
+
     system_taskq_fini();
 
     zfs_ioctl_osx_fini();
@@ -386,301 +355,6 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 
 }
 
-bool net_lundman_zfs_zvol::zfs_check_mountroot()
-{
-    
-    /*
-     * Check if the kext is loading during early boot
-     * and/or check if root is mounted (IORegistry?)
-     * Use PE Boot Args to determine the root pool name.
-     */
-    char zfs_boot[MAXPATHLEN];
-    bool result = false;
-    
-    /* Ugly hack to determine if this is early boot */
-    uint64_t uptime =   0;
-
-    clock_get_uptime(&uptime); /* uptime since boot in nanoseconds */
-    
-    IOLog("ZFS: zfs_check_mountroot: uptime (%llu)\n", uptime);
-    
-    /* 3 billion nanoseconds ~= 3 seconds */
-    if (uptime >= 3LLU<<30) {
-        IOLog("ZFS: zfs_check_mountroot: Already booted\n");
-        
-        return false;
-    } else {
-        IOLog("ZFS: zfs_check_mountroot: Boot time\n");
-    }
-    
-    result =    PE_parse_boot_argn( "zfs_boot", &zfs_boot, sizeof(zfs_boot) );
-    //IOLog( "Raw zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-    
-    result =    (result && zfs_boot && strlen(zfs_boot) > 0);
-    
-    if ( !result ) {
-        result =    PE_parse_boot_argn( "rd", &zfs_boot, sizeof(zfs_boot) );
-        result =    (result && zfs_boot && strlen(zfs_boot) > 0 && strncmp(zfs_boot,"zfs:",4));
-        //IOLog( "Raw rd: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-    }
-    if ( !result ) {
-        result =    PE_parse_boot_argn( "rootdev", &zfs_boot, sizeof(zfs_boot) );
-        result =    (result && zfs_boot && strlen(zfs_boot) > 0 && strncmp(zfs_boot,"zfs:",4));
-        //IOLog( "Raw rootdev: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-    }
-    
-    if ( result ) {
-        IOLog( "Got zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-    } else {
-        IOLog( "No zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-    }
-    
-    return result;
-    
-}
-
-#define error_delay 500
-#define info_delay 10
-bool net_lundman_zfs_zvol::zfs_mountroot()
-{
-    /*              EDITORIAL / README
-     *
-     * The filesystem that we mount as root is defined in the
-     * boot property "zfs_boot" with a format of
-     * "poolname/root-dataset-name".
-     * You may also use the options "rd=zfs:pool/dataset"
-     *  or "rootdev=zfs:pool/dataset"
-     *
-     * Valid entries: "rpool", "tank/fish",
-     *  "sys/ROOT/BootEnvironment", and so on.
-     *
-     *  see /Library/Preferences/SystemConfiguration/com.apple.Boot.plist
-     *  and ${PREFIX}/share/zfs/com.apple.Boot.plist for examples
-     *
-     * Note that initial boot support uses ZVOLs formatted
-     * as (Mac-native) Journaled HFS+
-     * In this case the bootfs will be a ZVOL, which cannot
-     * be set via "zpool set bootfs=pool/zvol"
-     *
-     * Using ZFS datasets as root will require an additional
-     * hack to trick the xnu kernel.
-     *
-     * Candidate is creating a (blank) ramdisk in chosen/RamDisk,
-     * then forcible root-mount, possibly using an overlay.
-     * Other options may include grub2+zfs, Chameleon, Chimera, etc.
-     *
-     *
-     *           TO DO -- TO DO -- TO DO
-     *
-     * - Use PE Boot Args to determine the root pool name.
-     *  working basically, but needs to filter zfs: from
-     *  start of argument string. Also testing multiple
-     *  '/'s in the dataset/zvol name, though it doesn't
-     *  use this right now. Of course, need to error check
-     *  for invalid entries (and decide what to do then).
-     *
-     * - Use IORegistry to locate vdevs - DONE
-     *
-     * - Call functions in vdev_disk.c or spa_boot.c
-     * to locate the pool, import it. - DONE
-     *    Cloned these functions into this giant function.
-     *    Needs to be abstracted. - DONE
-     *
-     * - Present single zvol as specified in zfs_boot?
-     *    Currently all zvols are made available on import.
-     *
-     * - Provide sample Boot.plist
-     *    ${PREFIX}/share/zfs/com.apple.Boot.plist
-     *    Install to:
-     *    /Library/Preferences/SystemConfiguration/com.apple.Boot.plist
-     *
-     * Case 1: Present zvol for the Root volume - DONE
-     *
-     * Case 2: Similar to meklort's FSRoot method,
-     * register vfs_fsadd, and mount root;
-     * mount the bootfs dataset as a union mount on top
-     * of a ramdisk if necessary.
-     */
-
-    char * strptr =         0;
-    vdev_iokit_t * dvd =    0;
-
-    char zfs_boot[MAXPATHLEN];
-    char zfs_pool[MAXPATHLEN];
-    char zfs_root[MAXPATHLEN];
-    
-    int split =             0;
-    bool result =           false;
-
-    if (mountedRootPool == true)
-        return false;
-    
-    PE_parse_boot_argn( "zfs_boot", zfs_boot, MAXPATHLEN );
-    
-    result =    ( strlen(zfs_boot) > 0 );
-    
-    if ( !result ) {
-        PE_parse_boot_argn( "rd", zfs_boot, sizeof(zfs_boot) );
-        result =    (strlen(zfs_boot) > 0 && strncmp(zfs_boot,"zfs:",4));
-        //        strptr = zfs_boot + 4;
-    }
-    if ( !result ) {
-        PE_parse_boot_argn( "rootdev", zfs_boot, sizeof(zfs_boot) );
-        result =    (strlen(zfs_boot) > 0 && strncmp(zfs_boot,"zfs:",4));
-        //        strptr = zfs_boot + 4;
-    }
-    
-    if ( !result ) {
-        IOLog( "Invalid zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-        return false;
-    }
-    
-    // Error checking, should be longer than 1 character and null terminated
-    strptr = strchr( zfs_boot, '\0' );
-    if ( strptr == NULL ) {
-        IOLog( "Invalid zfs_boot: Not null terminated : [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-    }
-    
-    // Error checking, should be longer than 1 character
-    if ( strlen(strptr) == 1 ) {
-        IOLog( "Invalid zfs_boot: Only null character : [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-    } else {
-        IOLog( "Valid zfs_boot: [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-    }
-    
-    // Find first '/' in the boot arg
-    strptr = strchr( zfs_boot, '/' );
-    
-    // If leading '/', return error
-    if ( strptr == (zfs_boot) ) {
-        IOLog( "Invalid zfs_boot: starts with '/' : [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-        strptr = NULL;
-        return false;
-    }
-    
-    // If trailing '/', return error
-    if ( strptr == ( zfs_boot + strlen(zfs_boot) - 1 )  ) {
-        IOLog( "Invalid zfs_boot: ends with '/' : [%llu] {%s}\n", (uint64_t)strlen(zfs_boot), zfs_boot );
-        strptr = NULL;
-        return false;
-    }
-    
-    //    if ( split > 0 && split < strlen(zfs_boot) ) {
-    if ( strptr && strptr > zfs_boot ) {
-        //strpbrk(search.spa_name, "/@")
-        split = strlen(zfs_boot) - strlen(strptr);
-        strlcpy( zfs_pool, zfs_boot, split+1 );
-        strlcpy( zfs_root, strptr+1, strlen(strptr) );
-    } else {
-        strlcpy( zfs_pool, zfs_boot, strlen(zfs_boot)+1 );
-        strlcpy( zfs_root, "\0", 1 );
-    }
-    
-    // Find last @ in zfs_root ds
-    strptr = strrchr( zfs_root, '@' );
-    
-    //    if ( split > 0 && split < strlen(zfs_boot) ) {
-    if (strptr && strptr > zfs_root) {
-        split = strlen(zfs_root) - strlen(strptr);
-        strptr += split;
-        strlcpy( zfs_root, strptr, split );
-    }
-    
-    IOLog( "Will attempt to import zfs_pool: [%llu] %s\n", (uint64_t)strlen(zfs_pool), zfs_pool );
-
-    result = ( zfs_pool && strlen(zfs_pool) > 0 );
-    
-    IOLog( "Will attempt to mount zfs_root:  [%llu] %s\n", (uint64_t)strlen(zfs_root), zfs_root );
-    
-    /*
-     * We want to match on all disks or volumes that
-     * do not contain a partition map / raid / LVM
-     *
-     */
-    
-    if(vdev_iokit_alloc(&dvd) != 0) {
-        IOLog( "Couldn't allocate dvd [%p]\n", dvd);
-        return false;
-    }
-    
-    IOLog( "Searching for pool by name {%s}\n", zfs_pool);
-    
-    if (vdev_iokit_find_pool(dvd, zfs_pool) == 0 &&
-        dvd != 0 && dvd->vd_iokit_hl != 0) {
-        
-        IOLog( "\nFound pool {%s}, importing handle: [%p]\n", zfs_pool, dvd->vd_iokit_hl );
-    }
-    
-    if (dvd->vd_iokit_hl == 0) {
-        IOLog( "Couldn't locate pool by name {%s}\n", zfs_pool);
-        vdev_iokit_free(&dvd);
-        return false;
-    }
-    
-    if (spa_import_rootpool(dvd) == 0) {
-        IOLog( "Imported pool {%s}\n", zfs_pool );
-        mountedRootPool =      true;
-    } else {
-        IOLog( "Couldn't import pool by handle [%p]\n", dvd);
-    }
-    
-    vdev_iokit_free(&dvd);
-    
-    return true;
-}
-
-bool net_lundman_zfs_zvol::isRootMounted()
-{
-    return mountedRootPool;
-}
-
-void net_lundman_zfs_zvol::mountTimerFired(OSObject* owner, IOTimerEventSource* sender)
-{
-    bool result =   false;
-    net_lundman_zfs_zvol * driver =    0;
-    
-    if (!owner) {
-        IOLog("ZFS: mountTimerFired: Called without owner\n");
-        return;
-    }
-    
-    driver =    OSDynamicCast(net_lundman_zfs_zvol,owner);
-    
-    if (!driver) {
-        IOLog("ZFS: mountTimerFired: Couldn't cast driver object\n");
-        return;
-    }
-
-    result =    driver->isRootMounted();
-    
-    if (result == true) {
-        IOLog("ZFS: mountTimerFired: Root pool already mounted\n");
-        driver->clearMountTimer();
-        return;
-    }
-    
-    result =    driver->zfs_mountroot();
-    
-    if(result == true) {
-        IOLog("ZFS: mountTimerFired: Successfully mounted root pool\n");
-        driver->clearMountTimer();
-        return;
-    }
-    
-    IOLog("ZFS: mountTimerFired: root pool not found, retrying after .1 second...\n");
-    sender->setTimeoutMS(100);
-}
-
-void net_lundman_zfs_zvol::clearMountTimer()
-{
-    if (!mountTimer)
-        return;
-    
-    IOLog("ZFS: clearMountTimer: Resetting and removing timer\n");
-    mountTimer->cancelTimeout();
-    mountTimer->release();
-    mountTimer =    0;
-}
 
 IOReturn net_lundman_zfs_zvol::doEjectMedia(void *arg1)
 {
@@ -698,6 +372,8 @@ IOReturn net_lundman_zfs_zvol::doEjectMedia(void *arg1)
   IOLog("block svc ejected\n");
   return kIOReturnSuccess;
 }
+
+
 
 bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
 {
@@ -757,7 +433,6 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
       //IOLog("removeBlockdevice\n");
 
       nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
-//      nub = OSDynamicCast(net_lundman_zfs_zvol_device, zv->zv_iokitdev);
 
       zv->zv_iokitdev = NULL;
       zv = NULL;
@@ -777,7 +452,6 @@ bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
     // Is it ok to keep a pointer reference to the nub like this?
     if (zv->zv_iokitdev) {
       nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
-//      nub = OSDynamicCast(net_lundman_zfs_zvol_device, zv->zv_iokitdev);
 
       if (!nub)
           return false;
@@ -940,16 +614,10 @@ uint64_t zvolIO_kit_read(void *iomem, uint64_t offset, char *address, uint64_t l
   IOByteCount done;
   //IOLog("zvolIO_kit_read offset %p count %llx to offset %llx\n",
   //    address, len, offset);
-    
-    /* 
-     * XXX - Is is safer and/or slower to use OSDynamicCast here?
-     *  would allow for an error check instead of a panic. Don't
-     *  know if there would be a performance hit.
-     */
-  done=((IOMemoryDescriptor*)iomem)->writeBytes(offset,
-                                                (void *)address,
-                                                len);
-return done;
+  done=static_cast<IOMemoryDescriptor*>(iomem)->writeBytes(offset,
+                                                           (void *)address,
+                                                           len);
+  return done;
 }
 
 uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t len)
@@ -957,9 +625,9 @@ uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t 
   IOByteCount done;
   //IOLog("zvolIO_kit_write offset %p count %llx to offset %llx\n",
   //    address, len, offset);
-  done=((IOMemoryDescriptor*)iomem)->readBytes(offset,
-                                               (void *)address,
-                                               len);
+  done=static_cast<IOMemoryDescriptor*>(iomem)->readBytes(offset,
+                                                          (void *)address,
+                                                          len);
   return done;
 }
 
