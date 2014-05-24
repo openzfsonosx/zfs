@@ -1156,15 +1156,17 @@ vdev_iokit_get_size(vdev_iokit_t * dvd, uint64_t *size, uint64_t *max_size, uint
 {
 	uint64_t blksize = 0;
 
-	if (!dvd)
+	if (!dvd || !dvd->vd_iokit_hl)
 		return EINVAL;
 
 	if (size != 0) {
 		*size = ((IOMedia *)dvd->vd_iokit_hl)->getSize();
 	}
 
-	*max_size = *size;
-
+	if (max_size != 0) {
+		*max_size = *size;
+	}
+	
 	if (ashift != 0) {
 		blksize = ((IOMedia *)dvd->vd_iokit_hl)->getPreferredBlockSize();
 		if (blksize <= 0) {
