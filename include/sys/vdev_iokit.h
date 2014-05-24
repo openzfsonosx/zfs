@@ -39,9 +39,9 @@
 #include <IOKit/IOMemoryDescriptor.h>
 
 typedef struct vdev_iokit_context {
-	IOMemoryDescriptor *	buffer;
-	IOStorageCompletion		completion;
-	zio_t *					zio;
+	IOMemoryDescriptor * buffer;
+	IOStorageCompletion completion;
+	zio_t * zio;
 } vdev_iokit_context_t;
 
 #endif /* C++ */
@@ -51,13 +51,13 @@ extern "C" {
 #endif /* C++ */
 
 typedef struct vdev_iokit {
-	void *		vd_iokit_hl;		/* IOMedia service handle */
-	void *		vd_zfs_hl;			/* IOProvider zfs handle */
-	boolean_t	vd_offline;			/* device has gone offline */
-	void *		in_command_pool;	/* IOCommandPool for reads */
-	void *		out_command_pool;	/* IOCommandPool for writes */
-	void *		command_set;		/* OSSet to hold all commands */
-//	uint64_t	vd_ashift;			/* ashift alignment */
+	void * vd_iokit_hl;      /* IOMedia service handle */
+	void * vd_zfs_hl;        /* IOProvider zfs handle */
+	boolean_t vd_offline;    /* device has gone offline */
+	void * in_command_pool;  /* IOCommandPool for reads */
+	void * out_command_pool; /* IOCommandPool for writes */
+	void * command_set;      /* OSSet to hold all commands */
+//	uint64_t vd_ashift;      /* ashift alignment */
 } vdev_iokit_t;
 
 /*

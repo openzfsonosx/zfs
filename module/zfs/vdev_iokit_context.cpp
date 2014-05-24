@@ -24,27 +24,27 @@ OSDefineMetaClassAndStructors(net_lundman_vdev_io_context, IOCommand)
 
 inline bool net_lundman_vdev_io_context::init(OSDictionary *dict)
 {
-	zio =   0;
+	zio = 0;
 
-	completion.target =	0;
+	completion.target = 0;
 	completion.parameter = this;
-	completion.action =	(IOStorageCompletionAction) &vdev_iokit_io_intr;
+	completion.action = (IOStorageCompletionAction) &vdev_iokit_io_intr;
 
 	return true;
 }
 
 inline void net_lundman_vdev_io_context::free()
 {
-	zio =   0;
+	zio = 0;
 
 	if (buffer)
 		buffer->release();
 
 	buffer = 0;
 
-	completion.target =	0;
+	completion.target = 0;
 	completion.parameter = 0;
-	completion.action =	0;
+	completion.action = 0;
 
 	super::free();
 }
@@ -61,7 +61,7 @@ inline bool net_lundman_vdev_io_context::initWithTransfer(zio_t * new_zio)
 		return false;
 	}
 
-	buffer =			0;
+	buffer = 0;
 
 	if (new_zio)
 		configure(new_zio);
@@ -77,9 +77,9 @@ inline bool net_lundman_vdev_io_context::initWithDirection(IODirection new_direc
 		return false;
 	}
 
-	direction =			 new_direction;
+	direction = new_direction;
 
-	buffer =				0;
+	buffer = 0;
 
 	return true;
 }
@@ -87,7 +87,7 @@ inline bool net_lundman_vdev_io_context::initWithDirection(IODirection new_direc
 IOCommand* net_lundman_vdev_io_context::withTransfer(zio_t * new_zio)
 {
 	/* NULL new_zio is valid - pre-allocation of resources */
-	net_lundman_vdev_io_context * new_context =	 new net_lundman_vdev_io_context;
+	net_lundman_vdev_io_context * new_context = new net_lundman_vdev_io_context;
 
 	if (!new_context)
 		return 0;
@@ -102,7 +102,7 @@ IOCommand* net_lundman_vdev_io_context::withTransfer(zio_t * new_zio)
 }
 
 IOCommand* net_lundman_vdev_io_context::withDirection(IODirection new_direction) {
-	net_lundman_vdev_io_context * new_context =	 new net_lundman_vdev_io_context;
+	net_lundman_vdev_io_context * new_context = new net_lundman_vdev_io_context;
 
 	if (!new_context)
 		return 0;
@@ -121,7 +121,7 @@ bool net_lundman_vdev_io_context::configure(zio_t * new_zio)
 	if (!new_zio)
 		return false;
 
-	zio =	   new_zio;
+	zio = new_zio;
 
 	/*
 	 * withAddress will re-use the buffer object

@@ -62,18 +62,18 @@ vdev_iokit_alloc(vdev_iokit_t **dvd)
 	}
 
 	// KM_SLEEP for vdev context
-	*dvd =	(vdev_iokit_t *) kmem_alloc(sizeof (vdev_iokit_t), KM_NOSLEEP);
+	*dvd = (vdev_iokit_t *) kmem_alloc(sizeof (vdev_iokit_t), KM_NOSLEEP);
 
 	if (!dvd || !(*dvd))
 		return ENOMEM;
 
-	(*dvd)->vd_iokit_hl =	 0;
-	(*dvd)->vd_offline =	 0;
-	(*dvd)->in_command_pool =	0;
-	(*dvd)->out_command_pool =	0;
-	(*dvd)->command_set =	 0;
+	(*dvd)->vd_iokit_hl = 0;
+	(*dvd)->vd_offline = 0;
+	(*dvd)->in_command_pool = 0;
+	(*dvd)->out_command_pool = 0;
+	(*dvd)->command_set = 0;
 
-	(*dvd)->vd_zfs_hl =		vdev_iokit_get_service();
+	(*dvd)->vd_zfs_hl = vdev_iokit_get_service();
 
 	return 0;
 }
@@ -84,12 +84,12 @@ vdev_iokit_free(vdev_iokit_t **dvd)
 	if (!dvd)
 		return;
 
-	(*dvd)->vd_iokit_hl =	0;
-	(*dvd)->vd_zfs_hl =		0;
-	(*dvd)->vd_offline =	0;
-	(*dvd)->in_command_pool =	0;
-	(*dvd)->out_command_pool =	0;
-	(*dvd)->command_set =	0;
+	(*dvd)->vd_iokit_hl = 0;
+	(*dvd)->vd_zfs_hl = 0;
+	(*dvd)->vd_offline = 0;
+	(*dvd)->in_command_pool = 0;
+	(*dvd)->out_command_pool = 0;
+	(*dvd)->command_set = 0;
 
 	kmem_free(*dvd, sizeof (vdev_iokit_t));
 	*dvd = 0;
@@ -111,7 +111,7 @@ vdev_iokit_state_change(vdev_t * vd, int faulted, int degraded)
 extern void
 vdev_iokit_hold(vdev_t * vd)
 {
-	vdev_iokit_t * dvd =	0;
+	vdev_iokit_t * dvd = 0;
 	vdev_iokit_log_ptr("vdev_iokit_hold: vd", vd);
 
 	if (!vd)
@@ -176,7 +176,7 @@ vdev_iokit_hold(vdev_t * vd)
 extern void
 vdev_iokit_rele(vdev_t * vd)
 {
-	vdev_iokit_t * dvd =	0;
+	vdev_iokit_t * dvd = 0;
 	vdev_iokit_log_ptr("vdev_iokit_rele: vd", vd);
 	if (!vd)
 		return;
@@ -242,8 +242,8 @@ vdev_iokit_hl_rele_async(vdev_t *vd, taskq_t *taskq)
 extern int
 vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift)
 {
-	vdev_iokit_t *dvd =	0;
-	int error =			0;
+	vdev_iokit_t *dvd = 0;
+	int error = 0;
 
 	if (!vd)
 		return EINVAL;
@@ -271,7 +271,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 		goto out;
 	}
 
-	error =	 vdev_iokit_alloc((vdev_iokit_t **) &(vd->vdev_tsd));
+	error = vdev_iokit_alloc((vdev_iokit_t **) &(vd->vdev_tsd));
 	dvd = (vdev_iokit_t *)(vd->vdev_tsd);
 
 	if (error != 0 || !dvd) {
@@ -329,7 +329,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 		 * is not yet set, then this must be a slice.
 		 */
 		if (error == 0 && vd->vdev_wholedisk == -1ULL)
-			vd->vdev_wholedisk =	0;
+			vd->vdev_wholedisk = 0;
 	}
 
 	/*
@@ -371,7 +371,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 	 * Once a device is opened, verify that the physical device path (if
 	 * available) is up to date.
 	 */
-	char *physpath =	0;
+	char *physpath = 0;
 
 	physpath = kmem_alloc(MAXPATHLEN, KM_NOSLEEP);
 
@@ -406,7 +406,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 
 		/* Allocate several io_context objects */
 		if (vdev_iokit_context_pool_alloc(dvd) != 0) {
-			error =	 ENOMEM;
+			error = ENOMEM;
 			goto out;
 		}
 	}
@@ -461,7 +461,7 @@ out:
 extern void
 vdev_iokit_close(vdev_t *vd)
 {
-	vdev_iokit_t *dvd =	0;
+	vdev_iokit_t *dvd = 0;
 
 	if (!vd || !vd->vdev_tsd)
 		return;
@@ -469,7 +469,7 @@ vdev_iokit_close(vdev_t *vd)
 	if (vd->vdev_reopening)
 		vdev_iokit_log("vdev_iokit_close: reopening (unhandled)");
 
-	dvd =	 (vdev_iokit_t *)vd->vdev_tsd;
+	dvd = (vdev_iokit_t *)vd->vdev_tsd;
 
 	if (dvd->vd_iokit_hl != NULL) {
 		/* Sync the disk if needed */
@@ -487,8 +487,8 @@ vdev_iokit_close(vdev_t *vd)
 	vd->vdev_delayed_close = B_FALSE;
 
 	vdev_iokit_free((vdev_iokit_t **) &(vd->vdev_tsd));
-	vd->vdev_tsd =	0;
-	dvd =			0;
+	vd->vdev_tsd = 0;
+	dvd = 0;
 }
 
 extern void
@@ -504,9 +504,9 @@ vdev_iokit_ioctl_done(void *zio_arg, const int error)
 extern int
 vdev_iokit_io_start(zio_t *zio)
 {
-	vdev_t *vd =		0;
-	vdev_iokit_t *dvd =	0;
-	int error =			0;
+	vdev_t *vd = 0;
+	vdev_iokit_t *dvd = 0;
+	int error = 0;
 
 	if (!zio || !zio->io_vd || !zio->io_vd->vdev_tsd ||
 		!(zio->io_data) || zio->io_size == 0)
@@ -589,7 +589,7 @@ vdev_iokit_io_start(zio_t *zio)
 		error = ENXIO;
 	}
 
-	error =	 vdev_iokit_strategy(dvd, zio);
+	error = vdev_iokit_strategy(dvd, zio);
 
 	if (error) {
 		zio->io_error = error;
@@ -612,7 +612,7 @@ vdev_iokit_io_done(zio_t *zio)
 	 * Call an IOKit helper function to check the IOMedia
 	 * device - status, properties, and/or ioctl.
 	 */
-	vdev_t * vd =	0;
+	vdev_t * vd = 0;
 
 	if (!zio)
 		return;
@@ -636,11 +636,11 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
 {
 	vdev_label_t *label = 0;
 
-	size_t labelsize =	 VDEV_SKIP_SIZE + VDEV_PHYS_SIZE;
+	size_t labelsize = VDEV_SKIP_SIZE + VDEV_PHYS_SIZE;
 	uint64_t s = 0, size = 0;
 	uint64_t offset, state, txg = 0;
 	int l;
-	int error =			 EINVAL;
+	int error = EINVAL;
 
 	/*
 	 * Read the device label and build the nvlist.
@@ -650,7 +650,7 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
 		return EINVAL;
 
 	/* Open the IOKit handle */
-	error =	 vdev_iokit_handle_open(dvd, FREAD);
+	error = vdev_iokit_handle_open(dvd, FREAD);
 
 	if (error != 0) {
 		return (SET_ERROR(EIO));
@@ -662,8 +662,8 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
 		return (SET_ERROR(EIO));
 	}
 
-	size =	 P2ALIGN_TYPED(s, sizeof (vdev_label_t), uint64_t);
-	label =	 kmem_alloc(sizeof (vdev_label_t), KM_NOSLEEP);
+	size = P2ALIGN_TYPED(s, sizeof (vdev_label_t), uint64_t);
+	label = kmem_alloc(sizeof (vdev_label_t), KM_NOSLEEP);
 
 	if (!label) {
 		(void) vdev_iokit_handle_close(dvd, FREAD);
@@ -725,22 +725,22 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
 int
 vdev_iokit_read_rootlabel(char *devpath, char *devid, nvlist_t **config)
 {
-	vdev_iokit_t * dvd =	0;
-	int error =			 EINVAL;
+	vdev_iokit_t * dvd = 0;
+	int error = EINVAL;
 
-	error =	 vdev_iokit_alloc(&dvd);
+	error = vdev_iokit_alloc(&dvd);
 
 	if (error)
 		return error;
 
 	/* Locate the vdev by pathname */
-	error =	 vdev_iokit_find_by_path(dvd, devpath);
+	error = vdev_iokit_find_by_path(dvd, devpath);
 
 	if (error) {
 		goto error;
 	}
 
-	error =	 vdev_iokit_read_label(dvd, config);
+	error = vdev_iokit_read_label(dvd, config);
 
 error:
 	vdev_iokit_free(&dvd);

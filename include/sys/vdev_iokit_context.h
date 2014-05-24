@@ -23,16 +23,16 @@ class net_lundman_vdev_io_context : public IOCommand
 private:
 
 public:
-	virtual inline bool init						(OSDictionary* dict = NULL);
-	virtual inline void free						(void);
-	virtual inline bool initWithTransfer			(zio_t * new_zio = NULL);
-	virtual inline bool initWithDirection			(IODirection);
-	static IOCommand* withTransfer					(zio_t * new_zio = NULL);
-	static IOCommand* withDirection					(IODirection);
-	virtual bool configure							(zio_t * new_zio = NULL);
-	virtual bool prepare();
-	virtual bool complete();
-	virtual bool reset();
+	virtual inline bool init (OSDictionary* dict = NULL);
+	virtual inline void free (void);
+	virtual inline bool initWithTransfer (zio_t * new_zio = NULL);
+	virtual inline bool initWithDirection (IODirection);
+	static IOCommand* withTransfer (zio_t * new_zio = NULL);
+	static IOCommand* withDirection (IODirection);
+	virtual bool configure (zio_t * new_zio = NULL);
+	virtual bool prepare ();
+	virtual bool complete ();
+	virtual bool reset ();
 
 	IOBufferMemoryDescriptor * buffer;
 	zio_t * zio;
