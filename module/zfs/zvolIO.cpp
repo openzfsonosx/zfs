@@ -76,7 +76,7 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
     protocolCharacteristics->setObject(kIOPropertyPhysicalInterconnectTypeKey, dataString);
     dataString->release();
     dataString = 0;
-	
+
     dataString = OSString::withCString(kIOPropertyInterconnectFileKey);
     if (!dataString) {
       IOLog( "could not create interconnect location string\n" );
@@ -175,7 +175,7 @@ dprintf( "logicalBlockSize %llu\n", dataNumber->unsigned64BitValue());
      */
 
     setProperty( kIOBlockStorageDeviceTypeKey, kIOBlockStorageDeviceTypeGeneric );
-	
+
     return true;
 }
 
@@ -387,14 +387,9 @@ IOReturn net_lundman_zfs_zvol_device::reportBlockSize(UInt64 *blockSize)
 
 IOReturn net_lundman_zfs_zvol_device::reportMaxValidBlock(UInt64 *maxBlock)
 {
-  if (ZVOL_BSIZE == 0 ) {
-    /* Avoid divide by zero */
-    return kIOReturnNotAttached;
-  }
-    
-  *maxBlock = (zv->zv_volsize / (ZVOL_BSIZE))-1 ; //-1
-  dprintf("reportMaxValidBlock %llu\n", *maxBlock);
-  return kIOReturnSuccess;
+	*maxBlock = (zv->zv_volsize / (ZVOL_BSIZE))-1 ; //-1
+	dprintf("reportMaxValidBlock %llu\n", *maxBlock);
+	return kIOReturnSuccess;
 }
 
 IOReturn net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent, bool
