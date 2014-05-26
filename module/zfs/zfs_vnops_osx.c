@@ -1232,6 +1232,14 @@ zfs_vnop_pageout(
     }
 
     tx = dmu_tx_create(zfsvfs->z_os);
+	if (!tx) {
+		printf("ZFS: zfs_vnops_osx: NULL TX encountered!\n");
+        if (!(flags & UPL_NOCOMMIT))
+            ubc_upl_abort_range(upl, upl_offset, len,
+                                UPL_ABORT_FREE_ON_EMPTY);
+        err = EINVAL;
+        goto exit;
+	}
     dmu_tx_hold_write(tx, zp->z_id, off, len);
     dmu_tx_hold_bonus(tx, zp->z_id);
     err = dmu_tx_assign(tx, TXG_NOWAIT);
