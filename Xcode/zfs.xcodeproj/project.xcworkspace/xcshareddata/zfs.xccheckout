@@ -5,19 +5,19 @@
 	<key>IDESourceControlProjectFavoriteDictionaryKey</key>
 	<false/>
 	<key>IDESourceControlProjectIdentifier</key>
-	<string>109CEC8D-891D-4847-A538-F447B25C07B2</string>
+	<string>2C2692AE-22FD-43CB-BEAF-0105F2DF9686</string>
 	<key>IDESourceControlProjectName</key>
 	<string>zfs</string>
 	<key>IDESourceControlProjectOriginsDictionary</key>
 	<dict>
-		<key>32E771EC-89A5-4C77-9E9D-CDA021030B3A</key>
+		<key>E926AA24-BFDA-4BCB-8BD7-BE9B86F73F68</key>
 		<string>https://github.com/openzfsonosx/zfs.git</string>
 	</dict>
 	<key>IDESourceControlProjectPath</key>
 	<string>Xcode/zfs.xcodeproj/project.xcworkspace</string>
 	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
 	<dict>
-		<key>32E771EC-89A5-4C77-9E9D-CDA021030B3A</key>
+		<key>E926AA24-BFDA-4BCB-8BD7-BE9B86F73F68</key>
 		<string>../../..</string>
 	</dict>
 	<key>IDESourceControlProjectURL</key>
@@ -25,14 +25,14 @@
 	<key>IDESourceControlProjectVersion</key>
 	<integer>110</integer>
 	<key>IDESourceControlProjectWCCIdentifier</key>
-	<string>32E771EC-89A5-4C77-9E9D-CDA021030B3A</string>
+	<string>E926AA24-BFDA-4BCB-8BD7-BE9B86F73F68</string>
 	<key>IDESourceControlProjectWCConfigurations</key>
 	<array>
 		<dict>
 			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
 			<string>public.vcs.git</string>
 			<key>IDESourceControlWCCIdentifierKey</key>
-			<string>32E771EC-89A5-4C77-9E9D-CDA021030B3A</string>
+			<string>E926AA24-BFDA-4BCB-8BD7-BE9B86F73F68</string>
 			<key>IDESourceControlWCCName</key>
 			<string>zfs</string>
 		</dict>

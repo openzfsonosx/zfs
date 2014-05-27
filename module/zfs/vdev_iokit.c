@@ -371,21 +371,10 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 	 * Once a device is opened, verify that the physical device path (if
 	 * available) is up to date.
 	 */
-	char *physpath = 0;
 
-	physpath = kmem_alloc(MAXPATHLEN, KM_NOSLEEP);
-
-	if (vdev_iokit_physpath(vd, physpath) == 0 &&
-		(vd->vdev_physpath == NULL || strcmp(vd->vdev_physpath, physpath) != 0)) {
-
-			if (vd->vdev_physpath) {
-				spa_strfree(vd->vdev_physpath);
-			}
-			vd->vdev_physpath = spa_strdup(physpath);
-		}
-	kmem_free(physpath, MAXPATHLEN);
-
-//skip_open:
+	if (vdev_iokit_physpath(vd, 0) != 0) {
+		vdev_iokit_log("ZFS: vdev_iokit_open: physpath couldn't be updated");
+	}
 
 	/*
 	 * Determine the actual size of the device.
@@ -411,12 +400,6 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 		}
 	}
 
-
-	/*
-	 * ### APPLE TODO ###
-	 * If we own the whole disk, try to enable disk write caching.
-	 */
-
 	/*
 	 * Done above in vdev_iokit_get_size
 	 */
@@ -437,6 +420,13 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size, uint64_t *max_size, uint64_t *ashift
 	 * try again.
 	 */
 	vd->vdev_nowritecache = B_FALSE;
+
+	/*
+	 * ### APPLE TODO ###
+	 * If we own the whole disk, try to enable disk write caching.
+	 * FreeBSD geom can use write caching on individual partitions,
+	 *  possibly same on OS X.
+	 */
 
 out:
 	if (error != 0) {

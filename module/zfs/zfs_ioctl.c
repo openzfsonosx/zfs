@@ -4090,6 +4090,12 @@ zfs_ioc_recv(zfs_cmd_t *zc)
         error = 1;
     }
 #endif
+
+#if defined(__APPLE__) || defined (__FREEBSD__) || defined (__FreeBSD__)
+	if (error == 0)
+		zvol_create_minors(tofs);
+#endif
+
     /*
      * On error, restore the original props.
      */

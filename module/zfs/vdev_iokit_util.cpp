@@ -15,35 +15,36 @@
 #include <sys/vdev_iokit_context.h>
 
 /*
+ * XXX To do -
+ * Determine best value
+ * First used value was 8
+ */
+#define VDEV_IOKIT_PREALLOCATE_CONTEXTS		16
+
+/*
  * IOKit C++ functions
  */
-
-#define	info_delay 0 // 50
-#define	error_delay 0 // 1000
 
 extern void vdev_iokit_log(const char * logString)
 {
 	IOLog("ZFS: vdev: %s\n", logString);
-	//	IOSleep(info_delay);
 }
 
 extern void vdev_iokit_log_str(const char * logString1, const char * logString2)
 {
 	IOLog("ZFS: vdev: %s {%s}\n", logString1, logString2);
-	//	IOSleep(info_delay);
 }
 
 extern void vdev_iokit_log_ptr(const char * logString, const void * logPtr)
 {
 	IOLog("ZFS: vdev: %s [%p]\n", logString, logPtr);
-	//	IOSleep(info_delay);
 }
 
 extern void vdev_iokit_log_num(const char * logString, const uint64_t logNum)
 {
 	IOLog("ZFS: vdev: %s (%llu)\n", logString, logNum);
-	//	IOSleep(error_delay);
 }
+
 
 #if 0
 static inline void vdev_iokit_context_free(vdev_iokit_context_t * io_context);
@@ -180,7 +181,7 @@ extern int vdev_iokit_context_pool_alloc(vdev_iokit_t * dvd)
 	IOCommandPool * new_in_pool = 0;
 	IOCommandPool * new_out_pool = 0;
 	net_lundman_vdev_io_context * new_context = 0;
-	int preallocate = 8;
+	int preallocate =	VDEV_IOKIT_PREALLOCATE_CONTEXTS;
 	int error = EINVAL;
 
 	/* Only allocate if dvd avail and command pools are not */
@@ -997,7 +998,7 @@ extern int vdev_iokit_physpath(vdev_t * vd, char * physpath)
 {
 	vdev_iokit_t * dvd = 0;
 
-	if (!vd || !physpath)
+	if (!vd)
 		return EINVAL;
 
 	dvd = static_cast <vdev_iokit_t *> (vd->vdev_tsd);
@@ -1005,13 +1006,20 @@ extern int vdev_iokit_physpath(vdev_t * vd, char * physpath)
 	if (!dvd || !dvd->vd_iokit_hl)
 		return EINVAL;
 
-	if (strlen(vd->vdev_path) > 0) {
+	/* If physpath arg is provided */
+	if (physpath && strlen(physpath) > 0) {
+
+		/* Save the physpath arg into physpath */
+		vd->vdev_physpath = spa_strdup(physpath);
+		return 0;
+	} else if (vd->vdev_path && strlen(vd->vdev_path) > 0) {
 
 		/* Save the current path into physpath */
-		strlcat(physpath, vd->vdev_path, strlen(vd->vdev_path));
+		vd->vdev_physpath = spa_strdup(vd->vdev_path);
 		return 0;
-
 	} else {
+
+		/* No usable physpath available */
 		return EINVAL;
 	}
 }
