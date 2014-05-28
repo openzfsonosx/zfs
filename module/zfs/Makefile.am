@@ -147,7 +147,9 @@ zfs_SOURCES = \
 	../zcommon/zfs_namecheck.c \
 	../zcommon/zfs_prop.c \
 	../zcommon/zpool_prop.c \
-	../zcommon/zprop_common.c
+	../zcommon/zprop_common.c \
+	ZFSLabelScheme.cpp \
+	ZFSProxyMediaScheme.cpp
 
 zfs_CPPFLAGS=$(CFLAGS_KMOD)
 zfs_CXXFLAGS=$(CFLAGS_KMOD)
