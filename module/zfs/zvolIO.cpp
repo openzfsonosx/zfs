@@ -454,9 +454,9 @@ net_lundman_zfs_zvol_device::doUnmap(IOBlockStorageDeviceExtent *extents,
 	return (kIOReturnSuccess);
 }
 
-const UInt32
+UInt32
 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
-	UInt32 capacitiesMaxCount)
+	UInt32 capacitiesMaxCount) const
 {
 	dprintf("formatCap\n");
 
