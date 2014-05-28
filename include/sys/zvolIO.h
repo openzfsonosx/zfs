@@ -2,6 +2,7 @@
 #define ZVOLIO_H_INCLUDED
 
 #include <IOKit/IOService.h>
+#include <sys/zvol.h>
 
 class net_lundman_zfs_zvol : public IOService
 {
@@ -69,6 +70,8 @@ public:
                                        UInt64 block, UInt64 nblks,
                                        IOStorageAttributes *attributes,
                                        IOStorageCompletion *completion);
+	virtual IOReturn  doDiscard(UInt64 block, UInt64 nblks);
+	virtual IOReturn  doUnmap(IOBlockStorageDeviceExtent *extents, UInt32 extentsCount, UInt32 options);
     virtual bool handleOpen( IOService *client, IOOptionBits options, void *access);
     virtual void handleClose( IOService *client, IOOptionBits options);
     virtual int getBSDName();

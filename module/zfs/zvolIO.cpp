@@ -7,6 +7,7 @@
 #include <sys/zvol.h>
 
 #include <sys/zvolIO.h>
+#include <IOKit/IOKitKeys.h>
 #include <IOKit/storage/IOBlockStorageDevice.h>
 #include <IOKit/storage/IOStorageProtocolCharacteristics.h>
 
@@ -27,7 +28,7 @@ OSDefineMetaClassAndStructors(net_lundman_zfs_zvol_device,IOBlockStorageDevice)
 bool net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
                                        OSDictionary *properties)
 {
-  dprintf("zolio_device:init\n");
+  dprintf("zvolIO_device:init\n");
   if (super::init(properties) == false)
     return false;
 
@@ -42,30 +43,36 @@ bool net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
 bool net_lundman_zfs_zvol_device::attach(IOService* provider)
 {
     OSDictionary		*	protocolCharacteristics = 0;
+    OSDictionary		*	deviceCharacteristics   = 0;
+    OSDictionary		*	storageFeatures			= 0;
+	OSBoolean			*	unmapFeature			= 0;
 	OSString			*	dataString				= 0;
+    OSNumber			*	dataNumber				= 0;
 
     if (super::attach(provider) == false)
         return false;
     m_provider = OSDynamicCast(net_lundman_zfs_zvol, provider);
     if (m_provider == NULL)
         return false;
-
+	
     /*
      * We want to set some additional properties for ZVOLs, in
      * particular, "Virtual Device", and type "File" (or is Internal better?)
      * Finally "Generic" type.
+     *
+     * These properties are defined in *protocol* characteristics
      */
-
+	
     protocolCharacteristics = OSDictionary::withCapacity(3);
     if (!protocolCharacteristics) {
-      IOLog("failed to create dictionary for protocolCharacteristics.\n");
-      return true;
+		IOLog("failed to create dictionary for protocolCharacteristics.\n");
+		return true;
     }
-
+	
     dataString = OSString::withCString(kIOPropertyPhysicalInterconnectTypeVirtual);
     if (!dataString) {
-      IOLog( "could not create interconnect type string\n" );
-      return true;
+		IOLog( "could not create interconnect type string\n" );
+		return true;
     }
     protocolCharacteristics->setObject(kIOPropertyPhysicalInterconnectTypeKey, dataString);
     dataString->release();
@@ -73,16 +80,127 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
 
     dataString = OSString::withCString(kIOPropertyInterconnectFileKey);
     if (!dataString) {
-      IOLog( "PGPdiskDriver::createNub: could not create interconnect location string\n" );
+      IOLog( "could not create interconnect location string\n" );
       return true;
     }
     protocolCharacteristics->setObject(kIOPropertyPhysicalInterconnectLocationKey, dataString);
     dataString->release();
     dataString = 0;
-
+	
     setProperty( kIOPropertyProtocolCharacteristicsKey, protocolCharacteristics );
     protocolCharacteristics->release();
     protocolCharacteristics = 0;
+    
+    /*
+     * We want to set some additional properties for ZVOLs, in
+     * particular, logical block size (volblocksize) of the
+     * underlying ZVOL, and 'physical' block size presented by
+     * the virtual disk. Also set physical bytes per sector.
+     *
+     * These properties are defined in *device* characteristics
+     */
+    
+    deviceCharacteristics = OSDictionary::withCapacity(3);
+    if (!deviceCharacteristics) {
+        IOLog("failed to create dictionary for deviceCharacteristics.\n");
+        return true;
+    }
+
+    /* Set physical block size to ZVOL_BSIZE (512b) */
+    dataNumber =    OSNumber::withNumber(ZVOL_BSIZE,8*sizeof(ZVOL_BSIZE));
+    deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey, dataNumber);
+dprintf( "physicalBlockSize %llu\n", dataNumber->unsigned64BitValue());
+    dataNumber->release();
+    dataNumber	= 0;
+    
+    /* Set logical block size to match volblocksize property */
+    dataNumber =    OSNumber::withNumber(zv->zv_volblocksize,8*sizeof(zv->zv_volblocksize));
+    deviceCharacteristics->setObject(kIOPropertyLogicalBlockSizeKey, dataNumber);
+dprintf( "logicalBlockSize %llu\n", dataNumber->unsigned64BitValue());
+    dataNumber->release();
+    dataNumber	= 0;
+    
+    /* Set physical bytes per sector to match volblocksize property */
+    dataNumber =    OSNumber::withNumber((uint64_t)(8*ZVOL_BSIZE),8*sizeof(uint64_t));
+    deviceCharacteristics->setObject(kIOPropertyBytesPerPhysicalSectorKey, dataNumber);
+    dprintf( "physicalBytesPerSector %llu\n", dataNumber->unsigned64BitValue());
+    dataNumber->release();
+    dataNumber	= 0;
+    
+    /* Apply these characteristics */
+    setProperty( kIOPropertyDeviceCharacteristicsKey, deviceCharacteristics );
+    deviceCharacteristics->release();
+    deviceCharacteristics	= 0;
+
+	/*
+     * Zvol unmap (experimental) support
+	 *  Possibly as a property / sysctl
+     *
+     * These properties are defined in IOStorageFeatures
+     */
+
+	storageFeatures =	OSDictionary::withCapacity(1);
+	if (!storageFeatures) {
+        IOLog("failed to create dictionary for storageFeatures.\n");
+        return true;
+    }
+
+	/* Set unmap feature */
+	unmapFeature =	OSBoolean::withBoolean(true);
+    storageFeatures->setObject(kIOStorageFeatureUnmap, unmapFeature);
+	unmapFeature->release();
+	unmapFeature	= 0;
+
+	/* Apply these storage features */
+    setProperty( kIOStorageFeaturesKey, storageFeatures );
+    storageFeatures->release();
+    storageFeatures	= 0;
+
+
+    /*
+     * Set transfer limits:
+     *
+     *  Maximum transfer size (bytes)
+     *  Maximum transfer block count
+     *  Maximum transfer block size (bytes)
+     *  Maximum transfer segment count
+     *  Maximum transfer segment size (bytes)
+     *  Minimum transfer segment size (bytes)
+     *
+     *  We will need to establish safe
+     *   defaults for all / per volblocksize
+     *
+     *  Example: setProperty( kIOMinimumSegmentAlignmentByteCountKey, 1, 1 );
+     */
+
+    
+    /*
+     * Set Minimum transfer segment size if the block size is smaller than 4k
+     */
+/*
+     uint64_t                minSegmentSize          = 0;
+    if( zv->zv_volblocksize > 4096 ) {
+        setProperty( kIOMinimumSegmentAlignmentByteCountKey, 1, 1 );
+
+
+//        minSegmentSize = zv->zv_volblocksize / ( ZVOL_BSIZE * 4 );
+        // Minimum is the default of 4
+//        if ( minSegmentSize > 4 ) {
+//            dataNumber =    OSNumber::withNumber(minSegmentSize,8*sizeof(minSegmentSize));
+//            setProperty( kIOMinimumSegmentAlignmentByteCountKey, minSegmentSize, sizeof(minSegmentSize) );
+//            dataNumber->release();
+//            dataNumber = 0;
+//        }
+    }
+  */
+    
+    /*
+     * Finally "Generic" type, set as a device property.
+     * Tried setting this to the string "ZVOL" however the OS
+     * does not recognize it as a block storage device.
+     * This would probably be possible by extending the
+     * IOBlockStorage Device / Driver relationship.
+     */
 
     setProperty( kIOBlockStorageDeviceTypeKey, kIOBlockStorageDeviceTypeGeneric );
 
@@ -92,30 +210,30 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
 
 int net_lundman_zfs_zvol_device::getBSDName(void)
 {
-  int err = 0;
-
-  IORegistryEntry *ioregdevice = OSDynamicCast ( IORegistryEntry, this );
-  if(ioregdevice) {
-    OSObject *bsdnameosobj;
-    bsdnameosobj = ioregdevice->getProperty(kIOBSDNameKey,
-                                            gIOServicePlane,
-                                            kIORegistryIterateRecursively);
-    if(bsdnameosobj) {
-      OSString* bsdnameosstr = OSDynamicCast(OSString, bsdnameosobj);
-      IOLog("zvol: bsd name is '%s'\n", bsdnameosstr->getCStringNoCopy());
-      if (zv) {
-        zv->zv_bsdname[0] = 'r'; // for 'rdiskX'.
-        strlcpy(&zv->zv_bsdname[1], bsdnameosstr->getCStringNoCopy(),
-                sizeof(zv->zv_bsdname)-1);
-        //IOLog("name assigned '%s'\n", zv->zv_bsdname);
-      } else
-        err = -1;
-    } else
-      err = -1;
-  } else
-    err = -1;
-
-  return (err);
+	int err = 0;
+	
+	IORegistryEntry *ioregdevice = OSDynamicCast ( IORegistryEntry, this );
+	if(ioregdevice) {
+		OSObject *bsdnameosobj;
+		bsdnameosobj = ioregdevice->getProperty(kIOBSDNameKey,
+												gIOServicePlane,
+												kIORegistryIterateRecursively);
+		if(bsdnameosobj) {
+			OSString* bsdnameosstr = OSDynamicCast(OSString, bsdnameosobj);
+			IOLog("zvol: bsd name is '%s'\n", bsdnameosstr->getCStringNoCopy());
+			if (zv) {
+				zv->zv_bsdname[0] = 'r'; // for 'rdiskX'.
+				strlcpy(&zv->zv_bsdname[1], bsdnameosstr->getCStringNoCopy(),
+						sizeof(zv->zv_bsdname)-1);
+				//IOLog("name assigned '%s'\n", zv->zv_bsdname);
+			} else
+				err = -1;
+		} else
+			err = -1;
+	} else
+		err = -1;
+	
+	return (err);
 }
 
 
@@ -128,151 +246,185 @@ void net_lundman_zfs_zvol_device::detach(IOService* provider)
 
 
 bool net_lundman_zfs_zvol_device::handleOpen( IOService *client,
-                                              IOOptionBits options,
-                                              void *argument)
+											 IOOptionBits options,
+											 void *argument)
 {
-  IOStorageAccess access = (IOStorageAccess) (uint64_t) argument;
-
-  dprintf("open\n");
-
-  if (super::handleOpen(client, options, argument) == false)
-    return false;
-
-  /*
-   * It was the hope that openHandle would indicate the type of open required
-   * such that we can set FREAD/FWRITE/ZVOL_EXCL as needed, but alas,
-   * "access" is always 0 here.
-   */
-
-  switch (access) {
-
-  case kIOStorageAccessReader:
-    //IOLog("handleOpen: readOnly\n");
-    zv->zv_openflags = FREAD;
-    zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL);
-    break;
-
-  case kIOStorageAccessReaderWriter:
-    //IOLog("handleOpen: options %04x\n", options);
-    zv->zv_openflags = FWRITE | ZVOL_EXCL;
-    break;
-
-  default:
-    //IOLog("handleOpen with unknown access %04lu - guessing\n", access);
-    zv->zv_openflags = FWRITE;
-  }
-
-  if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL)) {
-    dprintf("Open failed\n");
-    return false;
-  }
-
-  dprintf("Open done\n");
-
-  return true;
+	IOStorageAccess access = (IOStorageAccess) (uint64_t) argument;
+	
+	dprintf("open\n");
+	
+	if (super::handleOpen(client, options, argument) == false)
+		return false;
+	
+	/*
+	 * It was the hope that openHandle would indicate the type of open required
+	 * such that we can set FREAD/FWRITE/ZVOL_EXCL as needed, but alas,
+	 * "access" is always 0 here.
+	 */
+	
+	switch (access) {
+			
+		case kIOStorageAccessReader:
+			//IOLog("handleOpen: readOnly\n");
+			zv->zv_openflags = FREAD;
+			zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL);
+			break;
+			
+		case kIOStorageAccessReaderWriter:
+			//IOLog("handleOpen: options %04x\n", options);
+			zv->zv_openflags = FWRITE | ZVOL_EXCL;
+			break;
+			
+		default:
+			//IOLog("handleOpen with unknown access %04lu - guessing\n", access);
+			zv->zv_openflags = FWRITE;
+	}
+	
+	if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL)) {
+		dprintf("Open failed\n");
+		return false;
+	}
+	
+	dprintf("Open done\n");
+	
+	return true;
 }
 
 
 
 void net_lundman_zfs_zvol_device::handleClose( IOService *client,
-                                               IOOptionBits options)
+											  IOOptionBits options)
 {
-  super::handleClose(client, options);
-
-  //IOLog("handleClose\n");
-  zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
-
+	super::handleClose(client, options);
+	
+	//IOLog("handleClose\n");
+	zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
+	
 }
 
 IOReturn net_lundman_zfs_zvol_device::doAsyncReadWrite(
-    IOMemoryDescriptor *buffer, UInt64 block, UInt64 nblks,
-    IOStorageAttributes *attributes, IOStorageCompletion *completion)
+													   IOMemoryDescriptor *buffer, UInt64 block, UInt64 nblks,
+													   IOStorageAttributes *attributes, IOStorageCompletion *completion)
 {
     IODirection               direction;
     IOByteCount               actualByteCount;
-
-
+	
+	
     // Return errors for incoming I/O if we have been terminated.
     if (isInactive() == true) {
-      dprintf("asyncReadWrite notActive fail\n");
-      return kIOReturnNotAttached;
+		dprintf("asyncReadWrite notActive fail\n");
+		return kIOReturnNotAttached;
     }
     // These variables are set in zvol_first_open(), which should have been
     // called already.
     if (!zv->zv_objset || !zv->zv_dbuf) {
-      dprintf("asyncReadWrite no objset nor dbuf\n");
-      return kIOReturnNotAttached;
+		dprintf("asyncReadWrite no objset nor dbuf\n");
+		return kIOReturnNotAttached;
     }
-
+	
     // Ensure the start block being targeted is within the disk’s capacity.
     if ((block)*(ZVOL_BSIZE) >= zv->zv_volsize) {
-      dprintf("asyncReadWrite start block outside volume\n");
-      return kIOReturnBadArgument;
+		dprintf("asyncReadWrite start block outside volume\n");
+		return kIOReturnBadArgument;
     }
-
+	
     // Shorten the read, if beyond the end
     if (((block + nblks)*(ZVOL_BSIZE)) > zv->zv_volsize) {
-      dprintf("asyncReadWrite block shortening needed\n");
-      return kIOReturnBadArgument;
+		dprintf("asyncReadWrite block shortening needed\n");
+		return kIOReturnBadArgument;
     }
-
+	
     // Get the buffer’s direction, whether the operation is a read or a write.
     direction = buffer->getDirection();
     if ((direction != kIODirectionIn) && (direction != kIODirectionOut)) {
-      dprintf("asyncReadWrite kooky direction\n");
-      return kIOReturnBadArgument;
+		dprintf("asyncReadWrite kooky direction\n");
+		return kIOReturnBadArgument;
     }
-
+	
     dprintf("%s offset @block %llu numblocks %llu: blksz %llu\n",
             direction == kIODirectionIn ? "Read" : "Write",
             block, nblks, (ZVOL_BSIZE));
     //IOLog("getMediaBlockSize is %llu\n", m_provider->getMediaBlockSize());
     // Perform the read or write operation through the transport driver.
     actualByteCount = (nblks*(ZVOL_BSIZE));
-
+	
     if (direction == kIODirectionIn) {
-
-      if (zvol_read_iokit(zv,
-                          (block*(ZVOL_BSIZE)),
-                          actualByteCount,
-                          (void *)buffer))
-        actualByteCount = 0;
-
+		
+		if (zvol_read_iokit(zv,
+							(block*(ZVOL_BSIZE)),
+							actualByteCount,
+							(void *)buffer))
+			actualByteCount = 0;
+		
     } else {
-
-      if (zvol_write_iokit(zv,
-                           (block*(ZVOL_BSIZE)),
-                            actualByteCount,
-                           (void *)buffer))
-        actualByteCount = 0;
-
+		
+		if (zvol_write_iokit(zv,
+							 (block*(ZVOL_BSIZE)),
+							 actualByteCount,
+							 (void *)buffer))
+			actualByteCount = 0;
+		
     }
-
+	
     if (actualByteCount != nblks*(ZVOL_BSIZE))
-      dprintf("Read/Write operation failed\n");
-
+		dprintf("Read/Write operation failed\n");
+	
     // Call the completion function.
     (completion->action)(completion->target, completion->parameter,
                          kIOReturnSuccess, actualByteCount);
     return kIOReturnSuccess;
 }
 
+IOReturn
+net_lundman_zfs_zvol_device::doDiscard(UInt64 block, UInt64 nblks)
+{
+//IOLog("doDiscard called with block, nblks (%llu, %llu)\n", block, nblks);
+	uint64_t bytes		= 0;
+	uint64_t off		= 0;
+
+	/* Convert block/nblks to offset/bytes */
+	off =	block * ZVOL_BSIZE;
+	bytes =	nblks * ZVOL_BSIZE;
+//IOLog("calling zvol_unmap with offset, bytes (%llu, %llu)\n", off, bytes);
+
+	return (zvol_unmap(zv, off, bytes) == 0 ? kIOReturnSuccess : kIOReturnError);
+}
 
 
+IOReturn
+net_lundman_zfs_zvol_device::doUnmap( IOBlockStorageDeviceExtent *extents, UInt32 extentsCount, UInt32 options = 0)
+{
+	UInt32 i = 0;
+	IOReturn result;
 
+//IOLog("doUnmap called with (%u) extents and options (%u)\n", (uint32_t)extentsCount, (uint32_t)options);
+
+	if (options > 0) {
+        return kIOReturnUnsupported;
+	}
+
+	for (i = 0; i < extentsCount; i++) {
+		result = doDiscard(extents[i].blockStart, extents[i].blockCount);
+		if (result != kIOReturnSuccess) {
+			return result;
+		}
+	}
+
+    return kIOReturnSuccess;
+}
 UInt32 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
                                                           UInt32 capacitiesMaxCount) const
 {
-  dprintf("formatCap\n");
+	dprintf("formatCap\n");
     // Ensure that the array is sufficient to hold all our formats
     // (we require 1 element).
     if ((capacities != NULL) && (capacitiesMaxCount < 1))
-      return 0;               // Error, return an array size of 0.
+		return 0;               // Error, return an array size of 0.
     // The caller may provide a NULL array if it wishes to query
     // the number of formats that we support.
     if (capacities != NULL)
-      //capacities[0] = m_blockCount * kDiskBlockSize;
-      capacities[0] = zv->zv_volsize;
+		//capacities[0] = m_blockCount * kDiskBlockSize;
+		capacities[0] = zv->zv_volsize;
     dprintf("returning capacity[0] size %llu\n", zv->zv_volsize);
     return 1;
 }
@@ -281,39 +433,39 @@ UInt32 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
 
 char* net_lundman_zfs_zvol_device::getProductString(void)
 {
-  dprintf("getProduct %p\n", zv);
-  if (zv && zv->zv_name) return zv->zv_name;
-  return (char*)"ZVolume";
+	dprintf("getProduct %p\n", zv);
+	if (zv && zv->zv_name) return zv->zv_name;
+	return (char*)"ZVolume";
 }
 
 
 
 IOReturn net_lundman_zfs_zvol_device::reportBlockSize(UInt64 *blockSize)
 {
-  *blockSize = (ZVOL_BSIZE);
-  dprintf("reportBlockSize %llu\n", *blockSize);
-  return kIOReturnSuccess;
+	*blockSize = (ZVOL_BSIZE);
+	dprintf("reportBlockSize %llu\n", *blockSize);
+	return kIOReturnSuccess;
 }
 
 IOReturn net_lundman_zfs_zvol_device::reportMaxValidBlock(UInt64 *maxBlock)
 {
-  *maxBlock = (zv->zv_volsize / (ZVOL_BSIZE))-1 ; //-1
-  dprintf("reportMaxValidBlock %llu\n", *maxBlock);
-  return kIOReturnSuccess;
+	*maxBlock = (zv->zv_volsize / (ZVOL_BSIZE))-1 ; //-1
+	dprintf("reportMaxValidBlock %llu\n", *maxBlock);
+	return kIOReturnSuccess;
 }
 
 IOReturn net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent, bool
-   *changedState)
+													   *changedState)
 {
     *mediaPresent = true;
-
+	
     *changedState = false;
     dprintf("reportMediaState\n");
     return kIOReturnSuccess;
 }
 
 IOReturn net_lundman_zfs_zvol_device::reportPollRequirements(bool *pollRequired,
-   bool *pollIsExpensive)
+															 bool *pollIsExpensive)
 {
     *pollRequired = false;
     *pollIsExpensive = false;
@@ -334,16 +486,16 @@ IOReturn net_lundman_zfs_zvol_device::reportRemovability(bool *isRemovable)
 IOReturn net_lundman_zfs_zvol_device::doEjectMedia(void)
 {
     dprintf("ejectMedia\n");
-
+	
     //this->m_provider->doEjectMedia(this);
     this->m_provider->doEjectMedia(zv);
-
+	
     return kIOReturnSuccess;
 }
 
 IOReturn  net_lundman_zfs_zvol_device::doFormatMedia(UInt64 byteCapacity)
 {
-    dprintf("doFormat\n");
+    IOLog("doFormat\n");
     return kIOReturnSuccess;
 }
 
@@ -355,9 +507,9 @@ IOReturn  net_lundman_zfs_zvol_device::doLockUnlockMedia(bool doLock)
 
 IOReturn  net_lundman_zfs_zvol_device::doSynchronizeCache(void)
 {
-    dprintf("doSync\n");
+    IOLog("doSync\n");
     if (zv && zv->zv_zilog) {
-      zil_commit(zv->zv_zilog, ZVOL_OBJ);
+		zil_commit(zv->zv_zilog, ZVOL_OBJ);
     }
     return kIOReturnSuccess;
 }
@@ -400,9 +552,9 @@ IOReturn  net_lundman_zfs_zvol_device::reportWriteProtection(bool *isWriteProtec
 {
     dprintf("reportWritePro\n");
     if (zv && (zv->zv_flags & ZVOL_RDONLY))
-      *isWriteProtected = true;
+		*isWriteProtected = true;
     else
-      *isWriteProtected = false;
+		*isWriteProtected = false;
     return kIOReturnSuccess;
 }
 

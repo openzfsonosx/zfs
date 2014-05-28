@@ -117,6 +117,7 @@ extern int zvol_read_iokit (zvol_state_t *zv, uint64_t offset, uint64_t count,
                             void *iomem);
 extern int zvol_write_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count,
                             void *iomem);
+extern int zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes);
 
 extern void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk,
                              const char *bsd_rdisk);
