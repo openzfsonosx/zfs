@@ -9,7 +9,7 @@ OSDefineMetaClassAndStructors(ZFSProxyMediaScheme, IOPartitionScheme)
 
 extern "C" {
 
-void ZFSDriver_create_pool(char *poolname, uint64_t bytes,
+void ZFSDriver_create_poolX(char *poolname, uint64_t bytes,
 						   uint64_t block, boolean_t rdonly,
 						   uint64_t pool_guid, uint64_t dataset_guid)
 {
