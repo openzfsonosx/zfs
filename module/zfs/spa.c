@@ -4082,6 +4082,30 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	 */
 	spa_async_request(spa, SPA_ASYNC_AUTOEXPAND);
 
+#ifdef _KERNEL
+	{
+		uint64_t refdbytes, availbytes, usedobjs, availobjs;
+		objset_t *os;
+		int error;
+
+		printf("Holding pool\n");
+
+		error = dmu_objset_hold(spa->spa_name, FTAG, &os);
+		if (!error) {
+			printf("Get space\n");
+			dmu_objset_space(os,
+							 &refdbytes, &availbytes, &usedobjs, &availobjs);
+			dmu_objset_rele(os, FTAG);
+
+			printf("Create pool\n");
+			ZFSDriver_create_pool(spa->spa_name, availbytes, 512,
+								  B_FALSE, spa_guid(spa),
+								  dsl_dataset_fsid_guid(dmu_objset_ds(os)));
+		}
+	}
+#endif
+
+
 	mutex_exit(&spa_namespace_lock);
 	spa_history_log_version(spa, "import");
 
