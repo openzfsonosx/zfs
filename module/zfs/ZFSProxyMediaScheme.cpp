@@ -7,13 +7,72 @@
 
 OSDefineMetaClassAndStructors(ZFSProxyMediaScheme, IOPartitionScheme)
 
+extern "C" {
+
+void ZFSDriver_create_pool(char *poolname, uint64_t bytes,
+						   uint64_t block, boolean_t rdonly,
+						   uint64_t pool_guid, uint64_t dataset_guid)
+{
+    IOMedia*                newMedia;
+	uint32_t index = 0;
+
+	printf("Creating pool proxy for '%s' size %llu, guid %llx dataset_guid %llx\n",
+		   poolname, bytes, pool_guid, dataset_guid);
+
+
+    newMedia = new IOMedia;
+    if ( newMedia )
+    {
+
+
+
+        if ( newMedia->init(0,
+							bytes,
+							block,
+							0,
+							false, //it's a "partition" now
+							!rdonly,
+							"zfs_filesystem_proxy"))
+		{
+            newMedia->setName(poolname);
+
+            // Set a location value (the partition number) for this partition
+            char location[12];
+            snprintf(location, sizeof(location), "%d", (int)0);
+            newMedia->setLocation(location);
+
+            // Set the "Partition ID" key for this partition
+            newMedia->setProperty(kIOMediaPartitionIDKey, index, 32);
+
+            newMedia->setProperty("ZFS_POOL_GUID", pool_guid, 64);
+            newMedia->setProperty("ZFS_DATASET_GUID", dataset_guid, 64);
+		}
+		else
+		{
+			newMedia->release();
+			newMedia = NULL;
+		}
+    }
+}
+
+}
+
+
+void ZFSProxyMediaScheme::add_pool(char *pool)
+{
+	printf("add_pool '%s'\n", pool);
+}
+
+
 IOService* ZFSProxyMediaScheme::probe(IOService* provider, SInt32* score)
 {
+	printf("ZFSProxyMediaScheme::probe\n");
+
     if (super::probe(provider, score) == 0)
         return 0;
 
     //find first level of child filesystems.
-    m_child_filesystems = scan(score);
+    //m_child_filesystems = scan(score);
 
     //If this filesystem has no children, then return NULL
     printf("probe: this %p : m_child_filesystems %p\n", this, m_child_filesystems);
@@ -222,11 +281,11 @@ IOMedia* ZFSProxyMediaScheme::instantiateMediaObject(ZFSFilesystemEntry* fsEntry
 
             //ZFS
             //Fix me: get pool guid and dataset guid from the label
-            uint32_t zfs_pool_guid = 16504178780918792917UL;
-            uint32_t zfs_dataset_guid = 17572052293026476543UL;
+            uint64_t zfs_pool_guid = 16504178780918792917UL;
+            uint64_t zfs_dataset_guid = 17572052293026476543UL;
 
-            newMedia->setProperty("ZFS_POOL_GUID", zfs_pool_guid, 32);
-            newMedia->setProperty("ZFS_DATASET_GUID", zfs_dataset_guid, 32);
+            newMedia->setProperty("ZFS_POOL_GUID", zfs_pool_guid, 64);
+            newMedia->setProperty("ZFS_DATASET_GUID", zfs_dataset_guid, 64);
 		}
 		else
 		{
