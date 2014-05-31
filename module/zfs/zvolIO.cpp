@@ -46,7 +46,6 @@ bool net_lundman_zfs_zvol_device::attach(IOService* provider)
     OSDictionary		*	deviceCharacteristics   = 0;
 	OSString			*	dataString				= 0;
     OSNumber			*	dataNumber				= 0;
-    uint64_t                minSegmentSize          = 0;
 
     if (super::attach(provider) == false)
         return false;
@@ -147,25 +146,6 @@ dprintf( "logicalBlockSize %llu\n", dataNumber->unsigned64BitValue());
      *  Example: setProperty( kIOMinimumSegmentAlignmentByteCountKey, 1, 1 );
      */
 
-    
-    /*
-     * Set Minimum transfer segment size if the block size is smaller than 4k
-     */
-/*
-    if( zv->zv_volblocksize > 4096 ) {
-        setProperty( kIOMinimumSegmentAlignmentByteCountKey, 1, 1 );
-
-//        minSegmentSize = zv->zv_volblocksize / ( ZVOL_BSIZE * 4 );
-        // Minimum is the default of 4
-//        if ( minSegmentSize > 4 ) {
-//            dataNumber =    OSNumber::withNumber(minSegmentSize,8*sizeof(minSegmentSize));
-//            setProperty( kIOMinimumSegmentAlignmentByteCountKey, minSegmentSize, sizeof(minSegmentSize) );
-//            dataNumber->release();
-//            dataNumber = 0;
-//        }
-    }
-  */
-    
     /*
      * Finally "Generic" type, set as a device property.
      * Tried setting this to the string "ZVOL" however the OS

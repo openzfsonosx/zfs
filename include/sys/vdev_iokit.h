@@ -33,31 +33,17 @@
 #include <sys/zio.h>
 
 #ifdef __cplusplus
-#include <IOKit/storage/IOBlockStorageDevice.h>
-#include <IOKit/storage/IOMedia.h>
-#include <IOKit/IOTypes.h>
-#include <IOKit/IOMemoryDescriptor.h>
-
-typedef struct vdev_iokit_context {
-	IOMemoryDescriptor * buffer;
-	IOStorageCompletion completion;
-	zio_t * zio;
-} vdev_iokit_context_t;
-
-#endif /* C++ */
-
-#ifdef __cplusplus
 extern "C" {
 #endif /* C++ */
 
 typedef struct vdev_iokit {
-	void * vd_iokit_hl;      /* IOMedia service handle */
-	void * vd_zfs_hl;        /* IOProvider zfs handle */
-	boolean_t vd_offline;    /* device has gone offline */
-	void * in_command_pool;  /* IOCommandPool for reads */
-	void * out_command_pool; /* IOCommandPool for writes */
-	void * command_set;      /* OSSet to hold all commands */
-//	uint64_t vd_ashift;      /* ashift alignment */
+	void * vd_iokit_hl;			/* IOMedia service handle */
+	void * vd_zfs_hl;			/* IOProvider zfs handle */
+#if 0
+	void * in_command_pool;		/* IOCommandPool for reads */
+	void * out_command_pool;	/* IOCommandPool for writes */
+	void * command_set;			/* OSSet to hold all commands */
+#endif
 } vdev_iokit_t;
 
 /*
@@ -72,8 +58,10 @@ extern void vdev_iokit_log_num(const char *, const uint64_t);
 int vdev_iokit_alloc(vdev_iokit_t **);
 void vdev_iokit_free(vdev_iokit_t **);
 
+#if 0 /* Disabled */
 extern int vdev_iokit_context_pool_alloc(vdev_iokit_t *);
 extern int vdev_iokit_context_pool_free(vdev_iokit_t *);
+#endif	/* Disabled */
 
 extern void * vdev_iokit_get_context(vdev_iokit_t *, zio_t *);
 extern void vdev_iokit_return_context(zio_t *, void *);
@@ -106,15 +94,14 @@ extern int vdev_iokit_handle_close(vdev_iokit_t *, int);
 
 extern int vdev_iokit_sync(vdev_iokit_t *, zio_t *);
 
-extern int vdev_iokit_get_size(vdev_iokit_t *, uint64_t *, uint64_t *, uint64_t *);
+extern int vdev_iokit_get_size(vdev_iokit_t *,
+				uint64_t *, uint64_t *, uint64_t *);
 
 extern void * vdev_iokit_get_service();
 
 extern int vdev_iokit_status(vdev_iokit_t *);
 
 extern int vdev_iokit_ioctl(vdev_iokit_t *, zio_t *);
-
-extern void vdev_iokit_ioctl_done(void *, const int);
 
 extern int vdev_iokit_strategy(vdev_iokit_t *, zio_t *);
 
@@ -124,21 +111,23 @@ extern int vdev_iokit_read_label(vdev_iokit_t *, nvlist_t **);
 
 extern int vdev_iokit_read_rootlabel(char *, char *, nvlist_t **);
 
-#if 0
-/* Extern for raidz dumps, not needed */
-extern int vdev_iokit_physio(vdev_iokit_t *, void *, size_t, uint64_t, int, boolean_t);
-#endif /* disabled */
+/*
+ * Extern for raidz dumps, not needed
+ *	extern int vdev_iokit_physio(vdev_iokit_t *,
+ *			void *, size_t, uint64_t, int, boolean_t);
+ */
 
 /*
- * Since vdev_iokit.c is not compiled into libzpool, this function should only be
- * defined in the zfs kernel module.
+ * Since vdev_iokit.c is not compiled into libzpool,
+ *	this function should only be defined in the zfs
+ *	kernel module.
  */
 #ifdef _KERNEL
 extern int vdev_iokit_physio(vdev_iokit_t *, void *, size_t, uint64_t, int);
 #endif
 
 #ifdef __cplusplus
-}   /* extern "C" */
+}	/* extern "C" */
 #endif /* C++ */
 
 #endif /* _KERNEL */

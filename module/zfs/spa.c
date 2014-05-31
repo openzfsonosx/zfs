@@ -1756,10 +1756,7 @@ spa_config_valid(spa_t *spa, nvlist_t *config)
 			vdev_reopen(tvd);
 		}
 	}
-    
-//#ifdef _KERNEL
-//    vdev_iokit_log_ptr("ZFS: spa_config_valid: Freeing mrvd", mrvd);
-//#endif
+
 	vdev_free(mrvd);
 	spa_config_exit(spa, SCL_ALL, FTAG);
 
@@ -2226,12 +2223,10 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	 * existing pool, the labels haven't yet been updated so we skip
 	 * validation for now.
 	 */
-printf("ZFS: spa_load_impl: vdev_validate(rvd, mosconfig) with (type) = (%p, %d) (%d)\n", rvd, mosconfig, type);
 	if (type != SPA_IMPORT_ASSEMBLE) {
 		spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
 		error = vdev_validate(rvd, mosconfig);
 		spa_config_exit(spa, SCL_ALL, FTAG);
-printf("ZFS: spa_load_impl: vdev_validate result: (error, rvd->vdev_state) = (%d, %llu)\n", error, rvd->vdev_state);
 		if (error != 0)
 			return (error);
 
@@ -2249,7 +2244,6 @@ printf("ZFS: spa_load_impl: vdev_validate result: (error, rvd->vdev_state) = (%d
 	 */
 	if (ub->ub_txg == 0) {
 		nvlist_free(label);
-printf("ZFS: spa_load_impl: vdev_uberblock_load result: (ub, ub->ub_txg) = (%p, %llu)\n", ub, ub->ub_txg);
 		return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, ENXIO));
 	}
 
@@ -2271,7 +2265,6 @@ printf("ZFS: spa_load_impl: vdev_uberblock_load result: (ub, ub->ub_txg) = (%p, 
 		if (label == NULL || nvlist_lookup_nvlist(label,
 		    ZPOOL_CONFIG_FEATURES_FOR_READ, &features) != 0) {
 			nvlist_free(label);
-printf("ZFS: spa_load_impl: ZPOOL_CONFIG_FEATURES_FOR_READ result: (label, features) = (%p, %p)\n", label, features);
 			return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA,
 			    ENXIO));
 		}
@@ -2328,8 +2321,6 @@ printf("ZFS: spa_load_impl: ZPOOL_CONFIG_FEATURES_FOR_READ result: (label, featu
 	if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_VDEV_CHILDREN,
 	    &children) != 0 && mosconfig && type != SPA_IMPORT_ASSEMBLE &&
 	    rvd->vdev_guid_sum != ub->ub_guid_sum) {
-printf("ZFS: spa_load_impl: VDEV_AUX_BAD_GUID_SUM: (children, mosconfig, type, rvd->vdev_guid_sum, ub->ub_guid_sum) = (%llu, %d, %d, %llu, %llu)\n",
-       children, mosconfig, type, rvd->vdev_guid_sum, ub->ub_guid_sum);
 		return (spa_vdev_err(rvd, VDEV_AUX_BAD_GUID_SUM, ENXIO));
     }
 
@@ -2654,7 +2645,6 @@ printf("ZFS: spa_load_impl: VDEV_AUX_BAD_GUID_SUM: (children, mosconfig, type, r
 			return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, EIO));
 
 		if (!spa_config_valid(spa, nvconfig)) {
-printf("ZFS: spa_load_impl: spa_config_valid result: fail (spa, nvconfig) = (%p, %p)\n", spa, nvconfig);
 			nvlist_free(nvconfig);
 			return (spa_vdev_err(rvd, VDEV_AUX_BAD_GUID_SUM,
 			    ENXIO));
@@ -2667,12 +2657,10 @@ printf("ZFS: spa_load_impl: spa_config_valid result: fail (spa, nvconfig) = (%p,
 		 * more toplevel vdevs are faulted.
 		 */
 		if (rvd->vdev_state <= VDEV_STATE_CANT_OPEN) {
-printf("ZFS: spa_load_impl: toplevel vdev fault: (rvd->vdev_state) = (%llu)\n", rvd->vdev_state);
 			return (SET_ERROR(ENXIO));
         }
 
 		if (spa_check_logs(spa)) {
-printf("ZFS: spa_load_impl: VDEV_AUX_BAD_LOG: (spa) = (%p)\n", spa);
 			*ereport = FM_EREPORT_ZFS_LOG_REPLAY;
 			return (spa_vdev_err(rvd, VDEV_AUX_BAD_LOG, ENXIO));
 		}
@@ -2695,7 +2683,6 @@ printf("ZFS: spa_load_impl: VDEV_AUX_BAD_LOG: (spa) = (%p)\n", spa);
 	 */
 	if (state != SPA_LOAD_TRYIMPORT) {
 		if ((error = spa_load_verify(spa))) {
-printf("ZFS: spa_load_impl: spa_load_verify result: (spa, error) = (%p, %d)\n", spa, error);
 			return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA,
 			    error));
         }
@@ -3350,10 +3337,7 @@ spa_validate_aux_devs(spa_t *spa, nvlist_t *nvroot, uint64_t crtxg, int mode,
 			goto out;
 
 		if (!vd->vdev_ops->vdev_op_leaf) {
-            
-//#ifdef _KERNEL
-//            vdev_iokit_log_ptr("ZFS: spa_validate_aux_devs: Freeing vd", vd);
-//#endif
+
 			vdev_free(vd);
 			error = SET_ERROR(EINVAL);
 			goto out;
@@ -3378,9 +3362,7 @@ spa_validate_aux_devs(spa_t *spa, nvlist_t *nvroot, uint64_t crtxg, int mode,
 			VERIFY(nvlist_add_uint64(dev[i], ZPOOL_CONFIG_GUID,
 			    vd->vdev_guid) == 0);
 		}
-//#ifdef _KERNEL
-//        vdev_iokit_log_ptr("ZFS: spa_validate_aux_devs: Freeing vd", vd);
-//#endif
+
 		vdev_free(vd);
 
 		if (error &&
@@ -4447,9 +4429,6 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 		 */
 		for (id = 0; id < rvd->vdev_children; id++) {
 			if (rvd->vdev_child[id]->vdev_ishole) {
-//#ifdef _KERNEL
-//                vdev_iokit_log_num("ZFS: vdev_free: rvd child is hole", id);
-//#endif
 				vdev_free(rvd->vdev_child[id]);
 				break;
 			}

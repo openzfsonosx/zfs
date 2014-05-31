@@ -22,7 +22,8 @@ extern "C" {
 
 OSDefineMetaClassAndStructors(net_lundman_vdev_io_context, IOCommand)
 
-inline bool net_lundman_vdev_io_context::init(OSDictionary *dict)
+inline bool
+net_lundman_vdev_io_context::init(OSDictionary *dict)
 {
 	zio = 0;
 
@@ -30,10 +31,11 @@ inline bool net_lundman_vdev_io_context::init(OSDictionary *dict)
 	completion.parameter = this;
 	completion.action = (IOStorageCompletionAction) &vdev_iokit_io_intr;
 
-	return true;
+	return (true);
 }
 
-inline void net_lundman_vdev_io_context::free()
+inline void
+net_lundman_vdev_io_context::free()
 {
 	zio = 0;
 
@@ -49,16 +51,17 @@ inline void net_lundman_vdev_io_context::free()
 	super::free();
 }
 
-inline bool net_lundman_vdev_io_context::initWithTransfer(zio_t * new_zio)
+inline bool
+	net_lundman_vdev_io_context::initWithTransfer(zio_t * new_zio)
 {
 	/* NULL new_zio should be valid for pre-allocation of resources */
 	if (!new_zio)
-		return false;
+		return (false);
 
 	/* Pre-initialize */
 	if (!init()) {
-		vdev_iokit_log("ZFS: initWithTransfer: failed");
-		return false;
+		vdev_iokit_log("initWithTransfer: failed");
+		return (false);
 	}
 
 	buffer = 0;
@@ -66,89 +69,100 @@ inline bool net_lundman_vdev_io_context::initWithTransfer(zio_t * new_zio)
 	if (new_zio)
 		configure(new_zio);
 
-	return true;
+	return (true);
 }
 
-inline bool net_lundman_vdev_io_context::initWithDirection(IODirection new_direction)
+inline bool
+net_lundman_vdev_io_context::initWithDirection(IODirection new_direction)
 {
 	/* Pre-initialize */
 	if (!init()) {
-		vdev_iokit_log("ZFS: initWithDirection: failed");
-		return false;
+		vdev_iokit_log("initWithDirection: failed");
+		return (false);
 	}
 
 	direction = new_direction;
 
 	buffer = 0;
 
-	return true;
+	return (true);
 }
 
-IOCommand* net_lundman_vdev_io_context::withTransfer(zio_t * new_zio)
+IOCommand *
+net_lundman_vdev_io_context::withTransfer(zio_t * new_zio)
 {
 	/* NULL new_zio is valid - pre-allocation of resources */
-	net_lundman_vdev_io_context * new_context = new net_lundman_vdev_io_context;
+	net_lundman_vdev_io_context * new_context =
+					new net_lundman_vdev_io_context;
 
 	if (!new_context)
-		return 0;
+		return (0);
 
 	if (! new_context->initWithTransfer(new_zio)) {
 		new_context->release();
 		new_context = 0;
-		return 0;
+		return (0);
 	}
 
-	return new_context;
+	return (new_context);
 }
 
-IOCommand* net_lundman_vdev_io_context::withDirection(IODirection new_direction) {
-	net_lundman_vdev_io_context * new_context = new net_lundman_vdev_io_context;
+IOCommand *
+net_lundman_vdev_io_context::withDirection(IODirection new_direction) {
+	net_lundman_vdev_io_context * new_context =
+					new net_lundman_vdev_io_context;
 
 	if (!new_context)
-		return 0;
+		return (0);
 
 	if (! new_context->initWithDirection(new_direction)) {
 		new_context->release();
 		new_context = 0;
-		return 0;
+		return (0);
 	}
 
-	return new_context;
+	return (new_context);
 }
 
-bool net_lundman_vdev_io_context::configure(zio_t * new_zio)
+bool
+net_lundman_vdev_io_context::configure(zio_t * new_zio)
 {
 	if (!new_zio)
-		return false;
+		return (false);
 
 	zio = new_zio;
 
 	/*
-	 * withAddress will re-use the buffer object
+	 * initWithAddress can re-use the buffer object
 	 */
 	if (buffer) {
 		buffer->release();
 	}
 
-	buffer = (IOBufferMemoryDescriptor*)IOBufferMemoryDescriptor::withAddress(zio->io_data, zio->io_size, direction);
+	buffer = (IOBufferMemoryDescriptor*)
+		IOBufferMemoryDescriptor::withAddress(
+			zio->io_data, zio->io_size, direction);
 
-	return true;
+	return (true);
 }
 
 /* Prepare buffer for I/O */
-bool net_lundman_vdev_io_context::prepare()
+bool
+net_lundman_vdev_io_context::prepare()
 {
 	return (buffer->prepare(kIODirectionNone) == kIOReturnSuccess);
 }
 
 /* Inform buffer that I/O is complete */
-bool net_lundman_vdev_io_context::complete()
+bool
+net_lundman_vdev_io_context::complete()
 {
 	return (buffer->complete(kIODirectionNone) == kIOReturnSuccess);
 }
 
 /* Reset memory buffer and zio */
-bool net_lundman_vdev_io_context::reset()
+bool
+net_lundman_vdev_io_context::reset()
 {
 	zio = 0;
 
@@ -158,7 +172,7 @@ bool net_lundman_vdev_io_context::reset()
 		buffer = 0;
 	}
 
-	return 0;
+	return (0);
 }
 
 #ifdef __cplusplus
