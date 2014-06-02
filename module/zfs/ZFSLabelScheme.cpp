@@ -108,6 +108,9 @@ void ZFSDriver_create_pool(char *poolname, uint64_t bytes,
             //newMedia->setName(poolname);
             newMedia->setProperty("ZFS_POOL_GUID", zfs_pool_guid, 32);
             newMedia->setProperty("ZFS_VDEV_GUID", zfs_vdev_guid, 32);
+			if (m_pool_proxy->attach(newMedia) == false)
+				return;
+
 			newMedia->registerService();
 		}
 		else
