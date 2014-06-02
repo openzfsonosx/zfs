@@ -45,9 +45,7 @@ public:
     virtual IOService*  probe(IOService* provider, SInt32* score);
 	virtual bool		start (IOService* provider);
 	virtual void		stop (IOService* provider);
-	virtual void		free (void);
 
-	virtual void		add_pool(char *);
     //virtual IOReturn        requestProbe(IOOptionBits options);
 
 //	virtual void		read (IOService* client, UInt64 byteStart, IOMemoryDescriptor* buffer, IOStorageAttributes* attributes, IOStorageCompletion* completion);

@@ -79,46 +79,6 @@ IOMedia*  ZFSLabelScheme::scan(SInt32* score)
 }
 
 
-extern "C" {
-
-void ZFSDriver_create_pool(char *poolname, uint64_t bytes,
-						   uint64_t block, boolean_t rdonly,
-						   uint64_t pool_guid, uint64_t dataset_guid)
-{
-    IOMedia*                newMedia;
-	uint32_t index = 0;
-
-	printf("Creating pool proxy for '%s' size %llu, guid %llx dataset_guid %llx\n",
-		   poolname, bytes, pool_guid, dataset_guid);
-	newMedia = new IOMedia;
-	if ( newMedia )
-	{
-		if ( newMedia->init(0,
-							bytes,
-							block,
-							0,
-							true,
-							!rdonly,
-							"zfs_pool_proxy"))
-		{
-            //Fix me: get pool guid and vdev guid from the label
-            uint32_t zfs_pool_guid = 16504178780918792917UL;
-            uint32_t zfs_vdev_guid = 7851727243200360649UL;
-
-            //newMedia->setName(poolname);
-            newMedia->setProperty("ZFS_POOL_GUID", zfs_pool_guid, 32);
-            newMedia->setProperty("ZFS_VDEV_GUID", zfs_vdev_guid, 32);
-			newMedia->registerService();
-		}
-		else
-		{
-			newMedia->release();
-			newMedia = NULL;
-		}
-	}
-}
-
-}
 
 
 IOMedia* ZFSLabelScheme::instantiateMediaObject ()

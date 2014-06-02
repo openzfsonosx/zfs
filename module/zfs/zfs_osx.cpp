@@ -446,6 +446,183 @@ IOByteCount net_lundman_zfs_zvol::performWrite (IOMemoryDescriptor* srcDesc,
 }
 
 
+#include "ZFSProxyMediaScheme.h"
+#include <IOKit/IOLib.h>
+#include <IOKit/IOBufferMemoryDescriptor.h>
+
+OSDictionary * net_lundman_zfs_zvol::IOBSDNameMatching( const char * name )
+{
+    OSDictionary *      dict;
+    const OSSymbol *    str = 0;
+
+    do {
+
+        dict = IOService::serviceMatching( gIOServiceKey );
+        if( !dict)
+            continue;
+        str = OSSymbol::withCString( name );
+        if( !str)
+            continue;
+        dict->setObject( kIOBSDNameKey, (OSObject *) str );
+        str->release();
+
+        return( dict );
+
+    } while( false );
+    if( dict)
+        dict->release();
+    if( str)
+        str->release();
+
+    return( 0 );
+}
+
+bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
+											   uint64_t bytes,
+											   uint64_t block,
+											   boolean_t rdonly,
+											   uint64_t pool_guid,
+											   uint64_t dataset_guid)
+{
+    net_lundman_zfs_zvol_device *nub = NULL;
+    bool            result = false;
+	zvol_state_t *zv;
+
+	printf("iokitCreateNewDevice: size %llu\n", bytes);
+
+
+	zv = (zvol_state_t *) kmem_zalloc(sizeof (zvol_state_t), KM_SLEEP);
+    if (!zv) return false;
+
+	zv->zv_volsize = bytes;
+	zv->zv_volblocksize = block;
+    zv->zv_znode.z_is_zvol = 1;
+	(void) strlcpy(zv->zv_name, poolname, MAXPATHLEN);
+	zv->zv_min_bs = DEV_BSHIFT;
+	zv->zv_minor = -1;
+
+    //IOLog("createBlock size %llu\n", zv->zv_volsize);
+
+    // Allocate a new IOBlockStorageDevice nub.
+    nub = new net_lundman_zfs_zvol_device;
+    if (nub == NULL)
+		return false;
+
+    // Call the custom init method (passing the overall disk size).
+    if (nub->init(zv) == false) {
+		nub->release();
+		return false;
+	}
+
+
+    // Attach the IOBlockStorageDevice to the this driver.
+    // This call increments the reference count of the nub object,
+    // so we can release our reference at function exit.
+    if (nub->attach(this) == false) {
+		nub->release();
+		return false;
+	}
+
+    // Allow the upper level drivers to match against the IOStorageDevice.
+    /*
+     * We here use Synchronous, so that all services are attached now, then
+     * we can go look for the BSDName. We need this to create the correct
+     * symlinks.
+     */
+
+    nub->registerService( kIOServiceSynchronous);
+
+    IOMedia *media = OSDynamicCast(IOMedia, nub->getClient()->getClient());
+    //media = OSDynamicCast(IOMedia, serv);
+    printf("media %p\n", media);
+    printf("media->getContent() %s\n", media->getContent());
+    printf("media->getContentHint() %s\n", media->getContentHint());
+    media->setProperty(kIOMediaContentKey, "zfs_pool_proxy");
+    printf("media->getContent() %s\n", media->getContent());
+    printf("media->getContentHint() %s\n", media->getContentHint());
+
+#if 0
+    IOMedia*                newMedia;
+    IOMediaAttributeMask    mediaAttributes = 0;
+    bool                    isMediaWritable = true;
+	uint32_t index = 0;
+    newMedia = new IOMedia;
+    if ( newMedia )
+    {
+        if ( newMedia->init(0,
+							bytes,
+							block,
+							0,
+							false, //it's a "partition" now
+							!rdonly,
+							"zfs_pool_proxy"))
+		{
+
+			printf("attaching new Media\n");
+
+            newMedia->setName(poolname);
+
+            // Set a location value (the partition number) for this partition
+            char location[12];
+            snprintf(location, sizeof(location), "%d", (int)0);
+            newMedia->setLocation(location);
+
+            // Set the "Partition ID" key for this partition
+            newMedia->setProperty(kIOMediaPartitionIDKey, index, 32);
+
+            newMedia->setProperty("ZFS_POOL_GUID", pool_guid, 64);
+            newMedia->setProperty("ZFS_DATASET_GUID", dataset_guid, 64);
+
+			newMedia->attach(this);
+			newMedia->start(this);
+
+		}
+		else
+		{
+			newMedia->release();
+			newMedia = NULL;
+		}
+    }
+#endif
+
+
+	printf("Stirring the pot...\n");
+	//requestProbe(0);
+	media->requestProbe(0);
+
+
+
+
+ bail:
+    // Unconditionally release the nub object.
+    if (nub != NULL)
+        nub->release();
+
+   return result;
+}
+
+
+bool net_lundman_zfs_zvol::destroyStorageDevice (char *poolname)
+{
+    net_lundman_zfs_zvol_device *nub = NULL;
+    bool            result = true;
+	zvol_state_t *zv = NULL;
+
+    if (zv && zv->zv_iokitdev) {
+
+      //IOLog("removeBlockdevice\n");
+
+      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
+
+      zv->zv_iokitdev = NULL;
+      zv = NULL;
+
+      nub->terminate();
+    }
+
+    return result;
+}
+
 /*
  * C language interfaces
  */
@@ -459,6 +636,20 @@ int zvolCreateNewDevice(zvol_state_t *zv)
 int zvolRemoveDevice(zvol_state_t *zv)
 {
     static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyBlockStorageDevice(zv);
+    return 0;
+}
+
+int ZFSDriver_create_pool(char *poolname, uint64_t bytes,
+						  uint64_t block, boolean_t rdonly,
+						  uint64_t pool_guid, uint64_t dataset_guid)
+{
+    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createStorageDevice(poolname, bytes, block, rdonly, pool_guid, dataset_guid);
+    return 0;
+}
+
+int ZFSDriver_remove_pool(char *poolname)
+{
+    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyStorageDevice(poolname);
     return 0;
 }
 
