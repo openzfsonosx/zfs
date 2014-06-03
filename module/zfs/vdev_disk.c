@@ -310,17 +310,6 @@ vdev_disk_io_start(zio_t *zio)
 	if (zio->io_flags & ZIO_FLAG_FAILFAST)
 		flags |= B_FAILFAST;
 
-	/*
-	 * Check the state of this device to see if it has been offlined or
-	 * is in an error state.  If the device was offlined or closed,
-	 * dvd will be NULL and buf_alloc below will fail
-	 */
-	/* error = vdev_is_dead(vd) ? ENXIO : vdev_error_inject(vd, zio); */
-	if (!vdev_readable(vd)) {
-		zio->io_error = SET_ERROR(ENXIO);
-		return (ZIO_PIPELINE_CONTINUE);
-	}
-
 	bp = buf_alloc(dvd->vd_devvp);
 
 	ASSERT(bp != NULL);
