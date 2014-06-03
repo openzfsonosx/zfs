@@ -104,8 +104,9 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize,
 	context = vfs_context_create((vfs_context_t)0);
 
 	/* Obtain an opened/referenced vnode for the device. */
-	error = vnode_open(vd->vdev_path, spa_mode(vd->vdev_spa),
-						0, 0, &devvp, context);
+	error = vnode_open(vd->vdev_path,
+	    spa_mode(vd->vdev_spa),
+	    0, 0, &devvp, context);
 	if (error) {
 		goto out;
 	}
@@ -140,9 +141,9 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize,
 	 * Determine the actual size of the device.
 	 */
 	if (VNOP_IOCTL(devvp, DKIOCGETBLOCKSIZE,
-			(caddr_t)&blksize, 0, context) != 0 ||
-			VNOP_IOCTL(devvp, DKIOCGETBLOCKCOUNT,
-			(caddr_t)&blkcnt, 0, context) != 0) {
+	    (caddr_t)&blksize, 0, context) != 0 ||
+	    VNOP_IOCTL(devvp, DKIOCGETBLOCKCOUNT,
+	    (caddr_t)&blkcnt, 0, context) != 0) {
 
 		error = EINVAL;
 		goto out;
@@ -151,7 +152,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize,
 	*max_psize = *psize;
 	dvd->vd_ashift = highbit(blksize)-1;
 	dprintf("vdev_disk: Device %p ashift set to %d\n",
-				devvp, dvd->vd_ashift);
+	    devvp, dvd->vd_ashift);
 	/*
 	 *  ### APPLE TODO ###
 	 * If we own the whole disk, try to enable disk write caching.
@@ -204,7 +205,7 @@ vdev_disk_close(vdev_t *vd)
 		context = vfs_context_create((vfs_context_t)0);
 
 		(void) vnode_close(dvd->vd_devvp, spa_mode(vd->vdev_spa),
-								context);
+		    context);
 		(void) vfs_context_rele(context);
 	}
 
@@ -267,7 +268,7 @@ vdev_disk_io_start(zio_t *zio)
 
 			context = vfs_context_create((vfs_context_t)0);
 			error = VNOP_IOCTL(dvd->vd_devvp, DKIOCSYNCHRONIZECACHE,
-							NULL, FWRITE, context);
+			    NULL, FWRITE, context);
 			(void) vfs_context_rele(context);
 
 			if (error == 0)
@@ -365,8 +366,8 @@ vdev_disk_io_done(zio_t *zio)
 	if (zio->io_error == EIO) {
 		state = DKIO_NONE;
 		if (ldi_ioctl(dvd->vd_lh, DKIOCSTATE, (intptr_t)&state,
-			FKIOCTL, kcred, NULL) == 0 &&
-			state != DKIO_INSERTED) {
+		    FKIOCTL, kcred, NULL) == 0 &&
+		    state != DKIO_INSERTED) {
 			vd->vdev_remove_wanted = B_TRUE;
 			spa_async_request(zio->io_spa, SPA_ASYNC_REMOVE);
 		}
