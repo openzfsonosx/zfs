@@ -430,10 +430,7 @@ zfs_vnop_lookup(struct vnop_lookup_args *ap)
 	 */
 	if ((error == ENOENT) && zfs_vnop_create_negatives) {
 		if ((ap->a_cnp->cn_nameiop == CREATE ||
-		    ap->a_cnp->cn_nameiop == RENAME ||
-		    (ap->a_cnp->cn_nameiop == DELETE &&
-		    (cnp->cn_flags & DOWHITEOUT) &&
-		    (cnp->cn_flags & ISWHITEOUT))) &&
+		    ap->a_cnp->cn_nameiop == RENAME) &&
 		    (cnp->cn_flags & ISLASTCN)) {
 			error = EJUSTRETURN;
 			goto exit;
