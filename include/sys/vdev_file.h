@@ -40,6 +40,9 @@ typedef struct vdev_file {
     uint32_t	vf_vid;
 } vdev_file_t;
 
+extern void vdev_file_init(void);
+extern void vdev_file_fini(void);
+
 #ifdef	__cplusplus
 }
 #endif

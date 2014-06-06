@@ -134,11 +134,11 @@ zio_init(void)
 	vmem_t *data_alloc_arena = NULL;
 
 	zio_cache = kmem_cache_create("zio_cache", sizeof (zio_t), 0,
-	    zio_cons, zio_dest, NULL, NULL, NULL, KMC_KMEM);
+	    zio_cons, zio_dest, NULL, NULL, NULL, 0);
 	zio_link_cache = kmem_cache_create("zio_link_cache",
-	    sizeof (zio_link_t), 0, NULL, NULL, NULL, NULL, NULL, KMC_KMEM);
+	    sizeof (zio_link_t), 0, NULL, NULL, NULL, NULL, NULL, 0);
 	zio_vdev_cache = kmem_cache_create("zio_vdev_cache", sizeof (vdev_io_t),
-	    PAGESIZE, NULL, NULL, NULL, NULL, NULL, KMC_VMEM);
+	    PAGESIZE, NULL, NULL, NULL, NULL, NULL, 0);
 
 	/*
 	 * For small buffers, we want a cache for each multiple of

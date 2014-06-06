@@ -92,13 +92,11 @@
 #ifdef __APPLE__
 #define MNTTAB "/etc/mtab"
 
-extern int file_vnode_withvid(int, struct vnode **, uint32_t *);
-extern int file_drop(int);
-
 static int mnttab_file_create(void);
 #endif
 
-list_t zfsdev_state_list;
+kmutex_t zfsdev_state_lock;
+zfsdev_state_t *zfsdev_state_list;
 
 extern void zfs_init(void);
 extern void zfs_fini(void);
@@ -5509,10 +5507,7 @@ zfsdev_get_state_impl(minor_t minor, enum zfsdev_state_type which)
 {
 	zfsdev_state_t *zs;
 
-	ASSERT(MUTEX_HELD(&spa_namespace_lock));
-
-	for (zs = list_head(&zfsdev_state_list); zs != NULL;
-	     zs = list_next(&zfsdev_state_list, zs)) {
+	for (zs = zfsdev_state_list; zs != NULL; zs = zs->zs_next) {
 		if (zs->zs_minor == minor) {
 			switch (which) {
 			case ZST_ONEXIT:  return (zs->zs_onexit);
@@ -5530,10 +5525,7 @@ zfsdev_minor_find(dev_t dev)
 {
 	zfsdev_state_t *zs;
 
-	ASSERT(MUTEX_HELD(&spa_namespace_lock));
-
-	for (zs = list_head(&zfsdev_state_list); zs != NULL;
-		 zs = list_next(&zfsdev_state_list, zs))
+	for (zs = zfsdev_state_list; zs != NULL; zs = zs->zs_next)
 		if (zs->zs_dev == dev)
 			return (zs);
 
@@ -5546,9 +5538,7 @@ zfsdev_get_state(minor_t minor, enum zfsdev_state_type which)
 {
 	void *ptr;
 
-	mutex_enter(&spa_namespace_lock);
 	ptr = zfsdev_get_state_impl(minor, which);
-	mutex_exit(&spa_namespace_lock);
 
 	return (ptr);
 }
@@ -5580,7 +5570,7 @@ zfsdev_minor_alloc(void)
 	static minor_t last_minor = 0;
 	minor_t m;
 
-	ASSERT(MUTEX_HELD(&spa_namespace_lock));
+	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 
 	for (m = last_minor + 1; m != last_minor; m++) {
 		if (m > ZFSDEV_MAX_MINOR)
@@ -5605,31 +5595,55 @@ zfsdev_minor_alloc(void)
 static int
 zfsdev_state_init(dev_t dev)
 {
-	zfsdev_state_t *zs;
+	zfsdev_state_t *zs, *zsprev = NULL;
 	minor_t minor;
+	boolean_t newzs = B_FALSE;
 
-	ASSERT(MUTEX_HELD(&spa_namespace_lock));
+	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 
 	minor = zfsdev_minor_alloc();
 	if (minor == 0)
 		return (SET_ERROR(ENXIO));
 
-	zs = kmem_zalloc(sizeof (zfsdev_state_t), KM_SLEEP);
+	for (zs = zfsdev_state_list; zs != NULL; zs = zs->zs_next) {
+		if (zs->zs_minor == -1)
+			break;
+		zsprev = zs;
+	}
+
+	if (!zs) {
+		zs = kmem_zalloc(sizeof (zfsdev_state_t), KM_SLEEP);
+		newzs = B_TRUE;
+	}
 
 #ifdef __APPLE__
 	zs->zs_dev = dev;
     dprintf("created zs %p\n", zs);
 #endif
-	zs->zs_minor = minor;
 
 #ifndef __APPLE__
+	zs->zs_file = filp;
 	filp->private_data = zs;
 #endif
 
 	zfs_onexit_init((zfs_onexit_t **)&zs->zs_onexit);
 	zfs_zevent_init((zfs_zevent_t **)&zs->zs_zevent);
 
-	list_insert_tail(&zfsdev_state_list, zs);
+
+	/*
+	 * In order to provide for lock-free concurrent read access
+	 * to the minor list in zfsdev_get_state_impl(), new entries
+	 * must be completely written before linking them into the
+	 * list whereas existing entries are already linked; the last
+	 * operation must be updating zs_minor (from -1 to the new
+	 * value).
+	 */
+	if (newzs) {
+		zs->zs_minor = minor;
+		zsprev->zs_next = zs;
+	} else {
+		zs->zs_minor = minor;
+	}
 
 	return (0);
 }
@@ -5639,7 +5653,7 @@ zfsdev_state_destroy(dev_t dev)
 {
 	zfsdev_state_t *zs = NULL;
 
-	ASSERT(MUTEX_HELD(&spa_namespace_lock));
+	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 	//ASSERT(filp->private_data != NULL);
 
 #ifdef __APPLE__
@@ -5651,10 +5665,11 @@ zfsdev_state_destroy(dev_t dev)
 
     dprintf("destroying zs %p\n", zs);
 
-	zfs_onexit_destroy(zs->zs_onexit);
-	zfs_zevent_destroy(zs->zs_zevent);
-	list_remove(&zfsdev_state_list, zs);
-	kmem_free(zs, sizeof (zfsdev_state_t));
+	if (zs->zs_minor != -1) {
+		zs->zs_minor = -1;
+		zfs_onexit_destroy(zs->zs_onexit);
+		zfs_zevent_destroy(zs->zs_zevent);
+	}
 
 	return (0);
 }
@@ -5674,9 +5689,9 @@ static int zfsdev_open(dev_t dev, int flags, int devtype,
         return 0;
     }
 
-	mutex_enter(&spa_namespace_lock);
+	mutex_enter(&zfsdev_state_lock);
 	error = zfsdev_state_init((dev_t)p);
-	mutex_exit(&spa_namespace_lock);
+	mutex_exit(&zfsdev_state_lock);
 
 	return (-error);
 }
@@ -5690,9 +5705,9 @@ static int zfsdev_release(dev_t dev, int flags, int devtype,
 
 	dprintf("zfsdev_release, flag %02X devtype %d, dev is %p, thread %p\n",
 			flags, devtype, p, current_thread());
-	mutex_enter(&spa_namespace_lock);
+	mutex_enter(&zfsdev_state_lock);
 	error = zfsdev_state_destroy((dev_t)p);
-	mutex_exit(&spa_namespace_lock);
+	mutex_exit(&zfsdev_state_lock);
 
 	return (-error);
 }
@@ -5805,9 +5820,13 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 		goto out;
 
 	/* legacy ioctls can modify zc_name */
-	len = strcspn(zc->zc_name, "/@#") + 1;
-	saved_poolname = kmem_alloc(len, KM_SLEEP);
-	(void) strlcpy(saved_poolname, zc->zc_name, len);
+	saved_poolname = spa_strdup(zc->zc_name);
+	if (saved_poolname == NULL) {
+		error = SET_ERROR(ENOMEM);
+		goto out;
+	} else {
+		saved_poolname[strcspn(saved_poolname, "/@#")] = '\0';
+	}
 
 	if (vec->zvec_func != NULL) {
 		nvlist_t *outnvl;
@@ -5879,7 +5898,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 		(void) tsd_set(zfs_allow_log_key, saved_poolname);
 	} else {
 		if (saved_poolname != NULL)
-			kmem_free(saved_poolname, len);
+			spa_strfree(saved_poolname);
 	}
 
 	kmem_free(zc, sizeof (zfs_cmd_t));
@@ -5939,7 +5958,6 @@ zfsdev_bioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pr
 #endif /* __OPPLE__ */
     return (zvol_ioctl(dev, cmd, data, 1, NULL, NULL));
 }
-
 
 static struct bdevsw zfs_bdevsw = {
     /* open */      zvol_open,
@@ -6059,6 +6077,10 @@ zfs_ioctl_osx_init(void)
     spa_init(FREAD | FWRITE);
     zvol_init(); // Removd in 10a286
 
+	mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
+	zfsdev_state_list = kmem_zalloc(sizeof (zfsdev_state_t), KM_SLEEP);
+	zfsdev_state_list->zs_minor = -1;
+
     zfs_ioctl_init();
 
     printf("ZFS: Loaded module v%s-%s%s, "
@@ -6071,11 +6093,23 @@ zfs_ioctl_osx_init(void)
 void
 zfs_ioctl_osx_fini(void)
 {
+	zfsdev_state_t *zs, *zsprev = NULL;
 
     if (spa_busy() || zvol_busy() || zio_injection_enabled) {
         printf("zfs_ioctl_fini: sorry we're busy\n");
         return;
     }
+
+	mutex_destroy(&zfsdev_state_lock);
+
+	for (zs = zfsdev_state_list; zs != NULL; zs = zs->zs_next) {
+		if (zsprev)
+			kmem_free(zsprev, sizeof (zfsdev_state_t));
+		zsprev = zs;
+	}
+	if (zsprev)
+		kmem_free(zsprev, sizeof (zfsdev_state_t));
+
 
     spa_fini();
 	tsd_destroy(&zfs_fsyncer_key);
