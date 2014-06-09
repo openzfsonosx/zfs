@@ -62,6 +62,17 @@ void ZFSProxyMediaScheme::ZFSDriver_create_pool2(char *poolname, uint64_t bytes,
 		   poolname, bytes, pool_guid, dataset_guid);
 
 
+	zv = kmem_zalloc(sizeof (zvol_state_t), KM_SLEEP);
+	zv->zv_volblocksize = DEV_BSHIFT;
+    zv->zv_znode.z_is_zvol = 1;
+	(void) strlcpy(zv->zv_name, poolname, MAXPATHLEN);
+	zv->zv_min_bs = DEV_BSHIFT;
+	zv->zv_minor = -1;
+	//zv->zv_objset = os;
+
+	// Create the /dev/diskX entry
+    zvolCreateNewDevice(zv);
+
     newMedia = new IOMedia;
     if ( newMedia )
     {
