@@ -1,6 +1,8 @@
 include $(top_srcdir)/config/Rules.am
 
-AUTOMAKE_OPTIONS = subdir-objects
+VPATH = \
+	$(top_srcdir)/lib/libspl \
+	$(top_srcdir)/lib/libspl/$(TARGET_ASM_DIR)
 
 AM_CFLAGS += $(DEBUG_STACKFLAGS) $(FRAME_LARGER_THAN)
 
@@ -16,26 +18,31 @@ AM_CCASFLAGS = \
 
 noinst_LTLIBRARIES = libspl.la
 
-libspl_la_SOURCES = \
-	crypto/edonr/edonr.c \
-	crypto/skein/skein.c \
-	crypto/skein/skein_iv.c \
-	crypto/skein/skein_block.c \
-	crypto/sha2/sha2.c \
-	fdatasync.c \
+USER_C = \
+	getexecname.c \
 	gethrtime.c \
 	gethrestime.c \
 	getmntany.c \
 	list.c \
 	mkdirp.c \
+	strlcat.c \
+	strlcpy.c \
 	strnlen.c \
 	timestamp.c \
-	uio.c \
-	zmount.c \
 	zone.c \
 	xdr.c \
-	asm-generic/atomic.S \
 	include/sys/list.h \
 	include/sys/list_impl.h
 
-#libspl_la_LDFLAGS = -lrt
+USER_ASM = atomic.S
+
+KERNEL_C =
+
+nodist_libspl_la_SOURCES = \
+	$(USER_C) \
+	$(USER_ASM) \
+	$(KERNEL_C)
+
+libspl_la_LIBADD = -lrt
+
+EXTRA_DIST = $(USER_C)

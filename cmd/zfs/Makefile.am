@@ -12,7 +12,6 @@ zfs_SOURCES = \
 	zfs_iter.c \
 	zfs_iter.h \
 	zfs_main.c \
-	zfs_osx.m  \
 	zfs_util.h
 
 zfs_LDADD = \

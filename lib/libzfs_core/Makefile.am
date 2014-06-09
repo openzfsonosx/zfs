@@ -6,8 +6,14 @@ DEFAULT_INCLUDES += \
 
 lib_LTLIBRARIES = libzfs_core.la
 
-libzfs_core_la_SOURCES = \
+USER_C = \
 	libzfs_core.c
+
+KERNEL_C =
+
+nodist_libzfs_core_la_SOURCES = \
+	$(USER_C) \
+	$(KERNEL_C)
 
 libzfs_core_la_LIBADD = \
 	$(top_builddir)/lib/libnvpair/libnvpair.la

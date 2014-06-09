@@ -10,7 +10,15 @@ DEFAULT_INCLUDES += \
 
 noinst_LTLIBRARIES = libefi.la
 
-libefi_la_LDFLAGS= -framework DiskArbitration -framework CoreServices
-
-libefi_la_SOURCES = \
+USER_C = \
 	rdwr_efi.c
+
+KERNEL_C =
+
+nodist_libefi_la_SOURCES = \
+	$(USER_C) \
+	$(KERNEL_C)
+
+libefi_la_LIBADD = $(LIBUUID) $(ZLIB)
+
+EXTRA_DIST = $(USER_C)

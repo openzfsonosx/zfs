@@ -10,7 +10,7 @@ DEFAULT_INCLUDES += \
 
 lib_LTLIBRARIES = libuutil.la
 
-libuutil_la_SOURCES = \
+USER_C = \
 	uu_alloc.c \
 	uu_avl.c \
 	uu_dprintf.c \
@@ -22,11 +22,17 @@ libuutil_la_SOURCES = \
 	uu_string.c \
 	uu_strtoint.c
 
+KERNEL_C =
+
+nodist_libuutil_la_SOURCES = \
+	$(USER_C) \
+	$(KERNEL_C)
+
 libuutil_la_LIBADD = \
 	$(top_builddir)/lib/libavl/libavl.la \
 	$(top_builddir)/lib/libspl/libspl.la \
 	$(top_builddir)/lib/libefi/libefi.la
 
-libuutil_la_LDFLAGS = -version-info 1:1:0
+libuutil_la_LDFLAGS = -pthread -version-info 1:1:0
 
 EXTRA_DIST = $(USER_C)

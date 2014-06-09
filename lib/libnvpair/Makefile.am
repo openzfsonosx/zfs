@@ -1,6 +1,8 @@
 include $(top_srcdir)/config/Rules.am
 
-AUTOMAKE_OPTIONS = subdir-objects
+VPATH = \
+	$(top_srcdir)/module/nvpair \
+	$(top_srcdir)/lib/libnvpair
 
 AM_CFLAGS += $(DEBUG_STACKFLAGS) $(FRAME_LARGER_THAN)
 
@@ -10,12 +12,18 @@ DEFAULT_INCLUDES += \
 
 lib_LTLIBRARIES = libnvpair.la
 
-libnvpair_la_SOURCES = \
+USER_C = \
 	libnvpair.c \
-	nvpair_alloc_system.c \
-	../../module/nvpair/nvpair_alloc_fixed.c \
-	../../module/nvpair/nvpair.c \
-	../../module/nvpair/fnvpair.c
+	nvpair_alloc_system.c
+
+KERNEL_C = \
+	nvpair_alloc_fixed.c \
+	nvpair.c \
+	fnvpair.c
+
+nodist_libnvpair_la_SOURCES = \
+	$(USER_C) \
+	$(KERNEL_C)
 
 libnvpair_la_LIBADD = \
         $(top_builddir)/lib/libuutil/libuutil.la

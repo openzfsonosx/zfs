@@ -8,12 +8,18 @@ DEFAULT_INCLUDES += \
 
 noinst_LTLIBRARIES = libshare.la
 
-libshare_la_SOURCES = \
+USER_C = \
 	libshare_impl.h \
 	libshare.c \
 	nfs.c \
 	nfs.h \
 	smb.c \
-	smb.h \
-	afp.c \
-	afp.h
+	smb.h
+
+KERNEL_C =
+
+nodist_libshare_la_SOURCES = \
+	$(USER_C)
+	$(KERNEL_C)
+
+EXTRA_DIST = $(USER_C)
