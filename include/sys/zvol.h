@@ -72,7 +72,7 @@ typedef struct zvol_state {
 
 enum zfs_soft_state_type {
 	ZSST_ZVOL,
-	ZSST_CTLDEV
+	ZSST_CTLDEV,
 };
 
 typedef struct zfs_soft_state {
@@ -127,6 +127,11 @@ extern uint64_t zvolIO_kit_read (void *iomem, uint64_t offset, char *address, ui
 extern uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t len);
 extern int      zvolRemoveDevice(zvol_state_t *zv);
 extern int      zvolCreateNewDevice(zvol_state_t *zv);
+extern int ZFSDriver_create_pool(char *poolname, uint64_t bytes,
+									uint64_t block, boolean_t rdonly,
+									uint64_t pool_guid,
+									uint64_t dataset_guid);
+extern int ZFSDriver_remove_pool(char *poolname);
 extern int      zvolSetVolsize(zvol_state_t *zv);
 
 extern int zvol_busy(void);

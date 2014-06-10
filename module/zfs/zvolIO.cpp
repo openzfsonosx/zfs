@@ -15,7 +15,7 @@
  */
 
 
-//#define dprintf IOLog
+#define dprintf IOLog
 
 // Define the superclass
 #define super IOBlockStorageDevice
@@ -34,6 +34,9 @@ bool net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
   zv = c_zv;
   // Is it safe/ok to keep a pointer reference like this?
   zv->zv_iokitdev = (void *) this;
+
+  super::setProperty(kIOMediaContentHintKey,
+			  zv->zv_minor == -1 ? "zfs_pool_proxy" : "AAA");
 
   return true;
 }
@@ -144,6 +147,8 @@ bool net_lundman_zfs_zvol_device::handleOpen( IOService *client,
    * "access" is always 0 here.
    */
 
+  if (zv->zv_minor == -1) return true;
+
   switch (access) {
 
   case kIOStorageAccessReader:
@@ -162,6 +167,7 @@ bool net_lundman_zfs_zvol_device::handleOpen( IOService *client,
     zv->zv_openflags = FWRITE;
   }
 
+
   if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL)) {
     dprintf("Open failed\n");
     return false;
@@ -179,6 +185,8 @@ void net_lundman_zfs_zvol_device::handleClose( IOService *client,
 {
   super::handleClose(client, options);
 
+  if (zv->zv_minor != -1) return;
+
   //IOLog("handleClose\n");
   zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
 
@@ -195,12 +203,6 @@ IOReturn net_lundman_zfs_zvol_device::doAsyncReadWrite(
     // Return errors for incoming I/O if we have been terminated.
     if (isInactive() == true) {
       dprintf("asyncReadWrite notActive fail\n");
-      return kIOReturnNotAttached;
-    }
-    // These variables are set in zvol_first_open(), which should have been
-    // called already.
-    if (!zv->zv_objset || !zv->zv_dbuf) {
-      dprintf("asyncReadWrite no objset nor dbuf\n");
       return kIOReturnNotAttached;
     }
 
@@ -230,23 +232,34 @@ IOReturn net_lundman_zfs_zvol_device::doAsyncReadWrite(
     // Perform the read or write operation through the transport driver.
     actualByteCount = (nblks*(ZVOL_BSIZE));
 
-    if (direction == kIODirectionIn) {
+	// Only do IO on ZVolumes - the others are fake
+	if (zv->zv_minor != -1) {
 
-      if (zvol_read_iokit(zv,
-                          (block*(ZVOL_BSIZE)),
-                          actualByteCount,
-                          (void *)buffer))
+		// These variables are set in zvol_first_open(), which should
+		// have been called already.
+		if (!zv->zv_objset || !zv->zv_dbuf) {
+			dprintf("asyncReadWrite no objset nor dbuf\n");
+			return kIOReturnNotAttached;
+		}
+
+		if (direction == kIODirectionIn) {
+
+			if (zvol_read_iokit(zv,
+								(block*(ZVOL_BSIZE)),
+								actualByteCount,
+								(void *)buffer))
+				actualByteCount = 0;
+
+		} else {
+
+			if (zvol_write_iokit(zv,
+								 (block*(ZVOL_BSIZE)),
+								 actualByteCount,
+								 (void *)buffer))
         actualByteCount = 0;
 
-    } else {
-
-      if (zvol_write_iokit(zv,
-                           (block*(ZVOL_BSIZE)),
-                            actualByteCount,
-                           (void *)buffer))
-        actualByteCount = 0;
-
-    }
+		}
+	}
 
     if (actualByteCount != nblks*(ZVOL_BSIZE))
       dprintf("Read/Write operation failed\n");

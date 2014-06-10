@@ -3,122 +3,9 @@
 #include <IOKit/IOBufferMemoryDescriptor.h>
 
 // Define the superclass
-#define super IOMedia
+#define super IOPartitionScheme
 
-OSDefineMetaClassAndStructors(ZFSProxyMediaScheme, IOMedia)
-
-
-/*
- * Can those with more C++ experience clean this up?
- */
-static void *global_c_interface = NULL;
-
-extern "C" {
-
-void ZFSDriver_create_pool(char *poolname, uint64_t bytes,
-						   uint64_t block, boolean_t rdonly,
-						   uint64_t pool_guid, uint64_t dataset_guid)
-{
-	static_cast<ZFSProxyMediaScheme*>(global_c_interface)->ZFSDriver_create_pool2(poolname, bytes, block, rdonly, pool_guid, dataset_guid);
-}
-
-}
-
-bool ZFSProxyMediaScheme::init (UInt64               base,
-                      UInt64               size,
-                      UInt64               preferredBlockSize,
-                      IOMediaAttributeMask attributes,
-                      bool                 isWhole,
-                      bool                 isWritable,
-                      const char *         contentHint,
-                      OSDictionary *       properties)
-{
-    bool res = super::init(base,size,preferredBlockSize,attributes,
-						   isWhole,isWritable,contentHint,properties);
-    IOLog("ZFS::init\n");
-    global_c_interface = (void *)this;
-    return res;
-}
-
-
-void ZFSProxyMediaScheme::free (void)
-{
-  IOLog("ZFS::free\n");
-	if (m_child_filesystems != NULL)
-		m_child_filesystems->release();
-    global_c_interface = NULL;
-    super::free();
-}
-
-
-void ZFSProxyMediaScheme::ZFSDriver_create_pool2(char *poolname, uint64_t bytes,
-						   uint64_t block, boolean_t rdonly,
-						   uint64_t pool_guid, uint64_t dataset_guid)
-{
-    IOMedia*                newMedia;
-	uint32_t index = 0;
-
-	printf("Creating pool proxy for '%s' size %llu, guid %llx dataset_guid %llx\n",
-		   poolname, bytes, pool_guid, dataset_guid);
-
-
-	zv = kmem_zalloc(sizeof (zvol_state_t), KM_SLEEP);
-	zv->zv_volblocksize = DEV_BSHIFT;
-    zv->zv_znode.z_is_zvol = 1;
-	(void) strlcpy(zv->zv_name, poolname, MAXPATHLEN);
-	zv->zv_min_bs = DEV_BSHIFT;
-	zv->zv_minor = -1;
-	//zv->zv_objset = os;
-
-	// Create the /dev/diskX entry
-    zvolCreateNewDevice(zv);
-
-    newMedia = new IOMedia;
-    if ( newMedia )
-    {
-
-
-
-        if ( newMedia->init(0,
-							bytes,
-							block,
-							0,
-							false, //it's a "partition" now
-							!rdonly,
-							"zfs_pool_proxy"))
-		{
-            newMedia->setName(poolname);
-
-            // Set a location value (the partition number) for this partition
-            char location[12];
-            snprintf(location, sizeof(location), "%d", (int)0);
-            newMedia->setLocation(location);
-
-            // Set the "Partition ID" key for this partition
-            newMedia->setProperty(kIOMediaPartitionIDKey, index, 32);
-
-            newMedia->setProperty("ZFS_POOL_GUID", pool_guid, 64);
-            newMedia->setProperty("ZFS_DATASET_GUID", dataset_guid, 64);
-
-			newMedia->attach(this);
-			newMedia->start(this);
-
-
-		}
-		else
-		{
-			newMedia->release();
-			newMedia = NULL;
-		}
-    }
-}
-
-
-
-void ZFSProxyMediaScheme::add_pool(char *pool)
-{
-	printf("add_pool '%s'\n", pool);
-}
+OSDefineMetaClassAndStructors(ZFSProxyMediaScheme, IOPartitionScheme)
 
 
 IOService* ZFSProxyMediaScheme::probe(IOService* provider, SInt32* score)
@@ -129,7 +16,7 @@ IOService* ZFSProxyMediaScheme::probe(IOService* provider, SInt32* score)
         return 0;
 
     //find first level of child filesystems.
-    //m_child_filesystems = scan(score);
+    m_child_filesystems = scan(score);
 
     //If this filesystem has no children, then return NULL
     printf("probe: this %p : m_child_filesystems %p\n", this, m_child_filesystems);
@@ -199,11 +86,9 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
 {
     //IOBufferMemoryDescriptor*       buffer                  = NULL;
     //SamplePartitionTable*           sampleTable;
-    IOMedia*    media ;
+	IOMedia *media                   = getProvider();
 
     UInt64 child_filesystem_count;
-
-    media = OSDynamicCast(ZFSProxyMediaScheme, getProvider());
 
     printf("ZFSProxyMediaScheme::scan : provider Content is %s\n", media->getContent());
     printf("ZFSProxyMediaScheme::scan : provider ContentHint is %s\n", media->getContentHint());
@@ -292,9 +177,7 @@ bail:
 
 IOMedia* ZFSProxyMediaScheme::instantiateMediaObject(ZFSFilesystemEntry* fsEntry, unsigned index)
 {
-    IOMedia*        media;
-
-    media = OSDynamicCast(ZFSProxyMediaScheme, getProvider());
+	IOMedia*        media          = getProvider();
 
     //We can get fancier than passthrough if we want
     UInt64                  partitionBase   = 0;

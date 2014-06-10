@@ -27,6 +27,13 @@ class net_lundman_zfs_zvol : public IOService
                                     UInt64 byteOffset,
                                     UInt64 byteCount);
 
+  virtual bool createStorageDevice(char *poolname, uint64_t bytes,
+									uint64_t block, boolean_t rdonly,
+									uint64_t pool_guid,
+									uint64_t dataset_guid);
+  virtual bool  destroyStorageDevice(char *poolname);
+
+  OSDictionary *IOBSDNameMatching( const char * name );
 };
 
 

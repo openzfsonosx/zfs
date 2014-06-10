@@ -23,7 +23,7 @@ struct ZFSFilesystemEntry {
 };
 
 
-class ZFSProxyMediaScheme : public IOMedia
+class ZFSProxyMediaScheme : public IOPartitionScheme
 {
 	OSDeclareDefaultStructors(ZFSProxyMediaScheme)
 
@@ -42,26 +42,10 @@ protected:
 //	static void			readCompleted (void* target, void* parameter, IOReturn status, UInt64 actualByteCount);
 
 public:
-bool init (UInt64               base,
-                      UInt64               size,
-                      UInt64               preferredBlockSize,
-                      IOMediaAttributeMask attributes,
-                      bool                 isWhole,
-                      bool                 isWritable,
-                      const char *         contentHint = 0,
-		   OSDictionary *       properties = 0);
-	virtual void        free  (void);
     virtual IOService*  probe(IOService* provider, SInt32* score);
 	virtual bool		start (IOService* provider);
 	virtual void		stop (IOService* provider);
 
-	virtual void		add_pool(char *);
-	virtual void        ZFSDriver_create_pool2(char *poolname,
-											   uint64_t bytes,
-											   uint64_t block,
-											   boolean_t rdonly,
-											   uint64_t pool_guid,
-											   uint64_t dataset_guid);
     //virtual IOReturn        requestProbe(IOOptionBits options);
 
 //	virtual void		read (IOService* client, UInt64 byteStart, IOMemoryDescriptor* buffer, IOStorageAttributes* attributes, IOStorageCompletion* completion);
