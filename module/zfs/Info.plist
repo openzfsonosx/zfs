@@ -74,7 +74,7 @@
 			<key>IOPropertyMatch</key>
 			<dict>
 				<key>Content Hint</key>
-				<string>6A898CC3-1DD2-11B2-99A6-080020736631</string>
+				<string>fooproxy</string>
 			</dict>
 		</dict>
 
@@ -87,7 +87,7 @@
 			<key>IOMatchCategory</key>
 			<string>IOStorage</string>
 			<key>IOProbeScore</key>
-			<integer>500</integer>
+			<integer>400</integer>
 			<key>IOProviderClass</key>
 			<string>IOMedia</string>
 			<key>IOPropertyMatch</key>

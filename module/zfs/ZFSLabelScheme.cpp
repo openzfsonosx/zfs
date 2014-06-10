@@ -9,6 +9,8 @@ OSDefineMetaClassAndStructors(ZFSLabelScheme, IOFilterScheme)
 
 IOService* ZFSLabelScheme::probe(IOService* provider, SInt32* score)
 {
+	IOLog("probe\n");
+
     if (super::probe(provider, score) == 0)
         return 0;
     /*

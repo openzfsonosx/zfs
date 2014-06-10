@@ -450,33 +450,6 @@ IOByteCount net_lundman_zfs_zvol::performWrite (IOMemoryDescriptor* srcDesc,
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
 
-OSDictionary * net_lundman_zfs_zvol::IOBSDNameMatching( const char * name )
-{
-    OSDictionary *      dict;
-    const OSSymbol *    str = 0;
-
-    do {
-
-        dict = IOService::serviceMatching( gIOServiceKey );
-        if( !dict)
-            continue;
-        str = OSSymbol::withCString( name );
-        if( !str)
-            continue;
-        dict->setObject( kIOBSDNameKey, (OSObject *) str );
-        str->release();
-
-        return( dict );
-
-    } while( false );
-    if( dict)
-        dict->release();
-    if( str)
-        str->release();
-
-    return( 0 );
-}
-
 bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
 											   uint64_t bytes,
 											   uint64_t block,
@@ -537,7 +510,9 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
     printf("media %p\n", media);
     printf("media->getContent() %s\n", media->getContent());
     printf("media->getContentHint() %s\n", media->getContentHint());
-    media->setProperty(kIOMediaContentKey, "zfs_pool_proxy");
+    media->setProperty(kIOMediaContentKey, "fooproxy");
+    //media->setProperty(kIOMediaContentKey, "zfs_pool_proxy");
+    media->setProperty(kIOMediaContentHintKey, "fooproxy");
     printf("media->getContent() %s\n", media->getContent());
     printf("media->getContentHint() %s\n", media->getContentHint());
 
@@ -588,9 +563,7 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
 
 	printf("Stirring the pot...\n");
 	//requestProbe(0);
-	media->requestProbe(0);
-
-
+	media->registerService();
 
 
  bail:
