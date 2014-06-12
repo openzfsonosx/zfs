@@ -660,12 +660,13 @@ char *net_lundman_zfs_zvol::findDataset(char *dev)
 					strlcpy(found, (char *)osstr->getCStringNoCopy(),
 						MAXPATHLEN);
 					printf("Got string '%s'\n", dev);
+					return found;
 				} // OSString
 			} // OSObject
         } // got service
     } // matchDict
 
-	return found;
+	return NULL;
 }
 
 

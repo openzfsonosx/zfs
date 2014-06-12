@@ -1476,9 +1476,30 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 #else
 	struct timeval tv;
 #endif
+	int dev_mapping = 0;
+	char *devname = NULL;
 
 	ASSERT(vfsp);
 	ASSERT(osname);
+
+#ifdef __APPLE__
+	/*
+	 * If the device given is /dev/disk* notation, we need to lookup
+	 * the actual DATASET name from the fake disk entries we create for
+	 * iokit.
+	 */
+	if (osname[0] == '/') {
+        devname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+		strlcpy(devname, osname, MAXPATHLEN);
+		if (ZFSDriver_FindDataset(osname))
+			dev_mapping = 1;
+	}
+
+	printf("zfs_domount map '%s'\n", osname);
+#endif
+
+
+
 
 	error = zfsvfs_create(osname, &zfsvfs);
 	if (error)
@@ -1592,8 +1613,9 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 		error = zfsvfs_setup(zfsvfs, B_TRUE);
 	}
 
+	vfs_mountedfrom(vfsp, dev_mapping ? devname : osname);
+	if (devname) kmem_free(devname, MAXPATHLEN);
 
-	vfs_mountedfrom(vfsp, osname);
 #ifdef __APPLE__
 
 #else
@@ -2048,19 +2070,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	    mnt_args.optptr,
 	    mnt_args.optlen,
 	    options);
-
-#ifdef __APPLE__
-	/*
-	 * If the device given is /dev/disk* notation, we need to lookup
-	 * the actual DATASET name from the fake disk entries we create for
-	 * iokit.
-	 */
-	if (mnt_args.fspec[0] == '/') {
-		ZFSDriver_FindDataset(osname);
-	}
-
-	printf("vfs_mount '%s' on to '%s'\n", mnt_args.fspec, osname);
-#endif
 
 	if (mflag & MS_RDONLY)
 		flags |= MNT_RDONLY;
