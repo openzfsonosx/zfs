@@ -598,6 +598,77 @@ bool net_lundman_zfs_zvol::destroyStorageDevice (char *poolname)
     return result;
 }
 
+OSDictionary *net_lundman_zfs_zvol::IOBSDNameMatching(const char *name)
+{
+    OSDictionary *      dict;
+    const OSSymbol *    str = 0;
+
+    do {
+
+        dict = IOService::serviceMatching( gIOServiceKey );
+        if( !dict)
+            continue;
+        str = OSSymbol::withCString( name );
+        if( !str)
+            continue;
+        dict->setObject( kIOBSDNameKey, (OSObject *) str );
+        str->release();
+
+        return( dict );
+
+    } while( false );
+    if( dict)
+        dict->release();
+    if( str)
+        str->release();
+
+    return( 0 );
+}
+/*
+ * Given 'dev' like "/dev/disk2s3", lookup the fake IOKit disks, to
+ * find matching disk, and its DATASET name "BOOM/hello/world" and
+ * return.
+ * If no match, return NULL
+ */
+char *net_lundman_zfs_zvol::findDataset(char *dev)
+{
+	printf("findDataset('%s')\n", dev);
+	OSDictionary *matchingDict;
+    io_service_t            service;
+	char *found = dev;
+
+	if (!strncasecmp("/dev/", dev, 5))
+		dev = &dev[5];
+
+    matchingDict = IOBSDNameMatching(dev);
+    if (NULL == matchingDict) {
+        printf("IOBSDNameMatching returned a NULL dictionary.\n");
+    } else {
+		IOService *service = NULL;
+
+		service = IOService::waitForMatchingService(matchingDict, 5);
+
+        if (IO_OBJECT_NULL == service) {
+            printf("IOServiceGetMatchingService returned IO_OBJECT_NULL.\n");
+        } else {
+			OSObject *dataset;
+			dataset = service->getProperty("DATASET");
+			if (dataset) {
+				printf("Got property %p\n", dataset);
+				OSString*osstr = OSDynamicCast(OSString, dataset);
+				if (osstr) {
+					strlcpy(found, (char *)osstr->getCStringNoCopy(),
+						MAXPATHLEN);
+					printf("Got string '%s'\n", dev);
+				} // OSString
+			} // OSObject
+        } // got service
+    } // matchDict
+
+	return found;
+}
+
+
 /*
  * C language interfaces
  */
@@ -632,6 +703,11 @@ int zvolSetVolsize(zvol_state_t *zv)
 {
     static_cast<net_lundman_zfs_zvol*>(global_c_interface)->updateVolSize(zv);
     return 0;
+}
+
+char *ZFSDriver_FindDataset(char *dev)
+{
+    return static_cast<net_lundman_zfs_zvol*>(global_c_interface)->findDataset(dev);
 }
 
 

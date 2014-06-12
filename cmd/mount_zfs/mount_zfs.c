@@ -32,10 +32,9 @@
 #include <libzfs.h>
 #include <locale.h>
 
-
-// THIS FILE IS VERY LINUX, MAKE OSX VERSION
-
-#if 0
+#include <sys/zfs_mount.h>
+#include <sys/mntent.h>
+#include <mntent.h>
 
 libzfs_handle_t *g_zfs;
 
@@ -46,6 +45,7 @@ typedef struct option_map {
 } option_map_t;
 
 static const option_map_t option_map[] = {
+#if 0
 	/* Canonicalized filesystem independent options from mount(8) */
 	{ MNTOPT_NOAUTO,	MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_DEFAULTS,	MS_COMMENT,	ZS_COMMENT	},
@@ -105,6 +105,7 @@ static const option_map_t option_map[] = {
 	{ MNTOPT_XATTR,		MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_NOXATTR,	MS_COMMENT,	ZS_COMMENT	},
 	{ MNTOPT_ZFSUTIL,	MS_COMMENT,	ZS_ZFSUTIL	},
+#endif
 	{ NULL,			0,		0		} };
 
 /*
@@ -224,7 +225,7 @@ static char *
 parse_dataset(char *dataset)
 {
 	char cwd[PATH_MAX];
-	struct stat64 statbuf;
+	struct stat statbuf;
 	int error;
 	int len;
 
@@ -234,7 +235,7 @@ parse_dataset(char *dataset)
 	 * extract the pool name stored in the label.  Given the pool
 	 * name we can mount the root dataset.
 	 */
-	error = stat64(dataset, &statbuf);
+	error = stat(dataset, &statbuf);
 	if (error == 0) {
 		nvlist_t *config;
 		char *name;
@@ -290,6 +291,10 @@ mtab_is_writeable(void)
 	struct stat st;
 	int error, fd;
 
+#ifdef __APPLE__
+	return 0;
+#endif
+
 	error = lstat(MNTTAB, &st);
 	if (error || S_ISLNK(st.st_mode))
 		return (0);
@@ -305,6 +310,9 @@ mtab_is_writeable(void)
 static int
 mtab_update(char *dataset, char *mntpoint, char *type, char *mntopts)
 {
+#ifdef __APPLE__
+	return (MOUNT_SUCCESS);
+#else
 	struct mntent mnt;
 	FILE *fp;
 	int error;
@@ -337,18 +345,16 @@ mtab_update(char *dataset, char *mntpoint, char *type, char *mntopts)
 	(void) endmntent(fp);
 
 	return (MOUNT_SUCCESS);
+#endif
 }
 
-
-#endif
 
 
 int
 main(int argc, char **argv)
 {
-#if 0
 	zfs_handle_t *zhp;
-	char prop[ZFS_MAXPROPLEN];
+	char prop[ZFS_MAXPROPLEN] = { '\0' };
 	char mntopts[MNT_LINE_MAX] = { '\0' };
 	char badopt[MNT_LINE_MAX] = { '\0' };
 	char mtabopt[MNT_LINE_MAX] = { '\0' };
@@ -357,14 +363,11 @@ main(int argc, char **argv)
 	unsigned long mntflags = 0, zfsflags = 0, remount = 0;
 	int sloppy = 0, fake = 0, verbose = 0, nomtab = 0, zfsutil = 0;
 	int error, c;
-#endif
-
-    return -1;
-
-#if 0
 
 	(void) setlocale(LC_ALL, "");
+#ifndef __APPLE__
 	(void) textdomain(TEXT_DOMAIN);
+#endif
 
 	opterr = 0;
 
@@ -471,8 +474,7 @@ main(int argc, char **argv)
 	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT)) == NULL) {
 		(void) fprintf(stderr, gettext("filesystem '%s' cannot be "
 		    "mounted, unable to open the dataset\n"), dataset);
-		libzfs_fini(g_zfs);
-		return (MOUNT_USAGE);
+		(void) fprintf(stderr, gettext("Passing to kernel, perhaps it knows what to do\n"));
 	}
 
 	/*
@@ -483,6 +485,7 @@ main(int argc, char **argv)
 	 * this is needed because the 'context' property overrides others
 	 * if it is not the default, set the 'context' property
 	 */
+#ifndef __APPLE__
 	if (zfs_prop_get(zhp, ZFS_PROP_SELINUX_CONTEXT, prop, sizeof (prop),
 	    NULL, NULL, 0, B_FALSE) == 0) {
 		if (strcmp(prop, "none") == 0) {
@@ -498,15 +501,19 @@ main(int argc, char **argv)
 			    prop, mntopts, mtabopt);
 		}
 	}
+#endif
 
-	/* treat all snapshots as legacy mount points */
-	if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT)
-		(void) strlcpy(prop, ZFS_MOUNTPOINT_LEGACY, ZFS_MAXPROPLEN);
-	else
-		(void) zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT, prop,
-		    sizeof (prop), NULL, NULL, 0, B_FALSE);
+	if (zhp) {
 
-	zfs_close(zhp);
+		/* treat all snapshots as legacy mount points */
+		if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT)
+			(void) strlcpy(prop, ZFS_MOUNTPOINT_LEGACY, ZFS_MAXPROPLEN);
+		else
+			(void) zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT, prop,
+								sizeof (prop), NULL, NULL, 0, B_FALSE);
+
+		zfs_close(zhp);
+	}
 	libzfs_fini(g_zfs);
 
 	/*
@@ -520,7 +527,7 @@ main(int argc, char **argv)
 	 * using zfs as your root file system both rc.sysinit/umountroot and
 	 * systemd depend on 'mount -o remount <mountpoint>' to work.
 	 */
-	if (zfsutil && (strcmp(prop, ZFS_MOUNTPOINT_LEGACY) == 0)) {
+	if (zfsutil && prop[0] && (strcmp(prop, ZFS_MOUNTPOINT_LEGACY) == 0)) {
 		(void) fprintf(stderr, gettext(
 		    "filesystem '%s' cannot be mounted using 'zfs mount'.\n"
 		    "Use 'zfs set mountpoint=%s' or 'mount -t zfs %s %s'.\n"
@@ -529,7 +536,7 @@ main(int argc, char **argv)
 		return (MOUNT_USAGE);
 	}
 
-	if (!zfsutil && !(remount || fake) &&
+	if (!zfsutil && !(remount || fake) && prop[0] &&
 	    strcmp(prop, ZFS_MOUNTPOINT_LEGACY)) {
 		(void) fprintf(stderr, gettext(
 		    "filesystem '%s' cannot be mounted using 'mount'.\n"
@@ -540,8 +547,8 @@ main(int argc, char **argv)
 	}
 
 	if (!fake) {
-		error = mount(dataset, mntpoint, MNTTYPE_ZFS,
-		    mntflags, mntopts);
+		error = zmount(dataset, mntpoint, MS_OPTIONSTR | mntflags,
+					   MNTTYPE_ZFS, NULL, 0, mntopts, sizeof (mntopts));
 		if (error) {
 			switch (errno) {
 			case ENOENT:
@@ -568,5 +575,4 @@ main(int argc, char **argv)
 	}
 
 	return (MOUNT_SUCCESS);
-#endif
 }
