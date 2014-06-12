@@ -59,25 +59,6 @@
 			<string>IOKit</string>
 		</dict>
 
-		<key>ZFSLabelScheme</key>
-		<dict>
-			<key>CFBundleIdentifier</key>
-			<string>net.lundman.zfs</string>
-			<key>IOClass</key>
-			<string>ZFSLabelScheme</string>
-			<key>IOMatchCategory</key>
-			<string>IOStorage</string>
-			<key>IOProbeScore</key>
-			<integer>500</integer>
-			<key>IOProviderClass</key>
-			<string>IOMedia</string>
-			<key>IOPropertyMatch</key>
-			<dict>
-				<key>Content Hint</key>
-				<string>fooproxy</string>
-			</dict>
-		</dict>
-
 		<key>ZFSProxyMediaScheme</key>
 		<dict>
 			<key>CFBundleIdentifier</key>

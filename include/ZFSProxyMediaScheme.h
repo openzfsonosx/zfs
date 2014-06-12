@@ -37,7 +37,6 @@ protected:
 //	};
 
     virtual OSSet*      scan(SInt32 * score);
-    virtual IOMedia*    instantiateMediaObject(ZFSFilesystemEntry* sampleEntry, unsigned index);
     //bool                            isPartitionCorrupt (SamplePartitionEntry* sampleEntry)          { return false; }
 //	static void			readCompleted (void* target, void* parameter, IOReturn status, UInt64 actualByteCount);
 
@@ -45,6 +44,7 @@ public:
     virtual IOService*  probe(IOService* provider, SInt32* score);
 	virtual bool		start (IOService* provider);
 	virtual void		stop (IOService* provider);
+    virtual IOMedia*    instantiateMediaObject(ZFSFilesystemEntry* sampleEntry, unsigned index);
 
     //virtual IOReturn        requestProbe(IOOptionBits options);
 

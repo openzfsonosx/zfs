@@ -82,6 +82,75 @@ void ZFSProxyMediaScheme::stop(IOService* provider)
 }
 
 
+struct holder_s
+{
+	char *poolname;
+	unsigned int index;
+	OSSet*child_filesystems;
+	ZFSProxyMediaScheme *object;
+};
+
+int
+spa_osx_create_devs(const char *dsname, void *arg)
+{
+	struct holder_s *holder = (struct holder_s *)arg;
+	int startnamelen;
+	int dsnamelen;
+	const char *part;
+
+	// Skip if impossible happens, or "ourself".
+	if (!arg || !dsname) return 0;
+
+	startnamelen = strlen(holder->poolname);
+	dsnamelen = strlen(dsname);
+
+	// Skip outselves
+	if (dsnamelen <= startnamelen) {
+		printf("  skipping '%s' ('%s')\n", dsname, holder->poolname);
+		return 0;
+	}
+
+	// If it has a trailing slash, its a child, skip that too.
+	// startname = "BOOM"
+	// dsname    = "BOOM/hello" then check from "h" to see if there
+	// are "/" following.
+	part = &dsname[startnamelen];
+	while(*part == '/') part++; // Skip leading slash
+
+	if (strchr(part, '/')) {
+		printf("  skipping '%s' due to slash (from '%s')\n", dsname, part);
+		return 0;
+	}
+
+	printf("Creating '%s' (remainer '%s')\n", dsname, part);
+	ZFSFilesystemEntry foo;
+	snprintf(foo.filesystemName, sizeof(foo.filesystemName), "foo %d",
+			 (int) holder->index);
+	IOMedia *newMedia;
+	newMedia = static_cast<ZFSProxyMediaScheme*>(holder->object)->instantiateMediaObject(&foo, 1+holder->index);
+	//newMedia = (holder->object)->instantiateMediaObject(&foo, 1+holder->index);
+
+
+	if ( newMedia )
+	{
+		printf("Content is %s\n", newMedia->getContent());
+		printf("ContentHint is %s\n", newMedia->getContentHint());
+		printf("Name is %s\n", newMedia->getName());
+
+		newMedia->setProperty("DATASET", dsname);
+		holder->child_filesystems->setObject(newMedia);
+		newMedia->release();
+	}
+
+	holder->index++;
+
+	return 0;
+}
+
+extern "C" {
+#include <sys/dmu.h>
+}
+
 OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
 {
     //IOBufferMemoryDescriptor*       buffer                  = NULL;
@@ -96,7 +165,6 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
 
     if (strcmp(media->getContentHint(), "zfs_pool_proxy") == 0) {
         printf("ZFSProxyMediaScheme::scan : it's a zfs_pool_proxy\n");
-        child_filesystem_count = 2;
     } else if (strcmp(media->getContentHint(), "zfs_filesystem_proxy") == 0){
         printf("ZFSProxyMediaScheme::scan : it's a zfs_filesystem_proxy\n");
         child_filesystem_count = 0;
@@ -104,72 +172,45 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
         printf("uh oh, unrecognized provider");
     }
 
-//    UInt64                                          mediaBlockSize  = media->getPreferredBlockSize();
-//    bool                                            mediaIsOpen             = false;
-    OSSet*                                          child_filesystems       = NULL;
-//    IOReturn                                        status;
 
-    // Determine whether this media is formatted.
-    //if (media->isFormatted() == false)
-    //    goto bail;
 
-    // Allocate a sector-sized buffer to hold data read from disk
-    //buffer = IOBufferMemoryDescriptor::withCapacity(mediaBlockSize, kIODirectionIn);
-    //if (buffer == NULL)
-    //    goto bail;
+	struct holder_s holder = { 0 };
 
-    // Allocate a set to hold the media objects representing partitions
-    child_filesystems = OSSet::withCapacity(8);
-    if (child_filesystems == NULL)
-        goto bail;
 
-    // Open the media with read access
-//    mediaIsOpen = open(this, 0, kIOStorageAccessReader);
-//    if (mediaIsOpen == false)
-//        goto bail;
+	//holder.poolname = media->getName();
+	OSObject *sobj;
+	sobj = media->getProperty("DATASET");
+	if (sobj) {
+		OSString*osstr = OSDynamicCast(OSString, sobj);
+		if (osstr) {
 
-    // Read the first sector of the disk
-//    status = media->read(this, 0, buffer);
-//    if (status != kIOReturnSuccess)
-//        goto bail;
-//    sampleTable = (SamplePartitionTable*)buffer->getBytesNoCopy();
+			holder.poolname = (char *)osstr->getCStringNoCopy();
+			holder.index = 0;
+			holder.child_filesystems = OSSet::withCapacity(1);
+			if (holder.child_filesystems == NULL)
+				goto bail;
 
-    // Determine whether the protective map signature is present.
-//    if (strcmp(sampleTable->partitionIdentifier, SamplePartitionIdentifier) != 0)
-//        goto bail;
+			printf("Looking for direct children of '%s'\n",
+				   holder.poolname);
 
-    // Scan for valid partition entries in the protective map.
-    //UInt64 child_filesystem_count = sampleTable->partitionCount;
+			holder.object = this;
 
-    for (unsigned index = 0; index < child_filesystem_count; index++)
-    {
-//        if (isPartitionCorrupt(&sampleTable->partitionEntries[index]))
-//            goto bail;
-        ZFSFilesystemEntry foo;
-        snprintf(foo.filesystemName, sizeof(foo.filesystemName), "foo %d", (int) index);
-        IOMedia*        newMedia = instantiateMediaObject(&foo, 1+index);
+			dmu_objset_find(holder.poolname, spa_osx_create_devs,
+							&holder, DS_FIND_CHILDREN);
+		}
 
-        printf("Content is %s\n", newMedia->getContent());
-        printf("ContentHint is %s\n", newMedia->getContentHint());
-        printf("Name is %s\n", newMedia->getName());
-
-        if ( newMedia )
-        {
-            child_filesystems->setObject(newMedia);
-            newMedia->release();
-        }
-    }
+	}
 
     // Release temporary resources
     close(this);
   //  buffer->release();
 
-    return child_filesystems;
+    return holder.child_filesystems;
 
 bail:
     // Release all allocated objects
 //    if ( mediaIsOpen )          close(this);
-    if ( child_filesystems )    child_filesystems->release();
+    if ( holder.child_filesystems )    holder.child_filesystems->release();
  //   if ( buffer )               buffer->release();
 
     return NULL;
