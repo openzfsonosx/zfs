@@ -510,11 +510,13 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
     printf("media %p\n", media);
     printf("media->getContent() %s\n", media->getContent());
     printf("media->getContentHint() %s\n", media->getContentHint());
-    media->setProperty(kIOMediaContentKey, "fooproxy");
+    media->setProperty(kIOMediaContentKey, "zfs_pool_proxy");
     //media->setProperty(kIOMediaContentKey, "zfs_pool_proxy");
-    media->setProperty(kIOMediaContentHintKey, "fooproxy");
+    media->setProperty(kIOMediaContentHintKey, "zfs_pool_proxy");
     printf("media->getContent() %s\n", media->getContent());
     printf("media->getContentHint() %s\n", media->getContentHint());
+
+	media->setProperty("DATASET", poolname);
 
 #if 0
     IOMedia*                newMedia;

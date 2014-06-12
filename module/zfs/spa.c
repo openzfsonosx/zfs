@@ -4098,9 +4098,11 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 			dmu_objset_rele(os, FTAG);
 
 			printf("Create pool\n");
+#if 1
 			ZFSDriver_create_pool(spa->spa_name, availbytes, 512,
 								  B_FALSE, spa_guid(spa),
 								  dsl_dataset_fsid_guid(dmu_objset_ds(os)));
+#endif
 		}
 	}
 #endif
