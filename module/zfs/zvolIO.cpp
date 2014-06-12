@@ -15,7 +15,7 @@
  */
 
 
-#define dprintf IOLog
+//#define dprintf IOLog
 
 // Define the superclass
 #define super IOBlockStorageDevice

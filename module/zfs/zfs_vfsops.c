@@ -2001,6 +2001,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	int		canwrite;
 	int		mflag;
 	int		flags = 0;
+	char *realosname = NULL; // If allocated.
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
@@ -2040,13 +2041,26 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	error = copyin((user_addr_t)mnt_args.optptr, (caddr_t)options,
 	    mnt_args.optlen);
 
-	dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
+	printf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
 	    " options %s\n",
 	    mnt_args.fspec,
 	    mnt_args.mflag,
 	    mnt_args.optptr,
 	    mnt_args.optlen,
 	    options);
+
+#ifdef __APPLE__
+	/*
+	 * If the device given is /dev/disk* notation, we need to lookup
+	 * the actual DATASET name from the fake disk entries we create for
+	 * iokit.
+	 */
+	if (mnt_args.fspec[0] == '/') {
+		ZFSDriver_FindDataset(osname);
+	}
+
+	printf("vfs_mount '%s' on to '%s'\n", mnt_args.fspec, osname);
+#endif
 
 	if (mflag & MS_RDONLY)
 		flags |= MNT_RDONLY;
@@ -2450,6 +2464,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
     }
 
 	ZFS_EXIT(zfsvfs);
+
 
 	return (0);
 }

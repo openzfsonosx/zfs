@@ -34,6 +34,7 @@ class net_lundman_zfs_zvol : public IOService
   virtual bool  destroyStorageDevice(char *poolname);
 
   OSDictionary *IOBSDNameMatching( const char * name );
+  virtual char *findDataset(char *dev);
 };
 
 

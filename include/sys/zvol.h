@@ -133,6 +133,7 @@ extern int ZFSDriver_create_pool(char *poolname, uint64_t bytes,
 									uint64_t dataset_guid);
 extern int ZFSDriver_remove_pool(char *poolname);
 extern int      zvolSetVolsize(zvol_state_t *zv);
+extern char *ZFSDriver_FindDataset(char *dev);
 
 extern int zvol_busy(void);
 extern void zfs_ereport_zvol_post(const char *subclass, const char *name,
