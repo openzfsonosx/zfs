@@ -124,8 +124,8 @@ spa_osx_create_devs(const char *dsname, void *arg)
 
 	printf("Creating '%s' (remainer '%s')\n", dsname, part);
 	ZFSFilesystemEntry foo;
-	snprintf(foo.filesystemName, sizeof(foo.filesystemName), "foo %d",
-			 (int) holder->index);
+	snprintf(foo.filesystemName, sizeof(foo.filesystemName), "%s",
+			 dsname);
 	IOMedia *newMedia;
 	newMedia = static_cast<ZFSProxyMediaScheme*>(holder->object)->instantiateMediaObject(&foo, 1+holder->index);
 	//newMedia = (holder->object)->instantiateMediaObject(&foo, 1+holder->index);
