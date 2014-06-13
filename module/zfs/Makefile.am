@@ -173,7 +173,7 @@ zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
 debug-kext-linking:
 	kextlibs -all-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/
 
-install-exec-local: zfs.kext
+install-exec-local:: zfs.kext
 	rm -rf $(KERNEL_MODDIR)
 	mkdir -p $(KERNEL_MODDIR)
 	rsync -r zfs.kext/ $(KERNEL_MODDIR)
