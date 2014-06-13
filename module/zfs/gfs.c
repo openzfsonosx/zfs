@@ -1175,6 +1175,7 @@ gfs_vop_readdir(ap)
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
 	int *eofp = ap->a_eofflag;
 	int ncookies = 0;
+	int ncookies_allocated = 0;
 	u_long *cookies = NULL;
 	u_long *a_cookies = NULL;
 	int error;
@@ -1200,8 +1201,8 @@ gfs_vop_readdir(ap)
 		 */
 		ncookies = uio_resid(uiop) / (sizeof(dirent64_t) - sizeof(((dirent64_t *)NULL)->d_name) + 1);
 
-		MALLOC(cookies, u_long *, ncookies * sizeof(u_long),
-               M_TEMP, M_WAITOK);
+		cookies = (u_long*)kmem_alloc(ncookies * sizeof(u_long), KM_SLEEP);
+		ncookies_allocated = ncookies;
 		a_cookies = cookies;
 		*ap->a_numdirent = ncookies;
 	}
@@ -1220,7 +1221,7 @@ gfs_vop_readdir(ap)
 
 
     if (cookies)
-		FREE(a_cookies, M_TEMP);
+		kmem_free(a_cookies, ncookies_allocated * sizeof(u_long));
 
 	return (error);
 }

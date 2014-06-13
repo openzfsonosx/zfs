@@ -1182,8 +1182,6 @@ dmu_write_req(objset_t *os, uint64_t object, struct request *req, dmu_tx_t *tx)
 
 #endif
 
-
-
 int
 dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 {
@@ -1195,12 +1193,20 @@ dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 	 * NB: we could do this block-at-a-time, but it's nice
 	 * to be reading in parallel.
 	 */
-	//err = dmu_buf_hold_array(os, object, uio->uio_loffset, size, TRUE, FTAG,
-    //   &numbufs, &dbp);
+#ifndef __APPLE__
+	err = dmu_buf_hold_array(os, object, uio->uio_loffset, size, TRUE, FTAG,
+	    &numbufs, &dbp);
+#else
 	err = dmu_buf_hold_array(os, object, uio_offset(uio), size, TRUE, FTAG,
 	    &numbufs, &dbp);
+#endif
 	if (err)
 		return (err);
+
+#ifdef UIO_XUIO
+	if (uio->uio_extflg == UIO_XUIO)
+		xuio = (xuio_t *)uio;
+#endif
 
 	for (i = 0; i < numbufs; i++) {
 		int tocpy;
@@ -1209,8 +1215,11 @@ dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 
 		ASSERT(size > 0);
 
-		//bufoff = uio->uio_loffset - db->db_offset;
+#ifndef __APPLE__
+		bufoff = uio->uio_loffset - db->db_offset;
+#else
 		bufoff = uio_offset(uio) - db->db_offset;
+#endif
 		tocpy = (int)MIN(db->db_size - bufoff, size);
 
 		if (xuio) {
@@ -1219,9 +1228,12 @@ dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 			arc_buf_t *abuf = dbuf_loan_arcbuf(dbi);
 			err = dmu_xuio_add(xuio, abuf, bufoff, tocpy);
 			if (!err) {
-				//uio->uio_resid -= tocpy;
-				//uio->uio_loffset += tocpy;
-                uio_update(uio, tocpy);
+#ifndef __APPLE__
+				uio->uio_resid -= tocpy;
+				uio->uio_loffset += tocpy;
+#else
+				uio_update(uio, tocpy);
+#endif
 			}
 
 			if (abuf == dbuf_abuf)
