@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BuildMachineOSBuild</key>
+	<string>12B19</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleIdentifier</key>
+	<string>net.lundman.filesystems.zfs</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>zfs</string>
+	<key>CFBundlePackageType</key>
+	<string>fs  </string>
+	<key>CFBundleShortVersionString</key>
+	<string>2012.09.23</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>2012.09.23</string>
+	<key>DTCompiler</key>
+	<string></string>
+	<key>DTPlatformBuild</key>
+	<string>4F1003</string>
+	<key>DTPlatformVersion</key>
+	<string>GM</string>
+	<key>DTSDKBuild</key>
+	<string>12A264</string>
+	<key>DTSDKName</key>
+	<string>macosx10.8</string>
+	<key>DTXcode</key>
+	<string>0441</string>
+	<key>DTXcodeBuild</key>
+	<string>4F1003</string>
+	<key>FSMediaTypes</key>
+	<dict>
+		<key>zfs_filesystem_proxy</key>
+		<dict>
+			<key>FSMediaProperties</key>
+			<dict>
+				<key>Content Hint</key>
+				<string>zfs_filesystem_proxy</string>
+			</dict>
+			<key>FSProbeArguments</key>
+			<string>-p</string>
+			<key>FSProbeExecutable</key>
+			<string>zfs.util</string>
+			<key>FSProbeOrder</key>
+			<integer>1000</integer>
+		</dict>
+		<key>zfs_pool_proxy</key>
+		<dict>
+			<key>FSMediaProperties</key>
+			<dict>
+				<key>Content Hint</key>
+				<string>zfs_pool_proxy</string>
+			</dict>
+			<key>FSProbeArguments</key>
+			<string>-p</string>
+			<key>FSProbeExecutable</key>
+			<string>zfs.util</string>
+			<key>FSProbeOrder</key>
+			<integer>1000</integer>
+		</dict>
+	</dict>
+	<key>FSPersonalities</key>
+	<dict>
+		<key>ZFS</key>
+		<dict>
+			<key>FSLiveVerificationArguments</key>
+			<string>-c</string>
+			<key>FSName</key>
+			<string>ZFS</string>
+			<key>FSSubType</key>
+			<integer>1</integer>
+			<key>FSVerificationArguments</key>
+			<string>-c</string>
+			<key>FSVerificationExecutable</key>
+			<string>zfs.util</string>
+		</dict>
+		<key>ZFS Dataset</key>
+		<dict>
+			<key>FSName</key>
+			<string>ZFS Dataset</string>
+			<key>FSSubType</key>
+			<integer>1</integer>
+		</dict>
+		<key>ZFS Pool</key>
+		<dict>
+			<key>FSFormatArguments</key>
+			<string>-i</string>
+			<key>FSFormatContentMask</key>
+			<string>6A898CC3-1DD2-11B2-99A6-080020736631</string>
+			<key>FSFormatExecutable</key>
+			<string>zfs.util</string>
+			<key>FSFormatInteractive</key>
+			<false/>
+			<key>FSFormatMaximumSize</key>
+			<integer>9223372034707292160</integer>
+			<key>FSFormatMinimumSize</key>
+			<integer>268435456</integer>
+			<key>FSLiveVerificationArguments</key>
+			<string></string>
+			<key>FSName</key>
+			<string>ZFS Pool</string>
+			<key>FSSubType</key>
+			<integer>0</integer>
+			<key>FSVerificationArguments</key>
+			<string>-c</string>
+			<key>FSVerificationExecutable</key>
+			<string>zfs.util</string>
+		</dict>
+		<key>ZFS Snapshot</key>
+		<dict>
+			<key>FSName</key>
+			<string>ZFS Snapshot</string>
+			<key>FSSubType</key>
+			<integer>2</integer>
+		</dict>
+		<key>ZFS Snapshot Collection</key>
+		<dict>
+			<key>FSName</key>
+			<string>ZFS Snapshot Collection</string>
+			<key>FSSubType</key>
+			<integer>3</integer>
+		</dict>
+	</dict>
+</dict>
+</plist>
