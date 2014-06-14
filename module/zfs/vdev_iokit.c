@@ -111,6 +111,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 	vdev_iokit_t *dvd = 0;
 	int error = 0;
 	uint64_t checkguid = 0;
+	char * physpath = 0;
 
 	if (!vd)
 		return (EINVAL);
@@ -241,6 +242,21 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		 */
 		if (error && vd->vdev_guid != 0) {
 			error = vdev_iokit_open_by_guid(dvd, checkguid);
+
+			if (error == 0) {
+			/* Update vdev_path */
+				physpath =				vdev_iokit_get_path(dvd);
+
+				if (physpath && strlen(physpath) > 0) {
+					/* Save physpath into vdev_path */
+					vd->vdev_path =		spa_strdup(physpath);
+				}
+
+				if (physpath) {
+					kmem_free(physpath, MAXPATHLEN);
+					physpath = 0;
+				}
+			}
 		}
 	}
 

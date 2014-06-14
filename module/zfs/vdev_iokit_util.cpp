@@ -1193,7 +1193,10 @@ vdev_iokit_open_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 	}
 }
 
-/* Caller should pass in a null newpath pointer */
+/*
+ * Caller should free the returned char pointer
+ *	kmem_free(ptr, MAXPATHLEN);
+ */
 extern char *
 vdev_iokit_get_path(vdev_iokit_t * dvd)
 {
