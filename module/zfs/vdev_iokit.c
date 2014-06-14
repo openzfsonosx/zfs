@@ -32,6 +32,7 @@
 
 #include <sys/zfs_context.h>
 #include <sys/spa.h>
+#include <sys/spa_impl.h>
 #include <sys/vdev_iokit.h>
 #include <sys/vdev_impl.h>
 #include <sys/fs/zfs.h>
@@ -109,6 +110,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 {
 	vdev_iokit_t *dvd = 0;
 	int error = 0;
+	uint64_t checkguid = 0;
 
 	if (!vd)
 		return (EINVAL);
@@ -147,6 +149,12 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		return (error != 0 ? error : ENOMEM);
 	}
 
+	/* When creating or splitting pools, don't validate guid */
+	if (vd->vdev_spa->spa_load_state != SPA_LOAD_NONE &&
+	    vd->vdev_spa->spa_config_splitting == 0) {
+		checkguid = vd->vdev_guid;
+	}
+
 	/*
 	 * When opening a disk device, we want to preserve the user's original
 	 * intent. We always want to open the device by the path the user gave
@@ -175,7 +183,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 
 			(void) snprintf(buf, len, "%ss0", vd->vdev_path);
 
-			error = vdev_iokit_open_by_path(dvd, buf);
+			error = vdev_iokit_open_by_path(dvd, buf, checkguid);
 
 			if (error == 0) {
 				spa_strfree(vd->vdev_path);
@@ -191,7 +199,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		 * specified path.
 		 */
 		if (error != 0) {
-			error = vdev_iokit_open_by_path(dvd, vd->vdev_path);
+			error = vdev_iokit_open_by_path(dvd, vd->vdev_path, checkguid);
 		}
 
 		/*
@@ -211,7 +219,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 	if (error) {
 
 		if (vd->vdev_physpath != NULL) {
-			error = vdev_iokit_open_by_path(dvd, vd->vdev_physpath);
+			error = vdev_iokit_open_by_path(dvd, vd->vdev_physpath, checkguid);
 		}
 
 		/*
@@ -220,7 +228,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		 * don't need to propagate its oddities to this edge condition.
 		 */
 		if (error && vd->vdev_path != NULL) {
-			error = vdev_iokit_open_by_path(dvd, vd->vdev_path);
+			error = vdev_iokit_open_by_path(dvd, vd->vdev_path, checkguid);
 		}
 
 		/*
@@ -232,7 +240,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		 *	been re-cabled, moved, removed, or otherwise.
 		 */
 		if (error && vd->vdev_guid != 0) {
-			error = vdev_iokit_open_by_guid(dvd, vd->vdev_guid);
+			error = vdev_iokit_open_by_guid(dvd, checkguid);
 		}
 	}
 
@@ -577,11 +585,27 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
 			continue;
 		}
 
+		/*
+		 * Check that a valid config was loaded
+		 *	skip devices that are unavailable,
+		 *	uninitialized, or potentially active
+		 */
 		if (nvlist_lookup_uint64(*config,
-				ZPOOL_CONFIG_POOL_TXG, &txg) != 0 ||
-			nvlist_lookup_uint64(*config,
 				ZPOOL_CONFIG_POOL_STATE, &state) != 0 ||
-			state >= POOL_STATE_DESTROYED || txg == 0) {
+			state > POOL_STATE_L2CACHE) {
+
+			nvlist_free(*config);
+			*config = NULL;
+			continue;
+		}
+
+		/*
+		 * Check and fetch txg number
+		 */
+		if (state != POOL_STATE_SPARE &&
+			state != POOL_STATE_L2CACHE &&
+		    (nvlist_lookup_uint64(*config, ZPOOL_CONFIG_POOL_TXG,
+				&txg) != 0 || txg == 0)) {
 
 			nvlist_free(*config);
 			*config = NULL;
@@ -620,7 +644,7 @@ vdev_iokit_read_rootlabel(char *devpath, char *devid, nvlist_t **config)
 		return (error);
 
 	/* Locate the vdev by pathname, without validating the GUID */
-	error = vdev_iokit_find_by_path(dvd, devpath, FALSE);
+	error = vdev_iokit_find_by_path(dvd, devpath, 0);
 
 	if (error) {
 		goto error;

@@ -573,16 +573,19 @@ extern OSSet * vdev_iokit_get_disks()
 
 /* Returned object will have a reference count and should be released */
 int
-vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, bool validate)
+vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, uint64_t guid = 0)
 {
 	OSSet * allDisks = 0;
 	OSObject * currentEntry = 0;
 	IOMedia * currentDisk = 0;
-	IORegistryEntry * matchedDisk = 0;
+	IOMedia * matchedDisk = 0;
 	OSObject * bsdnameosobj = 0;
 	OSString * bsdnameosstr = 0;
 	char * diskName = 0;
+	nvlist_t * config = 0;
+
 	uint64_t min_size = 128<<20; /* 128 Mb */
+	uint64_t current_guid = 0;
 
 	if (!dvd || !diskPath) {
 		return (EINVAL);
@@ -656,11 +659,6 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, bool validate)
 		/* Check if the name matches */
 		if (bsdnameosstr->isEqualTo(diskName)) {
 			/* Success - save match */
-			if (matchedDisk) {
-				matchedDisk->release();
-				matchedDisk = 0;
-			}
-
 			matchedDisk = currentDisk;
 			matchedDisk->retain();
 		}
@@ -674,6 +672,31 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, bool validate)
 		if (matchedDisk) {
 			break;
 		}
+	}
+
+	/* Check GUID */
+	if (guid > 0 && matchedDisk) {
+		/* Temporarily assign currentDisk to the dvd */
+		dvd->vd_iokit_hl = (void *)matchedDisk;
+
+		/* Try to read a config label from this disk */
+		if (vdev_iokit_read_label(dvd, &config) != 0 ||
+			nvlist_lookup_uint64(config,
+				ZPOOL_CONFIG_GUID, &current_guid) != 0 ||
+			current_guid != guid) {
+
+			/* Clear matchedDisk */
+			matchedDisk->release();
+			matchedDisk = 0;
+		}
+
+		/* Clear the vd_iokit_hl */
+		dvd->vd_iokit_hl = 0;
+
+		/* Clear the config */
+		if (config)
+			nvlist_free(config);
+		config = 0;
 	}
 
 	if (allDisks) {
@@ -1107,13 +1130,13 @@ vdev_iokit_handle_close(vdev_iokit_t *dvd, int fmode = 0)
 }
 
 extern int
-vdev_iokit_open_by_path(vdev_iokit_t * dvd, char * path)
+vdev_iokit_open_by_path(vdev_iokit_t * dvd, char * path, uint64_t guid = 0)
 {
 	if (!dvd || !path) {
 		return (EINVAL);
 	}
 
-	if (vdev_iokit_find_by_path(dvd, path, TRUE) != 0 ||
+	if (vdev_iokit_find_by_path(dvd, path, guid) != 0 ||
 		!dvd->vd_iokit_hl) {
 
 		return (ENOENT);
