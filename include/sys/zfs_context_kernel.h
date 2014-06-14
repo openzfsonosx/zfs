@@ -83,7 +83,6 @@ typedef enum kmem_cbrc {
 #define	KMC_KMEM		0x0
 #define	KMC_VMEM		0x0
 
-
 typedef struct dirent dirent_t;
 typedef struct direntry dirent64_t;
 
@@ -103,14 +102,10 @@ typedef struct direntry dirent64_t;
 /* Pre-faulting pages not yet supported for Mac OS X */
 #define zfs_prefault_write(n, uio)
 
-extern u_int32_t k_maczfs_debug_stalk;
-
-
 #define SEC_TO_TICK(sec)        ((sec) * hz)
 #define MSEC_TO_TICK(msec)      ((msec) / (MILLISEC / hz))
 #define USEC_TO_TICK(usec)      ((usec) / (MICROSEC / hz))
 #define NSEC_TO_TICK(usec)      ((usec) / (NANOSEC / hz))
-
 
 #endif /* _KERNEL */
 
