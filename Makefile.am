@@ -90,6 +90,6 @@ uninstall-hook::
 		    || echo "Ignoring errors"; \
 	done
 	$(RM) -r /System/Library/Filesystems/zfs.fs
-	$(RM) -r /System/Library/Extensions/zfs.fs
-	$(RM) -r /Library/Extensions/zfs.fs
+	$(RM) -r /System/Library/Extensions/zfs.kext
+	$(RM) -r /Library/Extensions/zfs.kext
 endif
