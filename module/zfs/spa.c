@@ -5105,8 +5105,15 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 	spa_activate(newspa, spa_mode_global);
 	spa_async_suspend(newspa);
 
+#ifndef sun
+	/* mark that we are creating new spa by splitting */
+	newspa->spa_splitting_newspa = B_TRUE;
+#endif
 	/* create the new pool from the disks of the original pool */
 	error = spa_load(newspa, SPA_LOAD_IMPORT, SPA_IMPORT_ASSEMBLE, B_TRUE);
+#ifndef sun
+	newspa->spa_splitting_newspa = B_FALSE;
+#endif
 	if (error)
 		goto out;
 

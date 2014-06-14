@@ -151,7 +151,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 
 	/* When creating or splitting pools, don't validate guid */
 	if (vd->vdev_spa->spa_load_state != SPA_LOAD_NONE &&
-	    vd->vdev_spa->spa_config_splitting == 0) {
+	    vd->vdev_spa->spa_splitting_newspa != B_TRUE) {
 		checkguid = vd->vdev_guid;
 	}
 

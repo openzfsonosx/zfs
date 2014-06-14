@@ -247,6 +247,9 @@ struct spa {
 	 */
 	spa_config_lock_t spa_config_lock[SCL_LOCKS]; /* config changes */
 	refcount_t	spa_refcount;		/* number of opens */
+#ifndef sun
+	boolean_t	spa_splitting_newspa;	/* creating new spa in split */
+#endif
 };
 
 extern char *spa_config_path;
