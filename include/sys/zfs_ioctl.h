@@ -539,8 +539,8 @@ extern void *zfsdev_get_state(minor_t minor, enum zfsdev_state_type which);
 extern minor_t zfsdev_getminor(dev_t dev);
 extern minor_t zfsdev_minor_alloc(void);
 
-extern void zfs_ioctl_osx_init(void);
-extern void zfs_ioctl_osx_fini(void);
+extern int zfs_ioctl_osx_init(void);
+extern int zfs_ioctl_osx_fini(void);
 
 
 
