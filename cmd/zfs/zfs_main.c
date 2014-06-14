@@ -652,6 +652,7 @@ zfs_do_clone(int argc, char **argv)
 	/* create the mountpoint if necessary */
 	if (ret == 0) {
 		zfs_handle_t *clone;
+		int canmount = ZFS_CANMOUNT_OFF;
 
 		if (log_history) {
 			(void) zpool_log_history(g_zfs, history_str);
@@ -660,7 +661,17 @@ zfs_do_clone(int argc, char **argv)
 
 		clone = zfs_open(g_zfs, argv[1], ZFS_TYPE_DATASET);
 		if (clone != NULL) {
-			if (zfs_get_type(clone) != ZFS_TYPE_VOLUME)
+			/*
+			 * if the user doesn't want the dataset automatically
+			 * mounted, then skip the mount/share step.
+			 */
+			if (zfs_prop_valid_for_type(ZFS_PROP_CANMOUNT,
+			    zfs_get_type(clone), B_FALSE))
+				canmount = zfs_prop_get_int(clone,
+				    ZFS_PROP_CANMOUNT);
+
+			if (zfs_get_type(clone) != ZFS_TYPE_VOLUME &&
+			    canmount == ZFS_CANMOUNT_ON)
 				if ((ret = zfs_mount(clone, NULL, 0)) == 0)
 					ret = zfs_share(clone);
 			zfs_close(clone);
@@ -850,7 +861,7 @@ zfs_do_create(int argc, char **argv)
 	 * if the user doesn't want the dataset automatically mounted,
 	 * then skip the mount/share step
 	 */
-	if (zfs_prop_valid_for_type(ZFS_PROP_CANMOUNT, type))
+	if (zfs_prop_valid_for_type(ZFS_PROP_CANMOUNT, type, B_FALSE))
 		canmount = zfs_prop_get_int(zhp, ZFS_PROP_CANMOUNT);
 
 	/*
@@ -1433,7 +1444,7 @@ get_callback(zfs_handle_t *zhp, void *data)
 				if (pl->pl_all)
 					continue;
 				if (!zfs_prop_valid_for_type(pl->pl_prop,
-				    ZFS_TYPE_DATASET)) {
+				    ZFS_TYPE_DATASET, B_FALSE)) {
 					(void) fprintf(stderr,
 					    gettext("No such property '%s'\n"),
 					    zfs_prop_to_name(pl->pl_prop));
@@ -1767,7 +1778,7 @@ inherit_recurse_cb(zfs_handle_t *zhp, void *data)
 	 * are not valid for this type of dataset.
 	 */
 	if (prop != ZPROP_INVAL &&
-	    !zfs_prop_valid_for_type(prop, zfs_get_type(zhp)))
+	    !zfs_prop_valid_for_type(prop, zfs_get_type(zhp), B_FALSE))
 		return (0);
 
 	return (zfs_prop_inherit(zhp, cb->cb_propname, cb->cb_received) != 0);

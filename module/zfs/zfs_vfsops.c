@@ -2537,8 +2537,6 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
      * the full issue.
      */
 
-    while(vnop_num_reclaims > 0) delay(hz>>1);
-
  	/*
 	 * If someone has not already unmounted this file system,
 	 * drain the iput_taskq to ensure all active references to the
@@ -2758,8 +2756,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		}
 	}
 #endif
-
-    while(vnop_num_reclaims > 0) delay(hz>>1);
 
     dprintf("Signalling reclaim sync\n");
 	/* We just did final sync, tell reclaim to mop it up */
