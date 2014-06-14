@@ -200,7 +200,8 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		 * specified path.
 		 */
 		if (error != 0) {
-			error = vdev_iokit_open_by_path(dvd, vd->vdev_path, checkguid);
+			error = vdev_iokit_open_by_path(dvd,
+				vd->vdev_path, checkguid);
 		}
 
 		/*
@@ -220,7 +221,8 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 	if (error) {
 
 		if (vd->vdev_physpath != NULL) {
-			error = vdev_iokit_open_by_path(dvd, vd->vdev_physpath, checkguid);
+			error = vdev_iokit_open_by_path(dvd,
+				vd->vdev_physpath, checkguid);
 		}
 
 		/*
@@ -229,7 +231,8 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		 * don't need to propagate its oddities to this edge condition.
 		 */
 		if (error && vd->vdev_path != NULL) {
-			error = vdev_iokit_open_by_path(dvd, vd->vdev_path, checkguid);
+			error = vdev_iokit_open_by_path(dvd,
+				vd->vdev_path, checkguid);
 		}
 
 		/*
@@ -245,11 +248,11 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 
 			if (error == 0) {
 			/* Update vdev_path */
-				physpath =				vdev_iokit_get_path(dvd);
+				physpath =	vdev_iokit_get_path(dvd);
 
 				if (physpath && strlen(physpath) > 0) {
 					/* Save physpath into vdev_path */
-					vd->vdev_path =		spa_strdup(physpath);
+					vd->vdev_path =	spa_strdup(physpath);
 				}
 
 				if (physpath) {
