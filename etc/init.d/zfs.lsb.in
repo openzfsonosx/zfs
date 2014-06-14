@@ -49,14 +49,6 @@ start()
 {
 	[ -f "$LOCKFILE" ] && return 3
 
-	# Requires selinux policy which has not been written.
-	if [ -r "/selinux/enforce" ] &&
-	   [ "$(cat /selinux/enforce)" = "1" ]; then
-
-		log_failure_msg "SELinux ZFS policy required"
-		return 4
-	fi
-
 	# Delay until all required block devices are present.
 	udevadm settle
 
@@ -118,13 +110,6 @@ stop()
 
 	log_begin_msg "Unmounting ZFS filesystems"
 	"$ZFS" umount -a
-	log_end_msg $?
-
-	log_begin_msg "Exporting ZFS pools"
-	"$ZPOOL" list -H -o name | \
-	    while read pool; do
-		"$ZPOOL" export $pool
-	done
 	log_end_msg $?
 
 	rm -f "$LOCKFILE"

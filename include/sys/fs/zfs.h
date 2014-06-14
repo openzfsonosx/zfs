@@ -261,7 +261,7 @@ boolean_t zfs_prop_written(const char *);
 int zfs_prop_index_to_string(zfs_prop_t, uint64_t, const char **);
 int zfs_prop_string_to_index(zfs_prop_t, const char *, uint64_t *);
 uint64_t zfs_prop_random_value(zfs_prop_t, uint64_t seed);
-boolean_t zfs_prop_valid_for_type(int, zfs_type_t);
+boolean_t zfs_prop_valid_for_type(int, zfs_type_t, boolean_t);
 
 /*
  * Pool property functions shared between libzfs and kernel.
@@ -969,7 +969,6 @@ typedef struct zfs_footprint_stats {
 extern zfs_memory_stats_t zfs_footprint;
 extern int zfs_threads;
 extern int zfs_msg_buf_enabled;
-extern u_int32_t k_maczfs_debug_stalk;
 extern size_t zfs_kallocmap_size;
 extern size_t zfs_kernelmap_size;
 

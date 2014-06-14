@@ -239,7 +239,8 @@ zfs_is_mountable(zfs_handle_t *zhp, char *buf, size_t buflen,
 	char sourceloc[ZFS_MAXNAMELEN];
 	zprop_source_t sourcetype;
 
-	if (!zfs_prop_valid_for_type(ZFS_PROP_MOUNTPOINT, zhp->zfs_type))
+	if (!zfs_prop_valid_for_type(ZFS_PROP_MOUNTPOINT, zhp->zfs_type,
+	    B_FALSE))
 		return (B_FALSE);
 
 	verify(zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT, buf, buflen,
@@ -527,6 +528,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 		return (0);
 
 #ifdef __LINUX__
+
 	/*
 	 * Append default mount options which apply to the mount point.
 	 * This is done because under Linux (unlike Solaris) multiple mount

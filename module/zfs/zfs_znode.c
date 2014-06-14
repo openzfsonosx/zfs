@@ -1335,12 +1335,46 @@ again:
 		getnewvnode_drop_reserve();
 
 		dprintf("Waiting on zp %p to die!\n", zp);
-		// delay(hz>>1);
-		cv_signal(&zfsvfs->z_reclaim_thr_cv);
-		while (!list_is_empty(&zfsvfs->z_reclaim_znodes))
-			delay(hz >> 2);
-		goto again;
 
+		/*
+		 * We will do direct reclaim of the zp we want, so we can
+		 * re-acquire the vnode it needs. This means stealing it
+		 * from the reclaim thread, if it is still in the list.
+		 * We can not access "zp" directly here, as it may already
+		 * have been released, so we grab the mutex, run through the
+		 * reclaim list, if it in the list, we can safely take it out
+		 * and reclaim it here.
+		 */
+		mutex_enter(&zfsvfs->z_reclaim_list_lock);
+		for (znode_t *rzp = list_head(&zfsvfs->z_reclaim_znodes) ;
+			 rzp;
+			 rzp = list_next(&zfsvfs->z_reclaim_znodes, rzp)) {
+
+			if (rzp == zp) {
+
+				dprintf("Removing from reclaim list zp %p\n", zp);
+                list_remove(&zfsvfs->z_reclaim_znodes, zp);
+				mutex_exit(&zfsvfs->z_reclaim_list_lock);
+
+#ifdef _KERNEL
+				atomic_dec_64(&vnop_num_reclaims);
+#endif
+				rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+				if (zp->z_sa_hdl == NULL)
+					zfs_znode_free(zp);
+				else
+					zfs_zinactive(zp);
+				rw_exit(&zfsvfs->z_teardown_inactive_lock);
+				goto again;
+
+            }
+
+		} // for
+		mutex_exit(&zfsvfs->z_reclaim_list_lock);
+		/* We have just looked through the entire list and not found
+		 * the zp, so it must have already been reclaimed.
+		 */
+		goto again;
 
 	} /* HDL != NULL */
 

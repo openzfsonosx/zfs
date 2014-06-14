@@ -57,9 +57,9 @@ typedef uint64_t vfs_feature_t;
       VNODE_ATTR_va_filerev |                   \
       VNODE_ATTR_va_type    |                   \
       VNODE_ATTR_va_encoding |                  \
-	  VNODE_ATTR_va_uuuid |                       \
-	  VNODE_ATTR_va_guuid |                       \
       0)
+	  //VNODE_ATTR_va_uuuid |
+	  //VNODE_ATTR_va_guuid |
 
 /* For part 1 of zfs_getattr() */
 int
@@ -347,12 +347,14 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         VATTR_RETURN(vap, va_addedtime, vap->va_ctime);
     }
 #endif
+#if 0 // Issue #192
 	if (VATTR_IS_ACTIVE(vap, va_uuuid)) {
         kauth_cred_uid2guid(zp->z_uid, &vap->va_uuuid);
     }
 	if (VATTR_IS_ACTIVE(vap, va_guuid)) {
         kauth_cred_uid2guid(zp->z_gid, &vap->va_guuid);
     }
+#endif
 
 	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
 
