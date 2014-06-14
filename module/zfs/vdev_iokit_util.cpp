@@ -577,7 +577,7 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, bool validate)
 {
 	OSSet * allDisks = 0;
 	OSObject * currentEntry = 0;
-	IORegistryEntry * currentDisk = 0;
+	IOMedia * currentDisk = 0;
 	IORegistryEntry * matchedDisk = 0;
 	OSObject * bsdnameosobj = 0;
 	OSString * bsdnameosstr = 0;
