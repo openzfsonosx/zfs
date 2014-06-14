@@ -117,11 +117,11 @@ void *
 zfsdev_get_soft_state(minor_t minor, enum zfs_soft_state_type which)
 {
     zfs_soft_state_t *zp;
-	
+
     zp = ddi_get_soft_state(zfsdev_state, minor);
     if (zp == NULL || zp->zss_type != which)
         return (NULL);
-	
+
     return (zp->zss_data);
 }
 
@@ -166,7 +166,7 @@ zvol_size_changed(zvol_state_t *zv, uint64_t volsize)
 								 "Nblocks", volsize / zv_zv_volblocksize) == DDI_SUCCESS);
 	
     //zvolSetVolsize(zv);
-	
+
 	/* Notify specfs to invalidate the cached size */
 	//spec_size_invalidate(dev, VBLK);
 	//spec_size_invalidate(dev, VCHR);
@@ -177,10 +177,10 @@ zvol_check_volsize(uint64_t volsize, uint64_t blocksize)
 {
 	if (volsize == 0)
 		return (EINVAL);
-	
+
 	if (volsize % blocksize != 0)
 		return (EINVAL);
-	
+
 #ifdef _ILP32XXX
 	if (volsize - 1 > SPEC_MAXOFFSET_T)
 		return (EOVERFLOW);
@@ -195,7 +195,7 @@ zvol_check_volblocksize(uint64_t volblocksize)
 	    volblocksize > SPA_MAXBLOCKSIZE ||
 	    !ISP2(volblocksize))
 		return (EDOM);
-	
+
 	return (0);
 }
 
@@ -205,20 +205,20 @@ zvol_get_stats(objset_t *os, nvlist_t *nv)
 	int error;
 	dmu_object_info_t doi;
 	uint64_t val;
-	
+
 	error = zap_lookup(os, ZVOL_ZAP_OBJ, "size", 8, 1, &val);
 	if (error)
 		return (error);
-	
+
 	dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_VOLSIZE, val);
-	
+
 	error = dmu_object_info(os, ZVOL_OBJ, &doi);
-	
+
 	if (error == 0) {
 		dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_VOLBLOCKSIZE,
 								   doi.doi_data_block_size);
 	}
-	
+
 	return (error);
 }
 
@@ -227,9 +227,9 @@ zvol_minor_lookup(const char *name)
 {
 	minor_t minor;
 	zvol_state_t *zv;
-	
+
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
-	
+
 	for (minor = 1; minor <= ZFSDEV_MAX_MINOR; minor++) {
 		zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
 		if (zv == NULL)
@@ -237,7 +237,7 @@ zvol_minor_lookup(const char *name)
 		if (strcmp(zv->zv_name, name) == 0)
 			return (zv);
 	}
-	
+
 	return (NULL);
 }
 
@@ -256,7 +256,7 @@ zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	struct maparg *ma = arg;
 	zvol_extent_t *ze;
 	int bs = ma->ma_zv->zv_volblocksize;
-	
+
 	if (bp == NULL || zb->zb_object != ZVOL_OBJ || zb->zb_level != 0)
 		return (0);
 	
@@ -2424,10 +2424,12 @@ zvol_init(void)
 {
 	dprintf("zvol_init\n");
 	VERIFY(ddi_soft_state_init(&zfsdev_state, sizeof (zfs_soft_state_t),
-							   1) == 0);
-	//mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
-    dprintf("zfsdev_state: %p\n", zfsdev_state);
-    return 0;
+	    1) == 0);
+#ifdef illumos
+	mutex_init(&zfsdev_state_lock, NULL, MUTEX_DEFAULT, NULL);
+#endif
+	dprintf("zfsdev_state: %p\n", zfsdev_state);
+	return (0);
 }
 
 void

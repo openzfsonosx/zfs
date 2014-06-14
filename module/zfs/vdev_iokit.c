@@ -223,6 +223,14 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 			error = vdev_iokit_open_by_path(dvd, vd->vdev_path);
 		}
 
+		/*
+		 * Since the vdev couldn't be easily located by path,
+		 *	now we need to expand the search to all disks and
+		 *	attempt to locate the vdev by guid, if known.
+		 * This resolves the issue of disks being renumbered
+		 *	on Mac OS X, for example when physical disks have
+		 *	been re-cabled, moved, removed, or otherwise.
+		 */
 		if (error && vd->vdev_guid != 0) {
 			error = vdev_iokit_open_by_guid(dvd, vd->vdev_guid);
 		}
@@ -611,8 +619,8 @@ vdev_iokit_read_rootlabel(char *devpath, char *devid, nvlist_t **config)
 	if (error)
 		return (error);
 
-	/* Locate the vdev by pathname */
-	error = vdev_iokit_find_by_path(dvd, devpath);
+	/* Locate the vdev by pathname, without validating the GUID */
+	error = vdev_iokit_find_by_path(dvd, devpath, FALSE);
 
 	if (error) {
 		goto error;

@@ -76,7 +76,7 @@ extern int vdev_iokit_open_by_path(vdev_iokit_t *, char *);
 
 extern int vdev_iokit_open_by_guid(vdev_iokit_t *, uint64_t);
 
-extern int vdev_iokit_find_by_path(vdev_iokit_t *, char *);
+extern int vdev_iokit_find_by_path(vdev_iokit_t *, char *, bool);
 
 extern int vdev_iokit_find_by_guid(vdev_iokit_t *, uint64_t);
 

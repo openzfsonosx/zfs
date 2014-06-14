@@ -573,7 +573,7 @@ extern OSSet * vdev_iokit_get_disks()
 
 /* Returned object will have a reference count and should be released */
 int
-vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath)
+vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, bool validate)
 {
 	OSSet * allDisks = 0;
 	OSObject * currentEntry = 0;
@@ -582,6 +582,7 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath)
 	OSObject * bsdnameosobj = 0;
 	OSString * bsdnameosstr = 0;
 	char * diskName = 0;
+	uint64_t min_size = 128<<20; /* 128 Mb */
 
 	if (!dvd || !diskPath) {
 		return (EINVAL);
@@ -624,6 +625,14 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath)
 			/* Pop from list */
 			allDisks->removeObject(currentEntry);
 			currentEntry = 0;
+			continue;
+		}
+
+		if (currentDisk->getSize() < min_size) {
+			/* Pop from list */
+			allDisks->removeObject(currentEntry);
+			currentEntry = 0;
+			currentDisk = 0;
 			continue;
 		}
 
@@ -701,7 +710,7 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 	IOMedia * matchedDisk = 0;
 	nvlist_t * config = 0;
 
-	uint64_t min_size = 100<<20; /* 100 Mb */
+	uint64_t min_size = 128<<20; /* 128 Mb */
 	uint64_t txg = 0, besttxg = 0;
 	uint64_t current_guid = 0;
 
@@ -1104,7 +1113,7 @@ vdev_iokit_open_by_path(vdev_iokit_t * dvd, char * path)
 		return (EINVAL);
 	}
 
-	if (vdev_iokit_find_by_path(dvd, path) != 0 ||
+	if (vdev_iokit_find_by_path(dvd, path, TRUE) != 0 ||
 		!dvd->vd_iokit_hl) {
 
 		return (ENOENT);

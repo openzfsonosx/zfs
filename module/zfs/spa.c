@@ -1756,7 +1756,6 @@ spa_config_valid(spa_t *spa, nvlist_t *config)
 			vdev_reopen(tvd);
 		}
 	}
-
 	vdev_free(mrvd);
 	spa_config_exit(spa, SCL_ALL, FTAG);
 
@@ -2227,6 +2226,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
 		error = vdev_validate(rvd, mosconfig);
 		spa_config_exit(spa, SCL_ALL, FTAG);
+
 		if (error != 0)
 			return (error);
 
@@ -2320,9 +2320,8 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	 */
 	if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_VDEV_CHILDREN,
 	    &children) != 0 && mosconfig && type != SPA_IMPORT_ASSEMBLE &&
-	    rvd->vdev_guid_sum != ub->ub_guid_sum) {
+	    rvd->vdev_guid_sum != ub->ub_guid_sum)
 		return (spa_vdev_err(rvd, VDEV_AUX_BAD_GUID_SUM, ENXIO));
-    }
 
 	if (type != SPA_IMPORT_ASSEMBLE && spa->spa_config_splitting) {
 		spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
@@ -2656,9 +2655,8 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		 * root vdev.  If it can't be opened, it indicates one or
 		 * more toplevel vdevs are faulted.
 		 */
-		if (rvd->vdev_state <= VDEV_STATE_CANT_OPEN) {
+		if (rvd->vdev_state <= VDEV_STATE_CANT_OPEN)
 			return (SET_ERROR(ENXIO));
-        }
 
 		if (spa_check_logs(spa)) {
 			*ereport = FM_EREPORT_ZFS_LOG_REPLAY;
@@ -2682,10 +2680,9 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	 * to start pushing transactions.
 	 */
 	if (state != SPA_LOAD_TRYIMPORT) {
-		if ((error = spa_load_verify(spa))) {
+		if ((error = spa_load_verify(spa)))
 			return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA,
 			    error));
-        }
 	}
 
 	if (spa_writeable(spa) && (state == SPA_LOAD_RECOVER ||
@@ -3337,7 +3334,6 @@ spa_validate_aux_devs(spa_t *spa, nvlist_t *nvroot, uint64_t crtxg, int mode,
 			goto out;
 
 		if (!vd->vdev_ops->vdev_op_leaf) {
-
 			vdev_free(vd);
 			error = SET_ERROR(EINVAL);
 			goto out;
@@ -4007,8 +4003,6 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 
 	error = spa_load_best(spa, state, B_TRUE, policy.zrp_txg,
 	    policy.zrp_request);
-    
-printf("spa_import: spa_load_best (%d)\n", error);
 
 	/*
 	 * Propagate anything learned while loading the pool and pass it
@@ -4048,7 +4042,6 @@ printf("spa_import: spa_load_best (%d)\n", error);
 
 	if (error != 0 || (props && spa_writeable(spa) &&
 	    (error = spa_prop_set(spa, props)))) {
-printf("spa_import: validation failed? (%d)\n", error);
 		spa_unload(spa);
 		spa_deactivate(spa);
 		spa_remove(spa);
