@@ -82,7 +82,7 @@ extern int vdev_iokit_find_by_guid(vdev_iokit_t *, uint64_t);
 
 extern int vdev_iokit_find_pool(vdev_iokit_t *, char *);
 
-extern int vdev_iokit_physpath(vdev_t *, char *);
+extern int vdev_iokit_physpath(vdev_t *);
 
 extern int vdev_iokit_open(vdev_t *, uint64_t *, uint64_t *, uint64_t *);
 
@@ -93,6 +93,8 @@ extern int vdev_iokit_handle_open(vdev_iokit_t *, int);
 extern int vdev_iokit_handle_close(vdev_iokit_t *, int);
 
 extern int vdev_iokit_sync(vdev_iokit_t *, zio_t *);
+
+extern char * vdev_iokit_get_path(vdev_iokit_t * dvd);
 
 extern int vdev_iokit_get_size(vdev_iokit_t *,
 				uint64_t *, uint64_t *, uint64_t *);

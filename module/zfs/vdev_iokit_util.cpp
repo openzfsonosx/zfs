@@ -597,20 +597,30 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, uint64_t guid = 0)
 		return (EINVAL);
 	}
 
-	diskName = strrchr(diskPath, '/');
-
-	if (diskName) {
-		/* /dev/disk0s2 -> /disk0s2 */
-		/* Start after the last path divider */
-		diskName++;
-		/* /disk0s2 -> disk0s2 */
-	} else {
-		/*
-		 * XXX To do - check that diskName
-		 * is in the form diskNsN
-		 */
+	/*
+	 * XXX - TO DO
+	 *	We may need to rework libzpool
+	 *	to resolve symlinks to /dev/diskNsN
+	 */
+	if (strncmp(diskPath, "/dev/", 5) == 0)
+		diskName = diskPath + 5;
+	else
 		diskName = diskPath;
-	}
+
+//	diskName = strrchr(diskPath, '/');
+//
+//	if (diskName) {
+//		/* /dev/disk0s2 -> /disk0s2 */
+//		/* Start after the last path divider */
+//		diskName++;
+//		/* /disk0s2 -> disk0s2 */
+//	} else {
+//		/*
+//		 * XXX To do - check that diskName
+//		 * is in the form diskNsN
+//		 */
+//		diskName = diskPath;
+//	}
 
 	while (allDisks->getCount() > 0) {
 
@@ -640,8 +650,7 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, uint64_t guid = 0)
 		}
 
 		bsdnameosobj = currentDisk->getProperty(kIOBSDNameKey,
-				gIOServicePlane,
-				kIORegistryIterateRecursively);
+			gIOServicePlane, kIORegistryIterateRecursively);
 
 		if (bsdnameosobj) {
 			bsdnameosstr = OSDynamicCast(OSString, bsdnameosobj);
@@ -992,34 +1001,47 @@ extern int vdev_iokit_find_pool(vdev_iokit_t * dvd, char * pool_name)
 }
 
 /* If path is valid, copy into physpath */
-extern int vdev_iokit_physpath(vdev_t * vd, char * physpath)
+extern int vdev_iokit_physpath(vdev_t * vd)
 {
 	vdev_iokit_t * dvd = 0;
+	char * physpath = 0;
+	int err;
+
+	/* presume failure */
+	err = EINVAL;
 
 	if (!vd)
-		return (EINVAL);
+		return (err);
 
 	dvd = static_cast <vdev_iokit_t *> (vd->vdev_tsd);
 
 	if (!dvd || !dvd->vd_iokit_hl)
-		return (EINVAL);
+		return (err);
+
+	physpath =	vdev_iokit_get_path(dvd);
 
 	/* If physpath arg is provided */
 	if (physpath && strlen(physpath) > 0) {
 
 		/* Save the physpath arg into physpath */
 		vd->vdev_physpath = spa_strdup(physpath);
-		return (0);
+
+		err = 0;
 	} else if (vd->vdev_path && strlen(vd->vdev_path) > 0) {
 
 		/* Save the current path into physpath */
 		vd->vdev_physpath = spa_strdup(vd->vdev_path);
-		return (0);
-	} else {
 
-		/* No usable physpath available */
-		return (EINVAL);
+		err = 0;
 	}
+
+	if (physpath) {
+		kmem_free(physpath, MAXPATHLEN);
+//		spa_strfree(physpath);
+		physpath = 0;
+	}
+
+	return (err);
 }
 
 /*
@@ -1169,6 +1191,54 @@ vdev_iokit_open_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 	} else {
 		return (EIO);
 	}
+}
+
+/* Caller should pass in a null newpath pointer */
+extern char *
+vdev_iokit_get_path(vdev_iokit_t * dvd)
+{
+	IOMedia * iokit_hl = 0;
+	OSObject * bsdnameosobj = 0;
+	OSString * bsdnameosstr = 0;
+	char * diskpath = 0;
+	char * newpath = 0;
+
+	if (!dvd || !dvd->vd_iokit_hl)
+		return (0);
+
+	iokit_hl =	OSDynamicCast(IOMedia,
+		static_cast<OSObject *>(dvd->vd_iokit_hl));
+
+	if (!iokit_hl)
+		return (0);
+
+	bsdnameosobj = iokit_hl->getProperty(kIOBSDNameKey,
+		gIOServicePlane, kIORegistryIterateRecursively);
+
+	if (bsdnameosobj) {
+		bsdnameosstr = OSDynamicCast(OSString, bsdnameosobj);
+		bsdnameosobj = 0;
+	}
+
+	if (!bsdnameosstr) {
+		return (0);
+	}
+
+	diskpath =	(char *) bsdnameosstr->getCStringNoCopy();
+
+	/* Save the disk path into newpath */
+	if (diskpath && strlen(diskpath) > 0) {
+
+//		newpath = spa_strdup(diskpath);
+
+		newpath = (char *) kmem_alloc(MAXPATHLEN, KM_PUSHPAGE);
+		snprintf(newpath, MAXPATHLEN, "/dev/%s", diskpath);
+	}
+
+	bsdnameosstr = 0;
+	iokit_hl = 0;
+
+	return (newpath);
 }
 
 extern int

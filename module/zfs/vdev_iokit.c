@@ -265,7 +265,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 	 * available) is up to date.
 	 */
 
-	if (vdev_iokit_physpath(vd, 0) != 0) {
+	if (vdev_iokit_physpath(vd) != 0) {
 		vdev_iokit_log("vdev_iokit_open: physpath couldn't be updated");
 	}
 
