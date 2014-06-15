@@ -1023,11 +1023,17 @@ extern int vdev_iokit_physpath(vdev_t * vd)
 	/* If physpath arg is provided */
 	if (physpath && strlen(physpath) > 0) {
 
+		if (vd->vdev_physpath)
+			spa_strfree(vd->vdev_physpath);
+
 		/* Save the physpath arg into physpath */
 		vd->vdev_physpath = spa_strdup(physpath);
 
 		err = 0;
 	} else if (vd->vdev_path && strlen(vd->vdev_path) > 0) {
+
+		if (vd->vdev_physpath)
+			spa_strfree(vd->vdev_physpath);
 
 		/* Save the current path into physpath */
 		vd->vdev_physpath = spa_strdup(vd->vdev_path);
@@ -1036,8 +1042,8 @@ extern int vdev_iokit_physpath(vdev_t * vd)
 	}
 
 	if (physpath) {
-		kmem_free(physpath, MAXPATHLEN);
-//		spa_strfree(physpath);
+//		kmem_free(physpath, strlen(physpath)+1);
+		spa_strfree(physpath);
 		physpath = 0;
 	}
 
@@ -1205,6 +1211,7 @@ vdev_iokit_get_path(vdev_iokit_t * dvd)
 	OSString * bsdnameosstr = 0;
 	char * diskpath = 0;
 	char * newpath = 0;
+	size_t len = 0;
 
 	if (!dvd || !dvd->vd_iokit_hl)
 		return (0);
@@ -1234,8 +1241,11 @@ vdev_iokit_get_path(vdev_iokit_t * dvd)
 
 //		newpath = spa_strdup(diskpath);
 
-		newpath = (char *) kmem_alloc(MAXPATHLEN, KM_PUSHPAGE);
-		snprintf(newpath, MAXPATHLEN, "/dev/%s", diskpath);
+		len = strlen(diskpath) + strlen("/dev/") + 1;
+
+		newpath = (char *) kmem_alloc(len, KM_SLEEP);
+
+		snprintf(newpath, len, "/dev/%s", diskpath);
 	}
 
 	bsdnameosstr = 0;

@@ -187,7 +187,9 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 			error = vdev_iokit_open_by_path(dvd, buf, checkguid);
 
 			if (error == 0) {
-				spa_strfree(vd->vdev_path);
+				if (vd->vdev_path)
+					spa_strfree(vd->vdev_path);
+
 				vd->vdev_path = buf;
 				vd->vdev_wholedisk = 1ULL;
 			} else {
@@ -251,12 +253,16 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 				physpath =	vdev_iokit_get_path(dvd);
 
 				if (physpath && strlen(physpath) > 0) {
+
+					if (vd->vdev_path)
+						spa_strfree(vd->vdev_path);
+
 					/* Save physpath into vdev_path */
 					vd->vdev_path =	spa_strdup(physpath);
 				}
 
 				if (physpath) {
-					kmem_free(physpath, MAXPATHLEN);
+					spa_strfree(physpath);
 					physpath = 0;
 				}
 			}
