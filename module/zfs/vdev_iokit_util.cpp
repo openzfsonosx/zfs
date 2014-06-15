@@ -584,7 +584,7 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, uint64_t guid = 0)
 	char * diskName = 0;
 	nvlist_t * config = 0;
 
-	uint64_t min_size = 128<<20; /* 128 Mb */
+	uint64_t min_size = SPA_MINDEVSIZE; /* 64 Mb */
 	uint64_t current_guid = 0;
 
 	if (!dvd || !diskPath) {
@@ -742,7 +742,7 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 	IOMedia * matchedDisk = 0;
 	nvlist_t * config = 0;
 
-	uint64_t min_size = 128<<20; /* 128 Mb */
+	uint64_t min_size = SPA_MINDEVSIZE; /* 64 Mb */
 	uint64_t txg = 0, besttxg = 0;
 	uint64_t current_guid = 0;
 
@@ -877,7 +877,7 @@ extern int vdev_iokit_find_pool(vdev_iokit_t * dvd, char * pool_name)
 	nvlist_t * config = 0;
 	char * cur_pool_name = 0;
 
-	uint64_t min_size = 100<<20; /* 100 Mb */
+	uint64_t min_size = SPA_MINDEVSIZE; /* 64 Mb */
 	uint64_t txg = 0, besttxg = 0;
 
 	if (!pool_name)
