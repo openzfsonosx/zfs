@@ -428,7 +428,8 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
       zv = NULL;
         
       if (nub)
-          nub->terminate(kIOServiceSynchronous);
+          nub->terminate(kIOServiceRequired|
+			kIOServiceSynchronous);
     }
 
     return result;
@@ -448,7 +449,7 @@ bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
         
       //IOLog("Attempting to update volsize\n");
       nub->retain();
-      nub->registerService(kIOServiceSynchronous);
+      nub->registerService(kIOServiceAsynchronous);
       nub->release();
     }
     return true;
