@@ -246,7 +246,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		 *	been re-cabled, moved, removed, or otherwise.
 		 */
 		if (error && vd->vdev_guid != 0) {
-			error = vdev_iokit_open_by_guid(dvd, checkguid);
+			error = vdev_iokit_open_by_guid(dvd, vd->vdev_guid);
 
 			if (error == 0) {
 			/* Update vdev_path */
