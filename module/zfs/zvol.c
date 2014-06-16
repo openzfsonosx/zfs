@@ -694,8 +694,6 @@ __zvol_rename_minor(zvol_state_t *zv, const char *newname)
 }
 #endif
 
-extern boolean_t spa_exporting_vdevs;
-
 int
 zvol_first_open(zvol_state_t *zv)
 {
