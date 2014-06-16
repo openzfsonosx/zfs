@@ -449,7 +449,7 @@ bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
         
       //IOLog("Attempting to update volsize\n");
       nub->retain();
-      nub->registerService(kIOServiceAsynchronous);
+      nub->registerService(kIOServiceSynchronous);
       nub->release();
     }
     return true;
