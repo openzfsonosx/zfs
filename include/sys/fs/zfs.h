@@ -969,7 +969,6 @@ typedef struct zfs_footprint_stats {
 extern zfs_memory_stats_t zfs_footprint;
 extern int zfs_threads;
 extern int zfs_msg_buf_enabled;
-extern u_int32_t k_maczfs_debug_stalk;
 extern size_t zfs_kallocmap_size;
 extern size_t zfs_kernelmap_size;
 
