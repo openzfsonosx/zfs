@@ -65,16 +65,62 @@ usage(void)
 	closelog();
         exit(FSUR_INVAL);
 }
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreServices/CoreServices.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/storage/IOMedia.h>
+#include <DiskArbitration/DiskArbitration.h>
+
+
+
 
 static int
 zfs_probe(const char *devpath)
 {
 	int result = FSUR_UNRECOGNIZED;
 	char *volname = "somename";
+	CFMutableDictionaryRef  matchingDict;
+    io_service_t            service;
+
+	if (!strncmp("/dev/", devpath, 5))
+		devpath = &devpath[5];
 
 	syslog(LOG_NOTICE, "+zfs_probe : devpath %s", devpath);
 
-	syslog(LOG_NOTICE, "writing volname %s\n", volname);
+	matchingDict = IOBSDNameMatching(kIOMasterPortDefault, 0, devpath);
+    if (NULL == matchingDict) {
+			syslog(LOG_NOTICE, "IOBSDNameMatching returned a NULL dictionary.\n");
+    } else {
+        // Fetch the object with the matching BSD node name.
+        // Note that there should only be one match, so IOServiceGetMatchingService is used instead of
+        // IOServiceGetMatchingServices to simplify the code.
+        service = IOServiceGetMatchingService(kIOMasterPortDefault, matchingDict);
+
+        if (IO_OBJECT_NULL == service) {
+			syslog(LOG_NOTICE, "IOServiceGetMatchingService returned IO_OBJECT_NULL.\n");
+        } else {
+			syslog(LOG_NOTICE, "writing\n");
+			if (IOObjectConformsTo(service, kIOMediaClass)) {
+
+
+#if 0  // Figure out what to do with "service" here.
+
+				//IOService *media = OSDynamicCast(IOMedia, service);
+				//OSbject *o = media->getProperty("DATASET");
+				volname = service->getProperty("DATASET")->getCStringNoCopy();
+				if (o) {
+					//OSString *os = OSDynamicCast(OSString, o);
+					//if (os) {
+						volname = os->getCStringNoCopy();
+						syslog(LOG_NOTICE, "writing volname %s\n", volname);
+						//}
+				}
+#endif
+			}
+            IOObjectRelease(service);
+        }
+	}
+
 	write(1, volname, strlen(volname));
 	result = FSUR_RECOGNIZED;
 
@@ -106,7 +152,7 @@ main(int argc, char **argv)
 
 	if (argc < 2 || argv[0][0] != '-')
 		usage();
- 
+
 	what = argv[0][1];
 	syslog(LOG_NOTICE, "zfs.util called with option %c", what);
 
@@ -142,4 +188,3 @@ main(int argc, char **argv)
 	closelog();
 	exit(ret);
 }
-

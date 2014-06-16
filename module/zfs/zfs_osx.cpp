@@ -518,49 +518,6 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
 
 	media->setProperty("DATASET", poolname);
 
-#if 0
-    IOMedia*                newMedia;
-    IOMediaAttributeMask    mediaAttributes = 0;
-    bool                    isMediaWritable = true;
-	uint32_t index = 0;
-    newMedia = new IOMedia;
-    if ( newMedia )
-    {
-        if ( newMedia->init(0,
-							bytes,
-							block,
-							0,
-							false, //it's a "partition" now
-							!rdonly,
-							"zfs_pool_proxy"))
-		{
-
-			printf("attaching new Media\n");
-
-            newMedia->setName(poolname);
-
-            // Set a location value (the partition number) for this partition
-            char location[12];
-            snprintf(location, sizeof(location), "%d", (int)0);
-            newMedia->setLocation(location);
-
-            // Set the "Partition ID" key for this partition
-            newMedia->setProperty(kIOMediaPartitionIDKey, index, 32);
-
-            newMedia->setProperty("ZFS_POOL_GUID", pool_guid, 64);
-            newMedia->setProperty("ZFS_DATASET_GUID", dataset_guid, 64);
-
-			newMedia->attach(this);
-			newMedia->start(this);
-
-		}
-		else
-		{
-			newMedia->release();
-			newMedia = NULL;
-		}
-    }
-#endif
 
 
 	printf("Stirring the pot...\n");

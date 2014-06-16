@@ -18,7 +18,7 @@ zfs_util_LDADD = \
 	$(top_builddir)/lib/libzfs/libzfs.la
 	$(top_builddir)/lib/libzfs_core/libzfs_core.la
 
-zfs_util_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) -framework DiskArbitration -framework CoreServices
+zfs_util_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) -framework DiskArbitration -framework CoreServices -framework IOKit
 
 install-exec-hook:
 	mkdir -p $(DESTDIR)/System/Library/Filesystems/zfs.fs/Contents/Resources

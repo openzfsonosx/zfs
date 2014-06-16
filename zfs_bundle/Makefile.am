@@ -14,6 +14,8 @@ zfs_fs_SOURCE =
 zfs_SOURCES = \
 	../cmd/zfs_util/zfs_util.c
 
+zfs_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) -framework DiskArbitration -framework CoreServices -framework IOKit
+
 ZFS_FS_DIR = $(DESTDIR)/System/Library/Filesystems/zfs.fs
 
 dist_noinst_DATA = $(EN_INFO_PLIST_STRINGS) $(INFO_PLIST)
