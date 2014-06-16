@@ -101,21 +101,17 @@ zfs_probe(const char *devpath)
         } else {
 			syslog(LOG_NOTICE, "writing\n");
 			if (IOObjectConformsTo(service, kIOMediaClass)) {
+				CFStringRef serialNumberAsCFString;
+				CFStringEncoding encoding = kCFStringEncodingUTF8;
 
+				serialNumberAsCFString = (CFStringRef*) IORegistryEntryCreateCFProperty(service, CFSTR("DATASET"), kCFAllocatorDefault, 0);
 
-#if 0  // Figure out what to do with "service" here.
-
-				//IOService *media = OSDynamicCast(IOMedia, service);
-				//OSbject *o = media->getProperty("DATASET");
-				volname = service->getProperty("DATASET")->getCStringNoCopy();
-				if (o) {
-					//OSString *os = OSDynamicCast(OSString, o);
-					//if (os) {
-						volname = os->getCStringNoCopy();
-						syslog(LOG_NOTICE, "writing volname %s\n", volname);
-						//}
+				if (serialNumberAsCFString) {
+					volname = CFStringGetCStringPtr(serialNumberAsCFString, encoding);
 				}
-#endif
+
+				syslog(LOG_NOTICE, "writing volname %s\n", volname);
+
 			}
             IOObjectRelease(service);
         }
