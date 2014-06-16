@@ -1538,7 +1538,7 @@ vdev_reopen(vdev_t *vd)
 		    !l2arc_vdev_present(vd))
 			l2arc_add_vdev(spa, vd);
 	} else {
-		(void) vdev_validate(vd, spa_last_synced_txg(spa));
+		(void) vdev_validate(vd, B_TRUE);
 	}
 
 	/*
