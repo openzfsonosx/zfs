@@ -50,14 +50,14 @@
 extern ldi_ident_t zfs_li;
 
 typedef struct vdev_disk_buf {
-	buf_t	vdb_buf;
-	zio_t	*vdb_io;
+	buf_t vdb_buf;
+	zio_t *vdb_io;
 } vdev_disk_buf_t;
 #endif /* !__APPLE__ */
 
 static int
 vdev_disk_open(vdev_t *vd, uint64_t *psize,
-			uint64_t *max_psize, uint64_t *ashift)
+	uint64_t *max_psize, uint64_t *ashift)
 {
 	vdev_disk_t *dvd = NULL;
 	vnode_t *devvp = NULLVP;
@@ -371,9 +371,9 @@ vdev_ops_t vdev_disk_ops = {
 	vdev_default_asize,
 	vdev_disk_io_start,
 	vdev_disk_io_done,
-	NULL /* vdev_op_state_change */,
-	NULL /* vdev_op_hold */,
-	NULL /* vdev_op_rele */,
+	NULL	/* vdev_op_state_change */,
+	NULL	/* vdev_op_hold */,
+	NULL	/* vdev_op_rele */,
 	VDEV_TYPE_DISK,	/* name of this vdev type */
-	B_TRUE			/* leaf vdev */
+	B_TRUE	/* leaf vdev */
 };
