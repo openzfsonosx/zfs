@@ -131,11 +131,7 @@ zfs_onexit_fd_hold(int fd, minor_t *minorp)
     if (fp == NULL)
         return EBADF;
 
-#ifdef __APPLE__
-    *minorp = zfsdev_getminor((dev_t)current_proc());
-#else
     *minorp = zfsdev_getminor(fp->f_file);
-#endif
     return (zfs_onexit_minor_to_state(*minorp, &zo));
 }
 
