@@ -62,7 +62,7 @@ vdev_iokit_alloc(vdev_iokit_t **dvd)
 		return (EINVAL);
 	}
 
-	*dvd = (vdev_iokit_t *) kmem_alloc(sizeof (vdev_iokit_t), KM_PUSHPAGE);
+	*dvd = (vdev_iokit_t *)kmem_alloc(sizeof (vdev_iokit_t), KM_PUSHPAGE);
 
 	if (!dvd || !(*dvd))
 		return (ENOMEM);
@@ -98,7 +98,7 @@ vdev_iokit_free(vdev_iokit_t **dvd)
 }
 
 extern void
-vdev_iokit_state_change(vdev_t * vd, int faulted, int degraded)
+vdev_iokit_state_change(vdev_t *vd, int faulted, int degraded)
 {
 	vdev_iokit_log_ptr("vdev_iokit_state_change: vd", vd);
 
@@ -111,7 +111,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 	vdev_iokit_t *dvd = 0;
 	int error = 0;
 	uint64_t checkguid = 0;
-	char * physpath = 0;
+	char *physpath = 0;
 
 	if (!vd)
 		return (EINVAL);
@@ -143,7 +143,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		}
 	}
 
-	error = vdev_iokit_alloc((vdev_iokit_t **) &(vd->vdev_tsd));
+	error = vdev_iokit_alloc((vdev_iokit_t **)&(vd->vdev_tsd));
 	dvd = (vdev_iokit_t *)(vd->vdev_tsd);
 
 	if (error != 0 || !dvd) {
@@ -203,7 +203,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		 */
 		if (error != 0) {
 			error = vdev_iokit_open_by_path(dvd,
-				vd->vdev_path, checkguid);
+			    vd->vdev_path, checkguid);
 		}
 
 		/*
@@ -224,7 +224,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 
 		if (vd->vdev_physpath != NULL) {
 			error = vdev_iokit_open_by_path(dvd,
-				vd->vdev_physpath, checkguid);
+			    vd->vdev_physpath, checkguid);
 		}
 
 		/*
@@ -234,7 +234,7 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		 */
 		if (error && vd->vdev_path != NULL) {
 			error = vdev_iokit_open_by_path(dvd,
-				vd->vdev_path, checkguid);
+			    vd->vdev_path, checkguid);
 		}
 
 		/*
@@ -281,8 +281,8 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 	if (error) {
 		/* Ignore the error, but log it */
 		vdev_iokit_log_num(
-			"vdev_iokit_open: vdev_iokit_sync returned error",
-			error);
+		    "vdev_iokit_open: vdev_iokit_sync returned error",
+		    error);
 	}
 
 	/*
@@ -308,7 +308,7 @@ skip_open:
 #if 0 /* Disabled */
 	/* Allocate command pools for async IO */
 	if (!dvd->in_command_pool ||
-		(spa_mode(vd->vdev_spa) > FREAD && !dvd->out_command_pool)) {
+	    (spa_mode(vd->vdev_spa) > FREAD && !dvd->out_command_pool)) {
 
 		/* Allocate several io_context objects */
 		if (vdev_iokit_context_pool_alloc(dvd) != 0) {
@@ -389,8 +389,8 @@ vdev_iokit_close(vdev_t *vd)
 			if (error) {
 				/* Ignore the error, but log it */
 				vdev_iokit_log_num(
-					"vdev_iokit_close: couldn't sync disk",
-					error);
+				    "vdev_iokit_close: couldn't sync disk",
+				    error);
 			}
 		}
 
@@ -400,8 +400,8 @@ vdev_iokit_close(vdev_t *vd)
 		if (error) {
 			/* Ignore the error, but log it */
 			vdev_iokit_log_num(
-				"vdev_iokit_close: handle_close returned error",
-				error);
+			    "vdev_iokit_close: handle_close returned error",
+			    error);
 		}
 
 		dvd->vd_iokit_hl = 0;
@@ -414,7 +414,7 @@ vdev_iokit_close(vdev_t *vd)
 
 	vd->vdev_delayed_close = B_FALSE;
 
-	vdev_iokit_free((vdev_iokit_t **) &(vd->vdev_tsd));
+	vdev_iokit_free((vdev_iokit_t **)&(vd->vdev_tsd));
 	vd->vdev_tsd = 0;
 	dvd = 0;
 }
@@ -522,7 +522,7 @@ vdev_iokit_io_start(zio_t *zio)
 extern void
 vdev_iokit_io_done(zio_t *zio)
 {
-	vdev_t * vd = 0;
+	vdev_t *vd = 0;
 
 	if (!zio)
 		return;
@@ -548,7 +548,7 @@ vdev_iokit_io_done(zio_t *zio)
 
 /* Read configuration from disk */
 int
-vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
+vdev_iokit_read_label(vdev_iokit_t *dvd, nvlist_t **config)
 {
 	vdev_label_t *label = 0;
 	size_t labelsize = VDEV_SKIP_SIZE + VDEV_PHYS_SIZE;
@@ -597,13 +597,13 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
 		}
 
 		if (vdev_iokit_physio(dvd, (void*)label, labelsize,
-							offset, FREAD) != 0) {
+		    offset, FREAD) != 0) {
 			continue;
 		}
 
 		error = nvlist_unpack(label->vl_vdev_phys.vp_nvlist,
-					sizeof (label->vl_vdev_phys.vp_nvlist),
-					config, 0);
+		    sizeof (label->vl_vdev_phys.vp_nvlist),
+		    config, 0);
 
 		if (error != 0) {
 			*config = NULL;
@@ -616,8 +616,8 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
 		 *	uninitialized, or potentially active
 		 */
 		if (nvlist_lookup_uint64(*config,
-				ZPOOL_CONFIG_POOL_STATE, &state) != 0 ||
-			state > POOL_STATE_L2CACHE) {
+		    ZPOOL_CONFIG_POOL_STATE, &state) != 0 ||
+		    state > POOL_STATE_L2CACHE) {
 
 			nvlist_free(*config);
 			*config = NULL;
@@ -628,9 +628,9 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
 		 * Check and fetch txg number
 		 */
 		if (state != POOL_STATE_SPARE &&
-			state != POOL_STATE_L2CACHE &&
+		    state != POOL_STATE_L2CACHE &&
 		    (nvlist_lookup_uint64(*config, ZPOOL_CONFIG_POOL_TXG,
-				&txg) != 0 || txg == 0)) {
+		    &txg) != 0 || txg == 0)) {
 
 			nvlist_free(*config);
 			*config = NULL;
@@ -660,7 +660,7 @@ vdev_iokit_read_label(vdev_iokit_t * dvd, nvlist_t **config)
 int
 vdev_iokit_read_rootlabel(char *devpath, char *devid, nvlist_t **config)
 {
-	vdev_iokit_t * dvd = 0;
+	vdev_iokit_t *dvd = 0;
 	int error = EINVAL;
 
 	error = vdev_iokit_alloc(&dvd);

@@ -94,12 +94,12 @@ extern int vdev_iokit_handle_close(vdev_iokit_t *, int);
 
 extern int vdev_iokit_sync(vdev_iokit_t *, zio_t *);
 
-extern char * vdev_iokit_get_path(vdev_iokit_t * dvd);
+extern char *vdev_iokit_get_path(vdev_iokit_t *);
 
 extern int vdev_iokit_get_size(vdev_iokit_t *,
 				uint64_t *, uint64_t *, uint64_t *);
 
-extern void * vdev_iokit_get_service();
+extern void *vdev_iokit_get_service();
 
 extern int vdev_iokit_status(vdev_iokit_t *);
 

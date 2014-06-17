@@ -26,48 +26,48 @@
  * IOKit C++ functions
  */
 
-extern void vdev_iokit_log(const char * logString)
+extern void vdev_iokit_log(const char *logString)
 {
 	IOLog("ZFS: vdev: %s\n", logString);
 }
 
-extern void vdev_iokit_log_str(const char * logString1, const char * logString2)
+extern void vdev_iokit_log_str(const char *logString1, const char *logString2)
 {
 	IOLog("ZFS: vdev: %s {%s}\n", logString1, logString2);
 }
 
-extern void vdev_iokit_log_ptr(const char * logString, const void * logPtr)
+extern void vdev_iokit_log_ptr(const char *logString, const void *logPtr)
 {
 	IOLog("ZFS: vdev: %s [%p]\n", logString, logPtr);
 }
 
-extern void vdev_iokit_log_num(const char * logString, const uint64_t logNum)
+extern void vdev_iokit_log_num(const char *logString, const uint64_t logNum)
 {
 	IOLog("ZFS: vdev: %s (%llu)\n", logString, logNum);
 }
 
-static inline void vdev_iokit_context_free(vdev_iokit_context_t * io_context);
+static inline void vdev_iokit_context_free(vdev_iokit_context_t *io_context);
 
-static inline vdev_iokit_context_t * vdev_iokit_context_alloc(zio_t * zio)
+static inline vdev_iokit_context_t *vdev_iokit_context_alloc(zio_t *zio)
 {
-	vdev_iokit_context_t * io_context = 0;
-	IOMemoryDescriptor * newBuffer = 0;
+	vdev_iokit_context_t *io_context = 0;
+	IOMemoryDescriptor *newBuffer = 0;
 
 
 	if (!zio || !zio->io_data || zio->io_size == 0)
 		return (0);
 
 	/* KM_PUSHPAGE for IO context */
-	io_context = (vdev_iokit_context_t *) kmem_alloc(
-				sizeof (vdev_iokit_context_t), KM_PUSHPAGE);
+	io_context = (vdev_iokit_context_t *)kmem_alloc(
+	    sizeof (vdev_iokit_context_t), KM_PUSHPAGE);
 
 	if (!io_context)
 		return (0);
 
 	newBuffer = IOBufferMemoryDescriptor::withAddress(
-				zio->io_data, zio->io_size,
-				(zio->io_type == ZIO_TYPE_WRITE ?
-				kIODirectionOut : kIODirectionIn));
+	    zio->io_data, zio->io_size,
+	    (zio->io_type == ZIO_TYPE_WRITE ?
+	    kIODirectionOut : kIODirectionIn));
 
 	if (!newBuffer)
 		goto error;
@@ -78,8 +78,8 @@ static inline vdev_iokit_context_t * vdev_iokit_context_alloc(zio_t * zio)
 
 	io_context->completion.target =	io_context;
 	io_context->completion.parameter =	zio;
-	io_context->completion.action =
-	(IOStorageCompletionAction) &vdev_iokit_io_intr;
+	io_context->completion.action = (IOStorageCompletionAction)
+	    &vdev_iokit_io_intr;
 
 	return (io_context);
 
@@ -90,7 +90,7 @@ error:
 	return (0);
 }
 
-static inline void vdev_iokit_context_free(vdev_iokit_context_t * io_context)
+static inline void vdev_iokit_context_free(vdev_iokit_context_t *io_context)
 {
 	if (!io_context) {
 		return;
@@ -110,7 +110,7 @@ static inline void vdev_iokit_context_free(vdev_iokit_context_t * io_context)
 }
 
 #if 0 /* Disabled */
-extern inline void * vdev_iokit_get_context(vdev_iokit_t * dvd, zio_t * zio)
+extern inline void *vdev_iokit_get_context(vdev_iokit_t *dvd, zio_t *zio)
 {
 	bool blocking = false;
 	IOCommandPool * command_pool = 0;
@@ -120,10 +120,10 @@ extern inline void * vdev_iokit_get_context(vdev_iokit_t * dvd, zio_t * zio)
 
 	if (zio->io_type == ZIO_TYPE_WRITE) {
 		command_pool = (OSDynamicCast(IOCommandPool,
-					(OSObject *)dvd->out_command_pool));
+		    (OSObject *)dvd->out_command_pool));
 	} else {
 		command_pool = (OSDynamicCast(IOCommandPool,
-					(OSObject *)dvd->in_command_pool));
+		    (OSObject *)dvd->in_command_pool));
 	}
 
 	if (!command_pool) {
@@ -146,10 +146,10 @@ extern inline void * vdev_iokit_get_context(vdev_iokit_t * dvd, zio_t * zio)
 	return (void *)(command_pool->getCommand(blocking));
 }
 
-extern inline void vdev_iokit_return_context(zio_t * zio, void * io_context)
+extern inline void vdev_iokit_return_context(zio_t *zio, void *io_context)
 {
-	vdev_iokit_t * dvd = 0;
-	IOCommandPool * command_pool = 0;
+	vdev_iokit_t *dvd = 0;
+	IOCommandPool *command_pool = 0;
 
 	if (!zio || !zio->io_vd || !zio->io_vd->vdev_tsd)
 		return;
@@ -161,21 +161,20 @@ extern inline void vdev_iokit_return_context(zio_t * zio, void * io_context)
 
 	if (zio->io_type == ZIO_TYPE_WRITE) {
 		command_pool = (OSDynamicCast(IOCommandPool,
-					(OSObject *)dvd->out_command_pool));
+		    (OSObject *)dvd->out_command_pool));
 	} else {
 		command_pool = (OSDynamicCast(IOCommandPool,
-					(OSObject *)dvd->in_command_pool));
+		    (OSObject *)dvd->in_command_pool));
 	}
 
 	if (!command_pool) {
-		io_context
 		return;
 	}
 
 	command_pool->returnCommand((IOCommand *)io_context);
 }
 
-extern int vdev_iokit_context_pool_alloc(vdev_iokit_t * dvd)
+extern int vdev_iokit_context_pool_alloc(vdev_iokit_t *dvd)
 {
 	OSSet * new_set = 0;
 	IOWorkLoop * work_loop = 0;
@@ -204,7 +203,7 @@ extern int vdev_iokit_context_pool_alloc(vdev_iokit_t * dvd)
 	if (!dvd->in_command_pool) {
 		/* Allocate read work loop */
 		work_loop = IOWorkLoop::workLoopWithOptions(
-						IOWorkLoop::kPreciousStack);
+		    IOWorkLoop::kPreciousStack);
 		if (!work_loop) {
 			error = ENOMEM;
 			goto error;
@@ -227,8 +226,8 @@ extern int vdev_iokit_context_pool_alloc(vdev_iokit_t * dvd)
 		/* Pre-allocate contexts for reads */
 		for (int i = 0; i < preallocate; i++) {
 			new_context = (net_lundman_vdev_io_context *)
-				net_lundman_vdev_io_context::withDirection(
-				kIODirectionIn);
+			    net_lundman_vdev_io_context::withDirection(
+			    kIODirectionIn);
 
 			if (!new_context) {
 				error = ENOMEM;
@@ -247,7 +246,7 @@ extern int vdev_iokit_context_pool_alloc(vdev_iokit_t * dvd)
 	if (!dvd->out_command_pool) {
 		/* Allocate write work loop */
 		work_loop = IOWorkLoop::workLoopWithOptions(
-						IOWorkLoop::kPreciousStack);
+		    IOWorkLoop::kPreciousStack);
 		if (!work_loop) {
 			error = ENOMEM;
 			goto error;
@@ -272,8 +271,8 @@ extern int vdev_iokit_context_pool_alloc(vdev_iokit_t * dvd)
 		/* Pre-allocate contexts for writes */
 		for (int i = 0; i < preallocate; i++) {
 			new_context = (net_lundman_vdev_io_context *)
-				net_lundman_vdev_io_context::withDirection(
-				kIODirectionOut);
+			    net_lundman_vdev_io_context::withDirection(
+			    kIODirectionOut);
 
 			if (!new_context) {
 				error = ENOMEM;
@@ -310,7 +309,7 @@ error:
 	return (error);
 }
 
-extern int vdev_iokit_context_pool_free(vdev_iokit_t * dvd)
+extern int vdev_iokit_context_pool_free(vdev_iokit_t *dvd)
 {
 	IOCommandPool * command_pool = 0;
 	OSSet * command_set = 0;
@@ -362,8 +361,8 @@ extern void * vdev_iokit_get_service()
 	IOService * zfs_hl = 0;
 
 	currentEntry = IORegistryEntry::fromPath(
-				"IOService:/IOResources/net_lundman_zfs_zvol",
-				0, 0, 0, 0);
+	    "IOService:/IOResources/net_lundman_zfs_zvol",
+	    0, 0, 0, 0);
 
 	if (currentEntry) {
 		zfs_hl = OSDynamicCast(IOService, currentEntry);
@@ -386,11 +385,11 @@ extern void * vdev_iokit_get_service()
 
 		if (newIterator) {
 			registryIterator = OSDynamicCast(IORegistryIterator,
-								newIterator);
+			    newIterator);
 			if (registryIterator) {
 
 				zfs_hl = OSDynamicCast(IOService,
-					registryIterator->getCurrentEntry());
+				    registryIterator->getCurrentEntry());
 
 				if (zfs_hl)
 					zfs_hl->retain();
@@ -408,7 +407,7 @@ extern void * vdev_iokit_get_service()
 
 	/* If not matched, go to plan C */
 	registryIterator = IORegistryIterator::iterateOver(
-			gIOServicePlane, kIORegistryIterateRecursively);
+	    gIOServicePlane, kIORegistryIterateRecursively);
 	if (registryIterator) {
 		do {
 			if (allServices)
@@ -426,18 +425,18 @@ extern void * vdev_iokit_get_service()
 	}
 
 	while ((currentEntry = OSDynamicCast(IORegistryEntry,
-				allServices->getFirstObject()))) {
+	    allServices->getFirstObject()))) {
 		if (currentEntry) {
 
 			entryName = OSDynamicCast(OSString,
-					currentEntry->copyName());
+			    currentEntry->copyName());
 
 			if (entryName) {
 				if (entryName->isEqualTo(
-					"net_lundman_zfs_zvol")) {
+				    "net_lundman_zfs_zvol")) {
 					zfs_hl = OSDynamicCast(
-							IOService,
-							currentEntry);
+					    IOService,
+					    currentEntry);
 					zfs_hl->retain();
 				}
 				entryName->release();
@@ -481,7 +480,7 @@ extern OSSet * vdev_iokit_get_disks()
 	boolean_t result = false;
 
 	registryIterator = IORegistryIterator::iterateOver(gIOServicePlane,
-				kIORegistryIterateRecursively);
+	    kIORegistryIterateRecursively);
 
 	if (!registryIterator) {
 		registryIterator = 0;
@@ -528,7 +527,7 @@ extern OSSet * vdev_iokit_get_disks()
 		 * (could just as well be the last object)
 		 */
 		currentEntry = OSDynamicCast(IORegistryEntry,
-						allEntries->getFirstObject());
+		    allEntries->getFirstObject());
 
 		if (!currentEntry) {
 			/* clean up */
@@ -546,7 +545,7 @@ extern OSSet * vdev_iokit_get_disks()
 
 		/* Check 'Leaf' property */
 		matchBool = OSDynamicCast(OSBoolean,
-			currentEntry->getProperty(kIOMediaLeafKey));
+		    currentEntry->getProperty(kIOMediaLeafKey));
 
 		result = (matchBool && matchBool->getValue() == true);
 
@@ -573,7 +572,7 @@ extern OSSet * vdev_iokit_get_disks()
 
 /* Returned object will have a reference count and should be released */
 int
-vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, uint64_t guid = 0)
+vdev_iokit_find_by_path(vdev_iokit_t *dvd, char *diskPath, uint64_t guid = 0)
 {
 	OSSet * allDisks = 0;
 	OSObject * currentEntry = 0;
@@ -581,8 +580,8 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, uint64_t guid = 0)
 	IOMedia * matchedDisk = 0;
 	OSObject * bsdnameosobj = 0;
 	OSString * bsdnameosstr = 0;
-	char * diskName = 0;
-	nvlist_t * config = 0;
+	char *diskName = 0;
+	nvlist_t *config = 0;
 
 	uint64_t min_size = SPA_MINDEVSIZE; /* 64 Mb */
 	uint64_t current_guid = 0;
@@ -607,20 +606,22 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, uint64_t guid = 0)
 	else
 		diskName = diskPath;
 
-//	diskName = strrchr(diskPath, '/');
-//
-//	if (diskName) {
-//		/* /dev/disk0s2 -> /disk0s2 */
-//		/* Start after the last path divider */
-//		diskName++;
-//		/* /disk0s2 -> disk0s2 */
-//	} else {
-//		/*
-//		 * XXX To do - check that diskName
-//		 * is in the form diskNsN
-//		 */
-//		diskName = diskPath;
-//	}
+#if 0
+	diskName = strrchr(diskPath, '/');
+
+	if (diskName) {
+		/* /dev/disk0s2 -> /disk0s2 */
+		/* Start after the last path divider */
+		diskName++;
+		/* /disk0s2 -> disk0s2 */
+	} else {
+		/*
+		 * XXX To do - check that diskName
+		 * is in the form diskNsN
+		 */
+		diskName = diskPath;
+	}
+#endif
 
 	while (allDisks->getCount() > 0) {
 
@@ -650,7 +651,7 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, uint64_t guid = 0)
 		}
 
 		bsdnameosobj = currentDisk->getProperty(kIOBSDNameKey,
-			gIOServicePlane, kIORegistryIterateRecursively);
+		    gIOServicePlane, kIORegistryIterateRecursively);
 
 		if (bsdnameosobj) {
 			bsdnameosstr = OSDynamicCast(OSString, bsdnameosobj);
@@ -690,9 +691,9 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, uint64_t guid = 0)
 
 		/* Try to read a config label from this disk */
 		if (vdev_iokit_read_label(dvd, &config) != 0 ||
-			nvlist_lookup_uint64(config,
-				ZPOOL_CONFIG_GUID, &current_guid) != 0 ||
-			current_guid != guid) {
+		    nvlist_lookup_uint64(config,
+		    ZPOOL_CONFIG_GUID, &current_guid) != 0 ||
+		    current_guid != guid) {
 
 			/* Clear matchedDisk */
 			matchedDisk->release();
@@ -734,13 +735,13 @@ vdev_iokit_find_by_path(vdev_iokit_t * dvd, char * diskPath, uint64_t guid = 0)
  * Returned object will have a reference count and should be released
  */
 int
-vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
+vdev_iokit_find_by_guid(vdev_iokit_t *dvd, uint64_t guid)
 {
 	OSSet * allDisks = 0;
 	OSObject * currentEntry = 0;
 	IOMedia * currentDisk = 0;
 	IOMedia * matchedDisk = 0;
-	nvlist_t * config = 0;
+	nvlist_t *config = 0;
 
 	uint64_t min_size = SPA_MINDEVSIZE; /* 64 Mb */
 	uint64_t state = 0, txg = 0;
@@ -811,8 +812,8 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 		 *	uninitialized, or potentially active
 		 */
 		if (nvlist_lookup_uint64(config,
-			ZPOOL_CONFIG_POOL_STATE, &state) != 0 ||
-			state > POOL_STATE_L2CACHE) {
+		    ZPOOL_CONFIG_POOL_STATE, &state) != 0 ||
+		    state > POOL_STATE_L2CACHE) {
 
 			nvlist_free(config);
 			config = 0;
@@ -828,9 +829,9 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 		 * Fetch txg number unless spare or l2cache
 		 */
 		if (state != POOL_STATE_SPARE &&
-			state != POOL_STATE_L2CACHE &&
+		    state != POOL_STATE_L2CACHE &&
 		    (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_TXG,
-				&txg) != 0 || txg == 0)) {
+		    &txg) != 0 || txg == 0)) {
 
 			nvlist_free(config);
 			config = 0;
@@ -844,8 +845,8 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 
 		/* Get and check guid */
 		if (nvlist_lookup_uint64(config,
-			ZPOOL_CONFIG_GUID, &current_guid) != 0 ||
-			current_guid != guid) {
+		    ZPOOL_CONFIG_GUID, &current_guid) != 0 ||
+		    current_guid != guid) {
 
 			current_guid = 0;
 
@@ -899,14 +900,14 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 }
 
 /* Returned nvlist should be freed */
-extern int vdev_iokit_find_pool(vdev_iokit_t * dvd, char * pool_name)
+extern int vdev_iokit_find_pool(vdev_iokit_t *dvd, char *pool_name)
 {
 	OSSet * allDisks = 0;
 	OSObject * currentEntry = 0;
 	IOMedia * currentDisk = 0;
 	IOMedia * matchedDisk = 0;
-	nvlist_t * config = 0;
-	char * cur_pool_name = 0;
+	nvlist_t *config = 0;
+	char *cur_pool_name = 0;
 
 	uint64_t min_size = SPA_MINDEVSIZE; /* 64 Mb */
 	uint64_t txg = 0, besttxg = 0;
@@ -970,12 +971,12 @@ extern int vdev_iokit_find_pool(vdev_iokit_t * dvd, char * pool_name)
 
 		/* Get and check txg and pool name */
 		if (nvlist_lookup_uint64(config,
-				ZPOOL_CONFIG_POOL_TXG, &txg) != 0 ||
-			nvlist_lookup_string(config,
-				ZPOOL_CONFIG_POOL_NAME, &cur_pool_name) != 0 ||
-			txg < besttxg || strlen(cur_pool_name) == 0 ||
-			strncmp(cur_pool_name, pool_name,
-				strlen(cur_pool_name)) != 0) {
+		    ZPOOL_CONFIG_POOL_TXG, &txg) != 0 ||
+		    nvlist_lookup_string(config,
+		    ZPOOL_CONFIG_POOL_NAME, &cur_pool_name) != 0 ||
+		    txg < besttxg || strlen(cur_pool_name) == 0 ||
+		    strncmp(cur_pool_name, pool_name,
+		    strlen(cur_pool_name)) != 0) {
 
 			txg = 0;
 			cur_pool_name = 0;
@@ -1032,10 +1033,10 @@ extern int vdev_iokit_find_pool(vdev_iokit_t * dvd, char * pool_name)
 }
 
 /* If path is valid, copy into physpath */
-extern int vdev_iokit_physpath(vdev_t * vd)
+extern int vdev_iokit_physpath(vdev_t *vd)
 {
-	vdev_iokit_t * dvd = 0;
-	char * physpath = 0;
+	vdev_iokit_t *dvd = 0;
+	char *physpath = 0;
 	int err;
 
 	/* presume failure */
@@ -1120,19 +1121,19 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)
 	 * the device is actually writeable
 	 */
 	if (fmode > FREAD &&
-		iokit_hl->isWritable() == false) {
+	    iokit_hl->isWritable() == false) {
 
 		error = ENODEV;
 		goto error;
 	}
 
 	if (iokit_hl->IOMedia::open((IOService *)dvd->vd_zfs_hl,
-				0, (fmode == FREAD ?
-				kIOStorageAccessReader :
-				kIOStorageAccessReaderWriter)) == false) {
+	    0, (fmode == FREAD ?
+	    kIOStorageAccessReader :
+	    kIOStorageAccessReaderWriter)) == false) {
 
-				error = EIO;
-				goto error;
+		error = EIO;
+		goto error;
 	}
 
 	goto out;
@@ -1164,14 +1165,14 @@ vdev_iokit_handle_close(vdev_iokit_t *dvd, int fmode = 0)
 		return (EINVAL);
 
 	iokit_hl =	OSDynamicCast(IOMedia,
-				static_cast<OSObject *>(dvd->vd_iokit_hl));
+	    static_cast<OSObject *>(dvd->vd_iokit_hl));
 
 	if (!iokit_hl) {
 		return (EINVAL);
 	}
 
 	zfs_hl = OSDynamicCast(IOService,
-				static_cast<OSObject *>(dvd->vd_zfs_hl));
+	    static_cast<OSObject *>(dvd->vd_zfs_hl));
 
 	if (!zfs_hl) {
 		iokit_hl = 0;
@@ -1179,8 +1180,8 @@ vdev_iokit_handle_close(vdev_iokit_t *dvd, int fmode = 0)
 	}
 
 	iokit_hl->close(zfs_hl, (fmode == FREAD ?
-			kIOStorageAccessReader :
-			kIOStorageAccessReaderWriter));
+	    kIOStorageAccessReader :
+	    kIOStorageAccessReaderWriter));
 
 	zfs_hl = 0;
 	iokit_hl = 0;
@@ -1189,14 +1190,14 @@ vdev_iokit_handle_close(vdev_iokit_t *dvd, int fmode = 0)
 }
 
 extern int
-vdev_iokit_open_by_path(vdev_iokit_t * dvd, char * path, uint64_t guid = 0)
+vdev_iokit_open_by_path(vdev_iokit_t *dvd, char *path, uint64_t guid = 0)
 {
 	if (!dvd || !path) {
 		return (EINVAL);
 	}
 
 	if (vdev_iokit_find_by_path(dvd, path, guid) != 0 ||
-		!dvd->vd_iokit_hl) {
+	    !dvd->vd_iokit_hl) {
 
 		return (ENOENT);
 	}
@@ -1210,14 +1211,14 @@ vdev_iokit_open_by_path(vdev_iokit_t * dvd, char * path, uint64_t guid = 0)
 }
 
 extern int
-vdev_iokit_open_by_guid(vdev_iokit_t * dvd, uint64_t guid)
+vdev_iokit_open_by_guid(vdev_iokit_t *dvd, uint64_t guid)
 {
 	if (!dvd || guid == 0) {
 		return (EINVAL);
 	}
 
 	if (vdev_iokit_find_by_guid(dvd, guid) != 0 ||
-		!dvd->vd_iokit_hl) {
+	    !dvd->vd_iokit_hl) {
 
 		return (ENOENT);
 	}
@@ -1235,26 +1236,26 @@ vdev_iokit_open_by_guid(vdev_iokit_t * dvd, uint64_t guid)
  *	kmem_free(ptr, MAXPATHLEN);
  */
 extern char *
-vdev_iokit_get_path(vdev_iokit_t * dvd)
+vdev_iokit_get_path(vdev_iokit_t *dvd)
 {
 	IOMedia * iokit_hl = 0;
 	OSObject * bsdnameosobj = 0;
 	OSString * bsdnameosstr = 0;
-	char * diskpath = 0;
-	char * newpath = 0;
+	char *diskpath = 0;
+	char *newpath = 0;
 	size_t len = 0;
 
 	if (!dvd || !dvd->vd_iokit_hl)
 		return (0);
 
 	iokit_hl =	OSDynamicCast(IOMedia,
-		static_cast<OSObject *>(dvd->vd_iokit_hl));
+	    static_cast<OSObject *>(dvd->vd_iokit_hl));
 
 	if (!iokit_hl)
 		return (0);
 
 	bsdnameosobj = iokit_hl->getProperty(kIOBSDNameKey,
-		gIOServicePlane, kIORegistryIterateRecursively);
+	    gIOServicePlane, kIORegistryIterateRecursively);
 
 	if (bsdnameosobj) {
 		bsdnameosstr = OSDynamicCast(OSString, bsdnameosobj);
@@ -1265,7 +1266,7 @@ vdev_iokit_get_path(vdev_iokit_t * dvd)
 		return (0);
 	}
 
-	diskpath =	(char *) bsdnameosstr->getCStringNoCopy();
+	diskpath =	(char *)bsdnameosstr->getCStringNoCopy();
 
 	/* Save the disk path into newpath */
 	if (diskpath && strlen(diskpath) > 0) {
@@ -1274,7 +1275,7 @@ vdev_iokit_get_path(vdev_iokit_t * dvd)
 
 		len = strlen(diskpath) + strlen("/dev/") + 1;
 
-		newpath = (char *) kmem_alloc(len, KM_SLEEP);
+		newpath = (char *)kmem_alloc(len, KM_SLEEP);
 
 		snprintf(newpath, len, "/dev/%s", diskpath);
 	}
@@ -1286,7 +1287,7 @@ vdev_iokit_get_path(vdev_iokit_t * dvd)
 }
 
 extern int
-vdev_iokit_get_size(vdev_iokit_t * dvd, uint64_t *size,
+vdev_iokit_get_size(vdev_iokit_t *dvd, uint64_t *size,
 				uint64_t *max_size, uint64_t *ashift)
 {
 	IOMedia * iokit_hl = 0;
@@ -1296,7 +1297,7 @@ vdev_iokit_get_size(vdev_iokit_t * dvd, uint64_t *size,
 		return (EINVAL);
 
 	iokit_hl =	OSDynamicCast(IOMedia,
-				static_cast<OSObject *>(dvd->vd_iokit_hl));
+	    static_cast<OSObject *>(dvd->vd_iokit_hl));
 
 	if (!iokit_hl)
 		return (EINVAL);
@@ -1328,7 +1329,7 @@ vdev_iokit_get_size(vdev_iokit_t * dvd, uint64_t *size,
  *  EINVAL or EIO as needed
  */
 extern int
-vdev_iokit_status(vdev_iokit_t * dvd)
+vdev_iokit_status(vdev_iokit_t *dvd)
 {
 	/*
 	 * XXX - TO DO
@@ -1356,13 +1357,13 @@ vdev_iokit_status(vdev_iokit_t * dvd)
 		return (EINVAL);
 
 	iokit_hl =	OSDynamicCast(IOMedia,
-				static_cast<OSObject *>(dvd->vd_iokit_hl));
+	    static_cast<OSObject *>(dvd->vd_iokit_hl));
 
 	if (!iokit_hl)
 		return (EINVAL);
 
 	if (iokit_hl->isInactive() == true ||
-		iokit_hl->isFormatted() != true) {
+	    iokit_hl->isFormatted() != true) {
 
 		iokit_hl	= 0;
 		return (ENXIO);
@@ -1373,7 +1374,7 @@ vdev_iokit_status(vdev_iokit_t * dvd)
 }
 
 int
-vdev_iokit_ioctl(vdev_iokit_t * dvd, zio_t * zio)
+vdev_iokit_ioctl(vdev_iokit_t *dvd, zio_t *zio)
 {
 	/*
 	 * XXX - TO DO
@@ -1400,7 +1401,7 @@ vdev_iokit_ioctl(vdev_iokit_t * dvd, zio_t * zio)
  * zio can be null
  */
 int
-vdev_iokit_sync(vdev_iokit_t *dvd, zio_t * zio)
+vdev_iokit_sync(vdev_iokit_t *dvd, zio_t *zio)
 {
 	IOMedia * iokit_hl	= 0;
 	IOService * zfs_hl = 0;
@@ -1411,14 +1412,14 @@ vdev_iokit_sync(vdev_iokit_t *dvd, zio_t * zio)
 	}
 
 	iokit_hl =	OSDynamicCast(IOMedia,
-				static_cast<OSObject *>(dvd->vd_iokit_hl));
+	    static_cast<OSObject *>(dvd->vd_iokit_hl));
 
 	if (!iokit_hl) {
 		return (EINVAL);
 	}
 
 	zfs_hl = OSDynamicCast(IOService,
-				static_cast<OSObject *>(dvd->vd_zfs_hl));
+	    static_cast<OSObject *>(dvd->vd_zfs_hl));
 
 	if (!zfs_hl) {
 		iokit_hl = 0;
@@ -1439,7 +1440,7 @@ vdev_iokit_sync(vdev_iokit_t *dvd, zio_t * zio)
 
 /* Must already have handle_open called on dvd */
 extern int
-vdev_iokit_physio(vdev_iokit_t * dvd, void * data,
+vdev_iokit_physio(vdev_iokit_t *dvd, void *data,
 			size_t size, uint64_t offset, int fmode)
 {
 	/*	IOBufferMemoryDescriptor * buffer = 0; */
@@ -1450,17 +1451,17 @@ vdev_iokit_physio(vdev_iokit_t * dvd, void * data,
 	uint64_t actualByteCount = 0;
 
 	if (!dvd || !dvd->vd_iokit_hl || !dvd->vd_zfs_hl ||
-		!data || size == 0)
+	    !data || size == 0)
 		return (EINVAL);
 
 	iokit_hl = OSDynamicCast(IOMedia,
-				static_cast<OSObject *>(dvd->vd_iokit_hl));
+	    static_cast<OSObject *>(dvd->vd_iokit_hl));
 
 	if (!iokit_hl)
 		return (EINVAL);
 
 	zfs_hl = OSDynamicCast(IOService,
-				static_cast<OSObject *>(dvd->vd_zfs_hl));
+	    static_cast<OSObject *>(dvd->vd_zfs_hl));
 
 	if (!zfs_hl) {
 		iokit_hl = 0;
@@ -1468,9 +1469,9 @@ vdev_iokit_physio(vdev_iokit_t * dvd, void * data,
 	}
 
 	buffer = IOMemoryDescriptor::withAddress(
-				data, size, (fmode == FREAD ?
-				kIODirectionIn :
-				kIODirectionOut));
+	    data, size, (fmode == FREAD ?
+	    kIODirectionIn :
+	    kIODirectionOut));
 
 	/* Verify the buffer is ready for use */
 	if (!buffer || buffer->getLength() != size) {
@@ -1480,7 +1481,7 @@ vdev_iokit_physio(vdev_iokit_t * dvd, void * data,
 	}
 
 	result = buffer->prepare(fmode == FWRITE ?
-				kIODirectionOut : kIODirectionIn);
+	    kIODirectionOut : kIODirectionIn);
 
 	if (result != kIOReturnSuccess) {
 
@@ -1492,10 +1493,10 @@ vdev_iokit_physio(vdev_iokit_t * dvd, void * data,
 
 	if (fmode == FREAD) {
 		result = iokit_hl->IOMedia::read(zfs_hl, offset,
-					buffer, 0, &actualByteCount);
+		    buffer, 0, &actualByteCount);
 	} else {
 		result = iokit_hl->IOMedia::write(zfs_hl, offset,
-					buffer, 0, &actualByteCount);
+		    buffer, 0, &actualByteCount);
 	}
 
 	buffer->complete();
@@ -1517,25 +1518,25 @@ error:
 
 /* Must already have handle_open called on dvd */
 extern int
-vdev_iokit_strategy(vdev_iokit_t * dvd, zio_t * zio)
+vdev_iokit_strategy(vdev_iokit_t *dvd, zio_t *zio)
 {
-	vdev_iokit_context_t * io_context = 0;
+	vdev_iokit_context_t *io_context = 0;
 	IOMedia * iokit_hl =	0;
 	IOService * zfs_hl = 0;
 
 	if (!dvd || !dvd->vd_iokit_hl || !dvd->vd_zfs_hl ||
-		!zio || !(zio->io_data) || zio->io_size == 0) {
+	    !zio || !(zio->io_data) || zio->io_size == 0) {
 		return (EINVAL);
 	}
 
 	iokit_hl = OSDynamicCast(IOMedia,
-				static_cast<OSObject *>(dvd->vd_iokit_hl));
+	    static_cast<OSObject *>(dvd->vd_iokit_hl));
 
 	if (!iokit_hl)
 		return (EINVAL);
 
 	zfs_hl = OSDynamicCast(IOService,
-				static_cast<OSObject *>(dvd->vd_zfs_hl));
+	    static_cast<OSObject *>(dvd->vd_zfs_hl));
 
 	if (!zfs_hl) {
 		iokit_hl = 0;
@@ -1572,7 +1573,7 @@ vdev_iokit_strategy(vdev_iokit_t * dvd, zio_t * zio)
 
 	/* Prepare the IOMemoryDescriptor (wires memory) */
 	if (io_context->buffer->prepare(zio->io_type == ZIO_TYPE_WRITE ?
-			kIODirectionOut : kIODirectionIn) != kIOReturnSuccess) {
+	    kIODirectionOut : kIODirectionIn) != kIOReturnSuccess) {
 
 		vdev_iokit_context_free(io_context);
 		goto error;
@@ -1580,12 +1581,12 @@ vdev_iokit_strategy(vdev_iokit_t * dvd, zio_t * zio)
 
 	if (zio->io_type == ZIO_TYPE_WRITE) {
 		iokit_hl->IOMedia::write(zfs_hl, zio->io_offset,
-						io_context->buffer, 0,
-						&(io_context->completion));
+		    io_context->buffer, 0,
+		    &(io_context->completion));
 	} else {
 		iokit_hl->IOMedia::read(zfs_hl, zio->io_offset,
-						io_context->buffer, 0,
-						&(io_context->completion));
+		    io_context->buffer, 0,
+		    &(io_context->completion));
 	}
 
 error:
@@ -1599,9 +1600,9 @@ error:
 extern void vdev_iokit_io_intr(void * target, void * parameter,
 				kern_return_t status, UInt64 actualByteCount)
 {
-	vdev_iokit_context_t * io_context = 0;
-	zio_t * zio = 0;
-	vdev_t * vd = 0;
+	vdev_iokit_context_t *io_context = 0;
+	zio_t *zio = 0;
+	vdev_t *vd = 0;
 
 	if (!target || !parameter) {
 		return;
@@ -1622,7 +1623,7 @@ extern void vdev_iokit_io_intr(void * target, void * parameter,
 
 	/* Teardown the IOMemoryDescriptor */
 	if (io_context && io_context->buffer->complete()
-		!= kIOReturnSuccess) {
+	    != kIOReturnSuccess) {
 		return;
 	}
 
@@ -1646,7 +1647,7 @@ extern void vdev_iokit_io_intr(void * target, void * parameter,
 	zio->io_error = (status != 0 ? EIO : 0);
 
 	if (zio->io_error == 0 &&
-		actualByteCount < zio->io_size) {
+	    actualByteCount < zio->io_size) {
 		zio->io_error = EIO;
 	}
 

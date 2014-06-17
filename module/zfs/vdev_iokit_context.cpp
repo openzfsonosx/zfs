@@ -52,7 +52,7 @@ net_lundman_vdev_io_context::free()
 }
 
 inline bool
-	net_lundman_vdev_io_context::initWithTransfer(zio_t * new_zio)
+net_lundman_vdev_io_context::initWithTransfer(zio_t *new_zio)
 {
 	/* NULL new_zio should be valid for pre-allocation of resources */
 	if (!new_zio)
@@ -89,11 +89,11 @@ net_lundman_vdev_io_context::initWithDirection(IODirection new_direction)
 }
 
 IOCommand *
-net_lundman_vdev_io_context::withTransfer(zio_t * new_zio)
+net_lundman_vdev_io_context::withTransfer(zio_t *new_zio)
 {
 	/* NULL new_zio is valid - pre-allocation of resources */
 	net_lundman_vdev_io_context * new_context =
-					new net_lundman_vdev_io_context;
+	    new net_lundman_vdev_io_context;
 
 	if (!new_context)
 		return (0);
@@ -125,7 +125,7 @@ net_lundman_vdev_io_context::withDirection(IODirection new_direction) {
 }
 
 bool
-net_lundman_vdev_io_context::configure(zio_t * new_zio)
+net_lundman_vdev_io_context::configure(zio_t *new_zio)
 {
 	if (!new_zio)
 		return (false);
@@ -140,8 +140,8 @@ net_lundman_vdev_io_context::configure(zio_t * new_zio)
 	}
 
 	buffer = (IOBufferMemoryDescriptor*)
-		IOBufferMemoryDescriptor::withAddress(
-			zio->io_data, zio->io_size, direction);
+	    IOBufferMemoryDescriptor::withAddress(
+	    zio->io_data, zio->io_size, direction);
 
 	return (true);
 }
