@@ -2863,7 +2863,8 @@ arc_adapt_thread(void)
 #endif /* !_KERNEL */
 
 		/* No recent memory pressure allow the ARC to grow. */
-		if (arc_no_grow && ddi_get_lbolt() >= arc_grow_time)
+		if (arc_no_grow &&
+		    ddi_time_after_eq(ddi_get_lbolt(), arc_grow_time))
 			arc_no_grow = FALSE;
 
 		arc_adjust_meta();
@@ -3306,7 +3307,7 @@ arc_access(arc_buf_hdr_t *buf, kmutex_t *hash_lock)
 		 * but it is still in the cache. Move it to the MFU
 		 * state.
 		 */
-		if (now > buf->b_arc_access + ARC_MINTIME) {
+		if (ddi_time_after(now, buf->b_arc_access + ARC_MINTIME)) {
 			/*
 			 * More than 125ms have passed since we
 			 * instantiated this buffer.  Move it to the
@@ -4392,9 +4393,14 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 
 	if (reserve > arc_c/4 && !arc_no_grow)
 		arc_c = MIN(arc_c_max, reserve * 4);
+
+	/*
+	 * Throttle when the calculated memory footprint for the TXG
+	 * exceeds the target ARC size.
+	 */
 	if (reserve > arc_c) {
 		DMU_TX_STAT_BUMP(dmu_tx_memory_reserve);
-		return (SET_ERROR(ENOMEM));
+		return (SET_ERROR(ERESTART));
 	}
 
 	/*

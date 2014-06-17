@@ -141,6 +141,7 @@ static vdev_disk_db_entry_t vdev_disk_database[] = {
 	{"ATA     INTEL SSDSC2BB48", 8192},
 	{"ATA     INTEL SSDSC2BB60", 8192},
 	{"ATA     INTEL SSDSC2BB80", 8192},
+	{"ATA     INTEL SSDSC2BW24", 8192},
 	{"ATA     INTEL SSDSC2CT06", 8192},
 	{"ATA     INTEL SSDSC2CT12", 8192},
 	{"ATA     INTEL SSDSC2CT18", 8192},
@@ -405,7 +406,7 @@ check_slice(const char *path, blkid_cache cache, int force, boolean_t isspare)
 	 * using check_file() to see if it's safe.  The one safe
 	 * case is a spare device shared between multiple pools.
 	 */
-	if (strcmp(value, "zfs") == 0) {
+	if (strcmp(value, "zfs_member") == 0) {
 		err = check_file(path, force, isspare);
 	} else {
 		if (force) {
