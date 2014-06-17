@@ -95,7 +95,7 @@
 static int mnttab_file_create(void);
 #endif
 
-#define dprintf printf
+//#define dprintf printf
 
 kmutex_t zfsdev_state_lock;
 zfsdev_state_t *zfsdev_state_list;
@@ -4862,20 +4862,20 @@ zfs_ioc_hold(const char *pool, nvlist_t *args, nvlist_t *errlist)
 	nvlist_t *holds;
 	int cleanup_fd = -1;
 	int error;
-	minor_t minor = 0;
+	minor_t minorx = 0;
 
 	error = nvlist_lookup_nvlist(args, "holds", &holds);
 	if (error != 0)
 		return (SET_ERROR(EINVAL));
 
 	if (nvlist_lookup_int32(args, "cleanup_fd", &cleanup_fd) == 0) {
-		error = zfs_onexit_fd_hold(cleanup_fd, &minor);
+		error = zfs_onexit_fd_hold(cleanup_fd, &minorx);
 		if (error != 0)
 			return (error);
 	}
 
-    error = dsl_dataset_user_hold(holds, minor, errlist);
-    if (minor != 0)
+    error = dsl_dataset_user_hold(holds, minorx, errlist);
+    if (minorx != 0)
         zfs_onexit_fd_rele(cleanup_fd);
 	return (error);
 }
@@ -5522,17 +5522,6 @@ zfsdev_get_state_impl(minor_t minor, enum zfsdev_state_type which)
 	return (NULL);
 }
 
-static void *
-zfsdev_minor_find(dev_t dev)
-{
-	zfsdev_state_t *zs;
-
-	for (zs = zfsdev_state_list; zs != NULL; zs = zs->zs_next)
-		if (zs->zs_dev == dev)
-			return (zs);
-
-    return NULL;
-}
 
 
 void *
@@ -5551,7 +5540,8 @@ zfsdev_getminor(dev_t dev)
 	zfsdev_state_t *zs = NULL;
 
 #ifdef __APPLE__
-	zs = zfsdev_minor_find(dev);
+	zs = zfsdev_get_state_impl(minor(dev), ZST_ALL);
+	//zs = zfsdev_minor_find(dev);
 	printf("Looking for dev %d/minor %d : %p\n", dev, minor(dev), zs);
 	if (!zs) return -1;
 #else
@@ -5622,7 +5612,7 @@ zfsdev_state_init(dev_t dev)
 
 #ifdef __APPLE__
 	zs->zs_dev = dev;
-    dprintf("created zs %p for minor %d\n", zs, minorx);
+    printf("created zs %p for minor %d\n", zs, minorx);
 #endif
 
 #ifndef __APPLE__
@@ -5661,14 +5651,15 @@ zfsdev_state_destroy(dev_t dev)
 	//ASSERT(filp->private_data != NULL);
 
 #ifdef __APPLE__
-	zs = zfsdev_minor_find(dev);
+	zs = zfsdev_get_state_impl(minor(dev), ZST_ALL);
+	//zs = zfsdev_minor_find(dev);
 #else
 	zs = filp->private_data;
 #endif
 	if (!zs)
 		return (0);
 
-	dprintf("destroying zs %p minor %d\n", zs, zs->zs_minor);
+	printf("destroying zs %p minor %d\n", zs, zs->zs_minor);
 
 	if (zs->zs_minor != -1) {
 		zs->zs_minor = -1;
@@ -5687,11 +5678,12 @@ zfsdev_open(dev_t dev, int flags, int devtype, struct proc *p)
 	int error;
 	minor_t xminor = minor(dev);
 
-	printf("zfsdev_open, dev %d flag %02X devtype %d, proc is %p: thread %p\n",
+	dprintf("zfsdev_open, dev %d flag %02X devtype %d, proc is %p: thread %p\n",
 		   xminor, flags, devtype, p, current_thread());
 
 
-	if (zfsdev_minor_find(dev)) {
+	if (zfsdev_get_state_impl(minor(dev), ZST_ALL)) {
+		//if (zfsdev_minor_find(dev)) {
 		dprintf("zs already exists\n");
 		return (0);
 	}
@@ -5710,7 +5702,7 @@ zfsdev_release(dev_t dev, int flags, int devtype, struct proc *p)
 {
 	int error;
 
-	printf("zfsdev_release, dev %d flag %02X devtype %d, dev is %p, thread %p\n",
+	dprintf("zfsdev_release, dev %d flag %02X devtype %d, dev is %p, thread %p\n",
 		   minor(dev), flags, devtype, p, current_thread());
 	mutex_enter(&zfsdev_state_lock);
 	error = zfsdev_state_destroy(dev);
@@ -5755,8 +5747,6 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 		printf("Calling zvol ioctl minor %d \n", minorx);
 		return (zvol_ioctl(dev, cmd, arg, 0, NULL, NULL));
 	}
-
-	printf("zfsctl ioctl\n");
 
 	vecnum = cmd - ZFS_IOC_FIRST;
 #ifdef illumos
@@ -5892,6 +5882,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 			if (smusherror == 0)
 				puterror = put_nvlist(zc, outnvl);
 		}
+
 
 		if (puterror != 0)
 			error = puterror;
@@ -6041,11 +6032,11 @@ static int
 zfs_devfs_clone(__unused dev_t dev, int action)
 {
 	static minor_t minorx;
-	printf("zfs_devfs_clone action %d\n", action);
+	dprintf("zfs_devfs_clone action %d\n", action);
 
 	if (action == DEVFS_CLONE_ALLOC) {
 		minorx = zfsdev_minor_alloc();
-		printf("Returning minor %d\n");
+		dprintf("Returning minor %d\n");
 		return minorx;
 	}
 	return -1;
