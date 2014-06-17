@@ -102,7 +102,8 @@ zfs_probe(const char *devpath)
 			syslog(LOG_NOTICE, "writing\n");
 			if (IOObjectConformsTo(service, kIOMediaClass)) {
 				CFStringRef serialNumberAsCFString;
-				CFStringEncoding encoding = kCFStringEncodingUTF8;
+				//CFStringEncoding encoding = kCFStringEncodingUTF8;
+				CFStringEncoding encoding = kCFStringEncodingMacRoman;
 
 				serialNumberAsCFString = (CFStringRef*) IORegistryEntryCreateCFProperty(service, CFSTR("DATASET"), kCFAllocatorDefault, 0);
 
