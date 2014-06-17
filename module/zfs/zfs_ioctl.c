@@ -95,6 +95,8 @@
 static int mnttab_file_create(void);
 #endif
 
+#define dprintf printf
+
 kmutex_t zfsdev_state_lock;
 zfsdev_state_t *zfsdev_state_list;
 
@@ -5550,6 +5552,7 @@ zfsdev_getminor(dev_t dev)
 
 #ifdef __APPLE__
 	zs = zfsdev_minor_find(dev);
+	printf("Looking for dev %d/minor %d : %p\n", dev, minor(dev), zs);
 	if (!zs) return -1;
 #else
 	ASSERT(filp != NULL);
@@ -5596,13 +5599,14 @@ static int
 zfsdev_state_init(dev_t dev)
 {
 	zfsdev_state_t *zs, *zsprev = NULL;
-	minor_t minor;
+	minor_t minorx;
 	boolean_t newzs = B_FALSE;
 
 	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 
-	minor = zfsdev_minor_alloc();
-	if (minor == 0)
+	//minor = zfsdev_minor_alloc();
+	minorx = minor(dev);
+	if (minorx == 0)
 		return (SET_ERROR(ENXIO));
 
 	for (zs = zfsdev_state_list; zs != NULL; zs = zs->zs_next) {
@@ -5618,7 +5622,7 @@ zfsdev_state_init(dev_t dev)
 
 #ifdef __APPLE__
 	zs->zs_dev = dev;
-    dprintf("created zs %p\n", zs);
+    dprintf("created zs %p for minor %d\n", zs, minorx);
 #endif
 
 #ifndef __APPLE__
@@ -5639,10 +5643,10 @@ zfsdev_state_init(dev_t dev)
 	 * value).
 	 */
 	if (newzs) {
-		zs->zs_minor = minor;
+		zs->zs_minor = minorx;
 		zsprev->zs_next = zs;
 	} else {
-		zs->zs_minor = minor;
+		zs->zs_minor = minorx;
 	}
 
 	return (0);
@@ -5664,7 +5668,7 @@ zfsdev_state_destroy(dev_t dev)
 	if (!zs)
 		return (0);
 
-	dprintf("destroying zs %p\n", zs);
+	dprintf("destroying zs %p minor %d\n", zs, zs->zs_minor);
 
 	if (zs->zs_minor != -1) {
 		zs->zs_minor = -1;
@@ -5681,17 +5685,19 @@ zfsdev_open(dev_t dev, int flags, int devtype, struct proc *p)
 //zfsdev_open(struct vnode *ino, struct file *filp)
 {
 	int error;
+	minor_t xminor = minor(dev);
 
-	dprintf("zfsdev_open, flag %02X devtype %d, proc is %p: thread %p\n",
-	    flags, devtype, p, current_thread());
+	printf("zfsdev_open, dev %d flag %02X devtype %d, proc is %p: thread %p\n",
+		   xminor, flags, devtype, p, current_thread());
 
-	if (zfsdev_minor_find((dev_t)p)) {
+
+	if (zfsdev_minor_find(dev)) {
 		dprintf("zs already exists\n");
 		return (0);
 	}
 
 	mutex_enter(&zfsdev_state_lock);
-	error = zfsdev_state_init((dev_t)p);
+	error = zfsdev_state_init(dev);
 	mutex_exit(&zfsdev_state_lock);
 
 	return (-error);
@@ -5704,10 +5710,10 @@ zfsdev_release(dev_t dev, int flags, int devtype, struct proc *p)
 {
 	int error;
 
-	dprintf("zfsdev_release, flag %02X devtype %d, dev is %p, thread %p\n",
-			flags, devtype, p, current_thread());
+	printf("zfsdev_release, dev %d flag %02X devtype %d, dev is %p, thread %p\n",
+		   minor(dev), flags, devtype, p, current_thread());
 	mutex_enter(&zfsdev_state_lock);
-	error = zfsdev_state_destroy((dev_t)p);
+	error = zfsdev_state_destroy(dev);
 	mutex_exit(&zfsdev_state_lock);
 
 	return (-error);
@@ -5722,7 +5728,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 	zfs_cmd_t *zc;
 	uint_t vecnum;
 	int error, rc, len = 0, flag = 0;
-	minor_t minor = getminor(dev);
+	minor_t minorx = getminor(dev);
 	const zfs_ioc_vec_t *vec;
 	char *saved_poolname = NULL;
 	nvlist_t *innvl = NULL;
@@ -5737,9 +5743,20 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 #endif /* __OPPLE__ */
 
 	// If minor > 0 it is an ioctl for zvol!
+#if 0
 	if (minor != 0 &&
-	    zfsdev_get_soft_state(minor, ZSST_CTLDEV) == NULL)
+	    zfsdev_get_soft_state(minorx, ZSST_CTLDEV) == NULL) {
+		printf("Calling zvol ioctl minor %d \n", minorx);
 		return (zvol_ioctl(dev, cmd, arg, 0, NULL, NULL));
+	}
+#endif
+
+	if (zfsdev_get_state_impl(minorx, ZST_ALL) == NULL) {
+		printf("Calling zvol ioctl minor %d \n", minorx);
+		return (zvol_ioctl(dev, cmd, arg, 0, NULL, NULL));
+	}
+
+	printf("zfsctl ioctl\n");
 
 	vecnum = cmd - ZFS_IOC_FIRST;
 #ifdef illumos
@@ -6021,6 +6038,21 @@ mnttab_file_create(void)
 #endif
 
 static int
+zfs_devfs_clone(__unused dev_t dev, int action)
+{
+	static minor_t minorx;
+	printf("zfs_devfs_clone action %d\n", action);
+
+	if (action == DEVFS_CLONE_ALLOC) {
+		minorx = zfsdev_minor_alloc();
+		printf("Returning minor %d\n");
+		return minorx;
+	}
+	return -1;
+}
+
+
+static int
 zfs_attach(void)
 {
 #ifdef linux
@@ -6050,8 +6082,10 @@ zfs_attach(void)
 	}
 
 	dev = makedev(zfs_major, 0);/* Get the device number */
-	zfs_devnode = devfs_make_node(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
-	    0666, "zfs", 0);
+	//zfs_devnode = devfs_make_node(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
+	//   0666, "zfs", 0);
+	zfs_devnode = devfs_make_node_clone(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
+										0666, zfs_devfs_clone, "zfs", 0);
 
 	if (!zfs_devnode) {
 		printf("ZFS: devfs_make_node() failed\n");
