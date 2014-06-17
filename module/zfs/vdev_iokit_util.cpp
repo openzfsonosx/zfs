@@ -743,7 +743,7 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 	nvlist_t * config = 0;
 
 	uint64_t min_size = SPA_MINDEVSIZE; /* 64 Mb */
-	uint64_t txg = 0, besttxg = 0;
+	uint64_t state = 0, txg = 0;
 	uint64_t current_guid = 0;
 
 	if (!dvd || guid == 0)
@@ -787,8 +787,10 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 		/* Try to read a config label from this disk */
 		if (vdev_iokit_read_label(dvd, &config) != 0) {
 			/* Failed to read config */
-			if (config)
+			if (config) {
 				nvlist_free(config);
+				config = 0;
+			}
 
 			/* No config found - clear the vd_iokit_hl */
 			dvd->vd_iokit_hl = 0;
@@ -803,14 +805,48 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 		/* Checking config - clear the vd_iokit_hl meanwhile */
 		dvd->vd_iokit_hl = 0;
 
-		/* Get and check txg and guid */
+		/*
+		 * Check that a valid config was loaded
+		 *	skip devices that are unavailable,
+		 *	uninitialized, or potentially active
+		 */
 		if (nvlist_lookup_uint64(config,
-				ZPOOL_CONFIG_POOL_TXG, &txg) != 0 ||
-			nvlist_lookup_uint64(config,
-				ZPOOL_CONFIG_GUID, &current_guid) != 0 ||
-			txg < besttxg || current_guid != guid) {
+			ZPOOL_CONFIG_POOL_STATE, &state) != 0 ||
+			state > POOL_STATE_L2CACHE) {
 
-			txg = 0;
+			nvlist_free(config);
+			config = 0;
+
+			/* Pop from list */
+			allDisks->removeObject(currentEntry);
+			currentEntry = 0;
+			currentDisk = 0;
+			continue;
+		}
+
+		/*
+		 * Fetch txg number unless spare or l2cache
+		 */
+		if (state != POOL_STATE_SPARE &&
+			state != POOL_STATE_L2CACHE &&
+		    (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_TXG,
+				&txg) != 0 || txg == 0)) {
+
+			nvlist_free(config);
+			config = 0;
+
+			/* Pop from list */
+			allDisks->removeObject(currentEntry);
+			currentEntry = 0;
+			currentDisk = 0;
+			continue;
+		}
+
+		/* Get and check guid */
+		if (nvlist_lookup_uint64(config,
+			ZPOOL_CONFIG_GUID, &current_guid) != 0 ||
+			current_guid != guid) {
+
 			current_guid = 0;
 
 			nvlist_free(config);
@@ -823,14 +859,6 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 			continue;
 		}
 
-		besttxg = txg;
-
-		/* Previous match? Release it */
-		if (matchedDisk) {
-			matchedDisk->release();
-			matchedDisk = 0;
-		}
-
 		/* Save it and up the retain count */
 		matchedDisk = currentDisk;
 		matchedDisk->retain();
@@ -840,7 +868,10 @@ vdev_iokit_find_by_guid(vdev_iokit_t * dvd, uint64_t guid)
 		currentEntry = 0;
 		currentDisk = 0;
 
-		/* Loop in case there is a better match */
+		/* Find by guid breaks on the first match */
+		if (matchedDisk) {
+			break;
+		}
 	}
 
 	if (config) {
