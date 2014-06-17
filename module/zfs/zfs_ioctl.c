@@ -5603,7 +5603,7 @@ zfsdev_state_init(dev_t dev)
 
 #ifdef __APPLE__
 	zs->zs_dev = dev;
-    printf("created zs %p for minor %d\n", zs, minorx);
+    dprintf("created zs %p for minor %d\n", zs, minorx);
 #endif
 
 #ifndef __APPLE__
@@ -5649,7 +5649,7 @@ zfsdev_state_destroy(dev_t dev)
 	if (!zs)
 		return (0);
 
-	printf("destroying zs %p minor %d\n", zs, zs->zs_minor);
+	dprintf("destroying zs %p minor %d\n", zs, zs->zs_minor);
 
 	if (zs->zs_minor != -1) {
 		zs->zs_minor = -1;
