@@ -690,8 +690,8 @@ vdev_ops_t vdev_iokit_ops = {
 	vdev_iokit_io_start,
 	vdev_iokit_io_done,
 	vdev_iokit_state_change,	/* vdev_op_state_change */
-	NULL,						/* vdev_op_hold */
-	NULL,						/* vdev_op_rele */
-	VDEV_TYPE_DISK,				/* name of this vdev type */
-	B_TRUE						/* leaf vdev */
+	NULL,	/* vdev_op_hold */
+	NULL,	/* vdev_op_rele */
+	VDEV_TYPE_DISK,	/* name of this vdev type */
+	B_TRUE	/* leaf vdev */
 };
