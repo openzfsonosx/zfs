@@ -3920,14 +3920,6 @@ static boolean_t zfs_ioc_recv_inject_err;
 #endif
 
 
-
-#if ZFS_LEOPARD_ONLY
-#define file_vnode_withvid(a, b, c) file_vnode(a, b)
-#endif
-
-
-
-
 /*
  * inputs:
  * zc_name		name of containing filesystem
@@ -5541,8 +5533,7 @@ zfsdev_getminor(dev_t dev)
 
 #ifdef __APPLE__
 	zs = zfsdev_get_state_impl(minor(dev), ZST_ALL);
-	//zs = zfsdev_minor_find(dev);
-	printf("Looking for dev %d/minor %d : %p\n", dev, minor(dev), zs);
+	dprintf("Looking for dev %d/minor %d : %p\n", dev, minor(dev), zs);
 	if (!zs) return -1;
 #else
 	ASSERT(filp != NULL);
@@ -5594,7 +5585,7 @@ zfsdev_state_init(dev_t dev)
 
 	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 
-	//minor = zfsdev_minor_alloc();
+	/* zfsdev_minor_alloc is now handled in the devfs_clone callback */
 	minorx = minor(dev);
 	if (minorx == 0)
 		return (SET_ERROR(ENXIO));
@@ -5652,7 +5643,6 @@ zfsdev_state_destroy(dev_t dev)
 
 #ifdef __APPLE__
 	zs = zfsdev_get_state_impl(minor(dev), ZST_ALL);
-	//zs = zfsdev_minor_find(dev);
 #else
 	zs = filp->private_data;
 #endif
@@ -5676,14 +5666,12 @@ zfsdev_open(dev_t dev, int flags, int devtype, struct proc *p)
 //zfsdev_open(struct vnode *ino, struct file *filp)
 {
 	int error;
-	minor_t xminor = minor(dev);
 
 	dprintf("zfsdev_open, dev %d flag %02X devtype %d, proc is %p: thread %p\n",
-		   xminor, flags, devtype, p, current_thread());
+			minor(dev), flags, devtype, p, current_thread());
 
 
 	if (zfsdev_get_state_impl(minor(dev), ZST_ALL)) {
-		//if (zfsdev_minor_find(dev)) {
 		dprintf("zs already exists\n");
 		return (0);
 	}
@@ -5710,8 +5698,6 @@ zfsdev_release(dev_t dev, int flags, int devtype, struct proc *p)
 
 	return (-error);
 }
-
-//#define	CRED	((uintptr_t)NOCRED)
 
 #define getminor(X) minor((X))
 static int
@@ -6073,8 +6059,6 @@ zfs_attach(void)
 	}
 
 	dev = makedev(zfs_major, 0);/* Get the device number */
-	//zfs_devnode = devfs_make_node(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
-	//   0666, "zfs", 0);
 	zfs_devnode = devfs_make_node_clone(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
 										0666, zfs_devfs_clone, "zfs", 0);
 
