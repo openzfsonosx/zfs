@@ -1105,15 +1105,13 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)
 
 	iokit_hl = (IOMedia *)dvd->vd_iokit_hl;
 
-	if (!iokit_hl) {
-		error = EINVAL;
-		goto error;
-	}
+	if (!iokit_hl)
+		return (EINVAL);
 
 	/* Check if device is already open (by any clients, including ZFS) */
 	if (iokit_hl->isOpen(0) == true) {
-		error = EBUSY;
-		goto error;
+		iokit_hl = 0;
+		return (EBUSY);
 	}
 
 	/*
@@ -1123,8 +1121,8 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)
 	if (fmode > FREAD &&
 	    iokit_hl->isWritable() == false) {
 
-		error = ENODEV;
-		goto error;
+		iokit_hl = 0;
+		return (ENODEV);
 	}
 
 	if (iokit_hl->IOMedia::open((IOService *)dvd->vd_zfs_hl,
@@ -1132,24 +1130,9 @@ vdev_iokit_handle_open(vdev_iokit_t *dvd, int fmode = 0)
 	    kIOStorageAccessReader :
 	    kIOStorageAccessReaderWriter)) == false) {
 
-		error = EIO;
-		goto error;
+		iokit_hl = 0;
+		return (EIO);
 	}
-
-	goto out;
-
-error:
-
-	if (error == 0)
-		error = EIO;
-
-	iokit_hl = 0;
-
-	return (error);
-
-out:
-
-	iokit_hl = 0;
 
 	/* Success */
 	return (0);
