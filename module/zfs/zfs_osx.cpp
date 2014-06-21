@@ -367,7 +367,7 @@ bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
      * we can go look for the BSDName. We need this to create the correct
      * symlinks.
      */
-    nub->registerService( kIOServiceSynchronous);
+    nub->registerService(kIOServiceSynchronous);
 
     if (nub->getBSDName() == 0) {
         if ((version_major != 10) &&
@@ -399,8 +399,9 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
       zv->zv_iokitdev = NULL;
       zv = NULL;
         
-      if (nub)
-          nub->terminate(kIOServiceSynchronous);
+		if (nub)
+			nub->terminate(kIOServiceRequired|
+			    kIOServiceSynchronous);
     }
 
     return result;
