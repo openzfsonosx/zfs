@@ -21,14 +21,6 @@ public:
 	virtual bool		createBlockStorageDevice(zvol_state_t *zv);
 	virtual bool		destroyBlockStorageDevice(zvol_state_t *zv);
 	virtual bool		updateVolSize(zvol_state_t *zv);
-
-	virtual IOByteCount	performRead(IOMemoryDescriptor* dstDesc,
-		UInt64 byteOffset,
-		UInt64 byteCount);
-
-	virtual IOByteCount	performWrite(IOMemoryDescriptor* srcDesc,
-		UInt64 byteOffset,
-		UInt64 byteCount);
 };
 
 #include <IOKit/storage/IOBlockStorageDevice.h>
