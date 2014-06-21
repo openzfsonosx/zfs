@@ -27,7 +27,7 @@ OSDefineMetaClassAndStructors(net_lundman_zfs_zvol_device, IOBlockStorageDevice)
 
 bool
 net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
-						OSDictionary *properties)
+    OSDictionary *properties)
 {
 	dprintf("zvolIO_device:init\n");
 	if (super::init(properties) == false)
@@ -44,12 +44,12 @@ net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
 bool
 net_lundman_zfs_zvol_device::attach(IOService* provider)
 {
-	OSDictionary * protocolCharacteristics	= 0;
-	OSDictionary * deviceCharacteristics	= 0;
-	OSDictionary *	storageFeatures			= 0;
-	OSBoolean * unmapFeature				= 0;
-	OSString * dataString					= 0;
-	OSNumber * dataNumber					= 0;
+	OSDictionary *protocolCharacteristics = 0;
+	OSDictionary *deviceCharacteristics = 0;
+	OSDictionary *storageFeatures = 0;
+	OSBoolean *unmapFeature = 0;
+	OSString *dataString = 0;
+	OSNumber *dataNumber = 0;
 
 	if (super::attach(provider) == false)
 		return (false);
@@ -75,14 +75,14 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	}
 
 	dataString = OSString::withCString(
-		kIOPropertyPhysicalInterconnectTypeVirtual);
+	    kIOPropertyPhysicalInterconnectTypeVirtual);
 
 	if (!dataString) {
 		IOLog("could not create interconnect type string\n");
 		return (true);
 	}
 	protocolCharacteristics->setObject(
-		kIOPropertyPhysicalInterconnectTypeKey, dataString);
+	    kIOPropertyPhysicalInterconnectTypeKey, dataString);
 
 	dataString->release();
 	dataString = 0;
@@ -93,13 +93,13 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 		return (true);
 	}
 	protocolCharacteristics->setObject(
-		kIOPropertyPhysicalInterconnectLocationKey, dataString);
+	    kIOPropertyPhysicalInterconnectLocationKey, dataString);
 
 	dataString->release();
 	dataString = 0;
 
 	setProperty(kIOPropertyProtocolCharacteristicsKey,
-				protocolCharacteristics);
+	    protocolCharacteristics);
 
 	protocolCharacteristics->release();
 	protocolCharacteristics = 0;
@@ -122,46 +122,46 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 
 	/* Set physical block size to ZVOL_BSIZE (512b) */
 	dataNumber =	OSNumber::withNumber(ZVOL_BSIZE,
-					8 * sizeof (ZVOL_BSIZE));
+	    8 * sizeof (ZVOL_BSIZE));
 
 	deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey,
-					dataNumber);
+	    dataNumber);
 
 	dprintf("physicalBlockSize %llu\n",
-			dataNumber->unsigned64BitValue());
+	    dataNumber->unsigned64BitValue());
 
 	dataNumber->release();
 	dataNumber	= 0;
 
 	/* Set logical block size to match volblocksize property */
 	dataNumber =	OSNumber::withNumber(zv->zv_volblocksize,
-					8 * sizeof (zv->zv_volblocksize));
+	    8 * sizeof (zv->zv_volblocksize));
 
 	deviceCharacteristics->setObject(kIOPropertyLogicalBlockSizeKey,
-					dataNumber);
+	    dataNumber);
 
 	dprintf("logicalBlockSize %llu\n",
-			dataNumber->unsigned64BitValue());
+	    dataNumber->unsigned64BitValue());
 
 	dataNumber->release();
 	dataNumber	= 0;
 
 	/* Set physical bytes per sector to match volblocksize property */
 	dataNumber =	OSNumber::withNumber((uint64_t)(8*ZVOL_BSIZE),
-					8 * sizeof (uint64_t));
+	    8 * sizeof (uint64_t));
 
 	deviceCharacteristics->setObject(kIOPropertyBytesPerPhysicalSectorKey,
-					dataNumber);
+	    dataNumber);
 
 	dprintf("physicalBytesPerSector %llu\n",
-			dataNumber->unsigned64BitValue());
+	    dataNumber->unsigned64BitValue());
 
 	dataNumber->release();
 	dataNumber	= 0;
 
 	/* Apply these characteristics */
 	setProperty(kIOPropertyDeviceCharacteristicsKey,
-				deviceCharacteristics);
+	    deviceCharacteristics);
 
 	deviceCharacteristics->release();
 	deviceCharacteristics	= 0;
@@ -217,7 +217,7 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	 */
 
 	setProperty(kIOBlockStorageDeviceTypeKey,
-				kIOBlockStorageDeviceTypeGeneric);
+	    kIOBlockStorageDeviceTypeGeneric);
 
 	return (true);
 }
@@ -226,39 +226,39 @@ int
 net_lundman_zfs_zvol_device::getBSDName(void)
 {
 	int err = 0;
+	IORegistryEntry *ioregdevice = 0;
+	OSObject *bsdnameosobj = 0;
+	OSString* bsdnameosstr = 0;
 
-	IORegistryEntry *ioregdevice = OSDynamicCast(IORegistryEntry, this);
+	ioregdevice = OSDynamicCast(IORegistryEntry, this);
 
-	if (ioregdevice) {
-		OSObject *bsdnameosobj;
-		bsdnameosobj = ioregdevice->getProperty(kIOBSDNameKey,
-						gIOServicePlane,
-						kIORegistryIterateRecursively);
-		if (bsdnameosobj) {
-			OSString* bsdnameosstr = OSDynamicCast(OSString,
-						bsdnameosobj);
+	if (!ioregdevice)
+		return (-1);
 
-			IOLog("zvol: bsd name is '%s'\n",
-				bsdnameosstr->getCStringNoCopy());
+	bsdnameosobj = ioregdevice->getProperty(kIOBSDNameKey,
+	    gIOServicePlane, kIORegistryIterateRecursively);
 
-			if (zv) {
-				zv->zv_bsdname[0] = 'r'; // for 'rdiskX'.
-				strlcpy(&zv->zv_bsdname[1],
-					bsdnameosstr->getCStringNoCopy(),
-					sizeof (zv->zv_bsdname)-1);
-				/*
-				 * IOLog("name assigned '%s'\n",
-				 *	zv->zv_bsdname);
-				 */
+	if (!bsdnameosobj)
+		return (-1);
 
-			} else
-				err = -1;
-		} else
-			err = -1;
-	} else
-		err = -1;
+	bsdnameosstr = OSDynamicCast(OSString, bsdnameosobj);
 
-	return (err);
+	IOLog("zvol: bsd name is '%s'\n",
+	    bsdnameosstr->getCStringNoCopy());
+
+	if (!zv)
+		return (-1);
+
+	zv->zv_bsdname[0] = 'r'; // for 'rdiskX'.
+	strlcpy(&zv->zv_bsdname[1],
+	    bsdnameosstr->getCStringNoCopy(),
+	    sizeof (zv->zv_bsdname)-1);
+	/*
+	 * IOLog("name assigned '%s'\n",
+	 *	zv->zv_bsdname);
+	 */
+
+	return (0);
 }
 
 
@@ -273,10 +273,9 @@ net_lundman_zfs_zvol_device::detach(IOService* provider)
 
 bool
 net_lundman_zfs_zvol_device::handleOpen(IOService *client,
-						IOOptionBits options,
-						void *argument)
+    IOOptionBits options, void *argument)
 {
-	IOStorageAccess access = (IOStorageAccess) (uint64_t) argument;
+	IOStorageAccess access = (IOStorageAccess)(uint64_t)argument;
 
 	dprintf("open\n");
 
@@ -323,7 +322,7 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 
 void
 net_lundman_zfs_zvol_device::handleClose(IOService *client,
-							IOOptionBits options)
+    IOOptionBits options)
 {
 	super::handleClose(client, options);
 
@@ -334,12 +333,11 @@ net_lundman_zfs_zvol_device::handleClose(IOService *client,
 
 IOReturn
 net_lundman_zfs_zvol_device::doAsyncReadWrite(
-	IOMemoryDescriptor *buffer, UInt64 block, UInt64 nblks,
-	IOStorageAttributes *attributes, IOStorageCompletion *completion)
+    IOMemoryDescriptor *buffer, UInt64 block, UInt64 nblks,
+    IOStorageAttributes *attributes, IOStorageCompletion *completion)
 {
-	IODirection			   direction;
-	IOByteCount			   actualByteCount;
-
+	IODirection direction;
+	IOByteCount actualByteCount;
 
 	// Return errors for incoming I/O if we have been terminated.
 	if (isInactive() == true) {
@@ -373,8 +371,8 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 	}
 
 	dprintf("%s offset @block %llu numblocks %llu: blksz %llu\n",
-			direction == kIODirectionIn ? "Read" : "Write",
-			block, nblks, (ZVOL_BSIZE));
+	    direction == kIODirectionIn ? "Read" : "Write",
+	    block, nblks, (ZVOL_BSIZE));
 	// IOLog("getMediaBlockSize is %llu\n",
 	//	m_provider->getMediaBlockSize());
 
@@ -383,19 +381,19 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 
 	if (direction == kIODirectionIn) {
 
-		if (zvol_read_iokit(zv,
-					(block*(ZVOL_BSIZE)),
-					actualByteCount,
-					(void *)buffer))
+		if (zvol_read_iokit(zv, (block*(ZVOL_BSIZE)),
+		    actualByteCount, (void *)buffer)) {
+
 			actualByteCount = 0;
+		}
 
 	} else {
 
-		if (zvol_write_iokit(zv,
-					(block*(ZVOL_BSIZE)),
-					actualByteCount,
-					(void *)buffer))
+		if (zvol_write_iokit(zv, (block*(ZVOL_BSIZE)),
+		    actualByteCount, (void *)buffer)) {
+
 			actualByteCount = 0;
+		}
 
 	}
 
@@ -404,21 +402,23 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 
 	// Call the completion function.
 	(completion->action)(completion->target, completion->parameter,
-				kIOReturnSuccess, actualByteCount);
+	    kIOReturnSuccess, actualByteCount);
 	return (kIOReturnSuccess);
 }
 
 IOReturn
 net_lundman_zfs_zvol_device::doDiscard(UInt64 block, UInt64 nblks)
 {
-// IOLog("doDiscard called with block, nblks (%llu, %llu)\n", block, nblks);
+	dprintf("doDiscard called with block, nblks (%llu, %llu)\n",
+	    block, nblks);
 	uint64_t bytes		= 0;
 	uint64_t off		= 0;
 
 	/* Convert block/nblks to offset/bytes */
 	off =	block * ZVOL_BSIZE;
 	bytes =	nblks * ZVOL_BSIZE;
-// IOLog("calling zvol_unmap with offset, bytes (%llu, %llu)\n", off, bytes);
+	dprintf("calling zvol_unmap with offset, bytes (%llu, %llu)\n",
+	    off, bytes);
 
 	if (zvol_unmap(zv, off, bytes) == 0)
 		return (kIOReturnSuccess);
@@ -429,13 +429,13 @@ net_lundman_zfs_zvol_device::doDiscard(UInt64 block, UInt64 nblks)
 
 IOReturn
 net_lundman_zfs_zvol_device::doUnmap(IOBlockStorageDeviceExtent *extents,
-				UInt32 extentsCount, UInt32 options = 0)
+    UInt32 extentsCount, UInt32 options = 0)
 {
 	UInt32 i = 0;
 	IOReturn result;
 
-// IOLog("doUnmap called with (%u) extents and options (%u)\n",
-//	(uint32_t)extentsCount, (uint32_t)options);
+	dprintf("doUnmap called with (%u) extents and options (%u)\n",
+	    (uint32_t)extentsCount, (uint32_t)options);
 
 	if (options > 0) {
 		return (kIOReturnUnsupported);
@@ -444,7 +444,7 @@ net_lundman_zfs_zvol_device::doUnmap(IOBlockStorageDeviceExtent *extents,
 	for (i = 0; i < extentsCount; i++) {
 
 		result = doDiscard(extents[i].blockStart,
-				extents[i].blockCount);
+		    extents[i].blockCount);
 
 		if (result != kIOReturnSuccess) {
 			return (result);
@@ -456,7 +456,7 @@ net_lundman_zfs_zvol_device::doUnmap(IOBlockStorageDeviceExtent *extents,
 
 UInt32
 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
-	UInt32 capacitiesMaxCount) const
+    UInt32 capacitiesMaxCount) const
 {
 	dprintf("formatCap\n");
 
@@ -489,7 +489,7 @@ net_lundman_zfs_zvol_device::getProductString(void)
 	if (zv && zv->zv_name)
 		return (zv->zv_name);
 
-	return ((char *) "ZVolume");
+	return ((char *)"ZVolume");
 }
 
 IOReturn
@@ -510,7 +510,7 @@ net_lundman_zfs_zvol_device::reportMaxValidBlock(UInt64 *maxBlock)
 
 IOReturn
 net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent,
-	bool * changedState)
+    bool *changedState)
 {
 	dprintf("reportMediaState\n");
 	*mediaPresent = true;
@@ -520,7 +520,7 @@ net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent,
 
 IOReturn
 net_lundman_zfs_zvol_device::reportPollRequirements(bool *pollRequired,
-	bool *pollIsExpensive)
+    bool *pollIsExpensive)
 {
 	dprintf("reportPollReq\n");
 	*pollRequired = false;
