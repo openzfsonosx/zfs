@@ -29,7 +29,7 @@
 
 #include <stdint.h>
 
-void zed_event_init(struct zed_conf *zcp);
+int  zed_event_init(struct zed_conf *zcp);
 
 void zed_event_fini(struct zed_conf *zcp);
 

@@ -218,7 +218,19 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 
  retry:
-	zed_event_init(zcp);
+	if (zed_event_init(zcp)) {
+		/*
+		 * If we failed to open /dev/zfs, but force was requested, we
+		 * sleep waiting for it to come alive. This lets zed sit around
+		 * waiting for the kernel module to load.
+		 */
+		if (zcp->do_force) {
+			sleep(30);
+			if (!_got_exit)	goto retry;
+		}
+		zed_log_die("Failed to initialize libzfs");
+    }
+
 	zed_event_seek(zcp, saved_eid, saved_etime);
 
 	while (!_got_exit) {

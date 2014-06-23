@@ -47,33 +47,22 @@
 /*
  * Open the libzfs interface.
  */
-void
+int
 zed_event_init(struct zed_conf *zcp)
 {
 	if (!zcp)
 		zed_log_die("Failed zed_event_init: %s", strerror(EINVAL));
 
- retry:
 	zcp->zfs_hdl = libzfs_init();
 	if (!zcp->zfs_hdl) {
-
-		/*
-		 * If we failed to open /dev/zfs, but force was requested, we
-		 * sleep waiting for it to come alive. This lets zed sit around
-		 * waiting for the kernel module to load.
-		 */
-		if (zcp->do_force) {
-			sleep(30);
-			goto retry;
-		}
-
-		zed_log_die("Failed to initialize libzfs");
-    }
+		return ENODEV;
+	}
 
 	zcp->zevent_fd = open(ZFS_DEV, O_RDWR);
 	if (zcp->zevent_fd < 0)
 		zed_log_die("Failed to open \"%s\": %s",
 		    ZFS_DEV, strerror(errno));
+	return 0;
 }
 
 /*
