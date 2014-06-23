@@ -167,8 +167,7 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	deviceCharacteristics	= 0;
 
 	/*
-	 * Zvol unmap (experimental) support
-	 *  Possibly as a property / sysctl
+	 * ZVOL unmap support
 	 *
 	 * These properties are defined in IOStorageFeatures
 	 */
@@ -201,18 +200,15 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	 *  Maximum transfer segment size (bytes)
 	 *  Minimum transfer segment size (bytes)
 	 *
-	 *  We will need to establish safe
-	 *   defaults for all / per volblocksize
+	 *  We will need to establish safe defaults for all / per volblocksize
 	 *
-	 *  Example: setProperty(kIOMinimumSegmentAlignmentByteCountKey,
-	 *						 1, 1);
+	 *  Example: setProperty(kIOMinimumSegmentAlignmentByteCountKey, 1, 1);
 	 */
 
 	/*
-	 * Finally "Generic" type, set as a device property.
-	 * Tried setting this to the string "ZVOL" however the OS
-	 * does not recognize it as a block storage device.
-	 * This would probably be possible by extending the
+	 * Finally "Generic" type, set as a device property. Tried setting this
+	 * to the string "ZVOL" however the OS does not recognize it as a block
+	 * storage device. This would probably be possible by extending the
 	 * IOBlockStorage Device / Driver relationship.
 	 */
 
@@ -254,8 +250,7 @@ net_lundman_zfs_zvol_device::getBSDName(void)
 	    bsdnameosstr->getCStringNoCopy(),
 	    sizeof (zv->zv_bsdname)-1);
 	/*
-	 * IOLog("name assigned '%s'\n",
-	 *	zv->zv_bsdname);
+	 * IOLog("name assigned '%s'\n", zv->zv_bsdname);
 	 */
 
 	return (0);
@@ -283,10 +278,9 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 		return (false);
 
 	/*
-	 * It was the hope that openHandle would indicate
-	 *	the type of open required such that we can set
-	 *	FREAD/FWRITE/ZVOL_EXCL as needed, but alas,
-	 *	"access" is always 0 here.
+	 * It was the hope that openHandle would indicate the type of open
+	 * required such that we can set FREAD/FWRITE/ZVOL_EXCL as needed, but
+	 * alas, "access" is always 0 here.
 	 */
 
 	switch (access) {
@@ -461,17 +455,16 @@ net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
 	dprintf("formatCap\n");
 
 	/*
-	 * Ensure that the array is sufficient to
-	 *	hold all our formats (we require 1 element).
+	 * Ensure that the array is sufficient to hold all our formats
+	 * (we require one element).
 	 */
 	if ((capacities != NULL) && (capacitiesMaxCount < 1))
 		return (0);
 		/* Error, return an array size of 0. */
 
 	/*
-	 * The caller may provide a NULL array if
-	 *	it wishes to query the number of formats
-	 *	that we support.
+	 * The caller may provide a NULL array if it wishes to query the number
+	 * of formats that we support.
 	 */
 	if (capacities != NULL)
 		capacities[0] = zv->zv_volsize;
@@ -595,9 +588,8 @@ net_lundman_zfs_zvol_device::reportEjectability(bool *isEjectable)
 {
 	dprintf("reportEjecta\n");
 	/*
-	 * Which do we prefer? If you eject it,
-	 *	you can't get volume back until
-	 *	you import it again.
+	 * Which do we prefer? If you eject it, you can't get volume back until
+	 * you import it again.
 	 */
 
 	*isEjectable = false;

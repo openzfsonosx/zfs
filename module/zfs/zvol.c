@@ -1513,14 +1513,12 @@ zvol_strategy(struct buf *bp)
 	ASSERT(os != NULL);
 
 	/*
-	 * bp_mapin() is used to map virtual address space
-	 *  to a page list maintained by the buffer header
-	 *  during a paged- I/O request. bp_mapin() allocates
-	 *  system virtual address space, maps that space to
-	 *  the page list, and returns the starting address
-	 *  of the space in the bp->b_un.b_addr field of the
-	 *  buf(9S) structure. Virtual address space is then
-	 *  deallocated using the bp_mapout(9F) function.
+	 * bp_mapin() is used to map virtual address space to a page list
+	 * maintained by the buffer header during a paged-I/O request.
+	 * bp_mapin() allocates system virtual address space, maps that space to
+	 * the page list, and returns the starting address of the space in the
+	 * bp->b_un.b_addr field of the buf(9S) structure. Virtual address space
+	 * is then deallocated using the bp_mapout(9F) function.
 	 */
 	// bp_mapin(bp);
 	// addr = buf_dataptr(bp);
@@ -2448,8 +2446,8 @@ zvol_ioctl(dev_t dev, unsigned long cmd, caddr_t data, int isblk,
 
 			/*
 			 * Apply Postel's Law to length-checking. If they
-			 *	overshoot, just blank out until the end, if
-			 *	there's a need to blank out anything.
+			 * overshoot, just blank out until the end, if there's a
+			 * need to blank out anything.
 			 */
 			if (df.df_start >= zv->zv_volsize)
 				break;	/* No need to do anything... */
