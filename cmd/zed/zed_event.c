@@ -765,7 +765,7 @@ _zed_event_add_time_strings(uint64_t eid, zed_strings_t *zsp, int64_t etime[])
 /*
  * Service the next zevent, blocking until one is available.
  */
-void
+int
 zed_event_service(struct zed_conf *zcp)
 {
 	nvlist_t *nvl;
@@ -783,20 +783,19 @@ zed_event_service(struct zed_conf *zcp)
 		errno = EINVAL;
 		zed_log_msg(LOG_ERR, "Failed to service zevent: %s",
 		    strerror(errno));
-		return;
+		return EINVAL;
 	}
 	rv = zpool_events_next(zcp->zfs_hdl, &nvl, &n_dropped, ZEVENT_NONE,
 	    zcp->zevent_fd);
 
 #ifdef	__APPLE__
 	if (rv == ENODEV) {
-		/* _got_exit is static, so lets signal ourselves */
-		kill(0, SIGTERM);
+		return ENODEV;
 	}
 #endif
 
 	if ((rv != 0) || !nvl)
-		return;
+		return 0;
 
 	if (n_dropped > 0) {
 		zed_log_msg(LOG_WARNING, "Missed %d events", n_dropped);
@@ -847,4 +846,5 @@ zed_event_service(struct zed_conf *zcp)
 		zed_strings_destroy(zsp);
 	}
 	nvlist_free(nvl);
+	return 0;
 }

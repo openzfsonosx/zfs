@@ -36,6 +36,6 @@ void zed_event_fini(struct zed_conf *zcp);
 int zed_event_seek(struct zed_conf *zcp, uint64_t saved_eid,
     int64_t saved_etime[]);
 
-void zed_event_service(struct zed_conf *zcp);
+int zed_event_service(struct zed_conf *zcp);
 
 #endif	/* !ZED_EVENT_H */

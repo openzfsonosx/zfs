@@ -226,12 +226,11 @@ main(int argc, char *argv[])
 			_got_hup = 0;
 			(void) zed_conf_scan_dir(zcp);
 		}
-		zed_event_service(zcp);
+		if (zed_event_service(zcp)) break;
 	}
 	zed_log_msg(LOG_NOTICE, "Exiting");
 	zed_event_fini(zcp);
-	if (zcp->do_force) {
-		_got_exit = 0;
+	if (zcp->do_force && !_got_exit) {
 		goto retry;
 	}
 	zed_conf_destroy(zcp);
