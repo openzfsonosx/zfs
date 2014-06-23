@@ -367,7 +367,7 @@ bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
      * we can go look for the BSDName. We need this to create the correct
      * symlinks.
      */
-    nub->registerService( kIOServiceSynchronous);
+    nub->registerService(kIOServiceSynchronous);
 
     if (nub->getBSDName() == 0) {
         if ((version_major != 10) &&
@@ -398,8 +398,10 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
 
       zv->zv_iokitdev = NULL;
       zv = NULL;
-
-      nub->terminate();
+        
+		if (nub)
+			nub->terminate(kIOServiceRequired|
+			    kIOServiceSynchronous);
     }
 
     return result;
@@ -414,37 +416,16 @@ bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
     if (zv->zv_iokitdev) {
       nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
 
+      if (!nub)
+          return false;
+        
       //IOLog("Attempting to update volsize\n");
       nub->retain();
-      nub->registerService();
+      nub->registerService(kIOServiceSynchronous);
       nub->release();
     }
     return true;
 }
-
-/*
- * Not used
- */
-IOByteCount net_lundman_zfs_zvol::performRead (IOMemoryDescriptor* dstDesc,
-                                               UInt64 byteOffset,
-                                               UInt64 byteCount)
-{
-  IOLog("performRead offset %llu count %llu\n", byteOffset, byteCount);
-    return dstDesc->writeBytes(0, (void*)((uintptr_t)m_buffer + byteOffset),
-                               byteCount);
-}
-
-/*
- * Not used
- */
-IOByteCount net_lundman_zfs_zvol::performWrite (IOMemoryDescriptor* srcDesc,
-                                                UInt64 byteOffset,
-                                                UInt64 byteCount)
-{
-  IOLog("performWrite offset %llu count %llu\n", byteOffset, byteCount);
-    return srcDesc->readBytes(0, (void*)((uintptr_t)m_buffer + byteOffset), byteCount);
-}
-
 
 /*
  * C language interfaces
@@ -467,7 +448,6 @@ int zvolSetVolsize(zvol_state_t *zv)
     static_cast<net_lundman_zfs_zvol*>(global_c_interface)->updateVolSize(zv);
     return 0;
 }
-
 
 uint64_t zvolIO_kit_read(void *iomem, uint64_t offset, char *address, uint64_t len)
 {
