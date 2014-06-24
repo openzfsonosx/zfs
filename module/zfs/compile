@@ -130,6 +130,7 @@ gcc $CFLAGS -o zprop_common.o -c ../zcommon/zprop_common.c
 mkdir -p zfs.kext/Contents/Resources/English.lproj zfs.kext/Contents/MacOS
 cp -f Info.plist zfs.kext/Contents/
 cp -f InfoPlist.strings zfs.kext/Contents/Resources/English.lproj/
+plutil -convert binary1 zfs.kext/Contents/Resources/English.lproj/InfoPlist.strings
 
 gcc -o zfs.kext/Contents/MacOS/zfs *.o -Xlinker -kext -nostdlib -lkmodc++ -lkmod -lcc_kext || echo "Linking failed"
 

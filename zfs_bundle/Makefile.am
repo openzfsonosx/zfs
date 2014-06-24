@@ -20,6 +20,7 @@ zfs.fs$(EXEEXT): $(INFO_PLIST) English.lproj/$(PLIST_STRINGS) $(PKGINFO)
 	cp -f $(PKGINFO) zfs.fs/Contents/
 	cp -f $(INFO_PLIST) zfs.fs/Contents/
 	cp -f English.lproj/$(INFOPLIST_STRINGS) zfs.fs/Contents/Resources/English.lproj/
+	plutil -convert binary1 zfs.fs/Contents/Resources/English.lproj/InfoPlist.strings
 
 install-exec-local:: zfs.fs
 	rm -f $(FS_BUNDLEDIR)/Contents/$(PkgInfo)
