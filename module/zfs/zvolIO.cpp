@@ -541,7 +541,7 @@ net_lundman_zfs_zvol_device::doEjectMedia(void)
 IOReturn
 net_lundman_zfs_zvol_device::doFormatMedia(UInt64 byteCapacity)
 {
-	IOLog("doFormat\n");
+	dprintf("doFormat\n");
 	return (kIOReturnSuccess);
 }
 
@@ -555,7 +555,7 @@ net_lundman_zfs_zvol_device::doLockUnlockMedia(bool doLock)
 IOReturn
 net_lundman_zfs_zvol_device::doSynchronizeCache(void)
 {
-	IOLog("doSync\n");
+	dprintf("doSync\n");
 	if (zv && zv->zv_zilog) {
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
 	}
