@@ -23,7 +23,7 @@ zfs.fs$(EXEEXT): $(INFO_PLIST) English.lproj/$(PLIST_STRINGS) $(PKGINFO)
 	plutil -convert binary1 zfs.fs/Contents/Resources/English.lproj/InfoPlist.strings
 
 install-exec-local:: zfs.fs
-	rm -f $(FS_BUNDLEDIR)/Contents/$(PkgInfo)
+	rm -f $(FS_BUNDLEDIR)/Contents/$(PKGINFO)
 	rm -f $(FS_BUNDLEDIR)/Contents/$(INFO_PLIST)
 	rm -f $(FS_BUNDLEDIR)/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS)
 	mkdir -p $(FS_BUNDLEDIR)
