@@ -27,7 +27,7 @@ install-exec-local:: zfs.fs
 	rm -f $(FS_BUNDLEDIR)/Contents/$(INFO_PLIST)
 	rm -f $(FS_BUNDLEDIR)/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS)
 	mkdir -p $(FS_BUNDLEDIR)
-	rsync -aH zfs.fs/ $(FS_BUNDLEDIR)
+	rsync -aH zfs.fs/ $(FS_BUNDLEDIR)/
 	chown -R root:wheel $(FS_BUNDLEDIR)
 
 clean:

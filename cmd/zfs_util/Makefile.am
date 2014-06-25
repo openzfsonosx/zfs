@@ -13,7 +13,7 @@ install-exec-hook:
 	mkdir -p $(DESTDIR)/System/Library/Filesystems/zfs.fs/Contents/Resources
 	/bin/ln -f $(DESTDIR)$(sbindir)/zfs.util $(DESTDIR)/System/Library/Filesystems/zfs.fs/Contents/Resources/zfs.util
 	/bin/ln -fs Contents/Resources/zfs.util $(DESTDIR)/System/Library/Filesystems/zfs.fs/zfs.util
-	sudo chown -R root:wheel /System/Library/Filesystems/zfs.fs
+	sudo chown -R root:wheel ${DESTDIR}/System/Library/Filesystems/zfs.fs
 
 uninstall-hook:
 	-$(RM) $(DESTDIR)/System/Library/Filesystems/zfs.fs/Contents/Resources/zfs.util
