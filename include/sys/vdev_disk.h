@@ -32,16 +32,17 @@
 #include <sys/vdev.h>
 
 typedef struct vdev_disk {
-    char            *vd_minor;
-    struct vnode    *vd_devvp;
-    uint64_t	vd_ashift;
+	char *vd_minor;
+	struct vnode *vd_devvp;
+	uint64_t vd_ashift;
 } vdev_disk_t;
 
-#define lbtodb(bytes)                   /* calculates (bytes / DEV_BSIZE) */ \
-        ((unsigned long long)(bytes) >> DEV_BSHIFT)
-#define ldbtob(db)                      /* calculates (db * DEV_BSIZE) */ \
-        ((unsigned long long)(db) << DEV_BSHIFT)
-
+/* calculates (bytes / DEV_BSIZE) */
+#define	lbtodb(bytes) \
+	((unsigned long long)(bytes) >> DEV_BSHIFT)
+/* calculates (db * DEV_BSIZE) */
+#define	ldbtob(db) \
+	((unsigned long long)(db) << DEV_BSHIFT)
 
 #endif /* _KERNEL */
 #endif /* _SYS_VDEV_DISK_H */

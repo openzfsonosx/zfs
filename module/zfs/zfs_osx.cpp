@@ -395,7 +395,7 @@ bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
      * we can go look for the BSDName. We need this to create the correct
      * symlinks.
      */
-    nub->registerService( kIOServiceSynchronous);
+    nub->registerService(kIOServiceSynchronous);
 
     if (nub->getBSDName() == 0) {
         if ((version_major != 10) &&
@@ -598,7 +598,6 @@ int zvolSetVolsize(zvol_state_t *zv)
         return 1;
     }
 }
-
 
 uint64_t zvolIO_kit_read(void *iomem, uint64_t offset, char *address, uint64_t len)
 {

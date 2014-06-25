@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleIdentifier</key>
+	<string>net.lundman.filesystems.zfs</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>zfs</string>
+	<key>CFBundlePackageType</key>
+	<string>fs  </string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.3.0</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>1.3</string>
+	<key>FSMediaTypes</key>
+	<dict>
+		<key>6A898CC3-1DD2-11B2-99A6-080020736631</key>
+		<dict>
+			<key>FSMediaProperties</key>
+			<dict>
+				<key>Content Hint</key>
+				<string>6A898CC3-1DD2-11B2-99A6-080020736631</string>
+				<key>Leaf</key>
+				<true/>
+			</dict>
+			<key>FSProbeArguments</key>
+			<string>-p</string>
+			<key>FSProbeExecutable</key>
+			<string>zfs.util</string>
+			<key>FSProbeOrder</key>
+			<integer>850</integer>
+		</dict>
+	</dict>
+	<key>FSPersonalities</key>
+	<dict>
+		<key>ZFS</key>
+		<dict>
+			<key>FSFormatInteractive</key>
+			<false/>
+			<key>FSFormatArguments</key>
+			<string></string>
+			<key>FSFormatContentMask</key>
+			<string>6A898CC3-1DD2-11B2-99A6-080020736631</string>
+			<key>FSFormatExecutable</key>
+			<string>zfs.util</string>
+			<key>FSFormatMinimumSize</key>
+			<integer>268435456</integer>
+			<key>FSFormatMaximumSize</key>
+			<integer>9223372034707292160</integer>
+			<key>FSName</key>
+			<string>ZFS File System</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

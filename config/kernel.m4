@@ -196,16 +196,16 @@ AC_DEFUN([ZFS_AC_SPL], [
 		dnl #
 		dnl # Look in the standard development package location
 		dnl #
-		sourcelink=`ls -1d /usr/src/spl-*/${LINUX_VERSION} \
-		            2>/dev/null | tail -1`
+		dnl	#	sourcelink=`ls -1d /usr/src/spl-*/${LINUX_VERSION} \
+		dnl #           2>/dev/null | tail -1`
 
 		dnl #
 		dnl # Look in the DKMS source location
 		dnl #
-		AS_IF([test -z "$sourcelink" || test ! -e $sourcelink/spl_config.h], [
-			sourcelink=`ls -1d /var/lib/dkms/spl/*/build \
-			            2>/dev/null | tail -1`
-		])
+		dnl # AS_IF([test -z "$sourcelink" || test ! -e $sourcelink/spl_config.h], [
+		dnl #	sourcelink=`ls -1d /var/lib/dkms/spl/*/build \
+		dnl #	            2>/dev/null | tail -1`
+		dnl # ])
 
 		dnl #
 		dnl # Look in the parent directory

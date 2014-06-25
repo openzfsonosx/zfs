@@ -16,31 +16,33 @@
  */
 
 
-//#define dprintf IOLog
+// #define dprintf IOLog
 
 // Define the superclass
-#define super IOBlockStorageDevice
+#define	super IOBlockStorageDevice
 
-#define ZVOL_BSIZE	DEV_BSIZE
+#define	ZVOL_BSIZE	DEV_BSIZE
 
-OSDefineMetaClassAndStructors(net_lundman_zfs_zvol_device,IOBlockStorageDevice)
+OSDefineMetaClassAndStructors(net_lundman_zfs_zvol_device, IOBlockStorageDevice)
 
-bool net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
-                                       OSDictionary *properties)
+bool
+net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
+    OSDictionary *properties)
 {
   dprintf("zvolIO_device:init\n");
   if (super::init(properties) == false)
     return false;
 
-  zv = c_zv;
-  // Is it safe/ok to keep a pointer reference like this?
-  zv->zv_iokitdev = (void *) this;
+	zv = c_zv;
+	// Is it safe/ok to keep a pointer reference like this?
+	zv->zv_iokitdev = (void *) this;
 
-  return true;
+	return (true);
 }
 
 
-bool net_lundman_zfs_zvol_device::attach(IOService* provider)
+bool
+net_lundman_zfs_zvol_device::attach(IOService* provider)
 {
     OSDictionary		*	protocolCharacteristics = 0;
     OSDictionary		*	deviceCharacteristics   = 0;
@@ -159,8 +161,8 @@ dprintf( "logicalBlockSize %llu\n", dataNumber->unsigned64BitValue());
     return true;
 }
 
-
-int net_lundman_zfs_zvol_device::getBSDName(void)
+int
+net_lundman_zfs_zvol_device::getBSDName(void)
 {
 	int err = 0;
 	
@@ -189,11 +191,12 @@ int net_lundman_zfs_zvol_device::getBSDName(void)
 }
 
 
-void net_lundman_zfs_zvol_device::detach(IOService* provider)
+void
+net_lundman_zfs_zvol_device::detach(IOService* provider)
 {
-    if (m_provider == provider)
-        m_provider = NULL;
-    super::detach(provider);
+	if (m_provider == provider)
+		m_provider = NULL;
+	super::detach(provider);
 }
 
 
@@ -327,11 +330,30 @@ IOReturn net_lundman_zfs_zvol_device::doAsyncReadWrite(
     return kIOReturnSuccess;
 }
 
+IOReturn
+net_lundman_zfs_zvol_device::doDiscard(UInt64 block, UInt64 nblks)
+{
+	dprintf("doDiscard called with block, nblks (%llu, %llu)\n",
+	    block, nblks);
+	uint64_t bytes		= 0;
+	uint64_t off		= 0;
+
+	/* Convert block/nblks to offset/bytes */
+	off =	block * ZVOL_BSIZE;
+	bytes =	nblks * ZVOL_BSIZE;
+	dprintf("calling zvol_unmap with offset, bytes (%llu, %llu)\n",
+	    off, bytes);
+
+	if (zvol_unmap(zv, off, bytes) == 0)
+		return (kIOReturnSuccess);
+	else
+		return (kIOReturnError);
+}
 
 
-
-UInt32 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
-                                                          UInt32 capacitiesMaxCount) const
+IOReturn
+net_lundman_zfs_zvol_device::doUnmap(IOBlockStorageDeviceExtent *extents,
+    UInt32 extentsCount, UInt32 options = 0)
 {
 	dprintf("formatCap\n");
     // Ensure that the array is sufficient to hold all our formats
@@ -347,7 +369,12 @@ UInt32 net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
     return 1;
 }
 
+	dprintf("doUnmap called with (%u) extents and options (%u)\n",
+	    (uint32_t)extentsCount, (uint32_t)options);
 
+	if (options > 0) {
+		return (kIOReturnUnsupported);
+	}
 
 char* net_lundman_zfs_zvol_device::getProductString(void)
 {
@@ -356,7 +383,13 @@ char* net_lundman_zfs_zvol_device::getProductString(void)
 	return (char*)"ZVolume";
 }
 
+		result = doDiscard(extents[i].blockStart,
+		    extents[i].blockCount);
 
+		if (result != kIOReturnSuccess) {
+			return (result);
+		}
+	}
 
 IOReturn net_lundman_zfs_zvol_device::reportBlockSize(UInt64 *blockSize)
 {
@@ -365,7 +398,9 @@ IOReturn net_lundman_zfs_zvol_device::reportBlockSize(UInt64 *blockSize)
 	return kIOReturnSuccess;
 }
 
-IOReturn net_lundman_zfs_zvol_device::reportMaxValidBlock(UInt64 *maxBlock)
+UInt32
+net_lundman_zfs_zvol_device::doGetFormatCapacities(UInt64* capacities,
+    UInt32 capacitiesMaxCount) const
 {
 	*maxBlock = (zv->zv_volsize / (ZVOL_BSIZE))-1 ; //-1
 	dprintf("reportMaxValidBlock %llu\n", *maxBlock);
@@ -385,23 +420,22 @@ IOReturn net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent, bool
 IOReturn net_lundman_zfs_zvol_device::reportPollRequirements(bool *pollRequired,
 															 bool *pollIsExpensive)
 {
-    *pollRequired = false;
-    *pollIsExpensive = false;
-    dprintf("reportPollReq\n");
-    return kIOReturnSuccess;
+	*blockSize = (ZVOL_BSIZE);
+	dprintf("reportBlockSize %llu\n", *blockSize);
+	return (kIOReturnSuccess);
 }
 
-IOReturn net_lundman_zfs_zvol_device::reportRemovability(bool *isRemovable)
+IOReturn
+net_lundman_zfs_zvol_device::reportMaxValidBlock(UInt64 *maxBlock)
 {
-    *isRemovable = false;
-    dprintf("reportRemova\n");
-    return kIOReturnSuccess;
+	*maxBlock = (zv->zv_volsize / (ZVOL_BSIZE)) - 1;
+	dprintf("reportMaxValidBlock %llu\n", *maxBlock);
+	return (kIOReturnSuccess);
 }
 
-
-
-
-IOReturn net_lundman_zfs_zvol_device::doEjectMedia(void)
+IOReturn
+net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent,
+    bool *changedState)
 {
     dprintf("ejectMedia\n");
 	
@@ -411,19 +445,25 @@ IOReturn net_lundman_zfs_zvol_device::doEjectMedia(void)
     return kIOReturnSuccess;
 }
 
-IOReturn  net_lundman_zfs_zvol_device::doFormatMedia(UInt64 byteCapacity)
+IOReturn
+net_lundman_zfs_zvol_device::reportRemovability(bool *isRemovable)
 {
-    dprintf("doFormat\n");
-    return kIOReturnSuccess;
+	dprintf("reportRemova\n");
+	*isRemovable = false;
+	return (kIOReturnSuccess);
 }
 
-IOReturn  net_lundman_zfs_zvol_device::doLockUnlockMedia(bool doLock)
+IOReturn
+net_lundman_zfs_zvol_device::doEjectMedia(void)
 {
-    dprintf("doLockUnlock\n");
-    return kIOReturnSuccess;
+	dprintf("ejectMedia\n");
+	// this->m_provider->doEjectMedia(this);
+	this->m_provider->doEjectMedia(zv);
+	return (kIOReturnSuccess);
 }
 
-IOReturn  net_lundman_zfs_zvol_device::doSynchronizeCache(void)
+IOReturn
+net_lundman_zfs_zvol_device::doFormatMedia(UInt64 byteCapacity)
 {
     dprintf("doSync\n");
     if (zv && zv->zv_zilog) {
@@ -432,41 +472,46 @@ IOReturn  net_lundman_zfs_zvol_device::doSynchronizeCache(void)
     return kIOReturnSuccess;
 }
 
-char     *net_lundman_zfs_zvol_device::getVendorString(void)
+IOReturn
+net_lundman_zfs_zvol_device::doLockUnlockMedia(bool doLock)
 {
-    dprintf("getVendor\n");
-    return  (char*)"ZVOL";
+	dprintf("doLockUnlock\n");
+	return (kIOReturnSuccess);
 }
 
-char     *net_lundman_zfs_zvol_device::getRevisionString(void)
+IOReturn
+net_lundman_zfs_zvol_device::doSynchronizeCache(void)
 {
-    dprintf("getRevision\n");
-    return  (char*)ZFS_META_VERSION;
+	dprintf("doSync\n");
+	if (zv && zv->zv_zilog) {
+		zil_commit(zv->zv_zilog, ZVOL_OBJ);
+	}
+	return (kIOReturnSuccess);
 }
 
-char     *net_lundman_zfs_zvol_device::getAdditionalDeviceInfoString(void)
+char *
+net_lundman_zfs_zvol_device::getVendorString(void)
 {
-    dprintf("getAdditional\n");
-    return  (char*)"ZFS Volume";
+	dprintf("getVendor\n");
+	return ((char *)"ZVOL");
 }
 
-IOReturn  net_lundman_zfs_zvol_device::reportEjectability(bool *isEjectable)
+char *
+net_lundman_zfs_zvol_device::getRevisionString(void)
 {
-    dprintf("reportEjecta\n");
-    // Which do we prefer? If you eject it, you can't get volume back until
-    // you import it again.
-    *isEjectable = false;
-    return kIOReturnSuccess;
+	dprintf("getRevision\n");
+	return ((char *)ZFS_META_VERSION);
 }
 
-IOReturn  net_lundman_zfs_zvol_device::reportLockability(bool *isLockable)
+char *
+net_lundman_zfs_zvol_device::getAdditionalDeviceInfoString(void)
 {
-    dprintf("reportLocka\n");
-    *isLockable = true;
-    return kIOReturnSuccess;
+	dprintf("getAdditional\n");
+	return ((char *)"ZFS Volume");
 }
 
-IOReturn  net_lundman_zfs_zvol_device::reportWriteProtection(bool *isWriteProtected)
+IOReturn
+net_lundman_zfs_zvol_device::reportEjectability(bool *isEjectable)
 {
     dprintf("reportWritePro\n");
     if (zv && (zv->zv_flags & ZVOL_RDONLY))
@@ -476,20 +521,36 @@ IOReturn  net_lundman_zfs_zvol_device::reportWriteProtection(bool *isWriteProtec
     return kIOReturnSuccess;
 }
 
-IOReturn  net_lundman_zfs_zvol_device::getWriteCacheState(bool *enabled)
+IOReturn
+net_lundman_zfs_zvol_device::reportLockability(bool *isLockable)
 {
-    dprintf("getCacheState\n");
-    *enabled = true;
-    return kIOReturnSuccess;
+	dprintf("reportLocka\n");
+	*isLockable = true;
+	return (kIOReturnSuccess);
 }
 
-IOReturn  net_lundman_zfs_zvol_device::setWriteCacheState(bool enabled)
+IOReturn
+net_lundman_zfs_zvol_device::reportWriteProtection(bool *isWriteProtected)
 {
-    dprintf("setWriteCache\n");
-    return kIOReturnSuccess;
+	dprintf("reportWritePro\n");
+	if (zv && (zv->zv_flags & ZVOL_RDONLY))
+		*isWriteProtected = true;
+	else
+		*isWriteProtected = false;
+	return (kIOReturnSuccess);
 }
 
+IOReturn
+net_lundman_zfs_zvol_device::getWriteCacheState(bool *enabled)
+{
+	dprintf("getCacheState\n");
+	*enabled = true;
+	return (kIOReturnSuccess);
+}
 
-// getMediaBlockSize()
-//getDeviceTypeName
-// 	status = messageClients ( type, arg, sizeof ( IOMediaState ) );
+IOReturn
+net_lundman_zfs_zvol_device::setWriteCacheState(bool enabled)
+{
+	dprintf("setWriteCache\n");
+	return (kIOReturnSuccess);
+}
