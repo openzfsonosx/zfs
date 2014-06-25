@@ -57,7 +57,7 @@ static vdev_ops_t *vdev_ops_table[] = {
 #ifdef _KERNEL
 	&vdev_iokit_ops,
 #else
-    &vdev_disk_ops,
+	&vdev_disk_ops,
 #endif
 	&vdev_file_ops,
 	&vdev_missing_ops,
@@ -963,7 +963,7 @@ vdev_probe_done(zio_t *zio)
 		while ((pio = zio_walk_parents(zio)) != NULL)
 			if (!vdev_accessible(vd, pio)) {
 				pio->io_error = SET_ERROR(ENXIO);
-            }
+		}
 		kmem_free(vps, sizeof (*vps));
 	}
 }
@@ -1090,7 +1090,7 @@ vdev_uses_zvols(vdev_t *vd)
 		if (vdev_uses_zvols(vd->vdev_child[c]))
 			return (B_TRUE);
 #endif
-	//return (B_FALSE);
+	// return (B_FALSE);
 	return (B_TRUE);
 }
 

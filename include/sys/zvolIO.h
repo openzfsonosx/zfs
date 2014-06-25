@@ -6,21 +6,9 @@
 
 class net_lundman_zfs_zvol : public IOService
 {
-  OSDeclareDefaultStructors(net_lundman_zfs_zvol)
+	OSDeclareDefaultStructors(net_lundman_zfs_zvol)
 
 private:
-
-public:
-  virtual bool        init  (OSDictionary* dictionary = NULL);
-  virtual void        free  (void);
-  virtual IOService*  probe (IOService* provider, SInt32* score);
-  virtual bool        start (IOService* provider);
-  virtual void        stop  (IOService* provider);
-  virtual IOReturn    doEjectMedia(void *nub);
-  virtual bool        createBlockStorageDevice  (zvol_state_t *zv);
-  virtual bool        destroyBlockStorageDevice (zvol_state_t *zv);
-  virtual bool        updateVolSize             (zvol_state_t *zv);
-};
 
 public:
 	virtual bool init(OSDictionary* dictionary = NULL);
@@ -37,14 +25,13 @@ public:
 #ifdef __cplusplus
 extern "C" {
 #endif
-    
-    net_lundman_zfs_zvol * zfsGetService();
-    
+
+	net_lundman_zfs_zvol * zfsGetService();
+
 #ifdef __cplusplus
 }
 #endif
 
-        
 #include <IOKit/storage/IOBlockStorageDevice.h>
 
 class net_lundman_zfs_zvol_device : public IOBlockStorageDevice

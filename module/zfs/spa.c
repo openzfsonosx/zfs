@@ -3720,7 +3720,7 @@ spa_generate_rootconf(void *vdev_tsd, uint64_t *guid)
      */
     if (vdev_iokit_read_label(dvd, &config) != 0)
 		return 0;
-    
+
 	/*
 	 * Add this top-level vdev to the child array.
 	 */
@@ -3814,7 +3814,7 @@ spa_import_rootpool(void *vdev_tsd)
 	 */
 	//config = spa_generate_rootconf(devpath, devid, &guid);
     config = spa_generate_rootconf(dvd, &guid);
-    
+
 #if defined(_OBP) && defined(_KERNEL)
 	if (config == NULL) {
 		if (strstr(devpath, "/iscsi/ssd") != NULL) {
@@ -3824,7 +3824,7 @@ spa_import_rootpool(void *vdev_tsd)
 		}
 	}
 #endif
-    
+
 	if (config == NULL) {
         /*
 		cmn_err(CE_NOTE, "Cannot read the pool label from '%s'",
@@ -3878,7 +3878,7 @@ spa_import_rootpool(void *vdev_tsd)
 		error = SET_ERROR(ENOENT);
 		goto out;
 	}
-    
+
 	/*
 	 * Determine if there is a better boot device.
 	 */
@@ -3890,7 +3890,7 @@ spa_import_rootpool(void *vdev_tsd)
 		error = SET_ERROR(EINVAL);
 		goto out;
 	}
-    
+
 	/*
 	 * If the boot device is part of a spare vdev then ensure that
 	 * we're booting off the active spare.
@@ -3904,10 +3904,10 @@ spa_import_rootpool(void *vdev_tsd)
 		error = SET_ERROR(EINVAL);
 		goto out;
 	}
-    
+
 //    if (spa_state(spa) > POOL_STATE_ACTIVE)
 //        spa_activate(spa, spa_mode(spa));
-    
+
 	error = 0;
 out:
 	spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
@@ -3921,7 +3921,7 @@ out:
 #ifdef _KERNEL
 	zvol_create_minors(pname);
 #endif
-    
+
 	nvlist_free(config);
 	return (error);
 }

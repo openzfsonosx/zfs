@@ -29,6 +29,9 @@
 #include <sys/zfs_context.h>
 #include <sys/zfs_znode.h>
 
+#ifdef	__cplusplus
+extern "C" {
+#endif
 
 #define	ZVOL_OBJ	1ULL
 #define	ZVOL_ZAP_OBJ	2ULL
@@ -45,10 +48,6 @@
 #define	ZVOL_WCE	0x8
 
 
-#ifdef	__cplusplus
-extern "C" {
-#endif /* C++ */
-    
 /*
  * The in-core state of each volume.
  */
@@ -143,12 +142,17 @@ extern uint64_t zvolIO_kit_write(void *iomem, uint64_t offset,
 extern int zvolRemoveDevice(zvol_state_t *zv);
 extern int zvolCreateNewDevice(zvol_state_t *zv);
 
-    
-#ifdef	__cplusplus
-}
-#endif /* C++ */
+extern int zvolSetVolsize(zvol_state_t *zv);
+
+extern int zvol_busy(void);
+
+extern void zfs_ereport_zvol_post(const char *subclass, const char *name,
+    const char *bsd, const char *rbsd);
 
 #endif /* _KERNEL */
 
+#ifdef	__cplusplus
+}
+#endif
 
 #endif /* _SYS_ZVOL_H */
