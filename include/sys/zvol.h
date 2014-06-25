@@ -33,8 +33,8 @@
 extern "C" {
 #endif
 
-#define	ZVOL_OBJ		1ULL
-#define	ZVOL_ZAP_OBJ		2ULL
+#define	ZVOL_OBJ	1ULL
+#define	ZVOL_ZAP_OBJ	2ULL
 
 
 #ifdef _KERNEL
@@ -52,22 +52,23 @@ extern "C" {
  * The in-core state of each volume.
  */
 typedef struct zvol_state {
-	char		zv_name[MAXPATHLEN]; /* pool/dd name */
-	uint64_t	zv_volsize;	/* amount of space we advertise */
-	uint64_t	zv_volblocksize; /* volume block size */
-	minor_t		zv_minor;	/* minor number */
-	uint8_t		zv_min_bs;	/* minimum addressable block shift */
-	uint8_t		zv_flags;	/* readonly, dumpified, etc. */
-	objset_t	*zv_objset;	/* objset handle */
-	uint32_t	zv_open_count[OTYPCNT];	/* open counts */
-	uint32_t	zv_total_opens;	/* total open count */
-	zilog_t		*zv_zilog;	/* ZIL handle */
-	list_t		zv_extents;	/* List of extents for dump */
-	znode_t		zv_znode;	/* for range locking */
-	dmu_buf_t	*zv_dbuf;	/* bonus handle */
-    void        *zv_iokitdev; /* C++ reference to IOKit class */
-    uint64_t    zv_openflags; /* Remember flags used at open */
-	char		zv_bsdname[MAXPATHLEN]; /* 'rdiskX' name, use [1] for diskX */
+	char zv_name[MAXPATHLEN];	/* pool/dd name */
+	uint64_t zv_volsize;	/* amount of space we advertise */
+	uint64_t zv_volblocksize;	/* volume block size */
+	minor_t zv_minor;	/* minor number */
+	uint8_t zv_min_bs;	/* minimum addressable block shift */
+	uint8_t zv_flags;	/* readonly, dumpified, etc. */
+	objset_t *zv_objset;	/* objset handle */
+	uint32_t zv_open_count[OTYPCNT];	/* open counts */
+	uint32_t zv_total_opens;	/* total open count */
+	zilog_t *zv_zilog;	/* ZIL handle */
+	list_t zv_extents;	/* List of extents for dump */
+	znode_t zv_znode;	/* for range locking */
+	dmu_buf_t *zv_dbuf;	/* bonus handle */
+	void *zv_iokitdev;	/* C++ reference to IOKit class */
+	uint64_t zv_openflags;	/* Remember flags used at open */
+	char zv_bsdname[MAXPATHLEN];
+	/* 'rdiskX' name, use [1] for diskX */
 } zvol_state_t;
 
 enum zfs_soft_state_type {
@@ -104,22 +105,31 @@ extern int zvol_write(dev_t dev, struct uio *uiop, int p);
 
 extern int zvol_init(void);
 extern void zvol_fini(void);
-extern int zvol_ioctl(dev_t, unsigned long, caddr_t, int isblk, cred_t *, int *rvalp);
+extern int zvol_ioctl(dev_t, unsigned long, caddr_t,
+    int isblk, cred_t *, int *rvalp);
+
 extern void *zfsdev_get_soft_state(minor_t, enum zfs_soft_state_type which);
 extern void zvol_strategy(struct buf *bp);
 
-    /* C helper functions for C++ */
-extern int zvol_open_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p);
-extern int zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p);
+/* C helper functions for C++ */
+extern int zvol_open_impl(zvol_state_t *zv, int flag,
+    int otyp, struct proc *p);
+
+extern int zvol_close_impl(zvol_state_t *zv, int flag,
+    int otyp, struct proc *p);
+
 extern int zvol_get_volume_blocksize(dev_t dev);
 
-extern int zvol_read_iokit (zvol_state_t *zv, uint64_t offset, uint64_t count,
-                            void *iomem);
-extern int zvol_write_iokit(zvol_state_t *zv, uint64_t offset, uint64_t count,
-                            void *iomem);
+extern int zvol_read_iokit(zvol_state_t *zv, uint64_t offset,
+    uint64_t count, void *iomem);
+
+extern int zvol_write_iokit(zvol_state_t *zv, uint64_t offset,
+    uint64_t count, void *iomem);
+extern int zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes);
 
 extern void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk,
-                             const char *bsd_rdisk);
+    const char *bsd_rdisk);
+
 extern void zvol_remove_symlink(zvol_state_t *zv);
 
     /* These functions live in zvolIO.cpp to be called from C */
@@ -135,11 +145,18 @@ extern int ZFSDriver_remove_pool(char *poolname);
 extern int      zvolSetVolsize(zvol_state_t *zv);
 extern char *ZFSDriver_FindDataset(char *dev);
 
+extern uint64_t zvolIO_kit_write(void *iomem, uint64_t offset,
+    char *address, uint64_t len);
+
+extern int zvolRemoveDevice(zvol_state_t *zv);
+extern int zvolCreateNewDevice(zvol_state_t *zv);
+
+extern int zvolSetVolsize(zvol_state_t *zv);
+
 extern int zvol_busy(void);
+
 extern void zfs_ereport_zvol_post(const char *subclass, const char *name,
-                                  const char *bsd, const char *rbsd);
-
-
+    const char *bsd, const char *rbsd);
 
 #endif /* _KERNEL */
 

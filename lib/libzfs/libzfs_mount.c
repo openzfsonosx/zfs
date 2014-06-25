@@ -427,6 +427,32 @@ zfs_add_options(zfs_handle_t *zhp, char *options, int len)
 #endif /* __LINUX */
 
 #ifdef __APPLE__
+
+static int
+file_compare(FILE *f1, FILE *f2)
+{
+	int c1, c2;
+	int ret = 0;
+
+	while (1) {
+		c1 = getc(f1);
+		c2 = getc(f2);
+
+		if (c1 != c2) {
+			ret = -1;
+			break;
+		}
+
+		if (c1 == EOF || c2 == EOF)
+			break;
+	}
+
+	rewind(f1);
+	rewind(f2);
+
+	return (ret);
+}
+
 /*
  * On OSX we can set the icon to an Open ZFS specific one, just to be extra
  * shiny
@@ -439,54 +465,74 @@ zfs_mount_seticon(const char *mountpoint)
 	uint16_t finderinfo[16];
 	struct stat sbuf;
 	char *path;
-    FILE *dstfp, *srcfp;
-    unsigned char buf[1024];
-    unsigned int red;
+	FILE *dstfp, *srcfp;
+	unsigned char buf[1024];
+	unsigned int red;
+	boolean_t hasicon = 0;
 
-    /* Check if we already have a custom icon, if so, leave it alone */
 	if (asprintf(&path, "%s/%s", mountpoint, MOUNT_POINT_CUSTOM_ICON) == -1)
 		return;
-	if ((stat(path, &sbuf) == 0 && sbuf.st_size > 0)) {
-        free(path);
-        return;
-    }
 
-    /* check if we can read in the default ZFS icon */
-    srcfp = fopen(CUSTOM_ICON_PATH, "r");
+	if ((stat(path, &sbuf) == 0 && sbuf.st_size > 0))
+		hasicon = 1;
 
-    /* No icon, oh well, its cosmetics, so just give up */
-    if (!srcfp) {
-        free(path);
-        return;
-    }
+	/* check if we can read in the default ZFS icon */
+	srcfp = fopen(CUSTOM_ICON_PATH, "r");
 
-    /* Open the output icon */
-    dstfp = fopen(path, "w");
-    if (!dstfp) {
-        fclose(srcfp);
-        free(path);
-        return;
-    }
+	/* No source icon */
+	if (!srcfp) {
+		free(path);
+		if (hasicon)
+			goto setfinderinfo;
+		else
+			return;
+	}
 
+	if (hasicon) {
+		/* Open the output icon for reading */
+		dstfp = fopen(path, "r");
+		if (!dstfp) {
+			fclose(srcfp);
+			free(path);
+			goto setfinderinfo;
+		}
+		if (file_compare(srcfp, dstfp) == 0) {
+			fclose(srcfp);
+			fclose(dstfp);
+			free(path);
+			goto setfinderinfo;
+		} else {
+			fclose(dstfp);
+		}
+	}
 
-    /* Copy icon */
-    while ((red = fread(buf, 1, sizeof(buf), srcfp)) > 0)
-        (void) fwrite(buf, 1, red, dstfp);
+	/* Open the output icon for writing */
+	dstfp = fopen(path, "w");
+	if (!dstfp) {
+		fclose(srcfp);
+		free(path);
+		goto setfinderinfo;
+	}
 
-    fclose(srcfp);
+	/* Copy icon */
+	while ((red = fread(buf, 1, sizeof(buf), srcfp)) > 0)
+		(void) fwrite(buf, 1, red, dstfp);
 
+	fclose(dstfp);
+	fclose(srcfp);
+	free(path);
+setfinderinfo:
 	/* Tag the root directory as having a custom icon. */
 	attrsize = getxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
 	    sizeof (finderinfo), 0, 0);
 	if (attrsize != sizeof (finderinfo))
 		(void) memset(&finderinfo, 0, sizeof(finderinfo));
-	finderinfo[4] |= BE_16(0x0400);
 
-	(void) setxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
-	    sizeof (finderinfo), 0, 0);
-
-    fclose(dstfp);
-	free(path);
+	if ((finderinfo[4] & BE_16(0x0400)) == 0) {
+		finderinfo[4] |= BE_16(0x0400);
+		(void) setxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
+		    sizeof (finderinfo), 0, 0);
+	}
 }
 #endif
 
