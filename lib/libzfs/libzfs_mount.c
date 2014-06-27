@@ -84,6 +84,7 @@
 
 #ifdef __APPLE__
 #include <sys/zfs_mount.h>
+#include <CommonCrypto/CommonDigest.h>
 #endif /* __APPLE__ */
 
 //#dprintf printf
@@ -427,30 +428,46 @@ zfs_add_options(zfs_handle_t *zhp, char *options, int len)
 #endif /* __LINUX */
 
 #ifdef __APPLE__
-
 static int
 file_compare(FILE *f1, FILE *f2)
 {
-	int c1, c2;
-	int ret = 0;
+	struct stat sbuf;
+	off_t f1size, f2size;
+	CC_MD5_CTX ctx;
+	size_t n;
+	unsigned char buf[1024];
+	unsigned char mdresult1[CC_MD5_DIGEST_LENGTH];
+	unsigned char mdresult2[CC_MD5_DIGEST_LENGTH];
+	int i;
 
-	while (1) {
-		c1 = getc(f1);
-		c2 = getc(f2);
+	fstat(fileno(f1), &sbuf);
+	f1size = sbuf.st_size;
+	fstat(fileno(f2), &sbuf);
+	f2size = sbuf.st_size;
 
-		if (c1 != c2) {
-			ret = -1;
-			break;
-		}
+	if (f1size != f2size)
+		return (-1);
 
-		if (c1 == EOF || c2 == EOF)
-			break;
+	CC_MD5_Init(&ctx);
+	while ((n = fread(buf, 1, 1024, f1)) > 0) {
+		CC_MD5_Update(&ctx, buf, (CC_LONG)n);
 	}
-
+	CC_MD5_Final(mdresult1, &ctx);
 	rewind(f1);
+
+	CC_MD5_Init(&ctx);
+	while ((n = fread(buf, 1, 1024, f2)) > 0) {
+		CC_MD5_Update(&ctx, buf, (CC_LONG)n);
+	}
+	CC_MD5_Final(mdresult2, &ctx);
 	rewind(f2);
 
-	return (ret);
+	for(i = 0; i < CC_MD5_DIGEST_LENGTH; i++) {
+		if (mdresult1[i] != mdresult2[i])
+			return (-1);
+	}
+
+	return (0);
 }
 
 /*
