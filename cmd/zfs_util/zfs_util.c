@@ -233,6 +233,67 @@ out:
 	return (ret);
 }
 
+#include <sys/fs/zfs.h>  // ZPOOL_CACHE
+#include <sys/zfs_context.h> // kmem
+#include <sys/stat.h>
+void zpool_read_cachefile(void)
+{
+	int fd;
+	struct stat stbf;
+	void *buf = NULL;
+	nvlist_t *nvlist, *child;
+	nvpair_t *nvpair;
+	uint64_t guid;
+	int importrc = 0;
+
+	zfs_util_log("reading cachefile\n");
+
+	fd = open(ZPOOL_CACHE, O_RDONLY);
+	if (fd < 0) return;
+
+	if (fstat(fd, &stbf) || !stbf.st_size) goto out;
+
+	buf = kmem_alloc(stbf.st_size, 0);
+	if (!buf) goto out;
+
+	if (read(fd, buf, stbf.st_size) != stbf.st_size) goto out;
+
+	rename(ZPOOL_CACHE, ZPOOL_CACHE".importing");
+
+	if (nvlist_unpack(buf, stbf.st_size, &nvlist, KM_PUSHPAGE) != 0)
+		goto out;
+
+	nvpair = NULL;
+	while ((nvpair = nvlist_next_nvpair(nvlist, nvpair)) != NULL) {
+		if (nvpair_type(nvpair) != DATA_TYPE_NVLIST)
+			continue;
+
+	  	VERIFY(nvpair_value_nvlist(nvpair, &child) == 0);
+
+		zfs_util_log("Cachefile has pool '%s'\n",
+					 nvpair_name(nvpair));
+
+		if (nvlist_lookup_uint64(child, ZPOOL_CONFIG_POOL_GUID,
+								 &guid)== 0) {
+			zfs_util_log("Cachefile has pool '%s' guid %llu\n",
+						 nvpair_name(nvpair),
+						 guid);
+
+			if ((importrc = zpool_import_by_guid(guid)) != 0)
+				zfs_util_log("zpool import error %d\n",
+							 importrc);
+		}
+
+	}
+	nvlist_free(nvlist);
+
+  out:
+	close(fd);
+	if (buf) kmem_free(buf, stbf.st_size);
+
+}
+
+
 int
 main(int argc, char **argv)
 {
@@ -249,7 +310,6 @@ main(int argc, char **argv)
 	struct stat sb;
 	uint64_t poolguid;
 	int ret = FSUR_INVAL;
-	int importrc = 0;
 
 	/* save & strip off program name */
 	progname = argv[0];
@@ -286,9 +346,10 @@ main(int argc, char **argv)
 		if (ret == FSUR_RECOGNIZED) {
 			zfs_util_log("FSUC_PROBE %s : FSUR_RECOGNIZED : "
 			    "poolguid %llu", blockdevice, poolguid);
-			if ((importrc = zpool_import_by_guid(poolguid)) != 0)
-				zfs_util_log("zpool import error %d\n",
-				    importrc);
+
+			/* Read cachefile and attempt imports */
+			zpool_read_cachefile();
+
 		} else if (ret == FSUR_UNRECOGNIZED) {
 			zfs_util_log("FSUC_PROBE %s : FSUR_UNRECOGNIZED",
 			    blockdevice);
