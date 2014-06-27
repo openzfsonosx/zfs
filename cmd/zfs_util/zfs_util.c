@@ -51,6 +51,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <syslog.h>
+#include <priv.h>
 
 #ifndef FSUC_GETUUID
 #define	FSUC_GETUUID	'k'
@@ -64,13 +65,14 @@
 #define	ZFS_UTIL_STDOUT_LOG	"/Library/Logs/zfs_util_stdout.log"
 #define	ZFS_UTIL_STDERR_LOG	"/Library/Logs/zfs_util_stderr.log"
 
-#ifdef DEBUG
+#ifndef DEBUG
 int zfs_util_debug = 1;
 #else
 int zfs_util_debug = 0;
 #endif
 
 const char *progname;
+libzfs_handle_t *g_zfs;
 
 static void
 zfs_util_log(const char *format, ...)
@@ -109,6 +111,7 @@ usage(void)
 	fprintf(stderr, "       %s -p disk0s1 removable readonly\n", progname);
 }
 
+#if 0
 static int
 run_process(const char *path, char *argv[])
 {
@@ -166,7 +169,6 @@ run_process(const char *path, char *argv[])
         return (-1);
 }
 
-
 static int
 zpool_import_by_guid(uint64_t poolguid)
 {
@@ -187,6 +189,193 @@ zpool_import_by_guid(uint64_t poolguid)
 
 	zfs_util_log("-zpool_import_by_guid %d", rc);
 	return (rc);
+}
+#endif
+
+/*
+ * Perform the import for the given configuration.  This passes the heavy
+ * lifting off to zpool_import_props(), and then mounts the datasets contained
+ * within the pool.
+ */
+static int
+do_import(nvlist_t *config, const char *newname, const char *mntopts,
+    nvlist_t *props, int flags)
+{
+	zpool_handle_t *zhp;
+	char *name;
+	uint64_t state;
+	uint64_t version;
+
+	verify(nvlist_lookup_string(config, ZPOOL_CONFIG_POOL_NAME,
+	    &name) == 0);
+
+	verify(nvlist_lookup_uint64(config,
+	    ZPOOL_CONFIG_POOL_STATE, &state) == 0);
+	verify(nvlist_lookup_uint64(config,
+	    ZPOOL_CONFIG_VERSION, &version) == 0);
+	if (!SPA_VERSION_IS_SUPPORTED(version)) {
+		zfs_util_log("cannot import '%s': pool is formatted using an "
+		    "unsupported ZFS version", name);
+		return (1);
+	} else if (state != POOL_STATE_EXPORTED &&
+	    !(flags & ZFS_IMPORT_ANY_HOST)) {
+		uint64_t hostid;
+
+		if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_HOSTID,
+		    &hostid) == 0) {
+			unsigned long system_hostid = gethostid() & 0xffffffff;
+
+			if ((unsigned long)hostid != system_hostid) {
+				char *hostname;
+				uint64_t timestamp;
+				time_t t;
+
+				verify(nvlist_lookup_string(config,
+				    ZPOOL_CONFIG_HOSTNAME, &hostname) == 0);
+				verify(nvlist_lookup_uint64(config,
+				    ZPOOL_CONFIG_TIMESTAMP, &timestamp) == 0);
+				t = timestamp;
+				zfs_util_log("cannot import " "'%s': pool may "
+				    "be in use from other system, it was last "
+				    "accessed by %s (hostid: 0x%lx) on %s",
+				    name, hostname, (unsigned long)hostid,
+				    asctime(localtime(&t)));
+				zfs_util_log("use '-f' to import anyway");
+				return (1);
+			}
+		} else {
+			zfs_util_log("cannot import '%s': pool may be in use "
+			    "from other system", name);
+			zfs_util_log("use '-f' to import anyway");
+			return (1);
+		}
+	}
+
+	if (zpool_import_props(g_zfs, config, newname, props, flags) != 0)
+		return (1);
+
+	if (newname != NULL)
+		name = (char *)newname;
+
+	if ((zhp = zpool_open_canfail(g_zfs, name)) == NULL)
+		return (1);
+
+	if (zpool_get_state(zhp) != POOL_STATE_UNAVAIL &&
+	    !(flags & ZFS_IMPORT_ONLY) &&
+	    zpool_enable_datasets(zhp, mntopts, 0) != 0) {
+		zpool_close(zhp);
+		return (1);
+	}
+
+	zpool_close(zhp);
+	return (0);
+}
+
+
+static int
+zpool_import_by_guid(uint64_t searchguid)
+{
+	int err = 0;
+	nvlist_t *pools = NULL;
+	nvpair_t *elem;
+	nvlist_t *config;
+	nvlist_t *found_config = NULL;
+	nvlist_t *policy = NULL;
+	boolean_t first;
+	int flags = ZFS_IMPORT_NORMAL;
+	uint32_t rewind_policy = ZPOOL_NO_REWIND;
+	uint64_t pool_state, txg = -1ULL;
+	importargs_t idata = { 0 };
+
+	if ((g_zfs = libzfs_init()) == NULL)
+                return (1);
+
+	idata.unique = B_TRUE;
+
+        /* In the future, we can capture further policy and include it here */
+	if (nvlist_alloc(&policy, NV_UNIQUE_NAME, 0) != 0 ||
+	    nvlist_add_uint64(policy, ZPOOL_REWIND_REQUEST_TXG, txg) != 0 ||
+	    nvlist_add_uint32(policy, ZPOOL_REWIND_REQUEST, rewind_policy) != 0)
+                goto error;
+
+	if (!priv_ineffect(PRIV_SYS_CONFIG)) {
+		zfs_util_log("cannot discover pools: permission denied");
+		nvlist_free(policy);
+		return (1);
+	}
+
+	idata.guid = searchguid;
+
+	pools = zpool_search_import(g_zfs, &idata);
+
+	if (pools == NULL && idata.exists) {
+		zfs_util_log("cannot import '%llu': a pool with that guid is "
+		    "already created/imported", searchguid);
+                err = 1;
+        } else if (pools == NULL) {
+		zfs_util_log("cannot import '%llu': no such pool available",
+		    searchguid);
+                err = 1;
+        }
+
+	if (err == 1) {
+		nvlist_free(policy);
+		return (1);
+        }
+
+	/*
+	 * At this point we have a list of import candidate configs. Even though
+	 * we were searching by guid, we still need to post-process the list to
+	 * deal with pool state. 
+	 */
+	err = 0;
+	elem = NULL;
+	first = B_TRUE;
+	while ((elem = nvlist_next_nvpair(pools, elem)) != NULL) {
+
+		verify(nvpair_value_nvlist(elem, &config) == 0);
+
+		verify(nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_STATE,
+		    &pool_state) == 0);
+		if (pool_state == POOL_STATE_DESTROYED)
+			continue;
+
+		verify(nvlist_add_nvlist(config, ZPOOL_REWIND_POLICY,
+		    policy) == 0);
+
+		uint64_t guid;
+
+		/*
+		 * Search for a pool by guid.
+		 */
+		verify(nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_GUID,
+		    &guid) == 0);
+
+		if (guid == searchguid)
+			found_config = config;
+	}
+
+	/*
+	 * If we were searching for a specific pool, verify that we found a
+	 * pool, and then do the import.
+	 */
+	if (err == 0) {
+		if (found_config == NULL) {
+			zfs_util_log("cannot import '%llu': no such pool "
+			    "available", searchguid);
+			err = B_TRUE;
+		} else {
+			err |= do_import(found_config, NULL, NULL, NULL,
+			    flags);
+		}
+	}
+
+error:
+	nvlist_free(pools);
+	nvlist_free(policy);
+	libzfs_fini(g_zfs);
+
+	return (err ? 1 : 0);
 }
 
 static int
@@ -246,7 +435,7 @@ void zpool_read_cachefile(void)
 	uint64_t guid;
 	int importrc = 0;
 
-	zfs_util_log("reading cachefile\n");
+	zfs_util_log("reading cachefile");
 
 	fd = open(ZPOOL_CACHE, O_RDONLY);
 	if (fd < 0) return;
@@ -258,7 +447,7 @@ void zpool_read_cachefile(void)
 
 	if (read(fd, buf, stbf.st_size) != stbf.st_size) goto out;
 
-	rename(ZPOOL_CACHE, ZPOOL_CACHE".importing");
+	//rename(ZPOOL_CACHE, ZPOOL_CACHE".importing");
 
 	if (nvlist_unpack(buf, stbf.st_size, &nvlist, KM_PUSHPAGE) != 0)
 		goto out;
@@ -270,18 +459,15 @@ void zpool_read_cachefile(void)
 
 	  	VERIFY(nvpair_value_nvlist(nvpair, &child) == 0);
 
-		zfs_util_log("Cachefile has pool '%s'\n",
-					 nvpair_name(nvpair));
+		zfs_util_log("Cachefile has pool '%s'", nvpair_name(nvpair));
 
 		if (nvlist_lookup_uint64(child, ZPOOL_CONFIG_POOL_GUID,
 								 &guid)== 0) {
-			zfs_util_log("Cachefile has pool '%s' guid %llu\n",
-						 nvpair_name(nvpair),
-						 guid);
+			zfs_util_log("Cachefile has pool '%s' guid %llu",
+			    nvpair_name(nvpair), guid);
 
 			if ((importrc = zpool_import_by_guid(guid)) != 0)
-				zfs_util_log("zpool import error %d\n",
-							 importrc);
+				zfs_util_log("zpool import error %d", importrc);
 		}
 
 	}
