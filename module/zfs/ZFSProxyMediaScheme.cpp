@@ -138,6 +138,7 @@ spa_osx_create_devs(const char *dsname, void *arg)
 		printf("Name is %s\n", newMedia->getName());
 
 		newMedia->setProperty("DATASET", dsname);
+		//newMedia->setProperty("DAMountAutomatic", "FALSE");
 		holder->child_filesystems->setObject(newMedia);
 		newMedia->release();
 	}

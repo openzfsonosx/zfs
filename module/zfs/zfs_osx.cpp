@@ -500,8 +500,7 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
     printf("media->getContentHint() %s\n", media->getContentHint());
 
 	media->setProperty("DATASET", poolname);
-
-
+	//media->setProperty("DOMOUNTME", "FALSE");
 
 	printf("Stirring the pot...\n");
 	//requestProbe(0);

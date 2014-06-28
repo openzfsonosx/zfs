@@ -80,6 +80,10 @@ usage(void)
 #define FSUC_GETUUID 'k'
 #endif
 
+#ifndef FSUC_QUICKVERIFY
+#define FSUC_QUICKVERIFY 'q'
+#endif
+
 
 
 static int
@@ -197,6 +201,11 @@ main(int argc, char **argv)
 				syslog(LOG_NOTICE, "UUID is %s", uuidLine);
 				ret = FSUR_IO_SUCCESS;
 			}
+			break;
+
+		case FSUC_QUICKVERIFY:
+			syslog(LOG_NOTICE, "%s: returning OK on VERIFY", progname);
+			ret = 0;
 			break;
 
 		default:
