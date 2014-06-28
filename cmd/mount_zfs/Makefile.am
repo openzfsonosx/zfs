@@ -23,4 +23,4 @@ mount_zfs_LDADD = \
 	$(top_builddir)/lib/libzfs/libzfs.la
 
 mount_zfs_LDFLAGS = \
-	-pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) $(LIBSELINUX)
+	-static -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) $(LIBSELINUX)

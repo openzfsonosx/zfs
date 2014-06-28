@@ -55,6 +55,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <syslog.h>
+#define COMMON_DIGEST_FOR_OPENSSL
+#include <CommonCrypto/CommonDigest.h>
+#include <uuid/uuid.h>
+
 
 const char *progname;
 
@@ -72,13 +76,16 @@ usage(void)
 #include <DiskArbitration/DiskArbitration.h>
 
 
+#ifndef FSUC_GETUUID
+#define FSUC_GETUUID 'k'
+#endif
+
 
 
 static int
-zfs_probe(const char *devpath)
+zfs_probe(const char *devpath, char **volname)
 {
 	int result = FSUR_UNRECOGNIZED;
-	char *volname = "somename";
 	CFMutableDictionaryRef  matchingDict;
     io_service_t            service;
 
@@ -108,18 +115,16 @@ zfs_probe(const char *devpath)
 				serialNumberAsCFString = (CFStringRef*) IORegistryEntryCreateCFProperty(service, CFSTR("DATASET"), kCFAllocatorDefault, 0);
 
 				if (serialNumberAsCFString) {
-					volname = CFStringGetCStringPtr(serialNumberAsCFString, encoding);
+					*volname = CFStringGetCStringPtr(serialNumberAsCFString, encoding);
+					result = FSUR_RECOGNIZED;
 				}
 
-				syslog(LOG_NOTICE, "writing volname %s\n", volname);
+				syslog(LOG_NOTICE, "writing volname %s\n", *volname);
 
 			}
             IOObjectRelease(service);
         }
 	}
-
-	write(1, volname, strlen(volname));
-	result = FSUR_RECOGNIZED;
 
 	syslog(LOG_NOTICE, "-zfs_probe : result %d", result);
 	return (result);
@@ -141,6 +146,7 @@ main(int argc, char **argv)
 	char  *devname;
 	struct stat  sb;
 	int  ret = FSUR_INVAL;
+	char *volname = NULL;
 
 	/* save & strip off program name */
 	progname = argv[0];
@@ -169,17 +175,32 @@ main(int argc, char **argv)
 	}
 
 	switch (what) {
-	case FSUC_PROBE:
-		ret = zfs_probe(blkdevice);
-		if (ret == -1)
-			syslog(LOG_NOTICE, "FSUC_PROBE %s : FSUR_RECOGNIZED", blkdevice);
-		else if (ret == -2)
-			syslog(LOG_NOTICE, "FSUC_PROBE %s : FSUR_UNRECOGNIZED", blkdevice);
-		else
-			syslog(LOG_NOTICE, "FSUC_PROBE returned invalid probe status : %d", ret);
-		break;
-	default:
-		usage();
+		case FSUC_PROBE:
+			ret = zfs_probe(blkdevice, &volname);
+
+			if (ret == FSUR_RECOGNIZED)
+				write(1, volname, strlen(volname));
+			break;
+
+		case FSUC_GETUUID:
+			ret = zfs_probe(blkdevice, &volname);
+			if (ret == FSUR_RECOGNIZED) {
+				MD5_CTX  md5c;
+				unsigned char digest[MD5_DIGEST_LENGTH];
+				char uuidLine[40];
+				MD5_Init( &md5c );
+				MD5_Update( &md5c, volname, strlen(volname));
+				MD5_Final( digest, &md5c );
+				// 12962490-0DBE-3BCD-B22E-31B6CD7054E4
+				uuid_unparse(digest, uuidLine);
+				write(1, uuidLine, strlen(uuidLine));
+				syslog(LOG_NOTICE, "UUID is %s", uuidLine);
+				ret = FSUR_IO_SUCCESS;
+			}
+			break;
+
+		default:
+			usage();
 	}
 
 	closelog();

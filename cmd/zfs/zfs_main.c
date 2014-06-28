@@ -27,6 +27,7 @@
  * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  */
 
+#include <syslog.h>
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
@@ -6422,6 +6423,14 @@ manual_mount(int argc, char **argv)
 	int c;
 	int flags = 0;
 	char *dataset, *path;
+	int i;
+
+	setlogmask(LOG_UPTO(LOG_NOTICE));
+
+	syslog(LOG_NOTICE, "manual_mount arguments");
+	for (i = 0; i < argc; i++)
+		syslog(LOG_NOTICE, " '%s' +", argv[i]);
+
 
 	/* check options */
 	while ((c = getopt(argc, argv, ":mo:O")) != -1) {
@@ -6473,6 +6482,24 @@ manual_mount(int argc, char **argv)
 
 	dataset = argv[0];
 	path = argv[1];
+
+#ifdef __APPLE__
+	/*
+	 * DiskArbitrationd will call us with /dev/disk* device entries
+	 * we will let these pass to the kernel, who will look up the
+	 * real dataset name.
+	 */
+
+	if (!strncmp("/dev/disk", dataset, 9)) {
+		if (zmount(dataset, path, MS_OPTIONSTR | flags, MNTTYPE_ZFS,
+		    NULL, 0, mntopts, sizeof (mntopts)) != 0) {
+			(void) fprintf(stderr, gettext("mount failed: %s\n"),
+			    strerror(errno));
+			ret = 1;
+		}
+		return ret;
+	}
+#endif
 
 	/* try to open the dataset */
 	if ((zhp = zfs_open(g_zfs, dataset, ZFS_TYPE_FILESYSTEM)) == NULL)
