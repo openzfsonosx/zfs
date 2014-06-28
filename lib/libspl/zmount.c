@@ -1,4 +1,4 @@
-/*-
+/*
  * Copyright (c) 2006 Pawel Jakub Dawidek <pjd@FreeBSD.org>
  * All rights reserved.
  *
@@ -37,64 +37,83 @@
 #include <CoreServices/CoreServices.h>
 #include <IOKit/IOKitLib.h>
 #include <IOKit/storage/IOMedia.h>
+#include <IOKit/IOBSD.h>
 #include <libzfs.h>
 
 /*
  * Lookup "POOL/DATASET" and return BSD Name "diskXsY".
  */
-char *iokit_dataset_to_device(const char *spec)
+int
+iokit_dataset_to_device(const char *spec, io_name_t volname)
 {
-	char path[256];
-    io_service_t            service;
-	CFMutableDictionaryRef matchingDictionary = NULL;
-	CFStringRef cfStr;
-	char *volname = NULL;
-	io_iterator_t iter;
+	io_service_t service = IO_OBJECT_NULL;
+	CFMutableDictionaryRef mySubDictionary;
+	CFMutableDictionaryRef myMatchingDictionary;
+	CFStringRef specRef = NULL;
+	io_iterator_t iter = IO_OBJECT_NULL;
 	int status;
+	CFStringRef ioBSDName = NULL;
 
-	matchingDictionary = IOServiceMatching(kIOMediaClass);
-	cfStr = CFStringCreateWithCString(NULL, path, kCFStringEncodingMacRoman);
-	CFDictionaryAddValue(matchingDictionary,
-						 CFSTR("DATASET"),
-						 cfStr);
+	if (spec == NULL)
+		return (-1);
 
+	specRef = CFStringCreateWithCString(NULL, spec,
+	    kCFStringEncodingMacRoman);
+	if (specRef == NULL)
+		return (-1);
+
+	mySubDictionary = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+	    &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	CFDictionarySetValue(mySubDictionary, CFSTR("DATASET"), specRef);
+
+	myMatchingDictionary = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+	    &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	CFDictionarySetValue(myMatchingDictionary, CFSTR(kIOPropertyMatchKey),
+	    mySubDictionary);
+
+	/* always consumes one reference of myMatchingDictionary */
 	status = IOServiceGetMatchingServices(kIOMasterPortDefault,
-										  matchingDictionary,
-										  &iter);
-	if ((status != kIOReturnSuccess) || (iter == 0))
-		return NULL;
+	    myMatchingDictionary, &iter);
 
-	while( service = IOIteratorNext(iter) ) {
+	if ((status != KERN_SUCCESS) || (iter == IO_OBJECT_NULL)) {
+		fprintf(stderr, "failed to GetMatchingService\n");
+		CFRelease(specRef);
+		CFRelease(mySubDictionary);
+		CFRelease(myMatchingDictionary);
+		return (-1);
+	}
 
-		if (IO_OBJECT_NULL == service) {
-			fprintf(stderr, "failed to GetMatchingService\r\n");
-		} else {
-			fprintf(stderr, "Matching service is ok\r\n");
-
+	while ((service = IOIteratorNext(iter)) != IO_OBJECT_NULL) {
+		fprintf(stderr, "Matching service is ok\n");
 		if (IOObjectConformsTo(service, kIOMediaClass)) {
-			CFStringRef serialNumberAsCFString;
-			//CFStringEncoding encoding = kCFStringEncodingUTF8;
-			CFStringEncoding encoding = kCFStringEncodingMacRoman;
-
-			fprintf(stderr, "Conforms to is ok\r\n");
-
-			serialNumberAsCFString = (CFStringRef*) IORegistryEntryCreateCFProperty(service, CFSTR("BSD Name"), kCFAllocatorDefault, 0);
-
-			if (serialNumberAsCFString) {
-				volname = CFStringGetCStringPtr(serialNumberAsCFString, encoding);
-				fprintf(stderr, "Found BSDName '%s'\r\n", volname);
-
+			fprintf(stderr, "Conforms to is ok\n");
+			ioBSDName =
+			    (CFStringRef) IORegistryEntryCreateCFProperty(
+			    service, CFSTR(kIOBSDNameKey), kCFAllocatorDefault,
+			    0);
+			if (ioBSDName) {
+				strlcpy(volname,
+				    CFStringGetCStringPtr(ioBSDName,
+				    kCFStringEncodingMacRoman),
+				    sizeof (io_name_t));
+				fprintf(stderr, "Found BSDName '%s'\n",
+				    volname);
+				CFRelease(ioBSDName);
 			}
 
-            IOObjectRelease(service);
-        }
+		}
+		IOObjectRelease(service);
 	}
-	}
-	return volname;
+
+	IOObjectRelease(iter);
+	CFRelease(specRef);
+	CFRelease(mySubDictionary);
+
+	return (0);
 }
 
 
-static int diskutil_mount(const char *spec, const char *dir, int flags)
+static int diskutil_mount(io_name_t device, const char *path, int flags)
 {
 	char *argv[7] = {
 	    "/usr/sbin/diskutil",
@@ -110,8 +129,8 @@ static int diskutil_mount(const char *spec, const char *dir, int flags)
 	}
 #endif
 
-	argv[count++] = (char *)dir;
-	argv[count++] = (char *)spec;
+	argv[count++] = (char *)path;
+	argv[count++] = (char *)device;
 
 	rc = libzfs_run_process(argv[0], argv, STDOUT_VERBOSE|STDERR_VERBOSE);
 
@@ -125,7 +144,7 @@ zmount(const char *spec, const char *dir, int mflag, char *fstype,
 {
 	int rv;
 	struct zfs_mount_args mnt_args;
-	char *devname = NULL;
+	io_name_t devname;
 
 	assert(spec != NULL);
 	assert(dir != NULL);
@@ -143,10 +162,10 @@ zmount(const char *spec, const char *dir, int mflag, char *fstype,
 	 * SpotLight is more involved. The zfs_vfs_mount() call in zfs_vfsops
 	 * translates it back again.
 	 */
-	devname = iokit_dataset_to_device(spec);
-	if (devname) {
-		return diskutil_mount(devname, dir, mflag);
-	}
+	if (iokit_dataset_to_device(spec, devname) != 0)
+		return (-1);
+	if (devname)
+		return (diskutil_mount(devname, dir, mflag));
 
 	mnt_args.fspec = spec;
 	mnt_args.mflag = mflag;
@@ -155,7 +174,7 @@ zmount(const char *spec, const char *dir, int mflag, char *fstype,
 
 	rv = mount(fstype, dir, 0, &mnt_args);
 
-	return rv;
+	return (rv);
 }
 
 #endif
