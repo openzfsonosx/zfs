@@ -49,7 +49,7 @@
 			<string>zfs.util</string>
 			<key>FSProbeOrder</key>
 			<integer>1000</integer>
-			<key>autodiskmount</key>
+			<key>letsnotautodiskmount</key>
 			<false/>
 		</dict>
 		<key>zfs_pool_proxy</key>

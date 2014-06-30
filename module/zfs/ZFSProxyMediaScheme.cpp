@@ -43,6 +43,9 @@ bool ZFSProxyMediaScheme::start (IOService *provider)
     if (child_filesystemIterator == NULL)
         return false;
 
+	setProperty("IOUserClientClass",
+				"com_osxkernel_driver_IOKitTestUserClient");
+
 
     // Attach and register each IOMedia object (representing found partitions)
     while ((child_filesystem = (IOMedia*)child_filesystemIterator->getNextObject()))
@@ -55,7 +58,8 @@ bool ZFSProxyMediaScheme::start (IOService *provider)
     }
     child_filesystemIterator->release();
 
-    //this->registerService(); //why?
+
+    this->registerService(); //why?
 
     return true;
 }
@@ -138,7 +142,8 @@ spa_osx_create_devs(const char *dsname, void *arg)
 		printf("Name is %s\n", newMedia->getName());
 
 		newMedia->setProperty("DATASET", dsname);
-		//newMedia->setProperty("DAMountAutomatic", "FALSE");
+		newMedia->setProperty("DOMOUNTME", "FALSE");
+		//newMedia->setProperty("DONTMOUNTME", "TRUE");
 		holder->child_filesystems->setObject(newMedia);
 		newMedia->release();
 	}
@@ -276,133 +281,26 @@ IOMedia* ZFSProxyMediaScheme::instantiateMediaObject(ZFSFilesystemEntry* fsEntry
     return newMedia;
 }
 
-#if 0
-/*
 
-void	ZFSProxyMediaScheme::read (IOService* client, UInt64 byteStart, IOMemoryDescriptor* buffer, IOStorageAttributes* attributes, IOStorageCompletion* completion)
+IOReturn ZFSProxyMediaScheme::setDONTMOUNTME(OSString value)
 {
-	ReadCompletionParams*	context;
-	IOStorageCompletion		newCompletion;
-
-	context = (ReadCompletionParams*)IOMalloc(sizeof(ReadCompletionParams));
-	if (context == NULL)
-	{
-		complete(completion, kIOReturnNoMemory);
-		return;
-	}
-
-	context->completion = *completion;
-	context->buffer = buffer;
-	context->buffer->retain();
-
-	newCompletion.target = this;
-	newCompletion.action = readCompleted;
-	newCompletion.parameter = context;
-
-	m_device->read(client, byteStart, buffer, attributes, &newCompletion);
+	IOMedia *media;
+    //media = OSDynamicCast(IOMedia, m_child_filesystems);
+	//media->setProperty("DONTMOUNTME", value);
+	return 0;
 }
 
-void	ZFSProxyMediaScheme::readCompleted (void* target, void* parameter, IOReturn status, UInt64 actualByteCount)
+IOReturn
+ZFSProxyMediaScheme::newUserClient(task_t owningTask,
+										   void* securityID, UInt32 type,
+										   OSDictionary* properties,
+										   IOUserClient** handler)
 {
-	ReadCompletionParams*	context = (ReadCompletionParams*)parameter;
+	IOReturn ret;
 
-	// Decrypt the data read from disk.
-	if (status == kIOReturnSuccess)
-		status = decryptBuffer(context->buffer, actualByteCount);
+	ret = super::newUserClient(owningTask, securityID, type, properties,
+							   handler);
+	printf("XXXnewUserClient: ret %d and *handler %p\n", ret, *handler);
 
-	// If  either the read from disk or the decryption operation failed, set the actualByteCount value to 0.
-	if (status != kIOReturnSuccess)
-		actualByteCount = 0;
-
-	// Call the original caller’s completion function.
-	complete(&context->completion, status, actualByteCount);
-
-	context->buffer->release();
-	IOFree(context, sizeof(ReadCompletionParams));
+	return ret;
 }
-
-IOReturn	ZFSProxyMediaScheme::decryptBuffer (IOMemoryDescriptor* buffer, UInt64 actualByteCount)
-{
-	bool			didPrepare = false;
-	IOMemoryMap*	map = NULL;
-	uint32_t*		nextWord;
-	IOReturn		status;
-
-	status = buffer->prepare(buffer->getDirection());
-	if (status != kIOReturnSuccess)
-		goto bail;
-	didPrepare = true;
-	map = buffer->map();
-	if (map == NULL)
-	{
-		status = kIOReturnError;
-		goto bail;
-	}
-
-	// Decrypt the data
-	UInt64		remainingWords;
-	remainingWords = actualByteCount / sizeof(uint32_t);
-	nextWord = (uint32_t*)map->getVirtualAddress();
-	while (remainingWords--)
-	{
-		*nextWord ^= 0xFFFFFFFF;
-		nextWord++;
-	}
-
-	// Fall-through on success
-bail:
-
-	if (map != NULL)
-		map->release();
-	if (didPrepare == true)
-		buffer->complete();
-
-	return status;
-}
-
-
-void	ZFSProxyMediaScheme::write (IOService* client, UInt64 byteStart, IOMemoryDescriptor* buffer, IOStorageAttributes* attributes, IOStorageCompletion* completion)
-{
-	IOMemoryDescriptor*		newDesc;
-
-	newDesc = encryptBuffer(buffer);
-	if (newDesc == NULL)
-	{
-		complete(completion, kIOReturnNoMemory);
-		return;
-	}
-
-	m_device->write(client, byteStart, newDesc, attributes, completion);
-
-	newDesc->release();
-}
-
-IOMemoryDescriptor*	ZFSProxyMediaScheme::encryptBuffer (IOMemoryDescriptor* buffer)
-{
-	IOBufferMemoryDescriptor*	newDesc;
-
-	// Allocate a buffer to hold the encrypted contents
-	newDesc = IOBufferMemoryDescriptor::withCapacity(buffer->getLength(), buffer->getDirection());
-	if (newDesc != NULL)
-	{
-		uint32_t*		nextWord;
-		UInt64			remainingWords;
-
-		nextWord = (uint32_t*)newDesc->getBytesNoCopy();
-
-		// Read the source buffer into the new memory descriptor
-		buffer->readBytes(0, nextWord, buffer->getLength());
-
-		// Encrypt the buffer
-		remainingWords = buffer->getLength() / sizeof(uint32_t);
-		while (remainingWords--)
-		{
-			*nextWord ^= 0xFFFFFFFF;
-			nextWord++;
-		}
-	}
-
-	return newDesc;
-}
- */
-#endif

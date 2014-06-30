@@ -46,11 +46,10 @@ public:
 	virtual void		stop (IOService* provider);
     virtual IOMedia*    instantiateMediaObject(ZFSFilesystemEntry* sampleEntry, unsigned index);
 
-    //virtual IOReturn        requestProbe(IOOptionBits options);
+	virtual IOReturn newUserClient(task_t owningTask,
+								   void* securityID, UInt32 type,
+								   OSDictionary* properties,
+								   IOUserClient** handler);
+	virtual IOReturn setDONTMOUNTME(OSString value);
 
-//	virtual void		read (IOService* client, UInt64 byteStart, IOMemoryDescriptor* buffer, IOStorageAttributes* attributes, IOStorageCompletion* completion);
-//	virtual void		write (IOService* client, UInt64 byteStart, IOMemoryDescriptor* buffer, IOStorageAttributes* attributes, IOStorageCompletion* completion);
-
-//	static IOReturn				decryptBuffer (IOMemoryDescriptor* buffer, UInt64 actualByteCount);
-//	static IOMemoryDescriptor*	encryptBuffer (IOMemoryDescriptor* buffer);
 };

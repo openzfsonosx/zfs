@@ -226,7 +226,6 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 {
     bool res = super::start(provider);
 
-
     IOLog("ZFS: Loading module ... \n");
 	/*
 	 * Initialize znode cache, vnode ops, etc...
@@ -488,7 +487,12 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
 
     nub->registerService( kIOServiceSynchronous);
 
+    //ZFSProxyMediaScheme *proxy = OSDynamicCast(ZFSProxyMediaScheme,
+	//										   nub->getClient());
+	//nub->setProperty("DOMOUNTME", "FALSE");
+
     IOMedia *media = OSDynamicCast(IOMedia, nub->getClient()->getClient());
+
     //media = OSDynamicCast(IOMedia, serv);
     printf("media %p\n", media);
     printf("media->getContent() %s\n", media->getContent());
@@ -500,7 +504,7 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
     printf("media->getContentHint() %s\n", media->getContentHint());
 
 	media->setProperty("DATASET", poolname);
-	//media->setProperty("DOMOUNTME", "FALSE");
+	media->setProperty("DOMOUNTME", "FALSE");
 
 	printf("Stirring the pot...\n");
 	//requestProbe(0);

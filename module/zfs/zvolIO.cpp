@@ -39,7 +39,6 @@ net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
 
   super::setProperty(kIOMediaContentHintKey,
 			  zv->zv_minor == -1 ? "zfs_pool_proxy" : "AAA");
-
   return true;
 }
 
@@ -639,4 +638,15 @@ net_lundman_zfs_zvol_device::setWriteCacheState(bool enabled)
 {
 	dprintf("setWriteCache\n");
 	return (kIOReturnSuccess);
+}
+
+
+IOReturn
+net_lundman_zfs_zvol_device::newUserClient(task_t owningTask,
+										   void* securityID, UInt32 type,
+										   OSDictionary* properties,
+										   IOUserClient** handler)
+{
+	printf("newUserClient\n");
+	return true;
 }

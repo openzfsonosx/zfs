@@ -116,6 +116,21 @@ zfs_probe(const char *devpath, char **volname)
 				//CFStringEncoding encoding = kCFStringEncodingUTF8;
 				CFStringEncoding encoding = kCFStringEncodingMacRoman;
 
+
+				// Do we want to mount it yet?
+#if 1
+
+				serialNumberAsCFString = (CFStringRef*) IORegistryEntryCreateCFProperty(service, CFSTR("DOMOUNTME"), kCFAllocatorDefault, 0);
+				if (serialNumberAsCFString &&
+					CFEqual(serialNumberAsCFString, CFSTR("FALSE") )) {
+					result = FSUR_UNRECOGNIZED;
+					IOObjectRelease(service);
+					syslog(LOG_NOTICE, "-zfs_probe : lying about it result %d", result);
+					return (result);
+				}
+#endif
+
+
 				serialNumberAsCFString = (CFStringRef*) IORegistryEntryCreateCFProperty(service, CFSTR("DATASET"), kCFAllocatorDefault, 0);
 
 				if (serialNumberAsCFString) {
@@ -135,7 +150,7 @@ zfs_probe(const char *devpath, char **volname)
 }
 
 int
-main(int argc, char **argv)
+main(int argc, char **argv, char **env)
 {
 	setlogmask(LOG_UPTO(LOG_NOTICE));
 
@@ -162,6 +177,7 @@ main(int argc, char **argv)
 
 	what = argv[0][1];
 	syslog(LOG_NOTICE, "zfs.util called with option %c", what);
+
 
 	devname = argv[1];
 	cp = strrchr(devname, '/');

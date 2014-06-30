@@ -40,6 +40,133 @@
 #include <IOKit/IOBSD.h>
 #include <libzfs.h>
 
+
+int testicles()
+{
+	CFDictionaryRef matchingDict = NULL;
+	io_iterator_t iter = 0;
+	io_service_t service = 0;
+	kern_return_t kr;
+
+	fprintf(stderr, "testicles primed\r\n");
+
+	// Create a matching dictionary that will find any USB device.
+	//matchingDict = IOServiceMatching("net_lundman_zfs_zvol_device");
+	matchingDict = IOServiceMatching("IOMedia");
+
+	// Create an iterator for all I/O Registry objects that match the dictionary.
+	kr = IOServiceGetMatchingServices(kIOMasterPortDefault, matchingDict, &iter);
+	if (kr != KERN_SUCCESS)
+		return -1;
+
+	fprintf(stderr, "getmatching ok\r\n");
+
+	// Iterate over all matching objects.
+	while ((service = IOIteratorNext(iter)) != 0)
+	{
+		CFStringRef className;
+		io_name_t name;
+
+		fprintf(stderr, "iterating\r\n");
+
+		io_connect_t connect;
+		kern_return_t status;
+		io_registry_entry_t *parent;
+		io_registry_entry_t *child;
+		io_iterator_t children;
+
+		status = IORegistryEntryGetChildIterator(
+			service,
+			kIOServicePlane,
+			&children );
+
+		while ((child = IOIteratorNext(children))) {
+
+			className = IOObjectCopyClass(child);
+			fprintf(stderr, "clientclass %s :\r\n",
+					CFStringGetCStringPtr( className, kCFStringEncodingMacRoman)
+				);
+			if (CFEqual(className, CFSTR("ZFSProxyMediaScheme")) == true) {
+
+				IORegistryEntryGetName(service, name);
+				if (!strcmp(name, "BOOM/test")) {
+					fprintf(stderr, "Found device with name: %s\n", name);
+
+					status = IOServiceOpen(child,
+										   mach_task_self(), 0, &connect);
+					fprintf(stderr, "XXX child open say %d : %p\n",
+							status,connect);
+
+					status = IOConnectSetCFProperty(connect,
+													CFSTR("DOMOUNTME"),
+													CFSTR("TRUE"));
+
+					fprintf(stderr, "XXX IOConnectSetCFProp say %d : %p\n",
+							status,connect);
+
+
+				}
+			}
+			IOObjectRelease(child);
+		}
+		IOObjectRelease(children);
+
+
+		status = IORegistryEntryGetParentEntry(
+			service,
+			kIOServicePlane,
+			&parent );
+
+		fprintf(stderr, "XXX parent say %d\n", status);
+
+		className = IOObjectCopyClass(parent);
+		fprintf(stderr, "parentclass %s :\r\n",
+				CFStringGetCStringPtr( className, kCFStringEncodingMacRoman)
+			);
+
+
+		// List all IOUSBDevice objects, ignoring objects that subclass IOUSBDevice.
+		//className = IOObjectCopyClass(service);
+		//IORegistryEntryGetName(service, name);
+
+		fprintf(stderr, "classname %s : %s\r\n",
+				CFStringGetCStringPtr( className, kCFStringEncodingMacRoman),
+				name
+			);
+
+		if (CFEqual(className, CFSTR("ZFSProxyMediaSchemXe")) == true)
+		{
+			IORegistryEntryGetName(service, name);
+			if (!strcmp(name, "BOOM/test")) {
+				fprintf(stderr, "Found device with name: %s\n", name);
+
+				status = IOServiceOpen(parent,
+									   mach_task_self(), 0, &connect);
+				fprintf(stderr, "XXX parent open say %d : %p\n",
+						status,connect);
+
+				status = IOConnectSetCFProperty(connect,
+												CFSTR("DOMOUNTME"),
+												CFSTR("TRUE"));
+
+				fprintf(stderr, "XXX IOConnectSetCFProp say %d : %p\n",
+						status,connect);
+
+			}
+		}
+		CFRelease(className);
+		IOObjectRelease(service);
+	}
+
+	// Release the iterator.
+	IOObjectRelease(iter);
+
+}
+
+
+
+
+
 /*
  * Lookup "POOL/DATASET" and return BSD Name "diskXsY".
  */
@@ -56,6 +183,9 @@ iokit_dataset_to_device(const char *spec, io_name_t volname)
 
 	if (spec == NULL)
 		return (-1);
+
+	testicles();
+
 
 	specRef = CFStringCreateWithCString(NULL, spec,
 	    kCFStringEncodingMacRoman);
@@ -99,6 +229,33 @@ iokit_dataset_to_device(const char *spec, io_name_t volname)
 				fprintf(stderr, "Found BSDName '%s'\n",
 				    volname);
 				CFRelease(ioBSDName);
+
+				// Remove DONTMOUNTME property
+				CFMutableDictionaryRef propertyDict = CFDictionaryCreateMutable(kCFAllocatorDefault, 1, NULL, NULL);
+
+				CFDictionarySetValue(propertyDict,
+									 CFSTR("DONTMOUNTME"),
+									 CFSTR("FALSE"));
+
+				fprintf(stderr, "trying to roger props\r\n");
+				kern_return_t status;
+
+				io_connect_t connect;
+
+				status = IOServiceOpen(service,
+									   mach_task_self(), 0, &connect);
+				fprintf(stderr, "open say %dr\n", status);
+
+				if(status == KERN_SUCCESS) {
+					status = IOConnectSetCFProperties(connect, propertyDict);
+					fprintf(stderr, "open OK, SetCFProp %d\r\n", status);
+
+					if (status == KERN_SUCCESS) {
+						fprintf(stderr, "Changeed DONTMOUNTME\r\n");
+					}
+
+					CFRelease(propertyDict);
+				}
 			}
 
 		}

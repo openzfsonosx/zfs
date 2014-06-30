@@ -86,6 +86,12 @@ public:
 	    IOOptionBits options);
 
 	virtual int getBSDName();
+
+	virtual IOReturn newUserClient(task_t owningTask,
+								   void* securityID, UInt32 type,
+								   OSDictionary* properties,
+								   IOUserClient** handler);
+
 };
 
 #endif

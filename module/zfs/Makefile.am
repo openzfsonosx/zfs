@@ -149,7 +149,9 @@ zfs_SOURCES = \
 	../zcommon/zpool_prop.c \
 	../zcommon/zprop_common.c \
 	ZFSLabelScheme.cpp \
-	ZFSProxyMediaScheme.cpp
+	ZFSProxyMediaScheme.cpp \
+	IOKitTestUserClient.cpp \
+	IOKitTest.cpp
 
 zfs_CPPFLAGS=$(CFLAGS_KMOD)
 zfs_CXXFLAGS=$(CFLAGS_KMOD)
