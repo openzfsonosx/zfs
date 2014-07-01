@@ -38,8 +38,6 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <libzfs.h>
-
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -53,6 +51,9 @@
 #include <syslog.h>
 #include <priv.h>
 
+#include <sys/zfs_context.h>
+#include <libzfs.h>
+
 #ifndef FSUC_GETUUID
 #define	FSUC_GETUUID	'k'
 #endif
@@ -61,15 +62,13 @@
 #define	FSUC_SETUUID	's'
 #endif
 
-#define	ZPOOL_COMMAND	"/usr/sbin/zpool"
-#define	ZFS_UTIL_STDOUT_LOG	"/Library/Logs/zfs_util_stdout.log"
-#define	ZFS_UTIL_STDERR_LOG	"/Library/Logs/zfs_util_stderr.log"
-
-#ifndef DEBUG
+#ifdef DEBUG
 int zfs_util_debug = 1;
 #else
 int zfs_util_debug = 0;
 #endif
+
+#define	printf	zfs_util_log
 
 const char *progname;
 libzfs_handle_t *g_zfs;
@@ -77,18 +76,23 @@ libzfs_handle_t *g_zfs;
 static void
 zfs_util_log(const char *format, ...)
 {
-	setlogmask(LOG_UPTO(LOG_NOTICE));
 	if (zfs_util_debug == 0)
 		return;
+
 	va_list args;
+	char buf[1024];
+
+	setlogmask(LOG_UPTO(LOG_NOTICE));
+
+	va_start(args, format);
+	(void) vsnprintf(buf, sizeof (buf), format, args);
+	fputs(buf, stderr);
+	va_end(args);
+
+	if (*(&buf[strlen(buf) - 1]) == '\n')
+		*(&buf[strlen(buf) - 1]) = '\0';
 	va_start(args, format);
 	vsyslog(LOG_NOTICE, format, args);
-	va_end(args);
-	va_start(args, format);
-	char buf[1024];
-	(void) vsnprintf(buf, sizeof (buf), format, args);
-	(void) strlcat(buf, "\n", sizeof (buf));
-	fputs(buf, stderr);
 	va_end(args);
 }
 
@@ -110,87 +114,6 @@ usage(void)
 	fprintf(stderr, "Examples:\n");
 	fprintf(stderr, "       %s -p disk0s1 removable readonly\n", progname);
 }
-
-#if 0
-static int
-run_process(const char *path, char *argv[])
-{
-        pid_t pid;
-        int rc, outfd, errfd;
-	char buf[20];
-	struct tm *stm;
-	time_t now;
-
-        pid = vfork();
-        if (pid == 0) {
-                outfd = open(ZFS_UTIL_STDOUT_LOG,
-		    O_CREAT|O_APPEND|O_WRONLY, 0644);
-
-                if (outfd < 0)
-                        _exit(-1);
-
-		errfd = open(ZFS_UTIL_STDERR_LOG,
-		    O_CREAT|O_APPEND|O_WRONLY, 0644);
-
-		if (errfd < 0)
-			_exit(-1);
-
-		(void) dup2(outfd, STDOUT_FILENO);
-
-		(void) dup2(errfd, STDERR_FILENO);
-
-                close(outfd);
-                close(errfd);
-
-		now = time (0);
-		stm = localtime(&now);
-		strftime (buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", stm);
-		fputs(buf, stderr);
-		{
-		int i;
-		fprintf(stderr, "\nRunning process: ");
-		for (i = 0; argv[i]; i++)
-			fprintf(stderr, "'%s' ", argv[i]);
-		fprintf(stderr, "\r\n");
-		}
-                (void) execvp(path, argv);
-                _exit(-1);
-        } else if (pid > 0) {
-                int status;
-
-                while ((rc = waitpid(pid, &status, 0)) == -1 &&
-                        errno == EINTR);
-                if (rc < 0 || !WIFEXITED(status))
-                        return (-1);
-
-                return (WEXITSTATUS(status));
-        }
-
-        return (-1);
-}
-
-static int
-zpool_import_by_guid(uint64_t poolguid)
-{
-	int rc;
-	char idstr[64];
-	char *argv[4] = {
-	    ZPOOL_COMMAND,
-	    "import",
-	    (char *)NULL,
-	    (char *)NULL };
-
-	zfs_util_log("+zpool_import_by_guid %llu", poolguid);
-
-	snprintf(idstr, sizeof (idstr), "%llu", poolguid);
-	argv[2] = idstr;
-
-	rc = run_process(argv[0], argv);
-
-	zfs_util_log("-zpool_import_by_guid %d", rc);
-	return (rc);
-}
-#endif
 
 /*
  * Perform the import for the given configuration.  This passes the heavy
@@ -214,8 +137,8 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 	verify(nvlist_lookup_uint64(config,
 	    ZPOOL_CONFIG_VERSION, &version) == 0);
 	if (!SPA_VERSION_IS_SUPPORTED(version)) {
-		zfs_util_log("cannot import '%s': pool is formatted using an "
-		    "unsupported ZFS version", name);
+		printf("cannot import '%s': pool is formatted using an "
+		    "unsupported ZFS version\n", name);
 		return (1);
 	} else if (state != POOL_STATE_EXPORTED &&
 	    !(flags & ZFS_IMPORT_ANY_HOST)) {
@@ -235,18 +158,18 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 				verify(nvlist_lookup_uint64(config,
 				    ZPOOL_CONFIG_TIMESTAMP, &timestamp) == 0);
 				t = timestamp;
-				zfs_util_log("cannot import " "'%s': pool may "
-				    "be in use from other system, it was last "
-				    "accessed by %s (hostid: 0x%lx) on %s",
+				printf("cannot import " "'%s': pool may be in "
+				    "use from other system, it was last "
+				    "accessed by %s (hostid: 0x%lx) on %s\n",
 				    name, hostname, (unsigned long)hostid,
 				    asctime(localtime(&t)));
-				zfs_util_log("use '-f' to import anyway");
+				printf("use '-f' to import anyway\n");
 				return (1);
 			}
 		} else {
-			zfs_util_log("cannot import '%s': pool may be in use "
-			    "from other system", name);
-			zfs_util_log("use '-f' to import anyway");
+			printf("cannot import '%s': pool may be in use from "
+			    "other system\n", name);
+			printf("use '-f' to import anyway\n");
 			return (1);
 		}
 	}
@@ -271,7 +194,6 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 	return (0);
 }
 
-
 static int
 zpool_import_by_guid(uint64_t searchguid)
 {
@@ -286,20 +208,23 @@ zpool_import_by_guid(uint64_t searchguid)
 	uint32_t rewind_policy = ZPOOL_NO_REWIND;
 	uint64_t pool_state, txg = -1ULL;
 	importargs_t idata = { 0 };
+	char *msgid;
+	zpool_status_t reason;
+	zpool_errata_t errata;
 
 	if ((g_zfs = libzfs_init()) == NULL)
-                return (1);
+		return (1);
 
 	idata.unique = B_TRUE;
 
-        /* In the future, we can capture further policy and include it here */
+	/* In the future, we can capture further policy and include it here */
 	if (nvlist_alloc(&policy, NV_UNIQUE_NAME, 0) != 0 ||
 	    nvlist_add_uint64(policy, ZPOOL_REWIND_REQUEST_TXG, txg) != 0 ||
 	    nvlist_add_uint32(policy, ZPOOL_REWIND_REQUEST, rewind_policy) != 0)
-                goto error;
+		goto error;
 
 	if (!priv_ineffect(PRIV_SYS_CONFIG)) {
-		zfs_util_log("cannot discover pools: permission denied");
+		printf("cannot discover pools: permission denied\n");
 		nvlist_free(policy);
 		return (1);
 	}
@@ -309,24 +234,24 @@ zpool_import_by_guid(uint64_t searchguid)
 	pools = zpool_search_import(g_zfs, &idata);
 
 	if (pools == NULL && idata.exists) {
-		zfs_util_log("cannot import '%llu': a pool with that guid is "
-		    "already created/imported", searchguid);
-                err = 1;
-        } else if (pools == NULL) {
-		zfs_util_log("cannot import '%llu': no such pool available",
+		printf("cannot import '%llu': a pool with that guid is already "
+		    "created/imported\n", searchguid);
+		err = 1;
+	} else if (pools == NULL) {
+		printf("cannot import '%llu': no such pool available\n",
 		    searchguid);
-                err = 1;
-        }
+		err = 1;
+	}
 
 	if (err == 1) {
 		nvlist_free(policy);
 		return (1);
-        }
+	}
 
 	/*
 	 * At this point we have a list of import candidate configs. Even though
 	 * we were searching by guid, we still need to post-process the list to
-	 * deal with pool state. 
+	 * deal with pool state.
 	 */
 	err = 0;
 	elem = NULL;
@@ -361,12 +286,16 @@ zpool_import_by_guid(uint64_t searchguid)
 	 */
 	if (err == 0) {
 		if (found_config == NULL) {
-			zfs_util_log("cannot import '%llu': no such pool "
-			    "available", searchguid);
+			printf("cannot import '%llu': no such pool available\n",
+			    searchguid);
 			err = B_TRUE;
 		} else {
-			err |= do_import(found_config, NULL, NULL, NULL,
-			    flags);
+			reason = zpool_import_status(config, &msgid, &errata);
+			if (reason == ZPOOL_STATUS_OK)
+				err |= do_import(found_config, NULL, NULL, NULL,
+				    flags);
+			else
+				err = 1;
 		}
 	}
 
@@ -386,13 +315,13 @@ zfs_probe(const char *devpath, uint64_t *outpoolguid)
 	int fd;
 	uint64_t guid;
 
-	zfs_util_log("+zfs_probe : devpath %s", devpath);
+	printf("+zfs_probe : devpath %s\n", devpath);
 
 	if (outpoolguid == NULL)
 		goto out;
 
 	if ((fd = open(devpath, O_RDONLY)) < 0) {
-		zfs_util_log("Could not open devpath %s : fd %d", devpath, fd);
+		printf("Could not open devpath %s : fd %d\n", devpath, fd);
 		goto out;
 	}
 
@@ -405,8 +334,8 @@ zfs_probe(const char *devpath, uint64_t *outpoolguid)
 
 	if (config != NULL) {
 		if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_GUID,
-		    &guid)== 0) {
-			zfs_util_log("guid %llu", guid);
+		    &guid) == 0) {
+			printf("guid %llu\n", guid);
 			nvlist_free(config);
 			*outpoolguid = guid;
 			ret = FSUR_RECOGNIZED;
@@ -418,14 +347,13 @@ zfs_probe(const char *devpath, uint64_t *outpoolguid)
 	}
 
 out:
-	zfs_util_log("-zfs_probe : ret %d", ret);
+	printf("-zfs_probe : ret %d\n", ret);
 	return (ret);
 }
 
-#include <sys/fs/zfs.h>  // ZPOOL_CACHE
-#include <sys/zfs_context.h> // kmem
-#include <sys/stat.h>
-void zpool_read_cachefile(void)
+#ifdef ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
+void
+zpool_read_cachefile(void)
 {
 	int fd;
 	struct stat stbf;
@@ -435,19 +363,21 @@ void zpool_read_cachefile(void)
 	uint64_t guid;
 	int importrc = 0;
 
-	zfs_util_log("reading cachefile");
+	printf("reading cachefile\n");
 
 	fd = open(ZPOOL_CACHE, O_RDONLY);
-	if (fd < 0) return;
+	if (fd < 0)
+		return;
 
-	if (fstat(fd, &stbf) || !stbf.st_size) goto out;
+	if (fstat(fd, &stbf) || !stbf.st_size)
+		goto out;
 
 	buf = kmem_alloc(stbf.st_size, 0);
-	if (!buf) goto out;
+	if (!buf)
+		goto out;
 
-	if (read(fd, buf, stbf.st_size) != stbf.st_size) goto out;
-
-	//rename(ZPOOL_CACHE, ZPOOL_CACHE".importing");
+	if (read(fd, buf, stbf.st_size) != stbf.st_size)
+		goto out;
 
 	if (nvlist_unpack(buf, stbf.st_size, &nvlist, KM_PUSHPAGE) != 0)
 		goto out;
@@ -457,35 +387,36 @@ void zpool_read_cachefile(void)
 		if (nvpair_type(nvpair) != DATA_TYPE_NVLIST)
 			continue;
 
-	  	VERIFY(nvpair_value_nvlist(nvpair, &child) == 0);
+		VERIFY(nvpair_value_nvlist(nvpair, &child) == 0);
 
-		zfs_util_log("Cachefile has pool '%s'", nvpair_name(nvpair));
+		printf("Cachefile has pool '%s'\n", nvpair_name(nvpair));
 
 		if (nvlist_lookup_uint64(child, ZPOOL_CONFIG_POOL_GUID,
-								 &guid)== 0) {
-			zfs_util_log("Cachefile has pool '%s' guid %llu",
+		    &guid) == 0) {
+			printf("Cachefile has pool '%s' guid %llu\n",
 			    nvpair_name(nvpair), guid);
 
-			if ((importrc = zpool_import_by_guid(guid)) != 0)
-				zfs_util_log("zpool import error %d", importrc);
+			importrc = zpool_import_by_guid(guid);
+			printf("zpool import error %d\n", importrc);
 		}
 
 	}
 	nvlist_free(nvlist);
 
-  out:
+out:
 	close(fd);
-	if (buf) kmem_free(buf, stbf.st_size);
+	if (buf)
+		kmem_free(buf, stbf.st_size);
 
 }
-
+#endif
 
 int
 main(int argc, char **argv)
 {
 	int argindex;
 	for (argindex = 0; argindex < argc; argindex++) {
-		zfs_util_log("argv[%d]: %s", argindex, argv[argindex]);
+		printf("argv[%d]: %s\n", argindex, argv[argindex]);
 	}
 
 	char blockdevice[MAXPATHLEN];
@@ -496,6 +427,9 @@ main(int argc, char **argv)
 	struct stat sb;
 	uint64_t poolguid;
 	int ret = FSUR_INVAL;
+#ifndef ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
+	int importrc = 0;
+#endif
 
 	/* save & strip off program name */
 	progname = argv[0];
@@ -508,7 +442,7 @@ main(int argc, char **argv)
 	}
 
 	what = argv[0][1];
-	zfs_util_log("zfs.util called with option %c", what);
+	printf("zfs.util called with option %c\n", what);
 
 	devname = argv[1];
 	cp = strrchr(devname, '/');
@@ -518,10 +452,10 @@ main(int argc, char **argv)
 		devname++;
 	(void) snprintf(rawdevice, sizeof (rawdevice), "/dev/r%s", devname);
 	(void) snprintf(blockdevice, sizeof (blockdevice), "/dev/%s", devname);
-	zfs_util_log("blockdevice is %s", blockdevice);
+	printf("blockdevice is %s\n", blockdevice);
 
 	if (stat(blockdevice, &sb) != 0) {
-		zfs_util_log("%s: stat %s failed, %s", progname, blockdevice,
+		printf("%s: stat %s failed, %s\n", progname, blockdevice,
 		    strerror(errno));
 		goto out;
 	}
@@ -530,30 +464,32 @@ main(int argc, char **argv)
 	case FSUC_PROBE:
 		ret = zfs_probe(rawdevice, &poolguid);
 		if (ret == FSUR_RECOGNIZED) {
-			zfs_util_log("FSUC_PROBE %s : FSUR_RECOGNIZED : "
-			    "poolguid %llu", blockdevice, poolguid);
+			printf("FSUC_PROBE %s : FSUR_RECOGNIZED : poolguid "
+			    "%llu\n", blockdevice, poolguid);
 
+#ifndef ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
+			importrc = zpool_import_by_guid(poolguid);
+			printf("zpool import error %d\n", importrc);
+#else
 			/* Read cachefile and attempt imports */
 			zpool_read_cachefile();
-
+#endif
 		} else if (ret == FSUR_UNRECOGNIZED) {
-			zfs_util_log("FSUC_PROBE %s : FSUR_UNRECOGNIZED",
+			printf("FSUC_PROBE %s : FSUR_UNRECOGNIZED\n",
 			    blockdevice);
 		} else {
-			zfs_util_log("FSUC_PROBE %s : returned invalid probe "
-			    "status : %d", blockdevice, ret);
+			printf("FSUC_PROBE %s : returned invalid probe status :"
+			    " %d\n", blockdevice, ret);
 		}
 		break;
 	case FSUC_GETUUID:
-		zfs_util_log("FSUC_GETUUID");
+		printf("FSUC_GETUUID\n");
 		ret = FSUR_INVAL;
-		//ret = FSUR_IO_FAIL;
 		break;
 	case FSUC_SETUUID:
 		/* Set a UUID */
-		zfs_util_log("FSUC_SETUUID");
+		printf("FSUC_SETUUID\n");
 		ret = FSUR_INVAL;
-		//ret = FSUR_IO_FAIL;
 		break;
 	default:
 		ret = FSUR_INVAL;
@@ -563,5 +499,5 @@ out:
 	closelog();
 	exit(ret);
 
-	return ret;	/* ...and make main fit the ANSI spec. */
+	return (ret);	/* ...and make main fit the ANSI spec. */
 }
