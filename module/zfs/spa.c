@@ -4308,7 +4308,10 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 
 #ifdef _KERNEL
 	zvol_remove_minors_symlink(pool);
+
+	ZFSDriver_remove_pool(pool);
 #endif
+
 	spa_event_notify(spa, NULL, FM_EREPORT_ZFS_POOL_DESTROY);
 
 	if (spa->spa_state != POOL_STATE_UNINITIALIZED) {

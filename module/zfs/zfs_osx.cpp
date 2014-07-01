@@ -21,6 +21,7 @@ extern "C" {
   extern kern_return_t _start(kmod_info_t *ki, void *data);
   extern kern_return_t _stop(kmod_info_t *ki, void *data);
 
+extern void *zfsdev_state;
 };
   __attribute__((visibility("default"))) KMOD_EXPLICIT_DECL(net.lundman.zfs, "1.0.0", _start, _stop)
   __private_extern__ kmod_start_func_t *_realmain = 0;
@@ -442,11 +443,23 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
     net_lundman_zfs_zvol_device *nub = NULL;
     bool            result = false;
 	zvol_state_t *zv;
+	minor_t minor = 0;
+	zfs_soft_state_t *zs;
 
 	printf("iokitCreateNewDevice: size %llu\n", bytes);
 
+	if ((minor = zfsdev_minor_alloc()) == 0) {
+		return false;
+	}
 
+	if (ddi_soft_state_zalloc(zfsdev_state, minor) != DDI_SUCCESS) {
+		return false;
+	}
+	zs = (zfs_soft_state_t *)ddi_get_soft_state(zfsdev_state, minor);
+	zs->zss_type = ZSST_ZVOL;
 	zv = (zvol_state_t *) kmem_zalloc(sizeof (zvol_state_t), KM_SLEEP);
+	zs->zss_data = zv;
+
     if (!zv) return false;
 
 	zv->zv_volsize = bytes;
@@ -519,24 +532,56 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
    return result;
 }
 
+extern "C" {
+
+static zvol_state_t *
+zvol_minor_lookup(const char *name)
+{
+	minor_t minor;
+	zvol_state_t *zv;
+
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
+
+	for (minor = 1; minor <= ZFSDEV_MAX_MINOR; minor++) {
+		zv = (zvol_state_t *)zfsdev_get_soft_state(minor, ZSST_ZVOL);
+		if (zv == NULL)
+			continue;
+		if (strcmp(zv->zv_name, name) == 0)
+			return (zv);
+	}
+
+	return (NULL);
+}
+}
+
 
 bool net_lundman_zfs_zvol::destroyStorageDevice (char *poolname)
 {
     net_lundman_zfs_zvol_device *nub = NULL;
     bool            result = true;
+	zfs_soft_state_t *zs;
 	zvol_state_t *zv = NULL;
+	minor_t minor;
+
+	zv = zvol_minor_lookup(poolname);
+
+	printf("Destroy '%s' got zv %p\n", poolname, zv);
 
     if (zv && zv->zv_iokitdev) {
 
-      //IOLog("removeBlockdevice\n");
+		IOLog("removing fake pool devices\n");
 
-      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
+		nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
 
-      zv->zv_iokitdev = NULL;
-      zv = NULL;
+		minor = zv->zv_minor;
+		zv->zv_iokitdev = NULL;
+		kmem_free(zv, sizeof (zvol_state_t));
+		zv = NULL;
 
-      nub->terminate();
+		nub->terminate();
     }
+
+	ddi_soft_state_free(zfsdev_state, minor);
 
     return result;
 }
