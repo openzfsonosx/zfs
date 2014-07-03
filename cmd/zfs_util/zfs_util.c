@@ -343,19 +343,11 @@ zfs_probe(const char *devpath, uint64_t *outpoolguid)
 	(void) close(fd);
 
 	if (config != NULL) {
-		if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_GUID,
-		    &guid) == 0) {
-			printf("guid %llu\n", guid);
-			nvlist_free(config);
-			*outpoolguid = guid;
-			ret = FSUR_RECOGNIZED;
-		} else {
-			goto out;
-		}
-	} else {
-		goto out;
+		ret = FSUR_RECOGNIZED;
+		*outpoolguid = (nvlist_lookup_uint64(config,
+		    ZPOOL_CONFIG_POOL_GUID, &guid) == 0) ? guid : 0;
+		nvlist_free(config);
 	}
-
 out:
 	printf("-zfs_probe : ret %d\n", ret);
 	return (ret);
@@ -435,7 +427,7 @@ main(int argc, char **argv)
 	char *cp;
 	char *devname;
 	struct stat sb;
-	uint64_t poolguid;
+	uint64_t poolguid = 0;
 	int ret = FSUR_INVAL;
 #ifndef ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
 	int importrc = 0;
@@ -479,14 +471,15 @@ main(int argc, char **argv)
 		if (ret == FSUR_RECOGNIZED) {
 			printf("FSUC_PROBE %s : FSUR_RECOGNIZED : poolguid "
 			    "%llu\n", blockdevice, poolguid);
-
+			if (poolguid != 0) {
 #ifndef ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
-			importrc = zpool_import_by_guid(poolguid);
-			printf("zpool import error %d\n", importrc);
+				importrc = zpool_import_by_guid(poolguid);
+				printf("zpool import error %d\n", importrc);
 #else
-			/* Read cachefile and attempt imports */
-			zpool_read_cachefile();
+				/* Read cachefile and attempt imports */
+				zpool_read_cachefile();
 #endif
+			}
 		} else if (ret == FSUR_UNRECOGNIZED) {
 			printf("FSUC_PROBE %s : FSUR_UNRECOGNIZED\n",
 			    blockdevice);
