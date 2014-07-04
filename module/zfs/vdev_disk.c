@@ -344,10 +344,36 @@ vdev_disk_close(vdev_t *vd)
 		dvd->vd_minor = NULL;
 	}
 
-	if (dvd->vd_devid != NULL) {
-		ddi_devid_free(dvd->vd_devid);
-		dvd->vd_devid = NULL;
-	}
+	return (bio_size);
+}
+
+static inline void
+vdev_submit_bio(int rw, struct bio *bio)
+{
+#ifdef HAVE_CURRENT_BIO_TAIL
+	struct bio **bio_tail = current->bio_tail;
+	current->bio_tail = NULL;
+	submit_bio(rw, bio);
+	current->bio_tail = bio_tail;
+#else
+	struct bio_list *bio_list = current->bio_list;
+	current->bio_list = NULL;
+	submit_bio(rw, bio);
+	current->bio_list = bio_list;
+#endif
+}
+
+static int
+__vdev_disk_physio(struct block_device *bdev, zio_t *zio, caddr_t kbuf_ptr,
+    size_t kbuf_size, uint64_t kbuf_offset, int flags)
+{
+	dio_request_t *dr;
+	caddr_t bio_ptr;
+	uint64_t bio_offset;
+	int bio_size, bio_count = 16;
+	int i = 0, error = 0;
+
+	ASSERT3U(kbuf_offset + kbuf_size, <=, bdev->bd_inode->i_size);
 
 	if (dvd->vd_lh != NULL) {
 		(void) ldi_close(dvd->vd_lh, spa_mode(vd->vdev_spa), kcred);
@@ -376,13 +402,15 @@ vdev_disk_close(vdev_t *vd)
 	if (dvd->vd_offline)
 		return;
 
-	vdev_disk_free(vd);
-}
+	/* Extra reference to protect dio_request during vdev_submit_bio */
+	vdev_disk_dio_get(dr);
+	if (zio)
+		zio->io_delay = jiffies_64;
 
-static void
-vdev_disk_io_intr(struct buf *bp, void *arg)
-{
-	zio_t *zio = (zio_t *)arg;
+	/* Submit all bio's associated with this dio */
+	for (i = 0; i < dr->dr_bio_count; i++)
+		if (dr->dr_bio[i])
+			vdev_submit_bio(dr->dr_rw, dr->dr_bio[i]);
 
 	/*
 	 * The rest of the zio stack only deals with EIO, ECKSUM, and ENXIO.
@@ -409,6 +437,33 @@ vdev_disk_ioctl_done(void *zio_arg, int error)
 	zio->io_error = error;
 
 	zio_interrupt(zio);
+
+	BIO_END_IO_RETURN(0);
+}
+
+static int
+vdev_disk_io_flush(struct block_device *bdev, zio_t *zio)
+{
+	struct request_queue *q;
+	struct bio *bio;
+
+	q = bdev_get_queue(bdev);
+	if (!q)
+		return (ENXIO);
+
+	bio = bio_alloc(GFP_NOIO, 0);
+	/* bio_alloc() with __GFP_WAIT never returns NULL */
+	if (unlikely(bio == NULL))
+		return (ENOMEM);
+
+	bio->bi_end_io = vdev_disk_io_flush_completion;
+	bio->bi_private = zio;
+	bio->bi_bdev = bdev;
+	zio->io_delay = jiffies_64;
+	vdev_submit_bio(VDEV_WRITE_FLUSH_FUA, bio);
+	invalidate_bdev(bdev);
+
+	return (0);
 }
 
 static void

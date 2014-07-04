@@ -293,6 +293,7 @@ bio_set_flags_failfast(struct block_device *bdev, int *flags)
 #define	VDEV_REQ_FLUSH			REQ_HARDBARRIER
 #define	VDEV_REQ_FUA			REQ_FUA
 #endif
+#endif
 
 /*
  * 2.6.32 API change
