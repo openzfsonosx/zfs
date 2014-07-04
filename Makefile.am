@@ -74,6 +74,10 @@ if CONFIG_USER
 install-data-hook::
 	@echo
 	for plistfile in $(launchddaemon_DATA); do \
+		label=`defaults read "$$PWD"/"$$plistfile" Label`; \
+		echo "Attempting to remove $$label ..."; \
+		$(DESTDIR)/bin/launchctl remove "$$label" \
+		    || echo "Ignoring errors"; \
 		bn=`basename "$$plistfile"`; \
 		echo "Attempting to load $$bn ..."; \
 		$(DESTDIR)/bin/launchctl load -w \

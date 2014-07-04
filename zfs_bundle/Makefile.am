@@ -13,10 +13,15 @@ bin_PROGRAMS = zfs.fs
 
 dist_noinst_DATA = $(INFO_PLIST) English.lproj/$(INFOPLIST_STRINGS) $(PKGINFO)
 
-zfs.fs$(EXEEXT): $(INFO_PLIST) English.lproj/$(PLIST_STRINGS) $(PKGINFO)
-	@echo
+zfs.fs/Contents/$(PKGINFO):
+
+zfs.fs/Contents/$(INFO_PLIST):
+
+zfs.fs/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS):
+
+zfs.fs$(EXEEXT): zfs.fs/Contents/$(PKGINFO) zfs.fs/Contents/$(INFO_PLIST) zfs.fs/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS) $(INFO_PLIST) English.lproj/$(INFOPLIST_STRINGS) $(PKGINFO)
 	rm -rf zfs.fs
-	mkdir -p zfs.fs/Contents/Resources/English.lproj 
+	mkdir -p zfs.fs/Contents/Resources/English.lproj
 	cp -f $(PKGINFO) zfs.fs/Contents/
 	cp -f $(INFO_PLIST) zfs.fs/Contents/
 	cp -f English.lproj/$(INFOPLIST_STRINGS) zfs.fs/Contents/Resources/English.lproj/
