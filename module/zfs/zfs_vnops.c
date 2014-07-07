@@ -20,7 +20,8 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2015 by Chunwei Chen. All rights reserved.
  */
 
@@ -2013,9 +2014,12 @@ top:
 		dmu_tx_mark_netfree(tx);
 
 	/*
-	 * Mark this transaction as typically resulting in a net free of space
+	 * Mark this transaction as typically resulting in a net free of
+	 * space, unless object removal will be delayed indefinitely
+	 * (due to active holds on the vnode due to the file being open).
 	 */
-	dmu_tx_mark_netfree(tx);
+	if (may_delete_now)
+		dmu_tx_mark_netfree(tx);
 
 	error = dmu_tx_assign(tx, waited ? TXG_WAITED : TXG_NOWAIT);
 	if (error) {
