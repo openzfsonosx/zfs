@@ -608,7 +608,6 @@ dmu_tx_count_free(dmu_tx_hold_t *txh, uint64_t off, uint64_t len)
 	txh->txh_space_tounref += unref;
 }
 
-
 /*
  * This function marks the transaction as being a "net free".  The end
  * result is that refquotas will be disabled for this transaction, and
@@ -623,7 +622,7 @@ dmu_tx_mark_netfree(dmu_tx_t *tx)
 	dmu_tx_hold_t *txh;
 
 	txh = dmu_tx_hold_object_impl(tx, tx->tx_objset,
-								  DMU_NEW_OBJECT, THT_FREE, 0, 0);
+	    DMU_NEW_OBJECT, THT_FREE, 0, 0);
 
 	/*
 	 * Pretend that this operation will free 1GB of space.  This
