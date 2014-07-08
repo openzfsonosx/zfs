@@ -1130,7 +1130,6 @@ dnode_hold_impl(objset_t *os, uint64_t object, int flag,
 		if (winner != NULL) {
 			zrl_add(&dnh->dnh_zrlock);
 			dnode_destroy(dn); /* implicit zrl_remove() */
-			zrl_destroy(&dnh->dnh_zrlock);
 			dn = winner;
 		}
 	}
