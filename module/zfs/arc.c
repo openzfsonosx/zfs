@@ -2692,7 +2692,6 @@ arc_reclaim_needed(void)
 static void
 arc_reclaim_thread(void *dummy __unused)
 {
-#ifdef _KERNEL
     clock_t                 growtime = 0;
     arc_reclaim_strategy_t  last_reclaim = ARC_RECLAIM_CONS;
     callb_cpr_t             cpr;
@@ -2757,10 +2756,12 @@ arc_reclaim_thread(void *dummy __unused)
                 last_reclaim = ARC_RECLAIM_AGGR;
             }
 
+#ifdef _KERNEL
             kr = mach_vm_pressure_monitor(FALSE, 0,
                                           NULL, &num_pages);
             if (kr == KERN_SUCCESS)
                 amount = num_pages * PAGE_SIZE;
+#endif
 
             if (!amount)
                 amount = 1024780;
@@ -2814,7 +2815,7 @@ arc_reclaim_thread(void *dummy __unused)
     arc_thread_exit = 0;
     cv_broadcast(&arc_reclaim_thr_cv);
     CALLB_CPR_EXIT(&cpr);           /* drops arc_reclaim_thr_lock */
-#endif
+
     thread_exit();
 }
 
