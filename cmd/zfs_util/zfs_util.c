@@ -62,6 +62,8 @@
 #define	FSUC_SETUUID	's'
 #endif
 
+#define	ZPOOL_IMPORT_ALL_COOKIE	"/tmp/org.openzfsonosx.did-zpool-import-all"
+
 #ifdef DEBUG
 int zfs_util_debug = 1;
 #else
@@ -69,6 +71,8 @@ int zfs_util_debug = 0;
 #endif
 
 #define	printf	zfs_util_log
+
+#define ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
 
 const char *progname;
 libzfs_handle_t *g_zfs;
@@ -208,9 +212,11 @@ zpool_import_by_guid(uint64_t searchguid)
 	uint32_t rewind_policy = ZPOOL_NO_REWIND;
 	uint64_t pool_state, txg = -1ULL;
 	importargs_t idata = { 0 };
+#ifdef ZFS_AUTOIMPORT_ZPOOL_STATUS_OK_ONLY
 	char *msgid;
 	zpool_status_t reason;
 	zpool_errata_t errata;
+#endif
 
 	if ((g_zfs = libzfs_init()) == NULL)
 		return (1);
@@ -290,12 +296,16 @@ zpool_import_by_guid(uint64_t searchguid)
 			    searchguid);
 			err = B_TRUE;
 		} else {
+#ifdef ZFS_AUTOIMPORT_ZPOOL_STATUS_OK_ONLY
 			reason = zpool_import_status(config, &msgid, &errata);
 			if (reason == ZPOOL_STATUS_OK)
 				err |= do_import(found_config, NULL, NULL, NULL,
 				    flags);
 			else
 				err = 1;
+#else
+			err |= do_import(found_config, NULL, NULL, NULL, flags);
+#endif
 		}
 	}
 
@@ -462,6 +472,9 @@ main(int argc, char **argv)
 
 	switch (what) {
 	case FSUC_PROBE:
+		if (stat(ZPOOL_IMPORT_ALL_COOKIE, &sb) != 0) {
+			exit(FSUR_RECOGNIZED);
+		}
 		ret = zfs_probe(rawdevice, &poolguid);
 		if (ret == FSUR_RECOGNIZED) {
 			printf("FSUC_PROBE %s : FSUR_RECOGNIZED : poolguid "
