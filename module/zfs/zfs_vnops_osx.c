@@ -1780,6 +1780,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	struct uio *uio = ap->a_uio;
 	pathname_t cn = { 0 };
 	int  error;
+        long cn_alloc_size = 0;
 
 	/* dprintf("+getxattr vp %p\n", ap->a_vp); */
 
@@ -1805,8 +1806,10 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 		goto out;
 	}
 
-	cn.pn_buf = (char *)spa_strdup(ap->a_name);
-	cn.pn_bufsize = strlen(cn.pn_buf);
+        cn_alloc_size = strlen(ap->a_name) + 1;
+
+	cn.pn_buf = (char*)kmem_zalloc(cn_alloc_size, KM_SLEEP);
+	cn.pn_bufsize = cn_alloc_size;
 
 	/* Lookup the attribute name. */
 	if ((error = zfs_dirlook(VTOZ(xdvp), (char *)ap->a_name, &xvp, 0, NULL,
@@ -1828,7 +1831,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	}
 out:
 	if (cn.pn_buf)
-		spa_strfree(cn.pn_buf);
+		kmem_free(cn.pn_buf, cn_alloc_size);
 	if (xvp) {
 		vnode_put(xvp);
 	}
