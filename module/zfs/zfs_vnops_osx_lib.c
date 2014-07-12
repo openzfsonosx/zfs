@@ -558,8 +558,9 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 		return (error);
 	}
 
-	cn.pn_buf = spa_strdup(name);
-	cn.pn_bufsize = strlen(name);
+	cn.pn_bufsize = strlen(name)+1;
+	cn.pn_buf = (char *)kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
+
 
  top:
 	/* Lock the attribute entry name. */
@@ -611,7 +612,7 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 	zfs_dirent_unlock(dl);
  out:
     if (cn.pn_buf)
-        spa_strfree(cn.pn_buf);
+		kmem_free(cn.pn_buf, cn.pn_bufsize);
 
 	if (error == EEXIST)
 		error = ENOATTR;
@@ -1061,7 +1062,7 @@ void fileattrpack(attrinfo_t *aip, zfsvfs_t *zfsvfs, znode_t *zp)
 			pathname_t cn = { 0 };
 
 			cn.pn_buf = spa_strdup(XATTR_RESOURCEFORK_NAME);
-			cn.pn_bufsize = strlen(cn.pn_buf);
+			cn.pn_bufsize = strlen(cn.pn_buf)+1;
 
 			/* Grab the hidden attribute directory vnode. */
 			if (zfs_get_xattrdir(zp, &xdvp, cr, 0) == 0 &&
@@ -1247,7 +1248,7 @@ void getfinderinfo(znode_t *zp, cred_t *cr, finderinfo_t *fip)
 	}
 
 	cn.pn_buf = spa_strdup(XATTR_FINDERINFO_NAME);
-	cn.pn_bufsize = strlen(cn.pn_buf);
+	cn.pn_bufsize = strlen(cn.pn_buf)+1;
 
 	if ((error = zfs_dirlook(VTOZ(xdvp), cn.pn_buf, &xvp, 0, NULL, &cn))) {
 		goto out;
