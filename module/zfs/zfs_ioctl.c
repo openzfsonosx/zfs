@@ -5814,13 +5814,9 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 		goto out;
 
 	/* legacy ioctls can modify zc_name */
-	saved_poolname = spa_strdup(zc->zc_name);
-	if (saved_poolname == NULL) {
-		error = SET_ERROR(ENOMEM);
-		goto out;
-	} else {
-		saved_poolname[strcspn(saved_poolname, "/@#")] = '\0';
-	}
+	len = strcspn(zc->zc_name, "/@#") + 1;
+	saved_poolname = kmem_alloc(len, KM_SLEEP);
+	(void) strlcpy(saved_poolname, zc->zc_name, len);
 
 	if (vec->zvec_func != NULL) {
 		nvlist_t *outnvl;
@@ -5893,7 +5889,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 		(void) tsd_set(zfs_allow_log_key, saved_poolname);
 	} else {
 		if (saved_poolname != NULL)
-			spa_strfree(saved_poolname);
+			kmem_free(saved_poolname, len);
 	}
 
 	kmem_free(zc, sizeof (zfs_cmd_t));
