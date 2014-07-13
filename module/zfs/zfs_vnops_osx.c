@@ -1961,8 +1961,8 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 		goto out;
 	}
 
-	cn.pn_buf = (char *)spa_strdup(ap->a_name);
-	cn.pn_bufsize = strlen(cn.pn_buf);
+	cn.pn_bufsize = strlen(cn.pn_buf)+1;
+	cn.pn_buf = (char *)kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
 
 	/* Lookup the attribute name. */
 	if ((error = zfs_dirlook(VTOZ(xdvp), (char *)ap->a_name, &xvp, 0, NULL,
@@ -1976,7 +1976,7 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 
 out:
 	if (cn.pn_buf)
-		spa_strfree(cn.pn_buf);
+		kmem_free(cn.pn_buf, cn.pn_bufsize);
 
 	if (xvp) {
 		vnode_put(xvp);
@@ -2128,8 +2128,8 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 	if (zfs_get_xattrdir(zp, &xdvp, cr, 0) != 0)
 		goto out;
 
-	cn.pn_buf = spa_strdup(ap->a_name);
-	cn.pn_bufsize = strlen(cn.pn_buf);
+	cn.pn_bufsize = strlen(cn.pn_buf) + 1;
+	cn.pn_buf = (char *)kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
 
 	/* Lookup the attribute name. */
 	if ((error = zfs_dirlook(VTOZ(xdvp), (char *)ap->a_name, svpp, 0, NULL,
@@ -2137,7 +2137,8 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 		if (error == ENOENT)
 			error = ENOATTR;
 	}
-	spa_strfree(cn.pn_buf);
+
+	kmem_free(cn.pn_buf, cn.pn_bufsize);
 
 out:
 	if (xdvp)
