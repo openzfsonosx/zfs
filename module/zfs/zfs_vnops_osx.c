@@ -1961,7 +1961,7 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 		goto out;
 	}
 
-	cn.pn_bufsize = strlen(cn.pn_buf)+1;
+	cn.pn_bufsize = strlen(ap->a_name)+1;
 	cn.pn_buf = (char *)kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
 
 	/* Lookup the attribute name. */
@@ -2109,7 +2109,6 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 	pathname_t cn = { 0 };
 	int  error = ENOATTR;
 	uint64_t xattr;
-
 	dprintf("+getnamedstream vp %p\n", ap->a_vp);
 
 	*svpp = NULLVP;
@@ -2128,7 +2127,7 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 	if (zfs_get_xattrdir(zp, &xdvp, cr, 0) != 0)
 		goto out;
 
-	cn.pn_bufsize = strlen(cn.pn_buf) + 1;
+	cn.pn_bufsize = strlen(ap->a_name) + 1;
 	cn.pn_buf = (char *)kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
 
 	/* Lookup the attribute name. */
