@@ -21,6 +21,8 @@
 #include <sys/xattr.h>
 #include <sys/utfconv.h>
 
+extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
+
 
 /* Originally from illumos:uts/common/sys/vfs.h */
 typedef uint64_t vfs_feature_t;
@@ -1099,6 +1101,7 @@ void nameattrpack(attrinfo_t *aip, const char *name, int namelen)
 	struct attrreference * attr_refptr;
 	u_int32_t attrlen;
 	size_t nfdlen, freespace;
+	int force_formd_normalized_output;
 
 	varbufptr = *aip->ai_varbufpp;
 	attr_refptr = (struct attrreference *)(*aip->ai_attrbufpp);
@@ -1108,8 +1111,15 @@ void nameattrpack(attrinfo_t *aip, const char *name, int namelen)
 	 * Mac OS X: non-ascii names are UTF-8 NFC on disk
 	 * so convert to NFD before exporting them.
 	 */
+
+	if (zfs_vnop_force_formd_normalized_output &&
+	    !is_ascii_str(name))
+		force_formd_normalized_output = 1;
+	else
+		force_formd_normalized_output = 0;
+
 	namelen = strlen(name);
-	if (is_ascii_str(name) ||
+	if (!force_formd_normalized_output ||
 	    utf8_normalizestr((const u_int8_t *)name, namelen,
                           (u_int8_t *)varbufptr, &nfdlen,
                           freespace, UTF_DECOMPOSED) != 0) {

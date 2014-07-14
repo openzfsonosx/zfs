@@ -84,6 +84,9 @@
 
 //#define dprintf printf
 
+int zfs_vnop_force_formd_normalized_output = 0; /* disabled by default */
+
+
 /*
  * Programming rules.
  *
@@ -2624,7 +2627,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 		uint64_t *next = NULL;
 		uint8_t dtype;
 		size_t namelen;
-		int ascii;
+		int force_formd_normalized_output;
         size_t  nfdlen;
 
 
@@ -2721,8 +2724,15 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 		 * Note: non-ascii names may expand (up to 3x) when converted to NFD
 		 */
 		namelen = strlen(zap.za_name);
-		ascii = is_ascii_str(zap.za_name);
-		if (!ascii)
+
+		/* sysctl to force formD normalization of vnop output */
+		if (zfs_vnop_force_formd_normalized_output &&
+		    !is_ascii_str(zap.za_name))
+			force_formd_normalized_output = 1;
+		else
+			force_formd_normalized_output = 0;
+
+		if (force_formd_normalized_output)
 			namelen = MIN(extended ? MAXPATHLEN-1 : MAXNAMLEN, namelen * 3);
 
 		reclen = DIRENT_RECLEN(namelen, extended);
@@ -2764,7 +2774,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			 * so convert to NFD before exporting them.
 			 */
 			namelen = strlen(zap.za_name);
-			if (ascii ||
+			if (!force_formd_normalized_output ||
 			    utf8_normalizestr((const u_int8_t *)zap.za_name, namelen,
 			                      (u_int8_t *)eodp->d_name, &nfdlen,
 			                      MAXPATHLEN-1, UTF_DECOMPOSED) != 0) {
@@ -2793,7 +2803,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			 * so convert to NFD before exporting them.
 			 */
 			namelen = strlen(zap.za_name);
-			if (ascii ||
+			if (!force_formd_normalized_output ||
 			    utf8_normalizestr((const u_int8_t *)zap.za_name, namelen,
 			                      (u_int8_t *)odp->d_name, &nfdlen,
 			                      MAXNAMLEN, UTF_DECOMPOSED) != 0) {

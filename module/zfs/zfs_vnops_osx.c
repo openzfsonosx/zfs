@@ -73,6 +73,8 @@ unsigned int zfs_vnop_create_negatives = 1;
 unsigned int zfs_vnop_reclaim_throttle = 33280;
 #endif
 
+extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
+
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
 #define	DECLARE_CONTEXT(ap) \
@@ -2019,6 +2021,7 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 	size_t  namelen;
 	int  error = 0;
 	uint64_t xattr;
+	int force_formd_normalized_output;
 
 	dprintf("+listxattr vp %p\n", ap->a_vp);
 
@@ -2053,7 +2056,14 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 		 * so convert to NFD before exporting them.
 		 */
 		namelen = strlen(za.za_name);
-		if (!is_ascii_str(za.za_name) &&
+
+		if (zfs_vnop_force_formd_normalized_output &&
+		    !is_ascii_str(za.za_name))
+			force_formd_normalized_output = 1;
+		else
+			force_formd_normalized_output = 0;
+
+		if (force_formd_normalized_output &&
 		    utf8_normalizestr((const u_int8_t *)za.za_name, namelen,
 		    (u_int8_t *)nfd_name, &namelen, sizeof (nfd_name),
 		    UTF_DECOMPOSED) == 0) {

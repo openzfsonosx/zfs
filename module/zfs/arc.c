@@ -271,6 +271,10 @@ extern unsigned zfs_vfs_suspend_fs_end_delay;
 SYSCTL_INT(_zfs, OID_AUTO, vfs_suspend_fs_end_delay,
            CTLFLAG_RW, &zfs_vfs_suspend_fs_end_delay, 0,
            "Delay at end of zfs_suspend_fs in seconds");
+extern unsigned zfs_vnop_force_formd_normalized_output;
+SYSCTL_INT(_zfs, OID_AUTO, vnop_force_formd_normalized_output,
+           CTLFLAG_RW, &zfs_vnop_force_formd_normalized_output, 0,
+           "Force formD normalization of vnop output");
 #endif
 
 
@@ -6152,6 +6156,7 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs_vnop_reclaim_throttle);
     sysctl_register_oid(&sysctl__zfs_vfs_suspend_fs_begin_delay);
     sysctl_register_oid(&sysctl__zfs_vfs_suspend_fs_end_delay);
+    sysctl_register_oid(&sysctl__zfs_vnop_force_formd_normalized_output);
 
 }
 
@@ -6195,5 +6200,6 @@ void arc_unregister_oids(void)
     sysctl_unregister_oid(&sysctl__zfs_vnop_reclaim_throttle);
     sysctl_unregister_oid(&sysctl__zfs_vfs_suspend_fs_begin_delay);
     sysctl_unregister_oid(&sysctl__zfs_vfs_suspend_fs_end_delay);
+    sysctl_unregister_oid(&sysctl__zfs_vnop_force_formd_normalized_output);
 }
 #endif
