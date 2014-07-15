@@ -737,6 +737,9 @@ libzfs_load_module(const char *module)
 										  module );
 				return EPERM;
 			}
+			else{
+				ret = 0;
+			}
 		}
 	}
 
