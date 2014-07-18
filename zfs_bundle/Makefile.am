@@ -9,7 +9,7 @@ PKGINFO = PkgInfo
 INFO_PLIST = Info.plist
 INFOPLIST_STRINGS = InfoPlist.strings
 
-bin_PROGRAMS = zfs.fs
+bin_PROGRAMS = .zfs.fs
 
 dist_noinst_DATA = $(INFO_PLIST) English.lproj/$(INFOPLIST_STRINGS) $(PKGINFO)
 
@@ -19,15 +19,16 @@ zfs.fs/Contents/$(INFO_PLIST):
 
 zfs.fs/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS):
 
-zfs.fs$(EXEEXT): zfs.fs/Contents/$(PKGINFO) zfs.fs/Contents/$(INFO_PLIST) zfs.fs/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS) $(INFO_PLIST) English.lproj/$(INFOPLIST_STRINGS) $(PKGINFO)
+.zfs.fs$(EXEEXT): zfs.fs/Contents/$(PKGINFO) zfs.fs/Contents/$(INFO_PLIST) zfs.fs/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS) $(INFO_PLIST) English.lproj/$(INFOPLIST_STRINGS) $(PKGINFO)
 	rm -rf zfs.fs
 	mkdir -p zfs.fs/Contents/Resources/English.lproj
 	cp -f $(PKGINFO) zfs.fs/Contents/
 	cp -f $(INFO_PLIST) zfs.fs/Contents/
 	cp -f English.lproj/$(INFOPLIST_STRINGS) zfs.fs/Contents/Resources/English.lproj/
 	plutil -convert binary1 zfs.fs/Contents/Resources/English.lproj/InfoPlist.strings
+	touch .zfs.fs
 
-install-exec-local:: zfs.fs
+install-exec-local:: .zfs.fs
 	rm -f $(FS_BUNDLEDIR)/Contents/$(PKGINFO)
 	rm -f $(FS_BUNDLEDIR)/Contents/$(INFO_PLIST)
 	rm -f $(FS_BUNDLEDIR)/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS)
@@ -35,5 +36,5 @@ install-exec-local:: zfs.fs
 	rsync -aH zfs.fs/ $(FS_BUNDLEDIR)/
 	chown -R root:wheel $(FS_BUNDLEDIR)
 
-clean:
+clean-local:
 	rm -rf zfs.fs

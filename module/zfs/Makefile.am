@@ -36,7 +36,7 @@ LINKFLAGS_KMOD = \
 	-lkmod \
 	-lcc_kext
 
-bin_PROGRAMS = zfs.kext
+bin_PROGRAMS = .zfs.kext
 noinst_PROGRAMS = zfs
 
 zfs_kext_SOURCE =
@@ -157,7 +157,7 @@ KERNEL_MODDIR = $(DESTDIR)@KERNEL_MODPREFIX@/zfs.kext
 
 dist_noinst_DATA = $(PLIST_STRING) $(INFO_PLIST)
 
-zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
+.zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
 	@echo
 	rm -rf zfs.kext
 	mkdir -p zfs.kext/Contents/Resources/English.lproj zfs.kext/Contents/MacOS
@@ -167,12 +167,13 @@ zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
 	cp -f $(top_srcdir)/VolumeIcon.icns zfs.kext/Contents/Resources/
 	cp -f zfs zfs.kext/Contents/MacOS/
 	kextlibs -undef-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/ || echo Ignoring errors
+	touch .zfs.kext
 
 # Show more information if there are linking problems.
 debug-kext-linking:
 	kextlibs -all-symbols -e -r $(SPL_KMODDIR) -xml zfs.kext/
 
-install-exec-local:: zfs.kext
+install-exec-local:: .zfs.kext
 	rm -rf $(KERNEL_MODDIR)
 	mkdir -p $(KERNEL_MODDIR)
 	rsync -r zfs.kext/ $(KERNEL_MODDIR)
@@ -182,6 +183,5 @@ install-exec-local:: zfs.kext
 	@echo "To uninstall module: rm -rf $(KERNEL_MODDIR)"
 	@echo
 
-clean:
-	rm -rf zfs.kext/
-	rm -f *.o *.lo zfs
+clean-local:
+	rm -rf zfs.kext
