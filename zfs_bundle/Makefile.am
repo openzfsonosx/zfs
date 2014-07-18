@@ -35,6 +35,7 @@ install-exec-local:: .zfs.fs
 	mkdir -p $(FS_BUNDLEDIR)
 	rsync -aH zfs.fs/ $(FS_BUNDLEDIR)/
 	chown -R root:wheel $(FS_BUNDLEDIR)
+	rm -f $(DESTDIR)$(bindir)/.zfs.fs
 
 clean-local:
 	rm -rf zfs.fs
