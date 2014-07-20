@@ -85,6 +85,8 @@
 #ifdef __APPLE__
 #include <sys/zfs_mount.h>
 #include <CommonCrypto/CommonDigest.h>
+static off_t snowflake_icon_size = 196764; // bytes
+static unsigned char snowflake_icon_md[] = {0x77, 0x1b, 0x99, 0x36, 0x77, 0x8c, 0xc9, 0xb1, 0x19, 0x4e, 0x70, 0x9b, 0x9e, 0xc0, 0xf6, 0x5e}; // md5sum
 #endif /* __APPLE__ */
 
 //#dprintf printf
@@ -428,46 +430,38 @@ zfs_add_options(zfs_handle_t *zhp, char *options, int len)
 #endif /* __LINUX */
 
 #ifdef __APPLE__
-static int
-file_compare(FILE *f1, FILE *f2)
+static boolean_t
+should_update_icon(FILE *current_icon)
 {
 	struct stat sbuf;
-	off_t f1size, f2size;
+	off_t current_icon_size;
 	CC_MD5_CTX ctx;
 	size_t n;
 	unsigned char buf[1024];
-	unsigned char mdresult1[CC_MD5_DIGEST_LENGTH];
-	unsigned char mdresult2[CC_MD5_DIGEST_LENGTH];
+	unsigned char current_icon_md[CC_MD5_DIGEST_LENGTH];
 	int i;
 
-	fstat(fileno(f1), &sbuf);
-	f1size = sbuf.st_size;
-	fstat(fileno(f2), &sbuf);
-	f2size = sbuf.st_size;
+	fstat(fileno(current_icon), &sbuf);
+	current_icon_size = sbuf.st_size;
 
-	if (f1size != f2size)
-		return (-1);
+	if (current_icon_size != snowflake_icon_size) {
+		return (B_FALSE);
+	}
 
 	CC_MD5_Init(&ctx);
-	while ((n = fread(buf, 1, 1024, f1)) > 0) {
+	while ((n = fread(buf, 1, 1024, current_icon)) > 0) {
 		CC_MD5_Update(&ctx, buf, (CC_LONG)n);
 	}
-	CC_MD5_Final(mdresult1, &ctx);
-	rewind(f1);
-
-	CC_MD5_Init(&ctx);
-	while ((n = fread(buf, 1, 1024, f2)) > 0) {
-		CC_MD5_Update(&ctx, buf, (CC_LONG)n);
-	}
-	CC_MD5_Final(mdresult2, &ctx);
-	rewind(f2);
+	CC_MD5_Final(current_icon_md, &ctx);
+	rewind(current_icon);
 
 	for(i = 0; i < CC_MD5_DIGEST_LENGTH; i++) {
-		if (mdresult1[i] != mdresult2[i])
-			return (-1);
+		if (current_icon_md[i] != snowflake_icon_md[i]) {
+			return (B_FALSE);
+		}
 	}
 
-	return (0);
+	return (B_TRUE);
 }
 
 /*
@@ -485,13 +479,16 @@ zfs_mount_seticon(const char *mountpoint)
 	FILE *dstfp, *srcfp;
 	unsigned char buf[1024];
 	unsigned int red;
-	boolean_t hasicon = 0;
+	boolean_t hasicon = B_FALSE;
+	boolean_t doupdatefinder = B_FALSE;
+	char template[MAXPATHLEN];
+	int fd = -1;
 
 	if (asprintf(&path, "%s/%s", mountpoint, MOUNT_POINT_CUSTOM_ICON) == -1)
 		return;
 
 	if ((stat(path, &sbuf) == 0 && sbuf.st_size > 0))
-		hasicon = 1;
+		hasicon = B_TRUE;
 
 	/* check if we can read in the default ZFS icon */
 	srcfp = fopen(CUSTOM_ICON_PATH, "r");
@@ -513,12 +510,14 @@ zfs_mount_seticon(const char *mountpoint)
 			free(path);
 			goto setfinderinfo;
 		}
-		if (file_compare(srcfp, dstfp) == 0) {
+		if (should_update_icon(dstfp) == B_FALSE) {
 			fclose(srcfp);
 			fclose(dstfp);
 			free(path);
 			goto setfinderinfo;
 		} else {
+			fprintf(stderr, "Updating custom icon of %s\n", mountpoint);
+			doupdatefinder = B_TRUE;
 			fclose(dstfp);
 		}
 	}
@@ -549,6 +548,18 @@ setfinderinfo:
 		finderinfo[4] |= BE_16(0x0400);
 		(void) setxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
 		    sizeof (finderinfo), 0, 0);
+		doupdatefinder = B_TRUE;
+	}
+
+	/* Need to touch a visible file to get Finder to update */
+	if (doupdatefinder) {
+		strlcpy(template, mountpoint, sizeof (template));
+		strlcat(template, "/tempXXXXXX", sizeof (template));
+		if ((fd = mkstemp(template)) != -1) {
+			unlink(template); // Just delete it right away
+			close(fd);
+		} else
+			fprintf(stderr, "Failed to create temp file.\n");
 	}
 }
 #endif
