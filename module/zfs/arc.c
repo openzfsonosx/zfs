@@ -4521,12 +4521,12 @@ arc_init(void)
 	/* set max to 1/2 of all memory */
 	arc_c_max = arc_c * 4;
 
-    // We have to be a little more concervative on OSX. But those dedicating
-    // to ZFS can always bring it up using sysctl.
-    arc_c_max >>= 1;
-    //arc_c_max >>= 3;
-
-    // 2GB system, ARC at about 82329600;
+	/*
+	 * We have to be a little more conservative on OS X. But users
+	 * dedicating their machines to ZFS can always bring it up using the
+	 * zfs.arc_max sysctl.
+	 */
+	arc_c_max >>= 1;
 
 #ifdef _KERNEL
     printf("ZFS: ARC limit set to (arc_c_max): %llu\n",
