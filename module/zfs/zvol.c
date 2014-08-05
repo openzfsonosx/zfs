@@ -2779,17 +2779,19 @@ zvol_dump_fini(zvol_state_t *zv)
 
 #endif
 
-
 int
-zvol_create_minors(const char *name)
+__zvol_create_minors(const char *name)
 {
 	uint64_t cookie;
 	objset_t *os;
 	char *osname, *p;
 	int error, len;
 
-	if (dataset_name_hidden(name))
+	printf("ZVOL async on '%s'\n", name);
+
+	if (dataset_name_hidden(name)) {
 		return (0);
+	}
 
 	if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
 		dprintf("ZFS WARNING 1: Unable to put hold on %s (error=%d).\n",
@@ -2840,7 +2842,7 @@ zvol_create_minors(const char *name)
 	while (dmu_dir_list_next(os, MAXPATHLEN - (p - osname), p, NULL,
 	    &cookie) == 0) {
 		dmu_objset_rele(os, FTAG);
-		(void) zvol_create_minors(osname);
+		(void) __zvol_create_minors(osname);
 		if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
 			dprintf("ZFS WARNING 2: %s %s (error=%d).\n",
 			    "Unable to put hold on",
@@ -2855,7 +2857,27 @@ zvol_create_minors(const char *name)
 	return (0);
 }
 
+/*
+ * Wrapper to free 'name' once all the recursion as finished.
+ */
+void
+_zvol_create_minors(char *name)
+{
+	__zvol_create_minors(name);
+	spa_strfree(name);
+}
 
+
+int
+zvol_create_minors(const char *arg)
+{
+	char *name;
+	printf("ASync ZVOL create minors requested.\n");
+	name = spa_strdup(arg);
+	(void) thread_create(NULL, 0, _zvol_create_minors, (void *)name, 0, &p0,
+						 TS_RUN, minclsyspri);
+	return (0);
+}
 
 
 /*
