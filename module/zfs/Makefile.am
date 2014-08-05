@@ -43,6 +43,7 @@ zfs_kext_SOURCE =
 
 zfs_SOURCES = \
 	arc.c \
+	blkptr.c \
 	bplist.c \
 	bpobj.c \
 	bptree.c \
@@ -60,6 +61,7 @@ zfs_SOURCES = \
 	dmu_zfetch.c \
 	dnode.c \
 	dnode_sync.c \
+	dsl_bookmark.c \
 	dsl_dataset.c \
 	dsl_deadlist.c \
 	dsl_deleg.c \
@@ -76,6 +78,7 @@ zfs_SOURCES = \
 	lzjb.c \
 	lz4.c \
 	metaslab.c \
+	range_tree.c \
 	refcount.c \
 	rrwlock.c \
 	sa.c \
@@ -88,6 +91,7 @@ zfs_SOURCES = \
 	spa_misc.c \
 	spa_stats.c \
 	space_map.c \
+	space_reftree.c \
 	txg.c \
 	uberblock.c \
 	unique.c \

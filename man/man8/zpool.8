@@ -62,7 +62,7 @@ zpool \- configures ZFS storage pools
 
 .LP
 .nf
-\fBzpool get\fR [\fB-p\fR] "\fIall\fR" | \fIproperty\fR[,...] \fIpool\fR ...
+\fBzpool get\fR [\fB-pH\fR] "\fIall\fR" | \fIproperty\fR[,...] \fIpool\fR ...
 .fi
 
 .LP
@@ -130,7 +130,7 @@ zpool \- configures ZFS storage pools
 
 .LP
 .nf
-\fBzpool replace\fR [\fB-f\fR] \fIpool\fR \fIdevice\fR [\fInew_device\fR]
+\fBzpool replace\fR [\fB-f\fR] [\fB-o\fR \fIproperty=value\fR]  \fIpool\fR \fIdevice\fR [\fInew_device\fR]
 .fi
 
 .LP
@@ -145,7 +145,7 @@ zpool \- configures ZFS storage pools
 
 .LP
 .nf
-\fBzpool split\fR [\fB-n\fR] [\fB-R\fR \fIaltroot\fR] [\fB-o\fR \fIproperty=value\fR] \fIpool\fR \fInewpool\fR
+\fBzpool split\fR [\fB-n\fR] [\fB-R\fR \fIaltroot\fR] [\fB-o\fR \fIproperty=value\fR] \fIpool\fR \fInewpool\fR [\fIdevice\fR ...]
 .fi
 
 .LP
@@ -577,6 +577,7 @@ Information about unsupported features that are enabled on the pool. See
 .ad
 .RS 20n
 .rt
+.sp
 Information about unsupported features that are enabled on the pool. See
 \fBzpool-features\fR(5) for details.
 .RE
@@ -1085,6 +1086,17 @@ See the "Properties" section for more information on the available pool properti
 .RS 6n
 .rt
 Display numbers in parseable (exact) values.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-H\fR\fR
+.ad
+.RS 6n
+.rt
+Scripted mode. Do not display headers, and separate fields by a single tab instead of arbitrary space.
 .RE
 
 .RE
@@ -1684,7 +1696,7 @@ Removes the specified device from the pool. This command currently only supports
 .ne 2
 .mk
 .na
-\fB\fBzpool replace\fR [\fB-f\fR] \fIpool\fR \fIold_device\fR [\fInew_device\fR]\fR
+\fB\fBzpool replace\fR [\fB-f\fR] [\fB-o\fR \fIproperty=value\fR] \fIpool\fR \fIold_device\fR [\fInew_device\fR]\fR
 .ad
 .sp .6
 .RS 4n
@@ -1702,6 +1714,17 @@ The size of \fInew_device\fR must be greater than or equal to the minimum size o
 .RS 6n
 .rt
 Forces use of \fInew_device\fR, even if its appears to be in use. Not all devices can be overridden in this manner.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-o\fR \fIproperty=value\fR
+.ad
+.sp .6n
+.RS 6n
+Sets the given pool properties. See the "Properties" section for a list of valid properties that can be set. The only property supported at the moment is \fBashift\fR.  \fBDo note\fR that some properties (among them \fBashift\fR) are \fInot\fR inherited from a previous vdev. They are vdev specific, not pool specific.
 .RE
 
 .RE
@@ -1747,11 +1770,13 @@ Sets the given property on the specified pool. See the "Properties" section for 
 .ne 2
 .mk
 .na
-\fBzpool split\fR [\fB-n\fR] [\fB-R\fR \fIaltroot\fR] [\fB-o\fR \fIproperty=value\fR] \fIpool\fR \fInewpool\fR
+\fBzpool split\fR [\fB-n\fR] [\fB-R\fR \fIaltroot\fR] [\fB-o\fR \fIproperty=value\fR] \fIpool\fR \fInewpool\fR [\fIdevice\fR ...]
 .ad
 .sp .6
 .RS 4n
-Split devices off \fIpool\fR creating \fInewpool\fR.  All \fBvdev\fRs in \fIpool\fR must be mirrors.  At the time of the split, \fInewpool\fR will be a replica of \fIpool\fR.
+Split devices off \fIpool\fR creating \fInewpool\fR. All \fBvdev\fRs in \fIpool\fR must be mirrors and the pool must not be in the process of resilvering. At the time of the split, \fInewpool\fR will be a replica of \fIpool\fR. By default, the last device in each mirror is split from \fIpool\fR to create \fInewpool\fR.
+
+The optional \fIdevice\fR specification causes the specified device(s) to be included in the new pool and, should any devices remain unspecified, the last device in each mirror is used as would be by default.
 
 .sp
 .ne 2

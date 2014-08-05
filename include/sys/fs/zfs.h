@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  */
@@ -46,10 +46,11 @@ extern "C" {
  * combined into masks that can be passed to various functions.
  */
 typedef enum {
-	ZFS_TYPE_FILESYSTEM	= 0x1,
-	ZFS_TYPE_SNAPSHOT	= 0x2,
-	ZFS_TYPE_VOLUME		= 0x4,
-	ZFS_TYPE_POOL		= 0x8
+	ZFS_TYPE_FILESYSTEM	= (1 << 0),
+	ZFS_TYPE_SNAPSHOT	= (1 << 1),
+	ZFS_TYPE_VOLUME		= (1 << 2),
+	ZFS_TYPE_POOL		= (1 << 3),
+	ZFS_TYPE_BOOKMARK	= (1 << 4)
 } zfs_type_t;
 
 typedef enum dmu_objset_type {
@@ -154,6 +155,7 @@ typedef enum {
 	ZFS_PROP_SELINUX_ROOTCONTEXT,
 	ZFS_PROP_RELATIME,
 #endif
+	ZFS_PROP_REDUNDANT_METADATA,
 	ZFS_NUM_PROPS
 } zfs_prop_t;
 
@@ -197,6 +199,7 @@ typedef enum {
 	ZPOOL_PROP_COMMENT,
 	ZPOOL_PROP_EXPANDSZ,
 	ZPOOL_PROP_FREEING,
+	ZPOOL_PROP_LEAKED,
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
 
@@ -353,6 +356,11 @@ typedef enum {
 	ZFS_XATTR_DIR = 1,
 	ZFS_XATTR_SA = 2
 } zfs_xattr_type_t;
+
+typedef enum {
+	ZFS_REDUNDANT_METADATA_ALL,
+	ZFS_REDUNDANT_METADATA_MOST
+} zfs_redundant_metadata_type_t;
 
 /*
  * On-disk version number.

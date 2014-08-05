@@ -4877,12 +4877,19 @@ top:
 	}
 	dmu_tx_commit(tx);
 
-out:
-	pvn_write_done(pp, (err ? B_ERROR : 0) | flags);
-	if (offp)
-		*offp = off;
-	if (lenp)
-		*lenp = len;
+	zfs_range_unlock(rl);
+
+#ifdef LINUX
+	if (wbc->sync_mode != WB_SYNC_NONE) {
+		/*
+		 * Note that this is rarely called under writepages(), because
+		 * writepages() normally handles the entire commit for
+		 * performance reasons.
+		 */
+		if (zfsvfs->z_log != NULL)
+			zil_commit(zfsvfs->z_log, zp->z_id);
+	}
+#endif
 
 	return (err);
 }

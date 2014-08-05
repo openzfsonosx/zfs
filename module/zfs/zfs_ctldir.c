@@ -612,7 +612,8 @@ zfsctl_shares_fid(ap)
 	znode_t		*dzp;
 	int		error;
 
-	ZFS_ENTER(zfsvfs);
+	if (zfs_component_namecheck(name, NULL, NULL) != 0)
+		return (SET_ERROR(EILSEQ));
 
 	if (zfsvfs->z_shares_dir == 0) {
 		ZFS_EXIT(zfsvfs);
@@ -903,7 +904,7 @@ zfsctl_snapshot_zname(struct vnode *vp, const char *name, int len, char *zname)
 {
 	objset_t *os = ((zfsvfs_t *)(vfs_fsprivate(vnode_mount(vp))))->z_os;
 
-	if (snapshot_namecheck(name, NULL, NULL) != 0)
+	if (zfs_component_namecheck(name, NULL, NULL) != 0)
 		return (EILSEQ);
 	dmu_objset_name(os, zname);
 	if (strlen(zname) + 1 + strlen(name) >= len)
@@ -1155,13 +1156,13 @@ zfsctl_snapdir_mkdir(struct vnode *dvp, char *dirname, vattr_t *vap, struct vnod
 {
     return ENOTSUP;
 #if 0
-	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(dvp));
-	char name[MAXNAMELEN];
-	int err, error;
-	//static enum symfollow follow = NO_FOLLOW;
-	static enum uio_seg seg = UIO_SYSSPACE;
+	zfs_sb_t *zsb = ITOZSB(dip);
+	char *dsname;
+	int error;
 
-	if (snapshot_namecheck(dirname, NULL, NULL) != 0)
+	dsname = kmem_alloc(MAXNAMELEN, KM_SLEEP);
+
+	if (zfs_component_namecheck(dirname, NULL, NULL) != 0) {
 		error = SET_ERROR(EILSEQ);
 		goto out;
 	}

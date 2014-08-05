@@ -27,7 +27,7 @@
  * Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
  * Rewritten for Linux by Brian Behlendorf <behlendorf1@llnl.gov>.
  * LLNL-CODE-403049.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -224,11 +224,11 @@ skip_open:
 	*psize = blkcnt * (uint64_t)blksize;
 	*max_psize = *psize;
 
-	dvd->vd_ashift = highbit(blksize) - 1;
+	dvd->vd_ashift = highbit64(blksize) - 1;
 	dprintf("vdev_disk: Device %p ashift set to %d\n", devvp,
 	    dvd->vd_ashift);
 
-	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
+	*ashift = highbit64(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
 
 	/*
 	 *  ### APPLE TODO ###

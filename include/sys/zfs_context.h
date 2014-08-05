@@ -25,9 +25,8 @@
 /*
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
- * Copyright 2013 Jorgen Lundman. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2013-2014 Jorgen Lundman. All rights reserved.
+ * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_ZFS_CONTEXT_H
