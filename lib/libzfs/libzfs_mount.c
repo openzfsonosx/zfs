@@ -1428,6 +1428,11 @@ zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
 					    "'%s'\n", zfs_get_name(nzhp));
 					dstlnk[ret] = '\0';
 					do_unmount_volume(dstlnk, 0);
+				} else {
+					printf("Can not unmount zvolume automatically, due to missing symlink.\n");
+					printf("'%s/zfs/zvol/dsk/%s' (is 'zed' running?)\n",
+						   ZVOL_ROOT, zfs_get_name(nzhp));
+					printf("Use 'diskutil unmountdisk /dev/diskX' to continue export\n");
 				}
 				free(volume);
 			}
