@@ -638,7 +638,7 @@ zio_inject_fault(char *name, int flags, int *id, zinject_record_t *record)
 
 		*id = handler->zi_id = inject_next_id++;
 		list_insert_tail(&inject_handlers, handler);
-		atomic_add_32(&zio_injection_enabled, 1);
+		atomic_inc_32(&zio_injection_enabled);
 
 		rw_exit(&inject_lock);
 	}
@@ -733,7 +733,7 @@ zio_clear_fault(int id)
 
 	spa_inject_delref(handler->zi_spa);
 	kmem_free(handler, sizeof (inject_handler_t));
-	atomic_add_32(&zio_injection_enabled, -1);
+	atomic_dec_32(&zio_injection_enabled);
 
 	return (0);
 }
