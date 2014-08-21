@@ -148,15 +148,6 @@
 #include <zfs_fletcher.h>
 #include <sys/sysctl.h>
 
-#ifdef __APPLE__
-#include <mach/kern_return.h>
-extern kern_return_t mach_vm_pressure_monitor(
-        boolean_t       wait_for_pressure,
-        unsigned int    nsecs_monitored,
-        unsigned int    *pages_reclaimed_p,
-        unsigned int    *pages_wanted_p);
-#endif /* __APPLE__ */
-
 #ifndef _KERNEL
 /* set with ZFS_DEBUG=watch, to enable watchpoints on frozen buffers */
 boolean_t arc_watch = B_FALSE;
@@ -2699,9 +2690,7 @@ arc_reclaim_thread(void *dummy __unused)
     clock_t                 growtime = 0;
     arc_reclaim_strategy_t  last_reclaim = ARC_RECLAIM_CONS;
     callb_cpr_t             cpr;
-    kern_return_t kr;
     uint64_t amount;
-    unsigned int num_pages;
 
     CALLB_CPR_INIT(&cpr, &arc_reclaim_thr_lock, callb_generic_cpr, FTAG);
 
@@ -2761,10 +2750,7 @@ arc_reclaim_thread(void *dummy __unused)
             }
 
 #ifdef _KERNEL
-            kr = mach_vm_pressure_monitor(FALSE, 0,
-                                          NULL, &num_pages);
-            if (kr == KERN_SUCCESS)
-                amount = num_pages * PAGE_SIZE;
+            amount = kmem_num_pages_wanted() * PAGE_SIZE;
 #endif
 
             if (!amount)
@@ -4526,7 +4512,7 @@ arc_init(void)
 	 * dedicating their machines to ZFS can always bring it up using the
 	 * zfs.arc_max sysctl.
 	 */
-	arc_c_max >>= 1;
+	//arc_c_max >>= 1;
 
 #ifdef _KERNEL
     printf("ZFS: ARC limit set to (arc_c_max): %llu\n",
