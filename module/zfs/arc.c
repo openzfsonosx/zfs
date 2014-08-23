@@ -1124,6 +1124,21 @@ buf_dest(void *vbuf, void *unused)
 	arc_space_return(sizeof (arc_buf_t), ARC_SPACE_HDRS);
 }
 
+/*
+ * Reclaim callback -- invoked when memory is low.
+ */
+/* ARGSUSED */
+static void
+hdr_recl(void *unused)
+{
+	/*
+	 * umem calls the reclaim func when we destroy the buf cache,
+	 * which is after we do arc_fini().
+	 */
+	if (!arc_dead)
+		cv_signal(&arc_reclaim_thr_cv);
+}
+
 static void
 buf_init(void)
 {
@@ -1161,7 +1176,7 @@ retry:
 	}
 
 	hdr_cache = kmem_cache_create("arc_buf_hdr_t", sizeof (arc_buf_hdr_t),
-	    0, hdr_cons, hdr_dest, NULL, NULL, NULL, 0);
+	    0, hdr_cons, hdr_dest, hdr_recl, NULL, NULL, 0);
 	buf_cache = kmem_cache_create("arc_buf_t", sizeof (arc_buf_t),
 	    0, buf_cons, buf_dest, NULL, NULL, NULL, 0);
 	l2arc_hdr_cache = kmem_cache_create("l2arc_buf_hdr_t", L2HDR_SIZE,
@@ -2669,8 +2684,8 @@ arc_reclaim_needed(void)
 
     if (spl_vm_pool_low()) return 1;
 
-    if (kmem_used() > (kmem_size() * 2) / 4)
-        return (1);
+    //if (kmem_used() > (kmem_size() * 2) / 4)
+    //    return (1);
 #endif
 
 
@@ -2690,8 +2705,8 @@ arc_reclaim_thread(void *dummy __unused)
     clock_t                 growtime = 0;
     arc_reclaim_strategy_t  last_reclaim = ARC_RECLAIM_CONS;
     callb_cpr_t             cpr;
-    uint64_t amount;
-
+    uint64_t                amount;
+	
     CALLB_CPR_INIT(&cpr, &arc_reclaim_thr_lock, callb_generic_cpr, FTAG);
 
     mutex_enter(&arc_reclaim_thr_lock);
@@ -2701,6 +2716,7 @@ arc_reclaim_thread(void *dummy __unused)
 #ifdef _KERNEL
         static uint64_t last_zfs_arc_max = 0;
         // Detect changes of arc stats from sysctl
+		
         if (zfs_arc_max != last_zfs_arc_max) {
             last_zfs_arc_max = zfs_arc_max;
 
