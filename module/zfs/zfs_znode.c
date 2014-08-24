@@ -143,6 +143,8 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 	int error;
 #endif
 
+	bzero(zp, sizeof(znode_t));
+	
 	POINTER_INVALIDATE(&zp->z_zfsvfs);
 	ASSERT(!POINTER_IS_VALID(zp->z_zfsvfs));
 
@@ -696,7 +698,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	struct vnodeopv_entry_desc *vops;
 #endif
 
-	zp = kmem_cache_alloc(znode_cache, KM_SLEEP|KM_ZERO);
+	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
 	zfs_znode_cache_constructor(zp, zfsvfs->z_parent->z_vfs, 0);
 
 	ASSERT(zp->z_dirlocks == NULL);
