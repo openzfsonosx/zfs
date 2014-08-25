@@ -1624,7 +1624,7 @@ zfs_ioc_pool_get_history(zfs_cmd_t *zc)
 		return (SET_ERROR(ENOTSUP));
 	}
 
-	hist_buf = vmem_alloc(size, KM_SLEEP);
+	hist_buf = kmem_alloc(size, KM_SLEEP);
 	if ((error = spa_history_get(spa, &zc->zc_history_offset,
 								 &zc->zc_history_len, hist_buf)) == 0) {
 		error = ddi_copyout(hist_buf,
@@ -1633,7 +1633,7 @@ zfs_ioc_pool_get_history(zfs_cmd_t *zc)
 	}
 
 	spa_close(spa, FTAG);
-	vmem_free(hist_buf, size);
+	kmem_free(hist_buf, size);
 	return (error);
 }
 
@@ -4517,7 +4517,7 @@ zfs_ioc_userspace_many(zfs_cmd_t *zc)
 	if (error)
 		return (error);
 
-	buf = vmem_alloc(bufsize, KM_SLEEP);
+	buf = kmem_alloc(bufsize, KM_SLEEP);
 
 	error = zfs_userspace_many(zsb, zc->zc_objset_type, &zc->zc_cookie,
 							   buf, &zc->zc_nvlist_dst_size);
@@ -4527,7 +4527,7 @@ zfs_ioc_userspace_many(zfs_cmd_t *zc)
 						 (user_addr_t)(uintptr_t)zc->zc_nvlist_dst,
                          zc->zc_nvlist_dst_size, 0);
 	}
-	vmem_free(buf, bufsize);
+	kmem_free(buf, bufsize);
 	zfsvfs_rele(zsb, FTAG);
 
 	return (error);

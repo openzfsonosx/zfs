@@ -348,15 +348,8 @@ dbuf_fini(void)
 
 	for (i = 0; i < DBUF_MUTEXES; i++)
 		mutex_destroy(&h->hash_mutexes[i]);
-#if defined(_KERNEL) && defined(HAVE_SPL)
-	/*
-	 * Large allocations which do not require contiguous pages
-	 * should be using vmem_free() in the linux kernel
-	 */
-	vmem_free(h->hash_table, (h->hash_table_mask + 1) * sizeof (void *));
-#else
+
 	kmem_free(h->hash_table, (h->hash_table_mask + 1) * sizeof (void *));
-#endif
 	kmem_cache_destroy(dbuf_cache);
 }
 
