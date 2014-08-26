@@ -1428,6 +1428,9 @@ zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
 					    "'%s'\n", zfs_get_name(nzhp));
 					dstlnk[ret] = '\0';
 					do_unmount_volume(dstlnk, 0);
+				} else {
+					printf("Unable to automatically unmount ZVOL, is 'zed' running?\n");
+					printf("Use 'diskutil unmountdisk /dev/diskX' to complete export.\n");
 				}
 				free(volume);
 			}
