@@ -20,9 +20,9 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -104,7 +104,7 @@
  * with the buffer may be evicted prior to the callback.  The callback
  * must be made with *no locks held* (to prevent deadlock).  Additionally,
  * the users of callbacks must ensure that their private data is
- * protected from simultaneous callbacks from arc_buf_evict()
+ * protected from simultaneous callbacks from arc_clear_callback()
  * and arc_do_user_evicts().
  *
  * It as also possible to register a callback which is run when the
@@ -872,7 +872,7 @@ typedef struct l2arc_read_callback {
 	arc_buf_t		*l2rcb_buf;		/* read buffer */
 	spa_t			*l2rcb_spa;		/* spa */
 	blkptr_t		l2rcb_bp;		/* original blkptr */
-	zbookmark_t		l2rcb_zb;		/* original bookmark */
+	zbookmark_phys_t	l2rcb_zb;		/* original bookmark */
 	int			l2rcb_flags;		/* original flags */
 	enum zio_compress	l2rcb_compress;		/* applied compress */
 } l2arc_read_callback_t;
@@ -1752,8 +1752,12 @@ arc_buf_data_free(arc_buf_t *buf, void (*free_func)(void *, size_t))
 	}
 }
 
+/*
+ * Free up buf->b_data and if 'remove' is set, then pull the
+ * arc_buf_t off of the the arc_buf_hdr_t's list and free it.
+ */
 static void
-arc_buf_destroy(arc_buf_t *buf, boolean_t recycle, boolean_t all)
+arc_buf_destroy(arc_buf_t *buf, boolean_t recycle, boolean_t remove)
 {
 	arc_buf_t **bufp;
 
@@ -1803,7 +1807,7 @@ arc_buf_destroy(arc_buf_t *buf, boolean_t recycle, boolean_t all)
 	}
 
 	/* only remove the buf if requested */
-	if (!all)
+	if (!remove)
 		return;
 
 	/* remove the buf from the hdr list */
@@ -1849,6 +1853,8 @@ arc_hdr_destroy(arc_buf_hdr_t *hdr)
 			list_remove(l2hdr->b_dev->l2ad_buflist, hdr);
 			ARCSTAT_INCR(arcstat_l2_size, -hdr->b_size);
 			ARCSTAT_INCR(arcstat_l2_asize, -l2hdr->b_asize);
+			vdev_space_update(l2hdr->b_dev->l2ad_vdev,
+			    -l2hdr->b_asize, 0, 0);
 			kmem_cache_free(l2arc_hdr_cache, l2hdr);
 			arc_space_return(L2HDR_SIZE, ARC_SPACE_L2HDRS);
 			if (hdr->b_state == arc_l2c_only)
@@ -2437,7 +2443,7 @@ arc_do_user_evicts(void)
 		mutex_exit(&arc_eviction_mtx);
 
 		if (buf->b_efunc != NULL)
-			VERIFY(buf->b_efunc(buf) == 0);
+			VERIFY0(buf->b_efunc(buf->b_private));
 
 		buf->b_efunc = NULL;
 		buf->b_private = NULL;
@@ -3593,7 +3599,7 @@ arc_read_done(zio_t *zio)
 int
 arc_read(zio_t *pio, spa_t *spa, const blkptr_t *bp, arc_done_func_t *done,
     void *private, zio_priority_t priority, int zio_flags, uint32_t *arc_flags,
-    const zbookmark_t *zb)
+    const zbookmark_phys_t *zb)
 {
 	arc_buf_hdr_t *hdr = NULL;
 	arc_buf_t *buf = NULL;
@@ -3788,7 +3794,7 @@ top:
 		 */
 		ASSERT3U(hdr->b_size, ==, size);
 		DTRACE_PROBE4(arc__miss, arc_buf_hdr_t *, hdr, blkptr_t *, bp,
-		    uint64_t, size, zbookmark_t *, zb);
+		    uint64_t, size, zbookmark_phys_t *, zb);
 		ARCSTAT_BUMP(arcstat_misses);
 		ARCSTAT_CONDSTAT(!(hdr->b_flags & ARC_PREFETCH),
 		    demand, prefetch, hdr->b_type != ARC_BUFC_METADATA,
@@ -3973,16 +3979,25 @@ arc_freed(spa_t *spa, const blkptr_t *bp)
 
 
 /*
- * This is used by the DMU to let the ARC know that a buffer is
- * being evicted, so the ARC should clean up.  If this arc buf
- * is not yet in the evicted state, it will be put there.
+ * Clear the user eviction callback set by arc_set_callback(), first calling
+ * it if it exists.  Because the presence of a callback keeps an arc_buf cached
+ * clearing the callback may result in the arc_buf being destroyed.  However,
+ * it will not result in the *last* arc_buf being destroyed, hence the data
+ * will remain cached in the ARC. We make a copy of the arc buffer here so
+ * that we can process the callback without holding any locks.
+ *
+ * It's possible that the callback is already in the process of being cleared
+ * by another thread.  In this case we can not clear the callback.
+ *
+ * Returns B_TRUE if the callback was successfully called and cleared.
  */
-int
-arc_buf_evict(arc_buf_t *buf)
+boolean_t
+arc_clear_callback(arc_buf_t *buf)
 {
 	arc_buf_hdr_t *hdr;
 	kmutex_t *hash_lock;
-	arc_buf_t **bufp;
+	arc_evict_func_t *efunc = buf->b_efunc;
+	void *private = buf->b_private;
 
 	mutex_enter(&buf->b_evict_lock);
 	hdr = buf->b_hdr;
@@ -3992,17 +4007,16 @@ arc_buf_evict(arc_buf_t *buf)
 		 */
 		ASSERT(buf->b_data == NULL);
 		mutex_exit(&buf->b_evict_lock);
-		return (0);
+		return (B_FALSE);
 	} else if (buf->b_data == NULL) {
-		arc_buf_t copy = *buf; /* structure assignment */
 		/*
 		 * We are on the eviction list; process this buffer now
 		 * but let arc_do_user_evicts() do the reaping.
 		 */
 		buf->b_efunc = NULL;
 		mutex_exit(&buf->b_evict_lock);
-		VERIFY(copy.b_efunc(&copy) == 0);
-		return (1);
+		VERIFY0(efunc(private));
+		return (B_TRUE);
 	}
 	hash_lock = HDR_LOCK(hdr);
 	mutex_enter(hash_lock);
@@ -4012,48 +4026,21 @@ arc_buf_evict(arc_buf_t *buf)
 	ASSERT3U(refcount_count(&hdr->b_refcnt), <, hdr->b_datacnt);
 	ASSERT(hdr->b_state == arc_mru || hdr->b_state == arc_mfu);
 
-	/*
-	 * Pull this buffer off of the hdr
-	 */
-	bufp = &hdr->b_buf;
-	while (*bufp != buf)
-		bufp = &(*bufp)->b_next;
-	*bufp = buf->b_next;
-
-	ASSERT(buf->b_data != NULL);
-	arc_buf_destroy(buf, FALSE, FALSE);
-
-	if (hdr->b_datacnt == 0) {
-		arc_state_t *old_state = hdr->b_state;
-		arc_state_t *evicted_state;
-
-		ASSERT(hdr->b_buf == NULL);
-		ASSERT(refcount_is_zero(&hdr->b_refcnt));
-
-		evicted_state =
-		    (old_state == arc_mru) ? arc_mru_ghost : arc_mfu_ghost;
-
-		mutex_enter(&old_state->arcs_mtx);
-		mutex_enter(&evicted_state->arcs_mtx);
-
-		arc_change_state(evicted_state, hdr, hash_lock);
-		ASSERT(HDR_IN_HASH_TABLE(hdr));
-		hdr->b_flags |= ARC_IN_HASH_TABLE;
-		hdr->b_flags &= ~ARC_BUF_AVAILABLE;
-
-		mutex_exit(&evicted_state->arcs_mtx);
-		mutex_exit(&old_state->arcs_mtx);
-	}
-	mutex_exit(hash_lock);
-	mutex_exit(&buf->b_evict_lock);
-
-	VERIFY(buf->b_efunc(buf) == 0);
 	buf->b_efunc = NULL;
 	buf->b_private = NULL;
-	buf->b_hdr = NULL;
-	buf->b_next = NULL;
-	kmem_cache_free(buf_cache, buf);
-	return (1);
+
+	if (hdr->b_datacnt > 1) {
+		mutex_exit(&buf->b_evict_lock);
+		arc_buf_destroy(buf, FALSE, TRUE);
+	} else {
+		ASSERT(buf == hdr->b_buf);
+		hdr->b_flags |= ARC_BUF_AVAILABLE;
+		mutex_exit(&buf->b_evict_lock);
+	}
+
+	mutex_exit(hash_lock);
+	VERIFY0(efunc(private));
+	return (B_TRUE);
 }
 
 /*
@@ -4190,6 +4177,8 @@ arc_release(arc_buf_t *buf, void *tag)
 
 	if (l2hdr) {
 		ARCSTAT_INCR(arcstat_l2_asize, -l2hdr->b_asize);
+		vdev_space_update(l2hdr->b_dev->l2ad_vdev,
+		    -l2hdr->b_asize, 0, 0);
 		kmem_cache_free(l2arc_hdr_cache, l2hdr);
 		arc_space_return(L2HDR_SIZE, ARC_SPACE_L2HDRS);
 		ARCSTAT_INCR(arcstat_l2_size, -buf_size);
@@ -4204,7 +4193,7 @@ arc_release(arc_buf_t *buf, void *tag)
 /* ARGSUSED */
 int
 arc_release_bp(arc_buf_t *buf, void *tag, blkptr_t *bp, spa_t *spa,
-    zbookmark_t *zb)
+    zbookmark_phys_t *zb)
 {
 	arc_release(buf, tag);
 	return (0);
@@ -4219,17 +4208,6 @@ arc_released(arc_buf_t *buf)
 	released = (buf->b_data != NULL && buf->b_hdr->b_state == arc_anon);
 	mutex_exit(&buf->b_evict_lock);
 	return (released);
-}
-
-int
-arc_has_callback(arc_buf_t *buf)
-{
-	int callback;
-
-	mutex_enter(&buf->b_evict_lock);
-	callback = (buf->b_efunc != NULL);
-	mutex_exit(&buf->b_evict_lock);
-	return (callback);
 }
 
 #ifdef ZFS_DEBUG
@@ -4371,7 +4349,7 @@ arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
     blkptr_t *bp, arc_buf_t *buf, boolean_t l2arc, boolean_t l2arc_compress,
     const zio_prop_t *zp, arc_done_func_t *ready, arc_done_func_t *physdone,
     arc_done_func_t *done, void *private, zio_priority_t priority,
-    int zio_flags, const zbookmark_t *zb)
+    int zio_flags, const zbookmark_phys_t *zb)
 {
 	arc_buf_hdr_t *hdr = buf->b_hdr;
 	arc_write_callback_t *callback;
@@ -5073,6 +5051,7 @@ l2arc_write_done(zio_t *zio)
 	arc_buf_hdr_t *head, *ab, *ab_prev;
 	l2arc_buf_hdr_t *abl2;
 	kmutex_t *hash_lock;
+	int64_t bytes_dropped = 0;
 
 	cb = zio->io_private;
 	ASSERT(cb != NULL);
@@ -5120,6 +5099,7 @@ l2arc_write_done(zio_t *zio)
 			 */
 			list_remove(buflist, ab);
 			ARCSTAT_INCR(arcstat_l2_asize, -abl2->b_asize);
+			bytes_dropped += abl2->b_asize;
 			ab->b_l2hdr = NULL;
 			kmem_cache_free(l2arc_hdr_cache, abl2);
 			arc_space_return(L2HDR_SIZE, ARC_SPACE_L2HDRS);
@@ -5138,6 +5118,8 @@ l2arc_write_done(zio_t *zio)
 	list_remove(buflist, head);
 	kmem_cache_free(hdr_cache, head);
 	mutex_exit(&l2arc_buflist_mtx);
+
+	vdev_space_update(dev->l2ad_vdev, -bytes_dropped, 0, 0);
 
 	l2arc_do_free_on_write();
 
@@ -5277,6 +5259,7 @@ l2arc_evict(l2arc_dev_t *dev, uint64_t distance, boolean_t all)
 	arc_buf_hdr_t *ab, *ab_prev;
 	kmutex_t *hash_lock;
 	uint64_t taddr;
+	int64_t bytes_evicted = 0;
 
 	buflist = dev->l2ad_buflist;
 
@@ -5375,6 +5358,7 @@ top:
 			if (ab->b_l2hdr != NULL) {
 				abl2 = ab->b_l2hdr;
 				ARCSTAT_INCR(arcstat_l2_asize, -abl2->b_asize);
+				bytes_evicted += abl2->b_asize;
 				ab->b_l2hdr = NULL;
 				kmem_cache_free(l2arc_hdr_cache, abl2);
 				arc_space_return(L2HDR_SIZE, ARC_SPACE_L2HDRS);
@@ -5392,7 +5376,7 @@ top:
 	}
 	mutex_exit(&l2arc_buflist_mtx);
 
-	vdev_space_update(dev->l2ad_vdev, -(taddr - dev->l2ad_evict), 0, 0);
+	vdev_space_update(dev->l2ad_vdev, -bytes_evicted, 0, 0);
 	dev->l2ad_evict = taddr;
 }
 
@@ -5645,15 +5629,13 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 	ARCSTAT_INCR(arcstat_l2_write_bytes, write_asize);
 	ARCSTAT_INCR(arcstat_l2_size, write_sz);
 	ARCSTAT_INCR(arcstat_l2_asize, write_asize);
-	vdev_space_update(dev->l2ad_vdev, write_psize, 0, 0);
+	vdev_space_update(dev->l2ad_vdev, write_asize, 0, 0);
 
 	/*
 	 * Bump device hand to the device start if it is approaching the end.
 	 * l2arc_evict() will already have evicted ahead for this case.
 	 */
 	if (dev->l2ad_hand >= (dev->l2ad_end - target_sz)) {
-		vdev_space_update(dev->l2ad_vdev,
-		    dev->l2ad_end - dev->l2ad_hand, 0, 0);
 		dev->l2ad_hand = dev->l2ad_start;
 		dev->l2ad_evict = dev->l2ad_start;
 		dev->l2ad_first = B_FALSE;

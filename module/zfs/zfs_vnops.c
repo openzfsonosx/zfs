@@ -1207,6 +1207,7 @@ void
 zfs_get_done(zgd_t *zgd, int error)
 {
 	znode_t *zp = zgd->zgd_private;
+
 #ifndef __APPLE__
 	objset_t *os = zp->z_zfsvfs->z_os;
 #endif

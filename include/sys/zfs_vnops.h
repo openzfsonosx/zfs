@@ -239,8 +239,6 @@ extern void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl);
 extern void nfsacl_set_wellknown(int wkg, guid_t *guid);
 
 
-
-
 #ifdef	__cplusplus
 }
 #endif

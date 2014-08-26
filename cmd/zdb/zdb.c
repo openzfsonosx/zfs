@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  */
 
 #include <stdio.h>
@@ -113,11 +113,11 @@ static void
 usage(void)
 {
 	(void) fprintf(stderr,
-	    "Usage: %s [-CumdibcsDvhLXFPA] [-t txg] [-e [-p path...]] "
-	    "[-U config] [-M inflight I/Os] poolname [object...]\n"
+	    "Usage: %s [-CumMdibcsDvhLXFPA] [-t txg] [-e [-p path...]] "
+	    "[-U config] [-I inflight I/Os] poolname [object...]\n"
 	    "       %s [-divPA] [-e -p path...] [-U config] dataset "
 	    "[object...]\n"
-	    "       %s -m [-LXFPA] [-t txg] [-e [-p path...]] [-U config] "
+	    "       %s -mM [-LXFPA] [-t txg] [-e [-p path...]] [-U config] "
 	    "poolname [vdev [metaslab...]]\n"
 	    "       %s -R [-A] [-e [-p path...]] poolname "
 	    "vdev:offset:size[:flags]\n"
@@ -140,6 +140,7 @@ usage(void)
 	(void) fprintf(stderr, "        -h pool history\n");
 	(void) fprintf(stderr, "        -b block statistics\n");
 	(void) fprintf(stderr, "        -m metaslabs\n");
+	(void) fprintf(stderr, "        -M metaslab groups\n");
 	(void) fprintf(stderr, "        -c checksum all metadata (twice for "
 	    "all data) blocks\n");
 	(void) fprintf(stderr, "        -s report stats on zdb's I/O\n");
@@ -168,7 +169,7 @@ usage(void)
 	(void) fprintf(stderr, "        -P print numbers in parseable form\n");
 	(void) fprintf(stderr, "        -t <txg> -- highest txg to use when "
 	    "searching for uberblocks\n");
-	(void) fprintf(stderr, "        -M <number of inflight I/Os> -- "
+	(void) fprintf(stderr, "        -I <number of inflight I/Os> -- "
 	    "specify the maximum number of checksumming I/Os "
 	    "[default is 200]\n");
 	(void) fprintf(stderr, "Specify an option more than once (e.g. -bb) "
@@ -550,7 +551,7 @@ get_metaslab_refcount(vdev_t *vd)
 	int refcount = 0;
 	int c, m;
 
-	if (vd->vdev_top == vd) {
+	if (vd->vdev_top == vd && !vd->vdev_removing) {
 		for (m = 0; m < vd->vdev_ms_count; m++) {
 			space_map_t *sm = vd->vdev_ms[m]->ms_sm;
 
@@ -688,9 +689,10 @@ dump_metaslab(metaslab_t *msp)
 		 * The space map histogram represents free space in chunks
 		 * of sm_shift (i.e. bucket 0 refers to 2^sm_shift).
 		 */
-		(void) printf("\tOn-disk histogram:\n");
+		(void) printf("\tOn-disk histogram:\t\tfragmentation %llu\n",
+		    (u_longlong_t)msp->ms_fragmentation);
 		dump_histogram(sm->sm_phys->smp_histogram,
-		    SPACE_MAP_HISTOGRAM_SIZE(sm), sm->sm_shift);
+		    SPACE_MAP_HISTOGRAM_SIZE, sm->sm_shift);
 	}
 
 	if (dump_opt['d'] > 5 || dump_opt['m'] > 3) {
@@ -712,6 +714,48 @@ print_vdev_metaslab_header(vdev_t *vd)
 	(void) printf("\t%15s   %19s   %15s   %10s\n",
 	    "---------------", "-------------------",
 	    "---------------", "-------------");
+}
+
+static void
+dump_metaslab_groups(spa_t *spa)
+{
+	vdev_t *rvd = spa->spa_root_vdev;
+	metaslab_class_t *mc = spa_normal_class(spa);
+	uint64_t fragmentation;
+	int c;
+
+	metaslab_class_histogram_verify(mc);
+
+	for (c = 0; c < rvd->vdev_children; c++) {
+		vdev_t *tvd = rvd->vdev_child[c];
+		metaslab_group_t *mg = tvd->vdev_mg;
+
+		if (mg->mg_class != mc)
+			continue;
+
+		metaslab_group_histogram_verify(mg);
+		mg->mg_fragmentation = metaslab_group_fragmentation(mg);
+
+		(void) printf("\tvdev %10llu\t\tmetaslabs%5llu\t\t"
+		    "fragmentation",
+		    (u_longlong_t)tvd->vdev_id,
+		    (u_longlong_t)tvd->vdev_ms_count);
+		if (mg->mg_fragmentation == ZFS_FRAG_INVALID) {
+			(void) printf("%3s\n", "-");
+		} else {
+			(void) printf("%3llu%%\n",
+			    (u_longlong_t)mg->mg_fragmentation);
+		}
+		dump_histogram(mg->mg_histogram, RANGE_TREE_HISTOGRAM_SIZE, 0);
+	}
+
+	(void) printf("\tpool %s\tfragmentation", spa_name(spa));
+	fragmentation = metaslab_class_fragmentation(mc);
+	if (fragmentation == ZFS_FRAG_INVALID)
+		(void) printf("\t%3s\n", "-");
+	else
+		(void) printf("\t%3llu%%\n", (u_longlong_t)fragmentation);
+	dump_histogram(mc->mc_histogram, RANGE_TREE_HISTOGRAM_SIZE, 0);
 }
 
 static void
@@ -1022,7 +1066,8 @@ dump_dnode(objset_t *os, uint64_t object, void *data, size_t size)
 }
 
 static uint64_t
-blkid2offset(const dnode_phys_t *dnp, const blkptr_t *bp, const zbookmark_t *zb)
+blkid2offset(const dnode_phys_t *dnp, const blkptr_t *bp,
+    const zbookmark_phys_t *zb)
 {
 	if (dnp == NULL) {
 		ASSERT(zb->zb_level < 0);
@@ -1086,7 +1131,7 @@ snprintf_blkptr_compact(char *blkbuf, size_t buflen, const blkptr_t *bp)
 }
 
 static void
-print_indirect(blkptr_t *bp, const zbookmark_t *zb,
+print_indirect(blkptr_t *bp, const zbookmark_phys_t *zb,
     const dnode_phys_t *dnp)
 {
 	char blkbuf[BP_SPRINTF_LEN];
@@ -1115,7 +1160,7 @@ print_indirect(blkptr_t *bp, const zbookmark_t *zb,
 
 static int
 visit_indirect(spa_t *spa, const dnode_phys_t *dnp,
-    blkptr_t *bp, const zbookmark_t *zb)
+    blkptr_t *bp, const zbookmark_phys_t *zb)
 {
 	int err = 0;
 
@@ -1141,7 +1186,7 @@ visit_indirect(spa_t *spa, const dnode_phys_t *dnp,
 		/* recursively visit blocks below this */
 		cbp = buf->b_data;
 		for (i = 0; i < epb; i++, cbp++) {
-			zbookmark_t czb;
+			zbookmark_phys_t czb;
 
 			SET_BOOKMARK(&czb, zb->zb_objset, zb->zb_object,
 			    zb->zb_level - 1,
@@ -1165,7 +1210,7 @@ dump_indirect(dnode_t *dn)
 {
 	dnode_phys_t *dnp = dn->dn_phys;
 	int j;
-	zbookmark_t czb;
+	zbookmark_phys_t czb;
 
 	(void) printf("Indirect blocks:\n");
 
@@ -2264,7 +2309,7 @@ zdb_blkptr_done(zio_t *zio)
 	blkptr_t *bp = zio->io_bp;
 	int ioerr = zio->io_error;
 	zdb_cb_t *zcb = zio->io_private;
-	zbookmark_t *zb = &zio->io_bookmark;
+	zbookmark_phys_t *zb = &zio->io_bookmark;
 
 	zio_data_buf_free(zio->io_data, zio->io_size);
 
@@ -2298,7 +2343,7 @@ zdb_blkptr_done(zio_t *zio)
 
 static int
 zdb_blkptr_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
-    const zbookmark_t *zb, const dnode_phys_t *dnp, void *arg)
+    const zbookmark_phys_t *zb, const dnode_phys_t *dnp, void *arg)
 {
 	zdb_cb_t *zcb = arg;
 	dmu_object_type_t type;
@@ -2383,8 +2428,7 @@ zdb_leak(void *arg, uint64_t start, uint64_t size)
 }
 
 static metaslab_ops_t zdb_metaslab_ops = {
-	NULL,	/* alloc */
-	NULL	/* fragmented */
+	NULL	/* alloc */
 };
 
 static void
@@ -2756,7 +2800,7 @@ typedef struct zdb_ddt_entry {
 /* ARGSUSED */
 static int
 zdb_ddt_add_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
-    const zbookmark_t *zb, const dnode_phys_t *dnp, void *arg)
+    const zbookmark_phys_t *zb, const dnode_phys_t *dnp, void *arg)
 {
 	avl_tree_t *t = arg;
 	avl_index_t where;
@@ -2876,6 +2920,8 @@ dump_zpool(spa_t *spa)
 
 	if (dump_opt['d'] > 2 || dump_opt['m'])
 		dump_metaslabs(spa);
+	if (dump_opt['M'])
+		dump_metaslab_groups(spa);
 
 	if (dump_opt['d'] || dump_opt['i']) {
 		dump_dir(dp->dp_meta_objset);
@@ -3366,10 +3412,11 @@ main(int argc, char **argv)
 	int rewind = ZPOOL_NEVER_REWIND;
 	char *spa_config_path_env;
 #ifdef __APPLE__
-	const char *opts = "bcdhilmM:suCDRSAFLVXevp:t:U:PZ";
+	const char *opts = "bcdhilmMI:suCDRSAFLXevp:t:U:PZ";
 #else
-	const char *opts = "bcdhilmM:suCDRSAFLVXevp:t:U:P";
+	const char *opts = "bcdhilmMI:suCDRSAFLXevp:t:U:P";
 #endif
+
 	(void) setrlimit(RLIMIT_NOFILE, &rl);
 	(void) enable_extended_FILE_stdio(-1, -1);
 
@@ -3397,6 +3444,7 @@ main(int argc, char **argv)
 		case 'u':
 		case 'C':
 		case 'D':
+		case 'M':
 		case 'R':
 		case 'S':
 			dump_opt[c]++;
@@ -3413,10 +3461,7 @@ main(int argc, char **argv)
 		case 'V':
 			flags = ZFS_IMPORT_VERBATIM;
 			break;
-		case 'v':
-			verbose++;
-			break;
-		case 'M':
+		case 'I':
 			max_inflight = strtoull(optarg, NULL, 0);
 			if (max_inflight == 0) {
 				(void) fprintf(stderr, "maximum number "
@@ -3456,6 +3501,9 @@ main(int argc, char **argv)
 			zdb_forever = 1;
 			break;
 #endif
+		case 'v':
+			verbose++;
+			break;
 		default:
 			usage();
 			break;
