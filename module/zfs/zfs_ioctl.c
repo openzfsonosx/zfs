@@ -5842,7 +5842,8 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 	const zfs_ioc_vec_t *vec;
 	char *saved_poolname = NULL;
 	nvlist_t *innvl = NULL;
-	cred_t *cr = vfs_context_current();
+	vfs_context_t ctx = vfs_context_current();
+	cred_t *cr = vfs_context_ucred(ctx);
 
 	//printf("ioctl minor %d\n", minor);
 
