@@ -57,7 +57,11 @@ write_record(struct diffarg *da)
 		return (0);
 	}
 
+#ifdef _KERNEL
+	da->da_err = spl_vn_rdwr(UIO_WRITE, da->da_vp, (caddr_t)&da->da_ddr,
+#else
 	da->da_err = vn_rdwr(UIO_WRITE, da->da_vp, (caddr_t)&da->da_ddr,
+#endif
 	    sizeof (da->da_ddr), 0, UIO_SYSSPACE, FAPPEND,
 	    RLIM64_INFINITY, CRED(), &resid);
 	*da->da_offp += sizeof (da->da_ddr);
