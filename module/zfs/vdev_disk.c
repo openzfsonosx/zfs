@@ -176,12 +176,14 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	error = EINVAL;		/* presume failure */
 
 	if (vd->vdev_path != NULL) {
-		context = vfs_context_create((vfs_context_t)0);
+
+		context = vfs_context_create( spl_vfs_context_kernel() );
 
 		/* Obtain an opened/referenced vnode for the device. */
 		if ((error = vnode_open(vd->vdev_path, spa_mode(spa), 0, 0,
-		    &devvp, context)))
+								&devvp, context))) {
 			goto out;
+		}
 		if (!vnode_isblk(devvp)) {
 			error = ENOTBLK;
 			goto out;
@@ -196,14 +198,17 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		 * Disallow opening of a device that is currently in use.
 		 * Flush out any old buffers remaining from a previous use.
 		 */
-		if ((error = vfs_mountedon(devvp)))
+		if ((error = vfs_mountedon(devvp))) {
 			goto out;
+		}
 		if (VNOP_FSYNC(devvp, MNT_WAIT, context) != 0) {
 			error = ENOTBLK;
 			goto out;
 		}
-		if ((error = buf_invalidateblks(devvp, BUF_WRITE_DATA, 0, 0)))
+		if ((error = buf_invalidateblks(devvp, BUF_WRITE_DATA, 0, 0))) {
 			goto out;
+		}
+
 	} else {
 		goto out;
 	}
@@ -272,6 +277,8 @@ out:
 	}
 	if (context)
 		(void) vfs_context_rele(context);
+
+	if (error) printf("ZFS: vdev_disk_open() failed error %d\n", error);
 
 	return (error);
 }
