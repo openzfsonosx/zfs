@@ -322,7 +322,7 @@ vdev_disk_close(vdev_t *vd)
 #ifdef __APPLE__
 	if (dvd->vd_devvp != NULL) {
 		vfs_context_t context;
-		context = vfs_context_create((vfs_context_t)0);
+		context = vfs_context_create(spl_vfs_context_kernel());
 		(void) vnode_close(dvd->vd_devvp, spa_mode(vd->vdev_spa),
 		    context);
 		(void) vfs_context_rele(context);
@@ -385,7 +385,7 @@ vdev_disk_io_start(zio_t *zio)
 				break;
 			}
 
-			context = vfs_context_create((vfs_context_t)0);
+			context = vfs_context_create(spl_vfs_context_kernel());
 			error = VNOP_IOCTL(dvd->vd_devvp, DKIOCSYNCHRONIZECACHE,
 			    NULL, FWRITE, context);
 			(void) vfs_context_rele(context);
