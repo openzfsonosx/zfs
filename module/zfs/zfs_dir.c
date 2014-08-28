@@ -46,6 +46,7 @@
 //#include <sys/smp.h>
 #include <sys/zfs_dir.h>
 #include <sys/zfs_acl.h>
+#include <sys/zfs_vnops.h>
 #include <sys/fs/zfs.h>
 #include <sys/zap.h>
 #include <sys/dmu.h>
@@ -524,6 +525,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 
 
 
+
 /*
  * Delete the entire contents of a directory.  Return a count
  * of the number of entries that could not be deleted. If we encounter
@@ -572,7 +574,7 @@ zfs_purgedir(znode_t *dzp)
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
 			dmu_tx_abort(tx);
-			VN_RELE(ZTOV(xzp));
+			VN_RELE(ZTOV(xzp)); // async
 			skipped += 1;
 			continue;
 		}
@@ -585,7 +587,7 @@ zfs_purgedir(znode_t *dzp)
 			skipped += 1;
 		dmu_tx_commit(tx);
 
-		VN_RELE(ZTOV(xzp));
+		VN_RELE(ZTOV(xzp)); // async
 	}
 	zap_cursor_fini(&zc);
 	if (error != ENOENT)
@@ -623,7 +625,6 @@ zfs_rmnode(znode_t *zp)
              * Leave it in the unlinked set.
              */
             zfs_znode_dmu_fini(zp);
-            zfs_znode_free(zp);
             return;
         }
 	}
@@ -701,7 +702,7 @@ zfs_rmnode(znode_t *zp)
 	dmu_tx_commit(tx);
 out:
 	if (xzp)
-		VN_RELE(ZTOV(xzp));
+		VN_RELE(ZTOV(xzp)); // async
 }
 
 static uint64_t

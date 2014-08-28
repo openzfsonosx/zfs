@@ -1207,6 +1207,7 @@ void
 zfs_get_done(zgd_t *zgd, int error)
 {
 	znode_t *zp = zgd->zgd_private;
+
 #ifndef __APPLE__
 	objset_t *os = zp->z_zfsvfs->z_os;
 #endif
@@ -4883,6 +4884,17 @@ out:
 		*offp = off;
 	if (lenp)
 		*lenp = len;
+	zfs_range_unlock(rl);
+
+	if (wbc->sync_mode != WB_SYNC_NONE) {
+		/*
+		 * Note that this is rarely called under writepages(), because
+		 * writepages() normally handles the entire commit for
+		 * performance reasons.
+		 */
+		if (zsb->z_log != NULL)
+			zil_commit(zsb->z_log, zp->z_id);
+	}
 
 	return (err);
 }

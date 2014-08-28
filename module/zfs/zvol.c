@@ -244,7 +244,7 @@ struct maparg {
 /*ARGSUSED*/
 static int
 zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
-    const zbookmark_t *zb, const dnode_phys_t *dnp, void *arg)
+    const zbookmark_phys_t *zb, const dnode_phys_t *dnp, void *arg)
 {
 	struct maparg *ma = arg;
 	zvol_extent_t *ze;

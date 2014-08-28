@@ -903,7 +903,7 @@ zfsctl_snapshot_zname(struct vnode *vp, const char *name, int len, char *zname)
 {
 	objset_t *os = ((zfsvfs_t *)(vfs_fsprivate(vnode_mount(vp))))->z_os;
 
-	if (snapshot_namecheck(name, NULL, NULL) != 0)
+	if (zfs_component_namecheck(name, NULL, NULL) != 0)
 		return (EILSEQ);
 	dmu_objset_name(os, zname);
 	if (strlen(zname) + 1 + strlen(name) >= len)
@@ -1162,6 +1162,14 @@ zfsctl_snapdir_mkdir(struct vnode *dvp, char *dirname, vattr_t *vap, struct vnod
 	static enum uio_seg seg = UIO_SYSSPACE;
 
 	if (snapshot_namecheck(dirname, NULL, NULL) != 0)
+
+	zfs_sb_t *zsb = ITOZSB(dip);
+	char *dsname;
+	int error;
+
+	dsname = kmem_alloc(MAXNAMELEN, KM_SLEEP);
+
+	if (zfs_component_namecheck(dirname, NULL, NULL) != 0) {
 		error = SET_ERROR(EILSEQ);
 		goto out;
 	}
