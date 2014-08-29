@@ -501,11 +501,14 @@ zvol_create_minor(const char *name)
 		return (error);
 	}
 
+	// we should hold mutex_enter(&zfsdev_state_lock);
 	if ((minor = zfsdev_minor_alloc()) == 0) {
+		//mutex_exit(&zfsdev_state_lock);
 		dmu_objset_disown(os, FTAG);
 		mutex_exit(&spa_namespace_lock);
 		return (ENXIO);
 	}
+	//mutex_exit(&zfsdev_state_lock);
 
 	if (ddi_soft_state_zalloc(zfsdev_state, minor) != DDI_SUCCESS) {
 		dmu_objset_disown(os, FTAG);

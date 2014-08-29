@@ -6176,7 +6176,9 @@ zfs_devfs_clone(__unused dev_t dev, int action)
 	dprintf("zfs_devfs_clone action %d\n", action);
 
 	if (action == DEVFS_CLONE_ALLOC) {
+		mutex_enter(&zfsdev_state_lock);
 		minorx = zfsdev_minor_alloc();
+		mutex_exit(&zfsdev_state_lock);
 		dprintf("Returning minor %d\n");
 		return minorx;
 	}

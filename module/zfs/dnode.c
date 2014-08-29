@@ -119,6 +119,8 @@ dnode_cons(void *arg, void *unused, int kmflag)
 	    offsetof(dmu_buf_impl_t, db_link));
 
 	dn->dn_moved = 0;
+
+
 	return (0);
 }
 
@@ -367,7 +369,9 @@ dnode_create(objset_t *os, dnode_phys_t *dnp, dmu_buf_impl_t *db,
 {
 	dnode_t *dn = kmem_cache_alloc(dnode_cache, KM_PUSHPAGE);
 
+#ifndef __APPLE__  // Our kmem_cache does not use KMEM_UNINITIALIZED_PATTERN
 	ASSERT(!POINTER_IS_VALID(dn->dn_objset));
+#endif
 	dn->dn_moved = 0;
 
 	/*
