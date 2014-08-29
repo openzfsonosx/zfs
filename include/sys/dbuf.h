@@ -220,7 +220,7 @@ typedef struct dmu_buf_impl {
 	 * Our link on the owner dnodes's dn_dbufs list.
 	 * Protected by its dn_dbufs_mtx.
 	 */
-	list_node_t db_link;
+	avl_node_t db_link;
 
 	/* Data which is unique to data (leaf) blocks: */
 
