@@ -1054,11 +1054,8 @@ done:
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
-<<<<<<< HEAD
 #if 0
-=======
 #include <linux/module_compat.h>
->>>>>>> upstream/master
 
 static int avl_init(void) { return 0; }
 static int avl_fini(void) { return 0; }
