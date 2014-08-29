@@ -574,7 +574,8 @@ zfs_purgedir(znode_t *dzp)
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
 			dmu_tx_abort(tx);
-			VN_RELE(ZTOV(xzp)); // async
+			//VN_RELE(ZTOV(xzp)); // async
+			VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
 			skipped += 1;
 			continue;
 		}
@@ -587,7 +588,8 @@ zfs_purgedir(znode_t *dzp)
 			skipped += 1;
 		dmu_tx_commit(tx);
 
-		VN_RELE(ZTOV(xzp)); // async
+		//VN_RELE(ZTOV(xzp)); // async
+		VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
 	}
 	zap_cursor_fini(&zc);
 	if (error != ENOENT)
@@ -638,7 +640,7 @@ zfs_rmnode(znode_t *zp)
 		 * Not enough space.  Leave the file in the unlinked set.
 		 */
 		zfs_znode_dmu_fini(zp);
-		zfs_znode_free(zp);
+		//zfs_znode_free(zp);
 		return;
 	}
 
@@ -678,7 +680,7 @@ zfs_rmnode(znode_t *zp)
 		 */
 		dmu_tx_abort(tx);
 		zfs_znode_dmu_fini(zp);
-		zfs_znode_free(zp);
+		//zfs_znode_free(zp);
 		goto out;
 	}
 
@@ -702,7 +704,8 @@ zfs_rmnode(znode_t *zp)
 	dmu_tx_commit(tx);
 out:
 	if (xzp)
-		VN_RELE(ZTOV(xzp)); // async
+		//VN_RELE(ZTOV(xzp)); // async
+	VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
 }
 
 static uint64_t
