@@ -863,6 +863,24 @@ avl_update(avl_tree_t *t, void *obj)
 	return (B_FALSE);
 }
 
+void
+avl_swap(avl_tree_t *tree1, avl_tree_t *tree2)
+{
+	avl_node_t *temp_node;
+	ulong_t temp_numnodes;
+
+	ASSERT3P(tree1->avl_compar, ==, tree2->avl_compar);
+	ASSERT3U(tree1->avl_offset, ==, tree2->avl_offset);
+	ASSERT3U(tree1->avl_size, ==, tree2->avl_size);
+
+	temp_node = tree1->avl_root;
+	temp_numnodes = tree1->avl_numnodes;
+	tree1->avl_root = tree2->avl_root;
+	tree1->avl_numnodes = tree2->avl_numnodes;
+	tree2->avl_root = temp_node;
+	tree2->avl_numnodes = temp_numnodes;
+}
+
 /*
  * initialize a new AVL tree
  */
