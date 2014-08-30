@@ -228,10 +228,6 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
     bool res = super::start(provider);
 
     IOLog("ZFS: Loading module ... \n");
-	/*
-	 * Initialize znode cache, vnode ops, etc...
-	 */
-	zfs_znode_init();
 
 	/*
 	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
@@ -308,7 +304,6 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     zfs_ioctl_osx_fini();
     zvol_fini();
     zfs_vfsops_fini();
-    zfs_znode_fini();
 
 	//sysctl_unregister_oid(&sysctl__debug_maczfs_stalk);
     //	sysctl_unregister_oid(&sysctl__debug_maczfs);

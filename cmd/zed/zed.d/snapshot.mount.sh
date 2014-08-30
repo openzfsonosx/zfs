@@ -5,7 +5,7 @@
 
 # OS X notification script.
 function notify {
-	/usr/bin/osascript -e 'display notification "'"$1"'" with title "'"$2"'"'
+	sudo -u "$(stat -f '%Su' /dev/console)" /usr/bin/osascript -e 'display notification "'"$1"'" with title "'"$2"'"'
 }
 
 test -f "${ZED_SCRIPT_DIR}/zed.rc" && . "${ZED_SCRIPT_DIR}/zed.rc"

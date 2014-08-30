@@ -17,6 +17,7 @@
 	<key>WatchPaths</key>
 	<array>
 		<string>/dev/zfs</string>
+		<string>/etc/zfs</string>
 	</array>
 </dict>
 </plist>

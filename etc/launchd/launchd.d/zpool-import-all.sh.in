@@ -1,0 +1,7 @@
+#!/bin/bash
+
+export ZPOOL=@sbindir@/zpool
+export ZPOOL_IMPORT_ALL_COOKIE=/tmp/org.openzfsonosx.did-zpool-import-all
+
+"${ZPOOL}" import -a
+touch "${ZPOOL_IMPORT_ALL_COOKIE}"

@@ -73,6 +73,8 @@ unsigned int zfs_vnop_create_negatives = 1;
 unsigned int zfs_vnop_reclaim_throttle = 33280;
 #endif
 
+extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
+
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
 #define	DECLARE_CONTEXT(ap) \
@@ -1805,8 +1807,8 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 		goto out;
 	}
 
-	cn.pn_buf = (char *)spa_strdup(ap->a_name);
-	cn.pn_bufsize = strlen(cn.pn_buf);
+	cn.pn_bufsize = strlen(ap->a_name) + 1;
+	cn.pn_buf = (char*)kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
 
 	/* Lookup the attribute name. */
 	if ((error = zfs_dirlook(VTOZ(xdvp), (char *)ap->a_name, &xvp, 0, NULL,
@@ -1828,7 +1830,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	}
 out:
 	if (cn.pn_buf)
-		spa_strfree(cn.pn_buf);
+		kmem_free(cn.pn_buf, cn.pn_bufsize);
 	if (xvp) {
 		vnode_put(xvp);
 	}
@@ -1961,8 +1963,8 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 		goto out;
 	}
 
-	cn.pn_buf = (char *)spa_strdup(ap->a_name);
-	cn.pn_bufsize = strlen(cn.pn_buf);
+	cn.pn_bufsize = strlen(ap->a_name)+1;
+	cn.pn_buf = (char *)kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
 
 	/* Lookup the attribute name. */
 	if ((error = zfs_dirlook(VTOZ(xdvp), (char *)ap->a_name, &xvp, 0, NULL,
@@ -1976,7 +1978,7 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 
 out:
 	if (cn.pn_buf)
-		spa_strfree(cn.pn_buf);
+		kmem_free(cn.pn_buf, cn.pn_bufsize);
 
 	if (xvp) {
 		vnode_put(xvp);
@@ -2019,6 +2021,7 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 	size_t  namelen;
 	int  error = 0;
 	uint64_t xattr;
+	int force_formd_normalized_output;
 
 	dprintf("+listxattr vp %p\n", ap->a_vp);
 
@@ -2053,7 +2056,14 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 		 * so convert to NFD before exporting them.
 		 */
 		namelen = strlen(za.za_name);
-		if (!is_ascii_str(za.za_name) &&
+
+		if (zfs_vnop_force_formd_normalized_output &&
+		    !is_ascii_str(za.za_name))
+			force_formd_normalized_output = 1;
+		else
+			force_formd_normalized_output = 0;
+
+		if (force_formd_normalized_output &&
 		    utf8_normalizestr((const u_int8_t *)za.za_name, namelen,
 		    (u_int8_t *)nfd_name, &namelen, sizeof (nfd_name),
 		    UTF_DECOMPOSED) == 0) {
@@ -2109,7 +2119,6 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 	pathname_t cn = { 0 };
 	int  error = ENOATTR;
 	uint64_t xattr;
-
 	dprintf("+getnamedstream vp %p\n", ap->a_vp);
 
 	*svpp = NULLVP;
@@ -2128,8 +2137,8 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 	if (zfs_get_xattrdir(zp, &xdvp, cr, 0) != 0)
 		goto out;
 
-	cn.pn_buf = spa_strdup(ap->a_name);
-	cn.pn_bufsize = strlen(cn.pn_buf);
+	cn.pn_bufsize = strlen(ap->a_name) + 1;
+	cn.pn_buf = (char *)kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
 
 	/* Lookup the attribute name. */
 	if ((error = zfs_dirlook(VTOZ(xdvp), (char *)ap->a_name, svpp, 0, NULL,
@@ -2137,7 +2146,8 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 		if (error == ENOENT)
 			error = ENOATTR;
 	}
-	spa_strfree(cn.pn_buf);
+
+	kmem_free(cn.pn_buf, cn.pn_bufsize);
 
 out:
 	if (xdvp)

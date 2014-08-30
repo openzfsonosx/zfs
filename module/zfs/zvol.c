@@ -244,7 +244,7 @@ struct maparg {
 /*ARGSUSED*/
 static int
 zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
-    const zbookmark_t *zb, const dnode_phys_t *dnp, void *arg)
+    const zbookmark_phys_t *zb, const dnode_phys_t *dnp, void *arg)
 {
 	struct maparg *ma = arg;
 	zvol_extent_t *ze;
@@ -501,11 +501,14 @@ zvol_create_minor(const char *name)
 		return (error);
 	}
 
+	// we should hold mutex_enter(&zfsdev_state_lock);
 	if ((minor = zfsdev_minor_alloc()) == 0) {
+		//mutex_exit(&zfsdev_state_lock);
 		dmu_objset_disown(os, FTAG);
 		mutex_exit(&spa_namespace_lock);
 		return (ENXIO);
 	}
+	//mutex_exit(&zfsdev_state_lock);
 
 	if (ddi_soft_state_zalloc(zfsdev_state, minor) != DDI_SUCCESS) {
 		dmu_objset_disown(os, FTAG);

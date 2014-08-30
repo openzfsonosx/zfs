@@ -21,6 +21,8 @@
 #include <sys/xattr.h>
 #include <sys/utfconv.h>
 
+extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
+
 
 /* Originally from illumos:uts/common/sys/vfs.h */
 typedef uint64_t vfs_feature_t;
@@ -558,8 +560,9 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 		return (error);
 	}
 
-	cn.pn_buf = spa_strdup(name);
-	cn.pn_bufsize = strlen(name);
+	cn.pn_bufsize = strlen(name)+1;
+	cn.pn_buf = (char *)kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
+
 
  top:
 	/* Lock the attribute entry name. */
@@ -611,7 +614,7 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 	zfs_dirent_unlock(dl);
  out:
     if (cn.pn_buf)
-        spa_strfree(cn.pn_buf);
+		kmem_free(cn.pn_buf, cn.pn_bufsize);
 
 	if (error == EEXIST)
 		error = ENOATTR;
@@ -1059,17 +1062,20 @@ void fileattrpack(attrinfo_t *aip, zfsvfs_t *zfsvfs, znode_t *zp)
 			vnode_t *xdvp = NULLVP;
 			vnode_t *xvp = NULLVP;
 			pathname_t cn = { 0 };
+			char *name = NULL;
 
-			cn.pn_buf = spa_strdup(XATTR_RESOURCEFORK_NAME);
-			cn.pn_bufsize = strlen(cn.pn_buf);
+			name = spa_strdup(XATTR_RESOURCEFORK_NAME);
+			cn.pn_bufsize = strlen(name)+1;
+			cn.pn_buf = kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
 
 			/* Grab the hidden attribute directory vnode. */
 			if (zfs_get_xattrdir(zp, &xdvp, cr, 0) == 0 &&
-			    zfs_dirlook(VTOZ(xdvp), cn.pn_buf, &xvp, 0, NULL,
+			    zfs_dirlook(VTOZ(xdvp), name, &xvp, 0, NULL,
                             &cn) == 0) {
 				rsrcsize = VTOZ(xvp)->z_size;
 			}
-            spa_strfree(cn.pn_buf);
+            spa_strfree(name);
+			kmem_free(cn.pn_buf, cn.pn_bufsize);
 
 			if (xvp)
 				vnode_put(xvp);
@@ -1095,6 +1101,7 @@ void nameattrpack(attrinfo_t *aip, const char *name, int namelen)
 	struct attrreference * attr_refptr;
 	u_int32_t attrlen;
 	size_t nfdlen, freespace;
+	int force_formd_normalized_output;
 
 	varbufptr = *aip->ai_varbufpp;
 	attr_refptr = (struct attrreference *)(*aip->ai_attrbufpp);
@@ -1104,8 +1111,15 @@ void nameattrpack(attrinfo_t *aip, const char *name, int namelen)
 	 * Mac OS X: non-ascii names are UTF-8 NFC on disk
 	 * so convert to NFD before exporting them.
 	 */
+
+	if (zfs_vnop_force_formd_normalized_output &&
+	    !is_ascii_str(name))
+		force_formd_normalized_output = 1;
+	else
+		force_formd_normalized_output = 0;
+
 	namelen = strlen(name);
-	if (is_ascii_str(name) ||
+	if (!force_formd_normalized_output ||
 	    utf8_normalizestr((const u_int8_t *)name, namelen,
                           (u_int8_t *)varbufptr, &nfdlen,
                           freespace, UTF_DECOMPOSED) != 0) {
@@ -1224,6 +1238,7 @@ void getfinderinfo(znode_t *zp, cred_t *cr, finderinfo_t *fip)
 	pathname_t  cn = { 0 };
 	int		error;
     uint64_t xattr = 0;
+	char *name = NULL;
 
     if (sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zp->z_zfsvfs),
                    &xattr, sizeof(xattr)) ||
@@ -1246,17 +1261,20 @@ void getfinderinfo(znode_t *zp, cred_t *cr, finderinfo_t *fip)
 		goto out;
 	}
 
-	cn.pn_buf = spa_strdup(XATTR_FINDERINFO_NAME);
-	cn.pn_bufsize = strlen(cn.pn_buf);
+	name = spa_strdup(XATTR_FINDERINFO_NAME);
+	cn.pn_bufsize = strlen(name)+1;
+	cn.pn_buf = kmem_zalloc(cn.pn_bufsize, KM_SLEEP);
 
-	if ((error = zfs_dirlook(VTOZ(xdvp), cn.pn_buf, &xvp, 0, NULL, &cn))) {
+	if ((error = zfs_dirlook(VTOZ(xdvp), name, &xvp, 0, NULL, &cn))) {
 		goto out;
 	}
 	error = dmu_read_uio(zp->z_zfsvfs->z_os, VTOZ(xvp)->z_id, auio,
 	                     sizeof (finderinfo_t));
 out:
-    if (cn.pn_buf)
-        spa_strfree(cn.pn_buf);
+    if (name)
+        spa_strfree(name);
+	if (cn.pn_buf)
+		kmem_free(cn.pn_buf, cn.pn_bufsize);
 	if (auio)
 		uio_free(auio);
 	if (xvp)

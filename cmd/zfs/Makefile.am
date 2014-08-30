@@ -24,6 +24,7 @@ zfs_LDADD = \
 zfs_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID)
 
 install-exec-hook:
+	$(MKDIR_P) $(DESTDIR)/sbin
 	/bin/ln -f $(DESTDIR)$(sbindir)/zfs $(DESTDIR)/sbin/mount_zfs
 	/bin/ln -f $(DESTDIR)$(sbindir)/zfs $(DESTDIR)/sbin/umount_zfs
 

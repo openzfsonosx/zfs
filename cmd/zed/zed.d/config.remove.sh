@@ -5,7 +5,7 @@
 
 # OS X notification script.
 function notify {
-	/usr/bin/osascript -e 'display notification "'"$1"'" with title "'"$2"'"'
+	sudo -u "$(stat -f '%Su' /dev/console)" /usr/bin/osascript -e 'display notification "'"$1"'" with title "'"$2"'"'
 }
 
 
@@ -17,7 +17,7 @@ if [ -d /etc/zfs ]; then
 	    eid="${ZEVENT_EID}" class="${ZEVENT_SUBCLASS}" \
 	    "${ZEVENT_POOL:+pool=$ZEVENT_POOL}"
 
-	notify "zpool.cache file has been removed" "config.sync"
+	notify "zpool.cache file has been removed" "config.remove"
 
 	fi
 

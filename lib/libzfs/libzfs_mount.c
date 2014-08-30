@@ -84,6 +84,9 @@
 
 #ifdef __APPLE__
 #include <sys/zfs_mount.h>
+#include <CommonCrypto/CommonDigest.h>
+static off_t snowflake_icon_size = 196764; // bytes
+static unsigned char snowflake_icon_md[] = {0x77, 0x1b, 0x99, 0x36, 0x77, 0x8c, 0xc9, 0xb1, 0x19, 0x4e, 0x70, 0x9b, 0x9e, 0xc0, 0xf6, 0x5e}; // md5sum
 #endif /* __APPLE__ */
 
 //#dprintf printf
@@ -428,30 +431,38 @@ zfs_add_options(zfs_handle_t *zhp, char *options, int len)
 #endif /* __LINUX */
 
 #ifdef __APPLE__
-
-static int
-file_compare(FILE *f1, FILE *f2)
+static boolean_t
+should_update_icon(FILE *current_icon)
 {
-	int c1, c2;
-	int ret = 0;
+	struct stat sbuf;
+	off_t current_icon_size;
+	CC_MD5_CTX ctx;
+	size_t n;
+	unsigned char buf[1024];
+	unsigned char current_icon_md[CC_MD5_DIGEST_LENGTH];
+	int i;
 
-	while (1) {
-		c1 = getc(f1);
-		c2 = getc(f2);
+	fstat(fileno(current_icon), &sbuf);
+	current_icon_size = sbuf.st_size;
 
-		if (c1 != c2) {
-			ret = -1;
-			break;
-		}
-
-		if (c1 == EOF || c2 == EOF)
-			break;
+	if (current_icon_size != snowflake_icon_size) {
+		return (B_FALSE);
 	}
 
-	rewind(f1);
-	rewind(f2);
+	CC_MD5_Init(&ctx);
+	while ((n = fread(buf, 1, 1024, current_icon)) > 0) {
+		CC_MD5_Update(&ctx, buf, (CC_LONG)n);
+	}
+	CC_MD5_Final(current_icon_md, &ctx);
+	rewind(current_icon);
 
-	return (ret);
+	for(i = 0; i < CC_MD5_DIGEST_LENGTH; i++) {
+		if (current_icon_md[i] != snowflake_icon_md[i]) {
+			return (B_FALSE);
+		}
+	}
+
+	return (B_TRUE);
 }
 
 /*
@@ -469,13 +480,16 @@ zfs_mount_seticon(const char *mountpoint)
 	FILE *dstfp, *srcfp;
 	unsigned char buf[1024];
 	unsigned int red;
-	boolean_t hasicon = 0;
+	boolean_t hasicon = B_FALSE;
+	boolean_t doupdatefinder = B_FALSE;
+	char template[MAXPATHLEN];
+	int fd = -1;
 
 	if (asprintf(&path, "%s/%s", mountpoint, MOUNT_POINT_CUSTOM_ICON) == -1)
 		return;
 
 	if ((stat(path, &sbuf) == 0 && sbuf.st_size > 0))
-		hasicon = 1;
+		hasicon = B_TRUE;
 
 	/* check if we can read in the default ZFS icon */
 	srcfp = fopen(CUSTOM_ICON_PATH, "r");
@@ -497,12 +511,14 @@ zfs_mount_seticon(const char *mountpoint)
 			free(path);
 			goto setfinderinfo;
 		}
-		if (file_compare(srcfp, dstfp) == 0) {
+		if (should_update_icon(dstfp) == B_FALSE) {
 			fclose(srcfp);
 			fclose(dstfp);
 			free(path);
 			goto setfinderinfo;
 		} else {
+			fprintf(stderr, "Updating custom icon of %s\n", mountpoint);
+			doupdatefinder = B_TRUE;
 			fclose(dstfp);
 		}
 	}
@@ -533,6 +549,18 @@ setfinderinfo:
 		finderinfo[4] |= BE_16(0x0400);
 		(void) setxattr(mountpoint, XATTR_FINDERINFO_NAME, &finderinfo,
 		    sizeof (finderinfo), 0, 0);
+		doupdatefinder = B_TRUE;
+	}
+
+	/* Need to touch a visible file to get Finder to update */
+	if (doupdatefinder) {
+		strlcpy(template, mountpoint, sizeof (template));
+		strlcat(template, "/tempXXXXXX", sizeof (template));
+		if ((fd = mkstemp(template)) != -1) {
+			unlink(template); // Just delete it right away
+			close(fd);
+		} else
+			fprintf(stderr, "Failed to create temp file.\n");
 	}
 }
 #endif
@@ -691,8 +719,20 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT)
 		fprintf(stderr, "ZFS: snapshot mountpoint '%s'\n", mountpoint);
 
-	if (!(flags & MS_RDONLY))
+	if (!(flags & MS_RDONLY)) {
+		char *path;
+
+		/* We need to fully disable Spotlight, or it can hang at export */
+		if (asprintf(&path, "%s/.metadata_never_index", mountpoint) > 0) {
+			int fd;
+			//fd = open(path, O_RDONLY|O_TRUNC|O_CREAT, 0644);
+			//if (fd > 0) close(fd);
+			free(path);
+		}
+
 		zfs_mount_seticon(mountpoint);
+
+	}
 #endif
 
 	/* remove the mounted entry before re-adding on remount */
@@ -1400,6 +1440,9 @@ zpool_disable_volumes(zfs_handle_t *nzhp, void *data)
 					    "'%s'\n", zfs_get_name(nzhp));
 					dstlnk[ret] = '\0';
 					do_unmount_volume(dstlnk, 0);
+				} else {
+					printf("Unable to automatically unmount ZVOL, is 'zed' running?\n");
+					printf("Use 'diskutil unmountdisk /dev/diskX' to complete export.\n");
 				}
 				free(volume);
 			}

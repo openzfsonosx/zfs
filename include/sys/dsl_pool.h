@@ -87,6 +87,7 @@ typedef struct dsl_pool {
 	struct dsl_dir *dp_root_dir;
 	struct dsl_dir *dp_mos_dir;
 	struct dsl_dir *dp_free_dir;
+	struct dsl_dir *dp_leak_dir;
 	struct dsl_dataset *dp_origin_snap;
 	uint64_t dp_root_dir_obj;
 	struct taskq *dp_iput_taskq;
@@ -150,10 +151,10 @@ void dsl_free_sync(zio_t *pio, dsl_pool_t *dp, uint64_t txg,
     const blkptr_t *bpp);
 int dsl_read(zio_t *pio, spa_t *spa, const blkptr_t *bpp, arc_buf_t *pbuf,
     arc_done_func_t *done, void *_private, int priority, int zio_flags,
-    uint32_t *arc_flags, const zbookmark_t *zb);
+    uint32_t *arc_flags, const zbookmark_phys_t *zb);
 int dsl_read_nolock(zio_t *pio, spa_t *spa, const blkptr_t *bpp,
     arc_done_func_t *done, void *_private, int priority, int zio_flags,
-    uint32_t *arc_flags, const zbookmark_t *zb);
+    uint32_t *arc_flags, const zbookmark_phys_t *zb);
 void dsl_pool_create_origin(dsl_pool_t *dp, dmu_tx_t *tx);
 void dsl_pool_upgrade_clones(dsl_pool_t *dp, dmu_tx_t *tx);
 void dsl_pool_upgrade_dir_clones(dsl_pool_t *dp, dmu_tx_t *tx);
