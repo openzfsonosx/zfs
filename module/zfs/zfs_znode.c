@@ -411,7 +411,10 @@ zfs_znode_init(void)
 	    /* zfs_znode_cache_constructor */ NULL,
 	    zfs_znode_cache_destructor, NULL, NULL,
 	    NULL, 0);
-	kmem_cache_set_move(znode_cache, zfs_znode_move);
+	
+	// BGH - dont support move semantics here yet.
+	// zfs_znode_move() requires porting
+	//kmem_cache_set_move(znode_cache, zfs_znode_move);
 }
 
 void
