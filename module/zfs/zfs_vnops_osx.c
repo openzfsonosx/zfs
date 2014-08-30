@@ -1568,6 +1568,17 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	vnode_clearfsnode(vp); /* vp->v_data = NULL */
 	vnode_removefsref(vp); /* ADDREF from vnode_create */
 
+	if (!zfsvfs) {
+		printf("ZFS: vnop_reclaim with zfsvfs == NULL - tell lundman\n");
+		return 0;
+	}
+
+	if (zfsctl_is_node(vp)) {
+		printf("ZFS: vnop_reclaim with ctldir node - tell lundman\n");
+		return 0;
+	}
+
+
 	/*
 	 * Calls into vnode_create() can trigger reclaim and since we are
 	 * likely to hold locks while inside vnode_create(), we need to defer
