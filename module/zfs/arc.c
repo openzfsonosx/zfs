@@ -2670,8 +2670,8 @@ arc_reclaim_needed(void)
 
     if (spl_vm_pool_low()) return 1;
 
-    //if (kmem_used() > (kmem_size() * 2) / 4)
-    //    return (1);
+    if (kmem_used() > (kmem_size() * 2) / 4)
+        return (1);
 #endif
 
 
@@ -2738,7 +2738,6 @@ arc_reclaim_thread(void *dummy __unused)
 #endif
 
         if (arc_reclaim_needed()) {
-
             if (arc_no_grow) {
                 if (last_reclaim == ARC_RECLAIM_CONS) {
                     last_reclaim = ARC_RECLAIM_AGGR;
