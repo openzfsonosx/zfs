@@ -159,6 +159,7 @@ free_blocks(dnode_t *dn, blkptr_t *bp, int num, dmu_tx_t *tx)
 }
 
 #ifdef ZFS_DEBUG
+#ifdef _KERNEL
 static void
 free_verify(dmu_buf_impl_t *db, uint64_t start, uint64_t end, dmu_tx_t *tx)
 {
@@ -235,6 +236,7 @@ free_verify(dmu_buf_impl_t *db, uint64_t start, uint64_t end, dmu_tx_t *tx)
 	}
 	DB_DNODE_EXIT(db);
 }
+#endif
 #endif
 
 static void

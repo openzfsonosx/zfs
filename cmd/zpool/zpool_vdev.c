@@ -1269,7 +1269,7 @@ make_disks(zpool_handle_t *zhp, nvlist_t *nv)
 		if (!is_exclusive || !is_spare(NULL, udevpath)) {
 			ret = strncmp(udevpath, UDISK_ROOT, strlen(UDISK_ROOT));
 			if (ret == 0) {
-				ret = lstat64(udevpath, &statbuf);
+				ret = stat(udevpath, &statbuf);
 				if (ret == 0 && S_ISLNK(statbuf.st_mode))
 					(void) unlink(udevpath);
 			}

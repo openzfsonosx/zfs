@@ -2258,11 +2258,6 @@ dmu_buf_add_ref(dmu_buf_t *db, void* tag)
     dbuf_add_ref((dmu_buf_impl_t *)db, tag);
 }
 
-uint64_t
-dmu_buf_refcount(dmu_buf_t *db)
-{
-    return dbuf_refcount((dmu_buf_impl_t *)db);
-}
 
 
 

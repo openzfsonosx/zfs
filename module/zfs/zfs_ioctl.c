@@ -749,26 +749,6 @@ zfs_secpolicy_destroy_snaps(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 	return (error);
 }
 
-/*
- * Destroying snapshots with delegated permissions requires
- * descendent mount and destroy permissions.
- */
-static int
-zfs_secpolicy_destroy_recursive(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
-{
-    int error;
-    char *dsname;
-
-    dsname = kmem_asprintf("%s@", zc->zc_name);
-
-    error = zfs_secpolicy_destroy_perms(dsname, cr);
-    if (error == ENOENT)
-        error = zfs_secpolicy_destroy_perms(zc->zc_name, cr);
-
-    strfree(dsname);
-    return (error);
-}
-
 int
 zfs_secpolicy_rename_perms(const char *from, const char *to, cred_t *cr)
 {
@@ -910,31 +890,6 @@ zfs_secpolicy_snapshot(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 	return (error);
 }
 
-static int
-zfs_secpolicy_create(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
-{
-    char	parentname[MAXNAMELEN];
-    int	error;
-
-    if ((error = zfs_get_parent(zc->zc_name, parentname,
-                                sizeof (parentname))) != 0)
-        return (error);
-
-    if (zc->zc_value[0] != '\0') {
-        if ((error = zfs_secpolicy_write_perms(zc->zc_value,
-                                               ZFS_DELEG_PERM_CLONE, cr)) != 0)
-            return (error);
-    }
-
-    if ((error = zfs_secpolicy_write_perms(parentname,
-                                           ZFS_DELEG_PERM_CREATE, cr)) != 0)
-        return (error);
-
-    error = zfs_secpolicy_write_perms(parentname,
-                                      ZFS_DELEG_PERM_MOUNT, cr);
-
-    return (error);
-}
 
 /*
  * Check for permission to create each snapshot in the nvlist.
@@ -2830,29 +2785,6 @@ zfs_ioc_pool_get_props(zfs_cmd_t *zc)
 	return (error);
 }
 
-/*
- * inputs:
- * zc_name              name of volume
- *
- * outputs:             none
- */
-static int
-zfs_ioc_create_minor(zfs_cmd_t *zc)
-{
-    return (zvol_create_minor(zc->zc_name));
-}
-
-/*
- * inputs:
- * zc_name              name of volume
- *
- * outputs:             none
- */
-static int
-zfs_ioc_remove_minor(zfs_cmd_t *zc)
-{
-	return (zvol_remove_minor(zc->zc_name));
-}
 
 /*
  * inputs:
@@ -3440,51 +3372,6 @@ zfs_destroy_unmount_origin(const char *fsname)
 	} else {
 		dmu_objset_rele(os, FTAG);
 	}
-}
-
-/*
- * inputs:
- * zc_name name of filesystem, snaps must be under it
- * zc_nvlist_src[_size] full names of snapshots to destroy
- * zc_defer_destroy mark for deferred destroy
- *
- * outputs:
- * zc_name on failure, name of failed snapshot
- */
-static int
-zfs_ioc_destroy_snaps_nvl(zfs_cmd_t *zc)
-{
-    int err, len;
-    nvlist_t *nvl;
-    nvpair_t *pair;
-
-    if ((err = get_nvlist(zc->zc_nvlist_src, zc->zc_nvlist_src_size,
-                          zc->zc_iflags, &nvl)) != 0)
-        return (err);
-
-    len = strlen(zc->zc_name);
-    for (pair = nvlist_next_nvpair(nvl, NULL); pair != NULL;
-         pair = nvlist_next_nvpair(nvl, pair)) {
-        const char *name = nvpair_name(pair);
-        /*
-         * The snap name must be underneath the zc_name. This ensures
-         * that our permission checks were legitimate.
-         */
-        if (strncmp(zc->zc_name, name, len) != 0 ||
-            (name[len] != '@' && name[len] != '/')) {
-            nvlist_free(nvl);
-            return (EINVAL);
-        }
-
-        (void) zfs_unmount_snap(name);
-        (void) zvol_remove_minor(name);
-    }
-
-    printf("dmu_snapshots_destroy_nvl was removed\n");
-    //err = dmu_snapshots_destroy_nvl(nvl, zc->zc_defer_destroy,
-    //                              zc->zc_name);
-    nvlist_free(nvl);
-    return (err);
 }
 
 

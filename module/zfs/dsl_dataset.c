@@ -2049,7 +2049,7 @@ dsl_dataset_promote_check(void *arg, dmu_tx_t *tx)
 		VERIFY0(dsl_dataset_get_snapname(ds));
 		err = dsl_dataset_snap_lookup(hds, ds->ds_snapname, &val);
 		if (err == 0) {
-			(void) strcpy(ddpa->err_ds, snap->ds->ds_snapname);
+			(void) strlcpy(ddpa->err_ds, snap->ds->ds_snapname, MAXNAMELEN);
 			err = SET_ERROR(EEXIST);
 			goto out;
 		}

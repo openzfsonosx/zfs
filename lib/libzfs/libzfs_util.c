@@ -54,7 +54,9 @@
 
 #ifdef __APPLE__
 #include <sys/zfs_mount.h>
+void libshare_init(void);
 #endif /* __APPLE__ */
+
 
 int
 libzfs_errno(libzfs_handle_t *hdl)
@@ -659,7 +661,6 @@ libzfs_run_process(const char *path, char *argv[], int flags)
 {
 	pid_t pid;
 	int rc, devnull_fd;
-	char **argp;
 
 	pid = vfork();
 	if (pid == 0) {

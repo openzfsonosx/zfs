@@ -361,6 +361,8 @@ _NOTE(CONSTCOND) } while (0)
 
 #endif
 
+extern void dbuf_fill_done(dmu_buf_impl_t *db, dmu_tx_t *tx);
+
 
 #ifdef	__cplusplus
 }

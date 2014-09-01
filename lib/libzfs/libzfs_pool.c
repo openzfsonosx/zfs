@@ -3429,7 +3429,7 @@ char *
 zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
     boolean_t verbose)
 {
-	char *path, *devid, *type;
+	char *path, *devid;
 	uint64_t value;
 	char buf[PATH_BUF_LEN];
 	char tmpbuf[PATH_BUF_LEN];
@@ -3507,9 +3507,9 @@ zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
 		 */
 		if (nvlist_lookup_uint64(nv, ZPOOL_CONFIG_WHOLE_DISK,
 		    &value) == 0 && value) {
-			int pathlen = strlen(path);
 			char *tmp = zfs_strdup(hdl, path);
 #ifdef illumos
+			int pathlen = strlen(path);
 			/*
 			 * If it starts with c#, and ends with "s0", chop
 			 * the "s0" off, or if it ends with "s0/old", remove

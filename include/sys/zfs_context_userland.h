@@ -81,6 +81,7 @@
 #include <sys/fm/fs/zfs.h>
 #include <sys/sunddi.h>
 #include <sys/debug.h>
+#include <stropts.h>
 
 /*
  * Stack

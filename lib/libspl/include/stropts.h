@@ -22,4 +22,8 @@
 #ifndef _LIBSPL_STROPTS_H
 #define	_LIBSPL_STROPTS_H
 
+
+int highbit64(uint64_t i);
+
+
 #endif /* _LIBSPL_STROPTS_H */

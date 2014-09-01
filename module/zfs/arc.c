@@ -2713,9 +2713,11 @@ arc_reclaim_thread(void *dummy __unused)
     clock_t                 growtime = 0;
     arc_reclaim_strategy_t  last_reclaim = ARC_RECLAIM_CONS;
     callb_cpr_t             cpr;
-    kern_return_t kr;
     uint64_t amount;
+#ifdef _KERNEL
     unsigned int num_pages;
+	kern_return_t kr;
+#endif
 
     CALLB_CPR_INIT(&cpr, &arc_reclaim_thr_lock, callb_generic_cpr, FTAG);
 
