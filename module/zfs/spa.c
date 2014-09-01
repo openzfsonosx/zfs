@@ -1183,7 +1183,7 @@ spa_deactivate(spa_t *spa)
 	 * it.
 	 */
 	if (spa->spa_did != 0) {
-		thread_join(spa->spa_did);
+		thread_join((void *)spa->spa_did);
 		spa->spa_did = 0;
 	}
 

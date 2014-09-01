@@ -176,8 +176,8 @@ typedef struct proc {
 } proc_t;
 #endif
 
-extern struct proc p0;
-#define	curproc		(&p0)
+extern struct proc *p0;
+#define	curproc		(p0)
 
 typedef void (*thread_func_t)(void *);
 typedef void (*thread_func_arg_t)(void *);
