@@ -22,6 +22,8 @@ extern "C" {
   extern kern_return_t _stop(kmod_info_t *ki, void *data);
 
 extern void *zfsdev_state;
+	static zvol_state_t *
+	zvol_minor_lookup(const char *name);
 };
   __attribute__((visibility("default"))) KMOD_EXPLICIT_DECL(net.lundman.zfs, "1.0.0", _start, _stop)
   __private_extern__ kmod_start_func_t *_realmain = 0;
@@ -443,6 +445,17 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
 
 	printf("iokitCreateNewDevice: size %llu\n", bytes);
 
+	printf("New pool '%s' - checking existance..\n", poolname);
+
+	/* Already locked in spa_import */
+	zv = zvol_minor_lookup(poolname);
+	printf("zv said %p\n", zv);
+
+	if (zv) {
+		destroyStorageDevice(poolname);
+	}
+
+
 	if ((minor = zfsdev_minor_alloc()) == 0) {
 		return false;
 	}
@@ -455,45 +468,36 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
 	zv = (zvol_state_t *) kmem_zalloc(sizeof (zvol_state_t), KM_SLEEP);
 	zs->zss_data = zv;
 
-    if (!zv) return false;
+	if (!zv) return false;
 
 	zv->zv_volsize = bytes;
 	zv->zv_volblocksize = block;
-    zv->zv_znode.z_is_zvol = 1;
+	zv->zv_znode.z_is_zvol = 1;
 	(void) strlcpy(zv->zv_name, poolname, MAXPATHLEN);
 	zv->zv_min_bs = DEV_BSHIFT;
 	zv->zv_minor = -1;
 
-    //IOLog("createBlock size %llu\n", zv->zv_volsize);
-
-    // Allocate a new IOBlockStorageDevice nub.
-    nub = new net_lundman_zfs_zvol_device;
-    if (nub == NULL)
+	// Allocate a new IOBlockStorageDevice nub.
+	nub = new net_lundman_zfs_zvol_device;
+	if (nub == NULL)
 		return false;
 
-    // Call the custom init method (passing the overall disk size).
-    if (nub->init(zv) == false) {
+	// Call the custom init method (passing the overall disk size).
+	if (nub->init(zv) == false) {
 		nub->release();
 		return false;
 	}
 
 
-    // Attach the IOBlockStorageDevice to the this driver.
-    // This call increments the reference count of the nub object,
-    // so we can release our reference at function exit.
-    if (nub->attach(this) == false) {
+	// Attach the IOBlockStorageDevice to the this driver.
+	// This call increments the reference count of the nub object,
+	// so we can release our reference at function exit.
+	if (nub->attach(this) == false) {
 		nub->release();
 		return false;
 	}
 
-    // Allow the upper level drivers to match against the IOStorageDevice.
-    /*
-     * We here use Synchronous, so that all services are attached now, then
-     * we can go look for the BSDName. We need this to create the correct
-     * symlinks.
-     */
-
-    nub->registerService( kIOServiceSynchronous);
+	nub->registerService( kIOServiceSynchronous);
 
     //ZFSProxyMediaScheme *proxy = OSDynamicCast(ZFSProxyMediaScheme,
 	//										   nub->getClient());
@@ -517,7 +521,6 @@ bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
 	printf("Stirring the pot...\n");
 	//requestProbe(0);
 	media->registerService();
-
 
  bail:
     // Unconditionally release the nub object.
@@ -547,7 +550,8 @@ zvol_minor_lookup(const char *name)
 
 	return (NULL);
 }
-}
+
+} /* "C" */
 
 
 bool net_lundman_zfs_zvol::destroyStorageDevice (char *poolname)

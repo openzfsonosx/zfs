@@ -2199,6 +2199,20 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_destroy(&zfsvfs.z_hold_mtx[i]);
+
+#ifdef _KERNAL
+		{
+			uint64_t refdbytes, availbytes, usedobjs, availobjs;
+
+			dmu_objset_space(os,
+							 &refdbytes, &availbytes, &usedobjs, &availobjs);
+			ZFSDriver_create_pool(spa_name(dmu_objset_spa(os)),
+								  availbytes, 512,
+								  B_FALSE, spa_guid(dmu_objset_spa(os)),
+								  dsl_dataset_fsid_guid(dmu_objset_ds(os)));
+		}
+#endif
+
 }
 
 #endif /* _KERNEL */

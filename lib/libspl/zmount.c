@@ -41,6 +41,52 @@
 #include <libzfs.h>
 
 
+char *iokit_device_to_dataset(char *device)
+{
+	char *result = NULL;
+	CFMutableDictionaryRef matchingDict;
+	io_service_t service;
+	CFStringRef cfstr;
+
+	if (!strncmp("/dev/", device, 5))
+		device = &device[5];
+
+	fprintf(stderr, "looking for '%s'\n", device);
+
+	matchingDict = IOBSDNameMatching(kIOMasterPortDefault, 0, device);
+	if (NULL == matchingDict)
+		return NULL;
+
+	/*
+	 * Fetch the object with the matching BSD node name.
+	 * Note that there should only be one match, so
+	 * IOServiceGetMatchingService is used instead of
+	 * IOServiceGetMatchingServices to simplify the code.
+	 */
+	service = IOServiceGetMatchingService(kIOMasterPortDefault,
+										  matchingDict);
+
+	if (IO_OBJECT_NULL == service) {
+		return NULL;
+	}
+
+	if (IOObjectConformsTo(service, kIOMediaClass)) {
+
+		cfstr = IORegistryEntryCreateCFProperty(service,
+						CFSTR("DATASET"), kCFAllocatorDefault, 0);
+		if (cfstr) {
+			result = strdup(CFStringGetCStringPtr(cfstr,
+						kCFStringEncodingMacRoman));
+			CFRelease(cfstr);
+		}
+	}
+	IOObjectRelease(service);
+	return result;
+}
+
+
+
+
 int iokit_mark_device_to_mount(char *dataset)
 {
 	CFDictionaryRef matchingDict = NULL;
@@ -71,6 +117,9 @@ int iokit_mark_device_to_mount(char *dataset)
 	if (!special_name) return -1;
 	snprintf(special_name, special_len, "ZVOL %s Media",
 			 dataset);
+
+	fprintf(stderr, "Looking for device: '%s' or '%s'\n", dataset,
+		special_name);
 
 
 
@@ -107,6 +156,7 @@ int iokit_mark_device_to_mount(char *dataset)
 
 				/* If this matches the dataset in question ... */
 				IORegistryEntryGetName(service, name);
+				fprintf(stderr, "device with name: %s\n", name);
 				if (!strcmp(name, dataset) ||
 					!strcmp(name, special_name)) {
 
@@ -165,6 +215,7 @@ iokit_dataset_to_device(const char *spec, io_name_t volname)
 	io_iterator_t iter = IO_OBJECT_NULL;
 	int status;
 	CFStringRef ioBSDName = NULL;
+	char *dataset = NULL;
 
 	if (spec == NULL)
 		return (-1);
@@ -182,6 +233,7 @@ iokit_dataset_to_device(const char *spec, io_name_t volname)
 
 	myMatchingDictionary = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
 	    &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	fprintf(stderr, "myMatchingDict %p\n", myMatchingDictionary);
 	CFDictionarySetValue(myMatchingDictionary, CFSTR(kIOPropertyMatchKey),
 	    mySubDictionary);
 
@@ -189,11 +241,14 @@ iokit_dataset_to_device(const char *spec, io_name_t volname)
 	status = IOServiceGetMatchingServices(kIOMasterPortDefault,
 	    myMatchingDictionary, &iter);
 
+	fprintf(stderr, "status %d iter %p\n", status, iter);
+
 	if ((status != KERN_SUCCESS) || (iter == IO_OBJECT_NULL)) {
 		fprintf(stderr, "failed to GetMatchingService\n");
 		CFRelease(specRef);
+		fprintf(stderr, "failed to GetMatchingService2\n");
 		CFRelease(mySubDictionary);
-		CFRelease(myMatchingDictionary);
+		fprintf(stderr, "failed to GetMatchingService3\n");
 		return (-1);
 	}
 
@@ -224,6 +279,8 @@ iokit_dataset_to_device(const char *spec, io_name_t volname)
 	CFRelease(specRef);
 	CFRelease(mySubDictionary);
 
+	free(dataset);
+
 	return (0);
 }
 
@@ -233,9 +290,11 @@ static int diskutil_mount(io_name_t device, const char *path, int flags)
 	char *argv[7] = {
 	    "/usr/sbin/diskutil",
 	    "mount",
-		"-mountPoint",
+		//"-mountPoint",
 	    NULL, NULL, NULL, NULL };
-	int rc, count = 3;
+		int rc;
+		//int count = 3;
+		int count = 2;
 
 #if 0
 	if (flags & MS_FORCE) {
@@ -244,7 +303,7 @@ static int diskutil_mount(io_name_t device, const char *path, int flags)
 	}
 #endif
 
-	argv[count++] = (char *)path;
+		//argv[count++] = (char *)path;
 	argv[count++] = (char *)device;
 
 	rc = libzfs_run_process(argv[0], argv, STDOUT_VERBOSE|STDERR_VERBOSE);
@@ -271,16 +330,20 @@ zmount(const char *spec, const char *dir, int mflag, char *fstype,
 	assert(optptr != NULL);
 	assert(optlen > 0);
 
+	fprintf(stderr, "zmount spec '%s' dir '%s'\n", spec, dir);
+
 	/*
 	 * If we can, we will translate from "$POOL/$DATASET" name here to
 	 * the fake IOKIT "/dev/diskXsY". So that DiskArbitration and
 	 * SpotLight is more involved. The zfs_vfs_mount() call in zfs_vfsops
 	 * translates it back again.
 	 */
-	if (iokit_dataset_to_device(spec, devname) != 0)
-		return (-1);
-	if (devname)
-		return (diskutil_mount(devname, dir, mflag));
+	if (iokit_dataset_to_device(spec, devname) == 0)
+		if (devname)
+			return (diskutil_mount(devname, dir, mflag));
+
+	/* Regular mount wanted, from cmd/zfs manual_mount */
+	fprintf(stderr, "zmount manual '%s' \n", spec);
 
 	mnt_args.fspec = spec;
 	mnt_args.mflag = mflag;

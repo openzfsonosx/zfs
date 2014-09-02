@@ -395,7 +395,6 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops, uint64_t txg)
 	    dsl_dataset_get_blkptr(ds), DMU_OST_ZFS, tx)));
 #ifdef _KERNEL
 	zfs_create_fs(os, kcred, zplprops, tx);
-	//zfs_create_fs(os, kcred, ZPL_VERSION, tx);// FIXME, should be props
 #endif
 	dsl_dataset_rele(ds, FTAG);
 
@@ -1060,4 +1059,3 @@ dsl_pool_config_held(dsl_pool_t *dp)
 {
     return (RRW_LOCK_HELD(&dp->dp_config_rwlock));
 }
-
