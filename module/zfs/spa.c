@@ -4393,8 +4393,6 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 	}
 
 #ifdef _KERNEL
-	zvol_remove_minors_symlink(pool);
-
 	ZFSDriver_remove_pool(pool);
 #endif
 

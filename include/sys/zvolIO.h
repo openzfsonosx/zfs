@@ -27,6 +27,7 @@ public:
 	virtual bool createBlockStorageDevice(zvol_state_t *zv);
 	virtual bool destroyBlockStorageDevice(zvol_state_t *zv);
 	virtual bool updateVolSize(zvol_state_t *zv);
+	virtual bool IOKit_Rescan(char *pool);
 };
 
 #include <IOKit/storage/IOBlockStorageDevice.h>

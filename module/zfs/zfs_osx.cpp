@@ -657,6 +657,43 @@ char *net_lundman_zfs_zvol::findDataset(char *dev)
 }
 
 
+bool net_lundman_zfs_zvol::IOKit_Rescan(char *dev)
+{
+	printf("IOKit_Rescan requested for '%s'\n", dev);
+	OSDictionary *matchingDict;
+    io_service_t            service;
+	char *found = dev;
+
+#if 0
+	if (!strncasecmp("/dev/", dev, 5))
+		dev = &dev[5];
+
+    matchingDict = IOBSDNameMatching(dev);
+    if (NULL == matchingDict) {
+        printf("IOBSDNameMatching returned a NULL dictionary.\n");
+    } else {
+		IOService *service = NULL;
+
+		service = IOService::waitForMatchingService(matchingDict, 5);
+
+        if (IO_OBJECT_NULL == service) {
+            printf("IOServiceGetMatchingService returned IO_OBJECT_NULL.\n");
+        } else {
+
+			IOLog("I am of class %s\n", service->getMetaClass()->getClassName());
+			IOLog("provider class %s\n", service->getProvider()->getMetaClass()->getClassName());
+
+
+		}
+
+	}
+#endif
+
+}
+
+
+
+
 /*
  * C language interfaces
  */
@@ -686,6 +723,13 @@ int ZFSDriver_remove_pool(char *poolname)
     static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyStorageDevice(poolname);
     return 0;
 }
+
+int ZFSDriver_IOKit_Rescan(char *poolname)
+{
+    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->IOKit_Rescan(poolname);
+    return 0;
+}
+
 
 int zvolSetVolsize(zvol_state_t *zv)
 {

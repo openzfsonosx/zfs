@@ -150,6 +150,7 @@ extern uint64_t zvolIO_kit_write(void *iomem, uint64_t offset,
 
 extern int zvolRemoveDevice(zvol_state_t *zv);
 extern int zvolCreateNewDevice(zvol_state_t *zv);
+extern int ZFSDriver_IOKit_Rescan(char *pool);
 
 extern int zvolSetVolsize(zvol_state_t *zv);
 

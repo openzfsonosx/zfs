@@ -290,11 +290,11 @@ static int diskutil_mount(io_name_t device, const char *path, int flags)
 	char *argv[7] = {
 	    "/usr/sbin/diskutil",
 	    "mount",
-		//"-mountPoint",
-	    NULL, NULL, NULL, NULL };
-		int rc;
-		//int count = 3;
-		int count = 2;
+		"-mountPoint",
+	    NULL, NULL, NULL, NULL
+	};
+	int rc;
+	int count = 3;
 
 #if 0
 	if (flags & MS_FORCE) {
@@ -303,10 +303,34 @@ static int diskutil_mount(io_name_t device, const char *path, int flags)
 	}
 #endif
 
-		//argv[count++] = (char *)path;
+#if 1
+	argv[count++] = (char *)path;
 	argv[count++] = (char *)device;
 
 	rc = libzfs_run_process(argv[0], argv, STDOUT_VERBOSE|STDERR_VERBOSE);
+#endif
+
+#if 0
+	fprintf(stderr, "Opening '%s' to issue ioctltltltltl\r\n", device);
+	int fd;
+	char *path2;
+
+	asprintf(&path2, "/dev/%s", device);
+
+	fd = open(path2, O_RDWR);
+	if ( fd >= 0) {
+		dk_format_capacity_t dkio = { 0 };
+		dkio.blockCount = 0;
+		dkio.blockSize = 0;
+		fprintf(stderr, "opened\r\n");
+		//rc = ioctl(fd, DKIOCEJECT, &dkio);
+		fprintf(stderr, "ioctl %d\r\n", rc);
+		perror("ioctl: ");
+		close(fd);
+	}
+
+	free(path2);
+#endif
 
 	return (rc ? EINVAL : 0);
 }

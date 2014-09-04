@@ -722,15 +722,23 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	if (!(flags & MS_RDONLY)) {
 		char *path;
 
+#if 0
 		/* We need to fully disable Spotlight, or it can hang at export */
 		if (asprintf(&path, "%s/.metadata_never_index", mountpoint) > 0) {
 			int fd;
-			//fd = open(path, O_RDONLY|O_TRUNC|O_CREAT, 0644);
-			//if (fd > 0) close(fd);
+			fd = open(path, O_RDONLY|O_TRUNC|O_CREAT, 0644);
+			if (fd > 0) close(fd);
 			free(path);
 		}
 
 		zfs_mount_seticon(mountpoint);
+#endif
+			{
+				zfs_cmd_t zc = {"\0"};
+				(void) strlcpy(zc.zc_name, "disk2",
+							   sizeof (zc.zc_name));
+				zfs_ioctl(hdl, ZFS_IOC_IOKIT_RESCAN, &zc);
+			}
 
 	}
 #endif

@@ -5133,6 +5133,21 @@ zfs_ioc_events_seek(zfs_cmd_t *zc)
 /*
  * inputs:
  * zc_name		name of new filesystem or snapshot
+ *
+ * trigger iokit to attempt to mount all datasets
+ */
+static int
+zfs_ioc_iokit_rescan(zfs_cmd_t *zc)
+{
+
+	ZFSDriver_IOKit_Rescan(zc->zc_name);
+
+	return (0);
+}
+
+/*
+ * inputs:
+ * zc_name		name of new filesystem or snapshot
  * zc_value		full name of old snapshot
  *
  * outputs:
@@ -5628,6 +5643,13 @@ zfs_ioctl_init(void)
 							  zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
 	zfs_ioctl_register_legacy(ZFS_IOC_EVENTS_SEEK, zfs_ioc_events_seek,
 							  zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
+
+	/*
+	 * Apple functions
+	 */
+	zfs_ioctl_register_legacy(ZFS_IOC_IOKIT_RESCAN, zfs_ioc_iokit_rescan,
+							  zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
+
 }
 
 

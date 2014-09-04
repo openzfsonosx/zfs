@@ -862,6 +862,8 @@ zvol_remove_minors_symlink(const char *name)
 	char *namebuf;
 	minor_t minor;
 
+	if (!name) return;
+
 	size_t name_buf_len = strlen(name) + 2;
 
 	namebuf = kmem_zalloc(name_buf_len, KM_SLEEP);

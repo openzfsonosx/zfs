@@ -515,7 +515,7 @@ IOReturn
 net_lundman_zfs_zvol_device::reportMediaState(bool *mediaPresent,
     bool *changedState)
 {
-	dprintf("reportMediaState\n");
+	printf("reportMediaState\n");
 	*mediaPresent = true;
 	*changedState = false;
 	return (kIOReturnSuccess);
@@ -543,15 +543,25 @@ IOReturn
 net_lundman_zfs_zvol_device::doEjectMedia(void)
 {
 	dprintf("ejectMedia\n");
-	// this->m_provider->doEjectMedia(this);
 	this->m_provider->doEjectMedia(zv);
+
+#if 0
+	IOLog("I am of class %s\n", getMetaClass()->getClassName());
+	IOLog("provider class %s\n", getProvider()->getMetaClass()->getClassName());
+	IOLog("provider provider class %s\n", getProvider()->getProvider()->getMetaClass()->getClassName());
+
+	getClient()->getClient()->registerService(kIOServiceSynchronous);
+	printf("BSDName %s\n", this->getBSDName());
+#endif
+
 	return (kIOReturnSuccess);
 }
 
 IOReturn
 net_lundman_zfs_zvol_device::doFormatMedia(UInt64 byteCapacity)
 {
-	dprintf("doFormat\n");
+	printf("doFormat\n");
+
 	return (kIOReturnSuccess);
 }
 
