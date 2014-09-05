@@ -1893,6 +1893,8 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 	uint64_t volsize	= 0;
 	int error			= 0;
 
+	printf("zvol_unmap\n");
+
 	if (zv == NULL)
 		return (ENXIO);
 
