@@ -66,7 +66,7 @@
 			<key>FSProbeOrder</key>
 			<integer>1000</integer>
 			<key>autodiskmount</key>
-			<false/>
+			<true/>
 		</dict>
                 <key>Whole</key>
                 <dict>
