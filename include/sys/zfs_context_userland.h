@@ -81,6 +81,7 @@
 #include <sys/fm/fs/zfs.h>
 #include <sys/sunddi.h>
 #include <sys/debug.h>
+#include <stropts.h>
 
 /*
  * Stack
@@ -112,14 +113,13 @@ extern void dprintf_setup(int *argc, char **argv);
 extern void __dprintf(const char *file, const char *func,
     int line, const char *fmt, ...);
 extern void cmn_err(int, const char *, ...);
-extern void vcmn_err(int, const char *, __va_list);
+extern void vcmn_err(int, const char *, va_list);
 extern void panic(const char *, ...);
-extern void vpanic(const char *, __va_list);
+extern void vpanic(const char *, va_list);
 
 #define       ERESTART (-1)            /* restart syscall */
 
 #define	fm_panic	panic
-
 /*
  * DTrace SDT probes have different signatures in userland than they do in
  * kernel.  If they're being used in kernel code, re-define them out of
@@ -176,8 +176,8 @@ typedef struct proc {
 } proc_t;
 #endif
 
-extern struct proc p0;
-#define	curproc		(&p0)
+extern struct proc *p0;
+#define	curproc		(p0)
 
 typedef void (*thread_func_t)(void *);
 typedef void (*thread_func_arg_t)(void *);

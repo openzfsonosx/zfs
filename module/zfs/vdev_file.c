@@ -60,7 +60,9 @@ static int
 vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
     uint64_t *ashift)
 {
+#if _KERNEL
 	static vattr_t vattr;
+#endif
 	vdev_file_t *vf;
 	struct vnode *vp;
 	int error = 0;

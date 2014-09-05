@@ -752,7 +752,7 @@ zpl_set_acl(struct inode *ip, int type, struct posix_acl *acl)
 				if (ip->i_mode != mode) {
 					ip->i_mode = mode;
 					ip->i_ctime = current_fs_time(sb);
-					mark_inode_dirty(ip);
+					zfs_mark_inode_dirty(ip);
 				}
 
 				if (error == 0)
@@ -910,7 +910,7 @@ zpl_init_acl(struct inode *ip, struct inode *dir)
 		if (!acl) {
 			ip->i_mode &= ~current_umask();
 			ip->i_ctime = current_fs_time(ITOZSB(ip)->z_sb);
-			mark_inode_dirty(ip);
+			zfs_mark_inode_dirty(ip);
 			return (0);
 		}
 	}
@@ -928,7 +928,7 @@ zpl_init_acl(struct inode *ip, struct inode *dir)
 		error = __posix_acl_create(&acl, GFP_KERNEL, &mode);
 		if (error >= 0) {
 			ip->i_mode = mode;
-			mark_inode_dirty(ip);
+			zfs_mark_inode_dirty(ip);
 			if (error > 0)
 				error = zpl_set_acl(ip, ACL_TYPE_ACCESS, acl);
 		}

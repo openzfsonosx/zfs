@@ -52,18 +52,15 @@
 
 #include <sys/zfs_context_userland.h>
 
-#endif /* _KERNEL */
+#endif
 
 #define noinline
-
 #define EBADE EBADMACHO
-
 #ifndef MAX_UPL_TRANSFER
 #define MAX_UPL_TRANSFER 256
 #endif
-
-#define      getcomm()                       "unknown"
-
+#define getcomm() "unknown"
 #define ZVOL_ROOT "/var/run"
+
 
 #endif	/* _SYS_ZFS_CONTEXT_H */

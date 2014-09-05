@@ -221,7 +221,6 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 int
 net_lundman_zfs_zvol_device::getBSDName(void)
 {
-	int err = 0;
 	IORegistryEntry *ioregdevice = 0;
 	OSObject *bsdnameosobj = 0;
 	OSString* bsdnameosstr = 0;

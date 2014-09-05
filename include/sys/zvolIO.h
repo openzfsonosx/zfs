@@ -9,7 +9,6 @@ class net_lundman_zfs_zvol : public IOService
 	OSDeclareDefaultStructors(net_lundman_zfs_zvol)
 
 private:
-	void *m_buffer;
 
 public:
 	virtual bool init(OSDictionary* dictionary = NULL);

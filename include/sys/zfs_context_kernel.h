@@ -83,6 +83,8 @@ typedef enum kmem_cbrc {
 #define	KMC_KMEM		0x0
 #define	KMC_VMEM		0x0
 
+#define noinline
+
 typedef struct dirent dirent_t;
 typedef struct direntry dirent64_t;
 
