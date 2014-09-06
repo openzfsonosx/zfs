@@ -6541,6 +6541,9 @@ manual_mount(int argc, char **argv)
 	int c;
 	int flags = 0;
 	char *dataset, *path;
+#ifdef __APPLE__
+	uint64_t zfs_version = 0;
+#endif
 
 	/* check options */
 	while ((c = getopt(argc, argv, ":mo:O")) != -1) {
@@ -6600,13 +6603,40 @@ manual_mount(int argc, char **argv)
 	(void) zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT, mountpoint,
 	    sizeof (mountpoint), NULL, NULL, 0, B_FALSE);
 
+#ifdef __APPLE__
+	/*
+	 * Fetch the max supported zfs version in case we get ENOTSUP
+	 * back from the mount command, since we need the zfs handle
+	 * to do so.
+	 */
+	zfs_version = zfs_prop_get_int(zhp, ZFS_PROP_VERSION);
+	if (zfs_version == 0) {
+		fprintf(stderr, gettext("unable to fetch "
+		    "ZFS version for filesystem '%s'\n"), dataset);
+		return (1);
+	}
+#endif
+
 	/* check for legacy mountpoint and complain appropriately */
 	ret = 0;
 	if (strcmp(mountpoint, ZFS_MOUNTPOINT_LEGACY) == 0) {
 		if (zmount(dataset, path, MS_OPTIONSTR | flags, MNTTYPE_ZFS,
 		    NULL, 0, mntopts, sizeof (mntopts)) != 0) {
-			(void) fprintf(stderr, gettext("mount failed: %s\n"),
-			    strerror(errno));
+#ifdef __APPLE__
+			if (errno == ENOTSUP && zfs_version > ZPL_VERSION) {
+				(void) fprintf(stderr,
+				    gettext("filesystem '%s' (v%d) is not "
+				    "supported by this implementation of "
+				    "ZFS (max v%d).\n"), dataset,
+				    (int) zfs_version, (int) ZPL_VERSION);
+			} else {
+#endif
+				(void) fprintf(stderr,
+				    gettext("mount failed: %s\n"),
+				    strerror(errno));
+#ifdef __APPLE__
+			}
+#endif
 			ret = 1;
 		}
 	} else {
