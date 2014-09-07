@@ -759,7 +759,6 @@ zpool_set_prop(zpool_handle_t *zhp, const char *propname, const char *propval)
 		return (-1);
 	}
 
-	fprintf(stderr, "pool_set_props\r\n");
 	ret = zfs_ioctl(zhp->zpool_hdl, ZFS_IOC_POOL_SET_PROPS, &zc);
 
 	zcmd_free_nvlists(&zc);
