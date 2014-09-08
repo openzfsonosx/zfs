@@ -29,6 +29,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <syslog.h>
 #include "zed_log.h"
