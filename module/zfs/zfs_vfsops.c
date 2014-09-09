@@ -115,151 +115,6 @@ int  zfs_module_stop(kmod_info_t *ki, void *data);
 extern int getzfsvfs(const char *dsname, zfsvfs_t **zfvp);
 
 
-// move these structs to _osx once wrappers are updated
-
-/*
- * ZFS file system features.
- */
-const vol_capabilities_attr_t zfs_capabilities = {
-	{
-		/* Format capabilities we support: */
-        /*	VOL_CAP_FMT_PERSISTENTOBJECTIDS |*/
-		VOL_CAP_FMT_SYMBOLICLINKS |
-		VOL_CAP_FMT_HARDLINKS |
-		VOL_CAP_FMT_SPARSE_FILES |
-		VOL_CAP_FMT_CASE_SENSITIVE |
-		VOL_CAP_FMT_CASE_PRESERVING |
-		VOL_CAP_FMT_FAST_STATFS |
-		VOL_CAP_FMT_2TB_FILESIZE |
-		VOL_CAP_FMT_HIDDEN_FILES |
-		/*VOL_CAP_FMT_PATH_FROM_ID*/
-        0,
-
-		/* Interface capabilities we support: */
-		VOL_CAP_INT_ATTRLIST |
-		VOL_CAP_INT_NFSEXPORT |
-		//VOL_CAP_INT_SEARCHFS |
-        /* VOL_CAP_INT_READDIRATTR | */
-        /* As the readdirattr function has not been updated since maczfs,
-         * it has been decided to disable this functionality, Darwin will
-         * adjust and use readdir, and getattr instead. */
-		VOL_CAP_INT_VOL_RENAME |
-		VOL_CAP_INT_ADVLOCK |
-		VOL_CAP_INT_FLOCK |
-		VOL_CAP_INT_EXTENDED_SECURITY |
-#if NAMEDSTREAMS
-		VOL_CAP_INT_NAMEDSTREAMS |
-#endif
-		VOL_CAP_INT_EXTENDED_ATTR ,
-
-		0 , 0
-	},
-	{
-		/* Format capabilities we know about: */
-		VOL_CAP_FMT_PERSISTENTOBJECTIDS |
-		VOL_CAP_FMT_SYMBOLICLINKS |
-		VOL_CAP_FMT_HARDLINKS |
-		VOL_CAP_FMT_JOURNAL |
-		VOL_CAP_FMT_JOURNAL_ACTIVE |
-		VOL_CAP_FMT_NO_ROOT_TIMES |
-		VOL_CAP_FMT_SPARSE_FILES |
-		VOL_CAP_FMT_ZERO_RUNS |
-		VOL_CAP_FMT_CASE_SENSITIVE |
-		VOL_CAP_FMT_CASE_PRESERVING |
-		VOL_CAP_FMT_FAST_STATFS |
-		VOL_CAP_FMT_2TB_FILESIZE |
-		VOL_CAP_FMT_OPENDENYMODES |
-		VOL_CAP_FMT_HIDDEN_FILES |
-		VOL_CAP_FMT_PATH_FROM_ID ,
-
-		/* Interface capabilities we know about: */
-		VOL_CAP_INT_SEARCHFS |
-		VOL_CAP_INT_ATTRLIST |
-		VOL_CAP_INT_NFSEXPORT |
-        /* VOL_CAP_INT_READDIRATTR | */
-        VOL_CAP_INT_EXCHANGEDATA |
-        VOL_CAP_INT_COPYFILE |
-        VOL_CAP_INT_ALLOCATE |
-		VOL_CAP_INT_VOL_RENAME |
-		VOL_CAP_INT_ADVLOCK |
-		VOL_CAP_INT_FLOCK |
-		VOL_CAP_INT_EXTENDED_SECURITY |
-		VOL_CAP_INT_USERACCESS |
-		VOL_CAP_INT_MANLOCK |
-#if NAMEDSTREAMS
-		VOL_CAP_INT_NAMEDSTREAMS |
-#endif
-		VOL_CAP_INT_EXTENDED_ATTR ,
-
-		0, 0
-	}
-};
-
-
-
-
-/*
- * ZFS file system attributes (for getattrlist).
- */
-const attribute_set_t zfs_attributes = {
-		ATTR_CMN_NAME	|
-		ATTR_CMN_DEVID	|
-		ATTR_CMN_FSID	|
-		ATTR_CMN_OBJTYPE |
-		ATTR_CMN_OBJTAG	|
-		ATTR_CMN_OBJID	|
-		ATTR_CMN_OBJPERMANENTID |
-		ATTR_CMN_PAROBJID |
-		ATTR_CMN_CRTIME |
-		ATTR_CMN_MODTIME |
-		ATTR_CMN_CHGTIME |
-		ATTR_CMN_ACCTIME |
-		ATTR_CMN_BKUPTIME |
-		ATTR_CMN_FNDRINFO |
-		ATTR_CMN_OWNERID |
-		ATTR_CMN_GRPID	|
-		ATTR_CMN_ACCESSMASK |
-		ATTR_CMN_FLAGS	|
-		ATTR_CMN_USERACCESS |
-		ATTR_CMN_EXTENDED_SECURITY |
-		ATTR_CMN_UUID |
-		ATTR_CMN_GRPUUID ,
-
-		ATTR_VOL_FSTYPE	|
-		ATTR_VOL_SIGNATURE |
-		ATTR_VOL_SIZE	|
-		ATTR_VOL_SPACEFREE |
-		ATTR_VOL_SPACEAVAIL |
-		ATTR_VOL_MINALLOCATION |
-		ATTR_VOL_ALLOCATIONCLUMP |
-		ATTR_VOL_IOBLOCKSIZE |
-		ATTR_VOL_OBJCOUNT |
-		ATTR_VOL_FILECOUNT |
-		ATTR_VOL_DIRCOUNT |
-		ATTR_VOL_MAXOBJCOUNT |
-		ATTR_VOL_MOUNTPOINT |
-		ATTR_VOL_NAME	|
-		ATTR_VOL_MOUNTFLAGS |
-		ATTR_VOL_MOUNTEDDEVICE |
-		ATTR_VOL_CAPABILITIES |
-		ATTR_VOL_ATTRIBUTES ,
-
-		ATTR_DIR_LINKCOUNT |
-		ATTR_DIR_ENTRYCOUNT |
-		ATTR_DIR_MOUNTSTATUS ,
-
-		ATTR_FILE_LINKCOUNT |
-		ATTR_FILE_TOTALSIZE |
-		ATTR_FILE_ALLOCSIZE |
-		/* ATTR_FILE_IOBLOCKSIZE */
-		ATTR_FILE_DEVTYPE |
-		ATTR_FILE_DATALENGTH |
-		ATTR_FILE_DATAALLOCSIZE |
-		ATTR_FILE_RSRCLENGTH |
-		ATTR_FILE_RSRCALLOCSIZE ,
-
-		0
-};
 
 
 /*
@@ -2230,7 +2085,10 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 
 
-        vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
+		/* It appears Spotlight makes certain assumptions if we enable VOLFS
+		 */
+        //vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
+
 		/* Indicate to VFS that we support ACLs. */
 		vfs_setextendedsecurity(vfsp);
 
@@ -2400,12 +2258,187 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		VFSATTR_RETURN(fsap, f_fsid, vfs_statfs(mp)->f_fsid);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_capabilities)) {
-		bcopy(&zfs_capabilities, &fsap->f_capabilities, sizeof (zfs_capabilities));
+
+		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_FORMAT] =
+			VOL_CAP_FMT_HARDLINKS |      // ZFS
+			VOL_CAP_FMT_SPARSE_FILES |   // ZFS
+			VOL_CAP_FMT_CASE_SENSITIVE | // ZFS
+			VOL_CAP_FMT_2TB_FILESIZE |   // ZFS
+			VOL_CAP_FMT_SYMBOLICLINKS |  // msdos..
+			VOL_CAP_FMT_NO_ROOT_TIMES |
+			VOL_CAP_FMT_CASE_PRESERVING |
+			VOL_CAP_FMT_FAST_STATFS |
+			VOL_CAP_FMT_HIDDEN_FILES ;
+		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_INTERFACES] =
+			VOL_CAP_INT_ATTRLIST |          // ZFS
+			VOL_CAP_INT_NFSEXPORT |         // ZFS
+			VOL_CAP_INT_EXTENDED_SECURITY | // ZFS
+#if NAMEDSTREAMS
+			VOL_CAP_INT_NAMEDSTREAMS |      // ZFS
+#endif
+			VOL_CAP_INT_EXTENDED_ATTR |     // ZFS
+			VOL_CAP_INT_VOL_RENAME |        // msdos..
+			VOL_CAP_INT_ADVLOCK |
+			VOL_CAP_INT_FLOCK ;
+		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_RESERVED1] = 0;
+		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_RESERVED2] = 0;
+
+		fsap->f_capabilities.valid[VOL_CAPABILITIES_FORMAT] =
+			VOL_CAP_FMT_PERSISTENTOBJECTIDS |
+			VOL_CAP_FMT_SYMBOLICLINKS |
+			VOL_CAP_FMT_HARDLINKS |
+			VOL_CAP_FMT_JOURNAL |
+			VOL_CAP_FMT_JOURNAL_ACTIVE |
+			VOL_CAP_FMT_NO_ROOT_TIMES |
+			VOL_CAP_FMT_SPARSE_FILES |
+			VOL_CAP_FMT_ZERO_RUNS |
+			VOL_CAP_FMT_CASE_SENSITIVE |
+			VOL_CAP_FMT_CASE_PRESERVING |
+			VOL_CAP_FMT_FAST_STATFS |
+			VOL_CAP_FMT_2TB_FILESIZE |
+			VOL_CAP_FMT_OPENDENYMODES |
+			VOL_CAP_FMT_HIDDEN_FILES ;
+		fsap->f_capabilities.valid[VOL_CAPABILITIES_INTERFACES] =
+			VOL_CAP_INT_SEARCHFS |
+			VOL_CAP_INT_ATTRLIST |
+			VOL_CAP_INT_NFSEXPORT |
+			VOL_CAP_INT_READDIRATTR |
+			VOL_CAP_INT_EXCHANGEDATA |
+			VOL_CAP_INT_COPYFILE |
+			VOL_CAP_INT_ALLOCATE |
+			VOL_CAP_INT_VOL_RENAME |
+			VOL_CAP_INT_ADVLOCK |
+			VOL_CAP_INT_FLOCK |
+			VOL_CAP_INT_MANLOCK ;
+		fsap->f_capabilities.valid[VOL_CAPABILITIES_RESERVED1] = 0;
+		fsap->f_capabilities.valid[VOL_CAPABILITIES_RESERVED2] = 0;
+
 		VFSATTR_SET_SUPPORTED(fsap, f_capabilities);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_attributes)) {
-		bcopy(&zfs_attributes, &fsap->f_attributes.validattr, sizeof (zfs_attributes));
-		bcopy(&zfs_attributes, &fsap->f_attributes.nativeattr, sizeof (zfs_attributes));
+
+		fsap->f_attributes.validattr.commonattr =
+			ATTR_CMN_NAME	|
+			ATTR_CMN_DEVID	|
+			ATTR_CMN_FSID	|
+			ATTR_CMN_OBJTYPE |
+			ATTR_CMN_OBJTAG	|
+			ATTR_CMN_OBJID	|
+			/* ATTR_CMN_OBJPERMANENTID | */
+			ATTR_CMN_PAROBJID |
+			/* ATTR_CMN_SCRIPT | */
+			ATTR_CMN_CRTIME |
+			ATTR_CMN_MODTIME |
+			ATTR_CMN_CHGTIME |
+			ATTR_CMN_ACCTIME |
+			/* ATTR_CMN_BKUPTIME | */
+			/* ATTR_CMN_FNDRINFO | */
+			ATTR_CMN_OWNERID |
+			ATTR_CMN_GRPID	|
+			ATTR_CMN_ACCESSMASK |
+			ATTR_CMN_FLAGS	|
+			ATTR_CMN_USERACCESS |
+			/* ATTR_CMN_EXTENDED_SECURITY | */
+			/* ATTR_CMN_UUID | */
+			/* ATTR_CMN_GRPUUID | */
+			0;
+		fsap->f_attributes.validattr.volattr =
+			ATTR_VOL_FSTYPE	|
+			/* ATTR_VOL_SIGNATURE */
+			ATTR_VOL_SIZE	|
+			ATTR_VOL_SPACEFREE |
+			ATTR_VOL_SPACEAVAIL |
+			ATTR_VOL_MINALLOCATION |
+			ATTR_VOL_ALLOCATIONCLUMP |
+			ATTR_VOL_IOBLOCKSIZE |
+			/* ATTR_VOL_OBJCOUNT */
+			/* ATTR_VOL_FILECOUNT */
+			/* ATTR_VOL_DIRCOUNT */
+			/* ATTR_VOL_MAXOBJCOUNT */
+			ATTR_VOL_MOUNTPOINT |
+			ATTR_VOL_NAME	|
+			ATTR_VOL_MOUNTFLAGS |
+			ATTR_VOL_MOUNTEDDEVICE |
+			/* ATTR_VOL_ENCODINGSUSED */
+			ATTR_VOL_CAPABILITIES |
+			ATTR_VOL_ATTRIBUTES;
+		fsap->f_attributes.validattr.dirattr =
+			ATTR_DIR_LINKCOUNT |
+			/* ATTR_DIR_ENTRYCOUNT */
+			ATTR_DIR_MOUNTSTATUS;
+		fsap->f_attributes.validattr.fileattr =
+			ATTR_FILE_LINKCOUNT |
+			ATTR_FILE_TOTALSIZE |
+			ATTR_FILE_ALLOCSIZE |
+			/* ATTR_FILE_IOBLOCKSIZE */
+			ATTR_FILE_DEVTYPE |
+			/* ATTR_FILE_FORKCOUNT */
+			/* ATTR_FILE_FORKLIST */
+			ATTR_FILE_DATALENGTH |
+			ATTR_FILE_DATAALLOCSIZE |
+			ATTR_FILE_RSRCLENGTH |
+			ATTR_FILE_RSRCALLOCSIZE;
+		fsap->f_attributes.validattr.forkattr = 0;
+		fsap->f_attributes.nativeattr.commonattr =
+			ATTR_CMN_NAME	|
+			ATTR_CMN_DEVID	|
+			ATTR_CMN_FSID	|
+			ATTR_CMN_OBJTYPE |
+			ATTR_CMN_OBJTAG	|
+			ATTR_CMN_OBJID	|
+			/* ATTR_CMN_OBJPERMANENTID | */
+			ATTR_CMN_PAROBJID |
+			/* ATTR_CMN_SCRIPT | */
+			ATTR_CMN_CRTIME |
+			ATTR_CMN_MODTIME |
+			/* ATTR_CMN_CHGTIME | */	/* Supported but not native */
+			ATTR_CMN_ACCTIME |
+			/* ATTR_CMN_BKUPTIME | */
+			/* ATTR_CMN_FNDRINFO | */
+			/* ATTR_CMN_OWNERID | */	/* Supported but not native */
+			/* ATTR_CMN_GRPID	| */	/* Supported but not native */
+			/* ATTR_CMN_ACCESSMASK | */	/* Supported but not native */
+			ATTR_CMN_FLAGS	|
+			ATTR_CMN_USERACCESS |
+			/* ATTR_CMN_EXTENDED_SECURITY | */
+			/* ATTR_CMN_UUID | */
+			/* ATTR_CMN_GRPUUID | */
+			0;
+		fsap->f_attributes.nativeattr.volattr =
+			ATTR_VOL_FSTYPE	|
+			/* ATTR_VOL_SIGNATURE */
+			ATTR_VOL_SIZE	|
+			ATTR_VOL_SPACEFREE |
+			ATTR_VOL_SPACEAVAIL |
+			ATTR_VOL_MINALLOCATION |
+			ATTR_VOL_ALLOCATIONCLUMP |
+			ATTR_VOL_IOBLOCKSIZE |
+			/* ATTR_VOL_OBJCOUNT */
+			/* ATTR_VOL_FILECOUNT */
+			/* ATTR_VOL_DIRCOUNT */
+			/* ATTR_VOL_MAXOBJCOUNT */
+			ATTR_VOL_MOUNTPOINT |
+			ATTR_VOL_NAME	|
+			ATTR_VOL_MOUNTFLAGS |
+			ATTR_VOL_MOUNTEDDEVICE |
+			/* ATTR_VOL_ENCODINGSUSED */
+			ATTR_VOL_CAPABILITIES |
+			ATTR_VOL_ATTRIBUTES;
+		fsap->f_attributes.nativeattr.dirattr = 0;
+		fsap->f_attributes.nativeattr.fileattr =
+			/* ATTR_FILE_LINKCOUNT | */	/* Supported but not native */
+			ATTR_FILE_TOTALSIZE |
+			ATTR_FILE_ALLOCSIZE |
+			/* ATTR_FILE_IOBLOCKSIZE */
+			ATTR_FILE_DEVTYPE |
+			/* ATTR_FILE_FORKCOUNT */
+			/* ATTR_FILE_FORKLIST */
+			ATTR_FILE_DATALENGTH |
+			ATTR_FILE_DATAALLOCSIZE |
+			ATTR_FILE_RSRCLENGTH |
+			ATTR_FILE_RSRCALLOCSIZE;
+		fsap->f_attributes.nativeattr.forkattr = 0;
+
 		VFSATTR_SET_SUPPORTED(fsap, f_attributes);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_create_time)) {
