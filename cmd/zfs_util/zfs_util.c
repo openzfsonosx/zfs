@@ -138,10 +138,21 @@ zfs_probe(const char *devpath, io_name_t volname)
 				cfstr = IORegistryEntryCreateCFProperty(service,
 				    CFSTR("DATASET"), kCFAllocatorDefault, 0);
 				if (cfstr) {
-					(void) strlcpy(volname,
+					char fullvolname[MAXPATHLEN];
+					(void) strlcpy(fullvolname,
 					    CFStringGetCStringPtr(cfstr,
 					    kCFStringEncodingMacRoman),
 					    sizeof (io_name_t));
+
+					char *tmp = strrchr(fullvolname, '/');
+					if (tmp && (*(&tmp[1]) != '\0')) {
+						strlcpy(volname, &tmp[1],
+						    sizeof (io_name_t));
+					} else {
+						strlcpy(volname, fullvolname,
+						    sizeof (io_name_t));
+					}
+
 					result = FSUR_RECOGNIZED;
 					CFRelease(cfstr);
 				}
