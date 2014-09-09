@@ -2371,8 +2371,14 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 				    root, str);
 			else
 				(void) snprintf(propbuf, proplen, "%s%s%s%s",
-				    root, str, relpath[0] == '@' ? "" : "/",
+#ifdef __APPLE__
+								root, str, source == "" ? "/Volumes/" : "/",
+#else
+								root, str, relpath[0] == '@' ? "" : "/",
+#endif
 				    relpath);
+
+
 #ifdef __APPLE__
 			}
 #endif
