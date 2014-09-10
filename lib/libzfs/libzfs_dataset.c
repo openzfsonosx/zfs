@@ -2349,14 +2349,14 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 						firsthalf[len] = '\0';
 						(void) snprintf(propbuf,
 						    proplen,
-						    "%s%s/%s/.zfs/snapshot/%s",
+						    "%s/Volumes%s/%s/.zfs/snapshot/%s",
 						    root, str, firsthalf,
 						    &secondhalf[1]);
 						free(firsthalf);
 					} else {
 						(void) snprintf(propbuf,
 						    proplen,
-						    "%s%s/.zfs/snapshot/%s",
+						    "%s/Volumes%s/.zfs/snapshot/%s",
 						    root, str, &secondhalf[1]);
 					}
 				} else {
