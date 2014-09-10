@@ -1430,7 +1430,18 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	 */
 
 #ifdef __APPLE__
-    vfs_getnewfsid(vfsp);
+
+	// If we were given a /dev/disk dev, we set the fsid to what we want
+	if (dev_mapping) {
+		struct vfsstatfs *vfsstatfs;
+		vfsstatfs = vfs_statfs(vfsp);
+		vfsstatfs->f_fsid.val[0] = rdev;
+		vfsstatfs->f_fsid.val[1] = vfs_typenum(vfsp);
+	} else {
+		// Otherwise, ask VFS to give us a random unique one.
+		vfs_getnewfsid(vfsp);
+	}
+
 #else
 	fsid_guid = dmu_objset_fsid_guid(zfsvfs->z_os);
 	ASSERT((fsid_guid & ~((1ULL<<56)-1)) == 0);

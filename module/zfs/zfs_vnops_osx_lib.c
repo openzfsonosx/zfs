@@ -162,7 +162,6 @@ zfs_getattr_znode_locked(vattr_t *vap, znode_t *zp, cred_t *cr)
 	}
 	return (0);
 }
-
 int
 zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 {
@@ -335,12 +334,18 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	if (VATTR_IS_ACTIVE(vap, va_filerev)) {
         VATTR_RETURN(vap, va_filerev, 0);
     }
+
+	/*
+	 * kpi_vfs.c: 2355
+	 * "
+	 * * The fsid can be obtained from the mountpoint directly.
+	 * VATTR_RETURN(vap, va_fsid, vp->v_mount->mnt_vfsstat.f_fsid.val[0]);
+	 * "
+	 * It is pointless to set fsid here, but in case XNU changes in future
+	 * we might as well keep it.
+	 */
 	if (VATTR_IS_ACTIVE(vap, va_fsid)) {
-
-		vap->va_fsid = zfsvfs->z_rdev;
-		VATTR_SET_SUPPORTED(vap, va_fsid);
-
-        //VATTR_RETURN(vap, va_fsid, vfs_statfs(zfsvfs->z_vfs)->f_fsid.val[0]);
+        VATTR_RETURN(vap, va_fsid, zfsvfs->z_rdev);
     }
 	if (VATTR_IS_ACTIVE(vap, va_type)) {
         VATTR_RETURN(vap, va_type, vnode_vtype(ZTOV(zp)));
