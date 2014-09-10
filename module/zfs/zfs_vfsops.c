@@ -1358,20 +1358,16 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 		if (!(error = vnode_open(devname,
 								 0, 0, 0,
 								 &devvp, context))) {
-			printf("'%s' opened\n", devname);
+
 			if (vnode_isblk(devvp)) {
-
 				rdev = vnode_specrdev(devvp);
-				printf("is BLK with rdev %llx\n",
-					   rdev);
-
 			}
 			vnode_close(devvp, 0, context);
 		}
 
 	}
 
-	printf("zfs_domount map '%s'\n", osname);
+	printf("zfs_domount map '%s' with rdev id %llx\n", osname, rdev);
 #endif
 
 

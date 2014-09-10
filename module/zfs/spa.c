@@ -3539,17 +3539,13 @@ static void spa_iokit_pool(char *poolname, uint64_t guid)
 	objset_t *os;
 	int error;
 
-	printf("Holding pool\n");
-
 	error = dmu_objset_hold(poolname, FTAG, &os);
 	if (!error) {
-		printf("Get space\n");
 		dmu_objset_space(os,
 						 &refdbytes, &availbytes, &usedobjs, &availobjs);
 		dmu_objset_rele(os, FTAG);
 
 		printf("Create pool\n");
-
 		ZFSDriver_create_pool(poolname, availbytes, 512,
 							  B_FALSE, guid,
 							  dsl_dataset_fsid_guid(dmu_objset_ds(os)));
