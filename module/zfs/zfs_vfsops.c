@@ -1333,6 +1333,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 #endif
 	int dev_mapping = 0;
 	char *devname = NULL;
+	dev_t rdev;
 
 	ASSERT(vfsp);
 	ASSERT(osname);
@@ -1348,6 +1349,26 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 		strlcpy(devname, osname, MAXPATHLEN);
 		if (ZFSDriver_FindDataset(osname))
 			dev_mapping = 1;
+
+		vfs_context_t context = NULL;
+		struct vnode *devvp = NULLVP;
+
+		context = vfs_context_create( spl_vfs_context_kernel() );
+
+		if (!(error = vnode_open(devname,
+								 0, 0, 0,
+								 &devvp, context))) {
+			printf("'%s' opened\n", devname);
+			if (vnode_isblk(devvp)) {
+
+				rdev = vnode_specrdev(devvp);
+				printf("is BLK with rdev %llx\n",
+					   rdev);
+
+			}
+			vnode_close(devvp, 0, context);
+		}
+
 	}
 
 	printf("zfs_domount map '%s'\n", osname);
@@ -1375,6 +1396,9 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 
 
 #ifdef __APPLE__
+
+	zfsvfs->z_rdev = rdev;
+
 	/*
 	 * Record the mount time (for Spotlight)
 	 */
@@ -1880,6 +1904,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	int		flags = 0;
 	char *realosname = NULL; // If allocated.
 
+	printf("mvp is %p : data is %p\n", mvp, data);
+
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
 	size_t		osnamelen = 0;
@@ -1887,6 +1913,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
     /*
      * Get the objset name (the "special" mount argument).
      */
+#if 1
     if (data) {
 		// 10a286 renames fspec to datasetpath
 
@@ -1906,6 +1933,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
             mnt_args.fspec = (char *)CAST_USER_ADDR_T(tmp);
         }
 
+		printf("Get sttring\n");
         // Copy over the string
         if ( (error = copyinstr((user_addr_t)mnt_args.fspec, osname,
                                 MAXPATHLEN, &osnamelen)) )
@@ -1917,6 +1945,20 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 	error = copyin((user_addr_t)mnt_args.optptr, (caddr_t)options,
 	    mnt_args.optlen);
+
+#else
+
+	bzero(&mnt_args, sizeof(mnt_args));
+	bcopy(data, &mnt_args, sizeof(mnt_args));
+	osname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+	strlcpy(osname, mnt_args.fspec, MAXPATHLEN);
+
+	mflag = mnt_args.mflag;
+	options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
+	strlcpy(options, mnt_args.optptr, mnt_args.optlen);
+
+#endif
+
 
 	printf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
 	    " options %s\n",
@@ -2255,7 +2297,10 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	VFSATTR_RETURN(fsap, f_files,  fsap->f_ffree + usedobjs);
 
 	if (VFSATTR_IS_ACTIVE(fsap, f_fsid)) {
-		VFSATTR_RETURN(fsap, f_fsid, vfs_statfs(mp)->f_fsid);
+		fsap->f_fsid.val[0] = zfsvfs->z_rdev;
+		fsap->f_fsid.val[1] = vfs_typenum(mp);
+		VFSATTR_SET_SUPPORTED(fsap, f_fsid);
+		//VFSATTR_RETURN(fsap, f_fsid, vfs_statfs(mp)->f_fsid);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_capabilities)) {
 

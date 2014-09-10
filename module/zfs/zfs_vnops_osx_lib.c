@@ -336,7 +336,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         VATTR_RETURN(vap, va_filerev, 0);
     }
 	if (VATTR_IS_ACTIVE(vap, va_fsid)) {
-        VATTR_RETURN(vap, va_fsid, vfs_statfs(zfsvfs->z_vfs)->f_fsid.val[0]);
+
+		vap->va_fsid = zfsvfs->z_rdev;
+		VATTR_SET_SUPPORTED(vap, va_fsid);
+
+        //VATTR_RETURN(vap, va_fsid, vfs_statfs(zfsvfs->z_vfs)->f_fsid.val[0]);
     }
 	if (VATTR_IS_ACTIVE(vap, va_type)) {
         VATTR_RETURN(vap, va_type, vnode_vtype(ZTOV(zp)));
