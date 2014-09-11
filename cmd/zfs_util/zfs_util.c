@@ -429,6 +429,8 @@ main(int argc, char **argv)
 	struct stat sb;
 	uint64_t poolguid = 0;
 	int ret = FSUR_INVAL;
+	int rval;
+	ushort_t disknum, partnum;
 #ifndef ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
 	int importrc = 0;
 #endif
@@ -465,9 +467,17 @@ main(int argc, char **argv)
 	switch (what) {
 	case FSUC_PROBE:
 		if (stat(ZPOOL_IMPORT_ALL_COOKIE, &sb) != 0) {
-			exit(FSUR_RECOGNIZED);
+			rval = sscanf(blockdevice, "/dev/disk%hus%hu",
+			    &disknum,
+			    &partnum);
+			if (rval == 2)
+				ret = FSUR_RECOGNIZED;
+			else
+				ret = zfs_probe(rawdevice, &poolguid);
+			exit(ret);
+		} else {
+			ret = zfs_probe(rawdevice, &poolguid);
 		}
-		ret = zfs_probe(rawdevice, &poolguid);
 		if (ret == FSUR_RECOGNIZED) {
 			printf("FSUC_PROBE %s : FSUR_RECOGNIZED : poolguid "
 			    "%llu\n", blockdevice, poolguid);
