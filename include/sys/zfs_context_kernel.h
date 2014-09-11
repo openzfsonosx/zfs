@@ -72,13 +72,14 @@ extern "C" {
 #include <sys/atomic.h>
 //#include <linux/dcache_compat.h>
 
-typedef enum kmem_cbrc {
-	KMEM_CBRC_YES,
-	KMEM_CBRC_NO,
-	KMEM_CBRC_LATER,
-	KMEM_CBRC_DONT_NEED,
-	KMEM_CBRC_DONT_KNOW
-} kmem_cbrc_t;
+// There are to be found in spl/include/sys/kmem.h 
+//typedef enum kmem_cbrc {
+//	KMEM_CBRC_YES,
+//	KMEM_CBRC_NO,
+//	KMEM_CBRC_LATER,
+//	KMEM_CBRC_DONT_NEED,
+//	KMEM_CBRC_DONT_KNOW
+//} kmem_cbrc_t;
 
 #define	KMC_KMEM		0x0
 #define	KMC_VMEM		0x0

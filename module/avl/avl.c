@@ -87,6 +87,13 @@
  *	  than the value of the indicated "avl_node_t *".
  */
 
+/*
+ * OSX note. The KERNEL version of this file has moved into
+ * spl-avl.c - This file is retained for userland.
+ *
+ * Please merge both files in future updates.
+ */
+
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/debug.h>
@@ -872,7 +879,6 @@ avl_swap(avl_tree_t *tree1, avl_tree_t *tree2)
 	ASSERT3P(tree1->avl_compar, ==, tree2->avl_compar);
 	ASSERT3U(tree1->avl_offset, ==, tree2->avl_offset);
 	ASSERT3U(tree1->avl_size, ==, tree2->avl_size);
-
 	temp_node = tree1->avl_root;
 	temp_numnodes = tree1->avl_numnodes;
 	tree1->avl_root = tree2->avl_root;
