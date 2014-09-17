@@ -61,7 +61,7 @@ struct proc {
 };
 
 /* this only exists to have its address taken */
-struct proc p0;
+struct proc *p0;
 
 /*
  * =========================================================================

@@ -1053,12 +1053,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	error = zfs_get_zplprop(os, ZFS_PROP_VERSION, &zfsvfs->z_version);
 	if (error) {
 		goto out;
-	} else if (zfsvfs->z_version >
-	    zfs_zpl_version_map(spa_version(dmu_objset_spa(os)))) {
-		(void) printf("Can't mount a version %lld file system "
-		    "on a version %lld pool\n. Pool must be upgraded to mount "
-		    "this file system.", (u_longlong_t)zfsvfs->z_version,
-		    (u_longlong_t)spa_version(dmu_objset_spa(os)));
+	} else if (zfsvfs->z_version > ZPL_VERSION) {
 		error = SET_ERROR(ENOTSUP);
 		goto out;
 	}

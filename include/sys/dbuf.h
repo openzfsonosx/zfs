@@ -213,11 +213,14 @@ typedef struct dmu_buf_impl {
 	/* pointer to most recent dirty record for this buffer */
 	dbuf_dirty_record_t *db_last_dirty;
 
+	/* Creation time of dbuf (see comment in dbuf_compare). */
+	hrtime_t db_creation;
+
 	/*
 	 * Our link on the owner dnodes's dn_dbufs list.
 	 * Protected by its dn_dbufs_mtx.
 	 */
-	list_node_t db_link;
+	avl_node_t db_link;
 
 	/* Data which is unique to data (leaf) blocks: */
 
@@ -360,6 +363,8 @@ _NOTE(CONSTCOND) } while (0)
 #define	DBUF_VERIFY(db)
 
 #endif
+
+extern void dbuf_fill_done(dmu_buf_impl_t *db, dmu_tx_t *tx);
 
 
 #ifdef	__cplusplus

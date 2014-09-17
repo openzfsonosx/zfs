@@ -1,6 +1,9 @@
 include $(top_srcdir)/config/Rules.am
 
 AUTOMAKE_OPTIONS = subdir-objects
+libzfs_pcdir = $(datarootdir)/pkgconfig
+libzfs_pc_DATA = $(top_srcdir)/lib/libzfs/libzfs.pc $(top_srcdir)/lib/libzfs/libzfs_core.pc
+EXTRA_DIST = $(top_srcdir)/lib/libzfs/libzfs.pc $(top_srcdir)/lib/libzfs/libzfs_core.pc
 
 DEFAULT_INCLUDES += \
 	-I$(top_srcdir)/include \

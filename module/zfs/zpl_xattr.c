@@ -240,6 +240,7 @@ zpl_xattr_get_dir(struct inode *ip, const char *name, void *value,
 {
 	struct inode *dxip = NULL;
 	struct inode *xip = NULL;
+	loff_t pos = 0;
 	int error;
 
 	/* Lookup the xattr directory */
@@ -262,7 +263,7 @@ zpl_xattr_get_dir(struct inode *ip, const char *name, void *value,
 		goto out;
 	}
 
-	error = zpl_read_common(xip, value, size, 0, UIO_SYSSPACE, 0, cr);
+	error = zpl_read_common(xip, value, size, &pos, UIO_SYSSPACE, 0, cr);
 out:
 	if (xip)
 		VN_RELE(xip);
@@ -358,6 +359,7 @@ zpl_xattr_set_dir(struct inode *ip, const char *name, const void *value,
 	ssize_t wrote;
 	int lookup_flags, error;
 	const int xattr_mode = S_IFREG | 0644;
+	loff_t pos = 0;
 
 	/*
 	 * Lookup the xattr directory.  When we're adding an entry pass
@@ -408,7 +410,7 @@ zpl_xattr_set_dir(struct inode *ip, const char *name, const void *value,
 	if (error)
 		goto out;
 
-	wrote = zpl_write_common(xip, value, size, 0, UIO_SYSSPACE, 0, cr);
+	wrote = zpl_write_common(xip, value, size, &pos, UIO_SYSSPACE, 0, cr);
 	if (wrote < 0)
 		error = wrote;
 

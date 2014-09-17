@@ -138,7 +138,6 @@ zfs_SOURCES = \
 	zrlock.c \
 	zvol.c \
 	zvolIO.cpp \
-	../avl/avl.c \
 	../nvpair/fnvpair.c \
 	../nvpair/nvpair.c \
 	../nvpair/nvpair_alloc_fixed.c \

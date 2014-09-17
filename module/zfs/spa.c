@@ -1183,7 +1183,7 @@ spa_deactivate(spa_t *spa)
 	 * it.
 	 */
 	if (spa->spa_did != 0) {
-		thread_join(spa->spa_did);
+		thread_join((void *)spa->spa_did);
 		spa->spa_did = 0;
 	}
 
@@ -5992,7 +5992,7 @@ spa_sync_nvlist(spa_t *spa, uint64_t obj, nvlist_t *nv, dmu_tx_t *tx)
 	 * saves us a pre-read to get data we don't actually care about.
 	 */
 	bufsize = P2ROUNDUP((uint64_t)nvsize, SPA_CONFIG_BLOCKSIZE);
-	packed = vmem_alloc(bufsize, KM_PUSHPAGE);
+	packed = kmem_alloc(bufsize, KM_PUSHPAGE);
 
 	VERIFY(nvlist_pack(nv, &packed, &nvsize, NV_ENCODE_XDR,
 	    KM_PUSHPAGE) == 0);
@@ -6000,7 +6000,7 @@ spa_sync_nvlist(spa_t *spa, uint64_t obj, nvlist_t *nv, dmu_tx_t *tx)
 
 	dmu_write(spa->spa_meta_objset, obj, 0, bufsize, packed, tx);
 
-	vmem_free(packed, bufsize);
+	kmem_free(packed, bufsize);
 
 	VERIFY(0 == dmu_bonus_hold(spa->spa_meta_objset, obj, FTAG, &db));
 	dmu_buf_will_dirty(db, tx);

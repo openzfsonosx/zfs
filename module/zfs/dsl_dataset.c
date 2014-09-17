@@ -1691,9 +1691,6 @@ static int
 dsl_dataset_rename_snapshot_sync_impl(dsl_pool_t *dp,
     dsl_dataset_t *hds, void *arg)
 {
-#ifdef _KERNEL
-	char *oldname, *newname;
-#endif
 	dsl_dataset_rename_snapshot_arg_t *ddrsa = arg;
 	dsl_dataset_t *ds;
 	uint64_t val;
@@ -1719,18 +1716,6 @@ dsl_dataset_rename_snapshot_sync_impl(dsl_pool_t *dp,
 	mutex_exit(&ds->ds_lock);
 	VERIFY0(zap_add(dp->dp_meta_objset, hds->ds_phys->ds_snapnames_zapobj,
 	    ds->ds_snapname, 8, 1, &ds->ds_object, tx));
-
-#ifdef _KERNEL
-	oldname = kmem_alloc(MAXPATHLEN, KM_PUSHPAGE);
-	newname = kmem_alloc(MAXPATHLEN, KM_PUSHPAGE);
-	snprintf(oldname, MAXPATHLEN, "%s@%s", ddrsa->ddrsa_fsname,
-	    ddrsa->ddrsa_oldsnapname);
-	snprintf(newname, MAXPATHLEN, "%s@%s", ddrsa->ddrsa_fsname,
-	    ddrsa->ddrsa_newsnapname);
-	zvol_rename_minors(oldname, newname);
-	kmem_free(newname, MAXPATHLEN);
-	kmem_free(oldname, MAXPATHLEN);
-#endif
 
 	dsl_dataset_rele(ds, FTAG);
 	return (0);
@@ -1759,6 +1744,11 @@ int
 dsl_dataset_rename_snapshot(const char *fsname,
     const char *oldsnapname, const char *newsnapname, boolean_t recursive)
 {
+#ifdef _KERNEL
+	char *oldname, *newname;
+#endif
+	int error;
+
 	dsl_dataset_rename_snapshot_arg_t ddrsa;
 
 	ddrsa.ddrsa_fsname = fsname;
@@ -1766,8 +1756,21 @@ dsl_dataset_rename_snapshot(const char *fsname,
 	ddrsa.ddrsa_newsnapname = newsnapname;
 	ddrsa.ddrsa_recursive = recursive;
 
-	return (dsl_sync_task(fsname, dsl_dataset_rename_snapshot_check,
-	    dsl_dataset_rename_snapshot_sync, &ddrsa, 1));
+	error = dsl_sync_task(fsname, dsl_dataset_rename_snapshot_check,
+	    dsl_dataset_rename_snapshot_sync, &ddrsa, 1);
+
+	if (error)
+	    return (SET_ERROR(error));
+
+#ifdef _KERNEL
+	oldname = kmem_asprintf("%s@%s", fsname, oldsnapname);
+	newname = kmem_asprintf("%s@%s", fsname, newsnapname);
+	zvol_rename_minors(oldname, newname);
+	strfree(newname);
+	strfree(oldname);
+#endif
+
+	return (0);
 }
 
 /*
@@ -2049,7 +2052,7 @@ dsl_dataset_promote_check(void *arg, dmu_tx_t *tx)
 		VERIFY0(dsl_dataset_get_snapname(ds));
 		err = dsl_dataset_snap_lookup(hds, ds->ds_snapname, &val);
 		if (err == 0) {
-			(void) strcpy(ddpa->err_ds, snap->ds->ds_snapname);
+			(void) strlcpy(ddpa->err_ds, snap->ds->ds_snapname, MAXNAMELEN);
 			err = SET_ERROR(EEXIST);
 			goto out;
 		}

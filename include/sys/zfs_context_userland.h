@@ -81,6 +81,7 @@
 #include <sys/fm/fs/zfs.h>
 #include <sys/sunddi.h>
 #include <sys/debug.h>
+#include <stropts.h>
 
 /*
  * Stack
@@ -175,8 +176,8 @@ typedef struct proc {
 } proc_t;
 #endif
 
-extern struct proc p0;
-#define	curproc		(&p0)
+extern struct proc *p0;
+#define	curproc		(p0)
 
 typedef void (*thread_func_t)(void *);
 typedef void (*thread_func_arg_t)(void *);

@@ -8,6 +8,8 @@ class net_lundman_zfs_zvol : public IOService
 {
 	OSDeclareDefaultStructors(net_lundman_zfs_zvol)
 
+private:
+
 public:
 	virtual bool createStorageDevice(char *poolname, uint64_t bytes,
 									 uint64_t block, boolean_t rdonly,

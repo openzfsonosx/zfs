@@ -278,15 +278,6 @@ zpool_get_prop_literal(zpool_handle_t *zhp, zpool_prop_t prop, char *buf,
 			intval = zpool_get_prop_int(zhp, prop, &src);
 			(void) snprintf(buf, len, "%llu", (u_longlong_t)intval);
 			break;
-		case ZPOOL_PROP_FRAGMENTATION:
-			intval = zpool_get_prop_int(zhp, prop, &src);
-			if (intval == UINT64_MAX) {
-				(void) strlcpy(buf, "-", len);
-			} else {
-				(void) snprintf(buf, len, "%llu%%",
-				    (u_longlong_t)intval);
-			}
-			break;
 
 		case ZPOOL_PROP_ALTROOT:
 		case ZPOOL_PROP_CACHEFILE:
@@ -342,6 +333,15 @@ zpool_get_prop_literal(zpool_handle_t *zhp, zpool_prop_t prop, char *buf,
 		case ZPOOL_PROP_CAPACITY:
 			(void) snprintf(buf, len, "%llu%%",
 			    (u_longlong_t)intval);
+			break;
+
+		case ZPOOL_PROP_FRAGMENTATION:
+			if (intval == UINT64_MAX) {
+				(void) strlcpy(buf, "-", len);
+			} else {
+				(void) snprintf(buf, len, "%llu%%",
+				    (u_longlong_t)intval);
+			}
 			break;
 
 		case ZPOOL_PROP_DEDUPRATIO:
@@ -759,7 +759,6 @@ zpool_set_prop(zpool_handle_t *zhp, const char *propname, const char *propval)
 		return (-1);
 	}
 
-	fprintf(stderr, "pool_set_props\r\n");
 	ret = zfs_ioctl(zhp->zpool_hdl, ZFS_IOC_POOL_SET_PROPS, &zc);
 
 	zcmd_free_nvlists(&zc);
@@ -3429,7 +3428,7 @@ char *
 zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
     boolean_t verbose)
 {
-	char *path, *devid, *type;
+	char *path, *devid;
 	uint64_t value;
 	char buf[PATH_BUF_LEN];
 	char tmpbuf[PATH_BUF_LEN];
@@ -3507,9 +3506,9 @@ zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
 		 */
 		if (nvlist_lookup_uint64(nv, ZPOOL_CONFIG_WHOLE_DISK,
 		    &value) == 0 && value) {
-			int pathlen = strlen(path);
 			char *tmp = zfs_strdup(hdl, path);
 #ifdef illumos
+			int pathlen = strlen(path);
 			/*
 			 * If it starts with c#, and ends with "s0", chop
 			 * the "s0" off, or if it ends with "s0/old", remove

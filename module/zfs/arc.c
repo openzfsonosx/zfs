@@ -148,15 +148,6 @@
 #include <zfs_fletcher.h>
 #include <sys/sysctl.h>
 
-#ifdef __APPLE__
-#include <mach/kern_return.h>
-extern kern_return_t mach_vm_pressure_monitor(
-        boolean_t       wait_for_pressure,
-        unsigned int    nsecs_monitored,
-        unsigned int    *pages_reclaimed_p,
-        unsigned int    *pages_wanted_p);
-#endif /* __APPLE__ */
-
 #ifndef _KERNEL
 /* set with ZFS_DEBUG=watch, to enable watchpoints on frozen buffers */
 boolean_t arc_watch = B_FALSE;
@@ -782,69 +773,6 @@ int l2arc_nocompress = B_FALSE;			/* don't compress bufs */
 int l2arc_feed_again = B_TRUE;			/* turbo warmup */
 int l2arc_norw = B_FALSE;			/* no reads during writes */
 
-#ifdef _KERNEL
-SYSCTL_QUAD(_zfs, OID_AUTO, l2arc_write_max, CTLFLAG_RW,
-    &l2arc_write_max, "max write size");
-SYSCTL_QUAD(_zfs, OID_AUTO, l2arc_write_boost, CTLFLAG_RW,
-    &l2arc_write_boost, "extra write during warmup");
-SYSCTL_QUAD(_zfs, OID_AUTO, l2arc_headroom, CTLFLAG_RW,
-    &l2arc_headroom, "number of dev writes");
-SYSCTL_QUAD(_zfs, OID_AUTO, l2arc_feed_secs, CTLFLAG_RW,
-    &l2arc_feed_secs, "interval seconds");
-SYSCTL_QUAD(_zfs, OID_AUTO, l2arc_feed_min_ms, CTLFLAG_RW,
-    &l2arc_feed_min_ms, "min interval milliseconds");
-
-SYSCTL_INT(_zfs, OID_AUTO, l2arc_noprefetch, CTLFLAG_RW,
-    &l2arc_noprefetch, 0, "don't cache prefetch bufs");
-SYSCTL_INT(_zfs, OID_AUTO, l2arc_feed_again, CTLFLAG_RW,
-    &l2arc_feed_again, 0, "turbo warmup");
-SYSCTL_INT(_zfs, OID_AUTO, l2arc_norw, CTLFLAG_RW,
-    &l2arc_norw, 0, "no reads during writes");
-
-SYSCTL_QUAD(_zfs, OID_AUTO, anon_size, CTLFLAG_RD,
-    &ARC_anon.arcs_size, "size of anonymous state");
-SYSCTL_QUAD(_zfs, OID_AUTO, anon_metadata_lsize, CTLFLAG_RD,
-    &ARC_anon.arcs_lsize[ARC_BUFC_METADATA], "size of anonymous state");
-SYSCTL_QUAD(_zfs, OID_AUTO, anon_data_lsize, CTLFLAG_RD,
-    &ARC_anon.arcs_lsize[ARC_BUFC_DATA], "size of anonymous state");
-
-SYSCTL_QUAD(_zfs, OID_AUTO, mru_size, CTLFLAG_RD,
-    &ARC_mru.arcs_size, "size of mru state");
-SYSCTL_QUAD(_zfs, OID_AUTO, mru_metadata_lsize, CTLFLAG_RD,
-    &ARC_mru.arcs_lsize[ARC_BUFC_METADATA], "size of metadata in mru state");
-SYSCTL_QUAD(_zfs, OID_AUTO, mru_data_lsize, CTLFLAG_RD,
-    &ARC_mru.arcs_lsize[ARC_BUFC_DATA], "size of data in mru state");
-
-SYSCTL_QUAD(_zfs, OID_AUTO, mru_ghost_size, CTLFLAG_RD,
-    &ARC_mru_ghost.arcs_size, "size of mru ghost state");
-SYSCTL_QUAD(_zfs, OID_AUTO, mru_ghost_metadata_lsize, CTLFLAG_RD,
-    &ARC_mru_ghost.arcs_lsize[ARC_BUFC_METADATA],
-    "size of metadata in mru ghost state");
-SYSCTL_QUAD(_zfs, OID_AUTO, mru_ghost_data_lsize, CTLFLAG_RD,
-    &ARC_mru_ghost.arcs_lsize[ARC_BUFC_DATA],
-    "size of data in mru ghost state");
-
-SYSCTL_QUAD(_zfs, OID_AUTO, mfu_size, CTLFLAG_RD,
-    &ARC_mfu.arcs_size, "size of mfu state");
-SYSCTL_QUAD(_zfs, OID_AUTO, mfu_metadata_lsize, CTLFLAG_RD,
-    &ARC_mfu.arcs_lsize[ARC_BUFC_METADATA], "size of metadata in mfu state");
-SYSCTL_QUAD(_zfs, OID_AUTO, mfu_data_lsize, CTLFLAG_RD,
-    &ARC_mfu.arcs_lsize[ARC_BUFC_DATA], "size of data in mfu state");
-
-SYSCTL_QUAD(_zfs, OID_AUTO, mfu_ghost_size, CTLFLAG_RD,
-    &ARC_mfu_ghost.arcs_size, "size of mfu ghost state");
-SYSCTL_QUAD(_zfs, OID_AUTO, mfu_ghost_metadata_lsize, CTLFLAG_RD,
-    &ARC_mfu_ghost.arcs_lsize[ARC_BUFC_METADATA],
-    "size of metadata in mfu ghost state");
-SYSCTL_QUAD(_zfs, OID_AUTO, mfu_ghost_data_lsize, CTLFLAG_RD,
-    &ARC_mfu_ghost.arcs_lsize[ARC_BUFC_DATA],
-    "size of data in mfu ghost state");
-
-SYSCTL_QUAD(_zfs, OID_AUTO, l2c_only_size, CTLFLAG_RD,
-    &ARC_l2c_only.arcs_size, "size of mru state");
-#endif
-
-
 /*
  * L2ARC Internals
  */
@@ -1059,15 +987,9 @@ buf_fini(void)
 {
 	int i;
 
-#if defined(_KERNEL) && defined(HAVE_SPL)
-	/* Large allocations which do not require contiguous pages
-	 * should be using vmem_free() in the linux kernel */
-	vmem_free(buf_hash_table->ht_table,
-	    (buf_hash_table->ht_mask + 1) * sizeof (void *));
-#else
 	kmem_free(buf_hash_table->ht_table,
 	    (buf_hash_table->ht_mask + 1) * sizeof (void *));
-#endif
+
 	for (i = 0; i < BUF_LOCKS; i++)
 		mutex_destroy(&buf_hash_table->ht_locks[i].ht_lock);
 	kmem_cache_destroy(hdr_cache);
@@ -1140,6 +1062,21 @@ buf_dest(void *vbuf, void *unused)
 	arc_space_return(sizeof (arc_buf_t), ARC_SPACE_HDRS);
 }
 
+/*
+ * Reclaim callback -- invoked when memory is low.
+ */
+/* ARGSUSED */
+static void
+hdr_recl(void *unused)
+{
+	/*
+	 * umem calls the reclaim func when we destroy the buf cache,
+	 * which is after we do arc_fini().
+	 */
+	if (!arc_dead)
+		cv_signal(&arc_reclaim_thr_cv);
+}
+
 static void
 buf_init(void)
 {
@@ -1160,17 +1097,9 @@ buf_init(void)
 retry:
 	buf_hash_table->ht_mask = hsize - 1ULL;
 
-#if defined(_KERNEL) && defined(HAVE_SPL)
-	/*
-	 * Large allocations which do not require contiguous pages
-	 * should be using vmem_alloc() in the linux kernel
-	 */
-	buf_hash_table->ht_table =
-	    vmem_zalloc(hsize * sizeof (void*), KM_SLEEP);
-#else
 	buf_hash_table->ht_table =
 	    kmem_zalloc(hsize * sizeof (void*), KM_NOSLEEP);
-#endif
+
 	if (buf_hash_table->ht_table == NULL) {
 		ASSERT(hsize > (1ULL << 8));
 		hsize >>= 1;
@@ -1178,7 +1107,7 @@ retry:
 	}
 
 	hdr_cache = kmem_cache_create("arc_buf_hdr_t", sizeof (arc_buf_hdr_t),
-	    0, hdr_cons, hdr_dest, NULL, NULL, NULL, 0);
+	    0, hdr_cons, hdr_dest, hdr_recl, NULL, NULL, 0);
 	buf_cache = kmem_cache_create("arc_buf_t", sizeof (arc_buf_t),
 	    0, buf_cons, buf_dest, NULL, NULL, NULL, 0);
 	l2arc_hdr_cache = kmem_cache_create("l2arc_buf_hdr_t", L2HDR_SIZE,
@@ -2713,9 +2642,7 @@ arc_reclaim_thread(void *dummy __unused)
     clock_t                 growtime = 0;
     arc_reclaim_strategy_t  last_reclaim = ARC_RECLAIM_CONS;
     callb_cpr_t             cpr;
-    kern_return_t kr;
-    uint64_t amount;
-    unsigned int num_pages;
+    uint64_t                amount;
 
     CALLB_CPR_INIT(&cpr, &arc_reclaim_thr_lock, callb_generic_cpr, FTAG);
 
@@ -2726,6 +2653,7 @@ arc_reclaim_thread(void *dummy __unused)
 #ifdef _KERNEL
         static uint64_t last_zfs_arc_max = 0;
         // Detect changes of arc stats from sysctl
+
         if (zfs_arc_max != last_zfs_arc_max) {
             last_zfs_arc_max = zfs_arc_max;
 
@@ -2744,12 +2672,23 @@ arc_reclaim_thread(void *dummy __unused)
             arc_meta_limit = arc_c_max / 4;
             arc_meta_max = 0;
             printf("ARC: updating arc_max=%llx\n", arc_c_max);
+			printf("ARC: arc_size currently=%llx\n", arc_size);
+
+			// React immediately to a request to reduce ARC size
+			if (arc_size > arc_c) {
+				printf("triggering arc kmem_reap_now\n");
+				arc_kmem_reap_now(ARC_RECLAIM_AGGR, arc_size - arc_c);
+
+				// provide a hint to the SPL that memory has been released
+				// due to user request, and that the SPL needs to release
+				// all unneeded memory now.
+				kmem_flush();
+			}
         }
 #endif
 #endif
 
         if (arc_reclaim_needed()) {
-
             if (arc_no_grow) {
                 if (last_reclaim == ARC_RECLAIM_CONS) {
                     last_reclaim = ARC_RECLAIM_AGGR;
@@ -2775,10 +2714,7 @@ arc_reclaim_thread(void *dummy __unused)
             }
 
 #ifdef _KERNEL
-            kr = mach_vm_pressure_monitor(FALSE, 0,
-                                          NULL, &num_pages);
-            if (kr == KERN_SUCCESS)
-                amount = num_pages * PAGE_SIZE;
+            amount = kmem_num_pages_wanted() * PAGE_SIZE;
 #endif
 
             if (!amount)
@@ -4540,7 +4476,7 @@ arc_init(void)
 	 * dedicating their machines to ZFS can always bring it up using the
 	 * zfs.arc_max sysctl.
 	 */
-	arc_c_max >>= 1;
+	//arc_c_max >>= 1;
 
 #ifdef _KERNEL
     printf("ZFS: ARC limit set to (arc_c_max): %llu\n",
@@ -6148,32 +6084,6 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs);
     sysctl_register_oid(&sysctl__zfs_arc_max);
     sysctl_register_oid(&sysctl__zfs_arc_min);
-    sysctl_register_oid(&sysctl__zfs_arc_meta_used);
-    sysctl_register_oid(&sysctl__zfs_arc_meta_limit);
-    sysctl_register_oid(&sysctl__zfs_l2arc_write_max);
-    sysctl_register_oid(&sysctl__zfs_l2arc_write_boost);
-    sysctl_register_oid(&sysctl__zfs_l2arc_headroom);
-    sysctl_register_oid(&sysctl__zfs_l2arc_feed_secs);
-    sysctl_register_oid(&sysctl__zfs_l2arc_feed_min_ms);
-    sysctl_register_oid(&sysctl__zfs_l2arc_noprefetch);
-    sysctl_register_oid(&sysctl__zfs_l2arc_feed_again);
-    sysctl_register_oid(&sysctl__zfs_l2arc_norw);
-    sysctl_register_oid(&sysctl__zfs_anon_size);
-    sysctl_register_oid(&sysctl__zfs_anon_metadata_lsize);
-    sysctl_register_oid(&sysctl__zfs_anon_data_lsize);
-    sysctl_register_oid(&sysctl__zfs_mru_size);
-    sysctl_register_oid(&sysctl__zfs_mru_metadata_lsize);
-    sysctl_register_oid(&sysctl__zfs_mru_data_lsize);
-    sysctl_register_oid(&sysctl__zfs_mru_ghost_size);
-    sysctl_register_oid(&sysctl__zfs_mru_ghost_metadata_lsize);
-    sysctl_register_oid(&sysctl__zfs_mru_ghost_data_lsize);
-    sysctl_register_oid(&sysctl__zfs_mfu_size);
-    sysctl_register_oid(&sysctl__zfs_mfu_metadata_lsize);
-    sysctl_register_oid(&sysctl__zfs_mfu_data_lsize);
-    sysctl_register_oid(&sysctl__zfs_mfu_ghost_size);
-    sysctl_register_oid(&sysctl__zfs_mfu_ghost_metadata_lsize);
-    sysctl_register_oid(&sysctl__zfs_mfu_ghost_data_lsize);
-    sysctl_register_oid(&sysctl__zfs_l2c_only_size);
 
     sysctl_register_oid(&sysctl__zfs_vnop_osx_debug);
     sysctl_register_oid(&sysctl__zfs_vnop_ignore_negatives);
@@ -6192,32 +6102,6 @@ void arc_unregister_oids(void)
     sysctl_unregister_oid(&sysctl__zfs);
     sysctl_unregister_oid(&sysctl__zfs_arc_max);
     sysctl_unregister_oid(&sysctl__zfs_arc_min);
-    sysctl_unregister_oid(&sysctl__zfs_arc_meta_used);
-    sysctl_unregister_oid(&sysctl__zfs_arc_meta_limit);
-    sysctl_unregister_oid(&sysctl__zfs_l2arc_write_max);
-    sysctl_unregister_oid(&sysctl__zfs_l2arc_write_boost);
-    sysctl_unregister_oid(&sysctl__zfs_l2arc_headroom);
-    sysctl_unregister_oid(&sysctl__zfs_l2arc_feed_secs);
-    sysctl_unregister_oid(&sysctl__zfs_l2arc_feed_min_ms);
-    sysctl_unregister_oid(&sysctl__zfs_l2arc_noprefetch);
-    sysctl_unregister_oid(&sysctl__zfs_l2arc_feed_again);
-    sysctl_unregister_oid(&sysctl__zfs_l2arc_norw);
-    sysctl_unregister_oid(&sysctl__zfs_anon_size);
-    sysctl_unregister_oid(&sysctl__zfs_anon_metadata_lsize);
-    sysctl_unregister_oid(&sysctl__zfs_anon_data_lsize);
-    sysctl_unregister_oid(&sysctl__zfs_mru_size);
-    sysctl_unregister_oid(&sysctl__zfs_mru_metadata_lsize);
-    sysctl_unregister_oid(&sysctl__zfs_mru_data_lsize);
-    sysctl_unregister_oid(&sysctl__zfs_mru_ghost_size);
-    sysctl_unregister_oid(&sysctl__zfs_mru_ghost_metadata_lsize);
-    sysctl_unregister_oid(&sysctl__zfs_mru_ghost_data_lsize);
-    sysctl_unregister_oid(&sysctl__zfs_mfu_size);
-    sysctl_unregister_oid(&sysctl__zfs_mfu_metadata_lsize);
-    sysctl_unregister_oid(&sysctl__zfs_mfu_data_lsize);
-    sysctl_unregister_oid(&sysctl__zfs_mfu_ghost_size);
-    sysctl_unregister_oid(&sysctl__zfs_mfu_ghost_metadata_lsize);
-    sysctl_unregister_oid(&sysctl__zfs_mfu_ghost_data_lsize);
-    sysctl_unregister_oid(&sysctl__zfs_l2c_only_size);
 
     sysctl_unregister_oid(&sysctl__zfs_vnop_osx_debug);
     sysctl_unregister_oid(&sysctl__zfs_vnop_ignore_negatives);
