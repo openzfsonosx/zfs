@@ -2672,12 +2672,12 @@ arc_reclaim_thread(void *dummy __unused)
             arc_c = arc_c_max;
             arc_p = (arc_c >> 1);
 
-            /* limit meta-data to 1/4 of the arc capacity */
+            /* limit meta-data to 3/4 of the arc capacity */
             arc_meta_limit = (3 * arc_c_max) / 4;
             zfs_arc_meta_limit = arc_meta_limit;
             last_zfs_arc_meta_limit = zfs_arc_meta_limit;
-            arc_meta_max = 0;
-            printf("ARC: updating arc_max=%llx\n", arc_c_max);
+            printf("ARC: updating arc_max=%llx : arc_meta_limit=%llx\n",
+                arc_c_max, arc_meta_limit);
 			printf("ARC: arc_size currently=%llx\n", arc_size);
 
 			// React immediately to a request to reduce ARC size
@@ -2697,16 +2697,21 @@ arc_reclaim_thread(void *dummy __unused)
 		last_zfs_arc_min = zfs_arc_min;
 		if (zfs_arc_min > 0 &&
 		    zfs_arc_min < arc_c_max &&
-		    zfs_arc_min != arc_c_min)
+		    zfs_arc_min != arc_c_min) {
 			arc_c_min = zfs_arc_min;
+			printf("ARC: updating arc_min=%llx\n", arc_c_min);
+		}
         }
 
 	if (zfs_arc_meta_limit != last_zfs_arc_meta_limit) {
 		last_zfs_arc_meta_limit = zfs_arc_meta_limit;
 		if (zfs_arc_meta_limit > 0 &&
 		    zfs_arc_meta_limit <= arc_c_max &&
-		    zfs_arc_meta_limit != arc_meta_limit)
+		    zfs_arc_meta_limit != arc_meta_limit) {
 			arc_meta_limit = zfs_arc_meta_limit;
+			printf("ARC: updating arc_meta_limit=%llx\n",
+			    arc_meta_limit);
+		}
 	}
 #endif
 #endif
