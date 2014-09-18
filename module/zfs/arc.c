@@ -233,6 +233,8 @@ SYSCTL_QUAD(_zfs, OID_AUTO, arc_max, CTLFLAG_RW,
             &zfs_arc_max, "Maximum ARC size");
 SYSCTL_QUAD(_zfs, OID_AUTO, arc_min, CTLFLAG_RW,
             &zfs_arc_min, "Minimum ARC size")
+SYSCTL_QUAD(_zfs, OID_AUTO, arc_meta_limit, CTLFLAG_RW,
+            &zfs_arc_meta_limit, "Meta limit for arc size")
 
 extern unsigned int debug_vnop_osx_printf;
 SYSCTL_INT(_zfs, OID_AUTO, vnop_osx_debug,
@@ -558,9 +560,11 @@ static arc_state_t	*arc_l2c_only;
 SYSCTL_QUAD(_zfs, OID_AUTO, arc_meta_used,
             CTLFLAG_RD, &arc_stats.arcstat_meta_used.value.ui64,
             "ARC metadata used");
+#if 0
 SYSCTL_QUAD(_zfs, OID_AUTO, arc_meta_limit,
             CTLFLAG_RW, &arc_stats.arcstat_meta_limit.value.ui64,
             "ARC metadata limit");
+#endif
 #endif
 
 /*
@@ -2652,6 +2656,8 @@ arc_reclaim_thread(void *dummy __unused)
 #ifdef __APPLE__
 #ifdef _KERNEL
         static uint64_t last_zfs_arc_max = 0;
+        static uint64_t last_zfs_arc_min = 0;
+        static uint64_t last_zfs_arc_meta_limit = 0;
         // Detect changes of arc stats from sysctl
 
         if (zfs_arc_max != last_zfs_arc_max) {
@@ -2663,13 +2669,13 @@ arc_reclaim_thread(void *dummy __unused)
              */
             if (zfs_arc_max > 64<<20 && zfs_arc_max < physmem * PAGESIZE)
                 arc_c_max = zfs_arc_max;
-            //if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max)
-            //arc_c_min = zfs_arc_min;
             arc_c = arc_c_max;
             arc_p = (arc_c >> 1);
 
             /* limit meta-data to 1/4 of the arc capacity */
-            arc_meta_limit = arc_c_max / 4;
+            arc_meta_limit = (3 * arc_c_max) / 4;
+            zfs_arc_meta_limit = arc_meta_limit;
+            last_zfs_arc_meta_limit = zfs_arc_meta_limit;
             arc_meta_max = 0;
             printf("ARC: updating arc_max=%llx\n", arc_c_max);
 			printf("ARC: arc_size currently=%llx\n", arc_size);
@@ -2684,7 +2690,24 @@ arc_reclaim_thread(void *dummy __unused)
 				// all unneeded memory now.
 				kmem_flush();
 			}
+			zfs_arc_max = arc_c_max;
         }
+
+	if (zfs_arc_min != last_zfs_arc_min) {
+		last_zfs_arc_min = zfs_arc_min;
+		if (zfs_arc_min > 0 &&
+		    zfs_arc_min < arc_c_max &&
+		    zfs_arc_min != arc_c_min)
+			arc_c_min = zfs_arc_min;
+        }
+
+	if (zfs_arc_meta_limit != last_zfs_arc_meta_limit) {
+		last_zfs_arc_meta_limit = zfs_arc_meta_limit;
+		if (zfs_arc_meta_limit > 0 &&
+		    zfs_arc_meta_limit <= arc_c_max &&
+		    zfs_arc_meta_limit != arc_meta_limit)
+			arc_meta_limit = zfs_arc_meta_limit;
+	}
 #endif
 #endif
 
@@ -4466,8 +4489,8 @@ arc_init(void)
 	//spl_register_shrinker(&arc_shrinker);
 #endif
 
-	/* set min cache to zero */
-	arc_c_min = 4<<20;
+	/* set min cache to 1/32 of all memory, or 64MB, whichever is more */
+	arc_c_min = MAX(arc_c / 4, 64<<20);
 	/* set max to 1/2 of all memory */
 	arc_c_max = arc_c * 4;
 
@@ -4492,7 +4515,6 @@ arc_init(void)
 	if (zfs_arc_min > 0 && zfs_arc_min <= arc_c_max)
 		arc_c_min = zfs_arc_min;
 
-
 	arc_c = arc_c_max;
 	arc_p = (arc_c >> 1);
 
@@ -4509,6 +4531,10 @@ arc_init(void)
 		arc_c = arc_c / 2;
 	if (arc_c < arc_c_min)
 		arc_c = arc_c_min;
+
+	zfs_arc_min = arc_c_min;
+	zfs_arc_max = arc_c_max;
+	zfs_arc_meta_limit = arc_meta_limit;
 
 	arc_anon = &ARC_anon;
 	arc_mru = &ARC_mru;
@@ -6084,6 +6110,7 @@ void arc_register_oids(void)
     sysctl_register_oid(&sysctl__zfs);
     sysctl_register_oid(&sysctl__zfs_arc_max);
     sysctl_register_oid(&sysctl__zfs_arc_min);
+    sysctl_register_oid(&sysctl__zfs_arc_meta_limit);
 
     sysctl_register_oid(&sysctl__zfs_vnop_osx_debug);
     sysctl_register_oid(&sysctl__zfs_vnop_ignore_negatives);
@@ -6102,6 +6129,7 @@ void arc_unregister_oids(void)
     sysctl_unregister_oid(&sysctl__zfs);
     sysctl_unregister_oid(&sysctl__zfs_arc_max);
     sysctl_unregister_oid(&sysctl__zfs_arc_min);
+    sysctl_unregister_oid(&sysctl__zfs_arc_meta_limit);
 
     sysctl_unregister_oid(&sysctl__zfs_vnop_osx_debug);
     sysctl_unregister_oid(&sysctl__zfs_vnop_ignore_negatives);
