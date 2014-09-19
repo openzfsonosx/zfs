@@ -52,6 +52,7 @@ dnl if $CFLAGS is blank
 cflags_save="$CFLAGS"
 AC_PROG_CC
 AC_PROG_CXX
+AC_PROG_OBJC([clang gcc cc])
 CFLAGS="$cflags_save"
 AC_PROG_LIBTOOL
 AM_PROG_CC_C_O
@@ -128,6 +129,7 @@ AC_CONFIG_FILES([
 	cmd/arcstat/Makefile
 	cmd/dbufstat/Makefile
 	cmd/zed/Makefile
+	cmd/znotify/Makefile
 	contrib/Makefile
 	contrib/bash_completion.d/Makefile
 	module/Makefile
