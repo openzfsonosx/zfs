@@ -228,10 +228,14 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		break;
 	case SPOTLIGHT_GET_MOUNT_TIME:
 	case SPOTLIGHT_FSCTL_GET_MOUNT_TIME:
+		dprintf("vnop_ioctl: spotlight get mount time: %08lx\n",
+				zfsvfs->z_mount_time);
 		*(uint32_t *)ap->a_data = zfsvfs->z_mount_time;
 		break;
 	case SPOTLIGHT_GET_UNMOUNT_TIME:
 	case SPOTLIGHT_FSCTL_GET_LAST_MTIME:
+		dprintf("vnop_ioctl: spotlight get last unmount time: %08lx\n",
+				zfsvfs->z_last_unmount_time);
 		*(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
 		break;
 	case F_RDADVISE:
