@@ -182,11 +182,19 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	 * On Mac OS X we always export the root directory id as 2
 	 */
 	vap->va_fileid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_id;
+	//printf("fileid set to %u as z_id %u == z_root %u\n",
+	//	   vap->va_fileid, zp->z_id,  zfsvfs->z_root);
+
 	//vap->va_fileid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_vid;
-	vap->va_nlink = zp->z_links;
 	vap->va_data_size = zp->z_size;
 	vap->va_total_size = zp->z_size;
 	vap->va_gen = zp->z_gen;
+
+	if (vnode_isdir(vp)) {
+		vap->va_nlink = zp->z_size;
+	} else {
+		vap->va_nlink = zp->z_links;
+	}
 
 	/*
 	 * For Carbon compatibility,pretend to support this legacy/unused attribute
@@ -205,12 +213,18 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
                       &parent, sizeof (parent));
 
     if (!error) {
-        if (zp->z_id == zfsvfs->z_root)
+        if (zp->z_id == zfsvfs->z_root) {
+			//printf("z_id %u == z_root %u - setting parent 1\n", zp->z_id,
+			//	   zfsvfs->z_root);
             vap->va_parentid = 1;
-        else if (parent == zfsvfs->z_root)
+		} else if (parent == zfsvfs->z_root) {
+			//printf("parent %u == z_root %u - setting parent 2\n", parent,
+			//	   zfsvfs->z_root);
             vap->va_parentid = 2;
-        else
+		} else {
+			//printf("neither, setting parent %u\n", parent);
             vap->va_parentid = parent;
+		}
     }
 
 	vap->va_iosize = zp->z_blksz ? zp->z_blksz : zfsvfs->z_max_blksz;

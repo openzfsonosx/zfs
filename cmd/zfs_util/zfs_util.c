@@ -121,6 +121,18 @@ zfs_probe(const char *devpath, io_name_t volname)
 			syslog(LOG_NOTICE, "writing\n");
 			if (IOObjectConformsTo(service, kIOMediaClass)) {
 				// Do we want to mount it yet?
+				cfstr = IORegistryEntryCreateCFProperty(service,
+				    CFSTR("DATASET"), kCFAllocatorDefault, 0);
+				if (cfstr) {
+					(void) strlcpy(volname,
+							  CFStringGetCStringPtr(cfstr,
+								   kCFStringEncodingMacRoman),
+								   sizeof (io_name_t));
+
+					result = FSUR_RECOGNIZED;
+					CFRelease(cfstr);
+				}
+
 #if 1
 				cfstr = IORegistryEntryCreateCFProperty(service,
 				    CFSTR("DOMOUNTME"), kCFAllocatorDefault, 0);
@@ -135,27 +147,8 @@ zfs_probe(const char *devpath, io_name_t volname)
 				if (cfstr)
 					CFRelease(cfstr);
 #endif
-				cfstr = IORegistryEntryCreateCFProperty(service,
-				    CFSTR("DATASET"), kCFAllocatorDefault, 0);
-				if (cfstr) {
-					char fullvolname[MAXPATHLEN];
-					(void) strlcpy(fullvolname,
-					    CFStringGetCStringPtr(cfstr,
-					    kCFStringEncodingMacRoman),
-					    sizeof (io_name_t));
 
-					char *tmp = strrchr(fullvolname, '/');
-					if (tmp && (*(&tmp[1]) != '\0')) {
-						strlcpy(volname, &tmp[1],
-						    sizeof (io_name_t));
-					} else {
-						strlcpy(volname, fullvolname,
-						    sizeof (io_name_t));
-					}
 
-					result = FSUR_RECOGNIZED;
-					CFRelease(cfstr);
-				}
 				syslog(LOG_NOTICE, "writing volname %s\n",
 				    volname);
 			}
@@ -215,7 +208,19 @@ main(int argc, char **argv, char **env)
 
 	switch (what) {
 		case FSUC_PROBE:
+
+			// Probe will always return the full dataset name
+			// (For UUID) but diskutil does not like slashes, so
+			// lets eat everything except the last part.
 			ret = zfs_probe(blkdevice, volname);
+
+			char *tmp = strrchr(volname, '/');
+			if (tmp && (*(&tmp[1]) != '\0')) {
+				strlcpy(volname, &tmp[1],
+						sizeof (io_name_t));
+			}
+
+			syslog(LOG_NOTICE, "volname '%s'", volname);
 
 			if (ret == FSUR_RECOGNIZED)
 				write(1, volname, strlen(volname));
@@ -223,19 +228,17 @@ main(int argc, char **argv, char **env)
 
 		case FSUC_GETUUID:
 			ret = zfs_probe(blkdevice, volname);
-			if (ret == FSUR_RECOGNIZED) {
-				MD5_CTX  md5c;
-				unsigned char digest[MD5_DIGEST_LENGTH];
-				char uuidLine[40];
-				MD5_Init(&md5c);
-				MD5_Update(&md5c, volname, strlen(volname));
-				MD5_Final(digest, &md5c);
-				// 12962490-0DBE-3BCD-B22E-31B6CD7054E4
-				uuid_unparse(digest, uuidLine);
-				write(1, uuidLine, strlen(uuidLine));
-				syslog(LOG_NOTICE, "UUID is %s", uuidLine);
-				ret = FSUR_IO_SUCCESS;
-			}
+			MD5_CTX  md5c;
+			unsigned char digest[MD5_DIGEST_LENGTH];
+			char uuidLine[40];
+			MD5_Init(&md5c);
+			MD5_Update(&md5c, volname, strlen(volname));
+			MD5_Final(digest, &md5c);
+			// 12962490-0DBE-3BCD-B22E-31B6CD7054E4
+			uuid_unparse(digest, uuidLine);
+			write(1, uuidLine, strlen(uuidLine));
+			syslog(LOG_NOTICE, "UUID is %s - returning SUCCESS", uuidLine);
+			ret = FSUR_IO_SUCCESS;
 			break;
 
 		case FSUC_QUICKVERIFY:

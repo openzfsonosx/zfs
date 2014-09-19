@@ -2132,6 +2132,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		/* It appears Spotlight makes certain assumptions if we enable VOLFS
 		 */
         //vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
+        vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_JOURNALED));
 
 		/* Indicate to VFS that we support ACLs. */
 		vfs_setextendedsecurity(vfsp);
@@ -2311,6 +2312,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_FMT_SPARSE_FILES |   // ZFS
 			VOL_CAP_FMT_CASE_SENSITIVE | // ZFS
 			VOL_CAP_FMT_2TB_FILESIZE |   // ZFS
+			VOL_CAP_FMT_JOURNAL | VOL_CAP_FMT_JOURNAL_ACTIVE | // ZFS
 			VOL_CAP_FMT_SYMBOLICLINKS |  // msdos..
 			VOL_CAP_FMT_NO_ROOT_TIMES |
 			VOL_CAP_FMT_CASE_PRESERVING |
@@ -2542,14 +2544,26 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
      */
 	VFSATTR_RETURN(fsap, f_signature, 18475);  /*  */
 	VFSATTR_RETURN(fsap, f_carbon_fsid, 0);
+
+
     // Make up a UUID here, based on the name
 	if (VFSATTR_IS_ACTIVE(fsap, f_uuid)) {
         MD5_CTX  md5c;
-        char *fromname = vfs_statfs(zfsvfs->z_vfs)->f_mntfromname;
+		char osname[MAXNAMELEN];
+
+		// Get dataset name
+		dmu_objset_name(zfsvfs->z_os, osname);
+
+        char *fromname = osname;
         MD5Init( &md5c );
         MD5Update( &md5c, fromname, strlen(fromname));
         MD5Final( fsap->f_uuid, &md5c );
         VFSATTR_SET_SUPPORTED(fsap, f_uuid);
+		printf("Returning '%s' uuid '%02x%02x%02x%02x'\n", fromname,
+			   fsap->f_uuid[0],
+			   fsap->f_uuid[1],
+			   fsap->f_uuid[2],
+			   fsap->f_uuid[3]);
     }
 
 	ZFS_EXIT(zfsvfs);
