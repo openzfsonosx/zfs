@@ -2745,8 +2745,8 @@ arc_reclaim_thread(void *dummy __unused)
             amount = kmem_num_pages_wanted() * PAGE_SIZE;
 #endif
 
-            if (!amount)
-                amount = 1024780;
+            // BGH if (!amount)
+            //    amount = 1024780;
 
             dprintf("ARC reclaim: %llu\n", amount);
 
