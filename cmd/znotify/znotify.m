@@ -139,7 +139,7 @@ isMavericks()
 		 "\n" \
 		 " Optional:\n" \
 		 "\n" \
-		 " -title VALUE The notification title. Defaults to ‘Terminal’.\n" \
+		 " -title VALUE The notification title. Defaults to ‘Open ZFS’.\n" \
 		 " -subtitle VALUE The notification subtitle.\n" \
 		 " -sound NAME The name of a sound to play when the notification appears. The names are listed\n" \
 		 " in Sound Preferences. Use 'default' for the default notification sound.\n" \
@@ -230,7 +230,7 @@ isMavericks()
 		  options[@"open"] = encodedURL;
 		}
 	  }
-	  [self deliverNotificationWithTitle:defaults[@"title"] ?: @"Terminal"
+	  [self deliverNotificationWithTitle:defaults[@"title"] ?: @"Open ZFS"
 								subtitle:subtitle
 								 message:message
 								 options:options
