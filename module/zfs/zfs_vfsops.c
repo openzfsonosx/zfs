@@ -2131,7 +2131,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 		/* It appears Spotlight makes certain assumptions if we enable VOLFS
 		 */
-        //vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
+        vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
         vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_JOURNALED));
 
 		/* Indicate to VFS that we support ACLs. */
@@ -2308,6 +2308,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	if (VFSATTR_IS_ACTIVE(fsap, f_capabilities)) {
 
 		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_FORMAT] =
+			VOL_CAP_FMT_PERSISTENTOBJECTIDS |
 			VOL_CAP_FMT_HARDLINKS |      // ZFS
 			VOL_CAP_FMT_SPARSE_FILES |   // ZFS
 			VOL_CAP_FMT_CASE_SENSITIVE | // ZFS
