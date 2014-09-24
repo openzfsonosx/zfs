@@ -335,10 +335,15 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
              * be able to distringuish between mounts. For this reason
              * we simply return the fullname, from the statfs mountedfrom
              */
+			char osname[MAXNAMELEN];
+
+			dmu_objset_name(zfsvfs->z_os, osname);
+
             strlcpy(vap->va_name,
-                    vfs_statfs(vnode_mount(vp))->f_mntfromname,
+                    osname,
                     MAXPATHLEN);
             VATTR_SET_SUPPORTED(vap, va_name);
+			printf("getattr root returning '%s'\n", vap->va_name);
         }
 	}
 
