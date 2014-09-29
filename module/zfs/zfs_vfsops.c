@@ -103,7 +103,7 @@
 #include <sys/zfs_mount.h>
 #endif /* __APPLE__ */
 
-//#define dprintf printf
+#define dprintf printf
 
 #ifdef __APPLE__
 
@@ -1970,6 +1970,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	    mnt_args.optlen,
 	    options);
 
+	(void) dnlc_purge_vfsp(vfsp, 0);
+
 	if (mflag & MS_RDONLY)
 		flags |= MNT_RDONLY;
 
@@ -2318,6 +2320,8 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_FMT_NO_ROOT_TIMES |
 			VOL_CAP_FMT_CASE_PRESERVING |
 			VOL_CAP_FMT_FAST_STATFS |
+			VOL_CAP_FMT_PATH_FROM_ID |
+			VOL_CAP_FMT_64BIT_OBJECT_IDS |
 			VOL_CAP_FMT_HIDDEN_FILES ;
 		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_INTERFACES] =
 			VOL_CAP_INT_ATTRLIST |          // ZFS
@@ -2329,6 +2333,11 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_INT_EXTENDED_ATTR |     // ZFS
 			VOL_CAP_INT_VOL_RENAME |        // msdos..
 			VOL_CAP_INT_ADVLOCK |
+
+			VOL_CAP_INT_EXCHANGEDATA|
+			VOL_CAP_INT_COPYFILE|
+			VOL_CAP_INT_ALLOCATE|
+
 			VOL_CAP_INT_FLOCK ;
 		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_RESERVED1] = 0;
 		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_RESERVED2] = 0;
@@ -2347,6 +2356,8 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_FMT_FAST_STATFS |
 			VOL_CAP_FMT_2TB_FILESIZE |
 			VOL_CAP_FMT_OPENDENYMODES |
+			VOL_CAP_FMT_PATH_FROM_ID |
+			VOL_CAP_FMT_64BIT_OBJECT_IDS |
 			VOL_CAP_FMT_HIDDEN_FILES ;
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_INTERFACES] =
 			VOL_CAP_INT_SEARCHFS |
@@ -2374,7 +2385,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			ATTR_CMN_OBJTYPE |
 			ATTR_CMN_OBJTAG	|
 			ATTR_CMN_OBJID	|
-			/* ATTR_CMN_OBJPERMANENTID | */
+			ATTR_CMN_OBJPERMANENTID |
 			ATTR_CMN_PAROBJID |
 			/* ATTR_CMN_SCRIPT | */
 			ATTR_CMN_CRTIME |
@@ -2382,29 +2393,29 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			ATTR_CMN_CHGTIME |
 			ATTR_CMN_ACCTIME |
 			/* ATTR_CMN_BKUPTIME | */
-			/* ATTR_CMN_FNDRINFO | */
+			ATTR_CMN_FNDRINFO |
 			ATTR_CMN_OWNERID |
 			ATTR_CMN_GRPID	|
 			ATTR_CMN_ACCESSMASK |
 			ATTR_CMN_FLAGS	|
 			ATTR_CMN_USERACCESS |
-			/* ATTR_CMN_EXTENDED_SECURITY | */
-			/* ATTR_CMN_UUID | */
-			/* ATTR_CMN_GRPUUID | */
+			ATTR_CMN_EXTENDED_SECURITY |
+			ATTR_CMN_UUID |
+			ATTR_CMN_GRPUUID |
 			0;
 		fsap->f_attributes.validattr.volattr =
 			ATTR_VOL_FSTYPE	|
-			/* ATTR_VOL_SIGNATURE */
+			ATTR_VOL_SIGNATURE |
 			ATTR_VOL_SIZE	|
 			ATTR_VOL_SPACEFREE |
 			ATTR_VOL_SPACEAVAIL |
 			ATTR_VOL_MINALLOCATION |
 			ATTR_VOL_ALLOCATIONCLUMP |
 			ATTR_VOL_IOBLOCKSIZE |
-			/* ATTR_VOL_OBJCOUNT */
-			/* ATTR_VOL_FILECOUNT */
-			/* ATTR_VOL_DIRCOUNT */
-			/* ATTR_VOL_MAXOBJCOUNT */
+			ATTR_VOL_OBJCOUNT |
+			ATTR_VOL_FILECOUNT |
+			ATTR_VOL_DIRCOUNT |
+			ATTR_VOL_MAXOBJCOUNT |
 			ATTR_VOL_MOUNTPOINT |
 			ATTR_VOL_NAME	|
 			ATTR_VOL_MOUNTFLAGS |
@@ -2414,7 +2425,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			ATTR_VOL_ATTRIBUTES;
 		fsap->f_attributes.validattr.dirattr =
 			ATTR_DIR_LINKCOUNT |
-			/* ATTR_DIR_ENTRYCOUNT */
+			ATTR_DIR_ENTRYCOUNT |
 			ATTR_DIR_MOUNTSTATUS;
 		fsap->f_attributes.validattr.fileattr =
 			ATTR_FILE_LINKCOUNT |
@@ -2436,7 +2447,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			ATTR_CMN_OBJTYPE |
 			ATTR_CMN_OBJTAG	|
 			ATTR_CMN_OBJID	|
-			/* ATTR_CMN_OBJPERMANENTID | */
+			ATTR_CMN_OBJPERMANENTID |
 			ATTR_CMN_PAROBJID |
 			/* ATTR_CMN_SCRIPT | */
 			ATTR_CMN_CRTIME |
@@ -2445,28 +2456,28 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			ATTR_CMN_ACCTIME |
 			/* ATTR_CMN_BKUPTIME | */
 			/* ATTR_CMN_FNDRINFO | */
-			/* ATTR_CMN_OWNERID | */	/* Supported but not native */
-			/* ATTR_CMN_GRPID	| */	/* Supported but not native */
-			/* ATTR_CMN_ACCESSMASK | */	/* Supported but not native */
+			ATTR_CMN_OWNERID | 	/* Supported but not native */
+			ATTR_CMN_GRPID	| 	/* Supported but not native */
+			ATTR_CMN_ACCESSMASK | 	/* Supported but not native */
 			ATTR_CMN_FLAGS	|
 			ATTR_CMN_USERACCESS |
-			/* ATTR_CMN_EXTENDED_SECURITY | */
-			/* ATTR_CMN_UUID | */
-			/* ATTR_CMN_GRPUUID | */
+			ATTR_CMN_EXTENDED_SECURITY |
+			ATTR_CMN_UUID |
+			ATTR_CMN_GRPUUID |
 			0;
 		fsap->f_attributes.nativeattr.volattr =
 			ATTR_VOL_FSTYPE	|
-			/* ATTR_VOL_SIGNATURE */
+			ATTR_VOL_SIGNATURE |
 			ATTR_VOL_SIZE	|
 			ATTR_VOL_SPACEFREE |
 			ATTR_VOL_SPACEAVAIL |
 			ATTR_VOL_MINALLOCATION |
 			ATTR_VOL_ALLOCATIONCLUMP |
 			ATTR_VOL_IOBLOCKSIZE |
-			/* ATTR_VOL_OBJCOUNT */
-			/* ATTR_VOL_FILECOUNT */
-			/* ATTR_VOL_DIRCOUNT */
-			/* ATTR_VOL_MAXOBJCOUNT */
+			ATTR_VOL_OBJCOUNT |
+			ATTR_VOL_FILECOUNT |
+			ATTR_VOL_DIRCOUNT |
+			ATTR_VOL_MAXOBJCOUNT |
 			ATTR_VOL_MOUNTPOINT |
 			ATTR_VOL_NAME	|
 			ATTR_VOL_MOUNTFLAGS |
@@ -2594,8 +2605,9 @@ zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
 	ZFS_ENTER_NOERROR(zfsvfs);
 
 	error = zfs_zget(zfsvfs, zfsvfs->z_root, &rootzp);
-	if (error == 0)
+	if (error == 0) {
 		*vpp = ZTOV(rootzp);
+	}
 
 	ZFS_EXIT(zfsvfs);
 
@@ -2749,6 +2761,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		    ZFS_DELEG_PERM_MOUNT, cr))
 			return (ret);
 	}
+#endif
 
 	/*
 	 * We purge the parent filesystem's vfsp as the parent filesystem
@@ -2757,7 +2770,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	 * referential for non-snapshots.
 	 */
 	(void) dnlc_purge_vfsp(zfsvfs->z_parent->z_vfs, 0);
-#endif
 
 	/*
 	 * Unmount any snapshots mounted under .zfs before unmounting the
@@ -2949,6 +2961,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	    (zfsvfs->z_shares_dir != 0 && ino == zfsvfs->z_shares_dir))
 		return (EOPNOTSUPP);
 
+
     /* We can not be locked during zget. */
 
 	err = zfs_zget(zfsvfs, ino, &zp);
@@ -2972,9 +2985,6 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
     err = zfs_vnode_lock(*vpp, 0/*flags*/);
 
-    if (vnode_isvroot(*vpp))
-        goto out;
-
  out:
     /*
      * We do not release the vp here in vget, if we do, we panic with io_count
@@ -2982,9 +2992,11 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
      *
      * VN_RELE(ZTOV(zp));
      */
-	if (err != 0)
+	if (err != 0) {
+		VN_RELE(ZTOV(zp));
 		*vpp = NULL;
-    dprintf("vget return %d\n", err);
+	}
+    dprintf("vget return %d (vp %p)\n", err, *vpp);
 	return (err);
 }
 
@@ -3008,10 +3020,14 @@ zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_
 	 * from zfs_vfs_vget KPI (unless of course the real id was
 	 * already 2).
 	 */
+	if (ino == 2) ino = zfsvfs->z_root;
+
 	if ((ino == zfsvfs->z_root) && (zfsvfs->z_root != 2)) {
+		error = VFS_ROOT(mp, 0, vpp);
 		ZFS_EXIT(zfsvfs);
-		return (ENOENT);
+		return (error);
 	}
+
 	error = zfs_vget_internal(zfsvfs, ino, vpp);
 
 	ZFS_EXIT(zfsvfs);

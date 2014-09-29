@@ -2303,6 +2303,8 @@ zfs_vnop_exchange(struct vnop_exchange_args *ap)
 	znode_t  *fzp;
 	zfsvfs_t  *zfsvfs;
 
+	dprintf("zfs_vnop_exchange: ENOTSUP\n");
+
 	/* The files must be on the same volume. */
 	if (vnode_mount(fvp) != vnode_mount(tvp))
 		return (EXDEV);

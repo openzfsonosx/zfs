@@ -299,12 +299,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         vap->va_name[0] = 0;
 
         if (!vnode_isvroot(vp)) {
-            /* Lets not supply name as zap_cursor can cause panic */
-#if 0
-            if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-                                 ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
-                VATTR_SET_SUPPORTED(vap, va_name);
-#endif
             /*
              * Finder (Carbon) relies on getattr returning the correct name
              * for hardlinks to work, so we store the lookup name in
@@ -326,7 +320,15 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
                 dprintf("getattr: %p return name '%s':%04x\n", vp,
                        vap->va_name,
                        vap->va_linkid);
-            }
+            } else {
+
+#if 0
+				if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+									 ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
+					VATTR_SET_SUPPORTED(vap, va_name);
+#endif
+
+			}
 
 
         } else {
