@@ -123,7 +123,7 @@ extern int getzfsvfs(const char *dsname, zfsvfs_t **zfvp);
 const vol_capabilities_attr_t zfs_capabilities = {
 	{
 		/* Format capabilities we support: */
-        /*	VOL_CAP_FMT_PERSISTENTOBJECTIDS |*/
+		VOL_CAP_FMT_PERSISTENTOBJECTIDS |
 		VOL_CAP_FMT_SYMBOLICLINKS |
 		VOL_CAP_FMT_HARDLINKS |
 		VOL_CAP_FMT_SPARSE_FILES |
@@ -132,7 +132,8 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_FMT_FAST_STATFS |
 		VOL_CAP_FMT_2TB_FILESIZE |
 		VOL_CAP_FMT_HIDDEN_FILES |
-		/*VOL_CAP_FMT_PATH_FROM_ID*/
+		VOL_CAP_FMT_PATH_FROM_ID |
+		VOL_CAP_FMT_64BIT_OBJECT_IDS |
         0,
 
 		/* Interface capabilities we support: */
@@ -169,6 +170,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_FMT_FAST_STATFS |
 		VOL_CAP_FMT_2TB_FILESIZE |
 		VOL_CAP_FMT_OPENDENYMODES |
+		VOL_CAP_FMT_64BIT_OBJECT_IDS |
 		VOL_CAP_FMT_HIDDEN_FILES |
 		VOL_CAP_FMT_PATH_FROM_ID ,
 
@@ -2437,11 +2439,21 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
     // Make up a UUID here, based on the name
 	if (VFSATTR_IS_ACTIVE(fsap, f_uuid)) {
         MD5_CTX  md5c;
-        char *fromname = vfs_statfs(zfsvfs->z_vfs)->f_mntfromname;
+		char osname[MAXNAMELEN];
+
+		// Get dataset name
+		dmu_objset_name(zfsvfs->z_os, osname);
+
+        char *fromname = osname;
         MD5Init( &md5c );
         MD5Update( &md5c, fromname, strlen(fromname));
         MD5Final( fsap->f_uuid, &md5c );
         VFSATTR_SET_SUPPORTED(fsap, f_uuid);
+		dprintf("Returning '%s' uuid '%02x%02x%02x%02x'\n", fromname,
+			   fsap->f_uuid[0],
+			   fsap->f_uuid[1],
+			   fsap->f_uuid[2],
+			   fsap->f_uuid[3]);
     }
 
 	ZFS_EXIT(zfsvfs);
@@ -2848,8 +2860,44 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
     err = zfs_vnode_lock(*vpp, 0/*flags*/);
 
-    if (vnode_isvroot(*vpp))
-        goto out;
+	/*
+	 * Spotlight requires that vap->va_name() is set when returning
+	 * from vfs_vget, so that vfs_getrealpath() can succeed in returning
+	 * a path to mds.
+	 */
+	char name[MAXPATHLEN + 2];
+
+	/* Root can't lookup in ZAP */
+	if (zp->z_id == zfsvfs->z_root) {
+
+		dmu_objset_name(zfsvfs->z_os, name);
+		dprintf("vget: set root '%s'\n", name);
+		vnode_update_identity(*vpp, NULL, name,
+							  strlen(name), 0,
+							  VNODE_UPDATE_NAME);
+
+	} else {
+		uint64_t parent;
+
+		/* Lookup name from ID, grab parent */
+		VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+                         &parent, sizeof (parent)) == 0);
+
+#if 1
+		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+							 ZFS_DIRENT_OBJ(-1ULL), name) == 0) {
+
+			dprintf("vget: set name '%s'\n", name);
+			vnode_update_identity(*vpp, NULL, name,
+								  strlen(name), 0,
+								  VNODE_UPDATE_NAME);
+		} else {
+			dprintf("vget: unable to get name for %u\n", zp->z_id);
+		} // !zap_search
+#endif
+
+	} // rootid
+
 
  out:
     /*
@@ -2858,8 +2906,10 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
      *
      * VN_RELE(ZTOV(zp));
      */
-	if (err != 0)
+	if (err != 0) {
+		VN_RELE(ZTOV(zp));
 		*vpp = NULL;
+	}
     dprintf("vget return %d\n", err);
 	return (err);
 }
@@ -2884,10 +2934,14 @@ zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_
 	 * from zfs_vfs_vget KPI (unless of course the real id was
 	 * already 2).
 	 */
+	if (ino == 2) ino = zfsvfs->z_root;
+
 	if ((ino == zfsvfs->z_root) && (zfsvfs->z_root != 2)) {
+		error = VFS_ROOT(mp, 0, vpp);
 		ZFS_EXIT(zfsvfs);
-		return (ENOENT);
+		return (error);
 	}
+
 	error = zfs_vget_internal(zfsvfs, ino, vpp);
 
 	ZFS_EXIT(zfsvfs);

@@ -2638,12 +2638,13 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 		if (offset == 0) {
 			(void) strlcpy(zap.za_name, ".", MAXNAMELEN);
 			zap.za_normalization_conflict = 0;
-			objnum = zp->z_id;
+			objnum = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_id;
 			type = DT_DIR;
 		} else if (offset == 1) {
 			(void) strlcpy(zap.za_name, "..", MAXNAMELEN);
 			zap.za_normalization_conflict = 0;
-			objnum = parent;
+			objnum = (parent == zfsvfs->z_root) ? 2 : parent;
+			objnum = (zp->z_id == zfsvfs->z_root) ? 1 : objnum;
 			type = DT_DIR;
 #if 1
 		} else if (offset == 2 && zfs_show_ctldir(zp)) {
