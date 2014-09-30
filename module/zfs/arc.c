@@ -2621,8 +2621,6 @@ arc_reclaim_needed(void)
 
     if (spl_vm_pool_low()) return 1;
 
-    if (kmem_used() > (kmem_size() * 2) / 4)
-        return (1);
 #endif
 
 
