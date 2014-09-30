@@ -689,7 +689,7 @@ zfs_vnode_forget(struct vnode *vp)
  */
 static znode_t *
 zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
-				dmu_object_type_t obj_type, sa_handle_t *hdl, char *vpname)
+				dmu_object_type_t obj_type, sa_handle_t *hdl)
 {
 	znode_t	*zp;
 	struct vnode *vp;
@@ -822,64 +822,6 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 #else /* APPLE */
 
 	zfs_znode_getvnode(zp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
-
-
-#if 1
-	/*
-	 * Spotlight requires that vnode_name() is set very early, as it can
-	 * come in from VNOP_VGET (without calls to VNOP_LOOKUP). We can be
-	 * given the name from calls to zfs_mknode() in the vap->va_name field
-	 * which is otherwise only used for lookup.
-	 * Otherwise, we have to look up the name in the ZAP.
-	 */
-	char name[MAXPATHLEN + 2];
-
-	if (zfsvfs && zfsvfs->z_os) {
-
-		/* Root can't lookup in ZAP */
-		if (zp->z_id == zfsvfs->z_root) {
-
-			dmu_objset_name(zfsvfs->z_os, name);
-			printf("getvnode: set root '%s'\n", name);
-			vnode_update_identity(vp, NULL, name,
-								  strlen(name), 0,
-								  VNODE_UPDATE_NAME);
-
-		} else {
-
-			/* Passed name in via vap->va_name? */
-
-			if (vpname) {
-
-				printf("getvnode: passed name '%s'\n", vpname);
-				vnode_update_identity(vp, NULL, vpname,
-									  strlen(vpname), 0,
-									  VNODE_UPDATE_NAME);
-			} else {
-
-				/* Lookup name from ID */
-#if 1
-				if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-									 ZFS_DIRENT_OBJ(-1ULL), name) == 0) {
-
-					printf("getvnode: set name '%s'\n", name);
-					vnode_update_identity(vp, NULL, name,
-										  strlen(name), 0,
-										  VNODE_UPDATE_NAME);
-				} else {
-					printf("getvnode: unable to get name for %u\n", zp->z_id);
-				} // !zap_search
-
-#endif
-
-			} // !vpname
-
-		} // !zfsvfs
-
-	} // zfsvfs
-#endif
-
-
 
 #endif /* Apple */
 
@@ -1154,8 +1096,8 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 		 * vnop_fsync.
 		 */
 		// zfs_release_sa_handle(sa_hdl, db, FTAG);
-		*zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, sa_hdl,
-							   vap->va_name);
+		*zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, sa_hdl);
+
 		ASSERT(*zpp != NULL);
 		// ZFS_OBJ_HOLD_ENTER(zfsvfs, obj);
 		// VERIFY(0 == sa_buf_hold(zfsvfs->z_os, obj, NULL, &db));
@@ -1457,7 +1399,7 @@ again:
 
 	zp = NULL;
 	zp = zfs_znode_alloc(zfsvfs, db, doi.doi_data_block_size,
-						 doi.doi_bonus_type, NULL, NULL);
+						 doi.doi_bonus_type, NULL);
 
 	if (zp == NULL) {
 		err = SET_ERROR(ENOENT);

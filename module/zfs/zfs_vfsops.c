@@ -103,7 +103,7 @@
 #include <sys/zfs_mount.h>
 #endif /* __APPLE__ */
 
-#define dprintf printf
+//#define dprintf printf
 
 #ifdef __APPLE__
 
@@ -2571,7 +2571,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
         MD5Update( &md5c, fromname, strlen(fromname));
         MD5Final( fsap->f_uuid, &md5c );
         VFSATTR_SET_SUPPORTED(fsap, f_uuid);
-		printf("Returning '%s' uuid '%02x%02x%02x%02x'\n", fromname,
+		dprintf("Returning '%s' uuid '%02x%02x%02x%02x'\n", fromname,
 			   fsap->f_uuid[0],
 			   fsap->f_uuid[1],
 			   fsap->f_uuid[2],
@@ -2967,7 +2967,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	err = zfs_zget(zfsvfs, ino, &zp);
 
     if (err) {
-        dprintf("zget failed %d\n", err);
+        dprintf("vget: zget failed %d\n", err);
         return err;
     }
 
@@ -2985,13 +2985,48 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
     err = zfs_vnode_lock(*vpp, 0/*flags*/);
 
+
+	/*
+	 * Spotlight requires that vap->va_name() is set when returning
+	 * from vfs_vget, so that vfs_getrealpath() can succeed in returning
+	 * a path to mds.
+	 */
+	char name[MAXPATHLEN + 2];
+
+	/* Root can't lookup in ZAP */
+	if (zp->z_id == zfsvfs->z_root) {
+
+		dmu_objset_name(zfsvfs->z_os, name);
+		dprintf("vget: set root '%s'\n", name);
+		vnode_update_identity(*vpp, NULL, name,
+							  strlen(name), 0,
+							  VNODE_UPDATE_NAME);
+
+	} else {
+		uint64_t parent;
+
+		/* Lookup name from ID, grab parent */
+		VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+                         &parent, sizeof (parent)) == 0);
+
+#if 1
+		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+							 ZFS_DIRENT_OBJ(-1ULL), name) == 0) {
+
+			dprintf("vget: set name '%s'\n", name);
+			vnode_update_identity(*vpp, NULL, name,
+								  strlen(name), 0,
+								  VNODE_UPDATE_NAME);
+		} else {
+			dprintf("vget: unable to get name for %u\n", zp->z_id);
+		} // !zap_search
+#endif
+
+	} // rootid
+
+
+
  out:
-    /*
-     * We do not release the vp here in vget, if we do, we panic with io_count
-     * != 1
-     *
-     * VN_RELE(ZTOV(zp));
-     */
 	if (err != 0) {
 		VN_RELE(ZTOV(zp));
 		*vpp = NULL;

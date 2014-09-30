@@ -1755,9 +1755,6 @@ top:
 			goto out;
 		}
 
-		/* Set the name for Spotlight, used in zfs_znode_alloc() */
-		vap->va_name = name ? name : NULL;
-
 		tx = dmu_tx_create(os);
 
 		dmu_tx_hold_sa_create(tx, acl_ids.z_aclp->z_acl_bytes +
@@ -2238,9 +2235,6 @@ zfs_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t **vpp, cred_t *cr,
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
-
-	/* Set the name for Spotlight, used in zfs_znode_alloc() */
-	vap->va_name = dirname ? dirname : NULL;
 
 	/*
 	 * First make sure the new directory doesn't exist.
@@ -4458,10 +4452,6 @@ zfs_symlink(vnode_t *dvp, vnode_t **vpp, char *name, vattr_t *vap, char *link,
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
-
-	/* Set the name for Spotlight, used in zfs_znode_alloc() */
-	vap->va_name = name ? name : NULL;
-
 top:
 	/*
 	 * Attempt to lock directory; fail if entry already exists.
