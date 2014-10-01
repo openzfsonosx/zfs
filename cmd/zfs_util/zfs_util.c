@@ -177,6 +177,7 @@ main(int argc, char **argv, char **env)
 	struct stat  sb;
 	int  ret = FSUR_INVAL;
 	io_name_t volname;
+	char *thename;
 
 	/* save & strip off program name */
 	progname = argv[0];
@@ -215,15 +216,15 @@ main(int argc, char **argv, char **env)
 			ret = zfs_probe(blkdevice, volname);
 
 			char *tmp = strrchr(volname, '/');
-			if (tmp && (*(&tmp[1]) != '\0')) {
-				strlcpy(volname, &tmp[1],
-						sizeof (io_name_t));
-			}
+			if (tmp && (tmp[1] != '\0'))
+				thename = &tmp[1];
+			else
+				thename = &volname[0];
 
-			syslog(LOG_NOTICE, "volname '%s'", volname);
+			syslog(LOG_NOTICE, "volname '%s'", thename);
 
 			if (ret == FSUR_RECOGNIZED)
-				write(1, volname, strlen(volname));
+				write(1, thename, strlen(thename));
 			break;
 
 		case FSUC_GETUUID:
