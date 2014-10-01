@@ -2313,7 +2313,6 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_FMT_PERSISTENTOBJECTIDS |
 			VOL_CAP_FMT_HARDLINKS |      // ZFS
 			VOL_CAP_FMT_SPARSE_FILES |   // ZFS
-			VOL_CAP_FMT_CASE_SENSITIVE | // ZFS
 			VOL_CAP_FMT_2TB_FILESIZE |   // ZFS
 			VOL_CAP_FMT_JOURNAL | VOL_CAP_FMT_JOURNAL_ACTIVE | // ZFS
 			VOL_CAP_FMT_SYMBOLICLINKS |  // msdos..
@@ -2373,6 +2372,11 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_INT_MANLOCK ;
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_RESERVED1] = 0;
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_RESERVED2] = 0;
+
+		/* Check if we are case-sensitive */
+		if (zfsvfs->z_case == ZFS_CASE_SENSITIVE)
+			fsap->f_capabilities.capabilities[VOL_CAPABILITIES_FORMAT]
+				|= VOL_CAP_FMT_CASE_SENSITIVE;
 
 		VFSATTR_SET_SUPPORTED(fsap, f_capabilities);
 	}
