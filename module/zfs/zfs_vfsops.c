@@ -127,7 +127,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_FMT_SYMBOLICLINKS |
 		VOL_CAP_FMT_HARDLINKS |
 		VOL_CAP_FMT_SPARSE_FILES |
-		VOL_CAP_FMT_CASE_SENSITIVE |
+		/*VOL_CAP_FMT_CASE_SENSITIVE*/ /* Moved down to vfs_getattr */
 		VOL_CAP_FMT_CASE_PRESERVING |
 		VOL_CAP_FMT_FAST_STATFS |
 		VOL_CAP_FMT_2TB_FILESIZE |
@@ -2375,6 +2375,11 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_capabilities)) {
 		bcopy(&zfs_capabilities, &fsap->f_capabilities, sizeof (zfs_capabilities));
+		/* Check if we are case-sensitive */
+		if (zfsvfs->z_case == ZFS_CASE_SENSITIVE)
+			fsap->f_capabilities.capabilities[VOL_CAPABILITIES_FORMAT]
+				|= VOL_CAP_FMT_CASE_SENSITIVE;
+
 		VFSATTR_SET_SUPPORTED(fsap, f_capabilities);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_attributes)) {
