@@ -2325,7 +2325,6 @@ arc_adjust(void)
  * the arc_meta_limit and reclaim buffers which are pinned in the cache
  * by higher layers.  (i.e. the zpl)
  */
-#ifdef __LINUX__
 static void
 arc_do_user_prune(int64_t adjustment)
 {
@@ -2361,7 +2360,6 @@ arc_do_user_prune(int64_t adjustment)
 	ARCSTAT_BUMP(arcstat_prune);
 	mutex_exit(&arc_prune_mtx);
 }
-#endif
 
 static void
 arc_do_user_evicts(void)
@@ -2391,7 +2389,6 @@ arc_do_user_evicts(void)
  * This is only used to enforce the tunable arc_meta_limit, if we are
  * unable to evict enough buffers notify the user via the prune callback.
  */
-#ifdef __LINUX__
 static void
 arc_adjust_meta(void)
 {
@@ -2449,7 +2446,6 @@ arc_adjust_meta(void)
 	if (arc_meta_used > arc_meta_limit)
 		arc_do_user_prune(zfs_arc_meta_prune);
 }
-#endif
 
 /*
  * Flush all *evictable* data from the cache for the given spa.
@@ -2720,8 +2716,8 @@ arc_reclaim_thread(void *dummy __unused)
 
             dprintf("ARC reclaim: %llu\n", amount);
 
-            arc_kmem_reap_now(last_reclaim, amount);
-
+			// ZOL upstream do not call this in KERNEL
+            //arc_kmem_reap_now(last_reclaim, amount);
             arc_warm = B_TRUE;
 
         } else if (arc_no_grow && ddi_get_lbolt() >= growtime) {
@@ -2733,25 +2729,9 @@ arc_reclaim_thread(void *dummy __unused)
          * used to avoid collapsing the arc_c value when only the
          * arc_meta_limit is being exceeded.
          */
+		arc_adjust_meta();
+
         arc_adjust();
-
-
-#ifdef _KARNEL
-        {
-            clock_t now;
-            static clock_t then = 0;
-            now = ddi_get_lbolt();
-            if (now - then > (2 * hz)) {
-                then = now;
-
-                printf("oth %d sa %d znode %d, dmu %d, num %d, reclaims %llu\n",
-                       dnode_other, XX_sa, XX_znode, XX_dmu,
-                       XX_numznodes, vnop_num_reclaims);
-            }
-        }
-#endif
-        //if (arc_meta_used > 203847320)
-        //  panic("arc_meta_used is too damn high");
 
         if (arc_eviction_list != NULL)
             arc_do_user_evicts();
