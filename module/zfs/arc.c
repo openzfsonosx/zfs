@@ -2672,11 +2672,6 @@ arc_reclaim_thread(void *dummy __unused)
 			if (arc_size > arc_c) {
 				printf("triggering arc kmem_reap_now\n");
 				arc_kmem_reap_now(ARC_RECLAIM_AGGR, arc_size - arc_c);
-
-				// provide a hint to the SPL that memory has been released
-				// due to user request, and that the SPL needs to release
-				// all unneeded memory now.
-				kmem_flush();
 			}
         }
 #endif
