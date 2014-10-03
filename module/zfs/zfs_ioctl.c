@@ -3278,7 +3278,8 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 		return 0;
 	}
 	error = spa_open(poolname, &spa, FTAG);
-	strfree(poolname);
+	kmem_free(poolname, strlen(poolname)+1);
+	//strfree(poolname);
 	if (error != 0)
 		return (error);
 
