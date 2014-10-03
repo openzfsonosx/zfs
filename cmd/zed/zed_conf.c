@@ -51,16 +51,14 @@ zed_conf_create(void)
 {
 	struct zed_conf *zcp;
 
-	zcp = malloc(sizeof (*zcp));
+	zcp = calloc(1, sizeof (*zcp));
 	if (!zcp)
 		goto nomem;
-
-	memset(zcp, 0, sizeof (*zcp));
 
 	zcp->syslog_facility = LOG_DAEMON;
 	zcp->min_events = ZED_MIN_EVENTS;
 	zcp->max_events = ZED_MAX_EVENTS;
-	zcp->scripts = NULL;		/* created via zed_conf_scan_dir() */
+	zcp->zedlets = NULL;		/* created via zed_conf_scan_dir() */
 	zcp->state_fd = -1;		/* opened via zed_conf_open_state() */
 	zcp->zfs_hdl = NULL;		/* opened via zed_event_init() */
 	zcp->zevent_fd = -1;		/* opened via zed_event_init() */
@@ -71,7 +69,7 @@ zed_conf_create(void)
 	if (!(zcp->pid_file = strdup(ZED_PID_FILE)))
 		goto nomem;
 
-	if (!(zcp->script_dir = strdup(ZED_SCRIPT_DIR)))
+	if (!(zcp->zedlet_dir = strdup(ZED_ZEDLET_DIR)))
 		goto nomem;
 
 	if (!(zcp->state_file = strdup(ZED_STATE_FILE)))
@@ -86,6 +84,7 @@ nomem:
 
 /*
  * Destroy the configuration [zcp].
+ *
  * Note: zfs_hdl & zevent_fd are destroyed via zed_event_fini().
  */
 void
@@ -112,22 +111,23 @@ zed_conf_destroy(struct zed_conf *zcp)
 	if (zcp->pid_file)
 		free(zcp->pid_file);
 
-	if (zcp->script_dir)
-		free(zcp->script_dir);
+	if (zcp->zedlet_dir)
+		free(zcp->zedlet_dir);
 
 	if (zcp->state_file)
 		free(zcp->state_file);
 
-	if (zcp->scripts)
-		zed_strings_destroy(zcp->scripts);
+	if (zcp->zedlets)
+		zed_strings_destroy(zcp->zedlets);
 
 	free(zcp);
 }
 
 /*
  * Display command-line help and exit.
+ *
  * If [got_err] is 0, output to stdout and exit normally;
- *   otherwise, output to stderr and exit with a failure status.
+ * otherwise, output to stderr and exit with a failure status.
  */
 static void
 _zed_conf_display_help(const char *prog, int got_err)
@@ -161,7 +161,7 @@ _zed_conf_display_help(const char *prog, int got_err)
 	    "Read configuration from FILE.", ZED_CONF_FILE);
 #endif
 	fprintf(fp, "%*c%*s %s [%s]\n", w1, 0x20, -w2, "-d DIR",
-	    "Read enabled scripts from DIR.", ZED_SCRIPT_DIR);
+	    "Read enabled ZEDLETs from DIR.", ZED_ZEDLET_DIR);
 	fprintf(fp, "%*c%*s %s [%s]\n", w1, 0x20, -w2, "-p FILE",
 	    "Write daemon's PID to FILE.", ZED_PID_FILE);
 	fprintf(fp, "%*c%*s %s [%s]\n", w1, 0x20, -w2, "-s FILE",
@@ -269,7 +269,7 @@ zed_conf_parse_opts(struct zed_conf *zcp, int argc, char **argv)
 			_zed_conf_parse_path(&zcp->conf_file, optarg);
 			break;
 		case 'd':
-			_zed_conf_parse_path(&zcp->script_dir, optarg);
+			_zed_conf_parse_path(&zcp->zedlet_dir, optarg);
 			break;
 		case 'p':
 			_zed_conf_parse_path(&zcp->pid_file, optarg);
@@ -307,6 +307,7 @@ zed_conf_parse_opts(struct zed_conf *zcp, int argc, char **argv)
 
 /*
  * Parse the configuration file into the configuration [zcp].
+ *
  * FIXME: Not yet implemented.
  */
 void
@@ -317,17 +318,19 @@ zed_conf_parse_file(struct zed_conf *zcp)
 }
 
 /*
- * Scan the [zcp] script_dir for files to exec based on the event class.
- *   Files must be executable by user, but not writable by group or other.
- *   Dotfiles are ignored.
- * Return 0 on success with an updated set of scripts,
- *   or -1 on error with errno set.
- * FIXME: Check if script_dir and all parent dirs are secure.
+ * Scan the [zcp] zedlet_dir for files to exec based on the event class.
+ * Files must be executable by user, but not writable by group or other.
+ * Dotfiles are ignored.
+ *
+ * Return 0 on success with an updated set of zedlets,
+ * or -1 on error with errno set.
+ *
+ * FIXME: Check if zedlet_dir and all parent dirs are secure.
  */
 int
 zed_conf_scan_dir(struct zed_conf *zcp)
 {
-	zed_strings_t *scripts;
+	zed_strings_t *zedlets;
 	DIR *dirp;
 	struct dirent *direntp;
 	char pathname[PATH_MAX];
@@ -336,23 +339,23 @@ zed_conf_scan_dir(struct zed_conf *zcp)
 
 	if (!zcp) {
 		errno = EINVAL;
-		zed_log_msg(LOG_ERR, "Failed to scan script dir: %s",
+		zed_log_msg(LOG_ERR, "Failed to scan zedlet dir: %s",
 		    strerror(errno));
 		return (-1);
 	}
-	scripts = zed_strings_create();
-	if (!scripts) {
+	zedlets = zed_strings_create();
+	if (!zedlets) {
 		errno = ENOMEM;
 		zed_log_msg(LOG_WARNING, "Failed to scan dir \"%s\": %s",
-		    zcp->script_dir, strerror(errno));
+		    zcp->zedlet_dir, strerror(errno));
 		return (-1);
 	}
-	dirp = opendir(zcp->script_dir);
+	dirp = opendir(zcp->zedlet_dir);
 	if (!dirp) {
 		int errno_bak = errno;
 		zed_log_msg(LOG_WARNING, "Failed to open dir \"%s\": %s",
-		    zcp->script_dir, strerror(errno));
-		zed_strings_destroy(scripts);
+		    zcp->zedlet_dir, strerror(errno));
+		zed_strings_destroy(zedlets);
 		errno = errno_bak;
 		return (-1);
 	}
@@ -361,7 +364,7 @@ zed_conf_scan_dir(struct zed_conf *zcp)
 			continue;
 
 		n = snprintf(pathname, sizeof (pathname),
-		    "%s/%s", zcp->script_dir, direntp->d_name);
+		    "%s/%s", zcp->zedlet_dir, direntp->d_name);
 		if ((n < 0) || (n >= sizeof (pathname))) {
 			zed_log_msg(LOG_WARNING, "Failed to stat \"%s\": %s",
 			    direntp->d_name, strerror(ENAMETOOLONG));
@@ -402,7 +405,7 @@ zed_conf_scan_dir(struct zed_conf *zcp)
 			    direntp->d_name);
 			continue;
 		}
-		if (zed_strings_add(scripts, direntp->d_name) < 0) {
+		if (zed_strings_add(zedlets, direntp->d_name) < 0) {
 			zed_log_msg(LOG_WARNING,
 			    "Failed to register \"%s\": %s",
 			    direntp->d_name, strerror(errno));
@@ -410,33 +413,35 @@ zed_conf_scan_dir(struct zed_conf *zcp)
 		}
 		if (zcp->do_verbose)
 			zed_log_msg(LOG_INFO,
-			    "Registered script \"%s\"", direntp->d_name);
+			    "Registered zedlet \"%s\"", direntp->d_name);
 	}
 	if (closedir(dirp) < 0) {
 		int errno_bak = errno;
 		zed_log_msg(LOG_WARNING, "Failed to close dir \"%s\": %s",
-		    zcp->script_dir, strerror(errno));
-		zed_strings_destroy(scripts);
+		    zcp->zedlet_dir, strerror(errno));
+		zed_strings_destroy(zedlets);
 		errno = errno_bak;
 		return (-1);
 	}
-	if (zcp->scripts)
-		zed_strings_destroy(zcp->scripts);
+	if (zcp->zedlets)
+		zed_strings_destroy(zcp->zedlets);
 
-	zcp->scripts = scripts;
+	zcp->zedlets = zedlets;
 	return (0);
 }
 
 /*
  * Write the PID file specified in [zcp].
  * Return 0 on success, -1 on error.
+ *
  * This must be called after fork()ing to become a daemon (so the correct PID
- *   is recorded), but before daemonization is complete and the parent process
- *   exits (for synchronization with systemd).
+ * is recorded), but before daemonization is complete and the parent process
+ * exits (for synchronization with systemd).
+ *
  * FIXME: Only update the PID file after verifying the PID previously stored
- *   in the PID file no longer exists or belongs to a foreign process
- *   in order to ensure the daemon cannot be started more than once.
- *   (This check is currently done by zed_conf_open_state().)
+ * in the PID file no longer exists or belongs to a foreign process
+ * in order to ensure the daemon cannot be started more than once.
+ * (This check is currently done by zed_conf_open_state().)
  */
 int
 zed_conf_write_pid(struct zed_conf *zcp)
@@ -497,6 +502,7 @@ zed_conf_write_pid(struct zed_conf *zcp)
 /*
  * Open and lock the [zcp] state_file.
  * Return 0 on success, -1 on error.
+ *
  * FIXME: If state_file exists, verify ownership & permissions.
  * FIXME: Move lock to pid_file instead.
  */
@@ -577,11 +583,9 @@ zed_conf_open_state(struct zed_conf *zcp)
 }
 
 /*
- * Read the opened [zcp] state_file to obtain the eid & etime
- *   of the last event processed.
- * Write the state from the last event to the [eidp] & [etime] args
- *   passed by reference.
- * Note that etime[] is an array of size 2.
+ * Read the opened [zcp] state_file to obtain the eid & etime of the last event
+ * processed.  Write the state from the last event to the [eidp] & [etime] args
+ * passed by reference.  Note that etime[] is an array of size 2.
  * Return 0 on success, -1 on error.
  */
 int
@@ -631,8 +635,7 @@ zed_conf_read_state(struct zed_conf *zcp, uint64_t *eidp, int64_t etime[])
 
 /*
  * Write the [eid] & [etime] of the last processed event to the opened
- *   [zcp] state_file.
- * Note that etime[] is an array of size 2.
+ * [zcp] state_file.  Note that etime[] is an array of size 2.
  * Return 0 on success, -1 on error.
  */
 int
