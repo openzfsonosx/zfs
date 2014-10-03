@@ -1603,10 +1603,10 @@ zfs_znode_free(znode_t *zp)
 #if 0
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	mutex_enter(&zfsvfs->z_znodes_lock);
-	POINTER_INVALIDATE(&zp->z_zfsvfs);
 	list_remove(&zfsvfs->z_all_znodes, zp);
 	mutex_exit(&zfsvfs->z_znodes_lock);
 #endif
+	POINTER_INVALIDATE(&zp->z_zfsvfs);
 
 	if (zp->z_acl_cached) {
 		zfs_acl_free(zp->z_acl_cached);
