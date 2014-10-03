@@ -47,7 +47,7 @@
 //
 // FIXME
 #define noinline
-
+#undef ZFS_DEBUG
 
 struct dbuf_hold_impl_data {
 	/* Function arguments */

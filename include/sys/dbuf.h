@@ -322,7 +322,7 @@ boolean_t dbuf_is_metadata(dmu_buf_impl_t *db);
 	((_db)->db_objset->os_compress != ZIO_COMPRESS_OFF ||		\
 	(dbuf_is_metadata(_db) && zfs_mdcomp_disable == B_FALSE))
 
-#ifdef ZFS_DEBUG
+#ifdef ZFS_DEBAG
 
 /*
  * There should be a ## between the string literal and fmt, to make it
