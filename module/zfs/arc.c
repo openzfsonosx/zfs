@@ -153,6 +153,10 @@
 boolean_t arc_watch = B_FALSE;
 #endif
 
+#ifdef _KERNEL
+extern vmem_t *zio_arena;
+#endif
+
 static kmutex_t		arc_reclaim_thr_lock;
 static kcondvar_t	arc_reclaim_thr_cv;	/* used to signal reclaim thr */
 static uint8_t		arc_thread_exit;
@@ -2554,6 +2558,15 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat, uint64_t bytes)
 
 	kmem_cache_reap_now(buf_cache);
 	kmem_cache_reap_now(hdr_cache);
+	
+#ifdef KERNEL
+	/*
+	 * Ask the vmem areana to reclaim unused memory from its
+	 * quantum caches.
+	 */
+	if (zio_arena != NULL && strat == ARC_RECLAIM_AGGR)
+		vmem_qcache_reap(zio_arena);
+#endif
 }
 
 

@@ -66,6 +66,10 @@ kmem_cache_t *zio_data_buf_cache[SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT];
 int zio_bulk_flags = 0;
 int zio_delay_max = ZIO_DELAY_MAX;
 
+#ifdef _KERNEL
+extern vmem_t *zio_alloc_arena;
+#endif
+
 /*
  * The following actions directly effect the spa's sync-to-convergence logic.
  * The values below define the sync pass when we start performing the action.
@@ -130,8 +134,13 @@ zio_dest(void *arg, void *unused)
 void
 zio_init(void)
 {
-	size_t c;
+    size_t c;
+	
+#ifdef _KERNEL
+	vmem_t *data_alloc_arena = zio_alloc_arena;
+#else
 	vmem_t *data_alloc_arena = NULL;
+#endif
 
 	zio_cache = kmem_cache_create("zio_cache", sizeof (zio_t), 0,
 	    zio_cons, zio_dest, NULL, NULL, NULL, 0);
