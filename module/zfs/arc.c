@@ -4512,7 +4512,7 @@ arc_init(void)
 	 * dedicating their machines to ZFS can always bring it up using the
 	 * zfs.arc_max sysctl.
 	 */
-	//arc_c_max >>= 1;
+	arc_c_max >>= 1;
 
 #ifdef _KERNEL
     printf("ZFS: ARC limit set to (arc_c_max): %llu\n",
