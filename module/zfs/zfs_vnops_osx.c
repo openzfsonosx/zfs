@@ -1148,60 +1148,22 @@ osx_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 
 
 static int
-zfs_vnop_pageout(struct vnop_pageout_args *ap)
-#if 0
-	struct vnop_pageout_args {
-		struct vnode	*a_vp;
-		upl_t		a_pl;
-		vm_offset_t	a_pl_offset;
-		off_t		a_foffset;
-		size_t		a_size;
-		int		a_flags;
-		vfs_context_t	a_context;
-	};
-#endif
+zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
+			offset_t off, size_t size, int flags)
 {
-	struct vnode *vp = ap->a_vp;
-	int flags = ap->a_flags;
-	upl_t upl = ap->a_pl;
-	vm_offset_t upl_offset = ap->a_pl_offset;
-	size_t len = ap->a_size;
-	offset_t off = ap->a_f_offset;
-	znode_t *zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	dmu_tx_t *tx;
 	rl_t *rl;
 	uint64_t filesz;
 	int err = 0;
+	size_t len = size;
 
 	dprintf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: "
 	    "blksz 0x%x, z_size 0x%llx\n", off, len, upl_offset, zp->z_blksz,
 	    zp->z_size);
 
-	/*
-	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
-	 * Break up that function into smaller bits so it can be reused.
-	 */
-
-	if (zfsvfs == NULL) {
-		if (!(flags & UPL_NOCOMMIT))
-			ubc_upl_abort(upl,
-			    (UPL_ABORT_DUMP_PAGES | UPL_ABORT_FREE_ON_EMPTY));
-		return (ENXIO);
-	}
-
-	/* Defer syncs if we are coming through vnode_create() */
-	if (zfsvfs->z_vnode_create_depth) {
-		printf("zfs: pageout dropping request due to vnode_create\n");
-		if (!(flags & UPL_NOCOMMIT))
-			ubc_upl_abort(upl,
-			    (UPL_ABORT_DUMP_PAGES | UPL_ABORT_FREE_ON_EMPTY));
-		return (ENXIO);
-	}
-
 	ZFS_ENTER(zfsvfs);
 
-	ASSERT(vn_has_cached_data(vp));
+	ASSERT(vn_has_cached_data(ZTOV(zp)));
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
 	if (upl == (upl_t)NULL)
@@ -1213,7 +1175,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 		err = EINVAL;
 		goto exit;
 	}
-	if (vnode_vfsisrdonly(vp)) {
+	if (vnode_vfsisrdonly(ZTOV(zp))) {
 		if (!(flags & UPL_NOCOMMIT))
 			ubc_upl_abort_range(upl, upl_offset, len,
 			    UPL_ABORT_FREE_ON_EMPTY);
@@ -1235,11 +1197,11 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	uint64_t pgsize = roundup(filesz, PAGESIZE);
 
 	/* Any whole pages beyond the end of the file while we abort */
-	if ((ap->a_size + ap->a_f_offset) > pgsize) {
+	if ((size + off) > pgsize) {
 		printf("pageout: abort outside pages (rounded 0x%llx > UPLlen "
-		    "0x%llx\n", pgsize, ap->a_size + ap->a_f_offset);
+			   "0x%llx\n", pgsize, size + off);
 		ubc_upl_abort_range(upl, pgsize,
-		    pgsize - (ap->a_size + ap->a_f_offset),
+		    pgsize - (size + off),
 		    UPL_ABORT_FREE_ON_EMPTY);
 	}
 
@@ -1354,10 +1316,10 @@ out:
 
 	if (!(flags & UPL_NOCOMMIT)) {
 		if (err)
-			ubc_upl_abort_range(upl, upl_offset, ap->a_size,
+			ubc_upl_abort_range(upl, upl_offset, size,
 			    (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
 		else
-			ubc_upl_commit_range(upl, upl_offset, ap->a_size,
+			ubc_upl_commit_range(upl, upl_offset, size,
 			    (UPL_COMMIT_CLEAR_DIRTY |
 			    UPL_COMMIT_FREE_ON_EMPTY));
 	}
@@ -1367,6 +1329,106 @@ exit:
 		printf("pageout err %d\n", err);
 	return (err);
 }
+
+
+
+struct pageout_cb {
+	zfsvfs_t   *zfsvfs;
+	znode_t    *zp;
+	upl_t       upl;
+	vm_offset_t upl_offset;
+	offset_t    offset;
+	size_t      len;
+	int         flags;
+};
+
+
+void zfs_pageout_wrapper(void *arg)
+{
+	struct pageout_cb *cb = (struct pageout_cb *)arg;
+	int err;
+
+	err  = zfs_pageout(cb->zfsvfs, cb->zp, cb->upl, cb->upl_offset,
+					   cb->offset, cb->len, cb->flags);
+
+	kmem_free(cb, sizeof(*cb));
+
+	printf("The forked returned %d\n", err);
+
+	thread_exit();
+
+}
+
+
+static int
+zfs_vnop_pageout(struct vnop_pageout_args *ap)
+#if 0
+	struct vnop_pageout_args {
+		struct vnode	*a_vp;
+		upl_t		a_pl;
+		vm_offset_t	a_pl_offset;
+		off_t		a_foffset;
+		size_t		a_size;
+		int		a_flags;
+		vfs_context_t	a_context;
+	};
+#endif
+{
+	struct vnode *vp = ap->a_vp;
+	int flags = ap->a_flags;
+	upl_t upl = ap->a_pl;
+	vm_offset_t upl_offset = ap->a_pl_offset;
+	size_t len = ap->a_size;
+	offset_t off = ap->a_f_offset;
+	znode_t *zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+	dprintf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: "
+	    "blksz 0x%x, z_size 0x%llx\n", off, len, upl_offset, zp->z_blksz,
+	    zp->z_size);
+
+	/*
+	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
+	 * Break up that function into smaller bits so it can be reused.
+	 */
+
+	if (zfsvfs == NULL) {
+		if (!(flags & UPL_NOCOMMIT))
+			ubc_upl_abort(upl,
+			    (UPL_ABORT_DUMP_PAGES | UPL_ABORT_FREE_ON_EMPTY));
+		return (ENXIO);
+	}
+
+	/*
+	 * Defer syncs if we are coming through vnode_create()
+	 * This is an annoyance of XNU, and we can not open a new TX
+	 * as we are already in a TX. *this thread* needs to go back
+	 * and we launch another to handle this pageout request
+	 */
+	if (zfsvfs->z_vnode_create_depth) {
+		struct pageout_cb *cb;
+
+		printf("zfs: pageout forking request due to vnode_create\n");
+
+		cb = kmem_alloc(sizeof(*cb), KM_PUSHPAGE);
+		cb->zfsvfs     = zfsvfs;
+		cb->zp         = zp;
+		cb->upl        = upl;
+		cb->upl_offset = upl_offset;
+		cb->offset     = ap->a_f_offset;
+		cb->len        = len;
+		cb->flags      = flags;
+		(void) thread_create(NULL, 0, zfs_pageout_wrapper, cb, 0, &p0,
+							 TS_RUN, minclsyspri);
+		return 0;
+	}
+
+
+	return zfs_pageout(zfsvfs, zp, upl, upl_offset, ap->a_f_offset,
+					   len, flags);
+
+}
+
 
 static int
 zfs_vnop_mmap(struct vnop_mmap_args *ap)
@@ -1625,6 +1687,8 @@ static void
 zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs)
 {
 	int count = 0;
+
+	if (zfsvfs->z_unmounted == B_TRUE) return;
 
 	/*
 	 * Attempt to throttle. If the list grows "large" we need to slow down
