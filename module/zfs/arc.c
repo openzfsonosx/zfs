@@ -2712,7 +2712,7 @@ arc_reclaim_thread(void *dummy __unused)
             dprintf("ARC reclaim: %llu\n", amount);
 
 			// ZOL upstream do not call this in KERNEL
-            //arc_kmem_reap_now(last_reclaim, amount);
+            arc_kmem_reap_now(last_reclaim, amount);
             arc_warm = B_TRUE;
 
         } else if (arc_no_grow && ddi_get_lbolt() >= growtime) {
