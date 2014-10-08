@@ -2746,11 +2746,10 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 #endif
 
     dprintf("Signalling reclaim sync\n");
-	/* We just did final sync, tell reclaim to mop it up */
+	/* We just did final sync, tell reclaim to mop it up
+	 * proper wait for reclaim is done in zfsvfs_teardown()
+	 */
     cv_signal(&zfsvfs->z_reclaim_thr_cv);
-    /* Not the classiest sync control ... */
-    delay(hz);
-
 
 #endif
 

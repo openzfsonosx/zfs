@@ -1688,7 +1688,10 @@ zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs)
 {
 	int count = 0;
 
-	if (zfsvfs->z_unmounted == B_TRUE) return;
+#ifdef __APPLE__
+	/* Don't throttle unmounts */
+	if (vfs_isunmount(zfsvfs->z_vfs)) return;
+#endif
 
 	/*
 	 * Attempt to throttle. If the list grows "large" we need to slow down
