@@ -1690,7 +1690,7 @@ zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs)
 
 #ifdef __APPLE__
 	/* Don't throttle unmounts */
-	if (vfs_isunmount(zfsvfs->z_vfs)) return;
+	if (zfsvfs && zfsvfs->z_vfs && vfs_isunmount(zfsvfs->z_vfs)) return;
 #endif
 
 	/*
