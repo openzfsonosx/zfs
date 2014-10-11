@@ -5716,7 +5716,6 @@ zfsdev_open(dev_t dev, int flags, int devtype, struct proc *p)
 	dprintf("zfsdev_open, dev %d flag %02X devtype %d, proc is %p: thread %p\n",
 			minor(dev), flags, devtype, p, current_thread());
 
-
 	if (zfsdev_get_state_impl(minor(dev), ZST_ALL)) {
 		dprintf("zs already exists\n");
 		return (0);
@@ -5777,7 +5776,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 #endif
 
 	if (zfsdev_get_state_impl(minorx, ZST_ALL) == NULL) {
-		printf("Calling zvol ioctl minor %d \n", minorx);
+		dprintf("Calling zvol ioctl minor %d \n", minorx);
 		return (zvol_ioctl(dev, cmd, arg, 0, NULL, NULL));
 	}
 
@@ -6061,13 +6060,14 @@ static int
 zfs_devfs_clone(__unused dev_t dev, int action)
 {
 	static minor_t minorx;
+
 	dprintf("zfs_devfs_clone action %d\n", action);
 
 	if (action == DEVFS_CLONE_ALLOC) {
 		mutex_enter(&zfsdev_state_lock);
 		minorx = zfsdev_minor_alloc();
 		mutex_exit(&zfsdev_state_lock);
-		dprintf("Returning minor %d\n");
+		dprintf("zfs_devfs_clone: Returning minor %d\n", minorx);
 		return minorx;
 	}
 	return -1;
@@ -6106,7 +6106,6 @@ zfs_attach(void)
 	dev = makedev(zfs_major, 0);/* Get the device number */
 	zfs_devnode = devfs_make_node_clone(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
 										0666, zfs_devfs_clone, "zfs", 0);
-
 	if (!zfs_devnode) {
 		printf("ZFS: devfs_make_node() failed\n");
 		return (-1);
@@ -6142,8 +6141,13 @@ zfs_detach(void)
 	mutex_destroy(&zfsdev_state_lock);
 
 	for (zs = zfsdev_state_list; zs != NULL; zs = zs->zs_next) {
-		if (zsprev)
+		if (zsprev) {
+			if (zsprev->zs_minor != -1) {
+				zfs_onexit_destroy(zsprev->zs_onexit);
+				zfs_zevent_destroy(zsprev->zs_zevent);
+			}
 			kmem_free(zsprev, sizeof (zfsdev_state_t));
+		}
 		zsprev = zs;
 	}
 	if (zsprev)
