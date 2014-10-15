@@ -2682,7 +2682,7 @@ arc_reclaim_thread(void *dummy __unused)
 				// provide a hint to the SPL that memory has been released
 				// due to user request, and that the SPL needs to release
 				// all unneeded memory now.
-				kmem_flush();
+//				kmem_flush();
 			}
         }
 #endif
