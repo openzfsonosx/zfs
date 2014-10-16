@@ -6163,6 +6163,50 @@ zfs_allow_log_destroy(void *arg)
 #define	ZFS_DEBUG_STR	""
 #endif
 
+
+
+
+darwin_stats_t darwin_stats = {
+	{ "active_vnodes",			KSTAT_DATA_UINT64 },
+	{ "debug",			KSTAT_DATA_UINT64 },
+	{ "ignore_negatives",		KSTAT_DATA_UINT64 },
+	{ "ignore_positives",		KSTAT_DATA_UINT64 },
+	{ "create_negatives",		KSTAT_DATA_UINT64 },
+	{ "reclaim_throttle",		KSTAT_DATA_UINT64 },
+	{ "force_formd_normalized",		KSTAT_DATA_UINT64 },
+};
+
+
+static kstat_t		*darwin_ksp;
+
+
+static int darwin_kstat_update(kstat_t *ksp, int rw)
+{
+	darwin_stats_t *ks = ksp->ks_data;
+
+	if (rw == KSTAT_WRITE) {
+		debug_vnop_osx_printf = ks->darwin_debug.value.ui64;
+		zfs_vnop_ignore_negatives = ks->darwin_ignore_negatives.value.ui64;
+		zfs_vnop_ignore_positives = ks->darwin_ignore_positives.value.ui64;
+		zfs_vnop_create_negatives = ks->darwin_create_negatives.value.ui64;
+		zfs_vnop_reclaim_throttle = ks->darwin_reclaim_throttle.value.ui64;
+		zfs_vnop_force_formd_normalized_output = ks->darwin_force_formd_normalized.value.ui64;
+		return 0;
+	} else {
+		ks->darwin_active_vnodes.value.ui64          = zfs_threads;
+		ks->darwin_debug.value.ui64                  = debug_vnop_osx_printf;
+		ks->darwin_ignore_negatives.value.ui64       = zfs_vnop_ignore_negatives;
+		ks->darwin_ignore_positives.value.ui64       = zfs_vnop_ignore_positives;
+		ks->darwin_create_negatives.value.ui64       = zfs_vnop_create_negatives;
+		ks->darwin_reclaim_throttle.value.ui64       = zfs_vnop_reclaim_throttle;
+		ks->darwin_force_formd_normalized.value.ui64 = zfs_vnop_force_formd_normalized_output;
+	}
+
+	return (0);
+}
+
+
+
 int
 zfs_ioctl_osx_init(void)
 {
@@ -6207,6 +6251,16 @@ zfs_ioctl_osx_init(void)
 	mutex_init(&zfs_share_lock, NULL, MUTEX_DEFAULT, NULL);
 #endif
 
+	darwin_ksp = kstat_create("zfs", 0, "darwin", "misc",
+	    KSTAT_TYPE_NAMED, sizeof (darwin_stats) / sizeof (kstat_named_t),
+	    KSTAT_FLAG_VIRTUAL|KSTAT_FLAG_WRITABLE);
+
+	if (darwin_ksp != NULL) {
+		darwin_ksp->ks_data = &darwin_stats;
+        darwin_ksp->ks_update = darwin_kstat_update;
+		kstat_install(darwin_ksp);
+	}
+
 #ifdef __APPLE__
 	(void) mnttab_file_create();
 	zfs_ioctl_installed = 1;
@@ -6244,6 +6298,12 @@ zfs_ioctl_osx_fini(void)
 		return (SET_ERROR(EBUSY));
 	}
 #endif
+
+	if (darwin_ksp != NULL) {
+		kstat_delete(darwin_ksp);
+		darwin_ksp = NULL;
+	}
+
 
 #ifdef illumos
 	if ((error = mod_remove(&modlinkage)) != 0)

@@ -73,8 +73,6 @@ unsigned int zfs_vnop_create_negatives = 1;
 unsigned int zfs_vnop_reclaim_throttle = 33280;
 #endif
 
-extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
-
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
 #define	DECLARE_CONTEXT(ap) \
@@ -1146,7 +1144,6 @@ osx_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 
 
 
-
 static int
 zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 			offset_t off, size_t size, int flags)
@@ -1837,7 +1834,11 @@ zfs_vnop_pathconf(struct vnop_pathconf_args *ap)
 	return (error);
 }
 
-static int
+
+/*
+ * This is not static so dtrace can see it
+ */
+int
 zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 #if 0
 	struct vnop_getxattr_args {
@@ -1921,7 +1922,10 @@ out:
 	return (error);
 }
 
-static int
+/*
+ * This is not static so dtrace can see it
+ */
+int
 zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 #if 0
 	struct vnop_setxattr_args {
