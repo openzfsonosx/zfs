@@ -1523,6 +1523,7 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 
 #ifdef _KERNEL
 uint64_t vnop_num_reclaims = 0;
+uint64_t vnop_num_vnodes = 0;
 
 /*
  * Thread started to deal with any nodes in z_reclaim_nodes
@@ -1654,6 +1655,8 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 #ifdef _KERNEL
 	atomic_inc_64(&vnop_num_reclaims);
+	atomic_dec_64(&vnop_num_vnodes);
+
 #endif
 #if 1
 	if (!has_warned && vnop_num_reclaims > 20000) {
@@ -3068,6 +3071,8 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0)
 		;
 	atomic_sub_64(&zfsvfs->z_vnode_create_depth, 1);
+
+	atomic_inc_64(&vnop_num_vnodes);
 
 	dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
 

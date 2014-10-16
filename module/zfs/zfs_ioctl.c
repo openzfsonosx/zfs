@@ -6168,6 +6168,7 @@ zfs_allow_log_destroy(void *arg)
 
 darwin_stats_t darwin_stats = {
 	{ "active_vnodes",			KSTAT_DATA_UINT64 },
+	{ "reclaim_nodes",			KSTAT_DATA_UINT64 },
 	{ "debug",			KSTAT_DATA_UINT64 },
 	{ "ignore_negatives",		KSTAT_DATA_UINT64 },
 	{ "ignore_positives",		KSTAT_DATA_UINT64 },
@@ -6193,7 +6194,8 @@ static int darwin_kstat_update(kstat_t *ksp, int rw)
 		zfs_vnop_force_formd_normalized_output = ks->darwin_force_formd_normalized.value.ui64;
 		return 0;
 	} else {
-		ks->darwin_active_vnodes.value.ui64          = zfs_threads;
+		ks->darwin_active_vnodes.value.ui64          = vnop_num_vnodes;
+		ks->darwin_reclaim_nodes.value.ui64          = vnop_num_reclaims;
 		ks->darwin_debug.value.ui64                  = debug_vnop_osx_printf;
 		ks->darwin_ignore_negatives.value.ui64       = zfs_vnop_ignore_negatives;
 		ks->darwin_ignore_positives.value.ui64       = zfs_vnop_ignore_positives;

@@ -565,6 +565,7 @@ extern int zfs_ioctl_osx_fini(void);
 
 typedef struct darwin_stats {
 	kstat_named_t darwin_active_vnodes;
+	kstat_named_t darwin_reclaim_nodes;
 	kstat_named_t darwin_debug;
 	kstat_named_t darwin_ignore_negatives;
 	kstat_named_t darwin_ignore_positives;
@@ -585,7 +586,8 @@ extern unsigned int zfs_vnop_ignore_positives;
 extern unsigned int zfs_vnop_create_negatives;
 extern unsigned int zfs_vnop_reclaim_throttle;
 extern int zfs_vnop_force_formd_normalized_output;
-
+extern uint64_t vnop_num_reclaims;
+extern uint64_t vnop_num_vnodes;
 
 
 
