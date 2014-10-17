@@ -6253,7 +6253,7 @@ zfs_ioctl_osx_init(void)
 	mutex_init(&zfs_share_lock, NULL, MUTEX_DEFAULT, NULL);
 #endif
 
-	darwin_ksp = kstat_create("zfs", 0, "darwin", "misc",
+	darwin_ksp = kstat_create("zfs", 0, "darwin", "tunable",
 	    KSTAT_TYPE_NAMED, sizeof (darwin_stats) / sizeof (kstat_named_t),
 	    KSTAT_FLAG_VIRTUAL|KSTAT_FLAG_WRITABLE);
 
