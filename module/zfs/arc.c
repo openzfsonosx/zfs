@@ -471,7 +471,7 @@ static arc_state_t	*arc_l2c_only;
 
 #ifdef __APPLE__
 /*
- * In Solaris the tunable are set via /etc/system. Until we have a loat
+ * In Solaris the tunable are set via /etc/system. Until we have a load
  * time configuration, we add them to writable kstat tunables.
  */
 typedef struct arc_kstat {
