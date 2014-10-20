@@ -416,16 +416,6 @@ vdev_cache_stat_init(void)
 		vdc_ksp->ks_data = &vdc_stats;
 		kstat_install(vdc_ksp);
 	}
-#ifdef __APPLE__
-	vdev_queue_kstat_ksp = kstat_create("zfs", 0, "vdev_queue", "tunable",
-	    KSTAT_TYPE_NAMED, sizeof (vdev_queue_kstat) / sizeof (kstat_named_t),
-	    KSTAT_FLAG_VIRTUAL|KSTAT_FLAG_WRITABLE);
-	if (vdev_queue_kstat_ksp != NULL) {
-		vdev_queue_kstat_ksp->ks_data = &vdev_queue_kstat;
-        vdev_queue_kstat_ksp->ks_update = vdev_queue_kstat_update;
-		kstat_install(vdev_queue_kstat_ksp);
-	}
-#endif
 }
 
 void
@@ -435,12 +425,6 @@ vdev_cache_stat_fini(void)
 		kstat_delete(vdc_ksp);
 		vdc_ksp = NULL;
 	}
-#ifdef __APPLE__
-    if (vdev_queue_kstat_ksp != NULL) {
-        kstat_delete(vdev_queue_kstat_ksp);
-        vdev_queue_kstat_ksp = NULL;
-    }
-#endif
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)

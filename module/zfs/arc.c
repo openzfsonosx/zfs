@@ -139,6 +139,10 @@
 #include <sys/kstat.h>
 #include <zfs_fletcher.h>
 
+#ifdef __APPLE__
+#include <sys/kstat_osx.h>
+#endif
+
 #ifndef _KERNEL
 /* set with ZFS_DEBUG=watch, to enable watchpoints on frozen buffers */
 boolean_t arc_watch = B_FALSE;
@@ -467,108 +471,6 @@ static arc_state_t	*arc_l2c_only;
 ((_c_) == ZIO_COMPRESS_LZ4 || (_c_) == ZIO_COMPRESS_EMPTY)
 
 
-
-
-#ifdef __APPLE__
-/*
- * In Solaris the tunable are set via /etc/system. Until we have a load
- * time configuration, we add them to writable kstat tunables.
- */
-typedef struct arc_kstat {
-	kstat_named_t arc_zfs_arc_max;
-	kstat_named_t arc_zfs_arc_min;
-	kstat_named_t arc_zfs_arc_meta_limit;
-	kstat_named_t arc_zfs_arc_grow_retry;
-	kstat_named_t arc_zfs_arc_shrink_shift;
-	kstat_named_t arc_zfs_arc_p_min_shift;
-	kstat_named_t arc_zfs_disable_dup_eviction;
-	kstat_named_t arc_zfs_arc_average_blocksize;
-} arc_kstat_t;
-
-arc_kstat_t arc_kstat = {
-	{ "zfs_arc_max",			KSTAT_DATA_UINT64 },
-	{ "zfs_arc_min",			KSTAT_DATA_UINT64 },
-	{ "zfs_arc_meta_limit",			KSTAT_DATA_UINT64 },
-	{ "zfs_arc_grow_retry",		KSTAT_DATA_UINT64 },
-	{ "zfs_arc_shrink_shift",		KSTAT_DATA_UINT64 },
-	{ "zfs_arc_p_min_shift",		KSTAT_DATA_UINT64 },
-	{ "zfs_disable_dup_eviction",		KSTAT_DATA_UINT64 },
-	{ "zfs_arc_average_blocksize",		KSTAT_DATA_UINT64 },
-};
-static kstat_t		*arc_kstat_ksp;
-
-static int arc_kstat_update(kstat_t *ksp, int rw)
-{
-	arc_kstat_t *ks = ksp->ks_data;
-
-	if (rw == KSTAT_WRITE) {
-
-		/* Did we change the value ? */
-		if (ks->arc_zfs_arc_max.value.ui64 != zfs_arc_max) {
-
-			/* Assign new value */
-			zfs_arc_max = ks->arc_zfs_arc_max.value.ui64;
-
-			/* Update ARC with new value */
-			if (zfs_arc_max > 64<<20 && zfs_arc_max < physmem * PAGESIZE)
-				arc_c_max = zfs_arc_max;
-
-			arc_c = arc_c_max;
-			arc_p = (arc_c >> 1);
-
-			/* If meta_limit is not set, adjust it automatically */
-			if (!zfs_arc_meta_limit)
-				arc_meta_limit = arc_c_max / 4;
-		}
-
-		if (ks->arc_zfs_arc_min.value.ui64 != zfs_arc_min) {
-			zfs_arc_min               = ks->arc_zfs_arc_min.value.ui64;
-			if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max)
-				arc_c_min = zfs_arc_min;
-		}
-
-		if (ks->arc_zfs_arc_meta_limit.value.ui64 != zfs_arc_meta_limit) {
-			zfs_arc_meta_limit  = ks->arc_zfs_arc_meta_limit.value.ui64;
-
-			/* Allow the tunable to override if it is reasonable */
-			if (zfs_arc_meta_limit > 0 && zfs_arc_meta_limit <= arc_c_max)
-				arc_meta_limit = zfs_arc_meta_limit;
-
-			if (arc_c_min < arc_meta_limit / 2 && zfs_arc_min == 0)
-				arc_c_min = arc_meta_limit / 2;
-		}
-
-		zfs_arc_grow_retry        = ks->arc_zfs_arc_grow_retry.value.ui64;
-		zfs_arc_shrink_shift      = ks->arc_zfs_arc_shrink_shift.value.ui64;
-		zfs_arc_p_min_shift       = ks->arc_zfs_arc_p_min_shift.value.ui64;
-		zfs_disable_dup_eviction  = ks->arc_zfs_disable_dup_eviction.value.ui64;
-		zfs_arc_average_blocksize = ks->arc_zfs_arc_average_blocksize.value.ui64;
-		return 0;
-	} else {
-
-		ks->arc_zfs_arc_max.value.ui64        =
-			zfs_arc_max ? zfs_arc_max : arc_c_max;
-
-		ks->arc_zfs_arc_min.value.ui64        =
-			zfs_arc_min ? zfs_arc_min : arc_c_min;
-
-		ks->arc_zfs_arc_meta_limit.value.ui64 =
-			zfs_arc_meta_limit ? zfs_arc_meta_limit : arc_meta_limit;
-
-		ks->arc_zfs_arc_grow_retry.value.ui64        = zfs_arc_grow_retry;
-		ks->arc_zfs_arc_shrink_shift.value.ui64      = zfs_arc_shrink_shift;
-		ks->arc_zfs_arc_p_min_shift.value.ui64       = zfs_arc_p_min_shift;
-		ks->arc_zfs_disable_dup_eviction.value.ui64  = zfs_disable_dup_eviction;
-		ks->arc_zfs_arc_average_blocksize.value.ui64 = zfs_arc_average_blocksize;
-	}
-
-	return (0);
-}
-#endif
-
-
-
-
 static int		arc_no_grow;	/* Don't try to grow cache size */
 static uint64_t		arc_tempreserve;
 static uint64_t		arc_loaned_bytes;
@@ -818,6 +720,83 @@ static boolean_t l2arc_compress_buf(l2arc_buf_hdr_t *l2hdr);
 static void l2arc_decompress_zio(zio_t *zio, arc_buf_hdr_t *hdr,
                                  enum zio_compress c);
 static void l2arc_release_cdata_buf(arc_buf_hdr_t *ab);
+
+
+#ifdef __APPLE__
+
+/*
+ * Uses ARC static variables in logic.
+ */
+int arc_kstat_update(kstat_t *ksp, int rw)
+{
+	osx_kstat_t *ks = ksp->ks_data;
+
+	if (rw == KSTAT_WRITE) {
+
+		/* Did we change the value ? */
+		if (ks->arc_zfs_arc_max.value.ui64 != zfs_arc_max) {
+
+			/* Assign new value */
+			zfs_arc_max = ks->arc_zfs_arc_max.value.ui64;
+
+			/* Update ARC with new value */
+			if (zfs_arc_max > 64<<20 && zfs_arc_max < physmem * PAGESIZE)
+				arc_c_max = zfs_arc_max;
+
+			arc_c = arc_c_max;
+			arc_p = (arc_c >> 1);
+
+			/* If meta_limit is not set, adjust it automatically */
+			if (!zfs_arc_meta_limit)
+				arc_meta_limit = arc_c_max / 4;
+		}
+
+		if (ks->arc_zfs_arc_min.value.ui64 != zfs_arc_min) {
+			zfs_arc_min               = ks->arc_zfs_arc_min.value.ui64;
+			if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max)
+				arc_c_min = zfs_arc_min;
+		}
+
+		if (ks->arc_zfs_arc_meta_limit.value.ui64 != zfs_arc_meta_limit) {
+			zfs_arc_meta_limit  = ks->arc_zfs_arc_meta_limit.value.ui64;
+
+			/* Allow the tunable to override if it is reasonable */
+			if (zfs_arc_meta_limit > 0 && zfs_arc_meta_limit <= arc_c_max)
+				arc_meta_limit = zfs_arc_meta_limit;
+
+			if (arc_c_min < arc_meta_limit / 2 && zfs_arc_min == 0)
+				arc_c_min = arc_meta_limit / 2;
+		}
+
+		zfs_arc_grow_retry        = ks->arc_zfs_arc_grow_retry.value.ui64;
+		zfs_arc_shrink_shift      = ks->arc_zfs_arc_shrink_shift.value.ui64;
+		zfs_arc_p_min_shift       = ks->arc_zfs_arc_p_min_shift.value.ui64;
+		zfs_disable_dup_eviction  = ks->arc_zfs_disable_dup_eviction.value.ui64;
+		zfs_arc_average_blocksize = ks->arc_zfs_arc_average_blocksize.value.ui64;
+
+	} else {
+
+		ks->arc_zfs_arc_max.value.ui64        =
+			zfs_arc_max ? zfs_arc_max : arc_c_max;
+
+		ks->arc_zfs_arc_min.value.ui64        =
+			zfs_arc_min ? zfs_arc_min : arc_c_min;
+
+		ks->arc_zfs_arc_meta_limit.value.ui64 =
+			zfs_arc_meta_limit ? zfs_arc_meta_limit : arc_meta_limit;
+
+		ks->arc_zfs_arc_grow_retry.value.ui64        = zfs_arc_grow_retry;
+		ks->arc_zfs_arc_shrink_shift.value.ui64      = zfs_arc_shrink_shift;
+		ks->arc_zfs_arc_p_min_shift.value.ui64       = zfs_arc_p_min_shift;
+		ks->arc_zfs_disable_dup_eviction.value.ui64  = zfs_disable_dup_eviction;
+		ks->arc_zfs_arc_average_blocksize.value.ui64 = zfs_arc_average_blocksize;
+	}
+	return 0;
+
+}
+
+#endif
+
 
 static uint64_t
 buf_hash(uint64_t spa, const dva_t *dva, uint64_t birth)
@@ -4008,17 +3987,6 @@ arc_init(void)
         kstat_install(arc_ksp);
     }
 
-#ifdef __APPLE__
-	arc_kstat_ksp = kstat_create("zfs", 0, "arc", "tunable",
-	    KSTAT_TYPE_NAMED, sizeof (arc_kstat) / sizeof (kstat_named_t),
-	    KSTAT_FLAG_VIRTUAL|KSTAT_FLAG_WRITABLE);
-
-	if (arc_kstat_ksp != NULL) {
-		arc_kstat_ksp->ks_data = &arc_kstat;
-        arc_kstat_ksp->ks_update = arc_kstat_update;
-		kstat_install(arc_kstat_ksp);
-	}
-#endif
 
     (void) thread_create(NULL, 0, arc_reclaim_thread, NULL, 0, &p0,
                          TS_RUN, minclsyspri);
@@ -4063,13 +4031,6 @@ arc_fini(void)
         kstat_delete(arc_ksp);
         arc_ksp = NULL;
     }
-
-#ifdef __APPLE__
-    if (arc_kstat_ksp != NULL) {
-        kstat_delete(arc_kstat_ksp);
-        arc_kstat_ksp = NULL;
-    }
-#endif
 
     mutex_destroy(&arc_eviction_mtx);
     mutex_destroy(&arc_reclaim_thr_lock);

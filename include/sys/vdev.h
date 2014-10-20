@@ -163,32 +163,6 @@ typedef enum {
 
 extern int vdev_label_init(vdev_t *vd, uint64_t txg, vdev_labeltype_t reason);
 
-#ifdef __APPLE__
-extern kstat_t		*vdev_queue_kstat_ksp;
-
-typedef struct vdev_queue_kstat {
-	kstat_named_t zfs_vdev_max_active;
-	kstat_named_t zfs_vdev_sync_read_min_active;
-	kstat_named_t zfs_vdev_sync_read_max_active;
-	kstat_named_t zfs_vdev_sync_write_min_active;
-	kstat_named_t zfs_vdev_sync_write_max_active;
-	kstat_named_t zfs_vdev_async_read_min_active;
-	kstat_named_t zfs_vdev_async_read_max_active;
-	kstat_named_t zfs_vdev_async_write_min_active;
-	kstat_named_t zfs_vdev_async_write_max_active;
-	kstat_named_t zfs_vdev_scrub_min_active;
-	kstat_named_t zfs_vdev_scrub_max_active;
-	kstat_named_t zfs_vdev_async_write_active_min_dirty_percent;
-	kstat_named_t zfs_vdev_async_write_active_max_dirty_percent;
-	kstat_named_t zfs_vdev_aggregation_limit;
-	kstat_named_t zfs_vdev_read_gap_limit;
-	kstat_named_t zfs_vdev_write_gap_limit;
-} vdev_queue_kstat_t;
-
-extern vdev_queue_kstat_t vdev_queue_kstat;
-int vdev_queue_kstat_update(kstat_t *ksp, int rw);
-#endif /* APPLE */
-
 #ifdef	__cplusplus
 }
 #endif

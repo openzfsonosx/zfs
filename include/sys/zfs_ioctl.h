@@ -563,33 +563,7 @@ extern minor_t zfsdev_minor_alloc(void);
 extern int zfs_ioctl_osx_init(void);
 extern int zfs_ioctl_osx_fini(void);
 
-typedef struct darwin_stats {
-	kstat_named_t darwin_active_vnodes;
-	kstat_named_t darwin_reclaim_nodes;
-	kstat_named_t darwin_debug;
-	kstat_named_t darwin_ignore_negatives;
-	kstat_named_t darwin_ignore_positives;
-	kstat_named_t darwin_create_negatives;
-	kstat_named_t darwin_reclaim_throttle;
-	kstat_named_t darwin_force_formd_normalized;
-} darwin_stats_t;
-
-#define	DARWIN_STATS_INCR(stat, val) \
-	atomic_add_64(&darwin_stats.stat.value.ui64, (val));
-#define	DARWIN_STATS_DECR(stat, val) \
-	atomic_sub_64(&darwin_stats.stat.value.ui64, (val));
-
-
-extern unsigned int debug_vnop_osx_printf;
-extern unsigned int zfs_vnop_ignore_negatives;
-extern unsigned int zfs_vnop_ignore_positives;
-extern unsigned int zfs_vnop_create_negatives;
-extern unsigned int zfs_vnop_reclaim_throttle;
 extern int zfs_vnop_force_formd_normalized_output;
-extern uint64_t vnop_num_reclaims;
-extern uint64_t vnop_num_vnodes;
-
-
 
 #endif	/* _KERNEL */
 
