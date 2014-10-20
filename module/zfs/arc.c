@@ -769,6 +769,8 @@ int arc_kstat_update(kstat_t *ksp, int rw)
 		}
 
 		zfs_arc_grow_retry        = ks->arc_zfs_arc_grow_retry.value.ui64;
+        arc_grow_retry = zfs_arc_grow_retry;
+
 		zfs_arc_shrink_shift      = ks->arc_zfs_arc_shrink_shift.value.ui64;
 		zfs_arc_p_min_shift       = ks->arc_zfs_arc_p_min_shift.value.ui64;
 		zfs_disable_dup_eviction  = ks->arc_zfs_disable_dup_eviction.value.ui64;
@@ -785,7 +787,8 @@ int arc_kstat_update(kstat_t *ksp, int rw)
 		ks->arc_zfs_arc_meta_limit.value.ui64 =
 			zfs_arc_meta_limit ? zfs_arc_meta_limit : arc_meta_limit;
 
-		ks->arc_zfs_arc_grow_retry.value.ui64        = zfs_arc_grow_retry;
+		ks->arc_zfs_arc_grow_retry.value.ui64        =
+			zfs_arc_grow_retry ? zfs_arc_grow_retry : arc_grow_retry;
 		ks->arc_zfs_arc_shrink_shift.value.ui64      = zfs_arc_shrink_shift;
 		ks->arc_zfs_arc_p_min_shift.value.ui64       = zfs_arc_p_min_shift;
 		ks->arc_zfs_disable_dup_eviction.value.ui64  = zfs_disable_dup_eviction;
@@ -2327,6 +2330,8 @@ arc_shrink(void)
 
     if (arc_size > arc_c)
         arc_adjust();
+
+	printf("arc_shrink\n");
 }
 
 /*
@@ -2497,7 +2502,11 @@ arc_reclaim_thread(void *notused)
 
     mutex_enter(&arc_reclaim_thr_lock);
     while (arc_thread_exit == 0) {
+
         if (arc_reclaim_needed()) {
+
+			printf("ZFS: arc reclaim needed: last %u nogrow %u\n", last_reclaim,
+				   arc_no_grow);
 
             if (arc_no_grow) {
                 if (last_reclaim == ARC_RECLAIM_CONS) {
@@ -2514,10 +2523,13 @@ arc_reclaim_thread(void *notused)
             /* reset the growth delay for every reclaim */
             growtime = ddi_get_lbolt() + (arc_grow_retry * hz);
 
+			printf("ZFS: arc growtime set to %llu\n", growtime);
+
             arc_kmem_reap_now(last_reclaim);
             arc_warm = B_TRUE;
 
         } else if (arc_no_grow && ddi_get_lbolt() >= growtime) {
+			printf("ZFS: arc growing again\n");
             arc_no_grow = FALSE;
         }
 
@@ -2528,6 +2540,8 @@ arc_reclaim_thread(void *notused)
 
         /* block until needed, or one second, whichever is shorter */
         CALLB_CPR_SAFE_BEGIN(&cpr);
+        (void) cv_timedwait(&arc_reclaim_thr_cv,
+                            &arc_reclaim_thr_lock, (ddi_get_lbolt() + 10));
         (void) cv_timedwait(&arc_reclaim_thr_cv,
                             &arc_reclaim_thr_lock, (ddi_get_lbolt() + hz));
         CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_thr_lock);
