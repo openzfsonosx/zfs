@@ -1571,7 +1571,7 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	DECLARE_CRED(ap);
 
-	/* dprintf("+vnop_inactive\n"); */
+	dprintf("vnop_inactive: zp %p vp %p\n", zp, vp);
 
 	if (zfsvfs->z_vnode_create_depth)
 		return (0);
