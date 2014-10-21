@@ -297,6 +297,7 @@ struct synccb {
     kauth_cred_t cr;
     int waitfor;
     int error;
+	zfsvfs_t *zfsvfs;
 };
 
 static int
@@ -304,10 +305,17 @@ zfs_sync_callback(struct vnode *vp, void *cargs)
 {
     struct synccb *cb = (struct synccb *) cargs;
     int error;
-
+	znode_t *zp;
 
     /* The .zfs vnode is special, skip it */
     if (zfsctl_is_node(vp)) return (VNODE_RETURNED);
+
+	/* Double check this vnode belongs to ZFS */
+	zp = VTOZ(vp);
+	if (!zp || (cb->zfsvfs != zp->z_zfsvfs)) {
+		printf("ZFS: vp %p is not a znode!\n", vp);
+		return (VNODE_RETURNED);
+	}
 
     /* ZFS doesn't actually use any of the args */
     error = zfs_fsync(vp, cb->waitfor, (cred_t *)cb->cr, cb->ct);
@@ -343,6 +351,7 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
         cb.ct = NULL;
         cb.cr = kauth_cred_get();
         cb.error = 0;
+		cb.zfsvfs = zfsvfs;
 
         error = vnode_iterate(vfsp, 0, zfs_sync_callback, (void *)&cb);
         if (error != 0)
