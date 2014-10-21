@@ -4,6 +4,7 @@
 typedef struct osx_kstat {
 	kstat_named_t darwin_active_vnodes;
 	kstat_named_t darwin_reclaim_nodes;
+	kstat_named_t darwin_pageout_nodes;
 	kstat_named_t darwin_debug;
 	kstat_named_t darwin_ignore_negatives;
 	kstat_named_t darwin_ignore_positives;
@@ -87,6 +88,7 @@ extern unsigned int zfs_vnop_ignore_positives;
 extern unsigned int zfs_vnop_create_negatives;
 extern unsigned int zfs_vnop_reclaim_throttle;
 extern uint64_t vnop_num_reclaims;
+extern uint64_t vnop_num_pageout;
 extern uint64_t vnop_num_vnodes;
 
 extern uint64_t zfs_arc_max;

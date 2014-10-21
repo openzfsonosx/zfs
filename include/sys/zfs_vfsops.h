@@ -90,6 +90,13 @@ struct zfsvfs {
         boolean_t       z_reclaim_thread_exit;
         kmutex_t		z_reclaim_thr_lock;
         kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
+
+	    list_t          z_pageout_nodes;/* all pageout requests to process */
+        boolean_t       z_pageout_thread_exit;
+        kmutex_t		z_pageout_thr_lock;
+        kcondvar_t	    z_pageout_thr_cv;	/* used to signal pageout thr */
+        kmutex_t	    z_pageout_list_lock;/* lockfor using z_pageout_list*/
+
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
         uint64_t	    z_replay_eof;	/* New end of file - replay only */

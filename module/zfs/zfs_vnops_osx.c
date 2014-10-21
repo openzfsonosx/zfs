@@ -1143,6 +1143,7 @@ osx_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 }
 
 
+uint64_t vnop_num_pageout = 0;
 
 static int
 zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
@@ -1329,32 +1330,83 @@ exit:
 
 
 
-struct pageout_cb {
-	zfsvfs_t   *zfsvfs;
-	znode_t    *zp;
-	upl_t       upl;
-	vm_offset_t upl_offset;
-	offset_t    offset;
-	size_t      len;
-	int         flags;
-};
-
-
-void zfs_pageout_wrapper(void *arg)
+/*
+ * Thread started to deal with any nodes in z_reclaim_nodes
+ */
+void
+vnop_pageout_thread(void *arg)
 {
-	struct pageout_cb *cb = (struct pageout_cb *)arg;
-	int err;
+	pageout_t *cb;
+	callb_cpr_t cpr;
+	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
 
-	err  = zfs_pageout(cb->zfsvfs, cb->zp, cb->upl, cb->upl_offset,
-					   cb->offset, cb->len, cb->flags);
+#define VERBOSE_PAGEOUT
+/*
+ * #define VERBOSE_PAGEOUT
+ */
+#ifdef VERBOSE_PAGEOUT
+	int count = 0;
+	printf("ZFS: pageout %p thread is alive!\n", zfsvfs);
+#endif
+	CALLB_CPR_INIT(&cpr, &zfsvfs->z_pageout_thr_lock, callb_generic_cpr,
+	    FTAG);
+	mutex_enter(&zfsvfs->z_pageout_thr_lock);
+	while (1) {
+		while (1) {
+			mutex_enter(&zfsvfs->z_pageout_list_lock);
+			cb = list_head(&zfsvfs->z_pageout_nodes);
+			if (cb) {
+				list_remove(&zfsvfs->z_pageout_nodes, cb);
+			}
+			mutex_exit(&zfsvfs->z_pageout_list_lock);
+			/* Only exit thread once list is empty */
+			if (!cb)
+				break;
+#ifdef VERBOSE_PAGEOUT
+			count++;
+#endif
+#ifdef _KERNEL
+			atomic_dec_64(&vnop_num_pageout);
+#endif
 
-	kmem_free(cb, sizeof(*cb));
+			/* CODE */
+			zfs_pageout(cb->zfsvfs, cb->zp, cb->upl, cb->upl_offset,
+						cb->offset, cb->len, cb->flags);
 
-	printf("The forked returned %d\n", err);
+			kmem_free(cb, sizeof(*cb));
+			cb = NULL;
 
+		} /* until empty */
+#ifdef VERBOSE_PAGEOUT
+		if (count)
+			printf("pageout_thr: %p nodes released: %d "
+			    "(in list %llu)\n", zfsvfs, count,
+			    vnop_num_pageout);
+		count = 0;
+#endif
+		/* Allow us to quit, since list is empty */
+		if (zfsvfs->z_pageout_thread_exit == TRUE)
+			break;
+		/* block until needed, or one second, whichever is shorter */
+#if 1
+		/* RECLAIM_SIGNAL */
+		CALLB_CPR_SAFE_BEGIN(&cpr);
+		(void) cv_timedwait_interruptible(&zfsvfs->z_pageout_thr_cv,
+		    &zfsvfs->z_pageout_thr_lock, (ddi_get_lbolt() + (hz>>1)));
+		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_pageout_thr_lock);
+#else
+		delay(hz>>1);
+#endif
+	} /* forever */
+#ifdef VERBOSE_PAGEOUT
+	printf("ZFS: pageout thread %p is quitting!\n", zfsvfs);
+#endif
+	zfsvfs->z_pageout_thread_exit = FALSE;
+	cv_broadcast(&zfsvfs->z_pageout_thr_cv);
+	CALLB_CPR_EXIT(&cpr); /* drops zfsvfs->z_pageout_thr_lock */
 	thread_exit();
-
 }
+
 
 
 static int
@@ -1405,7 +1457,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	if (zfsvfs->z_vnode_create_depth) {
 		struct pageout_cb *cb;
 
-		printf("zfs: pageout forking request due to vnode_create\n");
+		printf("zfs: pageout thread requested due to vnode_create\n");
 
 		cb = kmem_alloc(sizeof(*cb), KM_PUSHPAGE);
 		cb->zfsvfs     = zfsvfs;
@@ -1415,8 +1467,16 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 		cb->offset     = ap->a_f_offset;
 		cb->len        = len;
 		cb->flags      = flags;
-		(void) thread_create(NULL, 0, zfs_pageout_wrapper, cb, 0, &p0,
-							 TS_RUN, minclsyspri);
+		list_link_init(&cb->pageout_node);
+
+		mutex_enter(&zfsvfs->z_pageout_list_lock);
+		list_insert_tail(&zfsvfs->z_pageout_nodes, cb);
+		mutex_exit(&zfsvfs->z_pageout_list_lock);
+
+		atomic_inc_64(&vnop_num_pageout);
+
+		/* Wake up the thread if it is sleeping */
+		cv_signal(&zfsvfs->z_pageout_thr_cv);
 		return 0;
 	}
 
