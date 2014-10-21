@@ -82,7 +82,8 @@ unsigned int zfs_vnop_reclaim_throttle = 33280;
 	DECLARE_CONTEXT(ap)
 
 #undef dprintf
-#define	dprintf if (debug_vnop_osx_printf) printf
+//#define	dprintf if (debug_vnop_osx_printf) printf
+#define	dprintf(...) if (debug_vnop_osx_printf) {printf(__VA_ARGS__);delay(hz>>2);}
 
 /* Move this somewhere else, maybe autoconf? */
 #define	HAVE_NAMED_STREAMS 1
@@ -1340,7 +1341,6 @@ vnop_pageout_thread(void *arg)
 	callb_cpr_t cpr;
 	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
 
-#define VERBOSE_PAGEOUT
 /*
  * #define VERBOSE_PAGEOUT
  */
@@ -1457,7 +1457,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	if (zfsvfs->z_vnode_create_depth) {
 		struct pageout_cb *cb;
 
-		printf("zfs: pageout thread requested due to vnode_create\n");
+		dprintf("zfs: pageout thread requested due to vnode_create\n");
 
 		cb = kmem_alloc(sizeof(*cb), KM_PUSHPAGE);
 		cb->zfsvfs     = zfsvfs;
