@@ -2477,9 +2477,6 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat)
     kmem_cache_reap_now(buf_cache);
     kmem_cache_reap_now(hdr_cache);
 //    kmem_cache_reap_now(range_seg_cache);
-#ifdef _KERNEL
-    kmem_reap();
-#endif
 
 #ifdef KERNEL
     /*
@@ -2541,7 +2538,7 @@ arc_reclaim_thread(void *notused)
         /* block until needed, or one second, whichever is shorter */
         CALLB_CPR_SAFE_BEGIN(&cpr);
         (void) cv_timedwait(&arc_reclaim_thr_cv,
-                            &arc_reclaim_thr_lock, (ddi_get_lbolt() + 10));
+                            &arc_reclaim_thr_lock, (ddi_get_lbolt() + (hz>>3)));
         (void) cv_timedwait(&arc_reclaim_thr_cv,
                             &arc_reclaim_thr_lock, (ddi_get_lbolt() + hz));
         CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_thr_lock);

@@ -2552,7 +2552,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	 * zfs_sb_t have been handled only then can it be safely destroyed.
 	 */
 	if (zfsvfs->z_os)
-		taskq_wait(dsl_pool_iput_taskq(dmu_objset_pool(zfsvfs->z_os)));
+		taskq_wait(dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
 
 	rrw_enter(&zfsvfs->z_teardown_lock, RW_WRITER, FTAG);
 
