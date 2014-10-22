@@ -82,8 +82,8 @@ unsigned int zfs_vnop_reclaim_throttle = 33280;
 	DECLARE_CONTEXT(ap)
 
 #undef dprintf
-//#define	dprintf if (debug_vnop_osx_printf) printf
-#define	dprintf(...) if (debug_vnop_osx_printf) {printf(__VA_ARGS__);delay(hz>>2);}
+#define	dprintf if (debug_vnop_osx_printf) printf
+//#define	dprintf(...) if (debug_vnop_osx_printf) {printf(__VA_ARGS__);delay(hz>>2);}
 
 /* Move this somewhere else, maybe autoconf? */
 #define	HAVE_NAMED_STREAMS 1
@@ -1430,7 +1430,16 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	size_t len = ap->a_size;
 	offset_t off = ap->a_f_offset;
 	znode_t *zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	zfsvfs_t *zfsvfs = NULL;
+
+	if (!zp || !zp->z_zfsvfs) {
+		if (!(flags & UPL_NOCOMMIT))
+			ubc_upl_abort(upl,
+			    (UPL_ABORT_DUMP_PAGES | UPL_ABORT_FREE_ON_EMPTY));
+		return (ENXIO);
+	}
+
+	zfsvfs = zp->z_zfsvfs;
 
 	dprintf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: "
 	    "blksz 0x%x, z_size 0x%llx\n", off, len, upl_offset, zp->z_blksz,
@@ -1441,12 +1450,6 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 * Break up that function into smaller bits so it can be reused.
 	 */
 
-	if (zfsvfs == NULL) {
-		if (!(flags & UPL_NOCOMMIT))
-			ubc_upl_abort(upl,
-			    (UPL_ABORT_DUMP_PAGES | UPL_ABORT_FREE_ON_EMPTY));
-		return (ENXIO);
-	}
 
 	/*
 	 * Defer syncs if we are coming through vnode_create()
@@ -1557,6 +1560,96 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	return (0);
 }
 
+
+uint64_t vnop_num_inactive = 0;
+
+/*
+ * Thread started to deal with any nodes in z_inactive_nodes
+ */
+void
+vnop_inactive_thread(void *arg)
+{
+	inactive_t *in;
+	callb_cpr_t cpr;
+	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
+
+/*
+ * #define VERBOSE_INACTIVE
+ */
+#ifdef VERBOSE_INACTIVE
+	int count = 0;
+	printf("ZFS: inactive %p thread is alive!\n", zfsvfs);
+#endif
+	CALLB_CPR_INIT(&cpr, &zfsvfs->z_inactive_thr_lock, callb_generic_cpr,
+	    FTAG);
+	mutex_enter(&zfsvfs->z_inactive_thr_lock);
+	while (1) {
+		while (1) {
+			mutex_enter(&zfsvfs->z_inactive_list_lock);
+			in = list_head(&zfsvfs->z_inactive_nodes);
+			if (in) {
+				list_remove(&zfsvfs->z_inactive_nodes, in);
+			}
+			mutex_exit(&zfsvfs->z_inactive_list_lock);
+			/* Only exit thread once list is empty */
+			if (!in)
+				break;
+#ifdef VERBOSE_INACTIVE
+			count++;
+#endif
+#ifdef _KERNEL
+			atomic_dec_64(&vnop_num_inactive);
+#endif
+
+			/* CODE */
+			if (vnode_getwithref(in->vp) == 0) {
+
+				zfs_inactive(in->vp, NULL, 0);
+
+				/* release hold from vnop_inactive */
+				vnode_rele(in->vp);
+
+				/* Release iocount from getwithref */
+				vnode_put(in->vp);
+
+				/* release in */
+				kmem_free(in, sizeof(*in));
+
+			}
+
+		} /* until empty */
+#ifdef VERBOSE_INACTIVE
+		if (count)
+			printf("inactive_thr: %p nodes released: %d "
+			    "(in list %llu)\n", zfsvfs, count,
+			    vnop_num_inactive);
+		count = 0;
+#endif
+		/* Allow us to quit, since list is empty */
+		if (zfsvfs->z_inactive_thread_exit == TRUE)
+			break;
+		/* block until needed, or one second, whichever is shorter */
+#if 1
+		/* RECLAIM_SIGNAL */
+		CALLB_CPR_SAFE_BEGIN(&cpr);
+		(void) cv_timedwait_interruptible(&zfsvfs->z_inactive_thr_cv,
+		    &zfsvfs->z_inactive_thr_lock, (ddi_get_lbolt() + (hz>>1)));
+		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_inactive_thr_lock);
+#else
+		delay(hz>>1);
+#endif
+	} /* forever */
+#ifdef VERBOSE_INACTIVE
+	printf("ZFS: inactive thread %p is quitting!\n", zfsvfs);
+#endif
+	zfsvfs->z_inactive_thread_exit = FALSE;
+	cv_broadcast(&zfsvfs->z_inactive_thr_cv);
+	CALLB_CPR_EXIT(&cpr); /* drops zfsvfs->z_inactive_thr_lock */
+	thread_exit();
+}
+
+
+
 static int
 zfs_vnop_inactive(struct vnop_inactive_args *ap)
 #if 0
@@ -1573,13 +1666,41 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 
 	dprintf("vnop_inactive: zp %p vp %p\n", zp, vp);
 
-	if (zfsvfs->z_vnode_create_depth)
+	if (zfsvfs->z_vnode_create_depth) {
+		/*
+		 * We can not call inactive at this time, as we are inside
+		 * vnode_create, so we must place it on a queue and process
+		 * later, but to stop darwin from calling vnop_reclaim on
+		 * this node, we grab a refcount
+		 */
+		inactive_t *in;
+
+		dprintf("ZFS: vnop_inactive %p busy, deferred\n", vp);
+		vnode_ref(vp);
+
+		in = kmem_alloc(sizeof(*in), KM_PUSHPAGE);
+		in->vp = vp;
+		list_link_init(&in->inactive_node);
+
+		/* Place it on the list */
+		mutex_enter(&zfsvfs->z_inactive_list_lock);
+		list_insert_tail(&zfsvfs->z_inactive_nodes, in);
+		mutex_exit(&zfsvfs->z_inactive_list_lock);
+
+		atomic_inc_64(&vnop_num_inactive);
+
+		/* Wake up the thread */
+		cv_signal(&zfsvfs->z_inactive_thr_cv);
 		return (0);
+	}
+
 	zfs_inactive(vp, cr, NULL);
 
 	/* dprintf("-vnop_inactive\n"); */
 	return (0);
 }
+
+
 
 #ifdef _KERNEL
 uint64_t vnop_num_reclaims = 0;
@@ -1659,6 +1780,8 @@ vnop_reclaim_thread(void *arg)
 }
 #endif
 
+
+
 static int
 zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 #if 0
@@ -1668,9 +1791,14 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	};
 #endif
 {
+	/*
+	 * Care needs to be taken here, we may already have called reclaim
+	 * from vnop_inactive, if so, very little needs to be done.
+	 */
+
 	struct vnode	*vp = ap->a_vp;
-	znode_t	*zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	znode_t	*zp = NULL;
+	zfsvfs_t *zfsvfs = NULL;
 	static int has_warned = 0;
 	ASSERT(zp != NULL);
 
@@ -1680,6 +1808,13 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 #ifndef __APPLE__
 	vnode_destroy_vobject(vp);
 #endif
+
+	/* Already been released? */
+	zp = VTOZ(vp);
+	if (!zp) goto out;
+
+	zfsvfs = zp->z_zfsvfs;
+
 	/*
 	 * Purge old data structures associated with the denode.
 	 */
@@ -1739,9 +1874,12 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 #ifdef RECLAIM_SIGNAL
 	cv_signal(&zfsvfs->z_reclaim_thr_cv);
 #endif
+  out:
 
 	return (0);
 }
+
+
 
 static void
 zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs)

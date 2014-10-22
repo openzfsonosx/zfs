@@ -59,6 +59,7 @@ osx_kstat_t osx_kstat = {
 	{ "active_vnodes",				KSTAT_DATA_UINT64 },
 	{ "reclaim_nodes",				KSTAT_DATA_UINT64 },
 	{ "pageout_nodes",				KSTAT_DATA_UINT64 },
+	{ "inactive_nodes",				KSTAT_DATA_UINT64 },
 	{ "vnop_debug",					KSTAT_DATA_UINT64 },
 	{ "ignore_negatives",			KSTAT_DATA_UINT64 },
 	{ "ignore_positives",			KSTAT_DATA_UINT64 },
@@ -208,6 +209,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->darwin_active_vnodes.value.ui64          = vnop_num_vnodes;
 		ks->darwin_reclaim_nodes.value.ui64          = vnop_num_reclaims;
 		ks->darwin_pageout_nodes.value.ui64          = vnop_num_pageout;
+		ks->darwin_inactive_nodes.value.ui64         = vnop_num_inactive;
 		ks->darwin_debug.value.ui64                  = debug_vnop_osx_printf;
 		ks->darwin_ignore_negatives.value.ui64       = zfs_vnop_ignore_negatives;
 		ks->darwin_ignore_positives.value.ui64       = zfs_vnop_ignore_positives;

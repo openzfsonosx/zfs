@@ -416,6 +416,7 @@ extern void zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, znode_t *zp,
                         vsecattr_t *vsecp, zfs_fuid_info_t *fuidp);
 extern void vnop_reclaim_thread(void *arg);
 extern void vnop_pageout_thread(void *arg);
+extern void vnop_inactive_thread(void *arg);
 
 //extern void zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 //         znode_t *zp, int aclcnt, ace_t *z_ace, zfs_fuid_info_t *fuidp);

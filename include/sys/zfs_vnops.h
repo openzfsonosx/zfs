@@ -253,6 +253,13 @@ struct pageout_cb {
 
 typedef struct pageout_cb pageout_t;
 
+struct inactive_cb {
+	list_node_t	inactive_node;
+	struct vnode *vp;
+};
+
+typedef struct inactive_cb inactive_t;
+
 
 #ifdef	__cplusplus
 }
