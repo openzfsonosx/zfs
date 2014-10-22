@@ -3903,11 +3903,11 @@ arc_init(void)
      * 5/8 & 3GB feels better
      */
 
-    if (arc_c * 8 >= 1<<30) {
+    if (arc_c * 4 >= 1<<30) {
         arc_c_max = (arc_c * 8) - ((uint64_t)(1<<30) * 3);
     } else
         arc_c_max = arc_c_min;
-    arc_c_max = MAX(arc_c * 7, arc_c_max);
+    arc_c_max = MAX(arc_c * 2, arc_c_max);
 
     /*
      * Allow the tunables to override our calculations if they are
