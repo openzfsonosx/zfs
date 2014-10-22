@@ -332,6 +332,8 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
 {
     struct synccb cb;
 
+	return 0;
+
     /*
      * Data integrity is job one. We don't want a compromised kernel
      * writing to the storage pool, so we never sync during panic.
