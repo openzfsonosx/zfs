@@ -1373,6 +1373,13 @@ vnop_pageout_thread(void *arg)
 			zfs_pageout(cb->zfsvfs, cb->zp, cb->upl, cb->upl_offset,
 						cb->offset, cb->len, cb->flags);
 
+			/* Release the reference held below */
+			if (vnode_getwithref(ZTOV(cb->zp)) == 0) {
+				vnode_rele(ZTOV(cb->zp));
+				vnode_put(ZTOV(cb->zp));
+			}
+
+
 			kmem_free(cb, sizeof(*cb));
 			cb = NULL;
 
@@ -1471,6 +1478,9 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 		cb->len        = len;
 		cb->flags      = flags;
 		list_link_init(&cb->pageout_node);
+
+		/* Hold a reference so xnu doesn't release it */
+		vnode_ref(vp);
 
 		mutex_enter(&zfsvfs->z_pageout_list_lock);
 		list_insert_tail(&zfsvfs->z_pageout_nodes, cb);
