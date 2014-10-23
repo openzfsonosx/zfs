@@ -307,6 +307,7 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
         /*
          * Sync a specific filesystem.
          */
+#if 0
         zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
         dsl_pool_t *dp;
         int error;
@@ -327,6 +328,7 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
             zil_commit(zfsvfs->z_log, 0);
 
         ZFS_EXIT(zfsvfs);
+#endif
     } else {
         /*
          * Sync all ZFS filesystems. This is what happens when you
