@@ -1480,7 +1480,10 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 		list_link_init(&cb->pageout_node);
 
 		/* Hold a reference so xnu doesn't release it */
-		vnode_ref(vp);
+		if (vnode_getwithref(vp) == 0) {
+			vnode_ref(vp);
+			vnode_put(vp);
+		}
 
 		mutex_enter(&zfsvfs->z_pageout_list_lock);
 		list_insert_tail(&zfsvfs->z_pageout_nodes, cb);
