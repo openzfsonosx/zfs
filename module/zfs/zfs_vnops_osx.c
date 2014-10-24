@@ -1615,7 +1615,7 @@ vnop_inactive_thread(void *arg)
 #endif
 
 			/* CODE */
-			if (vnode_getwithref(in->vp) == 0) {
+			if (in->vp && vnode_getwithref(in->vp) == 0) {
 
 				zfs_inactive(in->vp, NULL, 0);
 
@@ -1625,10 +1625,11 @@ vnop_inactive_thread(void *arg)
 				/* Release iocount from getwithref */
 				vnode_put(in->vp);
 
-				/* release in */
-				kmem_free(in, sizeof(*in));
-
 			}
+
+			/* release in */
+			kmem_free(in, sizeof(*in));
+
 
 		} /* until empty */
 #ifdef VERBOSE_INACTIVE
