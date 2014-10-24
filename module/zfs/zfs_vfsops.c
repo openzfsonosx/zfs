@@ -307,7 +307,7 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
         /*
          * Sync a specific filesystem.
          */
-#if 0
+#if 1
         zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
         dsl_pool_t *dp;
         int error;
@@ -330,12 +330,14 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
         ZFS_EXIT(zfsvfs);
 #endif
     } else {
+#if 0
         /*
          * Sync all ZFS filesystems. This is what happens when you
          * run sync(1M). Unlike other filesystems, ZFS honors the
          * request by waiting for all pools to commit all dirty data.
          */
         spa_sync_allpools();
+#endif
     }
 
     return (0);
