@@ -54,8 +54,9 @@ vnode_t *rootdir = (vnode_t *)0xabcd1234;
 char hw_serial[HW_HOSTID_LEN];
 
 struct utsname utsname = {
-	"userland", "libzpool", "1", "1", "na"
+        "userland", "libzpool", "1", "1", "na"
 };
+
 
 struct proc {
 };
@@ -1152,6 +1153,7 @@ ddi_strtoull(const char *str, char **nptr, int base, u_longlong_t *result)
 		return (errno);
 	return (0);
 }
+
 
 /*
  * =========================================================================
