@@ -91,6 +91,8 @@
 #include "zfs_comutil.h"
 
 #ifdef __APPLE__
+#include <sys/kstat_osx.h>
+
 #define MNTTAB "/etc/mtab"
 
 static int mnttab_file_create(void);
@@ -6167,6 +6169,10 @@ zfs_allow_log_destroy(void *arg)
 #define	ZFS_DEBUG_STR	""
 #endif
 
+
+
+
+
 int
 zfs_ioctl_osx_init(void)
 {
@@ -6212,6 +6218,9 @@ zfs_ioctl_osx_init(void)
 #endif
 
 #ifdef __APPLE__
+
+	kstat_osx_init();
+
 	(void) mnttab_file_create();
 	zfs_ioctl_installed = 1;
 #endif
@@ -6248,6 +6257,8 @@ zfs_ioctl_osx_fini(void)
 		return (SET_ERROR(EBUSY));
 	}
 #endif
+
+	kstat_osx_fini();
 
 #ifdef illumos
 	if ((error = mod_remove(&modlinkage)) != 0)

@@ -711,6 +711,11 @@ int uio_iovcnt( struct uio *a_uio );
 #define TS_STACK_MIN            PTHREAD_STACK_MIN
 #define TS_STACK_MAX            (256 * 1024)
 
+
+#define kpreempt(X)
+
+
+
 #endif /* !_KERNEL */
 
 

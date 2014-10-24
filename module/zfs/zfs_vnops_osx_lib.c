@@ -589,10 +589,8 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 	}
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_sa(tx, dzp->z_sa_hdl, B_FALSE);
-	dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, FALSE, NULL);
-	//dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT);
-	//dmu_tx_hold_bonus(tx, dzp->z_id);
 	dmu_tx_hold_zap(tx, dzp->z_id, TRUE, (char *)name);
+	dmu_tx_hold_zap(tx, DMU_NEW_OBJECT, FALSE, NULL);
 
 #if 1 // FIXME
 	if (dzp->z_pflags & ZFS_INHERIT_ACE) {

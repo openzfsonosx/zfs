@@ -278,7 +278,8 @@ out:
 	if (context)
 		(void) vfs_context_rele(context);
 
-	if (error) printf("ZFS: vdev_disk_open() failed error %d\n", error);
+	if (error) printf("ZFS: vdev_disk_open('%s') failed error %d\n",
+					  vd->vdev_path ? vd->vdev_path : "", error);
 
 	return (error);
 }

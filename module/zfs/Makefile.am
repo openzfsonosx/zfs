@@ -118,6 +118,7 @@ zfs_SOURCES = \
 	zfs_fm.c \
 	zfs_fuid.c \
 	zfs_ioctl.c \
+	zfs_kstat_osx.c \
 	zfs_log.c \
 	zfs_onexit.c \
 	zfs_osx.cpp \

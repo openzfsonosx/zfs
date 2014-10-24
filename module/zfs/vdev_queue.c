@@ -171,6 +171,7 @@ int zfs_vdev_aggregation_limit = SPA_MAXBLOCKSIZE;
 int zfs_vdev_read_gap_limit = 32 << 10;
 int zfs_vdev_write_gap_limit = 4 << 10;
 
+
 int
 vdev_queue_offset_compare(const void *x1, const void *x2)
 {
@@ -431,7 +432,6 @@ vdev_queue_io_remove(vdev_queue_t *vq, zio_t *zio)
 static void
 vdev_queue_pending_add(vdev_queue_t *vq, zio_t *zio)
 {
-
 #ifdef LINUX
 	spa_t *spa = zio->io_spa;
 	spa_stats_history_t *ssh = &spa->spa_stats.io_history;

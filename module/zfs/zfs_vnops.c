@@ -1210,10 +1210,7 @@ void
 zfs_get_done(zgd_t *zgd, int error)
 {
 	znode_t *zp = zgd->zgd_private;
-
-#ifndef __APPLE__
 	objset_t *os = zp->z_zfsvfs->z_os;
-#endif
 
 	if (zgd->zgd_db)
 		dmu_buf_rele(zgd->zgd_db, zgd);
@@ -5027,7 +5024,13 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 		 * suspend/resume and this file no longer exists.
 		 */
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
+#ifndef __APPLE__
+/*
+ * We can not call vnode_recycle here, as we may be coming from vclean
+ * and if so, we end up calling us again, causing panic.
+ */
 		vnode_recycle(vp);
+#endif
 		return;
 	}
 
@@ -5038,7 +5041,9 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 		 */
 		mutex_exit(&zp->z_lock);
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
+#ifndef __APPLE__
 		vnode_recycle(vp);
+#endif
 		return;
 	}
 	mutex_exit(&zp->z_lock);

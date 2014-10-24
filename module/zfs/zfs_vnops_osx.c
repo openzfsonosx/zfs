@@ -73,8 +73,6 @@ unsigned int zfs_vnop_create_negatives = 1;
 unsigned int zfs_vnop_reclaim_throttle = 33280;
 #endif
 
-extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
-
 #define	DECLARE_CRED(ap) \
 	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context)
 #define	DECLARE_CONTEXT(ap) \
@@ -85,6 +83,7 @@ extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
 
 #undef dprintf
 #define	dprintf if (debug_vnop_osx_printf) printf
+//#define	dprintf(...) if (debug_vnop_osx_printf) {printf(__VA_ARGS__);delay(hz>>2);}
 
 /* Move this somewhere else, maybe autoconf? */
 #define	HAVE_NAMED_STREAMS 1
@@ -1145,7 +1144,7 @@ osx_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 }
 
 
-
+uint64_t vnop_num_pageout = 0;
 
 static int
 zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
@@ -1332,32 +1331,89 @@ exit:
 
 
 
-struct pageout_cb {
-	zfsvfs_t   *zfsvfs;
-	znode_t    *zp;
-	upl_t       upl;
-	vm_offset_t upl_offset;
-	offset_t    offset;
-	size_t      len;
-	int         flags;
-};
-
-
-void zfs_pageout_wrapper(void *arg)
+/*
+ * Thread started to deal with any nodes in z_reclaim_nodes
+ */
+void
+vnop_pageout_thread(void *arg)
 {
-	struct pageout_cb *cb = (struct pageout_cb *)arg;
-	int err;
+	pageout_t *cb;
+	callb_cpr_t cpr;
+	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
 
-	err  = zfs_pageout(cb->zfsvfs, cb->zp, cb->upl, cb->upl_offset,
-					   cb->offset, cb->len, cb->flags);
+/*
+ * #define VERBOSE_PAGEOUT
+ */
+#ifdef VERBOSE_PAGEOUT
+	int count = 0;
+	printf("ZFS: pageout %p thread is alive!\n", zfsvfs);
+#endif
+	CALLB_CPR_INIT(&cpr, &zfsvfs->z_pageout_thr_lock, callb_generic_cpr,
+	    FTAG);
+	mutex_enter(&zfsvfs->z_pageout_thr_lock);
+	while (1) {
+		while (1) {
+			mutex_enter(&zfsvfs->z_pageout_list_lock);
+			cb = list_head(&zfsvfs->z_pageout_nodes);
+			if (cb) {
+				list_remove(&zfsvfs->z_pageout_nodes, cb);
+			}
+			mutex_exit(&zfsvfs->z_pageout_list_lock);
+			/* Only exit thread once list is empty */
+			if (!cb)
+				break;
+#ifdef VERBOSE_PAGEOUT
+			count++;
+#endif
+#ifdef _KERNEL
+			atomic_dec_64(&vnop_num_pageout);
+#endif
 
-	kmem_free(cb, sizeof(*cb));
+			/* CODE */
+			zfs_pageout(cb->zfsvfs, cb->zp, cb->upl, cb->upl_offset,
+						cb->offset, cb->len, cb->flags);
 
-	printf("The forked returned %d\n", err);
+			/* Release the reference held below */
+			if (vnode_getwithref(ZTOV(cb->zp)) == 0) {
+				vnode_rele(ZTOV(cb->zp));
+				vnode_put(ZTOV(cb->zp));
+			}
 
+
+			kmem_free(cb, sizeof(*cb));
+			cb = NULL;
+
+		} /* until empty */
+#ifdef VERBOSE_PAGEOUT
+		if (count)
+			printf("pageout_thr: %p nodes released: %d "
+			    "(in list %llu)\n", zfsvfs, count,
+			    vnop_num_pageout);
+		count = 0;
+#endif
+		/* Allow us to quit, since list is empty */
+		if (zfsvfs->z_pageout_thread_exit == TRUE)
+			break;
+		/* block until needed, or one second, whichever is shorter */
+#if 1
+		/* RECLAIM_SIGNAL */
+		CALLB_CPR_SAFE_BEGIN(&cpr);
+		(void) cv_timedwait_interruptible(&zfsvfs->z_pageout_thr_cv,
+		    &zfsvfs->z_pageout_thr_lock, (ddi_get_lbolt() + (hz>>1)));
+		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_pageout_thr_lock);
+#else
+		delay(hz>>1);
+#endif
+	} /* forever */
+#ifdef VERBOSE_PAGEOUT
+	printf("ZFS: pageout thread %p is quitting!\n", zfsvfs);
+#endif
+	zfsvfs->z_pageout_thread_exit = FALSE;
+	cv_broadcast(&zfsvfs->z_pageout_thr_cv);
+	CALLB_CPR_EXIT(&cpr); /* drops zfsvfs->z_pageout_thr_lock */
 	thread_exit();
-
 }
+
 
 
 static int
@@ -1381,7 +1437,16 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	size_t len = ap->a_size;
 	offset_t off = ap->a_f_offset;
 	znode_t *zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	zfsvfs_t *zfsvfs = NULL;
+
+	if (!zp || !zp->z_zfsvfs) {
+		if (!(flags & UPL_NOCOMMIT))
+			ubc_upl_abort(upl,
+			    (UPL_ABORT_DUMP_PAGES | UPL_ABORT_FREE_ON_EMPTY));
+		return (ENXIO);
+	}
+
+	zfsvfs = zp->z_zfsvfs;
 
 	dprintf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: "
 	    "blksz 0x%x, z_size 0x%llx\n", off, len, upl_offset, zp->z_blksz,
@@ -1392,12 +1457,6 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 * Break up that function into smaller bits so it can be reused.
 	 */
 
-	if (zfsvfs == NULL) {
-		if (!(flags & UPL_NOCOMMIT))
-			ubc_upl_abort(upl,
-			    (UPL_ABORT_DUMP_PAGES | UPL_ABORT_FREE_ON_EMPTY));
-		return (ENXIO);
-	}
 
 	/*
 	 * Defer syncs if we are coming through vnode_create()
@@ -1408,7 +1467,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	if (zfsvfs->z_vnode_create_depth) {
 		struct pageout_cb *cb;
 
-		printf("zfs: pageout forking request due to vnode_create\n");
+		dprintf("zfs: pageout thread requested due to vnode_create\n");
 
 		cb = kmem_alloc(sizeof(*cb), KM_PUSHPAGE);
 		cb->zfsvfs     = zfsvfs;
@@ -1418,8 +1477,22 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 		cb->offset     = ap->a_f_offset;
 		cb->len        = len;
 		cb->flags      = flags;
-		(void) thread_create(NULL, 0, zfs_pageout_wrapper, cb, 0, &p0,
-							 TS_RUN, minclsyspri);
+		list_link_init(&cb->pageout_node);
+
+		/* Hold a reference so xnu doesn't release it */
+		if (vnode_getwithref(vp) == 0) {
+			vnode_ref(vp);
+			vnode_put(vp);
+		}
+
+		mutex_enter(&zfsvfs->z_pageout_list_lock);
+		list_insert_tail(&zfsvfs->z_pageout_nodes, cb);
+		mutex_exit(&zfsvfs->z_pageout_list_lock);
+
+		atomic_inc_64(&vnop_num_pageout);
+
+		/* Wake up the thread if it is sleeping */
+		cv_signal(&zfsvfs->z_pageout_thr_cv);
 		return 0;
 	}
 
@@ -1500,6 +1573,97 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	return (0);
 }
 
+
+uint64_t vnop_num_inactive = 0;
+
+/*
+ * Thread started to deal with any nodes in z_inactive_nodes
+ */
+void
+vnop_inactive_thread(void *arg)
+{
+	inactive_t *in;
+	callb_cpr_t cpr;
+	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
+
+/*
+ * #define VERBOSE_INACTIVE
+ */
+#ifdef VERBOSE_INACTIVE
+	int count = 0;
+	printf("ZFS: inactive %p thread is alive!\n", zfsvfs);
+#endif
+	CALLB_CPR_INIT(&cpr, &zfsvfs->z_inactive_thr_lock, callb_generic_cpr,
+	    FTAG);
+	mutex_enter(&zfsvfs->z_inactive_thr_lock);
+	while (1) {
+		while (1) {
+			mutex_enter(&zfsvfs->z_inactive_list_lock);
+			in = list_head(&zfsvfs->z_inactive_nodes);
+			if (in) {
+				list_remove(&zfsvfs->z_inactive_nodes, in);
+			}
+			mutex_exit(&zfsvfs->z_inactive_list_lock);
+			/* Only exit thread once list is empty */
+			if (!in)
+				break;
+#ifdef VERBOSE_INACTIVE
+			count++;
+#endif
+#ifdef _KERNEL
+			atomic_dec_64(&vnop_num_inactive);
+#endif
+
+			/* CODE */
+			if (in->vp && vnode_getwithref(in->vp) == 0) {
+
+				zfs_inactive(in->vp, NULL, 0);
+
+				/* release hold from vnop_inactive */
+				vnode_rele(in->vp);
+
+				/* Release iocount from getwithref */
+				vnode_put(in->vp);
+
+			}
+
+			/* release in */
+			kmem_free(in, sizeof(*in));
+
+
+		} /* until empty */
+#ifdef VERBOSE_INACTIVE
+		if (count)
+			printf("inactive_thr: %p nodes released: %d "
+			    "(in list %llu)\n", zfsvfs, count,
+			    vnop_num_inactive);
+		count = 0;
+#endif
+		/* Allow us to quit, since list is empty */
+		if (zfsvfs->z_inactive_thread_exit == TRUE)
+			break;
+		/* block until needed, or one second, whichever is shorter */
+#if 1
+		/* RECLAIM_SIGNAL */
+		CALLB_CPR_SAFE_BEGIN(&cpr);
+		(void) cv_timedwait_interruptible(&zfsvfs->z_inactive_thr_cv,
+		    &zfsvfs->z_inactive_thr_lock, (ddi_get_lbolt() + (hz>>1)));
+		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_inactive_thr_lock);
+#else
+		delay(hz>>1);
+#endif
+	} /* forever */
+#ifdef VERBOSE_INACTIVE
+	printf("ZFS: inactive thread %p is quitting!\n", zfsvfs);
+#endif
+	zfsvfs->z_inactive_thread_exit = FALSE;
+	cv_broadcast(&zfsvfs->z_inactive_thr_cv);
+	CALLB_CPR_EXIT(&cpr); /* drops zfsvfs->z_inactive_thr_lock */
+	thread_exit();
+}
+
+
+
 static int
 zfs_vnop_inactive(struct vnop_inactive_args *ap)
 #if 0
@@ -1514,18 +1678,47 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	DECLARE_CRED(ap);
 
-	/* dprintf("+vnop_inactive\n"); */
+	dprintf("vnop_inactive: zp %p vp %p\n", zp, vp);
 
-	if (zfsvfs->z_vnode_create_depth)
+	if (zfsvfs->z_vnode_create_depth) {
+		/*
+		 * We can not call inactive at this time, as we are inside
+		 * vnode_create, so we must place it on a queue and process
+		 * later, but to stop darwin from calling vnop_reclaim on
+		 * this node, we grab a refcount
+		 */
+		inactive_t *in;
+
+		dprintf("ZFS: vnop_inactive %p busy, deferred\n", vp);
+		vnode_ref(vp);
+
+		in = kmem_alloc(sizeof(*in), KM_PUSHPAGE);
+		in->vp = vp;
+		list_link_init(&in->inactive_node);
+
+		/* Place it on the list */
+		mutex_enter(&zfsvfs->z_inactive_list_lock);
+		list_insert_tail(&zfsvfs->z_inactive_nodes, in);
+		mutex_exit(&zfsvfs->z_inactive_list_lock);
+
+		atomic_inc_64(&vnop_num_inactive);
+
+		/* Wake up the thread */
+		cv_signal(&zfsvfs->z_inactive_thr_cv);
 		return (0);
+	}
+
 	zfs_inactive(vp, cr, NULL);
 
 	/* dprintf("-vnop_inactive\n"); */
 	return (0);
 }
 
+
+
 #ifdef _KERNEL
 uint64_t vnop_num_reclaims = 0;
+uint64_t vnop_num_vnodes = 0;
 
 /*
  * Thread started to deal with any nodes in z_reclaim_nodes
@@ -1601,6 +1794,8 @@ vnop_reclaim_thread(void *arg)
 }
 #endif
 
+
+
 static int
 zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 #if 0
@@ -1610,9 +1805,14 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	};
 #endif
 {
+	/*
+	 * Care needs to be taken here, we may already have called reclaim
+	 * from vnop_inactive, if so, very little needs to be done.
+	 */
+
 	struct vnode	*vp = ap->a_vp;
-	znode_t	*zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	znode_t	*zp = NULL;
+	zfsvfs_t *zfsvfs = NULL;
 	static int has_warned = 0;
 	ASSERT(zp != NULL);
 
@@ -1622,6 +1822,13 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 #ifndef __APPLE__
 	vnode_destroy_vobject(vp);
 #endif
+
+	/* Already been released? */
+	zp = VTOZ(vp);
+	if (!zp) goto out;
+
+	zfsvfs = zp->z_zfsvfs;
+
 	/*
 	 * Purge old data structures associated with the denode.
 	 */
@@ -1657,6 +1864,8 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 #ifdef _KERNEL
 	atomic_inc_64(&vnop_num_reclaims);
+	atomic_dec_64(&vnop_num_vnodes);
+
 #endif
 #if 1
 	if (!has_warned && vnop_num_reclaims > 20000) {
@@ -1679,9 +1888,12 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 #ifdef RECLAIM_SIGNAL
 	cv_signal(&zfsvfs->z_reclaim_thr_cv);
 #endif
+  out:
 
 	return (0);
 }
+
+
 
 static void
 zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs)
@@ -1837,7 +2049,11 @@ zfs_vnop_pathconf(struct vnop_pathconf_args *ap)
 	return (error);
 }
 
-static int
+
+/*
+ * This is not static so dtrace can see it
+ */
+int
 zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 #if 0
 	struct vnop_getxattr_args {
@@ -1921,7 +2137,10 @@ out:
 	return (error);
 }
 
-static int
+/*
+ * This is not static so dtrace can see it
+ */
+int
 zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 #if 0
 	struct vnop_setxattr_args {
@@ -3064,6 +3283,8 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0)
 		;
 	atomic_sub_64(&zfsvfs->z_vnode_create_depth, 1);
+
+	atomic_inc_64(&vnop_num_vnodes);
 
 	dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
 
