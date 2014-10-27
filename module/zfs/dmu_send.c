@@ -54,7 +54,6 @@
 #include <sys/dsl_bookmark.h>
 #include <sys/zfeature.h>
 
-
 /* Set this tunable to TRUE to replace corrupt data with 0x2f5baddb10c */
 int zfs_send_corrupt_data = B_FALSE;
 
@@ -1724,9 +1723,7 @@ dmu_recv_stream(dmu_recv_cookie_t *drc, struct vnode *vp, offset_t *voffp,
 
 	ra.byteswap = drc->drc_byteswap;
 	ra.cksum = drc->drc_cksum;
-
 	ra.vp = vp;
-
 	ra.voff = *voffp;
 	ra.bufsize = 1<<20;
 	ra.buf = kmem_alloc(ra.bufsize, KM_SLEEP);
