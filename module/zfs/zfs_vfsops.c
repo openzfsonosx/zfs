@@ -293,7 +293,7 @@ extern void zfs_ioctl_fini(void);
 
 
 int
-zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t context)
+zfs_vfs_sync(struct mount *vfsp, int waitfor, vfs_context_t context)
 {
 
     /*
@@ -307,12 +307,12 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
         /*
          * Sync a specific filesystem.
          */
-#if 1
         zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
         dsl_pool_t *dp;
         int error;
 
         ZFS_ENTER(zfsvfs);
+#if 0
         dp = dmu_objset_pool(zfsvfs->z_os);
 
         /*
@@ -327,8 +327,8 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
         if (zfsvfs->z_log != NULL)
             zil_commit(zfsvfs->z_log, 0);
 
-        ZFS_EXIT(zfsvfs);
 #endif
+        ZFS_EXIT(zfsvfs);
     } else {
 #if 0
         /*
