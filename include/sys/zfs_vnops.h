@@ -243,7 +243,7 @@ extern void nfsacl_set_wellknown(int wkg, guid_t *guid);
 struct pageout_cb {
 	list_node_t	pageout_node;
 	zfsvfs_t   *zfsvfs;
-	struct vnode *vp;
+	znode_t    *zp;
 	upl_t       upl;
 	vm_offset_t upl_offset;
 	offset_t    offset;

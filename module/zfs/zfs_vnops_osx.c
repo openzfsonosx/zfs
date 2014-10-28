@@ -1371,18 +1371,18 @@ vnop_pageout_thread(void *arg)
 #endif
 
 			/* CODE */
-			if (vnode_getwithref(cb->vp) == 0) {
+			if (vnode_getwithref(ZTOV(cb->zp)) == 0) {
 
-				zfs_pageout(cb->zfsvfs, cb->vp, cb->upl, cb->upl_offset,
+				zfs_pageout(cb->zfsvfs, cb->zp, cb->upl, cb->upl_offset,
 							cb->offset, cb->len, cb->flags);
 
 
-				VN_RELE(cb->vp);
+				VN_RELE(ZTOV(cb->zp));
 
 			} else {
 
-				printf("ZFS: vnop_pageout: unable to acquire object %p\n",
-					   cb->vp);
+				printf("ZFS: vnop_pageout: unable to acquire zp %p\n",
+					   cb->zp);
 
 			}
 
@@ -1478,7 +1478,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 
 		cb = kmem_alloc(sizeof(*cb), KM_PUSHPAGE);
 		cb->zfsvfs     = zfsvfs;
-		cb->vp         = vp;
+		cb->zp         = zp;
 		cb->upl        = upl;
 		cb->upl_offset = upl_offset;
 		cb->offset     = ap->a_f_offset;
