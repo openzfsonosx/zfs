@@ -816,6 +816,7 @@ dnode_move_impl(dnode_t *odn, dnode_t *ndn)
 }
 
 /*ARGSUSED*/
+#if 0
 kmem_cbrc_t
 dnode_move(void *buf, void *newbuf, size_t size, void *arg)
 {
@@ -955,6 +956,7 @@ dnode_move(void *buf, void *newbuf, size_t size, void *arg)
 
 	return (KMEM_CBRC_YES);
 }
+#endif
 #endif	/* _KERNEL */
 
 void

@@ -1965,7 +1965,7 @@ arc_evict(arc_state_t *state, uint64_t spa, int64_t bytes, boolean_t recycle,
             mutex_exit(&evicted_state->arcs_mtx);
             mutex_exit(&state->arcs_mtx);
 
-            kpreempt(KPREEMPT_SYNC);
+            //kpreempt(KPREEMPT_SYNC);
 
             mutex_enter(&state->arcs_mtx);
             mutex_enter(&evicted_state->arcs_mtx);
@@ -2109,7 +2109,7 @@ top:
             list_insert_after(list, ab, &marker);
             mutex_exit(&state->arcs_mtx);
 
-            kpreempt(KPREEMPT_SYNC);
+            //kpreempt(KPREEMPT_SYNC);
 
             mutex_enter(&state->arcs_mtx);
             ab_prev = list_prev(list, &marker);
@@ -2311,7 +2311,7 @@ arc_shrink(void)
         uint64_t to_free;
 
 #ifdef _KERNEL
-        to_free = MAX(arc_c >> arc_shrink_shift, kmem_num_pages_wanted() * PAGE_SIZE);
+        to_free = MAX(arc_c >> arc_shrink_shift, 4 * PAGE_SIZE);
 #else
         to_free = arc_c >> arc_shrink_shift;
 #endif
@@ -2420,10 +2420,10 @@ arc_reclaim_needed(void)
      * to aggressively evict memory from the arc in order to avoid
      * memory fragmentation issues.
      */
-    if (zio_arena != NULL &&
-        vmem_size(zio_arena, VMEM_FREE) <
-        (vmem_size(zio_arena, VMEM_ALLOC) >> 4))
-        return (1);
+    //if (zio_arena != NULL &&
+    //    vmem_size(zio_arena, VMEM_FREE) <
+    //    (vmem_size(zio_arena, VMEM_ALLOC) >> 4))
+    //    return (1);
 #else
     if (spa_get_random(100) == 0)
         return (1);
@@ -2483,8 +2483,8 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat)
      * Ask the vmem areana to reclaim unused memory from its
      * quantum caches.
      */
-    if (zio_arena != NULL && strat == ARC_RECLAIM_AGGR)
-        vmem_qcache_reap(zio_arena);
+    //if (zio_arena != NULL && strat == ARC_RECLAIM_AGGR)
+	//  vmem_qcache_reap(zio_arena);
 #endif
 }
 
@@ -2537,8 +2537,6 @@ arc_reclaim_thread(void *notused)
 
         /* block until needed, or one second, whichever is shorter */
         CALLB_CPR_SAFE_BEGIN(&cpr);
-        (void) cv_timedwait(&arc_reclaim_thr_cv,
-                            &arc_reclaim_thr_lock, (ddi_get_lbolt() + (hz>>3)));
         (void) cv_timedwait(&arc_reclaim_thr_cv,
                             &arc_reclaim_thr_lock, (ddi_get_lbolt() + hz));
         CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_thr_lock);

@@ -311,8 +311,7 @@ void dnode_fini(void);
 int dnode_next_offset(dnode_t *dn, int flags, uint64_t *off,
     int minlvl, uint64_t blkfill, uint64_t txg);
 void dnode_evict_dbufs(dnode_t *dn);
-kmem_cbrc_t
-dnode_move(void *buf, void *newbuf, size_t size, void *arg);
+//kmem_cbrc_t dnode_move(void *buf, void *newbuf, size_t size, void *arg);
 
 #ifdef ZFS_DEBUGXXX
 
