@@ -1340,6 +1340,7 @@ vnop_pageout_thread(void *arg)
 	pageout_t *cb;
 	callb_cpr_t cpr;
 	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
+	znode_t *zp;
 
 /*
  * #define VERBOSE_PAGEOUT
@@ -1370,8 +1371,21 @@ vnop_pageout_thread(void *arg)
 #endif
 
 			/* CODE */
-			zfs_pageout(cb->zfsvfs, cb->zp, cb->upl, cb->upl_offset,
-						cb->offset, cb->len, cb->flags);
+			if (zfs_zget(zfsvfs, cb->object, &zp) == 0) {
+
+				zfs_pageout(cb->zfsvfs, zp, cb->upl, cb->upl_offset,
+							cb->offset, cb->len, cb->flags);
+
+
+				VN_RELE(ZTOV(zp));
+
+			} else {
+
+				printf("ZFS: vnop_pageout: unable to acquire object %llu\n",
+					   cb->object);
+
+			}
+
 
 			kmem_free(cb, sizeof(*cb));
 			cb = NULL;
@@ -1389,10 +1403,10 @@ vnop_pageout_thread(void *arg)
 			break;
 		/* block until needed, or one second, whichever is shorter */
 #if 1
-		/* RECLAIM_SIGNAL */
+		/* PAGEOUT_SIGNAL */
 		CALLB_CPR_SAFE_BEGIN(&cpr);
-		(void) cv_timedwait_interruptible(&zfsvfs->z_pageout_thr_cv,
-		    &zfsvfs->z_pageout_thr_lock, (ddi_get_lbolt() + (hz>>1)));
+		cv_timedwait(&zfsvfs->z_pageout_thr_cv,
+		    &zfsvfs->z_pageout_thr_lock, (ddi_get_lbolt() + (hz)));
 		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_pageout_thr_lock);
 #else
 		delay(hz>>1);
@@ -1464,7 +1478,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 
 		cb = kmem_alloc(sizeof(*cb), KM_PUSHPAGE);
 		cb->zfsvfs     = zfsvfs;
-		cb->zp         = zp;
+		cb->object     = zp->z_id;
 		cb->upl        = upl;
 		cb->upl_offset = upl_offset;
 		cb->offset     = ap->a_f_offset;
@@ -1572,6 +1586,7 @@ vnop_inactive_thread(void *arg)
 	inactive_t *in;
 	callb_cpr_t cpr;
 	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
+	znode_t *zp;
 
 /*
  * #define VERBOSE_INACTIVE
@@ -1601,16 +1616,21 @@ vnop_inactive_thread(void *arg)
 			atomic_dec_64(&vnop_num_inactive);
 #endif
 
-			/* CODE */
-			if (in->vp && vnode_getwithref(in->vp) == 0) {
+			/*
+			 * We have (possibly) lost our vnode, so zget it again.
+			 * This might seem a bit silly, considering we are trying
+			 * to call zfs_inactive()
+			 */
+			if (zfs_zget(zfsvfs, in->object, &zp) == 0) {
+				printf("Did the zget thing\n");
+				zfs_inactive(ZTOV(zp), NULL, 0);
 
-				zfs_inactive(in->vp, NULL, 0);
+				VN_RELE(ZTOV(zp));
 
-				/* release hold from vnop_inactive */
-				vnode_rele(in->vp);
+			} else {
 
-				/* Release iocount from getwithref */
-				vnode_put(in->vp);
+				printf("ZFS: vnop_inactive: unable to acquire object %llu\n",
+					   in->object);
 
 			}
 
@@ -1633,8 +1653,8 @@ vnop_inactive_thread(void *arg)
 #if 1
 		/* RECLAIM_SIGNAL */
 		CALLB_CPR_SAFE_BEGIN(&cpr);
-		(void) cv_timedwait_interruptible(&zfsvfs->z_inactive_thr_cv,
-		    &zfsvfs->z_inactive_thr_lock, (ddi_get_lbolt() + (hz>>1)));
+		(void) cv_timedwait(&zfsvfs->z_inactive_thr_cv,
+		    &zfsvfs->z_inactive_thr_lock, (ddi_get_lbolt() + hz));
 		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_inactive_thr_lock);
 #else
 		delay(hz>>1);
@@ -1671,16 +1691,43 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 		/*
 		 * We can not call inactive at this time, as we are inside
 		 * vnode_create, so we must place it on a queue and process
-		 * later, but to stop darwin from calling vnop_reclaim on
-		 * this node, we grab a refcount
+		 * later
+		 *
+		 * However, we can cheat a little, by looking inside zfs_inactive
+		 * we can take the fast exits here as well, and only keep
+		 * node around for the syncing case
 		 */
+		rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+		if (zp->z_sa_hdl == NULL) {
+			/*
+			 * The fs has been unmounted, or we did a
+			 * suspend/resume and this file no longer exists.
+			 */
+			rw_exit(&zfsvfs->z_teardown_inactive_lock);
+			return 0;
+		}
+
+		mutex_enter(&zp->z_lock);
+		if (zp->z_unlinked) {
+			/*
+			 * Fast path to recycle a vnode of a removed file.
+			 */
+			mutex_exit(&zp->z_lock);
+			rw_exit(&zfsvfs->z_teardown_inactive_lock);
+			return 0;
+		}
+		mutex_exit(&zp->z_lock);
+
+		/*
+		 * Ok, this node needs to be synced, so place it on the list
+		 */
+
 		inactive_t *in;
 
 		dprintf("ZFS: vnop_inactive %p busy, deferred\n", vp);
-		vnode_ref(vp);
 
 		in = kmem_alloc(sizeof(*in), KM_PUSHPAGE);
-		in->vp = vp;
+		in->object = zp->z_id;
 		list_link_init(&in->inactive_node);
 
 		/* Place it on the list */
@@ -1695,6 +1742,8 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 		return (0);
 	}
 
+
+	/* We call call it directly, huzzah! */
 	zfs_inactive(vp, cr, NULL);
 
 	/* dprintf("-vnop_inactive\n"); */
