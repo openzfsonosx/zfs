@@ -1371,18 +1371,18 @@ vnop_pageout_thread(void *arg)
 #endif
 
 			/* CODE */
-			if (zfs_zget(zfsvfs, cb->object, &zp) == 0) {
+			if (vnode_getwithref(cb->vp) == 0) {
 
-				zfs_pageout(cb->zfsvfs, zp, cb->upl, cb->upl_offset,
+				zfs_pageout(cb->zfsvfs, cb->vp, cb->upl, cb->upl_offset,
 							cb->offset, cb->len, cb->flags);
 
 
-				VN_RELE(ZTOV(zp));
+				VN_RELE(cb->vp);
 
 			} else {
 
-				printf("ZFS: vnop_pageout: unable to acquire object %llu\n",
-					   cb->object);
+				printf("ZFS: vnop_pageout: unable to acquire object %p\n",
+					   cb->vp);
 
 			}
 
@@ -1478,7 +1478,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 
 		cb = kmem_alloc(sizeof(*cb), KM_PUSHPAGE);
 		cb->zfsvfs     = zfsvfs;
-		cb->object     = zp->z_id;
+		cb->vp         = vp;
 		cb->upl        = upl;
 		cb->upl_offset = upl_offset;
 		cb->offset     = ap->a_f_offset;
@@ -1621,16 +1621,17 @@ vnop_inactive_thread(void *arg)
 			 * This might seem a bit silly, considering we are trying
 			 * to call zfs_inactive()
 			 */
-			if (zfs_zget(zfsvfs, in->object, &zp) == 0) {
-				printf("Did the zget thing\n");
-				zfs_inactive(ZTOV(zp), NULL, 0);
+			//if (zfs_zget(zfsvfs, in->object, &zp) == 0) {
+			if (vnode_getwithref(in->vp) == 0) {
 
-				VN_RELE(ZTOV(zp));
+				zfs_inactive(in->vp, NULL, 0);
+
+				vnode_put(in->vp);
 
 			} else {
 
-				printf("ZFS: vnop_inactive: unable to acquire object %llu\n",
-					   in->object);
+				printf("ZFS: vnop_inactive: unable to acquire object %p\n",
+					   in->vp);
 
 			}
 
@@ -1717,6 +1718,7 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 			return 0;
 		}
 		mutex_exit(&zp->z_lock);
+		rw_exit(&zfsvfs->z_teardown_inactive_lock);
 
 		/*
 		 * Ok, this node needs to be synced, so place it on the list
@@ -1727,7 +1729,7 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 		dprintf("ZFS: vnop_inactive %p busy, deferred\n", vp);
 
 		in = kmem_alloc(sizeof(*in), KM_PUSHPAGE);
-		in->object = zp->z_id;
+		in->vp = vp;
 		list_link_init(&in->inactive_node);
 
 		/* Place it on the list */
