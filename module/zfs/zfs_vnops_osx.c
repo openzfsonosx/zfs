@@ -1371,18 +1371,17 @@ vnop_pageout_thread(void *arg)
 #endif
 
 			/* CODE */
-			if (vnode_getwithref(ZTOV(cb->zp)) == 0) {
-
-				zfs_pageout(cb->zfsvfs, cb->zp, cb->upl, cb->upl_offset,
+			znode_t *zp;
+			if (zfs_zget(zfsvfs, cb->vid, &zp) == 0) {
+				zfs_pageout(cb->zfsvfs, zp, cb->upl, cb->upl_offset,
 							cb->offset, cb->len, cb->flags);
 
-
-				VN_RELE(ZTOV(cb->zp));
+				VN_RELE(ZTOV(zp));
 
 			} else {
 
 				printf("ZFS: vnop_pageout: unable to acquire zp %p\n",
-					   cb->zp);
+					   zp);
 
 			}
 
@@ -1478,7 +1477,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 
 		cb = kmem_alloc(sizeof(*cb), KM_PUSHPAGE);
 		cb->zfsvfs     = zfsvfs;
-		cb->zp         = zp;
+		cb->vid        = zp->z_id;
 		cb->upl        = upl;
 		cb->upl_offset = upl_offset;
 		cb->offset     = ap->a_f_offset;
@@ -1621,17 +1620,19 @@ vnop_inactive_thread(void *arg)
 			 * This might seem a bit silly, considering we are trying
 			 * to call zfs_inactive()
 			 */
-			//if (zfs_zget(zfsvfs, in->object, &zp) == 0) {
-			if (vnode_getwithref(in->vp) == 0) {
+			znode_t *zp;
+			//if (zfs_zget(zfsvfs, in->vid, &zp) == 0) {
+			if ((vnode_getwithvid(in->vp, in->vid) == 0)) {
 
 				zfs_inactive(in->vp, NULL, 0);
 
 				vnode_put(in->vp);
+				//vnode_recycle(ZTOV(zp));
 
 			} else {
 
-				printf("ZFS: vnop_inactive: unable to acquire object %p\n",
-					   in->vp);
+				//printf("ZFS: vnop_inactive: unable to acquire object %p:%llu\n",
+				//	   in->vp, in->vid);
 
 			}
 
@@ -1720,27 +1721,34 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 		mutex_exit(&zp->z_lock);
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
 
-		/*
-		 * Ok, this node needs to be synced, so place it on the list
-		 */
 
-		inactive_t *in;
+		if (zp->z_atime_dirty && zp->z_unlinked == 0) {
 
-		dprintf("ZFS: vnop_inactive %p busy, deferred\n", vp);
+			/*
+			 * Ok, this node needs to be synced, so place it on the list
+			 */
 
-		in = kmem_alloc(sizeof(*in), KM_PUSHPAGE);
-		in->vp = vp;
-		list_link_init(&in->inactive_node);
+			inactive_t *in;
 
-		/* Place it on the list */
-		mutex_enter(&zfsvfs->z_inactive_list_lock);
-		list_insert_tail(&zfsvfs->z_inactive_nodes, in);
-		mutex_exit(&zfsvfs->z_inactive_list_lock);
+			dprintf("ZFS: vnop_inactive %p busy, deferred\n", vp);
 
-		atomic_inc_64(&vnop_num_inactive);
+			in = kmem_alloc(sizeof(*in), KM_PUSHPAGE);
+			in->vp = vp;
+			in->vid = zp->z_id;
+			list_link_init(&in->inactive_node);
 
-		/* Wake up the thread */
-		cv_signal(&zfsvfs->z_inactive_thr_cv);
+			/* Place it on the list */
+			mutex_enter(&zfsvfs->z_inactive_list_lock);
+			list_insert_tail(&zfsvfs->z_inactive_nodes, in);
+			mutex_exit(&zfsvfs->z_inactive_list_lock);
+
+			atomic_inc_64(&vnop_num_inactive);
+
+			/* Wake up the thread */
+			cv_signal(&zfsvfs->z_inactive_thr_cv);
+
+		} // dirty and !unlinked
+
 		return (0);
 	}
 
