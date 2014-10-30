@@ -2453,7 +2453,7 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat)
     /*
      * Reclaim unused memory from all kmem caches.
      */
-    kmem_reap();
+    //kmem_reap();
 #endif
 #endif
 
@@ -2476,6 +2476,7 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat)
     }
     kmem_cache_reap_now(buf_cache);
     kmem_cache_reap_now(hdr_cache);
+
 //    kmem_cache_reap_now(range_seg_cache);
 
 #ifdef KERNEL

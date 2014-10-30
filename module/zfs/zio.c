@@ -135,8 +135,8 @@ void
 zio_init(void)
 {
     size_t c;
-	
-#ifdef _KERNEL
+
+#ifdef _KARNEL
 	vmem_t *data_alloc_arena = zio_alloc_arena;
 #else
 	vmem_t *data_alloc_arena = NULL;
