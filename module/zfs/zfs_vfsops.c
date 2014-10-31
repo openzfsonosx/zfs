@@ -1257,19 +1257,11 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	mutex_init(&zfsvfs->z_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&zfsvfs->z_reclaim_list_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&zfsvfs->z_reclaim_thr_lock, NULL, MUTEX_DEFAULT, NULL);
-	mutex_init(&zfsvfs->z_pageout_thr_lock, NULL, MUTEX_DEFAULT, NULL);
-	mutex_init(&zfsvfs->z_inactive_thr_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&zfsvfs->z_reclaim_thr_cv, NULL, CV_DEFAULT, NULL);
-	cv_init(&zfsvfs->z_pageout_thr_cv, NULL, CV_DEFAULT, NULL);
-	cv_init(&zfsvfs->z_inactive_thr_cv, NULL, CV_DEFAULT, NULL);
 	list_create(&zfsvfs->z_all_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_node));
 	list_create(&zfsvfs->z_reclaim_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_reclaim_node));
-	list_create(&zfsvfs->z_pageout_nodes, sizeof (pageout_t),
-	    offsetof(pageout_t, pageout_node));
-	list_create(&zfsvfs->z_inactive_nodes, sizeof (inactive_t),
-	    offsetof(inactive_t, inactive_node));
 	rrw_init(&zfsvfs->z_teardown_lock, B_FALSE);
 	rw_init(&zfsvfs->z_teardown_inactive_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zfsvfs->z_fuid_lock, NULL, RW_DEFAULT, NULL);
@@ -1279,14 +1271,6 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
     zfsvfs->z_reclaim_thread_exit = FALSE;
 	(void) thread_create(NULL, 0, vnop_reclaim_thread, zfsvfs, 0, &p0,
 	    TS_RUN, minclsyspri);
-
-    zfsvfs->z_pageout_thread_exit = FALSE;
-	(void) thread_create(NULL, 0, vnop_pageout_thread, zfsvfs, 0, &p0,
-	    TS_RUN, minclsyspri);
-
-    zfsvfs->z_inactive_thread_exit = FALSE;
-	(void) thread_create(NULL, 0, vnop_inactive_thread, zfsvfs, 0, &p0,
-	    TS_RUN, maxclsyspri);
 
 	*zfvp = zfsvfs;
 	return (0);
@@ -1393,28 +1377,6 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 
 	zfs_fuid_destroy(zfsvfs);
 
-    dprintf("stopping pageout thread\n");
-	mutex_enter(&zfsvfs->z_pageout_thr_lock);
-    zfsvfs->z_pageout_thread_exit = TRUE;
-	cv_signal(&zfsvfs->z_pageout_thr_cv);
-	while (zfsvfs->z_pageout_thread_exit == TRUE)
-		cv_wait(&zfsvfs->z_pageout_thr_cv, &zfsvfs->z_pageout_thr_lock);
-	mutex_exit(&zfsvfs->z_pageout_thr_lock);
-
-	mutex_destroy(&zfsvfs->z_pageout_thr_lock);
-	cv_destroy(&zfsvfs->z_pageout_thr_cv);
-
-    dprintf("stopping inactive thread\n");
-	mutex_enter(&zfsvfs->z_inactive_thr_lock);
-    zfsvfs->z_inactive_thread_exit = TRUE;
-	cv_signal(&zfsvfs->z_inactive_thr_cv);
-	while (zfsvfs->z_inactive_thread_exit == TRUE)
-		cv_wait(&zfsvfs->z_inactive_thr_cv, &zfsvfs->z_inactive_thr_lock);
-	mutex_exit(&zfsvfs->z_inactive_thr_lock);
-
-	mutex_destroy(&zfsvfs->z_inactive_thr_lock);
-	cv_destroy(&zfsvfs->z_inactive_thr_cv);
-
     dprintf("stopping reclaim thread\n");
 	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
     zfsvfs->z_reclaim_thread_exit = TRUE;
@@ -1430,12 +1392,8 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	mutex_destroy(&zfsvfs->z_znodes_lock);
 	mutex_destroy(&zfsvfs->z_lock);
 	mutex_destroy(&zfsvfs->z_reclaim_list_lock);
-	mutex_destroy(&zfsvfs->z_pageout_list_lock);
-	mutex_destroy(&zfsvfs->z_inactive_list_lock);
 	list_destroy(&zfsvfs->z_all_znodes);
 	list_destroy(&zfsvfs->z_reclaim_znodes);
-	list_destroy(&zfsvfs->z_pageout_nodes);
-	list_destroy(&zfsvfs->z_inactive_nodes);
 	rrw_destroy(&zfsvfs->z_teardown_lock);
 	rw_destroy(&zfsvfs->z_teardown_inactive_lock);
 	rw_destroy(&zfsvfs->z_fuid_lock);

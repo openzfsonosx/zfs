@@ -2501,9 +2501,11 @@ arc_reclaim_thread(void *notused)
     mutex_enter(&arc_reclaim_thr_lock);
     while (arc_thread_exit == 0) {
 
+		delay(hz);
+
         if (arc_reclaim_needed()) {
 
-			dprintf("ZFS: arc reclaim needed: last %u nogrow %u\n", last_reclaim,
+			printf("ZFS: arc reclaim needed: last %u nogrow %u\n", last_reclaim,
 				   arc_no_grow);
 
             if (arc_no_grow) {
@@ -2538,8 +2540,6 @@ arc_reclaim_thread(void *notused)
 
         /* block until needed, or one second, whichever is shorter */
         CALLB_CPR_SAFE_BEGIN(&cpr);
-        (void) cv_timedwait(&arc_reclaim_thr_cv,
-                            &arc_reclaim_thr_lock, (ddi_get_lbolt() + (hz>>3)));
         (void) cv_timedwait(&arc_reclaim_thr_cv,
                             &arc_reclaim_thr_lock, (ddi_get_lbolt() + hz));
         CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_thr_lock);

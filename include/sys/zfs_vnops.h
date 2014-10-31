@@ -239,29 +239,6 @@ extern void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl);
 extern void nfsacl_set_wellknown(int wkg, guid_t *guid);
 
 
-
-struct pageout_cb {
-	list_node_t	pageout_node;
-	zfsvfs_t   *zfsvfs;
-	uint64_t    vid;
-	upl_t       upl;
-	vm_offset_t upl_offset;
-	offset_t    offset;
-	size_t      len;
-	int         flags;
-};
-
-typedef struct pageout_cb pageout_t;
-
-struct inactive_cb {
-	list_node_t	  inactive_node;
-	uint64_t      vid;
-	struct vnode *vp;
-};
-
-typedef struct inactive_cb inactive_t;
-
-
 #ifdef	__cplusplus
 }
 #endif
