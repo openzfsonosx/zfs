@@ -1594,6 +1594,7 @@ vnop_reclaim_thread(void *arg)
 #else
 		delay(hz>>1);
 #endif
+
 	} /* forever */
 #ifdef VERBOSE_RECLAIM
 	printf("ZFS: reclaim thread %p is quitting!\n", zfsvfs);
@@ -1715,6 +1716,7 @@ zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs)
 	/* Don't throttle unmounts */
 	if (zfsvfs && zfsvfs->z_vfs && vfs_isunmount(zfsvfs->z_vfs)) return;
 #endif
+
 
 	/*
 	 * Attempt to throttle. If the list grows "large" we need to slow down
