@@ -1383,7 +1383,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 		printf("ZFS: Ditching pageout request\n");
 
 		ubc_upl_abort(upl,
-					  (UPL_ABORT_UNAVAILABLE | UPL_ABORT_FREE_ON_EMPTY));
+					  (UPL_ABORT_UNAVAILABLE));
 		return 0;
 	}
 

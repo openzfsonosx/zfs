@@ -2479,7 +2479,7 @@ arc_kmem_reap_now(arc_reclaim_strategy_t strat)
 
 //    kmem_cache_reap_now(range_seg_cache);
 
-#ifdef KERNEL
+#ifdef _KERNEL
     /*
      * Ask the vmem areana to reclaim unused memory from its
      * quantum caches.
