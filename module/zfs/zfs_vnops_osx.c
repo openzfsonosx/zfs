@@ -1158,13 +1158,13 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	    "blksz 0x%x, z_size 0x%llx\n", off, len, upl_offset, zp->z_blksz,
 	    zp->z_size);
 
+	if (upl == (upl_t)NULL)
+		return 0;
+
 	ZFS_ENTER(zfsvfs);
 
 	ASSERT(vn_has_cached_data(ZTOV(zp)));
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
-
-	if (upl == (upl_t)NULL)
-		panic("zfs_vnop_pageout: no upl!");
 
 	if (len <= 0) {
 		if (!(flags & UPL_NOCOMMIT))
@@ -1251,7 +1251,11 @@ top:
 
 	caddr_t va;
 
-	ubc_upl_map(upl, (vm_offset_t *)&va);
+	if (ubc_upl_map(upl, (vm_offset_t *)&va) != KERN_SUCCESS) {
+		err = EINVAL;
+		goto out;
+	}
+
 	va += upl_offset;
 	while (len >= PAGESIZE) {
 		ssize_t sz = PAGESIZE;
@@ -1382,9 +1386,12 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 
 		printf("ZFS: Ditching pageout request\n");
 
-		ubc_upl_abort(upl,
-					  (UPL_ABORT_UNAVAILABLE));
-		return 0;
+		if (upl && !(flags & UPL_NOCOMMIT)) {
+
+			ubc_upl_abort(upl,
+						  (UPL_ABORT_UNAVAILABLE));
+			return 0;
+		}
 	}
 
 	return zfs_pageout(zfsvfs, zp, upl, upl_offset, ap->a_f_offset,
