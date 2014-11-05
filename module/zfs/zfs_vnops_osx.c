@@ -1146,7 +1146,7 @@ osx_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 
 static int
 zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
-			offset_t off, size_t size, int flags)
+			offset_t off, size_t size, int flags, kcondvar_t *condvar)
 {
 	dmu_tx_t *tx;
 	rl_t *rl;
@@ -1308,6 +1308,22 @@ top:
 		zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, off, len, 0,
 		    NULL, NULL);
 	}
+
+
+	if (condvar) {
+		printf("ASync request, releasing parent and calling dmu_tx_commit\n");
+		// Once we release parent, we can not access "upl" anymore.
+		if (!(flags & UPL_NOCOMMIT)) {
+			ubc_upl_commit_range(upl, upl_offset, size,
+								 (UPL_COMMIT_CLEAR_DIRTY |
+								  UPL_COMMIT_FREE_ON_EMPTY));
+		}
+
+		// release parent.
+		cv_signal(condvar);
+
+	}
+
 	dmu_tx_commit(tx);
 
 out:
@@ -1319,12 +1335,12 @@ out:
 		if (err)
 			ubc_upl_abort_range(upl, upl_offset, size,
 			    (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
-		else
-			ubc_upl_commit_range(upl, upl_offset, size,
-			    (UPL_COMMIT_CLEAR_DIRTY |
-			    UPL_COMMIT_FREE_ON_EMPTY));
 	}
 exit:
+
+	// If we had error, wake up the waiter
+	if (err && condvar) cv_signal(condvar);
+
 	ZFS_EXIT(zfsvfs);
 	if (err)
 		printf("pageout err %d\n", err);
@@ -1332,6 +1348,36 @@ exit:
 }
 
 
+struct pageout_struct {
+	znode_t *zp;
+	upl_t upl;
+	vm_offset_t upl_offset;
+	offset_t offset;
+	size_t len;
+	int flags;
+	kmutex_t mutex;
+	kcondvar_t condvar;
+};
+typedef struct pageout_struct pageout_t;
+
+void
+vnop_pageout_async(void *arg)
+{
+	pageout_t *cb = (pageout_t *)arg;
+
+	// Make sure parent is waiting, mutex is released when cv_wait is called.
+	mutex_enter(&cb->mutex);
+	mutex_exit(&cb->mutex);
+
+	zfs_pageout(cb->zp->z_zfsvfs,
+				cb->zp, cb->upl,
+				cb->upl_offset,
+				cb->offset, cb->len,
+				cb->flags,
+				&cb->condvar);
+
+	thread_exit();
+}
 
 
 static int
@@ -1383,21 +1429,46 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 * and we launch another to handle this pageout request
 	 */
 	if (zfsvfs->z_vnode_create_depth) {
+		pageout_t *cb;
 
-		printf("ZFS: Ditching pageout request\n");
+		printf("ZFS: async pageout request\n");
 
-		if (upl && !(flags & UPL_NOCOMMIT)) {
+		cb = kmem_alloc(sizeof(*cb), KM_SLEEP);
+		mutex_init(&cb->mutex, NULL, MUTEX_DEFAULT, NULL);
+		cv_init(&cb->condvar, NULL, CV_DEFAULT, NULL);
 
-			ubc_upl_abort(upl,
-						  (UPL_ABORT_UNAVAILABLE));
-			return 0;
-		}
+		mutex_enter(&cb->mutex);
+
+		cb->upl = upl;
+		cb->zp = zp;
+		cb->upl_offset = upl_offset;
+		cb->offset = ap->a_f_offset;
+		cb->len = len;
+		cb->flags = flags;
+
+		(void) thread_create(NULL, 0, vnop_pageout_async, cb, 0, &p0,
+							 TS_RUN, minclsyspri);
+
+		// Wait thread to start and get to dmu_tx_sync, then we resume here.
+		cv_wait(&cb->condvar, &cb->mutex);
+		printf("Parent woke\n");
+
+		mutex_exit(&cb->mutex);
+		mutex_destroy(&cb->mutex);
+		cv_destroy(&cb->condvar);
+		kmem_free(cb, sizeof(*cb));
+		return 0;
+
 	}
 
 	return zfs_pageout(zfsvfs, zp, upl, upl_offset, ap->a_f_offset,
-					   len, flags);
+					   len, flags, NULL);
 
 }
+
+
+
+
 
 
 static int
