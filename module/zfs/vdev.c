@@ -2591,6 +2591,18 @@ vdev_is_dead(vdev_t *vd)
 	 * Instead we rely on the fact that we skip over dead devices
 	 * before issuing I/O to them.
 	 */
+
+	if (vd->vdev_state < VDEV_STATE_DEGRADED || vd->vdev_ishole ||
+	    vd->vdev_ops == &vdev_missing_ops) {
+		static uint64_t last = 0;
+		if (!last) last = ddi_get_lbolt();
+		if (ddi_get_lbolt() - last > hz) {
+			last = ddi_get_lbolt();
+			printf("BTW, device '%s' is marked dead.\n",
+				   vd->vdev_path);
+		}
+	}
+
 	return (vd->vdev_state < VDEV_STATE_DEGRADED || vd->vdev_ishole ||
 	    vd->vdev_ops == &vdev_missing_ops);
 }

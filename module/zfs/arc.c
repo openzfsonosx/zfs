@@ -5275,6 +5275,8 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 
     ASSERT(!l2arc_vdev_present(vd));
 
+	printf("l2arc_add_vdev: adding '%s'\n", vd->vdev_path);
+
     /*
      * Create a new l2arc device entry.
      */
@@ -5314,6 +5316,8 @@ void
 l2arc_remove_vdev(vdev_t *vd)
 {
     l2arc_dev_t *dev, *nextdev, *remdev = NULL;
+
+	printf("Removing vdev: '%s'\n", vd->vdev_path);
 
     /*
      * Find the device by vdev
@@ -5394,6 +5398,8 @@ l2arc_start(void)
     if (!(spa_mode_global & FWRITE))
         return;
 
+	printf("Signalling l2arc to start\n");
+
     (void) thread_create(NULL, 0, l2arc_feed_thread, NULL, 0, &p0,
                          TS_RUN, minclsyspri);
 }
@@ -5403,6 +5409,8 @@ l2arc_stop(void)
 {
     if (!(spa_mode_global & FWRITE))
         return;
+
+	printf("Signalling l2arc to stop\n");
 
     mutex_enter(&l2arc_feed_thr_lock);
     cv_signal(&l2arc_feed_thr_cv);	/* kick thread out of startup */
