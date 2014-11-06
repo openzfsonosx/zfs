@@ -357,7 +357,6 @@ zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
 	}
 }
 
-
 static int
 zfs_vnop_lookup(struct vnop_lookup_args *ap)
 #if 0
@@ -1155,11 +1154,12 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	size_t len = size;
 
 	dprintf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: "
-	    "blksz 0x%x, z_size 0x%llx\n", off, len, upl_offset, zp->z_blksz,
-	    zp->z_size);
+	    "blksz 0x%x, z_size 0x%llx upl %p\n",
+		   off, len, upl_offset, zp->z_blksz,
+		   zp->z_size, upl);
 
 	if (upl == (upl_t)NULL)
-		return 0;
+		return EINVAL;
 
 	ZFS_ENTER(zfsvfs);
 
@@ -1195,7 +1195,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 
 	/* Any whole pages beyond the end of the file while we abort */
 	if ((size + off) > pgsize) {
-		printf("pageout: abort outside pages (rounded 0x%llx > UPLlen "
+		printf("ZFS: pageout abort outside pages (rounded 0x%llx > UPLlen "
 			   "0x%llx\n", pgsize, size + off);
 		ubc_upl_abort_range(upl, pgsize,
 		    pgsize - (size + off),
@@ -1212,6 +1212,7 @@ top:
 	if (off >= filesz) {
 		/* ignore all pages */
 		err = 0;
+		if (condvar) cv_signal(condvar);
 		goto out;
 	} else if (off + len > filesz) {
 #if 0
@@ -1310,18 +1311,18 @@ top:
 	}
 
 
+	// Once we release parent, we can not access "upl" anymore.
+	// So mark it successful here, there are no more failure paths.
+	if (!(flags & UPL_NOCOMMIT)) {
+		ubc_upl_commit_range(upl, upl_offset, size,
+							 (UPL_COMMIT_CLEAR_DIRTY |
+							  UPL_COMMIT_FREE_ON_EMPTY));
+	}
+
+	// release parent, if we are async
 	if (condvar) {
-		printf("ASync request, releasing parent and calling dmu_tx_commit\n");
-		// Once we release parent, we can not access "upl" anymore.
-		if (!(flags & UPL_NOCOMMIT)) {
-			ubc_upl_commit_range(upl, upl_offset, size,
-								 (UPL_COMMIT_CLEAR_DIRTY |
-								  UPL_COMMIT_FREE_ON_EMPTY));
-		}
-
-		// release parent.
+		//printf("ASync pageout, releasing parent and calling dmu_tx_commit\n");
 		cv_signal(condvar);
-
 	}
 
 	dmu_tx_commit(tx);
@@ -1343,7 +1344,8 @@ exit:
 
 	ZFS_EXIT(zfsvfs);
 	if (err)
-		printf("pageout err %d\n", err);
+		printf("ZFS: pageout failed %d\n", err);
+	//if (condvar) printf("async pageout complete: %p\n", zp);
 	return (err);
 }
 
@@ -1407,6 +1409,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 		if (!(flags & UPL_NOCOMMIT))
 			ubc_upl_abort(upl,
 			    (UPL_ABORT_DUMP_PAGES | UPL_ABORT_FREE_ON_EMPTY));
+		printf("ZFS: vnop_pageout: null zp or zfsvfs\n");
 		return (ENXIO);
 	}
 
@@ -1431,7 +1434,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	if (zfsvfs->z_vnode_create_depth) {
 		pageout_t *cb;
 
-		printf("ZFS: async pageout request\n");
+		dprintf("ZFS: async pageout request: %p\n", zp);
 
 		cb = kmem_alloc(sizeof(*cb), KM_SLEEP);
 		mutex_init(&cb->mutex, NULL, MUTEX_DEFAULT, NULL);
@@ -1451,7 +1454,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 
 		// Wait thread to start and get to dmu_tx_sync, then we resume here.
 		cv_wait(&cb->condvar, &cb->mutex);
-		printf("Parent woke\n");
+		dprintf("Parent pageout woke: zp %p\n", zp);
 
 		mutex_exit(&cb->mutex);
 		mutex_destroy(&cb->mutex);
