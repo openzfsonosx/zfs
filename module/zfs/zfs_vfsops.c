@@ -1377,6 +1377,26 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 
 	zfs_fuid_destroy(zfsvfs);
 
+	/* Wait for reclaim to empty, before holding locks */
+	int count = 0;
+	while(!list_empty(&zfsvfs->z_all_znodes) ||
+		  !list_empty(&zfsvfs->z_reclaim_znodes)) {
+		cv_signal(&zfsvfs->z_reclaim_thr_cv);
+		printf("Waiting for reclaim to drain: %d + %d\n",
+			   list_empty(&zfsvfs->z_all_znodes),
+			   list_empty(&zfsvfs->z_reclaim_znodes));
+		delay(hz);
+		if (count++ > 10) break;
+	}
+
+    dprintf("stopping reclaim thread\n");
+	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
+    zfsvfs->z_reclaim_thread_exit = TRUE;
+	cv_signal(&zfsvfs->z_reclaim_thr_cv);
+	while (zfsvfs->z_reclaim_thread_exit == TRUE)
+		cv_wait(&zfsvfs->z_reclaim_thr_cv, &zfsvfs->z_reclaim_thr_lock);
+	mutex_exit(&zfsvfs->z_reclaim_thr_lock);
+	printf("Complete\n");
 
 	mutex_destroy(&zfsvfs->z_reclaim_thr_lock);
 	cv_destroy(&zfsvfs->z_reclaim_thr_cv);
@@ -2420,15 +2440,6 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		delay(hz);
 		if (count++ > 10) break;
 	}
-
-    dprintf("stopping reclaim thread\n");
-	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
-    zfsvfs->z_reclaim_thread_exit = TRUE;
-	cv_signal(&zfsvfs->z_reclaim_thr_cv);
-	while (zfsvfs->z_reclaim_thread_exit == TRUE)
-		cv_wait(&zfsvfs->z_reclaim_thr_cv, &zfsvfs->z_reclaim_thr_lock);
-	mutex_exit(&zfsvfs->z_reclaim_thr_lock);
-	printf("Complete\n");
 
 	rrw_enter(&zfsvfs->z_teardown_lock, RW_WRITER, FTAG);
 
