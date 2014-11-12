@@ -730,20 +730,38 @@ static int
 unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
 {
     int error;
-#if 0
-    error = unmount(mountpoint, flags);
-    if (unmount(mountpoint, flags) != 0) {
-		return (zfs_error_fmt(hdl, EZFS_UMOUNTFAILED,
-		    dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
-		    mountpoint));
-	}
-#else
     error = do_unmount(mountpoint, flags);
     if (error != 0) {
         return (zfs_error_fmt(hdl, EZFS_UMOUNTFAILED,
                               dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
                     mountpoint));
     }
+#ifdef __APPLE__
+	/*
+	 * Temporary hack to remove Finder icons after unmount, until
+	 * mount wrappers work is complete.
+	 */
+	char *argv[7] = {
+	    "/usr/bin/osascript",
+		"-e",
+	    NULL,
+		NULL, NULL, NULL };
+	char *script = NULL;
+	const char *tail;
+
+	tail = strrchr(mountpoint, '/');
+	if (tail && *tail == '/') tail++;
+	else tail = mountpoint;
+
+	asprintf(&script,
+			 "tell application \"Finder\" to eject disk \"%s\"",
+			 tail);
+
+	argv[2] = (char *)script;
+	libzfs_run_process(argv[0], argv, 0);
+
+	free(script);
+
 #endif
 
 	return (0);
@@ -1233,7 +1251,6 @@ remove_mountpoint(zfs_handle_t *zhp)
 	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint),
 	    &source))
 		return;
-
 	if (source == ZPROP_SRC_DEFAULT ||
 	    source == ZPROP_SRC_INHERITED) {
 		/*
