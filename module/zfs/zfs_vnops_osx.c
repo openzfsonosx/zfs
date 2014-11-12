@@ -1153,14 +1153,15 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	int err = 0;
 	size_t len = size;
 
-	dprintf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: "
+	printf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: "
 	    "blksz 0x%x, z_size 0x%llx upl %p\n",
 		   off, len, upl_offset, zp->z_blksz,
 		   zp->z_size, upl);
 
-	if (upl == (upl_t)NULL)
+	if (upl == (upl_t)NULL) {
+		printf("ZFS: vnop_pageout: failed on NULL upl\n");
 		return EINVAL;
-
+	}
 	/*
 	 * We can't leave this function without either calling upl_commit or
 	 * upl_abort. So use the non-error version.
@@ -1168,7 +1169,8 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	ZFS_ENTER_NOERROR(zfsvfs);
 	if (zfsvfs->z_unmounted) {
 		if (!(flags & UPL_NOCOMMIT))
-			(void) ubc_upl_abort(upl, UPL_ABORT_UNAVAILABLE);
+			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
+		printf("ZFS: vnop_pageout: abort on z_unmounted\n");
 		ZFS_EXIT(zfsvfs);
 		return EIO;
 	}
@@ -1179,7 +1181,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 
 	if (len <= 0) {
 		if (!(flags & UPL_NOCOMMIT))
-			(void) ubc_upl_abort(upl, UPL_ABORT_ERROR);
+			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
 		err = EINVAL;
 		goto exit;
 	}
@@ -1330,6 +1332,10 @@ out:
 		if (err)
 			ubc_upl_abort_range(upl, upl_offset, size,
 			    (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
+		else
+			ubc_upl_commit_range(upl, upl_offset, size,
+								 (UPL_COMMIT_CLEAR_DIRTY |
+								  UPL_COMMIT_FREE_ON_EMPTY));
 	}
 exit:
 	ZFS_EXIT(zfsvfs);
@@ -1366,7 +1372,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	if (!zp || !zp->z_zfsvfs) {
 		if (!(flags & UPL_NOCOMMIT))
 			ubc_upl_abort(upl,
-			    (UPL_ABORT_UNAVAILABLE));
+			    (UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY));
 		printf("ZFS: vnop_pageout: null zp or zfsvfs\n");
 		return (ENXIO);
 	}
@@ -1391,7 +1397,8 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 */
 	if (zfsvfs->z_vnode_create_depth) {
 		if (!(flags & UPL_NOCOMMIT))
-			(void) ubc_upl_abort(upl, UPL_ABORT_UNAVAILABLE);
+			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
+		printf("ZFS: vnop_pageout: abort on vnode_create\n");
 		return EIO;
 
 	}
