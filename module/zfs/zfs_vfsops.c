@@ -1382,7 +1382,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	while(!list_empty(&zfsvfs->z_all_znodes) ||
 		  !list_empty(&zfsvfs->z_reclaim_znodes)) {
 		cv_signal(&zfsvfs->z_reclaim_thr_cv);
-		printf("Waiting for reclaim to drain: %d + %d\n",
+		printf("ZFS: Waiting for reclaim to drain: %d + %d\n",
 			   list_empty(&zfsvfs->z_all_znodes),
 			   list_empty(&zfsvfs->z_reclaim_znodes));
 		delay(hz);
@@ -1396,7 +1396,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	while (zfsvfs->z_reclaim_thread_exit == TRUE)
 		cv_wait(&zfsvfs->z_reclaim_thr_cv, &zfsvfs->z_reclaim_thr_lock);
 	mutex_exit(&zfsvfs->z_reclaim_thr_lock);
-	printf("Complete\n");
+	dprintf("Complete\n");
 
 	mutex_destroy(&zfsvfs->z_reclaim_thr_lock);
 	cv_destroy(&zfsvfs->z_reclaim_thr_cv);
@@ -2434,7 +2434,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	while(!list_empty(&zfsvfs->z_all_znodes) ||
 		  !list_empty(&zfsvfs->z_reclaim_znodes)) {
 		cv_signal(&zfsvfs->z_reclaim_thr_cv);
-		printf("Waiting for reclaim to drain: %d + %d\n",
+		printf("ZFS:Waiting for reclaim to drain: %d + %d\n",
 			   list_empty(&zfsvfs->z_all_znodes),
 			   list_empty(&zfsvfs->z_reclaim_znodes));
 		delay(hz);
@@ -2704,7 +2704,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		/*
 		 * Finally release the objset
 		 */
-        printf("disown\n");
+        dprintf("disown\n");
 		dmu_objset_disown(os, zfsvfs);
 	}
 
@@ -3155,6 +3155,8 @@ zfs_freevfs(struct mount *vfsp)
 #endif	/* sun */
 
 	zfsvfs_free(zfsvfs);
+
+	vfs_setfsprivate(vfsp, NULL);
 
 	atomic_add_32(&zfs_active_fs_count, -1);
     dprintf("-freevfs\n");

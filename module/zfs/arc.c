@@ -2505,7 +2505,7 @@ arc_reclaim_thread(void *notused)
 
         if (arc_reclaim_needed()) {
 
-			printf("ZFS: arc reclaim needed: last %u nogrow %u\n", last_reclaim,
+			dprintf("ZFS: arc reclaim needed: last %u nogrow %u\n", last_reclaim,
 				   arc_no_grow);
 
             if (arc_no_grow) {
