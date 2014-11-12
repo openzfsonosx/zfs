@@ -1161,14 +1161,25 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	if (upl == (upl_t)NULL)
 		return EINVAL;
 
-	ZFS_ENTER(zfsvfs);
+	/*
+	 * We can't leave this function without either calling upl_commit or
+	 * upl_abort. So use the non-error version.
+	 */
+	ZFS_ENTER_NOERROR(zfsvfs);
+	if (zfsvfs->z_unmounted) {
+		if (!(flags & UPL_NOCOMMIT))
+			(void) ubc_upl_abort(upl, UPL_ABORT_UNAVAILABLE);
+		ZFS_EXIT(zfsvfs);
+		return EIO;
+	}
+
 
 	ASSERT(vn_has_cached_data(ZTOV(zp)));
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
 	if (len <= 0) {
 		if (!(flags & UPL_NOCOMMIT))
-			(void) ubc_upl_abort(upl, 0);
+			(void) ubc_upl_abort(upl, UPL_ABORT_ERROR);
 		err = EINVAL;
 		goto exit;
 	}
@@ -1408,7 +1419,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	if (!zp || !zp->z_zfsvfs) {
 		if (!(flags & UPL_NOCOMMIT))
 			ubc_upl_abort(upl,
-			    (UPL_ABORT_DUMP_PAGES | UPL_ABORT_FREE_ON_EMPTY));
+			    (UPL_ABORT_UNAVAILABLE));
 		printf("ZFS: vnop_pageout: null zp or zfsvfs\n");
 		return (ENXIO);
 	}
@@ -1433,6 +1444,11 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 */
 	if (zfsvfs->z_vnode_create_depth) {
 		pageout_t *cb;
+
+		if (!(flags & UPL_NOCOMMIT))
+			(void) ubc_upl_abort(upl, UPL_ABORT_UNAVAILABLE);
+		return EIO;
+
 
 		dprintf("ZFS: async pageout request: %p\n", zp);
 
