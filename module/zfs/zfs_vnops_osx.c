@@ -1153,13 +1153,13 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	int err = 0;
 	size_t len = size;
 
-	printf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: "
+	dprintf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: "
 	    "blksz 0x%x, z_size 0x%llx upl %p\n",
 		   off, len, upl_offset, zp->z_blksz,
 		   zp->z_size, upl);
 
 	if (upl == (upl_t)NULL) {
-		printf("ZFS: vnop_pageout: failed on NULL upl\n");
+		dprintf("ZFS: vnop_pageout: failed on NULL upl\n");
 		return EINVAL;
 	}
 	/*
@@ -1170,7 +1170,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	if (zfsvfs->z_unmounted) {
 		if (!(flags & UPL_NOCOMMIT))
 			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
-		printf("ZFS: vnop_pageout: abort on z_unmounted\n");
+		dprintf("ZFS: vnop_pageout: abort on z_unmounted\n");
 		ZFS_EXIT(zfsvfs);
 		return EIO;
 	}
@@ -1398,7 +1398,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	if (zfsvfs->z_vnode_create_depth) {
 		if (!(flags & UPL_NOCOMMIT))
 			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
-		printf("ZFS: vnop_pageout: abort on vnode_create\n");
+		dprintf("ZFS: vnop_pageout: abort on vnode_create\n");
 		return EIO;
 
 	}
