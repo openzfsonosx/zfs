@@ -749,7 +749,7 @@ unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
                               dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
                     mountpoint));
     }
-#ifdef __APPLE__
+#ifdef __OPPLE__
 	/*
 	 * Temporary hack to remove Finder icons after unmount, until
 	 * mount wrappers work is complete.
