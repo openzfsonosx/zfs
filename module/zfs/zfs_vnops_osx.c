@@ -679,15 +679,11 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 		return (0);
 
 	/*
-	 * Because vnode_create() can end up calling fsync, which means we would
-	 * sit around waiting for dmu_tx, while higher up in this thread may
-	 * have called vnode_create(), while waiting for dmu_tx. We have wrapped
-	 * the vnode_create() call with a lock, so we can ignore fsync while
-	 * inside vnode_create().
+	 * If we come here via vnode_create()->vclean() we can not end up in
+	 * zil_commit() or we will deadlock. But we know that vnop_reclaim will
+	 * be called next, so we just return success.
 	 */
-
-	if (zfsvfs->z_vnode_create_depth)
-		return (0);
+	if (vnode_isrecycled(ap->a_vp)) return 0;
 
 	err = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 
@@ -1390,17 +1386,14 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 
 
 	/*
-	 * Defer syncs if we are coming through vnode_create()
-	 * This is an annoyance of XNU, and we can not open a new TX
-	 * as we are already in a TX. *this thread* needs to go back
-	 * and we launch another to handle this pageout request
+	 * If we are coming via the vnode_create()->vclean() path, we can not
+	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
 	 */
-	if (zfsvfs->z_vnode_create_depth) {
+	if (vnode_isrecycled(ap->a_vp)) {
 		if (!(flags & UPL_NOCOMMIT))
 			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
 		dprintf("ZFS: vnop_pageout: abort on vnode_create\n");
 		return EIO;
-
 	}
 
 	return zfs_pageout(zfsvfs, zp, upl, upl_offset, ap->a_f_offset,
@@ -1502,11 +1495,11 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 
 	dprintf("vnop_inactive: zp %p vp %p\n", zp, vp);
 
-	if (zfsvfs->z_vnode_create_depth) {
+	if (vnode_isrecycled(ap->a_vp)) {
 		/*
 		 * We can not call inactive at this time, as we are inside
-		 * vnode_create, so we must place it on a queue and process
-		 * later
+		 * vnode_create()->vclean() path. But since we are only here to
+		 * sync out atime, and we know vnop_reclaim will called next.
 		 *
 		 * However, we can cheat a little, by looking inside zfs_inactive
 		 * we can take the fast exits here as well, and only keep
@@ -3112,11 +3105,8 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 	 * vnode_create() has a habit of calling both vnop_reclaim() and
 	 * vnop_fsync(), which can create havok as we are already holding locks.
 	 */
-	atomic_add_64(&zfsvfs->z_vnode_create_depth, 1);
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0)
-		;
-	atomic_sub_64(&zfsvfs->z_vnode_create_depth, 1);
-
+		kpreempt(KPREEMPT_SYNC);
 	atomic_inc_64(&vnop_num_vnodes);
 
 	dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
