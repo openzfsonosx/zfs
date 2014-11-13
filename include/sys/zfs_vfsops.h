@@ -90,7 +90,7 @@ struct zfsvfs {
         boolean_t       z_reclaim_thread_exit;
         kmutex_t		z_reclaim_thr_lock;
         kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
-	dev_t z_rdev;
+	    dev_t z_rdev;
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
         uint64_t	    z_replay_eof;	/* New end of file - replay only */

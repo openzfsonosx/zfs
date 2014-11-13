@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  */
 
@@ -176,7 +176,7 @@ dsl_pool_open_impl(spa_t *spa, uint64_t txg)
 	mutex_init(&dp->dp_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&dp->dp_spaceavail_cv, NULL, CV_DEFAULT, NULL);
 
-	dp->dp_iput_taskq = taskq_create("zfs_iput_taskq", 1, minclsyspri,
+	dp->dp_vnrele_taskq = taskq_create("zfs_vn_rele_taskq", 1, minclsyspri,
 	    1, 4, 0);
 
 	return (dp);
@@ -328,7 +328,7 @@ dsl_pool_close(dsl_pool_t *dp)
 	dsl_scan_fini(dp);
 	rrw_destroy(&dp->dp_config_rwlock);
 	mutex_destroy(&dp->dp_lock);
-	taskq_destroy(dp->dp_iput_taskq);
+	taskq_destroy(dp->dp_vnrele_taskq);
 	if (dp->dp_blkstats)
 		kmem_free(dp->dp_blkstats, sizeof (zfs_all_blkstats_t));
 	kmem_free(dp, sizeof (dsl_pool_t));
@@ -839,9 +839,9 @@ dsl_pool_create_origin(dsl_pool_t *dp, dmu_tx_t *tx)
 }
 
 taskq_t *
-dsl_pool_iput_taskq(dsl_pool_t *dp)
+dsl_pool_vnrele_taskq(dsl_pool_t *dp)
 {
-	return (dp->dp_iput_taskq);
+	return (dp->dp_vnrele_taskq);
 }
 
 /*

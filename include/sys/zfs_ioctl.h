@@ -574,7 +574,7 @@ extern minor_t zfsdev_minor_alloc(void);
 extern int zfs_ioctl_osx_init(void);
 extern int zfs_ioctl_osx_fini(void);
 
-
+extern int zfs_vnop_force_formd_normalized_output;
 
 #endif	/* _KERNEL */
 

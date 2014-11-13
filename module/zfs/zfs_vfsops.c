@@ -145,37 +145,9 @@ extern void zfs_ioctl_fini(void);
 
 
 
-struct synccb {
-    caller_context_t *ct;
-    kauth_cred_t cr;
-    int waitfor;
-    int error;
-};
-
-static int
-zfs_sync_callback(struct vnode *vp, void *cargs)
-{
-    struct synccb *cb = (struct synccb *) cargs;
-    int error;
-
-
-    /* The .zfs vnode is special, skip it */
-    if (zfsctl_is_node(vp)) return (VNODE_RETURNED);
-
-    /* ZFS doesn't actually use any of the args */
-    error = zfs_fsync(vp, cb->waitfor, (cred_t *)cb->cr, cb->ct);
-
-    if (error)
-        cb->error = error;
-
-    return (VNODE_RETURNED);
-}
-
-
 int
 zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t context)
 {
-    struct synccb cb;
 
     /*
      * Data integrity is job one. We don't want a compromised kernel
@@ -188,18 +160,10 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
         /*
          * Sync a specific filesystem.
          */
+#if 1
         zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
         dsl_pool_t *dp;
         int error;
-
-        cb.waitfor = waitfor;
-        cb.ct = NULL;
-        cb.cr = kauth_cred_get();
-        cb.error = 0;
-
-        error = vnode_iterate(vfsp, 0, zfs_sync_callback, (void *)&cb);
-        if (error != 0)
-            return (error);
 
         ZFS_ENTER(zfsvfs);
         dp = dmu_objset_pool(zfsvfs->z_os);
@@ -217,13 +181,16 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
             zil_commit(zfsvfs->z_log, 0);
 
         ZFS_EXIT(zfsvfs);
+#endif
     } else {
+#if 0
         /*
          * Sync all ZFS filesystems. This is what happens when you
          * run sync(1M). Unlike other filesystems, ZFS honors the
          * request by waiting for all pools to commit all dirty data.
          */
         spa_sync_allpools();
+#endif
     }
 
     return (0);
@@ -1263,6 +1230,18 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 
 	zfs_fuid_destroy(zfsvfs);
 
+	/* Wait for reclaim to empty, before holding locks */
+	int count = 0;
+	while(!list_empty(&zfsvfs->z_all_znodes) ||
+		  !list_empty(&zfsvfs->z_reclaim_znodes)) {
+		cv_signal(&zfsvfs->z_reclaim_thr_cv);
+		printf("ZFS: Waiting for reclaim to drain: %d + %d\n",
+			   list_empty(&zfsvfs->z_all_znodes),
+			   list_empty(&zfsvfs->z_reclaim_znodes));
+		delay(hz);
+		if (count++ > 10) break;
+	}
+
     dprintf("stopping reclaim thread\n");
 	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
     zfsvfs->z_reclaim_thread_exit = TRUE;
@@ -1270,6 +1249,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	while (zfsvfs->z_reclaim_thread_exit == TRUE)
 		cv_wait(&zfsvfs->z_reclaim_thr_cv, &zfsvfs->z_reclaim_thr_lock);
 	mutex_exit(&zfsvfs->z_reclaim_thr_lock);
+	dprintf("Complete\n");
 
 	mutex_destroy(&zfsvfs->z_reclaim_thr_lock);
 	cv_destroy(&zfsvfs->z_reclaim_thr_cv);
@@ -2128,8 +2108,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	if (error)
 		printf("zfs_vfs_mount: error %d\n", error);
 	if (error == 0) {
-
-
+		zfsvfs_t *zfsvfs =vfs_fsprivate(vfsp);
 
 		/* It appears Spotlight makes certain assumptions if we enable VOLFS
 		 */
@@ -2142,99 +2121,15 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		/* Advisory locking should be handled at the VFS layer */
 		vfs_setlocklocal(vfsp);
 
-
-#if 0
-
-		/*
-		 * Mac OS X needs a file system modify time
-		 *
-		 * We use the mtime of the "com.apple.system.mtime"
-		 * extended attribute, which is associated with the
-		 * file system root directory.
-		 *
-		 * Here we need to take a ref on z_mtime_vp to keep it around.
-		 * If the attribute isn't there, attempt to create it.
-		 */
-
-		zfsvfs_t *zfsvfs =vfs_fsprivate(vfsp);
-        if (zfsvfs->z_mtime_vp == NULL) {
-			vnode_t *rvp;
-			vnode_t *xdvp = NULLVP;
-			vnode_t *xvp = NULLVP;
-			znode_t *rootzp;
-			timestruc_t modify_time;
-			cred_t  *cr;
-			timestruc_t  now;
-			int flag;
-			int result;
-
-			if (zfs_zget(zfsvfs, zfsvfs->z_root, &rootzp) != 0) {
-				goto out;
-			}
-			rvp = ZTOV(rootzp);
-			cr = (cred_t *)vfs_context_ucred(context);
-
-			/* Grab the hidden attribute directory vnode. */
-			result = zfs_get_xattrdir(rootzp, &xdvp, cr, CREATE_XATTR_DIR);
-			vnode_put(rvp);	/* all done with root vnode */
-			rvp = NULL;
-			if (result) {
-				goto out;
-			}
-
-			/*
-			 * HACK - workaround missing vnode_setnoflush() KPI...
-			 *
-			 * We tag zfsvfs so that zfs_attach_vnode() can then set
-			 * vnfs_marksystem when the vnode gets created.
-			 */
-			zfsvfs->z_last_unmount_time = 0xBADC0DE;
-			zfsvfs->z_last_mtime_synced = VTOZ(xdvp)->z_id;
-
-			if (!vfs_isrdonly(vfsp)) {
-
-			flag = vfs_isrdonly(vfsp) ? 0 : ZEXISTS;
-			/* Lookup or create the named attribute. */
-			if ( zfs_obtain_xattr(VTOZ(xdvp), ZFS_MTIME_XATTR,
-                                  S_IRUSR | S_IWUSR, cr, &xvp,
-                                  flag) ) {
-                zfsvfs->z_last_unmount_time = 0;
-                zfsvfs->z_last_mtime_synced = 0;
-                vnode_put(xdvp);
-                goto out;
-            }
-
-            gethrestime(&now);
-
-            ZFS_TIME_ENCODE(&now, VTOZ(xvp)->z_atime);
-			vnode_put(xdvp);
-
-            /* Can't hold a ref if we are readonly. */
-            if (!vfs_isrdonly(vfsp)) {
-
-                //vnode_ref(xvp);
-
-                zfsvfs->z_mtime_vp = xvp;
-            }
-            ZFS_TIME_DECODE(&modify_time, VTOZ(xvp)->z_atime);
-            zfsvfs->z_last_unmount_time = modify_time.tv_sec;
-            zfsvfs->z_last_mtime_synced = modify_time.tv_sec;
-			/*
-			 * Keep this referenced vnode from impeding an unmount.
-			 *
-			 * XXX vnode_setnoflush() is MIA from KPI (see workaround above).
-			 */
-#if 0
-			vnode_setnoflush(xvp);
-#endif
-			vnode_put(xvp);
-            } // readonly
-
-		}
-#endif
+		dsl_prop_get_integer(osname, "LASTUNMOUNT",
+							 &zfsvfs->z_last_unmount_time, NULL);
+		dprintf("ZFS: '%s' mount using last_unmount value %llx\n",
+				osname,
+				zfsvfs->z_last_unmount_time);
 
 	}
 #endif /* __APPLE__ */
+
 
 out:
 #ifdef __APPLE__
@@ -2308,7 +2203,6 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		//VFSATTR_RETURN(fsap, f_fsid, vfs_statfs(mp)->f_fsid);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_capabilities)) {
-
 		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_FORMAT] =
 			VOL_CAP_FMT_PERSISTENTOBJECTIDS |
 			VOL_CAP_FMT_HARDLINKS |      // ZFS
@@ -2654,7 +2548,20 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	 * zfs_sb_t have been handled only then can it be safely destroyed.
 	 */
 	if (zfsvfs->z_os)
-		taskq_wait(dsl_pool_iput_taskq(dmu_objset_pool(zfsvfs->z_os)));
+		taskq_wait(dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
+
+
+	/* Wait for reclaim to empty, before holding locks */
+	int count = 0;
+	while(!list_empty(&zfsvfs->z_all_znodes) ||
+		  !list_empty(&zfsvfs->z_reclaim_znodes)) {
+		cv_signal(&zfsvfs->z_reclaim_thr_cv);
+		printf("ZFS:Waiting for reclaim to drain: %d + %d\n",
+			   list_empty(&zfsvfs->z_all_znodes),
+			   list_empty(&zfsvfs->z_reclaim_znodes));
+		delay(hz);
+		if (count++ > 10) break;
+	}
 
 	rrw_enter(&zfsvfs->z_teardown_lock, RW_WRITER, FTAG);
 
@@ -2746,6 +2653,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 }
 
 /*ARGSUSED*/
+
 int
 zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 {
@@ -2818,6 +2726,8 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
     }
 #endif
 
+	ret = vflush(mp, NULLVP, SKIPSYSTEM);
+
 	if (mntflags & MNT_FORCE) {
 		/*
 		 * Mark file system as unmounted before calling
@@ -2834,46 +2744,35 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	 */
 	ret = vflush(mp, NULLVP, (mntflags & MNT_FORCE) ? FORCECLOSE|SKIPSYSTEM : SKIPSYSTEM);
 
-	if (ret != 0) {
+	if ((ret != 0) && !(mntflags & MNT_FORCE)) {
 		if (!zfsvfs->z_issnap) {
 			zfsctl_create(zfsvfs);
 			//ASSERT(zfsvfs->z_ctldir != NULL);
 		}
 		return (ret);
 	}
+
 #ifdef __APPLE__
-	/*
-	 * Mac OS X needs a file system modify time
-	 *
-	 * We use the mtime of the "com.apple.system.mtime"
-	 * extended attribute, which is associated with the
-	 * file system root directory.
-	 *
-	 * Here we need to release the ref we took on z_mtime_vp during mount.
-	 */
-#if 0
-	if ((ret == 0) || (mntflags & MNT_FORCE)) {
-		if (zfsvfs->z_mtime_vp != NULL) {
-			vnode_t *mvp;
+		{
+			/* Update the last-unmount time for Spotlight's next mount */
+			char osname[MAXNAMELEN];
+			timestruc_t  now;
+			dmu_objset_name(zfsvfs->z_os, osname);
 
-			mvp = zfsvfs->z_mtime_vp;
-			zfsvfs->z_mtime_vp = NULL;
+			gethrestime(&now);
+			zfsvfs->z_last_unmount_time = now.tv_sec;
 
-			if (vnode_get(mvp) == 0) {
-				//vnode_rele(mvp);
-				vnode_recycle(mvp);
-				vnode_put(mvp);
-			}
+			ret = dsl_prop_set_int(osname, "LASTUNMOUNT", ZPROP_SRC_LOCAL,
+								   zfsvfs->z_last_unmount_time);
+			dprintf("ZFS: '%s' set lastunmount to %llx (%d)\n",
+					osname, zfsvfs->z_last_unmount_time, ret);
 		}
-	}
-#endif
 
-    dprintf("Signalling reclaim sync\n");
-	/* We just did final sync, tell reclaim to mop it up */
-    cv_signal(&zfsvfs->z_reclaim_thr_cv);
-    /* Not the classiest sync control ... */
-    delay(hz);
-
+		dprintf("Signalling reclaim sync\n");
+		/* We just did final sync, tell reclaim to mop it up
+		 * proper wait for reclaim is done in zfsvfs_teardown()
+		 */
+		cv_signal(&zfsvfs->z_reclaim_thr_cv);
 
 #endif
 
@@ -2899,6 +2798,11 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		}
 	}
 #endif
+
+	/*
+	 * Last chance to dump unreferenced system files.
+	 */
+	(void) vflush(mp, NULLVP, FORCECLOSE);
 
     dprintf("teardown\n");
 	VERIFY(zfsvfs_teardown(zfsvfs, B_TRUE) == 0);
@@ -2949,6 +2853,8 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	return (0);
 }
 
+
+
 static int
 zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 {
@@ -2989,7 +2895,6 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
     err = zfs_vnode_lock(*vpp, 0/*flags*/);
 
-
 	/*
 	 * Spotlight requires that vap->va_name() is set when returning
 	 * from vfs_vget, so that vfs_getrealpath() can succeed in returning
@@ -3027,7 +2932,6 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 #endif
 
 	} // rootid
-
 
 
  out:
@@ -3368,6 +3272,8 @@ zfs_freevfs(struct mount *vfsp)
 #endif	/* sun */
 
 	zfsvfs_free(zfsvfs);
+
+	vfs_setfsprivate(vfsp, NULL);
 
 	atomic_add_32(&zfs_active_fs_count, -1);
     dprintf("-freevfs\n");

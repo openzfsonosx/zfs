@@ -47,8 +47,7 @@ typedef struct zed_strings_node zed_strings_node_t;
 
 /*
  * Compare zed_strings_node_t nodes [x1] and [x2].
- * As required for the AVL tree, return exactly
- *   -1 for <, 0 for ==, and +1 for >.
+ * As required for the AVL tree, return -1 for <, 0 for ==, and +1 for >.
  */
 static int
 _zed_strings_node_compare(const void *x1, const void *x2)
@@ -83,11 +82,10 @@ zed_strings_create(void)
 {
 	zed_strings_t *zsp;
 
-	zsp = malloc(sizeof (*zsp));
+	zsp = calloc(1, sizeof (*zsp));
 	if (!zsp)
 		return (NULL);
 
-	memset(zsp, 0, sizeof (*zsp));
 	avl_create(&zsp->tree, _zed_strings_node_compare,
 	    sizeof (zed_strings_node_t), offsetof(zed_strings_node_t, node));
 
@@ -118,6 +116,7 @@ zed_strings_destroy(zed_strings_t *zsp)
 /*
  * Add a copy of the string [s] to the container [zsp].
  * Return 0 on success, or -1 on error.
+ *
  * FIXME: Handle dup strings.
  */
 int
@@ -131,11 +130,10 @@ zed_strings_add(zed_strings_t *zsp, const char *s)
 		return (-1);
 	}
 	len = sizeof (zed_strings_node_t) + strlen(s) + 1;
-	np = malloc(len);
+	np = calloc(1, len);
 	if (!np)
 		return (-1);
 
-	memset(np, 0, len);
 	assert((char *) np->string + strlen(s) < (char *) np + len);
 	(void) strcpy(np->string, s);
 	avl_add(&zsp->tree, np);

@@ -399,7 +399,7 @@ dnode_setdblksz(dnode_t *dn, int size)
 	dn->dn_datablkszsec = size >> SPA_MINBLOCKSHIFT;
 	dn->dn_datablkshift = ISP2(size) ? highbit64(size - 1) : 0;
 }
-int dnode_other = 0;
+
 static dnode_t *
 dnode_create(objset_t *os, dnode_phys_t *dnp, dmu_buf_impl_t *db,
     uint64_t object, dnode_handle_t *dnh)
@@ -454,7 +454,6 @@ dnode_create(objset_t *os, dnode_phys_t *dnp, dmu_buf_impl_t *db,
 	mutex_exit(&os->os_lock);
 
 	arc_space_consume(sizeof (dnode_t), ARC_SPACE_OTHER);
-    dnode_other++;
 
 	return (dn);
 }
@@ -506,7 +505,6 @@ dnode_destroy(dnode_t *dn)
 	dmu_zfetch_rele(&dn->dn_zfetch);
 	kmem_cache_free(dnode_cache, dn);
 	arc_space_return(sizeof (dnode_t), ARC_SPACE_OTHER);
-    dnode_other--;
 }
 
 void
@@ -1036,7 +1034,7 @@ dnode_buf_pageout(dmu_buf_t *db, void *arg)
 		dnh->dnh_dnode = NULL;
 	}
 	kmem_free(children_dnodes, sizeof (dnode_children_t) +
-	    (epb - 1) * sizeof (dnode_handle_t));
+	    epb * sizeof (dnode_handle_t));
 }
 
 /*
@@ -1122,7 +1120,7 @@ dnode_hold_impl(objset_t *os, uint64_t object, int flag,
 		int i;
 		dnode_children_t *winner;
 		children_dnodes = kmem_alloc(sizeof (dnode_children_t) +
-		    (epb - 1) * sizeof (dnode_handle_t),
+		    epb * sizeof (dnode_handle_t),
 		    KM_PUSHPAGE | KM_NODEBUG);
 		children_dnodes->dnc_count = epb;
 		dnh = &children_dnodes->dnc_children[0];
@@ -1138,7 +1136,7 @@ dnode_hold_impl(objset_t *os, uint64_t object, int flag,
 			}
 
 			kmem_free(children_dnodes, sizeof (dnode_children_t) +
-			    (epb - 1) * sizeof (dnode_handle_t));
+			    epb * sizeof (dnode_handle_t));
 			children_dnodes = winner;
 		}
 	}
@@ -1963,6 +1961,15 @@ dnode_next_offset(dnode_t *dn, int flags, uint64_t *offset,
 	while (error == 0 && --lvl >= minlvl) {
 		error = dnode_next_offset_level(dn,
 		    flags, offset, lvl, blkfill, txg);
+	}
+
+	/*
+	 * There's always a "virtual hole" at the end of the object, even
+	 * if all BP's which physically exist are non-holes.
+	 */
+	if ((flags & DNODE_FIND_HOLE) && error == ESRCH && txg == 0 &&
+	    minlvl == 1 && blkfill == 1 && !(flags & DNODE_FIND_BACKWARDS)) {
+		error = 0;
 	}
 
 	if (error == 0 && (flags & DNODE_FIND_BACKWARDS ?

@@ -29,6 +29,8 @@
  * Copyright (c) 201i3 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Portions Copyright 2013 Jorgen Lundman <lundman@lundman.net>
+ * Copyright (c) 2013 Steven Hartland. All rights reserved.
+ * Copyright (c) 2014, Nexenta Systems, Inc. All rights reserved.
  */
 
 #define __APPLE_API_PRIVATE
@@ -91,6 +93,8 @@
 #include "zfs_comutil.h"
 
 #ifdef __APPLE__
+#include <sys/kstat_osx.h>
+
 #define MNTTAB "/etc/mtab"
 
 static int mnttab_file_create(void);
@@ -2324,36 +2328,6 @@ zfs_prop_set_special(const char *dsname, zprop_source_t source,
 			}
 			break;
 		}
-	case ZFS_PROP_COMPRESSION:
-	{
-		if (intval == ZIO_COMPRESS_LZ4) {
-			spa_t *spa;
-
-			if ((err = spa_open(dsname, &spa, FTAG)) != 0)
-				return (err);
-
-			/*
-			 * Setting the LZ4 compression algorithm activates
-			 * the feature.
-			 */
-			if (!spa_feature_is_active(spa,
-			    SPA_FEATURE_LZ4_COMPRESS)) {
-				if ((err = zfs_prop_activate_feature(spa,
-				    SPA_FEATURE_LZ4_COMPRESS)) != 0) {
-					spa_close(spa, FTAG);
-					return (err);
-				}
-			}
-
-			spa_close(spa, FTAG);
-		}
-		/*
-		 * We still want the default set action to be performed in the
-		 * caller, we only performed zfeature settings here.
-		 */
-		err = -1;
-		break;
-	}
 
 	default:
 		err = -1;
@@ -3278,7 +3252,8 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 		return 0;
 	}
 	error = spa_open(poolname, &spa, FTAG);
-	strfree(poolname);
+	kmem_free(poolname, strlen(poolname)+1);
+	//strfree(poolname);
 	if (error != 0)
 		return (error);
 
@@ -3760,56 +3735,6 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 	}
 
 	return (zfs_secpolicy_setprop(dsname, prop, pair, CRED()));
-}
-
-/*
- * Checks for a race condition to make sure we don't increment a feature flag
- * multiple times.
- */
-static int
-zfs_prop_activate_feature_check(void *arg, dmu_tx_t *tx)
-{
-	spa_t *spa = dmu_tx_pool(tx)->dp_spa;
-	spa_feature_t *featurep = arg;
-
-	if (!spa_feature_is_active(spa, *featurep))
-		return (0);
-	else
-		return (SET_ERROR(EBUSY));
-}
-
-/*
- * The callback invoked on feature activation in the sync task caused by
- * zfs_prop_activate_feature.
- */
-static void
-zfs_prop_activate_feature_sync(void *arg, dmu_tx_t *tx)
-{
-	spa_t *spa = dmu_tx_pool(tx)->dp_spa;
-	spa_feature_t *featurep = arg;
-
-	spa_feature_incr(spa, *featurep, tx);
-}
-
-/*
- * Activates a feature on a pool in response to a property setting. This
- * creates a new sync task which modifies the pool to reflect the feature
- * as being active.
- */
-static int
-zfs_prop_activate_feature(spa_t *spa, spa_feature_t feature)
-{
-	int err;
-
-	/* EBUSY here indicates that the feature is already active */
-	err = dsl_sync_task(spa_name(spa),
-	    zfs_prop_activate_feature_check, zfs_prop_activate_feature_sync,
-	    &feature, 2);
-
-	if (err != 0 && err != EBUSY)
-		return (err);
-	else
-		return (0);
 }
 
 /*
@@ -5737,7 +5662,6 @@ zfsdev_open(dev_t dev, int flags, int devtype, struct proc *p)
 	dprintf("zfsdev_open, dev %d flag %02X devtype %d, proc is %p: thread %p\n",
 			minor(dev), flags, devtype, p, current_thread());
 
-
 	if (zfsdev_get_state_impl(minor(dev), ZST_ALL)) {
 		dprintf("zs already exists\n");
 		return (0);
@@ -5798,7 +5722,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 #endif
 
 	if (zfsdev_get_state_impl(minorx, ZST_ALL) == NULL) {
-		printf("Calling zvol ioctl minor %d \n", minorx);
+		dprintf("Calling zvol ioctl minor %d \n", minorx);
 		return (zvol_ioctl(dev, cmd, arg, 0, NULL, NULL));
 	}
 
@@ -6082,13 +6006,14 @@ static int
 zfs_devfs_clone(__unused dev_t dev, int action)
 {
 	static minor_t minorx;
+
 	dprintf("zfs_devfs_clone action %d\n", action);
 
 	if (action == DEVFS_CLONE_ALLOC) {
 		mutex_enter(&zfsdev_state_lock);
 		minorx = zfsdev_minor_alloc();
 		mutex_exit(&zfsdev_state_lock);
-		dprintf("Returning minor %d\n");
+		dprintf("zfs_devfs_clone: Returning minor %d\n", minorx);
 		return minorx;
 	}
 	return -1;
@@ -6127,7 +6052,6 @@ zfs_attach(void)
 	dev = makedev(zfs_major, 0);/* Get the device number */
 	zfs_devnode = devfs_make_node_clone(dev, DEVFS_CHAR, UID_ROOT, GID_WHEEL,
 										0666, zfs_devfs_clone, "zfs", 0);
-
 	if (!zfs_devnode) {
 		printf("ZFS: devfs_make_node() failed\n");
 		return (-1);
@@ -6163,8 +6087,13 @@ zfs_detach(void)
 	mutex_destroy(&zfsdev_state_lock);
 
 	for (zs = zfsdev_state_list; zs != NULL; zs = zs->zs_next) {
-		if (zsprev)
+		if (zsprev) {
+			if (zsprev->zs_minor != -1) {
+				zfs_onexit_destroy(zsprev->zs_onexit);
+				zfs_zevent_destroy(zsprev->zs_zevent);
+			}
 			kmem_free(zsprev, sizeof (zfsdev_state_t));
+		}
 		zsprev = zs;
 	}
 	if (zsprev)
@@ -6183,6 +6112,10 @@ zfs_allow_log_destroy(void *arg)
 #else
 #define	ZFS_DEBUG_STR	""
 #endif
+
+
+
+
 
 int
 zfs_ioctl_osx_init(void)
@@ -6229,6 +6162,9 @@ zfs_ioctl_osx_init(void)
 #endif
 
 #ifdef __APPLE__
+
+	kstat_osx_init();
+
 	(void) mnttab_file_create();
 	zfs_ioctl_installed = 1;
 #endif
@@ -6265,6 +6201,8 @@ zfs_ioctl_osx_fini(void)
 		return (SET_ERROR(EBUSY));
 	}
 #endif
+
+	kstat_osx_fini();
 
 #ifdef illumos
 	if ((error = mod_remove(&modlinkage)) != 0)

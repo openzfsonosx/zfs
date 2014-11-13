@@ -236,9 +236,8 @@ spa_history_log_sync(void *arg, dmu_tx_t *tx)
 #endif
 
 	fnvlist_add_uint64(nvl, ZPOOL_HIST_TIME, gethrestime_sec());
-#ifdef _KERNEL
 	fnvlist_add_string(nvl, ZPOOL_HIST_HOST, utsname.nodename);
-#endif
+
 	if (nvlist_exists(nvl, ZPOOL_HIST_CMD)) {
 		zfs_dbgmsg("command: %s",
 		    fnvlist_lookup_string(nvl, ZPOOL_HIST_CMD));
@@ -550,8 +549,8 @@ spa_history_log_version(spa_t *spa, const char *operation)
 	spa_history_log_internal(spa, operation, NULL,
 	    "pool version %llu; software version %llu/%d; uts %s %s %s %s",
 	    (u_longlong_t)spa_version(spa), SPA_VERSION, ZPL_VERSION,
-	    utsname.nodename, utsname.release, utsname.version,
-	    utsname.machine);
+		utsname.nodename, utsname.release, utsname.version,
+		utsname.machine);
 }
 
 

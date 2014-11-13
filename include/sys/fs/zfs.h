@@ -146,6 +146,7 @@ typedef enum {
 #ifdef __APPLE__
     ZFS_PROP_APPLE_BROWSE,
     ZFS_PROP_APPLE_IGNOREOWNER,
+	ZFS_PROP_APPLE_LASTUNMOUNT, /* not exposed to the user */
 #endif
 #ifdef LINUX
 	ZFS_PROP_ACLTYPE,
@@ -202,6 +203,7 @@ typedef enum {
 	ZPOOL_PROP_FREEING,
 	ZPOOL_PROP_FRAGMENTATION,
 	ZPOOL_PROP_LEAKED,
+	ZPOOL_PROP_TNAME,
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
 

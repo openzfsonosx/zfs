@@ -54,7 +54,6 @@
 #include <sys/dsl_bookmark.h>
 #include <sys/zfeature.h>
 
-
 /* Set this tunable to TRUE to replace corrupt data with 0x2f5baddb10c */
 int zfs_send_corrupt_data = B_FALSE;
 
@@ -1211,10 +1210,12 @@ free_guid_map_onexit(void *arg)
 }
 
 static void *
-restore_read(struct restorearg *ra, int len)
+restore_read(struct restorearg *ra, int len, char *buf)
 {
-	void *rv;
 	int done = 0;
+
+	if (buf == NULL)
+		buf = ra->buf;
 
 	/* some things will require 8-byte alignment, so everything must */
 	ASSERT0(len % 8);
@@ -1227,7 +1228,7 @@ restore_read(struct restorearg *ra, int len)
 #else
 		ra->err = vn_rdwr(UIO_READ, ra->vp,
 #endif
-		    (caddr_t)ra->buf + done, len - done,
+		    buf + done, len - done,
 		    ra->voff, UIO_SYSSPACE, FAPPEND,
 		    RLIM64_INFINITY, CRED(), &resid);
 
@@ -1240,12 +1241,11 @@ restore_read(struct restorearg *ra, int len)
 	}
 
 	ASSERT3U(done, ==, len);
-	rv = ra->buf;
 	if (ra->byteswap)
-		fletcher_4_incremental_byteswap(rv, len, &ra->cksum);
+		fletcher_4_incremental_byteswap(buf, len, &ra->cksum);
 	else
-		fletcher_4_incremental_native(rv, len, &ra->cksum);
-	return (rv);
+		fletcher_4_incremental_native(buf, len, &ra->cksum);
+	return (buf);
 }
 
 noinline static void
@@ -1337,12 +1337,25 @@ backup_byteswap(dmu_replay_record_t *drr)
 #undef DO32
 }
 
+static inline uint8_t
+deduce_nblkptr(dmu_object_type_t bonus_type, uint64_t bonus_size)
+{
+	if (bonus_type == DMU_OT_SA) {
+		return (1);
+	} else {
+		return (1 +
+		    ((DN_MAX_BONUSLEN - bonus_size) >> SPA_BLKPTRSHIFT));
+	}
+}
+
 noinline static int
 restore_object(struct restorearg *ra, objset_t *os, struct drr_object *drro)
 {
-	int err;
+	dmu_object_info_t doi;
 	dmu_tx_t *tx;
 	void *data = NULL;
+	uint64_t object;
+	int err;
 
 	if (drro->drr_type == DMU_OT_NONE ||
 	    !DMU_OT_IS_VALID(drro->drr_type) ||
@@ -1356,46 +1369,63 @@ restore_object(struct restorearg *ra, objset_t *os, struct drr_object *drro)
 		return (SET_ERROR(EINVAL));
 	}
 
-	err = dmu_object_info(os, drro->drr_object, NULL);
+	err = dmu_object_info(os, drro->drr_object, &doi);
 
 	if (err != 0 && err != ENOENT)
 		return (SET_ERROR(EINVAL));
+	object = err == 0 ? drro->drr_object : DMU_NEW_OBJECT;
 
 	if (drro->drr_bonuslen) {
-		data = restore_read(ra, P2ROUNDUP(drro->drr_bonuslen, 8));
+		data = restore_read(ra, P2ROUNDUP(drro->drr_bonuslen, 8), NULL);
 		if (ra->err != 0)
 			return (ra->err);
 	}
 
-	if (err == ENOENT) {
-		/* currently free, want to be allocated */
-		tx = dmu_tx_create(os);
-		dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT);
-		err = dmu_tx_assign(tx, TXG_WAIT);
-		if (err != 0) {
-			dmu_tx_abort(tx);
-			return (err);
+	/*
+	 * If we are losing blkptrs or changing the block size this must
+	 * be a new file instance.  We must clear out the previous file
+	 * contents before we can change this type of metadata in the dnode.
+	 */
+	if (err == 0) {
+		int nblkptr;
+
+		nblkptr = deduce_nblkptr(drro->drr_bonustype,
+		    drro->drr_bonuslen);
+
+		if (drro->drr_blksz != doi.doi_data_block_size ||
+		    nblkptr < doi.doi_nblkptr) {
+			err = dmu_free_long_range(os, drro->drr_object,
+			    0, DMU_OBJECT_END);
+			if (err != 0)
+				return (SET_ERROR(EINVAL));
 		}
-		err = dmu_object_claim(os, drro->drr_object,
-		    drro->drr_type, drro->drr_blksz,
-		    drro->drr_bonustype, drro->drr_bonuslen, tx);
-		dmu_tx_commit(tx);
-	} else {
-		/* currently allocated, want to be allocated */
-		err = dmu_object_reclaim(os, drro->drr_object,
-		    drro->drr_type, drro->drr_blksz,
-		    drro->drr_bonustype, drro->drr_bonuslen);
-	}
-	if (err != 0) {
-		return (SET_ERROR(EINVAL));
 	}
 
 	tx = dmu_tx_create(os);
-	dmu_tx_hold_bonus(tx, drro->drr_object);
+	dmu_tx_hold_bonus(tx, object);
 	err = dmu_tx_assign(tx, TXG_WAIT);
 	if (err != 0) {
 		dmu_tx_abort(tx);
 		return (err);
+	}
+
+	if (object == DMU_NEW_OBJECT) {
+		/* currently free, want to be allocated */
+		err = dmu_object_claim(os, drro->drr_object,
+		    drro->drr_type, drro->drr_blksz,
+		    drro->drr_bonustype, drro->drr_bonuslen, tx);
+	} else if (drro->drr_type != doi.doi_type ||
+	    drro->drr_blksz != doi.doi_data_block_size ||
+	    drro->drr_bonustype != doi.doi_bonus_type ||
+	    drro->drr_bonuslen != doi.doi_bonus_size) {
+		/* currently allocated, but with different properties */
+		err = dmu_object_reclaim(os, drro->drr_object,
+		    drro->drr_type, drro->drr_blksz,
+		    drro->drr_bonustype, drro->drr_bonuslen, tx);
+	}
+	if (err != 0) {
+		dmu_tx_commit(tx);
+		return (SET_ERROR(EINVAL));
 	}
 
 	dmu_object_set_checksum(os, drro->drr_object, drro->drr_checksumtype,
@@ -1452,6 +1482,8 @@ restore_write(struct restorearg *ra, objset_t *os,
     struct drr_write *drrw)
 {
 	dmu_tx_t *tx;
+	dmu_buf_t *bonus;
+	arc_buf_t *abuf;
 	void *data;
 	int err;
 
@@ -1459,12 +1491,20 @@ restore_write(struct restorearg *ra, objset_t *os,
 	    !DMU_OT_IS_VALID(drrw->drr_type))
 		return (SET_ERROR(EINVAL));
 
-	data = restore_read(ra, drrw->drr_length);
-	if (data == NULL)
-		return (ra->err);
-
 	if (dmu_object_info(os, drrw->drr_object, NULL) != 0)
 		return (SET_ERROR(EINVAL));
+
+	if (dmu_bonus_hold(os, drrw->drr_object, FTAG, &bonus) != 0)
+		return (SET_ERROR(EINVAL));
+
+	abuf = dmu_request_arcbuf(bonus, drrw->drr_length);
+
+	data = restore_read(ra, drrw->drr_length, abuf->b_data);
+	if (data == NULL) {
+		dmu_return_arcbuf(abuf);
+		dmu_buf_rele(bonus, FTAG);
+		return (ra->err);
+	}
 
 	tx = dmu_tx_create(os);
 
@@ -1472,6 +1512,8 @@ restore_write(struct restorearg *ra, objset_t *os,
 	    drrw->drr_offset, drrw->drr_length);
 	err = dmu_tx_assign(tx, TXG_WAIT);
 	if (err != 0) {
+		dmu_return_arcbuf(abuf);
+		dmu_buf_rele(bonus, FTAG);
 		dmu_tx_abort(tx);
 		return (err);
 	}
@@ -1480,9 +1522,9 @@ restore_write(struct restorearg *ra, objset_t *os,
 		    DMU_OT_BYTESWAP(drrw->drr_type);
 		dmu_ot_byteswap[byteswap].ob_func(data, drrw->drr_length);
 	}
-	dmu_write(os, drrw->drr_object,
-	    drrw->drr_offset, drrw->drr_length, data, tx);
+	dmu_assign_arcbuf(bonus, drrw->drr_offset, abuf, tx);
 	dmu_tx_commit(tx);
+	dmu_buf_rele(bonus, FTAG);
 	return (0);
 }
 
@@ -1564,7 +1606,7 @@ restore_write_embedded(struct restorearg *ra, objset_t *os,
 	if (drrwnp->drr_compression >= ZIO_COMPRESS_FUNCTIONS)
 		return (EINVAL);
 
-	data = restore_read(ra, P2ROUNDUP(drrwnp->drr_psize, 8));
+	data = restore_read(ra, P2ROUNDUP(drrwnp->drr_psize, 8), NULL);
 	if (data == NULL)
 		return (ra->err);
 
@@ -1599,7 +1641,7 @@ restore_spill(struct restorearg *ra, objset_t *os, struct drr_spill *drrs)
 	    drrs->drr_length > SPA_MAXBLOCKSIZE)
 		return (SET_ERROR(EINVAL));
 
-	data = restore_read(ra, drrs->drr_length);
+	data = restore_read(ra, drrs->drr_length, NULL);
 	if (data == NULL)
 		return (ra->err);
 
@@ -1681,9 +1723,7 @@ dmu_recv_stream(dmu_recv_cookie_t *drc, struct vnode *vp, offset_t *voffp,
 
 	ra.byteswap = drc->drc_byteswap;
 	ra.cksum = drc->drc_cksum;
-
 	ra.vp = vp;
-
 	ra.voff = *voffp;
 	ra.bufsize = 1<<20;
 	ra.buf = kmem_alloc(ra.bufsize, KM_SLEEP);
@@ -1742,7 +1782,7 @@ dmu_recv_stream(dmu_recv_cookie_t *drc, struct vnode *vp, offset_t *voffp,
 	 */
 	pcksum = ra.cksum;
 	while (ra.err == 0 &&
-	    NULL != (drr = restore_read(&ra, sizeof (*drr)))) {
+	    NULL != (drr = restore_read(&ra, sizeof (*drr), NULL))) {
 		if (issig(JUSTLOOKING) && issig(FORREAL)) {
 			ra.err = SET_ERROR(EINTR);
 			goto out;
