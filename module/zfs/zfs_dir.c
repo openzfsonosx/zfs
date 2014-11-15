@@ -571,6 +571,7 @@ zfs_purgedir(znode_t *dzp)
 		dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, FALSE, NULL);
 		/* Is this really needed ? */
 		zfs_sa_upgrade_txholds(tx, xzp);
+		dmu_tx_mark_netfree(tx);
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
 			dmu_tx_abort(tx);
@@ -640,6 +641,8 @@ zfs_rmnode(znode_t *zp)
 		 * Not enough space.  Leave the file in the unlinked set.
 		 */
 		zfs_znode_dmu_fini(zp);
+		/* Can't release zp before vp, so tell VFS to release */
+		vnode_recycle(ZTOV(zp));
 		//zfs_znode_free(zp);
 		return;
 	}
@@ -680,6 +683,8 @@ zfs_rmnode(znode_t *zp)
 		 */
 		dmu_tx_abort(tx);
 		zfs_znode_dmu_fini(zp);
+		/* Can't release zp before vp, so tell VFS to release */
+		vnode_recycle(ZTOV(zp));
 		//zfs_znode_free(zp);
 		goto out;
 	}
@@ -699,13 +704,13 @@ zfs_rmnode(znode_t *zp)
 	VERIFY3U(0, ==,
 	    zap_remove_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx));
 
+	/* it is possible we should do the fastpath test here like in zfs_remove*/
 	zfs_znode_delete(zp, tx);
 
 	dmu_tx_commit(tx);
 out:
 	if (xzp)
-		//VN_RELE(ZTOV(xzp)); // async
-	VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
+		VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
 }
 
 static uint64_t

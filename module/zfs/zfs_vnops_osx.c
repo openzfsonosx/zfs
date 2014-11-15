@@ -1419,7 +1419,12 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 {
 	struct vnode *vp = ap->a_vp;
 	znode_t *zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	zfsvfs_t *zfsvfs;
+
+	if (!zp) panic("null zp");
+	if (!zp) return ENODEV;
+
+	zfsvfs = zp->z_zfsvfs;
 
 	dprintf("+vnop_mmap\n");
 
@@ -1490,10 +1495,14 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 {
 	struct vnode *vp = ap->a_vp;
 	znode_t *zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	zfsvfs_t *zfsvfs = NULL;
 	DECLARE_CRED(ap);
 
 	dprintf("vnop_inactive: zp %p vp %p\n", zp, vp);
+
+	if (!zp) return 0; /* zfs_remove will clear it in fastpath */
+
+	zfsvfs = zp->z_zfsvfs;
 
 	if (vnode_isrecycled(ap->a_vp)) {
 		/*
@@ -1682,6 +1691,8 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	zp->z_vnode = NULL;
 	list_remove(&zfsvfs->z_all_znodes, zp); /* XXX */
 	mutex_exit(&zfsvfs->z_znodes_lock);
+
+	if (zp->z_fastpath == B_TRUE) goto out;
 
 	mutex_enter(&zfsvfs->z_reclaim_list_lock);
 	list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
