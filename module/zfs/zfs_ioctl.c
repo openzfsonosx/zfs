@@ -4032,6 +4032,12 @@ zfs_ioc_recv(zfs_cmd_t *zc)
         error = 1;
     }
 #endif
+
+#ifdef _KERNEL
+	if (error == 0)
+		zvol_create_minors(tofs);
+#endif
+
     /*
      * On error, restore the original props.
      */
