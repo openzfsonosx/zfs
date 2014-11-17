@@ -1591,77 +1591,14 @@ vnop_reclaim_thread(void *arg)
 
 			/*
 			 * We have popped a node off the reclaim_list, and need to
-			 * run the final tx sync, lifted out of the ass end of the
-			 * zfs_rmnode call
+			 * run the final tx sync, by calling zfs_rmnode
 			 */
 
 			rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-			zp->z_reclaim_reentry = B_TRUE; /* Should already be true, but .. */
 
-			/* CODE from zfs_remove */
-
-			printf("Calling 2nd phase reclaim %p\n", zp);
-
-			objset_t	*os = zfsvfs->z_os;
-			znode_t		*xzp = NULL;
-			dmu_tx_t	*tx;
-			uint64_t	acl_obj;
-			int         error;
-
-			acl_obj = zfs_external_acl(zp);
-
-			/*
-			 * Set up the final transaction.
-			 */
-			tx = dmu_tx_create(os);
-			dmu_tx_hold_free(tx, zp->z_id, 0, DMU_OBJECT_END);
-			dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, FALSE, NULL);
-			if (xzp) {
-				dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, TRUE, NULL);
-				dmu_tx_hold_sa(tx, xzp->z_sa_hdl, B_FALSE);
-			}
-			if (acl_obj)
-				dmu_tx_hold_free(tx, acl_obj, 0, DMU_OBJECT_END);
-
-			zfs_sa_upgrade_txholds(tx, zp);
-			error = dmu_tx_assign(tx, TXG_WAIT);
-			if (error) {
-				/*
-				 * Not enough space to delete the file.  Leave it in the
-				 * unlinked set, leaking it until the fs is remounted (at
-				 * which point we'll call zfs_unlinked_drain() to process it).
-				 */
-				dmu_tx_abort(tx);
-				zfs_znode_dmu_fini(zp);
-				zfs_znode_free(zp);
-				goto out;
-			}
-
-			if (xzp) {
-				ASSERT(error == 0);
-				mutex_enter(&xzp->z_lock);
-				xzp->z_unlinked = B_TRUE;	/* mark xzp for deletion */
-				xzp->z_links = 0;	/* no more links to it */
-				VERIFY(0 == sa_update(xzp->z_sa_hdl, SA_ZPL_LINKS(zfsvfs),
-									  &xzp->z_links, sizeof (xzp->z_links), tx));
-				mutex_exit(&xzp->z_lock);
-				zfs_unlinked_add(xzp, tx);
-			}
-
-			/* Remove this znode from the unlinked set */
-			VERIFY3U(0, ==,
-					 zap_remove_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx));
-
-			/* it is possible we should do the fastpath test here like in zfs_remove*/
-			zfs_znode_delete(zp, tx);
-
-			dmu_tx_commit(tx);
-		  out:
-			if (xzp)
-				VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
-
-
-			/* CODE from zfs_remove */
+			/* CODE */
+			zfs_rmnode(zp);
+			/* CODE */
 
 			rw_exit(&zfsvfs->z_teardown_inactive_lock);
 
@@ -1720,9 +1657,10 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	zfsvfs_t *zfsvfs = NULL;
 	static int has_warned = 0;
 	reentry_threads_t *reentry;
+	boolean_t exception;
+	boolean_t fastpath;
 	ASSERT(zp != NULL);
 
-	dprintf("+vnop_reclaim %p type %d\n", vp, vnode_vtype(vp));
 
 	/* Destroy the vm object and flush associated pages. */
 #ifndef __APPLE__
@@ -1731,6 +1669,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 	/* Already been released? */
 	zp = VTOZ(vp);
+	dprintf("+vnop_reclaim zp %p/%p type %d\n", zp, vp, vnode_vtype(vp));
 	if (!zp) goto out;
 
 	zfsvfs = zp->z_zfsvfs;
@@ -1768,20 +1707,34 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	} /* for all threads */
 	mutex_exit(&zfsvfs->z_reentry_lock);
 
+	/* Work out if we can not call zfs_rmnode directly */
+	mutex_enter(&zp->z_lock);
+	exception = ((zp->z_reclaim_reentry == B_TRUE) &&
+				 (zp->z_sa_hdl != NULL) &&
+				 zp->z_unlinked) ? B_TRUE : B_FALSE;
+	fastpath = zp->z_fastpath;
+	mutex_exit(&zp->z_lock);
+
+	dprintf("+vnop_reclaim zp %p/%p exception %d fast %d unlinked %d sa_hdl %p\n",
+		   zp, vp, exception, zp->z_fastpath, zp->z_unlinked, zp->z_sa_hdl);
 	/*
 	 * This will release as much as it can, based on reclaim_reentry,
 	 * if we are from fastpath, we do not call free here, as zfs_remove
 	 * calls zfs_znode_delete() directly.
 	 * zfs_zinactive() will leave earlier if z_reclaim_reentry is true.
 	 */
-	if (zp->z_fastpath == B_FALSE) {
+	if (fastpath == B_FALSE) {
 
-		rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-		if (zp->z_sa_hdl == NULL)
-			zfs_znode_free(zp);
-		else
-			zfs_zinactive(zp);
-		rw_exit(&zfsvfs->z_teardown_inactive_lock);
+		/* We can not call, zfs_rmnode, so check for this case */
+		if (exception == B_FALSE) {
+
+			rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+			if (zp->z_sa_hdl == NULL)
+				zfs_znode_free(zp);
+			else
+				zfs_zinactive(zp);
+			rw_exit(&zfsvfs->z_teardown_inactive_lock);
+		}
 	}
 
 	/*
@@ -1794,15 +1747,13 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	atomic_dec_64(&vnop_num_vnodes);
 
 	/* Direct zfs_remove? We are done */
-	if (zp->z_fastpath == B_TRUE) goto out;
+	if (fastpath == B_TRUE) goto out;
 
 	/* If we are reentry, and sa_hdl, and unlinked, then we did not finish
 	 * in zfs_rmnode, so add us to the reclaim_list to be completed
 	 * by the reclaim_thread
 	 */
-	if ((zp->z_reclaim_reentry != B_TRUE) &&
-		(zp->z_sa_hdl != NULL) &&
-		(zp->z_unlinked)) {
+	if (exception == B_TRUE) {
 
 		/* We could not release, due to z_inactive wanting to call dmu_tx,
 		 * we then need to add to reclaim_list for the reclaim_thread to

@@ -619,6 +619,7 @@ zfs_rmnode(znode_t *zp)
 	/*
 	 * If this is an attribute directory, purge its contents.
 	 */
+
 	if ((IFTOVT((mode_t)zp->z_mode) == VDIR) &&
 		(zp->z_pflags & ZFS_XATTR)) {
 
@@ -628,8 +629,7 @@ zfs_rmnode(znode_t *zp)
 			 * Leave it in the unlinked set.
 			 */
 			zfs_znode_dmu_fini(zp);
-			if (zp->z_reclaim_reentry == B_FALSE)
-				zfs_znode_free(zp);
+			zfs_znode_free(zp);
 			return;
 		}
 	}
@@ -644,8 +644,7 @@ zfs_rmnode(znode_t *zp)
 		 */
 		zfs_znode_dmu_fini(zp);
 		/* Can't release zp before vp, so tell VFS to release */
-		if (zp->z_reclaim_reentry == B_FALSE)
-			zfs_znode_free(zp);
+		zfs_znode_free(zp);
 		return;
 	}
 
@@ -659,16 +658,6 @@ zfs_rmnode(znode_t *zp)
 		error = zfs_zget(zfsvfs, xattr_obj, &xzp);
 		ASSERT(error == 0);
 	}
-
-
-	/*
-	 * If z_reclaim_reentry is set, then we would deadlock trying to start
-	 * another TX here (the same thread that called vnode_create is already
-	 * in a TX. So we simply stop now, and it will be places on the
-	 * reclaim_list by vnop_reclaim, and the final TX will be handled by
-	 * the reclaim_thread.
-	 */
-	if (zp->z_reclaim_reentry == B_TRUE) return;
 
 	acl_obj = zfs_external_acl(zp);
 
