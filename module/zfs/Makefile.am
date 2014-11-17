@@ -98,6 +98,8 @@ zfs_SOURCES = \
 	vdev.c \
 	vdev_cache.c \
 	vdev_disk.c \
+	vdev_iokit.c \
+	vdev_iokit_util.cpp \
 	vdev_file.c \
 	vdev_label.c \
 	vdev_mirror.c \

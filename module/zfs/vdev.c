@@ -61,7 +61,11 @@ static vdev_ops_t *vdev_ops_table[] = {
 	&vdev_mirror_ops,
 	&vdev_replacing_ops,
 	&vdev_spare_ops,
+#ifdef _KERNEL
+	&vdev_iokit_ops,
+#else
 	&vdev_disk_ops,
+#endif
 	&vdev_file_ops,
 	&vdev_missing_ops,
 	&vdev_hole_ops,

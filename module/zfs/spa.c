@@ -71,6 +71,7 @@
 #include <sys/zvol.h>
 
 #ifdef	_KERNEL
+#include <sys/vdev_iokit.h>
 #include <sys/bootprops.h>
 #include <sys/callb.h>
 #include <sys/cpupart.h>
@@ -3794,18 +3795,25 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
  * during the system boot up time.
  */
 
-#if 0
+//extern int vdev_disk_read_rootlabel(char *, char *, nvlist_t **);
 
-extern int vdev_disk_read_rootlabel(char *, char *, nvlist_t **);
-
-static nvlist_t *
-spa_generate_rootconf(char *devpath, char *devid, uint64_t *guid)
+//(char *devpath, char *devid, uint64_t *guid)
+extern nvlist_t *
+spa_generate_rootconf(void *vdev_tsd, uint64_t *guid)
 {
 	nvlist_t *config;
 	nvlist_t *nvtop, *nvroot;
 	uint64_t pgid;
+	vdev_iokit_t * dvd = (vdev_iokit_t *)vdev_tsd;
 
+	if (!dvd)
+		return (NULL);
+
+#if 0
 	if (vdev_disk_read_rootlabel(devpath, devid, &config) != 0)
+		return (NULL);
+#endif
+	if (vdev_iokit_read_label(dvd, &config) != 0)
 		return (NULL);
 
 	/*
@@ -3854,7 +3862,13 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 		nvlist_t *label;
 		uint64_t label_txg;
 
+#if 0
 		if (vdev_disk_read_rootlabel(vd->vdev_physpath, vd->vdev_devid,
+		    &label) != 0)
+			return;
+#endif
+
+		if (vdev_iokit_read_rootlabel(vd->vdev_physpath, vd->vdev_devid,
 		    &label) != 0)
 			return;
 
@@ -3872,8 +3886,6 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 	}
 }
 
-#endif
-
 /*
  * Import a root pool.
  *
@@ -3886,20 +3898,28 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
  * e.g.
  *	"/pci@1f,0/ide@d/disk@0,0:a"
  */
+//(char *devpath, char *devid)
 int
-spa_import_rootpool(char *devpath, char *devid)
+spa_import_rootpool(void *vdev_tsd)
 {
 	spa_t *spa;
-	vdev_t *rvd, *bvd /*, *avd = NULL*/;
+	vdev_t *rvd, *bvd , *avd = NULL;
 	nvlist_t *config = NULL, *nvtop;
 	uint64_t guid = 0, txg;
 	char *pname;
 	int error;
+	vdev_iokit_t * dvd = (vdev_iokit_t *)vdev_tsd;
+
+	// Check if the device handle is valid
+	if (!dvd)
+		return (SET_ERROR(EINVAL));
 
 	/*
 	 * Read the label from the boot device and generate a configuration.
 	 */
 	//config = spa_generate_rootconf(devpath, devid, &guid);
+	config = spa_generate_rootconf(vdev_tsd, &guid);
+
 #if defined(_OBP) && defined(_KERNEL)
 	if (config == NULL) {
 		if (strstr(devpath, "/iscsi/ssd") != NULL) {
@@ -3910,8 +3930,12 @@ spa_import_rootpool(char *devpath, char *devid)
 	}
 #endif
 	if (config == NULL) {
+		cmn_err(CE_NOTE, "Cannot read the pool label from '%p'",
+		    vdev_tsd);
+#if 0
 		cmn_err(CE_NOTE, "Cannot read the pool label from '%s'",
 		    devpath);
+#endif
 		return (SET_ERROR(EIO));
 	}
 
@@ -3962,7 +3986,6 @@ spa_import_rootpool(char *devpath, char *devid)
 	/*
 	 * Determine if there is a better boot device.
 	 */
-#if 0
 	avd = bvd;
 	spa_alt_rootvdev(rvd, &avd, &txg);
 	if (avd != bvd) {
@@ -3971,7 +3994,6 @@ spa_import_rootpool(char *devpath, char *devid)
 		error = SET_ERROR(EINVAL);
 		goto out;
 	}
-#endif
 
 	/*
 	 * If the boot device is part of a spare vdev then ensure that
@@ -3987,10 +4009,17 @@ spa_import_rootpool(char *devpath, char *devid)
 		goto out;
 	}
 
+#ifdef _KERNEL
+	zvol_create_minors(pname);
+#endif
+
 	error = 0;
 out:
 	spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
-	vdev_free(rvd);
+	if (rvd) {
+		vdev_free(rvd);
+		rvd = 0;
+	}
 	spa_config_exit(spa, SCL_ALL, FTAG);
 	mutex_exit(&spa_namespace_lock);
 
@@ -3998,7 +4027,7 @@ out:
 	return (error);
 }
 
-#endif
+#endif // _KERNEL
 
 /*
  * Import a non-root pool into the system.
@@ -5893,14 +5922,17 @@ spa_async_resume(spa_t *spa)
 static void
 spa_async_dispatch(spa_t *spa)
 {
-    vnode_t *rootdir = getrootdir();
+#if 0
+	vnode_t *rootdir = getrootdir();
+#endif
 
 	mutex_enter(&spa->spa_async_lock);
 	if (spa->spa_async_tasks && !spa->spa_async_suspended &&
-	    spa->spa_async_thread == NULL &&
-	    rootdir != NULL && !vn_is_readonly(rootdir))
+	    spa->spa_async_thread == NULL) {
+	    /* && rootdir != NULL && !vn_is_readonly(rootdir)) */
 		spa->spa_async_thread = thread_create(NULL, 0,
 		    spa_async_thread, spa, 0, &p0, TS_RUN, maxclsyspri);
+	}
 	mutex_exit(&spa->spa_async_lock);
 }
 

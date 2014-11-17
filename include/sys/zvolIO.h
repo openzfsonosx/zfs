@@ -9,6 +9,8 @@ class net_lundman_zfs_zvol : public IOService
 	OSDeclareDefaultStructors(net_lundman_zfs_zvol)
 
 private:
+	bool mountedRootPool;
+	IOTimerEventSource * mountTimer;
 
 public:
 	virtual bool init(OSDictionary* dictionary = NULL);
@@ -20,6 +22,12 @@ public:
 	virtual bool createBlockStorageDevice(zvol_state_t *zv);
 	virtual bool destroyBlockStorageDevice(zvol_state_t *zv);
 	virtual bool updateVolSize(zvol_state_t *zv);
+
+	virtual bool zfs_check_mountroot();
+	virtual bool zfs_mountroot();
+	virtual bool isRootMounted();
+	virtual void clearMountTimer();
+	static void mountTimerFired(OSObject*, IOTimerEventSource*);
 };
 
 #include <IOKit/storage/IOBlockStorageDevice.h>
