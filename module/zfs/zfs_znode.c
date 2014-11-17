@@ -1570,37 +1570,60 @@ zfs_zinactive(znode_t *zp)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	uint64_t z_id = zp->z_id;
+	int takelock = 0;
 
 	ASSERT(zp->z_sa_hdl);
 
-	ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
+	/* Fastpath: Don't grab locks if we are from reclaim thread to mop up */
+	if ((zp->z_reclaim_reentry == B_TRUE) &&
+		(zp->z_sa_hdl != NULL) &&
+		zp->z_unlinked) {
+		zfs_rmnode(zp);
+        return;
+    }
 
-	mutex_enter(&zp->z_lock);
+	/*
+	 * These locks may already be taken by ourselves, through vnode_create
+	 * reentry.
+	 */
+
+	if (zp->z_reclaim_reentry == B_FALSE)
+		takelock = 1;
+
+	if (takelock) {
+		ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
+		mutex_enter(&zp->z_lock);
+	}
 
 	/*
 	 * If this was the last reference to a file with no links,
 	 * remove the file from the file system.
 	 */
 	if (zp->z_unlinked) {
-		mutex_exit(&zp->z_lock);
-		ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
+		if (takelock) {
+			mutex_exit(&zp->z_lock);
+			ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
+		}
 		zfs_rmnode(zp);
 		return;
 	}
 
-	mutex_exit(&zp->z_lock);
+	if (takelock) mutex_exit(&zp->z_lock);
 	zfs_znode_dmu_fini(zp);
-	ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
+	if (takelock) ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 	zfs_znode_free(zp);
 }
 
 void
 zfs_znode_free(znode_t *zp)
 {
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-	ASSERT(zp->z_sa_hdl == NULL);
-
+	mutex_enter(&zfsvfs->z_znodes_lock);
+	zp->z_vnode = NULL;
 	POINTER_INVALIDATE(&zp->z_zfsvfs);
+	list_remove(&zfsvfs->z_all_znodes, zp); /* XXX */
+	mutex_exit(&zfsvfs->z_znodes_lock);
 
 	if (zp->z_acl_cached) {
 		zfs_acl_free(zp->z_acl_cached);

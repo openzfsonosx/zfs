@@ -41,6 +41,23 @@ extern "C" {
 struct zfs_sb;
 struct znode;
 
+#ifdef __APPLE__
+/*
+ * Due to the reentrant habit of vnode_create(), which can call
+ * vnop_inactive, vnop_fsync, vnop_pageout and vnop_reclaim, while
+ * the caller is in the middle of dmu_tx, the vnop_reclaim handler can
+ * not start a new dmu_tx. We keep a list of "threads" currently inside
+ * vnode_create so that we can detect this situation, and if so, defer
+ * the final TX of zfs_rmnode into the reclaim_thread.
+ */
+struct reentry_threads {
+	list_node_t reentry_node;
+	thread_t id;
+};
+typedef struct reentry_threads reentry_threads_t;
+#endif
+
+
 typedef struct zfsvfs zfsvfs_t;
 
 struct zfsvfs {
@@ -84,12 +101,15 @@ struct zfsvfs {
         uint64_t        z_version;
         uint64_t        z_shares_dir;   /* hidden shares dir */
         kmutex_t	    z_lock;
+#ifdef __APPLE__
         kmutex_t	    z_reclaim_list_lock; /* lock for using z_reclaim_list*/
         list_t          z_reclaim_znodes;/* all reclaimed vnodes in the fs*/
         boolean_t       z_reclaim_thread_exit;
         kmutex_t		z_reclaim_thr_lock;
-        kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
-
+    	kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
+        kmutex_t	    z_reentry_lock;    /* lock for using z_reentry_threads */
+	    list_t          z_reentry_threads; /* List of threads in vnode_create */
+#endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
         uint64_t	    z_replay_eof;	/* New end of file - replay only */

@@ -480,7 +480,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
         dmu_object_info_t doi;
         znode_t                *zp;
         int                error;
-
+		int x=0;
         printf("ZFS: unlinked drain\n");
 
         /*
@@ -515,12 +515,12 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
                  */
                 if (error != 0)
                         continue;
-
+				x++;
                 zp->z_unlinked = B_TRUE;
                 VN_RELE(ZTOV(zp));
         }
         zap_cursor_fini(&zc);
-        printf("ZFS: unlinked drain completed.\n");
+        printf("ZFS: unlinked drain completed (%u).\n", x);
 }
 
 
@@ -619,17 +619,19 @@ zfs_rmnode(znode_t *zp)
 	/*
 	 * If this is an attribute directory, purge its contents.
 	 */
-	if (IFTOVT((mode_t)zp->z_mode) == VDIR &&
-	    (zp->z_pflags & ZFS_XATTR)) {
+	if ((IFTOVT((mode_t)zp->z_mode) == VDIR) &&
+		(zp->z_pflags & ZFS_XATTR)) {
 
-        if (!ZTOV(zp) || zfs_purgedir(zp) != 0) {
-            /*
-             * Not enough space to delete some xattrs.
-             * Leave it in the unlinked set.
-             */
-            zfs_znode_dmu_fini(zp);
-            return;
-        }
+		if (zfs_purgedir(zp) != 0) {
+			/*
+			 * Not enough space to delete some xattrs.
+			 * Leave it in the unlinked set.
+			 */
+			zfs_znode_dmu_fini(zp);
+			if (zp->z_reclaim_reentry == B_FALSE)
+				zfs_znode_free(zp);
+			return;
+		}
 	}
 
 	/*
@@ -642,8 +644,8 @@ zfs_rmnode(znode_t *zp)
 		 */
 		zfs_znode_dmu_fini(zp);
 		/* Can't release zp before vp, so tell VFS to release */
-		vnode_recycle(ZTOV(zp));
-		//zfs_znode_free(zp);
+		if (zp->z_reclaim_reentry == B_FALSE)
+			zfs_znode_free(zp);
 		return;
 	}
 
@@ -652,11 +654,21 @@ zfs_rmnode(znode_t *zp)
 	 * the xattr dir.
 	 */
 	error = sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
-	    &xattr_obj, sizeof (xattr_obj));
+		&xattr_obj, sizeof (xattr_obj));
 	if (error == 0 && xattr_obj) {
 		error = zfs_zget(zfsvfs, xattr_obj, &xzp);
 		ASSERT(error == 0);
 	}
+
+
+	/*
+	 * If z_reclaim_reentry is set, then we would deadlock trying to start
+	 * another TX here (the same thread that called vnode_create is already
+	 * in a TX. So we simply stop now, and it will be places on the
+	 * reclaim_list by vnop_reclaim, and the final TX will be handled by
+	 * the reclaim_thread.
+	 */
+	if (zp->z_reclaim_reentry == B_TRUE) return;
 
 	acl_obj = zfs_external_acl(zp);
 
@@ -683,9 +695,7 @@ zfs_rmnode(znode_t *zp)
 		 */
 		dmu_tx_abort(tx);
 		zfs_znode_dmu_fini(zp);
-		/* Can't release zp before vp, so tell VFS to release */
-		vnode_recycle(ZTOV(zp));
-		//zfs_znode_free(zp);
+		zfs_znode_free(zp);
 		goto out;
 	}
 
@@ -704,7 +714,6 @@ zfs_rmnode(znode_t *zp)
 	VERIFY3U(0, ==,
 	    zap_remove_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx));
 
-	/* it is possible we should do the fastpath test here like in zfs_remove*/
 	zfs_znode_delete(zp, tx);
 
 	dmu_tx_commit(tx);
@@ -842,7 +851,8 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 	int count = 0;
 	int error;
 
-	dnlc_remove(ZTOV(dzp), dl->dl_name);
+	if (ZTOV(dzp))
+		dnlc_remove(ZTOV(dzp), dl->dl_name);
 
 	if (!(flag & ZRENAMING)) {
 		if (vn_vfswlock(vp))		/* prevent new mounts on zp */

@@ -2064,8 +2064,6 @@ top:
 #endif
 	}
 
-	//delete_now = 0;
-
 	dprintf("vnop_remove: may_delete_now is %d, delete_now %d\n",
 		   may_delete_now, delete_now);
 
