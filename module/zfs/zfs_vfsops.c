@@ -63,9 +63,9 @@
 
 #include <sys/zap.h>
 
-#ifndef __APPLE__
 #include <sys/sa.h>
 #include <sys/sa_impl.h>
+#ifndef __APPLE__
 #include <sys/varargs.h>
 #include <sys/policy.h>
 #include <sys/atomic.h>
@@ -865,7 +865,6 @@ zfs_space_delta_cb(dmu_object_type_t bonustype, void *data,
 		*userp = znp->zp_uid;
 		*groupp = znp->zp_gid;
 	} else {
-#if 0
 		int hdrsize;
 		sa_hdr_phys_t *sap = data;
 		sa_hdr_phys_t sa = *sap;
@@ -901,7 +900,6 @@ zfs_space_delta_cb(dmu_object_type_t bonustype, void *data,
 			*userp = BSWAP_64(*userp);
 			*groupp = BSWAP_64(*groupp);
 		}
-#endif
 	}
 	return (0);
 }
