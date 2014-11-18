@@ -1570,47 +1570,24 @@ zfs_zinactive(znode_t *zp)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	uint64_t z_id = zp->z_id;
-	int takelock = 0;
 
 	ASSERT(zp->z_sa_hdl);
-
-	/* Fastpath: Don't grab locks if we are from reclaim thread to mop up */
-	if ((zp->z_reclaim_reentry == B_TRUE) &&
-		(zp->z_sa_hdl != NULL) &&
-		zp->z_unlinked) {
-		zfs_rmnode(zp);
-        return;
-    }
 
 	/*
 	 * These locks may already be taken by ourselves, through vnode_create
 	 * reentry.
 	 */
 
-	if (zp->z_reclaim_reentry == B_FALSE)
-		takelock = 1;
-
-	if (takelock) {
-		ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
-		mutex_enter(&zp->z_lock);
-	}
-
 	/*
 	 * If this was the last reference to a file with no links,
 	 * remove the file from the file system.
 	 */
 	if (zp->z_unlinked) {
-		if (takelock) {
-			mutex_exit(&zp->z_lock);
-			ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
-		}
 		zfs_rmnode(zp);
 		return;
 	}
 
-	if (takelock) mutex_exit(&zp->z_lock);
 	zfs_znode_dmu_fini(zp);
-	if (takelock) ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 	zfs_znode_free(zp);
 }
 
