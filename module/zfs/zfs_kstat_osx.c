@@ -64,6 +64,7 @@ osx_kstat_t osx_kstat = {
 	{ "create_negatives",			KSTAT_DATA_UINT64 },
 	{ "reclaim_throttle",			KSTAT_DATA_UINT64 },
 	{ "force_formd_normalized",		KSTAT_DATA_UINT64 },
+	{ "skip_unlinked_drain",		KSTAT_DATA_UINT64 },
 
 	{ "zfs_arc_max",				KSTAT_DATA_UINT64 },
 	{ "zfs_arc_min",				KSTAT_DATA_UINT64 },
@@ -148,11 +149,14 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		/* Darwin */
 
 		debug_vnop_osx_printf = ks->darwin_debug.value.ui64;
+		if (ks->darwin_debug.value.ui64 == 9119)
+			panic("ZFS: User requested panic\n");
 		zfs_vnop_ignore_negatives = ks->darwin_ignore_negatives.value.ui64;
 		zfs_vnop_ignore_positives = ks->darwin_ignore_positives.value.ui64;
 		zfs_vnop_create_negatives = ks->darwin_create_negatives.value.ui64;
 		zfs_vnop_reclaim_throttle = ks->darwin_reclaim_throttle.value.ui64;
 		zfs_vnop_force_formd_normalized_output = ks->darwin_force_formd_normalized.value.ui64;
+		zfs_vnop_skip_unlinked_drain = ks->darwin_skip_unlinked_drain.value.ui64;
 
 		/* ARC */
 		arc_kstat_update(ksp, rw);
@@ -212,6 +216,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->darwin_create_negatives.value.ui64       = zfs_vnop_create_negatives;
 		ks->darwin_reclaim_throttle.value.ui64       = zfs_vnop_reclaim_throttle;
 		ks->darwin_force_formd_normalized.value.ui64 = zfs_vnop_force_formd_normalized_output;
+		ks->darwin_skip_unlinked_drain.value.ui64    = zfs_vnop_skip_unlinked_drain;
 
 		/* ARC */
 		arc_kstat_update(ksp, rw);

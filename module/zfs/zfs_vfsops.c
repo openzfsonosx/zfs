@@ -109,6 +109,7 @@
 
 unsigned int zfs_vfs_suspend_fs_begin_delay = 2;
 unsigned int zfs_vfs_suspend_fs_end_delay = 2;
+unsigned int zfs_vnop_skip_unlinked_drain = 0;
 
 int  zfs_module_start(kmod_info_t *ki, void *data);
 int  zfs_module_stop(kmod_info_t *ki, void *data);
@@ -865,6 +866,7 @@ zfs_space_delta_cb(dmu_object_type_t bonustype, void *data,
 		*userp = znp->zp_uid;
 		*groupp = znp->zp_gid;
 	} else {
+#if 1
 		int hdrsize;
 		sa_hdr_phys_t *sap = data;
 		sa_hdr_phys_t sa = *sap;
@@ -900,6 +902,7 @@ zfs_space_delta_cb(dmu_object_type_t bonustype, void *data,
 			*userp = BSWAP_64(*userp);
 			*groupp = BSWAP_64(*groupp);
 		}
+#endif
 	}
 	return (0);
 }
@@ -1313,8 +1316,9 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 		 * allow replays to succeed.
 		 */
 #if 1
-		if (!vfs_isrdonly(zfsvfs->z_vfs))
-			zfs_unlinked_drain(zfsvfs);
+		if (!zfs_vnop_skip_unlinked_drain)
+			if (!vfs_isrdonly(zfsvfs->z_vfs))
+				zfs_unlinked_drain(zfsvfs);
 #endif
 
 		/*
