@@ -756,6 +756,26 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 			free(path);
 		}
 
+		/* If we mount without DA, it fails to create .Trashes folder, so
+		 * we manually attempt to create it here until proper integration
+		 * is complete
+		 */
+			{
+				char *path;
+				struct stat stsb;
+				if (asprintf(&path,
+							 "%s/.Trashes", mountpoint) > 0) {
+
+					if (lstat(path, &stsb) != 0) { /* Not there */
+						if (!mkdir(path, (mode_t)0333))
+							(void)chmod(path, (mode_t)01333);
+					}
+					free(path);
+				}
+			}
+
+
+
 	}
 #endif
 
