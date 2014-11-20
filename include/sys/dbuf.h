@@ -220,7 +220,7 @@ typedef struct dmu_buf_impl {
 	 * Our link on the owner dnodes's dn_dbufs list.
 	 * Protected by its dn_dbufs_mtx.
 	 */
-	avl_node_t db_link;
+	list_node_t db_link;
 
 	/* Data which is unique to data (leaf) blocks: */
 
@@ -236,7 +236,7 @@ typedef struct dmu_buf_impl {
 } dmu_buf_impl_t;
 
 /* Note: the dbuf hash table is exposed only for the mdb module */
-#define	DBUF_MUTEXES 256
+#define	DBUF_MUTEXES 8192
 #define	DBUF_HASH_MUTEX(h, idx) (&(h)->hash_mutexes[(idx) & (DBUF_MUTEXES-1)])
 typedef struct dbuf_hash_table {
 	uint64_t hash_table_mask;
