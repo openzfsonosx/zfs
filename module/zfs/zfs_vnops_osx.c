@@ -1138,6 +1138,24 @@ osx_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	return (err);
 }
 
+static boolean_t zfs_isvnode_reentry(znode_t *zp)
+{
+	reentry_threads_t *reentry;
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+	/* Check to see if this thread is currently inside vnode_create */
+	mutex_enter(&zfsvfs->z_reentry_lock);
+	for (reentry = list_head(&zfsvfs->z_reentry_threads);
+		 reentry;
+		 reentry = list_next(&zfsvfs->z_reentry_threads, reentry)) {
+		if (reentry->id == curthread) {
+			mutex_exit(&zfsvfs->z_reentry_lock);
+			return B_TRUE;
+		}
+	} /* for all threads */
+	mutex_exit(&zfsvfs->z_reentry_lock);
+	return B_FALSE;
+}
 
 static int
 zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
@@ -1389,7 +1407,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 * If we are coming via the vnode_create()->vclean() path, we can not
 	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
 	 */
-	if (vnode_isrecycled(ap->a_vp)) {
+	if (vnode_isrecycled(ap->a_vp) || (zfs_isvnode_reentry(zp) == B_TRUE)) {
 		if (!(flags & UPL_NOCOMMIT))
 			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
 		dprintf("ZFS: vnop_pageout: abort on vnode_create\n");
@@ -1482,7 +1500,6 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 
 
 
-
 static int
 zfs_vnop_inactive(struct vnop_inactive_args *ap)
 #if 0
@@ -1503,38 +1520,7 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 
 	zfsvfs = zp->z_zfsvfs;
 
-	if (vnode_isrecycled(ap->a_vp)) {
-		/*
-		 * We can not call inactive at this time, as we are inside
-		 * vnode_create()->vclean() path. But since we are only here to
-		 * sync out atime, and we know vnop_reclaim will called next.
-		 *
-		 * However, we can cheat a little, by looking inside zfs_inactive
-		 * we can take the fast exits here as well, and only keep
-		 * node around for the syncing case
-		 */
-		rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-		if (zp->z_sa_hdl == NULL) {
-			/*
-			 * The fs has been unmounted, or we did a
-			 * suspend/resume and this file no longer exists.
-			 */
-			rw_exit(&zfsvfs->z_teardown_inactive_lock);
-			return 0;
-		}
-
-		mutex_enter(&zp->z_lock);
-		if (zp->z_unlinked) {
-			/*
-			 * Fast path to recycle a vnode of a removed file.
-			 */
-			mutex_exit(&zp->z_lock);
-			rw_exit(&zfsvfs->z_teardown_inactive_lock);
-			return 0;
-		}
-		mutex_exit(&zp->z_lock);
-		rw_exit(&zfsvfs->z_teardown_inactive_lock);
-
+	if (vnode_isrecycled(ap->a_vp) || (zfs_isvnode_reentry(zp) == B_TRUE)) {
 		return (0);
 	}
 
@@ -1656,7 +1642,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	znode_t	*zp = NULL;
 	zfsvfs_t *zfsvfs = NULL;
 	static int has_warned = 0;
-	reentry_threads_t *reentry;
 	boolean_t exception;
 	boolean_t fastpath;
 	ASSERT(zp != NULL);
@@ -1694,18 +1679,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	 * we would call dmu_tx, so this needs to be deferred
 	 */
 
-	zp->z_reclaim_reentry = B_FALSE;
-	/* Check to see if this thread is currently inside vnode_create */
-	mutex_enter(&zfsvfs->z_reentry_lock);
-	for (reentry = list_head(&zfsvfs->z_reentry_threads);
-		 reentry;
-		 reentry = list_next(&zfsvfs->z_reentry_threads, reentry)) {
-		if (reentry->id == curthread) {
-			zp->z_reclaim_reentry = B_TRUE;
-			break;
-		}
-	} /* for all threads */
-	mutex_exit(&zfsvfs->z_reentry_lock);
+	zp->z_reclaim_reentry = zfs_isvnode_reentry(zp);
 
 	/* Work out if we can not call zfs_rmnode directly */
 	mutex_enter(&zp->z_lock);
