@@ -473,15 +473,14 @@ zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 * (force) umounted the file system.
 */
 void
-zfs_unlinked_drain(zfsvfs_t *zfsvfs)
+zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
 {
         zap_cursor_t        zc;
         zap_attribute_t zap;
         dmu_object_info_t doi;
         znode_t                *zp;
         int                error;
-		int x=0;
-        printf("ZFS: unlinked drain\n");
+		uint64_t entries=0;
 
         /*
          * Interate over the contents of the unlinked set.
@@ -515,12 +514,54 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
                  */
                 if (error != 0)
                         continue;
-				x++;
+				entries++;
                 zp->z_unlinked = B_TRUE;
+
                 VN_RELE(ZTOV(zp));
+
+				if (!(entries % 10000))
+					printf("ZFS: unlinked drain progress (%llu)\n", entries);
+
         }
         zap_cursor_fini(&zc);
-        printf("ZFS: unlinked drain completed (%u).\n", x);
+        printf("ZFS: unlinked drain completed (%llu).\n", entries);
+}
+
+
+static void zfs_unlinked_drain_start(void *arg)
+{
+	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
+	zfs_unlinked_drain_internal(zfsvfs);
+	thread_exit();
+}
+
+void
+zfs_unlinked_drain(zfsvfs_t *zfsvfs)
+{
+        zap_cursor_t        zc;
+        zap_attribute_t zap;
+        dmu_object_info_t doi;
+        znode_t                *zp;
+        int                error;
+		uint64_t entries=0;
+
+        /*
+         * Interate over the contents of the unlinked set.
+         */
+        for (zap_cursor_init(&zc, zfsvfs->z_os, zfsvfs->z_unlinkedobj);
+         zap_cursor_retrieve(&zc, &zap) == 0;
+         zap_cursor_advance(&zc)) {
+			entries++;
+        }
+        zap_cursor_fini(&zc);
+
+        printf("ZFS: unlinked drain (Total entries: %llu).\n", entries);
+
+		if (!entries) return;
+
+		(void) thread_create(NULL, 0, zfs_unlinked_drain_start, zfsvfs, 0, &p0,
+							 TS_RUN, minclsyspri);
+
 }
 
 
