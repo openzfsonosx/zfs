@@ -998,8 +998,8 @@ zpool_do_create(int argc, char **argv)
 				    altroot, poolname);
 			else
 #ifdef __APPLE__
-				(void) snprintf(buf, sizeof (buf), "/Volumes/%s",
-								poolname);
+				(void) snprintf(buf, sizeof (buf),
+				    "/Volumes/%s", poolname);
 #else
 				(void) snprintf(buf, sizeof (buf), "/%s",
 				    poolname);

@@ -2349,15 +2349,18 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 						firsthalf[len] = '\0';
 						(void) snprintf(propbuf,
 						    proplen,
-						    "%s/Volumes%s/%s/.zfs/snapshot/%s",
-						    root, str, firsthalf,
-						    &secondhalf[1]);
+						    "%s%s%s%s/.zfs/snapshot/%s",
+						    root, str, source == "" ?
+						    "/Volumes/" : "/",
+						    firsthalf, &secondhalf[1]);
 						free(firsthalf);
 					} else {
 						(void) snprintf(propbuf,
 						    proplen,
-						    "%s/Volumes%s/.zfs/snapshot/%s",
-						    root, str, &secondhalf[1]);
+						    "%s%s%s.zfs/snapshot/%s",
+						    root, str, source == "" ?
+						    "/Volumes/" : "/",
+						    &secondhalf[1]);
 					}
 				} else {
 					fprintf(stderr, "snapshot '%s' has "
@@ -2372,9 +2375,9 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 			else
 				(void) snprintf(propbuf, proplen, "%s%s%s%s",
 #ifdef __APPLE__
-								root, str, source == "" ? "/Volumes/" : "/",
+				    root, str, source == "" ? "/Volumes/" : "/",
 #else
-								root, str, relpath[0] == '@' ? "" : "/",
+				    root, str, relpath[0] == '@' ? "" : "/",
 #endif
 				    relpath);
 
