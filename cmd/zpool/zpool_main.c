@@ -997,8 +997,13 @@ zpool_do_create(int argc, char **argv)
 				(void) snprintf(buf, sizeof (buf), "%s/%s",
 				    altroot, poolname);
 			else
+#ifdef __APPLE__
+				(void) snprintf(buf, sizeof (buf),
+				    "/Volumes/%s", poolname);
+#else
 				(void) snprintf(buf, sizeof (buf), "/%s",
 				    poolname);
+#endif
 		} else {
 			if (altroot != NULL)
 				(void) snprintf(buf, sizeof (buf), "%s%s",
