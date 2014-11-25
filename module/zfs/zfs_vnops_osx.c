@@ -1186,7 +1186,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
 		dprintf("ZFS: vnop_pageout: abort on z_unmounted\n");
 		ZFS_EXIT(zfsvfs);
-		return EIO;
+		return ENXIO;
 	}
 
 
@@ -1195,7 +1195,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 
 	if (len <= 0) {
 		if (!(flags & UPL_NOCOMMIT))
-			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
+			(void) ubc_upl_abort_range(upl, upl_offset, len, 0);
 		err = EINVAL;
 		goto exit;
 	}
@@ -1345,7 +1345,7 @@ out:
 	if (!(flags & UPL_NOCOMMIT)) {
 		if (err)
 			ubc_upl_abort_range(upl, upl_offset, size,
-			    (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
+								(UPL_ABORT_FREE_ON_EMPTY)); /* dump? */
 		else
 			ubc_upl_commit_range(upl, upl_offset, size,
 								 (UPL_COMMIT_CLEAR_DIRTY |
@@ -1409,7 +1409,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 */
 	if (vnode_isrecycled(ap->a_vp) || (zfs_isvnode_reentry(zp) == B_TRUE)) {
 		if (!(flags & UPL_NOCOMMIT))
-			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
+			(void) ubc_upl_abort_range(upl, upl_offset, len, 0);
 		dprintf("ZFS: vnop_pageout: abort on vnode_create\n");
 		return EIO;
 	}
