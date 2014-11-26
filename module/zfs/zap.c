@@ -494,7 +494,19 @@ zap_open_leaf(uint64_t blkid, dmu_buf_t *db)
 
 	return (l);
 }
-extern unsigned int rwlock_detect_problem;
+
+
+#ifdef __APPLE__
+int rw_isinit(krwlock_t *rwlp)
+{
+#ifdef _KERNEL
+	if (rwlp->rw_pad != 0x012345678)
+		return 0;
+#endif
+	return 1;
+}
+#endif
+
 
 static int
 zap_get_leaf_byblk(zap_t *zap, uint64_t blkid, dmu_tx_t *tx, krw_t lt,
@@ -522,13 +534,14 @@ zap_get_leaf_byblk(zap_t *zap, uint64_t blkid, dmu_tx_t *tx, krw_t lt,
 	if (l == NULL)
 		l = zap_open_leaf(blkid, db);
 
-	rw_enter(&l->l_rwlock, lt);
-#ifdef _KERNEL
-	if (rwlock_detect_problem) {
-		printf("ZFS: Detected corrupt unlinked node!\n");
-		return EINVAL;
+#ifdef __APPLE__
+	if (!rw_isinit(&l->l_rwlock)) {
+		printf("ZFS: bad rwlock detected\n");
+		return ENXIO;
 	}
 #endif
+
+	rw_enter(&l->l_rwlock, lt);
 
 	/*
 	 * Must lock before dirtying, otherwise l->l_phys could change,
@@ -586,6 +599,12 @@ zap_deref_leaf(zap_t *zap, uint64_t h, dmu_tx_t *tx, krw_t lt, zap_leaf_t **lp)
 	ASSERT(zap->zap_dbuf == NULL ||
 	    zap->zap_f.zap_phys == zap->zap_dbuf->db_data);
 	ASSERT3U(zap->zap_f.zap_phys->zap_magic, ==, ZAP_MAGIC);
+#ifdef __APPLE__
+	if (zap->zap_f.zap_phys->zap_magic != ZAP_MAGIC) {
+		printf("ZFS: defer_leaf bad zap detected\n");
+		return ENXIO;
+	}
+#endif
 	idx = ZAP_HASH_IDX(h, zap->zap_f.zap_phys->zap_ptrtbl.zt_shift);
 	err = zap_idx_to_blk(zap, idx, &blk);
 	if (err != 0)

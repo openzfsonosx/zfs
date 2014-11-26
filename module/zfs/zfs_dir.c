@@ -598,9 +598,8 @@ zfs_purgedir(znode_t *dzp)
 		    ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
 		if (error) {
 
-			if (rwlock_detect_problem) {
-				rwlock_detect_problem=0;
-				printf("ZFS: Detected problem with dir %llu\n",
+			if ((error == ENXIO)) {
+				printf("ZFS: Detected problem with item %llu\n",
 					   dzp->z_id);
 			}
 
