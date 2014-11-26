@@ -578,6 +578,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
  *	Also, it assumes the directory contents is *only* regular
  *	files.
  */
+extern unsigned int rwlock_detect_problem;
 static int
 zfs_purgedir(znode_t *dzp)
 {
@@ -596,6 +597,13 @@ zfs_purgedir(znode_t *dzp)
 		error = zfs_zget(zfsvfs,
 		    ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
 		if (error) {
+
+			if (rwlock_detect_problem) {
+				rwlock_detect_problem=0;
+				printf("ZFS: Detected problem with dir %llu\n",
+					   dzp->z_id);
+			}
+
 			skipped += 1;
 			continue;
 		}

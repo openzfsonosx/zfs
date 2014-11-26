@@ -494,6 +494,7 @@ zap_open_leaf(uint64_t blkid, dmu_buf_t *db)
 
 	return (l);
 }
+extern unsigned int rwlock_detect_problem;
 
 static int
 zap_get_leaf_byblk(zap_t *zap, uint64_t blkid, dmu_tx_t *tx, krw_t lt,
@@ -522,6 +523,13 @@ zap_get_leaf_byblk(zap_t *zap, uint64_t blkid, dmu_tx_t *tx, krw_t lt,
 		l = zap_open_leaf(blkid, db);
 
 	rw_enter(&l->l_rwlock, lt);
+#ifdef _KERNEL
+	if (rwlock_detect_problem) {
+		printf("ZFS: Detected corrupt unlinked node!\n");
+		return EINVAL;
+	}
+#endif
+
 	/*
 	 * Must lock before dirtying, otherwise l->l_phys could change,
 	 * causing ASSERT below to fail.
