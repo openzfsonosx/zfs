@@ -482,11 +482,8 @@ zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
         int                error;
 		uint64_t entries=0;
 
-        /*
-         * Interate over the contents of the unlinked set.
-         */
         for (zap_cursor_init(&zc, zfsvfs->z_os, zfsvfs->z_unlinkedobj);
-         zap_cursor_retrieve(&zc, &zap) == 0;
+			 zap_cursor_retrieve(&zc, &zap) == 0;
          zap_cursor_advance(&zc)) {
 
                 /*
@@ -495,9 +492,9 @@ zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
 
                 error = dmu_object_info(zfsvfs->z_os,
                  zap.za_first_integer, &doi);
-                if (error != 0)
-                        continue;
-
+                if (error != 0) {
+					continue;
+				}
                 ASSERT((doi.doi_type == DMU_OT_PLAIN_FILE_CONTENTS) ||
                  (doi.doi_type == DMU_OT_DIRECTORY_CONTENTS));
                 /*
@@ -512,12 +509,15 @@ zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
                  * directory. All we need to do is skip over them, since they
                  * are already in the system marked z_unlinked.
                  */
-                if (error != 0)
-                        continue;
+                if (error != 0) continue;
+
 				entries++;
                 zp->z_unlinked = B_TRUE;
 
                 VN_RELE(ZTOV(zp));
+
+				/* Call vnop_reclaim now to keep the unlinked order */
+				vnode_recycle(ZTOV(zp));
 
 				if (!(entries % 10000))
 					printf("ZFS: unlinked drain progress (%llu)\n", entries);
@@ -525,6 +525,7 @@ zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
         }
         zap_cursor_fini(&zc);
         printf("ZFS: unlinked drain completed (%llu).\n", entries);
+
 }
 
 
@@ -602,7 +603,6 @@ zfs_purgedir(znode_t *dzp)
 				printf("ZFS: Detected problem with item %llu\n",
 					   dzp->z_id);
 			}
-
 			skipped += 1;
 			continue;
 		}
@@ -643,6 +643,13 @@ zfs_purgedir(znode_t *dzp)
 	zap_cursor_fini(&zc);
 	if (error != ENOENT)
 		skipped += 1;
+
+	if (error == ENXIO) {
+		printf("ZFS: purgedir detected corruption. dropping %llu\n",
+			   dzp->z_id);
+		return 0; // Remove this dir anyway
+	}
+
 	return (skipped);
 }
 
