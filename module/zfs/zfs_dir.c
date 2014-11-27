@@ -516,11 +516,17 @@ zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
 
                 VN_RELE(ZTOV(zp));
 
+#ifdef __APPLE__
 				/* Call vnop_reclaim now to keep the unlinked order */
 				vnode_recycle(ZTOV(zp));
+#endif
 
 				if (!(entries % 10000))
 					printf("ZFS: unlinked drain progress (%llu)\n", entries);
+
+				/* Check if unmount is attempted, if so, abort to exit */
+				if (zfsvfs->z_unmounted) break;
+
 
         }
         zap_cursor_fini(&zc);
@@ -598,11 +604,12 @@ zfs_purgedir(znode_t *dzp)
 		error = zfs_zget(zfsvfs,
 		    ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
 		if (error) {
-
+#ifdef __APPLE__
 			if ((error == ENXIO)) {
 				printf("ZFS: Detected problem with item %llu\n",
 					   dzp->z_id);
 			}
+#endif
 			skipped += 1;
 			continue;
 		}
@@ -644,11 +651,13 @@ zfs_purgedir(znode_t *dzp)
 	if (error != ENOENT)
 		skipped += 1;
 
+#ifdef __APPLE__
 	if (error == ENXIO) {
 		printf("ZFS: purgedir detected corruption. dropping %llu\n",
 			   dzp->z_id);
 		return 0; // Remove this dir anyway
 	}
+#endif
 
 	return (skipped);
 }
