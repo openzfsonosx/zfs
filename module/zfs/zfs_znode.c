@@ -1568,9 +1568,6 @@ zfs_znode_delete(znode_t *zp, dmu_tx_t *tx)
 void
 zfs_zinactive(znode_t *zp)
 {
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	uint64_t z_id = zp->z_id;
-
 	ASSERT(zp->z_sa_hdl);
 
 	/*

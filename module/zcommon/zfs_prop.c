@@ -712,6 +712,7 @@ zfs_prop_align_right(zfs_prop_t prop)
 #if defined(_KERNEL) && defined(HAVE_SPL)
 
 #if 0
+#include <linux/module_compat.h>
 static int zcommon_init(void) { return 0; }
 static int zcommon_fini(void) { return 0; }
 

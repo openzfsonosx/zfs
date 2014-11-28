@@ -97,7 +97,7 @@ dbuf_cons(void *vdb, void *unused, int kmflag)
 	mutex_init(&db->db_mtx, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&db->db_changed, NULL, CV_DEFAULT, NULL);
 	refcount_create(&db->db_holds);
-	db->db_creation = gethrtime();
+	list_link_init(&db->db_link);
 	return (0);
 }
 
@@ -383,7 +383,7 @@ dbuf_verify(dmu_buf_impl_t *db)
 		ASSERT3U(db->db_level, <, dn->dn_nlevels);
 		ASSERT(db->db_blkid == DMU_BONUS_BLKID ||
 		    db->db_blkid == DMU_SPILL_BLKID ||
-		    !avl_is_empty(&dn->dn_dbufs));
+		    !list_is_empty(&dn->dn_dbufs));
 	}
 	if (db->db_blkid == DMU_BONUS_BLKID) {
 		ASSERT(dn != NULL);
@@ -568,8 +568,6 @@ dbuf_read_done(zio_t *zio, arc_buf_t *buf, void *vdb)
 	cv_broadcast(&db->db_changed);
 	dbuf_rele_and_unlock(db, NULL);
 }
-int bonusholds=0;
-int dmubufholds=0;
 
 static int
 dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
@@ -594,7 +592,6 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
 		ASSERT3U(bonuslen, <=, db->db.db_size);
 		db->db.db_data = zio_buf_alloc(DN_MAX_BONUSLEN);
 		arc_space_consume(DN_MAX_BONUSLEN, ARC_SPACE_OTHER);
-        bonusholds++;
 		if (bonuslen < DN_MAX_BONUSLEN)
 			bzero(db->db.db_data, DN_MAX_BONUSLEN);
 		if (bonuslen)
@@ -810,7 +807,6 @@ dbuf_fix_old_data(dmu_buf_impl_t *db, uint64_t txg)
 		/* Note that the data bufs here are zio_bufs */
 		dr->dt.dl.dr_data = zio_buf_alloc(DN_MAX_BONUSLEN);
 		arc_space_consume(DN_MAX_BONUSLEN, ARC_SPACE_OTHER);
-        bonusholds++;
 		bcopy(db->db.db_data, dr->dt.dl.dr_data, DN_MAX_BONUSLEN);
 	} else if (refcount_count(&db->db_holds) > db->db_dirtycnt) {
 		int size = db->db.db_size;
@@ -868,30 +864,21 @@ dbuf_unoverride(dbuf_dirty_record_t *dr)
  * receive; see comment below for details.
  */
 void
-dbuf_free_range(dnode_t *dn, uint64_t start_blkid, uint64_t end_blkid,
-    dmu_tx_t *tx)
+dbuf_free_range(dnode_t *dn, uint64_t start, uint64_t end, dmu_tx_t *tx)
 {
-	dmu_buf_impl_t *db, *db_next, db_search;
+	dmu_buf_impl_t *db, *db_next;
 	uint64_t txg = tx->tx_txg;
-	avl_index_t where;
+	boolean_t freespill =
+		(start == DMU_SPILL_BLKID || end == DMU_SPILL_BLKID);
 
-	if (end_blkid > dn->dn_maxblkid && (end_blkid != DMU_SPILL_BLKID))
-		end_blkid = dn->dn_maxblkid;
-	dprintf_dnode(dn, "start=%llu end=%llu\n", start_blkid, end_blkid);
-
-	db_search.db_level = 0;
-	db_search.db_blkid = start_blkid;
-	db_search.db_creation = 0;
+	if (end > dn->dn_maxblkid && !freespill)
+		end = dn->dn_maxblkid;
+	dprintf_dnode(dn, "start=%llu end=%llu\n", start, end);
 
 	mutex_enter(&dn->dn_dbufs_mtx);
-	if (start_blkid >= dn->dn_unlisted_l0_blkid) {
+	if (start >= dn->dn_unlisted_l0_blkid * dn->dn_datablksz &&
+		!freespill) {
 		/* There can't be any dbufs in this range; no need to search. */
-#ifdef DEBUG
-		db = avl_find(&dn->dn_dbufs, &db_search, &where);
-		ASSERT3P(db, ==, NULL);
-		db = avl_nearest(&dn->dn_dbufs, where, AVL_AFTER);
-		ASSERT(db == NULL || db->db_level > 0);
-#endif
 		mutex_exit(&dn->dn_dbufs_mtx);
 		return;
 	} else if (dmu_objset_is_receiving(dn->dn_objset)) {
@@ -904,19 +891,14 @@ dbuf_free_range(dnode_t *dn, uint64_t start_blkid, uint64_t end_blkid,
 		 */
 		atomic_inc_64(&zfs_free_range_recv_miss);
 	}
-
-	db = avl_find(&dn->dn_dbufs, &db_search, &where);
-	ASSERT3P(db, ==, NULL);
-	db = avl_nearest(&dn->dn_dbufs, where, AVL_AFTER);
-
-	for (; db != NULL; db = db_next) {
-		db_next = AVL_NEXT(&dn->dn_dbufs, db);
+	for (db = list_head(&dn->dn_dbufs); db != NULL; db = db_next) {
+		db_next = list_next(&dn->dn_dbufs, db);
 		ASSERT(db->db_blkid != DMU_BONUS_BLKID);
 
-		if (db->db_level != 0 || db->db_blkid > end_blkid) {
-			break;
-		}
-		ASSERT3U(db->db_blkid, >=, start_blkid);
+		if (db->db_level != 0)
+			continue;
+		if ((db->db_blkid < start || db->db_blkid > end) && !freespill)
+			continue;
 
 		/* found a level 0 buffer in the range */
 		mutex_enter(&db->db_mtx);
@@ -926,8 +908,8 @@ dbuf_free_range(dnode_t *dn, uint64_t start_blkid, uint64_t end_blkid,
 		}
 
 		if (db->db_state == DB_UNCACHED ||
-		    db->db_state == DB_NOFILL ||
-		    db->db_state == DB_EVICTING) {
+			db->db_state == DB_NOFILL ||
+			db->db_state == DB_EVICTING) {
 			ASSERT(db->db.db_data == NULL);
 			mutex_exit(&db->db_mtx);
 			continue;
@@ -955,7 +937,7 @@ dbuf_free_range(dnode_t *dn, uint64_t start_blkid, uint64_t end_blkid,
 				 * contain new data when we sync.
 				 */
 				if (db->db_blkid != DMU_SPILL_BLKID &&
-				    db->db_blkid > dn->dn_maxblkid)
+					db->db_blkid > dn->dn_maxblkid)
 					dn->dn_maxblkid = db->db_blkid;
 				dbuf_unoverride(dr);
 			} else {
@@ -1651,7 +1633,6 @@ dbuf_clear(dmu_buf_impl_t *db)
 		if (db->db_blkid == DMU_BONUS_BLKID) {
 			zio_buf_free(db->db.db_data, DN_MAX_BONUSLEN);
 			arc_space_return(DN_MAX_BONUSLEN, ARC_SPACE_OTHER);
-            bonusholds--;
 		}
 		db->db.db_data = NULL;
 		db->db_state = DB_UNCACHED;
@@ -1667,7 +1648,7 @@ dbuf_clear(dmu_buf_impl_t *db)
 	dn = DB_DNODE(db);
 	dndb = dn->dn_dbuf;
 	if (db->db_blkid != DMU_BONUS_BLKID && MUTEX_HELD(&dn->dn_dbufs_mtx)) {
-		avl_remove(&dn->dn_dbufs, db);
+		list_remove(&dn->dn_dbufs, db);
 		(void) atomic_dec_32_nv(&dn->dn_dbufs_count);
 		membar_producer();
 		DB_DNODE_EXIT(db);
@@ -1812,7 +1793,6 @@ dbuf_create(dnode_t *dn, uint8_t level, uint64_t blkid,
 		db->db_state = DB_UNCACHED;
 		/* the bonus dbuf is not placed in the hash table */
 		arc_space_consume(sizeof (dmu_buf_impl_t), ARC_SPACE_OTHER);
-        dmubufholds++;
 		return (db);
 	} else if (blkid == DMU_SPILL_BLKID) {
 		db->db.db_size = (blkptr != NULL) ?
@@ -1840,14 +1820,13 @@ dbuf_create(dnode_t *dn, uint8_t level, uint64_t blkid,
 		mutex_exit(&dn->dn_dbufs_mtx);
 		return (odb);
 	}
-	avl_add(&dn->dn_dbufs, db);
+	list_insert_head(&dn->dn_dbufs, db);
 	if (db->db_level == 0 && db->db_blkid >=
 	    dn->dn_unlisted_l0_blkid)
 		dn->dn_unlisted_l0_blkid = db->db_blkid + 1;
 	db->db_state = DB_UNCACHED;
 	mutex_exit(&dn->dn_dbufs_mtx);
 	arc_space_consume(sizeof (dmu_buf_impl_t), ARC_SPACE_OTHER);
-    dmubufholds++;
 
 	if (parent && parent != dn->dn_dbuf)
 		dbuf_add_ref(parent, db);
@@ -1900,7 +1879,7 @@ dbuf_destroy(dmu_buf_impl_t *db)
 			DB_DNODE_ENTER(db);
 			dn = DB_DNODE(db);
 			mutex_enter(&dn->dn_dbufs_mtx);
-			avl_remove(&dn->dn_dbufs, db);
+			list_remove(&dn->dn_dbufs, db);
 			(void) atomic_dec_32_nv(&dn->dn_dbufs_count);
 			mutex_exit(&dn->dn_dbufs_mtx);
 			DB_DNODE_EXIT(db);
@@ -1918,6 +1897,7 @@ dbuf_destroy(dmu_buf_impl_t *db)
 	db->db_parent = NULL;
 	db->db_buf = NULL;
 
+	ASSERT(!list_link_active(&db->db_link));
 	ASSERT(db->db.db_data == NULL);
 	ASSERT(db->db_hash_next == NULL);
 	ASSERT(db->db_blkptr == NULL);
@@ -1925,7 +1905,6 @@ dbuf_destroy(dmu_buf_impl_t *db)
 
 	kmem_cache_free(dbuf_cache, db);
 	arc_space_return(sizeof (dmu_buf_impl_t), ARC_SPACE_OTHER);
-    dmubufholds--;
 }
 
 void
@@ -2532,7 +2511,6 @@ dbuf_sync_leaf(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 		if (*datap != db->db.db_data) {
 			zio_buf_free(*datap, DN_MAX_BONUSLEN);
 			arc_space_return(DN_MAX_BONUSLEN, ARC_SPACE_OTHER);
-            bonusholds--;
 		}
 		db->db_data_pending = NULL;
 		drp = &db->db_last_dirty;
@@ -3024,4 +3002,5 @@ EXPORT_SYMBOL(dmu_buf_set_user_ie);
 EXPORT_SYMBOL(dmu_buf_update_user);
 EXPORT_SYMBOL(dmu_buf_get_user);
 EXPORT_SYMBOL(dmu_buf_freeable);
+EXPORT_SYMBOL(dmu_buf_get_blkptr);
 #endif
