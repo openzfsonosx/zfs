@@ -109,7 +109,7 @@
 
 unsigned int zfs_vfs_suspend_fs_begin_delay = 2;
 unsigned int zfs_vfs_suspend_fs_end_delay = 2;
-unsigned int zfs_vnop_skip_unlinked_drain = 1;
+unsigned int zfs_vnop_skip_unlinked_drain = 0;
 
 int  zfs_module_start(kmod_info_t *ki, void *data);
 int  zfs_module_stop(kmod_info_t *ki, void *data);
