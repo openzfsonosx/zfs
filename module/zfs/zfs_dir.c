@@ -482,11 +482,8 @@ zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
         int                error;
 		uint64_t entries=0;
 
-        /*
-         * Interate over the contents of the unlinked set.
-         */
         for (zap_cursor_init(&zc, zfsvfs->z_os, zfsvfs->z_unlinkedobj);
-         zap_cursor_retrieve(&zc, &zap) == 0;
+			 zap_cursor_retrieve(&zc, &zap) == 0;
          zap_cursor_advance(&zc)) {
 
                 /*
@@ -495,9 +492,9 @@ zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
 
                 error = dmu_object_info(zfsvfs->z_os,
                  zap.za_first_integer, &doi);
-                if (error != 0)
-                        continue;
-
+                if (error != 0) {
+					continue;
+				}
                 ASSERT((doi.doi_type == DMU_OT_PLAIN_FILE_CONTENTS) ||
                  (doi.doi_type == DMU_OT_DIRECTORY_CONTENTS));
                 /*
@@ -512,19 +509,29 @@ zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
                  * directory. All we need to do is skip over them, since they
                  * are already in the system marked z_unlinked.
                  */
-                if (error != 0)
-                        continue;
+                if (error != 0) continue;
+
 				entries++;
                 zp->z_unlinked = B_TRUE;
 
                 VN_RELE(ZTOV(zp));
 
+#ifdef __APPLE__
+				/* Call vnop_reclaim now to keep the unlinked order */
+				vnode_recycle(ZTOV(zp));
+#endif
+
 				if (!(entries % 10000))
 					printf("ZFS: unlinked drain progress (%llu)\n", entries);
+
+				/* Check if unmount is attempted, if so, abort to exit */
+				if (zfsvfs->z_unmounted) break;
+
 
         }
         zap_cursor_fini(&zc);
         printf("ZFS: unlinked drain completed (%llu).\n", entries);
+
 }
 
 
@@ -578,6 +585,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
  *	Also, it assumes the directory contents is *only* regular
  *	files.
  */
+extern unsigned int rwlock_detect_problem;
 static int
 zfs_purgedir(znode_t *dzp)
 {
@@ -596,6 +604,12 @@ zfs_purgedir(znode_t *dzp)
 		error = zfs_zget(zfsvfs,
 		    ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
 		if (error) {
+#ifdef __APPLE__
+			if ((error == ENXIO)) {
+				printf("ZFS: Detected problem with item %llu\n",
+					   dzp->z_id);
+			}
+#endif
 			skipped += 1;
 			continue;
 		}
@@ -636,6 +650,15 @@ zfs_purgedir(znode_t *dzp)
 	zap_cursor_fini(&zc);
 	if (error != ENOENT)
 		skipped += 1;
+
+#ifdef __APPLE__
+	if (error == ENXIO) {
+		printf("ZFS: purgedir detected corruption. dropping %llu\n",
+			   dzp->z_id);
+		return 0; // Remove this dir anyway
+	}
+#endif
+
 	return (skipped);
 }
 
