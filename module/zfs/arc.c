@@ -3922,15 +3922,9 @@ arc_init(void)
 
     /* set min cache to 1/32 of all memory, or 64MB, whichever is more */
     arc_c_min = MAX(arc_c / 4, 64<<20);
-    /* set max to 5/8 of all memory, or all but 2GB, whichever is more */
-
-    /*
-     * BGH - Illumos figure is 3/4 & 1GB, my mac does not like that much,
-     * 5/8 & 3GB feels better
-     */
-
-    if (arc_c * 4 >= 1<<30) {
-        arc_c_max = (arc_c * 8) - ((uint64_t)(1<<30) * 3);
+    /* set max to 1/4 of all memory, or all but 3GB, whichever is more */
+    if (arc_c * 8 >= (3ULL << 30)) {
+        arc_c_max = (arc_c * 8) - (3ULL << 30);
     } else
         arc_c_max = arc_c_min;
     arc_c_max = MAX(arc_c * 2, arc_c_max);
