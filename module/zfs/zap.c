@@ -496,16 +496,6 @@ zap_open_leaf(uint64_t blkid, dmu_buf_t *db)
 }
 
 
-#ifdef __APPLE__
-int rw_isinit(krwlock_t *rwlp)
-{
-#ifdef _KERNEL
-	if (rwlp->rw_pad != 0x012345678)
-		return 0;
-#endif
-	return 1;
-}
-#endif
 
 
 static int
@@ -535,10 +525,12 @@ zap_get_leaf_byblk(zap_t *zap, uint64_t blkid, dmu_tx_t *tx, krw_t lt,
 		l = zap_open_leaf(blkid, db);
 
 #ifdef __APPLE__
+#ifdef _KERNEL
 	if (!rw_isinit(&l->l_rwlock)) {
 		printf("ZFS: bad rwlock detected\n");
 		return ENXIO;
 	}
+#endif
 #endif
 
 	rw_enter(&l->l_rwlock, lt);
