@@ -1552,6 +1552,11 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 uint64_t vnop_num_reclaims = 0;
 uint64_t vnop_num_vnodes = 0;
 
+/* If enabled, we will signal the reclaim thread to start right after
+ * placing a node on the list, for quicker reclaims
+ */
+#define RECLAIM_SIGNAL
+
 /*
  * Thread started to deal with any nodes in z_reclaim_nodes
  */
@@ -1728,6 +1733,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 	vnode_clearfsnode(vp); /* vp->v_data = NULL */
 	vnode_removefsref(vp); /* ADDREF from vnode_create */
+	zp->z_vnode = NULL;
 	atomic_dec_64(&vnop_num_vnodes);
 
 	/* Direct zfs_remove? We are done */
