@@ -1698,11 +1698,9 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	 */
 
 	/* Work out if we can not call zfs_rmnode directly */
-	mutex_enter(&zp->z_lock);
 	exception = ((zp->z_sa_hdl != NULL) &&
 				 zp->z_unlinked) ? B_TRUE : B_FALSE;
 	fastpath = zp->z_fastpath;
-	mutex_exit(&zp->z_lock);
 
 	dprintf("+vnop_reclaim zp %p/%p exception %d fast %d unlinked %d sa_hdl %p\n",
 		   zp, vp, exception, zp->z_fastpath, zp->z_unlinked, zp->z_sa_hdl);
