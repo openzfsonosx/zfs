@@ -1731,7 +1731,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 	vnode_clearfsnode(vp); /* vp->v_data = NULL */
 	vnode_removefsref(vp); /* ADDREF from vnode_create */
-	zp->z_vnode = NULL;
 	atomic_dec_64(&vnop_num_vnodes);
 
 	/* Direct zfs_remove? We are done */
