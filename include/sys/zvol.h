@@ -47,7 +47,6 @@ extern "C" {
 #define	ZVOL_EXCL	0x4
 #define	ZVOL_WCE	0x8
 
-
 /*
  * The in-core state of each volume.
  */
@@ -69,7 +68,29 @@ typedef struct zvol_state {
 	uint64_t zv_openflags;	/* Remember flags used at open */
 	char zv_bsdname[MAXPATHLEN];
 	/* 'rdiskX' name, use [1] for diskX */
+
+	list_t zv_unmap_list;
+	kmutex_t zv_unmap_lock;
+	boolean_t zv_unmap_thread_exit;
+	kmutex_t zv_unmap_thr_lock;
+	kcondvar_t zv_unmap_thr_cv;
+
 } zvol_state_t;
+
+extern uint64_t zvol_num_unmap;
+
+/*
+ * Unmap/Discard list node
+ */
+typedef struct zvol_unmap {
+	list_node_t unmap_next;
+	zvol_state_t *zv;
+	uint64_t offset;
+	uint64_t bytes;
+	//rl_t *rl;
+	void *rl;
+} zvol_unmap_t;
+
 
 enum zfs_soft_state_type {
 	ZSST_ZVOL,

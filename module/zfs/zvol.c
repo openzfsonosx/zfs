@@ -84,6 +84,7 @@
 #include <sys/dumphdr.h>
 #include <sys/zil_impl.h>
 #include <sys/dbuf.h>
+#include <sys/callb.h>
 
 #include "zfs_namecheck.h"
 
@@ -472,6 +473,120 @@ zvol_name2minor(const char *name, minor_t *minor)
 }
 
 /*
+ * ZVOL UNMAP THREAD. Handle unmap/discard requests as they come in.
+ * Each request is already locked (to stop writes) we just need to tx and
+ * commit
+ */
+uint64_t zvol_num_unmap = 0;
+
+void
+zvol_unmap_thread(void *arg)
+{
+	zvol_unmap_t *um;
+	callb_cpr_t cpr;
+	zvol_state_t *zv = (zvol_state_t *)arg;
+	dmu_tx_t *tx		= 0;
+	int error			= 0;
+
+#define VERBOSE_UNMAP
+/*
+ * #define VERBOSE_UNMAP
+ */
+#ifdef VERBOSE_UNMAP
+	int count = 0;
+	printf("ZFS: unmap %p thread is alive!\n", zv);
+#endif
+	CALLB_CPR_INIT(&cpr, &zv->zv_unmap_thr_lock, callb_generic_cpr,
+	    FTAG);
+	mutex_enter(&zv->zv_unmap_thr_lock);
+	while (1) {
+		while (1) {
+			mutex_enter(&zv->zv_unmap_lock);
+			um = list_head(&zv->zv_unmap_list);
+			if (um) {
+				list_remove(&zv->zv_unmap_list, um);
+			}
+			mutex_exit(&zv->zv_unmap_lock);
+			/* Only exit thread once list is empty */
+			if (!um)
+				break;
+#ifdef VERBOSE_UNMAP
+			count++;
+#endif
+			atomic_dec_64(&zvol_num_unmap);
+
+			/* CODE */
+
+			if (um && zv && zv->zv_objset) {
+
+				tx = dmu_tx_create(um->zv->zv_objset);
+
+				error = dmu_tx_assign(tx, TXG_WAIT);
+
+				if (error) {
+					dmu_tx_abort(tx);
+				} else {
+
+					zvol_log_truncate(um->zv, tx, um->offset, um->bytes, B_TRUE);
+
+					dmu_tx_commit(tx);
+
+					error = dmu_free_long_range(um->zv->zv_objset,
+												ZVOL_OBJ, um->offset, um->bytes);
+				}
+
+				zfs_range_unlock(um->rl);
+
+				if (error == 0) {
+					/*
+					 * If the write-cache is disabled or 'sync' property
+					 * is set to 'always' then treat this as a synchronous
+					 * operation (i.e. commit to zil).
+					 */
+					if (!(um->zv->zv_flags & ZVOL_WCE) ||
+						(um->zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS)) {
+
+						zil_commit(um->zv->zv_zilog, ZVOL_OBJ);
+
+					}
+				}
+			}
+			/* CODE */
+
+		} /* until empty */
+#ifdef VERBOSE_UNMAP
+		if (count)
+			printf("unmap_thr: %p nodes cleared: %d "
+				   "(in list %llu)\n", zv, count,
+				   zvol_num_unmap);
+		count = 0;
+#endif
+		/* Allow us to quit, since list is empty */
+		if (zv->zv_unmap_thread_exit == TRUE)
+			break;
+		/* block until needed, or one second, whichever is shorter */
+		CALLB_CPR_SAFE_BEGIN(&cpr);
+		(void) cv_timedwait_interruptible(&zv->zv_unmap_thr_cv,
+										  &zv->zv_unmap_thr_lock, (ddi_get_lbolt() + (hz>>1)));
+		CALLB_CPR_SAFE_END(&cpr, &zv->zv_unmap_thr_lock);
+
+	} /* forever */
+
+#ifdef VERBOSE_UNMAP
+	printf("ZFS: unmap thread %p is quitting!\n", zv);
+#endif
+	zv->zv_unmap_thread_exit = FALSE;
+	cv_broadcast(&zv->zv_unmap_thr_cv);
+	CALLB_CPR_EXIT(&cpr);
+	thread_exit();
+}
+
+
+
+
+
+
+/*
  * Create a minor node (plus a whole lot more) for the specified volume.
  */
 int
@@ -556,6 +671,17 @@ zvol_create_minor(const char *name)
 	    sizeof (rl_t), offsetof(rl_t, r_node));
 	list_create(&zv->zv_extents, sizeof (zvol_extent_t),
 	    offsetof(zvol_extent_t, ze_node));
+
+	printf("ZFS: zvol starting unmap thread\n");
+	mutex_init(&zv->zv_unmap_lock, NULL, MUTEX_DEFAULT, NULL);
+	list_create(&zv->zv_unmap_list, sizeof (zvol_unmap_t),
+	    offsetof(zvol_unmap_t, unmap_next));
+	mutex_init(&zv->zv_unmap_thr_lock, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&zv->zv_unmap_thr_cv, NULL, CV_DEFAULT, NULL);
+	zv->zv_unmap_thread_exit = FALSE;
+	(void) thread_create(NULL, 0, zvol_unmap_thread, zv, 0, &p0,
+						 TS_RUN, minclsyspri);
+
 	zv->zv_znode.z_is_zvol = 1;
 
 	/* get and cache the blocksize */
@@ -621,8 +747,22 @@ zvol_remove_zv(zvol_state_t *zv)
 	ddi_remove_minor_node(zfs_dip, NULL);
 #endif
 
+	printf("ZFS: zvol stopping unmap thread\n");
+
+	mutex_enter(&zv->zv_unmap_thr_lock);
+	zv->zv_unmap_thread_exit = TRUE;
+	cv_signal(&zv->zv_unmap_thr_cv);
+	while(zv->zv_unmap_thread_exit == TRUE) {
+		cv_wait(&zv->zv_unmap_thr_cv, &zv->zv_unmap_thr_lock);
+	}
+	mutex_exit(&zv->zv_unmap_thr_lock);
+	mutex_destroy(&zv->zv_unmap_thr_lock);
+	cv_destroy(&zv->zv_unmap_thr_cv);
+
 	avl_destroy(&zv->zv_znode.z_range_avl);
 	mutex_destroy(&zv->zv_znode.z_range_lock);
+	list_destroy(&zv->zv_unmap_list);
+	mutex_destroy(&zv->zv_unmap_lock);
 
 	kmem_free(zv, sizeof (zvol_state_t));
 
@@ -1889,65 +2029,33 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 int
 zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 {
-	rl_t *rl			= 0;
-	dmu_tx_t *tx		= 0;
-	uint64_t volsize	= 0;
-	int error			= 0;
+	zvol_unmap_t *um;
+	uint64_t volsize;
 
 	if (zv == NULL)
 		return (ENXIO);
+
+	dprintf("ZFS: unmap %llx length %llx\n", off, bytes);
 
 	volsize = zv->zv_volsize;
 
 	if (bytes > volsize - off)	/* don't write past the end */
 		bytes = volsize - off;
 
-	rl = zfs_range_lock(&zv->zv_znode, off, bytes, RL_WRITER);
+	um = kmem_alloc(sizeof(zvol_unmap_t), KM_SLEEP);
+	um->offset = off;
+	um->bytes = bytes;
+	um->zv = zv;
+	list_link_init(&um->unmap_next);
 
-	tx = dmu_tx_create(zv->zv_objset);
+	um->rl = zfs_range_lock(&zv->zv_znode, off, bytes, RL_WRITER);
 
-	error = dmu_tx_assign(tx, TXG_WAIT);
+	mutex_enter(&zv->zv_unmap_lock);
+	list_insert_tail(&zv->zv_unmap_list, um);
+	mutex_exit(&zv->zv_unmap_lock);
+	atomic_inc_64(&zvol_num_unmap);
 
-	if (error) {
-		dmu_tx_abort(tx);
-	} else {
-
-		zvol_log_truncate(zv, tx, off, bytes, B_TRUE);
-
-		dmu_tx_commit(tx);
-
-		error = dmu_free_long_range(zv->zv_objset,
-		    ZVOL_OBJ, off, bytes);
-	}
-
-	zfs_range_unlock(rl);
-
-	if (error == 0) {
-		/*
-		 * If the write-cache is disabled or 'sync' property
-		 * is set to 'always' then treat this as a synchronous
-		 * operation (i.e. commit to zil).
-		 */
-		if (!(zv->zv_flags & ZVOL_WCE) ||
-		    (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS)) {
-
-			zil_commit(zv->zv_zilog, ZVOL_OBJ);
-
-		}
-
-		/*
-		 * If the caller really wants synchronous writes, and
-		 * can't wait for them, don't return until the write
-		 * is done.
-		 *
-		 * XXX To do - forced async to test
-		 */
-		if (0) {
-			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
-		}
-	}
-
-	return (error);
+	return (0);
 }
 
 int

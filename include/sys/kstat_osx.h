@@ -11,6 +11,7 @@ typedef struct osx_kstat {
 	kstat_named_t darwin_reclaim_throttle;
 	kstat_named_t darwin_force_formd_normalized;
 	kstat_named_t darwin_skip_unlinked_drain;
+	kstat_named_t darwin_unmap_nodes;
 
 	kstat_named_t arc_zfs_arc_max;
 	kstat_named_t arc_zfs_arc_min;
@@ -90,6 +91,7 @@ extern unsigned int zfs_vnop_reclaim_throttle;
 extern unsigned int zfs_vnop_skip_unlinked_drain;
 extern uint64_t vnop_num_reclaims;
 extern uint64_t vnop_num_vnodes;
+extern uint64_t zvol_num_unmap;
 
 extern uint64_t zfs_arc_max;
 extern uint64_t zfs_arc_min;
