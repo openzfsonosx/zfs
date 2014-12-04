@@ -729,6 +729,9 @@ zvol_first_open(zvol_state_t *zv)
 	zvol_size_changed(zv, volsize);
 	zv->zv_zilog = zil_open(os, zvol_get_data);
 
+	// Enable write cache (disables sync for transactions)
+	//zv->zv_flags |= ZVOL_WCE;
+
 	VERIFY(dsl_prop_get_integer(zv->zv_name, "readonly", &readonly,
 	    NULL) == 0);
 	if (readonly || dmu_objset_is_snapshot(os) ||
@@ -1922,6 +1925,7 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 
 	zfs_range_unlock(rl);
 
+#if 0
 	if (error == 0) {
 		/*
 		 * If the write-cache is disabled or 'sync' property
@@ -1946,6 +1950,7 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 		}
 	}
+#endif
 
 	return (error);
 }
@@ -2791,6 +2796,9 @@ zvol_create_minors(const char *name)
 	objset_t *os;
 	char *osname, *p;
 	int error, len;
+#if 1
+printf("zvol_create_minors: %s\n", name);
+#endif
 
 	if (dataset_name_hidden(name))
 		return (0);

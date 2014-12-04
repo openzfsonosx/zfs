@@ -2497,8 +2497,9 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 
 	if (spa_feature_is_active(spa, SPA_FEATURE_ENABLED_TXG)) {
 		if (spa_dir_prop(spa, DMU_POOL_FEATURE_ENABLED_TXG,
-		    &spa->spa_feat_enabled_txg_obj) != 0)
+		    &spa->spa_feat_enabled_txg_obj) != 0) {
 			return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, EIO));
+		}
 	}
 
 	spa->spa_is_initializing = B_TRUE;
@@ -3801,6 +3802,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 extern nvlist_t *
 spa_generate_rootconf(void *vdev_tsd, uint64_t *guid)
 {
+
 	nvlist_t *config;
 	nvlist_t *nvtop, *nvroot;
 	uint64_t pgid;
@@ -3902,12 +3904,12 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 int
 spa_import_rootpool(void *vdev_tsd)
 {
-	spa_t *spa;
-	vdev_t *rvd, *bvd , *avd = NULL;
-	nvlist_t *config = NULL, *nvtop;
-	uint64_t guid = 0, txg;
-	char *pname;
-	int error;
+	spa_t *spa = NULL;
+	vdev_t *rvd = NULL, *bvd = NULL, *avd = NULL;
+	nvlist_t *config = NULL, *nvtop = NULL;
+	uint64_t guid = 0, txg = 0;
+	char *pname = NULL;
+	int error = 0;
 	vdev_iokit_t * dvd = (vdev_iokit_t *)vdev_tsd;
 
 	// Check if the device handle is valid
@@ -3918,7 +3920,7 @@ spa_import_rootpool(void *vdev_tsd)
 	 * Read the label from the boot device and generate a configuration.
 	 */
 	//config = spa_generate_rootconf(devpath, devid, &guid);
-	config = spa_generate_rootconf(vdev_tsd, &guid);
+	config = spa_generate_rootconf(dvd, &guid);
 
 #if defined(_OBP) && defined(_KERNEL)
 	if (config == NULL) {
@@ -3932,10 +3934,6 @@ spa_import_rootpool(void *vdev_tsd)
 	if (config == NULL) {
 		cmn_err(CE_NOTE, "Cannot read the pool label from '%p'",
 		    vdev_tsd);
-#if 0
-		cmn_err(CE_NOTE, "Cannot read the pool label from '%s'",
-		    devpath);
-#endif
 		return (SET_ERROR(EIO));
 	}
 
@@ -3955,6 +3953,7 @@ spa_import_rootpool(void *vdev_tsd)
 	spa = spa_add(pname, config, NULL);
 	spa->spa_is_root = B_TRUE;
 	spa->spa_import_flags = ZFS_IMPORT_VERBATIM;
+	//spa->spa_import_flags = ZFS_IMPORT_ANY_HOST;
 
 	/*
 	 * Build up a vdev tree based on the boot device's label config.
@@ -3965,6 +3964,22 @@ spa_import_rootpool(void *vdev_tsd)
 	error = spa_config_parse(spa, &rvd, nvtop, NULL, 0,
 	    VDEV_ALLOC_ROOTPOOL);
 	spa_config_exit(spa, SCL_ALL, FTAG);
+#if 1
+printf("rvd: %p\n", rvd);
+if (rvd) {
+	printf("rvd->guid %llu\n", rvd->vdev_guid);
+	printf("rvd->state %llu\n", rvd->vdev_state);
+	printf("rvd->type %s\n", rvd->vdev_ops->vdev_op_type);
+	printf("rvd->children %llu\n", rvd->vdev_children);
+
+	for (uint64_t c = 0; c < rvd->vdev_children; c++) {
+		printf("\tchild[%llu]->guid %llu\n", c, rvd->vdev_child[c]->vdev_guid);
+		printf("\tchild[%llu]->state %llu\n", c, rvd->vdev_child[c]->vdev_state);
+		printf("\tchild[%llu]->type %s\n", c, rvd->vdev_child[c]->vdev_ops->vdev_op_type);
+		printf("\tchild[%llu]->children %llu\n", c, rvd->vdev_child[c]->vdev_children);
+	}
+}
+#endif
 	if (error) {
 		mutex_exit(&spa_namespace_lock);
 		nvlist_free(config);
@@ -3983,6 +3998,7 @@ spa_import_rootpool(void *vdev_tsd)
 		goto out;
 	}
 
+#if 0
 	/*
 	 * Determine if there is a better boot device.
 	 */
@@ -3994,6 +4010,7 @@ spa_import_rootpool(void *vdev_tsd)
 		error = SET_ERROR(EINVAL);
 		goto out;
 	}
+#endif
 
 	/*
 	 * If the boot device is part of a spare vdev then ensure that
@@ -4009,21 +4026,42 @@ spa_import_rootpool(void *vdev_tsd)
 		goto out;
 	}
 
-#ifdef _KERNEL
-	zvol_create_minors(pname);
-#endif
+	if (error != 0) {
+		error = SET_ERROR(ENOENT);
+		goto out;
+	}
 
 	error = 0;
+
 out:
 	spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
 	if (rvd) {
 		vdev_free(rvd);
-		rvd = 0;
+//		rvd = 0;
 	}
 	spa_config_exit(spa, SCL_ALL, FTAG);
 	mutex_exit(&spa_namespace_lock);
 
 	nvlist_free(config);
+
+#ifdef _KERNEL
+
+//	printf("spa_import_rootpool: calling spa_activate %d\n", spa->spa_state);
+//	printf("spa_state %d\n", spa->spa_state);
+//	spa_load(spa, SPA_LOAD_IMPORT, SPA_IMPORT_EXISTING, B_TRUE);
+//	spa_activate(spa, spa_mode_global);
+
+	if (error == 0) {
+//		spa_activate(spa, spa_mode(spa));
+//		printf("spa_state %d\n", spa->spa_state);
+		//error =
+		zvol_create_minors(pname);
+		printf("zvol_create_minors returns %d\n", error);
+	}
+
+
+#endif // _KERNEL
+
 	return (error);
 }
 

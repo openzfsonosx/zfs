@@ -974,7 +974,7 @@ vdev_probe_done(zio_t *zio)
 		while ((pio = zio_walk_parents(zio)) != NULL)
 			if (!vdev_accessible(vd, pio)) {
 				pio->io_error = SET_ERROR(ENXIO);
-            }
+			}
 		kmem_free(vps, sizeof (*vps));
 	}
 }

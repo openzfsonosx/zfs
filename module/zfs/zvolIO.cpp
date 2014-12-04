@@ -37,6 +37,8 @@ net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
 	// Is it safe/ok to keep a pointer reference like this?
 	zv->zv_iokitdev = (void *) this;
 
+	zvol_unmap_enabled = true;
+
 	return (true);
 }
 
@@ -172,22 +174,28 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	 * These properties are defined in IOStorageFeatures
 	 */
 
-	storageFeatures =	OSDictionary::withCapacity(1);
-	if (!storageFeatures) {
-		IOLog("failed to create dictionary for storageFeatures.\n");
-		return (true);
+	if (!zvol_unmap_enabled) {
+		IOLog("Disabled ZVOL unmap\n");
+	} else {
+		IOLog("Enabled ZVOL unmap\n");
+
+		storageFeatures =	OSDictionary::withCapacity(1);
+		if (!storageFeatures) {
+			IOLog("failed to create dictionary for storageFeatures.\n");
+			return (true);
+		}
+
+		/* Set unmap feature */
+		unmapFeature =	OSBoolean::withBoolean(true);
+		storageFeatures->setObject(kIOStorageFeatureUnmap, unmapFeature);
+		unmapFeature->release();
+		unmapFeature	= 0;
+
+		/* Apply these storage features */
+		setProperty(kIOStorageFeaturesKey, storageFeatures);
+		storageFeatures->release();
+		storageFeatures	= 0;
 	}
-
-	/* Set unmap feature */
-	unmapFeature =	OSBoolean::withBoolean(true);
-	storageFeatures->setObject(kIOStorageFeatureUnmap, unmapFeature);
-	unmapFeature->release();
-	unmapFeature	= 0;
-
-	/* Apply these storage features */
-	setProperty(kIOStorageFeaturesKey, storageFeatures);
-	storageFeatures->release();
-	storageFeatures	= 0;
 
 
 	/*
@@ -397,6 +405,14 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 	(completion->action)(completion->target, completion->parameter,
 	    kIOReturnSuccess, actualByteCount);
 	return (kIOReturnSuccess);
+}
+
+void
+net_lundman_zfs_zvol_device::setUnmapEnabled(bool enabled)
+{
+	//dprintf("setUnmapEnabled to %d\n", enabled);
+	IOLog("setUnmapEnabled to %d\n", enabled);
+	zvol_unmap_enabled = enabled;
 }
 
 IOReturn

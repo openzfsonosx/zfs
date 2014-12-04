@@ -27,6 +27,13 @@
 
 #include <libkern/sysctl.h>
 
+#include <sys/zfs_context.h>
+#include <sys/mount.h>
+#include <sys/vdev_disk.h>
+#include <sys/fs/zfs.h>
+#include <sys/zio.h>
+#include <sys/spa.h>
+
 
 extern "C" {
   extern kern_return_t _start(kmod_info_t *ki, void *data);
@@ -43,7 +50,8 @@ extern "C" {
  * Can those with more C++ experience clean this up?
  */
 static void *global_c_interface = NULL;
-
+static uint16_t mount_attempts = 0;
+#define ZFS_MOUNTROOT_RETRIES 10
 
 // Define the superclass.
 #define super IOService
@@ -214,7 +222,11 @@ bool net_lundman_zfs_zvol::init (OSDictionary* dict)
     bool res = super::init(dict);
     //IOLog("ZFS::init\n");
     global_c_interface = (void *)this;
+
     mountTimer = 0;
+    disksInUse = 0;
+    zvol_unmap_enabled = true;
+
     return res;
 }
 
@@ -223,6 +235,15 @@ void net_lundman_zfs_zvol::free (void)
 {
   //IOLog("ZFS::free\n");
     global_c_interface = NULL;
+
+    clearMountTimer();
+
+    if (disksInUse) {
+	disksInUse->flushCollection();
+	disksInUse->release();
+	disksInUse = 0;
+    }
+
     super::free();
 }
 
@@ -237,7 +258,7 @@ IOService* net_lundman_zfs_zvol::probe (IOService* provider, SInt32* score)
 bool net_lundman_zfs_zvol::start (IOService *provider)
 {
     bool res = super::start(provider);
-
+    char zvol_unmap[MAXPATHLEN];
 
     IOLog("ZFS: Loading module ... \n");
 
@@ -289,11 +310,25 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
       }
     }
 
-	/* Check if ZFS should try to mount root */
-	IOLog("Checking if root pool should be imported...");
+	// Stop loading module if failed
+	if (res == false)
+		return (false);
 
-	if (res == false || zfs_check_mountroot() == false) {
-		return (res);
+	if (PE_parse_boot_argn("zvol_unmap", &zvol_unmap,
+	    sizeof (zvol_unmap))) {
+
+		IOLog("zvol_unmap=%s\n", zvol_unmap);
+
+		if (strncmp(zvol_unmap, "0", 2) == 0) {
+			IOLog("Disabled unmap\n");
+			zvol_unmap_enabled = false;
+		}
+	}
+
+	/* Check if ZFS should try to mount root */
+	IOLog("Checking if root pool should be imported...\n");
+	if (zfs_check_mountroot() == false) {
+		return (true);
 	}
 
 	/* Looks good, give it a go */
@@ -354,6 +389,56 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 
 }
 
+bool net_lundman_zfs_zvol::registerDisk(IOService* newDisk)
+{
+	if (!newDisk) {
+vdev_iokit_log("registerDisk: !newDisk");
+		return (false);
+	}
+
+	if (!disksInUse) {
+vdev_iokit_log("registerDisk: allocating disksInUse");
+		//disksInUse = OSSet::withObjects(((OSObject **)&newDisk), 1, 0);
+		//return (disksInUse != 0 ? true : false);
+		disksInUse = OSSet::withCapacity(1);
+
+		if (!disksInUse) {
+vdev_iokit_log("registerDisk: Couldn't allocate disksInUse");
+			return (false);
+		}
+	}
+
+	return (disksInUse->setObject(newDisk));
+}
+
+bool net_lundman_zfs_zvol::unregisterDisk(IOService* oldDisk)
+{
+	if (!oldDisk) {
+vdev_iokit_log("unregisterDisk: !oldDisk");
+		return (false);
+	}
+
+	if (!disksInUse ||
+	    disksInUse->containsObject(oldDisk) != true) {
+vdev_iokit_log_ptr("unregisterDisk: !disksInUse %p (or doesn't contain object)", disksInUse);
+		return (true);
+	}
+
+	disksInUse->removeObject(oldDisk);
+
+	return (true);
+}
+
+bool net_lundman_zfs_zvol::isDiskUsed(IOService* checkDisk)
+{
+	if (!checkDisk || !disksInUse) {
+		return (false);
+vdev_iokit_log_ptr("unregisterDisk: !checkDisk or !disksInUse %p", disksInUse);
+	}
+
+	return (disksInUse->containsObject(checkDisk));
+}
+
 bool net_lundman_zfs_zvol::zfs_check_mountroot()
 {
 	/*
@@ -372,7 +457,9 @@ bool net_lundman_zfs_zvol::zfs_check_mountroot()
 	IOLog("ZFS: zfs_check_mountroot: uptime (%llu)\n", uptime);
 
 	/* 3 billion nanoseconds ~= 3 seconds */
-	if (uptime >= 3LLU<<30) {
+	//if (uptime >= 3LLU<<30) {
+	/* 60 billion nanoseconds ~= 60 seconds */
+	if (uptime >= 7LLU<<33) {
 		IOLog("ZFS: zfs_check_mountroot: Already booted\n");
 
 		return (false);
@@ -409,8 +496,7 @@ bool net_lundman_zfs_zvol::zfs_check_mountroot()
 		IOLog("Got zfs_boot: [%llu] {%s}\n",
 		    (uint64_t)strlen(zfs_boot), zfs_boot);
 	} else {
-		IOLog("No zfs_boot: [%llu] {%s}\n",
-		    (uint64_t)strlen(zfs_boot), zfs_boot);
+		IOLog("No zfs_boot\n");
 	}
 
 	return (result);
@@ -483,6 +569,7 @@ bool net_lundman_zfs_zvol::zfs_mountroot()
 	char zfs_boot[MAXPATHLEN];
 	char zfs_pool[MAXPATHLEN];
 	char zfs_root[MAXPATHLEN];
+	char *vdev_path;
 
 	int split = 0;
 	bool result = false;
@@ -569,6 +656,16 @@ bool net_lundman_zfs_zvol::zfs_mountroot()
 		strlcpy(zfs_root, strptr, split);
 	}
 
+#if 0
+/*
+ * Manually set zfs_pool and zfs_root for debugging.
+ *
+ * Best to comment out above section, too
+ */
+//snprintf(zfs_pool, 5, "tank");
+//snprintf(zfs_root, 1, "");
+#endif
+
 	IOLog("Will attempt to import zfs_pool: [%llu] %s\n",
 	    (uint64_t)strlen(zfs_pool), zfs_pool);
 
@@ -579,8 +676,7 @@ bool net_lundman_zfs_zvol::zfs_mountroot()
 
 	/*
 	 * We want to match on all disks or volumes that
-	 * do not contain a partition map / raid / LVM
-	 *
+	 *  do not contain a partition map / raid / LVM
 	 */
 
 	if (vdev_iokit_alloc(&dvd) != 0) {
@@ -595,24 +691,37 @@ bool net_lundman_zfs_zvol::zfs_mountroot()
 
 		IOLog("\nFound pool {%s}, importing handle: [%p]\n",
 		    zfs_pool, dvd->vd_iokit_hl);
-	}
 
-	if (dvd->vd_iokit_hl == 0) {
-		IOLog("Couldn't locate pool by name {%s}\n", zfs_pool);
+/*
+		vdev_path = vdev_iokit_get_path(dvd);
+
+		if (vdev_path) {
+			IOLog("Disk path: %s\n", vdev_path);
+			IOSleep(1000);
+
+			vdev_iokit_open_devvp(vdev_path);
+
+			strfree(vdev_path);
+		}
+*/
+
+		if (spa_import_rootpool(dvd) == 0) {
+			IOLog("Imported pool {%s}\n", zfs_pool);
+			result = mountedRootPool = true;
+		} else {
+			IOLog("Couldn't import pool by handle [%p]\n", dvd);
+			result = false;
+		}
+
 		vdev_iokit_free(&dvd);
-		return (false);
+		dvd = 0;
+		return (result);
 	}
 
-	if (spa_import_rootpool(dvd) == 0) {
-		IOLog("Imported pool {%s}\n", zfs_pool);
-		mountedRootPool = true;
-	} else {
-		IOLog("Couldn't import pool by handle [%p]\n", dvd);
-	}
-
+	IOLog("Couldn't locate pool by name {%s}\n", zfs_pool);
 	vdev_iokit_free(&dvd);
-
-	return (true);
+	dvd = 0;
+	return (false);
 }
 
 bool net_lundman_zfs_zvol::isRootMounted()
@@ -625,6 +734,8 @@ void net_lundman_zfs_zvol::mountTimerFired(OSObject* owner,
 {
 	bool result = false;
 	net_lundman_zfs_zvol *driver =	0;
+
+mount_attempts++;
 
 	if (!owner) {
 		IOLog("ZFS: mountTimerFired: Called without owner\n");
@@ -654,8 +765,17 @@ void net_lundman_zfs_zvol::mountTimerFired(OSObject* owner,
 		return;
 	}
 
-	IOLog("ZFS: mountTimerFired: root pool not found, retrying...\n");
-	sender->setTimeoutMS(100);
+	if (mount_attempts < ZFS_MOUNTROOT_RETRIES) {
+		IOLog("ZFS: mountTimerFired: root pool not found, retrying...\n");
+		sender->setTimeoutMS(100);
+		//sender->setTimeoutMS(3000);
+	} else {
+		IOLog("ZFS: mountTimerFired: root pool not found after %d attempts, giving up.\n",
+		    ZFS_MOUNTROOT_RETRIES);
+		driver->clearMountTimer();
+	}
+
+	return;
 }
 
 void net_lundman_zfs_zvol::clearMountTimer()
@@ -666,7 +786,7 @@ void net_lundman_zfs_zvol::clearMountTimer()
 	IOLog("ZFS: clearMountTimer: Resetting and removing timer\n");
 	mountTimer->cancelTimeout();
 	mountTimer->release();
-	mountTimer =	0;
+	mountTimer = 0;
 }
 
 IOReturn net_lundman_zfs_zvol::doEjectMedia(void *arg1)
@@ -711,6 +831,9 @@ bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
     // so we can release our reference at function exit.
     if (nub->attach(this) == false)
         goto bail;
+
+    // Set TRIM flag as needed
+    nub->setUnmapEnabled(zvol_unmap_enabled);
 
     // Allow the upper level drivers to match against the IOBlockStorageDevice.
     /*

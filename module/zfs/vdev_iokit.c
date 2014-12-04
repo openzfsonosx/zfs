@@ -18,17 +18,6 @@
  *
  * CDDL HEADER END
  */
-/*
- * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
- * Portions Copyright 2007 Apple Inc. All rights reserved.
- * Use is subject to license terms.
- * Copyright (C) 2008-2010 Lawrence Livermore National Security, LLC.
- * Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
- * Rewritten for Linux by Brian Behlendorf <behlendorf1@llnl.gov>.
- * LLNL-CODE-403049.
- * Copyright (c) 2013 by Delphix. All rights reserved.
- */
 
 #include <sys/zfs_context.h>
 #include <sys/spa.h>
@@ -37,14 +26,7 @@
 #include <sys/vdev_impl.h>
 #include <sys/fs/zfs.h>
 #include <sys/zio.h>
-#ifdef __APPLE__
 #include <sys/mount.h>
-#else
-#include <sys/sunldi.h>
-#endif /* __APPLE__ */
-
-
-unsigned int zfs_iokit_vdev_ashift = 0;
 
 extern void vdev_iokit_log(const char *);
 extern void vdev_iokit_log_str(const char *, const char *);
@@ -62,7 +44,7 @@ vdev_iokit_alloc(vdev_iokit_t **dvd)
 		return (EINVAL);
 	}
 
-	*dvd = (vdev_iokit_t *)kmem_alloc(sizeof (vdev_iokit_t), KM_PUSHPAGE);
+	*dvd = (vdev_iokit_t *)kmem_alloc(sizeof (vdev_iokit_t), KM_SLEEP);
 
 	if (!dvd || !(*dvd))
 		return (ENOMEM);
@@ -86,6 +68,11 @@ vdev_iokit_free(vdev_iokit_t **dvd)
 		return;
 
 	(*dvd)->vd_iokit_hl = 0;
+
+	// Release the ZFS service handle
+#if 0
+	vdev_iokit_release_service((*dvd)->vd_zfs_hl);
+#endif
 	(*dvd)->vd_zfs_hl = 0;
 	/*
 	 * (*dvd)->in_command_pool = 0;
@@ -101,13 +88,13 @@ extern void
 vdev_iokit_state_change(vdev_t *vd, int faulted, int degraded)
 {
 	vdev_iokit_log_ptr("vdev_iokit_state_change: %s %d %s %d", vd);
-	vdev_iokit_log_num("fault?", faulted);
-	vdev_iokit_log_num("degrade?", degraded);
+	vdev_iokit_log_num("faulted?", faulted);
+	vdev_iokit_log_num("degraded?", degraded);
 }
 
 extern int
 vdev_iokit_open(vdev_t *vd, uint64_t *size,
-				uint64_t *max_size, uint64_t *ashift)
+    uint64_t *max_size, uint64_t *ashift)
 {
 	vdev_iokit_t *dvd = 0;
 	int error = 0;
@@ -151,9 +138,16 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		return (error != 0 ? error : ENOMEM);
 	}
 
-	/* When creating or splitting pools, don't validate guid */
-	if (vd->vdev_spa->spa_load_state != SPA_LOAD_NONE &&
-	    vd->vdev_spa->spa_config_splitting) {
+	/* Unless creating or splitting pool, validate guid */
+	    //!vd->vdev_spa->spa_splitting) { // Added boolean
+	    //!vd->vdev_splitting) {
+vdev_iokit_log_ptr("pool split nvlist:", vd->vdev_spa->spa_config_splitting);
+vdev_iokit_log_num("vdev split bool:", vd->vdev_splitting);
+
+	if (vd->vdev_spa->spa_load_state == SPA_LOAD_NONE ||
+	    !vd->vdev_spa->spa_config_splitting) { // check if nvlist exists
+		checkguid = 0;
+	} else {
 		checkguid = vd->vdev_guid;
 	}
 
@@ -177,11 +171,12 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 
 	error = EINVAL;		/* presume failure */
 
+#if 0
 	if (vd->vdev_path != NULL) {
 
 		if (vd->vdev_wholedisk == -1ULL) {
 			size_t len = strlen(vd->vdev_path) + 3;
-			char *buf = kmem_alloc(len, KM_PUSHPAGE);
+			char *buf = kmem_alloc(len, KM_SLEEP);
 
 			(void) snprintf(buf, len, "%ss0", vd->vdev_path);
 
@@ -214,12 +209,12 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		if (error == 0 && vd->vdev_wholedisk == -1ULL)
 			vd->vdev_wholedisk = 0;
 	}
+#endif
 
 	/*
-	 * If all else fails, then try opening by physical path (if available)
-	 * or the logical path (if we failed due to the devid check). While not
-	 * as reliable as the devid, this will give us something, and the higher
-	 * level vdev validation will prevent us from opening the wrong device.
+	 * Try opening by physical path (if available) or the logical path,
+	 * and finally by guid if neither succeeds. Check vdev guid to avoid
+	 * using the wrong device.
 	 */
 	if (error) {
 
@@ -247,6 +242,9 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		 *	been re-cabled, moved, removed, or otherwise.
 		 */
 		if (error && vd->vdev_guid != 0) {
+#if 1
+vdev_iokit_log("vdev_iokit_open: Falling back to vdev_find_by_guid");
+#endif
 			error = vdev_iokit_open_by_guid(dvd, vd->vdev_guid);
 
 			if (error == 0) {
@@ -284,13 +282,13 @@ vdev_iokit_open(vdev_t *vd, uint64_t *size,
 		vdev_iokit_log_num(
 		    "vdev_iokit_open: vdev_iokit_sync returned error",
 		    error);
+		error = 0;
 	}
 
 	/*
 	 * Once a device is opened, verify that the physical device path (if
 	 * available) is up to date.
 	 */
-
 	if (vdev_iokit_physpath(vd) != 0) {
 		vdev_iokit_log("vdev_iokit_open: physpath couldn't be updated");
 	}
@@ -325,14 +323,14 @@ skip_open:
 	/*
 	 * Take the device's minimum transfer size into account.
 	 */
-	//	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
+	//	*ashift = highbit64(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
 
 	/*
 	 * XXX - not being set here, but working normally with both
 	 *  ashift=9 and ashift=12 (plus default ashift=0) pools...
 	 */
-	//	if (*ashift > 0)
-	//		vd->vdev_ashift = *ashift;
+	//if (*ashift > 0)
+	//	vd->vdev_ashift = *ashift;
 
 	/*
 	 * Clear the nowritecache bit, so that on a vdev_reopen() we will
@@ -341,7 +339,7 @@ skip_open:
 	vd->vdev_nowritecache = B_FALSE;
 
 	/*
-	 * ### APPLE TODO ###
+	 * ### XXX APPLE TODO ###
 	 * If we own the whole disk, try to enable disk write caching.
 	 * FreeBSD geom can use write caching on individual partitions,
 	 *  possibly same on OS X.
@@ -362,6 +360,8 @@ out:
 		 * rest of the spa not to try and reopen or close this device
 		 */
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
+
+		return (ENXIO);
 	}
 
 	return (0);
@@ -370,8 +370,8 @@ out:
 extern void
 vdev_iokit_close(vdev_t *vd)
 {
-	vdev_iokit_t *dvd	= 0;
-	int error			= 0;
+	vdev_iokit_t *dvd = 0;
+	int error = 0;
 
 	if (!vd || !vd->vdev_tsd)
 		return;
@@ -381,6 +381,9 @@ vdev_iokit_close(vdev_t *vd)
 	}
 
 	dvd = (vdev_iokit_t *)vd->vdev_tsd;
+
+	if (!dvd)
+		return;
 
 	if (dvd->vd_iokit_hl != NULL) {
 		/* Sync the disk if needed */
@@ -392,6 +395,8 @@ vdev_iokit_close(vdev_t *vd)
 				vdev_iokit_log_num(
 				    "vdev_iokit_close: couldn't sync disk",
 				    error);
+
+				error = 0;
 			}
 		}
 
@@ -403,6 +408,8 @@ vdev_iokit_close(vdev_t *vd)
 			vdev_iokit_log_num(
 			    "vdev_iokit_close: handle_close returned error",
 			    error);
+
+			error = 0;
 		}
 
 		dvd->vd_iokit_hl = 0;
@@ -415,7 +422,8 @@ vdev_iokit_close(vdev_t *vd)
 
 	vd->vdev_delayed_close = B_FALSE;
 
-	vdev_iokit_free((vdev_iokit_t **)&(vd->vdev_tsd));
+//	vdev_iokit_free((vdev_iokit_t **)&(vd->vdev_tsd));
+	vdev_iokit_free(&dvd);
 	vd->vdev_tsd = 0;
 	dvd = 0;
 }
@@ -547,20 +555,22 @@ vdev_iokit_io_done(zio_t *zio)
 	}
 }
 
-/* Read configuration from disk */
+/*
+ * Read configuration from disk
+ *  First, read the device label
+ *  then build the nvlist.
+ */
 int
 vdev_iokit_read_label(vdev_iokit_t *dvd, nvlist_t **config)
 {
 	vdev_label_t *label = 0;
+	void *buf = 0;
 	size_t labelsize = VDEV_SKIP_SIZE + VDEV_PHYS_SIZE;
 	uint64_t s = 0, size = 0;
-	uint64_t offset, state, txg = 0;
+	uint64_t offset, state;
+	uint64_t txg = 0, best_txg = 0;
 	int l;
 	int error = EINVAL;
-
-	/*
-	 * Read the device label and build the nvlist.
-	 */
 
 	if (!dvd || !dvd->vd_iokit_hl || !dvd->vd_zfs_hl)
 		return (EINVAL);
@@ -579,7 +589,7 @@ vdev_iokit_read_label(vdev_iokit_t *dvd, nvlist_t **config)
 	}
 
 	size = P2ALIGN_TYPED(s, sizeof (vdev_label_t), uint64_t);
-	label = kmem_alloc(sizeof (vdev_label_t), KM_PUSHPAGE);
+	label = kmem_alloc(sizeof (vdev_label_t), KM_SLEEP);
 
 	if (!label) {
 		(void) vdev_iokit_handle_close(dvd, FREAD);
@@ -592,47 +602,38 @@ vdev_iokit_read_label(vdev_iokit_t *dvd, nvlist_t **config)
 		/* read vdev label */
 		offset = vdev_label_offset(size, l, 0);
 
-		/* If label is outside disk boundaries, we're done */
-		if (offset > s || offset+labelsize > s) {
-			break;
-		}
+		/* Verify offset is within disk boundaries */
+		ASSERT(offset <= s && offset+labelsize <= s);
 
 		if (vdev_iokit_physio(dvd, (void*)label, labelsize,
 		    offset, FREAD) != 0) {
 			continue;
 		}
 
-		error = nvlist_unpack(label->vl_vdev_phys.vp_nvlist,
-		    sizeof (label->vl_vdev_phys.vp_nvlist),
-		    config, 0);
-
-		if (error != 0) {
+		if (nvlist_unpack(label->vl_vdev_phys.vp_nvlist,
+		    sizeof (label->vl_vdev_phys.vp_nvlist), config, 0) != 0) {
 			*config = NULL;
 			continue;
 		}
 
 		/*
 		 * Check that a valid config was loaded
-		 *	skip devices that are unavailable,
-		 *	uninitialized, or potentially active
+		 *  skip devices that are unavailable,
+		 *  uninitialized, or potentially active
 		 */
 		if (nvlist_lookup_uint64(*config,
 		    ZPOOL_CONFIG_POOL_STATE, &state) != 0 ||
-		    state > POOL_STATE_L2CACHE) {
-
+		    state >= POOL_STATE_DESTROYED) {
 			nvlist_free(*config);
 			*config = NULL;
 			continue;
 		}
 
-		/*
-		 * Check and fetch txg number
-		 */
+		/* Check and fetch txg number */
 		if (state != POOL_STATE_SPARE &&
 		    state != POOL_STATE_L2CACHE &&
 		    (nvlist_lookup_uint64(*config, ZPOOL_CONFIG_POOL_TXG,
 		    &txg) != 0 || txg == 0)) {
-
 			nvlist_free(*config);
 			*config = NULL;
 			continue;
@@ -641,15 +642,10 @@ vdev_iokit_read_label(vdev_iokit_t *dvd, nvlist_t **config)
 		break;
 	}
 
-	if (label) {
-		kmem_free(label, sizeof (vdev_label_t));
-	}
-
+	kmem_free(label, sizeof (vdev_label_t));
 	(void) vdev_iokit_handle_close(dvd, FREAD);
-
-	if (*config == NULL) {
+	if (*config == NULL)
 		error = SET_ERROR(EIDRM);
-	}
 
 	return (error);
 }
@@ -696,3 +692,4 @@ vdev_ops_t vdev_iokit_ops = {
 	VDEV_TYPE_DISK,	/* name of this vdev type */
 	B_TRUE	/* leaf vdev */
 };
+

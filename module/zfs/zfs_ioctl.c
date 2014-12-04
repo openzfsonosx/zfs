@@ -5974,7 +5974,7 @@ mnttab_file_create(void)
 
 	if ((error = vn_open(MNTTAB, UIO_SYSSPACE,
 						 oflags, 0666, &vp, CRCREAT, 0)) == 0) {
-		if ((error =VOP_FSYNC(vp, FSYNC, kcred,
+		if ((error = VOP_FSYNC(vp, FSYNC, kcred,
 							  NULL)) == 0) {
 			error = VOP_CLOSE(vp, oflags, 1, 0,
 							  kcred, NULL);
@@ -6149,7 +6149,7 @@ zfs_ioctl_osx_init(void)
 
 	kstat_osx_init();
 
-	(void) mnttab_file_create();
+//	(void) mnttab_file_create();
 	zfs_ioctl_installed = 1;
 #endif
 	printf("ZFS: Loaded module v%s-%s%s, "

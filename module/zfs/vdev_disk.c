@@ -229,11 +229,11 @@ skip_open:
 	*psize = blkcnt * (uint64_t)blksize;
 	*max_psize = *psize;
 
-	dvd->vd_ashift = highbit(blksize) - 1;
-	dprintf("vdev_disk: Device %p ashift set to %d\n", devvp,
-	    dvd->vd_ashift);
+	//dvd->vd_ashift = highbit(blksize) - 1;
+	//dprintf("vdev_disk: Device %p ashift set to %d\n", devvp,
+	    //dvd->vd_ashift);
 
-	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
+	*ashift = highbit64(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
 
 	/*
 	 *  ### APPLE TODO ###
@@ -424,7 +424,7 @@ vdev_disk_io_start(zio_t *zio)
 		return (ZIO_PIPELINE_CONTINUE);
 	}
 
-	flags = (zio->io_type == ZIO_TYPE_READ ? B_READ : B_WRITE);
+	flags = (zio->io_type == ZIO_TYPE_READ ? B_READ : B_WRITE) | B_NOCACHE;
 	/* flags |= B_NOCACHE; */
 
 	if (zio->io_flags & ZIO_FLAG_FAILFAST)
@@ -437,18 +437,19 @@ vdev_disk_io_start(zio_t *zio)
 	ASSERT(zio->io_size != 0);
 
 	buf_setflags(bp, flags);
-	buf_setcount(bp, zio->io_size);
 	buf_setdataptr(bp, (uintptr_t)zio->io_data);
+
+	buf_setsize(bp, zio->io_size);
+	buf_setcount(bp, zio->io_size);
 
 	/*
 	 * Map offset to blcknumber, based on physical block number.
 	 * (512, 4096, ..). If we fail to map, default back to
 	 * standard 512. lbtodb() is fixed at 512.
 	 */
-	buf_setblkno(bp, zio->io_offset >> dvd->vd_ashift);
-	buf_setlblkno(bp, zio->io_offset >> dvd->vd_ashift);
+	buf_setlblkno(bp, zio->io_offset);
+	buf_setblkno(bp, zio->io_offset);
 
-	buf_setsize(bp, zio->io_size);
 	if (buf_setcallback(bp, vdev_disk_io_intr, zio) != 0)
 		panic("vdev_disk_io_start: buf_setcallback failed\n");
 

@@ -9,8 +9,10 @@ class net_lundman_zfs_zvol : public IOService
 	OSDeclareDefaultStructors(net_lundman_zfs_zvol)
 
 private:
+	bool zvol_unmap_enabled;
 	bool mountedRootPool;
-	IOTimerEventSource * mountTimer;
+	IOTimerEventSource* mountTimer;
+	OSSet* disksInUse;
 
 public:
 	virtual bool init(OSDictionary* dictionary = NULL);
@@ -22,6 +24,10 @@ public:
 	virtual bool createBlockStorageDevice(zvol_state_t *zv);
 	virtual bool destroyBlockStorageDevice(zvol_state_t *zv);
 	virtual bool updateVolSize(zvol_state_t *zv);
+
+	virtual bool registerDisk(IOService* newDisk);
+	virtual bool unregisterDisk(IOService* oldDisk);
+	virtual bool isDiskUsed(IOService* checkDisk);
 
 	virtual bool zfs_check_mountroot();
 	virtual bool zfs_mountroot();
@@ -39,6 +45,7 @@ class net_lundman_zfs_zvol_device : public IOBlockStorageDevice
 private:
 	net_lundman_zfs_zvol *m_provider;
 	zvol_state_t *zv;
+	bool zvol_unmap_enabled;
 
 public:
 	virtual bool init(zvol_state_t *c_zv,
@@ -76,6 +83,7 @@ public:
 	    IOStorageAttributes *attributes,
 	    IOStorageCompletion *completion);
 
+	virtual void setUnmapEnabled(bool enabled);
 	virtual IOReturn doDiscard(UInt64 block, UInt64 nblks);
 	virtual IOReturn doUnmap(IOBlockStorageDeviceExtent *extents,
 	    UInt32 extentsCount, UInt32 options);
