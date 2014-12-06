@@ -27,7 +27,10 @@ namespace ID
 			slashIdx = path.find('/', slashIdx+1);
 			int err = mkdir(path.substr(0, slashIdx).c_str(), 0755); // octal mode
 			if (err != 0 && errno != EEXIST)
-				throw Exception("Error creating Directory: " + path);
+			{
+				Throw<Exception> e;
+				e << "Error creating Directory: " << path;
+			}
 		}
 		while (slashIdx != std::string::npos);
 	}

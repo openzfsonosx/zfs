@@ -35,8 +35,7 @@ namespace ID
 	{
 		m_impl->session = DASessionCreate(kCFAllocatorDefault);
 		DARegisterDiskAppearedCallback(m_impl->session, nullptr, [](DADiskRef disk, void * ctx)
-			{ static_cast<DiskArbitrationDispatcher*>(ctx)->diskAppeared(disk); },
-			this);
+			{ static_cast<DiskArbitrationDispatcher*>(ctx)->diskAppeared(disk); }, this);
 		DARegisterDiskDisappearedCallback(m_impl->session, nullptr, [](DADiskRef disk, void * ctx)
 			{ static_cast<DiskArbitrationDispatcher*>(ctx)->diskDisappeared(disk); }, this);
 	}
