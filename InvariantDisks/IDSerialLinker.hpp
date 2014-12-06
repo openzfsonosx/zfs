@@ -28,6 +28,9 @@ namespace ID
 		virtual void diskDisappeared(DADiskRef disk, DiskInformation const & info) override;
 
 	private:
+		std::string formatSerialPath(DiskInformation const & di) const;
+
+	private:
 		std::string m_base;
 	};
 }

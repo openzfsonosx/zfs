@@ -28,9 +28,14 @@ namespace ID
 
 	static std::string prefixDevice = "IODeviceTree:/";
 
-	bool isRootDevice(DiskInformation const & di)
+	bool isDevice(DiskInformation const & di)
 	{
-		return di.mediaWhole && di.mediaPath.substr(0, prefixDevice.size()) == prefixDevice;
+		return di.mediaPath.substr(0, prefixDevice.size()) == prefixDevice;
+	}
+
+	bool isWhole(DiskInformation const & di)
+	{
+		return di.mediaWhole;
 	}
 
 	static bool isInvalidSerialChar(char c)
@@ -49,21 +54,38 @@ namespace ID
 		return s.substr(first, last - first);
 	}
 
-	std::string formatSerial(std::string const & model, std::string const & serial)
+	std::string partitionSuffix(DiskInformation const & di)
 	{
-		std::string formated = trim(model) + "-" + trim(serial);
+		if (isDevice(di) && !isWhole(di))
+		{
+			size_t suffixStart = di.mediaPath.find_last_not_of("0123456789");
+			if (suffixStart != std::string::npos && di.mediaPath[suffixStart] == ':')
+				return di.mediaPath.substr(suffixStart);
+		}
+		return std::string();
+	}
+
+	std::string formatSerial(DiskInformation const & di)
+	{
+		std::string formated = trim(di.deviceModel) + "-" + trim(di.ioSerial);
 		std::replace(formated.begin(), formated.end(), ' ', '_');
 		formated.erase(std::remove_if(formated.begin(), formated.end(), isInvalidSerialChar), formated.end());
+		formated += partitionSuffix(di);
 		return formated;
+	}
+
+	std::string SerialLinker::formatSerialPath(DiskInformation const & di) const
+	{
+		return m_base + "/" + formatSerial(di);
 	}
 
 	void SerialLinker::diskAppeared(DADiskRef disk, DiskInformation const & di)
 	{
-		if (isRootDevice(di))
+		if (isDevice(di))
 		{
 			try
 			{
-				std::string serial = m_base + "/" + formatSerial(di.deviceModel, di.ioSerial);
+				std::string serial = formatSerialPath(di);
 				std::string devicePath = "/dev/" + di.mediaBSDName;
 				std::cout << "Creating symlink: \"" << serial << "\" -> " << devicePath << std::endl;
 				createSymlink(serial, devicePath);
@@ -77,11 +99,11 @@ namespace ID
 
 	void SerialLinker::diskDisappeared(DADiskRef disk, DiskInformation const & di)
 	{
-		if (isRootDevice(di))
+		if (isDevice(di))
 		{
 			try
 			{
-				std::string serial = m_base + "/" + formatSerial(di.deviceModel, di.ioSerial);
+				std::string serial = formatSerialPath(di);
 				std::string devicePath = "/dev/" + di.mediaBSDName;
 				std::cout << "Removing symlink: \"" << serial << "\"" << std::endl;
 				removeSymlink(serial);
