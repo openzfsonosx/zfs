@@ -30,4 +30,7 @@ http://zfsonlinux.org/faq.html#WhatDevNamesShouldIUseWhenCreatingMyPool
 License
 =======
 
-This program is licensed under the "3-clause BSD" License. See the LICENSE.md file for details.
+This program is copyrighted by me, because I wrote it.
+This program is licensed under the "3-clause BSD" License. See the BSD.LICENSE.md file for details.
+If desired, it is also licensed under the CDDL OpenSolaris license, see OPENSOLARIS.LICENSE.txt
+for details. Other licenses are available on request.
