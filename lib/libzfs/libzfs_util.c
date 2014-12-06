@@ -945,12 +945,26 @@ zfs_append_partition(char *path, size_t max_len)
 {
 	int len = strlen(path);
 
-	if (strncmp(path, UDISK_ROOT"/by-path", strlen(UDISK_ROOT) + 8) == 0) {
+	if (strncmp(path, DISK_ROOT"/disk", strlen(DISK_ROOT) + 5) == 0) {
+		if (len + 2 >= max_len)
+			return (-1);
+
+		(void) strcat(path, "s1");
+		len += 2;
+	} else if (strncmp(path, UDISK_ROOT"/by-path",
+	    strlen(UDISK_ROOT) + 8) == 0) {
 		if (path[len - 1] == '0' &&
 		    path[len - 2] == ':')
 			path[len - 1] = '1';
 		else
 			return (-1); /* should have ended with ":0" */
+	} else if (strncmp(path, UDISK_ROOT"/by-serial",
+	    strlen(UDISK_ROOT) + 10) == 0) {
+		if (len + 2 >= max_len)
+			return (-1);
+
+		(void) strcat(path, ":1");
+		len += 2;
 	} else {
 		if (len + 2 >= max_len)
 			return (-1);
