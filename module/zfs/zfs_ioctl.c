@@ -160,11 +160,6 @@ static int zfs_fill_zplprops_root(uint64_t, nvlist_t *, nvlist_t *,
 int zfs_set_prop_nvlist(const char *, zprop_source_t, nvlist_t *, nvlist_t *);
 static int get_nvlist(uint64_t nvl, uint64_t size, int iflag, nvlist_t **nvp);
 
-uint_t zfs_fsyncer_key;
-static int zfs_prop_activate_feature(spa_t *spa, spa_feature_t feature);
-static int zfs_prop_activate_feature_check(void *arg1, dmu_tx_t *tx);
-static void zfs_prop_activate_feature_sync(void *arg1, dmu_tx_t *tx);
-
 static void
 history_str_free(char *buf)
 {
@@ -4032,6 +4027,12 @@ zfs_ioc_recv(zfs_cmd_t *zc)
         error = 1;
     }
 #endif
+
+#ifdef _KERNEL
+	if (error == 0)
+		zvol_create_minors(tofs);
+#endif
+
     /*
      * On error, restore the original props.
      */

@@ -565,6 +565,32 @@ setfinderinfo:
 }
 #endif
 
+#ifdef __APPLE__
+
+void osx_start_spotlight(char *mountpoint)
+{
+	char *argv[7] = {
+	    "/usr/bin/mdutil",
+		"-E",
+	    NULL,
+		NULL, NULL, NULL };
+
+	// mdutil -E /mount
+	argv[2] = (char *)mountpoint;
+	libzfs_run_process(argv[0], argv, 0);
+
+	// mdutil -i on /mount
+	argv[1] = "-i";
+	argv[2] = "on";
+	argv[3] = (char *)mountpoint;
+	libzfs_run_process(argv[0], argv, 0);
+
+	printf("Enabled Spotlight on '%s'\n", mountpoint);
+
+}
+
+#endif
+
 /*
  * Mount the given filesystem.
  *
@@ -723,6 +749,45 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	if (!(flags & MS_RDONLY)) {
 
 		zfs_mount_seticon(mountpoint);
+
+		/*
+		 * We automatically created root ".metadate_index_never" files while
+		 * spotlight support was broken, we will be nice and try to clean
+		 * those up here, if the file date is older than before the release
+		 * with spotlight support. (So if users create newer, they want
+		 * spotlist disabled)
+		 * This should probably be removed after next release. (1.4.0?)
+		 */
+		char *path;
+		if (asprintf(&path, "%s/.metadata_never_index", mountpoint) > 0) {
+			struct stat stsb;
+			/* GMT: Mon, 15 Dec 2014 09:00:00 GMT. */
+			if (!stat(path, &stsb) && (stsb.st_mtime < 1418634000)) {
+				unlink(path);
+				osx_start_spotlight(mountpoint);
+			}
+			free(path);
+		}
+
+		/* If we mount without DA, it fails to create .Trashes folder, so
+		 * we manually attempt to create it here until proper integration
+		 * is complete
+		 */
+			{
+				char *path;
+				struct stat stsb;
+				if (asprintf(&path,
+							 "%s/.Trashes", mountpoint) > 0) {
+
+					if (lstat(path, &stsb) != 0) { /* Not there */
+						if (!mkdir(path, (mode_t)0333))
+							(void)chmod(path, (mode_t)01333);
+					}
+					free(path);
+				}
+			}
+
+
 
 	}
 #endif

@@ -2,6 +2,7 @@ SUBDIRS = fm fs
 
 COMMON_H = \
 	$(top_srcdir)/include/sys/arc.h \
+	$(top_srcdir)/include/sys/arc_impl.h \
 	$(top_srcdir)/include/sys/avl.h \
 	$(top_srcdir)/include/sys/avl_impl.h \
 	$(top_srcdir)/include/sys/blkptr.h \
@@ -100,6 +101,6 @@ libzfs_HEADERS = $(COMMON_H) $(USER_H)
 endif
 
 if CONFIG_KERNEL
-kerneldir = /usr/src/zfs-$(VERSION)/include/sys
+kerneldir = @prefix@/src/zfs-$(VERSION)/include/sys
 kernel_HEADERS = $(COMMON_H) $(KERNEL_H)
 endif

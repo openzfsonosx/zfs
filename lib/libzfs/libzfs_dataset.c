@@ -2339,30 +2339,38 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 #ifdef __APPLE__
 			//Temporarily allowing snapshot mounting
 			if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT) {
-				const char *secondhalf = strchr(relpath, '@');
-				if(secondhalf) {
-					size_t len = secondhalf - relpath;
-					if (len > 0) {
-						char *firsthalf =
-						    (char *)malloc(len+1);
-						memcpy(firsthalf, relpath, len);
-						firsthalf[len] = '\0';
-						(void) snprintf(propbuf,
-						    proplen,
-						    "%s/Volumes%s/%s/.zfs/snapshot/%s",
-						    root, str, firsthalf,
-						    &secondhalf[1]);
-						free(firsthalf);
-					} else {
-						(void) snprintf(propbuf,
-						    proplen,
-						    "%s/Volumes%s/.zfs/snapshot/%s",
-						    root, str, &secondhalf[1]);
-					}
-				} else {
-					fprintf(stderr, "snapshot '%s' has "
-					    "no '@'\n", zhp->zfs_name);
+				const char *r = strrchr(relpath, '@');
+				if (!r) {
+					(void) fprintf(stderr, "snapshot '%s' "
+								   "has no '@'\n", zhp->zfs_name);
 					abort();
+				}
+				const char *snapshot_name = &r[1];
+				if (*snapshot_name == '\0') {
+					(void) fprintf(stderr, "snapshot '%s' "
+								   "has no name after '@'\n",
+								   zhp->zfs_name);
+					abort();
+				}
+				size_t parent_name_len = r - relpath;
+				if (parent_name_len > 0) {
+					char *parent_name =
+						zfs_alloc(zhp->zfs_hdl,
+								  parent_name_len + 1);
+					(void) strlcpy(parent_name, relpath,
+								   parent_name_len + 1);
+					(void) snprintf(propbuf, proplen,
+									"%s%s%s%s/.zfs/snapshot/%s", root,
+									str, source == NULL ||
+									source[0] == '\0' ? "/Volumes/" :
+									"/", parent_name, snapshot_name);
+					free(parent_name);
+				} else {
+					(void) snprintf(propbuf, proplen,
+									"%s%s%s.zfs/snapshot/%s", root, str,
+									source == NULL ||
+									source[0] == '\0' ? "/Volumes/" :
+									"/", snapshot_name);
 				}
 			} else {
 #endif
@@ -2372,9 +2380,10 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 			else
 				(void) snprintf(propbuf, proplen, "%s%s%s%s",
 #ifdef __APPLE__
-								root, str, source == "" ? "/Volumes/" : "/",
+				    root, str, source == NULL ||
+				    source[0] == '\0' ? "/Volumes/" : "/",
 #else
-								root, str, relpath[0] == '@' ? "" : "/",
+				    root, str, relpath[0] == '@' ? "" : "/",
 #endif
 				    relpath);
 

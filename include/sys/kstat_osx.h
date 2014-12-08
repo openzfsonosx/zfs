@@ -10,6 +10,7 @@ typedef struct osx_kstat {
 	kstat_named_t darwin_create_negatives;
 	kstat_named_t darwin_reclaim_throttle;
 	kstat_named_t darwin_force_formd_normalized;
+	kstat_named_t darwin_skip_unlinked_drain;
 
 	kstat_named_t arc_zfs_arc_max;
 	kstat_named_t arc_zfs_arc_min;
@@ -86,6 +87,7 @@ extern unsigned int zfs_vnop_ignore_negatives;
 extern unsigned int zfs_vnop_ignore_positives;
 extern unsigned int zfs_vnop_create_negatives;
 extern unsigned int zfs_vnop_reclaim_throttle;
+extern unsigned int zfs_vnop_skip_unlinked_drain;
 extern uint64_t vnop_num_reclaims;
 extern uint64_t vnop_num_vnodes;
 
@@ -117,5 +119,7 @@ extern int zfs_vdev_write_gap_limit;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);
+
+int arc_kstat_update(kstat_t *ksp, int rw);
 
 #endif

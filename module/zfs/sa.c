@@ -571,6 +571,7 @@ sa_find_sizes(sa_os_t *sa, sa_bulk_attr_t *attr_desc, int attr_count,
 {
 	int var_size = 0;
 	int i;
+	int j = -1;
 	int full_space;
 	int hdrsize;
 	int extra_hdrsize;
@@ -622,13 +623,11 @@ sa_find_sizes(sa_os_t *sa, sa_bulk_attr_t *attr_desc, int attr_count,
 				/*
 				 * Account for header space used by array of
 				 * optional sizes of variable-length attributes.
-				 * Record the extra header size in case this
-				 * increase needs to be reversed due to
-				 * spill-over.
+				 * Record the index in case this increase needs
+				 * to be reversed due to spill-over.
 				 */
 				hdrsize += sizeof (uint16_t);
-				if (*index != -1 || might_spill_here)
-					extra_hdrsize += sizeof (uint16_t);
+				j = i;
 			} else {
 				ASSERT(buftype == SA_BONUS);
 				if (*index == -1)
@@ -652,8 +651,13 @@ sa_find_sizes(sa_os_t *sa, sa_bulk_attr_t *attr_desc, int attr_count,
 			*will_spill = B_TRUE;
 	}
 
-	if (*will_spill)
-		hdrsize -= extra_hdrsize;
+	/*
+	 * j holds the index of the last variable-sized attribute for
+	 * which hdrsize was increased.  Reverse the increase if that
+	 * attribute will be relocated to the spill block.
+	 */
+	if (*will_spill && j == *index)
+		hdrsize -= sizeof (uint16_t);
 
 	hdrsize = P2ROUNDUP(hdrsize, 8);
 	return (hdrsize);
@@ -777,8 +781,14 @@ sa_build_layouts(sa_handle_t *hdl, sa_bulk_attr_t *attr_desc, int attr_count,
 		hash ^= SA_ATTR_HASH(attrs[i]);
 		attr_desc[i].sa_addr = data_start;
 		attr_desc[i].sa_size = length;
-		SA_COPY_DATA(attr_desc[i].sa_data_func, attr_desc[i].sa_data,
-		    data_start, length);
+		if (!attr_desc[i].sa_data) {
+			printf("ZFS: NULL SA: SA_COPY_DATA(%p, %p, %p, %u) i=%u\n",
+				   attr_desc[i].sa_data_func, attr_desc[i].sa_data,
+				   data_start, length, i);
+		} else {
+			SA_COPY_DATA(attr_desc[i].sa_data_func, attr_desc[i].sa_data,
+						 data_start, length);
+		}
 		if (sa->sa_attr_table[attrs[i]].sa_length == 0) {
 			sahdr->sa_lengths[len_idx++] = length;
 		}

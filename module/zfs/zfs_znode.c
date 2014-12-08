@@ -188,6 +188,7 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 	zp->z_dirlocks = NULL;
 	zp->z_acl_cached = NULL;
 	zp->z_moved = 0;
+	zp->z_fastpath = B_FALSE;
 	return (0);
 }
 
@@ -753,10 +754,10 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	if (sa_bulk_lookup(zp->z_sa_hdl, bulk, count) != 0 || zp->z_gen == 0) {
 		if (hdl == NULL)
 			sa_handle_destroy(zp->z_sa_hdl);
+		printf("znode_alloc: sa_bulk_lookup failed - aborting\n");
 		zfs_vnode_forget(vp);
 		zp->z_vnode = NULL;
 		kmem_cache_free(znode_cache, zp);
-		dprintf("znode_alloc: sa_bulk_lookup failed - aborting\n");
 		return (NULL);
 	}
 
@@ -1568,45 +1569,36 @@ zfs_znode_delete(znode_t *zp, dmu_tx_t *tx)
 void
 zfs_zinactive(znode_t *zp)
 {
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	uint64_t z_id = zp->z_id;
-
 	ASSERT(zp->z_sa_hdl);
 
-	ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
-
-	mutex_enter(&zp->z_lock);
+	/*
+	 * These locks may already be taken by ourselves, through vnode_create
+	 * reentry.
+	 */
 
 	/*
 	 * If this was the last reference to a file with no links,
 	 * remove the file from the file system.
 	 */
 	if (zp->z_unlinked) {
-		mutex_exit(&zp->z_lock);
-		ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 		zfs_rmnode(zp);
 		return;
 	}
 
-	mutex_exit(&zp->z_lock);
 	zfs_znode_dmu_fini(zp);
-	ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 	zfs_znode_free(zp);
 }
 
 void
 zfs_znode_free(znode_t *zp)
 {
-
-	ASSERT(zp->z_sa_hdl == NULL);
-	zp->z_vnode = NULL;
-#if 0
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
 	mutex_enter(&zfsvfs->z_znodes_lock);
-	list_remove(&zfsvfs->z_all_znodes, zp);
-	mutex_exit(&zfsvfs->z_znodes_lock);
-#endif
+	zp->z_vnode = NULL;
 	POINTER_INVALIDATE(&zp->z_zfsvfs);
+	list_remove(&zfsvfs->z_all_znodes, zp); /* XXX */
+	mutex_exit(&zfsvfs->z_znodes_lock);
 
 	if (zp->z_acl_cached) {
 		zfs_acl_free(zp->z_acl_cached);
@@ -2022,6 +2014,7 @@ zfs_trunc(znode_t *zp, uint64_t end)
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	zfs_sa_upgrade_txholds(tx, zp);
+	dmu_tx_mark_netfree(tx);
 	error = dmu_tx_assign(tx, TXG_WAIT);
 	if (error) {
 		dmu_tx_abort(tx);

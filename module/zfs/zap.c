@@ -209,7 +209,7 @@ zap_table_grow(zap_t *zap, zap_table_phys_t *tbl,
 		tbl->zt_nextblk = 0;
 		tbl->zt_blks_copied = 0;
 
-		dprintf("finished; numblocks now %llu (%lluk entries)\n",
+		dprintf("finished; numblocks now %llu (%uk entries)\n",
 		    tbl->zt_numblks, 1<<(tbl->zt_shift-10));
 	}
 
@@ -495,6 +495,9 @@ zap_open_leaf(uint64_t blkid, dmu_buf_t *db)
 	return (l);
 }
 
+
+
+
 static int
 zap_get_leaf_byblk(zap_t *zap, uint64_t blkid, dmu_tx_t *tx, krw_t lt,
     zap_leaf_t **lp)
@@ -521,7 +524,17 @@ zap_get_leaf_byblk(zap_t *zap, uint64_t blkid, dmu_tx_t *tx, krw_t lt,
 	if (l == NULL)
 		l = zap_open_leaf(blkid, db);
 
+#ifdef __APPLE__
+#ifdef _KERNEL
+	if (!rw_isinit(&l->l_rwlock)) {
+		printf("ZFS: bad rwlock detected\n");
+		return ENXIO;
+	}
+#endif
+#endif
+
 	rw_enter(&l->l_rwlock, lt);
+
 	/*
 	 * Must lock before dirtying, otherwise l->l_phys could change,
 	 * causing ASSERT below to fail.
@@ -578,6 +591,12 @@ zap_deref_leaf(zap_t *zap, uint64_t h, dmu_tx_t *tx, krw_t lt, zap_leaf_t **lp)
 	ASSERT(zap->zap_dbuf == NULL ||
 	    zap->zap_f.zap_phys == zap->zap_dbuf->db_data);
 	ASSERT3U(zap->zap_f.zap_phys->zap_magic, ==, ZAP_MAGIC);
+#ifdef __APPLE__
+	if (zap->zap_f.zap_phys->zap_magic != ZAP_MAGIC) {
+		printf("ZFS: defer_leaf bad zap detected\n");
+		return ENXIO;
+	}
+#endif
 	idx = ZAP_HASH_IDX(h, zap->zap_f.zap_phys->zap_ptrtbl.zt_shift);
 	err = zap_idx_to_blk(zap, idx, &blk);
 	if (err != 0)

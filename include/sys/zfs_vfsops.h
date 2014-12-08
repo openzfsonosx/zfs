@@ -84,13 +84,14 @@ struct zfsvfs {
         uint64_t        z_version;
         uint64_t        z_shares_dir;   /* hidden shares dir */
         kmutex_t	    z_lock;
+#ifdef __APPLE__
         kmutex_t	    z_reclaim_list_lock; /* lock for using z_reclaim_list*/
-        uint64_t        z_vnode_create_depth;/* inc/dec before/after vnode_create */
         list_t          z_reclaim_znodes;/* all reclaimed vnodes in the fs*/
         boolean_t       z_reclaim_thread_exit;
         kmutex_t		z_reclaim_thr_lock;
         kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
 	    dev_t z_rdev;
+#endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
         uint64_t	    z_replay_eof;	/* New end of file - replay only */

@@ -63,9 +63,9 @@
 
 #include <sys/zap.h>
 
-#ifndef __APPLE__
 #include <sys/sa.h>
 #include <sys/sa_impl.h>
+#ifndef __APPLE__
 #include <sys/varargs.h>
 #include <sys/policy.h>
 #include <sys/atomic.h>
@@ -109,6 +109,7 @@
 
 unsigned int zfs_vfs_suspend_fs_begin_delay = 2;
 unsigned int zfs_vfs_suspend_fs_end_delay = 2;
+unsigned int zfs_vnop_skip_unlinked_drain = 0;
 
 int  zfs_module_start(kmod_info_t *ki, void *data);
 int  zfs_module_stop(kmod_info_t *ki, void *data);
@@ -718,7 +719,7 @@ zfs_space_delta_cb(dmu_object_type_t bonustype, void *data,
 		*userp = znp->zp_uid;
 		*groupp = znp->zp_gid;
 	} else {
-#if 0
+#if 1
 		int hdrsize;
 		sa_hdr_phys_t *sap = data;
 		sa_hdr_phys_t sa = *sap;
@@ -1164,9 +1165,10 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 		 * During replay we remove the read only flag to
 		 * allow replays to succeed.
 		 */
-#if 0
-		if (!vfs_isrdonly(zfsvfs->z_vfs))
-			zfs_unlinked_drain(zfsvfs);
+#if 1
+		if (!zfs_vnop_skip_unlinked_drain)
+			if (!vfs_isrdonly(zfsvfs->z_vfs))
+				zfs_unlinked_drain(zfsvfs);
 #endif
 
 		/*

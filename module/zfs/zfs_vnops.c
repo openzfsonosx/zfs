@@ -1960,7 +1960,9 @@ top:
 	 * and clearing out the vnode when the VFS still has a reference
 	 * open on it, even though it's dropping it shortly.
 	 */
-#ifndef __APPLE__
+#ifdef __APPLE__
+	may_delete_now = !vnode_isinuse(vp, 0) && !vn_has_cached_data(vp);
+#else
 	VI_LOCK(vp);
 	may_delete_now = vp->v_count == 1 && !vn_has_cached_data(vp);
 	VI_UNLOCK(vp);
@@ -2004,6 +2006,14 @@ top:
 	/* charge as an update -- would be nice not to charge at all */
 	dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, FALSE, NULL);
 
+	/*
+	 * Mark this transaction as typically resulting in a net free of
+	 * space, unless object removal will be delayed indefinitely
+	 * (due to active holds on the vnode due to the file being open).
+	 */
+	if (may_delete_now)
+		dmu_tx_mark_netfree(tx);
+
 	error = dmu_tx_assign(tx, waited ? TXG_WAITED : TXG_NOWAIT);
 	if (error) {
 		zfs_dirent_unlock(dl);
@@ -2034,7 +2044,6 @@ top:
 	}
 
 	if (unlinked) {
-
 		/*
 		 * Hold z_lock so that we can make sure that the ACL obj
 		 * hasn't changed.  Could have been deleted due to
@@ -2055,19 +2064,10 @@ top:
 #endif
 	}
 
-#ifdef __APPLE__
-    /*
-     *
-     * The delete_now path should not be taken, FreeBSD relies on
-     * conditions above to have it unset. We will simply unset it here
-     *
-     */
-    delete_now = 0;
-#endif
+	dprintf("vnop_remove: may_delete_now is %d, delete_now %d\n",
+		   may_delete_now, delete_now);
+
 	if (delete_now) {
-#if defined (__FreeBSD__) || defined(__APPLE__)
-		panic("zfs_remove: delete_now branch taken");
-#endif
 		if (xattr_obj_unlinked) {
 			ASSERT3U(xzp->z_links, ==, 2);
 			mutex_enter(&xzp->z_lock);
@@ -2088,35 +2088,37 @@ top:
 				    sizeof (uint64_t), tx);
 			ASSERT(error==0);
 		}
+
 #ifndef __APPLE__
 		VI_LOCK(vp);
 		vp->v_count--;
 		ASSERT0(vp->v_count);
 		VI_UNLOCK(vp);
-#else
-        /* None of this code is run on Apple, see delete_now panic above */
-
-        /* Release the hold zfs_zget put on the vnode */
-		vnode_put(vp);
-
-		/* zfs_znode_delete clears out the dbufs AND
-		 * frees the entire znode as part of the dmu's
-		 * evict func during the sync thread
-		 */
-        dprintf("zfs_remove: vnode_recycle\n");
-		zfs_znode_delete(zp, tx);
-        vnode_removefsref(vp);
-        vnode_clearfsnode(vp);
-		vnode_recycle(vp);
 #endif
 		mutex_exit(&zp->z_lock);
-		zfs_znode_delete(zp, tx);
+		vnode_pager_setsize(vp, 0);
+		VN_RELE(vp);
+		/*
+		 * Call recycle which will call vnop_reclaim directly if it can
+		 * so tell reclaim to not do anything with this node, so we can
+		 * release it directly. If recycl/reclaim didn't work out, defer
+		 * it by placing it on the unlinked list.
+		 */
+		zp->z_fastpath = B_TRUE;
+		if (vnode_recycle(vp) == 1) {
+			/* recycle/reclaim is done, so we can just release now */
+			zfs_znode_delete(zp, tx);
+		} else {
+			/* failed to recycle, so just place it on the unlinked list */
+			zp->z_fastpath = B_FALSE;
+			zfs_unlinked_add(zp, tx);
+		}
+		vp = NULL;
+		zp = NULL;
+
 	} else if (unlinked) {
 		mutex_exit(&zp->z_lock);
 		zfs_unlinked_add(zp, tx);
-#ifdef __FreeBSD__
-		vp->v_vflag |= VV_NOSYNC;
-#endif
 	}
 
 	txtype = TX_REMOVE;
@@ -2131,11 +2133,13 @@ out:
 
 	zfs_dirent_unlock(dl);
 
-	if (!delete_now)
-		VN_RELE(vp);
-	if (xzp)
+    if (xzp) {
 		VN_RELE(ZTOV(xzp));
-
+		vnode_recycle(ZTOV(xzp));
+	}
+	if (!delete_now) {
+		VN_RELE(vp);
+	}
 	if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
 		zil_commit(zilog, 0);
 

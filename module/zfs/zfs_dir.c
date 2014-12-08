@@ -473,21 +473,17 @@ zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 * (force) umounted the file system.
 */
 void
-zfs_unlinked_drain(zfsvfs_t *zfsvfs)
+zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
 {
         zap_cursor_t        zc;
         zap_attribute_t zap;
         dmu_object_info_t doi;
         znode_t                *zp;
         int                error;
+		uint64_t entries=0;
 
-        printf("ZFS: unlinked drain\n");
-
-        /*
-         * Interate over the contents of the unlinked set.
-         */
         for (zap_cursor_init(&zc, zfsvfs->z_os, zfsvfs->z_unlinkedobj);
-         zap_cursor_retrieve(&zc, &zap) == 0;
+			 zap_cursor_retrieve(&zc, &zap) == 0;
          zap_cursor_advance(&zc)) {
 
                 /*
@@ -496,9 +492,9 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 
                 error = dmu_object_info(zfsvfs->z_os,
                  zap.za_first_integer, &doi);
-                if (error != 0)
-                        continue;
-
+                if (error != 0) {
+					continue;
+				}
                 ASSERT((doi.doi_type == DMU_OT_PLAIN_FILE_CONTENTS) ||
                  (doi.doi_type == DMU_OT_DIRECTORY_CONTENTS));
                 /*
@@ -513,14 +509,66 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
                  * directory. All we need to do is skip over them, since they
                  * are already in the system marked z_unlinked.
                  */
-                if (error != 0)
-                        continue;
+                if (error != 0) continue;
 
+				entries++;
                 zp->z_unlinked = B_TRUE;
+
                 VN_RELE(ZTOV(zp));
+
+#ifdef __APPLE__
+				/* Call vnop_reclaim now to keep the unlinked order */
+				vnode_recycle(ZTOV(zp));
+#endif
+
+				if (!(entries % 10000))
+					printf("ZFS: unlinked drain progress (%llu)\n", entries);
+
+				/* Check if unmount is attempted, if so, abort to exit */
+				if (zfsvfs->z_unmounted) break;
+
+
         }
         zap_cursor_fini(&zc);
-        printf("ZFS: unlinked drain completed.\n");
+        printf("ZFS: unlinked drain completed (%llu).\n", entries);
+
+}
+
+
+static void zfs_unlinked_drain_start(void *arg)
+{
+	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
+	zfs_unlinked_drain_internal(zfsvfs);
+	thread_exit();
+}
+
+void
+zfs_unlinked_drain(zfsvfs_t *zfsvfs)
+{
+        zap_cursor_t        zc;
+        zap_attribute_t zap;
+        dmu_object_info_t doi;
+        znode_t                *zp;
+        int                error;
+		uint64_t entries=0;
+
+        /*
+         * Interate over the contents of the unlinked set.
+         */
+        for (zap_cursor_init(&zc, zfsvfs->z_os, zfsvfs->z_unlinkedobj);
+         zap_cursor_retrieve(&zc, &zap) == 0;
+         zap_cursor_advance(&zc)) {
+			entries++;
+        }
+        zap_cursor_fini(&zc);
+
+        printf("ZFS: unlinked drain (Total entries: %llu).\n", entries);
+
+		if (!entries) return;
+
+		(void) thread_create(NULL, 0, zfs_unlinked_drain_start, zfsvfs, 0, &p0,
+							 TS_RUN, minclsyspri);
+
 }
 
 
@@ -537,6 +585,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
  *	Also, it assumes the directory contents is *only* regular
  *	files.
  */
+extern unsigned int rwlock_detect_problem;
 static int
 zfs_purgedir(znode_t *dzp)
 {
@@ -555,6 +604,12 @@ zfs_purgedir(znode_t *dzp)
 		error = zfs_zget(zfsvfs,
 		    ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
 		if (error) {
+#ifdef __APPLE__
+			if ((error == ENXIO)) {
+				printf("ZFS: Detected problem with item %llu\n",
+					   dzp->z_id);
+			}
+#endif
 			skipped += 1;
 			continue;
 		}
@@ -571,6 +626,7 @@ zfs_purgedir(znode_t *dzp)
 		dmu_tx_hold_zap(tx, zfsvfs->z_unlinkedobj, FALSE, NULL);
 		/* Is this really needed ? */
 		zfs_sa_upgrade_txholds(tx, xzp);
+		dmu_tx_mark_netfree(tx);
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
 			dmu_tx_abort(tx);
@@ -594,6 +650,15 @@ zfs_purgedir(znode_t *dzp)
 	zap_cursor_fini(&zc);
 	if (error != ENOENT)
 		skipped += 1;
+
+#ifdef __APPLE__
+	if (error == ENXIO) {
+		printf("ZFS: purgedir detected corruption. dropping %llu\n",
+			   dzp->z_id);
+		return 0; // Remove this dir anyway
+	}
+#endif
+
 	return (skipped);
 }
 
@@ -618,17 +683,19 @@ zfs_rmnode(znode_t *zp)
 	/*
 	 * If this is an attribute directory, purge its contents.
 	 */
-	if (IFTOVT((mode_t)zp->z_mode) == VDIR &&
-	    (zp->z_pflags & ZFS_XATTR)) {
 
-        if (!ZTOV(zp) || zfs_purgedir(zp) != 0) {
-            /*
-             * Not enough space to delete some xattrs.
-             * Leave it in the unlinked set.
-             */
-            zfs_znode_dmu_fini(zp);
-            return;
-        }
+	if ((IFTOVT((mode_t)zp->z_mode) == VDIR) &&
+		(zp->z_pflags & ZFS_XATTR)) {
+
+		if (zfs_purgedir(zp) != 0) {
+			/*
+			 * Not enough space to delete some xattrs.
+			 * Leave it in the unlinked set.
+			 */
+			zfs_znode_dmu_fini(zp);
+			zfs_znode_free(zp);
+			return;
+		}
 	}
 
 	/*
@@ -640,7 +707,8 @@ zfs_rmnode(znode_t *zp)
 		 * Not enough space.  Leave the file in the unlinked set.
 		 */
 		zfs_znode_dmu_fini(zp);
-		//zfs_znode_free(zp);
+		/* Can't release zp before vp, so tell VFS to release */
+		zfs_znode_free(zp);
 		return;
 	}
 
@@ -649,7 +717,7 @@ zfs_rmnode(znode_t *zp)
 	 * the xattr dir.
 	 */
 	error = sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
-	    &xattr_obj, sizeof (xattr_obj));
+		&xattr_obj, sizeof (xattr_obj));
 	if (error == 0 && xattr_obj) {
 		error = zfs_zget(zfsvfs, xattr_obj, &xzp);
 		ASSERT(error == 0);
@@ -680,7 +748,7 @@ zfs_rmnode(znode_t *zp)
 		 */
 		dmu_tx_abort(tx);
 		zfs_znode_dmu_fini(zp);
-		//zfs_znode_free(zp);
+		zfs_znode_free(zp);
 		goto out;
 	}
 
@@ -704,8 +772,7 @@ zfs_rmnode(znode_t *zp)
 	dmu_tx_commit(tx);
 out:
 	if (xzp)
-		//VN_RELE(ZTOV(xzp)); // async
-	VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
+		VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
 }
 
 static uint64_t
@@ -837,7 +904,8 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 	int count = 0;
 	int error;
 
-	dnlc_remove(ZTOV(dzp), dl->dl_name);
+	if (ZTOV(dzp))
+		dnlc_remove(ZTOV(dzp), dl->dl_name);
 
 	if (!(flag & ZRENAMING)) {
 		if (vn_vfswlock(vp))		/* prevent new mounts on zp */

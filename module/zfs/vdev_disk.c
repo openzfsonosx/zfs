@@ -233,6 +233,7 @@ skip_open:
 	dprintf("vdev_disk: Device %p ashift set to %d\n", devvp,
 	    dvd->vd_ashift);
 
+
 	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
 
 	/*

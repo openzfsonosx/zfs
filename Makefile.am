@@ -12,7 +12,7 @@ SUBDIRS = include
 if CONFIG_KERNEL
 SUBDIRS += module
 
-extradir = /usr/src/zfs-$(VERSION)
+extradir = @prefix@/src/zfs-$(VERSION)
 extra_HEADERS = zfs.release.in zfs_config.h.in
 
 kerneldir = /usr/src/zfs-$(VERSION)/$(LINUX_VERSION)
