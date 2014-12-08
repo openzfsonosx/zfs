@@ -426,7 +426,7 @@ vdev_disk_io_start(zio_t *zio)
 	}
 
 	flags = (zio->io_type == ZIO_TYPE_READ ? B_READ : B_WRITE);
-	/* flags |= B_NOCACHE; */
+	flags |= B_NOCACHE;
 
 	if (zio->io_flags & ZIO_FLAG_FAILFAST)
 		flags |= B_FAILFAST;
