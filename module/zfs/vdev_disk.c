@@ -223,7 +223,7 @@ skip_open:
 	dprintf("vdev_disk_open: Attempting to set ashift to %llu (%u)\n",
 	    vd->vdev_ashift, blksize);
 	if ((error = VNOP_IOCTL(devvp, DKIOCSETBLOCKSIZE,
-	    (caddr_t)&blksize, 0, context)) != 0) {
+	    (caddr_t)&blksize, FWRITE, context)) != 0) {
 		/*
 		 * An error here is not fatal, just use the block size
 		 * returned by devvp below (unless that value is larger
@@ -349,7 +349,7 @@ vdev_disk_close(vdev_t *vd)
 		ASSERT(context != 0);
 
 		if ((error = VNOP_IOCTL(dvd->vd_devvp, DKIOCSETBLOCKSIZE,
-		    (caddr_t)&blksize, 0, context)) != 0) {
+		    (caddr_t)&blksize, FWRITE, context)) != 0) {
 			dprintf("vdev_disk_close: failed to reset blksize: ");
 			dprintf("%u, error: %d\n", blksize, error);
 		}
