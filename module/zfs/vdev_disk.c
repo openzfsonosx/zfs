@@ -216,6 +216,25 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 skip_open:
 #endif
 	/*
+	 * Set devvp blocksize, using ashift if available
+	 */
+	blksize = (vd->vdev_ashift == 0 ? DEV_BSIZE : 1U << vd->vdev_ashift);
+
+	dprintf("vdev_disk_open: Attempting to set ashift to %llu (%u)\n",
+	    vd->vdev_ashift, blksize);
+	if ((error = VNOP_IOCTL(devvp, DKIOCSETBLOCKSIZE,
+	    (caddr_t)&blksize, 0, context)) != 0) {
+		/*
+		 * An error here is not fatal, just use the block size
+		 * returned by devvp below (unless that value is larger
+		 * than the ashift requested by the upper layers).
+		 * It will simply mean more read and write IOs will be
+		 * issued.
+		 */
+		dprintf("vdev_disk_open: failed to set blksize\n");
+	}
+
+	/*
 	 * Determine the actual size of the device.
 	 */
 	if (VNOP_IOCTL(devvp, DKIOCGETBLOCKSIZE, (caddr_t)&blksize, 0,
@@ -229,12 +248,12 @@ skip_open:
 	*psize = blkcnt * (uint64_t)blksize;
 	*max_psize = *psize;
 
-	dvd->vd_ashift = highbit(blksize) - 1;
+	dvd->vd_ashift = highbit64(blksize) - 1;
 	dprintf("vdev_disk: Device %p ashift set to %d\n", devvp,
 	    dvd->vd_ashift);
 
-
-	*ashift = highbit(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
+	*ashift = highbit64(MAX(blksize, SPA_MINBLOCKSIZE)) - 1;
+	ASSERT(*ashift <= vd->vdev_ashift);
 
 	/*
 	 *  ### APPLE TODO ###
@@ -289,6 +308,8 @@ static void
 vdev_disk_close(vdev_t *vd)
 {
 	vdev_disk_t *dvd = vd->vdev_tsd;
+	uint32_t blksize = DEV_BSIZE;
+	int error = 0;
 
 	if (vd->vdev_reopening || dvd == NULL)
 		return;
@@ -325,6 +346,20 @@ vdev_disk_close(vdev_t *vd)
 	if (dvd->vd_devvp != NULL) {
 		vfs_context_t context;
 		context = vfs_context_create(spl_vfs_context_kernel());
+		ASSERT(context != 0);
+
+		if ((error = VNOP_IOCTL(dvd->vd_devvp, DKIOCSETBLOCKSIZE,
+		    (caddr_t)&blksize, 0, context)) != 0) {
+			dprintf("vdev_disk_close: failed to reset blksize: ");
+			dprintf("%u, error: %d\n", blksize, error);
+		}
+		if ((error = VNOP_IOCTL(dvd->vd_devvp, DKIOCGETBLOCKSIZE,
+		    (caddr_t)&blksize, 0, context)) != 0) {
+			dprintf("vdev_disk_close: failed to get blksize: ");
+				dprintf("%u, error: %d\n", blksize, error);
+		}
+		dprintf("vdev_disk_close: blksize reset to: %u\n", blksize);
+
 		(void) vnode_close(dvd->vd_devvp, spa_mode(vd->vdev_spa),
 		    context);
 		(void) vfs_context_rele(context);
