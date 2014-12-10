@@ -1455,7 +1455,7 @@ zvol_log_write(zvol_state_t *zv, dmu_tx_t *tx, offset_t off, ssize_t resid,
 	boolean_t slogging;
 	ssize_t immediate_write_sz;
 
-	if (zil_replaying(zilog, tx))
+	if (!zilog || !tx || zil_replaying(zilog, tx))
 		return;
 
 	immediate_write_sz = (zilog->zl_logbias == ZFS_LOGBIAS_THROUGHPUT)
@@ -2243,7 +2243,7 @@ zvol_log_truncate(zvol_state_t *zv, dmu_tx_t *tx, uint64_t off, uint64_t len,
 	lr_truncate_t *lr;
 	zilog_t *zilog = zv->zv_zilog;
 
-	if (zil_replaying(zilog, tx))
+	if (!zilog || !tx || zil_replaying(zilog, tx))
 		return;
 
 	itx = zil_itx_create(TX_TRUNCATE, sizeof (*lr));
