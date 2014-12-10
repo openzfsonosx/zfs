@@ -455,6 +455,13 @@ zap_leaf_lookup_closest(zap_leaf_t *l,
 
 	ASSERT3U(l->l_phys->l_hdr.lh_magic, ==, ZAP_LEAF_MAGIC);
 
+#ifdef __APPLE__
+	if (l->l_phys->l_hdr.lh_magic != ZAP_LEAF_MAGIC) {
+		printf("ZFS: Corrupt zap_leaf_lookup_closest detected\n");
+		return ENXIO;
+	}
+#endif
+
 	for (lh = LEAF_HASH(l, h); lh <= bestlh; lh++) {
 		for (chunk = l->l_phys->l_hash[lh];
 		    chunk != CHAIN_END; chunk = le->le_next) {

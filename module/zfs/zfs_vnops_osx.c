@@ -1552,6 +1552,11 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 uint64_t vnop_num_reclaims = 0;
 uint64_t vnop_num_vnodes = 0;
 
+/* If enabled, we will signal the reclaim thread to start right after
+ * placing a node on the list, for quicker reclaims
+ */
+#define RECLAIM_SIGNAL
+
 /*
  * Thread started to deal with any nodes in z_reclaim_nodes
  */
@@ -1656,7 +1661,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	znode_t	*zp = NULL;
 	zfsvfs_t *zfsvfs = NULL;
 	static int has_warned = 0;
-	reentry_threads_t *reentry;
 	boolean_t exception;
 	boolean_t fastpath;
 	ASSERT(zp != NULL);
@@ -1688,32 +1692,15 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	 * If we can do direct reclaim, do so now - in zfs_zinactive,
 	 * calling zfs_rmnode, we try to do a dmu_tx, which will fail.
 	 * So if we come via;
-	 * = vnode_create (z_reentry_threads)
 	 * = and have a sa_hdl, to call inactive (z_sa_hdl)
 	 * = and is unlinked (z_unlinked)
 	 * we would call dmu_tx, so this needs to be deferred
 	 */
 
-	zp->z_reclaim_reentry = B_FALSE;
-	/* Check to see if this thread is currently inside vnode_create */
-	mutex_enter(&zfsvfs->z_reentry_lock);
-	for (reentry = list_head(&zfsvfs->z_reentry_threads);
-		 reentry;
-		 reentry = list_next(&zfsvfs->z_reentry_threads, reentry)) {
-		if (reentry->id == curthread) {
-			zp->z_reclaim_reentry = B_TRUE;
-			break;
-		}
-	} /* for all threads */
-	mutex_exit(&zfsvfs->z_reentry_lock);
-
 	/* Work out if we can not call zfs_rmnode directly */
-	mutex_enter(&zp->z_lock);
-	exception = ((zp->z_reclaim_reentry == B_TRUE) &&
-				 (zp->z_sa_hdl != NULL) &&
+	exception = ((zp->z_sa_hdl != NULL) &&
 				 zp->z_unlinked) ? B_TRUE : B_FALSE;
 	fastpath = zp->z_fastpath;
-	mutex_exit(&zp->z_lock);
 
 	dprintf("+vnop_reclaim zp %p/%p exception %d fast %d unlinked %d sa_hdl %p\n",
 		   zp, vp, exception, zp->z_fastpath, zp->z_unlinked, zp->z_sa_hdl);
@@ -3103,7 +3090,6 @@ int
 zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 {
 	struct vnode_fsparam vfsp;
-	reentry_threads_t reentry;
 
 	dprintf("getvnode zp %p with vpp %p zfsvfs %p vfs %p\n", zp, vpp,
 	    zfsvfs, zfsvfs->z_vfs);
@@ -3177,15 +3163,8 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 	 * vnode_create() has a habit of calling both vnop_reclaim() and
 	 * vnop_fsync(), which can create havok as we are already holding locks.
 	 */
-	reentry.id = curthread;
-	mutex_enter(&zfsvfs->z_reentry_lock);
-	list_insert_head(&zfsvfs->z_reentry_threads, &reentry);
-	mutex_exit(&zfsvfs->z_reentry_lock);
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0)
 		kpreempt(KPREEMPT_SYNC);
-	mutex_enter(&zfsvfs->z_reentry_lock);
-	list_remove(&zfsvfs->z_reentry_threads, &reentry);
-	mutex_exit(&zfsvfs->z_reentry_lock);
 	atomic_inc_64(&vnop_num_vnodes);
 
 	dprintf("Assigned zp %p with vp %p\n", zp, *vpp);

@@ -2135,7 +2135,7 @@ out:
 
     if (xzp) {
 		VN_RELE(ZTOV(xzp));
-		//vnode_recycle(ZTOV(xzp));
+		vnode_recycle(ZTOV(xzp));
 	}
 	if (!delete_now) {
 		VN_RELE(vp);
