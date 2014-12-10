@@ -477,7 +477,7 @@ zvol_name2minor(const char *name, minor_t *minor)
  * Each request is already locked (to stop writes) we just need to tx and
  * commit
  */
-uint64_t zvol_num_unmap = 0;
+//uint64_t zvol_num_unmap = 0;
 
 void
 zvol_unmap_thread(void *arg)
@@ -513,13 +513,16 @@ zvol_unmap_thread(void *arg)
 #ifdef VERBOSE_UNMAP
 			count++;
 #endif
-			atomic_dec_64(&zvol_num_unmap);
+		//	atomic_dec_64(&zvol_num_unmap);
+			atomic_dec_64(&(zv->zvol_num_unmap));
 
 			/* CODE */
 
 			if (um && zv && zv->zv_objset) {
 
 				tx = dmu_tx_create(um->zv->zv_objset);
+
+				dmu_tx_mark_netfree(tx);
 
 				error = dmu_tx_assign(tx, TXG_WAIT);
 
@@ -532,7 +535,7 @@ zvol_unmap_thread(void *arg)
 					dmu_tx_commit(tx);
 
 					error = dmu_free_long_range(um->zv->zv_objset,
-												ZVOL_OBJ, um->offset, um->bytes);
+					    ZVOL_OBJ, um->offset, um->bytes);
 				}
 
 				zfs_range_unlock(um->rl);
@@ -558,7 +561,7 @@ zvol_unmap_thread(void *arg)
 		if (count)
 			printf("unmap_thr: %p nodes cleared: %d "
 				   "(in list %llu)\n", zv, count,
-				   zvol_num_unmap);
+				   zv->zvol_num_unmap);
 		count = 0;
 #endif
 		/* Allow us to quit, since list is empty */
@@ -567,7 +570,7 @@ zvol_unmap_thread(void *arg)
 		/* block until needed, or one second, whichever is shorter */
 		CALLB_CPR_SAFE_BEGIN(&cpr);
 		(void) cv_timedwait_interruptible(&zv->zv_unmap_thr_cv,
-										  &zv->zv_unmap_thr_lock, (ddi_get_lbolt() + (hz>>1)));
+		    &zv->zv_unmap_thr_lock, (ddi_get_lbolt() + (hz>>1)));
 		CALLB_CPR_SAFE_END(&cpr, &zv->zv_unmap_thr_lock);
 
 	} /* forever */
@@ -672,6 +675,7 @@ zvol_create_minor(const char *name)
 	list_create(&zv->zv_extents, sizeof (zvol_extent_t),
 	    offsetof(zvol_extent_t, ze_node));
 
+	zv->zvol_num_unmap = 0;
 	printf("ZFS: zvol starting unmap thread\n");
 	mutex_init(&zv->zv_unmap_lock, NULL, MUTEX_DEFAULT, NULL);
 	list_create(&zv->zv_unmap_list, sizeof (zvol_unmap_t),
@@ -2053,7 +2057,8 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 	mutex_enter(&zv->zv_unmap_lock);
 	list_insert_tail(&zv->zv_unmap_list, um);
 	mutex_exit(&zv->zv_unmap_lock);
-	atomic_inc_64(&zvol_num_unmap);
+//	atomic_inc_64(&zvol_num_unmap);
+	atomic_inc_64(&(zv->zvol_num_unmap));
 
 	return (0);
 }

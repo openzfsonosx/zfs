@@ -74,10 +74,11 @@ typedef struct zvol_state {
 	boolean_t zv_unmap_thread_exit;
 	kmutex_t zv_unmap_thr_lock;
 	kcondvar_t zv_unmap_thr_cv;
+	uint64_t zvol_num_unmap;
 
 } zvol_state_t;
 
-extern uint64_t zvol_num_unmap;
+//extern uint64_t zvol_num_unmap;
 
 /*
  * Unmap/Discard list node

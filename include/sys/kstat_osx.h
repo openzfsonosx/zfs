@@ -91,7 +91,7 @@ extern unsigned int zfs_vnop_reclaim_throttle;
 extern unsigned int zfs_vnop_skip_unlinked_drain;
 extern uint64_t vnop_num_reclaims;
 extern uint64_t vnop_num_vnodes;
-extern uint64_t zvol_num_unmap;
+//extern uint64_t zvol_num_unmap;
 
 extern uint64_t zfs_arc_max;
 extern uint64_t zfs_arc_min;

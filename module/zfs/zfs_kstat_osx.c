@@ -218,7 +218,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->darwin_reclaim_throttle.value.ui64       = zfs_vnop_reclaim_throttle;
 		ks->darwin_force_formd_normalized.value.ui64 = zfs_vnop_force_formd_normalized_output;
 		ks->darwin_skip_unlinked_drain.value.ui64    = zfs_vnop_skip_unlinked_drain;
-		ks->darwin_unmap_nodes.value.ui64            = zvol_num_unmap;
+//		ks->darwin_unmap_nodes.value.ui64            = zvol_num_unmap;
 
 		/* ARC */
 		arc_kstat_update(ksp, rw);
