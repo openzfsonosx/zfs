@@ -137,6 +137,22 @@ namespace ID
 		return result;
 	}
 
+	std::string serialNumberFromIOObject(io_object_t ioObject)
+	{
+		static CFStringRef const serialStrings[] = {
+			CFSTR("Serial Number"),
+			CFSTR("INQUIRY Unit Serial Number"),
+			CFSTR("USB Serial Number")
+		};
+		for (CFStringRef serialString: serialStrings)
+		{
+			std::string serial = stringFromIOObjectWithParents(ioObject, serialString);
+			if (!serial.empty())
+				return serial;
+		}
+		return std::string();
+	}
+
 	DiskInformation getDiskInformation(DADiskRef disk)
 	{
 		DiskInformation info;
@@ -164,7 +180,7 @@ namespace ID
 		CFRelease(descDict);
 		// IOKit
 		io_service_t io = DADiskCopyIOMedia(disk);
-		info.ioSerial = stringFromIOObjectWithParents(io, CFSTR("Serial Number"));
+		info.ioSerial = serialNumberFromIOObject(io);
 		CFMutableDictionaryRef ioDict = nullptr;
 		if (IORegistryEntryCreateCFProperties(io, &ioDict, kCFAllocatorDefault, 0) == kIOReturnSuccess)
 		{
