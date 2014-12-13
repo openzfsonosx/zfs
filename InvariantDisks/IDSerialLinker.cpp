@@ -89,7 +89,10 @@ namespace ID
 
 	std::string SerialLinker::formatSerialPath(DiskInformation const & di) const
 	{
-		return m_base + "/" + formatSerial(di);
+		std::string serial = formatSerial(di);
+		if (!serial.empty())
+			serial = m_base + "/" + serial;
+		return serial;
 	}
 
 	void SerialLinker::diskAppeared(DADiskRef disk, DiskInformation const & di)
