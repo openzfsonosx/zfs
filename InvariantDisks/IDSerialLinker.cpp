@@ -70,10 +70,20 @@ namespace ID
 
 	std::string formatSerial(DiskInformation const & di)
 	{
-		std::string formated = trim(di.deviceModel) + "-" + trim(di.ioSerial);
+		std::string model = trim(di.deviceModel);
+		std::string serial = trim(di.ioSerial);
+		std::string formated;
+		if (!serial.empty())
+		{
+			if (model.empty())
+				formated = serial;
+			else
+				formated = model + "-" + serial;
+		}
 		std::replace(formated.begin(), formated.end(), ' ', '_');
 		formated.erase(std::remove_if(formated.begin(), formated.end(), isInvalidSerialChar), formated.end());
-		formated += partitionSuffix(di);
+		if (!formated.empty())
+			formated += partitionSuffix(di);
 		return formated;
 	}
 
@@ -89,6 +99,8 @@ namespace ID
 			try
 			{
 				std::string serial = formatSerialPath(di);
+				if (serial.empty())
+					return;
 				std::string devicePath = "/dev/" + di.mediaBSDName;
 				std::cout << "Creating symlink: \"" << serial << "\" -> " << devicePath << std::endl;
 				createSymlink(serial, devicePath);
@@ -107,6 +119,8 @@ namespace ID
 			try
 			{
 				std::string serial = formatSerialPath(di);
+				if (serial.empty())
+					return;
 				std::string devicePath = "/dev/" + di.mediaBSDName;
 				std::cout << "Removing symlink: \"" << serial << "\"" << std::endl;
 				removeFSObject(serial);
