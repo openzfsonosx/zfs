@@ -35,10 +35,12 @@ namespace ID
 
 	void DAHandlerIdle::idle()
 	{
+		createFile(m_base + "/invariant.idle");
 	}
 
 	void DAHandlerIdle::busy()
 	{
+		removeFSObject(m_base + "/invariant.idle");
 		scheduleSingleshot(m_idleTimer, m_idleTimeout);
 	}
 }

@@ -109,7 +109,7 @@ namespace ID
 				std::string serial = formatSerialPath(di);
 				std::string devicePath = "/dev/" + di.mediaBSDName;
 				std::cout << "Removing symlink: \"" << serial << "\"" << std::endl;
-				removeSymlink(serial);
+				removeFSObject(serial);
 			}
 			catch (std::exception const & e)
 			{

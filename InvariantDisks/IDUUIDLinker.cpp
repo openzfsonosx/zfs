@@ -67,7 +67,7 @@ namespace ID
 				mediaID = m_base + "/" + mediaID;
 				std::string devicePath = "/dev/" + di.mediaBSDName;
 				std::cout << "Removing symlink: \"" << mediaID << "\"" << std::endl;
-				removeSymlink(mediaID);
+				removeFSObject(mediaID);
 			}
 			catch (std::exception const & e)
 			{

@@ -69,7 +69,7 @@ namespace ID
 			{
 				mediaPath = m_base + "/" + mediaPath;
 				std::cout << "Removing symlink: \"" << mediaPath << "\"" << std::endl;
-				removeSymlink(mediaPath);
+				removeFSObject(mediaPath);
 			}
 			catch (std::exception const & e)
 			{

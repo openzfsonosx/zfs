@@ -16,6 +16,8 @@
 
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
 #include <string.h>
 
 namespace ID
@@ -36,11 +38,29 @@ namespace ID
 		while (slashIdx != std::string::npos);
 	}
 
+	void createFile(std::string const & path)
+	{
+		if (path.empty())
+			throw Exception("Can not create file with empty path");
+		removeFSObject(path);
+		// Create the file for event use only with user-readability only
+		int fd = open(path.c_str(), O_EVTONLY | O_CREAT, 0700);
+		if (fd >= 0)
+		{
+			close(fd);
+		}
+		else
+		{
+			Throw<Exception> e;
+			e << "Error creating file " << path << ": " << strerror(errno);
+		}
+	}
+
 	void createSymlink(std::string const & link, std::string const & target)
 	{
 		if (link.empty() || target.empty())
 			throw Exception("Can not create symlink with empty path");
-		removeSymlink(link);
+		removeFSObject(link);
 		int err = symlink(target.c_str(), link.c_str());
 		if (err != 0)
 		{
@@ -49,15 +69,15 @@ namespace ID
 		}
 	}
 
-	void removeSymlink(std::string const & link)
+	void removeFSObject(std::string const & path)
 	{
-		if (link.empty())
-			throw Exception("Can not remove symlink with empty path");
-		int err = unlink(link.c_str());
+		if (path.empty())
+			throw Exception("Can not remove file system object with empty path");
+		int err = unlink(path.c_str());
 		if (err != 0 && errno != ENOENT)
 		{
 			Throw<Exception> e;
-			e << "Error removing symlink " << link << ": " << strerror(err);
+			e << "Error removing file system object " << path << ": " << strerror(err);
 		}
 	}
 }

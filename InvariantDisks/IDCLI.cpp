@@ -73,7 +73,7 @@ namespace ID
 			m_impl->runloop = CFRunLoopGetCurrent();
 		}
 		DiskArbitrationDispatcher dispatcher;
-		dispatcher.addHandler(std::make_shared<DAHandlerIdle>(m_impl->basePath + "invariant.idle"));
+		dispatcher.addHandler(std::make_shared<DAHandlerIdle>(m_impl->basePath));
 		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout, m_impl->verbose));
 		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path"));
 		dispatcher.addHandler(std::make_shared<UUIDLinker>(m_impl->basePath + "/by-id"));
