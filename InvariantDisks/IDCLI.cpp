@@ -15,9 +15,11 @@
 #include "IDException.hpp"
 #include "IDDiskArbitrationDispatcher.hpp"
 #include "IDDiskInfoLogger.hpp"
+#include "IDDAHandlerIdle.hpp"
 #include "IDMediaPathLinker.hpp"
 #include "IDUUIDLinker.hpp"
 #include "IDSerialLinker.hpp"
+#include "IDDispatchUtils.hpp"
 
 #include <vector>
 #include <map>
@@ -35,29 +37,6 @@
 
 namespace ID
 {
-	struct DispatchDelete
-	{
-		void operator()(dispatch_source_s * source)
-		{
-			dispatch_source_set_event_handler_f(source, nullptr);
-			dispatch_release(source);
-		}
-	};
-
-	typedef std::unique_ptr<dispatch_source_s, DispatchDelete> DispatchSource;
-
-	DispatchSource createSourceSignal(int sig, void * ctx)
-	{
-		signal(sig, SIG_IGN);
-		dispatch_source_t source = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, sig, 0,
-														  DISPATCH_TARGET_QUEUE_DEFAULT);
-		dispatch_set_context(source, ctx);
-		dispatch_source_set_event_handler_f(source,
-			[](void * ctx){ static_cast<CLI*>(ctx)->stop();});
-		dispatch_resume(source);
-		return DispatchSource(source);
-	}
-
 	struct CLI::Impl
 	{
 		std::mutex mutex;
@@ -73,8 +52,9 @@ namespace ID
 		m_impl(new Impl)
 	{
 		// Setup
-		m_impl->signalSourceINT = createSourceSignal(SIGINT, this);
-		m_impl->signalSourceTERM = createSourceSignal(SIGTERM, this);
+		dispatch_function_t stopHandler = [](void * ctx){ static_cast<CLI*>(ctx)->stop();};
+		m_impl->signalSourceINT = createSourceSignal(SIGINT, this, stopHandler);
+		m_impl->signalSourceTERM = createSourceSignal(SIGTERM, this, stopHandler);
 		// UI
 		std::cout << "InvariantDisk " << GIT_VERSION << std::endl;
 		parse(argc, argv);
@@ -93,6 +73,7 @@ namespace ID
 			m_impl->runloop = CFRunLoopGetCurrent();
 		}
 		DiskArbitrationDispatcher dispatcher;
+		dispatcher.addHandler(std::make_shared<DAHandlerIdle>(m_impl->basePath + "invariant.idle"));
 		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout, m_impl->verbose));
 		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path"));
 		dispatcher.addHandler(std::make_shared<UUIDLinker>(m_impl->basePath + "/by-id"));
