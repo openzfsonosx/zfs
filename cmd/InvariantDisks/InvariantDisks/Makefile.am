@@ -10,6 +10,8 @@ sbin_PROGRAMS = InvariantDisks
 InvariantDisks_SOURCES = \
 	IDCLI.cpp \
 	IDCLI.hpp \
+	IDDAHandlerIdle.cpp \
+	IDDAHandlerIdle.hpp \
 	IDDiskArbitrationDispatcher.cpp \
 	IDDiskArbitrationDispatcher.hpp \
 	IDDiskArbitrationHandler.hpp \
@@ -17,6 +19,8 @@ InvariantDisks_SOURCES = \
 	IDDiskArbitrationUtils.hpp \
 	IDDiskInfoLogger.cpp \
 	IDDiskInfoLogger.hpp \
+	IDDispatchUtils.cpp \
+	IDDispatchUtils.hpp \
 	IDException.cpp \
 	IDException.hpp \
 	IDFileUtils.cpp \
