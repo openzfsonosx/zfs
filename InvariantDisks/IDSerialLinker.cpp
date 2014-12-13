@@ -52,7 +52,9 @@ namespace ID
 	{
 		size_t first = s.find_first_not_of(' ');
 		size_t last = s.find_last_not_of(' ');
-		return s.substr(first, last - first);
+		if (first != std::string::npos)
+			return s.substr(first, last - first);
+		return s;
 	}
 
 	std::string partitionSuffix(DiskInformation const & di)
