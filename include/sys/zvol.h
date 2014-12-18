@@ -74,6 +74,9 @@ typedef struct zvol_state {
 enum zfs_soft_state_type {
 	ZSST_ZVOL,
 	ZSST_CTLDEV,
+#ifdef __APPLE__
+	ZSST_PSEUDO,
+#endif
 };
 
 typedef struct zfs_soft_state {

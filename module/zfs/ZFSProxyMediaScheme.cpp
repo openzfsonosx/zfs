@@ -1,6 +1,8 @@
 #include "ZFSProxyMediaScheme.h"
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
+#include <sys/zvolIO.h>
+#include <sys/osx_pseudo.h>
 
 // Define the superclass
 #define super IOPartitionScheme
@@ -19,7 +21,25 @@ IOService* ZFSProxyMediaScheme::probe(IOService* provider, SInt32* score)
     m_child_filesystems = scan(score);
 
     //If this filesystem has no children, then return NULL
-    printf("probe: this %p : m_child_filesystems %p\n", this, m_child_filesystems);
+    printf("probe: this %p : m_child_filesystems %p: provider %p\n",
+		   this, m_child_filesystems, provider);
+
+	IOMedia *up = OSDynamicCast(IOMedia, provider);
+	if (up) {
+		net_lundman_zfs_pseudo_device *pseudo;
+
+		printf("UP ok: name '%s': provider %p: pprovider %p\n",
+			   up->getName(),
+			   up->getProvider(),
+			   up->getProvider()->getProvider());
+
+		pseudo = OSDynamicCast(net_lundman_zfs_pseudo_device,
+							   up->getProvider()->getProvider());
+		// Save ptr to us, so we can call probe in future.
+		if (pseudo)
+			pseudo->registerPool(this);
+	}
+
 
     return m_child_filesystems ? this : NULL;
     return NULL;
@@ -42,10 +62,6 @@ bool ZFSProxyMediaScheme::start (IOService *provider)
     child_filesystemIterator = OSCollectionIterator::withCollection(m_child_filesystems);
     if (child_filesystemIterator == NULL)
         return false;
-
-	setProperty("IOUserClientClass",
-				"com_osxkernel_driver_IOKitTestUserClient");
-
 
     // Attach and register each IOMedia object (representing found partitions)
     while ((child_filesystem = (IOMedia*)child_filesystemIterator->getNextObject()))
@@ -126,6 +142,27 @@ spa_osx_create_devs(const char *dsname, void *arg)
 		return 0;
 	}
 
+
+	// Check if it already exists, so we do an update
+	OSCollectionIterator *iter;
+
+	iter = OSCollectionIterator::withCollection(holder->child_filesystems);
+	if (iter) {
+		IOMedia *media;
+		while (media = (IOMedia *)iter->getNextObject()) {
+			OSObject *sobj;
+			sobj = media->getProperty("DATASET");
+			OSString*osstr = OSDynamicCast(OSString, sobj);
+			if (osstr->isEqualTo(dsname)) {
+				printf("Already has '%s' -- skipping\n", dsname);
+				iter->release();
+				return 0;
+			}
+		}
+
+		iter->release();
+	}
+
 	printf("Creating '%s' (remainer '%s')\n", dsname, part);
 	ZFSFilesystemEntry foo;
 	snprintf(foo.filesystemName, sizeof(foo.filesystemName), "%s",
@@ -142,8 +179,6 @@ spa_osx_create_devs(const char *dsname, void *arg)
 		printf("Name is %s\n", newMedia->getName());
 
 		newMedia->setProperty("DATASET", dsname);
-		newMedia->setProperty("DOMOUNTME", "FALSE");
-		//newMedia->setProperty("DONTMOUNTME", "TRUE");
 		holder->child_filesystems->setObject(newMedia);
 		newMedia->release();
 	}
@@ -162,12 +197,15 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
     //IOBufferMemoryDescriptor*       buffer                  = NULL;
     //SamplePartitionTable*           sampleTable;
 	IOMedia *media                   = getProvider();
+	int highest, id;
+	IOMedia*		child_filesystem;
+	OSIterator*		child_filesystemIterator;
 
     UInt64 child_filesystem_count;
 
     printf("ZFSProxyMediaScheme::scan : provider Content is %s\n", media->getContent());
     printf("ZFSProxyMediaScheme::scan : provider ContentHint is %s\n", media->getContentHint());
-    printf("ZFSProxyMediaScheme::scan : provider Name is %s\n", media->getName());
+    printf("ZFSProxyMediaScheme::scan : provider Name is %s: this %p\n", media->getName(), this);
 
     if (strcmp(media->getContentHint(), "zfs_pool_proxy") == 0) {
         printf("ZFSProxyMediaScheme::scan : it's a zfs_pool_proxy\n");
@@ -182,6 +220,74 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
 
 	struct holder_s holder = { 0 };
 
+	// Assign existing list, so we can add to it
+	if (!m_child_filesystems)
+		holder.child_filesystems = OSSet::withCapacity(1);
+	else
+		holder.child_filesystems = m_child_filesystems;
+
+	if (holder.child_filesystems == NULL)
+		goto bail;
+
+
+
+
+
+
+	printf("Looking for deletions \n");
+
+	/* Here we will loop through the child_filesystem list, and look
+	 * up each name in ZFS. If failed, remove from IOKit. (deletions)
+	 * We do this before adding any new nodes, so we know they were
+	 * registered, and thus, needs to be unregistered
+	 */
+	child_filesystemIterator = OSCollectionIterator::withCollection(holder.child_filesystems);
+	if (child_filesystemIterator) {
+		while ((child_filesystem = (IOMedia*)child_filesystemIterator->getNextObject())) {
+			OSString *dset;
+
+			dset = (OSString *)child_filesystem->getProperty("DATASET");
+			printf("Looking up '%s'\n", dset->getCStringNoCopy());
+
+			objset_t *os;
+
+			if (dmu_objset_hold(dset->getCStringNoCopy(), FTAG, &os) == 0) {
+				dmu_objset_rele(os, FTAG);
+			} else {
+				printf("Told to delete '%s'\n", dset->getCStringNoCopy());
+				child_filesystem->terminate();
+
+				holder.child_filesystems->removeObject(child_filesystem);
+
+			}
+		}
+
+		child_filesystemIterator->release();
+	}
+
+
+
+
+
+
+
+
+	// Find highest index
+	highest = 0;
+
+	child_filesystemIterator = OSCollectionIterator::withCollection(m_child_filesystems);
+	if (child_filesystemIterator) {
+		while ((child_filesystem = (IOMedia*)child_filesystemIterator->getNextObject())) {
+			id = ((OSNumber *)child_filesystem->getProperty("Partition ID"))->unsigned64BitValue();
+
+			if (id > highest) highest = id;
+		}
+
+		child_filesystemIterator->release();
+	}
+	printf("Highest existing ID %u\n", highest);
+	holder.index = highest;
+
 
 	//holder.poolname = media->getName();
 	OSObject *sobj;
@@ -191,10 +297,6 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
 		if (osstr) {
 
 			holder.poolname = (char *)osstr->getCStringNoCopy();
-			holder.index = 0;
-			holder.child_filesystems = OSSet::withCapacity(1);
-			if (holder.child_filesystems == NULL)
-				goto bail;
 
 			printf("Looking for direct children of '%s'\n",
 				   holder.poolname);
@@ -211,7 +313,7 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
     close(this);
   //  buffer->release();
 
-    return holder.child_filesystems;
+	return holder.child_filesystems;
 
 bail:
     // Release all allocated objects

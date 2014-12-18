@@ -154,8 +154,7 @@ zfs_SOURCES = \
 	../zcommon/zprop_common.c \
 	ZFSLabelScheme.cpp \
 	ZFSProxyMediaScheme.cpp \
-	IOKitTestUserClient.cpp \
-	IOKitTest.cpp
+	osx_pseudo_device.cpp
 
 zfs_CPPFLAGS=$(CFLAGS_KMOD)
 zfs_CXXFLAGS=$(CFLAGS_KMOD)

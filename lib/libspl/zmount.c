@@ -220,7 +220,7 @@ iokit_dataset_to_device(const char *spec, io_name_t volname)
 	if (spec == NULL)
 		return (-1);
 
-	iokit_mark_device_to_mount(spec);
+	//iokit_mark_device_to_mount(spec);
 
 	specRef = CFStringCreateWithCString(NULL, spec,
 	    kCFStringEncodingMacRoman);

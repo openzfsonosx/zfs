@@ -3540,11 +3540,13 @@ spa_l2cache_drop(spa_t *spa)
  * For IOkit to work with Spotlight, we have to create a bunch of
  * fake /dev/diskX entries, which require the pool size.
  */
-static void spa_iokit_pool(char *poolname, uint64_t guid)
+void spa_iokit_pool(char *poolname, uint64_t guid)
 {
 	uint64_t refdbytes, availbytes, usedobjs, availobjs;
 	objset_t *os;
 	int error;
+
+	printf("[ZFS] iokit update '%s'\n", poolname);
 
 	error = dmu_objset_hold(poolname, FTAG, &os);
 	if (!error) {
@@ -3552,7 +3554,6 @@ static void spa_iokit_pool(char *poolname, uint64_t guid)
 						 &refdbytes, &availbytes, &usedobjs, &availobjs);
 		dmu_objset_rele(os, FTAG);
 
-		printf("Create pool\n");
 		ZFSDriver_create_pool(poolname, availbytes, 512,
 							  B_FALSE, guid,
 							  dsl_dataset_fsid_guid(dmu_objset_ds(os)));

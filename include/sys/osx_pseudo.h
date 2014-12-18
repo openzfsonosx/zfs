@@ -1,49 +1,28 @@
-#ifndef	ZVOLIO_H_INCLUDED
-#define	ZVOLIO_H_INCLUDED
+#ifndef	PSEUDO_H_INCLUDED
+#define	PSEUDO_H_INCLUDED
 
 #include <IOKit/IOService.h>
-#include <sys/zvol.h>
-
-class net_lundman_zfs_zvol : public IOService
-{
-	OSDeclareDefaultStructors(net_lundman_zfs_zvol)
-
-private:
-
-public:
-	OSDictionary *IOBSDNameMatching( const char * name );
-
-	virtual bool init(OSDictionary* dictionary = NULL);
-	virtual void free(void);
-	virtual IOService* probe(IOService* provider, SInt32* score);
-	virtual bool start(IOService* provider);
-	virtual void stop(IOService* provider);
-	virtual IOReturn doEjectMedia(void *nub);
-	virtual bool createBlockStorageDevice(zvol_state_t *zv);
-	virtual bool destroyBlockStorageDevice(zvol_state_t *zv);
-	virtual bool updateVolSize(zvol_state_t *zv);
-
-	virtual bool createPseudoDevices(char *poolname, uint64_t bytes,
-									 uint64_t block, boolean_t rdonly,
-									 uint64_t pool_guid,
-									 uint64_t dataset_guid);
-	virtual bool  destroyPseudoDevices(char *poolname);
-	virtual char *findDataset(char *dev);
-};
 
 #include <IOKit/storage/IOBlockStorageDevice.h>
 
-class net_lundman_zfs_zvol_device : public IOBlockStorageDevice
+#include "ZFSProxyMediaScheme.h"
+
+
+class net_lundman_zfs_pseudo_device : public IOBlockStorageDevice
 {
-	OSDeclareDefaultStructors(net_lundman_zfs_zvol_device)
+	OSDeclareDefaultStructors(net_lundman_zfs_pseudo_device)
 
 private:
 	net_lundman_zfs_zvol *m_provider;
 	zvol_state_t *zv;
+	ZFSProxyMediaScheme *pool_proxy;
 
 public:
 	virtual bool init(zvol_state_t *c_zv,
 	    OSDictionary* properties = 0);
+
+	virtual void  registerPool(ZFSProxyMediaScheme *);
+	virtual void rescan(IOService *);
 
 	virtual bool attach(IOService* provider);
 	virtual void detach(IOService* provider);
@@ -88,11 +67,6 @@ public:
 	    IOOptionBits options);
 
 	virtual int getBSDName();
-
-	virtual IOReturn newUserClient(task_t owningTask,
-								   void* securityID, UInt32 type,
-								   OSDictionary* properties,
-								   IOUserClient** handler);
 
 };
 

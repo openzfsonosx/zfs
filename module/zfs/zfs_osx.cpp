@@ -8,6 +8,7 @@
 #include <sys/zvol.h>
 
 #include <sys/zvolIO.h>
+#include <sys/osx_pseudo.h>
 
 #include <sys/zfs_vnops.h>
 #include <sys/taskq.h>
@@ -18,13 +19,13 @@
 
 
 extern "C" {
-  extern kern_return_t _start(kmod_info_t *ki, void *data);
-  extern kern_return_t _stop(kmod_info_t *ki, void *data);
-
-extern void *zfsdev_state;
+	extern kern_return_t _start(kmod_info_t *ki, void *data);
+	extern kern_return_t _stop(kmod_info_t *ki, void *data);
+	extern void *zfsdev_state;
 	static zvol_state_t *
 	zvol_minor_lookup(const char *name);
 };
+
   __attribute__((visibility("default"))) KMOD_EXPLICIT_DECL(net.lundman.zfs, "1.0.0", _start, _stop)
   __private_extern__ kmod_start_func_t *_realmain = 0;
   __private_extern__ kmod_stop_func_t  *_antimain = 0;
@@ -426,165 +427,6 @@ bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
 
 
 
-#include "ZFSProxyMediaScheme.h"
-#include <IOKit/IOLib.h>
-#include <IOKit/IOBufferMemoryDescriptor.h>
-
-bool net_lundman_zfs_zvol::createStorageDevice(char *poolname,
-											   uint64_t bytes,
-											   uint64_t block,
-											   boolean_t rdonly,
-											   uint64_t pool_guid,
-											   uint64_t dataset_guid)
-{
-    net_lundman_zfs_zvol_device *nub = NULL;
-    bool            result = false;
-	zvol_state_t *zv;
-	minor_t minor = 0;
-	zfs_soft_state_t *zs;
-
-	printf("iokitCreateNewDevice: size %llu\n", bytes);
-
-	printf("New pool '%s' - checking existance..\n", poolname);
-
-	/* Already locked in spa_import */
-	zv = zvol_minor_lookup(poolname);
-	printf("zv said %p\n", zv);
-
-	if (zv) {
-		destroyStorageDevice(poolname);
-	}
-
-
-	if ((minor = zfsdev_minor_alloc()) == 0) {
-		return false;
-	}
-
-	if (ddi_soft_state_zalloc(zfsdev_state, minor) != DDI_SUCCESS) {
-		return false;
-	}
-	zs = (zfs_soft_state_t *)ddi_get_soft_state(zfsdev_state, minor);
-	zs->zss_type = ZSST_ZVOL;
-	zv = (zvol_state_t *) kmem_zalloc(sizeof (zvol_state_t), KM_SLEEP);
-	zs->zss_data = zv;
-
-	if (!zv) return false;
-
-	zv->zv_volsize = bytes;
-	zv->zv_volblocksize = block;
-	zv->zv_znode.z_is_zvol = 1;
-	(void) strlcpy(zv->zv_name, poolname, MAXPATHLEN);
-	zv->zv_min_bs = DEV_BSHIFT;
-	zv->zv_minor = -1;
-
-	// Allocate a new IOBlockStorageDevice nub.
-	nub = new net_lundman_zfs_zvol_device;
-	if (nub == NULL)
-		return false;
-
-	// Call the custom init method (passing the overall disk size).
-	if (nub->init(zv) == false) {
-		nub->release();
-		return false;
-	}
-
-
-	// Attach the IOBlockStorageDevice to the this driver.
-	// This call increments the reference count of the nub object,
-	// so we can release our reference at function exit.
-	if (nub->attach(this) == false) {
-		nub->release();
-		return false;
-	}
-
-	nub->registerService( kIOServiceSynchronous);
-
-    //ZFSProxyMediaScheme *proxy = OSDynamicCast(ZFSProxyMediaScheme,
-	//										   nub->getClient());
-	//nub->setProperty("DOMOUNTME", "FALSE");
-
-    IOMedia *media = OSDynamicCast(IOMedia, nub->getClient()->getClient());
-
-    //media = OSDynamicCast(IOMedia, serv);
-    printf("media %p\n", media);
-    printf("media->getContent() %s\n", media->getContent());
-    printf("media->getContentHint() %s\n", media->getContentHint());
-    media->setProperty(kIOMediaContentKey, "zfs_pool_proxy");
-    //media->setProperty(kIOMediaContentKey, "zfs_pool_proxy");
-    media->setProperty(kIOMediaContentHintKey, "zfs_pool_proxy");
-    printf("media->getContent() %s\n", media->getContent());
-    printf("media->getContentHint() %s\n", media->getContentHint());
-
-	media->setProperty("DATASET", poolname);
-	media->setProperty("DOMOUNTME", "FALSE");
-
-	printf("Stirring the pot...\n");
-	//requestProbe(0);
-	media->registerService();
-
- bail:
-    // Unconditionally release the nub object.
-    if (nub != NULL)
-        nub->release();
-
-   return result;
-}
-
-extern "C" {
-
-static zvol_state_t *
-zvol_minor_lookup(const char *name)
-{
-	minor_t minor;
-	zvol_state_t *zv;
-
-	ASSERT(MUTEX_HELD(&spa_namespace_lock));
-
-	for (minor = 1; minor <= ZFSDEV_MAX_MINOR; minor++) {
-		zv = (zvol_state_t *)zfsdev_get_soft_state(minor, ZSST_ZVOL);
-		if (zv == NULL)
-			continue;
-		if (strcmp(zv->zv_name, name) == 0)
-			return (zv);
-	}
-
-	return (NULL);
-}
-
-} /* "C" */
-
-
-bool net_lundman_zfs_zvol::destroyStorageDevice (char *poolname)
-{
-    net_lundman_zfs_zvol_device *nub = NULL;
-    bool            result = true;
-	zfs_soft_state_t *zs;
-	zvol_state_t *zv = NULL;
-	minor_t minor;
-
-	zv = zvol_minor_lookup(poolname);
-
-	printf("Destroy '%s' got zv %p\n", poolname, zv);
-
-    if (zv && zv->zv_iokitdev) {
-
-		IOLog("removing fake pool devices\n");
-
-		nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
-
-		minor = zv->zv_minor;
-		zv->zv_iokitdev = NULL;
-		kmem_free(zv, sizeof (zvol_state_t));
-		zv = NULL;
-
-		nub->terminate();
-    }
-
-	ddi_soft_state_free(zfsdev_state, minor);
-
-    return result;
-}
-
 OSDictionary *net_lundman_zfs_zvol::IOBSDNameMatching(const char *name)
 {
     OSDictionary *      dict;
@@ -611,6 +453,183 @@ OSDictionary *net_lundman_zfs_zvol::IOBSDNameMatching(const char *name)
 
     return( 0 );
 }
+
+#include "ZFSProxyMediaScheme.h"
+#include <IOKit/IOLib.h>
+#include <IOKit/IOBufferMemoryDescriptor.h>
+
+extern "C" {
+
+static zvol_state_t *
+zvol_minor_lookup(const char *name)
+{
+	minor_t minor;
+	zvol_state_t *zv;
+
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
+
+	for (minor = 1; minor <= ZFSDEV_MAX_MINOR; minor++) {
+		zv = (zvol_state_t *)zfsdev_get_soft_state(minor, ZSST_PSEUDO);
+		if (zv == NULL)
+			continue;
+		if (strcmp(zv->zv_name, name) == 0)
+			return (zv);
+	}
+
+	return (NULL);
+}
+
+} /* "C" */
+
+
+
+
+bool net_lundman_zfs_zvol::createPseudoDevices(char *poolname,
+											   uint64_t bytes,
+											   uint64_t block,
+											   boolean_t rdonly,
+											   uint64_t pool_guid,
+											   uint64_t dataset_guid)
+{
+    net_lundman_zfs_pseudo_device *nub = NULL;
+    bool            result = false;
+	zvol_state_t *zv;
+	minor_t minor = 0;
+	zfs_soft_state_t *zs;
+	IOMedia *pseudo;
+
+	printf("createPseudoDevices: size %llu\n", bytes);
+
+	printf("New pool '%s' - checking existance..\n", poolname);
+
+	/* Already locked in spa_import */
+	zv = zvol_minor_lookup(poolname);
+	printf("zv said %p\n", zv);
+
+	if (zv) {
+
+		// Already have pool nub
+		nub =  static_cast<net_lundman_zfs_pseudo_device*>(zv->zv_iokitdev);
+		nub->retain();
+		pseudo = OSDynamicCast(IOMedia, nub->getClient()->getClient());
+
+		printf("Calling scan again: nub %p pseudo %p pool_proxy %p\n",
+			   nub, pseudo);
+
+		nub->rescan(nub);
+
+		// not needed?
+		nub->registerService( kIOServiceSynchronous);
+
+
+	} else {
+		// Create new nub for the pool
+
+		if ((minor = zfsdev_minor_alloc()) == 0) {
+			return false;
+		}
+
+		if (ddi_soft_state_zalloc(zfsdev_state, minor) != DDI_SUCCESS) {
+			return false;
+		}
+		zs = (zfs_soft_state_t *)ddi_get_soft_state(zfsdev_state, minor);
+		zs->zss_type = ZSST_PSEUDO;
+		zv = (zvol_state_t *) kmem_zalloc(sizeof (zvol_state_t), KM_SLEEP);
+		zs->zss_data = zv;
+
+		if (!zv) return false;
+
+		zv->zv_volsize = bytes;
+		zv->zv_volblocksize = block;
+		zv->zv_znode.z_is_zvol = 1;
+		(void) strlcpy(zv->zv_name, poolname, MAXPATHLEN);
+		zv->zv_min_bs = DEV_BSHIFT;
+		zv->zv_minor = -1;
+
+		// Allocate a new IOBlockStorageDevice nub.
+		nub = new net_lundman_zfs_pseudo_device;
+		if (nub == NULL)
+			return false;
+
+		printf("nub is %p\n", nub);
+
+
+		// Call the custom init method (passing the overall disk size).
+		if (nub->init(zv) == false) {
+			nub->release();
+			return false;
+		}
+
+
+		// Attach the IOBlockStorageDevice to the this driver.
+		// This call increments the reference count of the nub object,
+		// so we can release our reference at function exit.
+		if (nub->attach(this) == false) {
+			nub->release();
+			return false;
+		}
+
+		nub->registerService( kIOServiceSynchronous);
+
+		pseudo = OSDynamicCast(IOMedia, nub->getClient()->getClient());
+
+		//media = OSDynamicCast(IOMedia, serv);
+		printf("media %p\n", pseudo);
+		printf("media->getContent() %s\n", pseudo->getContent());
+		printf("media->getContentHint() %s\n", pseudo->getContentHint());
+		pseudo->setProperty(kIOMediaContentKey, "zfs_pool_proxy");
+		pseudo->setProperty(kIOMediaContentHintKey, "zfs_pool_proxy");
+		printf("media->getContent() %s\n", pseudo->getContent());
+		printf("media->getContentHint() %s\n", pseudo->getContentHint());
+
+		pseudo->setProperty("DATASET", poolname);
+	}
+
+	printf("Stirring the pot\n");
+
+	pseudo->registerService();
+
+ bail:
+    // Unconditionally release the nub object.
+    if (nub != NULL)
+        nub->release();
+
+   return result;
+}
+
+
+
+bool net_lundman_zfs_zvol::destroyPseudoDevices(char *poolname)
+{
+    net_lundman_zfs_pseudo_device *nub = NULL;
+    bool            result = true;
+	zfs_soft_state_t *zs;
+	zvol_state_t *zv = NULL;
+	minor_t minor;
+
+	zv = zvol_minor_lookup(poolname);
+
+	printf("Destroy '%s' got zv %p\n", poolname, zv);
+
+    if (zv && zv->zv_iokitdev) {
+
+		IOLog("removing fake pool devices\n");
+
+		nub = static_cast<net_lundman_zfs_pseudo_device*>(zv->zv_iokitdev);
+
+		minor = zv->zv_minor;
+		zv->zv_iokitdev = NULL;
+		kmem_free(zv, sizeof (zvol_state_t));
+		zv = NULL;
+
+		nub->terminate();
+    }
+
+	ddi_soft_state_free(zfsdev_state, minor);
+
+    return result;
+}
+
 /*
  * Given 'dev' like "/dev/disk2s3", lookup the fake IOKit disks, to
  * find matching disk, and its DATASET name "BOOM/hello/world" and
@@ -657,39 +676,6 @@ char *net_lundman_zfs_zvol::findDataset(char *dev)
 }
 
 
-bool net_lundman_zfs_zvol::IOKit_Rescan(char *dev)
-{
-	printf("IOKit_Rescan requested for '%s'\n", dev);
-	OSDictionary *matchingDict;
-    io_service_t            service;
-	char *found = dev;
-
-#if 0
-	if (!strncasecmp("/dev/", dev, 5))
-		dev = &dev[5];
-
-    matchingDict = IOBSDNameMatching(dev);
-    if (NULL == matchingDict) {
-        printf("IOBSDNameMatching returned a NULL dictionary.\n");
-    } else {
-		IOService *service = NULL;
-
-		service = IOService::waitForMatchingService(matchingDict, 5);
-
-        if (IO_OBJECT_NULL == service) {
-            printf("IOServiceGetMatchingService returned IO_OBJECT_NULL.\n");
-        } else {
-
-			IOLog("I am of class %s\n", service->getMetaClass()->getClassName());
-			IOLog("provider class %s\n", service->getProvider()->getMetaClass()->getClassName());
-
-
-		}
-
-	}
-#endif
-
-}
 
 
 
@@ -710,26 +696,6 @@ int zvolRemoveDevice(zvol_state_t *zv)
     return 0;
 }
 
-int ZFSDriver_create_pool(char *poolname, uint64_t bytes,
-						  uint64_t block, boolean_t rdonly,
-						  uint64_t pool_guid, uint64_t dataset_guid)
-{
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createStorageDevice(poolname, bytes, block, rdonly, pool_guid, dataset_guid);
-    return 0;
-}
-
-int ZFSDriver_remove_pool(char *poolname)
-{
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyStorageDevice(poolname);
-    return 0;
-}
-
-int ZFSDriver_IOKit_Rescan(char *poolname)
-{
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->IOKit_Rescan(poolname);
-    return 0;
-}
-
 
 int zvolSetVolsize(zvol_state_t *zv)
 {
@@ -737,10 +703,41 @@ int zvolSetVolsize(zvol_state_t *zv)
     return 0;
 }
 
+
+
+int ZFSDriver_create_pool(char *poolname, uint64_t bytes,
+						  uint64_t block, boolean_t rdonly,
+						  uint64_t pool_guid, uint64_t dataset_guid)
+{
+    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createPseudoDevices(poolname, bytes, block, rdonly, pool_guid, dataset_guid);
+    return 0;
+}
+
+int ZFSDriver_remove_pool(char *poolname)
+{
+    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyPseudoDevices(poolname);
+    return 0;
+}
+
 char *ZFSDriver_FindDataset(char *dev)
 {
     return static_cast<net_lundman_zfs_zvol*>(global_c_interface)->findDataset(dev);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 uint64_t zvolIO_kit_read(void *iomem, uint64_t offset, char *address, uint64_t len)
 {

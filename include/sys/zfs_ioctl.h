@@ -512,8 +512,6 @@ typedef enum zfs_ioc {
 	ZFS_IOC_OSX = ('Z' << 8) + 0x100,
 #endif
 
-	ZFS_IOC_IOKIT_RESCAN,
-
 	ZFS_IOC_LAST
 } zfs_ioc_t;
 

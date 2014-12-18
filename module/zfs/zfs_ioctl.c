@@ -3101,6 +3101,14 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 #ifdef _KERNEL
 	if (error == 0 && type == DMU_OST_ZVOL)
 		zvol_create_minors(fsname);
+
+	if (error == 0 && type == DMU_OST_ZFS) {
+		char *r = NULL;
+		r = strchr(fsname, '/');
+		if (r) *r = 0;
+		spa_iokit_pool(fsname, 0);
+		if (r) *r = '/';
+	}
 #endif
 
 	return (error);
@@ -3496,8 +3504,22 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 		err = dsl_destroy_snapshot(zc->zc_name, zc->zc_defer_destroy);
 	else
 		err = dsl_destroy_head(zc->zc_name);
+
 	if (zc->zc_objset_type == DMU_OST_ZVOL && err == 0)
 		(void) zvol_remove_minor(zc->zc_name);
+
+#ifdef _KERNEL
+	if (err == 0 && zc->zc_objset_type == DMU_OST_ZFS) {
+		char *r = NULL;
+		r = strchr(zc->zc_name, '/');
+		if (r) *r = 0;
+		spa_iokit_pool(zc->zc_name, 0);
+		if (r) *r = '/';
+	}
+#endif
+
+
+
 	return (err);
 }
 
@@ -4946,21 +4968,6 @@ zfs_ioc_events_seek(zfs_cmd_t *zc)
 /*
  * inputs:
  * zc_name		name of new filesystem or snapshot
- *
- * trigger iokit to attempt to mount all datasets
- */
-static int
-zfs_ioc_iokit_rescan(zfs_cmd_t *zc)
-{
-
-	ZFSDriver_IOKit_Rescan(zc->zc_name);
-
-	return (0);
-}
-
-/*
- * inputs:
- * zc_name		name of new filesystem or snapshot
  * zc_value		full name of old snapshot
  *
  * outputs:
@@ -5455,12 +5462,6 @@ zfs_ioctl_init(void)
 	zfs_ioctl_register_legacy(ZFS_IOC_EVENTS_CLEAR, zfs_ioc_events_clear,
 							  zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
 	zfs_ioctl_register_legacy(ZFS_IOC_EVENTS_SEEK, zfs_ioc_events_seek,
-							  zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
-
-	/*
-	 * Apple functions
-	 */
-	zfs_ioctl_register_legacy(ZFS_IOC_IOKIT_RESCAN, zfs_ioc_iokit_rescan,
 							  zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
 
 }

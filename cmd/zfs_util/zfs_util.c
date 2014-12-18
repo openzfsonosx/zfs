@@ -133,22 +133,6 @@ zfs_probe(const char *devpath, io_name_t volname)
 					CFRelease(cfstr);
 				}
 
-#if 1
-				cfstr = IORegistryEntryCreateCFProperty(service,
-				    CFSTR("DOMOUNTME"), kCFAllocatorDefault, 0);
-				if (cfstr && CFEqual(cfstr, CFSTR("FALSE"))) {
-					result = FSUR_UNRECOGNIZED;
-					CFRelease(cfstr);
-					IOObjectRelease(service);
-					syslog(LOG_NOTICE, "-zfs_probe : lying "
-					    "about it result %d", result);
-					return (result);
-				}
-				if (cfstr)
-					CFRelease(cfstr);
-#endif
-
-
 				syslog(LOG_NOTICE, "writing volname %s\n",
 				    volname);
 			}
