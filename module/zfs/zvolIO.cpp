@@ -46,7 +46,6 @@ net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
 bool
 net_lundman_zfs_zvol_device::attach(IOService* provider)
 {
-	OSDictionary *protocolCharacteristics = 0;
 	OSDictionary *deviceCharacteristics = 0;
 	OSDictionary *storageFeatures = 0;
 	OSBoolean *unmapFeature = 0;
@@ -68,6 +67,9 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	 *
 	 * These properties are defined in *protocol* characteristics
 	 */
+
+#if 0
+	OSDictionary *protocolCharacteristics = 0;
 
 	protocolCharacteristics = OSDictionary::withCapacity(3);
 
@@ -105,6 +107,7 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 
 	protocolCharacteristics->release();
 	protocolCharacteristics = 0;
+#endif
 
 	/*
 	 * We want to set some additional properties for ZVOLs, in
