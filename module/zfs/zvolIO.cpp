@@ -106,8 +106,8 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 
 	/*
 	 * We want to set some additional properties for ZVOLs, in
-	 * particular, logical block size (volblocksize) of the
-	 * underlying ZVOL, and 'physical' block size presented by
+	 * particular, physical block size (volblocksize) of the
+	 * underlying ZVOL, and 'logical' block size presented by
 	 * the virtual disk. Also set physical bytes per sector.
 	 *
 	 * These properties are defined in *device* characteristics
@@ -120,27 +120,27 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 		return (true);
 	}
 
-	/* Set physical block size to ZVOL_BSIZE (512b) */
+	/* Set logical block size to ZVOL_BSIZE (512b) */
 	dataNumber =	OSNumber::withNumber(ZVOL_BSIZE,
 	    8 * sizeof (ZVOL_BSIZE));
-
-	deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey,
-	    dataNumber);
-
-	dprintf("physicalBlockSize %llu\n",
-	    dataNumber->unsigned64BitValue());
-
-	dataNumber->release();
-	dataNumber	= 0;
-
-	/* Set logical block size to match volblocksize property */
-	dataNumber =	OSNumber::withNumber(zv->zv_volblocksize,
-	    8 * sizeof (zv->zv_volblocksize));
 
 	deviceCharacteristics->setObject(kIOPropertyLogicalBlockSizeKey,
 	    dataNumber);
 
 	dprintf("logicalBlockSize %llu\n",
+	    dataNumber->unsigned64BitValue());
+
+	dataNumber->release();
+	dataNumber	= 0;
+
+	/* Set physical block size to match volblocksize property */
+	dataNumber =	OSNumber::withNumber(zv->zv_volblocksize,
+	    8 * sizeof (zv->zv_volblocksize));
+
+	deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey,
+	    dataNumber);
+
+	dprintf("physicalBlockSize %llu\n",
 	    dataNumber->unsigned64BitValue());
 
 	dataNumber->release();
