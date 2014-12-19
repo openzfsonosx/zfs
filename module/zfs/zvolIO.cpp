@@ -115,6 +115,11 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	 * underlying ZVOL, and logical block size presented by
 	 * the virtual disk. Also set physical bytes per sector.
 	 *
+	 * XXX - Experimentally setting SolidState SSD type
+	 *
+	 * XXX - To do: set kIOPropertyProductSerialNumberKey
+	 *  using the GUID of the zvol?
+	 *
 	 * These properties are defined in *device* characteristics
 	 */
 
@@ -124,6 +129,20 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 		IOLog("failed to create dict for deviceCharacteristics.\n");
 		return (true);
 	}
+
+	/* Set this device to be a solid-state type */
+	dataString = OSString::withCString(
+	    kIOPropertyMediumTypeSolidStateKey);
+
+	if (!dataString) {
+		IOLog("could not create medium type string\n");
+		return (true);
+	}
+	deviceCharacteristics->setObject(kIOPropertyMediumTypeKey,
+	dataString);
+
+	dataString->release();
+	dataString = 0;
 
 	/* Set logical block size to ZVOL_BSIZE (512b) */
 	dataNumber =	OSNumber::withNumber(ZVOL_BSIZE,
