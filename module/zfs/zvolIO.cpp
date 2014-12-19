@@ -44,7 +44,6 @@ net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
 bool
 net_lundman_zfs_zvol_device::attach(IOService* provider)
 {
-	OSDictionary *protocolCharacteristics = 0;
 	OSDictionary *deviceCharacteristics = 0;
 	OSDictionary *storageFeatures = 0;
 	OSBoolean *unmapFeature = 0;
@@ -66,6 +65,8 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	 *
 	 * These properties are defined in *protocol* characteristics
 	 */
+
+	OSDictionary *protocolCharacteristics = 0;
 
 	protocolCharacteristics = OSDictionary::withCapacity(3);
 
@@ -106,9 +107,14 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 
 	/*
 	 * We want to set some additional properties for ZVOLs, in
-	 * particular, logical block size (volblocksize) of the
-	 * underlying ZVOL, and 'physical' block size presented by
+	 * particular, physical block size (volblocksize) of the
+	 * underlying ZVOL, and 'logical' block size presented by
 	 * the virtual disk. Also set physical bytes per sector.
+	 *
+	 * XXX - Experimentally setting SolidState SSD type
+	 *
+	 * XXX - To do: set kIOPropertyProductSerialNumberKey
+	 *  using the GUID of the zvol?
 	 *
 	 * These properties are defined in *device* characteristics
 	 */
@@ -120,22 +126,25 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 		return (true);
 	}
 
-	/* Set physical block size to ZVOL_BSIZE (512b) */
+#if 0
+	/* Set this device to be a solid-state type */
+	dataString = OSString::withCString(
+	    kIOPropertyMediumTypeSolidStateKey);
+
+	if (!dataString) {
+		IOLog("could not create medium type string\n");
+		return (true);
+	}
+	deviceCharacteristics->setObject(kIOPropertyMediumTypeKey,
+	dataString);
+
+	dataString->release();
+	dataString = 0;
+#endif
+
+	/* Set logical block size to ZVOL_BSIZE (512b) */
 	dataNumber =	OSNumber::withNumber(ZVOL_BSIZE,
 	    8 * sizeof (ZVOL_BSIZE));
-
-	deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey,
-	    dataNumber);
-
-	dprintf("physicalBlockSize %llu\n",
-	    dataNumber->unsigned64BitValue());
-
-	dataNumber->release();
-	dataNumber	= 0;
-
-	/* Set logical block size to match volblocksize property */
-	dataNumber =	OSNumber::withNumber(zv->zv_volblocksize,
-	    8 * sizeof (zv->zv_volblocksize));
 
 	deviceCharacteristics->setObject(kIOPropertyLogicalBlockSizeKey,
 	    dataNumber);
@@ -146,8 +155,21 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	dataNumber->release();
 	dataNumber	= 0;
 
+	/* Set physical block size to match volblocksize property */
+	dataNumber =	OSNumber::withNumber(zv->zv_volblocksize,
+	    8 * sizeof (zv->zv_volblocksize));
+
+	deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey,
+	    dataNumber);
+
+	dprintf("physicalBlockSize %llu\n",
+	    dataNumber->unsigned64BitValue());
+
+	dataNumber->release();
+	dataNumber	= 0;
+
 	/* Set physical bytes per sector to match volblocksize property */
-	dataNumber =	OSNumber::withNumber((uint64_t)(8*ZVOL_BSIZE),
+	dataNumber =	OSNumber::withNumber((uint64_t)(zv->zv_volblocksize),
 	    8 * sizeof (uint64_t));
 
 	deviceCharacteristics->setObject(kIOPropertyBytesPerPhysicalSectorKey,
