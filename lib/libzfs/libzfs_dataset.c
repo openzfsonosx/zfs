@@ -693,30 +693,6 @@ libzfs_mnttab_cache_compare(const void *arg1, const void *arg2)
 	return (rv > 0 ? 1 : -1);
 }
 
-#if 0
-int
-libzfs_mnttab_update(libzfs_handle_t *hdl)
-{
-	int nitems;
-	struct statfs *sfsp;
-
-	nitems = getmntinfo(&sfsp, MNT_WAIT);
-	if (nitems == 0) {
-		(void) fprintf(stderr, gettext("no mounted filesystems\n"));
-		abort();
-	}
-	while (--nitems >= 0) {
-		if (strcmp(sfsp[nitems].f_fstypename, MNTTYPE_ZFS) != 0)
-			continue;
-		libzfs_mnttab_add(hdl, sfsp[nitems].f_mntfromname, sfsp[nitems].f_mntonname,
-		    NULL);
-	}
-
-	return (0);
-}
-#endif
-
-//From FreeBSD
 void
 libzfs_mnttab_update(libzfs_handle_t *hdl)
 {
@@ -788,6 +764,8 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 	mnttab_node_t find;
 	mnttab_node_t *mtn;
 
+	fprintf(stderr, "libzfs_mnttab_find: '%s' \r\n", fsname);
+
 	if (!hdl->libzfs_mnttab_enable) {
 		struct mnttab srch = { 0 };
 
@@ -821,6 +799,8 @@ libzfs_mnttab_add(libzfs_handle_t *hdl, const char *special,
     const char *mountp, const char *mntopts)
 {
 	mnttab_node_t *mtn;
+
+	fprintf(stderr, "libzfs_mnttab_add: '%s' '%s'\r\n", special, mountp);
 
 	if (avl_numnodes(&hdl->libzfs_mnttab_cache) == 0)
 		return;

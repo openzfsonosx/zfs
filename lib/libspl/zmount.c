@@ -51,7 +51,7 @@ char *iokit_device_to_dataset(char *device)
 	if (!strncmp("/dev/", device, 5))
 		device = &device[5];
 
-	fprintf(stderr, "looking for '%s'\n", device);
+	//fprintf(stderr, "looking for '%s'\n", device);
 
 	matchingDict = IOBSDNameMatching(kIOMasterPortDefault, 0, device);
 	if (NULL == matchingDict)
@@ -196,6 +196,7 @@ int iokit_mark_device_to_mount(char *dataset)
 
 	free(special_name);
 
+	return 0;
 }
 
 

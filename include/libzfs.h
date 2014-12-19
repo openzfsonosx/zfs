@@ -795,6 +795,7 @@ extern int zpool_fru_set(zpool_handle_t *, uint64_t, const char *);
 #ifndef sun
 extern int zmount(const char *, const char *, int, char *, char *, int, char *,
     int);
+extern char *iokit_device_to_dataset(char *device);
 #endif	/* !sun */
 
 #ifdef	__cplusplus
