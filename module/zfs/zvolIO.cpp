@@ -147,7 +147,7 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	dataNumber	= 0;
 
 	/* Set physical bytes per sector to match volblocksize property */
-	dataNumber =	OSNumber::withNumber((uint64_t)(8*ZVOL_BSIZE),
+	dataNumber =	OSNumber::withNumber((uint64_t)(volblocksize),
 	    8 * sizeof (uint64_t));
 
 	deviceCharacteristics->setObject(kIOPropertyBytesPerPhysicalSectorKey,
