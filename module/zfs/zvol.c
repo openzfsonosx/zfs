@@ -479,6 +479,7 @@ zvol_name2minor(const char *name, minor_t *minor)
  */
 //uint64_t zvol_num_unmap = 0;
 
+#define VERBOSE_UNMAP
 void
 zvol_unmap_thread(void *arg)
 {
@@ -488,7 +489,6 @@ zvol_unmap_thread(void *arg)
 	dmu_tx_t *tx		= 0;
 	int error			= 0;
 
-#define VERBOSE_UNMAP
 /*
  * #define VERBOSE_UNMAP
  */
@@ -2031,25 +2031,55 @@ int
 zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 {
 	zvol_unmap_t *um;
-	uint64_t volsize;
+	uint64_t end = off + bytes;
+#ifdef VERBOSE_UNMAP
+	uint64_t old_off = off;
+	uint64_t old_end = end;
+#endif
 
 	if (zv == NULL)
 		return (ENXIO);
 
-	dprintf("ZFS: unmap %llx length %llx\n", off, bytes);
+#ifdef VERBOSE_UNMAP
+	printf("ZFS: unmap requested %llx length %llx\n",
+	    off, bytes);
+#endif
 
-	volsize = zv->zv_volsize;
+	off = P2ROUNDUP(off, zv->zv_volblocksize);
+	end = P2ALIGN(end, zv->zv_volblocksize);
 
-	if (bytes > volsize - off)	/* don't write past the end */
-		bytes = volsize - off;
+#ifdef VERBOSE_UNMAP
+	if (off != old_off)
+		printf("ZFS: unmap offset roundup from %llu to %llu\n",
+		    old_off, off);
+	if (end != old_end)
+		printf("ZFS: unmap end aligned from %llu to %llu\n",
+		    old_end, end);
+#endif
+
+	if (end > zv->zv_volsize)	/* don't write past the end */
+		end = zv->zv_volsize;
+
+	if (off >= end) {
+#ifdef VERBOSE_UNMAP
+		printf("ZFS: unmap skipping unaligned request\n");
+#endif
+		/* Return success- caller does not need to know */
+		return (0);
+	}
+
+#ifdef VERBOSE_UNMAP
+	printf("ZFS: unmap %llx length %llx\n",
+	    off, bytes);
+#endif
 
 	um = kmem_alloc(sizeof(zvol_unmap_t), KM_SLEEP);
 	um->offset = off;
-	um->bytes = bytes;
+	um->bytes = end - off;
 	um->zv = zv;
 	list_link_init(&um->unmap_next);
 
-	um->rl = zfs_range_lock(&zv->zv_znode, off, bytes, RL_WRITER);
+	um->rl = zfs_range_lock(&zv->zv_znode, off, (end - off), RL_WRITER);
 
 	mutex_enter(&zv->zv_unmap_lock);
 	list_insert_tail(&zv->zv_unmap_list, um);
