@@ -168,6 +168,9 @@ zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
 	rm -rf zfs.kext
 	mkdir -p zfs.kext/Contents/Resources/English.lproj zfs.kext/Contents/MacOS
 	cp -f $(INFO_PLIST) zfs.kext/Contents/
+	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(ZFS_META_VERSION)" zfs.kext/Contents/Info.plist
+	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(ZFS_META_VERSION)" zfs.kext/Contents/Info.plist
+	/usr/libexec/PlistBuddy -c "Set :OSBundleLibraries:net.lundman.spl $(ZFS_META_VERSION)" zfs.kext/Contents/Info.plist
 	cp -f $(PLIST_STRING) zfs.kext/Contents/Resources/English.lproj/
 	plutil -convert binary1 zfs.kext/Contents/Resources/English.lproj/InfoPlist.strings
 	cp -f $(top_srcdir)/VolumeIcon.icns zfs.kext/Contents/Resources/
