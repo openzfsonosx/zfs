@@ -1926,25 +1926,12 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 
 	if (error == 0) {
 		/*
-		 * If the write-cache is disabled or 'sync' property
-		 * is set to 'always' then treat this as a synchronous
-		 * operation (i.e. commit to zil).
+		 * If the 'sync' property is set to 'always' then
+		 * treat this as a synchronous operation
+		 * (i.e. commit to zil).
 		 */
-		if (!(zv->zv_flags & ZVOL_WCE) ||
-		    (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS)) {
-
-			zil_commit(zv->zv_zilog, ZVOL_OBJ);
-
-		}
-
-		/*
-		 * If the caller really wants synchronous writes, and
-		 * can't wait for them, don't return until the write
-		 * is done.
-		 *
-		 * XXX To do - forced async to test
-		 */
-		if (0) {
+		if (um->zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
+			zil_commit(um->zv->zv_zilog, ZVOL_OBJ);
 			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 		}
 	}
