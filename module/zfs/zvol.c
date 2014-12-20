@@ -1892,18 +1892,58 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 int
 zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 {
+//#define VERBOSE_UNMAP
+#define DEBUG_UNMAP
 	rl_t *rl = 0;
 	dmu_tx_t *tx = 0;
-	uint64_t volsize = 0;
 	int error = 0;
+	uint64_t end = off + bytes;
+#ifdef VERBOSE_UNMAP
+	uint64_t old_off = off;
+	uint64_t old_end = end;
+	uint64_t old_bytes = bytes;
+#endif
 
 	if (zv == NULL)
 		return (ENXIO);
 
-	volsize = zv->zv_volsize;
+#ifdef VERBOSE_UNMAP
+	printf("ZFS: unmap requested %llx -> %llx, length %llx\n",
+	    off, end, bytes);
+#endif
 
-	if (bytes > volsize - off)	/* don't write past the end */
-		bytes = volsize - off;
+	off = P2ROUNDUP(off, zv->zv_volblocksize);
+	end = P2ALIGN(end, zv->zv_volblocksize);
+
+#ifdef VERBOSE_UNMAP
+	if (off != old_off)
+		printf("ZFS: unmap offset roundup from %llu to %llu\n",
+		    old_off, off);
+	if (end != old_end)
+		printf("ZFS: unmap end aligned from %llu to %llu\n",
+		    old_end, end);
+	if (bytes != old_bytes)
+		printf("ZFS: unmap bytes aligned from %llu to %llu\n",
+		    old_bytes, bytes);
+#endif
+
+	if (end > zv->zv_volsize)	/* don't write past the end */
+		end = zv->zv_volsize;
+
+	if (off >= end) {
+#ifdef VERBOSE_UNMAP
+		printf("ZFS: unmap skipping unaligned request\n");
+#endif
+		/* Return success- caller does not need to know */
+		return (0);
+	}
+
+	bytes = end - off;
+
+#ifdef DEBUG_UNMAP
+	printf("ZFS: unmap %llx -> %llx, length %llx\n",
+	    off, end, bytes);
+#endif
 
 	rl = zfs_range_lock(&zv->zv_znode, off, bytes, RL_WRITER);
 
@@ -1934,8 +1974,8 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 		 * treat this as a synchronous operation
 		 * (i.e. commit to zil).
 		 */
-		if (um->zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
-			zil_commit(um->zv->zv_zilog, ZVOL_OBJ);
+		if (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
+			zil_commit(zv->zv_zilog, ZVOL_OBJ);
 			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 		}
 	}
