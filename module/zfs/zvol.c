@@ -1889,10 +1889,10 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 int
 zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 {
-	rl_t *rl			= 0;
-	dmu_tx_t *tx		= 0;
-	uint64_t volsize	= 0;
-	int error			= 0;
+	rl_t *rl = 0;
+	dmu_tx_t *tx = 0;
+	uint64_t volsize = 0;
+	int error = 0;
 
 	if (zv == NULL)
 		return (ENXIO);
@@ -1905,6 +1905,8 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 	rl = zfs_range_lock(&zv->zv_znode, off, bytes, RL_WRITER);
 
 	tx = dmu_tx_create(zv->zv_objset);
+
+	dmu_tx_mark_netfree(tx);
 
 	error = dmu_tx_assign(tx, TXG_WAIT);
 
