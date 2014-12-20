@@ -548,6 +548,7 @@ zvol_unmap_thread(void *arg)
 					 */
 					if (um->zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
 						zil_commit(um->zv->zv_zilog, ZVOL_OBJ);
+						txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 					}
 				}
 			}
