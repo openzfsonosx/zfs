@@ -542,15 +542,12 @@ zvol_unmap_thread(void *arg)
 
 				if (error == 0) {
 					/*
-					 * If the write-cache is disabled or 'sync' property
-					 * is set to 'always' then treat this as a synchronous
-					 * operation (i.e. commit to zil).
+					 * If the 'sync' property is set to 'always' then
+					 * treat this as a synchronous operation
+					 * (i.e. commit to zil).
 					 */
-					if (!(um->zv->zv_flags & ZVOL_WCE) ||
-						(um->zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS)) {
-
+					if (um->zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
 						zil_commit(um->zv->zv_zilog, ZVOL_OBJ);
-
 					}
 				}
 			}
