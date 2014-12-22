@@ -330,11 +330,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
              * we simply return the fullname, from the statfs mountedfrom
              */
 			char osname[MAXNAMELEN];
-
+			char *r;
 			dmu_objset_name(zfsvfs->z_os, osname);
-
+			r = strrchr(osname, '/');
             strlcpy(vap->va_name,
-                    osname,
+                    r ? &r[1] : osname,
                     MAXPATHLEN);
             VATTR_SET_SUPPORTED(vap, va_name);
 			dprintf("getattr root returning '%s'\n", vap->va_name);
