@@ -212,6 +212,9 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
     } else if (strcmp(media->getContentHint(), "zfs_filesystem_proxy") == 0){
         printf("ZFSProxyMediaScheme::scan : it's a zfs_filesystem_proxy\n");
         child_filesystem_count = 0;
+    } else if (strcmp(media->getContentHint(), "zfs_snapshot_proxy") == 0){
+        printf("ZFSProxyMediaScheme::scan : it's a zfs_snapshot_proxy\n");
+        child_filesystem_count = 0;
     } else {
         printf("uh oh, unrecognized provider");
     }

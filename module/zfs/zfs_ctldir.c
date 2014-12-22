@@ -1395,6 +1395,9 @@ domount:
 
 #ifdef _KERNEL
 
+	err = IOKit_mount_snapshot(curthread, vpp, "zfs", mountpoint, snapname, 0);
+
+
     /* In upstream ZFS, mount_snapshot takes the current vp in vpp,
      * allocates a new mount, and creates a new mvp for it. Then
      * calls vput(vp) to release the current vnode. This lookup

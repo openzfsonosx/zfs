@@ -29,6 +29,7 @@ public:
 									 uint64_t dataset_guid);
 	virtual bool  destroyPseudoDevices(char *poolname);
 	virtual char *findDataset(char *dev);
+	virtual int mountSnapshot(char *snapname);
 };
 
 #include <IOKit/storage/IOBlockStorageDevice.h>

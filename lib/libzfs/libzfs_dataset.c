@@ -764,8 +764,6 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 	mnttab_node_t find;
 	mnttab_node_t *mtn;
 
-	fprintf(stderr, "libzfs_mnttab_find: '%s' \r\n", fsname);
-
 	if (!hdl->libzfs_mnttab_enable) {
 		struct mnttab srch = { 0 };
 
@@ -799,8 +797,6 @@ libzfs_mnttab_add(libzfs_handle_t *hdl, const char *special,
     const char *mountp, const char *mntopts)
 {
 	mnttab_node_t *mtn;
-
-	fprintf(stderr, "libzfs_mnttab_add: '%s' '%s'\r\n", special, mountp);
 
 	if (avl_numnodes(&hdl->libzfs_mnttab_cache) == 0)
 		return;

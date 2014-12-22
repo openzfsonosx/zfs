@@ -76,6 +76,7 @@ enum zfs_soft_state_type {
 	ZSST_CTLDEV,
 #ifdef __APPLE__
 	ZSST_PSEUDO,
+	ZSST_PSEUDOSNAP,
 #endif
 };
 
@@ -154,6 +155,12 @@ extern uint64_t zvolIO_kit_write(void *iomem, uint64_t offset,
 extern int zvolRemoveDevice(zvol_state_t *zv);
 extern int zvolCreateNewDevice(zvol_state_t *zv);
 extern int ZFSDriver_IOKit_Rescan(char *pool);
+extern int IOKit_mount_snapshot(thread_t *tr,
+						 struct vnode **vpp,
+						 char *type,
+						 char *mountpoint,
+						 char *snapname,
+								int flags);
 
 extern int zvolSetVolsize(zvol_state_t *zv);
 
