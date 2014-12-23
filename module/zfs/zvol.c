@@ -1890,7 +1890,6 @@ int
 zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 {
 //#define VERBOSE_UNMAP
-#define DEBUG_UNMAP
 	rl_t *rl = 0;
 	dmu_tx_t *tx = 0;
 	int error = 0;
@@ -1937,7 +1936,7 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 
 	bytes = end - off;
 
-#ifdef DEBUG_UNMAP
+#ifdef VERBOSE_UNMAP
 	printf("ZFS: unmap %llx -> %llx, length %llx\n",
 	    off, end, bytes);
 #endif
