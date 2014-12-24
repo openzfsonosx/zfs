@@ -128,6 +128,8 @@ AC_CONFIG_FILES([
 	cmd/arcstat/Makefile
 	cmd/dbufstat/Makefile
 	cmd/zed/Makefile
+	cmd/InvariantDisks/Makefile
+	cmd/InvariantDisks/InvariantDisks/Makefile
 	contrib/Makefile
 	contrib/bash_completion.d/Makefile
 	module/Makefile
