@@ -684,92 +684,49 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
 	minor_t minor = 0;
 	zfs_soft_state_t *zs;
 	IOMedia *pseudo;
+	int poolstrlen;
+	char *poolstr = NULL, *r;
 
 	printf("mountSnapshot: \n");
 
 	printf("New snapshot '%s' - checking existance..\n", snapname);
 
+	// Grab the pool name only
+	poolstrlen = strlen(snapname) + 1;
+	poolstr = (char *)kmem_alloc(poolstrlen, KM_SLEEP);
+	strlcpy(poolstr, snapname, poolstrlen);
+	r = strchr(poolstr, '/');
+	if (r) *r = 0;
+	r = strchr(poolstr, '@');
+	if (r) *r = 0;
+
 	/* Already locked in spa_import */
-	zv = zvol_minor_lookup(snapname);
+	zv = zvol_minor_lookup(poolstr);
 	printf("zv said %p\n", zv);
 
 	if (zv) {
 
-		printf("Snapshot '%s' node already exists\n", snapname);
-
-	} else {
-		// Create new nub for the pool
-
-		if ((minor = zfsdev_minor_alloc()) == 0) {
-			return false;
-		}
-
-		if (ddi_soft_state_zalloc(zfsdev_state, minor) != DDI_SUCCESS) {
-			return false;
-		}
-		zs = (zfs_soft_state_t *)ddi_get_soft_state(zfsdev_state, minor);
-		zs->zss_type = ZSST_PSEUDOSNAP;
-		zv = (zvol_state_t *) kmem_zalloc(sizeof (zvol_state_t), KM_SLEEP);
-		zs->zss_data = zv;
-
-		if (!zv) return false;
-
-		zv->zv_volsize = 1234567890;
-		zv->zv_volblocksize = 512;
-		zv->zv_znode.z_is_zvol = 1;
-		(void) strlcpy(zv->zv_name, snapname, MAXPATHLEN);
-		zv->zv_min_bs = DEV_BSHIFT;
-		zv->zv_minor = -1;
-
-		// Allocate a new IOBlockStorageDevice nub.
-		nub = new net_lundman_zfs_pseudo_device;
-		if (nub == NULL)
-			return false;
-
-		printf("nub is %p\n", nub);
-
-
-		// Call the custom init method (passing the overall disk size).
-		if (nub->init(zv) == false) {
-			nub->release();
-			return false;
-		}
-
-
-		// Attach the IOBlockStorageDevice to the this driver.
-		// This call increments the reference count of the nub object,
-		// so we can release our reference at function exit.
-		if (nub->attach(this) == false) {
-			nub->release();
-			return false;
-		}
-
-		nub->registerService( kIOServiceSynchronous);
-
+		printf("Pool '%s' node already exists\n", poolstr);
+		nub =  static_cast<net_lundman_zfs_pseudo_device*>(zv->zv_iokitdev);
+		nub->retain();
 		pseudo = OSDynamicCast(IOMedia, nub->getClient()->getClient());
 
-		//media = OSDynamicCast(IOMedia, serv);
-		printf("media %p\n", pseudo);
-		printf("media->getContent() %s\n", pseudo->getContent());
-		printf("media->getContentHint() %s\n", pseudo->getContentHint());
-		pseudo->setProperty(kIOMediaContentKey, "zfs_snapshot_proxy");
-		pseudo->setProperty(kIOMediaContentHintKey, "zfs_snapshot_proxy");
-		printf("media->getContent() %s\n", pseudo->getContent());
-		printf("media->getContentHint() %s\n", pseudo->getContentHint());
+		// Insert new snapshot proxy here
 
-		pseudo->setProperty("DATASET", snapname);
 	}
 
-	printf("Stirring the pot\n");
 
-	pseudo->registerService();
+	result = true;
 
- bail:
+
+  bail:
     // Unconditionally release the nub object.
     if (nub != NULL)
         nub->release();
 
-   return result;
+	kmem_free(poolstr, poolstrlen);
+
+	return result;
 }
 
 
