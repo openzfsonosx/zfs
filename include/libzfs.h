@@ -57,14 +57,22 @@ extern "C" {
  * Default device paths
  */
 #define	DISK_ROOT		"/dev"
+#ifdef __LINUX__
 #define	UDISK_ROOT		"/dev/disk"
+#elif defined(__APPLE__)
+#define	UDISK_ROOT		"/private/var/run/disk"
+#endif /* __LINUX__ */
 
 /*
  * Default wait time for a device name to be created.
  */
 #define	DISK_LABEL_WAIT		(30 * 1000)  /* 30 seconds */
 
+#ifdef __LINUX__
 #define	DEFAULT_IMPORT_PATH_SIZE	7
+#elif defined(__APPLE__)
+#define	DEFAULT_IMPORT_PATH_SIZE	4
+#endif /* __LINUX__ */
 extern char *zpool_default_import_path[DEFAULT_IMPORT_PATH_SIZE];
 
 /*

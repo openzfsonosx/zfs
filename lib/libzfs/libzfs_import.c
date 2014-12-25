@@ -1010,12 +1010,18 @@ err_blkid1:
 
 char *
 zpool_default_import_path[DEFAULT_IMPORT_PATH_SIZE] = {
+#ifdef __LINUX__
 	"/dev/disk/by-vdev",	/* Custom rules, use first if they exist */
 	"/dev/mapper",		/* Use multipath devices before components */
 	"/dev/disk/by-uuid",	/* Single unique entry and persistent */
 	"/dev/disk/by-id",	/* May be multiple entries and persistent */
 	"/dev/disk/by-path",	/* Encodes physical location and persistent */
 	"/dev/disk/by-label",	/* Custom persistent labels */
+#elif defined(__APPLE__)
+	"/private/var/run/disk/by-id",
+	"/private/var/run/disk/by-path",
+	"/private/var/run/disk/by-serial",
+#endif /* __LINUX__ */
 	"/dev"			/* UNSAFE device names will change */
 };
 
