@@ -3156,9 +3156,9 @@ zfs_freevfs(struct mount *vfsp)
 		VFS_RELE(zfsvfs->z_parent->z_vfs);
 #endif	/* sun */
 
-	zfsvfs_free(zfsvfs);
-
 	vfs_setfsprivate(vfsp, NULL);
+
+	zfsvfs_free(zfsvfs);
 
 	atomic_add_32(&zfs_active_fs_count, -1);
     dprintf("-freevfs\n");
