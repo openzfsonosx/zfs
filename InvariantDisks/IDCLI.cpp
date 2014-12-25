@@ -57,7 +57,7 @@ namespace ID
 		m_impl->signalSourceINT = createSourceSignal(SIGINT, this, stopHandler);
 		m_impl->signalSourceTERM = createSourceSignal(SIGTERM, this, stopHandler);
 		// UI
-		std::cout << "InvariantDisk " << GIT_VERSION << std::endl;
+		showVersion();
 		parse(argc, argv);
 	}
 
@@ -67,6 +67,13 @@ namespace ID
 
 	int CLI::exec()
 	{
+		// Print help and terminate
+		if (m_impl->showHelp)
+		{
+			showHelp();
+			return 0;
+		}
+		// Start runloop
 		{
 			std::lock_guard<std::mutex> lock(m_impl->mutex);
 			if (m_impl->runloop)
@@ -101,6 +108,20 @@ namespace ID
 		std::function<void(char **)> func;
 	};
 
+	void CLI::showVersion() const
+	{
+		std::cout << "InvariantDisk " << GIT_VERSION << std::endl;
+	}
+
+	void CLI::showHelp() const
+	{
+		std::cout << "Usage: InvariantDisks [-hv] [-p <basePath>] [-t <timeoutMS>]\n";
+		std::cout << "\t-h:\tprint help and exit\n";
+		std::cout << "\t-v:\tverbose logging\n";
+		std::cout << "\t-p <basePath>:\tset base path for symlinks (" << m_impl->basePath << ")\n";
+		std::cout << "\t-t <timeoutMS>:\tset idle timeout (" << m_impl->idleTimeoutNS/1000000 << " ms)\n";
+	}
+
 	void CLI::parse(int & argc, char ** argv)
 	{
 		// Command Line Parsing
@@ -112,14 +133,15 @@ namespace ID
 			{"-t", { 1, [&](char ** a){
 				try
 				{
-					m_impl->idleTimeoutNS = std::stol(a[1])*1000000;
+					int64_t timeoutInNS = std::stol(a[1])*1000000ll;
+					if (timeoutInNS < 0)
+						throw std::out_of_range("negative");
+					m_impl->idleTimeoutNS = timeoutInNS;
 				}
-				catch (...)
+				catch (std::exception const & e)
 				{
-					Throw<Exception>() << "Idle Timeout " << a[1] << " is not a number";
+					Throw<Exception>() << "Idle Timeout " << a[1] << " is not a valid timeout: " << e.what();
 				}
-				if (m_impl->idleTimeoutNS < 0)
-					Throw<Exception>() << "Idle Timeout " << a[1] << " is out of range";
 			}}}
 		};
 		for (int argIdx = 0; argIdx < argc; ++argIdx)
