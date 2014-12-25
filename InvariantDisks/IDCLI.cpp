@@ -45,6 +45,7 @@ namespace ID
 		bool showHelp = false;
 		bool verbose = false;
 		std::string basePath = "/var/run/disk";
+		int64_t idleTimeoutNS = 4000000000;
 		CFRunLoopRef runloop = nullptr;
 	};
 
@@ -73,7 +74,7 @@ namespace ID
 			m_impl->runloop = CFRunLoopGetCurrent();
 		}
 		DiskArbitrationDispatcher dispatcher;
-		dispatcher.addHandler(std::make_shared<DAHandlerIdle>(m_impl->basePath));
+		dispatcher.addHandler(std::make_shared<DAHandlerIdle>(m_impl->basePath, m_impl->idleTimeoutNS));
 		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout, m_impl->verbose));
 		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path"));
 		dispatcher.addHandler(std::make_shared<UUIDLinker>(m_impl->basePath + "/by-id"));
@@ -107,7 +108,19 @@ namespace ID
 		{
 			{"-h", { 0, [&](char **){ m_impl->showHelp = true; }}},
 			{"-v", { 0, [&](char **){ m_impl->verbose = true; }}},
-			{"-p", { 1, [&](char ** a){ m_impl->basePath = a[1]; }}}
+			{"-p", { 1, [&](char ** a){ m_impl->basePath = a[1]; }}},
+			{"-t", { 1, [&](char ** a){
+				try
+				{
+					m_impl->idleTimeoutNS = std::stol(a[1])*1000000;
+				}
+				catch (...)
+				{
+					Throw<Exception>() << "Idle Timeout " << a[1] << " is not a number";
+				}
+				if (m_impl->idleTimeoutNS < 0)
+					Throw<Exception>() << "Idle Timeout " << a[1] << " is out of range";
+			}}}
 		};
 		for (int argIdx = 0; argIdx < argc; ++argIdx)
 		{
