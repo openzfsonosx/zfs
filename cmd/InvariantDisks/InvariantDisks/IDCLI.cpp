@@ -45,6 +45,7 @@ namespace ID
 		bool showHelp = false;
 		bool verbose = false;
 		std::string basePath = "/var/run/disk";
+		int64_t idleTimeoutNS = 4000000000;
 		CFRunLoopRef runloop = nullptr;
 	};
 
@@ -56,7 +57,7 @@ namespace ID
 		m_impl->signalSourceINT = createSourceSignal(SIGINT, this, stopHandler);
 		m_impl->signalSourceTERM = createSourceSignal(SIGTERM, this, stopHandler);
 		// UI
-		std::cout << "InvariantDisk " << GIT_VERSION << std::endl;
+		showVersion();
 		parse(argc, argv);
 	}
 
@@ -66,6 +67,13 @@ namespace ID
 
 	int CLI::exec()
 	{
+		// Print help and terminate
+		if (m_impl->showHelp)
+		{
+			showHelp();
+			return 0;
+		}
+		// Start runloop
 		{
 			std::lock_guard<std::mutex> lock(m_impl->mutex);
 			if (m_impl->runloop)
@@ -73,7 +81,7 @@ namespace ID
 			m_impl->runloop = CFRunLoopGetCurrent();
 		}
 		DiskArbitrationDispatcher dispatcher;
-		dispatcher.addHandler(std::make_shared<DAHandlerIdle>(m_impl->basePath));
+		dispatcher.addHandler(std::make_shared<DAHandlerIdle>(m_impl->basePath, m_impl->idleTimeoutNS));
 		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout, m_impl->verbose));
 		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path"));
 		dispatcher.addHandler(std::make_shared<UUIDLinker>(m_impl->basePath + "/by-id"));
@@ -100,6 +108,20 @@ namespace ID
 		std::function<void(char **)> func;
 	};
 
+	void CLI::showVersion() const
+	{
+		std::cout << "InvariantDisk " << GIT_VERSION << std::endl;
+	}
+
+	void CLI::showHelp() const
+	{
+		std::cout << "Usage: InvariantDisks [-hv] [-p <basePath>] [-t <timeoutMS>]\n";
+		std::cout << "\t-h:\tprint help and exit\n";
+		std::cout << "\t-v:\tverbose logging\n";
+		std::cout << "\t-p <basePath>:\tset base path for symlinks (" << m_impl->basePath << ")\n";
+		std::cout << "\t-t <timeoutMS>:\tset idle timeout (" << m_impl->idleTimeoutNS/1000000 << " ms)\n";
+	}
+
 	void CLI::parse(int & argc, char ** argv)
 	{
 		// Command Line Parsing
@@ -107,7 +129,20 @@ namespace ID
 		{
 			{"-h", { 0, [&](char **){ m_impl->showHelp = true; }}},
 			{"-v", { 0, [&](char **){ m_impl->verbose = true; }}},
-			{"-p", { 1, [&](char ** a){ m_impl->basePath = a[1]; }}}
+			{"-p", { 1, [&](char ** a){ m_impl->basePath = a[1]; }}},
+			{"-t", { 1, [&](char ** a){
+				try
+				{
+					int64_t timeoutInNS = std::stol(a[1])*1000000ll;
+					if (timeoutInNS < 0)
+						throw std::out_of_range("negative");
+					m_impl->idleTimeoutNS = timeoutInNS;
+				}
+				catch (std::exception const & e)
+				{
+					Throw<Exception>() << "Idle Timeout " << a[1] << " is not a valid timeout: " << e.what();
+				}
+			}}}
 		};
 		for (int argIdx = 0; argIdx < argc; ++argIdx)
 		{

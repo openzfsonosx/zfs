@@ -30,6 +30,8 @@ namespace ID
 		void stop();
 
 	private:
+		void showVersion() const;
+		void showHelp() const;
 		void parse(int & argc, char ** argv);
 
 	private:

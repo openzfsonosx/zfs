@@ -21,6 +21,7 @@ namespace ID
 		m_idleTimer(createSourceTimer(this, [](void * ctx){ static_cast<DAHandlerIdle*>(ctx)->idle(); }))
 	{
 		createPath(m_base);
+		busy();
 	}
 
 	void DAHandlerIdle::diskAppeared(DADiskRef /*disk*/, DiskInformation const & /*info*/)
