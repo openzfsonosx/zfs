@@ -2084,6 +2084,8 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 
 	/* Write the attribute data. */
 	ASSERT(uio != NULL);
+	error = zfs_freesp(VTOZ(xvp), 0, 0, VTOZ(vp)->z_mode, TRUE);
+
 	error = VNOP_WRITE(xvp, uio, 0, ap->a_context);
 
 out:
