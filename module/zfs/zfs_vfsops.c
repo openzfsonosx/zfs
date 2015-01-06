@@ -656,9 +656,14 @@ zfs_register_callbacks(struct mount *vfsp)
 	    !spa_writeable(dmu_objset_spa(os))) {
 		readonly = B_TRUE;
 		do_readonly = B_TRUE;
-	} else {
+#ifndef __APPLE__
+		/* Apple has no option to pass RW to mount, ie
+		 * zfs set readonly=on D ; zfs mount -o rw D
+		 */
+	} else if (vfs_optionisset(vfsp, MNTOPT_RW, NULL)) {
 		readonly = B_FALSE;
 		do_readonly = B_TRUE;
+#endif
 	}
 	if (vfs_optionisset(vfsp, MNT_NOSUID, NULL)) {
 		setuid = B_FALSE;
