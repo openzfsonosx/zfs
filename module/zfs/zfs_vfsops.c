@@ -618,10 +618,8 @@ zfs_register_callbacks(struct mount *vfsp)
 	boolean_t do_setuid = B_FALSE;
 	boolean_t exec = B_FALSE;
 	boolean_t do_exec = B_FALSE;
-#ifdef illumos
 	boolean_t devices = B_FALSE;
 	boolean_t do_devices = B_FALSE;
-#endif
 	boolean_t xattr = B_FALSE;
 	boolean_t do_xattr = B_FALSE;
 	boolean_t atime = B_FALSE;
@@ -665,47 +663,69 @@ zfs_register_callbacks(struct mount *vfsp)
 		do_readonly = B_TRUE;
 #endif
 	}
+	if (vfs_optionisset(vfsp, MNT_NODEV, NULL)) {
+		devices = B_FALSE;
+		do_devices = B_TRUE;
+#ifndef __APPLE__
+	} else {
+        devices = B_TRUE;
+        do_devices = B_TRUE;
+#endif
+    }
+	/* xnu SETUID, not IllumOS SUID */
 	if (vfs_optionisset(vfsp, MNT_NOSUID, NULL)) {
 		setuid = B_FALSE;
 		do_setuid = B_TRUE;
+#ifndef __APPLE__
 	} else {
         setuid = B_TRUE;
         do_setuid = B_TRUE;
+#endif
     }
 	if (vfs_optionisset(vfsp, MNT_NOEXEC, NULL)) {
 		exec = B_FALSE;
 		do_exec = B_TRUE;
+#ifndef __APPLE__
 	} else {
 		exec = B_TRUE;
 		do_exec = B_TRUE;
+#endif
 	}
 	if (vfs_optionisset(vfsp, MNT_NOUSERXATTR, NULL)) {
 		xattr = B_FALSE;
 		do_xattr = B_TRUE;
+#ifndef __APPLE__
 	} else {
 		xattr = B_TRUE;
 		do_xattr = B_TRUE;
+#endif
 	}
 	if (vfs_optionisset(vfsp, MNT_NOATIME, NULL)) {
 		atime = B_FALSE;
 		do_atime = B_TRUE;
+#ifndef __APPLE__
 	} else {
 		atime = B_TRUE;
 		do_atime = B_TRUE;
+#endif
 	}
 	if (vfs_optionisset(vfsp, MNT_DONTBROWSE, NULL)) {
 		finderbrowse = B_FALSE;
 		do_finderbrowse = B_TRUE;
+#ifndef __APPLE__
 	} else {
 		finderbrowse = B_TRUE;
 		do_finderbrowse = B_TRUE;
+#endif
 	}
 	if (vfs_optionisset(vfsp, MNT_IGNORE_OWNERSHIP, NULL)) {
 		ignoreowner = B_TRUE;
 		do_ignoreowner = B_TRUE;
+#ifndef __APPLE__
 	} else {
 		ignoreowner = B_FALSE;
 		do_ignoreowner = B_TRUE;
+#endif
 	}
 
 	/*
