@@ -61,6 +61,7 @@ extern "C" {
 #define	UDISK_ROOT		"/dev/disk"
 #elif defined(__APPLE__)
 #define	UDISK_ROOT		"/private/var/run/disk"
+#define	UDISK_ROOT_ALT		"/var/run/disk"
 #endif /* __LINUX__ */
 
 /*
