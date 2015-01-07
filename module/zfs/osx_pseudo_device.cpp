@@ -76,12 +76,12 @@ void  net_lundman_zfs_pseudo_device::registerPool(ZFSProxyMediaScheme *addy)
 	pool_proxy = addy;
 }
 
-void  net_lundman_zfs_pseudo_device::rescan(IOService *provider)
+void  net_lundman_zfs_pseudo_device::rescan(IOService *provider, char *snapshot)
 {
 	if (pool_proxy) {
 		int score = 400;
 		printf("Calling scan on %p\n", pool_proxy);
-		pool_proxy->probe(provider, &score);
+		pool_proxy->probe(provider, &score, snapshot);
 		pool_proxy->start(provider);
 	}
 

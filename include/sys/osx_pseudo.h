@@ -22,7 +22,7 @@ public:
 	    OSDictionary* properties = 0);
 
 	virtual void  registerPool(ZFSProxyMediaScheme *);
-	virtual void rescan(IOService *);
+	virtual void rescan(IOService *, char *);
 
 	virtual bool attach(IOService* provider);
 	virtual void detach(IOService* provider);

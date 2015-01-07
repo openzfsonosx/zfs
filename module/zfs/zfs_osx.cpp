@@ -516,7 +516,7 @@ bool net_lundman_zfs_zvol::createPseudoDevices(char *poolname,
 		printf("Calling scan again: nub %p pseudo %p pool_proxy %p\n",
 			   nub, pseudo);
 
-		nub->rescan(nub);
+		nub->rescan(nub, NULL);
 
 		// not needed?
 		nub->registerService( kIOServiceSynchronous);
@@ -691,6 +691,7 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
 
 	printf("New snapshot '%s' - checking existance..\n", snapname);
 
+
 	// Grab the pool name only
 	poolstrlen = strlen(snapname) + 1;
 	poolstr = (char *)kmem_alloc(poolstrlen, KM_SLEEP);
@@ -700,6 +701,7 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
 	r = strchr(poolstr, '@');
 	if (r) *r = 0;
 
+#if 0
 	/* Already locked in spa_import */
 	zv = zvol_minor_lookup(poolstr);
 	printf("zv said %p\n", zv);
@@ -713,6 +715,26 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
 
 		// Insert new snapshot proxy here
 
+	}
+#endif
+
+	zv = zvol_minor_lookup(poolstr);
+	printf("zv said %p\n", zv);
+
+	if (zv) {
+
+		// Already have pool nub
+		nub =  static_cast<net_lundman_zfs_pseudo_device*>(zv->zv_iokitdev);
+		nub->retain();
+		pseudo = OSDynamicCast(IOMedia, nub->getClient()->getClient());
+
+		printf("Calling scan again: nub %p pseudo %p pool_proxy %p\n",
+			   nub, pseudo);
+
+		nub->rescan(nub, snapname);
+
+		// not needed?
+		nub->registerService( kIOServiceSynchronous);
 	}
 
 

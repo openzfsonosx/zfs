@@ -10,7 +10,7 @@
 OSDefineMetaClassAndStructors(ZFSProxyMediaScheme, IOPartitionScheme)
 
 
-IOService* ZFSProxyMediaScheme::probe(IOService* provider, SInt32* score)
+IOService* ZFSProxyMediaScheme::probe(IOService* provider, SInt32* score, char *snapshot)
 {
 	printf("ZFSProxyMediaScheme::probe\n");
 
@@ -18,7 +18,7 @@ IOService* ZFSProxyMediaScheme::probe(IOService* provider, SInt32* score)
         return 0;
 
     //find first level of child filesystems.
-    m_child_filesystems = scan(score);
+    m_child_filesystems = scan(score, snapshot);
 
     //If this filesystem has no children, then return NULL
     printf("probe: this %p : m_child_filesystems %p: provider %p\n",
@@ -44,6 +44,14 @@ IOService* ZFSProxyMediaScheme::probe(IOService* provider, SInt32* score)
     return m_child_filesystems ? this : NULL;
     return NULL;
 }
+
+IOService* ZFSProxyMediaScheme::probe(IOService* provider, SInt32* score)
+{
+	return probe(provider, score, NULL);
+}
+
+
+
 
 bool ZFSProxyMediaScheme::start (IOService *provider)
 {
@@ -192,7 +200,7 @@ extern "C" {
 #include <sys/dmu.h>
 }
 
-OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
+OSSet*  ZFSProxyMediaScheme::scan(SInt32* score, char *snapshot)
 {
     //IOBufferMemoryDescriptor*       buffer                  = NULL;
     //SamplePartitionTable*           sampleTable;
@@ -315,6 +323,9 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score)
     // Release temporary resources
     close(this);
   //  buffer->release();
+
+
+	if (snapshot) printf("ZFS: Should add snapshot '%s' here.\n", snapshot);
 
 	return holder.child_filesystems;
 
