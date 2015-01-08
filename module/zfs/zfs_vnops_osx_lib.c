@@ -626,8 +626,10 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
     if (cn.pn_buf)
 		kmem_free(cn.pn_buf, cn.pn_bufsize);
 
-	if (error == EEXIST)
+	/* The REPLACE error if doesn't exist is ENOATTR */
+	if ((flag & ZEXISTS) && (error == EEXIST))
 		error = ENOATTR;
+
 	if (xzp)
 		*vpp = ZTOV(xzp);
 
