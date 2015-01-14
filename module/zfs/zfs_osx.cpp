@@ -679,7 +679,7 @@ char *net_lundman_zfs_zvol::findDataset(char *dev)
 int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
 {
     net_lundman_zfs_pseudo_device *nub = NULL;
-    bool            result = false;
+    int            result = 1;
 	zvol_state_t *zv;
 	minor_t minor = 0;
 	zfs_soft_state_t *zs;
@@ -738,7 +738,7 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
 	}
 
 
-	result = true;
+	result = 0;
 
 
   bail:
@@ -821,6 +821,8 @@ int IOKit_mount_snapshot(thread_t *tr,         /* not used */
 							  &mvp,
 							  vfs_context_current());
 		if (!result) {
+			printf("vnode_lookup good?! close %p return %p\n",
+				   *vpp, mvp);
 			VN_RELE(*vpp);
 			*vpp = mvp;
 		}

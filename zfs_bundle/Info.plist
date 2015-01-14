@@ -52,22 +52,6 @@
 			<key>autodiskmount</key>
 			<false/>
 		</dict>
-		<key>zfs_snapshot_proxy</key>
-		<dict>
-			<key>FSMediaProperties</key>
-			<dict>
-				<key>Content Hint</key>
-				<string>zfs_snapshot_proxy</string>
-			</dict>
-			<key>FSProbeArguments</key>
-			<string>-p</string>
-			<key>FSProbeExecutable</key>
-			<string>zfs.util</string>
-			<key>FSProbeOrder</key>
-			<integer>1000</integer>
-			<key>autodiskmount</key>
-			<true/>
-		</dict>
 		<key>zfs_pool_proxy</key>
 		<dict>
 			<key>FSMediaProperties</key>
@@ -154,6 +138,8 @@
 			<string>ZFS Snapshot</string>
 			<key>FSSubType</key>
 			<integer>2</integer>
+			<key>autodiskmount</key>
+			<true/>
 		</dict>
 		<key>ZFS Snapshot Collection</key>
 		<dict>

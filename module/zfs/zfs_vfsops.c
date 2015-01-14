@@ -1922,13 +1922,17 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
         if ( (error = copyinstr((user_addr_t)mnt_args.fspec, osname,
                                 MAXPATHLEN, &osnamelen)) )
             goto out;
+
+
+
+		mflag = mnt_args.mflag;
+
+		options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
+
+		error = copyin((user_addr_t)mnt_args.optptr, (caddr_t)options,
+					   mnt_args.optlen);
     }
-	mflag = mnt_args.mflag;
 
-	options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
-
-	error = copyin((user_addr_t)mnt_args.optptr, (caddr_t)options,
-	    mnt_args.optlen);
 
 #else
 
@@ -2447,8 +2451,11 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 
 		VFSATTR_SET_SUPPORTED(fsap, f_vol_name);
 	}
-	VFSATTR_RETURN(fsap, f_fssubtype, 0);
-
+	if (!zfsvfs->z_issnap) {
+		VFSATTR_RETURN(fsap, f_fssubtype, 0);
+	} else {
+		VFSATTR_RETURN(fsap, f_fssubtype, 2);
+	}
     /* According to joshade over at
      * https://github.com/joshado/liberate-applefileserver/blob/master/liberate.m
      * the following values need to be returned for it to be considered

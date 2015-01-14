@@ -116,6 +116,7 @@ struct holder_s
 	unsigned int index;
 	OSSet*child_filesystems;
 	ZFSProxyMediaScheme *object;
+	int snapshot;
 };
 
 int
@@ -157,7 +158,7 @@ spa_osx_create_devs(const char *dsname, void *arg)
 	iter = OSCollectionIterator::withCollection(holder->child_filesystems);
 	if (iter) {
 		IOMedia *media;
-		while (media = (IOMedia *)iter->getNextObject()) {
+		while ((media = (IOMedia *)iter->getNextObject())) {
 			OSObject *sobj;
 			sobj = media->getProperty("DATASET");
 			OSString*osstr = OSDynamicCast(OSString, sobj);
@@ -187,6 +188,11 @@ spa_osx_create_devs(const char *dsname, void *arg)
 		printf("Name is %s\n", newMedia->getName());
 
 		newMedia->setProperty("DATASET", dsname);
+
+		// Tag snapshots
+		if (holder->snapshot)
+			newMedia->setProperty("FSSubType", 2, 32);
+
 		holder->child_filesystems->setObject(newMedia);
 		newMedia->release();
 	}
@@ -210,6 +216,7 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score, char *snapshot)
 	OSIterator*		child_filesystemIterator;
 
     UInt64 child_filesystem_count;
+	int rlen = 0;
 
     printf("ZFSProxyMediaScheme::scan : provider Content is %s\n", media->getContent());
     printf("ZFSProxyMediaScheme::scan : provider ContentHint is %s\n", media->getContentHint());
@@ -240,8 +247,16 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score, char *snapshot)
 	if (holder.child_filesystems == NULL)
 		goto bail;
 
-
-
+	/* If we are passed a snapshot to add, figure out the dataset name
+	 * part for easy comparison
+	 */
+	if (snapshot) {
+		char *r;
+		r = strchr(snapshot, '@'); // ZFS guarantee us 1 '@'
+		if (r) {
+			rlen = r - snapshot;
+		}
+	}
 
 
 
@@ -265,7 +280,8 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score, char *snapshot)
 			if (dmu_objset_hold(dset->getCStringNoCopy(), FTAG, &os) == 0) {
 				dmu_objset_rele(os, FTAG);
 			} else {
-				printf("Told to delete '%s'\n", dset->getCStringNoCopy());
+				printf("Told to delete '%s':\n",
+					   dset->getCStringNoCopy());
 				child_filesystem->terminate();
 
 				holder.child_filesystems->removeObject(child_filesystem);
@@ -316,6 +332,15 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score, char *snapshot)
 
 			dmu_objset_find(holder.poolname, spa_osx_create_devs,
 							&holder, DS_FIND_CHILDREN);
+
+			/* Add a snapshot ? */
+			if (rlen && !strncmp(snapshot, holder.poolname, rlen)) {
+				printf("ZFS: Attempting to add snapshot '%s'\n", snapshot);
+				holder.snapshot = 1;
+				spa_osx_create_devs(snapshot, &holder);
+				snapshot = NULL;
+			}
+
 		}
 
 	}
