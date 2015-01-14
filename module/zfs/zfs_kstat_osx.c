@@ -52,10 +52,20 @@
  *
  */
 
+#ifdef DEBUG
+#define	ZFS_DEBUG_STR	" (DEBUG mode)"
+#else
+#define	ZFS_DEBUG_STR	""
+#endif
 
+static char *kext_version = ZFS_META_VERSION "-" ZFS_META_RELEASE ZFS_DEBUG_STR;
 
 
 osx_kstat_t osx_kstat = {
+	{ "kext_version",				KSTAT_DATA_STRING },
+	{ "spa_version",				KSTAT_DATA_UINT64 },
+	{ "zpl_version",				KSTAT_DATA_UINT64 },
+
 	{ "active_vnodes",				KSTAT_DATA_UINT64 },
 	{ "reclaim_nodes",				KSTAT_DATA_UINT64 },
 	{ "vnop_debug",					KSTAT_DATA_UINT64 },
@@ -205,7 +215,10 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 	} else {
 
 		/* kstat READ */
-
+		ks->kext_version.value.string.addr.ptr       = kext_version;
+		ks->kext_version.value.string.len            = strlen(kext_version)+1;
+		ks->spa_version.value.ui64                   = SPA_VERSION;
+		ks->zpl_version.value.ui64                   = ZPL_VERSION;
 
 		/* Darwin */
 		ks->darwin_active_vnodes.value.ui64          = vnop_num_vnodes;
