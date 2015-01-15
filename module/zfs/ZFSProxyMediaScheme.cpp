@@ -177,9 +177,8 @@ spa_osx_create_devs(const char *dsname, void *arg)
 	snprintf(foo.filesystemName, sizeof(foo.filesystemName), "%s",
 			 dsname);
 	IOMedia *newMedia;
-	newMedia = static_cast<ZFSProxyMediaScheme*>(holder->object)->instantiateMediaObject(&foo, 1+holder->index);
-	//newMedia = (holder->object)->instantiateMediaObject(&foo, 1+holder->index);
-
+	newMedia = static_cast<ZFSProxyMediaScheme*>(holder->object)->instantiateMediaObject(&foo, 1+holder->index,
+																						 holder->snapshot ? "zfs_snapshot_proxy" : "zfs_filesystem_proxy");
 
 	if ( newMedia )
 	{
@@ -188,10 +187,6 @@ spa_osx_create_devs(const char *dsname, void *arg)
 		printf("Name is %s\n", newMedia->getName());
 
 		newMedia->setProperty("DATASET", dsname);
-
-		// Tag snapshots
-		if (holder->snapshot)
-			newMedia->setProperty("FSSubType", 2, 32);
 
 		holder->child_filesystems->setObject(newMedia);
 		newMedia->release();
@@ -363,7 +358,7 @@ bail:
     return NULL;
 }
 
-IOMedia* ZFSProxyMediaScheme::instantiateMediaObject(ZFSFilesystemEntry* fsEntry, unsigned index)
+IOMedia* ZFSProxyMediaScheme::instantiateMediaObject(ZFSFilesystemEntry* fsEntry, unsigned index, const char *type)
 {
 	IOMedia*        media          = getProvider();
 
@@ -384,7 +379,7 @@ IOMedia* ZFSProxyMediaScheme::instantiateMediaObject(ZFSFilesystemEntry* fsEntry
 							mediaAttributes,
 							false, //it's a "partition" now
 							isMediaWritable,
-							"zfs_filesystem_proxy"))
+							type))
 		{
 
             //Fix me get file system name so we can set it.

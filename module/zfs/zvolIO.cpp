@@ -38,7 +38,7 @@ net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
 	zv->zv_iokitdev = (void *) this;
 
   super::setProperty(kIOMediaContentHintKey,
-			  zv->zv_minor == -1 ? "zfs_pool_proxy" : "AAA");
+			  zv->zv_minor == -1 ? "zfs_pool_proxy" : "ZFS Volume");
   return true;
 }
 

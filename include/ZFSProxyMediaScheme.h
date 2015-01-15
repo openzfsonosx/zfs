@@ -45,7 +45,7 @@ public:
     virtual IOService*  probe(IOService* provider, SInt32* score, char *);
 	virtual bool		start (IOService* provider);
 	virtual void		stop (IOService* provider);
-    virtual IOMedia*    instantiateMediaObject(ZFSFilesystemEntry* sampleEntry, unsigned index);
+    virtual IOMedia*    instantiateMediaObject(ZFSFilesystemEntry* sampleEntry, unsigned index, const char *type);
 
 	virtual IOReturn newUserClient(task_t owningTask,
 								   void* securityID, UInt32 type,

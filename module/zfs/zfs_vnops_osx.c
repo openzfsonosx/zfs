@@ -3191,6 +3191,8 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 	return (0);
 }
 
+
+
 /*
  * Maybe these should live in vfsops
  */
@@ -3221,6 +3223,7 @@ zfs_vfsops_init(void)
 		return (KERN_FAILURE);
 	else
 		return (KERN_SUCCESS);
+
 }
 
 int

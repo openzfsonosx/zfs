@@ -812,10 +812,12 @@ int IOKit_mount_snapshot(thread_t *tr,         /* not used */
 
 	result =  static_cast<net_lundman_zfs_zvol*>(global_c_interface)->mountSnapshot(snapname);
 
+#if 0
 	if (!result) {
 		printf("ZFS: new iokit created, waiting for mount to complete...\n");
 		delay(hz * 5);
 
+		printf("ZFS: Calling lookup again on '%s'... \n", mountpoint);
 		result = vnode_lookup(mountpoint,
 							  0,
 							  &mvp,
@@ -828,6 +830,7 @@ int IOKit_mount_snapshot(thread_t *tr,         /* not used */
 		}
 
 	}
+#endif
 
 	return result;
 }

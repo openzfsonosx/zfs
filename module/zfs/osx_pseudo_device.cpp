@@ -64,8 +64,10 @@ net_lundman_zfs_pseudo_device::init(zvol_state_t *c_zv,
 	// Is it safe/ok to keep a pointer reference like this?
 	zv->zv_iokitdev = (void *) this;
 
+#if 0
 	super::setProperty(kIOMediaContentHintKey,
 					   zv->zv_minor == -1 ? "zfs_pool_proxy" : "AAA");
+#endif
 	return true;
 }
 
