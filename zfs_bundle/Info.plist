@@ -36,70 +36,64 @@
 	<string>4F1003</string>
 	<key>FSMediaTypes</key>
 	<dict>
-		<key>zfs_filesystem_proxy</key>
+	  <key>zfs_filesystem_proxy</key>
+	  <dict>
+		<key>FSMediaProperties</key>
 		<dict>
-			<key>FSMediaProperties</key>
-			<dict>
-				<key>Content Hint</key>
-				<string>zfs_filesystem_proxy</string>
-				<key>Leaf</key>
-				<true/>
-			</dict>
-			<key>FSProbeArguments</key>
-			<string>-p</string>
-			<key>FSProbeExecutable</key>
-			<string>ffs.util</string>
-			<key>FSProbeOrder</key>
-			<integer>1000</integer>
+		  <key>Content Hint</key>
+		  <string>zfs_filesystem_proxy</string>
 		</dict>
-		<key>zfs_pool_proxy</key>
+		<key>FSProbeArguments</key>
+		<string>-p</string>
+		<key>FSProbeExecutable</key>
+		<string>ffs.util</string>
+		<key>FSProbeOrder</key>
+		<integer>1000</integer>
+	  </dict>
+	  <key>zfs_pool_proxy</key>
+	  <dict>
+		<key>FSMediaProperties</key>
 		<dict>
-			<key>FSMediaProperties</key>
-			<dict>
-				<key>Content Hint</key>
-				<string>zfs_pool_proxy</string>
-			</dict>
-			<key>FSProbeArguments</key>
-			<string>-p</string>
-			<key>FSProbeExecutable</key>
-			<string>qfs.util</string>
-			<key>FSProbeOrder</key>
-			<integer>1000</integer>
-			<key>autodiskmount</key>
-			<false/>
+		  <key>Content Hint</key>
+		  <string>zfs_pool_proxy</string>
 		</dict>
-		<key>zfs_snapshot_proxy</key>
+		<key>FSProbeArguments</key>
+		<string>-p</string>
+		<key>FSProbeExecutable</key>
+		<string>qfs.util</string>
+		<key>FSProbeOrder</key>
+		<integer>1000</integer>
+	  </dict>
+	  <key>zfs_snapshot_proxy</key>
+	  <dict>
+		<key>FSMediaProperties</key>
 		<dict>
-			<key>FSMediaProperties</key>
-			<dict>
-				<key>Content Hint</key>
-				<string>zfs_snapshot_proxy</string>
-				<key>Leaf</key>
-				<true/>
-			</dict>
-			<key>FSProbeArguments</key>
-			<string>-q</string>
-			<key>FSProbeExecutable</key>
-			<string>xfs.util</string>
-			<key>FSProbeOrder</key>
-			<integer>1000</integer>
+		  <key>Content Hint</key>
+		  <string>zfs_snapshot_proxy</string>
 		</dict>
-        <key>Whole</key>
+		<key>FSProbeArguments</key>
+		<string>-q</string>
+		<key>FSProbeExecutable</key>
+		<string>xfs.util</string>
+		<key>FSProbeOrder</key>
+		<integer>1000</integer>
+	  </dict>
+      <key>Whole</key>
+      <dict>
+        <key>FSMediaProperties</key>
         <dict>
-          <key>FSMediaProperties</key>
-          <dict>
-            <key>Leaf</key>
-            <true/>
-            <key>Whole</key>
-            <true/>
-          </dict>
-          <key>FSProbeArguments</key>
-          <string>-p</string>
-          <key>FSProbeExecutable</key>
-          <string>zfs2.util</string>
-          <key>FSProbeOrder</key>
-          <integer>2000</integer>
+          <key>Leaf</key>
+          <true/>
+          <key>Whole</key>
+          <true/>
         </dict>
+        <key>FSProbeArguments</key>
+        <string>-p</string>
+        <key>FSProbeExecutable</key>
+        <string>zfs2.util</string>
+        <key>FSProbeOrder</key>
+        <integer>2000</integer>
+      </dict>
 	</dict>
 	<key>FSPersonalities</key>
 	<dict>
@@ -154,8 +148,6 @@
 			<string>ZFS Snapshot</string>
 			<key>FSSubType</key>
 			<integer>2</integer>
-			<key>autodiskmount</key>
-			<true/>
 		</dict>
 		<key>ZFS Snapshot Collection</key>
 		<dict>

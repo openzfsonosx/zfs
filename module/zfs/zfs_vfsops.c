@@ -1458,7 +1458,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 			goto out;
 		}
 
-        vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_AUTOMOUNTED));
+        //vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_AUTOMOUNTED));
 
 		atime_changed_cb(zfsvfs, B_FALSE);
 		readonly_changed_cb(zfsvfs, B_TRUE);

@@ -177,8 +177,10 @@ spa_osx_create_devs(const char *dsname, void *arg)
 	snprintf(foo.filesystemName, sizeof(foo.filesystemName), "%s",
 			 dsname);
 	IOMedia *newMedia;
-	newMedia = static_cast<ZFSProxyMediaScheme*>(holder->object)->instantiateMediaObject(&foo, 1+holder->index,
-																						 holder->snapshot ? "zfs_snapshot_proxy" : "zfs_filesystem_proxy");
+	newMedia = static_cast<ZFSProxyMediaScheme*>(holder->object)->instantiateMediaObject(
+		&foo,
+		1+holder->index,
+		holder->snapshot ? "zfs_snapshot_proxy" : "zfs_filesystem_proxy");
 
 	if ( newMedia )
 	{
@@ -187,6 +189,8 @@ spa_osx_create_devs(const char *dsname, void *arg)
 		printf("Name is %s\n", newMedia->getName());
 
 		newMedia->setProperty("DATASET", dsname);
+		if (holder->snapshot)
+			newMedia->setProperty("autodiskmount", true);
 
 		holder->child_filesystems->setObject(newMedia);
 		newMedia->release();
@@ -329,7 +333,10 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score, char *snapshot)
 							&holder, DS_FIND_CHILDREN);
 
 			/* Add a snapshot ? */
-			if (rlen && !strncmp(snapshot, holder.poolname, rlen)) {
+			if (rlen)
+				printf("ZFS: Comparing '%s' to '%s' for %d bytes\n",
+					   snapshot, holder.poolname, rlen);
+			if (rlen /*&& !strncmp(snapshot, holder.poolname, rlen)*/) {
 				printf("ZFS: Attempting to add snapshot '%s'\n", snapshot);
 				holder.snapshot = 1;
 				spa_osx_create_devs(snapshot, &holder);
@@ -399,7 +406,7 @@ IOMedia* ZFSProxyMediaScheme::instantiateMediaObject(ZFSFilesystemEntry* fsEntry
             // Set the "Partition ID" key for this partition
             newMedia->setProperty(kIOMediaPartitionIDKey, index, 32);
 
-
+#if 0
             //ZFS
             //Fix me: get pool guid and dataset guid from the label
             uint64_t zfs_pool_guid = 16504178780918792917UL;
@@ -407,6 +414,7 @@ IOMedia* ZFSProxyMediaScheme::instantiateMediaObject(ZFSFilesystemEntry* fsEntry
 
             newMedia->setProperty("ZFS_POOL_GUID", zfs_pool_guid, 64);
             newMedia->setProperty("ZFS_DATASET_GUID", zfs_dataset_guid, 64);
+#endif
 		}
 		else
 		{
