@@ -189,9 +189,6 @@ spa_osx_create_devs(const char *dsname, void *arg)
 		printf("Name is %s\n", newMedia->getName());
 
 		newMedia->setProperty("DATASET", dsname);
-		if (holder->snapshot) {
-			newMedia->setProperty("autodiskmount", true);
-		}
 
 		holder->child_filesystems->setObject(newMedia);
 		newMedia->release();

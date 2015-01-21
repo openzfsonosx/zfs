@@ -63,6 +63,8 @@
 #include <CommonCrypto/CommonDigest.h>
 #include <uuid/uuid.h>
 
+#include <libzfs.h>
+
 
 const char *progname;
 
@@ -87,8 +89,7 @@ usage(void)
 #define	FSUC_QUICKVERIFY 'q'
 #endif
 
-void check_for_snapshot(char *name);
-void setmountpoint(char *);
+void check_for_snapshot(char *device, char *name);
 
 
 
@@ -215,7 +216,7 @@ main(int argc, char **argv, char **env)
 			if (ret == FSUR_RECOGNIZED)
 				write(1, thename, strlen(thename));
 
-			check_for_snapshot(thename);
+			check_for_snapshot(blkdevice, thename);
 			break;
 
 		case FSUC_GETUUID:
@@ -254,133 +255,69 @@ main(int argc, char **argv, char **env)
  * no way to set the mountpoint. So if we get a probe for a snapshot,
  * we setup the DA callbacks to modify the mountpoint.
  */
-void check_for_snapshot(char *name)
+void check_for_snapshot(char *device, char *name)
 {
-	int ret;
+	DADiskRef        disk     = NULL;
+	DASessionRef session;
+	CFURLRef path;
+	int err;
+	libzfs_handle_t *g_zfs;
+	zfs_handle_t *snap = NULL;
+	char sourceloc[ZFS_MAXNAMELEN];
+	zprop_source_t sourcetype;
+	char mountpoint[ZFS_MAXPROPLEN];
 
-	// Check for snapshot
+	// Check for snapshot, we could let zfs_open(ZFS_TYPE_SNAPSHOT) fail, or
+	// check type == ZFS_TYPE_SNAPSHOT here instead of looking for '@'
 	if (!strchr(name, '@')) return;
 
 	syslog(LOG_NOTICE, "%s: '%s' appears to be snapshot",
 		   progname, name);
 
-
-
-	ret = fork();
-
-	switch(ret) {
-		case 0: /* child */
-			close(0);
-			close(1);
-			close(2);
-			setsid();
-			setmountpoint(name);
-			_exit(0);
-		case -1:
-		default:
-			return;
-	}
-	return;
-}
-
-
-static int doexit = 0;
-//void approveMount(DADiskRef disk, CFArrayRef keys, void *context)
-DADissenterRef approveMount(DADiskRef disk, void* context)
-{
-	char *name = (char *)context;
-	CFURLRef path;
-	int ok = 0;
-	DADissenterRef dissenter;
-	CFDictionaryRef description;
-	int failit = 0;
-	struct stat stsb;
-
-	description = DADiskCopyDescription( disk );
-	if ( description ) {
-
-		syslog(LOG_NOTICE, "dictionary OK");
-
-		CFURLRef url = CFDictionaryGetValue( description, kDADiskDescriptionVolumePathKey );
-
-		char buf[MAXPATHLEN];
-		if (CFURLGetFileSystemRepresentation(url, false, (UInt8 *)buf, sizeof(buf))) {
-
-			syslog(LOG_NOTICE, "location is %s", buf);
-
-				ok = 1;
-		}
-	}
-	CFRelease( description );
-
-	syslog(LOG_NOTICE, "approveMount called:");
-	//DADiskSetBypath( dsk, @"/tmp/a" );
-	doexit = 1;
-
-	if (stat("/tmp/a", &stsb)) {
-		mkdir("/tmp/a", 0755);
-		failit = 1;
+	// Open libzfs to fetch the snapshots mountpoint
+	if ((g_zfs = libzfs_init()) == NULL) {
+		return;
 	}
 
+	if ((snap = zfs_open(g_zfs, name, ZFS_TYPE_SNAPSHOT)) == NULL)
+		goto fail;
+
+	err = zfs_prop_get(snap, ZFS_PROP_MOUNTPOINT, mountpoint, sizeof(mountpoint),
+					   &sourcetype, sourceloc, sizeof (sourceloc), B_FALSE);
+	if (err) goto fail;
+
+	syslog(LOG_NOTICE, "mountpoint is '%s'", mountpoint);
+
+	session = DASessionCreate(kCFAllocatorDefault);
+	if (!session) goto fail;
 
 
 	path = CFURLCreateFromFileSystemRepresentation(
 		kCFAllocatorDefault,
-		//"/Volumes/BOOM/.zfs/snapshot/send",
-		//32,
-		"/tmp/a",
-		6,
+		(const unsigned char *)mountpoint,
+		strlen(mountpoint),
 		true);
 
-	DADiskMountWithArguments(disk, path, kDADiskMountOptionDefault,
-							 NULL, NULL, NULL);
+	disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, device);
 
-#if 1
-	if (failit) {
+	syslog(LOG_NOTICE, "calling mount on '%s' and '%s' (%s)",
+		   device, mountpoint, name);
 
-		/* deny the mount since we already mounted it */
-		dissenter = DADissenterCreate(kCFAllocatorDefault,
-									  kDAReturnNotPermitted,
-									  CFSTR("mounted hidden"));
-		return dissenter;
-	}
-#endif
-	return NULL;
-}
-
-#include <DiskArbitration/DADisk.h>
-
-void setmountpoint(char *name)
-{
-	DASessionRef session;
-	dispatch_queue_t queue = NULL;
-	session = DASessionCreate(kCFAllocatorDefault);
-	syslog(LOG_NOTICE, "%s: session is open",
-		   progname);
-
-	DARegisterDiskMountApprovalCallback(session, NULL, approveMount, name);
-
-#if 0
-	DARegisterDiskDescriptionChangedCallback(session,
-											 kDADiskDescriptionMatchVolumeMountable,
-											 kDADiskDescriptionWatchVolumePath,
-											 approveMount,
-											 NULL);
-#endif
-
-
-	syslog(LOG_NOTICE, "sleeping");
-
-	DAApprovalSessionScheduleWithRunLoop(session, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
-	while (!doexit) {
-		if (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 10 /* seconds */, true) ==
-			kCFRunLoopRunTimedOut) doexit = 1;
-
+	if (disk) {
+		// Add callback in DiskMount if we want to know if it succeeded or not
+		DADiskMount(disk, path, kDADiskMountOptionDefault,
+					NULL, NULL);
+		CFRelease(disk);
 	}
 
-	DAApprovalSessionUnscheduleFromRunLoop(session, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
-	DAUnregisterApprovalCallback(session, approveMount, NULL);
-	//  DAUnregisterCallback(session, approveMount, NULL);
+	CFRelease(path);
 	CFRelease(session);
-	syslog(LOG_NOTICE, "setmountpoint exit\n");
+
+  fail:
+	if (snap)
+		zfs_close(snap);
+
+	libzfs_fini(g_zfs);
+
+	return;
 }
