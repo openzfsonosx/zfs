@@ -46,7 +46,7 @@
 		<key>FSProbeArguments</key>
 		<string>-p</string>
 		<key>FSProbeExecutable</key>
-		<string>ffs.util</string>
+		<string>zfs.util</string>
 		<key>FSProbeOrder</key>
 		<integer>1000</integer>
 	  </dict>
@@ -60,7 +60,7 @@
 		<key>FSProbeArguments</key>
 		<string>-p</string>
 		<key>FSProbeExecutable</key>
-		<string>qfs.util</string>
+		<string>zfs.util</string>
 		<key>FSProbeOrder</key>
 		<integer>1000</integer>
 	  </dict>
@@ -74,7 +74,7 @@
 		<key>FSProbeArguments</key>
 		<string>-q</string>
 		<key>FSProbeExecutable</key>
-		<string>xfs.util</string>
+		<string>zfs.util</string>
 		<key>FSProbeOrder</key>
 		<integer>1000</integer>
 	  </dict>
@@ -90,7 +90,7 @@
         <key>FSProbeArguments</key>
         <string>-p</string>
         <key>FSProbeExecutable</key>
-        <string>zfs2.util</string>
+        <string>zfs.util</string>
         <key>FSProbeOrder</key>
         <integer>2000</integer>
       </dict>
@@ -108,7 +108,7 @@
 			<key>FSVerificationArguments</key>
 			<string>-c</string>
 			<key>FSVerificationExecutable</key>
-			<string>zfs3.util</string>
+			<string>zfs.util</string>
 		</dict>
 		<key>ZFS Dataset</key>
 		<dict>
@@ -124,7 +124,7 @@
 			<key>FSFormatContentMask</key>
 			<string>6A898CC3-1DD2-11B2-99A6-080020736631</string>
 			<key>FSFormatExecutable</key>
-			<string>zfs4.util</string>
+			<string>zfs.util</string>
 			<key>FSFormatInteractive</key>
 			<false/>
 			<key>FSFormatMaximumSize</key>
@@ -140,7 +140,7 @@
 			<key>FSVerificationArguments</key>
 			<string>-c</string>
 			<key>FSVerificationExecutable</key>
-			<string>zfs5.util</string>
+			<string>zfs.util</string>
 		</dict>
 		<key>ZFS Snapshot</key>
 		<dict>

@@ -87,6 +87,11 @@ usage(void)
 #define	FSUC_QUICKVERIFY 'q'
 #endif
 
+void check_for_snapshot(char *name);
+void setmountpoint(char *);
+
+
+
 static int
 zfs_probe(const char *devpath, io_name_t volname)
 {
@@ -209,6 +214,8 @@ main(int argc, char **argv, char **env)
 
 			if (ret == FSUR_RECOGNIZED)
 				write(1, thename, strlen(thename));
+
+			check_for_snapshot(thename);
 			break;
 
 		case FSUC_GETUUID:
@@ -236,6 +243,144 @@ main(int argc, char **argv, char **env)
 			usage();
 	}
 
+	syslog(LOG_NOTICE, "main thread exit");
 	closelog();
 	exit(ret);
+}
+
+
+/*
+ * The kernel will trigger an automate mount of the snapshots, but has
+ * no way to set the mountpoint. So if we get a probe for a snapshot,
+ * we setup the DA callbacks to modify the mountpoint.
+ */
+void check_for_snapshot(char *name)
+{
+	int ret;
+
+	// Check for snapshot
+	if (!strchr(name, '@')) return;
+
+	syslog(LOG_NOTICE, "%s: '%s' appears to be snapshot",
+		   progname, name);
+
+
+
+	ret = fork();
+
+	switch(ret) {
+		case 0: /* child */
+			close(0);
+			close(1);
+			close(2);
+			setsid();
+			setmountpoint(name);
+			_exit(0);
+		case -1:
+		default:
+			return;
+	}
+	return;
+}
+
+
+static int doexit = 0;
+//void approveMount(DADiskRef disk, CFArrayRef keys, void *context)
+DADissenterRef approveMount(DADiskRef disk, void* context)
+{
+	char *name = (char *)context;
+	CFURLRef path;
+	int ok = 0;
+	DADissenterRef dissenter;
+	CFDictionaryRef description;
+	int failit = 0;
+	struct stat stsb;
+
+	description = DADiskCopyDescription( disk );
+	if ( description ) {
+
+		syslog(LOG_NOTICE, "dictionary OK");
+
+		CFURLRef url = CFDictionaryGetValue( description, kDADiskDescriptionVolumePathKey );
+
+		char buf[MAXPATHLEN];
+		if (CFURLGetFileSystemRepresentation(url, false, (UInt8 *)buf, sizeof(buf))) {
+
+			syslog(LOG_NOTICE, "location is %s", buf);
+
+				ok = 1;
+		}
+	}
+	CFRelease( description );
+
+	syslog(LOG_NOTICE, "approveMount called:");
+	//DADiskSetBypath( dsk, @"/tmp/a" );
+	doexit = 1;
+
+	if (stat("/tmp/a", &stsb)) {
+		mkdir("/tmp/a", 0755);
+		failit = 1;
+	}
+
+
+
+	path = CFURLCreateFromFileSystemRepresentation(
+		kCFAllocatorDefault,
+		//"/Volumes/BOOM/.zfs/snapshot/send",
+		//32,
+		"/tmp/a",
+		6,
+		true);
+
+	DADiskMountWithArguments(disk, path, kDADiskMountOptionDefault,
+							 NULL, NULL, NULL);
+
+#if 1
+	if (failit) {
+
+		/* deny the mount since we already mounted it */
+		dissenter = DADissenterCreate(kCFAllocatorDefault,
+									  kDAReturnNotPermitted,
+									  CFSTR("mounted hidden"));
+		return dissenter;
+	}
+#endif
+	return NULL;
+}
+
+#include <DiskArbitration/DADisk.h>
+
+void setmountpoint(char *name)
+{
+	DASessionRef session;
+	dispatch_queue_t queue = NULL;
+	session = DASessionCreate(kCFAllocatorDefault);
+	syslog(LOG_NOTICE, "%s: session is open",
+		   progname);
+
+	DARegisterDiskMountApprovalCallback(session, NULL, approveMount, name);
+
+#if 0
+	DARegisterDiskDescriptionChangedCallback(session,
+											 kDADiskDescriptionMatchVolumeMountable,
+											 kDADiskDescriptionWatchVolumePath,
+											 approveMount,
+											 NULL);
+#endif
+
+
+	syslog(LOG_NOTICE, "sleeping");
+
+	DAApprovalSessionScheduleWithRunLoop(session, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+	while (!doexit) {
+		if (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 10 /* seconds */, true) ==
+			kCFRunLoopRunTimedOut) doexit = 1;
+
+	}
+
+	DAApprovalSessionUnscheduleFromRunLoop(session, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+	DAUnregisterApprovalCallback(session, approveMount, NULL);
+	//  DAUnregisterCallback(session, approveMount, NULL);
+	CFRelease(session);
+	syslog(LOG_NOTICE, "setmountpoint exit\n");
 }
