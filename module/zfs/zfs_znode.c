@@ -1308,13 +1308,22 @@ again:
 			if (err == 0) {
 
 				dprintf("attaching vnode %p\n", vp);
-				if ((vnode_getwithvid(vp, zp->z_vid) != 0)) {
+
+				/*
+				 * zfs_free_node() sets z_vnode to NULL when called inside
+				 * the znodes_lock, so we check against that here to ensure
+				 * it is not NULL
+				 */
+				mutex_enter(&zfsvfs->z_znodes_lock);
+				if (!ZTOV(zp) || (vnode_getwithvid(vp, zp->z_vid) != 0)) {
+					mutex_exit(&zfsvfs->z_znodes_lock);
 					mutex_exit(&zp->z_lock);
 					sa_buf_rele(db, NULL);
 					ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 					dprintf("zfs: vnode_getwithvid err\n");
 					goto again;
 				}
+				mutex_exit(&zfsvfs->z_znodes_lock);
 
 			}
 			mutex_exit(&zp->z_lock);
