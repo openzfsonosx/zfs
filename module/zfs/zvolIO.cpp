@@ -16,7 +16,7 @@
  */
 
 
-// #define dprintf IOLog
+//#define dprintf IOLog
 
 // Define the superclass
 #define	super IOBlockStorageDevice
@@ -271,7 +271,7 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 {
 	IOStorageAccess access = (IOStorageAccess)(uint64_t)argument;
 
-	dprintf("open\n");
+	dprintf("open: options %lx\n", options);
 
 	if (super::handleOpen(client, options, argument) == false)
 		return (false);
@@ -285,7 +285,7 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 	switch (access) {
 
 		case kIOStorageAccessReader:
-			// IOLog("handleOpen: readOnly\n");
+			//IOLog("handleOpen: readOnly\n");
 			zv->zv_openflags = FREAD;
 			zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL);
 			break;
@@ -302,8 +302,12 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 	}
 
 	if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL)) {
-		dprintf("Open failed\n");
-		return (false);
+		dprintf("Open failed - testing readonly\n");
+
+		zv->zv_openflags = FREAD;
+		if (zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL))
+			return (false); // fail it.
+
 	}
 
 	dprintf("Open done\n");
@@ -606,11 +610,11 @@ net_lundman_zfs_zvol_device::reportLockability(bool *isLockable)
 IOReturn
 net_lundman_zfs_zvol_device::reportWriteProtection(bool *isWriteProtected)
 {
-	dprintf("reportWritePro\n");
 	if (zv && (zv->zv_flags & ZVOL_RDONLY))
 		*isWriteProtected = true;
 	else
 		*isWriteProtected = false;
+	dprintf("reportWritePro: %d\n", *isWriteProtected);
 	return (kIOReturnSuccess);
 }
 
