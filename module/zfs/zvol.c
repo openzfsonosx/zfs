@@ -471,11 +471,34 @@ zvol_name2minor(const char *name, minor_t *minor)
 	return (zv ? 0 : -1);
 }
 
+static int
+__zvol_snapdev_hidden(const char *name)
+{
+	uint64_t snapdev;
+	char *parent;
+	char *atp;
+	int error = 0;
+
+	parent = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+	(void) strlcpy(parent, name, MAXPATHLEN);
+
+	if ((atp = strrchr(parent, '@')) != NULL) {
+		*atp = '\0';
+		error = dsl_prop_get_integer(parent, "snapdev", &snapdev, NULL);
+		if ((error == 0) && (snapdev == ZFS_SNAPDEV_HIDDEN))
+			error = SET_ERROR(ENODEV);
+	}
+
+	kmem_free(parent, MAXPATHLEN);
+
+	return (SET_ERROR(error));
+}
+
 /*
  * Create a minor node (plus a whole lot more) for the specified volume.
  */
 int
-zvol_create_minor(const char *name)
+__zvol_create_minor(const char *name, boolean_t ignore_snapdev)
 {
 	zfs_soft_state_t *zs;
 	zvol_state_t *zv;
@@ -491,6 +514,14 @@ zvol_create_minor(const char *name)
 	if (zvol_minor_lookup(name) != NULL) {
 		mutex_exit(&spa_namespace_lock);
 		return (EEXIST);
+	}
+
+	if (ignore_snapdev == B_FALSE) {
+		error = __zvol_snapdev_hidden(name);
+		if (error) {
+			mutex_exit(&spa_namespace_lock);
+			return (error);
+		}
 	}
 
 	/* lie and say we're read-only */
@@ -589,6 +620,23 @@ zvol_create_minor(const char *name)
 	return (0);
 }
 
+int
+zvol_create_minor(const char *name)
+{
+	int error;
+
+#ifdef LINUX
+	mutex_enter(&zvol_state_lock);
+#endif
+
+	error = __zvol_create_minor(name, B_FALSE);
+
+#ifdef LINUX
+	mutex_exit(&zvol_state_lock);
+#endif
+
+	return (SET_ERROR(error));
+}
 
 /*
  * Given a path, return TRUE if path is a ZVOL.
@@ -992,9 +1040,12 @@ snapdev_snapshot_changed_cb(const char *dsname, void *arg) {
 	if (strchr(dsname, '@') == NULL)
 		return (0);
 
+/*
+ * XXX Check status of spa_namespace_lock
+ */
 	switch (snapdev) {
 		case ZFS_SNAPDEV_VISIBLE:
-			(void) zvol_create_minor(dsname);
+			(void) __zvol_create_minor(dsname, B_TRUE);
 			break;
 		case ZFS_SNAPDEV_HIDDEN:
 			(void) zvol_remove_minor(dsname);
@@ -1003,16 +1054,13 @@ snapdev_snapshot_changed_cb(const char *dsname, void *arg) {
 	return (0);
 }
 
-
-
 int
 zvol_set_snapdev(const char *dsname, uint64_t snapdev) {
-	(void) dmu_objset_find((char *)dsname, snapdev_snapshot_changed_cb,
-				&snapdev, DS_FIND_SNAPSHOTS | DS_FIND_CHILDREN);
+	(void) dmu_objset_find((char *) dsname, snapdev_snapshot_changed_cb,
+	    &snapdev, DS_FIND_SNAPSHOTS | DS_FIND_CHILDREN);
 	/* caller should continue to modify snapdev property */
 	return (-1);
 }
-
 
 int
 zvol_set_volsize(const char *name, uint64_t volsize)
@@ -2811,83 +2859,30 @@ zvol_dump_fini(zvol_state_t *zv)
 
 #endif
 
-
-int
-zvol_create_minors(const char *name)
+static int
+zvol_create_minors_cb(const char *dsname, void *arg)
 {
-	uint64_t cookie;
-	objset_t *os;
-	char *osname, *p;
-	int error, len;
+	(void) zvol_create_minor(dsname);
 
-	if (dataset_name_hidden(name))
-		return (0);
-
-	if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
-		dprintf("ZFS WARNING 1: Unable to put hold on %s (error=%d).\n",
-		    name, error);
-		return (error);
-	}
-
-	if (dmu_objset_type(os) == DMU_OST_ZVOL) {
-		/*
-		 * In OSX, create_minor() will call IOKit, which may end up
-		 * calling zvol_first_open(), so we can not hold a lock here.
-		 */
-		dmu_objset_rele(os, FTAG);
-
-		if ((error = zvol_create_minor(name)) == 0)
-		/* error = zvol_create_snapshots(os, name) */;
-		else {
-			dprintf("ZFS WARNING: %s %s (error=%d).\n",
-			    "Unable to create ZVOL",
-			    name, error);
-		}
-		return (error);
-	}
-	if (dmu_objset_type(os) != DMU_OST_ZFS) {
-		dmu_objset_rele(os, FTAG);
-		return (0);
-	}
-
-	osname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
-	if (snprintf(osname, MAXPATHLEN, "%s/", name) >= MAXPATHLEN) {
-		dmu_objset_rele(os, FTAG);
-		kmem_free(osname, MAXPATHLEN);
-		return (ENOENT);
-	}
-	p = osname + strlen(osname);
-	len = MAXPATHLEN - (p - osname);
-
-#if 0
-	/* Prefetch the datasets. */
-	cookie = 0;
-	while (dmu_dir_list_next(os, len, p, NULL, &cookie) == 0) {
-		if (!dataset_name_hidden(osname))
-			(void) dmu_objset_prefetch(osname, NULL);
-	}
-#endif
-
-	cookie = 0;
-	while (dmu_dir_list_next(os, MAXPATHLEN - (p - osname), p, NULL,
-	    &cookie) == 0) {
-		dmu_objset_rele(os, FTAG);
-		(void) zvol_create_minors(osname);
-		if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
-			dprintf("ZFS WARNING 2: %s %s (error=%d).\n",
-			    "Unable to put hold on",
-			    name, error);
-			kmem_free(osname, MAXPATHLEN);
-			return (error);
-		}
-	}
-
-	dmu_objset_rele(os, FTAG);
-	kmem_free(osname, MAXPATHLEN);
 	return (0);
 }
 
+/*
+ * Create minors for specified dataset including children and snapshots.
+ */
+int
+zvol_create_minors(const char *name)
+{
+	int error = 0;
 
+#ifdef LINUX
+	if (!zvol_inhibit_dev)
+#endif
+		error = dmu_objset_find((char *)name, zvol_create_minors_cb,
+		    NULL, DS_FIND_CHILDREN | DS_FIND_SNAPSHOTS);
+
+	return (SET_ERROR(error));
+}
 
 
 /*
