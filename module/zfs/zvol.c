@@ -2878,8 +2878,21 @@ zvol_create_minors(const char *name)
 #ifdef LINUX
 	if (!zvol_inhibit_dev)
 #endif
+
+	/*
+	 * Iterate over dataset/zvol and children, including snapshots.
+	 * However, if a snapshot was passed as the argument, create the
+	 * minor directly. dmu_objset_find will not fire when passing a
+	 * snapshot as its argument.
+	 */
+	if (strchr(name, '@') == NULL) {
+		/* Dataset or zvol */
 		error = dmu_objset_find((char *)name, zvol_create_minors_cb,
 		    NULL, DS_FIND_CHILDREN | DS_FIND_SNAPSHOTS);
+	} else {
+		/* Snapshot */
+		error = zvol_create_minor(name);
+	}
 
 	return (SET_ERROR(error));
 }

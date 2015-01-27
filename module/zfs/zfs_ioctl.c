@@ -3213,9 +3213,11 @@ zfs_ioc_snapshot(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 
 	error = dsl_dataset_snapshot(snaps, props, outnvl);
 
+#if 0
 #ifdef _KERNEL
 	if (error == 0)
 		zvol_create_minors(poolname);
+#endif
 #endif
 
 	return (error);
