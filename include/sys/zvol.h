@@ -66,7 +66,6 @@ typedef struct zvol_state {
 	znode_t zv_znode;	/* for range locking */
 	dmu_buf_t *zv_dbuf;	/* bonus handle */
 	void *zv_iokitdev;	/* C++ reference to IOKit class */
-	uint64_t zv_openflags;	/* Remember flags used at open */
 	char zv_bsdname[MAXPATHLEN];
 	/* 'rdiskX' name, use [1] for diskX */
 } zvol_state_t;
