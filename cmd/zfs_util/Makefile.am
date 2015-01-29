@@ -14,7 +14,7 @@ zfs_util_SOURCES = \
 zfs_util_LDADD = \
         $(top_builddir)/lib/libzfs/libzfs.la
 
-zfs_util_LDFLAGS = -static
+zfs_util_LDFLAGS = -static -framework IOKit
 
 install-exec-hook:
 	mkdir -p $(DESTDIR)/System/Library/Filesystems/zfs.fs/Contents/Resources

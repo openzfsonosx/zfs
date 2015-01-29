@@ -32,4 +32,5 @@ zdb_static_LDADD = \
 	$(top_builddir)/lib/libzpool/libzpool.la \
 	$(top_builddir)/lib/libzfs/libzfs.la
 
-zdb_static_LDFLAGS = -static -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID)
+zdb_static_LDFLAGS = -static -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) \
+	-framework IOKit

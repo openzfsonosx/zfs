@@ -1025,6 +1025,80 @@ zpool_default_import_path[DEFAULT_IMPORT_PATH_SIZE] = {
 	"/dev"			/* UNSAFE device names will change */
 };
 
+
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/storage/IOMedia.h>
+#include <IOKit/storage/IOCDMedia.h>
+#include <IOKit/storage/IODVDMedia.h>
+
+/*
+ * Given disk2s1, look up "disk2" is IOKit and attempt to determine if
+ * it is an optical device.
+ */
+int is_optical_media(char *bsdname)
+{
+	CFMutableDictionaryRef matchingDict;
+	mach_port_t masterPort;
+	int ret = 0;
+	io_service_t service, start;
+    kern_return_t   kernResult;
+    io_iterator_t   iter;
+
+	if ((matchingDict = IOBSDNameMatching(kIOMasterPortDefault, 0, bsdname))  == NULL)
+        return(0);
+
+	start = IOServiceGetMatchingService(kIOMasterPortDefault, matchingDict);
+	if (IO_OBJECT_NULL == start)
+		return (0);
+
+	service = start;
+
+	// Create an iterator across all parents of the service object passed in.
+	// since only disk2 would match with ConfirmsTo, and not disk2s1, so
+    // we search the parents until we find "Whole", ie, disk2.
+	kernResult = IORegistryEntryCreateIterator(service,
+                       kIOServicePlane,
+                       kIORegistryIterateRecursively | kIORegistryIterateParents,
+                       &iter);
+
+	if (KERN_SUCCESS == kernResult) {
+        Boolean isWholeMedia = false;
+        IOObjectRetain(service);
+        do {
+
+			// Lookup "Whole" if we can
+			if (IOObjectConformsTo(service, kIOMediaClass)) {
+				CFTypeRef wholeMedia;
+				wholeMedia = IORegistryEntryCreateCFProperty(service,
+													 CFSTR(kIOMediaWholeKey),
+                                                     kCFAllocatorDefault,
+                                                     0);
+				if (wholeMedia) {
+					isWholeMedia = CFBooleanGetValue(wholeMedia);
+					CFRelease(wholeMedia);
+				}
+			}
+
+			// If we found "Whole", check the service type.
+			if (isWholeMedia &&
+				( (IOObjectConformsTo(service, kIOCDMediaClass)) ||
+				  (IOObjectConformsTo(service, kIODVDMediaClass)) )) {
+				ret = 1; // Is optical, skip
+			}
+
+            IOObjectRelease(service);
+        } while ((service = IOIteratorNext(iter)) && !isWholeMedia);
+        IOObjectRelease(iter);
+	}
+
+	IOObjectRelease(start);
+	return ret;
+}
+#endif
+
+
 /*
  * Given a list of directories to search, find all pools stored on disk.  This
  * includes partial pools which are not available to import.  If no args are
@@ -1146,6 +1220,9 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			    (strncmp(name, "lp", 2) == 0) ||
 			    (strncmp(name, "fd", 2) == 0) ||
 			    (strncmp(name, "hpet", 4) == 0) ||
+#ifdef __APPLE__
+				(strncmp(name, "com", 3) == 0) || // /dev/com_digidesign_semiface
+#endif
 			    (strncmp(name, "core", 4) == 0))
 				continue;
 
@@ -1157,6 +1234,14 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			    (!S_ISREG(statbuf.st_mode) &&
 			    !S_ISBLK(statbuf.st_mode)))
 				continue;
+
+#ifdef __APPLE__
+			/* It is desirable to skip optical media as well, as they are
+			 * also called /dev/diskX
+			 */
+			if (is_optical_media(name))
+				continue;
+#endif
 
 			if ((fd = openat64(dfd, name, O_RDONLY)) < 0)
 				continue;
