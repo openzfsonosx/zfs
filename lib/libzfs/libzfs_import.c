@@ -1221,6 +1221,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			    (strncmp(name, "fd", 2) == 0) ||
 			    (strncmp(name, "hpet", 4) == 0) ||
 #ifdef __APPLE__
+				(strncmp(name, "pty", 3) == 0) || // lots, skip for speed
 				(strncmp(name, "com", 3) == 0) || // /dev/com_digidesign_semiface
 #endif
 			    (strncmp(name, "core", 4) == 0))
