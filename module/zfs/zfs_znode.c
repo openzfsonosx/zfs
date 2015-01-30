@@ -1241,7 +1241,7 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 	dmu_object_info_t doi;
 	dmu_buf_t	*db;
 	znode_t		*zp;
-	struct vnode		*vp;
+	struct vnode		*vp = NULL;
 	sa_handle_t	*hdl;
 	struct thread	*td;
 	int err;
@@ -1314,17 +1314,13 @@ again:
 				 * the znodes_lock, so we check against that here to ensure
 				 * it is not NULL
 				 */
-				mutex_enter(&zfsvfs->z_znodes_lock);
-				if (!ZTOV(zp) || (vnode_getwithvid(vp, zp->z_vid) != 0)) {
-					mutex_exit(&zfsvfs->z_znodes_lock);
+				if (!vp || (vnode_getwithvid(vp, zp->z_vid) != 0)) {
 					mutex_exit(&zp->z_lock);
 					sa_buf_rele(db, NULL);
 					ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 					dprintf("zfs: vnode_getwithvid err\n");
 					goto again;
 				}
-				mutex_exit(&zfsvfs->z_znodes_lock);
-
 			}
 			mutex_exit(&zp->z_lock);
 			sa_buf_rele(db, NULL);
