@@ -121,6 +121,7 @@ AC_CONFIG_FILES([
 	cmd/zstreamdump/Makefile
 	cmd/ztest/Makefile
 	cmd/zpios/Makefile
+	cmd/zfs_sysctl/Makefile
 	cmd/mount_zfs/Makefile
 	cmd/fsck_zfs/Makefile
 	cmd/zvol_id/Makefile

@@ -1,2 +1,2 @@
-SUBDIRS  = InvariantDisks arcstat zfs zpool zdb zhack zinject zstreamdump ztest zpios mount_zfs zed zfs_util
+SUBDIRS  = InvariantDisks arcstat zfs zpool zdb zhack zinject zstreamdump ztest zpios mount_zfs zed zfs_util zfs_sysctl
 #SUBDIRS += zpool_layout zvol_id zpool_id vdev_id

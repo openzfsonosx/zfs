@@ -700,7 +700,7 @@ struct list *namelist;
 
 void usage()
 {
-    (void)fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n",
+    (void)fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n%s\n",
                   "usage: sysctl [-bn] variable ...",
                   "       sysctl [-bn] -w variable=value ...",
                   "       sysctl [-bn] -a",
