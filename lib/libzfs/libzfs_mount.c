@@ -748,8 +748,8 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 		char *path;
 		if (asprintf(&path, "%s/.metadata_never_index", mountpoint) > 0) {
 			struct stat stsb;
-			/* UTC: Sun, 01 Feb 2015 00:00:00 +0000 */
-			if (!stat(path, &stsb) && (stsb.st_mtime < 1422748800)) {
+			/* UTC: Sun, 01 Mar 2015 00:00:00 +0000 */
+			if (!stat(path, &stsb) && (stsb.st_mtime < 1425168000)) {
 				unlink(path);
 				osx_start_spotlight(mountpoint);
 			}
