@@ -234,6 +234,9 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 	 */
 	zfs_ioctl_osx_init();
 
+	/* registerService() allows zconfigd to match against the service */
+	this->registerService();
+
 	///sysctl_register_oid(&sysctl__debug_maczfs);
 	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
 

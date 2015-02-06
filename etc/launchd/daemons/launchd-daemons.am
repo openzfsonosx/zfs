@@ -1,4 +1,5 @@
 launchddaemon_DATA = \
+	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.zconfigd.plist \
 	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.zed.plist \
 	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.zpool-import-all.plist \
 	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.InvariantDisks.plist
