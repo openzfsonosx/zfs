@@ -317,6 +317,9 @@ error:
 	return (err ? 1 : 0);
 }
 
+extern int is_optical_media(char *bsdname);
+
+
 static int
 zfs_probe(const char *devpath, uint64_t *outpoolguid)
 {
@@ -454,6 +457,12 @@ main(int argc, char **argv)
 		devname = cp + 1;
 	if (*devname == 'r')
 		devname++;
+
+	if (is_optical_media(devname)) {
+		printf("zfs.util: is_optical_media(%s)\n", devname);
+		goto out;
+	}
+
 	(void) snprintf(rawdevice, sizeof (rawdevice), "/dev/r%s", devname);
 	(void) snprintf(blockdevice, sizeof (blockdevice), "/dev/%s", devname);
 	printf("blockdevice is %s\n", blockdevice);
