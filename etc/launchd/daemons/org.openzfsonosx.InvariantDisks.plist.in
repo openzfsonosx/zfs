@@ -10,6 +10,8 @@
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
+	<key>KeepAlive</key>
+	<true/>
 	<key>StandardErrorPath</key>
 	<string>/private/var/log/org.openzfsonosx.InvariantDisks.err</string>
 	<key>StandardOutPath</key>

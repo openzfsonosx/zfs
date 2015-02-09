@@ -701,12 +701,12 @@ struct list *namelist;
 void usage()
 {
     (void)fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n%s\n",
-                  "usage: sysctl [-bn] variable ...",
-                  "       sysctl [-bn] -w variable=value ...",
-                  "       sysctl [-bn] -a",
-                  "       sysctl [-bn] -A",
-                  "       sysctl [-bn] -X",
-                  "       sysctl -f [conffile]");
+                  "usage: zsysctl [-bn] variable ...",
+                  "       zsysctl [-bn] -w variable=value ...",
+                  "       zsysctl [-bn] -a",
+                  "       zsysctl [-bn] -A",
+                  "       zsysctl [-bn] -X",
+                  "       zsysctl -f [conffile]");
     exit(1);
 }
 

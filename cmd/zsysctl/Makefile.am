@@ -2,7 +2,7 @@ include $(top_srcdir)/config/Rules.am
 
 AUTOMAKE_OPTIONS = subdir-objects
 
-sbin_PROGRAMS = zfs_sysctl
+sbin_PROGRAMS = zsysctl
 
-zfs_sysctl_SOURCES = \
-	zfs_sysctl.c 
+zsysctl_SOURCES = \
+	zsysctl.c
