@@ -1095,6 +1095,13 @@ int is_optical_media(const char *bsdname)
 	IOObjectRelease(start);
 	return ret;
 }
+
+
+void signal_alarm(int foo)
+{
+
+}
+
 #endif
 
 
@@ -1239,18 +1246,30 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			/* It is desirable to skip optical media as well, as they are
 			 * also called /dev/diskX
 			 */
-			if (is_optical_media(name))
+			if (is_optical_media((char *)name))
 				continue;
 #endif
 
 			if ((fd = openat64(dfd, name, O_RDONLY)) < 0)
 				continue;
 
+#ifdef __APPLE__
+			signal(SIGALRM, signal_alarm);
+			alarm(20);
+#endif
 			if ((zpool_read_label(fd, &config)) != 0) {
+#ifdef __APPLE__
+				if (errno == EINTR)
+					printf("ZFS: Unable to read device '%s'\n", name);
+				alarm(0);
+#endif
 				(void) close(fd);
 				(void) no_memory(hdl);
 				goto error;
 			}
+#ifdef __APPLE__
+			alarm(0);
+#endif
 
 			(void) close(fd);
 
