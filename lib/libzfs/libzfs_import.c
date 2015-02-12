@@ -1096,10 +1096,11 @@ int is_optical_media(const char *bsdname)
 	return ret;
 }
 
+jmp_buf buffer;
 
 void signal_alarm(int foo)
 {
-
+	longjmp(buffer, 1);
 }
 
 #endif
@@ -1254,13 +1255,22 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 				continue;
 
 #ifdef __APPLE__
-			signal(SIGALRM, signal_alarm);
+			struct sigaction sact;
+			sigemptyset(&sact.sa_mask);
+			sact.sa_flags = 0;
+			sact.sa_handler = signal_alarm;
+			sigaction(SIGALRM, &sact, NULL);
+
+			if (setjmp(buffer) != 0) {
+				printf("ZFS: Warning, timeout reading device '%s'\n", name);
+				close(fd);
+				continue;
+			}
+
 			alarm(20);
 #endif
 			if ((zpool_read_label(fd, &config)) != 0) {
 #ifdef __APPLE__
-				if (errno == EINTR)
-					printf("ZFS: Unable to read device '%s'\n", name);
 				alarm(0);
 #endif
 				(void) close(fd);
