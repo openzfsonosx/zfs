@@ -638,6 +638,7 @@ zvol_remove_minor(const char *name)
 	zvol_state_t *zv;
 	int rc;
 
+	printf("ZVOL: zvol_remove_minor\n");
 	mutex_enter(&spa_namespace_lock);
 	if ((zv = zvol_minor_lookup(name)) == NULL) {
 		mutex_exit(&spa_namespace_lock);
@@ -838,6 +839,8 @@ zvol_remove_minors(const char *name)
 	minor_t minor;
 
 	size_t name_buf_len = strlen(name) + 2;
+
+	printf("ZVOL: zvol_remove_minors\n");
 
 	namebuf = kmem_zalloc(name_buf_len, KM_SLEEP);
 	(void) strncpy(namebuf, name, strlen(name));

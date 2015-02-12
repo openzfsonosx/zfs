@@ -322,9 +322,9 @@ IOReturn net_lundman_zfs_zvol::doEjectMedia(void *arg1)
   IOLog("block svc ejecting\n");
   if(nub) {
 
-    // Only 10.6 needs special work to eject
-    if ((version_major == 10) &&
-	(version_minor == 8))
+	  // Only 10.6 needs special work to eject
+	  //if ((version_major == 10) &&
+	  //	(version_minor == 8))
       destroyBlockStorageDevice(nub);
 
   }
@@ -342,7 +342,7 @@ bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
 
     if (!zv) goto bail;
 
-    //IOLog("createBlock size %llu\n", zv->zv_volsize);
+    IOLog("createBlock size %llu\n", zv->zv_volsize);
 
     // Allocate a new IOBlockStorageDevice nub.
     nub = new net_lundman_zfs_zvol_device;
@@ -388,9 +388,10 @@ bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
     net_lundman_zfs_zvol_device *nub = NULL;
     bool            result = true;
 
+	IOLog("removeBlockdevice: %p \n",zv->zv_iokitdev );
+
     if (zv->zv_iokitdev) {
 
-      //IOLog("removeBlockdevice\n");
 
       nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
 
@@ -417,7 +418,7 @@ bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
       if (!nub)
           return false;
 
-      //IOLog("Attempting to update volsize\n");
+      IOLog("Attempting to update volsize\n");
       nub->retain();
       nub->registerService(kIOServiceSynchronous);
       nub->release();
@@ -625,6 +626,7 @@ bool net_lundman_zfs_zvol::destroyPseudoDevices(char *poolname)
 		nub->terminate();
     }
 
+	IOLog("ZFS: releasing minor %d\n", minor);
 	ddi_soft_state_free(zfsdev_state, minor);
 
     return result;
@@ -782,13 +784,13 @@ int ZFSDriver_create_pool(char *poolname, uint64_t bytes,
 						  uint64_t block, boolean_t rdonly,
 						  uint64_t pool_guid, uint64_t dataset_guid)
 {
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createPseudoDevices(poolname, bytes, block, rdonly, pool_guid, dataset_guid);
+    //static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createPseudoDevices(poolname, bytes, block, rdonly, pool_guid, dataset_guid);
     return 0;
 }
 
 int ZFSDriver_remove_pool(char *poolname)
 {
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyPseudoDevices(poolname);
+    //static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyPseudoDevices(poolname);
     return 0;
 }
 

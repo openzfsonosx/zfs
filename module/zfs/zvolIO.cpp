@@ -16,7 +16,7 @@
  */
 
 
-// #define dprintf IOLog
+#define dprintf IOLog
 
 // Define the superclass
 #define	super IOBlockStorageDevice
@@ -291,7 +291,7 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 		case kIOStorageAccessReader:
 			// IOLog("handleOpen: readOnly\n");
 			zv->zv_openflags = FREAD;
-			zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL);
+			//zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL);
 			break;
 
 		case kIOStorageAccessReaderWriter:
@@ -323,10 +323,14 @@ net_lundman_zfs_zvol_device::handleClose(IOService *client,
 {
 	super::handleClose(client, options);
 
+	IOLog("handleClose: %d\n",zv->zv_minor );
 	if (zv->zv_minor != -1) return;
 
-	// IOLog("handleClose\n");
 	zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
+
+	if (ejected)
+		this->m_provider->doEjectMedia(zv);
+
 
 }
 
@@ -542,7 +546,7 @@ IOReturn
 net_lundman_zfs_zvol_device::doEjectMedia(void)
 {
 	dprintf("ejectMedia\n");
-	this->m_provider->doEjectMedia(zv);
+	ejected = 1;
 
 #if 0
 	IOLog("I am of class %s\n", getMetaClass()->getClassName());

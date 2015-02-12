@@ -41,6 +41,7 @@ class net_lundman_zfs_zvol_device : public IOBlockStorageDevice
 private:
 	net_lundman_zfs_zvol *m_provider;
 	zvol_state_t *zv;
+	int ejected = 0;
 
 public:
 	virtual bool init(zvol_state_t *c_zv,

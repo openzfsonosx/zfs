@@ -126,6 +126,8 @@ spa_osx_create_devs(const char *dsname, void *arg)
 	int startnamelen;
 	int dsnamelen;
 	const char *part;
+	int skip = 0;
+	objset_t *os;
 
 	// Skip if impossible happens, or "ourself".
 	if (!arg || !dsname) return 0;
@@ -150,6 +152,17 @@ spa_osx_create_devs(const char *dsname, void *arg)
 		printf("  skipping '%s' due to slash (from '%s')\n", dsname, part);
 		return 0;
 	}
+
+	// Check if its ZVOL, and skip if so
+	if (dmu_objset_hold(dsname, FTAG, &os) == 0) {
+		if (dmu_objset_type(os) == DMU_OST_ZVOL) skip = 1;
+		dmu_objset_rele(os, FTAG);
+		if (skip) {
+			printf("Skipping ZVOL '%s'\n", dsname);
+			return 0;
+		}
+	}
+
 
 
 	// Check if it already exists, so we do an update
