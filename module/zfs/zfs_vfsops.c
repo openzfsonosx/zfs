@@ -2450,6 +2450,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		}
 
 		VFSATTR_SET_SUPPORTED(fsap, f_vol_name);
+		dprintf("vfs_getattr: volume name '%s'\n", fsap->f_vol_name);
 	}
 	if (!zfsvfs->z_issnap) {
 		VFSATTR_RETURN(fsap, f_fssubtype, 0);
@@ -2877,12 +2878,14 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	 * This will make NFS to switch to LOOKUP instead of using VGET.
 	 */
 	if (ino == ZFSCTL_INO_ROOT || ino == ZFSCTL_INO_SNAPDIR ||
-	    (zfsvfs->z_shares_dir != 0 && ino == zfsvfs->z_shares_dir))
+	    (zfsvfs->z_shares_dir != 0 && ino == zfsvfs->z_shares_dir)) {
+		printf("vget %d EOPNOTSUPP\n", ino);
 		return (EOPNOTSUPP);
+	}
 
 
     /* We can not be locked during zget. */
-
+	if (!ino) ino=2;
 	err = zfs_zget(zfsvfs, ino, &zp);
 
     if (err) {
@@ -2948,7 +2951,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 		VN_RELE(ZTOV(zp));
 		*vpp = NULL;
 	}
-    dprintf("vget return %d (vp %p)\n", err, *vpp);
+    if (err) dprintf("vget return %d\n", err);
 	return (err);
 }
 
@@ -2977,6 +2980,7 @@ zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_
 	if ((ino == zfsvfs->z_root) && (zfsvfs->z_root != 2)) {
 		error = VFS_ROOT(mp, 0, vpp);
 		ZFS_EXIT(zfsvfs);
+		dprintf("ZFS vget root %d\n", error);
 		return (error);
 	}
 

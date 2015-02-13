@@ -322,14 +322,12 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
                        vap->va_linkid);
             } else {
 
-#if 0
 				if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
 									 ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
 					VATTR_SET_SUPPORTED(vap, va_name);
-#endif
+				dprintf("getattr: using name '%s'\n", vap->va_name);
 
 			}
-
 
         } else {
             /*
