@@ -784,13 +784,13 @@ int ZFSDriver_create_pool(char *poolname, uint64_t bytes,
 						  uint64_t block, boolean_t rdonly,
 						  uint64_t pool_guid, uint64_t dataset_guid)
 {
-    //static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createPseudoDevices(poolname, bytes, block, rdonly, pool_guid, dataset_guid);
+    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createPseudoDevices(poolname, bytes, block, rdonly, pool_guid, dataset_guid);
     return 0;
 }
 
 int ZFSDriver_remove_pool(char *poolname)
 {
-    //static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyPseudoDevices(poolname);
+    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyPseudoDevices(poolname);
     return 0;
 }
 
