@@ -3452,15 +3452,16 @@ char *
 zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
     nvlist_t *opts)
 {
-	char *path, *devid;
+	char *path, *devid, *type;
 	uint64_t value;
 	char buf[PATH_BUF_LEN];
 	char tmpbuf[PATH_BUF_LEN];
-	boolean_t verbose = B_FALSE, guid = B_FALSE;
+	boolean_t verbose = B_FALSE, guid = B_FALSE, links = B_FALSE;
 	vdev_stat_t *vs;
 	uint_t vsc;
 
 	if (opts) {
+		links = (nvlist_lookup_boolean(opts, "follow_links") == 0);
 		guid = (nvlist_lookup_boolean(opts, "print_guid") == 0);
 		verbose = (nvlist_lookup_boolean(opts, "verbose") == 0);
 	}
@@ -3509,6 +3510,15 @@ zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
 
 			if (newdevid)
 				devid_str_free(newdevid);
+		}
+
+		if (links) {
+			char *rp = realpath(path, NULL);
+			if (rp) {
+				strlcpy(buf, rp, sizeof (buf));
+				path = buf;
+				free(rp);
+			}
 		}
 
 		/*
