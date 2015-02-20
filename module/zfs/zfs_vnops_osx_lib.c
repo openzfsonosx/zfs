@@ -189,6 +189,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	vap->va_data_size = zp->z_size;
 	vap->va_total_size = zp->z_size;
 	vap->va_gen = zp->z_gen;
+	vap->va_gen = 0;
 
 	if (vnode_isdir(vp)) {
 		vap->va_nlink = zp->z_size;
@@ -317,17 +318,16 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
                         MAXPATHLEN);
                 VATTR_SET_SUPPORTED(vap, va_name);
 
-                dprintf("getattr: %p return name '%s':%04x\n", vp,
-                       vap->va_name,
-                       vap->va_linkid);
             } else {
 
 				if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
 									 ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
 					VATTR_SET_SUPPORTED(vap, va_name);
-				dprintf("getattr: using name '%s'\n", vap->va_name);
-
 			}
+
+			printf("getattr: %p return name '%s':%04x\n", vp,
+				   vap->va_name,
+				   vap->va_linkid);
 
         } else {
             /*
@@ -336,14 +336,15 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
              * we simply return the fullname, from the statfs mountedfrom
              */
 			char osname[MAXNAMELEN];
-
+			char *r;
 			dmu_objset_name(zfsvfs->z_os, osname);
-
+			r = strrchr(osname, '/');
             strlcpy(vap->va_name,
-                    osname,
+                    r ? &r[1] : osname,
                     MAXPATHLEN);
+
             VATTR_SET_SUPPORTED(vap, va_name);
-			dprintf("getattr root returning '%s'\n", vap->va_name);
+			printf("getattr root returning '%s'\n", vap->va_name);
         }
 	}
 
@@ -387,6 +388,10 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #endif
 
 	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
+
+	dprintf("vnop_getattr: asked %08x replied %08x       missing %08x\n",
+		   vap->va_active, vap->va_supported,
+		   vap->va_active ^ (vap->va_active & vap->va_supported));
 
 	ZFS_EXIT(zfsvfs);
 	return (error);

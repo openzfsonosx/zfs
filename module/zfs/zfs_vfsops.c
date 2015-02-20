@@ -1219,7 +1219,7 @@ void
 zfsvfs_free(zfsvfs_t *zfsvfs)
 {
 	int i;
-
+	znode_t *zp, *next;
     dprintf("+zfsvfs_free\n");
 	/*
 	 * This is a barrier to prevent the filesystem from going away in
@@ -1233,6 +1233,21 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	zfs_fuid_destroy(zfsvfs);
 
 	/* Wait for reclaim to empty, before holding locks */
+	if (!list_empty(&zfsvfs->z_all_znodes)) {
+		printf("ZFS: Pushing remaining znodes to reclaim\n");
+		mutex_enter(&zfsvfs->z_znodes_lock);
+		for (zp = list_head(&zfsvfs->z_all_znodes);
+			 zp != NULL;
+			 zp = next) {
+
+			next = list_next(&zfsvfs->z_all_znodes, zp);
+			mutex_exit(&zfsvfs->z_znodes_lock);
+			vnode_recycle(ZTOV(zp));
+			mutex_enter(&zfsvfs->z_znodes_lock);
+		}
+		mutex_exit(&zfsvfs->z_znodes_lock);
+	}
+
 	int count = 0;
 	while(!list_empty(&zfsvfs->z_all_znodes) ||
 		  !list_empty(&zfsvfs->z_reclaim_znodes)) {
@@ -2479,7 +2494,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
         MD5Update( &md5c, fromname, strlen(fromname));
         MD5Final( fsap->f_uuid, &md5c );
         VFSATTR_SET_SUPPORTED(fsap, f_uuid);
-		dprintf("Returning '%s' uuid '%02x%02x%02x%02x'\n", fromname,
+		printf("Returning '%s' uuid '%02x%02x%02x%02x'\n", fromname,
 			   fsap->f_uuid[0],
 			   fsap->f_uuid[1],
 			   fsap->f_uuid[2],
@@ -2488,6 +2503,9 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 
 	ZFS_EXIT(zfsvfs);
 
+	dprintf("vfs_getattr: asked %08x replied %08x       missing %08x\n",
+			fsap->f_active, fsap->f_supported,
+			fsap->f_active ^ (fsap->f_active & fsap->f_supported));
 
 	return (0);
 }
@@ -3104,6 +3122,8 @@ zfs_vfs_vptofh(vnode_t *vp, int *fhlenp, unsigned char *fhp, __unused vfs_contex
 	uint64_t	zp_gen;
 	int		i;
 	//int		error;
+
+	printf("zfs_vfs_vptofh\n");
 
 	if (*fhlenp < sizeof (zfs_zfid_t)) {
 		return (EOVERFLOW);
