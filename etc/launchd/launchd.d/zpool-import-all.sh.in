@@ -3,7 +3,7 @@
 echo "+zpool-import-all.sh"
 date
 export ZPOOL=@sbindir@/zpool
-export ZPOOL_IMPORT_ALL_COOKIE=/tmp/org.openzfsonosx.did-zpool-import-all
+export ZPOOL_IMPORT_ALL_COOKIE=/var/run/org.openzfsonosx.zpool-import-all.didRun
 export INVARIANT_DISKS_IDLE_FILE=/var/run/disk/invariant.idle
 export TIMEOUT_SECONDS=60
 export MAXIMUM_SLEEP_ITERATIONS=$((${TIMEOUT_SECONDS} * 10))

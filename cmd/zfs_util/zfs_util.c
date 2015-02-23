@@ -62,7 +62,7 @@
 #define	FSUC_SETUUID	's'
 #endif
 
-#define	ZPOOL_IMPORT_ALL_COOKIE	"/tmp/org.openzfsonosx.did-zpool-import-all"
+#define	ZPOOL_IMPORT_ALL_COOKIE	"/var/run/org.openzfsonosx.zpool-import-all.didRun"
 
 #ifdef DEBUG
 int zfs_util_debug = 1;
