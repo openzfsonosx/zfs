@@ -584,6 +584,7 @@ bool net_lundman_zfs_zvol::createPseudoDevices(char *poolname,
 		printf("media->getContentHint() %s\n", pseudo->getContentHint());
 
 		pseudo->setProperty("DATASET", poolname);
+		pseudo->setProperty("UUID", "409FDB9A-2AE2-2771-F992-6C98FC54EE19");
 	}
 
 	printf("Stirring the pot\n");
