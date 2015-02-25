@@ -1996,6 +1996,13 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 		goto out;
 	}
 
+	/*
+	 * Save memory location and bufsize for the finderinfo tests below
+	 */
+	user_addr_t finderinfo = uio_curriovbase( uio );
+	uint64_t bufsize = uio_resid(uio);
+
+
 	/* Read the attribute data. */
 	if (uio == NULL) {
 		znode_t  *xzp = VTOZ(xvp);
@@ -2006,6 +2013,91 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	} else {
 		error = VNOP_READ(xvp, uio, 0, ap->a_context);
 	}
+
+
+	/*
+	 * Please move this to zfs_vnops_osx_lib.c
+	 */
+struct FndrExtendedDirInfo {
+        u_int32_t document_id;
+        u_int32_t date_added;
+        u_int16_t extended_flags;
+        u_int16_t reserved3;
+        u_int32_t write_gen_counter;
+} __attribute__((aligned(2), packed));
+
+struct FndrExtendedFileInfo {
+        u_int32_t document_id;
+        u_int32_t date_added;
+        u_int16_t extended_flags;
+        u_int16_t reserved2;
+        u_int32_t write_gen_counter;
+} __attribute__((aligned(2), packed));
+
+/* Finder information */
+struct FndrFileInfo {
+        u_int32_t       fdType;         /* file type */
+        u_int32_t       fdCreator;      /* file creator */
+        u_int16_t       fdFlags;        /* Finder flags */
+        struct {
+            int16_t     v;              /* file's location */
+            int16_t     h;
+        } fdLocation;
+        int16_t         opaque;
+} __attribute__((aligned(2), packed));
+typedef struct FndrFileInfo FndrFileInfo;
+
+	if (!error && uio &&
+		bcmp(ap->a_name, XATTR_FINDERINFO_NAME, sizeof(XATTR_FINDERINFO_NAME)) == 0) {
+
+		u_int8_t *finfo = NULL;
+		uint64_t crtime[2];
+		struct timespec va_crtime;
+		//static u_int32_t emptyfinfo[8] = {0};
+
+		finfo = (u_int8_t *)finderinfo + 16;
+
+        if (IFTOVT((mode_t)zp->z_mode) == VLNK) {
+			struct FndrFileInfo *fip;
+
+			fip = (struct FndrFileInfo *)finderinfo;
+			fip->fdType = 0;
+			fip->fdCreator = 0;
+		}
+
+		sa_lookup(zp->z_sa_hdl, SA_ZPL_CRTIME(zp->z_zfsvfs), crtime, sizeof(crtime));
+		ZFS_TIME_DECODE(&va_crtime, crtime);
+        if (IFTOVT((mode_t)zp->z_mode) == VREG) {
+			struct FndrExtendedFileInfo *extinfo = (struct FndrExtendedFileInfo *)finfo;
+			extinfo->date_added = 0;
+
+			/* listxattr shouldnt list it either if empty, fixme.
+			if (bcmp((const void *)finderinfo, emptyfinfo,
+					 sizeof(emptyfinfo)) == 0)
+				error = ENOATTR;
+			*/
+
+			extinfo->date_added = OSSwapBigToHostInt32(va_crtime.tv_sec);
+         }
+        if (IFTOVT((mode_t)zp->z_mode) == VDIR) {
+			struct FndrExtendedDirInfo *extinfo = (struct FndrExtendedDirInfo *)finfo;
+			extinfo->date_added = 0;
+
+			/*
+			if (bcmp((const void *)finderinfo, emptyfinfo,
+					 sizeof(emptyfinfo)) == 0)
+				error = ENOATTR;
+			*/
+
+			extinfo->date_added = OSSwapBigToHostInt32(va_crtime.tv_sec);
+         }
+
+		if (bufsize != 32) error = ERANGE; // finderinfo must be 32 bytes.
+
+	}
+
+
+
 out:
 	if (cn.pn_buf)
 		kmem_free(cn.pn_buf, cn.pn_bufsize);
@@ -2085,6 +2177,12 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	/* Write the attribute data. */
 	ASSERT(uio != NULL);
 	error = zfs_freesp(VTOZ(xvp), 0, 0, VTOZ(vp)->z_mode, TRUE);
+
+    /*
+	 * TODO:
+	 * When writing FINDERINFO, we need to replace the ADDEDTIME date
+	 * with actual crtime and not let userland overwrite it.
+	 */
 
 	error = VNOP_WRITE(xvp, uio, 0, ap->a_context);
 
@@ -2636,7 +2734,7 @@ zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 	int prefetch = 0;
 	int error = 0;
 
-	dprintf("+vnop_readdirattr\n");
+	printf("+vnop_readdirattr\n");
 
 	*(ap->a_actualcount) = 0;
 	*(ap->a_eofflag) = 0;

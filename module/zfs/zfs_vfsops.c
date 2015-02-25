@@ -127,7 +127,10 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_FMT_PERSISTENTOBJECTIDS |
 		VOL_CAP_FMT_SYMBOLICLINKS |
 		VOL_CAP_FMT_HARDLINKS |
+		VOL_CAP_FMT_JOURNAL |
+		VOL_CAP_FMT_JOURNAL_ACTIVE |
 		VOL_CAP_FMT_SPARSE_FILES |
+		VOL_CAP_FMT_ZERO_RUNS |
 		/*VOL_CAP_FMT_CASE_SENSITIVE*/ /* Moved down to vfs_getattr */
 		VOL_CAP_FMT_CASE_PRESERVING |
 		VOL_CAP_FMT_FAST_STATFS |
@@ -138,13 +141,17 @@ const vol_capabilities_attr_t zfs_capabilities = {
         0,
 
 		/* Interface capabilities we support: */
+		//VOL_CAP_INT_SEARCHFS | //**
 		VOL_CAP_INT_ATTRLIST |
 		VOL_CAP_INT_NFSEXPORT |
-		//VOL_CAP_INT_SEARCHFS |
-        /* VOL_CAP_INT_READDIRATTR | */
+		//VOL_CAP_INT_READDIRATTR |
         /* As the readdirattr function has not been updated since maczfs,
          * it has been decided to disable this functionality, Darwin will
          * adjust and use readdir, and getattr instead. */
+		//VOL_CAP_INT_EXCHANGEDATA |
+		//VOL_CAP_INT_COPYFILE |
+		//VOL_CAP_INT_ALLOCATE | // **
+
 		VOL_CAP_INT_VOL_RENAME |
 		VOL_CAP_INT_ADVLOCK |
 		VOL_CAP_INT_FLOCK |
@@ -179,7 +186,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_INT_SEARCHFS |
 		VOL_CAP_INT_ATTRLIST |
 		VOL_CAP_INT_NFSEXPORT |
-        /* VOL_CAP_INT_READDIRATTR | */
+        VOL_CAP_INT_READDIRATTR |
         VOL_CAP_INT_EXCHANGEDATA |
         VOL_CAP_INT_COPYFILE |
         VOL_CAP_INT_ALLOCATE |
@@ -226,7 +233,8 @@ const attribute_set_t zfs_attributes = {
 		ATTR_CMN_USERACCESS |
 		ATTR_CMN_EXTENDED_SECURITY |
 		ATTR_CMN_UUID |
-		ATTR_CMN_GRPUUID ,
+		ATTR_CMN_GRPUUID |
+		ATTR_CMN_PARENTID ,
 
 		ATTR_VOL_FSTYPE	|
 		ATTR_VOL_SIGNATURE |
@@ -311,7 +319,6 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
 #if 1
         zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
         dsl_pool_t *dp;
-        int error;
 
         ZFS_ENTER(zfsvfs);
         dp = dmu_objset_pool(zfsvfs->z_os);
@@ -2209,6 +2216,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		printf("zfs_vfs_mount: error %d\n", error);
 	if (error == 0) {
 		zfsvfs_t *zfsvfs =vfs_fsprivate(vfsp);
+		uint64_t value;
 
         vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
 		/* Indicate to VFS that we support ACLs. */
@@ -2218,8 +2226,9 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		vfs_setlocklocal(vfsp);
 
 		dsl_prop_get_integer(osname, "LASTUNMOUNT",
-							 &zfsvfs->z_last_unmount_time, NULL);
-		dprintf("ZFS: '%s' mount using last_unmount value %llx\n",
+							 &value, NULL);
+		value = zfsvfs->z_last_unmount_time;
+		dprintf("ZFS: '%s' mount using last_unmount value %lx\n",
 				osname,
 				zfsvfs->z_last_unmount_time);
 
@@ -2310,12 +2319,18 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		VFSATTR_SET_SUPPORTED(fsap, f_attributes);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_create_time)) {
-		dmu_objset_stats_t dmu_stat;
+		char osname[MAXNAMELEN];
+		uint64_t value;
 
-		dmu_objset_fast_stat(zfsvfs->z_os, &dmu_stat);
-		//fsap->f_create_time.tv_sec = dmu_stat.dds_creation_time;
+		// Get dataset name
+		dmu_objset_name(zfsvfs->z_os, osname);
+		dsl_prop_get_integer(osname, "CREATION",
+							 &value, NULL);
+		fsap->f_create_time.tv_sec  = value;
 		fsap->f_create_time.tv_nsec = 0;
 		VFSATTR_SET_SUPPORTED(fsap, f_create_time);
+		printf("ZFS: Creation time %llu\n",
+			   value);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_modify_time)) {
         timestruc_t  now;
@@ -2382,6 +2397,13 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			   fsap->f_uuid[2],
 			   fsap->f_uuid[3]);
     }
+	uint64_t missing = 0;
+	missing = (fsap->f_active ^ (fsap->f_active & fsap->f_supported));
+	if ( missing != 0) {
+		printf("vfs_getattr:: asked %08llx replied %08llx       missing %08llx\n",
+			   fsap->f_active, fsap->f_supported,
+			   missing);
+	}
 
 	ZFS_EXIT(zfsvfs);
 
@@ -2668,8 +2690,8 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			zfsvfs->z_last_unmount_time = now.tv_sec;
 
 			ret = dsl_prop_set_int(osname, "LASTUNMOUNT", ZPROP_SRC_LOCAL,
-								   zfsvfs->z_last_unmount_time);
-			dprintf("ZFS: '%s' set lastunmount to %llx (%d)\n",
+								   (uint64_t)zfsvfs->z_last_unmount_time);
+			dprintf("ZFS: '%s' set lastunmount to %lx (%d)\n",
 					osname, zfsvfs->z_last_unmount_time, ret);
 		}
 
