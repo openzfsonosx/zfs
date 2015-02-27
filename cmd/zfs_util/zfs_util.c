@@ -62,7 +62,10 @@
 #define	FSUC_SETUUID	's'
 #endif
 
-#define	ZPOOL_IMPORT_ALL_COOKIE	"/tmp/org.openzfsonosx.did-zpool-import-all"
+#define	ZPOOL_IMPORT_ALL_COOKIE		"/var/run/org.openzfsonosx.zpool-import-all.didRun"
+#define	INVARIANT_DISKS_IDLE_FILE	"/var/run/disk/invariant.idle"
+#define	IS_INVARIANT_DISKS_LOADED_CMD	"/bin/launchctl list -x org.openzfsonosx.InvariantDisks &>/dev/null"
+#define	INVARIANT_DISKS_TIMEOUT_SECONDS	60
 
 #ifdef DEBUG
 int zfs_util_debug = 1;
@@ -327,8 +330,30 @@ zfs_probe(const char *devpath, uint64_t *outpoolguid)
 	int ret = FSUR_UNRECOGNIZED;
 	int fd;
 	uint64_t guid;
+	int i;
+	struct stat sbuf;
 
 	printf("+zfs_probe : devpath %s\n", devpath);
+
+	if (system(IS_INVARIANT_DISKS_LOADED_CMD) == 0) {
+		/* InvariantDisks is loaded */
+		i = 0;
+		while(i != INVARIANT_DISKS_TIMEOUT_SECONDS) {
+			if (stat(INVARIANT_DISKS_IDLE_FILE, &sbuf) == 0) {
+				printf("Found %s after %d iterations of "
+				    "sleeping 1 second\n",
+				    INVARIANT_DISKS_IDLE_FILE, i);
+				break;
+			}
+			sleep(1);
+			i++;
+		}
+		if (i == INVARIANT_DISKS_TIMEOUT_SECONDS) {
+			printf("File %s not found within %d seconds\n",
+			    INVARIANT_DISKS_IDLE_FILE,
+			    INVARIANT_DISKS_TIMEOUT_SECONDS);
+		}
+	}
 
 	if (outpoolguid == NULL)
 		goto out;
