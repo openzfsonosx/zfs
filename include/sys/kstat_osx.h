@@ -2,7 +2,6 @@
 #define KSTAT_OSX_INCLUDED
 
 typedef struct osx_kstat {
-	kstat_named_t kext_version;
 	kstat_named_t spa_version;
 	kstat_named_t zpl_version;
 

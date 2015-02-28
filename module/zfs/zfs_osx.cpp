@@ -52,8 +52,20 @@ extern SInt32 zfs_active_fs_count;
 extern int system_taskq_size;
 taskq_t	*system_taskq = NULL;
 
+#ifdef DEBUG
+#define	ZFS_DEBUG_STR	" (DEBUG mode)"
+#else
+#define	ZFS_DEBUG_STR	""
+#endif
 
+static char kext_version[64] = ZFS_META_VERSION "-" ZFS_META_RELEASE ZFS_DEBUG_STR;
 
+//struct sysctl_oid_list sysctl__zfs_children;
+SYSCTL_DECL(_zfs);
+SYSCTL_NODE( , OID_AUTO, zfs, CTLFLAG_RD, 0, "");
+SYSCTL_STRING(_zfs, OID_AUTO, kext_version,
+			  CTLFLAG_RD | CTLFLAG_LOCKED,
+			  kext_version, 0, "ZFS KEXT Version");
 
 #ifdef __APPLE__
 extern int
@@ -229,6 +241,9 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 
     IOLog("ZFS: Loading module ... \n");
 
+    sysctl_register_oid(&sysctl__zfs);
+    sysctl_register_oid(&sysctl__zfs_kext_version);
+
 	/*
 	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
 	 */
@@ -305,9 +320,8 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     zvol_fini();
     zfs_vfsops_fini();
 
-	//sysctl_unregister_oid(&sysctl__debug_maczfs_stalk);
-    //	sysctl_unregister_oid(&sysctl__debug_maczfs);
-
+    sysctl_unregister_oid(&sysctl__zfs_kext_version);
+    sysctl_unregister_oid(&sysctl__zfs);
     IOLog("ZFS: Unloaded module\n");
 
 }
