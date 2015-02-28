@@ -481,6 +481,8 @@ zfs_prop_init(void)
 	    ZFS_TYPE_FILESYSTEM, "on | off", "COM.APPLE.IGNOREOWNER", boolean_table);
 	zprop_register_hidden(ZFS_PROP_APPLE_LASTUNMOUNT,"COM.APPLE.LASTUNMOUNT",
 	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "LASTUNMOUNT");
+	zprop_register_index(ZFS_PROP_APPLE_MIMIC_HFS, "com.apple.mimic_hfs", 0, PROP_INHERIT,
+	    ZFS_TYPE_FILESYSTEM, "on | off", "COM.APPLE.MIMIC_HFS", boolean_table);
 #endif
 
 
