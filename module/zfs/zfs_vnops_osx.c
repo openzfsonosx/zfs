@@ -60,6 +60,9 @@
 #include <sys/callb.h>
 #include <sys/unistd.h>
 
+#include <miscfs/fifofs/fifo.h>
+#include <vfs/vfs_support.h>
+
 #ifdef _KERNEL
 #include <sys/sysctl.h>
 unsigned int debug_vnop_osx_printf = 0;
@@ -115,6 +118,7 @@ extern struct vnodeopv_desc zfs_fvnodeop_opv_desc;
 extern struct vnodeopv_desc zfs_symvnodeop_opv_desc;
 extern struct vnodeopv_desc zfs_xdvnodeop_opv_desc;
 extern struct vnodeopv_desc zfs_evnodeop_opv_desc;
+extern struct vnodeopv_desc zfs_fifonodeop_opv_desc;
 
 extern struct vnodeopv_desc zfsctl_ops_root;
 extern struct vnodeopv_desc zfsctl_ops_snapdir;
@@ -131,7 +135,8 @@ static struct vnodeopv_desc *zfs_vnodeop_opv_desc_list[ZFS_VNOP_TBL_CNT] =
 	&zfs_fvnodeop_opv_desc,
 	&zfs_symvnodeop_opv_desc,
 	&zfs_xdvnodeop_opv_desc,
-	&zfs_evnodeop_opv_desc,
+	//&zfs_evnodeop_opv_desc,
+	&zfs_fifonodeop_opv_desc,
 	&zfsctl_ops_root,
 	&zfsctl_ops_snapdir,
 	&zfsctl_ops_snapshot,
@@ -216,7 +221,26 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 	int error = 0;
 	DECLARE_CRED_AND_CONTEXT(ap);
 
-	dprintf("vnop_ioctl %08lx\n", ap->a_command);
+	dprintf("vnop_ioctl %08lx: VTYPE %d\n", ap->a_command,
+			vnode_vtype(ZTOV(zp)));
+
+	if (IFTOVT((mode_t)zp->z_mode) == VFIFO) {
+		dprintf("ZFS: FIFO ioctl  %02lx ('%lu' + %lu)\n",
+			   ap->a_command, (ap->a_command&0xff00)>>8,
+			   ap->a_command&0xff);
+		error = fifo_ioctl(ap);
+		error = 0;
+		goto out;
+	}
+
+	if ((IFTOVT((mode_t)zp->z_mode) == VBLK) ||
+		(IFTOVT((mode_t)zp->z_mode) == VCHR)) {
+		dprintf("ZFS: spec ioctl  %02lx ('%lu' + %lu)\n",
+			   ap->a_command, (ap->a_command&0xff00)>>8,
+			   ap->a_command&0xff);
+		error = spec_ioctl(ap);
+		goto out;
+	}
 
 	ZFS_ENTER(zfsvfs);
 
@@ -236,15 +260,25 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 	case F_RDADVISE:
 		dprintf("vnop_ioctl: F_RDADVISE\n");
 		break;
+
+	case O_NONBLOCK:
+		case 0x80006817: // HFSIOC_SET_ALWAYS_ZEROFILL
+		case 0x8000680f: // HFSIOC_EXT_BULKACCESS
+		case 0x80005802:
+		break;
+
 	default:
-		dprintf("vnop_ioctl: Unknown ioctl %02lx ('%lu' + %lu)\n",
+		printf("vnop_ioctl: Unknown ioctl %02lx ('%lu' + %lu)\n",
 		    ap->a_command, (ap->a_command&0xff00)>>8,
 		    ap->a_command&0xff);
 		error = ENOTTY;
 	}
 	ZFS_EXIT(zfsvfs);
+  out:
+	if (error) printf("failing ioctl: %d\n", error);
 	return (error);
 }
+
 
 static int
 zfs_vnop_read(struct vnop_read_args *ap)
@@ -2985,6 +3019,7 @@ zfs_vnop_searchfs(struct vnop_searchfs_args *ap)
 #endif
 
 
+
 /*
  * Predeclare these here so that the compiler assumes that this is an "old
  * style" function declaration that does not include arguments so that we won't
@@ -2996,12 +3031,14 @@ static int zfs_isdir();
 static int
 zfs_inval()
 {
+	printf("ZFS: Bad vnop: returning EINVAL\n");
 	return (EINVAL);
 }
 
 static int
 zfs_isdir()
 {
+	printf("ZFS: Bad vnop: returning EISDIR\n");
 	return (EISDIR);
 }
 
@@ -3025,6 +3062,7 @@ struct vnodeopv_entry_desc zfs_dvnodeops_template[] = {
 	{&vnop_write_desc,	(VOPFUNC)zfs_isdir},
 	{&vnop_ioctl_desc,	(VOPFUNC)zfs_vnop_ioctl},
 	{&vnop_select_desc,	(VOPFUNC)zfs_isdir},
+	{&vnop_bwrite_desc, (VOPFUNC)zfs_isdir},
 	{&vnop_fsync_desc,	(VOPFUNC)zfs_vnop_fsync},
 	{&vnop_remove_desc,	(VOPFUNC)zfs_vnop_remove},
 	{&vnop_link_desc,	(VOPFUNC)zfs_vnop_link},
@@ -3068,6 +3106,7 @@ struct vnodeopv_entry_desc zfs_fvnodeops_template[] = {
 	{&vnop_inactive_desc,	(VOPFUNC)zfs_vnop_inactive},
 	{&vnop_reclaim_desc,	(VOPFUNC)zfs_vnop_reclaim},
 	{&vnop_pathconf_desc,	(VOPFUNC)zfs_vnop_pathconf},
+	{&vnop_bwrite_desc, (VOPFUNC)zfs_inval},
 	{&vnop_pagein_desc,	(VOPFUNC)zfs_vnop_pagein},
 	{&vnop_pageout_desc,	(VOPFUNC)zfs_vnop_pageout},
 	{&vnop_mmap_desc,	(VOPFUNC)zfs_vnop_mmap},
@@ -3165,6 +3204,58 @@ struct vnodeopv_entry_desc zfs_evnodeops_template[] = {
 struct vnodeopv_desc zfs_evnodeop_opv_desc =
 { &zfs_evnodeops, zfs_evnodeops_template };
 
+int (**zfs_fifonodeops)(void *);
+struct vnodeopv_entry_desc zfs_fifonodeops_template[] = {
+	{ &vnop_default_desc, (VOPFUNC)vn_default_error },
+	{ &vnop_lookup_desc, (VOPFUNC)fifo_lookup },            /* lookup */
+	{ &vnop_create_desc, (VOPFUNC)fifo_create },            /* create */
+	{ &vnop_mknod_desc, (VOPFUNC)fifo_mknod },              /* mknod */
+	{ &vnop_open_desc, (VOPFUNC)fifo_open },                        /* open
+																	 */
+	{ &vnop_close_desc, (VOPFUNC)fifo_close },           /* close */
+	{ &vnop_getattr_desc, (VOPFUNC)zfs_vnop_getattr },      /* getattr */
+	{ &vnop_setattr_desc, (VOPFUNC)zfs_vnop_setattr },      /* setattr */
+	{ &vnop_read_desc, (VOPFUNC)fifo_read },             /* read */
+	{ &vnop_write_desc, (VOPFUNC)fifo_write },           /* write */
+	{ &vnop_ioctl_desc, (VOPFUNC)fifo_ioctl },              /* ioctl */
+	{ &vnop_select_desc, (VOPFUNC)fifo_select },            /* select */
+	{ &vnop_revoke_desc, (VOPFUNC)fifo_revoke },            /* revoke */
+	{ &vnop_mmap_desc, (VOPFUNC)fifo_mmap },                        /* mmap */
+	{ &vnop_fsync_desc, (VOPFUNC)zfs_vnop_fsync },          /* fsync */
+	{ &vnop_remove_desc, (VOPFUNC)fifo_remove },            /* remove */
+	{ &vnop_link_desc, (VOPFUNC)fifo_link },                        /* link */
+	{ &vnop_rename_desc, (VOPFUNC)fifo_rename },            /* rename */
+	{ &vnop_mkdir_desc, (VOPFUNC)fifo_mkdir },              /* mkdir */
+	{ &vnop_rmdir_desc, (VOPFUNC)fifo_rmdir },              /* rmdir */
+	{ &vnop_symlink_desc, (VOPFUNC)fifo_symlink },          /* symlink */
+	{ &vnop_readdir_desc, (VOPFUNC)fifo_readdir },          /* readdir */
+	{ &vnop_readlink_desc, (VOPFUNC)fifo_readlink },                /* readlink */
+	{ &vnop_inactive_desc, (VOPFUNC)zfs_vnop_inactive },    /* inactive */
+	{ &vnop_reclaim_desc, (VOPFUNC)zfs_vnop_reclaim },      /* reclaim */
+	{ &vnop_strategy_desc, (VOPFUNC)fifo_strategy },                /* strategy */
+	{ &vnop_pathconf_desc, (VOPFUNC)fifo_pathconf },                /* pathconf */
+	{ &vnop_advlock_desc, (VOPFUNC)err_advlock },           /* advlock */
+	{ &vnop_bwrite_desc, (VOPFUNC)zfs_inval },
+	{ &vnop_pagein_desc, (VOPFUNC)zfs_vnop_pagein },                /* Pagein */
+	{ &vnop_pageout_desc, (VOPFUNC)zfs_vnop_pageout },      /* Pageout */
+	{ &vnop_copyfile_desc, (VOPFUNC)err_copyfile },                 /* copyfile */
+	{ &vnop_blktooff_desc, (VOPFUNC)zfs_vnop_blktooff },    /* blktooff */
+	{ &vnop_offtoblk_desc, (VOPFUNC)zfs_vnop_offtoblk },    /* offtoblk */
+	{ &vnop_blockmap_desc, (VOPFUNC)zfs_vnop_blockmap },            /* blockmap */
+	{ &vnop_getxattr_desc, (VOPFUNC)zfs_vnop_getxattr},
+	{ &vnop_setxattr_desc, (VOPFUNC)zfs_vnop_setxattr},
+	{ &vnop_removexattr_desc, (VOPFUNC)zfs_vnop_removexattr},
+	{ &vnop_listxattr_desc, (VOPFUNC)zfs_vnop_listxattr},
+	{ (struct vnodeop_desc*)NULL, (VOPFUNC)NULL }
+};
+struct vnodeopv_desc zfs_fifonodeop_opv_desc =
+	{ &zfs_fifonodeops, zfs_fifonodeops_template };
+
+
+
+
+
+
 /*
  * Alas, OS X does not let us create a vnode, and assign the vtype later and we
  * do not know what type we want here. Is there a way around this? We could
@@ -3240,9 +3331,11 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 			vfsp.vnfs_rdev = zfs_cmpldev(rdev);
 		}
 		/* FALLTHROUGH */
-	case VFIFO:
 	case VSOCK:
 		vfsp.vnfs_vops = zfs_fvnodeops;
+		break;
+	case VFIFO:
+		vfsp.vnfs_vops = zfs_fifonodeops;
 		break;
 	case VREG:
 		vfsp.vnfs_vops = zfs_fvnodeops;
@@ -3255,7 +3348,8 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 #endif
 		break;
 	default:
-		vfsp.vnfs_vops = zfs_evnodeops;
+		//vfsp.vnfs_vops = zfs_evnodeops;
+		printf("ZFS: Warning, error-vnops selected\n");
 		break;
 	}
 

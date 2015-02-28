@@ -2076,6 +2076,9 @@ zfs_freesp(znode_t *zp, uint64_t off, uint64_t len, int flag, boolean_t log)
 	int count = 0;
 	int error;
 
+	if (vnode_isfifo(ZTOV(zp)))
+		return 0;
+
 	if ((error = sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zfsvfs), &mode,
 	    sizeof (mode))) != 0)
 		return (error);
