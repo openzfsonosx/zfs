@@ -112,6 +112,7 @@ AC_CONFIG_FILES([
 	lib/libzfs_core/Makefile
 	lib/libshare/Makefile
 	cmd/Makefile
+	cmd/zconfigd/Makefile
 	cmd/zdb/Makefile
 	cmd/zhack/Makefile
 	cmd/zfs/Makefile
