@@ -610,6 +610,21 @@ ignoreowner_changed_cb(void *arg, uint64_t newval)
 	}
 }
 
+static void
+mimic_hfs_changed_cb(void *arg, uint64_t newval)
+{
+	// FIXME - what do we do in here?
+	zfsvfs_t *zfsvfs = arg;
+	struct vfsstatfs *vfsstatfs;
+	vfsstatfs = vfs_statfs(zfsvfs->z_vfs);
+
+	if(newval == 0) {
+	    strlcpy(vfsstatfs->f_fstypename, "zfs", MFSTYPENAMELEN);
+	} else {
+	    strlcpy(vfsstatfs->f_fstypename, "hfs", MFSTYPENAMELEN);
+	}
+}
+
 #endif
 
 static int
@@ -802,6 +817,8 @@ zfs_register_callbacks(struct mount *vfsp)
 	    zfs_prop_to_name(ZFS_PROP_APPLE_BROWSE), finderbrowse_changed_cb, zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_APPLE_IGNOREOWNER), ignoreowner_changed_cb, zfsvfs);
+	error = error ? error : dsl_prop_register(ds,
+	    zfs_prop_to_name(ZFS_PROP_APPLE_MIMIC_HFS), mimic_hfs_changed_cb, zfsvfs);
 #endif
 	dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 	if (error)
@@ -868,6 +885,8 @@ unregister:
 	    finderbrowse_changed_cb, zfsvfs);
 	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_APPLE_IGNOREOWNER),
 	    ignoreowner_changed_cb, zfsvfs);
+	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_APPLE_MIMIC_HFS),
+	    mimic_hfs_changed_cb, zfsvfs);
 #endif
 	return (error);
 }
@@ -1485,6 +1504,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	uint64_t recordsize, fsid_guid;
 	vnode_t *vp;
 #else
+	uint64_t mimic_hfs = 0;
 	struct timeval tv;
 #endif
 
@@ -1541,7 +1561,15 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	 */
 
 #ifdef __APPLE__
-    vfs_getnewfsid(vfsp);
+	error = dsl_prop_get_integer(osname, "com.apple.mimic_hfs", &mimic_hfs, NULL);
+	vfs_getnewfsid(vfsp);
+
+	if(mimic_hfs) {
+	    struct vfsstatfs *vfsstatfs;
+	    vfsstatfs = vfs_statfs(vfsp);
+	    strlcpy(vfsstatfs->f_fstypename, "hfs", MFSTYPENAMELEN);
+	}
+
 #else
 	fsid_guid = dmu_objset_fsid_guid(zfsvfs->z_os);
 	ASSERT((fsid_guid & ~((1ULL<<56)-1)) == 0);
@@ -1679,6 +1707,8 @@ zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
 		    finderbrowse_changed_cb, zfsvfs) == 0);
 		VERIFY(dsl_prop_unregister(ds, "com.apple.ignoreowner",
 		    ignoreowner_changed_cb, zfsvfs) == 0);
+		VERIFY(dsl_prop_unregister(ds, "com.apple.mimic_hfs",
+		    mimic_hfs_changed_cb, zfsvfs) == 0);
 #endif
 	}
 }
