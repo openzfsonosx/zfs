@@ -403,7 +403,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	uint64_t missing = 0;
 	missing = (vap->va_active ^ (vap->va_active & vap->va_supported));
 	if ( missing != 0) {
-		printf("vnop_getattr:: asked %08llx replied %08llx       missing %08llx\n",
+		dprintf("vnop_getattr:: asked %08llx replied %08llx       missing %08llx\n",
 			   vap->va_active, vap->va_supported,
 			   missing);
 	}

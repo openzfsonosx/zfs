@@ -2400,7 +2400,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	uint64_t missing = 0;
 	missing = (fsap->f_active ^ (fsap->f_active & fsap->f_supported));
 	if ( missing != 0) {
-		printf("vfs_getattr:: asked %08llx replied %08llx       missing %08llx\n",
+		dprintf("vfs_getattr:: asked %08llx replied %08llx       missing %08llx\n",
 			   fsap->f_active, fsap->f_supported,
 			   missing);
 	}
