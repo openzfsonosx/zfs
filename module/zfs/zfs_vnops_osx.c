@@ -3031,14 +3031,14 @@ static int zfs_isdir();
 static int
 zfs_inval()
 {
-	printf("ZFS: Bad vnop: returning EINVAL\n");
+	dprintf("ZFS: Bad vnop: returning EINVAL\n");
 	return (EINVAL);
 }
 
 static int
 zfs_isdir()
 {
-	printf("ZFS: Bad vnop: returning EISDIR\n");
+	dprintf("ZFS: Bad vnop: returning EISDIR\n");
 	return (EISDIR);
 }
 
