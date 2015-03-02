@@ -2342,7 +2342,6 @@ arc_shrink(void)
 static int
 arc_reclaim_needed(void)
 {
-    uint64_t extra;
 
 #ifdef _KERNEL
 
@@ -3800,7 +3799,6 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 {
 #ifdef _KERNEL
     uint64_t freemem = kmem_avail();
-    uint64_t available_memory = freemem;
     static uint64_t page_load = 0;
     static uint64_t last_txg = 0;
 
@@ -3816,8 +3814,6 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
         last_txg = txg;
         page_load = 0;
     }
-
-#warning - think about this block of code more.
 
 #ifdef sun
     /*

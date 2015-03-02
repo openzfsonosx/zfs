@@ -1037,10 +1037,9 @@ zpool_default_import_path[DEFAULT_IMPORT_PATH_SIZE] = {
  * Given disk2s1, look up "disk2" is IOKit and attempt to determine if
  * it is an optical device.
  */
-int is_optical_media(char *bsdname)
+int is_optical_media(const char *bsdname)
 {
 	CFMutableDictionaryRef matchingDict;
-	mach_port_t masterPort;
 	int ret = 0;
 	io_service_t service, start;
     kern_return_t   kernResult;

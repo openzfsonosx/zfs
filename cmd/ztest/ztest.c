@@ -125,6 +125,9 @@
 #include <sys/fs/zfs.h>
 #include <libnvpair.h>
 #include <synch.h>
+#ifdef __GNUC__ /* backtrace() is a GNU extension */
+#include <execinfo.h>
+#endif
 
 static int ztest_fd_data = -1;
 static int ztest_fd_rand = -1;

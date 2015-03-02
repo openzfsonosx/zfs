@@ -98,7 +98,6 @@ dbuf_cons(void *vdb, void *unused, int kmflag)
 	cv_init(&db->db_changed, NULL, CV_DEFAULT, NULL);
 	refcount_create(&db->db_holds);
 	db->db_creation = gethrtime();
-	list_link_init(&db->db_link);
 	return (0);
 }
 

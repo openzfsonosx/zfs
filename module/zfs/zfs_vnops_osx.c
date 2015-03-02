@@ -61,6 +61,7 @@
 #include <sys/unistd.h>
 
 #include <miscfs/fifofs/fifo.h>
+#include <miscfs/specfs/specdev.h>
 #include <vfs/vfs_support.h>
 
 #ifdef _KERNEL

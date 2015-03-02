@@ -547,9 +547,6 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 {
         zap_cursor_t        zc;
         zap_attribute_t zap;
-        dmu_object_info_t doi;
-        znode_t                *zp;
-        int                error;
 		uint64_t entries=0;
 
         /*
@@ -605,7 +602,7 @@ zfs_purgedir(znode_t *dzp)
 		    ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
 		if (error) {
 #ifdef __APPLE__
-			if ((error == ENXIO)) {
+			if (error == ENXIO) {
 				printf("ZFS: Detected problem with item %llu\n",
 					   dzp->z_id);
 			}

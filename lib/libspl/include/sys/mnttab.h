@@ -72,10 +72,6 @@ extern char *hasmntopt(struct mnttab *mnt, char *opt);
 
 extern void statfs2mnttab(struct statfs *sfs, struct mnttab *mp);
 
-#define	AT_FDCWD		-100
-#define	AT_SYMLINK_NOFOLLOW	0x100
-#define	AT_REMOVEDIR		0x200
-#define	AT_SYMLINK_FOLLOW	0x400
 extern int fstatat64(int, const char *, struct stat *, int);
 
 #endif
