@@ -72,8 +72,8 @@ extern char *hasmntopt(struct mnttab *mnt, char *opt);
 
 extern void statfs2mnttab(struct statfs *sfs, struct mnttab *mp);
 
-#ifndef AT_SYMLINK_FOLLOW
-#define	AT_SYMLINK_FOLLOW	0x400
+#ifndef AT_SYMLINK_NOFOLLOW
+#define AT_SYMLINK_NOFOLLOW     0x100
 #endif
 
 extern int fstatat64(int, const char *, struct stat *, int);
