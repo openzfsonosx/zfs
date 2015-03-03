@@ -338,7 +338,7 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
         ZFS_EXIT(zfsvfs);
 #endif
     } else {
-#if 0
+#if 1
         /*
          * Sync all ZFS filesystems. This is what happens when you
          * run sync(1M). Unlike other filesystems, ZFS honors the
