@@ -103,7 +103,7 @@
 #include <sys/zfs_mount.h>
 #endif /* __APPLE__ */
 
-#define dprintf printf
+//#define dprintf printf
 
 #ifdef __APPLE__
 
@@ -304,7 +304,6 @@ extern void zfs_ioctl_fini(void);
 int
 zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t context)
 {
-	printf("ZFS: vfs_sync called %p\n", vfsp);
     /*
      * Data integrity is job one. We don't want a compromised kernel
      * writing to the storage pool, so we never sync during panic.
@@ -332,10 +331,8 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
             return (0);
         }
 
-        if (zfsvfs->z_log != NULL) {
-			printf("ZFS: commit %p\n", vfsp);
+        if (zfsvfs->z_log != NULL)
             zil_commit(zfsvfs->z_log, 0);
-		}
 
         ZFS_EXIT(zfsvfs);
 
