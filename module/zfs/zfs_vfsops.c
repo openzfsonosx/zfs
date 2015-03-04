@@ -103,6 +103,7 @@
 #include <sys/zfs_mount.h>
 #endif /* __APPLE__ */
 
+//#define dprintf kprintf
 //#define dprintf printf
 
 #ifdef __APPLE__
@@ -186,7 +187,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_INT_SEARCHFS |
 		VOL_CAP_INT_ATTRLIST |
 		VOL_CAP_INT_NFSEXPORT |
-        VOL_CAP_INT_READDIRATTR |
+        //VOL_CAP_INT_READDIRATTR |
         VOL_CAP_INT_EXCHANGEDATA |
         VOL_CAP_INT_COPYFILE |
         VOL_CAP_INT_ALLOCATE |
@@ -2665,8 +2666,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		zfsctl_destroy(zfsvfs);
 		ASSERT(zfsvfs->z_ctldir == NULL);
 	}
-
-	spl_ubc_umount(mp);
 
 #if 0
     // If we are ourselves a snapshot
