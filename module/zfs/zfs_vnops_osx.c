@@ -86,9 +86,9 @@ unsigned int zfs_vnop_reclaim_throttle = 33280;
 	DECLARE_CONTEXT(ap)
 
 #undef dprintf
-#define	dprintf if (debug_vnop_osx_printf) printf
+//#define	dprintf if (debug_vnop_osx_printf) printf
 //#define	dprintf if (debug_vnop_osx_printf) kprintf
-//#define dprintf kprintf
+#define dprintf kprintf
 
 //#define	dprintf(...) if (debug_vnop_osx_printf) {printf(__VA_ARGS__);delay(hz>>2);}
 
@@ -828,8 +828,12 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 
 	if (!error) {
 		/* If successful, tell OS X which fields ZFS set. */
-		if (VATTR_IS_ACTIVE(vap, va_data_size))
+		if (VATTR_IS_ACTIVE(vap, va_data_size)) {
+			dprintf("ZFS: setattr new size %llx %llx\n", vap->va_size,
+					ubc_getsize(ap->a_vp));
+			ubc_setsize(ap->a_vp, vap->va_size);
 			VATTR_SET_SUPPORTED(vap, va_data_size);
+		}
 		if (VATTR_IS_ACTIVE(vap, va_mode))
 			VATTR_SET_SUPPORTED(vap, va_mode);
 		if (VATTR_IS_ACTIVE(vap, va_acl))
@@ -852,6 +856,15 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 			VATTR_SET_SUPPORTED(vap, va_flags);
 		}
 	}
+
+	uint64_t missing = 0;
+	missing = (vap->va_active ^ (vap->va_active & vap->va_supported));
+	if ( missing != 0) {
+		dprintf("vnop_setattr:: asked %08llx replied %08llx       missing %08llx\n",
+			   vap->va_active, vap->va_supported,
+			   missing);
+	}
+
 
 	if (error)
 		printf("vnop_setattr return failure %d\n", error);
@@ -1243,7 +1256,16 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 		    UPL_ABORT_FREE_ON_EMPTY);
 	}
 
-	len = MIN(len, filesz - off);
+	//len = MIN(len, filesz - off);
+	dprintf("ZFS: starting with size %llx\n", len);
+	if (off + len > filesz) {
+		dprintf("ZFS: Extending file to %llx\n", off+len);
+		zfs_freesp(zp, off+len, 0, 0, TRUE);
+		filesz = off+len;
+		ubc_setsize(ZTOV(zp), filesz);
+	}
+
+
 top:
 	rl = zfs_range_lock(zp, off, len, RL_WRITER);
 	/*
@@ -1264,7 +1286,7 @@ top:
 		if (trunc)
 			pvn_write_done(trunc, flags);
 #endif
-		len = filesz - off;
+		//len = filesz - off;
 	}
 
 	tx = dmu_tx_create(zfsvfs->z_os);
@@ -1311,7 +1333,7 @@ top:
 
 	/*
 	 * The last, possibly partial block needs to have the data zeroed that
-	 * would extend passed the size of the file.
+	 * would extend past the size of the file.
 	 */
 	if (len > 0) {
 		ssize_t sz = len;
@@ -1327,8 +1349,8 @@ top:
 		 * Zero out the remainder of the PAGE that didn't fit within
 		 * the file size.
 		 */
-		bzero(va, PAGESIZE-sz);
-		dprintf("zero last 0x%lx bytes.\n", PAGESIZE-sz);
+		//bzero(va, PAGESIZE-sz);
+		//dprintf("zero last 0x%lx bytes.\n", PAGESIZE-sz);
 
 	}
 	ubc_upl_unmap(upl);
