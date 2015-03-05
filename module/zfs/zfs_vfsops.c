@@ -103,6 +103,7 @@
 #include <sys/zfs_mount.h>
 #endif /* __APPLE__ */
 
+//#define dprintf kprintf
 //#define dprintf printf
 
 #ifdef __APPLE__
@@ -187,7 +188,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_INT_SEARCHFS |
 		VOL_CAP_INT_ATTRLIST |
 		VOL_CAP_INT_NFSEXPORT |
-        VOL_CAP_INT_READDIRATTR |
+        //VOL_CAP_INT_READDIRATTR |
         VOL_CAP_INT_EXCHANGEDATA |
         VOL_CAP_INT_COPYFILE |
         VOL_CAP_INT_ALLOCATE |
@@ -303,7 +304,6 @@ extern void zfs_ioctl_fini(void);
 int
 zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t context)
 {
-
     /*
      * Data integrity is job one. We don't want a compromised kernel
      * writing to the storage pool, so we never sync during panic.
@@ -335,6 +335,7 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
             zil_commit(zfsvfs->z_log, 0);
 
         ZFS_EXIT(zfsvfs);
+
 #endif
     } else {
 #if 1

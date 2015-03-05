@@ -87,6 +87,9 @@ unsigned int zfs_vnop_reclaim_throttle = 33280;
 
 #undef dprintf
 #define	dprintf if (debug_vnop_osx_printf) printf
+//#define	dprintf if (debug_vnop_osx_printf) kprintf
+//#define dprintf kprintf
+
 //#define	dprintf(...) if (debug_vnop_osx_printf) {printf(__VA_ARGS__);delay(hz>>2);}
 
 /*
@@ -1418,10 +1421,15 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 * If we are coming via the vnode_create()->vclean() path, we can not
 	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
 	 */
-	if (vnode_isrecycled(ap->a_vp)) {
+	int i, rentry;
+	for (i = 0, rentry = 0; i < MAX_VNODECREATE_THREADS; i++)
+		if (zfsvfs->z_vnodecreate_threads[i] == (uint64_t)current_thread())
+			rentry = 1;
+
+	if (rentry) {
 		if (!(flags & UPL_NOCOMMIT))
 			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
-		dprintf("ZFS: vnop_pageout: abort on vnode_create\n");
+		dprintf("ZFS: vnop_pageout: re-entry abort on vnode_create\n");
 		return EIO;
 	}
 
@@ -3354,8 +3362,16 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 	 * vnode_create() has a habit of calling both vnop_reclaim() and
 	 * vnop_fsync(), which can create havok as we are already holding locks.
 	 */
+	uint64_t place;
+
+	place = atomic_inc_64_nv(&zfsvfs->z_vnodecreate_counter) % MAX_VNODECREATE_THREADS;
+	if (zfsvfs->z_vnodecreate_threads[place])
+		printf("ZFS: Warning MAX_VNODECREATE_THREADS %u overflow.\n",
+			   MAX_VNODECREATE_THREADS);
+	zfsvfs->z_vnodecreate_threads[place] = (uint64_t)current_thread();
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0)
 		kpreempt(KPREEMPT_SYNC);
+	zfsvfs->z_vnodecreate_threads[place] = 0;
 	atomic_inc_64(&vnop_num_vnodes);
 
 	dprintf("Assigned zp %p with vp %p\n", zp, *vpp);

@@ -94,6 +94,9 @@ struct zfsvfs {
         boolean_t       z_reclaim_thread_exit;
         kmutex_t		z_reclaim_thr_lock;
     	kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
+#define MAX_VNODECREATE_THREADS 5 /* How many threads to remember to avoid deadlock*/
+	    uint64_t        z_vnodecreate_threads[MAX_VNODECREATE_THREADS];
+	    uint64_t        z_vnodecreate_counter;
 #endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
