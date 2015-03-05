@@ -779,14 +779,11 @@ int arc_kstat_update(kstat_t *ksp, int rw)
 
 	} else {
 
-		ks->arc_zfs_arc_max.value.ui64        =
-			zfs_arc_max ? zfs_arc_max : arc_c_max;
+		ks->arc_zfs_arc_max.value.ui64        = zfs_arc_max;
 
-		ks->arc_zfs_arc_min.value.ui64        =
-			zfs_arc_min ? zfs_arc_min : arc_c_min;
+		ks->arc_zfs_arc_min.value.ui64        =	zfs_arc_min;
 
-		ks->arc_zfs_arc_meta_limit.value.ui64 =
-			zfs_arc_meta_limit ? zfs_arc_meta_limit : arc_meta_limit;
+		ks->arc_zfs_arc_meta_limit.value.ui64 =	zfs_arc_meta_limit;
 
 		ks->arc_zfs_arc_grow_retry.value.ui64        =
 			zfs_arc_grow_retry ? zfs_arc_grow_retry : arc_grow_retry;
