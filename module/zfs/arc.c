@@ -204,6 +204,7 @@ static boolean_t arc_warm;
 uint64_t zfs_arc_max;
 uint64_t zfs_arc_min;
 uint64_t zfs_arc_meta_limit = 0;
+uint64_t zfs_arc_meta_min = 0;
 int zfs_arc_grow_retry = 0;
 int zfs_arc_shrink_shift = 0;
 int zfs_arc_p_min_shift = 0;
@@ -333,6 +334,7 @@ typedef struct arc_stats {
     kstat_named_t arcstat_meta_used;
     kstat_named_t arcstat_meta_limit;
     kstat_named_t arcstat_meta_max;
+	kstat_named_t arcstat_meta_min;
 } arc_stats_t;
 
 static arc_stats_t arc_stats = {
@@ -398,7 +400,8 @@ static arc_stats_t arc_stats = {
     { "duplicate_reads",		KSTAT_DATA_UINT64 },
     { "arc_meta_used",		KSTAT_DATA_UINT64 },
     { "arc_meta_limit",		KSTAT_DATA_UINT64 },
-    { "arc_meta_max",		KSTAT_DATA_UINT64 }
+    { "arc_meta_max",		KSTAT_DATA_UINT64 },
+    { "arc_meta_min",		KSTAT_DATA_UINT64 }
 };
 
 #define	ARCSTAT(stat)	(arc_stats.stat.value.ui64)
@@ -464,6 +467,7 @@ static arc_state_t	*arc_l2c_only;
 #define	arc_c_min	ARCSTAT(arcstat_c_min)	/* min target cache size */
 #define	arc_c_max	ARCSTAT(arcstat_c_max)	/* max target cache size */
 #define	arc_meta_limit	ARCSTAT(arcstat_meta_limit) /* max size for metadata */
+#define	arc_meta_min	ARCSTAT(arcstat_meta_min) /* min size for metadata */
 #define	arc_meta_used	ARCSTAT(arcstat_meta_used) /* size of metadata */
 #define	arc_meta_max	ARCSTAT(arcstat_meta_max) /* max size of metadata */
 
@@ -754,8 +758,12 @@ int arc_kstat_update(kstat_t *ksp, int rw)
 
 		if (ks->arc_zfs_arc_min.value.ui64 != zfs_arc_min) {
 			zfs_arc_min               = ks->arc_zfs_arc_min.value.ui64;
-			if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max)
+			if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max) {
 				arc_c_min = zfs_arc_min;
+				/* If user hasn't set it, update meta_min too */
+				if (!zfs_arc_meta_min)
+					arc_meta_min = arc_c_min / 2;
+			}
 		}
 
 		if (ks->arc_zfs_arc_meta_limit.value.ui64 != zfs_arc_meta_limit) {
@@ -767,6 +775,12 @@ int arc_kstat_update(kstat_t *ksp, int rw)
 
 			if (arc_c_min < arc_meta_limit / 2 && zfs_arc_min == 0)
 				arc_c_min = arc_meta_limit / 2;
+		}
+
+		if (ks->arc_zfs_arc_meta_min.value.ui64 != zfs_arc_meta_min) {
+			zfs_arc_meta_min  = ks->arc_zfs_arc_meta_min.value.ui64;
+			if (zfs_arc_meta_min > 0 && zfs_arc_meta_min <= arc_meta_limit)
+				arc_meta_min = zfs_arc_meta_min;
 		}
 
 		zfs_arc_grow_retry        = ks->arc_zfs_arc_grow_retry.value.ui64;
@@ -784,6 +798,8 @@ int arc_kstat_update(kstat_t *ksp, int rw)
 		ks->arc_zfs_arc_min.value.ui64        =	zfs_arc_min;
 
 		ks->arc_zfs_arc_meta_limit.value.ui64 =	zfs_arc_meta_limit;
+
+		ks->arc_zfs_arc_meta_min.value.ui64 =	zfs_arc_meta_min;
 
 		ks->arc_zfs_arc_grow_retry.value.ui64        =
 			zfs_arc_grow_retry ? zfs_arc_grow_retry : arc_grow_retry;
@@ -2192,9 +2208,15 @@ arc_adjust(void)
     }
 
     if (adjustment > 0 && arc_mru->arcs_lsize[ARC_BUFC_METADATA] > 0) {
+
         delta = MIN(arc_mru->arcs_lsize[ARC_BUFC_METADATA], adjustment);
-        (void) arc_evict(arc_mru, 0, delta, FALSE,
-                         ARC_BUFC_METADATA);
+		if (arc_meta_used > arc_meta_min) {
+			(void) arc_evict(arc_mru, 0, delta, FALSE,
+							 ARC_BUFC_DATA);
+		} else {
+			(void) arc_evict(arc_mru, 0, delta, FALSE,
+							 ARC_BUFC_METADATA);
+		}
     }
 
     /*
@@ -2212,8 +2234,13 @@ arc_adjust(void)
     if (adjustment > 0 && arc_mfu->arcs_lsize[ARC_BUFC_METADATA] > 0) {
         int64_t delta = MIN(adjustment,
                             arc_mfu->arcs_lsize[ARC_BUFC_METADATA]);
-        (void) arc_evict(arc_mfu, 0, delta, FALSE,
-                         ARC_BUFC_METADATA);
+		if (arc_meta_used > arc_meta_min) {
+			(void) arc_evict(arc_mfu, 0, delta, FALSE,
+							 ARC_BUFC_DATA);
+		} else {
+			(void) arc_evict(arc_mfu, 0, delta, FALSE,
+							 ARC_BUFC_METADATA);
+		}
     }
 
     /*
@@ -3943,6 +3970,12 @@ arc_init(void)
 
     if (arc_c_min < arc_meta_limit / 2 && zfs_arc_min == 0)
         arc_c_min = arc_meta_limit / 2;
+
+	if (zfs_arc_meta_min > 0) {
+		arc_meta_min = zfs_arc_meta_min;
+	} else {
+		arc_meta_min = arc_c_min / 2;
+	}
 
     if (zfs_arc_grow_retry > 0)
         arc_grow_retry = zfs_arc_grow_retry;

@@ -71,6 +71,7 @@ osx_kstat_t osx_kstat = {
 	{ "zfs_arc_max",				KSTAT_DATA_UINT64 },
 	{ "zfs_arc_min",				KSTAT_DATA_UINT64 },
 	{ "zfs_arc_meta_limit",			KSTAT_DATA_UINT64 },
+	{ "zfs_arc_meta_min",			KSTAT_DATA_UINT64 },
 	{ "zfs_arc_grow_retry",			KSTAT_DATA_UINT64 },
 	{ "zfs_arc_shrink_shift",		KSTAT_DATA_UINT64 },
 	{ "zfs_arc_p_min_shift",		KSTAT_DATA_UINT64 },
