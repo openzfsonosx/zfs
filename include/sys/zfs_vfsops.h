@@ -41,6 +41,10 @@ extern "C" {
 struct zfs_sb;
 struct znode;
 
+/* #define WITH_SEARCHFS */
+/* #define WITH_READDIRATTR */
+#define	HAVE_NAMED_STREAMS 1
+
 typedef struct zfsvfs zfsvfs_t;
 
 struct zfsvfs {

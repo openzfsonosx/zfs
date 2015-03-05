@@ -89,12 +89,6 @@ unsigned int zfs_vnop_reclaim_throttle = 33280;
 #define	dprintf if (debug_vnop_osx_printf) printf
 //#define	dprintf(...) if (debug_vnop_osx_printf) {printf(__VA_ARGS__);delay(hz>>2);}
 
-/* Move this somewhere else, maybe autoconf? */
-#define	HAVE_NAMED_STREAMS 1
-
-/* #define WITH_SEARCHFS */
-
-
 /*
  * zfs vfs operations.
  */
@@ -3080,7 +3074,9 @@ struct vnodeopv_entry_desc zfs_dvnodeops_template[] = {
 	{&vnop_setxattr_desc,	(VOPFUNC)zfs_vnop_setxattr},
 	{&vnop_removexattr_desc, (VOPFUNC)zfs_vnop_removexattr},
 	{&vnop_listxattr_desc,	(VOPFUNC)zfs_vnop_listxattr},
+#ifdef WITH_READDIRATTR
 	{&vnop_readdirattr_desc, (VOPFUNC)zfs_vnop_readdirattr},
+#endif
 #ifdef WITH_SEARCHFS
 	{&vnop_searchfs_desc,	(VOPFUNC)zfs_vnop_searchfs},
 #endif
