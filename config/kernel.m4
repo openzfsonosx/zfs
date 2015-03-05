@@ -63,13 +63,18 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 
 	AC_MSG_CHECKING([kernel source directory])
 	AS_IF([test -z "$kernelsrc"], [
-		AS_IF([test -d "/System/Library/Frameworks/Kernel.framework/Headers"], [
-			kernelsrc="/System/Library/Frameworks/Kernel.framework"])
+		system_major_version=`sw_vers -productVersion | $AWK -F '.' '{ print $[]1 "." $[]2 }'`
+		AS_IF([test -d "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX${system_major_version}.sdk/System/Library/Frameworks/Kernel.framework/Headers"], [
+			kernelsrc="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX${system_major_version}.sdk/System/Library/Frameworks/Kernel.framework"])
 	])
 	AS_IF([test -z "$kernelsrc"], [
 		tmpdir=`xcrun --show-sdk-path`
 		AS_IF([test -d "$tmpdir/System/Library/Frameworks/Kernel.framework/Headers"], [
 			kernelsrc="$tmpdir/System/Library/Frameworks/Kernel.framework"])
+	])
+	AS_IF([test -z "$kernelsrc"], [
+		AS_IF([test -d "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.10.sdk/System/Library/Frameworks/Kernel.framework"], [
+			kernelsrc="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.10.sdk/System/Library/Frameworks/Kernel.framework"])
 	])
 	AS_IF([test -z "$kernelsrc"], [
 		AS_IF([test -d "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework"], [
