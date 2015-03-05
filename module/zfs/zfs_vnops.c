@@ -4913,9 +4913,17 @@ zfs_putapage(vnode_t *vp, page_t **pp, u_offset_t *offp,
 	znode_t		*zp = VTOZ(vp);
 	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
 	dmu_tx_t	*tx;
-	u_offset_t	off, koff;
-	size_t		len, klen;
-	int		err;
+	caddr_t		va;
+	int		err = 0;
+	uint64_t	mtime[2], ctime[2];
+	sa_bulk_attr_t	bulk[3];
+	int		cnt = 0;
+	struct address_space *mapping;
+
+	ZFS_ENTER(zsb);
+	ZFS_VERIFY_ZP(zp);
+
+	ASSERT(PageLocked(pp));
 
 	off = pp->p_offset;
 	len = PAGESIZE;
