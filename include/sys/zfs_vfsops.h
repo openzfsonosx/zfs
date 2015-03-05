@@ -94,9 +94,9 @@ struct zfsvfs {
         boolean_t       z_reclaim_thread_exit;
         kmutex_t		z_reclaim_thr_lock;
     	kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
-#define MAX_VNODECREATE_THREADS 5 /* How many threads to remember to avoid deadlock*/
-	    uint64_t        z_vnodecreate_threads[MAX_VNODECREATE_THREADS];
-	    uint64_t        z_vnodecreate_counter;
+
+        kmutex_t	    z_vnodecreate_lock; /*lock for using z_vnodecreate_list*/
+        list_t          z_vnodecreate_list;/* all threads in vnode_create */
 #endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
@@ -106,6 +106,12 @@ struct zfsvfs {
         kmutex_t        z_hold_mtx[ZFS_OBJ_MTX_SZ];     /* znode hold locks */
 };
 
+#ifdef __APPLE__
+	struct vnodecreate {
+		thread_t thread;
+		list_node_t link;
+	};
+#endif
 
 #define	ZFS_SUPER_MAGIC	0x2fc12fc1
 

@@ -1421,12 +1421,17 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 * If we are coming via the vnode_create()->vclean() path, we can not
 	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
 	 */
-	int i, rentry;
-	for (i = 0, rentry = 0; i < MAX_VNODECREATE_THREADS; i++)
-		if (zfsvfs->z_vnodecreate_threads[i] == (uint64_t)current_thread())
-			rentry = 1;
+	struct vnodecreate *vcp;
 
-	if (rentry) {
+	mutex_enter(&zfsvfs->z_vnodecreate_lock);
+	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
+		 vcp;
+		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
+		if (vcp->thread == current_thread()) break;
+	mutex_exit(&zfsvfs->z_vnodecreate_lock);
+
+	/* If re-entry, vcp will be set, otherwise NULL */
+	if (vcp) {
 		if (!(flags & UPL_NOCOMMIT))
 			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
 		dprintf("ZFS: vnop_pageout: re-entry abort on vnode_create\n");
@@ -2734,6 +2739,7 @@ zfs_vnop_select(struct vnop_select_args *ap)
 	return (1);
 }
 
+#ifdef WITH_READDIRATTR
 static int
 zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 #if 0
@@ -2989,6 +2995,7 @@ update:
 	dprintf("-readdirattr: error %d\n", error);
 	return (error);
 }
+#endif
 
 
 #ifdef WITH_SEARCHFS
@@ -3362,16 +3369,25 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 	 * vnode_create() has a habit of calling both vnop_reclaim() and
 	 * vnop_fsync(), which can create havok as we are already holding locks.
 	 */
-	uint64_t place;
 
-	place = atomic_inc_64_nv(&zfsvfs->z_vnodecreate_counter) % MAX_VNODECREATE_THREADS;
-	if (zfsvfs->z_vnodecreate_threads[place])
-		printf("ZFS: Warning MAX_VNODECREATE_THREADS %u overflow.\n",
-			   MAX_VNODECREATE_THREADS);
-	zfsvfs->z_vnodecreate_threads[place] = (uint64_t)current_thread();
+	/* So pageout can know if it is called recursively, add this thread to list*/
+
+	struct vnodecreate vnodecreate_node;
+	vnodecreate_node.thread = current_thread();
+	list_link_init(&vnodecreate_node.link);
+	mutex_enter(&zfsvfs->z_vnodecreate_lock);
+	list_insert_tail(&zfsvfs->z_vnodecreate_list, &vnodecreate_node);
+	mutex_exit(&zfsvfs->z_vnodecreate_lock);
+
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0)
 		kpreempt(KPREEMPT_SYNC);
-	zfsvfs->z_vnodecreate_threads[place] = 0;
+
+	/* Remove this thread from list. */
+	mutex_enter(&zfsvfs->z_vnodecreate_lock);
+	list_remove(&zfsvfs->z_vnodecreate_list, &vnodecreate_node);
+	mutex_exit(&zfsvfs->z_vnodecreate_lock);
+
+
 	atomic_inc_64(&vnop_num_vnodes);
 
 	dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
