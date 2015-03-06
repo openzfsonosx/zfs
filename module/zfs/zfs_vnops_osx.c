@@ -88,7 +88,7 @@ unsigned int zfs_vnop_reclaim_throttle = 33280;
 #undef dprintf
 //#define	dprintf if (debug_vnop_osx_printf) printf
 //#define	dprintf if (debug_vnop_osx_printf) kprintf
-#define dprintf kprintf
+//#define dprintf kprintf
 
 //#define	dprintf(...) if (debug_vnop_osx_printf) {printf(__VA_ARGS__);delay(hz>>2);}
 
@@ -553,7 +553,7 @@ zfs_vnop_remove(struct vnop_remove_args *ap)
 	DECLARE_CRED_AND_CONTEXT(ap);
 	int error;
 
-	dprintf("vnop_remove\n");
+	dprintf("vnop_remove: %p (%s)\n", ap->a_vp, ap->a_cnp->cn_nameptr);
 
 	/*
 	 * extern int zfs_remove ( struct vnode *dvp, char *name, cred_t *cr,
@@ -715,7 +715,22 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	 * zil_commit() or we will deadlock. But we know that vnop_reclaim will
 	 * be called next, so we just return success.
 	 */
-	if (vnode_isrecycled(ap->a_vp)) return 0;
+	/*
+	 * If we are coming via the vnode_create()->vclean() path, we can not
+	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
+	 */
+	struct vnodecreate *vcp;
+
+	mutex_enter(&zfsvfs->z_vnodecreate_lock);
+	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
+		 vcp;
+		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
+		if (vcp->thread == current_thread()) break;
+	mutex_exit(&zfsvfs->z_vnodecreate_lock);
+
+	/* If re-entry, vcp will be set, otherwise NULL */
+	if (vcp) return 0;
+		//if (vnode_isrecycled(ap->a_vp)) return 0;
 
 	err = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 
@@ -738,8 +753,10 @@ zfs_vnop_getattr(struct vnop_getattr_args *ap)
 	/* dprintf("+vnop_getattr zp %p vp %p\n", VTOZ(ap->a_vp), ap->a_vp); */
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /* flags */0, cr, ct);
-	if (error)
+	if (error) {
+		dprintf("-vnop_getattr '%p' %d\n", (ap->a_vp), error);
 		return (error);
+	}
 
 	error = zfs_getattr_znode_unlocked(ap->a_vp, ap->a_vap);
 	if (error)
@@ -1031,7 +1048,8 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	int need_unlock = 0;
 	int error = 0;
 
-	dprintf("+vnop_pagein: off 0x%llx size 0x%lx\n", off, len);
+	dprintf("+vnop_pagein: %p/%p off 0x%llx size 0x%lx filesz 0x%llx\n",
+			zp, vp, off, len, zp->z_size);
 
 	if (upl == (upl_t)NULL)
 		panic("zfs_vnop_pagein: no upl!");
@@ -1067,6 +1085,10 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 		rw_enter(&zp->z_map_lock, RW_WRITER);
 		need_unlock = TRUE;
 	}
+
+	/* Can't read beyond EOF */
+	if (off + len > zp->z_size)
+		len = zp->z_size - off;
 
 	ubc_upl_map(upl, (vm_offset_t *)&vaddr);
 	dprintf("vaddr %p with upl_off 0x%lx\n", vaddr, upl_offset);
@@ -1194,10 +1216,10 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	int err = 0;
 	size_t len = size;
 
-	dprintf("+vnop_pageout: off 0x%llx len 0x%lx upl_off 0x%lx: "
-	    "blksz 0x%x, z_size 0x%llx upl %p\n",
-		   off, len, upl_offset, zp->z_blksz,
-		   zp->z_size, upl);
+	dprintf("+vnop_pageout: %p/%p off 0x%llx len 0x%lx upl_off 0x%lx: "
+			"blksz 0x%x, z_size 0x%llx upl %p flags 0x%x\n", zp, ZTOV(zp),
+			off, len, upl_offset, zp->z_blksz,
+			zp->z_size, upl, flags);
 
 	if (upl == (upl_t)NULL) {
 		dprintf("ZFS: vnop_pageout: failed on NULL upl\n");
@@ -1258,12 +1280,10 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 
 	//len = MIN(len, filesz - off);
 	dprintf("ZFS: starting with size %llx\n", len);
-	if (off + len > filesz) {
-		dprintf("ZFS: Extending file to %llx\n", off+len);
-		zfs_freesp(zp, off+len, 0, 0, TRUE);
-		filesz = off+len;
-		ubc_setsize(ZTOV(zp), filesz);
-	}
+	//if (off + len > zp->z_size) {
+	//	dprintf("ZFS: Extending file to %llx\n", off+len);
+	//	zfs_freesp(zp, off+len, 0, 0, TRUE);
+	//}
 
 
 top:
@@ -1286,7 +1306,7 @@ top:
 		if (trunc)
 			pvn_write_done(trunc, flags);
 #endif
-		//len = filesz - off;
+		len = filesz - off;
 	}
 
 	tx = dmu_tx_create(zfsvfs->z_os);
@@ -1489,7 +1509,7 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 
 	zfsvfs = zp->z_zfsvfs;
 
-	dprintf("+vnop_mmap\n");
+	dprintf("+vnop_mmap: %p\n", ap->a_vp);
 
 	ZFS_ENTER(zfsvfs);
 
@@ -1521,7 +1541,7 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-	dprintf("+vnop_mnomap\n");
+	dprintf("+vnop_mnomap: %p\n", ap->a_vp);
 
 	ZFS_ENTER(zfsvfs);
 
@@ -1766,8 +1786,17 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 				 zp->z_unlinked) ? B_TRUE : B_FALSE;
 	fastpath = zp->z_fastpath;
 
-	dprintf("+vnop_reclaim zp %p/%p exception %d fast %d unlinked %d sa_hdl %p\n",
-		   zp, vp, exception, zp->z_fastpath, zp->z_unlinked, zp->z_sa_hdl);
+	/*
+	 * Except during unmount, we might as well do direct reclaim then
+	 * as we can not come from vnode_create(). This ensures we mop up
+	 * everything for unmount
+	 */
+	if (zfsvfs->z_unmounted)
+		exception = B_FALSE;
+
+	dprintf("+vnop_reclaim zp %p/%p exception %d fast %d unlinked %d unmount %d sa_hdl %p\n",
+		   zp, vp, exception, zp->z_fastpath, zp->z_unlinked,
+			zfsvfs->z_unmounted, zp->z_sa_hdl);
 	/*
 	 * This will release as much as it can, based on reclaim_reentry,
 	 * if we are from fastpath, we do not call free here, as zfs_remove
