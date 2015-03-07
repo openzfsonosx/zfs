@@ -86,7 +86,7 @@ unsigned int zfs_vnop_reclaim_throttle = 33280;
 	DECLARE_CONTEXT(ap)
 
 #undef dprintf
-//#define	dprintf if (debug_vnop_osx_printf) printf
+#define	dprintf if (debug_vnop_osx_printf) printf
 //#define	dprintf if (debug_vnop_osx_printf) kprintf
 //#define dprintf kprintf
 
@@ -1097,22 +1097,22 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 * Fill pages with data from the file.
 	 */
 	while (len > 0) {
-		dprintf("pagein from off 0x%llx into address %p (len 0x%lx)\n",
-		    off, vaddr, len);
-		if (len < PAGESIZE)
-			break;
-		error = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, off, PAGESIZE,
+		uint64_t readlen;
+
+		readlen = MIN(PAGESIZE, len);
+
+		dprintf("pagein from off 0x%llx len 0x%llx into address %p (len 0x%lx)\n",
+				off, readlen, vaddr, len);
+
+		error = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, off, readlen,
 		    (void *)vaddr, DMU_READ_PREFETCH);
 		if (error) {
 			printf("zfs_vnop_pagein: dmu_read err %d\n", error);
 			break;
 		}
-		off += PAGESIZE;
-		vaddr += PAGESIZE;
-		if (len >= PAGESIZE)
-			len -= PAGESIZE;
-		else
-			len = 0;
+		off += readlen;
+		vaddr += readlen;
+		len -= readlen;
 	}
 	ubc_upl_unmap(upl);
 
