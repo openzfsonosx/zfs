@@ -103,7 +103,7 @@
 #include <sys/zfs_mount.h>
 #endif /* __APPLE__ */
 
-#define dprintf kprintf
+//#define dprintf kprintf
 //#define dprintf printf
 
 #ifdef __APPLE__

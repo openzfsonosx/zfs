@@ -41,6 +41,7 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_vdev_aggregation_limit;
 	kstat_named_t zfs_vdev_read_gap_limit;
 	kstat_named_t zfs_vdev_write_gap_limit;
+
 	kstat_named_t arc_reduce_dnlc_percent;
 	kstat_named_t arc_lotsfree_percent;
 	kstat_named_t zfs_dirty_data_max;
@@ -83,6 +84,12 @@ typedef struct osx_kstat {
 	kstat_named_t zio_injection_enabled;
 	kstat_named_t zvol_immediate_write_sz;
 
+	kstat_named_t zfs_top_maxinflight;
+	kstat_named_t zfs_resilver_delay;
+	kstat_named_t zfs_scrub_delay;
+	kstat_named_t zfs_scan_idle;
+
+
 } osx_kstat_t;
 
 
@@ -121,6 +128,32 @@ extern int zfs_vdev_async_write_active_max_dirty_percent;
 extern int zfs_vdev_aggregation_limit;
 extern int zfs_vdev_read_gap_limit;
 extern int zfs_vdev_write_gap_limit;
+
+extern uint_t arc_reduce_dnlc_percent;
+extern int arc_lotsfree_percent;
+extern hrtime_t zfs_delay_max_ns;
+extern int spa_asize_inflation;
+extern unsigned int	zfetch_max_streams;
+extern unsigned int	zfetch_min_sec_reap;
+extern unsigned int	zfetch_block_cap;
+extern int zfs_default_bs;
+extern int zfs_default_ibs;
+extern uint64_t metaslab_aliquot;
+extern int zfs_vdev_cache_max;
+extern int spa_max_replication_override;
+extern int zfs_no_scrub_io;
+extern int zfs_no_scrub_prefetch;
+extern ssize_t zfs_immediate_write_sz;
+extern offset_t zfs_read_chunk_size;
+extern uint64_t metaslab_gang_bang;
+extern uint64_t metaslab_df_alloc_threshold;
+extern int metaslab_df_free_pct;
+extern ssize_t zvol_immediate_write_sz;
+
+extern int zfs_top_maxinflight;
+extern int zfs_resilver_delay;
+extern int zfs_scrub_delay;
+extern int zfs_scan_idle;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);

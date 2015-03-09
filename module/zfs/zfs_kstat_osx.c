@@ -41,7 +41,9 @@
 #include <sys/kstat.h>
 #include <sys/kstat_osx.h>
 #include <sys/zfs_ioctl.h>
-
+#include <sys/spa.h>
+#include <sys/zap_impl.h>
+#include <sys/zil.h>
 
 /*
  * In Solaris the tunable are set via /etc/system. Until we have a load
@@ -112,8 +114,6 @@ osx_kstat_t osx_kstat = {
 	{"zfs_default_bs",				KSTAT_DATA_INT64  },
 	{"zfs_default_ibs",				KSTAT_DATA_INT64  },
 	{"metaslab_aliquot",			KSTAT_DATA_INT64  },
-	{"reference_tracking_enable",	KSTAT_DATA_INT64  },
-	{"reference_history",			KSTAT_DATA_INT64  },
 	{"spa_max_replication_override",KSTAT_DATA_INT64  },
 	{"spa_mode_global",				KSTAT_DATA_INT64  },
 	{"zfs_flags",					KSTAT_DATA_INT64  },
@@ -135,6 +135,11 @@ osx_kstat_t osx_kstat = {
 	{"metaslab_df_free_pct",		KSTAT_DATA_INT64  },
 	{"zio_injection_enabled",		KSTAT_DATA_INT64  },
 	{"zvol_immediate_write_sz",		KSTAT_DATA_INT64  },
+
+	{"zfs_top_maxinflight",			KSTAT_DATA_INT64  },
+	{"zfs_resilver_delay",			KSTAT_DATA_INT64  },
+	{"zfs_scrub_delay",				KSTAT_DATA_INT64  },
+	{"zfs_scan_idle",				KSTAT_DATA_INT64  },
 };
 
 
@@ -200,10 +205,86 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		zfs_vdev_write_gap_limit =
 			ks->zfs_vdev_write_gap_limit.value.i64;
 
+		arc_reduce_dnlc_percent =
+			ks->arc_reduce_dnlc_percent.value.i64;
+		arc_lotsfree_percent =
+			ks->arc_lotsfree_percent.value.i64;
 		zfs_dirty_data_max =
 			ks->zfs_dirty_data_max.value.i64;
 		zfs_dirty_data_sync =
 			ks->zfs_dirty_data_sync.value.i64;
+		zfs_delay_max_ns =
+			ks->zfs_delay_max_ns.value.i64;
+		zfs_delay_min_dirty_percent =
+			ks->zfs_delay_min_dirty_percent.value.i64;
+		zfs_delay_scale =
+			ks->zfs_delay_scale.value.i64;
+		spa_asize_inflation =
+			ks->spa_asize_inflation.value.i64;
+		zfs_mdcomp_disable =
+			ks->zfs_mdcomp_disable.value.i64;
+		zfs_prefetch_disable =
+			ks->zfs_prefetch_disable.value.i64;
+		zfetch_max_streams =
+			ks->zfetch_max_streams.value.i64;
+		zfetch_min_sec_reap =
+			ks->zfetch_min_sec_reap.value.i64;
+		zfetch_block_cap =
+			ks->zfetch_block_cap.value.i64;
+		zfetch_array_rd_sz =
+			ks->zfetch_array_rd_sz.value.i64;
+		zfs_default_bs =
+			ks->zfs_default_bs.value.i64;
+		zfs_default_ibs =
+			ks->zfs_default_ibs.value.i64;
+		metaslab_aliquot =
+			ks->metaslab_aliquot.value.i64;
+		spa_max_replication_override =
+			ks->spa_max_replication_override.value.i64;
+		spa_mode_global =
+			ks->spa_mode_global.value.i64;
+		zfs_flags =
+			ks->zfs_flags.value.i64;
+		zfs_txg_timeout =
+			ks->zfs_txg_timeout.value.i64;
+		zfs_vdev_cache_max =
+			ks->zfs_vdev_cache_max.value.i64;
+		zfs_vdev_cache_size =
+			ks->zfs_vdev_cache_size.value.i64;
+		zfs_no_scrub_io =
+			ks->zfs_no_scrub_io.value.i64;
+		zfs_no_scrub_prefetch =
+			ks->zfs_no_scrub_prefetch.value.i64;
+		fzap_default_block_shift =
+			ks->fzap_default_block_shift.value.i64;
+		zfs_immediate_write_sz =
+			ks->zfs_immediate_write_sz.value.i64;
+		zfs_read_chunk_size =
+			ks->zfs_read_chunk_size.value.i64;
+		zfs_nocacheflush =
+			ks->zfs_nocacheflush.value.i64;
+		zil_replay_disable =
+			ks->zil_replay_disable.value.i64;
+		metaslab_gang_bang =
+			ks->metaslab_gang_bang.value.i64;
+		metaslab_df_alloc_threshold =
+			ks->metaslab_df_alloc_threshold.value.i64;
+		metaslab_df_free_pct =
+			ks->metaslab_df_free_pct.value.i64;
+		zio_injection_enabled =
+			ks->zio_injection_enabled.value.i64;
+		zvol_immediate_write_sz =
+			ks->zvol_immediate_write_sz.value.i64;
+
+		zfs_top_maxinflight =
+			ks->zfs_top_maxinflight.value.i64;
+		zfs_resilver_delay =
+			ks->zfs_resilver_delay.value.i64;
+		zfs_scrub_delay =
+			ks->zfs_scrub_delay.value.i64;
+		zfs_scan_idle =
+			ks->zfs_scan_idle
+.value.i64;
 
 	} else {
 
@@ -259,10 +340,85 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->zfs_vdev_write_gap_limit.value.i64 =
 			zfs_vdev_write_gap_limit;
 
+		ks->arc_reduce_dnlc_percent.value.i64 =
+			arc_reduce_dnlc_percent;
+		ks->arc_lotsfree_percent.value.i64 =
+			arc_lotsfree_percent;
 		ks->zfs_dirty_data_max.value.i64 =
 			zfs_dirty_data_max;
 		ks->zfs_dirty_data_sync.value.i64 =
 			zfs_dirty_data_sync;
+		ks->zfs_delay_max_ns.value.i64 =
+			zfs_delay_max_ns;
+		ks->zfs_delay_min_dirty_percent.value.i64 =
+			zfs_delay_min_dirty_percent;
+		ks->zfs_delay_scale.value.i64 =
+			zfs_delay_scale;
+		ks->spa_asize_inflation.value.i64 =
+			spa_asize_inflation;
+		ks->zfs_mdcomp_disable.value.i64 =
+			zfs_mdcomp_disable;
+		ks->zfs_prefetch_disable.value.i64 =
+			zfs_prefetch_disable;
+		ks->zfetch_max_streams.value.i64 =
+			zfetch_max_streams;
+		ks->zfetch_min_sec_reap.value.i64 =
+			zfetch_min_sec_reap;
+		ks->zfetch_block_cap.value.i64 =
+			zfetch_block_cap;
+		ks->zfetch_array_rd_sz.value.i64 =
+			zfetch_array_rd_sz;
+		ks->zfs_default_bs.value.i64 =
+			zfs_default_bs;
+		ks->zfs_default_ibs.value.i64 =
+			zfs_default_ibs;
+		ks->metaslab_aliquot.value.i64 =
+			metaslab_aliquot;
+		ks->spa_max_replication_override.value.i64 =
+			spa_max_replication_override;
+		ks->spa_mode_global.value.i64 =
+			spa_mode_global;
+		ks->zfs_flags.value.i64 =
+			zfs_flags;
+		ks->zfs_txg_timeout.value.i64 =
+			zfs_txg_timeout;
+		ks->zfs_vdev_cache_max.value.i64 =
+			zfs_vdev_cache_max;
+		ks->zfs_vdev_cache_size.value.i64 =
+			zfs_vdev_cache_size;
+		ks->zfs_no_scrub_io.value.i64 =
+			zfs_no_scrub_io;
+		ks->zfs_no_scrub_prefetch.value.i64 =
+			zfs_no_scrub_prefetch;
+		ks->fzap_default_block_shift.value.i64 =
+			fzap_default_block_shift;
+		ks->zfs_immediate_write_sz.value.i64 =
+			zfs_immediate_write_sz;
+		ks->zfs_read_chunk_size.value.i64 =
+			zfs_read_chunk_size;
+		ks->zfs_nocacheflush.value.i64 =
+			zfs_nocacheflush;
+		ks->zil_replay_disable.value.i64 =
+			zil_replay_disable;
+		ks->metaslab_gang_bang.value.i64 =
+			metaslab_gang_bang;
+		ks->metaslab_df_alloc_threshold.value.i64 =
+			metaslab_df_alloc_threshold;
+		ks->metaslab_df_free_pct.value.i64 =
+			metaslab_df_free_pct;
+		ks->zio_injection_enabled.value.i64 =
+			zio_injection_enabled;
+		ks->zvol_immediate_write_sz.value.i64 =
+			zvol_immediate_write_sz;
+
+		ks->zfs_top_maxinflight.value.i64 =
+			zfs_top_maxinflight;
+		ks->zfs_resilver_delay.value.i64 =
+			zfs_resilver_delay;
+		ks->zfs_scrub_delay.value.i64 =
+			zfs_scrub_delay;
+		ks->zfs_scan_idle.value.i64 =
+			zfs_scan_idle;
 
 	}
 	return 0;
