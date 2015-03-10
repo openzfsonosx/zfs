@@ -2513,10 +2513,11 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		taskq_wait(dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
 
 
-	/* Wait for reclaim to empty, before holding locks */
+	/* Wait for reclaim to empty, before holding locks, but only
+	 * if we are unmounting, otherwise suspend will delay */
 	int count = 0;
-	while(!list_empty(&zfsvfs->z_all_znodes) ||
-		  !list_empty(&zfsvfs->z_reclaim_znodes)) {
+	while(unmounting && (!list_empty(&zfsvfs->z_all_znodes) ||
+					  !list_empty(&zfsvfs->z_reclaim_znodes))) {
 		cv_signal(&zfsvfs->z_reclaim_thr_cv);
 		printf("ZFS:Waiting for reclaim to drain: %d + %d\n",
 			   list_empty(&zfsvfs->z_all_znodes),
@@ -2561,7 +2562,6 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
 		return (SET_ERROR(EIO));
 	}
-
 	/*
 	 * At this point there are no VFS ops active, and any new VFS ops
 	 * will fail with EIO since we have z_teardown_lock for writer (only
