@@ -2404,7 +2404,9 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 
 		VFSATTR_SET_SUPPORTED(fsap, f_vol_name);
 	}
-	VFSATTR_RETURN(fsap, f_fssubtype, 0);
+
+	/* If we are mimicing, we need to let userland know we are really ZFS */
+	VFSATTR_RETURN(fsap, f_fssubtype, MNTTYPE_ZFS_SUBTYPE);
 
     /* According to joshade over at
      * https://github.com/joshado/liberate-applefileserver/blob/master/liberate.m

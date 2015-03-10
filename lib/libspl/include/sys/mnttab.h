@@ -54,6 +54,7 @@ struct mnttab {
 	char *mnt_mntopts;
 	uint_t mnt_major;
 	uint_t mnt_minor;
+	uint32_t mnt_fssubtype;
 };
 #define        extmnttab        mnttab
 

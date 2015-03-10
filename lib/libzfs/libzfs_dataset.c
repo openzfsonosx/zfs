@@ -727,13 +727,15 @@ libzfs_mnttab_update(libzfs_handle_t *hdl)
 		mnttab_node_t *mtn;
 		avl_index_t where;
 
-		if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
+		if ((strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) &&
+			(entry.mnt_fssubtype != MNTTYPE_ZFS_SUBTYPE))
 			continue;
 
 		mtn = zfs_alloc(hdl, sizeof (mnttab_node_t));
 		mtn->mtn_mt.mnt_special = zfs_strdup(hdl, entry.mnt_special);
 		mtn->mtn_mt.mnt_mountp = zfs_strdup(hdl, entry.mnt_mountp);
-		mtn->mtn_mt.mnt_fstype = zfs_strdup(hdl, entry.mnt_fstype);
+		//mtn->mtn_mt.mnt_fstype = zfs_strdup(hdl, entry.mnt_fstype);
+		mtn->mtn_mt.mnt_fstype = zfs_strdup(hdl, MNTTYPE_ZFS);
 		mtn->mtn_mt.mnt_mntopts = zfs_strdup(hdl, entry.mnt_mntopts);
 
 		/* Exclude duplicate mounts */
@@ -795,7 +797,8 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 			libzfs_mnttab_fini(hdl);
 		rewind(hdl->libzfs_mnttab);
 		srch.mnt_special = (char *)fsname;
-		srch.mnt_fstype = MNTTYPE_ZFS;
+		//srch.mnt_fstype = MNTTYPE_ZFS;
+		srch.mnt_fstype = NULL; // search for zfs or mimic
 		if (getmntany(hdl->libzfs_mnttab, entry, &srch) == 0)
 			return (0);
 		else

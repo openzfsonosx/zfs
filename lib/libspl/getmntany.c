@@ -243,19 +243,19 @@ mntopt(char **p)
 {
 	char *cp = *p;
 	char *retstr;
-    
+
 	while (*cp && isspace(*cp))
 		cp++;
-    
+
 	retstr = cp;
 	while (*cp && *cp != ',')
 		cp++;
-    
+
 	if (*cp) {
 		*cp = '\0';
 		cp++;
 	}
-    
+
 	*p = cp;
 	return (retstr);
 }
@@ -265,7 +265,7 @@ hasmntopt(struct mnttab *mnt, char *opt)
 {
 	char tmpopts[MNT_LINE_MAX];
 	char *f, *opts = tmpopts;
-    
+
 	if (mnt->mnt_mntopts == NULL)
 		return (NULL);
 	(void) strcpy(opts, mnt->mnt_mntopts);
@@ -280,7 +280,7 @@ hasmntopt(struct mnttab *mnt, char *opt)
 static void
 optadd(char *mntopts, size_t size, const char *opt)
 {
-    
+
 	if (mntopts[0] != '\0')
 		strlcat(mntopts, ",", size);
 	strlcat(mntopts, opt, size);
@@ -291,9 +291,9 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 {
 	static char mntopts[MNTMAXSTR];
 	long flags;
-    
+
 	mntopts[0] = '\0';
-    
+
 	flags = sfs->f_flags;
 #define	OPTADD(opt)	optadd(mntopts, sizeof(mntopts), (opt))
 	if (flags & MNT_RDONLY)
@@ -336,7 +336,8 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 	mp->mnt_mountp = sfs->f_mntonname;
 	mp->mnt_fstype = sfs->f_fstypename;
 	mp->mnt_mntopts = mntopts;
-	//if (strcmp(mp->mnt_fstype, MNTTYPE_ZFS) == 0) 
+	mp->mnt_fssubtype = sfs->f_fssubtype;
+	//if (strcmp(mp->mnt_fstype, MNTTYPE_ZFS) == 0)
 		//printf("mnttab: %s %s %s %s\n", mp->mnt_special, mp->mnt_mountp, mp->mnt_fstype, mp->mnt_mntopts);
 }
 
@@ -348,7 +349,7 @@ statfs_init(void)
 {
 	struct statfs *sfs;
 	int error;
-    
+
 	if (gsfs != NULL) {
 		free(gsfs);
 		gsfs = NULL;
@@ -381,11 +382,11 @@ getmntany(FILE *fd __unused, struct mnttab *mgetp, struct mnttab *mrefp)
 {
 	//struct statfs *sfs; //Not sure what FreeBSD was planning to do with this.
 	int i, error;
-    
+
 	error = statfs_init();
 	if (error != 0)
 		return (error);
-    
+
 	for (i = 0; i < allfs; i++) {
 		if (mrefp->mnt_special != NULL &&
 		    strcmp(mrefp->mnt_special, gsfs[i].f_mntfromname) != 0) {
@@ -410,7 +411,7 @@ getmntent(FILE *fp, struct mnttab *mp)
 {
 	//struct statfs *sfs; //Not sure what FreeBSD was planning to do with this.
 	int error, nfs;
-    
+
 	nfs = (int)lseek(fileno(fp), 0, SEEK_CUR);
 	if (nfs == -1)
 		return (errno);

@@ -925,7 +925,8 @@ zfs_path_to_zhandle(libzfs_handle_t *hdl, char *path, zfs_type_t argtype)
 		return (NULL);
 	}
 
-	if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) {
+	if ((strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) &&
+		(entry.mnt_fssubtype != MNTTYPE_ZFS_SUBTYPE)) {
 		(void) fprintf(stderr, gettext("'%s': not a ZFS filesystem\n"),
 		    path);
 		return (NULL);
