@@ -50,7 +50,6 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_delay_min_dirty_percent;
 	kstat_named_t zfs_delay_scale;
 	kstat_named_t spa_asize_inflation;
-	kstat_named_t arc_shrink_shift;
 	kstat_named_t zfs_mdcomp_disable;
 	kstat_named_t zfs_prefetch_disable;
 	kstat_named_t zfetch_max_streams;
@@ -60,8 +59,6 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_default_bs;
 	kstat_named_t zfs_default_ibs;
 	kstat_named_t metaslab_aliquot;
-	kstat_named_t reference_tracking_enable;
-	kstat_named_t reference_history;
 	kstat_named_t spa_max_replication_override;
 	kstat_named_t spa_mode_global;
 	kstat_named_t zfs_flags;

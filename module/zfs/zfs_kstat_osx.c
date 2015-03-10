@@ -283,8 +283,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		zfs_scrub_delay =
 			ks->zfs_scrub_delay.value.i64;
 		zfs_scan_idle =
-			ks->zfs_scan_idle
-.value.i64;
+			ks->zfs_scan_idle.value.i64;
 
 	} else {
 
