@@ -1254,6 +1254,15 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			if ((fd = openat64(dfd, name, O_RDONLY)) < 0)
 				continue;
 
+			int32_t blksz = 0;
+			if (S_ISBLK(statbuf.st_mode) &&
+				(ioctl(fd, DKIOCGETBLOCKSIZE, &blksz) || blksz == 0)) {
+				fprintf(stderr, "device '%s' failed to report blocksize -- skipping\r\n",
+						name);
+				close(fd);
+				continue;
+			}
+
 #ifdef __APPLE__
 			struct sigaction sact;
 			sigemptyset(&sact.sa_mask);
@@ -1269,6 +1278,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 
 			alarm(20);
 #endif
+
 			if ((zpool_read_label(fd, &config)) != 0) {
 #ifdef __APPLE__
 				alarm(0);
