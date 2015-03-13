@@ -1257,8 +1257,9 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			int32_t blksz = 0;
 			if (S_ISBLK(statbuf.st_mode) &&
 				(ioctl(fd, DKIOCGETBLOCKSIZE, &blksz) || blksz == 0)) {
-				fprintf(stderr, "device '%s' failed to report blocksize -- skipping\r\n",
-						name);
+				if (strncmp(name, "vn", 2) != 0)
+					fprintf(stderr, "device '%s' failed to report blocksize -- skipping\r\n",
+							name);
 				close(fd);
 				continue;
 			}
