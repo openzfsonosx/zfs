@@ -1335,6 +1335,43 @@ Controls whether the dataset is managed from a non-global zone. Zones are a Sola
 .RE
 
 .sp
+.ne 2
+.mk
+.na
+\fB\fBcom.apple.browse\fR=\fBon\fR | \floff\fR\fR
+.ad
+.sp .6
+.RS 4n
+Equivalent to mount option browse/nobrowse. This option indicates that
+the mount point should not be visible via the GUI (i.e., appear on the
+Desktop as a separate volume).
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBcom.apple.ignoreowner\fR=\fBon\fR | \fBoff\fR\fR
+.ad
+.sp .6
+.RS 4n
+Equivalent to mount option noowners. Ignore the ownership field for the entire volume.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBcom.apple.mimic_hfs\fR=\fBon\fR | \fBoff\fR\fR
+.ad
+.sp .6
+.RS 4n
+Some applications check if the filesystem type is "hfs" and refuse to
+work with ZFS. In this situation, this property can be enabled and the
+filesystem type will be reported as "hfs".
+.RE
+
+.sp
 .LP
 The following three properties cannot be changed after the file system is created, and therefore, should be set when the file system is created. If the properties are not set with the \fBzfs create\fR or \fBzpool create\fR commands, these properties are inherited from the parent dataset. If the parent dataset lacks these properties due to having been created prior to these features being supported, the new file system will have the default values for these properties.
 .sp
