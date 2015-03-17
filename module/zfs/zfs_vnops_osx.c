@@ -719,7 +719,7 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	 * If we are coming via the vnode_create()->vclean() path, we can not
 	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
 	 */
-#if 1
+#if 0
 	struct vnodecreate *vcp;
 
 	mutex_enter(&zfsvfs->z_vnodecreate_lock);
