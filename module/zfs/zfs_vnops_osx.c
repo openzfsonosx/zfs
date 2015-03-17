@@ -1794,8 +1794,8 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	 * as we can not come from vnode_create(). This ensures we mop up
 	 * everything for unmount
 	 */
-	//if (zfsvfs->z_unmounted)
-	//	exception = B_FALSE;
+	if (zfsvfs->z_unmounted)
+		exception = B_FALSE;
 
 	dprintf("+vnop_reclaim zp %p/%p exception %d fast %d unlinked %d unmount %d sa_hdl %p\n",
 		   zp, vp, exception, zp->z_fastpath, zp->z_unlinked,
