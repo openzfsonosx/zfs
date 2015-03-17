@@ -222,12 +222,14 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 	dprintf("vnop_ioctl %08lx: VTYPE %d\n", ap->a_command,
 			vnode_vtype(ZTOV(zp)));
 
+	ZFS_ENTER(zfsvfs);
 	if (IFTOVT((mode_t)zp->z_mode) == VFIFO) {
 		dprintf("ZFS: FIFO ioctl  %02lx ('%lu' + %lu)\n",
 			   ap->a_command, (ap->a_command&0xff00)>>8,
 			   ap->a_command&0xff);
 		error = fifo_ioctl(ap);
 		error = 0;
+		ZFS_EXIT(zfsvfs);
 		goto out;
 	}
 
@@ -237,14 +239,12 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			   ap->a_command, (ap->a_command&0xff00)>>8,
 			   ap->a_command&0xff);
 		error = spec_ioctl(ap);
+		ZFS_EXIT(zfsvfs);
 		goto out;
 	}
 
-	ZFS_ENTER(zfsvfs);
-
 	switch (ap->a_command) {
 	case F_FULLFSYNC:
-		/* zfs_fsync also calls ZFS_ENTER */
 		error = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 		break;
 	case SPOTLIGHT_GET_MOUNT_TIME:
@@ -271,7 +271,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		    ap->a_command&0xff);
 		error = ENOTTY;
 	}
-	ZFS_EXIT(zfsvfs);
+
   out:
 	if (error) printf("failing ioctl: %d\n", error);
 	return (error);
@@ -715,22 +715,7 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	 * zil_commit() or we will deadlock. But we know that vnop_reclaim will
 	 * be called next, so we just return success.
 	 */
-	/*
-	 * If we are coming via the vnode_create()->vclean() path, we can not
-	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
-	 */
-	struct vnodecreate *vcp;
-
-	mutex_enter(&zfsvfs->z_vnodecreate_lock);
-	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
-		 vcp;
-		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
-		if (vcp->thread == current_thread()) break;
-	mutex_exit(&zfsvfs->z_vnodecreate_lock);
-
-	/* If re-entry, vcp will be set, otherwise NULL */
-	if (vcp) return 0;
-		//if (vnode_isrecycled(ap->a_vp)) return 0;
+	if (vnode_isrecycled(ap->a_vp)) return 0;
 
 	err = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 
@@ -1279,7 +1264,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	}
 
 	//len = MIN(len, filesz - off);
-	dprintf("ZFS: starting with size %llx\n", len);
+	dprintf("ZFS: starting with size %lx\n", len);
 	//if (off + len > zp->z_size) {
 	//	dprintf("ZFS: Extending file to %llx\n", off+len);
 	//	zfs_freesp(zp, off+len, 0, 0, TRUE);
