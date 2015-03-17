@@ -731,7 +731,7 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 
 	/* If re-entry, vcp will be set, otherwise NULL */
 	if (vcp) return 0;
-#lese
+#else
 	if (vnode_isrecycled(ap->a_vp)) return 0;
 #endif
 
