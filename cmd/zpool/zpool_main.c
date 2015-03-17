@@ -239,7 +239,7 @@ get_usage(zpool_help_t idx) {
 		    "[-R root] [-F [-n]]\n"
 		    "\t    <pool | id> [newpool]\n"));
 	case HELP_IOSTAT:
-		return (gettext("\tiostat [-v] [-T d|u] [pool] ... [interval "
+		return (gettext("\tiostat [-vL] [-T d|u] [pool] ... [interval "
 		    "[count]]\n"));
 	case HELP_LABELCLEAR:
 		return (gettext("\tlabelclear [-f] <vdev>\n"));
@@ -2680,7 +2680,7 @@ print_iostat(zpool_handle_t *zhp, void *data)
 	 * Print out the statistics for the pool.
 	 */
 	print_vdev_stats(zhp, zpool_get_name(zhp), oldnvroot, newnvroot, cb, 0,
-	    0);
+	    cb->cb_display_flags);
 
 	if (cb->cb_verbose)
 		print_iostat_separator(cb);
@@ -2842,16 +2842,19 @@ zpool_do_iostat(int argc, char **argv)
 	boolean_t verbose = B_FALSE;
 	boolean_t print_guid = B_FALSE;
 	boolean_t follow_links = B_FALSE;
-	iostat_cbdata_t cb;
+	iostat_cbdata_t cb = { 0 };
 
 	/* check options */
-	while ((c = getopt(argc, argv, "T:v")) != -1) {
+	while ((c = getopt(argc, argv, "T:vL")) != -1) {
 		switch (c) {
 		case 'T':
 			get_timestamp_arg(*optarg);
 			break;
 		case 'v':
 			verbose = B_TRUE;
+			break;
+		case 'L':
+			follow_links = B_TRUE;
 			break;
 		case '?':
 			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
