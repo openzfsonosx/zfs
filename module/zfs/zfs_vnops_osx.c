@@ -719,7 +719,7 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	 * If we are coming via the vnode_create()->vclean() path, we can not
 	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
 	 */
-#if 0
+#if 1
 	struct vnodecreate *vcp;
 
 	mutex_enter(&zfsvfs->z_vnodecreate_lock);
@@ -1794,8 +1794,8 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	 * as we can not come from vnode_create(). This ensures we mop up
 	 * everything for unmount
 	 */
-	if (zfsvfs->z_unmounted)
-		exception = B_FALSE;
+	//if (zfsvfs->z_unmounted)
+	//	exception = B_FALSE;
 
 	dprintf("+vnop_reclaim zp %p/%p exception %d fast %d unlinked %d unmount %d sa_hdl %p\n",
 		   zp, vp, exception, zp->z_fastpath, zp->z_unlinked,
