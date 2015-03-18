@@ -242,6 +242,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		ZFS_EXIT(zfsvfs);
 		goto out;
 	}
+	ZFS_EXIT(zfsvfs);
 
 	switch (ap->a_command) {
 	case F_FULLFSYNC:
