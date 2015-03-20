@@ -716,7 +716,17 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	 * zil_commit() or we will deadlock. But we know that vnop_reclaim will
 	 * be called next, so we just return success.
 	 */
-	if (vnode_isrecycled(ap->a_vp)) return 0;
+	struct vnodecreate *vcp;
+
+	mutex_enter(&zfsvfs->z_vnodecreate_lock);
+	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
+		 vcp;
+		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
+		if (vcp->thread == current_thread()) break;
+	mutex_exit(&zfsvfs->z_vnodecreate_lock);
+
+	/* If re-entry, vcp will be set, otherwise NULL */
+	if (vcp) return EIO;
 
 	err = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 
@@ -3409,11 +3419,14 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 
 	/* So pageout can know if it is called recursively, add this thread to list*/
 
-	struct vnodecreate vnodecreate_node;
-	vnodecreate_node.thread = current_thread();
-	list_link_init(&vnodecreate_node.link);
+	struct vnodecreate *vnodecreate_node;
+
+	vnodecreate_node = (struct vnodecreate *)kmem_alloc(sizeof(*vnodecreate_node), KM_SLEEP);
+
+	vnodecreate_node->thread = current_thread();
+	list_link_init(&vnodecreate_node->link);
 	mutex_enter(&zfsvfs->z_vnodecreate_lock);
-	list_insert_tail(&zfsvfs->z_vnodecreate_list, &vnodecreate_node);
+	list_insert_tail(&zfsvfs->z_vnodecreate_list, vnodecreate_node);
 	mutex_exit(&zfsvfs->z_vnodecreate_lock);
 
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0)
@@ -3421,9 +3434,9 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 
 	/* Remove this thread from list. */
 	mutex_enter(&zfsvfs->z_vnodecreate_lock);
-	list_remove(&zfsvfs->z_vnodecreate_list, &vnodecreate_node);
+	list_remove(&zfsvfs->z_vnodecreate_list, vnodecreate_node);
 	mutex_exit(&zfsvfs->z_vnodecreate_lock);
-
+	kmem_free(vnodecreate_node, sizeof(*vnodecreate_node));
 
 	atomic_inc_64(&vnop_num_vnodes);
 
