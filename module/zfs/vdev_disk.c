@@ -484,9 +484,10 @@ vdev_disk_io_done(zio_t *zio)
 
 #ifdef __APPLE__
 		u_int32_t blksz;
-		if (VNOP_IOCTL(dvd->vd_devvp, DKIOCGETBLOCKSIZE,
-					   (caddr_t)&blksz, 0, vfs_context_current()) != 0 ||
-			blksz == 0) {
+		//if (VNOP_IOCTL(dvd->vd_devvp, DKIOCGETBLOCKSIZE,
+		//			   (caddr_t)&blksz, 0, vfs_context_current()) != 0 ||
+		//	blksz == 0) {
+		if (1) {
 #else
 		state = DKIO_NONE;
 		if (ldi_ioctl(dvd->vd_lh, DKIOCSTATE, (intptr_t)&state,
