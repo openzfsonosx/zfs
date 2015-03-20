@@ -465,25 +465,43 @@ vdev_disk_io_start(zio_t *zio)
 static void
 vdev_disk_io_done(zio_t *zio)
 {
+	vdev_t *vd = zio->io_vd;
 
-#ifndef __APPLE__
 	/*
-	 * XXX- NOEL TODO
 	 * If the device returned EIO, then attempt a DKIOCSTATE ioctl to see if
 	 * the device has been removed.  If this is the case, then we trigger an
 	 * asynchronous removal of the device.
 	 */
-	if (zio->io_error == EIO) {
+	if (zio->io_error == EIO && !vd->vdev_remove_wanted) {
+		vdev_disk_t *dvd = vd->vdev_tsd;
+
+		printf("ZFS: %p had IO errors, checking for removal\n", dvd->vd_devvp);
+
+#ifdef __APPLE__
+		u_int32_t blksz;
+		if (VNOP_IOCTL(dvd->vd_devvp, DKIOCGETBLOCKSIZE,
+					   (caddr_t)&blksz, 0, vfs_context_current()) != 0 ||
+			blksz == 0) {
+#else
 		state = DKIO_NONE;
 		if (ldi_ioctl(dvd->vd_lh, DKIOCSTATE, (intptr_t)&state,
 		    FKIOCTL, kcred, NULL) == 0 &&
 		    state != DKIO_INSERTED) {
+#endif
+			printf("ZFS: Device %p removal(?) detected\n", dvd->vd_devvp);
+			/*
+			 * We post the resource as soon as possible, instead of
+			 * when the async removal actually happens, because the
+			 * DE is using this information to discard previous I/O
+			 * errors.
+			 */
+			zfs_post_remove(zio->io_spa, vd);
 			vd->vdev_remove_wanted = B_TRUE;
 			spa_async_request(zio->io_spa, SPA_ASYNC_REMOVE);
+		} else if (!vd->vdev_delayed_close) {
+			vd->vdev_delayed_close = B_TRUE;
 		}
 	}
-#endif /* !__APPLE__ */
-
 }
 
 vdev_ops_t vdev_disk_ops = {
