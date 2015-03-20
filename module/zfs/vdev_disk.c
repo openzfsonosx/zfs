@@ -339,7 +339,12 @@ vdev_disk_io_intr(struct buf *bp, void *arg)
 {
 	zio_t *zio = (zio_t *)arg;
 
-	zio->io_error = buf_error(bp);
+	/*
+	 * The rest of the zio stack only deals with EIO, ECKSUM, and ENXIO.
+	 * Rather than teach the rest of the stack about other error
+	 * possibilities (EFAULT, etc), we normalize the error value here.
+	 */
+	zio->io_error = (buf_error(bp) != 0 ? EIO : 0);
 
 	if (zio->io_error == 0 && buf_resid(bp) != 0) {
 		zio->io_error = EIO;
