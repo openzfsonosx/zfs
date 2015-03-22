@@ -8,6 +8,7 @@
 	<array>
 		<string>@sbindir@/zed</string>
 		<string>-F</string>
+		<string>-v</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
