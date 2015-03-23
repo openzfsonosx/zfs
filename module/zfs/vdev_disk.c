@@ -120,25 +120,24 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		return (SET_ERROR(EINVAL));
 	}
 
-#ifdef illumos
 	/*
 	 * Reopen the device if it's not currently open. Otherwise,
 	 * just update the physical size of the device.
 	 */
 	if (dvd != NULL) {
-		if (dvd->vd_ldi_offline && dvd->vd_lh == NULL) {
-			/*
-			 * If we are opening a device in its offline notify
-			 * context, the LDI handle was just closed. Clean
-			 * up the LDI event callbacks and free vd->vdev_tsd.
-			 */
-			vdev_disk_free(vd);
-		} else {
-			ASSERT(vd->vdev_reopening);
-			goto skip_open;
-		}
+	  if (dvd->vd_offline) {
+	    /*
+	     * If we are opening a device in its offline notify
+	     * context, the LDI handle was just closed. Clean
+	     * up the LDI event callbacks and free vd->vdev_tsd.
+	     */
+	    vdev_disk_free(vd);
+	  } else {
+	    ASSERT(vd->vdev_reopening);
+		devvp = dvd->vd_devvp;
+	    goto skip_open;
+	  }
 	}
-#endif
 
 	/*
 	 * Create vd->vdev_tsd.
@@ -212,9 +211,8 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	} else {
 		goto out;
 	}
-#ifdef illumos
+
 skip_open:
-#endif
 	/*
 	 * Determine the actual size of the device.
 	 */
@@ -261,6 +259,7 @@ skip_open:
 		 */
 		(void) ldi_ioctl(dvd->vd_lh, DKIOCSETWCE, (intptr_t)&wce,
 		    FKIOCTL, kcred, NULL);
+	}
 #endif
 
 	/*
@@ -272,8 +271,10 @@ skip_open:
 	dvd->vd_devvp = devvp;
 out:
 	if (error) {
-		if (devvp)
+	  if (devvp) {
 			vnode_close(devvp, fmode, context);
+			dvd->vd_devvp = NULL;
+	  }
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 	}
 	if (context)
@@ -281,11 +282,11 @@ out:
 
 	if (error) printf("ZFS: vdev_disk_open('%s') failed error %d\n",
 					  vd->vdev_path ? vd->vdev_path : "", error);
-
 	return (error);
 }
 
-static void
+/* Not static so zfs_osx.cpp can call it on device removal */
+void
 vdev_disk_close(vdev_t *vd)
 {
 	vdev_disk_t *dvd = vd->vdev_tsd;
@@ -310,26 +311,25 @@ vdev_disk_close(vdev_t *vd)
 	}
 #endif
 
+#ifdef __APPLE__
+	if (dvd->vd_devvp != NULL) {
+		/* vnode_close() can stall during removal, so clear vd_devvp now */
+		struct vnode *vp = dvd->vd_devvp;
+		dvd->vd_devvp = NULL;
+		(void) vnode_close(vp, spa_mode(vd->vdev_spa),
+						   spl_vfs_context_kernel());
+	}
+#endif
+
 	vd->vdev_delayed_close = B_FALSE;
-#ifdef illumos
+
 	/*
 	 * If we closed the LDI handle due to an offline notify from LDI,
 	 * don't free vd->vdev_tsd or unregister the callbacks here;
 	 * the offline finalize callback or a reopen will take care of it.
 	 */
-	if (dvd->vd_ldi_offline)
+	if (dvd->vd_offline)
 		return;
-#endif
-
-#ifdef __APPLE__
-	if (dvd->vd_devvp != NULL) {
-		vfs_context_t context;
-		context = vfs_context_create(spl_vfs_context_kernel());
-		(void) vnode_close(dvd->vd_devvp, spa_mode(vd->vdev_spa),
-		    context);
-		(void) vfs_context_rele(context);
-	}
-#endif
 
 	vdev_disk_free(vd);
 }
@@ -339,8 +339,15 @@ vdev_disk_io_intr(struct buf *bp, void *arg)
 {
 	zio_t *zio = (zio_t *)arg;
 
-	zio->io_error = buf_error(bp);
+	/*
+	 * The rest of the zio stack only deals with EIO, ECKSUM, and ENXIO.
+	 * Rather than teach the rest of the stack about other error
+	 * possibilities (EFAULT, etc), we normalize the error value here.
+	 */
+	int error;
+	error=buf_error(bp);
 
+	zio->io_error = (error != 0 ? EIO : 0);
 	if (zio->io_error == 0 && buf_resid(bp) != 0) {
 		zio->io_error = EIO;
 	}
@@ -367,6 +374,16 @@ vdev_disk_io_start(zio_t *zio)
 	struct buf *bp;
 	vfs_context_t context;
 	int flags, error = 0;
+
+	/*
+	 * If the vdev is closed, it's likely in the REMOVED or FAULTED state.
+	 * Nothing to be done here but return failure.
+	 */
+	if (dvd == NULL || (dvd->vd_offline) || dvd->vd_devvp == NULL) {
+		zio->io_error = ENXIO;
+		zio_interrupt(zio);
+		return (ZIO_PIPELINE_CONTINUE);
+	}
 
 	if (zio->io_type == ZIO_TYPE_IOCTL) {
 
@@ -465,25 +482,40 @@ vdev_disk_io_start(zio_t *zio)
 static void
 vdev_disk_io_done(zio_t *zio)
 {
-
-#ifndef __APPLE__
+	vdev_t *vd = zio->io_vd;
 	/*
-	 * XXX- NOEL TODO
 	 * If the device returned EIO, then attempt a DKIOCSTATE ioctl to see if
-	 * the device has been removed.  If this is the case, then we trigger an
+	 * the device has been removed. If this is the case, then we trigger an
 	 * asynchronous removal of the device.
 	 */
-	if (zio->io_error == EIO) {
+	if (zio->io_error == EIO && !vd->vdev_remove_wanted) {
+
+		/* Apple handle device removal in zfs_osx.cpp - read errors etc
+		 * should be retried by zio
+		 */
+#ifdef __APPLE__
+		return;
+#else
 		state = DKIO_NONE;
 		if (ldi_ioctl(dvd->vd_lh, DKIOCSTATE, (intptr_t)&state,
-		    FKIOCTL, kcred, NULL) == 0 &&
-		    state != DKIO_INSERTED) {
-			vd->vdev_remove_wanted = B_TRUE;
-			spa_async_request(zio->io_spa, SPA_ASYNC_REMOVE);
+					  FKIOCTL, kcred, NULL) == 0 &&
+			state != DKIO_INSERTED)
+			{
+				/*
+				 * We post the resource as soon as possible, instead of
+				 * when the async removal actually happens, because the
+				 * DE is using this information to discard previous I/O
+				 * errors.
+				 */
+				zfs_post_remove(zio->io_spa, vd);
+				vd->vdev_remove_wanted = B_TRUE;
+				spa_async_request(zio->io_spa, SPA_ASYNC_REMOVE);
+				spa_async_dispatch(zio->io_spa);
+			} else if (!vd->vdev_delayed_close) {
+			vd->vdev_delayed_close = B_TRUE;
 		}
+#endif
 	}
-#endif /* !__APPLE__ */
-
 }
 
 vdev_ops_t vdev_disk_ops = {

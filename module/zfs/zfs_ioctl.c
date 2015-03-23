@@ -4354,9 +4354,9 @@ zfs_ioc_clear(zfs_cmd_t *zc)
 	/*
 	 * Resume any suspended I/Os.
 	 */
-	if (zio_resume(spa) != 0)
+	if (zio_resume(spa) != 0) {
 		error = SET_ERROR(EIO);
-
+	}
 	spa_close(spa, FTAG);
 
 	return (error);

@@ -1010,6 +1010,7 @@ vdev_probe(vdev_t *vd, zio_t *zio)
 	mutex_enter(&vd->vdev_probe_lock);
 
 	if ((pio = vd->vdev_probe_zio) == NULL) {
+
 		vps = kmem_zalloc(sizeof (*vps), KM_PUSHPAGE);
 
 		vps->vps_flags = ZIO_FLAG_CANFAIL | ZIO_FLAG_PROBE |
@@ -1052,8 +1053,9 @@ vdev_probe(vdev_t *vd, zio_t *zio)
 		}
 	}
 
-	if (zio != NULL)
+	if (zio != NULL) {
 		zio_add_child(zio, pio);
+	}
 
 	mutex_exit(&vd->vdev_probe_lock);
 
@@ -1365,6 +1367,7 @@ vdev_validate(vdev_t *vd, boolean_t strict)
 		nvlist_t *nvl;
 		uint64_t txg = spa_last_synced_txg(spa) != 0 ?
 		    spa_last_synced_txg(spa) : -1ULL;
+
 
 		if ((label = vdev_label_read_config(vd, txg)) == NULL) {
 			vdev_set_state(vd, B_TRUE, VDEV_STATE_CANT_OPEN,
@@ -2595,6 +2598,7 @@ vdev_is_dead(vdev_t *vd)
 	 * Instead we rely on the fact that we skip over dead devices
 	 * before issuing I/O to them.
 	 */
+
 	return (vd->vdev_state < VDEV_STATE_DEGRADED || vd->vdev_ishole ||
 	    vd->vdev_ops == &vdev_missing_ops);
 }

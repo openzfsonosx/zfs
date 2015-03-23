@@ -28,6 +28,10 @@
 #ifndef _SYS_VDEV_DISK_H
 #define	_SYS_VDEV_DISK_H
 
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 #ifdef _KERNEL
 #include <sys/vdev.h>
 
@@ -35,6 +39,7 @@ typedef struct vdev_disk {
 	char *vd_minor;
 	struct vnode *vd_devvp;
 	uint64_t vd_ashift;
+	boolean_t vd_offline;
 } vdev_disk_t;
 
 /* calculates (bytes / DEV_BSIZE) */
@@ -45,4 +50,11 @@ typedef struct vdev_disk {
 	((unsigned long long)(db) << DEV_BSHIFT)
 
 #endif /* _KERNEL */
+
+extern void vdev_disk_close(vdev_t *vd);
+
+#ifdef  __cplusplus
+}
+#endif
+
 #endif /* _SYS_VDEV_DISK_H */
