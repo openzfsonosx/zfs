@@ -2717,10 +2717,14 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	}
 
 #ifdef __APPLE__
-	if (!vfs_isrdonly(zfsvfs->z_vfs) && spa_writeable(dmu_objset_spa(zfsvfs->z_os))) {
+	if (!vfs_isrdonly(zfsvfs->z_vfs) &&
+		spa_writeable(dmu_objset_spa(zfsvfs->z_os)) &&
+		!(mntflags & MNT_FORCE)) {
 			/* Update the last-unmount time for Spotlight's next mount */
 			char osname[MAXNAMELEN];
 			timestruc_t  now;
+
+			printf("ZFS: Updating spotlight LASTUNMOUNT property\n");
 			dmu_objset_name(zfsvfs->z_os, osname);
 
 			gethrestime(&now);
