@@ -2953,7 +2953,8 @@ parent_name(const char *path, char *buf, size_t buflen)
 {
 	char *slashp;
 
-	(void) strlcpy(buf, path, buflen);
+	if (path != buf)
+		(void) strlcpy(buf, path, buflen);
 
 	if ((slashp = strrchr(buf, '/')) == NULL)
 		return (-1);
