@@ -66,7 +66,6 @@ osx_kstat_t osx_kstat = {
 	{ "ignore_negatives",			KSTAT_DATA_UINT64 },
 	{ "ignore_positives",			KSTAT_DATA_UINT64 },
 	{ "create_negatives",			KSTAT_DATA_UINT64 },
-	{ "reclaim_throttle",			KSTAT_DATA_UINT64 },
 	{ "force_formd_normalized",		KSTAT_DATA_UINT64 },
 	{ "skip_unlinked_drain",		KSTAT_DATA_UINT64 },
 
@@ -162,7 +161,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		zfs_vnop_ignore_negatives = ks->darwin_ignore_negatives.value.ui64;
 		zfs_vnop_ignore_positives = ks->darwin_ignore_positives.value.ui64;
 		zfs_vnop_create_negatives = ks->darwin_create_negatives.value.ui64;
-		zfs_vnop_reclaim_throttle = ks->darwin_reclaim_throttle.value.ui64;
 		zfs_vnop_force_formd_normalized_output = ks->darwin_force_formd_normalized.value.ui64;
 		zfs_vnop_skip_unlinked_drain = ks->darwin_skip_unlinked_drain.value.ui64;
 
@@ -298,7 +296,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->darwin_ignore_negatives.value.ui64       = zfs_vnop_ignore_negatives;
 		ks->darwin_ignore_positives.value.ui64       = zfs_vnop_ignore_positives;
 		ks->darwin_create_negatives.value.ui64       = zfs_vnop_create_negatives;
-		ks->darwin_reclaim_throttle.value.ui64       = zfs_vnop_reclaim_throttle;
 		ks->darwin_force_formd_normalized.value.ui64 = zfs_vnop_force_formd_normalized_output;
 		ks->darwin_skip_unlinked_drain.value.ui64    = zfs_vnop_skip_unlinked_drain;
 

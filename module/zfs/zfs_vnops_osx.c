@@ -70,11 +70,6 @@ unsigned int debug_vnop_osx_printf = 0;
 unsigned int zfs_vnop_ignore_negatives = 0;
 unsigned int zfs_vnop_ignore_positives = 0;
 unsigned int zfs_vnop_create_negatives = 1;
-/*
- * Default kern.maxvnodes = 66560,
- * allow ZFS to use half the system?
- */
-unsigned int zfs_vnop_reclaim_throttle = 33280;
 #endif
 
 #define	DECLARE_CRED(ap) \
@@ -123,8 +118,6 @@ extern struct vnodeopv_desc zfsctl_ops_snapdir;
 extern struct vnodeopv_desc zfsctl_ops_snapshot;
 
 #define	ZFS_VNOP_TBL_CNT	8
-
-static void zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs);
 
 
 static struct vnodeopv_desc *zfs_vnodeop_opv_desc_list[ZFS_VNOP_TBL_CNT] =
@@ -496,9 +489,6 @@ exit:
 		    filename ? filename : cnp->cn_nameptr);
 	if (filename)
 		kmem_free(filename, filename_num_bytes);
-
-	if (!error && ap->a_vpp && *ap->a_vpp && VTOZ(*ap->a_vpp))
-		zfs_vnop_throttle_reclaim(VTOZ(*ap->a_vpp)->z_zfsvfs);
 
 	dprintf("-vnop_lookup %d\n", error);
 	return (error);
@@ -1856,38 +1846,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 }
 
 
-
-static void
-zfs_vnop_throttle_reclaim(zfsvfs_t *zfsvfs)
-{
-	int count = 0;
-
-#ifdef __APPLE__
-	/* Don't throttle unmounts */
-	if (zfsvfs && zfsvfs->z_vfs && vfs_isunmount(zfsvfs->z_vfs)) return;
-#endif
-
-
-	/*
-	 * Attempt to throttle. If the list grows "large" we need to slow down
-	 * the vnode_create() process until it is manageable.
-	 */
-	while (vnop_num_reclaims > zfs_vnop_reclaim_throttle) {
-		count++;
-		if (zfsvfs)
-			cv_signal(&zfsvfs->z_reclaim_thr_cv);
-		/*
-		 * Instead of a blind delay, should we use cv_timedwait() and
-		 * have the reclaim thread signal back once it is under the
-		 * limit?
-		 */
-		delay(hz>>4);
-	}
-
-	if (count)
-		printf("ZFS: Delaying due to reclaim size "
-		    "(vnop_reclaim_throttle) times %u\n", count);
-}
 
 
 
