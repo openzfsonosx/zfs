@@ -74,6 +74,14 @@ typedef enum zpl_attr {
 	ZPL_SCANSTAMP,
 	ZPL_DACL_ACES,
     ZPL_DXATTR,
+#ifdef __APPLE__
+	/* Apple defines a ADDEDTIME, which is the time the entry was placed in
+	 * the containing directory. Ie, CRTIME and updated when moved into
+	 * a different directory. This can be retrieved with getxattr "FinderInfo"
+	 * or the getattrlist() syscall.
+	 */
+	ZPL_ADDTIME,
+#endif
 	ZPL_END
 } zpl_attr_t;
 

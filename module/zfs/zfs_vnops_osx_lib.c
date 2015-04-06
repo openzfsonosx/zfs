@@ -368,8 +368,19 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	* copy the ADDEDTIME into the structure. See vnop_getxattr
 	*/
 	if (VATTR_IS_ACTIVE(vap, va_addedtime)) {
-		vap->va_addedtime.tv_sec = vap->va_crtime.tv_sec;
-		vap->va_addedtime.tv_nsec = 0;
+		uint64_t addtime[2];
+		/* Lookup the ADDTIME if it exists, if not, use CRTIME */
+		if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ADDTIME(zfsvfs),
+					  &addtime, sizeof (addtime)) != 0) {
+			dprintf("ZFS: ADDEDTIME using crtime %llu (error %d)\n",
+					vap->va_crtime.tv_sec, error);
+			vap->va_addedtime.tv_sec  = vap->va_crtime.tv_sec;
+			vap->va_addedtime.tv_nsec = vap->va_crtime.tv_nsec;
+		} else {
+			dprintf("ZFS: ADDEDTIME using addtime %llu\n",
+					addtime[0]);
+			ZFS_TIME_DECODE(&vap->va_addedtime, addtime);
+		}
         VATTR_SET_SUPPORTED(vap, va_addedtime);
     }
 #endif

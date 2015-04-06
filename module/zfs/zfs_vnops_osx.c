@@ -2089,6 +2089,7 @@ typedef struct FndrFileInfo FndrFileInfo;
 
 		u_int8_t *finfo = NULL;
 		uint64_t crtime[2];
+		uint64_t addtime[2];
 		struct timespec va_crtime;
 		//static u_int32_t emptyfinfo[8] = {0};
 
@@ -2102,8 +2103,15 @@ typedef struct FndrFileInfo FndrFileInfo;
 			fip->fdCreator = 0;
 		}
 
+		/* Lookup the ADDTIME if it exists, if not, use CRTIME */
+		/* change this into bulk */
 		sa_lookup(zp->z_sa_hdl, SA_ZPL_CRTIME(zp->z_zfsvfs), crtime, sizeof(crtime));
-		ZFS_TIME_DECODE(&va_crtime, crtime);
+		if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ADDTIME(zfsvfs), &addtime, sizeof (addtime)) != 0) {
+			ZFS_TIME_DECODE(&va_crtime, crtime);
+		} else {
+			ZFS_TIME_DECODE(&va_crtime, addtime);
+		}
+
         if (IFTOVT((mode_t)zp->z_mode) == VREG) {
 			struct FndrExtendedFileInfo *extinfo = (struct FndrExtendedFileInfo *)finfo;
 			extinfo->date_added = 0;
