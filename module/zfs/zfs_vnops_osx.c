@@ -1062,13 +1062,21 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 		need_unlock = TRUE;
 	}
 
-	/* Can't read beyond EOF */
-	if (off + len > zp->z_size)
-		len = zp->z_size - off;
 
 	ubc_upl_map(upl, (vm_offset_t *)&vaddr);
+
 	dprintf("vaddr %p with upl_off 0x%lx\n", vaddr, upl_offset);
 	vaddr += upl_offset;
+
+	/* Can't read beyond EOF - but we need to zero those extra bytes. */
+	if (off + len > zp->z_size) {
+		uint64_t newend = zp->z_size - off;
+
+		dprintf("ZFS: pagein zeroing offset 0x%llx for 0x%llx bytes.\n",
+				newend, len - newend);
+		memset(&vaddr[newend], 0, len - newend);
+		len = newend;
+	}
 	/*
 	 * Fill pages with data from the file.
 	 */
