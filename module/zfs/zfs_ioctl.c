@@ -159,6 +159,7 @@ static int zfs_fill_zplprops_root(uint64_t, nvlist_t *, nvlist_t *,
 								  boolean_t *);
 int zfs_set_prop_nvlist(const char *, zprop_source_t, nvlist_t *, nvlist_t *);
 static int get_nvlist(uint64_t nvl, uint64_t size, int iflag, nvlist_t **nvp);
+static int get_nvlist_debug(uint64_t nvl, uint64_t size, int iflag, nvlist_t **nvp);
 
 static void
 history_str_free(char *buf)
@@ -1183,6 +1184,45 @@ zfs_secpolicy_tmp_snapshot(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
  * Returns the nvlist as specified by the user in the zfs_cmd_t.
  */
 static int
+get_nvlist_debug(uint64_t nvl, uint64_t size, int iflag, nvlist_t **nvp)
+{
+	printf("+get_nvlist_debug : nvl %llu : size %llu : iflag %d : nvp %p\n", nvl, size, iflag, nvp);
+	return (SET_ERROR(EINVAL));
+
+	char *packed;
+	int error;
+	nvlist_t *list = NULL;
+
+	/*
+	 * Read in and unpack the user-supplied nvlist.
+	 */
+	if (size == 0)
+		return (SET_ERROR(EINVAL));
+
+
+	packed = kmem_alloc(size, KM_SLEEP | KM_NODEBUG);
+
+	if ((error = ddi_copyin((void *)(uintptr_t)nvl, packed, size,
+							iflag)) != 0) {
+		kmem_free(packed, size);
+		return (error);
+	}
+
+	if ((error = nvlist_unpack(packed, size, &list, 0)) != 0) {
+		kmem_free(packed, size);
+		return (error);
+	}
+
+	kmem_free(packed, size);
+
+	*nvp = list;
+	return (0);
+}
+
+/*
+ * Returns the nvlist as specified by the user in the zfs_cmd_t.
+ */
+static int
 get_nvlist(uint64_t nvl, uint64_t size, int iflag, nvlist_t **nvp)
 {
 	char *packed;
@@ -1540,7 +1580,7 @@ zfs_ioc_pool_tryimport(zfs_cmd_t *zc)
 	nvlist_t *tryconfig, *config;
 	int error;
 
-	if ((error = get_nvlist(zc->zc_nvlist_conf, zc->zc_nvlist_conf_size,
+	if ((error = get_nvlist_debug(zc->zc_nvlist_conf, zc->zc_nvlist_conf_size,
 							zc->zc_iflags, &tryconfig)) != 0)
 		return (error);
 
