@@ -1054,14 +1054,24 @@ done:
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
+
 #if 0
 #include <linux/module_compat.h>
 
-static int avl_init(void) { return 0; }
-static int avl_fini(void) { return 0; }
+static int __init
+avl_init(void)
+{
+	return (0);
+}
 
-spl_module_init(avl_init);
-spl_module_exit(avl_fini);
+
+static void __exit
+avl_fini(void)
+{
+}
+
+module_init(avl_init);
+module_exit(avl_fini);
 
 MODULE_DESCRIPTION("Generic AVL tree implementation");
 MODULE_AUTHOR(ZFS_META_AUTHOR);

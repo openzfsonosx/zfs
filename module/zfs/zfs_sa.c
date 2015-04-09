@@ -188,6 +188,83 @@ zfs_sa_set_scanstamp(znode_t *zp, xvattr_t *xvap, dmu_tx_t *tx)
 	}
 }
 
+int
+zfs_sa_get_xattr(znode_t *zp)
+{
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	char *obj;
+	int size;
+	int error;
+
+	ASSERT(RW_LOCK_HELD(&zp->z_xattr_lock));
+	ASSERT(!zp->z_xattr_cached);
+	ASSERT(zp->z_is_sa);
+
+	error = sa_size(zp->z_sa_hdl, SA_ZPL_DXATTR(zfsvfs), &size);
+	if (error) {
+		if (error == ENOENT)
+			return nvlist_alloc(&zp->z_xattr_cached,
+			    NV_UNIQUE_NAME, KM_SLEEP);
+		else
+			return (error);
+	}
+
+	obj = zio_buf_alloc(size);
+
+	error = sa_lookup(zp->z_sa_hdl, SA_ZPL_DXATTR(zfsvfs), obj, size);
+	if (error == 0)
+		error = nvlist_unpack(obj, size, &zp->z_xattr_cached, KM_SLEEP);
+
+	zio_buf_free(obj, size);
+
+	return (error);
+}
+
+int
+zfs_sa_set_xattr(znode_t *zp)
+{
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	dmu_tx_t *tx;
+	char *obj;
+	size_t size;
+	int error;
+
+	ASSERT(RW_WRITE_HELD(&zp->z_xattr_lock));
+	ASSERT(zp->z_xattr_cached);
+	ASSERT(zp->z_is_sa);
+
+	error = nvlist_size(zp->z_xattr_cached, &size, NV_ENCODE_XDR);
+	if (error)
+		goto out;
+
+	obj = zio_buf_alloc(size);
+
+	error = nvlist_pack(zp->z_xattr_cached, &obj, &size,
+	    NV_ENCODE_XDR, KM_SLEEP);
+	if (error)
+		goto out_free;
+
+	tx = dmu_tx_create(zfsvfs->z_os);
+	dmu_tx_hold_sa_create(tx, size);
+	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_TRUE);
+
+	error = dmu_tx_assign(tx, TXG_WAIT);
+	if (error) {
+		dmu_tx_abort(tx);
+	} else {
+		error = sa_update(zp->z_sa_hdl, SA_ZPL_DXATTR(zfsvfs),
+		    obj, size, tx);
+		if (error)
+			dmu_tx_abort(tx);
+		else
+			dmu_tx_commit(tx);
+	}
+out_free:
+	zio_buf_free(obj, size);
+out:
+	return (error);
+}
+
 /*
  * I'm not convinced we should do any of this upgrade.
  * since the SA code can read both old/new znode formats

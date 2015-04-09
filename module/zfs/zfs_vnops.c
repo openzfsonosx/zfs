@@ -4844,34 +4844,27 @@ zfs_putapage(vnode_t *vp, page_t **pp, u_offset_t *offp,
 	ASSERT3U(btop(len), ==, btopr(len));
 
 	/*
-	 * Can't push pages past end-of-file.
+	 * The ordering here is critical and must adhere to the following
+	 * rules in order to avoid deadlocking in either zfs_read() or
+	 * zfs_free_range() due to a lock inversion.
+	 *
+	 * 1) The page must be unlocked prior to acquiring the range lock.
+	 *    This is critical because zfs_read() calls find_lock_page()
+	 *    which may block on the page lock while holding the range lock.
+	 *
+	 * 2) Before setting or clearing write back on a page the range lock
+	 *    must be held in order to prevent a lock inversion with the
+	 *    zfs_free_range() function.
 	 */
-	if (off >= zp->z_size) {
-		/* ignore all pages */
-		err = 0;
-		goto out;
-	} else if (off + len > zp->z_size) {
-		int npages = btopr(zp->z_size - off);
-		page_t **trunc;
+	unlock_page(pp);
+	rl = zfs_range_lock(zp, pgoff, pglen, RL_WRITER);
+	set_page_writeback(pp);
 
-		page_list_break(&pp, &trunc, npages);
-		/* ignore pages past end of file */
-		if (trunc)
-			pvn_write_done(trunc, flags);
-		len = zp->z_size - off;
-	}
-
-	if (zfs_owner_overquota(zfsvfs, zp, B_FALSE) ||
-	    zfs_owner_overquota(zfsvfs, zp, B_TRUE)) {
-		err = (EDQUOT);
-		goto out;
-	}
-top:
-	tx = dmu_tx_create(zfsvfs->z_os);
-	dmu_tx_hold_write(tx, zp->z_id, off, len);
-
+	tx = dmu_tx_create(zsb->z_os);
+	dmu_tx_hold_write(tx, zp->z_id, pgoff, pglen);
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	zfs_sa_upgrade_txholds(tx, zp);
+
 	err = dmu_tx_assign(tx, TXG_NOWAIT);
 	if (err != 0) {
 		if (err == ERESTART) {
@@ -4961,7 +4954,8 @@ zfs_putpage(vnode_t *vp, offset_t off, size_t len, int flags, cred_t *cr,
 	rl_t		*rl;
 	int		error = 0;
 
-    dprintf("putpage\n");
+	if (zfs_is_readonly(zfsvfs) || dmu_objset_is_snapshot(zfsvfs->z_os))
+		return (0);
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);

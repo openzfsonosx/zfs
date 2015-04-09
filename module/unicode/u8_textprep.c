@@ -2133,15 +2133,24 @@ u8_textprep_str(char *inarray, size_t *inlen, char *outarray, size_t *outlen,
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
+
 #if 0
 
 #include <linux/module_compat.h>
 
-static int unicode_init(void) { return 0; }
-static int unicode_fini(void) { return 0; }
+static int __init
+unicode_init(void) {
+	return (0);
+}
 
-spl_module_init(unicode_init);
-spl_module_exit(unicode_fini);
+
+static void __exit
+unicode_fini(void)
+{
+}
+
+module_init(unicode_init);
+module_exit(unicode_fini);
 
 MODULE_DESCRIPTION("Unicode implementation");
 MODULE_AUTHOR(ZFS_META_AUTHOR);

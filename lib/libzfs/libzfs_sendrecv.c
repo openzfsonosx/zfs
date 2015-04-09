@@ -43,6 +43,7 @@
 #include <sys/mnttab.h>
 #include <sys/avl.h>
 #include <sys/debug.h>
+#include <sys/stat.h>
 #include <stddef.h>
 #include <pthread.h>
 #include <umem.h>
@@ -621,13 +622,15 @@ send_iterate_snap(zfs_handle_t *zhp, void *arg)
 	uint64_t guid = zhp->zfs_dmustats.dds_guid;
 	char *snapname;
 	nvlist_t *nv;
-	boolean_t isfromsnap, istosnap;
+	boolean_t isfromsnap, istosnap, istosnapwithnofrom;
 
 	snapname = strrchr(zhp->zfs_name, '@')+1;
 	isfromsnap = (sd->fromsnap != NULL &&
 	    strcmp(sd->fromsnap, snapname) == 0);
 	istosnap = (sd->tosnap != NULL && (strcmp(sd->tosnap, snapname) == 0));
+	istosnapwithnofrom = (istosnap && sd->fromsnap == NULL);
 
+	VERIFY(0 == nvlist_add_uint64(sd->parent_snaps, snapname, guid));
 	/*
 	 * NB: if there is no fromsnap here (it's a newly created fs in
 	 * an incremental replication), we will substitute the tosnap.
@@ -643,7 +646,7 @@ send_iterate_snap(zfs_handle_t *zhp, void *arg)
 			return (0);
 		}
 
-		if (sd->seento || !sd->seenfrom) {
+		if ((sd->seento || !sd->seenfrom) && !istosnapwithnofrom) {
 			zfs_close(zhp);
 			return (0);
 		}
@@ -651,8 +654,6 @@ send_iterate_snap(zfs_handle_t *zhp, void *arg)
 		if (istosnap)
 			sd->seento = B_TRUE;
 	}
-
-	VERIFY(0 == nvlist_add_uint64(sd->parent_snaps, snapname, guid));
 
 	VERIFY(0 == nvlist_alloc(&nv, NV_UNIQUE_NAME, 0));
 	send_iterate_prop(zhp, nv);
@@ -2705,12 +2706,6 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 		ret = zcmd_write_src_nvlist(hdl, &zc, props);
 		if (err)
 			nvlist_free(props);
-
-		if (0 == nvlist_lookup_nvlist(fs, "snapprops", &props)) {
-			VERIFY(0 == nvlist_lookup_nvlist(props,
-			    snapname, &snapprops_nvlist));
-		}
-
 		if (ret != 0)
 			return (-1);
 	}
@@ -3320,6 +3315,48 @@ zfs_receive(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 	int err;
 	int cleanup_fd;
 	uint64_t action_handle = 0;
+	struct stat sb;
+
+	/*
+	 * The only way fstat can fail is if we do not have a valid file
+	 * descriptor.
+	 */
+	if (fstat(infd, &sb) == -1) {
+		perror("fstat");
+		return (-2);
+	}
+
+#ifdef __linux__
+#ifndef F_SETPIPE_SZ
+#define	F_SETPIPE_SZ (F_SETLEASE + 7)
+#endif /* F_SETPIPE_SZ */
+
+#ifndef F_GETPIPE_SZ
+#define	F_GETPIPE_SZ (F_GETLEASE + 7)
+#endif /* F_GETPIPE_SZ */
+
+	/*
+	 * It is not uncommon for gigabytes to be processed in zfs receive.
+	 * Speculatively increase the buffer size via Linux-specific fcntl()
+	 * call.
+	 */
+	if (S_ISFIFO(sb.st_mode)) {
+		FILE *procf = fopen("/proc/sys/fs/pipe-max-size", "r");
+
+		if (procf != NULL) {
+			unsigned long max_psize;
+			long cur_psize;
+			if (fscanf(procf, "%lu", &max_psize) > 0) {
+				cur_psize = fcntl(infd, F_GETPIPE_SZ);
+				if (cur_psize > 0 &&
+				    max_psize > (unsigned long) cur_psize)
+					(void) fcntl(infd, F_SETPIPE_SZ,
+					    max_psize);
+			}
+			fclose(procf);
+		}
+	}
+#endif /* __linux__ */
 
 	cleanup_fd = open(ZFS_DEV, O_RDWR);
 	VERIFY(cleanup_fd >= 0);

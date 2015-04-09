@@ -43,6 +43,7 @@
 #include <sys/zfeature.h>
 #include <sys/blkptr.h>
 #include <sys/range_tree.h>
+#include <sys/trace_dbuf.h>
 
 //
 // FIXME
@@ -317,7 +318,7 @@ retry:
 
     //printf("[dbuf] init hsize is 0x%llx mask is 0x%llx\n", hsize, h->hash_table_mask);
 
-	h->hash_table = kmem_zalloc(hsize * sizeof (void *), KM_PUSHPAGE);
+	h->hash_table = kmem_zalloc(hsize * sizeof (void *), KM_SLEEP);
 
 	if (h->hash_table == NULL) {
 		/* XXX - we should really return an error instead of assert */
@@ -1131,7 +1132,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 		dn->dn_dirtyctx =
 		    (dmu_tx_is_syncing(tx) ? DN_DIRTY_SYNC : DN_DIRTY_OPEN);
 		ASSERT(dn->dn_dirtyctx_firstset == NULL);
-		dn->dn_dirtyctx_firstset = kmem_alloc(1, KM_PUSHPAGE);
+		dn->dn_dirtyctx_firstset = kmem_alloc(1, KM_SLEEP);
 	}
 	mutex_exit(&dn->dn_mtx);
 
@@ -1208,7 +1209,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	 * to make a copy of it so that the changes we make in this
 	 * transaction group won't leak out when we sync the older txg.
 	 */
-	dr = kmem_zalloc(sizeof (dbuf_dirty_record_t), KM_PUSHPAGE);
+	dr = kmem_zalloc(sizeof (dbuf_dirty_record_t), KM_SLEEP);
 	list_link_init(&dr->dr_dirty_node);
 	if (db->db_level == 0) {
 		void *data_old = db->db_buf;
@@ -1663,7 +1664,7 @@ dbuf_clear(dmu_buf_impl_t *db)
 	dndb = dn->dn_dbuf;
 	if (db->db_blkid != DMU_BONUS_BLKID && MUTEX_HELD(&dn->dn_dbufs_mtx)) {
 		avl_remove(&dn->dn_dbufs, db);
-		(void) atomic_dec_32_nv(&dn->dn_dbufs_count);
+		(void) atomic_dec_32(&dn->dn_dbufs_count);
 		membar_producer();
 		DB_DNODE_EXIT(db);
 		/*
@@ -1780,7 +1781,7 @@ dbuf_create(dnode_t *dn, uint8_t level, uint64_t blkid,
 	ASSERT(RW_LOCK_HELD(&dn->dn_struct_rwlock));
 	ASSERT(dn->dn_type != DMU_OT_NONE);
 
-	db = kmem_cache_alloc(dbuf_cache, KM_PUSHPAGE);
+	db = kmem_cache_alloc(dbuf_cache, KM_SLEEP);
 
 	db->db_objset = os;
 	db->db.db_object = dn->dn_object;
@@ -1848,7 +1849,7 @@ dbuf_create(dnode_t *dn, uint8_t level, uint64_t blkid,
 	ASSERT(dn->dn_object == DMU_META_DNODE_OBJECT ||
 	    refcount_count(&dn->dn_holds) > 0);
 	(void) refcount_add(&dn->dn_holds, db);
-	(void) atomic_inc_32_nv(&dn->dn_dbufs_count);
+	atomic_inc_32(&dn->dn_dbufs_count);
 
 	dprintf_dbuf(db, "db=%p\n", db);
 
@@ -1894,7 +1895,7 @@ dbuf_destroy(dmu_buf_impl_t *db)
 			dn = DB_DNODE(db);
 			mutex_enter(&dn->dn_dbufs_mtx);
 			avl_remove(&dn->dn_dbufs, db);
-			(void) atomic_dec_32_nv(&dn->dn_dbufs_count);
+			(void) atomic_dec_32(&dn->dn_dbufs_count);
 			mutex_exit(&dn->dn_dbufs_mtx);
 			DB_DNODE_EXIT(db);
 			/*
@@ -2074,7 +2075,7 @@ dbuf_hold_impl(dnode_t *dn, uint8_t level, uint64_t blkid, int fail_sparse,
 	int error;
 
 	dh = kmem_zalloc(sizeof (struct dbuf_hold_impl_data) *
-	    DBUF_HOLD_IMPL_MAX_DEPTH, KM_PUSHPAGE);
+	    DBUF_HOLD_IMPL_MAX_DEPTH, KM_SLEEP);
 	__dbuf_hold_impl_init(dh, dn, level, blkid, fail_sparse, tag, dbp, 0);
 
 	error = __dbuf_hold_impl(dh);
@@ -2215,21 +2216,60 @@ dbuf_rele_and_unlock(dmu_buf_impl_t *db, void *tag)
 
 	if (holds == 0) {
 		if (db->db_blkid == DMU_BONUS_BLKID) {
+			dnode_t *dn;
+
+			/*
+			 * If the dnode moves here, we cannot cross this
+			 * barrier until the move completes.
+			 */
+			DB_DNODE_ENTER(db);
+
+			dn = DB_DNODE(db);
+			atomic_dec_32(&dn->dn_dbufs_count);
+
+			/*
+			 * Decrementing the dbuf count means that the bonus
+			 * buffer's dnode hold is no longer discounted in
+			 * dnode_move(). The dnode cannot move until after
+			 * the dnode_rele_and_unlock() below.
+			 */
+			DB_DNODE_EXIT(db);
+
+			/*
+			 * Do not reference db after its lock is dropped.
+			 * Another thread may evict it.
+			 */
 			mutex_exit(&db->db_mtx);
 
 			/*
-			 * If the dnode moves here, we cannot cross this barrier
-			 * until the move completes.
+			 * If the dnode has been freed, evict the bonus
+			 * buffer immediately.	The data in the bonus
+			 * buffer is no longer relevant and this prevents
+			 * a stale bonus buffer from being associated
+			 * with this dnode_t should the dnode_t be reused
+			 * prior to being destroyed.
 			 */
-			DB_DNODE_ENTER(db);
-			(void) atomic_dec_32_nv(&DB_DNODE(db)->dn_dbufs_count);
-			DB_DNODE_EXIT(db);
-			/*
-			 * The bonus buffer's dnode hold is no longer discounted
-			 * in dnode_move(). The dnode cannot move until after
-			 * the dnode_rele().
-			 */
-			dnode_rele(DB_DNODE(db), db);
+			mutex_enter(&dn->dn_mtx);
+			if (dn->dn_type == DMU_OT_NONE ||
+			    dn->dn_free_txg != 0) {
+				/*
+				 * Drop dn_mtx.  It is a leaf lock and
+				 * cannot be held when dnode_evict_bonus()
+				 * acquires other locks in order to
+				 * perform the eviction.
+				 *
+				 * Freed dnodes cannot be reused until the
+				 * last hold is released.  Since this bonus
+				 * buffer has a hold, the dnode will remain
+				 * in the free state, even without dn_mtx
+				 * held, until the dnode_rele_and_unlock()
+				 * below.
+				 */
+				mutex_exit(&dn->dn_mtx);
+				dnode_evict_bonus(dn);
+				mutex_enter(&dn->dn_mtx);
+			}
+			dnode_rele_and_unlock(dn, db);
 		} else if (db->db_buf == NULL) {
 			/*
 			 * This is a special case: we never associated this

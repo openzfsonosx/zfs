@@ -36,6 +36,7 @@
 #include <sys/zio.h>
 #include <sys/dmu_zfetch.h>
 #include <sys/range_tree.h>
+#include <sys/trace_dnode.h>
 
 static kmem_cache_t *dnode_cache;
 /*
@@ -404,7 +405,7 @@ static dnode_t *
 dnode_create(objset_t *os, dnode_phys_t *dnp, dmu_buf_impl_t *db,
     uint64_t object, dnode_handle_t *dnh)
 {
-	dnode_t *dn = kmem_cache_alloc(dnode_cache, KM_PUSHPAGE);
+	dnode_t *dn = kmem_cache_alloc(dnode_cache, KM_SLEEP);
 
 #ifndef __APPLE__  // Our kmem_cache does not use KMEM_UNINITIALIZED_PATTERN
 	ASSERT(!POINTER_IS_VALID(dn->dn_objset));
@@ -1120,8 +1121,8 @@ dnode_hold_impl(objset_t *os, uint64_t object, int flag,
 		int i;
 		dnode_children_t *winner;
 		children_dnodes = kmem_alloc(sizeof (dnode_children_t) +
-		    epb * sizeof (dnode_handle_t),
-		    KM_PUSHPAGE | KM_NODEBUG);
+									 (epb - 1 ) * sizeof (dnode_handle_t),
+		    KM_SLEEP | KM_NODEBUG);
 		children_dnodes->dnc_count = epb;
 		dnh = &children_dnodes->dnc_children[0];
 		for (i = 0; i < epb; i++) {
@@ -1218,12 +1219,18 @@ dnode_add_ref(dnode_t *dn, void *tag)
 void
 dnode_rele(dnode_t *dn, void *tag)
 {
+	mutex_enter(&dn->dn_mtx);
+	dnode_rele_and_unlock(dn, tag);
+}
+
+void
+dnode_rele_and_unlock(dnode_t *dn, void *tag)
+{
 	uint64_t refs;
 	/* Get while the hold prevents the dnode from moving. */
 	dmu_buf_impl_t *db = dn->dn_dbuf;
 	dnode_handle_t *dnh = dn->dn_handle;
 
-	mutex_enter(&dn->dn_mtx);
 	refs = refcount_remove(&dn->dn_holds, tag);
     dprintf("dnode: -dn_hold %d\n", refcount_count(&dn->dn_holds));
 	mutex_exit(&dn->dn_mtx);

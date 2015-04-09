@@ -92,7 +92,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	}
 #endif
 
-	vf = vd->vdev_tsd = kmem_zalloc(sizeof (vdev_file_t), KM_PUSHPAGE);
+	vf = vd->vdev_tsd = kmem_zalloc(sizeof (vdev_file_t), KM_SLEEP);
 
 	/*
 	 * We always open the files from the root of the global zone, even if

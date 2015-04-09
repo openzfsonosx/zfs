@@ -5348,9 +5348,9 @@ zfs_ioctl_init(void)
 	 * does the logging of those commands.
 	 */
 	zfs_ioctl_register_pool(ZFS_IOC_POOL_DESTROY, zfs_ioc_pool_destroy,
-							zfs_secpolicy_config, B_FALSE, POOL_CHECK_NONE);
+							zfs_secpolicy_config, B_FALSE, POOL_CHECK_SUSPENDED);
 	zfs_ioctl_register_pool(ZFS_IOC_POOL_EXPORT, zfs_ioc_pool_export,
-							zfs_secpolicy_config, B_FALSE, POOL_CHECK_NONE);
+							zfs_secpolicy_config, B_FALSE, POOL_CHECK_SUSPENDED);
 
 	zfs_ioctl_register_pool(ZFS_IOC_POOL_STATS, zfs_ioc_pool_stats,
 							zfs_secpolicy_read, B_FALSE, POOL_CHECK_NONE);
@@ -5680,6 +5680,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 	const zfs_ioc_vec_t *vec;
 	char *saved_poolname = NULL;
 	nvlist_t *innvl = NULL;
+
 	vfs_context_t ctx = vfs_context_current();
 	cred_t *cr = vfs_context_ucred(ctx);
 
@@ -5723,7 +5724,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 	if (vec->zvec_func == NULL && vec->zvec_legacy_func == NULL)
 		return (-SET_ERROR(EINVAL));
 
-	zc = kmem_zalloc(sizeof (zfs_cmd_t), KM_SLEEP | KM_NODEBUG);
+	zc = kmem_zalloc(sizeof (zfs_cmd_t), KM_SLEEP);
 
 #ifdef __APPLE__
 	flag |= FKIOCTL;
@@ -5812,7 +5813,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 			}
 		}
 
-		VERIFY0(nvlist_alloc(&outnvl, NV_UNIQUE_NAME, KM_PUSHPAGE));
+		outnvl = fnvlist_alloc();
 		error = vec->zvec_func(zc->zc_name, innvl, outnvl);
 
 		if (error == 0 && vec->zvec_allow_log &&
@@ -6091,7 +6092,6 @@ zfs_allow_log_destroy(void *arg)
 #else
 #define	ZFS_DEBUG_STR	""
 #endif
-
 
 
 

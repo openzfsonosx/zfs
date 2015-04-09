@@ -289,7 +289,7 @@ int dmu_send_estimate(dsl_dataset_t *ds, dsl_dataset_t *fromds,
 #ifdef ZFS_DEBUG
 #define	dprintf_ds(ds, fmt, ...) do { \
 	if (zfs_flags & ZFS_DEBUG_DPRINTF) { \
-	char *__ds_name = kmem_alloc(MAXNAMELEN, KM_PUSHPAGE); \
+	char *__ds_name = kmem_alloc(MAXNAMELEN, KM_SLEEP); \
 	dsl_dataset_name(ds, __ds_name); \
 	dprintf("ds=%s " fmt, __ds_name, __VA_ARGS__); \
 	kmem_free(__ds_name, MAXNAMELEN); \

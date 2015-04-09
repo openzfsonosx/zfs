@@ -628,6 +628,10 @@ zpool_do_add(int argc, char **argv)
 
 	if (dryrun) {
 		nvlist_t *poolnvroot;
+		nvlist_t **l2child;
+		uint_t l2children, c;
+		char *vname;
+		boolean_t hadcache = B_FALSE;
 
 		verify(nvlist_lookup_nvlist(config, ZPOOL_CONFIG_VDEV_TREE,
 		    &poolnvroot) == 0);
@@ -645,6 +649,30 @@ zpool_do_add(int argc, char **argv)
 			print_vdev_tree(zhp, NULL, nvroot, 0, B_TRUE, 0);
 		} else if (num_logs(nvroot) > 0) {
 			print_vdev_tree(zhp, "logs", nvroot, 0, B_TRUE, 0);
+		}
+
+		/* Do the same for the caches */
+		if (nvlist_lookup_nvlist_array(poolnvroot, ZPOOL_CONFIG_L2CACHE,
+		    &l2child, &l2children) == 0 && l2children) {
+			hadcache = B_TRUE;
+			(void) printf(gettext("\tcache\n"));
+			for (c = 0; c < l2children; c++) {
+				vname = zpool_vdev_name(g_zfs, NULL,
+				    l2child[c], B_FALSE);
+				(void) printf("\t  %s\n", vname);
+				free(vname);
+			}
+		}
+		if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_L2CACHE,
+		    &l2child, &l2children) == 0 && l2children) {
+			if (!hadcache)
+				(void) printf(gettext("\tcache\n"));
+			for (c = 0; c < l2children; c++) {
+				vname = zpool_vdev_name(g_zfs, NULL,
+				    l2child[c], B_FALSE);
+				(void) printf("\t  %s\n", vname);
+				free(vname);
+			}
 		}
 
 		ret = 0;
@@ -1981,7 +2009,7 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 	} else if (state != POOL_STATE_EXPORTED &&
 	    !(flags & ZFS_IMPORT_ANY_HOST)) {
 		uint64_t hostid = 0;
-		unsigned long system_hostid = gethostid() & 0xffffffff;
+		unsigned long system_hostid = get_system_hostid();
 
 		(void) nvlist_lookup_uint64(config, ZPOOL_CONFIG_HOSTID,
 		    &hostid);
@@ -4788,8 +4816,8 @@ upgrade_version(zpool_handle_t *zhp, uint64_t version)
 		return (ret);
 
 	if (unsupp_fs) {
-		(void) printf(gettext("Upgrade not performed due to %d "
-		    "unsupported filesystems (max v%d).\n"),
+		(void) fprintf(stderr, gettext("Upgrade not performed due "
+		    "to %d unsupported filesystems (max v%d).\n"),
 		    unsupp_fs, (int) ZPL_VERSION);
 		return (1);
 	}
@@ -5003,7 +5031,7 @@ upgrade_one(zpool_handle_t *zhp, void *data)
 	int ret;
 
 	if (strcmp("log", zpool_get_name(zhp)) == 0) {
-		(void) printf(gettext("'log' is now a reserved word\n"
+		(void) fprintf(stderr, gettext("'log' is now a reserved word\n"
 		    "Pool 'log' must be renamed using export and import"
 		    " to upgrade.\n"));
 		return (1);

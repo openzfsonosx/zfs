@@ -2464,7 +2464,7 @@ zfs_zaccess(znode_t *zp, int mode, int flags, boolean_t skipaclchk, cred_t *cr)
 			 * child xattr znodes have been destroyed and
 			 * release their references in zfs_inode_destroy().
 			 */
-			error = zfs_zget(ZTOZFS(zp), parent, &check_zp);
+			error = zfs_zget(zp->z_zfsvfs, parent, &check_zp);
 			if (error)
 				return (error);
 

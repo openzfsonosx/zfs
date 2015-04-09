@@ -548,8 +548,6 @@ zfs_create_share_dir(zfsvfs_t *zfsvfs, dmu_tx_t *tx)
 	vattr.va_gid = crgetgid(kcred);
 
 	sharezp = kmem_cache_alloc(znode_cache, KM_SLEEP);
-	//zfs_znode_cache_constructor(sharezp, zfsvfs->z_parent->z_vfs, 0);
-	ASSERT(!POINTER_IS_VALID(sharezp->z_zfsvfs));
 	sharezp->z_moved = 0;
 	sharezp->z_unlinked = 0;
 	sharezp->z_atime_dirty = 0;
@@ -1008,7 +1006,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	 * order for  DMU_OT_ZNODE is critical since it needs to be constructed
 	 * in the old znode_phys_t format.  Don't change this ordering
 	 */
-	sa_attrs = kmem_alloc(sizeof (sa_bulk_attr_t) * ZPL_END, KM_PUSHPAGE);
+	sa_attrs = kmem_alloc(sizeof (sa_bulk_attr_t) * ZPL_END, KM_SLEEP);
 
 	if (obj_type == DMU_OT_ZNODE) {
 		SA_ADD_BULK_ATTR(sa_attrs, cnt, SA_ZPL_ATIME(zfsvfs),

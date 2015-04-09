@@ -98,17 +98,31 @@ zpl_dirty_inode(struct inode *ip)
 static void
 zpl_evict_inode(struct inode *ip)
 {
+	fstrans_cookie_t cookie;
+
+	cookie = spl_fstrans_mark();
 	truncate_setsize(ip, 0);
 	clear_inode(ip);
 	zfs_inactive(ip);
+	spl_fstrans_unmark(cookie);
 }
 
 #else
 
 static void
+zpl_drop_inode(struct inode *ip)
+{
+	generic_delete_inode(ip);
+}
+
+static void
 zpl_clear_inode(struct inode *ip)
 {
+	fstrans_cookie_t cookie;
+
+	cookie = spl_fstrans_mark();
 	zfs_inactive(ip);
+	spl_fstrans_unmark(cookie);
 }
 
 static void
@@ -117,7 +131,6 @@ zpl_inode_delete(struct inode *ip)
 	truncate_setsize(ip, 0);
 	clear_inode(ip);
 }
-
 #endif /* HAVE_EVICT_INODE */
 
 static void
@@ -269,37 +282,13 @@ zpl_kill_sb(struct super_block *sb)
 #endif /* HAVE_S_INSTANCES_LIST_HEAD */
 }
 
-#ifdef HAVE_SHRINK
-/*
- * Linux 3.1 - 3.x API
- *
- * The Linux 3.1 API introduced per-sb cache shrinkers to replace the
- * global ones.  This allows us a mechanism to cleanly target a specific
- * zfs file system when the dnode and inode caches grow too large.
- *
- * In addition, the 3.0 kernel added the iterate_supers_type() helper
- * function which is used to safely walk all of the zfs file systems.
- */
-static void
-zpl_prune_sb(struct super_block *sb, void *arg)
-{
-	int objects = 0;
-	int error;
-
-	error = -zfs_sb_prune(sb, *(unsigned long *)arg, &objects);
-	ASSERT3S(error, <=, 0);
-}
-#endif /* HAVE_SHRINK */
-
 void
-zpl_prune_sbs(int64_t bytes_to_scan, void *private)
+zpl_prune_sb(int64_t nr_to_scan, void *arg)
 {
-#ifdef HAVE_SHRINK
-	unsigned long nr_to_scan = (bytes_to_scan / sizeof (znode_t));
+	struct super_block *sb = (struct super_block *)arg;
+	int objects = 0;
 
-	iterate_supers_type(&zpl_fs_type, zpl_prune_sb, &nr_to_scan);
-	kmem_reap();
-#endif /* HAVE_SHRINK */
+	(void) -zfs_sb_prune(sb, nr_to_scan, &objects);
 }
 
 #ifdef HAVE_NR_CACHED_OBJECTS
@@ -336,10 +325,10 @@ const struct super_operations zpl_super_operations = {
 	.destroy_inode		= zpl_inode_destroy,
 	.dirty_inode		= zpl_dirty_inode,
 	.write_inode		= NULL,
-	.drop_inode		= NULL,
 #ifdef HAVE_EVICT_INODE
 	.evict_inode		= zpl_evict_inode,
 #else
+	.drop_inode		= zpl_drop_inode,
 	.clear_inode		= zpl_clear_inode,
 	.delete_inode		= zpl_inode_delete,
 #endif /* HAVE_EVICT_INODE */
