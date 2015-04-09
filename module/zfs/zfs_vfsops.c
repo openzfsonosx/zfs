@@ -2589,6 +2589,22 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		zfsvfs->z_unmounted = B_TRUE;
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
 		rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
+#ifdef __APPLE__
+		if (!list_empty(&zfsvfs->z_reclaim_znodes)) {
+			printf("ZFS: Attempting to purge reclaim list manually\n");
+			while(1) {
+				mutex_enter(&zfsvfs->z_reclaim_list_lock);
+				zp = list_head(&zfsvfs->z_reclaim_znodes);
+				if (zp) {
+					list_remove(&zfsvfs->z_reclaim_znodes, zp);
+				}
+				mutex_exit(&zfsvfs->z_reclaim_list_lock);
+				if (!zp) break;
+				zfs_znode_free(zp);
+			}
+			printf("ZFS: Done.\n");
+		}
+#endif
 	}
 
 	/*
