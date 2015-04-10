@@ -1239,6 +1239,12 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 		goto out;
 	zfsvfs->z_acl_mode = (uint_t)zval;
 
+	zfs_get_zplprop(os, ZFS_PROP_APPLE_LASTUNMOUNT, &zval);
+	zfsvfs->z_last_unmount_time = zval;
+	printf("ZFS: '%s' mount using last_unmount value %lx\n",
+		   osname,
+		   zfsvfs->z_last_unmount_time);
+
 	/*
 	 * Fold case on file systems that are always or sometimes case
 	 * insensitive.
@@ -2064,18 +2070,20 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
         osname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
 
         if (vfs_context_is64bit(context)) {
-            if ( (error = ddi_copyin(data, (caddr_t)&mnt_args, sizeof(mnt_args), 0)) )
+            if ( (error = ddi_copyin((void *)data,
+									 (caddr_t)&mnt_args, sizeof(mnt_args), 0)) )
                 goto out;
         } else {
             user32_addr_t tmp;
-            if ( (error = ddi_copyin(data, (caddr_t)&tmp, sizeof(tmp), 0)) )
+            if ( (error = ddi_copyin((void *)data,
+									 (caddr_t)&tmp, sizeof(tmp), 0)) )
                 goto out;
             /* munge into LP64 addr */
             mnt_args.fspec = (char *)CAST_USER_ADDR_T(tmp);
         }
 
         // Copy over the string
-        if ( (error = ddi_copyinstr((user_addr_t)mnt_args.fspec, osname,
+        if ( (error = ddi_copyinstr((const void *)mnt_args.fspec, osname,
                                 MAXPATHLEN, &osnamelen)) )
             goto out;
     }
@@ -2083,7 +2091,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 	options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
 
-	error = ddi_copyin((user_addr_t)mnt_args.optptr, (caddr_t)options,
+	error = ddi_copyin((const void *)mnt_args.optptr, (caddr_t)options,
 					   mnt_args.optlen, 0);
 
 	dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
@@ -2259,13 +2267,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 		/* Advisory locking should be handled at the VFS layer */
 		vfs_setlocklocal(vfsp);
-
-		dsl_prop_get_integer(osname, "LASTUNMOUNT",
-							 &value, NULL);
-		value = zfsvfs->z_last_unmount_time;
-		dprintf("ZFS: '%s' mount using last_unmount value %lx\n",
-				osname,
-				zfsvfs->z_last_unmount_time);
 
 	}
 #endif /* __APPLE__ */
@@ -2739,17 +2740,32 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			/* Update the last-unmount time for Spotlight's next mount */
 			char osname[MAXNAMELEN];
 			timestruc_t  now;
+			dmu_tx_t *tx;
+			int error;
+			uint64_t value;
 
-			printf("ZFS: Updating spotlight LASTUNMOUNT property\n");
 			dmu_objset_name(zfsvfs->z_os, osname);
+			printf("ZFS: '%s' Updating spotlight LASTUNMOUNT property\n",
+				osname);
 
 			gethrestime(&now);
 			zfsvfs->z_last_unmount_time = now.tv_sec;
 
-			ret = dsl_prop_set_int(osname, "LASTUNMOUNT", ZPROP_SRC_LOCAL,
-								   (uint64_t)zfsvfs->z_last_unmount_time);
-			dprintf("ZFS: '%s' set lastunmount to %lx (%d)\n",
-					osname, zfsvfs->z_last_unmount_time, ret);
+			tx = dmu_tx_create(zfsvfs->z_os);
+			dmu_tx_hold_zap(tx, MASTER_NODE_OBJ, TRUE, NULL);
+			error = dmu_tx_assign(tx, TXG_WAIT);
+			if (error) {
+                dmu_tx_abort(tx);
+			} else {
+				value = zfsvfs->z_last_unmount_time;
+				error = zap_update(zfsvfs->z_os, MASTER_NODE_OBJ,
+								   zfs_prop_to_name(ZFS_PROP_APPLE_LASTUNMOUNT),
+								   8, 1,
+								   &value, tx);
+				dmu_tx_commit(tx);
+			}
+			printf("ZFS: '%s' set lastunmount to 0x%lx (%d)\n",
+					osname, zfsvfs->z_last_unmount_time, error);
 		}
 
 		dprintf("Signalling reclaim sync\n");
