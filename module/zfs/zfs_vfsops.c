@@ -2064,18 +2064,18 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
         osname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
 
         if (vfs_context_is64bit(context)) {
-            if ( (error = copyin(data, (caddr_t)&mnt_args, sizeof(mnt_args))) )
+            if ( (error = ddi_copyin(data, (caddr_t)&mnt_args, sizeof(mnt_args), 0)) )
                 goto out;
         } else {
             user32_addr_t tmp;
-            if ( (error = copyin(data, (caddr_t)&tmp, sizeof(tmp))) )
+            if ( (error = ddi_copyin(data, (caddr_t)&tmp, sizeof(tmp), 0)) )
                 goto out;
             /* munge into LP64 addr */
             mnt_args.fspec = (char *)CAST_USER_ADDR_T(tmp);
         }
 
         // Copy over the string
-        if ( (error = copyinstr((user_addr_t)mnt_args.fspec, osname,
+        if ( (error = ddi_copyinstr((user_addr_t)mnt_args.fspec, osname,
                                 MAXPATHLEN, &osnamelen)) )
             goto out;
     }
@@ -2083,8 +2083,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 	options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
 
-	error = copyin((user_addr_t)mnt_args.optptr, (caddr_t)options,
-	    mnt_args.optlen);
+	error = ddi_copyin((user_addr_t)mnt_args.optptr, (caddr_t)options,
+					   mnt_args.optlen, 0);
 
 	dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
 	    " options %s\n",

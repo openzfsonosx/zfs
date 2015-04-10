@@ -121,7 +121,7 @@ zfs_vfs_sysctl(int *name, __unused u_int namelen, user_addr_t oldp, size_t *oldl
 		copyoutsize = sizeof (zfs_footprint_stats_t) +
 		              ((act_caches - 1) * sizeof (kmem_cache_stats_t));
 
-		error = copyout(footprint, oldp, copyoutsize);
+		error = ddi_copyout(footprint, oldp, copyoutsize, 0);
 
 		kmem_free(footprint, copyinsize);
 
