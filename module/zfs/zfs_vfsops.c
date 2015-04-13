@@ -161,7 +161,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 #if NAMEDSTREAMS
 		VOL_CAP_INT_NAMEDSTREAMS |
 #endif
-		VOL_CAP_INT_EXTENDED_ATTR ,
+		/*VOL_CAP_INT_EXTENDED_ATTR ,*/
 
 		0 , 0
 	},
@@ -413,11 +413,11 @@ atime_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
 
-	if (newval == TRUE) {
-		zfsvfs->z_atime = TRUE;
+	if (newval == B_TRUE) {
+		zfsvfs->z_atime = B_TRUE;
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOATIME);
 	} else {
-		zfsvfs->z_atime = FALSE;
+		zfsvfs->z_atime = B_FALSE;
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOATIME);
 	}
 }
@@ -435,11 +435,21 @@ xattr_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
 
-	if (newval == TRUE) {
+	/*
+	 * Apple does have MNT_NOUSERXATTR mount option, but unfortunately the VFS
+	 * layer returns EACCESS if xattr access is attempted. Finder etc, will
+	 * do so, even if filesystem capabilities is set without xattr, rendering
+	 * the mount option useless. We no longer set it, and handle xattrs being
+	 * disabled internally.
+	 */
+
+	if (newval == B_TRUE) {
 		/* XXX locking on vfs_flag? */
-        vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
+		zfsvfs->z_xattr = B_TRUE;
+        //vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
 	} else {
-        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
+		zfsvfs->z_xattr = B_FALSE;
+        //vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
 	}
 }
 
@@ -486,7 +496,7 @@ static void
 readonly_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == TRUE) {
+	if (newval == B_TRUE) {
 		/* XXX locking on vfs_flag? */
 
         // We need to release the mtime_vp when readonly, as it will not
@@ -513,7 +523,7 @@ static void
 setuid_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == FALSE) {
+	if (newval == B_FALSE) {
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOSUID);
 	} else {
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOSUID);
@@ -524,7 +534,7 @@ static void
 exec_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == FALSE) {
+	if (newval == B_FALSE) {
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOEXEC);
 	} else {
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOEXEC);
@@ -545,7 +555,7 @@ nbmand_changed_cb(void *arg, uint64_t newval)
 {
 #if 0
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == FALSE) {
+	if (newval == B_FALSE) {
 		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_NBMAND);
 		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_NONBMAND, NULL, 0);
 	} else {
@@ -593,7 +603,7 @@ static void
 finderbrowse_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == FALSE) {
+	if (newval == B_FALSE) {
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_DONTBROWSE);
 	} else {
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_DONTBROWSE);
@@ -603,7 +613,7 @@ static void
 ignoreowner_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == FALSE) {
+	if (newval == B_FALSE) {
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_IGNORE_OWNERSHIP);
 	} else {
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_IGNORE_OWNERSHIP);
@@ -2346,6 +2356,12 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		if (zfsvfs->z_case == ZFS_CASE_SENSITIVE)
 			fsap->f_capabilities.capabilities[VOL_CAPABILITIES_FORMAT]
 				|= VOL_CAP_FMT_CASE_SENSITIVE;
+
+		/* Check if xattr is enabled */
+        if (zfsvfs->z_xattr == B_TRUE) {
+			fsap->f_capabilities.capabilities[VOL_CAPABILITIES_INTERFACES]
+				|= VOL_CAP_INT_EXTENDED_ATTR;
+		}
 
 		VFSATTR_SET_SUPPORTED(fsap, f_capabilities);
 	}
