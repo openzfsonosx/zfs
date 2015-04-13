@@ -2011,7 +2011,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
-		return ENOATTR;
+		return ENOTSUP;
 	}
 
 	ZFS_ENTER(zfsvfs);
@@ -2232,7 +2232,7 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
-		return ENOATTR;
+		return ENOTSUP;
 	}
 
 	ZFS_ENTER(zfsvfs);
@@ -2320,7 +2320,7 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
-		return 0;
+		return EINVAL;
 	}
 
 	ZFS_ENTER(zfsvfs);
