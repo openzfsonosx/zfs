@@ -5737,7 +5737,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 
 	zc->zc_dev = dev;
 
-	zc->zc_iflags = flag & FKIOCTL;
+	zc->zc_iflags = flag & ~FKIOCTL;
 	if (zc->zc_nvlist_src_size != 0) {
 		error = get_nvlist(zc->zc_nvlist_src, zc->zc_nvlist_src_size,
 		    zc->zc_iflags, &innvl);
