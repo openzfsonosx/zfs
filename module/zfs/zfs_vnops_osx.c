@@ -259,6 +259,15 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		case 0x80005802:
 		break;
 
+	case 0xc000680c: // HFS_NEXT_LINK:
+		//printf("vnop_ioctl: HFS_NEXT_LINK %02lx ('%lu' + %lu)\n",
+		//    ap->a_command, (ap->a_command&0xff00)>>8,
+		//    ap->a_command&0xff);
+
+		*(uint32_t *)ap->a_data = 0;
+		error = 0;
+		break;
+
 	default:
 		printf("vnop_ioctl: Unknown ioctl %02lx ('%lu' + %lu)\n",
 		    ap->a_command, (ap->a_command&0xff00)>>8,
