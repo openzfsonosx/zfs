@@ -505,6 +505,8 @@ vdev_lookup_by_path(vdev_t *vd, const char *name)
 	char *lookup_name;
 	int err = 0;
 
+	if (!vd) return NULL;
+
 	// Check both strings are valid
 	if (name && *name &&
 		vd->vdev_path && vd->vdev_path[0]) {
