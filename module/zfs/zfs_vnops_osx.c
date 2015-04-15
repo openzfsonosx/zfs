@@ -156,7 +156,13 @@ zfs_vfs_quotactl(__unused struct mount *mp, __unused int cmds,
 }
 
 
-static int
+
+/*
+ * All these functions could be declared as 'static' but to assist with
+ * dtrace debugging, we do not.
+ */
+
+int
 zfs_vnop_open(struct vnop_open_args *ap)
 #if 0
 	struct vnop_open_args {
@@ -176,7 +182,7 @@ zfs_vnop_open(struct vnop_open_args *ap)
 	return (err);
 }
 
-static int
+int
 zfs_vnop_close(struct vnop_close_args *ap)
 #if 0
 	struct vnop_close_args {
@@ -193,7 +199,7 @@ zfs_vnop_close(struct vnop_close_args *ap)
 	return (zfs_close(ap->a_vp, ap->a_fflag, count, offset, cr, ct));
 }
 
-static int
+int
 zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 #if 0
 	struct vnop_ioctl_args {
@@ -281,7 +287,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 }
 
 
-static int
+int
 zfs_vnop_read(struct vnop_read_args *ap)
 #if 0
 	struct vnop_read_args {
@@ -304,7 +310,7 @@ zfs_vnop_read(struct vnop_read_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_write(struct vnop_write_args *ap)
 #if 0
 	struct vnop_write_args {
@@ -338,7 +344,7 @@ zfs_vnop_write(struct vnop_write_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_access(struct vnop_access_args *ap)
 #if 0
 	struct vnop_access_args {
@@ -392,7 +398,7 @@ zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
 	}
 }
 
-static int
+int
 zfs_vnop_lookup(struct vnop_lookup_args *ap)
 #if 0
 	struct vnop_lookup_args {
@@ -503,7 +509,7 @@ exit:
 	return (error);
 }
 
-static int
+int
 zfs_vnop_create(struct vnop_create_args *ap)
 #if 0
 	struct vnop_create_args {
@@ -538,7 +544,7 @@ zfs_vnop_create(struct vnop_create_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_remove(struct vnop_remove_args *ap)
 #if 0
 	struct vnop_remove_args {
@@ -567,7 +573,7 @@ zfs_vnop_remove(struct vnop_remove_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_mkdir(struct vnop_mkdir_args *ap)
 #if 0
 	struct vnop_mkdir_args {
@@ -610,7 +616,7 @@ zfs_vnop_mkdir(struct vnop_mkdir_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_rmdir(struct vnop_rmdir_args *ap)
 #if 0
 	struct vnop_rmdir_args {
@@ -638,7 +644,7 @@ zfs_vnop_rmdir(struct vnop_rmdir_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_readdir(struct vnop_readdir_args *ap)
 #if 0
 	struct vnop_readdir_args {
@@ -681,7 +687,7 @@ zfs_vnop_readdir(struct vnop_readdir_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_fsync(struct vnop_fsync_args *ap)
 #if 0
 	struct vnop_fsync_args {
@@ -722,7 +728,7 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	return (err);
 }
 
-static int
+int
 zfs_vnop_getattr(struct vnop_getattr_args *ap)
 #if 0
 	struct vnop_getattr_args {
@@ -749,7 +755,7 @@ zfs_vnop_getattr(struct vnop_getattr_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_setattr(struct vnop_setattr_args *ap)
 #if 0
 	struct vnop_setattr_args {
@@ -873,7 +879,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_rename(struct vnop_rename_args *ap)
 #if 0
 	struct vnop_rename_args {
@@ -910,7 +916,7 @@ zfs_vnop_rename(struct vnop_rename_args *ap)
 
 	return (error);
 }
-static int
+int
 zfs_vnop_symlink(struct vnop_symlink_args *ap)
 #if 0
 	struct vnop_symlink_args {
@@ -944,7 +950,7 @@ zfs_vnop_symlink(struct vnop_symlink_args *ap)
 }
 
 
-static int
+int
 zfs_vnop_readlink(struct vnop_readlink_args *ap)
 #if 0
 	struct vnop_readlink_args {
@@ -965,7 +971,7 @@ zfs_vnop_readlink(struct vnop_readlink_args *ap)
 	return (zfs_readlink(ap->a_vp, ap->a_uio, cr, ct));
 }
 
-static int
+int
 zfs_vnop_link(struct vnop_link_args *ap)
 #if 0
 	struct vnop_link_args {
@@ -1005,7 +1011,7 @@ zfs_vnop_link(struct vnop_link_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_pagein(struct vnop_pagein_args *ap)
 #if 0
 	struct vnop_pagein_args {
@@ -1409,7 +1415,7 @@ exit:
 
 
 
-static int
+int
 zfs_vnop_pageout(struct vnop_pageout_args *ap)
 #if 0
 	struct vnop_pageout_args {
@@ -1483,7 +1489,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 
 
 
-static int
+int
 zfs_vnop_mmap(struct vnop_mmap_args *ap)
 #if 0
 	struct vnop_mmap_args {
@@ -1519,7 +1525,7 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 	return (0);
 }
 
-static int
+int
 zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 #if 0
 	struct vnop_mnomap_args {
@@ -1560,7 +1566,7 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 
 
 
-static int
+int
 zfs_vnop_inactive(struct vnop_inactive_args *ap)
 #if 0
 	struct vnop_inactive_args {
@@ -1720,7 +1726,7 @@ vnop_reclaim_thread(void *arg)
 
 
 
-static int
+int
 zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 #if 0
 	struct vnop_reclaim_args {
@@ -1866,7 +1872,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 
 
-static int
+int
 zfs_vnop_mknod(struct vnop_mknod_args *ap)
 #if 0
 	struct vnop_mknod_args {
@@ -1881,7 +1887,7 @@ zfs_vnop_mknod(struct vnop_mknod_args *ap)
 	return (zfs_vnop_create((struct vnop_create_args *)ap));
 }
 
-static int
+int
 zfs_vnop_allocate(struct vnop_allocate_args *ap)
 #if 0
 	struct vnop_allocate_args {
@@ -1899,7 +1905,7 @@ zfs_vnop_allocate(struct vnop_allocate_args *ap)
 	return (0);
 }
 
-static int
+int
 zfs_vnop_whiteout(struct vnop_whiteout_args *ap)
 #if 0
 	struct vnop_whiteout_args {
@@ -1915,7 +1921,7 @@ zfs_vnop_whiteout(struct vnop_whiteout_args *ap)
 	return (ENOTSUP);
 }
 
-static int
+int
 zfs_vnop_pathconf(struct vnop_pathconf_args *ap)
 #if 0
 	struct vnop_pathconf_args {
@@ -1987,10 +1993,6 @@ zfs_vnop_pathconf(struct vnop_pathconf_args *ap)
 	return (error);
 }
 
-
-/*
- * This is not static so dtrace can see it
- */
 int
 zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 #if 0
@@ -2119,9 +2121,6 @@ out:
 	return (error);
 }
 
-/*
- * This is not static so dtrace can see it
- */
 int
 zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 #if 0
@@ -2205,7 +2204,7 @@ out:
 	return (error);
 }
 
-static int
+int
 zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 #if 0
 	struct vnop_removexattr_args {
@@ -2279,7 +2278,7 @@ out:
 	return (error);
 }
 
-static int
+int
 zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 #if 0
 	struct vnop_listxattr_args {
@@ -2387,7 +2386,7 @@ out:
 }
 
 #ifdef HAVE_NAMED_STREAMS
-static int
+int
 zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 #if 0
 	struct vnop_getnamedstream_args {
@@ -2445,7 +2444,7 @@ out:
 	return (error);
 }
 
-static int
+int
 zfs_vnop_makenamedstream(struct vnop_makenamedstream_args *ap)
 #if 0
 	struct vnop_makenamedstream_args {
@@ -2511,7 +2510,7 @@ out:
 	return (error);
 }
 
-static int
+int
 zfs_vnop_removenamedstream(struct vnop_removenamedstream_args *ap)
 #if 0
 	struct vnop_removenamedstream_args {
@@ -2559,7 +2558,7 @@ out:
  *
  * This call is deprecated in 10.8
  */
-static int
+int
 zfs_vnop_exchange(struct vnop_exchange_args *ap)
 #if 0
 	struct vnop_exchange_args {
@@ -2598,7 +2597,7 @@ zfs_vnop_exchange(struct vnop_exchange_args *ap)
 	return (ENOTSUP);
 }
 
-static int
+int
 zfs_vnop_revoke(struct vnop_revoke_args *ap)
 #if 0
 	struct vnop_revoke_args {
@@ -2611,7 +2610,7 @@ zfs_vnop_revoke(struct vnop_revoke_args *ap)
 	return (vn_revoke(ap->a_vp, ap->a_flags, ap->a_context));
 }
 
-static int
+int
 zfs_vnop_blktooff(struct vnop_blktooff_args *ap)
 #if 0
 	struct vnop_blktooff_args {
@@ -2626,7 +2625,7 @@ zfs_vnop_blktooff(struct vnop_blktooff_args *ap)
 	return (0);
 }
 
-static int
+int
 zfs_vnop_offtoblk(struct vnop_offtoblk_args *ap)
 #if 0
 	struct vnop_offtoblk_args {
@@ -2653,7 +2652,7 @@ zfs_vnop_offtoblk(struct vnop_offtoblk_args *ap)
 	return (0);
 }
 
-static int
+int
 zfs_vnop_blockmap(struct vnop_blockmap_args *ap)
 #if 0
 	struct vnop_blockmap_args {
@@ -2672,7 +2671,7 @@ zfs_vnop_blockmap(struct vnop_blockmap_args *ap)
 	return (ENOTSUP);
 }
 
-static int
+int
 zfs_vnop_strategy(struct vnop_strategy_args *ap)
 #if 0
 	struct vnop_strategy_args {
@@ -2685,7 +2684,7 @@ zfs_vnop_strategy(struct vnop_strategy_args *ap)
 	return (0);
 }
 
-static int
+int
 zfs_vnop_select(struct vnop_select_args *ap)
 #if 0
 	struct vnop_select_args {
@@ -2704,7 +2703,7 @@ zfs_vnop_select(struct vnop_select_args *ap)
 }
 
 #ifdef WITH_READDIRATTR
-static int
+int
 zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 #if 0
 	struct vnop_readdirattr_args {
