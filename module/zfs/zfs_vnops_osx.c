@@ -1685,7 +1685,10 @@ vnop_reclaim_thread(void *arg)
 			rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 
 			/* CODE */
-			zfs_rmnode(zp);
+			if (zp->z_sa_hdl)
+				zfs_rmnode(zp);
+			else
+				printf("ZFS: Warning, reclaim_thread zp with NULL zp->z_sa_hdl\n");
 			/* CODE */
 
 			rw_exit(&zfsvfs->z_teardown_inactive_lock);
