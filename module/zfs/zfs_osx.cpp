@@ -564,7 +564,7 @@ extern "C" {
 	vdev_t *vd = (vdev_t *)arg;
 	vdev_disk_t *dvd = (vdev_disk_t *)vd->vdev_tsd;
 
-	dvd->vd_offline = B_TRUE;
+	if (dvd) dvd->vd_offline = B_TRUE;
 	vdev_disk_close(vd);
 	thread_exit();
   }
