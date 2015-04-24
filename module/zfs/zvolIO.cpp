@@ -376,6 +376,10 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 	/* Perform the read or write operation through the transport driver. */
 	actualByteCount = (nblks*(ZVOL_BSIZE));
 
+	/* Make sure we don't go away while the command is being executed */
+	retain();
+	m_provider->retain();
+
 	if (direction == kIODirectionIn) {
 
 		if (zvol_read_iokit(zv, (block*(ZVOL_BSIZE)),
@@ -393,6 +397,9 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 		}
 
 	}
+
+	m_provider->release();
+	release();
 
 	if (actualByteCount != nblks*(ZVOL_BSIZE))
 		dprintf("Read/Write operation failed\n");
