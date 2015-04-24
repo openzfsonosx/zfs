@@ -1359,17 +1359,8 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	zfsvfs_t *zfsvfs;
 	int error;
 
-	zfsvfs = kmem_zalloc(sizeof (zfsvfs_t), KM_SLEEP);
-
-	/*
-	 * We claim to always be readonly so we can open snapshots;
-	 * other ZPL code will prevent us from writing to snapshots.
-	 */
-	error = dmu_objset_own(osname, DMU_OST_ZFS, B_TRUE, zfsvfs, &os);
-	if (error) {
-		kmem_free(zfsvfs, sizeof (zfsvfs_t));
-		return (error);
-	}
+	*zsbp = zsb;
+	return (0);
 
 	zfsvfs->z_vfs = NULL;
 	zfsvfs->z_parent = zfsvfs;
@@ -1521,9 +1512,9 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	avl_destroy(&zfsvfs->z_hardlinks_linkid);
 #endif
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
-		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
-	kmem_free(zfsvfs, sizeof (zfsvfs_t));
-    dprintf("-zfsvfs_free\n");
+		mutex_destroy(&zsb->z_hold_mtx[i]);
+	vmem_free(zsb->z_hold_mtx, sizeof (kmutex_t) * ZFS_OBJ_MTX_SZ);
+	kmem_free(zsb, sizeof (zfs_sb_t));
 }
 
 static void
@@ -2970,25 +2961,19 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
         goto out;
 	}
 
-    *vpp = ZTOV(zp);
-
-    err = zfs_vnode_lock(*vpp, 0/*flags*/);
-
-	/*
-	 * Spotlight requires that vap->va_name() is set when returning
-	 * from vfs_vget, so that vfs_getrealpath() can succeed in returning
-	 * a path to mds.
-	 */
-	char name[MAXPATHLEN + 2];
-
-	/* Root can't lookup in ZAP */
-	if (zp->z_id == zfsvfs->z_root) {
-
-		dmu_objset_name(zfsvfs->z_os, name);
-		dprintf("vget: set root '%s'\n", name);
-		vnode_update_identity(*vpp, NULL, name,
-							  strlen(name), 0,
-							  VNODE_UPDATE_NAME);
+		atime_changed_cb(zsb, B_FALSE);
+		readonly_changed_cb(zsb, B_TRUE);
+		if ((error = dsl_prop_get_integer(osname,
+		    "xattr", &pval, NULL)))
+			goto out;
+		xattr_changed_cb(zsb, pval);
+		if ((error = dsl_prop_get_integer(osname,
+		    "acltype", &pval, NULL)))
+			goto out;
+		acltype_changed_cb(zsb, pval);
+		zsb->z_issnap = B_TRUE;
+		zsb->z_os->os_sync = ZFS_SYNC_DISABLED;
+		zsb->z_snap_defer_time = jiffies;
 
 	} else {
 		uint64_t parent;
@@ -3022,37 +3007,8 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
 		} else {
 
-			/* Lookup name from ID, grab parent */
-			VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
-							 &parent, sizeof (parent)) == 0);
-
-			if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-								 ZFS_DIRENT_OBJ(-1ULL), name) == 0) {
-
-				dprintf("vget: set name '%s'\n", name);
-				vnode_update_identity(*vpp, NULL, name,
-									  strlen(name), 0,
-									  VNODE_UPDATE_NAME);
-			} else {
-				dprintf("vget: unable to get name for %llu\n", zp->z_id);
-			} // !zap_search
-		}
-	} // rootid
-
-
- out:
-    /*
-     * We do not release the vp here in vget, if we do, we panic with io_count
-     * != 1
-     *
-     * VN_RELE(ZTOV(zp));
-     */
-	if (err != 0) {
-		VN_RELE(ZTOV(zp));
-		*vpp = NULL;
-	}
-    dprintf("vget return %d\n", err);
-	return (err);
+	if (zsb)
+		zfsctl_destroy(sb->s_fs_info);
 }
 
 #ifdef __APPLE__

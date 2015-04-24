@@ -5181,25 +5181,9 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
 
-	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+	rw_enter(&zsb->z_teardown_inactive_lock, RW_READER);
 	if (zp->z_sa_hdl == NULL) {
-		/*
-		 * The fs has been unmounted, or we did a
-		 * suspend/resume and this file no longer exists.
-		 */
-		rw_exit(&zfsvfs->z_teardown_inactive_lock);
-		vnode_recycle(vp);
-		return;
-	}
-
-	mutex_enter(&zp->z_lock);
-	if (zp->z_unlinked) {
-		/*
-		 * Fast path to recycle a vnode of a removed file.
-		 */
-		mutex_exit(&zp->z_lock);
-		rw_exit(&zfsvfs->z_teardown_inactive_lock);
-		vnode_recycle(vp);
+		rw_exit(&zsb->z_teardown_inactive_lock);
 		return;
 	}
 	mutex_exit(&zp->z_lock);

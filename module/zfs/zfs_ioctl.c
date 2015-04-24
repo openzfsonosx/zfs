@@ -3317,16 +3317,16 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 int
 zfs_unmount_snap(const char *snapname)
 {
-	int err = 0;
+	int err;
 
 	if (strchr(snapname, '@') == NULL)
 		return (0);
 
-	//err = zfsctl_snapshot_unmount((char *)snapname, MNT_FORCE);
+	err = zfsctl_snapshot_unmount((char *)snapname, MNT_FORCE);
 	if (err != 0 && err != ENOENT)
 		return (SET_ERROR(err));
 
-	return 0;
+	return (0);
 }
 
 /* ARGSUSED */

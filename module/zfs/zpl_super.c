@@ -382,6 +382,21 @@ zpl_remount_fs(struct super_block *sb, int *flags, char *data)
 	return (error);
 }
 
+/*
+ * ZFS specific features must be explicitly handled here, the VFS will
+ * automatically handled the following generic functionality.
+ *
+ *   MNT_NOSUID,
+ *   MNT_NODEV,
+ *   MNT_NOEXEC,
+ *   MNT_NOATIME,
+ *   MNT_NODIRATIME,
+ *   MNT_READONLY,
+ *   MNT_STRICTATIME,
+ *   MS_SYNCHRONOUS,
+ *   MS_DIRSYNC,
+ *   MS_MANDLOCK.
+ */
 static int
 __zpl_show_options(struct seq_file *seq, zfs_sb_t *zsb)
 {

@@ -672,6 +672,54 @@ zfs_znode_dmu_fini(znode_t *zp)
 	zp->z_sa_hdl = NULL;
 }
 
+/*
+ * Called by new_inode() to allocate a new inode.
+ */
+int
+zfs_inode_alloc(struct super_block *sb, struct inode **ip)
+{
+	znode_t *zp;
+
+	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
+	*ip = ZTOI(zp);
+
+	return (0);
+}
+
+/*
+ * Called in multiple places when an inode should be destroyed.
+ */
+void
+zfs_inode_destroy(struct inode *ip)
+{
+	znode_t *zp = ITOZ(ip);
+	zfs_sb_t *zsb = ZTOZSB(zp);
+
+	mutex_enter(&zsb->z_znodes_lock);
+	if (list_link_active(&zp->z_link_node)) {
+		list_remove(&zsb->z_all_znodes, zp);
+		zsb->z_nr_znodes--;
+	}
+	mutex_exit(&zsb->z_znodes_lock);
+
+	if (zp->z_acl_cached) {
+		zfs_acl_free(zp->z_acl_cached);
+		zp->z_acl_cached = NULL;
+	}
+
+	if (zp->z_xattr_cached) {
+		nvlist_free(zp->z_xattr_cached);
+		zp->z_xattr_cached = NULL;
+	}
+
+	if (zp->z_xattr_parent) {
+		zfs_iput_async(ZTOI(zp->z_xattr_parent));
+		zp->z_xattr_parent = NULL;
+	}
+
+	kmem_cache_free(znode_cache, zp);
+}
+
 static void
 zfs_vnode_forget(struct vnode *vp)
 {
