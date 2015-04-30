@@ -953,8 +953,9 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 		}
 
 		if (zp->z_links <= zp_is_dir) {
-			zfs_panic_recover("zfs: link count on vnode %p is %u, "
+			zfs_panic_recover("zfs: link count on vnode %p objID %llu is %u, "
 			    "should be at least %u", zp->z_vnode,
+							  zp->z_id,
 			    (int)zp->z_links,
 			    zp_is_dir + 1);
 			zp->z_links = zp_is_dir + 1;
