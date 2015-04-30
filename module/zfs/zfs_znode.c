@@ -402,7 +402,9 @@ void
 zfs_znode_init(void)
 {
 	/*
-	 * Initialize zcache
+	 * Initialize zcache.  The KMC_SLAB hint is used in order that it be
+	 * backed by kmalloc() when on the Linux slab in order that any
+	 * wait_on_bit() operations on the related inode operate properly.
 	 */
 	rw_init(&zfsvfs_lock, NULL, RW_DEFAULT, NULL);
 	ASSERT(znode_cache == NULL);

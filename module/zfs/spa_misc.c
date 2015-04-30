@@ -22,6 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -227,7 +228,6 @@
 static avl_tree_t spa_namespace_avl;
 kmutex_t spa_namespace_lock;
 static kcondvar_t spa_namespace_cv;
-static int spa_active_count;
 int spa_max_replication_override = SPA_DVAS_PER_BP;
 
 static kmutex_t spa_spare_lock;
@@ -478,14 +478,17 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	mutex_init(&spa->spa_async_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_errlist_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_errlog_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_evicting_os_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_history_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_proc_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_props_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_scrub_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_suspend_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_vdev_top_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_feat_stats_lock, NULL, MUTEX_DEFAULT, NULL);
 
 	cv_init(&spa->spa_async_cv, NULL, CV_DEFAULT, NULL);
+	cv_init(&spa->spa_evicting_os_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_proc_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_scrub_io_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_suspend_cv, NULL, CV_DEFAULT, NULL);
@@ -512,10 +515,8 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	/*
 	 * Set the alternate root, if there is one.
 	 */
-	if (altroot) {
+	if (altroot)
 		spa->spa_root = spa_strdup(altroot);
-		spa_active_count++;
-	}
 
 	/*
 	 * Every pool starts with the default cachefile
@@ -574,16 +575,15 @@ spa_remove(spa_t *spa)
 
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 	ASSERT(spa->spa_state == POOL_STATE_UNINITIALIZED);
+	ASSERT3U(refcount_count(&spa->spa_refcount), ==, 0);
 
 	nvlist_free(spa->spa_config_splitting);
 
 	avl_remove(&spa_namespace_avl, spa);
 	cv_broadcast(&spa_namespace_cv);
 
-	if (spa->spa_root) {
+	if (spa->spa_root)
 		spa_strfree(spa->spa_root);
-		spa_active_count--;
-	}
 
 	while ((dp = list_head(&spa->spa_config_list)) != NULL) {
 		list_remove(&spa->spa_config_list, dp);
@@ -608,6 +608,7 @@ spa_remove(spa_t *spa)
 		bplist_destroy(&spa->spa_free_bplist[t]);
 
 	cv_destroy(&spa->spa_async_cv);
+	cv_destroy(&spa->spa_evicting_os_cv);
 	cv_destroy(&spa->spa_proc_cv);
 	cv_destroy(&spa->spa_scrub_io_cv);
 	cv_destroy(&spa->spa_suspend_cv);
@@ -615,12 +616,14 @@ spa_remove(spa_t *spa)
 	mutex_destroy(&spa->spa_async_lock);
 	mutex_destroy(&spa->spa_errlist_lock);
 	mutex_destroy(&spa->spa_errlog_lock);
+	mutex_destroy(&spa->spa_evicting_os_lock);
 	mutex_destroy(&spa->spa_history_lock);
 	mutex_destroy(&spa->spa_proc_lock);
 	mutex_destroy(&spa->spa_props_lock);
 	mutex_destroy(&spa->spa_scrub_lock);
 	mutex_destroy(&spa->spa_suspend_lock);
 	mutex_destroy(&spa->spa_vdev_top_lock);
+	mutex_destroy(&spa->spa_feat_stats_lock);
 
 	kmem_free(spa, sizeof (spa_t));
 }
@@ -667,6 +670,20 @@ spa_close(spa_t *spa, void *tag)
 {
 	ASSERT(refcount_count(&spa->spa_refcount) > spa->spa_minref ||
 	    MUTEX_HELD(&spa_namespace_lock));
+	(void) refcount_remove(&spa->spa_refcount, tag);
+}
+
+/*
+ * Remove a reference to the given spa_t held by a dsl dir that is
+ * being asynchronously released.  Async releases occur from a taskq
+ * performing eviction of dsl datasets and dirs.  The namespace lock
+ * isn't held and the hold by the object being evicted may contribute to
+ * spa_minref (e.g. dataset or directory released during pool export),
+ * so the asserts in spa_close() do not apply.
+ */
+void
+spa_async_close(spa_t *spa, void *tag)
+{
 	(void) refcount_remove(&spa->spa_refcount, tag);
 }
 
@@ -1543,6 +1560,34 @@ spa_log_class(spa_t *spa)
 	return (spa->spa_log_class);
 }
 
+void
+spa_evicting_os_register(spa_t *spa, objset_t *os)
+{
+	mutex_enter(&spa->spa_evicting_os_lock);
+	list_insert_head(&spa->spa_evicting_os_list, os);
+	mutex_exit(&spa->spa_evicting_os_lock);
+}
+
+void
+spa_evicting_os_deregister(spa_t *spa, objset_t *os)
+{
+	mutex_enter(&spa->spa_evicting_os_lock);
+	list_remove(&spa->spa_evicting_os_list, os);
+	cv_broadcast(&spa->spa_evicting_os_cv);
+	mutex_exit(&spa->spa_evicting_os_lock);
+}
+
+void
+spa_evicting_os_wait(spa_t *spa)
+{
+	mutex_enter(&spa->spa_evicting_os_lock);
+	while (!list_is_empty(&spa->spa_evicting_os_list))
+		cv_wait(&spa->spa_evicting_os_cv, &spa->spa_evicting_os_lock);
+	mutex_exit(&spa->spa_evicting_os_lock);
+
+	dmu_buf_user_evict_wait();
+}
+
 int
 spa_max_replication(spa_t *spa)
 {
@@ -1641,11 +1686,6 @@ spa_boot_init(void)
 	spa_config_load();
 }
 
-int
-spa_busy(void)
-{
-    return (spa_active_count);
-}
 
 void
 spa_init(int mode)

@@ -2895,6 +2895,8 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		zil_commit(zfsvfs->z_log, zp->z_id);
 		ZFS_EXIT(zfsvfs);
 	}
+	tsd_set(zfs_fsyncer_key, NULL);
+
 	return (0);
 }
 

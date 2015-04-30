@@ -24,6 +24,10 @@
  */
 
 /*
+ * Copyright (c) 2014 by Delphix. All rights reserved.
+ */
+
+/*
  * AVL - generic AVL tree implementation for kernel use
  *
  * A complete description of AVL trees can be found in many CS textbooks.
@@ -85,6 +89,12 @@
  *	  is a modified "avl_node_t *".  The bottom bit (normally 0 for a
  *	  pointer) is set to indicate if that the new node has a value greater
  *	  than the value of the indicated "avl_node_t *".
+ *
+ * Note - in addition to userland (e.g. libavl and libutil) and the kernel
+ * (e.g. genunix), avl.c is compiled into ld.so and kmdb's genunix module,
+ * which each have their own compilation environments and subsequent
+ * requirements. Each of these environments must be considered when adding
+ * dependencies from avl.c.
  */
 
 /*
@@ -1087,6 +1097,8 @@ EXPORT_SYMBOL(avl_first);
 EXPORT_SYMBOL(avl_last);
 EXPORT_SYMBOL(avl_nearest);
 EXPORT_SYMBOL(avl_add);
+EXPORT_SYMBOL(avl_swap);
+EXPORT_SYMBOL(avl_is_empty);
 EXPORT_SYMBOL(avl_remove);
 EXPORT_SYMBOL(avl_numnodes);
 EXPORT_SYMBOL(avl_destroy_nodes);
