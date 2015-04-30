@@ -20,6 +20,7 @@
 #include <sys/unistd.h>
 #include <sys/xattr.h>
 #include <sys/utfconv.h>
+#include <sys/finderinfo.h>
 
 extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
 
@@ -1602,5 +1603,64 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
         dprintf("  ACL: %d type %04x, mask %04x, flags %04x, who %d\n",
                i, type, mask, flags, who);
     }
+
+}
+
+void finderinfo_update(uint8_t *finderinfo, znode_t *zp)
+{
+	u_int8_t *finfo = NULL;
+	uint64_t crtime[2];
+	uint64_t addtime[2];
+	struct timespec va_crtime;
+	//static u_int32_t emptyfinfo[8] = {0};
+
+
+	finfo = (u_int8_t *)finderinfo + 16;
+
+	if (IFTOVT((mode_t)zp->z_mode) == VLNK) {
+		struct FndrFileInfo *fip;
+
+		fip = (struct FndrFileInfo *)finderinfo;
+		fip->fdType = 0;
+		fip->fdCreator = 0;
+	}
+
+	/* Lookup the ADDTIME if it exists, if not, use CRTIME */
+	/* change this into bulk */
+	sa_lookup(zp->z_sa_hdl, SA_ZPL_CRTIME(zp->z_zfsvfs), crtime, sizeof(crtime));
+
+	if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ADDTIME(zp->z_zfsvfs), &addtime,
+				  sizeof (addtime)) != 0) {
+		ZFS_TIME_DECODE(&va_crtime, crtime);
+	} else {
+		ZFS_TIME_DECODE(&va_crtime, addtime);
+	}
+
+	if (IFTOVT((mode_t)zp->z_mode) == VREG) {
+		struct FndrExtendedFileInfo *extinfo =
+			(struct FndrExtendedFileInfo *)finfo;
+		extinfo->date_added = 0;
+
+		/* listxattr shouldnt list it either if empty, fixme.
+		   if (bcmp((const void *)finderinfo, emptyfinfo,
+		   sizeof(emptyfinfo)) == 0)
+		   error = ENOATTR;
+		*/
+
+		extinfo->date_added = OSSwapBigToHostInt32(va_crtime.tv_sec);
+	}
+	if (IFTOVT((mode_t)zp->z_mode) == VDIR) {
+		struct FndrExtendedDirInfo *extinfo =
+			(struct FndrExtendedDirInfo *)finfo;
+		extinfo->date_added = 0;
+
+		/*
+		  if (bcmp((const void *)finderinfo, emptyfinfo,
+		  sizeof(emptyfinfo)) == 0)
+		  error = ENOATTR;
+		*/
+
+		extinfo->date_added = OSSwapBigToHostInt32(va_crtime.tv_sec);
+	}
 
 }

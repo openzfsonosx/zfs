@@ -121,7 +121,7 @@ zfs_vfs_sysctl(int *name, __unused u_int namelen, user_addr_t oldp, size_t *oldl
 		copyoutsize = sizeof (zfs_footprint_stats_t) +
 		              ((act_caches - 1) * sizeof (kmem_cache_stats_t));
 
-		error = copyout(footprint, oldp, copyoutsize);
+		error = ddi_copyout(footprint, oldp, copyoutsize, 0);
 
 		kmem_free(footprint, copyinsize);
 
@@ -505,6 +505,8 @@ vdev_lookup_by_path(vdev_t *vd, const char *name)
 	char *lookup_name;
 	int err = 0;
 
+	if (!vd) return NULL;
+
 	// Check both strings are valid
 	if (name && *name &&
 		vd->vdev_path && vd->vdev_path[0]) {
@@ -562,7 +564,7 @@ extern "C" {
 	vdev_t *vd = (vdev_t *)arg;
 	vdev_disk_t *dvd = (vdev_disk_t *)vd->vdev_tsd;
 
-	dvd->vd_offline = B_TRUE;
+	if (dvd) dvd->vd_offline = B_TRUE;
 	vdev_disk_close(vd);
 	thread_exit();
   }

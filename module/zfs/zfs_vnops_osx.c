@@ -156,7 +156,13 @@ zfs_vfs_quotactl(__unused struct mount *mp, __unused int cmds,
 }
 
 
-static int
+
+/*
+ * All these functions could be declared as 'static' but to assist with
+ * dtrace debugging, we do not.
+ */
+
+int
 zfs_vnop_open(struct vnop_open_args *ap)
 #if 0
 	struct vnop_open_args {
@@ -176,7 +182,7 @@ zfs_vnop_open(struct vnop_open_args *ap)
 	return (err);
 }
 
-static int
+int
 zfs_vnop_close(struct vnop_close_args *ap)
 #if 0
 	struct vnop_close_args {
@@ -193,7 +199,7 @@ zfs_vnop_close(struct vnop_close_args *ap)
 	return (zfs_close(ap->a_vp, ap->a_fflag, count, offset, cr, ct));
 }
 
-static int
+int
 zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 #if 0
 	struct vnop_ioctl_args {
@@ -259,6 +265,15 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		case 0x80005802:
 		break;
 
+	case 0xc000680c: // HFS_NEXT_LINK:
+		//printf("vnop_ioctl: HFS_NEXT_LINK %02lx ('%lu' + %lu)\n",
+		//    ap->a_command, (ap->a_command&0xff00)>>8,
+		//    ap->a_command&0xff);
+
+		*(uint32_t *)ap->a_data = 0;
+		error = 0;
+		break;
+
 	default:
 		printf("vnop_ioctl: Unknown ioctl %02lx ('%lu' + %lu)\n",
 		    ap->a_command, (ap->a_command&0xff00)>>8,
@@ -272,7 +287,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 }
 
 
-static int
+int
 zfs_vnop_read(struct vnop_read_args *ap)
 #if 0
 	struct vnop_read_args {
@@ -295,7 +310,7 @@ zfs_vnop_read(struct vnop_read_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_write(struct vnop_write_args *ap)
 #if 0
 	struct vnop_write_args {
@@ -329,7 +344,7 @@ zfs_vnop_write(struct vnop_write_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_access(struct vnop_access_args *ap)
 #if 0
 	struct vnop_access_args {
@@ -383,7 +398,7 @@ zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
 	}
 }
 
-static int
+int
 zfs_vnop_lookup(struct vnop_lookup_args *ap)
 #if 0
 	struct vnop_lookup_args {
@@ -494,7 +509,7 @@ exit:
 	return (error);
 }
 
-static int
+int
 zfs_vnop_create(struct vnop_create_args *ap)
 #if 0
 	struct vnop_create_args {
@@ -529,7 +544,7 @@ zfs_vnop_create(struct vnop_create_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_remove(struct vnop_remove_args *ap)
 #if 0
 	struct vnop_remove_args {
@@ -558,7 +573,7 @@ zfs_vnop_remove(struct vnop_remove_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_mkdir(struct vnop_mkdir_args *ap)
 #if 0
 	struct vnop_mkdir_args {
@@ -601,7 +616,7 @@ zfs_vnop_mkdir(struct vnop_mkdir_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_rmdir(struct vnop_rmdir_args *ap)
 #if 0
 	struct vnop_rmdir_args {
@@ -629,7 +644,7 @@ zfs_vnop_rmdir(struct vnop_rmdir_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_readdir(struct vnop_readdir_args *ap)
 #if 0
 	struct vnop_readdir_args {
@@ -672,7 +687,7 @@ zfs_vnop_readdir(struct vnop_readdir_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_fsync(struct vnop_fsync_args *ap)
 #if 0
 	struct vnop_fsync_args {
@@ -713,7 +728,7 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	return (err);
 }
 
-static int
+int
 zfs_vnop_getattr(struct vnop_getattr_args *ap)
 #if 0
 	struct vnop_getattr_args {
@@ -740,7 +755,7 @@ zfs_vnop_getattr(struct vnop_getattr_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_setattr(struct vnop_setattr_args *ap)
 #if 0
 	struct vnop_setattr_args {
@@ -864,7 +879,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_rename(struct vnop_rename_args *ap)
 #if 0
 	struct vnop_rename_args {
@@ -901,7 +916,7 @@ zfs_vnop_rename(struct vnop_rename_args *ap)
 
 	return (error);
 }
-static int
+int
 zfs_vnop_symlink(struct vnop_symlink_args *ap)
 #if 0
 	struct vnop_symlink_args {
@@ -935,7 +950,7 @@ zfs_vnop_symlink(struct vnop_symlink_args *ap)
 }
 
 
-static int
+int
 zfs_vnop_readlink(struct vnop_readlink_args *ap)
 #if 0
 	struct vnop_readlink_args {
@@ -956,7 +971,7 @@ zfs_vnop_readlink(struct vnop_readlink_args *ap)
 	return (zfs_readlink(ap->a_vp, ap->a_uio, cr, ct));
 }
 
-static int
+int
 zfs_vnop_link(struct vnop_link_args *ap)
 #if 0
 	struct vnop_link_args {
@@ -996,7 +1011,7 @@ zfs_vnop_link(struct vnop_link_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_vnop_pagein(struct vnop_pagein_args *ap)
 #if 0
 	struct vnop_pagein_args {
@@ -1400,7 +1415,7 @@ exit:
 
 
 
-static int
+int
 zfs_vnop_pageout(struct vnop_pageout_args *ap)
 #if 0
 	struct vnop_pageout_args {
@@ -1474,7 +1489,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 
 
 
-static int
+int
 zfs_vnop_mmap(struct vnop_mmap_args *ap)
 #if 0
 	struct vnop_mmap_args {
@@ -1510,7 +1525,7 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 	return (0);
 }
 
-static int
+int
 zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 #if 0
 	struct vnop_mnomap_args {
@@ -1551,7 +1566,7 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 
 
 
-static int
+int
 zfs_vnop_inactive(struct vnop_inactive_args *ap)
 #if 0
 	struct vnop_inactive_args {
@@ -1670,7 +1685,10 @@ vnop_reclaim_thread(void *arg)
 			rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 
 			/* CODE */
-			zfs_rmnode(zp);
+			if (zp->z_sa_hdl)
+				zfs_rmnode(zp);
+			else
+				printf("ZFS: Warning, reclaim_thread zp with NULL zp->z_sa_hdl\n");
 			/* CODE */
 
 			rw_exit(&zfsvfs->z_teardown_inactive_lock);
@@ -1711,7 +1729,7 @@ vnop_reclaim_thread(void *arg)
 
 
 
-static int
+int
 zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 #if 0
 	struct vnop_reclaim_args {
@@ -1857,7 +1875,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 
 
-static int
+int
 zfs_vnop_mknod(struct vnop_mknod_args *ap)
 #if 0
 	struct vnop_mknod_args {
@@ -1872,7 +1890,7 @@ zfs_vnop_mknod(struct vnop_mknod_args *ap)
 	return (zfs_vnop_create((struct vnop_create_args *)ap));
 }
 
-static int
+int
 zfs_vnop_allocate(struct vnop_allocate_args *ap)
 #if 0
 	struct vnop_allocate_args {
@@ -1890,7 +1908,7 @@ zfs_vnop_allocate(struct vnop_allocate_args *ap)
 	return (0);
 }
 
-static int
+int
 zfs_vnop_whiteout(struct vnop_whiteout_args *ap)
 #if 0
 	struct vnop_whiteout_args {
@@ -1906,7 +1924,7 @@ zfs_vnop_whiteout(struct vnop_whiteout_args *ap)
 	return (ENOTSUP);
 }
 
-static int
+int
 zfs_vnop_pathconf(struct vnop_pathconf_args *ap)
 #if 0
 	struct vnop_pathconf_args {
@@ -1978,10 +1996,6 @@ zfs_vnop_pathconf(struct vnop_pathconf_args *ap)
 	return (error);
 }
 
-
-/*
- * This is not static so dtrace can see it
- */
 int
 zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 #if 0
@@ -2005,6 +2019,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	struct uio *uio = ap->a_uio;
 	pathname_t cn = { 0 };
 	int  error;
+	struct uio *finderinfo_uio = NULL;
 
 	/* dprintf("+getxattr vp %p\n", ap->a_vp); */
 
@@ -2042,10 +2057,18 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	}
 
 	/*
-	 * Save memory location and bufsize for the finderinfo tests below
+	 * If we are dealing with FinderInfo, we duplicate the UIO first
+	 * so that we can uiomove to/from it to modify contents.
 	 */
-	user_addr_t finderinfo = uio_curriovbase( uio );
-	uint64_t bufsize = uio_resid(uio);
+	if (!error && uio &&
+		bcmp(ap->a_name, XATTR_FINDERINFO_NAME, sizeof(XATTR_FINDERINFO_NAME)) == 0) {
+		if ((user_size_t)uio_resid(uio) < 32) {/* FinderInfo is 32 bytes */
+			error = ERANGE;
+			goto out;
+		}
+
+		finderinfo_uio = uio_duplicate(uio);
+	}
 
 
 	/* Read the attribute data. */
@@ -2061,97 +2084,32 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 
 
 	/*
-	 * Please move this to zfs_vnops_osx_lib.c
+	 * Handle FinderInfo
 	 */
-struct FndrExtendedDirInfo {
-        u_int32_t document_id;
-        u_int32_t date_added;
-        u_int16_t extended_flags;
-        u_int16_t reserved3;
-        u_int32_t write_gen_counter;
-} __attribute__((aligned(2), packed));
+	if ((error == 0) && (finderinfo_uio != NULL)) {
+		u_int8_t finderinfo[32];
+		size_t bytes;
 
-struct FndrExtendedFileInfo {
-        u_int32_t document_id;
-        u_int32_t date_added;
-        u_int16_t extended_flags;
-        u_int16_t reserved2;
-        u_int32_t write_gen_counter;
-} __attribute__((aligned(2), packed));
-
-/* Finder information */
-struct FndrFileInfo {
-        u_int32_t       fdType;         /* file type */
-        u_int32_t       fdCreator;      /* file creator */
-        u_int16_t       fdFlags;        /* Finder flags */
-        struct {
-            int16_t     v;              /* file's location */
-            int16_t     h;
-        } fdLocation;
-        int16_t         opaque;
-} __attribute__((aligned(2), packed));
-typedef struct FndrFileInfo FndrFileInfo;
-
-	if (!error && uio &&
-		bcmp(ap->a_name, XATTR_FINDERINFO_NAME, sizeof(XATTR_FINDERINFO_NAME)) == 0) {
-
-		u_int8_t *finfo = NULL;
-		uint64_t crtime[2];
-		uint64_t addtime[2];
-		struct timespec va_crtime;
-		//static u_int32_t emptyfinfo[8] = {0};
-
-		finfo = (u_int8_t *)finderinfo + 16;
-
-        if (IFTOVT((mode_t)zp->z_mode) == VLNK) {
-			struct FndrFileInfo *fip;
-
-			fip = (struct FndrFileInfo *)finderinfo;
-			fip->fdType = 0;
-			fip->fdCreator = 0;
+		/* Copy in the data we just read */
+		uiocopy((const char *)&finderinfo, 32, UIO_WRITE,
+				finderinfo_uio, &bytes);
+		if (bytes != 32) {
+			error = ERANGE;
+			goto out;
 		}
 
-		/* Lookup the ADDTIME if it exists, if not, use CRTIME */
-		/* change this into bulk */
-		sa_lookup(zp->z_sa_hdl, SA_ZPL_CRTIME(zp->z_zfsvfs), crtime, sizeof(crtime));
-		if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ADDTIME(zfsvfs), &addtime, sizeof (addtime)) != 0) {
-			ZFS_TIME_DECODE(&va_crtime, crtime);
-		} else {
-			ZFS_TIME_DECODE(&va_crtime, addtime);
-		}
+		finderinfo_update((uint8_t *)&finderinfo, zp);
 
-        if (IFTOVT((mode_t)zp->z_mode) == VREG) {
-			struct FndrExtendedFileInfo *extinfo = (struct FndrExtendedFileInfo *)finfo;
-			extinfo->date_added = 0;
-
-			/* listxattr shouldnt list it either if empty, fixme.
-			if (bcmp((const void *)finderinfo, emptyfinfo,
-					 sizeof(emptyfinfo)) == 0)
-				error = ENOATTR;
-			*/
-
-			extinfo->date_added = OSSwapBigToHostInt32(va_crtime.tv_sec);
-         }
-        if (IFTOVT((mode_t)zp->z_mode) == VDIR) {
-			struct FndrExtendedDirInfo *extinfo = (struct FndrExtendedDirInfo *)finfo;
-			extinfo->date_added = 0;
-
-			/*
-			if (bcmp((const void *)finderinfo, emptyfinfo,
-					 sizeof(emptyfinfo)) == 0)
-				error = ENOATTR;
-			*/
-
-			extinfo->date_added = OSSwapBigToHostInt32(va_crtime.tv_sec);
-         }
-
-		if (bufsize != 32) error = ERANGE; // finderinfo must be 32 bytes.
+		/* Copy out the data we just modified */
+		uiomove((const char*)&finderinfo, 32, 0, finderinfo_uio);
 
 	}
 
 
 
 out:
+	if (finderinfo_uio) uio_free(finderinfo_uio);
+
 	if (cn.pn_buf)
 		kmem_free(cn.pn_buf, cn.pn_bufsize);
 	if (xvp) {
@@ -2166,9 +2124,6 @@ out:
 	return (error);
 }
 
-/*
- * This is not static so dtrace can see it
- */
 int
 zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 #if 0
@@ -2252,7 +2207,7 @@ out:
 	return (error);
 }
 
-static int
+int
 zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 #if 0
 	struct vnop_removexattr_args {
@@ -2326,7 +2281,7 @@ out:
 	return (error);
 }
 
-static int
+int
 zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 #if 0
 	struct vnop_listxattr_args {
@@ -2434,7 +2389,7 @@ out:
 }
 
 #ifdef HAVE_NAMED_STREAMS
-static int
+int
 zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 #if 0
 	struct vnop_getnamedstream_args {
@@ -2492,7 +2447,7 @@ out:
 	return (error);
 }
 
-static int
+int
 zfs_vnop_makenamedstream(struct vnop_makenamedstream_args *ap)
 #if 0
 	struct vnop_makenamedstream_args {
@@ -2558,7 +2513,7 @@ out:
 	return (error);
 }
 
-static int
+int
 zfs_vnop_removenamedstream(struct vnop_removenamedstream_args *ap)
 #if 0
 	struct vnop_removenamedstream_args {
@@ -2606,7 +2561,7 @@ out:
  *
  * This call is deprecated in 10.8
  */
-static int
+int
 zfs_vnop_exchange(struct vnop_exchange_args *ap)
 #if 0
 	struct vnop_exchange_args {
@@ -2645,7 +2600,7 @@ zfs_vnop_exchange(struct vnop_exchange_args *ap)
 	return (ENOTSUP);
 }
 
-static int
+int
 zfs_vnop_revoke(struct vnop_revoke_args *ap)
 #if 0
 	struct vnop_revoke_args {
@@ -2658,7 +2613,7 @@ zfs_vnop_revoke(struct vnop_revoke_args *ap)
 	return (vn_revoke(ap->a_vp, ap->a_flags, ap->a_context));
 }
 
-static int
+int
 zfs_vnop_blktooff(struct vnop_blktooff_args *ap)
 #if 0
 	struct vnop_blktooff_args {
@@ -2673,7 +2628,7 @@ zfs_vnop_blktooff(struct vnop_blktooff_args *ap)
 	return (0);
 }
 
-static int
+int
 zfs_vnop_offtoblk(struct vnop_offtoblk_args *ap)
 #if 0
 	struct vnop_offtoblk_args {
@@ -2700,7 +2655,7 @@ zfs_vnop_offtoblk(struct vnop_offtoblk_args *ap)
 	return (0);
 }
 
-static int
+int
 zfs_vnop_blockmap(struct vnop_blockmap_args *ap)
 #if 0
 	struct vnop_blockmap_args {
@@ -2719,7 +2674,7 @@ zfs_vnop_blockmap(struct vnop_blockmap_args *ap)
 	return (ENOTSUP);
 }
 
-static int
+int
 zfs_vnop_strategy(struct vnop_strategy_args *ap)
 #if 0
 	struct vnop_strategy_args {
@@ -2732,7 +2687,7 @@ zfs_vnop_strategy(struct vnop_strategy_args *ap)
 	return (0);
 }
 
-static int
+int
 zfs_vnop_select(struct vnop_select_args *ap)
 #if 0
 	struct vnop_select_args {
@@ -2751,7 +2706,7 @@ zfs_vnop_select(struct vnop_select_args *ap)
 }
 
 #ifdef WITH_READDIRATTR
-static int
+int
 zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 #if 0
 	struct vnop_readdirattr_args {
