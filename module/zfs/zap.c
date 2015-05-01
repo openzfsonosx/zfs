@@ -972,10 +972,15 @@ zap_create_link(objset_t *os, dmu_object_type_t ot, uint64_t parent_obj,
     const char *name, dmu_tx_t *tx)
 {
 	uint64_t new_obj;
-
+	int err;
 	VERIFY((new_obj = zap_create(os, ot, DMU_OT_NONE, 0, tx)) > 0);
-	VERIFY(zap_add(os, parent_obj, name, sizeof (uint64_t), 1, &new_obj,
-	    tx) == 0);
+	//VERIFY(zap_add(os, parent_obj, name, sizeof (uint64_t), 1, &new_obj,
+	//tx) == 0);
+	if ((err = zap_add(os, parent_obj, name, sizeof (uint64_t), 1, &new_obj,
+					   tx)) != 0) {
+		delay(hz);
+		panic("zap_add failed, err %d for name '%s'\n", err, name);
+	}
 
 	return (new_obj);
 }
