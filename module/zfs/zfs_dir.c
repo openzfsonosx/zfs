@@ -837,8 +837,6 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 		ZFS_TIME_ENCODE(&now, addtime);
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_ADDTIME(zfsvfs), NULL,
 		    addtime, sizeof (addtime));
-		dprintf("ZFS: Updating ADDEDTIME on zp/vp %p/%p: %llu\n",
-				szp, ZTOV(szp), addtime[0]);
 	}
 #endif
 	error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);

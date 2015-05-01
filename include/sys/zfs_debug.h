@@ -67,9 +67,9 @@ extern int zfs_free_leak_on_eio;
 #if defined(_KERNEL)
 
 #include <spl-debug.h>
-#define	dprintf(...)                                                   \
+#define	dprintf(...)										   \
 	if (zfs_flags & ZFS_DEBUG_DPRINTF)                             \
-		__SDEBUG(NULL, SS_USER1, SD_DPRINTF, __VA_ARGS__)
+		cmn_err(CE_NOTE, __VA_ARGS__)
 
 /*
  * When zfs is running is user space the debugging is always enabled.

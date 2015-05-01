@@ -424,6 +424,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			zfs_recover;
 
 	}
+
 	return 0;
 }
 
