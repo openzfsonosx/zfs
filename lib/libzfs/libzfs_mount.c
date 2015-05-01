@@ -760,7 +760,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 		 * we manually attempt to create it here until proper integration
 		 * is complete
 		 */
-			{
+		if (0) {
 				char *path;
 				struct stat stsb;
 				if (asprintf(&path,

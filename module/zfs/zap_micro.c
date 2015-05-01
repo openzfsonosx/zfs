@@ -980,8 +980,10 @@ zap_add(objset_t *os, uint64_t zapobj, const char *key,
 	zap_name_t *zn;
 
 	err = zap_lockdir(os, zapobj, tx, RW_WRITER, TRUE, TRUE, &zap);
-	if (err)
+	if (err) {
+		printf("ZFS: zap_lockdir failed %d zapobj %llu\n", err, zapobj);
 		return (err);
+	}
 	zn = zap_name_alloc(zap, key, MT_EXACT);
 	if (zn == NULL) {
 		zap_unlockdir(zap);
@@ -1008,6 +1010,7 @@ zap_add(objset_t *os, uint64_t zapobj, const char *key,
 	zap_name_free(zn);
 	if (zap != NULL)	/* may be NULL if fzap_add() failed */
 		zap_unlockdir(zap);
+	if (err) printf("ZFS: zap_add returning error %d\n", err);
 	return (err);
 }
 
