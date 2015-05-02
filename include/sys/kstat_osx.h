@@ -85,6 +85,8 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_scrub_delay;
 	kstat_named_t zfs_scan_idle;
 
+	kstat_named_t zfs_recover;
+
 
 } osx_kstat_t;
 

@@ -102,16 +102,6 @@ zfs_dbgmsg_init(void)
 	    offsetof(zfs_dbgmsg_t, zdm_node));
 	mutex_init(&zfs_dbgmsgs_lock, NULL, MUTEX_DEFAULT, NULL);
 #endif
-
-	if (zfs_flags == 0) {
-#if defined(_KERNEL)
-		zfs_flags = ZFS_DEBUG_DPRINTF;
-		spl_debug_set_mask(spl_debug_get_mask() | SD_DPRINTF);
-		spl_debug_set_subsys(spl_debug_get_subsys() | SS_USER1);
-#else
-		zfs_flags = ~ZFS_DEBUG_DPRINTF;
-#endif /* _KERNEL */
-	}
 }
 
 void

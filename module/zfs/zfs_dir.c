@@ -837,8 +837,6 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 		ZFS_TIME_ENCODE(&now, addtime);
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_ADDTIME(zfsvfs), NULL,
 		    addtime, sizeof (addtime));
-		dprintf("ZFS: Updating ADDEDTIME on zp/vp %p/%p: %llu\n",
-				szp, ZTOV(szp), addtime[0]);
 	}
 #endif
 	error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
@@ -953,8 +951,9 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 		}
 
 		if (zp->z_links <= zp_is_dir) {
-			zfs_panic_recover("zfs: link count on vnode %p is %u, "
+			zfs_panic_recover("zfs: link count on vnode %p objID %llu is %u, "
 			    "should be at least %u", zp->z_vnode,
+							  zp->z_id,
 			    (int)zp->z_links,
 			    zp_is_dir + 1);
 			zp->z_links = zp_is_dir + 1;
