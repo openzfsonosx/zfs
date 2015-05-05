@@ -1652,6 +1652,7 @@ isDeviceMatchForKeyAndSubstr(char *device, CFStringRef key, CFStringRef substr,
 int
 osx_device_isvirtual(char *device)
 {
+return false;
 	Boolean isCoreStorageLV = false;
 	Boolean isVirtualInterface = false;
 

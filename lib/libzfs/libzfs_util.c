@@ -944,6 +944,7 @@ zfs_path_to_zhandle(libzfs_handle_t *hdl, char *path, zfs_type_t argtype)
 int
 zfs_append_partition(char *path, size_t max_len)
 {
+fprintf(stderr, "+zfs_append_partition : path %s : max_len %zu\n", path, max_len);
 	int len = strlen(path);
 
 	if (strncmp(path, DISK_ROOT"/disk", strlen(DISK_ROOT) + 5) == 0) {
@@ -970,6 +971,11 @@ zfs_append_partition(char *path, size_t max_len)
 
 		(void) strcat(path, ":1");
 		len += 2;
+	} else if (strncmp(path, UDISK_ROOT"/by-id",
+            strlen(UDISK_ROOT) + 6) == 0 ||
+            strncmp(path, UDISK_ROOT_ALT"/by-id",
+            strlen(UDISK_ROOT_ALT) + 6) == 0) {
+		; /* Do nothing - this is probably already the partition */
 	} else {
 		if (len + 2 >= max_len)
 			return (-1);
@@ -1081,6 +1087,7 @@ zfs_strcmp_shortname(char *name, char *cmp_name, int wholedisk)
 int
 zfs_strcmp_pathname(char *name, char *cmp, int wholedisk)
 {
+fprintf(stderr, "+zfs_strcmp %s : %s : %d\n", name, cmp, wholedisk);
 	int path_len, cmp_len;
 	char path_name[MAXPATHLEN];
 	char cmp_name[MAXPATHLEN];
@@ -1098,7 +1105,11 @@ zfs_strcmp_pathname(char *name, char *cmp, int wholedisk)
 	if (name[0] != '/')
 		return (zfs_strcmp_shortname(name, cmp_name, wholedisk));
 
-	(void) strlcpy(path_name, name, MAXPATHLEN);
+	if (strncmp(name, "/var/run/", 9) == 0) {
+		strlcpy(path_name, "/private", MAXPATHLEN);
+		strlcat(path_name, name, MAXPATHLEN);
+	} else
+		(void) strlcpy(path_name, name, MAXPATHLEN);
 	path_len = strlen(path_name);
 	cmp_len = strlen(cmp_name);
 
@@ -1108,6 +1119,7 @@ zfs_strcmp_pathname(char *name, char *cmp, int wholedisk)
 			return (ENOMEM);
 	}
 
+fprintf(stderr, "path_name %s : cmp_name %s\n", path_name, cmp_name);
 	if ((path_len != cmp_len) || strcmp(path_name, cmp_name))
 		return (ENOENT);
 

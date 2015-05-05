@@ -2012,6 +2012,7 @@ static nvlist_t *
 vdev_to_nvlist_iter(nvlist_t *nv, nvlist_t *search, boolean_t *avail_spare,
     boolean_t *l2cache, boolean_t *log)
 {
+fprintf(stderr, "+vdev_to_nvlist_iter\n");
 	uint_t c, children;
 	nvlist_t **child;
 	nvlist_t *ret;
@@ -2020,8 +2021,10 @@ vdev_to_nvlist_iter(nvlist_t *nv, nvlist_t *search, boolean_t *avail_spare,
 	nvpair_t *pair = nvlist_next_nvpair(search, NULL);
 
 	/* Nothing to look for */
-	if (search == NULL || pair == NULL)
+	if (search == NULL || pair == NULL) {
+fprintf(stderr, "-vdev_to_nvlist_iterA\n");
 		return (NULL);
+	}
 
 	/* Obtain the key we will use to search */
 	srchkey = nvpair_name(pair);
@@ -2034,8 +2037,10 @@ vdev_to_nvlist_iter(nvlist_t *nv, nvlist_t *search, boolean_t *avail_spare,
 			verify(nvpair_value_uint64(pair, &srchval) == 0);
 			verify(nvlist_lookup_uint64(nv, ZPOOL_CONFIG_GUID,
 			    &theguid) == 0);
-			if (theguid == srchval)
+			if (theguid == srchval) {
+fprintf(stderr, "-vdev_to_nvlist_iterB\n");
 				return (nv);
+			}
 		}
 		break;
 
@@ -2058,15 +2063,32 @@ vdev_to_nvlist_iter(nvlist_t *nv, nvlist_t *search, boolean_t *avail_spare,
 		 *
 		 * Otherwise, all other searches are simple string compares.
 		 */
+if(srchkey)
+fprintf(stderr, "srchkey %s\n", srchkey);
+else
+fprintf(stderr, "srchkey null\n");
+if(srchval)
+fprintf(stderr, "srchval %s\n", srchval);
+else
+fprintf(stderr, "srchval null\n");
+if(val)
+fprintf(stderr, "val %s\n", val);
+else
+fprintf(stderr, "val null\n");
 		if (strcmp(srchkey, ZPOOL_CONFIG_PATH) == 0) {
+fprintf(stderr, "path!\n");
 			uint64_t wholedisk = 0;
 
 			(void) nvlist_lookup_uint64(nv, ZPOOL_CONFIG_WHOLE_DISK,
 			    &wholedisk);
-			if (zfs_strcmp_pathname(srchval, val, wholedisk) == 0)
+fprintf(stderr, "wholedisk %llu\n", wholedisk);
+			if (zfs_strcmp_pathname(srchval, val, wholedisk) == 0) {
+fprintf(stderr, "-vdev_to_nvlist_iterC\n");
 				return (nv);
+			}
 
 		} else if (strcmp(srchkey, ZPOOL_CONFIG_TYPE) == 0 && val) {
+fprintf(stderr, "type!\n");
 			char *type, *idx, *end, *p;
 			uint64_t id, vdev_id;
 
@@ -2075,8 +2097,10 @@ vdev_to_nvlist_iter(nvlist_t *nv, nvlist_t *search, boolean_t *avail_spare,
 			 * that the srchval is composed of a type and
 			 * vdev id pair (i.e. mirror-4).
 			 */
-			if ((type = strdup(srchval)) == NULL)
+			if ((type = strdup(srchval)) == NULL) {
+fprintf(stderr, "-vdev_to_nvlist_iterD\n");
 				return (NULL);
+			}
 
 			if ((p = strrchr(type, '-')) == NULL) {
 				free(type);
@@ -2104,21 +2128,28 @@ vdev_to_nvlist_iter(nvlist_t *nv, nvlist_t *search, boolean_t *avail_spare,
 			vdev_id = strtoull(idx, &end, 10);
 
 			free(type);
-			if (errno != 0)
+			if (errno != 0) {
+fprintf(stderr, "-vdev_to_nvlist_iterE\n");
 				return (NULL);
+			}
 
 			/*
 			 * Now verify that we have the correct vdev id.
 			 */
-			if (vdev_id == id)
+			if (vdev_id == id) {
+fprintf(stderr, "-vdev_to_nvlist_iterF\n");
 				return (nv);
+			}
 		}
 
 		/*
 		 * Common case
 		 */
-		if (strcmp(srchval, val) == 0)
+		if (strcmp(srchval, val) == 0) {
+fprintf(stderr, "common case!\n");
+fprintf(stderr, "-vdev_to_nvlist_iterG\n");
 			return (nv);
+		}
 		break;
 	}
 
@@ -2127,8 +2158,10 @@ vdev_to_nvlist_iter(nvlist_t *nv, nvlist_t *search, boolean_t *avail_spare,
 	}
 
 	if (nvlist_lookup_nvlist_array(nv, ZPOOL_CONFIG_CHILDREN,
-	    &child, &children) != 0)
+	    &child, &children) != 0) {
+fprintf(stderr, "-vdev_to_nvlist_iterH\n");
 		return (NULL);
+	}
 
 	for (c = 0; c < children; c++) {
 		if ((ret = vdev_to_nvlist_iter(child[c], search,
@@ -2145,6 +2178,7 @@ vdev_to_nvlist_iter(nvlist_t *nv, nvlist_t *search, boolean_t *avail_spare,
 			    is_log) {
 				*log = B_TRUE;
 			}
+fprintf(stderr, "-vdev_to_nvlist_iterI\n");
 			return (ret);
 		}
 	}
@@ -2155,6 +2189,7 @@ vdev_to_nvlist_iter(nvlist_t *nv, nvlist_t *search, boolean_t *avail_spare,
 			if ((ret = vdev_to_nvlist_iter(child[c], search,
 			    avail_spare, l2cache, NULL)) != NULL) {
 				*avail_spare = B_TRUE;
+fprintf(stderr, "-vdev_to_nvlist_iterJ\n");
 				return (ret);
 			}
 		}
@@ -2166,11 +2201,13 @@ vdev_to_nvlist_iter(nvlist_t *nv, nvlist_t *search, boolean_t *avail_spare,
 			if ((ret = vdev_to_nvlist_iter(child[c], search,
 			    avail_spare, l2cache, NULL)) != NULL) {
 				*l2cache = B_TRUE;
+fprintf(stderr, "-vdev_to_nvlist_iterK\n");
 				return (ret);
 			}
 		}
 	}
 
+fprintf(stderr, "-vdev_to_nvlist_iterL\n");
 	return (NULL);
 }
 
@@ -2216,6 +2253,7 @@ nvlist_t *
 zpool_find_vdev(zpool_handle_t *zhp, const char *path, boolean_t *avail_spare,
     boolean_t *l2cache, boolean_t *log)
 {
+fprintf(stderr, "moo\n");
 	char *end;
 	nvlist_t *nvroot, *search, *ret;
 	uint64_t guid;
@@ -2224,10 +2262,13 @@ zpool_find_vdev(zpool_handle_t *zhp, const char *path, boolean_t *avail_spare,
 
 	guid = strtoull(path, &end, 0);
 	if (guid != 0 && *end == '\0') {
+fprintf(stderr, "A\n");
 		verify(nvlist_add_uint64(search, ZPOOL_CONFIG_GUID, guid) == 0);
 	} else if (zpool_vdev_is_interior(path)) {
+fprintf(stderr, "B\n");
 		verify(nvlist_add_string(search, ZPOOL_CONFIG_TYPE, path) == 0);
 	} else {
+fprintf(stderr, "C\n");
 		verify(nvlist_add_string(search, ZPOOL_CONFIG_PATH, path) == 0);
 	}
 
@@ -2241,6 +2282,7 @@ zpool_find_vdev(zpool_handle_t *zhp, const char *path, boolean_t *avail_spare,
 	ret = vdev_to_nvlist_iter(nvroot, search, avail_spare, l2cache, log);
 	nvlist_free(search);
 
+fprintf(stderr, "cow : %p\n", ret);
 	return (ret);
 }
 
@@ -2402,6 +2444,7 @@ zpool_get_physpath(zpool_handle_t *zhp, char *physpath, size_t phypath_size)
 static int
 zpool_relabel_disk(libzfs_handle_t *hdl, const char *path, const char *msg)
 {
+fprintf(stderr, "+zpool_relabel_disk : hdl %p : path %s : msg %s\n", hdl, path, msg);
 	int fd, error;
 
 	if ((fd = open(path, O_RDWR|O_DIRECT)) < 0) {
@@ -2452,9 +2495,11 @@ zpool_vdev_online(zpool_handle_t *zhp, const char *path, int flags,
 	}
 
 	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+fprintf(stderr, "here\n");
 	if ((tgt = zpool_find_vdev(zhp, path, &avail_spare, &l2cache,
 	    &islog)) == NULL)
 		return (zfs_error(hdl, EZFS_NODEVICE, msg));
+fprintf(stderr, "there\n");
 
 	verify(nvlist_lookup_uint64(tgt, ZPOOL_CONFIG_GUID, &zc.zc_guid) == 0);
 
@@ -2489,6 +2534,17 @@ zpool_vdev_online(zpool_handle_t *zhp, const char *path, int flags,
 					    msg));
 
 				fullpath = buf;
+			}
+			if (strncmp(fullpath, "/private/var/run/disk/by-id", 27) ||
+			    strncmp(fullpath, "/var/run/disk/by-id", 19)) {
+				char buf2[MAXPATHLEN];
+				(void) realpath(fullpath, buf2);
+				int buf2len = strlen(buf2);
+				if (*(&buf2[buf2len - 1]) == '1' &&
+				    *(&buf2[buf2len - 2]) == 's') {
+					buf2[buf2len - 2] = '\0';
+					fullpath = buf2;
+				}
 			}
 
 			error = zpool_relabel_disk(hdl, fullpath, msg);
