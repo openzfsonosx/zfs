@@ -979,7 +979,8 @@ zap_create_link(objset_t *os, dmu_object_type_t ot, uint64_t parent_obj,
 	if ((err = zap_add(os, parent_obj, name, sizeof (uint64_t), 1, &new_obj,
 					   tx)) != 0) {
 		delay(hz);
-		panic("zap_add failed, err %d for name '%s'\n", err, name);
+		panic("zap_add failed, err %d for name '%s' parent %llu\n", err,
+			  name, parent_obj);
 	}
 
 	return (new_obj);
