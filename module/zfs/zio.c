@@ -383,7 +383,22 @@ zio_unique_parent(zio_t *cio)
 {
 	zio_t *pio = zio_walk_parents(cio);
 
+#if 1
+		{
+			zio_t *nio;
+			if ((nio = zio_walk_parents(cio)) != NULL) {
+				printf("ZFS: about to panic due to zio_unique_parent() not being NULL: pio %p -> nio %p\n", nio);
+
+				while((nio = zio_walk_parents(cio)) != NULL)
+					printf("ZFS: nio %p\n", nio);
+
+				delay(hz << 2);
+				panic("ZFS: zio_unique_parent not as unique as we'd like");
+			}
+		}
+#else
 	VERIFY(zio_walk_parents(cio) == NULL);
+#endif
 	return (pio);
 }
 
