@@ -530,6 +530,8 @@ zfs_vnop_create(struct vnop_create_args *ap)
 
 	dprintf("vnop_create: '%s'\n", cnp->cn_nameptr);
 
+	SPL_MASK_VAP(vap);
+
 	/*
 	 * extern int zfs_create(struct vnode *dvp, char *name, vattr_t *vap,
 	 *     int excl, int mode, struct vnode **vpp, cred_t *cr);
@@ -589,6 +591,8 @@ zfs_vnop_mkdir(struct vnop_mkdir_args *ap)
 	int error;
 
 	dprintf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
+
+	SPL_MASK_VAP(ap->a_vap);
 
 #if 0
 	/* Let's deny OS X fseventd for now */
@@ -741,6 +745,7 @@ zfs_vnop_getattr(struct vnop_getattr_args *ap)
 	int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
 
+	SPL_MASK_VAP(ap->a_vap);
 	/* dprintf("+vnop_getattr zp %p vp %p\n", VTOZ(ap->a_vp), ap->a_vp); */
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /* flags */0, cr, ct);
@@ -769,6 +774,8 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	vattr_t *vap = ap->a_vap;
 	uint_t mask = vap->va_mask;
 	int error = 0;
+
+	SPL_MASK_VAP(vap);
 
 	/* Translate OS X requested mask to ZFS */
 	if (VATTR_IS_ACTIVE(vap, va_data_size))
@@ -933,6 +940,8 @@ zfs_vnop_symlink(struct vnop_symlink_args *ap)
 	int error;
 
 	dprintf("vnop_symlink\n");
+
+	SPL_MASK_VAP(ap->a_vap);
 
 	/*
 	 * extern int zfs_symlink(struct vnode *dvp, struct vnode **vpp,
@@ -1887,6 +1896,7 @@ zfs_vnop_mknod(struct vnop_mknod_args *ap)
 	};
 #endif
 {
+	SPL_MASK_VAP(ap->a_vap);
 	return (zfs_vnop_create((struct vnop_create_args *)ap));
 }
 
