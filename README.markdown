@@ -4,7 +4,7 @@ OpenZFS on OS X (O3X) brings OpenZFS features to Apple's OS X.
 ** zfs.kext depends upon spl.kext, so start with that repository:
 https://github.com/openzfsonosx/spl.git
 
-It is tested primarily on Mac OS X Mavericks.
+It is tested primarily on Mac OS X Yosemite.
 
 See http://openzfsonosx.org/ for more information.
 
