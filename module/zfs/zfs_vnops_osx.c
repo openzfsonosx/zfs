@@ -543,6 +543,7 @@ zfs_vnop_create(struct vnop_create_args *ap)
 	if (!error)
 		cache_purge_negatives(ap->a_dvp);
 
+	SPL_RESTORE_VAP(vap);
 	return (error);
 }
 
@@ -617,6 +618,7 @@ zfs_vnop_mkdir(struct vnop_mkdir_args *ap)
 	if (!error)
 		cache_purge_negatives(ap->a_dvp);
 
+	SPL_RESTORE_VAP(ap->a_vap);
 	return (error);
 }
 
@@ -749,14 +751,15 @@ zfs_vnop_getattr(struct vnop_getattr_args *ap)
 	/* dprintf("+vnop_getattr zp %p vp %p\n", VTOZ(ap->a_vp), ap->a_vp); */
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /* flags */0, cr, ct);
-	if (error) {
-		dprintf("-vnop_getattr '%p' %d\n", (ap->a_vp), error);
-		return (error);
-	}
 
-	error = zfs_getattr_znode_unlocked(ap->a_vp, ap->a_vap);
+	if (!error)
+		error = zfs_getattr_znode_unlocked(ap->a_vp, ap->a_vap);
+
 	if (error)
 		dprintf("-vnop_getattr '%p' %d\n", (ap->a_vp), error);
+
+	SPL_RESTORE_VAP(ap->a_vap);
+
 	return (error);
 }
 
@@ -880,6 +883,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 			   missing);
 	}
 
+	SPL_RESTORE_VAP(vap);
 
 	if (error)
 		printf("vnop_setattr return failure %d\n", error);
@@ -955,6 +959,7 @@ zfs_vnop_symlink(struct vnop_symlink_args *ap)
 		cache_purge_negatives(ap->a_dvp);
 	/* XXX zfs_attach_vnode()? */
 
+	SPL_RESTORE_VAP(ap->a_vap);
 	return (error);
 }
 
@@ -1896,8 +1901,11 @@ zfs_vnop_mknod(struct vnop_mknod_args *ap)
 	};
 #endif
 {
+	int error;
 	SPL_MASK_VAP(ap->a_vap);
-	return (zfs_vnop_create((struct vnop_create_args *)ap));
+	error = zfs_vnop_create((struct vnop_create_args *)ap);
+	SPL_RESTORE_VAP(ap->a_vap);
+	return error;
 }
 
 int
