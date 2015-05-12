@@ -530,8 +530,6 @@ zfs_vnop_create(struct vnop_create_args *ap)
 
 	dprintf("vnop_create: '%s'\n", cnp->cn_nameptr);
 
-	SPL_MASK_VAP(vap);
-
 	/*
 	 * extern int zfs_create(struct vnode *dvp, char *name, vattr_t *vap,
 	 *     int excl, int mode, struct vnode **vpp, cred_t *cr);
@@ -543,7 +541,6 @@ zfs_vnop_create(struct vnop_create_args *ap)
 	if (!error)
 		cache_purge_negatives(ap->a_dvp);
 
-	SPL_RESTORE_VAP(vap);
 	return (error);
 }
 
@@ -593,8 +590,6 @@ zfs_vnop_mkdir(struct vnop_mkdir_args *ap)
 
 	dprintf("vnop_mkdir '%s'\n", ap->a_cnp->cn_nameptr);
 
-	SPL_MASK_VAP(ap->a_vap);
-
 #if 0
 	/* Let's deny OS X fseventd for now */
 	if (ap->a_cnp->cn_nameptr &&
@@ -618,7 +613,6 @@ zfs_vnop_mkdir(struct vnop_mkdir_args *ap)
 	if (!error)
 		cache_purge_negatives(ap->a_dvp);
 
-	SPL_RESTORE_VAP(ap->a_vap);
 	return (error);
 }
 
@@ -747,7 +741,6 @@ zfs_vnop_getattr(struct vnop_getattr_args *ap)
 	int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
 
-	SPL_MASK_VAP(ap->a_vap);
 	/* dprintf("+vnop_getattr zp %p vp %p\n", VTOZ(ap->a_vp), ap->a_vp); */
 
 	error = zfs_getattr(ap->a_vp, ap->a_vap, /* flags */0, cr, ct);
@@ -757,8 +750,6 @@ zfs_vnop_getattr(struct vnop_getattr_args *ap)
 
 	if (error)
 		dprintf("-vnop_getattr '%p' %d\n", (ap->a_vp), error);
-
-	SPL_RESTORE_VAP(ap->a_vap);
 
 	return (error);
 }
@@ -777,8 +768,6 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	vattr_t *vap = ap->a_vap;
 	uint_t mask = vap->va_mask;
 	int error = 0;
-
-	SPL_MASK_VAP(vap);
 
 	/* Translate OS X requested mask to ZFS */
 	if (VATTR_IS_ACTIVE(vap, va_data_size))
@@ -883,8 +872,6 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 			   missing);
 	}
 
-	SPL_RESTORE_VAP(vap);
-
 	if (error)
 		printf("vnop_setattr return failure %d\n", error);
 	return (error);
@@ -945,8 +932,6 @@ zfs_vnop_symlink(struct vnop_symlink_args *ap)
 
 	dprintf("vnop_symlink\n");
 
-	SPL_MASK_VAP(ap->a_vap);
-
 	/*
 	 * extern int zfs_symlink(struct vnode *dvp, struct vnode **vpp,
 	 *     char *name, vattr_t *vap, char *link, cred_t *cr);
@@ -958,8 +943,6 @@ zfs_vnop_symlink(struct vnop_symlink_args *ap)
 	if (!error)
 		cache_purge_negatives(ap->a_dvp);
 	/* XXX zfs_attach_vnode()? */
-
-	SPL_RESTORE_VAP(ap->a_vap);
 	return (error);
 }
 
@@ -1902,9 +1885,7 @@ zfs_vnop_mknod(struct vnop_mknod_args *ap)
 #endif
 {
 	int error;
-	SPL_MASK_VAP(ap->a_vap);
 	error = zfs_vnop_create((struct vnop_create_args *)ap);
-	SPL_RESTORE_VAP(ap->a_vap);
 	return error;
 }
 
