@@ -937,8 +937,7 @@ spa_taskq_dispatch_ent(spa_t *spa, zio_type_t t, zio_taskq_type_t q,
 	} else {
 		tq = tqs->stqs_taskq[((uint64_t)gethrtime()) % tqs->stqs_count];
 	}
-	//taskq_dispatch_ent(tq, func, arg, flags, ent);
-	taskq_dispatch(tq, func, arg, flags);
+	taskq_dispatch_ent(tq, func, arg, flags, ent);
 }
 
 /*
