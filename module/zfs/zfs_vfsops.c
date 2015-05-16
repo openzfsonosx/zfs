@@ -1216,6 +1216,12 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
 	zfsvfs->z_os = os;
 
+	/* Volume status "all ok" */
+	zfsvfs->z_notification_conditions = 0;
+	zfsvfs->z_freespace_notify_warninglimit = 0;
+	zfsvfs->z_freespace_notify_dangerlimit = 0;
+	zfsvfs->z_freespace_notify_desiredlevel = 0;
+
 	error = zfs_get_zplprop(os, ZFS_PROP_VERSION, &zfsvfs->z_version);
 	if (error) {
 		goto out;

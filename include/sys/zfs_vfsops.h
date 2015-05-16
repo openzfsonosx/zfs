@@ -87,6 +87,10 @@ struct zfsvfs {
         boolean_t       z_use_sa;       /* version allow system attributes */
         uint64_t        z_version;
         uint64_t        z_shares_dir;   /* hidden shares dir */
+	uint64_t	z_notification_conditions; /* used for HFSIOC_VOLUME_STATUS */
+	uint64_t	z_freespace_notify_warninglimit; /* HFSIOC_ vfs notification - number of free blocks */
+	uint64_t	z_freespace_notify_dangerlimit; /* HFSIOC_ vfs notification - number of free blocks */
+	uint64_t	z_freespace_notify_desiredlevel; /* HFSIOC_ vfs notification - number of free blocks */
         kmutex_t	    z_lock;
 #ifdef __APPLE__
         kmutex_t	    z_reclaim_list_lock; /* lock for using z_reclaim_list*/
