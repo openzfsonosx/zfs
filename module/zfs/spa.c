@@ -911,8 +911,6 @@ spa_taskqs_init(spa_t *spa, zio_type_t t, zio_taskq_type_t q)
 			    INT_MAX, spa->spa_proc, flags);
 		}
 
-		printf("spa: taskq_create: %p\n", tq);
-
 		tqs->stqs_taskq[i] = tq;
 	}
 }
