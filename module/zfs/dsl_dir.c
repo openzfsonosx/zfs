@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 Martin Matuska. All rights reserved.
  * Copyright (c) 2014 Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
@@ -512,7 +512,7 @@ dsl_dir_init_fs_ss_count(dsl_dir_t *dd, dmu_tx_t *tx)
 	zap_attribute_t *za;
 	dsl_dataset_t *ds;
 
-	ASSERT(spa_feature_is_enabled(dp->dp_spa, SPA_FEATURE_FS_SS_LIMIT));
+	ASSERT(spa_feature_is_active(dp->dp_spa, SPA_FEATURE_FS_SS_LIMIT));
 	ASSERT(dsl_pool_config_held(dp));
 	ASSERT(dmu_tx_is_syncing(tx));
 
@@ -665,7 +665,8 @@ dsl_dir_activate_fs_ss_limit(const char *ddname)
 	int error;
 
 	error = dsl_sync_task(ddname, dsl_dir_actv_fs_ss_limit_check,
-	    dsl_dir_actv_fs_ss_limit_sync, (void *)ddname, 0);
+	    dsl_dir_actv_fs_ss_limit_sync, (void *)ddname, 0,
+	    ZFS_SPACE_CHECK_RESERVED);
 
 	if (error == EALREADY)
 		error = 0;
@@ -1531,7 +1532,7 @@ dsl_dir_set_quota(const char *ddname, zprop_source_t source, uint64_t quota)
 	ddsqra.ddsqra_value = quota;
 
 	return (dsl_sync_task(ddname, dsl_dir_set_quota_check,
-	    dsl_dir_set_quota_sync, &ddsqra, 0));
+	    dsl_dir_set_quota_sync, &ddsqra, 0, ZFS_SPACE_CHECK_NONE));
 }
 
 int
@@ -1652,7 +1653,7 @@ dsl_dir_set_reservation(const char *ddname, zprop_source_t source,
 	ddsqra.ddsqra_value = reservation;
 
 	return (dsl_sync_task(ddname, dsl_dir_set_reservation_check,
-	    dsl_dir_set_reservation_sync, &ddsqra, 0));
+	    dsl_dir_set_reservation_sync, &ddsqra, 0, ZFS_SPACE_CHECK_NONE));
 }
 
 static dsl_dir_t *
@@ -1753,7 +1754,7 @@ dsl_dir_rename_check(void *arg, dmu_tx_t *tx)
 	}
 
 	if (dmu_tx_is_syncing(tx)) {
-		if (spa_feature_is_enabled(dp->dp_spa,
+		if (spa_feature_is_active(dp->dp_spa,
 		    SPA_FEATURE_FS_SS_LIMIT)) {
 			/*
 			 * Although this is the check function and we don't
@@ -1782,8 +1783,11 @@ dsl_dir_rename_check(void *arg, dmu_tx_t *tx)
 			err = zap_lookup(os, dd->dd_object,
 			    DD_FIELD_FILESYSTEM_COUNT, sizeof (fs_cnt), 1,
 			    &fs_cnt);
-			if (err != ENOENT && err != 0)
+			if (err != ENOENT && err != 0) {
+				dsl_dir_rele(newparent, FTAG);
+				dsl_dir_rele(dd, FTAG);
 				return (err);
+			}
 
 			/*
 			 * have to add 1 for the filesystem itself that we're
@@ -1794,8 +1798,11 @@ dsl_dir_rename_check(void *arg, dmu_tx_t *tx)
 			err = zap_lookup(os, dd->dd_object,
 			    DD_FIELD_SNAPSHOT_COUNT, sizeof (ss_cnt), 1,
 			    &ss_cnt);
-			if (err != ENOENT && err != 0)
+			if (err != ENOENT && err != 0) {
+				dsl_dir_rele(newparent, FTAG);
+				dsl_dir_rele(dd, FTAG);
 				return (err);
+			}
 		}
 
 		/* no rename into our descendant */
@@ -1846,7 +1853,7 @@ dsl_dir_rename_sync(void *arg, dmu_tx_t *tx)
 		 * We already made sure the dd counts were initialized in the
 		 * check function.
 		 */
-		if (spa_feature_is_enabled(dp->dp_spa,
+		if (spa_feature_is_active(dp->dp_spa,
 		    SPA_FEATURE_FS_SS_LIMIT)) {
 			VERIFY0(zap_lookup(os, dd->dd_object,
 			    DD_FIELD_FILESYSTEM_COUNT, sizeof (fs_cnt), 1,
@@ -1928,7 +1935,8 @@ dsl_dir_rename(const char *oldname, const char *newname)
 	ddra.ddra_cred = CRED();
 
 	return (dsl_sync_task(oldname,
-	    dsl_dir_rename_check, dsl_dir_rename_sync, &ddra, 3));
+	    dsl_dir_rename_check, dsl_dir_rename_sync, &ddra,
+	    3, ZFS_SPACE_CHECK_RESERVED));
 }
 
 int

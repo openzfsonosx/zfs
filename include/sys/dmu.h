@@ -259,7 +259,7 @@ void zfs_znode_byteswap(void *buf, size_t size);
  * The maximum number of bytes that can be accessed as part of one
  * operation, including metadata.
  */
-#define	DMU_MAX_ACCESS (10<<20) /* 10MB */
+#define	DMU_MAX_ACCESS (64 * 1024 * 1024) /* 64MB */
 #define	DMU_MAX_DELETEBLKCNT (20480) /* ~5MB of indirect blocks */
 
 #define	DMU_USERUSED_OBJECT	(-1ULL)
@@ -579,6 +579,7 @@ dmu_buf_init_user(dmu_buf_user_t *dbu, dmu_buf_evict_func_t *evict_func,
 	ASSERT(dbu->dbu_evict_func == NULL);
 	ASSERT(evict_func != NULL);
 	dbu->dbu_evict_func = evict_func;
+	taskq_init_ent(&dbu->dbu_tqent);
 #ifdef ZFS_DEBUG
 	dbu->dbu_clear_on_evict_dbufp = clear_on_evict_dbufp;
 #endif
@@ -769,6 +770,7 @@ void xuio_stat_wbuf_copied(void);
 void xuio_stat_wbuf_nocopy(void);
 
 extern int zfs_prefetch_disable;
+extern int zfs_max_recordsize;
 
 /*
  * Asynchronously try to read in the data.
@@ -953,8 +955,8 @@ typedef void (*dmu_traverse_cb_t)(objset_t *os, void *arg, struct blkptr *bp,
 void dmu_traverse_objset(objset_t *os, uint64_t txg_start,
     dmu_traverse_cb_t cb, void *arg);
 
-int dmu_send(const char *tosnap, const char *fromsnap, boolean_t embedok,
-    int outfd, struct vnode *vp, offset_t *off);
+//int dmu_send(const char *tosnap, const char *fromsnap, boolean_t embedok,
+	//  int outfd, struct vnode *vp, offset_t *off);
 
 
 int dmu_diff(const char *tosnap_name, const char *fromsnap_name,
