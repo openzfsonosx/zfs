@@ -558,7 +558,6 @@ sa_find_sizes(sa_os_t *sa, sa_bulk_attr_t *attr_desc, int attr_count,
 {
 	int var_size_count = 0;
 	int i;
-	int j = -1;
 	int full_space;
 	int hdrsize;
 	int extra_hdrsize;
@@ -644,13 +643,8 @@ sa_find_sizes(sa_os_t *sa, sa_bulk_attr_t *attr_desc, int attr_count,
 			*will_spill = B_TRUE;
 	}
 
-	/*
-	 * j holds the index of the last variable-sized attribute for
-	 * which hdrsize was increased.  Reverse the increase if that
-	 * attribute will be relocated to the spill block.
-	 */
-	if (*will_spill && j == *index)
-		hdrsize -= sizeof (uint16_t);
+	if (*will_spill)
+		hdrsize -= extra_hdrsize;
 
 	hdrsize = P2ROUNDUP(hdrsize, 8);
 	return (hdrsize);
@@ -1107,7 +1101,7 @@ sa_setup(objset_t *os, uint64_t sa_obj, sa_attr_reg_t *reg_attrs, int count,
 		    sa_layout_info_hash(sa_legacy_zpl_layout,
 		    sa_legacy_attr_count), B_FALSE, NULL);
 
-		(void) sa_add_layout_entry(os, sa_dummy_zpl_layout, 1, 1,
+		(void) sa_add_layout_entry(os, sa_dummy_zpl_layout, 0, 1,
                                    0, B_FALSE, NULL);
 	}
 	*user_table = os->os_sa->sa_user_table;
