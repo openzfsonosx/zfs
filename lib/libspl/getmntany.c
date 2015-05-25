@@ -249,6 +249,7 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 	mp->mnt_mountp = sfs->f_mntonname;
 	mp->mnt_fstype = sfs->f_fstypename;
 	mp->mnt_mntopts = mntopts;
+	mp->mnt_fssubtype = sfs->f_fssubtype;
 	//if (strcmp(mp->mnt_fstype, MNTTYPE_ZFS) == 0)
 		//printf("mnttab: %s %s %s %s\n", mp->mnt_special, mp->mnt_mountp, mp->mnt_fstype, mp->mnt_mntopts);
 

@@ -72,7 +72,7 @@ extern "C" {
 #include <sys/atomic.h>
 //#include <linux/dcache_compat.h>
 
-// There are to be found in spl/include/sys/kmem.h 
+// There are to be found in spl/include/sys/kmem.h
 //typedef enum kmem_cbrc {
 //	KMEM_CBRC_YES,
 //	KMEM_CBRC_NO,

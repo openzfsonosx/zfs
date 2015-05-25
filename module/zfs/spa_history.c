@@ -183,7 +183,7 @@ spa_history_zone(void)
 {
 #ifdef _KERNEL
 #ifdef HAVE_SPL
-	return ("linux");
+	return ("OSX");
 #else
 	return (curproc->p_zone->zone_name);
 #endif

@@ -1686,6 +1686,7 @@ zio_resume(spa_t *spa)
 		return (0);
 
 	zio_reexecute(pio);
+
 	return (zio_wait(pio));
 }
 
@@ -3222,7 +3223,7 @@ zio_done(zio_t *zio)
 	if (zio->io_delay >= MSEC_TO_TICK(zio_delay_max)) {
 		if (zio->io_vd != NULL && !vdev_is_dead(zio->io_vd))
 			zfs_ereport_post(FM_EREPORT_ZFS_DELAY, zio->io_spa,
-			    zio->io_vd, zio, 0, 0);
+							 zio->io_vd, zio, 0, 0);
 	}
 
 	if (zio->io_error) {
@@ -3232,10 +3233,12 @@ zio_done(zio_t *zio)
 		 * at the block level.  We ignore these errors if the
 		 * device is currently unavailable.
 		 */
+#ifndef __APPLE__
 		if (zio->io_error != ECKSUM && zio->io_vd != NULL &&
 			!vdev_is_dead(zio->io_vd))
 			zfs_ereport_post(FM_EREPORT_ZFS_IO, zio->io_spa,
-						zio->io_vd, zio, 0, 0);
+							 zio->io_vd, zio, 0, 0);
+#endif
 
 		if ((zio->io_error == EIO || !(zio->io_flags &
 		    (ZIO_FLAG_SPECULATIVE | ZIO_FLAG_DONT_PROPAGATE))) &&
@@ -3246,7 +3249,7 @@ zio_done(zio_t *zio)
 			 */
 			spa_log_error(zio->io_spa, zio);
 			zfs_ereport_post(FM_EREPORT_ZFS_DATA, zio->io_spa,
-			    NULL, zio, 0, 0);
+							 NULL, zio, 0, 0);
 		}
 	}
 

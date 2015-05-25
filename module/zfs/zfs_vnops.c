@@ -4334,6 +4334,24 @@ top:
 			    (void *)&szp->z_pflags, sizeof (uint64_t), tx);
 			ASSERT(error==0);
 
+#ifdef __APPLE__
+			/* If we moved an entry into a different directory (sdzp != tdzp)
+			 * then we also need to update ADDEDTIME (ADDTIME) property for
+			 * FinderInfo. We are already inside error == 0 conditional
+			 */
+			if (sdzp != tdzp) {
+				timestruc_t	now;
+				uint64_t addtime[2];
+				gethrestime(&now);
+				ZFS_TIME_ENCODE(&now, addtime);
+				error = sa_update(szp->z_sa_hdl, SA_ZPL_ADDTIME(zfsvfs),
+								  (void *)&addtime, sizeof (addtime), tx);
+				dprintf("ZFS: Updating ADDEDTIME on zp/vp %p/%p: %llu\n",
+						szp, ZTOV(szp), addtime[0]);
+			}
+#endif
+
+
 			error = zfs_link_destroy(sdl, szp, tx, ZRENAMING, NULL);
 			if (error == 0) {
 				zfs_log_rename(zilog, tx, TX_RENAME |
@@ -4362,6 +4380,8 @@ top:
 				    ZRENAMING, NULL), ==, 0);
 			}
 		}
+
+
 #if defined (FREEBSD_NAMECACHE)
 		if (error == 0) {
 			cache_purge(sdvp);

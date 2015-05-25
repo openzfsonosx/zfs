@@ -150,7 +150,7 @@ zpool \- configures ZFS storage pools
 
 .LP
 .nf
-\fBzpool status\fR [\fB-gxvD\fR] [\fB-T\fR d | u] [\fIpool\fR] ... [\fIinterval\fR [\fIcount\fR]]
+\fBzpool status\fR [\fB-gxvDL\fR] [\fB-T\fR d | u] [\fIpool\fR] ... [\fIinterval\fR [\fIcount\fR]]
 .fi
 
 .LP
@@ -1857,7 +1857,7 @@ Sets the specified property for \fInewpool\fR. See the “Properties” section 
 .ne 2
 .mk
 .na
-\fBzpool status\fR [\fB-gxvD\fR] [\fB-T\fR d | u] [\fIpool\fR] ... [\fIinterval\fR [\fIcount\fR]]
+\fBzpool status\fR [\fB-gxvDL\fR] [\fB-T\fR d | u] [\fIpool\fR] ... [\fIinterval\fR [\fIcount\fR]]
 .ad
 .sp .6
 .RS 4n
@@ -1907,6 +1907,17 @@ Displays verbose data error information, printing out a complete list of all dat
 .rt
 Display a histogram of deduplication statistics, showing the allocated (physically present on disk) and
 referenced (logically referenced in the pool) block counts and sizes by reference count.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-L\fR\fR
+.ad
+.RS 12n
+.rt
+Display vdev real paths resolving all symbolic links. This can be used to lookup the current BSD name of a disk imported using InvariantDisks /var/run/disk/* paths.
 .RE
 
 .sp

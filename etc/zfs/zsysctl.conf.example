@@ -1,0 +1,23 @@
+# Uses the standard SYSCTL.CONF(5) format.
+# Comments are denoted by a "#" at the beginning of a line.
+
+# It is highly recommended to put a date and justification as comments
+# alongside each tuning.
+
+# The zfs_arc_max parameter is in bytes and accepts decimal or
+# hexadecimal values. The following text shows how to set this parameter
+# to 11 GB, as an example:
+
+# 10 Mar 2015; ilovezfs
+# Cap the ARC to 11 GB reserving 5 GB for applications.
+# 11 * 2^30 = 11,811,160,064
+kstat.zfs.darwin.tunable.zfs_arc_max=11811160064
+
+# As another example, let's raise the zfs_arc_meta_limit:
+
+# 10 Mar 2015; ilovezfs
+# Raise zfs_arc_meta_limit to 3/4 (instead of 1/4) of zfs_arc_max.
+# 3/4 * (11 * 2^30) = 8,858,370,048
+# But let's use hexadecimal this time.
+# 8,858,370,048 = 0x210000000
+kstat.zfs.darwin.tunable.zfs_arc_meta_limit=0x210000000

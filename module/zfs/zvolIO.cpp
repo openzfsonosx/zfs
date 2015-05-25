@@ -16,7 +16,7 @@
  */
 
 
-#define dprintf IOLog
+//#define dprintf IOLog
 
 // Define the superclass
 #define	super IOBlockStorageDevice
@@ -108,8 +108,8 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 
 	/*
 	 * We want to set some additional properties for ZVOLs, in
-	 * particular, logical block size (volblocksize) of the
-	 * underlying ZVOL, and 'physical' block size presented by
+	 * particular, physical block size (volblocksize) of the
+	 * underlying ZVOL, and 'logical' block size presented by
 	 * the virtual disk. Also set physical bytes per sector.
 	 *
 	 * These properties are defined in *device* characteristics
@@ -122,22 +122,9 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 		return (true);
 	}
 
-	/* Set physical block size to ZVOL_BSIZE (512b) */
+	/* Set logical block size to ZVOL_BSIZE (512b) */
 	dataNumber =	OSNumber::withNumber(ZVOL_BSIZE,
 	    8 * sizeof (ZVOL_BSIZE));
-
-	deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey,
-	    dataNumber);
-
-	dprintf("physicalBlockSize %llu\n",
-	    dataNumber->unsigned64BitValue());
-
-	dataNumber->release();
-	dataNumber	= 0;
-
-	/* Set logical block size to match volblocksize property */
-	dataNumber =	OSNumber::withNumber(zv->zv_volblocksize,
-	    8 * sizeof (zv->zv_volblocksize));
 
 	deviceCharacteristics->setObject(kIOPropertyLogicalBlockSizeKey,
 	    dataNumber);
@@ -148,8 +135,21 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	dataNumber->release();
 	dataNumber	= 0;
 
+	/* Set physical block size to match volblocksize property */
+	dataNumber =	OSNumber::withNumber(zv->zv_volblocksize,
+	    8 * sizeof (zv->zv_volblocksize));
+
+	deviceCharacteristics->setObject(kIOPropertyPhysicalBlockSizeKey,
+	    dataNumber);
+
+	dprintf("physicalBlockSize %llu\n",
+	    dataNumber->unsigned64BitValue());
+
+	dataNumber->release();
+	dataNumber	= 0;
+
 	/* Set physical bytes per sector to match volblocksize property */
-	dataNumber =	OSNumber::withNumber((uint64_t)(8*ZVOL_BSIZE),
+	dataNumber =	OSNumber::withNumber((uint64_t)(zv->zv_volblocksize),
 	    8 * sizeof (uint64_t));
 
 	deviceCharacteristics->setObject(kIOPropertyBytesPerPhysicalSectorKey,
@@ -273,7 +273,7 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 {
 	IOStorageAccess access = (IOStorageAccess)(uint64_t)argument;
 
-	dprintf("open\n");
+	dprintf("open: options %lx\n", options);
 
 	if (super::handleOpen(client, options, argument) == false)
 		return (false);
@@ -289,7 +289,7 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 	switch (access) {
 
 		case kIOStorageAccessReader:
-			// IOLog("handleOpen: readOnly\n");
+			//IOLog("handleOpen: readOnly\n");
 			zv->zv_openflags = FREAD;
 			//zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL);
 			break;
@@ -306,8 +306,12 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 	}
 
 	if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL)) {
-		dprintf("Open failed\n");
-		return (false);
+		dprintf("Open failed - testing readonly\n");
+
+		zv->zv_openflags = FREAD;
+		if (zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL))
+			return (false); // fail it.
+
 	}
 
 	dprintf("Open done\n");
@@ -384,6 +388,9 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 			dprintf("asyncReadWrite no objset nor dbuf\n");
 			return kIOReturnNotAttached;
 		}
+		/* Make sure we don't go away while the command is being executed */
+		retain();
+		m_provider->retain();
 
 		if (direction == kIODirectionIn) {
 
@@ -404,8 +411,11 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 		}
 	}
 
-    if (actualByteCount != nblks*(ZVOL_BSIZE))
-      dprintf("Read/Write operation failed\n");
+	m_provider->release();
+	release();
+
+	if (actualByteCount != nblks*(ZVOL_BSIZE))
+		dprintf("Read/Write operation failed\n");
 
     // Call the completion function.
     (completion->action)(completion->target, completion->parameter,
@@ -630,11 +640,11 @@ net_lundman_zfs_zvol_device::reportLockability(bool *isLockable)
 IOReturn
 net_lundman_zfs_zvol_device::reportWriteProtection(bool *isWriteProtected)
 {
-	dprintf("reportWritePro\n");
 	if (zv && (zv->zv_flags & ZVOL_RDONLY))
 		*isWriteProtected = true;
 	else
 		*isWriteProtected = false;
+	dprintf("reportWritePro: %d\n", *isWriteProtected);
 	return (kIOReturnSuccess);
 }
 

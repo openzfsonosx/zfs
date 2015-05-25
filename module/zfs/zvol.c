@@ -1320,7 +1320,7 @@ zvol_log_write(zvol_state_t *zv, dmu_tx_t *tx, offset_t off, ssize_t resid,
 	boolean_t slogging;
 	ssize_t immediate_write_sz;
 
-	if (zil_replaying(zilog, tx))
+	if (!zilog || !tx || zil_replaying(zilog, tx))
 		return;
 
 	immediate_write_sz = (zilog->zl_logbias == ZFS_LOGBIAS_THROUGHPUT)
@@ -1894,22 +1894,63 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 int
 zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 {
-	rl_t *rl			= 0;
-	dmu_tx_t *tx		= 0;
-	uint64_t volsize	= 0;
-	int error			= 0;
+//#define VERBOSE_UNMAP
+	rl_t *rl = 0;
+	dmu_tx_t *tx = 0;
+	int error = 0;
+	uint64_t end = off + bytes;
+#ifdef VERBOSE_UNMAP
+	uint64_t old_off = off;
+	uint64_t old_end = end;
+	uint64_t old_bytes = bytes;
+#endif
 
 	if (zv == NULL)
 		return (ENXIO);
 
-	volsize = zv->zv_volsize;
+#ifdef VERBOSE_UNMAP
+	printf("ZFS: unmap requested %llx -> %llx, length %llx\n",
+	    off, end, bytes);
+#endif
 
-	if (bytes > volsize - off)	/* don't write past the end */
-		bytes = volsize - off;
+	off = P2ROUNDUP(off, zv->zv_volblocksize);
+	end = P2ALIGN(end, zv->zv_volblocksize);
+
+#ifdef VERBOSE_UNMAP
+	if (off != old_off)
+		printf("ZFS: unmap offset roundup from %llu to %llu\n",
+		    old_off, off);
+	if (end != old_end)
+		printf("ZFS: unmap end aligned from %llu to %llu\n",
+		    old_end, end);
+	if (bytes != old_bytes)
+		printf("ZFS: unmap bytes aligned from %llu to %llu\n",
+		    old_bytes, bytes);
+#endif
+
+	if (end > zv->zv_volsize)	/* don't write past the end */
+		end = zv->zv_volsize;
+
+	if (off >= end) {
+#ifdef VERBOSE_UNMAP
+		printf("ZFS: unmap skipping unaligned request\n");
+#endif
+		/* Return success- caller does not need to know */
+		return (0);
+	}
+
+	bytes = end - off;
+
+#ifdef VERBOSE_UNMAP
+	printf("ZFS: unmap %llx -> %llx, length %llx\n",
+	    off, end, bytes);
+#endif
 
 	rl = zfs_range_lock(&zv->zv_znode, off, bytes, RL_WRITER);
 
 	tx = dmu_tx_create(zv->zv_objset);
+
+	dmu_tx_mark_netfree(tx);
 
 	error = dmu_tx_assign(tx, TXG_WAIT);
 
@@ -1929,25 +1970,12 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 
 	if (error == 0) {
 		/*
-		 * If the write-cache is disabled or 'sync' property
-		 * is set to 'always' then treat this as a synchronous
-		 * operation (i.e. commit to zil).
+		 * If the 'sync' property is set to 'always' then
+		 * treat this as a synchronous operation
+		 * (i.e. commit to zil).
 		 */
-		if (!(zv->zv_flags & ZVOL_WCE) ||
-		    (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS)) {
-
+		if (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
 			zil_commit(zv->zv_zilog, ZVOL_OBJ);
-
-		}
-
-		/*
-		 * If the caller really wants synchronous writes, and
-		 * can't wait for them, don't return until the write
-		 * is done.
-		 *
-		 * XXX To do - forced async to test
-		 */
-		if (0) {
 			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 		}
 	}
@@ -2140,7 +2168,7 @@ zvol_log_truncate(zvol_state_t *zv, dmu_tx_t *tx, uint64_t off, uint64_t len,
 	lr_truncate_t *lr;
 	zilog_t *zilog = zv->zv_zilog;
 
-	if (zil_replaying(zilog, tx))
+	if (!zilog || !tx || zil_replaying(zilog, tx))
 		return;
 
 	itx = zil_itx_create(TX_TRUNCATE, sizeof (*lr));

@@ -458,12 +458,18 @@ void
 zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	int err;
 
 	ASSERT(zp->z_unlinked);
 	ASSERT(zp->z_links == 0);
 
-	VERIFY3U(0, ==,
-	    zap_add_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx));
+
+	if (( err = zap_add_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx))
+		!= 0) {
+		zfs_panic_recover("zfs: zfs_unlinked_add(id %llu) failed to add to unlinked list: %d\n",
+						  zp->z_id,
+						  err);
+	}
 }
 
 
@@ -473,7 +479,7 @@ zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 * (force) umounted the file system.
 */
 void
-zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
+zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 {
         zap_cursor_t        zc;
         zap_attribute_t zap;
@@ -535,44 +541,6 @@ zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
 }
 
 
-static void zfs_unlinked_drain_start(void *arg)
-{
-	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
-	zfs_unlinked_drain_internal(zfsvfs);
-	thread_exit();
-}
-
-void
-zfs_unlinked_drain(zfsvfs_t *zfsvfs)
-{
-        zap_cursor_t        zc;
-        zap_attribute_t zap;
-        dmu_object_info_t doi;
-        znode_t                *zp;
-        int                error;
-		uint64_t entries=0;
-
-        /*
-         * Interate over the contents of the unlinked set.
-         */
-        for (zap_cursor_init(&zc, zfsvfs->z_os, zfsvfs->z_unlinkedobj);
-         zap_cursor_retrieve(&zc, &zap) == 0;
-         zap_cursor_advance(&zc)) {
-			entries++;
-        }
-        zap_cursor_fini(&zc);
-
-        printf("ZFS: unlinked drain (Total entries: %llu).\n", entries);
-
-		if (!entries) return;
-
-		(void) thread_create(NULL, 0, zfs_unlinked_drain_start, zfsvfs, 0, &p0,
-							 TS_RUN, minclsyspri);
-
-}
-
-
-
 
 /*
  * Delete the entire contents of a directory.  Return a count
@@ -605,7 +573,7 @@ zfs_purgedir(znode_t *dzp)
 		    ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
 		if (error) {
 #ifdef __APPLE__
-			if ((error == ENXIO)) {
+			if (error == ENXIO) {
 				printf("ZFS: Detected problem with item %llu\n",
 					   dzp->z_id);
 			}
@@ -825,6 +793,23 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 		zfs_tstamp_update_setup(zp, STATE_CHANGED, mtime,
 		    ctime, B_TRUE);
 	}
+
+#ifdef __APPLE__
+			/* If we moved an entry into a different directory (sdzp != tdzp)
+			 * then we also need to update ADDEDTIME (ADDTIME) property for
+			 * FinderInfo. We skip the ZRENAMING step, as a rename in the
+			 * same directory should not update the entry. This case is
+			 * handled in zfs_rename().
+			 */
+	if (!(flag & ZRENAMING)) {
+		timestruc_t	now;
+		uint64_t addtime[2];
+		gethrestime(&now);
+		ZFS_TIME_ENCODE(&now, addtime);
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_ADDTIME(zfsvfs), NULL,
+		    addtime, sizeof (addtime));
+	}
+#endif
 	error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
 	ASSERT(error == 0);
 
@@ -937,8 +922,9 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 		}
 
 		if (zp->z_links <= zp_is_dir) {
-			zfs_panic_recover("zfs: link count on vnode %p is %u, "
+			zfs_panic_recover("zfs: link count on vnode %p objID %llu is %u, "
 			    "should be at least %u", zp->z_vnode,
+							  zp->z_id,
 			    (int)zp->z_links,
 			    zp_is_dir + 1);
 			zp->z_links = zp_is_dir + 1;

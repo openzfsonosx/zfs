@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>BuildMachineOSBuild</key>
-	<string>14B25</string>
+	<string>14C1514</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
@@ -25,17 +25,17 @@
 	<key>DTCompiler</key>
 	<string>com.apple.compilers.llvm.clang.1_0</string>
 	<key>DTPlatformBuild</key>
-	<string>6C95a</string>
+	<string>6C131e</string>
 	<key>DTPlatformVersion</key>
 	<string>GM</string>
 	<key>DTSDKBuild</key>
-	<string>13F26</string>
+	<string>12F37</string>
 	<key>DTSDKName</key>
 	<string>macosx10.8</string>
 	<key>DTXcode</key>
 	<string>0620</string>
 	<key>DTXcodeBuild</key>
-	<string>6C95a</string>
+	<string>6C131e</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>net.lundman.zfs</key>

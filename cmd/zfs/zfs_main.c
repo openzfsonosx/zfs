@@ -6006,8 +6006,12 @@ share_mount(int op, int argc, char **argv)
 			return (ENOENT);
 
 		while (getmntent(mnttab_file, &entry) == 0) {
-			if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0 ||
-			    strchr(entry.mnt_special, '@') != NULL)
+
+			if ((strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) &&
+				(entry.mnt_fssubtype != MNTTYPE_ZFS_SUBTYPE))
+					continue;
+
+			if (strchr(entry.mnt_special, '@') != NULL)
 				continue;
 
 			(void) printf("%-30s  %s\n", entry.mnt_special,
@@ -6155,7 +6159,8 @@ unshare_unmount_path(int op, char *path, int flags, boolean_t is_manual)
 		return (ret != 0);
 	}
 
-	if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) {
+	if ((strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) &&
+		(entry.mnt_fssubtype != MNTTYPE_ZFS_SUBTYPE)) {
 		(void) fprintf(stderr, gettext("cannot %s '%s': not a ZFS "
 		    "filesystem\n"), cmdname, path);
 		return (1);
@@ -6300,7 +6305,8 @@ unshare_unmount(int op, int argc, char **argv)
 		while (getmntent(mnttab_file, &entry) == 0) {
 
 			/* ignore non-ZFS entries */
-			if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0)
+			if ((strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) &&
+				(entry.mnt_fssubtype != MNTTYPE_ZFS_SUBTYPE))
 				continue;
 
 #ifdef __APPLE__

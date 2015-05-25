@@ -1010,14 +1010,101 @@ err_blkid1:
 
 char *
 zpool_default_import_path[DEFAULT_IMPORT_PATH_SIZE] = {
+#ifdef __LINUX__
 	"/dev/disk/by-vdev",	/* Custom rules, use first if they exist */
 	"/dev/mapper",		/* Use multipath devices before components */
 	"/dev/disk/by-uuid",	/* Single unique entry and persistent */
 	"/dev/disk/by-id",	/* May be multiple entries and persistent */
 	"/dev/disk/by-path",	/* Encodes physical location and persistent */
 	"/dev/disk/by-label",	/* Custom persistent labels */
+#elif defined(__APPLE__)
+	"/private/var/run/disk/by-id",
+	"/private/var/run/disk/by-path",
+	"/private/var/run/disk/by-serial",
+#endif /* __LINUX__ */
 	"/dev"			/* UNSAFE device names will change */
 };
+
+
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/storage/IOMedia.h>
+#include <IOKit/storage/IOCDMedia.h>
+#include <IOKit/storage/IODVDMedia.h>
+
+/*
+ * Given disk2s1, look up "disk2" is IOKit and attempt to determine if
+ * it is an optical device.
+ */
+int is_optical_media(const char *bsdname)
+{
+	CFMutableDictionaryRef matchingDict;
+	int ret = 0;
+	io_service_t service, start;
+    kern_return_t   kernResult;
+    io_iterator_t   iter;
+
+	if ((matchingDict = IOBSDNameMatching(kIOMasterPortDefault, 0, bsdname))  == NULL)
+        return(0);
+
+	start = IOServiceGetMatchingService(kIOMasterPortDefault, matchingDict);
+	if (IO_OBJECT_NULL == start)
+		return (0);
+
+	service = start;
+
+	// Create an iterator across all parents of the service object passed in.
+	// since only disk2 would match with ConfirmsTo, and not disk2s1, so
+    // we search the parents until we find "Whole", ie, disk2.
+	kernResult = IORegistryEntryCreateIterator(service,
+                       kIOServicePlane,
+                       kIORegistryIterateRecursively | kIORegistryIterateParents,
+                       &iter);
+
+	if (KERN_SUCCESS == kernResult) {
+        Boolean isWholeMedia = false;
+        IOObjectRetain(service);
+        do {
+
+			// Lookup "Whole" if we can
+			if (IOObjectConformsTo(service, kIOMediaClass)) {
+				CFTypeRef wholeMedia;
+				wholeMedia = IORegistryEntryCreateCFProperty(service,
+													 CFSTR(kIOMediaWholeKey),
+                                                     kCFAllocatorDefault,
+                                                     0);
+				if (wholeMedia) {
+					isWholeMedia = CFBooleanGetValue(wholeMedia);
+					CFRelease(wholeMedia);
+				}
+			}
+
+			// If we found "Whole", check the service type.
+			if (isWholeMedia &&
+				( (IOObjectConformsTo(service, kIOCDMediaClass)) ||
+				  (IOObjectConformsTo(service, kIODVDMediaClass)) )) {
+				ret = 1; // Is optical, skip
+			}
+
+            IOObjectRelease(service);
+        } while ((service = IOIteratorNext(iter)) && !isWholeMedia);
+        IOObjectRelease(iter);
+	}
+
+	IOObjectRelease(start);
+	return ret;
+}
+
+jmp_buf buffer;
+
+void signal_alarm(int foo)
+{
+	longjmp(buffer, 1);
+}
+
+#endif
+
 
 /*
  * Given a list of directories to search, find all pools stored on disk.  This
@@ -1140,6 +1227,10 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			    (strncmp(name, "lp", 2) == 0) ||
 			    (strncmp(name, "fd", 2) == 0) ||
 			    (strncmp(name, "hpet", 4) == 0) ||
+#ifdef __APPLE__
+				(strncmp(name, "pty", 3) == 0) || // lots, skip for speed
+				(strncmp(name, "com", 3) == 0) || // /dev/com_digidesign_semiface
+#endif
 			    (strncmp(name, "core", 4) == 0))
 				continue;
 
@@ -1152,14 +1243,54 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			    !S_ISBLK(statbuf.st_mode)))
 				continue;
 
+#ifdef __APPLE__
+			/* It is desirable to skip optical media as well, as they are
+			 * also called /dev/diskX
+			 */
+			if (is_optical_media((char *)name))
+				continue;
+#endif
+
 			if ((fd = openat64(dfd, name, O_RDONLY)) < 0)
 				continue;
 
+			int32_t blksz = 0;
+			if (S_ISBLK(statbuf.st_mode) &&
+				(ioctl(fd, DKIOCGETBLOCKSIZE, &blksz) || blksz == 0)) {
+				if (strncmp(name, "vn", 2) != 0)
+					fprintf(stderr, "device '%s' failed to report blocksize -- skipping\r\n",
+							name);
+				close(fd);
+				continue;
+			}
+
+#ifdef __APPLE__
+			struct sigaction sact;
+			sigemptyset(&sact.sa_mask);
+			sact.sa_flags = 0;
+			sact.sa_handler = signal_alarm;
+			sigaction(SIGALRM, &sact, NULL);
+
+			if (setjmp(buffer) != 0) {
+				printf("ZFS: Warning, timeout reading device '%s'\n", name);
+				close(fd);
+				continue;
+			}
+
+			alarm(20);
+#endif
+
 			if ((zpool_read_label(fd, &config)) != 0) {
+#ifdef __APPLE__
+				alarm(0);
+#endif
 				(void) close(fd);
 				(void) no_memory(hdl);
 				goto error;
 			}
+#ifdef __APPLE__
+			alarm(0);
+#endif
 
 			(void) close(fd);
 

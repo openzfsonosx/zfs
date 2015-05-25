@@ -177,7 +177,7 @@ history_str_get(zfs_cmd_t *zc)
 		return (NULL);
 
 	buf = kmem_alloc(HIS_MAX_RECORD_LEN, KM_SLEEP | KM_NODEBUG);
-	if (copyinstr((user_addr_t)(uintptr_t)zc->zc_history,
+	if (ddi_copyinstr((user_addr_t)(uintptr_t)zc->zc_history,
 				  buf, HIS_MAX_RECORD_LEN, &len) != 0) {
 		history_str_free(buf);
 		return (NULL);
@@ -4376,9 +4376,9 @@ zfs_ioc_clear(zfs_cmd_t *zc)
 	/*
 	 * Resume any suspended I/Os.
 	 */
-	if (zio_resume(spa) != 0)
+	if (zio_resume(spa) != 0) {
 		error = SET_ERROR(EIO);
-
+	}
 	spa_close(spa, FTAG);
 
 	return (error);
@@ -4499,7 +4499,7 @@ zfs_ioc_userspace_many(zfs_cmd_t *zc)
 							   buf, &zc->zc_nvlist_dst_size);
 
 	if (error == 0) {
-		error = xcopyout(buf,
+		error = ddi_copyout(buf,
 						 (user_addr_t)(uintptr_t)zc->zc_nvlist_dst,
                          zc->zc_nvlist_dst_size, 0);
 	}
@@ -5760,7 +5760,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 
 	zc->zc_dev = dev;
 
-	zc->zc_iflags = flag & FKIOCTL;
+	zc->zc_iflags = flag & ~FKIOCTL;
 	if (zc->zc_nvlist_src_size != 0) {
 		error = get_nvlist(zc->zc_nvlist_src, zc->zc_nvlist_src_size,
 		    zc->zc_iflags, &innvl);

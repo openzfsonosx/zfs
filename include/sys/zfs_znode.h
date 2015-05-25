@@ -111,6 +111,10 @@ extern "C" {
 #define	SA_ZPL_DXATTR(z)	z->z_attr_table[ZPL_DXATTR]
 #define	SA_ZPL_PAD(z)		z->z_attr_table[ZPL_PAD]
 
+#ifdef __APPLE__
+#define	SA_ZPL_ADDTIME(z)		z->z_attr_table[ZPL_ADDTIME]
+#endif
+
 /*
  * Is ID ephemeral?
  */

@@ -3,20 +3,18 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>org.openzfsonosx.zed.service</string>
+	<string>org.openzfsonosx.zconfigd</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/usr/local/sbin/zed.service.sh</string>
+		<string>@sbindir@/zconfigd</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
+	<key>KeepAlive</key>
+	<true/>
 	<key>StandardErrorPath</key>
-	<string>/private/var/log/openzfsonosx.err</string>
+	<string>/private/var/log/org.openzfsonosx.zconfigd.err</string>
 	<key>StandardOutPath</key>
-	<string>/private/var/log/openzfsonosx.log</string>
-	<key>WatchPaths</key>
-	<array>
-		<string>/dev/zfs</string>
-	</array>
+	<string>/private/var/log/org.openzfsonosx.zconfigd.log</string>
 </dict>
 </plist>

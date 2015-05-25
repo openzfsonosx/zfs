@@ -41,6 +41,10 @@ extern "C" {
 struct zfs_sb;
 struct znode;
 
+/* #define WITH_SEARCHFS */
+/* #define WITH_READDIRATTR */
+#define	HAVE_NAMED_STREAMS 1
+
 typedef struct zfsvfs zfsvfs_t;
 
 struct zfsvfs {
@@ -91,6 +95,9 @@ struct zfsvfs {
         kmutex_t		z_reclaim_thr_lock;
         kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
 	    dev_t z_rdev;
+
+        kmutex_t	    z_vnodecreate_lock; /*lock for using z_vnodecreate_list*/
+        list_t          z_vnodecreate_list;/* all threads in vnode_create */
 #endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
@@ -100,6 +107,12 @@ struct zfsvfs {
         kmutex_t        z_hold_mtx[ZFS_OBJ_MTX_SZ];     /* znode hold locks */
 };
 
+#ifdef __APPLE__
+	struct vnodecreate {
+		thread_t thread;
+		list_node_t link;
+	};
+#endif
 
 #define	ZFS_SUPER_MAGIC	0x2fc12fc1
 

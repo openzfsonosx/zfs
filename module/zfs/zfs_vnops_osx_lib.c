@@ -20,6 +20,7 @@
 #include <sys/unistd.h>
 #include <sys/xattr.h>
 #include <sys/utfconv.h>
+#include <sys/finderinfo.h>
 
 extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
 
@@ -175,6 +176,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	ZFS_ENTER(zfsvfs);
     if (!zp->z_sa_hdl) {
         ZFS_EXIT(zfsvfs);
+		printf("ZFS: getattr error\n");
         return EIO;
     }
 
@@ -323,9 +325,10 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 				if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
 									 ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
 					VATTR_SET_SUPPORTED(vap, va_name);
+
 			}
 
-			printf("getattr: %p return name '%s':%04x\n", vp,
+			dprintf("getattr: %p return name '%s':%04llx\n", vp,
 				   vap->va_name,
 				   vap->va_linkid);
 
@@ -374,8 +377,42 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         VATTR_RETURN(vap, va_encoding, kTextEncodingMacUnicode);
     }
 #ifdef VNODE_ATTR_va_addedtime
+   /* ADDEDTIME should come from finderinfo according to hfs_attrlist.c
+	* in ZFS we can use crtime, and add logic to getxattr finderinfo to
+	* copy the ADDEDTIME into the structure. See vnop_getxattr
+	*/
 	if (VATTR_IS_ACTIVE(vap, va_addedtime)) {
-        VATTR_RETURN(vap, va_addedtime, vap->va_ctime);
+		uint64_t addtime[2];
+		/* Lookup the ADDTIME if it exists, if not, use CRTIME */
+		if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ADDTIME(zfsvfs),
+					  &addtime, sizeof (addtime)) != 0) {
+			dprintf("ZFS: ADDEDTIME using crtime %llu (error %d)\n",
+					vap->va_crtime.tv_sec, error);
+			vap->va_addedtime.tv_sec  = vap->va_crtime.tv_sec;
+			vap->va_addedtime.tv_nsec = vap->va_crtime.tv_nsec;
+		} else {
+			dprintf("ZFS: ADDEDTIME using addtime %llu\n",
+					addtime[0]);
+			ZFS_TIME_DECODE(&vap->va_addedtime, addtime);
+		}
+        VATTR_SET_SUPPORTED(vap, va_addedtime);
+    }
+#endif
+#ifdef VNODE_ATTR_va_fsid64
+	if (VATTR_IS_ACTIVE(vap, va_fsid64)) {
+		vap->va_fsid64.val[0] = vfs_statfs(zfsvfs->z_vfs)->f_fsid.val[0];
+		vap->va_fsid64.val[1] = vfs_typenum(zfsvfs->z_vfs);
+        VATTR_SET_SUPPORTED(vap, va_fsid64);
+    }
+#endif
+#ifdef VNODE_ATTR_va_write_gencount
+	if (VATTR_IS_ACTIVE(vap, va_write_gencount)) {
+        VATTR_RETURN(vap, va_write_gencount, 0);
+    }
+#endif
+#ifdef VNODE_ATTR_va_document_id
+	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
+        VATTR_RETURN(vap, va_document_id, 0);
     }
 #endif
 #if 0 // Issue #192
@@ -388,11 +425,13 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #endif
 
 	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
-
-	dprintf("vnop_getattr: asked %08x replied %08x       missing %08x\n",
-		   vap->va_active, vap->va_supported,
-		   vap->va_active ^ (vap->va_active & vap->va_supported));
-
+	uint64_t missing = 0;
+	missing = (vap->va_active ^ (vap->va_active & vap->va_supported));
+	if ( missing != 0) {
+		dprintf("vnop_getattr:: asked %08llx replied %08llx       missing %08llx\n",
+			   vap->va_active, vap->va_supported,
+			   missing);
+	}
 	ZFS_EXIT(zfsvfs);
 	return (error);
 }
@@ -647,8 +686,10 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
     if (cn.pn_buf)
 		kmem_free(cn.pn_buf, cn.pn_bufsize);
 
-	if (error == EEXIST)
+	/* The REPLACE error if doesn't exist is ENOATTR */
+	if ((flag & ZEXISTS) && (error == EEXIST))
 		error = ENOATTR;
+
 	if (xzp)
 		*vpp = ZTOV(xzp);
 
@@ -1575,5 +1616,64 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
         dprintf("  ACL: %d type %04x, mask %04x, flags %04x, who %d\n",
                i, type, mask, flags, who);
     }
+
+}
+
+void finderinfo_update(uint8_t *finderinfo, znode_t *zp)
+{
+	u_int8_t *finfo = NULL;
+	uint64_t crtime[2];
+	uint64_t addtime[2];
+	struct timespec va_crtime;
+	//static u_int32_t emptyfinfo[8] = {0};
+
+
+	finfo = (u_int8_t *)finderinfo + 16;
+
+	if (IFTOVT((mode_t)zp->z_mode) == VLNK) {
+		struct FndrFileInfo *fip;
+
+		fip = (struct FndrFileInfo *)finderinfo;
+		fip->fdType = 0;
+		fip->fdCreator = 0;
+	}
+
+	/* Lookup the ADDTIME if it exists, if not, use CRTIME */
+	/* change this into bulk */
+	sa_lookup(zp->z_sa_hdl, SA_ZPL_CRTIME(zp->z_zfsvfs), crtime, sizeof(crtime));
+
+	if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ADDTIME(zp->z_zfsvfs), &addtime,
+				  sizeof (addtime)) != 0) {
+		ZFS_TIME_DECODE(&va_crtime, crtime);
+	} else {
+		ZFS_TIME_DECODE(&va_crtime, addtime);
+	}
+
+	if (IFTOVT((mode_t)zp->z_mode) == VREG) {
+		struct FndrExtendedFileInfo *extinfo =
+			(struct FndrExtendedFileInfo *)finfo;
+		extinfo->date_added = 0;
+
+		/* listxattr shouldnt list it either if empty, fixme.
+		   if (bcmp((const void *)finderinfo, emptyfinfo,
+		   sizeof(emptyfinfo)) == 0)
+		   error = ENOATTR;
+		*/
+
+		extinfo->date_added = OSSwapBigToHostInt32(va_crtime.tv_sec);
+	}
+	if (IFTOVT((mode_t)zp->z_mode) == VDIR) {
+		struct FndrExtendedDirInfo *extinfo =
+			(struct FndrExtendedDirInfo *)finfo;
+		extinfo->date_added = 0;
+
+		/*
+		  if (bcmp((const void *)finderinfo, emptyfinfo,
+		  sizeof(emptyfinfo)) == 0)
+		  error = ENOATTR;
+		*/
+
+		extinfo->date_added = OSSwapBigToHostInt32(va_crtime.tv_sec);
+	}
 
 }

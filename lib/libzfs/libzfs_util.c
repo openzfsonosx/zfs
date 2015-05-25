@@ -925,7 +925,8 @@ zfs_path_to_zhandle(libzfs_handle_t *hdl, char *path, zfs_type_t argtype)
 		return (NULL);
 	}
 
-	if (strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) {
+	if ((strcmp(entry.mnt_fstype, MNTTYPE_ZFS) != 0) &&
+		(entry.mnt_fssubtype != MNTTYPE_ZFS_SUBTYPE)) {
 		(void) fprintf(stderr, gettext("'%s': not a ZFS filesystem\n"),
 		    path);
 		return (NULL);
@@ -945,11 +946,29 @@ zfs_append_partition(char *path, size_t max_len)
 {
 	int len = strlen(path);
 
-	if (strncmp(path, UDISK_ROOT, strlen(UDISK_ROOT)) == 0) {
-		if (len + 6 >= max_len)
+	if (strncmp(path, DISK_ROOT"/disk", strlen(DISK_ROOT) + 5) == 0) {
+		if (len + 2 >= max_len)
 			return (-1);
 
 		(void) strcat(path, "s1");
+		len += 2;
+	} else if (strncmp(path, UDISK_ROOT"/by-path",
+	    strlen(UDISK_ROOT) + 8) == 0 ||
+	    strncmp(path, UDISK_ROOT_ALT"/by-path",
+	    strlen(UDISK_ROOT_ALT) + 8) == 0) {
+		if (path[len - 1] == '0' &&
+		    path[len - 2] == ':')
+			path[len - 1] = '1';
+		else
+			return (-1); /* should have ended with ":0" */
+	} else if (strncmp(path, UDISK_ROOT"/by-serial",
+            strlen(UDISK_ROOT) + 10) == 0 ||
+            strncmp(path, UDISK_ROOT_ALT"/by-serial",
+            strlen(UDISK_ROOT_ALT) + 10) == 0) {
+		if (len + 2 >= max_len)
+			return (-1);
+
+		(void) strcat(path, ":1");
 		len += 2;
 	} else {
 		if (len + 2 >= max_len)

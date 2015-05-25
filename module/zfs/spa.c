@@ -3552,11 +3552,11 @@ void spa_iokit_pool(char *poolname, uint64_t guid)
 	if (!error) {
 		dmu_objset_space(os,
 						 &refdbytes, &availbytes, &usedobjs, &availobjs);
-		dmu_objset_rele(os, FTAG);
 
 		ZFSDriver_create_pool(poolname, availbytes, 512,
 							  B_FALSE, guid,
 							  dsl_dataset_fsid_guid(dmu_objset_ds(os)));
+		dmu_objset_rele(os, FTAG);
 	}
 }
 #endif
@@ -5952,6 +5952,7 @@ spa_async_request(spa_t *spa, int task)
 	mutex_enter(&spa->spa_async_lock);
 	spa->spa_async_tasks |= task;
 	mutex_exit(&spa->spa_async_lock);
+	spa_async_dispatch(spa);
 }
 
 /*

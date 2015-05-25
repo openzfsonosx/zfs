@@ -1242,7 +1242,7 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 	dmu_object_info_t doi;
 	dmu_buf_t	*db;
 	znode_t		*zp;
-	struct vnode		*vp;
+	struct vnode		*vp = NULL;
 	sa_handle_t	*hdl;
 	struct thread	*td;
 	int err;
@@ -1309,14 +1309,19 @@ again:
 			if (err == 0) {
 
 				dprintf("attaching vnode %p\n", vp);
-				if ((vnode_getwithvid(vp, zp->z_vid) != 0)) {
+
+				/*
+				 * zfs_free_node() sets z_vnode to NULL when called inside
+				 * the znodes_lock, so we check against that here to ensure
+				 * it is not NULL
+				 */
+				if (!vp || (vnode_getwithvid(vp, zp->z_vid) != 0)) {
 					mutex_exit(&zp->z_lock);
 					sa_buf_rele(db, NULL);
 					ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 					dprintf("zfs: vnode_getwithvid err\n");
 					goto again;
 				}
-
 			}
 			mutex_exit(&zp->z_lock);
 			sa_buf_rele(db, NULL);
@@ -2071,6 +2076,9 @@ zfs_freesp(znode_t *zp, uint64_t off, uint64_t len, int flag, boolean_t log)
 	sa_bulk_attr_t bulk[3];
 	int count = 0;
 	int error;
+
+	if (vnode_isfifo(ZTOV(zp)))
+		return 0;
 
 	if ((error = sa_lookup(zp->z_sa_hdl, SA_ZPL_MODE(zfsvfs), &mode,
 	    sizeof (mode))) != 0)

@@ -112,6 +112,7 @@ AC_CONFIG_FILES([
 	lib/libzfs_core/Makefile
 	lib/libshare/Makefile
 	cmd/Makefile
+	cmd/zconfigd/Makefile
 	cmd/zdb/Makefile
 	cmd/zhack/Makefile
 	cmd/zfs/Makefile
@@ -119,6 +120,7 @@ AC_CONFIG_FILES([
 	cmd/zinject/Makefile
 	cmd/zpool/Makefile
 	cmd/zstreamdump/Makefile
+	cmd/zsysctl/Makefile
 	cmd/ztest/Makefile
 	cmd/zpios/Makefile
 	cmd/mount_zfs/Makefile
@@ -128,6 +130,8 @@ AC_CONFIG_FILES([
 	cmd/arcstat/Makefile
 	cmd/dbufstat/Makefile
 	cmd/zed/Makefile
+	cmd/InvariantDisks/Makefile
+	cmd/InvariantDisks/InvariantDisks/Makefile
 	contrib/Makefile
 	contrib/bash_completion.d/Makefile
 	module/Makefile

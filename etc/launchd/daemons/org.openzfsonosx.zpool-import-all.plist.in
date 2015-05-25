@@ -11,9 +11,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>/private/var/log/openzfsonosx-zpool-import-all.err</string>
+	<string>/private/var/log/org.openzfsonosx.zpool-import-all.err</string>
 	<key>StandardOutPath</key>
-	<string>/private/var/log/openzfsonosx-zpool-import-all.log</string>
+	<string>/private/var/log/org.openzfsonosx.zpool-import-all.log</string>
 	<key>TimeOut</key>
 	<integer>0</integer>
 </dict>

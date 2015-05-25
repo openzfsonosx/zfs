@@ -65,6 +65,28 @@
 
 #include <libzfs.h>
 
+#ifndef FSUC_GETUUID
+#define	FSUC_GETUUID	'k'
+#endif
+
+#ifndef FSUC_SETUUID
+#define	FSUC_SETUUID	's'
+#endif
+
+#define	ZPOOL_IMPORT_ALL_COOKIE		"/var/run/org.openzfsonosx.zpool-import-all.didRun"
+#define	INVARIANT_DISKS_IDLE_FILE	"/var/run/disk/invariant.idle"
+#define	IS_INVARIANT_DISKS_LOADED_CMD	"/bin/launchctl list -x org.openzfsonosx.InvariantDisks &>/dev/null"
+#define	INVARIANT_DISKS_TIMEOUT_SECONDS	60
+
+#ifdef DEBUG
+int zfs_util_debug = 1;
+#else
+int zfs_util_debug = 0;
+#endif
+
+#define	printf	zfs_util_log
+
+#define ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
 
 const char *progname;
 
@@ -187,6 +209,7 @@ main(int argc, char **argv, char **env)
 		devname = cp + 1;
 	if (*devname == 'r')
 		devname++;
+
 	(void) sprintf(blkdevice, "%s%s", _PATH_DEV, devname);
 	syslog(LOG_NOTICE, "blkdevice is %s", blkdevice);
 
