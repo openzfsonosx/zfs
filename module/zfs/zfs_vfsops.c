@@ -473,10 +473,9 @@ static void
 blksz_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-
-	if (newval < SPA_MINBLOCKSIZE ||
-	    newval > SPA_MAXBLOCKSIZE || !ISP2(newval))
-		newval = SPA_MAXBLOCKSIZE;
+	ASSERT3U(newval, <=, spa_maxblocksize(dmu_objset_spa(zfsvfs->z_os)));
+	ASSERT3U(newval, >=, SPA_MINBLOCKSIZE);
+	ASSERT(ISP2(newval));
 
 	zfsvfs->z_max_blksz = newval;
 	//zfsvfs->z_vfs->mnt_stat.f_iosize = newval;
@@ -1212,7 +1211,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	 */
 	zfsvfs->z_vfs = NULL;
 	zfsvfs->z_parent = zfsvfs;
-	zfsvfs->z_max_blksz = SPA_MAXBLOCKSIZE;
+	zfsvfs->z_max_blksz = SPA_OLD_MAXBLOCKSIZE;
 	zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
 	zfsvfs->z_os = os;
 
@@ -1319,6 +1318,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	cv_init(&zfsvfs->z_reclaim_thr_cv, NULL, CV_DEFAULT, NULL);
 	list_create(&zfsvfs->z_all_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_node));
+
 	list_create(&zfsvfs->z_reclaim_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_reclaim_node));
 	list_create(&zfsvfs->z_vnodecreate_list, sizeof (struct vnodecreate),
@@ -2459,6 +2459,12 @@ zfs_vnode_lock(vnode_t *vp, int flags)
 	return (error);
 }
 
+
+/*
+ * The ARC has requested that the filesystem drop entries from the dentry
+ * and inode caches.  This can occur when the ARC needs to free meta data
+ * blocks but can't because they are all pinned by entries in these caches.
+ */
 int
 zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
 {
@@ -2633,7 +2639,6 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	return (0);
 }
 
-/*ARGSUSED*/
 
 int
 zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)

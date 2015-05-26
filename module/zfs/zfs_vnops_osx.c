@@ -3325,8 +3325,8 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 #endif
 		break;
 	default:
-		//vfsp.vnfs_vops = zfs_evnodeops;
-		printf("ZFS: Warning, error-vnops selected\n");
+		vfsp.vnfs_vops = zfs_fvnodeops;
+		printf("ZFS: Warning, error-vnops selected: vtype %d\n",vfsp.vnfs_vtype);
 		break;
 	}
 

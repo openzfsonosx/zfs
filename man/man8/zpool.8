@@ -57,7 +57,7 @@ zpool \- configures ZFS storage pools
 
 .LP
 .nf
-\fBzpool export\fR [\fB-f\fR] \fIpool\fR ...
+\fBzpool export\fR [\fB-a\fR] [\fB-f\fR] \fIpool\fR ...
 .fi
 
 .LP
@@ -1068,11 +1068,13 @@ Forces any active datasets contained within the pool to be unmounted.
 Detaches \fIdevice\fR from a mirror. The operation is refused if there are no other valid replicas of the data.  If \fIdevice\fR may be re-added to the pool later on then consider the "\fBzpool offline\fR" command instead.
 .RE
 
+.RE
+
 .sp
 .ne 2
 .mk
 .na
-\fB\fBzpool export\fR [\fB-f\fR] \fIpool\fR ...\fR
+\fB\fBzpool export\fR [\fB-a\fR] [\fB-f\fR] \fIpool\fR ...\fR
 .ad
 .sp .6
 .RS 4n
@@ -1081,6 +1083,17 @@ Exports the given pools from the system. All devices are marked as exported, but
 Before exporting the pool, all datasets within the pool are unmounted. A pool can not be exported if it has a shared spare that is currently being used.
 .sp
 For pools to be portable, you must give the \fBzpool\fR command whole disks, not just partitions, so that \fBZFS\fR can label the disks with portable \fBEFI\fR labels. Otherwise, disk drivers on platforms of different endianness will not recognize the disks.
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-a\fR\fR
+.ad
+.RS 6n
+.rt
+Exports all pools imported on the system.
+.RE
+
 .sp
 .ne 2
 .mk

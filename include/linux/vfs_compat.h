@@ -21,6 +21,7 @@
 
 /*
  * Copyright (C) 2011 Lawrence Livermore National Security, LLC.
+ * Copyright (C) 2015 Jörg Thalheim.
  */
 
 #ifndef _ZFS_VFS_H
@@ -64,25 +65,35 @@ truncate_setsize(struct inode *ip, loff_t new)
 }
 #endif /* HAVE_TRUNCATE_SETSIZE */
 
-#if defined(HAVE_BDI) && !defined(HAVE_BDI_SETUP_AND_REGISTER)
 /*
- * 2.6.34 API change,
- * Add bdi_setup_and_register() function if not yet provided by kernel.
- * It is used to quickly initialize and register a BDI for the filesystem.
+ * 2.6.32 - 2.6.33, bdi_setup_and_register() is not available.
+ * 2.6.34 - 3.19, bdi_setup_and_register() takes 3 arguments.
+ * 4.0 - x.y, bdi_setup_and_register() takes 2 arguments.
  */
+#if defined(HAVE_2ARGS_BDI_SETUP_AND_REGISTER)
+static inline int
+zpl_bdi_setup_and_register(struct backing_dev_info *bdi, char *name)
+{
+	return (bdi_setup_and_register(bdi, name));
+}
+#elif defined(HAVE_3ARGS_BDI_SETUP_AND_REGISTER)
+static inline int
+zpl_bdi_setup_and_register(struct backing_dev_info *bdi, char *name)
+{
+	return (bdi_setup_and_register(bdi, name, BDI_CAP_MAP_COPY));
+}
+#else
 extern atomic_long_t zfs_bdi_seq;
 
 static inline int
-bdi_setup_and_register(
-	struct backing_dev_info *bdi,
-	char *name,
-	unsigned int cap)
+zpl_bdi_setup_and_register(struct backing_dev_info *bdi, char *name)
 {
 	char tmp[32];
 	int error;
 
 	bdi->name = name;
-	bdi->capabilities = cap;
+	bdi->capabilities = BDI_CAP_MAP_COPY;
+
 	error = bdi_init(bdi);
 	if (error)
 		return (error);
@@ -97,7 +108,7 @@ bdi_setup_and_register(
 
 	return (error);
 }
-#endif /* HAVE_BDI && !HAVE_BDI_SETUP_AND_REGISTER */
+#endif
 
 /*
  * 2.6.38 API change,
@@ -327,5 +338,17 @@ current_umask(void)
 #else
 #define	zpl_inode_owner_or_capable(ip)		is_owner_or_cap(ip)
 #endif /* HAVE_INODE_OWNER_OR_CAPABLE */
+
+/*
+ * 3.19 API change
+ * struct access f->f_dentry->d_inode was replaced by accessor function
+ * file_inode(f)
+ */
+#ifndef HAVE_FILE_INODE
+static inline struct inode *file_inode(const struct file *f)
+{
+	return (f->f_dentry->d_inode);
+}
+#endif /* HAVE_FILE_INODE */
 
 #endif /* _ZFS_VFS_H */

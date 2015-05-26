@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland.  All rights reserved.
  * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
@@ -262,9 +262,9 @@ get_usage(zfs_help_t idx)
 	case HELP_ROLLBACK:
 		return (gettext("\trollback [-rRf] <snapshot>\n"));
 	case HELP_SEND:
-		return (gettext("\tsend [-DnPpRrve] [-[iI] snapshot] "
+		return (gettext("\tsend [-DnPpRvLe] [-[iI] snapshot] "
 		    "<snapshot>\n"
-		    "\tsend [-e] [-i snapshot|bookmark] "
+		    "\tsend [-Le] [-i snapshot|bookmark] "
 		    "<filesystem|volume|snapshot>\n"));
 	case HELP_SET:
 		return (gettext("\tset <property=value> "
@@ -1907,9 +1907,13 @@ zfs_do_inherit(int argc, char **argv)
 			if (prop == ZFS_PROP_QUOTA ||
 			    prop == ZFS_PROP_RESERVATION ||
 			    prop == ZFS_PROP_REFQUOTA ||
-			    prop == ZFS_PROP_REFRESERVATION)
+			    prop == ZFS_PROP_REFRESERVATION) {
 				(void) fprintf(stderr, gettext("use 'zfs set "
 				    "%s=none' to clear\n"), propname);
+				(void) fprintf(stderr, gettext("use 'zfs "
+				    "inherit -S %s' to revert to received "
+				    "value\n"), propname);
+			}
 			return (1);
 		}
 		if (received && (prop == ZFS_PROP_VOLSIZE ||
@@ -3683,7 +3687,7 @@ zfs_do_send(int argc, char **argv)
 	boolean_t extraverbose = B_FALSE;
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":i:I:RDpvnPe")) != -1) {
+	while ((c = getopt(argc, argv, ":i:I:RDpvnPLe")) != -1) {
 		switch (c) {
 		case 'i':
 			if (fromname)
@@ -3717,6 +3721,9 @@ zfs_do_send(int argc, char **argv)
 			break;
 		case 'n':
 			flags.dryrun = B_TRUE;
+			break;
+		case 'L':
+			flags.largeblock = B_TRUE;
 			break;
 		case 'e':
 			flags.embed_data = B_TRUE;
@@ -3774,6 +3781,8 @@ zfs_do_send(int argc, char **argv)
 		if (zhp == NULL)
 			return (1);
 
+		if (flags.largeblock)
+			lzc_flags |= LZC_SEND_FLAG_LARGE_BLOCK;
 		if (flags.embed_data)
 			lzc_flags |= LZC_SEND_FLAG_EMBED_DATA;
 
@@ -5645,7 +5654,6 @@ share_mount_one(zfs_handle_t *zhp, int op, int flags, char *protocol,
 	char mountpoint[ZFS_MAXPROPLEN];
 	char shareopts[ZFS_MAXPROPLEN];
 	char smbshareopts[ZFS_MAXPROPLEN];
-	char overlay[ZFS_MAXPROPLEN];
 	const char *cmdname = op == OP_SHARE ? "share" : "mount";
 	struct mnttab mnt;
 	uint64_t zoned, canmount;
@@ -5753,19 +5761,6 @@ share_mount_one(zfs_handle_t *zhp, int op, int flags, char *protocol,
 		return (1);
 	} else if (canmount == ZFS_CANMOUNT_NOAUTO && !explicit) {
 		return (0);
-	}
-
-	/*
-	 * Overlay mounts are disabled by default but may be enabled
-	 * via the 'overlay' property or the 'zfs mount -O' option.
-	 */
-	if (!(flags & MS_OVERLAY)) {
-		if (zfs_prop_get(zhp, ZFS_PROP_OVERLAY, overlay,
-			    sizeof (overlay), NULL, NULL, 0, B_FALSE) == 0) {
-			if (strcmp(overlay, "on") == 0) {
-				flags |= MS_OVERLAY;
-			}
-		}
 	}
 
 	/*
@@ -6884,6 +6879,9 @@ zfs_do_bookmark(int argc, char **argv)
 		case ENOTSUP:
 			err_msg = "bookmark feature not enabled";
 			break;
+		case ENOSPC:
+			err_msg = "out of space";
+			break;
 		default:
 			err_msg = "unknown error";
 			break;
@@ -6892,7 +6890,7 @@ zfs_do_bookmark(int argc, char **argv)
 		    dgettext(TEXT_DOMAIN, err_msg));
 	}
 
-	return (ret);
+	return (ret != 0);
 
 usage:
 	usage(B_FALSE);
@@ -6909,6 +6907,8 @@ main(int argc, char **argv)
 
 	(void) setlocale(LC_ALL, "");
 	//(void) textdomain(TEXT_DOMAIN);
+
+	dprintf_setup(&argc, argv);
 
 	opterr = 0;
 

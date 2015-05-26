@@ -438,11 +438,23 @@ zfs_prop_init(void)
 	zprop_register_number(ZFS_PROP_REFRESERVATION, "refreservation", 0,
 	    PROP_DEFAULT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
 	    "<size> | none", "REFRESERV");
+	zprop_register_number(ZFS_PROP_FILESYSTEM_LIMIT, "filesystem_limit",
+	    UINT64_MAX, PROP_DEFAULT, ZFS_TYPE_FILESYSTEM,
+	    "<count> | none", "FSLIMIT");
+	zprop_register_number(ZFS_PROP_SNAPSHOT_LIMIT, "snapshot_limit",
+	    UINT64_MAX, PROP_DEFAULT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
+	    "<count> | none", "SSLIMIT");
+	zprop_register_number(ZFS_PROP_FILESYSTEM_COUNT, "filesystem_count",
+	    UINT64_MAX, PROP_DEFAULT, ZFS_TYPE_FILESYSTEM,
+	    "<count>", "FSCOUNT");
+	zprop_register_number(ZFS_PROP_SNAPSHOT_COUNT, "snapshot_count",
+	    UINT64_MAX, PROP_DEFAULT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
+	    "<count>", "SSCOUNT");
 
 	/* inherit number properties */
 	zprop_register_number(ZFS_PROP_RECORDSIZE, "recordsize",
-	    SPA_MAXBLOCKSIZE, PROP_INHERIT,
-	    ZFS_TYPE_FILESYSTEM, "512 to 128k, power of 2", "RECSIZE");
+	    SPA_OLD_MAXBLOCKSIZE, PROP_INHERIT,
+	    ZFS_TYPE_FILESYSTEM, "512 to 1M, power of 2", "RECSIZE");
 
 	/* hidden properties */
 	zprop_register_hidden(ZFS_PROP_CREATETXG, "createtxg", PROP_TYPE_NUMBER,
@@ -712,14 +724,20 @@ zfs_prop_align_right(zfs_prop_t prop)
 #endif
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
+#ifdef LINUX
+static int __init
+zcommon_init(void)
+{
+	return (0);
+}
 
-#if 0
-#include <linux/module_compat.h>
-static int zcommon_init(void) { return 0; }
-static int zcommon_fini(void) { return 0; }
+static void __exit
+zcommon_fini(void)
+{
+}
 
-spl_module_init(zcommon_init);
-spl_module_exit(zcommon_fini);
+module_init(zcommon_init);
+module_exit(zcommon_fini);
 
 MODULE_DESCRIPTION("Generic ZFS support");
 MODULE_AUTHOR(ZFS_META_AUTHOR);

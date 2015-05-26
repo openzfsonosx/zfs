@@ -50,7 +50,6 @@ extern "C" {
  * Forward declarations that lots of things need.
  */
 typedef struct vdev_queue vdev_queue_t;
-typedef struct vdev_io vdev_io_t;
 typedef struct vdev_cache vdev_cache_t;
 typedef struct vdev_cache_entry vdev_cache_entry_t;
 
@@ -61,7 +60,7 @@ typedef int	vdev_open_func_t(vdev_t *vd, uint64_t *size, uint64_t *max_size,
     uint64_t *ashift);
 typedef void	vdev_close_func_t(vdev_t *vd);
 typedef uint64_t vdev_asize_func_t(vdev_t *vd, uint64_t psize);
-typedef int	vdev_io_start_func_t(zio_t *zio);
+typedef void	vdev_io_start_func_t(zio_t *zio);
 typedef void	vdev_io_done_func_t(zio_t *zio);
 typedef void	vdev_state_change_func_t(vdev_t *vd, int, int);
 typedef void	vdev_hold_func_t(vdev_t *vd);
@@ -114,17 +113,13 @@ struct vdev_queue {
 	vdev_t		*vq_vdev;
 	vdev_queue_class_t vq_class[ZIO_PRIORITY_NUM_QUEUEABLE];
 	avl_tree_t	vq_active_tree;
+	avl_tree_t	vq_read_offset_tree;
+	avl_tree_t	vq_write_offset_tree;
 	uint64_t	vq_last_offset;
 	hrtime_t	vq_io_complete_ts; /* time last i/o completed */
 	hrtime_t	vq_io_delta_ts;
-	list_t		vq_io_list;
 	zio_t		vq_io_search; /* used as local for stack reduction */
 	kmutex_t	vq_lock;
-};
-
-struct vdev_io {
-	char		vi_buffer[SPA_MAXBLOCKSIZE]; /* Must be first */
-	list_node_t	vi_node;
 };
 
 /*

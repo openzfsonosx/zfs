@@ -363,7 +363,7 @@ zfs_probe(const char *devpath, uint64_t *outpoolguid)
 		goto out;
 	}
 
-	if (zpool_read_label(fd, &config) != 0) {
+	if (zpool_read_label(fd, &config, NULL) != 0) {
 		(void) close(fd);
 		goto out;
 	}

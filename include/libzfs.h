@@ -365,6 +365,7 @@ typedef enum {
 	ZPOOL_STATUS_OK
 } zpool_status_t;
 
+extern unsigned long get_system_hostid(void);
 extern zpool_status_t zpool_get_status(zpool_handle_t *, char **,
     zpool_errata_t *);
 extern zpool_status_t zpool_import_status(nvlist_t *, char **,
@@ -631,6 +632,9 @@ typedef struct sendflags {
 	/* show progress (ie. -v) */
 	boolean_t progress;
 
+	/* large blocks (>128K) are permitted */
+	boolean_t largeblock;
+
 	/* WRITE_EMBEDDED records of type DATA are permitted */
 	boolean_t embed_data;
 } sendflags_t;
@@ -771,7 +775,7 @@ extern int zpool_in_use(libzfs_handle_t *, int, pool_state_t *, char **,
 /*
  * Label manipulation.
  */
-extern int zpool_read_label(int, nvlist_t **);
+extern int zpool_read_label(int, nvlist_t **, int *);
 extern int zpool_clear_label(int);
 
 /*

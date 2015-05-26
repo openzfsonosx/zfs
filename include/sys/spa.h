@@ -22,6 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
 
 #ifndef _SYS_SPA_H
@@ -29,6 +30,7 @@
 
 #include <sys/avl.h>
 #include <sys/zfs_context.h>
+#include <sys/kstat.h>
 #include <sys/nvpair.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
@@ -96,16 +98,25 @@ _NOTE(CONSTCOND) } while (0)
 _NOTE(CONSTCOND) } while (0)
 
 /*
- * We currently support nine block sizes, from 512 bytes to 128K.
- * We could go higher, but the benefits are near-zero and the cost
- * of COWing a giant block to modify one byte would become excessive.
+ * We currently support block sizes from 512 bytes to 16MB.
+ * The benefits of larger blocks, and thus larger IO, need to be weighed
+ * against the cost of COWing a giant block to modify one byte, and the
+ * large latency of reading or writing a large block.
+ *
+ * Note that although blocks up to 16MB are supported, the recordsize
+ * property can not be set larger than zfs_max_recordsize (default 1MB).
+ * See the comment near zfs_max_recordsize in dsl_dataset.c for details.
+ *
+ * Note that although the LSIZE field of the blkptr_t can store sizes up
+ * to 32MB, the dnode's dn_datablkszsec can only store sizes up to
+ * 32MB - 512 bytes.  Therefore, we limit SPA_MAXBLOCKSIZE to 16MB.
  */
 #define	SPA_MINBLOCKSHIFT	9
-#define	SPA_MAXBLOCKSHIFT	17
+#define	SPA_OLD_MAXBLOCKSHIFT	17
+#define	SPA_MAXBLOCKSHIFT	24
 #define	SPA_MINBLOCKSIZE	(1ULL << SPA_MINBLOCKSHIFT)
+#define	SPA_OLD_MAXBLOCKSIZE	(1ULL << SPA_OLD_MAXBLOCKSHIFT)
 #define	SPA_MAXBLOCKSIZE	(1ULL << SPA_MAXBLOCKSHIFT)
-
-#define	SPA_BLOCKSIZES		(SPA_MAXBLOCKSHIFT - SPA_MINBLOCKSHIFT + 1)
 
 /*
  * Size of block to hold the configuration data (a packed nvlist)
@@ -500,12 +511,13 @@ _NOTE(CONSTCOND) } while (0)
 	if (bp == NULL) {						\
 		len += func(buf + len, size - len, "<NULL>");		\
 	} else if (BP_IS_HOLE(bp)) {					\
-		len += func(buf + len, size - len, "<hole>");		\
-		if (bp->blk_birth > 0) {				\
-			len += func(buf + len, size - len,		\
-			    " birth=%lluL",				\
-			    (u_longlong_t)bp->blk_birth);		\
-		}							\
+		len += func(buf + len, size - len,			\
+		    "HOLE [L%llu %s] "					\
+		    "size=%llxL birth=%lluL",				\
+		    (u_longlong_t)BP_GET_LEVEL(bp),			\
+		    type,						\
+		    (u_longlong_t)BP_GET_LSIZE(bp),			\
+		    (u_longlong_t)bp->blk_birth);			\
 	} else if (BP_IS_EMBEDDED(bp)) {				\
 		len = func(buf + len, size - len,			\
 		    "EMBEDDED [L%llu %s] et=%u %s "			\
@@ -678,6 +690,7 @@ extern spa_t *spa_next(spa_t *prev);
 /* Refcount functions */
 extern void spa_open_ref(spa_t *spa, void *tag);
 extern void spa_close(spa_t *spa, void *tag);
+extern void spa_async_close(spa_t *spa, void *tag);
 extern boolean_t spa_refcount_zero(spa_t *spa);
 
 #define	SCL_NONE	0x00
@@ -782,14 +795,17 @@ extern spa_load_state_t spa_load_state(spa_t *spa);
 extern uint64_t spa_freeze_txg(spa_t *spa);
 extern uint64_t spa_get_asize(spa_t *spa, uint64_t lsize);
 extern uint64_t spa_get_dspace(spa_t *spa);
+extern uint64_t spa_get_slop_space(spa_t *spa);
 extern void spa_update_dspace(spa_t *spa);
 extern uint64_t spa_version(spa_t *spa);
 extern boolean_t spa_deflate(spa_t *spa);
 extern metaslab_class_t *spa_normal_class(spa_t *spa);
 extern metaslab_class_t *spa_log_class(spa_t *spa);
+extern void spa_evicting_os_register(spa_t *, objset_t *os);
+extern void spa_evicting_os_deregister(spa_t *, objset_t *os);
+extern void spa_evicting_os_wait(spa_t *spa);
 extern int spa_max_replication(spa_t *spa);
 extern int spa_prev_software_version(spa_t *spa);
-extern int spa_busy(void);
 extern uint8_t spa_get_failmode(spa_t *spa);
 extern boolean_t spa_suspended(spa_t *spa);
 extern uint64_t spa_bootfs(spa_t *spa);
@@ -823,6 +839,8 @@ extern boolean_t spa_has_slogs(spa_t *spa);
 extern boolean_t spa_is_root(spa_t *spa);
 extern boolean_t spa_writeable(spa_t *spa);
 extern boolean_t spa_has_pending_synctask(spa_t *spa);
+extern int spa_maxblocksize(spa_t *spa);
+extern void zfs_blkptr_verify(spa_t *spa, const blkptr_t *bp);
 
 extern int spa_mode(spa_t *spa);
 extern uint64_t strtonum(const char *str, char **nptr);
@@ -876,12 +894,12 @@ extern void spa_configfile_set(spa_t *, nvlist_t *, boolean_t);
 extern void spa_event_notify(spa_t *spa, vdev_t *vdev, const char *name);
 
 #ifdef ZFS_DEBUG
-#define	dprintf_bp(bp, fmt, ...) do {					\
-	if (zfs_flags & ZFS_DEBUG_DPRINTF) {				\
-	char *__blkbuf = kmem_alloc(BP_SPRINTF_LEN, KM_PUSHPAGE);	\
-	snprintf_blkptr(__blkbuf, BP_SPRINTF_LEN, (bp));		\
-	dprintf(fmt " %s\n", __VA_ARGS__, __blkbuf);			\
-	kmem_free(__blkbuf, BP_SPRINTF_LEN);				\
+#define	dprintf_bp(bp, fmt, ...) do {				\
+	if (zfs_flags & ZFS_DEBUG_DPRINTF) {			\
+	char *__blkbuf = kmem_alloc(BP_SPRINTF_LEN, KM_SLEEP);	\
+	snprintf_blkptr(__blkbuf, BP_SPRINTF_LEN, (bp));	\
+	dprintf(fmt " %s\n", __VA_ARGS__, __blkbuf);		\
+	kmem_free(__blkbuf, BP_SPRINTF_LEN);			\
 	} \
 _NOTE(CONSTCOND) } while (0)
 #else
