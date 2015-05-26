@@ -53,6 +53,8 @@
 #include <sys/dmu.h>
 #endif /* !__APPLE__ */
 
+#include <sys/policy.h>
+
 #include <sys/dsl_prop.h>
 #include <sys/dsl_dataset.h>
 
@@ -2258,8 +2260,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	if (error)
 		printf("zfs_vfs_mount: error %d\n", error);
 	if (error == 0) {
-		zfsvfs_t *zfsvfs =vfs_fsprivate(vfsp);
-		uint64_t value;
 
         vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
 		/* Indicate to VFS that we support ACLs. */

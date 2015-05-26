@@ -489,7 +489,7 @@ net_lundman_zfs_zvol_device::getProductString(void)
 {
 	dprintf("getProduct %p\n", zv);
 
-	if (zv && zv->zv_name)
+	if (zv)
 		return (zv->zv_name);
 
 	return ((char *)"ZVolume");

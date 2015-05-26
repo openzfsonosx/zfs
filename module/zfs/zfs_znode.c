@@ -2480,7 +2480,7 @@ zfs_obj_to_path_impl(objset_t *osp, uint64_t obj, sa_handle_t *hdl,
 
 		component[0] = '/';
 		if (is_xattrdir) {
-			(void) snprintf(component + 1, MAXNAMELEN+2,
+			(void) snprintf(component + 1, MAXNAMELEN+1,
 			    "<xattrdir>");
 		} else {
 			error = zap_value_search(osp, pobj, obj,
