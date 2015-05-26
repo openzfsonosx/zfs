@@ -815,33 +815,6 @@ unmount_one(libzfs_handle_t *hdl, const char *mountpoint, int flags)
                               dgettext(TEXT_DOMAIN, "cannot unmount '%s'"),
                     mountpoint));
     }
-#ifdef __APPLE__
-	/*
-	 * Temporary hack to remove Finder icons after unmount, until
-	 * mount wrappers work is complete.
-	 */
-	char *argv[7] = {
-	    "/usr/bin/osascript",
-		"-e",
-	    NULL,
-		NULL, NULL, NULL };
-	char *script = NULL;
-	const char *tail;
-
-	tail = strrchr(mountpoint, '/');
-	if (tail && *tail == '/') tail++;
-	else tail = mountpoint;
-
-	asprintf(&script,
-			 "tell application \"Finder\" to eject disk \"%s\"",
-			 tail);
-
-	argv[2] = (char *)script;
-	libzfs_run_process(argv[0], argv, 0);
-
-	free(script);
-
-#endif
 
 	return (0);
 }
