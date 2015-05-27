@@ -2200,6 +2200,13 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 		goto out;
 	}
 
+	if (ap->a_options & XATTR_CREATE)
+		flag = ZNEW;	 /* expect no pre-existing entry */
+	else if (ap->a_options & XATTR_REPLACE)
+		flag = ZEXISTS;  /* expect an existing entry */
+	else
+		flag = 0;
+
 	mutex_enter(&zp->z_lock);
 	if (zp->z_xattr_cached == NULL)
 		error = -zfs_sa_get_xattr(zp);
@@ -2209,6 +2216,21 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	if (zfsvfs->z_use_sa && zfsvfs->z_xattr_sa && zp->z_is_sa) {
 		char *value;
 		uint64_t size;
+
+		/* New, expect it to not exist .. */
+		if ((flag | ZNEW) &&
+			(zpl_xattr_get_sa(vp, ap->a_name, NULL, 0) > 0)) {
+			error = EEXIST;
+			goto out;
+		}
+
+		/* Replace, XATTR must exist .. */
+		if ((flag | ZEXISTS) &&
+			((error = zpl_xattr_get_sa(vp, ap->a_name, NULL, 0)) <= 0) &&
+			error != -ENOENT) {
+			error = ENOATTR;
+			goto out;
+		}
 
 		size = uio_resid(uio);
 		value = kmem_alloc(size, KM_SLEEP);
@@ -2221,7 +2243,7 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 
 			error = zpl_xattr_set_sa(vp, ap->a_name,
 									 value, bytes,
-									 ap->a_options, cr);
+									 flag, cr);
 			kmem_free(value, size);
 
 			if (error == 0)
@@ -2234,13 +2256,6 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	if ((error = zfs_get_xattrdir(zp, &xdvp, cr, CREATE_XATTR_DIR))) {
 		goto out;
 	}
-
-	if (ap->a_options & XATTR_CREATE)
-		flag = ZNEW;	 /* expect no pre-existing entry */
-	else if (ap->a_options & XATTR_REPLACE)
-		flag = ZEXISTS;  /* expect an existing entry */
-	else
-		flag = 0;
 
 	/* Lookup or create the named attribute. */
 	error = zfs_obtain_xattr(VTOZ(xdvp), ap->a_name, VTOZ(vp)->z_mode, cr,
