@@ -218,8 +218,12 @@ extern void  nameattrpack(attrinfo_t *aip, const char *name, int namelen);
 extern int   getpackedsize(struct attrlist *alp, boolean_t user64);
 extern void  getfinderinfo(znode_t *zp, cred_t *cr, finderinfo_t *fip);
 extern uint32_t getuseraccess(znode_t *zp, vfs_context_t ctx);
-extern void finderinfo_update(uint8_t *finderinfo, znode_t *zp);
-
+extern void  finderinfo_update(uint8_t *finderinfo, znode_t *zp);
+extern int   zpl_xattr_set_sa(struct vnode *vp, const char *name,
+							  const void *value, size_t size, int flags,
+							  cred_t *cr);
+extern int zpl_xattr_get_sa(struct vnode *vp, const char *name, void *value,
+							size_t size);
 
     /*
      * OSX ACL Helper funcions
