@@ -168,8 +168,7 @@ zfs_probe(const char *devpath, io_name_t volname)
 		}
 	}
 
-	syslog(LOG_NOTICE, "-zfs_probe : result %d", result);
-	return (result);
+	return result;
 }
 
 int

@@ -1645,7 +1645,7 @@ isDeviceMatchForKeyAndSubstr(char *device, CFStringRef key, CFStringRef substr,
 	return (error);
 }
 
-/* 
+/*
  * Caller is responsible for supplying a /dev/disk* block device path
  * or the BSD name (disk*).
  */

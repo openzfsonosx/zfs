@@ -45,6 +45,7 @@ extern "C" {
 #include <sys/cmn_err.h>
 #include <sys/kmem.h>
 #include <sys/taskq.h>
+#include <sys/taskq_impl.h>
 #include <sys/buf.h>
 #include <sys/param.h>
 #include <sys/systm.h>

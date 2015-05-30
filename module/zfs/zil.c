@@ -39,6 +39,7 @@
 #include <sys/dmu_tx.h>
 #include <sys/dsl_pool.h>
 #include <sys/metaslab.h>
+#include <sys/trace_zil.h>
 
 /*
  * The zfs intent log (ZIL) saves transaction records of system calls
@@ -171,7 +172,7 @@ zil_bp_tree_add(zilog_t *zilog, const blkptr_t *bp)
 	if (avl_find(t, dva, &where) != NULL)
 		return (SET_ERROR(EEXIST));
 
-	zn = kmem_alloc(sizeof (zil_bp_node_t), KM_PUSHPAGE);
+	zn = kmem_alloc(sizeof (zil_bp_node_t), KM_SLEEP);
 	zn->zn_dva = *dva;
 	avl_insert(t, zn, where);
 
@@ -242,6 +243,7 @@ zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
 			    sizeof (cksum)) || BP_IS_HOLE(&zilc->zc_next_blk)) {
 				error = SET_ERROR(ECKSUM);
 			} else {
+				ASSERT3U(len, <=, SPA_OLD_MAXBLOCKSIZE);
 				bcopy(lr, dst, len);
 				*end = (char *)dst + len;
 				*nbp = zilc->zc_next_blk;
@@ -256,6 +258,8 @@ zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
 			    (zilc->zc_nused > (size - sizeof (*zilc)))) {
 				error = SET_ERROR(ECKSUM);
 			} else {
+				ASSERT3U(zilc->zc_nused, <=,
+				    SPA_OLD_MAXBLOCKSIZE);
 				bcopy(lr, dst, zilc->zc_nused);
 				*end = (char *)dst + zilc->zc_nused;
 				*nbp = zilc->zc_next_blk;
@@ -341,7 +345,7 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 	 * If the log has been claimed, stop if we encounter a sequence
 	 * number greater than the highest claimed sequence number.
 	 */
-	lrbuf = zio_buf_alloc(SPA_MAXBLOCKSIZE);
+	lrbuf = zio_buf_alloc(SPA_OLD_MAXBLOCKSIZE);
 	zil_bp_tree_init(zilog);
 
 	for (blk = zh->zh_log; !BP_IS_HOLE(&blk); blk = next_blk) {
@@ -388,7 +392,7 @@ done:
 	    (max_blk_seq == claim_blk_seq && max_lr_seq == claim_lr_seq));
 
 	zil_bp_tree_fini(zilog);
-	zio_buf_free(lrbuf, SPA_MAXBLOCKSIZE);
+	zio_buf_free(lrbuf, SPA_OLD_MAXBLOCKSIZE);
 
 	return (error);
 }
@@ -463,7 +467,7 @@ zil_alloc_lwb(zilog_t *zilog, blkptr_t *bp, uint64_t txg, boolean_t fastwrite)
 {
 	lwb_t *lwb;
 
-	lwb = kmem_cache_alloc(zil_lwb_cache, KM_PUSHPAGE);
+	lwb = kmem_cache_alloc(zil_lwb_cache, KM_SLEEP);
 	lwb->lwb_zilog = zilog;
 	lwb->lwb_blk = *bp;
 	lwb->lwb_fastwrite = fastwrite;
@@ -496,7 +500,7 @@ zilog_dirty(zilog_t *zilog, uint64_t txg)
 	dsl_pool_t *dp = zilog->zl_dmu_pool;
 	dsl_dataset_t *ds = dmu_objset_ds(zilog->zl_os);
 
-	if (dsl_dataset_is_snapshot(ds))
+	if (ds->ds_is_snapshot)
 		panic("dirtying snapshot!");
 
 	if (txg_list_add(&dp->dp_dirty_zilogs, zilog, txg)) {
@@ -814,7 +818,7 @@ zil_add_block(zilog_t *zilog, const blkptr_t *bp)
 	for (i = 0; i < ndvas; i++) {
 		zvsearch.zv_vdev = DVA_GET_VDEV(&bp->blk_dva[i]);
 		if (avl_find(t, &zvsearch, &where) == NULL) {
-			zv = kmem_alloc(sizeof (*zv), KM_PUSHPAGE);
+			zv = kmem_alloc(sizeof (*zv), KM_SLEEP);
 			zv->zv_vdev = zvsearch.zv_vdev;
 			avl_insert(t, zv, where);
 		}
@@ -940,7 +944,7 @@ zil_lwb_write_init(zilog_t *zilog, lwb_t *lwb)
  *
  * These must be a multiple of 4KB. Note only the amount used (again
  * aligned to 4KB) actually gets written. However, we can't always just
- * allocate SPA_MAXBLOCKSIZE as the slog space could be exhausted.
+ * allocate SPA_OLD_MAXBLOCKSIZE as the slog space could be exhausted.
  */
 uint64_t zil_block_buckets[] = {
     4096,		/* non TX_WRITE */
@@ -1022,7 +1026,7 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 		continue;
 	zil_blksz = zil_block_buckets[i];
 	if (zil_blksz == UINT64_MAX)
-		zil_blksz = SPA_MAXBLOCKSIZE;
+		zil_blksz = SPA_OLD_MAXBLOCKSIZE;
 	zilog->zl_prev_blks[zilog->zl_prev_rotor] = zil_blksz;
 	for (i = 0; i < ZIL_PREV_BLKS; i++)
 		zil_blksz = MAX(zil_blksz, zilog->zl_prev_blks[i]);
@@ -1191,8 +1195,7 @@ zil_itx_create(uint64_t txtype, size_t lrsize)
 
 	lrsize = P2ROUNDUP_TYPED(lrsize, sizeof (uint64_t), size_t);
 
-	itx = kmem_alloc(offsetof(itx_t, itx_lr) + lrsize,
-	    KM_PUSHPAGE | KM_NODEBUG);
+	itx = zio_data_buf_alloc(offsetof(itx_t, itx_lr) + lrsize);
 	itx->itx_lr.lrc_txtype = txtype;
 	itx->itx_lr.lrc_reclen = lrsize;
 	itx->itx_sod = lrsize; /* if write & WR_NEED_COPY will be increased */
@@ -1207,7 +1210,7 @@ zil_itx_create(uint64_t txtype, size_t lrsize)
 void
 zil_itx_destroy(itx_t *itx)
 {
-	kmem_free(itx, offsetof(itx_t, itx_lr) + itx->itx_lr.lrc_reclen);
+	zio_data_buf_free(itx, offsetof(itx_t, itx_lr)+itx->itx_lr.lrc_reclen);
 }
 
 /*
@@ -1228,8 +1231,7 @@ zil_itxg_clean(itxs_t *itxs)
 		if (itx->itx_callback != NULL)
 			itx->itx_callback(itx->itx_callback_data);
 		list_remove(list, itx);
-		kmem_free(itx, offsetof(itx_t, itx_lr) +
-		    itx->itx_lr.lrc_reclen);
+		zil_itx_destroy(itx);
 	}
 
 	cookie = NULL;
@@ -1240,8 +1242,7 @@ zil_itxg_clean(itxs_t *itxs)
 			if (itx->itx_callback != NULL)
 				itx->itx_callback(itx->itx_callback_data);
 			list_remove(list, itx);
-			kmem_free(itx, offsetof(itx_t, itx_lr) +
-			    itx->itx_lr.lrc_reclen);
+			zil_itx_destroy(itx);
 		}
 		list_destroy(list);
 		kmem_free(ian, sizeof (itx_async_node_t));
@@ -1308,8 +1309,7 @@ zil_remove_async(zilog_t *zilog, uint64_t oid)
 		if (itx->itx_callback != NULL)
 			itx->itx_callback(itx->itx_callback_data);
 		list_remove(&clean_list, itx);
-		kmem_free(itx, offsetof(itx_t, itx_lr) +
-		    itx->itx_lr.lrc_reclen);
+		zil_itx_destroy(itx);
 	}
 	list_destroy(&clean_list);
 }
@@ -1359,7 +1359,7 @@ zil_itx_assign(zilog_t *zilog, itx_t *itx, dmu_tx_t *tx)
 		ASSERT(itxg->itxg_sod == 0);
 		itxg->itxg_txg = txg;
 		itxs = itxg->itxg_itxs = kmem_zalloc(sizeof (itxs_t),
-		    KM_PUSHPAGE);
+		    KM_SLEEP);
 
 		list_create(&itxs->i_sync_list, sizeof (itx_t),
 		    offsetof(itx_t, itx_node));
@@ -1380,7 +1380,7 @@ zil_itx_assign(zilog_t *zilog, itx_t *itx, dmu_tx_t *tx)
 		ian = avl_find(t, &foid, &where);
 		if (ian == NULL) {
 			ian = kmem_alloc(sizeof (itx_async_node_t),
-			    KM_PUSHPAGE);
+			    KM_SLEEP);
 			list_create(&ian->ia_list, sizeof (itx_t),
 			    offsetof(itx_t, itx_node));
 			ian->ia_foid = foid;
@@ -1589,8 +1589,7 @@ zil_commit_writer(zilog_t *zilog)
 		if (itx->itx_callback != NULL)
 			itx->itx_callback(itx->itx_callback_data);
 		list_remove(&zilog->zl_itx_commit_list, itx);
-		kmem_free(itx, offsetof(itx_t, itx_lr)
-		    + itx->itx_lr.lrc_reclen);
+		zil_itx_destroy(itx);
 	}
 
 	mutex_enter(&zilog->zl_lock);
@@ -1801,7 +1800,7 @@ zil_alloc(objset_t *os, zil_header_t *zh_phys)
 	zilog_t *zilog;
 	int i;
 
-	zilog = kmem_zalloc(sizeof (zilog_t), KM_PUSHPAGE);
+	zilog = kmem_zalloc(sizeof (zilog_t), KM_SLEEP);
 
 	zilog->zl_header = zh_phys;
 	zilog->zl_os = os;
@@ -2207,7 +2206,7 @@ zil_replay(objset_t *os, void *arg, zil_replay_func_t replay_func[TX_MAX_TYPE])
 	zr.zr_replay = replay_func;
 	zr.zr_arg = arg;
 	zr.zr_byteswap = BP_SHOULD_BYTESWAP(&zh->zh_log);
-	zr.zr_lr = kmem_alloc(2 * SPA_MAXBLOCKSIZE, KM_PUSHPAGE);
+	zr.zr_lr = kmem_alloc(2 * SPA_MAXBLOCKSIZE, KM_SLEEP);
 
 	/*
 	 * Wait for in-progress removes to sync before starting replay.

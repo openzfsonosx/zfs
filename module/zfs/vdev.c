@@ -199,7 +199,7 @@ vdev_add_child(vdev_t *pvd, vdev_t *cvd)
 	pvd->vdev_children = MAX(pvd->vdev_children, id + 1);
 	newsize = pvd->vdev_children * sizeof (vdev_t *);
 
-	newchild = kmem_alloc(newsize, KM_PUSHPAGE);
+	newchild = kmem_alloc(newsize, KM_SLEEP);
 	if (pvd->vdev_child != NULL) {
 		bcopy(pvd->vdev_child, newchild, oldsize);
 		kmem_free(pvd->vdev_child, oldsize);
@@ -269,7 +269,7 @@ vdev_compact_children(vdev_t *pvd)
 		if (pvd->vdev_child[c])
 			newc++;
 
-	newchild = kmem_zalloc(newc * sizeof (vdev_t *), KM_PUSHPAGE);
+	newchild = kmem_zalloc(newc * sizeof (vdev_t *), KM_SLEEP);
 
 	for (c = newc = 0; c < oldc; c++) {
 		if ((cvd = pvd->vdev_child[c]) != NULL) {
@@ -292,7 +292,7 @@ vdev_alloc_common(spa_t *spa, uint_t id, uint64_t guid, vdev_ops_t *ops)
 	vdev_t *vd;
 	int t;
 
-	vd = kmem_zalloc(sizeof (vdev_t), KM_PUSHPAGE);
+	vd = kmem_zalloc(sizeof (vdev_t), KM_SLEEP);
 
 	if (spa->spa_root_vdev == NULL) {
 		ASSERT(ops == &vdev_root_ops);
@@ -846,16 +846,16 @@ vdev_metaslab_init(vdev_t *vd, uint64_t txg)
 
 	/*
 	 * Compute the raidz-deflation ratio.  Note, we hard-code
-	 * in 128k (1 << 17) because it is the current "typical" blocksize.
-	 * Even if SPA_MAXBLOCKSIZE changes, this algorithm must never change,
-	 * or we will inconsistently account for existing bp's.
+	 * in 128k (1 << 17) because it is the "typical" blocksize.
+	 * Even though SPA_MAXBLOCKSIZE changed, this algorithm can not change,
+	 * otherwise it would inconsistently account for existing bp's.
 	 */
 	vd->vdev_deflate_ratio = (1 << 17) /
 	    (vdev_psize_to_asize(vd, 1 << 17) >> SPA_MINBLOCKSHIFT);
 
 	ASSERT(oldc <= newc);
 
-	mspp = kmem_zalloc(newc * sizeof (*mspp), KM_PUSHPAGE | KM_NODEBUG);
+	mspp = kmem_zalloc(newc * sizeof (*mspp), KM_SLEEP);
 
 	if (oldc != 0) {
 		bcopy(vd->vdev_ms, mspp, oldc * sizeof (*mspp));
@@ -1010,8 +1010,7 @@ vdev_probe(vdev_t *vd, zio_t *zio)
 	mutex_enter(&vd->vdev_probe_lock);
 
 	if ((pio = vd->vdev_probe_zio) == NULL) {
-
-		vps = kmem_zalloc(sizeof (*vps), KM_PUSHPAGE);
+		vps = kmem_zalloc(sizeof (*vps), KM_SLEEP);
 
 		vps->vps_flags = ZIO_FLAG_CANFAIL | ZIO_FLAG_PROBE |
 		    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_DONT_AGGREGATE |

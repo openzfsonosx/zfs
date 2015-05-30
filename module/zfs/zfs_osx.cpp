@@ -57,9 +57,6 @@ extern "C" {
 
 extern SInt32 zfs_active_fs_count;
 
-/* Global system task queue for common use */
-extern int system_taskq_size;
-taskq_t	*system_taskq = NULL;
 
 #ifdef DEBUG
 #define	ZFS_DEBUG_STR	" (DEBUG mode)"
@@ -151,28 +148,11 @@ zfs_vfs_sysctl(int *name, __unused u_int namelen, user_addr_t oldp, size_t *oldl
 
 
 
-void
-system_taskq_fini(void)
-{
-    if (system_taskq)
-        taskq_destroy(system_taskq);
-}
 
 
 #include <sys/utsname.h>
 #include <string.h>
 
-void
-system_taskq_init(void)
-{
-
-    system_taskq = taskq_create("system_taskq",
-                                system_taskq_size * max_ncpus,
-                                minclsyspri, 4, 512,
-                                TASKQ_DYNAMIC | TASKQ_PREPOPULATE);
-
-
-}
 
 /*
  * fnv_32a_str - perform a 32 bit Fowler/Noll/Vo FNV-1a hash on a string

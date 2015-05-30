@@ -50,6 +50,23 @@
 #define DIFF(xx) ((mrefp->xx != NULL) && \
 		  (mgetp->xx == NULL || strcmp(mrefp->xx, mgetp->xx) != 0))
 
+#ifdef __APPLE__
+/*
+ * We will also query the extended filesystem capabilities API, to lookup
+ * other mount options, for example, XATTR. We can not use the MNTNOUSERXATTR
+ * option due to VFS rejecting with EACCESS.
+ */
+
+#include <sys/attr.h>
+typedef struct attrlist attrlist_t;
+
+struct attrBufS {
+	u_int32_t       length;
+	vol_capabilities_set_t caps;
+} __attribute__((aligned(4), packed));
+#endif
+
+
 
 DIR *
 fdopendir(int fd)
@@ -214,10 +231,25 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 	OPTADD(MNTOPT_NOXATTR);
 #endif
 #ifdef __APPLE__
-	if (flags & MNT_NOUSERXATTR)
-		OPTADD(MNTOPT_NOXATTR);
-	else
-		OPTADD(MNTOPT_XATTR);
+		{
+			struct attrBufS attrBuf;
+			attrlist_t      attrList;
+
+			memset(&attrList, 0, sizeof(attrList));
+			attrList.bitmapcount = ATTR_BIT_MAP_COUNT;
+			attrList.volattr = ATTR_VOL_INFO|ATTR_VOL_CAPABILITIES;
+
+			if (getattrlist(sfs->f_mntonname, &attrList, &attrBuf,
+							sizeof(attrBuf), 0) == 0)  {
+
+				if (attrBuf.caps[VOL_CAPABILITIES_INTERFACES] &
+					VOL_CAP_INT_EXTENDED_ATTR) {
+					OPTADD(MNTOPT_XATTR);
+				} else {
+					OPTADD(MNTOPT_NOXATTR);
+				} // If EXTENDED
+			} // if getattrlist
+		}
 #endif
 	if (flags & MNT_NOEXEC)
 		OPTADD(MNTOPT_NOEXEC);

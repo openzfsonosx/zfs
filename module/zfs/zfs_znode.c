@@ -56,6 +56,7 @@
 #endif /* _KERNEL */
 
 #include <sys/dmu.h>
+#include <sys/dmu_objset.h>
 #include <sys/refcount.h>
 #include <sys/stat.h>
 #include <sys/zap.h>
@@ -402,7 +403,9 @@ void
 zfs_znode_init(void)
 {
 	/*
-	 * Initialize zcache
+	 * Initialize zcache.  The KMC_SLAB hint is used in order that it be
+	 * backed by kmalloc() when on the Linux slab in order that any
+	 * wait_on_bit() operations on the related inode operate properly.
 	 */
 	rw_init(&zfsvfs_lock, NULL, RW_DEFAULT, NULL);
 	ASSERT(znode_cache == NULL);
@@ -548,8 +551,6 @@ zfs_create_share_dir(zfsvfs_t *zfsvfs, dmu_tx_t *tx)
 	vattr.va_gid = crgetgid(kcred);
 
 	sharezp = kmem_cache_alloc(znode_cache, KM_SLEEP);
-	//zfs_znode_cache_constructor(sharezp, zfsvfs->z_parent->z_vfs, 0);
-	ASSERT(!POINTER_IS_VALID(sharezp->z_zfsvfs));
 	sharezp->z_moved = 0;
 	sharezp->z_unlinked = 0;
 	sharezp->z_atime_dirty = 0;
@@ -1008,7 +1009,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	 * order for  DMU_OT_ZNODE is critical since it needs to be constructed
 	 * in the old znode_phys_t format.  Don't change this ordering
 	 */
-	sa_attrs = kmem_alloc(sizeof (sa_bulk_attr_t) * ZPL_END, KM_PUSHPAGE);
+	sa_attrs = kmem_alloc(sizeof (sa_bulk_attr_t) * ZPL_END, KM_SLEEP);
 
 	if (obj_type == DMU_OT_ZNODE) {
 		SA_ADD_BULK_ATTR(sa_attrs, cnt, SA_ZPL_ATIME(zfsvfs),
@@ -1806,8 +1807,13 @@ zfs_extend(znode_t *zp, uint64_t end)
 		 * We are growing the file past the current block size.
 		 */
 		if (zp->z_blksz > zp->z_zfsvfs->z_max_blksz) {
+			/*
+			 * File's blocksize is already larger than the
+			 * "recordsize" property.  Only let it grow to
+			 * the next power of 2.
+			 */
 			ASSERT(!ISP2(zp->z_blksz));
-			newblksz = MIN(end, SPA_MAXBLOCKSIZE);
+			newblksz = MIN(end, 1 << highbit64(zp->z_blksz));
 		} else {
 			newblksz = MIN(end, zp->z_zfsvfs->z_max_blksz);
 		}
@@ -2476,7 +2482,7 @@ zfs_obj_to_path_impl(objset_t *osp, uint64_t obj, sa_handle_t *hdl,
 
 		component[0] = '/';
 		if (is_xattrdir) {
-			(void) snprintf(component + 1, MAXNAMELEN+2,
+			(void) snprintf(component + 1, MAXNAMELEN+1,
 			    "<xattrdir>");
 		} else {
 			error = zap_value_search(osp, pobj, obj,

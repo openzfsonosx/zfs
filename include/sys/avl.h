@@ -23,6 +23,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright (c) 2014 by Delphix. All rights reserved.
+ */
+
 #ifndef	_AVL_H
 #define	_AVL_H
 

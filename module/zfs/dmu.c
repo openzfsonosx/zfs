@@ -285,7 +285,7 @@ dmu_bonus_hold(objset_t *os, uint64_t object, void *tag, dmu_buf_t **dbp)
 	/* as long as the bonus buf is held, the dnode will be held */
 	if (refcount_add(&db->db_holds, tag) == 1) {
 		VERIFY(dnode_add_ref(dn, db));
-		(void) atomic_inc_32_nv(&dn->dn_dbufs_count);
+		atomic_inc_32(&dn->dn_dbufs_count);
 	}
 
 	/*
@@ -419,8 +419,7 @@ dmu_buf_hold_array_by_dnode(dnode_t *dn, uint64_t offset, uint64_t length,
 		}
 		nblks = 1;
 	}
-	dbp = kmem_zalloc(sizeof (dmu_buf_t *) * nblks,
-	    KM_PUSHPAGE | KM_NODEBUG);
+	dbp = kmem_zalloc(sizeof (dmu_buf_t *) * nblks, KM_SLEEP);
 
 	zio = zio_root(dn->dn_objset->os_spa, NULL, NULL, ZIO_FLAG_CANFAIL);
 	blkid = dbuf_whichblock(dn, offset);
@@ -774,7 +773,7 @@ dmu_read(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	 * handle that here as well.
 	 */
 	if (dn->dn_maxblkid == 0) {
-		int newsz = offset > dn->dn_datablksz ? 0 :
+		uint64_t newsz = offset > dn->dn_datablksz ? 0 :
 		    MIN(size, dn->dn_datablksz - offset);
 		bzero((char *)buf + newsz, size - newsz);
 		size = newsz;
@@ -794,16 +793,16 @@ dmu_read(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 			break;
 
 		for (i = 0; i < numbufs; i++) {
-			int tocpy;
-			int bufoff;
+			uint64_t tocpy;
+			int64_t bufoff;
 			dmu_buf_t *db = dbp[i];
 
 			ASSERT(size > 0);
 
 			bufoff = offset - db->db_offset;
-			tocpy = (int)MIN(db->db_size - bufoff, size);
+			tocpy = MIN(db->db_size - bufoff, size);
 
-			bcopy((char *)db->db_data + bufoff, buf, tocpy);
+			(void) memcpy(buf, (char *)db->db_data + bufoff, tocpy);
 
 			offset += tocpy;
 			size -= tocpy;
@@ -829,14 +828,14 @@ dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	    FALSE, FTAG, &numbufs, &dbp));
 
 	for (i = 0; i < numbufs; i++) {
-		int tocpy;
-		int bufoff;
+		uint64_t tocpy;
+		int64_t bufoff;
 		dmu_buf_t *db = dbp[i];
 
 		ASSERT(size > 0);
 
 		bufoff = offset - db->db_offset;
-		tocpy = (int)MIN(db->db_size - bufoff, size);
+		tocpy = MIN(db->db_size - bufoff, size);
 
 		ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
 
@@ -941,9 +940,9 @@ dmu_xuio_init(xuio_t *xuio, int nblk)
                      XUIO_XUZC_RW(xuio) == UIO_READ ? UIO_READ : UIO_WRITE);
     xuio->xu_uio = uio;
 
-	priv = kmem_zalloc(sizeof (dmu_xuio_t), KM_PUSHPAGE);
+	priv = kmem_zalloc(sizeof (dmu_xuio_t), KM_SLEEP);
 	priv->cnt = nblk;
-	priv->bufs = kmem_zalloc(nblk * sizeof (arc_buf_t *), KM_PUSHPAGE);
+	priv->bufs = kmem_zalloc(nblk * sizeof (arc_buf_t *), KM_SLEEP);
 	//priv->iovp = uio->uio_iov;
     priv->iovp = (iovec_t *)uio_curriovbase(uio);
 
@@ -1136,13 +1135,15 @@ dmu_read_req(objset_t *os, uint64_t object, struct request *req)
 
 	req_offset = 0;
 	for (i = 0; i < numbufs; i++) {
-		int tocpy, didcpy, bufoff;
+		uint64_t tocpy;
+		int64_t bufoff;
+		int didcpy;
 		dmu_buf_t *db = dbp[i];
 
 		bufoff = offset - db->db_offset;
 		ASSERT3S(bufoff, >=, 0);
 
-		tocpy = (int)MIN(db->db_size - bufoff, size);
+		tocpy = MIN(db->db_size - bufoff, size);
 		if (tocpy == 0)
 			break;
 
@@ -1184,13 +1185,15 @@ dmu_write_req(objset_t *os, uint64_t object, struct request *req, dmu_tx_t *tx)
 
 	req_offset = 0;
 	for (i = 0; i < numbufs; i++) {
-		int tocpy, didcpy, bufoff;
+		uint64_t tocpy;
+		int64_t bufoff;
+		int didcpy;
 		dmu_buf_t *db = dbp[i];
 
 		bufoff = offset - db->db_offset;
 		ASSERT3S(bufoff, >=, 0);
 
-		tocpy = (int)MIN(db->db_size - bufoff, size);
+		tocpy = MIN(db->db_size - bufoff, size);
 		if (tocpy == 0)
 			break;
 
@@ -1252,8 +1255,8 @@ dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 #endif
 
 	for (i = 0; i < numbufs; i++) {
-		int tocpy;
-		int bufoff;
+		uint64_t tocpy;
+		int64_t bufoff;
 		dmu_buf_t *db = dbp[i];
 
 		ASSERT(size > 0);
@@ -1313,8 +1316,8 @@ dmu_write_uio_dnode(dnode_t *dn, uio_t *uio, uint64_t size, dmu_tx_t *tx)
 		return (err);
 
 	for (i = 0; i < numbufs; i++) {
-		int tocpy;
-		int bufoff;
+		uint64_t tocpy;
+		int64_t bufoff;
 		dmu_buf_t *db = dbp[i];
 
 		ASSERT(size > 0);
@@ -1680,7 +1683,19 @@ dmu_sync_done(zio_t *zio, arc_buf_t *buf, void *varg)
 		dr->dt.dl.dr_overridden_by = *zio->io_bp;
 		dr->dt.dl.dr_override_state = DR_OVERRIDDEN;
 		dr->dt.dl.dr_copies = zio->io_prop.zp_copies;
-		if (BP_IS_HOLE(&dr->dt.dl.dr_overridden_by))
+
+		/*
+		 * Old style holes are filled with all zeros, whereas
+		 * new-style holes maintain their lsize, type, level,
+		 * and birth time (see zio_write_compress). While we
+		 * need to reset the BP_SET_LSIZE() call that happened
+		 * in dmu_sync_ready for old style holes, we do *not*
+		 * want to wipe out the information contained in new
+		 * style holes. Thus, only zero out the block pointer if
+		 * it's an old style hole.
+		 */
+		if (BP_IS_HOLE(&dr->dt.dl.dr_overridden_by) &&
+		    dr->dt.dl.dr_overridden_by.blk_birth == 0)
 			BP_ZERO(&dr->dt.dl.dr_overridden_by);
 	} else {
 		dr->dt.dl.dr_override_state = DR_NOT_OVERRIDDEN;
@@ -1738,7 +1753,7 @@ dmu_sync_late_arrival(zio_t *pio, objset_t *os, dmu_sync_cb_t *done, zgd_t *zgd,
 		return (SET_ERROR(EIO));
 	}
 
-	dsa = kmem_alloc(sizeof (dmu_sync_arg_t), KM_PUSHPAGE);
+	dsa = kmem_alloc(sizeof (dmu_sync_arg_t), KM_SLEEP);
 	dsa->dsa_dr = NULL;
 	dsa->dsa_done = done;
 	dsa->dsa_zgd = zgd;
@@ -1848,19 +1863,32 @@ dmu_sync(zio_t *pio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd)
 	ASSERT(dr->dr_next == NULL || dr->dr_next->dr_txg < txg);
 
 	/*
-	 * Assume the on-disk data is X, the current syncing data is Y,
-	 * and the current in-memory data is Z (currently in dmu_sync).
-	 * X and Z are identical but Y is has been modified. Normally,
-	 * when X and Z are the same we will perform a nopwrite but if Y
-	 * is different we must disable nopwrite since the resulting write
-	 * of Y to disk can free the block containing X. If we allowed a
-	 * nopwrite to occur the block pointing to Z would reference a freed
-	 * block. Since this is a rare case we simplify this by disabling
-	 * nopwrite if the current dmu_sync-ing dbuf has been modified in
-	 * a previous transaction.
+	 * Assume the on-disk data is X, the current syncing data (in
+	 * txg - 1) is Y, and the current in-memory data is Z (currently
+	 * in dmu_sync).
+	 *
+	 * We usually want to perform a nopwrite if X and Z are the
+	 * same.  However, if Y is different (i.e. the BP is going to
+	 * change before this write takes effect), then a nopwrite will
+	 * be incorrect - we would override with X, which could have
+	 * been freed when Y was written.
+	 *
+	 * (Note that this is not a concern when we are nop-writing from
+	 * syncing context, because X and Y must be identical, because
+	 * all previous txgs have been synced.)
+	 *
+	 * Therefore, we disable nopwrite if the current BP could change
+	 * before this TXG.  There are two ways it could change: by
+	 * being dirty (dr_next is non-NULL), or by being freed
+	 * (dnode_block_freed()).  This behavior is verified by
+	 * zio_done(), which VERIFYs that the override BP is identical
+	 * to the on-disk BP.
 	 */
-	if (dr->dr_next)
+	DB_DNODE_ENTER(db);
+	dn = DB_DNODE(db);
+	if (dr->dr_next != NULL || dnode_block_freed(dn, db->db_blkid))
 		zp.zp_nopwrite = B_FALSE;
+	DB_DNODE_EXIT(db);
 
 	ASSERT(dr->dr_txg == txg);
 	if (dr->dt.dl.dr_override_state == DR_IN_DMU_SYNC ||
@@ -1878,7 +1906,7 @@ dmu_sync(zio_t *pio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd)
 	dr->dt.dl.dr_override_state = DR_IN_DMU_SYNC;
 	mutex_exit(&db->db_mtx);
 
-	dsa = kmem_alloc(sizeof (dmu_sync_arg_t), KM_PUSHPAGE);
+	dsa = kmem_alloc(sizeof (dmu_sync_arg_t), KM_SLEEP);
 	dsa->dsa_dr = dr;
 	dsa->dsa_done = done;
 	dsa->dsa_zgd = zgd;

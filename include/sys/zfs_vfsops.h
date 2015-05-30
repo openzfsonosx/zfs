@@ -85,6 +85,7 @@ struct zfsvfs {
         boolean_t	    z_use_fuids;	/* version allows fuids */
         boolean_t       z_replay;       /* set during ZIL replay */
         boolean_t       z_use_sa;       /* version allow system attributes */
+	    boolean_t       z_xattr_sa;     /* allow xattrs to be stores as SA */
         uint64_t        z_version;
         uint64_t        z_shares_dir;   /* hidden shares dir */
         kmutex_t	    z_lock;
@@ -98,6 +99,7 @@ struct zfsvfs {
 
         kmutex_t	    z_vnodecreate_lock; /*lock for using z_vnodecreate_list*/
         list_t          z_vnodecreate_list;/* all threads in vnode_create */
+        boolean_t       z_xattr;        /* enable atimes mount option */
 #endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
