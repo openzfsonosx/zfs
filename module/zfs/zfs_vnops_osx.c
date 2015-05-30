@@ -2022,6 +2022,11 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 
 	/* dprintf("+getxattr vp %p\n", ap->a_vp); */
 
+	/* xattrs disabled? */
+	if (zfsvfs->z_xattr == B_FALSE) {
+		return ENOTSUP;
+	}
+
 	ZFS_ENTER(zfsvfs);
 
 	/*
@@ -2146,7 +2151,12 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	int  flag;
 	int  error;
 
-	dprintf("+setxattr vp %p\n", ap->a_vp);
+	printf("+setxattr vp %p enabled? %d\n", ap->a_vp, zfsvfs->z_xattr);
+
+	/* xattrs disabled? */
+	if (zfsvfs->z_xattr == B_FALSE) {
+		return ENOTSUP;
+	}
 
 	ZFS_ENTER(zfsvfs);
 
@@ -2230,6 +2240,11 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 
 	dprintf("+removexattr vp %p\n", ap->a_vp);
 
+	/* xattrs disabled? */
+	if (zfsvfs->z_xattr == B_FALSE) {
+		return ENOTSUP;
+	}
+
 	ZFS_ENTER(zfsvfs);
 
 	/*
@@ -2312,6 +2327,11 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 	int force_formd_normalized_output;
 
 	dprintf("+listxattr vp %p\n", ap->a_vp);
+
+	/* xattrs disabled? */
+	if (zfsvfs->z_xattr == B_FALSE) {
+		return EINVAL;
+	}
 
 	ZFS_ENTER(zfsvfs);
 

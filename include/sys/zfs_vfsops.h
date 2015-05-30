@@ -97,6 +97,7 @@ struct zfsvfs {
 
         kmutex_t	    z_vnodecreate_lock; /*lock for using z_vnodecreate_list*/
         list_t          z_vnodecreate_list;/* all threads in vnode_create */
+        boolean_t       z_xattr;        /* enable atimes mount option */
 #endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
