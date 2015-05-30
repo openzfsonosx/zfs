@@ -2017,7 +2017,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
 	struct uio *uio = ap->a_uio;
 	pathname_t cn = { 0 };
-	int  error;
+	int  error = 0;
 	struct uio *finderinfo_uio = NULL;
 
 	/* dprintf("+getxattr vp %p\n", ap->a_vp); */
@@ -2043,6 +2043,43 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 		goto out;
 	}
 #endif
+
+	mutex_enter(&zp->z_lock);
+	if (zp->z_xattr_cached == NULL)
+		error = -zfs_sa_get_xattr(zp);
+	mutex_exit(&zp->z_lock);
+
+	if (zfsvfs->z_use_sa && zp->z_is_sa) {
+		uint64_t size = uio_resid(uio);
+		char *value;
+
+		if (!size) { /* Lookup size */
+
+			error = zpl_xattr_get_sa(vp, ap->a_name, NULL, 0);
+			if (error > 0) {
+				dprintf("ZFS: returning XATTR size %d\n", error);
+				*ap->a_size = error;
+				error = 0;
+				goto out;
+			}
+		}
+
+		value = kmem_alloc(size, KM_SLEEP);
+		if (value) {
+			error = zpl_xattr_get_sa(vp, ap->a_name, value, size);
+			dprintf("ZFS: SA XATTR said %d\n", error);
+
+			if (error > 0) {
+				uiomove((const char*)value, error, 0, uio);
+				kmem_free(value, size);
+				error = 0;
+			}
+
+			if (error != -ENOENT)
+				goto out;
+		}
+	}
+
 
 	/* Grab the hidden attribute directory vnode. */
 	if ((error = zfs_get_xattrdir(zp, &xdvp, cr, 0))) {
@@ -2149,9 +2186,9 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
 	struct uio *uio = ap->a_uio;
 	int  flag;
-	int  error;
+	int  error = 0;
 
-	printf("+setxattr vp %p enabled? %d\n", ap->a_vp, zfsvfs->z_xattr);
+	dprintf("+setxattr vp %p enabled? %d\n", ap->a_vp, zfsvfs->z_xattr);
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
@@ -2173,17 +2210,62 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 		goto out;
 	}
 
-	/* Grab the hidden attribute directory vnode. */
-	if ((error = zfs_get_xattrdir(zp, &xdvp, cr, CREATE_XATTR_DIR))) {
-		goto out;
-	}
-
 	if (ap->a_options & XATTR_CREATE)
 		flag = ZNEW;	 /* expect no pre-existing entry */
 	else if (ap->a_options & XATTR_REPLACE)
 		flag = ZEXISTS;  /* expect an existing entry */
 	else
 		flag = 0;
+
+	mutex_enter(&zp->z_lock);
+	if (zp->z_xattr_cached == NULL)
+		error = -zfs_sa_get_xattr(zp);
+	mutex_exit(&zp->z_lock);
+
+	/* Preferentially store the xattr as a SA for better performance */
+	if (zfsvfs->z_use_sa && zfsvfs->z_xattr_sa && zp->z_is_sa) {
+		char *value;
+		uint64_t size;
+
+		/* New, expect it to not exist .. */
+		if ((flag | ZNEW) &&
+			(zpl_xattr_get_sa(vp, ap->a_name, NULL, 0) > 0)) {
+			error = EEXIST;
+			goto out;
+		}
+
+		/* Replace, XATTR must exist .. */
+		if ((flag | ZEXISTS) &&
+			((error = zpl_xattr_get_sa(vp, ap->a_name, NULL, 0)) <= 0) &&
+			error != -ENOENT) {
+			error = ENOATTR;
+			goto out;
+		}
+
+		size = uio_resid(uio);
+		value = kmem_alloc(size, KM_SLEEP);
+		if (value) {
+			size_t bytes;
+
+			/* Copy in the xattr value */
+			uiocopy((const char *)value, size, UIO_WRITE,
+					uio, &bytes);
+
+			error = zpl_xattr_set_sa(vp, ap->a_name,
+									 value, bytes,
+									 flag, cr);
+			kmem_free(value, size);
+
+			if (error == 0)
+				goto out;
+		}
+		dprintf("ZFS: zpl_xattr_set_sa failed %d\n", error);
+	}
+
+	/* Grab the hidden attribute directory vnode. */
+	if ((error = zfs_get_xattrdir(zp, &xdvp, cr, CREATE_XATTR_DIR))) {
+		goto out;
+	}
 
 	/* Lookup or create the named attribute. */
 	error = zfs_obtain_xattr(VTOZ(xdvp), ap->a_name, VTOZ(vp)->z_mode, cr,
@@ -2253,6 +2335,27 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 	if (zp->z_pflags & ZFS_XATTR) {
 		error = EINVAL;
 		goto out;
+	}
+
+
+	mutex_enter(&zp->z_lock);
+	if (zp->z_xattr_cached == NULL)
+		error = -zfs_sa_get_xattr(zp);
+	mutex_exit(&zp->z_lock);
+
+	if (zfsvfs->z_use_sa && zfsvfs->z_xattr_sa && zp->z_is_sa) {
+        nvlist_t *nvl;
+
+		nvl = zp->z_xattr_cached;
+
+		error = -nvlist_remove(nvl, ap->a_name, DATA_TYPE_BYTE_ARRAY);
+
+		dprintf("ZFS: removexattr nvlist_remove said %d\n", error);
+		if (!error) {
+			/* Update the SA for additions, modifications, and removals. */
+			error = -zfs_sa_set_xattr(zp);
+			goto out;
+		}
 	}
 
 	sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs), &xattr, sizeof (xattr));
@@ -2343,6 +2446,36 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 		goto out;
 	}
 
+	mutex_enter(&zp->z_lock);
+	if (zp->z_xattr_cached == NULL)
+		error = -zfs_sa_get_xattr(zp);
+	mutex_exit(&zp->z_lock);
+
+	if (zfsvfs->z_use_sa && zp->z_is_sa && zp->z_xattr_cached) {
+        nvpair_t *nvp = NULL;
+
+		while ((nvp = nvlist_next_nvpair(zp->z_xattr_cached, nvp)) != NULL) {
+			ASSERT3U(nvpair_type(nvp), ==, DATA_TYPE_BYTE_ARRAY);
+
+			namelen = strlen(nvpair_name(nvp)) + 1; /* Null byte */
+
+			/* Just checking for space requirements? */
+			if (uio == NULL) {
+				size += namelen;
+			} else {
+				if (namelen > uio_resid(uio)) {
+					error = ERANGE;
+					break;
+				}
+				error = uiomove((caddr_t)nvpair_name(nvp), namelen,
+								UIO_READ, uio);
+				if (error)
+					break;
+			}
+		} /* while nvlist */
+	} /* SA xattr */
+	if (error) goto out;
+
 	/* Do we even have any attributes? */
 	if (sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs), &xattr,
 	    sizeof (xattr)) || (xattr == 0)) {
@@ -2403,7 +2536,7 @@ out:
 	}
 
 	ZFS_EXIT(zfsvfs);
-	dprintf("-listxattr vp %p: error %d\n", ap->a_vp, error);
+	dprintf("-listxattr vp %p: error %d size %ld\n", ap->a_vp, error, size);
 	return (error);
 }
 

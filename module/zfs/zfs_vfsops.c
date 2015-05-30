@@ -445,13 +445,17 @@ xattr_changed_cb(void *arg, uint64_t newval)
 	 * disabled internally.
 	 */
 
-	if (newval == B_TRUE) {
-		/* XXX locking on vfs_flag? */
-		zfsvfs->z_xattr = B_TRUE;
-        //vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
-	} else {
+	if (newval == ZFS_XATTR_OFF) {
 		zfsvfs->z_xattr = B_FALSE;
-        //vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
+		//vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
+	} else {
+		zfsvfs->z_xattr = B_TRUE;
+		//vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
+
+		if (newval == ZFS_XATTR_SA)
+			zfsvfs->z_xattr_sa = B_TRUE;
+		else
+			zfsvfs->z_xattr_sa = B_FALSE;
 	}
 }
 
@@ -1272,7 +1276,12 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 		error = zap_lookup(os, MASTER_NODE_OBJ, ZFS_SA_ATTRS, 8, 1,
 		    &sa_obj);
 		if (error)
-			return (error);
+			goto out;
+
+		error = zfs_get_zplprop(os, ZFS_PROP_XATTR, &zval);
+		if ((error == 0) && (zval == ZFS_XATTR_SA))
+			zfsvfs->z_xattr_sa = B_TRUE;
+
 	} else {
 		/*
 		 * Pre SA versions file systems should never touch
