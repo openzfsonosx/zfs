@@ -623,6 +623,9 @@ bool net_lundman_zfs_zvol::destroyPseudoDevices(char *poolname)
 
 		IOLog("removing fake pool devices\n");
 
+		// Make sure we can not look it up by name anymore.
+		zv->zv_name[0] = 0;
+
 		nub = static_cast<net_lundman_zfs_pseudo_device*>(zv->zv_iokitdev);
 
 		minor = zv->zv_minor;
