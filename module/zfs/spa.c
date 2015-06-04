@@ -3614,21 +3614,24 @@ spa_l2cache_drop(spa_t *spa)
  * For IOkit to work with Spotlight, we have to create a bunch of
  * fake /dev/diskX entries, which require the pool size.
  */
-void spa_iokit_pool(char *poolname, uint64_t guid)
+void spa_iokit_pool(char *poolname)
 {
 	uint64_t refdbytes, availbytes, usedobjs, availobjs;
 	objset_t *os;
 	int error;
 
-	printf("[ZFS] iokit update '%s'\n", poolname);
-
 	error = dmu_objset_hold(poolname, FTAG, &os);
 	if (!error) {
+		spa_t *spa = dmu_objset_spa(os);
+
+		printf("[ZFS] iokit update '%s' ('%s')\n", poolname, spa_name(spa));
+
 		dmu_objset_space(os,
 						 &refdbytes, &availbytes, &usedobjs, &availobjs);
 
-		ZFSDriver_create_pool(poolname, availbytes, 512,
-							  B_FALSE, guid,
+		ZFSDriver_create_pool(spa_name(spa), availbytes, 512,
+							  B_FALSE,
+							  spa_guid(spa),
 							  dsl_dataset_fsid_guid(dmu_objset_ds(os)));
 		dmu_objset_rele(os, FTAG);
 	}
@@ -3885,7 +3888,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa_config_sync(spa, B_FALSE, B_TRUE);
 
 #ifdef _KERNEL
-	spa_iokit_pool(spa->spa_name, spa_guid(spa));
+	spa_iokit_pool(spa->spa_name);
 #endif
 
 	spa_history_log_version(spa, "create");
@@ -4292,7 +4295,7 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	spa_async_request(spa, SPA_ASYNC_AUTOEXPAND);
 
 #ifdef _KERNEL
-	spa_iokit_pool(spa->spa_name, spa_guid(spa));
+	spa_iokit_pool(spa->spa_name);
 #endif
 
 

@@ -3119,13 +3119,11 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 	if (error == 0 && type == DMU_OST_ZVOL)
 		zvol_create_minors(fsname);
 
+#ifdef __APPLE__
 	if (error == 0 && type == DMU_OST_ZFS) {
-		char *r = NULL;
-		r = strchr(fsname, '/');
-		if (r) *r = 0;
-		spa_iokit_pool(fsname, 0);
-		if (r) *r = '/';
+		spa_iokit_pool(fsname);
 	}
+#endif
 #endif
 
 	return (error);
@@ -3174,6 +3172,12 @@ zfs_ioc_clone(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 #ifdef _KERNEL
 	if (error == 0)
 		zvol_create_minors(fsname);
+
+#ifdef __APPLE__
+	if (error == 0)
+		spa_iokit_pool(fsname);
+#endif
+
 #endif
 
 	return (error);
@@ -3526,13 +3530,11 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 		(void) zvol_remove_minor(zc->zc_name);
 
 #ifdef _KERNEL
+#ifdef __APPLE__
 	if (err == 0 && zc->zc_objset_type == DMU_OST_ZFS) {
-		char *r = NULL;
-		r = strchr(zc->zc_name, '/');
-		if (r) *r = 0;
-		spa_iokit_pool(zc->zc_name, 0);
-		if (r) *r = '/';
+		spa_iokit_pool(zc->zc_name);
 	}
+#endif
 #endif
 
 
@@ -4105,6 +4107,10 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 #ifdef _KERNEL
 	if (error == 0)
 		zvol_create_minors(tofs);
+#ifdef __APPLE__
+	if (error == 0)
+		spa_iokit_pool(tofs);
+#endif
 #endif
 
     /*
