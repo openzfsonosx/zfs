@@ -1256,6 +1256,18 @@ int getpackedsize(struct attrlist *alp, boolean_t user64)
 			size += sizeof(u_int64_t);
 		if (attrs & ATTR_CMN_PARENTID)
 			size += sizeof(u_int64_t);
+		/*
+		 * Also add:
+		 * ATTR_CMN_GEN_COUNT         (|FSOPT_ATTR_CMN_EXTENDED)
+		 * ATTR_CMN_DOCUMENT_ID       (|FSOPT_ATTR_CMN_EXTENDED)
+		 * ATTR_CMN_EXTENDED_SECURITY
+		 * ATTR_CMN_UUID
+		 * ATTR_CMN_GRPUUID
+		 * ATTR_CMN_FULLPATH
+		 * ATTR_CMN_ADDEDTIME
+		 * ATTR_CMN_ERROR
+		 * ATTR_CMN_DATA_PROTECT_FLAGS
+		 */
 	}
 	if ((attrs = alp->dirattr) != 0) {
 		if (attrs & ATTR_DIR_LINKCOUNT)
