@@ -1965,7 +1965,14 @@ zfs_vnop_pathconf(struct vnop_pathconf_args *ap)
 		*valp = PATH_MAX;  /* 1024 */
 		break;
 	case _PC_CASE_SENSITIVE:
+	{
+		znode_t *zp = VTOZ(ap->a_vp);
 		*valp = 1;
+		if (zp && zp->z_zfsvfs) {
+			zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+			*valp = (zfsvfs->z_case == ZFS_CASE_SENSITIVE) ? 1 : 0;
+		}
+	}
 		break;
 	case _PC_CASE_PRESERVING:
 		*valp = 1;
