@@ -768,6 +768,9 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 	uint64_t mtime[2], ctime[2];
 	int count = 0;
 	int error;
+#ifdef __APPLE__
+	uint64_t addtime[2];
+#endif
 
 	mutex_enter(&zp->z_lock);
 
@@ -803,7 +806,6 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 			 */
 	if (!(flag & ZRENAMING)) {
 		timestruc_t	now;
-		uint64_t addtime[2];
 		gethrestime(&now);
 		ZFS_TIME_ENCODE(&now, addtime);
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_ADDTIME(zfsvfs), NULL,
