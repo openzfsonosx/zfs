@@ -111,9 +111,6 @@ usage(void)
 #define	FSUC_QUICKVERIFY 'q'
 #endif
 
-void check_for_snapshot(char *device, char *name);
-
-
 
 static int
 zfs_probe(const char *devpath, io_name_t volname)
@@ -238,7 +235,6 @@ main(int argc, char **argv, char **env)
 			if (ret == FSUR_RECOGNIZED)
 				write(1, thename, strlen(thename));
 
-			check_for_snapshot(blkdevice, thename);
 			break;
 
 		case FSUC_GETUUID:
@@ -269,77 +265,4 @@ main(int argc, char **argv, char **env)
 	syslog(LOG_NOTICE, "main thread exit");
 	closelog();
 	exit(ret);
-}
-
-
-/*
- * The kernel will trigger an automate mount of the snapshots, but has
- * no way to set the mountpoint. So if we get a probe for a snapshot,
- * we setup the DA callbacks to modify the mountpoint.
- */
-void check_for_snapshot(char *device, char *name)
-{
-	DADiskRef        disk     = NULL;
-	DASessionRef session;
-	CFURLRef path;
-	int err;
-	libzfs_handle_t *g_zfs;
-	zfs_handle_t *snap = NULL;
-	char sourceloc[ZFS_MAXNAMELEN];
-	zprop_source_t sourcetype;
-	char mountpoint[ZFS_MAXPROPLEN];
-
-	// Check for snapshot, we could let zfs_open(ZFS_TYPE_SNAPSHOT) fail, or
-	// check type == ZFS_TYPE_SNAPSHOT here instead of looking for '@'
-	if (!strchr(name, '@')) return;
-
-	syslog(LOG_NOTICE, "%s: '%s' appears to be snapshot",
-		   progname, name);
-
-	// Open libzfs to fetch the snapshots mountpoint
-	if ((g_zfs = libzfs_init()) == NULL) {
-		return;
-	}
-
-	if ((snap = zfs_open(g_zfs, name, ZFS_TYPE_SNAPSHOT)) == NULL)
-		goto fail;
-
-	err = zfs_prop_get(snap, ZFS_PROP_MOUNTPOINT, mountpoint, sizeof(mountpoint),
-					   &sourcetype, sourceloc, sizeof (sourceloc), B_FALSE);
-	if (err) goto fail;
-
-	syslog(LOG_NOTICE, "mountpoint is '%s'", mountpoint);
-
-	session = DASessionCreate(kCFAllocatorDefault);
-	if (!session) goto fail;
-
-
-	path = CFURLCreateFromFileSystemRepresentation(
-		kCFAllocatorDefault,
-		(const unsigned char *)mountpoint,
-		strlen(mountpoint),
-		true);
-
-	disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, device);
-
-	syslog(LOG_NOTICE, "calling mount on '%s' and '%s' (%s)",
-		   device, mountpoint, name);
-
-	if (disk) {
-		// Add callback in DiskMount if we want to know if it succeeded or not
-		DADiskMount(disk, path, kDADiskMountOptionDefault,
-					NULL, NULL);
-		CFRelease(disk);
-	}
-
-	CFRelease(path);
-	CFRelease(session);
-
-  fail:
-	if (snap)
-		zfs_close(snap);
-
-	libzfs_fini(g_zfs);
-
-	return;
 }

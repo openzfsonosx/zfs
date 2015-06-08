@@ -95,7 +95,7 @@
 
 #include "zfs_namecheck.h"
 
-#define dprintf printf
+//#define dprintf printf
 
 /*
  *            OSX     FreeBSD
@@ -1432,8 +1432,13 @@ domount:
 	 */
 	if (!ctldir_mounting) {
 		atomic_inc_64(&ctldir_mounting);
+		mutex_exit(&sdp->sd_lock);
+		ZFS_EXIT(zfsvfs);
 		err = IOKit_mount_snapshot(curthread, vpp, "zfs", mountpoint, snapname, 0);
 		atomic_dec_64(&ctldir_mounting);
+		mutex_enter(&sdp->sd_lock);
+		ZFS_ENTER(zfsvfs);
+
 		printf("ZFS: mount said %d\n", err);
 	}
 

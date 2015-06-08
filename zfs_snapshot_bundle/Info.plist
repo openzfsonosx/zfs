@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BuildMachineOSBuild</key>
+	<string>12B19</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleIdentifier</key>
+	<string>net.lundman.filesystems.snapshot</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>zfs</string>
+	<key>CFBundlePackageType</key>
+	<string>fs  </string>
+	<key>CFBundleShortVersionString</key>
+	<string>2012.09.23</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>2012.09.23</string>
+	<key>DTCompiler</key>
+	<string></string>
+	<key>DTPlatformBuild</key>
+	<string>4F1003</string>
+	<key>DTPlatformVersion</key>
+	<string>GM</string>
+	<key>DTSDKBuild</key>
+	<string>12A264</string>
+	<key>DTSDKName</key>
+	<string>macosx10.8</string>
+	<key>DTXcode</key>
+	<string>0441</string>
+	<key>DTXcodeBuild</key>
+	<string>4F1003</string>
+	<key>FSMediaTypes</key>
+	<dict>
+	  <key>zfs_snapshot_proxy</key>
+	  <dict>
+		<key>FSMediaProperties</key>
+		<dict>
+		  <key>Content Hint</key>
+		  <string>zfs__proxy</string>
+		</dict>
+		<key>FSProbeArguments</key>
+		<string>-p</string>
+		<key>FSProbeExecutable</key>
+		<string>zfs.util</string>
+		<key>FSProbeOrder</key>
+		<integer>1000</integer>
+	  </dict>
+      <key>Whole</key>
+      <dict>
+        <key>FSMediaProperties</key>
+        <dict>
+          <key>Leaf</key>
+          <true/>
+          <key>Whole</key>
+          <true/>
+        </dict>
+        <key>FSProbeArguments</key>
+        <string>-p</string>
+        <key>FSProbeExecutable</key>
+        <string>zfs.util</string>
+        <key>FSProbeOrder</key>
+        <integer>2000</integer>
+		<key>autodiskmount</key>
+      </dict>
+	</dict>
+	<key>FSPersonalities</key>
+	<dict>
+		<key>ZFS Snapshot</key>
+		<dict>
+			<key>FSLiveVerificationArguments</key>
+			<string>-c</string>
+			<key>FSName</key>
+			<string>ZFS</string>
+			<key>FSSubType</key>
+			<integer>1</integer>
+			<key>FSVerificationArguments</key>
+			<string>-c</string>
+			<key>FSVerificationExecutable</key>
+			<string>zfs.util</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

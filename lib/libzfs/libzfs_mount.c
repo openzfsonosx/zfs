@@ -1324,6 +1324,9 @@ remove_mountpoint(zfs_handle_t *zhp)
 		 * and this error isn't really useful to the administrator in
 		 * any way.
 		 */
+
+		fprintf(stderr, "** attempting to rmdir(%s)\r\n", mountpoint);
+
 		(void) rmdir(mountpoint);
 	}
 }
@@ -1631,6 +1634,7 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 	 * appropriate.
 	 */
 	for (i = 0; i < used; i++) {
+		fprintf(stderr, "** unmounting '%s'\r\n", mountpoints[i]);
 		if (unmount_one(hdl, mountpoints[i], flags) != 0)
 			goto out;
 	}

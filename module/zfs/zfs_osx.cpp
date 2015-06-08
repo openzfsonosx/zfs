@@ -514,6 +514,11 @@ bool net_lundman_zfs_zvol::createPseudoDevices(char *poolname,
 	zv = zvol_minor_lookup(poolname);
 	printf("zv said %p\n", zv);
 
+	if (zv && !zv->zv_iokitdev) {
+		zv->zv_name[0] = 0;
+		zv = NULL;
+	}
+
 	if (zv) {
 
 		// Already have pool nub
@@ -821,27 +826,39 @@ int IOKit_mount_snapshot(thread_t *tr,         /* not used */
 {
 	int result;
 	struct vnode *mvp;
+	int i;
 
 	result =  static_cast<net_lundman_zfs_zvol*>(global_c_interface)->mountSnapshot(snapname);
 
-#if 0
+#if 1
 	if (!result) {
 		printf("ZFS: new iokit created, waiting for mount to complete...\n");
-		delay(hz * 5);
 
-		printf("ZFS: Calling lookup again on '%s'... \n", mountpoint);
-		result = vnode_lookup(mountpoint,
-							  0,
-							  &mvp,
-							  vfs_context_current());
-		if (!result) {
-			printf("vnode_lookup good?! close %p return %p\n",
-				   *vpp, mvp);
-			VN_RELE(*vpp);
-			*vpp = mvp;
-		}
 
+		for (i = 0; i < 5<<1; i++) {  // Wait up to 5 seconds for mount
+
+			printf("ZFS: Calling lookup again on '%s'... \n", mountpoint);
+			result = vnode_lookup(mountpoint,
+								  0,
+								  &mvp,
+								  vfs_context_current());
+			if (!result) {
+				printf("vnode_lookup good?! close %p return %p\n",
+					   *vpp, mvp);
+				VN_RELE(*vpp);
+				*vpp = mvp;
+				break;
+			}
+
+			/* Delay - since we are waiting on userland's DiskArbitration to
+			 * mount it, can we find a sexier way to wake up here? The
+			 * mount request will come via zfs_vfs_mount after all
+			 */
+			delay(hz>>1);
+
+		} // for
 	}
+
 #endif
 
 	return result;

@@ -362,9 +362,6 @@ OSSet*  ZFSProxyMediaScheme::scan(SInt32* score, char *snapshot)
     close(this);
   //  buffer->release();
 
-
-	if (snapshot) printf("ZFS: Should add snapshot '%s' here.\n", snapshot);
-
 	return holder.child_filesystems;
 
 bail:

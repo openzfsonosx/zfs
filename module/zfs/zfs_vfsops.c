@@ -1587,7 +1587,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	VOP_UNLOCK(vp, 0);
 #endif
 
-#if 0 // Want .zfs or not
+#if 1 // Want .zfs or not
 	if (!zfsvfs->z_issnap) {
 		zfsctl_create(zfsvfs);
     }

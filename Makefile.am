@@ -19,7 +19,7 @@ kerneldir = /usr/src/zfs-$(VERSION)/$(LINUX_VERSION)
 nodist_kernel_HEADERS = zfs.release zfs_config.h
 endif
 if CONFIG_USER
-SUBDIRS += dracut udev etc man scripts lib cmd zfs_bundle
+SUBDIRS += dracut udev etc man scripts lib cmd zfs_bundle zfs_snapshot_bundle
 endif
 
 
