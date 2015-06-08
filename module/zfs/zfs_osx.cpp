@@ -552,6 +552,7 @@ bool net_lundman_zfs_zvol::createPseudoDevices(char *poolname,
 
 		if (!zv) return false;
 
+		zv->zv_minor = minor;
 		zv->zv_volsize = bytes;
 		zv->zv_volblocksize = block;
 		zv->zv_znode.z_is_zvol = 1;
