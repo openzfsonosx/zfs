@@ -4347,7 +4347,8 @@ top:
 			 * then we also need to update ADDEDTIME (ADDTIME) property for
 			 * FinderInfo. We are already inside error == 0 conditional
 			 */
-			if (sdzp != tdzp) {
+			if ((sdzp != tdzp) &&
+				zfsvfs->z_use_sa == B_TRUE) {
 				timestruc_t	now;
 				uint64_t addtime[2];
 				gethrestime(&now);
