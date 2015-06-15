@@ -111,6 +111,23 @@ usage(void)
 #define	FSUC_QUICKVERIFY 'q'
 #endif
 
+char * MYCFStringCopyUTF8String(CFStringRef aString) {
+  if (aString == NULL) {
+    return NULL;
+  }
+
+  CFIndex length = CFStringGetLength(aString);
+  CFIndex maxSize =
+  CFStringGetMaximumSizeForEncoding(length,
+                                    kCFStringEncodingUTF8);
+  char *buffer = (char *)malloc(maxSize);
+  if (CFStringGetCString(aString, buffer, maxSize,
+                         kCFStringEncodingUTF8)) {
+    return buffer;
+  }
+  return NULL;
+}
+
 
 static int
 zfs_probe(const char *devpath, io_name_t volname)
@@ -149,12 +166,15 @@ zfs_probe(const char *devpath, io_name_t volname)
 				cfstr = IORegistryEntryCreateCFProperty(service,
 				    CFSTR("DATASET"), kCFAllocatorDefault, 0);
 				if (cfstr) {
-					(void) strlcpy(volname,
-							  CFStringGetCStringPtr(cfstr,
-								   kCFStringEncodingMacRoman),
-								   sizeof (io_name_t));
-
-					result = FSUR_RECOGNIZED;
+					char *freeme;
+					freeme = MYCFStringCopyUTF8String(cfstr);
+					if (freeme) {
+						(void) strlcpy(volname,
+									   freeme,
+									   sizeof (io_name_t));
+						free(freeme);
+						result = FSUR_RECOGNIZED;
+					}
 					CFRelease(cfstr);
 				}
 

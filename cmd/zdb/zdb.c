@@ -489,7 +489,7 @@ dump_bpobj_subobjs(objset_t *os, uint64_t object, void *data, size_t size)
 			last_nonzero = i;
 	}
 
-	for (i = 0; i <= last_nonzero; i++) {
+	for (i = 0; (int64_t)i <= last_nonzero; i++) {
 		(void) printf("\t%llu\n", (longlong_t)subobjs[i]);
 	}
 	kmem_free(subobjs, doi.doi_max_offset);

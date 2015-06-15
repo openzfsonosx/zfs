@@ -201,7 +201,22 @@ int iokit_mark_device_to_mount(char *dataset)
 
 
 
+char * MYCFStringCopyUTF8String(CFStringRef aString) {
+  if (aString == NULL) {
+    return NULL;
+  }
 
+  CFIndex length = CFStringGetLength(aString);
+  CFIndex maxSize =
+  CFStringGetMaximumSizeForEncoding(length,
+                                    kCFStringEncodingUTF8);
+  char *buffer = (char *)malloc(maxSize);
+  if (CFStringGetCString(aString, buffer, maxSize,
+                         kCFStringEncodingUTF8)) {
+    return buffer;
+  }
+  return NULL;
+}
 
 /*
  * Lookup "POOL/DATASET" and return BSD Name "diskXsY".
@@ -262,14 +277,19 @@ iokit_dataset_to_device(const char *spec, io_name_t volname)
 			    service, CFSTR(kIOBSDNameKey), kCFAllocatorDefault,
 			    0);
 			if (ioBSDName) {
+				char *freeme;
+				freeme = MYCFStringCopyUTF8String(ioBSDName);
+				if (freeme) {
+				fprintf(stderr, "Found BSDName '%s'\n",
+						freeme);
 				strlcpy(volname,
-				    CFStringGetCStringPtr(ioBSDName,
-				    kCFStringEncodingMacRoman),
-				    sizeof (io_name_t));
+						freeme,
+						sizeof (io_name_t));
 				fprintf(stderr, "Found BSDName '%s'\n",
 				    volname);
 				CFRelease(ioBSDName);
-
+				free(freeme);
+				}
 			}
 
 		}
@@ -335,6 +355,83 @@ static int diskutil_mount(io_name_t device, const char *path, int flags)
 
 	return (rc ? EINVAL : 0);
 }
+
+
+#include <DiskArbitration/DiskArbitration.h>
+
+void DiskMountCallback(DADiskRef diskRef, DADissenterRef dissenter, void *context)
+{
+// Disk *disk = (Disk *)context;
+
+	fprintf(stderr, "** DiskMountCallback: dissenter %p\r\n", dissenter);
+
+	if (dissenter) {
+
+		char *str =  MYCFStringCopyUTF8String(DADissenterGetStatusString(dissenter));
+
+		fprintf(stderr, "** DiskMountCallback: status 0x%x : '%s'\r\n",
+				DADissenterGetStatus(dissenter),
+				str);
+		free(str);
+
+	}
+	else {
+		fprintf(stderr, "** disk mounted\r\n");
+	}
+}
+
+
+static int diskutil_mountXX(io_name_t device, const char *path, int flags)
+{
+	DADiskRef disk;
+    CFDictionaryRef descDict;
+    DASessionRef session = DASessionCreate(NULL);
+
+	sleep(1);
+
+	fprintf(stderr, "** zmount: trying to trigger mount\r\n");
+
+    if (session) {
+        disk = DADiskCreateFromBSDName(NULL, session, device);
+
+		fprintf(stderr, "** disk %p\r\n", disk);
+
+        if (disk) {
+			CFURLRef url;
+
+			url = CFURLCreateFromFileSystemRepresentation(
+				kCFAllocatorDefault,
+				path,
+				strlen(path),
+				true);
+
+			fprintf(stderr, "** url %p\r\n", url);
+
+			DAApprovalSessionScheduleWithRunLoop(session,
+												 CFRunLoopGetCurrent(),
+												 kCFRunLoopDefaultMode);
+
+			DADiskMountWithArguments((DADiskRef) disk, (CFURLRef) url,
+									 kDADiskMountOptionDefault,
+									 DiskMountCallback,
+									 NULL,
+									 (CFStringRef *)NULL);
+
+			fprintf(stderr, "** mount\r\n");
+
+			CFRunLoopRunInMode(kCFRunLoopDefaultMode, 10, true);
+			DAApprovalSessionUnscheduleFromRunLoop (session,
+													CFRunLoopGetCurrent(),
+													kCFRunLoopDefaultMode);
+
+			CFRelease(url);
+			//CFRelease(pathStr);
+			CFRelease(session);
+		}
+	}
+}
+
+
 
 
 int

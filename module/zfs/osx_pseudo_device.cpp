@@ -43,7 +43,7 @@
  */
 
 
-// #define dprintf IOLog
+//#define dprintf IOLog
 
 // Define the superclass
 #define	super IOBlockStorageDevice
@@ -421,33 +421,16 @@ net_lundman_zfs_pseudo_device::doAsyncReadWrite(
     // Perform the read or write operation through the transport driver.
     actualByteCount = (nblks*(ZVOL_BSIZE));
 
-	// Only do IO on ZVolumes - the others are fake
-	if (zv->zv_minor != -1) {
 
-		// These variables are set in zvol_first_open(), which should
-		// have been called already.
-		if (!zv->zv_objset || !zv->zv_dbuf) {
-			dprintf("asyncReadWrite no objset nor dbuf\n");
-			return kIOReturnNotAttached;
-		}
+	if (direction == kIODirectionIn) {
 
-		if (direction == kIODirectionIn) {
-
-			if (zvol_read_iokit(zv,
-								(block*(ZVOL_BSIZE)),
-								actualByteCount,
-								(void *)buffer))
-				actualByteCount = 0;
+		// Clear the memory to say we read it.
+		//memset(buffer, 0, actualByteCount);
 
 		} else {
 
-			if (zvol_write_iokit(zv,
-								 (block*(ZVOL_BSIZE)),
-								 actualByteCount,
-								 (void *)buffer))
-        actualByteCount = 0;
+		// Do nothing but say everything went well
 
-		}
 	}
 
     if (actualByteCount != nblks*(ZVOL_BSIZE))
