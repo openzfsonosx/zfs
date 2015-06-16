@@ -4060,6 +4060,7 @@ zfs_rename(vnode_t *sdvp, char *snm, vnode_t *tdvp, char *tnm, cred_t *cr,
 #ifndef __APPLE__
 	vnode_t		*realvp;
 #endif
+	uint64_t addtime[2];
 	zfs_dirlock_t	*sdl, *tdl;
 	dmu_tx_t	*tx;
 	zfs_zlock_t	*zl;
@@ -4350,7 +4351,6 @@ top:
 			if ((sdzp != tdzp) &&
 				zfsvfs->z_use_sa == B_TRUE) {
 				timestruc_t	now;
-				uint64_t addtime[2];
 				gethrestime(&now);
 				ZFS_TIME_ENCODE(&now, addtime);
 				error = sa_update(szp->z_sa_hdl, SA_ZPL_ADDTIME(zfsvfs),
