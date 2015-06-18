@@ -2356,6 +2356,17 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 				str++;
 
 #ifdef __APPLE__
+			/*
+			 * On OSX by default we mount pools under /Volumes unless
+			 * the dataset property mountpoint specifies otherwise.
+			 * In addition to this, there is an undocumented environment
+			 * variable __ZFS_MAIN_MOUNTPOINT_DIR, used mainly by the
+			 * testing environment, as it expects "/" by default.
+			 */
+			char *default_mountpoint;
+			default_mountpoint = getenv("__ZFS_MAIN_MOUNTPOINT_DIR");
+			if (!default_mountpoint) default_mountpoint = "/Volumes/";
+
 			//Temporarily allowing snapshot mounting
 			if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT) {
 				const char *r = strrchr(relpath, '@');
@@ -2381,14 +2392,14 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 					(void) snprintf(propbuf, proplen,
 					    "%s%s%s%s/.zfs/snapshot/%s", root,
 					    str, source == NULL ||
-					    source[0] == '\0' ? "/Volumes/" :
+					    source[0] == '\0' ? default_mountpoint :
 					    "/", parent_name, snapshot_name);
 					free(parent_name);
 				} else {
 					(void) snprintf(propbuf, proplen,
 					    "%s%s%s.zfs/snapshot/%s", root, str,
 					    source == NULL ||
-					    source[0] == '\0' ? "/Volumes/" :
+					    source[0] == '\0' ? default_mountpoint :
 					    "/", snapshot_name);
 				}
 			} else {
@@ -2400,7 +2411,7 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 				(void) snprintf(propbuf, proplen, "%s%s%s%s",
 #ifdef __APPLE__
 				    root, str, source == NULL ||
-				    source[0] == '\0' ? "/Volumes/" : "/",
+				    source[0] == '\0' ? default_mountpoint : "/",
 #else
 				    root, str, relpath[0] == '@' ? "" : "/",
 #endif
