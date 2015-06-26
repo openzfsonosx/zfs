@@ -424,26 +424,6 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_c_max;
 	kstat_named_t arcstat_size;
 	/*
-	 * Number of compressed bytes stored in the arc_buf_hdr_t's b_pdata.
-	 * Note that the compressed bytes may match the uncompressed bytes
-	 * if the block is either not compressed or compressed arc is disabled.
-	 */
-	kstat_named_t arcstat_compressed_size;
-	/*
-	 * Uncompressed size of the data stored in b_pdata. If compressed
-	 * arc is disabled then this value will be identical to the stat
-	 * above.
-	 */
-	kstat_named_t arcstat_uncompressed_size;
-	/*
-	 * Number of bytes stored in all the arc_buf_t's. This is classified
-	 * as "overhead" since this data is typically short-lived and will
-	 * be evicted from the arc when it becomes unreferenced unless the
-	 * zfs_keep_uncompressed_metadata or zfs_keep_uncompressed_level
-	 * values have been set (see comment in dbuf.c for more information).
-	 */
-	kstat_named_t arcstat_overhead_size;
-	/*
 	 * Number of bytes consumed by internal ARC structures necessary
 	 * for tracking purposes; these structures are not actually
 	 * backed by ARC buffers. This includes arc_buf_hdr_t structures
@@ -684,9 +664,7 @@ static arc_stats_t arc_stats = {
 	{ "arc_meta_used",		KSTAT_DATA_UINT64 },
 	{ "arc_meta_limit",		KSTAT_DATA_UINT64 },
 	{ "arc_meta_max",		KSTAT_DATA_UINT64 },
-	{ "arc_meta_min",		KSTAT_DATA_UINT64 },
-	{ "sync_wait_for_async",	KSTAT_DATA_UINT64 },
-	{ "demand_hit_predictive_prefetch", KSTAT_DATA_UINT64 },
+	{ "arc_meta_min",		KSTAT_DATA_UINT64 }
 };
 
 #define	ARCSTAT(stat)	(arc_stats.stat.value.ui64)
