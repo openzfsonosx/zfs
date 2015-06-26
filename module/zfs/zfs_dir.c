@@ -317,7 +317,13 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 			zfs_dirent_unlock(dl);
 			return (SET_ERROR(EEXIST));
 		}
+#ifdef APPLE_SA_RECOVER
+		zfsvfs->z_recover_parent = dzp->z_id;
+#endif /* APPLE_SA_RECOVER */
 		error = zfs_zget(zfsvfs, zoid, zpp);
+#ifdef APPLE_SA_RECOVER
+		zfsvfs->z_recover_parent = 0;
+#endif /* APPLE_SA_RECOVER */
 
 		if (error) {
 			zfs_dirent_unlock(dl);

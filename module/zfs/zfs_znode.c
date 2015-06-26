@@ -822,6 +822,49 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 
 #else /* APPLE */
 
+#ifdef APPLE_SA_RECOVER
+	/*
+	 * We have had some SA corruption, making for invalid entries. We
+	 * attempt to handle this situation here, by not creating invalid
+	 * type vnodes.
+	 */
+	if (zfs_recover) {
+		if (( IFTOVT((mode_t)mode) == VNON) ||
+			( IFTOVT((mode_t)mode) > VCPLX)) {
+
+			printf("ZFS: WARNING! objid %llu has invalid SA data, please restore from backup. (mode %x)\n",
+				   zp->z_id, (int)zp->z_mode);
+
+			uint64_t parent = zfsvfs->z_recover_parent;
+			if (parent)	{
+
+				zap_cursor_t zc;
+				zap_attribute_t *za;
+				int err;
+				uint64_t mask =  ZFS_DIRENT_OBJ(-1ULL);
+
+				za = kmem_alloc(sizeof (zap_attribute_t), KM_SLEEP);
+				for (zap_cursor_init(&zc, zfsvfs->z_os, parent);
+					 (err = zap_cursor_retrieve(&zc, za)) == 0;
+					 zap_cursor_advance(&zc)) {
+					if ((za->za_first_integer & mask) == (zp->z_id & mask)) {
+						uint32_t vtype = DTTOVT(ZFS_DIRENT_TYPE(za->za_first_integer));
+						printf("ZFS: correct vtype is %d\n", vtype);
+						zp->z_mode = VTTOIF(vtype);
+						zp->z_size = 0;
+						break;
+                }
+				}
+				zap_cursor_fini(&zc);
+				kmem_free(za, sizeof (zap_attribute_t));
+			}
+			// Last ditch effort
+			if (!zp->z_mode) zp->z_mode = VTTOIF(VREG);
+
+		}
+	}
+#endif /* APPLE_SA_RECOVER */
+
 	zfs_znode_getvnode(zp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
 
 #endif /* Apple */
