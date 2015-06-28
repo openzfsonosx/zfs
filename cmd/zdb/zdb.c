@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2015, Intel Corporation.
  */
 
 #include <stdio.h>
@@ -489,7 +490,7 @@ dump_bpobj_subobjs(objset_t *os, uint64_t object, void *data, size_t size)
 			last_nonzero = i;
 	}
 
-	for (i = 0; i <= last_nonzero; i++) {
+	for (i = 0; (int) i <= last_nonzero; i++) {
 		(void) printf("\t%llu\n", (longlong_t)subobjs[i]);
 	}
 	kmem_free(subobjs, doi.doi_max_offset);
@@ -1072,7 +1073,7 @@ static void
 dump_history(spa_t *spa)
 {
 	nvlist_t **events = NULL;
-	char buf[SPA_MAXBLOCKSIZE];
+	char *buf;
 	uint64_t resid, len, off = 0;
 	uint_t num = 0;
 	int error;
@@ -1082,12 +1083,19 @@ dump_history(spa_t *spa)
 	char internalstr[MAXPATHLEN];
 	int i;
 
+	if ((buf = malloc(SPA_OLD_MAXBLOCKSIZE)) == NULL) {
+		(void) fprintf(stderr, "%s: unable to allocate I/O buffer\n",
+		    __func__);
+		return;
+	}
+
 	do {
-		len = sizeof (buf);
+		len = SPA_OLD_MAXBLOCKSIZE;
 
 		if ((error = spa_history_get(spa, &off, &len, buf)) != 0) {
 			(void) fprintf(stderr, "Unable to read history: "
 			    "error %d\n", error);
+			free(buf);
 			return;
 		}
 
@@ -1138,6 +1146,7 @@ next:
 			dump_nvlist(events[i], 2);
 		}
 	}
+	free(buf);
 }
 
 /*ARGSUSED*/
@@ -1253,7 +1262,7 @@ visit_indirect(spa_t *spa, const dnode_phys_t *dnp,
 	print_indirect(bp, zb, dnp);
 
 	if (BP_GET_LEVEL(bp) > 0 && !BP_IS_HOLE(bp)) {
-		uint32_t flags = ARC_WAIT;
+		arc_flags_t flags = ARC_FLAG_WAIT;
 		int i;
 		blkptr_t *cbp;
 		int epb = BP_GET_LSIZE(bp) >> SPA_BLKPTRSHIFT;
@@ -3089,6 +3098,7 @@ dump_zpool(spa_t *spa)
 
 	if (dump_opt['d'] || dump_opt['i']) {
 		uint64_t refcount;
+
 		dump_dir(dp->dp_meta_objset);
 		if (dump_opt['d'] >= 3) {
 			dump_full_bpobj(&spa->spa_deferred_bpobj,
@@ -3110,17 +3120,20 @@ dump_zpool(spa_t *spa)
 		(void) dmu_objset_find(spa_name(spa), dump_one_dir,
 		    NULL, DS_FIND_SNAPSHOTS | DS_FIND_CHILDREN);
 
-		(void) feature_get_refcount(spa,
-		    &spa_feature_table[SPA_FEATURE_LARGE_BLOCKS], &refcount);
-		if (num_large_blocks != refcount) {
-			(void) printf("large_blocks feature refcount mismatch: "
-			    "expected %lld != actual %lld\n",
-			    (longlong_t)num_large_blocks,
-			    (longlong_t)refcount);
-			rc = 2;
-		} else {
-			(void) printf("Verified large_blocks feature refcount "
-			    "is correct (%llu)\n", (longlong_t)refcount);
+		if (feature_get_refcount(spa,
+		    &spa_feature_table[SPA_FEATURE_LARGE_BLOCKS],
+		    &refcount) != ENOTSUP) {
+			if (num_large_blocks != refcount) {
+				(void) printf("large_blocks feature refcount "
+				    "mismatch: expected %lld != actual %lld\n",
+				    (longlong_t)num_large_blocks,
+				    (longlong_t)refcount);
+				rc = 2;
+			} else {
+				(void) printf("Verified large_blocks feature "
+				    "refcount is correct (%llu)\n",
+				    (longlong_t)refcount);
+			}
 		}
 	}
 	if (rc == 0 && (dump_opt['b'] || dump_opt['c']))
@@ -3719,8 +3732,10 @@ main(int argc, char **argv)
 	zfs_vdev_async_read_max_active = 10;
 
 	kernel_init(FREAD);
-	if ((g_zfs = libzfs_init()) == NULL)
+	if ((g_zfs = libzfs_init()) == NULL) {
+		(void) fprintf(stderr, "%s", libzfs_error_init(errno));
 		return (1);
+	}
 
 	if (dump_all)
 		verbose = MAX(verbose, 1);
