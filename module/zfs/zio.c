@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013 MacZFS team. All rights reserved.
  *
@@ -1209,19 +1209,26 @@ zio_write_bp_init(zio_t *zio)
 			return (ZIO_PIPELINE_CONTINUE);
 		} else {
 			/*
-			 * Round up compressed size to MINBLOCKSIZE and
-			 * zero the tail.
+			 * Round up compressed size up to the ashift
+			 * of the smallest-ashift device, and zero the tail.
+			 * This ensures that the compressed size of the BP
+			 * (and thus compressratio property) are correct,
+			 * in that we charge for the padding used to fill out
+			 * the last sector.
 			 */
-			size_t rounded =
-			    P2ROUNDUP(psize, (size_t)SPA_MINBLOCKSIZE);
-			if (rounded > psize) {
-				bzero((char *)cbuf + psize, rounded - psize);
-				psize = rounded;
-			}
-			if (psize == lsize) {
+			size_t rounded;
+
+			ASSERT3U(spa->spa_min_ashift, >=, SPA_MINBLOCKSHIFT);
+
+			rounded = (size_t)P2ROUNDUP(psize,
+			    1ULL << spa->spa_min_ashift);
+			if (rounded >= lsize) {
 				compress = ZIO_COMPRESS_OFF;
 				zio_buf_free(cbuf, lsize);
+				psize = lsize;
 			} else {
+				bzero((char *)cbuf + psize, rounded - psize);
+				psize = rounded;
 				zio_push_transform(zio, cbuf,
 				    psize, lsize, NULL);
 			}
@@ -2311,7 +2318,7 @@ zio_ddt_collision(zio_t *zio, ddt_t *ddt, ddt_entry_t *dde)
 
 		if (ddp->ddp_phys_birth != 0) {
 			arc_buf_t *abuf = NULL;
-			uint32_t aflags = ARC_WAIT;
+			arc_flags_t aflags = ARC_FLAG_WAIT;
 			blkptr_t blk = *zio->io_bp;
 			int error;
 

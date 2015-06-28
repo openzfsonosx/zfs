@@ -243,6 +243,7 @@ void zfs_znode_byteswap(void *buf, size_t size);
 
 #define	DS_FIND_SNAPSHOTS	(1<<0)
 #define	DS_FIND_CHILDREN	(1<<1)
+#define	DS_FIND_SERIALIZE	(1<<2)
 
 #define DS_MODE_NONE            0       /* invalid, to aid debugging */
 #define DS_MODE_STANDARD        1       /* normal access, no special needs */

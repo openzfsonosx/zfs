@@ -439,6 +439,10 @@ zio_inject_fault(char *name, int flags, int *id, zinject_record_t *record)
 	 * fault injection isn't a performance critical path.
 	 */
 	if (flags & ZINJECT_FLUSH_ARC)
+		/*
+		 * We must use FALSE to ensure arc_flush returns, since
+		 * we're not preventing concurrent ARC insertions.
+		 */
 		arc_flush(NULL);
 
 	return (0);

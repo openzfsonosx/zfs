@@ -52,9 +52,21 @@ install-data-local:
 endif
 
 
-checkstyle:
+checkstyle: cstyle shellcheck
+
+cstyle:
 	@find ${top_srcdir} -name '*.[hc]' ! -name 'zfs_config.*' \
 		! -name '*.mod.c' -type f -exec scripts/cstyle.pl {} \+
+
+shellcheck:
+	@if type shellcheck > /dev/null 2>&1; then \
+		(find ${top_srcdir} -type f -name '*.sh.in' -o -type f \
+		 -name '*.sh'; find etc/init.d/zfs*.in -type f) | \
+		 grep -v 'zfs-script-config' | \
+		 while read file; do \
+			shellcheck --format gcc "$$file"; \
+		 done; \
+	 fi
 
 ctags:
 	$(RM) $(top_srcdir)/tags
