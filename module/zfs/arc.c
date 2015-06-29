@@ -2640,8 +2640,38 @@ arc_hdr_l2hdr_destroy(arc_buf_hdr_t *hdr)
 
 	list_remove(&dev->l2ad_buflist, hdr);
 
-	ARCSTAT_INCR(arcstat_l2_asize, -asize);
-	ARCSTAT_INCR(arcstat_l2_size, -HDR_GET_LSIZE(hdr));
+	/*
+	 * We don't want to leak the b_tmp_cdata buffer that was
+	 * allocated in l2arc_write_buffers()
+	 */
+	arc_buf_l2_cdata_free(hdr);
+
+	/*
+	 * If the l2hdr's b_daddr is equal to L2ARC_ADDR_UNSET, then
+	 * this header is being processed by l2arc_write_buffers() (i.e.
+	 * it's in the first stage of l2arc_write_buffers()).
+	 * Re-affirming that truth here, just to serve as a reminder. If
+	 * b_daddr does not equal L2ARC_ADDR_UNSET, then the header may or
+	 * may not have its HDR_L2_WRITING flag set. (the write may have
+	 * completed, in which case HDR_L2_WRITING will be false and the
+	 * b_daddr field will point to the address of the buffer on disk).
+	 */
+	IMPLY(l2hdr->b_daddr == L2ARC_ADDR_UNSET, HDR_L2_WRITING(hdr));
+
+	/*
+	 * If b_daddr is equal to L2ARC_ADDR_UNSET, we're racing with
+	 * l2arc_write_buffers(). Since we've just removed this header
+	 * from the l2arc buffer list, this header will never reach the
+	 * second stage of l2arc_write_buffers(), which increments the
+	 * accounting stats for this header. Thus, we must be careful
+	 * not to decrement them for this header either.
+	 */
+	if (l2hdr->b_daddr != L2ARC_ADDR_UNSET) {
+		ARCSTAT_INCR(arcstat_l2_asize, -l2hdr->b_asize);
+		ARCSTAT_INCR(arcstat_l2_size, -hdr->b_size);
+
+		vdev_space_update(dev->l2ad_vdev,
+		    -l2hdr->b_asize, 0, 0);
 
 	vdev_space_update(dev->l2ad_vdev, -asize, 0, 0);
 
@@ -7169,14 +7199,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			}
 
 			hdr->b_l2hdr.b_dev = dev;
-			hdr->b_l2hdr.b_daddr = dev->l2ad_hand;
-			arc_hdr_set_flags(hdr,
-			    ARC_FLAG_L2_WRITING | ARC_FLAG_HAS_L2HDR);
-
-			mutex_enter(&dev->l2ad_mtx);
-			list_insert_head(&dev->l2ad_buflist, hdr);
-			mutex_exit(&dev->l2ad_mtx);
-
+			hdr->b_flags |= ARC_FLAG_L2_WRITING;
 			/*
 			 * We rely on the L1 portion of the header below, so
 			 * it's invalid for this header to have been evicted out
