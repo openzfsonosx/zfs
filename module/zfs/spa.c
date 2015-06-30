@@ -1333,8 +1333,6 @@ spa_unload(spa_t *spa)
 	 */
 	spa_l2cache_drop(spa);
 
-    spa_exporting_vdevs = B_TRUE;
-
 	/*
 	 * Close all vdevs.
 	 */
@@ -1369,8 +1367,6 @@ spa_unload(spa_t *spa)
 		spa->spa_l2cache.sav_config = NULL;
 	}
 	spa->spa_l2cache.sav_count = 0;
-
-    spa_exporting_vdevs = B_FALSE;
 
 	spa->spa_async_suspended = 0;
 
