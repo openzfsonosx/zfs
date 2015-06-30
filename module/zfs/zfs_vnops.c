@@ -506,6 +506,12 @@ mappedread_sf(vnode_t *vp, int nbytes, uio_t *uio)
 static int
 mappedread(vnode_t *vp, int nbytes, uio_t *uio)
 {
+	struct address_space *mp = ip->i_mapping;
+	struct page *pp;
+	znode_t *zp = ITOZ(ip);
+	int64_t	start, off;
+	uint64_t bytes;
+	int len = nbytes;
 	int error = 0;
 	znode_t *zp = VTOZ(vp);
 	objset_t *os = zp->z_zfsvfs->z_os;
@@ -537,9 +543,8 @@ mappedread(vnode_t *vp, int nbytes, uio_t *uio)
 			zfs_vmobject_wlock(obj);
 			page_unhold(pp);
 		} else {
-			zfs_vmobject_wunlock(obj);
-			error = dmu_read_uio(os, zp->z_id, uio, bytes);
-			zfs_vmobject_wlock(obj);
+			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
+			    uio, bytes);
 		}
 		len -= bytes;
 		off = 0;
@@ -654,6 +659,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
+
 	os = zfsvfs->z_os;
 
 	if (zp->z_pflags & ZFS_AV_QUARANTINED) {
@@ -759,7 +765,8 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (vn_has_cached_data(vp))
 			error = mappedread(vp, nbytes, uio);
 		else
-			error = dmu_read_uio(os, zp->z_id, uio, nbytes);
+			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
+			    uio, nbytes);
 		if (error) {
 			/* convert checksum errors into IO errors */
 			if (error == ECKSUM)
