@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  */
@@ -1074,21 +1074,6 @@ ztest_random_spa_version(uint64_t initial_version)
 	return (version);
 }
 
-/*
- * Find the largest ashift used
- */
-static uint64_t
-ztest_spa_get_ashift(void) {
-	uint64_t i;
-	uint64_t ashift = SPA_MINBLOCKSHIFT;
-	vdev_t *rvd = ztest_spa->spa_root_vdev;
-
-	for (i = 0; i < rvd->vdev_children; i++) {
-		ashift = MAX(ashift, rvd->vdev_child[i]->vdev_ashift);
-	}
-	return (ashift);
-}
-
 static int
 ztest_random_blocksize(void)
 {
@@ -1099,7 +1084,8 @@ ztest_random_blocksize(void)
 	int maxbs = SPA_OLD_MAXBLOCKSHIFT;
 	if (spa_maxblocksize(ztest_spa) == SPA_MAXBLOCKSIZE)
 		maxbs = 20;
-	uint64_t block_shift = ztest_random(maxbs - ztest_spa_get_ashift() + 1);
+	uint64_t block_shift =
+	    ztest_random(maxbs - ztest_spa->spa_max_ashift + 1);
 	return (1 << (SPA_MINBLOCKSHIFT + block_shift));
 }
 
@@ -4108,7 +4094,7 @@ ztest_dmu_read_write_zcopy(ztest_ds_t *zd, uint64_t id)
 		 * assign an arcbuf to a dbuf.
 		 */
 		for (j = 0; j < s; j++) {
-			if (i != 5) {
+			if (i != 5 || chunksize < (SPA_MINBLOCKSIZE * 2)) {
 				bigbuf_arcbufs[j] =
 				    dmu_request_arcbuf(bonus_db, chunksize);
 			} else {
@@ -4132,7 +4118,8 @@ ztest_dmu_read_write_zcopy(ztest_ds_t *zd, uint64_t id)
 			umem_free(packbuf, packsize);
 			umem_free(bigbuf, bigsize);
 			for (j = 0; j < s; j++) {
-				if (i != 5) {
+				if (i != 5 ||
+				    chunksize < (SPA_MINBLOCKSIZE * 2)) {
 					dmu_return_arcbuf(bigbuf_arcbufs[j]);
 				} else {
 					dmu_return_arcbuf(
@@ -4177,7 +4164,7 @@ ztest_dmu_read_write_zcopy(ztest_ds_t *zd, uint64_t id)
 		}
 		for (off = bigoff, j = 0; j < s; j++, off += chunksize) {
 			dmu_buf_t *dbt;
-			if (i != 5) {
+			if (i != 5 || chunksize < (SPA_MINBLOCKSIZE * 2)) {
 				bcopy((caddr_t)bigbuf + (off - bigoff),
 				    bigbuf_arcbufs[j]->b_data, chunksize);
 			} else {
@@ -4194,7 +4181,7 @@ ztest_dmu_read_write_zcopy(ztest_ds_t *zd, uint64_t id)
 				VERIFY(dmu_buf_hold(os, bigobj, off,
 				    FTAG, &dbt, DMU_READ_NO_PREFETCH) == 0);
 			}
-			if (i != 5) {
+			if (i != 5 || chunksize < (SPA_MINBLOCKSIZE * 2)) {
 				dmu_assign_arcbuf(bonus_db, off,
 				    bigbuf_arcbufs[j], tx);
 			} else {

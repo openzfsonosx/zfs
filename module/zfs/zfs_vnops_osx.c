@@ -1706,7 +1706,7 @@ vnop_reclaim_thread(void *arg)
 #if 1
 		/* RECLAIM_SIGNAL */
 		CALLB_CPR_SAFE_BEGIN(&cpr);
-		(void) cv_timedwait_interruptible(&zfsvfs->z_reclaim_thr_cv,
+		(void) cv_timedwait_sig(&zfsvfs->z_reclaim_thr_cv,
 		    &zfsvfs->z_reclaim_thr_lock, (ddi_get_lbolt() + (hz>>1)));
 		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_reclaim_thr_lock);
 #else

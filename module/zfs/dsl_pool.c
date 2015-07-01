@@ -178,8 +178,9 @@ dsl_pool_open_impl(spa_t *spa, uint64_t txg)
 	mutex_init(&dp->dp_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&dp->dp_spaceavail_cv, NULL, CV_DEFAULT, NULL);
 
-	dp->dp_vnrele_taskq = taskq_create("zfs_vn_rele_taskq", 1, minclsyspri,
-	    1, 4, 0);
+	dp->dp_vnrele_taskq = taskq_create("zfs_vn_rele_taskq", max_ncpus,
+		minclsyspri, max_ncpus * 8, INT_MAX,
+		TASKQ_PREPOPULATE | TASKQ_DYNAMIC);
 
 	return (dp);
 }
@@ -325,7 +326,14 @@ dsl_pool_close(dsl_pool_t *dp)
 	txg_list_destroy(&dp->dp_sync_tasks);
 	txg_list_destroy(&dp->dp_dirty_dirs);
 
+	/*
+	 * We can't set retry to TRUE since we're explicitly specifying
+	 * a spa to flush. This is good enough; any missed buffers for
+	 * this spa won't cause trouble, and they'll eventually fall
+	 * out of the ARC just like any other unused buffer.
+	 */
 	arc_flush(dp->dp_spa);
+
 	txg_fini(dp);
 	dsl_scan_fini(dp);
 	dmu_buf_user_evict_wait();
@@ -764,7 +772,7 @@ dsl_pool_upgrade_clones(dsl_pool_t *dp, dmu_tx_t *tx)
 	ASSERT(dp->dp_origin_snap != NULL);
 
 	VERIFY0(dmu_objset_find_dp(dp, dp->dp_root_dir_obj, upgrade_clones_cb,
-	    tx, DS_FIND_CHILDREN));
+	    tx, DS_FIND_CHILDREN | DS_FIND_SERIALIZE));
 }
 
 /* ARGSUSED */
@@ -819,7 +827,7 @@ dsl_pool_upgrade_dir_clones(dsl_pool_t *dp, dmu_tx_t *tx)
 	VERIFY0(bpobj_open(&dp->dp_free_bpobj, dp->dp_meta_objset, obj));
 
 	VERIFY0(dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
-	    upgrade_dir_clones_cb, tx, DS_FIND_CHILDREN));
+	    upgrade_dir_clones_cb, tx, DS_FIND_CHILDREN | DS_FIND_SERIALIZE));
 }
 
 void
@@ -1063,3 +1071,40 @@ dsl_pool_config_held(dsl_pool_t *dp)
 {
     return (RRW_LOCK_HELD(&dp->dp_config_rwlock));
 }
+
+boolean_t
+dsl_pool_config_held_writer(dsl_pool_t *dp)
+{
+	return (RRW_WRITE_HELD(&dp->dp_config_rwlock));
+}
+
+#if defined(LINUX) && defined(_KERNEL) && defined(HAVE_SPL)
+EXPORT_SYMBOL(dsl_pool_config_enter);
+EXPORT_SYMBOL(dsl_pool_config_exit);
+
+/* zfs_dirty_data_max_percent only applied at module load in arc_init(). */
+module_param(zfs_dirty_data_max_percent, int, 0444);
+MODULE_PARM_DESC(zfs_dirty_data_max_percent, "percent of ram can be dirty");
+
+/* zfs_dirty_data_max_max_percent only applied at module load in arc_init(). */
+module_param(zfs_dirty_data_max_max_percent, int, 0444);
+MODULE_PARM_DESC(zfs_dirty_data_max_max_percent,
+	"zfs_dirty_data_max upper bound as % of RAM");
+
+module_param(zfs_delay_min_dirty_percent, int, 0644);
+MODULE_PARM_DESC(zfs_delay_min_dirty_percent, "transaction delay threshold");
+
+module_param(zfs_dirty_data_max, ulong, 0644);
+MODULE_PARM_DESC(zfs_dirty_data_max, "determines the dirty space limit");
+
+/* zfs_dirty_data_max_max only applied at module load in arc_init(). */
+module_param(zfs_dirty_data_max_max, ulong, 0444);
+MODULE_PARM_DESC(zfs_dirty_data_max_max,
+	"zfs_dirty_data_max upper bound in bytes");
+
+module_param(zfs_dirty_data_sync, ulong, 0644);
+MODULE_PARM_DESC(zfs_dirty_data_sync, "sync txg when this much dirty data");
+
+module_param(zfs_delay_scale, ulong, 0644);
+MODULE_PARM_DESC(zfs_delay_scale, "how quickly delay approaches infinity");
+#endif

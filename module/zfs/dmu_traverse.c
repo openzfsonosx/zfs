@@ -177,7 +177,7 @@ static void
 traverse_prefetch_metadata(traverse_data_t *td,
     const blkptr_t *bp, const zbookmark_phys_t *zb)
 {
-	uint32_t flags = ARC_NOWAIT | ARC_PREFETCH;
+	arc_flags_t flags = ARC_FLAG_NOWAIT | ARC_FLAG_PREFETCH;
 
 	if (!(td->td_flags & TRAVERSE_PREFETCH_METADATA))
 		return;
@@ -250,7 +250,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		mutex_enter(&pd->pd_mtx);
 		ASSERT(pd->pd_bytes_fetched >= 0);
 		while (pd->pd_bytes_fetched < size && !pd->pd_exited)
-			cv_wait(&pd->pd_cv, &pd->pd_mtx);
+			cv_wait_sig(&pd->pd_cv, &pd->pd_mtx);
 		pd->pd_bytes_fetched -= size;
 		cv_broadcast(&pd->pd_cv);
 		mutex_exit(&pd->pd_mtx);
@@ -273,7 +273,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 	}
 
 	if (BP_GET_LEVEL(bp) > 0) {
-		uint32_t flags = ARC_WAIT;
+		uint32_t flags = ARC_FLAG_WAIT;
 		int32_t i;
 		int32_t epb = BP_GET_LSIZE(bp) >> SPA_BLKPTRSHIFT;
 		zbookmark_phys_t *czb;
@@ -307,7 +307,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		kmem_free(czb, sizeof (zbookmark_phys_t));
 
 	} else if (BP_GET_TYPE(bp) == DMU_OT_DNODE) {
-		uint32_t flags = ARC_WAIT;
+		uint32_t flags = ARC_FLAG_WAIT;
 		int32_t i;
 		int32_t epb = BP_GET_LSIZE(bp) >> DNODE_SHIFT;
 		dnode_phys_t *cdnp;
@@ -331,7 +331,7 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 				break;
 		}
 	} else if (BP_GET_TYPE(bp) == DMU_OT_OBJSET) {
-		uint32_t flags = ARC_WAIT;
+		arc_flags_t flags = ARC_FLAG_WAIT;
 		objset_phys_t *osp;
 		dnode_phys_t *mdnp, *gdnp, *udnp;
 
@@ -448,7 +448,7 @@ traverse_prefetcher(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
     const zbookmark_phys_t *zb, const dnode_phys_t *dnp, void *arg)
 {
 	prefetch_data_t *pfd = arg;
-	uint32_t aflags = ARC_NOWAIT | ARC_PREFETCH;
+	arc_flags_t aflags = ARC_FLAG_NOWAIT | ARC_FLAG_PREFETCH;
 
 	ASSERT(pfd->pd_bytes_fetched >= 0);
 	if (pfd->pd_cancel)
@@ -459,7 +459,7 @@ traverse_prefetcher(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 
 	mutex_enter(&pfd->pd_mtx);
 	while (!pfd->pd_cancel && pfd->pd_bytes_fetched >= zfs_pd_bytes_max)
-		cv_wait(&pfd->pd_cv, &pfd->pd_mtx);
+		cv_wait_sig(&pfd->pd_cv, &pfd->pd_mtx);
 	pfd->pd_bytes_fetched += BP_GET_LSIZE(bp);
 	cv_broadcast(&pfd->pd_cv);
 	mutex_exit(&pfd->pd_mtx);
@@ -545,7 +545,7 @@ traverse_impl(spa_t *spa, dsl_dataset_t *ds, uint64_t objset, blkptr_t *rootbp,
 
 	/* See comment on ZIL traversal in dsl_scan_visitds. */
 	if (ds != NULL && !ds->ds_is_snapshot && !BP_IS_HOLE(rootbp)) {
-		uint32_t flags = ARC_WAIT;
+		uint32_t flags = ARC_FLAG_WAIT;
 		objset_phys_t *osp;
 		arc_buf_t *buf;
 
@@ -571,7 +571,7 @@ traverse_impl(spa_t *spa, dsl_dataset_t *ds, uint64_t objset, blkptr_t *rootbp,
 	pd->pd_cancel = B_TRUE;
 	cv_broadcast(&pd->pd_cv);
 	while (!pd->pd_exited)
-		cv_wait(&pd->pd_cv, &pd->pd_mtx);
+		cv_wait_sig(&pd->pd_cv, &pd->pd_mtx);
 	mutex_exit(&pd->pd_mtx);
 
 	mutex_destroy(&pd->pd_mtx);
