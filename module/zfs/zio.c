@@ -1512,7 +1512,7 @@ zio_wait(zio_t *zio)
 		 * about a blocked task.  However, check zio_delay_max to see
 		 * if the I/O has exceeded the timeout and post an ereport.
 		 */
-		cv_timedwait_interruptible(&zio->io_cv, &zio->io_lock,
+		cv_timedwait_sig(&zio->io_cv, &zio->io_lock,
 		    ddi_get_lbolt() + hz);
 
 #if _KERNEL
