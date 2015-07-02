@@ -755,8 +755,15 @@ sa_build_layouts(sa_handle_t *hdl, sa_bulk_attr_t *attr_desc, int attr_count,
 		hash ^= SA_ATTR_HASH(attrs[i]);
 		attr_desc[i].sa_addr = data_start;
 		attr_desc[i].sa_size = length;
-		SA_COPY_DATA(attr_desc[i].sa_data_func, attr_desc[i].sa_data,
-		    data_start, length);
+
+		if (!attr_desc[i].sa_data) {
+			printf("ZFS: NULL SA: SA_COPY_DATA(%p, %p, %p, %u) i=%u\n",
+				   attr_desc[i].sa_data_func, attr_desc[i].sa_data,
+				   data_start, length, i);
+		} else {
+			SA_COPY_DATA(attr_desc[i].sa_data_func, attr_desc[i].sa_data,
+						 data_start, length);
+		}
 		if (sa->sa_attr_table[attrs[i]].sa_length == 0) {
 			sahdr->sa_lengths[len_idx++] = length;
 		}
