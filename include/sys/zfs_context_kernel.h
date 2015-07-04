@@ -45,6 +45,7 @@ extern "C" {
 #include <sys/cmn_err.h>
 #include <sys/kmem.h>
 #include <sys/taskq.h>
+#include <sys/taskq_impl.h>
 #include <sys/buf.h>
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -72,7 +73,7 @@ extern "C" {
 #include <sys/atomic.h>
 //#include <linux/dcache_compat.h>
 
-// There are to be found in spl/include/sys/kmem.h 
+// There are to be found in spl/include/sys/kmem.h
 //typedef enum kmem_cbrc {
 //	KMEM_CBRC_YES,
 //	KMEM_CBRC_NO,

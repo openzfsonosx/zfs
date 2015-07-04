@@ -49,108 +49,22 @@
 #define DIFF(xx) ((mrefp->xx != NULL) && \
 		  (mgetp->xx == NULL || strcmp(mrefp->xx, mgetp->xx) != 0))
 
-#if 0 //Replacing with FreeBSD implementation
-int
-getmntany(FILE *fp, struct mnttab *mgetp, struct mnttab *mrefp)
-{
-        struct statfs *sfsp;
-        int nitems;
+#ifdef __APPLE__
+/*
+ * We will also query the extended filesystem capabilities API, to lookup
+ * other mount options, for example, XATTR. We can not use the MNTNOUSERXATTR
+ * option due to VFS rejecting with EACCESS.
+ */
 
-        nitems = getmntinfo(&sfsp, MNT_WAIT);
+#include <sys/attr.h>
+typedef struct attrlist attrlist_t;
 
-        while (nitems-- > 0) {
-                if (strcmp(mrefp->mnt_fstype, sfsp->f_fstypename) == 0 &&
-                    strcmp(mrefp->mnt_special, sfsp->f_mntfromname) == 0) {
-                        mgetp->mnt_special = sfsp->f_mntfromname;
-                        mgetp->mnt_mountp = sfsp->f_mntonname;
-                        mgetp->mnt_fstype = sfsp->f_fstypename;
-                        mgetp->mnt_mntopts = "";
-                        return (0);
-                }
-                ++sfsp;
-        }
-        return (-1);
-}
+struct attrBufS {
+	u_int32_t       length;
+	vol_capabilities_set_t caps;
+} __attribute__((aligned(4), packed));
 #endif
 
-#if 0 //Replacing with FreeBSD implementation
-char *
-mntopt(char **p)
-{
-        char *cp = *p;
-        char *retstr;
-
-        while (*cp && isspace(*cp))
-                cp++;
-
-        retstr = cp;
-        while (*cp && *cp != ',')
-                cp++;
-
-        if (*cp) {
-                *cp = '\0';
-                cp++;
-        }
-
-        *p = cp;
-        return (retstr);
-}
-#endif
-
-#if 0 //Replacing with FreeBSD implementation
-char *
-hasmntopt(struct mnttab *mnt, char *opt)
-{
-        char tmpopts[MNT_LINE_MAX];
-        char *f, *opts = tmpopts;
-
-        if (mnt->mnt_mntopts == NULL)
-                return (NULL);
-        (void) strcpy(opts, mnt->mnt_mntopts);
-        f = mntopt(&opts);
-        for (; *f; f = mntopt(&opts)) {
-                if (strncmp(opt, f, strlen(opt)) == 0)
-                        return (f - tmpopts + mnt->mnt_mntopts);
-        }
-        return (NULL);
-}
-#endif
-
-
-#if 0 //Replacing with FreeBSD implementation
-int
-getmntent(FILE *fp, struct mnttab *mgetp)
-{
-    static struct statfs *mntbufp = NULL;
-    static unsigned int total   = 0;
-    static unsigned int current = 0;
-
-    if (!mntbufp) {
-
-        total = getmntinfo(&mntbufp, MNT_WAIT);
-        current = 0;
-
-        if (total <= 0) return -1; // EOF
-
-    }
-
-    if (current < total) {
-
-        mgetp->mnt_special = mntbufp[current].f_mntfromname;
-        mgetp->mnt_mountp =  mntbufp[current].f_mntonname;
-        mgetp->mnt_fstype =  mntbufp[current].f_fstypename;
-        mgetp->mnt_mntopts = "";
-
-        current++;
-        return 0; // Valid record
-    }
-
-    // Finished all nodes, return EOF once, and get ready for next time
-    mntbufp = NULL;
-
-    return -1; // EOF
-}
-#endif
 
 
 DIR *
@@ -314,10 +228,25 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 	OPTADD(MNTOPT_NOXATTR);
 #endif
 #ifdef __APPLE__
-	if (flags & MNT_NOUSERXATTR)
-		OPTADD(MNTOPT_NOXATTR);
-	else
-		OPTADD(MNTOPT_XATTR);
+		{
+			struct attrBufS attrBuf;
+			attrlist_t      attrList;
+
+			memset(&attrList, 0, sizeof(attrList));
+			attrList.bitmapcount = ATTR_BIT_MAP_COUNT;
+			attrList.volattr = ATTR_VOL_INFO|ATTR_VOL_CAPABILITIES;
+
+			if (getattrlist(sfs->f_mntonname, &attrList, &attrBuf,
+							sizeof(attrBuf), 0) == 0)  {
+
+				if (attrBuf.caps[VOL_CAPABILITIES_INTERFACES] &
+					VOL_CAP_INT_EXTENDED_ATTR) {
+					OPTADD(MNTOPT_XATTR);
+				} else {
+					OPTADD(MNTOPT_NOXATTR);
+				} // If EXTENDED
+			} // if getattrlist
+		}
 #endif
 	if (flags & MNT_NOEXEC)
 		OPTADD(MNTOPT_NOEXEC);

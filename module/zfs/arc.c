@@ -304,6 +304,7 @@ typedef struct arc_stats {
     kstat_named_t arcstat_size;
     kstat_named_t arcstat_hdr_size;
     kstat_named_t arcstat_data_size;
+    kstat_named_t arcstat_metadata_size;
     kstat_named_t arcstat_other_size;
     kstat_named_t arcstat_l2_hits;
     kstat_named_t arcstat_l2_misses;
@@ -371,6 +372,7 @@ static arc_stats_t arc_stats = {
     { "size",			KSTAT_DATA_UINT64 },
     { "hdr_size",			KSTAT_DATA_UINT64 },
     { "data_size",			KSTAT_DATA_UINT64 },
+    { "metadata_size",			KSTAT_DATA_UINT64 },
     { "other_size",			KSTAT_DATA_UINT64 },
     { "l2_hits",			KSTAT_DATA_UINT64 },
     { "l2_misses",			KSTAT_DATA_UINT64 },
@@ -1401,6 +1403,9 @@ arc_space_consume(uint64_t space, arc_space_type_t type)
         case ARC_SPACE_DATA:
             ARCSTAT_INCR(arcstat_data_size, space);
             break;
+        case ARC_SPACE_META:
+			ARCSTAT_INCR(arcstat_metadata_size, space);
+			break;
         case ARC_SPACE_OTHER:
             ARCSTAT_INCR(arcstat_other_size, space);
             break;
@@ -1410,9 +1415,13 @@ arc_space_consume(uint64_t space, arc_space_type_t type)
         case ARC_SPACE_L2HDRS:
             ARCSTAT_INCR(arcstat_l2_hdr_size, space);
             break;
+		case ARC_SPACE_NUMTYPES: /* Silence warning */
+			break;
     }
 
-    ARCSTAT_INCR(arcstat_meta_used, space);
+	if (type != ARC_SPACE_DATA)
+		ARCSTAT_INCR(arcstat_meta_used, space);
+
     atomic_add_64(&arc_size, space);
 }
 
@@ -1425,6 +1434,9 @@ arc_space_return(uint64_t space, arc_space_type_t type)
         case ARC_SPACE_DATA:
             ARCSTAT_INCR(arcstat_data_size, -space);
             break;
+        case ARC_SPACE_META:
+			ARCSTAT_INCR(arcstat_metadata_size, -space);
+			break;
         case ARC_SPACE_OTHER:
             ARCSTAT_INCR(arcstat_other_size, -space);
             break;
@@ -1434,12 +1446,17 @@ arc_space_return(uint64_t space, arc_space_type_t type)
         case ARC_SPACE_L2HDRS:
             ARCSTAT_INCR(arcstat_l2_hdr_size, -space);
             break;
+		case ARC_SPACE_NUMTYPES: /* Silence warning */
+			break;
     }
 
-    ASSERT(arc_meta_used >= space);
-    if (arc_meta_max < arc_meta_used)
-        arc_meta_max = arc_meta_used;
-    ARCSTAT_INCR(arcstat_meta_used, -space);
+	if (type != ARC_SPACE_DATA) {
+		ASSERT(arc_meta_used >= space);
+		if (arc_meta_max < arc_meta_used)
+			arc_meta_max = arc_meta_used;
+		ARCSTAT_INCR(arcstat_meta_used, -space);
+	}
+
     ASSERT(arc_size >= space);
     atomic_add_64(&arc_size, -space);
 }

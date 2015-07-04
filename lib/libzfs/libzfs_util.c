@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
@@ -62,6 +63,31 @@ int
 libzfs_errno(libzfs_handle_t *hdl)
 {
 	return (hdl->libzfs_error);
+}
+
+const char *
+libzfs_error_init(int error)
+{
+	switch (error) {
+	case ENXIO:
+		return (dgettext(TEXT_DOMAIN, "The ZFS modules are not "
+		    "loaded.\nTry running '/sbin/modprobe zfs' as root "
+		    "to load them.\n"));
+	case ENOENT:
+		return (dgettext(TEXT_DOMAIN, "The /dev/zfs device is "
+		    "missing and must be created.\nTry running 'udevadm "
+		    "trigger' as root to create it.\n"));
+	case ENOEXEC:
+		return (dgettext(TEXT_DOMAIN, "The ZFS modules cannot be "
+		    "auto-loaded.\nTry running '/sbin/modprobe zfs' as "
+		    "root to manually load them.\n"));
+	case EACCES:
+		return (dgettext(TEXT_DOMAIN, "Permission denied the "
+		    "ZFS utilities must be run as root.\n"));
+	default:
+		return (dgettext(TEXT_DOMAIN, "Failed to initialize the "
+		    "libzfs library.\n"));
+	}
 }
 
 const char *
@@ -578,7 +604,7 @@ zfs_nicenum(uint64_t num, char *buf, size_t buflen)
 	int index = 0;
 	char u;
 
-	while (n >= 1024) {
+	while (n >= 1024 && index < 6) {
 		n /= 1024;
 		index++;
 	}
@@ -660,7 +686,7 @@ int
 libzfs_run_process(const char *path, char *argv[], int flags)
 {
 	pid_t pid;
-	int rc, devnull_fd;
+	int error, devnull_fd;
 
 	pid = vfork();
 	if (pid == 0) {
@@ -688,9 +714,9 @@ libzfs_run_process(const char *path, char *argv[], int flags)
 	} else if (pid > 0) {
 		int status;
 
-		while ((rc = waitpid(pid, &status, 0)) == -1 &&
+		while ((error = waitpid(pid, &status, 0)) == -1 &&
 			errno == EINTR);
-		if (rc < 0 || !WIFEXITED(status))
+		if (error < 0 || !WIFEXITED(status))
 			return (-1);
 
 		return (WEXITSTATUS(status));
@@ -699,7 +725,16 @@ libzfs_run_process(const char *path, char *argv[], int flags)
 	return (-1);
 }
 
-int
+/*
+ * Verify the required ZFS_DEV device is available and optionally attempt
+ * to load the ZFS modules.  Under normal circumstances the modules
+ * should already have been loaded by some external mechanism.
+ *
+ * Environment variables:
+ * - ZFS_MODULE_LOADING="YES|yes|ON|on" - Attempt to load modules.
+ * - ZFS_MODULE_TIMEOUT="<seconds>"     - Seconds to wait for ZFS_DEV
+ */
+static int
 libzfs_load_module(const char *module)
 {
 	char *argv[4] = {"/sbin/kextload", NULL, (char *)0};
@@ -771,6 +806,7 @@ libzfs_handle_t *
 libzfs_init(void)
 {
 	libzfs_handle_t *hdl;
+	int error;
 
 	if (libzfs_load_module("zfs") != 0) {
 		(void) fprintf(stderr, gettext("Failed to load ZFS module "
@@ -800,8 +836,6 @@ libzfs_init(void)
 	if ((hdl->libzfs_mnttab = fopen(MNTTAB, "r")) == NULL) {
 #endif
 		(void) close(hdl->libzfs_fd);
-		(void) fprintf(stderr,
-		    gettext("mtab is not present at %s.\n"), MNTTAB);
 		free(hdl);
 		return (NULL);
 	}
@@ -1633,6 +1667,16 @@ zprop_parse_value(libzfs_handle_t *hdl, nvpair_t *elem, int prop,
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "use 'none' to disable quota/refquota"));
 			goto error;
+		}
+
+		/*
+		 * Special handling for "*_limit=none". In this case it's not
+		 * 0 but UINT64_MAX.
+		 */
+		if ((type & ZFS_TYPE_DATASET) && isnone &&
+		    (prop == ZFS_PROP_FILESYSTEM_LIMIT ||
+		    prop == ZFS_PROP_SNAPSHOT_LIMIT)) {
+			*ivalp = UINT64_MAX;
 		}
 		break;
 

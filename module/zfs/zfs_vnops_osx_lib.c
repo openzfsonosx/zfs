@@ -1256,6 +1256,18 @@ int getpackedsize(struct attrlist *alp, boolean_t user64)
 			size += sizeof(u_int64_t);
 		if (attrs & ATTR_CMN_PARENTID)
 			size += sizeof(u_int64_t);
+		/*
+		 * Also add:
+		 * ATTR_CMN_GEN_COUNT         (|FSOPT_ATTR_CMN_EXTENDED)
+		 * ATTR_CMN_DOCUMENT_ID       (|FSOPT_ATTR_CMN_EXTENDED)
+		 * ATTR_CMN_EXTENDED_SECURITY
+		 * ATTR_CMN_UUID
+		 * ATTR_CMN_GRPUUID
+		 * ATTR_CMN_FULLPATH
+		 * ATTR_CMN_ADDEDTIME
+		 * ATTR_CMN_ERROR
+		 * ATTR_CMN_DATA_PROTECT_FLAGS
+		 */
 	}
 	if ((attrs = alp->dirattr) != 0) {
 		if (attrs & ATTR_DIR_LINKCOUNT)
@@ -1663,4 +1675,84 @@ void finderinfo_update(uint8_t *finderinfo, znode_t *zp)
 		extinfo->date_added = OSSwapBigToHostInt32(va_crtime.tv_sec);
 	}
 
+}
+
+
+
+int
+zpl_xattr_set_sa(struct vnode *vp, const char *name, const void *value,
+				 size_t size, int flags, cred_t *cr)
+{
+	znode_t *zp = VTOZ(vp);
+	nvlist_t *nvl;
+	size_t sa_size;
+	int error;
+
+	ASSERT(zp->z_xattr_cached);
+	nvl = zp->z_xattr_cached;
+
+	if (value == NULL) {
+		error = -nvlist_remove(nvl, name, DATA_TYPE_BYTE_ARRAY);
+		if (error == -ENOENT)
+			return error;
+		//error = zpl_xattr_set_dir(vp, name, NULL, 0, flags, cr);
+        } else {
+                /* Limited to 32k to keep nvpair memory allocations small */
+                if (size > DXATTR_MAX_ENTRY_SIZE)
+                        return (-EFBIG);
+
+                /* Prevent the DXATTR SA from consuming the entire SA region */
+                error = -nvlist_size(nvl, &sa_size, NV_ENCODE_XDR);
+                if (error)
+                        return (error);
+
+                if (sa_size > DXATTR_MAX_SA_SIZE)
+                        return (-EFBIG);
+                error = -nvlist_add_byte_array(nvl, name,
+                    (uchar_t *)value, size);
+                if (error)
+                        return (error);
+        }
+
+        /* Update the SA for additions, modifications, and removals. */
+        if (!error)
+                error = -zfs_sa_set_xattr(zp);
+
+        ASSERT3S(error, <=, 0);
+
+        return (error);
+}
+
+int
+zpl_xattr_get_sa(struct vnode *vp, const char *name, void *value, size_t size)
+{
+	znode_t *zp = VTOZ(vp);
+	uchar_t *nv_value;
+	uint_t nv_size;
+	int error = 0;
+
+	ASSERT(RW_LOCK_HELD(&zp->z_xattr_lock));
+
+	mutex_enter(&zp->z_lock);
+	if (zp->z_xattr_cached == NULL)
+		error = -zfs_sa_get_xattr(zp);
+	mutex_exit(&zp->z_lock);
+
+	if (error)
+		return (error);
+
+	ASSERT(zp->z_xattr_cached);
+	error = -nvlist_lookup_byte_array(zp->z_xattr_cached, name,
+									  &nv_value, &nv_size);
+	if (error)
+		return (error);
+
+	if (!size)
+		return (nv_size);
+	if (size < nv_size)
+		return (-ERANGE);
+
+	memcpy(value, nv_value, nv_size);
+
+	return (nv_size);
 }

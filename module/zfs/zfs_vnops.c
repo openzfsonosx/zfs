@@ -506,6 +506,12 @@ mappedread_sf(vnode_t *vp, int nbytes, uio_t *uio)
 static int
 mappedread(vnode_t *vp, int nbytes, uio_t *uio)
 {
+	struct address_space *mp = ip->i_mapping;
+	struct page *pp;
+	znode_t *zp = ITOZ(ip);
+	int64_t	start, off;
+	uint64_t bytes;
+	int len = nbytes;
 	int error = 0;
 	znode_t *zp = VTOZ(vp);
 	objset_t *os = zp->z_zfsvfs->z_os;
@@ -537,9 +543,8 @@ mappedread(vnode_t *vp, int nbytes, uio_t *uio)
 			zfs_vmobject_wlock(obj);
 			page_unhold(pp);
 		} else {
-			zfs_vmobject_wunlock(obj);
-			error = dmu_read_uio(os, zp->z_id, uio, bytes);
-			zfs_vmobject_wlock(obj);
+			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
+			    uio, bytes);
 		}
 		len -= bytes;
 		off = 0;
@@ -654,6 +659,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
+
 	os = zfsvfs->z_os;
 
 	if (zp->z_pflags & ZFS_AV_QUARANTINED) {
@@ -759,7 +765,8 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (vn_has_cached_data(vp))
 			error = mappedread(vp, nbytes, uio);
 		else
-			error = dmu_read_uio(os, zp->z_id, uio, nbytes);
+			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
+			    uio, nbytes);
 		if (error) {
 			/* convert checksum errors into IO errors */
 			if (error == ECKSUM)
@@ -1029,8 +1036,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (rl->r_len == UINT64_MAX) {
 			uint64_t new_blksz;
 			if (zp->z_blksz > max_blksz) {
+				/*
+				 * File's blocksize is already larger than the
+				 * "recordsize" property.  Only let it grow to
+				 * the next power of 2.
+				 */
 				ASSERT(!ISP2(zp->z_blksz));
-				new_blksz = MIN(end_size, SPA_MAXBLOCKSIZE);
+				new_blksz = MIN(end_size,
+				    1 << highbit64(zp->z_blksz));
 			} else {
 				new_blksz = MIN(end_size, max_blksz);
 			}
@@ -2895,6 +2908,8 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		zil_commit(zfsvfs->z_log, zp->z_id);
 		ZFS_EXIT(zfsvfs);
 	}
+	tsd_set(zfs_fsyncer_key, NULL);
+
 	return (0);
 }
 
@@ -4052,6 +4067,7 @@ zfs_rename(vnode_t *sdvp, char *snm, vnode_t *tdvp, char *tnm, cred_t *cr,
 #ifndef __APPLE__
 	vnode_t		*realvp;
 #endif
+	uint64_t addtime[2];
 	zfs_dirlock_t	*sdl, *tdl;
 	dmu_tx_t	*tx;
 	zfs_zlock_t	*zl;
@@ -4339,9 +4355,9 @@ top:
 			 * then we also need to update ADDEDTIME (ADDTIME) property for
 			 * FinderInfo. We are already inside error == 0 conditional
 			 */
-			if (sdzp != tdzp) {
+			if ((sdzp != tdzp) &&
+				zfsvfs->z_use_sa == B_TRUE) {
 				timestruc_t	now;
-				uint64_t addtime[2];
 				gethrestime(&now);
 				ZFS_TIME_ENCODE(&now, addtime);
 				error = sa_update(szp->z_sa_hdl, SA_ZPL_ADDTIME(zfsvfs),
@@ -4844,34 +4860,27 @@ zfs_putapage(vnode_t *vp, page_t **pp, u_offset_t *offp,
 	ASSERT3U(btop(len), ==, btopr(len));
 
 	/*
-	 * Can't push pages past end-of-file.
+	 * The ordering here is critical and must adhere to the following
+	 * rules in order to avoid deadlocking in either zfs_read() or
+	 * zfs_free_range() due to a lock inversion.
+	 *
+	 * 1) The page must be unlocked prior to acquiring the range lock.
+	 *    This is critical because zfs_read() calls find_lock_page()
+	 *    which may block on the page lock while holding the range lock.
+	 *
+	 * 2) Before setting or clearing write back on a page the range lock
+	 *    must be held in order to prevent a lock inversion with the
+	 *    zfs_free_range() function.
 	 */
-	if (off >= zp->z_size) {
-		/* ignore all pages */
-		err = 0;
-		goto out;
-	} else if (off + len > zp->z_size) {
-		int npages = btopr(zp->z_size - off);
-		page_t **trunc;
+	unlock_page(pp);
+	rl = zfs_range_lock(zp, pgoff, pglen, RL_WRITER);
+	set_page_writeback(pp);
 
-		page_list_break(&pp, &trunc, npages);
-		/* ignore pages past end of file */
-		if (trunc)
-			pvn_write_done(trunc, flags);
-		len = zp->z_size - off;
-	}
-
-	if (zfs_owner_overquota(zfsvfs, zp, B_FALSE) ||
-	    zfs_owner_overquota(zfsvfs, zp, B_TRUE)) {
-		err = (EDQUOT);
-		goto out;
-	}
-top:
-	tx = dmu_tx_create(zfsvfs->z_os);
-	dmu_tx_hold_write(tx, zp->z_id, off, len);
-
+	tx = dmu_tx_create(zsb->z_os);
+	dmu_tx_hold_write(tx, zp->z_id, pgoff, pglen);
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	zfs_sa_upgrade_txholds(tx, zp);
+
 	err = dmu_tx_assign(tx, TXG_NOWAIT);
 	if (err != 0) {
 		if (err == ERESTART) {
@@ -4961,7 +4970,8 @@ zfs_putpage(vnode_t *vp, offset_t off, size_t len, int flags, cred_t *cr,
 	rl_t		*rl;
 	int		error = 0;
 
-    dprintf("putpage\n");
+	if (zfs_is_readonly(zfsvfs) || dmu_objset_is_snapshot(zfsvfs->z_os))
+		return (0);
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);

@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -178,6 +178,27 @@ vdev_lookup_by_guid(vdev_t *vd, uint64_t guid)
 	return (NULL);
 }
 
+static int
+vdev_count_leaves_impl(vdev_t *vd)
+{
+	int n = 0;
+	int c;
+
+	if (vd->vdev_ops->vdev_op_leaf)
+		return (1);
+
+	for (c = 0; c < vd->vdev_children; c++)
+		n += vdev_count_leaves_impl(vd->vdev_child[c]);
+
+	return (n);
+}
+
+int
+vdev_count_leaves(spa_t *spa)
+{
+	return (vdev_count_leaves_impl(spa->spa_root_vdev));
+}
+
 void
 vdev_add_child(vdev_t *pvd, vdev_t *cvd)
 {
@@ -199,7 +220,7 @@ vdev_add_child(vdev_t *pvd, vdev_t *cvd)
 	pvd->vdev_children = MAX(pvd->vdev_children, id + 1);
 	newsize = pvd->vdev_children * sizeof (vdev_t *);
 
-	newchild = kmem_alloc(newsize, KM_PUSHPAGE);
+	newchild = kmem_alloc(newsize, KM_SLEEP);
 	if (pvd->vdev_child != NULL) {
 		bcopy(pvd->vdev_child, newchild, oldsize);
 		kmem_free(pvd->vdev_child, oldsize);
@@ -269,7 +290,7 @@ vdev_compact_children(vdev_t *pvd)
 		if (pvd->vdev_child[c])
 			newc++;
 
-	newchild = kmem_zalloc(newc * sizeof (vdev_t *), KM_PUSHPAGE);
+	newchild = kmem_zalloc(newc * sizeof (vdev_t *), KM_SLEEP);
 
 	for (c = newc = 0; c < oldc; c++) {
 		if ((cvd = pvd->vdev_child[c]) != NULL) {
@@ -292,7 +313,7 @@ vdev_alloc_common(spa_t *spa, uint_t id, uint64_t guid, vdev_ops_t *ops)
 	vdev_t *vd;
 	int t;
 
-	vd = kmem_zalloc(sizeof (vdev_t), KM_PUSHPAGE);
+	vd = kmem_zalloc(sizeof (vdev_t), KM_SLEEP);
 
 	if (spa->spa_root_vdev == NULL) {
 		ASSERT(ops == &vdev_root_ops);
@@ -846,16 +867,16 @@ vdev_metaslab_init(vdev_t *vd, uint64_t txg)
 
 	/*
 	 * Compute the raidz-deflation ratio.  Note, we hard-code
-	 * in 128k (1 << 17) because it is the current "typical" blocksize.
-	 * Even if SPA_MAXBLOCKSIZE changes, this algorithm must never change,
-	 * or we will inconsistently account for existing bp's.
+	 * in 128k (1 << 17) because it is the "typical" blocksize.
+	 * Even though SPA_MAXBLOCKSIZE changed, this algorithm can not change,
+	 * otherwise it would inconsistently account for existing bp's.
 	 */
 	vd->vdev_deflate_ratio = (1 << 17) /
 	    (vdev_psize_to_asize(vd, 1 << 17) >> SPA_MINBLOCKSHIFT);
 
 	ASSERT(oldc <= newc);
 
-	mspp = kmem_zalloc(newc * sizeof (*mspp), KM_PUSHPAGE | KM_NODEBUG);
+	mspp = kmem_zalloc(newc * sizeof (*mspp), KM_SLEEP);
 
 	if (oldc != 0) {
 		bcopy(vd->vdev_ms, mspp, oldc * sizeof (*mspp));
@@ -1010,8 +1031,7 @@ vdev_probe(vdev_t *vd, zio_t *zio)
 	mutex_enter(&vd->vdev_probe_lock);
 
 	if ((pio = vd->vdev_probe_zio) == NULL) {
-
-		vps = kmem_zalloc(sizeof (*vps), KM_PUSHPAGE);
+		vps = kmem_zalloc(sizeof (*vps), KM_SLEEP);
 
 		vps->vps_flags = ZIO_FLAG_CANFAIL | ZIO_FLAG_PROBE |
 		    ZIO_FLAG_DONT_CACHE | ZIO_FLAG_DONT_AGGREGATE |
@@ -1315,6 +1335,17 @@ vdev_open(vdev_t *vd)
 		vdev_set_state(vd, B_TRUE, VDEV_STATE_FAULTED,
 		    VDEV_AUX_ERR_EXCEEDED);
 		return (error);
+	}
+
+	/*
+	 * Track the min and max ashift values for normal data devices.
+	 */
+	if (vd->vdev_top == vd && vd->vdev_ashift != 0 &&
+	    !vd->vdev_islog && vd->vdev_aux == NULL) {
+		if (vd->vdev_ashift > spa->spa_max_ashift)
+			spa->spa_max_ashift = vd->vdev_ashift;
+		if (vd->vdev_ashift < spa->spa_min_ashift)
+			spa->spa_min_ashift = vd->vdev_ashift;
 	}
 
 	/*

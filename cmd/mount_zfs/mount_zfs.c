@@ -244,7 +244,7 @@ parse_dataset(char *dataset)
 		if (fd < 0)
 			goto out;
 
-		error = zpool_read_label(fd, &config);
+		error = zpool_read_label(fd, &config, NULL);
 		(void) close(fd);
 		if (error)
 			goto out;
@@ -464,8 +464,10 @@ main(int argc, char **argv)
 	if (zfsflags & ZS_ZFSUTIL)
 		zfsutil = 1;
 
-	if ((g_zfs = libzfs_init()) == NULL)
+	if ((g_zfs = libzfs_init()) == NULL) {
+		(void) fprintf(stderr, "%s", libzfs_error_init(errno));
 		return (MOUNT_SYSERR);
+	}
 
 	/* try to open the dataset to access the mount point */
 	if ((zhp = zfs_open(g_zfs, dataset,

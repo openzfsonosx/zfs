@@ -25,6 +25,7 @@
 /*
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
+ * Copyright (c) 2014 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -33,8 +34,10 @@ int taskq_now;
 taskq_t *system_taskq;
 
 #define	TASKQ_ACTIVE	0x00010000
+#define	TASKQ_NAMELEN	31
 
 struct taskq {
+	char		tq_name[TASKQ_NAMELEN + 1];
 	kmutex_t	tq_lock;
 	krwlock_t	tq_threadlock;
 	kcondvar_t	tq_dispatch_cv;
@@ -175,7 +178,6 @@ taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
     taskq_ent_t *t)
 {
 	ASSERT(func != NULL);
-	ASSERT(!(tq->tq_flags & TASKQ_DYNAMIC));
 
 	/*
 	 * Mark it as a prealloc'd task.  This is important
@@ -213,6 +215,12 @@ taskq_wait(taskq_t *tq)
 
 void
 taskq_wait_id(taskq_t *tq, taskqid_t id)
+{
+	taskq_wait(tq);
+}
+
+void
+taskq_wait_outstanding(taskq_t *tq, taskqid_t id)
 {
 	taskq_wait(tq);
 }
@@ -280,6 +288,7 @@ taskq_create(const char *name, int nthreads, pri_t pri,
 	cv_init(&tq->tq_dispatch_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&tq->tq_wait_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&tq->tq_maxalloc_cv, NULL, CV_DEFAULT, NULL);
+	(void) strncpy(tq->tq_name, name, TASKQ_NAMELEN + 1);
 	tq->tq_flags = flags | TASKQ_ACTIVE;
 	tq->tq_active = nthreads;
 	tq->tq_nthreads = nthreads;

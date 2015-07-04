@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2012 DEY Storage Systems, Inc.  All rights reserved.
  * Copyright (c) 2012 Pawel Jakub Dawidek <pawel@dawidek.net>.
@@ -1083,21 +1084,28 @@ zfs_valid_proplist(libzfs_handle_t *hdl, zfs_type_t type, nvlist_t *nvl,
 			break;
 		}
 
-		case ZFS_PROP_RECORDSIZE:
 		case ZFS_PROP_VOLBLOCKSIZE:
-			/* must be power of two within SPA_{MIN,MAX}BLOCKSIZE */
+		case ZFS_PROP_RECORDSIZE:
+		{
+			int maxbs = SPA_MAXBLOCKSIZE;
+			if (zhp != NULL) {
+				maxbs = zpool_get_prop_int(zhp->zpool_hdl,
+				    ZPOOL_PROP_MAXBLOCKSIZE, NULL);
+			}
+			/*
+			 * The value must be a power of two between
+			 * SPA_MINBLOCKSIZE and maxbs.
+			 */
 			if (intval < SPA_MINBLOCKSIZE ||
-			    intval > SPA_MAXBLOCKSIZE || !ISP2(intval)) {
+			    intval > maxbs || !ISP2(intval)) {
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-				    "'%s' must be power of 2 from %u "
-				    "to %uk"), propname,
-				    (uint_t)SPA_MINBLOCKSIZE,
-				    (uint_t)SPA_MAXBLOCKSIZE >> 10);
+				    "'%s' must be power of 2 from 512B "
+				    "to %uKB"), propname, maxbs >> 10);
 				(void) zfs_error(hdl, EZFS_BADPROP, errbuf);
 				goto error;
 			}
 			break;
-
+		}
 		case ZFS_PROP_MLSLABEL:
 		{
 #ifdef HAVE_MLSLABEL
@@ -1474,7 +1482,8 @@ zfs_setprop_error(libzfs_handle_t *hdl, zfs_prop_t prop, int err,
 		break;
 
 	case ERANGE:
-		if (prop == ZFS_PROP_COMPRESSION) {
+		if (prop == ZFS_PROP_COMPRESSION ||
+		    prop == ZFS_PROP_RECORDSIZE) {
 			(void) zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "property setting is not allowed on "
 			    "bootable datasets"));
@@ -1992,6 +2001,10 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 	case ZFS_PROP_REFQUOTA:
 	case ZFS_PROP_RESERVATION:
 	case ZFS_PROP_REFRESERVATION:
+	case ZFS_PROP_FILESYSTEM_LIMIT:
+	case ZFS_PROP_SNAPSHOT_LIMIT:
+	case ZFS_PROP_FILESYSTEM_COUNT:
+	case ZFS_PROP_SNAPSHOT_COUNT:
 		*val = getprop_uint64(zhp, prop, source);
 
 		if (*source == NULL) {
@@ -2017,6 +2030,9 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 		(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
 		if (zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_OBJSET_ZPLPROPS, &zc)) {
 			zcmd_free_nvlists(&zc);
+			if (prop == ZFS_PROP_VERSION &&
+			    zhp->zfs_type == ZFS_TYPE_VOLUME)
+				*val = zfs_prop_default_numeric(prop);
 			return (-1);
 		}
 		if (zcmd_read_dst_nvlist(zhp->zfs_hdl, &zc, &zplprops) != 0 ||
@@ -2340,6 +2356,17 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 				str++;
 
 #ifdef __APPLE__
+			/*
+			 * On OSX by default we mount pools under /Volumes unless
+			 * the dataset property mountpoint specifies otherwise.
+			 * In addition to this, there is an undocumented environment
+			 * variable __ZFS_MAIN_MOUNTPOINT_DIR, used mainly by the
+			 * testing environment, as it expects "/" by default.
+			 */
+			char *default_mountpoint;
+			default_mountpoint = getenv("__ZFS_MAIN_MOUNTPOINT_DIR");
+			if (!default_mountpoint) default_mountpoint = "/Volumes/";
+
 			//Temporarily allowing snapshot mounting
 			if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT) {
 				const char *r = strrchr(relpath, '@');
@@ -2365,14 +2392,14 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 					(void) snprintf(propbuf, proplen,
 					    "%s%s%s%s/.zfs/snapshot/%s", root,
 					    str, source == NULL ||
-					    source[0] == '\0' ? "/Volumes/" :
+					    source[0] == '\0' ? default_mountpoint :
 					    "/", parent_name, snapshot_name);
 					free(parent_name);
 				} else {
 					(void) snprintf(propbuf, proplen,
 					    "%s%s%s.zfs/snapshot/%s", root, str,
 					    source == NULL ||
-					    source[0] == '\0' ? "/Volumes/" :
+					    source[0] == '\0' ? default_mountpoint :
 					    "/", snapshot_name);
 				}
 			} else {
@@ -2384,7 +2411,7 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 				(void) snprintf(propbuf, proplen, "%s%s%s%s",
 #ifdef __APPLE__
 				    root, str, source == NULL ||
-				    source[0] == '\0' ? "/Volumes/" : "/",
+				    source[0] == '\0' ? default_mountpoint : "/",
 #else
 				    root, str, relpath[0] == '@' ? "" : "/",
 #endif
@@ -2442,6 +2469,30 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 				    (u_longlong_t)val);
 			else
 				zfs_nicenum(val, propbuf, proplen);
+		}
+		break;
+
+	case ZFS_PROP_FILESYSTEM_LIMIT:
+	case ZFS_PROP_SNAPSHOT_LIMIT:
+	case ZFS_PROP_FILESYSTEM_COUNT:
+	case ZFS_PROP_SNAPSHOT_COUNT:
+
+		if (get_numeric_property(zhp, prop, src, &source, &val) != 0)
+			return (-1);
+
+		/*
+		 * If limit is UINT64_MAX, we translate this into 'none' (unless
+		 * literal is set), and indicate that it's the default value.
+		 * Otherwise, we print the number nicely and indicate that it's
+		 * set locally.
+		 */
+		if (literal) {
+			(void) snprintf(propbuf, proplen, "%llu",
+			    (u_longlong_t)val);
+		} else if (val == UINT64_MAX) {
+			(void) strlcpy(propbuf, "none", proplen);
+		} else {
+			zfs_nicenum(val, propbuf, proplen);
 		}
 		break;
 
@@ -3287,9 +3338,7 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 		case EDOM:
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "volume block size must be power of 2 from "
-			    "%u to %uk"),
-			    (uint_t)SPA_MINBLOCKSIZE,
-			    (uint_t)SPA_MAXBLOCKSIZE >> 10);
+			    "512B to %uKB"), zfs_max_recordsize >> 10);
 
 			return (zfs_error(hdl, EZFS_BADPROP, errbuf));
 

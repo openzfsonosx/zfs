@@ -251,7 +251,8 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 			    KM_SLEEP);
 			cv_init(&dl->dl_cv, NULL, CV_DEFAULT, NULL);
 			dl->dl_name = (char *)(dl + 1);
-			bcopy(name, dl->dl_name, namesize);
+			//bcopy(name, dl->dl_name, namesize);
+			strlcpy(dl->dl_name, name, namesize);
 			dl->dl_sharecnt = 0;
 			dl->dl_namelock = 0;
 			dl->dl_namesize = namesize;
@@ -458,12 +459,18 @@ void
 zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	int err;
 
 	ASSERT(zp->z_unlinked);
 	ASSERT(zp->z_links == 0);
 
-	VERIFY3U(0, ==,
-	    zap_add_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx));
+
+	if (( err = zap_add_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx))
+		!= 0) {
+		zfs_panic_recover("zfs: zfs_unlinked_add(id %llu) failed to add to unlinked list: %d\n",
+						  zp->z_id,
+						  err);
+	}
 }
 
 
@@ -473,7 +480,7 @@ zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 * (force) umounted the file system.
 */
 void
-zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
+zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 {
         zap_cursor_t        zc;
         zap_attribute_t zap;
@@ -533,41 +540,6 @@ zfs_unlinked_drain_internal(zfsvfs_t *zfsvfs)
         printf("ZFS: unlinked drain completed (%llu).\n", entries);
 
 }
-
-
-static void zfs_unlinked_drain_start(void *arg)
-{
-	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
-	zfs_unlinked_drain_internal(zfsvfs);
-	thread_exit();
-}
-
-void
-zfs_unlinked_drain(zfsvfs_t *zfsvfs)
-{
-        zap_cursor_t        zc;
-        zap_attribute_t zap;
-		uint64_t entries=0;
-
-        /*
-         * Interate over the contents of the unlinked set.
-         */
-        for (zap_cursor_init(&zc, zfsvfs->z_os, zfsvfs->z_unlinkedobj);
-         zap_cursor_retrieve(&zc, &zap) == 0;
-         zap_cursor_advance(&zc)) {
-			entries++;
-        }
-        zap_cursor_fini(&zc);
-
-        printf("ZFS: unlinked drain (Total entries: %llu).\n", entries);
-
-		if (!entries) return;
-
-		(void) thread_create(NULL, 0, zfs_unlinked_drain_start, zfsvfs, 0, &p0,
-							 TS_RUN, minclsyspri);
-
-}
-
 
 
 
@@ -797,6 +769,9 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 	uint64_t mtime[2], ctime[2];
 	int count = 0;
 	int error;
+#ifdef __APPLE__
+	uint64_t addtime[2];
+#endif
 
 	mutex_enter(&zp->z_lock);
 
@@ -830,9 +805,9 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 			 * same directory should not update the entry. This case is
 			 * handled in zfs_rename().
 			 */
-	if (!(flag & ZRENAMING)) {
+	if (!(flag & ZRENAMING) &&
+		zfsvfs->z_use_sa == B_TRUE) {
 		timestruc_t	now;
-		uint64_t addtime[2];
 		gethrestime(&now);
 		ZFS_TIME_ENCODE(&now, addtime);
 		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_ADDTIME(zfsvfs), NULL,

@@ -53,6 +53,8 @@
 #include <sys/dmu.h>
 #endif /* !__APPLE__ */
 
+#include <sys/policy.h>
+
 #include <sys/dsl_prop.h>
 #include <sys/dsl_dataset.h>
 
@@ -161,7 +163,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 #if NAMEDSTREAMS
 		VOL_CAP_INT_NAMEDSTREAMS |
 #endif
-		VOL_CAP_INT_EXTENDED_ATTR ,
+		/*VOL_CAP_INT_EXTENDED_ATTR ,*/
 
 		0 , 0
 	},
@@ -413,11 +415,11 @@ atime_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
 
-	if (newval == TRUE) {
-		zfsvfs->z_atime = TRUE;
+	if (newval == B_TRUE) {
+		zfsvfs->z_atime = B_TRUE;
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOATIME);
 	} else {
-		zfsvfs->z_atime = FALSE;
+		zfsvfs->z_atime = B_FALSE;
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOATIME);
 	}
 }
@@ -435,11 +437,25 @@ xattr_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
 
-	if (newval == TRUE) {
-		/* XXX locking on vfs_flag? */
-        vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
+	/*
+	 * Apple does have MNT_NOUSERXATTR mount option, but unfortunately the VFS
+	 * layer returns EACCESS if xattr access is attempted. Finder etc, will
+	 * do so, even if filesystem capabilities is set without xattr, rendering
+	 * the mount option useless. We no longer set it, and handle xattrs being
+	 * disabled internally.
+	 */
+
+	if (newval == ZFS_XATTR_OFF) {
+		zfsvfs->z_xattr = B_FALSE;
+		//vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
 	} else {
-        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
+		zfsvfs->z_xattr = B_TRUE;
+		//vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOUSERXATTR);
+
+		if (newval == ZFS_XATTR_SA)
+			zfsvfs->z_xattr_sa = B_TRUE;
+		else
+			zfsvfs->z_xattr_sa = B_FALSE;
 	}
 }
 
@@ -473,10 +489,9 @@ static void
 blksz_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-
-	if (newval < SPA_MINBLOCKSIZE ||
-	    newval > SPA_MAXBLOCKSIZE || !ISP2(newval))
-		newval = SPA_MAXBLOCKSIZE;
+	ASSERT3U(newval, <=, spa_maxblocksize(dmu_objset_spa(zfsvfs->z_os)));
+	ASSERT3U(newval, >=, SPA_MINBLOCKSIZE);
+	ASSERT(ISP2(newval));
 
 	zfsvfs->z_max_blksz = newval;
 	//zfsvfs->z_vfs->mnt_stat.f_iosize = newval;
@@ -486,7 +501,7 @@ static void
 readonly_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == TRUE) {
+	if (newval == B_TRUE) {
 		/* XXX locking on vfs_flag? */
 
         // We need to release the mtime_vp when readonly, as it will not
@@ -513,7 +528,7 @@ static void
 setuid_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == FALSE) {
+	if (newval == B_FALSE) {
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOSUID);
 	} else {
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOSUID);
@@ -524,7 +539,7 @@ static void
 exec_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == FALSE) {
+	if (newval == B_FALSE) {
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NOEXEC);
 	} else {
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NOEXEC);
@@ -545,7 +560,7 @@ nbmand_changed_cb(void *arg, uint64_t newval)
 {
 #if 0
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == FALSE) {
+	if (newval == B_FALSE) {
 		vfs_clearmntopt(zfsvfs->z_vfs, MNTOPT_NBMAND);
 		vfs_setmntopt(zfsvfs->z_vfs, MNTOPT_NONBMAND, NULL, 0);
 	} else {
@@ -593,7 +608,7 @@ static void
 finderbrowse_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == FALSE) {
+	if (newval == B_FALSE) {
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_DONTBROWSE);
 	} else {
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_DONTBROWSE);
@@ -603,7 +618,7 @@ static void
 ignoreowner_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-	if (newval == FALSE) {
+	if (newval == B_FALSE) {
         vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_IGNORE_OWNERSHIP);
 	} else {
         vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_IGNORE_OWNERSHIP);
@@ -1212,7 +1227,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	 */
 	zfsvfs->z_vfs = NULL;
 	zfsvfs->z_parent = zfsvfs;
-	zfsvfs->z_max_blksz = SPA_MAXBLOCKSIZE;
+	zfsvfs->z_max_blksz = SPA_OLD_MAXBLOCKSIZE;
 	zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
 	zfsvfs->z_os = os;
 
@@ -1267,7 +1282,12 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 		error = zap_lookup(os, MASTER_NODE_OBJ, ZFS_SA_ATTRS, 8, 1,
 		    &sa_obj);
 		if (error)
-			return (error);
+			goto out;
+
+		error = zfs_get_zplprop(os, ZFS_PROP_XATTR, &zval);
+		if ((error == 0) && (zval == ZFS_XATTR_SA))
+			zfsvfs->z_xattr_sa = B_TRUE;
+
 	} else {
 		/*
 		 * Pre SA versions file systems should never touch
@@ -1325,6 +1345,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	cv_init(&zfsvfs->z_reclaim_thr_cv, NULL, CV_DEFAULT, NULL);
 	list_create(&zfsvfs->z_all_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_node));
+
 	list_create(&zfsvfs->z_reclaim_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_reclaim_node));
 	list_create(&zfsvfs->z_vnodecreate_list, sizeof (struct vnodecreate),
@@ -2264,8 +2285,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	if (error)
 		printf("zfs_vfs_mount: error %d\n", error);
 	if (error == 0) {
-		zfsvfs_t *zfsvfs =vfs_fsprivate(vfsp);
-		uint64_t value;
 
         vfs_setflags(vfsp, (u_int64_t)((unsigned int)MNT_DOVOLFS));
 		/* Indicate to VFS that we support ACLs. */
@@ -2352,6 +2371,12 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		if (zfsvfs->z_case == ZFS_CASE_SENSITIVE)
 			fsap->f_capabilities.capabilities[VOL_CAPABILITIES_FORMAT]
 				|= VOL_CAP_FMT_CASE_SENSITIVE;
+
+		/* Check if xattr is enabled */
+        if (zfsvfs->z_xattr == B_TRUE) {
+			fsap->f_capabilities.capabilities[VOL_CAPABILITIES_INTERFACES]
+				|= VOL_CAP_INT_EXTENDED_ATTR;
+		}
 
 		VFSATTR_SET_SUPPORTED(fsap, f_capabilities);
 	}
@@ -2465,6 +2490,73 @@ zfs_vnode_lock(vnode_t *vp, int flags)
 	return (error);
 }
 
+
+#if !defined(HAVE_SPLIT_SHRINKER_CALLBACK) && !defined(HAVE_SHRINK) && \
+	defined(HAVE_D_PRUNE_ALIASES)
+/*
+ * Linux kernels older than 3.1 do not support a per-filesystem shrinker.
+ * To accommodate this we must improvise and manually walk the list of znodes
+ * attempting to prune dentries in order to be able to drop the inodes.
+ *
+ * To avoid scanning the same znodes multiple times they are always rotated
+ * to the end of the z_all_znodes list.  New znodes are inserted at the
+ * end of the list so we're always scanning the oldest znodes first.
+ */
+static int
+zfs_sb_prune_aliases(zfs_sb_t *zsb, unsigned long nr_to_scan)
+{
+	znode_t **zp_array, *zp;
+	int max_array = MIN(nr_to_scan, PAGE_SIZE * 8 / sizeof (znode_t *));
+	int objects = 0;
+	int i = 0, j = 0;
+
+	zp_array = kmem_zalloc(max_array * sizeof (znode_t *), KM_SLEEP);
+
+	mutex_enter(&zsb->z_znodes_lock);
+	while ((zp = list_head(&zsb->z_all_znodes)) != NULL) {
+
+		if ((i++ > nr_to_scan) || (j >= max_array))
+			break;
+
+		ASSERT(list_link_active(&zp->z_link_node));
+		list_remove(&zsb->z_all_znodes, zp);
+		list_insert_tail(&zsb->z_all_znodes, zp);
+
+		/* Skip active znodes and .zfs entries */
+		if (MUTEX_HELD(&zp->z_lock) || zp->z_is_ctldir)
+			continue;
+
+		if (igrab(ZTOI(zp)) == NULL)
+			continue;
+
+		zp_array[j] = zp;
+		j++;
+	}
+	mutex_exit(&zsb->z_znodes_lock);
+
+	for (i = 0; i < j; i++) {
+		zp = zp_array[i];
+
+		ASSERT3P(zp, !=, NULL);
+		d_prune_aliases(ZTOI(zp));
+
+		if (atomic_read(&ZTOI(zp)->i_count) == 1)
+			objects++;
+
+		iput(ZTOI(zp));
+	}
+
+	kmem_free(zp_array, max_array * sizeof (znode_t *));
+
+	return (objects);
+}
+#endif /* HAVE_D_PRUNE_ALIASES */
+
+/*
+ * The ARC has requested that the filesystem drop entries from the dentry
+ * and inode caches.  This can occur when the ARC needs to free meta data
+ * blocks but can't because they are all pinned by entries in these caches.
+ */
 int
 zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
 {
@@ -2639,7 +2731,6 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	return (0);
 }
 
-/*ARGSUSED*/
 
 int
 zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)

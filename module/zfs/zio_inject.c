@@ -439,6 +439,10 @@ zio_inject_fault(char *name, int flags, int *id, zinject_record_t *record)
 	 * fault injection isn't a performance critical path.
 	 */
 	if (flags & ZINJECT_FLUSH_ARC)
+		/*
+		 * We must use FALSE to ensure arc_flush returns, since
+		 * we're not preventing concurrent ARC insertions.
+		 */
 		arc_flush(NULL);
 
 	return (0);
@@ -525,6 +529,11 @@ zio_inject_fini(void)
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
-module_param(zio_injection_enabled, int, 0644);
-MODULE_PARM_DESC(zio_injection_enabled, "Enable fault injection");
+EXPORT_SYMBOL(zio_injection_enabled);
+EXPORT_SYMBOL(zio_inject_fault);
+EXPORT_SYMBOL(zio_inject_list_next);
+EXPORT_SYMBOL(zio_clear_fault);
+EXPORT_SYMBOL(zio_handle_fault_injection);
+EXPORT_SYMBOL(zio_handle_device_injection);
+EXPORT_SYMBOL(zio_handle_label_injection);
 #endif

@@ -366,7 +366,7 @@ vdev_disk_ioctl_done(void *zio_arg, int error)
 	zio_interrupt(zio);
 }
 
-static int
+static void
 vdev_disk_io_start(zio_t *zio)
 {
 	vdev_t *vd = zio->io_vd;
@@ -382,14 +382,15 @@ vdev_disk_io_start(zio_t *zio)
 	if (dvd == NULL || (dvd->vd_offline) || dvd->vd_devvp == NULL) {
 		zio->io_error = ENXIO;
 		zio_interrupt(zio);
-		return (ZIO_PIPELINE_CONTINUE);
+		return;
 	}
 
 	if (zio->io_type == ZIO_TYPE_IOCTL) {
 
 		if (!vdev_readable(vd)) {
 			zio->io_error = SET_ERROR(ENXIO);
-			return (ZIO_PIPELINE_CONTINUE);
+			zio_interrupt(zio);
+			return;
 		}
 
 		switch (zio->io_cmd) {
@@ -420,7 +421,7 @@ vdev_disk_io_start(zio_t *zio)
 				 * and will call vdev_disk_ioctl_done()
 				 * upon completion.
 				 */
-				return (ZIO_PIPELINE_STOP);
+				return;
 			} else if (error == ENOTSUP || error == ENOTTY) {
 				/*
 				 * If we get ENOTSUP or ENOTTY, we know that
@@ -439,7 +440,8 @@ vdev_disk_io_start(zio_t *zio)
 			zio->io_error = SET_ERROR(ENOTSUP);
 		}
 
-		return (ZIO_PIPELINE_CONTINUE);
+		zio_interrupt(zio);
+		return;
 	}
 
 	flags = (zio->io_type == ZIO_TYPE_READ ? B_READ : B_WRITE);
@@ -476,7 +478,11 @@ vdev_disk_io_start(zio_t *zio)
 	error = VNOP_STRATEGY(bp);
 	ASSERT(error == 0);
 
-	return (ZIO_PIPELINE_STOP);
+	if (error) {
+		zio->io_error = error;
+		zio_interrupt(zio);
+		return;
+	}
 }
 
 static void

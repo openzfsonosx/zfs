@@ -133,7 +133,6 @@ int sa_update_from_cb(sa_handle_t *, sa_attr_type_t,
     uint32_t buflen, sa_data_locator_t *, void *userdata, dmu_tx_t *);
 void sa_object_info(sa_handle_t *, dmu_object_info_t *);
 void sa_object_size(sa_handle_t *, uint32_t *, u_longlong_t *);
-void sa_update_user(sa_handle_t *, sa_handle_t *);
 void *sa_get_userdata(sa_handle_t *);
 void sa_set_userp(sa_handle_t *, void *);
 dmu_buf_t *sa_get_db(sa_handle_t *);
@@ -150,8 +149,6 @@ int sa_replace_all_by_template_locked(sa_handle_t *, sa_bulk_attr_t *,
 boolean_t sa_enabled(objset_t *);
 void sa_cache_init(void);
 void sa_cache_fini(void);
-void *sa_spill_alloc(int);
-void sa_spill_free(void *);
 int sa_set_sa_object(objset_t *, uint64_t);
 int sa_hdrsize(void *);
 void sa_handle_lock(sa_handle_t *);
