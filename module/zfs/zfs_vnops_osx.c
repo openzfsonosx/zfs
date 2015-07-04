@@ -390,7 +390,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_FSCTL_GET_JOURNAL_INFO:
-			/* Respond as though journel is empty/disabled */
+			/* Respond as though journal is empty/disabled */
 		{
 		    struct hfs_journal_info *jip;
 		    jip = (struct hfs_journal_info*)ap->a_data;
@@ -3677,7 +3677,6 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 int
 zfs_vfsops_init(void)
 {
-printf("HFSIOC_VOLUME_STATUS=%lu\n", HFSIOC_VOLUME_STATUS);
 	struct vfs_fsentry vfe;
 
 	zfs_init();
