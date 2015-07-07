@@ -835,6 +835,8 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 			printf("ZFS: WARNING! objid %llu has invalid SA data, please restore from backup. (mode %x)\n",
 				   zp->z_id, (int)zp->z_mode);
 
+			zp->z_mode = 0;
+
 			uint64_t parent = zfsvfs->z_recover_parent;
 			if (parent)	{
 
@@ -861,25 +863,32 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 			// Last ditch effort
 			if (!zp->z_mode) zp->z_mode = VTTOIF(VREG);
 
-		} // bad vtype
-
 #include <sys/dbuf.h>
 
 		dmu_buf_impl_t *db2 = db;
 		zbookmark_phys_t zb;
 
-// Log error in spa?
+        // Log error in spa?
+
 		SET_BOOKMARK(&zb, db2->db_objset->os_dsl_dataset ?
-					 db2->db_objset->os_dsl_dataset->ds_object : DMU_META_OBJSET,
+					 db2->db_objset->os_dsl_dataset->ds_object :
+					 DMU_META_OBJSET,
 					 db2->db.db_object, db2->db_level, db2->db_blkid);
 
 		spa_log_error_zb(db2->db_objset->os_spa, &zb);
+
+		} // bad vtype
 
 	} // zfs_recover
 
 #endif /* APPLE_SA_RECOVER */
 
+
+
+
 	zfs_znode_getvnode(zp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
+
+
 
 #endif /* Apple */
 
