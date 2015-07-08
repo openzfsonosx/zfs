@@ -729,8 +729,15 @@ zvol_first_open(zvol_state_t *zv)
 	zvol_size_changed(zv, volsize);
 	zv->zv_zilog = zil_open(os, zvol_get_data);
 
+#ifdef __APPLE_
+	error = dsl_prop_get_integer(zv->zv_name, "readonly", &readonly, NULL);
+	if (error)
+		printf("ZFS: Failed to lookup 'readonly' on '%s' error %d\n",
+			   zv->zv_name, error);
+#else
 	VERIFY(dsl_prop_get_integer(zv->zv_name, "readonly", &readonly,
 	    NULL) == 0);
+#endif
 	if (readonly || dmu_objset_is_snapshot(os) ||
 	    !spa_writeable(dmu_objset_spa(os)))
 		zv->zv_flags |= ZVOL_RDONLY;
