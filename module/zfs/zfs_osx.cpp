@@ -9,6 +9,10 @@
 
 #include <sys/zvolIO.h>
 
+#ifdef ZFS_BOOT
+#include <sys/zfs_boot.h>
+#endif
+
 #include <sys/ldi_osx.h>
 
 #include <sys/zfs_vnops.h>
@@ -325,11 +329,18 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
       }
     }
 
+#ifdef ZFS_BOOT
+	zfs_boot_init(this);
+#endif
+
     return res;
 }
 
 void net_lundman_zfs_zvol::stop (IOService *provider)
 {
+#ifdef ZFS_BOOT
+	zfs_boot_fini();
+#endif
 
     IOLog("ZFS: Attempting to unload ...\n");
 
@@ -347,7 +358,6 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     sysctl_unregister_oid(&sysctl__zfs_kext_version);
     sysctl_unregister_oid(&sysctl__zfs);
     IOLog("ZFS: Unloaded module\n");
-
 }
 
 

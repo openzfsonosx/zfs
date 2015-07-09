@@ -6239,7 +6239,10 @@ zfs_ioctl_osx_init(void)
 
 	kstat_osx_init();
 
+#ifndef ZFS_BOOT
+/* If the kext is loading during boot, this will panic */
 	(void) mnttab_file_create();
+#endif
 	zfs_ioctl_installed = 1;
 #endif
 	printf("ZFS: Loaded module v%s-%s%s, "

@@ -62,6 +62,7 @@ ZFS_AC_PACKAGE
 ZFS_AC_CONFIG
 ZFS_AC_DEBUG
 ZFS_AC_DEBUG_DMU_TX
+ZFS_AC_BOOT
 
 # during dev
 if test "x$ac_cv_prog_gcc" = xyes ; then

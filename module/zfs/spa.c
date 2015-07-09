@@ -5976,14 +5976,22 @@ spa_async_resume(spa_t *spa)
 static void
 spa_async_dispatch(spa_t *spa)
 {
+#ifndef ZFS_BOOT
     vnode_t *rootdir = getrootdir();
+#endif
 
 	mutex_enter(&spa->spa_async_lock);
+#ifndef ZFS_BOOT
 	if (spa->spa_async_tasks && !spa->spa_async_suspended &&
 	    spa->spa_async_thread == NULL &&
-	    rootdir != NULL && !vn_is_readonly(rootdir))
+	    rootdir != NULL && !vn_is_readonly(rootdir)) {
+#else
+	if (spa->spa_async_tasks && !spa->spa_async_suspended &&
+	    spa->spa_async_thread == NULL) {
+#endif
 		spa->spa_async_thread = thread_create(NULL, 0,
 		    spa_async_thread, spa, 0, &p0, TS_RUN, maxclsyspri);
+	}
 	mutex_exit(&spa->spa_async_lock);
 }
 
