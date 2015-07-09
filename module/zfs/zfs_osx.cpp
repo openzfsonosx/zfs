@@ -9,6 +9,8 @@
 
 #include <sys/zvolIO.h>
 
+#include <sys/ldi_osx.h>
+
 #include <sys/zfs_vnops.h>
 #include <sys/taskq.h>
 
@@ -32,12 +34,6 @@ extern "C" {
  * Can those with more C++ experience clean this up?
  */
 static void *global_c_interface = NULL;
-
-/* Notifier for disk removal */
-static IONotifier *disk_remove_notifier = NULL;
-
-static bool IOkit_disk_removed_callback(void* target, void* refCon, IOService* newService, IONotifier* notifier);
-
 
 // Define the superclass.
 #define super IOService
@@ -267,6 +263,17 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
     sysctl_register_oid(&sysctl__zfs);
     sysctl_register_oid(&sysctl__zfs_kext_version);
 
+	/* Init LDI */
+	int error = 0;
+	error = ldi_init(this);
+	if (error) {
+		IOLog("%s ldi_init error %d\n", __func__, error);
+		sysctl_unregister_oid(&sysctl__zfs_kext_version);
+		sysctl_unregister_oid(&sysctl__zfs);
+		return (false);
+		/* XXX Needs to fail ZFS start */
+	}
+
 	/*
 	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
 	 */
@@ -318,30 +325,12 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
       }
     }
 
-	disk_remove_notifier = addMatchingNotification(gIOTerminatedNotification,
-						serviceMatching("IOMedia"),
-						IOkit_disk_removed_callback,
-						this, NULL, 0);
-
     return res;
 }
 
 void net_lundman_zfs_zvol::stop (IOService *provider)
 {
 
-	/* Stop being told about devices leaving */
-	if (disk_remove_notifier) disk_remove_notifier->remove();
-
-#if 0
-  // You can not stop unload :(
-	if (zfs_active_fs_count != 0 ||
-	    spa_busy() ||
-	    zvol_busy()) {
-
-      IOLog("ZFS: Can not unload as we have filesystems mounted.\n");
-      return;
-	}
-#endif
     IOLog("ZFS: Attempting to unload ...\n");
 
     super::stop(provider);
@@ -352,6 +341,8 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     zfs_ioctl_osx_fini();
     zvol_fini();
     zfs_vfsops_fini();
+
+	ldi_fini();
 
     sysctl_unregister_oid(&sysctl__zfs_kext_version);
     sysctl_unregister_oid(&sysctl__zfs);
@@ -511,131 +502,4 @@ uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t 
                                                           (void *)address,
                                                           len);
   return done;
-}
-
-#include <sys/vdev_impl.h>
-#include <sys/spa_impl.h>
-
-static vdev_t *
-vdev_lookup_by_path(vdev_t *vd, const char *name)
-{
-	vdev_t *mvd;
-	int c;
-	char pathbuf[MAXPATHLEN];
-	char *lookup_name;
-	int err = 0;
-
-	if (!vd) return NULL;
-
-	// Check both strings are valid
-	if (name && *name &&
-		vd->vdev_path && vd->vdev_path[0]) {
-		int off;
-		struct vnode *vp;
-
-		lookup_name = vd->vdev_path;
-
-		// We need to resolve symlinks here to get the final source name
-		dprintf("ZFS: Looking up '%s'\n", vd->vdev_path);
-
-		if ((err = vnode_lookup(vd->vdev_path, 0,
-								&vp, vfs_context_current())) == 0) {
-			int len = MAXPATHLEN;
-
-			if ((err = vn_getpath(vp, pathbuf, &len)) == 0) {
-				dprintf("ZFS: '%s' resolved name is '%s'\n",
-						vd->vdev_path, pathbuf);
-				lookup_name = pathbuf;
-			}
-
-			vnode_put(vp);
-		}
-
-		if (err) dprintf("ZFS: Lookup failed %d\n", err);
-
-		// Skip /dev/ or not?
-		strncmp("/dev/", lookup_name, 5) == 0 ? off=5 : off=0;
-
-		dprintf("ZFS: vdev '%s' == '%s' ?\n", name,
-				&lookup_name[off]);
-
-		if (!strcmp(name, &lookup_name[off])) return vd;
-	}
-
-	for (c = 0; c < vd->vdev_children; c++)
-		if ((mvd = vdev_lookup_by_path(vd->vdev_child[c], name)) !=
-			NULL)
-			return (mvd);
-
-	return (NULL);
-}
-
-#include <sys/vdev_disk.h>
-
-extern "C" {
-
-  /*
-   * Unfortunately the notify thread that posts the termination event to us
-   * is inside IOkit locked loop, so we have to issue the vnode_close()
-   * async, or vn_close()/dkclose() will wait on notify to release the lock
-   */
-  static void vdev_close_thread(void *arg)
-  {
-	vdev_t *vd = (vdev_t *)arg;
-	vdev_disk_t *dvd = (vdev_disk_t *)vd->vdev_tsd;
-
-	if (dvd) dvd->vd_offline = B_TRUE;
-	vdev_disk_close(vd);
-	thread_exit();
-  }
-}
-
-/*
- * Callback for device termination events, ie, disks removed.
- */
-bool IOkit_disk_removed_callback(void* target,
-								 void* refCon,
-								 IOService* newService,
-								 IONotifier* notifier)
-{
-	OSObject *prop = 0;
-	OSString* bsdnameosstr = 0;
-
-	prop = newService->getProperty(kIOBSDNameKey, gIOServicePlane,
-								   kIORegistryIterateRecursively);
-	if (prop) {
-		spa_t *spa = NULL;
-
-		bsdnameosstr = OSDynamicCast(OSString, prop);
-		printf("ZFS: Device removal detected: '%s'\n",
-			   bsdnameosstr->getCStringNoCopy());
-
-		for (spa = spa_next(NULL);
-			 spa != NULL; spa = spa_next(spa)) {
-		  vdev_t *vd;
-
-		  dprintf("ZFS: Scanning pool '%s'\n", spa_name(spa));
-
-		  vd = vdev_lookup_by_path(spa->spa_root_vdev,
-								   bsdnameosstr->getCStringNoCopy());
-
-		  if (vd && vd->vdev_path) {
-
-			printf("ZFS: Device '%s' removal requested\n",
-				   vd->vdev_path);
-			(void) thread_create(NULL, 0, vdev_close_thread,
-								 vd, 0, &p0,
-								 TS_RUN, minclsyspri);
-
-			vd->vdev_remove_wanted = B_TRUE;
-			spa_async_request(spa, SPA_ASYNC_REMOVE);
-
-			break;
-		  }
-
-		} // for all spa
-
-	} // if has BSDname
-
-	return true;
 }

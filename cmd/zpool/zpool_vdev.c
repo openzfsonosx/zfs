@@ -1226,7 +1226,10 @@ make_disks(zpool_handle_t *zhp, nvlist_t *nv)
 		    &wholedisk));
 
 		if (!wholedisk) {
+#ifdef __LINUX__
+/* XXX We don't need to jump through blkid hoops here. */
 			(void) zero_label(path);
+#endif
 			return (0);
 		}
 

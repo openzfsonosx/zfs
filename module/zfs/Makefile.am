@@ -75,6 +75,9 @@ zfs_SOURCES = \
 	fm.c \
 	gfs.c \
 	gzip.c \
+	ldi_osx.c \
+	ldi_vnode.c \
+	ldi_iokit.cpp \
 	lzjb.c \
 	lz4.c \
 	metaslab.c \
