@@ -120,6 +120,19 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 		return (true);
 	}
 
+	/* Set this device to be an SSD, for priority and VM paging */
+	dataString = OSString::withCString(
+	    kIOPropertyMediumTypeSolidStateKey);
+	if (!dataString) {
+		IOLog("could not create medium type string\n");
+		return (true);
+	}
+	deviceCharacteristics->setObject(kIOPropertyMediumTypeKey,
+	    dataString);
+
+	dataString->release();
+	dataString = 0;
+
 	/* Set logical block size to ZVOL_BSIZE (512b) */
 	dataNumber =	OSNumber::withNumber(ZVOL_BSIZE,
 	    8 * sizeof (ZVOL_BSIZE));
