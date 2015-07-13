@@ -676,11 +676,34 @@ static void
 zfs_vnode_forget(struct vnode *vp)
 {
 
-	/* copied from insmntque_stddtr */
-	if (vp) {
-		vnode_clearfsnode(vp);
-		vnode_put(vp);
-		vnode_recycle(vp);
+	case S_IFLNK:
+		ip->i_op = &zpl_symlink_inode_operations;
+		break;
+
+	/*
+	 * rdev is only stored in a SA only for device files.
+	 */
+	case S_IFCHR:
+	case S_IFBLK:
+		sa_lookup(ITOZ(ip)->z_sa_hdl, SA_ZPL_RDEV(zsb), &rdev,
+		    sizeof (rdev));
+		/*FALLTHROUGH*/
+	case S_IFIFO:
+	case S_IFSOCK:
+		init_special_inode(ip, ip->i_mode, rdev);
+		ip->i_op = &zpl_special_inode_operations;
+		break;
+
+	default:
+		zfs_panic_recover("inode %llu has invalid mode: 0x%x\n",
+		    (u_longlong_t)ip->i_ino, ip->i_mode);
+
+		/* Assume the inode is a file and attempt to continue */
+		ip->i_mode = S_IFREG | 0644;
+		ip->i_op = &zpl_inode_operations;
+		ip->i_fop = &zpl_file_operations;
+		ip->i_mapping->a_ops = &zpl_address_space_operations;
+		break;
 	}
 }
 
