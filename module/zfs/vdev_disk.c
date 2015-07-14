@@ -255,14 +255,10 @@ skip_open:
 			*max_psize = capacity * blksz;
 		}
 
-		/*
-		 * Since we own the whole disk, try to enable disk write
-		 * caching.  We ignore errors because it's OK if we can't do it.
-		 */
-		(void) ldi_ioctl(dvd->vd_lh, DKIOCSETWCE, (intptr_t)&wce,
-		    FKIOCTL, kcred, NULL);
-	}
-#endif
+#ifndef HAVE_2ARGS_BIO_END_IO_T
+	if (BIO_BI_SIZE(bio))
+		return (1);
+#endif /* HAVE_2ARGS_BIO_END_IO_T */
 
 	/*
 	 * Clear the nowritecache bit, so that on a vdev_reopen() we will
