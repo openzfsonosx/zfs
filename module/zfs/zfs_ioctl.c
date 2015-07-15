@@ -1323,7 +1323,7 @@ zfsvfs_hold(const char *name, void *tag, zfsvfs_t **zfvp, boolean_t writer)
     if (getzfsvfs(name, zfvp) != 0)
         error = zfsvfs_create(name, zfvp);
     if (error == 0) {
-        rrw_enter(&(*zfvp)->z_teardown_lock, (writer) ? RW_WRITER :
+        rrm_enter(&(*zfvp)->z_teardown_lock, (writer) ? RW_WRITER :
                   RW_READER, tag);
         if ((*zfvp)->z_unmounted) {
             /*
@@ -1331,7 +1331,7 @@ zfsvfs_hold(const char *name, void *tag, zfsvfs_t **zfvp, boolean_t writer)
              * thread should be just about to disassociate the
              * objset from the zfsvfs.
              */
-            rrw_exit(&(*zfvp)->z_teardown_lock, tag);
+            rrm_exit(&(*zfvp)->z_teardown_lock, tag);
 			return (SET_ERROR(EBUSY));
         }
     }
@@ -1341,7 +1341,7 @@ zfsvfs_hold(const char *name, void *tag, zfsvfs_t **zfvp, boolean_t writer)
 static void
 zfsvfs_rele(zfsvfs_t *zfsvfs, void *tag)
 {
-    rrw_exit(&zfsvfs->z_teardown_lock, tag);
+    rrm_exit(&zfsvfs->z_teardown_lock, tag);
 
     if (zfsvfs->z_vfs) {
         VFS_RELE(zfsvfs->z_vfs);
@@ -5065,11 +5065,19 @@ zfs_ioc_space_snaps(const char *lastsnap, nvlist_t *innvl, nvlist_t *outnvl)
 		return (error);
 
 	error = dsl_dataset_hold(dp, lastsnap, FTAG, &new);
+	if (error == 0 && !new->ds_is_snapshot) {
+		dsl_dataset_rele(new, FTAG);
+		error = SET_ERROR(EINVAL);
+	}
 	if (error != 0) {
 		dsl_pool_rele(dp, FTAG);
 		return (error);
 	}
 	error = dsl_dataset_hold(dp, firstsnap, FTAG, &old);
+	if (error == 0 && !old->ds_is_snapshot) {
+		dsl_dataset_rele(old, FTAG);
+		error = SET_ERROR(EINVAL);
+	}
 	if (error != 0) {
 		dsl_dataset_rele(new, FTAG);
 		dsl_pool_rele(dp, FTAG);

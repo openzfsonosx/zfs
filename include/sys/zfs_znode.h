@@ -288,7 +288,7 @@ typedef struct znode {
  */
 #define ZFS_ENTER(zfsvfs)                       \
     {                                                                   \
-		rrw_enter(&(zfsvfs)->z_teardown_lock, RW_READER, FTAG); \
+		rrm_enter_read(&(zfsvfs)->z_teardown_lock, FTAG); \
         if ((zfsvfs)->z_unmounted) {                                    \
             ZFS_EXIT(zfsvfs);                                           \
             return (EIO);                                               \
@@ -296,12 +296,9 @@ typedef struct znode {
     }
 
 #define ZFS_ENTER_NOERROR(zfsvfs)                                       \
-	rrw_enter(&(zfsvfs)->z_teardown_lock, RW_READER, FTAG)
+	rrm_enter_read(&(zfsvfs)->z_teardown_lock, FTAG)
 
-    //        rw_enter(&(zfsvfs)->z_teardown_lock, RW_READER);
-
-    //#define ZFS_EXIT(zfsvfs) rw_exit(&(zfsvfs)->z_teardown_lock)
-#define	ZFS_EXIT(zfsvfs) rrw_exit(&(zfsvfs)->z_teardown_lock, FTAG)
+#define	ZFS_EXIT(zfsvfs) rrm_exit(&(zfsvfs)->z_teardown_lock, FTAG)
 
 /* Verifies the znode is valid */
 #define	ZFS_VERIFY_ZP(zp) \

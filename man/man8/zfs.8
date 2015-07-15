@@ -793,7 +793,7 @@ Currently only \fBposixacls\fR are supported on Linux.
 To obtain the best performance when setting \fBposixacl\fR users are strongly
 encouraged to set the \fBxattr=sa\fR property.  This will result in the
 Posix ACL being stored more efficiently on disk.  But as a consequence of this
-all new xattrs will only be accessable from ZFS implementations which support
+all new xattrs will only be accessible from ZFS implementations which support
 the \fBxattr=sa\fR property.  See the \fBxattr\fR property for more details.
 .RE
 
@@ -840,15 +840,25 @@ Changing this property affects only newly-written data.
 .ne 2
 .mk
 .na
-\fBcompression\fR=\fBon\fR | \fBoff\fR | \fBlzjb\fR | \fBgzip\fR | \fBgzip-\fR\fIN\fR | \fBzle\fR | \fBlz4\fR
+\fB\fBcompression\fR=\fBon\fR | \fBoff\fR | \fBlzjb\fR | \fBlz4\fR |
+\fBgzip\fR | \fBgzip-\fR\fIN\fR | \fBzle\fR\fR
 .ad
 .sp .6
 .RS 4n
-Controls the compression algorithm used for this dataset. The \fBlzjb\fR compression algorithm is optimized for performance while providing decent data compression. Setting compression to \fBon\fR uses the \fBlzjb\fR compression algorithm.
+Controls the compression algorithm used for this dataset.
 .sp
-The \fBgzip\fR compression algorithm uses the same compression as the \fBgzip\fR(1) command. You can specify the \fBgzip\fR level by using the value \fBgzip-\fR\fIN\fR where \fIN\fR is an integer from 1 (fastest) to 9 (best compression ratio). Currently, \fBgzip\fR is equivalent to \fBgzip-6\fR (which is also the default for \fBgzip\fR(1)).
+Setting compression to \fBon\fR indicates that the current default
+compression algorithm should be used.  The default balances compression
+and decompression speed, with compression ratio and is expected to
+work well on a wide variety of workloads.  Unlike all other settings for
+this property, \fBon\fR does not select a fixed compression type.  As
+new compression algorithms are added to ZFS and enabled on a pool, the
+default compression algorithm may change.  The current default compression
+algorthm is either \fBlzjb\fR or, if the \fBlz4_compress\fR feature is
+enabled, \fBlz4\fR.
 .sp
-The \fBzle\fR (zero-length encoding) compression algorithm is a fast and simple algorithm to eliminate runs of zeroes.
+The \fBlzjb\fR compression algorithm is optimized for performance while
+providing decent data compression.
 .sp
 The \fBlz4\fR compression algorithm is a high-performance replacement
 for the \fBlzjb\fR algorithm. It features significantly faster
@@ -858,7 +868,15 @@ the \fBlz4_compress\fR feature set to \fIenabled\fR. See
 \fBzpool-features\fR(5) for details on ZFS feature flags and the
 \fBlz4_compress\fR feature.
 .sp
-This property can also be referred to by its shortened column name \fBcompress\fR. Changing this property affects only newly-written data.
+The \fBgzip\fR compression algorithm uses the same compression as
+the \fBgzip\fR(1) command. You can specify the \fBgzip\fR level by using the
+value \fBgzip-\fR\fIN\fR where \fIN\fR is an integer from 1 (fastest) to 9
+(best compression ratio). Currently, \fBgzip\fR is equivalent to \fBgzip-6\fR
+(which is also the default for \fBgzip\fR(1)). The \fBzle\fR compression
+algorithm compresses runs of zeros.
+.sp
+This property can also be referred to by its shortened column name
+\fBcompress\fR. Changing this property affects only newly-written data.
 .RE
 
 .sp
@@ -1221,7 +1239,7 @@ You might want to set \fBshareiscsi=on\fR for a file system so that all \fBZFS\f
 .RS 4n
 Controls whether the file system is shared by using \fBSamba USERSHARES\fR, and what options are to be used. Otherwise, the file system is automatically shared and unshared with the \fBzfs share\fR and \fBzfs unshare\fR commands. If the property is set to \fBon\fR, the \fBnet\fR(8) command is invoked to create a \fBUSERSHARE\fR.
 .sp
-Because \fBSMB\fR shares requires a resource name, a unique resource name is constructed from the dataset name. The constructed name is a copy of the dataset name except that the characters in the dataset name, which would be illegal in the resource name, are replaced with underscore (\fB_\fR) characters. The ZFS On Linux driver does not (yet) support additional options which might be availible in the Solaris version.
+Because \fBSMB\fR shares requires a resource name, a unique resource name is constructed from the dataset name. The constructed name is a copy of the dataset name except that the characters in the dataset name, which would be illegal in the resource name, are replaced with underscore (\fB_\fR) characters. The ZFS On Linux driver does not (yet) support additional options which might be available in the Solaris version.
 .sp
 If the \fBsharesmb\fR property is set to \fBoff\fR, the file systems are unshared.
 .sp
@@ -1388,7 +1406,7 @@ xattrs as system attributes significantly decreases the amount of disk IO
 required.  Up to 64K of xattr data may be stored per file in the space reserved
 for system attributes.  If there is not enough space available for an xattr then
 it will be automatically written as a directory based xattr.  System attribute
-based xattrs are not accessable on platforms which do not support the
+based xattrs are not accessible on platforms which do not support the
 \fBxattr=sa\fR feature.
 .sp
 The use of system attribute based xattrs is strongly encouraged for users of
@@ -2849,7 +2867,9 @@ Include the dataset's properties in the stream.  This flag is implicit when -R i
 .RS 4n
 Do a dry-run ("No-op") send.  Do not generate any actual send data.  This is
 useful in conjunction with the \fB-v\fR or \fB-P\fR flags to determine what
-data will be sent.
+data will be sent.  In this case, the verbose output will be written to
+standard output (contrast with a non-dry-run, where the stream is written
+to standard output and the verbose output goes to standard error).
 .RE
 
 .sp
