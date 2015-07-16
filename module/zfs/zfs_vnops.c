@@ -1154,8 +1154,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	}
 
-    dprintf("zfs_write done remainder %llu\n", n);
-
+	zfs_inode_update(zp);
 	zfs_range_unlock(rl);
 
 	/*
@@ -1171,7 +1170,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
 		zil_commit(zilog, zp->z_id);
 
-	ZFS_EXIT(zfsvfs);
+	ZFS_EXIT(zsb);
 	return (0);
 }
 
