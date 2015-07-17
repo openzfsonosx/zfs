@@ -1870,7 +1870,7 @@ dnode_willuse_space(dnode_t *dn, int64_t space, dmu_tx_t *tx)
  */
 static int
 dnode_next_offset_level(dnode_t *dn, int flags, uint64_t *offset,
-	int lvl, uint64_t blkfill, uint64_t txg)
+    int lvl, uint64_t blkfill, uint64_t txg)
 {
 	dmu_buf_impl_t *db = NULL;
 	void *data = NULL;

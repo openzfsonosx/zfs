@@ -68,8 +68,9 @@
 /* in libzfs_dataset.c */
 extern void zfs_setprop_error(libzfs_handle_t *, zfs_prop_t, int, char *);
 
-static int zfs_receive_impl(libzfs_handle_t *, const char *, recvflags_t *,
-    int, const char *, nvlist_t *, avl_tree_t *, char **, int, uint64_t *);
+static int zfs_receive_impl(libzfs_handle_t *, const char *, const char *,
+	recvflags_t *, int, const char *, nvlist_t *, avl_tree_t *, char **, int,
+	uint64_t *);
 static int guid_to_name(libzfs_handle_t *, const char *,
     uint64_t, boolean_t, char *);
 
@@ -2792,7 +2793,7 @@ zfs_receive_package(libzfs_handle_t *hdl, int fd, const char *destname,
 		 * zfs_receive_one() will take care of it (ie,
 		 * recv_skip() and return 0).
 		 */
-		error = zfs_receive_impl(hdl, destname, flags, fd,
+		error = zfs_receive_impl(hdl, destname, NULL, flags, fd,
 		    sendfs, stream_nv, stream_avl, top_zfs, cleanup_fd,
 		    action_handlep);
 		if (error == ENODATA) {
@@ -2957,7 +2958,7 @@ recv_ecksum_set_aux(libzfs_handle_t *hdl, const char *target_snap,
  */
 static int
 zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
-    recvflags_t *flags, dmu_replay_record_t *drr,
+    const char *originsnap, recvflags_t *flags, dmu_replay_record_t *drr,
     dmu_replay_record_t *drr_noswap, const char *sendfs,
     nvlist_t *stream_nv, avl_tree_t *stream_avl, char **top_zfs, int cleanup_fd,
     uint64_t *action_handlep)
@@ -3109,12 +3110,17 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 		}
 		if (flags->verbose)
 			(void) printf("found clone origin %s\n", zc.zc_string);
+	} else if (originsnap) {
+		(void) strncpy(zc.zc_string, originsnap, ZFS_MAXNAMELEN);
+		if (flags->verbose)
+			(void) printf("using provided clone origin %s\n",
+						  zc.zc_string);
 	}
 
 	boolean_t resuming = DMU_GET_FEATUREFLAGS(drrb->drr_versioninfo) &
 		DMU_BACKUP_FEATURE_RESUMING;
 	stream_wantsnewfs = (drrb->drr_fromguid == 0 ||
-		 (drrb->drr_flags & DRR_FLAG_CLONE) /*|| originsnap*/) && !resuming;
+		 (drrb->drr_flags & DRR_FLAG_CLONE) || originsnap) && !resuming;
 
 	if (stream_wantsnewfs) {
 		/*
@@ -3505,9 +3511,10 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 }
 
 static int
-zfs_receive_impl(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
-    int infd, const char *sendfs, nvlist_t *stream_nv, avl_tree_t *stream_avl,
-    char **top_zfs, int cleanup_fd, uint64_t *action_handlep)
+zfs_receive_impl(libzfs_handle_t *hdl, const char *tosnap,
+    const char *originsnap, recvflags_t *flags, int infd, const char *sendfs,
+    nvlist_t *stream_nv, avl_tree_t *stream_avl, char **top_zfs, int cleanup_fd,
+    uint64_t *action_handlep)
 {
 	int err;
 	dmu_replay_record_t drr, drr_noswap;
@@ -3524,6 +3531,12 @@ zfs_receive_impl(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 	    !zfs_dataset_exists(hdl, tosnap, ZFS_TYPE_DATASET)) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, "specified fs "
 		    "(%s) does not exist"), tosnap);
+		return (zfs_error(hdl, EZFS_NOENT, errbuf));
+	}
+	if (originsnap &&
+	    !zfs_dataset_exists(hdl, originsnap, ZFS_TYPE_DATASET)) {
+		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, "specified origin fs "
+		    "(%s) does not exist"), originsnap);
 		return (zfs_error(hdl, EZFS_NOENT, errbuf));
 	}
 
@@ -3604,14 +3617,14 @@ zfs_receive_impl(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 				*cp = '\0';
 			sendfs = nonpackage_sendfs;
 		}
-		return (zfs_receive_one(hdl, infd, tosnap, flags,
-		    &drr, &drr_noswap, sendfs, stream_nv, stream_avl,
-		    top_zfs, cleanup_fd, action_handlep));
+		return (zfs_receive_one(hdl, infd, tosnap, originsnap, flags,
+		    &drr, &drr_noswap, sendfs, stream_nv, stream_avl, top_zfs,
+		    cleanup_fd, action_handlep));
 	} else {
 		assert(DMU_GET_STREAM_HDRTYPE(drrb->drr_versioninfo) ==
 		    DMU_COMPOUNDSTREAM);
-		return (zfs_receive_package(hdl, infd, tosnap, flags,
-		    &drr, &zcksum, top_zfs, cleanup_fd, action_handlep));
+		return (zfs_receive_package(hdl, infd, tosnap, flags, &drr,
+		    &zcksum, top_zfs, cleanup_fd, action_handlep));
 	}
 }
 
@@ -3623,14 +3636,21 @@ zfs_receive_impl(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
  * transfer can be resumed if the sending side supports it).
  */
 int
-zfs_receive(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
-    int infd, avl_tree_t *stream_avl)
+zfs_receive(libzfs_handle_t *hdl, const char *tosnap, nvlist_t *props,
+	recvflags_t *flags, int infd, avl_tree_t *stream_avl)
 {
 	char *top_zfs = NULL;
 	int err;
 	int cleanup_fd;
 	uint64_t action_handle = 0;
 	struct stat sb;
+
+	char *originsnap = NULL;
+	if (props) {
+		err = nvlist_lookup_string(props, "origin", &originsnap);
+		if (err && err != ENOENT)
+			return (err);
+	}
 
 	/*
 	 * The only way fstat can fail is if we do not have a valid file
@@ -3676,7 +3696,7 @@ zfs_receive(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 	cleanup_fd = open(ZFS_DEV, O_RDWR);
 	VERIFY(cleanup_fd >= 0);
 
-	err = zfs_receive_impl(hdl, tosnap, flags, infd, NULL, NULL,
+	err = zfs_receive_impl(hdl, tosnap, originsnap, flags, infd, NULL, NULL,
 	    stream_avl, &top_zfs, cleanup_fd, &action_handle);
 
 	VERIFY(0 == close(cleanup_fd));
