@@ -71,20 +71,19 @@ typedef uint_t ldi_status_t;
 /*
  * Flag for LDI handle's lh_flags field
  */
-#define	LH_FLAGS_NOTIFY	0x0001	/* invoked in context of a notify */
+#define	LH_FLAGS_NOTIFY		0x0001	/* invoked in context of a notify */
 
-#define	LDI_LIST_T		/* list_t instead of simple linked list */
 
 /*
  * LDI handle (OS X)
  */
+typedef struct _handle_iokit *handle_iokit_t;
+typedef struct _handle_vnode *handle_vnode_t;
+typedef struct _handle_notifier *handle_notifier_t;
+
 struct ldi_handle {
 	/* protected by ldi_handle_hash_lock */
-#ifdef LDI_LIST_T
 	list_node_t		lh_node;	/* list membership */
-#else
-	struct ldi_handle	*lh_next;	/* list membership */
-#endif
 	uint_t			lh_ref;		/* active references */
 	uint_t			lh_flags;	/* for notify event */
 
@@ -95,18 +94,21 @@ struct ldi_handle {
 	uint_t			lh_openref;	/* open client count */
 
 	/* unique/static fields in the handle */
+	union ldi_handle_tsd {
+		handle_iokit_t	iokit_tsd;
+		handle_vnode_t	vnode_tsd;
+	} lh_tsd;				/* union */
+	handle_notifier_t	lh_notifier;	/* pointer */
 	uint_t			lh_type;	/* IOKit or vnode */
 	uint_t			lh_fmode;	/* FREAD | FWRITE */
 	dev_t			lh_dev;		/* device number */
-	union dev_ptr {
-		void		*media;		/* IOMedia */
-		vnode_t		*devvp;		/* vnode */
-	} lh_un;
-	void			*lh_client;	/* IOService */
-	void			*lh_notifier;	/* IONotifier */
-};
+	uint_t			pad;		/* pad to 96 bytes */
+};						/* XXX Currently 96b */
 
 /* Shared functions */
+struct ldi_handle * handle_alloc_common(uint_t, dev_t, int);
+struct ldi_handle * handle_find(dev_t, int, boolean_t);
+struct ldi_handle * handle_add(struct ldi_handle *);
 int handle_status_change(struct ldi_handle *, int);
 void handle_hold(struct ldi_handle *);
 void handle_release(struct ldi_handle *);
@@ -114,27 +116,39 @@ ldi_status_t handle_open_start(struct ldi_handle *);
 void handle_open_done(struct ldi_handle *, ldi_status_t);
 
 /* Handle IOKit functions */
+void handle_free_iokit(struct ldi_handle *);
 struct ldi_handle *handle_alloc_iokit(dev_t, int);
 int handle_register_notifier(struct ldi_handle *);
 int handle_close_iokit(struct ldi_handle *);
 int handle_free_ioservice(struct ldi_handle *);
 int handle_alloc_ioservice(struct ldi_handle *);
 int handle_remove_notifier(struct ldi_handle *);
-int ldi_open_media_by_dev(dev_t, int, ldi_handle_t *);
-int ldi_open_media_by_path(char *, int, ldi_handle_t *);
-int handle_get_size_iokit(struct ldi_handle *, uint64_t *, uint64_t *);
+int handle_set_wce_iokit(struct ldi_handle *, int *);
+int handle_get_size_iokit(struct ldi_handle *, uint64_t *);
+int handle_get_media_info_iokit(struct ldi_handle *,
+    struct dk_minfo *);
+int handle_get_media_info_ext_iokit(struct ldi_handle *,
+    struct dk_minfo_ext *);
+int handle_check_media_iokit(struct ldi_handle *, int *);
 int handle_sync_iokit(struct ldi_handle *);
 int buf_strategy_iokit(ldi_buf_t *, struct ldi_handle *);
+int ldi_open_media_by_dev(dev_t, int, ldi_handle_t *);
+int ldi_open_media_by_path(char *, int, ldi_handle_t *);
 
 /* Handle vnode functions */
+dev_t dev_from_path(char *);
+void handle_free_vnode(struct ldi_handle *);
 struct ldi_handle *handle_alloc_vnode(dev_t, int);
 int handle_close_vnode(struct ldi_handle *);
-// static int handle_open_vnode(struct ldi_handle *, char *);
-int handle_get_size_vnode(struct ldi_handle *, uint64_t *, uint64_t *);
-int handle_sync_vnode(struct ldi_handle *lhp);
-dev_t dev_from_path(char *path);
-int ldi_open_vnode_by_path(char *, dev_t, int, ldi_handle_t *);
+int handle_get_size_vnode(struct ldi_handle *, uint64_t *);
+int handle_get_media_info_vnode(struct ldi_handle *,
+    struct dk_minfo *);
+int handle_get_media_info_ext_vnode(struct ldi_handle *,
+    struct dk_minfo_ext *);
+int handle_check_media_vnode(struct ldi_handle *, int *);
+int handle_sync_vnode(struct ldi_handle *);
 int buf_strategy_vnode(ldi_buf_t *, struct ldi_handle *);
+int ldi_open_vnode_by_path(char *, dev_t, int, ldi_handle_t *);
 
 /*
  * LDI event information
@@ -152,7 +166,7 @@ typedef struct ldi_ev_callback_impl {
 	void			*lec_cookie;
 	void			*lec_id;
 	list_node_t		lec_list;
-} ldi_ev_callback_impl_t;
+} ldi_ev_callback_impl_t;	/* XXX Currently 72b */
 
 /*
  * Members of "struct ldi_ev_callback_list" are protected by their le_lock
@@ -172,12 +186,12 @@ typedef struct ldi_ev_callback_impl {
 struct ldi_ev_callback_list {
 	kmutex_t		le_lock;
 	kcondvar_t		le_cv;
-	int			le_busy;
+	uint64_t		le_busy;
 	void			*le_thread;
 	list_t			le_head;
 	ldi_ev_callback_impl_t	*le_walker_next;
 	ldi_ev_callback_impl_t	*le_walker_prev;
-};
+};			/* XXX Currently 96b, but only used once */
 
 int ldi_invoke_notify(dev_info_t *, dev_t, int, char *, void *);
 void ldi_invoke_finalize(dev_info_t *, dev_t, int, char *, int, void *);

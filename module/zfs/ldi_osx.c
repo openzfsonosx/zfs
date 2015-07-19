@@ -283,6 +283,7 @@
  *
  * ldi_get_size
  * ldi_sync
+ * ldi_ioctl
  * ldi_strategy
  *
  * ldi_bioinit
@@ -311,7 +312,6 @@
  * bp->b_data = data_ptr;
  * bp->b_flags = B_BUSY | B_NOCACHE | B_READ; // For example
  * bp->b_iodone = &io_intr_func;  // For async IO, omit for sync IO
- * bp->b_iodoneparam = param_ptr; // For async IO, omit for sync IO
  * ldi_strategy(handle, bp);      // Issue IO
  *
  * With an async callback function such as:
@@ -345,6 +345,7 @@
 #include <sys/taskq.h>
 #include <sys/kstat.h>
 #include <sys/kstat_osx.h>
+#include <sys/dkio.h>
 
 /*
  * LDI Includes
@@ -378,7 +379,6 @@ _NOTE(CONSTCOND) } while (0)
  * comment out defines to alter behavior.
  */
 // #define	LDI_ZERO		/* For debugging, zero allocations */
-// #define	LDI_EV_TASKQ		/* Issue events to system_taskq */
 
 /* Find IOMedia by matching on the BSD disk name. */
 static boolean_t ldi_use_iokit_from_path = 1;
@@ -424,11 +424,7 @@ SYSCTL_UINT(_ldi_debug, OID_AUTO, use_vnode_from_path,
  */
 static volatile int64_t		ldi_handle_hash_count;
 
-#ifdef LDI_LIST_T
 static list_t			ldi_handle_hash_list[LH_HASH_SZ];
-#else
-static struct ldi_handle	*ldi_handle_hash[LH_HASH_SZ];
-#endif
 static kmutex_t			ldi_handle_hash_lock[LH_HASH_SZ];
 
 /*
@@ -457,40 +453,24 @@ static struct ldi_ev_cookie ldi_ev_cookies[] = {
 /*
  * kstats
  */
-static kstat_t	*ldi_ksp;
+static kstat_t				*ldi_ksp;
 
 typedef struct ldi_stats {
-#ifdef DEBUG
-	kstat_named_t		handle_io_count;
-	kstat_named_t		handle_io_read;
-	kstat_named_t		handle_io_write;
-	kstat_named_t		handle_byte_count;
-	kstat_named_t		handle_byte_read;
-	kstat_named_t		handle_byte_write;
-#endif
-	kstat_named_t		handle_count;
-	kstat_named_t		handle_count_iokit;
-	kstat_named_t		handle_count_vnode;
-	kstat_named_t		handle_refs;
-	kstat_named_t		handle_open_rw;
-	kstat_named_t		handle_open_ro;
+	kstat_named_t			handle_count;
+	kstat_named_t			handle_count_iokit;
+	kstat_named_t			handle_count_vnode;
+	kstat_named_t			handle_refs;
+	kstat_named_t			handle_open_rw;
+	kstat_named_t			handle_open_ro;
 } ldi_stats_t;
 
 static ldi_stats_t ldi_stats = {
-#ifdef DEBUG
-	{ "handle_io_count",	KSTAT_DATA_UINT64 },
-	{ "handle_io_read",	KSTAT_DATA_UINT64 },
-	{ "handle_io_write",	KSTAT_DATA_UINT64 },
-	{ "handle_byte_count",	KSTAT_DATA_UINT64 },
-	{ "handle_byte_read",	KSTAT_DATA_UINT64 },
-	{ "handle_byte_write",	KSTAT_DATA_UINT64 },
-#endif
-	{ "handle_count",	KSTAT_DATA_UINT64 },
-	{ "handle_count_iokit",	KSTAT_DATA_UINT64 },
-	{ "handle_count_vnode",	KSTAT_DATA_UINT64 },
-	{ "handle_refs",	KSTAT_DATA_UINT64 },
-	{ "handle_open_rw",	KSTAT_DATA_UINT64 },
-	{ "handle_open_ro",	KSTAT_DATA_UINT64 }
+	{ "handle_count",		KSTAT_DATA_UINT64 },
+	{ "handle_count_iokit",		KSTAT_DATA_UINT64 },
+	{ "handle_count_vnode",		KSTAT_DATA_UINT64 },
+	{ "handle_refs",		KSTAT_DATA_UINT64 },
+	{ "handle_open_rw",		KSTAT_DATA_UINT64 },
+	{ "handle_open_ro",		KSTAT_DATA_UINT64 }
 };
 
 #define	LDISTAT(stat)	(ldi_stats.stat.value.ui64)
@@ -590,21 +570,9 @@ handle_status_change_locked(struct ldi_handle *lhp, int new_status)
 	sc->lhp = lhp;
 	sc->new_status = new_status;
 
-#ifdef LDI_EV_TASKQ
-	int tq_id;
-	/* Dispatch event callback, dispatch returns a taskq id */
-	/* Calling with lock held, use TQ_NOSLEEP */
-	tq_id = taskq_dispatch(system_taskq, handle_status_change_callback,
-	    sc, TQ_NOSLEEP);
-	if (tq_id == 0) {
-		dprintf("%s taskq_dispatch failed\n", __func__);
-		kmem_free(sc, sizeof (status_change_args_t));
-	}
-#else
 	mutex_exit(&lhp->lh_lock);	/* Currently needs to drop lock */
 	handle_status_change_callback((void *)sc);
 	mutex_enter(&lhp->lh_lock);	/* Retake before return */
-#endif
 
 	return (0);
 }
@@ -668,17 +636,9 @@ handle_hold(struct ldi_handle *lhp)
  * Locate existing handle in linked list, may return NULL. Optionally places a
  * hold on found handle.
  */
-#ifdef LDI_LIST_T
 static struct ldi_handle *
 handle_find_locked(dev_t device, int fmode, boolean_t hold)
-#else
-static struct ldi_handle **
-handle_find_ref_locked(dev_t device, int fmode, boolean_t hold)
-#endif
 {
-#ifndef LDI_LIST_T
-	struct ldi_handle **lhpp = NULL;
-#endif
 	struct ldi_handle *retlhp = NULL, *lhp;
 	int index = LH_HASH(device);
 
@@ -692,16 +652,9 @@ handle_find_ref_locked(dev_t device, int fmode, boolean_t hold)
 	ASSERT(MUTEX_HELD(&ldi_handle_hash_lock[index]));
 
 	/* Iterate over handle hash list */
-#ifdef LDI_LIST_T
 	for (lhp = list_head(&ldi_handle_hash_list[index]);
 	    lhp != NULL;
 	    lhp = list_next(&ldi_handle_hash_list[index], lhp)) {
-#else
-	for (lhpp = &(ldi_handle_hash[index]);
-	    *lhpp != NULL;
-	    lhpp = &((*lhpp)->lh_next)) {
-		lhp = *lhpp;
-#endif
 		/* Check for matching dev_t and fmode (if set) */
 		if (lhp->lh_dev != device) {
 			continue;
@@ -738,13 +691,10 @@ handle_find_ref_locked(dev_t device, int fmode, boolean_t hold)
  * Call without lock held to find a handle by dev_t,
  * optionally placing a hold on the found handle.
  */
-static struct ldi_handle *
+struct ldi_handle *
 handle_find(dev_t device, int fmode, boolean_t hold)
 {
 	struct ldi_handle *lhp;
-#ifndef LDI_LIST_T
-	struct ldi_handle **lhpp;
-#endif
 	int index = LH_HASH(device);
 
 	if (device == 0) {
@@ -755,14 +705,8 @@ handle_find(dev_t device, int fmode, boolean_t hold)
 	/* Lock for duration of find */
 	mutex_enter(&ldi_handle_hash_lock[index]);
 
-#ifdef LDI_LIST_T
 	/* Find handle by dev_t (with hold) */
 	lhp = handle_find_locked(device, fmode, hold);
-#else
-	/* Find handle ref by dev_t (with hold), and deref */
-	lhpp = handle_find_ref_locked(device, fmode, hold);
-	lhp = *lhpp;
-#endif
 
 	/* Unlock and return handle (could be NULL) */
 	mutex_exit(&ldi_handle_hash_lock[index]);
@@ -772,8 +716,6 @@ handle_find(dev_t device, int fmode, boolean_t hold)
 static void
 handle_free(struct ldi_handle *lhp)
 {
-	int type;
-
 	ASSERT3U(lhp, !=, NULL);
 
 	/* Validate lhp, references, and status */
@@ -783,45 +725,40 @@ handle_free(struct ldi_handle *lhp)
 		    lhp->lh_status);
 	}
 
-	/* Free IOService client */
-	if (lhp->lh_client) {
-		if (handle_free_ioservice(lhp) != 0) {
-			dprintf("%s lhp %p client %p %s\n",
-			    __func__, lhp, lhp->lh_client,
-			    "couldn't be removed");
-		}
-		lhp->lh_client = 0;
-	}
-
 	/* Remove notification handler */
-	if (lhp->lh_notifier) {
-		if (handle_remove_notifier(lhp) != 0) {
-			dprintf("%s lhp %p notifier %p %s\n",
-			    __func__, lhp, lhp->lh_notifier,
-			    "couldn't be removed");
-		}
-		lhp->lh_notifier = 0;
+	if (handle_remove_notifier(lhp) != 0) {
+		dprintf("%s lhp %p notifier %s\n",
+		    __func__, lhp, "couldn't be removed");
 	}
 
 	/* Destroy condvar and mutex */
 	cv_destroy(&lhp->lh_cv);
 	mutex_destroy(&lhp->lh_lock);
 
-	/* Save type */
-	type = lhp->lh_type;
+	/* Decrement kstat handle count */
+	LDISTAT_BUMPDOWN(handle_count);
+	/* IOKit or vnode */
+	switch (lhp->lh_type) {
+	case LDI_TYPE_IOKIT:
+		/* Decrement kstat handle count and free iokit_tsd */
+		LDISTAT_BUMPDOWN(handle_count_iokit);
+		handle_free_iokit(lhp);
+		break;
+
+	case LDI_TYPE_VNODE:
+		/* Decrement kstat handle count and free vnode_tsd */
+		LDISTAT_BUMPDOWN(handle_count_vnode);
+		handle_free_vnode(lhp);
+		break;
+	default:
+		dprintf("%s invalid handle type\n", __func__);
+		break;
+	}
 
 	/* Deallocate handle */
 	dprintf("%s freeing %p\n", __func__, lhp);
 	kmem_free(lhp, sizeof (struct ldi_handle));
 	lhp = 0;
-
-	/* Decrement kstat handle count */
-	LDISTAT_BUMPDOWN(handle_count);
-	if (type == LDI_TYPE_IOKIT) {
-		LDISTAT_BUMPDOWN(handle_count_iokit);
-	} else if (type == LDI_TYPE_VNODE) {
-		LDISTAT_BUMPDOWN(handle_count_vnode);
-	}
 }
 
 /*
@@ -903,9 +840,6 @@ handle_release(struct ldi_handle *lhp)
 static struct ldi_handle *
 handle_add_locked(struct ldi_handle *lhp)
 {
-#ifndef LDI_LIST_T
-	struct ldi_handle **lhpp;
-#endif
 	struct ldi_handle *retlhp;
 	int index = 0;
 
@@ -924,12 +858,7 @@ handle_add_locked(struct ldi_handle *lhp)
 	}
 
 	/* Insert into list */
-#ifdef LDI_LIST_T
 	list_insert_head(&ldi_handle_hash_list[index], lhp);
-#else
-	lhp->lh_next = ldi_handle_hash[index];
-	ldi_handle_hash[index] = lhp;
-#endif
 
 	/* Update handle count */
 	OSIncrementAtomic(&ldi_handle_hash_count);
@@ -942,7 +871,7 @@ handle_add_locked(struct ldi_handle *lhp)
  * Caller should check if returned handle is the same and free new
  * handle if an existing handle was returned
  */
-static struct ldi_handle *
+struct ldi_handle *
 handle_add(struct ldi_handle *lhp)
 {
 	struct ldi_handle *retlhp;
@@ -965,7 +894,7 @@ handle_add(struct ldi_handle *lhp)
 static struct ldi_handle *
 handle_alloc(vnode_t *vp, struct ldi_ident_t *li)
 #else /* illumos */
-static struct ldi_handle *
+struct ldi_handle *
 handle_alloc_common(uint_t type, dev_t device, int fmode)
 #endif /* !illumos */
 {
@@ -1005,30 +934,17 @@ handle_alloc_common(uint_t type, dev_t device, int fmode)
 	/* Set dev_t (major/minor) device number */
 	new_lh->lh_dev = device;
 
-#ifndef LDI_ZERO
 	/* Clear list head */
-#ifdef LDI_LIST_T
 	new_lh->lh_node.list_next = NULL;
 	new_lh->lh_node.list_prev = NULL;
-#else
-	new_lh->lh_next = NULL;
-#endif
-#endif
 
 	/* Initialize with 1 handle ref and 0 open refs */
 	new_lh->lh_ref = 1;
 	new_lh->lh_openref = 0;
 
-	/* Clear device handle */
-	new_lh->lh_un.media = 0;
-	/*
-	 * XXX No need to clear devvp, since lh_un is a union
-	 * with a single pointer.
-	 * new_lh->lh_un.devvp = NULLVP;
-	 */
-
-	/* Clear IOService client and notifier */
-	new_lh->lh_client = 0;
+	/* Clear type-specific device data */
+	new_lh->lh_tsd.iokit_tsd = 0;
+	/* No need to clear vnode_tsd in union */
 	new_lh->lh_notifier = 0;
 
 	/* Assign fmode */
@@ -1047,92 +963,6 @@ handle_alloc_common(uint_t type, dev_t device, int fmode)
 	}
 
 	return (new_lh);
-}
-
-/* Returns handle with lock still held */
-struct ldi_handle *
-handle_alloc_iokit(dev_t device, int fmode)
-{
-	struct ldi_handle *lhp, *retlhp;
-
-	/* Search for existing handle */
-	if ((retlhp = handle_find(device, fmode, B_TRUE)) != NULL) {
-		dprintf("%s found handle before alloc\n", __func__);
-		return (retlhp);
-	}
-
-	/* Allocate an LDI IOKit handle */
-	if ((lhp = handle_alloc_common(LDI_TYPE_IOKIT, device,
-	    fmode)) == NULL) {
-		dprintf("%s couldn't allocate handle\n", __func__);
-		return (NULL);
-	}
-
-	/* Allocate an IOService client for open/close */
-	if (handle_alloc_ioservice(lhp) != 0) {
-		dprintf("%s couldn't allocate IOService client\n", __func__);
-		handle_release(lhp);
-		return (NULL);
-	}
-
-	/* Add the handle to the list, or return match */
-	if ((retlhp = handle_add(lhp)) == NULL) {
-		dprintf("%s handle_add failed\n", __func__);
-		handle_release(lhp);
-		return (NULL);
-	}
-
-	/* Check if new or found handle was returned */
-	if (retlhp != lhp) {
-		dprintf("%s found handle after alloc\n", __func__);
-		handle_release(lhp);
-		lhp = 0;
-	}
-
-	return (retlhp);
-}
-
-/* Returns handle with lock still held */
-struct ldi_handle *
-handle_alloc_vnode(dev_t device, int fmode)
-{
-	struct ldi_handle *lhp, *retlhp;
-
-	/* Search for existing handle */
-	if ((retlhp = handle_find(device, fmode, B_TRUE)) != NULL) {
-		dprintf("%s found handle before alloc\n", __func__);
-		return (retlhp);
-	}
-
-	/* Validate arguments */
-	if (device == 0 || fmode == 0) {
-		dprintf("%s missing dev_t %d or fmode %d\n",
-		    __func__, device, fmode);
-		return (NULL);
-	}
-
-	/* Allocate LDI vnode handle */
-	if ((lhp = handle_alloc_common(LDI_TYPE_VNODE, device,
-	    fmode)) == NULL) {
-		dprintf("%s couldn't allocate lhp\n", __func__);
-		return (NULL);
-	}
-
-	/* Add the handle to the list, or return match */
-	if ((retlhp = handle_add(lhp)) == NULL) {
-		dprintf("%s handle_add failed\n", __func__);
-		handle_release(lhp);
-		return (NULL);
-	}
-
-	/* Check if new or found handle was returned */
-	if (retlhp != lhp) {
-		dprintf("%s found handle after alloc\n", __func__);
-		handle_release(lhp);
-		lhp = 0;
-	}
-
-	return (retlhp);
 }
 
 static void
@@ -1423,28 +1253,15 @@ handle_hash_release()
 
 	for (index = 0; index < LH_HASH_SZ; index++) {
 		mutex_enter(&ldi_handle_hash_lock[index]);
-#ifdef LDI_LIST_T
 		if (!list_empty(&ldi_handle_hash_list[index])) {
-#else
-		if (ldi_handle_hash[index] != NULL) {
-#endif
 			dprintf("%s still have LDI handle(s) in list %d\n",
 			    __func__, index);
 		}
 
 		/* Iterate over the list */
-#ifdef LDI_LIST_T
 		while ((lhp = list_head(&ldi_handle_hash_list[index]))) {
-#else
-		while ((lhp = ldi_handle_hash[index]) != NULL) {
-#endif
-
 			/* remove from list to deallocate */
-#ifdef LDI_LIST_T
 			list_remove(&ldi_handle_hash_list[index], lhp);
-#else
-			ldi_handle_hash[index] = lhp->lh_next;
-#endif
 
 			/* Update handle count */
 			OSDecrementAtomic(&ldi_handle_hash_count);
@@ -1456,13 +1273,10 @@ handle_hash_release()
 			for (j = 0; j < refs; j++) {
 				handle_release_locked(lhp);
 			}
-			// handle_free(lhp);
 			lhp = 0;
 		}
 
-#ifdef LDI_LIST_T
 		list_destroy(&ldi_handle_hash_list[index]);
-#endif
 		mutex_exit(&ldi_handle_hash_lock[index]);
 		mutex_destroy(&ldi_handle_hash_lock[index]);
 	}
@@ -1471,41 +1285,6 @@ handle_hash_release()
 /*
  * LDI Event functions
  */
-static int
-ldi_native_event(const char *evname)
-{
-	int i;
-
-	LDI_EVTRC((CE_NOTE, "ldi_native_event: entered: ev=%s", evname));
-
-	for (i = 0; ldi_ev_cookies[i].ck_evname != NULL; i++) {
-		if (strcmp(ldi_ev_cookies[i].ck_evname, evname) == 0)
-			return (1);
-	}
-
-	return (0);
-}
-
-static uint_t
-ldi_ev_sync_event(const char *evname)
-{
-	int i;
-
-	ASSERT(ldi_native_event(evname));
-
-	LDI_EVTRC((CE_NOTE, "ldi_ev_sync_event: entered: %s", evname));
-
-	for (i = 0; ldi_ev_cookies[i].ck_evname != NULL; i++) {
-		if (strcmp(ldi_ev_cookies[i].ck_evname, evname) == 0)
-			return (ldi_ev_cookies[i].ck_sync);
-	}
-
-	/* This should never happen. */
-	cmn_err(CE_PANIC, "Unknown LDI event: %s", evname);
-
-	return (0);
-}
-
 char *
 ldi_ev_get_type(ldi_ev_cookie_t cookie)
 {
@@ -1738,8 +1517,6 @@ ldi_invoke_notify(__unused dev_info_t *dip, dev_t dev, int spec_type,
 	ASSERT((dev == DDI_DEV_T_ANY && spec_type == 0) ||
 	    (spec_type == S_IFCHR || spec_type == S_IFBLK));
 	ASSERT(event);
-	ASSERT(ldi_native_event(event));
-	ASSERT(ldi_ev_sync_event(event));
 
 	LDI_EVDBG((CE_NOTE, "ldi_invoke_notify(): entered: dip=%p, ev=%s",
 	    (void *)dip, event));
@@ -1899,7 +1676,6 @@ ldi_invoke_finalize(__unused dev_info_t *dip, dev_t dev, int spec_type,
 	ASSERT((dev == DDI_DEV_T_ANY && spec_type == 0) ||
 	    (spec_type == S_IFCHR || spec_type == S_IFBLK));
 	ASSERT(event);
-	ASSERT(ldi_native_event(event));
 	ASSERT(ldi_result == LDI_EV_SUCCESS || ldi_result == LDI_EV_FAILURE);
 
 	LDI_EVDBG((CE_NOTE, "ldi_invoke_finalize(): entered: dip=%p, result=%d"
@@ -2034,8 +1810,9 @@ ldi_ev_remove_callbacks(ldi_callback_id_t id)
 
 /* Client interface, find IOMedia from dev_t, alloc and open handle */
 int
-ldi_open_by_dev(dev_t device, int fmode,
-    __unused cred_t *cred, ldi_handle_t *lhp)
+ldi_open_by_dev(dev_t device, __unused int otyp, int fmode,
+    __unused cred_t *cred, ldi_handle_t *lhp,
+    __unused ldi_ident_t ident)
 {
 	int error = EINVAL;
 
@@ -2210,7 +1987,7 @@ ldi_close(ldi_handle_t lh, int fmode, __unused cred_t *cred)
  * Client interface, must be in LDI_STATUS_ONLINE
  */
 int
-ldi_get_size(ldi_handle_t lh, uint64_t *dev_size, uint64_t *blocksize)
+ldi_get_size(ldi_handle_t lh, uint64_t *dev_size)
 {
 	struct ldi_handle *handlep = (struct ldi_handle *)lh;
 	int error;
@@ -2219,10 +1996,9 @@ ldi_get_size(ldi_handle_t lh, uint64_t *dev_size, uint64_t *blocksize)
 	 * Ensure we have an LDI handle, and a valid dev_size and/or
 	 * blocksize pointer. Caller must pass at least one of these.
 	 */
-	if (!handlep || (!dev_size && !blocksize)) {
+	if (!handlep || !dev_size) {
 		dprintf("%s handle %p\n", __func__, handlep);
 		dprintf("%s dev_size %p\n", __func__, dev_size);
-		dprintf("%s blocksize %p\n", __func__, blocksize);
 		return (EINVAL);
 	}
 
@@ -2241,13 +2017,11 @@ ldi_get_size(ldi_handle_t lh, uint64_t *dev_size, uint64_t *blocksize)
 	/* IOMedia or vnode */
 	switch (handlep->lh_type) {
 	case LDI_TYPE_IOKIT:
-		error = handle_get_size_iokit(handlep,
-		    dev_size, blocksize);
+		error = handle_get_size_iokit(handlep, dev_size);
 		return (error);
 
 	case LDI_TYPE_VNODE:
-		error = handle_get_size_vnode(handlep,
-		    dev_size, blocksize);
+		error = handle_get_size_vnode(handlep, dev_size);
 		return (error);
 	}
 
@@ -2296,23 +2070,122 @@ ldi_sync(ldi_handle_t lh)
 	return (EINVAL);
 }
 
+int
+ldi_ioctl(ldi_handle_t lh, int cmd, intptr_t arg,
+    __unused int mode, __unused cred_t *cr, __unused int *rvalp)
+{
+	struct ldi_handle *handlep = (struct ldi_handle *)lh;
+	int error = EINVAL;
+	struct dk_callback *dkc;
+
+	switch (cmd) {
+	/* Flush write cache */
+	case DKIOCFLUSHWRITECACHE:
+		/* IOMedia or vnode */
+		switch (handlep->lh_type) {
+		case LDI_TYPE_IOKIT:
+			error = handle_sync_iokit(handlep);
+			break;
+
+		case LDI_TYPE_VNODE:
+			error = handle_sync_vnode(handlep);
+			break;
+
+		default:
+			error = ENOTSUP;
+		}
+
+		if (!arg) {
+			return (error);
+		}
+
+		dkc = (struct dk_callback *)arg;
+		/* Issue completion callback if set */
+		if (dkc->dkc_callback) {
+			(*dkc->dkc_callback)(dkc->dkc_cookie, error);
+		}
+
+		return (error);
+
+	/* Set or clear write cache enabled */
+	case DKIOCSETWCE:
+		/*
+		 * There doesn't seem to be a way to do this by vnode,
+		 * so we need to be able to locate an IOMedia and an
+		 * IOBlockStorageDevice provider.
+		 */
+		return (handle_set_wce_iokit(handlep, (int *)arg));
+
+	/* Get media blocksize and block count */
+	case DKIOCGMEDIAINFO:
+		/* IOMedia or vnode */
+		switch (handlep->lh_type) {
+		case LDI_TYPE_IOKIT:
+			return (handle_get_media_info_iokit(handlep,
+			    (struct dk_minfo *)arg));
+
+		case LDI_TYPE_VNODE:
+			return (handle_get_media_info_vnode(handlep,
+			    (struct dk_minfo *)arg));
+
+		default:
+			return (ENOTSUP);
+		}
+
+	/* Get media logical/physical blocksize and block count */
+	case DKIOCGMEDIAINFOEXT:
+		/* IOMedia or vnode */
+		switch (handlep->lh_type) {
+		case LDI_TYPE_IOKIT:
+			return (handle_get_media_info_ext_iokit(handlep,
+			    (struct dk_minfo_ext *)arg));
+
+		case LDI_TYPE_VNODE:
+			return (handle_get_media_info_ext_vnode(handlep,
+			    (struct dk_minfo_ext *)arg));
+
+		default:
+			return (ENOTSUP);
+		}
+
+	/* Check device status */
+	case DKIOCSTATE:
+		/* IOMedia or vnode */
+		switch (handlep->lh_type) {
+		case LDI_TYPE_IOKIT:
+			return (handle_check_media_iokit(handlep,
+			    (int *)arg));
+
+		case LDI_TYPE_VNODE:
+			return (handle_check_media_vnode(handlep,
+			    (int *)arg));
+
+		default:
+			return (ENOTSUP);
+		}
+
+	default:
+		return (ENOTSUP);
+	}
+}
+
 /*
  * Must already have handle_open called on lh.
  */
 int
-ldi_strategy(ldi_handle_t lh, ldi_buf_t *bp)
+ldi_strategy(ldi_handle_t lh, ldi_buf_t *lbp)
 {
 	struct ldi_handle *handlep = (struct ldi_handle *)lh;
 	int error = EINVAL;
 
 	/* Verify arguments */
-	if (!handlep || !bp || bp->b_bcount == 0) {
+	if (!handlep || !lbp || lbp->b_bcount == 0) {
 		dprintf("%s missing something...\n", __func__);
 		dprintf("handlep [%p]\n", handlep);
-		dprintf("bp [%p]\n", bp);
-		if (bp) {
-			dprintf("bp->b_bcount %llu\n",
-			    bp->b_bcount);
+		dprintf("lbp [%p]\n", lbp);
+		if (lbp) {
+			dprintf("lbp->b_bcount %llu\n",
+			    lbp->b_bcount);
 		}
 		return (EINVAL);
 	}
@@ -2323,105 +2196,72 @@ ldi_strategy(ldi_handle_t lh, ldi_buf_t *bp)
 		return (ENODEV);
 	}
 
-#ifdef DEBUG
-	uint64_t bcount = bp->b_bcount;
-#endif
 
 	/* IOMedia or vnode */
-	/* Issue buf_strategy, preserve error */
+	/* Issue type-specific buf_strategy, preserve error */
 	switch (handlep->lh_type) {
 	case LDI_TYPE_IOKIT:
-		error = buf_strategy_iokit(bp, handlep);
+		error = buf_strategy_iokit(lbp, handlep);
 		break;
 	case LDI_TYPE_VNODE:
-		error = buf_strategy_vnode(bp, handlep);
+		error = buf_strategy_vnode(lbp, handlep);
 		break;
 	default:
 		dprintf("%s invalid lh_type %d\n", __func__, handlep->lh_type);
 		return (EINVAL);
 	}
 
-#ifdef DEBUG
-	/*
-	 * Log issued IO's
-	 * It would be nice to log completed IO's but that occurs
-	 * in IOKit and vnode io_intr functions, beyond scope of
-	 * these kstats.
-	 * It would also be nice to log IO's per handle, so perhaps
-	 * we could register kstats in the handle, which could be
-	 * accessed from each io_intr.
-	 */
-	if (error == 0) {
-		LDISTAT_BUMP(handle_io_count);
-		LDISTAT_INCR(handle_byte_count, bcount);
-
-		if (bp->b_flags & B_READ) {
-			LDISTAT_BUMP(handle_io_read);
-			LDISTAT_INCR(handle_byte_read, bcount);
-		} else {
-			LDISTAT_BUMP(handle_io_write);
-			LDISTAT_INCR(handle_byte_write, bcount);
-		}
-	}
-#endif
 
 	return (error);
 }
 
-/* Should be called with struct allocated */
-int
-ldi_bioinit(ldi_handle_t lh, ldi_buf_t *bp)
+/* Client interface to get an LDI buffer */
+ldi_buf_t *
+ldi_getrbuf(int flags)
 {
-	struct ldi_handle *handlep = (struct ldi_handle *)lh;
-	int error = EINVAL;
+/* Example: bp = getrbuf(KM_SLEEP); */
+	ldi_buf_t *lbp;
 
-	if (!handlep || !bp) {
-		dprintf("%s missing argument %p %p\n",
-		    __func__, handlep, bp);
-		return (EINVAL);
-	}
-#ifdef LDI_ZERO
-	/* Zero the new buffer struct */
-	bzero(bp, sizeof (struct ldi_buf));
-#endif
-
-	bp->b_buf.bp = 0;
-	bp->b_ioattr = 0;
-	bp->b_iocompletion = 0;
-	bp->b_data = 0;
-	bp->b_flags = 0;
-	bp->b_bcount = 0;
-	bp->b_bufsize = 0;
-	bp->b_offset = 0;
-	bp->b_resid = 0;
-	bp->b_error = 0;
-	bp->b_iodone = 0;
-	bp->b_iodoneparam = 0;
-
-	/* Only IOKit handles need additional allocation */
-	if (handlep->lh_type == LDI_TYPE_IOKIT) {
-		error = ldi_bioinit_iokit(bp);
-		if (error) {
-			dprintf("%s ldi_bioinit_iokit returned %d\n",
-			    __func__, error);
-			return (error);
-		}
+	/* Allocate with requested flags */
+	lbp = kmem_alloc(sizeof (ldi_buf_t), flags);
+	/* Verify allocation */
+	if (!lbp) {
+		return (NULL);
 	}
 
-	/* Return success */
-	return (0);
+	ldi_bioinit(lbp);
+
+	return (lbp);
 }
 
-/*
- * XXX Had cleared b_ioattr and b_iocompletion here, moved to io_intr
- */
+/* Client interface to release an LDI buffer */
 void
-ldi_biofini(ldi_buf_t *bp)
+ldi_freerbuf(ldi_buf_t *lbp)
 {
-	if (!bp) {
-		dprintf("%s no bp\n", __func__);
+	if (!lbp) {
 		return;
 	}
+
+	/* Deallocate */
+	kmem_free(lbp, sizeof (ldi_buf_t));
+}
+
+void
+ldi_bioinit(ldi_buf_t *lbp)
+{
+#ifdef LDI_ZERO
+	/* Zero the new buffer struct */
+	bzero(lbp, sizeof (ldi_buf_t));
+#endif
+
+	/* Initialize defaults */
+	lbp->b_un.b_addr = 0;
+	lbp->b_flags = 0;
+	lbp->b_bcount = 0;
+	lbp->b_bufsize = 0;
+	lbp->b_lblkno = 0;
+	lbp->b_resid = 0;
+	lbp->b_error = 0;
 }
 
 /*
@@ -2458,13 +2298,9 @@ ldi_init(void *provider)
 	for (index = 0; index < LH_HASH_SZ; index++) {
 		mutex_init(&ldi_handle_hash_lock[index], NULL,
 		    MUTEX_DEFAULT, NULL);
-#ifdef LDI_LIST_T
 		list_create(&ldi_handle_hash_list[index],
 		    sizeof (struct ldi_handle),
 		    offsetof(struct ldi_handle, lh_node));
-#else
-		ldi_handle_hash[index] = NULL;
-#endif
 	}
 
 	/*
@@ -2495,7 +2331,7 @@ ldi_fini()
 	    ldi_ev_callback_list.le_thread != curthread ||
 	    ldi_ev_callback_list.le_walker_next != NULL ||
 	    ldi_ev_callback_list.le_walker_prev != NULL) {
-		dprintf("%s still has %s %d %s %p %s %p %s %p\n", __func__,
+		dprintf("%s still has %s %llu %s %p %s %p %s %p\n", __func__,
 		    "le_busy", ldi_ev_callback_list.le_busy,
 		    "le_thread", ldi_ev_callback_list.le_thread,
 		    "le_walker_next", ldi_ev_callback_list.le_walker_next,

@@ -62,121 +62,143 @@
 _NOTE(CONSTCOND) } while (0)
 #endif
 
-/*
- * Check, set, and clear vnode_mountedon flag.
- * Previously we 'checked' this flag after successful vnode_open, however the
- * open would have failed if the flag was set (so was never being checked).
- * The correct way to check this is by doing vnode_lookup prior to vnode_open
- * (or by checking with vnode_lookup after a failed open).
- * We were not setting or clearing the mountedon flag either, but it has
- * limited usefulness.
- * Specifically, setting vnode_mountedon disallows a separate read-only open
- * while we have a read-write open, which breaks shared spare vdevs.
- */
-// #define	LDI_VNODE_MOUNTEDON
+struct _handle_vnode {
+	vnode_t		*devvp;
+};	/* 8b */
 
-/*
- * Use vnode_getwithref and vnode_put for each IO or state change.
- * This takes a usecount on the vnode, which allows us to drop the iocount.
- * Previously an iocount and refcount were held from vnode_open through
- * vnode_close.
- * The iocount is intended to be dropped as soon as possible, and usecount
- * may be held for extended periods of time.
- * We could also save the vnode's VID and use vnode_getwithvid (like
- * vdev_file does).
- */
-#define	LDI_VNODE_REF
-#define	LDI_VNODE_PUT
+#define	LH_VNODE(lhp)	lhp->lh_tsd.vnode_tsd->devvp
+
+void
+handle_free_vnode(struct ldi_handle *lhp) {
+	if (!lhp) {
+		dprintf("%s missing lhp\n", __func__);
+		return;
+	}
+
+	if (!lhp->lh_tsd.vnode_tsd) {
+		dprintf("%s missing vnode_tsd\n", __func__);
+		return;
+	}
+
+	kmem_free(lhp->lh_tsd.vnode_tsd, sizeof (struct _handle_vnode));
+	lhp->lh_tsd.vnode_tsd = 0;
+}
+
+
+/* Returns handle with lock still held */
+struct ldi_handle *
+handle_alloc_vnode(dev_t device, int fmode)
+{
+	struct ldi_handle *lhp, *retlhp;
+
+	/* Search for existing handle */
+	if ((retlhp = handle_find(device, fmode, B_TRUE)) != NULL) {
+		dprintf("%s found handle before alloc\n", __func__);
+		return (retlhp);
+	}
+
+	/* Validate arguments */
+	if (device == 0 || fmode == 0) {
+		dprintf("%s missing dev_t %d or fmode %d\n",
+		    __func__, device, fmode);
+		return (NULL);
+	}
+
+	/* Allocate LDI vnode handle */
+	if ((lhp = handle_alloc_common(LDI_TYPE_VNODE, device,
+	    fmode)) == NULL) {
+		dprintf("%s couldn't allocate lhp\n", __func__);
+		return (NULL);
+	}
+
+	/* Allocate and clear type-specific device data */
+	lhp->lh_tsd.vnode_tsd = (struct _handle_vnode *)kmem_alloc(
+	    sizeof (struct _handle_vnode), KM_SLEEP);
+	LH_VNODE(lhp) = 0;
+
+	/* Add the handle to the list, or return match */
+	if ((retlhp = handle_add(lhp)) == NULL) {
+		dprintf("%s handle_add failed\n", __func__);
+		handle_release(lhp);
+		return (NULL);
+	}
+
+	/* Check if new or found handle was returned */
+	if (retlhp != lhp) {
+		dprintf("%s found handle after alloc\n", __func__);
+		handle_release(lhp);
+		lhp = 0;
+	}
+
+	return (retlhp);
+}
 
 int
 handle_close_vnode(struct ldi_handle *lhp)
 {
-	vnode_t *devvp = NULLVP;
-	vfs_context_t context = 0;
+	vfs_context_t context;
 	int error = EINVAL;
 
 	ASSERT3U(lhp, !=, NULL);
 	ASSERT3U(lhp->lh_type, ==, LDI_TYPE_VNODE);
-	ASSERT3U(lhp->lh_un.media, !=, NULL);
+	ASSERT3U(LH_VNODE(lhp), !=, NULL);
 	ASSERT3U(lhp->lh_status, ==, LDI_STATUS_CLOSING);
 
-	/* Validate devvp vnode */
-	if ((devvp = lhp->lh_un.devvp) == NULLVP) {
-		dprintf("%s invalid vnode devvp\n", __func__);
+#ifdef DEBUG
+	/* Validate vnode and context */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
 		return (ENODEV);
-		/* goto handle_closed; */
 	}
+#endif
 
-	/* Validate context */
-	if ((context = vfs_context_create(
-	    spl_vfs_context_kernel())) == NULL) {
+	context = vfs_context_create(spl_vfs_context_kernel());
+	if (!context) {
 		dprintf("%s couldn't create VFS context\n", __func__);
 		return (ENOMEM);
 	}
 
-#ifdef LDI_VNODE_REF
 	/* Take an iocount on devvp vnode. */
-	if (0 != (error = vnode_getwithref(devvp))) {
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
 		dprintf("%s vnode_getwithref error %d\n",
 		    __func__, error);
-		/*
-		 * Clear handle devvp vnode pointer.
-		 * If getwithref failed, we can't call vnode_close.
-		 */
-		lhp->lh_un.devvp = devvp = NULLVP;
-		error = ENODEV;
-		goto vnode_out;
+		/* If getwithref failed, we can't call vnode_close.  */
+		LH_VNODE(lhp) = NULLVP;
+		vfs_context_rele(context);
+		return (ENODEV);
 	}
 	/* All code paths from here must vnode_put. */
-#endif
 
 	/* For read-write, clear mountedon flag and wait for writes */
 	if (lhp->lh_fmode & FWRITE) {
-#ifdef LDI_VNODE_MOUNTEDON
-		/* Clear the vnode mountedon flag (returns void) */
-		vnode_clearmountedon(devvp);
-#endif
-
 		/* Wait for writes to complete */
-		error = vnode_waitforwrites(devvp, 0, 0, 0,
-		    "ldi:handle_close");
-
+		error = vnode_waitforwrites(LH_VNODE(lhp), 0, 0, 0,
+		    "ldi::handle_close_vnode");
 		if (error != 0) {
 			dprintf("%s waitforwrites returned %d\n",
 			    __func__, error);
 		}
 	}
 
-#ifdef LDI_VNODE_REF
 	/* Drop usecount */
-	vnode_rele(devvp);
-#endif
+	vnode_rele(LH_VNODE(lhp));
 
 	/* Drop iocount and refcount */
-	if (0 != (error = vnode_close(devvp,
-	    (lhp->lh_fmode & FWRITE ? FWASWRITTEN : 0), context))) {
-		dprintf("%s vnode_close error %d\n",
-		    __func__, error);
-		/* Preserve error */
-	}
+	error = vnode_close(LH_VNODE(lhp),
+	    (lhp->lh_fmode & FWRITE ? FWASWRITTEN : 0),
+	    context);
+	/* Preserve error from vnode_close */
 
 	/* Clear handle devvp vnode pointer */
-	lhp->lh_un.devvp = devvp = NULLVP;
+	LH_VNODE(lhp) = NULLVP;
+	/* Drop VFS context */
+	vfs_context_rele(context);
 
-vnode_out:
-#ifdef LDI_VNODE_PUT
-	/* devvp will be cleared if vnode_close succeeds */
-	if (devvp) {
-		/* Release iocount on vnode (still has usecount) */
-		vnode_put(devvp);
+	if (error) {
+		dprintf("%s vnode_close error %d\n",
+		    __func__, error);
 	}
-#endif
-
-	if (context) {
-		vfs_context_rele(context);
-		context = 0;
-	}
-
 	/* Return error from close */
 	return (error);
 }
@@ -184,316 +206,184 @@ vnode_out:
 static int
 handle_open_vnode(struct ldi_handle *lhp, char *path)
 {
-	vfs_context_t context = 0;
-	vnode_t *devvp = NULLVP;
-	int flags, error = EINVAL;
-	boolean_t has_iocount = B_FALSE;
-	boolean_t has_usecount = B_FALSE;
+	int error = EINVAL;
+	vfs_context_t context;
 
 	ASSERT3U(lhp, !=, NULL);
 	ASSERT3U(path, !=, NULL);
 	ASSERT3U(lhp->lh_type, ==, LDI_TYPE_VNODE);
 	ASSERT3U(lhp->lh_status, ==, LDI_STATUS_OPENING);
 
-	/* Find length of string plus null character */
+	/* Validate path string */
 	if (!path || strlen(path) <= 1) {
 		dprintf("%s missing path\n", __func__);
 		return (EINVAL);
 	}
 
-	/* Validate context */
+	/* Allocate and validate context */
 	context = vfs_context_create(spl_vfs_context_kernel());
-	if (context == NULL) {
+	if (!context) {
 		dprintf("%s couldn't create VFS context\n", __func__);
 		return (ENOMEM);
 	}
 
-	/* Valid LDI open modes are read-only or read-write. */
-	flags = FREAD | (lhp->lh_fmode & FWRITE ? FWRITE : 0);
-
 	/* Try to open the device by path (takes iocount) */
-	error = vnode_open(path, flags, 0, 0, &devvp, context);
-	if (error != 0) {
+	error = vnode_open(path, lhp->lh_fmode, 0, 0,
+	    &(LH_VNODE(lhp)), context);
+
+	if (error) {
 		dprintf("%s vnode_open error %d\n", __func__, error);
 		/* Return error from vnode_open */
-		goto vnode_out;
+		return (error);
 	}
-	has_iocount = B_TRUE;
 
-#ifdef LDI_VNODE_REF
 	/* Increase usecount, saving error. */
-	error = vnode_ref(devvp);
+	error = vnode_ref(LH_VNODE(lhp));
 	if (error != 0) {
-		dprintf("%s couldn't vnode_ref devvp\n", __func__);
-		/* Pass error for return */
-		goto vnode_out;
+		dprintf("%s couldn't vnode_ref\n", __func__);
+		vnode_close(LH_VNODE(lhp), lhp->lh_fmode, context);
+		/* Return error from vnode_ref */
+		return (error);
 	}
-	has_usecount = B_TRUE;
-#endif
-
-#if 0
-#ifdef LDI_VNODE_MOUNTEDON
-/*
- * XXX Disabled mountedon check as this will not even be reached if the
- * mountedon flag is set - vnode_open would fail and devvp would be NULLVP.
- * Only useful if checking devvp by vnode_lookup prior to vnode_open.
- * For example: vnode_lookup, check mountedon, vnode_put, then vnode_open.
- */
-	/*
-	 * Disallow opening of a device that is currently in use.
-	 */
-	error = vfs_mountedon(devvp);
-	if (error != 0) {
-		dprintf("%s vfs mountedon returned %d for %s\n",
-		    __func__, error, path);
-
-		error = EBUSY;
-		goto vnode_out;
-	}
-#endif /* LDI_VNODE_MOUNTEDON */
-#endif /* if 0 */
 
 	/* Verify vnode refers to a block device */
-	if (!vnode_isblk(devvp)) {
+	if (!vnode_isblk(LH_VNODE(lhp))) {
 		dprintf("%s %s is not a block device\n",
 		    __func__, path);
-
-		error = ENOTBLK;
-		goto vnode_out;
+		vnode_rele(LH_VNODE(lhp));
+		vnode_close(LH_VNODE(lhp), lhp->lh_fmode, context);
+		return (ENOTBLK);
 	}
 
-#if 0
-#ifdef LDI_VNODE_MOUNTEDON
-/*
- * XXX Disabled setting mountedon flag as it breaks shared spare
- * vdevs and libzfs probing of in-use devices.
- */
-	/*
-	 * This marks the device as having a filesystem mounted
-	 * on it, which prevents other clients from opening it.
-	 */
-	if (flags & FWRITE) {
-		dprintf("%s calling vnode_setmountedon\n",
-		    __func__);
-		vnode_setmountedon(devvp);
-	}
-#endif /* LDI_VNODE_MOUNTEDON */
-#endif /* if 0 */
-
-#ifdef LDI_VNODE_PUT
 	/* Drop iocount on vnode (still has usecount) */
-	vnode_put(devvp);
-#endif
+	vnode_put(LH_VNODE(lhp));
+	/* Drop VFS context */
+	vfs_context_rele(context);
 
-vnode_out:
-	/* Set error if devvp is missing */
-	if (error == 0 && devvp == NULLVP) {
-		error = ENODEV;
-	}
-
-	/* If error and devvp is still set, cleanup */
-	if (error != 0 && devvp != NULLVP) {
-		if (has_usecount) {
-			/* Drop usecount taken by vnode_ref */
-			vnode_rele(devvp);
-		}
-		if (has_iocount) {
-			/* Close (drops iocount), clear devvp */
-			vnode_close(devvp, flags, context);
-		}
-		devvp = NULLVP;
-	}
-	if (context) {
-		vfs_context_rele(context);
-		context = 0;
-	}
-
-	/* If successful, assign devvp vnode */
-	if (error == 0 && devvp != NULLVP) {
-		lhp->lh_un.devvp = devvp;
-		devvp = NULLVP;
-	}
-
-	/* Pass error */
-	return (error);
+	return (0);
 }
 
 int
-handle_get_size_vnode(struct ldi_handle *lhp,
-    uint64_t *dev_size, uint64_t *blocksize)
+handle_get_size_vnode(struct ldi_handle *lhp, uint64_t *dev_size)
 {
-	vfs_context_t context = 0;
-	vnode_t *devvp = NULLVP;
-	uint64_t blkcnt;
-	uint32_t blksize;
+	vfs_context_t context;
+	uint64_t blkcnt = 0;
+	uint32_t blksize = 0;
 	int error = EINVAL;
 
-	/* Validate devvp vnode */
-	if (NULLVP == (devvp = lhp->lh_un.devvp)) {
-		dprintf("%s invalid vnode devvp\n", __func__);
-		return (ENODEV);
+#ifdef DEBUG
+	if (!lhp || !dev_size) {
+		dprintf("%s missing lhp or dev_size\n", __func__);
+		return (EINVAL);
 	}
 
-	/* Validate context */
-	if ((context = vfs_context_create(
-	    spl_vfs_context_kernel())) == NULL) {
-		dprintf("%s couldn't create VFS context\n",
-		    __func__);
+	/* Validate vnode */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
+		return (ENODEV);
+	}
+#endif
+
+	/* Allocate and validate context */
+	context = vfs_context_create(spl_vfs_context_kernel());
+	if (!context) {
+		dprintf("%s couldn't create VFS context\n", __func__);
 		return (ENOMEM);
 	}
 
-#ifdef LDI_VNODE_REF
 	/* Take an iocount on devvp vnode. */
-	if (0 != (error = vnode_getwithref(devvp))) {
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
 		dprintf("%s vnode_getwithref error %d\n",
 		    __func__, error);
-		devvp = NULLVP;
-		error = ENODEV;
-		goto vnode_out;
+		vfs_context_rele(context);
+		return (ENODEV);
 	}
 	/* All code paths from here must vnode_put. */
-#endif
 
 	/* Fetch the blocksize */
-	error = VNOP_IOCTL(devvp, DKIOCGETBLOCKSIZE,
+	error = VNOP_IOCTL(LH_VNODE(lhp), DKIOCGETBLOCKSIZE,
 	    (caddr_t)&blksize, 0, context);
-	if (error != 0) {
-		dprintf("%s %s %d %d\n", __func__,
-		    "getblocksize error, value", error, blksize);
-		error = ENOENT;
-		goto vnode_out;
-	}
-
-	if (blksize == 0) {
-		dprintf("%s using default DEV_BSIZE\n", __func__);
-		/* Set to default of 512-bytes */
-		blksize = DEV_BSIZE;
-	}
-	ASSERT3U(blksize, ==, (1ULL<<(highbit(blksize)-1)));
-
-	/* If pointer was provided, copy in value */
-	if (blocksize != 0) {
-		/* Cast from 32-bit to 64 */
-		*blocksize = (uint64_t)blksize;
-	}
-
-	if (dev_size == 0) {
-		/* blocksize has been successfully set */
-		error = 0;
-		goto vnode_out;
-	}
+	error = (blksize == 0 ? ENODEV : error);
 
 	/* Fetch the block count */
-	error = VNOP_IOCTL(devvp, DKIOCGETBLOCKCOUNT,
-	    (caddr_t)&blkcnt, 0, context);
-	if (error != 0 || blkcnt == 0) {
-		dprintf("%s getblockcount failed %d %llu\n", __func__,
-		    error, blkcnt);
-		error = ENOENT;
-		goto vnode_out;
-	}
+	error = (error ? error : VNOP_IOCTL(LH_VNODE(lhp),
+	    DKIOCGETBLOCKCOUNT, (caddr_t)&blkcnt,
+	    0, context));
+	error = (blkcnt == 0 ? ENODEV : error);
+
+	/* Release iocount on vnode (still has usecount) */
+	vnode_put(LH_VNODE(lhp));
+	/* Drop VFS context */
+	vfs_context_rele(context);
 
 	/* Cast both to 64-bit then multiply */
 	*dev_size = ((uint64_t)blksize * (uint64_t)blkcnt);
 	if (*dev_size == 0) {
-		dprintf("%s invalid blksize %u or blkcnt %llu\n", __func__,
-		    blksize, blkcnt);
-		error = ENODEV;
-		goto vnode_out;
+		dprintf("%s invalid blksize %u or blkcnt %llu\n",
+		    __func__, blksize, blkcnt);
+		return (ENODEV);
 	}
-
-	/* Success */
-	error = 0;
-
-vnode_out:
-#ifdef LDI_VNODE_PUT
-	if (devvp != NULLVP) {
-		/* Release iocount on vnode (still has usecount) */
-		vnode_put(devvp);
-		devvp = NULLVP;
-	}
-#endif
-
-	if (context) {
-		vfs_context_rele(context);
-		context = 0;
-	}
-
-	return (error);
+	return (0);
 }
 
 int
 handle_sync_vnode(struct ldi_handle *lhp)
 {
-	vfs_context_t context = 0;
-	vnode_t *devvp = NULLVP;
+	vfs_context_t context;
 	int error = EINVAL;
 
-	/* Validate devvp vnode */
-	if (NULLVP == (devvp = lhp->lh_un.devvp)) {
-		dprintf("%s invalid vnode devvp\n", __func__);
-		return (ENODEV);
+#ifdef DEBUG
+	if (!lhp) {
+		dprintf("%s missing lhp\n", __func__);
+		return (EINVAL);
 	}
 
-	/* Validate context */
+	/* Validate vnode */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
+		return (ENODEV);
+	}
+#endif
+
+	/* Allocate and validate context */
 	context = vfs_context_create(spl_vfs_context_kernel());
 	if (!context) {
-		dprintf("%s couldn't create VFS context\n",
-		    __func__);
+		dprintf("%s couldn't create VFS context\n", __func__);
 		return (ENOMEM);
 	}
 
-#ifdef LDI_VNODE_REF
 	/* Take an iocount on devvp vnode. */
-	if (0 != (error = vnode_getwithref(devvp))) {
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
 		dprintf("%s vnode_getwithref error %d\n",
 		    __func__, error);
-		/* Clear devvp to avoid vnode_put */
-		devvp = NULLVP;
-		error = ENODEV;
-		goto vnode_out;
+		vfs_context_rele(context);
+		return (ENODEV);
 	}
 	/* All code paths from here must vnode_put. */
-#endif
 
 	/*
 	 * Flush out any old buffers remaining from a previous use.
 	 * buf_invalidateblks flushes UPL buffers, VNOP_FSYNC informs
 	 * the disk device to flush write buffers to disk.
 	 */
-	if (0 != (error = buf_invalidateblks(devvp,
-	    BUF_WRITE_DATA, 0, 0))) {
-		dprintf("%s buf_invalidateblks error %d\n",
+	error = buf_invalidateblks(LH_VNODE(lhp), BUF_WRITE_DATA, 0, 0);
+
+	error = (error ? error : VNOP_FSYNC(LH_VNODE(lhp),
+	    MNT_WAIT, context));
+
+	/* Release iocount on vnode (still has usecount) */
+	vnode_put(LH_VNODE(lhp));
+	/* Drop VFS context */
+	vfs_context_rele(context);
+
+	if (error) {
+		dprintf("%s buf_invalidateblks or VNOP_FSYNC error %d\n",
 		    __func__, error);
-		error = EIO;
-		goto vnode_out;
+		return (ENOTSUP);
 	}
-	if (0 != (error = VNOP_FSYNC(devvp, MNT_WAIT,
-	    context))) {
-		dprintf("%s VNOP_FSYNC error %d\n",
-		    __func__, error);
-		error = ENOTBLK;
-		goto vnode_out;
-	}
-
-	/* Success */
-	error = 0;
-
-vnode_out:
-#ifdef LDI_VNODE_PUT
-	if (devvp) {
-		/* Release iocount on vnode (still has usecount) */
-		vnode_put(devvp);
-		devvp = NULLVP;
-	}
-#endif
-
-	if (context) {
-		vfs_context_rele(context);
-		context = 0;
-	}
-
-	return (error);
+	return (0);
 }
 
 /* vnode_lookup, find dev_t info */
@@ -505,26 +395,25 @@ dev_from_path(char *path)
 	dev_t device;
 	int error = EINVAL;
 
+#ifdef DEBUG
 	/* Validate path */
 	if (path == 0 || strlen(path) <= 1 || path[0] != '/') {
 		dprintf("%s invalid path provided\n", __func__);
 		return (0);
 	}
-	dprintf("%s path %s\n", __func__, path);
+#endif
 
-	/* Validate context */
-	if ((context = vfs_context_create(
-	    spl_vfs_context_kernel())) == NULL) {
-		dprintf("%s couldn't create VFS context\n",
-		    __func__);
+	/* Allocate and validate context */
+	context = vfs_context_create(spl_vfs_context_kernel());
+	if (!context) {
+		dprintf("%s couldn't create VFS context\n", __func__);
 		return (0);
 	}
 
 	/* Try to lookup the vnode by path */
-	if ((error = vnode_lookup(path, 0, &devvp, context)) != 0 ||
-	    devvp == NULLVP) {
-		dprintf("%s vnode_lookup failed %d\n",
-		    __func__, error);
+	error = vnode_lookup(path, 0, &devvp, context);
+	if (error || devvp == NULLVP) {
+		dprintf("%s vnode_lookup failed %d\n", __func__, error);
 		vfs_context_rele(context);
 		return (0);
 	}
@@ -532,19 +421,17 @@ dev_from_path(char *path)
 	/* Get the rdev of this vnode */
 	device = vnode_specrdev(devvp);
 
-	/* Drop iocount on devvp and clear */
+	/* Drop iocount on devvp */
 	vnode_put(devvp);
-	devvp = NULLVP;
-
 	/* Drop vfs_context */
 	vfs_context_rele(context);
-	context = 0;
 
+#ifdef DEBUG
 	/* Validate dev_t */
 	if (device == 0) {
-		dprintf("%s invalid device\n",
-		    __func__);
+		dprintf("%s invalid device\n", __func__);
 	}
+#endif
 
 	/* Return 0 or valid dev_t */
 	return (device);
@@ -554,180 +441,123 @@ dev_from_path(char *path)
 static void
 ldi_vnode_io_intr(buf_t bp, void *arg)
 {
-	ldi_buf_t *obp = (struct ldi_buf *)arg;
-#ifdef DEBUG
-	vnode_t *devvp = buf_vnode(bp);
-#endif
+	ldi_buf_t *lbp = (ldi_buf_t *)arg;
 
 	ASSERT3U(bp, !=, NULL);
-	ASSERT3U(obp, !=, NULL);
-	ASSERT3U(devvp, !=, NULLVP);
+	ASSERT3U(lbp, !=, NULL);
 
 	/* Copyout error and resid */
-	obp->b_error = buf_error(bp);
-	obp->b_resid = buf_resid(bp);
+	lbp->b_error = buf_error(bp);
+	lbp->b_resid = buf_resid(bp);
 
 #ifdef DEBUG
-	if (obp->b_error || obp->b_resid != 0) {
+	if (lbp->b_error || lbp->b_resid != 0) {
 		dprintf("%s io error %d resid %llu\n", __func__,
-		    obp->b_error, obp->b_resid);
+		    lbp->b_error, lbp->b_resid);
 	}
 #endif
 
 	/* Teardown */
-	obp->b_buf.bp = 0;
 	buf_free(bp);
 
 	/* Call original completion function */
-	if (obp->b_iodone) {
-		obp->b_iodone(obp, obp->b_iodoneparam);
+	if (lbp->b_iodone) {
+		lbp->b_iodone(lbp);
 	}
 }
 
-/*
- * Uses IOMedia::read asynchronously or IOStorage::read synchronously.
- * virtual void read(IOService *	client,
- *     UInt64				byteStart,
- *     IOMemoryDescriptor *		buffer,
- *     IOStorageAttributes *		attributes,
- *     IOStorageCompletion *		completion);
- * virtual IOReturn read(IOService *	client,
- *     UInt64				byteStart,
- *     IOMemoryDescriptor *		buffer,
- *     IOStorageAttributes *		attributes = 0,
- *     UInt64 *				actualByteCount = 0);
- */
-
 int
-buf_strategy_vnode(ldi_buf_t *bp, struct ldi_handle *lhp)
+buf_strategy_vnode(ldi_buf_t *lbp, struct ldi_handle *lhp)
 {
+	buf_t bp = 0;
 	int error = EINVAL;
-	/* vnode */
-	vfs_context_t context = 0;
-	vnode_t *devvp = NULLVP;
-	buf_t newbp = 0;
-	uint64_t blkno;
-	int flags;
-	boolean_t sync;
 
-	ASSERT3U(bp, !=, NULL);
+	ASSERT3U(lbp, !=, NULL);
 	ASSERT3U(lhp, !=, NULL);
 
-	/* Validate devvp vnode */
-	if (NULLVP == (devvp = lhp->lh_un.devvp)) {
-		dprintf("%s invalid vnode devvp\n",
-		    __func__);
+#ifdef DEBUG
+	if (!lbp || !lhp) {
+		dprintf("%s missing lbp or lhp\n", __func__);
+		return (EINVAL);
+	}
+	if (lhp->lh_status != LDI_STATUS_ONLINE) {
+		dprintf("%s handle is not Online\n", __func__);
 		return (ENODEV);
 	}
 
-	/* Validate context */
-	if ((context = vfs_context_create(
-	    spl_vfs_context_kernel())) == NULL) {
-		dprintf("%s couldn't create VFS context\n",
-		    __func__);
+	/* Validate vnode */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
+		return (ENODEV);
+	}
+#endif
+
+	/* Allocate and verify buf_t */
+	if (NULL == (bp = buf_alloc(LH_VNODE(lhp)))) {
+		dprintf("%s %s\n", __func__,
+		    "couldn't allocate buf_t");
 		return (ENOMEM);
 	}
 
-	/* For synchronous IO */
-	sync = (bp->b_iodone == NULL);
-	/* Read/write and nocache flags */
-	flags = (bp->b_flags & B_READ ? B_READ : B_WRITE);
-	flags |= B_NOCACHE;
-	/* Get block number */
-	blkno = (bp->b_offset >> DEV_BSHIFT);
-
-	/* Allocate and verify buf_t */
-	if (NULL == (newbp = buf_alloc(devvp))) {
-		dprintf("%s %s\n", __func__,
-		    "couldn't allocate buf_t");
-		error = ENOMEM;
-		goto vnode_out;
-	}
-
 	/* Setup buffer */
-	buf_setflags(newbp, flags);
-	buf_setcount(newbp, bp->b_bcount);
-	buf_setdataptr(newbp, (uintptr_t)bp->b_data);
-	buf_setblkno(newbp, blkno);
-	buf_setlblkno(newbp, blkno);
-	buf_setsize(newbp, bp->b_bufsize);
+	buf_setflags(bp, B_NOCACHE | (lbp->b_flags & B_READ ?
+	    B_READ : B_WRITE));
+	buf_setcount(bp, lbp->b_bcount);
+	buf_setdataptr(bp, (uintptr_t)lbp->b_un.b_addr);
+	buf_setblkno(bp, lbp->b_lblkno);
+	buf_setlblkno(bp, lbp->b_lblkno);
+	buf_setsize(bp, lbp->b_bufsize);
 
 	/* For asynchronous IO */
-	if (!sync) {
-		buf_setcallback(newbp, &ldi_vnode_io_intr, bp);
+	if (lbp->b_iodone != NULL) {
+		buf_setcallback(bp, &ldi_vnode_io_intr, lbp);
 	}
-
-#ifdef DEBUG
-	if (bp->b_bcount != bp->b_bufsize) {
-		dprintf("%s vnode buf_t with flags %d, data %p,"
-		    " bcount %llx, blkno %llx, resid %x\n",
-		    __func__, flags, bp->b_data, bp->b_bcount, blkno,
-		    buf_resid(newbp));
-	}
-#endif
 
 	/* Recheck instantaneous value of handle status */
 	if (lhp->lh_status != LDI_STATUS_ONLINE) {
 		dprintf("%s device not online\n", __func__);
-		error = ENODEV;
-		goto vnode_out;
+		buf_free(bp);
+		return (ENODEV);
 	}
 
-#ifdef LDI_VNODE_REF
 	/* Take an iocount on devvp vnode. */
-	if (0 != (error = vnode_getwithref(devvp))) {
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
 		dprintf("%s vnode_getwithref error %d\n",
 		    __func__, error);
-		error = ENODEV;
-		goto vnode_out;
+		buf_free(bp);
+		return (ENODEV);
 	}
 	/* All code paths from here must vnode_put. */
-#endif
 
-	/* Assign newbp to bp */
-	bp->b_buf.bp = &newbp;
-
-	if (!(bp->b_flags & B_READ)) {
-		vnode_startwrite(devvp);
+	if (!(lbp->b_flags & B_READ)) {
+		/* Does not return an error status */
+		vnode_startwrite(LH_VNODE(lhp));
 	}
-	/* Issue the IO, preserving error */
-	error = VNOP_STRATEGY(newbp);
 
-	if (error != 0) {
+
+
+	/* Issue the IO, preserving error */
+	error = VNOP_STRATEGY(bp);
+
+	if (error) {
 		dprintf("%s VNOP_STRATEGY error %d\n",
 		    __func__, error);
 		/* Reclaim write count on vnode */
-		if (!(bp->b_flags & B_READ)) {
-			vnode_writedone(devvp);
+		if (!(lbp->b_flags & B_READ)) {
+			vnode_writedone(LH_VNODE(lhp));
 		}
-		error = EIO;
-		goto vnode_out;
+		vnode_put(LH_VNODE(lhp));
+		buf_free(bp);
+		return (EIO);
 	}
 
-	/* Clear pointer to avoid releasing in-use buf_t */
-	newbp = 0;
+	/* Release iocount on vnode (still has usecount) */
+	vnode_put(LH_VNODE(lhp));
 
 	/* For synchronous IO, call completion */
-	if (sync) {
-		ldi_vnode_io_intr(newbp, (void*)bp);
-	}
-
-vnode_out:
-#ifdef LDI_VNODE_PUT
-	if (devvp != NULLVP) {
-		/* Release iocount on vnode (still has usecount) */
-		vnode_put(devvp);
-		devvp = NULLVP;
-	}
-#endif
-	if (context) {
-		vfs_context_rele(context);
-		context = 0;
-	}
-	/* On success, newbp pointer was assigned to bp and cleared */
-	if (newbp) {
-		buf_free(newbp);
-		newbp = 0;
+	if (lbp->b_iodone == NULL) {
+		ldi_vnode_io_intr(bp, (void*)lbp);
 	}
 
 	/* Pass error from VNOP_STRATEGY */
@@ -782,9 +612,6 @@ ldi_open_vnode_by_path(char *path, dev_t device,
 		retlhp = 0;
 		return (EIO);
 	}
-
-	/* XXX Should get and cache blocksize for lbtodb */
-
 	handle_open_done(retlhp, LDI_STATUS_ONLINE);
 
 	/* Register for disk notifications */
@@ -794,4 +621,164 @@ ldi_open_vnode_by_path(char *path, dev_t device,
 	*lhp = (ldi_handle_t)retlhp;
 	/* Pass error from open */
 	return (error);
+}
+
+int
+handle_get_media_info_vnode(struct ldi_handle *lhp,
+    struct dk_minfo *dkm)
+{
+	vfs_context_t context;
+	uint32_t blksize;
+	uint64_t blkcount;
+	int error;
+
+#ifdef DEBUG
+	if (!lhp || !dkm) {
+		dprintf("%s missing lhp or dkm\n", __func__);
+		return (EINVAL);
+	}
+	if (lhp->lh_status != LDI_STATUS_ONLINE) {
+		dprintf("%s handle is not Online\n", __func__);
+		return (ENODEV);
+	}
+
+	/* Validate vnode */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
+		return (ENODEV);
+	}
+#endif
+
+	/* Allocate and validate context */
+	context = vfs_context_create(spl_vfs_context_kernel());
+	if (!context) {
+		dprintf("%s couldn't create VFS context\n", __func__);
+		return (0);
+	}
+
+	/* Take an iocount on devvp vnode. */
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
+		dprintf("%s vnode_getwithref error %d\n",
+		    __func__, error);
+		vfs_context_rele(context);
+		return (ENODEV);
+	}
+	/* All code paths from here must vnode_put. */
+
+	/* Get the blocksize and block count */
+	error = VNOP_IOCTL(LH_VNODE(lhp), DKIOCGETBLOCKSIZE,
+	    (caddr_t)&blksize, 0, context);
+	error = (error ? error : VNOP_IOCTL(LH_VNODE(lhp),
+	    DKIOCGETBLOCKCOUNT, (caddr_t)&blkcount,
+	    0, context));
+
+	/* Release iocount on vnode (still has usecount) */
+	vnode_put(LH_VNODE(lhp));
+	/* Drop vfs_context */
+	vfs_context_rele(context);
+
+	if (error) {
+		dkm->dki_capacity = 0;
+		dkm->dki_lbsize = 0;
+		return (error);
+	}
+
+	/* If successful, set return values */
+	dkm->dki_capacity = blkcount;
+	dkm->dki_lbsize = blksize;
+	return (0);
+}
+
+int
+handle_get_media_info_ext_vnode(struct ldi_handle *lhp,
+    struct dk_minfo_ext *dkmext)
+{
+	vfs_context_t context;
+	uint32_t blksize, pblksize;
+	uint64_t blkcount;
+	int error;
+
+#ifdef DEBUG
+	if (!lhp || !dkmext) {
+		dprintf("%s missing lhp or dkmext\n", __func__);
+		return (EINVAL);
+	}
+	if (lhp->lh_status != LDI_STATUS_ONLINE) {
+		dprintf("%s handle is not Online\n", __func__);
+		return (ENODEV);
+	}
+
+	/* Validate vnode and context */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode or context\n", __func__);
+		return (ENODEV);
+	}
+#endif
+
+	/* Allocate and validate context */
+	context = vfs_context_create(spl_vfs_context_kernel());
+	if (!context) {
+		dprintf("%s couldn't create VFS context\n", __func__);
+		return (0);
+	}
+
+	/* Take an iocount on devvp vnode. */
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
+		dprintf("%s vnode_getwithref error %d\n",
+		    __func__, error);
+		vfs_context_rele(context);
+		return (ENODEV);
+	}
+	/* All code paths from here must vnode_put. */
+
+	/* Get the blocksize, physical blocksize, and block count */
+	error = VNOP_IOCTL(LH_VNODE(lhp), DKIOCGETBLOCKSIZE,
+	    (caddr_t)&blksize, 0, context);
+	error = (error ? error : VNOP_IOCTL(LH_VNODE(lhp),
+	    DKIOCGETPHYSICALBLOCKSIZE, (caddr_t)&pblksize,
+	    0, context));
+	error = (error ? error : VNOP_IOCTL(LH_VNODE(lhp),
+	    DKIOCGETBLOCKCOUNT, (caddr_t)&blkcount,
+	    0, context));
+
+	/* Release iocount on vnode (still has usecount) */
+	vnode_put(LH_VNODE(lhp));
+	/* Drop vfs_context */
+	vfs_context_rele(context);
+
+	if (error) {
+		dkmext->dki_capacity = 0;
+		dkmext->dki_lbsize = 0;
+		dkmext->dki_pbsize = 0;
+		return (error);
+	}
+
+	/* If successful, set return values */
+	dkmext->dki_capacity = blkcount;
+	dkmext->dki_lbsize = blksize;
+	dkmext->dki_pbsize = pblksize;
+	return (0);
+}
+
+int
+handle_check_media_vnode(struct ldi_handle *lhp, int *status)
+{
+	if (!lhp || !status) {
+		dprintf("%s missing lhp or invalid status\n", __func__);
+		return (EINVAL);
+	}
+
+	/* Validate vnode and context */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
+		return (ENODEV);
+	}
+
+	/* XXX As yet unsupported */
+	return (ENOTSUP);
+
+	/* Check if the device is available and responding */
+	return (0);
 }

@@ -41,8 +41,8 @@ extern "C" {
 typedef struct vdev_disk {
 #ifdef illumos
 	ddi_devid_t	vd_devid;
-#endif
 	char		*vd_minor;
+#endif
 	ldi_handle_t	vd_lh;
 	list_t		vd_ldi_cbs;
 	boolean_t	vd_ldi_offline;

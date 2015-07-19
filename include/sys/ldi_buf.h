@@ -36,26 +36,36 @@ extern "C" {
  * Buffer context for LDI strategy
  */
 typedef struct ldi_buf {
-	/* Internal */
-	union {
-			void *iomem;	/* IOKit IOMemoryDescriptor */
-			buf_t *bp;	/* vnode buf_t */
-	} b_buf;
-	void		*b_ioattr;	/* struct IOStorageAttributes */
-	void		*b_iocompletion;/* struct IOStorageCompletion */
-
 	/* For client use */
-	void		*b_data;	/* Passed buffer address */
+	int		(*b_iodone)(struct ldi_buf *); /* Callback */
+	union {
+		void	*b_addr;	/* Passed buffer address */
+	} b_un;				/* Union to match illumos */
 	uint64_t	b_bcount;	/* Size of IO */
 	uint64_t	b_bufsize;	/* Size of buffer */
-	uint64_t	b_offset;	/* IO offset */
+	uint64_t	b_lblkno;	/* logical block number */
 	uint64_t	b_resid;	/* Remaining IO size */
 	int		b_flags;	/* Read or write, options */
 	int		b_error;	/* IO error code */
-	int		(*b_iodone)(struct ldi_buf *, void *arg);
-					/* Completion callback */
-	void		*b_iodoneparam;	/* Passed to callback */
-} ldi_buf_t;
+	uint64_t	pad;		/* Pad to 64 bytes */
+} ldi_buf_t;				/* XXX Currently 64b */
+
+ldi_buf_t *ldi_getrbuf(int);
+void ldi_freerbuf(ldi_buf_t *);
+void ldi_bioinit(ldi_buf_t *);
+
+/* Define macros to get and release a buffer */
+#define	getrbuf(flags)	ldi_getrbuf(flags)
+#define	freerbuf(lbp)	ldi_freerbuf(lbp)
+#define	bioinit(lbp)	ldi_bioinit(lbp)
+#define	geterror(lbp)	(lbp->b_error)
+#define	biowait(lbp)	(0)
+
+#define	lbtodb(bytes) \
+	(bytes >> DEV_BSHIFT)
+#define	dbtolb(blkno) \
+	(blkno << DEV_BSHIFT)
+#define	ldbtob(blkno)	dbtolb(blkno)
 
 /* Redefine B_BUSY */
 #define	B_BUSY	B_PHYS

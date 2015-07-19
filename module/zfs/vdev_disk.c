@@ -37,10 +37,11 @@
 #include <sys/fs/zfs.h>
 #include <sys/zio.h>
 #ifdef __APPLE__
+/* XXX If renamed to sunldi.h, no ifdef required */
 #include <sys/ldi_osx.h>
 #else
 #include <sys/sunldi.h>
-#endif /* __APPLE__ */
+#endif
 
 /*
  * Virtual device vector for disks.
@@ -49,6 +50,7 @@
 #ifdef illumos
 extern ldi_ident_t zfs_li;
 #else
+/* XXX leave extern if declared elsewhere - originally was in zfs_ioctl.c */
 ldi_ident_t zfs_li;
 #endif
 
@@ -66,6 +68,7 @@ vdev_disk_alloc(vdev_t *vd)
 
 	dvd = vd->vdev_tsd = kmem_zalloc(sizeof (vdev_disk_t), KM_SLEEP);
 #ifdef __APPLE__
+/* XXX Only alloc that needs zeroed, all others are properly initialized */
 	bzero(dvd, sizeof (vdev_disk_t));
 #endif
 
@@ -188,17 +191,16 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	vdev_disk_t *dvd = vd->vdev_tsd;
 	ldi_ev_cookie_t ecookie;
 	vdev_disk_ldi_cb_t *lcb;
-#ifdef illumos
 	union {
 		struct dk_minfo_ext ude;
 		struct dk_minfo ud;
 	} dks;
 	struct dk_minfo_ext *dkmext = &dks.ude;
 	struct dk_minfo *dkm = &dks.ud;
-#endif
 	int error;
 	dev_t dev;
 	int otyp;
+/* XXX Apple - must leave devid unchanged */
 #ifdef illumos
 	boolean_t validate_devid = B_FALSE;
 	ddi_devid_t devid;
@@ -253,11 +255,11 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	 * 3. Otherwise, the device may have moved.  Try opening the device
 	 *    by the devid instead.
 	 */
+/*
+ * XXX We must not set or modify the devid as this check would prevent
+ * import on Solaris/illumos.
+ */
 #ifdef illumos
-	/*
-	 * XXX We must not set or modify the devid as this check would prevent
-	 * import on Solaris/illumos.
-	 */
 	if (vd->vdev_devid != NULL) {
 		if (ddi_devid_str_decode(vd->vdev_devid, &dvd->vd_devid,
 		    &dvd->vd_minor) != 0) {
@@ -271,16 +273,16 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 
 	if (vd->vdev_path != NULL) {
 
+/*
+ * XXX This assumes that if vdev_path refers to a device path /dev/dsk/cNtNdN,
+ * then the whole disk can be found by slice 0 at path /dev/dsk/cNtNdNs0.
+ */
+#ifdef illumos
 		if (vd->vdev_wholedisk == -1ULL) {
 			size_t len = strlen(vd->vdev_path) + 3;
 			char *buf = kmem_alloc(len, KM_SLEEP);
 
-#ifdef illumos
 			(void) snprintf(buf, len, "%ss0", vd->vdev_path);
-#else
-			/* On OS X the first partition is labeled s1 */
-			(void) snprintf(buf, len, "%ss1", vd->vdev_path);
-#endif
 
 			error = ldi_open_by_name(buf, spa_mode(spa), kcred,
 			    &dvd->vd_lh, zfs_li);
@@ -292,6 +294,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 				kmem_free(buf, len);
 			}
 		}
+#endif
 
 		/*
 		 * If we have not yet opened the device, try to open it by the
@@ -302,6 +305,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 			    kcred, &dvd->vd_lh, zfs_li);
 		}
 
+/* XXX Apple - must leave devid unchanged */
 #ifdef illumos
 		/*
 		 * Compare the devid to the stored value.
@@ -326,6 +330,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 			vd->vdev_wholedisk = 0;
 	}
 
+/* XXX Apple - must leave devid unchanged */
 #ifdef illumos
 	/*
 	 * If we were unable to open by path, or the devid check fails, open by
@@ -344,10 +349,13 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	 * level vdev validation will prevent us from opening the wrong device.
 	 */
 	if (error) {
+/* XXX Apple - must leave devid unchanged */
 #ifdef illumos
 		if (vd->vdev_devid != NULL)
 			validate_devid = B_TRUE;
+#endif
 
+#ifdef illumos
 		if (vd->vdev_physpath != NULL &&
 		    (dev = ddi_pathname_to_dev_t(vd->vdev_physpath)) != NODEV)
 			error = ldi_open_by_dev(&dev, OTYP_BLK, spa_mode(spa),
@@ -369,11 +377,11 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		return (error);
 	}
 
+/*
+ * XXX Apple - We must not set or modify the devid. Import on Solaris/illumos
+ * expects a valid devid and fails if it cannot be decoded.
+ */
 #ifdef illumos
-	/*
-	 * XXX We must not set or modify the devid as import on Solaris/illumos
-	 * expects a valid devid and fails if it can't be decoded.
-	 */
 	/*
 	 * Now that the device has been successfully opened, update the devid
 	 * if necessary.
@@ -433,6 +441,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		    &vdev_disk_off_callb, (void *) vd, &lcb->lcb_id);
 	}
 
+/* XXX Apple to do - we could support the degrade event, or just no-op */
 #ifdef illumos
 	/*
 	 * Register callbacks for the LDI degrade event.
@@ -445,22 +454,18 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		    &vdev_disk_dgrd_callb, (void *) vd, &lcb->lcb_id);
 	}
 #endif
+
 skip_open:
 	/*
 	 * Determine the actual size of the device.
 	 */
-#ifdef illumos
 	if (ldi_get_size(dvd->vd_lh, psize) != 0) {
-#else
-	if ((error = ldi_get_size(dvd->vd_lh, psize, &pbsize)) != 0) {
-#endif
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 		return (SET_ERROR(EINVAL));
 	}
 
 	*max_psize = *psize;
 
-#ifdef illumos
 	/*
 	 * Determine the device's minimum transfer size.
 	 * If the ioctl isn't supported, assume DEV_BSIZE.
@@ -484,14 +489,25 @@ skip_open:
 		    vd->vdev_path, error);
 		pbsize = DEV_BSIZE;
 	}
-#endif
 
 	*ashift = highbit64(MAX(pbsize, SPA_MINBLOCKSIZE)) - 1;
 
-#ifdef illumos
+/* XXX Now that we opened the device, determine if it is a whole disk. */
+#ifdef __APPLE__
+	/*
+	 * XXX Apple to do - provide an ldi_ mechanism
+	 * to report whether this is a whole disk or a
+	 * partition.
+	 * Return 0 (no), 1 (yes), or -1 (error).
+	 */
+//	vd->vdev_wholedisk = ldi_is_wholedisk(vd->vd_lh);
+#endif
+
 	if (vd->vdev_wholedisk == 1) {
 		int wce = 1;
 
+/* Gets information about the EFI label on disk (if any) */
+#ifdef illumos
 		if (error == 0) {
 			/*
 			 * If we have the capability to expand, we'd have
@@ -504,6 +520,7 @@ skip_open:
 			    "max_psize %llu", vd->vdev_path, *psize,
 			    *max_psize);
 		}
+#endif
 
 		/*
 		 * Since we own the whole disk, try to enable disk write
@@ -512,7 +529,6 @@ skip_open:
 		(void) ldi_ioctl(dvd->vd_lh, DKIOCSETWCE, (intptr_t)&wce,
 		    FKIOCTL, kcred, NULL);
 	}
-#endif
 
 	/*
 	 * Clear the nowritecache bit, so that on a vdev_reopen() we will
@@ -528,19 +544,10 @@ vdev_disk_close(vdev_t *vd)
 {
 	vdev_disk_t *dvd = vd->vdev_tsd;
 
-#ifdef DEBUG
-	if (vd->vdev_reopening || dvd == NULL) {
-		printf("%s vdev_reopening %d with dvd %p\n", __func__,
-		    vd->vdev_reopening, dvd);
-		if (dvd) {
-			printf("dvd->vd_lh %p\n", dvd->vd_lh);
-		}
-	}
-#endif
-
 	if (vd->vdev_reopening || dvd == NULL)
 		return;
 
+/* XXX Apple - must leave devid unchanged */
 #ifdef illumos
 	if (dvd->vd_minor != NULL) {
 		ddi_devid_str_free(dvd->vd_minor);
@@ -585,6 +592,7 @@ vdev_disk_physio(vdev_t *vd, caddr_t data,
 
 	ASSERT(vd->vdev_ops == &vdev_disk_ops);
 
+/* XXX Apple - no equivalent crash dump mechanism on OS X */
 #ifdef illumos
 	/*
 	 * If in the context of an active crash dump, use the ldi_dump(9F)
@@ -606,6 +614,9 @@ vdev_disk_ldi_physio(ldi_handle_t vd_lh, caddr_t data,
 {
 #ifdef illumos
 	buf_t *bp;
+#else
+	ldi_buf_t *bp;
+#endif
 	int error = 0;
 
 	if (vd_lh == NULL)
@@ -622,45 +633,40 @@ vdev_disk_ldi_physio(ldi_handle_t vd_lh, caddr_t data,
 
 	error = ldi_strategy(vd_lh, bp);
 	ASSERT(error == 0);
+
 	if ((error = biowait(bp)) == 0 && bp->b_resid != 0)
 		error = SET_ERROR(EIO);
 	freerbuf(bp);
 
 	return (error);
-#endif
-	return (EINVAL);
 }
 
+#ifdef illumos
 static void
-vdev_disk_io_intr(ldi_buf_t *bp, void *arg)
+vdev_disk_io_intr(buf_t *bp)
+#else
+static void
+vdev_disk_io_intr(ldi_buf_t *bp)
+#endif
 {
-	zio_t *zio = (zio_t *)arg;
+	vdev_buf_t *vb = (vdev_buf_t *)bp;
+	zio_t *zio = vb->vb_io;
 
 	/*
 	 * The rest of the zio stack only deals with EIO, ECKSUM, and ENXIO.
 	 * Rather than teach the rest of the stack about other error
 	 * possibilities (EFAULT, etc), we normalize the error value here.
 	 */
-	zio->io_error = (bp->b_error != 0 ? EIO : 0);
+	zio->io_error = (geterror(bp) != 0 ? EIO : 0);
 
-	if (zio->io_error == 0 && bp->b_resid != 0) {
-		zio->io_error = EIO;
-	}
+	if (zio->io_error == 0 && bp->b_resid != 0)
+		zio->io_error = SET_ERROR(EIO);
 
-#ifdef DEBUG
-	if (bp->b_error) {
-		printf("%s IO error %d, resid %llx\n",
-		    __func__, bp->b_error, bp->b_resid);
-	}
-#endif
-
-	ldi_biofini(bp);
-	kmem_free(bp, sizeof (ldi_buf_t));
+	kmem_free(vb, sizeof (vdev_buf_t));
 
 	zio_interrupt(zio);
 }
 
-#ifdef illumos
 static void
 vdev_disk_ioctl_free(zio_t *zio)
 {
@@ -671,7 +677,6 @@ static const zio_vsd_ops_t vdev_disk_vsd_ops = {
 	vdev_disk_ioctl_free,
 	zio_vsd_default_cksum_report
 };
-#endif
 
 static void
 vdev_disk_ioctl_done(void *zio_arg, int error)
@@ -688,7 +693,13 @@ vdev_disk_io_start(zio_t *zio)
 {
 	vdev_t *vd = zio->io_vd;
 	vdev_disk_t *dvd = vd->vdev_tsd;
+	vdev_buf_t *vb;
+	struct dk_callback *dkc;
+#ifdef illumos
+	buf_t *bp;
+#else
 	ldi_buf_t *bp = 0;
+#endif
 	int flags, error = 0;
 
 	/*
@@ -721,19 +732,15 @@ vdev_disk_io_start(zio_t *zio)
 				break;
 			}
 
-			/* XXX Add async callback, perhaps ldi_ioctl */
-			ldi_sync(dvd->vd_lh);
+			zio->io_vsd = dkc = kmem_alloc(sizeof (*dkc), KM_SLEEP);
+			zio->io_vsd_ops = &vdev_disk_vsd_ops;
 
-			if (error == 0) {
-				/* This will call zio_interrupt */
-				vdev_disk_ioctl_done(zio, error);
-				return;
-			} else {
-#ifdef DEBUG
-				printf("%s zio_ioctl error %d\n", __func__, error);
-#endif
-				error = ENOTSUP;
-			}
+			dkc->dkc_callback = vdev_disk_ioctl_done;
+			dkc->dkc_flag = FLUSH_VOLATILE;
+			dkc->dkc_cookie = zio;
+
+			error = ldi_ioctl(dvd->vd_lh, zio->io_cmd,
+			    (uintptr_t)dkc, FKIOCTL, kcred, NULL);
 
 			if (error == 0) {
 				/*
@@ -742,7 +749,9 @@ vdev_disk_io_start(zio_t *zio)
 				 * upon completion.
 				 */
 				return;
-			} else if (error == ENOTSUP || error == ENOTTY) {
+			}
+
+			if (error == ENOTSUP || error == ENOTTY) {
 				/*
 				 * If we get ENOTSUP or ENOTTY, we know that
 				 * no future attempts will ever succeed.
@@ -783,36 +792,36 @@ vdev_disk_io_start(zio_t *zio)
 		return;
 	} /* io_type */
 
-	bp = kmem_alloc(sizeof (ldi_buf_t), KM_SLEEP);
+	vb = kmem_alloc(sizeof (vdev_buf_t), KM_SLEEP);
 
-	if (!bp || error != 0) {
-		printf("%s bioinit error %d\n", __func__, error);
-		zio->io_error = ENOMEM;
-		zio_interrupt(zio);
-		return;
-	}
+	vb->vb_io = zio;
+	bp = &vb->vb_buf;
 
-	ldi_bioinit(dvd->vd_lh, bp);
+	bioinit(bp);
 	bp->b_flags = B_BUSY | B_NOCACHE | flags;
 	if (!(zio->io_flags & (ZIO_FLAG_IO_RETRY | ZIO_FLAG_TRYHARD)))
 		bp->b_flags |= B_FAILFAST;
 	bp->b_bcount = zio->io_size;
-	bp->b_data = zio->io_data;
-	bp->b_offset = zio->io_offset;
+	bp->b_un.b_addr = zio->io_data;
+	bp->b_lblkno = lbtodb(zio->io_offset);
 	bp->b_bufsize = zio->io_size;
 	bp->b_iodone = (int (*)())vdev_disk_io_intr;
-	bp->b_iodoneparam = (void *)zio;
+
+#ifdef illumos
+	/* ldi_strategy() will return non-zero only on programming errors */
+	VERIFY(ldi_strategy(dvd->vd_lh, bp) == 0);
+#else /* !illumos */
 
 	error = ldi_strategy(dvd->vd_lh, bp);
-
-	if (error) {
-#ifdef DEBUG
-		printf("%s ldi_strategy error %d\n", __func__, error);
-#endif
-		zio->io_error = error;
-		zio_interrupt(zio);
-		return;
+	if (error != 0) {
+		dprintf("%s error from ldi_strategy %d\n", __func__, error);
+		zio->io_error = EIO;
+		kmem_free(vb, sizeof (vdev_buf_t));
+		zio_execute(zio);
+		// zio_interrupt(zio);
 	}
+#endif /* !illumos */
+
 }
 
 static void
@@ -827,13 +836,6 @@ vdev_disk_io_done(zio_t *zio)
 	 * make sure it's still accessible.
 	 */
 	if (zio->io_error == EIO && !vd->vdev_remove_wanted) {
-#ifdef __APPLE__
-		/*
-		 * handle device removal via media termination - read errors etc
-		 * should be retried by zio
-		 */
-		return;
-#else
 		vdev_disk_t *dvd = vd->vdev_tsd;
 		int state = DKIO_NONE;
 
@@ -851,7 +853,6 @@ vdev_disk_io_done(zio_t *zio)
 		} else if (!vd->vdev_delayed_close) {
 			vd->vdev_delayed_close = B_TRUE;
 		}
-#endif
 	}
 }
 
@@ -872,19 +873,10 @@ vdev_ops_t vdev_disk_ops = {
  * Given the root disk device devid or pathname, read the label from
  * the device, and construct a configuration nvlist.
  */
-#ifdef illumos
 int
 vdev_disk_read_rootlabel(char *devpath, char *devid, nvlist_t **config)
-#else
-int
-vdev_disk_read_rootlabel(char *devpath, __unused char *devid, nvlist_t **config)
-#endif
 {
-#ifdef illumos
 	ldi_handle_t vd_lh;
-#else
-	ldi_handle_t vd_lh = 0;
-#endif
 	vdev_label_t *label;
 	uint64_t s, size;
 	int l;
@@ -899,6 +891,7 @@ vdev_disk_read_rootlabel(char *devpath, __unused char *devid, nvlist_t **config)
 	/*
 	 * Read the device label and build the nvlist.
 	 */
+/* XXX Apple - no devid */
 #ifdef illumos
 	if (devid != NULL && ddi_devid_str_decode(devid, &tmpdevid,
 	    &minor_name) == 0) {
@@ -909,22 +902,19 @@ vdev_disk_read_rootlabel(char *devpath, __unused char *devid, nvlist_t **config)
 	}
 #endif
 
+#ifdef __APPLE__
 	/* Apple: Error will be -1 at this point, allowing open_by_name */
+	error = -1;
+	vd_lh = 0;	/* Dismiss compiler warning */
+#endif
 	if (error && (error = ldi_open_by_name(devpath, FREAD, kcred, &vd_lh,
 	    zfs_li)))
 		return (error);
 
-#ifdef illumos
 	if (ldi_get_size(vd_lh, &s)) {
 		(void) ldi_close(vd_lh, FREAD, kcred);
 		return (SET_ERROR(EIO));
 	}
-#else
-	if (ldi_get_size(vd_lh, &s, NULL)) {
-		(void) ldi_close(vd_lh, FREAD, kcred);
-		return (SET_ERROR(EIO));
-	}
-#endif
 
 	size = P2ALIGN_TYPED(s, sizeof (vdev_label_t), uint64_t);
 	label = kmem_alloc(sizeof (vdev_label_t), KM_SLEEP);

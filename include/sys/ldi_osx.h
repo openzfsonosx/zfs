@@ -82,21 +82,60 @@ typedef struct ldi_ev_callback {
 	    void *, void *);
 } ldi_ev_callback_t;
 
+/* Structs passed to media_get_info */
+struct dk_minfo {
+	uint32_t		dki_capacity;	/* Logical block count */
+	uint32_t		dki_lbsize;	/* Logical block size */
+};	/* (8b) */
+
+struct dk_minfo_ext {
+	uint64_t		dki_capacity;	/* Logical block count */
+	uint32_t		dki_lbsize;	/* Logical block size */
+	uint32_t		dki_pbsize;	/* Physical block size */
+};	/* (16b) */
+
+/*
+ * XXX This struct is defined in spl but was unused until now.
+ * There is a reference in zvol.c zvol_ioctl, commented out.
+ */
+#if 0
+struct dk_callback {
+	void (*dkc_callback)(void *dkc_cookie, int error);
+	void *dkc_cookie;
+	int dkc_flag;
+};	/* XXX Currently 20b */
+#endif
+
+/* XXX Already defined in spl dkio.h (used elsewhere) */
+#if 0
+#define	DKIOCFLUSHWRITECACHE	(DKIOC | 34)
+#endif
+
+#define	FLUSH_VOLATILE		0x1
+#define	DKIOCSTATE		(DKIOC | 13)
+#define	DKIOCSETWCE		(DKIOC | 37)
+#define	DKIOCGMEDIAINFO		(DKIOC | 42)
+#define	DKIOCGMEDIAINFOEXT	(DKIOC | 48)
+
+/*
+ * This state enum is the argument passed to the DKIOCSTATE ioctl.
+ */
+enum dkio_state { DKIO_NONE, DKIO_EJECTED, DKIO_INSERTED, DKIO_DEV_GONE };
+
 /*
  * LDI Handle manipulation functions
  */
-int ldi_open_by_dev(dev_t, int, cred_t *, ldi_handle_t *);
-int ldi_open_by_name(char *, int, cred_t *, ldi_handle_t *,
-    __unused ldi_ident_t);
+int ldi_open_by_dev(dev_t, int, int, cred_t *,
+    ldi_handle_t *, __unused ldi_ident_t);
+int ldi_open_by_name(char *, int, cred_t *,
+    ldi_handle_t *, __unused ldi_ident_t);
+
 int ldi_close(ldi_handle_t, int, cred_t *);
 
-int ldi_get_size(ldi_handle_t, uint64_t *, uint64_t *);
 int ldi_sync(ldi_handle_t);
+int ldi_get_size(ldi_handle_t, uint64_t *);
+int ldi_ioctl(ldi_handle_t, int, intptr_t, int, cred_t *, int *);
 int ldi_strategy(ldi_handle_t, ldi_buf_t *);
-
-int ldi_bioinit(ldi_handle_t, ldi_buf_t *);
-int ldi_bioinit_iokit(ldi_buf_t *);
-void ldi_biofini(ldi_buf_t *);
 
 /*
  * LDI events related declarations

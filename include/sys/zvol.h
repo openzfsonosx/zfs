@@ -36,13 +36,6 @@ extern "C" {
 #define	ZVOL_OBJ	1ULL
 #define	ZVOL_ZAP_OBJ	2ULL
 
-/* calculates (bytes / DEV_BSIZE) */
-#define	lbtodb(bytes) \
-	((unsigned long long)(bytes) >> DEV_BSHIFT)
-/* calculates (db * DEV_BSIZE) */
-#define	ldbtob(db) \
-	((unsigned long long)(db) << DEV_BSHIFT)
-
 #ifdef _KERNEL
 
 /*
