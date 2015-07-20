@@ -658,6 +658,7 @@ ldi_iokit_io_intr(void *target, void *parameter,
 	ldi_iokit_buf_t *iobp = (ldi_iokit_buf_t *)target;
 	ldi_buf_t *lbp = (ldi_buf_t *)parameter;
 
+#ifdef DEBUG
 	/* In debug builds, verify buffer pointers */
 	ASSERT3U(lbp, !=, 0);
 	ASSERT3U(iobp, !=, 0);
@@ -676,6 +677,7 @@ ldi_iokit_io_intr(void *target, void *parameter,
 		dprintf("%s missing a buffer\n", __func__);
 		return;
 	}
+#endif
 
 	/* Complete and release IOMemoryDescriptor */
 	iobp->iomem->complete();
