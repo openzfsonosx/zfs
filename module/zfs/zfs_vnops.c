@@ -1192,6 +1192,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 #ifdef __APPLE__
 		if (!xuio && n > 0)
 			zfs_prefault_write(MIN(n, max_blksz), uio);
+
+		atomic_inc_64(&zp->z_write_gencount);
+
 #endif	/* sun */
 
 
