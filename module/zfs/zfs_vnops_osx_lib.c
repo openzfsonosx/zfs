@@ -177,8 +177,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
-
-
+	if (zp->z_unlinked) {
+		printf("ZFS: getattr for unlinked!\n");
+		ZFS_EXIT(zfsvfs);
+		return ENOENT;
+	}
 
 	if (VATTR_IS_ACTIVE(vap, va_acl)) {
         //printf("want acl\n");
@@ -199,9 +202,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
     }
 
-
-
     mutex_enter(&zp->z_lock);
+
 	/*
 	 * On Mac OS X we always export the root directory id as 2
 	 */
