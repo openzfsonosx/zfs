@@ -30,6 +30,7 @@
 #include <sys/spa.h>
 #include <sys/vdev_disk.h>
 #include <sys/vdev_impl.h>
+#include <sys/vdev_trim.h>
 #include <sys/abd.h>
 #include <sys/fs/zfs.h>
 #include <sys/zio.h>
@@ -554,6 +555,7 @@ skip_open:
 	    FKIOCTL, kcred, NULL) == 0) {
 		vd->vdev_nonrot = (isssd ? B_TRUE : B_FALSE);
 	}
+	vd->vdev_trim = B_TRUE;
 #endif //__APPLE__
 
 	return (0);
@@ -824,6 +826,13 @@ vdev_disk_io_start(zio_t *zio)
 		else
 			flags = B_READ | B_ASYNC;
 		break;
+
+	case ZIO_TYPE_TRIM:
+		zio->io_error = -blkdev_issue_discard(vd->vd_bdev,
+		    zio->io_offset >> 9, zio->io_size >> 9, GFP_NOFS, 0);
+		rw_exit(&vd->vd_lock);
+		zio_interrupt(zio);
+		return;
 
 	default:
 		zio->io_error = SET_ERROR(ENOTSUP);

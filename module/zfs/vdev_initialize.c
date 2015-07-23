@@ -533,9 +533,8 @@ vdev_initialize_load(vdev_t *vd)
 	vdev_initialize_calculate_progress(vd);
 }
 
-
 /*
- * Convert the logical range into a physcial range and add it to our
+ * Convert the logical range into a physical range and add it to our
  * avl tree.
  */
 void

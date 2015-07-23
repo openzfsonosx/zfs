@@ -158,6 +158,8 @@ uint32_t zfs_vdev_removal_min_active = 1;
 uint32_t zfs_vdev_removal_max_active = 2;
 uint32_t zfs_vdev_initializing_min_active = 1;
 uint32_t zfs_vdev_initializing_max_active = 1;
+uint32_t zfs_vdev_trim_min_active = 1;
+uint32_t zfs_vdev_trim_max_active = 10;
 
 /*
  * When the pool has less than zfs_vdev_async_write_active_min_dirty_percent
@@ -233,11 +235,13 @@ vdev_queue_class_tree(vdev_queue_t *vq, zio_priority_t p)
 static inline avl_tree_t *
 vdev_queue_type_tree(vdev_queue_t *vq, zio_type_t t)
 {
-	ASSERT(t == ZIO_TYPE_READ || t == ZIO_TYPE_WRITE);
+	ASSERT(t == ZIO_TYPE_READ || t == ZIO_TYPE_WRITE || t == ZIO_TYPE_TRIM);
 	if (t == ZIO_TYPE_READ)
 		return (&vq->vq_read_offset_tree);
-	else
+	else if (t == ZIO_TYPE_WRITE)
 		return (&vq->vq_write_offset_tree);
+	else
+		return (&vq->vq_trim_offset_tree);
 }
 
 int
@@ -277,6 +281,9 @@ vdev_queue_class_min_active(zio_priority_t p)
 		return (zfs_vdev_removal_min_active);
 	case ZIO_PRIORITY_INITIALIZING:
 		return (zfs_vdev_initializing_min_active);
+	case ZIO_PRIORITY_TRIM:
+	case ZIO_PRIORITY_AUTOTRIM:
+		return (zfs_vdev_trim_min_active);
 	default:
 		panic("invalid priority %u", p);
 		return (0);
@@ -340,6 +347,9 @@ vdev_queue_class_max_active(spa_t *spa, zio_priority_t p)
 		return (zfs_vdev_removal_max_active);
 	case ZIO_PRIORITY_INITIALIZING:
 		return (zfs_vdev_initializing_max_active);
+	case ZIO_PRIORITY_TRIM:
+	case ZIO_PRIORITY_AUTOTRIM:
+		return (zfs_vdev_trim_max_active);
 	default:
 		panic("invalid priority %u", p);
 		return (0);
@@ -398,21 +408,28 @@ vdev_queue_init(vdev_t *vd)
 		vdev_queue_offset_compare, sizeof (zio_t),
 		offsetof(struct zio, io_offset_node));
 	avl_create(vdev_queue_type_tree(vq, ZIO_TYPE_WRITE),
-		vdev_queue_offset_compare, sizeof (zio_t),
-		offsetof(struct zio, io_offset_node));
+	    vdev_queue_offset_compare, sizeof (zio_t),
+	    offsetof(struct zio, io_offset_node));
+	avl_create(vdev_queue_type_tree(vq, ZIO_TYPE_TRIM),
+	    vdev_queue_offset_compare, sizeof (zio_t),
+	    offsetof(struct zio, io_offset_node));
 
 	for (p = 0; p < ZIO_PRIORITY_NUM_QUEUEABLE; p++) {
 		int (*compfn) (const void *, const void *);
 
 		/*
-		 * The synchronous i/o queues are dispatched in FIFO rather
+		 * The synchronous/trim i/o queues are dispatched in FIFO rather
 		 * than LBA order. This provides more consistent latency for
 		 * these i/os.
 		 */
-		if (p == ZIO_PRIORITY_SYNC_READ || p == ZIO_PRIORITY_SYNC_WRITE)
+		if (p == ZIO_PRIORITY_SYNC_READ ||
+		    p == ZIO_PRIORITY_SYNC_WRITE ||
+		    p == ZIO_PRIORITY_TRIM ||
+		    p == ZIO_PRIORITY_AUTOTRIM) {
 			compfn = vdev_queue_timestamp_compare;
-		else
+		} else {
 			compfn = vdev_queue_offset_compare;
+		}
 		avl_create(vdev_queue_class_tree(vq, p), compfn,
 			sizeof (zio_t), offsetof(struct zio, io_queue_node));
 	}
@@ -431,6 +448,7 @@ vdev_queue_fini(vdev_t *vd)
 	avl_destroy(&vq->vq_active_tree);
 	avl_destroy(vdev_queue_type_tree(vq, ZIO_TYPE_READ));
 	avl_destroy(vdev_queue_type_tree(vq, ZIO_TYPE_WRITE));
+	avl_destroy(vdev_queue_type_tree(vq, ZIO_TYPE_TRIM));
 
 	mutex_destroy(&vq->vq_lock);
 }
@@ -574,6 +592,13 @@ vdev_queue_aggregate(vdev_queue_t *vq, zio_t *zio)
 	 */
 	zfs_vdev_aggregation_limit =
 	    MIN(zfs_vdev_aggregation_limit, SPA_MAXBLOCKSIZE);
+
+	/*
+	 * While TRIM commands could be aggregated based on offset this
+	 * behavior is disable until it's determined to be beneficial.
+	 */
+	if (zio->io_type == ZIO_TYPE_TRIM)
+		return (NULL);
 
 	first = last = zio;
 
@@ -743,7 +768,7 @@ again:
 	 * For LBA-ordered queues (async / scrub / initializing), issue the
 	 * i/o which follows the most recently issued i/o in LBA (offset) order.
 	 *
-	 * For FIFO queues (sync), issue the i/o with the lowest timestamp.
+	 * For FIFO queues (sync/trim), issue the i/o with the lowest timestamp.
 	 */
 	tree = vdev_queue_class_tree(vq, p);
 	vq->vq_io_search.io_timestamp = 0;
@@ -799,15 +824,22 @@ vdev_queue_io(zio_t *zio)
 		    zio->io_priority != ZIO_PRIORITY_ASYNC_READ &&
 		    zio->io_priority != ZIO_PRIORITY_SCRUB &&
 		    zio->io_priority != ZIO_PRIORITY_REMOVAL &&
-		    zio->io_priority != ZIO_PRIORITY_INITIALIZING)
+		    zio->io_priority != ZIO_PRIORITY_INITIALIZING &&
+		    zio->io_priority != ZIO_PRIORITY_TRIM &&
+		    zio->io_priority != ZIO_PRIORITY_AUTOTRIM)
 			zio->io_priority = ZIO_PRIORITY_ASYNC_READ;
-	} else {
-		ASSERT(zio->io_type == ZIO_TYPE_WRITE);
+	} else if (zio->io_type == ZIO_TYPE_WRITE) {
 		if (zio->io_priority != ZIO_PRIORITY_SYNC_WRITE &&
 		    zio->io_priority != ZIO_PRIORITY_ASYNC_WRITE &&
 		    zio->io_priority != ZIO_PRIORITY_REMOVAL &&
-		    zio->io_priority != ZIO_PRIORITY_INITIALIZING)
+		    zio->io_priority != ZIO_PRIORITY_INITIALIZING &&
+		    zio->io_priority != ZIO_PRIORITY_TRIM &&
+		    zio->io_priority != ZIO_PRIORITY_AUTOTRIM)
 			zio->io_priority = ZIO_PRIORITY_ASYNC_WRITE;
+	} else {
+		ASSERT(zio->io_type == ZIO_TYPE_TRIM);
+		ASSERT(zio->io_priority == ZIO_PRIORITY_TRIM ||
+		    zio->io_priority == ZIO_PRIORITY_AUTOTRIM);
 	}
 
 	zio->io_flags |= ZIO_FLAG_DONT_CACHE | ZIO_FLAG_DONT_QUEUE;

@@ -46,6 +46,8 @@
 #include <sys/abd.h>
 #include <inttypes.h>
 #include <sys/vdev_initialize.h>
+#include <sys/vdev_trim.h>
+#include <sys/trace_vdev.h>
 
 /*
  * This file contains the necessary logic to remove vdevs from a
@@ -1151,6 +1153,8 @@ vdev_remove_complete(spa_t *spa)
 	txg = spa_vdev_enter(spa);
 	vdev_t *vd = vdev_lookup_top(spa, spa->spa_vdev_removal->svr_vdev_id);
 	ASSERT3P(vd->vdev_initialize_thread, ==, NULL);
+	ASSERT3P(vd->vdev_trim_thread, ==, NULL);
+	ASSERT3P(vd->vdev_autotrim_thread, ==, NULL);
 
 	sysevent_t *ev = spa_event_create(spa, vd, NULL,
 	    ESC_ZFS_VDEV_REMOVE_DEV);
@@ -1828,8 +1832,15 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 	/* Make sure these changes are sync'ed */
 	spa_vdev_config_exit(spa, NULL, *txg, 0, FTAG);
 
+<<<<<<< HEAD
 	/* Stop initializing */
 	vdev_initialize_stop_all(vd, VDEV_INITIALIZE_CANCELED);
+=======
+	/* Stop initializing and TRIM */
+	vdev_initialize_stop_all(vd, VDEV_INITIALIZE_CANCELED);
+	vdev_trim_stop_all(vd, VDEV_TRIM_CANCELED);
+	vdev_autotrim_stop_wait(vd);
+>>>>>>> c0650da42e... Add UNMAP/TRIM functionality to ZFS [WIP]
 
 	*txg = spa_vdev_config_enter(spa);
 
@@ -2008,11 +2019,13 @@ spa_vdev_remove_top(vdev_t *vd, uint64_t *txg)
 	error = spa_reset_logs(spa);
 
 	/*
-	 * We stop any initializing that is currently in progress but leave
-	 * the state as "active". This will allow the initializing to resume
-	 * if the removal is canceled sometime later.
+	 * We stop any initializing and TRIM that is currently in progress
+	 * but leave the state as "active". This will allow the process to
+	 * resume if the removal is canceled sometime later.
 	 */
 	vdev_initialize_stop_all(vd, VDEV_INITIALIZE_ACTIVE);
+	vdev_trim_stop_all(vd, VDEV_TRIM_ACTIVE);
+	vdev_autotrim_stop_wait(vd);
 
 	*txg = spa_vdev_config_enter(spa);
 
@@ -2026,6 +2039,8 @@ spa_vdev_remove_top(vdev_t *vd, uint64_t *txg)
 	if (error != 0) {
 		metaslab_group_activate(mg);
 		spa_async_request(spa, SPA_ASYNC_INITIALIZE_RESTART);
+		spa_async_request(spa, SPA_ASYNC_TRIM_RESTART);
+		spa_async_request(spa, SPA_ASYNC_AUTOTRIM);
 		return (error);
 	}
 

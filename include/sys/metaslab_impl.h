@@ -69,7 +69,8 @@ typedef enum trace_alloc_type {
 	TRACE_ENOSPC		= -6ULL,
 	TRACE_CONDENSING	= -7ULL,
 	TRACE_VDEV_ERROR	= -8ULL,
-	TRACE_INITIALIZING	= -9ULL
+	TRACE_INITIALIZING	= -9ULL,
+	TRACE_TRIMMING		= -10ULL,
 } trace_alloc_type_t;
 
 #define	METASLAB_WEIGHT_PRIMARY		(1ULL << 63)
@@ -277,6 +278,11 @@ struct metaslab_group {
 	boolean_t		mg_initialize_updating;
 	kmutex_t		mg_ms_initialize_lock;
 	kcondvar_t		mg_ms_initialize_cv;
+
+	int			mg_ms_trimming;
+	boolean_t		mg_trim_updating;
+	kmutex_t		mg_ms_trim_lock;
+	kcondvar_t		mg_ms_trim_cv;
 };
 
 /*
@@ -362,12 +368,14 @@ struct metaslab {
 	range_tree_t	*ms_freed;	/* already freed this syncing txg */
 	range_tree_t	*ms_defer[TXG_DEFER_SIZE];
 	range_tree_t	*ms_checkpointing; /* to add to the checkpoint */
+	range_tree_t	*ms_trim;	/* to be auto trimmed */
 
 	boolean_t	ms_condensing;	/* condensing? */
 	boolean_t	ms_condense_wanted;
 	uint64_t	ms_condense_checked_txg;
 
 	uint64_t	ms_initializing; /* leaves initializing this ms */
+	uint64_t	ms_trimming;	/* leaves trimming this ms */
 
 	/*
 	 * We must hold both ms_lock and ms_group->mg_lock in order to

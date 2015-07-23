@@ -13,7 +13,7 @@
 .\" CDDL HEADER, with the fields enclosed by brackets "[]" replaced with your
 .\" own identifying information:
 .\" Portions Copyright [yyyy] [name of copyright owner]
-.TH ZFS-MODULE-PARAMETERS 5 "Oct 28, 2017"
+.TH ZFS-MODULE-PARAMETERS 5 "Feb 15, 2019"
 .SH NAME
 zfs\-module\-parameters \- ZFS module parameters
 .SH DESCRIPTION
@@ -1080,6 +1080,18 @@ _
 _
 128	ZFS_DEBUG_HISTOGRAM_VERIFY
 	Enable extra spacemap histogram verifications.
+_
+256	ZFS_DEBUG_METASLAB_VERIFY
+	Verify space accounting on disk matches in-core range_trees.
+_
+512	ZFS_DEBUG_SET_ERROR
+	Enable SET_ERROR and dprintf entries in the debug log.
+_
+1024	ZFS_DEBUG_INDIRECT_REMAP
+	Verify split blocks created by device removal.
+_
+2048	ZFS_DEBUG_TRIM
+	Verify TRIM ranges are always within the allocatable range tree.
 .TE
 .sp
 * Requires debug build.
@@ -1624,6 +1636,66 @@ This controls the number of threads used by the dp_sync_taskq.  The default
 value of 75% will create a maximum of one thread per cpu.
 .sp
 Default value: \fB75\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_trim_extent_bytes_max\fR (unsigned int)
+.ad
+.RS 12n
+Maximum size of TRIM command.  Ranges larger than this will be split in to
+chunks no larger than \fBzfs_trim_extent_bytes_max\fR bytes before being
+issued to the device.
+.sp
+Default value: \fB134,217,728\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_trim_extent_bytes_min\fR (unsigned int)
+.ad
+.RS 12n
+Minimum size of TRIM commands.  TRIM ranges smaller than this will be skipped
+unless they're part of a larger range which was broken in to chunks.  This is
+done because it's common for these small TRIMs to negatively impact overall
+performance.  This value can be set to 0 to TRIM all unallocated space.
+.sp
+Default value: \fB32,768\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_trim_queue_limit\fR (unsigned int)
+.ad
+.RS 12n
+Maximum number of queued TRIMs outstanding per leaf vdev.  The number of
+concurrent TRIM commands issued to the device is controlled by the
+\fBzfs_vdev_trim_min_active\fR and \fBzfs_vdev_trim_max_active\fR module
+options.
+.sp
+Default value: \fB10\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_trim_txg_batch\fR (unsigned int)
+.ad
+.RS 12n
+The number of transaction groups worth of frees which should be aggregated
+before TRIM operations are issued to the device.  This setting represents a
+trade-off between issuing larger, more efficient TRIM operations and the
+delay before the recently trimmed space is available for use by the device.
+.sp
+Increasing this value will allow frees to be aggregated for a longer time.
+This will result is larger TRIM operations and potentially increased memory
+usage.  Decreasing this value will have the opposite effect.  The default
+value of 32 was determined to be a reasonable compromise.
+.sp
+Default value: \fB32\fR.
 .RE
 
 .sp

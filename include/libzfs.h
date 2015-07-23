@@ -175,6 +175,9 @@ typedef enum zfs_error {
 	EZFS_NO_INITIALIZE,	/* no active initialize */
 	EZFS_ACTIVE_POOL,	/* pool is imported on a different system */
 	EZFS_IOC_NOTSUPPORTED,	/* operation not supported by zfs module */
+	EZFS_TRIMMING,		/* currently trimming */
+	EZFS_NO_TRIM,		/* no active trim */
+	EZFS_TRIM_NOTSUP,	/* device does not support trim */
 	EZFS_UNKNOWN
 } zfs_error_t;
 
@@ -297,6 +300,9 @@ typedef struct splitflags {
 extern int zpool_scan(zpool_handle_t *, pool_scan_func_t, pool_scrub_cmd_t);
 extern int zpool_initialize(zpool_handle_t *, pool_initialize_func_t,
     nvlist_t *);
+extern int zpool_trim(zpool_handle_t *, pool_trim_func_t, nvlist_t *,
+    uint64_t, boolean_t);
+
 extern int zpool_clear(zpool_handle_t *, const char *, nvlist_t *);
 extern int zpool_reguid(zpool_handle_t *);
 extern int zpool_reopen_one(zpool_handle_t *, void *);

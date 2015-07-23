@@ -593,6 +593,8 @@ typedef enum zfs_ioc {
 	ZFS_IOC_CHANNEL_PROGRAM,
 	ZFS_IOC_POOL_SYNC,
 
+	ZFS_IOC_POOL_TRIM,
+
 	/*
 	 * Linux - 3/64 numbers reserved.
 	 */
