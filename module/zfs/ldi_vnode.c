@@ -908,3 +908,128 @@ handle_is_solidstate_vnode(struct ldi_handle *lhp, int *isssd)
 
 	return (error);
 }
+
+int
+handle_features_vnode(struct ldi_handle *lhp,
+    uint32_t *features)
+{
+	vfs_context_t context;
+	int error;
+
+#ifdef DEBUG
+	if (lhp->lh_status != LDI_STATUS_ONLINE) {
+		dprintf("%s handle is not Online\n", __func__);
+		return (ENODEV);
+	}
+
+	/* Validate vnode */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
+		return (ENODEV);
+	}
+#endif
+
+	/* Allocate and validate context */
+	context = vfs_context_create(spl_vfs_context_kernel());
+	if (!context) {
+		dprintf("%s couldn't create VFS context\n", __func__);
+		return (0);
+	}
+
+	/* Take an iocount on devvp vnode. */
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
+		dprintf("%s vnode_getwithref error %d\n",
+		    __func__, error);
+		vfs_context_rele(context);
+		return (ENODEV);
+	}
+
+	/* All code paths from here must vnode_put. */
+
+	error = VNOP_IOCTL(LH_VNODE(lhp), DKIOCGETFEATURES,
+	    (caddr_t)features, 0, context);
+
+	if (error) {
+		printf("%s: 0x%x\n", __func__, error);
+	}
+
+	/* Release iocount on vnode (still has usecount) */
+	vnode_put(LH_VNODE(lhp));
+	/* Drop vfs_context */
+	vfs_context_rele(context);
+
+	return (error);
+}
+
+int
+handle_unmap_vnode(struct ldi_handle *lhp,
+    dkioc_free_list_ext_t *dkm)
+{
+	vfs_context_t context;
+	int error;
+
+#ifdef DEBUG
+	if (!lhp || !dkm) {
+		dprintf("%s missing lhp or dkm\n", __func__);
+		return (EINVAL);
+	}
+	if (lhp->lh_status != LDI_STATUS_ONLINE) {
+		dprintf("%s handle is not Online\n", __func__);
+		return (ENODEV);
+	}
+
+	/* Validate vnode */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
+		return (ENODEV);
+	}
+#endif
+
+	/* Allocate and validate context */
+	context = vfs_context_create(spl_vfs_context_kernel());
+	if (!context) {
+		dprintf("%s couldn't create VFS context\n", __func__);
+		return (0);
+	}
+
+	/* Take an iocount on devvp vnode. */
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
+		dprintf("%s vnode_getwithref error %d\n",
+		    __func__, error);
+		vfs_context_rele(context);
+		return (ENODEV);
+	}
+	/* All code paths from here must vnode_put. */
+
+	/* We need to convert illumos' dkioc_free_list_t to dk_unmap_t */
+	/* We only support 1 entry now */
+	dk_unmap_t dkun = { 0 };
+	dk_extent_t ext;
+	dkun.extentsCount = 1;
+	dkun.extents = &ext;
+	ext.offset = dkm->dfle_start;
+	ext.length = dkm->dfle_length;
+
+	/* dkm->dfl_flags vs dkun.options
+	 * #define DF_WAIT_SYNC 0x00000001 / * Wait for full write-out of free. * /
+	 * #define _DK_UNMAP_INITIALIZE    0x00000100
+	 */
+
+	/* issue unmap */
+	error = VNOP_IOCTL(LH_VNODE(lhp), DKIOCUNMAP,
+	    (caddr_t)&dkun, 0, context);
+
+	if (error) {
+		dprintf("%s unmap: 0x%x for off %llx size %llx\n", __func__, error,
+			ext.offset, ext.length);
+	}
+
+	/* Release iocount on vnode (still has usecount) */
+	vnode_put(LH_VNODE(lhp));
+	/* Drop vfs_context */
+	vfs_context_rele(context);
+
+	return (error);
+}

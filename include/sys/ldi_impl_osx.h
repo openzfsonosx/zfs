@@ -41,6 +41,8 @@
 #define	_SYS_LDI_IMPL_OSX_H
 
 #include <sys/ldi_osx.h>
+#include <sys/disk.h>
+#include <sys/dkio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -139,6 +141,10 @@ int ldi_open_media_by_dev(dev_t, int, ldi_handle_t *);
 int ldi_open_media_by_path(char *, int, ldi_handle_t *);
 int handle_get_bootinfo_iokit(struct ldi_handle *,
     struct io_bootinfo *);
+int handle_features_iokit(struct ldi_handle *,
+    uint32_t *);
+int handle_unmap_iokit(struct ldi_handle *,
+    dkioc_free_list_ext_t *);
 
 /* Handle vnode functions */
 dev_t dev_from_path(char *);
@@ -159,6 +165,10 @@ int buf_strategy_vnode(ldi_buf_t *, struct ldi_handle *);
 int ldi_open_vnode_by_path(char *, dev_t, int, ldi_handle_t *);
 int handle_get_bootinfo_vnode(struct ldi_handle *,
     struct io_bootinfo *);
+int handle_features_vnode(struct ldi_handle *,
+    uint32_t *);
+int handle_unmap_vnode(struct ldi_handle *,
+    dkioc_free_list_ext_t *);
 
 /*
  * LDI event information

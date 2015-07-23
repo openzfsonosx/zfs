@@ -30,6 +30,7 @@
 #include <sys/spa.h>
 #include <sys/vdev_disk.h>
 #include <sys/vdev_impl.h>
+#include <sys/vdev_trim.h>
 #include <sys/abd.h>
 #include <sys/fs/zfs.h>
 #include <sys/zio.h>
@@ -554,6 +555,20 @@ skip_open:
 	    FKIOCTL, kcred, NULL) == 0) {
 		vd->vdev_nonrot = (isssd ? B_TRUE : B_FALSE);
 	}
+
+	// Assume no TRIM
+	vd->vdev_has_trim = B_FALSE;
+	uint32_t features;
+	if (ldi_ioctl(dvd->vd_lh, DKIOCGETFEATURES, (intptr_t)&features,
+	    FKIOCTL, kcred, NULL) == 0) {
+		if (features & DK_FEATURE_UNMAP)
+			vd->vdev_has_trim = B_TRUE;
+	}
+	printf("%s: has_trim set to %x\n", __func__, vd->vdev_has_trim);
+
+	/* Set when device reports it supports secure TRIM. */
+	// No secure trim in Apple yet.
+	vd->vdev_has_securetrim = B_FALSE;
 #endif //__APPLE__
 
 	return (0);
@@ -824,6 +839,17 @@ vdev_disk_io_start(zio_t *zio)
 		else
 			flags = B_READ | B_ASYNC;
 		break;
+
+	case ZIO_TYPE_TRIM:
+	{
+		dkioc_free_list_ext_t dfle;
+		dfle.dfle_start = zio->io_offset;
+		dfle.dfle_length = zio->io_size;
+		zio->io_error = ldi_ioctl(dvd->vd_lh, DKIOCFREE,
+			(uintptr_t)&dfle, FKIOCTL, kcred, NULL);
+		zio_interrupt(zio);
+		return;
+	}
 
 	default:
 		zio->io_error = SET_ERROR(ENOTSUP);
