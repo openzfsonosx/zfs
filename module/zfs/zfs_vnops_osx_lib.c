@@ -457,8 +457,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 			documentid = docid;  // 64 to 32
 		}
 
-		printf("ZFS: documentid set to %llu\n", documentid);
-
 		VATTR_RETURN(vap, va_document_id, documentid);
     }
 #endif
