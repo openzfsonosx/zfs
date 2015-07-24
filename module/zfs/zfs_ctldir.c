@@ -2280,7 +2280,16 @@ zfsctl_umount_snapshots(vfs_t *vfsp, int fflags, cred_t *cr)
 
 	mutex_exit(&sdp->sd_lock);
 
-	VN_RELE(dvp);
+/*
+ * Initialize the various pieces we'll need to create and manipulate .zfs
+ * directories.  Currently this is unused but available.
+ */
+void
+zfsctl_init(void)
+{
+	zfs_expire_taskq = taskq_create("z_unmount", 1, defclsyspri,
+	    1, 8, TASKQ_PREPOPULATE);
+}
 
     dprintf("umount_snapshot err %d\n", error);
 	return (error);

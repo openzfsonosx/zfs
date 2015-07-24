@@ -656,22 +656,7 @@ retry:
 	 * All entries are queued via taskq_dispatch_ent(), so min/maxalloc
 	 * configuration is not required.
 	 */
-	dbu_evict_taskq = taskq_create("dbu_evict", 1, minclsyspri, 0, 0, 0);
-
-	multilist_create(&dbuf_cache, sizeof (dmu_buf_impl_t),
-		offsetof(dmu_buf_impl_t, db_cache_link),
-		zfs_arc_num_sublists_per_state,
-		dbuf_cache_multilist_index_func);
-	refcount_create(&dbuf_cache_size);
-
-#ifdef _KERNEL
-	tsd_create(&zfs_dbuf_evict_key, NULL);
-#endif
-	dbuf_evict_thread_exit = B_FALSE;
-	mutex_init(&dbuf_evict_lock, NULL, MUTEX_DEFAULT, NULL);
-	cv_init(&dbuf_evict_cv, NULL, CV_DEFAULT, NULL);
-	dbuf_cache_evict_thread = thread_create(NULL, 0, dbuf_evict_thread,
-		NULL, 0, &p0, TS_RUN, minclsyspri);
+	dbu_evict_taskq = taskq_create("dbu_evict", 1, defclsyspri, 0, 0, 0);
 }
 
 void
