@@ -1574,6 +1574,10 @@ zfs_znode_delete(znode_t *zp, dmu_tx_t *tx)
 void
 zfs_zinactive(znode_t *zp)
 {
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	uint64_t z_id = zp->z_id;
+	int skip_lock = 0;
+	int skip_id_lock = 0;
 	ASSERT(zp->z_sa_hdl);
 
 	/*
@@ -1582,15 +1586,32 @@ zfs_zinactive(znode_t *zp)
 	 */
 
 	/*
+	 * Don't allow a zfs_zget() while were trying to release this znode
+	 */
+	if (ZFS_OBJ_HELD(zfsvfs, z_id))
+		skip_id_lock = 1;
+	else
+		ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
+
+	if (mutex_owner(&zp->z_lock))
+		skip_lock = 1;
+	else
+		mutex_enter(&zp->z_lock);
+
+	/*
 	 * If this was the last reference to a file with no links,
 	 * remove the file from the file system.
 	 */
 	if (zp->z_unlinked) {
+		if (!skip_lock) mutex_exit(&zp->z_lock);
+		if (!skip_id_lock) ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 		zfs_rmnode(zp);
 		return;
 	}
 
+	if (!skip_lock) mutex_exit(&zp->z_lock);
 	zfs_znode_dmu_fini(zp);
+	if (!skip_id_lock) ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 	zfs_znode_free(zp);
 }
 

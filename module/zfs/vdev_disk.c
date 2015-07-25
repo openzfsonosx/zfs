@@ -385,66 +385,86 @@ vdev_disk_io_start(zio_t *zio)
 		return;
 	}
 
-	if (zio->io_type == ZIO_TYPE_IOCTL) {
+	switch (zio->io_type) {
+		case ZIO_TYPE_IOCTL:
 
-		if (!vdev_readable(vd)) {
-			zio->io_error = SET_ERROR(ENXIO);
-			zio_interrupt(zio);
-			return;
-		}
-
-		switch (zio->io_cmd) {
-
-		case DKIOCFLUSHWRITECACHE:
-
-			if (zfs_nocacheflush)
-				break;
-
-			if (vd->vdev_nowritecache) {
-				zio->io_error = SET_ERROR(ENOTSUP);
-				break;
-			}
-
-			context = vfs_context_create(spl_vfs_context_kernel());
-			error = VNOP_IOCTL(dvd->vd_devvp, DKIOCSYNCHRONIZECACHE,
-			    NULL, FWRITE, context);
-			(void) vfs_context_rele(context);
-
-			if (error == 0)
-				vdev_disk_ioctl_done(zio, error);
-			else
-				error = ENOTSUP;
-
-			if (error == 0) {
-				/*
-				 * The ioctl will be done asychronously,
-				 * and will call vdev_disk_ioctl_done()
-				 * upon completion.
-				 */
+			if (!vdev_readable(vd)) {
+				zio->io_error = SET_ERROR(ENXIO);
+				zio_interrupt(zio);
 				return;
-			} else if (error == ENOTSUP || error == ENOTTY) {
-				/*
-				 * If we get ENOTSUP or ENOTTY, we know that
-				 * no future attempts will ever succeed.
-				 * In this case we set a persistent bit so
-				 * that we don't bother with the ioctl in the
-				 * future.
-				 */
-				vd->vdev_nowritecache = B_TRUE;
 			}
-			zio->io_error = error;
 
-			break;
+			switch (zio->io_cmd) {
+
+				case DKIOCFLUSHWRITECACHE:
+
+					if (zfs_nocacheflush)
+						break;
+
+					if (vd->vdev_nowritecache) {
+						zio->io_error = SET_ERROR(ENOTSUP);
+						break;
+					}
+
+					context = vfs_context_create(spl_vfs_context_kernel());
+					error = VNOP_IOCTL(dvd->vd_devvp, DKIOCSYNCHRONIZECACHE,
+									   NULL, FWRITE, context);
+					(void) vfs_context_rele(context);
+
+					if (error == 0)
+						vdev_disk_ioctl_done(zio, error);
+					else
+						error = ENOTSUP;
+
+					if (error == 0) {
+						/*
+						 * The ioctl will be done asychronously,
+						 * and will call vdev_disk_ioctl_done()
+						 * upon completion.
+						 */
+						return;
+					} else if (error == ENOTSUP || error == ENOTTY) {
+						/*
+						 * If we get ENOTSUP or ENOTTY, we know that
+						 * no future attempts will ever succeed.
+						 * In this case we set a persistent bit so
+						 * that we don't bother with the ioctl in the
+						 * future.
+						 */
+						vd->vdev_nowritecache = B_TRUE;
+					}
+					zio->io_error = error;
+
+					break;
+
+				default:
+					zio->io_error = SET_ERROR(ENOTSUP);
+			} /* io_cmd */
+
+			zio_execute(zio);
+			return;
+
+	case ZIO_TYPE_WRITE:
+		if (zio->io_priority == ZIO_PRIORITY_SYNC_WRITE)
+			flags = B_WRITE;
+		else
+			flags = B_WRITE | B_ASYNC;
+		break;
+
+	case ZIO_TYPE_READ:
+		if (zio->io_priority == ZIO_PRIORITY_SYNC_READ)
+			flags = B_READ;
+		else
+			flags = B_READ | B_ASYNC;
+		break;
 
 		default:
 			zio->io_error = SET_ERROR(ENOTSUP);
-		}
+			zio_interrupt(zio);
+			return;
+	} /* io_type */
 
-		zio_interrupt(zio);
-		return;
-	}
-
-	flags = (zio->io_type == ZIO_TYPE_READ ? B_READ : B_WRITE);
+	/* Stop OSX from also caching our data */
 	flags |= B_NOCACHE;
 
 	if (zio->io_flags & ZIO_FLAG_FAILFAST)

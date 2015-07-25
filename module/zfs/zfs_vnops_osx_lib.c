@@ -175,11 +175,34 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
     //printf("getattr_osx\n");
 
 	ZFS_ENTER(zfsvfs);
-    if (!zp->z_sa_hdl) {
-        ZFS_EXIT(zfsvfs);
-		printf("ZFS: getattr error\n");
-        return EIO;
+	ZFS_VERIFY_ZP(zp);
+
+	if (zp->z_unlinked) {
+		printf("ZFS: getattr for unlinked!\n");
+		ZFS_EXIT(zfsvfs);
+		return ENOENT;
+	}
+
+	if (VATTR_IS_ACTIVE(vap, va_acl)) {
+        //printf("want acl\n");
+        VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
+        VATTR_RETURN(vap, va_guuid, kauth_null_guid);
+
+        //dprintf("Calling getacl\n");
+        if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
+            //  dprintf("zfs_getacl returned error %d\n", error);
+            error = 0;
+        } else {
+
+            VATTR_SET_SUPPORTED(vap, va_acl);
+            /* va_acl implies that va_uuuid and va_guuid are also supported. */
+            VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
+            VATTR_RETURN(vap, va_guuid, kauth_null_guid);
+        }
+
     }
+
+    mutex_enter(&zp->z_lock);
 
 	/*
 	 * On Mac OS X we always export the root directory id as 2
@@ -244,42 +267,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		VATTR_RETURN(vap, va_dirlinkcount, 1);
     }
 
-	if (VATTR_IS_ACTIVE(vap, va_acl)) {
-        //printf("want acl\n");
-#if 0
-        zfs_acl_phys_t acl;
-
-        if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
-                      &acl, sizeof (zfs_acl_phys_t))) {
-            //if (zp->z_acl.z_acl_count == 0) {
-			vap->va_acl = (kauth_acl_t) KAUTH_FILESEC_NONE;
-		} else {
-			if ((error = zfs_getacl(zp, &vap->va_acl, B_TRUE, NULL))) {
-                dprintf("zfs_getacl returned error %d\n", error);
-                error = 0;
-				//ZFS_EXIT(zfsvfs);
-				//return (error);
-			}
-		}
-
-#endif
-      //VATTR_SET_SUPPORTED(vap, va_acl);
-        VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
-        VATTR_RETURN(vap, va_guuid, kauth_null_guid);
-
-        //dprintf("Calling getacl\n");
-        if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
-            //  dprintf("zfs_getacl returned error %d\n", error);
-            error = 0;
-        } else {
-
-            VATTR_SET_SUPPORTED(vap, va_acl);
-            /* va_acl implies that va_uuuid and va_guuid are also supported. */
-            VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
-            VATTR_RETURN(vap, va_guuid, kauth_null_guid);
-        }
-
-    }
 
 	if (VATTR_IS_ACTIVE(vap, va_data_alloc) || VATTR_IS_ACTIVE(vap, va_total_alloc)) {
 		uint32_t  blksize;
@@ -479,6 +466,9 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 			   vap->va_active, vap->va_supported,
 			   missing);
 	}
+
+	mutex_exit(&zp->z_lock);
+
 	ZFS_EXIT(zfsvfs);
 	return (error);
 }
