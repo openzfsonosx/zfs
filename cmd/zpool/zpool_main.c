@@ -659,7 +659,7 @@ zpool_do_add(int argc, char **argv)
 			(void) printf(gettext("\tcache\n"));
 			for (c = 0; c < l2children; c++) {
 				vname = zpool_vdev_name(g_zfs, NULL,
-				    l2child[c], B_FALSE);
+				    l2child[c], NULL);
 				(void) printf("\t  %s\n", vname);
 				free(vname);
 			}
@@ -670,7 +670,7 @@ zpool_do_add(int argc, char **argv)
 				(void) printf(gettext("\tcache\n"));
 			for (c = 0; c < l2children; c++) {
 				vname = zpool_vdev_name(g_zfs, NULL,
-				    l2child[c], B_FALSE);
+				    l2child[c], NULL);
 				(void) printf("\t  %s\n", vname);
 				free(vname);
 			}
