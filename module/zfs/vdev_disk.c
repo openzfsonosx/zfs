@@ -198,10 +198,10 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	struct dk_minfo_ext *dkmext = &dks.ude;
 	struct dk_minfo *dkm = &dks.ud;
 	int error;
-	dev_t dev;
-	int otyp;
 /* XXX Apple - must leave devid unchanged */
 #ifdef illumos
+	dev_t dev;
+	int otyp;
 	boolean_t validate_devid = B_FALSE;
 	ddi_devid_t devid;
 #endif
