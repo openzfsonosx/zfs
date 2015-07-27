@@ -178,7 +178,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	ZFS_VERIFY_ZP(zp);
 
 	if (zp->z_unlinked) {
-		printf("ZFS: getattr for unlinked!\n");
+		dprintf("ZFS: getattr for unlinked!\n");
 		ZFS_EXIT(zfsvfs);
 		return ENOENT;
 	}
