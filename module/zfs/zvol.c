@@ -2656,20 +2656,11 @@ zvol_ioctl(dev_t dev, unsigned long cmd, caddr_t data, int isblk,
 			break;
 #endif
 
-		case DKIOCGETBLOCKCOUNT:
-			dprintf("DKIOCGETBLOCKCOUNT: %llu\n",
-			    zv->zv_volsize / zv->zv_volblocksize);
-			*o = (uint64_t)zv->zv_volsize / zv->zv_volblocksize;
-			break;
-
-		case DKIOCGETBASE:
-			dprintf("DKIOCGETBASE\n");
-			/*
-			 * What offset should we say?
-			 * 0 is ok for FAT but to HFS
-			 */
-			*o = zv->zv_volblocksize * 0;
-			break;
+int
+zvol_init(void)
+{
+	int threads = MIN(MAX(zvol_threads, 1), 1024);
+	int error;
 
 		case DKIOCGETPHYSICALBLOCKSIZE:
 			dprintf("DKIOCGETPHYSICALBLOCKSIZE\n");
@@ -2683,9 +2674,13 @@ zvol_ioctl(dev_t dev, unsigned long cmd, caddr_t data, int isblk,
 			break;
 #endif
 
-		case DKIOCGETMAXBYTECOUNTREAD:
-			*o = SPA_MAXBLOCKSIZE;
-			break;
+	zvol_taskq = taskq_create(ZVOL_DRIVER, threads, maxclsyspri,
+	    threads * 2, INT_MAX, TASKQ_PREPOPULATE | TASKQ_DYNAMIC);
+	if (zvol_taskq == NULL) {
+		printk(KERN_INFO "ZFS: taskq_create() failed\n");
+		error = -ENOMEM;
+		goto out1;
+	}
 
 		case DKIOCGETMAXBYTECOUNTWRITE:
 			*o = SPA_MAXBLOCKSIZE;
@@ -2769,34 +2764,8 @@ zvol_fini(void)
 
 
 
-/*
- * Due to OS X limitations in /dev, we create a symlink for "/dev/zvol" to
- * "/var/run/zfs" (if we can) and for each pool, create the traditional
- * ZFS Volume symlinks.
- *
- * Ie, for ZVOL $POOL/$VOLUME
- * BSDName /dev/disk2 /dev/rdisk2
- * /dev/zvol -> /var/run/zfs
- * /var/run/zfs/zvol/dsk/$POOL/$VOLUME -> /dev/disk2
- * /var/run/zfs/zvol/rdsk/$POOL/$VOLUME -> /dev/rdisk2
- *
- * Note, we do not create symlinks for the partitioned slices.
- *
- */
-
-void
-zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rdisk)
-{
-	zfs_ereport_zvol_post(FM_EREPORT_ZVOL_CREATE_SYMLINK,
-	    zv->zv_name, bsd_disk, bsd_rdisk);
-}
-
-
-void
-zvol_remove_symlink(zvol_state_t *zv)
-{
-	if (!zv || !zv->zv_name[0])
-		return;
+module_param(zvol_threads, uint, 0444);
+MODULE_PARM_DESC(zvol_threads, "Max number of threads to handle I/O requests");
 
 	zfs_ereport_zvol_post(FM_EREPORT_ZVOL_REMOVE_SYMLINK,
 	    zv->zv_name, &zv->zv_bsdname[1],
