@@ -1239,7 +1239,9 @@ sa_byteswap(sa_handle_t *hdl, sa_buf_type_t buftype)
 	dmu_buf_impl_t *db;
 	int num_lengths = 1;
 	int i;
-	ASSERTV(sa_os_t *sa = hdl->sa_os->os_sa);
+#ifdef DEBUG
+	sa_os_t *sa = hdl->sa_os->os_sa;
+#endif
 
 	ASSERT(MUTEX_HELD(&sa->sa_lock));
 	if (sa_hdr_phys->sa_magic == SA_MAGIC)
