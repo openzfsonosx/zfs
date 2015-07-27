@@ -355,6 +355,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 			validate_devid = B_TRUE;
 #endif
 
+/* XXX Apple to do - make ddi_ interface for this, using IORegistry path */
 #ifdef illumos
 		if (vd->vdev_physpath != NULL &&
 		    (dev = ddi_pathname_to_dev_t(vd->vdev_physpath)) != NODEV)
@@ -402,7 +403,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	}
 #endif
 
-/* XXX Apple to do */
+/* XXX Apple to do, needs IORegistry physpath interface */
 #ifdef illumos
 	/*
 	 * Once a device is opened, verify that the physical device path (if
@@ -506,7 +507,7 @@ skip_open:
 	if (vd->vdev_wholedisk == 1) {
 		int wce = 1;
 
-/* Gets information about the EFI label on disk (if any) */
+/* Gets information about the disk if it has GPT partitions */
 #ifdef illumos
 		if (error == 0) {
 			/*
