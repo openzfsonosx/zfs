@@ -494,8 +494,7 @@ buf_strategy_vnode(ldi_buf_t *lbp, struct ldi_handle *lhp)
 
 	/* Allocate and verify buf_t */
 	if (NULL == (bp = buf_alloc(LH_VNODE(lhp)))) {
-		dprintf("%s %s\n", __func__,
-		    "couldn't allocate buf_t");
+		dprintf("%s couldn't allocate buf_t\n", __func__);
 		return (ENOMEM);
 	}
 

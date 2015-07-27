@@ -2196,7 +2196,6 @@ ldi_strategy(ldi_handle_t lh, ldi_buf_t *lbp)
 		return (ENODEV);
 	}
 
-
 	/* IOMedia or vnode */
 	/* Issue type-specific buf_strategy, preserve error */
 	switch (handlep->lh_type) {
@@ -2210,7 +2209,6 @@ ldi_strategy(ldi_handle_t lh, ldi_buf_t *lbp)
 		dprintf("%s invalid lh_type %d\n", __func__, handlep->lh_type);
 		return (EINVAL);
 	}
-
 
 	return (error);
 }
