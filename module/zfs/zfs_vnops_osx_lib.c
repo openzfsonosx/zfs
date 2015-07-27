@@ -388,7 +388,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #endif
 
 #ifdef VNODE_ATTR_va_document_id
-	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
+	if (/*VATTR_IS_ACTIVE(vap, va_flags) && (vap->va_flags & UF_TRACKED)
+		  &&*/ VATTR_IS_ACTIVE(vap, va_document_id)) {
 
 		/* If they requested document_id, we will go look for it (in case
 		 * it was already set before), or, generate a new one.
@@ -398,6 +399,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		uint64_t docid = 0;
 		uint32_t documentid = 0;
 		dmu_tx_t *tx;
+
+#if 0 /* Not yet */
 
 		error = sa_lookup(zp->z_sa_hdl, SA_ZPL_DOCUMENTID(zfsvfs),
 						  &docid, sizeof (docid));
@@ -410,6 +413,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 			/* What if we haven't looked up name above? */
 			if (vap->va_name)
 				documentid = fnv_32a_str(vap->va_name, documentid);
+
+			printf("ZFS: Generated new ID for %llu '%s' : %08u\n",
+				   zp->z_id,
+				   vap->va_name ? vap->va_name : "",
+				   documentid);
 
 			docid = documentid;  // 32 to 64
 
@@ -443,6 +451,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		} else {
 			documentid = docid;  // 64 to 32
 		}
+#endif
+
 
 		VATTR_RETURN(vap, va_document_id, documentid);
     }
