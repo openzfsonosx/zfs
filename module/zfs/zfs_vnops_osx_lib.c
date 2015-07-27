@@ -381,14 +381,74 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #endif
 #ifdef VNODE_ATTR_va_write_gencount
 	if (VATTR_IS_ACTIVE(vap, va_write_gencount)) {
-        VATTR_RETURN(vap, va_write_gencount, 0);
+		if (!zp->z_write_gencount)
+			atomic_inc_64(&zp->z_write_gencount);
+        VATTR_RETURN(vap, va_write_gencount, (uint32_t)zp->z_write_gencount);
     }
 #endif
+
 #ifdef VNODE_ATTR_va_document_id
 	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
-        VATTR_RETURN(vap, va_document_id, 0);
+
+		/* If they requested document_id, we will go look for it (in case
+		 * it was already set before), or, generate a new one.
+		 * document_id is generated from PARENT's ID and name then hashed
+		 * into a 32bit value.
+		 */
+		uint64_t docid = 0;
+		uint32_t documentid = 0;
+		dmu_tx_t *tx;
+
+		error = sa_lookup(zp->z_sa_hdl, SA_ZPL_DOCUMENTID(zfsvfs),
+						  &docid, sizeof (docid));
+
+		if (error || !docid) {
+			/* Generate new ID */
+
+#define FNV1_32A_INIT ((uint32_t)0x811c9dc5)
+			documentid = fnv_32a_buf(&docid, sizeof(docid), FNV1_32A_INIT);
+			/* What if we haven't looked up name above? */
+			if (vap->va_name)
+				documentid = fnv_32a_str(vap->va_name, documentid);
+
+			docid = documentid;  // 32 to 64
+
+			/* Write the new documentid to SA */
+			if (zfsvfs->z_use_sa == B_TRUE) {
+
+				tx = dmu_tx_create(zfsvfs->z_os);
+				dmu_tx_hold_sa_create(tx, sizeof(docid));
+				dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_TRUE);
+
+				error = dmu_tx_assign(tx, TXG_WAIT);
+				if (error) {
+					dmu_tx_abort(tx);
+				} else {
+					error = sa_update(zp->z_sa_hdl, SA_ZPL_DOCUMENTID(zfsvfs),
+									  &docid, sizeof(docid), tx);
+					if (error)
+						dmu_tx_abort(tx);
+					else
+						dmu_tx_commit(tx);
+				}
+
+				if (error)
+					printf("ZFS: sa_update(SA_ZPL_DOCUMENTID) failed %d\n",
+						   error);
+			}
+
+			// Clear error so we don't fail getattr
+			error = 0;
+
+		} else {
+			documentid = docid;  // 64 to 32
+		}
+
+		VATTR_RETURN(vap, va_document_id, documentid);
     }
 #endif
+
+
 #if 0 // Issue #192
 	if (VATTR_IS_ACTIVE(vap, va_uuuid)) {
         kauth_cred_uid2guid(zp->z_uid, &vap->va_uuuid);

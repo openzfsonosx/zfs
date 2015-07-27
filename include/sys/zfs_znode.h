@@ -113,6 +113,7 @@ extern "C" {
 
 #ifdef __APPLE__
 #define	SA_ZPL_ADDTIME(z)		z->z_attr_table[ZPL_ADDTIME]
+#define	SA_ZPL_DOCUMENTID(z)	z->z_attr_table[ZPL_DOCUMENTID]
 #endif
 
 /*
@@ -240,6 +241,7 @@ typedef struct znode {
     char        z_finder_hardlink_name[MAXPATHLEN];
 	boolean_t   z_fastpath;
 	boolean_t   z_reclaim_reentry; /* vnode_create()->vnop_reclaim() */
+	uint64_t    z_write_gencount;
 #endif
 
 #ifdef ZFS_DEBUG

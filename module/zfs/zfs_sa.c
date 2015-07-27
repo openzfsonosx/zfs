@@ -65,6 +65,7 @@ sa_attr_reg_t zfs_attr_table[ZPL_END+1] = {
     {"ZPL_DXATTR", 0, SA_UINT8_ARRAY, 0},
 #ifdef __APPLE__
     {"ZPL_ADDTIME", sizeof (uint64_t) * 2, SA_UINT64_ARRAY, 0},
+    {"ZPL_DOCUMENTID", sizeof (uint64_t), SA_UINT64_ARRAY, 0},
 #endif
 	{NULL, 0, 0, 0}
 };
