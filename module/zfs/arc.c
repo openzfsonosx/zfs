@@ -362,6 +362,7 @@ int zfs_arc_average_blocksize = 8 * 1024; /* 8KB */
 /*
  * These tunables are Linux specific
  */
+unsigned long zfs_arc_sys_free = 0;
 int zfs_arc_memory_throttle_disable = 1;
 int zfs_arc_min_prefetch_lifespan = 0;
 int zfs_arc_p_aggressive_disable = 1;
@@ -583,8 +584,8 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_meta_limit;
 	kstat_named_t arcstat_meta_max;
 	kstat_named_t arcstat_meta_min;
-	kstat_named_t arcstat_sync_wait_for_async;
-	kstat_named_t arcstat_demand_hit_predictive_prefetch;
+	kstat_named_t arcstat_need_free;
+	kstat_named_t arcstat_sys_free;
 } arc_stats_t;
 
 static arc_stats_t arc_stats = {
@@ -667,7 +668,9 @@ static arc_stats_t arc_stats = {
 	{ "arc_meta_used",		KSTAT_DATA_UINT64 },
 	{ "arc_meta_limit",		KSTAT_DATA_UINT64 },
 	{ "arc_meta_max",		KSTAT_DATA_UINT64 },
-	{ "arc_meta_min",		KSTAT_DATA_UINT64 }
+	{ "arc_meta_min",		KSTAT_DATA_UINT64 },
+	{ "arc_need_free",		KSTAT_DATA_UINT64 },
+	{ "arc_sys_free",		KSTAT_DATA_UINT64 }
 };
 
 #define	ARCSTAT(stat)	(arc_stats.stat.value.ui64)
@@ -733,6 +736,8 @@ static arc_state_t	*arc_l2c_only;
 #define	arc_meta_min	ARCSTAT(arcstat_meta_min) /* min size for metadata */
 #define	arc_meta_used	ARCSTAT(arcstat_meta_used) /* size of metadata */
 #define	arc_meta_max	ARCSTAT(arcstat_meta_max) /* max size of metadata */
+#define	arc_need_free	ARCSTAT(arcstat_need_free) /* bytes to be freed */
+#define	arc_sys_free	ARCSTAT(arcstat_sys_free) /* target system free bytes */
 
 /* compressed size of entire arc */
 #define	arc_compressed_size	ARCSTAT(arcstat_compressed_size)
@@ -3845,12 +3850,6 @@ int64_t last_free_memory;
 free_memory_reason_t last_free_reason;
 
 #ifdef _KERNEL
-#ifdef __linux__
-/*
- * expiration time for arc_no_grow set by direct memory reclaim.
- */
-static clock_t arc_grow_time = 0;
-#else
 /*
  * Additional reserve of pages for pp_reserve.
  */
@@ -3860,7 +3859,6 @@ int64_t arc_pages_pp_reserve = 64;
  * Additional reserve of pages for swapfs.
  */
 int64_t arc_swapfs_reserve = 64;
-#endif
 #endif /* _KERNEL */
 
 /*
@@ -3873,26 +3871,14 @@ arc_available_memory(void)
 {
 	int64_t lowest = INT64_MAX;
 	free_memory_reason_t r = FMR_UNKNOWN;
-
 #ifdef _KERNEL
-#ifdef __linux__
-	/*
-	 * Under Linux we are not allowed to directly interrogate the global
-	 * memory state.  Instead rely on observing that direct reclaim has
-	 * recently occurred therefore the system must be low on memory.  The
-	 * exact values returned are not critical but should be small.
-	 */
-	if (ddi_time_after_eq(ddi_get_lbolt(), arc_grow_time))
-		lowest = PAGE_SIZE;
-	else
-		lowest = -PAGE_SIZE;
-#else
 	int64_t n;
+#ifdef __linux__
+	pgcnt_t needfree = btop(arc_need_free);
+	pgcnt_t lotsfree = btop(arc_sys_free);
+	pgcnt_t desfree = 0;
+#endif
 
-	/*
-	 * Platforms like illumos have greater visibility in to the memory
-	 * subsystem and can return a more detailed analysis of memory.
-	 */
 	if (needfree > 0) {
 		n = PAGESIZE * (-needfree);
 		if (n < lowest) {
@@ -3914,6 +3900,7 @@ arc_available_memory(void)
 		r = FMR_LOTSFREE;
 	}
 
+#ifndef __linux__
 	/*
 	 * check to make sure that swapfs has enough space so that anon
 	 * reservations can still succeed. anon_resvmem() checks that the
@@ -3942,6 +3929,7 @@ arc_available_memory(void)
 		lowest = n;
 		r = FMR_PAGES_PP_MAXIMUM;
 	}
+#endif
 
 #if defined(__i386)
 	/*
@@ -3980,12 +3968,11 @@ arc_available_memory(void)
 			r = FMR_ZIO_ARENA;
 		}
 	}
-#endif /* __linux__ */
-#else
+#else /* _KERNEL */
 	/* Every 100 calls, free a small amount */
 	if (spa_get_random(100) == 0)
 		lowest = -1024;
-#endif
+#endif /* _KERNEL */
 
 	last_free_memory = lowest;
 	last_free_reason = r;
@@ -4104,7 +4091,7 @@ arc_reclaim_thread(void)
 			to_free = (arc_c >> arc_shrink_shift) - free_memory;
 			if (to_free > 0) {
 #ifdef _KERNEL
-				to_free = MAX(to_free, ptob(needfree));
+				to_free = MAX(to_free, arc_need_free);
 #endif
 				arc_shrink(to_free);
 			}
@@ -4131,9 +4118,11 @@ arc_reclaim_thread(void)
 			/*
 			 * We're either no longer overflowing, or we
 			 * can't evict anything more, so we should wake
-			 * up any threads before we go to sleep.
+			 * up any threads before we go to sleep and clear
+			 * arc_need_free since nothing more can be done.
 			 */
 			cv_broadcast(&arc_reclaim_waiters_cv);
+			arc_need_free = 0;
 
 			/*
 			 * Block until signaled, or after one second (we
@@ -4232,33 +4221,19 @@ arc_user_evicts_thread(void)
 
 		mutex_enter(&arc_reclaim_lock);
 
-		/*
-		 * If evicted is zero, we couldn't evict anything via
-		 * arc_adjust(). This could be due to hash lock
-		 * collisions, but more likely due to the majority of
-		 * arc buffers being unevictable. Therefore, even if
-		 * arc_size is above arc_c, another pass is unlikely to
-		 * be helpful and could potentially cause us to enter an
-		 * infinite loop.
-		 */
-		if (arc_size <= arc_c || evicted == 0) {
-			/*
-			 * We're either no longer overflowing, or we
-			 * can't evict anything more, so we should wake
-			 * up any threads before we go to sleep.
-			 */
-			cv_broadcast(&arc_reclaim_waiters_cv);
-
-			/*
-			 * Block until signaled, or after one second (we
-			 * might need to perform arc_kmem_reap_now()
-			 * even if we aren't being signalled)
-			 */
-			CALLB_CPR_SAFE_BEGIN(&cpr);
-			(void) cv_timedwait_hires(&arc_reclaim_thread_cv,
-			    &arc_reclaim_lock, SEC2NSEC(1), MSEC2NSEC(1), 0);
-			CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_lock);
-		}
+	/*
+	 * When direct reclaim is observed it usually indicates a rapid
+	 * increase in memory pressure.  This occurs because the kswapd
+	 * threads were unable to asynchronously keep enough free memory
+	 * available.  In this case set arc_no_grow to briefly pause arc
+	 * growth to avoid compounding the memory pressure.
+	 */
+	if (current_is_kswapd()) {
+		ARCSTAT_BUMP(arcstat_memory_indirect_count);
+	} else {
+		arc_no_grow = B_TRUE;
+		arc_need_free = ptob(sc->nr_to_scan);
+		ARCSTAT_BUMP(arcstat_memory_direct_count);
 	}
 
 	arc_reclaim_thread_exit = B_FALSE;
@@ -6186,6 +6161,10 @@ arc_tuning_update(void)
 	/* Valid range: 1 - N ticks */
 	if (zfs_arc_min_prefetch_lifespan)
 		arc_min_prefetch_lifespan = zfs_arc_min_prefetch_lifespan;
+
+	/* Valid range: 0 - <all physical memory> */
+	if ((zfs_arc_sys_free) && (zfs_arc_sys_free != arc_sys_free))
+		arc_sys_free = MIN(MAX(zfs_arc_sys_free, 0), ptob(physmem));
 }
 
 void
@@ -6225,8 +6204,11 @@ arc_init(void)
 	 * small, because it can cause transactions to be larger than
 	 * arc_c, causing arc_tempreserve_space() to fail.
 	 */
-#ifndef _KERNEL
-	arc_c_min = arc_c_max / 2;
+	spl_register_shrinker(&arc_shrinker);
+
+	/* Set to 1/64 of all memory or a minimum of 512K */
+	arc_sys_free = MAX(ptob(physmem / 64), (512 * 1024));
+	arc_need_free = 0;
 #endif
 
 	/* Set min cache to allow safe operation of arc_adapt() */
@@ -7823,5 +7805,8 @@ MODULE_PARM_DESC(l2arc_feed_again, "Turbo L2ARC warmup");
 
 module_param(l2arc_norw, int, 0644);
 MODULE_PARM_DESC(l2arc_norw, "No reads during writes");
+
+module_param(zfs_arc_sys_free, ulong, 0644);
+MODULE_PARM_DESC(zfs_arc_sys_free, "System free memory target size in bytes");
 
 #endif
