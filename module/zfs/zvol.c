@@ -474,6 +474,30 @@ zvol_name2minor(const char *name, minor_t *minor)
 	return (zv ? 0 : -1);
 }
 
+static int
+zvol_snapdev_hidden(const char *name)
+{
+	uint64_t snapdev;
+	char *parent;
+	char *atp;
+	int error = 0;
+
+	parent = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+	(void) strlcpy(parent, name, MAXPATHLEN);
+
+	if ((atp = strrchr(parent, '@')) != NULL) {
+		*atp = '\0';
+		error = dsl_prop_get_integer(parent, "snapdev",
+		    &snapdev, NULL);
+		if ((error == 0) && (snapdev == ZFS_SNAPDEV_HIDDEN))
+			error = SET_ERROR(ENODEV);
+	}
+
+	kmem_free(parent, MAXPATHLEN);
+
+	return (SET_ERROR(error));
+}
+
 /*
  * Create a minor node (plus a whole lot more) for the specified volume.
  */
@@ -2639,7 +2663,6 @@ zvol_dump_fini(zvol_state_t *zv)
 
 #endif
 
-
 int
 zvol_create_minors(const char *name)
 {
@@ -2664,9 +2687,7 @@ zvol_create_minors(const char *name)
 		 */
 		dmu_objset_rele(os, FTAG);
 
-		if ((error = zvol_create_minor(name)) == 0)
-		/* error = zvol_create_snapshots(os, name) */;
-		else {
+		if ((error = zvol_create_minor(name)) != 0) {
 			dprintf("ZFS WARNING: %s %s (error=%d).\n",
 			    "Unable to create ZVOL",
 			    name, error);
