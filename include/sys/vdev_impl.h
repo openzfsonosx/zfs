@@ -347,18 +347,6 @@ extern void vdev_set_min_asize(vdev_t *vd);
 /* zdb uses this tunable, so it must be declared here to make lint happy. */
 extern int zfs_vdev_cache_size;
 
-/*
- * The vdev_buf_t is used to translate between zio_t and buf_t, and back again.
- */
-typedef struct vdev_buf {
-#ifdef illumos
-	buf_t		vb_buf;	/* buffer that describes the io */
-#else
-	ldi_buf_t	vb_buf;	/* LDI buffer that describes the io */
-#endif
-	zio_t		*vb_io;	/* pointer back to the original zio_t */
-} vdev_buf_t;
-
 #ifdef	__cplusplus
 }
 #endif
