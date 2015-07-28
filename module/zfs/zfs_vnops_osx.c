@@ -298,6 +298,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
                 int flags = 0;
 
 				printf("ZFS: ioctl(HFS_GETPATH)\n");
+#if 0 // Is it needed?
 				/* Caller must be owner of file system. */
 				vfsp = vfs_statfs(zfsvfs->z_vfs);
 				/*if (suser((kauth_cred_t)cr, NULL) &&  APPLE denied suser */
@@ -328,6 +329,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
                 vnode_put(file_vp);
 
 				printf("ZFS: done %d\n", error);
+#endif
 			}
 			break;
 
