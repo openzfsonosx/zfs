@@ -218,26 +218,31 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_PARENT(zfsvfs), NULL, &parent, 8);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
 					 &zp->z_pflags, 8);
+
+	/* Unfortunately, sa_bulk_lookup does not let you handle optional SA entries
+	 */
+	error = sa_bulk_lookup(zp->z_sa_hdl, bulk, count);
+	if (error) {
+		printf("ZFS: Warning: getattr failed sa_bulk_lookup: %d, parent %llu, flags %llu\n",
+			   error, parent, zp->z_pflags );
+		mutex_exit(&zp->z_lock);
+		ZFS_EXIT(zfsvfs);
+	}
+
 #ifdef VNODE_ATTR_va_addedtime
 	if (VATTR_IS_ACTIVE(vap, va_addedtime)) {
-		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_ADDTIME(zfsvfs), NULL,
-						 &addtime, sizeof(addtime));
+		sa_lookup(zp->z_sa_hdl, SA_ZPL_ADDTIME(zfsvfs),
+				  &addtime, sizeof(addtime));
 	}
 #endif
 #ifdef VNODE_ATTR_va_document_id
 	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
 		if (!zp->z_document_id) {
-			SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_DOCUMENTID(zfsvfs), NULL,
-							 &docid, sizeof(docid));
+			sa_lookup(zp->z_sa_hdl, SA_ZPL_DOCUMENTID(zfsvfs),
+					  &docid, sizeof(docid));
 		}
 	}
 #endif
-	error = sa_bulk_lookup(zp->z_sa_hdl, bulk, count);
-	if (error && (error < 2)) {
-		printf("ZFS: Warning: getattr failed sa_bulk_lookup: %d, parent %llu, flags %llu\n",
-			   error, parent, zp->z_pflags );
-		error = 0;
-	}
 
 
     /*
@@ -1028,6 +1033,7 @@ void commonattrpack(attrinfo_t *aip, zfsvfs_t *zfsvfs, znode_t *zp,
 		attrbufptr = ((u_int32_t *)attrbufptr) + 1;
 	}
 	if (ATTR_CMN_FLAGS & commonattr) {
+		// TODO, sa_lookup of ZPL_FLAGS
 		u_int32_t flags = zfs_getbsdflags(zp);
 
 		/* Shadow Finder Info's invisible bit to UF_HIDDEN */
