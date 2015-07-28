@@ -958,7 +958,9 @@ zfs_ereport_zvol_post(const char *subclass, const char *name, const char *bsd,
     char *r;
     spa_t *spa;
 
+	mutex_enter(&spa_namespace_lock);
     spa = spa_lookup(name);
+	mutex_exit(&spa_namespace_lock);
     if (!spa) return;
 
 	zfs_ereport_start(&ereport, &detector,

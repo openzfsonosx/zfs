@@ -1884,8 +1884,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	static int has_warned = 0;
 	boolean_t exception;
 	boolean_t fastpath;
-	ASSERT(zp != NULL);
-
 
 	/* Destroy the vm object and flush associated pages. */
 #ifndef __APPLE__
