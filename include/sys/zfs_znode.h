@@ -66,6 +66,14 @@ extern "C" {
 #define	ZFS_OFFLINE		0x0000100000000000ull
 #define	ZFS_SPARSE		0x0000200000000000ull
 
+#ifdef __APPLE__
+	/* Unsure how we officially register new flags bits, but
+	 * I guess we will claim the whole nibble for OSX
+	 * 0x00n0000000000000ull : n = 1 2 4 8
+	 */
+#define	ZFS_TRACKED		0x0010000000000000ull
+#endif
+
 #define	ZFS_ATTR_SET(zp, attr, value, pflags, tx) \
 { \
 	if (value) \
@@ -237,6 +245,7 @@ typedef struct znode {
 #ifdef __APPLE__
 	list_node_t	z_link_reclaim_node;	/* all reclaim znodes in fs link */
     uint32_t    z_vid;  /* OSX vnode_vid */
+	uint32_t    z_document_id;
     /* Track vnop_lookup name for Finder - not for anything else */
     char        z_finder_hardlink_name[MAXPATHLEN];
 	boolean_t   z_fastpath;
@@ -290,7 +299,11 @@ typedef struct znode {
  */
 #define ZFS_ENTER(zfsvfs)                       \
     {                                                                   \
-		rrm_enter_read(&(zfsvfs)->z_teardown_lock, FTAG); \
+		if (!POINTER_IS_VALID(zfsvfs)) {								\
+			printf("ZFS: ZFS_ENTER on released %s:%d",					\
+				   __FILE__, __LINE__);									\
+			return EIO; }												\
+		rrm_enter_read(&(zfsvfs)->z_teardown_lock, FTAG);				\
         if ((zfsvfs)->z_unmounted) {                                    \
             ZFS_EXIT(zfsvfs);                                           \
             return (EIO);                                               \
@@ -445,6 +458,13 @@ int zfs_attach_vnode(znode_t *zp);
 uint32_t zfs_getbsdflags(znode_t *zp);
 void zfs_setbsdflags(znode_t *zp, uint32_t bsdflags);
 void zfs_time_stamper_locked(znode_t *zp, uint_t flag, dmu_tx_t *tx);
+int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags);
+void zfs_setattr_generate_id(znode_t *zp, uint64_t val, char *name);
+
+#define FNV1_32A_INIT ((uint32_t)0x811c9dc5)
+uint32_t fnv_32a_str(const char *str, uint32_t hval);
+uint32_t fnv_32a_buf(void *buf, size_t len, uint32_t hval);
+
 
 #ifdef ZFS_DEBUG
 typedef enum whereami {

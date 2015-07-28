@@ -146,6 +146,16 @@ struct user64_ext_access_t {
 #define	HFSIOC_GET_DESIRED_DISK	_IOR('h', 29, u_int32_t)
 #define	HFS_FSCTL_GET_DESIRED_DISK	IOCBASECMD(HFSIOC_GET_DESIRED_DISK)
 
+/* revisiond only uses this when something transforms in a way the kernel can't track
+such as "foo.rtf" -> "foo.rtfd" */
+#define HFSIOC_TRANSFER_DOCUMENT_ID  _IOW('h', 32, u_int32_t)
+#define HFS_TRANSFER_DOCUMENT_ID  IOCBASECMD(HFSIOC_TRANSFER_DOCUMENT_ID)
+
+
+/* fcntl.h */
+#define F_MAKECOMPRESSED                80 /* Make the file compressed; truncate & toggle BSD bits */
+
+
 // END of definitions
 
 #endif
