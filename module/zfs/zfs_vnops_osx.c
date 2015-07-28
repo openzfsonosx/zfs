@@ -289,9 +289,50 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_GETPATH:
-			// fail as if requested of non-root fs
-			// i.e. !vnode_isvroot(vp)
-			error = EINVAL;
+  		    {
+				struct vfsstatfs *vfsp;
+				struct vnode *file_vp;
+                ino64_t cnid;
+                int  outlen;
+                char *bufptr;
+                int flags = 0;
+
+				printf("ZFS: ioctl(HFS_GETPATH)\n");
+				/* Caller must be owner of file system. */
+				vfsp = vfs_statfs(zfsvfs->z_vfs);
+				/*if (suser((kauth_cred_t)cr, NULL) &&  APPLE denied suser */
+				if (proc_suser(current_proc()) &&
+					kauth_cred_getuid((kauth_cred_t)cr) != vfsp->f_owner) {
+					error = EACCES;
+					goto out;
+				}
+				/* Target vnode must be file system's root. */
+				if (!vnode_isvroot(ap->a_vp)) {
+					error = EINVAL;
+					goto out;
+				}
+
+				/* We are passed a string containing a inode number */
+				bufptr = (char *)ap->a_data;
+                cnid = strtoul(bufptr, NULL, 10);
+                if (ap->a_fflag & HFS_GETPATH_VOLUME_RELATIVE) {
+					flags |= BUILDPATH_VOLUME_RELATIVE;
+                }
+
+				if ((error = zfs_vfs_vget(zfsvfs->z_vfs, cnid, &file_vp,
+										  (vfs_context_t)ct))) {
+					goto out;
+                }
+                error = build_path(file_vp, bufptr, sizeof(pathname_t),
+								   &outlen, flags, (vfs_context_t)ct);
+                vnode_put(file_vp);
+
+				printf("ZFS: done %d\n", error);
+			}
+			break;
+
+		case HFS_TRANSFER_DOCUMENT_ID:
+			printf("ZFS: HFS_TRANSFER_DOCUMENT_ID:\n");
 			break;
 
 		case HFS_PREV_LINK:

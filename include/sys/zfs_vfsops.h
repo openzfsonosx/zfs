@@ -41,9 +41,13 @@ extern "C" {
 struct zfs_sb;
 struct znode;
 
+#ifdef __APPLE__
+#define APPLE_SA_RECOVER
 /* #define WITH_SEARCHFS */
 /* #define WITH_READDIRATTR */
 #define	HAVE_NAMED_STREAMS 1
+#endif
+
 
 typedef struct zfsvfs zfsvfs_t;
 
@@ -103,6 +107,11 @@ struct zfsvfs {
         kmutex_t	    z_vnodecreate_lock; /*lock for using z_vnodecreate_list*/
         list_t          z_vnodecreate_list;/* all threads in vnode_create */
         boolean_t       z_xattr;        /* enable atimes mount option */
+
+#ifdef APPLE_SA_RECOVER
+	uint64_t z_recover_parent;/* Temporary holder until SA corruption are gone */
+#endif /* APPLE_SA_RECOVER */
+
 #endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
