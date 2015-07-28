@@ -158,9 +158,7 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 	char *buf;
 	vnode_t *vp;
 	int oflags = FWRITE | FTRUNC | FCREAT | FOFFMAX;
-#ifdef __linux__
 	int error;
-#endif
 	char *temp;
 
 	/*
