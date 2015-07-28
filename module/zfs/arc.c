@@ -363,13 +363,13 @@ int zfs_arc_average_blocksize = 8 * 1024; /* 8KB */
  * These tunables are Linux specific
  */
 unsigned long zfs_arc_sys_free = 0;
-int zfs_arc_memory_throttle_disable = 1;
 int zfs_arc_min_prefetch_lifespan = 0;
 int zfs_arc_p_aggressive_disable = 1;
 int zfs_arc_p_dampener_disable = 1;
 int zfs_arc_meta_prune = 10000;
 int zfs_arc_meta_strategy = ARC_STRATEGY_META_BALANCED;
 int zfs_arc_meta_adjust_restarts = 4096;
+int zfs_arc_lotsfree_percent = 10;
 
 /* The 6 states: */
 static arc_state_t ARC_anon;
@@ -5694,35 +5694,40 @@ static int
 arc_memory_throttle(uint64_t reserve, uint64_t txg)
 {
 #ifdef _KERNEL
-#ifdef sun
 	uint64_t available_memory = ptob(freemem);
-#endif
-#ifdef __APPLE__
-	int64_t available_memory = spl_free_wrapper();
-	int64_t freemem = available_memory / PAGESIZE;
-#endif
-
 	static uint64_t page_load = 0;
 	static uint64_t last_txg = 0;
-
-#if defined(__i386)
-	available_memory =
-	    MIN(available_memory, vmem_size(heap_arena, VMEM_FREE));
+#ifdef __linux__
+	pgcnt_t minfree = btop(arc_sys_free / 4);
 #endif
 
 	if (freemem > physmem * arc_lotsfree_percent / 100)
 		return (0);
 
-	if (freemem > physmem * arc_lotsfree_percent / 100)
-		return (0);
+	if (txg > last_txg) {
+		last_txg = txg;
+		page_load = 0;
+	}
 
-	if (arc_reclaim_needed()) {
+	/*
+	 * If we are in pageout, we know that memory is already tight,
+	 * the arc is already going to be evicting, so we just want to
+	 * continue to let page writes occur as quickly as possible.
+	 */
+	if (current_is_kswapd()) {
+		if (page_load > MAX(ptob(minfree), available_memory) / 4) {
+			DMU_TX_STAT_BUMP(dmu_tx_memory_reclaim);
+			return (SET_ERROR(ERESTART));
+		}
+		/* Note: reserve is inflated, so we deflate */
+		page_load += reserve / 8;
+		return (0);
+	} else if (page_load > 0 && arc_reclaim_needed()) {
 		/* memory is low, delay before restarting */
 		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 		return (SET_ERROR(EAGAIN));
 	}
-#ifdef sun
-	}
+	page_load = 0;
 #endif
 	page_load = 0;
 #else // 0 - APPLE
@@ -6162,9 +6167,15 @@ arc_tuning_update(void)
 	if (zfs_arc_min_prefetch_lifespan)
 		arc_min_prefetch_lifespan = zfs_arc_min_prefetch_lifespan;
 
+	/* Valid range: 0 - 100 */
+	if ((zfs_arc_lotsfree_percent >= 0) &&
+	    (zfs_arc_lotsfree_percent <= 100))
+		arc_lotsfree_percent = zfs_arc_lotsfree_percent;
+
 	/* Valid range: 0 - <all physical memory> */
 	if ((zfs_arc_sys_free) && (zfs_arc_sys_free != arc_sys_free))
 		arc_sys_free = MIN(MAX(zfs_arc_sys_free, 0), ptob(physmem));
+
 }
 
 void
@@ -7766,9 +7777,6 @@ MODULE_PARM_DESC(zfs_disable_dup_eviction, "disable duplicate buffer eviction");
 module_param(zfs_arc_average_blocksize, int, 0444);
 MODULE_PARM_DESC(zfs_arc_average_blocksize, "Target average block size");
 
-module_param(zfs_arc_memory_throttle_disable, int, 0644);
-MODULE_PARM_DESC(zfs_arc_memory_throttle_disable, "disable memory throttle");
-
 module_param(zfs_arc_min_prefetch_lifespan, int, 0644);
 MODULE_PARM_DESC(zfs_arc_min_prefetch_lifespan, "Min life of prefetch block");
 
@@ -7805,6 +7813,10 @@ MODULE_PARM_DESC(l2arc_feed_again, "Turbo L2ARC warmup");
 
 module_param(l2arc_norw, int, 0644);
 MODULE_PARM_DESC(l2arc_norw, "No reads during writes");
+
+module_param(zfs_arc_lotsfree_percent, int, 0644);
+MODULE_PARM_DESC(zfs_arc_lotsfree_percent,
+	"System free memory I/O throttle in bytes");
 
 module_param(zfs_arc_sys_free, ulong, 0644);
 MODULE_PARM_DESC(zfs_arc_sys_free, "System free memory target size in bytes");
