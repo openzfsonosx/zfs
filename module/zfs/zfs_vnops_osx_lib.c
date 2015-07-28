@@ -211,7 +211,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #ifdef VNODE_ATTR_va_addedtime
 	uint64_t addtime[2] = { 0 };
 #endif
-	int ishardlink = 0;
 
     //printf("getattr_osx\n");
 
@@ -239,10 +238,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
     mutex_enter(&zp->z_lock);
 
-	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
-		1 : 0;
-	if (zp->z_finder_hardlink == TRUE)
-		ishardlink = 1;
 
 	/* Work out which SA we need to fetch */
 
@@ -254,7 +249,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	 */
 	error = sa_bulk_lookup(zp->z_sa_hdl, bulk, count);
 	if (error) {
-		dprintf("ZFS: Warning: getattr failed sa_bulk_lookup: %d, parent %llu, flags %llu\n",
+		printf("ZFS: Warning: getattr failed sa_bulk_lookup: %d, parent %llu, flags %llu\n",
 			   error, parent, zp->z_pflags );
 		mutex_exit(&zp->z_lock);
 		ZFS_EXIT(zfsvfs);
@@ -302,11 +297,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		vap->va_parentid = 2;
 	else
 		vap->va_parentid = parent;
-
-	// Hardlinks: Return cached parentid, make it 2 if root.
-	if (ishardlink && zp->z_finder_parentid)
-		vap->va_parentid = (zp->z_finder_parentid == zfsvfs->z_root) ?
-			2 : zp->z_finder_parentid;
 
 	vap->va_iosize = zp->z_blksz ? zp->z_blksz : zfsvfs->z_max_blksz;
 	//vap->va_iosize = 512;
@@ -498,7 +488,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #endif
 
 #ifdef VNODE_ATTR_va_document_id
-	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
+	if (/*VATTR_IS_ACTIVE(vap, va_flags) && (vap->va_flags & UF_TRACKED)
+		  &&*/ VATTR_IS_ACTIVE(vap, va_document_id)) {
 
 		if (!zp->z_document_id) {
 			zfs_setattr_generate_id(zp, parent, vap->va_name);
@@ -2040,7 +2031,7 @@ int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags)
 	int             count = 0;
 	sa_bulk_attr_t  bulk[2];
 
-	dprintf("ZFS: vnop_setattr(UF_TRACKED) obj %llu : documentid %08u\n",
+	printf("ZFS: vnop_setattr(UF_TRACKED) obj %llu : documentid %08u\n",
 		   zp->z_id,
 		   zp->z_document_id);
 
@@ -2070,47 +2061,10 @@ int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags)
 		}
 
 		if (error)
-			dprintf("ZFS: sa_update(SA_ZPL_DOCUMENTID) failed %d\n",
+			printf("ZFS: sa_update(SA_ZPL_DOCUMENTID) failed %d\n",
 				   error);
 
 	} // if z_use_sa && !readonly
 
 	return error;
 }
-
-
-
-int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid)
-{
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	hardlinks_t searchnode, *findnode;
-	avl_index_t loc;
-
-	searchnode.hl_parent = parentid;
-	searchnode.hl_fileid = zp->z_id;
-	strlcpy(searchnode.hl_name, zp->z_name_cache, PATH_MAX);
-
-	rw_enter(&zfsvfs->z_hardlinks_lock, RW_WRITER);
-	findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
-	if (!findnode) {
-		// Add hash entry
-		zp->z_finder_hardlink = TRUE;
-		findnode = kmem_alloc(sizeof(hardlinks_t), KM_SLEEP);
-
-		findnode->hl_parent = parentid;
-		findnode->hl_fileid = zp->z_id;
-		strlcpy(findnode->hl_name, zp->z_name_cache, PATH_MAX);
-
-		findnode->hl_linkid = linkid;
-
-		avl_add(&zfsvfs->z_hardlinks, findnode);
-		avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
-		dprintf("ZFS: Inserted new hardlink node (%llu,%llu,'%s') <-> (%x,%u)\n",
-				findnode->hl_parent,
-				findnode->hl_fileid, findnode->hl_name,
-				findnode->hl_linkid, findnode->hl_linkid	);
-	} // findnode2
-	rw_exit(&zfsvfs->z_hardlinks_lock);
-
-	return findnode ? 1 : 0;
-} // findnode

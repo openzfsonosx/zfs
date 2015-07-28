@@ -160,18 +160,6 @@ such as "foo.rtf" -> "foo.rtfd" */
 #define F_MAKECOMPRESSED                80 /* Make the file compressed; truncate & toggle BSD bits */
 
 
-/* Get file system information for the given volume */
-//#define HFSIOC_GET_FSINFO        _IOWR('h', 45, hfs_fsinfo)
-//#define HFS_GET_FSINFO           IOCBASECMD(HFSIOC_GET_FSINFO)
-
-/* Re-pin hotfile data; argument controls what state gets repinned */
-#define HFSIOC_REPIN_HOTFILE_STATE _IOWR('h', 46, u_int32_t)
-#define HFS_REPIN_HOTFILE_STATE    IOCBASECMD(HFSIOC_REPIN_HOTFILE_STATE)
-
-/* Mark a directory or file as worth caching on any underlying "fast" device */
-#define HFSIOC_SET_HOTFILE_STATE _IOWR('h', 47, u_int32_t)
-#define HFS_SET_HOTFILE_STATE    IOCBASECMD(HFSIOC_SET_HOTFILE_STATE)
-
 // END of definitions
 
 #endif

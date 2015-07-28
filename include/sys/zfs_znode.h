@@ -235,16 +235,8 @@ typedef struct znode {
 	list_node_t	z_link_reclaim_node;	/* all reclaim znodes in fs link */
     uint32_t    z_vid;  /* OSX vnode_vid */
 	uint32_t    z_document_id;
-
-    /* Track vnop_lookup name for Finder - as Apple asks for va_name in
-	 * vnop_getattr and vfs_vget, it is expensive to lookup the name.
-	 * We also need to keep hardlink parentid to return the correct id in
-	 * getattr
-	 */
-    char        z_name_cache[MAXPATHLEN];
-	uint64_t    z_finder_parentid;
-	boolean_t   z_finder_hardlink;  /* set high if it ever had a hardlink hash */
-
+    /* Track vnop_lookup name for Finder - not for anything else */
+    char        z_finder_hardlink_name[MAXPATHLEN];
 	boolean_t   z_fastpath;
 	boolean_t   z_reclaim_reentry; /* vnode_create()->vnop_reclaim() */
 	uint64_t    z_write_gencount;

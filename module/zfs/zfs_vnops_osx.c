@@ -481,7 +481,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_GETPATH:
-			dprintf("ZFS: ioctl(HFS_GETPATH)\n");
+			printf("ZFS: ioctl(HFS_GETPATH)\n");
   		    {
 				struct vfsstatfs *vfsp;
 				struct vnode *file_vp;
@@ -519,7 +519,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 								   &outlen, flags, (vfs_context_t)ct);
                 vnode_put(file_vp);
 
-				dprintf("ZFS: HFS_GETPATH done %d : '%s'\n", error,
+				printf("ZFS: HFS_GETPATH done %d : '%s'\n", error,
 					   error ? "" : bufptr);
 			}
 			break;
@@ -530,7 +530,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 				file_t *to_fp;
 				struct vnode *to_vp;
 				znode_t *to_zp;
-				dprintf("ZFS: HFS_TRANSFER_DOCUMENT_ID:\n");
+				printf("ZFS: HFS_TRANSFER_DOCUMENT_ID:\n");
 
 				to_fp = getf(to_fd);
 				if (to_fp == NULL) {
@@ -555,11 +555,11 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 
 				/* Source should have UF_TRACKED */
 				if (!(zp->z_pflags & ZFS_TRACKED)) {
-					dprintf("ZFS: source is not TRACKED\n");
+					printf("ZFS: source is not TRACKED\n");
 					error = EINVAL;
 					/* destination should NOT have UF_TRACKED */
 				} else if (to_zp->z_pflags & ZFS_TRACKED) {
-					dprintf("ZFS: destination is already TRACKED\n");
+					printf("ZFS: destination is already TRACKED\n");
 					error = EEXIST;
 					/* should be valid types */
 				} else if ((IFTOVT((mode_t)zp->z_mode) == VDIR) ||
@@ -578,7 +578,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 					/* Commit to disk */
 					zfs_setattr_set_documentid(to_zp, B_TRUE);
 					zfs_setattr_set_documentid(zp, B_TRUE); /* also update flags */
-					dprintf("ZFS: Moved docid %u from id %llu to id %llu\n",
+					printf("ZFS: Moved docid %u from id %llu to id %llu\n",
 						   to_zp->z_document_id, zp->z_id, to_zp->z_id);
 				}
 			  transfer_out:
@@ -597,7 +597,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		    {
 				uint32_t gen_counter;
 
-				dprintf("ZFS: F_MAKECOMPRESSED\n");
+				printf("ZFS: F_MAKECOMPRESSED\n");
 
 				if (vfs_isrdonly(zfsvfs->z_vfs) ||
 					!spa_writeable(dmu_objset_spa(zfsvfs->z_os))) {
@@ -637,6 +637,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 
 			}
 			break;
+
 
 		case HFS_PREV_LINK:
 		case HFS_NEXT_LINK:
@@ -3018,8 +3019,6 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 		if (value) {
 			rw_enter(&zp->z_xattr_lock, RW_READER);
 			error = zpl_xattr_get_sa(vp, ap->a_name, value, size);
-			rw_exit(&zp->z_xattr_lock);
-
 			//dprintf("ZFS: SA XATTR said %d\n", error);
 
 			if (error > 0) {
@@ -3141,7 +3140,7 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	int  flag;
 	int  error = 0;
 
-	dprintf("+setxattr vp %p '%s' enabled? %d\n", ap->a_vp,
+	printf("+setxattr vp %p '%s' enabled? %d\n", ap->a_vp,
 		   ap->a_name, zfsvfs->z_xattr);
 
 	/* xattrs disabled? */
@@ -3431,7 +3430,7 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 					error = ERANGE;
 					break;
 				}
-				dprintf("ZFS: listxattr '%s'\n", nvpair_name(nvp));
+				printf("ZFS: listxattr '%s'\n", nvpair_name(nvp));
 				error = uiomove((caddr_t)nvpair_name(nvp), namelen,
 								UIO_READ, uio);
 				if (error)
