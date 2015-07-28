@@ -760,6 +760,7 @@ sa_build_layouts(sa_handle_t *hdl, sa_bulk_attr_t *attr_desc, int attr_count,
 			printf("ZFS: NULL SA: SA_COPY_DATA(%p, %p, %p, %u) i=%u\n",
 				   attr_desc[i].sa_data_func, attr_desc[i].sa_data,
 				   data_start, length, i);
+			continue;
 		} else {
 			SA_COPY_DATA(attr_desc[i].sa_data_func, attr_desc[i].sa_data,
 						 data_start, length);

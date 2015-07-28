@@ -954,6 +954,11 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	if (VATTR_IS_ACTIVE(vap, va_flags)) {
 		znode_t *zp = VTOZ(ap->a_vp);
 
+		/* If TRACKED is wanted, and not previously set, go set DocumentID */
+		if ((vap->va_flags & UF_TRACKED) && !(zp->z_pflags & ZFS_TRACKED)) {
+			zfs_setattr_set_documentid(zp);
+		}
+
 		/* Map OS X file flags to zfs file flags */
 		zfs_setbsdflags(zp, vap->va_flags);
 		dprintf("OS X flags %08x changed to ZFS %04llx\n",
@@ -1005,7 +1010,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	uint64_t missing = 0;
 	missing = (vap->va_active ^ (vap->va_active & vap->va_supported));
 	if ( missing != 0) {
-		dprintf("vnop_setattr:: asked %08llx replied %08llx       missing %08llx\n",
+		printf("vnop_setattr:: asked %08llx replied %08llx       missing %08llx\n",
 			   vap->va_active, vap->va_supported,
 			   missing);
 	}
