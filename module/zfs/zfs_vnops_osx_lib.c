@@ -468,7 +468,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
 		} // !document_id
 
-		//VATTR_RETURN(vap, va_document_id, zp->z_document_id);
+		VATTR_RETURN(vap, va_document_id, zp->z_document_id);
     }
 #endif /* VNODE_ATTR_va_document_id */
 
