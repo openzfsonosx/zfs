@@ -1262,7 +1262,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 
 	zfs_get_zplprop(os, ZFS_PROP_APPLE_LASTUNMOUNT, &zval);
 	zfsvfs->z_last_unmount_time = zval;
-	printf("ZFS: '%s' mount using last_unmount value %lx\n",
+	dprintf("ZFS: '%s' mount using last_unmount value %lx\n",
 		   osname,
 		   zfsvfs->z_last_unmount_time);
 
@@ -2842,7 +2842,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			uint64_t value;
 
 			dmu_objset_name(zfsvfs->z_os, osname);
-			printf("ZFS: '%s' Updating spotlight LASTUNMOUNT property\n",
+			dprintf("ZFS: '%s' Updating spotlight LASTUNMOUNT property\n",
 				osname);
 
 			gethrestime(&now);
@@ -2861,7 +2861,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 								   &value, tx);
 				dmu_tx_commit(tx);
 			}
-			printf("ZFS: '%s' set lastunmount to 0x%lx (%d)\n",
+			dprintf("ZFS: '%s' set lastunmount to 0x%lx (%d)\n",
 					osname, zfsvfs->z_last_unmount_time, error);
 		}
 
