@@ -381,8 +381,8 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 				zp->z_pflags &= ~ZFS_TRACKED;
 
 				/* Commit to disk */
-				zfs_setattr_set_documentid(to_zp);
-				zfs_setattr_set_documentid(zp);
+				zfs_setattr_set_documentid(to_zp, B_TRUE);
+				zfs_setattr_set_documentid(zp, B_TRUE); /* also update flags */
 				printf("ZFS: Moved docid %u from id %llu to id %llu\n",
 					   to_zp->z_document_id, zp->z_id, to_zp->z_id);
 			}
@@ -1055,7 +1055,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 		/* If TRACKED is wanted, and not previously set, go set DocumentID */
 		if ((vap->va_flags & UF_TRACKED) && !(zp->z_pflags & ZFS_TRACKED)) {
 			zfs_setattr_generate_id(zp, 0, NULL);
-			zfs_setattr_set_documentid(zp);
+			zfs_setattr_set_documentid(zp, B_FALSE); /* flags updated in vnops */
 		}
 
 		/* Map OS X file flags to zfs file flags */

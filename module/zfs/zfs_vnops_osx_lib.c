@@ -1857,7 +1857,7 @@ void zfs_setattr_generate_id(znode_t *zp, uint64_t val, char *name)
  * setattr asked for UF_TRACKED to be set, which means we will make sure
  * we have a hash made (includes getting filename) and stored in SA.
  */
-int zfs_setattr_set_documentid(znode_t *zp)
+int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error = 0;
@@ -1876,8 +1876,10 @@ int zfs_setattr_set_documentid(znode_t *zp)
 
 		uint64_t docid = zp->z_document_id;  // 32->64
 
-		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
-						 &zp->z_pflags, 8);
+		if (update_flags == B_TRUE) {
+			SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
+							 &zp->z_pflags, 8);
+		}
         SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_DOCUMENTID(zfsvfs), NULL,
 						 &docid, sizeof(docid));
 

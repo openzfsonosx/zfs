@@ -454,7 +454,7 @@ int zfs_attach_vnode(znode_t *zp);
 uint32_t zfs_getbsdflags(znode_t *zp);
 void zfs_setbsdflags(znode_t *zp, uint32_t bsdflags);
 void zfs_time_stamper_locked(znode_t *zp, uint_t flag, dmu_tx_t *tx);
-int zfs_setattr_set_documentid(znode_t *zp);
+int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags);
 void zfs_setattr_generate_id(znode_t *zp, uint64_t val, char *name);
 
 #define FNV1_32A_INIT ((uint32_t)0x811c9dc5)
