@@ -176,9 +176,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #ifdef VNODE_ATTR_va_addedtime
 	uint64_t addtime[2] = { 0 };
 #endif
-#ifdef VNODE_ATTR_va_document_id
-	uint64_t docid = 0;
-#endif
 
     //printf("getattr_osx\n");
 
@@ -235,15 +232,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 				  &addtime, sizeof(addtime));
 	}
 #endif
-#ifdef VNODE_ATTR_va_document_id
-	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
-		if (!zp->z_document_id) {
-			sa_lookup(zp->z_sa_hdl, SA_ZPL_DOCUMENTID(zfsvfs),
-					  &docid, sizeof(docid));
-		}
-	}
-#endif
-
 
     /*
 	 * On Mac OS X we always export the root directory id as 2
@@ -418,55 +406,9 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #ifdef VNODE_ATTR_va_document_id
 	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
 
-		/*
-		 * Document ID. Persistant IDs that can survive "safe saving".
-		 * 'revisiond' appears to use fchflags(UF_TRACKED) on files/dirs
-		 * that it wishes to use DocumentIDs with. Here, we will lookup
-		 * if an entry already has a DocumentID stored in SA, but if not,
-		 * hash the DocumentID for (PARENTID + filename) and return it.
-		 * In vnop_setattr for UF_TRACKED, we will store the DocumentID to
-		 * disk.
-		 * Although it is not entirely clear which situations we should handle
-		 * we do handle:
-		 *
-		 * Case 1:
-		 *   "file.txt" gets chflag(UF_TRACKED) and DocumentID set.
-		 *   "file.txt" is renamed to "file.tmp". DocumentID is kept.
-		 *   "file.txt" is re-created, DocumentID remains same, but not saved.
-		 *
-		 * Case 2:
-		 *   "file.txt" gets chflag(UF_TRACKED) and DocumentID set.
-		 *   "file.txt" is moved to another directory. DocumentID is kept.
-		 *
-		 * It is interesting to note that HFS+ has "tombstones" which is
-		 * created when a UF_TRACKED entry is unlinked, or, renamed.
-		 * Then if a new entry is created with same PARENT+name, and matching
-		 * tombstone is found, will inherit the DocumentID, and UF_TRACKED flag.
-		 *
-		 * We may need to implement this as well.
-		 */
-		uint32_t documentid = 0;
-
 		if (!zp->z_document_id) {
-
-			/* docid comes from sa_bulk_lookup */
-			if (error || !docid) {
-				/* Generate new ID */
-
-				documentid = fnv_32a_buf(&parent, sizeof(parent), FNV1_32A_INIT);
-				/* What if we haven't looked up name above? */
-				if (vap->va_name)
-					documentid = fnv_32a_str(vap->va_name, documentid);
-
-				zp->z_document_id = documentid;
-
-			} else {
-
-				zp->z_document_id = docid; // 64->32
-
-			}
-
-		} // !document_id
+			zfs_setattr_generate_id(zp, parent, vap->va_name);
+		}
 
 		VATTR_RETURN(vap, va_document_id, zp->z_document_id);
     }
@@ -1837,6 +1779,80 @@ zpl_xattr_get_sa(struct vnode *vp, const char *name, void *value, size_t size)
 }
 
 
+
+/*
+ * Document ID. Persistant IDs that can survive "safe saving".
+ * 'revisiond' appears to use fchflags(UF_TRACKED) on files/dirs
+ * that it wishes to use DocumentIDs with. Here, we will lookup
+ * if an entry already has a DocumentID stored in SA, but if not,
+ * hash the DocumentID for (PARENTID + filename) and return it.
+ * In vnop_setattr for UF_TRACKED, we will store the DocumentID to
+ * disk.
+ * Although it is not entirely clear which situations we should handle
+ * we do handle:
+ *
+ * Case 1:
+ *   "file.txt" gets chflag(UF_TRACKED) and DocumentID set.
+ *   "file.txt" is renamed to "file.tmp". DocumentID is kept.
+ *   "file.txt" is re-created, DocumentID remains same, but not saved.
+ *
+ * Case 2:
+ *   "file.txt" gets chflag(UF_TRACKED) and DocumentID set.
+ *   "file.txt" is moved to another directory. DocumentID is kept.
+ *
+ * It is interesting to note that HFS+ has "tombstones" which is
+ * created when a UF_TRACKED entry is unlinked, or, renamed.
+ * Then if a new entry is created with same PARENT+name, and matching
+ * tombstone is found, will inherit the DocumentID, and UF_TRACKED flag.
+ *
+ * We may need to implement this as well.
+ *
+ * If "name" or "parent" is known, pass it along, or it needs to look it up.
+ *
+ */
+void zfs_setattr_generate_id(znode_t *zp, uint64_t val, char *name)
+{
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	char *nameptr = NULL;
+	char filename[MAXPATHLEN + 2];
+	uint64_t parent = val;
+	int error = 0;
+	uint64_t docid = 0;
+
+	if (!zp->z_document_id && zp->z_sa_hdl) {
+
+		error = sa_lookup(zp->z_sa_hdl, SA_ZPL_DOCUMENTID(zfsvfs),
+						  &docid, sizeof(docid));
+		if (!error && docid) {
+			zp->z_document_id = docid;
+			return;
+		}
+
+		/* Have name? */
+		if (name && *name) {
+			nameptr = name;
+		} else {
+			/* Do we have parent? */
+			if (!parent) {
+				VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+								 &parent, sizeof (parent)) == 0);
+			}
+			/* Lookup filename */
+			filename[0] = 0;
+			if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+								 ZFS_DIRENT_OBJ(-1ULL), filename) == 0) {
+
+				nameptr = filename;
+			}
+		}
+
+		zp->z_document_id = fnv_32a_buf(&parent, sizeof(parent), FNV1_32A_INIT);
+		if (nameptr)
+			zp->z_document_id = fnv_32a_str(nameptr, zp->z_document_id);
+
+	} // !document_id
+}
+
 /*
  * setattr asked for UF_TRACKED to be set, which means we will make sure
  * we have a hash made (includes getting filename) and stored in SA.
@@ -1844,33 +1860,13 @@ zpl_xattr_get_sa(struct vnode *vp, const char *name, void *value, size_t size)
 int zfs_setattr_set_documentid(znode_t *zp)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	uint64_t parent;
-	char filename[MAXPATHLEN + 2];
 	int error = 0;
 	dmu_tx_t *tx;
+	int             count = 0;
+	sa_bulk_attr_t  bulk[2];
 
-	filename[0] = 0;
-
-	/* Generate ID if needed */
-	if (!zp->z_document_id && zp->z_sa_hdl) {
-
-		/* We'll need PARENT to get name */
-		VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
-						 &parent, sizeof (parent)) == 0);
-
-		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-							 ZFS_DIRENT_OBJ(-1ULL), filename) == 0) {
-
-			zp->z_document_id =fnv_32a_buf(&parent,sizeof(parent),FNV1_32A_INIT);
-			zp->z_document_id =fnv_32a_str(filename, zp->z_document_id);
-
-		} // filename
-
-	} // !z_document_id
-
-	printf("ZFS: vnop_setattr(UF_TRACKED) obj %llu '%s' : documentid %08u\n",
+	printf("ZFS: vnop_setattr(UF_TRACKED) obj %llu : documentid %08u\n",
 		   zp->z_id,
-		   filename,
 		   zp->z_document_id);
 
 	/* Write the new documentid to SA */
@@ -1880,16 +1876,20 @@ int zfs_setattr_set_documentid(znode_t *zp)
 
 		uint64_t docid = zp->z_document_id;  // 32->64
 
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
+						 &zp->z_pflags, 8);
+        SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_DOCUMENTID(zfsvfs), NULL,
+						 &docid, sizeof(docid));
+
 		tx = dmu_tx_create(zfsvfs->z_os);
-		dmu_tx_hold_sa_create(tx, sizeof(docid));
 		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_TRUE);
 
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
 			dmu_tx_abort(tx);
 		} else {
-			error = sa_update(zp->z_sa_hdl, SA_ZPL_DOCUMENTID(zfsvfs),
-							  &docid, sizeof(docid), tx);
+			error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
+
 			if (error)
 				dmu_tx_abort(tx);
 			else

@@ -289,6 +289,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_GETPATH:
+			printf("ZFS: ioctl(HFS_GETPATH)\n");
   		    {
 				struct vfsstatfs *vfsp;
 				struct vnode *file_vp;
@@ -297,8 +298,6 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
                 char *bufptr;
                 int flags = 0;
 
-				printf("ZFS: ioctl(HFS_GETPATH)\n");
-#if 0 // Is it needed?
 				/* Caller must be owner of file system. */
 				vfsp = vfs_statfs(zfsvfs->z_vfs);
 				/*if (suser((kauth_cred_t)cr, NULL) &&  APPLE denied suser */
@@ -329,12 +328,68 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
                 vnode_put(file_vp);
 
 				printf("ZFS: done %d\n", error);
-#endif
 			}
 			break;
 
 		case HFS_TRANSFER_DOCUMENT_ID:
+		{
+			u_int32_t to_fd = *(u_int32_t *)ap->a_data;
+			file_t *to_fp;
+			struct vnode *to_vp;
+			znode_t *to_zp;
 			printf("ZFS: HFS_TRANSFER_DOCUMENT_ID:\n");
+
+			to_fp = getf(to_fd);
+			if (to_fp == NULL) {
+				error = EBADF;
+				goto out;
+			}
+
+			to_vp = getf_vnode(to_fp);
+
+			if ( (error = vnode_getwithref(to_vp)) ) {
+				releasef(to_fd);
+				goto out;
+			}
+
+			/* Confirm it is inside our mount */
+			if (((zfsvfs_t *)vfs_fsprivate(vnode_mount((to_vp)))) != zfsvfs) {
+				error = EXDEV;
+				goto transfer_out;
+			}
+
+			to_zp = VTOZ(to_vp);
+
+			/* Source should have UF_TRACKED */
+			if (!(zp->z_pflags & ZFS_TRACKED)) {
+				error = EINVAL;
+			/* destination should NOT have UF_TRACKED */
+			} else if (to_zp->z_pflags & ZFS_TRACKED) {
+				error = EEXIST;
+			/* should be valid types */
+			} else if ((IFTOVT((mode_t)zp->z_mode) == VDIR) ||
+					   (IFTOVT((mode_t)zp->z_mode) == VREG) ||
+					   (IFTOVT((mode_t)zp->z_mode) == VLNK)) {
+				/* Make sure source has a document id  - although it can't*/
+				if (!zp->z_document_id)
+					zfs_setattr_generate_id(zp, 0, NULL);
+
+				/* transfer over */
+				to_zp->z_document_id = zp->z_document_id;
+				zp->z_document_id = 0;
+				to_zp->z_pflags |= ZFS_TRACKED;
+				zp->z_pflags &= ~ZFS_TRACKED;
+
+				/* Commit to disk */
+				zfs_setattr_set_documentid(to_zp);
+				zfs_setattr_set_documentid(zp);
+				printf("ZFS: Moved docid %u from id %llu to id %llu\n",
+					   to_zp->z_document_id, zp->z_id, to_zp->z_id);
+			  transfer_out:
+				vnode_put(to_vp);
+				releasef(to_fd);
+			}
+		}
 			break;
 
 		case HFS_PREV_LINK:
@@ -999,6 +1054,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 
 		/* If TRACKED is wanted, and not previously set, go set DocumentID */
 		if ((vap->va_flags & UF_TRACKED) && !(zp->z_pflags & ZFS_TRACKED)) {
+			zfs_setattr_generate_id(zp, 0, NULL);
 			zfs_setattr_set_documentid(zp);
 		}
 
