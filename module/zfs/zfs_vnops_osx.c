@@ -385,10 +385,10 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 				zfs_setattr_set_documentid(zp);
 				printf("ZFS: Moved docid %u from id %llu to id %llu\n",
 					   to_zp->z_document_id, zp->z_id, to_zp->z_id);
-			  transfer_out:
-				vnode_put(to_vp);
-				releasef(to_fd);
 			}
+		  transfer_out:
+			vnode_put(to_vp);
+			releasef(to_fd);
 		}
 			break;
 
