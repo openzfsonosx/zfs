@@ -1001,8 +1001,7 @@ dmu_xuio_init(xuio_t *xuio, int nblk)
 	priv = kmem_zalloc(sizeof (dmu_xuio_t), KM_SLEEP);
 	priv->cnt = nblk;
 	priv->bufs = kmem_zalloc(nblk * sizeof (arc_buf_t *), KM_SLEEP);
-	//priv->iovp = uio->uio_iov;
-    priv->iovp = (iovec_t *)uio_curriovbase(uio);
+	priv->iovp = (iovec_t *)uio->uio_iov;
 	XUIO_XUZC_PRIV(xuio) = priv;
 
 	if (XUIO_XUZC_RW(xuio) == UIO_READ)
@@ -1048,8 +1047,7 @@ dmu_xuio_add(xuio_t *xuio, arc_buf_t *abuf, offset_t off, size_t n)
 
 	ASSERT(i < priv->cnt);
 	ASSERT(off + n <= arc_buf_size(abuf));
-	//iov = uio->uio_iov + i;
-	iov = ((iovec_t *)uio_curriovbase(uio)) + i;
+	iov = (iovec_t *)uio->uio_iov + i;
 	iov->iov_base = (char *)abuf->b_data + off;
 	iov->iov_len = n;
 	priv->bufs[i] = abuf;
