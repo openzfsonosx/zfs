@@ -323,7 +323,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 										  (vfs_context_t)ct))) {
 					goto out;
                 }
-                error = build_path(file_vp, bufptr, sizeof(pathname_t),
+                error = build_path(file_vp, bufptr, MAXPATHLEN,
 								   &outlen, flags, (vfs_context_t)ct);
                 vnode_put(file_vp);
 
@@ -362,9 +362,11 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 
 			/* Source should have UF_TRACKED */
 			if (!(zp->z_pflags & ZFS_TRACKED)) {
+				printf("ZFS: source is not TRACKED\n");
 				error = EINVAL;
 			/* destination should NOT have UF_TRACKED */
 			} else if (to_zp->z_pflags & ZFS_TRACKED) {
+				printf("ZFS: destination is already TRACKED\n");
 				error = EEXIST;
 			/* should be valid types */
 			} else if ((IFTOVT((mode_t)zp->z_mode) == VDIR) ||
@@ -2316,7 +2318,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 		value = kmem_alloc(size, KM_SLEEP);
 		if (value) {
 			error = zpl_xattr_get_sa(vp, ap->a_name, value, size);
-			dprintf("ZFS: SA XATTR said %d\n", error);
+			//dprintf("ZFS: SA XATTR said %d\n", error);
 
 			if (error > 0) {
 				uiomove((const char*)value, error, 0, uio);
@@ -2437,7 +2439,8 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	int  flag;
 	int  error = 0;
 
-	dprintf("+setxattr vp %p enabled? %d\n", ap->a_vp, zfsvfs->z_xattr);
+	printf("+setxattr vp %p '%s' enabled? %d\n", ap->a_vp,
+		   ap->a_name, zfsvfs->z_xattr);
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
@@ -2569,7 +2572,7 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 	int  error;
 	uint64_t xattr;
 
-	dprintf("+removexattr vp %p\n", ap->a_vp);
+	dprintf("+removexattr vp %p '%s'\n", ap->a_vp, ap->a_name);
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
@@ -2652,12 +2655,11 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 #if 0
 	struct vnop_listxattr_args {
 		struct vnodeop_desc *a_desc;
-		struct vnode	*a_vp;
-		char		*a_name;
-		struct uio	*a_uio;
-		size_t		*a_size;
-		int		a_options;
-		vfs_context_t	a_context;
+        vnode_t a_vp;
+        uio_t a_uio;
+        size_t *a_size;
+        int a_options;
+        vfs_context_t a_context;
 	};
 #endif
 {
@@ -2678,7 +2680,7 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 	uint64_t xattr;
 	int force_formd_normalized_output;
 
-	dprintf("+listxattr vp %p\n", ap->a_vp);
+	dprintf("+listxattr vp %p: \n", ap->a_vp);
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
@@ -2716,6 +2718,7 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 					error = ERANGE;
 					break;
 				}
+				printf("ZFS: listxattr '%s'\n", nvpair_name(nvp));
 				error = uiomove((caddr_t)nvpair_name(nvp), namelen,
 								UIO_READ, uio);
 				if (error)
