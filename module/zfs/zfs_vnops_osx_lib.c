@@ -1891,11 +1891,7 @@ int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags)
 			dmu_tx_abort(tx);
 		} else {
 			error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
-
-			if (error)
-				dmu_tx_abort(tx);
-			else
-				dmu_tx_commit(tx);
+			dmu_tx_commit(tx);
 		}
 
 		if (error)

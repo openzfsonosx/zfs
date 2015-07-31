@@ -155,6 +155,11 @@ such as "foo.rtf" -> "foo.rtfd" */
 #define HFSIOC_TRANSFER_DOCUMENT_ID  _IOW('h', 32, u_int32_t)
 #define HFS_TRANSFER_DOCUMENT_ID  IOCBASECMD(HFSIOC_TRANSFER_DOCUMENT_ID)
 
+
+/* fcntl.h */
+#define F_MAKECOMPRESSED                80 /* Make the file compressed; truncate & toggle BSD bits */
+
+
 // END of definitions
 
 #endif
