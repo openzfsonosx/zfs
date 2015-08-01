@@ -15,12 +15,12 @@
 #include "IDDiskArbitrationUtils.hpp"
 #include "IDFileUtils.hpp"
 
-#include <iostream>
 #include <algorithm>
 
 namespace ID
 {
-	MediaPathLinker::MediaPathLinker(std::string base) :
+	MediaPathLinker::MediaPathLinker(std::string base, ASLClient const & logger) :
+		DiskArbitrationHandler(logger),
 		m_base(std::move(base))
 	{
 		createPath(m_base);
@@ -50,12 +50,15 @@ namespace ID
 			{
 				mediaPath = m_base + "/" + mediaPath;
 				std::string devicePath = "/dev/" + di.mediaBSDName;
-				std::cout << "Creating symlink: \"" << mediaPath << "\" -> " << devicePath << std::endl;
+				asl_log(logger().client(), 0, ASL_LEVEL_NOTICE,
+						"Creating symlink: \"%s\" -> \"%s\"",
+						mediaPath.c_str(), devicePath.c_str());
 				createSymlink(mediaPath, devicePath);
 			}
 			catch (std::exception const & e)
 			{
-				std::cerr << "Could not create symlink: " << e.what() << std::endl;
+				asl_log(logger().client(), 0, ASL_LEVEL_ERR,
+						"Could not create symlink: %s", e.what());
 			}
 		}
 	}
@@ -68,12 +71,14 @@ namespace ID
 			try
 			{
 				mediaPath = m_base + "/" + mediaPath;
-				std::cout << "Removing symlink: \"" << mediaPath << "\"" << std::endl;
+				asl_log(logger().client(), 0, ASL_LEVEL_NOTICE,
+						"Removing symlink: \"%s\"", mediaPath.c_str());
 				removeFSObject(mediaPath);
 			}
 			catch (std::exception const & e)
 			{
-				std::cerr << "Could not remove symlink: " << e.what() << std::endl;
+				asl_log(logger().client(), 0, ASL_LEVEL_ERR,
+						"Could not remove symlink: %s", e.what());
 			}
 		}
 	}

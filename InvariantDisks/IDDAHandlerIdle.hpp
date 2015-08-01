@@ -23,7 +23,8 @@ namespace ID
 	class DAHandlerIdle : public DiskArbitrationHandler
 	{
 	public:
-		explicit DAHandlerIdle(std::string base, int64_t idleTimeoutNS);
+		explicit DAHandlerIdle(std::string base, int64_t idleTimeoutNS,
+							   ASLClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;

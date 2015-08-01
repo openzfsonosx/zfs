@@ -15,24 +15,23 @@
 
 #include "IDDiskArbitrationHandler.hpp"
 
-#include <iostream>
+#include <string>
 
 namespace ID
 {
 	class DiskInfoLogger : public DiskArbitrationHandler
 	{
 	public:
-		DiskInfoLogger(std::ostream & stream, bool verbose = false);
+		explicit DiskInfoLogger(bool verbose, ASLClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;
 		virtual void diskDisappeared(DADiskRef disk, DiskInformation const & info) override;
 
 	private:
-		void printDisk(DiskInformation const & info) const;
+		std::string formatDisk(DiskInformation const & info) const;
 
 	private:
-		std::ostream & m_logStream;
 		bool m_verbose;
 	};
 }

@@ -16,34 +16,35 @@
 
 #include <DiskArbitration/DiskArbitration.h>
 
-#include <iostream>
+#include <sstream>
 
 namespace ID
 {
-	DiskInfoLogger::DiskInfoLogger(std::ostream & stream, bool verbose) :
-		m_logStream(stream), m_verbose(verbose)
+	DiskInfoLogger::DiskInfoLogger(bool verbose, ASLClient const & logger) :
+		DiskArbitrationHandler(logger),
+		m_verbose(verbose)
 	{
 	}
 
 	void DiskInfoLogger::diskAppeared(DADiskRef /*disk*/, DiskInformation const & info)
 	{
-		m_logStream << "Disk Appeared: ";
-		printDisk(info);
-		m_logStream << std::endl;
+		asl_log(logger().client(), 0, ASL_LEVEL_NOTICE,
+				"Disk Appeared: %s", formatDisk(info).c_str());
 	}
 
 	void DiskInfoLogger::diskDisappeared(DADiskRef /*disk*/, DiskInformation const & info)
 	{
-		m_logStream << "Disk Disappeared: ";
-		printDisk(info);
-		m_logStream << std::endl;
+		asl_log(logger().client(), 0, ASL_LEVEL_NOTICE,
+				"Disk Disappeared: %s", formatDisk(info).c_str());
 	}
 
-	void DiskInfoLogger::printDisk(DiskInformation const & info) const
+	std::string DiskInfoLogger::formatDisk(DiskInformation const & info) const
 	{
+		std::stringstream ss;
 		if (m_verbose)
-			m_logStream << info;
+			ss << info;
 		else
-			m_logStream << info.mediaBSDName;
+			ss << info.mediaBSDName;
+		return ss.str();
 	}
 }
