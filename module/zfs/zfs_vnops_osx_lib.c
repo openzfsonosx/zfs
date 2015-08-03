@@ -174,11 +174,34 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
     //printf("getattr_osx\n");
 
 	ZFS_ENTER(zfsvfs);
-    if (!zp->z_sa_hdl) {
-        ZFS_EXIT(zfsvfs);
-		printf("ZFS: getattr error\n");
-        return EIO;
+	ZFS_VERIFY_ZP(zp);
+
+	if (zp->z_unlinked) {
+		dprintf("ZFS: getattr for unlinked!\n");
+		ZFS_EXIT(zfsvfs);
+		return ENOENT;
+	}
+
+	if (VATTR_IS_ACTIVE(vap, va_acl)) {
+        //printf("want acl\n");
+        VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
+        VATTR_RETURN(vap, va_guuid, kauth_null_guid);
+
+        //dprintf("Calling getacl\n");
+        if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
+            //  dprintf("zfs_getacl returned error %d\n", error);
+            error = 0;
+        } else {
+
+            VATTR_SET_SUPPORTED(vap, va_acl);
+            /* va_acl implies that va_uuuid and va_guuid are also supported. */
+            VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
+            VATTR_RETURN(vap, va_guuid, kauth_null_guid);
+        }
+
     }
+
+    mutex_enter(&zp->z_lock);
 
 	/*
 	 * On Mac OS X we always export the root directory id as 2
@@ -251,42 +274,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		VATTR_RETURN(vap, va_dirlinkcount, 1);
     }
 
-	if (VATTR_IS_ACTIVE(vap, va_acl)) {
-        //printf("want acl\n");
-#if 0
-        zfs_acl_phys_t acl;
-
-        if (sa_lookup(zp->z_sa_hdl, SA_ZPL_ZNODE_ACL(zfsvfs),
-                      &acl, sizeof (zfs_acl_phys_t))) {
-            //if (zp->z_acl.z_acl_count == 0) {
-			vap->va_acl = (kauth_acl_t) KAUTH_FILESEC_NONE;
-		} else {
-			if ((error = zfs_getacl(zp, &vap->va_acl, B_TRUE, NULL))) {
-                dprintf("zfs_getacl returned error %d\n", error);
-                error = 0;
-				//ZFS_EXIT(zfsvfs);
-				//return (error);
-			}
-		}
-
-#endif
-      //VATTR_SET_SUPPORTED(vap, va_acl);
-        VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
-        VATTR_RETURN(vap, va_guuid, kauth_null_guid);
-
-        //dprintf("Calling getacl\n");
-        if ((error = zfs_getacl(zp, &vap->va_acl, B_FALSE, NULL))) {
-            //  dprintf("zfs_getacl returned error %d\n", error);
-            error = 0;
-        } else {
-
-            VATTR_SET_SUPPORTED(vap, va_acl);
-            /* va_acl implies that va_uuuid and va_guuid are also supported. */
-            VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
-            VATTR_RETURN(vap, va_guuid, kauth_null_guid);
-        }
-
-    }
 
 	if (VATTR_IS_ACTIVE(vap, va_data_alloc) || VATTR_IS_ACTIVE(vap, va_total_alloc)) {
 		uint32_t  blksize;
@@ -407,14 +394,84 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #endif
 #ifdef VNODE_ATTR_va_write_gencount
 	if (VATTR_IS_ACTIVE(vap, va_write_gencount)) {
-        VATTR_RETURN(vap, va_write_gencount, 0);
+		if (!zp->z_write_gencount)
+			atomic_inc_64(&zp->z_write_gencount);
+        VATTR_RETURN(vap, va_write_gencount, (uint32_t)zp->z_write_gencount);
     }
 #endif
+
 #ifdef VNODE_ATTR_va_document_id
-	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
-        VATTR_RETURN(vap, va_document_id, 0);
+	if (/*VATTR_IS_ACTIVE(vap, va_flags) && (vap->va_flags & UF_TRACKED)
+		  &&*/ VATTR_IS_ACTIVE(vap, va_document_id)) {
+
+		/* If they requested document_id, we will go look for it (in case
+		 * it was already set before), or, generate a new one.
+		 * document_id is generated from PARENT's ID and name then hashed
+		 * into a 32bit value.
+		 */
+		uint64_t docid = 0;
+		uint32_t documentid = 0;
+		dmu_tx_t *tx;
+
+#if 0 /* Not yet */
+
+		error = sa_lookup(zp->z_sa_hdl, SA_ZPL_DOCUMENTID(zfsvfs),
+						  &docid, sizeof (docid));
+
+		if (error || !docid) {
+			/* Generate new ID */
+
+#define FNV1_32A_INIT ((uint32_t)0x811c9dc5)
+			documentid = fnv_32a_buf(&docid, sizeof(docid), FNV1_32A_INIT);
+			/* What if we haven't looked up name above? */
+			if (vap->va_name)
+				documentid = fnv_32a_str(vap->va_name, documentid);
+
+			printf("ZFS: Generated new ID for %llu '%s' : %08u\n",
+				   zp->z_id,
+				   vap->va_name ? vap->va_name : "",
+				   documentid);
+
+			docid = documentid;  // 32 to 64
+
+			/* Write the new documentid to SA */
+			if (zfsvfs->z_use_sa == B_TRUE) {
+
+				tx = dmu_tx_create(zfsvfs->z_os);
+				dmu_tx_hold_sa_create(tx, sizeof(docid));
+				dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_TRUE);
+
+				error = dmu_tx_assign(tx, TXG_WAIT);
+				if (error) {
+					dmu_tx_abort(tx);
+				} else {
+					error = sa_update(zp->z_sa_hdl, SA_ZPL_DOCUMENTID(zfsvfs),
+									  &docid, sizeof(docid), tx);
+					if (error)
+						dmu_tx_abort(tx);
+					else
+						dmu_tx_commit(tx);
+				}
+
+				if (error)
+					printf("ZFS: sa_update(SA_ZPL_DOCUMENTID) failed %d\n",
+						   error);
+			}
+
+			// Clear error so we don't fail getattr
+			error = 0;
+
+		} else {
+			documentid = docid;  // 64 to 32
+		}
+#endif
+
+
+		VATTR_RETURN(vap, va_document_id, documentid);
     }
 #endif
+
+
 #if 0 // Issue #192
 	if (VATTR_IS_ACTIVE(vap, va_uuuid)) {
         kauth_cred_uid2guid(zp->z_uid, &vap->va_uuuid);
@@ -432,6 +489,9 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 			   vap->va_active, vap->va_supported,
 			   missing);
 	}
+
+	mutex_exit(&zp->z_lock);
+
 	ZFS_EXIT(zfsvfs);
 	return (error);
 }
@@ -1269,6 +1329,18 @@ int getpackedsize(struct attrlist *alp, boolean_t user64)
 			size += sizeof(u_int64_t);
 		if (attrs & ATTR_CMN_PARENTID)
 			size += sizeof(u_int64_t);
+		/*
+		 * Also add:
+		 * ATTR_CMN_GEN_COUNT         (|FSOPT_ATTR_CMN_EXTENDED)
+		 * ATTR_CMN_DOCUMENT_ID       (|FSOPT_ATTR_CMN_EXTENDED)
+		 * ATTR_CMN_EXTENDED_SECURITY
+		 * ATTR_CMN_UUID
+		 * ATTR_CMN_GRPUUID
+		 * ATTR_CMN_FULLPATH
+		 * ATTR_CMN_ADDEDTIME
+		 * ATTR_CMN_ERROR
+		 * ATTR_CMN_DATA_PROTECT_FLAGS
+		 */
 	}
 	if ((attrs = alp->dirattr) != 0) {
 		if (attrs & ATTR_DIR_LINKCOUNT)

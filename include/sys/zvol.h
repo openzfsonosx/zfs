@@ -169,6 +169,7 @@ extern int zvol_busy(void);
 extern void zfs_ereport_zvol_post(const char *subclass, const char *name,
     const char *bsd, const char *rbsd);
 
+extern boolean_t spa_exporting_vdevs;
 #endif /* _KERNEL */
 
 #ifdef	__cplusplus

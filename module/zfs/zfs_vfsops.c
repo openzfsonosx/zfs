@@ -1077,6 +1077,12 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	zfsvfs->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
 	zfsvfs->z_os = os;
 
+	/* Volume status "all ok" */
+	zfsvfs->z_notification_conditions = 0;
+	zfsvfs->z_freespace_notify_warninglimit = 0;
+	zfsvfs->z_freespace_notify_dangerlimit = 0;
+	zfsvfs->z_freespace_notify_desiredlevel = 0;
+
 	error = zfs_get_zplprop(os, ZFS_PROP_VERSION, &zfsvfs->z_version);
 	if (error) {
 		goto out;
@@ -1102,7 +1108,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 
 	zfs_get_zplprop(os, ZFS_PROP_APPLE_LASTUNMOUNT, &zval);
 	zfsvfs->z_last_unmount_time = zval;
-	printf("ZFS: '%s' mount using last_unmount value %lx\n",
+	dprintf("ZFS: '%s' mount using last_unmount value %lx\n",
 		   osname,
 		   zfsvfs->z_last_unmount_time);
 
@@ -1190,7 +1196,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	    offsetof(znode_t, z_link_reclaim_node));
 	list_create(&zfsvfs->z_vnodecreate_list, sizeof (struct vnodecreate),
 	    offsetof(struct vnodecreate, link));
-	rrw_init(&zfsvfs->z_teardown_lock, B_FALSE);
+	rrm_init(&zfsvfs->z_teardown_lock, B_FALSE);
 	rw_init(&zfsvfs->z_teardown_inactive_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zfsvfs->z_fuid_lock, NULL, RW_DEFAULT, NULL);
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
@@ -1353,7 +1359,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	list_destroy(&zfsvfs->z_all_znodes);
 	list_destroy(&zfsvfs->z_reclaim_znodes);
 	list_destroy(&zfsvfs->z_vnodecreate_list);
-	rrw_destroy(&zfsvfs->z_teardown_lock);
+	rrm_destroy(&zfsvfs->z_teardown_lock);
 	rw_destroy(&zfsvfs->z_teardown_inactive_lock);
 	rw_destroy(&zfsvfs->z_fuid_lock);
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
@@ -2629,6 +2635,67 @@ zfs_vnode_lock(vnode_t *vp, int flags)
 }
 
 
+#if !defined(HAVE_SPLIT_SHRINKER_CALLBACK) && !defined(HAVE_SHRINK) && \
+	defined(HAVE_D_PRUNE_ALIASES)
+/*
+ * Linux kernels older than 3.1 do not support a per-filesystem shrinker.
+ * To accommodate this we must improvise and manually walk the list of znodes
+ * attempting to prune dentries in order to be able to drop the inodes.
+ *
+ * To avoid scanning the same znodes multiple times they are always rotated
+ * to the end of the z_all_znodes list.  New znodes are inserted at the
+ * end of the list so we're always scanning the oldest znodes first.
+ */
+static int
+zfs_sb_prune_aliases(zfs_sb_t *zsb, unsigned long nr_to_scan)
+{
+	znode_t **zp_array, *zp;
+	int max_array = MIN(nr_to_scan, PAGE_SIZE * 8 / sizeof (znode_t *));
+	int objects = 0;
+	int i = 0, j = 0;
+
+	zp_array = kmem_zalloc(max_array * sizeof (znode_t *), KM_SLEEP);
+
+	mutex_enter(&zsb->z_znodes_lock);
+	while ((zp = list_head(&zsb->z_all_znodes)) != NULL) {
+
+		if ((i++ > nr_to_scan) || (j >= max_array))
+			break;
+
+		ASSERT(list_link_active(&zp->z_link_node));
+		list_remove(&zsb->z_all_znodes, zp);
+		list_insert_tail(&zsb->z_all_znodes, zp);
+
+		/* Skip active znodes and .zfs entries */
+		if (MUTEX_HELD(&zp->z_lock) || zp->z_is_ctldir)
+			continue;
+
+		if (igrab(ZTOI(zp)) == NULL)
+			continue;
+
+		zp_array[j] = zp;
+		j++;
+	}
+	mutex_exit(&zsb->z_znodes_lock);
+
+	for (i = 0; i < j; i++) {
+		zp = zp_array[i];
+
+		ASSERT3P(zp, !=, NULL);
+		d_prune_aliases(ZTOI(zp));
+
+		if (atomic_read(&ZTOI(zp)->i_count) == 1)
+			objects++;
+
+		iput(ZTOI(zp));
+	}
+
+	kmem_free(zp_array, max_array * sizeof (znode_t *));
+
+	return (objects);
+}
+#endif /* HAVE_D_PRUNE_ALIASES */
+
 /*
  * The ARC has requested that the filesystem drop entries from the dentry
  * and inode caches.  This can occur when the ARC needs to free meta data
@@ -2705,7 +2772,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		if (count++ > 10) break;
 	}
 
-	rrw_enter(&zfsvfs->z_teardown_lock, RW_WRITER, FTAG);
+	rrm_enter(&zfsvfs->z_teardown_lock, RW_WRITER, FTAG);
 
 	if (!unmounting) {
 		/*
@@ -2738,7 +2805,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	 */
 	if (!unmounting && (zfsvfs->z_unmounted || zfsvfs->z_os == NULL)) {
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
-		rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
+		rrm_exit(&zfsvfs->z_teardown_lock, FTAG);
 		return (SET_ERROR(EIO));
 	}
 	/*
@@ -2765,7 +2832,7 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	if (unmounting) {
 		zfsvfs->z_unmounted = B_TRUE;
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
-		rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
+		rrm_exit(&zfsvfs->z_teardown_lock, FTAG);
 #ifdef __APPLE__
 		if (!list_empty(&zfsvfs->z_reclaim_znodes)) {
 			printf("ZFS: Attempting to purge reclaim list manually\n");
@@ -2890,9 +2957,9 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		 * vflush(FORCECLOSE). This way we ensure no future vnops
 		 * will be called and risk operating on DOOMED vnodes.
 		 */
-		rrw_enter(&zfsvfs->z_teardown_lock, RW_WRITER, FTAG);
+		rrm_enter(&zfsvfs->z_teardown_lock, RW_WRITER, FTAG);
 		zfsvfs->z_unmounted = B_TRUE;
-		rrw_exit(&zfsvfs->z_teardown_lock, FTAG);
+		rrm_exit(&zfsvfs->z_teardown_lock, FTAG);
 	}
 
 	/*
@@ -2920,7 +2987,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			uint64_t value;
 
 			dmu_objset_name(zfsvfs->z_os, osname);
-			printf("ZFS: '%s' Updating spotlight LASTUNMOUNT property\n",
+			dprintf("ZFS: '%s' Updating spotlight LASTUNMOUNT property\n",
 				osname);
 
 			gethrestime(&now);
@@ -2939,7 +3006,7 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 								   &value, tx);
 				dmu_tx_commit(tx);
 			}
-			printf("ZFS: '%s' set lastunmount to 0x%lx (%d)\n",
+			dprintf("ZFS: '%s' set lastunmount to 0x%lx (%d)\n",
 					osname, zfsvfs->z_last_unmount_time, error);
 		}
 
@@ -3353,7 +3420,7 @@ zfs_resume_fs(zfsvfs_t *zsb, const char *osname)
 	znode_t *zp;
 	uint64_t sa_obj = 0;
 
-	ASSERT(RRW_WRITE_HELD(&zsb->z_teardown_lock));
+	ASSERT(RRM_WRITE_HELD(&zsb->z_teardown_lock));
 	ASSERT(RW_WRITE_HELD(&zsb->z_teardown_inactive_lock));
 
 	/*
@@ -3417,7 +3484,7 @@ zfs_resume_fs(zfsvfs_t *zsb, const char *osname)
 bail:
 	/* release the VFS ops */
 	rw_exit(&zsb->z_teardown_inactive_lock);
-	rrw_exit(&zsb->z_teardown_lock, FTAG);
+	rrm_exit(&zsb->z_teardown_lock, FTAG);
 
 	if (err) {
 		/*

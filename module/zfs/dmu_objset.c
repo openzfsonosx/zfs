@@ -24,6 +24,8 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright (c) 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2015, STRATO AG, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -48,12 +50,23 @@
 #include <sys/sa.h>
 #include <sys/zfs_onexit.h>
 #include <sys/dsl_destroy.h>
+#include <sys/vdev.h>
 
 /*
  * Needed to close a window in dnode_move() that allows the objset to be freed
  * before it can be safely accessed.
  */
 krwlock_t os_lock;
+
+/*
+ * Tunable to overwrite the maximum number of threads for the parallization
+ * of dmu_objset_find_dp, needed to speed up the import of pools with many
+ * datasets.
+ * Default is 4 times the number of leaf vdevs.
+ */
+int dmu_find_threads = 0;
+
+static void dmu_objset_find_dp_cb(void *arg);
 
 void
 dmu_objset_init(void)
@@ -151,7 +164,8 @@ compression_changed_cb(void *arg, uint64_t newval)
 	 */
 	ASSERT(newval != ZIO_COMPRESS_INHERIT);
 
-	os->os_compress = zio_compress_select(newval, ZIO_COMPRESS_ON_VALUE);
+	os->os_compress = zio_compress_select(os->os_spa, newval,
+	    ZIO_COMPRESS_ON);
 }
 
 static void
@@ -294,15 +308,15 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 	os->os_spa = spa;
 	os->os_rootbp = bp;
 	if (!BP_IS_HOLE(os->os_rootbp)) {
-		uint32_t aflags = ARC_WAIT;
+		arc_flags_t aflags = ARC_FLAG_WAIT;
 		zbookmark_phys_t zb;
 		SET_BOOKMARK(&zb, ds ? ds->ds_object : DMU_META_OBJSET,
 		    ZB_ROOT_OBJECT, ZB_ROOT_LEVEL, ZB_ROOT_BLKID);
 
 		if (DMU_OS_IS_L2CACHEABLE(os))
-			aflags |= ARC_L2CACHE;
+			aflags |= ARC_FLAG_L2CACHE;
 		if (DMU_OS_IS_L2COMPRESSIBLE(os))
-			aflags |= ARC_L2COMPRESS;
+			aflags |= ARC_FLAG_L2COMPRESS;
 
 		dprintf_bp(os->os_rootbp, "reading %s", "");
 		err = arc_read(NULL, spa, os->os_rootbp,
@@ -408,7 +422,7 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 	} else {
 		/* It's the meta-objset. */
 		os->os_checksum = ZIO_CHECKSUM_FLETCHER_4;
-		os->os_compress = ZIO_COMPRESS_LZJB;
+		os->os_compress = ZIO_COMPRESS_ON;
 		os->os_copies = spa_max_replication(spa);
 		os->os_dedup_checksum = ZIO_CHECKSUM_OFF;
 		os->os_dedup_verify = B_FALSE;
@@ -504,6 +518,25 @@ dmu_objset_hold(const char *name, void *tag, objset_t **osp)
 	return (err);
 }
 
+static int
+dmu_objset_own_impl(dsl_dataset_t *ds, dmu_objset_type_t type,
+    boolean_t readonly, void *tag, objset_t **osp)
+{
+	int err;
+
+	err = dmu_objset_from_ds(ds, osp);
+	if (err != 0) {
+		dsl_dataset_disown(ds, tag);
+	} else if (type != DMU_OST_ANY && type != (*osp)->os_phys->os_type) {
+		dsl_dataset_disown(ds, tag);
+		return (SET_ERROR(EINVAL));
+	} else if (!readonly && dsl_dataset_is_snapshot(ds)) {
+		dsl_dataset_disown(ds, tag);
+		return (SET_ERROR(EROFS));
+	}
+	return (err);
+}
+
 /*
  * dsl_pool must not be held when this is called.
  * Upon successful return, there will be a longhold on the dataset,
@@ -525,19 +558,24 @@ dmu_objset_own(const char *name, dmu_objset_type_t type,
 		dsl_pool_rele(dp, FTAG);
 		return (err);
 	}
-
-	err = dmu_objset_from_ds(ds, osp);
+	err = dmu_objset_own_impl(ds, type, readonly, tag, osp);
 	dsl_pool_rele(dp, FTAG);
-	if (err != 0) {
-		dsl_dataset_disown(ds, tag);
-	} else if (type != DMU_OST_ANY && type != (*osp)->os_phys->os_type) {
-		dsl_dataset_disown(ds, tag);
-		return (SET_ERROR(EINVAL));
-	} else if (!readonly && ds->ds_is_snapshot) {
-		dsl_dataset_disown(ds, tag);
-		return (SET_ERROR(EROFS));
-	}
+
 	return (err);
+}
+
+int
+dmu_objset_own_obj(dsl_pool_t *dp, uint64_t obj, dmu_objset_type_t type,
+    boolean_t readonly, void *tag, objset_t **osp)
+{
+	dsl_dataset_t *ds;
+	int err;
+
+	err = dsl_dataset_own_obj(dp, obj, tag, &ds);
+	if (err != 0)
+		return (err);
+
+	return (dmu_objset_own_impl(ds, type, readonly, tag, osp));
 }
 
 void
@@ -912,11 +950,7 @@ dmu_objset_clone_check(void *arg, dmu_tx_t *tx)
 		dsl_dir_rele(pdd, FTAG);
 		return (SET_ERROR(EEXIST));
 	}
-	/* You can't clone across pools. */
-	if (pdd->dd_pool != dp) {
-		dsl_dir_rele(pdd, FTAG);
-		return (SET_ERROR(EXDEV));
-	}
+
 	error = dsl_fs_ss_limit_check(pdd, 1, ZFS_PROP_FILESYSTEM_LIMIT, NULL,
 	    doca->doca_cred);
 	if (error != 0) {
@@ -928,12 +962,6 @@ dmu_objset_clone_check(void *arg, dmu_tx_t *tx)
 	error = dsl_dataset_hold(dp, doca->doca_origin, FTAG, &origin);
 	if (error != 0)
 		return (error);
-
-	/* You can't clone across pools. */
-	if (origin->ds_dir->dd_pool != dp) {
-		dsl_dataset_rele(origin, FTAG);
-		return (SET_ERROR(EXDEV));
-	}
 
 	/* You can only clone snapshots, not the head datasets. */
 	if (!origin->ds_is_snapshot) {
@@ -1314,6 +1342,7 @@ dmu_objset_userquota_get_ids(dnode_t *dn, boolean_t before, dmu_tx_t *tx)
 	int flags = dn->dn_id_flags;
 	int error;
 	boolean_t have_spill = B_FALSE;
+	boolean_t have_bonus = B_FALSE;
 
 	if (!dmu_objset_userused_enabled(dn->dn_objset))
 		return;
@@ -1325,8 +1354,21 @@ dmu_objset_userquota_get_ids(dnode_t *dn, boolean_t before, dmu_tx_t *tx)
 	if (before && dn->dn_bonuslen != 0)
 		data = DN_BONUS(dn->dn_phys);
 	else if (!before && dn->dn_bonuslen != 0) {
-		if (dn->dn_bonus) {
-			db = dn->dn_bonus;
+		db = dn->dn_bonus;
+		if (db != NULL) {
+			if (!RW_WRITE_HELD(&dn->dn_struct_rwlock)) {
+				have_bonus = dbuf_try_add_ref((dmu_buf_t *)db,
+				    dn->dn_objset, dn->dn_object,
+				    DMU_BONUS_BLKID, FTAG);
+
+				/*
+				 * The hold will fail if the buffer is
+				 * being evicted due to unlink, in which
+				 * case nothing needs to be done.
+				 */
+				if (!have_bonus)
+					return;
+			}
 			mutex_enter(&db->db_mtx);
 			data = dmu_objset_userquota_find_data(db, tx);
 		} else {
@@ -1401,7 +1443,7 @@ dmu_objset_userquota_get_ids(dnode_t *dn, boolean_t before, dmu_tx_t *tx)
 		dn->dn_id_flags |= DN_ID_CHKED_BONUS;
 	}
 	mutex_exit(&dn->dn_mtx);
-	if (have_spill)
+	if (have_spill || have_bonus)
 		dmu_buf_rele((dmu_buf_t *)db, FTAG);
 }
 
@@ -1604,30 +1646,41 @@ dmu_dir_list_next(objset_t *os, int namelen, char *name,
 	return (0);
 }
 
-/*
- * Find objsets under and including ddobj, call func(ds) on each.
- */
-int
-dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
-    int func(dsl_pool_t *, dsl_dataset_t *, void *), void *arg, int flags)
+typedef struct dmu_objset_find_ctx {
+	taskq_t		*dc_tq;
+	dsl_pool_t	*dc_dp;
+	uint64_t	dc_ddobj;
+	int		(*dc_func)(dsl_pool_t *, dsl_dataset_t *, void *);
+	void		*dc_arg;
+	int		dc_flags;
+	kmutex_t	*dc_error_lock;
+	int		*dc_error;
+} dmu_objset_find_ctx_t;
+
+static void
+dmu_objset_find_dp_impl(dmu_objset_find_ctx_t *dcp)
 {
+	dsl_pool_t *dp = dcp->dc_dp;
+	dmu_objset_find_ctx_t *child_dcp;
 	dsl_dir_t *dd;
 	dsl_dataset_t *ds;
 	zap_cursor_t zc;
 	zap_attribute_t *attr;
 	uint64_t thisobj;
-	int err;
+	int err = 0;
 
-	ASSERT(dsl_pool_config_held(dp));
+	/* don't process if there already was an error */
+	if (*dcp->dc_error != 0)
+		goto out;
 
-	err = dsl_dir_hold_obj(dp, ddobj, NULL, FTAG, &dd);
+	err = dsl_dir_hold_obj(dp, dcp->dc_ddobj, NULL, FTAG, &dd);
 	if (err != 0)
-		return (err);
+		goto out;
 
 	/* Don't visit hidden ($MOS & $ORIGIN) objsets. */
 	if (dd->dd_myname[0] == '$') {
 		dsl_dir_rele(dd, FTAG);
-		return (0);
+		goto out;
 	}
 
 	thisobj = dsl_dir_phys(dd)->dd_head_dataset_obj;
@@ -1636,7 +1689,7 @@ dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
 	/*
 	 * Iterate over all children.
 	 */
-	if (flags & DS_FIND_CHILDREN) {
+	if (dcp->dc_flags & DS_FIND_CHILDREN) {
 		for (zap_cursor_init(&zc, dp->dp_meta_objset,
 		    dsl_dir_phys(dd)->dd_child_dir_zapobj);
 		    zap_cursor_retrieve(&zc, attr) == 0;
@@ -1645,24 +1698,22 @@ dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
 			    sizeof (uint64_t));
 			ASSERT3U(attr->za_num_integers, ==, 1);
 
-			err = dmu_objset_find_dp(dp, attr->za_first_integer,
-			    func, arg, flags);
-			if (err != 0)
-				break;
+			child_dcp = kmem_alloc(sizeof (*child_dcp), KM_SLEEP);
+			*child_dcp = *dcp;
+			child_dcp->dc_ddobj = attr->za_first_integer;
+			if (dcp->dc_tq != NULL)
+				(void) taskq_dispatch(dcp->dc_tq,
+				    dmu_objset_find_dp_cb, child_dcp, TQ_SLEEP);
+			else
+				dmu_objset_find_dp_impl(child_dcp);
 		}
 		zap_cursor_fini(&zc);
-
-		if (err != 0) {
-			dsl_dir_rele(dd, FTAG);
-			kmem_free(attr, sizeof (zap_attribute_t));
-			return (err);
-		}
 	}
 
 	/*
 	 * Iterate over all snapshots.
 	 */
-	if (flags & DS_FIND_SNAPSHOTS) {
+	if (dcp->dc_flags & DS_FIND_SNAPSHOTS) {
 		dsl_dataset_t *ds;
 		err = dsl_dataset_hold_obj(dp, thisobj, FTAG, &ds);
 
@@ -1683,7 +1734,7 @@ dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
 				    attr->za_first_integer, FTAG, &ds);
 				if (err != 0)
 					break;
-				err = func(dp, ds, arg);
+				err = dcp->dc_func(dp, ds, dcp->dc_arg);
 				dsl_dataset_rele(ds, FTAG);
 				if (err != 0)
 					break;
@@ -1696,17 +1747,123 @@ dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
 	kmem_free(attr, sizeof (zap_attribute_t));
 
 	if (err != 0)
-		return (err);
+		goto out;
 
 	/*
 	 * Apply to self.
 	 */
 	err = dsl_dataset_hold_obj(dp, thisobj, FTAG, &ds);
 	if (err != 0)
-		return (err);
-	err = func(dp, ds, arg);
+		goto out;
+	err = dcp->dc_func(dp, ds, dcp->dc_arg);
 	dsl_dataset_rele(ds, FTAG);
-	return (err);
+
+out:
+	if (err != 0) {
+		mutex_enter(dcp->dc_error_lock);
+		/* only keep first error */
+		if (*dcp->dc_error == 0)
+			*dcp->dc_error = err;
+		mutex_exit(dcp->dc_error_lock);
+	}
+
+	kmem_free(dcp, sizeof (*dcp));
+}
+
+static void
+dmu_objset_find_dp_cb(void *arg)
+{
+	dmu_objset_find_ctx_t *dcp = arg;
+	dsl_pool_t *dp = dcp->dc_dp;
+
+	/*
+	 * We need to get a pool_config_lock here, as there are several
+	 * asssert(pool_config_held) down the stack. Getting a lock via
+	 * dsl_pool_config_enter is risky, as it might be stalled by a
+	 * pending writer. This would deadlock, as the write lock can
+	 * only be granted when our parent thread gives up the lock.
+	 * The _prio interface gives us priority over a pending writer.
+	 */
+	dsl_pool_config_enter_prio(dp, FTAG);
+
+	dmu_objset_find_dp_impl(dcp);
+
+	dsl_pool_config_exit(dp, FTAG);
+}
+
+/*
+ * Find objsets under and including ddobj, call func(ds) on each.
+ * The order for the enumeration is completely undefined.
+ * func is called with dsl_pool_config held.
+ */
+int
+dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
+    int func(dsl_pool_t *, dsl_dataset_t *, void *), void *arg, int flags)
+{
+	int error = 0;
+	taskq_t *tq = NULL;
+	int ntasks;
+	dmu_objset_find_ctx_t *dcp;
+	kmutex_t err_lock;
+
+	mutex_init(&err_lock, NULL, MUTEX_DEFAULT, NULL);
+	dcp = kmem_alloc(sizeof (*dcp), KM_SLEEP);
+	dcp->dc_tq = NULL;
+	dcp->dc_dp = dp;
+	dcp->dc_ddobj = ddobj;
+	dcp->dc_func = func;
+	dcp->dc_arg = arg;
+	dcp->dc_flags = flags;
+	dcp->dc_error_lock = &err_lock;
+	dcp->dc_error = &error;
+
+	if ((flags & DS_FIND_SERIALIZE) || dsl_pool_config_held_writer(dp)) {
+		/*
+		 * In case a write lock is held we can't make use of
+		 * parallelism, as down the stack of the worker threads
+		 * the lock is asserted via dsl_pool_config_held.
+		 * In case of a read lock this is solved by getting a read
+		 * lock in each worker thread, which isn't possible in case
+		 * of a writer lock. So we fall back to the synchronous path
+		 * here.
+		 * In the future it might be possible to get some magic into
+		 * dsl_pool_config_held in a way that it returns true for
+		 * the worker threads so that a single lock held from this
+		 * thread suffices. For now, stay single threaded.
+		 */
+		dmu_objset_find_dp_impl(dcp);
+
+		return (error);
+	}
+
+	ntasks = dmu_find_threads;
+	if (ntasks == 0)
+		ntasks = vdev_count_leaves(dp->dp_spa) * 4;
+	tq = taskq_create("dmu_objset_find", ntasks, minclsyspri, ntasks,
+	    INT_MAX, 0);
+	if (tq == NULL) {
+		kmem_free(dcp, sizeof (*dcp));
+		return (SET_ERROR(ENOMEM));
+	}
+	dcp->dc_tq = tq;
+
+	/* dcp will be freed by task */
+	(void) taskq_dispatch(tq, dmu_objset_find_dp_cb, dcp, TQ_SLEEP);
+
+	/*
+	 * PORTING: this code relies on the property of taskq_wait to wait
+	 * until no more tasks are queued and no more tasks are active. As
+	 * we always queue new tasks from within other tasks, task_wait
+	 * reliably waits for the full recursion to finish, even though we
+	 * enqueue new tasks after taskq_wait has been called.
+	 * On platforms other than illumos, taskq_wait may not have this
+	 * property.
+	 */
+	taskq_wait(tq);
+	taskq_destroy(tq);
+	mutex_destroy(&err_lock);
+
+	return (error);
 }
 
 /*

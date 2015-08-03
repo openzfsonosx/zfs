@@ -41,9 +41,13 @@ extern "C" {
 struct zfs_sb;
 struct znode;
 
+#ifdef __APPLE__
+#define APPLE_SA_RECOVER
 /* #define WITH_SEARCHFS */
 /* #define WITH_READDIRATTR */
 #define	HAVE_NAMED_STREAMS 1
+#endif
+
 
 typedef struct zfsvfs zfsvfs_t;
 
@@ -71,7 +75,7 @@ struct zfsvfs {
         int             z_norm;         /* normalization flags */
         boolean_t       z_atime;        /* enable atimes mount option */
         boolean_t       z_unmounted;    /* unmounted */
-	    rrwlock_t	    z_teardown_lock;
+	    rrmlock_t	    z_teardown_lock;
         krwlock_t	    z_teardown_inactive_lock;
         list_t          z_all_znodes;   /* all vnodes in the fs */
         kmutex_t        z_znodes_lock;  /* lock for z_all_znodes */
@@ -88,6 +92,10 @@ struct zfsvfs {
 	    boolean_t       z_xattr_sa;     /* allow xattrs to be stores as SA */
         uint64_t        z_version;
         uint64_t        z_shares_dir;   /* hidden shares dir */
+	uint64_t	z_notification_conditions; /* used for HFSIOC_VOLUME_STATUS */
+	uint64_t	z_freespace_notify_warninglimit; /* HFSIOC_ vfs notification - number of free blocks */
+	uint64_t	z_freespace_notify_dangerlimit; /* HFSIOC_ vfs notification - number of free blocks */
+	uint64_t	z_freespace_notify_desiredlevel; /* HFSIOC_ vfs notification - number of free blocks */
         kmutex_t	    z_lock;
 #ifdef __APPLE__
         kmutex_t	    z_reclaim_list_lock; /* lock for using z_reclaim_list*/
@@ -100,6 +108,11 @@ struct zfsvfs {
         kmutex_t	    z_vnodecreate_lock; /*lock for using z_vnodecreate_list*/
         list_t          z_vnodecreate_list;/* all threads in vnode_create */
         boolean_t       z_xattr;        /* enable atimes mount option */
+
+#ifdef APPLE_SA_RECOVER
+	uint64_t z_recover_parent;/* Temporary holder until SA corruption are gone */
+#endif /* APPLE_SA_RECOVER */
+
 #endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;

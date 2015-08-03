@@ -242,10 +242,10 @@ txg_thread_wait(tx_state_t *tx, callb_cpr_t *cpr, kcondvar_t *cv, clock_t time)
 	CALLB_CPR_SAFE_BEGIN(cpr);
 
 	if (time)
-		(void) cv_timedwait_interruptible(cv, &tx->tx_sync_lock,
+		(void) cv_timedwait_sig(cv, &tx->tx_sync_lock,
 		    ddi_get_lbolt() + time);
 	else
-		cv_wait_interruptible(cv, &tx->tx_sync_lock);
+		cv_wait_sig(cv, &tx->tx_sync_lock);
 
 	CALLB_CPR_SAFE_END(cpr, &tx->tx_sync_lock);
 }
@@ -444,8 +444,8 @@ txg_dispatch_callbacks(dsl_pool_t *dp, uint64_t txg)
 			 * Commit callback taskq hasn't been created yet.
 			 */
 			tx->tx_commit_cb_taskq = taskq_create("tx_commit_cb",
-			    100, minclsyspri, max_ncpus, INT_MAX,
-			    TASKQ_THREADS_CPU_PCT | TASKQ_PREPOPULATE);
+			    max_ncpus, minclsyspri, max_ncpus, max_ncpus * 2,
+			    TASKQ_PREPOPULATE | TASKQ_DYNAMIC);
 		}
 
 		cb_list = kmem_alloc(sizeof (list_t), KM_SLEEP);
@@ -470,7 +470,7 @@ txg_wait_callbacks(dsl_pool_t *dp)
 	tx_state_t *tx = &dp->dp_tx;
 
 	if (tx->tx_commit_cb_taskq != NULL)
-		taskq_wait(tx->tx_commit_cb_taskq);
+		taskq_wait_outstanding(tx->tx_commit_cb_taskq, 0);
 }
 
 static void

@@ -243,6 +243,7 @@ void zfs_znode_byteswap(void *buf, size_t size);
 
 #define	DS_FIND_SNAPSHOTS	(1<<0)
 #define	DS_FIND_CHILDREN	(1<<1)
+#define	DS_FIND_SERIALIZE	(1<<2)
 
 #define DS_MODE_NONE            0       /* invalid, to aid debugging */
 #define DS_MODE_STANDARD        1       /* normal access, no special needs */
@@ -738,8 +739,9 @@ int dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
 int dmu_read_req(objset_t *os, uint64_t object, struct request *req);
 int dmu_write_req(objset_t *os, uint64_t object, struct request *req,
 	dmu_tx_t *tx);
-int dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size);
-int dmu_write_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size,
+int dmu_read_uio(objset_t *os, uint64_t object, struct uio *uio, uint64_t size);
+int dmu_read_uio_dbuf(dmu_buf_t *zdb, struct uio *uio, uint64_t size);
+int dmu_write_uio(objset_t *os, uint64_t object, struct uio *uio, uint64_t size,
 	dmu_tx_t *tx);
 int dmu_write_uio_dbuf(dmu_buf_t *zdb, struct uio *uio, uint64_t size,
 	dmu_tx_t *tx);

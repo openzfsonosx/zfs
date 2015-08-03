@@ -272,6 +272,7 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
     IOOptionBits options, void *argument)
 {
 	IOStorageAccess access = (IOStorageAccess)(uint64_t)argument;
+	bool ret = true;
 
 	dprintf("open: options %lx\n", options);
 
@@ -284,7 +285,9 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 	 * alas, "access" is always 0 here.
 	 */
 
-  if (zv->zv_minor == -1) return true;
+
+    spa_exporting_vdevs = B_TRUE;
+
 
 	switch (access) {
 
@@ -310,9 +313,11 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 
 		zv->zv_openflags = FREAD;
 		if (zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL))
-			return (false); // fail it.
+			ret = false;
 
 	}
+
+    spa_exporting_vdevs = B_FALSE;
 
 	dprintf("Open done\n");
 
@@ -327,10 +332,10 @@ net_lundman_zfs_zvol_device::handleClose(IOService *client,
 {
 	super::handleClose(client, options);
 
-	IOLog("handleClose: %d\n",zv->zv_minor );
-	if (zv->zv_minor != -1) return;
-
+	// IOLog("handleClose\n");
+    spa_exporting_vdevs = B_TRUE;
 	zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
+    spa_exporting_vdevs = B_FALSE;
 
 	if (ejected)
 		this->m_provider->doEjectMedia(zv);

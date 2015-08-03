@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
@@ -650,7 +650,7 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
 {
 	dnode_t *dn;
 	zbookmark_phys_t zb;
-	uint32_t aflags = ARC_NOWAIT;
+	uint32_t aflags = ARC_FLAG_NOWAIT;
 	int err;
 
 	DB_DNODE_ENTER(db);
@@ -704,9 +704,9 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
 	mutex_exit(&db->db_mtx);
 
 	if (DBUF_IS_L2CACHEABLE(db))
-		aflags |= ARC_L2CACHE;
+		aflags |= ARC_FLAG_L2CACHE;
 	if (DBUF_IS_L2COMPRESSIBLE(db))
-		aflags |= ARC_L2COMPRESS;
+		aflags |= ARC_FLAG_L2COMPRESS;
 
 	SET_BOOKMARK(&zb, db->db_objset->os_dsl_dataset ?
 	    db->db_objset->os_dsl_dataset->ds_object : DMU_META_OBJSET,
@@ -718,7 +718,7 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t *flags)
 	    dbuf_read_done, db, ZIO_PRIORITY_SYNC_READ,
 	    (*flags & DB_RF_CANFAIL) ? ZIO_FLAG_CANFAIL : ZIO_FLAG_MUSTSUCCEED,
 	    &aflags, &zb);
-	if (aflags & ARC_CACHED)
+	if (aflags & ARC_FLAG_CACHED)
 		*flags |= DB_RF_CACHED;
 
 	return (SET_ERROR(err));
@@ -1452,6 +1452,16 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	dbuf_dirty_record_t *dr, **drp;
 
 	ASSERT(txg != 0);
+
+	/*
+	 * Due to our use of dn_nlevels below, this can only be called
+	 * in open context, unless we are operating on the MOS.
+	 * From syncing context, dn_nlevels may be different from the
+	 * dn_nlevels used when dbuf was dirtied.
+	 */
+	ASSERT(db->db_objset ==
+	    dmu_objset_pool(db->db_objset)->dp_meta_objset ||
+	    txg != spa_syncing_txg(dmu_objset_spa(db->db_objset)));
 	ASSERT(db->db_blkid != DMU_BONUS_BLKID);
 	ASSERT0(db->db_level);
 	ASSERT(MUTEX_HELD(&db->db_mtx));
@@ -1474,11 +1484,8 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 
 	ASSERT(db->db.db_size != 0);
 
-	/*
-	 * Any space we accounted for in dp_dirty_* will be cleaned up by
-	 * dsl_pool_sync().  This is relatively rare so the discrepancy
-	 * is not a big deal.
-	 */
+	dsl_pool_undirty_space(dmu_objset_pool(dn->dn_objset),
+	    dr->dr_accounted, txg);
 
 	*drp = dr->dr_next;
 
@@ -1493,7 +1500,7 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 		list_remove(&dr->dr_parent->dt.di.dr_children, dr);
 		mutex_exit(&dr->dr_parent->dt.di.dr_mtx);
 	} else if (db->db_blkid == DMU_SPILL_BLKID ||
-	    db->db_level+1 == dn->dn_nlevels) {
+	    db->db_level + 1 == dn->dn_nlevels) {
 		ASSERT(db->db_blkptr == NULL || db->db_parent == dn->dn_dbuf);
 		mutex_enter(&dn->dn_mtx);
 		list_remove(&dn->dn_dirty_records[txg & TXG_MASK], dr);
@@ -1508,11 +1515,6 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 		ASSERT(dr->dt.dl.dr_data != NULL);
 		if (dr->dt.dl.dr_data != db->db_buf)
 			VERIFY(arc_buf_remove_ref(dr->dt.dl.dr_data, db));
-	}
-
-	if (db->db_level != 0) {
-		mutex_destroy(&dr->dt.di.dr_mtx);
-		list_destroy(&dr->dt.di.dr_children);
 	}
 
 	kmem_free(dr, sizeof (dbuf_dirty_record_t));
@@ -2025,7 +2027,8 @@ dbuf_prefetch(dnode_t *dn, uint64_t blkid, zio_priority_t prio)
 	if (dbuf_findbp(dn, 0, blkid, TRUE, &db, &bp, NULL) == 0) {
 		if (bp && !BP_IS_HOLE(bp) && !BP_IS_EMBEDDED(bp)) {
 			dsl_dataset_t *ds = dn->dn_objset->os_dsl_dataset;
-			uint32_t aflags = ARC_NOWAIT | ARC_PREFETCH;
+			arc_flags_t aflags =
+			    ARC_FLAG_NOWAIT | ARC_FLAG_PREFETCH;
 			zbookmark_phys_t zb;
 
 			SET_BOOKMARK(&zb, ds ? ds->ds_object : DMU_META_OBJSET,
@@ -2248,7 +2251,7 @@ dbuf_try_add_ref(dmu_buf_t *db_fake, objset_t *os, uint64_t obj, uint64_t blkid,
 	dmu_buf_impl_t *found_db;
 	boolean_t result = B_FALSE;
 
-	if (db->db_blkid == DMU_BONUS_BLKID)
+	if (blkid == DMU_BONUS_BLKID)
 		found_db = dbuf_find_bonus(os, obj);
 	else
 		found_db = dbuf_find(os, obj, 0, blkid);
@@ -2258,7 +2261,7 @@ dbuf_try_add_ref(dmu_buf_t *db_fake, objset_t *os, uint64_t obj, uint64_t blkid,
 			(void) refcount_add(&db->db_holds, tag);
 			result = B_TRUE;
 		}
-		mutex_exit(&db->db_mtx);
+		mutex_exit(&found_db->db_mtx);
 	}
 	return (result);
 }
@@ -2599,7 +2602,7 @@ dbuf_sync_indirect(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 
 	zio = dr->dr_zio;
 	mutex_enter(&dr->dt.di.dr_mtx);
-	dbuf_sync_list(&dr->dt.di.dr_children, tx);
+	dbuf_sync_list(&dr->dt.di.dr_children, db->db_level - 1, tx);
 	ASSERT(list_head(&dr->dt.di.dr_children) == NULL);
 	mutex_exit(&dr->dt.di.dr_mtx);
 	zio_nowait(zio);
@@ -2750,7 +2753,7 @@ dbuf_sync_leaf(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 }
 
 void
-dbuf_sync_list(list_t *list, dmu_tx_t *tx)
+dbuf_sync_list(list_t *list, int level, dmu_tx_t *tx)
 {
 	dbuf_dirty_record_t *dr;
 
@@ -2766,6 +2769,10 @@ dbuf_sync_list(list_t *list, dmu_tx_t *tx)
 			ASSERT3U(dr->dr_dbuf->db.db_object, ==,
 			    DMU_META_DNODE_OBJECT);
 			break;
+		}
+		if (dr->dr_dbuf->db_blkid != DMU_BONUS_BLKID &&
+		    dr->dr_dbuf->db_blkid != DMU_SPILL_BLKID) {
+			VERIFY3U(dr->dr_dbuf->db_level, ==, level);
 		}
 		list_remove(list, dr);
 		if (dr->dr_dbuf->db_level > 0)

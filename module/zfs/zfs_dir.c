@@ -251,7 +251,8 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 			    KM_SLEEP);
 			cv_init(&dl->dl_cv, NULL, CV_DEFAULT, NULL);
 			dl->dl_name = (char *)(dl + 1);
-			bcopy(name, dl->dl_name, namesize);
+			//bcopy(name, dl->dl_name, namesize);
+			strlcpy(dl->dl_name, name, namesize);
 			dl->dl_sharecnt = 0;
 			dl->dl_namelock = 0;
 			dl->dl_namesize = namesize;
@@ -316,7 +317,13 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 			zfs_dirent_unlock(dl);
 			return (SET_ERROR(EEXIST));
 		}
+#ifdef APPLE_SA_RECOVER
+		zfsvfs->z_recover_parent = dzp->z_id;
+#endif /* APPLE_SA_RECOVER */
 		error = zfs_zget(zfsvfs, zoid, zpp);
+#ifdef APPLE_SA_RECOVER
+		zfsvfs->z_recover_parent = 0;
+#endif /* APPLE_SA_RECOVER */
 
 		if (error) {
 			zfs_dirent_unlock(dl);
@@ -804,7 +811,8 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 			 * same directory should not update the entry. This case is
 			 * handled in zfs_rename().
 			 */
-	if (!(flag & ZRENAMING)) {
+	if (!(flag & ZRENAMING) &&
+		zfsvfs->z_use_sa == B_TRUE) {
 		timestruc_t	now;
 		gethrestime(&now);
 		ZFS_TIME_ENCODE(&now, addtime);

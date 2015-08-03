@@ -25,6 +25,7 @@
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2012 by Frederik Wessels. All rights reserved.
  * Copyright (c) 2012 by Cyril Plisko. All rights reserved.
+ * Copyright (c) 2013 by Prasad Joshi (sTec). All rights reserved.
  */
 
 #include <assert.h>
@@ -239,8 +240,8 @@ get_usage(zpool_help_t idx) {
 		    "[-R root] [-F [-n]]\n"
 		    "\t    <pool | id> [newpool]\n"));
 	case HELP_IOSTAT:
-		return (gettext("\tiostat [-vL] [-T d|u] [pool] ... [interval "
-		    "[count]]\n"));
+		return (gettext("\tiostat [-v] [-T d|u] [-y] [pool] ... "
+		    "[interval [count]]\n"));
 	case HELP_LABELCLEAR:
 		return (gettext("\tlabelclear [-f] <vdev>\n"));
 	case HELP_LIST:
@@ -2317,8 +2318,10 @@ zpool_do_import(int argc, char **argv)
 
 		errno = 0;
 		searchguid = strtoull(argv[0], &endptr, 10);
-		if (errno != 0 || *endptr != '\0')
+		if (errno != 0 || *endptr != '\0') {
 			searchname = argv[0];
+			searchguid = 0;
+		}
 		found_config = NULL;
 
 		/*
@@ -2891,9 +2894,10 @@ zpool_do_iostat(int argc, char **argv)
 	boolean_t print_guid = B_FALSE;
 	boolean_t follow_links = B_FALSE;
 	iostat_cbdata_t cb = { 0 };
+	boolean_t omit_since_boot = B_FALSE;
 
 	/* check options */
-	while ((c = getopt(argc, argv, "T:vL")) != -1) {
+	while ((c = getopt(argc, argv, "T:vLy")) != -1) {
 		switch (c) {
 		case 'T':
 			get_timestamp_arg(*optarg);
@@ -2903,6 +2907,9 @@ zpool_do_iostat(int argc, char **argv)
 			break;
 		case 'L':
 			follow_links = B_TRUE;
+			break;
+		case 'y':
+			omit_since_boot = B_TRUE;
 			break;
 		case '?':
 			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
@@ -2947,11 +2954,16 @@ zpool_do_iostat(int argc, char **argv)
 	cb.cb_namewidth = 0;
 
 	for (;;) {
-		pool_list_update(list);
-
 		if ((npools = pool_list_count(list)) == 0)
 			(void) fprintf(stderr, gettext("no pools available\n"));
 		else {
+			/*
+			 * If this is the first iteration and -y was supplied
+			 * we skip any printing.
+			 */
+			boolean_t skip = (omit_since_boot &&
+				cb.cb_iteration == 0);
+
 			/*
 			 * Refresh all statistics.  This is done as an
 			 * explicit step before calculating the maximum name
@@ -2973,11 +2985,17 @@ zpool_do_iostat(int argc, char **argv)
 				print_timestamp(timestamp_fmt);
 
 			/*
-			 * If it's the first time, or verbose mode, print the
-			 * header.
+			 * If it's the first time and we're not skipping it,
+			 * or either skip or verbose mode, print the header.
 			 */
-			if (++cb.cb_iteration == 1 || verbose)
+			if ((++cb.cb_iteration == 1 && !skip) ||
+				(skip != verbose))
 				print_iostat_header(&cb);
+
+			if (skip) {
+				(void) sleep(interval);
+				continue;
+			}
 
 			(void) pool_list_iter(list, B_FALSE, print_iostat, &cb);
 
@@ -3356,17 +3374,10 @@ zpool_do_list(int argc, char **argv)
 	if (zprop_get_list(g_zfs, props, &cb.cb_proplist, ZFS_TYPE_POOL) != 0)
 		usage(B_FALSE);
 
-	if ((list = pool_list_get(argc, argv, &cb.cb_proplist, &ret)) == NULL)
-		return (1);
-
-	if (argc == 0 && !cb.cb_scripted && pool_list_count(list) == 0) {
-		(void) printf(gettext("no pools available\n"));
-		zprop_free_list(cb.cb_proplist);
-		return (0);
-	}
-
 	for (;;) {
-		pool_list_update(list);
+		if ((list = pool_list_get(argc, argv, &cb.cb_proplist,
+		    &ret)) == NULL)
+			return (1);
 
 		if (pool_list_count(list) == 0)
 			break;
@@ -3386,9 +3397,16 @@ zpool_do_list(int argc, char **argv)
 		if (count != 0 && --count == 0)
 			break;
 
+		pool_list_free(list);
 		(void) sleep(interval);
 	}
 
+	if (argc == 0 && !cb.cb_scripted && pool_list_count(list) == 0) {
+		(void) printf(gettext("no pools available\n"));
+		ret = 0;
+	}
+
+	pool_list_free(list);
 	zprop_free_list(cb.cb_proplist);
 	return (ret);
 }
@@ -6022,14 +6040,10 @@ main(int argc, char **argv)
 	if ((strcmp(cmdname, "-?") == 0) || strcmp(cmdname, "--help") == 0)
 		usage(B_TRUE);
 
-#ifdef __OPPLE__
-	if (getuid())
-		printf("ZFS requires 'root' user permission to work on OS X.\n"
-		    "Precede the command with 'sudo' and try again.\n");
-#endif /* __OPPLE__ */
-
-	if ((g_zfs = libzfs_init()) == NULL)
+	if ((g_zfs = libzfs_init()) == NULL) {
+		(void) fprintf(stderr, "%s", libzfs_error_init(errno));
 		return (1);
+	}
 
 	libzfs_print_on_error(g_zfs, B_TRUE);
 

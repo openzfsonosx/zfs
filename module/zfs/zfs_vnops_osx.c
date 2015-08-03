@@ -63,9 +63,14 @@
 #include <miscfs/fifofs/fifo.h>
 #include <miscfs/specfs/specdev.h>
 #include <vfs/vfs_support.h>
+#include <sys/ioccom.h>
+
+
 
 #ifdef _KERNEL
 #include <sys/sysctl.h>
+#include <sys/hfs_internal.h>
+
 unsigned int debug_vnop_osx_printf = 0;
 unsigned int zfs_vnop_ignore_negatives = 0;
 unsigned int zfs_vnop_ignore_positives = 0;
@@ -244,49 +249,178 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 	ZFS_EXIT(zfsvfs);
 
 	switch (ap->a_command) {
-	case F_FULLFSYNC:
-		error = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
-		break;
-	case SPOTLIGHT_GET_MOUNT_TIME:
-	case SPOTLIGHT_FSCTL_GET_MOUNT_TIME:
-		dprintf("vnop_ioctl: spotlight get mount time: %08lx\n",
-				zfsvfs->z_mount_time);
-		*(uint32_t *)ap->a_data = zfsvfs->z_mount_time;
-		break;
-	case SPOTLIGHT_GET_UNMOUNT_TIME:
-	case SPOTLIGHT_FSCTL_GET_LAST_MTIME:
-		dprintf("vnop_ioctl: spotlight get last unmount time: %08lx\n",
-				zfsvfs->z_last_unmount_time);
-		*(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
-		break;
-	case F_RDADVISE:
-		dprintf("vnop_ioctl: F_RDADVISE\n");
-		break;
+		/* ioctl supported by ZFS and POSIX */
+		case F_FULLFSYNC:
+			error = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
+			break;
+		case SPOTLIGHT_GET_MOUNT_TIME:
+		case SPOTLIGHT_FSCTL_GET_MOUNT_TIME:
+			dprintf("vnop_ioctl: spotlight get mount time: %08lx\n",
+					zfsvfs->z_mount_time);
+			*(uint32_t *)ap->a_data = zfsvfs->z_mount_time;
+			break;
+		case SPOTLIGHT_GET_UNMOUNT_TIME:
+		case SPOTLIGHT_FSCTL_GET_LAST_MTIME:
+			dprintf("vnop_ioctl: spotlight get last unmount time: %08lx\n",
+					zfsvfs->z_last_unmount_time);
+			*(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
+			break;
+		case F_RDADVISE:
+			dprintf("vnop_ioctl: F_RDADVISE\n");
+			break;
 
-	case O_NONBLOCK:
-		case 0x80006817: // HFSIOC_SET_ALWAYS_ZEROFILL
-		case 0x8000680f: // HFSIOC_EXT_BULKACCESS
+		case F_CHKCLEAN:
+			/* normally calls http://fxr.watson.org/fxr/source/bsd/vfs/vfs_cluster.c?v=xnu-2050.18.24#L5839 */
+			break;
+
+
+		case HFS_SET_ALWAYS_ZEROFILL:
+		case HFS_EXT_BULKACCESS_FSCTL:
+			/* Required by Spotlight search */
+			break;
+
+
+
+			/* ioctl required to simulate HFS mimic behavior */
+
+
 		case 0x80005802:
+			/* unknown as to what this is - is from subsystem read, 'X', 2 */
+			break;
+
+		case HFS_GETPATH:
+			// fail as if requested of non-root fs
+			// i.e. !vnode_isvroot(vp)
+			error = EINVAL;
+			break;
+
+		case HFS_PREV_LINK:
+		case HFS_NEXT_LINK:
+			// HFS has a facility to efficiently iterate the collection
+			// of hardlinks pointing to an object, ZFS does not
+			// implement something like this.
+			//
+			// In the mean time, we will just reply with "what hardlink?"
+			*(uint32_t *)ap->a_data = 0;
+			break;
+
+		case HFS_RESIZE_PROGRESS:
+			/* fail as if requested of non-root fs */
+			error = EINVAL;
+			break;
+
+		case HFS_RESIZE_VOLUME:
+			/* fail as if requested of non-root fs */
+			error = EINVAL;
+			break;
+
+		case HFS_CHANGE_NEXT_ALLOCATION:
+			/* fail as if requested of non-root fs */
+			error = EINVAL;
+			break;
+
+		case HFS_CHANGE_NEXTCNID:
+			/* FIXME : fail as though read only */
+			error = EROFS;
+			break;
+
+		case F_FREEZE_FS:
+			/* Dont support freeze */
+			error = ENOTSUP;
+			break;
+
+		case F_THAW_FS:
+			/* dont support fail as though insufficient privilege */
+			error = EACCES;
+			break;
+
+		case HFS_BULKACCESS_FSCTL:
+			/* Respond as if HFS_STANDARD flag is set */
+			error = EINVAL;
+			break;
+
+		case HFS_FSCTL_GET_VERY_LOW_DISK:
+			*(uint32_t*)ap->a_data = zfsvfs->z_freespace_notify_dangerlimit;
+			break;
+
+		case HFS_FSCTL_SET_VERY_LOW_DISK:
+			if (*(uint32_t *)ap->a_data >= zfsvfs->z_freespace_notify_warninglimit) {
+				error = EINVAL;
+			} else {
+				zfsvfs->z_freespace_notify_dangerlimit = *(uint32_t *)ap->a_data;
+            }
+			break;
+
+		case HFS_FSCTL_GET_LOW_DISK:
+			*(uint32_t*)ap->a_data = zfsvfs->z_freespace_notify_warninglimit;
+			break;
+
+		case HFS_FSCTL_SET_LOW_DISK:
+			if (   *(uint32_t *)ap->a_data >= zfsvfs->z_freespace_notify_desiredlevel
+				   || *(uint32_t *)ap->a_data <= zfsvfs->z_freespace_notify_dangerlimit) {
+				error = EINVAL;
+			} else {
+				zfsvfs->z_freespace_notify_warninglimit = *(uint32_t *)ap->a_data;
+			}
+			break;
+
+		case HFS_FSCTL_GET_DESIRED_DISK:
+			*(uint32_t*)ap->a_data = zfsvfs->z_freespace_notify_desiredlevel;
+			break;
+
+		case HFS_FSCTL_SET_DESIRED_DISK:
+			if (*(uint32_t *)ap->a_data <= zfsvfs->z_freespace_notify_warninglimit) {
+				error = EINVAL;
+			} else {
+				zfsvfs->z_freespace_notify_desiredlevel = *(uint32_t *)ap->a_data;
+			}
+			break;
+
+		case HFS_VOLUME_STATUS:
+			/* For now we always reply "all ok" */
+			*(uint32_t *)ap->a_data = zfsvfs->z_notification_conditions;
+			break;
+
+		case HFS_SET_BOOT_INFO:
+		case HFS_GET_BOOT_INFO:
+		case HFS_MARK_BOOT_CORRUPT:
+			/* ZFS booting is not supported, mimic selection of a non-root HFS volume */
+			*(uint32_t *)ap->a_data = 0;
+			error = EINVAL;
+			break;
+
+		case HFS_FSCTL_GET_JOURNAL_INFO:
+			/* Respond as though journal is empty/disabled */
+		{
+		    struct hfs_journal_info *jip;
+		    jip = (struct hfs_journal_info*)ap->a_data;
+		    jip->jstart = 0;
+		    jip->jsize = 0;
+		}
 		break;
 
-	case 0xc000680c: // HFS_NEXT_LINK:
-		//printf("vnop_ioctl: HFS_NEXT_LINK %02lx ('%lu' + %lu)\n",
-		//    ap->a_command, (ap->a_command&0xff00)>>8,
-		//    ap->a_command&0xff);
+		case HFS_DISABLE_METAZONE:
+			/* fail as though insufficient privs */
+			error = EACCES;
+			break;
 
-		*(uint32_t *)ap->a_data = 0;
-		error = 0;
-		break;
+			/* End HFS mimic ioctl */
 
-	default:
-		printf("vnop_ioctl: Unknown ioctl %02lx ('%lu' + %lu)\n",
-		    ap->a_command, (ap->a_command&0xff00)>>8,
-		    ap->a_command&0xff);
-		error = ENOTTY;
+
+		default:
+			printf("vnop_ioctl: Unknown ioctl %02lx ('%lu' + %lu)\n",
+				   ap->a_command, (ap->a_command&0xff00)>>8,
+				   ap->a_command&0xff);
+			error = ENOTTY;
 	}
 
   out:
-	if (error) printf("failing ioctl: %d\n", error);
+	if (error)
+		printf("vnop_ioctl failing ioctl: %02lx ('%lu' + %lu) returned %d\n",
+			ap->a_command, (ap->a_command&0xff00)>>8,
+			ap->a_command&0xff,
+			error);
+
 	return (error);
 }
 
@@ -1710,7 +1844,7 @@ vnop_reclaim_thread(void *arg)
 #if 1
 		/* RECLAIM_SIGNAL */
 		CALLB_CPR_SAFE_BEGIN(&cpr);
-		(void) cv_timedwait_interruptible(&zfsvfs->z_reclaim_thr_cv,
+		(void) cv_timedwait_sig(&zfsvfs->z_reclaim_thr_cv,
 		    &zfsvfs->z_reclaim_thr_lock, (ddi_get_lbolt() + (hz>>1)));
 		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_reclaim_thr_lock);
 #else

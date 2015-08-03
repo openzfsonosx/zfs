@@ -441,7 +441,7 @@ zmount(const char *spec, const char *dir, int mflag, char *fstype,
 	int rv;
 	struct zfs_mount_args mnt_args;
 	io_name_t devname;
-
+	char *rpath = NULL;
 	assert(spec != NULL);
 	assert(dir != NULL);
 	assert(fstype != NULL);
@@ -472,7 +472,16 @@ zmount(const char *spec, const char *dir, int mflag, char *fstype,
 	mnt_args.optptr = optptr;
 	mnt_args.optlen = optlen;
 
-	rv = mount(fstype, dir, 0, &mnt_args);
+	/* There is a bug in XNU where /var/tmp is resolved as
+	 * "private/var/tmp" without the leading "/", and both mount(2) and
+	 * diskutil mount avoid this by calling realpath() first. So we will
+	 * do the same.
+	 */
+	rpath = realpath(dir, NULL);
+
+	rv = mount(fstype, rpath ? rpath : dir, 0, &mnt_args);
+
+	if (rpath) free(rpath);
 
 	return (rv);
 }

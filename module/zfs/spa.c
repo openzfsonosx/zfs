@@ -130,9 +130,9 @@ static const char *const zio_taskq_types[ZIO_TASKQ_TYPES] = {
 const zio_taskq_info_t zio_taskqs[ZIO_TYPES][ZIO_TASKQ_TYPES] = {
 	/* ISSUE	ISSUE_HIGH	INTR		INTR_HIGH */
 	{ ZTI_ONE,	ZTI_NULL,	ZTI_ONE,	ZTI_NULL }, /* NULL */
-	{ ZTI_N(8),	ZTI_NULL,	ZTI_BATCH,	ZTI_NULL }, /* READ */
-	{ ZTI_BATCH,	ZTI_N(5),	ZTI_N(16),	ZTI_N(5) }, /* WRITE */
-	{ ZTI_P(4, 8),	ZTI_NULL,	ZTI_ONE,	ZTI_NULL }, /* FREE */
+	{ ZTI_N(8),	ZTI_NULL,	ZTI_P(12, 8),	ZTI_NULL }, /* READ */
+	{ ZTI_BATCH,	ZTI_N(5),	ZTI_P(12, 8),	ZTI_N(5) }, /* WRITE */
+	{ ZTI_P(12, 8),	ZTI_NULL,	ZTI_ONE,	ZTI_NULL }, /* FREE */
 	{ ZTI_ONE,	ZTI_NULL,	ZTI_ONE,	ZTI_NULL }, /* CLAIM */
 	{ ZTI_ONE,	ZTI_NULL,	ZTI_ONE,	ZTI_NULL }, /* IOCTL */
 };
@@ -847,6 +847,7 @@ spa_taskqs_init(spa_t *spa, zio_type_t t, zio_taskq_type_t q)
 	uint_t count = ztip->zti_count;
 	spa_taskqs_t *tqs = &spa->spa_zio_taskq[t][q];
 	char name[32];
+	//uint_t i, flags = TASKQ_DYNAMIC;
 	uint_t i, flags = 0;
 	boolean_t batch = B_FALSE;
 
@@ -1332,8 +1333,6 @@ spa_unload(spa_t *spa)
 	 */
 	spa_l2cache_drop(spa);
 
-    spa_exporting_vdevs = B_TRUE;
-
 	/*
 	 * Close all vdevs.
 	 */
@@ -1368,8 +1367,6 @@ spa_unload(spa_t *spa)
 		spa->spa_l2cache.sav_config = NULL;
 	}
 	spa->spa_l2cache.sav_count = 0;
-
-    spa_exporting_vdevs = B_FALSE;
 
 	spa->spa_async_suspended = 0;
 
@@ -1803,6 +1800,7 @@ static boolean_t
 spa_check_logs(spa_t *spa)
 {
 	boolean_t rv = B_FALSE;
+	dsl_pool_t *dp = spa_get_dsl(spa);
 
 	switch (spa->spa_log_state) {
 	default:
@@ -1810,8 +1808,8 @@ spa_check_logs(spa_t *spa)
 	case SPA_LOG_MISSING:
 		/* need to recheck in case slog has been restored */
 	case SPA_LOG_UNKNOWN:
-		rv = (dmu_objset_find(spa->spa_name, zil_check_log_chain,
-		    NULL, DS_FIND_CHILDREN) != 0);
+		rv = (dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
+		    zil_check_log_chain, NULL, DS_FIND_CHILDREN) != 0);
 		if (rv)
 			spa_set_log_state(spa, SPA_LOG_MISSING);
 		break;
@@ -2273,6 +2271,8 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		return (error);
 
 	ASSERT(spa->spa_root_vdev == rvd);
+	ASSERT3U(spa->spa_min_ashift, >=, SPA_MINBLOCKSHIFT);
+	ASSERT3U(spa->spa_max_ashift, <=, SPA_MAXBLOCKSHIFT);
 
 	if (type != SPA_IMPORT_ASSEMBLE) {
 		ASSERT(spa_guid(spa) == pool_guid);
@@ -2792,6 +2792,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	    spa->spa_load_max_txg == UINT64_MAX)) {
 		dmu_tx_t *tx;
 		int need_update = B_FALSE;
+		dsl_pool_t *dp = spa_get_dsl(spa);
 		int c;
 
 		ASSERT(state != SPA_LOAD_TRYIMPORT);
@@ -2805,9 +2806,8 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		 */
 		spa->spa_claiming = B_TRUE;
 
-		tx = dmu_tx_create_assigned(spa_get_dsl(spa),
-		    spa_first_txg(spa));
-		(void) dmu_objset_find(spa_name(spa),
+		tx = dmu_tx_create_assigned(dp, spa_first_txg(spa));
+		(void) dmu_objset_find_dp(dp, dp->dp_root_dir_obj,
 		    zil_claim, tx, DS_FIND_CHILDREN);
 		dmu_tx_commit(tx);
 
@@ -6505,21 +6505,6 @@ spa_sync(spa_t *spa, uint64_t txg)
 	}
 
 	/*
-	 * If anything has changed in this txg, or if someone is waiting
-	 * for this txg to sync (eg, spa_vdev_remove()), push the
-	 * deferred frees from the previous txg.  If not, leave them
-	 * alone so that we don't generate work on an otherwise idle
-	 * system.
-	 */
-	if (!txg_list_empty(&dp->dp_dirty_datasets, txg) ||
-	    !txg_list_empty(&dp->dp_dirty_dirs, txg) ||
-	    !txg_list_empty(&dp->dp_sync_tasks, txg) ||
-	    ((dsl_scan_active(dp->dp_scan) ||
-	    txg_sync_waiting(dp)) && !spa_shutting_down(spa))) {
-		spa_sync_deferred_frees(spa, tx);
-	}
-
-	/*
 	 * Iterate to convergence.
 	 */
 	do {
@@ -6536,6 +6521,11 @@ spa_sync(spa_t *spa, uint64_t txg)
 		if (pass < zfs_sync_pass_deferred_free) {
 			spa_sync_frees(spa, free_bpl, tx);
 		} else {
+			/*
+			 * We can not defer frees in pass 1, because
+			 * we sync the deferred frees later in pass 1.
+			 */
+			ASSERT3U(pass, >, 1);
 			bplist_iterate(free_bpl, bpobj_enqueue_cb,
 			    &spa->spa_deferred_bpobj, tx);
 		}
@@ -6546,8 +6536,37 @@ spa_sync(spa_t *spa, uint64_t txg)
 		while ((vd = txg_list_remove(&spa->spa_vdev_txg_list, txg)))
 			vdev_sync(vd, txg);
 
-		if (pass == 1)
+		if (pass == 1) {
 			spa_sync_upgrades(spa, tx);
+			ASSERT3U(txg, >=,
+			    spa->spa_uberblock.ub_rootbp.blk_birth);
+			/*
+			 * Note: We need to check if the MOS is dirty
+			 * because we could have marked the MOS dirty
+			 * without updating the uberblock (e.g. if we
+			 * have sync tasks but no dirty user data).  We
+			 * need to check the uberblock's rootbp because
+			 * it is updated if we have synced out dirty
+			 * data (though in this case the MOS will most
+			 * likely also be dirty due to second order
+			 * effects, we don't want to rely on that here).
+			 */
+			if (spa->spa_uberblock.ub_rootbp.blk_birth < txg &&
+			    !dmu_objset_is_dirty(mos, txg)) {
+				/*
+				 * Nothing changed on the first pass,
+				 * therefore this TXG is a no-op.  Avoid
+				 * syncing deferred frees, so that we
+				 * can keep this TXG as a no-op.
+				 */
+				ASSERT(txg_list_empty(&dp->dp_dirty_datasets,
+				    txg));
+				ASSERT(txg_list_empty(&dp->dp_dirty_dirs, txg));
+				ASSERT(txg_list_empty(&dp->dp_sync_tasks, txg));
+				break;
+			}
+			spa_sync_deferred_frees(spa, tx);
+		}
 
 	} while (dmu_objset_is_dirty(mos, txg));
 

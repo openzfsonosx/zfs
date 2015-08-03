@@ -113,6 +113,7 @@ extern "C" {
 
 #ifdef __APPLE__
 #define	SA_ZPL_ADDTIME(z)		z->z_attr_table[ZPL_ADDTIME]
+#define	SA_ZPL_DOCUMENTID(z)	z->z_attr_table[ZPL_DOCUMENTID]
 #endif
 
 /*
@@ -240,6 +241,7 @@ typedef struct znode {
     char        z_finder_hardlink_name[MAXPATHLEN];
 	boolean_t   z_fastpath;
 	boolean_t   z_reclaim_reentry; /* vnode_create()->vnop_reclaim() */
+	uint64_t    z_write_gencount;
 #endif
 
 #ifdef ZFS_DEBUG
@@ -288,7 +290,7 @@ typedef struct znode {
  */
 #define ZFS_ENTER(zfsvfs)                       \
     {                                                                   \
-		rrw_enter(&(zfsvfs)->z_teardown_lock, RW_READER, FTAG); \
+		rrm_enter_read(&(zfsvfs)->z_teardown_lock, FTAG); \
         if ((zfsvfs)->z_unmounted) {                                    \
             ZFS_EXIT(zfsvfs);                                           \
             return (EIO);                                               \
@@ -296,12 +298,9 @@ typedef struct znode {
     }
 
 #define ZFS_ENTER_NOERROR(zfsvfs)                                       \
-	rrw_enter(&(zfsvfs)->z_teardown_lock, RW_READER, FTAG)
+	rrm_enter_read(&(zfsvfs)->z_teardown_lock, FTAG)
 
-    //        rw_enter(&(zfsvfs)->z_teardown_lock, RW_READER);
-
-    //#define ZFS_EXIT(zfsvfs) rw_exit(&(zfsvfs)->z_teardown_lock)
-#define	ZFS_EXIT(zfsvfs) rrw_exit(&(zfsvfs)->z_teardown_lock, FTAG)
+#define	ZFS_EXIT(zfsvfs) rrm_exit(&(zfsvfs)->z_teardown_lock, FTAG)
 
 /* Verifies the znode is valid */
 #define	ZFS_VERIFY_ZP(zp) \

@@ -1102,7 +1102,7 @@ sa_setup(objset_t *os, uint64_t sa_obj, sa_attr_reg_t *reg_attrs, int count,
 		    sa_legacy_attr_count), B_FALSE, NULL);
 
 		(void) sa_add_layout_entry(os, sa_dummy_zpl_layout, 0, 1,
-                                   0, B_FALSE, NULL);
+		    0, B_FALSE, NULL);
 	}
 	*user_table = os->os_sa->sa_user_table;
 	mutex_exit(&sa->sa_lock);
@@ -1279,13 +1279,8 @@ sa_build_index(sa_handle_t *hdl, sa_buf_type_t buftype)
 	sa_hdr_phys_t *sa_hdr_phys;
 	dmu_buf_impl_t *db = SA_GET_DB(hdl, buftype);
 	dmu_object_type_t bonustype = SA_BONUSTYPE_FROM_DB(db);
-	sa_os_t *sa;
+	sa_os_t *sa = hdl->sa_os->os_sa;
 	sa_idx_tab_t *idx_tab;
-
-    if (!hdl) panic("ZFS: hdl is NULL");
-    sa = hdl->sa_os->os_sa;
-
-    if (!sa) return 0;
 
 	sa_hdr_phys = SA_GET_HDR(hdl, buftype);
 
@@ -1296,16 +1291,7 @@ sa_build_index(sa_handle_t *hdl, sa_buf_type_t buftype)
 	/* only check if not old znode */
 	if (IS_SA_BONUSTYPE(bonustype) && sa_hdr_phys->sa_magic != SA_MAGIC &&
 	    sa_hdr_phys->sa_magic != 0) {
-
-		//VERIFY(BSWAP_32(sa_hdr_phys->sa_magic) == SA_MAGIC);
-		if (BSWAP_32(sa_hdr_phys->sa_magic) != SA_MAGIC) {
-            printf("sa_magic is incorrect (%08x != %08x). hdl %p buftype %02x\n",
-                   sa_hdr_phys->sa_magic, SA_MAGIC,
-                   hdl, buftype);
-
-            return 0;
-        }
-
+		VERIFY(BSWAP_32(sa_hdr_phys->sa_magic) == SA_MAGIC);
 		sa_byteswap(hdl, buftype);
 	}
 
@@ -1335,8 +1321,6 @@ sa_idx_tab_rele(objset_t *os, void *arg)
 
 	if (idx_tab == NULL)
 		return;
-
-    if (!sa) return;
 
 	mutex_enter(&sa->sa_lock);
 	if (refcount_remove(&idx_tab->sa_refcount, NULL) == 0) {
@@ -1513,10 +1497,8 @@ sa_lookup_uio(sa_handle_t *hdl, sa_attr_type_t attr, uio_t *uio)
 
 	mutex_enter(&hdl->sa_lock);
 	if ((error = sa_attr_op(hdl, &bulk, 1, SA_LOOKUP, NULL)) == 0) {
-		//error = uiomove((void *)bulk.sa_addr, MIN(bulk.sa_size,
-        //   uio->uio_resid), UIO_READ, uio);
 		error = uiomove((void *)bulk.sa_addr, MIN(bulk.sa_size,
-                         uio_resid(uio)), UIO_READ, uio);
+				   uio_resid(uio)), UIO_READ, uio);
 	}
 	mutex_exit(&hdl->sa_lock);
 	return (error);
@@ -2053,7 +2035,7 @@ sa_handle_unlock(sa_handle_t *hdl)
 	mutex_exit(&hdl->sa_lock);
 }
 
-#if 0 //fixme
+#ifdef LINUX
 #ifdef _KERNEL
 EXPORT_SYMBOL(sa_handle_get);
 EXPORT_SYMBOL(sa_handle_get_from_db);
