@@ -1646,38 +1646,17 @@ zfs_zinactive(znode_t *zp)
 	int skip_id_lock = 0;
 	ASSERT(zp->z_sa_hdl);
 
-	/*
-	 * These locks may already be taken by ourselves, through vnode_create
-	 * reentry.
-	 */
-
-	/*
-	 * Don't allow a zfs_zget() while were trying to release this znode
-	 */
-	if (ZFS_OBJ_HELD(zfsvfs, z_id))
-		skip_id_lock = 1;
-	else
-		ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
-
-	if (mutex_owner(&zp->z_lock))
-		skip_lock = 1;
-	else
-		mutex_enter(&zp->z_lock);
 
 	/*
 	 * If this was the last reference to a file with no links,
 	 * remove the file from the file system.
 	 */
 	if (zp->z_unlinked) {
-		if (!skip_lock) mutex_exit(&zp->z_lock);
-		if (!skip_id_lock) ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 		zfs_rmnode(zp);
 		return;
 	}
 
-	if (!skip_lock) mutex_exit(&zp->z_lock);
 	zfs_znode_dmu_fini(zp);
-	if (!skip_id_lock) ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 	zfs_znode_free(zp);
 }
 
