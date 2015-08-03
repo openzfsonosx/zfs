@@ -15,13 +15,13 @@
 #include "IDDiskArbitrationUtils.hpp"
 #include "IDFileUtils.hpp"
 
-#include <iostream>
 #include <string>
 #include <algorithm>
 
 namespace ID
 {
-	SerialLinker::SerialLinker(std::string base) :
+	SerialLinker::SerialLinker(std::string base, ASLClient const & logger) :
+		DiskArbitrationHandler(logger),
 		m_base(std::move(base))
 	{
 		createPath(m_base);
@@ -105,12 +105,15 @@ namespace ID
 				if (serial.empty())
 					return;
 				std::string devicePath = "/dev/" + di.mediaBSDName;
-				std::cout << "Creating symlink: \"" << serial << "\" -> " << devicePath << std::endl;
+				asl_log(logger().client(), 0, ASL_LEVEL_NOTICE,
+						"Creating symlink: \"%s\" -> \"%s\"",
+						serial.c_str(), devicePath.c_str());
 				createSymlink(serial, devicePath);
 			}
 			catch (std::exception const & e)
 			{
-				std::cerr << "Could not create symlink: " << e.what() << std::endl;
+				asl_log(logger().client(), 0, ASL_LEVEL_ERR,
+						"Could not create symlink: %s", e.what());
 			}
 		}
 	}
@@ -124,13 +127,14 @@ namespace ID
 				std::string serial = formatSerialPath(di);
 				if (serial.empty())
 					return;
-				std::string devicePath = "/dev/" + di.mediaBSDName;
-				std::cout << "Removing symlink: \"" << serial << "\"" << std::endl;
+				asl_log(logger().client(), 0, ASL_LEVEL_NOTICE,
+						"Removing symlink: \"%s\"", serial.c_str());
 				removeFSObject(serial);
 			}
 			catch (std::exception const & e)
 			{
-				std::cerr << "Could not remove symlink: " << e.what() << std::endl;
+				asl_log(logger().client(), 0, ASL_LEVEL_ERR,
+						"Could not remove symlink: %s", e.what());
 			}
 		}
 	}

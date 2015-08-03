@@ -3,16 +3,14 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>org.openzfsonosx.InvariantDisks</string>
+	<string>net.the-color-black.InvariantDisks</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>@sbindir@/InvariantDisks</string>
+		<string>/usr/local/bin/InvariantDisks</string>
+		<string>-p</string>
+		<string>/var/run/disk</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
-	<key>KeepAlive</key>
-	<true/>
-	<key>TimeOut</key>
-	<integer>0</integer>
 </dict>
 </plist>

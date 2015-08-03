@@ -20,6 +20,7 @@
 #include "IDUUIDLinker.hpp"
 #include "IDSerialLinker.hpp"
 #include "IDDispatchUtils.hpp"
+#include "IDASLUtils.hpp"
 
 #include <vector>
 #include <map>
@@ -37,6 +38,9 @@
 
 namespace ID
 {
+	static char const * const logFacility = "net.the-color-black.InvariantDisk";
+	static char const * const logIdent = "InvariantDisk";
+
 	struct CLI::Impl
 	{
 		std::mutex mutex;
@@ -45,6 +49,7 @@ namespace ID
 		bool showHelp = false;
 		bool verbose = false;
 		std::string basePath = "/var/run/disk";
+		std::string logPath;
 		int64_t idleTimeoutNS = 4000000000;
 		CFRunLoopRef runloop = nullptr;
 	};
@@ -80,12 +85,15 @@ namespace ID
 				throw Exception("CLI already running");
 			m_impl->runloop = CFRunLoopGetCurrent();
 		}
+		ASLClient logger(logIdent, logFacility, ASL_OPT_STDERR);
+		if (!m_impl->logPath.empty())
+			logger.addLogFile(m_impl->logPath.c_str());
 		DiskArbitrationDispatcher dispatcher;
-		dispatcher.addHandler(std::make_shared<DAHandlerIdle>(m_impl->basePath, m_impl->idleTimeoutNS));
-		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(std::cout, m_impl->verbose));
-		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path"));
-		dispatcher.addHandler(std::make_shared<UUIDLinker>(m_impl->basePath + "/by-id"));
-		dispatcher.addHandler(std::make_shared<SerialLinker>(m_impl->basePath + "/by-serial"));
+		dispatcher.addHandler(std::make_shared<DAHandlerIdle>(m_impl->basePath, m_impl->idleTimeoutNS, logger));
+		dispatcher.addHandler(std::make_shared<DiskInfoLogger>(m_impl->verbose, logger));
+		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path", logger));
+		dispatcher.addHandler(std::make_shared<UUIDLinker>(m_impl->basePath + "/by-id", logger));
+		dispatcher.addHandler(std::make_shared<SerialLinker>(m_impl->basePath + "/by-serial", logger));
 		dispatcher.start();
 		CFRunLoopRun();
 		{
@@ -119,6 +127,7 @@ namespace ID
 		std::cout << "\t-h:\tprint help and exit\n";
 		std::cout << "\t-v:\tverbose logging\n";
 		std::cout << "\t-p <basePath>:\tset base path for symlinks (" << m_impl->basePath << ")\n";
+		std::cout << "\t-l <logPath>:\tset optional path for logging (" << m_impl->logPath << ")\n";
 		std::cout << "\t-t <timeoutMS>:\tset idle timeout (" << m_impl->idleTimeoutNS/1000000 << " ms)\n";
 	}
 
@@ -130,6 +139,7 @@ namespace ID
 			{"-h", { 0, [&](char **){ m_impl->showHelp = true; }}},
 			{"-v", { 0, [&](char **){ m_impl->verbose = true; }}},
 			{"-p", { 1, [&](char ** a){ m_impl->basePath = a[1]; }}},
+			{"-l", { 1, [&](char ** a){ m_impl->logPath = a[1]; }}},
 			{"-t", { 1, [&](char ** a){
 				try
 				{
