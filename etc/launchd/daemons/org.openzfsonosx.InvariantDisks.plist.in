@@ -12,10 +12,6 @@
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
-	<key>StandardErrorPath</key>
-	<string>/private/var/log/org.openzfsonosx.InvariantDisks.err</string>
-	<key>StandardOutPath</key>
-	<string>/private/var/log/org.openzfsonosx.InvariantDisks.log</string>
 	<key>TimeOut</key>
 	<integer>0</integer>
 </dict>
