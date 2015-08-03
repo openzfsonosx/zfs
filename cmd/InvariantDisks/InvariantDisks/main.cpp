@@ -13,6 +13,9 @@
 #include "IDCLI.hpp"
 #include "IDException.hpp"
 
+#include <asl.h>
+#include <iostream>
+
 int main(int argc, char ** argv)
 {
 	try
@@ -22,14 +25,17 @@ int main(int argc, char ** argv)
 	}
 	catch (ID::Exception const & e)
 	{
+		asl_log(0, 0, ASL_LEVEL_CRIT, "%s", e.what());
 		std::cerr << e.what() << std::endl;
 	}
 	catch (std::exception const & e)
 	{
+		asl_log(0, 0, ASL_LEVEL_CRIT, "Terminated by exception: %s", e.what());
 		std::cerr << "Terminated by exception: " << e.what() << std::endl;
 	}
 	catch (...)
 	{
+		asl_log(0, 0, ASL_LEVEL_CRIT, "Terminated by unknown exception");
 		std::cerr << "Terminated by unknown exception" << std::endl;
 	}
 	return -1;

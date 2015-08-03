@@ -11,6 +11,7 @@
 		700AE3CC191530A000929DAE /* IDSerialLinker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 700AE3CA191530A000929DAE /* IDSerialLinker.cpp */; };
 		704C39201A3C777F00929DAE /* IDDispatchUtils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 704C391E1A3C777F00929DAE /* IDDispatchUtils.cpp */; };
 		704C39231A3C7E9600929DAE /* IDDAHandlerIdle.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 704C39211A3C7E9600929DAE /* IDDAHandlerIdle.cpp */; };
+		707E3F0E1B6CDC2400929DAE /* IDASLUtils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 707E3F0C1B6CDC2400929DAE /* IDASLUtils.cpp */; };
 		70C63F28190CF5E800929DAE /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F27190CF5E800929DAE /* main.cpp */; };
 		70C63F32190CF78800929DAE /* IDCLI.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F30190CF78800929DAE /* IDCLI.cpp */; };
 		70C63F35190CF87400929DAE /* IDException.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F33190CF87400929DAE /* IDException.cpp */; };
@@ -45,6 +46,8 @@
 		704C391F1A3C777F00929DAE /* IDDispatchUtils.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDDispatchUtils.hpp; sourceTree = "<group>"; };
 		704C39211A3C7E9600929DAE /* IDDAHandlerIdle.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDDAHandlerIdle.cpp; sourceTree = "<group>"; };
 		704C39221A3C7E9600929DAE /* IDDAHandlerIdle.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDDAHandlerIdle.hpp; sourceTree = "<group>"; };
+		707E3F0C1B6CDC2400929DAE /* IDASLUtils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDASLUtils.cpp; sourceTree = "<group>"; };
+		707E3F0D1B6CDC2400929DAE /* IDASLUtils.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDASLUtils.hpp; sourceTree = "<group>"; };
 		70C63F24190CF5E800929DAE /* InvariantDisks */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = InvariantDisks; sourceTree = BUILT_PRODUCTS_DIR; };
 		70C63F27190CF5E800929DAE /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; path = main.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
 		70C63F30190CF78800929DAE /* IDCLI.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; path = IDCLI.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
@@ -125,6 +128,8 @@
 				70C63F57190D574000929DAE /* IDFileUtils.hpp */,
 				704C391E1A3C777F00929DAE /* IDDispatchUtils.cpp */,
 				704C391F1A3C777F00929DAE /* IDDispatchUtils.hpp */,
+				707E3F0C1B6CDC2400929DAE /* IDASLUtils.cpp */,
+				707E3F0D1B6CDC2400929DAE /* IDASLUtils.hpp */,
 			);
 			path = InvariantDisks;
 			sourceTree = "<group>";
@@ -218,6 +223,7 @@
 				704C39201A3C777F00929DAE /* IDDispatchUtils.cpp in Sources */,
 				704C39231A3C7E9600929DAE /* IDDAHandlerIdle.cpp in Sources */,
 				70C63F35190CF87400929DAE /* IDException.cpp in Sources */,
+				707E3F0E1B6CDC2400929DAE /* IDASLUtils.cpp in Sources */,
 				70C63F4B190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp in Sources */,
 				70C63F4F190D2AA000929DAE /* IDDiskInfoLogger.cpp in Sources */,
 				70C63F58190D574000929DAE /* IDFileUtils.cpp in Sources */,

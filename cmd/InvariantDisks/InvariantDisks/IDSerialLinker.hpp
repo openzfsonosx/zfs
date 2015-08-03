@@ -22,7 +22,7 @@ namespace ID
 	class SerialLinker : public DiskArbitrationHandler
 	{
 	public:
-		SerialLinker(std::string base);
+		explicit SerialLinker(std::string base, ASLClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;

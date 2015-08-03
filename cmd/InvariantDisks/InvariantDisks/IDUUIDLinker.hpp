@@ -22,7 +22,7 @@ namespace ID
 	class UUIDLinker : public DiskArbitrationHandler
 	{
 	public:
-		UUIDLinker(std::string base);
+		explicit UUIDLinker(std::string base, ASLClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;
