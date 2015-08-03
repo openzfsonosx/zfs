@@ -8,6 +8,8 @@ DEFAULT_INCLUDES += \
 sbin_PROGRAMS = InvariantDisks
 
 InvariantDisks_SOURCES = \
+	IDASLUtils.cpp \
+	IDASLUtils.hpp \
 	IDCLI.cpp \
 	IDCLI.hpp \
 	IDDAHandlerIdle.cpp \
