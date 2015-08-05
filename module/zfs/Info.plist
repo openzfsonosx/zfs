@@ -40,12 +40,19 @@
 	<dict>
 		<key>net.lundman.zfs</key>
 		<dict>
-          <key>CFBundleIdentifier</key>
-          <string>net.lundman.zfs</string>
+			<key>CFBundleIdentifier</key>
+			<string>net.lundman.zfs</string>
 			<key>IOClass</key>
 			<string>net_lundman_zfs_zvol</string>
 			<key>IOMatchCategory</key>
 			<string>net_lundman_zfs_zvol</string>
+			<key>IOMediaIcon</key>
+			<dict>
+				<key>CFBundleIdentifier</key>
+				<string>net.lundman.zfs</string>
+				<key>IOBundleResourceFile</key>
+				<string>VolumeIcon.icns</string>
+			</dict>
 			<key>IOProviderClass</key>
 			<string>IOResources</string>
 			<key>IOResourceMatch</key>
@@ -54,67 +61,30 @@
 
 		<key>ZFSProxyMediaScheme</key>
 		<dict>
-          <key>CFBundleIdentifier</key>
-          <string>net.lundman.zfs</string>
-		  <key>IOClass</key>
+			<key>CFBundleIdentifier</key>
+			<string>net.lundman.zfs</string>
+			<key>IOClass</key>
 			<string>ZFSProxyMediaScheme</string>
 			<key>IOMatchCategory</key>
 			<string>IOStorage</string>
-            <key>IOProviderClass</key>
-            <string>IOResources</string>
-
-			<key>IOParentMatch</key>
-			<dict>
-			  <key>IOPropertyMatch</key>
-			  <dict>
-				<key>device-type</key>
-				<string>Generic</string>
-			  </dict>
-			  <key>IOProviderClass</key>
-			  <string>IOBlockStorageDevice</string>
-			</dict>
-
 			<key>IOProbeScore</key>
 			<integer>400</integer>
-
-			<key>IOPropertyMatch</key>
-			<dict>
-			  <key>Whole</key>
-			  <true/>
-			</dict>
-
+			<key>IOProviderClass</key>
+			<string>IOMedia</string>
 			<key>IOPropertyMatch</key>
 			<array>
-			  <dict>
-				<key>Content Hint</key>
-				<string>zfs_snapshot_proxy</string>
-			  </dict>
-			  <dict>
+				<dict>
+					<key>Content Hint</key>
+					<string>zfs_snapshot_proxy</string>
+				</dict>
+				<dict>
 				<key>Content Hint</key>
 				<string>zfs_pool_proxy</string>
-			  </dict>
-			  <dict>
-				<key>Content Hint</key>
-				<string>zfs_filesystem_proxy</string>
-			  </dict>
-			  <dict>
-				<key>IOProviderClass</key>
-				<string>IOMedia</string>
-			  </dict>
-
-			  <key>IOBlockStorageDriver</key>
-			  <dict>
-				<key>IOClass</key>
-				<string>IOBlockStorageDriver</string>
-				<key>IOPropertyMatch</key>
-				<dict>
-				  <key>device-type</key>
-				  <string>Generic</string>
 				</dict>
-				<key>IOProviderClass</key>
-				<string>IOBlockStorageDevice</string>
-			  </dict>
-
+				<dict>
+					<key>Content Hint</key>
+					<string>zfs_filesystem_proxy</string>
+				</dict>
 			</array>
 		</dict>
 
