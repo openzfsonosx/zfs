@@ -289,10 +289,163 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_GETPATH:
-			// fail as if requested of non-root fs
-			// i.e. !vnode_isvroot(vp)
-			error = EINVAL;
+			printf("ZFS: ioctl(HFS_GETPATH)\n");
+  		    {
+				struct vfsstatfs *vfsp;
+				struct vnode *file_vp;
+                ino64_t cnid;
+                int  outlen;
+                char *bufptr;
+                int flags = 0;
+
+				/* Caller must be owner of file system. */
+				vfsp = vfs_statfs(zfsvfs->z_vfs);
+				/*if (suser((kauth_cred_t)cr, NULL) &&  APPLE denied suser */
+				if (proc_suser(current_proc()) &&
+					kauth_cred_getuid((kauth_cred_t)cr) != vfsp->f_owner) {
+					error = EACCES;
+					goto out;
+				}
+				/* Target vnode must be file system's root. */
+				if (!vnode_isvroot(ap->a_vp)) {
+					error = EINVAL;
+					goto out;
+				}
+
+				/* We are passed a string containing a inode number */
+				bufptr = (char *)ap->a_data;
+                cnid = strtoul(bufptr, NULL, 10);
+                if (ap->a_fflag & HFS_GETPATH_VOLUME_RELATIVE) {
+					flags |= BUILDPATH_VOLUME_RELATIVE;
+                }
+
+				if ((error = zfs_vfs_vget(zfsvfs->z_vfs, cnid, &file_vp,
+										  (vfs_context_t)ct))) {
+					goto out;
+                }
+                error = build_path(file_vp, bufptr, MAXPATHLEN,
+								   &outlen, flags, (vfs_context_t)ct);
+                vnode_put(file_vp);
+
+				printf("ZFS: HFS_GETPATH done %d : '%s'\n", error,
+					   error ? "" : bufptr);
+			}
 			break;
+
+		case HFS_TRANSFER_DOCUMENT_ID:
+		    {
+				u_int32_t to_fd = *(u_int32_t *)ap->a_data;
+				file_t *to_fp;
+				struct vnode *to_vp;
+				znode_t *to_zp;
+				printf("ZFS: HFS_TRANSFER_DOCUMENT_ID:\n");
+
+				to_fp = getf(to_fd);
+				if (to_fp == NULL) {
+					error = EBADF;
+					goto out;
+				}
+
+				to_vp = getf_vnode(to_fp);
+
+				if ( (error = vnode_getwithref(to_vp)) ) {
+					releasef(to_fd);
+					goto out;
+				}
+
+				/* Confirm it is inside our mount */
+				if (((zfsvfs_t *)vfs_fsprivate(vnode_mount((to_vp)))) != zfsvfs) {
+					error = EXDEV;
+					goto transfer_out;
+				}
+
+				to_zp = VTOZ(to_vp);
+
+				/* Source should have UF_TRACKED */
+				if (!(zp->z_pflags & ZFS_TRACKED)) {
+					printf("ZFS: source is not TRACKED\n");
+					error = EINVAL;
+					/* destination should NOT have UF_TRACKED */
+				} else if (to_zp->z_pflags & ZFS_TRACKED) {
+					printf("ZFS: destination is already TRACKED\n");
+					error = EEXIST;
+					/* should be valid types */
+				} else if ((IFTOVT((mode_t)zp->z_mode) == VDIR) ||
+						   (IFTOVT((mode_t)zp->z_mode) == VREG) ||
+						   (IFTOVT((mode_t)zp->z_mode) == VLNK)) {
+					/* Make sure source has a document id  - although it can't*/
+					if (!zp->z_document_id)
+						zfs_setattr_generate_id(zp, 0, NULL);
+
+					/* transfer over */
+					to_zp->z_document_id = zp->z_document_id;
+					zp->z_document_id = 0;
+					to_zp->z_pflags |= ZFS_TRACKED;
+					zp->z_pflags &= ~ZFS_TRACKED;
+
+					/* Commit to disk */
+					zfs_setattr_set_documentid(to_zp, B_TRUE);
+					zfs_setattr_set_documentid(zp, B_TRUE); /* also update flags */
+					printf("ZFS: Moved docid %u from id %llu to id %llu\n",
+						   to_zp->z_document_id, zp->z_id, to_zp->z_id);
+				}
+			  transfer_out:
+				vnode_put(to_vp);
+				releasef(to_fd);
+			}
+			break;
+
+
+		case F_MAKECOMPRESSED:
+			/*
+			 * Not entirely sure what this does, but HFS comments include:
+			 * "Make the file compressed; truncate & toggle BSD bits"
+			 *
+			 */
+		    {
+				uint32_t gen_counter;
+
+				printf("ZFS: F_MAKECOMPRESSED\n");
+
+				if (vfs_isrdonly(zfsvfs->z_vfs) ||
+					!spa_writeable(dmu_objset_spa(zfsvfs->z_os))) {
+					error = EROFS;
+					goto out;
+				}
+
+				if (ap->a_data) {
+					/*
+					 * Cast the pointer into a uint32_t so we can extract the
+					 * supplied generation counter.
+					 */
+					gen_counter = *((uint32_t*)ap->a_data);
+                }
+                else {
+					error = EINVAL;
+					goto out;
+                }
+				/* Are there any other usecounts/FDs? */
+                if (vnode_isinuse(ap->a_vp, 1)) {
+					error = EBUSY;
+					goto out;
+				}
+				if (zp->z_pflags & ZFS_IMMUTABLE) {
+					error = EINVAL;
+					goto out;
+				}
+				if (zp->z_write_gencount == gen_counter) {
+					/*
+					 * OK, the gen_counter matched.  Go for it:
+					 * Toggle state bits,truncate file, and suppress mtime update
+					 */
+					// return OK
+				} else {
+					error = ESTALE;
+				}
+
+			}
+			break;
+
 
 		case HFS_PREV_LINK:
 		case HFS_NEXT_LINK:
@@ -954,6 +1107,12 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	if (VATTR_IS_ACTIVE(vap, va_flags)) {
 		znode_t *zp = VTOZ(ap->a_vp);
 
+		/* If TRACKED is wanted, and not previously set, go set DocumentID */
+		if ((vap->va_flags & UF_TRACKED) && !(zp->z_pflags & ZFS_TRACKED)) {
+			zfs_setattr_generate_id(zp, 0, NULL);
+			zfs_setattr_set_documentid(zp, B_FALSE); /* flags updated in vnops */
+		}
+
 		/* Map OS X file flags to zfs file flags */
 		zfs_setbsdflags(zp, vap->va_flags);
 		dprintf("OS X flags %08x changed to ZFS %04llx\n",
@@ -1005,7 +1164,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	uint64_t missing = 0;
 	missing = (vap->va_active ^ (vap->va_active & vap->va_supported));
 	if ( missing != 0) {
-		dprintf("vnop_setattr:: asked %08llx replied %08llx       missing %08llx\n",
+		printf("vnop_setattr:: asked %08llx replied %08llx       missing %08llx\n",
 			   vap->va_active, vap->va_supported,
 			   missing);
 	}
@@ -2214,7 +2373,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 		value = kmem_alloc(size, KM_SLEEP);
 		if (value) {
 			error = zpl_xattr_get_sa(vp, ap->a_name, value, size);
-			dprintf("ZFS: SA XATTR said %d\n", error);
+			//dprintf("ZFS: SA XATTR said %d\n", error);
 
 			if (error > 0) {
 				uiomove((const char*)value, error, 0, uio);
@@ -2335,7 +2494,8 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	int  flag;
 	int  error = 0;
 
-	dprintf("+setxattr vp %p enabled? %d\n", ap->a_vp, zfsvfs->z_xattr);
+	printf("+setxattr vp %p '%s' enabled? %d\n", ap->a_vp,
+		   ap->a_name, zfsvfs->z_xattr);
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
@@ -2467,7 +2627,7 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 	int  error;
 	uint64_t xattr;
 
-	dprintf("+removexattr vp %p\n", ap->a_vp);
+	dprintf("+removexattr vp %p '%s'\n", ap->a_vp, ap->a_name);
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
@@ -2550,12 +2710,11 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 #if 0
 	struct vnop_listxattr_args {
 		struct vnodeop_desc *a_desc;
-		struct vnode	*a_vp;
-		char		*a_name;
-		struct uio	*a_uio;
-		size_t		*a_size;
-		int		a_options;
-		vfs_context_t	a_context;
+        vnode_t a_vp;
+        uio_t a_uio;
+        size_t *a_size;
+        int a_options;
+        vfs_context_t a_context;
 	};
 #endif
 {
@@ -2576,7 +2735,7 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 	uint64_t xattr;
 	int force_formd_normalized_output;
 
-	dprintf("+listxattr vp %p\n", ap->a_vp);
+	dprintf("+listxattr vp %p: \n", ap->a_vp);
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
@@ -2614,6 +2773,7 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 					error = ERANGE;
 					break;
 				}
+				printf("ZFS: listxattr '%s'\n", nvpair_name(nvp));
 				error = uiomove((caddr_t)nvpair_name(nvp), namelen,
 								UIO_READ, uio);
 				if (error)
