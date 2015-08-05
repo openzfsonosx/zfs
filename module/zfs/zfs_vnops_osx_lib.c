@@ -434,10 +434,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 				} else {
 					error = sa_update(zp->z_sa_hdl, SA_ZPL_DOCUMENTID(zfsvfs),
 									  &docid, sizeof(docid), tx);
-					if (error)
-						dmu_tx_abort(tx);
-					else
-						dmu_tx_commit(tx);
+					dmu_tx_commit(tx);
 				}
 
 				if (error)
@@ -705,7 +702,7 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 	}
 #endif
     zfs_sa_upgrade_txholds(tx, dzp);
-	error = dmu_tx_assign(tx, TXG_NOWAIT);
+	error = dmu_tx_assign(tx, TXG_WAIT);
 	if (error) {
 		zfs_dirent_unlock(dl);
 		if (error == ERESTART) {
