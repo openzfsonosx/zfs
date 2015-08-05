@@ -496,6 +496,19 @@ zvol_create_minor(const char *name)
 		return (EEXIST);
 	}
 
+	/* On OS X we always check snapdev, for now */
+#ifdef linux
+	if (ignore_snapdev == B_FALSE) {
+#endif
+		error = zvol_snapdev_hidden(name);
+		if (error) {
+			mutex_exit(&zfsdev_state_lock);
+			return (error);
+		}
+#ifdef linux
+	}
+#endif
+
 	/* lie and say we're read-only */
 	error = dmu_objset_own(name, DMU_OST_ZVOL, B_TRUE, FTAG, &os);
 
