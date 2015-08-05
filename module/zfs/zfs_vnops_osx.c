@@ -1612,8 +1612,10 @@ top:
 		goto exit;
 	}
 	dmu_tx_hold_write(tx, zp->z_id, off, len);
-	dmu_tx_hold_bonus(tx, zp->z_id);
-	err = dmu_tx_assign(tx, TXG_NOWAIT);
+
+	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+	zfs_sa_upgrade_txholds(tx, zp);
+	err = dmu_tx_assign(tx, TXG_WAIT);
 	if (err != 0) {
 		if (err == ERESTART) {
 			zfs_range_unlock(rl);
