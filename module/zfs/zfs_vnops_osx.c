@@ -1844,7 +1844,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 	/* If re-entry, vcp will be set, otherwise NULL */
 	if (vcp) {
-		dprintf("ZFS: vnop_pageoutv2: re-entry abort on vnode_create\n");
+		printf("ZFS: vnop_pageoutv2: re-entry abort on vnode_create\n");
 		return EIO;
 	}
 
@@ -1969,7 +1969,9 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	int isize;
 	int pg_index;
 	int error_ret = 0;
-	isize = ap->a_size;
+	//isize = ap->a_size;
+	isize = len;
+
 	f_offset = ap->a_f_offset;
 	for (pg_index = ((isize) / PAGE_SIZE); pg_index > 0;) {
 		if (upl_page_present(pl, --pg_index))
@@ -1995,6 +1997,8 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		int  xsize;
 		int  num_of_pages;
 
+		//printf("isize %d for page %d\n", isize, pg_index);
+
 		if ( !upl_page_present(pl, pg_index)) {
 			/*
 			 * we asked for RET_ONLY_DIRTY, so it's possible
@@ -2009,7 +2013,10 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 			continue;
 		}
 		if ( !upl_dirty_page(pl, pg_index)) {
-			panic ("hfs_vnop_pageout: unforeseen clean page @ index %d for UPL %p\n", pg_index, upl);
+			/* hfs has a call to panic here, but we trigger this *a lot* so
+			 * unsure what is going on */
+			//printf ("zfs_vnop_pageoutv2: unforeseen clean page @ index %d for UPL %p\n", pg_index, upl);
+			continue;
 		}
 
 		/*
@@ -2041,8 +2048,15 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 #endif
 		}
 
-		dmu_write(zfsvfs->z_os, zp->z_id,
-				  f_offset, xsize, &va[offset], tx);
+		if (f_offset + xsize > filesize) {
+			printf("ZFS: lowering size %d to %d\n",
+				   xsize, filesize - f_offset);
+			xsize = filesize - f_offset;
+		}
+
+		if (xsize > 0)
+			dmu_write(zfsvfs->z_os, zp->z_id,
+					  f_offset, xsize, &va[offset], tx);
 
 #if 0 // hfs
 		if ((error = cluster_pageout(vp, upl, offset, f_offset,
