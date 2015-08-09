@@ -87,4 +87,12 @@ namespace ID
 	{
 		return m_impl->addLogFile(logFile);
 	}
+
+	void ASLClient::log(int level, const char * format, ...) const
+	{
+		va_list args;
+		va_start(args, format);
+		asl_vlog(client(), 0, level, format, args);
+		va_end(args);
+	}
 }

@@ -105,15 +105,13 @@ namespace ID
 				if (serial.empty())
 					return;
 				std::string devicePath = "/dev/" + di.mediaBSDName;
-				asl_log(logger().client(), 0, ASL_LEVEL_NOTICE,
-						"Creating symlink: \"%s\" -> \"%s\"",
-						serial.c_str(), devicePath.c_str());
+				logger().log(ASL_LEVEL_NOTICE, "Creating symlink: \"%s\" -> \"%s\"",
+							 serial.c_str(), devicePath.c_str());
 				createSymlink(serial, devicePath);
 			}
 			catch (std::exception const & e)
 			{
-				asl_log(logger().client(), 0, ASL_LEVEL_ERR,
-						"Could not create symlink: %s", e.what());
+				logger().log(ASL_LEVEL_ERR, "Could not create symlink: %s", e.what());
 			}
 		}
 	}
@@ -127,14 +125,12 @@ namespace ID
 				std::string serial = formatSerialPath(di);
 				if (serial.empty())
 					return;
-				asl_log(logger().client(), 0, ASL_LEVEL_NOTICE,
-						"Removing symlink: \"%s\"", serial.c_str());
+				logger().log(ASL_LEVEL_NOTICE, "Removing symlink: \"%s\"", serial.c_str());
 				removeFSObject(serial);
 			}
 			catch (std::exception const & e)
 			{
-				asl_log(logger().client(), 0, ASL_LEVEL_ERR,
-						"Could not remove symlink: %s", e.what());
+				logger().log(ASL_LEVEL_ERR, "Could not remove symlink: %s", e.what());
 			}
 		}
 	}

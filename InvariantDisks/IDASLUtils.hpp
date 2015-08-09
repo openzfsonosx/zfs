@@ -30,6 +30,9 @@ namespace ID
 	public:
 		int addLogFile(char const * logFile);
 
+	public:
+		void log(int level, const char * format, ...) const __printflike(3, 4);
+
 	private:
 		class Impl;
 		std::shared_ptr<Impl> m_impl;
