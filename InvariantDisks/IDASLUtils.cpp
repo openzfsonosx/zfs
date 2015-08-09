@@ -88,7 +88,7 @@ namespace ID
 		return m_impl->addLogFile(logFile);
 	}
 
-	void ASLClient::log(int level, const char * format, ...) const
+	void ASLClient::logFormat(int level, const char * format, ...) const
 	{
 		va_list args;
 		va_start(args, format);

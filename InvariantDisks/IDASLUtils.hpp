@@ -16,6 +16,7 @@
 #include <asl.h>
 
 #include <memory>
+#include <sstream>
 
 namespace ID
 {
@@ -31,12 +32,25 @@ namespace ID
 		int addLogFile(char const * logFile);
 
 	public:
-		void log(int level, const char * format, ...) const __printflike(3, 4);
+		template<typename... ARGS>
+		void log(int level, ARGS const & ... args) const;
+
+		void logFormat(int level, const char * format, ...) const __printflike(3, 4);
 
 	private:
 		class Impl;
 		std::shared_ptr<Impl> m_impl;
 	};
+
+	// Private Implementation
+	template<typename... ARGS>
+	void ASLClient::log(int level, ARGS const & ... args) const
+	{
+		std::stringstream ss;
+		int ignored[] = {(ss << args, 0)...};
+		(void)ignored;
+		asl_log(client(), 0, level, "%s", ss.str().c_str());
+	}
 }
 
 #endif

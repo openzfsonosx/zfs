@@ -50,13 +50,12 @@ namespace ID
 			{
 				mediaPath = m_base + "/" + mediaPath;
 				std::string devicePath = "/dev/" + di.mediaBSDName;
-				logger().log(ASL_LEVEL_NOTICE, "Creating symlink: \"%s\" -> \"%s\"",
-							 mediaPath.c_str(), devicePath.c_str());
+				logger().log(ASL_LEVEL_NOTICE, "Creating symlink: ", mediaPath, " -> ", devicePath);
 				createSymlink(mediaPath, devicePath);
 			}
 			catch (std::exception const & e)
 			{
-				logger().log(ASL_LEVEL_ERR, "Could not create symlink: %s", e.what());
+				logger().log(ASL_LEVEL_ERR, "Could not create symlink: ", e.what());
 			}
 		}
 	}
@@ -69,12 +68,12 @@ namespace ID
 			try
 			{
 				mediaPath = m_base + "/" + mediaPath;
-				logger().log(ASL_LEVEL_NOTICE, "Removing symlink: \"%s\"", mediaPath.c_str());
+				logger().log(ASL_LEVEL_NOTICE, "Removing symlink: ", mediaPath);
 				removeFSObject(mediaPath);
 			}
 			catch (std::exception const & e)
 			{
-				logger().log(ASL_LEVEL_ERR, "Could not remove symlink: %s", e.what());
+				logger().log(ASL_LEVEL_ERR, "Could not remove symlink: ", e.what());
 			}
 		}
 	}

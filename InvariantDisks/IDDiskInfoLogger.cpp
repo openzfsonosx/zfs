@@ -28,12 +28,12 @@ namespace ID
 
 	void DiskInfoLogger::diskAppeared(DADiskRef /*disk*/, DiskInformation const & info)
 	{
-		logger().log(ASL_LEVEL_NOTICE, "Disk Appeared: %s", formatDisk(info).c_str());
+		logger().log(ASL_LEVEL_NOTICE, "Disk Appeared: ", formatDisk(info));
 	}
 
 	void DiskInfoLogger::diskDisappeared(DADiskRef /*disk*/, DiskInformation const & info)
 	{
-		logger().log(ASL_LEVEL_NOTICE, "Disk Disappeared: %s", formatDisk(info).c_str());
+		logger().log(ASL_LEVEL_NOTICE, "Disk Disappeared: ", formatDisk(info));
 	}
 
 	std::string DiskInfoLogger::formatDisk(DiskInformation const & info) const
