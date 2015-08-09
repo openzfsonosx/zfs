@@ -12,6 +12,8 @@
 
 #include "IDDiskArbitrationUtils.hpp"
 
+#include <IOKit/storage/IOStorageProtocolCharacteristics.h>
+
 namespace ID
 {
 	std::ostream & operator<<(std::ostream & os, DADiskRef disk)
@@ -37,6 +39,7 @@ namespace ID
 				<< disk.mediaLeaf << ", " << disk.mediaWritable << ")\n"
 			<< "\tDeviceGUID=\"" << disk.deviceGUID << "\"\n"
 			<< "\tDevicePath=\"" << disk.devicePath << "\"\n"
+			<< "\tDeviceProtocol=\"" << disk.deviceProtocol << "\"\n"
 			<< "\tDeviceModel=\"" << disk.deviceModel << "\"\n"
 			<< "\tBusName=\"" << disk.busName << "\"\n"
 			<< "\tBusPath=\"" << disk.busPath << "\"\n"
@@ -153,7 +156,7 @@ namespace ID
 		return std::string();
 	}
 
-	static std::string prefixDevice = "IODeviceTree:/";
+	static std::string coreStorageMark = "/CoreStoragePhysical/";
 
 	DiskInformation getDiskInformation(DADiskRef disk)
 	{
@@ -171,12 +174,12 @@ namespace ID
 		info.mediaName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaNameKey);
 		info.mediaPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaPathKey);
 		info.mediaContent = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaContentKey);
-		info.isDevice = info.mediaPath.compare(0, prefixDevice.size(), prefixDevice) == 0;
 		info.mediaWhole = boolFromDictionary(descDict, kDADiskDescriptionMediaWholeKey);
 		info.mediaLeaf = boolFromDictionary(descDict, kDADiskDescriptionMediaLeafKey);
 		info.mediaWritable = boolFromDictionary(descDict, kDADiskDescriptionMediaWritableKey);
 		info.deviceGUID = stringFromDictionary<CFDataRef>(descDict, kDADiskDescriptionDeviceGUIDKey);
 		info.devicePath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionDevicePathKey);
+		info.deviceProtocol = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionDeviceProtocolKey);
 		info.deviceModel = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionDeviceModelKey);
 		info.busName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionBusNameKey);
 		info.busPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionBusPathKey);
@@ -191,6 +194,10 @@ namespace ID
 			CFRelease(ioDict);
 		}
 		IOObjectRelease(io);
+		// Guess wether this is an actual device
+		bool isCoreStorage = info.mediaPath.find(coreStorageMark) != std::string::npos;
+		bool isVirtual = info.deviceProtocol == kIOPropertyPhysicalInterconnectTypeVirtual;
+		info.isDevice = !isCoreStorage && !isVirtual;
 		return info;
 	}
 }

@@ -39,6 +39,7 @@ namespace ID
 		bool mediaWritable;
 		std::string deviceGUID;
 		std::string devicePath;
+		std::string deviceProtocol;
 		std::string deviceModel;
 		std::string busName;
 		std::string busPath;
