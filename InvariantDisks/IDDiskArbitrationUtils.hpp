@@ -33,6 +33,7 @@ namespace ID
 		std::string mediaName;
 		std::string mediaPath;
 		std::string mediaContent;
+		bool isDevice;
 		bool mediaWhole;
 		bool mediaLeaf;
 		bool mediaWritable;

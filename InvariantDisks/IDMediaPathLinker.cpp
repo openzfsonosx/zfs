@@ -30,11 +30,7 @@ namespace ID
 
 	static std::string filterMediaPath(std::string const & mediaPath)
 	{
-		if (mediaPath.size() < prefixDevice.size())
-			return std::string();
-		auto r = std::mismatch(mediaPath.begin(), mediaPath.end(),
-							   prefixDevice.begin());
-		if (r.second != prefixDevice.end())
+		if (mediaPath.compare(0, prefixDevice.size(), prefixDevice) != 0)
 			return std::string();
 		std::string filteredPath = mediaPath.substr(prefixDevice.size());
 		std::replace(filteredPath.begin(), filteredPath.end(), '/', '-');

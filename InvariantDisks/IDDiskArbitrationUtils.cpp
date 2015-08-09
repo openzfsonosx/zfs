@@ -153,6 +153,8 @@ namespace ID
 		return std::string();
 	}
 
+	static std::string prefixDevice = "IODeviceTree:/";
+
 	DiskInformation getDiskInformation(DADiskRef disk)
 	{
 		DiskInformation info;
@@ -169,6 +171,7 @@ namespace ID
 		info.mediaName = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaNameKey);
 		info.mediaPath = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaPathKey);
 		info.mediaContent = stringFromDictionary<CFStringRef>(descDict, kDADiskDescriptionMediaContentKey);
+		info.isDevice = info.mediaPath.compare(0, prefixDevice.size(), prefixDevice) == 0;
 		info.mediaWhole = boolFromDictionary(descDict, kDADiskDescriptionMediaWholeKey);
 		info.mediaLeaf = boolFromDictionary(descDict, kDADiskDescriptionMediaLeafKey);
 		info.mediaWritable = boolFromDictionary(descDict, kDADiskDescriptionMediaWritableKey);

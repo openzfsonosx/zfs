@@ -27,11 +27,9 @@ namespace ID
 		createPath(m_base);
 	}
 
-	static std::string prefixDevice = "IODeviceTree:/";
-
 	bool isDevice(DiskInformation const & di)
 	{
-		return di.mediaPath.substr(0, prefixDevice.size()) == prefixDevice;
+		return di.isDevice;
 	}
 
 	bool isWhole(DiskInformation const & di)
