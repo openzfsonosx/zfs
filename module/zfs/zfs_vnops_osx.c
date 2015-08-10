@@ -1781,10 +1781,8 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 }
 
 
-/*
- * In V2 of vnop_pageout, we are given a NULL upl, so that we can
- * grab the file locks first, then request the upl to lock down pages.
- */
+
+
 int
 zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 #if 0
@@ -1800,330 +1798,152 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 #endif
 {
 	struct vnode *vp = ap->a_vp;
-	int flags = ap->a_flags;
-	upl_t upl = ap->a_pl;
-	vm_offset_t upl_offset = ap->a_pl_offset;
-	size_t len = ap->a_size;
 	offset_t off = ap->a_f_offset;
+	offset_t newoff;
+	size_t len = ap->a_size;
+	int flags = ap->a_flags;
+	int uplflags;
+
 	znode_t *zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = NULL;
-	int error = 0;
-	upl_page_info_t* pl;
-	uint64_t filesize;
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	zilog_t *zilog = zfsvfs->z_log;
+	upl_t upl = ap->a_pl;
+	upl_page_info_t *pl;
+	vm_offset_t upl_offset = ap->a_pl_offset;
 	rl_t *rl;
-	dmu_tx_t *tx;
-	kern_return_t kret;
+	uint64_t filesz;
+	int error = 0;
+	size_t fsblksz;
 
-	/* We can still get into this function as non-v2 style, by the default
-	 * pager (ie, swap - when we eventually support it)
-	 */
-	if (upl) {
-		printf("ZFS: Relaying vnop_pageoutv2 to vnop_pageout\n");
-		return zfs_vnop_pageout(ap);
+	if (ISSET(flags, UPL_MSYNC))
+		uplflags = UPL_UBC_MSYNC;
+	else
+		uplflags = UPL_UBC_PAGEOUT;
+
+	ASSERT(!(flags & UPL_NOCOMMIT)); /* this is for swap files only, not yet supported on ZFS */
+	ASSERT(upl == NULL); /* zfs is responsible to create the upl */
+
+	if (zfsvfs == NULL) {
+		error = ENXIO;
+		goto exit_abort;
 	}
 
-	if (!zp || !zp->z_zfsvfs) {
-		printf("ZFS: vnop_pageout: null zp or zfsvfs\n");
-		return ENXIO;
-	}
-
-	zfsvfs = zp->z_zfsvfs;
-
-	/*
-	 * If we are coming via the vnode_create()->vclean() path, we can not
-	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
-	 */
-	struct vnodecreate *vcp;
-
-	mutex_enter(&zfsvfs->z_vnodecreate_lock);
-	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
-		 vcp;
-		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
-		if (vcp->thread == current_thread()) break;
-	mutex_exit(&zfsvfs->z_vnodecreate_lock);
-
-	/* If re-entry, vcp will be set, otherwise NULL */
-	if (vcp) {
-		printf("ZFS: vnop_pageoutv2: re-entry abort on vnode_create\n");
-		return EIO;
-	}
-
-
-	/* Start the pageout request */
-		/*
-	 * We can't leave this function without either calling upl_commit or
-	 * upl_abort. So use the non-error version.
-	 */
+	/* OS X - can't use ZFS_ENTER macro since we may have to cleanup UPL */
 	ZFS_ENTER_NOERROR(zfsvfs);
 	if (zfsvfs->z_unmounted) {
-		dprintf("ZFS: vnop_pageoutv2: abort on z_unmounted\n");
 		error = EIO;
-		goto exit;
+		goto exit_abort;
 	}
-
-
-	ASSERT(vn_has_cached_data(ZTOV(zp)));
-	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
 	if (len <= 0) {
+		printf("zfs_vnop_pageout: invalid size %ld", len);
 		error = EINVAL;
-		goto exit;
+		goto exit_abort;
 	}
-	if (vnode_vfsisrdonly(ZTOV(zp))) {
+	if (vnode_vfsisrdonly(vp)) {
 		error = EROFS;
-		goto exit;
+		goto exit_abort;
 	}
 
-	filesize = zp->z_size; /* get consistent copy of zp_size */
+	fsblksz = zp->z_blksz ? zp->z_blksz : PAGE_SIZE;
 
-	if (off < 0 || off >= filesize || (off & PAGE_MASK_64) ||
-	    (len & PAGE_MASK)) {
-		error = EINVAL;
-		goto exit;
+	/* expand the range so it starts and ends on file block boundary */
+	newoff = off / fsblksz * fsblksz;
+	len += (off - newoff);
+	off = newoff;
+
+	if (off + len < zp->z_size) {
+		len = roundup(len, fsblksz);
+		if (len & ~PAGE_MASK) { /* fsblksz is NOT a multiple of PAGE_SIZE */
+			len = roundup(len, PAGE_SIZE);
+		}
 	}
 
-	uint64_t pgsize = roundup(filesize, PAGESIZE);
-
-	/* Any whole pages beyond the end of the file while we abort */
-	if ((len + off) > pgsize) {
-		printf("ZFS: pageout abort outside pages (rounded 0x%llx > UPLlen "
-			   "0x%llx\n", pgsize, len + off);
-	}
-
-  top:
+	zilog = zfsvfs->z_log;
 	rl = zfs_range_lock(zp, off, len, RL_WRITER);
 	/*
-	 * can't push pages passed end-of-file
+	 * Can't push pages past end-of-file. File size may have
+	 * changed before we grab the range lock, so we must check
+	 * after we have the range lock
 	 */
-	if (off >= filesize) {
-		/* ignore all pages */
-		error = 0;
-		goto out;
-	} else if (off + len > filesize) {
-#if 0
-		int npages = btopr(filesz - off);
-		page_t *trunc;
-
-		page_list_break(&pp, &trunc, npages);
-		/* ignore pages past end of file */
-		if (trunc)
-			pvn_write_done(trunc, flags);
-#endif
-		len = filesize - off;
-	}
-
-	tx = dmu_tx_create(zfsvfs->z_os);
-	dmu_tx_hold_write(tx, zp->z_id, off, len);
-
-	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
-	zfs_sa_upgrade_txholds(tx, zp);
-	error = dmu_tx_assign(tx, TXG_WAIT);
-	if (error != 0) {
-		if (error == ERESTART) {
-			zfs_range_unlock(rl);
-			dmu_tx_wait(tx);
-			dmu_tx_abort(tx);
-			goto top;
-		}
-		dmu_tx_abort(tx);
-		goto out;
-	}
-
-
-	/* Grab UPL now */
-	int request_flags;
-
-	upl_offset = 0;
-	flags &= ~UPL_NOCOMMIT;
-
-	if (flags & UPL_MSYNC) {
-		request_flags = UPL_UBC_MSYNC | UPL_RET_ONLY_DIRTY;
-	}
-	else {
-		request_flags = UPL_UBC_PAGEOUT | UPL_RET_ONLY_DIRTY;
-	}
-
-	kret = ubc_create_upl(vp, ap->a_f_offset, ap->a_size, &upl, &pl, request_flags);
-
-	if ((kret != KERN_SUCCESS) || (upl == (upl_t) NULL)) {
+	filesz = zp->z_size; /* get consistent copy of zp_size */
+	if ((off < 0) || (off >= filesz) ||
+		(off & PAGE_MASK_64) || (len & PAGE_MASK)) { /* totally out of file range, abort the whole range */
 		error = EINVAL;
-		dmu_tx_abort(tx);
+		zfs_range_unlock(rl);
+		goto exit_abort;
+	}
+	off_t rounded_filesz = roundup(filesz, PAGE_SIZE);
+	if (off + len > rounded_filesz) {
+		/* abort the range out of EOF */
+		VERIFY(ubc_create_upl(vp, rounded_filesz, off + len - rounded_filesz, &upl, &pl, uplflags) == 0);
+		ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+		len = rounded_filesz - off;
+	}
+
+	/* split into smaller chunks if necessary */
+	int max_blksz = zfsvfs->z_max_blksz;
+
+	/* now we have all the locks, create the upl, insert it into
+	 * the avl tree, so it can be found by sharedupl_get before they do
+	 * I/Os */
+	size_t upl_size = roundup(len, PAGE_SIZE);
+	uint64_t size = roundup(zp->z_size, PAGE_SIZE_64);
+	if (off + upl_size > size)
+		upl_size = size - off;
+	error = ubc_create_upl(vp, off, upl_size, &upl, &pl, uplflags);
+	if (error) {
 		goto out;
 	}
+	sharedupl_t supl;
+	bzero(&supl, sizeof(sharedupl_t));
+	supl.su_upl_f_off = off;
+	supl.su_upl_size = upl_size;
+	supl.su_upl_off = 0;
+	supl.su_upl = upl;
+	supl.su_pl = pl;
+	supl.su_vaddr = 0;
+	supl.su_refcount = 1; /* prevent it from being freed in sharedupl_put */
+	supl.su_err = 0;
+	mutex_init(&supl.su_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_enter(&zp->z_upltree_lock);
+	avl_add(&zp->z_upltree, &supl);
+	mutex_exit(&zp->z_upltree_lock);
 
-
-	caddr_t va;
-
-	if (ubc_upl_map(upl, (vm_offset_t *)&va) != KERN_SUCCESS) {
-		error = EINVAL;
-		goto out;
-	}
-
-    /*
-	 * Scan from the back to find the last page in the UPL, so that we
-	 * aren't looking at a UPL that may have already been freed by the
-	 * preceding aborts/completions.
-	 */
-	off_t f_offset;
-	int offset;
-	int isize;
-	int pg_index;
-	int error_ret = 0;
-	//isize = ap->a_size;
-	isize = len;
-
-	f_offset = ap->a_f_offset;
-	for (pg_index = ((isize) / PAGE_SIZE); pg_index > 0;) {
-		if (upl_page_present(pl, --pg_index))
-			break;
-		if (pg_index == 0) {
-			ubc_upl_abort_range(upl, 0, isize, UPL_ABORT_FREE_ON_EMPTY);
-			dmu_tx_abort(tx);
-			goto out;
-		}
-	}
-	/*
-	 * initialize the offset variables before we touch the UPL.
-	 * a_f_offset is the position into the file, in bytes
-	 * offset is the position into the UPL, in bytes
-	 * pg_index is the pg# of the UPL we're operating on.
-	 * isize is the offset into the UPL of the last non-clean page.
-	 */
-	isize = ((pg_index + 1) * PAGE_SIZE);
-
-	offset = 0;
-	pg_index = 0;
-	while (isize) {
-		int  xsize;
-		int  num_of_pages;
-
-		//printf("isize %d for page %d\n", isize, pg_index);
-
-		if ( !upl_page_present(pl, pg_index)) {
-			/*
-			 * we asked for RET_ONLY_DIRTY, so it's possible
-			 * to get back empty slots in the UPL.
-			 * just skip over them
-			 */
-			f_offset += PAGE_SIZE;
-			offset   += PAGE_SIZE;
-			isize    -= PAGE_SIZE;
-			pg_index++;
-
-			continue;
-		}
-		if ( !upl_dirty_page(pl, pg_index)) {
-			/* hfs has a call to panic here, but we trigger this *a lot* so
-			 * unsure what is going on */
-			//printf ("zfs_vnop_pageoutv2: unforeseen clean page @ index %d for UPL %p\n", pg_index, upl);
-			continue;
-		}
-
-		/*
-		 * We know that we have at least one dirty page.
-		 * Now checking to see how many in a row we have
-		 */
-		num_of_pages = 1;
-		xsize = isize - PAGE_SIZE;
-		while (xsize) {
-			if ( !upl_dirty_page(pl, pg_index + num_of_pages))
-				break;
-			num_of_pages++;
-			xsize -= PAGE_SIZE;
-		}
-		xsize = num_of_pages * PAGE_SIZE;
-
-		if (!vnode_isswap(vp)) {
-			off_t end_of_range;
-
-			end_of_range = f_offset + xsize - 1;
-			if (end_of_range >= filesize) {
-				end_of_range = (off_t)(filesize - 1);
-			}
-#if 0 // hfs
-			if (f_offset < filesize) {
-				rl_remove(f_offset, end_of_range, &fp->ff_invalidranges);
-				cp->c_flag |= C_MODIFIED;  /* leof is dirty */
-			}
-#endif
-		}
-
-		if (f_offset + xsize > filesize) {
-			printf("ZFS: lowering size %d to %d\n",
-				   xsize, filesize - f_offset);
-			xsize = filesize - f_offset;
-		}
-
-		if (xsize > 0)
-			dmu_write(zfsvfs->z_os, zp->z_id,
-					  f_offset, xsize, &va[offset], tx);
-
-#if 0 // hfs
-		if ((error = cluster_pageout(vp, upl, offset, f_offset,
-									 xsize, filesize, a_flags))) {
-			if (error_ret == 0)
-				error_ret = error;
-		}
-#endif
-
-		f_offset += xsize;
-		offset   += xsize;
-		isize    -= xsize;
-		pg_index += num_of_pages;
-	} // while isize
-
-
-	/* capture errnos bubbled out of cluster_pageout if they occurred */
-	if (error_ret != 0) {
-		printf("ZFS: Warning vnop_pageoutv2 dmu_write returned error %d\n",
-			   error_ret);
-	}
-
-
-	/* finish off transaction */
-
-	ubc_upl_unmap(upl);
-
-	if (!(flags & UPL_NOCOMMIT)) {
-		if (error)
-			ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
-		else
-			ubc_upl_commit(upl);
-	}
-	upl = NULL;
-
-	if (error == 0) {
-		uint64_t mtime[2], ctime[2];
-		sa_bulk_attr_t bulk[3];
-		int count = 0;
-
-		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL,
-		    &mtime, 16);
-		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL,
-		    &ctime, 16);
-		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
-		    &zp->z_pflags, 8);
-		zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime,
-		    B_TRUE);
-		zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, off, len, 0,
-		    NULL, NULL);
-	}
-	dmu_tx_commit(tx);
+	error = zfs_cluster_push_now(vp, zfsvfs->z_os, zp->z_id, upl, pl, off, 0/*upl_offset*/, len, flags, max_blksz, NULL/*tx*/);
 
   out:
+	debug_msg("%s:%d upl=%p", __func__, __LINE__, upl);
 	zfs_range_unlock(rl);
-	if (flags & UPL_IOSYNC)
-		zil_commit(zfsvfs->z_log, zp->z_id);
 
-  exit:
+	/* we want to push the dirty pages out since VM wants free
+	 * pages when calling vnop_pageout */
+	zil_commit(zfsvfs->z_log, zp->z_id);
+
+	atomic_dec_32(&supl.su_refcount);
+	ASSERT(supl.su_refcount == 0); /* I must be the only owner */
+	mutex_enter(&zp->z_upltree_lock);
+	avl_remove(&zp->z_upltree, &supl);
+	mutex_exit(&zp->z_upltree_lock);
+
+
+	if (supl.su_vaddr) {
+		ubc_upl_unmap(supl.su_upl);
+	}
+	mutex_destroy(&supl.su_lock);
+	debug_msg("%s:%d upl=%p", __func__, __LINE__, upl);
+	ubc_upl_commit_range(upl, 0, upl_size, UPL_COMMIT_FREE_ON_EMPTY);
+
 	ZFS_EXIT(zfsvfs);
-	if (error)
-		printf("ZFS: pageoutv2 failed %d\n", error);
+	return (error);
+
+  exit_abort:
+	VERIFY(ubc_create_upl(vp, off, len, &upl, &pl, uplflags) == 0);
+	ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+	if (zfsvfs)
+		ZFS_EXIT(zfsvfs);
 	return (error);
 }
-
-
-
 
 
 

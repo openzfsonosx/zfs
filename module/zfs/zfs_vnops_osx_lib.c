@@ -1902,3 +1902,526 @@ int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags)
 
 	return error;
 }
+
+
+
+#if defined(__APPLE__) && defined(KERNEL)
+
+int sharedupl_cmp(const void *p1, const void *p2)
+{
+	sharedupl_t *u1 = (sharedupl_t*)p1;
+	sharedupl_t *u2 = (sharedupl_t*)p2;
+
+	if (u1->su_upl_f_off + u1->su_upl_size <= u2->su_upl_f_off)
+		return -1;
+	if (u2->su_upl_f_off + u2->su_upl_size <= u1->su_upl_f_off)
+		return 1;
+	return 0;
+}
+
+#define MAX_UPL_SIZE_BYTES	(1024 * 1024 * 64)
+#define MAX_UPL_SIZE		(MAX_UPL_SIZE_BYTES / PAGE_SIZE)
+
+
+
+zfs_cluster_push_now_impl(struct vnode *vp, objset_t *os, uint64_t object,
+						  upl_t upl, upl_page_info_t *pl, off_t f_offset,
+						  off_t upl_offset, size_t upl_size, int flags,
+						  dmu_tx_t *tx)
+{
+	/*
+	 * For the first and last block, copy data into ARC and mark as clean.
+	 * For other blocks, create a upli for each block with the proper vp,
+	 * offset, and size
+	 */
+	int err;
+	znode_t *zp = VTOZ(vp);
+	dnode_t *dn = NULL;
+	off_t fsblksz;
+	uplinfo_t *upli = NULL;
+	ssize_t         tx_bytes = 0;
+	zfsvfs_t        *zfsvfs = zp->z_zfsvfs;
+	zilog_t         *zilog = zfsvfs->z_log;
+	off_t new_f_offset;
+	int copy_to_arc = FALSE;
+	sharedupl_t tmpsu;
+	//objset_impl_t *dnos;
+	objset_t *dnos;
+	int compress, checksum;
+	boolean_t commit_upl = (upl == NULL);
+	int create_tx = (tx == NULL);
+
+	ASSERT((f_offset & PAGE_MASK) == 0);
+	/* upl_offset is meaningful only when upl is not empty */
+	ASSERT(upl_offset == 0 || upl != NULL);
+	dprintf("%s: upl %p (vp %p vid %d off %d size %d)", __func__, upl, vp,
+			  (int)vnode_vid(vp), (int)f_offset, (int)upl_size);
+
+	if (create_tx) {
+	  again:
+		/* Start a transaction. */
+		tx = dmu_tx_create(zfsvfs->z_os);
+		dmu_tx_hold_bonus(tx, zp->z_id);
+		dmu_tx_hold_write(tx, zp->z_id, f_offset, upl_size);
+		err = dmu_tx_assign(tx, TXG_WAIT);
+		if (err) {
+			dmu_tx_abort(tx);
+			dprintf("%s:%d err=%d", __func__, __LINE__, err);
+			goto exit_no_commit;
+		}
+
+        err = dnode_hold(os, object, FTAG, &dn);
+        if (err) {
+			dprintf("%s:%d err=%d", __func__, __LINE__, err);
+			dn = NULL;
+			goto exit;
+        }
+	}
+
+	err = dnode_hold(os, object, FTAG, &dn);
+	if (err) {
+		dprintf("%s:%d err=%d", __func__, __LINE__, err);
+		dn = NULL;
+		goto exit;
+	}
+
+
+	dnos = dn->dn_objset;
+	compress = zio_compress_select(dn->dn_compress, dnos->os_compress,
+		os->os_compress);
+	checksum = zio_checksum_select(dn->dn_checksum, dnos->os_checksum);
+	fsblksz = dmu_get_fsblksz(dn);
+
+	uint64_t maxblkid;
+	maxblkid = howmany(zp->z_size, fsblksz) - 1;
+	if (fsblksz < PAGE_SIZE && maxblkid > 0) {
+		/*
+		 * This is a rare case that happens only on a close-to-full
+		 * file system, we fall back to always use ARC to avoid the
+		 * complexity that only part of the page is cleaned.
+		 */
+		upli = NULL;
+		copy_to_arc = TRUE;
+	} else {
+		ASSERT((fsblksz & PAGE_MASK) == 0 || maxblkid == 0);
+		upli = kmem_alloc(sizeof(uplinfo_t), KM_SLEEP);
+		printf( "%s:%d alloc upli=%p stack:%p %p %p %p", __func__, __LINE__, upli, __builtin_return_address(1), __builtin_return_address(2), __builtin_return_address(3), __builtin_return_address(4));
+		atomic_inc_32(&num_upli);
+		bzero(upli, sizeof(uplinfo_t));
+		upli->ui_vp = vp;
+		upli->ui_vid = vnode_vid(vp);
+		mutex_init(&upli->ui_lock, NULL, MUTEX_DEFAULT, NULL);
+	}
+	/* create upl in order to copy data to ARC for partial fill blocks */
+	if (upl == NULL) {
+		/* create upl that covers the asked range */
+		upl_size = roundup(upl_size, PAGE_SIZE);
+		uint64_t size = roundup(zp->z_size, PAGE_SIZE_64);
+		if (f_offset + upl_size > size)
+			upl_size = size - f_offset;
+		ASSERT(upl_size);
+		err = ubc_create_upl(vp, f_offset, upl_size, &upl, &pl, UPL_COPYOUT_FROM | UPL_SET_LITE);
+		if (err) {
+			dprintf("%s:%d err=%d", __func__, __LINE__, err);
+			goto exit;
+		}
+	}
+	bzero(&tmpsu, sizeof(tmpsu));
+	tmpsu.su_upl = upl;
+	tmpsu.su_pl = pl;
+	tmpsu.su_upl_f_off = f_offset;
+	tmpsu.su_upl_size = upl_size;
+	/* if file is opened for write and checksum or compress is on,
+	   the page could be changed while ZFS is checksuming or
+	   compressing, thus getting inconsistent file.  So we have to
+	   copy the data to ARC.  Fortunately, this does not happen
+	   often */
+	if (zp->z_mmapped_for_write && (checksum != ZIO_CHECKSUM_OFF || compress != ZIO_COMPRESS_OFF)) {
+		copy_to_arc = TRUE;
+	}
+
+	/* fill in the hole of the upl with valid data */
+	off_t offset;
+	int page_index, page_index_offset, page_index_end, page_index_hole_end;
+	sharedupl_t supl;
+	int bytes_to_copy;
+
+	off_t blknum, startblk, endblk;
+	uint64_t blkid;
+	size_t num_io_pending = 0;
+	upl_offset_t uploff;
+	upl_size_t uplsize;
+	int has_hole;
+	off_t start, end;
+	size_t total_valid_pages;
+
+	/* find all fs blocks need to be read */
+	startblk = f_offset / fsblksz;
+	endblk = MIN(howmany(f_offset + upl_size, fsblksz), maxblkid + 1);
+
+	/* find out total valid pages in advance, since upl will
+	 * disappear after the last valid page is committed */
+
+	total_valid_pages = 0;
+	page_index_offset = upl_offset / PAGE_SIZE;
+	page_index_end = howmany(upl_size, PAGE_SIZE) + page_index_offset;
+	ASSERT(pl);
+	ASSERT((upl_offset & PAGE_MASK) == 0); /* must be on page boundary */
+	for (page_index = page_index_offset; page_index < page_index_end; page_index++) {
+		if (upl_valid_page(pl, page_index))
+			total_valid_pages++;
+	}
+
+	if (total_valid_pages == 0) { /* don't need to do anything besides abort the upl */
+		ASSERT(upli != NULL);
+		if (commit_upl)
+			ubc_upl_abort_range(upl, upl_offset, upl_size, UPL_ABORT_FREE_ON_EMPTY);
+		dprintf("%s: total_valid_pages=0 aborted upl %p (vp %p off %d size %d)", __func__, upl, vp,
+				  (int)f_offset, (int)upl_size);
+		goto exit;
+	}
+	dprintf("%s: vp=%p vid=%d valid_pages=%d startblk=%d endblk=%d fsblksz=%d", __func__, vp, (int)vnode_vid(vp), (int)total_valid_pages, (int)startblk, (int)endblk, (int)fsblksz);
+	for (blknum = startblk; blknum < endblk; blknum++) {
+		offset = blknum * fsblksz;
+		blkid = dbuf_whichblock(dn, offset);
+		rw_enter(&dn->dn_struct_rwlock, RW_READER);
+		dmu_buf_impl_t *db = dbuf_hold(dn, blkid, FTAG);
+		rw_exit(&dn->dn_struct_rwlock);
+		if (db == NULL) {
+			err = EIO;
+			dprintf("%s:%d err=%d", __func__, __LINE__, err);
+			goto exit;
+		}
+
+		/* find whether there are holes in this upl */
+		start = MAX(f_offset, offset);
+		end = MIN(f_offset + upl_size, offset + fsblksz);
+		has_hole = FALSE;
+		if (fsblksz >= PAGE_SIZE) {
+			page_index = (start - f_offset) / PAGE_SIZE + page_index_offset;
+			page_index_end = howmany(end - f_offset, PAGE_SIZE) + page_index_offset;
+			for (; page_index < page_index_end; page_index++) {
+				if (!upl_valid_page(pl, page_index)) {
+					has_hole = TRUE;
+					break;
+				}
+			}
+		}
+
+		if (has_hole || offset < f_offset || offset + fsblksz > f_offset + upl_size) {
+			/* blk is partially outside of upl, do read-modify-write */
+			dprintf("%s buf=%p partial fill state=%d db->db_buf->b_uplinfo=%p", __func__, db->db_buf, (int)db->db_state,
+					  db->db_buf ? db->db_buf->b_uplinfo : NULL);
+			dmu_buf_will_dirty_osx(&db->db, tx, &tmpsu);
+			bytes_to_copy = end - start;
+			uploff = start - f_offset + upl_offset;
+			uplsize = roundup(bytes_to_copy, PAGE_SIZE);
+			if (db->db.db_data == NULL) { /* data is referred by the b_uplinfo */
+				ASSERT(db->db_buf->b_uplinfo != NULL);
+
+				/*
+				 * There are several different cases to handle
+				 * here: 1. the existing upl does not cover this
+				 * block, we need keep the fresh data in ARC other
+				 * than UBC if the upl has hole, we need to read
+				 * the block from disk; we also need to copy data
+				 * from upl to ARC buffer; we also need to create
+				 * additional upls for the uncovered range and
+				 * copy data from those upl into the ARC buffer.
+				 * We then can mark all pages this block covers as
+				 * clean
+				 * 2. if the upl has no hole and covers the
+				 * block, all data are available in UBC: we need
+				 * to mark all pages dirty, so they won't
+				 * disappear when we need them (when writing them)
+				 * 3. if the upl has hole and covers the block: we
+				 * need to allocate a buffer for ARC, read the
+				 * block from disk, and copy valid UBC data into
+				 * the buffer, then commit the upl pages and mark
+				 * them clean
+				 */
+
+				boolean_t need_read_mod_write, need_more_ubc_data = FALSE;
+				int num_uncoverred_part = 0;
+				off_t more_upl_f_off[2], more_upl_size[2];
+				/* upl doesn't fully cover the block */
+				if (offset < f_offset || offset + fsblksz > f_offset + upl_size) {
+					if (db->db_blkptr) { /* this buffer has an on-disk copy */
+						need_read_mod_write = TRUE;
+						need_more_ubc_data = TRUE;
+						if (offset < f_offset) { /* the uncovered part is at the beginning */
+							more_upl_f_off[num_uncoverred_part] = offset;
+							more_upl_size[num_uncoverred_part] = roundup(f_offset - offset, PAGE_SIZE);
+							num_uncoverred_part++;
+						}
+						if (offset + fsblksz > f_offset + upl_size) { /* the uncovered part is at the end */
+							more_upl_f_off[num_uncoverred_part] = f_offset + upl_size;
+							ASSERT(more_upl_f_off[num_uncoverred_part] % PAGE_SIZE == 0);
+							more_upl_size[num_uncoverred_part] =
+								roundup(offset + fsblksz - more_upl_f_off[num_uncoverred_part], PAGE_SIZE);
+							num_uncoverred_part++;
+						}
+					} else {        /* this buffer does not have on-disk copy, so everything is in UBC */
+						need_read_mod_write = FALSE;
+					}
+				} else {                                                                                                                   /* upl covers the full block */
+					if (!has_hole) { /* all pages of this block
+									  * are in UBC.  Mark them
+									  * dirty to keep them
+									  * there */
+						need_read_mod_write = FALSE;
+					} else {
+						/* keep data in ARC other than UBC, so we
+						 * won't have undefined data when writing
+						 * this block */
+						need_read_mod_write = TRUE;
+					}
+				}
+				ASSERT(!need_more_ubc_data || need_read_mod_write);
+				if (need_read_mod_write) { // convert the ARC buffer to use internal buffer, and read data
+					dbuf_conv_db_upl_to_arc(db, FALSE/*copy_data*/);
+					/* read data from media so the data not
+					 * covered by this upl will have valid data */
+					err = arc_read_fill_buf(db, NULL/*upli*/, TRUE/*lock_db*/);
+					if (err)
+						dprintf("%s:%d err=%d", __func__, __LINE__, err);
+
+					/* since data in UPL is newer than data from
+					 * media, copy all data we can find from upl
+					 * into the block.  skip holes in the UPL */
+					boolean_t has_valid_pages = FALSE;
+					if (has_hole) {
+						off_t page_start, page_end;
+						for (page_index = (start - f_offset) / PAGE_SIZE + page_index_offset;
+							 page_index < page_index_end; page_index++) {
+							if (!upl_valid_page(pl, page_index)) {
+								continue;
+							}
+							has_valid_pages = TRUE;
+							page_start = (page_index - page_index_offset) * PAGE_SIZE + f_offset;
+							page_end = MIN(f_offset + upl_size, page_start + PAGE_SIZE);
+							err = copy_upl_to_mem(upl, page_start - f_offset + upl_offset, db->db.db_data + page_start - offset,
+												  page_end - page_start, pl);
+
+							if (err)
+								dprintf("%s:%d err=%d", __func__, __LINE__, err);
+							dprintf("%s:%d commit valid page only off=%d size=%d", __func__, __LINE__, (int)page_start, (int)(page_end - page_start));
+						}
+					} else {
+						has_valid_pages = TRUE;
+						err = copy_upl_to_mem(upl, uploff, db->db.db_data + start - offset, bytes_to_copy, pl);
+						ASSERT(err == 0);
+					}
+
+					if (commit_upl && !(flags & UPL_NOCOMMIT)) {
+						dprintf("%s:%d upl=%p off=%d size=%d aborted offset=%d blknum=%d buf=%p upli=%p vid=%d", __func__, __LINE__,
+								  upl, (int)uploff, (int)uplsize, (int)offset, (int)blknum, db->db_buf,
+								  db->db_buf->b_uplinfo ? db->db_buf->b_uplinfo : NULL,
+								  db->db_buf->b_uplinfo ? (int)vnode_vid(db->db_buf->b_uplinfo->ui_vp) : 0);
+						ubc_upl_commit_range(upl, uploff, uplsize, UPL_COMMIT_CLEAR_DIRTY | UPL_COMMIT_FREE_ON_EMPTY);
+					}
+
+					if (need_more_ubc_data) {
+						int last_valid_page;
+						upl_t more_upl;
+						upl_page_info_t *more_pl;
+						off_t page_start, page_end;
+						int i;
+						for (i = 0; i < num_uncoverred_part; i++) {
+							dprintf("%s: create upl f_off=%lld size=%lld", __func__, more_upl_f_off[i], more_upl_size[i]);
+							err = ubc_create_upl(vp, more_upl_f_off[i], more_upl_size[i], &more_upl, &more_pl,
+												 UPL_COPYOUT_FROM | UPL_SET_LITE);
+							if (err)
+								dprintf("%s:%d err=%d", __func__, __LINE__, err);
+							page_index_end = howmany(more_upl_size[i], PAGE_SIZE);
+							/* find the last valid page */
+							for (last_valid_page = page_index_end - 1; last_valid_page >= 0; last_valid_page--) {
+								if (upl_valid_page(more_pl, last_valid_page))
+									break;
+							}
+							/* copy every valid page */
+							for (page_index = 0; page_index <= last_valid_page; page_index++) {
+								if (!upl_valid_page(more_pl, page_index)) {
+									continue;
+								}
+								page_start = page_index * PAGE_SIZE + more_upl_f_off[i];
+								page_end = MIN(offset + fsblksz, page_start + PAGE_SIZE);
+								if (page_start < page_end) {
+									err = copy_upl_to_mem(more_upl, page_start - more_upl_f_off[i],
+														  db->db.db_data + page_start - offset, page_end - page_start, more_pl);
+								}
+								if (err)
+									dprintf("%s:%d err=%d", __func__, __LINE__, err);
+							}
+							ubc_upl_commit_range(more_upl, 0, more_upl_size[i], UPL_COMMIT_CLEAR_DIRTY | UPL_COMMIT_FREE_ON_EMPTY);
+						}
+					} /* if need_more_ubc_data */
+				} else {
+					if (commit_upl && !(flags & UPL_NOCOMMIT)) {
+						dprintf("%s:%d upl=%p off=%d size=%d aborted offset=%d blknum=%d buf=%p upli=%p vid=%d", __func__, __LINE__,
+								  upl, (int)uploff, (int)uplsize, (int)offset, (int)blknum, db->db_buf, db->db_buf->b_uplinfo,
+								  (int)vnode_vid(db->db_buf->b_uplinfo->ui_vp));
+						ubc_upl_commit_range(upl, uploff, uplsize, UPL_COMMIT_SET_DIRTY | UPL_COMMIT_FREE_ON_EMPTY);
+					}
+				}  /* if need_read_mod_write */
+			} else {
+				/* only copy & commit the valid pages, skip the invalid pages */
+				boolean_t has_valid_pages = FALSE;
+				if (has_hole) {
+					off_t page_start, page_end;
+					for (page_index = (start - f_offset) / PAGE_SIZE + page_index_offset;
+						 page_index < page_index_end; page_index++) {
+						if (!upl_valid_page(pl, page_index)) {
+							continue;
+						}
+						has_valid_pages = TRUE;
+						page_start = (page_index - page_index_offset) * PAGE_SIZE + f_offset;
+						page_end = MIN(offset + fsblksz, page_start + PAGE_SIZE);
+						err = copy_upl_to_mem(upl, page_start - f_offset + upl_offset, db->db.db_data + page_start - offset,
+											  page_end - page_start, pl);
+						if (err)
+							dprintf("%s:%d err=%d", __func__, __LINE__, err);
+						dprintf("%s:%d commit valid page only off=%d size=%d", __func__, __LINE__, (int)page_start, (int)(page_end - page_start));
+					}
+				} else {
+					has_valid_pages = TRUE;
+					err = copy_upl_to_mem(upl, uploff, db->db.db_data + start - offset, bytes_to_copy, pl);
+					ASSERT(err == 0);
+				}
+				if (commit_upl && has_valid_pages && !(flags & UPL_NOCOMMIT)) {
+					dprintf("%s:%d upl=%p off=%d size=%d committed offset=%d start=%d end=%d blknum=%d", __func__, __LINE__,
+							  upl, (int)uploff, (int)uplsize, (int)offset, (int)start, (int)end, (int)blknum);
+					ubc_upl_commit_range(upl, uploff, uplsize, UPL_COMMIT_FREE_ON_EMPTY);
+				}
+				}
+			tx_bytes += bytes_to_copy;
+		} else {                                /* block is totally within upl and does not have hole, simply write */
+			uplinfo_t *cur_upli;
+			if (copy_to_arc) {
+				cur_upli = NULL;
+			} else {
+				cur_upli = kmem_alloc(sizeof(uplinfo_t), KM_SLEEP);
+				dprintf( "%s:%d alloc upli=%p stack:%p %p %p %p", __func__, __LINE__, cur_upli, __builtin_return_address(1), __builtin_return_address(2), __builtin_return_address(3), __builtin_return_address(4));
+				atomic_inc_32(&num_upli);
+				memcpy(cur_upli, upli, sizeof(uplinfo_t));
+				cur_upli->ui_f_off = offset;
+				cur_upli->ui_size = fsblksz;
+				mutex_init(&cur_upli->ui_lock, NULL, MUTEX_DEFAULT, NULL);
+			}
+			dmu_buf_will_fill_osx(&db->db, tx, cur_upli, &tmpsu);
+			uploff = offset - f_offset + upl_offset;
+			uplsize = roundup(db->db.db_size, PAGE_SIZE);
+			dprintf("%s:%d db_state=%d db_data=%p copy_to_arc=%d", __func__, __LINE__, db->db_state, db->db.db_data, copy_to_arc);
+			if ((db->db_state == DB_CACHED && db->db.db_data != NULL) || copy_to_arc) { /* cannot use UBC.  copy into ARC */
+				if (((dmu_buf_impl_t *)db)->db_buf->b_uplinfo != NULL) {
+					dbuf_conv_db_upl_to_arc(db, TRUE/*copy_data*/);
+				} else {
+					err = copy_upl_to_mem(upl, uploff, db->db.db_data, db->db.db_size, pl);
+					ASSERT(err == 0);
+				}
+				if (commit_upl && !(flags & UPL_NOCOMMIT) && upli != NULL) { /* when upli==NULL, upl will be committed as a whole below */
+					dprintf("%s:%d upl=%p off=%d size=%d committed", __func__, __LINE__, upl, (int)uploff, (int)uplsize);
+					ubc_upl_commit_range(upl, uploff, uplsize, UPL_COMMIT_FREE_ON_EMPTY);
+				}
+				if (cur_upli != NULL) {
+					dprintf("%s:%d upli %p is freed", __func__, __LINE__, cur_upli);
+					mutex_destroy(&cur_upli->ui_lock);
+					atomic_dec_32(&num_upli);
+					dprintf ("%s:%d upli=%p stack:%p %p %p %p", __func__, __LINE__, cur_upli, __builtin_return_address(1), __builtin_return_address(2), __builtin_return_address(3), __builtin_return_address(4));
+					kmem_free(cur_upli, sizeof(uplinfo_t));
+				}
+			} else {
+				/* this page is not cleared yet, we abort it so
+				 * its dirty bit is left unchanged.  the write
+				 * will happen some time later, and after the
+				 * write is done this page will be marked as clean
+				 * in sharedupl_put */
+				ASSERT(upli != NULL);
+				if (commit_upl && !(flags & UPL_NOCOMMIT)) {
+					dprintf("%s:%d upl=%p off=%d size=%d aborted", __func__, __LINE__, upl, (int)uploff, (int)uplsize);
+					ubc_upl_abort_range(upl, uploff, uplsize, UPL_ABORT_FREE_ON_EMPTY);
+				}
+				if (db->db_buf->b_uplinfo != cur_upli) {
+					dprintf("%s:%d upli %p is freed", __func__, __LINE__, cur_upli);
+					mutex_destroy(&cur_upli->ui_lock);
+					atomic_dec_32(&num_upli);
+#ifdef ZFS_DEBUG
+					memset(cur_upli, 0xC5, sizeof(uplinfo_t));
+#endif
+					dprintf( "%s:%d upli=%p stack:%p %p %p %p", __func__, __LINE__, cur_upli, __builtin_return_address(1), __builtin_return_address(2), __builtin_return_address(3), __builtin_return_address(4));
+					kmem_free(cur_upli, sizeof(uplinfo_t));
+				}
+			}
+			dmu_buf_fill_done(&db->db, tx);
+			tx_bytes += db->db.db_size;
+		}
+		dbuf_rele(db, FTAG);
+	}
+
+  exit:
+	if (dn != NULL)
+		dnode_rele(dn, FTAG);
+
+	if (create_tx) {
+		if (err == 0) {
+			zfs_log_write(zilog, tx, TX_WRITE, zp, f_offset, tx_bytes, flags,
+						  NULL, NULL);
+		} else {
+			dprintf("%s:%d err=%d", __func__, __LINE__, err);
+		}
+		dmu_tx_commit(tx);
+	}
+
+  exit_no_commit:
+	if (commit_upl && !(flags & UPL_NOCOMMIT) && upli == NULL) {
+		dprintf("%s:%d upl=%p off=0 size=%d committed", __func__, __LINE__, upl, (int)upl_size);
+		ubc_upl_commit_range(upl, upl_offset, upl_size, UPL_COMMIT_FREE_ON_EMPTY);
+	}
+	if (upli != NULL) {
+		mutex_destroy(&upli->ui_lock);
+		atomic_dec_32(&num_upli);
+#ifdef ZFS_DEBUG
+		memset(upli, 0xC6, sizeof(uplinfo_t));
+#endif
+		dprintf ("%s:%d free upli=%p stack:%p %p %p %p", __func__, __LINE__, upli, __builtin_return_address(1), __builtin_return_address(2), __builtin_return_address(3), __builtin_return_address(4));
+		kmem_free(upli, sizeof(uplinfo_t));
+	}
+
+	return err;
+} /* zfs_cluster_push_now_impl */
+
+
+
+
+
+int
+zfs_cluster_push_now(struct vnode *vp, objset_t *os, uint64_t object, upl_t upl,
+					 upl_page_info_t *pl, off_t f_offset,
+					 off_t upl_offset, size_t nbytes, int flags,
+					 int max_push_size, dmu_tx_t *tx)
+{
+	int err;
+	size_t bytes_to_push;
+
+	/* we can never push more than a upl can handle in one shot */
+	if (max_push_size > MAX_UPL_SIZE * PAGE_SIZE)
+		max_push_size = MAX_UPL_SIZE * PAGE_SIZE;
+
+	/* split into chunks of max_push_size on max_push_size boundary */
+	while (nbytes > 0) {
+		if (nbytes > max_push_size - (f_offset % max_push_size))
+			bytes_to_push = max_push_size - (f_offset % max_push_size);
+		else
+			bytes_to_push = nbytes;
+		err = zfs_cluster_push_now_impl(vp, os, object, upl, pl, f_offset, upl_offset, bytes_to_push, flags, tx);
+		if (err != 0)
+			break;
+		f_offset += bytes_to_push;
+		if (upl)   /* upl_offset is meaningful only when there is a upl */
+			upl_offset += bytes_to_push;
+		nbytes -= bytes_to_push;
+	}
+	return err;
+}
+
+#endif

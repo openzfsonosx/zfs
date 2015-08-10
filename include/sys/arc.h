@@ -123,6 +123,9 @@ struct arc_buf {
 	arc_buf_t		*b_next;
 	kmutex_t		b_evict_lock;
 	void			*b_data;
+#if defined (__APPLE__) && defined (KERNEL)
+	uplinfo_t               *b_uplinfo;
+#endif
 	arc_evict_func_t	*b_efunc;
 	void			*b_private;
 };

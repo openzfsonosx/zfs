@@ -251,6 +251,13 @@ typedef struct znode {
 	boolean_t   z_fastpath;
 	boolean_t   z_reclaim_reentry; /* vnode_create()->vnop_reclaim() */
 	uint64_t    z_write_gencount;
+
+	boolean_t   z_mmapped_for_write;    /* file has been memory mapped
+										 * for write */
+	avl_tree_t      z_upltree;      /* all shared upl of this file are
+									 * stored in this AVL tree */
+	kmutex_t        z_upltree_lock; /* protects access to the z_upltree */
+
 #endif
 
 #ifdef ZFS_DEBUG

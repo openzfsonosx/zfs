@@ -186,6 +186,12 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 	avl_create(&zp->z_range_avl, zfs_range_compare,
 	    sizeof (rl_t), offsetof(rl_t, r_node));
 
+#ifdef __APPLE__
+	mutex_init(&zp->z_upltree_lock, NULL, MUTEX_DEFAULT, NULL);
+	avl_create(&zp->z_upltree, sharedupl_cmp, sizeof(sharedupl_t),
+			   offsetof(sharedupl_t, su_avlnode));
+#endif
+
 	zp->z_dirlocks = NULL;
 	zp->z_acl_cached = NULL;
 	zp->z_moved = 0;
@@ -209,6 +215,11 @@ zfs_znode_cache_destructor(void *buf, void *arg)
 	mutex_destroy(&zp->z_acl_lock);
 	avl_destroy(&zp->z_range_avl);
 	mutex_destroy(&zp->z_range_lock);
+
+#ifdef __APPLE__
+	avl_destroy(&zp->z_upltree);
+	mutex_destroy(&zp->z_upltree_lock);
+#endif
 
 	ASSERT(zp->z_dirlocks == NULL);
 	ASSERT(zp->z_acl_cached == NULL);

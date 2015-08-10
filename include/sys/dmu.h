@@ -232,6 +232,7 @@ typedef enum txg_how {
 	TXG_WAITED,
 } txg_how_t;
 
+
 void byteswap_uint64_array(void *buf, size_t size);
 void byteswap_uint32_array(void *buf, size_t size);
 void byteswap_uint16_array(void *buf, size_t size);
@@ -970,6 +971,66 @@ int dmu_diff(const char *tosnap_name, const char *fromsnap_name,
 extern uint64_t *zfs_crc64_table;
 
 extern int zfs_mdcomp_disable;
+
+#if defined (__APPLE__) && defined(KERNEL)
+#include <sys/avl.h>
+typedef struct sharedupl sharedupl_t;
+typedef struct uplinfo uplinfo_t;
+/*
+ * multiple ARC buffers may point to the same shared upl.  Use
+ * reference counting to keep track of them.  All sharedupl of the
+ * file is in an AVL tree.
+ */
+struct sharedupl {
+	avl_node_t su_avlnode;
+	off_t su_upl_f_off; /* must be on VM page boundary */
+	size_t su_upl_size; /* must be a multiple of VM page size */
+	vm_offset_t su_upl_off;
+	upl_t su_upl; /* is NULL before upl is created */
+	upl_page_info_t *su_pl;
+	vm_offset_t su_vaddr; /* is NULL before upl is mapped into kernel */
+	uint32_t su_refcount; /* how many ARC buffers are using this shared UPL */
+	int su_err; /* I/O errors of ARC buffers when writing data of this UPL out */
+	kmutex_t su_lock; /* protect the change of su_vaddr */
+};
+struct uplinfo {
+	/* information to create/find UPL */
+	struct vnode *ui_vp;
+	uint32_t ui_vid;
+	off_t ui_f_off;
+	size_t ui_size;
+	sharedupl_t *ui_sharedupl_for_read;
+	sharedupl_t *ui_sharedupl_for_write;
+	boolean_t ui_for_read;
+	kmutex_t ui_lock; /* protect the change of ui_sharedupl_for_* */
+};
+
+inline sharedupl_t *upli_sharedupl(uplinfo_t *upli) {
+	if (upli->ui_for_read)
+		return upli->ui_sharedupl_for_read;
+	else
+		return upli->ui_sharedupl_for_write;
+}
+
+int dmu_read_upl(vnode_t *vp, objset_t *os, uint64_t object, struct uio *uio, uint64_t nbytes, int flags);
+int dmu_pagein(vnode_t *vp, objset_t *os, uint64_t objset, off_t file_off, size_t nbytes, upl_t upl, vm_offset_t upl_offset);
+int dmu_write_upl(vnode_t *vp, objset_t *os, uint64_t object, struct uio *uio, uint64_t nbytes, int flags, dmu_tx_t *tx);
+
+//typedef struct dnode dnode_t;
+//off_t dmu_get_fsblksz(dnode_t *dn);
+int copy_upl_to_mem(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info_t *pl);
+int copy_mem_to_upl(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info_t *pl);
+
+extern uint32_t num_upli;                 /* check memory leaks */
+
+char* getuplvaddr(uplinfo_t *uplinfo, boolean_t for_read);
+
+/* find the shared upl in the AVL tree.  If not found, create a new one, add to AVL tree, and return it.  The reference count is taken */
+void sharedupl_get(uplinfo_t *upli, boolean_t for_read);
+void sharedupl_put(uplinfo_t *upli, boolean_t clear_dirty);
+int sharedupl_cmp(const void *u1, const void *u2);
+
+#endif
 
 #ifdef	__cplusplus
 }
