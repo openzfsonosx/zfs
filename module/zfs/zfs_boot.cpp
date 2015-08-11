@@ -69,6 +69,8 @@
 #include <IOKit/storage/IOMedia.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
 
+extern "C" {
+
 #include <sys/zfs_boot.h>
 #include <sys/taskq.h>
 
@@ -96,8 +98,6 @@
 /*
  * C functions for boot-time vdev discovery
  */
-
-extern "C" {
 
 /*
  * Intermediate structures used to gather configuration information.
@@ -136,7 +136,9 @@ typedef struct pool_list {
 	char			*pool_name;
 	OSSet			*new_disks;
 	OSSet			*disks;
-	IOLock			*lock;
+	kmutex_t		lock;
+	kcondvar_t		cv;
+//	IOLock			*lock;
 	IOService		*zfs_hl;
 	IONotifier		*notifier;
 	volatile UInt64		terminating;
@@ -1306,7 +1308,8 @@ zfs_boot_probe_media(void* target, void* refCon,
 
 
 	/* Take pool_list lock */
-	IOLockLock(pools->lock);
+	// IOLockLock(pools->lock);
+	mutex_enter(&pools->lock);
 
 	/* Abort early */
 	if (pools->terminating != ZFS_BOOT_ACTIVE) {
@@ -1314,7 +1317,8 @@ zfs_boot_probe_media(void* target, void* refCon,
 		printf("%s\n", "zfs_boot_probe_media terminating 3");
 #endif
 		/* Unlock the pool list lock */
-		IOLockUnlock(pools->lock);
+		// IOLockUnlock(pools->lock);
+		mutex_exit(&pools->lock);
 		goto out;
 	}
 
@@ -1322,10 +1326,12 @@ zfs_boot_probe_media(void* target, void* refCon,
 	pools->disks->setObject(media);
 
 	/* Unlock the pool list lock */
-	IOLockUnlock(pools->lock);
+	// IOLockUnlock(pools->lock);
+	mutex_exit(&pools->lock);
 
 	/* Wakeup zfs_boot_import_thread */
-	IOLockWakeup(pools->lock, (void*)pools, true);
+	// IOLockWakeup(pools->lock, (void*)pools, true);
+	cv_signal(&pools->cv);
 
 out:
 	media = 0;
@@ -1522,10 +1528,11 @@ zfs_boot_free()
 	}
 
 	/* Release the lock */
-	if (pools->lock) {
-		IOLockFree(pools->lock);
-		pools->lock = 0;
-	}
+	// if (pools->lock) {
+		// IOLockFree(pools->lock);
+		mutex_destroy(&pools->lock);
+		// pools->lock = 0;
+	// }
 
 	/* Release the disk set */
 	if (pools->disks) {
@@ -1581,7 +1588,7 @@ zfs_boot_free()
 void
 zfs_boot_fini()
 {
-	IOLock *lock;
+	// IOLock *lock;
 	pool_list_t *pools = zfs_boot_pool_list;
 
 	if (!pools) {
@@ -1601,8 +1608,8 @@ zfs_boot_fini()
 	}
 
 	/* Save the pool lock pointer */
-	lock = pools->lock;
-	if (lock) {
+//	lock = pools->lock;
+//	if (lock) {
 		/* Take pool list lock */
 		//IOLockLock(lock);
 
@@ -1616,11 +1623,12 @@ zfs_boot_fini()
 		//IOLockUnlock(lock);
 
 		/* Wakeup zfs_boot_import_thread */
-		IOLockWakeup(lock, (void*)pools, true);
-	}
+		// IOLockWakeup(lock, (void*)pools, true);
+		cv_signal(&pools->cv);
+//	}
 
 	/* Clean up */
-	lock = 0;
+//	lock = 0;
 	pools = 0;
 }
 
@@ -1668,7 +1676,8 @@ zfs_boot_import_thread(void *arg)
 	}
 
 	/* Take pool list lock */
-	IOLockLock(pools->lock);
+	// IOLockLock(pools->lock);
+	mutex_enter(&pools->lock);
 
 	/* Check for work, then sleep on the lock */
 	do {
@@ -1696,7 +1705,8 @@ zfs_boot_import_thread(void *arg)
 		new_set = 0;
 
 		/* Release pool list lock */
-		IOLockUnlock(pools->lock);
+		// IOLockUnlock(pools->lock);
+		mutex_exit(&pools->lock);
 
 		/* Create an iterator over the objects in the set */
 		iter = OSCollectionIterator::withCollection(disks);
@@ -1709,9 +1719,11 @@ zfs_boot_import_thread(void *arg)
 			    disks->getCount(), "disks skipped");
 #endif
 			/* Merge disks back into pools->disks */
-			IOLockLock(pools->lock);
+			// IOLockLock(pools->lock);
+			mutex_enter(&pools->lock);
 			pools->disks->merge(disks);
-			IOLockUnlock(pools->lock);
+			// IOLockUnlock(pools->lock);
+			mutex_exit(&pools->lock);
 
 			/* Swap 'disks' back to new_set */
 			disks->flushCollection();
@@ -1829,7 +1841,8 @@ zfs_boot_import_thread(void *arg)
 		}
 
 		/* Retake pool list lock */
-		IOLockLock(pools->lock);
+		// IOLockLock(pools->lock);
+		mutex_enter(&pools->lock);
 
 next_locked:
 		/* Check for work */
@@ -1849,14 +1862,17 @@ next_locked:
 		printf("zfs_boot_import_thread: sleeping on lock\n");
 #endif
 		/* Sleep on lock, thread is resumed with lock held */
-		IOLockSleep(pools->lock, (void*)pools, 0);
+		// IOLockSleep(pools->lock, (void*)pools, 0);
+		cv_timedwait_sig(&pools->cv, &pools->lock,
+		    ddi_get_lbolt() + hz);
 
 	/* Loop forever */
 	} while (true);
 
 out_locked:
 	/* Unlock pool list lock */
-	IOLockUnlock(pools->lock);
+	// IOLockUnlock(pools->lock);
+	mutex_exit(&pools->lock);
 
 out_unlocked:
 	/* Cleanup new_set */
@@ -1896,16 +1912,16 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 
 	if (!pool_name || !pool_guid) {
 #ifdef DEBUG
-		printf("%s %s\n", "zfs_boot_check_mountroot",
+		printf("%s %s\n", __func__,
 		    "invalid pool_name or pool_guid ptr");
 #endif
 		return (false);
 	}
 
-	/* Ugly hack to determine if this is early boot */
+	/* XXX Ugly hack to determine if this is early boot */
 	clock_get_uptime(&uptime); /* uptime since boot in nanoseconds */
 
-zfs_boot_log("%s %llu\n", "ZFS: zfs_check_mountroot: uptime:", uptime);
+zfs_boot_log("%s uptime: %llu\n", __func__, uptime);
 
 /* XXX Debug build skips early-boot check */
 #ifndef DEBUG
@@ -1913,11 +1929,11 @@ zfs_boot_log("%s %llu\n", "ZFS: zfs_check_mountroot: uptime:", uptime);
 	//if (uptime >= 3LLU<<30) {
 	/* 60 billion nanoseconds ~= 60 seconds */
 	if (uptime >= 7LLU<<33) {
-		zfs_boot_log("%s\n", "ZFS: zfs_check_mountroot: Already booted");
+		zfs_boot_log("%s %s\n", __func__, "Already booted");
 
 		return (false);
 	} else {
-		zfs_boot_log("%s\n", "ZFS: zfs_check_mountroot: Boot time");
+		zfs_boot_log("%s %s\n", __func__, "Boot time");
 	}
 #endif
 
@@ -1925,7 +1941,7 @@ zfs_boot_log("%s %llu\n", "ZFS: zfs_check_mountroot: uptime:", uptime);
 
 	if (!zfs_boot) {
 #ifdef DEBUG
-		printf("zfs_boot_check_mountroot couldn't allocate zfs_boot\n");
+		printf("%s couldn't allocate zfs_boot\n", __func__);
 #endif
 		return (false);
 	}
@@ -1965,14 +1981,15 @@ zfs_boot_log("%s %llu\n", "ZFS: zfs_check_mountroot: uptime:", uptime);
 		split = strchr(zfs_boot, '/');
 		if (split) {
 			/* copy pool name up to first slash */
-			len = (split - zfs_boot + 1);
+			len = (split - zfs_boot);
 		} else {
 			/* or copy whole string */
-			len = (strlen(zfs_boot) + 1);
+			len = strlen(zfs_boot);
 		}
 
-		*pool_name = (char*) kmem_alloc(len, KM_SLEEP);
-		strncpy(*pool_name, zfs_boot, len);
+		*pool_name = (char*) kmem_alloc(len+1, KM_SLEEP);
+		// strncpy(*pool_name, zfs_boot, len+1);
+		snprintf(*pool_name, len+1, "%s", zfs_boot);
 
 		zfs_boot_log("Got zfs_boot: [%llu] {%s}->{%s}\n",
 		    *pool_guid, zfs_boot, *pool_name);
@@ -1998,7 +2015,7 @@ zfs_boot_init(IOService *zfs_hl)
 
 	if (!zfs_hl) {
 #ifdef DEBUG
-		printf("zfs_boot_init: No zfs_hl provided\n");
+		printf("%s: No zfs_hl provided\n", __func__);
 #endif
 		return (false);
 	}
@@ -2010,7 +2027,7 @@ zfs_boot_init(IOService *zfs_hl)
 		 * or no pool is specified for import.
 		 */
 #ifdef DEBUG
-		printf("zfs_boot_init: check failed\n");
+		printf("%s: check failed\n", __func__);
 #endif
 		return (true);
 	}
@@ -2022,10 +2039,6 @@ zfs_boot_init(IOService *zfs_hl)
 	}
 	bzero(pools, sizeof(pool_list_t));
 
-	if ((pools->lock = IOLockAlloc()) == 0) {
-		/* Fail if memory couldn't be allocated */
-		goto error;
-	}
 	if (0 == (pools->disks = OSSet::withCapacity(
 				    ZFS_BOOT_PREALLOC_SET))) {
 		/* Fail if memory couldn't be allocated */
@@ -2049,6 +2062,13 @@ zfs_boot_init(IOService *zfs_hl)
 	}
 	pools->notifier = notifier;
 
+	// if ((pools->lock = IOLockAlloc()) == 0) {
+		/* Fail if memory couldn't be allocated */
+		// goto error;
+	// }
+	mutex_init(&pools->lock, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&pools->cv, NULL, CV_DEFAULT, NULL);
+
 	/* Finally, start the import thread */
 	taskq_dispatch(system_taskq, zfs_boot_import_thread,
 	    (void*)pools, TQ_SLEEP);
@@ -2065,15 +2085,15 @@ zfs_boot_init(IOService *zfs_hl)
 
 error:
 	if (pools) {
-		if (pools->lock) {
-			IOLockFree(pools->lock);
-			pools->lock = 0;
-		}
 		if (pools->disks) {
 			pools->disks->flushCollection();
 			pools->disks->release();
 			pools->disks = 0;
 		}
+		// if (pools->lock) {
+			// IOLockFree(pools->lock);
+			// pools->lock = 0;
+		// }
 		kmem_free(pools, sizeof (pool_list_t));
 		pools = 0;
 	}
