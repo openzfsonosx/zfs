@@ -38,7 +38,7 @@ namespace ID
 	public:
 		int addLogFile(char const * logFile)
 		{
-			int fd = open(logFile, O_RDWR | O_CREAT);
+			int fd = open(logFile, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 			if (fd < 0)
 			{
 				asl_log(client, 0, ASL_LEVEL_ERR, "Error opening log file \"%s\" (%m)", logFile);
