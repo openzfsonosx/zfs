@@ -1651,10 +1651,13 @@ zfs_zinactive(znode_t *zp)
 	 * If this was the last reference to a file with no links,
 	 * remove the file from the file system.
 	 */
+	mutex_enter(&zp->z_lock);
 	if (zp->z_unlinked) {
+		mutex_exit(&zp->z_lock);
 		zfs_rmnode(zp);
 		return;
 	}
+	mutex_exit(&zp->z_lock);
 
 	zfs_znode_dmu_fini(zp);
 	zfs_znode_free(zp);
