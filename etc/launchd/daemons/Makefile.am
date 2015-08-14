@@ -4,6 +4,12 @@ include $(top_srcdir)/etc/launchd/daemons/launchd-daemons.am
 
 DAEMON_DIR = $(top_srcdir)/etc/launchd/daemons
 
+EXTRA_DIST = \
+	$(DAEMON_DIR)/org.openzfsonosx.zconfigd.plist.in \
+	$(DAEMON_DIR)/org.openzfsonosx.zed.plist.in \
+	$(DAEMON_DIR)/org.openzfsonosx.zpool-import-all.plist.in \
+	$(DAEMON_DIR)/org.openzfsonosx.InvariantDisks.plist.in
+
 $(DAEMON_DIR)/org.openzfsonosx.zconfigd.plist: $(DAEMON_DIR)/org.openzfsonosx.zconfigd.plist.in
 $(DAEMON_DIR)/org.openzfsonosx.zed.plist: $(DAEMON_DIR)/org.openzfsonosx.zed.plist.in
 $(DAEMON_DIR)/org.openzfsonosx.zpool-import-all.plist: $(DAEMON_DIR)/org.openzfsonosx.zpool-import-all.plist.in
