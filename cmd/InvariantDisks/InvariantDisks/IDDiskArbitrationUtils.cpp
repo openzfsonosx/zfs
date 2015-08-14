@@ -14,6 +14,8 @@
 
 #include <IOKit/storage/IOStorageProtocolCharacteristics.h>
 
+#include <sstream>
+
 namespace ID
 {
 	std::ostream & operator<<(std::ostream & os, DADiskRef disk)
@@ -72,7 +74,13 @@ namespace ID
 
 	std::string to_string(CFDataRef data)
 	{
-		return std::string(reinterpret_cast<char const *>(CFDataGetBytePtr(data)), CFDataGetLength(data));
+		char const * bytesBegin = reinterpret_cast<char const *>(CFDataGetBytePtr(data));
+		char const * bytesEnd = bytesBegin + CFDataGetLength(data);
+		std::stringstream ss;
+		ss << std::hex;
+		for (char const * byteIt = bytesBegin; byteIt != bytesEnd; ++byteIt)
+			ss << static_cast<unsigned>(*byteIt);
+		return ss.str();
 	}
 
 	std::string to_string(CFUUIDRef uuid)
