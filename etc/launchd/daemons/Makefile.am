@@ -2,11 +2,12 @@ AUTOMAKE_OPTIONS = subdir-objects
 
 include $(top_srcdir)/etc/launchd/daemons/launchd-daemons.am
 
-EXTRA_DIST = \
-	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.zconfigd.plist.in \
-	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.zed.plist.in \
-	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.zpool-import-all.plist.in \
-	$(top_srcdir)/etc/launchd/daemons/org.openzfsonosx.InvariantDisks.plist.in
+DAEMON_DIR = $(top_srcdir)/etc/launchd/daemons
+
+$(DAEMON_DIR)/org.openzfsonosx.zconfigd.plist: $(DAEMON_DIR)/org.openzfsonosx.zconfigd.plist.in
+$(DAEMON_DIR)/org.openzfsonosx.zed.plist: $(DAEMON_DIR)/org.openzfsonosx.zed.plist.in
+$(DAEMON_DIR)/org.openzfsonosx.zpool-import-all.plist: $(DAEMON_DIR)/org.openzfsonosx.zpool-import-all.plist.in
+$(DAEMON_DIR)/org.openzfsonosx.InvariantDisks.plist: $(DAEMON_DIR)/org.openzfsonosx.InvariantDisks.plist.in
 
 $(launchddaemon_DATA):
 	-$(SED) -e 's,@bindir\@,$(bindir),g' \
