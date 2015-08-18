@@ -1099,7 +1099,22 @@ arc_cksum_verify(arc_buf_t *buf)
         mutex_exit(&buf->b_hdr->b_freeze_lock);
         return;
     }
+#ifdef __APPLE_KERNEL__
+	uint64_t size = buf->b_hdr->b_size;
+	void *p;
+
+	if (buf->b_uplinfo != NULL && buf->b_data == NULL) {
+		/* map UPL into kernel (if not mapped yet) for the checksum */
+		p = getuplvaddr(buf->b_uplinfo, FALSE/*for_read*/) +
+			(buf->b_uplinfo->ui_f_off - upli_sharedupl(buf->b_uplinfo)->su_upl_f_off);
+	} else {
+		p = buf->b_data;
+	}
+
+	fletcher_2_native(p, buf->b_hdr->b_size, &zc);
+#else
     fletcher_2_native(buf->b_data, buf->b_hdr->b_size, &zc);
+#endif
     if (!ZIO_CHECKSUM_EQUAL(*buf->b_hdr->b_freeze_cksum, zc))
         panic("buffer modified while frozen!");
     mutex_exit(&buf->b_hdr->b_freeze_lock);
@@ -1112,7 +1127,25 @@ arc_cksum_equal(arc_buf_t *buf)
     int equal;
 
     mutex_enter(&buf->b_hdr->b_freeze_lock);
+#ifdef __APPLE_KERNEL__
+        {
+			uint64_t size = buf->b_hdr->b_size;
+			void *p;
+
+			if (buf->b_uplinfo != NULL && buf->b_data == NULL) {
+				/* map UPL into kernel (if not mapped yet) for the checksum */
+				p = getuplvaddr(buf->b_uplinfo, FALSE/*for_read*/) +
+					(buf->b_uplinfo->ui_f_off -
+					 upli_sharedupl(buf->b_uplinfo)->su_upl_f_off);
+			} else {
+				p = buf->b_data;
+			}
+
+			fletcher_2_native(p, buf->b_hdr->b_size, &zc);
+        }
+#else
     fletcher_2_native(buf->b_data, buf->b_hdr->b_size, &zc);
+#endif
     equal = ZIO_CHECKSUM_EQUAL(*buf->b_hdr->b_freeze_cksum, zc);
     mutex_exit(&buf->b_hdr->b_freeze_lock);
 
@@ -1131,8 +1164,26 @@ arc_cksum_compute(arc_buf_t *buf, boolean_t force)
         return;
     }
     buf->b_hdr->b_freeze_cksum = kmem_alloc(sizeof (zio_cksum_t), KM_SLEEP);
+#ifdef __APPLE_KERNEL__
+        {
+			uint64_t size = buf->b_hdr->b_size;
+			void *p;
+
+			if (buf->b_uplinfo != NULL && buf->b_data == NULL) {
+				/* map UPL into kernel (if not mapped yet) for the checksum */
+				p = getuplvaddr(buf->b_uplinfo, TRUE/*for_read*/) +
+					(buf->b_uplinfo->ui_f_off -
+					 upli_sharedupl(buf->b_uplinfo)->su_upl_f_off);
+			} else {
+				p = buf->b_data;
+			}
+
+			fletcher_2_native(p, buf->b_hdr->b_size, buf->b_hdr->b_freeze_cksum);
+        }
+#else
     fletcher_2_native(buf->b_data, buf->b_hdr->b_size,
                       buf->b_hdr->b_freeze_cksum);
+#endif
     mutex_exit(&buf->b_hdr->b_freeze_lock);
     arc_buf_watch(buf);
 }
@@ -1241,7 +1292,11 @@ add_reference(arc_buf_hdr_t *ab, kmutex_t *hash_lock, void *tag)
 
     if ((refcount_add(&ab->b_refcnt, tag) == 1) &&
         (ab->b_state != arc_anon)) {
-        uint64_t delta = ab->b_size * ab->b_datacnt;
+#ifdef __APPLE_KERNEL__
+		uint64_t delta = ab->b_size * ab->b_realdatacnt;
+#else
+		uint64_t delta = ab->b_size * ab->b_datacnt;
+#endif
         list_t *list = &ab->b_state->arcs_list[ab->b_type];
         uint64_t *size = &ab->b_state->arcs_lsize[ab->b_type];
 
@@ -1254,7 +1309,11 @@ add_reference(arc_buf_hdr_t *ab, kmutex_t *hash_lock, void *tag)
             ASSERT3P(ab->b_buf, ==, NULL);
             delta = ab->b_size;
         }
+#ifdef __APPLE_KERNEL__
+		ASSERT(delta >= 0);
+#else
         ASSERT(delta > 0);
+#endif
         ASSERT3U(*size, >=, delta);
         atomic_add_64(size, -delta);
         mutex_exit(&ab->b_state->arcs_mtx);
@@ -1282,7 +1341,11 @@ remove_reference(arc_buf_hdr_t *ab, kmutex_t *hash_lock, void *tag)
         ASSERT(!list_link_active(&ab->b_arc_node));
         list_insert_head(&state->arcs_list[ab->b_type], ab);
         ASSERT(ab->b_datacnt > 0);
+#ifdef __APPLE_KERNEL__
+		atomic_add_64(size, ab->b_size * ab->b_realdatacnt);
+#else
         atomic_add_64(size, ab->b_size * ab->b_datacnt);
+#endif
         mutex_exit(&state->arcs_mtx);
     }
     return (cnt);
@@ -1320,7 +1383,14 @@ arc_change_state(arc_state_t *new_state, arc_buf_hdr_t *ab, kmutex_t *hash_lock)
     ASSERT(ab->b_datacnt == 0 || !GHOST_STATE(new_state));
     ASSERT(ab->b_datacnt <= 1 || old_state != arc_anon);
 
+#ifdef __APPLE_KERNEL__
+	if (ab->b_buf != NULL && ab->b_buf->b_data == NULL)
+		from_delta = to_delta = 0;
+	else
+		from_delta = to_delta = ab->b_realdatacnt * ab->b_size;
+#else
     from_delta = to_delta = ab->b_datacnt * ab->b_size;
+#endif
 
     /*
      * If this buffer is evictable, transfer it from the
@@ -1479,7 +1549,11 @@ arc_data_buf_free(void *buf, uint64_t size)
 }
 
 arc_buf_t *
+#ifdef __APPLE_KERNEL__
+arc_buf_alloc(spa_t *spa, int size, void *tag, arc_buf_contents_t type, int alloc_data)
+#else
 arc_buf_alloc(spa_t *spa, uint64_t size, void *tag, arc_buf_contents_t type)
+#endif
 {
     arc_buf_hdr_t *hdr;
     arc_buf_t *buf;
@@ -1499,7 +1573,17 @@ arc_buf_alloc(spa_t *spa, uint64_t size, void *tag, arc_buf_contents_t type)
     buf->b_private = NULL;
     buf->b_next = NULL;
     hdr->b_buf = buf;
+#ifdef __APPLE_KERNEL__
+	if (alloc_data) {
+		arc_get_data_buf(buf);
+		hdr->b_realdatacnt = 1;
+	} else {
+		hdr->b_realdatacnt = 0;
+	}
+	buf->b_uplinfo = NULL;
+#else
     arc_get_data_buf(buf);
+#endif
     hdr->b_datacnt = 1;
     hdr->b_flags = 0;
     ASSERT(refcount_is_zero(&hdr->b_refcnt));
@@ -1575,8 +1659,22 @@ arc_buf_clone(arc_buf_t *from)
     buf->b_next = hdr->b_buf;
     hdr->b_buf = buf;
     arc_get_data_buf(buf);
+#ifdef __APPLE_KERNEL__
+	buf->b_uplinfo = NULL;
+	if (from->b_uplinfo != NULL && from->b_data == NULL) {
+		sharedupl_get(from->b_uplinfo, TRUE/*for_read*/);
+		sharedupl_t *supl = upli_sharedupl(from->b_uplinfo);
+		upl_t upl = supl->su_upl;
+		int offset = from->b_uplinfo->ui_f_off - supl->su_upl_f_off;
+		copy_upl_to_mem(upl, offset, buf->b_data, size, supl->su_pl);
+		sharedupl_put(from->b_uplinfo, FALSE/*clear_dirty*/);
+	} else {
+		bcopy(from->b_data, buf->b_data, size);
+	}
+	hdr->b_realdatacnt += 1;
+#else
     bcopy(from->b_data, buf->b_data, size);
-
+#endif
     /*
      * This buffer already exists in the arc so create a duplicate
      * copy for the caller.  If the buffer is associated with user data
@@ -1603,7 +1701,11 @@ arc_buf_add_ref(arc_buf_t *buf, void* tag)
      * was successful.
      */
     mutex_enter(&buf->b_evict_lock);
+#ifdef __APPLE_KERNEL__
+	if (buf->b_data == NULL && buf->b_uplinfo == NULL) {
+#else
     if (buf->b_data == NULL) {
+#endif
         mutex_exit(&buf->b_evict_lock);
         return;
     }
@@ -1676,6 +1778,10 @@ arc_buf_destroy(arc_buf_t *buf, boolean_t recycle, boolean_t remove)
                 ARCSTAT_INCR(arcstat_data_size, -size);
                 atomic_add_64(&arc_size, -size);
             }
+#ifdef __APPLE_KERNEL__
+			if (arc_size > arc_c_peak)
+				arc_c_peak = arc_size;
+#endif
         }
         if (list_link_active(&buf->b_hdr->b_arc_node)) {
             uint64_t *cnt = &state->arcs_lsize[type];
@@ -1701,6 +1807,20 @@ arc_buf_destroy(arc_buf_t *buf, boolean_t recycle, boolean_t remove)
         }
         ASSERT(buf->b_hdr->b_datacnt > 0);
         buf->b_hdr->b_datacnt -= 1;
+#ifdef __APPLE_KERNEL__
+		buf->b_hdr->b_realdatacnt -= 1;
+	} else if (buf->b_uplinfo) {
+		arc_state_t *state = buf->b_hdr->b_state;
+		uplinfo_t *upli = buf->b_uplinfo;
+		sharedupl_t *supl = upli_sharedupl(upli);
+		remove_upli(buf->b_uplinfo);
+		mutex_destroy(&upli->ui_lock);
+		atomic_dec_32(&num_upli);
+		kmem_free(upli, sizeof(uplinfo_t));
+		buf->b_uplinfo = NULL;
+		ASSERT(buf->b_hdr->b_datacnt > 0);
+		buf->b_hdr->b_datacnt -= 1;
+#endif
     }
 
     /* only remove the buf if requested */
@@ -1805,7 +1925,7 @@ arc_buf_free(arc_buf_t *buf, void *tag)
     int hashed = hdr->b_state != arc_anon;
 
     ASSERT(buf->b_efunc == NULL);
-    ASSERT(buf->b_data != NULL);
+    //ASSERT(buf->b_data != NULL);
 
     if (hashed) {
         kmutex_t *hash_lock = HDR_LOCK(hdr);
@@ -1862,7 +1982,11 @@ arc_buf_remove_ref(arc_buf_t *buf, void* tag)
     hdr = buf->b_hdr;
     ASSERT3P(hash_lock, ==, HDR_LOCK(hdr));
     ASSERT(hdr->b_state != arc_anon);
+#ifdef __APPLE_KERNEL__
+	ASSERT(buf->b_data != NULL || buf->b_uplinfo != NULL);
+#else
     ASSERT(buf->b_data != NULL);
+#endif
 
     (void) remove_reference(hdr, hash_lock, tag);
     if (hdr->b_datacnt > 1) {
@@ -3073,6 +3197,138 @@ arc_read_done(zio_t *zio)
     if (freeable)
         arc_hdr_destroy(hdr);
 }
+
+#ifdef __APPLE_KERNEL__
+static void
+	arc_read_fill_buf_done(zio_t *zio)
+{
+	arc_buf_hdr_t   *hdr, *found;
+	arc_buf_t       *buf;
+	arc_buf_t       *abuf;  /* buffer we're assigning to callback */
+	kmutex_t        *hash_lock;
+	arc_callback_t  *callback_list, *acb;
+	int             freeable = FALSE;
+
+	buf = zio->io_private;
+	hdr = buf->b_hdr;
+
+	found = buf_hash_find(zio->io_spa, &hdr->b_dva, hdr->b_birth,
+						  &hash_lock);
+
+	/* no need to byteswap since we wrote it out not long ago */
+	arc_cksum_compute(buf, B_TRUE);
+
+	hdr->b_acb = NULL;
+	hdr->b_flags &= ~ARC_IO_IN_PROGRESS;
+	ASSERT(!HDR_BUF_AVAILABLE(hdr));
+
+	if (zio->io_error != 0) {
+		hdr->b_flags |= ARC_IO_ERROR;
+		if (hdr->b_state != arc_anon) {
+			ASSERT(hash_lock);
+			arc_change_state(arc_anon, hdr, hash_lock);
+		}
+		if (HDR_IN_HASH_TABLE(hdr))
+			buf_hash_remove(hdr);
+		freeable = refcount_is_zero(&hdr->b_refcnt);
+		/* convert checksum errors into IO errors */
+		if (zio->io_error == ECKSUM)
+			zio->io_error = EIO;
+	}
+	cv_broadcast(&hdr->b_cv);
+	if (hash_lock) {
+		mutex_exit(hash_lock);
+	} else {
+		/*
+		 * This block was freed while we waited for the read to
+		 * complete.  It has been removed from the hash table and
+		 * moved to the anonymous state (so that it won't show up
+		 * in the cache).
+		 */
+		ASSERT3P(hdr->b_state, ==, arc_anon);
+		freeable = refcount_is_zero(&hdr->b_refcnt);
+	}
+
+	if (freeable)
+		arc_hdr_destroy(hdr);
+}
+
+int
+arc_read_fill_buf(dmu_buf_impl_t *db, uplinfo_t *upli, boolean_t lock_db)
+{
+	int err = 0;
+	arc_buf_t *buf = db->db_buf;
+	arc_buf_hdr_t *hdr = buf->b_hdr;
+	spa_t *spa = db->db_dnode->dn_objset->os_spa;
+	arc_buf_hdr_t *found;
+	kmutex_t *hash_lock;
+	boolean_t has_hash_lock;
+	zbookmark_t zb;
+	blkptr_t *bp;
+	zio_t *zio;
+	off_t offset;
+	sharedupl_t *supl;
+	uplinfo_t *old_upli = NULL;
+
+	if (lock_db)
+		mutex_enter(&db->db_mtx);
+	zb.zb_objset = db->db_objset->os_dsl_dataset ?
+		db->db_objset->os_dsl_dataset->ds_object : 0;
+	zb.zb_object = db->db.db_object;
+	zb.zb_level = db->db_level;
+	zb.zb_blkid = db->db_blkid;
+	if (db->db_blkptr && !BP_IS_HOLE(db->db_blkptr)) {
+		bp = db->db_blkptr;
+	} else {
+		bp = &db->db_last_dirty->dt.dl.dr_overridden_by;
+	}
+	if (hdr->b_state != arc_anon) {
+		found = buf_hash_find(spa, BP_IDENTITY(bp), hdr->b_birth, &hash_lock);
+		has_hash_lock = (found != NULL);
+	} else {
+		has_hash_lock = FALSE;
+	}
+	if (db->db_level == 0 && dnode_block_freed(db->db_dnode, db->db_blkid))
+		bp = NULL;
+	if (bp == NULL || BP_IS_HOLE(bp)) {
+		if (upli) {
+			supl = upli_sharedupl(upli);
+			offset = upli->ui_f_off - supl->su_upl_f_off;
+			cluster_zero(supl->su_upl, offset, db->db.db_size, NULL);
+		} else {
+			bzero(buf->b_data, db->db.db_size);
+		}
+		if (lock_db)
+			mutex_exit(&db->db_mtx);
+	} else {
+		buf->b_hdr->b_flags |= ARC_IO_IN_PROGRESS;
+		/* save the old upli,  */
+		if (buf->b_uplinfo) {
+			ASSERT(upli != NULL);
+			old_upli = buf->b_uplinfo;
+			buf->b_uplinfo = upli;
+		}
+		if (has_hash_lock)
+			mutex_exit(hash_lock);
+		if (lock_db)
+			mutex_exit(&db->db_mtx);
+		zio = zio_read_osx(NULL/*pio*/, spa, bp, buf->b_data,
+						   db->db.db_size, arc_read_fill_buf_done, buf, ZIO_PRIORITY_SYNC_READ,
+						   ZIO_FLAG_CANFAIL, &zb, upli);
+		err = zio_wait(zio);
+		/* we do not own the upli passed in, so we put the old upli back into buf */
+		if (buf->b_uplinfo) {
+			buf->b_uplinfo = old_upli;
+		}
+	}
+	return err;
+}
+#endif
+
+
+
+
+
 
 /*
  * "Read" the block at the specified DVA (in bp) via the
