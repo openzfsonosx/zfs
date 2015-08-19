@@ -289,7 +289,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_GETPATH:
-			printf("ZFS: ioctl(HFS_GETPATH)\n");
+			dprintf("ZFS: ioctl(HFS_GETPATH)\n");
   		    {
 				struct vfsstatfs *vfsp;
 				struct vnode *file_vp;
@@ -327,8 +327,8 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 								   &outlen, flags, (vfs_context_t)ct);
                 vnode_put(file_vp);
 
-				printf("ZFS: HFS_GETPATH done %d : '%s'\n", error,
-					   error ? "" : bufptr);
+				dprintf("ZFS: HFS_GETPATH done %d : '%s'\n", error,
+						error ? "" : bufptr);
 			}
 			break;
 
