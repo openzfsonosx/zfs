@@ -1297,6 +1297,8 @@ dmu_tx_assign(dmu_tx_t *tx, txg_how_t txg_how)
 	    txg_how == TXG_WAITED);
 	ASSERT(!dsl_pool_sync_context(tx->tx_pool));
 
+	VERIFY0(dsl_pool_sync_context(tx->tx_pool));
+
 	if (txg_how == TXG_WAITED)
 		tx->tx_waited = B_TRUE;
 
