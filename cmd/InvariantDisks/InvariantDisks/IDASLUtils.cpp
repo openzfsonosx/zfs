@@ -38,7 +38,7 @@ namespace ID
 	public:
 		int addLogFile(char const * logFile)
 		{
-			int fd = open(logFile, O_RDWR | O_CREAT);
+			int fd = open(logFile, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 			if (fd < 0)
 			{
 				asl_log(client, 0, ASL_LEVEL_ERR, "Error opening log file \"%s\" (%m)", logFile);
@@ -86,5 +86,13 @@ namespace ID
 	int ASLClient::addLogFile(char const * logFile)
 	{
 		return m_impl->addLogFile(logFile);
+	}
+
+	void ASLClient::logFormat(int level, const char * format, ...) const
+	{
+		va_list args;
+		va_start(args, format);
+		asl_vlog(client(), 0, level, format, args);
+		va_end(args);
 	}
 }

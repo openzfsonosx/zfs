@@ -2484,6 +2484,9 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	 */
 	if (exception == B_TRUE) {
 
+		ZTOV(zp) = NULL;       /* vnode is gone, clear our ptr before placing
+								* on the reclaim list */
+
 		/* We could not release, due to z_inactive wanting to call dmu_tx,
 		 * we then need to add to reclaim_list for the reclaim_thread to
 		 * finish off later as a separate thread. */

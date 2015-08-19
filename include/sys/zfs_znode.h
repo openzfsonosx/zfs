@@ -299,7 +299,11 @@ typedef struct znode {
  */
 #define ZFS_ENTER(zfsvfs)                       \
     {                                                                   \
-		rrm_enter_read(&(zfsvfs)->z_teardown_lock, FTAG); \
+		if (!POINTER_IS_VALID(zfsvfs)) {								\
+			printf("ZFS: ZFS_ENTER on released %s:%d",					\
+				   __FILE__, __LINE__);									\
+			return EIO; }												\
+		rrm_enter_read(&(zfsvfs)->z_teardown_lock, FTAG);				\
         if ((zfsvfs)->z_unmounted) {                                    \
             ZFS_EXIT(zfsvfs);                                           \
             return (EIO);                                               \
