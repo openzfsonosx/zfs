@@ -2848,7 +2848,7 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	int  flag;
 	int  error = 0;
 
-	printf("+setxattr vp %p '%s' enabled? %d\n", ap->a_vp,
+	dprintf("+setxattr vp %p '%s' enabled? %d\n", ap->a_vp,
 		   ap->a_name, zfsvfs->z_xattr);
 
 	/* xattrs disabled? */
