@@ -381,8 +381,11 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
             uio_setrw(uio, UIO_WRITE);
            error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
             if (error == 0) {
-                dmu_write(zfsvfs->z_os, zp->z_id,
-                        woff, bytes, (caddr_t)vaddr + off, tx);
+
+				/*
+				  dmu_write(zfsvfs->z_os, zp->z_id,
+				  woff, bytes, (caddr_t)vaddr + off, tx);
+				*/
                 /*
                  * We don't need a ubc_upl_commit_range()
                  * here since the dmu_write() effectively
@@ -396,9 +399,10 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
                                     UPL_ABORT_DUMP_PAGES);
             }
         } else { // !upl_valid_page
-            error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
-                                uio, bytes, tx);
-
+			/*
+			  error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
+			  uio, bytes, tx);
+			*/
             rw_exit(&zp->z_map_lock);
         }
 
@@ -1068,8 +1072,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
                 uio_copy = uio_duplicate(uio);
 
 			tx_bytes = uio_resid(uio);
+
 			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
-			    uio, nbytes, tx);
+									   uio, nbytes, tx);
 			tx_bytes -= uio_resid(uio);
 
 		} else {
