@@ -1835,6 +1835,12 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		goto exit_abort;
 	}
 
+	if (!zp->z_sa_hdl) {
+		printf("ZFS: vnop_pageout: null zp sa_hdl\n");
+		error = ENXIO;
+		goto exit_abort;
+	}
+
 	zfsvfs = zp->z_zfsvfs;
 
 	dprintf("+vnop_pageout2: off 0x%llx len 0x%lx upl_off 0x%lx: "
