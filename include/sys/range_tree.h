@@ -54,6 +54,10 @@ typedef struct range_tree {
 	 */
 	uint64_t	rt_histogram[RANGE_TREE_HISTOGRAM_SIZE];
 	kmutex_t	*rt_lock;	/* pointer to lock that protects map */
+
+	char rt_debug_allocator[256];
+	int rt_debug_line;
+
 } range_tree_t;
 
 typedef struct range_seg {
@@ -75,7 +79,8 @@ typedef void range_tree_func_t(void *arg, uint64_t start, uint64_t size);
 
 void range_tree_init(void);
 void range_tree_fini(void);
-range_tree_t *range_tree_create(range_tree_ops_t *ops, void *arg, kmutex_t *lp);
+#define range_tree_create(X,Y,Z) range_tree_createX((X), (Y), (Z), __FILE__, __LINE__)
+	range_tree_t *range_tree_createX(range_tree_ops_t *ops, void *arg, kmutex_t *lp, char *, int);
 void range_tree_destroy(range_tree_t *rt);
 boolean_t range_tree_contains(range_tree_t *rt, uint64_t start, uint64_t size);
 uint64_t range_tree_space(range_tree_t *rt);

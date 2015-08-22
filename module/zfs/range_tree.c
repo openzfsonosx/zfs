@@ -127,8 +127,9 @@ range_tree_seg_compare(const void *x1, const void *x2)
 	return (0);
 }
 
+
 range_tree_t *
-range_tree_create(range_tree_ops_t *ops, void *arg, kmutex_t *lp)
+range_tree_createX(range_tree_ops_t *ops, void *arg, kmutex_t *lp, char *file, int line)
 {
 	range_tree_t *rt;
 
@@ -144,13 +145,26 @@ range_tree_create(range_tree_ops_t *ops, void *arg, kmutex_t *lp)
 	if (rt->rt_ops != NULL)
 		rt->rt_ops->rtop_create(rt, rt->rt_arg);
 
+	strlcpy(rt->rt_debug_allocator, file, 256);
+	rt->rt_debug_line = line;
+
 	return (rt);
+}
+
+void dumpdump(void *arg, uint64_t start, uint64_t size)
+{
+	printf("     zfs: %llu (%llu)\n", start, size);
 }
 
 void
 range_tree_destroy(range_tree_t *rt)
 {
-	VERIFY0(rt->rt_space);
+	if (rt->rt_space) {
+		printf("ZFS: rt->rt_space is !0 : space %llu from %s:%u \n",
+			   rt->rt_space, rt->rt_debug_allocator, rt->rt_debug_line);
+		range_tree_walk(rt, dumpdump, NULL);
+	}
+	//VERIFY0(rt->rt_space);
 
 	if (rt->rt_ops != NULL)
 		rt->rt_ops->rtop_destroy(rt, rt->rt_arg);
