@@ -81,7 +81,6 @@ osx_kstat_t osx_kstat = {
 	{ "l2arc_write_boost",			KSTAT_DATA_UINT64 },
 	{ "l2arc_headroom",				KSTAT_DATA_UINT64 },
 	{ "l2arc_headroom_boost",		KSTAT_DATA_UINT64 },
-	{ "l2arc_max_block_size",		KSTAT_DATA_UINT64 },
 	{ "l2arc_feed_secs",			KSTAT_DATA_UINT64 },
 	{ "l2arc_feed_min_ms",			KSTAT_DATA_UINT64 },
 
@@ -150,26 +149,6 @@ osx_kstat_t osx_kstat = {
 	{"zfs_scan_idle",				KSTAT_DATA_INT64  },
 
 	{"zfs_recover",					KSTAT_DATA_INT64  },
-
-	{"zfs_free_max_blocks",				KSTAT_DATA_UINT64  },
-	{"zfs_free_bpobj_enabled",			KSTAT_DATA_INT64  },
-
-	{"zfs_send_corrupt_data",		KSTAT_DATA_UINT64  },
-	{"zfs_send_queue_length",		KSTAT_DATA_UINT64  },
-	{"zfs_recv_queue_length",		KSTAT_DATA_UINT64  },
-
-	{"zfs_vdev_mirror_rotating_inc",		KSTAT_DATA_UINT64  },
-	{"zfs_vdev_mirror_rotating_seek_inc",	KSTAT_DATA_UINT64  },
-	{"zfs_vdev_mirror_rotating_seek_offset",KSTAT_DATA_UINT64  },
-	{"zfs_vdev_mirror_non_rotating_inc",	KSTAT_DATA_UINT64  },
-	{"zfs_vdev_mirror_non_rotating_seek_inc",KSTAT_DATA_UINT64  },
-
-	{"zvol_inhibit_dev",KSTAT_DATA_UINT64  },
-	{"zfs_send_set_freerecords_bit",KSTAT_DATA_UINT64  },
-
-	{"zfs_write_implies_delete_child",KSTAT_DATA_UINT64  },
-	{"zfs_send_holes_without_birth_time",KSTAT_DATA_UINT64  },
-
 };
 
 
@@ -205,6 +184,14 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		l2arc_headroom = ks->l2arc_headroom.value.ui64;
 		l2arc_headroom_boost = ks->l2arc_headroom_boost.value.ui64;
 		l2arc_max_block_size = ks->l2arc_max_block_size.value.ui64;
+		l2arc_feed_secs = ks->l2arc_feed_secs.value.ui64;
+		l2arc_feed_min_ms = ks->l2arc_feed_min_ms.value.ui64;
+
+		/* L2ARC */
+		l2arc_write_max = ks->l2arc_write_max.value.ui64;
+		l2arc_write_boost = ks->l2arc_write_boost.value.ui64;
+		l2arc_headroom = ks->l2arc_headroom.value.ui64;
+		l2arc_headroom_boost = ks->l2arc_headroom_boost.value.ui64;
 		l2arc_feed_secs = ks->l2arc_feed_secs.value.ui64;
 		l2arc_feed_min_ms = ks->l2arc_feed_min_ms.value.ui64;
 
@@ -385,6 +372,18 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->l2arc_headroom.value.ui64                = l2arc_headroom;
 		ks->l2arc_headroom_boost.value.ui64          = l2arc_headroom_boost;
 		ks->l2arc_max_block_size.value.ui64          = l2arc_max_block_size;
+		ks->l2arc_feed_secs.value.ui64               = l2arc_feed_secs;
+		ks->l2arc_feed_min_ms.value.ui64             = l2arc_feed_min_ms;
+
+		ks->l2arc_noprefetch.value.i64               = l2arc_noprefetch;
+		ks->l2arc_feed_again.value.i64               = l2arc_feed_again;
+		ks->l2arc_norw.value.i64                     = l2arc_norw;
+
+		/* L2ARC */
+		ks->l2arc_write_max.value.ui64               = l2arc_write_max;
+		ks->l2arc_write_boost.value.ui64             = l2arc_write_boost;
+		ks->l2arc_headroom.value.ui64                = l2arc_headroom;
+		ks->l2arc_headroom_boost.value.ui64          = l2arc_headroom_boost;
 		ks->l2arc_feed_secs.value.ui64               = l2arc_feed_secs;
 		ks->l2arc_feed_min_ms.value.ui64             = l2arc_feed_min_ms;
 
