@@ -3090,7 +3090,8 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 			volblocksize = zfs_prop_default_numeric(
 													ZFS_PROP_VOLBLOCKSIZE);
 
-		if ((error = zvol_check_volblocksize(volblocksize)) != 0 ||
+		if ((error = zvol_check_volblocksize(fsname,
+		    volblocksize)) != 0 ||
 		    (error = zvol_check_volsize(volsize,
 										volblocksize)) != 0)
 			return (error);
@@ -3717,6 +3718,11 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 
 	case ZFS_PROP_COPIES:
 		if (zfs_earlier_version(dsname, SPA_VERSION_DITTO_BLOCKS))
+			return (SET_ERROR(ENOTSUP));
+		break;
+
+	case ZFS_PROP_DEDUP:
+		if (zfs_earlier_version(dsname, SPA_VERSION_DEDUP))
 			return (SET_ERROR(ENOTSUP));
 		break;
 

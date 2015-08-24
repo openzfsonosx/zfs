@@ -62,21 +62,11 @@
 #include <sys/dnode.h>
 #include <sys/dsl_dataset.h>
 #include <sys/dsl_prop.h>
-#include <sys/dsl_dir.h>
-#include <sys/dkio.h>
-// #include <sys/efi_partition.h>
-#include <sys/byteorder.h>
-#include <sys/pathname.h>
-#include <sys/ddi.h>
-#include <sys/sunddi.h>
-#include <sys/crc32.h>
-#include <sys/dirent.h>
-#include <sys/policy.h>
-#include <sys/fs/zfs.h>
-#include <sys/zfs_ioctl.h>
-#include <sys/mkdev.h>
-#include <sys/zil.h>
-#include <sys/refcount.h>
+#include <sys/zap.h>
+#include <sys/zfeature.h>
+#include <sys/zil_impl.h>
+#include <sys/zio.h>
+#include <sys/zfs_rlock.h>
 #include <sys/zfs_znode.h>
 #include <sys/spa_impl.h>
 #include <sys/zfs_rlock.h>
@@ -468,9 +458,35 @@ zil_replay_func_t zvol_replay_vector[TX_MAX_TYPE] = {
 };
 
 int
-zvol_name2minor(const char *name, minor_t *minor)
+zvol_check_volblocksize(const char *name, uint64_t volblocksize)
 {
-	zvol_state_t *zv;
+	/* Record sizes above 128k need the feature to be enabled */
+	if (volblocksize > SPA_OLD_MAXBLOCKSIZE) {
+		spa_t *spa;
+		int error;
+
+		if ((error = spa_open(name, &spa, FTAG)) != 0)
+			return (error);
+
+		if (!spa_feature_is_enabled(spa, SPA_FEATURE_LARGE_BLOCKS)) {
+			spa_close(spa, FTAG);
+			return (SET_ERROR(ENOTSUP));
+		}
+
+		/*
+		 * We don't allow setting the property above 1MB,
+		 * unless the tunable has been changed.
+		 */
+		if (volblocksize > zfs_max_recordsize)
+			return (SET_ERROR(EDOM));
+
+		spa_close(spa, FTAG);
+	}
+
+	if (volblocksize < SPA_MINBLOCKSIZE ||
+	    volblocksize > SPA_MAXBLOCKSIZE ||
+	    !ISP2(volblocksize))
+		return (SET_ERROR(EDOM));
 
 	mutex_enter(&zfsdev_state_lock);
 	zv = zvol_minor_lookup(name);
