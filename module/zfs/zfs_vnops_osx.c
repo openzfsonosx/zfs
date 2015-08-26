@@ -1989,6 +1989,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 			goto top;
 		}
 		dmu_tx_abort(tx);
+		ubc_upl_abort_range(upl, ap->a_f_offset,a_size, UPL_ABORT_FREE_ON_EMPTY);
 		goto pageout_done;
 	}
 
@@ -2146,12 +2147,10 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	if (a_flags & UPL_IOSYNC)
 		zil_commit(zfsvfs->z_log, zp->z_id);
 
-	if (!(a_flags & UPL_NOCOMMIT)) {
-		if (error)
-			ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
-		else
-			ubc_upl_commit_range(upl, 0, a_size, UPL_COMMIT_FREE_ON_EMPTY);
-	}
+	if (error)
+		ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
+	else
+		ubc_upl_commit_range(upl, 0, a_size, UPL_COMMIT_FREE_ON_EMPTY);
 
 	upl = NULL;
 

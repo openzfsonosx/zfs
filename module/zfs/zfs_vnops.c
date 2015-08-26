@@ -338,7 +338,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
              dmu_tx_t *tx)
 {
     znode_t *zp = VTOZ(vp);
-    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+    //zfsvfs_t *zfsvfs = zp->z_zfsvfs;
     int len = nbytes;
     int error = 0;
     vm_offset_t vaddr = 0;
@@ -366,9 +366,9 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
         ubc_upl_map(upl, &vaddr);
     }
 
-    for (upl_page = 0; len > 0; ++upl_page) {
+    for (upl_page = 0; vaddr && (len > 0); ++upl_page) {
         uint64_t bytes = MIN(PAGESIZE - off, len);
-        uint64_t woff = uio_offset(uio);
+        //uint64_t woff = uio_offset(uio);
         /*
          * We don't want a new page to "appear" in the middle of
          * the file update (because it may not get the write
@@ -595,7 +595,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
         ubc_upl_map(upl, &vaddr);
     }
 
-    for (upl_page = 0; len > 0; ++upl_page) {
+    for (upl_page = 0; vaddr && (len > 0); ++upl_page) {
         uint64_t bytes = MIN(PAGE_SIZE - off, len);
         if (pl && upl_valid_page(pl, upl_page)) {
             uio_setrw(uio, UIO_READ);
