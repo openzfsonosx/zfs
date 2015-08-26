@@ -1372,7 +1372,15 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	}
 
 
-	ubc_upl_map(upl, (vm_offset_t *)&vaddr);
+	if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
+		dprintf("zfs_vnop_pagein: failed to ubc_upl_map");
+		if (!(flags & UPL_NOCOMMIT))
+			(void) ubc_upl_abort(upl, 0);
+		if (need_unlock)
+			rw_exit(&zp->z_map_lock);
+		ZFS_EXIT(zfsvfs);
+		return (ENOMEM);
+	}
 
 	dprintf("vaddr %p with upl_off 0x%lx\n", vaddr, upl_offset);
 	vaddr += upl_offset;
