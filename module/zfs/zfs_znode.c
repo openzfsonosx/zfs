@@ -1394,7 +1394,7 @@ again:
 			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 			getnewvnode_drop_reserve();
 			return (err);
-		}
+		} // if vnode == NULL or z_doomed
 
 		/*
 		 * We have this strange race in OSX where vnop_reclaim has
@@ -1645,13 +1645,33 @@ zfs_zinactive(znode_t *zp)
 	int has_lock = 0;
 	ASSERT(zp->z_sa_hdl);
 
-
 	/*
 	 * If this was the last reference to a file with no links,
 	 * remove the file from the file system.
 	 */
-	/* Best effort to avoid Modify-After-Free */
-	has_lock = mutex_tryenter(&zp->z_lock);
+
+	/*
+	 * If we are coming via the vnode_create()->vclean() path, we can not
+	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
+	 */
+	struct vnodecreate *vcp;
+
+	mutex_enter(&zfsvfs->z_vnodecreate_lock);
+	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
+		 vcp;
+		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
+		if (vcp->thread == current_thread()) break;
+	mutex_exit(&zfsvfs->z_vnodecreate_lock);
+
+	/* If re-entry, vcp will be set, otherwise NULL */
+	if (vcp) {
+		has_lock = 0;
+	} else {
+		has_lock = 1;
+	}
+
+	if (has_lock) mutex_enter(&zp->z_lock);
+
 	if (zp->z_unlinked) {
 		if (has_lock) mutex_exit(&zp->z_lock);
 		zfs_rmnode(zp);
@@ -1667,6 +1687,17 @@ void
 zfs_znode_free(znode_t *zp)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+#if 1 /* detect if we are about to release something actually locked */
+	uint64_t *mp = (uint64_t *)&zp->z_lock;
+	/* we know first entry in SPL mutex is "owner" and if mutex has been freed,
+	 * it should be 0.
+	 */
+	if (mp[0] != 0) {
+		panic("ZFS: about to znode_free a zp %p with active mutex %llx\n",
+			  zp, mp[0]);
+	}
+#endif
 
 	mutex_enter(&zfsvfs->z_znodes_lock);
 	zp->z_vnode = NULL;

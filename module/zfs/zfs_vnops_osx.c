@@ -1905,7 +1905,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		return zfs_vnop_pageout(ap);
 	}
 
-	if (!zp || !zp->z_zfsvfs) {
+	if (!zp || !zp->z_zfsvfs || !zp->z_sa_hdl) {
 		printf("ZFS: vnop_pageout: null zp or zfsvfs\n");
 		return ENXIO;
 	}
@@ -2317,7 +2317,7 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 	}
 
 
-	/* We call call it directly, huzzah! */
+	/* We can call it directly, huzzah! */
 	zfs_inactive(vp, cr, NULL);
 
 	/* dprintf("-vnop_inactive\n"); */
@@ -2469,6 +2469,18 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 		return 0;
 	}
 
+	ZTOV(zp) = NULL;
+
+	/*
+	 * Purge old data structures associated with the denode.
+	 */
+	cache_purge(vp);
+
+	vnode_clearfsnode(vp); /* vp->v_data = NULL */
+	vnode_removefsref(vp); /* ADDREF from vnode_create */
+	atomic_dec_64(&vnop_num_vnodes);
+
+
 	/*
 	 * If we can do direct reclaim, do so now - in zfs_zinactive,
 	 * calling zfs_rmnode, we try to do a dmu_tx, which will fail.
@@ -2514,15 +2526,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 		}
 	}
 
-	/*
-	 * Purge old data structures associated with the denode.
-	 */
-	cache_purge(vp);
-
-	vnode_clearfsnode(vp); /* vp->v_data = NULL */
-	vnode_removefsref(vp); /* ADDREF from vnode_create */
-	atomic_dec_64(&vnop_num_vnodes);
-
 	/* Direct zfs_remove? We are done */
 	if (fastpath == B_TRUE) goto out;
 
@@ -2531,9 +2534,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	 * by the reclaim_thread
 	 */
 	if (exception == B_TRUE) {
-
-		ZTOV(zp) = NULL;       /* vnode is gone, clear our ptr before placing
-								* on the reclaim list */
 
 		/* We could not release, due to z_inactive wanting to call dmu_tx,
 		 * we then need to add to reclaim_list for the reclaim_thread to
