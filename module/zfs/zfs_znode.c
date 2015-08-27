@@ -1438,10 +1438,10 @@ again:
 				atomic_dec_64(&vnop_num_reclaims);
 #endif
 				rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-				if (zp->z_sa_hdl == NULL)
-					zfs_znode_free(zp);
+				if (zp->z_sa_hdl)
+					zfs_rmnode(zp);
 				else
-					zfs_zinactive(zp);
+					printf("ZFS: Warning, zget reclaim NULL zp->z_sa_hdl\n");
 				rw_exit(&zfsvfs->z_teardown_inactive_lock);
 				goto again;
 
