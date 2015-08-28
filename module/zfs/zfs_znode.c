@@ -1642,17 +1642,13 @@ zfs_zinactive(znode_t *zp)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	uint64_t z_id = zp->z_id;
-	int has_lock = 0;
+	int use_lock = 0;
 	ASSERT(zp->z_sa_hdl);
 
-	/*
-	 * If this was the last reference to a file with no links,
-	 * remove the file from the file system.
-	 */
 
 	/*
 	 * If we are coming via the vnode_create()->vclean() path, we can not
-	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
+	 * grab the mutex we already hold.
 	 */
 	struct vnodecreate *vcp;
 
@@ -1664,22 +1660,40 @@ zfs_zinactive(znode_t *zp)
 	mutex_exit(&zfsvfs->z_vnodecreate_lock);
 
 	/* If re-entry, vcp will be set, otherwise NULL */
-	if (vcp) {
-		has_lock = 0;
-	} else {
-		has_lock = 1;
+	if (!vcp) {
+		use_lock = 1;
 	}
 
-	if (has_lock) mutex_enter(&zp->z_lock);
+	/*
+	 * Don't allow a zfs_zget() while were trying to release this znode
+	 */
+	if (use_lock) {
+		ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
+		mutex_enter(&zp->z_lock);
+	}
 
+	/* Solaris checks to see if a reference was grabbed to the vnode here
+	 * which we can not easily do in XNU */
+	if (ZTOV(zp) && vnode_isinuse(ZTOV(zp), 0)) {
+		printf("ZFS: zinactive(%p) has non-zero vp reference!\n", zp);
+	}
+
+	/*
+	 * If this was the last reference to a file with no links,
+	 * remove the file from the file system.
+	 */
 	if (zp->z_unlinked) {
-		if (has_lock) mutex_exit(&zp->z_lock);
+		if (use_lock) {
+			mutex_exit(&zp->z_lock);
+			ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
+		}
 		zfs_rmnode(zp);
 		return;
 	}
-	if (has_lock) mutex_exit(&zp->z_lock);
 
+	if (use_lock) mutex_exit(&zp->z_lock);
 	zfs_znode_dmu_fini(zp);
+	if (use_lock) ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 	zfs_znode_free(zp);
 }
 
