@@ -112,5 +112,5 @@ if CONFIG_KERNEL
 #kerneldir = @prefix@/src/zfs-$(VERSION)/include/sys
 #kernel_HEADERS = $(COMMON_H) $(KERNEL_H)
 kerneldir =
-kernel_HEADERS =
+kernel_HEADERS = 
 endif
