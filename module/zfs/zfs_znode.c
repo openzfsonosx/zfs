@@ -1674,9 +1674,9 @@ zfs_zinactive(znode_t *zp)
 
 	/* Solaris checks to see if a reference was grabbed to the vnode here
 	 * which we can not easily do in XNU */
-	if (ZTOV(zp) && vnode_isinuse(ZTOV(zp), 0)) {
-		printf("ZFS: zinactive(%p) has non-zero vp reference!\n", zp);
-	}
+	//if (ZTOV(zp) && vnode_isinuse(ZTOV(zp), 0)) {
+	//	printf("ZFS: zinactive(%p) has non-zero vp reference!\n", zp);
+	//}
 
 	/*
 	 * If this was the last reference to a file with no links,
