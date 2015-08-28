@@ -3044,6 +3044,15 @@ zfs_vfs_vptofh(vnode_t *vp, int *fhlenp, unsigned char *fhp, __unused vfs_contex
 	zp_gen = zp->z_gen;
 	if (zp_gen == 0)
 		zp_gen = 1;
+	if ((fid_gen == 0) && (zsb->z_root == object))
+		fid_gen = zp_gen;
+	if (zp->z_unlinked || zp_gen != fid_gen) {
+		dprintf("znode gen (%llu) != fid gen (%llu)\n", zp_gen,
+		    fid_gen);
+		iput(ZTOI(zp));
+		ZFS_EXIT(zsb);
+		return (SET_ERROR(EINVAL));
+	}
 
 	/*
 	 * Store the object and gen numbers in an endian neutral manner
