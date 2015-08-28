@@ -1,3 +1,6 @@
 libspldir = $(includedir)/libspl
-libspl_HEADERS = \
-	$(top_srcdir)/lib/libspl/include/util/sscanf.h
+
+#O3X - prevent header install
+#libspl_HEADERS = \
+#	$(top_srcdir)/lib/libspl/include/util/sscanf.h
+libspl_HEADERS = 
