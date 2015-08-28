@@ -2342,7 +2342,22 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 
 		zvol_log_truncate(zv, tx, off, bytes, B_TRUE);
 
-		dmu_tx_commit(tx);
+	set_capacity(zv->zv_disk, zv->zv_volsize >> 9);
+
+	blk_queue_max_hw_sectors(zv->zv_queue, (DMU_MAX_ACCESS / 4) >> 9);
+	blk_queue_max_segments(zv->zv_queue, UINT16_MAX);
+	blk_queue_max_segment_size(zv->zv_queue, UINT_MAX);
+	blk_queue_physical_block_size(zv->zv_queue, zv->zv_volblocksize);
+	blk_queue_io_opt(zv->zv_queue, zv->zv_volblocksize);
+#ifdef HAVE_BLK_QUEUE_DISCARD
+	blk_queue_max_discard_sectors(zv->zv_queue,
+	    (zvol_max_discard_blocks * zv->zv_volblocksize) >> 9);
+	blk_queue_discard_granularity(zv->zv_queue, zv->zv_volblocksize);
+	queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, zv->zv_queue);
+#endif
+#ifdef HAVE_BLK_QUEUE_NONROT
+	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, zv->zv_queue);
+#endif
 
 		error = dmu_free_long_range(zv->zv_objset,
 		    ZVOL_OBJ, off, bytes);
