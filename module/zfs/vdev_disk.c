@@ -166,7 +166,27 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	}
 #endif
 
-	error = EINVAL;		/* presume failure */
+	v->vdev_tsd = vd;
+	vd->vd_bdev = bdev;
+
+skip_open:
+	/*  Determine the physical block size */
+	block_size = vdev_bdev_block_size(vd->vd_bdev);
+
+	/* Clear the nowritecache bit, causes vdev_reopen() to try again. */
+	v->vdev_nowritecache = B_FALSE;
+
+	/* Inform the ZIO pipeline that we are non-rotational */
+	v->vdev_nonrot = blk_queue_nonrot(bdev_get_queue(vd->vd_bdev));
+
+	/* Physical volume size in bytes */
+	*psize = bdev_capacity(vd->vd_bdev);
+
+	/* TODO: report possible expansion size */
+	*max_psize = *psize;
+
+	/* Based on the minimum sector size set the block size */
+	*ashift = highbit64(MAX(block_size, SPA_MINBLOCKSIZE)) - 1;
 
 	if (vd->vdev_path != NULL) {
 
