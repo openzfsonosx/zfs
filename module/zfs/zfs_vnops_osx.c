@@ -557,6 +557,10 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			error = EACCES;
 			break;
 
+#ifdef HFS_GET_FSINFO
+		case HFS_GET_FSINFO:
+			break;
+#endif
 			/* End HFS mimic ioctl */
 
 

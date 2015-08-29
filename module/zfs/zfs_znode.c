@@ -1303,7 +1303,8 @@ zfs_xvattr_set(znode_t *zp, xvattr_t *xvap, dmu_tx_t *tx)
 }
 
 int
-zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+zfs_zget_internal(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp,
+				  int skip_vnode, int want_unlinked)
 {
 	dmu_object_info_t doi;
 	dmu_buf_t	*db;
@@ -1360,41 +1361,62 @@ again:
 		 * We can only call getwithvid if vp is not NULL
 		 */
 		if (ZTOV(zp)) {
-			/* Standard ZFS code here */
+			uint32_t        vid;
 
 			mutex_enter(&zp->z_lock);
+
+			/*
+			 * Since zp may disappear after we unlock below,
+			 * we save a copy of vp and it's vid
+			 */
+			vid = zp->z_vid;
+			vp = ZTOV(zp);
+
+			/*
+			 * Since we do immediate eviction of the z_dbuf, we
+			 * should never find a dbuf with a znode that doesn't
+			 * know about the dbuf.
+			 */
+			ASSERT3P(zp->z_dbuf, ==, db);
 			ASSERT3U(zp->z_id, ==, obj_num);
-			if (zp->z_unlinked) {
-				err = (ENOENT);
-			} else {
-				vp = ZTOV(zp);
-				*zpp = zp;
-				err = 0;
+
+			/*
+			 * OS X can return the znode when the file is unlinked
+			 * in order to support the sync of open-unlinked files
+			 */
+			if (!want_unlinked && zp->z_unlinked) {
+				dmu_buf_rele(db, NULL);
+				mutex_exit(&zp->z_lock);
+				ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+				return (ENOENT);
 			}
 
-			if (err == 0) {
+			dmu_buf_rele(db, NULL);
+			mutex_exit(&zp->z_lock);
+			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
-				dprintf("attaching vnode %p\n", vp);
+			if (!vp || (vnode_getwithvid(vp, vid) != 0)) {
+				goto again;
+			}
 
-				/*
-				 * zfs_free_node() sets z_vnode to NULL when called inside
-				 * the znodes_lock, so we check against that here to ensure
-				 * it is not NULL
-				 */
-				if (!vp || (vnode_getwithvid(vp, zp->z_vid) != 0)) {
-					mutex_exit(&zp->z_lock);
-					sa_buf_rele(db, NULL);
-					ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-					dprintf("zfs: vnode_getwithvid err\n");
-					goto again;
-				}
+			/*
+			 * Since we had to drop all of our locks above, make sure
+			 * that we have the vnode and znode we had before.
+			 */
+			mutex_enter(&zp->z_lock);
+			if ((vid != zp->z_vid) || (vp != ZTOV(zp))) {
+				mutex_exit(&zp->z_lock);
+				/* Release the wrong vp from vnode_getwithvid(). This
+				 * call is missing in 10a286 - lundman */
+				VN_RELE(vp);
+				goto again;
 			}
 			mutex_exit(&zp->z_lock);
-			sa_buf_rele(db, NULL);
-			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+
+			*zpp = zp;
 			getnewvnode_drop_reserve();
-			return (err);
-		} // if vnode == NULL or z_doomed
+			return (0);
+		} // if vnode != NULL
 
 		/*
 		 * We have this strange race in OSX where vnop_reclaim has
@@ -1468,6 +1490,7 @@ again:
 	 * bonus buffer.
 	 */
 
+	/* TODO: Add the skip_vnode part here */
 	zp = NULL;
 	zp = zfs_znode_alloc(zfsvfs, db, doi.doi_data_block_size,
 	    doi.doi_bonus_type, NULL);
@@ -1497,6 +1520,33 @@ again:
 	dprintf("zget returning %d\n", err);
 	return (err);
 }
+
+
+/*
+ * Some callers don't require a vnode, so allow them to
+ * get a znode without attaching a vnode to it.
+ */
+int
+zfs_zget_sans_vnode(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+{
+	return zfs_zget_internal(zfsvfs, obj_num, zpp, 1, 0);
+}
+
+/*
+ * Some callers wants the znode even it is already unlinked
+ */
+int
+zfs_zget_want_unlinked(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+{
+	return zfs_zget_internal(zfsvfs, obj_num, zpp, 0, 1);
+}
+
+int
+zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+{
+	return zfs_zget_internal(zfsvfs, obj_num, zpp, 0, 0);
+}
+
 
 int
 zfs_rezget(znode_t *zp)
