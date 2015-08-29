@@ -825,8 +825,7 @@ vdev_queue_lastoffset(vdev_t *vd)
 	return (vd->vdev_queue.vq_lastoffset);
 }
 
-void
-vdev_queue_register_lastoffset(vdev_t *vd, zio_t *zio)
-{
-	vd->vdev_queue.vq_lastoffset = zio->io_offset + zio->io_size;
-}
+module_param(zfs_vdev_sync_write_min_active, int, 0644);
+MODULE_PARM_DESC(zfs_vdev_sync_write_min_active,
+	"Min active sync write I/Os per vdev");
+#endif
