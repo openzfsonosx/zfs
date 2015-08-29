@@ -2001,6 +2001,10 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 			goto top;
 		}
 		dmu_tx_abort(tx);
+		if (vaddr) {
+			ubc_upl_unmap(upl);
+			vaddr = NULL;
+		}
 		ubc_upl_abort_range(upl, ap->a_f_offset,a_size, UPL_ABORT_FREE_ON_EMPTY);
 		goto pageout_done;
 	}
@@ -2027,6 +2031,11 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 			break;
 		if (pg_index == 0) {
 			printf("ZFS: failed on pg_index\n");
+			dmu_tx_commit(tx);
+			if (vaddr) {
+				ubc_upl_unmap(upl);
+				vaddr = NULL;
+			}
 			ubc_upl_abort_range(upl, 0, isize, UPL_ABORT_FREE_ON_EMPTY);
 			goto pageout_done;
 		}
@@ -2108,6 +2117,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		if (!vaddr) {
 			if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
 				error = EINVAL;
+				printf("ZFS: unable to map\n");
 				goto out;
 			}
 			dprintf("ZFS: Mapped %p\n", vaddr);
@@ -2127,12 +2137,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		isize    -= xsize;
 		pg_index += num_of_pages;
 	} // while isize
-
-	// unmap
-	if (vaddr) {
-		ubc_upl_unmap(upl);
-		vaddr = NULL;
-	}
 
 	/* finish off transaction */
 	if (error == 0) {
@@ -2155,6 +2159,12 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	dmu_tx_commit(tx);
 
   out:
+	// unmap
+	if (vaddr) {
+		ubc_upl_unmap(upl);
+		vaddr = NULL;
+	}
+
 	zfs_range_unlock(rl);
 	if (a_flags & UPL_IOSYNC)
 		zil_commit(zfsvfs->z_log, zp->z_id);

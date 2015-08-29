@@ -1409,8 +1409,11 @@ again:
 				/* Release the wrong vp from vnode_getwithvid(). This
 				 * call is missing in 10a286 - lundman */
 				VN_RELE(vp);
+				printf("ZFS: the vids do not match part 1\n");
 				goto again;
 			}
+			if (vnode_vid(vp) != zp->z_vid)
+				printf("ZFS: the vids do not match\n");
 			mutex_exit(&zp->z_lock);
 
 			*zpp = zp;
