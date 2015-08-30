@@ -39,8 +39,7 @@ ZED_PIDFILE="@runstatedir@/$ZED_NAME.pid"
 
 do_depend()
 {
-	before zfs-import
-	after sysfs
+	after zfs-mount localmount
 }
 
 do_start()

@@ -57,7 +57,7 @@ do_depend()
 	# bootmisc will log to /var which may be a different zfs than root.
 	before bootmisc logger
 
-	after procfs zfs-import sysfs procps
+	after zfs-import sysfs
 	use mtab
 	keyword -lxc -openvz -prefix -vserver
 }
