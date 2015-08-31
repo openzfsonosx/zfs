@@ -1326,22 +1326,22 @@ getzfsvfs(const char *dsname, zfsvfs_t **zfvp)
  * which prevents all vnode ops from running.
  */
 static int
-zfsvfs_hold(const char *name, void *tag, zfsvfs_t **zfvp, boolean_t writer)
+zfs_sb_hold(const char *name, void *tag, zfs_sb_t **zsbp, boolean_t writer)
 {
-    int error = 0;
+	int error = 0;
 
-    if (getzfsvfs(name, zfvp) != 0)
-        error = zfsvfs_create(name, zfvp);
-    if (error == 0) {
-        rrm_enter(&(*zfvp)->z_teardown_lock, (writer) ? RW_WRITER :
-                  RW_READER, tag);
-        if ((*zfvp)->z_unmounted) {
-            /*
-             * XXX we could probably try again, since the unmounting
-             * thread should be just about to disassociate the
-             * objset from the zfsvfs.
-             */
-            rrm_exit(&(*zfvp)->z_teardown_lock, tag);
+	if (get_zfs_sb(name, zsbp) != 0)
+		error = zfs_sb_create(name, NULL, zsbp);
+	if (error == 0) {
+		rrm_enter(&(*zsbp)->z_teardown_lock, (writer) ? RW_WRITER :
+		    RW_READER, tag);
+		if ((*zsbp)->z_unmounted) {
+			/*
+			 * XXX we could probably try again, since the unmounting
+			 * thread should be just about to disassociate the
+			 * objset from the zsb.
+			 */
+			rrm_exit(&(*zsbp)->z_teardown_lock, tag);
 			return (SET_ERROR(EBUSY));
         }
     }

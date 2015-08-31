@@ -1616,89 +1616,50 @@ command for normal file systems, its mount options are set according to its
 properties. The correlation between properties and mount options is as follows:
 .Bd -literal
     PROPERTY                MOUNT OPTION
-    devices                 devices/nodevices
-    exec                    exec/noexec
-    readonly                ro/rw
-    setuid                  setuid/nosetuid
-    xattr                   xattr/noxattr
-.Ed
-.Pp
-In addition, these options can be set on a per-mount basis using the
-.Fl o
-option, without affecting the property that is stored on disk. The values
-specified on the command line override the values stored in the dataset. The
-.Sy nosuid
-option is an alias for
-.Sy nodevices Ns , Ns Sy nosetuid .
-These properties are reported as
-.Qq temporary
-by the
-.Nm zfs Cm get
-command. If the properties are changed while the dataset is mounted, the new
-setting overrides any temporary settings.
-.Ss "User Properties"
-In addition to the standard native properties, ZFS supports arbitrary user
-properties. User properties have no effect on ZFS behavior, but applications or
-administrators can use them to annotate datasets
-.Pq file systems, volumes, and snapshots .
-.Pp
-User property names must contain a colon
-.Pq Qq Sy \&:
-character to distinguish them from native properties. They may contain lowercase
-letters, numbers, and the following punctuation characters: colon
-.Pq Qq Sy \&: ,
-dash
-.Pq Qq Sy - ,
-period
-.Pq Qq Sy \&. ,
-and underscore
-.Pq Qq Sy _ .
-The expected convention is that the property name is divided into two portions
-such as
-.Em module Ns : Ns Em property ,
-but this namespace is not enforced by ZFS.
-User property names can be at most 256 characters, and cannot begin with a dash
-.Pq Qq Sy - .
-.Pp
-When making programmatic use of user properties, it is strongly suggested to use
-a reversed
-.Sy DNS
-domain name for the
-.Em module
-component of property names to reduce the chance that two
-independently-developed packages use the same property name for different
-purposes.
-.Pp
-The values of user properties are arbitrary strings, are always inherited, and
-are never validated. All of the commands that operate on properties
-.Po Nm zfs Cm list ,
-.Nm zfs Cm get ,
-.Nm zfs Cm set ,
-and so forth
-.Pc
-can be used to manipulate both native properties and user properties. Use the
-.Nm zfs Cm inherit
-command to clear a user property. If the property is not defined in any parent
-dataset, it is removed entirely. Property values are limited to 8192 bytes.
-.Ss ZFS Volumes as Swap or Dump Devices
-During an initial installation a swap device and dump device are created on ZFS
-volumes in the ZFS root pool. By default, the swap area size is based on 1/2 the
-size of physical memory up to 2 Gbytes. The size of the dump device depends on
-the kernel's requirements at installation time. Separate ZFS volumes must be
-used for the swap area and dump devices. Do not swap to a file on a ZFS file
-system. A ZFS swap file configuration is not supported.
-.Pp
-If you need to change your swap area or dump device after the system is
-installed or upgraded, use the
-.Xr swap 1M
-and
-.Xr dumpadm 1M
-commands.
-.Sh SUBCOMMANDS
-All subcommands that modify state are logged persistently to the pool in their
-original form.
-.Bl -tag -width ""
-.It Nm Fl
+     devices                 devices/nodevices
+     exec                    exec/noexec
+     readonly                ro/rw
+     setuid                  setuid/nosetuid
+     xattr                   xattr/noxattr
+     atime                   atime/noatime
+     relatime                relatime/norelatime
+     nbmand                  nbmand/nonbmand
+.fi
+.in -2
+.sp
+
+.sp
+.LP
+In addition, these options can be set on a per-mount basis using the \fB-o\fR option, without affecting the property that is stored on disk. The values specified on the command line override the values stored in the dataset. The \fB-nosuid\fR option is an alias for \fBnodevices,nosetuid\fR. These properties are reported as "temporary" by the \fBzfs get\fR command. If the properties are changed while the dataset is mounted, the new setting overrides any temporary settings.
+.SS "User Properties"
+.LP
+In addition to the standard native properties, \fBZFS\fR supports arbitrary user properties. User properties have no effect on \fBZFS\fR behavior, but applications or administrators can use them to annotate datasets (file systems, volumes, and snapshots).
+.sp
+.LP
+User property names must contain a colon (\fB:\fR) character to distinguish them from native properties. They may contain lowercase letters, numbers, and the following punctuation characters: colon (\fB:\fR), dash (\fB-\fR), period (\fB\&.\fR), and underscore (\fB_\fR). The expected convention is that the property name is divided into two portions such as \fImodule\fR\fB:\fR\fIproperty\fR, but this namespace is not enforced by \fBZFS\fR. User property names can be at most 256 characters, and cannot begin with a dash (\fB-\fR).
+.sp
+.LP
+When making programmatic use of user properties, it is strongly suggested to use a reversed \fBDNS\fR domain name for the \fImodule\fR component of property names to reduce the chance that two independently-developed packages use the same property name for different purposes. For example, property names beginning with \fBcom.sun\fR. are reserved for use by Oracle Corporation (which acquired Sun Microsystems).
+.sp
+.LP
+The values of user properties are arbitrary strings, are always inherited, and are never validated. All of the commands that operate on properties (\fBzfs list\fR, \fBzfs get\fR, \fBzfs set\fR, and so forth) can be used to manipulate both native properties and user properties. Use the \fBzfs inherit\fR command to clear a user property . If the property is not defined in any parent dataset, it is removed entirely. Property values are limited to 1024 characters.
+.SS "ZFS Volumes as Swap"
+.LP
+\fBZFS\fR volumes may be used as Linux swap devices.  After creating the volume
+with the \fBzfs create\fR command set up and enable the swap area using the
+\fBmkswap\fR(8) and \fBswapon\fR(8) commands.  Do not swap to a file on a
+\fBZFS\fR file system. A \fBZFS\fR swap file configuration is not supported.
+.SH SUBCOMMANDS
+.LP
+All subcommands that modify state are logged persistently to the pool in their original form.
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs ?\fR\fR
+.ad
+.sp .6
+.RS 4n
 Displays a help message.
 .It Xo
 .Nm

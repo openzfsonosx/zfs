@@ -33,10 +33,8 @@
 #include <libzfs.h>
 #include <locale.h>
 
-
-// THIS FILE IS VERY LINUX, MAKE OSX VERSION
-
-#if 0
+#define	ZS_COMMENT	0x00000000	/* comment */
+#define	ZS_ZFSUTIL	0x00000001	/* caller is zfs(8) */
 
 libzfs_handle_t *g_zfs;
 
@@ -340,9 +338,29 @@ mtab_update(char *dataset, char *mntpoint, char *type, char *mntopts)
 	return (MOUNT_SUCCESS);
 }
 
+static void
+append_mntopt(const char *name, const char *val, char *mntopts,
+    char *mtabopt, boolean_t quote)
+{
+	char tmp[MNT_LINE_MAX];
+
+	snprintf(tmp, MNT_LINE_MAX, quote ? ",%s=\"%s\"" : ",%s=%s", name, val);
+
+	if (mntopts)
+		strlcat(mntopts, tmp, MNT_LINE_MAX);
+
+	if (mtabopt)
+		strlcat(mtabopt, tmp, MNT_LINE_MAX);
+}
 
 #endif
 
+	if (zfs_prop_get(zhp, zpt, context, sizeof (context),
+	    NULL, NULL, 0, B_FALSE) == 0) {
+		if (strcmp(context, "none") != 0)
+		    append_mntopt(name, context, mntopts, mtabopt, B_TRUE);
+	}
+}
 
 int
 main(int argc, char **argv)

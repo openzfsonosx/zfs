@@ -703,38 +703,12 @@ static int
 zfs_register_callbacks(struct mount *vfsp)
 {
 	struct dsl_dataset *ds = NULL;
-
-	objset_t *os = NULL;
-	zfsvfs_t *zfsvfs = NULL;
-	boolean_t readonly = B_FALSE;
-	boolean_t do_readonly = B_FALSE;
-	boolean_t setuid = B_FALSE;
-	boolean_t do_setuid = B_FALSE;
-	boolean_t exec = B_FALSE;
-	boolean_t do_exec = B_FALSE;
-	boolean_t devices = B_FALSE;
-	boolean_t do_devices = B_FALSE;
-	boolean_t xattr = B_FALSE;
-	boolean_t do_xattr = B_FALSE;
-	boolean_t atime = B_FALSE;
-	boolean_t do_atime = B_FALSE;
-	boolean_t finderbrowse = B_FALSE;
-	boolean_t do_finderbrowse = B_FALSE;
-	boolean_t ignoreowner = B_FALSE;
-	boolean_t do_ignoreowner = B_FALSE;
+	objset_t *os = zsb->z_os;
+	zfs_mntopts_t *zmo = zsb->z_mntopts;
 	int error = 0;
 
-	ASSERT(vfsp);
-    zfsvfs = vfs_fsprivate(vfsp);
-	ASSERT(zfsvfs);
-	os = zfsvfs->z_os;
-
-	/*
-	 * This function can be called for a snapshot when we update snapshot's
-	 * mount point, which isn't really supported.
-	 */
-	if (dmu_objset_is_snapshot(os))
-		return (EOPNOTSUPP);
+	ASSERT(zsb);
+	ASSERT(zmo);
 
 	/*
 	 * The act of registering our callbacks will destroy any mount
@@ -742,110 +716,10 @@ zfs_register_callbacks(struct mount *vfsp)
 	 * of mount options, we stash away the current values and
 	 * restore them after we register the callbacks.
 	 */
-#define vfs_optionisset(X, Y, Z) (vfs_flags(X)&(Y))
-
-	if (vfs_optionisset(vfsp, MNT_RDONLY, NULL) ||
-	    !spa_writeable(dmu_objset_spa(os))) {
-		readonly = B_TRUE;
-		do_readonly = B_TRUE;
-#ifndef __APPLE__
-		/* Apple has no option to pass RW to mount, ie
-		 * zfs set readonly=on D ; zfs mount -o rw D
-		 */
-	} else if (vfs_optionisset(vfsp, MNTOPT_RW, NULL)) {
-		readonly = B_FALSE;
-		do_readonly = B_TRUE;
-#endif
+	if (zfs_is_readonly(zsb) || !spa_writeable(dmu_objset_spa(os))) {
+		zmo->z_do_readonly = B_TRUE;
+		zmo->z_readonly = B_TRUE;
 	}
-	if (vfs_optionisset(vfsp, MNT_NODEV, NULL)) {
-		devices = B_FALSE;
-		do_devices = B_TRUE;
-#ifndef __APPLE__
-	} else {
-        devices = B_TRUE;
-        do_devices = B_TRUE;
-#endif
-    }
-	/* xnu SETUID, not IllumOS SUID */
-	if (vfs_optionisset(vfsp, MNT_NOSUID, NULL)) {
-		setuid = B_FALSE;
-		do_setuid = B_TRUE;
-#ifndef __APPLE__
-	} else {
-        setuid = B_TRUE;
-        do_setuid = B_TRUE;
-#endif
-    }
-	if (vfs_optionisset(vfsp, MNT_NOEXEC, NULL)) {
-		exec = B_FALSE;
-		do_exec = B_TRUE;
-#ifndef __APPLE__
-	} else {
-		exec = B_TRUE;
-		do_exec = B_TRUE;
-#endif
-	}
-	if (vfs_optionisset(vfsp, MNT_NOUSERXATTR, NULL)) {
-		xattr = B_FALSE;
-		do_xattr = B_TRUE;
-#ifndef __APPLE__
-	} else {
-		xattr = B_TRUE;
-		do_xattr = B_TRUE;
-#endif
-	}
-	if (vfs_optionisset(vfsp, MNT_NOATIME, NULL)) {
-		atime = B_FALSE;
-		do_atime = B_TRUE;
-#ifndef __APPLE__
-	} else {
-		atime = B_TRUE;
-		do_atime = B_TRUE;
-#endif
-	}
-	if (vfs_optionisset(vfsp, MNT_DONTBROWSE, NULL)) {
-		finderbrowse = B_FALSE;
-		do_finderbrowse = B_TRUE;
-#ifndef __APPLE__
-	} else {
-		finderbrowse = B_TRUE;
-		do_finderbrowse = B_TRUE;
-#endif
-	}
-	if (vfs_optionisset(vfsp, MNT_IGNORE_OWNERSHIP, NULL)) {
-		ignoreowner = B_TRUE;
-		do_ignoreowner = B_TRUE;
-#ifndef __APPLE__
-	} else {
-		ignoreowner = B_FALSE;
-		do_ignoreowner = B_TRUE;
-#endif
-	}
-
-	/*
-	 * nbmand is a special property.  It can only be changed at
-	 * mount time.
-	 *
-	 * This is weird, but it is documented to only be changeable
-	 * at mount time.
-	 */
-#ifdef __LINUX__
-	uint64_t nbmand = 0;
-
-	if (vfs_optionisset(vfsp, MNTOPT_NONBMAND, NULL)) {
-		nbmand = B_FALSE;
-	} else if (vfs_optionisset(vfsp, MNTOPT_NBMAND, NULL)) {
-		nbmand = B_TRUE;
-	} else {
-		char osname[ZFS_MAX_DATASET_NAME_LEN];
-
-		dmu_objset_name(os, osname);
-		if (error = dsl_prop_get_integer(osname, "nbmand", &nbmand,
-		    NULL)) {
-			return (error);
-		}
-	}
-#endif
 
 	/*
 	 * Register property callbacks.
@@ -897,28 +771,22 @@ zfs_register_callbacks(struct mount *vfsp)
 	/*
 	 * Invoke our callbacks to restore temporary mount options.
 	 */
-	if (do_readonly)
-		readonly_changed_cb(zfsvfs, readonly);
-	if (do_setuid)
-		setuid_changed_cb(zfsvfs, setuid);
-	if (do_exec)
-		exec_changed_cb(zfsvfs, exec);
-	if (do_devices)
-		devices_changed_cb(zfsvfs, devices);
-	if (do_xattr)
-		xattr_changed_cb(zfsvfs, xattr);
-	if (do_atime)
-		atime_changed_cb(zfsvfs, atime);
-#ifdef __APPLE__
-	if (do_finderbrowse)
-		finderbrowse_changed_cb(zfsvfs, finderbrowse);
-	if (do_ignoreowner)
-		ignoreowner_changed_cb(zfsvfs, ignoreowner);
-#endif
-#ifndef __APPLE__
-
-	nbmand_changed_cb(zfsvfs, nbmand);
-#endif
+	if (zmo->z_do_readonly)
+		readonly_changed_cb(zsb, zmo->z_readonly);
+	if (zmo->z_do_setuid)
+		setuid_changed_cb(zsb, zmo->z_setuid);
+	if (zmo->z_do_exec)
+		exec_changed_cb(zsb, zmo->z_exec);
+	if (zmo->z_do_devices)
+		devices_changed_cb(zsb, zmo->z_devices);
+	if (zmo->z_do_xattr)
+		xattr_changed_cb(zsb, zmo->z_xattr);
+	if (zmo->z_do_atime)
+		atime_changed_cb(zsb, zmo->z_atime);
+	if (zmo->z_do_relatime)
+		relatime_changed_cb(zsb, zmo->z_relatime);
+	if (zmo->z_do_nbmand)
+		nbmand_changed_cb(zsb, zmo->z_nbmand);
 
 	return (0);
 
@@ -1220,13 +1088,26 @@ zfs_owner_overquota(zfsvfs_t *zfsvfs, znode_t *zp, boolean_t isgroup)
 	return (zfs_fuid_overquota(zfsvfs, isgroup, fuid));
 }
 
-/*
- * Associate this zfsvfs with the given objset, which must be owned.
- * This will cache a bunch of on-disk state from the objset in the
- * zfsvfs.
- */
-static int
-zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
+zfs_mntopts_t *
+zfs_mntopts_alloc(void)
+{
+	return (kmem_zalloc(sizeof (zfs_mntopts_t), KM_SLEEP));
+}
+
+void
+zfs_mntopts_free(zfs_mntopts_t *zmo)
+{
+	if (zmo->z_osname)
+		strfree(zmo->z_osname);
+
+	if (zmo->z_mntpoint)
+		strfree(zmo->z_mntpoint);
+
+	kmem_free(zmo, sizeof (zfs_mntopts_t));
+}
+
+int
+zfs_sb_create(const char *osname, zfs_mntopts_t *zmo, zfs_sb_t **zsbp)
 {
 	int error;
 	uint64_t val;
@@ -1257,10 +1138,32 @@ zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 		return (error);
 	zfsvfs->z_norm = (int)val;
 
-	error = zfs_get_zplprop(os, ZFS_PROP_UTF8ONLY, &val);
-	if (error != 0)
-		return (error);
-	zfsvfs->z_utf8 = (val != 0);
+	/*
+	 * Optional temporary mount options, free'd in zfs_sb_free().
+	 */
+	zsb->z_mntopts = (zmo ? zmo : zfs_mntopts_alloc());
+
+	/*
+	 * Initialize the zfs-specific filesystem structure.
+	 * Should probably make this a kmem cache, shuffle fields,
+	 * and just bzero up to z_hold_mtx[].
+	 */
+	zsb->z_sb = NULL;
+	zsb->z_parent = zsb;
+	zsb->z_max_blksz = SPA_OLD_MAXBLOCKSIZE;
+	zsb->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
+	zsb->z_os = os;
+
+	error = zfs_get_zplprop(os, ZFS_PROP_VERSION, &zsb->z_version);
+	if (error) {
+		goto out;
+	} else if (zsb->z_version > ZPL_VERSION) {
+		error = SET_ERROR(ENOTSUP);
+		goto out;
+	}
+	if ((error = zfs_get_zplprop(os, ZFS_PROP_NORMALIZE, &zval)) != 0)
+		goto out;
+	zsb->z_norm = (int)zval;
 
 	error = zfs_get_zplprop(os, ZFS_PROP_CASE, &val);
 	if (error != 0)
@@ -1506,6 +1409,7 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_destroy(&zsb->z_hold_mtx[i]);
 	vmem_free(zsb->z_hold_mtx, sizeof (kmutex_t) * ZFS_OBJ_MTX_SZ);
+	zfs_mntopts_free(zsb->z_mntopts);
 	kmem_free(zsb, sizeof (zfs_sb_t));
 }
 
@@ -2919,19 +2823,18 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
 		searchnode.hl_linkid = ino;
 
-		rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
-		findnode = avl_find(&zfsvfs->z_hardlinks_linkid, &searchnode, &loc);
-		rw_exit(&zfsvfs->z_hardlinks_lock);
+int
+zfs_domount(struct super_block *sb, zfs_mntopts_t *zmo, int silent)
+{
+	const char *osname = zmo->z_osname;
+	zfs_sb_t *zsb;
+	struct inode *root_inode;
+	uint64_t recordsize;
+	int error;
 
-		if (findnode) {
-			dprintf("ZFS: vget found (%llu, %llu, %u): '%s'\n",
-				   findnode->hl_parent,
-				   findnode->hl_fileid, findnode->hl_linkid,
-				   findnode->hl_name);
-			// Lookup the actual zp instead
-			ino = findnode->hl_fileid;
-		} // findnode
-	} // MSB set
+	error = zfs_sb_create(osname, zmo, &zsb);
+	if (error)
+		return (error);
 
 
 	/* We can not be locked during zget. */
@@ -3038,37 +2941,16 @@ zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_
 }
 #endif /* __APPLE__ */
 
-
-#ifndef __APPLE__
-static int
-zfs_checkexp(vfs_t *vfsp, struct sockaddr *nam, int *extflagsp,
-    struct ucred **credanonp, int *numsecflavors, int **secflavors)
-{
-	zfsvfs_t *zfsvfs = vfsp->vfs_data;
-
-	/*
-	 * If this is regular file system vfsp is the same as
-	 * zfsvfs->z_parent->z_vfs, but if it is snapshot,
-	 * zfsvfs->z_parent->z_vfs represents parent file system
-	 * which we have to use here, because only this file system
-	 * has mnt_export configured.
-	 */
-	return (vfs_stdcheckexp(zfsvfs->z_parent->z_vfs, nam, extflagsp,
-	    credanonp, numsecflavors, secflavors));
-}
-
-CTASSERT(SHORT_FID_LEN <= sizeof(struct fid));
-CTASSERT(LONG_FID_LEN <= sizeof(struct fid));
-
-#endif
-
-#ifdef __APPLE__
-
 int
-zfs_vfs_setattr(__unused struct mount *mp, __unused struct vfs_attr *fsap, __unused vfs_context_t context)
+zfs_remount(struct super_block *sb, int *flags, zfs_mntopts_t *zmo)
 {
-	// 10a286 bits has an implementation of this
-	return (ENOTSUP);
+	zfs_sb_t *zsb = sb->s_fs_info;
+	int error;
+
+	zfs_unregister_callbacks(zsb);
+	error = zfs_register_callbacks(zsb);
+
+	return (error);
 }
 
 /*
