@@ -885,11 +885,6 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 
 
 
-
-	zfs_znode_getvnode(zp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
-
-
-
 #endif /* Apple */
 
 	mutex_enter(&zfsvfs->z_znodes_lock);
@@ -1156,19 +1151,22 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	VERIFY(sa_replace_all_by_template(sa_hdl, sa_attrs, cnt, tx) == 0);
 
 	if (!(flag & IS_ROOT_NODE)) {
-
+		struct vnode *vp = NULL;
 		/*
 		 * We must not hold any locks while calling vnode_create inside
 		 * zfs_znode_alloc(), as it may call either of vnop_reclaim, or
-		 * vnop_fsync.
+		 * vnop_fsync. If it is not enough to just release ZFS_OBJ_HOLD
+		 * we will have to attach the vnode after the dmu_commit like
+		 * maczfs does, in each vnop caller.
 		 */
-		// zfs_release_sa_handle(sa_hdl, db, FTAG);
 		*zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, sa_hdl);
+		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj);
 		ASSERT(*zpp != NULL);
-		// ZFS_OBJ_HOLD_ENTER(zfsvfs, obj);
-		// VERIFY(0 == sa_buf_hold(zfsvfs->z_os, obj, NULL, &db));
-		// VERIFY(0 == sa_handle_get_from_db(zfsvfs->z_os, db, NULL,
-		// SA_HDL_SHARED, &sa_hdl));
+
+		zfs_znode_getvnode(*zpp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
+
+		ZFS_OBJ_HOLD_ENTER(zfsvfs, obj);
+
 	} else {
 		/*
 		 * If we are creating the root node, the "parent" we
@@ -1501,7 +1499,12 @@ again:
 	if (zp == NULL) {
 		err = SET_ERROR(ENOENT);
 	} else {
+		struct vnode *vp = NULL;
 		*zpp = zp;
+		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+		getnewvnode_drop_reserve();
+		zfs_znode_getvnode(zp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
+		return (err);
 	}
 	if (err == 0) {
 #ifndef __APPLE__ /* Already associated with mount from vnode_create */
