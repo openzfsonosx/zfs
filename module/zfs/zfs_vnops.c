@@ -5180,10 +5180,16 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
+	int need_unlock = 0;
 
-	rw_enter(&zsb->z_teardown_inactive_lock, RW_READER);
+	/* Only read lock if we haven't already write locked, e.g. rollback */
+	if (!RW_WRITE_HELD(&zsb->z_teardown_inactive_lock)) {
+		need_unlock = 1;
+		rw_enter(&zsb->z_teardown_inactive_lock, RW_READER);
+	}
 	if (zp->z_sa_hdl == NULL) {
-		rw_exit(&zsb->z_teardown_inactive_lock);
+		if (need_unlock)
+			rw_exit(&zsb->z_teardown_inactive_lock);
 		return;
 	}
 	mutex_exit(&zp->z_lock);
@@ -5205,7 +5211,10 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 			dmu_tx_commit(tx);
 		}
 	}
-	rw_exit(&zfsvfs->z_teardown_inactive_lock);
+
+	zfs_zinactive(zp);
+	if (need_unlock)
+		rw_exit(&zsb->z_teardown_inactive_lock);
 }
 
 #ifdef sun
