@@ -6279,26 +6279,9 @@ zfs_attach(void)
 static void
 zfs_detach(void)
 {
-#ifdef linux
-	int error;
-#endif
 	zfsdev_state_t *zs, *zsprev = NULL;
 
-#ifdef linux
-	error = misc_deregister(&zfs_misc);
-	if (error != 0)
-		printk(KERN_INFO "ZFS: misc_deregister() failed %d\n", error);
-#elif defined(__APPLE__)
-	if (zfs_devnode) {
-		devfs_remove(zfs_devnode);
-		zfs_devnode = NULL;
-	}
-	if (zfs_major) {
-		(void) cdevsw_remove(zfs_major, &zfs_cdevsw);
-		zfs_major = 0;
-	}
-#endif
-
+	misc_deregister(&zfs_misc);
 	mutex_destroy(&zfsdev_state_lock);
 
 	for (zs = zfsdev_state_list; zs != NULL; zs = zs->zs_next) {
