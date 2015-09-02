@@ -576,7 +576,7 @@ zfs_purgedir(znode_t *dzp)
 	for (zap_cursor_init(&zc, zfsvfs->z_os, dzp->z_id);
 	    (error = zap_cursor_retrieve(&zc, &zap)) == 0;
 	    zap_cursor_advance(&zc)) {
-		error = zfs_zget(zfsvfs,
+		error = zfs_zget_sans_vnode(zfsvfs,
 		    ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
 		if (error) {
 #ifdef __APPLE__
@@ -589,10 +589,13 @@ zfs_purgedir(znode_t *dzp)
 			continue;
 		}
 
-/*
+#ifdef __APPLE__
+		ASSERT(S_ISREG(xzp->z_mode) ||
+			   S_ISLNK(xzp->z_mode));
+#else
 	    ASSERT((ZTOV(xzp)->v_type == VREG) ||
-		    (ZTOV(xzp)->v_type == VLNK));
-*/
+			   (ZTOV(xzp)->v_type == VLNK));
+#endif
 
 		tx = dmu_tx_create(zfsvfs->z_os);
 		dmu_tx_hold_sa(tx, dzp->z_sa_hdl, B_FALSE);
@@ -606,7 +609,16 @@ zfs_purgedir(znode_t *dzp)
 		if (error) {
 			dmu_tx_abort(tx);
 			//VN_RELE(ZTOV(xzp)); // async
+#ifdef __APPLE__
+			if (ZTOV(xzp) == NULL) {
+				zfs_zinactive(xzp);
+			} else {
+				VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
+			}
+#else
 			VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
+#endif
+
 			skipped += 1;
 			continue;
 		}
@@ -619,8 +631,15 @@ zfs_purgedir(znode_t *dzp)
 			skipped += 1;
 		dmu_tx_commit(tx);
 
-		//VN_RELE(ZTOV(xzp)); // async
+#ifdef __APPLE__
+		if (ZTOV(xzp) == NULL) {
+			zfs_zinactive(xzp);
+		} else {
+			VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
+		}
+#else
 		VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
+#endif
 	}
 	zap_cursor_fini(&zc);
 	if (error != ENOENT)
@@ -770,7 +789,12 @@ zfs_link_create(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	vnode_t *vp = ZTOV(zp);
 	uint64_t value;
+#ifdef __APPLE__
+	/* OS X - don't access the vnode here since it might not be attached. */
+	int zp_is_dir = S_ISDIR(zp->z_mode);
+#else
 	int zp_is_dir = (vnode_isdir(vp));
+#endif
 	sa_bulk_attr_t bulk[5];
 	uint64_t mtime[2], ctime[2];
 	int count = 0;
@@ -892,7 +916,12 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 	znode_t *dzp = dl->dl_dzp;
 	zfsvfs_t *zfsvfs = dzp->z_zfsvfs;
 	vnode_t *vp = ZTOV(zp);
+#ifdef __APPLE__
+	/* OS X - don't access the vnode here since it might not be attached. */
+	int zp_is_dir = S_ISDIR(zp->z_mode);
+#else
 	int zp_is_dir = vnode_isdir((vp));
+#endif
 	boolean_t unlinked = B_FALSE;
 	sa_bulk_attr_t bulk[5];
 	uint64_t mtime[2], ctime[2];
@@ -1066,7 +1095,12 @@ zfs_make_xattrdir(znode_t *zp, vattr_t *vap, vnode_t **xvpp, cred_t *cr)
 
 	zfs_acl_ids_free(&acl_ids);
 	dmu_tx_commit(tx);
-
+#ifdef __APPLE__
+	/*
+	 * Obtain and attach the vnode after committing the transaction
+	 */
+	zfs_znode_getvnode(xzp, zfsvfs);
+#endif
 	*xvpp = ZTOV(xzp);
 
 	return (0);

@@ -99,14 +99,6 @@ struct zfsvfs {
 	uint64_t	z_freespace_notify_desiredlevel; /* HFSIOC_ vfs notification - number of free blocks */
         kmutex_t	    z_lock;
 #ifdef __APPLE__
-        kmutex_t	    z_reclaim_list_lock; /* lock for using z_reclaim_list*/
-        list_t          z_reclaim_znodes;/* all reclaimed vnodes in the fs*/
-        boolean_t       z_reclaim_thread_exit;
-        kmutex_t		z_reclaim_thr_lock;
-    	kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
-
-        kmutex_t	    z_vnodecreate_lock; /*lock for using z_vnodecreate_list*/
-        list_t          z_vnodecreate_list;/* all threads in vnode_create */
         boolean_t       z_xattr;        /* enable atimes mount option */
 
 #ifdef APPLE_SA_RECOVER

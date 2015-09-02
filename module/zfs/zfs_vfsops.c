@@ -1339,26 +1339,14 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 
 	mutex_init(&zfsvfs->z_znodes_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&zfsvfs->z_lock, NULL, MUTEX_DEFAULT, NULL);
-	mutex_init(&zfsvfs->z_reclaim_list_lock, NULL, MUTEX_DEFAULT, NULL);
-	mutex_init(&zfsvfs->z_reclaim_thr_lock, NULL, MUTEX_DEFAULT, NULL);
-	mutex_init(&zfsvfs->z_vnodecreate_lock, NULL, MUTEX_DEFAULT, NULL);
-	cv_init(&zfsvfs->z_reclaim_thr_cv, NULL, CV_DEFAULT, NULL);
 	list_create(&zfsvfs->z_all_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_node));
 
-	list_create(&zfsvfs->z_reclaim_znodes, sizeof (znode_t),
-	    offsetof(znode_t, z_link_reclaim_node));
-	list_create(&zfsvfs->z_vnodecreate_list, sizeof (struct vnodecreate),
-	    offsetof(struct vnodecreate, link));
 	rrm_init(&zfsvfs->z_teardown_lock, B_FALSE);
 	rw_init(&zfsvfs->z_teardown_inactive_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zfsvfs->z_fuid_lock, NULL, RW_DEFAULT, NULL);
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_init(&zfsvfs->z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
-
-    zfsvfs->z_reclaim_thread_exit = FALSE;
-	(void) thread_create(NULL, 0, vnop_reclaim_thread, zfsvfs, 0, &p0,
-	    TS_RUN, minclsyspri);
 
 	*zfvp = zfsvfs;
 	return (0);
@@ -1466,38 +1454,9 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 
 	zfs_fuid_destroy(zfsvfs);
 
-	/* Wait for reclaim to empty, before holding locks */
-	int count = 0;
-	while(!list_empty(&zfsvfs->z_all_znodes) ||
-		  !list_empty(&zfsvfs->z_reclaim_znodes)) {
-		cv_signal(&zfsvfs->z_reclaim_thr_cv);
-		printf("ZFS: Waiting for reclaim to drain: %d + %d\n",
-			   list_empty(&zfsvfs->z_all_znodes),
-			   list_empty(&zfsvfs->z_reclaim_znodes));
-		delay(hz);
-		if (count++ > 10) break;
-	}
-
-    dprintf("stopping reclaim thread\n");
-	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
-    zfsvfs->z_reclaim_thread_exit = TRUE;
-	cv_signal(&zfsvfs->z_reclaim_thr_cv);
-	while (zfsvfs->z_reclaim_thread_exit == TRUE)
-		cv_wait(&zfsvfs->z_reclaim_thr_cv, &zfsvfs->z_reclaim_thr_lock);
-	mutex_exit(&zfsvfs->z_reclaim_thr_lock);
-	dprintf("Complete\n");
-
-	mutex_destroy(&zfsvfs->z_reclaim_thr_lock);
-	cv_destroy(&zfsvfs->z_reclaim_thr_cv);
-    dprintf("Stopped, then releasing node.\n");
-
 	mutex_destroy(&zfsvfs->z_znodes_lock);
 	mutex_destroy(&zfsvfs->z_lock);
-	mutex_destroy(&zfsvfs->z_reclaim_list_lock);
-	mutex_destroy(&zfsvfs->z_vnodecreate_lock);
 	list_destroy(&zfsvfs->z_all_znodes);
-	list_destroy(&zfsvfs->z_reclaim_znodes);
-	list_destroy(&zfsvfs->z_vnodecreate_list);
 	rrm_destroy(&zfsvfs->z_teardown_lock);
 	rw_destroy(&zfsvfs->z_teardown_inactive_lock);
 	rw_destroy(&zfsvfs->z_fuid_lock);
@@ -2591,7 +2550,6 @@ zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
  * Note, if 'unmounting' if FALSE, we return with the 'z_teardown_lock'
  * and 'z_teardown_inactive_lock' held.
  */
-extern uint64_t vnop_num_reclaims;
 static int
 zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 {
@@ -2600,7 +2558,6 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
      * We have experienced deadlocks with dmu_recv_end happening between
      * suspend_fs() and resume_fs(). Clearly something is not quite ready
      * so we will wait for pools to be synced first.
-     * It could also be related to the reclaim-list size.
      * This is considered a temporary solution until we can work out
      * the full issue.
      */
@@ -2612,20 +2569,6 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 	 */
 	if (zfsvfs->z_os)
 		taskq_wait(dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
-
-
-	/* Wait for reclaim to empty, before holding locks, but only
-	 * if we are unmounting, otherwise suspend will delay */
-	int count = 0;
-	while(unmounting && (!list_empty(&zfsvfs->z_all_znodes) ||
-					  !list_empty(&zfsvfs->z_reclaim_znodes))) {
-		cv_signal(&zfsvfs->z_reclaim_thr_cv);
-		printf("ZFS:Waiting for reclaim to drain: %d + %d\n",
-			   list_empty(&zfsvfs->z_all_znodes),
-			   list_empty(&zfsvfs->z_reclaim_znodes));
-		delay(hz);
-		if (count++ > 10) break;
-	}
 
 	rrm_enter(&zfsvfs->z_teardown_lock, RW_WRITER, FTAG);
 
@@ -2688,22 +2631,6 @@ zfsvfs_teardown(zfsvfs_t *zfsvfs, boolean_t unmounting)
 		zfsvfs->z_unmounted = B_TRUE;
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
 		rrm_exit(&zfsvfs->z_teardown_lock, FTAG);
-#ifdef __APPLE__
-		if (!list_empty(&zfsvfs->z_reclaim_znodes)) {
-			printf("ZFS: Attempting to purge reclaim list manually\n");
-			while(1) {
-				mutex_enter(&zfsvfs->z_reclaim_list_lock);
-				zp = list_head(&zfsvfs->z_reclaim_znodes);
-				if (zp) {
-					list_remove(&zfsvfs->z_reclaim_znodes, zp);
-				}
-				mutex_exit(&zfsvfs->z_reclaim_list_lock);
-				if (!zp) break;
-				zfs_znode_free(zp);
-			}
-			printf("ZFS: Done.\n");
-		}
-#endif
 	}
 
 	/*
@@ -2864,12 +2791,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 			dprintf("ZFS: '%s' set lastunmount to 0x%lx (%d)\n",
 					osname, zfsvfs->z_last_unmount_time, error);
 		}
-
-		dprintf("Signalling reclaim sync\n");
-		/* We just did final sync, tell reclaim to mop it up
-		 * proper wait for reclaim is done in zfsvfs_teardown()
-		 */
-		cv_signal(&zfsvfs->z_reclaim_thr_cv);
 
 #endif
 

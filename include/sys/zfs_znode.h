@@ -395,6 +395,10 @@ extern int	zfs_freesp(znode_t *, uint64_t, uint64_t, int, boolean_t);
 extern void	zfs_znode_init(void);
 extern void	zfs_znode_fini(void);
 extern int zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp);
+#ifdef __APPLE__
+extern int      zfs_zget_sans_vnode(zfsvfs_t *, uint64_t, znode_t **);
+extern int      zfs_zget_want_unlinked(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp);
+#endif
 extern int	zfs_rezget(znode_t *);
 extern void	zfs_zinactive(znode_t *);
 extern void	zfs_znode_delete(znode_t *, dmu_tx_t *);
@@ -454,7 +458,6 @@ extern void zfs_znode_free(znode_t *zp);
 void zfs_perm_init(znode_t *zp, znode_t *parent, int flag,
                    vattr_t *vap, dmu_tx_t *tx, cred_t *cr);
 void zfs_time_stamper(znode_t *zp, uint_t flag, dmu_tx_t *tx);
-int zfs_attach_vnode(znode_t *zp);
 uint32_t zfs_getbsdflags(znode_t *zp);
 void zfs_setbsdflags(znode_t *zp, uint32_t bsdflags);
 void zfs_time_stamper_locked(znode_t *zp, uint_t flag, dmu_tx_t *tx);

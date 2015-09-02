@@ -501,69 +501,6 @@ mappedread_sf(vnode_t *vp, int nbytes, uio_t *uio)
 }
 #endif
 
-/*
- * When a file is memory mapped, we must keep the IO data synchronized
- * between the DMU cache and the memory mapped pages.  What this means:
- *
- * On Read:	We "read" preferentially from memory mapped pages,
- *		else we default from the dmu buffer.
- *
- * NOTE: We will always "break up" the IO into PAGESIZE uiomoves when
- *	 the file is memory mapped.
- */
-#ifdef __FreeBSD__
-static int
-mappedread(vnode_t *vp, int nbytes, uio_t *uio)
-{
-	struct address_space *mp = ip->i_mapping;
-	struct page *pp;
-	znode_t *zp = ITOZ(ip);
-	int64_t	start, off;
-	uint64_t bytes;
-	int len = nbytes;
-	int error = 0;
-	znode_t *zp = VTOZ(vp);
-	objset_t *os = zp->z_zfsvfs->z_os;
-	vm_object_t obj;
-	int64_t start;
-	caddr_t va;
-	int len = nbytes;
-	int off;
-
-	ASSERT(vp->v_mount != NULL);
-	obj = vp->v_object;
-	ASSERT(obj != NULL);
-
-	start = uio->uio_loffset;
-	off = start & PAGEOFFSET;
-	zfs_vmobject_wlock(obj);
-	for (start &= PAGEMASK; len > 0; start += PAGESIZE) {
-		page_t *pp;
-		uint64_t bytes = MIN(PAGESIZE - off, len);
-
-		if (pp = page_hold(vp, start)) {
-			struct sf_buf *sf;
-			caddr_t va;
-
-			zfs_vmobject_wunlock(obj);
-			va = zfs_map_page(pp, &sf);
-			error = uiomove(va + off, bytes, UIO_READ, uio);
-			zfs_unmap_page(sf);
-			zfs_vmobject_wlock(obj);
-			page_unhold(pp);
-		} else {
-			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
-			    uio, bytes);
-		}
-		len -= bytes;
-		off = 0;
-		if (error)
-			break;
-	}
-	zfs_vmobject_wunlock(obj);
-	return (error);
-}
-#endif
 
 static int
 mappedread(vnode_t *vp, int nbytes, struct uio *uio)
@@ -1828,6 +1765,12 @@ top:
 		    vsecp, acl_ids.z_fuidp, vap);
 		zfs_acl_ids_free(&acl_ids);
 		dmu_tx_commit(tx);
+
+		/*
+		 * OS X - attach the vnode _after_ committing the transaction
+		 */
+		zfs_znode_getvnode(zp, zfsvfs);
+
 	} else {
 		int aflags = (flag & FAPPEND) ? V_APPEND : 0;
 
@@ -2358,6 +2301,12 @@ top:
 	zfs_acl_ids_free(&acl_ids);
 
 	dmu_tx_commit(tx);
+
+	/*
+	 * OS X - attach the vnode _after_ committing the transaction
+	 */
+	zfs_znode_getvnode(zp, zfsvfs);
+	*vpp = ZTOV(zp);
 
 	zfs_dirent_unlock(dl);
 
@@ -4595,6 +4544,12 @@ top:
 	zfs_acl_ids_free(&acl_ids);
 
 	dmu_tx_commit(tx);
+
+	/*
+	 * OS X - attach the vnode _after_ committing the transaction
+	 */
+	zfs_znode_getvnode(zp, zfsvfs);
+	*vpp = ZTOV(zp);
 
 	zfs_dirent_unlock(dl);
 
