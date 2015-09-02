@@ -688,6 +688,11 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
     zfs_acl_ids_free(&acl_ids);
 	dmu_tx_commit(tx);
 
+	/*
+	 * OS X - attach the vnode _after_ committing the transaction
+	 */
+	zfs_znode_getvnode(xzp, zfsvfs);
+
 	zfs_dirent_unlock(dl);
  out:
     if (cn.pn_buf)

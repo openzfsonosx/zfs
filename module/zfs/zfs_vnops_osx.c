@@ -1016,7 +1016,8 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	 * zil_commit() or we will deadlock. But we know that vnop_reclaim will
 	 * be called next, so we just return success.
 	 */
-	if (vnode_isrecycled(ap->a_vp)) return 0;
+	// this might not be needed now
+	//if (vnode_isrecycled(ap->a_vp)) return 0;
 
 	err = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 
@@ -1449,66 +1450,6 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 }
 
 
-/*
- * This function is faulty and is no longer called.
- * Test case: fsx -S 1385394297
- */
-int
-osx_write_pages(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
-    struct page *pp, dmu_tx_t *tx)
-{
-	dmu_buf_t **dbp;
-	int numbufs, i;
-	int err;
-
-	if (size == 0)
-		return (0);
-
-	err = dmu_buf_hold_array(os, object, offset, size, FALSE, FTAG,
-	    &numbufs, &dbp);
-	if (err)
-		return (err);
-
-	for (i = 0; i < numbufs; i++) {
-		int tocpy, copied, thiscpy;
-		int bufoff;
-		dmu_buf_t *db = dbp[i];
-		caddr_t va;
-
-		ASSERT(size > 0);
-		ASSERT3U(db->db_size, >=, PAGESIZE);
-
-		bufoff = offset - db->db_offset;
-		tocpy = (int)MIN(db->db_size - bufoff, size);
-
-		ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
-		if (tocpy == db->db_size)
-			dmu_buf_will_fill(db, tx);
-		else
-			dmu_buf_will_dirty(db, tx);
-
-		ubc_upl_map((upl_t)pp, (vm_offset_t *)&va);
-		for (copied = 0; copied < tocpy; copied += PAGESIZE) {
-			thiscpy = MIN(PAGESIZE, tocpy - copied);
-			bcopy(va, (char *)db->db_data + bufoff, thiscpy);
-			va += PAGESIZE;
-			bufoff += PAGESIZE;
-		}
-		ubc_upl_unmap((upl_t)pp);
-
-		if (tocpy == db->db_size)
-			dmu_buf_fill_done(db, tx);
-
-		if (err)
-			break;
-
-		offset += tocpy;
-		size -= tocpy;
-	}
-	dmu_buf_rele_array(dbp, numbufs, FTAG);
-
-	return (err);
-}
 
 
 static int
@@ -1764,29 +1705,6 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 * XXX Crib this too, although Apple uses parts of zfs_putapage().
 	 * Break up that function into smaller bits so it can be reused.
 	 */
-
-
-	/*
-	 * If we are coming via the vnode_create()->vclean() path, we can not
-	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
-	 */
-	struct vnodecreate *vcp;
-
-	mutex_enter(&zfsvfs->z_vnodecreate_lock);
-	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
-		 vcp;
-		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
-		if (vcp->thread == current_thread()) break;
-	mutex_exit(&zfsvfs->z_vnodecreate_lock);
-
-	/* If re-entry, vcp will be set, otherwise NULL */
-	if (vcp) {
-		if (!(flags & UPL_NOCOMMIT))
-			(void) ubc_upl_abort(upl, UPL_ABORT_DUMP_PAGES|UPL_ABORT_FREE_ON_EMPTY);
-		dprintf("ZFS: vnop_pageout: re-entry abort on vnode_create\n");
-		return EIO;
-	}
-
 	return zfs_pageout(zfsvfs, zp, upl, upl_offset, ap->a_f_offset,
 					   len, flags);
 
@@ -1930,27 +1848,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	ZFS_ENTER_NOERROR(zfsvfs);
 	if (zfsvfs->z_unmounted) {
 		dprintf("ZFS: vnop_pageoutv2: abort on z_unmounted\n");
-		error = EIO;
-		goto exit_abort;
-	}
-
-
-	/*
-	 * If we are coming via the vnode_create()->vclean() path, we can not
-	 * end up in zil_commit(), and we know vnop_reclaim will soon be called.
-	 */
-	struct vnodecreate *vcp;
-
-	mutex_enter(&zfsvfs->z_vnodecreate_lock);
-	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
-		 vcp;
-		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
-		if (vcp->thread == current_thread()) break;
-	mutex_exit(&zfsvfs->z_vnodecreate_lock);
-
-	/* If re-entry, vcp will be set, otherwise NULL */
-	if (vcp) {
-		printf("ZFS: vnop_pageoutv2: re-entry abort on vnode_create\n");
 		error = EIO;
 		goto exit_abort;
 	}
@@ -2343,99 +2240,7 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 #ifdef _KERNEL
 uint64_t vnop_num_reclaims = 0;
 uint64_t vnop_num_vnodes = 0;
-
-/* If enabled, we will signal the reclaim thread to start right after
- * placing a node on the list, for quicker reclaims
- */
-#define RECLAIM_SIGNAL
-
-/*
- * Thread started to deal with any nodes in z_reclaim_nodes
- */
-void
-vnop_reclaim_thread(void *arg)
-{
-	znode_t *zp;
-	callb_cpr_t cpr;
-	zfsvfs_t *zfsvfs = (zfsvfs_t *)arg;
-/*
- * #define VERBOSE_RECLAIM
- */
-#ifdef VERBOSE_RECLAIM
-	int count = 0;
-	printf("ZFS: reclaim %p thread is alive!\n", zfsvfs);
 #endif
-	CALLB_CPR_INIT(&cpr, &zfsvfs->z_reclaim_thr_lock, callb_generic_cpr,
-	    FTAG);
-	mutex_enter(&zfsvfs->z_reclaim_thr_lock);
-	while (1) {
-		while (1) {
-			mutex_enter(&zfsvfs->z_reclaim_list_lock);
-			zp = list_head(&zfsvfs->z_reclaim_znodes);
-			if (zp) {
-				list_remove(&zfsvfs->z_reclaim_znodes, zp);
-			}
-			mutex_exit(&zfsvfs->z_reclaim_list_lock);
-			/* Only exit thread once list is empty */
-			if (!zp)
-				break;
-#ifdef VERBOSE_RECLAIM
-			count++;
-#endif
-#ifdef _KERNEL
-			atomic_dec_64(&vnop_num_reclaims);
-#endif
-
-			/*
-			 * We have popped a node off the reclaim_list, and need to
-			 * run the final tx sync, by calling zfs_rmnode
-			 */
-
-			rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-
-			/* CODE */
-			if (zp->z_sa_hdl)
-				zfs_rmnode(zp);
-			else
-				printf("ZFS: Warning, reclaim_thread zp with NULL zp->z_sa_hdl\n");
-			/* CODE */
-
-			rw_exit(&zfsvfs->z_teardown_inactive_lock);
-
-
-		} /* until empty */
-#ifdef VERBOSE_RECLAIM
-		if (count)
-			printf("reclaim_thr: %p nodes released: %d "
-			    "(in list %llu)\n", zfsvfs, count,
-			    vnop_num_reclaims);
-		count = 0;
-#endif
-		/* Allow us to quit, since list is empty */
-		if (zfsvfs->z_reclaim_thread_exit == TRUE)
-			break;
-		/* block until needed, or one second, whichever is shorter */
-#if 1
-		/* RECLAIM_SIGNAL */
-		CALLB_CPR_SAFE_BEGIN(&cpr);
-		(void) cv_timedwait_sig(&zfsvfs->z_reclaim_thr_cv,
-		    &zfsvfs->z_reclaim_thr_lock, (ddi_get_lbolt() + (hz>>1)));
-		CALLB_CPR_SAFE_END(&cpr, &zfsvfs->z_reclaim_thr_lock);
-#else
-		delay(hz>>1);
-#endif
-
-	} /* forever */
-#ifdef VERBOSE_RECLAIM
-	printf("ZFS: reclaim thread %p is quitting!\n", zfsvfs);
-#endif
-	zfsvfs->z_reclaim_thread_exit = FALSE;
-	cv_broadcast(&zfsvfs->z_reclaim_thr_cv);
-	CALLB_CPR_EXIT(&cpr); /* drops zfsvfs->z_reclaim_thr_lock */
-	thread_exit();
-}
-#endif
-
 
 
 int
@@ -2456,7 +2261,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	znode_t	*zp = NULL;
 	zfsvfs_t *zfsvfs = NULL;
 	static int has_warned = 0;
-	boolean_t exception;
 	boolean_t fastpath;
 	ASSERT(zp != NULL);
 
@@ -2492,31 +2296,10 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	vnode_removefsref(vp); /* ADDREF from vnode_create */
 	atomic_dec_64(&vnop_num_vnodes);
 
-
-	/*
-	 * If we can do direct reclaim, do so now - in zfs_zinactive,
-	 * calling zfs_rmnode, we try to do a dmu_tx, which will fail.
-	 * So if we come via;
-	 * = and have a sa_hdl, to call inactive (z_sa_hdl)
-	 * = and is unlinked (z_unlinked)
-	 * we would call dmu_tx, so this needs to be deferred
-	 */
-
-	/* Work out if we can not call zfs_rmnode directly */
-	exception = ((zp->z_sa_hdl != NULL) &&
-				 zp->z_unlinked) ? B_TRUE : B_FALSE;
 	fastpath = zp->z_fastpath;
 
-	/*
-	 * Except during unmount, we might as well do direct reclaim then
-	 * as we can not come from vnode_create(). This ensures we mop up
-	 * everything for unmount
-	 */
-	if (zfsvfs->z_unmounted)
-		exception = B_FALSE;
-
-	dprintf("+vnop_reclaim zp %p/%p exception %d fast %d unlinked %d unmount %d sa_hdl %p\n",
-		   zp, vp, exception, zp->z_fastpath, zp->z_unlinked,
+	dprintf("+vnop_reclaim zp %p/%p fast %d unlinked %d unmount %d sa_hdl %p\n",
+		   zp, vp, zp->z_fastpath, zp->z_unlinked,
 			zfsvfs->z_unmounted, zp->z_sa_hdl);
 	/*
 	 * This will release as much as it can, based on reclaim_reentry,
@@ -2525,56 +2308,20 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	 * zfs_zinactive() will leave earlier if z_reclaim_reentry is true.
 	 */
 	if (fastpath == B_FALSE) {
-
-		/* We can not call, zfs_rmnode, so check for this case */
-		if (exception == B_FALSE) {
-
-			rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-			if (zp->z_sa_hdl == NULL)
-				zfs_znode_free(zp);
-			else
-				zfs_zinactive(zp);
-			rw_exit(&zfsvfs->z_teardown_inactive_lock);
-		}
+		rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+		if (zp->z_sa_hdl == NULL)
+			zfs_znode_free(zp);
+		else
+			zfs_zinactive(zp);
+		rw_exit(&zfsvfs->z_teardown_inactive_lock);
 	}
 
 	/* Direct zfs_remove? We are done */
 	if (fastpath == B_TRUE) goto out;
 
-	/* If we are reentry, and sa_hdl, and unlinked, then we did not finish
-	 * in zfs_rmnode, so add us to the reclaim_list to be completed
-	 * by the reclaim_thread
-	 */
-	if (exception == B_TRUE) {
-
-		/* We could not release, due to z_inactive wanting to call dmu_tx,
-		 * we then need to add to reclaim_list for the reclaim_thread to
-		 * finish off later as a separate thread. */
-		mutex_enter(&zfsvfs->z_reclaim_list_lock);
-		list_insert_tail(&zfsvfs->z_reclaim_znodes, zp);
-		mutex_exit(&zfsvfs->z_reclaim_list_lock);
 
 #ifdef _KERNEL
-		atomic_inc_64(&vnop_num_reclaims);
-#endif
-		/*
-		 * We can either signal the reclaim-thread to wake up for each node or
-		 * let it sleep for its own timeout and process nodes in bunches. We
-		 * should measure which method is better.
-		 */
-#ifdef RECLAIM_SIGNAL
-		cv_signal(&zfsvfs->z_reclaim_thr_cv);
-#endif
-
-	} // Add to reclaim list
-
-
-#if 1
-	if (!has_warned && vnop_num_reclaims > 20000) {
-		has_warned = 1;
-		printf("ZFS: Reclaim thread is being slow (%llu)\n",
-		    vnop_num_reclaims);
-	}
+	atomic_inc_64(&vnop_num_reclaims);
 #endif
 
   out:
@@ -4136,11 +3883,12 @@ getnewvnode_drop_reserve()
  * zp->z_vnode and zp->z_vid.
  */
 int
-zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
+zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 {
 	struct vnode_fsparam vfsp;
+	struct vnode *vp = NULL;
 
-	dprintf("getvnode zp %p with vpp %p zfsvfs %p vfs %p\n", zp, vpp,
+	dprintf("getvnode zp %p with vp %p zfsvfs %p vfs %p\n", zp, vp,
 	    zfsvfs, zfsvfs->z_vfs);
 
 	if (zp->z_vnode)
@@ -4217,31 +3965,17 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 	 */
 
 	/* So pageout can know if it is called recursively, add this thread to list*/
-
-	struct vnodecreate vnodecreate_node;
-	vnodecreate_node.thread = current_thread();
-	list_link_init(&vnodecreate_node.link);
-	mutex_enter(&zfsvfs->z_vnodecreate_lock);
-	list_insert_tail(&zfsvfs->z_vnodecreate_list, &vnodecreate_node);
-	mutex_exit(&zfsvfs->z_vnodecreate_lock);
-
-	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, vpp) != 0)
+	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0)
 		kpreempt(KPREEMPT_SYNC);
-
-	/* Remove this thread from list. */
-	mutex_enter(&zfsvfs->z_vnodecreate_lock);
-	list_remove(&zfsvfs->z_vnodecreate_list, &vnodecreate_node);
-	mutex_exit(&zfsvfs->z_vnodecreate_lock);
-
 
 	atomic_inc_64(&vnop_num_vnodes);
 
-	dprintf("Assigned zp %p with vp %p\n", zp, *vpp);
+	dprintf("Assigned zp %p with vp %p\n", zp, vp);
 
-	vnode_settag(*vpp, VT_ZFS);
+	vnode_settag(vp, VT_ZFS);
 
-	zp->z_vid = vnode_vid(*vpp);
-	zp->z_vnode = *vpp;
+	zp->z_vid = vnode_vid(vp);
+	zp->z_vnode = vp;
 
 	/*
 	 * OS X Finder is hardlink agnostic, so we need to mark vp's that
@@ -4249,7 +3983,7 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs, struct vnode **vpp)
 	 * the name cache.
 	 */
 	if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG))
-		vnode_setmultipath(*vpp);
+		vnode_setmultipath(vp);
 
 	return (0);
 }
