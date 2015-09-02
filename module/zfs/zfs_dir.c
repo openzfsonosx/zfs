@@ -932,12 +932,15 @@ zfs_link_destroy(zfs_dirlock_t *dl, znode_t *zp, dmu_tx_t *tx, int flag,
 		dnlc_remove(ZTOV(dzp), dl->dl_name);
 
 	if (!(flag & ZRENAMING)) {
-		if (vn_vfswlock(vp))		/* prevent new mounts on zp */
-			return ((EBUSY));
 
-		if (vn_ismntpt(vp)) {		/* don't remove mount point */
-			vn_vfsunlock(vp);
-			return ((EBUSY));
+		if (vp) {
+			if (vn_vfswlock(vp))		/* prevent new mounts on zp */
+				return ((EBUSY));
+
+			if (vn_ismntpt(vp)) {		/* don't remove mount point */
+				vn_vfsunlock(vp);
+				return ((EBUSY));
+			}
 		}
 
 		mutex_enter(&zp->z_lock);
