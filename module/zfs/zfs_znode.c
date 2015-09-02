@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  * Portions Copyright 2007-2009 Apple Inc. All rights reserved.
  * Use is subject to license terms.
  */
@@ -1226,7 +1226,6 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	VERIFY(sa_replace_all_by_template(sa_hdl, sa_attrs, cnt, tx) == 0);
 
 	if (!(flag & IS_ROOT_NODE)) {
-		struct vnode *vp = NULL;
 		/*
 		 * We must not hold any locks while calling vnode_create inside
 		 * zfs_znode_alloc(), as it may call either of vnop_reclaim, or
@@ -1235,13 +1234,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 		 * maczfs does, in each vnop caller.
 		 */
 		*zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, sa_hdl);
-		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj);
 		ASSERT(*zpp != NULL);
-
-		zfs_znode_getvnode(*zpp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
-
-		ZFS_OBJ_HOLD_ENTER(zfsvfs, obj);
-
 	} else {
 		/*
 		 * If we are creating the root node, the "parent" we
@@ -1425,7 +1418,8 @@ again:
 		 * should never find a sa handle that doesn't
 		 * know about the znode.
 		 */
-		ASSERT3P(zp, !=, NULL);
+
+		mutex_enter(&zp->z_lock);
 
 		mutex_enter(&zp->z_lock);
 
@@ -1433,139 +1427,39 @@ again:
 		 * Since zp may disappear after we unlock below,
 		 * we save a copy of vp and it's vid
 		 */
-		if (ZTOV(zp)) {
-			uint32_t        vid;
+		vid = zp->z_vid;
+		vp = ZTOV(zp);
 
-			mutex_enter(&zp->z_lock);
+		/*
+		 * Since we do immediate eviction of the z_dbuf, we
+		 * should never find a dbuf with a znode that doesn't
+		 * know about the dbuf.
+		 */
+		ASSERT3P(zp->z_dbuf, ==, db);
+		ASSERT3U(zp->z_id, ==, obj_num);
 
-			/*
-			 * Since zp may disappear after we unlock below,
-			 * we save a copy of vp and it's vid
-			 */
-			vid = zp->z_vid;
-			vp = ZTOV(zp);
-
-			/*
-			 * Since we do immediate eviction of the z_dbuf, we
-			 * should never find a dbuf with a znode that doesn't
-			 * know about the dbuf.
-			 */
-			ASSERT3P(zp->z_dbuf, ==, db);
-			ASSERT3U(zp->z_id, ==, obj_num);
-
-			/*
-			 * OS X can return the znode when the file is unlinked
-			 * in order to support the sync of open-unlinked files
-			 */
-			if (!want_unlinked && zp->z_unlinked) {
-				dmu_buf_rele(db, NULL);
-				mutex_exit(&zp->z_lock);
-				ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-				return (ENOENT);
-			}
-
+		/*
+		 * OS X can return the znode when the file is unlinked
+		 * in order to support the sync of open-unlinked files
+		 */
+		if (!want_unlinked && zp->z_unlinked) {
 			dmu_buf_rele(db, NULL);
 			mutex_exit(&zp->z_lock);
 			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+			return (ENOENT);
+		}
 
-			if (!vp || (vnode_getwithvid(vp, vid) != 0)) {
-				goto again;
-			}
-
-			/*
-			 * Since we had to drop all of our locks above, make sure
-			 * that we have the vnode and znode we had before.
-			 */
-			mutex_enter(&zp->z_lock);
-			if ((vid != zp->z_vid) || (vp != ZTOV(zp))) {
-				mutex_exit(&zp->z_lock);
-				/* Release the wrong vp from vnode_getwithvid(). This
-				 * call is missing in 10a286 - lundman */
-				VN_RELE(vp);
-				printf("ZFS: the vids do not match part 1\n");
-				goto again;
-			}
-			if (vnode_vid(vp) != zp->z_vid)
-				printf("ZFS: the vids do not match\n");
-			mutex_exit(&zp->z_lock);
-
-			*zpp = zp;
-			getnewvnode_drop_reserve();
-			return (0);
-		} // if vnode != NULL
-
-			if (!vp || (vnode_getwithvid(vp, vid) != 0)) {
-				goto again;
-			}
-
-			/*
-			 * Since we had to drop all of our locks above, make sure
-			 * that we have the vnode and znode we had before.
-			 */
-			mutex_enter(&zp->z_lock);
-			if ((vid != zp->z_vid) || (vp != ZTOV(zp))) {
-				mutex_exit(&zp->z_lock);
-				/* Release the wrong vp from vnode_getwithvid(). This
-				 * call is missing in 10a286 - lundman */
-				VN_RELE(vp);
-				printf("ZFS: the vids do not match part 1\n");
-				goto again;
-			}
-			if (vnode_vid(vp) != zp->z_vid)
-				printf("ZFS: the vids do not match\n");
-			mutex_exit(&zp->z_lock);
-
-			*zpp = zp;
-			getnewvnode_drop_reserve();
-			return (0);
-		} // if vnode != NULL
-
+		dmu_buf_rele(db, NULL);
 		mutex_exit(&zp->z_lock);
-		sa_buf_rele(db, NULL);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
-		if ((flags & ZGET_FLAG_WITHOUT_VNODE_GET)) {
-			/* Do not increase vnode iocount */
-			*zpp = zp;
-			return 0;
-		}
-
-		/* We are racing zfs_znode_getvnode() and we got here first, we
-		 * need to let it get ahead */
-		if (!vp) {
-			kpreempt(KPREEMPT_SYNC);
-			dprintf("zget racing attach\n");
+		if (!vp || (vnode_getwithvid(vp, vid) != 0)) {
 			goto again;
 		}
 
-		/* Due to vnode_create() -> zfs_fsync() -> zil_commit() -> zget()
-		 * -> vnode_getwithvid() -> deadlock. Unsure why vnode_getwithvid()
-		 * ends up sleeping in msleep() but vnode_get() does not.
-		 */
-		if (!vp || (err=vnode_getwithvid(vp, vid) != 0)) {
-			//if ((err = vnode_get(vp)) != 0) {
-			dprintf("ZFS: vnode_get() returned %d\n", err);
-			kpreempt(KPREEMPT_SYNC);
-			goto again;
-		}
-
-#ifdef _KERNEL
-				atomic_dec_64(&vnop_num_reclaims);
-#endif
-				rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-				if (zp->z_sa_hdl)
-					zfs_rmnode(zp);
-				else
-					printf("ZFS: Warning, zget reclaim NULL zp->z_sa_hdl\n");
-				rw_exit(&zfsvfs->z_teardown_inactive_lock);
-				goto again;
-
-            }
-
-		} // for
-		mutex_exit(&zfsvfs->z_reclaim_list_lock);
-		/* We have just looked through the entire list and not found
-		 * the zp, so it must have already been reclaimed.
+		/*
+		 * Since we had to drop all of our locks above, make sure
+		 * that we have the vnode and znode we had before.
 		 */
 		mutex_enter(&zp->z_lock);
 		if ((vid != zp->z_vid) || (vp != ZTOV(zp))) {
@@ -1573,7 +1467,7 @@ again:
 			/* Release the wrong vp from vnode_getwithvid(). This
 			 * call is missing in 10a286 - lundman */
 			VN_RELE(vp);
-			dprintf("ZFS: the vids do not match part 1\n");
+			printf("ZFS: the vids do not match part 1\n");
 			goto again;
 		}
 		if (vnode_vid(vp) != zp->z_vid)
@@ -1597,19 +1491,15 @@ again:
 	 * bonus buffer.
 	 */
 
-	/* TODO: Add the skip_vnode part here */
 	zp = NULL;
 	zp = zfs_znode_alloc(zfsvfs, db, doi.doi_data_block_size,
 	    doi.doi_bonus_type, NULL);
 
 	if (zp == NULL) {
 		err = SET_ERROR(ENOENT);
-	} else {
-		struct vnode *vp = NULL;
-		*zpp = zp;
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 		getnewvnode_drop_reserve();
-		zfs_znode_getvnode(zp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
+		dprintf("zget returning %d\n", err);
 		return (err);
 	}
 	*zpp = zp;
@@ -1632,15 +1522,12 @@ again:
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 	getnewvnode_drop_reserve();
 
-	if ((flags & ZGET_FLAG_WITHOUT_VNODE) ||
-		(flags & ZGET_FLAG_WITHOUT_VNODE_GET))	{
+	if (skip_vnode) {
 		/* Insert it on our list of active znodes */
 		//mutex_enter(&zfsvfs->z_znodes_lock);
 		//list_insert_tail(&zfsvfs->z_all_znodes, zp);
 		//membar_producer();
 		//mutex_exit(&zfsvfs->z_znodes_lock);
-		if (flags & ZGET_FLAG_WITHOUT_VNODE_GET)
-			printf("ZFS: zget without vnode in znodealloc case\n");
 	} else {
 		/* Attach a vnode to our new znode */
 		zfs_znode_getvnode(zp, zfsvfs); /* Assigns both vp and z_vnode */
@@ -1816,7 +1703,6 @@ zfs_zinactive(znode_t *zp)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	uint64_t z_id = zp->z_id;
-	int use_lock = 0;
 	ASSERT(zp->z_sa_hdl);
 
 	/*
@@ -1833,85 +1719,19 @@ zfs_zinactive(znode_t *zp)
 	//}
 
 	/*
-	 * If we are coming via the vnode_create()->vclean() path, we can not
-	 * grab the mutex we already hold.
-	 */
-	struct vnodecreate *vcp;
-
-	mutex_enter(&zfsvfs->z_vnodecreate_lock);
-	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
-		 vcp;
-		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
-		if (vcp->thread == current_thread()) break;
-	mutex_exit(&zfsvfs->z_vnodecreate_lock);
-
-	/* If re-entry, vcp will be set, otherwise NULL */
-	if (!vcp) {
-		use_lock = 1;
-	}
-
-	/*
-	 * Don't allow a zfs_zget() while were trying to release this znode
-	 */
-	if (use_lock) {
-		ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
-		mutex_enter(&zp->z_lock);
-	}
-
-	/* Solaris checks to see if a reference was grabbed to the vnode here
-	 * which we can not easily do in XNU */
-	//if (ZTOV(zp) && vnode_isinuse(ZTOV(zp), 0)) {
-	//	printf("ZFS: zinactive(%p) has non-zero vp reference!\n", zp);
-	//}
-
-	/*
-	 * If we are coming via the vnode_create()->vclean() path, we can not
-	 * grab the mutex we already hold.
-	 */
-	struct vnodecreate *vcp;
-
-	mutex_enter(&zfsvfs->z_vnodecreate_lock);
-	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
-		 vcp;
-		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
-		if (vcp->thread == current_thread()) break;
-	mutex_exit(&zfsvfs->z_vnodecreate_lock);
-
-	/* If re-entry, vcp will be set, otherwise NULL */
-	if (!vcp) {
-		use_lock = 1;
-	}
-
-	/*
-	 * Don't allow a zfs_zget() while were trying to release this znode
-	 */
-	if (use_lock) {
-		ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
-		mutex_enter(&zp->z_lock);
-	}
-
-	/* Solaris checks to see if a reference was grabbed to the vnode here
-	 * which we can not easily do in XNU */
-	//if (ZTOV(zp) && vnode_isinuse(ZTOV(zp), 0)) {
-	//	printf("ZFS: zinactive(%p) has non-zero vp reference!\n", zp);
-	//}
-
-	/*
 	 * If this was the last reference to a file with no links,
 	 * remove the file from the file system.
 	 */
 	if (zp->z_unlinked) {
-		if (use_lock) {
-			mutex_exit(&zp->z_lock);
-			ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
-		}
+		mutex_exit(&zp->z_lock);
+		ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 		zfs_rmnode(zp);
 		return;
 	}
 
-	if (use_lock) mutex_exit(&zp->z_lock);
+	mutex_exit(&zp->z_lock);
 	zfs_znode_dmu_fini(zp);
-	if (use_lock) ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
+	ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 	zfs_znode_free(zp);
 }
 

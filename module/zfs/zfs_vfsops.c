@@ -1383,14 +1383,6 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	for (int i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_init(&zfsvfs->z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
 
-	error = zfsvfs_init(zfsvfs, os);
-	if (error != 0) {
-		dmu_objset_disown(os, zfsvfs);
-		*zfvp = NULL;
-		kmem_free(zfsvfs, sizeof (zfsvfs_t));
-		return (error);
-	}
-
 	*zfvp = zfsvfs;
 	return (0);
 }
