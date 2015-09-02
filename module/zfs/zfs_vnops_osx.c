@@ -2488,8 +2488,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	/*
 	 * Purge old data structures associated with the denode.
 	 */
-	cache_purge(vp);
-
 	vnode_clearfsnode(vp); /* vp->v_data = NULL */
 	vnode_removefsref(vp); /* ADDREF from vnode_create */
 	atomic_dec_64(&vnop_num_vnodes);
