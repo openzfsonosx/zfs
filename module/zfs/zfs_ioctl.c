@@ -5598,7 +5598,9 @@ zfsdev_getminor(dev_t dev)
 	zfsdev_state_t *zs = NULL;
 
 #ifdef __APPLE__
+	mutex_enter(&zfsdev_state_lock);
 	zs = zfsdev_get_state_impl(minor(dev), ZST_ALL);
+	mutex_exit(&zfsdev_state_lock);
 	dprintf("Looking for dev %d/minor %d : %p\n", dev, minor(dev), zs);
 	if (!zs) return -1;
 #else
