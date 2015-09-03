@@ -338,7 +338,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
              dmu_tx_t *tx)
 {
     znode_t *zp = VTOZ(vp);
-    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+    //zfsvfs_t *zfsvfs = zp->z_zfsvfs;
     int len = nbytes;
     int error = 0;
     vm_offset_t vaddr = 0;
@@ -360,15 +360,22 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
      * Create a UPL for the current range and map its
      * page list into the kernel virtual address space.
      */
-    if ( ubc_create_upl(vp, upl_start, upl_size, &upl, NULL,
-                        UPL_FILE_IO | UPL_SET_LITE) == KERN_SUCCESS ) {
-        pl = ubc_upl_pageinfo(upl);
-        ubc_upl_map(upl, &vaddr);
-    }
+    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
+						   UPL_FILE_IO | UPL_SET_LITE);
+	if ((error != KERN_SUCCESS) || !upl) {
+		printf("ZFS: update_pages failed to ubc_create_upl: %d\n", error);
+		return;
+	}
+
+	if (ubc_upl_map(upl, &vaddr) != KERN_SUCCESS) {
+		printf("ZFS: update_pages failed to ubc_upl_map: %d\n", error);
+		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+		return;
+	}
 
     for (upl_page = 0; len > 0; ++upl_page) {
         uint64_t bytes = MIN(PAGESIZE - off, len);
-        uint64_t woff = uio_offset(uio);
+        //uint64_t woff = uio_offset(uio);
         /*
          * We don't want a new page to "appear" in the middle of
          * the file update (because it may not get the write
@@ -417,14 +424,12 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     /*
      * Unmap the page list and free the UPL.
      */
-    if (pl) {
-        (void) ubc_upl_unmap(upl);
-        /*
-         * We want to abort here since due to dmu_write()
-         * we effectively didn't dirty any pages.
-         */
-        (void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-    }
+	(void) ubc_upl_unmap(upl);
+	/*
+	 * We want to abort here since due to dmu_write()
+	 * we effectively didn't dirty any pages.
+	 */
+	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 
 }
 #endif
@@ -589,11 +594,18 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
      * Create a UPL for the current range and map its
      * page list into the kernel virtual address space.
      */
-    if ( ubc_create_upl(vp, upl_start, upl_size, &upl, NULL,
-                        UPL_FILE_IO | UPL_SET_LITE) == KERN_SUCCESS ) {
-        pl = ubc_upl_pageinfo(upl);
-        ubc_upl_map(upl, &vaddr);
-    }
+    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
+						   UPL_FILE_IO | UPL_SET_LITE);
+	if ((error != KERN_SUCCESS) || !upl) {
+		printf("ZFS: mappedread failed to ubc_create_upl: %d\n", error);
+		return EIO;
+	}
+
+	if (ubc_upl_map(upl, &vaddr) != KERN_SUCCESS) {
+		printf("ZFS: mappedread failed to ubc_upl_map: %d\n", error);
+		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+		return ENOMEM;
+	}
 
     for (upl_page = 0; len > 0; ++upl_page) {
         uint64_t bytes = MIN(PAGE_SIZE - off, len);
@@ -620,10 +632,8 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     /*
      * Unmap the page list and free the UPL.
      */
-    if (pl) {
-        (void) ubc_upl_unmap(upl);
-        (void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-    }
+	(void) ubc_upl_unmap(upl);
+	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 
     return (error);
 }
