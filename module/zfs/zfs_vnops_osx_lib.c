@@ -488,8 +488,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #endif
 
 #ifdef VNODE_ATTR_va_document_id
-	if (/*VATTR_IS_ACTIVE(vap, va_flags) && (vap->va_flags & UF_TRACKED)
-		  &&*/ VATTR_IS_ACTIVE(vap, va_document_id)) {
+	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
 
 		if (!zp->z_document_id) {
 			zfs_setattr_generate_id(zp, parent, vap->va_name);
