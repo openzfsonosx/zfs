@@ -1494,6 +1494,32 @@ again:
 			return (0);
 		} // if vnode != NULL
 
+			if (!vp || (vnode_getwithvid(vp, vid) != 0)) {
+				goto again;
+			}
+
+			/*
+			 * Since we had to drop all of our locks above, make sure
+			 * that we have the vnode and znode we had before.
+			 */
+			mutex_enter(&zp->z_lock);
+			if ((vid != zp->z_vid) || (vp != ZTOV(zp))) {
+				mutex_exit(&zp->z_lock);
+				/* Release the wrong vp from vnode_getwithvid(). This
+				 * call is missing in 10a286 - lundman */
+				VN_RELE(vp);
+				printf("ZFS: the vids do not match part 1\n");
+				goto again;
+			}
+			if (vnode_vid(vp) != zp->z_vid)
+				printf("ZFS: the vids do not match\n");
+			mutex_exit(&zp->z_lock);
+
+			*zpp = zp;
+			getnewvnode_drop_reserve();
+			return (0);
+		} // if vnode != NULL
+
 		mutex_exit(&zp->z_lock);
 		sa_buf_rele(db, NULL);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
@@ -1799,6 +1825,38 @@ zfs_zinactive(znode_t *zp)
 	ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
 
 	mutex_enter(&zp->z_lock);
+
+	/* Solaris checks to see if a reference was grabbed to the vnode here
+	 * which we can not easily do in XNU */
+	//if (ZTOV(zp) && vnode_isinuse(ZTOV(zp), 0)) {
+	//	printf("ZFS: zinactive(%p) has non-zero vp reference!\n", zp);
+	//}
+
+	/*
+	 * If we are coming via the vnode_create()->vclean() path, we can not
+	 * grab the mutex we already hold.
+	 */
+	struct vnodecreate *vcp;
+
+	mutex_enter(&zfsvfs->z_vnodecreate_lock);
+	for (vcp = list_head(&zfsvfs->z_vnodecreate_list);
+		 vcp;
+		 vcp = list_next(&zfsvfs->z_vnodecreate_list, vcp))
+		if (vcp->thread == current_thread()) break;
+	mutex_exit(&zfsvfs->z_vnodecreate_lock);
+
+	/* If re-entry, vcp will be set, otherwise NULL */
+	if (!vcp) {
+		use_lock = 1;
+	}
+
+	/*
+	 * Don't allow a zfs_zget() while were trying to release this znode
+	 */
+	if (use_lock) {
+		ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
+		mutex_enter(&zp->z_lock);
+	}
 
 	/* Solaris checks to see if a reference was grabbed to the vnode here
 	 * which we can not easily do in XNU */
