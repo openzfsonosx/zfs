@@ -5598,7 +5598,9 @@ zfsdev_getminor(dev_t dev)
 	zfsdev_state_t *zs = NULL;
 
 #ifdef __APPLE__
+	mutex_enter(&zfsdev_state_lock);
 	zs = zfsdev_get_state_impl(minor(dev), ZST_ALL);
+	mutex_exit(&zfsdev_state_lock);
 	dprintf("Looking for dev %d/minor %d : %p\n", dev, minor(dev), zs);
 	if (!zs) return -1;
 #else
@@ -5736,12 +5738,13 @@ zfsdev_open(dev_t dev, int flags, int devtype, struct proc *p)
 	dprintf("zfsdev_open, dev %d flag %02X devtype %d, proc is %p: thread %p\n",
 			minor(dev), flags, devtype, p, current_thread());
 
+	mutex_enter(&zfsdev_state_lock);
 	if (zfsdev_get_state_impl(minor(dev), ZST_ALL)) {
+		mutex_exit(&zfsdev_state_lock);
 		dprintf("zs already exists\n");
 		return (0);
 	}
 
-	mutex_enter(&zfsdev_state_lock);
 	error = zfsdev_state_init(dev);
 	mutex_exit(&zfsdev_state_lock);
 
@@ -5796,10 +5799,13 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 	}
 #endif
 
+	mutex_enter(&zfsdev_state_lock);
 	if (zfsdev_get_state_impl(minorx, ZST_ALL) == NULL) {
+		mutex_exit(&zfsdev_state_lock);
 		dprintf("Calling zvol ioctl minor %d \n", minorx);
 		return (zvol_ioctl(dev, cmd, arg, 0, NULL, NULL));
 	}
+	mutex_exit(&zfsdev_state_lock);
 
 	vecnum = cmd - ZFS_IOC_FIRST;
 #ifdef illumos

@@ -237,7 +237,6 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	 * On Mac OS X we always export the root directory id as 2
 	 */
 	vap->va_fileid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_id;
-	//vap->va_fileid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_vid;
 
 	vap->va_data_size = zp->z_size;
 	vap->va_total_size = zp->z_size;
@@ -405,8 +404,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #endif
 
 #ifdef VNODE_ATTR_va_document_id
-	if (/*VATTR_IS_ACTIVE(vap, va_flags) && (vap->va_flags & UF_TRACKED)
-		  &&*/ VATTR_IS_ACTIVE(vap, va_document_id)) {
+	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
 
 		if (!zp->z_document_id) {
 			zfs_setattr_generate_id(zp, parent, vap->va_name);

@@ -99,6 +99,10 @@ struct user64_ext_access_t {
 
 #define HFSIOC_GETPATH  _IOWR('h', 13, pathname_t)
 #define HFS_GETPATH  IOCBASECMD(HFSIOC_GETPATH)
+#define HFS_GETPATH_VOLUME_RELATIVE	0x1
+
+/* This define is deemed secret by Apple */
+#define BUILDPATH_VOLUME_RELATIVE 0x8 /* Return path relative to the nearest mount point */
 
 /* Enable/disable extent-based extended attributes */
 #define HFSIOC_SET_XATTREXTENTS_STATE  _IOW('h', 14, u_int32_t)
