@@ -8,7 +8,7 @@ export INVARIANT_DISKS_IDLE_FILE=/var/run/disk/invariant.idle
 export TIMEOUT_SECONDS=60
 export MAXIMUM_SLEEP_ITERATIONS=$((${TIMEOUT_SECONDS} * 10))
 
-2>&1 /usr/bin/time /usr/sbin/system_profiler SPParallelATADataType SPCardReaderDataType SPFibreChannelDataType SPFireWireDataType SPHardwareRAIDDataType SPNetworkDataType SPPCIDataType SPParallelSCSIDataType SPSASDataType SPSerialATADataType SPStorageDataType SPThunderboltDataType SPUSBDataType SPNetworkVolumeDataType 1>/dev/null
+/usr/bin/time /usr/sbin/system_profiler SPParallelATADataType SPCardReaderDataType SPFibreChannelDataType SPFireWireDataType SPHardwareRAIDDataType SPNetworkDataType SPPCIDataType SPParallelSCSIDataType SPSASDataType SPSerialATADataType SPStorageDataType SPThunderboltDataType SPUSBDataType SPNetworkVolumeDataType 1>/dev/null
 /bin/sync
 
 echo "Waiting up to ${TIMEOUT_SECONDS} seconds for the InvariantDisks idle file ${INVARIANT_DISKS_IDLE_FILE} to exist"
