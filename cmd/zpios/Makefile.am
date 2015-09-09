@@ -11,4 +11,3 @@ zpios_SOURCES = \
 	zpios_main.c \
 	zpios_util.c \
 	zpios.h
-

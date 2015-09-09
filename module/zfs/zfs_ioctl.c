@@ -3077,8 +3077,7 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 			volblocksize = zfs_prop_default_numeric(
 													ZFS_PROP_VOLBLOCKSIZE);
 
-		if ((error = zvol_check_volblocksize(
-											 volblocksize)) != 0 ||
+		if ((error = zvol_check_volblocksize(volblocksize)) != 0 ||
 		    (error = zvol_check_volsize(volsize,
 										volblocksize)) != 0)
 			return (error);
@@ -3291,40 +3290,21 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
  * This function is best-effort.  Callers must deal gracefully if it
  * remains mounted (or is remounted after this call).
  *
- * XXX: This function should detect a failure to unmount a snapdir of a dataset
- * and return the appropriate error code when it is mounted. Its Illumos and
- * FreeBSD counterparts do this. We do not do this on Linux because there is no
- * clear way to access the mount information that FreeBSD and Illumos use to
- * distinguish between things with mounted snapshot directories, and things
- * without mounted snapshot directories, which include zvols. Returning a
- * failure for the latter causes `zfs destroy` to fail on zvol snapshots.
+ * Returns 0 if the argument is not a snapshot, or it is not currently a
+ * filesystem, or we were able to unmount it.  Returns error code otherwise.
  */
 int
 zfs_unmount_snap(const char *snapname)
 {
-	zfsvfs_t *zsb = NULL;
-	char *dsname;
-	//char *fullname = NULL;
-	char *ptr;
-    int error;
+	int err = 0;
 
-    if ((ptr = strchr(snapname, '@')) == NULL)
-        return 0;
+	if (strchr(snapname, '@') == NULL)
+		return (0);
 
-    dsname = kmem_alloc(ptr - snapname + 1, KM_SLEEP);
-    strlcpy(dsname, snapname, ptr - snapname + 1);
+	//err = zfsctl_snapshot_unmount((char *)snapname, MNT_FORCE);
+	if (err != 0 && err != ENOENT)
+		return (SET_ERROR(err));
 
-	error = zfsvfs_hold(dsname, FTAG, &zsb, B_FALSE);
-	if (error == 0) {
-		//error = zfsctl_unmount_snapshot(zsb, fullname, MNT_FORCE);
-		zfsvfs_rele(zsb, FTAG);
-
-		/* Allow ENOENT for consistency with upstream */
-		if (error == ENOENT)
-			error = 0;
-	}
-
-    kmem_free(dsname, ptr - snapname + 1);
 	return 0;
 }
 
@@ -3727,6 +3707,7 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 			return (SET_ERROR(ENOTSUP));
 		break;
 
+	case ZFS_PROP_VOLBLOCKSIZE:
 	case ZFS_PROP_RECORDSIZE:
 		/* Record sizes above 128k need the feature to be enabled */
 		if (nvpair_value_uint64(pair, &intval) == 0 &&

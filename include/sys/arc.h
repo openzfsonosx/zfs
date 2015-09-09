@@ -51,6 +51,9 @@ typedef void arc_done_func_t(zio_t *zio, arc_buf_t *buf, void *_private);
 typedef void arc_prune_func_t(int64_t bytes, void *_private);
 typedef int arc_evict_func_t(void *_private);
 
+/* Shared module parameters */
+extern int zfs_arc_average_blocksize;
+
 /* generic arc_done_func_t's which you can use */
 arc_done_func_t arc_bcopy_func;
 arc_done_func_t arc_getbuf_func;

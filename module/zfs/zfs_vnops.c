@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2015 by Chunwei Chen. All rights reserved.
  */
 
 /* Portions Copyright 2007 Jeremy Teo */
@@ -773,7 +774,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	int		max_blksz = zfsvfs->z_max_blksz;
 	int		error = 0;
 	arc_buf_t	*abuf;
-	iovec_t		*aiov = NULL;
+	const iovec_t	*aiov = NULL;
 	xuio_t		*xuio = NULL;
 	int		i_iov = 0;
 	//int		iovcnt = uio_iovcnt(uio);
@@ -1153,7 +1154,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	}
 
     dprintf("zfs_write done remainder %llu\n", n);
-
 
 	zfs_range_unlock(rl);
 
@@ -3152,8 +3152,8 @@ zfs_getattr_fast(struct inode *ip, struct kstat *sp)
 		 */
 		sp->blksize = zsb->z_max_blksz;
 	}
+}
 #endif
-
 
 
 /*
@@ -4844,10 +4844,59 @@ zfs_putapage(vnode_t *vp, page_t **pp, u_offset_t *offp,
 	 * 2) Before setting or clearing write back on a page the range lock
 	 *    must be held in order to prevent a lock inversion with the
 	 *    zfs_free_range() function.
+	 *
+	 * This presents a problem because upon entering this function the
+	 * page lock is already held.  To safely acquire the range lock the
+	 * page lock must be dropped.  This creates a window where another
+	 * process could truncate, invalidate, dirty, or write out the page.
+	 *
+	 * Therefore, after successfully reacquiring the range and page locks
+	 * the current page state is checked.  In the common case everything
+	 * will be as is expected and it can be written out.  However, if
+	 * the page state has changed it must be handled accordingly.
 	 */
+	mapping = pp->mapping;
+	redirty_page_for_writepage(wbc, pp);
 	unlock_page(pp);
+
 	rl = zfs_range_lock(zp, pgoff, pglen, RL_WRITER);
+	lock_page(pp);
+
+	/* Page mapping changed or it was no longer dirty, we're done */
+	if (unlikely((mapping != pp->mapping) || !PageDirty(pp))) {
+		unlock_page(pp);
+		zfs_range_unlock(rl);
+		ZFS_EXIT(zsb);
+		return (0);
+	}
+
+	/* Another process started write block if required */
+	if (PageWriteback(pp)) {
+		unlock_page(pp);
+		zfs_range_unlock(rl);
+
+		if (wbc->sync_mode != WB_SYNC_NONE)
+			wait_on_page_writeback(pp);
+
+		ZFS_EXIT(zsb);
+		return (0);
+	}
+
+	/* Clear the dirty flag the required locks are held */
+	if (!clear_page_dirty_for_io(pp)) {
+		unlock_page(pp);
+		zfs_range_unlock(rl);
+		ZFS_EXIT(zsb);
+		return (0);
+	}
+
+	/*
+	 * Counterpart for redirty_page_for_writepage() above.  This page
+	 * was in fact not skipped and should not be counted as if it were.
+	 */
+	wbc->pages_skipped--;
 	set_page_writeback(pp);
+	unlock_page(pp);
 
 	tx = dmu_tx_create(zsb->z_os);
 	dmu_tx_hold_write(tx, zp->z_id, pgoff, pglen);
@@ -5023,6 +5072,7 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
+	int need_unlock = 0;
 
 	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 	if (zp->z_sa_hdl == NULL) {

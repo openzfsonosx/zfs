@@ -114,12 +114,6 @@ struct zfsvfs {
         kmutex_t        z_hold_mtx[ZFS_OBJ_MTX_SZ];     /* znode hold locks */
 };
 
-#ifdef __APPLE__
-	struct vnodecreate {
-		thread_t thread;
-		list_node_t link;
-	};
-#endif
 
 #define	ZFS_SUPER_MAGIC	0x2fc12fc1
 
@@ -198,6 +192,7 @@ extern int zfs_set_version(zfsvfs_t *zfsvfs, uint64_t newvers);
 
 extern int zfs_get_zplprop(objset_t *os, zfs_prop_t prop,
     uint64_t *value);
+
 extern int zfs_sb_create(const char *name, zfsvfs_t **zfsvfsp);
 extern int zfs_sb_setup(zfsvfs_t *zfsvfs, boolean_t mounting);
 extern void zfs_sb_free(zfsvfs_t *zfsvfs);

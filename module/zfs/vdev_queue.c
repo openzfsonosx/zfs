@@ -349,6 +349,7 @@ vdev_queue_init(vdev_t *vd)
 
 	mutex_init(&vq->vq_lock, NULL, MUTEX_DEFAULT, NULL);
 	vq->vq_vdev = vd;
+	taskq_init_ent(&vd->vdev_queue.vq_io_search.io_tqent);
 
 	avl_create(&vq->vq_active_tree, vdev_queue_offset_compare,
 	    sizeof (zio_t), offsetof(struct zio, io_queue_node));
@@ -847,5 +848,5 @@ MODULE_PARM_DESC(zfs_vdev_sync_write_max_active,
 
 module_param(zfs_vdev_sync_write_min_active, int, 0644);
 MODULE_PARM_DESC(zfs_vdev_sync_write_min_active,
-	"Min active sync write I/Osper vdev");
+	"Min active sync write I/Os per vdev");
 #endif

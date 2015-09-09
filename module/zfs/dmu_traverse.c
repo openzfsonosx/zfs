@@ -476,7 +476,6 @@ traverse_prefetch_thread(void *arg)
 	traverse_data_t *td_main = arg;
 	traverse_data_t td = *td_main;
 	zbookmark_phys_t czb;
-
 	td.td_func = traverse_prefetcher;
 	td.td_arg = td_main->td_pfd;
 	td.td_pfd = NULL;
