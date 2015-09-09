@@ -287,7 +287,8 @@ skip_open:
 		if (isssd)
 			vd->vdev_nonrot = B_TRUE;
 	}
-	dprintf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "",
+	// smd: was dprintf
+	printf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "", 
 			isssd);
 
 	dvd->vd_devvp = devvp;
