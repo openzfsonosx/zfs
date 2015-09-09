@@ -615,7 +615,7 @@ dbuf_init(void)
 	 * By default, the table will take up
 	 * totalmem * sizeof(void*) / 8K (1MB per GB with 8-byte pointers).
 	 */
-	while (hsize * zfs_arc_average_blocksize < physmem * PAGESIZE)
+		while (hsize * zfs_arc_average_blocksize <(uint64_t)physmem * PAGESIZE)
 		hsize <<= 1;
 
 retry:

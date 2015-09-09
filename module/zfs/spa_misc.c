@@ -2061,3 +2061,4 @@ MODULE_PARM_DESC(spa_asize_inflation,
 module_param(spa_slop_shift, int, 0644);
 MODULE_PARM_DESC(spa_slop_shift, "Reserved free space in pool");
 #endif
+#endif

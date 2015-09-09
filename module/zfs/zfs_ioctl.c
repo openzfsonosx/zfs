@@ -3090,8 +3090,7 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 			volblocksize = zfs_prop_default_numeric(
 													ZFS_PROP_VOLBLOCKSIZE);
 
-		if ((error = zvol_check_volblocksize(fsname,
-		    volblocksize)) != 0 ||
+		if ((error = zvol_check_volblocksize(volblocksize)) != 0 ||
 		    (error = zvol_check_volsize(volsize,
 										volblocksize)) != 0)
 			return (error);
@@ -3317,16 +3316,16 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 int
 zfs_unmount_snap(const char *snapname)
 {
-	int err;
+	int err = 0;
 
 	if (strchr(snapname, '@') == NULL)
 		return (0);
 
-	err = zfsctl_snapshot_unmount((char *)snapname, MNT_FORCE);
+	//err = zfsctl_snapshot_unmount((char *)snapname, MNT_FORCE);
 	if (err != 0 && err != ENOENT)
 		return (SET_ERROR(err));
 
-	return (0);
+	return 0;
 }
 
 /* ARGSUSED */

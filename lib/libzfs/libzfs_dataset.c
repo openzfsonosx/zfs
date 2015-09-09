@@ -2052,7 +2052,9 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 
 	switch (prop) {
 	case ZFS_PROP_ATIME:
+#ifdef LINUX
 	case ZFS_PROP_RELATIME:
+#endif
 	case ZFS_PROP_DEVICES:
 	case ZFS_PROP_EXEC:
 	case ZFS_PROP_READONLY:

@@ -1152,7 +1152,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	}
 
-	zfs_inode_update(zp);
+    dprintf("zfs_write done remainder %llu\n", n);
+
 	zfs_range_unlock(rl);
 
 	/*
@@ -3197,6 +3198,8 @@ zfs_getattr_fast(struct inode *ip, struct kstat *sp)
 		 */
 		sp->blksize = zsb->z_max_blksz;
 	}
+}
+#endif
 
 	mutex_exit(&zp->z_lock);
 
@@ -3215,7 +3218,6 @@ zfs_getattr_fast(struct inode *ip, struct kstat *sp)
 	return (0);
 }
 #endif
-
 
 /*
  * Set the file attributes to the values contained in the
