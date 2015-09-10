@@ -1,3 +1,5 @@
 libspldir = $(includedir)/libspl/sys/sysevent
-libspl_HEADERS = \
-	$(top_srcdir)/lib/libspl/include/sys/sysevent/eventdefs.h
+#O3X - prevent header install
+#libspl_HEADERS = \
+#	$(top_srcdir)/lib/libspl/include/sys/sysevent/eventdefs.h
+libspl_HEADERS = 

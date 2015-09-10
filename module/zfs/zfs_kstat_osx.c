@@ -79,6 +79,13 @@ osx_kstat_t osx_kstat = {
 	{ "zfs_disable_dup_eviction",	KSTAT_DATA_UINT64 },
 	{ "zfs_arc_average_blocksize",	KSTAT_DATA_UINT64 },
 
+	{ "l2arc_write_max",			KSTAT_DATA_UINT64 },
+	{ "l2arc_write_boost",			KSTAT_DATA_UINT64 },
+	{ "l2arc_headroom",				KSTAT_DATA_UINT64 },
+	{ "l2arc_headroom_boost",		KSTAT_DATA_UINT64 },
+	{ "l2arc_feed_secs",			KSTAT_DATA_UINT64 },
+	{ "l2arc_feed_min_ms",			KSTAT_DATA_UINT64 },
+
 	{ "max_active",					KSTAT_DATA_UINT64 },
 	{ "sync_read_min_active",		KSTAT_DATA_UINT64 },
 	{ "sync_read_max_active",		KSTAT_DATA_UINT64 },
@@ -135,12 +142,16 @@ osx_kstat_t osx_kstat = {
 	{"zio_injection_enabled",		KSTAT_DATA_INT64  },
 	{"zvol_immediate_write_sz",		KSTAT_DATA_INT64  },
 
+	{ "l2arc_noprefetch",			KSTAT_DATA_INT64  },
+	{ "l2arc_feed_again",			KSTAT_DATA_INT64  },
+	{ "l2arc_norw",					KSTAT_DATA_INT64  },
+
 	{"zfs_top_maxinflight",			KSTAT_DATA_INT64  },
 	{"zfs_resilver_delay",			KSTAT_DATA_INT64  },
 	{"zfs_scrub_delay",				KSTAT_DATA_INT64  },
 	{"zfs_scan_idle",				KSTAT_DATA_INT64  },
 
-	{"zfs_recover",				KSTAT_DATA_INT64  },
+	{"zfs_recover",					KSTAT_DATA_INT64  },
 };
 
 
@@ -169,6 +180,17 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		/* ARC */
 		arc_kstat_update(ksp, rw);
 
+		/* L2ARC */
+		l2arc_write_max = ks->l2arc_write_max.value.ui64;
+		l2arc_write_boost = ks->l2arc_write_boost.value.ui64;
+		l2arc_headroom = ks->l2arc_headroom.value.ui64;
+		l2arc_headroom_boost = ks->l2arc_headroom_boost.value.ui64;
+		l2arc_feed_secs = ks->l2arc_feed_secs.value.ui64;
+		l2arc_feed_min_ms = ks->l2arc_feed_min_ms.value.ui64;
+
+		l2arc_noprefetch = ks->l2arc_noprefetch.value.i64;
+		l2arc_feed_again = ks->l2arc_feed_again.value.i64;
+		l2arc_norw = ks->l2arc_norw.value.i64;
 
 		/* vdev_queue */
 
@@ -305,6 +327,18 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		/* ARC */
 		arc_kstat_update(ksp, rw);
+
+		/* L2ARC */
+		ks->l2arc_write_max.value.ui64               = l2arc_write_max;
+		ks->l2arc_write_boost.value.ui64             = l2arc_write_boost;
+		ks->l2arc_headroom.value.ui64                = l2arc_headroom;
+		ks->l2arc_headroom_boost.value.ui64          = l2arc_headroom_boost;
+		ks->l2arc_feed_secs.value.ui64               = l2arc_feed_secs;
+		ks->l2arc_feed_min_ms.value.ui64             = l2arc_feed_min_ms;
+
+		ks->l2arc_noprefetch.value.i64               = l2arc_noprefetch;
+		ks->l2arc_feed_again.value.i64               = l2arc_feed_again;
+		ks->l2arc_norw.value.i64                     = l2arc_norw;
 
 		/* vdev_queue */
 		ks->zfs_vdev_max_active.value.ui64 =

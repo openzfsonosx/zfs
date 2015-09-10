@@ -13,7 +13,6 @@
 #ifndef ID_CLI_HPP
 #define ID_CLI_HPP
 
-#include <iostream>
 #include <string>
 #include <memory>
 

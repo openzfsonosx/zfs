@@ -338,7 +338,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
              dmu_tx_t *tx)
 {
     znode_t *zp = VTOZ(vp);
-    zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+    //zfsvfs_t *zfsvfs = zp->z_zfsvfs;
     int len = nbytes;
     int error = 0;
     vm_offset_t vaddr = 0;
@@ -360,15 +360,22 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
      * Create a UPL for the current range and map its
      * page list into the kernel virtual address space.
      */
-    if ( ubc_create_upl(vp, upl_start, upl_size, &upl, NULL,
-                        UPL_FILE_IO | UPL_SET_LITE) == KERN_SUCCESS ) {
-        pl = ubc_upl_pageinfo(upl);
-        ubc_upl_map(upl, &vaddr);
-    }
+    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
+						   UPL_FILE_IO | UPL_SET_LITE);
+	if ((error != KERN_SUCCESS) || !upl) {
+		printf("ZFS: update_pages failed to ubc_create_upl: %d\n", error);
+		return;
+	}
+
+	if (ubc_upl_map(upl, &vaddr) != KERN_SUCCESS) {
+		printf("ZFS: update_pages failed to ubc_upl_map: %d\n", error);
+		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+		return;
+	}
 
     for (upl_page = 0; len > 0; ++upl_page) {
         uint64_t bytes = MIN(PAGESIZE - off, len);
-        uint64_t woff = uio_offset(uio);
+        //uint64_t woff = uio_offset(uio);
         /*
          * We don't want a new page to "appear" in the middle of
          * the file update (because it may not get the write
@@ -381,8 +388,11 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
             uio_setrw(uio, UIO_WRITE);
            error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
             if (error == 0) {
-                dmu_write(zfsvfs->z_os, zp->z_id,
-                        woff, bytes, (caddr_t)vaddr + off, tx);
+
+				/*
+				  dmu_write(zfsvfs->z_os, zp->z_id,
+				  woff, bytes, (caddr_t)vaddr + off, tx);
+				*/
                 /*
                  * We don't need a ubc_upl_commit_range()
                  * here since the dmu_write() effectively
@@ -396,9 +406,10 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
                                     UPL_ABORT_DUMP_PAGES);
             }
         } else { // !upl_valid_page
-            error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
-                                uio, bytes, tx);
-
+			/*
+			  error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
+			  uio, bytes, tx);
+			*/
             rw_exit(&zp->z_map_lock);
         }
 
@@ -413,14 +424,12 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     /*
      * Unmap the page list and free the UPL.
      */
-    if (pl) {
-        (void) ubc_upl_unmap(upl);
-        /*
-         * We want to abort here since due to dmu_write()
-         * we effectively didn't dirty any pages.
-         */
-        (void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-    }
+	(void) ubc_upl_unmap(upl);
+	/*
+	 * We want to abort here since due to dmu_write()
+	 * we effectively didn't dirty any pages.
+	 */
+	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 
 }
 #endif
@@ -492,69 +501,6 @@ mappedread_sf(vnode_t *vp, int nbytes, uio_t *uio)
 }
 #endif
 
-/*
- * When a file is memory mapped, we must keep the IO data synchronized
- * between the DMU cache and the memory mapped pages.  What this means:
- *
- * On Read:	We "read" preferentially from memory mapped pages,
- *		else we default from the dmu buffer.
- *
- * NOTE: We will always "break up" the IO into PAGESIZE uiomoves when
- *	 the file is memory mapped.
- */
-#ifdef __FreeBSD__
-static int
-mappedread(vnode_t *vp, int nbytes, uio_t *uio)
-{
-	struct address_space *mp = ip->i_mapping;
-	struct page *pp;
-	znode_t *zp = ITOZ(ip);
-	int64_t	start, off;
-	uint64_t bytes;
-	int len = nbytes;
-	int error = 0;
-	znode_t *zp = VTOZ(vp);
-	objset_t *os = zp->z_zfsvfs->z_os;
-	vm_object_t obj;
-	int64_t start;
-	caddr_t va;
-	int len = nbytes;
-	int off;
-
-	ASSERT(vp->v_mount != NULL);
-	obj = vp->v_object;
-	ASSERT(obj != NULL);
-
-	start = uio->uio_loffset;
-	off = start & PAGEOFFSET;
-	zfs_vmobject_wlock(obj);
-	for (start &= PAGEMASK; len > 0; start += PAGESIZE) {
-		page_t *pp;
-		uint64_t bytes = MIN(PAGESIZE - off, len);
-
-		if (pp = page_hold(vp, start)) {
-			struct sf_buf *sf;
-			caddr_t va;
-
-			zfs_vmobject_wunlock(obj);
-			va = zfs_map_page(pp, &sf);
-			error = uiomove(va + off, bytes, UIO_READ, uio);
-			zfs_unmap_page(sf);
-			zfs_vmobject_wlock(obj);
-			page_unhold(pp);
-		} else {
-			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
-			    uio, bytes);
-		}
-		len -= bytes;
-		off = 0;
-		if (error)
-			break;
-	}
-	zfs_vmobject_wunlock(obj);
-	return (error);
-}
-#endif
 
 static int
 mappedread(vnode_t *vp, int nbytes, struct uio *uio)
@@ -585,11 +531,18 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
      * Create a UPL for the current range and map its
      * page list into the kernel virtual address space.
      */
-    if ( ubc_create_upl(vp, upl_start, upl_size, &upl, NULL,
-                        UPL_FILE_IO | UPL_SET_LITE) == KERN_SUCCESS ) {
-        pl = ubc_upl_pageinfo(upl);
-        ubc_upl_map(upl, &vaddr);
-    }
+    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
+						   UPL_FILE_IO | UPL_SET_LITE);
+	if ((error != KERN_SUCCESS) || !upl) {
+		printf("ZFS: mappedread failed to ubc_create_upl: %d\n", error);
+		return EIO;
+	}
+
+	if (ubc_upl_map(upl, &vaddr) != KERN_SUCCESS) {
+		printf("ZFS: mappedread failed to ubc_upl_map: %d\n", error);
+		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+		return ENOMEM;
+	}
 
     for (upl_page = 0; len > 0; ++upl_page) {
         uint64_t bytes = MIN(PAGE_SIZE - off, len);
@@ -616,10 +569,8 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     /*
      * Unmap the page list and free the UPL.
      */
-    if (pl) {
-        (void) ubc_upl_unmap(upl);
-        (void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-    }
+	(void) ubc_upl_unmap(upl);
+	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 
     return (error);
 }
@@ -1068,8 +1019,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
                 uio_copy = uio_duplicate(uio);
 
 			tx_bytes = uio_resid(uio);
+
 			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
-			    uio, nbytes, tx);
+									   uio, nbytes, tx);
 			tx_bytes -= uio_resid(uio);
 
 		} else {
@@ -1813,6 +1765,12 @@ top:
 		    vsecp, acl_ids.z_fuidp, vap);
 		zfs_acl_ids_free(&acl_ids);
 		dmu_tx_commit(tx);
+
+		/*
+		 * OS X - attach the vnode _after_ committing the transaction
+		 */
+		zfs_znode_getvnode(zp, zfsvfs);
+
 	} else {
 		int aflags = (flag & FAPPEND) ? V_APPEND : 0;
 
@@ -2343,6 +2301,12 @@ top:
 	zfs_acl_ids_free(&acl_ids);
 
 	dmu_tx_commit(tx);
+
+	/*
+	 * OS X - attach the vnode _after_ committing the transaction
+	 */
+	zfs_znode_getvnode(zp, zfsvfs);
+	*vpp = ZTOV(zp);
 
 	zfs_dirent_unlock(dl);
 
@@ -4580,6 +4544,12 @@ top:
 	zfs_acl_ids_free(&acl_ids);
 
 	dmu_tx_commit(tx);
+
+	/*
+	 * OS X - attach the vnode _after_ committing the transaction
+	 */
+	zfs_znode_getvnode(zp, zfsvfs);
+	*vpp = ZTOV(zp);
 
 	zfs_dirent_unlock(dl);
 

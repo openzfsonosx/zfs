@@ -15,12 +15,12 @@
 #include "IDDiskArbitrationUtils.hpp"
 #include "IDFileUtils.hpp"
 
-#include <iostream>
 #include <algorithm>
 
 namespace ID
 {
-	MediaPathLinker::MediaPathLinker(std::string base) :
+	MediaPathLinker::MediaPathLinker(std::string base, ASLClient const & logger) :
+		DiskArbitrationHandler(logger),
 		m_base(std::move(base))
 	{
 		createPath(m_base);
@@ -30,11 +30,7 @@ namespace ID
 
 	static std::string filterMediaPath(std::string const & mediaPath)
 	{
-		if (mediaPath.size() < prefixDevice.size())
-			return std::string();
-		auto r = std::mismatch(mediaPath.begin(), mediaPath.end(),
-							   prefixDevice.begin());
-		if (r.second != prefixDevice.end())
+		if (mediaPath.compare(0, prefixDevice.size(), prefixDevice) != 0)
 			return std::string();
 		std::string filteredPath = mediaPath.substr(prefixDevice.size());
 		std::replace(filteredPath.begin(), filteredPath.end(), '/', '-');
@@ -50,12 +46,12 @@ namespace ID
 			{
 				mediaPath = m_base + "/" + mediaPath;
 				std::string devicePath = "/dev/" + di.mediaBSDName;
-				std::cout << "Creating symlink: \"" << mediaPath << "\" -> " << devicePath << std::endl;
+				logger().log(ASL_LEVEL_NOTICE, "Creating symlink: ", mediaPath, " -> ", devicePath);
 				createSymlink(mediaPath, devicePath);
 			}
 			catch (std::exception const & e)
 			{
-				std::cerr << "Could not create symlink: " << e.what() << std::endl;
+				logger().log(ASL_LEVEL_ERR, "Could not create symlink: ", e.what());
 			}
 		}
 	}
@@ -68,12 +64,12 @@ namespace ID
 			try
 			{
 				mediaPath = m_base + "/" + mediaPath;
-				std::cout << "Removing symlink: \"" << mediaPath << "\"" << std::endl;
+				logger().log(ASL_LEVEL_NOTICE, "Removing symlink: ", mediaPath);
 				removeFSObject(mediaPath);
 			}
 			catch (std::exception const & e)
 			{
-				std::cerr << "Could not remove symlink: " << e.what() << std::endl;
+				logger().log(ASL_LEVEL_ERR, "Could not remove symlink: ", e.what());
 			}
 		}
 	}

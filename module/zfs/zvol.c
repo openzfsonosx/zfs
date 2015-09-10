@@ -2266,11 +2266,13 @@ zvol_ioctl(dev_t dev, unsigned long cmd, caddr_t data, int isblk,
 				*f = 1;
 			break;
 
+#ifdef DKIOCGETBLOCKCOUNT32
 		case DKIOCGETBLOCKCOUNT32:
 			dprintf("DKIOCGETBLOCKCOUNT32: %lu\n",
 			    (uint32_t)zv->zv_volsize / zv->zv_volblocksize);
 			*f = (uint32_t)zv->zv_volsize / zv->zv_volblocksize;
 			break;
+#endif
 
 		case DKIOCGETBLOCKCOUNT:
 			dprintf("DKIOCGETBLOCKCOUNT: %llu\n",

@@ -19,7 +19,9 @@ kerneldir = /usr/src/zfs-$(VERSION)/$(LINUX_VERSION)
 nodist_kernel_HEADERS = zfs.release zfs_config.h
 endif
 if CONFIG_USER
-SUBDIRS += udev etc man scripts lib cmd zfs_bundle zfs_snapshot_bundle
+# O3X - trim out linux stuff.
+#SUBDIRS += udev etc man scripts lib cmd zfs_bundle
+SUBDIRS += etc man scripts lib cmd zfs_bundle zfs_snapshot_bundle
 endif
 
 
@@ -42,13 +44,15 @@ distclean-local::
 
 if CONFIG_KERNEL
 install-data-local:
-	release=$(ZFS_META_VERSION)-$(ZFS_META_RELEASE); \
-	instdest=$(DESTDIR)/usr/src/zfs-$$release/$(LINUX_VERSION); \
-	for instfile in $(noinst_HEADERS); do \
-		parentdir=`dirname $$instdest/$$instfile`; \
-		mkdir -p $$parentdir; \
-		$(INSTALL) $$instfile $$instdest/$$instfile; \
-	done
+
+#    release=$(ZFS_META_VERSION)-$(ZFS_META_RELEASE); \
+#	instdest=$(DESTDIR)/usr/src/zfs-$$release/$(LINUX_VERSION); \
+#	for instfile in $(noinst_HEADERS); do \
+#		parentdir=`dirname $$instdest/$$instfile`; \
+#		mkdir -p $$parentdir; \
+#		$(INSTALL) $$instfile $$instdest/$$instfile; \
+#	done
+
 endif
 
 

@@ -41,6 +41,11 @@
 #include <sys/metaslab.h>
 #include <sys/trace_zil.h>
 
+#if defined (__APPLE__) && defined (__KERNEL__)
+#include <sys/zfs_rlock.h>
+#include <sys/zfs_znode.h>
+#endif
+
 /*
  * The zfs intent log (ZIL) saves transaction records of system calls
  * that change the file system in memory with enough information
@@ -1093,6 +1098,11 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 	uint64_t txg = lrc->lrc_txg;
 	uint64_t reclen = lrc->lrc_reclen;
 	uint64_t dlen = 0;
+	int error = 0;
+#if defined (__APPLE__) && defined (__KERNEL__)
+	znode_t *zp = NULL;
+	rl_t *rl = NULL;
+#endif
 
 	if (lwb == NULL)
 		return (NULL);
@@ -1104,6 +1114,45 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 	if (lrc->lrc_txtype == TX_WRITE && itx->itx_wr_state == WR_NEED_COPY)
 		dlen = P2ROUNDUP_TYPED(
 		    lrw->lr_length, sizeof (uint64_t), uint64_t);
+
+#if defined (__APPLE__) && defined (__KERNEL__)
+	/* to avoid deadlock, grab necessary range lock before hold the txg */
+	if (lrc->lrc_txtype == TX_WRITE && itx->itx_wr_state != WR_COPIED) {
+		uint64_t off = lr->lr_offset;
+		int len = lr->lr_length; /* this range never exceeds max blk size,
+									so int type is ok */
+		zfsvfs_t *zfsvfs = itx->itx_private;
+
+		error = zfs_zget_want_unlinked(zfsvfs, lr->lr_foid, &zp);
+		if (error == 0) {
+			if (dlen) {                     /* immediate write */
+				rl = zfs_range_lock(zp, off, len, RL_READER);
+			} else {
+				uint64_t boff; /* block starting offset */
+
+				/*
+				 * Have to lock the whole block to ensure when it's
+				 * written out and it's checksum is being calculated
+				 * that no one can change the data. We need to re-check
+				 * blocksize after we get the lock in case it's changed!
+				 */
+				for (;;) {
+					if (ISP2(zp->z_blksz)) {
+						boff = P2ALIGN_TYPED(off, zp->z_blksz,
+											 uint64_t);
+					} else {
+						boff = 0;
+					}
+					len = zp->z_blksz;
+					rl = zfs_range_lock(zp, boff, len, RL_READER);
+					if (zp->z_blksz == len)
+						break;
+					zfs_range_unlock(rl);
+				}
+			} /* if (dlen) ... else */
+		} /* if (error == 0) */
+	}         /* if (lrc->lrc_txtype == TX_WRITE && itx->itx_wr_state != WR_COPIED) */
+#endif
 
 	zilog->zl_cur_used += (reclen + dlen);
 
@@ -1142,7 +1191,6 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 			ZIL_STAT_INCR(zil_itx_copied_bytes, lrw->lr_length);
 		} else {
 			char *dbuf;
-			int error;
 
 			if (dlen) {
 				ASSERT(itx->itx_wr_state == WR_NEED_COPY);
@@ -1158,8 +1206,17 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 				ZIL_STAT_INCR(zil_itx_indirect_bytes,
 				    lrw->lr_length);
 			}
+#if defined (__APPLE__) && defined (__KERNEL__)
+			if (error == 0) {
+				/* if error is not 0, the zfs_zget already failed,
+				 * no need to proceed */
+				error = zilog->zl_get_data(
+					itx->itx_private, lr, dbuf, lwb->lwb_zio, zp, rl);
+			}
+#else
 			error = zilog->zl_get_data(
 			    itx->itx_private, lrw, dbuf, lwb->lwb_zio);
+#endif
 			if (error == EIO) {
 				txg_wait_synced(zilog->zl_dmu_pool, txg);
 				return (lwb);

@@ -21,6 +21,8 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Portions Copyright 2007-2009 Apple Inc. All rights reserved.
+ * Use is subject to license terms.
  */
 
 /* Portions Copyright 2007 Jeremy Teo */
@@ -76,8 +78,6 @@ SYSCTL_INT(_debug_sizeof, OID_AUTO, znode, CTLFLAG_RD, 0, sizeof (znode_t),
 #endif
 void
 zfs_release_sa_handle(sa_handle_t *hdl, dmu_buf_t *db, void *tag);
-extern uint64_t vnop_num_reclaims;
-
 
 
 // #define dprintf printf
@@ -174,7 +174,6 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 #endif
 
 	list_link_init(&zp->z_link_node);
-	list_link_init(&zp->z_link_reclaim_node);
 
 	mutex_init(&zp->z_lock, NULL, MUTEX_DEFAULT, NULL);
 	rw_init(&zp->z_map_lock, NULL, RW_DEFAULT, NULL);
@@ -885,11 +884,6 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 
 
 
-
-	zfs_znode_getvnode(zp, zfsvfs, &vp); /* Assigns both vp and z_vnode */
-
-
-
 #endif /* Apple */
 
 	mutex_enter(&zfsvfs->z_znodes_lock);
@@ -930,6 +924,18 @@ static zfs_acl_phys_t acl_phys;
  *
  *	OUT:	zpp	- allocated znode
  *
+ * OS X implementation notes:
+ *
+ * The caller of zfs_mknode() is expected to call zfs_znode_getvnode()
+ * AFTER the dmu_tx_commit() is performed.  This prevents deadlocks
+ * since vnode_create can indirectly attempt to clean a dirty vnode.
+ *
+ * The current list of callers includes:
+ *      zfs_vnop_create
+ *      zfs_vnop_mkdir
+ *      zfs_vnop_symlink
+ *      zfs_obtain_xattr
+ *      zfs_make_xattrdir
  */
 void
 zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
@@ -1156,20 +1162,16 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	VERIFY(sa_replace_all_by_template(sa_hdl, sa_attrs, cnt, tx) == 0);
 
 	if (!(flag & IS_ROOT_NODE)) {
-
 		/*
 		 * We must not hold any locks while calling vnode_create inside
 		 * zfs_znode_alloc(), as it may call either of vnop_reclaim, or
-		 * vnop_fsync.
+		 * vnop_fsync. If it is not enough to just release ZFS_OBJ_HOLD
+		 * we will have to attach the vnode after the dmu_commit like
+		 * maczfs does, in each vnop caller.
 		 */
-		// zfs_release_sa_handle(sa_hdl, db, FTAG);
 		*zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, sa_hdl);
 
 		ASSERT(*zpp != NULL);
-		// ZFS_OBJ_HOLD_ENTER(zfsvfs, obj);
-		// VERIFY(0 == sa_buf_hold(zfsvfs->z_os, obj, NULL, &db));
-		// VERIFY(0 == sa_handle_get_from_db(zfsvfs->z_os, db, NULL,
-		// SA_HDL_SHARED, &sa_hdl));
 	} else {
 		/*
 		 * If we are creating the root node, the "parent" we
@@ -1205,7 +1207,6 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 
 	kmem_free(sa_attrs, sizeof (sa_bulk_attr_t) * ZPL_END);
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj);
-	getnewvnode_drop_reserve();
 }
 
 /*
@@ -1304,7 +1305,8 @@ zfs_xvattr_set(znode_t *zp, xvattr_t *xvap, dmu_tx_t *tx)
 }
 
 int
-zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+zfs_zget_internal(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp,
+				  int skip_vnode, int want_unlinked)
 {
 	dmu_object_info_t doi;
 	dmu_buf_t	*db;
@@ -1313,6 +1315,7 @@ zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
 	sa_handle_t	*hdl;
 	struct thread	*td;
 	int err;
+	uint32_t        vid;
 
 	dprintf("+zget %lld\n", obj_num);
 
@@ -1355,107 +1358,63 @@ again:
 		 * know about the znode.
 		 */
 
-		ASSERT3P(zp, !=, NULL);
+		mutex_enter(&zp->z_lock);
 
 		/*
-		 * We can only call getwithvid if vp is not NULL
+		 * Since zp may disappear after we unlock below,
+		 * we save a copy of vp and it's vid
 		 */
-		if (ZTOV(zp)) {
-			/* Standard ZFS code here */
+		vid = zp->z_vid;
+		vp = ZTOV(zp);
 
-			mutex_enter(&zp->z_lock);
-			ASSERT3U(zp->z_id, ==, obj_num);
-			if (zp->z_unlinked) {
-				err = (ENOENT);
-			} else {
-				vp = ZTOV(zp);
-				*zpp = zp;
-				err = 0;
-			}
+		/*
+		 * Since we do immediate eviction of the z_dbuf, we
+		 * should never find a dbuf with a znode that doesn't
+		 * know about the dbuf.
+		 */
+		ASSERT3P(zp->z_dbuf, ==, db);
+		ASSERT3U(zp->z_id, ==, obj_num);
 
-			if (err == 0) {
-
-				dprintf("attaching vnode %p\n", vp);
-
-				/*
-				 * zfs_free_node() sets z_vnode to NULL when called inside
-				 * the znodes_lock, so we check against that here to ensure
-				 * it is not NULL
-				 */
-				if (!vp || (vnode_getwithvid(vp, zp->z_vid) != 0)) {
-					mutex_exit(&zp->z_lock);
-					sa_buf_rele(db, NULL);
-					ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-					dprintf("zfs: vnode_getwithvid err\n");
-					goto again;
-				}
-			}
+		/*
+		 * OS X can return the znode when the file is unlinked
+		 * in order to support the sync of open-unlinked files
+		 */
+		if (!want_unlinked && zp->z_unlinked) {
+			dmu_buf_rele(db, NULL);
 			mutex_exit(&zp->z_lock);
-			sa_buf_rele(db, NULL);
 			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-			getnewvnode_drop_reserve();
-			return (err);
+			return (ENOENT);
+		}
+
+		dmu_buf_rele(db, NULL);
+		mutex_exit(&zp->z_lock);
+		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+
+		if (!vp || (vnode_getwithvid(vp, vid) != 0)) {
+			goto again;
 		}
 
 		/*
-		 * We have this strange race in OSX where vnop_reclaim has
-		 * been called so we released vp, and placed zp on reclaim
-		 * list. But reclaim has not yet removed it from the
-		 * reclaim-list so it is still around.  When we detect this
-		 * here, we force a reclaim right now, then go a head and
-		 * allocate a new zp
+		 * Since we had to drop all of our locks above, make sure
+		 * that we have the vnode and znode we had before.
 		 */
+		mutex_enter(&zp->z_lock);
+		if ((vid != zp->z_vid) || (vp != ZTOV(zp))) {
+			mutex_exit(&zp->z_lock);
+			/* Release the wrong vp from vnode_getwithvid(). This
+			 * call is missing in 10a286 - lundman */
+			VN_RELE(vp);
+			printf("ZFS: the vids do not match part 1\n");
+			goto again;
+		}
+		if (vnode_vid(vp) != zp->z_vid)
+			printf("ZFS: the vids do not match\n");
+		mutex_exit(&zp->z_lock);
 
-		/* VP is NULL */
-
-		/* Clean up locks */
-		sa_buf_rele(db, NULL);
-		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+		*zpp = zp;
 		getnewvnode_drop_reserve();
-
-		dprintf("Waiting on zp %p to die!\n", zp);
-
-		/*
-		 * We will do direct reclaim of the zp we want, so we can
-		 * re-acquire the vnode it needs. This means stealing it
-		 * from the reclaim thread, if it is still in the list.
-		 * We can not access "zp" directly here, as it may already
-		 * have been released, so we grab the mutex, run through the
-		 * reclaim list, if it in the list, we can safely take it out
-		 * and reclaim it here.
-		 */
-		mutex_enter(&zfsvfs->z_reclaim_list_lock);
-		for (znode_t *rzp = list_head(&zfsvfs->z_reclaim_znodes) ;
-			 rzp;
-			 rzp = list_next(&zfsvfs->z_reclaim_znodes, rzp)) {
-
-			if (rzp == zp) {
-
-				dprintf("Removing from reclaim list zp %p\n", zp);
-                list_remove(&zfsvfs->z_reclaim_znodes, zp);
-				mutex_exit(&zfsvfs->z_reclaim_list_lock);
-
-#ifdef _KERNEL
-				atomic_dec_64(&vnop_num_reclaims);
-#endif
-				rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
-				if (zp->z_sa_hdl == NULL)
-					zfs_znode_free(zp);
-				else
-					zfs_zinactive(zp);
-				rw_exit(&zfsvfs->z_teardown_inactive_lock);
-				goto again;
-
-            }
-
-		} // for
-		mutex_exit(&zfsvfs->z_reclaim_list_lock);
-		/* We have just looked through the entire list and not found
-		 * the zp, so it must have already been reclaimed.
-		 */
-		goto again;
-
-	} /* HDL != NULL */
+		return (0);
+	} // if vnode != NULL
 
 	/*
 	 * Not found create new znode/vnode
@@ -1475,9 +1434,13 @@ again:
 
 	if (zp == NULL) {
 		err = SET_ERROR(ENOENT);
-	} else {
-		*zpp = zp;
+		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+		getnewvnode_drop_reserve();
+		dprintf("zget returning %d\n", err);
+		return (err);
 	}
+	*zpp = zp;
+
 	if (err == 0) {
 #ifndef __APPLE__ /* Already associated with mount from vnode_create */
 		struct vnode *vp = ZTOV(zp);
@@ -1495,9 +1458,48 @@ again:
 	}
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 	getnewvnode_drop_reserve();
+
+	if (skip_vnode) {
+		/* Insert it on our list of active znodes */
+		//mutex_enter(&zfsvfs->z_znodes_lock);
+		//list_insert_tail(&zfsvfs->z_all_znodes, zp);
+		//membar_producer();
+		//mutex_exit(&zfsvfs->z_znodes_lock);
+	} else {
+		/* Attach a vnode to our new znode */
+		zfs_znode_getvnode(zp, zfsvfs); /* Assigns both vp and z_vnode */
+	}
+
 	dprintf("zget returning %d\n", err);
 	return (err);
 }
+
+
+/*
+ * Some callers don't require a vnode, so allow them to
+ * get a znode without attaching a vnode to it.
+ */
+int
+zfs_zget_sans_vnode(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+{
+	return zfs_zget_internal(zfsvfs, obj_num, zpp, 1, 0);
+}
+
+/*
+ * Some callers wants the znode even it is already unlinked
+ */
+int
+zfs_zget_want_unlinked(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+{
+	return zfs_zget_internal(zfsvfs, obj_num, zpp, 0, 1);
+}
+
+int
+zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+{
+	return zfs_zget_internal(zfsvfs, obj_num, zpp, 0, 0);
+}
+
 
 int
 zfs_rezget(znode_t *zp)
@@ -1646,20 +1648,32 @@ zfs_zinactive(znode_t *zp)
 	ASSERT(zp->z_sa_hdl);
 
 	/*
-	 * These locks may already be taken by ourselves, through vnode_create
-	 * reentry.
+	 * Don't allow a zfs_zget() while were trying to release this znode
 	 */
+	ZFS_OBJ_HOLD_ENTER(zfsvfs, z_id);
+
+	mutex_enter(&zp->z_lock);
+
+	/* Solaris checks to see if a reference was grabbed to the vnode here
+	 * which we can not easily do in XNU */
+	//if (ZTOV(zp) && vnode_isinuse(ZTOV(zp), 0)) {
+	//	printf("ZFS: zinactive(%p) has non-zero vp reference!\n", zp);
+	//}
 
 	/*
 	 * If this was the last reference to a file with no links,
 	 * remove the file from the file system.
 	 */
 	if (zp->z_unlinked) {
+		mutex_exit(&zp->z_lock);
+		ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 		zfs_rmnode(zp);
 		return;
 	}
 
+	mutex_exit(&zp->z_lock);
 	zfs_znode_dmu_fini(zp);
+	ZFS_OBJ_HOLD_EXIT(zfsvfs, z_id);
 	zfs_znode_free(zp);
 }
 
@@ -1667,6 +1681,17 @@ void
 zfs_znode_free(znode_t *zp)
 {
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+#if 1 /* detect if we are about to release something actually locked */
+	uint64_t *mp = (uint64_t *)&zp->z_lock;
+	/* we know first entry in SPL mutex is "owner" and if mutex has been freed,
+	 * it should be 0.
+	 */
+	if (mp[0] != 0) {
+		panic("ZFS: about to znode_free a zp %p with active mutex %llx\n",
+			  zp, mp[0]);
+	}
+#endif
 
 	mutex_enter(&zfsvfs->z_znodes_lock);
 	zp->z_vnode = NULL;
@@ -2353,9 +2378,6 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	mutex_init(&zfsvfs.z_znodes_lock, NULL, MUTEX_DEFAULT, NULL);
 	list_create(&zfsvfs.z_all_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_node));
-	mutex_init(&zfsvfs.z_reclaim_list_lock, NULL, MUTEX_DEFAULT, NULL);
-	list_create(&zfsvfs.z_reclaim_znodes, sizeof (znode_t),
-	    offsetof(znode_t, z_link_reclaim_node));
 
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_init(&zfsvfs.z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);

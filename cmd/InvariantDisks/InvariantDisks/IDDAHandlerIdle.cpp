@@ -16,7 +16,9 @@
 
 namespace ID
 {
-	DAHandlerIdle::DAHandlerIdle(std::string base, int64_t idleTimeoutNS) :
+	DAHandlerIdle::DAHandlerIdle(std::string base, int64_t idleTimeoutNS,
+								 ASLClient const & logger) :
+		DiskArbitrationHandler(logger),
 		m_base(std::move(base)), m_idleTimeout(idleTimeoutNS),
 		m_idleTimer(createSourceTimer(this, [](void * ctx){ static_cast<DAHandlerIdle*>(ctx)->idle(); }))
 	{

@@ -22,7 +22,7 @@ namespace ID
 	class MediaPathLinker : public DiskArbitrationHandler
 	{
 	public:
-		MediaPathLinker(std::string base);
+		explicit MediaPathLinker(std::string base, ASLClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;
