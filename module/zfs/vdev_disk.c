@@ -99,6 +99,75 @@ vdev_disk_free(vdev_t *vd)
 	vd->vdev_tsd = NULL;
 }
 
+// smd
+#if 1
+const char *devids[] = {
+"media-06435AEA-7E68-8E00-0643-5AEA7E688E00",
+"media-065BFA2B-16AD-57C0-065B-FA2B16AD57C0",
+"DT_HyperX_30-1C6F65C7B80DBCB131FB000D:2",
+"media-065BFA34-D7DE-9000-065B-FA34D7DE9000",
+"media-06435B07-8095-9180-0643-5B0780959180",
+"Patriot_Memory-070727D062444554:1",
+"media-065BFA1D-A7CA-E940-065B-FA1DA7CAE940",
+"media-06435AE2-F97D-7100-0643-5AE2F97D7100",
+"DT_HyperX_30-1C6F65C7B80DBCB131FB000D:1",
+"media-065BAF0F-CE5A-7400-065B-AF0FCE5A7400",
+"media-065BF90D-6464-3880-065B-F90D64643880",
+"media-065BAF14-6020-7940-065B-AF1460207940",
+"media-065BF912-67CC-F440-065B-F91267CCF440",
+"media-065BAF21-0F98-F780-065B-AF210F98F780",
+"media-065BF919-1448-4AC0-065B-F91914484AC0",
+"media-065BAF19-295F-CE00-065B-AF19295FCE00",
+"media-065BFA0C-15F3-B500-065B-FA0C15F3B500",
+"media-970A550F-BA71-4D05-8D02-E6D7C7489670",
+"media-065BAEFF-FB1E-49C0-065B-AEFFFB1E49C0",
+"media-AC58DF37-2193-480D-9992-4ACD67D3E351",
+NULL	
+};
+
+// from http://www.opensource.apple.com/source/xnu/xnu-792.13.8/libsa/strstr.c
+
+static inline char *
+smd_strstr(const char *in, const char *str)
+{
+  char c;
+  size_t len;
+
+  c = *str++;
+  if (!c)
+    return (char *) in;	// Trivial empty string case
+
+  len = strlen(str);
+  do {
+    char sc;
+
+    do {
+      sc = *in++;
+      if (!sc)
+	return (char *) 0;
+    } while (sc != c);
+  } while (strncmp(in, str, len) != 0);
+
+  return (char *) (in - 1);
+}
+
+
+static inline int
+ssd_search(const char a[]) {
+  int i;
+  char *p = NULL;
+
+  for(i=0; devids[i] != NULL; i++) {
+    if((p=smd_strstr(a, devids[i]))!=NULL) {
+      printf("ZFS: smd: issid: %s\n", a);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+#endif
+
 static int
 vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
     uint64_t *ashift)
@@ -286,6 +355,12 @@ skip_open:
 				   context) == 0) {
 		if (isssd)
 			vd->vdev_nonrot = B_TRUE;
+	}
+	// smd - search static table in #if block above
+	if(isssd == 0) {
+	  if(vd->vdev_path) {
+	    isssd = ssd_search(vd->vdev_path);
+	  }
 	}
 	// smd: was dprintf
 	printf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "", 
