@@ -332,7 +332,7 @@ dsl_pool_close(dsl_pool_t *dp)
 	 * this spa won't cause trouble, and they'll eventually fall
 	 * out of the ARC just like any other unused buffer.
 	 */
-	arc_flush(dp->dp_spa);
+	arc_flush(dp->dp_spa, FALSE);
 
 	txg_fini(dp);
 	dsl_scan_fini(dp);

@@ -57,6 +57,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/lzjb.c \
 	../../module/zfs/lz4.c \
 	../../module/zfs/metaslab.c \
+	../../module/zfs/multilist.c \
 	../../module/zfs/range_tree.c \
 	../../module/zfs/refcount.c \
 	../../module/zfs/rrwlock.c \

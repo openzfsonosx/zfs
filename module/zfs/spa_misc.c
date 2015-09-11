@@ -1747,21 +1747,20 @@ spa_init(int mode)
 
 	spa_mode_global = mode;
 
-#ifndef _KERNEL
+#ifdef sun
+#ifdef _KERNEL
+	spa_arch_init();
+#else
 	if (spa_mode_global != FREAD && dprintf_find_string("watch")) {
-		struct sigaction sa;
-
-		sa.sa_flags = SA_SIGINFO;
-		sigemptyset(&sa.sa_mask);
-		sa.sa_sigaction = arc_buf_sigsegv;
-
-		if (sigaction(SIGSEGV, &sa, NULL) == -1) {
+		arc_procfd = open("/proc/self/ctl", O_WRONLY);
+		if (arc_procfd == -1) {
 			perror("could not enable watchpoints: "
-			    "sigaction(SIGSEGV, ...) = ");
+				   "opening /proc/self/ctl failed: ");
 		} else {
 			arc_watch = B_TRUE;
 		}
 	}
+#endif
 #endif
 
 	fm_init();
