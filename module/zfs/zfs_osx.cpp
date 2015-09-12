@@ -432,43 +432,41 @@ uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t 
 
 #include <sys/vdev_impl.h>
 #include <sys/spa_impl.h>
+#include <sys/vdev_disk.h>
+
+#define dprintf printf
 
 static vdev_t *
 vdev_lookup_by_path(vdev_t *vd, const char *name)
 {
 	vdev_t *mvd;
 	int c;
-	char pathbuf[MAXPATHLEN];
 	char *lookup_name;
-	int err = 0;
+	vdev_disk_t *dvd = NULL;
 
 	if (!vd) return NULL;
 
+	dvd = (vdev_disk_t *)vd->vdev_tsd;
+
 	// Check both strings are valid
-	if (name && *name &&
+	if (name && *name && dvd &&
 		vd->vdev_path && vd->vdev_path[0]) {
 		int off;
-		struct vnode *vp;
+
+		// Try normal path "vdev_path" or the readlink resolved
 
 		lookup_name = vd->vdev_path;
 
-		// We need to resolve symlinks here to get the final source name
-		dprintf("ZFS: Looking up '%s'\n", vd->vdev_path);
+		// Skip /dev/ or not?
+		strncmp("/dev/", lookup_name, 5) == 0 ? off=5 : off=0;
 
-		if ((err = vnode_lookup(vd->vdev_path, 0,
-								&vp, vfs_context_current())) == 0) {
-			int len = MAXPATHLEN;
+		dprintf("ZFS: vdev '%s' == '%s' ?\n", name,
+				&lookup_name[off]);
 
-			if ((err = vn_getpath(vp, pathbuf, &len)) == 0) {
-				dprintf("ZFS: '%s' resolved name is '%s'\n",
-						vd->vdev_path, pathbuf);
-				lookup_name = pathbuf;
-			}
+		if (!strcmp(name, &lookup_name[off])) return vd;
 
-			vnode_put(vp);
-		}
 
-		if (err) dprintf("ZFS: Lookup failed %d\n", err);
+		lookup_name = dvd->vd_readlinkname;
 
 		// Skip /dev/ or not?
 		strncmp("/dev/", lookup_name, 5) == 0 ? off=5 : off=0;
@@ -487,7 +485,6 @@ vdev_lookup_by_path(vdev_t *vd, const char *name)
 	return (NULL);
 }
 
-#include <sys/vdev_disk.h>
 
 extern "C" {
 
@@ -538,16 +535,16 @@ bool IOkit_disk_removed_callback(void* target,
 
 		  if (vd && vd->vdev_path) {
 
-			printf("ZFS: Device '%s' removal requested\n",
-				   vd->vdev_path);
-			(void) thread_create(NULL, 0, vdev_close_thread,
-								 vd, 0, &p0,
-								 TS_RUN, minclsyspri);
+			  printf("ZFS: Device '%s' removal requested\n",
+					 vd->vdev_path);
+			  (void) thread_create(NULL, 0, vdev_close_thread,
+								   vd, 0, &p0,
+								   TS_RUN, minclsyspri);
 
-			vd->vdev_remove_wanted = B_TRUE;
-			spa_async_request(spa, SPA_ASYNC_REMOVE);
+			  vd->vdev_remove_wanted = B_TRUE;
+			  spa_async_request(spa, SPA_ASYNC_REMOVE);
 
-			break;
+			  break;
 		  }
 
 		} // for all spa
