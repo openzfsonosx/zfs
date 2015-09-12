@@ -40,6 +40,7 @@ typedef struct vdev_disk {
 	struct vnode *vd_devvp;
 	uint64_t vd_ashift;
 	boolean_t vd_offline;
+	char vd_readlinkname[MAXPATHLEN];
 } vdev_disk_t;
 
 /* calculates (bytes / DEV_BSIZE) */
