@@ -2227,6 +2227,8 @@ static int
 __dbuf_hold_impl(struct dbuf_hold_impl_data *dh)
 {
 	ASSERT3S(dh->dh_depth, <, DBUF_HOLD_IMPL_MAX_DEPTH);
+	if (dh->dh_depth >= DBUF_HOLD_IMPL_MAX_DEPTH) panic("ZFS: DBUF_HOLD_IMPL_MAX_DEPTH (%d) limit reached!\n", DBUF_HOLD_IMPL_MAX_DEPTH);
+
 	dh->dh_parent = NULL;
 
 	ASSERT(dh->dh_blkid != DMU_BONUS_BLKID);
