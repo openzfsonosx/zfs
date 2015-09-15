@@ -267,10 +267,11 @@ vdev_queue_max_async_writes(spa_t *spa)
 {
 	int writes;
 	uint64_t dirty = spa->spa_dsl_pool->dp_dirty_total;
-	uint64_t min_bytes =  zfs_dirty_data_max *
-		zfs_vdev_async_write_active_min_dirty_percent / 100;
-	uint64_t max_bytes =  zfs_dirty_data_max *
-		zfs_vdev_async_write_active_max_dirty_percent / 100;
+	uint64_t min_bytes =  (uint64_t)zfs_dirty_data_max *
+	    (uint64_t) zfs_vdev_async_write_active_min_dirty_percent / 100;
+	uint64_t max_bytes =  (uint64_t)zfs_dirty_data_max *
+	   (uint64_t)  zfs_vdev_async_write_active_max_dirty_percent / 100;
+	uint64_t divisor;
 	/*
 	 * Sync tasks correspond to interactive user actions. To reduce the
 	 * execution time of those actions we push data out as fast as possible.
@@ -290,12 +291,12 @@ vdev_queue_max_async_writes(spa_t *spa)
 	 * move right by min_bytes
 	 * move up by min_writes
 	 */
+	divisor =  (max_bytes - min_bytes) +
+	    (uint64_t)zfs_vdev_async_write_min_active;
 	writes = (dirty - min_bytes) *
-		zfs_vdev_async_write_max_active -
-		zfs_vdev_async_write_min_active /
-		(uint64_t)(
-		(max_bytes - min_bytes) +
-	    zfs_vdev_async_write_min_active);
+	    (zfs_vdev_async_write_max_active -
+	    zfs_vdev_async_write_min_active) /
+		divisor;
 	ASSERT3U(writes, >=, zfs_vdev_async_write_min_active);
 	ASSERT3U(writes, <=, zfs_vdev_async_write_max_active);
 	return (writes);
