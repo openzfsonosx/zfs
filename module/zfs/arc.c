@@ -1850,7 +1850,7 @@ arc_space_return(uint64_t space, arc_space_type_t type)
 }
 
 arc_buf_t *
-arc_buf_alloc(spa_t *spa, uint64_t size, void *tag, arc_buf_contents_t type)
+arc_buf_alloc(spa_t *spa, int size, void *tag, arc_buf_contents_t type)
 {
 	arc_buf_hdr_t *hdr;
 	arc_buf_t *buf;
@@ -1894,7 +1894,7 @@ static char *arc_onloan_tag = "onloan";
  * freed.
  */
 arc_buf_t *
-arc_loan_buf(spa_t *spa, uint64_t size)
+arc_loan_buf(spa_t *spa, int size)
 {
 	arc_buf_t *buf;
 
@@ -2380,7 +2380,7 @@ arc_buf_remove_ref(arc_buf_t *buf, void* tag)
 	return (no_callback);
 }
 
-uint64_t
+int
 arc_buf_size(arc_buf_t *buf)
 {
 	return (buf->b_hdr->b_size);
@@ -3912,10 +3912,8 @@ arc_read_done(zio_t *zio)
 		ASSERT3U(hdr->b_dva.dva_word[1], ==,
 		    BP_IDENTITY(zio->io_bp)->dva_word[1]);
 
-#ifdef DEBUG
 		arc_buf_hdr_t *found = buf_hash_find(hdr->b_spa, zio->io_bp,
 		    &hash_lock);
-#endif
 
 		ASSERT((found == NULL && HDR_FREED_IN_READ(hdr) &&
 		    hash_lock == NULL) ||

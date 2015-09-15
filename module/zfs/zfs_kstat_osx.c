@@ -115,7 +115,6 @@ osx_kstat_t osx_kstat = {
 	{"zfs_prefetch_disable",		KSTAT_DATA_INT64  },
 	{"zfetch_max_streams",			KSTAT_DATA_INT64  },
 	{"zfetch_min_sec_reap",			KSTAT_DATA_INT64  },
-	{"zfetch_block_cap",			KSTAT_DATA_INT64  },
 	{"zfetch_array_rd_sz",			KSTAT_DATA_INT64  },
 	{"zfs_default_bs",				KSTAT_DATA_INT64  },
 	{"zfs_default_ibs",				KSTAT_DATA_INT64  },
@@ -251,8 +250,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			ks->zfetch_max_streams.value.i64;
 		zfetch_min_sec_reap =
 			ks->zfetch_min_sec_reap.value.i64;
-		zfetch_block_cap =
-			ks->zfetch_block_cap.value.i64;
 		zfetch_array_rd_sz =
 			ks->zfetch_array_rd_sz.value.i64;
 		zfs_default_bs =
@@ -398,8 +395,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			zfetch_max_streams;
 		ks->zfetch_min_sec_reap.value.i64 =
 			zfetch_min_sec_reap;
-		ks->zfetch_block_cap.value.i64 =
-			zfetch_block_cap;
 		ks->zfetch_array_rd_sz.value.i64 =
 			zfetch_array_rd_sz;
 		ks->zfs_default_bs.value.i64 =
