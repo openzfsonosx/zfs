@@ -176,6 +176,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		/* ARC */
 		arc_kstat_update(ksp, rw);
+		arc_kstat_update_osx(ksp, rw);
 
 		/* L2ARC */
 		l2arc_write_max = ks->l2arc_write_max.value.ui64;
@@ -355,31 +356,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		/* ARC */
 		arc_kstat_update(ksp, rw);
 		arc_kstat_update_osx(ksp, rw);
-
-		/* L2ARC */
-		ks->l2arc_write_max.value.ui64               = l2arc_write_max;
-		ks->l2arc_write_boost.value.ui64             = l2arc_write_boost;
-		ks->l2arc_headroom.value.ui64                = l2arc_headroom;
-		ks->l2arc_headroom_boost.value.ui64          = l2arc_headroom_boost;
-		ks->l2arc_max_block_size.value.ui64          = l2arc_max_block_size;
-		ks->l2arc_feed_secs.value.ui64               = l2arc_feed_secs;
-		ks->l2arc_feed_min_ms.value.ui64             = l2arc_feed_min_ms;
-
-		ks->l2arc_noprefetch.value.i64               = l2arc_noprefetch;
-		ks->l2arc_feed_again.value.i64               = l2arc_feed_again;
-		ks->l2arc_norw.value.i64                     = l2arc_norw;
-
-		/* L2ARC */
-		ks->l2arc_write_max.value.ui64               = l2arc_write_max;
-		ks->l2arc_write_boost.value.ui64             = l2arc_write_boost;
-		ks->l2arc_headroom.value.ui64                = l2arc_headroom;
-		ks->l2arc_headroom_boost.value.ui64          = l2arc_headroom_boost;
-		ks->l2arc_feed_secs.value.ui64               = l2arc_feed_secs;
-		ks->l2arc_feed_min_ms.value.ui64             = l2arc_feed_min_ms;
-
-		ks->l2arc_noprefetch.value.i64               = l2arc_noprefetch;
-		ks->l2arc_feed_again.value.i64               = l2arc_feed_again;
-		ks->l2arc_norw.value.i64                     = l2arc_norw;
 
 		/* L2ARC */
 		ks->l2arc_write_max.value.ui64               = l2arc_write_max;
