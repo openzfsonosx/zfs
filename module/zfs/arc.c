@@ -5010,12 +5010,12 @@ arc_kstat_update(kstat_t *ksp, int rw)
 	return (0);
 }
 
-#ifdef __OPPLE__
 
+#ifdef __APPLE__
 /*
  * Uses ARC static variables in logic.
  */
-int arc_kstat_update(kstat_t *ksp, int rw)
+int arc_kstat_update_osx(kstat_t *ksp, int rw)
 {
 	osx_kstat_t *ks = ksp->ks_data;
 
@@ -5092,9 +5092,7 @@ int arc_kstat_update(kstat_t *ksp, int rw)
 		ks->arc_zfs_arc_average_blocksize.value.ui64 = zfs_arc_average_blocksize;
 	}
 	return 0;
-
 }
-
 #endif
 
 /*
