@@ -3295,17 +3295,16 @@ arc_available_memory(void)
 
 #endif // sun
 
+#ifdef __APPLE__
+	lowest = kmem_avail();
+#endif
+
 
 #else  // KERNEL
 	/* Every 100 calls, free a small amount */
 	if (spa_get_random(100) == 0)
 		lowest = -1024;
 #endif // KERNEL
-
-#ifdef __APPLE__
-	lowest = 1 << 30;
-#endif
-
 
 	last_free_memory = lowest;
 	last_free_reason = r;
@@ -3446,6 +3445,9 @@ arc_reclaim_thread(void)
 #ifdef _KERNEL
 #ifdef sun
 				to_free = MAX(to_free, ptob(needfree));
+#endif
+#ifdef __APPLE__
+				to_free = MAX(to_free, kmem_num_pages_wanted() * PAGESIZE);
 #endif
 #endif
 				arc_shrink(to_free);
@@ -4871,6 +4873,12 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 #ifdef _KERNEL
 #ifdef sun
 	uint64_t available_memory = ptob(freemem);
+#endif
+#ifdef __APPLE__
+	uint64_t available_memory = kmem_avail();
+	uint64_t freemem = available_memory / PAGESIZE;
+#endif
+
 	static uint64_t page_load = 0;
 	static uint64_t last_txg = 0;
 
@@ -4891,19 +4899,24 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	 * the arc is already going to be evicting, so we just want to
 	 * continue to let page writes occur as quickly as possible.
 	 */
+#ifdef sun
 	if (curproc == proc_pageout) {
 		if (page_load > MAX(ptob(minfree), available_memory) / 4)
 			return (SET_ERROR(ERESTART));
 		/* Note: reserve is inflated, so we deflate */
 		page_load += reserve / 8;
 		return (0);
-	} else if (page_load > 0 && arc_reclaim_needed()) {
+	} else { /* DANGLING ELSE */
+#endif
+	if (page_load > 0 && arc_reclaim_needed()) {
 		/* memory is low, delay before restarting */
 		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 		return (SET_ERROR(EAGAIN));
 	}
+#ifdef sun
+	}
+#endif
 	page_load = 0;
-#endif // sun
 #endif // KERNEL
 	return (0);
 }
