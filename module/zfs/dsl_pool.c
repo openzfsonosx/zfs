@@ -96,15 +96,15 @@
  * capped at zfs_dirty_data_max_max.  It can also be overridden with a module
  * parameter.
  */
-unsigned long zfs_dirty_data_max = 0;
-unsigned long zfs_dirty_data_max_max = 0;
+uint64_t zfs_dirty_data_max = 0;
+uint64_t zfs_dirty_data_max_max = 4ULL * 1024 * 1024 * 1024;
 int zfs_dirty_data_max_percent = 10;
 int zfs_dirty_data_max_max_percent = 25;
 
 /*
  * If there is at least this much dirty data, push out a txg.
  */
-unsigned long zfs_dirty_data_sync = 64 * 1024 * 1024;
+uint64_t zfs_dirty_data_sync = 64 * 1024 * 1024;
 
 /*
  * Once there is this amount of dirty data, the dmu_tx_delay() will kick in
@@ -126,7 +126,7 @@ int zfs_delay_min_dirty_percent = 60;
  * Note: zfs_delay_scale * zfs_dirty_data_max must be < 2^64, due to the
  * multiply in dmu_tx_delay().
  */
-unsigned long zfs_delay_scale = 1000 * 1000 * 1000 / 2000;
+uint64_t zfs_delay_scale = 1000 * 1000 * 1000 / 2000;
 
 hrtime_t zfs_throttle_delay = MSEC2NSEC(10);
 hrtime_t zfs_throttle_resolution = MSEC2NSEC(10);

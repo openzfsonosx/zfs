@@ -5332,10 +5332,11 @@ arc_init(void)
 	 */
 	if (zfs_dirty_data_max == 0) {
 		zfs_dirty_data_max = physmem * PAGESIZE *
-		    zfs_dirty_data_max_percent / 100;
+			zfs_dirty_data_max_percent / 100;
 		zfs_dirty_data_max = MIN(zfs_dirty_data_max,
 		    zfs_dirty_data_max_max);
 	}
+	if (!zfs_dirty_data_max) printf("ZFS: ARC zfs_dirty_data_max is zero\n");
 }
 
 void

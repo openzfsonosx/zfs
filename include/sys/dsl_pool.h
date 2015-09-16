@@ -51,13 +51,13 @@ struct dsl_pool;
 struct dmu_tx;
 struct dsl_scan;
 
-extern unsigned long zfs_dirty_data_max;
-extern unsigned long zfs_dirty_data_max_max;
-extern unsigned long zfs_dirty_data_sync;
+extern uint64_t zfs_dirty_data_max;
+extern uint64_t zfs_dirty_data_max_max;
+extern uint64_t zfs_dirty_data_sync;
 extern int zfs_dirty_data_max_percent;
 extern int zfs_dirty_data_max_max_percent;
 extern int zfs_delay_min_dirty_percent;
-extern unsigned long zfs_delay_scale;
+extern uint64_t zfs_delay_scale;
 
 /* These macros are for indexing into the zfs_all_blkstats_t. */
 #define	DMU_OT_DEFERRED	DMU_OT_NONE
