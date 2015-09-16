@@ -5354,7 +5354,7 @@ arc_init(void)
 
 #ifdef __APPLE__
 	if (zfs_arc_num_sublists_per_state < 1)
-		zfs_arc_num_sublists_per_state = MAX(1/*max_ncpus*/, 1);
+		zfs_arc_num_sublists_per_state = MAX(max_ncpus, 1);
 #else
 	if (zfs_arc_num_sublists_per_state < 1)
 		zfs_arc_num_sublists_per_state = MAX(boot_ncpus, 1);
