@@ -3320,7 +3320,7 @@ arc_reclaim_needed(void)
 		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 		return 1;
 	}
-    if (kmem_avail == 0)  // smd
+    if (kmem_avail() == 0)  // smd
       return 1;
 #endif
 #endif
