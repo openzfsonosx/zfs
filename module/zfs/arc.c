@@ -3288,7 +3288,7 @@ arc_available_memory(void)
 #endif // sun
 
 #ifdef __APPLE__
-	lowest = kmem_avail_may_be_negative();
+	lowest = kmem_avail();
 #endif
 
 
