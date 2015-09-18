@@ -4911,10 +4911,12 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 #endif // sun
 	page_load = 0;
 #else // 0 - APPLE
-	if (arc_reclaim_needed()) {
-	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
-	  return (SET_ERROR(EAGAIN));
-	}
+	// the return from here is used to block all writes, so we don't want to return 1
+	// except in exceptional cases - smd
+	//if (arc_reclaim_needed()) {
+	//  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
+	//  return 1;
+	//}
 #endif // 0	
 #endif // KERNEL
 	return (0);
