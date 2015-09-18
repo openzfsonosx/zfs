@@ -3414,7 +3414,7 @@ arc_reclaim_thread(void)
 
 		mutex_exit(&arc_reclaim_lock);
 
-		if (free_memory < 0) {
+		if (free_memory <= 0) {  // smd - otherwise we fall through
 
 			arc_no_grow = B_TRUE;
 			arc_warm = B_TRUE;
