@@ -3320,6 +3320,8 @@ arc_reclaim_needed(void)
 		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 		return 1;
 	}
+    if (kmem_avail() == 0)  // smd
+      return 1;
 #endif
 #endif
 	return (arc_available_memory() < 0);
@@ -3412,7 +3414,7 @@ arc_reclaim_thread(void)
 
 		mutex_exit(&arc_reclaim_lock);
 
-		if (free_memory < 0) {
+		if (free_memory <= 0) {  // smd - otherwise we fall through
 
 			arc_no_grow = B_TRUE;
 			arc_warm = B_TRUE;
@@ -4891,6 +4893,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	 * the arc is already going to be evicting, so we just want to
 	 * continue to let page writes occur as quickly as possible.
 	 */
+#if 0 // smd
 #ifdef sun
 	if (curproc == proc_pageout) {
 		if (page_load > MAX(ptob(minfree), available_memory) / 4)
@@ -4899,7 +4902,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 		page_load += reserve / 8;
 		return (0);
 	} else { /* DANGLING ELSE */
-#endif
+#endif // sun
 	if (page_load > 0 && arc_reclaim_needed()) {
 		/* memory is low, delay before restarting */
 		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
@@ -4907,8 +4910,20 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	}
 #ifdef sun
 	}
-#endif
+#endif // sun
 	page_load = 0;
+#else // 0 - APPLE
+	// the return from here is used to block all writes, so we don't want to return 1
+	// except in exceptional cases - smd
+	//if (arc_reclaim_needed()) {
+	//  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
+	//  return 1;
+	//}
+	//extern unsigned int vm_page_free_wanted;
+	//
+	//if (vm_page_free_wanted > 0) // we're paging, throttle zfs writes
+	//  return (SET_ERROR(EAGAIN));
+#endif // 0	
 #endif // KERNEL
 	return (0);
 }
