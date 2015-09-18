@@ -4919,6 +4919,10 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	//  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 	//  return 1;
 	//}
+	extern unsigned int vm_page_free_wanted;
+
+	if (vm_page_free_wanted > 0) // we're paging, throttle zfs writes
+	  return (SET_ERROR(EAGAIN));
 #endif // 0	
 #endif // KERNEL
 	return (0);
