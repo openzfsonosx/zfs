@@ -3320,7 +3320,7 @@ arc_reclaim_needed(void)
 		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 		return 1;
 	}
-    if (kmem_avail() == 0)  // smd
+    if (kmem_avail() < 0)
       return 1;
 #endif
 #endif
@@ -4869,7 +4869,10 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	uint64_t available_memory = ptob(freemem);
 #endif
 #ifdef __APPLE__
-	uint64_t available_memory = kmem_avail();
+	int64_t ka = kmem_avail();
+	uint64_t available_memory = 0;
+	if (ka < 0)
+	  available_memory = 0;
 	uint64_t freemem = available_memory / PAGESIZE;
 #endif
 
