@@ -3289,6 +3289,8 @@ arc_available_memory(void)
 
 #ifdef __APPLE__
 	lowest = kmem_avail();
+	if (lowest < 0) printf("ZFS: %s: kmem_avail() negative, %lld\n", __func__, lowest);
+	
 #endif
 
 
@@ -3320,11 +3322,19 @@ arc_reclaim_needed(void)
 		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 		return 1;
 	}
-    if (kmem_avail() < 0)
+    if (kmem_avail() < 0) { // negative is badness
+      printf("ZFS: %s, kmem_avail() is negative\n", __func__);
       return 1;
+    }
 #endif
 #endif
-	return (arc_available_memory() < 0);
+    int64_t a = arc_available_memory();
+    if(a < 0) {
+      printf("ZFS: %s, arc_available_memory was negative (%lld), returning 1\n", __func__, a);
+      return 1;
+    }
+
+    return 0;
 }
 
 static void
@@ -3414,7 +3424,14 @@ arc_reclaim_thread(void)
 
 		mutex_exit(&arc_reclaim_lock);
 
-		if (free_memory <= 0) {  // smd - otherwise we fall through
+		if(free_memory < 0) {
+		    printf("ZFS: %s free_memory negative, %lld, so we would  arc_kmem_reap_now()\n", __func__, free_memory);
+		} else if (free_memory == 0) {
+		  printf("ZFS: %s free_memory zero, setting to -4096\n", __func__);
+		  free_memory = -4096;
+		}
+
+		if (free_memory < 0) {  // smd - otherwise we fall through
 
 			arc_no_grow = B_TRUE;
 			arc_warm = B_TRUE;
@@ -3435,6 +3452,10 @@ arc_reclaim_thread(void)
 
 			int64_t to_free =
 			    (arc_c >> arc_shrink_shift) - free_memory;
+
+			printf("ZFS: %s, after arc reap, free_memory is %lld, to_free is %lld\n",
+			       __func__, free_memory, to_free);
+
 			if (to_free > 0) {
 #ifdef _KERNEL
 #ifdef sun
@@ -3444,6 +3465,7 @@ arc_reclaim_thread(void)
 				to_free = MAX(to_free, kmem_num_pages_wanted() * PAGESIZE);
 #endif
 #endif
+				printf("ZFS: %s, to_free == %lld, calling arc_shrink()\n", __func__, to_free);
 				arc_shrink(to_free);
 			}
 		} else if (free_memory < arc_c >> arc_no_grow_shift) {
@@ -4873,6 +4895,9 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	uint64_t available_memory = 0;
 	if (ka > 0)
 	  available_memory = ka;
+	else {
+	  printf("ZFS: %s, kmem_avail() negative, setting to zero\n", __func__);
+	}
 	uint64_t freemem = available_memory / PAGESIZE;
 #endif
 
@@ -4926,6 +4951,10 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	//
 	//if (vm_page_free_wanted > 0) // we're paging, throttle zfs writes
 	//  return (SET_ERROR(EAGAIN));
+	if (kmem_avail() < 0) { // we now can have this go negative... negatives mean badness
+	  printf("ZFS: %s, kmem_avail() is negative\n", __func__);
+	  return (SET_ERROR(EAGAIN));
+	}
 #endif // 0	
 #endif // KERNEL
 	return (0);
