@@ -3320,7 +3320,7 @@ arc_reclaim_needed(void)
 		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 		return 1;
 	}
-    if (kmem_avail() < 0)
+    if (kmem_avail() < 0) // negative is badness
       return 1;
 #endif
 #endif
@@ -4926,6 +4926,8 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	//
 	//if (vm_page_free_wanted > 0) // we're paging, throttle zfs writes
 	//  return (SET_ERROR(EAGAIN));
+	if (kmem_avail() < 0) // we now can have this go negative... negatives mean badness
+	  return (SET_ERROR(EAGAIN)); 
 #endif // 0	
 #endif // KERNEL
 	return (0);
