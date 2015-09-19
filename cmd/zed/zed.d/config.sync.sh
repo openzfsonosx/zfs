@@ -26,4 +26,26 @@ if [ -d /etc/zfs ]; then
 else
 	mkdir -p /etc/zfs
 fi
+
+if [ -d /etc/zfs/caches ]; then
+    for p in ssdpool Trinity Donkey CLATM
+    do
+	if [ -f /etc/zfs/caches/${p}.cache.tmp ]
+	then
+	    rm -f /etc/zfs/caches/${p}.cache
+	    mv /etc/zfs/caches/${p}.cache.tmp /etc/zfs/caches/${p}.cache
+
+	    logger -t "${ZED_SYSLOG_TAG:=zed}" -p "${ZED_SYSLOG_PRIORITY:=daemon.notice}" \
+		   eid="${ZEVENT_EID}" class="${ZEVENT_SUBCLASS}" \
+		   "${ZEVENT_POOL:+pool=$ZEVENT_POOL}"
+
+	    notify "${i} file has been renamed" "config.sync"
+
+	fi
+    done
+else
+    mkdir -p /etc/zfs/caches
+fi
+	    
+    
 echo 0
