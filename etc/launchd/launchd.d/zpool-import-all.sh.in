@@ -35,6 +35,8 @@ date
 ZPOOL_CACHE_DONE=0
 if [ -f /etc/zfs/zpool.cache ]
 then
+    # but this isn't a superb idea because import order is all over the map
+    # and importing ssdpool last is [a] system-slowing and [b] leaves empty directories mounted
     echo "Running zpool import -c /etc/zfs/zpool.cache -a"
     "${ZPOOL}" import -c /etc/zfs/zpool.cache -a && ZPOOL_CACHE_DONE=1
 fi
@@ -49,6 +51,11 @@ then
     if [ -f /etc/zfs/caches/ssdpool.cache ]
     then
 	"${ZPOOL}" import -c /etc/zfs/caches/ssdpool.cache ssdpool && SSDPOOL_CACHE_DONE=1
+	if ((!SSDPOOL_CACHE_DONE))
+	then
+	    echo "ssdpool cache import failed, this is critical. bye."
+	    exit 1
+	fi
     fi
     if [ -f /etc/zfs/caches/Trinity.cache ]
     then
