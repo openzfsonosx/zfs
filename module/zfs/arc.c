@@ -4871,8 +4871,8 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 #ifdef __APPLE__
 	int64_t ka = kmem_avail();
 	uint64_t available_memory = 0;
-	if (ka < 0)
-	  available_memory = 0;
+	if (ka > 0)
+	  available_memory = ka;
 	uint64_t freemem = available_memory / PAGESIZE;
 #endif
 
