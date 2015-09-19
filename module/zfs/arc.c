@@ -3289,6 +3289,8 @@ arc_available_memory(void)
 
 #ifdef __APPLE__
 	lowest = kmem_avail();
+	if (lowest < 0) printf("ZFS: %s: kmem_avail() negative, %lld\n", __func__, lowest);
+	
 #endif
 
 
@@ -3320,8 +3322,10 @@ arc_reclaim_needed(void)
 		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 		return 1;
 	}
-    if (kmem_avail() < 0) // negative is badness
+    if (kmem_avail() < 0) { // negative is badness
+      printf("SPL: %s, kmem_avail() is negative\n", __func__);
       return 1;
+    }
 #endif
 #endif
 	return (arc_available_memory() < 0);
@@ -4873,6 +4877,9 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	uint64_t available_memory = 0;
 	if (ka > 0)
 	  available_memory = ka;
+	else {
+	  printf("ZFS: %s, kmem_avail() negative, setting to zero\n", __func__);
+	}
 	uint64_t freemem = available_memory / PAGESIZE;
 #endif
 
@@ -4926,8 +4933,10 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	//
 	//if (vm_page_free_wanted > 0) // we're paging, throttle zfs writes
 	//  return (SET_ERROR(EAGAIN));
-	if (kmem_avail() < 0) // we now can have this go negative... negatives mean badness
-	  return (SET_ERROR(EAGAIN)); 
+	if (kmem_avail() < 0) { // we now can have this go negative... negatives mean badness
+	  printf("ZFS: %s, kmem_avail() is negative\n", __func__);
+	  return (SET_ERROR(EAGAIN));
+	}
 #endif // 0	
 #endif // KERNEL
 	return (0);
