@@ -63,6 +63,13 @@ then
 	"${ZPOOL}" import -c /etc/zfs/caches/CLATM.cache CLATM && CLATM_CACHE_DONE=1
     fi
 fi
+
+if((ZPOOL_CACHE_DONE)); then echo Everything imported via cache.; fi
+if((SSDPOOL_CACHE_DONE)); then echo ssdpool imported via cache.; fi
+if((TRINITY_CACHE_DONE)); then echo Trinity imported via cache.; fi
+if((CLATM_CACHE_DONE)); then echo CLATM imported via cache.; fi
+if((DONKEY_CACHE_DONE)); then echo Donkey imported via cache.; fi
+  
     
 if ((!ZPOOL_IMPORT_CACHE && ((! ((SSDPOOL_CACHE_DONE || CLATM_CACHE_DONE || DONKEY_CACHE_DONE || TRINITY_CACHE_DONE))))))
 then
