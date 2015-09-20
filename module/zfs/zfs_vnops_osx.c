@@ -1166,6 +1166,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 		}
 	}
 
+#if 0
 	uint64_t missing = 0;
 	missing = (vap->va_active ^ (vap->va_active & vap->va_supported));
 	if ( missing != 0) {
@@ -1173,6 +1174,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 			   vap->va_active, vap->va_supported,
 			   missing);
 	}
+#endif
 
 	if (error)
 		printf("vnop_setattr return failure %d\n", error);
