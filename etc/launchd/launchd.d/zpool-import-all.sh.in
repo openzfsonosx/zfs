@@ -37,8 +37,9 @@ if [ -f /etc/zfs/zpool.cache ]
 then
     # but this isn't a superb idea because import order is all over the map
     # and importing ssdpool last is [a] system-slowing and [b] leaves empty directories mounted
-    echo "Running zpool import -c /etc/zfs/zpool.cache -a"
-    "${ZPOOL}" import -c /etc/zfs/zpool.cache -a && ZPOOL_CACHE_DONE=1
+    #echo "Running zpool import -c /etc/zfs/zpool.cache -a"
+    #"${ZPOOL}" import -c /etc/zfs/zpool.cache -a && ZPOOL_CACHE_DONE=1
+    echo "zpool.cache file found!"
 fi
 
 if ((!ZPOOL_CACHE_DONE))
@@ -109,6 +110,12 @@ fi
 
 echo "Touching the file ${ZPOOL_IMPORT_ALL_COOKIE}"
 touch "${ZPOOL_IMPORT_ALL_COOKIE}"
+
+echo "Setting cachefile property"
+for i in ssdpool Donkey Trinity CLATM
+do
+    "${ZPOOL}" set cachefile=/etc/zfs/caches/$i.cache $i
+done
 
 date
 echo "-zpool-import-all.sh"
