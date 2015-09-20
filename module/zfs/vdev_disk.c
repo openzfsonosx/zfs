@@ -229,7 +229,7 @@ skip_open:
 
 	int len = MAXPATHLEN;
 	if (vn_getpath(devvp, dvd->vd_readlinkname, &len) == 0) {
-		printf("ZFS: '%s' resolved name is '%s'\n",
+		dprintf("ZFS: '%s' resolved name is '%s'\n",
 			   vd->vdev_path, dvd->vd_readlinkname);
 	} else {
 		dvd->vd_readlinkname[0] = 0;
