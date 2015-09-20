@@ -111,7 +111,7 @@ fi
 echo "Touching the file ${ZPOOL_IMPORT_ALL_COOKIE}"
 touch "${ZPOOL_IMPORT_ALL_COOKIE}"
 
-echo "Setting cachefile property"
+echo "Setting cachefile properties"
 for i in ssdpool Donkey Trinity CLATM
 do
     "${ZPOOL}" set cachefile=/etc/zfs/caches/$i.cache $i
