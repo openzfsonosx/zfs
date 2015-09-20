@@ -543,7 +543,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 
         }
         zap_cursor_fini(&zc);
-        printf("ZFS: unlinked drain completed (%llu).\n", entries);
+        if (entries) printf("ZFS: unlinked drain completed (%llu).\n", entries);
 
 }
 
