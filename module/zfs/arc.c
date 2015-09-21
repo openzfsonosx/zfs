@@ -3323,7 +3323,7 @@ arc_reclaim_needed(void)
 		return 1;
 	}
     if (kmem_avail() < 0) { // negative is badness
-      printf("SPL: %s, kmem_avail() is negative\n", __func__);
+      printf("ZFS: %s, kmem_avail() is negative\n", __func__);
       return 1;
     }
 #endif
