@@ -3420,6 +3420,13 @@ arc_reclaim_thread(void)
 
 		if (free_memory <= 0) {  // smd - otherwise we fall through
 
+		  if(free_memory < 0) {
+		    printf("ZFS: %s free_memory negative, %lld, so arc_kmem_reap_now()\n", __func__, free_memory);
+		  } else {
+		    printf("ZFS: %s free_memory zero, setting to -4096\n", __func__);
+		    free_memory = -4096;
+		  }
+
 			arc_no_grow = B_TRUE;
 			arc_warm = B_TRUE;
 
@@ -3439,6 +3446,10 @@ arc_reclaim_thread(void)
 
 			int64_t to_free =
 			    (arc_c >> arc_shrink_shift) - free_memory;
+
+			printf("ZFS: %s, after arc reap, free_memory is %lld, to_free is %lld\n",
+			       __func__, free_memory, to_free);
+
 			if (to_free > 0) {
 #ifdef _KERNEL
 #ifdef sun
@@ -3448,6 +3459,7 @@ arc_reclaim_thread(void)
 				to_free = MAX(to_free, kmem_num_pages_wanted() * PAGESIZE);
 #endif
 #endif
+				printf("ZFS: %s, to_free == %lld, calling arc_shrink()\n", __func__, to_free);
 				arc_shrink(to_free);
 			}
 		} else if (free_memory < arc_c >> arc_no_grow_shift) {
