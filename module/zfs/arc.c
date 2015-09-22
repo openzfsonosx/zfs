@@ -132,6 +132,7 @@
 #include <sys/dsl_pool.h>
 #include <sys/multilist.h>
 #ifdef _KERNEL
+#include <sys/kmem.h>
 #include <sys/vmsystm.h>
 #include <vm/anon.h>
 #include <sys/fs/swapnode.h>
@@ -3187,6 +3188,9 @@ int64_t arc_swapfs_reserve = 64;
  * needed.  Positive if there is sufficient free memory, negative indicates
  * the amount of memory that needs to be freed up.
  */
+
+extern int64_t kmem_avail(); // typecheck paranoia!
+
 static int64_t
 arc_available_memory(void)
 {
