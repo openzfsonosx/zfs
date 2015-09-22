@@ -3418,14 +3418,14 @@ arc_reclaim_thread(void)
 
 		mutex_exit(&arc_reclaim_lock);
 
-		if (free_memory <= 0) {  // smd - otherwise we fall through
+		if(free_memory < 0) {
+		    printf("ZFS: %s free_memory negative, %lld, so we would  arc_kmem_reap_now()\n", __func__, free_memory);
+		} else if (free_memory == 0) {
+		  printf("ZFS: %s free_memory zero, setting to -4096\n", __func__);
+		  free_memory = -4096;
+		}
 
-		  if(free_memory < 0) {
-		    printf("ZFS: %s free_memory negative, %lld, so arc_kmem_reap_now()\n", __func__, free_memory);
-		  } else {
-		    printf("ZFS: %s free_memory zero, setting to -4096\n", __func__);
-		    free_memory = -4096;
-		  }
+		if (free_memory < 0) {  // smd - otherwise we fall through
 
 			arc_no_grow = B_TRUE;
 			arc_warm = B_TRUE;
