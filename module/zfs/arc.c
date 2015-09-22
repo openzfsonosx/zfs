@@ -3188,6 +3188,9 @@ int64_t arc_swapfs_reserve = 64;
  * needed.  Positive if there is sufficient free memory, negative indicates
  * the amount of memory that needs to be freed up.
  */
+
+extern int64_t kmem_avail(); // typecheck paranoia!
+
 static int64_t
 arc_available_memory(void)
 {
