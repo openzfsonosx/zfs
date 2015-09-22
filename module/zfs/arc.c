@@ -132,7 +132,6 @@
 #include <sys/dsl_pool.h>
 #include <sys/multilist.h>
 #ifdef _KERNEL
-#include <sys/kmem.h>
 #include <sys/vmsystm.h>
 #include <vm/anon.h>
 #include <sys/fs/swapnode.h>
@@ -3293,7 +3292,7 @@ arc_available_memory(void)
 
 #ifdef __APPLE__
 	lowest = kmem_avail();
-	if (lowest < 0) printf("ZFS: %s: kmem_avail() negative, %lld\n", __func__, lowest);
+	// if (lowest < 0) printf("ZFS: %s: kmem_avail() negative, %lld\n", __func__, lowest);
 	
 #endif
 
@@ -3327,7 +3326,7 @@ arc_reclaim_needed(void)
 		return 1;
 	}
     if (kmem_avail() < 0) { // negative is badness
-      printf("ZFS: %s, kmem_avail() is negative\n", __func__);
+      //printf("ZFS: %s, kmem_avail() is negative\n", __func__);
       return 1;
     }
 #endif
@@ -4895,13 +4894,11 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	uint64_t available_memory = ptob(freemem);
 #endif
 #ifdef __APPLE__
-	int64_t ka = kmem_avail();
-	uint64_t available_memory = 0;
+	uint64_t ka = kmem_avail();
+	int64_t available_memory = 0;
 	if (ka > 0)
 	  available_memory = ka;
-	else {
-	  printf("ZFS: %s, kmem_avail() negative, setting to zero\n", __func__);
-	}
+
 	uint64_t freemem = available_memory / PAGESIZE;
 #endif
 
@@ -4955,8 +4952,9 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	//
 	//if (vm_page_free_wanted > 0) // we're paging, throttle zfs writes
 	//  return (SET_ERROR(EAGAIN));
-	if (kmem_avail() < 0) { // we now can have this go negative... negatives mean badness
-	  printf("ZFS: %s, kmem_avail() is negative\n", __func__);
+	ka = kmem_avail();
+	if (ka  < 0) { // we now can have this go negative... negatives mean badness
+	  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ka);
 	  return (SET_ERROR(EAGAIN));
 	}
 #endif // 0	
