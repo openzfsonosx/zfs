@@ -132,6 +132,7 @@
 #include <sys/dsl_pool.h>
 #include <sys/multilist.h>
 #ifdef _KERNEL
+#include <sys/kmem.h>
 #include <sys/vmsystm.h>
 #include <vm/anon.h>
 #include <sys/fs/swapnode.h>
