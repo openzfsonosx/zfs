@@ -314,8 +314,7 @@ main(int argc, char *argv[])
 			if (verbose)
 				(void) printf("\n");
 
-			if ((DMU_GET_STREAM_HDRTYPE(drrb->drr_versioninfo) ==
-			    DMU_COMPOUNDSTREAM) && drr->drr_payloadlen != 0) {
+			if (drr->drr_payloadlen != 0) {
 				nvlist_t *nv;
 				int sz = drr->drr_payloadlen;
 

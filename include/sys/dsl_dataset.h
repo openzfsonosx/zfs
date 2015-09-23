@@ -38,6 +38,7 @@
 #include <sys/zfs_context.h>
 #include <sys/dsl_deadlist.h>
 #include <sys/refcount.h>
+#include <zfeature_common.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -90,6 +91,18 @@ struct dsl_pool;
  * is counted in the refcount of the SPA_FEATURE_LARGE_BLOCKS feature.
  */
 #define	DS_FIELD_LARGE_BLOCKS "org.open-zfs:large_blocks"
+
+/*
+ * These fields are set on datasets that are in the middle of a resumable
+ * receive, and allow the sender to resume the send if it is interrupted.
+ */
+#define	DS_FIELD_RESUME_FROMGUID "com.delphix:resume_fromguid"
+#define	DS_FIELD_RESUME_TONAME "com.delphix:resume_toname"
+#define	DS_FIELD_RESUME_TOGUID "com.delphix:resume_toguid"
+#define	DS_FIELD_RESUME_OBJECT "com.delphix:resume_object"
+#define	DS_FIELD_RESUME_OFFSET "com.delphix:resume_offset"
+#define	DS_FIELD_RESUME_BYTES "com.delphix:resume_bytes"
+#define	DS_FIELD_RESUME_EMBEDOK "com.delphix:resume_embedok"
 
 /*
  * DS_FLAG_CI_DATASET is set if the dataset contains a file system whose
@@ -146,6 +159,7 @@ typedef struct dsl_dataset {
 	/* only used in syncing context, only valid for non-snapshots: */
 	struct dsl_dataset *ds_prev;
 	uint64_t ds_bookmarks;  /* DMU_OTN_ZAP_METADATA */
+
 	boolean_t ds_large_blocks;
 	boolean_t ds_need_large_blocks;
 
@@ -185,6 +199,26 @@ typedef struct dsl_dataset {
 
 	kmutex_t ds_sendstream_lock;
 	list_t ds_sendstreams;
+
+	/*
+	 * When in the middle of a resumable receive, tracks how much
+	 * progress we have made.
+	 */
+	uint64_t ds_resume_object[TXG_SIZE];
+	uint64_t ds_resume_offset[TXG_SIZE];
+	uint64_t ds_resume_bytes[TXG_SIZE];
+
+	/*
+	 * For ZFEATURE_FLAG_PER_DATASET features, set if this dataset
+	 * uses this feature.
+	 */
+	uint8_t ds_feature_inuse[SPA_FEATURES];
+
+	/*
+	 * Set if we need to activate the feature on this dataset this txg
+	 * (used only in syncing context).
+	 */
+	uint8_t ds_feature_activation_needed[SPA_FEATURES];
 
 	/* Protected by ds_lock; keep at end of struct for better locality */
 	char ds_snapname[MAXNAMELEN];
@@ -304,6 +338,8 @@ int dsl_dataset_snap_remove(dsl_dataset_t *ds, const char *name, dmu_tx_t *tx,
 void dsl_dataset_set_refreservation_sync_impl(dsl_dataset_t *ds,
     zprop_source_t source, uint64_t value, dmu_tx_t *tx);
 void dsl_dataset_zapify(dsl_dataset_t *ds, dmu_tx_t *tx);
+boolean_t dsl_dataset_is_zapified(dsl_dataset_t *ds);
+boolean_t dsl_dataset_has_resume_receive_state(dsl_dataset_t *ds);
 int dsl_dataset_rollback(const char *fsname, void *owner, nvlist_t *result);
 
 int dmu_send_estimate(dsl_dataset_t *ds, dsl_dataset_t *fromds,

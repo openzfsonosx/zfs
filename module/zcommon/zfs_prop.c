@@ -373,6 +373,11 @@ zfs_prop_init(void)
 	zprop_register_string(ZFS_PROP_MLSLABEL, "mlslabel",
 	    ZFS_MLSLABEL_DEFAULT, PROP_INHERIT, ZFS_TYPE_DATASET,
 	    "<sensitivity label>", "MLSLABEL");
+    zprop_register_string(ZFS_PROP_RECEIVE_RESUME_TOKEN,
+		"receive_resume_token",
+		NULL, PROP_READONLY, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
+		"<string token>", "RESUMETOK");
+
 #ifdef LINUX
 	zprop_register_string(ZFS_PROP_SELINUX_CONTEXT, "context",
 	    "none", PROP_DEFAULT, ZFS_TYPE_DATASET, "<selinux context>",

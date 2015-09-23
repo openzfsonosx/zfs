@@ -1,4 +1,4 @@
-#!/bin/sed -f
+#!/usr/bin/sed -f
 
 s:usr/src/uts/common/fs/zfs/sys:include/sys:g
 s:usr/src/uts/common/fs/zfs:module/zfs:g
@@ -13,3 +13,6 @@ s:usr/src/lib/libzfs/common:lib/libzfs:g
 s:usr/src/lib/libzfs_core/common:lib/libzfs_core:g
 s:lib/libzpool/common/sys:include/sys:g
 s:lib/libzpool/common:lib/libzpool:g
+s:usr/src/test/zfs-tests:zfs-test/test/zfs-tests:g
+s:usr/src/common/zfs:module/zcommon:g
+

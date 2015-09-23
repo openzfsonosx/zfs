@@ -38,6 +38,7 @@ struct dnode_phys;
 struct dsl_dataset;
 struct zilog;
 struct arc_buf;
+struct zbookmark;
 
 typedef int (blkptr_cb_t)(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
     const zbookmark_phys_t *zb, const struct dnode_phys *dnp, void *arg);
@@ -54,6 +55,8 @@ typedef int (blkptr_cb_t)(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 
 int traverse_dataset(struct dsl_dataset *ds,
     uint64_t txg_start, int flags, blkptr_cb_t func, void *arg);
+int traverse_dataset_resume(struct dsl_dataset *ds, uint64_t txg_start,
+    zbookmark_phys_t *resume, int flags, blkptr_cb_t func, void *arg);
 int traverse_dataset_destroyed(spa_t *spa, blkptr_t *blkptr,
     uint64_t txg_start, zbookmark_phys_t *resume, int flags,
     blkptr_cb_t func, void *arg);

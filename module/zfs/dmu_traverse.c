@@ -47,6 +47,7 @@ typedef struct prefetch_data {
 	int pd_flags;
 	boolean_t pd_cancel;
 	boolean_t pd_exited;
+	zbookmark_phys_t pd_resume;
 } prefetch_data_t;
 
 typedef struct traverse_data {
@@ -394,9 +395,15 @@ post:
 		 * Set the bookmark to the first level-0 block that we need
 		 * to visit.  This way, the resuming code does not need to
 		 * deal with resuming from indirect blocks.
+		 *
+		 * Note, if zb_level <= 0, dnp may be NULL, so we don't want
+		 * to dereference it.
 		 */
-		td->td_resume->zb_blkid = zb->zb_blkid <<
-		    (zb->zb_level * (dnp->dn_indblkshift - SPA_BLKPTRSHIFT));
+		td->td_resume->zb_blkid = zb->zb_blkid;
+		if (zb->zb_level > 0) {
+			td->td_resume->zb_blkid <<= zb->zb_level *
+			    (dnp->dn_indblkshift - SPA_BLKPTRSHIFT);
+		}
 		td->td_paused = B_TRUE;
 	}
 
@@ -479,6 +486,7 @@ traverse_prefetch_thread(void *arg)
 	td.td_func = traverse_prefetcher;
 	td.td_arg = td_main->td_pfd;
 	td.td_pfd = NULL;
+	td.td_resume = &td_main->td_pfd->pd_resume;
 
 	SET_BOOKMARK(&czb, td.td_objset,
 	    ZB_ROOT_OBJECT, ZB_ROOT_LEVEL, ZB_ROOT_BLKID);
@@ -588,11 +596,19 @@ traverse_impl(spa_t *spa, dsl_dataset_t *ds, uint64_t objset, blkptr_t *rootbp,
  * in syncing context).
  */
 int
-traverse_dataset(dsl_dataset_t *ds, uint64_t txg_start, int flags,
-    blkptr_cb_t func, void *arg)
+traverse_dataset_resume(dsl_dataset_t *ds, uint64_t txg_start,
+    zbookmark_phys_t *resume,
+    int flags, blkptr_cb_t func, void *arg)
 {
 	return (traverse_impl(ds->ds_dir->dd_pool->dp_spa, ds, ds->ds_object,
-	    &dsl_dataset_phys(ds)->ds_bp, txg_start, NULL, flags, func, arg));
+	    &dsl_dataset_phys(ds)->ds_bp, txg_start, resume, flags, func, arg));
+}
+
+int
+traverse_dataset(dsl_dataset_t *ds, uint64_t txg_start,
+    int flags, blkptr_cb_t func, void *arg)
+{
+	return (traverse_dataset_resume(ds, txg_start, NULL, flags, func, arg));
 }
 
 int
@@ -612,7 +628,6 @@ traverse_pool(spa_t *spa, uint64_t txg_start, int flags,
     blkptr_cb_t func, void *arg)
 {
 	int err;
-	uint64_t obj;
 	dsl_pool_t *dp = spa_get_dsl(spa);
 	objset_t *mos = dp->dp_meta_objset;
 	boolean_t hard = (flags & TRAVERSE_HARD);
@@ -624,8 +639,8 @@ traverse_pool(spa_t *spa, uint64_t txg_start, int flags,
 		return (err);
 
 	/* visit each dataset */
-	for (obj = 1; err == 0;
-	    err = dmu_object_next(mos, &obj, FALSE, txg_start)) {
+	for (uint64_t obj = 1; err == 0;
+	    err = dmu_object_next(mos, &obj, B_FALSE, txg_start)) {
 		dmu_object_info_t doi;
 
 		err = dmu_object_info(mos, obj, &doi);
