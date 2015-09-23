@@ -4884,12 +4884,8 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	uint64_t available_memory = ptob(freemem);
 #endif
 #ifdef __APPLE__
-	uint64_t ka = kmem_avail();
-	int64_t available_memory = 0;
-	if (ka > 0)
-	  available_memory = ka;
-
-	uint64_t freemem = available_memory / PAGESIZE;
+	int64_t available_memory = kmem_avail();
+	int64_t freemem = available_memory / PAGESIZE;
 #endif
 
 	static uint64_t page_load = 0;
@@ -4912,7 +4908,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	 * the arc is already going to be evicting, so we just want to
 	 * continue to let page writes occur as quickly as possible.
 	 */
-#if 0 // smd
+#if 0 // smd : we might want to do something here if vm_page_free_wanted > 0
 #ifdef sun
 	if (curproc == proc_pageout) {
 		if (page_load > MAX(ptob(minfree), available_memory) / 4)
@@ -4945,6 +4941,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	int64_t ks = kmem_avail();
 	if (ks  < 0) { // we now can have this go negative... negatives mean badness
 	  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ks);
+	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 	  return (SET_ERROR(EAGAIN));
 	}
 #endif // 0
