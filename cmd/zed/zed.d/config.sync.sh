@@ -46,6 +46,4 @@ if [ -d /etc/zfs/caches ]; then
 else
     mkdir -p /etc/zfs/caches
 fi
-	    
-    
 echo 0
