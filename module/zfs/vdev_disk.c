@@ -122,7 +122,7 @@ const char *devids[] = {
 "media-970A550F-BA71-4D05-8D02-E6D7C7489670",
 "media-065BAEFF-FB1E-49C0-065B-AEFFFB1E49C0",
 "media-AC58DF37-2193-480D-9992-4ACD67D3E351",
-NULL	
+NULL
 };
 
 // from http://www.opensource.apple.com/source/xnu/xnu-792.13.8/libsa/strstr.c
