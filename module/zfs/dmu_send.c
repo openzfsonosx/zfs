@@ -24,8 +24,6 @@
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014, Joyent, Inc. All rights reserved.
  * Copyright 2014 HybridCluster. All rights reserved.
- * Copyright (c) 2016 Actifio, Inc. All rights reserved.
- * Copyright 2016 RackTop Systems.
  */
 
 #include <sys/dmu.h>
@@ -55,14 +53,11 @@
 #include <sys/dsl_bookmark.h>
 #include <sys/zfeature.h>
 #include <sys/bqueue.h>
-#include <sys/zvol.h>
 
 /* Set this tunable to TRUE to replace corrupt data with 0x2f5baddb10c */
 int zfs_send_corrupt_data = B_FALSE;
 int zfs_send_queue_length = 16 * 1024 * 1024;
 int zfs_recv_queue_length = 16 * 1024 * 1024;
-/* Set this tunable to FALSE to disable setting of DRR_FLAG_FREERECORDS */
-uint64_t zfs_send_set_freerecords_bit = B_TRUE;
 
 static char *dmu_recv_tag = "dmu_recv_tag";
 const char *recv_clone_name = "%recv";
@@ -127,15 +122,10 @@ dump_record(dmu_sendarg_t *dsp, void *payload, int payload_len)
 	fletcher_4_incremental_native(dsp->dsa_drr,
 	    offsetof(dmu_replay_record_t, drr_u.drr_checksum.drr_checksum),
 	    &dsp->dsa_zc);
-	if (dsp->dsa_drr->drr_type == DRR_BEGIN) {
-		dsp->dsa_sent_begin = B_TRUE;
-	} else {
+	if (dsp->dsa_drr->drr_type != DRR_BEGIN) {
 		ASSERT(ZIO_CHECKSUM_IS_ZERO(&dsp->dsa_drr->drr_u.
 		    drr_checksum.drr_checksum));
 		dsp->dsa_drr->drr_u.drr_checksum.drr_checksum = dsp->dsa_zc;
-	}
-	if (dsp->dsa_drr->drr_type == DRR_END) {
-		dsp->dsa_sent_end = B_TRUE;
 	}
 	fletcher_4_incremental_native(&dsp->dsa_drr->
 	    drr_u.drr_checksum.drr_checksum,
@@ -617,7 +607,7 @@ do_dump(dmu_sendarg_t *dsa, struct send_block_record *data)
 			return (SET_ERROR(EIO));
 
 		err = dump_spill(dsa, zb->zb_object, blksz, abuf->b_data);
-		arc_buf_destroy(abuf, &abuf);
+		(void) arc_buf_remove_ref(abuf, &abuf);
 	} else if (backup_do_embed(dsa, bp)) {
 		/* it's an embedded level-0 block of a regular object */
 		int blksz = dblkszsec << SPA_MINBLOCKSHIFT;
@@ -707,7 +697,7 @@ dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *to_ds,
 	int err;
 	uint64_t fromtxg = 0;
 	uint64_t featureflags = 0;
-	struct send_thread_arg to_arg = { { { 0 } } };
+	struct send_thread_arg to_arg = { 0 };
 
 	err = dmu_objset_from_ds(to_ds, &os);
 	if (err != 0) {
@@ -783,6 +773,7 @@ dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *to_ds,
 	dsp->dsa_off = off;
 	dsp->dsa_toguid = dsl_dataset_phys(to_ds)->ds_guid;
 	dsp->dsa_pending_op = PENDING_NONE;
+	dsp->dsa_incremental = (ancestor_zb != NULL);
 	dsp->dsa_featureflags = featureflags;
 	dsp->dsa_resume_object = resumeobj;
 	dsp->dsa_resume_offset = resumeoff;
@@ -877,8 +868,6 @@ out:
 	mutex_enter(&to_ds->ds_sendstream_lock);
 	list_remove(&to_ds->ds_sendstreams, dsp);
 	mutex_exit(&to_ds->ds_sendstream_lock);
-
-	VERIFY(err != 0 || (dsp->dsa_sent_begin && dsp->dsa_sent_end));
 
 	kmem_free(drr, sizeof (dmu_replay_record_t));
 	kmem_free(dsp, sizeof (dmu_sendarg_t));
@@ -1057,9 +1046,7 @@ dmu_adjust_send_estimate_for_indirects(dsl_dataset_t *ds, uint64_t size,
 int
 dmu_send_estimate(dsl_dataset_t *ds, dsl_dataset_t *fromds, uint64_t *sizep)
 {
-#ifdef DEBUG
 	dsl_pool_t *dp = ds->ds_dir->dd_pool;
-#endif
 	int err;
 	uint64_t size;
 
@@ -1120,9 +1107,7 @@ int
 dmu_send_estimate_from_txg(dsl_dataset_t *ds, uint64_t from_txg,
     uint64_t *sizep)
 {
-#ifdef DEBUG
 	dsl_pool_t *dp = ds->ds_dir->dd_pool;
-#endif
 	int err;
 	uint64_t size = 0;
 
@@ -1517,8 +1502,7 @@ dmu_recv_resume_begin_check(void *arg, dmu_tx_t *tx)
 	    !spa_feature_is_enabled(dp->dp_spa, SPA_FEATURE_LZ4_COMPRESS))
 		return (SET_ERROR(ENOTSUP));
 
-	/* 6 extra bytes for /%recv */
-	char recvname[ZFS_MAX_DATASET_NAME_LEN + 6];
+	char recvname[ZFS_MAXNAMELEN];
 
 	(void) snprintf(recvname, sizeof (recvname), "%s/%s",
 	    tofs, recv_clone_name);
@@ -1547,16 +1531,6 @@ dmu_recv_resume_begin_check(void *arg, dmu_tx_t *tx)
 	if (error != 0 || drrb->drr_toguid != val) {
 		dsl_dataset_rele(ds, FTAG);
 		return (SET_ERROR(EINVAL));
-	}
-
-	/*
-	 * Check if the receive is still running.  If so, it will be owned.
-	 * Note that nothing else can own the dataset (e.g. after the receive
-	 * fails) because it will be marked inconsistent.
-	 */
-	if (dsl_dataset_has_owner(ds)) {
-		dsl_dataset_rele(ds, FTAG);
-		return (SET_ERROR(EBUSY));
 	}
 
 	/* There should not be any snapshots of this fs yet. */
@@ -1591,8 +1565,7 @@ dmu_recv_resume_begin_sync(void *arg, dmu_tx_t *tx)
 	const char *tofs = drba->drba_cookie->drc_tofs;
 	dsl_dataset_t *ds;
 	uint64_t dsobj;
-	/* 6 extra bytes for /%recv */
-	char recvname[ZFS_MAX_DATASET_NAME_LEN + 6];
+	char recvname[ZFS_MAXNAMELEN];
 
 	(void) snprintf(recvname, sizeof (recvname), "%s/%s",
 	    tofs, recv_clone_name);
@@ -1615,9 +1588,7 @@ dmu_recv_resume_begin_sync(void *arg, dmu_tx_t *tx)
 	dmu_buf_will_dirty(ds->ds_dbuf, tx);
 	dsl_dataset_phys(ds)->ds_flags |= DS_FLAG_INCONSISTENT;
 
-	rrw_enter(&ds->ds_bp_rwlock, RW_READER, FTAG);
 	ASSERT(!BP_IS_HOLE(dsl_dataset_get_blkptr(ds)));
-	rrw_exit(&ds->ds_bp_rwlock, FTAG);
 
 	drba->drba_cookie->drc_ds = ds;
 
@@ -1683,6 +1654,52 @@ struct receive_record_arg {
 	uint64_t bytes_read; /* bytes read from stream when record created */
 	boolean_t eos_marker; /* Marks the end of the stream */
 	bqueue_node_t node;
+};
+
+struct receive_writer_arg {
+	objset_t *os;
+	boolean_t byteswap;
+	bqueue_t q;
+
+	/*
+	 * These three args are used to signal to the main thread that we're
+	 * done.
+	 */
+	kmutex_t mutex;
+	kcondvar_t cv;
+	boolean_t done;
+
+	int err;
+	/* A map from guid to dataset to help handle dedup'd streams. */
+	avl_tree_t *guid_to_ds_map;
+	boolean_t resumable;
+	uint64_t last_object, last_offset;
+	uint64_t bytes_read; /* bytes read when current record created */
+};
+
+struct receive_arg  {
+	objset_t *os;
+	vnode_t *vp; /* The vnode to read the stream from */
+	uint64_t voff; /* The current offset in the stream */
+	uint64_t bytes_read;
+	/*
+	 * A record that has had its payload read in, but hasn't yet been handed
+	 * off to the worker thread.
+	 */
+	struct receive_record_arg *rrd;
+	/* A record that has had its header read in, but not its payload. */
+	struct receive_record_arg *next_rrd;
+	zio_cksum_t cksum;
+	zio_cksum_t prev_cksum;
+	int err;
+	boolean_t byteswap;
+	/* Sorted list of objects not to issue prefetches for. */
+	list_t ignore_obj_list;
+};
+
+struct receive_ign_obj_node {
+	list_node_t node;
+	uint64_t object;
 };
 
 struct receive_writer_arg {
@@ -1889,8 +1906,6 @@ byteswap_record(dmu_replay_record_t *drr)
 		DO64(drr_end.drr_toguid);
 		ZIO_CHECKSUM_BSWAP(&drr->drr_u.drr_end.drr_checksum);
 		break;
-	case DRR_NUMTYPES:
-		break;
 	}
 
 	if (drr->drr_type != DRR_BEGIN) {
@@ -2061,8 +2076,8 @@ receive_freeobjects(struct receive_writer_arg *rwa,
 		return (SET_ERROR(EINVAL));
 
 	for (obj = drrfo->drr_firstobj;
-	    obj < drrfo->drr_firstobj + drrfo->drr_numobjs && next_err == 0;
-	    next_err = dmu_object_next(rwa->os, &obj, FALSE, 0)) {
+	    obj < drrfo->drr_firstobj + drrfo->drr_numobjs;
+	    (void) dmu_object_next(rwa->os, &obj, FALSE, 0)) {
 		int err;
 
 		if (dmu_object_info(rwa->os, obj, NULL) != 0)
@@ -2072,8 +2087,7 @@ receive_freeobjects(struct receive_writer_arg *rwa,
 		if (err != 0)
 			return (err);
 	}
-	if (next_err != ESRCH)
-		return (next_err);
+
 	return (0);
 }
 
@@ -2312,7 +2326,7 @@ dmu_recv_cleanup_ds(dmu_recv_cookie_t *drc)
 		txg_wait_synced(drc->drc_ds->ds_dir->dd_pool, 0);
 		dsl_dataset_disown(drc->drc_ds, dmu_recv_tag);
 	} else {
-		char name[ZFS_MAX_DATASET_NAME_LEN];
+		char name[MAXNAMELEN];
 		dsl_dataset_name(drc->drc_ds, name);
 		dsl_dataset_disown(drc->drc_ds, dmu_recv_tag);
 		(void) dsl_destroy_head(name);
@@ -2403,66 +2417,6 @@ receive_read_payload_and_next_header(struct receive_arg *ra, int len, void *buf)
 	return (0);
 }
 
-static void
-objlist_create(struct objlist *list)
-{
-	list_create(&list->list, sizeof (struct receive_objnode),
-	    offsetof(struct receive_objnode, node));
-	list->last_lookup = 0;
-}
-
-static void
-objlist_destroy(struct objlist *list)
-{
-	for (struct receive_objnode *n = list_remove_head(&list->list);
-	    n != NULL; n = list_remove_head(&list->list)) {
-		kmem_free(n, sizeof (*n));
-	}
-	list_destroy(&list->list);
-}
-
-/*
- * This function looks through the objlist to see if the specified object number
- * is contained in the objlist.  In the process, it will remove all object
- * numbers in the list that are smaller than the specified object number.  Thus,
- * any lookup of an object number smaller than a previously looked up object
- * number will always return false; therefore, all lookups should be done in
- * ascending order.
- */
-static boolean_t
-objlist_exists(struct objlist *list, uint64_t object)
-{
-	struct receive_objnode *node = list_head(&list->list);
-	ASSERT3U(object, >=, list->last_lookup);
-	list->last_lookup = object;
-	while (node != NULL && node->object < object) {
-		VERIFY3P(node, ==, list_remove_head(&list->list));
-		kmem_free(node, sizeof (*node));
-		node = list_head(&list->list);
-	}
-	return (node != NULL && node->object == object);
-}
-
-/*
- * The objlist is a list of object numbers stored in ascending order.  However,
- * the insertion of new object numbers does not seek out the correct location to
- * store a new object number; instead, it appends it to the list for simplicity.
- * Thus, any users must take care to only insert new object numbers in ascending
- * order.
- */
-static void
-objlist_insert(struct objlist *list, uint64_t object)
-{
-	struct receive_objnode *node = kmem_zalloc(sizeof (*node), KM_SLEEP);
-	node->object = object;
-#ifdef ZFS_DEBUG
-	struct receive_objnode *last_object = list_tail(&list->list);
-	uint64_t last_objnum = (last_object != NULL ? last_object->object : 0);
-	ASSERT3U(node->object, >, last_objnum);
-#endif
-	list_insert_tail(&list->list, node);
-}
-
 /*
  * Issue the prefetch reads for any necessary indirect blocks.
  *
@@ -2485,7 +2439,13 @@ static void
 receive_read_prefetch(struct receive_arg *ra,
     uint64_t object, uint64_t offset, uint64_t length)
 {
-	if (!objlist_exists(&ra->ignore_objlist, object)) {
+	struct receive_ign_obj_node *node = list_head(&ra->ignore_obj_list);
+	while (node != NULL && node->object < object) {
+		VERIFY3P(node, ==, list_remove_head(&ra->ignore_obj_list));
+		kmem_free(node, sizeof (*node));
+		node = list_head(&ra->ignore_obj_list);
+	}
+	if (node == NULL || node->object > object) {
 		dmu_prefetch(ra->os, object, 1, offset, length,
 		    ZIO_PRIORITY_SYNC_READ);
 	}
@@ -2518,7 +2478,18 @@ receive_read_record(struct receive_arg *ra)
 		 */
 		if (err == ENOENT ||
 		    (err == 0 && doi.doi_data_block_size != drro->drr_blksz)) {
-			objlist_insert(&ra->ignore_objlist, drro->drr_object);
+			struct receive_ign_obj_node *node =
+			    kmem_zalloc(sizeof (*node),
+			    KM_SLEEP);
+			node->object = drro->drr_object;
+#ifdef ZFS_DEBUG
+			struct receive_ign_obj_node *last_object =
+			    list_tail(&ra->ignore_obj_list);
+			uint64_t last_objnum = (last_object != NULL ?
+			    last_object->object : 0);
+			ASSERT3U(node->object, >, last_objnum);
+#endif
+			list_insert_tail(&ra->ignore_obj_list, node);
 			err = 0;
 		}
 		return (err);
@@ -2735,6 +2706,7 @@ resume_check(struct receive_arg *ra, nvlist_t *begin_nvl)
 	return (0);
 }
 
+
 /*
  * Read in the stream's records, one by one, and apply them to the pool.  There
  * are two threads involved; the thread that calls this function will spin up a
@@ -2768,7 +2740,8 @@ dmu_recv_stream(dmu_recv_cookie_t *drc, vnode_t *vp, offset_t *voffp,
 		    sizeof (ra.bytes_read), 1, &ra.bytes_read);
 	}
 
-	objlist_create(&ra.ignore_objlist);
+	list_create(&ra.ignore_obj_list, sizeof (struct receive_ign_obj_node),
+	    offsetof(struct receive_ign_obj_node, node));
 
 	/* these were verified in dmu_recv_begin */
 	ASSERT3U(DMU_GET_STREAM_HDRTYPE(drc->drc_drrb->drr_versioninfo), ==,
@@ -2820,21 +2793,17 @@ dmu_recv_stream(dmu_recv_cookie_t *drc, vnode_t *vp, offset_t *voffp,
 	}
 
 	uint32_t payloadlen = drc->drc_drr_begin->drr_payloadlen;
-	void *payload = NULL;
-	if (payloadlen != 0)
-		payload = kmem_alloc(payloadlen, KM_SLEEP);
+	void *payload = kmem_alloc(payloadlen, KM_SLEEP);
 
 	err = receive_read_payload_and_next_header(&ra, payloadlen, payload);
-	if (err != 0) {
-		if (payloadlen != 0)
-			kmem_free(payload, payloadlen);
+	if (err != 0)
 		goto out;
-	}
 	if (payloadlen != 0) {
 		err = nvlist_unpack(payload, payloadlen, &begin_nvl, KM_SLEEP);
 		kmem_free(payload, payloadlen);
 		if (err != 0)
 			goto out;
+
 	}
 
 	if (featureflags & DMU_BACKUP_FEATURE_RESUMING) {
@@ -2922,7 +2891,12 @@ out:
 	}
 
 	*voffp = ra.voff;
-	objlist_destroy(&ra.ignore_objlist);
+	for (struct receive_ign_obj_node *n =
+	    list_remove_head(&ra.ignore_obj_list); n != NULL;
+	    n = list_remove_head(&ra.ignore_obj_list)) {
+		kmem_free(n, sizeof (*n));
+	}
+	list_destroy(&ra.ignore_obj_list);
 	return (err);
 }
 
@@ -3088,8 +3062,6 @@ dmu_recv_end_sync(void *arg, dmu_tx_t *tx)
 			(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
 			    DS_FIELD_RESUME_TONAME, tx);
 		}
-		drc->drc_newsnapobj =
-		    dsl_dataset_phys(drc->drc_ds)->ds_prev_snap_obj;
 	}
 	zvol_create_minors(dp->dp_spa, drc->drc_tofs, B_TRUE);
 	/*
@@ -3134,8 +3106,10 @@ static int dmu_recv_end_modified_blocks = 3;
 static int
 dmu_recv_existing_end(dmu_recv_cookie_t *drc)
 {
+	int error;
+	char name[MAXNAMELEN];
+
 #ifdef _KERNEL
-	char name[ZFS_MAX_DATASET_NAME_LEN];
 	/*
 	 * We will be destroying the ds; make sure its origin is unmounted if
 	 * necessary.

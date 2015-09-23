@@ -58,8 +58,6 @@
 #include "zfs_fletcher.h"
 #include "libzfs_impl.h"
 #include <zlib.h>
-#include <sha2.h>
-
 #include <sys/zio_checksum.h>
 #include <sys/ddt.h>
 #include <sys/socket.h>
@@ -72,11 +70,10 @@
 /* in libzfs_dataset.c */
 extern void zfs_setprop_error(libzfs_handle_t *, zfs_prop_t, int, char *);
 
-static int zfs_receive_impl(libzfs_handle_t *, const char *, const char *,
-	recvflags_t *, int, const char *, nvlist_t *, avl_tree_t *, char **, int,
-    uint64_t *, const char *);
+static int zfs_receive_impl(libzfs_handle_t *, const char *, recvflags_t *,
+    int, const char *, nvlist_t *, avl_tree_t *, char **, int, uint64_t *);
 static int guid_to_name(libzfs_handle_t *, const char *,
-    uint64_t, boolean_t, char *);
+	uint64_t, boolean_t, char *);
 
 static const zio_cksum_t zero_cksum = { { 0 } };
 
@@ -305,8 +302,11 @@ cksummer(void *arg)
 			    DMU_BACKUP_FEATURE_DEDUPPROPS);
 			DMU_SET_FEATUREFLAGS(drrb->drr_versioninfo, fflags);
 
+			if (cksum_and_write(drr, sizeof (dmu_replay_record_t),
+			    &stream_cksum, outfd) == -1)
+				goto out;
 			if (drr->drr_payloadlen != 0) {
-				sz = drr->drr_payloadlen;
+				int sz = drr->drr_payloadlen;
 
 				if (sz > SPA_MAXBLOCKSIZE) {
 					buf = zfs_realloc(dda->dedup_hdl, buf,
@@ -1535,7 +1535,7 @@ zfs_send_resume_token_to_nvlist(libzfs_handle_t *hdl, const char *token)
 	    &version, &checksum, &packed_len);
 	if (nread != 3) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "resume token is corrupt (invalid format)"));
+		    "resume token is corrupt (sscanf failed)"));
 		return (NULL);
 	}
 
@@ -1563,7 +1563,7 @@ zfs_send_resume_token_to_nvlist(libzfs_handle_t *hdl, const char *token)
 
 	/* verify checksum */
 	zio_cksum_t cksum;
-	fletcher_4_native(compressed, len, NULL,&cksum);
+	fletcher_4_native(compressed, len, &cksum);
 	if (cksum.zc_word[0] != checksum) {
 		free(compressed);
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
@@ -1573,9 +1573,8 @@ zfs_send_resume_token_to_nvlist(libzfs_handle_t *hdl, const char *token)
 
 	/* uncompress */
 	void *packed = zfs_alloc(hdl, packed_len);
-	uLongf packed_len_long = packed_len;
-	if (uncompress(packed, &packed_len_long, compressed, len) != Z_OK ||
-	    packed_len_long != packed_len) {
+	unsigned long packed_len_long = packed_len;
+	if (uncompress(packed, &packed_len_long, compressed, len) != Z_OK) {
 		free(packed);
 		free(compressed);
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
@@ -1606,26 +1605,26 @@ zfs_send_resume(libzfs_handle_t *hdl, sendflags_t *flags, int outfd,
 	uint64_t resumeobj, resumeoff, toguid, fromguid, bytes;
 	zfs_handle_t *zhp;
 	int error = 0;
-	char name[ZFS_MAX_DATASET_NAME_LEN];
+	char name[ZFS_MAXNAMELEN];
+	nvlist_t *resume_nvl =
+	    zfs_send_resume_token_to_nvlist(hdl, resume_token);
 	enum lzc_send_flags lzc_flags = 0;
+
+	if (flags->verbose) {
+		(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
+		    "resume token contents:\n"));
+		nvlist_print(stderr, resume_nvl);
+	}
 
 	(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
 	    "cannot resume send"));
 
-	nvlist_t *resume_nvl =
-	    zfs_send_resume_token_to_nvlist(hdl, resume_token);
 	if (resume_nvl == NULL) {
 		/*
 		 * zfs_error_aux has already been set by
 		 * zfs_send_resume_token_to_nvlist
 		 */
 		return (zfs_error(hdl, EZFS_FAULT, errbuf));
-	}
-
-	if (flags->verbose) {
-		(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
-		    "resume token contents:\n"));
-		nvlist_print(stderr, resume_nvl);
 	}
 
 	if (nvlist_lookup_string(resume_nvl, "toname", &toname) != 0 ||
@@ -2299,7 +2298,6 @@ guid_to_name_cb(zfs_handle_t *zhp, void *arg)
 	if (gtnd->skip != NULL &&
 	    (slash = strrchr(zhp->zfs_name, '/')) != NULL &&
 	    strcmp(slash + 1, gtnd->skip) == 0) {
-		zfs_close(zhp);
 		return (0);
 	}
 
@@ -3042,7 +3040,7 @@ static void
 recv_ecksum_set_aux(libzfs_handle_t *hdl, const char *target_snap,
     boolean_t resumable)
 {
-	char target_fs[ZFS_MAX_DATASET_NAME_LEN];
+	char target_fs[ZFS_MAXNAMELEN];
 
 	zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 	    "checksum mismatch or incomplete stream"));
@@ -3243,7 +3241,7 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 	boolean_t resuming = DMU_GET_FEATUREFLAGS(drrb->drr_versioninfo) &
 		DMU_BACKUP_FEATURE_RESUMING;
 	stream_wantsnewfs = (drrb->drr_fromguid == 0 ||
-		 (drrb->drr_flags & DRR_FLAG_CLONE) || originsnap) && !resuming;
+						 (drrb->drr_flags & DRR_FLAG_CLONE) /*|| originsnap*/) && !resuming;
 
 	if (stream_wantsnewfs) {
 		/*

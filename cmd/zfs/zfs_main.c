@@ -3943,14 +3943,9 @@ zfs_do_receive(int argc, char **argv)
 	int c, err = 0;
 	recvflags_t flags = { 0 };
 	boolean_t abort_resumable = B_FALSE;
-	nvlist_t *props;
-	nvpair_t *nvp = NULL;
-
-	if (nvlist_alloc(&props, NV_UNIQUE_NAME, 0) != 0)
-		nomem();
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":o:denuvFsA")) != -1) {
+	while ((c = getopt(argc, argv, ":denuvFsA")) != -1) {
 		switch (c) {
 		case 'o':
 			if (parseprop(props, optarg) != 0) {
@@ -4015,7 +4010,7 @@ zfs_do_receive(int argc, char **argv)
 			usage(B_FALSE);
 		}
 
-		char namebuf[ZFS_MAX_DATASET_NAME_LEN];
+		char namebuf[ZFS_MAXNAMELEN];
 		(void) snprintf(namebuf, sizeof (namebuf),
 		    "%s/%%recv", argv[0]);
 
@@ -4023,12 +4018,9 @@ zfs_do_receive(int argc, char **argv)
 		    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME)) {
 			zfs_handle_t *zhp = zfs_open(g_zfs,
 			    namebuf, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME);
-			if (zhp == NULL) {
-				nvlist_free(props);
+			if (zhp == NULL)
 				return (1);
-			}
 			err = zfs_destroy(zhp, B_FALSE);
-			zfs_close(zhp);
 		} else {
 			zfs_handle_t *zhp = zfs_open(g_zfs,
 			    argv[0], ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME);
@@ -4041,22 +4033,12 @@ zfs_do_receive(int argc, char **argv)
 				    gettext("'%s' does not have any "
 				    "resumable receive state to abort\n"),
 				    argv[0]);
-				nvlist_free(props);
-				zfs_close(zhp);
 				return (1);
 			}
 			err = zfs_destroy(zhp, B_FALSE);
-			zfs_close(zhp);
 		}
-		nvlist_free(props);
-		return (err != 0);
-	}
 
-	while ((nvp = nvlist_next_nvpair(props, nvp))) {
-		if (strcmp(nvpair_name(nvp), "origin") != 0) {
-			(void) fprintf(stderr, gettext("invalid option"));
-			usage(B_FALSE);
-		}
+		return (err != 0);
 	}
 
 	if (isatty(STDIN_FILENO)) {

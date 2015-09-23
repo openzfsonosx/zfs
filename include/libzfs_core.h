@@ -67,6 +67,9 @@ enum lzc_send_flags {
 int lzc_send(const char *, const char *, int, enum lzc_send_flags);
 int lzc_send_resume(const char *, const char *, int,
     enum lzc_send_flags, uint64_t, uint64_t);
+int lzc_receive(const char *, nvlist_t *, const char *, boolean_t, int);
+int lzc_receive_resumable(const char *, nvlist_t *, const char *,
+    boolean_t, int);
 int lzc_send_space(const char *, const char *, uint64_t *);
 
 struct dmu_replay_record;

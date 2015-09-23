@@ -38,7 +38,6 @@
 #include <sys/zfs_context.h>
 #include <sys/dsl_deadlist.h>
 #include <sys/refcount.h>
-#include <sys/rrwlock.h>
 #include <zfeature_common.h>
 
 #ifdef	__cplusplus
@@ -85,6 +84,18 @@ struct dsl_pool;
  * in the refcount of the SPA_FEATURES_BOOKMARKS feature.
  */
 #define	DS_FIELD_BOOKMARK_NAMES "com.delphix:bookmarks"
+
+/*
+ * These fields are set on datasets that are in the middle of a resumable
+ * receive, and allow the sender to resume the send if it is interrupted.
+ */
+#define	DS_FIELD_RESUME_FROMGUID "com.delphix:resume_fromguid"
+#define	DS_FIELD_RESUME_TONAME "com.delphix:resume_toname"
+#define	DS_FIELD_RESUME_TOGUID "com.delphix:resume_toguid"
+#define	DS_FIELD_RESUME_OBJECT "com.delphix:resume_object"
+#define	DS_FIELD_RESUME_OFFSET "com.delphix:resume_offset"
+#define	DS_FIELD_RESUME_BYTES "com.delphix:resume_bytes"
+#define	DS_FIELD_RESUME_EMBEDOK "com.delphix:resume_embedok"
 
 /*
  * These fields are set on datasets that are in the middle of a resumable
@@ -155,6 +166,9 @@ typedef struct dsl_dataset {
 	struct dsl_dataset *ds_prev;
 	uint64_t ds_bookmarks;  /* DMU_OTN_ZAP_METADATA */
 
+	boolean_t ds_large_blocks;
+	boolean_t ds_need_large_blocks;
+
 	/* has internal locking: */
 	dsl_deadlist_t ds_deadlist;
 	bplist_t ds_pending_deadlist;
@@ -199,9 +213,6 @@ typedef struct dsl_dataset {
 	uint64_t ds_resume_object[TXG_SIZE];
 	uint64_t ds_resume_offset[TXG_SIZE];
 	uint64_t ds_resume_bytes[TXG_SIZE];
-
-	/* Protected by our dsl_dir's dd_lock */
-	list_t ds_prop_cbs;
 
 	/*
 	 * For ZFEATURE_FLAG_PER_DATASET features, set if this dataset

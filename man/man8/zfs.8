@@ -1730,22 +1730,32 @@ Unless necessary, deduplication should NOT be enabled on a system. Instead, cons
 Properties are divided into two types, native properties and user-defined (or "user") properties. Native properties either export internal statistics or control \fBZFS\fR behavior. In addition, native properties are either editable or read-only. User properties have no effect on \fBZFS\fR behavior, but you can use them to annotate datasets in a way that is meaningful in your environment. For more information about user properties, see the "User Properties" section, below.
 .sp
 .LP
-Every dataset has a set of properties that export statistics about the dataset as well as control various behaviors. Properties are inherited from the parent unless overridden by the child. Some properties apply only to certain types of datasets (file systems, volumes, or snapshots).
-.sp
+.nf
+\fBzfs\fR \fBsend\fR [\fB-eL\fR] [\fB-i \fIsnapshot\fR|\fIbookmark\fR]\fR \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR
+.fi
+.Cm send
+.Op Fl Penv
+.Fl t Ar receive_resume_token
+.Nm
 .LP
 The values of numeric properties can be specified using human-readable suffixes (for example, \fBk\fR, \fBKB\fR, \fBM\fR, \fBGb\fR, and so forth, up to \fBZ\fR for zettabyte). The following are all valid (and equal) specifications: 
 .sp
 .in +2
 .nf
-1536M, 1.5g, 1.50GB
+\fBzfs\fR \fBreceive | recv\fR [\fB-vnFus\fR] \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR
 .fi
 .in -2
 .sp
 
 .sp
 .LP
-The values of non-numeric properties are case sensitive and must be lowercase, except for \fBmountpoint\fR, \fBsharenfs\fR, and \fBsharesmb\fR.
-.sp
+.nf
+\fBzfs\fR \fBreceive | recv\fR [\fB-vnFus\fR] [\fB-d\fR|\fB-e\fR] \fIfilesystem\fR
+.fi
+.Cm receive
+.Fl A
+.Ar filesystem Ns | Ns Ar volume
+.Nm
 .LP
 The following native properties consist of read-only statistics about the dataset. These properties can be neither set, nor inherited. Native properties apply to all dataset types unless otherwise noted.
 .sp
@@ -1874,7 +1884,13 @@ For file systems, indicates whether the file system is currently mounted. This p
 .RS 4n
 For cloned file systems or volumes, the snapshot from which the clone was created. See also the \fBclones\fR property.
 .RE
-
+.It Sy receive_resume_token
+For filesystems or volumes which have saved partially-completed state from
+.Sy zfs receive -s ,
+this opaque token can be provided to
+.Sy zfs send -t
+to resume and complete the
+.Sy zfs receive .
 .sp
 .ne 2
 .mk
@@ -4108,12 +4124,26 @@ See \fBzpool-features\fR(5) for details on ZFS feature flags and the
 .sp
 .ne 2
 .na
-\fBzfs send\fR [\fB-DnPpRveL\fR] [\fB-\fR[\fBiI\fR] \fIsnapshot\fR] \fIsnapshot\fR
+\fBzfs send\fR [\fB-DnPpRveL\fR] [\fB-\fR[\fBiI\fR] \fIsnapshot\fR]
+\fIsnapshot\fR -t receive_resume_token
 .ad
 .sp .6
 .RS 4n
 Creates a stream representation of the second \fIsnapshot\fR, which is written to standard output. The output can be redirected to a file or to a different system (for example, using \fBssh\fR(1). By default, a full stream is generated.
 .sp
+.Cm send
+.Op Fl Penv
+.Fl t
+.Ar receive_resume_token
+.Xc
+Creates a send stream which resumes an interrupted receive.  The
+.Ar receive_resume_token
+is the value of this property on the filesystem
+or volume that was being received into.  See the documentation for
+.Sy zfs receive -s
+for more details.
+.It Xo
+.Nm
 .ne 2
 .mk
 .na
@@ -5144,196 +5174,142 @@ is specified. The receiving system must also support this feature.
 .It Fl v
 Print verbose information about the stream package generated. This information
 includes a per-second report of how much data has been sent.
-.Pp
-The format of the stream is committed. You will be able to receive your streams
-on future versions of ZFS .
-.El
-.It Xo
-.Nm
-.Cm send
-.Op Fl Le
-.Op Fl i Ar snapshot Ns | Ns Ar bookmark
-.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot
-.Xc
-Generate a send stream, which may be of a filesystem, and may be incremental
-from a bookmark. If the destination is a filesystem or volume, the pool must be
-read-only, or the filesystem must not be mounted. When the stream generated from
-a filesystem or volume is received, the default snapshot name will be
-.Qq --head-- .
-.Bl -tag -width "-L"
-.It Fl L
-Generate a stream which may contain blocks larger than 128KB. This flag has no
-effect if the
-.Sy large_blocks
-pool feature is disabled, or if the
-.Sy recordsize
-property of this filesystem has never been set above 128KB. The receiving system
-must have the
-.Sy large_blocks
-pool feature enabled as well. See
-.Xr zpool-features 5
-for details on ZFS feature flags and the
-.Sy large_blocks
-feature.
-.It Fl e
-Generate a more compact stream by using
-.Sy WRITE_EMBEDDED
-records for blocks which are stored more compactly on disk by the
-.Sy embedded_data
-pool feature. This flag has no effect if the
-.Sy embedded_data
-feature is disabled. The receiving system must have the
-.Sy embedded_data
-feature enabled. If the
-.Sy lz4_compress
-feature is active on the sending system, then the receiving system must have
-that feature enabled as well. See
-.Xr zpool-features 5
-for details on ZFS feature flags and the
-.Sy embedded_data
-feature.
-.It Fl i Ar snapshot Ns | Ns Ar bookmark
-Generate an incremental send stream. The incremental source must be an earlier
-snapshot in the destination's history. It will commonly be an earlier snapshot
-in the destination's file system, in which case it can be specified as the last
-component of the name
-.Po the
-.Sy #
-or
-.Sy @
-character and following
-.Pc .
-.Pp
-If the incremental target is a clone, the incremental source can be the origin
-snapshot, or an earlier snapshot in the origin's filesystem, or the origin's
-origin, etc.
-.El
-.It Xo
-.Nm
-.Cm send
-.Op Fl Penv
-.Fl t
-.Ar receive_resume_token
-.Xc
-Creates a send stream which resumes an interrupted receive.  The
-.Ar receive_resume_token
-is the value of this property on the filesystem
-or volume that was being received into.  See the documentation for
-.Sy zfs receive -s
-for more details.
-.It Xo
-.Nm
-.Cm receive
-.Op Fl Fnsuv
-.Op Fl o Sy origin Ns = Ns Ar snapshot
-.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot
+.RE
+
+The format of the stream is committed. You will be able to receive your streams on future versions of \fBZFS\fR.
+.RE
+
+.RE
+.sp
+.ne 2
+.na
+\fBzfs send\fR [\fB-eL\fR] [\fB-i\fR \fIsnapshot\fR|\fIbookmark\fR] \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR
+.ad
+.sp .6
+.RS 4n
+Generate a send stream, which may be of a filesystem, and may be
+incremental from a bookmark.  If the destination is a filesystem or volume,
+the pool must be read-only, or the filesystem must not be mounted.  When the
+stream generated from a filesystem or volume is received, the default snapshot
+name will be "--head--".
+
+.sp
+.ne 2
+.na
+\fB-i\fR \fIsnapshot\fR|\fIbookmark\fR
+.ad
+.sp .6
+.RS 4n
+Generate an incremental send stream.  The incremental source must be an earlier
+snapshot in the destination's history. It will commonly be an earlier
+snapshot in the destination's filesystem, in which case it can be
+specified as the last component of the name (the \fB#\fR or \fB@\fR character
+and following).
+.sp
+If the incremental target is a clone, the incremental source can
+be the origin snapshot, or an earlier snapshot in the origin's filesystem,
+or the origin's origin, etc.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-L\fR\fR
+.ad
+.sp .6
+.RS 4n
+Generate a stream which may contain blocks larger than 128KB.  This flag
+has no effect if the \fBlarge_blocks\fR pool feature is disabled, or if
+the \fRrecordsize\fR property of this filesystem has never been set above
+128KB.  The receiving system must have the \fBlarge_blocks\fR pool feature
+enabled as well.  See \fBzpool-features\fR(5) for details on ZFS feature
+flags and the \fBlarge_blocks\fR feature.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-e\fR\fR
+.ad
+.sp .6
+.RS 4n
+Generate a more compact stream by using WRITE_EMBEDDED records for blocks
+which are stored more compactly on disk by the \fBembedded_data\fR pool
+feature.  This flag has no effect if the \fBembedded_data\fR feature is
+disabled.  The receiving system must have the \fBembedded_data\fR feature
+enabled.  If the \fBlz4_compress\fR feature is active on the sending system,
+then the receiving system must have that feature enabled as well. See
+\fBzpool-features\fR(5) for details on ZFS feature flags and the
+\fBembedded_data\fR feature.
+.RE
+
+.RE
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs receive\fR [\fB-vnFus\fR] \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR\fR
+.ad
 .br
-.Nm
-.Cm receive
-.Op Fl Fnsuv
-.Op Fl d Ns | Ns Fl e
-.Op Fl o Sy origin Ns = Ns Ar snapshot
-.Ar filesystem
-.Xc
-Creates a snapshot whose contents are as specified in the stream provided on
-standard input. If a full stream is received, then a new file system is created
-as well. Streams are created using the
-.Nm zfs Cm send
-subcommand, which by default creates a full stream.
-.Nm zfs Cm recv
-can be used as an alias for
-.Nm zfs Cm receive.
-.Pp
-If an incremental stream is received, then the destination file system must
-already exist, and its most recent snapshot must match the incremental stream's
-source. For
-.Sy zvols ,
-the destination device link is destroyed and recreated, which means the
-.Sy zvol
-cannot be accessed during the
-.Cm receive
-operation.
-.Pp
-When a snapshot replication package stream that is generated by using the
-.Nm zfs Cm send Fl R
-command is received, any snapshots that do not exist on the sending location are
-destroyed by using the
-.Nm zfs Cm destroy Fl d
-command.
-.Pp
-The name of the snapshot
-.Pq and file system, if a full stream is received
-that this subcommand creates depends on the argument type and the use of the
-.Fl d
-or
-.Fl e
-options.
-.Pp
-If the argument is a snapshot name, the specified
-.Ar snapshot
-is created. If the argument is a file system or volume name, a snapshot with the
-same name as the sent snapshot is created within the specified
-.Ar filesystem
-or
-.Ar volume .
-If neither of the
-.Fl d
-or
-.Fl e
-options are specified, the provided target snapshot name is used exactly as
-provided.
-.Pp
-The
-.Fl d
-and
-.Fl e
-options cause the file system name of the target snapshot to be determined by
-appending a portion of the sent snapshot's name to the specified target
-.Ar filesystem .
-If the
-.Fl d
-option is specified, all but the first element of the sent snapshot's file
-system path
-.Pq usually the pool name
-is used and any required intermediate file systems within the specified one are
-created. If the
-.Fl e
-option is specified, then only the last element of the sent snapshot's file
-system name
-.Pq i.e. the name of the source file system itself
-is used as the target file system name.
-.Bl -tag -width "-F"
-.It Fl F
-Force a rollback of the file system to the most recent snapshot before
-performing the receive operation. If receiving an incremental replication stream
-.Po for example, one generated by
-.Nm zfs Cm send Fl R Op Fl i Ns | Ns Fl I
-.Pc ,
-destroy snapshots and file systems that do not exist on the sending side.
-.It Fl d
-Discard the first element of the sent snapshot's file system name, using the
-remaining elements to determine the name of the target file system for the new
-snapshot as described in the paragraph above.
-.It Fl e
-Discard all but the last element of the sent snapshot's file system name, using
-that element to determine the name of the target file system for the new
-snapshot as described in the paragraph above.
-.It Fl n
-Do not actually receive the stream. This can be useful in conjunction with the
-.Fl v
-option to verify the name the receive operation would use.
-.It Fl o Sy origin Ns = Ns Ar snapshot
-Forces the stream to be received as a clone of the given snapshot.
-If the stream is a full send stream, this will create the filesystem
-described by the stream as a clone of the specified snapshot. Which
-snapshot was specified will not affect the success or failure of the
-receive, as long as the snapshot does exist.  If the stream is an
-incremental send stream, all the normal verification will be performed.
-.It Fl u
+.na
+\fB\fBzfs receive\fR [\fB-vnFus\fR] [\fB-d\fR|\fB-e\fR] \fIfilesystem\fR\fR
+.ad
+.sp .6
+.RS 4n
+Creates a snapshot whose contents are as specified in the stream provided on standard input. If a full stream is received, then a new file system is created as well. Streams are created using the \fBzfs send\fR subcommand, which by default creates a full stream. \fBzfs recv\fR can be used as an alias for \fBzfs receive\fR.
+.sp
+If an incremental stream is received, then the destination file system must already exist, and its most recent snapshot must match the incremental stream's source. For \fBzvols\fR, the destination device link is destroyed and recreated, which means the \fBzvol\fR cannot be accessed during the \fBreceive\fR operation.
+.sp
+When a snapshot replication package stream that is generated by using the \fBzfs send\fR \fB-R\fR command is  received, any snapshots that do not exist on the sending location are destroyed by using the \fBzfs destroy\fR \fB-d\fR command.
+.sp
+The name of the snapshot (and file system, if a full stream is received) that this subcommand creates depends on the argument type and the use of the \fB-d\fR or \fB-e\fR options.
+.sp
+If the argument is a snapshot name, the specified \fIsnapshot\fR is created. If the argument is a file system or volume name, a snapshot with the same name as the sent snapshot is created within the specified \fIfilesystem\fR or \fIvolume\fR.  If neither of the \fB-d\fR or \fB-e\fR options are specified, the provided target snapshot name is used exactly as provided.
+.sp
+The \fB-d\fR and \fB-e\fR options cause the file system name of the target snapshot to be determined by appending a portion of the sent snapshot's name to the specified target \fIfilesystem\fR. If the \fB-d\fR option is specified, all but the first element of the sent snapshot's file system path (usually the pool name) is used and any required intermediate file systems within the specified one are created.  If the \fB-e\fR option is specified, then only the last element of the sent snapshot's file system name (i.e. the name of the source file system itself) is used as the target file system name.
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-d\fR\fR
+.ad
+.sp .6
+.RS 4n
+Discard the first element of the sent snapshot's file system name, using the remaining elements to determine the name of the target file system for the new snapshot as described in the paragraph above.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-e\fR\fR
+.ad
+.sp .6
+.RS 4n
+Discard all but the last element of the sent snapshot's file system name, using that element to determine the name of the target file system for the new snapshot as described in the paragraph above.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-u\fR\fR
+.ad
+.sp .6
+.RS 4n
 File system that is associated with the received stream is not mounted.
-.It Fl v
-Print verbose information about the stream and the time required to perform the
-receive operation.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-v\fR\fR
+.ad
+.sp .6
+.RS 4n
+Print verbose information about the stream and the time required to perform the receive operation.
+.RE
 .It Fl s
 If the receive is interrupted, save the partially received state, rather
 than deleting it.  Interruption may be due to premature termination of
@@ -5358,9 +5334,8 @@ To use this flag, the storage pool must have the
 feature enabled.  See
 .Xr zpool-features 5
 for details on ZFS feature flags.
-.El
-.It Xo
-.Nm
+.sp
+.ne 2
 .Cm receive
 .Fl A
 .Ar filesystem Ns | Ns Ar volume
@@ -5370,21 +5345,45 @@ Abort an interrupted
 deleting its saved partially received state.
 .It Xo
 .Nm
-.Cm allow
-.Ar filesystem Ns | Ns Ar volume
-.Xc
-Displays permissions that have been delegated on the specified filesystem or
-volume. See the other forms of
-.Nm zfs Cm allow
-for more information.
-.It Xo
-.Nm
-.Cm allow
-.Op Fl dglu
-.Ar user Ns | Ns Ar group Ns Oo , Ns Ar user Ns | Ns Ar group Oc Ns ...
-.Ar perm Ns | Ns @ Ns Ar setname Ns Oo , Ns Ar perm Ns | Ns @ Ns
-.Ar setname Oc Ns ...
-.Ar filesystem Ns | Ns Ar volume
+.mk
+.na
+\fB\fB-n\fR\fR
+.ad
+.sp .6
+.RS 4n
+Do not actually receive the stream. This can be useful in conjunction with the \fB-v\fR option to verify the name the receive operation would use.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-F\fR\fR
+.ad
+.sp .6
+.RS 4n
+Force a rollback of the file system to the most recent snapshot before performing the receive operation. If receiving an incremental replication stream (for example, one generated by \fBzfs send -R -[iI]\fR), destroy snapshots and file systems that do not exist on the sending side.
+.RE
+
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs allow\fR \fIfilesystem\fR | \fIvolume\fR\fR
+.ad
+.sp .6
+.RS 4n
+Displays permissions that have been delegated on the specified filesystem or volume. See the other forms of \fBzfs allow\fR for more information.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs allow\fR [\fB-ldug\fR] "\fIeveryone\fR"|\fIuser\fR|\fIgroup\fR[,...] \fIperm\fR|@\fIsetname\fR[,...] \fIfilesystem\fR| \fIvolume\fR\fR
+.ad
 .br
 .Nm
 .Cm allow

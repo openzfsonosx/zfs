@@ -55,7 +55,6 @@
 #include <sys/zio_compress.h>
 #include <zfs_fletcher.h>
 #include <sys/dmu_send.h>
-#include <sys/zio_checksum.h>
 
 /*
  * The SPA supports block sizes up to 16MB.  However, very large blocks
@@ -1761,13 +1760,11 @@ get_receive_resume_stats(dsl_dataset_t *ds, nvlist_t *nv)
 		    packed_size, packed_size, 6);
 
 		zio_cksum_t cksum;
-		fletcher_4_native(compressed, compressed_size, NULL, &cksum);
+		fletcher_4_native(compressed, compressed_size, &cksum);
 
 		str = kmem_alloc(compressed_size * 2 + 1, KM_SLEEP);
 		for (int i = 0; i < compressed_size; i++) {
-			(void) snprintf(str + i * 2,
-							compressed_size * 2 + 1,
-							"%02x", compressed[i]);
+			(void) sprintf(str + i * 2, "%02x", compressed[i]);
 		}
 		str[compressed_size * 2] = '\0';
 		char *propval = kmem_asprintf("%u-%llx-%llx-%s",
@@ -1868,15 +1865,12 @@ dsl_dataset_stats(dsl_dataset_t *ds, nvlist_t *nv)
 		 * stats set on our child named "%recv".  Check the child
 		 * for the prop.
 		 */
-		/* 6 extra bytes for /%recv */
-		char recvname[ZFS_MAX_DATASET_NAME_LEN + 6];
+		char recvname[ZFS_MAXNAMELEN];
 		dsl_dataset_t *recv_ds;
 		dsl_dataset_name(ds, recvname);
-		if (strlcat(recvname, "/", sizeof (recvname)) <
-			sizeof (recvname) &&
-			strlcat(recvname, recv_clone_name, sizeof (recvname)) <
-			sizeof (recvname) &&
-			dsl_dataset_hold(dp, recvname, FTAG, &recv_ds) == 0) {
+		(void) strcat(recvname, "/");
+		(void) strcat(recvname, recv_clone_name);
+		if (dsl_dataset_hold(dp, recvname, FTAG, &recv_ds) == 0) {
 			get_receive_resume_stats(recv_ds, nv);
 			dsl_dataset_rele(recv_ds, FTAG);
 		}
@@ -3542,6 +3536,7 @@ dsl_dataset_zapify(dsl_dataset_t *ds, dmu_tx_t *tx)
 	dmu_object_zapify(mos, ds->ds_object, DMU_OT_DSL_DATASET, tx);
 }
 
+
 boolean_t
 dsl_dataset_is_zapified(dsl_dataset_t *ds)
 {
@@ -3556,5 +3551,55 @@ dsl_dataset_has_resume_receive_state(dsl_dataset_t *ds)
 {
 	return (dsl_dataset_is_zapified(ds) &&
 			zap_contains(ds->ds_dir->dd_pool->dp_meta_objset,
-			ds->ds_object, DS_FIELD_RESUME_TOGUID) == 0);
+						 ds->ds_object, DS_FIELD_RESUME_TOGUID) == 0);
 }
+
+
+
+#if defined(_KERNEL) && defined(HAVE_SPL)
+#if defined(_LP64)
+module_param(zfs_max_recordsize, int, 0644);
+MODULE_PARM_DESC(zfs_max_recordsize, "Max allowed record size");
+#else
+/* Limited to 1M on 32-bit platforms due to lack of virtual address space */
+module_param(zfs_max_recordsize, int, 0444);
+MODULE_PARM_DESC(zfs_max_recordsize, "Max allowed record size");
+#endif
+
+EXPORT_SYMBOL(dsl_dataset_hold);
+EXPORT_SYMBOL(dsl_dataset_hold_obj);
+EXPORT_SYMBOL(dsl_dataset_own);
+EXPORT_SYMBOL(dsl_dataset_own_obj);
+EXPORT_SYMBOL(dsl_dataset_name);
+EXPORT_SYMBOL(dsl_dataset_rele);
+EXPORT_SYMBOL(dsl_dataset_disown);
+EXPORT_SYMBOL(dsl_dataset_tryown);
+EXPORT_SYMBOL(dsl_dataset_create_sync);
+EXPORT_SYMBOL(dsl_dataset_create_sync_dd);
+EXPORT_SYMBOL(dsl_dataset_snapshot_check);
+EXPORT_SYMBOL(dsl_dataset_snapshot_sync);
+EXPORT_SYMBOL(dsl_dataset_promote);
+EXPORT_SYMBOL(dsl_dataset_user_hold);
+EXPORT_SYMBOL(dsl_dataset_user_release);
+EXPORT_SYMBOL(dsl_dataset_get_holds);
+EXPORT_SYMBOL(dsl_dataset_get_blkptr);
+EXPORT_SYMBOL(dsl_dataset_set_blkptr);
+EXPORT_SYMBOL(dsl_dataset_get_spa);
+EXPORT_SYMBOL(dsl_dataset_modified_since_snap);
+EXPORT_SYMBOL(dsl_dataset_space_written);
+EXPORT_SYMBOL(dsl_dataset_space_wouldfree);
+EXPORT_SYMBOL(dsl_dataset_sync);
+EXPORT_SYMBOL(dsl_dataset_block_born);
+EXPORT_SYMBOL(dsl_dataset_block_kill);
+EXPORT_SYMBOL(dsl_dataset_block_freeable);
+EXPORT_SYMBOL(dsl_dataset_prev_snap_txg);
+EXPORT_SYMBOL(dsl_dataset_dirty);
+EXPORT_SYMBOL(dsl_dataset_stats);
+EXPORT_SYMBOL(dsl_dataset_fast_stat);
+EXPORT_SYMBOL(dsl_dataset_space);
+EXPORT_SYMBOL(dsl_dataset_fsid_guid);
+EXPORT_SYMBOL(dsl_dsobj_to_dsname);
+EXPORT_SYMBOL(dsl_dataset_check_quota);
+EXPORT_SYMBOL(dsl_dataset_clone_swap_check_impl);
+EXPORT_SYMBOL(dsl_dataset_clone_swap_sync_impl);
+#endif

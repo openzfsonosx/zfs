@@ -30,6 +30,7 @@ USER_C = \
 	../../module/zfs/bplist.c \
 	../../module/zfs/bpobj.c \
 	../../module/zfs/bptree.c \
+	../../module/zfs/bqueue.c \
 	../../module/zfs/dbuf.c \
 	../../module/zfs/dbuf_stats.c \
 	../../module/zfs/ddt.c \

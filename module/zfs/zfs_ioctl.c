@@ -5266,8 +5266,9 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 #ifndef __APPLE__
 	off = fp->f_offset;
 #endif
-	error = dmu_send(snapname, fromname, embedok, largeblockok, fd,
-		resumeobj, resumeoff, fp->f_vnode, &off);
+
+	error = dmu_send(snapname, fromname, embedok, largeblockok,
+		fd, resumeobj, resumeoff, fp->f_vnode, &off);
 
 #ifndef __APPLE__
 	if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
