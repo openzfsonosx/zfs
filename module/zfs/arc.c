@@ -3293,7 +3293,6 @@ arc_available_memory(void)
 #ifdef __APPLE__
 	lowest = kmem_avail();
 	// if (lowest < 0) printf("ZFS: %s: kmem_avail() negative, %lld\n", __func__, lowest);
-	
 #endif
 
 
@@ -3427,7 +3426,7 @@ arc_reclaim_thread(void)
 
 		mutex_exit(&arc_reclaim_lock);
 
-		if (free_memory < 0) {  // smd - otherwise we fall through
+		if (free_memory < 0) {
 
 			arc_no_grow = B_TRUE;
 			arc_warm = B_TRUE;
@@ -4948,7 +4947,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ka);
 	  return (SET_ERROR(EAGAIN));
 	}
-#endif // 0	
+#endif // 0
 #endif // KERNEL
 	return (0);
 }
