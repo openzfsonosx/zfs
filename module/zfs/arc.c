@@ -4942,9 +4942,9 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	//
 	//if (vm_page_free_wanted > 0) // we're paging, throttle zfs writes
 	//  return (SET_ERROR(EAGAIN));
-	ka = kmem_avail();
-	if (ka  < 0) { // we now can have this go negative... negatives mean badness
-	  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ka);
+	int64_t ks = kmem_avail();
+	if (ks  < 0) { // we now can have this go negative... negatives mean badness
+	  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ks);
 	  return (SET_ERROR(EAGAIN));
 	}
 #endif // 0
