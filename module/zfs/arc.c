@@ -1213,7 +1213,7 @@ buf_dest(void *vbuf, void *unused)
 static void
 hdr_recl(void *unused)
 {
-	dprintf("hdr_recl called\n");
+	dprintf("ZFS: hdr_recl called\n");
 	/*
 	 * umem calls the reclaim func when we destroy the buf cache,
 	 * which is after we do arc_fini().
@@ -3321,7 +3321,7 @@ arc_reclaim_needed(void)
 #ifdef __APPLE__
 #ifdef KERNEL
     if (spl_vm_pool_low()) {
-		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
+      // ARCSTAT_INCR(arcstat_memory_throttle_count, 1); // no this is reclaim not throttle
 		return 1;
 	}
     if (kmem_avail() < 0) { // negative is badness
@@ -3458,7 +3458,7 @@ arc_reclaim_thread(void)
 				to_free = MAX(to_free, kmem_num_pages_wanted() * PAGESIZE);
 #endif
 #endif
-				printf("ZFS: %s, to_free == %lld, calling arc_shrink()\n", __func__, to_free);
+				if (to_free > 12*1024*1024) printf("ZFS: %s, to_free == %lld, calling arc_shrink()\n", __func__, to_free);
 				arc_shrink(to_free);
 			}
 		} else if (free_memory < arc_c >> arc_no_grow_shift) {
@@ -4884,6 +4884,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	uint64_t available_memory = ptob(freemem);
 #endif
 #ifdef __APPLE__
+	extern int32_t spl_minimal_physmem_p(void);
 	int64_t available_memory = kmem_avail();
 	int64_t freemem = available_memory / PAGESIZE;
 #endif
@@ -4938,10 +4939,14 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	//
 	//if (vm_page_free_wanted > 0) // we're paging, throttle zfs writes
 	//  return (SET_ERROR(EAGAIN));
-	int64_t ks = kmem_avail();
-	if (ks  < 0) { // we now can have this go negative... negatives mean badness
-	  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ks);
+	//int64_t ks = kmem_avail();
+	//if (ks  < 0) { // we now can have this go negative... negatives mean badness
+	//  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ks);
+	if(!spl_minimal_physmem_p() && arc_reclaim_needed()) {
 	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
+	  cv_signal(&arc_reclaim_thread_cv);
+	  printf("ZFS: %s THROTTLED, reclaim signalled, txg = %llu, reserve = %llu\n",
+		 __func__, txg, reserve);
 	  return (SET_ERROR(EAGAIN));
 	}
 #endif // 0
@@ -4994,7 +4999,7 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 
 	if (reserve + arc_tempreserve + anon_size > arc_c / 2 &&
 	    anon_size > arc_c / 4) {
-		dprintf("failing, arc_tempreserve=%lluK anon_meta=%lluK "
+		dprintf("ZFS: failing, arc_tempreserve=%lluK anon_meta=%lluK "
 		    "anon_data=%lluK tempreserve=%lluK arc_c=%lluK\n",
 		    arc_tempreserve>>10,
 		    arc_anon->arcs_lsize[ARC_BUFC_METADATA]>>10,
