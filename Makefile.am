@@ -41,19 +41,6 @@ distclean-local::
 		-o -name '*.order' -o -name '*.markers' \) \
 		-type f -print | xargs $(RM)
 
-if CONFIG_KERNEL
-install-data-local:
-
-#    release=$(ZFS_META_VERSION)-$(ZFS_META_RELEASE); \
-#	instdest=$(DESTDIR)/usr/src/zfs-$$release/$(LINUX_VERSION); \
-#	for instfile in $(noinst_HEADERS); do \
-#		parentdir=`dirname $$instdest/$$instfile`; \
-#		mkdir -p $$parentdir; \
-#		$(INSTALL) $$instfile $$instdest/$$instfile; \
-#	done
-
-endif
-
 
 checkstyle: cstyle shellcheck
 
