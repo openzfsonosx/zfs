@@ -24,3 +24,7 @@ mount_zfs_LDADD = \
 
 mount_zfs_LDFLAGS = \
 	-pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) $(LIBSELINUX)
+
+install-exec-hook:
+
+uninstall-hook:

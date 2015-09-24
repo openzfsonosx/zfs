@@ -11,9 +11,9 @@ AC_DEFUN([ZFS_AC_CONFIG_KERNEL], [
 	dnl # compiler options are added by the kernel build system.
 	KERNELCPPFLAGS="$KERNELCPPFLAGS $NO_UNUSED_BUT_SET_VARIABLE"
 	KERNELCPPFLAGS="$KERNELCPPFLAGS -D_KERNEL -DKERNEL -DKERNEL_PRIVATE -mkernel"
-	KERNELCPPFLAGS="$KERNELCPPFLAGS -DAPPLE -DNeXT
+	KERNELCPPFLAGS="$KERNELCPPFLAGS -DAPPLE -DNeXT"
 	KERNELCPPFLAGS="$KERNELCPPFLAGS -DTEXT_DOMAIN=\\\"zfs-kernel\\\""
-	KERNELCPPFLAGS="$KERNELCPPFLAGS -Wall -g -nostdinc
+	KERNELCPPFLAGS="$KERNELCPPFLAGS -Wall -g -nostdinc"
 	KERNELCPPFLAGS="$KERNELCPPFLAGS -DZFS_META_VERSION=\"\$(ZFS_META_VERSION)\""
 	KERNELCPPFLAGS="$KERNELCPPFLAGS -DZFS_META_RELEASE=\"\$(ZFS_META_RELEASE)\""
 
@@ -75,6 +75,10 @@ AC_DEFUN([ZFS_AC_KERNEL], [
 	AS_IF([test -z "$kernelsrc"], [
 		AS_IF([test -d "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.10.sdk/System/Library/Frameworks/Kernel.framework"], [
 			kernelsrc="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.10.sdk/System/Library/Frameworks/Kernel.framework"])
+	])
+	AS_IF([test -z "$kernelsrc"], [
+		AS_IF([test -d "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.11.sdk/System/Library/Frameworks/Kernel.framework"], [
+			kernelsrc="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.11.sdk/System/Library/Frameworks/Kernel.framework"])
 	])
 	AS_IF([test -z "$kernelsrc"], [
 		AS_IF([test -d "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk/System/Library/Frameworks/Kernel.framework"], [
