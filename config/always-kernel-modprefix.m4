@@ -13,7 +13,7 @@ AC_DEFUN([ZFS_AC_CONFIG_ALWAYS_KERNEL_MODPREFIX], [
 
 	AC_MSG_CHECKING([kernel module prefix])
 	AS_IF([test -z "$kernelmodprefix"], [
-		kernelmodprefix="/System/Library/Extensions"
+		kernelmodprefix="/Library/Extensions"
 	])
 	AC_MSG_RESULT([$kernelmodprefix])
 	KERNEL_MODPREFIX=${kernelmodprefix}

@@ -16,7 +16,6 @@ extradir = @prefix@/src/zfs-$(VERSION)
 extra_HEADERS = zfs.release.in zfs_config.h.in
 
 kerneldir = /usr/src/zfs-$(VERSION)/$(LINUX_VERSION)
-nodist_kernel_HEADERS = zfs.release zfs_config.h
 endif
 if CONFIG_USER
 # O3X - trim out linux stuff.
@@ -41,19 +40,6 @@ distclean-local::
 		-o -name 'Makefile' -o -name 'Module.symvers' \
 		-o -name '*.order' -o -name '*.markers' \) \
 		-type f -print | xargs $(RM)
-
-if CONFIG_KERNEL
-install-data-local:
-
-#    release=$(ZFS_META_VERSION)-$(ZFS_META_RELEASE); \
-#	instdest=$(DESTDIR)/usr/src/zfs-$$release/$(LINUX_VERSION); \
-#	for instfile in $(noinst_HEADERS); do \
-#		parentdir=`dirname $$instdest/$$instfile`; \
-#		mkdir -p $$parentdir; \
-#		$(INSTALL) $$instfile $$instdest/$$instfile; \
-#	done
-
-endif
 
 
 checkstyle: cstyle shellcheck
@@ -100,6 +86,7 @@ install-data-hook::
 		$(DESTDIR)$(launchddaemondir)/"$$bn" \
 		    || echo "Ignoring errors"; \
 	done
+	echo "Install done."
 
 uninstall-hook::
 	@echo
@@ -109,7 +96,6 @@ uninstall-hook::
 		$(DESTDIR)/bin/launchctl remove "$$label" \
 		    || echo "Ignoring errors"; \
 	done
-	$(RM) -r /System/Library/Filesystems/zfs.fs
-	$(RM) -r /System/Library/Extensions/zfs.kext
-	$(RM) -r /Library/Extensions/zfs.kext
+	$(RM) -r $(DESTDIR)@FILESYSTEMS_PREFIX@/zfs.fs
+	$(RM) -r $(DESTDIR)@KERNEL_MODPREFIX@/zfs.kext
 endif

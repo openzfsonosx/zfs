@@ -185,7 +185,7 @@ install-exec-local:: zfs.kext
 	rm -rf $(KERNEL_MODDIR)
 	mkdir -p $(KERNEL_MODDIR)
 	rsync -r zfs.kext/ $(KERNEL_MODDIR)
-	chown -R root:wheel $(KERNEL_MODDIR)
+	chown -R root:wheel $(KERNEL_MODDIR) || echo "Unable to chown root:wheel $(KERNEL_MODDIR). KEXT will not load until it is"
 	@echo
 	@echo "To load module: kextload -v $(KERNEL_MODDIR)"
 	@echo "To uninstall module: rm -rf $(KERNEL_MODDIR)"
@@ -194,3 +194,6 @@ install-exec-local:: zfs.kext
 clean:
 	rm -rf zfs.kext/
 	rm -f *.o *.lo zfs
+
+uninstall-hook:
+	rm -rf "$(KERNEL_MODDIR)"
