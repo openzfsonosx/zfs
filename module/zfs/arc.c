@@ -2499,34 +2499,172 @@ arc_buf_eviction_needed(arc_buf_t *buf)
 	arc_buf_hdr_t *hdr;
 	boolean_t evict_needed = B_FALSE;
 
-	if (zfs_disable_dup_eviction)
-		return (B_FALSE);
+/*
+ * Evict buffers from list until we've removed the specified number of
+ * bytes.  Move the removed buffers to the appropriate evict state.
+ * If the recycle flag is set, then attempt to "recycle" a buffer:
+ * - look for a buffer to evict that is `bytes' long.
+ * - return the data block from this buffer rather than freeing it.
+ * This flag is used by callers that are trying to make space for a
+ * new buffer in a full arc cache.
+ *
+ * This function makes a "best effort".  It skips over any buffers
+ * it can't get a hash_lock on, and so may not catch all candidates.
+ * It may also return without evicting as much space as requested.
+ */
+static void *
+arc_evict(arc_state_t *state, uint64_t spa, int64_t bytes, boolean_t recycle,
+          arc_buf_contents_t type)
+{
+    arc_state_t *evicted_state;
+    uint64_t bytes_evicted = 0, skipped = 0, missed = 0;
+    arc_buf_hdr_t *ab, *ab_prev = NULL;
+    list_t *list = &state->arcs_list[type];
+    kmutex_t *hash_lock;
+    boolean_t have_lock;
+    void *stolen = NULL;
+    arc_buf_hdr_t marker = { {{0}} };
+    int count = 0;
 
-	mutex_enter(&buf->b_evict_lock);
-	hdr = buf->b_hdr;
-	if (hdr == NULL) {
-		/*
-		 * We are in arc_do_user_evicts(); let that function
-		 * perform the eviction.
-		 */
-		ASSERT(buf->b_data == NULL);
-		mutex_exit(&buf->b_evict_lock);
-		return (B_FALSE);
-	} else if (buf->b_data == NULL) {
-		/*
-		 * We have already been added to the arc eviction list;
-		 * recommend eviction.
-		 */
-		ASSERT3P(hdr, ==, &arc_eviction_hdr);
-		mutex_exit(&buf->b_evict_lock);
-		return (B_TRUE);
-	}
+    ASSERT(state == arc_mru || state == arc_mfu);
 
-	if (hdr->b_l1hdr.b_datacnt > 1 && HDR_ISTYPE_DATA(hdr))
-		evict_needed = B_TRUE;
+    evicted_state = (state == arc_mru) ? arc_mru_ghost : arc_mfu_ghost;
 
-	mutex_exit(&buf->b_evict_lock);
-	return (evict_needed);
+    mutex_enter(&state->arcs_mtx);
+    mutex_enter(&evicted_state->arcs_mtx);
+
+    for (ab = list_tail(list); ab; ab = ab_prev) {
+        ab_prev = list_prev(list, ab);
+        /* prefetch buffers have a minimum lifespan */
+        if (HDR_IO_IN_PROGRESS(ab) ||
+            (spa && ab->b_spa != spa) ||
+            (ab->b_flags & (ARC_PREFETCH|ARC_INDIRECT) &&
+             ddi_get_lbolt() - ab->b_arc_access <
+             arc_min_prefetch_lifespan)) {
+                skipped++;
+                continue;
+            }
+        /* "lookahead" for better eviction candidate */
+        if (recycle && ab->b_size != bytes &&
+            ab_prev && ab_prev->b_size == bytes)
+            continue;
+
+        /* ignore markers */
+        if (ab->b_spa == 0)
+            continue;
+
+        /*
+         * It may take a long time to evict all the bufs requested.
+         * To avoid blocking all arc activity, periodically drop
+         * the arcs_mtx and give other threads a chance to run
+         * before reacquiring the lock.
+         *
+         * If we are looking for a buffer to recycle, we are in
+         * the hot code path, so don't sleep.
+         */
+        if (!recycle && count++ > arc_evict_iterations) {
+            list_insert_after(list, ab, &marker);
+            mutex_exit(&evicted_state->arcs_mtx);
+            mutex_exit(&state->arcs_mtx);
+
+            kpreempt(KPREEMPT_SYNC);
+
+            mutex_enter(&state->arcs_mtx);
+            mutex_enter(&evicted_state->arcs_mtx);
+            ab_prev = list_prev(list, &marker);
+            list_remove(list, &marker);
+            count = 0;
+            continue;
+        }
+
+        hash_lock = HDR_LOCK(ab);
+        have_lock = MUTEX_HELD(hash_lock);
+        if (have_lock || mutex_tryenter(hash_lock)) {
+            ASSERT0(refcount_count(&ab->b_refcnt));
+            ASSERT(ab->b_datacnt > 0);
+            while (ab->b_buf) {
+                arc_buf_t *buf = ab->b_buf;
+                if (!mutex_tryenter(&buf->b_evict_lock)) {
+                    missed += 1;
+                    break;
+                }
+                if (buf->b_data) {
+                    bytes_evicted += ab->b_size;
+                    if (recycle && ab->b_type == type &&
+                        ab->b_size == bytes &&
+                        !HDR_L2_WRITING(ab)) {
+                        stolen = buf->b_data;
+                        recycle = FALSE;
+                    }
+                }
+                if (buf->b_efunc) {
+                    mutex_enter(&arc_eviction_mtx);
+                    arc_buf_destroy(buf,
+                                    buf->b_data == stolen, FALSE);
+                    ab->b_buf = buf->b_next;
+                    buf->b_hdr = &arc_eviction_hdr;
+                    buf->b_next = arc_eviction_list;
+                    arc_eviction_list = buf;
+                    mutex_exit(&arc_eviction_mtx);
+                    mutex_exit(&buf->b_evict_lock);
+                } else {
+                    mutex_exit(&buf->b_evict_lock);
+                    arc_buf_destroy(buf,
+                                    buf->b_data == stolen, TRUE);
+                }
+            }
+
+            if (ab->b_l2hdr) {
+                ARCSTAT_INCR(arcstat_evict_l2_cached,
+                             ab->b_size);
+            } else {
+                if (l2arc_write_eligible(ab->b_spa, ab)) {
+                    ARCSTAT_INCR(arcstat_evict_l2_eligible,
+                                 ab->b_size);
+                } else {
+                    ARCSTAT_INCR(
+                                 arcstat_evict_l2_ineligible,
+                                 ab->b_size);
+                }
+            }
+
+            if (ab->b_datacnt == 0) {
+                arc_change_state(evicted_state, ab, hash_lock);
+                ASSERT(HDR_IN_HASH_TABLE(ab));
+                ab->b_flags |= ARC_IN_HASH_TABLE;
+                ab->b_flags &= ~ARC_BUF_AVAILABLE;
+                DTRACE_PROBE1(arc__evict, arc_buf_hdr_t *, ab);
+            }
+            if (!have_lock)
+                mutex_exit(hash_lock);
+            if (bytes >= 0 && bytes_evicted >= bytes)
+                break;
+        } else {
+            missed += 1;
+        }
+    }
+
+    mutex_exit(&evicted_state->arcs_mtx);
+    mutex_exit(&state->arcs_mtx);
+
+    if (bytes_evicted < bytes)
+        dprintf("only evicted %lld bytes from %x",
+                (longlong_t)bytes_evicted, state);
+
+    if (skipped)
+        ARCSTAT_INCR(arcstat_evict_skip, skipped);
+
+    if (missed)
+        ARCSTAT_INCR(arcstat_mutex_miss, missed);
+
+    /*
+     * Note: we have just evicted some data into the ghost state,
+     * potentially putting the ghost size over the desired size.  Rather
+     * that evicting from the ghost list in this hot code path, leave
+     * this chore to the arc_reclaim_thread().
+     */
+
+    return (stolen);
 }
 
 /*
@@ -2544,8 +2682,108 @@ arc_buf_eviction_needed(arc_buf_t *buf)
 static int64_t
 arc_evict_hdr(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 {
-	arc_state_t *evicted_state, *state;
-	int64_t bytes_evicted = 0;
+    arc_buf_hdr_t *ab, *ab_prev;
+    arc_buf_hdr_t marker = { {{0}} };
+    list_t *list = &state->arcs_list[ARC_BUFC_DATA];
+    kmutex_t *hash_lock;
+    uint64_t bytes_deleted = 0;
+    uint64_t bufs_skipped = 0;
+    int count = 0;
+
+    ASSERT(GHOST_STATE(state));
+top:
+    mutex_enter(&state->arcs_mtx);
+    for (ab = list_tail(list); ab; ab = ab_prev) {
+        ab_prev = list_prev(list, ab);
+        if (ab->b_type > ARC_BUFC_NUMTYPES)
+            panic("invalid ab=%p", (void *)ab);
+        if (spa && ab->b_spa != spa)
+            continue;
+
+        /* ignore markers */
+        if (ab->b_spa == 0)
+            continue;
+
+        hash_lock = HDR_LOCK(ab);
+        /* caller may be trying to modify this buffer, skip it */
+        if (MUTEX_HELD(hash_lock))
+            continue;
+
+        /*
+         * It may take a long time to evict all the bufs requested.
+         * To avoid blocking all arc activity, periodically drop
+         * the arcs_mtx and give other threads a chance to run
+         * before reacquiring the lock.
+         */
+        if (count++ > arc_evict_iterations) {
+            list_insert_after(list, ab, &marker);
+            mutex_exit(&state->arcs_mtx);
+
+            kpreempt(KPREEMPT_SYNC);
+
+            mutex_enter(&state->arcs_mtx);
+            ab_prev = list_prev(list, &marker);
+            list_remove(list, &marker);
+            count = 0;
+            continue;
+        }
+        if (mutex_tryenter(hash_lock)) {
+            ASSERT(!HDR_IO_IN_PROGRESS(ab));
+            ASSERT(ab->b_buf == NULL);
+            ARCSTAT_BUMP(arcstat_deleted);
+            bytes_deleted += ab->b_size;
+
+            if (ab->b_l2hdr != NULL) {
+                /*
+                 * This buffer is cached on the 2nd Level ARC;
+                 * don't destroy the header.
+                 */
+                arc_change_state(arc_l2c_only, ab, hash_lock);
+                mutex_exit(hash_lock);
+            } else {
+                arc_change_state(arc_anon, ab, hash_lock);
+                mutex_exit(hash_lock);
+                arc_hdr_destroy(ab);
+            }
+
+            DTRACE_PROBE1(arc__delete, arc_buf_hdr_t *, ab);
+            if (bytes >= 0 && bytes_deleted >= bytes)
+                break;
+        } else if (bytes < 0) {
+            /*
+             * Insert a list marker and then wait for the
+             * hash lock to become available. Once its
+             * available, restart from where we left off.
+             */
+            list_insert_after(list, ab, &marker);
+            mutex_exit(&state->arcs_mtx);
+            mutex_enter(hash_lock);
+            mutex_exit(hash_lock);
+            mutex_enter(&state->arcs_mtx);
+            ab_prev = list_prev(list, &marker);
+            list_remove(list, &marker);
+        } else {
+            bufs_skipped += 1;
+        }
+
+    }
+    mutex_exit(&state->arcs_mtx);
+
+    if (list == &state->arcs_list[ARC_BUFC_DATA] &&
+        (bytes < 0 || bytes_deleted < bytes)) {
+        list = &state->arcs_list[ARC_BUFC_METADATA];
+        goto top;
+    }
+
+    if (bufs_skipped) {
+        ARCSTAT_INCR(arcstat_mutex_miss, bufs_skipped);
+        ASSERT(bytes >= 0);
+    }
+
+    if (bytes_deleted < bytes)
+        dprintf("only deleted %lld bytes from %p",
+                (longlong_t)bytes_deleted, state);
+}
 
 	ASSERT(MUTEX_HELD(hash_lock));
 	ASSERT(HDR_HAS_L1HDR(hdr));
