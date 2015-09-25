@@ -4942,7 +4942,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	//int64_t ks = kmem_avail();
 	//if (ks  < 0) { // we now can have this go negative... negatives mean badness
 	//  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ks);
-	if(!spl_minimal_physmem_p()) {
+	if(!spl_minimal_physmem_p() && arc_reclaim_needed()) {
 	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 	  return (SET_ERROR(EAGAIN));
 	}
