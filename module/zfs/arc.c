@@ -3458,7 +3458,7 @@ arc_reclaim_thread(void)
 				to_free = MAX(to_free, kmem_num_pages_wanted() * PAGESIZE);
 #endif
 #endif
-				printf("ZFS: %s, to_free == %lld, calling arc_shrink()\n", __func__, to_free);
+				if (to_free > 12*1024*1024) printf("ZFS: %s, to_free == %lld, calling arc_shrink()\n", __func__, to_free);
 				arc_shrink(to_free);
 			}
 		} else if (free_memory < arc_c >> arc_no_grow_shift) {
