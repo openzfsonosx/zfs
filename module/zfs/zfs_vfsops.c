@@ -2695,9 +2695,12 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
     dprintf("z_ctldir check: %p\n",zfsvfs->z_ctldir );
 	if (zfsvfs->z_ctldir != NULL) {
 
+#ifndef __APPLE__
+		// We can not unmount from kernel space, and there is a known
+		// race causing panic
 		if ((ret = zfsctl_umount_snapshots(zfsvfs->z_vfs, 0 /*fflag*/, cr)) != 0)
 			return (ret);
-
+#endif
         dprintf("vflush 1\n");
         ret = vflush(zfsvfs->z_vfs, zfsvfs->z_ctldir, (mntflags & MNT_FORCE) ? FORCECLOSE : 0|SKIPSYSTEM);
 		//ret = vflush(zfsvfs->z_vfs, NULLVP, 0);
