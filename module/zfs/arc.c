@@ -1213,7 +1213,7 @@ buf_dest(void *vbuf, void *unused)
 static void
 hdr_recl(void *unused)
 {
-	dprintf("hdr_recl called\n");
+	printf("ZFS: hdr_recl called\n");
 	/*
 	 * umem calls the reclaim func when we destroy the buf cache,
 	 * which is after we do arc_fini().
@@ -4944,6 +4944,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	//  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ks);
 	if(!spl_minimal_physmem_p() && arc_reclaim_needed()) {
 	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
+	  cv_signal(&arc_reclaim_thread_cv);
 	  return (SET_ERROR(EAGAIN));
 	}
 #endif // 0
@@ -4996,7 +4997,7 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 
 	if (reserve + arc_tempreserve + anon_size > arc_c / 2 &&
 	    anon_size > arc_c / 4) {
-		dprintf("failing, arc_tempreserve=%lluK anon_meta=%lluK "
+		printf("ZFS: failing, arc_tempreserve=%lluK anon_meta=%lluK "
 		    "anon_data=%lluK tempreserve=%lluK arc_c=%lluK\n",
 		    arc_tempreserve>>10,
 		    arc_anon->arcs_lsize[ARC_BUFC_METADATA]>>10,
