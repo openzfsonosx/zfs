@@ -4945,6 +4945,8 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	if(!spl_minimal_physmem_p() && arc_reclaim_needed()) {
 	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 	  cv_signal(&arc_reclaim_thread_cv);
+	  printf("ZFS: %s THROTTLED, reclaim signalled, txg = %llu, reserve = %llu\n",
+		 __func__, txg, reserve);
 	  return (SET_ERROR(EAGAIN));
 	}
 #endif // 0
