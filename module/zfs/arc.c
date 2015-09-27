@@ -3445,6 +3445,7 @@ arc_reclaim_thread(void)
 			 */
 			free_memory = arc_available_memory();
 
+			static int64_t old_to_free = 0;
 			int64_t to_free =
 			    (arc_c >> arc_shrink_shift) - free_memory;
 
@@ -3458,8 +3459,16 @@ arc_reclaim_thread(void)
 				to_free = MAX(to_free, kmem_num_pages_wanted() * PAGESIZE);
 #endif
 #endif
-				if (to_free > 12*1024*1024) printf("ZFS: %s, to_free == %lld, calling arc_shrink()\n", __func__, to_free);
+				if (to_free > old_to_free) {
+				  printf("ZFS: %s, to_free == %lld increased above  %lld old_to_free\n",
+					 __func__, to_free, old_to_free);
+				  old_to_free = to_free;
+				}
 				arc_shrink(to_free);
+			} else if(old_to_free > 0) {
+			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
+				 __func__, old_to_free);
+			  old_to_free = 0;
 			}
 		} else if (free_memory < arc_c >> arc_no_grow_shift) {
 			arc_no_grow = B_TRUE;
@@ -3481,6 +3490,9 @@ arc_reclaim_thread(void)
 		 * infinite loop.
 		 */
 		if (arc_size <= arc_c || evicted == 0) {
+		  // this happens a lot (smd) [size < tsize, nothing evicted]
+		  //printf("ZFS: %s arc_size (%lld) <= arc_c (%lld) || evicted (%lld)\n",
+		  //	 __func__, arc_size, arc_c, evicted);
 			/*
 			 * We're either no longer overflowing, or we
 			 * can't evict anything more, so we should wake
@@ -3497,6 +3509,11 @@ arc_reclaim_thread(void)
 			(void) cv_timedwait(&arc_reclaim_thread_cv,
 			    &arc_reclaim_lock, ddi_get_lbolt() + hz);
 			CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_lock);
+		} else if(evicted > 0) {
+		  // this gets a lot of printouts but is interesting smd
+		  // we are often here after a long pause when we are near arc min
+		  printf("ZFS: %s evicted == %lld, arc_size %lld, arc_c %lld\n",
+			 __func__, evicted, arc_size, arc_c);
 		}
 	}
 
@@ -4997,8 +5014,8 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 	 * both succeed, when one of them should fail.  Not a huge deal.
 	 */
 
-	if (reserve + arc_tempreserve + anon_size > arc_c / 2 &&
-	    anon_size > arc_c / 4) {
+	if (reserve + arc_tempreserve + anon_size > arc_c / 4 &&
+	    anon_size > arc_c / 8) {
 		dprintf("ZFS: failing, arc_tempreserve=%lluK anon_meta=%lluK "
 		    "anon_data=%lluK tempreserve=%lluK arc_c=%lluK\n",
 		    arc_tempreserve>>10,
