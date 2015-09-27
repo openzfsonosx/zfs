@@ -4997,8 +4997,8 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 	 * both succeed, when one of them should fail.  Not a huge deal.
 	 */
 
-	if (reserve + arc_tempreserve + anon_size > arc_c / 2 &&
-	    anon_size > arc_c / 4) {
+	if (reserve + arc_tempreserve + anon_size > arc_c / 4 &&
+	    anon_size > arc_c / 8) {
 		dprintf("ZFS: failing, arc_tempreserve=%lluK anon_meta=%lluK "
 		    "anon_data=%lluK tempreserve=%lluK arc_c=%lluK\n",
 		    arc_tempreserve>>10,
