@@ -25,10 +25,10 @@ zfs_LDFLAGS = -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) -framework AppKit
 
 install-exec-hook:
 	echo "prefix $(PREFIX)"
-	$(MKDIR_P) $(DESTDIR)/$(sbindir)
-	/bin/ln -f $(DESTDIR)/$(sbindir)/zfs $(DESTDIR)/$(sbindir)/mount_zfs
-	/bin/ln -f $(DESTDIR)/$(sbindir)/zfs $(DESTDIR)/$(sbindir)/umount_zfs
+	$(MKDIR_P) $(DESTDIR)/$(MOUNTEXECDIR)
+	/bin/ln -f $(DESTDIR)/$(sbindir)/zfs $(DESTDIR)/$(MOUNTEXECDIR)/mount_zfs
+	/bin/ln -f $(DESTDIR)/$(sbindir)/zfs $(DESTDIR)/$(MOUNTEXECDIR)/umount_zfs
 
 uninstall-hook:
-	-$(RM) $(DESTDIR)/$(sbindir)/mount_zfs
-	-$(RM) $(DESTDIR)/$(sbindir)/umount_zfs
+	-$(RM) $(DESTDIR)/$(MOUNTEXECDIR)/mount_zfs
+	-$(RM) $(DESTDIR)/$(MOUNTEXECDIR)/umount_zfs
