@@ -383,11 +383,14 @@ extern void	zfs_grow_blocksize(znode_t *, uint64_t, dmu_tx_t *);
 extern int	zfs_freesp(znode_t *, uint64_t, uint64_t, int, boolean_t);
 extern void	zfs_znode_init(void);
 extern void	zfs_znode_fini(void);
+
+#define ZGET_FLAG_UNLINKED          (1<<0) /* Also lookup unlinked */
+#define ZGET_FLAG_WITHOUT_VNODE     (1<<1) /* Don't attach vnode */
+#define ZGET_FLAG_WITHOUT_VNODE_GET (1<<2) /* Don't attach vnode + vnode_get*/
 extern int zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp);
-#ifdef __APPLE__
-extern int      zfs_zget_sans_vnode(zfsvfs_t *, uint64_t, znode_t **);
-extern int      zfs_zget_want_unlinked(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp);
-#endif
+extern int zfs_zget_ext(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp, int flags);
+#define zfs_zget(A,B,C) zfs_zget_ext((A),(B),(C),0)
+
 extern int	zfs_rezget(znode_t *);
 extern void	zfs_zinactive(znode_t *);
 extern void	zfs_znode_delete(znode_t *, dmu_tx_t *);

@@ -1188,8 +1188,18 @@ zfs_get_done(zgd_t *zgd, int error)
 	 * Release the vnode asynchronously as we currently have the
 	 * txg stopped from syncing.
 	 */
-	VN_RELE_ASYNC(ZTOV(zp), dsl_pool_vnrele_taskq(dmu_objset_pool(os)));
-
+	/*
+	 * We only need to release the vnode if zget took the path to call
+	 * vnode_get() with already existing vnodes. If zget (would) call to
+	 * allocate new vnode, we don't (ZGET_FLAG_WITHOUT_VNODE), and it is
+	 * attached after zfs_get_data() is finished (and immediately released).
+	 */
+#if 0
+	if (ZTOV(zp)) {
+		printf("vn_rele_async\n");
+		VN_RELE_ASYNC(ZTOV(zp), dsl_pool_vnrele_taskq(dmu_objset_pool(os)));
+	}
+#endif
 	if (error == 0 && zgd->zgd_bp)
 		zil_add_block(zgd->zgd_zilog, zgd->zgd_bp);
 
@@ -1204,11 +1214,11 @@ static int zil_fault_io = 0;
  * Get data to generate a TX_WRITE intent log record.
  */
 int
-zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
+zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
+			 znode_t *zp, rl_t *rl)
 {
 	zfsvfs_t *zfsvfs = arg;
 	objset_t *os = zfsvfs->z_os;
-	znode_t *zp;
 	uint64_t object = lr->lr_foid;
 	uint64_t offset = lr->lr_offset;
 	uint64_t size = lr->lr_length;
@@ -1220,6 +1230,7 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 	ASSERT(zio != NULL);
 	ASSERT(size != 0);
 
+#ifndef __APPLE__
 	/*
 	 * Nothing to do if the file has been removed
 	 */
@@ -1234,10 +1245,12 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 		    dsl_pool_vnrele_taskq(dmu_objset_pool(os)));
 		return (SET_ERROR(ENOENT));
 	}
+#endif
 
 	zgd = (zgd_t *)kmem_zalloc(sizeof (zgd_t), KM_SLEEP);
 	zgd->zgd_zilog = zfsvfs->z_log;
 	zgd->zgd_private = zp;
+	zgd->zgd_rl = rl;
 
 	/*
 	 * Write records come in two flavors: immediate and indirect.
@@ -1247,7 +1260,11 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 	 * we don't have to write the data twice.
 	 */
 	if (buf != NULL) { /* immediate write */
+
+#ifndef __APPLE__
 		zgd->zgd_rl = zfs_range_lock(zp, offset, size, RL_READER);
+#endif
+
 		/* test for truncation needs to be done while range locked */
 		if (offset >= zp->z_size) {
 			error = SET_ERROR(ENOENT);
@@ -1268,8 +1285,10 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 			size = zp->z_blksz;
 			blkoff = ISP2(size) ? P2PHASE(offset, size) : offset;
 			offset -= blkoff;
+#ifndef __APPLE__
 			zgd->zgd_rl = zfs_range_lock(zp, offset, size,
 			    RL_READER);
+#endif
 			if (zp->z_blksz == size)
 				break;
 			offset += blkoff;
