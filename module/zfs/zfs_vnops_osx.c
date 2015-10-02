@@ -2262,7 +2262,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	struct vnode	*vp = ap->a_vp;
 	znode_t	*zp = NULL;
 	zfsvfs_t *zfsvfs = NULL;
-	static int has_warned = 0;
 	boolean_t fastpath;
 	ASSERT(zp != NULL);
 
@@ -3967,9 +3966,9 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 	 */
 
 	/* So pageout can know if it is called recursively, add this thread to list*/
-	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0)
+	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0) {
 		kpreempt(KPREEMPT_SYNC);
-
+	}
 	atomic_inc_64(&vnop_num_vnodes);
 
 	dprintf("Assigned zp %p with vp %p\n", zp, vp);
