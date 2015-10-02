@@ -5225,7 +5225,7 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 
 	/* So pageout can know if it is called recursively, add this thread to list*/
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0) {
-		delay(hz>>2); /* Make me more elegant */
+		kpreempt(KPREEMPT_SYNC);
 	}
 	atomic_inc_64(&vnop_num_vnodes);
 
