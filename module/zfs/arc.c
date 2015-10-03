@@ -3490,8 +3490,9 @@ arc_reclaim_thread(void)
 		 * infinite loop.
 		 */
 		if (arc_size <= arc_c || evicted == 0) {
-		  printf("ZFS: %s arc_size (%lld) <= arc_c (%lld) || evicted (%lld)\n",
-			 __func__, arc_size, arc_c, evicted);
+		  // this happens a lot (smd) [size < tsize, nothing evicted]
+		  //printf("ZFS: %s arc_size (%lld) <= arc_c (%lld) || evicted (%lld)\n",
+		  //	 __func__, arc_size, arc_c, evicted);
 			/*
 			 * We're either no longer overflowing, or we
 			 * can't evict anything more, so we should wake
@@ -3509,7 +3510,8 @@ arc_reclaim_thread(void)
 			    &arc_reclaim_lock, ddi_get_lbolt() + hz);
 			CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_lock);
 		} else if(evicted > 0) {
-		  printf("ZFS: %s evicted == %lld\n", __func__, evicted);
+		  printf("ZFS: %s evicted == %lld, arc_size %lld, arc_c %lld\n",
+			 __func__, evicted, arc_size, arc_c);
 		}
 	}
 
