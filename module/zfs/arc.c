@@ -3445,6 +3445,7 @@ arc_reclaim_thread(void)
 			 */
 			free_memory = arc_available_memory();
 
+			static int64_t old_to_free = 0;
 			int64_t to_free =
 			    (arc_c >> arc_shrink_shift) - free_memory;
 
@@ -3458,8 +3459,16 @@ arc_reclaim_thread(void)
 				to_free = MAX(to_free, kmem_num_pages_wanted() * PAGESIZE);
 #endif
 #endif
-				if (to_free > 12*1024*1024) printf("ZFS: %s, to_free == %lld, calling arc_shrink()\n", __func__, to_free);
+				if (to_free > old_to_free) {
+				  printf("ZFS: %s, to_free == %lld increased above  %lld old_to_free\n",
+					 __func__, to_free, old_to_free);
+				  old_to_free = to_free;
+				}
 				arc_shrink(to_free);
+			} else if(old_to_free > 0) {
+			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
+				 __func__, old_to_free);
+			  old_to_free = 0;
 			}
 		} else if (free_memory < arc_c >> arc_no_grow_shift) {
 			arc_no_grow = B_TRUE;
