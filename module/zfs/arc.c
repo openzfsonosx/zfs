@@ -3512,7 +3512,7 @@ arc_reclaim_thread(void)
 		} else if(evicted > 0) {
 		  // this gets a lot of printouts but is interesting smd
 		  // we are often here after a long pause when we are near arc min
-		  printf("ZFS: %s evicted == %lld, arc_size %lld, arc_c %lld\n",
+		  dprintf("ZFS: %s evicted == %lld, arc_size %lld, arc_c %lld\n",
 			 __func__, evicted, arc_size, arc_c);
 		}
 	}
