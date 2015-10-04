@@ -3460,8 +3460,8 @@ arc_reclaim_thread(void)
 #endif
 #endif
 				if (to_free > old_to_free) {
-				  printf("ZFS: %s, to_free == %lld increased above  %lld old_to_free\n",
-					 __func__, to_free, old_to_free);
+				  printf("ZFS: %s, to_free == %lld increased above %lld old_to_free (delta: %lld)\n",
+					 __func__, to_free, old_to_free, to_free - old_to_free);
 				  old_to_free = to_free;
 				}
 				arc_shrink(to_free);
