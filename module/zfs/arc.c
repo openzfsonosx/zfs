@@ -4959,12 +4959,17 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	//int64_t ks = kmem_avail();
 	//if (ks  < 0) { // we now can have this go negative... negatives mean badness
 	//  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ks);
-	if(!spl_minimal_physmem_p() && arc_reclaim_needed()) {
+	if(!spl_minimal_physmem_p()) { // && arc_reclaim_needed()) {
 	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 	  cv_signal(&arc_reclaim_thread_cv);
 	  printf("ZFS: %s THROTTLED, reclaim signalled, txg = %llu, reserve = %llu\n",
 		 __func__, txg, reserve);
 	  return (SET_ERROR(EAGAIN));
+	} else if(arc_reclaim_needed()) {
+	  printf("ZFS: %s arc_reclaim_needed, txg= %llu, reserve = %llu\n",
+		 __func__, txg, reserve);
+	  cv_signal(&arc_reclaim_thread_cv);
+	  return (0);
 	}
 #endif // 0
 #endif // KERNEL
