@@ -4966,7 +4966,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 		 __func__, txg, reserve);
 	  return (SET_ERROR(EAGAIN));
 	} else if(arc_reclaim_needed()) {
-	  printf("ZFS: %s arc_reclaim_needed, txg= %llu, reserve = %llu\n",
+	  dprintf("ZFS: %s arc_reclaim_needed, txg= %llu, reserve = %llu\n",
 		 __func__, txg, reserve);
 	  cv_signal(&arc_reclaim_thread_cv);
 	  return (0);
