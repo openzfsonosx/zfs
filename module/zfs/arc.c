@@ -3320,10 +3320,13 @@ arc_reclaim_needed(void)
 
 #ifdef __APPLE__
 #ifdef KERNEL
+#if 0 // smd: this may be hyper-aggressive; let kmem_avail deal with it
+      // returning 1 here among other things will cause l2arc abort_lowmems
     if (spl_vm_pool_low()) {
       // ARCSTAT_INCR(arcstat_memory_throttle_count, 1); // no this is reclaim not throttle
 		return 1;
 	}
+#endif    
     if (kmem_avail() < 0) { // negative is badness
       //printf("ZFS: %s, kmem_avail() is negative\n", __func__);
       return 1;
