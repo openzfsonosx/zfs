@@ -96,6 +96,8 @@ typedef struct osx_kstat {
 
 	kstat_named_t zfs_recover;
 
+  kstat_named_t zfs_free_max_blocks;
+
 
 } osx_kstat_t;
 
@@ -169,6 +171,8 @@ extern int zfs_top_maxinflight;
 extern int zfs_resilver_delay;
 extern int zfs_scrub_delay;
 extern int zfs_scan_idle;
+
+extern uint32_t zfs_free_max_blocks;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);
