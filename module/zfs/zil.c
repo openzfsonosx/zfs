@@ -1095,7 +1095,8 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 /*
  * zil_lwb_commit() is often called from inside the context of vnode_create,
  * and we can not enter the VFS again, we call zget() with WITHOUT_VNODE, and
- * attach it in async context, with VN_RELE following.
+ * attach it in async context, with VN_RELE following
+.
  */
 static void zil_attach_vnode(void *arg)
 {
@@ -1150,12 +1151,17 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 			* we only spawn the attach thread once.
 			*/
 			if (!ZTOV(zp)) {
+				printf("ZFS: zil is NULL case\n");
+			}
+#if 0
+			if (!ZTOV(zp)) {
 				if (atomic_cas_32(&zp->z_zil_attach_vnode, 0, 1) == 0) {
 					VERIFY(taskq_dispatch((taskq_t *)dsl_pool_vnrele_taskq(dmu_objset_pool( zp->z_zfsvfs->z_os )),
 										  (task_func_t *)zil_attach_vnode,
 										  zp, TQ_SLEEP) != 0);
 				}
 			}
+#endif
 
 			if (dlen) {                     /* immediate write */
 				rl = zfs_range_lock(zp, off, len, RL_READER);
