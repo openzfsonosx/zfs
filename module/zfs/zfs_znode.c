@@ -1462,7 +1462,7 @@ again:
 		/* We are racing zfs_znode_getvnode() and we got here first, we
 		 * need to let it get ahead */
 		if (!vp) {
-			delay(hz>>2); /* Make me more elegant */
+			kpreempt(KPREEMPT_SYNC);
 			dprintf("zget racing attach\n");
 			goto again;
 		}
@@ -1474,9 +1474,8 @@ again:
 		if (!vp || (err=vnode_getwithvid(vp, vid) != 0)) {
 			//if ((err = vnode_get(vp)) != 0) {
 			dprintf("ZFS: vnode_get() returned %d\n", err);
-			delay(hz>>2); /* Make me more elegant */
+			kpreempt(KPREEMPT_SYNC);
 			goto again;
-			return (ENOENT);
 		}
 
 		/*
@@ -1550,6 +1549,8 @@ again:
 		//list_insert_tail(&zfsvfs->z_all_znodes, zp);
 		//membar_producer();
 		//mutex_exit(&zfsvfs->z_znodes_lock);
+		if (flags & ZGET_FLAG_UNLINKED)
+			printf("ZFS: zget without vnode in znodealloc case\n");
 	} else {
 		/* Attach a vnode to our new znode */
 		zfs_znode_getvnode(zp, zfsvfs); /* Assigns both vp and z_vnode */
