@@ -240,7 +240,6 @@ typedef struct znode {
 	boolean_t   z_fastpath;
 	boolean_t   z_reclaim_reentry; /* vnode_create()->vnop_reclaim() */
 	uint64_t    z_write_gencount;
-	uint32_t    z_zil_attach_vnode; /* Set if we are attaching vnode async */
 #endif
 
 #ifdef ZFS_DEBUG
@@ -385,8 +384,9 @@ extern int	zfs_freesp(znode_t *, uint64_t, uint64_t, int, boolean_t);
 extern void	zfs_znode_init(void);
 extern void	zfs_znode_fini(void);
 
-#define ZGET_FLAG_UNLINKED      (1<<0) /* Also lookup unlinked */
-#define ZGET_FLAG_WITHOUT_VNODE (1<<1) /* Don't attach vnode */
+#define ZGET_FLAG_UNLINKED          (1<<0) /* Also lookup unlinked */
+#define ZGET_FLAG_WITHOUT_VNODE     (1<<1) /* Don't attach vnode */
+#define ZGET_FLAG_WITHOUT_VNODE_GET (1<<2) /* Don't attach vnode + vnode_get*/
 extern int zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp);
 extern int zfs_zget_ext(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp, int flags);
 #define zfs_zget(A,B,C) zfs_zget_ext((A),(B),(C),0)
