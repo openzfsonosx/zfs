@@ -1701,6 +1701,11 @@ zfs_znode_free(znode_t *zp)
 		zp->z_acl_cached = NULL;
 	}
 
+	if (zp->z_xattr_cached) {
+		nvlist_free(zp->z_xattr_cached);
+		zp->z_xattr_cached = NULL;
+	}
+
 	kmem_cache_free(znode_cache, zp);
 
 	VFS_RELE(zfsvfs->z_vfs);

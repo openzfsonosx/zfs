@@ -2539,9 +2539,9 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 
 			if (error > 0) {
 				uiomove((const char*)value, error, 0, uio);
-				kmem_free(value, size);
 				error = 0;
 			}
+			kmem_free(value, size);
 
 			if (error != -ENOENT)
 				goto out;
