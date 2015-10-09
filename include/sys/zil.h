@@ -442,11 +442,7 @@ typedef int zil_parse_blk_func_t(zilog_t *zilog, blkptr_t *bp, void *arg,
 typedef int zil_parse_lr_func_t(zilog_t *zilog, lr_t *lr, void *arg,
     uint64_t txg);
 typedef int (*zil_replay_func_t)(void *, char *, boolean_t);
-
-struct znode;
-struct rl;
-typedef int zil_get_data_t(void *arg, lr_write_t *lr, char *dbuf, zio_t *zio,
-						   struct znode *zp, struct rl *rl);
+typedef int zil_get_data_t(void *arg, lr_write_t *lr, char *dbuf, zio_t *zio);
 
 extern int zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
     zil_parse_lr_func_t *parse_lr_func, void *arg, uint64_t txg);
