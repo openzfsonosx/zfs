@@ -3346,28 +3346,6 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 		ost = LZC_DATSET_TYPE_ZFS;
 
 	/* open zpool handle for prop validation */
-	char pool_path[ZFS_MAX_DATASET_NAME_LEN];
-	(void) strlcpy(pool_path, path, sizeof (pool_path));
-
-	/* truncate pool_path at first slash */
-	char *p = strchr(pool_path, '/');
-	if (p != NULL)
-		*p = '\0';
-
-	zpool_handle_t *zpool_handle = zpool_open(hdl, pool_path);
-
-	/* open zpool handle for prop validation */
-	char pool_path[MAXNAMELEN];
-	(void) strlcpy(pool_path, path, sizeof (pool_path));
-
-	/* truncate pool_path at first slash */
-	char *p = strchr(pool_path, '/');
-	if (p != NULL)
-		*p = '\0';
-
-	zpool_handle_t *zpool_handle = zpool_open(hdl, pool_path);
-
-	/* open zpool handle for prop validation */
 	char pool_path[MAXNAMELEN];
 	(void) strlcpy(pool_path, path, sizeof (pool_path));
 
