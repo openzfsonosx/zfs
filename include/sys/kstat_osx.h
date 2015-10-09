@@ -60,7 +60,6 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_prefetch_disable;
 	kstat_named_t zfetch_max_streams;
 	kstat_named_t zfetch_min_sec_reap;
-	kstat_named_t zfetch_block_cap;
 	kstat_named_t zfetch_array_rd_sz;
 	kstat_named_t zfs_default_bs;
 	kstat_named_t zfs_default_ibs;
@@ -150,7 +149,6 @@ extern hrtime_t zfs_delay_max_ns;
 extern int spa_asize_inflation;
 extern unsigned int	zfetch_max_streams;
 extern unsigned int	zfetch_min_sec_reap;
-extern unsigned int	zfetch_block_cap;
 extern int zfs_default_bs;
 extern int zfs_default_ibs;
 extern uint64_t metaslab_aliquot;

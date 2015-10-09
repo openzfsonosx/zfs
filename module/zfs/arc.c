@@ -2965,8 +2965,11 @@ arc_read_done(zio_t *zio)
         ASSERT3U(hdr->b_dva.dva_word[1], ==,
                  BP_IDENTITY(zio->io_bp)->dva_word[1]);
 
-        arc_buf_hdr_t *found = buf_hash_find(hdr->b_spa, zio->io_bp,
-                                             &hash_lock);
+#ifdef DEBUG
+        arc_buf_hdr_t *found =
+#endif
+			buf_hash_find(hdr->b_spa, zio->io_bp,
+						  &hash_lock);
 
         ASSERT((found == NULL && HDR_FREED_IN_READ(hdr) &&
                 hash_lock == NULL) ||
@@ -3959,7 +3962,7 @@ arc_init(void)
 
     /* set min cache to 1/32 of all memory, or 64MB, whichever is more */
     arc_c_min = MAX(arc_c / 4, 64<<20);
-    
+
     /* set max to 1/4 of all memory */
     arc_c_max = arc_c * 2;
 

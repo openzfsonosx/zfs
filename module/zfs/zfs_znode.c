@@ -865,7 +865,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 
 #include <sys/dbuf.h>
 
-		dmu_buf_impl_t *db2 = db;
+		dmu_buf_impl_t *db2 = (dmu_buf_impl_t *)db;
 		zbookmark_phys_t zb;
 
         // Log error in spa?

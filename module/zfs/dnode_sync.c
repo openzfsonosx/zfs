@@ -290,7 +290,7 @@ free_children(dmu_buf_impl_t *db, uint64_t blkid, uint64_t nblks,
 				continue;
 			rw_enter(&dn->dn_struct_rwlock, RW_READER);
 			VERIFY0(dbuf_hold_impl(dn, db->db_level - 1,
-			    i, B_TRUE, FTAG, &subdb));
+				i, B_TRUE, FALSE, FTAG, &subdb));
 			rw_exit(&dn->dn_struct_rwlock);
 			ASSERT3P(bp, ==, subdb->db_blkptr);
 
@@ -364,7 +364,7 @@ dnode_sync_free_range_impl(dnode_t *dn, uint64_t blkid, uint64_t nblks,
 				continue;
 			rw_enter(&dn->dn_struct_rwlock, RW_READER);
 			VERIFY0(dbuf_hold_impl(dn, dnlevel - 1, i,
-			    TRUE, FTAG, &db));
+								   TRUE, FALSE, FTAG, &db));
 			rw_exit(&dn->dn_struct_rwlock);
 
 			free_children(db, blkid, nblks, tx);
