@@ -1389,7 +1389,7 @@ again:
 		mutex_exit(&zp->z_lock);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
-		if ((flags & ZGET_FLAG_WITHOUT_VNODE_GET)) {
+		if ((flags & ZGET_FLAG_WITHOUT_VNODE)) {
 			/* Do not increase vnode iocount */
 			*zpp = zp;
 			return 0;
@@ -1479,14 +1479,13 @@ again:
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 	getnewvnode_drop_reserve();
 
-	if ((flags & ZGET_FLAG_WITHOUT_VNODE) ||
-		(flags & ZGET_FLAG_WITHOUT_VNODE_GET))	{
+	if (flags & ZGET_FLAG_WITHOUT_VNODE) {
 		/* Insert it on our list of active znodes */
 		//mutex_enter(&zfsvfs->z_znodes_lock);
 		//list_insert_tail(&zfsvfs->z_all_znodes, zp);
 		//membar_producer();
 		//mutex_exit(&zfsvfs->z_znodes_lock);
-		if (flags & ZGET_FLAG_WITHOUT_VNODE_GET)
+		if (flags & ZGET_FLAG_UNLINKED)
 			printf("ZFS: zget without vnode in znodealloc case\n");
 	} else {
 		/* Attach a vnode to our new znode */
