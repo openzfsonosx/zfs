@@ -41,11 +41,9 @@
 #include <sys/metaslab.h>
 #include <sys/trace_zil.h>
 
-
-#if defined (__APPLE__) && defined (KERNEL)
+#if defined (__APPLE__) && defined (__KERNEL__)
 #include <sys/zfs_rlock.h>
 #include <sys/zfs_znode.h>
-extern int    zfs_znode_getvnode( znode_t *zp, zfsvfs_t *zfsvfs);
 #endif
 
 /*
@@ -1092,22 +1090,6 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 	return (nlwb);
 }
 
-#if defined (__APPLE__) && defined (KERNEL)
-/*
- * zil_lwb_commit() is often called from inside the context of vnode_create,
- * and we can not enter the VFS again, we call zget() with WITHOUT_VNODE, and
- * attach it in async context, with VN_RELE following.
- */
-static void zil_attach_vnode(void *arg)
-{
-    znode_t *zp = (znode_t *)arg;
-	zfs_znode_getvnode(zp, zp->z_zfsvfs);
-	VN_RELE(ZTOV(zp));
-	atomic_cas_32(&zp->z_zil_attach_vnode, 1, 0);
-}
-#endif
-
-
 static lwb_t *
 zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 {
@@ -1118,7 +1100,7 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 	uint64_t reclen = lrc->lrc_reclen;
 	uint64_t dlen = 0;
 	int error = 0;
-#if defined (__APPLE__) && defined (KERNEL)
+#if defined (__APPLE__) && defined (__KERNEL__)
 	znode_t *zp = NULL;
 	rl_t *rl = NULL;
 #endif
@@ -1134,30 +1116,16 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 		dlen = P2ROUNDUP_TYPED(
 		    lrw->lr_length, sizeof (uint64_t), uint64_t);
 
-#if defined (__APPLE__) && defined (KERNEL)
+#if defined (__APPLE__) && defined (__KERNEL__)
 	/* to avoid deadlock, grab necessary range lock before hold the txg */
 	if (lrc->lrc_txtype == TX_WRITE && itx->itx_wr_state != WR_COPIED) {
-		uint64_t off = lrw->lr_offset;
-		int len = lrw->lr_length; /* this range never exceeds max blk size,
+		uint64_t off = lr->lr_offset;
+		int len = lr->lr_length; /* this range never exceeds max blk size,
 									so int type is ok */
 		zfsvfs_t *zfsvfs = itx->itx_private;
 
-		error = zfs_zget_ext(zfsvfs, lrw->lr_foid, &zp,
-							 ZGET_FLAG_UNLINKED | ZGET_FLAG_WITHOUT_VNODE );
+		error = zfs_zget_want_unlinked(zfsvfs, lr->lr_foid, &zp);
 		if (error == 0) {
-
-			/* Attach vnode in different thread - if one is needed -
-			* since zil_lwb_commit is called multiple times for the same zp
-			* we only spawn the attach thread once.
-			*/
-			if (!ZTOV(zp)) {
-				if (atomic_cas_32(&zp->z_zil_attach_vnode, 0, 1) == 0) {
-					VERIFY(taskq_dispatch((taskq_t *)dsl_pool_vnrele_taskq(dmu_objset_pool( zp->z_zfsvfs->z_os )),
-										  (task_func_t *)zil_attach_vnode,
-										  zp, TQ_SLEEP) != 0);
-				}
-			}
-
 			if (dlen) {                     /* immediate write */
 				rl = zfs_range_lock(zp, off, len, RL_READER);
 			} else {
@@ -1239,18 +1207,17 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 				ZIL_STAT_INCR(zil_itx_indirect_bytes,
 				    lrw->lr_length);
 			}
+#if defined (__APPLE__) && defined (__KERNEL__)
 			if (error == 0) {
 				/* if error is not 0, the zfs_zget already failed,
 				 * no need to proceed */
-
-#if defined (__APPLE__) && defined (KERNEL)
 				error = zilog->zl_get_data(
-					itx->itx_private, lrw, dbuf, lwb->lwb_zio, zp, rl);
-#else
-				error = zilog->zl_get_data(
-					itx->itx_private, lrw, dbuf, lwb->lwb_zio, NULL, NULL);
-#endif
+					itx->itx_private, lr, dbuf, lwb->lwb_zio, zp, rl);
 			}
+#else
+			error = zilog->zl_get_data(
+			    itx->itx_private, lrw, dbuf, lwb->lwb_zio);
+#endif
 			if (error == EIO) {
 				txg_wait_synced(zilog->zl_dmu_pool, txg);
 				return (lwb);

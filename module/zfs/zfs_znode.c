@@ -1368,8 +1368,8 @@ zfs_xvattr_set(znode_t *zp, xvattr_t *xvap, dmu_tx_t *tx)
 }
 
 int
-zfs_zget_ext(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp,
-			 int flags)
+zfs_zget_internal(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp,
+				  int skip_vnode, int want_unlinked)
 {
 	dmu_object_info_t doi;
 	dmu_buf_t	*db;
@@ -1442,7 +1442,7 @@ again:
 		 * OS X can return the znode when the file is unlinked
 		 * in order to support the sync of open-unlinked files
 		 */
-		if (!(flags & ZGET_FLAG_UNLINKED) && zp->z_unlinked) {
+		if (!want_unlinked && zp->z_unlinked) {
 			dmu_buf_rele(db, NULL);
 			mutex_exit(&zp->z_lock);
 			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
@@ -1453,30 +1453,8 @@ again:
 		mutex_exit(&zp->z_lock);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
-		if ((flags & ZGET_FLAG_WITHOUT_VNODE)) {
-			/* Do not increase vnode iocount */
-			*zpp = zp;
-			return 0;
-		}
-
-		/* We are racing zfs_znode_getvnode() and we got here first, we
-		 * need to let it get ahead */
-		if (!vp) {
-			delay(hz>>2); /* Make me more elegant */
-			dprintf("zget racing attach\n");
+		if (!vp || (vnode_getwithvid(vp, vid) != 0)) {
 			goto again;
-		}
-
-		/* Due to vnode_create() -> zfs_fsync() -> zil_commit() -> zget()
-		 * -> vnode_getwithvid() -> deadlock. Unsure why vnode_getwithvid()
-		 * ends up sleeping in msleep() but vnode_get() does not.
-		 */
-		if (!vp || (err=vnode_getwithvid(vp, vid) != 0)) {
-			//if ((err = vnode_get(vp)) != 0) {
-			dprintf("ZFS: vnode_get() returned %d\n", err);
-			delay(hz>>2); /* Make me more elegant */
-			goto again;
-			return (ENOENT);
 		}
 
 		/*
@@ -1489,7 +1467,7 @@ again:
 			/* Release the wrong vp from vnode_getwithvid(). This
 			 * call is missing in 10a286 - lundman */
 			VN_RELE(vp);
-			dprintf("ZFS: the vids do not match part 1\n");
+			printf("ZFS: the vids do not match part 1\n");
 			goto again;
 		}
 		if (vnode_vid(vp) != zp->z_vid)
@@ -1544,7 +1522,7 @@ again:
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 	getnewvnode_drop_reserve();
 
-	if (flags & ZGET_FLAG_WITHOUT_VNODE) {
+	if (skip_vnode) {
 		/* Insert it on our list of active znodes */
 		//mutex_enter(&zfsvfs->z_znodes_lock);
 		//list_insert_tail(&zfsvfs->z_all_znodes, zp);
@@ -1557,6 +1535,32 @@ again:
 
 	dprintf("zget returning %d\n", err);
 	return (err);
+}
+
+
+/*
+ * Some callers don't require a vnode, so allow them to
+ * get a znode without attaching a vnode to it.
+ */
+int
+zfs_zget_sans_vnode(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+{
+	return zfs_zget_internal(zfsvfs, obj_num, zpp, 1, 0);
+}
+
+/*
+ * Some callers wants the znode even it is already unlinked
+ */
+int
+zfs_zget_want_unlinked(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+{
+	return zfs_zget_internal(zfsvfs, obj_num, zpp, 0, 1);
+}
+
+int
+zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp)
+{
+	return zfs_zget_internal(zfsvfs, obj_num, zpp, 0, 0);
 }
 
 
