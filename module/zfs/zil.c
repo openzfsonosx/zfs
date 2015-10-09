@@ -1092,6 +1092,21 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 	return (nlwb);
 }
 
+#if defined (__APPLE__) && defined (KERNEL)
+/*
+ * zil_lwb_commit() is often called from inside the context of vnode_create,
+ * and we can not enter the VFS again, we call zget() with WITHOUT_VNODE, and
+ * attach it in async context, with VN_RELE following
+.
+ */
+static void zil_attach_vnode(void *arg)
+{
+    znode_t *zp = (znode_t *)arg;
+	zfs_znode_getvnode(zp, zp->z_zfsvfs);
+	VN_RELE(ZTOV(zp));
+	atomic_cas_32(&zp->z_zil_attach_vnode, 1, 0);
+}
+#endif
 
 
 static lwb_t *
@@ -1129,7 +1144,7 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 		zfsvfs_t *zfsvfs = itx->itx_private;
 
 		error = zfs_zget_ext(zfsvfs, lrw->lr_foid, &zp,
-							 ZGET_FLAG_UNLINKED | ZGET_FLAG_WITHOUT_VNODE_GET );
+							 ZGET_FLAG_UNLINKED | ZGET_FLAG_WITHOUT_VNODE );
 		if (error == 0) {
 
 			/* Attach vnode in different thread - if one is needed -
@@ -1139,6 +1154,15 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 			if (!ZTOV(zp)) {
 				printf("ZFS: zil is NULL case\n");
 			}
+#if 0
+			if (!ZTOV(zp)) {
+				if (atomic_cas_32(&zp->z_zil_attach_vnode, 0, 1) == 0) {
+					VERIFY(taskq_dispatch((taskq_t *)dsl_pool_vnrele_taskq(dmu_objset_pool( zp->z_zfsvfs->z_os )),
+										  (task_func_t *)zil_attach_vnode,
+										  zp, TQ_SLEEP) != 0);
+				}
+			}
+#endif
 
 			if (dlen) {                     /* immediate write */
 				rl = zfs_range_lock(zp, off, len, RL_READER);
