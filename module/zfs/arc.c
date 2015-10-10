@@ -6600,6 +6600,9 @@ l2arc_release_cdata_buf(arc_buf_hdr_t *hdr)
  * This thread feeds the L2ARC at regular intervals.  This is the beating
  * heart of the L2ARC.
  */
+
+uint64_t zfs_l2arc_lowmem_algorithm = 0;
+
 static void
 #ifdef __APPLE__
 l2arc_feed_thread(void *notused)
@@ -6665,11 +6668,33 @@ l2arc_feed_thread(void)
 		/*
 		 * Avoid contributing to memory pressure.
 		 */
-		if (arc_reclaim_needed()) {
-			ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
-			spa_config_exit(spa, SCL_L2ARC, dev);
-			continue;
-		}
+		 if(zfs_l2arc_lowmem_algorithm == 1) {
+		   extern int32_t spl_minimal_physmem_p();
+		   if(!spl_minimal_physmem_p()) {
+		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+		     spa_config_exit(spa, SCL_L2ARC, dev);
+		     continue;
+		   }
+		 } else if (zfs_l2arc_lowmem_algorithm == 2) {
+		   if(arc_reclaim_needed() && spa_get_random(2) == 0) {
+		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+		     spa_config_exit(spa, SCL_L2ARC, dev);
+		     continue;
+		   }
+		 } else if (zfs_l2arc_lowmem_algorithm == 3) {
+		   if(arc_reclaim_needed() && spa_get_random(10) == 0) {
+		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+		     spa_config_exit(spa, SCL_L2ARC, dev);
+		     continue;
+		   }
+		 } else {
+		   if (arc_reclaim_needed()) {
+		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+		     spa_config_exit(spa, SCL_L2ARC, dev);
+		     continue;
+		   }
+		 }
+
 
 		ARCSTAT_BUMP(arcstat_l2_feeds);
 
