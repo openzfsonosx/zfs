@@ -5117,6 +5117,18 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 				/* If user hasn't set it, update meta_min too */
 				if (!zfs_arc_meta_min)
 					arc_meta_min = arc_c_min / 2;
+				printf("ZFS: set arc_c_min %llu, arc_meta_min %llu, zfs_arc_meta_min %llu\n",
+				       arc_c_min, arc_meta_min, zfs_arc_meta_min);
+				if(arc_c < arc_c_min) {
+				  printf("ZFS: raise arc_c %llu to arc_c_min %llu\n",
+					 arc_c, arc_c_min);
+				  arc_c = arc_c_min;
+				  if(arc_p < (arc_c >> 1)) {
+				    printf("ZFS: raise arc_p %llu to %llu\n",
+					   arc_p, (arc_c >> 1));
+				    arc_p = (arc_c >> 1);
+				  }
+				}
 			}
 		}
 
@@ -5129,12 +5141,16 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 
 			if (arc_c_min < arc_meta_limit / 2 && zfs_arc_min == 0)
 				arc_c_min = arc_meta_limit / 2;
+
+			printf("ZFS: set arc_meta_limit %llu, arc_c_min %llu, zfs_arc_meta_limit %llu\n",
+			       arc_meta_limit, arc_c_min, zfs_arc_meta_limit);
 		}
 
 		if (ks->arc_zfs_arc_meta_min.value.ui64 != zfs_arc_meta_min) {
 			zfs_arc_meta_min  = ks->arc_zfs_arc_meta_min.value.ui64;
 			if (zfs_arc_meta_min > 0 && zfs_arc_meta_min <= arc_meta_limit)
 				arc_meta_min = zfs_arc_meta_min;
+			printf("ZFS: set arc_meta_min %llu\n", arc_meta_min);
 		}
 
 		zfs_arc_grow_retry        = ks->arc_zfs_arc_grow_retry.value.ui64;
