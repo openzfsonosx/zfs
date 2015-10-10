@@ -151,6 +151,7 @@ osx_kstat_t osx_kstat = {
 
 	{"zfs_recover",					KSTAT_DATA_INT64  },
 	{"zfs_free_max_blocks",			KSTAT_DATA_UINT64 },
+	{"zfs_l2arc_lowmem_algorithm",		KSTAT_DATA_UINT64 },
 };
 
 
@@ -312,6 +313,13 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		  zfs_free_max_blocks = (uint32_t)ks->zfs_free_max_blocks.value.ui64;
 		}
 
+		if(ks->zfs_l2arc_lowmem_algorithm.value.ui64 != zfs_l2arc_lowmem_algorithm) {
+		  printf("ZFS: zfs_l2arc_lowmem_algorithm = %llu, becoming %llu\n",
+			 zfs_l2arc_lowmem_algorithm,
+			 ks->zfs_l2arc_lowmem_algorithm.value.ui64);
+		  zfs_l2arc_lowmem_algorithm = ks->zfs_l2arc_lowmem_algorithm.value.ui64;
+		}
+
 	} else {
 
 		/* kstat READ */
@@ -459,6 +467,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			zfs_recover;
 
 		ks->zfs_free_max_blocks.value.ui64 = (uint64_t)zfs_free_max_blocks;
+		ks->zfs_l2arc_lowmem_algorithm.value.ui64 = zfs_l2arc_lowmem_algorithm;
 
 	}
 
