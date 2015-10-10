@@ -1,0 +1,23 @@
+Differences from upstream-20150909
+
+	* add zfs_free_max_blocks tunable
+
+	ARC work :
+
+	* kmem_avail() is int64_t signed quantity; illumos
+		arc expects negative values when memory is low
+	* arc_available_memory() should rely mainly on
+		kmem_avail()
+	* arc_reclaim_thread() needs to expect negative
+		values from kmem_avail()
+	* arc_memory_throttle() needs to rely on
+		kmem_avail() and needs to accept negative
+		values; also increment arcstat when appropriate
+	* arc_reserve_tempspace() needs to be more
+		aggressive on xnu
+
+	* l2arc doesn't get enough writes in lowmem
+		condition, try workarounds
+
+	* arc_min tunable should change arc_c, and
+		additional arc tunable touching
