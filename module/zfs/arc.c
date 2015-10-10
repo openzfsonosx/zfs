@@ -4896,6 +4896,8 @@ arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
 	return (zio);
 }
 
+extern int32_t spl_minimal_physmem_p(void);
+
 static int
 arc_memory_throttle(uint64_t reserve, uint64_t txg)
 {
@@ -4904,7 +4906,6 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	uint64_t available_memory = ptob(freemem);
 #endif
 #ifdef __APPLE__
-	extern int32_t spl_minimal_physmem_p(void);
 	int64_t available_memory = kmem_avail();
 	int64_t freemem = available_memory / PAGESIZE;
 #endif
@@ -6685,7 +6686,6 @@ l2arc_feed_thread(void)
 		 * Avoid contributing to memory pressure.
 		 */
 		 if(zfs_l2arc_lowmem_algorithm == 1) {
-		   extern int32_t spl_minimal_physmem_p(void);
 		   if(!spl_minimal_physmem_p()) {
 		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
 		     spa_config_exit(spa, SCL_L2ARC, dev);
