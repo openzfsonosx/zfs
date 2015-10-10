@@ -6685,7 +6685,7 @@ l2arc_feed_thread(void)
 		 * Avoid contributing to memory pressure.
 		 */
 		 if(zfs_l2arc_lowmem_algorithm == 1) {
-		   extern int32_t spl_minimal_physmem_p();
+		   extern int32_t spl_minimal_physmem_p(void);
 		   if(!spl_minimal_physmem_p()) {
 		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
 		     spa_config_exit(spa, SCL_L2ARC, dev);
