@@ -6707,6 +6707,12 @@ l2arc_feed_thread(void)
 		     spa_config_exit(spa, SCL_L2ARC, dev);
 		     continue;
 		   }
+		 } else if (zfs_l2arc_lowmem_algorithm == 4) {
+		   if(arc_reclaim_needed() && spa_get_random(100)!=0) {
+		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+		     spa_config_exit(spa, SCL_L2ARC, dev);
+		     continue;
+		   }
 		 } else {
 		   if (arc_reclaim_needed()) {
 		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
