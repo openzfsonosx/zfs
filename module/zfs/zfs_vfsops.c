@@ -2875,7 +2875,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 }
 
 
-
 static int
 zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 {
@@ -2937,6 +2936,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 		// If we already have the name, cached in zfs_vnop_lookup
 		if (zp->z_finder_hardlink_name[0]) {
 
+			dprintf("vget: cached name '%s'\n", zp->z_finder_hardlink_name);
 			vnode_update_identity(*vpp, NULL, zp->z_finder_hardlink_name,
 								  strlen(zp->z_finder_hardlink_name), 0,
 								  VNODE_UPDATE_NAME);
