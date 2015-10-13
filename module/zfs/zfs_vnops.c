@@ -4376,8 +4376,8 @@ top:
 				 * calling vnop_lookup first - it is easier to clear
 				 * it out and let getattr look it up if needed.
 				 */
-				if (tzp) tzp->z_finder_hardlink_name[0] = 0;
-				if (szp) szp->z_finder_hardlink_name[0] = 0;
+				if (tzp) tzp->z_name_cache[0] = 0;
+				if (szp) szp->z_name_cache[0] = 0;
 
 #endif
 
