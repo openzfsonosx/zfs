@@ -803,7 +803,6 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_size = 0;
 	zp->z_name_cache[0] = 0;
 	zp->z_finder_parentid = 0;
-	zp->z_finder_hardlink = FALSE;
 
 	vp = ZTOV(zp); /* Does nothing in OSX */
 

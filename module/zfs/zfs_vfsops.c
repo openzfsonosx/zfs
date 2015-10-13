@@ -1283,7 +1283,7 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	avl_create(&zfsvfs->z_hardlinks_linkid, hardlinks_compare_linkid,
 			   sizeof (hardlinks_t), offsetof(hardlinks_t, hl_node_linkid));
 #endif
-	for (int i = 0; i != ZFS_OBJ_MTX_SZ; i++)
+	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_init(&zfsvfs->z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
 
 	*zfvp = zfsvfs;
@@ -2794,7 +2794,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 }
 
 
-
 static int
 zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 {
@@ -2817,7 +2816,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	 * hashes. Use the MSB set high as indicator.
 	 */
 	hardlinks_t *findnode = NULL;
-	if ((1ULL<<31) & ino) {
+	if ((1<<31) & ino) {
 		hardlinks_t searchnode;
 		avl_index_t loc;
 
@@ -2825,18 +2824,19 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
 		searchnode.hl_linkid = ino;
 
-int
-zfs_domount(struct super_block *sb, zfs_mntopts_t *zmo, int silent)
-{
-	const char *osname = zmo->z_osname;
-	zfs_sb_t *zsb;
-	struct inode *root_inode;
-	uint64_t recordsize;
-	int error;
+		rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
+		findnode = avl_find(&zfsvfs->z_hardlinks_linkid, &searchnode, &loc);
+		rw_exit(&zfsvfs->z_hardlinks_lock);
 
-	error = zfs_sb_create(osname, zmo, &zsb);
-	if (error)
-		return (error);
+		if (findnode) {
+			dprintf("ZFS: vget found (%llu, %llu, %u): '%s'\n",
+				   findnode->hl_parent,
+				   findnode->hl_fileid, findnode->hl_linkid,
+				   findnode->hl_name);
+			// Lookup the actual zp instead
+			ino = findnode->hl_fileid;
+		} // findnode
+	} // MSB set
 
 
 	/* We can not be locked during zget. */
@@ -2875,23 +2875,45 @@ zfs_domount(struct super_block *sb, zfs_mntopts_t *zmo, int silent)
 	} else {
 		uint64_t parent;
 
-		/* Lookup name from ID, grab parent */
-		VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
-                         &parent, sizeof (parent)) == 0);
+		// if its a hardlink cache
+		if (findnode) {
 
-#if 1
-		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-							 ZFS_DIRENT_OBJ(-1ULL), name) == 0) {
+			dprintf("vget: updating vnode to '%s' and parent %llu\n",
+				   findnode->hl_name, findnode->hl_parent);
+			vnode_update_identity(*vpp, NULL, findnode->hl_name,
+								  strlen(findnode->hl_name),
+								  findnode->hl_parent,
+								  VNODE_UPDATE_NAME|VNODE_UPDATE_PARENT);
+			strlcpy(zp->z_name_cache, findnode->hl_name, PATH_MAX);
+			zp->z_finder_parentid = findnode->hl_parent;
 
-			dprintf("vget: set name '%s'\n", name);
-			vnode_update_identity(*vpp, NULL, name,
-								  strlen(name), 0,
+		// If we already have the name, cached in zfs_vnop_lookup
+		} else if (zp->z_name_cache[0]) {
+
+			dprintf("vget: cached name '%s'\n", zp->z_name_cache);
+			vnode_update_identity(*vpp, NULL, zp->z_name_cache,
+								  strlen(zp->z_name_cache), 0,
 								  VNODE_UPDATE_NAME);
-		} else {
-			dprintf("vget: unable to get name for %u\n", zp->z_id);
-		} // !zap_search
-#endif
 
+			/* If needed, if findnode is set, we can update the parentid too */
+
+		} else {
+
+			/* Lookup name from ID, grab parent */
+			VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+							 &parent, sizeof (parent)) == 0);
+
+			if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+								 ZFS_DIRENT_OBJ(-1ULL), name) == 0) {
+
+				dprintf("vget: set name '%s'\n", name);
+				vnode_update_identity(*vpp, NULL, name,
+									  strlen(name), 0,
+									  VNODE_UPDATE_NAME);
+			} else {
+				dprintf("vget: unable to get name for %llu\n", zp->z_id);
+			} // !zap_search
+		}
 	} // rootid
 
 		} else {

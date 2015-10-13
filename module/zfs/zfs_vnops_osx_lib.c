@@ -211,6 +211,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 #ifdef VNODE_ATTR_va_addedtime
 	uint64_t addtime[2] = { 0 };
 #endif
+	int ishardlink = 0;
 
     //printf("getattr_osx\n");
 
@@ -238,6 +239,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
     mutex_enter(&zp->z_lock);
 
+	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
+		1 : 0;
 
 	/* Work out which SA we need to fetch */
 
@@ -298,6 +301,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	else
 		vap->va_parentid = parent;
 
+	// Hardlinks: Return cached parentid, make it 2 if root.
+	if (ishardlink)
+		vap->va_parentid = (zp->z_finder_parentid == zfsvfs->z_root) ?
+			2 : zp->z_finder_parentid;
+
 	vap->va_iosize = zp->z_blksz ? zp->z_blksz : zfsvfs->z_max_blksz;
 	//vap->va_iosize = 512;
     VATTR_SET_SUPPORTED(vap, va_iosize);
@@ -343,19 +351,23 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
              * If we also want ATTR_CMN_* lookups to work, we need to
              * set a unique va_linkid for each entry, and based on the
              * linkid in the lookup, return the correct name.
-             * It is set in zfs_finder_keep_hardlink()
+             * It is set in zfs_vnop_lookup().
+			 * Since zap_value_search is a slow call, we only use it if
+			 * we have not cached the name in vnop_lookup.
              */
 
-            if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG) &&
-                zp->z_finder_hardlink_name[0]) {
+			// Cached name, from vnop_lookup
+			if (ishardlink &&
+                zp->z_name_cache[0]) {
 
                 strlcpy(vap->va_name, zp->z_name_cache,
                         MAXPATHLEN);
                 VATTR_SET_SUPPORTED(vap, va_name);
 
-            } else {
-            if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-                                 ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
+			} else if (zp->z_name_cache[0]) {
+
+                strlcpy(vap->va_name, zp->z_name_cache,
+                        MAXPATHLEN);
                 VATTR_SET_SUPPORTED(vap, va_name);
 
             } else {
@@ -372,8 +384,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 			}
 
 			dprintf("getattr: %p return name '%s':%04llx\n", vp,
-				   vap->va_name,
-				   vap->va_linkid);
+					vap->va_name,
+					vap->va_linkid);
 
 
         } else {
@@ -416,17 +428,34 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 			rw_exit(&zfsvfs->z_hardlinks_lock);
 
 			if (!findnode) {
-				static uint32_t zfs_hardlink_sequence = 1ULL<<31;
-				uint32_t id;
+				static uint32_t zfs_hardlink_sequence = 1<<31;
+				// Search again after getting write lock
+				rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
+				findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
+				if (!findnode) {
+					// Add hash entry
+					findnode = kmem_alloc(sizeof(hardlinks_t), KM_SLEEP);
 
-				id = atomic_inc_32_nv(&zfs_hardlink_sequence);
+					findnode->hl_parent = vap->va_parentid;
+					findnode->hl_fileid = zp->z_id;
+					strlcpy(findnode->hl_name, zp->z_name_cache, PATH_MAX);
 
-				zfs_hardlink_addmap(zp, vap->va_parentid, id);
-				VATTR_RETURN(vap, va_linkid, id);
+					findnode->hl_linkid = zfs_hardlink_sequence;
+					atomic_inc_32(&zfs_hardlink_sequence);
 
-			} else {
-				VATTR_RETURN(vap, va_linkid, findnode->hl_linkid);
-			}
+					avl_add(&zfsvfs->z_hardlinks, findnode);
+					avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
+					dprintf("ZFS: Inserted new hardlink node (%llu,%llu,'%s') <-> (%x,%u)\n",
+						   findnode->hl_parent,
+						   findnode->hl_fileid, findnode->hl_name,
+						   findnode->hl_linkid, findnode->hl_linkid	);
+				} // findnode2
+				rw_exit(&zfsvfs->z_hardlinks_lock);
+
+			} // findnode
+
+			// return made, or found, linkid.
+			VATTR_RETURN(vap, va_linkid, findnode->hl_linkid);
 
 		} else { // !ishardlink - use same as fileid
 
@@ -504,15 +533,14 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
     }
 #endif
 
-	if (ishardlink) {
-		dprintf("ZFS:getattr(%s,%llu,%llu) parent %llu: cache_parent %llu: va_nlink %u\n",
+	if (ishardlink)
+		dprintf("ZFS:getattr(%s,%llu,%llu) parent %llu: cache_parent %llu\n",
 			   VATTR_IS_ACTIVE(vap, va_name) ? vap->va_name : zp->z_name_cache,
 			   vap->va_fileid,
 			   VATTR_IS_ACTIVE(vap, va_linkid) ? vap->va_linkid : 0,
 			   vap->va_parentid,
-			   zp->z_finder_parentid,
-			vap->va_nlink);
-	}
+			zp->z_finder_parentid);
+
 
 	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
 	uint64_t missing = 0;

@@ -4446,6 +4446,17 @@ top:
 				 */
 				vn_renamepath(tdvp, ZTOV(szp), tnm,
 				    strlen(tnm));
+
+#ifdef __APPLE__
+				/* Update cached name - for vget, and access without
+				 * calling vnop_lookup first - it is easier to clear
+				 * it out and let getattr look it up if needed.
+				 */
+				if (tzp) tzp->z_name_cache[0] = 0;
+				if (szp) szp->z_name_cache[0] = 0;
+
+#endif
+
 			} else {
 				/*
 				 * At this point, we have successfully created
