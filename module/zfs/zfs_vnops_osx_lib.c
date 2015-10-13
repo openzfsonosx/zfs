@@ -349,18 +349,18 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
              */
 
 			// Cached name, from vnop_lookup
-			if (ishardlink &&
-                zp->z_name_cache[0]) {
+			if (zp->z_finder_hardlink_name[0]) {
 
                 strlcpy(vap->va_name, zp->z_name_cache,
                         MAXPATHLEN);
                 VATTR_SET_SUPPORTED(vap, va_name);
 
-			} else if (zp->z_name_cache[0]) {
+            } else {
 
-                strlcpy(vap->va_name, zp->z_name_cache,
-                        MAXPATHLEN);
-                VATTR_SET_SUPPORTED(vap, va_name);
+				// Go find the name.
+				if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+									 ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
+					VATTR_SET_SUPPORTED(vap, va_name);
 
             } else {
 

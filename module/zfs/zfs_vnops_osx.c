@@ -938,46 +938,6 @@ zfs_vnop_access(struct vnop_access_args *ap)
 }
 
 
-/*
- * hard link references?
- * Read the comment in zfs_getattr_znode_unlocked for the reason
- * for this hackery. Since getattr(VA_NAME) is extremely common
- * call in OSX, we opt to always save the name. We need to be careful
- * as zfs_dirlook can return ctldir node as well (".zfs").
- * Hardlinks also need to be able to return the correct parentid.
- */
-static void zfs_cache_name(struct vnode *vp, struct vnode *dvp, char *filename)
-{
-	znode_t *zp;
-	if (!vp ||
-		!filename ||
-		!filename[0] ||
-		zfsctl_is_node(vp) ||
-		!VTOZ(vp))
-		return;
-
-	// Only cache files, or we might end up caching "."
-	if (!vnode_isreg(vp)) return;
-
-	zp = VTOZ(vp);
-
-	mutex_enter(&zp->z_lock);
-
-	strlcpy(zp->z_name_cache,
-			filename,
-			MAXPATHLEN);
-
-	// If hardlink, remember the parentid.
-	if ((zp->z_links > 1) &&
-		(IFTOVT((mode_t)zp->z_mode) == VREG) &&
-		dvp) {
-		zp->z_finder_parentid = VTOZ(dvp)->z_id;
-	}
-
-	mutex_exit(&zp->z_lock);
-}
-
-
 int
 zfs_vnop_lookup(struct vnop_lookup_args *ap)
 #if 0
@@ -1079,14 +1039,23 @@ zfs_vnop_lookup(struct vnop_lookup_args *ap)
 
 exit:
 
-#ifdef __APPLE__
-	if (!error)
-		zfs_cache_name(*ap->a_vpp, ap->a_dvp,
-					   filename ? filename : cnp->cn_nameptr);
-#endif
-
-	dprintf("-vnop_lookup %d : dvp %llu '%s'\n", error, VTOZ(ap->a_dvp)->z_id,
-			filename ? filename : cnp->cn_nameptr);
+	/*
+	 * hard link references?
+	 * Read the comment in zfs_getattr_znode_unlocked for the reason
+	 * for this hackery. Since getattr(VA_NAME) is extremely common
+	 * call in OSX, we opt to always save the name. We need to be careful
+	 * as zfs_dirlook can return ctldir node as well (".zfs").
+	 */
+	if (!error &&
+		(*ap->a_vpp != NULL)  &&
+		!zfsctl_is_node(*ap->a_vpp)) {
+		znode_t *zp = VTOZ(*ap->a_vpp);
+		if (zp != NULL) {
+			strlcpy(zp->z_finder_hardlink_name,
+					filename ? filename : cnp->cn_nameptr,
+					MAXPATHLEN);
+		} // zp
+	} // !error && vp
 
 	if (filename)
 		kmem_free(filename, filename_num_bytes);
