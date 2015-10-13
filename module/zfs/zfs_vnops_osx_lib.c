@@ -314,25 +314,29 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
              * If we also want ATTR_CMN_* lookups to work, we need to
              * set a unique va_linkid for each entry, and based on the
              * linkid in the lookup, return the correct name.
-             * It is set in zfs_finder_keep_hardlink()
+             * It is set in zfs_vnop_lookup().
+			 * Since zap_value_search is a slow call, we only use it if
+			 * we have not cached the name in vnop_lookup.
              */
 
-            if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG) &&
-                zp->z_finder_hardlink_name[0]) {
+			// Cached name, from vnop_lookup
+			if (zp->z_finder_hardlink_name[0]) {
 
                 strlcpy(vap->va_name, zp->z_finder_hardlink_name,
                         MAXPATHLEN);
                 VATTR_SET_SUPPORTED(vap, va_name);
 
             } else {
-            if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-                                 ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
-                VATTR_SET_SUPPORTED(vap, va_name);
+
+				// Go find the name.
+				if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+									 ZFS_DIRENT_OBJ(-1ULL), vap->va_name) == 0)
+					VATTR_SET_SUPPORTED(vap, va_name);
 
 			}
 			dprintf("getattr: %p return name '%s':%04llx\n", vp,
-				   vap->va_name,
-				   vap->va_linkid);
+					vap->va_name,
+					vap->va_linkid);
 
 
         } else {
