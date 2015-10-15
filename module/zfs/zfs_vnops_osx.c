@@ -773,16 +773,19 @@ zfs_vnop_lookup(struct vnop_lookup_args *ap)
 
 
 exit:
-	/* Set both for lookup and positive cache */
-	if (!error && (*ap->a_vpp) != NULL) {
+
+	/*
+	 * hard link references?
+	 * Read the comment in zfs_getattr_znode_unlocked for the reason
+	 * for this hackery. Since getattr(VA_NAME) is extremely common
+	 * call in OSX, we opt to always save the name. We need to be careful
+	 * as zfs_dirlook can return ctldir node as well (".zfs").
+	 */
+	if (!error &&
+		(*ap->a_vpp != NULL)  &&
+		!zfsctl_is_node(*ap->a_vpp)) {
 		znode_t *zp = VTOZ(*ap->a_vpp);
 		if (zp != NULL) {
-			/*
-			 * hard link references?
-			 * Read the comment in zfs_getattr_znode_unlocked for the reason
-			 * for this hackery. Since getattr(VA_NAME) is extremely common
-			 * call in OSX, we opt to always save the name.
-			 */
 			strlcpy(zp->z_finder_hardlink_name,
 					filename ? filename : cnp->cn_nameptr,
 					MAXPATHLEN);
