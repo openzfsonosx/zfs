@@ -5328,11 +5328,14 @@ arc_init(void)
 		zfs_arc_num_sublists_per_state = MAX(boot_ncpus, 1);
 #endif
 
+#if 0 // smd	
 	/* if kmem_flags are set, lets try to use less memory */
 	if (kmem_debugging())
 		arc_c = arc_c / 2;
+#endif // smd	
 	if (arc_c < arc_c_min)
 		arc_c = arc_c_min;
+	
 
 	arc_anon = &ARC_anon;
 	arc_mru = &ARC_mru;
