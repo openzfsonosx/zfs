@@ -3007,13 +3007,37 @@ dbuf_rele_and_unlock(dmu_buf_impl_t *db, void *tag)
 				bp = *db->db_blkptr;
 			}
 
-			if (!DBUF_IS_CACHEABLE(db) ||
-				db->db_pending_evict) {
-				dbuf_destroy(db);
-			} else if (!multilist_link_active(&db->db_cache_link)) {
-				multilist_insert(&dbuf_cache, db);
-				(void) refcount_add_many(&dbuf_cache_size,
-					db->db.db_size, db);
+			/*
+			 * A dbuf will be eligible for eviction if either the
+			 * 'primarycache' property is set or a duplicate
+			 * copy of this buffer is already cached in the arc.
+			 *
+			 * In the case of the 'primarycache' a buffer
+			 * is considered for eviction if it matches the
+			 * criteria set in the property.
+			 *
+			 * To decide if our buffer is considered a
+			 * duplicate, we must call into the arc to determine
+			 * if multiple buffers are referencing the same
+			 * block on-disk. If so, then we simply evict
+			 * ourselves.
+			 */
+			if (!DBUF_IS_CACHEABLE(db)) {
+				if (db->db_blkptr != NULL &&
+				    !BP_IS_HOLE(db->db_blkptr) &&
+				    !BP_IS_EMBEDDED(db->db_blkptr)) {
+					spa_t *spa =
+					    dmu_objset_spa(db->db_objset);
+					blkptr_t bp = *db->db_blkptr;
+					dbuf_clear(db);
+					arc_freed(spa, &bp);
+				} else {
+					dbuf_clear(db);
+				}
+			} else if (db->db_pending_evict ||
+			    arc_buf_eviction_needed(db->db_buf)) {
+				dbuf_clear(db);
+			} else {
 				mutex_exit(&db->db_mtx);
 
 				dbuf_evict_notify();
