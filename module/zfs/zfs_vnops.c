@@ -4446,15 +4446,6 @@ top:
 				 */
 				vn_renamepath(tdvp, ZTOV(szp), tnm,
 				    strlen(tnm));
-
-#ifdef __APPLE__
-				/* Update cached name - for vget, and access without
-				 * calling vnop_lookup first */
-				strlcpy(szp->z_finder_hardlink_name,
-						tnm,
-						MAXPATHLEN);
-#endif
-
 			} else {
 				/*
 				 * At this point, we have successfully created
