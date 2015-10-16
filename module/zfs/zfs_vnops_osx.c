@@ -1625,7 +1625,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 #endif
 
 	if (error)
-		dprintf("ZFS: vnop_setattr return failure %d\n", error);
+		printf("ZFS: vnop_setattr return failure %d\n", error);
 	return (error);
 }
 
@@ -3138,18 +3138,12 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	zfs_sa_upgrade_txholds(tx, zp);
 	error = dmu_tx_assign(tx, TXG_WAIT);
 	if (error != 0) {
-		if (error == ERESTART) {
-			zfs_range_unlock(rl);
-			dmu_tx_wait(tx);
-			dmu_tx_abort(tx);
-			goto top;
-		}
 		dmu_tx_abort(tx);
 		if (vaddr) {
 			ubc_upl_unmap(upl);
 			vaddr = NULL;
 		}
-		ubc_upl_abort_range(upl, ap->a_f_offset,a_size, UPL_ABORT_FREE_ON_EMPTY);
+		ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
 		goto pageout_done;
 	}
 
