@@ -98,7 +98,7 @@ typedef struct osx_kstat {
 
   kstat_named_t zfs_free_max_blocks;
   kstat_named_t zfs_l2arc_lowmem_algorithm;
-
+  kstat_named_t zfs_l2arc_lowmem_force_permil;
 
 } osx_kstat_t;
 
@@ -175,6 +175,7 @@ extern int zfs_scan_idle;
 
 extern uint32_t zfs_free_max_blocks;
 extern uint64_t zfs_l2arc_lowmem_algorithm;
+extern uint64_t zfs_l2arc_lowmem_force_permil;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);

@@ -505,6 +505,7 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_meta_min;
 	kstat_named_t arcstat_sync_wait_for_async;
 	kstat_named_t arcstat_demand_hit_predictive_prefetch;
+  kstat_named_t arcstat_l2_lowmem_force;
 } arc_stats_t;
 
 static arc_stats_t arc_stats = {
@@ -593,6 +594,7 @@ static arc_stats_t arc_stats = {
 	{ "arc_meta_min",		KSTAT_DATA_UINT64 },
 	{ "sync_wait_for_async",	KSTAT_DATA_UINT64 },
 	{ "demand_hit_predictive_prefetch", KSTAT_DATA_UINT64 },
+	{ "l2_lowmem_force",		KSTAT_DATA_UINT64 },
 };
 
 #define	ARCSTAT(stat)	(arc_stats.stat.value.ui64)
@@ -6653,6 +6655,7 @@ l2arc_release_cdata_buf(arc_buf_hdr_t *hdr)
  */
 
 uint64_t zfs_l2arc_lowmem_algorithm = 0;
+uint64_t zfs_l2arc_lowmem_force_permil = 0;
 
 static void
 #ifdef __APPLE__
@@ -6719,42 +6722,55 @@ l2arc_feed_thread(void)
 		/*
 		 * Avoid contributing to memory pressure.
 		 */
-		 if(zfs_l2arc_lowmem_algorithm == 1) {
+		if(zfs_l2arc_lowmem_algorithm == 1) { // panics
 #ifdef _KERNEL
-		   if(! spl_minimal_physmem_p()) {
-		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
-		     spa_config_exit(spa, SCL_L2ARC, dev);
-		     continue;
-		   }
+		  if(! spl_minimal_physmem_p()) {
+		    ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+		    spa_config_exit(spa, SCL_L2ARC, dev);
+		    continue;
+		  }
 #else
-		   zfs_l2arc_lowmem_algorithm = 0;
+		  zfs_l2arc_lowmem_algorithm = 0;
 #endif
-		 } else if (zfs_l2arc_lowmem_algorithm == 2) {
-		   if(arc_reclaim_needed() && spa_get_random(2) == 0) {
+		} else if(arc_reclaim_needed()) {
+		  if(zfs_l2arc_lowmem_algorithm == 2) { // panics
+		    if(spa_get_random(2) == 0) {
+		      ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+		      spa_config_exit(spa, SCL_L2ARC, dev);
+		      continue;
+		    } else {
+		      ARCSTAT_BUMP(arcstat_l2_lowmem_force);
+		    }
+		  } else if(zfs_l2arc_lowmem_algorithm == 3) { // panics
+		    if(spa_get_random(10)==0) {
+		      ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+		      spa_config_exit(spa, SCL_L2ARC, dev);
+		      continue;
+		    } else {
+		      ARCSTAT_BUMP(arcstat_l2_lowmem_force);
+		    }
+		   } else if(zfs_l2arc_lowmem_algorithm == 4) { // this was ok
+		    if(spa_get_random(100)!=0) {
+		      ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+		      spa_config_exit(spa, SCL_L2ARC, dev);
+		      continue;
+		    } else {
+		      ARCSTAT_BUMP(arcstat_l2_lowmem_force);
+		    }
+		  } else if(zfs_l2arc_lowmem_algorithm == 5 && zfs_l2arc_lowmem_force_permil > 0) {
+		    if((spa_get_random(1000) + 1) >= zfs_l2arc_lowmem_force_permil) {
+		      ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
+		      spa_config_exit(spa, SCL_L2ARC, dev);
+		      continue;
+		    } else {
+		      ARCSTAT_BUMP(arcstat_l2_lowmem_force);
+		    }
+		  } else {
 		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
 		     spa_config_exit(spa, SCL_L2ARC, dev);
 		     continue;
-		   }
-		 } else if (zfs_l2arc_lowmem_algorithm == 3) {
-		   if(arc_reclaim_needed() && spa_get_random(10) == 0) {
-		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
-		     spa_config_exit(spa, SCL_L2ARC, dev);
-		     continue;
-		   }
-		 } else if (zfs_l2arc_lowmem_algorithm == 4) {
-		   if(arc_reclaim_needed() && spa_get_random(100)!=0) {
-		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
-		     spa_config_exit(spa, SCL_L2ARC, dev);
-		     continue;
-		   }
-		 } else {
-		   if (arc_reclaim_needed()) {
-		     ARCSTAT_BUMP(arcstat_l2_abort_lowmem);
-		     spa_config_exit(spa, SCL_L2ARC, dev);
-		     continue;
-		   }
-		 }
-
+		  }
+		}
 
 		ARCSTAT_BUMP(arcstat_l2_feeds);
 
