@@ -4373,10 +4373,12 @@ top:
 
 #ifdef __APPLE__
 				/* Update cached name - for vget, and access without
-				 * calling vnop_lookup first */
-				strlcpy(szp->z_finder_hardlink_name,
-						tnm,
-						MAXPATHLEN);
+				 * calling vnop_lookup first - it is easier to clear
+				 * it out and let getattr look it up if needed.
+				 */
+				if (tzp) tzp->z_finder_hardlink_name[0] = 0;
+				if (szp) szp->z_finder_hardlink_name[0] = 0;
+
 #endif
 
 			} else {
