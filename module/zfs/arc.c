@@ -5158,6 +5158,10 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 
 		if (ks->arc_zfs_arc_meta_min.value.ui64 != zfs_arc_meta_min) {
 			zfs_arc_meta_min  = ks->arc_zfs_arc_meta_min.value.ui64;
+			if (zfs_arc_meta_min >= arc_c_min) {
+			  printf("ZFS: probable error, zfs_arc_meta_min %llu >= arc_c_min %llu\n",
+				 zfs_arc_meta_min, arc_c_min);
+			}
 			if (zfs_arc_meta_min > 0 && zfs_arc_meta_min <= arc_meta_limit)
 				arc_meta_min = zfs_arc_meta_min;
 			printf("ZFS: set arc_meta_min %llu\n", arc_meta_min);
