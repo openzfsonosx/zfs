@@ -3344,7 +3344,7 @@ arc_reclaim_needed(void)
 #endif
     int64_t a = arc_available_memory();
     if(a < 0) {
-#ifndef _KERNEL      
+#ifdef _KERNEL      
       printf("ZFS: %s, arc_available_memory was negative (%lld), returning 1\n", __func__, a);
 #endif      
       return 1;
@@ -4979,6 +4979,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	  cv_signal(&arc_reclaim_thread_cv);
 	  printf("ZFS: %s THROTTLED, reclaim signalled, txg = %llu, reserve = %llu\n",
 		 __func__, txg, reserve);
+	  kpreempt(KPREEMPT_SYNC);
 	  return (SET_ERROR(EAGAIN));
 	} else if(arc_reclaim_needed()) {
 	  dprintf("ZFS: %s arc_reclaim_needed, txg= %llu, reserve = %llu\n",
