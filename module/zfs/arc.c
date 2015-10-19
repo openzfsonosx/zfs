@@ -3344,7 +3344,9 @@ arc_reclaim_needed(void)
 #endif
     int64_t a = arc_available_memory();
     if(a < 0) {
+#ifndef _KERNEL      
       printf("ZFS: %s, arc_available_memory was negative (%lld), returning 1\n", __func__, a);
+#endif      
       return 1;
     }
 
