@@ -672,6 +672,27 @@ zfs_vnop_access(struct vnop_access_args *ap)
 	return (error);
 }
 
+void
+zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
+{
+	if ((vp != NULL) && !zfsctl_is_node(vp)) {
+		znode_t *zp = VTOZ(vp);
+		if (zp != NULL) {
+			/*
+			 * hard link references? Read the comment in
+			 * zfs_getattr_znode_unlocked for the reason for this
+			 * hackery.
+			 */
+			if ((zp->z_links > 1) &&
+			    (IFTOVT((mode_t)zp->z_mode) == VREG)) {
+				dprintf("keep_hardlink: %p has refs %llu\n", vp,
+				    zp->z_links);
+				strlcpy(zp->z_finder_hardlink_name, filename,
+				    MAXPATHLEN);
+			}
+		} //zp
+	} //vp
+}
 
 int
 zfs_vnop_lookup(struct vnop_lookup_args *ap)
@@ -773,25 +794,10 @@ zfs_vnop_lookup(struct vnop_lookup_args *ap)
 
 
 exit:
-
-	/*
-	 * hard link references?
-	 * Read the comment in zfs_getattr_znode_unlocked for the reason
-	 * for this hackery. Since getattr(VA_NAME) is extremely common
-	 * call in OSX, we opt to always save the name. We need to be careful
-	 * as zfs_dirlook can return ctldir node as well (".zfs").
-	 */
-	if (!error &&
-		(*ap->a_vpp != NULL)  &&
-		!zfsctl_is_node(*ap->a_vpp)) {
-		znode_t *zp = VTOZ(*ap->a_vpp);
-		if (zp != NULL) {
-			strlcpy(zp->z_finder_hardlink_name,
-					filename ? filename : cnp->cn_nameptr,
-					MAXPATHLEN);
-		} // zp
-	} // !error && vp
-
+	/* Set both for lookup and positive cache */
+	if (!error)
+		zfs_finder_keep_hardlink(*ap->a_vpp,
+		    filename ? filename : cnp->cn_nameptr);
 	if (filename)
 		kmem_free(filename, filename_num_bytes);
 
@@ -3956,7 +3962,7 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 
 	/* So pageout can know if it is called recursively, add this thread to list*/
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0) {
-		delay(hz>>2); /* Make me more elegant */
+		kpreempt(KPREEMPT_SYNC);
 	}
 	atomic_inc_64(&vnop_num_vnodes);
 
