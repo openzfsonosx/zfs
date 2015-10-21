@@ -937,25 +937,26 @@ zfs_vnop_access(struct vnop_access_args *ap)
 	return (error);
 }
 
-
 void
 zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
 {
-	if (vp && VTOZ(vp)) {
+	if ((vp != NULL) && !zfsctl_is_node(vp)) {
 		znode_t *zp = VTOZ(vp);
-
-		/*
-		 * hard link references?
-		 * Read the comment in zfs_getattr_znode_unlocked for the reason
-		 * for this hackery.
-		 */
-		if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) {
-			dprintf("keep_hardlink: %p has refs %llu\n", vp,
-			    zp->z_links);
-			strlcpy(zp->z_finder_hardlink_name, filename,
-			    MAXPATHLEN);
-		}
-	}
+		if (zp != NULL) {
+			/*
+			 * hard link references? Read the comment in
+			 * zfs_getattr_znode_unlocked for the reason for this
+			 * hackery.
+			 */
+			if ((zp->z_links > 1) &&
+			    (IFTOVT((mode_t)zp->z_mode) == VREG)) {
+				dprintf("keep_hardlink: %p has refs %llu\n", vp,
+				    zp->z_links);
+				strlcpy(zp->z_finder_hardlink_name, filename,
+				    MAXPATHLEN);
+			}
+		} //zp
+	} //vp
 }
 
 int
