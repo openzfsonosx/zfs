@@ -2406,6 +2406,21 @@ zpool_do_import(int argc, char **argv)
 			nvlist_free(policy);
 			return (1);
 		}
+#ifdef __APPLE__
+		/*
+		 * Check for the SYS_CONFIG privilege.  We do this explicitly
+		 * here because otherwise any attempt to import pools will
+		 * report "no such pool available."
+		 */
+		if (argc > 0 && !priv_ineffect(PRIV_SYS_CONFIG)) {
+			(void) fprintf(stderr, gettext("cannot "
+			    "import pools: permission denied\n"));
+			if (searchdirs != NULL)
+				free(searchdirs);
+
+			nvlist_free(policy);
+			return (1);
+		}
 #endif /* __APPLE__ */
 	}
 
