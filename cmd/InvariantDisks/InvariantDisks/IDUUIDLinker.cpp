@@ -23,7 +23,7 @@ namespace ID
 		DiskArbitrationHandler(logger),
 		m_base(std::move(base))
 	{
-		createPath(m_base);
+		createCleanPath(m_base);
 	}
 
 	static std::vector<std::string> getUUIDs(DiskInformation const & diskInfo)
