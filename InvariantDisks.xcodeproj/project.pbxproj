@@ -21,8 +21,9 @@
 		70C63F4F190D2AA000929DAE /* IDDiskInfoLogger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F4D190D2AA000929DAE /* IDDiskInfoLogger.cpp */; };
 		70C63F52190D2CC900929DAE /* IDDiskArbitrationUtils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F50190D2CC900929DAE /* IDDiskArbitrationUtils.cpp */; };
 		70C63F55190D4A4300929DAE /* IDMediaPathLinker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F53190D4A4300929DAE /* IDMediaPathLinker.cpp */; };
-		70C63F58190D574000929DAE /* IDFileUtils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F56190D574000929DAE /* IDFileUtils.cpp */; };
+		70C63F58190D574000929DAE /* IDFileUtils.mm in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F56190D574000929DAE /* IDFileUtils.mm */; };
 		70C63F5A190D713B00929DAE /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70C63F59190D713B00929DAE /* IOKit.framework */; };
+		70D4742E1BDD0E4200929DAE /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70D4742D1BDD0E4200929DAE /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -65,9 +66,10 @@
 		70C63F51190D2CC900929DAE /* IDDiskArbitrationUtils.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; lineEnding = 0; path = IDDiskArbitrationUtils.hpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objcpp; };
 		70C63F53190D4A4300929DAE /* IDMediaPathLinker.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDMediaPathLinker.cpp; sourceTree = "<group>"; };
 		70C63F54190D4A4300929DAE /* IDMediaPathLinker.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDMediaPathLinker.hpp; sourceTree = "<group>"; };
-		70C63F56190D574000929DAE /* IDFileUtils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDFileUtils.cpp; sourceTree = "<group>"; };
+		70C63F56190D574000929DAE /* IDFileUtils.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = IDFileUtils.mm; sourceTree = "<group>"; };
 		70C63F57190D574000929DAE /* IDFileUtils.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDFileUtils.hpp; sourceTree = "<group>"; };
 		70C63F59190D713B00929DAE /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
+		70D4742D1BDD0E4200929DAE /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -78,6 +80,7 @@
 				70C63F5A190D713B00929DAE /* IOKit.framework in Frameworks */,
 				70C63F46190CFFAC00929DAE /* DiskArbitration.framework in Frameworks */,
 				70C63F44190CFFA500929DAE /* CoreFoundation.framework in Frameworks */,
+				70D4742E1BDD0E4200929DAE /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -124,7 +127,7 @@
 				700AE3CB191530A000929DAE /* IDSerialLinker.hpp */,
 				70C63F49190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp */,
 				70C63F4A190D1AEF00929DAE /* IDDiskArbitrationDispatcher.hpp */,
-				70C63F56190D574000929DAE /* IDFileUtils.cpp */,
+				70C63F56190D574000929DAE /* IDFileUtils.mm */,
 				70C63F57190D574000929DAE /* IDFileUtils.hpp */,
 				704C391E1A3C777F00929DAE /* IDDispatchUtils.cpp */,
 				704C391F1A3C777F00929DAE /* IDDispatchUtils.hpp */,
@@ -137,6 +140,7 @@
 		70C63F47190D15FE00929DAE /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				70D4742D1BDD0E4200929DAE /* Foundation.framework */,
 				70C63F59190D713B00929DAE /* IOKit.framework */,
 				70C63F45190CFFAC00929DAE /* DiskArbitration.framework */,
 				70C63F43190CFFA500929DAE /* CoreFoundation.framework */,
@@ -226,7 +230,7 @@
 				707E3F0E1B6CDC2400929DAE /* IDASLUtils.cpp in Sources */,
 				70C63F4B190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp in Sources */,
 				70C63F4F190D2AA000929DAE /* IDDiskInfoLogger.cpp in Sources */,
-				70C63F58190D574000929DAE /* IDFileUtils.cpp in Sources */,
+				70C63F58190D574000929DAE /* IDFileUtils.mm in Sources */,
 				70C63F28190CF5E800929DAE /* main.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
