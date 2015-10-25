@@ -13,17 +13,14 @@
 #include "IDUUIDLinker.hpp"
 
 #include "IDDiskArbitrationUtils.hpp"
-#include "IDFileUtils.hpp"
 
 #include <vector>
 
 namespace ID
 {
-	UUIDLinker::UUIDLinker(std::string base, ASLClient const & logger) :
-		DiskArbitrationHandler(logger),
-		m_base(std::move(base))
+	UUIDLinker::UUIDLinker(std::string const & base, ASLClient const & logger) :
+		BaseLinker(base, logger)
 	{
-		createPath(m_base);
 	}
 
 	static std::vector<std::string> getUUIDs(DiskInformation const & diskInfo)
@@ -43,36 +40,7 @@ namespace ID
 		auto mediaUUIDs = getUUIDs(di);
 		for (auto mediaID: mediaUUIDs)
 		{
-			try
-			{
-				mediaID = m_base + "/" + mediaID;
-				std::string devicePath = "/dev/" + di.mediaBSDName;
-				logger().log(ASL_LEVEL_NOTICE, "Creating symlink: ", mediaID, " -> ", devicePath);
-				createSymlink(mediaID, devicePath);
-			}
-			catch (std::exception const & e)
-			{
-				logger().log(ASL_LEVEL_ERR, "Could not create symlink: ", e.what());
-			}
+			addLinkForDisk(base() + "/" + mediaID, di);
 		}
 	}
-
-	void UUIDLinker::diskDisappeared(DADiskRef disk, DiskInformation const & di)
-	{
-		auto mediaUUIDs = getUUIDs(di);
-		for (auto mediaID: mediaUUIDs)
-		{
-			try
-			{
-				mediaID = m_base + "/" + mediaID;
-				logger().log(ASL_LEVEL_NOTICE, "Removing symlink: ", mediaID);
-				removeFSObject(mediaID);
-			}
-			catch (std::exception const & e)
-			{
-				logger().log(ASL_LEVEL_ERR, "Could not remove symlink: ", e.what());
-			}
-		}
-	}
-
 }
