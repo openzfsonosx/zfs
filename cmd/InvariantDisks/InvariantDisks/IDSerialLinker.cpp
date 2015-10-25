@@ -22,6 +22,17 @@ namespace ID
 	SerialLinker::SerialLinker(std::string base, ASLClient const & logger) :
 		BaseLinker(std::move(base), logger)
 	{
+		createCleanPath(m_base);
+	}
+
+	bool isDevice(DiskInformation const & di)
+	{
+		return di.isDevice;
+	}
+
+	bool isWhole(DiskInformation const & di)
+	{
+		return di.mediaWhole;
 	}
 
 	static bool isInvalidSerialChar(char c)

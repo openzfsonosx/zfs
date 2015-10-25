@@ -19,6 +19,7 @@ namespace ID
 	MediaPathLinker::MediaPathLinker(std::string const & base, ASLClient const & logger) :
 		BaseLinker(base, logger)
 	{
+		createCleanPath(m_base);
 	}
 
 	static std::string prefixDevice = "IODeviceTree:/";
