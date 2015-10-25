@@ -65,7 +65,7 @@ namespace ID
 		if (err != 0)
 		{
 			Throw<Exception> e;
-			e << "Error creating symlink " << link << " pointing to " << target << ": " << strerror(err);
+			e << "Error creating symlink " << link << " pointing to " << target << ": " << strerror(errno);
 		}
 	}
 
@@ -77,7 +77,7 @@ namespace ID
 		if (err != 0 && errno != ENOENT)
 		{
 			Throw<Exception> e;
-			e << "Error removing file system object " << path << ": " << strerror(err);
+			e << "Error removing file system object " << path << ": " << strerror(errno);
 		}
 	}
 }
