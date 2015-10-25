@@ -13,23 +13,17 @@
 #ifndef ID_MEDIAPATHLINKER_HPP
 #define ID_MEDIAPATHLINKER_HPP
 
-#include "IDDiskArbitrationHandler.hpp"
-
-#include <string>
+#include "IDBaseLinker.hpp"
 
 namespace ID
 {
-	class MediaPathLinker : public DiskArbitrationHandler
+	class MediaPathLinker : public BaseLinker
 	{
 	public:
-		explicit MediaPathLinker(std::string base, ASLClient const & logger);
+		explicit MediaPathLinker(std::string const & base, ASLClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;
-		virtual void diskDisappeared(DADiskRef disk, DiskInformation const & info) override;
-
-	private:
-		std::string m_base;
 	};
 }
 
