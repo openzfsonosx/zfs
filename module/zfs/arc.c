@@ -3327,25 +3327,10 @@ static boolean_t
 arc_reclaim_needed(void)
 {
 
-#ifdef __APPLE__
-#ifdef KERNEL
-#if 0 // smd: this may be hyper-aggressive; let kmem_avail deal with it
-      // returning 1 here among other things will cause l2arc abort_lowmems.
-    if (spl_vm_pool_low()) {
-      // ARCSTAT_INCR(arcstat_memory_throttle_count, 1); // no this is reclaim not throttle
-		return 1;
-	}
-#endif    
-    if (kmem_avail() < 0) { // negative is badness
-      //printf("ZFS: %s, kmem_avail() is negative\n", __func__);
-      return 1;
-    }
-#endif
-#endif
     int64_t a = arc_available_memory();
     if(a < 0) {
 #ifdef _KERNEL      
-      printf("ZFS: %s, arc_available_memory was negative (%lld), returning 1\n", __func__, a);
+      dprintf("ZFS: %s, arc_available_memory was negative (%lld), returning 1\n", __func__, a);
 #endif      
       return 1;
     }
@@ -4963,25 +4948,16 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 #else // 0 - APPLE
 	// the return from here is used to block all writes, so we don't want to return 1
 	// except in exceptional cases - smd
-	//if (arc_reclaim_needed()) {
-	//  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
-	//  return 1;
-	//}
-	//extern unsigned int vm_page_free_wanted;
-	//
-	//if (vm_page_free_wanted > 0) // we're paging, throttle zfs writes
-	//  return (SET_ERROR(EAGAIN));
-	//int64_t ks = kmem_avail();
-	//if (ks  < 0) { // we now can have this go negative... negatives mean badness
-	//  printf("ZFS: %s, kmem_avail() is negative (%lld)\n", __func__, ks);
 	if(!spl_minimal_physmem_p()) { // && arc_reclaim_needed()) {
 	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 	  cv_signal(&arc_reclaim_thread_cv);
-	  printf("ZFS: %s THROTTLED, reclaim signalled, txg = %llu, reserve = %llu\n",
+	  printf("ZFS: %s THROTTLED by SPL, reclaim signalled, txg = %llu, reserve = %llu\n",
 		 __func__, txg, reserve);
 	  kpreempt(KPREEMPT_SYNC);
 	  return (SET_ERROR(EAGAIN));
 	} else if(arc_reclaim_needed()) {
+	  // we already printfed in arc_reclaim_needed()
+	  // we don't want to throttle in this condition, just wake up arc_reclaim_thread
 	  dprintf("ZFS: %s arc_reclaim_needed, txg= %llu, reserve = %llu\n",
 		 __func__, txg, reserve);
 	  cv_signal(&arc_reclaim_thread_cv);
