@@ -21,7 +21,6 @@ namespace ID
 	UUIDLinker::UUIDLinker(std::string const & base, ASLClient const & logger) :
 		BaseLinker(base, logger)
 	{
-		createCleanPath(m_base);
 	}
 
 	static std::vector<std::string> getUUIDs(DiskInformation const & diskInfo)
