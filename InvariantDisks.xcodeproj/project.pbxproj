@@ -24,6 +24,8 @@
 		70C63F58190D574000929DAE /* IDFileUtils.mm in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F56190D574000929DAE /* IDFileUtils.mm */; };
 		70C63F5A190D713B00929DAE /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70C63F59190D713B00929DAE /* IOKit.framework */; };
 		70D4742E1BDD0E4200929DAE /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70D4742D1BDD0E4200929DAE /* Foundation.framework */; };
+		70D474311BDD17E800929DAE /* IDSymlinkHandle.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70D4742F1BDD17E800929DAE /* IDSymlinkHandle.cpp */; };
+		70D474371BDD21E100929DAE /* IDBaseLinker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70D474351BDD21E100929DAE /* IDBaseLinker.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -70,6 +72,10 @@
 		70C63F57190D574000929DAE /* IDFileUtils.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDFileUtils.hpp; sourceTree = "<group>"; };
 		70C63F59190D713B00929DAE /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
 		70D4742D1BDD0E4200929DAE /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		70D4742F1BDD17E800929DAE /* IDSymlinkHandle.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDSymlinkHandle.cpp; sourceTree = "<group>"; };
+		70D474301BDD17E800929DAE /* IDSymlinkHandle.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDSymlinkHandle.hpp; sourceTree = "<group>"; };
+		70D474351BDD21E100929DAE /* IDBaseLinker.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDBaseLinker.cpp; sourceTree = "<group>"; };
+		70D474361BDD21E100929DAE /* IDBaseLinker.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDBaseLinker.hpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -119,6 +125,8 @@
 				70C63F4E190D2AA000929DAE /* IDDiskInfoLogger.hpp */,
 				704C39211A3C7E9600929DAE /* IDDAHandlerIdle.cpp */,
 				704C39221A3C7E9600929DAE /* IDDAHandlerIdle.hpp */,
+				70D474351BDD21E100929DAE /* IDBaseLinker.cpp */,
+				70D474361BDD21E100929DAE /* IDBaseLinker.hpp */,
 				70C63F53190D4A4300929DAE /* IDMediaPathLinker.cpp */,
 				70C63F54190D4A4300929DAE /* IDMediaPathLinker.hpp */,
 				700AE3C71915139C00929DAE /* IDUUIDLinker.cpp */,
@@ -129,6 +137,8 @@
 				70C63F4A190D1AEF00929DAE /* IDDiskArbitrationDispatcher.hpp */,
 				70C63F56190D574000929DAE /* IDFileUtils.mm */,
 				70C63F57190D574000929DAE /* IDFileUtils.hpp */,
+				70D4742F1BDD17E800929DAE /* IDSymlinkHandle.cpp */,
+				70D474301BDD17E800929DAE /* IDSymlinkHandle.hpp */,
 				704C391E1A3C777F00929DAE /* IDDispatchUtils.cpp */,
 				704C391F1A3C777F00929DAE /* IDDispatchUtils.hpp */,
 				707E3F0C1B6CDC2400929DAE /* IDASLUtils.cpp */,
@@ -227,7 +237,9 @@
 				704C39201A3C777F00929DAE /* IDDispatchUtils.cpp in Sources */,
 				704C39231A3C7E9600929DAE /* IDDAHandlerIdle.cpp in Sources */,
 				70C63F35190CF87400929DAE /* IDException.cpp in Sources */,
+				70D474311BDD17E800929DAE /* IDSymlinkHandle.cpp in Sources */,
 				707E3F0E1B6CDC2400929DAE /* IDASLUtils.cpp in Sources */,
+				70D474371BDD21E100929DAE /* IDBaseLinker.cpp in Sources */,
 				70C63F4B190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp in Sources */,
 				70C63F4F190D2AA000929DAE /* IDDiskInfoLogger.cpp in Sources */,
 				70C63F58190D574000929DAE /* IDFileUtils.mm in Sources */,

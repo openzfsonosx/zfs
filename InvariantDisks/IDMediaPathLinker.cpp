@@ -13,17 +13,12 @@
 #include "IDMediaPathLinker.hpp"
 
 #include "IDDiskArbitrationUtils.hpp"
-#include "IDFileUtils.hpp"
-
-#include <algorithm>
 
 namespace ID
 {
-	MediaPathLinker::MediaPathLinker(std::string base, ASLClient const & logger) :
-		DiskArbitrationHandler(logger),
-		m_base(std::move(base))
+	MediaPathLinker::MediaPathLinker(std::string const & base, ASLClient const & logger) :
+		BaseLinker(base, logger)
 	{
-		createCleanPath(m_base);
 	}
 
 	static std::string prefixDevice = "IODeviceTree:/";
@@ -42,36 +37,7 @@ namespace ID
 		std::string mediaPath = filterMediaPath(di.mediaPath);
 		if (!mediaPath.empty() && !di.mediaBSDName.empty())
 		{
-			try
-			{
-				mediaPath = m_base + "/" + mediaPath;
-				std::string devicePath = "/dev/" + di.mediaBSDName;
-				logger().log(ASL_LEVEL_NOTICE, "Creating symlink: ", mediaPath, " -> ", devicePath);
-				createSymlink(mediaPath, devicePath);
-			}
-			catch (std::exception const & e)
-			{
-				logger().log(ASL_LEVEL_ERR, "Could not create symlink: ", e.what());
-			}
+			addLinkForDisk(base() + "/" + mediaPath, di);
 		}
 	}
-
-	void MediaPathLinker::diskDisappeared(DADiskRef disk, DiskInformation const & di)
-	{
-		std::string mediaPath = filterMediaPath(di.mediaPath);
-		if (!mediaPath.empty())
-		{
-			try
-			{
-				mediaPath = m_base + "/" + mediaPath;
-				logger().log(ASL_LEVEL_NOTICE, "Removing symlink: ", mediaPath);
-				removeFSObject(mediaPath);
-			}
-			catch (std::exception const & e)
-			{
-				logger().log(ASL_LEVEL_ERR, "Could not remove symlink: ", e.what());
-			}
-		}
-	}
-
 }
