@@ -56,9 +56,13 @@ namespace ID
 	{
 		if (isDevice(di) && !isWhole(di))
 		{
-			size_t suffixStart = di.mediaPath.find_last_not_of("0123456789");
-			if (suffixStart != std::string::npos && di.mediaPath[suffixStart] == ':')
-				return di.mediaPath.substr(suffixStart);
+			size_t suffixStart = di.mediaBSDName.find_last_not_of("0123456789");
+			if (suffixStart != std::string::npos &&
+				suffixStart+1 < di.mediaBSDName.size() &&
+				di.mediaBSDName[suffixStart] == 's')
+			{
+				return ':' + di.mediaBSDName.substr(suffixStart+1);
+			}
 		}
 		return std::string();
 	}
