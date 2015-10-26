@@ -18,10 +18,11 @@ typedef struct osx_kstat {
 	kstat_named_t arc_zfs_arc_meta_limit;
 	kstat_named_t arc_zfs_arc_meta_min;
 	kstat_named_t arc_zfs_arc_grow_retry;
-	kstat_named_t arc_zfs_arc_shrink_shift;
 	kstat_named_t arc_zfs_arc_p_min_shift;
 	kstat_named_t arc_zfs_disable_dup_eviction;
 	kstat_named_t arc_zfs_arc_average_blocksize;
+  kstat_named_t arc_zfs_arc_shrink_shift;
+  kstat_named_t arc_zfs_arc_no_grow_shift;
 
 	kstat_named_t l2arc_write_max;
 	kstat_named_t l2arc_write_boost;
@@ -115,10 +116,11 @@ extern uint64_t zfs_arc_min;
 extern uint64_t zfs_arc_meta_limit;
 extern uint64_t zfs_arc_meta_min;
 extern int zfs_arc_grow_retry;
-extern int zfs_arc_shrink_shift;
 extern int zfs_arc_p_min_shift;
 extern int zfs_disable_dup_eviction;
 extern int zfs_arc_average_blocksize;
+extern int zfs_arc_shrink_shift;
+extern int zfs_arc_no_grow_shift;
 
 extern uint64_t l2arc_write_max;
 extern uint64_t l2arc_write_boost;

@@ -170,6 +170,8 @@ void l2arc_start(void);
 void l2arc_stop(void);
 
 extern int zfs_arc_average_blocksize;
+extern int zfs_arc_shrink_shift;
+extern int zfs_arc_no_grow_shift;
 
 #ifndef _KERNEL
 extern boolean_t arc_watch;

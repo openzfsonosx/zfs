@@ -232,6 +232,7 @@ uint64_t zfs_arc_meta_limit = 0;
 uint64_t zfs_arc_meta_min = 0;
 int zfs_arc_grow_retry = 0;
 int zfs_arc_shrink_shift = 0;
+int zfs_arc_no_grow_shift = 0;
 int zfs_arc_p_min_shift = 0;
 int zfs_disable_dup_eviction = 0;
 int zfs_arc_average_blocksize = 8 * 1024; /* 8KB */
@@ -5147,9 +5148,38 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 		}
 
 		zfs_arc_grow_retry        = ks->arc_zfs_arc_grow_retry.value.ui64;
-        arc_grow_retry = zfs_arc_grow_retry;
+		arc_grow_retry = zfs_arc_grow_retry;
 
-		zfs_arc_shrink_shift      = ks->arc_zfs_arc_shrink_shift.value.ui64;
+		if(ks->arc_zfs_arc_shrink_shift.value.ui64 != zfs_arc_shrink_shift) {
+		  zfs_arc_shrink_shift = (int)ks->arc_zfs_arc_shrink_shift.value.ui64;
+		  if(zfs_arc_shrink_shift &&
+		     zfs_arc_shrink_shift < 30 &&
+		     (int)zfs_arc_shrink_shift > arc_no_grow_shift) {
+		    printf("ZFS: arc_shrink_shift changing from %d to %d\n",
+			   arc_shrink_shift, zfs_arc_shrink_shift);
+		    arc_shrink_shift = zfs_arc_shrink_shift;
+		  } else {
+		    printf("ZFS: cannot set arc_shrink_shift to %d, staying at %d\n",
+			   zfs_arc_shrink_shift, arc_shrink_shift);
+		    zfs_arc_shrink_shift = arc_shrink_shift;
+		  }
+		}
+
+		if(ks->arc_zfs_arc_no_grow_shift.value.ui64 != zfs_arc_no_grow_shift) {
+		  zfs_arc_no_grow_shift = ks->arc_zfs_arc_no_grow_shift.value.ui64;
+		  if(zfs_arc_no_grow_shift &&
+		     zfs_arc_no_grow_shift < 30 &&
+		     zfs_arc_no_grow_shift < arc_shrink_shift) {
+		    printf("ZFS: arc_no_grow_shift changing from %d to %d\n",
+			   arc_no_grow_shift, zfs_arc_no_grow_shift);
+		    arc_no_grow_shift = zfs_arc_no_grow_shift;
+		  } else {
+		    printf("ZFS: cannot set arc_no_grow_shift to %d, staying at %d\n",
+			   zfs_arc_no_grow_shift, arc_no_grow_shift);
+		    zfs_arc_no_grow_shift = arc_no_grow_shift;
+		  }
+		}
+
 		zfs_arc_p_min_shift       = ks->arc_zfs_arc_p_min_shift.value.ui64;
 		zfs_disable_dup_eviction  = ks->arc_zfs_disable_dup_eviction.value.ui64;
 		zfs_arc_average_blocksize = ks->arc_zfs_arc_average_blocksize.value.ui64;
@@ -5166,7 +5196,8 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 
 		ks->arc_zfs_arc_grow_retry.value.ui64        =
 			zfs_arc_grow_retry ? zfs_arc_grow_retry : arc_grow_retry;
-		ks->arc_zfs_arc_shrink_shift.value.ui64      = zfs_arc_shrink_shift;
+		ks->arc_zfs_arc_shrink_shift.value.ui64      = (uint64_t)arc_shrink_shift;
+		ks->arc_zfs_arc_no_grow_shift.value.ui64     = (uint64_t)arc_no_grow_shift;
 		ks->arc_zfs_arc_p_min_shift.value.ui64       = zfs_arc_p_min_shift;
 		ks->arc_zfs_disable_dup_eviction.value.ui64  = zfs_disable_dup_eviction;
 		ks->arc_zfs_arc_average_blocksize.value.ui64 = zfs_arc_average_blocksize;

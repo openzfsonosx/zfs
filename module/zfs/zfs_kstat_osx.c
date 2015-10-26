@@ -73,10 +73,11 @@ osx_kstat_t osx_kstat = {
 	{ "zfs_arc_meta_limit",			KSTAT_DATA_UINT64 },
 	{ "zfs_arc_meta_min",			KSTAT_DATA_UINT64 },
 	{ "zfs_arc_grow_retry",			KSTAT_DATA_UINT64 },
-	{ "zfs_arc_shrink_shift",		KSTAT_DATA_UINT64 },
 	{ "zfs_arc_p_min_shift",		KSTAT_DATA_UINT64 },
 	{ "zfs_disable_dup_eviction",	KSTAT_DATA_UINT64 },
 	{ "zfs_arc_average_blocksize",	KSTAT_DATA_UINT64 },
+	{ "zfs_arc_shrink_shift",		KSTAT_DATA_UINT64 },
+	{ "zfs_arc_no_grow_shift",			KSTAT_DATA_UINT64 },
 
 	{ "l2arc_write_max",			KSTAT_DATA_UINT64 },
 	{ "l2arc_write_boost",			KSTAT_DATA_UINT64 },
