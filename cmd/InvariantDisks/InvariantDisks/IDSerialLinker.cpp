@@ -52,6 +52,21 @@ namespace ID
 		return s;
 	}
 
+	std::string partitionSuffix(DiskInformation const & di)
+	{
+		if (isDevice(di) && !isWhole(di))
+		{
+			size_t suffixStart = di.mediaBSDName.find_last_not_of("0123456789");
+			if (suffixStart != std::string::npos &&
+				suffixStart+1 < di.mediaBSDName.size() &&
+				di.mediaBSDName[suffixStart] == 's')
+			{
+				return ':' + di.mediaBSDName.substr(suffixStart+1);
+			}
+		}
+		return std::string();
+	}
+
 	std::string formatSerial(DiskInformation const & di)
 	{
 		std::string model = trim(di.deviceModel);
