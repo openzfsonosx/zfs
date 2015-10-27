@@ -275,7 +275,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		vap->va_parentid = parent;
 
 	// Hardlinks: Return cached parentid, make it 2 if root.
-	if (ishardlink)
+	if (ishardlink && zp->z_finder_parentid)
 		vap->va_parentid = (zp->z_finder_parentid == zfsvfs->z_root) ?
 			2 : zp->z_finder_parentid;
 
@@ -402,34 +402,14 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
 			if (!findnode) {
 				static uint32_t zfs_hardlink_sequence = 1<<31;
-				// Search again after getting write lock
-				rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
-				zp->z_finder_hardlink = TRUE;
-				findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
-				if (!findnode) {
-					// Add hash entry
-					findnode = kmem_alloc(sizeof(hardlinks_t), KM_SLEEP);
 
-					findnode->hl_parent = vap->va_parentid;
-					findnode->hl_fileid = zp->z_id;
-					strlcpy(findnode->hl_name, zp->z_name_cache, PATH_MAX);
+				zfs_hardlink_addmap(zp, vap->va_parentid, zfs_hardlink_sequence);
+				VATTR_RETURN(vap, va_linkid, zfs_hardlink_sequence);
+				atomic_inc_32(&zfs_hardlink_sequence);
 
-					findnode->hl_linkid = zfs_hardlink_sequence;
-					atomic_inc_32(&zfs_hardlink_sequence);
-
-					avl_add(&zfsvfs->z_hardlinks, findnode);
-					avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
-					dprintf("ZFS: Inserted new hardlink node (%llu,%llu,'%s') <-> (%x,%u)\n",
-						   findnode->hl_parent,
-						   findnode->hl_fileid, findnode->hl_name,
-						   findnode->hl_linkid, findnode->hl_linkid	);
-				} // findnode2
-				rw_exit(&zfsvfs->z_hardlinks_lock);
-
-			} // findnode
-
-			// return made, or found, linkid.
-			VATTR_RETURN(vap, va_linkid, findnode->hl_linkid);
+			} else {
+				VATTR_RETURN(vap, va_linkid, findnode->hl_linkid);
+			}
 
 		} else { // !ishardlink - use same as fileid
 
@@ -1999,3 +1979,40 @@ int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags)
 
 	return error;
 }
+
+
+
+int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid)
+{
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	hardlinks_t searchnode, *findnode;
+	avl_index_t loc;
+
+	searchnode.hl_parent = parentid;
+	searchnode.hl_fileid = zp->z_id;
+	strlcpy(searchnode.hl_name, zp->z_name_cache, PATH_MAX);
+
+	rw_enter(&zfsvfs->z_hardlinks_lock, RW_WRITER);
+	findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
+	if (!findnode) {
+		// Add hash entry
+		zp->z_finder_hardlink = TRUE;
+		findnode = kmem_alloc(sizeof(hardlinks_t), KM_SLEEP);
+
+		findnode->hl_parent = parentid;
+		findnode->hl_fileid = zp->z_id;
+		strlcpy(findnode->hl_name, zp->z_name_cache, PATH_MAX);
+
+		findnode->hl_linkid = linkid;
+
+		avl_add(&zfsvfs->z_hardlinks, findnode);
+		avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
+		printf("ZFS: Inserted new hardlink node (%llu,%llu,'%s') <-> (%x,%u)\n",
+				findnode->hl_parent,
+				findnode->hl_fileid, findnode->hl_name,
+				findnode->hl_linkid, findnode->hl_linkid	);
+	} // findnode2
+	rw_exit(&zfsvfs->z_hardlinks_lock);
+
+	return findnode ? 1 : 0;
+} // findnode
