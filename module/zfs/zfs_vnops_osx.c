@@ -1142,6 +1142,8 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp)
 
 	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
 		1 : 0;
+	if (zp->z_finder_hardlink)
+		ishardlink = 1;
 
 	if (!ishardlink) return 0;
 
@@ -1161,7 +1163,9 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp)
 		avl_remove(&zfsvfs->z_hardlinks_linkid, findnode);
 		rw_exit(&zfsvfs->z_hardlinks_lock);
 		kmem_free(findnode, sizeof(*findnode));
-		dprintf("ZFS: removed hash '%s'\n", zp->z_name_cache);
+		printf("ZFS: removed hash '%s'\n", zp->z_name_cache);
+		zp->z_name_cache[0] = 0;
+		zp->z_finder_parentid = 0;
 		return 1;
 	}
 	return 0;
@@ -1189,6 +1193,8 @@ static int zfs_rename_hardlink(struct vnode *vp,
 
 	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
 		1 : 0;
+	if (zp->z_finder_hardlink)
+		ishardlink = 1;
 
 	if (!ishardlink) return 0;
 
@@ -1237,7 +1243,7 @@ static int zfs_rename_hardlink(struct vnode *vp,
 			kmem_free(delnode, sizeof(*delnode));
 		}
 
-		dprintf("ZFS: renamed hash %llu (%llu:'%s' to %llu:'%s'): %s\n",
+		printf("ZFS: renamed hash %llu (%llu:'%s' to %llu:'%s'): %s\n",
 			   zp->z_id,
 			   parent_fid, from,
 			   parent_tid, to,
@@ -1760,6 +1766,15 @@ zfs_vnop_link(struct vnop_link_args *ap)
 		vnode_setmultipath(ap->a_vp);
 		cache_purge(ap->a_vp);
 		cache_purge_negatives(ap->a_tdvp);
+	}
+
+		// If we rolled from single file into hardlinks, we had better set up
+		// a mapping for the original entry which used fileid.
+		znode_t *zp = VTOZ(ap->a_vp);
+		znode_t *dzp = VTOZ(ap->a_tdvp);
+		zfs_hardlink_addmap(zp,
+							dzp->z_id == zp->z_zfsvfs->z_root ? 2 : dzp->z_id,
+							zp->z_id);
 	}
 
 	return (error);
