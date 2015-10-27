@@ -693,6 +693,7 @@ dsl_dataset_tryown(dsl_dataset_t *ds, void *tag)
 {
 	boolean_t gotit = FALSE;
 
+	ASSERT(dsl_pool_config_held(ds->ds_dir->dd_pool));
 	mutex_enter(&ds->ds_lock);
 	if (ds->ds_owner == NULL && !DS_IS_INCONSISTENT(ds)) {
 		ds->ds_owner = tag;
@@ -701,6 +702,16 @@ dsl_dataset_tryown(dsl_dataset_t *ds, void *tag)
 	}
 	mutex_exit(&ds->ds_lock);
 	return (gotit);
+}
+
+boolean_t
+dsl_dataset_has_owner(dsl_dataset_t *ds)
+{
+  boolean_t rv;
+  mutex_enter(&ds->ds_lock);
+  rv = (ds->ds_owner != NULL);
+  mutex_exit(&ds->ds_lock);
+  return (rv);
 }
 
 uint64_t

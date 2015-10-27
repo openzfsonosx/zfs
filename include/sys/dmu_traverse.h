@@ -38,7 +38,6 @@ struct dnode_phys;
 struct dsl_dataset;
 struct zilog;
 struct arc_buf;
-struct zbookmark;
 
 typedef int (blkptr_cb_t)(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
     const zbookmark_phys_t *zb, const struct dnode_phys *dnp, void *arg);

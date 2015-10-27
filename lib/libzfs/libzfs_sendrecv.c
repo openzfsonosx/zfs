@@ -1419,7 +1419,7 @@ zfs_send_resume_token_to_nvlist(libzfs_handle_t *hdl, const char *token)
 	    &version, &checksum, &packed_len);
 	if (nread != 3) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "resume token is corrupt (sscanf failed)"));
+		    "resume token is corrupt (invalid format)"));
 		return (NULL);
 	}
 
@@ -1458,7 +1458,8 @@ zfs_send_resume_token_to_nvlist(libzfs_handle_t *hdl, const char *token)
 	/* uncompress */
 	void *packed = zfs_alloc(hdl, packed_len);
 	unsigned long packed_len_long = packed_len;
-	if (uncompress(packed, &packed_len_long, compressed, len) != Z_OK) {
+	if (uncompress(packed, &packed_len_long, compressed, len) != Z_OK ||
+	  packed_len_long != packed_len) {
 		free(packed);
 		free(compressed);
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
@@ -1490,25 +1491,25 @@ zfs_send_resume(libzfs_handle_t *hdl, sendflags_t *flags, int outfd,
 	zfs_handle_t *zhp;
 	int error = 0;
 	char name[ZFS_MAXNAMELEN];
-	nvlist_t *resume_nvl =
-	    zfs_send_resume_token_to_nvlist(hdl, resume_token);
 	enum lzc_send_flags lzc_flags = 0;
-
-	if (flags->verbose) {
-		(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
-		    "resume token contents:\n"));
-		nvlist_print(stderr, resume_nvl);
-	}
 
 	(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
 	    "cannot resume send"));
 
+	nvlist_t *resume_nvl =
+	  zfs_send_resume_token_to_nvlist(hdl, resume_token);
 	if (resume_nvl == NULL) {
 		/*
 		 * zfs_error_aux has already been set by
 		 * zfs_send_resume_token_to_nvlist
 		 */
 		return (zfs_error(hdl, EZFS_FAULT, errbuf));
+	}
+
+	if (flags->verbose) {
+	  (void) fprintf(stderr, dgettext(TEXT_DOMAIN,
+					  "resume token contents:\n"));
+	  nvlist_print(stderr, resume_nvl);
 	}
 
 	if (nvlist_lookup_string(resume_nvl, "toname", &toname) != 0 ||
@@ -2186,6 +2187,7 @@ guid_to_name_cb(zfs_handle_t *zhp, void *arg)
 	if (gtnd->skip != NULL &&
 	    (slash = strrchr(zhp->zfs_name, '/')) != NULL &&
 	    strcmp(slash + 1, gtnd->skip) == 0) {
+	  zfs_close(zhp);
 		return (0);
 	}
 
@@ -2213,12 +2215,9 @@ static int
 guid_to_name(libzfs_handle_t *hdl, const char *parent, uint64_t guid,
     boolean_t bookmark_ok, char *name)
 {
-	/* exhaustive search all local snapshots */
+
 	char pname[ZFS_MAXNAMELEN];
 	guid_to_name_data_t gtnd;
-	int err = 0;
-	zfs_handle_t *zhp;
-	char *cp;
 
 	gtnd.guid = guid;
 	gtnd.bookmark_ok = bookmark_ok;
@@ -2228,20 +2227,27 @@ guid_to_name(libzfs_handle_t *hdl, const char *parent, uint64_t guid,
 	(void) strlcpy(pname, parent, sizeof (pname));
 
 	/*
-	 * Search progressively larger portions of the hierarchy.  This will
+	 * Search progressively larger portions of the hierarchy, starting
+	 * with the filesystem specified by 'parent'. This will
 	 * select the "most local" version of the origin snapshot in the case
 	 * that there are multiple matching snapshots in the system.
 	 */
-	while ((cp = strrchr(pname, '/')) != NULL) {
-
+	(void) strlcpy(pname, parent, sizeof(pname));
+	char *cp = strrchr(pname, '@');
+	if(cp == NULL)
+	  cp = strchr(pname, '\0');
+	for(; cp != NULL; cp = strrchr(pname, '/')) {
 		/* Chop off the last component and open the parent */
 		*cp = '\0';
-		zhp = make_dataset_handle(hdl, pname);
+		zfs_handle_t *zhp = make_dataset_handle(hdl, pname);
 
 		if (zhp == NULL)
 			continue;
 
+		int err = guid_to_name_cb(zfs_handle_dup(zhp), &gtnd);
 		err = zfs_iter_children(zhp, guid_to_name_cb, &gtnd);
+		if(err != EEXIST)
+		  err = zfs_iter_children(zhp, guid_to_name_cb, &gtnd);
 		if (err != EEXIST && bookmark_ok)
 			err = zfs_iter_bookmarks(zhp, guid_to_name_cb, &gtnd);
 		zfs_close(zhp);
@@ -3703,3 +3709,4 @@ zfs_receive(libzfs_handle_t *hdl, const char *tosnap, recvflags_t *flags,
 
 	return (err);
 }
+ 

@@ -1523,6 +1523,16 @@ dmu_recv_resume_begin_check(void *arg, dmu_tx_t *tx)
 		return (SET_ERROR(EINVAL));
 	}
 
+	/*
+	 * Check if the receive is still running.  If so, it will be owned.
+	 * Note that nothing else can own the dataset (e.g. after the receive
+	 * fails) because it will be marked inconsistent.
+	 */
+	if (dsl_dataset_has_owner(ds)) {
+	  dsl_dataset_rele(ds, FTAG);
+	  return (SET_ERROR(EBUSY));
+	}
+
 	/* There should not be any snapshots of this fs yet. */
 	if (ds->ds_prev != NULL && ds->ds_prev->ds_dir == ds->ds_dir) {
 		dsl_dataset_rele(ds, FTAG);
@@ -2727,17 +2737,21 @@ dmu_recv_stream(dmu_recv_cookie_t *drc, vnode_t *vp, offset_t *voffp,
 	}
 
 	uint32_t payloadlen = drc->drc_drr_begin->drr_payloadlen;
-	void *payload = kmem_alloc(payloadlen, KM_SLEEP);
+	void *payload = NULL;
+	if (payloadlen != 0)
+	    payload = kmem_alloc(payloadlen, KM_SLEEP);
 
 	err = receive_read_payload_and_next_header(&ra, payloadlen, payload);
-	if (err != 0)
+	if (err != 0) {
+	  if (payloadlen != 0)
+	    kmem_free(payload, payloadlen);
 		goto out;
+	}
 	if (payloadlen != 0) {
 		err = nvlist_unpack(payload, payloadlen, &begin_nvl, KM_SLEEP);
 		kmem_free(payload, payloadlen);
 		if (err != 0)
 			goto out;
-
 	}
 
 	if (featureflags & DMU_BACKUP_FEATURE_RESUMING) {
