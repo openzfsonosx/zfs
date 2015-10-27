@@ -243,6 +243,7 @@ typedef struct znode {
 	 */
     char        z_name_cache[MAXPATHLEN];
 	uint64_t    z_finder_parentid;
+	boolean_t   z_finder_hardlink;  /* set high if it ever had a hardlink hash */
 
 	boolean_t   z_fastpath;
 	boolean_t   z_reclaim_reentry; /* vnode_create()->vnop_reclaim() */
