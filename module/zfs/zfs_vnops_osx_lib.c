@@ -212,6 +212,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
 	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
 		1 : 0;
+	if (zp->z_finder_hardlink == TRUE)
+		ishardlink = 1;
 
 	/* Work out which SA we need to fetch */
 
@@ -402,6 +404,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 				static uint32_t zfs_hardlink_sequence = 1<<31;
 				// Search again after getting write lock
 				rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
+				zp->z_finder_hardlink = TRUE;
 				findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
 				if (!findnode) {
 					// Add hash entry
