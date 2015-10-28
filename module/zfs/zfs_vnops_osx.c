@@ -763,6 +763,9 @@ static void zfs_cache_name(struct vnode *vp, struct vnode *dvp, char *filename)
 		!VTOZ(vp))
 		return;
 
+	// Only cache files, or we might end up caching "."
+	if (!vnode_isreg(vp)) return;
+
 	zp = VTOZ(vp);
 
 	strlcpy(zp->z_name_cache,
@@ -930,7 +933,7 @@ zfs_vnop_create(struct vnop_create_args *ap)
 }
 
 
-static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp)
+static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp, char *name)
 {
 	/*
 	 * Because we store hash of hardlinks in an AVLtree, we need to remove
@@ -955,10 +958,13 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp)
 
 	if (!ishardlink) return 0;
 
+	dprintf("ZFS: removing hash (%llu,%llu,'%s')\n",
+		   dzp->z_id, zp->z_id, name);
+
 	// Attempt to remove from hardlink avl, if its there
 	searchnode.hl_parent = dzp->z_id == zfsvfs->z_root ? 2 : dzp->z_id;
 	searchnode.hl_fileid = zp->z_id;
-	strlcpy(searchnode.hl_name, zp->z_name_cache, PATH_MAX);
+	strlcpy(searchnode.hl_name, name, PATH_MAX);
 
 	rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
 	findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
@@ -971,7 +977,7 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp)
 		avl_remove(&zfsvfs->z_hardlinks_linkid, findnode);
 		rw_exit(&zfsvfs->z_hardlinks_lock);
 		kmem_free(findnode, sizeof(*findnode));
-		printf("ZFS: removed hash '%s'\n", zp->z_name_cache);
+		dprintf("ZFS: removed hash '%s'\n", name);
 		zp->z_name_cache[0] = 0;
 		zp->z_finder_parentid = 0;
 		return 1;
@@ -1099,7 +1105,8 @@ zfs_vnop_remove(struct vnop_remove_args *ap)
 		cache_purge(ap->a_vp);
 
 		zfs_remove_hardlink(ap->a_vp,
-							ap->a_dvp);
+							ap->a_dvp,
+							ap->a_cnp->cn_nameptr);
 
 	}
 	return (error);
@@ -1551,14 +1558,6 @@ zfs_vnop_link(struct vnop_link_args *ap)
 	if (!error) {
 		// Set source vnode to multipath too, zfs_get_vnode() handles the target
 		vnode_setmultipath(ap->a_vp);
-
-		// If we rolled from single file into hardlinks, we had better set up
-		// a mapping for the original entry which used fileid.
-		znode_t *zp = VTOZ(ap->a_vp);
-		znode_t *dzp = VTOZ(ap->a_tdvp);
-		zfs_hardlink_addmap(zp,
-							dzp->z_id == zp->z_zfsvfs->z_root ? 2 : dzp->z_id,
-							zp->z_id);
 	}
 
 	return (error);
