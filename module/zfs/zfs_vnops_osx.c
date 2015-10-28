@@ -1771,6 +1771,8 @@ zfs_vnop_link(struct vnop_link_args *ap)
 	if (!error) {
 		// Set source vnode to multipath too, zfs_get_vnode() handles the target
 		vnode_setmultipath(ap->a_vp);
+		cache_purge(ap->a_vp);
+		cache_purge_negatives(ap->a_tdvp);
 	}
 
 	return (error);
