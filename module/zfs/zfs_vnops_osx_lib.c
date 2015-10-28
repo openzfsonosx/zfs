@@ -516,14 +516,15 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
     }
 #endif
 
-	if (ishardlink)
-		dprintf("ZFS:getattr(%s,%llu,%llu) parent %llu: cache_parent %llu\n",
+	if (ishardlink) {
+		dprintf("ZFS:getattr(%s,%llu,%llu) parent %llu: cache_parent %llu: va_nlink %u\n",
 			   VATTR_IS_ACTIVE(vap, va_name) ? vap->va_name : zp->z_name_cache,
 			   vap->va_fileid,
 			   VATTR_IS_ACTIVE(vap, va_linkid) ? vap->va_linkid : 0,
 			   vap->va_parentid,
-			zp->z_finder_parentid);
-
+			   zp->z_finder_parentid,
+			vap->va_nlink);
+	}
 
 	vap->va_supported |= ZFS_SUPPORTED_VATTRS;
 	uint64_t missing = 0;
@@ -2102,7 +2103,7 @@ int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid)
 
 		avl_add(&zfsvfs->z_hardlinks, findnode);
 		avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
-		printf("ZFS: Inserted new hardlink node (%llu,%llu,'%s') <-> (%x,%u)\n",
+		dprintf("ZFS: Inserted new hardlink node (%llu,%llu,'%s') <-> (%x,%u)\n",
 				findnode->hl_parent,
 				findnode->hl_fileid, findnode->hl_name,
 				findnode->hl_linkid, findnode->hl_linkid	);

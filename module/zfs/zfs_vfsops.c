@@ -2793,7 +2793,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	return (0);
 }
 
-
 static int
 zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 {
@@ -2880,9 +2879,12 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
 			dprintf("vget: updating vnode to '%s' and parent %llu\n",
 				   findnode->hl_name, findnode->hl_parent);
-			vnode_update_identity(*vpp, NULL, findnode->hl_name,
+
+			vnode_update_identity(*vpp,
+								  NULL,
+								  findnode->hl_name,
 								  strlen(findnode->hl_name),
-								  findnode->hl_parent,
+								  0,
 								  VNODE_UPDATE_NAME|VNODE_UPDATE_PARENT);
 			strlcpy(zp->z_name_cache, findnode->hl_name, PATH_MAX);
 			zp->z_finder_parentid = findnode->hl_parent;
