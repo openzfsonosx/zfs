@@ -12,7 +12,5 @@
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
-	<key>TimeOut</key>
-	<integer>0</integer>
 </dict>
 </plist>
