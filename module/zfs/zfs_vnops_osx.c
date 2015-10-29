@@ -763,6 +763,9 @@ static void zfs_cache_name(struct vnode *vp, struct vnode *dvp, char *filename)
 		!VTOZ(vp))
 		return;
 
+	// Only cache files, or we might end up caching "."
+	if (!vnode_isreg(vp)) return;
+
 	zp = VTOZ(vp);
 
 	strlcpy(zp->z_name_cache,
@@ -930,7 +933,7 @@ zfs_vnop_create(struct vnop_create_args *ap)
 }
 
 
-static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp)
+static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp, char *name)
 {
 	/*
 	 * Because we store hash of hardlinks in an AVLtree, we need to remove
@@ -950,13 +953,18 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp)
 
 	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
 		1 : 0;
+	if (zp->z_finder_hardlink)
+		ishardlink = 1;
 
 	if (!ishardlink) return 0;
+
+	dprintf("ZFS: removing hash (%llu,%llu,'%s')\n",
+		   dzp->z_id, zp->z_id, name);
 
 	// Attempt to remove from hardlink avl, if its there
 	searchnode.hl_parent = dzp->z_id == zfsvfs->z_root ? 2 : dzp->z_id;
 	searchnode.hl_fileid = zp->z_id;
-	strlcpy(searchnode.hl_name, zp->z_name_cache, PATH_MAX);
+	strlcpy(searchnode.hl_name, name, PATH_MAX);
 
 	rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
 	findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
@@ -969,14 +977,16 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp)
 		avl_remove(&zfsvfs->z_hardlinks_linkid, findnode);
 		rw_exit(&zfsvfs->z_hardlinks_lock);
 		kmem_free(findnode, sizeof(*findnode));
-		dprintf("ZFS: removed hash '%s'\n", zp->z_name_cache);
+		dprintf("ZFS: removed hash '%s'\n", name);
+		zp->z_name_cache[0] = 0;
+		zp->z_finder_parentid = 0;
 		return 1;
 	}
 	return 0;
 }
 
 
-static int zfs_rename_hardlink(struct vnode *vp,
+static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 							   struct vnode *fdvp, struct vnode *tdvp,
 							   char *from, char *to)
 {
@@ -995,8 +1005,26 @@ static int zfs_rename_hardlink(struct vnode *vp,
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
+	if (tvp) {
+		znode_t *tzp = VTOZ(tvp);
+		if (tzp) {
+			/* We also need to correct the parent id of the target, for
+			 * vget to be able to reply with the correct id. Used by mds
+			 * and Finder. */
+			tzp->z_finder_parentid = VTOZ(tdvp)->z_id;
+
+			vnode_update_identity(tvp, tdvp, 0,
+								  0, 0,
+								  VNODE_UPDATE_PARENT);
+			dprintf("ZFS: updated finder_parentid to %llu\n",
+				   tzp->z_finder_parentid);
+		}
+	}
+
 	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
 		1 : 0;
+	if (zp->z_finder_hardlink)
+		ishardlink = 1;
 
 	if (!ishardlink) return 0;
 
@@ -1013,6 +1041,7 @@ static int zfs_rename_hardlink(struct vnode *vp,
 
 	dprintf("ZFS: looking to rename hardlinks (%llu,%llu,%s)\n",
 		   parent_fid, zp->z_id, from);
+
 
 	// Attempt to remove from hardlink avl, if its there
 	searchnode.hl_parent = parent_fid;
@@ -1054,12 +1083,12 @@ static int zfs_rename_hardlink(struct vnode *vp,
 		// Update source node to new hash, and name.
 		findnode->hl_parent = parent_tid;
 		strlcpy(findnode->hl_name, to, PATH_MAX);
+		zp->z_finder_parentid = parent_tid;
 
 		avl_add(&zfsvfs->z_hardlinks, findnode);
 		avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
 
 		rw_exit(&zfsvfs->z_hardlinks_lock);
-
 		return 1;
 	}
 	return 0;
@@ -1093,7 +1122,8 @@ zfs_vnop_remove(struct vnop_remove_args *ap)
 		cache_purge(ap->a_vp);
 
 		zfs_remove_hardlink(ap->a_vp,
-							ap->a_dvp);
+							ap->a_dvp,
+							ap->a_cnp->cn_nameptr);
 
 	}
 	return (error);
@@ -1444,12 +1474,13 @@ zfs_vnop_rename(struct vnop_rename_args *ap)
 		cache_purge_negatives(ap->a_tdvp);
 		cache_purge(ap->a_fvp);
 
-		zfs_rename_hardlink(ap->a_fvp,
+		zfs_rename_hardlink(ap->a_fvp, ap->a_tvp,
 							ap->a_fdvp, ap->a_tdvp,
 							ap->a_fcnp->cn_nameptr,
 							ap->a_tcnp->cn_nameptr);
-		if (ap->a_tvp)
+		if (ap->a_tvp) {
 			cache_purge(ap->a_tvp);
+		}
 	}
 
 	return (error);
@@ -1542,8 +1573,12 @@ zfs_vnop_link(struct vnop_link_args *ap)
 
 	error = zfs_link(ap->a_tdvp, ap->a_vp, ap->a_cnp->cn_nameptr, cr, ct,
 	    /* flags */0);
-	if (!error)
+	if (!error) {
+		// Set source vnode to multipath too, zfs_get_vnode() handles the target
 		vnode_setmultipath(ap->a_vp);
+		cache_purge(ap->a_vp);
+		cache_purge_negatives(ap->a_tdvp);
+	}
 
 	return (error);
 }
