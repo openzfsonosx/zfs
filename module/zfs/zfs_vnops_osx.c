@@ -986,7 +986,7 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp, char *name)
 }
 
 
-static int zfs_rename_hardlink(struct vnode *vp,
+static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 							   struct vnode *fdvp, struct vnode *tdvp,
 							   char *from, char *to)
 {
@@ -1004,6 +1004,22 @@ static int zfs_rename_hardlink(struct vnode *vp,
 	if (!vp || !VTOZ(vp)) return 0;
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+	if (tvp) {
+		znode_t *tzp = VTOZ(tvp);
+		if (tzp) {
+			/* We also need to correct the parent id of the target, for
+			 * vget to be able to reply with the correct id. Used by mds
+			 * and Finder. */
+			tzp->z_finder_parentid = VTOZ(tdvp)->z_id;
+
+			vnode_update_identity(tvp, tdvp, 0,
+								  0, 0,
+								  VNODE_UPDATE_PARENT);
+			dprintf("ZFS: updated finder_parentid to %llu\n",
+				   tzp->z_finder_parentid);
+		}
+	}
 
 	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
 		1 : 0;
@@ -1025,6 +1041,7 @@ static int zfs_rename_hardlink(struct vnode *vp,
 
 	dprintf("ZFS: looking to rename hardlinks (%llu,%llu,%s)\n",
 		   parent_fid, zp->z_id, from);
+
 
 	// Attempt to remove from hardlink avl, if its there
 	searchnode.hl_parent = parent_fid;
@@ -1057,7 +1074,7 @@ static int zfs_rename_hardlink(struct vnode *vp,
 			kmem_free(delnode, sizeof(*delnode));
 		}
 
-		printf("ZFS: renamed hash %llu (%llu:'%s' to %llu:'%s'): %s\n",
+		dprintf("ZFS: renamed hash %llu (%llu:'%s' to %llu:'%s'): %s\n",
 			   zp->z_id,
 			   parent_fid, from,
 			   parent_tid, to,
@@ -1066,12 +1083,12 @@ static int zfs_rename_hardlink(struct vnode *vp,
 		// Update source node to new hash, and name.
 		findnode->hl_parent = parent_tid;
 		strlcpy(findnode->hl_name, to, PATH_MAX);
+		zp->z_finder_parentid = parent_tid;
 
 		avl_add(&zfsvfs->z_hardlinks, findnode);
 		avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
 
 		rw_exit(&zfsvfs->z_hardlinks_lock);
-
 		return 1;
 	}
 	return 0;
@@ -1457,12 +1474,13 @@ zfs_vnop_rename(struct vnop_rename_args *ap)
 		cache_purge_negatives(ap->a_tdvp);
 		cache_purge(ap->a_fvp);
 
-		zfs_rename_hardlink(ap->a_fvp,
+		zfs_rename_hardlink(ap->a_fvp, ap->a_tvp,
 							ap->a_fdvp, ap->a_tdvp,
 							ap->a_fcnp->cn_nameptr,
 							ap->a_tcnp->cn_nameptr);
-		if (ap->a_tvp)
+		if (ap->a_tvp) {
 			cache_purge(ap->a_tvp);
+		}
 	}
 
 	return (error);
