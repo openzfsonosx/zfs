@@ -1381,14 +1381,14 @@ again:
 		 * in order to support the sync of open-unlinked files
 		 */
 		if (!(flags & ZGET_FLAG_UNLINKED) && zp->z_unlinked) {
-			dmu_buf_rele(db, NULL);
 			mutex_exit(&zp->z_lock);
+			sa_buf_rele(db, NULL);
 			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 			return (ENOENT);
 		}
 
-		dmu_buf_rele(db, NULL);
 		mutex_exit(&zp->z_lock);
+		sa_buf_rele(db, NULL);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
 		if ((flags & ZGET_FLAG_WITHOUT_VNODE_GET)) {
