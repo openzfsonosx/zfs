@@ -543,7 +543,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 
         }
         zap_cursor_fini(&zc);
-        printf("ZFS: unlinked drain completed (%llu).\n", entries);
+        if (entries) printf("ZFS: unlinked drain completed (%llu).\n", entries);
 
 }
 
@@ -576,8 +576,9 @@ zfs_purgedir(znode_t *dzp)
 	for (zap_cursor_init(&zc, zfsvfs->z_os, dzp->z_id);
 	    (error = zap_cursor_retrieve(&zc, &zap)) == 0;
 	    zap_cursor_advance(&zc)) {
-		error = zfs_zget_sans_vnode(zfsvfs,
-		    ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp);
+		error = zfs_zget_ext(zfsvfs,
+							 ZFS_DIRENT_OBJ(zap.za_first_integer), &xzp,
+							 ZGET_FLAG_WITHOUT_VNODE);
 		if (error) {
 #ifdef __APPLE__
 			if (error == ENXIO) {

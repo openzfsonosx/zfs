@@ -24,10 +24,11 @@ zfs_LDADD = \
 zfs_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID)
 
 install-exec-hook:
-	$(MKDIR_P) $(DESTDIR)/sbin
-	/bin/ln -f $(DESTDIR)$(sbindir)/zfs $(DESTDIR)/sbin/mount_zfs
-	/bin/ln -f $(DESTDIR)$(sbindir)/zfs $(DESTDIR)/sbin/umount_zfs
+	echo "prefix $(PREFIX)"
+	$(MKDIR_P) $(DESTDIR)/$(MOUNTEXECDIR)
+	/bin/ln -f $(DESTDIR)/$(sbindir)/zfs $(DESTDIR)/$(MOUNTEXECDIR)/mount_zfs
+	/bin/ln -f $(DESTDIR)/$(sbindir)/zfs $(DESTDIR)/$(MOUNTEXECDIR)/umount_zfs
 
 uninstall-hook:
-	-$(RM) $(DESTDIR)/sbin/mount_zfs
-	-$(RM) $(DESTDIR)/sbin/umount_zfs
+	-$(RM) $(DESTDIR)/$(MOUNTEXECDIR)/mount_zfs
+	-$(RM) $(DESTDIR)/$(MOUNTEXECDIR)/umount_zfs

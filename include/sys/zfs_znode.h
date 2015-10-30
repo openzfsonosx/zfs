@@ -246,8 +246,16 @@ typedef struct znode {
 	list_node_t	z_link_reclaim_node;	/* all reclaim znodes in fs link */
     uint32_t    z_vid;  /* OSX vnode_vid */
 	uint32_t    z_document_id;
-    /* Track vnop_lookup name for Finder - not for anything else */
-    char        z_finder_hardlink_name[MAXPATHLEN];
+
+    /* Track vnop_lookup name for Finder - as Apple asks for va_name in
+	 * vnop_getattr and vfs_vget, it is expensive to lookup the name.
+	 * We also need to keep hardlink parentid to return the correct id in
+	 * getattr
+	 */
+    char        z_name_cache[MAXPATHLEN];
+	uint64_t    z_finder_parentid;
+	boolean_t   z_finder_hardlink;  /* set high if it ever had a hardlink hash */
+
 	boolean_t   z_fastpath;
 	boolean_t   z_reclaim_reentry; /* vnode_create()->vnop_reclaim() */
 	uint64_t    z_write_gencount;
@@ -394,11 +402,14 @@ extern void	zfs_grow_blocksize(znode_t *, uint64_t, dmu_tx_t *);
 extern int	zfs_freesp(znode_t *, uint64_t, uint64_t, int, boolean_t);
 extern void	zfs_znode_init(void);
 extern void	zfs_znode_fini(void);
+
+#define ZGET_FLAG_UNLINKED          (1<<0) /* Also lookup unlinked */
+#define ZGET_FLAG_WITHOUT_VNODE     (1<<1) /* Don't attach vnode */
+#define ZGET_FLAG_WITHOUT_VNODE_GET (1<<2) /* Don't attach vnode + vnode_get*/
 extern int zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp);
-#ifdef __APPLE__
-extern int      zfs_zget_sans_vnode(zfsvfs_t *, uint64_t, znode_t **);
-extern int      zfs_zget_want_unlinked(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp);
-#endif
+extern int zfs_zget_ext(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp, int flags);
+#define zfs_zget(A,B,C) zfs_zget_ext((A),(B),(C),0)
+
 extern int	zfs_rezget(znode_t *);
 extern void	zfs_zinactive(znode_t *);
 extern void	zfs_znode_delete(znode_t *, dmu_tx_t *);

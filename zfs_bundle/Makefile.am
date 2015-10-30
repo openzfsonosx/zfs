@@ -2,6 +2,9 @@ include $(top_srcdir)/config/Rules.am
 
 AUTOMAKE_OPTIONS = subdir-objects
 
+FS_BUNDLEPREFIX = @FILESYSTEMS_PREFIX@
+FS_BUNDLEDIR = $(DESTDIR)$(FS_BUNDLEPREFIX)/zfs.fs
+
 INFO_PLIST = Info.plist
 EN_INFO_PLIST_STRINGS = en.lproj/InfoPlist.strings
 PKGINFO = PkgInfo
@@ -36,12 +39,15 @@ zfs.fs$(EXEEXT): zfs $(EN_INFO_PLIST_STRINGS) $(INFO_PLIST) $(PKGINFO)
 	cp -f $(PKGINFO) zfs.fs/Contents/
 
 install-exec-local:: zfs.fs
-	rm -f /Library/Filesystems/zfs.fs/Resources/$(EN_INFO_PLIST_STRINGS)
-	rm -f /Library/Filesystems/zfs.fs/$(INFO_PLIST)
-	rm -f /Library/Filesystems/zfs.fs/Contents/$(PKGINFO)
-	mkdir -p /Library/Filesystems/zfs.fs
-	rsync -aH zfs.fs/ /Library/Filesystems/zfs.fs
-	chown -R root:wheel /Library/Filesystems/zfs.fs
+	rm -f $(FS_BUNDLEDIR)/Contents/$(PKGINFO)
+	rm -f $(FS_BUNDLEDIR)/Contents/$(INFO_PLIST)
+	rm -f $(FS_BUNDLEDIR)/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS)
+	mkdir -p $(FS_BUNDLEDIR)
+	rsync -aH zfs.fs/ $(FS_BUNDLEDIR)/
+	chown -R root:wheel $(FS_BUNDLEDIR) || echo "Unable to chown root:wheel in $(FS_BUNDLEDIR)"
 
 clean:
 	rm -rf zfs.fs
+
+uninstall-hook:
+	rm -rf "$(FS_BUNDLEDIR)"

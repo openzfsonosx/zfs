@@ -18,6 +18,7 @@
 namespace ID
 {
 	void createPath(std::string const & path);
+	void createCleanPath(std::string const & path);
 	void createFile(std::string const & path);
 	void createSymlink(std::string const & link, std::string const & target);
 	void removeFSObject(std::string const & path);

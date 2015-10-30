@@ -21,11 +21,11 @@ zfs_util_LDADD = \
 zfs_util_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) -framework DiskArbitration -framework CoreServices -framework IOKit -static
 
 install-exec-hook:
-	mkdir -p $(DESTDIR)/Library/Filesystems/zfs.fs/Contents/Resources
-	/bin/ln -f $(DESTDIR)$(sbindir)/zfs.util $(DESTDIR)/Library/Filesystems/zfs.fs/Contents/Resources/zfs.util
-	/bin/ln -fs Contents/Resources/zfs.util $(DESTDIR)/Library/Filesystems/zfs.fs/zfs.util
-	sudo chown -R root:wheel /Library/Filesystems/zfs.fs
+	mkdir -p $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfs.fs/Contents/Resources
+	/bin/ln -f $(DESTDIR)$(sbindir)/zfs.util $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfs.fs/Contents/Resources/zfs.util
+	/bin/ln -fs Contents/Resources/zfs.util $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfs.fs/zfs.util
+	chown -R root:wheel ${DESTDIR}/@FILESYSTEMS_PREFIX@/zfs.fs || echo "Unable to chown root:wheel ${DESTDIR}/@FILESYSTEMS_PREFIX@/zfs.fs"
 
 uninstall-hook:
-	-$(RM) $(DESTDIR)/Library/Filesystems/zfs.fs/Contents/Resources/zfs.util
-	-$(RM) $(DESTDIR)/Library/Filesystems/zfs.fs/zfs.util
+	-$(RM) $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfs.fs/Contents/Resources/zfs.util
+	-$(RM) $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfs.fs/zfs.util

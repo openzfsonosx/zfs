@@ -81,10 +81,6 @@ struct zfsvfs {
         list_t          z_all_znodes;   /* all vnodes in the fs */
         kmutex_t        z_znodes_lock;  /* lock for z_all_znodes */
         struct vnode   *z_ctldir;      /* .zfs directory pointer */
-        time_t          z_mount_time;           /* mount timestamp (for Spotlight) */
-        time_t          z_last_unmount_time;    /* unmount timestamp (for Spotlight) */
-        time_t          z_last_mtime_synced;    /* last fs mtime synced to disk */
-        struct vnode   *z_mtime_vp;            /* znode utilized for the fs mtime. */
         boolean_t       z_show_ctldir;  /* expose .zfs in the root dir */
         boolean_t       z_issnap;       /* true if this is a snapshot */
         boolean_t	    z_use_fuids;	/* version allows fuids */
@@ -93,17 +89,25 @@ struct zfsvfs {
 	    boolean_t       z_xattr_sa;     /* allow xattrs to be stores as SA */
         uint64_t        z_version;
         uint64_t        z_shares_dir;   /* hidden shares dir */
-	uint64_t	z_notification_conditions; /* used for HFSIOC_VOLUME_STATUS */
-	uint64_t	z_freespace_notify_warninglimit; /* HFSIOC_ vfs notification - number of free blocks */
-	uint64_t	z_freespace_notify_dangerlimit; /* HFSIOC_ vfs notification - number of free blocks */
-	uint64_t	z_freespace_notify_desiredlevel; /* HFSIOC_ vfs notification - number of free blocks */
         kmutex_t	    z_lock;
+
 #ifdef __APPLE__
 	    dev_t z_rdev;
+        time_t          z_mount_time;           /* mount timestamp (for Spotlight) */
+        time_t          z_last_unmount_time;    /* unmount timestamp (for Spotlight) */
         boolean_t       z_xattr;        /* enable atimes mount option */
 
+	    avl_tree_t   	z_hardlinks;    /* linkid hash avl tree for vget */
+	    avl_tree_t   	z_hardlinks_linkid; /* same tree, sorted on linkid */
+	    krwlock_t	    z_hardlinks_lock;	/* lock to access z_hardlinks */
+
+	    uint64_t	    z_notification_conditions; /* HFSIOC_VOLUME_STATUS */
+	    uint64_t	    z_freespace_notify_warninglimit; /* HFSIOC_ - number of free blocks */
+	    uint64_t	    z_freespace_notify_dangerlimit; /* HFSIOC_ - number of free blocks */
+	    uint64_t	    z_freespace_notify_desiredlevel; /* HFSIOC_ - number of free blocks */
+
 #ifdef APPLE_SA_RECOVER
-	uint64_t z_recover_parent;/* Temporary holder until SA corruption are gone */
+	    uint64_t        z_recover_parent;/* Temporary holder until SA corruption are gone */
 #endif /* APPLE_SA_RECOVER */
 
 #endif
@@ -115,12 +119,19 @@ struct zfsvfs {
         kmutex_t        z_hold_mtx[ZFS_OBJ_MTX_SZ];     /* znode hold locks */
 };
 
+
 #ifdef __APPLE__
-	struct vnodecreate {
-		thread_t thread;
-		list_node_t link;
-	};
+struct hardlinks_struct {
+	avl_node_t hl_node;
+	avl_node_t hl_node_linkid;
+	uint64_t hl_parent;     // parentid of entry
+	uint64_t hl_fileid;     // the fileid (z_id) for vget
+	uint32_t hl_linkid;     // the linkid, persistent over renames
+	char hl_name[PATH_MAX]; // cached name for vget
+};
+typedef struct hardlinks_struct hardlinks_t;
 #endif
+
 
 #define	ZFS_SUPER_MAGIC	0x2fc12fc1
 

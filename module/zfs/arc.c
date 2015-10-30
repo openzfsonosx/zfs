@@ -1951,7 +1951,7 @@ arc_evict(arc_state_t *state, uint64_t spa, int64_t bytes, boolean_t recycle,
     kmutex_t *hash_lock;
     boolean_t have_lock;
     void *stolen = NULL;
-    arc_buf_hdr_t marker = { 0 };
+    arc_buf_hdr_t marker = { {{0}} };
     int count = 0;
 
     ASSERT(state == arc_mru || state == arc_mfu);
@@ -2103,7 +2103,7 @@ static void
 arc_evict_ghost(arc_state_t *state, uint64_t spa, int64_t bytes)
 {
     arc_buf_hdr_t *ab, *ab_prev;
-    arc_buf_hdr_t marker = { 0 };
+    arc_buf_hdr_t marker = { {{0}} };
     list_t *list = &state->arcs_list[ARC_BUFC_DATA];
     kmutex_t *hash_lock;
     uint64_t bytes_deleted = 0;
