@@ -2933,31 +2933,23 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	} else {
 		uint64_t parent;
 
-		// If we already have the name, cached in zfs_vnop_lookup
-		if (zp->z_finder_hardlink_name[0]) {
+		/* Lookup name from ID, grab parent */
+		VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+                         &parent, sizeof (parent)) == 0);
 
-			dprintf("vget: cached name '%s'\n", zp->z_finder_hardlink_name);
-			vnode_update_identity(*vpp, NULL, zp->z_finder_hardlink_name,
-								  strlen(zp->z_finder_hardlink_name), 0,
+#if 1
+		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+							 ZFS_DIRENT_OBJ(-1ULL), name) == 0) {
+
+			dprintf("vget: set name '%s'\n", name);
+			vnode_update_identity(*vpp, NULL, name,
+								  strlen(name), 0,
 								  VNODE_UPDATE_NAME);
-
 		} else {
+			dprintf("vget: unable to get name for %u\n", zp->z_id);
+		} // !zap_search
+#endif
 
-			/* Lookup name from ID, grab parent */
-			VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
-							 &parent, sizeof (parent)) == 0);
-
-			if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-								 ZFS_DIRENT_OBJ(-1ULL), name) == 0) {
-
-				dprintf("vget: set name '%s'\n", name);
-				vnode_update_identity(*vpp, NULL, name,
-									  strlen(name), 0,
-									  VNODE_UPDATE_NAME);
-			} else {
-				dprintf("vget: unable to get name for %u\n", zp->z_id);
-			} // !zap_search
-		}
 	} // rootid
 
 

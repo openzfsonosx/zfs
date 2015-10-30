@@ -694,6 +694,26 @@ zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
 	} //vp
 }
 
+void
+zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
+{
+	if (vp && VTOZ(vp)) {
+		znode_t *zp = VTOZ(vp);
+
+		/*
+		 * hard link references?
+		 * Read the comment in zfs_getattr_znode_unlocked for the reason
+		 * for this hackery.
+		 */
+		if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) {
+			dprintf("keep_hardlink: %p has refs %llu\n", vp,
+			    zp->z_links);
+			strlcpy(zp->z_finder_hardlink_name, filename,
+			    MAXPATHLEN);
+		}
+	}
+}
+
 int
 zfs_vnop_lookup(struct vnop_lookup_args *ap)
 #if 0
