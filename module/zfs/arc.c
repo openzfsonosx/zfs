@@ -3302,7 +3302,14 @@ arc_available_memory(void)
 
 #ifdef __APPLE__
 	lowest = kmem_avail();
-	// if (lowest < 0) printf("ZFS: %s: kmem_avail() negative, %lld\n", __func__, lowest);
+	if(lowest < 0 && lowest > last_free_memory) {
+	  // if we're negative, stay negative until kmem_avail() goes non-negative
+	  // that way we don't lose kmem_avail() signals across multiple kmem_avail() calls.
+	  printf("ZFS: %s staying at %lld instead of kmem_avail() which is %lld\n",
+		 __func__, last_free_memory, lowest);
+	  lowest = last_free_memory;
+	}
+
 #endif
 
 
