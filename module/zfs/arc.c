@@ -3414,6 +3414,12 @@ arc_kmem_reap_now(void)
  * This possible deadlock is avoided by always acquiring a hash lock
  * using mutex_tryenter() from arc_reclaim_thread().
  */
+#ifdef __APPLE__
+#ifdef _KERNEL
+extern int32_t spl_pressure_adjust(int32_t);
+#endif
+#endif
+
 static void
 #ifdef __APPLE__
 arc_reclaim_thread(void *notused)
@@ -3471,7 +3477,16 @@ arc_reclaim_thread(void)
 					 __func__, to_free, old_to_free, to_free - old_to_free);
 				  old_to_free = to_free;
 				}
+
 				arc_shrink(to_free);
+#ifdef __APPLE__
+#ifdef _KERNEL				
+				if(to_free > 0) {
+				  printf("ZFS: %s, to_free: spl_adjust_pressure(%lld) returns %lld\n",
+					 __func__, to_free, spl_adjust_pressure(to_free));
+				}
+#endif
+#endif				
 			} else if(old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
 				 __func__, old_to_free);
@@ -3484,7 +3499,15 @@ arc_reclaim_thread(void)
 		}
 
 		evicted = arc_adjust();
-
+#ifdef __APPLE__
+#ifdef _KERNEL
+		if(evicted > 0) {
+		printf("ZFS: %s, arc_adjust: spl_adjust_pressure(%lld) returns %lld\n",
+		       __func__, evicted, spl_adjust_pressure(evicted));
+		}
+#endif
+#endif
+		
 		mutex_enter(&arc_reclaim_lock);
 
 		/*
