@@ -14,3 +14,5 @@ s:usr/src/lib/libzfs_core/common:lib/libzfs_core:g
 s:usr/src/common/zfs:module/zcommon:g
 s:lib/libzpool/common/sys:include/sys:g
 s:lib/libzpool/common:lib/libzpool:g
+s:usr/src/lib/libnvpair:lib/libnvpair:g
+s:usr/src/lib/libefi/common:lib/libefi:g
