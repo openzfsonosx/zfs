@@ -1481,6 +1481,21 @@ zfs_vnop_rename(struct vnop_rename_args *ap)
 		if (ap->a_tvp) {
 			cache_purge(ap->a_tvp);
 		}
+
+#ifdef __APPLE__
+		/*
+		 * After a rename, the VGET path /.vol/$fsid/$ino fails for a short
+		 * period on hardlinks (until someone calls lookup).
+		 * So until we can figure out exactly why this is, we drive a lookup
+		 * here to ensure that vget will work (Finder/Spotlight).
+		 */
+		if (VTOZ(ap->a_fvp)->z_finder_hardlink) {
+			struct vnode *vp;
+			if (VOP_LOOKUP(ap->a_tdvp, &vp, ap->a_tcnp, spl_vfs_context_kernel())
+				== 0) vnode_put(vp);
+		}
+#endif
+
 	}
 
 	return (error);
