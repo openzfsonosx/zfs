@@ -960,6 +960,8 @@ static void zfs_cache_name(struct vnode *vp, struct vnode *dvp, char *filename)
 
 	zp = VTOZ(vp);
 
+	mutex_enter(&zp->z_lock);
+
 	strlcpy(zp->z_name_cache,
 			filename,
 			MAXPATHLEN);
@@ -970,6 +972,8 @@ static void zfs_cache_name(struct vnode *vp, struct vnode *dvp, char *filename)
 		dvp) {
 		zp->z_finder_parentid = VTOZ(dvp)->z_id;
 	}
+
+	mutex_exit(&zp->z_lock);
 }
 
 
@@ -1170,8 +1174,10 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp, char *name)
 		rw_exit(&zfsvfs->z_hardlinks_lock);
 		kmem_free(findnode, sizeof(*findnode));
 		dprintf("ZFS: removed hash '%s'\n", name);
+		mutex_enter(&zp->z_lock);
 		zp->z_name_cache[0] = 0;
 		zp->z_finder_parentid = 0;
+		mutex_exit(&zp->z_lock);
 		return 1;
 	}
 	return 0;
@@ -1197,21 +1203,6 @@ static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-	if (tvp) {
-		znode_t *tzp = VTOZ(tvp);
-		if (tzp) {
-			/* We also need to correct the parent id of the target, for
-			 * vget to be able to reply with the correct id. Used by mds
-			 * and Finder. */
-			tzp->z_finder_parentid = VTOZ(tdvp)->z_id;
-
-			vnode_update_identity(tvp, tdvp, 0,
-								  0, 0,
-								  VNODE_UPDATE_PARENT);
-			dprintf("ZFS: updated finder_parentid to %llu\n",
-				   tzp->z_finder_parentid);
-		}
-	}
 
 	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
 		1 : 0;
@@ -1685,7 +1676,8 @@ zfs_vnop_rename(struct vnop_rename_args *ap)
 		 * So until we can figure out exactly why this is, we drive a lookup
 		 * here to ensure that vget will work (Finder/Spotlight).
 		 */
-		if (VTOZ(ap->a_fvp)->z_finder_hardlink) {
+		if (ap->a_fvp && VTOZ(ap->a_fvp) &&
+			VTOZ(ap->a_fvp)->z_finder_hardlink) {
 			struct vnode *vp;
 			if (VOP_LOOKUP(ap->a_tdvp, &vp, ap->a_tcnp, spl_vfs_context_kernel())
 				== 0) vnode_put(vp);
