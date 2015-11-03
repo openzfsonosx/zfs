@@ -3198,8 +3198,6 @@ int64_t arc_swapfs_reserve = 64;
  * the amount of memory that needs to be freed up.
  */
 
-extern int64_t kmem_avail(); // typecheck paranoia!
-
 static int64_t
 arc_available_memory(void)
 {
@@ -3207,7 +3205,11 @@ arc_available_memory(void)
 	free_memory_reason_t r = FMR_UNKNOWN;
 
 #ifdef _KERNEL
-
+#ifdef __APPLE__
+	if(spl_free_manual_pressure_wrapper() != 0) {
+	  cv_signal(&arc_reclaim_thread_cv);
+	}
+#endif //__APPLE__
 #ifdef sun
 	int64_t n;
 	if (needfree > 0) {
@@ -3301,7 +3303,7 @@ arc_available_memory(void)
 #endif // sun
 
 #ifdef __APPLE__
-	lowest = kmem_avail();
+	lowest = spl_free_wrapper();
 	// if (lowest < 0) printf("ZFS: %s: kmem_avail() negative, %lld\n", __func__, lowest);
 #endif
 
@@ -3327,15 +3329,17 @@ arc_available_memory(void)
 static boolean_t
 arc_reclaim_needed(void)
 {
-
-    int64_t a = arc_available_memory();
-    if(a < 0) {
-#ifdef _KERNEL
-      (void)spl_adjust_pressure(a);
-      dprintf("ZFS: %s, arc_available_memory was negative (%lld), returning 1\n", __func__, a);
-#endif      
+    if(arc_available_memory() < 0) {
       return 1;
     }
+
+#ifdef __APPLE__
+#ifdef _KERNEL
+    if(spl_free_manual_pressure_wrapper() != 0) {
+      return 1;
+    }
+#endif
+#endif
 
     return 0;
 }
@@ -3408,11 +3412,6 @@ arc_kmem_reap_now(void)
  * This possible deadlock is avoided by always acquiring a hash lock
  * using mutex_tryenter() from arc_reclaim_thread().
  */
-#ifdef __APPLE__
-#ifdef _KERNEL
-extern int32_t spl_pressure_adjust(int32_t);
-#endif
-#endif
 
 static void
 #ifdef __APPLE__
@@ -3433,13 +3432,16 @@ arc_reclaim_thread(void)
 
 		mutex_exit(&arc_reclaim_lock);
 
-		if (free_memory < 0) {
-
-#ifdef __APPLE__
+#ifdef __APPLE
 #ifdef _KERNEL
-		  spl_adjust_pressure(free_memory);
+		if (free_memory < 0 || spl_free_manual_pressure_wrapper() != 0) {
+#else
+	        if (free_memory < 0) {
 #endif
-#endif		  
+#else
+		if (free_memory < 0) {
+#endif
+
 			arc_no_grow = B_TRUE;
 			arc_warm = B_TRUE;
 
@@ -3467,26 +3469,19 @@ arc_reclaim_thread(void)
 				to_free = MAX(to_free, ptob(needfree));
 #endif
 #ifdef __APPLE__
-				to_free = MAX(to_free, kmem_num_pages_wanted() * PAGESIZE);
+				to_free = MAX(to_free, spl_free_manual_pressure_wrapper());
+				spl_free_set_pressure(0);
 
 				if (to_free > old_to_free) {
 				  printf("ZFS: %s, to_free == %lld increased above %lld old_to_free (delta: %lld)\n",
 					 __func__, to_free, old_to_free, to_free - old_to_free);
 				  old_to_free = to_free;
 				}
-
-				int64_t pre_shrink_arc_c = arc_c;
 #endif // __APPLE__
 #endif // _KERNEL
 				arc_shrink(to_free);
 #ifdef _KERNEL				
 #ifdef	__APPLE__
-				if(pre_shrink_arc_c > arc_c) {
-				  int64_t delta = pre_shrink_arc_c - arc_c;
-				  int64_t newpressure = spl_adjust_pressure(delta);
-				  printf("ZFS: %s, arc_c shrank by %lld, pressure_bytes_target now %llu\n",
-					 __func__, delta, newpressure);
-				}
 			} else if(old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
 				 __func__, old_to_free);
@@ -3507,17 +3502,8 @@ arc_reclaim_thread(void)
 		}
 
 		evicted = arc_adjust();
-#ifdef __APPLE__
-#ifdef _KERNEL
-		if(evicted > 0) {
-		  //printf("ZFS: %s, arc_adjust: spl_adjust_pressure(%lld) returns %lld\n",
-		  //   __func__, evicted, spl_adjust_pressure(evicted));
-		  (void)spl_adjust_pressure(evicted);
-		}
-#endif
-#endif
-		
-		mutex_enter(&arc_reclaim_lock);
+
+               mutex_enter(&arc_reclaim_lock);
 
 		/*
 		 * If evicted is zero, we couldn't evict anything via
@@ -4932,8 +4918,6 @@ arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
 	return (zio);
 }
 
-extern int32_t spl_minimal_physmem_p(void);
-
 static int
 arc_memory_throttle(uint64_t reserve, uint64_t txg)
 {
@@ -4942,9 +4926,7 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 	uint64_t available_memory = ptob(freemem);
 #endif
 #ifdef __APPLE__
-	int64_t available_memory = kmem_avail();
-	if(available_memory < 0)
-	  (void)spl_adjust_pressure(available_memory);
+	int64_t available_memory = spl_free_wrapper();
 	int64_t freemem = available_memory / PAGESIZE;
 #endif
 
