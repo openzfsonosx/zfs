@@ -1853,9 +1853,6 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_OWNER, guidp);
         } else if ((flags & OWNING_GROUP) == OWNING_GROUP) {
-#if HIDE_TRIVIAL_ACL
-			continue;
-#endif
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_GROUP, guidp);
         } else if (flags & ACE_EVERYONE) {
