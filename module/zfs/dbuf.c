@@ -1171,7 +1171,6 @@ dbuf_release_bp(dmu_buf_impl_t *db)
 	(void) arc_release(db->db_buf, db);
 }
 
-
 /*
  * We already have a dirty record for this TXG, and we are being
  * dirtied again.
@@ -1197,7 +1196,6 @@ dbuf_redirty(dbuf_dirty_record_t *dr)
 		}
 	}
 }
-
 
 dbuf_dirty_record_t *
 dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
@@ -1270,6 +1268,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 		drp = &dr->dr_next;
 	if (dr && dr->dr_txg == tx->tx_txg) {
 		DB_DNODE_EXIT(db);
+
 		dbuf_redirty(dr);
 		mutex_exit(&db->db_mtx);
 		return (dr);
@@ -1571,6 +1570,7 @@ dmu_buf_will_dirty(dmu_buf_t *db_fake, dmu_tx_t *tx)
 {
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)db_fake;
 	int rf = DB_RF_MUST_SUCCEED | DB_RF_NOPREFETCH;
+	dbuf_dirty_record_t *dr;
 
 	ASSERT(tx->tx_txg != 0);
 	ASSERT(!refcount_is_zero(&db->db_holds));
@@ -1582,7 +1582,7 @@ dmu_buf_will_dirty(dmu_buf_t *db_fake, dmu_tx_t *tx)
 	 * cached).
 	 */
 	mutex_enter(&db->db_mtx);
-	dbuf_dirty_record_t *dr;
+
 	for (dr = db->db_last_dirty;
 	    dr != NULL && dr->dr_txg >= tx->tx_txg; dr = dr->dr_next) {
 		/*
