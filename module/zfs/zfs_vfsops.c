@@ -2886,8 +2886,10 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 								  strlen(findnode->hl_name),
 								  0,
 								  VNODE_UPDATE_NAME|VNODE_UPDATE_PARENT);
+			mutex_enter(&zp->z_lock);
 			strlcpy(zp->z_name_cache, findnode->hl_name, PATH_MAX);
 			zp->z_finder_parentid = findnode->hl_parent;
+			mutex_exit(&zp->z_lock);
 
 		// If we already have the name, cached in zfs_vnop_lookup
 		} else if (zp->z_name_cache[0]) {
