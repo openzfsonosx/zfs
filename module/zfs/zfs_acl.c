@@ -1829,7 +1829,7 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
     *aclpp = k_acl;
 
     /*
-     * Translate Open Solaris ACEs to Mac OS X ACEs
+     * Translate Open Solaris ACEs to Mac OS X ACLs
      */
     i = 0;
     while ((zacep = zfs_acl_next_ace(aclp, zacep,
@@ -1842,7 +1842,7 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
         if (flags & ACE_OWNER) {
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_OWNER, guidp);
-        } else if (flags & OWNING_GROUP) {
+        } else if ((flags & OWNING_GROUP) == OWNING_GROUP) {
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_GROUP, guidp);
         } else if (flags & ACE_EVERYONE) {
@@ -1851,14 +1851,19 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
             /* Try to get a guid from our uid */
         } else {
 
-            if (kauth_cred_uid2guid(who, guidp) != 0) {
-                /* Try using gid then ... */
-                if (kauth_cred_gid2guid(who, guidp) != 0) {
-                    /* XXX - What else can we do here? */
-                    bzero(guidp, sizeof (guid_t));
-                }
-            }
+			dprintf("ZFS: trying to map uid %d flags %x type %x\n", who, flags,
+				type);
 
+			if (flags & OWNING_GROUP) {
+				if (kauth_cred_gid2guid(who, guidp) == 0) {
+					dprintf("ZFS: appears to be a group\n");
+				}
+			} else if (kauth_cred_uid2guid(who, guidp) == 0) {
+				dprintf("ZFS: appears to be a user\n");
+			} else {
+				dprintf("ZFS: Unable to map\n");
+				bzero(guidp, sizeof (guid_t));
+			}
         }
 
         //access_mask = aclp->z_acl[i].a_access_mask;

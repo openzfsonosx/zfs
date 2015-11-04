@@ -1600,6 +1600,7 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
     uint16_t  type = 0;
     u_int32_t  ace_flags;
     int wkg;
+	int err = 0;
 
     *nentries = k_acl->acl_entrycount;
 
@@ -1622,7 +1623,8 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
 
         who = -1;
         wkg = kauth_wellknown_guid(guidp);
-        switch(wkg) {
+
+		switch(wkg) {
         case KAUTH_WKG_OWNER:
             flags |= ACE_OWNER;
             break;
@@ -1636,15 +1638,20 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
         case KAUTH_WKG_NOBODY:
         default:
             /* Try to get a uid from supplied guid */
-            if (kauth_cred_guid2uid(guidp, &who) != 0) {
-                /* If we couldn't generate a uid, try for a gid */
-                if (kauth_cred_guid2gid(guidp, &who) != 0) {
-                    *nentries=0;
-                    dprintf("returning due to guid2gid\n");
-                    return;
-                }
-            }
-        }
+			err = kauth_cred_guid2uid(guidp, &who);
+			if (err) {
+				err = kauth_cred_guid2gid(guidp, &who);
+				if (!err) {
+					flags |= ACE_IDENTIFIER_GROUP;
+				}
+			}
+			if (err) {
+				*nentries=0;
+				dprintf("ZFS: returning due to guid2gid\n");
+				return;
+			}
+
+        } // switch
 
         ace->a_who = who;
 
