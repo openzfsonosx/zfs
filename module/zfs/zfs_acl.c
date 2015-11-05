@@ -1840,12 +1840,21 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
         guidp = &k_acl->acl_ace[i].ace_applicable;
 
         if (flags & ACE_OWNER) {
+#if HIDE_TRIVIAL_ACL
+			continue;
+#endif
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_OWNER, guidp);
         } else if ((flags & OWNING_GROUP) == OWNING_GROUP) {
+#if HIDE_TRIVIAL_ACL
+			continue;
+#endif
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_GROUP, guidp);
         } else if (flags & ACE_EVERYONE) {
+#if HIDE_TRIVIAL_ACL
+			continue;
+#endif
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_EVERYBODY, guidp);
             /* Try to get a guid from our uid */
@@ -1925,6 +1934,76 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
         k_acl->acl_ace[i].ace_flags = ace_flags;
         i++;
     }
+    k_acl->acl_entrycount = i;
+    mutex_exit(&zp->z_acl_lock);
+
+    zfs_acl_free(aclp);
+
+    return (0);
+}
+
+int
+zfs_addacl_trivial(znode_t *zp, ace_t *aces, int *nentries, int seen_type)
+{
+    zfs_acl_t       *aclp;
+    uint64_t        who;
+    uint32_t        access_mask;
+    uint16_t        flags;
+    uint16_t        type;
+    int             i;
+    int             error;
+    void *zacep = NULL;
+
+    mutex_enter(&zp->z_acl_lock);
+
+    error = zfs_acl_node_read(zp, B_FALSE, &aclp, B_TRUE);
+    if (error != 0) {
+        mutex_exit(&zp->z_acl_lock);
+        return (error);
+    }
+
+    dprintf("ondisk acl_count %d\n",aclp->z_acl_count);
+
+	// Start at the end
+	i = *nentries;
+
+    /*
+     * Translate Open Solaris ACEs to Mac OS X ACLs
+     */
+    while ((zacep = zfs_acl_next_ace(aclp, zacep,
+                                    &who, &access_mask, &flags, &type))) {
+
+        if (flags & ACE_OWNER) {
+			if (seen_type & ACE_OWNER) continue;
+			seen_type |= ACE_OWNER;
+            who = -1;
+        } else if ((flags & OWNING_GROUP) == OWNING_GROUP) {
+			if (seen_type & ACE_GROUP) continue;
+			seen_type |= ACE_GROUP;
+            who = -1;
+        } else if (flags & ACE_EVERYONE) {
+			if (seen_type & ACE_EVERYONE) continue;
+			seen_type |= ACE_EVERYONE;
+            who = -1;
+            /* Try to get a guid from our uid */
+        } else {
+
+			// Only deal with the trivials
+			continue;
+
+		}
+
+		aces[i].a_who = who;
+		aces[i].a_access_mask = access_mask;
+		aces[i].a_flags = flags;
+		aces[i].a_type = type;
+
+		dprintf("zfs: adding entry %d for type %x sizeof %d\n", i, type,
+			sizeof(aces[i]));
+        i++;
+    }
+
+	*nentries=i;
     mutex_exit(&zp->z_acl_lock);
 
     zfs_acl_free(aclp);

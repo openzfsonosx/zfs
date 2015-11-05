@@ -1177,8 +1177,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 void
 zfs_get_done(zgd_t *zgd, int error)
 {
-	znode_t *zp = zgd->zgd_private;
-	objset_t *os = zp->z_zfsvfs->z_os;
+	//znode_t *zp = zgd->zgd_private;
+	//objset_t *os = zp->z_zfsvfs->z_os;
 
 	if (zgd->zgd_db)
 		dmu_buf_rele(zgd->zgd_db, zgd);
@@ -3613,21 +3613,42 @@ top:
             ace_t	*aaclp;
             struct kauth_acl *kauth;
 
-            dprintf("Calling setacl\n");
-
             vsecattr.vsa_mask = VSA_ACE;
 
             kauth = vap->va_acl;
 
+#if HIDE_TRIVIAL_ACL
+			// We might have to add <up to> 3 trivial acls, depending on
+			// what was handed to us.
+            aclbsize = ( 3 + kauth->acl_entrycount ) * sizeof(ace_t);
+            dprintf("Given %d ACLs, adding 3\n", kauth->acl_entrycount);
+#else
             aclbsize = kauth->acl_entrycount * sizeof(ace_t);
-            vsecattr.vsa_aclentp = kmem_alloc(aclbsize, KM_SLEEP);
+            dprintf("Given %d ACLs\n", kauth->acl_entrycount);
+#endif
+
+			vsecattr.vsa_aclentp = kmem_zalloc(aclbsize, KM_SLEEP);
             aaclp = vsecattr.vsa_aclentp;
             vsecattr.vsa_aclentsz = aclbsize;
 
-            dprintf("aces_from_acl %d entries\n", kauth->acl_entrycount);
-            aces_from_acl(vsecattr.vsa_aclentp, &vsecattr.vsa_aclcnt, kauth);
+#if HIDE_TRIVIAL_ACL
+			// Add in the trivials, keep "seen_type" as a bit pattern of
+			// which trivials we have seen
+			int seen_type = 0;
 
-            err = zfs_setacl(zp, &vsecattr, B_TRUE, cr);
+            dprintf("aces_from_acl %d entries\n", kauth->acl_entrycount);
+            aces_from_acl(vsecattr.vsa_aclentp,
+						  &vsecattr.vsa_aclcnt, kauth, &seen_type);
+
+			// Add in trivials at end, based on the "seen_type".
+			zfs_addacl_trivial(zp, vsecattr.vsa_aclentp, &vsecattr.vsa_aclcnt,
+				seen_type);
+			dprintf("together at last: %d\n", vsecattr.vsa_aclcnt);
+#else
+            aces_from_acl(vsecattr.vsa_aclentp, &vsecattr.vsa_aclcnt, kauth);
+#endif
+
+			err = zfs_setacl(zp, &vsecattr, B_TRUE, cr);
             kmem_free(aaclp, aclbsize);
 
         } else {
