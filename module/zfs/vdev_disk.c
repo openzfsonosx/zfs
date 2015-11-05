@@ -296,6 +296,15 @@ out:
 	return (error);
 }
 
+static void vdev_disk_close_thread(void *arg)
+{
+       struct vnode *vp = arg;
+
+       (void) vnode_close(vp, 0,
+                                          spl_vfs_context_kernel());
+       thread_exit();
+}
+
 /* Not static so zfs_osx.cpp can call it on device removal */
 void
 vdev_disk_close(vdev_t *vd)
@@ -327,8 +336,9 @@ vdev_disk_close(vdev_t *vd)
 		/* vnode_close() can stall during removal, so clear vd_devvp now */
 		struct vnode *vp = dvd->vd_devvp;
 		dvd->vd_devvp = NULL;
-		(void) vnode_close(vp, spa_mode(vd->vdev_spa),
-						   spl_vfs_context_kernel());
+               (void) thread_create(NULL, 0, vdev_disk_close_thread,
+                                                        vp, 0, &p0,
+                                                        TS_RUN, minclsyspri);
 	}
 #endif
 
