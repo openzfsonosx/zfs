@@ -144,7 +144,8 @@ extern int zfs_set_prop_nvlist(const char *, zprop_source_t,
 static void zvol_log_truncate(zvol_state_t *zv, dmu_tx_t *tx, uint64_t off,
     uint64_t len, boolean_t sync);
 static int zvol_remove_zv(zvol_state_t *);
-static int zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio);
+static int zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
+						 znode_t *zp, rl_t *rl);
 // static int zvol_dumpify(zvol_state_t *zv);
 // static int zvol_dump_fini(zvol_state_t *zv);
 // static int zvol_dump_init(zvol_state_t *zv, boolean_t resize);
@@ -732,7 +733,7 @@ zvol_first_open(zvol_state_t *zv)
 	zvol_size_changed(zv, volsize);
 	zv->zv_zilog = zil_open(os, zvol_get_data);
 
-#ifdef __APPLE_
+#ifdef __APPLE__
 	error = dsl_prop_get_integer(zv->zv_name, "readonly", &readonly, NULL);
 	if (error)
 		printf("ZFS: Failed to lookup 'readonly' on '%s' error %d\n",
@@ -755,6 +756,10 @@ zvol_last_close(zvol_state_t *zv)
 {
 
 	dprintf("zvol_last_close\n");
+	if (zv->zv_total_opens != 0)
+		printf("ZFS: last_close but zv_total_opens==%d\n",
+			   zv->zv_total_opens);
+
 
 	zil_close(zv->zv_zilog);
 	zv->zv_zilog = NULL;
@@ -1187,7 +1192,8 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 	 * You may get multiple opens, but only one close.
 	 */
 	// zv->zv_open_count[otyp]--;
-	zv->zv_total_opens--;
+	if (zv->zv_total_opens > 0)
+		zv->zv_total_opens--;
 
 	if (zv->zv_total_opens == 0)
 		zvol_last_close(zv);
@@ -1239,7 +1245,8 @@ zvol_get_done(zgd_t *zgd, int error)
  * Get data to generate a TX_WRITE intent log record.
  */
 static int
-zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
+zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
+			  znode_t *zp, rl_t *rl)
 {
 	zvol_state_t *zv = arg;
 	objset_t *os = zv->zv_objset;
@@ -1256,7 +1263,8 @@ zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 
 	zgd = kmem_zalloc(sizeof (zgd_t), KM_SLEEP);
 	zgd->zgd_zilog = zv->zv_zilog;
-	zgd->zgd_rl = zfs_range_lock(&zv->zv_znode, offset, size, RL_READER);
+	zgd->zgd_rl = rl;
+	//zgd->zgd_rl = zfs_range_lock(&zv->zv_znode, offset, size, RL_READER);
 
 	/*
 	 * Write records come in two flavors: immediate and indirect.
@@ -2731,7 +2739,7 @@ zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rdisk)
 void
 zvol_remove_symlink(zvol_state_t *zv)
 {
-	if (!zv || !zv->zv_name)
+	if (!zv || !zv->zv_name[0])
 		return;
 
 	zfs_ereport_zvol_post(FM_EREPORT_ZVOL_REMOVE_SYMLINK,
