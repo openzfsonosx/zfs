@@ -3208,6 +3208,7 @@ arc_available_memory(void)
 #ifdef __APPLE__
 	if(spl_free_manual_pressure_wrapper() != 0) {
 	  cv_signal(&arc_reclaim_thread_cv);
+	  kpreempt(KPREEMPT_SYNC);
 	}
 #endif //__APPLE__
 #ifdef sun
@@ -3304,6 +3305,9 @@ arc_available_memory(void)
 
 #ifdef __APPLE__
 	lowest = spl_free_wrapper();
+	if((lowest - spl_free_manual_pressure_wrapper()) < 0) {
+	  lowest -= spl_free_manual_pressure_wrapper();
+	}
 	// if (lowest < 0) printf("ZFS: %s: kmem_avail() negative, %lld\n", __func__, lowest);
 #endif
 
@@ -3463,7 +3467,13 @@ arc_reclaim_thread(void)
 			int64_t to_free =
 			    (arc_c >> arc_shrink_shift) - free_memory;
 
+#ifndef _KERNEL			
 			if (to_free > 0) {
+#else
+#ifdef __APPLE__
+			if(to_free > 0 || spl_free_manual_pressure_wrapper() != 0) {
+#endif
+#endif			    
 #ifdef _KERNEL
 #ifdef sun
 				to_free = MAX(to_free, ptob(needfree));
@@ -4972,7 +4982,11 @@ arc_memory_throttle(uint64_t reserve, uint64_t txg)
 #else // 0 - APPLE
 	// the return from here is used to block all writes, so we don't want to return 1
 	// except in exceptional cases - smd
-	if(!spl_minimal_physmem_p()) { // && arc_reclaim_needed()) {
+	if(spl_free_manual_pressure_wrapper() != 0) {
+	  cv_signal(&arc_reclaim_thread_cv);
+	  kpreempt(KPREEMPT_SYNC);
+	}
+	if(!spl_minimal_physmem_p() && arc_reclaim_needed()) {
 	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 	  cv_signal(&arc_reclaim_thread_cv);
 	  printf("ZFS: %s THROTTLED by SPL, reclaim signalled, txg = %llu, reserve = %llu\n",
