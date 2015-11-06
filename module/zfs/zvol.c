@@ -1369,7 +1369,12 @@ zvol_read(struct bio *bio)
 
 	rl = zfs_range_lock(&zv->zv_znode, offset, len, RL_READER);
 
-	error = dmu_read_bio(zv->zv_objset, ZVOL_OBJ, bio);
+	/*
+	 * You may get multiple opens, but only one close.
+	 */
+	// zv->zv_open_count[otyp]--;
+	if (zv->zv_total_opens > 0)
+		zv->zv_total_opens--;
 
 	error = dmu_read_bio(zv->zv_objset, ZVOL_OBJ, bio);
 
@@ -2545,5 +2550,181 @@ zvol_fini(void)
 }
 
 
-module_param(zvol_max_discard_blocks, ulong, 0444);
-MODULE_PARM_DESC(zvol_max_discard_blocks, "Max number of blocks to discard");
+	tx = dmu_tx_create(os);
+	dmu_tx_hold_zap(tx, ZVOL_ZAP_OBJ, TRUE, NULL);
+	error = dmu_tx_assign(tx, TXG_WAIT);
+	if (error) {
+		dmu_tx_abort(tx);
+		return (error);
+	}
+	(void) zap_remove(os, ZVOL_ZAP_OBJ, ZVOL_DUMPSIZE, tx);
+	dmu_tx_commit(tx);
+
+	(void) zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
+	    zfs_prop_to_name(ZFS_PROP_CHECKSUM),
+	    8, 1, &checksum);
+	(void) zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
+	    zfs_prop_to_name(ZFS_PROP_COMPRESSION),
+	    8, 1, &compress);
+	(void) zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
+	    zfs_prop_to_name(ZFS_PROP_REFRESERVATION),
+	    8, 1, &refresrv);
+	(void) zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
+	    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE),
+	    8, 1, &vbs);
+
+	VERIFY(nvlist_alloc(&nv, NV_UNIQUE_NAME, KM_SLEEP) == 0);
+	(void) nvlist_add_uint64(nv,
+	    zfs_prop_to_name(ZFS_PROP_CHECKSUM),
+	    checksum);
+	(void) nvlist_add_uint64(nv,
+	    zfs_prop_to_name(ZFS_PROP_COMPRESSION),
+	    compress);
+	(void) nvlist_add_uint64(nv,
+	    zfs_prop_to_name(ZFS_PROP_REFRESERVATION),
+	    refresrv);
+	if (version >= SPA_VERSION_DEDUP &&
+	    zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
+	    zfs_prop_to_name(ZFS_PROP_DEDUP),
+	    8, 1, &dedup) == 0) {
+
+		(void) nvlist_add_uint64(nv,
+		    zfs_prop_to_name(ZFS_PROP_DEDUP), dedup);
+	}
+	(void) zfs_set_prop_nvlist(zv->zv_name, ZPROP_SRC_LOCAL,
+	    nv, NULL);
+	nvlist_free(nv);
+
+	zvol_free_extents(zv);
+	zv->zv_flags &= ~ZVOL_DUMPIFIED;
+	(void) dmu_free_long_range(os, ZVOL_OBJ, 0, DMU_OBJECT_END);
+	/* wait for dmu_free_long_range to actually free the blocks */
+	txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
+	tx = dmu_tx_create(os);
+	dmu_tx_hold_bonus(tx, ZVOL_OBJ);
+	error = dmu_tx_assign(tx, TXG_WAIT);
+	if (error) {
+		dmu_tx_abort(tx);
+		return (error);
+	}
+	if (dmu_object_set_blocksize(os, ZVOL_OBJ, vbs, 0, tx) == 0)
+		zv->zv_volblocksize = vbs;
+	dmu_tx_commit(tx);
+
+	return (0);
+}
+
+#endif
+
+
+int
+zvol_create_minors(const char *name)
+{
+	uint64_t cookie;
+	objset_t *os;
+	char *osname, *p;
+	int error, len;
+
+	if (dataset_name_hidden(name))
+		return (0);
+
+	if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
+		dprintf("ZFS WARNING 1: Unable to put hold on %s (error=%d).\n",
+		    name, error);
+		return (error);
+	}
+
+	if (dmu_objset_type(os) == DMU_OST_ZVOL) {
+		/*
+		 * In OSX, create_minor() will call IOKit, which may end up
+		 * calling zvol_first_open(), so we can not hold a lock here.
+		 */
+		dmu_objset_rele(os, FTAG);
+
+		if ((error = zvol_create_minor(name)) == 0)
+		/* error = zvol_create_snapshots(os, name) */;
+		else {
+			dprintf("ZFS WARNING: %s %s (error=%d).\n",
+			    "Unable to create ZVOL",
+			    name, error);
+		}
+		return (error);
+	}
+	if (dmu_objset_type(os) != DMU_OST_ZFS) {
+		dmu_objset_rele(os, FTAG);
+		return (0);
+	}
+
+	osname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+	if (snprintf(osname, MAXPATHLEN, "%s/", name) >= MAXPATHLEN) {
+		dmu_objset_rele(os, FTAG);
+		kmem_free(osname, MAXPATHLEN);
+		return (ENOENT);
+	}
+	p = osname + strlen(osname);
+	len = MAXPATHLEN - (p - osname);
+
+#if 0
+	/* Prefetch the datasets. */
+	cookie = 0;
+	while (dmu_dir_list_next(os, len, p, NULL, &cookie) == 0) {
+		if (!dataset_name_hidden(osname))
+			(void) dmu_objset_prefetch(osname, NULL);
+	}
+#endif
+
+	cookie = 0;
+	while (dmu_dir_list_next(os, MAXPATHLEN - (p - osname), p, NULL,
+	    &cookie) == 0) {
+		dmu_objset_rele(os, FTAG);
+		(void) zvol_create_minors(osname);
+		if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
+			dprintf("ZFS WARNING 2: %s %s (error=%d).\n",
+			    "Unable to put hold on",
+			    name, error);
+			kmem_free(osname, MAXPATHLEN);
+			return (error);
+		}
+	}
+
+	dmu_objset_rele(os, FTAG);
+	kmem_free(osname, MAXPATHLEN);
+	return (0);
+}
+
+
+
+
+/*
+ * Due to OS X limitations in /dev, we create a symlink for "/dev/zvol" to
+ * "/var/run/zfs" (if we can) and for each pool, create the traditional
+ * ZFS Volume symlinks.
+ *
+ * Ie, for ZVOL $POOL/$VOLUME
+ * BSDName /dev/disk2 /dev/rdisk2
+ * /dev/zvol -> /var/run/zfs
+ * /var/run/zfs/zvol/dsk/$POOL/$VOLUME -> /dev/disk2
+ * /var/run/zfs/zvol/rdsk/$POOL/$VOLUME -> /dev/rdisk2
+ *
+ * Note, we do not create symlinks for the partitioned slices.
+ *
+ */
+
+void
+zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rdisk)
+{
+	zfs_ereport_zvol_post(FM_EREPORT_ZVOL_CREATE_SYMLINK,
+	    zv->zv_name, bsd_disk, bsd_rdisk);
+}
+
+
+void
+zvol_remove_symlink(zvol_state_t *zv)
+{
+	if (!zv || !zv->zv_name[0])
+		return;
+
+	zfs_ereport_zvol_post(FM_EREPORT_ZVOL_REMOVE_SYMLINK,
+	    zv->zv_name, &zv->zv_bsdname[1],
+	    zv->zv_bsdname);
+}
