@@ -1266,7 +1266,7 @@ static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 		// Update source node to new hash, and name.
 		findnode->hl_parent = parent_tid;
 		strlcpy(findnode->hl_name, to, PATH_MAX);
-		zp->z_finder_parentid = parent_tid;
+		//zp->z_finder_parentid = parent_tid;
 
 		avl_add(&zfsvfs->z_hardlinks, findnode);
 		avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
