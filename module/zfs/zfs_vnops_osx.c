@@ -768,18 +768,21 @@ static void zfs_cache_name(struct vnode *vp, struct vnode *dvp, char *filename)
 
 	zp = VTOZ(vp);
 
+	uint64_t parentid = 0;
+	if((zp->z_links > 1) &&
+	   (IFTOVT((mode_t)zp->z_mode) == VREG) &&
+	   dvp) {
+	  parentid = VTOZ(dvp)->z_id;
+	}
+
 	mutex_enter(&zp->z_lock);
 
 	strlcpy(zp->z_name_cache,
 			filename,
 			MAXPATHLEN);
 
-	// If hardlink, remember the parentid.
-	if ((zp->z_links > 1) &&
-		(IFTOVT((mode_t)zp->z_mode) == VREG) &&
-		dvp) {
-		zp->z_finder_parentid = VTOZ(dvp)->z_id;
-	}
+          if(parentid)
+	    zp->z_finder_parentid = parentid;
 
 	mutex_exit(&zp->z_lock);
 }
