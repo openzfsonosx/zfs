@@ -153,8 +153,6 @@ osx_kstat_t osx_kstat = {
 
 	{"zfs_recover",					KSTAT_DATA_INT64  },
 	{"zfs_free_max_blocks",			KSTAT_DATA_UINT64 },
-	{"zfs_l2arc_lowmem_algorithm",		KSTAT_DATA_UINT64 },
-	{"zfs_l2arc_lowmem_force_permil",		KSTAT_DATA_UINT64 },
 };
 
 
@@ -316,28 +314,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		  zfs_free_max_blocks = (uint32_t)ks->zfs_free_max_blocks.value.ui64;
 		}
 
-		if(ks->zfs_l2arc_lowmem_algorithm.value.ui64 != zfs_l2arc_lowmem_algorithm) {
-		  printf("ZFS: zfs_l2arc_lowmem_algorithm = %llu, becoming %llu\n",
-			 zfs_l2arc_lowmem_algorithm,
-			 ks->zfs_l2arc_lowmem_algorithm.value.ui64);
-		  zfs_l2arc_lowmem_algorithm = ks->zfs_l2arc_lowmem_algorithm.value.ui64;
-		}
-
-		if(ks->zfs_l2arc_lowmem_force_permil.value.ui64 != zfs_l2arc_lowmem_force_permil) {
-		  if(ks->zfs_l2arc_lowmem_force_permil.value.ui64 > 1000) {
-		    printf("ZFS: l2arc_lowmem_force %llu out of range, unchanged at %llu\n",
-			   ks->zfs_l2arc_lowmem_force_permil.value.ui64,
-			   zfs_l2arc_lowmem_algorithm);
-		  } else {
-		    printf("ZFS: zfs_l2arc_lowmem_force_permil = %llu, now %llu, algorithm %llu -> 5\n",
-			   zfs_l2arc_lowmem_force_permil,
-			   ks->zfs_l2arc_lowmem_force_permil.value.ui64,
-			   zfs_l2arc_lowmem_algorithm);
-		    zfs_l2arc_lowmem_force_permil = ks->zfs_l2arc_lowmem_force_permil.value.ui64;
-		    zfs_l2arc_lowmem_algorithm = 5;
-		  }
-		}
-
 	} else {
 
 		/* kstat READ */
@@ -486,8 +462,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			zfs_recover;
 
 		ks->zfs_free_max_blocks.value.ui64 = (uint64_t)zfs_free_max_blocks;
-		ks->zfs_l2arc_lowmem_algorithm.value.ui64 = zfs_l2arc_lowmem_algorithm;
-		ks->zfs_l2arc_lowmem_force_permil.value.ui64 = zfs_l2arc_lowmem_force_permil;
 	}
 
 	return 0;

@@ -99,8 +99,6 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_recover;
 
   kstat_named_t zfs_free_max_blocks;
-  kstat_named_t zfs_l2arc_lowmem_algorithm;
-  kstat_named_t zfs_l2arc_lowmem_force_permil;
 
 } osx_kstat_t;
 
