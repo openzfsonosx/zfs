@@ -5564,7 +5564,7 @@ zfs_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 
 	if (cmd != F_FREESP) {
 		ZFS_EXIT(zfsvfs);
-		return (SET_ERROR(EINVAL));
+		return (SET_ERROR(ENOTSUP));
 	}
 #ifndef __APPLE__
 	if (error = convoff(vp, bfp, 0, offset)) {

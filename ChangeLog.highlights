@@ -78,3 +78,4 @@ O3X commits:
 	Fix panic in zfs_finder_keep_hardlink due to ctldir - ilovezfs
 	get_history() should use zfs_ioctl() not ioctl() - ilovezfs
 	Force zed to run since KeepAlive=true is already set anyway - ilovezfs
+	Pick a better error code in zfs_space when its not FREESP
