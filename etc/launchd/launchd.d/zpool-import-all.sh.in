@@ -48,6 +48,8 @@ then
     TRINITY_CACHE_DONE=0
     DONKEY_CACHE_DONE=0
     CLATM_CACHE_DONE=0
+    DUAL_CACHE_DONE=0
+    HOMEPOOL_CACHE_DONE=0
     echo "ZPOOL_CACHE_DONE = 0, therefore trying individual caches"
     if [ -f /etc/zfs/caches/ssdpool.cache ]
     then
@@ -70,6 +72,19 @@ then
     then
 	"${ZPOOL}" import -c /etc/zfs/caches/CLATM.cache CLATM && CLATM_CACHE_DONE=1
     fi
+    if [ -f /etc/zfs/caches/homepool.cache ]
+    then
+	"${ZPOOL}" import -c /etc/zfs/caches/homepool.cache homepool && HOMEPOOL_CACHE_DONE=1
+	if ((!HOMEPOOL_CACHE_DONE))
+	then
+	    echo "homepool cache import failed, this is critical. bye."
+	    exit 1
+	fi
+    fi
+    if [ -f /etc/zfs/caches/Dual.cache ]
+    then
+	"${ZPOOL}" import -c /etc/zfs/caches/Dual.cache DUAL && DUAL_CACHE_DONE=1
+    fi
 fi
 
 if((ZPOOL_CACHE_DONE)); then echo Everything imported via cache.; fi
@@ -77,13 +92,16 @@ if((SSDPOOL_CACHE_DONE)); then echo ssdpool imported via cache.; fi
 if((TRINITY_CACHE_DONE)); then echo Trinity imported via cache.; fi
 if((CLATM_CACHE_DONE)); then echo CLATM imported via cache.; fi
 if((DONKEY_CACHE_DONE)); then echo Donkey imported via cache.; fi
+if((HOMEPOOL_CACHE_DONE)); then echo homepool imported via cache.; fi
+if((DUAL_CACHE_DONE)); then echo homepool imported via cache.; fi
 
-if ((!ZPOOL_IMPORT_CACHE && ((! ((SSDPOOL_CACHE_DONE || CLATM_CACHE_DONE || DONKEY_CACHE_DONE || TRINITY_CACHE_DONE))))))
+if ((!ZPOOL_IMPORT_CACHE && ((! ((SSDPOOL_CACHE_DONE || CLATM_CACHE_DONE || DONKEY_CACHE_DONE || TRINITY_CACHE_DONE || HOMEPOOL_CACHE_DONE || DUAL_CACHE_DONE))))))
 then
     echo "Nothing imported via caches.  Running zpool import -d /etc/zfs/devices"
     "${ZPOOL}" import -d /etc/zfs/devices
     date
 
+    # should also make this work on mis; for now fallback will have to be manual
     echo "Running zpool import -d /etc/zfs/devices ssdpool || exit 1"
     "${ZPOOL}" import -d /etc/zfs/devices ssdpool || exit 1
     date
@@ -110,7 +128,7 @@ echo "Touching the file ${ZPOOL_IMPORT_ALL_COOKIE}"
 touch "${ZPOOL_IMPORT_ALL_COOKIE}"
 
 echo "Setting cachefile properties"
-for i in ssdpool Donkey Trinity CLATM
+for i in ssdpool Donkey Trinity CLATM homepool Dual
 do
     "${ZPOOL}" set cachefile=/etc/zfs/caches/$i.cache $i
 done
