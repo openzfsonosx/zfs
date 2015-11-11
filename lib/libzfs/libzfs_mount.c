@@ -603,7 +603,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 	char mntopts[MNT_LINE_MAX];
 	char overlay[ZFS_MAXPROPLEN];
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
-	int remount;
+	int remount = 0;
 
 	if (options == NULL) {
 		mntopts[0] = '\0';
