@@ -266,7 +266,7 @@ zfs_prop_init(void)
 	    "discard | noallow | restricted | passthrough | passthrough-x",
 	    "ACLINHERIT", acl_inherit_table);
     zprop_register_index(ZFS_PROP_ACLMODE, "aclmode",
-        ZFS_ACL_DISCARD, PROP_INHERIT, ZFS_TYPE_FILESYSTEM,
+        ZFS_ACL_PASSTHROUGH, PROP_INHERIT, ZFS_TYPE_FILESYSTEM,
         "discard | mask | passthrough", "ACLMODE", acl_mode_table);
 	zprop_register_index(ZFS_PROP_COPIES, "copies", 1, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
