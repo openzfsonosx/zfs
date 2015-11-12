@@ -32,7 +32,7 @@
 extern "C" {
 #endif
 
-extern unsigned long	zfetch_array_rd_sz;
+extern uint64_t	zfetch_array_rd_sz;
 
 struct dnode;				/* so we can reference dnode */
 
@@ -42,31 +42,25 @@ typedef enum zfetch_dirn {
 } zfetch_dirn_t;
 
 typedef struct zstream {
-	uint64_t	zst_offset;	/* offset of starting block in range */
-	uint64_t	zst_len;	/* length of range, in blocks */
-	zfetch_dirn_t	zst_direction;	/* direction of prefetch */
-	uint64_t	zst_stride;	/* length of stride, in blocks */
-	uint64_t	zst_ph_offset;	/* prefetch offset, in blocks */
-	uint64_t	zst_cap;	/* prefetch limit (cap), in blocks */
-	kmutex_t	zst_lock;	/* protects stream */
-	clock_t		zst_last;	/* lbolt of last prefetch */
-	list_node_t	zst_node;	/* next zstream here */
+	uint64_t        zs_blkid;       /* expect next access at this blkid */
+	uint64_t        zs_pf_blkid;    /* next block to prefetch */
+	kmutex_t        zs_lock;        /* protects stream */
+	hrtime_t        zs_atime;       /* time last prefetch issued */
+	list_node_t     zs_node;        /* link for zf_stream */
 } zstream_t;
 
 typedef struct zfetch {
 	krwlock_t	zf_rwlock;	/* protects zfetch structure */
 	list_t		zf_stream;	/* AVL tree of zstream_t's */
 	struct dnode	*zf_dnode;	/* dnode that owns this zfetch */
-	uint32_t	zf_stream_cnt;	/* # of active streams */
-	uint64_t	zf_alloc_fail;	/* # of failed attempts to alloc strm */
 } zfetch_t;
 
 void		zfetch_init(void);
 void		zfetch_fini(void);
 
 void		dmu_zfetch_init(zfetch_t *, struct dnode *);
-void		dmu_zfetch_rele(zfetch_t *);
-void		dmu_zfetch(zfetch_t *, uint64_t, uint64_t, int);
+void		dmu_zfetch_fini(zfetch_t *);
+void		dmu_zfetch(zfetch_t *, uint64_t, uint64_t);
 
 
 #ifdef	__cplusplus

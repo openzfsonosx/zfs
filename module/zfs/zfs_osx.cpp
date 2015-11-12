@@ -434,8 +434,6 @@ uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t 
 #include <sys/spa_impl.h>
 #include <sys/vdev_disk.h>
 
-#define dprintf printf
-
 static vdev_t *
 vdev_lookup_by_path(vdev_t *vd, const char *name)
 {

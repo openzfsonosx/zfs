@@ -29,6 +29,7 @@
 #ifndef _ZIO_H
 #define	_ZIO_H
 
+#include <sys/zio_priority.h>
 #include <sys/zfs_context.h>
 #include <sys/spa.h>
 #include <sys/txg.h>
@@ -146,17 +147,6 @@ enum zio_compress {
 #define	ZIO_FAILURE_MODE_WAIT		0
 #define	ZIO_FAILURE_MODE_CONTINUE	1
 #define	ZIO_FAILURE_MODE_PANIC		2
-
-typedef enum zio_priority {
-	ZIO_PRIORITY_SYNC_READ,
-	ZIO_PRIORITY_SYNC_WRITE,	/* ZIL */
-	ZIO_PRIORITY_ASYNC_READ,	/* prefetch */
-	ZIO_PRIORITY_ASYNC_WRITE,	/* spa_sync() */
-	ZIO_PRIORITY_SCRUB,		/* asynchronous scrub/resilver reads */
-	ZIO_PRIORITY_NUM_QUEUEABLE,
-
-	ZIO_PRIORITY_NOW		/* non-queued i/os (e.g. free) */
-} zio_priority_t;
 
 enum zio_flag {
 	/*

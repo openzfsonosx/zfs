@@ -46,6 +46,7 @@
 #include <sys/fs/zfs.h>
 #include <sys/uio.h>
 #include <sys/vnode.h>
+#include <sys/zio_priority.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -771,14 +772,14 @@ void dmu_xuio_clear(struct xuio *uio, int i);
 void xuio_stat_wbuf_copied(void);
 void xuio_stat_wbuf_nocopy(void);
 
-extern int zfs_prefetch_disable;
+extern boolean_t zfs_prefetch_disable;
 extern int zfs_max_recordsize;
 
 /*
  * Asynchronously try to read in the data.
  */
-void dmu_prefetch(objset_t *os, uint64_t object, uint64_t offset,
-    uint64_t len);
+void dmu_prefetch(objset_t *os, uint64_t object, int64_t level, uint64_t offset,
+	uint64_t len, zio_priority_t pri);
 
 typedef struct dmu_object_info {
 	/* All sizes are in bytes unless otherwise indicated. */

@@ -806,7 +806,6 @@ libzfs_handle_t *
 libzfs_init(void)
 {
 	libzfs_handle_t *hdl;
-	int error;
 
 	if (libzfs_load_module("zfs") != 0) {
 		(void) fprintf(stderr, gettext("Failed to load ZFS module "

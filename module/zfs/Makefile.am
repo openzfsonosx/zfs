@@ -47,6 +47,7 @@ zfs_SOURCES = \
 	bplist.c \
 	bpobj.c \
 	bptree.c \
+	bqueue.c \
 	dbuf.c \
 	dbuf_stats.c \
 	ddt.c \

@@ -144,7 +144,8 @@ extern int zfs_set_prop_nvlist(const char *, zprop_source_t,
 static void zvol_log_truncate(zvol_state_t *zv, dmu_tx_t *tx, uint64_t off,
     uint64_t len, boolean_t sync);
 static int zvol_remove_zv(zvol_state_t *);
-static int zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio);
+static int zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
+						 znode_t *, rl_t *);
 // static int zvol_dumpify(zvol_state_t *zv);
 // static int zvol_dump_fini(zvol_state_t *zv);
 // static int zvol_dump_init(zvol_state_t *zv, boolean_t resize);
@@ -1239,7 +1240,8 @@ zvol_get_done(zgd_t *zgd, int error)
  * Get data to generate a TX_WRITE intent log record.
  */
 static int
-zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
+zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
+			  znode_t *zp, rl_t *rl)
 {
 	zvol_state_t *zv = arg;
 	objset_t *os = zv->zv_objset;
@@ -2731,7 +2733,7 @@ zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rdisk)
 void
 zvol_remove_symlink(zvol_state_t *zv)
 {
-	if (!zv || !zv->zv_name)
+	if (!zv || !zv->zv_name[0])
 		return;
 
 	zfs_ereport_zvol_post(FM_EREPORT_ZVOL_REMOVE_SYMLINK,
