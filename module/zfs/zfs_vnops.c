@@ -3652,13 +3652,29 @@ top:
             kmem_free(aaclp, aclbsize);
 
         } else {
-            struct kauth_acl blank_acl;
 
-            bzero(&blank_acl, sizeof blank_acl);
+			vsecattr_t blank_acl;
+			int seen_type = 0;
+            int		aclbsize;	/* size of acl list in bytes */
+			ace_t	*aaclp;
+
+            blank_acl.vsa_mask = VSA_ACE;
+			blank_acl.vsa_aclcnt = 0;
+            aclbsize = ( 3 ) * sizeof(ace_t);
+			blank_acl.vsa_aclentp = kmem_zalloc(aclbsize, KM_SLEEP);
+			aaclp = blank_acl.vsa_aclentp;
+            blank_acl.vsa_aclentsz = aclbsize;
+			// Clearing, we need to pass in the trivials only
+			zfs_addacl_trivial(zp, blank_acl.vsa_aclentp, &blank_acl.vsa_aclcnt,
+				seen_type);
+
             if ((err = zfs_setacl(zp, &blank_acl, B_TRUE, cr)))
                 dprintf("setattr: setacl failed: %d\n", err);
-        }
-        }
+
+            kmem_free(aaclp, aclbsize);
+
+        } // blank ACL?
+	} // ACL
 
 
 	if (mask & AT_MODE) {

@@ -903,6 +903,7 @@ zfs_mode_compute(uint64_t fmode, zfs_acl_t *aclp,
 	uint32_t	access_mask;
 	boolean_t	an_exec_denied = B_FALSE;
 
+
 	mode = (fmode & (S_IFMT | S_ISUID | S_ISGID | S_ISVTX));
 
 	while ((acep = zfs_acl_next_ace(aclp, acep, &who,
@@ -921,8 +922,21 @@ zfs_mode_compute(uint64_t fmode, zfs_acl_t *aclp,
 		    entry_type == OWNING_GROUP))
 			continue;
 
-		if (entry_type == ACE_OWNER || (entry_type == 0 &&
-		    who == fuid)) {
+
+		/*
+		 * Apple has unusual expectations to emulate hfs in that the mode is not
+		 * updated:
+		 *      -rw-r--r--  1 root  wheel  0 Nov 12 12:39 file.txt
+		 * chmod +a "root allow execute" file.txt
+		 * ZFS: -rwxr--r--+ 1 root  wheel  0 Nov 12 12:39 file.txt
+		 * HFS: -rw-r--r--+ 1 root  wheel  0 Nov 12 12:39 file.txt
+		 *       0: user:root allow execute
+		 */
+		if (entry_type == ACE_OWNER
+#ifndef __APPLE__
+			|| (entry_type == 0 && who == fuid)
+#endif
+			) {
 			if ((access_mask & ACE_READ_DATA) &&
 			    (!(seen & S_IRUSR))) {
 				seen |= S_IRUSR;
@@ -944,8 +958,11 @@ zfs_mode_compute(uint64_t fmode, zfs_acl_t *aclp,
 					mode |= S_IXUSR;
 				}
 			}
-		} else if (entry_type == OWNING_GROUP ||
-		    (entry_type == ACE_IDENTIFIER_GROUP && who == fgid)) {
+		} else if (entry_type == OWNING_GROUP
+#ifndef __APPLE__
+				   || (entry_type == ACE_IDENTIFIER_GROUP && who == fgid)
+#endif
+			) {
 			if ((access_mask & ACE_READ_DATA) &&
 			    (!(seen & S_IRGRP))) {
 				seen |= S_IRGRP;
@@ -1465,15 +1482,11 @@ zfs_acl_chmod_setattr(znode_t *zp, zfs_acl_t **aclp, uint64_t mode)
 
 	mutex_enter(&zp->z_acl_lock);
 	mutex_enter(&zp->z_lock);
-#if 1
+
 	if (zp->z_zfsvfs->z_acl_mode == ZFS_ACL_DISCARD)
 		*aclp = zfs_acl_alloc(zfs_acl_version_zp(zp));
 	else
 		error = zfs_acl_node_read(zp, B_TRUE, aclp, B_TRUE);
-#else
-	//We will default to ZFS_ACL_PASSTHROUGH behavior until aclmode is brought back.
-	 error = zfs_acl_node_read(zp, B_TRUE, aclp, B_TRUE);
-#endif
 
 	if (error == 0) {
 		(*aclp)->z_hints = zp->z_pflags & V4_ACL_WIDE_FLAGS;
