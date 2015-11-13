@@ -7426,8 +7426,10 @@ l2arc_remove_vdev(vdev_t *vd)
 		 * accessed from anywhere in the l2arc rebuild code below
 		 * (except for l2arc_spa_rebuild_start, which is ok).
 		 */
-	  printf("ZFS: %s: ignoring thread join for %lld & doing delay(1) instead\n, remdev->l2ad_rebuild_did");
-	  delay(1); 
+	  printf("ZFS: %s: ignoring thread join for %lld & doing delay(5) instead\n",
+		 __func__, remdev->l2ad_rebuild_did);
+
+	  delay(5); 
 		//thread_join(remdev->l2ad_rebuild_did);
 	}
 
