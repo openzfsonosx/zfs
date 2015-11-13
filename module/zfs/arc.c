@@ -145,6 +145,7 @@
 
 #ifdef __APPLE__
 #include <sys/kstat_osx.h>
+#include <sys/debug.h>
 #ifdef _KERNEL
 extern vmem_t *zio_arena;
 #endif
@@ -1044,7 +1045,7 @@ typedef struct l2arc_dev_hdr_phys {
 
 	const uint64_t	dh_pad[44];		/* pad to 512 bytes */
 } l2arc_dev_hdr_phys_t;
-CTASSERT(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
+CTASSERT_GLOBAL(sizeof (l2arc_dev_hdr_phys_t) == SPA_MINBLOCKSIZE);
 
 /*
  * A single ARC buffer header entry in a l2arc_log_blk_phys_t.
@@ -1114,9 +1115,9 @@ typedef struct l2arc_log_blk_phys {
 	l2arc_log_ent_phys_t	lb_entries[L2ARC_LOG_BLK_ENTRIES];
 } l2arc_log_blk_phys_t;
 
-CTASSERT(sizeof (l2arc_log_blk_phys_t) == L2ARC_LOG_BLK_SIZE);
-CTASSERT(offsetof(l2arc_log_blk_phys_t, lb_entries) -
-    offsetof(l2arc_log_blk_phys_t, lb_magic) == L2ARC_LOG_BLK_HEADER_LEN);
+CTASSERT_GLOBAL(sizeof (l2arc_log_blk_phys_t) == L2ARC_LOG_BLK_SIZE);
+CTASSERT_GLOBAL(offsetof(l2arc_log_blk_phys_t, lb_entries) -
+		offsetof(l2arc_log_blk_phys_t, lb_magic) == L2ARC_LOG_BLK_HEADER_LEN);
 
 /*
  * These structures hold in-flight l2arc_log_blk_phys_t's as they're being
@@ -7533,8 +7534,9 @@ l2arc_spa_rebuild_start(spa_t *spa)
 			VERIFY3U(dev->l2ad_rebuild_did, ==, 0);
 #ifdef	_KERNEL
 			dev->l2ad_rebuild_did = thread_create(NULL, 0,
-			    l2arc_dev_rebuild_start, dev, 0, &p0, TS_RUN,
-			    minclsyspri)->t_did;
+							      (void *)l2arc_dev_rebuild_start,
+							      dev, 0, &p0, TS_RUN,
+							      minclsyspri);
 #endif
 		}
 	}
@@ -7849,7 +7851,7 @@ l2arc_log_blk_read(l2arc_dev_t *dev,
 	}
 
 	/* Make sure the buffer checks out */
-	fletcher_4_native(this_lb_buf, LBP_GET_PSIZE(this_lbp), NULL, &cksum);
+	fletcher_4_native(this_lb_buf, LBP_GET_PSIZE(this_lbp), &cksum);
 	if (!ZIO_CHECKSUM_EQUAL(cksum, this_lbp->lbp_cksum)) {
 		ARCSTAT_BUMP(arcstat_l2_rebuild_abort_cksum_errors);
 		err = SET_ERROR(EINVAL);
@@ -8116,12 +8118,12 @@ l2arc_log_blk_commit(l2arc_dev_t *dev, zio_t *pio,
 		    ZIO_COMPRESS_OFF);
 	}
 	/* checksum what we're about to write */
-	fletcher_4_native(lb_buf->lbb_log_blk, asize, NULL,
+	fletcher_4_native(lb_buf->lbb_log_blk, asize,
 	    &dev->l2ad_dev_hdr->dh_start_lbps[0].lbp_cksum);
 
 	/* perform the write itself */
 	CTASSERT(L2ARC_LOG_BLK_SIZE >= SPA_MINBLOCKSIZE &&
-	    L2ARC_LOG_BLK_SIZE <= SPA_MAXBLOCKSIZE);
+		 L2ARC_LOG_BLK_SIZE <= SPA_MAXBLOCKSIZE);
 	wzio = zio_write_phys(pio, dev->l2ad_vdev, dev->l2ad_hand,
 	    asize, lb_buf->lbb_log_blk, ZIO_CHECKSUM_OFF, NULL, NULL,
 	    ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_CANFAIL, B_FALSE);
@@ -8172,7 +8174,7 @@ l2arc_dev_hdr_checksum(const l2arc_dev_hdr_phys_t *hdr, zio_cksum_t *cksum)
 	fletcher_4_native((uint8_t *)hdr +
 	    offsetof(l2arc_dev_hdr_phys_t, dh_spa_guid),
 	    sizeof (*hdr) - offsetof(l2arc_dev_hdr_phys_t, dh_spa_guid),
-	    NULL, cksum);
+	    cksum);
 }
 
 /*

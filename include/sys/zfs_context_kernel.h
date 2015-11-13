@@ -85,6 +85,8 @@ extern "C" {
 #define	KMC_KMEM		0x0
 #define	KMC_VMEM		0x0
 
+typedef struct kthread *kt_did_t;
+
 #define noinline
 
 typedef struct dirent dirent_t;

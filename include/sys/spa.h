@@ -451,15 +451,15 @@ _NOTE(CONSTCOND) } while (0)
 	(0 == ((zc)->zc_word[0] | (zc)->zc_word[1] | \
 		   (zc)->zc_word[2] | (zc)->zc_word[3]))
 
-#define ZIO_CHECKSUM_BSWAP(zcp)										\
-	{                                                               \
-        (zcp)->zc_word[0] = BSWAP_64((zcp)->zc_word[0]);			\
-        (zcp)->zc_word[1] = BSWAP_64((zcp)->zc_word[1]);			\
-        (zcp)->zc_word[2] = BSWAP_64((zcp)->zc_word[2]);			\
-        (zcp)->zc_word[3] = BSWAP_64((zcp)->zc_word[3]);			\
-	}
-
 #define	DVA_IS_VALID(dva)	(DVA_GET_ASIZE(dva) != 0)
+
+#define        ZIO_SET_CHECKSUM(zcp, w0, w1, w2, w3)	\
+  {							\
+    (zcp)->zc_word[0] = w0;				\
+    (zcp)->zc_word[1] = w1;				\
+    (zcp)->zc_word[2] = w2;				\
+    (zcp)->zc_word[3] = w3;				\
+  }
 
 #define       ZIO_CHECKSUM_BSWAP(_zc)	  \
   do {							    \

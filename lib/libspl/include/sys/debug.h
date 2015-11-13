@@ -29,4 +29,14 @@
 
 #include <assert.h>
 
+/*
+ * Compile-time assertion. The condition 'x' must be constant.
+ */
+#define	CTASSERT_GLOBAL(x)		_CTASSERT(x, __LINE__)
+#define	CTASSERT(x)			{ _CTASSERT(x, __LINE__); }
+#define	_CTASSERT(x, y)			__CTASSERT(x, y)
+#define	__CTASSERT(x, y)			\
+	typedef char __attribute__ ((unused))	\
+	__compile_time_assertion__ ## y[(x) ? 1 : -1]
+
 #endif
