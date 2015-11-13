@@ -63,6 +63,8 @@ typedef struct user64_timespec	timespec_user64_t;
 #endif
 
 #define UNKNOWNUID ((uid_t)99)
+#define UNKNOWNGID ((gid_t)99)
+
 #define DTTOVT(dtype)   (iftovt_tab[(dtype)])
 #define kTextEncodingMacUnicode	0x7e
 #define ZAP_AVENAMELEN  (ZAP_MAXNAMELEN / 4)

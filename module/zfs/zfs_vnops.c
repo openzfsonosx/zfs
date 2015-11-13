@@ -3117,6 +3117,17 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	mutex_exit(&zp->z_lock);
 
 #ifdef __APPLE__
+
+	/* If we are told to ignore owners, we scribble over the uid and gid here
+	 * unless root.
+	 */
+	if (((unsigned int)vfs_flags(zfsvfs->z_vfs)) & MNT_IGNORE_OWNERSHIP) {
+		if (kauth_cred_getuid(cr) != 0) {
+			vap->va_uid = UNKNOWNUID;
+			vap->va_gid = UNKNOWNGID;
+		}
+	}
+
 #else
     uint64_t blksize, nblocks;
 

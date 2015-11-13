@@ -1317,14 +1317,18 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	uint_t mask = vap->va_mask;
 	int error = 0;
 
+
+	int ignore_ownership = (((unsigned int)vfs_flags(vnode_mount(ap->a_vp)))
+							& MNT_IGNORE_OWNERSHIP);
+
 	/* Translate OS X requested mask to ZFS */
 	if (VATTR_IS_ACTIVE(vap, va_data_size))
 		mask |= AT_SIZE;
 	if (VATTR_IS_ACTIVE(vap, va_mode))
 		mask |= AT_MODE;
-	if (VATTR_IS_ACTIVE(vap, va_uid))
+	if (VATTR_IS_ACTIVE(vap, va_uid) && !ignore_ownership)
 		mask |= AT_UID;
-	if (VATTR_IS_ACTIVE(vap, va_gid))
+	if (VATTR_IS_ACTIVE(vap, va_gid) && !ignore_ownership)
 		mask |= AT_GID;
 	if (VATTR_IS_ACTIVE(vap, va_access_time))
 		mask |= AT_ATIME;
