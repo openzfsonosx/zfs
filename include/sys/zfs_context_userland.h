@@ -189,6 +189,8 @@ typedef struct kthread {
 	void *		t_arg;
 } kthread_t;
 
+typedef uint64_t kt_did_t;
+
 #define	tsd_get(key)			pthread_getspecific(key)
 #define	tsd_set(key, val)		pthread_setspecific(key, val)
 #define	curthread			(kthread_t *)zk_thread_current()
