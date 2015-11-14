@@ -438,11 +438,17 @@ shortened column name,
 Amount of uninitialized space within the pool or device that can be used to
 increase the total capacity of the pool.  Uninitialized space consists of
 any space on an EFI labeled vdev which has not been brought online
-.Po e.g, using
-.Nm zpool Cm online Fl e
-.Pc .
-This space occurs when a LUN is dynamically expanded.
-.It Sy fragmentation
+(i.e. zpool online -e).  This space occurs when a LUN is dynamically expanded.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBfragmentation\fR\fR
+.ad
+.RS 20n
+.rt
 The amount of fragmentation in the pool.
 .It Sy free
 The amount of free space available in the pool.
