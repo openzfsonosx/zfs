@@ -241,8 +241,11 @@ extern int zpl_xattr_get_sa(struct vnode *vp, const char *name, void *value,
 #define KAUTH_WKG_EVERYBODY     4
 
 extern int kauth_wellknown_guid(guid_t *guid);
-extern void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl);
+extern void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl,
+						  int *seen_type);
 extern void nfsacl_set_wellknown(int wkg, guid_t *guid);
+extern int  zfs_addacl_trivial(znode_t *zp, ace_t *aces, int *nentries,
+							   int seen_type);
 
 
 #ifdef	__cplusplus
