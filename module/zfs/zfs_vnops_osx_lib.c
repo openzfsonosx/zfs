@@ -62,6 +62,8 @@ int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid);
 
 int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid);
 
+int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid);
+
 /* Originally from illumos:uts/common/sys/vfs.h */
 typedef uint64_t vfs_feature_t;
 #define	VFSFT_XVATTR		0x100000001	/* Supports xvattr for attrs */
