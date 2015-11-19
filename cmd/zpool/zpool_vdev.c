@@ -88,6 +88,10 @@
 #include "zpool_util.h"
 #include <sys/zfs_context.h>
 
+#ifdef __APPLE__
+int osx_device_get_mountpoint(const char *, char *, size_t);
+#endif /* __APPLE__ */
+
 /*
  * For any given vdev specification, we can have multiple errors.  The
  * vdev_error() function keeps track of whether we have seen an error yet, and
@@ -339,8 +343,20 @@ check_file(const char *file, boolean_t force, boolean_t isspare)
 	pool_state_t state;
 	boolean_t inuse;
 
-	if ((fd = open(file, O_RDONLY)) < 0)
+	if ((fd = open(file, O_RDONLY)) < 0) {
+		if (errno == EBUSY) {
+			char mountpoint_path[MAXPATHLEN];
+			if (osx_device_get_mountpoint(file, mountpoint_path,
+			    sizeof (mountpoint_path)) == 0)
+				vdev_error(gettext("%s is currently mounted on "
+				    "%s. Please see diskutil(8M) unmount.\n"),
+				    file, mountpoint_path);
+			else
+				vdev_error(gettext("%s is in use.\n"), file);
+			return (-1);
+		}
 		return (0);
+	}
 
 	if (zpool_in_use(g_zfs, fd, &state, &name, &inuse) == 0 && inuse) {
 		const char *desc;
@@ -1770,3 +1786,109 @@ make_root_vdev(zpool_handle_t *zhp, nvlist_t *props, int force, int check_rep,
 
 	return (newroot);
 }
+
+#ifdef __APPLE__
+#include <DiskArbitration/DiskArbitration.h>
+#include <IOKit/storage/IOStorageProtocolCharacteristics.h>
+//#include <CoreFoundation/CoreFoundation.h>
+//#include <CFNetwork/CFNetwork.h>
+//#include <CFNetwork/CFHTTPStream.h>
+
+#define diskarb_debug 0
+
+typedef struct {
+	DASessionRef session;
+	DADiskRef disk;
+} DADiskSession;
+
+int
+DACFDictionaryGetValueIfPresent(CFDictionaryRef dict, CFStringRef key,
+    char *buf, size_t buflen) {
+	int err = 0;
+	CFURLRef valMountPointURL = NULL;
+	CFStringRef fsPathCFStr = NULL;
+	if (dict &&
+	    CFDictionaryGetValueIfPresent(dict, key,
+	        (const void **)&valMountPointURL)) {
+		if (diskarb_debug)
+			printf("valMountPoint p %p\n", valMountPointURL);
+		fsPathCFStr = CFURLCopyFileSystemPath(valMountPointURL,
+		    kCFURLPOSIXPathStyle);
+		if (fsPathCFStr != NULL)
+			CFStringGetCString(fsPathCFStr, buf, buflen,
+			    kCFStringEncodingUTF8);
+		else
+			err = -1;
+	}
+
+	if (fsPathCFStr != NULL)
+		CFRelease(fsPathCFStr);
+	if (valMountPointURL != NULL)
+		CFRelease(valMountPointURL);
+
+	return (err);
+}
+
+int
+setupDADiskSession(DADiskSession *ds, const char *bsdName) {
+	int err = 0;
+
+	ds->session = DASessionCreate(NULL);
+	if (ds->session == NULL) {
+		err = EINVAL;
+	}
+
+	if (err == 0) {
+		ds->disk = DADiskCreateFromBSDName(NULL, ds->session, bsdName);
+		if (ds->disk == NULL)
+			err = EINVAL;
+	}
+	return (err);
+}
+
+void
+teardownDADiskSession(DADiskSession *ds) {
+	if (ds->session != NULL)
+		CFRelease(ds->session);
+	if (ds->disk != NULL)
+		CFRelease(ds->disk);
+}
+
+int
+DAGetVolumePath(const char *device, char *volumebuf, size_t volumebuflen) {
+	int error;
+	DADiskSession ds = { 0 };
+
+	if ((error = setupDADiskSession(&ds, device)) == 0) {
+		CFDictionaryRef descDict = NULL;
+		if((descDict = DADiskCopyDescription(ds.disk)) != NULL) {
+			error = DACFDictionaryGetValueIfPresent(descDict,
+			    kDADiskDescriptionVolumePathKey, volumebuf,
+			    volumebuflen);
+		} else {
+			error = -1;
+			(void) fprintf(stderr,
+			    "no DADiskCopyDescription for device %s\n",
+			    device);
+		}
+	}
+
+	teardownDADiskSession(&ds);
+	return (error);
+}
+
+/*
+ * Caller is responsible for supplying a /dev/disk* block device path
+ * or the BSD name (disk*).
+ */
+int
+osx_device_get_mountpoint(const char *device, char *buf, size_t buflen) {
+	int err;
+	if (diskarb_debug)
+		(void) fprintf(stderr, "Getting mountpoint for '%s'\n", device);
+
+	err = DAGetVolumePath(device, buf, buflen);
+
+	return (err);
+}
+#endif
