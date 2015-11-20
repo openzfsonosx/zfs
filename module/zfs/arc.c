@@ -3312,10 +3312,16 @@ arc_available_memory(void)
 	int64_t lowest = INT64_MAX;
 	free_memory_reason_t r = FMR_UNKNOWN;
 
-		if (mutex_tryenter(hash_lock)) {
-			uint64_t evicted = arc_evict_hdr(hdr, hash_lock);
-			mutex_exit(hash_lock);
-
+#ifdef _KERNEL
+#ifdef __APPLE__
+	if(spl_free_manual_pressure_wrapper() != 0) {
+	  cv_signal(&arc_reclaim_thread_cv);
+	  kpreempt(KPREEMPT_SYNC);
+	  if(spl_free_fast_pressure_wrapper() != FALSE) {
+	    return(-1);
+	  }
+	}
+#endif //__APPLE__
 #ifdef sun
 	int64_t n;
 	if (needfree > 0) {
@@ -3409,9 +3415,11 @@ arc_available_memory(void)
 #endif // sun
 
 #ifdef __APPLE__
-	lowest = kmem_avail();
+	lowest = spl_free_wrapper();
+	if((lowest - spl_free_manual_pressure_wrapper()) < 0) {
+		lowest -= spl_free_manual_pressure_wrapper();
+	}
 #endif
-
 
 #else  // KERNEL
 	/* Every 100 calls, free a small amount */
@@ -3552,19 +3560,53 @@ arc_reclaim_thread(void)
 			 */
 			free_memory = arc_available_memory();
 
+#ifdef _KERNEL
+#ifdef __APPLE__
+			static int64_t old_to_free = 0;
+#endif
+#endif
+
 			int64_t to_free =
 			    (arc_c >> arc_shrink_shift) - free_memory;
+
+#ifndef _KERNEL
 			if (to_free > 0) {
+#else
+#ifdef __APPLE__
+			if(to_free > 0 || spl_free_manual_pressure_wrapper() != 0) {
+#endif
+#endif
 #ifdef _KERNEL
 #ifdef sun
 				to_free = MAX(to_free, ptob(needfree));
 #endif
 #ifdef __APPLE__
-				to_free = MAX(to_free, kmem_num_pages_wanted() * PAGESIZE);
-#endif
-#endif
+				to_free = MAX(to_free, spl_free_manual_pressure_wrapper());
+				spl_free_set_pressure(0);
+
+				if (to_free > old_to_free) {
+				  printf("ZFS: %s, to_free == %lld increased above %lld old_to_free (delta: %lld)\n",
+					 __func__, to_free, old_to_free, to_free - old_to_free);
+				  old_to_free = to_free;
+				}
+#endif // __APPLE__
+#endif // _KERNEL
 				arc_shrink(to_free);
+#ifdef _KERNEL
+#ifdef	__APPLE__
+			} else if(old_to_free > 0) {
+			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
+				 __func__, old_to_free);
+			  old_to_free = 0;
 			}
+#endif // __APPLE__
+#ifdef sun
+			}
+#endif // sun
+#endif // _KERNEL
+#ifndef _KERNEL
+			}
+#endif // !_KERNEL
 		} else if (free_memory < arc_c >> arc_no_grow_shift) {
 			arc_no_grow = B_TRUE;
 		} else if (ddi_get_lbolt() >= growtime) {
@@ -5007,8 +5049,8 @@ arc_max_bytes(void)
 	uint64_t available_memory = ptob(freemem);
 #endif
 #ifdef __APPLE__
-	uint64_t available_memory = kmem_avail();
-	uint64_t freemem = available_memory / PAGESIZE;
+	int64_t available_memory = spl_free_wrapper();
+	int64_t freemem = available_memory / PAGESIZE;
 #endif
 
 	static uint64_t page_load = 0;
@@ -5031,6 +5073,8 @@ arc_max_bytes(void)
 	 * the arc is already going to be evicting, so we just want to
 	 * continue to let page writes occur as quickly as possible.
 	 */
+
+#if 0 // smd : we might want to do something here if vm_page_free_wanted > 0
 #ifdef sun
 	if (curproc == proc_pageout) {
 		if (page_load > MAX(ptob(minfree), available_memory) / 4)
@@ -5049,7 +5093,49 @@ arc_max_bytes(void)
 	}
 #endif
 	page_load = 0;
+#else // 0 - APPLE
+	// the return from here is used to block all writes, so we don't want to return 1
+	// except in exceptional cases - smd
+
+	if(spl_free_manual_pressure_wrapper() != 0) {
+	  cv_signal(&arc_reclaim_thread_cv);
+	  kpreempt(KPREEMPT_SYNC);
+	}
+
+	if(!spl_minimal_physmem_p() && page_load > 0) {
+	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
+	  printf("ZFS: %s: !spl_minimal_physmem_p(), available_memory == %lld, "
+		 "page_load = %llu, txg = %llu, reserve = %llu\n",
+		 __func__, available_memory, page_load, txg, reserve);
+	  cv_signal(&arc_reclaim_thread_cv);
+	  return (SET_ERROR(EAGAIN));
+	}
+
+	if(arc_reclaim_needed() && page_load > 0) {
+	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
+	  printf("ZFS: %s: arc_reclaim_needed(), available_memory == %lld, "
+		 "page_load = %llu, txg = %llu, reserve = %lld\n",
+		 __func__, available_memory, page_load, txg, reserve);
+	  cv_signal(&arc_reclaim_thread_cv);
+	  return (SET_ERROR(EAGAIN));
+	}
+
+	// as with sun, assume we are reclaiming
+	if(available_memory <= 0 || page_load > available_memory / 4) {
+	  return (SET_ERROR(ERESTART));
+	}
+
+	if(!spl_minimal_physmem_p()) {
+	  page_load += reserve/8;
+	  cv_signal(&arc_reclaim_thread_cv);
+	  return (0);
+	}
+
+	page_load = 0;
+
+#endif // 0
 #endif // KERNEL
+
 	return (0);
 }
 
