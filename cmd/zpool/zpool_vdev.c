@@ -1156,7 +1156,7 @@ zero_label(char *path)
 	char buf[size];
 	int err, fd;
 
-	if ((fd = open(path, O_WRONLY|O_EXCL)) < 0) {
+	if ((fd = open(path, O_WRONLY|O_EXLOCK)) < 0) {
 		(void) fprintf(stderr, gettext("cannot open '%s': %s\n"),
 		    path, strerror(errno));
 		return (-1);
