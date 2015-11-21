@@ -119,6 +119,52 @@ int  zfs_module_stop(kmod_info_t *ki, void *data);
 extern int getzfsvfs(const char *dsname, zfsvfs_t **zfvp);
 
 
+/*
+ * AVL tree of hardlink entries, which we need to map for Finder. The va_linkid
+ * needs to be unique for each hardlink target, as well as, return the znode
+ * in vget(va_linkid). Unfortunately, the va_linkid is 32bit (lost in the
+ * syscall translation to userland struct). We sort the AVL tree by
+ * -> directory id
+ *       -> z_id
+ *              -> name
+ *
+ */
+static int hardlinks_compare(const void *arg1, const void *arg2)
+{
+	const hardlinks_t *node1 = arg1;
+	const hardlinks_t *node2 = arg2;
+	int value;
+	if (node1->hl_parent > node2->hl_parent)
+		return 1;
+	if (node1->hl_parent < node2->hl_parent)
+		return -1;
+	if (node1->hl_fileid > node2->hl_fileid)
+		return 1;
+	if (node1->hl_fileid < node2->hl_fileid)
+		return -1;
+
+	value = strncmp(node1->hl_name, node2->hl_name, PATH_MAX);
+	if (value < 0) return -1;
+	if (value > 0) return 1;
+	return 0;
+}
+
+/*
+ * Lookup same information from linkid, to get at parentid, objid and name
+ */
+static int hardlinks_compare_linkid(const void *arg1, const void *arg2)
+{
+	const hardlinks_t *node1 = arg1;
+	const hardlinks_t *node2 = arg2;
+	if (node1->hl_linkid > node2->hl_linkid)
+		return 1;
+	if (node1->hl_linkid < node2->hl_linkid)
+		return -1;
+	return 0;
+}
+
+
+
 // move these structs to _osx once wrappers are updated
 
 /*
@@ -866,43 +912,7 @@ zfs_register_callbacks(struct mount *vfsp)
 	return (0);
 
 unregister:
-	/*
-	 * We may attempt to unregister some callbacks that are not
-	 * registered, but this is OK; it will simply return ENOMSG,
-	 * which we will ignore.
-	 */
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_ATIME),
-	    atime_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_XATTR),
-	    xattr_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_RECORDSIZE),
-	    blksz_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_READONLY),
-	    readonly_changed_cb, zfsvfs);
-#ifdef illumos
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_DEVICES),
-	    devices_changed_cb, zfsvfs);
-#endif
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_SETUID),
-	    setuid_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_EXEC),
-	    exec_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_SNAPDIR),
-	    snapdir_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_ACLMODE),
-       acl_mode_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_ACLINHERIT),
-	    acl_inherit_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_VSCAN),
-	    vscan_changed_cb, zfsvfs);
-#ifdef __APPLE__
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_APPLE_BROWSE),
-	    finderbrowse_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_APPLE_IGNOREOWNER),
-	    ignoreowner_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_APPLE_MIMIC_HFS),
-	    mimic_hfs_changed_cb, zfsvfs);
-#endif
+	dsl_prop_unregister_all(ds, zfsvfs);
 	return (error);
 }
 
@@ -1345,6 +1355,13 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	rrm_init(&zfsvfs->z_teardown_lock, B_FALSE);
 	rw_init(&zfsvfs->z_teardown_inactive_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zfsvfs->z_fuid_lock, NULL, RW_DEFAULT, NULL);
+#ifdef __APPLE__
+	rw_init(&zfsvfs->z_hardlinks_lock, NULL, RW_DEFAULT, NULL);
+	avl_create(&zfsvfs->z_hardlinks, hardlinks_compare,
+			   sizeof (hardlinks_t), offsetof(hardlinks_t, hl_node));
+	avl_create(&zfsvfs->z_hardlinks_linkid, hardlinks_compare_linkid,
+			   sizeof (hardlinks_t), offsetof(hardlinks_t, hl_node_linkid));
+#endif
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_init(&zfsvfs->z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
 
@@ -1460,6 +1477,21 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	rrm_destroy(&zfsvfs->z_teardown_lock);
 	rw_destroy(&zfsvfs->z_teardown_inactive_lock);
 	rw_destroy(&zfsvfs->z_fuid_lock);
+#ifdef __APPLE__
+	dprintf("ZFS: Unloading hardlink AVLtree: %lu\n",
+		   avl_numnodes(&zfsvfs->z_hardlinks));
+	void *cookie = NULL;
+	hardlinks_t *hardlink;
+	rw_destroy(&zfsvfs->z_hardlinks_lock);
+	while((hardlink = avl_destroy_nodes(&zfsvfs->z_hardlinks_linkid, &cookie))) {
+	}
+	cookie = NULL;
+	while((hardlink = avl_destroy_nodes(&zfsvfs->z_hardlinks, &cookie))) {
+		kmem_free(hardlink, sizeof(*hardlink));
+	}
+	avl_destroy(&zfsvfs->z_hardlinks);
+	avl_destroy(&zfsvfs->z_hardlinks_linkid);
+#endif
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
 	kmem_free(zfsvfs, sizeof (zfsvfs_t));
@@ -1664,49 +1696,7 @@ zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
 	 * Unregister properties.
 	 */
 	if (!dmu_objset_is_snapshot(os)) {
-		ds = dmu_objset_ds(os);
-		VERIFY(dsl_prop_unregister(ds, "atime", atime_changed_cb,
-		    zfsvfs) == 0);
-
-#ifdef LINUX
-		VERIFY(dsl_prop_unregister(ds, "relatime", relatime_changed_cb,
-		    zsb) == 0);
-#endif
-
-		VERIFY(dsl_prop_unregister(ds, "xattr", xattr_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "recordsize", blksz_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "readonly", readonly_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "setuid", setuid_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "exec", exec_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "snapdir", snapdir_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "aclmode", acl_mode_changed_cb,
-            zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "aclinherit",
-		    acl_inherit_changed_cb, zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "vscan",
-		    vscan_changed_cb, zfsvfs) == 0);
-#ifdef __APPLE__
-		VERIFY(dsl_prop_unregister(ds, "com.apple.browse",
-		    finderbrowse_changed_cb, zfsvfs) == 0);
-		VERIFY(dsl_prop_unregister(ds, "com.apple.ignoreowner",
-		    ignoreowner_changed_cb, zfsvfs) == 0);
-		VERIFY(dsl_prop_unregister(ds, "com.apple.mimic_hfs",
-		    mimic_hfs_changed_cb, zfsvfs) == 0);
-#endif
+		dsl_prop_unregister_all(dmu_objset_ds(os), zfsvfs);
 	}
 }
 
@@ -2665,7 +2655,9 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
     zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 	//kthread_t *td = (kthread_t *)curthread;
 	objset_t *os;
+#ifndef __APPLE__
 	cred_t *cr =  (cred_t *)vfs_context_ucred(context);
+#endif
 	int ret;
 
     dprintf("+unmount\n");
@@ -2678,7 +2670,6 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 		    ZFS_DELEG_PERM_MOUNT, cr))
 			return (ret);
 	}
-
 #endif
 	/*
 	 * We purge the parent filesystem's vfsp as the parent filesystem
@@ -2874,15 +2865,13 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 	return (0);
 }
 
-
-
 static int
 zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 {
 	znode_t		*zp;
 	int 		err;
 
-    dprintf("vget get %d\n", ino);
+    dprintf("vget get %llu\n", ino);
 	/*
 	 * zfs_zget() can't operate on virtual entries like .zfs/ or
 	 * .zfs/snapshot/ directories, that's why we return EOPNOTSUPP.
@@ -2892,7 +2881,36 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	    (zfsvfs->z_shares_dir != 0 && ino == zfsvfs->z_shares_dir))
 		return (EOPNOTSUPP);
 
-    /* We can not be locked during zget. */
+
+	/*
+	 * Check to see if we expect to find this in the hardlink avl tree of
+	 * hashes. Use the MSB set high as indicator.
+	 */
+	hardlinks_t *findnode = NULL;
+	if ((1<<31) & ino) {
+		hardlinks_t searchnode;
+		avl_index_t loc;
+
+		dprintf("ZFS: vget looking for (%x,%u)\n", ino, ino);
+
+		searchnode.hl_linkid = ino;
+
+		rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
+		findnode = avl_find(&zfsvfs->z_hardlinks_linkid, &searchnode, &loc);
+		rw_exit(&zfsvfs->z_hardlinks_lock);
+
+		if (findnode) {
+			dprintf("ZFS: vget found (%llu, %llu, %u): '%s'\n",
+				   findnode->hl_parent,
+				   findnode->hl_fileid, findnode->hl_linkid,
+				   findnode->hl_name);
+			// Lookup the actual zp instead
+			ino = findnode->hl_fileid;
+		} // findnode
+	} // MSB set
+
+
+	/* We can not be locked during zget. */
 
 	err = zfs_zget(zfsvfs, ino, &zp);
 
@@ -2934,23 +2952,48 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	} else {
 		uint64_t parent;
 
-		/* Lookup name from ID, grab parent */
-		VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
-                         &parent, sizeof (parent)) == 0);
+		// if its a hardlink cache
+		if (findnode) {
 
-#if 1
-		if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
-							 ZFS_DIRENT_OBJ(-1ULL), name) == 0) {
+			dprintf("vget: updating vnode to '%s' and parent %llu\n",
+				   findnode->hl_name, findnode->hl_parent);
 
-			dprintf("vget: set name '%s'\n", name);
-			vnode_update_identity(*vpp, NULL, name,
-								  strlen(name), 0,
+			vnode_update_identity(*vpp,
+								  NULL,
+								  findnode->hl_name,
+								  strlen(findnode->hl_name),
+								  0,
+								  VNODE_UPDATE_NAME|VNODE_UPDATE_PARENT);
+			strlcpy(zp->z_name_cache, findnode->hl_name, PATH_MAX);
+			zp->z_finder_parentid = findnode->hl_parent;
+
+		// If we already have the name, cached in zfs_vnop_lookup
+		} else if (zp->z_name_cache[0]) {
+
+			dprintf("vget: cached name '%s'\n", zp->z_name_cache);
+			vnode_update_identity(*vpp, NULL, zp->z_name_cache,
+								  strlen(zp->z_name_cache), 0,
 								  VNODE_UPDATE_NAME);
-		} else {
-			dprintf("vget: unable to get name for %u\n", zp->z_id);
-		} // !zap_search
-#endif
 
+			/* If needed, if findnode is set, we can update the parentid too */
+
+		} else {
+
+			/* Lookup name from ID, grab parent */
+			VERIFY(sa_lookup(zp->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+							 &parent, sizeof (parent)) == 0);
+
+			if (zap_value_search(zfsvfs->z_os, parent, zp->z_id,
+								 ZFS_DIRENT_OBJ(-1ULL), name) == 0) {
+
+				dprintf("vget: set name '%s'\n", name);
+				vnode_update_identity(*vpp, NULL, name,
+									  strlen(name), 0,
+									  VNODE_UPDATE_NAME);
+			} else {
+				dprintf("vget: unable to get name for %llu\n", zp->z_id);
+			} // !zap_search
+		}
 	} // rootid
 
 

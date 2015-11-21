@@ -446,15 +446,87 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			}
 			break;
 
-
 		case HFS_PREV_LINK:
 		case HFS_NEXT_LINK:
-			// HFS has a facility to efficiently iterate the collection
-			// of hardlinks pointing to an object, ZFS does not
-			// implement something like this.
-			//
-			// In the mean time, we will just reply with "what hardlink?"
-			*(uint32_t *)ap->a_data = 0;
+		{
+			/*
+			 * Find sibling linkids with hardlinks. a_data points to the
+			 * "current" linkid, and look up either prev or next (a_command)
+			 * linkid. Return in a_data.
+			 */
+			uint32_t linkfileid;
+			struct vfsstatfs *vfsp;
+			/* Caller must be owner of file system. */
+			vfsp = vfs_statfs(zfsvfs->z_vfs);
+			if ((kauth_cred_getuid(cr) == 0) &&
+				kauth_cred_getuid(cr) != vfsp->f_owner) {
+				error = EACCES;
+				goto out;
+			}
+			/* Target vnode must be file system's root. */
+			if (!vnode_isvroot(ap->a_vp)) {
+				error = EINVAL;
+				goto out;
+			}
+			linkfileid = *(uint32_t *)ap->a_data;
+			if (linkfileid < 16 ) { /* kHFSFirstUserCatalogNodeID */
+				error = EINVAL;
+				goto out;
+			}
+
+			/* Attempt to find the linkid in the hardlink_link AVL tree
+			 * If found, call to get prev or next.
+			 */
+			hardlinks_t searchnode, *findnode, *sibling;
+			avl_index_t loc;
+			searchnode.hl_linkid = linkfileid;
+
+			rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
+			findnode = avl_find(&zfsvfs->z_hardlinks_linkid, &searchnode, &loc);
+
+			if (!findnode) {
+				rw_exit(&zfsvfs->z_hardlinks_lock);
+				*(uint32_t *)ap->a_data = 0;
+				dprintf("ZFS: HFS_NEXT_LINK/HFS_PREV_LINK %u not found\n",
+					linkfileid);
+				goto out;
+			}
+
+			if (ap->a_command != HFS_NEXT_LINK) {
+
+				// Walk the next nodes, looking for fileid to match
+				while ((sibling = AVL_NEXT(&zfsvfs->z_hardlinks_linkid,
+										   findnode)) != NULL) {
+					if (findnode->hl_fileid == sibling->hl_fileid)
+						break;
+				}
+
+			} else {
+
+				// Walk the prev nodes, looking for fileid to match
+				while ((sibling = AVL_PREV(&zfsvfs->z_hardlinks_linkid,
+										   findnode)) != NULL) {
+					if (findnode->hl_fileid == sibling->hl_fileid)
+						break;
+				}
+
+			}
+			rw_exit(&zfsvfs->z_hardlinks_lock);
+
+			dprintf("ZFS: HFS_%s_LINK %u sibling %u\n",
+					(ap->a_command != HFS_NEXT_LINK) ? "NEXT" : "PREV",
+					linkfileid,
+					sibling ? sibling->hl_linkid : 0);
+
+			// Did we get a new node?
+			if (sibling == NULL) {
+				*(uint32_t *)ap->a_data = 0;
+				goto out;
+			}
+
+			*(uint32_t *)ap->a_data = sibling->hl_linkid;
+			error = 0;
+		}
 			break;
 
 		case HFS_RESIZE_PROGRESS:
@@ -673,25 +745,41 @@ zfs_vnop_access(struct vnop_access_args *ap)
 }
 
 
-void
-zfs_finder_keep_hardlink(struct vnode *vp, char *filename)
+/*
+ * hard link references?
+ * Read the comment in zfs_getattr_znode_unlocked for the reason
+ * for this hackery. Since getattr(VA_NAME) is extremely common
+ * call in OSX, we opt to always save the name. We need to be careful
+ * as zfs_dirlook can return ctldir node as well (".zfs").
+ * Hardlinks also need to be able to return the correct parentid.
+ */
+static void zfs_cache_name(struct vnode *vp, struct vnode *dvp, char *filename)
 {
-	if (vp && VTOZ(vp)) {
-		znode_t *zp = VTOZ(vp);
+	znode_t *zp;
+	if (!vp ||
+		!filename ||
+		!filename[0] ||
+		zfsctl_is_node(vp) ||
+		!VTOZ(vp))
+		return;
 
-		/*
-		 * hard link references?
-		 * Read the comment in zfs_getattr_znode_unlocked for the reason
-		 * for this hackery.
-		 */
-		if ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) {
-			dprintf("keep_hardlink: %p has refs %llu\n", vp,
-			    zp->z_links);
-			strlcpy(zp->z_finder_hardlink_name, filename,
-			    MAXPATHLEN);
-		}
+	// Only cache files, or we might end up caching "."
+	if (!vnode_isreg(vp)) return;
+
+	zp = VTOZ(vp);
+
+	strlcpy(zp->z_name_cache,
+			filename,
+			MAXPATHLEN);
+
+	// If hardlink, remember the parentid.
+	if ((zp->z_links > 1) &&
+		(IFTOVT((mode_t)zp->z_mode) == VREG) &&
+		dvp) {
+		zp->z_finder_parentid = VTOZ(dvp)->z_id;
 	}
 }
+
 
 int
 zfs_vnop_lookup(struct vnop_lookup_args *ap)
@@ -741,7 +829,7 @@ zfs_vnop_lookup(struct vnop_lookup_args *ap)
 				error = 0;
 				goto exit;	/* Positive cache, return it */
 			}
-			/* Release iocount held by cache_lookip */
+			/* Release iocount held by cache_lookup */
 			vnode_put(*ap->a_vpp);
 		}
 		/* Negatives are only followed if not CREATE, from HFS+. */
@@ -793,14 +881,19 @@ zfs_vnop_lookup(struct vnop_lookup_args *ap)
 
 
 exit:
-	/* Set both for lookup and positive cache */
+
+#ifdef __APPLE__
 	if (!error)
-		zfs_finder_keep_hardlink(*ap->a_vpp,
-		    filename ? filename : cnp->cn_nameptr);
+		zfs_cache_name(*ap->a_vpp, ap->a_dvp,
+					   filename ? filename : cnp->cn_nameptr);
+#endif
+
+	dprintf("-vnop_lookup %d : dvp %llu '%s'\n", error, VTOZ(ap->a_dvp)->z_id,
+			filename ? filename : cnp->cn_nameptr);
+
 	if (filename)
 		kmem_free(filename, filename_num_bytes);
 
-	dprintf("-vnop_lookup %d\n", error);
 	return (error);
 }
 
@@ -839,6 +932,169 @@ zfs_vnop_create(struct vnop_create_args *ap)
 	return (error);
 }
 
+
+static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp, char *name)
+{
+	/*
+	 * Because we store hash of hardlinks in an AVLtree, we need to remove
+	 * any entries in it upon deletion. Since it is complicated to know
+	 * if an entry was a hardlink, we simply check if the avltree has the
+	 * name.
+	 */
+	hardlinks_t searchnode, *findnode;
+	avl_index_t loc;
+
+	if (!vp || !VTOZ(vp)) return 1;
+	if (!dvp || !VTOZ(dvp)) return 1;
+	znode_t *zp = VTOZ(vp);
+	znode_t *dzp = VTOZ(dvp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	int ishardlink = 0;
+
+	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
+		1 : 0;
+	if (zp->z_finder_hardlink)
+		ishardlink = 1;
+
+	if (!ishardlink) return 0;
+
+	dprintf("ZFS: removing hash (%llu,%llu,'%s')\n",
+		   dzp->z_id, zp->z_id, name);
+
+	// Attempt to remove from hardlink avl, if its there
+	searchnode.hl_parent = dzp->z_id == zfsvfs->z_root ? 2 : dzp->z_id;
+	searchnode.hl_fileid = zp->z_id;
+	strlcpy(searchnode.hl_name, name, PATH_MAX);
+
+	rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
+	findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
+	rw_exit(&zfsvfs->z_hardlinks_lock);
+
+	// Found it? remove it
+	if (findnode) {
+		rw_enter(&zfsvfs->z_hardlinks_lock, RW_WRITER);
+		avl_remove(&zfsvfs->z_hardlinks, findnode);
+		avl_remove(&zfsvfs->z_hardlinks_linkid, findnode);
+		rw_exit(&zfsvfs->z_hardlinks_lock);
+		kmem_free(findnode, sizeof(*findnode));
+		dprintf("ZFS: removed hash '%s'\n", name);
+		zp->z_name_cache[0] = 0;
+		zp->z_finder_parentid = 0;
+		return 1;
+	}
+	return 0;
+}
+
+
+static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
+							   struct vnode *fdvp, struct vnode *tdvp,
+							   char *from, char *to)
+{
+	/*
+	 * Because we store hash of hardlinks in an AVLtree, we need to update
+	 * any entries in it upon rename. Since it is complicated to know
+	 * if an entry was a hardlink, we simply check if the avltree has the
+	 * name.
+	 */
+	hardlinks_t searchnode, *findnode, *delnode;
+	avl_index_t loc;
+	uint64_t parent_fid, parent_tid;
+	int ishardlink = 0;
+
+	if (!vp || !VTOZ(vp)) return 0;
+	znode_t *zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+	if (tvp) {
+		znode_t *tzp = VTOZ(tvp);
+		if (tzp) {
+			/* We also need to correct the parent id of the target, for
+			 * vget to be able to reply with the correct id. Used by mds
+			 * and Finder. */
+			tzp->z_finder_parentid = VTOZ(tdvp)->z_id;
+
+			vnode_update_identity(tvp, tdvp, 0,
+								  0, 0,
+								  VNODE_UPDATE_PARENT);
+			dprintf("ZFS: updated finder_parentid to %llu\n",
+				   tzp->z_finder_parentid);
+		}
+	}
+
+	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
+		1 : 0;
+	if (zp->z_finder_hardlink)
+		ishardlink = 1;
+
+	if (!ishardlink) return 0;
+
+	if (!fdvp || !VTOZ(fdvp)) return 0;
+	parent_fid = VTOZ(fdvp)->z_id;
+	parent_fid = parent_fid == zfsvfs->z_root ? 2 : parent_fid;
+
+	if (!tdvp || !VTOZ(tdvp)) {
+		parent_tid = parent_fid;
+	} else {
+		parent_tid = VTOZ(tdvp)->z_id;
+		parent_tid = parent_tid == zfsvfs->z_root ? 2 : parent_tid;
+	}
+
+	dprintf("ZFS: looking to rename hardlinks (%llu,%llu,%s)\n",
+		   parent_fid, zp->z_id, from);
+
+
+	// Attempt to remove from hardlink avl, if its there
+	searchnode.hl_parent = parent_fid;
+	searchnode.hl_fileid = zp->z_id;
+	strlcpy(searchnode.hl_name, from, PATH_MAX);
+
+	rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
+	findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
+	rw_exit(&zfsvfs->z_hardlinks_lock);
+
+	// Found it? update it
+	if (findnode) {
+
+		rw_enter(&zfsvfs->z_hardlinks_lock, RW_WRITER);
+
+		// Technically, we do not need to re-do the _linkid AVL here.
+		avl_remove(&zfsvfs->z_hardlinks, findnode);
+		avl_remove(&zfsvfs->z_hardlinks_linkid, findnode);
+
+		// If we already have a hashid for "to" and the rename presumably
+		// unlinked it, we need to remove it first.
+		searchnode.hl_parent = parent_tid;
+		strlcpy(searchnode.hl_name, to, PATH_MAX);
+		delnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
+		if (delnode) {
+			dprintf("ZFS: apparently %llu:'%s' exists, deleting\n",
+				   parent_tid, to);
+			avl_remove(&zfsvfs->z_hardlinks, delnode);
+			avl_remove(&zfsvfs->z_hardlinks_linkid, delnode);
+			kmem_free(delnode, sizeof(*delnode));
+		}
+
+		dprintf("ZFS: renamed hash %llu (%llu:'%s' to %llu:'%s'): %s\n",
+			   zp->z_id,
+			   parent_fid, from,
+			   parent_tid, to,
+			   delnode ? "deleted":"");
+
+		// Update source node to new hash, and name.
+		findnode->hl_parent = parent_tid;
+		strlcpy(findnode->hl_name, to, PATH_MAX);
+		zp->z_finder_parentid = parent_tid;
+
+		avl_add(&zfsvfs->z_hardlinks, findnode);
+		avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
+
+		rw_exit(&zfsvfs->z_hardlinks_lock);
+		return 1;
+	}
+	return 0;
+}
+
+
 int
 zfs_vnop_remove(struct vnop_remove_args *ap)
 #if 0
@@ -862,9 +1118,14 @@ zfs_vnop_remove(struct vnop_remove_args *ap)
 	 */
 	error = zfs_remove(ap->a_dvp, ap->a_cnp->cn_nameptr, cr, ct,
 	    /* flags */0);
-	if (!error)
+	if (!error) {
 		cache_purge(ap->a_vp);
 
+		zfs_remove_hardlink(ap->a_vp,
+							ap->a_dvp,
+							ap->a_cnp->cn_nameptr);
+
+	}
 	return (error);
 }
 
@@ -1212,8 +1473,14 @@ zfs_vnop_rename(struct vnop_rename_args *ap)
 		cache_purge_negatives(ap->a_fdvp);
 		cache_purge_negatives(ap->a_tdvp);
 		cache_purge(ap->a_fvp);
-		if (ap->a_tvp)
+
+		zfs_rename_hardlink(ap->a_fvp, ap->a_tvp,
+							ap->a_fdvp, ap->a_tdvp,
+							ap->a_fcnp->cn_nameptr,
+							ap->a_tcnp->cn_nameptr);
+		if (ap->a_tvp) {
 			cache_purge(ap->a_tvp);
+		}
 	}
 
 	return (error);
@@ -1306,8 +1573,12 @@ zfs_vnop_link(struct vnop_link_args *ap)
 
 	error = zfs_link(ap->a_tdvp, ap->a_vp, ap->a_cnp->cn_nameptr, cr, ct,
 	    /* flags */0);
-	if (!error)
+	if (!error) {
+		// Set source vnode to multipath too, zfs_get_vnode() handles the target
 		vnode_setmultipath(ap->a_vp);
+		cache_purge(ap->a_vp);
+		cache_purge_negatives(ap->a_tdvp);
+	}
 
 	return (error);
 }
@@ -1885,7 +2156,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	}
 
 
-  top:
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_write(tx, zp->z_id, ap->a_f_offset, ap->a_size);
 
@@ -3961,7 +4231,7 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 
 	/* So pageout can know if it is called recursively, add this thread to list*/
 	while (vnode_create(VNCREATE_FLAVOR, VCREATESIZE, &vfsp, &vp) != 0) {
-		delay(hz>>2); /* Make me more elegant */
+		kpreempt(KPREEMPT_SYNC);
 	}
 	atomic_inc_64(&vnop_num_vnodes);
 

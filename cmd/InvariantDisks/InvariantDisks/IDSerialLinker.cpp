@@ -13,7 +13,6 @@
 #include "IDSerialLinker.hpp"
 
 #include "IDDiskArbitrationUtils.hpp"
-#include "IDFileUtils.hpp"
 
 #include <string>
 #include <algorithm>
@@ -21,10 +20,8 @@
 namespace ID
 {
 	SerialLinker::SerialLinker(std::string base, ASLClient const & logger) :
-		DiskArbitrationHandler(logger),
-		m_base(std::move(base))
+		BaseLinker(std::move(base), logger)
 	{
-		createPath(m_base);
 	}
 
 	bool isDevice(DiskInformation const & di)
@@ -59,9 +56,13 @@ namespace ID
 	{
 		if (isDevice(di) && !isWhole(di))
 		{
-			size_t suffixStart = di.mediaPath.find_last_not_of("0123456789");
-			if (suffixStart != std::string::npos && di.mediaPath[suffixStart] == ':')
-				return di.mediaPath.substr(suffixStart);
+			size_t suffixStart = di.mediaBSDName.find_last_not_of("0123456789");
+			if (suffixStart != std::string::npos &&
+				suffixStart+1 < di.mediaBSDName.size() &&
+				di.mediaBSDName[suffixStart] == 's')
+			{
+				return ':' + di.mediaBSDName.substr(suffixStart+1);
+			}
 		}
 		return std::string();
 	}
@@ -89,7 +90,7 @@ namespace ID
 	{
 		std::string serial = formatSerial(di);
 		if (!serial.empty())
-			serial = m_base + "/" + serial;
+			serial = base() + "/" + serial;
 		return serial;
 	}
 
@@ -97,38 +98,7 @@ namespace ID
 	{
 		if (isDevice(di))
 		{
-			try
-			{
-				std::string serial = formatSerialPath(di);
-				if (serial.empty())
-					return;
-				std::string devicePath = "/dev/" + di.mediaBSDName;
-				logger().log(ASL_LEVEL_NOTICE, "Creating symlink: ", serial, " -> ", devicePath);
-				createSymlink(serial, devicePath);
-			}
-			catch (std::exception const & e)
-			{
-				logger().log(ASL_LEVEL_ERR, "Could not create symlink: ", e.what());
-			}
-		}
-	}
-
-	void SerialLinker::diskDisappeared(DADiskRef disk, DiskInformation const & di)
-	{
-		if (isDevice(di))
-		{
-			try
-			{
-				std::string serial = formatSerialPath(di);
-				if (serial.empty())
-					return;
-				logger().log(ASL_LEVEL_NOTICE, "Removing symlink: ", serial);
-				removeFSObject(serial);
-			}
-			catch (std::exception const & e)
-			{
-				logger().log(ASL_LEVEL_ERR, "Could not remove symlink: ", e.what());
-			}
+			addLinkForDisk(formatSerialPath(di), di);
 		}
 	}
 

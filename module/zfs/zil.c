@@ -569,7 +569,7 @@ zil_create(zilog_t *zilog)
 			BP_ZERO(&blk);
 		}
 
-		error = zio_alloc_zil(zilog->zl_spa, txg, &blk,
+		error = zio_alloc_zil(zilog->zl_spa, txg, &blk, NULL,
 		    ZIL_MIN_BLKSZ, B_TRUE);
 		fastwrite = TRUE;
 
@@ -1040,8 +1040,9 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 
 	BP_ZERO(bp);
 	use_slog = USE_SLOG(zilog);
-	error = zio_alloc_zil(spa, txg, bp, zil_blksz,
-	    USE_SLOG(zilog));
+	/* pass the old blkptr in order to spread log blocks across devs */
+	error = zio_alloc_zil(spa, txg, bp, &lwb->lwb_blk, zil_blksz, use_slog);
+
 	if (use_slog) {
 		ZIL_STAT_BUMP(zil_itx_metaslab_slog_count);
 		ZIL_STAT_INCR(zil_itx_metaslab_slog_bytes, lwb->lwb_nused);
@@ -1729,6 +1730,7 @@ zil_commit(zilog_t *zilog, uint64_t foid)
 	zil_commit_writer(zilog);
 	zilog->zl_com_batch = mybatch;
 	zilog->zl_writer = B_FALSE;
+	mutex_exit(&zilog->zl_lock);
 
 	/* wake up one thread to become the next writer */
 	cv_signal(&zilog->zl_cv_batch[(mybatch+1) & 1]);
@@ -1736,7 +1738,6 @@ zil_commit(zilog_t *zilog, uint64_t foid)
 	/* wake up all threads waiting for this batch to be committed */
 	cv_broadcast(&zilog->zl_cv_batch[mybatch & 1]);
 
-	mutex_exit(&zilog->zl_lock);
 }
 
 /*

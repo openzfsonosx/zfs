@@ -73,6 +73,7 @@ zfs_SOURCES = \
 	dsl_scan.c \
 	dsl_synctask.c \
 	dsl_userhold.c \
+	edonr_zfs.c \
 	fm.c \
 	gfs.c \
 	gzip.c \
@@ -85,6 +86,7 @@ zfs_SOURCES = \
 	rrwlock.c \
 	sa.c \
 	sha256.c \
+	skein_zfs.c	\
 	spa.c \
 	spa_boot.c \
 	spa_config.c \

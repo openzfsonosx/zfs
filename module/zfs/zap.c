@@ -163,8 +163,8 @@ zap_table_grow(zap_t *zap, zap_table_phys_t *tbl,
 		tbl->zt_nextblk = newblk;
 		ASSERT0(tbl->zt_blks_copied);
 		dmu_prefetch(zap->zap_objset, zap->zap_object, 0,
-					 tbl->zt_blk << bs, tbl->zt_numblks << bs,
-					 ZIO_PRIORITY_SYNC_READ);
+			tbl->zt_blk << bs, tbl->zt_numblks << bs,
+			ZIO_PRIORITY_SYNC_READ);
 	}
 
 	/*
@@ -1307,9 +1307,9 @@ fzap_get_stats(zap_t *zap, zap_stats_t *zs)
 		int b;
 
 		dmu_prefetch(zap->zap_objset, zap->zap_object, 0,
-					 zap_f_phys(zap)->zap_ptrtbl.zt_blk << bs,
-					 zap_f_phys(zap)->zap_ptrtbl.zt_numblks << bs,
-					 ZIO_PRIORITY_SYNC_READ);
+		    zap_f_phys(zap)->zap_ptrtbl.zt_blk << bs,
+			zap_f_phys(zap)->zap_ptrtbl.zt_numblks << bs,
+			ZIO_PRIORITY_SYNC_READ);
 
 		for (b = 0; b < zap_f_phys(zap)->zap_ptrtbl.zt_numblks;
 		    b++) {

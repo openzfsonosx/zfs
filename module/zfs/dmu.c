@@ -441,9 +441,8 @@ dmu_buf_hold_array_by_dnode(dnode_t *dn, uint64_t offset, uint64_t length,
 			(void) dbuf_read(db, zio, dbuf_flags);
 		dbp[i] = &db->db;
 	}
-
 	if ((flags & DMU_READ_NO_PREFETCH) == 0 && read &&
-		length < zfetch_array_rd_sz) {
+	    length <= zfetch_array_rd_sz) {
 		dmu_zfetch(&dn->dn_zfetch, blkid, nblks);
 	}
 	rw_exit(&dn->dn_struct_rwlock);
@@ -499,8 +498,7 @@ dmu_buf_hold_array(objset_t *os, uint64_t object, uint64_t offset,
 
 int
 dmu_buf_hold_array_by_bonus(dmu_buf_t *db_fake, uint64_t offset,
-    uint64_t length, boolean_t read, void *tag, int *numbufsp,
-	dmu_buf_t ***dbpp)
+    uint64_t length, boolean_t read, void *tag, int *numbufsp, dmu_buf_t ***dbpp)
 {
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)db_fake;
 	dnode_t *dn;
@@ -533,14 +531,12 @@ dmu_buf_rele_array(dmu_buf_t **dbp_fake, int numbufs, void *tag)
 }
 
 /*
- * Issue prefetch i/os for the given blocks.
+ * Issue prefetch i/os for the given blocks.  If level is greater than 0, the
+ * indirect blocks prefeteched will be those that point to the blocks containing
+ * the data starting at offset, and continuing to offset + len.
  *
- * Note: The assumption is that we *know* these blocks will be needed
- * almost immediately.  Therefore, the prefetch i/os will be issued at
- * ZIO_PRIORITY_SYNC_READ
- *
- * Note: indirect blocks and other metadata will be read synchronously,
- * causing this function to block if they are not already cached.
+ * Note that if the indirect blocks above the blocks being prefetched are not in
+ * cache, they will be asychronously read in.
  */
 void
 dmu_prefetch(objset_t *os, uint64_t object, int64_t level, uint64_t offset,
@@ -558,7 +554,7 @@ dmu_prefetch(objset_t *os, uint64_t object, int64_t level, uint64_t offset,
 
 		rw_enter(&dn->dn_struct_rwlock, RW_READER);
 		blkid = dbuf_whichblock(dn, level,
-								object * sizeof (dnode_phys_t));
+			object * sizeof (dnode_phys_t));
 		dbuf_prefetch(dn, level, blkid, pri, 0);
 		rw_exit(&dn->dn_struct_rwlock);
 		return;
@@ -574,13 +570,13 @@ dmu_prefetch(objset_t *os, uint64_t object, int64_t level, uint64_t offset,
 		return;
 
 	rw_enter(&dn->dn_struct_rwlock, RW_READER);
-        /*
-         * offset + len - 1 is the last byte we want to prefetch for, and offset
-         * is the first.  Then dbuf_whichblk(dn, level, off + len - 1) is the
-         * last block we want to prefetch, and dbuf_whichblock(dn, level,
-         * offset)  is the first.  Then the number we need to prefetch is the
-         * last - first + 1.
-         */
+	/*
+	 * offset + len - 1 is the last byte we want to prefetch for, and offset
+	 * is the first.  Then dbuf_whichblk(dn, level, off + len - 1) is the
+	 * last block we want to prefetch, and dbuf_whichblock(dn, level,
+	 * offset)  is the first.  Then the number we need to prefetch is the
+	 * last - first + 1.
+	 */
 	if (level > 0 || dn->dn_datablkshift != 0) {
 		nblks = dbuf_whichblock(dn, level, offset + len - 1) -
 			dbuf_whichblock(dn, level, offset) + 1;
@@ -2093,8 +2089,10 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		 * as well.  Otherwise, the metadata checksum defaults
 		 * to fletcher4.
 		 */
-		if (zio_checksum_table[checksum].ci_correctable < 1 ||
-		    zio_checksum_table[checksum].ci_eck)
+		if (!(zio_checksum_table[checksum].ci_flags &
+		    ZCHECKSUM_FLAG_METADATA) ||
+		    (zio_checksum_table[checksum].ci_flags &
+		    ZCHECKSUM_FLAG_EMBEDDED))
 			checksum = ZIO_CHECKSUM_FLETCHER_4;
 
 		if (os->os_redundant_metadata == ZFS_REDUNDANT_METADATA_ALL ||
@@ -2114,7 +2112,7 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		 * pipeline.
 		 */
 		compress = ZIO_COMPRESS_OFF;
-		checksum = ZIO_CHECKSUM_OFF;
+		checksum = ZIO_CHECKSUM_NOPARITY;
 	} else {
 		compress = zio_compress_select(os->os_spa, dn->dn_compress,
 		    compress);
@@ -2133,18 +2131,21 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		 */
 		if (dedup_checksum != ZIO_CHECKSUM_OFF) {
 			dedup = (wp & WP_DMU_SYNC) ? B_FALSE : B_TRUE;
-			if (!zio_checksum_table[checksum].ci_dedup)
+			if (!(zio_checksum_table[checksum].ci_flags &
+				  ZCHECKSUM_FLAG_DEDUP))
 				dedup_verify = B_TRUE;
 		}
 
 		/*
-		 * Enable nopwrite if we have a cryptographically secure
-		 * checksum that has no known collisions (i.e. SHA-256)
-		 * and compression is enabled.  We don't enable nopwrite if
-		 * dedup is enabled as the two features are mutually exclusive.
+		 * Enable nopwrite if we have secure enough checksum
+		 * algorithm (see comment in zio_nop_write) and
+		 * compression is enabled.  We don't enable nopwrite if
+		 * dedup is enabled as the two features are mutually
+		 * exclusive.
 		 */
-		nopwrite = (!dedup && zio_checksum_table[checksum].ci_dedup &&
-		    compress != ZIO_COMPRESS_OFF && zfs_nopwrite_enabled);
+		nopwrite = (!dedup && (zio_checksum_table[checksum].ci_flags &
+							   ZCHECKSUM_FLAG_NOPWRITE) &&
+			compress != ZIO_COMPRESS_OFF && zfs_nopwrite_enabled);
 	}
 
 	zp->zp_checksum = checksum;
@@ -2161,25 +2162,20 @@ int
 dmu_offset_next(objset_t *os, uint64_t object, boolean_t hole, uint64_t *off)
 {
 	dnode_t *dn;
-	int i, err;
+	int err;
 
-	err = dnode_hold(os, object, FTAG, &dn);
-	if (err)
-		return (err);
 	/*
 	 * Sync any current changes before
 	 * we go trundling through the block pointers.
 	 */
-	for (i = 0; i < TXG_SIZE; i++) {
-		if (list_link_active(&dn->dn_dirty_link[i]))
-			break;
+	err = dmu_object_wait_synced(os, object);
+	if (err) {
+		return (err);
 	}
-	if (i != TXG_SIZE) {
-		dnode_rele(dn, FTAG);
-		txg_wait_synced(dmu_objset_pool(os), 0);
-		err = dnode_hold(os, object, FTAG, &dn);
-		if (err)
-			return (err);
+
+	err = dnode_hold(os, object, FTAG, &dn);
+	if (err) {
+		return (err);
 	}
 
 	err = dnode_next_offset(dn, (hole ? DNODE_FIND_HOLE : 0), off, 1, 1, 0);
@@ -2188,11 +2184,45 @@ dmu_offset_next(objset_t *os, uint64_t object, boolean_t hole, uint64_t *off)
 	return (err);
 }
 
+/*
+ * Given the ZFS object, if it contains any dirty nodes
+ * this function flushes all dirty blocks to disk. This
+ * ensures the DMU object info is updated. A more efficient
+ * future version might just find the TXG with the maximum
+ * ID and wait for that to be synced.
+ */
+int
+dmu_object_wait_synced(objset_t *os, uint64_t object)
+{
+	dnode_t *dn;
+	int error, i;
+
+	error = dnode_hold(os, object, FTAG, &dn);
+	if (error) {
+		return (error);
+	}
+
+	for (i = 0; i < TXG_SIZE; i++) {
+		if (list_link_active(&dn->dn_dirty_link[i])) {
+			break;
+		}
+	}
+	dnode_rele(dn, FTAG);
+	if (i != TXG_SIZE) {
+		txg_wait_synced(dmu_objset_pool(os), 0);
+	}
+
+	return (0);
+}
+
+
 void
 __dmu_object_info_from_dnode(dnode_t *dn, dmu_object_info_t *doi)
 {
-	dnode_phys_t *dnp = dn->dn_phys;
+	dnode_phys_t *dnp;
 	int i;
+
+	dnp = dn->dn_phys;
 
 	doi->doi_data_block_size = dn->dn_datablksz;
 	doi->doi_metadata_block_size = dn->dn_indblkshift ?
@@ -2209,6 +2239,7 @@ __dmu_object_info_from_dnode(dnode_t *dn, dmu_object_info_t *doi)
 	doi->doi_fill_count = 0;
 	for (i = 0; i < dnp->dn_nblkptr; i++)
 		doi->doi_fill_count += BP_GET_FILL(&dnp->dn_blkptr[i]);
+
 }
 
 void

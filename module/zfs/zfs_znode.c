@@ -729,7 +729,9 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_uid = 0;
 	zp->z_gid = 0;
 	zp->z_size = 0;
-	zp->z_finder_hardlink_name[0] = 0;
+	zp->z_name_cache[0] = 0;
+	zp->z_finder_parentid = 0;
+	zp->z_finder_hardlink = FALSE;
 
 	vp = ZTOV(zp); /* Does nothing in OSX */
 
@@ -864,7 +866,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 
 #include <sys/dbuf.h>
 
-		dmu_buf_impl_t *db2 = db;
+		dmu_buf_impl_t *db2 = (dmu_buf_impl_t *)db;
 		zbookmark_phys_t zb;
 
         // Log error in spa?
@@ -1379,14 +1381,14 @@ again:
 		 * in order to support the sync of open-unlinked files
 		 */
 		if (!(flags & ZGET_FLAG_UNLINKED) && zp->z_unlinked) {
-			dmu_buf_rele(db, NULL);
 			mutex_exit(&zp->z_lock);
+			sa_buf_rele(db, NULL);
 			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 			return (ENOENT);
 		}
 
-		dmu_buf_rele(db, NULL);
 		mutex_exit(&zp->z_lock);
+		sa_buf_rele(db, NULL);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
 		if ((flags & ZGET_FLAG_WITHOUT_VNODE_GET)) {

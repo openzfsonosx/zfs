@@ -659,7 +659,7 @@ zpool_do_add(int argc, char **argv)
 			(void) printf(gettext("\tcache\n"));
 			for (c = 0; c < l2children; c++) {
 				vname = zpool_vdev_name(g_zfs, NULL,
-				    l2child[c], B_FALSE);
+				    l2child[c], NULL);
 				(void) printf("\t  %s\n", vname);
 				free(vname);
 			}
@@ -670,7 +670,7 @@ zpool_do_add(int argc, char **argv)
 				(void) printf(gettext("\tcache\n"));
 			for (c = 0; c < l2children; c++) {
 				vname = zpool_vdev_name(g_zfs, NULL,
-				    l2child[c], B_FALSE);
+				    l2child[c], NULL);
 				(void) printf("\t  %s\n", vname);
 				free(vname);
 			}
@@ -2298,6 +2298,22 @@ zpool_do_import(int argc, char **argv)
 			nvlist_free(policy);
 			return (1);
 		}
+#ifdef __APPLE__
+		/*
+		 * Check for the SYS_CONFIG privilege.  We do this explicitly
+		 * here because otherwise any attempt to import pools will
+		 * report "no such pool available."
+		 */
+		if (argc > 0 && !priv_ineffect(PRIV_SYS_CONFIG)) {
+			(void) fprintf(stderr, gettext("cannot "
+			    "import pools: permission denied\n"));
+			if (searchdirs != NULL)
+				free(searchdirs);
+
+			nvlist_free(policy);
+			return (1);
+		}
+#endif /* __APPLE__ */
 	}
 
 	/*
@@ -5208,7 +5224,8 @@ zpool_do_upgrade(int argc, char **argv)
 		    "---------------\n");
 		for (i = 0; i < SPA_FEATURES; i++) {
 			zfeature_info_t *fi = &spa_feature_table[i];
-			const char *ro = fi->fi_can_readonly ?
+			const char *ro =
+			    (fi->fi_flags & ZFEATURE_FLAG_READONLY_COMPAT) ?
 			    " (read-only compatible)" : "";
 
 			(void) printf("%-37s%s\n", fi->fi_uname, ro);

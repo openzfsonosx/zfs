@@ -64,8 +64,7 @@ typedef enum arc_flags
 	ARC_FLAG_CACHED			= 1 << 4,	/* I/O was in cache */
 	ARC_FLAG_L2CACHE		= 1 << 5,	/* cache in L2ARC */
 	ARC_FLAG_L2COMPRESS		= 1 << 6,	/* compress in L2ARC */
-	ARC_FLAG_PREDICTIVE_PREFETCH	= 1 << 7,	/* I/O from zfetch */
-
+	ARC_FLAG_PREDICTIVE_PREFETCH = 1 << 7,	/* I/O from zfetch */
 	/*
 	 * Private ARC flags.  These flags are private ARC only flags that
 	 * will show up in b_flags in the arc_hdr_buf_t. These flags should
@@ -88,6 +87,19 @@ typedef enum arc_flags
 	/* Flags specifying whether optional hdr struct fields are defined */
 	ARC_FLAG_HAS_L1HDR		= 1 << 19,
 	ARC_FLAG_HAS_L2HDR		= 1 << 20,
+
+	/*
+	 * The arc buffer's compression mode is stored in the top 7 bits of the
+	 * flags field, so these dummy flags are included so that MDB can
+	 * interpret the enum properly.
+	 */
+	ARC_FLAG_COMPRESS_0		= 1 << 24,
+	ARC_FLAG_COMPRESS_1		= 1 << 25,
+	ARC_FLAG_COMPRESS_2		= 1 << 26,
+	ARC_FLAG_COMPRESS_3		= 1 << 27,
+	ARC_FLAG_COMPRESS_4		= 1 << 28,
+	ARC_FLAG_COMPRESS_5		= 1 << 29,
+	ARC_FLAG_COMPRESS_6		= 1 << 30
 
 } arc_flags_t;
 

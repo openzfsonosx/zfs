@@ -25,6 +25,7 @@
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright 2014 HybridCluster. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2013 Saso Kiselkov. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -336,6 +337,7 @@ typedef struct dmu_buf {
 #define	DMU_POOL_FREE_BPOBJ		"free_bpobj"
 #define	DMU_POOL_BPTREE_OBJ		"bptree_obj"
 #define	DMU_POOL_EMPTY_BPOBJ		"empty_bpobj"
+#define	DMU_POOL_CHECKSUM_SALT		"org.illumos:checksum_salt"
 
 /*
  * Allocate an object from this objset.  The range of object numbers
@@ -508,8 +510,7 @@ uint64_t dmu_buf_refcount(dmu_buf_t *db);
  * individually with dmu_buf_rele.
  */
 int dmu_buf_hold_array_by_bonus(dmu_buf_t *db, uint64_t offset,
-    uint64_t length, boolean_t read, void *tag,
-	int *numbufsp, dmu_buf_t ***dbpp);
+    uint64_t length, boolean_t, void *tag, int *numbufsp, dmu_buf_t ***dbpp);
 void dmu_buf_rele_array(dmu_buf_t **, int numbufs, void *tag);
 
 typedef void dmu_buf_evict_func_t(void *user_ptr);
@@ -780,7 +781,7 @@ extern int zfs_max_recordsize;
  * Asynchronously try to read in the data.
  */
 void dmu_prefetch(objset_t *os, uint64_t object, int64_t level, uint64_t offset,
-				  uint64_t len, zio_priority_t pri);
+	uint64_t len, zio_priority_t pri);
 
 typedef struct dmu_object_info {
 	/* All sizes are in bytes unless otherwise indicated. */
@@ -947,6 +948,15 @@ int dmu_sync(struct zio *zio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd);
  */
 int dmu_offset_next(objset_t *os, uint64_t object, boolean_t hole,
     uint64_t *off);
+
+/*
+ * Check if a DMU object has any dirty blocks. If so, sync out
+ * all pending transaction groups. Otherwise, this function
+ * does not alter DMU state. This could be improved to only sync
+ * out the necessary transaction groups for this particular
+ * object.
+ */
+int dmu_object_wait_synced(objset_t *os, uint64_t object);
 
 /*
  * Initial setup and final teardown.

@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -176,49 +176,41 @@ spa_features_check(spa_t *spa, boolean_t for_write,
 {
 	objset_t *os = spa->spa_meta_objset;
 	boolean_t supported;
-	zap_cursor_t *zc;
-	zap_attribute_t *za;
+	zap_cursor_t zc;
+	zap_attribute_t za;
 	uint64_t obj = for_write ?
 	    spa->spa_feat_for_write_obj : spa->spa_feat_for_read_obj;
-	char *buf;
-
-	zc = kmem_alloc(sizeof (zap_cursor_t), KM_SLEEP);
-	za = kmem_alloc(sizeof (zap_attribute_t), KM_SLEEP);
-	buf = kmem_alloc(MAXPATHLEN, KM_SLEEP);
 
 	supported = B_TRUE;
-	for (zap_cursor_init(zc, os, obj);
-	    zap_cursor_retrieve(zc, za) == 0;
-	    zap_cursor_advance(zc)) {
-		ASSERT(za->za_integer_length == sizeof (uint64_t) &&
-		    za->za_num_integers == 1);
+	for (zap_cursor_init(&zc, os, obj);
+	    zap_cursor_retrieve(&zc, &za) == 0;
+	    zap_cursor_advance(&zc)) {
+		ASSERT(za.za_integer_length == sizeof (uint64_t) &&
+		    za.za_num_integers == 1);
 
 		if (NULL != enabled_feat) {
-			fnvlist_add_uint64(enabled_feat, za->za_name,
-			    za->za_first_integer);
+			fnvlist_add_uint64(enabled_feat, za.za_name,
+			    za.za_first_integer);
 		}
 
-		if (za->za_first_integer != 0 &&
-		    !zfeature_is_supported(za->za_name)) {
+		if (za.za_first_integer != 0 &&
+		    !zfeature_is_supported(za.za_name)) {
 			supported = B_FALSE;
 
 			if (NULL != unsup_feat) {
 				char *desc = "";
+				char buf[MAXPATHLEN];
 
 				if (zap_lookup(os, spa->spa_feat_desc_obj,
-				    za->za_name, 1, MAXPATHLEN, buf) == 0)
+				    za.za_name, 1, sizeof (buf), buf) == 0)
 					desc = buf;
 
-				VERIFY(nvlist_add_string(unsup_feat,
-				    za->za_name, desc) == 0);
+				VERIFY(nvlist_add_string(unsup_feat, za.za_name,
+				    desc) == 0);
 			}
 		}
 	}
-	zap_cursor_fini(zc);
-
-	kmem_free(buf, MAXPATHLEN);
-	kmem_free(za, sizeof (zap_attribute_t));
-	kmem_free(zc, sizeof (zap_cursor_t));
+	zap_cursor_fini(&zc);
 
 	return (supported);
 }
@@ -253,7 +245,7 @@ feature_get_refcount_from_disk(spa_t *spa, zfeature_info_t *feature,
 {
 	int err;
 	uint64_t refcount;
-	uint64_t zapobj = feature->fi_can_readonly ?
+	uint64_t zapobj = (feature->fi_flags & ZFEATURE_FLAG_READONLY_COMPAT) ?
 	    spa->spa_feat_for_write_obj : spa->spa_feat_for_read_obj;
 
 	/*
@@ -277,8 +269,11 @@ feature_get_refcount_from_disk(spa_t *spa, zfeature_info_t *feature,
 
 
 static int
-feature_get_enabled_txg(spa_t *spa, zfeature_info_t *feature, uint64_t *res) {
-	ASSERTV(uint64_t enabled_txg_obj = spa->spa_feat_enabled_txg_obj);
+feature_get_enabled_txg(spa_t *spa, zfeature_info_t *feature, uint64_t *res)
+{
+#ifdef DEBUG
+	uint64_t enabled_txg_obj = spa->spa_feat_enabled_txg_obj;
+#endif
 
 	ASSERT(zfeature_depends_on(feature->fi_feature,
 	    SPA_FEATURE_ENABLED_TXG));
@@ -303,11 +298,10 @@ void
 feature_sync(spa_t *spa, zfeature_info_t *feature, uint64_t refcount,
     dmu_tx_t *tx)
 {
-	uint64_t zapobj;
-
 	ASSERT(VALID_FEATURE_OR_NONE(feature->fi_feature));
-	zapobj = feature->fi_can_readonly ?
+	uint64_t zapobj = (feature->fi_flags & ZFEATURE_FLAG_READONLY_COMPAT) ?
 	    spa->spa_feat_for_write_obj : spa->spa_feat_for_read_obj;
+
 	VERIFY0(zap_update(spa->spa_meta_objset, zapobj, feature->fi_guid,
 	    sizeof (uint64_t), 1, &refcount, tx));
 
@@ -327,7 +321,7 @@ feature_sync(spa_t *spa, zfeature_info_t *feature, uint64_t refcount,
 
 	if (refcount == 0)
 		spa_deactivate_mos_feature(spa, feature->fi_guid);
-	else if (feature->fi_mos)
+	else if (feature->fi_flags & ZFEATURE_FLAG_MOS)
 		spa_activate_mos_feature(spa, feature->fi_guid, tx);
 }
 
@@ -338,8 +332,9 @@ feature_sync(spa_t *spa, zfeature_info_t *feature, uint64_t refcount,
 void
 feature_enable_sync(spa_t *spa, zfeature_info_t *feature, dmu_tx_t *tx)
 {
-	uint64_t initial_refcount = feature->fi_activate_on_enable ? 1 : 0;
-	uint64_t zapobj = feature->fi_can_readonly ?
+	uint64_t initial_refcount =
+	    (feature->fi_flags & ZFEATURE_FLAG_ACTIVATE_ON_ENABLE) ? 1 : 0;
+	uint64_t zapobj = (feature->fi_flags & ZFEATURE_FLAG_READONLY_COMPAT) ?
 	    spa->spa_feat_for_write_obj : spa->spa_feat_for_read_obj;
 	int i;
 
@@ -385,8 +380,8 @@ feature_do_action(spa_t *spa, spa_feature_t fid, feature_action_t action,
 {
 	uint64_t refcount = 0;
 	zfeature_info_t *feature = &spa_feature_table[fid];
-	ASSERTV(uint64_t zapobj = feature->fi_can_readonly ?
-	    spa->spa_feat_for_write_obj : spa->spa_feat_for_read_obj);
+	uint64_t zapobj = (feature->fi_flags & ZFEATURE_FLAG_READONLY_COMPAT) ?
+	    spa->spa_feat_for_write_obj : spa->spa_feat_for_read_obj;
 
 	ASSERT(VALID_FEATURE_FID(fid));
 	ASSERT(0 != zapobj);
@@ -498,7 +493,8 @@ spa_feature_is_active(spa_t *spa, spa_feature_t fid)
  * Returns B_FALSE otherwise (i.e. if the feature is not enabled).
  */
 boolean_t
-spa_feature_enabled_txg(spa_t *spa, spa_feature_t fid, uint64_t *txg) {
+spa_feature_enabled_txg(spa_t *spa, spa_feature_t fid, uint64_t *txg)
+{
 	int err;
 
 	ASSERT(VALID_FEATURE_FID(fid));

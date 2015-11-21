@@ -23,6 +23,7 @@
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2013 Saso Kiselkov. All rights reserved.
  */
 
 #ifndef _SYS_SPA_H
@@ -148,6 +149,14 @@ typedef struct dva {
 typedef struct zio_cksum {
 	uint64_t	zc_word[4];
 } zio_cksum_t;
+
+/*
+ * Some checksums/hashes need a 256-bit initialization salt. This salt is kept
+ * secret and is suitable for use in MAC algorithms as the key.
+ */
+typedef struct zio_cksum_salt {
+	uint8_t         zcs_bytes[32];
+} zio_cksum_salt_t;
 
 /*
  * Each block is described by its DVAs, time of birth, checksum, etc.
@@ -446,16 +455,16 @@ _NOTE(CONSTCOND) } while (0)
 	((zc1).zc_word[2] - (zc2).zc_word[2]) | \
 	((zc1).zc_word[3] - (zc2).zc_word[3])))
 
-#define ZIO_CHECKSUM_IS_ZERO(zc)				 \
-	(0 == ((zc)->zc_word[0] | (zc)->zc_word[1] | \
+#define ZIO_CHECKSUM_IS_ZERO(zc)							\
+	(0 == ((zc)->zc_word[0] | (zc)->zc_word[1] |			\
 		   (zc)->zc_word[2] | (zc)->zc_word[3]))
 
-#define ZIO_CHECKSUM_BSWAP(zcp)										\
-	{                                                               \
-        (zcp)->zc_word[0] = BSWAP_64((zcp)->zc_word[0]);			\
-        (zcp)->zc_word[1] = BSWAP_64((zcp)->zc_word[1]);			\
-        (zcp)->zc_word[2] = BSWAP_64((zcp)->zc_word[2]);			\
-        (zcp)->zc_word[3] = BSWAP_64((zcp)->zc_word[3]);			\
+#define ZIO_CHECKSUM_BSWAP(zcp)											\
+	{																	\
+        (zcp)->zc_word[0] = BSWAP_64((zcp)->zc_word[0]);				\
+        (zcp)->zc_word[1] = BSWAP_64((zcp)->zc_word[1]);				\
+        (zcp)->zc_word[2] = BSWAP_64((zcp)->zc_word[2]);				\
+        (zcp)->zc_word[3] = BSWAP_64((zcp)->zc_word[3]);				\
 	}
 
 #define	DVA_IS_VALID(dva)	(DVA_GET_ASIZE(dva) != 0)
@@ -875,6 +884,7 @@ extern void spa_history_log_internal_dd(dsl_dir_t *dd, const char *operation,
 /* error handling */
 struct zbookmark_phys;
 extern void spa_log_error(spa_t *spa, zio_t *zio);
+extern void spa_log_error_zb(spa_t *spa, zbookmark_phys_t *zb);
 extern void zfs_ereport_post(const char *_class, spa_t *spa, vdev_t *vd,
     zio_t *zio, uint64_t stateoroffset, uint64_t length);
 extern void zfs_post_remove(spa_t *spa, vdev_t *vd);

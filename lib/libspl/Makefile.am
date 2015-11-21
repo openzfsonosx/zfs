@@ -17,6 +17,11 @@ AM_CCASFLAGS = \
 noinst_LTLIBRARIES = libspl.la
 
 libspl_la_SOURCES = \
+	crypto/edonr/edonr.c \
+	crypto/skein/skein.c \
+	crypto/skein/skein_iv.c \
+	crypto/skein/skein_block.c \
+	crypto/sha2/sha2.c \
 	fdatasync.c \
 	gethrtime.c \
 	gethrestime.c \

@@ -53,6 +53,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/dsl_scan.c \
 	../../module/zfs/dsl_synctask.c \
 	../../module/zfs/dsl_userhold.c \
+	../../module/zfs/edonr_zfs.c \
 	../../module/zfs/fm.c \
 	../../module/zfs/gzip.c \
 	../../module/zfs/lzjb.c \
@@ -64,6 +65,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/rrwlock.c \
 	../../module/zfs/sa.c \
 	../../module/zfs/sha256.c \
+	../../module/zfs/skein_zfs.c \
 	../../module/zfs/spa.c \
 	../../module/zfs/spa_boot.c \
 	../../module/zfs/spa_config.c \
