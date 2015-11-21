@@ -722,7 +722,7 @@ zpool_do_add(int argc, char **argv)
 			(void) printf(gettext("\tcache\n"));
 			for (c = 0; c < l2children; c++) {
 				vname = zpool_vdev_name(g_zfs, NULL,
-				    l2child[c], name_flags);
+				    l2child[c], NULL);
 				(void) printf("\t  %s\n", vname);
 				free(vname);
 			}
@@ -733,7 +733,7 @@ zpool_do_add(int argc, char **argv)
 				(void) printf(gettext("\tcache\n"));
 			for (c = 0; c < l2children; c++) {
 				vname = zpool_vdev_name(g_zfs, NULL,
-				    l2child[c], name_flags);
+				    l2child[c], NULL);
 				(void) printf("\t  %s\n", vname);
 				free(vname);
 			}
@@ -2403,6 +2403,21 @@ zpool_do_import(int argc, char **argv)
 				free(searchdirs);
 
 			nvlist_free(props);
+			nvlist_free(policy);
+			return (1);
+		}
+#ifdef __APPLE__
+		/*
+		 * Check for the SYS_CONFIG privilege.  We do this explicitly
+		 * here because otherwise any attempt to import pools will
+		 * report "no such pool available."
+		 */
+		if (argc > 0 && !priv_ineffect(PRIV_SYS_CONFIG)) {
+			(void) fprintf(stderr, gettext("cannot "
+			    "import pools: permission denied\n"));
+			if (searchdirs != NULL)
+				free(searchdirs);
+
 			nvlist_free(policy);
 			return (1);
 		}

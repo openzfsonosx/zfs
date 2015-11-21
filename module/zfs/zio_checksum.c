@@ -135,15 +135,9 @@ zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS] = {
 	    ZCHECKSUM_FLAG_NOPWRITE, "edonr"},
 };
 
-/*
- * The flag corresponding to the "verify" in dedup=[checksum,]verify
- * must be cleared first, so callers should use ZIO_CHECKSUM_MASK.
- */
 spa_feature_t
 zio_checksum_to_feature(enum zio_checksum cksum)
 {
-	VERIFY((cksum & ~ZIO_CHECKSUM_MASK) == 0);
-
 	switch (cksum) {
 	case ZIO_CHECKSUM_SHA512:
 		return (SPA_FEATURE_SHA512);
@@ -247,6 +241,7 @@ zio_checksum_template_init(enum zio_checksum checksum, spa_t *spa)
 	mutex_exit(&spa->spa_cksum_tmpls_lock);
 }
 
+
 /*
  * Generate the checksum.
  */
@@ -298,8 +293,8 @@ zio_checksum_error_impl(spa_t *spa, blkptr_t *bp, enum zio_checksum checksum,
     void *data, uint64_t size, uint64_t offset, zio_bad_cksum_t *info)
 {
 	zio_checksum_info_t *ci = &zio_checksum_table[checksum];
-	zio_cksum_t actual_cksum, expected_cksum;
-	int byteswap;
+	zio_cksum_t actual_cksum, expected_cksum, verifier;
+	spa_t *spa = zio->io_spa;
 
 	if (checksum >= ZIO_CHECKSUM_FUNCTIONS || ci->ci_func[0] == NULL)
 		return (SET_ERROR(EINVAL));
@@ -396,6 +391,26 @@ zio_checksum_error(zio_t *zio, zio_bad_cksum_t *info)
 		return (error);
 	}
 	return (error);
+}
+
+/*
+ * Called by a spa_t that's about to be deallocated. This steps through
+ * all of the checksum context templates and deallocates any that were
+ * initialized using the algorithm-specific template init function.
+ */
+void
+zio_checksum_templates_free(spa_t *spa)
+{
+	for (enum zio_checksum checksum = 0;
+	    checksum < ZIO_CHECKSUM_FUNCTIONS; checksum++) {
+		if (spa->spa_cksum_tmpls[checksum] != NULL) {
+			zio_checksum_info_t *ci = &zio_checksum_table[checksum];
+
+			VERIFY(ci->ci_tmpl_free != NULL);
+			ci->ci_tmpl_free(spa->spa_cksum_tmpls[checksum]);
+			spa->spa_cksum_tmpls[checksum] = NULL;
+		}
+	}
 }
 
 /*

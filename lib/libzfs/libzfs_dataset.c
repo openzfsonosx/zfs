@@ -1089,10 +1089,8 @@ zfs_valid_proplist(libzfs_handle_t *hdl, zfs_type_t type, nvlist_t *nvl,
 		case ZFS_PROP_RECORDSIZE:
 		{
 			int maxbs = SPA_MAXBLOCKSIZE;
-			char buf[64];
-
-			if (zhp != NULL) {
-				maxbs = zpool_get_prop_int(zhp->zpool_hdl,
+			if (zpool_hdl != NULL) {
+				maxbs = zpool_get_prop_int(zpool_hdl,
 				    ZPOOL_PROP_MAXBLOCKSIZE, NULL);
 			}
 			/*
@@ -1108,11 +1106,10 @@ zfs_valid_proplist(libzfs_handle_t *hdl, zfs_type_t type, nvlist_t *nvl,
 			 * SPA_MINBLOCKSIZE and maxbs.
 			 */
 			if (intval < SPA_MINBLOCKSIZE ||
-			    intval > maxbs || !ISP2(intval)) {
-				zfs_nicenum(maxbs, buf, sizeof (buf));
+				intval > maxbs || !ISP2(intval)) {
 				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-				    "'%s' must be power of 2 from 512B "
-				    "to %s"), propname, buf);
+					"'%s' must be power of 2 from 512B "
+					"to %uKB"), propname, maxbs >> 10);
 				(void) zfs_error(hdl, EZFS_BADPROP, errbuf);
 				goto error;
 			}
@@ -1594,7 +1591,7 @@ zfs_prop_set_list(zfs_handle_t *zhp, nvlist_t *props)
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	nvlist_t *nvl;
 	int nvl_len;
-	int added_resv = 0;
+	int added_resv;
 
 	(void) snprintf(errbuf, sizeof (errbuf),
 					dgettext(TEXT_DOMAIN, "cannot set property for '%s'"),
@@ -1697,15 +1694,14 @@ zfs_prop_set_list(zfs_handle_t *zhp, nvlist_t *props)
 				zcmd_free_nvlists(&zc);
 
 				if (nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0) != 0)
-					goto error_nofree;
+					goto error;
 				if (nvlist_add_uint64(nvl,
 									  zfs_prop_to_name(ZFS_PROP_VOLSIZE),
 									  old_volsize) != 0)
-					goto error_nofree;
+					goto error;
 				if (zcmd_write_src_nvlist(hdl, &zc, nvl) != 0)
-					goto error_nofree;
+					goto error;
 				(void) zfs_ioctl(hdl, ZFS_IOC_SET_PROP, &zc);
-				goto error_nofree;
 			}
         } else {
 			for (cl_idx = 0; cl_idx < nvl_len; cl_idx++) {
@@ -1725,9 +1721,8 @@ zfs_prop_set_list(zfs_handle_t *zhp, nvlist_t *props)
         }
 
   error:
-        zcmd_free_nvlists(&zc);
-  error_nofree:
         nvlist_free(nvl);
+        zcmd_free_nvlists(&zc);
         if (cls != NULL) {
 			for (cl_idx = 0; cl_idx < nvl_len; cl_idx++) {
 				if (cls[cl_idx] != NULL)
@@ -1965,6 +1960,16 @@ get_numeric_property(zfs_handle_t *zhp, zfs_prop_t prop, zprop_source_t *src,
 	boolean_t received = zfs_is_recvd_props_mode(zhp);
 
 	*source = NULL;
+
+	/*
+	 * If the property is being fetched for a snapshot, check whether
+	 * the property is valid for the snapshot's head dataset type.
+	 */
+	if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT &&
+		!zfs_prop_valid_for_type(prop, zhp->zfs_head_type)) {
+			*val = zfs_prop_default_numeric(prop);
+			return (-1);
+	}
 
 	switch (prop) {
 	case ZFS_PROP_ATIME:
@@ -3369,6 +3374,17 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 
 	zpool_handle_t *zpool_handle = zpool_open(hdl, pool_path);
 
+	/* open zpool handle for prop validation */
+	char pool_path[MAXNAMELEN];
+	(void) strlcpy(pool_path, path, sizeof (pool_path));
+
+	/* truncate pool_path at first slash */
+	char *p = strchr(pool_path, '/');
+	if (p != NULL)
+		*p = '\0';
+
+	zpool_handle_t *zpool_handle = zpool_open(hdl, pool_path);
+
 	if (props && (props = zfs_valid_proplist(hdl, type, props,
 		zoned, NULL, zpool_handle, errbuf)) == 0) {
 		return (-1);
@@ -3797,7 +3813,7 @@ zfs_snapshot_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, nvlist_t *props)
 	 * get pool handle for prop validation. assumes all snaps are in the
 	 * same pool, as does lzc_snapshot (below).
 	 */
-	char pool[ZFS_MAX_DATASET_NAME_LEN];
+	char pool[MAXNAMELEN];
 	elem = nvlist_next_nvpair(snaps, NULL);
 	(void) strlcpy(pool, nvpair_name(elem), sizeof (pool));
 	pool[strcspn(pool, "/@")] = '\0';

@@ -16,7 +16,3 @@ s:lib/libzpool/common/sys:include/sys:g
 s:lib/libzpool/common:lib/libzpool:g
 s:usr/src/lib/libnvpair:lib/libnvpair:g
 s:usr/src/lib/libefi/common:lib/libefi:g
-s:usr/src/lib/libuutil/common:lib/libuutil:g
-s:module/zcommon/zfeature_common.c:module/zfs/zfeature_common.c:g
-s:usr/src/man/man5:man/man5:g
-s:usr/src/tools/scripts:scripts:g

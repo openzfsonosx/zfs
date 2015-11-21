@@ -484,9 +484,8 @@ dmu_buf_hold_array_by_dnode(dnode_t *dn, uint64_t offset, uint64_t length,
 			(void) dbuf_read(db, zio, dbuf_flags);
 		dbp[i] = &db->db;
 	}
-
 	if ((flags & DMU_READ_NO_PREFETCH) == 0 && read &&
-		length < zfetch_array_rd_sz) {
+	    length <= zfetch_array_rd_sz) {
 		dmu_zfetch(&dn->dn_zfetch, blkid, nblks);
 	}
 	rw_exit(&dn->dn_struct_rwlock);
@@ -542,8 +541,7 @@ dmu_buf_hold_array(objset_t *os, uint64_t object, uint64_t offset,
 
 int
 dmu_buf_hold_array_by_bonus(dmu_buf_t *db_fake, uint64_t offset,
-    uint64_t length, boolean_t read, void *tag, int *numbufsp,
-	dmu_buf_t ***dbpp)
+    uint64_t length, boolean_t read, void *tag, int *numbufsp, dmu_buf_t ***dbpp)
 {
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)db_fake;
 	dnode_t *dn;
@@ -599,7 +597,7 @@ dmu_prefetch(objset_t *os, uint64_t object, int64_t level, uint64_t offset,
 
 		rw_enter(&dn->dn_struct_rwlock, RW_READER);
 		blkid = dbuf_whichblock(dn, level,
-								object * sizeof (dnode_phys_t));
+			object * sizeof (dnode_phys_t));
 		dbuf_prefetch(dn, level, blkid, pri, 0);
 		rw_exit(&dn->dn_struct_rwlock);
 		return;
@@ -615,13 +613,13 @@ dmu_prefetch(objset_t *os, uint64_t object, int64_t level, uint64_t offset,
 		return;
 
 	rw_enter(&dn->dn_struct_rwlock, RW_READER);
-        /*
-         * offset + len - 1 is the last byte we want to prefetch for, and offset
-         * is the first.  Then dbuf_whichblk(dn, level, off + len - 1) is the
-         * last block we want to prefetch, and dbuf_whichblock(dn, level,
-         * offset)  is the first.  Then the number we need to prefetch is the
-         * last - first + 1.
-         */
+	/*
+	 * offset + len - 1 is the last byte we want to prefetch for, and offset
+	 * is the first.  Then dbuf_whichblk(dn, level, off + len - 1) is the
+	 * last block we want to prefetch, and dbuf_whichblock(dn, level,
+	 * offset)  is the first.  Then the number we need to prefetch is the
+	 * last - first + 1.
+	 */
 	if (level > 0 || dn->dn_datablkshift != 0) {
 		nblks = dbuf_whichblock(dn, level, offset + len - 1) -
 			dbuf_whichblock(dn, level, offset) + 1;
@@ -2232,7 +2230,7 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		if (dedup_checksum != ZIO_CHECKSUM_OFF) {
 			dedup = (wp & WP_DMU_SYNC) ? B_FALSE : B_TRUE;
 			if (!(zio_checksum_table[checksum].ci_flags &
-			    ZCHECKSUM_FLAG_DEDUP))
+				  ZCHECKSUM_FLAG_DEDUP))
 				dedup_verify = B_TRUE;
 		}
 

@@ -361,15 +361,6 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 
 		prefetch_dnode_metadata(td, &osp->os_meta_dnode, zb->zb_objset,
 			DMU_META_DNODE_OBJECT);
-		/*
-		 * See the block comment above for the goal of this variable.
-		 * If the maxblkid of the meta-dnode is 0, then we know that
-		 * we've never had more than DNODES_PER_BLOCK objects in the
-		 * dataset, which means we can't have reused any object ids.
-		 */
-		if (osp->os_meta_dnode.dn_maxblkid == 0)
-			td->td_realloc_possible = B_FALSE;
-
 		if (arc_buf_size(buf) >= sizeof (objset_phys_t)) {
 			prefetch_dnode_metadata(td, gdnp, zb->zb_objset,
 			    DMU_GROUPUSED_OBJECT);

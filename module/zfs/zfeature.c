@@ -380,10 +380,8 @@ feature_do_action(spa_t *spa, spa_feature_t fid, feature_action_t action,
 {
 	uint64_t refcount = 0;
 	zfeature_info_t *feature = &spa_feature_table[fid];
-#ifdef DEBUG
 	uint64_t zapobj = (feature->fi_flags & ZFEATURE_FLAG_READONLY_COMPAT) ?
 	    spa->spa_feat_for_write_obj : spa->spa_feat_for_read_obj;
-#endif
 
 	ASSERT(VALID_FEATURE_FID(fid));
 	ASSERT(0 != zapobj);

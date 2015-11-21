@@ -1205,49 +1205,8 @@ zio_write_bp_init(zio_t *zio)
 			zio->io_pipeline |= ZIO_STAGE_DDT_WRITE;
 			return (ZIO_PIPELINE_CONTINUE);
 		}
-
-		/*
-		 * We were unable to handle this as an override bp, treat
-		 * it as a regular write I/O.
-		 */
 		zio->io_bp_override = NULL;
-		*bp = zio->io_bp_orig;
-		zio->io_pipeline = zio->io_orig_pipeline;
-	}
-
-	return (ZIO_PIPELINE_CONTINUE);
-}
-
-static int
-zio_write_compress(zio_t *zio)
-{
-	spa_t *spa = zio->io_spa;
-	zio_prop_t *zp = &zio->io_prop;
-	enum zio_compress compress = zp->zp_compress;
-	blkptr_t *bp = zio->io_bp;
-	uint64_t lsize = zio->io_size;
-	uint64_t psize = lsize;
-	int pass = 1;
-
-	/*
-	 * If our children haven't all reached the ready stage,
-	 * wait for them and then repeat this pipeline stage.
-	 */
-	if (zio_wait_for_children(zio, ZIO_CHILD_GANG, ZIO_WAIT_READY) ||
-	    zio_wait_for_children(zio, ZIO_CHILD_LOGICAL, ZIO_WAIT_READY))
-		return (ZIO_PIPELINE_STOP);
-
-	if (!IO_IS_ALLOCATING(zio))
-		return (ZIO_PIPELINE_CONTINUE);
-
-	if (zio->io_children_ready != NULL) {
-		/*
-		 * Now that all our children are ready, run the callback
-		 * associated with this zio in case it wants to modify the
-		 * data to be written.
-		 */
-		ASSERT3U(zp->zp_level, >, 0);
-		zio->io_children_ready(zio);
+		BP_ZERO(bp);
 	}
 
 	ASSERT(zio->io_child_type != ZIO_CHILD_DDT);
@@ -2924,12 +2883,14 @@ zio_alloc_zil(spa_t *spa, uint64_t txg, blkptr_t *new_bp, blkptr_t *old_bp,
 
 	if (use_slog) {
 		error = metaslab_alloc(spa, spa_log_class(spa), size,
-		    new_bp, 1, txg, old_bp, METASLAB_HINTBP_AVOID, NULL);
+		    new_bp, 1, txg, old_bp,
+		    METASLAB_HINTBP_AVOID | METASLAB_GANG_AVOID);
 	}
 
 	if (error) {
 		error = metaslab_alloc(spa, spa_normal_class(spa), size,
-		    new_bp, 1, txg, old_bp, METASLAB_HINTBP_AVOID, NULL);
+		    new_bp, 1, txg, old_bp,
+		    METASLAB_HINTBP_AVOID);
 	}
 
 	if (error == 0) {
@@ -3936,6 +3897,73 @@ zbookmark_compare(uint16_t dbss1, uint8_t ibs1, uint16_t dbss2, uint8_t ibs2,
 		zb2obj = zb2->zb_object;
 		zb2level = zb2->zb_level;
 	}
+
+	/* Now that we have a canonical representation, do the comparison. */
+	if (zb1obj != zb2obj)
+		return (zb1obj < zb2obj ? -1 : 1);
+	else if (zb1L0 != zb2L0)
+		return (zb1L0 < zb2L0 ? -1 : 1);
+	else if (zb1level != zb2level)
+		return (zb1level > zb2level ? -1 : 1);
+	/*
+	 * This can (theoretically) happen if the bookmarks have the same object
+	 * and level, but different blkids, if the block sizes are not the same.
+	 * There is presently no way to change the indirect block sizes
+	 */
+	return (0);
+}
+
+/*
+ *  This function checks the following: given that last_block is the place that
+ *  our traversal stopped last time, does that guarantee that we've visited
+ *  every node under subtree_root?  Therefore, we can't just use the raw output
+ *  of zbookmark_compare.  We have to pass in a modified version of
+ *  subtree_root; by incrementing the block id, and then checking whether
+ *  last_block is before or equal to that, we can tell whether or not having
+ *  visited last_block implies that all of subtree_root's children have been
+ *  visited.
+ */
+boolean_t
+zbookmark_subtree_completed(const dnode_phys_t *dnp,
+    const zbookmark_phys_t *subtree_root, const zbookmark_phys_t *last_block)
+{
+	zbookmark_phys_t mod_zb = *subtree_root;
+	mod_zb.zb_blkid++;
+	ASSERT(last_block->zb_level == 0);
+
+	/* The objset_phys_t isn't before anything. */
+	if (dnp == NULL)
+		return (B_FALSE);
+
+	/*
+	 * We pass in 1ULL << (DNODE_BLOCK_SHIFT - SPA_MINBLOCKSHIFT) for the
+	 * data block size in sectors, because that variable is only used if
+	 * the bookmark refers to a block in the meta-dnode.  Since we don't
+	 * know without examining it what object it refers to, and there's no
+	 * harm in passing in this value in other cases, we always pass it in.
+	 *
+	 * We pass in 0 for the indirect block size shift because zb2 must be
+	 * level 0.  The indirect block size is only used to calculate the span
+	 * of the bookmark, but since the bookmark must be level 0, the span is
+	 * always 1, so the math works out.
+	 *
+	 * If you make changes to how the zbookmark_compare code works, be sure
+	 * to make sure that this code still works afterwards.
+	 */
+	return (zbookmark_compare(dnp->dn_datablkszsec, dnp->dn_indblkshift,
+	    1ULL << (DNODE_BLOCK_SHIFT - SPA_MINBLOCKSHIFT), 0, &mod_zb,
+	    last_block) <= 0);
+}
+
+#if defined(_KERNEL) && defined(HAVE_SPL)
+EXPORT_SYMBOL(zio_type_name);
+EXPORT_SYMBOL(zio_buf_alloc);
+EXPORT_SYMBOL(zio_data_buf_alloc);
+EXPORT_SYMBOL(zio_buf_free);
+EXPORT_SYMBOL(zio_data_buf_free);
+
+module_param(zio_delay_max, int, 0644);
+MODULE_PARM_DESC(zio_delay_max, "Max zio millisec delay before posting event");
 
 	/* Now that we have a canonical representation, do the comparison. */
 	if (zb1obj != zb2obj)

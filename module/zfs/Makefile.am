@@ -86,7 +86,7 @@ zfs_SOURCES = \
 	rrwlock.c \
 	sa.c \
 	sha256.c \
-	skein_zfs.c \
+	skein_zfs.c	\
 	spa.c \
 	spa_boot.c \
 	spa_config.c \

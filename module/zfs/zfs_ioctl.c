@@ -3720,12 +3720,6 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 			return (SET_ERROR(ENOTSUP));
 		break;
 
-	case ZFS_PROP_DEDUP:
-		if (zfs_earlier_version(dsname, SPA_VERSION_DEDUP))
-			return (SET_ERROR(ENOTSUP));
-		break;
-
-	case ZFS_PROP_VOLBLOCKSIZE:
 	case ZFS_PROP_RECORDSIZE:
 		/* Record sizes above 128k need the feature to be enabled */
 		if (nvpair_value_uint64(pair, &intval) == 0 &&
@@ -3776,6 +3770,7 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 				return (SET_ERROR(ENOTSUP));
 		}
 		break;
+
 	case ZFS_PROP_CHECKSUM:
 	case ZFS_PROP_DEDUP:
 	{
@@ -3791,7 +3786,7 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 			return (SET_ERROR(EINVAL));
 
 		/* check prop value is enabled in features */
-		feature = zio_checksum_to_feature(intval & ZIO_CHECKSUM_MASK);
+		feature = zio_checksum_to_feature(intval);
 		if (feature == SPA_FEATURE_NONE)
 			break;
 
@@ -3813,7 +3808,7 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 		}
 		spa_close(spa, FTAG);
 		break;
-	}
+       }
 
 	default:
 		break;
@@ -5266,9 +5261,8 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 #ifndef __APPLE__
 	off = fp->f_offset;
 #endif
-
-	error = dmu_send(snapname, fromname, embedok, largeblockok,
-		fd, resumeobj, resumeoff, fp->f_vnode, &off);
+	error = dmu_send(snapname, fromname, embedok, largeblockok, fd,
+		resumeobj, resumeoff, fp->f_vnode, &off);
 
 #ifndef __APPLE__
 	if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)

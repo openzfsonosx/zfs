@@ -41,11 +41,11 @@ extern uint64_t	zfetch_array_rd_sz;
 struct dnode;				/* so we can reference dnode */
 
 typedef struct zstream {
-	uint64_t	zs_blkid;	/* expect next access at this blkid */
-	uint64_t	zs_pf_blkid;	/* next block to prefetch */
-	kmutex_t	zs_lock;	/* protects stream */
-	hrtime_t	zs_atime;	/* time last prefetch issued */
-	list_node_t	zs_node;	/* link for zf_stream */
+	uint64_t        zs_blkid;       /* expect next access at this blkid */
+	uint64_t        zs_pf_blkid;    /* next block to prefetch */
+	kmutex_t        zs_lock;        /* protects stream */
+	hrtime_t        zs_atime;       /* time last prefetch issued */
+	list_node_t     zs_node;        /* link for zf_stream */
 } zstream_t;
 
 typedef struct zfetch {

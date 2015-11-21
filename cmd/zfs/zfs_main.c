@@ -658,8 +658,7 @@ zfs_do_clone(int argc, char **argv)
 	while ((c = getopt(argc, argv, "o:p")) != -1) {
 		switch (c) {
 		case 'o':
-			if (parseprop(props, optarg) != 0) {
-				nvlist_free(props);
+			if (parseprop(props, optarg))
 				return (1);
 			}
 			break;
@@ -3659,9 +3658,7 @@ zfs_do_snapshot(int argc, char **argv)
 	while ((c = getopt(argc, argv, "ro:")) != -1) {
 		switch (c) {
 		case 'o':
-			if (parseprop(props, optarg) != 0) {
-				nvlist_free(sd.sd_nvl);
-				nvlist_free(props);
+			if (parseprop(props, optarg))
 				return (1);
 			}
 			break;
@@ -3943,15 +3940,18 @@ zfs_do_receive(int argc, char **argv)
 	int c, err = 0;
 	recvflags_t flags = { 0 };
 	boolean_t abort_resumable = B_FALSE;
+	nvlist_t *props;
+	nvpair_t *nvp = NULL;
+
+	if (nvlist_alloc(&props, NV_UNIQUE_NAME, 0) != 0)
+		nomem();
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":denuvFsA")) != -1) {
+	while ((c = getopt(argc, argv, ":o:denuvFsA")) != -1) {
 		switch (c) {
 		case 'o':
-			if (parseprop(props, optarg) != 0) {
-				nvlist_free(props);
+			if (parseprop(props, optarg) != 0)
 				return (1);
-			}
 			break;
 		case 'd':
 			flags.isprefix = B_TRUE;
@@ -4041,6 +4041,13 @@ zfs_do_receive(int argc, char **argv)
 		return (err != 0);
 	}
 
+	while ((nvp = nvlist_next_nvpair(props, nvp))) {
+		if (strcmp(nvpair_name(nvp), "origin") != 0) {
+			(void) fprintf(stderr, gettext("invalid option"));
+			usage(B_FALSE);
+		}
+	}
+
 	if (isatty(STDIN_FILENO)) {
 		(void) fprintf(stderr,
 		    gettext("Error: Backup stream can not be read "
@@ -4051,7 +4058,6 @@ zfs_do_receive(int argc, char **argv)
 	}
 
 	err = zfs_receive(g_zfs, argv[0], props, &flags, STDIN_FILENO, NULL);
-	nvlist_free(props);
 
 	return (err != 0);
 }

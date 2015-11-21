@@ -55,6 +55,7 @@
 #include <sys/zio_compress.h>
 #include <zfs_fletcher.h>
 #include <sys/dmu_send.h>
+#include <sys/zio_checksum.h>
 
 /*
  * The SPA supports block sizes up to 16MB.  However, very large blocks
@@ -1760,11 +1761,13 @@ get_receive_resume_stats(dsl_dataset_t *ds, nvlist_t *nv)
 		    packed_size, packed_size, 6);
 
 		zio_cksum_t cksum;
-		fletcher_4_native(compressed, compressed_size, &cksum);
+		fletcher_4_native(compressed, compressed_size, NULL, &cksum);
 
 		str = kmem_alloc(compressed_size * 2 + 1, KM_SLEEP);
 		for (int i = 0; i < compressed_size; i++) {
-			(void) sprintf(str + i * 2, "%02x", compressed[i]);
+			(void) snprintf(str + i * 2,
+							compressed_size * 2 + 1,
+							"%02x", compressed[i]);
 		}
 		str[compressed_size * 2] = '\0';
 		char *propval = kmem_asprintf("%u-%llx-%llx-%s",
@@ -1803,7 +1806,7 @@ dsl_dataset_stats(dsl_dataset_t *ds, nvlist_t *nv)
 		get_clones_stat(ds, nv);
 	} else {
 		if (ds->ds_prev != NULL && ds->ds_prev != dp->dp_origin_snap) {
-			char buf[ZFS_MAX_DATASET_NAME_LEN];
+			char buf[MAXNAMELEN];
 			dsl_dataset_name(ds->ds_prev, buf);
 			dsl_prop_nvlist_add_string(nv, ZFS_PROP_PREV_SNAP, buf);
 		}
@@ -1868,8 +1871,8 @@ dsl_dataset_stats(dsl_dataset_t *ds, nvlist_t *nv)
 		char recvname[ZFS_MAXNAMELEN];
 		dsl_dataset_t *recv_ds;
 		dsl_dataset_name(ds, recvname);
-		(void) strcat(recvname, "/");
-		(void) strcat(recvname, recv_clone_name);
+		(void) strlcat(recvname, "/", ZFS_MAXNAMELEN);
+		(void) strlcat(recvname, recv_clone_name, ZFS_MAXNAMELEN);
 		if (dsl_dataset_hold(dp, recvname, FTAG, &recv_ds) == 0) {
 			get_receive_resume_stats(recv_ds, nv);
 			dsl_dataset_rele(recv_ds, FTAG);
@@ -3536,7 +3539,6 @@ dsl_dataset_zapify(dsl_dataset_t *ds, dmu_tx_t *tx)
 	dmu_object_zapify(mos, ds->ds_object, DMU_OT_DSL_DATASET, tx);
 }
 
-
 boolean_t
 dsl_dataset_is_zapified(dsl_dataset_t *ds)
 {
@@ -3551,9 +3553,8 @@ dsl_dataset_has_resume_receive_state(dsl_dataset_t *ds)
 {
 	return (dsl_dataset_is_zapified(ds) &&
 			zap_contains(ds->ds_dir->dd_pool->dp_meta_objset,
-						 ds->ds_object, DS_FIELD_RESUME_TOGUID) == 0);
+			ds->ds_object, DS_FIELD_RESUME_TOGUID) == 0);
 }
-
 
 
 #if defined(_KERNEL) && defined(HAVE_SPL)

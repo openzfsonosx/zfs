@@ -55,8 +55,6 @@
 #include <sys/cmn_err.h>
 
 #else
-
-#ifndef __APPLE__
 #pragma weak SHA256Update = SHA2Update
 #pragma weak SHA384Update = SHA2Update
 #pragma weak SHA512Update = SHA2Update
@@ -64,7 +62,6 @@
 #pragma weak SHA256Final = SHA2Final
 #pragma weak SHA384Final = SHA2Final
 #pragma weak SHA512Final = SHA2Final
-#endif
 
 #endif	/* _KERNEL */
 
