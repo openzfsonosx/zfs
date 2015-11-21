@@ -2404,7 +2404,7 @@ zpool_relabel_disk(libzfs_handle_t *hdl, const char *path, const char *msg)
 {
 	int fd, error;
 
-	if ((fd = open(path, O_RDWR|O_DIRECT)) < 0) {
+	if ((fd = open(path, O_RDWR|O_DIRECT|O_SHLOCK)) < 0) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, "cannot "
 		    "relabel '%s': unable to open device: %d"), path, errno);
 		return (zfs_error(hdl, EZFS_OPENFAILED, msg));
