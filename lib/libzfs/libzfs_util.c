@@ -979,6 +979,13 @@ zfs_append_partition(char *path, size_t max_len)
 {
 	int len = strlen(path);
 
+	if (strncmp(path, UDISK_ROOT"/by-id",
+	    strlen(UDISK_ROOT) + 6) == 0 ||
+	    strncmp(path, UDISK_ROOT_ALT"/by-id",
+	    strlen(UDISK_ROOT_ALT) + 6) == 0) {
+		return (len);
+	}
+
 	if (strncmp(path, DISK_ROOT"/disk", strlen(DISK_ROOT) + 5) == 0) {
 		if (len + 2 >= max_len)
 			return (-1);
