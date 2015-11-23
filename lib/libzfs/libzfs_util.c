@@ -980,6 +980,10 @@ zfs_append_partition(char *path, size_t max_len)
 {
 	int len = strlen(path);
 
+	if (strncmp(path, UDISK_ROOT"/by-id",
+	    strlen(UDISK_ROOT) + 6) == 0)
+		return (len);
+
 	if (strncmp(path, DISK_ROOT"/disk", strlen(DISK_ROOT) + 5) == 0) {
 		if (len + 2 >= max_len)
 			return (-1);
@@ -987,18 +991,14 @@ zfs_append_partition(char *path, size_t max_len)
 		(void) strcat(path, "s1");
 		len += 2;
 	} else if (strncmp(path, UDISK_ROOT"/by-path",
-	    strlen(UDISK_ROOT) + 8) == 0 ||
-	    strncmp(path, UDISK_ROOT_ALT"/by-path",
-	    strlen(UDISK_ROOT_ALT) + 8) == 0) {
+	    strlen(UDISK_ROOT) + 8) == 0) {
 		if (path[len - 1] == '0' &&
 		    path[len - 2] == ':')
 			path[len - 1] = '1';
 		else
 			return (-1); /* should have ended with ":0" */
 	} else if (strncmp(path, UDISK_ROOT"/by-serial",
-            strlen(UDISK_ROOT) + 10) == 0 ||
-            strncmp(path, UDISK_ROOT_ALT"/by-serial",
-            strlen(UDISK_ROOT_ALT) + 10) == 0) {
+            strlen(UDISK_ROOT) + 10) == 0) {
 		if (len + 2 >= max_len)
 			return (-1);
 
@@ -1107,6 +1107,42 @@ zfs_strcmp_shortname(char *name, char *cmp_name, int wholedisk)
 	return (error);
 }
 
+static int
+osx_normalize_path(char *path, char *normbuf, size_t normbuflen)
+{
+	boolean_t first;
+	char *dir;
+	int len = 0;
+
+	if (!path || !normbuf || normbuflen <= 0)
+		return (-1);
+
+	/* Strip redundant slashes if one exists due to ZPOOL_IMPORT_PATH */
+	memset(normbuf, 0, normbuflen);
+	dir = strtok(path, "/");
+	first = B_TRUE;
+	while (dir) {
+		len += 1;
+		if (len > normbuflen)
+			return (-1);
+		strcat(normbuf, "/");
+		if (first && strcmp(dir, "var") == 0) {
+			len += 8;
+			if (len > normbuflen)
+				return (-1);
+			strcat(normbuf, "private/");
+		}
+		len += strlen(dir);
+		if (len > normbuflen)
+			return (-1);
+		strcat(normbuf, dir);
+		dir = strtok(NULL, "/");
+		first = B_FALSE;
+	}
+
+	return (0);
+}
+
 /*
  * Given either a shorthand or fully qualified path name look for a match
  * against 'cmp'.  The passed name will be expanded as needed for comparison
@@ -1118,21 +1154,16 @@ zfs_strcmp_pathname(char *name, char *cmp, int wholedisk)
 	int path_len, cmp_len;
 	char path_name[MAXPATHLEN];
 	char cmp_name[MAXPATHLEN];
-	char *dir;
 
-	/* Strip redundant slashes if one exists due to ZPOOL_IMPORT_PATH */
-	memset(cmp_name, 0, MAXPATHLEN);
-	dir = strtok(cmp, "/");
-	while (dir) {
-		strcat(cmp_name, "/");
-		strcat(cmp_name, dir);
-		dir = strtok(NULL, "/");
-	}
+	if (osx_normalize_path(cmp, cmp_name, sizeof (cmp_name)) != 0)
+		abort();
 
 	if (name[0] != '/')
 		return (zfs_strcmp_shortname(name, cmp_name, wholedisk));
 
-	(void) strlcpy(path_name, name, MAXPATHLEN);
+	if (osx_normalize_path(name, path_name, sizeof (path_name)) != 0)
+		abort();
+
 	path_len = strlen(path_name);
 	cmp_len = strlen(cmp_name);
 

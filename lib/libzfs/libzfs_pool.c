@@ -2428,6 +2428,26 @@ zpool_relabel_disk(libzfs_handle_t *hdl, const char *path, const char *msg)
 	return (0);
 }
 
+int
+zpool_vdev_is_online(zpool_handle_t *zhp, const char *path, boolean_t *is_online)
+{
+        zfs_cmd_t zc = {"\0"};
+        nvlist_t *tgt;
+        boolean_t avail_spare, l2cache, islog;
+
+	if (is_online == NULL)
+		return (-1);
+
+        (void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+        if ((tgt = zpool_find_vdev(zhp, path, &avail_spare, &l2cache,
+            &islog)) == NULL)
+		return(ENODEV);
+
+	*is_online = vdev_online(tgt);
+
+	return (0);
+}
+
 /*
  * Bring the specified vdev online.   The 'flags' parameter is a set of the
  * ZFS_ONLINE_* flags.

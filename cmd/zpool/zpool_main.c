@@ -741,6 +741,8 @@ zpool_do_labelclear(int argc, char **argv)
 	pool_state_t state;
 	boolean_t inuse = B_FALSE;
 	boolean_t force = B_FALSE;
+	boolean_t isonline = B_TRUE;
+	zpool_handle_t *zhp;
 
 	/* check options */
 	while ((c = getopt(argc, argv, "f")) != -1) {
@@ -788,6 +790,11 @@ zpool_do_labelclear(int argc, char **argv)
 		case POOL_STATE_ACTIVE:
 		case POOL_STATE_SPARE:
 		case POOL_STATE_L2CACHE:
+			if ((zhp = zpool_open(g_zfs, name)) != NULL) {
+				if(force && (zpool_vdev_is_online(zhp, vdev,
+				    &isonline) == 0) && !isonline)
+					break;
+			}
 			(void) fprintf(stderr,
 			    gettext("labelclear operation failed.\n"
 			    "\tVdev %s is a member (%s), of pool \"%s\".\n"
