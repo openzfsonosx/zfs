@@ -74,7 +74,7 @@ extern void zfs_setprop_error(libzfs_handle_t *, zfs_prop_t, int, char *);
 
 static int zfs_receive_impl(libzfs_handle_t *, const char *, const char *,
 	recvflags_t *, int, const char *, nvlist_t *, avl_tree_t *, char **, int,
-	uint64_t *);
+    uint64_t *, const char *);
 static int guid_to_name(libzfs_handle_t *, const char *,
     uint64_t, boolean_t, char *);
 
@@ -2891,7 +2891,7 @@ zfs_receive_package(libzfs_handle_t *hdl, int fd, const char *destname,
 	 * zfs_receive_one().
 	 */
 	(void) strlcpy(sendfs, drr->drr_u.drr_begin.drr_toname,
-	    sizeof (sendfs));
+	    ZFS_MAXNAMELEN);
 	if ((cp = strchr(sendfs, '@')) != NULL) {
 		*cp = '\0';
 		/*
@@ -3656,7 +3656,7 @@ static int
 zfs_receive_impl(libzfs_handle_t *hdl, const char *tosnap,
     const char *originsnap, recvflags_t *flags, int infd, const char *sendfs,
     nvlist_t *stream_nv, avl_tree_t *stream_avl, char **top_zfs, int cleanup_fd,
-    uint64_t *action_handlep)
+    uint64_t *action_handlep, const char *finalsnap)
 {
 	int err;
 	dmu_replay_record_t drr, drr_noswap;
@@ -3763,7 +3763,7 @@ zfs_receive_impl(libzfs_handle_t *hdl, const char *tosnap,
 		}
 		return (zfs_receive_one(hdl, infd, tosnap, originsnap, flags,
 		    &drr, &drr_noswap, sendfs, stream_nv, stream_avl, top_zfs,
-		    cleanup_fd, action_handlep));
+		    cleanup_fd, action_handlep, finalsnap));
 	} else {
 		assert(DMU_GET_STREAM_HDRTYPE(drrb->drr_versioninfo) ==
 		    DMU_COMPOUNDSTREAM);
@@ -3841,7 +3841,7 @@ zfs_receive(libzfs_handle_t *hdl, const char *tosnap, nvlist_t *props,
 	VERIFY(cleanup_fd >= 0);
 
 	err = zfs_receive_impl(hdl, tosnap, originsnap, flags, infd, NULL, NULL,
-	    stream_avl, &top_zfs, cleanup_fd, &action_handle);
+	    stream_avl, &top_zfs, cleanup_fd, &action_handle, NULL);
 
 	VERIFY(0 == close(cleanup_fd));
 
