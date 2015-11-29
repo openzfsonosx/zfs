@@ -2278,6 +2278,24 @@ zpool_do_import(int argc, char **argv)
 			(void) fprintf(stderr, gettext("too many arguments\n"));
 			usage(B_FALSE);
 		}
+
+#ifdef __APPLE__
+		/*
+		 * Check for the SYS_CONFIG privilege. We do this explicitly
+		 * here because otherwise any attempt to import -a all pools
+		 * will report "no pools available to import" or silently fail
+		 * if a cache file is also specified.
+		 */
+		if (!priv_ineffect(PRIV_SYS_CONFIG)) {
+			(void) fprintf(stderr, gettext("cannot import pools: "
+			    "permission denied\n"));
+			if (searchdirs != NULL)
+				free(searchdirs);
+
+			nvlist_free(policy);
+			return (1);
+		}
+#endif /* __APPLE__ */
 	} else {
 		if (argc > 2) {
 			(void) fprintf(stderr, gettext("too many arguments\n"));
@@ -2285,7 +2303,7 @@ zpool_do_import(int argc, char **argv)
 		}
 
 		/*
-		 * Check for the SYS_CONFIG privilege.  We do this explicitly
+		 * Check for the SYS_CONFIG privilege. We do this explicitly
 		 * here because otherwise any attempt to discover pools will
 		 * silently fail.
 		 */
@@ -2301,7 +2319,7 @@ zpool_do_import(int argc, char **argv)
 #ifdef __APPLE__
 		/*
 		 * Check for the SYS_CONFIG privilege.  We do this explicitly
-		 * here because otherwise any attempt to import pools will
+		 * here because otherwise any attempt to import the pool will
 		 * report "no such pool available."
 		 */
 		if (argc > 0 && !priv_ineffect(PRIV_SYS_CONFIG)) {
