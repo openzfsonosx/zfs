@@ -2424,7 +2424,7 @@ zpool_do_import(int argc, char **argv)
 #ifdef __APPLE__
 		/*
 		 * Check for the SYS_CONFIG privilege.  We do this explicitly
-		 * here because otherwise any attempt to import pools will
+		 * here because otherwise any attempt to import the pool will
 		 * report "no such pool available."
 		 */
 		if (argc > 0 && !priv_ineffect(PRIV_SYS_CONFIG)) {
