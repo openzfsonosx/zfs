@@ -23,6 +23,7 @@ libspl_la_SOURCES = \
 	crypto/skein/skein_block.c \
 	crypto/sha2/sha2.c \
 	fdatasync.c \
+	getexecname.c \
 	gethrtime.c \
 	gethrestime.c \
 	getmntany.c \

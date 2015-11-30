@@ -478,16 +478,6 @@ enum ztest_object {
 	ZTEST_OBJECTS
 };
 
-#ifdef __APPLE__
-char *getexecname_fake = 0;
-#ifdef getexecname
-#undef getexecname
-char *getexecname(void) {
-	return getexecname_fake;
-}
-#endif
-#endif
-
 static void usage(boolean_t) __NORETURN;
 
 /*
@@ -818,7 +808,11 @@ process_options(int argc, char **argv)
 		cmd = umem_alloc(MAXPATHLEN, UMEM_NOFAIL);
 		realaltdir = umem_alloc(MAXPATHLEN, UMEM_NOFAIL);
 
+#ifdef __APPLE__
+		VERIFY(NULL != getexecrealpath(cmd, MAXPATHLEN));
+#else
 		VERIFY(NULL != realpath(getexecname(), cmd));
+#endif
 		if (0 != access(altdir, F_OK)) {
 			ztest_dump_core = B_FALSE;
 			fatal(B_TRUE, "invalid alternate ztest path: %s",
@@ -5465,7 +5459,11 @@ ztest_run_zdb(char *pool)
 	zdb = umem_alloc(MAXPATHLEN + MAXNAMELEN + 20, UMEM_NOFAIL);
 	zbuf = umem_alloc(1024, UMEM_NOFAIL);
 
+#ifdef __APPLE__
+	VERIFY(getexecrealpath(bin, MAXPATHLEN + MAXNAMELEN + 20) != NULL);
+#else
 	VERIFY(realpath(getexecname(), bin) != NULL);
+#endif
 	if (strncmp(bin, "/usr/sbin/ztest", 15) == 0) {
 		strcpy(bin, "/usr/sbin/zdb"); /* Installed */
 	} else if (strncmp(bin, "/sbin/ztest", 11) == 0) {
@@ -6299,7 +6297,11 @@ exec_child(char *cmd, char *libpath, boolean_t ignorekill, int *statusp)
 
 	if (cmd == NULL) {
 		cmdbuf = umem_alloc(MAXPATHLEN, UMEM_NOFAIL);
+#ifdef __APPLE__
+		VERIFY(NULL != getexecname(cmdbuf, MAXPATHLEN));
+#else
 		(void) strlcpy(cmdbuf, getexecname(), MAXPATHLEN);
+#endif
 		cmd = cmdbuf;
 	}
 
@@ -6414,10 +6416,6 @@ main(int argc, char **argv)
 
 	(void) setvbuf(stdout, NULL, _IOLBF, 0);
 
-#ifdef __APPLE__
-	getexecname_fake = strdup(argv[0]);
-#endif
-
 	action.sa_handler = sig_handler;
 	sigemptyset(&action.sa_mask);
 	action.sa_flags = 0;
@@ -6492,7 +6490,11 @@ main(int argc, char **argv)
 	}
 
 	cmd = umem_alloc(MAXNAMELEN, UMEM_NOFAIL);
+#ifdef __APPLE__
+	VERIFY(NULL != getexecname(cmd, MAXPATHLEN));
+#else
 	(void) strlcpy(cmd, getexecname(), MAXNAMELEN);
+#endif
 
 	zs->zs_do_init = B_TRUE;
 	if (strlen(ztest_opts.zo_alt_ztest) != 0) {

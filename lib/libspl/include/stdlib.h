@@ -29,6 +29,12 @@
 #ifndef _LIBSPL_STDLIB_H
 #define	_LIBSPL_STDLIB_H
 
-#define	getexecname getprogname
+#ifdef __APPLE__
+char *getexecname(char *, size_t);
+char *getexecrealpath(char *, size_t);
+#else
+//illumos function signature
+//const char *getexecname(void);
+#endif
 
 #endif

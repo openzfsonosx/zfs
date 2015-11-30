@@ -37,11 +37,12 @@
 #include <errno.h>
 #include <wchar.h>
 #include <unistd.h>
+#include <umem.h>
 
 static const char PNAME_FMT[] = "%s: ";
 static const char ERRNO_FMT[] = ": %s\n";
 
-static const char *pname;
+static char pname[MAXPATHLEN];
 
 static void
 uu_die_internal(int status, const char *format, va_list alist) __NORETURN;
@@ -172,9 +173,14 @@ uu_setpname(char *arg0)
 	 * than in each of its consumers.
 	 */
 	if (arg0 == NULL) {
+#ifdef __APPLE__
+		if (getexecname(pname, MAXPATHLEN) == NULL)
+			(void) strlcpy(pname, "unknown_command", MAXPATHLEN);
+#else
 		pname = getexecname();
 		if (pname == NULL)
 			pname = "unknown_command";
+#endif
 		return (pname);
 	}
 
@@ -184,7 +190,11 @@ uu_setpname(char *arg0)
 	for (;;) {
 		char *p = strrchr(arg0, '/');
 		if (p == NULL) {
+#ifdef __APPLE__
+			(void) strlcpy(pname, arg0, MAXPATHLEN);
+#else
 			pname = arg0;
+#endif
 			break;
 		} else {
 			if (*(p + 1) == '\0') {
@@ -192,7 +202,11 @@ uu_setpname(char *arg0)
 				continue;
 			}
 
+#ifdef __APPLE__
+			(void) strlcpy(pname, &p[1], MAXPATHLEN);
+#else
 			pname = p + 1;
+#endif
 			break;
 		}
 	}
