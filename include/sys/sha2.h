@@ -114,6 +114,16 @@ extern void SHA512Update(SHA512_CTX *, const void *, size_t);
 
 extern void SHA512Final(void *, SHA512_CTX *);
 
+#ifdef __APPLE__
+#define SHA256Update(X,Y,Z) SHA2Update((X),(Y),(Z))
+#define SHA384Update(X,Y,Z) SHA2Update((X),(Y),(Z))
+#define SHA512Update(X,Y,Z) SHA2Update((X),(Y),(Z))
+#define SHA256Final(X,Y) SHA2Final((X),(Y))
+#define SHA384Final(X,Y) SHA2Final((X),(Y))
+#define SHA512Final(X,Y) SHA2Final((X),(Y))
+#endif
+
+
 #ifdef _SHA2_IMPL
 /*
  * The following types/functions are all private to the implementation
