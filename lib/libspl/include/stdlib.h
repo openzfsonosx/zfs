@@ -29,6 +29,11 @@
 #ifndef _LIBSPL_STDLIB_H
 #define	_LIBSPL_STDLIB_H
 
-#define	getexecname getprogname
+#ifdef __APPLE__
+#include <sys/types.h>
+#include <mach-o/dyld.h>
+
+#define	getexecname _NSGetExecutablePath
+#endif
 
 #endif
