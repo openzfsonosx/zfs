@@ -190,11 +190,13 @@ vdev_file_close(vdev_t *vd)
 		return;
 
 	if (vf->vf_vnode != NULL) {
-        vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
+
+        if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
         // Also commented out in MacZFS
 		//(void) VOP_PUTPAGE(vf->vf_vnode, 0, 0, B_INVAL, kcred, NULL);
 		(void) VOP_CLOSE(vf->vf_vnode, spa_mode(vd->vdev_spa), 1, 0,
 		    kcred, NULL);
+		}
 	}
 
 	vd->vdev_delayed_close = B_FALSE;
