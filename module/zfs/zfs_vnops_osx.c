@@ -66,7 +66,6 @@
 #include <sys/ioccom.h>
 
 
-
 #ifdef _KERNEL
 #include <sys/sysctl.h>
 #include <sys/hfs_internal.h>
@@ -219,6 +218,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 {
 	/* OS X has no use for zfs_ioctl(). */
 	znode_t *zp = VTOZ(ap->a_vp);
+	struct vnode *vp = ap->a_vp;
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error = 0;
 	DECLARE_CRED_AND_CONTEXT(ap);
@@ -606,8 +606,16 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			*(uint32_t *)ap->a_data = zfsvfs->z_notification_conditions;
 			break;
 
-		case HFS_SET_BOOT_INFO:
+			break;
+
 		case HFS_GET_BOOT_INFO:
+			if (!vnode_isvroot(vp))
+				return(EINVAL);
+			//bcopy(zfsvfs->z_uuid, ap->a_data, sizeof(zfsvfs->z_uuid));
+			bcopy(&zfsvfs->vcbFndrInfo, ap->a_data, sizeof(zfsvfs->vcbFndrInfo));
+			break;
+
+		case HFS_SET_BOOT_INFO:
 		case HFS_MARK_BOOT_CORRUPT:
 			/* ZFS booting is not supported, mimic selection of a non-root HFS volume */
 			*(uint32_t *)ap->a_data = 0;
@@ -4250,7 +4258,10 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 
 	dprintf("Assigned zp %p with vp %p\n", zp, vp);
 
-	vnode_settag(vp, VT_ZFS);
+	if (zp->z_id == zfsvfs->z_root)
+		vnode_settag(vp, VT_HFS);
+	else
+		vnode_settag(vp, VT_ZFS);
 
 	zp->z_vid = vnode_vid(vp);
 	zp->z_vnode = vp;

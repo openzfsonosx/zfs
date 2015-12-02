@@ -98,6 +98,9 @@
 
 #include "zfs_comutil.h"
 
+//index 8 in the illumos vfssw
+int zfsfstype = 8;
+
 #ifdef __APPLE__
 #include <libkern/crypto/md5.h>
 #include <sys/zfs_vnops.h>
@@ -1533,6 +1536,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	uint64_t recordsize, fsid_guid;
 	vnode_t *vp;
 #else
+	uint64_t fsid_guid;
 	uint64_t mimic_hfs = 0;
 	struct timeval tv;
 #endif
@@ -1580,14 +1584,6 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	vfsp->mnt_kern_flag |= MNTK_EXTENDED_SHARED;
 #endif
 
-	/*
-	 * The fsid is 64 bits, composed of an 8-bit fs type, which
-	 * separates our fsid from any other filesystem types, and a
-	 * 56-bit objset unique ID.  The objset unique ID is unique to
-	 * all objsets open on this system, provided by unique_create().
-	 * The 8-bit fs type must be put in the low bits of fsid[1]
-	 * because that's where other Solaris filesystems put it.
-	 */
 
 #ifdef __APPLE__
 	error = dsl_prop_get_integer(osname, "com.apple.mimic_hfs", &mimic_hfs, NULL);
@@ -1598,14 +1594,24 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 	    vfsstatfs = vfs_statfs(vfsp);
 	    strlcpy(vfsstatfs->f_fstypename, "hfs", MFSTYPENAMELEN);
 	}
+#endif
 
-#else
+	/*
+	 * The fsid is 64 bits, composed of an 8-bit fs type, which
+	 * separates our fsid from any other filesystem types, and a
+	 * 56-bit objset unique ID.  The objset unique ID is unique to
+	 * all objsets open on this system, provided by unique_create().
+	 * The 8-bit fs type must be put in the low bits of fsid[1]
+	 * because that's where other Solaris filesystems put it.
+	 */
 	fsid_guid = dmu_objset_fsid_guid(zfsvfs->z_os);
 	ASSERT((fsid_guid & ~((1ULL<<56)-1)) == 0);
-	vfsp->vfs_fsid.val[0] = fsid_guid;
-	vfsp->vfs_fsid.val[1] = ((fsid_guid>>32) << 8) |
-	    vfsp->mnt_vfc->vfc_typenum & 0xFF;
-#endif
+	zfsvfs->vfs_fsid.val[0] = fsid_guid;
+	zfsvfs->vfs_fsid.val[1] = ((fsid_guid>>32) << 8) |
+	    (zfsfstype & 0xFF);
+
+	zfsvfs->vcbFndrInfo[6] = zfsvfs->vfs_fsid.val[0];
+	zfsvfs->vcbFndrInfo[7] = zfsvfs->vfs_fsid.val[1];
 
 	/*
 	 * Set features for file system.
@@ -2256,6 +2262,39 @@ out:
 	return (error);
 }
 
+/*
+ * The name space ID for generating an ZFS volume UUID. Same as HFS.
+ *
+ * B3E20F39-F292-11D6-97A4-00306543ECAC
+ */
+#define ZFS_UUID_NAMESPACE_ID  "\xB3\xE2\x0F\x39\xF2\x92\x11\xD6\x97\xA4\x00\x30\x65\x43\xEC\xAC"
+
+#ifdef __APPLE__
+/*
+ * Creates a UUID from a unique "name" in the HFS UUID Name space.
+ * See version 3 UUID.
+ */
+static void
+zfs_getvoluuid(zfsvfs_t *zfsvfs, uuid_t result)
+{
+	MD5_CTX  md5c;
+	uint8_t  rawUUID[8];
+
+	((uint32_t *)rawUUID)[0] = zfsvfs->vcbFndrInfo[6];
+	((uint32_t *)rawUUID)[1] = zfsvfs->vcbFndrInfo[7];
+	printf("zfs_getvoluuid: seeding from %d and %d\n",
+	    zfsvfs->vcbFndrInfo[6],
+	    zfsvfs->vcbFndrInfo[7]);
+
+	MD5Init( &md5c );
+	MD5Update( &md5c, ZFS_UUID_NAMESPACE_ID, sizeof( uuid_t ) );
+	MD5Update( &md5c, rawUUID, sizeof (rawUUID) );
+	MD5Final( result, &md5c );
+
+	result[6] = 0x30 | ( result[6] & 0x0F );
+	result[8] = 0x80 | ( result[8] & 0x3F );
+}
+#endif
 
 int
 zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t context)
@@ -2399,25 +2438,41 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
      */
 	VFSATTR_RETURN(fsap, f_signature, 18475);  /*  */
 	VFSATTR_RETURN(fsap, f_carbon_fsid, 0);
-    // Make up a UUID here, based on the name
 	if (VFSATTR_IS_ACTIVE(fsap, f_uuid)) {
-        MD5_CTX  md5c;
-		char osname[MAXNAMELEN];
+		zfs_getvoluuid(zfsvfs, fsap->f_uuid);
+		VFSATTR_SET_SUPPORTED(fsap, f_uuid);
+
+#if 1
+		// Only grabbing dataset name for the sake of the debug message
 
 		// Get dataset name
+		char osname[MAXNAMELEN];
 		dmu_objset_name(zfsvfs->z_os, osname);
+		char *fromname = osname;
 
-        char *fromname = osname;
-        MD5Init( &md5c );
-        MD5Update( &md5c, fromname, strlen(fromname));
-        MD5Final( fsap->f_uuid, &md5c );
-        VFSATTR_SET_SUPPORTED(fsap, f_uuid);
-		dprintf("Returning '%s' uuid '%02x%02x%02x%02x'\n", fromname,
-			   fsap->f_uuid[0],
-			   fsap->f_uuid[1],
-			   fsap->f_uuid[2],
-			   fsap->f_uuid[3]);
-    }
+		printf("Returning '%s' : uuid "
+		    "'%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-"
+		    "%02x%02x%02x%02x%02x%02x'\n",
+		    fromname,
+		    fsap->f_uuid[0],
+		    fsap->f_uuid[1],
+		    fsap->f_uuid[2],
+		    fsap->f_uuid[3],
+		    fsap->f_uuid[4],
+		    fsap->f_uuid[5],
+		    fsap->f_uuid[6],
+		    fsap->f_uuid[7],
+		    fsap->f_uuid[8],
+		    fsap->f_uuid[9],
+		    fsap->f_uuid[10],
+		    fsap->f_uuid[11],
+		    fsap->f_uuid[12],
+		    fsap->f_uuid[13],
+		    fsap->f_uuid[14],
+		    fsap->f_uuid[15]);
+#endif
+	}
+
 	uint64_t missing = 0;
 	missing = (fsap->f_active ^ (fsap->f_active & fsap->f_supported));
 	if ( missing != 0) {

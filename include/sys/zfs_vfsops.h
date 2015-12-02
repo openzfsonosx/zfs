@@ -116,6 +116,8 @@ struct zfsvfs {
         sa_attr_type_t  *z_attr_table;  /* SA attr mapping->id */
 #define ZFS_OBJ_MTX_SZ  256
         kmutex_t        z_hold_mtx[ZFS_OBJ_MTX_SZ];     /* znode hold locks */
+	fsid_t		vfs_fsid;		/* illumos vfs file system id */
+	u_int32_t	vcbFndrInfo[8]; /* Volume Control Block Finder Info, contains f_uuid */
 };
 
 
