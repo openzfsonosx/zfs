@@ -2347,7 +2347,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 
 	ZFS_ENTER(zfsvfs);
 
-	dmu_objset_space(zfsvfs->z_os,
+	dmu_objset_space_notondiskonly(zfsvfs->z_os,
 	    &refdbytes, &availbytes, &usedobjs, &availobjs);
 
 	VFSATTR_RETURN(fsap, f_objcount, usedobjs);

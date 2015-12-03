@@ -1505,12 +1505,32 @@ dmu_objset_userspace_upgrade(objset_t *os)
 	return (0);
 }
 
+static void
+__dmu_objset_space_common(objset_t *os, uint64_t *refdbytesp, uint64_t *availbytesp,
+    uint64_t *usedobjsp, uint64_t *availobjsp, int ondiskonly)
+{
+	if (ondiskonly)
+		dsl_dataset_space(os->os_dsl_dataset, refdbytesp, availbytesp,
+		    usedobjsp, availobjsp);
+	else
+		dsl_dataset_space_notondiskonly(os->os_dsl_dataset, refdbytesp,
+		    availbytesp, usedobjsp, availobjsp);
+}
+
 void
 dmu_objset_space(objset_t *os, uint64_t *refdbytesp, uint64_t *availbytesp,
     uint64_t *usedobjsp, uint64_t *availobjsp)
 {
-	dsl_dataset_space(os->os_dsl_dataset, refdbytesp, availbytesp,
-	    usedobjsp, availobjsp);
+	return(__dmu_objset_space_common(os, refdbytesp, availbytesp, usedobjsp,
+	    availobjsp, TRUE));
+}
+
+void
+dmu_objset_space_notondiskonly(objset_t *os, uint64_t *refdbytesp, uint64_t *availbytesp,
+    uint64_t *usedobjsp, uint64_t *availobjsp)
+{
+	return(__dmu_objset_space_common(os, refdbytesp, availbytesp, usedobjsp,
+            availobjsp, FALSE));
 }
 
 uint64_t

@@ -1727,13 +1727,13 @@ dsl_dataset_fsid_guid(dsl_dataset_t *ds)
 	return (ds->ds_fsid_guid);
 }
 
-void
-dsl_dataset_space(dsl_dataset_t *ds,
+static void
+__dsl_dataset_space_common(dsl_dataset_t *ds,
     uint64_t *refdbytesp, uint64_t *availbytesp,
-    uint64_t *usedobjsp, uint64_t *availobjsp)
+    uint64_t *usedobjsp, uint64_t *availobjsp, int ondiskonly)
 {
 	*refdbytesp = dsl_dataset_phys(ds)->ds_referenced_bytes;
-	*availbytesp = dsl_dir_space_available(ds->ds_dir, NULL, 0, TRUE);
+	*availbytesp = dsl_dir_space_available(ds->ds_dir, NULL, 0, ondiskonly);
 	if (ds->ds_reserved > dsl_dataset_phys(ds)->ds_unique_bytes)
 		*availbytesp +=
 		    ds->ds_reserved - dsl_dataset_phys(ds)->ds_unique_bytes;
@@ -1749,6 +1749,24 @@ dsl_dataset_space(dsl_dataset_t *ds,
 	}
 	*usedobjsp = BP_GET_FILL(&dsl_dataset_phys(ds)->ds_bp);
 	*availobjsp = DN_MAX_OBJECT - *usedobjsp;
+}
+
+void
+dsl_dataset_space(dsl_dataset_t *ds,
+    uint64_t *refdbytesp, uint64_t *availbytesp,
+    uint64_t *usedobjsp, uint64_t *availobjsp)
+{
+	return (__dsl_dataset_space_common(ds, refdbytesp, availbytesp,
+	    usedobjsp, availobjsp, TRUE));
+}
+
+void
+dsl_dataset_space_notondiskonly(dsl_dataset_t *ds,
+    uint64_t *refdbytesp, uint64_t *availbytesp,
+    uint64_t *usedobjsp, uint64_t *availobjsp)
+{
+	return (__dsl_dataset_space_common(ds, refdbytesp, availbytesp,
+	    usedobjsp, availobjsp, FALSE));
 }
 
 boolean_t
