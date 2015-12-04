@@ -2269,6 +2269,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 
 	ZFS_ENTER(zfsvfs);
 
+	txg_wait_synced(dmu_objset_pool(zfsvfs->z_os), 0);
 	dmu_objset_space(zfsvfs->z_os,
 	    &refdbytes, &availbytes, &usedobjs, &availobjs);
 
