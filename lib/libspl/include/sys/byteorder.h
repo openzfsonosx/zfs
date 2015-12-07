@@ -90,6 +90,12 @@ extern	in_port_t ntohs(in_port_t);
 #endif	/* !defined(_XPG4_2) || defined(__EXTENSIONS__) || defined(_XPG5) */
 #endif
 
+/* 10.8 is lacking in htonll */
+#if !defined(htonll)
+#define htonll(x)       __DARWIN_OSSwapInt64(x)
+#endif
+
+
 #if !defined(_XPG4_2) || defined(__EXTENSIONS__)
 
 /*
