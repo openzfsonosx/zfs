@@ -484,24 +484,6 @@ vdev_lookup_by_path(vdev_t *vd, const char *name)
 }
 
 
-extern "C" {
-
-  /*
-   * Unfortunately the notify thread that posts the termination event to us
-   * is inside IOkit locked loop, so we have to issue the vnode_close()
-   * async, or vn_close()/dkclose() will wait on notify to release the lock
-   */
-  static void vdev_close_thread(void *arg)
-  {
-	vdev_t *vd = (vdev_t *)arg;
-	vdev_disk_t *dvd = (vdev_disk_t *)vd->vdev_tsd;
-
-	if (dvd) dvd->vd_offline = B_TRUE;
-	vdev_disk_close(vd);
-	thread_exit();
-  }
-}
-
 /*
  * Callback for device termination events, ie, disks removed.
  */
@@ -532,12 +514,13 @@ bool IOkit_disk_removed_callback(void* target,
 								   bsdnameosstr->getCStringNoCopy());
 
 		  if (vd && vd->vdev_path) {
+			  vdev_disk_t *dvd = (vdev_disk_t *)vd->vdev_tsd;
 
 			  printf("ZFS: Device '%s' removal requested\n",
 					 vd->vdev_path);
-			  (void) thread_create(NULL, 0, vdev_close_thread,
-								   vd, 0, &p0,
-								   TS_RUN, minclsyspri);
+
+			  if (dvd) dvd->vd_offline = B_TRUE;
+			  vdev_disk_close(vd);
 
 			  vd->vdev_remove_wanted = B_TRUE;
 			  spa_async_request(spa, SPA_ASYNC_REMOVE);
