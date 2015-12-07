@@ -806,7 +806,6 @@ libzfs_handle_t *
 libzfs_init(void)
 {
 	libzfs_handle_t *hdl;
-	int error;
 
 	if (libzfs_load_module("zfs") != 0) {
 		(void) fprintf(stderr, gettext("Failed to load ZFS module "
@@ -1731,7 +1730,7 @@ addlist(libzfs_handle_t *hdl, char *propname, zprop_list_t **listp,
 
 	prop = zprop_name_to_prop(propname, type);
 
-	if (prop != ZPROP_INVAL && !zprop_valid_for_type(prop, type, B_FALSE))
+	if (prop != ZPROP_INVAL && !zprop_valid_for_type(prop, type))
 		prop = ZPROP_INVAL;
 
 	/*

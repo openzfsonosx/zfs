@@ -529,7 +529,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 
                 VN_RELE(ZTOV(zp));
 
-#ifdef __APPLE__
+#ifdef __OPPLE__
 				/* Call vnop_reclaim now to keep the unlinked order */
 				vnode_recycle(ZTOV(zp));
 #endif

@@ -36,7 +36,6 @@ extern "C" {
 #include <sys/zio.h>
 #include <sys/dmu.h>
 #include <sys/spa.h>
-#include <sys/refcount.h>
 
 /*
  * Used by arc_flush() to inform arc_evict_state() that it should evict
@@ -46,28 +45,12 @@ extern "C" {
 
 typedef struct arc_buf_hdr arc_buf_hdr_t;
 typedef struct arc_buf arc_buf_t;
-typedef struct arc_prune arc_prune_t;
 typedef void arc_done_func_t(zio_t *zio, arc_buf_t *buf, void *_private);
-typedef void arc_prune_func_t(int64_t bytes, void *_private);
 typedef int arc_evict_func_t(void *_private);
 
 /* generic arc_done_func_t's which you can use */
 arc_done_func_t arc_bcopy_func;
 arc_done_func_t arc_getbuf_func;
-
-/* generic arc_prune_func_t wrapper for callbacks */
-struct arc_prune {
-	arc_prune_func_t	*p_pfunc;
-	void			*p_private;
-	uint64_t		p_adjust;
-	list_node_t		p_node;
-	refcount_t		p_refcnt;
-};
-
-typedef enum arc_strategy {
-	ARC_STRATEGY_META_ONLY		= 0, /* Evict only meta data buffers */
-	ARC_STRATEGY_META_BALANCED	= 1, /* Evict data buffers if needed */
-} arc_strategy_t;
 
 typedef enum arc_flags
 {
@@ -81,27 +64,29 @@ typedef enum arc_flags
 	ARC_FLAG_CACHED			= 1 << 4,	/* I/O was in cache */
 	ARC_FLAG_L2CACHE		= 1 << 5,	/* cache in L2ARC */
 	ARC_FLAG_L2COMPRESS		= 1 << 6,	/* compress in L2ARC */
-
+	ARC_FLAG_PREDICTIVE_PREFETCH = 1 << 7,	/* I/O from zfetch */
 	/*
 	 * Private ARC flags.  These flags are private ARC only flags that
 	 * will show up in b_flags in the arc_hdr_buf_t. These flags should
 	 * only be set by ARC code.
 	 */
-	ARC_FLAG_IN_HASH_TABLE		= 1 << 7,	/* buffer is hashed */
-	ARC_FLAG_IO_IN_PROGRESS		= 1 << 8,	/* I/O in progress */
-	ARC_FLAG_IO_ERROR		= 1 << 9,	/* I/O failed for buf */
-	ARC_FLAG_FREED_IN_READ		= 1 << 10,	/* freed during read */
-	ARC_FLAG_BUF_AVAILABLE		= 1 << 11,	/* block not in use */
-	ARC_FLAG_INDIRECT		= 1 << 12,	/* indirect block */
-	ARC_FLAG_L2_WRITING		= 1 << 13,	/* write in progress */
-	ARC_FLAG_L2_EVICTED		= 1 << 14,	/* evicted during I/O */
-	ARC_FLAG_L2_WRITE_HEAD		= 1 << 15,	/* head of write list */
+	ARC_FLAG_IN_HASH_TABLE		= 1 << 8,	/* buffer is hashed */
+	ARC_FLAG_IO_IN_PROGRESS		= 1 << 9,	/* I/O in progress */
+	ARC_FLAG_IO_ERROR		= 1 << 10,	/* I/O failed for buf */
+	ARC_FLAG_FREED_IN_READ		= 1 << 11,	/* freed during read */
+	ARC_FLAG_BUF_AVAILABLE		= 1 << 12,	/* block not in use */
+	ARC_FLAG_INDIRECT		= 1 << 13,	/* indirect block */
+	/* Indicates that block was read with ASYNC priority. */
+	ARC_FLAG_PRIO_ASYNC_READ	= 1 << 14,
+	ARC_FLAG_L2_WRITING		= 1 << 15,	/* write in progress */
+	ARC_FLAG_L2_EVICTED		= 1 << 16,	/* evicted during I/O */
+	ARC_FLAG_L2_WRITE_HEAD		= 1 << 17,	/* head of write list */
 	/* indicates that the buffer contains metadata (otherwise, data) */
-	ARC_FLAG_BUFC_METADATA		= 1 << 16,
+	ARC_FLAG_BUFC_METADATA		= 1 << 18,
 
 	/* Flags specifying whether optional hdr struct fields are defined */
-	ARC_FLAG_HAS_L1HDR		= 1 << 17,
-	ARC_FLAG_HAS_L2HDR		= 1 << 18,
+	ARC_FLAG_HAS_L1HDR		= 1 << 19,
+	ARC_FLAG_HAS_L2HDR		= 1 << 20,
 
 	/*
 	 * The arc buffer's compression mode is stored in the top 7 bits of the
@@ -134,16 +119,6 @@ typedef enum arc_buf_contents {
 } arc_buf_contents_t;
 
 /*
- * These are the flags we pass into calls to the arc
- */
-#define ARC_WAIT        (1 << 1)        /* perform I/O synchronously */
-#define ARC_NOWAIT      (1 << 2)        /* perform I/O asynchronously */
-#define ARC_PREFETCH    (1 << 3)        /* I/O is a prefetch */
-#define ARC_CACHED      (1 << 4)        /* I/O was already in cache */
-#define ARC_L2CACHE     (1 << 5)        /* cache in L2ARC */
-#define ARC_L2COMPRESS  (1 << 6)        /* compress in L2ARC */
-
-/*
  * The following breakdows of arc_size exist for kstat only.
  */
 typedef enum arc_space_type {
@@ -155,49 +130,18 @@ typedef enum arc_space_type {
 	ARC_SPACE_NUMTYPES
 } arc_space_type_t;
 
-typedef enum arc_state_type {
-	ARC_STATE_ANON,
-	ARC_STATE_MRU,
-	ARC_STATE_MRU_GHOST,
-	ARC_STATE_MFU,
-	ARC_STATE_MFU_GHOST,
-	ARC_STATE_L2C_ONLY,
-	ARC_STATE_NUMTYPES
-} arc_state_type_t;
-
-typedef struct arc_buf_info {
-	arc_state_type_t	abi_state_type;
-	arc_buf_contents_t	abi_state_contents;
-	uint32_t		abi_flags;
-	uint32_t		abi_datacnt;
-	uint64_t		abi_size;
-	uint64_t		abi_spa;
-	uint64_t		abi_access;
-	uint32_t		abi_mru_hits;
-	uint32_t		abi_mru_ghost_hits;
-	uint32_t		abi_mfu_hits;
-	uint32_t		abi_mfu_ghost_hits;
-	uint32_t		abi_l2arc_hits;
-	uint32_t		abi_holds;
-	uint64_t		abi_l2arc_dattr;
-	uint64_t		abi_l2arc_asize;
-	enum zio_compress	abi_l2arc_compress;
-} arc_buf_info_t;
-
 void arc_space_consume(uint64_t space, arc_space_type_t type);
 void arc_space_return(uint64_t space, arc_space_type_t type);
-arc_buf_t *arc_buf_alloc(spa_t *spa, uint64_t size, void *tag,
+arc_buf_t *arc_buf_alloc(spa_t *spa, int size, void *tag,
     arc_buf_contents_t type);
-arc_buf_t *arc_loan_buf(spa_t *spa, uint64_t size);
+arc_buf_t *arc_loan_buf(spa_t *spa, int size);
 void arc_return_buf(arc_buf_t *buf, void *tag);
 void arc_loan_inuse_buf(arc_buf_t *buf, void *tag);
 void arc_buf_add_ref(arc_buf_t *buf, void *tag);
 boolean_t arc_buf_remove_ref(arc_buf_t *buf, void *tag);
-void arc_buf_info(arc_buf_t *buf, arc_buf_info_t *abi, int state_index);
-uint64_t arc_buf_size(arc_buf_t *buf);
+int arc_buf_size(arc_buf_t *buf);
 void arc_release(arc_buf_t *buf, void *tag);
 int arc_released(arc_buf_t *buf);
-void arc_buf_sigsegv(int sig, siginfo_t *si, void *unused);
 void arc_buf_freeze(arc_buf_t *buf);
 void arc_buf_thaw(arc_buf_t *buf);
 boolean_t arc_buf_eviction_needed(arc_buf_t *buf);
@@ -207,27 +151,23 @@ int arc_referenced(arc_buf_t *buf);
 
 int arc_read(zio_t *pio, spa_t *spa, const blkptr_t *bp,
     arc_done_func_t *done, void *_private, zio_priority_t priority, int flags,
-    uint32_t *arc_flags, const zbookmark_phys_t *zb);
+    arc_flags_t *arc_flags, const zbookmark_phys_t *zb);
 zio_t *arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
     blkptr_t *bp, arc_buf_t *buf, boolean_t l2arc, boolean_t l2arc_compress,
     const zio_prop_t *zp, arc_done_func_t *ready, arc_done_func_t *physdone,
     arc_done_func_t *done, void *_private, zio_priority_t priority,
     int zio_flags, const zbookmark_phys_t *zb);
-
-arc_prune_t *arc_add_prune_callback(arc_prune_func_t *func, void *_private);
-void arc_remove_prune_callback(arc_prune_t *p);
 void arc_freed(spa_t *spa, const blkptr_t *bp);
 
 void arc_set_callback(arc_buf_t *buf, arc_evict_func_t *func, void *_private);
 boolean_t arc_clear_callback(arc_buf_t *buf);
 
-void arc_flush(spa_t *spa);
+void arc_flush(spa_t *spa, boolean_t retry);
 void arc_tempreserve_clear(uint64_t reserve);
 int arc_tempreserve_space(uint64_t reserve, uint64_t txg);
 
 void arc_init(void);
 void arc_fini(void);
-int arc_referenced(arc_buf_t *buf);
 
 /*
  * Level 2 ARC
@@ -241,8 +181,11 @@ void l2arc_fini(void);
 void l2arc_start(void);
 void l2arc_stop(void);
 
+extern int zfs_arc_average_blocksize;
+
 #ifndef _KERNEL
 extern boolean_t arc_watch;
+extern int arc_procfd;
 #endif
 
 #ifdef	__cplusplus

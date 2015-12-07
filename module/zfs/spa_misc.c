@@ -23,6 +23,7 @@
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2013 Saso Kiselkov. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -52,7 +53,7 @@
 #include <sys/ddt.h>
 #include <sys/stropts.h>
 #include "zfs_prop.h"
-#include "zfeature_common.h"
+#include <sys/zfeature.h>
 
 /*
  * SPA locking
@@ -508,6 +509,7 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	mutex_init(&spa->spa_history_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_proc_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_props_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_cksum_tmpls_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_scrub_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_suspend_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_vdev_top_lock, NULL, MUTEX_DEFAULT, NULL);
@@ -636,6 +638,8 @@ spa_remove(spa_t *spa)
 	for (t = 0; t < TXG_SIZE; t++)
 		bplist_destroy(&spa->spa_free_bplist[t]);
 
+	zio_checksum_templates_free(spa);
+
 	cv_destroy(&spa->spa_async_cv);
 	cv_destroy(&spa->spa_evicting_os_cv);
 	cv_destroy(&spa->spa_proc_cv);
@@ -649,6 +653,7 @@ spa_remove(spa_t *spa)
 	mutex_destroy(&spa->spa_history_lock);
 	mutex_destroy(&spa->spa_proc_lock);
 	mutex_destroy(&spa->spa_props_lock);
+	mutex_destroy(&spa->spa_cksum_tmpls_lock);
 	mutex_destroy(&spa->spa_scrub_lock);
 	mutex_destroy(&spa->spa_suspend_lock);
 	mutex_destroy(&spa->spa_vdev_top_lock);
@@ -1747,21 +1752,20 @@ spa_init(int mode)
 
 	spa_mode_global = mode;
 
-#ifndef _KERNEL
+#ifdef sun
+#ifdef _KERNEL
+	spa_arch_init();
+#else
 	if (spa_mode_global != FREAD && dprintf_find_string("watch")) {
-		struct sigaction sa;
-
-		sa.sa_flags = SA_SIGINFO;
-		sigemptyset(&sa.sa_mask);
-		sa.sa_sigaction = arc_buf_sigsegv;
-
-		if (sigaction(SIGSEGV, &sa, NULL) == -1) {
+		arc_procfd = open("/proc/self/ctl", O_WRONLY);
+		if (arc_procfd == -1) {
 			perror("could not enable watchpoints: "
-			    "sigaction(SIGSEGV, ...) = ");
+				   "opening /proc/self/ctl failed: ");
 		} else {
 			arc_watch = B_TRUE;
 		}
 	}
+#endif
 #endif
 
 	fm_init();
@@ -2029,5 +2033,8 @@ MODULE_PARM_DESC(zfs_deadman_enabled, "Enable deadman timer");
 module_param(spa_asize_inflation, int, 0644);
 MODULE_PARM_DESC(spa_asize_inflation,
 	"SPA size estimate multiplication factor");
+
+module_param(spa_slop_shift, int, 0644);
+MODULE_PARM_DESC(spa_slop_shift, "Reserved free space in pool");
 #endif
 #endif

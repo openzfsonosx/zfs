@@ -1,9 +1,9 @@
-
 ACLOCAL_AMFLAGS = -I config
 
 include $(top_srcdir)/config/rpm.am
 include $(top_srcdir)/config/deb.am
 include $(top_srcdir)/config/tgz.am
+
 if CONFIG_USER
 include $(top_srcdir)/etc/launchd/daemons/launchd-daemons.am
 endif
@@ -59,11 +59,11 @@ shellcheck:
 	 fi
 
 ctags:
-	$(RM) $(top_srcdir)/tags
+	$(RM) tags
 	find $(top_srcdir) -name .git -prune -o -name '*.[hc]' | xargs ctags
 
 etags:
-	$(RM) $(top_srcdir)/TAGS
+	$(RM) TAGS
 	find $(top_srcdir) -name .pc -prune -o -name '*.[hc]' | xargs etags -a
 
 tags: ctags etags

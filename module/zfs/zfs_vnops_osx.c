@@ -1011,7 +1011,6 @@ static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-
 	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
 		1 : 0;
 	if (zp->z_finder_hardlink)

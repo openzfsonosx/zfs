@@ -210,6 +210,7 @@ extern int zfs_set_version(zfsvfs_t *zfsvfs, uint64_t newvers);
 
 extern int zfs_get_zplprop(objset_t *os, zfs_prop_t prop,
     uint64_t *value);
+
 extern int zfs_sb_create(const char *name, zfsvfs_t **zfsvfsp);
 extern int zfs_sb_setup(zfsvfs_t *zfsvfs, boolean_t mounting);
 extern void zfs_sb_free(zfsvfs_t *zfsvfs);

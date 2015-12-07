@@ -251,11 +251,10 @@ vdev_queue_max_async_writes(spa_t *spa)
 {
 	int writes;
 	uint64_t dirty = spa->spa_dsl_pool->dp_dirty_total;
-	uint64_t min_bytes = zfs_dirty_data_max *
-	    zfs_vdev_async_write_active_min_dirty_percent / 100;
-	uint64_t max_bytes = zfs_dirty_data_max *
-	    zfs_vdev_async_write_active_max_dirty_percent / 100;
-
+	uint64_t min_bytes =  zfs_dirty_data_max *
+		zfs_vdev_async_write_active_min_dirty_percent / 100;
+	uint64_t max_bytes =  zfs_dirty_data_max *
+		zfs_vdev_async_write_active_max_dirty_percent / 100;
 	/*
 	 * Sync tasks correspond to interactive user actions. To reduce the
 	 * execution time of those actions we push data out as fast as possible.
@@ -276,10 +275,11 @@ vdev_queue_max_async_writes(spa_t *spa)
 	 * move up by min_writes
 	 */
 	writes = (dirty - min_bytes) *
-	    (zfs_vdev_async_write_max_active -
-	    zfs_vdev_async_write_min_active) /
-	    (max_bytes - min_bytes) +
-	    zfs_vdev_async_write_min_active;
+		zfs_vdev_async_write_max_active -
+		zfs_vdev_async_write_min_active /
+		(uint64_t)(
+		(max_bytes - min_bytes) +
+	    zfs_vdev_async_write_min_active);
 	ASSERT3U(writes, >=, zfs_vdev_async_write_min_active);
 	ASSERT3U(writes, <=, zfs_vdev_async_write_max_active);
 	return (writes);
@@ -349,6 +349,7 @@ vdev_queue_init(vdev_t *vd)
 
 	mutex_init(&vq->vq_lock, NULL, MUTEX_DEFAULT, NULL);
 	vq->vq_vdev = vd;
+	taskq_init_ent(&vd->vdev_queue.vq_io_search.io_tqent);
 
 	avl_create(&vq->vq_active_tree, vdev_queue_offset_compare,
 	    sizeof (zio_t), offsetof(struct zio, io_queue_node));
@@ -847,5 +848,5 @@ MODULE_PARM_DESC(zfs_vdev_sync_write_max_active,
 
 module_param(zfs_vdev_sync_write_min_active, int, 0644);
 MODULE_PARM_DESC(zfs_vdev_sync_write_min_active,
-	"Min active sync write I/Osper vdev");
+	"Min active sync write I/Os per vdev");
 #endif

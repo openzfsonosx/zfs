@@ -70,6 +70,9 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 
     dprintf("vdev_file_open %p\n", vd->vdev_tsd);
 
+	/* Rotational optimizations only make sense on block devices */
+	vd->vdev_nonrot = B_TRUE;
+
 	/*
 	 * We must have a pathname, and it must be absolute.
 	 */
@@ -187,11 +190,13 @@ vdev_file_close(vdev_t *vd)
 		return;
 
 	if (vf->vf_vnode != NULL) {
-        vnode_getwithvid(vf->vf_vnode, vf->vf_vid);
+
+        if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
         // Also commented out in MacZFS
 		//(void) VOP_PUTPAGE(vf->vf_vnode, 0, 0, B_INVAL, kcred, NULL);
 		(void) VOP_CLOSE(vf->vf_vnode, spa_mode(vd->vdev_spa), 1, 0,
 		    kcred, NULL);
+		}
 	}
 
 	vd->vdev_delayed_close = B_FALSE;

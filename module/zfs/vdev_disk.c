@@ -111,6 +111,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	uint32_t blksize;
 	int fmode = 0;
 	int error = 0;
+	int isssd;
 
 	/*
 	 * We must have a pathname, and it must be absolute.
@@ -278,6 +279,16 @@ skip_open:
 	 * try again.
 	 */
 	vd->vdev_nowritecache = B_FALSE;
+
+	/* Inform the ZIO pipeline that we are non-rotational */
+	vd->vdev_nonrot = B_FALSE;
+	if (VNOP_IOCTL(devvp, DKIOCISSOLIDSTATE, (caddr_t)&isssd, 0,
+				   context) == 0) {
+		if (isssd)
+			vd->vdev_nonrot = B_TRUE;
+	}
+	dprintf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "",
+			isssd);
 
 	dvd->vd_devvp = devvp;
 out:

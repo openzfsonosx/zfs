@@ -659,7 +659,7 @@ zpool_do_add(int argc, char **argv)
 			(void) printf(gettext("\tcache\n"));
 			for (c = 0; c < l2children; c++) {
 				vname = zpool_vdev_name(g_zfs, NULL,
-				    l2child[c], B_FALSE);
+				    l2child[c], NULL);
 				(void) printf("\t  %s\n", vname);
 				free(vname);
 			}
@@ -670,7 +670,7 @@ zpool_do_add(int argc, char **argv)
 				(void) printf(gettext("\tcache\n"));
 			for (c = 0; c < l2children; c++) {
 				vname = zpool_vdev_name(g_zfs, NULL,
-				    l2child[c], B_FALSE);
+				    l2child[c], NULL);
 				(void) printf("\t  %s\n", vname);
 				free(vname);
 			}
@@ -5224,7 +5224,8 @@ zpool_do_upgrade(int argc, char **argv)
 		    "---------------\n");
 		for (i = 0; i < SPA_FEATURES; i++) {
 			zfeature_info_t *fi = &spa_feature_table[i];
-			const char *ro = fi->fi_can_readonly ?
+			const char *ro =
+			    (fi->fi_flags & ZFEATURE_FLAG_READONLY_COMPAT) ?
 			    " (read-only compatible)" : "";
 
 			(void) printf("%-37s%s\n", fi->fi_uname, ro);

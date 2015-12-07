@@ -570,6 +570,7 @@ extern void delay(clock_t ticks);
 #define	max_ncpus	64
 
 #define	minclsyspri	60
+#define	defclsyspri	60
 #define	maxclsyspri	99
 
 #define	CPU_SEQID	((uint64_t)pthread_self() & (max_ncpus - 1))

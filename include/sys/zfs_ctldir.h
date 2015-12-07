@@ -32,6 +32,7 @@
 #define	_ZFS_CTLDIR_H
 
 #include <sys/vnode.h>
+#include <sys/pathname.h>
 #include <sys/zfs_vfsops.h>
 #include <sys/zfs_znode.h>
 

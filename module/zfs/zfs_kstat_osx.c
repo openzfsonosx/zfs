@@ -61,7 +61,6 @@ osx_kstat_t osx_kstat = {
 	{ "zpl_version",				KSTAT_DATA_UINT64 },
 
 	{ "active_vnodes",				KSTAT_DATA_UINT64 },
-	{ "reclaim_nodes",				KSTAT_DATA_UINT64 },
 	{ "vnop_debug",					KSTAT_DATA_UINT64 },
 	{ "ignore_negatives",			KSTAT_DATA_UINT64 },
 	{ "ignore_positives",			KSTAT_DATA_UINT64 },
@@ -115,7 +114,6 @@ osx_kstat_t osx_kstat = {
 	{"zfs_prefetch_disable",		KSTAT_DATA_INT64  },
 	{"zfetch_max_streams",			KSTAT_DATA_INT64  },
 	{"zfetch_min_sec_reap",			KSTAT_DATA_INT64  },
-	{"zfetch_block_cap",			KSTAT_DATA_INT64  },
 	{"zfetch_array_rd_sz",			KSTAT_DATA_INT64  },
 	{"zfs_default_bs",				KSTAT_DATA_INT64  },
 	{"zfs_default_ibs",				KSTAT_DATA_INT64  },
@@ -179,6 +177,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		/* ARC */
 		arc_kstat_update(ksp, rw);
+		arc_kstat_update_osx(ksp, rw);
 
 		/* L2ARC */
 		l2arc_write_max = ks->l2arc_write_max.value.ui64;
@@ -251,8 +250,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			ks->zfetch_max_streams.value.i64;
 		zfetch_min_sec_reap =
 			ks->zfetch_min_sec_reap.value.i64;
-		zfetch_block_cap =
-			ks->zfetch_block_cap.value.i64;
 		zfetch_array_rd_sz =
 			ks->zfetch_array_rd_sz.value.i64;
 		zfs_default_bs =
@@ -317,7 +314,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		/* Darwin */
 		ks->darwin_active_vnodes.value.ui64          = vnop_num_vnodes;
-		ks->darwin_reclaim_nodes.value.ui64          = vnop_num_reclaims;
 		ks->darwin_debug.value.ui64                  = debug_vnop_osx_printf;
 		ks->darwin_ignore_negatives.value.ui64       = zfs_vnop_ignore_negatives;
 		ks->darwin_ignore_positives.value.ui64       = zfs_vnop_ignore_positives;
@@ -327,6 +323,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		/* ARC */
 		arc_kstat_update(ksp, rw);
+		arc_kstat_update_osx(ksp, rw);
 
 		/* L2ARC */
 		ks->l2arc_write_max.value.ui64               = l2arc_write_max;
@@ -398,8 +395,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			zfetch_max_streams;
 		ks->zfetch_min_sec_reap.value.i64 =
 			zfetch_min_sec_reap;
-		ks->zfetch_block_cap.value.i64 =
-			zfetch_block_cap;
 		ks->zfetch_array_rd_sz.value.i64 =
 			zfetch_array_rd_sz;
 		ks->zfs_default_bs.value.i64 =
