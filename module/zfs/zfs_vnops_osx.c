@@ -1199,22 +1199,6 @@ static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-	if (tvp) {
-		znode_t *tzp = VTOZ(tvp);
-		if (tzp) {
-			/* We also need to correct the parent id of the target, for
-			 * vget to be able to reply with the correct id. Used by mds
-			 * and Finder. */
-			tzp->z_finder_parentid = VTOZ(tdvp)->z_id;
-
-			vnode_update_identity(tvp, tdvp, 0,
-								  0, 0,
-								  VNODE_UPDATE_PARENT);
-			dprintf("ZFS: updated finder_parentid to %llu\n",
-				   tzp->z_finder_parentid);
-		}
-	}
-
 	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
 		1 : 0;
 	if (zp->z_finder_hardlink)

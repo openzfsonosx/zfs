@@ -77,14 +77,6 @@ int lzc_receive_resumable(const char *, nvlist_t *, const char *,
 int lzc_receive_with_header(const char *, nvlist_t *, const char *, boolean_t,
     boolean_t, int, const struct dmu_replay_record *);
 
-struct dmu_replay_record;
-
-int lzc_receive(const char *, nvlist_t *, const char *, boolean_t, int);
-int lzc_receive_resumable(const char *, nvlist_t *, const char *,
-    boolean_t, int);
-int lzc_receive_with_header(const char *, nvlist_t *, const char *, boolean_t,
-    boolean_t, int, const struct dmu_replay_record *);
-
 boolean_t lzc_exists(const char *);
 
 int lzc_rollback(const char *, char *, int);

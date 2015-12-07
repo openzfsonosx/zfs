@@ -1723,61 +1723,6 @@ struct receive_arg  {
 	struct objlist ignore_objlist;
 };
 
-struct receive_writer_arg {
-	objset_t *os;
-	boolean_t byteswap;
-	bqueue_t q;
-
-	/*
-	 * These three args are used to signal to the main thread that we're
-	 * done.
-	 */
-	kmutex_t mutex;
-	kcondvar_t cv;
-	boolean_t done;
-
-	int err;
-	/* A map from guid to dataset to help handle dedup'd streams. */
-	avl_tree_t *guid_to_ds_map;
-	boolean_t resumable;
-	uint64_t last_object, last_offset;
-	uint64_t bytes_read; /* bytes read when current record created */
-};
-
-struct objlist {
-	list_t list; /* List of struct receive_objnode. */
-	/*
-	 * Last object looked up. Used to assert that objects are being looked
-	 * up in ascending order.
-	 */
-	uint64_t last_lookup;
-};
-
-struct receive_objnode {
-	list_node_t node;
-	uint64_t object;
-};
-
-struct receive_arg  {
-	objset_t *os;
-	vnode_t *vp; /* The vnode to read the stream from */
-	uint64_t voff; /* The current offset in the stream */
-	uint64_t bytes_read;
-	/*
-	 * A record that has had its payload read in, but hasn't yet been handed
-	 * off to the worker thread.
-	 */
-	struct receive_record_arg *rrd;
-	/* A record that has had its header read in, but not its payload. */
-	struct receive_record_arg *next_rrd;
-	zio_cksum_t cksum;
-	zio_cksum_t prev_cksum;
-	int err;
-	boolean_t byteswap;
-	/* Sorted list of objects not to issue prefetches for. */
-	struct objlist ignore_objlist;
-};
-
 typedef struct guid_map_entry {
 	uint64_t	guid;
 	dsl_dataset_t	*gme_ds;

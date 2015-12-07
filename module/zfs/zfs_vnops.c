@@ -3203,22 +3203,6 @@ zfs_getattr_fast(struct inode *ip, struct kstat *sp)
 
 	mutex_exit(&zp->z_lock);
 
-	/*
-	 * Required to prevent NFS client from detecting different inode
-	 * numbers of snapshot root dentry before and after snapshot mount.
-	 */
-	if (zsb->z_issnap) {
-		if (ip->i_sb->s_root->d_inode == ip)
-			sp->ino = ZFSCTL_INO_SNAPDIRS -
-				dmu_objset_id(zsb->z_os);
-	}
-
-	ZFS_EXIT(zsb);
-
-	return (0);
-}
-#endif
-
 /*
  * Set the file attributes to the values contained in the
  * vattr structure.
@@ -4452,9 +4436,16 @@ top:
 				 * calling vnop_lookup first - it is easier to clear
 				 * it out and let getattr look it up if needed.
 				 */
-				if (tzp) tzp->z_name_cache[0] = 0;
-				if (szp) szp->z_name_cache[0] = 0;
-
+				if (tzp) {
+					mutex_enter(&tzp->z_lock);
+					tzp->z_name_cache[0] = 0;
+					mutex_exit(&tzp->z_lock);
+				}
+				if (szp) {
+					mutex_enter(&szp->z_lock);
+					szp->z_name_cache[0] = 0;
+					mutex_exit(&szp->z_lock);
+				}
 #endif
 
 			} else {

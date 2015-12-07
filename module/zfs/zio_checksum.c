@@ -432,3 +432,23 @@ zio_checksum_templates_free(spa_t *spa)
 		}
 	}
 }
+
+/*
+ * Called by a spa_t that's about to be deallocated. This steps through
+ * all of the checksum context templates and deallocates any that were
+ * initialized using the algorithm-specific template init function.
+ */
+void
+zio_checksum_templates_free(spa_t *spa)
+{
+	for (enum zio_checksum checksum = 0;
+	    checksum < ZIO_CHECKSUM_FUNCTIONS; checksum++) {
+		if (spa->spa_cksum_tmpls[checksum] != NULL) {
+			zio_checksum_info_t *ci = &zio_checksum_table[checksum];
+
+			VERIFY(ci->ci_tmpl_free != NULL);
+			ci->ci_tmpl_free(spa->spa_cksum_tmpls[checksum]);
+			spa->spa_cksum_tmpls[checksum] = NULL;
+		}
+	}
+}

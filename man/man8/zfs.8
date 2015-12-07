@@ -5386,6 +5386,928 @@ Displays permissions that have been delegated on the specified filesystem or vol
 \fB\fBzfs allow\fR [\fB-ldug\fR] "\fIeveryone\fR"|\fIuser\fR|\fIgroup\fR[,...] \fIperm\fR|@\fIsetname\fR[,...] \fIfilesystem\fR| \fIvolume\fR\fR
 .ad
 .br
+.na
+\fB\fBzfs allow\fR [\fB-ld\fR] \fB-e\fR \fIperm\fR|@\fIsetname\fR[,...] \fIfilesystem\fR | \fIvolume\fR\fR
+.ad
+.sp .6
+.RS 4n
+Delegates \fBZFS\fR administration permission for the file systems to non-privileged users.
+.sp
+.ne 2
+.mk
+.na
+\fB[\fB-ug\fR] "\fIeveryone\fR"|\fIuser\fR|\fIgroup\fR[,...]\fR
+.ad
+.sp .6
+.RS 4n
+Specifies to whom the permissions are delegated. Multiple entities can be specified as a comma-separated list. If neither of the \fB-ug\fR options are specified, then the argument is interpreted preferentially as the keyword "everyone", then as a user name, and lastly as a group name. To specify a user or group named "everyone", use the \fB-u\fR or \fB-g\fR options. To specify a group with the same name as a user, use the \fB-g\fR options.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB[\fB-e\fR] \fIperm\fR|@\fIsetname\fR[,...]\fR
+.ad
+.sp .6
+.RS 4n
+Specifies that the permissions be delegated to "everyone." Multiple permissions may be specified as a comma-separated list. Permission names are the same as \fBZFS\fR subcommand and property names. See the property list below. Property set names, which begin with an at sign (\fB@\fR) , may be specified. See the \fB-s\fR form below for details.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB[\fB-ld\fR] \fIfilesystem\fR|\fIvolume\fR\fR
+.ad
+.sp .6
+.RS 4n
+Specifies where the permissions are delegated. If neither of the \fB-ld\fR options are specified, or both are, then the permissions are allowed for the file system or volume, and all of its descendents. If only the \fB-l\fR option is used, then is allowed "locally" only for the specified file system. If only the \fB-d\fR option is used, then is allowed only for the descendent file systems.
+.RE
+
+.RE
+
+.sp
+.LP
+Permissions are generally the ability to use a \fBZFS\fR subcommand or change a \fBZFS\fR property. The following permissions are available:
+.sp
+.in +2
+.nf
+NAME             TYPE           NOTES
+allow            subcommand     Must also have the permission that is being
+                                allowed
+clone            subcommand     Must also have the 'create' ability and 'mount'
+                                ability in the origin file system
+create           subcommand     Must also have the 'mount' ability
+destroy          subcommand     Must also have the 'mount' ability
+diff             subcommand     Allows lookup of paths within a dataset
+                                given an object number, and the ability to
+                                create snapshots necessary to 'zfs diff'.
+mount            subcommand     Allows mount/umount of ZFS datasets
+promote          subcommand     Must also have the 'mount'
+                                and 'promote' ability in the origin file system
+receive          subcommand     Must also have the 'mount' and 'create' ability
+rename           subcommand     Must also have the 'mount' and 'create'
+                                ability in the new parent
+rollback         subcommand     Must also have the 'mount' ability
+send             subcommand     
+share            subcommand     Allows sharing file systems over NFS or SMB
+                                protocols
+snapshot         subcommand     Must also have the 'mount' ability
+groupquota       other          Allows accessing any groupquota@... property
+groupused        other          Allows reading any groupused@... property
+userprop         other          Allows changing any user property
+userquota        other          Allows accessing any userquota@... property
+userused         other          Allows reading any userused@... property
+
+acltype          property
+aclinherit       property       
+atime            property       
+canmount         property       
+casesensitivity  property       
+checksum         property       
+compression      property       
+copies           property       
+dedup            property
+devices          property       
+exec             property       
+filesystem_limit property
+logbias          property
+mlslabel         property
+mountpoint       property       
+nbmand           property       
+normalization    property       
+primarycache     property       
+quota            property       
+readonly         property       
+recordsize       property       
+refquota         property       
+refreservation   property       
+reservation      property       
+secondarycache   property       
+setuid           property       
+shareiscsi       property       
+sharenfs         property       
+sharesmb         property       
+snapdir          property       
+snapshot_limit   property
+utf8only         property       
+version          property       
+volblocksize     property       
+volsize          property       
+vscan            property       
+xattr            property       
+zoned            property       
+.fi
+.in -2
+.sp
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs allow\fR \fB-c\fR \fIperm\fR|@\fIsetname\fR[,...] \fIfilesystem\fR|\fIvolume\fR\fR
+.ad
+.sp .6
+.RS 4n
+Sets "create time" permissions. These permissions are granted (locally) to the creator of any newly-created descendent file system.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs allow\fR \fB-s\fR @\fIsetname\fR \fIperm\fR|@\fIsetname\fR[,...] \fIfilesystem\fR|\fIvolume\fR\fR
+.ad
+.sp .6
+.RS 4n
+Defines or adds permissions to a permission set. The set can be used by other \fBzfs allow\fR commands for the specified file system and its descendents. Sets are evaluated dynamically, so changes to a set are immediately reflected. Permission sets follow the same naming restrictions as ZFS file systems, but the name must begin with an "at sign" (\fB@\fR), and can be no more than 64 characters long.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs unallow\fR [\fB-rldug\fR] "\fIeveryone\fR"|\fIuser\fR|\fIgroup\fR[,...] [\fIperm\fR|@\fIsetname\fR[, ...]] \fIfilesystem\fR|\fIvolume\fR\fR
+.ad
+.br
+.na
+\fB\fBzfs unallow\fR [\fB-rld\fR] \fB-e\fR [\fIperm\fR|@\fIsetname\fR [,...]] \fIfilesystem\fR|\fIvolume\fR\fR
+.ad
+.br
+.na
+\fB\fBzfs unallow\fR [\fB-r\fR] \fB-c\fR [\fIperm\fR|@\fIsetname\fR[,...]]\fR
+.ad
+.br
+.na
+\fB\fIfilesystem\fR|\fIvolume\fR\fR
+.ad
+.sp .6
+.RS 4n
+Removes permissions that were granted with the \fBzfs allow\fR command. No permissions are explicitly denied, so other permissions granted are still in effect. For example, if the permission is granted by an ancestor. If no permissions are specified, then all permissions for the specified \fIuser\fR, \fIgroup\fR, or \fIeveryone\fR are removed. Specifying "everyone" (or using the \fB-e\fR option) only removes the permissions that were granted to "everyone", not all permissions for every user and group. See the \fBzfs allow\fR command for a description of the \fB-ldugec\fR options.
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-r\fR\fR
+.ad
+.sp .6
+.RS 4n
+Recursively remove the permissions from this file system and all descendents.
+.RE
+
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs unallow\fR [\fB-r\fR] \fB-s\fR @\fIsetname\fR [\fIperm\fR|@\fIsetname\fR[,...]]\fR
+.ad
+.br
+.na
+\fB\fIfilesystem\fR|\fIvolume\fR\fR
+.ad
+.sp .6
+.RS 4n
+Removes permissions from a permission set. If no permissions are specified, then all permissions are removed, thus removing the set entirely.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs hold\fR [\fB-r\fR] \fItag\fR \fIsnapshot\fR...\fR
+.ad
+.sp .6
+.RS 4n
+Adds a single reference, named with the \fItag\fR argument, to the specified snapshot or snapshots. Each snapshot has its own tag namespace, and tags must be unique within that space.
+.sp
+If a hold exists on a snapshot, attempts to destroy that snapshot by using the \fBzfs destroy\fR command return \fBEBUSY\fR.
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-r\fR\fR
+.ad
+.sp .6
+.RS 4n
+Specifies that a hold with the given tag is applied recursively to the snapshots of all descendent file systems.
+.RE
+
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs holds\fR [\fB-r\fR] \fIsnapshot\fR...\fR
+.ad
+.sp .6
+.RS 4n
+Lists all existing user references for the given snapshot or snapshots.
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-r\fR\fR
+.ad
+.sp .6
+.RS 4n
+Lists the holds that are set on the named descendent snapshots, in addition to listing the holds on the named snapshot.
+.RE
+
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs release\fR [\fB-r\fR] \fItag\fR \fIsnapshot\fR...\fR
+.ad
+.sp .6
+.RS 4n
+Removes a single reference, named with the \fItag\fR argument, from the specified snapshot or snapshots. The tag must already exist for each snapshot.
+.sp
+If a hold exists on a snapshot, attempts to destroy that snapshot by using the \fBzfs destroy\fR command return \fBEBUSY\fR.
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-r\fR\fR
+.ad
+.sp .6
+.RS 4n
+Recursively releases a hold with the given tag on the snapshots of all descendent file systems.
+.RE
+
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs diff\fR [\fB-FHt\fR] \fIsnapshot\fR \fIsnapshot|filesystem\fR
+.ad
+.sp .6
+.RS 4n
+Display the difference between a snapshot of a given filesystem and another
+snapshot of that filesystem from a later time or the current contents of the
+filesystem.  The first column is a character indicating the type of change,
+the other columns indicate pathname, new pathname (in case of rename), change
+in link count, and optionally file type and/or change time.
+
+The types of change are:
+.in +2
+.nf
+-       The path has been removed
++       The path has been created
+M       The path has been modified
+R       The path has been renamed
+.fi
+.in -2
+.sp
+.ne 2
+.na
+\fB-F\fR
+.ad
+.sp .6
+.RS 4n
+Display an indication of the type of file, in a manner similar to the \fB-F\fR
+option of \fBls\fR(1).
+.in +2
+.nf
+B       Block device
+C       Character device
+/       Directory
+>       Door
+|       Named pipe
+@       Symbolic link
+P       Event port
+=       Socket
+F       Regular file
+.fi
+.in -2
+.RE
+.sp
+.ne 2
+.na
+\fB-H\fR
+.ad
+.sp .6
+.RS 4n
+Give more parsable tab-separated output, without header lines and without arrows.
+.RE
+.sp
+.ne 2
+.na
+\fB-t\fR
+.ad
+.sp .6
+.RS 4n
+Display the path's inode change time as the first column of output.
+.RE
+
+.SH EXAMPLES
+.LP
+\fBExample 1 \fRCreating a ZFS File System Hierarchy
+.sp
+.LP
+The following commands create a file system named \fBpool/home\fR and a file system named \fBpool/home/bob\fR. The mount point \fB/export/home\fR is set for the parent file system, and is automatically inherited by the child file system.
+
+.sp
+.in +2
+.nf
+# \fBzfs create pool/home\fR
+# \fBzfs set mountpoint=/export/home pool/home\fR
+# \fBzfs create pool/home/bob\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 2 \fRCreating a ZFS Snapshot
+.sp
+.LP
+The following command creates a snapshot named \fByesterday\fR. This snapshot is mounted on demand in the \fB\&.zfs/snapshot\fR directory at the root of the \fBpool/home/bob\fR file system.
+
+.sp
+.in +2
+.nf
+# \fBzfs snapshot pool/home/bob@yesterday\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 3 \fRCreating and Destroying Multiple Snapshots
+.sp
+.LP
+The following command creates snapshots named \fByesterday\fR of \fBpool/home\fR and all of its descendent file systems. Each snapshot is mounted on demand in the \fB\&.zfs/snapshot\fR directory at the root of its file system. The second command destroys the newly created snapshots.
+
+.sp
+.in +2
+.nf
+# \fBzfs snapshot -r pool/home@yesterday\fR
+# \fBzfs destroy -r pool/home@yesterday\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 4 \fRDisabling and Enabling File System Compression
+.sp
+.LP
+The following command disables the \fBcompression\fR property for all file systems under \fBpool/home\fR. The next command explicitly enables \fBcompression\fR for \fBpool/home/anne\fR.
+
+.sp
+.in +2
+.nf
+# \fBzfs set compression=off pool/home\fR
+# \fBzfs set compression=on pool/home/anne\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 5 \fRListing ZFS Datasets
+.sp
+.LP
+The following command lists all active file systems and volumes in the system. Snapshots are displayed if the \fBlistsnaps\fR property is \fBon\fR. The default is \fBoff\fR. See \fBzpool\fR(8) for more information on pool properties.
+
+.sp
+.in +2
+.nf
+# \fBzfs list\fR
+   NAME                      USED  AVAIL  REFER  MOUNTPOINT
+   pool                      450K   457G    18K  /pool
+   pool/home                 315K   457G    21K  /export/home
+   pool/home/anne             18K   457G    18K  /export/home/anne
+   pool/home/bob             276K   457G   276K  /export/home/bob
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 6 \fRSetting a Quota on a ZFS File System
+.sp
+.LP
+The following command sets a quota of 50 Gbytes for \fBpool/home/bob\fR.
+
+.sp
+.in +2
+.nf
+# \fBzfs set quota=50G pool/home/bob\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 7 \fRListing ZFS Properties
+.sp
+.LP
+The following command lists all properties for \fBpool/home/bob\fR.
+
+.sp
+.in +2
+.nf
+# \fBzfs get all pool/home/bob\fR
+NAME           PROPERTY              VALUE                  SOURCE
+pool/home/bob  type                  filesystem             -
+pool/home/bob  creation              Tue Jul 21 15:53 2009  -
+pool/home/bob  used                  21K                    -
+pool/home/bob  available             20.0G                  -
+pool/home/bob  referenced            21K                    -
+pool/home/bob  compressratio         1.00x                  -
+pool/home/bob  mounted               yes                    -
+pool/home/bob  quota                 20G                    local
+pool/home/bob  reservation           none                   default
+pool/home/bob  recordsize            128K                   default
+pool/home/bob  mountpoint            /pool/home/bob         default
+pool/home/bob  sharenfs              off                    default
+pool/home/bob  checksum              on                     default
+pool/home/bob  compression           on                     local
+pool/home/bob  atime                 on                     default
+pool/home/bob  devices               on                     default
+pool/home/bob  exec                  on                     default
+pool/home/bob  setuid                on                     default
+pool/home/bob  readonly              off                    default
+pool/home/bob  zoned                 off                    default
+pool/home/bob  snapdir               hidden                 default
+pool/home/bob  acltype               off                    default
+pool/home/bob  aclinherit            restricted             default
+pool/home/bob  canmount              on                     default
+pool/home/bob  shareiscsi            off                    default
+pool/home/bob  xattr                 on                     default
+pool/home/bob  copies                1                      default
+pool/home/bob  version               4                      -
+pool/home/bob  utf8only              off                    -
+pool/home/bob  normalization         none                   -
+pool/home/bob  casesensitivity       sensitive              -
+pool/home/bob  vscan                 off                    default
+pool/home/bob  nbmand                off                    default
+pool/home/bob  sharesmb              off                    default
+pool/home/bob  refquota              none                   default
+pool/home/bob  refreservation        none                   default
+pool/home/bob  primarycache          all                    default
+pool/home/bob  secondarycache        all                    default
+pool/home/bob  usedbysnapshots       0                      -
+pool/home/bob  usedbydataset         21K                    -
+pool/home/bob  usedbychildren        0                      -
+pool/home/bob  usedbyrefreservation  0                      -
+pool/home/bob  logbias               latency                default
+pool/home/bob  dedup                 off                    default
+pool/home/bob  mlslabel              none                   default
+pool/home/bob  relatime              off                    default
+.fi
+.in -2
+.sp
+
+.sp
+.LP
+The following command gets a single property value.
+
+.sp
+.in +2
+.nf
+# \fBzfs get -H -o value compression pool/home/bob\fR
+on
+.fi
+.in -2
+.sp
+
+.sp
+.LP
+The following command lists all properties with local settings for \fBpool/home/bob\fR.
+
+.sp
+.in +2
+.nf
+# \fBzfs get -r -s local -o name,property,value all pool/home/bob\fR
+NAME           PROPERTY              VALUE
+pool/home/bob  quota                 20G
+pool/home/bob  compression           on
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 8 \fRRolling Back a ZFS File System
+.sp
+.LP
+The following command reverts the contents of \fBpool/home/anne\fR to the snapshot named \fByesterday\fR, deleting all intermediate snapshots.
+
+.sp
+.in +2
+.nf
+# \fBzfs rollback -r pool/home/anne@yesterday\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 9 \fRCreating a ZFS Clone
+.sp
+.LP
+The following command creates a writable file system whose initial contents are the same as \fBpool/home/bob@yesterday\fR.
+
+.sp
+.in +2
+.nf
+# \fBzfs clone pool/home/bob@yesterday pool/clone\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 10 \fRPromoting a ZFS Clone
+.sp
+.LP
+The following commands illustrate how to test out changes to a file system, and then replace the original file system with the changed one, using clones, clone promotion, and renaming:
+
+.sp
+.in +2
+.nf
+# \fBzfs create pool/project/production\fR
+  populate /pool/project/production with data
+# \fBzfs snapshot pool/project/production@today\fR
+# \fBzfs clone pool/project/production@today pool/project/beta\fR
+make changes to /pool/project/beta and test them
+# \fBzfs promote pool/project/beta\fR
+# \fBzfs rename pool/project/production pool/project/legacy\fR
+# \fBzfs rename pool/project/beta pool/project/production\fR
+once the legacy version is no longer needed, it can be destroyed
+# \fBzfs destroy pool/project/legacy\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 11 \fRInheriting ZFS Properties
+.sp
+.LP
+The following command causes \fBpool/home/bob\fR and \fBpool/home/anne\fR to inherit the \fBchecksum\fR property from their parent.
+
+.sp
+.in +2
+.nf
+# \fBzfs inherit checksum pool/home/bob pool/home/anne\fR
+.fi
+.in -2
+.sp
+.LP
+The following command causes \fBpool/home/bob\fR to revert to the received
+value for the \fBquota\fR property if it exists.
+
+.sp
+.in +2
+.nf
+# \fBzfs inherit -S quota pool/home/bob
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 12 \fRRemotely Replicating ZFS Data
+.sp
+.LP
+The following commands send a full stream and then an incremental stream to a remote machine, restoring them into \fBpoolB/received/fs@a\fRand \fBpoolB/received/fs@b\fR, respectively. \fBpoolB\fR must contain the file system \fBpoolB/received\fR, and must not initially contain \fBpoolB/received/fs\fR.
+
+.sp
+.in +2
+.nf
+# \fBzfs send pool/fs@a | \e\fR
+   \fBssh host zfs receive poolB/received/fs@a\fR
+# \fBzfs send -i a pool/fs@b | ssh host \e\fR
+   \fBzfs receive poolB/received/fs\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 13 \fRUsing the \fBzfs receive\fR \fB-d\fR Option
+.sp
+.LP
+The following command sends a full stream of \fBpoolA/fsA/fsB@snap\fR to a remote machine, receiving it into \fBpoolB/received/fsA/fsB@snap\fR. The \fBfsA/fsB@snap\fR portion of the received snapshot's name is determined from the name of the sent snapshot. \fBpoolB\fR must contain the file system \fBpoolB/received\fR. If \fBpoolB/received/fsA\fR does not exist, it is created as an empty file system.
+
+.sp
+.in +2
+.nf
+# \fBzfs send poolA/fsA/fsB@snap | \e
+   ssh host zfs receive -d poolB/received\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 14 \fRSetting User Properties
+.sp
+.LP
+The following example sets the user-defined \fBcom.example:department\fR property for a dataset.
+
+.sp
+.in +2
+.nf
+# \fBzfs set com.example:department=12345 tank/accounting\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 15 \fRCreating a ZFS Volume as an iSCSI Target Device
+.sp
+.LP
+The following example shows how to create a \fBZFS\fR volume as an \fBiSCSI\fR target. 
+
+.sp
+.in +2
+.nf
+# \fBzfs create -V 2g pool/volumes/vol1\fR
+# \fBzfs set shareiscsi=on pool/volumes/vol1\fR
+# \fBiscsitadm list target\fR
+Target: pool/volumes/vol1
+ iSCSI Name: 
+ iqn.1986-03.com.sun:02:7b4b02a6-3277-eb1b-e686-a24762c52a8c
+ Connections: 0
+.fi
+.in -2
+.sp
+
+.sp
+.LP
+After the \fBiSCSI\fR target is created, set up the \fBiSCSI\fR initiator. For more information about the Solaris \fBiSCSI\fR initiator, see \fBiscsitadm\fR(1M).
+.LP
+\fBExample 16 \fRPerforming a Rolling Snapshot
+.sp
+.LP
+The following example shows how to maintain a history of snapshots with a consistent naming scheme. To keep a week's worth of snapshots, the user destroys the oldest snapshot, renames the remaining snapshots, and then creates a new snapshot, as follows:
+
+.sp
+.in +2
+.nf
+# \fBzfs destroy -r pool/users@7daysago\fR
+# \fBzfs rename -r pool/users@6daysago @7daysago\fR
+# \fBzfs rename -r pool/users@5daysago @6daysago\fR
+# \fBzfs rename -r pool/users@4daysago @5daysago\fR
+# \fBzfs rename -r pool/users@3daysago @4daysago\fR
+# \fBzfs rename -r pool/users@2daysago @3daysago\fR
+# \fBzfs rename -r pool/users@yesterday @2daysago\fR
+# \fBzfs rename -r pool/users@today @yesterday\fR
+# \fBzfs snapshot -r pool/users@today\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 17 \fRSetting \fBsharenfs\fR Property Options on a ZFS File System
+.sp
+.LP
+The following commands show how to set \fBsharenfs\fR property options to enable \fBrw\fR access for a set of \fBIP\fR addresses and to enable root access for system \fBneo\fR on the \fBtank/home\fR file system.
+
+.sp
+.in +2
+.nf
+# \fBzfs set sharenfs='rw=@123.123.0.0/16,root=neo' tank/home\fR
+.fi
+.in -2
+.sp
+
+.sp
+.LP
+If you are using \fBDNS\fR for host name resolution, specify the fully qualified hostname.
+
+.LP
+\fBExample 18 \fRDelegating ZFS Administration Permissions on a ZFS Dataset
+.sp
+.LP
+The following example shows how to set permissions so that user \fBcindys\fR can create, destroy, mount, and take snapshots on \fBtank/cindys\fR. The permissions on \fBtank/cindys\fR are also displayed.
+
+.sp
+.in +2
+.nf
+# \fBzfs allow cindys create,destroy,mount,snapshot tank/cindys\fR
+# \fBzfs allow tank/cindys\fR
+-------------------------------------------------------------
+Local+Descendent permissions on (tank/cindys)
+          user cindys create,destroy,mount,snapshot
+-------------------------------------------------------------
+.fi
+.in -2
+.sp
+
+.sp
+.LP
+Because the \fBtank/cindys\fR mount point permission is set to 755 by default, user \fBcindys\fR will be unable to mount file systems under \fBtank/cindys\fR. Set an \fBACL\fR similar to the following syntax to provide mount point access:
+.sp
+.in +2
+.nf
+# \fBchmod A+user:cindys:add_subdirectory:allow /tank/cindys\fR
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 19 \fRDelegating Create Time Permissions on a ZFS Dataset
+.sp
+.LP
+The following example shows how to grant anyone in the group \fBstaff\fR to create file systems in \fBtank/users\fR. This syntax also allows staff members to destroy their own file systems, but not destroy anyone else's file system. The permissions on \fBtank/users\fR are also displayed.
+
+.sp
+.in +2
+.nf
+# \fBzfs allow staff create,mount tank/users\fR
+# \fBzfs allow -c destroy tank/users\fR
+# \fBzfs allow tank/users\fR
+-------------------------------------------------------------
+Create time permissions on (tank/users)
+          create,destroy
+Local+Descendent permissions on (tank/users)
+          group staff create,mount
+------------------------------------------------------------- 
+.fi
+.in -2
+.sp
+
+.LP
+\fBExample 20 \fRDefining and Granting a Permission Set on a ZFS Dataset
+.sp
+.LP
+The following example shows how to define and grant a permission set on the \fBtank/users\fR file system. The permissions on \fBtank/users\fR are also displayed.
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-L\fR\fR
+.ad
+.sp .6
+.RS 4n
+Generate a stream which may contain blocks larger than 128KB.  This flag
+has no effect if the \fBlarge_blocks\fR pool feature is disabled, or if
+the \fRrecordsize\fR property of this filesystem has never been set above
+128KB.  The receiving system must have the \fBlarge_blocks\fR pool feature
+enabled as well.  See \fBzpool-features\fR(5) for details on ZFS feature
+flags and the \fBlarge_blocks\fR feature.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-e\fR\fR
+.ad
+.sp .6
+.RS 4n
+Generate a more compact stream by using WRITE_EMBEDDED records for blocks
+which are stored more compactly on disk by the \fBembedded_data\fR pool
+feature.  This flag has no effect if the \fBembedded_data\fR feature is
+disabled.  The receiving system must have the \fBembedded_data\fR feature
+enabled.  If the \fBlz4_compress\fR feature is active on the sending system,
+then the receiving system must have that feature enabled as well. See
+\fBzpool-features\fR(5) for details on ZFS feature flags and the
+\fBembedded_data\fR feature.
+.RE
+
+.RE
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs receive\fR [\fB-vnFus\fR] \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR\fR
+.ad
+.br
+.na
+\fB\fBzfs receive\fR [\fB-vnFus\fR] [\fB-d\fR|\fB-e\fR] \fIfilesystem\fR\fR
+.ad
+.sp .6
+.RS 4n
+Creates a snapshot whose contents are as specified in the stream provided on standard input. If a full stream is received, then a new file system is created as well. Streams are created using the \fBzfs send\fR subcommand, which by default creates a full stream. \fBzfs recv\fR can be used as an alias for \fBzfs receive\fR.
+.sp
+If an incremental stream is received, then the destination file system must already exist, and its most recent snapshot must match the incremental stream's source. For \fBzvols\fR, the destination device link is destroyed and recreated, which means the \fBzvol\fR cannot be accessed during the \fBreceive\fR operation.
+.sp
+When a snapshot replication package stream that is generated by using the \fBzfs send\fR \fB-R\fR command is  received, any snapshots that do not exist on the sending location are destroyed by using the \fBzfs destroy\fR \fB-d\fR command.
+.sp
+The name of the snapshot (and file system, if a full stream is received) that this subcommand creates depends on the argument type and the use of the \fB-d\fR or \fB-e\fR options.
+.sp
+If the argument is a snapshot name, the specified \fIsnapshot\fR is created. If the argument is a file system or volume name, a snapshot with the same name as the sent snapshot is created within the specified \fIfilesystem\fR or \fIvolume\fR.  If neither of the \fB-d\fR or \fB-e\fR options are specified, the provided target snapshot name is used exactly as provided.
+.sp
+The \fB-d\fR and \fB-e\fR options cause the file system name of the target snapshot to be determined by appending a portion of the sent snapshot's name to the specified target \fIfilesystem\fR. If the \fB-d\fR option is specified, all but the first element of the sent snapshot's file system path (usually the pool name) is used and any required intermediate file systems within the specified one are created.  If the \fB-e\fR option is specified, then only the last element of the sent snapshot's file system name (i.e. the name of the source file system itself) is used as the target file system name.
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-d\fR\fR
+.ad
+.sp .6
+.RS 4n
+Discard the first element of the sent snapshot's file system name, using the remaining elements to determine the name of the target file system for the new snapshot as described in the paragraph above.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-e\fR\fR
+.ad
+.sp .6
+.RS 4n
+Discard all but the last element of the sent snapshot's file system name, using that element to determine the name of the target file system for the new snapshot as described in the paragraph above.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-u\fR\fR
+.ad
+.sp .6
+.RS 4n
+File system that is associated with the received stream is not mounted.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-v\fR\fR
+.ad
+.sp .6
+.RS 4n
+Print verbose information about the stream and the time required to perform the receive operation.
+.RE
+.It Fl s
+If the receive is interrupted, save the partially received state, rather
+than deleting it.  Interruption may be due to premature termination of
+the stream
+.Po e.g. due to network failure or failure of the remote system
+if the stream is being read over a network connection
+.Pc ,
+a checksum error in the stream, termination of the
+.Nm zfs Cm receive
+process, or unclean shutdown of the system.
+.Pp
+The receive can be resumed with a stream generated by
+.Nm zfs Cm send Fl t Ar token ,
+where the
+.Ar token
+is the value of the
+.Sy receive_resume_token
+property of the filesystem or volume which is received into.
+.Pp
+To use this flag, the storage pool must have the
+.Sy extensible_dataset
+feature enabled.  See
+.Xr zpool-features 5
+for details on ZFS feature flags.
+.sp
+.ne 2
+.Cm receive
+.Fl A
+.Ar filesystem Ns | Ns Ar volume
+.Xc
+Abort an interrupted
+.Nm zfs Cm receive Fl s ,
+deleting its saved partially received state.
+.It Xo
+.Nm
+.mk
+.na
+\fB\fB-n\fR\fR
+.ad
+.sp .6
+.RS 4n
+Do not actually receive the stream. This can be useful in conjunction with the \fB-v\fR option to verify the name the receive operation would use.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-F\fR\fR
+.ad
+.sp .6
+.RS 4n
+Force a rollback of the file system to the most recent snapshot before performing the receive operation. If receiving an incremental replication stream (for example, one generated by \fBzfs send -R -[iI]\fR), destroy snapshots and file systems that do not exist on the sending side.
+.RE
+
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs allow\fR \fIfilesystem\fR | \fIvolume\fR\fR
+.ad
+.sp .6
+.RS 4n
+Displays permissions that have been delegated on the specified filesystem or volume. See the other forms of \fBzfs allow\fR for more information.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzfs allow\fR [\fB-ldug\fR] "\fIeveryone\fR"|\fIuser\fR|\fIgroup\fR[,...] \fIperm\fR|@\fIsetname\fR[,...] \fIfilesystem\fR| \fIvolume\fR\fR
+.ad
+.br
 .Nm
 .Cm allow
 .Op Fl dl
