@@ -1371,14 +1371,15 @@ zvol_read(struct bio *bio)
 
 	/*
 	 * You may get multiple opens, but only one close.
+	 * Also, if we failed to open, and first_open wasn't called, skip it here.
 	 */
 	// zv->zv_open_count[otyp]--;
-	if (zv->zv_total_opens > 0)
+	if (zv->zv_total_opens > 0) {
 		zv->zv_total_opens--;
 
-	error = dmu_read_bio(zv->zv_objset, ZVOL_OBJ, bio);
-
-	dprintf("zvol_open: minor %d\n", getminor(devp));
+		if (zv->zv_total_opens == 0)
+			zvol_last_close(zv);
+	}
 
 	return (error);
 }
