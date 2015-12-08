@@ -761,21 +761,25 @@ zvol_last_close(zvol_state_t *zv)
 			   zv->zv_total_opens);
 
 
-	zil_close(zv->zv_zilog);
+	if (zv->zv_zilog)
+		zil_close(zv->zv_zilog);
 	zv->zv_zilog = NULL;
 
-	dmu_buf_rele(zv->zv_dbuf, zvol_tag);
+	if (zv->zv_dbuf)
+		dmu_buf_rele(zv->zv_dbuf, zvol_tag);
 	zv->zv_dbuf = NULL;
 
 	/*
 	 * Evict cached data
 	 */
-	if (dsl_dataset_is_dirty(dmu_objset_ds(zv->zv_objset)) &&
-	    !(zv->zv_flags & ZVOL_RDONLY))
-		txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
-	dmu_objset_evict_dbufs(zv->zv_objset);
+	if (zv->zv_objset) {
+		if (dsl_dataset_is_dirty(dmu_objset_ds(zv->zv_objset)) &&
+			!(zv->zv_flags & ZVOL_RDONLY))
+			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
+		dmu_objset_evict_dbufs(zv->zv_objset);
 
-	dmu_objset_disown(zv->zv_objset, zvol_tag);
+		dmu_objset_disown(zv->zv_objset, zvol_tag);
+	}
 	zv->zv_objset = NULL;
 }
 
@@ -1190,13 +1194,15 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 
 	/*
 	 * You may get multiple opens, but only one close.
+	 * Also, if we failed to open, and first_open wasn't called, skip it here.
 	 */
 	// zv->zv_open_count[otyp]--;
-	if (zv->zv_total_opens > 0)
+	if (zv->zv_total_opens > 0) {
 		zv->zv_total_opens--;
 
-	if (zv->zv_total_opens == 0)
-		zvol_last_close(zv);
+		if (zv->zv_total_opens == 0)
+			zvol_last_close(zv);
+	}
 
 	mutex_exit(&zfsdev_state_lock);
 	return (error);
