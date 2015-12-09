@@ -138,6 +138,8 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_send_set_freerecords_bit;
 
 	kstat_named_t zfs_write_implies_delete_child;
+
+	kstat_named_t zfs_fletcher_4_impl;
 } osx_kstat_t;
 
 

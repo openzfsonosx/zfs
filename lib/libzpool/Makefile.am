@@ -17,6 +17,7 @@ libzpool_la_SOURCES = \
 	../../module/zcommon/zfs_comutil.c \
 	../../module/zcommon/zfs_deleg.c \
 	../../module/zcommon/zfs_fletcher.c \
+	../../module/zcommon/zfs_fletcher_intel.c \
 	../../module/zcommon/zfs_namecheck.c \
 	../../module/zcommon/zfs_prop.c \
 	../../module/zcommon/zfs_uio.c \

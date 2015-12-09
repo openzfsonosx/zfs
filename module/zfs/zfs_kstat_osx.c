@@ -170,6 +170,8 @@ osx_kstat_t osx_kstat = {
 
 	{"zfs_write_implies_delete_child",KSTAT_DATA_UINT64  },
 
+	{"zfs_fletcher_4_impl", KSTAT_DATA_STRING  },
+
 };
 
 
@@ -358,6 +360,10 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		zfs_write_implies_delete_child =
 			ks->zfs_write_implies_delete_child.value.ui64;
 
+		printf("Setting '%s'\n",
+			   ks->zfs_fletcher_4_impl.value.string.addr.ptr);
+		fletcher_4_param_set(ks->zfs_fletcher_4_impl.value.string.addr.ptr, NULL);
+
 	} else {
 
 		/* kstat READ */
@@ -535,6 +541,12 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		ks->zfs_write_implies_delete_child.value.ui64 =
 			zfs_write_implies_delete_child;
+
+		static char buffer[256] = { 0 };
+		fletcher_4_param_get(buffer, NULL);
+		printf("zfs: '%s'\n", buffer);
+
+		kstat_named_setstr(&ks->zfs_fletcher_4_impl, buffer);
 	}
 
 	return 0;

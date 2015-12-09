@@ -6364,6 +6364,8 @@ zfs_ioctl_osx_init(void)
 
 	(void) mnttab_file_create();
 	zfs_ioctl_installed = 1;
+
+	fletcher_4_init();
 #endif
 	printf("ZFS: Loaded module v%s-%s%s, "
 	    "ZFS pool version %s, ZFS filesystem version %s\n",
@@ -6397,6 +6399,8 @@ zfs_ioctl_osx_fini(void)
 		return (SET_ERROR(EBUSY));
 	}
 #endif
+
+	fletcher_4_fini();
 
 	kstat_osx_fini();
 

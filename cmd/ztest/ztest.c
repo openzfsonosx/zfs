@@ -122,6 +122,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <sys/fs/zfs.h>
+#include <zfs_fletcher.h>
 #include <libnvpair.h>
 #include <synch.h>
 #ifdef __GNUC__ /* backtrace() is a GNU extension */
@@ -348,6 +349,7 @@ ztest_func_t ztest_vdev_aux_add_remove;
 ztest_func_t ztest_split_pool;
 ztest_func_t ztest_reguid;
 ztest_func_t ztest_spa_upgrade;
+ztest_func_t ztest_fletcher;
 
 uint64_t zopt_always = 0ULL * NANOSEC;		/* all the time */
 uint64_t zopt_incessant = 1ULL * NANOSEC / 10;	/* every 1/10 second */
@@ -393,6 +395,7 @@ ztest_info_t ztest_info[] = {
 	ZTI_INIT(ztest_vdev_LUN_growth, 1, &zopt_rarely),
 	ZTI_INIT(ztest_vdev_add_remove, 1, &ztest_opts.zo_vdevtime),
 	ZTI_INIT(ztest_vdev_aux_add_remove, 1, &ztest_opts.zo_vdevtime),
+	ZTI_INIT(ztest_fletcher, 1, &zopt_rarely),
 };
 
 #define	ZTEST_FUNCS	(sizeof (ztest_info) / sizeof (ztest_info_t))
@@ -5447,6 +5450,83 @@ ztest_spa_rename(ztest_ds_t *zd, uint64_t id)
 	umem_free(newname, strlen(newname) + 1);
 
 	(void) rw_unlock(&ztest_name_lock);
+}
+
+
+void
+ztest_fletcher(ztest_ds_t *zd, uint64_t id)
+{
+	hrtime_t end = gethrtime() + NANOSEC;
+
+	while (gethrtime() <= end) {
+		int run_count = 100;
+		void *buf;
+		uint32_t size;
+		int *ptr;
+		int i;
+		zio_cksum_t zc_ref;
+		zio_cksum_t zc_ref_byteswap;
+
+		size = ztest_random_blocksize();
+		buf = umem_alloc(size, UMEM_NOFAIL);
+
+		for (i = 0, ptr = buf; i < size / sizeof (*ptr); i++, ptr++)
+			*ptr = ztest_random(UINT_MAX);
+
+		VERIFY0(fletcher_4_impl_set("scalar"));
+		fletcher_4_native(buf, size, NULL, &zc_ref);
+		fletcher_4_byteswap(buf, size, NULL, &zc_ref_byteswap);
+
+		VERIFY0(fletcher_4_impl_set("cycle"));
+		while (run_count-- > 0) {
+			zio_cksum_t zc;
+			zio_cksum_t zc_byteswap;
+
+			fletcher_4_byteswap(buf, size, NULL, &zc_byteswap);
+			fletcher_4_native(buf, size, NULL, &zc);
+
+			VERIFY0(bcmp(&zc, &zc_ref, sizeof (zc)));
+			VERIFY0(bcmp(&zc_byteswap, &zc_ref_byteswap,
+			    sizeof (zc_byteswap)));
+		}
+
+		umem_free(buf, size);
+	}
+}
+
+static int
+ztest_check_path(char *path)
+{
+	struct stat s;
+	/* return true on success */
+	return (!stat(path, &s));
+}
+
+static void
+ztest_get_zdb_bin(char *bin, int len)
+{
+	char *zdb_path;
+	/*
+	 * Try to use ZDB_PATH and in-tree zdb path. If not successful, just
+	 * let popen to search through PATH.
+	 */
+	if ((zdb_path = getenv("ZDB_PATH"))) {
+		strlcpy(bin, zdb_path, len); /* In env */
+		if (!ztest_check_path(bin)) {
+			ztest_dump_core = 0;
+			fatal(1, "invalid ZDB_PATH '%s'", bin);
+		}
+		return;
+	}
+
+	VERIFY(realpath(getexecname(), bin) != NULL);
+	if (strstr(bin, "/ztest/")) {
+		strstr(bin, "/ztest/")[0] = '\0'; /* In-tree */
+		strcat(bin, "/zdb/zdb");
+		if (ztest_check_path(bin))
+			return;
+	}
+	strcpy(bin, "zdb");
 }
 
 /*

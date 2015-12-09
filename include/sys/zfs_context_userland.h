@@ -719,6 +719,11 @@ int uio_iovcnt( struct uio *a_uio );
 
 #define kpreempt(X)
 
+#define	kfpu_begin() ((void)0)
+#define	kfpu_end() ((void)0)
+
+static inline boolean_t zfs_avx_available(void) { return B_FALSE; }
+static inline boolean_t zfs_avx2_available(void) { return B_FALSE; }
 
 
 #endif /* !_KERNEL */

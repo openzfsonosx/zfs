@@ -36,6 +36,7 @@
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/fs/zfs.h>
+#include <sys/spa_checksum.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -143,12 +144,6 @@ typedef struct dva {
 	uint64_t	dva_word[2];
 } dva_t;
 
-/*
- * Each block has a 256-bit checksum -- strong enough for cryptographic hashes.
- */
-typedef struct zio_cksum {
-	uint64_t	zc_word[4];
-} zio_cksum_t;
 
 /*
  * Some checksums/hashes need a 256-bit initialization salt. This salt is kept
@@ -468,14 +463,6 @@ _NOTE(CONSTCOND) } while (0)
 	}
 
 #define	DVA_IS_VALID(dva)	(DVA_GET_ASIZE(dva) != 0)
-
-#define	ZIO_SET_CHECKSUM(zcp, w0, w1, w2, w3)	\
-{						\
-	(zcp)->zc_word[0] = w0;			\
-	(zcp)->zc_word[1] = w1;			\
-	(zcp)->zc_word[2] = w2;			\
-	(zcp)->zc_word[3] = w3;			\
-}
 
 #define	BP_IDENTITY(bp)		(ASSERT(!BP_IS_EMBEDDED(bp)), &(bp)->blk_dva[0])
 #define	BP_IS_GANG(bp)		\

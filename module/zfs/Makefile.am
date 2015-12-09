@@ -152,6 +152,7 @@ zfs_SOURCES = \
 	../zcommon/zfs_comutil.c \
 	../zcommon/zfs_deleg.c \
 	../zcommon/zfs_fletcher.c \
+	../zcommon/zfs_fletcher_intel.c \
 	../zcommon/zfs_namecheck.c \
 	../zcommon/zfs_prop.c \
 	../zcommon/zpool_prop.c \

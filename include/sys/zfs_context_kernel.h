@@ -117,6 +117,11 @@ typedef struct direntry dirent64_t;
 #define ARRAY_SIZE(arr) (IS_ARRAY(arr) ? (sizeof(arr) / sizeof(arr[0])) : 0)
 
 
+
+#define	kfpu_begin() kernel_fpu_begin()
+#define	kfpu_end() kernel_fpu_end()
+
+
 #endif /* _KERNEL */
 
 #ifdef __cplusplus

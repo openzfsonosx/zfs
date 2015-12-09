@@ -47,6 +47,7 @@ COMMON_H = \
 	$(top_srcdir)/include/sys/space_reftree.h \
 	$(top_srcdir)/include/sys/spa.h \
 	$(top_srcdir)/include/sys/spa_impl.h \
+	$(top_srcdir)/include/sys/spa_checksum.h \
 	$(top_srcdir)/include/sys/txg.h \
 	$(top_srcdir)/include/sys/txg_impl.h \
 	$(top_srcdir)/include/sys/u8_textprep_data.h \
@@ -108,5 +109,5 @@ if CONFIG_KERNEL
 #kerneldir = @prefix@/src/zfs-$(VERSION)/include/sys
 #kernel_HEADERS = $(COMMON_H) $(KERNEL_H)
 kerneldir =
-kernel_HEADERS = 
+kernel_HEADERS =
 endif
