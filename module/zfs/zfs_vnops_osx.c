@@ -1620,6 +1620,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	int flags = ap->a_flags;
 	int need_unlock = 0;
 	int error = 0;
+	uint64_t file_sz;
 
 	dprintf("+vnop_pagein: %p/%p off 0x%llx size 0x%lx filesz 0x%llx\n",
 			zp, vp, off, len, zp->z_size);
@@ -1636,10 +1637,12 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 
 	ZFS_ENTER(zfsvfs);
 
+	file_sz = zp->z_size;
+
 	ASSERT(vn_has_cached_data(vp));
 	/* ASSERT(zp->z_dbuf_held && zp->z_phys); */
 	/* can't fault passed EOF */
-	if ((off < 0) || (off >= zp->z_size) ||
+	if ((off < 0) || (off >= file_sz) ||
 		(len & PAGE_MASK) || (upl_offset & PAGE_MASK)) {
 		dprintf("passed EOF or size error\n");
 		ZFS_EXIT(zfsvfs);
@@ -1674,8 +1677,8 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	vaddr += upl_offset;
 
 	/* Can't read beyond EOF - but we need to zero those extra bytes. */
-	if (off + len > zp->z_size) {
-		uint64_t newend = zp->z_size - off;
+	if (off + len > file_sz) {
+		uint64_t newend = file_sz - off;
 
 		dprintf("ZFS: pagein zeroing offset 0x%llx for 0x%llx bytes.\n",
 				newend, len - newend);
@@ -1721,7 +1724,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 * truncation as this leads to deadlock. So we need to recheck the file
 	 * size.
 	 */
-	if (ap->a_f_offset >= zp->z_size)
+	if (ap->a_f_offset >= file_sz)
 		error = EFAULT;
 	if (need_unlock)
 		rw_exit(&zp->z_map_lock);
