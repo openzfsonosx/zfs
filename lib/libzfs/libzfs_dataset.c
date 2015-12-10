@@ -1694,14 +1694,15 @@ zfs_prop_set_list(zfs_handle_t *zhp, nvlist_t *props)
 				zcmd_free_nvlists(&zc);
 
 				if (nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0) != 0)
-					goto error;
+					goto error_nofree;
 				if (nvlist_add_uint64(nvl,
 									  zfs_prop_to_name(ZFS_PROP_VOLSIZE),
 									  old_volsize) != 0)
-					goto error;
+					goto error_nofree;
 				if (zcmd_write_src_nvlist(hdl, &zc, nvl) != 0)
-					goto error;
+					goto error_nofree;
 				(void) zfs_ioctl(hdl, ZFS_IOC_SET_PROP, &zc);
+				goto error_nofree;
 			}
         } else {
 			for (cl_idx = 0; cl_idx < nvl_len; cl_idx++) {
@@ -1721,8 +1722,9 @@ zfs_prop_set_list(zfs_handle_t *zhp, nvlist_t *props)
         }
 
   error:
-        nvlist_free(nvl);
         zcmd_free_nvlists(&zc);
+  error_nofree:
+        nvlist_free(nvl);
         if (cls != NULL) {
 			for (cl_idx = 0; cl_idx < nvl_len; cl_idx++) {
 				if (cls[cl_idx] != NULL)
