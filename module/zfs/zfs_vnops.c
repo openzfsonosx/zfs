@@ -5182,7 +5182,6 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
-	int need_unlock = 0;
 
 	/* Only read lock if we haven't already write locked, e.g. rollback */
 	if (!RW_WRITE_HELD(&zsb->z_teardown_inactive_lock)) {
