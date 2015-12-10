@@ -656,12 +656,17 @@ zvol_remove_minor_impl(const char *name)
 		return (ENXIO);
 	}
 
-	// Remember the iokit ptr so we can free it after releasing locks.
-	tmp_zv.zv_iokitdev = zv->zv_iokitdev;
-	strlcpy(tmp_zv.zv_name, zv->zv_name, sizeof(tmp_zv.zv_name));
-	strlcpy(tmp_zv.zv_bsdname, zv->zv_bsdname, sizeof(tmp_zv.zv_bsdname));
+	/* Call IOKit to remove the ZVOL device, but we
+	 * can't hold any locks while doing so.
+	 */
+	mutex_exit(&zfsdev_state_lock);
+	zvolRemoveDevice(zv);
+	mutex_enter(&zfsdev_state_lock);
 
+	zvol_remove_minor_symlink(name);
 	rc = zvol_remove_zv(zv); // Frees zv, if successful.
+	if (rc != 0)
+		zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
 	mutex_exit(&zfsdev_state_lock);
 
 	// Send zed notification
@@ -952,60 +957,14 @@ zvol_remove_minors_impl(const char *name)
 		zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
 		if (zv == NULL)
 			continue;
-
-		if (name == NULL || strcmp(zv->zv_name, name) == 0 ||
-			(strncmp(zv->zv_name, name, namelen) == 0 &&
-			 (zv->zv_name[namelen] == '/' ||
-			  zv->zv_name[namelen] == '@'))) {
-			zvol_state_t tmp_zv;
-
-			/* If in use, leave alone */
-			if (zv->zv_open_count > 0)
-				continue;
-
-			// Assign a temporary zv holder to call IOKit with
-			// release zv while we have mutex, then drop it.
-			tmp_zv.zv_iokitdev = zv->zv_iokitdev;
-			strlcpy(tmp_zv.zv_name, zv->zv_name, sizeof(tmp_zv.zv_name));
-			strlcpy(tmp_zv.zv_bsdname, zv->zv_bsdname, sizeof(tmp_zv.zv_bsdname));
-			(void) zvol_remove_zv(zv);
+		if (strncmp(namebuf, zv->zv_name, strlen(namebuf)) == 0) {
 			mutex_exit(&zfsdev_state_lock);
-
-			zvolRemoveDevice(&tmp_zv);
+			zvolRemoveDevice(zv);
 			mutex_enter(&zfsdev_state_lock);
+			(void) zvol_remove_zv(zv);
 		}
 	}
-	mutex_exit(&zfsdev_state_lock);
-}
-
-
-/* Remove minor for this specific snapshot only */
-#if 0
-static void
-zvol_remove_minor_impl(const char *name)
-{
-	zvol_state_t *zv, *zv_next;
-
-	if (zvol_inhibit_dev)
-		return;
-
-	if (strchr(name, '@') == NULL)
-		return;
-
-	mutex_enter(&zfsdev_state_lock);
-
-	for (zv = list_head(&zvol_state_list); zv != NULL; zv = zv_next) {
-		zv_next = list_next(&zvol_state_list, zv);
-
-		if (strcmp(zv->zv_name, name) == 0) {
-			/* If in use, leave alone */
-			if (zv->zv_open_count > 0)
-				continue;
-			zvol_remove(zv);
-			zvol_free(zv);
-			break;
-		}
-	}
+	kmem_free(namebuf, name_buf_len);
 
 	mutex_exit(&zfsdev_state_lock);
 }
