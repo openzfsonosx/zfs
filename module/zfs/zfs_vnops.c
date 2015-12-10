@@ -5161,7 +5161,6 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
-	int need_unlock = 0;
 
 	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 	if (zp->z_sa_hdl == NULL) {

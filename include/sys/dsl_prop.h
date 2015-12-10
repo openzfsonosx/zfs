@@ -61,10 +61,11 @@ typedef struct dsl_props_arg {
 	zprop_source_t pa_source;
 } dsl_props_arg_t;
 
+void dsl_prop_init(dsl_dir_t *dd);
+void dsl_prop_fini(dsl_dir_t *dd);
 int dsl_prop_register(struct dsl_dataset *ds, const char *propname,
     dsl_prop_changed_cb_t *callback, void *cbarg);
-int dsl_prop_unregister(struct dsl_dataset *ds, const char *propname,
-    dsl_prop_changed_cb_t *callback, void *cbarg);
+void dsl_prop_unregister_all(struct dsl_dataset *ds, void *cbarg);
 void dsl_prop_notify_all(struct dsl_dir *dd);
 boolean_t dsl_prop_hascb(struct dsl_dataset *ds);
 

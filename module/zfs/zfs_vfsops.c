@@ -1690,7 +1690,6 @@ void
 zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
 {
 	objset_t *os = zfsvfs->z_os;
-	struct dsl_dataset *ds;
 
 	/*
 	 * Unregister properties.
@@ -2256,7 +2255,6 @@ out:
 #endif
 	return (error);
 }
-
 
 
 int

@@ -1314,13 +1314,11 @@ zfs_zget_ext(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp,
 	znode_t		*zp;
 	struct vnode		*vp = NULL;
 	sa_handle_t	*hdl;
-	struct thread	*td;
 	int err;
 	uint32_t        vid;
 
 	dprintf("+zget %lld\n", obj_num);
 
-	td = curthread;
 	getnewvnode_reserve(1);
 
 again:

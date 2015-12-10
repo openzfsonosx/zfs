@@ -3957,7 +3957,10 @@ arc_read_done(zio_t *zio)
 		ASSERT3U(hdr->b_dva.dva_word[1], ==,
 		    BP_IDENTITY(zio->io_bp)->dva_word[1]);
 
-		arc_buf_hdr_t *found = buf_hash_find(hdr->b_spa, zio->io_bp,
+#ifdef DEBUG
+		arc_buf_hdr_t *found =
+#endif
+			buf_hash_find(hdr->b_spa, zio->io_bp,
 		    &hash_lock);
 
 		ASSERT((found == NULL && HDR_FREED_IN_READ(hdr) &&
