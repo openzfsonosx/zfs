@@ -617,9 +617,6 @@ zvol_remove_zv(zvol_state_t *zv)
 	if (zv->zv_total_opens != 0)
 		return (EBUSY);
 
-	// Call IOKit to remove the ZVOL device
-	zvolRemoveDevice(zv);
-
 #if 0
 	ddi_remove_minor_node(zfs_dip, NULL);
 	ddi_remove_minor_node(zfs_dip, NULL);
@@ -636,6 +633,7 @@ zvol_remove_zv(zvol_state_t *zv)
 	return (0);
 }
 
+
 int
 zvol_remove_minor(const char *name)
 {
@@ -647,8 +645,16 @@ zvol_remove_minor(const char *name)
 		mutex_exit(&zfsdev_state_lock);
 		return (ENXIO);
 	}
+
+	/* Call IOKit to remove the ZVOL device, but we
+	 * can't hold any locks while doing so.
+	 */
+	mutex_exit(&zfsdev_state_lock);
+	zvolRemoveDevice(zv);
+	mutex_enter(&zfsdev_state_lock);
+
 	zvol_remove_minor_symlink(name);
-	rc = zvol_remove_zv(zv);
+	rc = zvol_remove_zv(zv); // Frees zv, if successful.
 	if (rc != 0)
 		zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
 	mutex_exit(&zfsdev_state_lock);
@@ -867,10 +873,14 @@ zvol_remove_minors(const char *name)
 		zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
 		if (zv == NULL)
 			continue;
-		if (strncmp(namebuf, zv->zv_name, strlen(namebuf)) == 0)
+		if (strncmp(namebuf, zv->zv_name, strlen(namebuf)) == 0) {
+			mutex_exit(&zfsdev_state_lock);
+			zvolRemoveDevice(zv);
+			mutex_enter(&zfsdev_state_lock);
 			(void) zvol_remove_zv(zv);
+		}
 	}
-	kmem_free(namebuf, strlen(name) + 2);
+	kmem_free(namebuf, name_buf_len);
 
 	mutex_exit(&zfsdev_state_lock);
 }
