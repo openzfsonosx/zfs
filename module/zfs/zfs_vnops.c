@@ -2108,9 +2108,6 @@ top:
 		 * it by placing it on the unlinked list.
 		 */
 
-		/* To let Finder update the correct size */
-		zfsvfs->z_last_remove = gethrestime_sec();
-
 		zp->z_fastpath = B_TRUE;
 		if (vnode_recycle(vp) == 1) {
 			/* recycle/reclaim is done, so we can just release now */
