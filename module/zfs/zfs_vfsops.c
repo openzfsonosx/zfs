@@ -2271,9 +2271,13 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	 * to make it correct, but that has side effects which are undesirable.
 	 */
 	/* txg_wait_synced(dmu_objset_pool(zfsvfs->z_os), 0); */
+	dsl_pool_t *dp = dmu_objset_pool(zfsvfs->z_os);
+	uint64_t adjust = atomic_add_64_nv(&dp->dp_space_reclaim, 0);
 
 	dmu_objset_space(zfsvfs->z_os,
 	    &refdbytes, &availbytes, &usedobjs, &availobjs);
+
+	availbytes += adjust;
 
 	VFSATTR_RETURN(fsap, f_objcount, usedobjs);
 	VFSATTR_RETURN(fsap, f_maxobjcount, 0x7fffffffffffffff);

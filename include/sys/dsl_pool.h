@@ -123,6 +123,13 @@ typedef struct dsl_pool {
 	txg_list_t dp_dirty_dirs;
 	txg_list_t dp_sync_tasks;
 
+#ifdef __APPLE__
+	/* Remember space freed in zfs_remove() so Finder can be told the correct
+	 * value. Uses only atomic_* operations.
+	 */
+	uint64_t dp_space_reclaim;
+#endif
+
 	/*
 	 * Protects administrative changes (properties, namespace)
 	 *

@@ -610,6 +610,9 @@ dsl_pool_sync_done(dsl_pool_t *dp, uint64_t txg)
 		dmu_buf_rele(ds->ds_dbuf, zilog);
 	}
 	ASSERT(!dmu_objset_is_dirty(dp->dp_meta_objset, txg));
+#ifdef __APPLE__
+	atomic_swap_64(&dp->dp_space_reclaim, 0);
+#endif
 }
 
 /*

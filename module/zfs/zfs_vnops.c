@@ -2097,6 +2097,11 @@ top:
 		 * release it directly. If recycl/reclaim didn't work out, defer
 		 * it by placing it on the unlinked list.
 		 */
+#ifdef __APPLE__
+		dsl_pool_t *dp = dmu_objset_pool(zfsvfs->z_os);
+		atomic_add_64(&dp->dp_space_reclaim, zp->z_size);
+#endif
+
 
 		zp->z_fastpath = B_TRUE;
 		if (vnode_recycle(vp) == 1) {
