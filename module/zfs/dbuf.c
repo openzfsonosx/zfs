@@ -536,13 +536,48 @@ dbuf_verify(dmu_buf_impl_t *db)
 		 * If the blkptr isn't set but they have nonzero data,
 		 * it had better be dirty, otherwise we'll lose that
 		 * data when we evict this buffer.
+		 * There is an exception to this rule for indirect blocks; in
+		 * this case, if the indirect block is a hole, we fill in a few
+		 * fields on each of the child blocks (importantly, birth time)
+		 * to prevent hole birth times from being lost when you
+		 * partially fill in a hole.
 		 */
 		if (db->db_dirtycnt == 0) {
-			ASSERTV(uint64_t *buf = db->db.db_data);
-			int i;
+			if (db->db_level == 0) {
+				uint64_t *buf = db->db.db_data;
+				int i;
 
-			for (i = 0; i < db->db.db_size >> 3; i++) {
-				ASSERT(buf[i] == 0);
+				for (i = 0; i < db->db.db_size >> 3; i++) {
+					ASSERT(buf[i] == 0);
+				}
+			} else {
+				blkptr_t *bps = db->db.db_data;
+				ASSERT3U(1 << DB_DNODE(db)->dn_indblkshift, ==,
+						 db->db.db_size);
+				/*
+				 * We want to verify that all the blkptrs in the
+				 * indirect block are holes, but we may have
+				 * automatically set up a few fields for them.
+				 * We iterate through each blkptr and verify
+				 * they only have those fields set.
+				 */
+				for (int i = 0;
+					 i < db->db.db_size / sizeof (blkptr_t);
+					 i++) {
+					blkptr_t *bp = &bps[i];
+					ASSERT(ZIO_CHECKSUM_IS_ZERO(
+							   &bp->blk_cksum));
+					ASSERT(
+						DVA_IS_EMPTY(&bp->blk_dva[0]) &&
+						DVA_IS_EMPTY(&bp->blk_dva[1]) &&
+						DVA_IS_EMPTY(&bp->blk_dva[2]));
+                                       ASSERT0(bp->blk_fill);
+                                       ASSERT0(bp->blk_pad[0]);
+                                       ASSERT0(bp->blk_pad[1]);
+                                       ASSERT(!BP_IS_EMBEDDED(bp));
+                                       ASSERT(BP_IS_HOLE(bp));
+                                       ASSERT0(bp->blk_phys_birth);
+				}
 			}
 		}
 	}
@@ -711,6 +746,23 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 		dbuf_set_data(db, arc_buf_alloc(db->db_objset->os_spa,
 		    db->db.db_size, db, type));
 		bzero(db->db.db_data, db->db.db_size);
+
+		if (db->db_blkptr != NULL && db->db_level > 0 &&
+			BP_IS_HOLE(db->db_blkptr) &&
+			db->db_blkptr->blk_birth != 0) {
+			blkptr_t *bps = db->db.db_data;
+			for (int i = 0; i < ((1 <<
+				DB_DNODE(db)->dn_indblkshift) / sizeof (blkptr_t));
+				i++) {
+				blkptr_t *bp = &bps[i];
+				BP_SET_LSIZE(bp, BP_GET_LSIZE(db->db_blkptr));
+				BP_SET_TYPE(bp, BP_GET_TYPE(db->db_blkptr));
+				BP_SET_LEVEL(bp,
+							 BP_GET_LEVEL(db->db_blkptr) - 1);
+				BP_SET_BIRTH(bp, db->db_blkptr->blk_birth, 0);
+			}
+		}
+
 		db->db_state = DB_CACHED;
 		mutex_exit(&db->db_mtx);
 		return (0);
