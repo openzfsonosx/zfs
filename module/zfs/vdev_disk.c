@@ -503,6 +503,8 @@ vdev_disk_io_start(zio_t *zio)
 			return;
 	} /* io_type */
 
+	ASSERT(zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE);
+
 	/* Stop OSX from also caching our data */
 	flags |= B_NOCACHE;
 

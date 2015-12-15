@@ -236,6 +236,8 @@ vdev_file_io_start(zio_t *zio)
         return;
     }
 
+	ASSERT(zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE);
+
     if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
 
 		/*
