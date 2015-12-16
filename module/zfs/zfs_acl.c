@@ -903,6 +903,7 @@ zfs_mode_compute(uint64_t fmode, zfs_acl_t *aclp,
 	uint32_t	access_mask;
 	boolean_t	an_exec_denied = B_FALSE;
 
+
 	mode = (fmode & (S_IFMT | S_ISUID | S_ISGID | S_ISVTX));
 
 	while ((acep = zfs_acl_next_ace(aclp, acep, &who,
@@ -921,8 +922,21 @@ zfs_mode_compute(uint64_t fmode, zfs_acl_t *aclp,
 		    entry_type == OWNING_GROUP))
 			continue;
 
-		if (entry_type == ACE_OWNER || (entry_type == 0 &&
-		    who == fuid)) {
+
+		/*
+		 * Apple has unusual expectations to emulate hfs in that the mode is not
+		 * updated:
+		 *      -rw-r--r--  1 root  wheel  0 Nov 12 12:39 file.txt
+		 * chmod +a "root allow execute" file.txt
+		 * ZFS: -rwxr--r--+ 1 root  wheel  0 Nov 12 12:39 file.txt
+		 * HFS: -rw-r--r--+ 1 root  wheel  0 Nov 12 12:39 file.txt
+		 *       0: user:root allow execute
+		 */
+		if (entry_type == ACE_OWNER
+#ifndef __APPLE__
+			|| (entry_type == 0 && who == fuid)
+#endif
+			) {
 			if ((access_mask & ACE_READ_DATA) &&
 			    (!(seen & S_IRUSR))) {
 				seen |= S_IRUSR;
@@ -944,8 +958,11 @@ zfs_mode_compute(uint64_t fmode, zfs_acl_t *aclp,
 					mode |= S_IXUSR;
 				}
 			}
-		} else if (entry_type == OWNING_GROUP ||
-		    (entry_type == ACE_IDENTIFIER_GROUP && who == fgid)) {
+		} else if (entry_type == OWNING_GROUP
+#ifndef __APPLE__
+				   || (entry_type == ACE_IDENTIFIER_GROUP && who == fgid)
+#endif
+			) {
 			if ((access_mask & ACE_READ_DATA) &&
 			    (!(seen & S_IRGRP))) {
 				seen |= S_IRGRP;
@@ -1465,15 +1482,11 @@ zfs_acl_chmod_setattr(znode_t *zp, zfs_acl_t **aclp, uint64_t mode)
 
 	mutex_enter(&zp->z_acl_lock);
 	mutex_enter(&zp->z_lock);
-#if 1
+
 	if (zp->z_zfsvfs->z_acl_mode == ZFS_ACL_DISCARD)
 		*aclp = zfs_acl_alloc(zfs_acl_version_zp(zp));
 	else
 		error = zfs_acl_node_read(zp, B_TRUE, aclp, B_TRUE);
-#else
-	//We will default to ZFS_ACL_PASSTHROUGH behavior until aclmode is brought back.
-	 error = zfs_acl_node_read(zp, B_TRUE, aclp, B_TRUE);
-#endif
 
 	if (error == 0) {
 		(*aclp)->z_hints = zp->z_pflags & V4_ACL_WIDE_FLAGS;
@@ -1829,7 +1842,7 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
     *aclpp = k_acl;
 
     /*
-     * Translate Open Solaris ACEs to Mac OS X ACEs
+     * Translate Open Solaris ACEs to Mac OS X ACLs
      */
     i = 0;
     while ((zacep = zfs_acl_next_ace(aclp, zacep,
@@ -1840,25 +1853,39 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
         guidp = &k_acl->acl_ace[i].ace_applicable;
 
         if (flags & ACE_OWNER) {
+#if HIDE_TRIVIAL_ACL
+			continue;
+#endif
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_OWNER, guidp);
-        } else if (flags & OWNING_GROUP) {
+        } else if ((flags & OWNING_GROUP) == OWNING_GROUP) {
+#if HIDE_TRIVIAL_ACL
+			continue;
+#endif
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_GROUP, guidp);
         } else if (flags & ACE_EVERYONE) {
+#if HIDE_TRIVIAL_ACL
+			continue;
+#endif
             who = -1;
             nfsacl_set_wellknown(KAUTH_WKG_EVERYBODY, guidp);
             /* Try to get a guid from our uid */
         } else {
 
-            if (kauth_cred_uid2guid(who, guidp) != 0) {
-                /* Try using gid then ... */
-                if (kauth_cred_gid2guid(who, guidp) != 0) {
-                    /* XXX - What else can we do here? */
-                    bzero(guidp, sizeof (guid_t));
-                }
-            }
+			dprintf("ZFS: trying to map uid %d flags %x type %x\n", who, flags,
+				type);
 
+			if (flags & OWNING_GROUP) {
+				if (kauth_cred_gid2guid(who, guidp) == 0) {
+					dprintf("ZFS: appears to be a group\n");
+				}
+			} else if (kauth_cred_uid2guid(who, guidp) == 0) {
+				dprintf("ZFS: appears to be a user\n");
+			} else {
+				dprintf("ZFS: Unable to map\n");
+				bzero(guidp, sizeof (guid_t));
+			}
         }
 
         //access_mask = aclp->z_acl[i].a_access_mask;
@@ -1920,6 +1947,76 @@ zfs_getacl(znode_t *zp, struct kauth_acl **aclpp, boolean_t skipaclcheck,
         k_acl->acl_ace[i].ace_flags = ace_flags;
         i++;
     }
+    k_acl->acl_entrycount = i;
+    mutex_exit(&zp->z_acl_lock);
+
+    zfs_acl_free(aclp);
+
+    return (0);
+}
+
+int
+zfs_addacl_trivial(znode_t *zp, ace_t *aces, int *nentries, int seen_type)
+{
+    zfs_acl_t       *aclp;
+    uint64_t        who;
+    uint32_t        access_mask;
+    uint16_t        flags;
+    uint16_t        type;
+    int             i;
+    int             error;
+    void *zacep = NULL;
+
+    mutex_enter(&zp->z_acl_lock);
+
+    error = zfs_acl_node_read(zp, B_FALSE, &aclp, B_TRUE);
+    if (error != 0) {
+        mutex_exit(&zp->z_acl_lock);
+        return (error);
+    }
+
+    dprintf("ondisk acl_count %d\n",aclp->z_acl_count);
+
+	// Start at the end
+	i = *nentries;
+
+    /*
+     * Translate Open Solaris ACEs to Mac OS X ACLs
+     */
+    while ((zacep = zfs_acl_next_ace(aclp, zacep,
+                                    &who, &access_mask, &flags, &type))) {
+
+        if (flags & ACE_OWNER) {
+			if (seen_type & ACE_OWNER) continue;
+			seen_type |= ACE_OWNER;
+            who = -1;
+        } else if ((flags & OWNING_GROUP) == OWNING_GROUP) {
+			if (seen_type & ACE_GROUP) continue;
+			seen_type |= ACE_GROUP;
+            who = -1;
+        } else if (flags & ACE_EVERYONE) {
+			if (seen_type & ACE_EVERYONE) continue;
+			seen_type |= ACE_EVERYONE;
+            who = -1;
+            /* Try to get a guid from our uid */
+        } else {
+
+			// Only deal with the trivials
+			continue;
+
+		}
+
+		aces[i].a_who = who;
+		aces[i].a_access_mask = access_mask;
+		aces[i].a_flags = flags;
+		aces[i].a_type = type;
+
+		dprintf("zfs: adding entry %d for type %x sizeof %d\n", i, type,
+			sizeof(aces[i]));
+        i++;
+    }
+
+	*nentries=i;
     mutex_exit(&zp->z_acl_lock);
 
     zfs_acl_free(aclp);

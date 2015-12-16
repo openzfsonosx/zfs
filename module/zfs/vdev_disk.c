@@ -111,6 +111,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	uint32_t blksize;
 	int fmode = 0;
 	int error = 0;
+	int isssd;
 
 	/*
 	 * We must have a pathname, and it must be absolute.
@@ -279,6 +280,16 @@ skip_open:
 	 */
 	vd->vdev_nowritecache = B_FALSE;
 
+	/* Inform the ZIO pipeline that we are non-rotational */
+	vd->vdev_nonrot = B_FALSE;
+	if (VNOP_IOCTL(devvp, DKIOCISSOLIDSTATE, (caddr_t)&isssd, 0,
+				   context) == 0) {
+		if (isssd)
+			vd->vdev_nonrot = B_TRUE;
+	}
+	dprintf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "",
+			isssd);
+
 	dvd->vd_devvp = devvp;
 out:
 	if (error) {
@@ -294,6 +305,22 @@ out:
 	if (error) printf("ZFS: vdev_disk_open('%s') failed error %d\n",
 					  vd->vdev_path ? vd->vdev_path : "", error);
 	return (error);
+}
+
+
+
+/*
+ * It appears on export/reboot, iokit can hold a lock, then call our
+ * termination handler, and we end up locking-against-ourselves inside
+ * IOKit. We are then forced to make the vnode_close() call be async.
+ */
+static void vdev_disk_close_thread(void *arg)
+{
+	struct vnode *vp = arg;
+
+	(void) vnode_close(vp, 0,
+					   spl_vfs_context_kernel());
+	thread_exit();
 }
 
 /* Not static so zfs_osx.cpp can call it on device removal */
@@ -327,8 +354,9 @@ vdev_disk_close(vdev_t *vd)
 		/* vnode_close() can stall during removal, so clear vd_devvp now */
 		struct vnode *vp = dvd->vd_devvp;
 		dvd->vd_devvp = NULL;
-		(void) vnode_close(vp, spa_mode(vd->vdev_spa),
-						   spl_vfs_context_kernel());
+		(void) thread_create(NULL, 0, vdev_disk_close_thread,
+							 vp, 0, &p0,
+							 TS_RUN, minclsyspri);
 	}
 #endif
 
@@ -474,6 +502,8 @@ vdev_disk_io_start(zio_t *zio)
 			zio_interrupt(zio);
 			return;
 	} /* io_type */
+
+	ASSERT(zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE);
 
 	/* Stop OSX from also caching our data */
 	flags |= B_NOCACHE;

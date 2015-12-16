@@ -866,7 +866,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 
 #include <sys/dbuf.h>
 
-		dmu_buf_impl_t *db2 = db;
+		dmu_buf_impl_t *db2 = (dmu_buf_impl_t *)db;
 		zbookmark_phys_t zb;
 
         // Log error in spa?
@@ -1315,13 +1315,11 @@ zfs_zget_ext(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp,
 	znode_t		*zp;
 	struct vnode		*vp = NULL;
 	sa_handle_t	*hdl;
-	struct thread	*td;
 	int err;
 	uint32_t        vid;
 
 	dprintf("+zget %lld\n", obj_num);
 
-	td = curthread;
 	getnewvnode_reserve(1);
 
 again:

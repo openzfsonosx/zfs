@@ -6,7 +6,6 @@ typedef struct osx_kstat {
 	kstat_named_t zpl_version;
 
 	kstat_named_t darwin_active_vnodes;
-	kstat_named_t darwin_reclaim_nodes;
 	kstat_named_t darwin_debug;
 	kstat_named_t darwin_ignore_negatives;
 	kstat_named_t darwin_ignore_positives;
@@ -60,7 +59,6 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_prefetch_disable;
 	kstat_named_t zfetch_max_streams;
 	kstat_named_t zfetch_min_sec_reap;
-	kstat_named_t zfetch_block_cap;
 	kstat_named_t zfetch_array_rd_sz;
 	kstat_named_t zfs_default_bs;
 	kstat_named_t zfs_default_ibs;
@@ -107,7 +105,6 @@ extern unsigned int zfs_vnop_ignore_negatives;
 extern unsigned int zfs_vnop_ignore_positives;
 extern unsigned int zfs_vnop_create_negatives;
 extern unsigned int zfs_vnop_skip_unlinked_drain;
-extern uint64_t vnop_num_reclaims;
 extern uint64_t vnop_num_vnodes;
 
 extern uint64_t zfs_arc_max;
@@ -150,7 +147,6 @@ extern hrtime_t zfs_delay_max_ns;
 extern int spa_asize_inflation;
 extern unsigned int	zfetch_max_streams;
 extern unsigned int	zfetch_min_sec_reap;
-extern unsigned int	zfetch_block_cap;
 extern int zfs_default_bs;
 extern int zfs_default_ibs;
 extern uint64_t metaslab_aliquot;
@@ -178,5 +174,6 @@ int        kstat_osx_init(void);
 void       kstat_osx_fini(void);
 
 int arc_kstat_update(kstat_t *ksp, int rw);
+int arc_kstat_update_osx(kstat_t *ksp, int rw);
 
 #endif

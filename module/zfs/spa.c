@@ -24,6 +24,7 @@
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2013, 2014, Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2013 Saso Kiselkov. All rights reserved.
  */
 
 /*
@@ -902,11 +903,17 @@ spa_taskqs_init(spa_t *spa, zio_type_t t, zio_taskq_type_t q)
 			pri_t pri = maxclsyspri;
 			/*
 			 * The write issue taskq can be extremely CPU
-			 * intensive.  Run it at slightly lower priority
-			 * than the other taskqs.
+			 * intensive.  Run it at slightly less important
+			 * priority than the other taskqs.  Under Linux this
+			 * means incrementing the priority value on platforms
+			 * like illumos it should be decremented.
 			 */
 			if (t == ZIO_TYPE_WRITE && q == ZIO_TASKQ_ISSUE)
+#ifdef LINUX
+				pri++;
+#else
 				pri--;
+#endif
 
 			tq = taskq_create_proc(name, value, pri, 50,
 			    INT_MAX, spa->spa_proc, flags);
@@ -1946,7 +1953,7 @@ spa_load_verify_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	size_t size;
 	void *data;
 
-	if (BP_IS_HOLE(bp) || BP_IS_EMBEDDED(bp))
+	if (bp == NULL || BP_IS_HOLE(bp) || BP_IS_EMBEDDED(bp))
 		return (0);
 	/*
 	 * Note: normally this routine will not be called if
@@ -2584,6 +2591,19 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		spa_activate(spa, orig_mode);
 
 		return (spa_load(spa, state, SPA_IMPORT_EXISTING, B_TRUE));
+	}
+
+	/* Grab the secret checksum salt from the MOS. */
+	error = zap_lookup(spa->spa_meta_objset, DMU_POOL_DIRECTORY_OBJECT,
+		DMU_POOL_CHECKSUM_SALT, 1,
+		sizeof (spa->spa_cksum_salt.zcs_bytes),
+		spa->spa_cksum_salt.zcs_bytes);
+	if (error == ENOENT) {
+		/* Generate a new salt for subsequent use */
+		(void) random_get_pseudo_bytes(spa->spa_cksum_salt.zcs_bytes,
+			sizeof (spa->spa_cksum_salt.zcs_bytes));
+	} else if (error != 0) {
+		return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, EIO));
 	}
 
 	if (spa_dir_prop(spa, DMU_POOL_SYNC_BPOBJ, &obj) != 0)
@@ -3860,6 +3880,12 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	 */
 	if (version >= SPA_VERSION_ZPOOL_HISTORY)
 		spa_history_create_obj(spa, tx);
+
+	/*
+	 * Generate some random noise for salted checksums to operate on.
+	 */
+	(void) random_get_pseudo_bytes(spa->spa_cksum_salt.zcs_bytes,
+		sizeof (spa->spa_cksum_salt.zcs_bytes));
 
 	/*
 	 * Set pool properties.
@@ -6420,6 +6446,20 @@ spa_sync_upgrades(spa_t *spa, dmu_tx_t *tx)
 		if (lz4_en && !lz4_ac)
 			spa_feature_incr(spa, SPA_FEATURE_LZ4_COMPRESS, tx);
 	}
+
+	/*
+	 * If we haven't written the salt, do so now.  Note that the
+	 * feature may not be activated yet, but that's fine since
+	 * the presence of this ZAP entry is backwards compatible.
+	 */
+	if (zap_contains(spa->spa_meta_objset, DMU_POOL_DIRECTORY_OBJECT,
+		DMU_POOL_CHECKSUM_SALT) == ENOENT) {
+		VERIFY0(zap_add(spa->spa_meta_objset,
+			DMU_POOL_DIRECTORY_OBJECT, DMU_POOL_CHECKSUM_SALT, 1,
+			sizeof (spa->spa_cksum_salt.zcs_bytes),
+			spa->spa_cksum_salt.zcs_bytes, tx));
+	}
+
 	rrw_exit(&dp->dp_config_rwlock, FTAG);
 }
 
@@ -6601,16 +6641,10 @@ spa_sync(spa_t *spa, uint64_t txg)
 				if (svdcount == SPA_DVAS_PER_BP)
 					break;
 			}
-			error = vdev_config_sync(svd, svdcount, txg, B_FALSE);
-			if (error != 0)
-				error = vdev_config_sync(svd, svdcount, txg,
-				    B_TRUE);
+			error = vdev_config_sync(svd, svdcount, txg);
 		} else {
 			error = vdev_config_sync(rvd->vdev_child,
-			    rvd->vdev_children, txg, B_FALSE);
-			if (error != 0)
-				error = vdev_config_sync(rvd->vdev_child,
-				    rvd->vdev_children, txg, B_TRUE);
+			    rvd->vdev_children, txg);
 		}
 
 		if (error == 0)

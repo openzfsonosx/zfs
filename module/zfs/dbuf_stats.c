@@ -64,6 +64,7 @@ dbuf_stats_hash_table_headers(char *buf, size_t size)
 int
 __dbuf_stats_hash_table_data(char *buf, size_t size, dmu_buf_impl_t *db)
 {
+#ifdef LINUX
 	arc_buf_info_t abi = { 0 };
 	dmu_object_info_t doi = { 0 };
 	dnode_t *dn = DB_DNODE(db);
@@ -122,6 +123,8 @@ __dbuf_stats_hash_table_data(char *buf, size_t size, dmu_buf_impl_t *db)
 		return (size);
 
 	return (nwritten + 1);
+#endif
+	return 0;
 }
 
 static int

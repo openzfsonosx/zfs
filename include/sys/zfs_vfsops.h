@@ -47,6 +47,7 @@ struct znode;
 /* #define WITH_READDIRATTR */
 #define	HAVE_NAMED_STREAMS 1
 #define	HAVE_PAGEOUT_V2 1
+#define HIDE_TRIVIAL_ACL 1
 #endif
 
 
@@ -109,7 +110,6 @@ struct zfsvfs {
 #ifdef APPLE_SA_RECOVER
 	    uint64_t        z_recover_parent;/* Temporary holder until SA corruption are gone */
 #endif /* APPLE_SA_RECOVER */
-
 #endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;
@@ -210,6 +210,7 @@ extern int zfs_set_version(zfsvfs_t *zfsvfs, uint64_t newvers);
 
 extern int zfs_get_zplprop(objset_t *os, zfs_prop_t prop,
     uint64_t *value);
+
 extern int zfs_sb_create(const char *name, zfsvfs_t **zfsvfsp);
 extern int zfs_sb_setup(zfsvfs_t *zfsvfs, boolean_t mounting);
 extern void zfs_sb_free(zfsvfs_t *zfsvfs);

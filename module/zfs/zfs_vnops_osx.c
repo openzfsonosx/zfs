@@ -768,6 +768,8 @@ static void zfs_cache_name(struct vnode *vp, struct vnode *dvp, char *filename)
 
 	zp = VTOZ(vp);
 
+	mutex_enter(&zp->z_lock);
+
 	strlcpy(zp->z_name_cache,
 			filename,
 			MAXPATHLEN);
@@ -778,6 +780,8 @@ static void zfs_cache_name(struct vnode *vp, struct vnode *dvp, char *filename)
 		dvp) {
 		zp->z_finder_parentid = VTOZ(dvp)->z_id;
 	}
+
+	mutex_exit(&zp->z_lock);
 }
 
 
@@ -978,8 +982,10 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp, char *name)
 		rw_exit(&zfsvfs->z_hardlinks_lock);
 		kmem_free(findnode, sizeof(*findnode));
 		dprintf("ZFS: removed hash '%s'\n", name);
+		mutex_enter(&zp->z_lock);
 		zp->z_name_cache[0] = 0;
 		zp->z_finder_parentid = 0;
+		mutex_exit(&zp->z_lock);
 		return 1;
 	}
 	return 0;
@@ -1004,22 +1010,6 @@ static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 	if (!vp || !VTOZ(vp)) return 0;
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-
-	if (tvp) {
-		znode_t *tzp = VTOZ(tvp);
-		if (tzp) {
-			/* We also need to correct the parent id of the target, for
-			 * vget to be able to reply with the correct id. Used by mds
-			 * and Finder. */
-			tzp->z_finder_parentid = VTOZ(tdvp)->z_id;
-
-			vnode_update_identity(tvp, tdvp, 0,
-								  0, 0,
-								  VNODE_UPDATE_PARENT);
-			dprintf("ZFS: updated finder_parentid to %llu\n",
-				   tzp->z_finder_parentid);
-		}
-	}
 
 	ishardlink = ((zp->z_links > 1) && (IFTOVT((mode_t)zp->z_mode) == VREG)) ?
 		1 : 0;
@@ -1083,7 +1073,7 @@ static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 		// Update source node to new hash, and name.
 		findnode->hl_parent = parent_tid;
 		strlcpy(findnode->hl_name, to, PATH_MAX);
-		zp->z_finder_parentid = parent_tid;
+		//zp->z_finder_parentid = parent_tid;
 
 		avl_add(&zfsvfs->z_hardlinks, findnode);
 		avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
@@ -1326,14 +1316,18 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	uint_t mask = vap->va_mask;
 	int error = 0;
 
+
+	int ignore_ownership = (((unsigned int)vfs_flags(vnode_mount(ap->a_vp)))
+							& MNT_IGNORE_OWNERSHIP);
+
 	/* Translate OS X requested mask to ZFS */
 	if (VATTR_IS_ACTIVE(vap, va_data_size))
 		mask |= AT_SIZE;
 	if (VATTR_IS_ACTIVE(vap, va_mode))
 		mask |= AT_MODE;
-	if (VATTR_IS_ACTIVE(vap, va_uid))
+	if (VATTR_IS_ACTIVE(vap, va_uid) && !ignore_ownership)
 		mask |= AT_UID;
-	if (VATTR_IS_ACTIVE(vap, va_gid))
+	if (VATTR_IS_ACTIVE(vap, va_gid) && !ignore_ownership)
 		mask |= AT_GID;
 	if (VATTR_IS_ACTIVE(vap, va_access_time))
 		mask |= AT_ATIME;
@@ -1481,6 +1475,22 @@ zfs_vnop_rename(struct vnop_rename_args *ap)
 		if (ap->a_tvp) {
 			cache_purge(ap->a_tvp);
 		}
+
+#ifdef __APPLE__
+		/*
+		 * After a rename, the VGET path /.vol/$fsid/$ino fails for a short
+		 * period on hardlinks (until someone calls lookup).
+		 * So until we can figure out exactly why this is, we drive a lookup
+		 * here to ensure that vget will work (Finder/Spotlight).
+		 */
+		if (ap->a_fvp && VTOZ(ap->a_fvp) &&
+			VTOZ(ap->a_fvp)->z_finder_hardlink) {
+			struct vnode *vp;
+			if (VOP_LOOKUP(ap->a_tdvp, &vp, ap->a_tcnp, spl_vfs_context_kernel())
+				== 0) vnode_put(vp);
+		}
+#endif
+
 	}
 
 	return (error);
@@ -1610,6 +1620,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	int flags = ap->a_flags;
 	int need_unlock = 0;
 	int error = 0;
+	uint64_t file_sz;
 
 	dprintf("+vnop_pagein: %p/%p off 0x%llx size 0x%lx filesz 0x%llx\n",
 			zp, vp, off, len, zp->z_size);
@@ -1626,10 +1637,12 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 
 	ZFS_ENTER(zfsvfs);
 
+	file_sz = zp->z_size;
+
 	ASSERT(vn_has_cached_data(vp));
 	/* ASSERT(zp->z_dbuf_held && zp->z_phys); */
 	/* can't fault passed EOF */
-	if ((off < 0) || (off >= zp->z_size) ||
+	if ((off < 0) || (off >= file_sz) ||
 		(len & PAGE_MASK) || (upl_offset & PAGE_MASK)) {
 		dprintf("passed EOF or size error\n");
 		ZFS_EXIT(zfsvfs);
@@ -1664,8 +1677,8 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	vaddr += upl_offset;
 
 	/* Can't read beyond EOF - but we need to zero those extra bytes. */
-	if (off + len > zp->z_size) {
-		uint64_t newend = zp->z_size - off;
+	if (off + len > file_sz) {
+		uint64_t newend = file_sz - off;
 
 		dprintf("ZFS: pagein zeroing offset 0x%llx for 0x%llx bytes.\n",
 				newend, len - newend);
@@ -1711,7 +1724,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 * truncation as this leads to deadlock. So we need to recheck the file
 	 * size.
 	 */
-	if (ap->a_f_offset >= zp->z_size)
+	if (ap->a_f_offset >= file_sz)
 		error = EFAULT;
 	if (need_unlock)
 		rw_exit(&zp->z_map_lock);

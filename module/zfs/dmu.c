@@ -23,6 +23,7 @@
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014, Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2015 by Chunwei Chen. All rights reserved.
  */
 
 #include <sys/dmu.h>
@@ -139,7 +140,7 @@ dmu_buf_hold_noread(objset_t *os, uint64_t object, uint64_t offset,
 	err = dnode_hold(os, object, FTAG, &dn);
 	if (err)
 		return (err);
-	blkid = dbuf_whichblock(dn, offset);
+	blkid = dbuf_whichblock(dn, 0, offset);
 	rw_enter(&dn->dn_struct_rwlock, RW_READER);
 	db = dbuf_hold(dn, blkid, tag);
 	rw_exit(&dn->dn_struct_rwlock);
@@ -387,7 +388,7 @@ dmu_spill_hold_by_bonus(dmu_buf_t *bonus, void *tag, dmu_buf_t **dbp)
  */
 static int
 dmu_buf_hold_array_by_dnode(dnode_t *dn, uint64_t offset, uint64_t length,
-    int read, void *tag, int *numbufsp, dmu_buf_t ***dbpp, uint32_t flags)
+    boolean_t read, void *tag, int *numbufsp, dmu_buf_t ***dbpp, uint32_t flags)
 {
 	dmu_buf_t **dbp;
 	uint64_t blkid, nblks, i;
@@ -397,15 +398,19 @@ dmu_buf_hold_array_by_dnode(dnode_t *dn, uint64_t offset, uint64_t length,
 
 	ASSERT(length <= DMU_MAX_ACCESS);
 
-	dbuf_flags = DB_RF_CANFAIL | DB_RF_NEVERWAIT | DB_RF_HAVESTRUCT;
-	if (flags & DMU_READ_NO_PREFETCH || length > zfetch_array_rd_sz)
-		dbuf_flags |= DB_RF_NOPREFETCH;
+	/*
+	 * Note: We directly notify the prefetch code of this read, so that
+	 * we can tell it about the multi-block read.  dbuf_read() only knows
+	 * about the one block it is accessing.
+	 */
+	dbuf_flags = DB_RF_CANFAIL | DB_RF_NEVERWAIT | DB_RF_HAVESTRUCT |
+		DB_RF_NOPREFETCH;
 
 	rw_enter(&dn->dn_struct_rwlock, RW_READER);
 	if (dn->dn_datablkshift) {
 		int blkshift = dn->dn_datablkshift;
-		nblks = (P2ROUNDUP(offset+length, 1ULL<<blkshift) -
-		    P2ALIGN(offset, 1ULL<<blkshift)) >> blkshift;
+		nblks = (P2ROUNDUP(offset + length, 1ULL << blkshift) -
+				 P2ALIGN(offset, 1ULL << blkshift)) >> blkshift;
 	} else {
 		if (offset + length > dn->dn_datablksz) {
 			zfs_panic_recover("zfs: accessing past end of object "
@@ -422,9 +427,9 @@ dmu_buf_hold_array_by_dnode(dnode_t *dn, uint64_t offset, uint64_t length,
 	dbp = kmem_zalloc(sizeof (dmu_buf_t *) * nblks, KM_SLEEP);
 
 	zio = zio_root(dn->dn_objset->os_spa, NULL, NULL, ZIO_FLAG_CANFAIL);
-	blkid = dbuf_whichblock(dn, offset);
+	blkid = dbuf_whichblock(dn, 0, offset);
 	for (i = 0; i < nblks; i++) {
-		dmu_buf_impl_t *db = dbuf_hold(dn, blkid+i, tag);
+		dmu_buf_impl_t *db = dbuf_hold(dn, blkid + i, tag);
 		if (db == NULL) {
 			rw_exit(&dn->dn_struct_rwlock);
 			dmu_buf_rele_array(dbp, nblks, tag);
@@ -432,10 +437,13 @@ dmu_buf_hold_array_by_dnode(dnode_t *dn, uint64_t offset, uint64_t length,
 			return (SET_ERROR(EIO));
 		}
 		/* initiate async i/o */
-		if (read) {
+		if (read)
 			(void) dbuf_read(db, zio, dbuf_flags);
-		}
 		dbp[i] = &db->db;
+	}
+	if ((flags & DMU_READ_NO_PREFETCH) == 0 && read &&
+	    length <= zfetch_array_rd_sz) {
+		dmu_zfetch(&dn->dn_zfetch, blkid, nblks);
 	}
 	rw_exit(&dn->dn_struct_rwlock);
 
@@ -490,7 +498,7 @@ dmu_buf_hold_array(objset_t *os, uint64_t object, uint64_t offset,
 
 int
 dmu_buf_hold_array_by_bonus(dmu_buf_t *db_fake, uint64_t offset,
-    uint64_t length, int read, void *tag, int *numbufsp, dmu_buf_t ***dbpp)
+    uint64_t length, boolean_t read, void *tag, int *numbufsp, dmu_buf_t ***dbpp)
 {
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)db_fake;
 	dnode_t *dn;
@@ -523,24 +531,20 @@ dmu_buf_rele_array(dmu_buf_t **dbp_fake, int numbufs, void *tag)
 }
 
 /*
- * Issue prefetch i/os for the given blocks.
+ * Issue prefetch i/os for the given blocks.  If level is greater than 0, the
+ * indirect blocks prefeteched will be those that point to the blocks containing
+ * the data starting at offset, and continuing to offset + len.
  *
- * Note: The assumption is that we *know* these blocks will be needed
- * almost immediately.  Therefore, the prefetch i/os will be issued at
- * ZIO_PRIORITY_SYNC_READ
- *
- * Note: indirect blocks and other metadata will be read synchronously,
- * causing this function to block if they are not already cached.
+ * Note that if the indirect blocks above the blocks being prefetched are not in
+ * cache, they will be asychronously read in.
  */
 void
-dmu_prefetch(objset_t *os, uint64_t object, uint64_t offset, uint64_t len)
+dmu_prefetch(objset_t *os, uint64_t object, int64_t level, uint64_t offset,
+	uint64_t len, zio_priority_t pri)
 {
 	dnode_t *dn;
 	uint64_t blkid;
 	int nblks, err;
-
-	if (zfs_prefetch_disable)
-		return;
 
 	if (len == 0) {  /* they're interested in the bonus buffer */
 		dn = DMU_META_DNODE(os);
@@ -549,8 +553,9 @@ dmu_prefetch(objset_t *os, uint64_t object, uint64_t offset, uint64_t len)
 			return;
 
 		rw_enter(&dn->dn_struct_rwlock, RW_READER);
-		blkid = dbuf_whichblock(dn, object * sizeof (dnode_phys_t));
-		dbuf_prefetch(dn, blkid, ZIO_PRIORITY_SYNC_READ);
+		blkid = dbuf_whichblock(dn, level,
+			object * sizeof (dnode_phys_t));
+		dbuf_prefetch(dn, level, blkid, pri, 0);
 		rw_exit(&dn->dn_struct_rwlock);
 		return;
 	}
@@ -565,20 +570,24 @@ dmu_prefetch(objset_t *os, uint64_t object, uint64_t offset, uint64_t len)
 		return;
 
 	rw_enter(&dn->dn_struct_rwlock, RW_READER);
-	if (dn->dn_datablkshift) {
-		int blkshift = dn->dn_datablkshift;
-		nblks = (P2ROUNDUP(offset + len, 1 << blkshift) -
-		    P2ALIGN(offset, 1 << blkshift)) >> blkshift;
+	/*
+	 * offset + len - 1 is the last byte we want to prefetch for, and offset
+	 * is the first.  Then dbuf_whichblk(dn, level, off + len - 1) is the
+	 * last block we want to prefetch, and dbuf_whichblock(dn, level,
+	 * offset)  is the first.  Then the number we need to prefetch is the
+	 * last - first + 1.
+	 */
+	if (level > 0 || dn->dn_datablkshift != 0) {
+		nblks = dbuf_whichblock(dn, level, offset + len - 1) -
+			dbuf_whichblock(dn, level, offset) + 1;
 	} else {
 		nblks = (offset < dn->dn_datablksz);
 	}
 
 	if (nblks != 0) {
-		int i;
-
-		blkid = dbuf_whichblock(dn, offset);
-		for (i = 0; i < nblks; i++)
-			dbuf_prefetch(dn, blkid + i, ZIO_PRIORITY_SYNC_READ);
+		blkid = dbuf_whichblock(dn, level, offset);
+		for (int i = 0; i < nblks; i++)
+			dbuf_prefetch(dn, level, blkid + i, pri, 0);
 	}
 
 	rw_exit(&dn->dn_struct_rwlock);
@@ -646,9 +655,13 @@ static int
 dmu_free_long_range_impl(objset_t *os, dnode_t *dn, uint64_t offset,
     uint64_t length)
 {
-	uint64_t object_size = (dn->dn_maxblkid + 1) * dn->dn_datablksz;
+	uint64_t object_size;
 	int err;
 
+	if (dn == NULL)
+		return (SET_ERROR(EINVAL));
+
+	object_size = (dn->dn_maxblkid + 1) * dn->dn_datablksz;
 	if (offset >= object_size)
 		return (0);
 
@@ -945,7 +958,6 @@ dmu_xuio_init(xuio_t *xuio, int nblk)
 	priv->bufs = kmem_zalloc(nblk * sizeof (arc_buf_t *), KM_SLEEP);
 	//priv->iovp = uio->uio_iov;
     priv->iovp = (iovec_t *)uio_curriovbase(uio);
-
 	XUIO_XUZC_PRIV(xuio) = priv;
 
 	if (XUIO_XUZC_RW(xuio) == UIO_READ)
@@ -991,7 +1003,6 @@ dmu_xuio_add(xuio_t *xuio, arc_buf_t *abuf, offset_t off, size_t n)
 
 	ASSERT(i < priv->cnt);
 	ASSERT(off + n <= arc_buf_size(abuf));
-
 	//iov = uio->uio_iov + i;
 	iov = ((iovec_t *)uio_curriovbase(uio)) + i;
 	iov->iov_base = (char *)abuf->b_data + off;
@@ -1071,15 +1082,16 @@ xuio_stat_wbuf_nocopy()
  * return value is the number of bytes successfully copied to arg_buf.
  */
 static int
-dmu_req_copy(void *arg_buf, int size, struct request *req, size_t req_offset)
+dmu_bio_copy(void *arg_buf, int size, struct bio *bio, size_t bio_offset)
 {
-	struct bio_vec bv, *bvp;
-	struct req_iterator iter;
+	struct bio_vec bv, *bvp = &bv;
+	bvec_iterator_t iter;
 	char *bv_buf;
 	int tocpy, bv_len, bv_offset;
 	int offset = 0;
 
-	rq_for_each_segment4(bv, bvp, req, iter) {
+	bio_for_each_segment4(bv, bvp, bio, iter) {
+
 		/*
 		 * Fully consumed the passed arg_buf. We use goto here because
 		 * rq_for_each_segment is a double loop
@@ -1088,23 +1100,23 @@ dmu_req_copy(void *arg_buf, int size, struct request *req, size_t req_offset)
 		if (size == offset)
 			goto out;
 
-		/* Skip already copied bv */
-		if (req_offset >=  bv.bv_len) {
-			req_offset -= bv.bv_len;
+		/* Skip already copied bvp */
+		if (bio_offset >= bvp->bv_len) {
+			bio_offset -= bvp->bv_len;
 			continue;
 		}
 
-		bv_len = bv.bv_len - req_offset;
-		bv_offset = bv.bv_offset + req_offset;
-		req_offset = 0;
+		bv_len = bvp->bv_len - bio_offset;
+		bv_offset = bvp->bv_offset + bio_offset;
+		bio_offset = 0;
 
 		tocpy = MIN(bv_len, size - offset);
 		ASSERT3S(tocpy, >=, 0);
 
-		bv_buf = page_address(bv.bv_page) + bv_offset;
+		bv_buf = page_address(bvp->bv_page) + bv_offset;
 		ASSERT3P(bv_buf, !=, NULL);
 
-		if (rq_data_dir(req) == WRITE)
+		if (bio_data_dir(bio) == WRITE)
 			memcpy(arg_buf + offset, bv_buf, tocpy);
 		else
 			memcpy(bv_buf, arg_buf + offset, tocpy);
@@ -1116,13 +1128,13 @@ out:
 }
 
 int
-dmu_read_req(objset_t *os, uint64_t object, struct request *req)
+dmu_read_bio(objset_t *os, uint64_t object, struct bio *bio)
 {
-	uint64_t size = blk_rq_bytes(req);
-	uint64_t offset = blk_rq_pos(req) << 9;
+	uint64_t offset = BIO_BI_SECTOR(bio) << 9;
+	uint64_t size = BIO_BI_SIZE(bio);
 	dmu_buf_t **dbp;
 	int numbufs, i, err;
-	size_t req_offset;
+	size_t bio_offset;
 
 	/*
 	 * NB: we could do this block-at-a-time, but it's nice
@@ -1133,7 +1145,7 @@ dmu_read_req(objset_t *os, uint64_t object, struct request *req)
 	if (err)
 		return (err);
 
-	req_offset = 0;
+	bio_offset = 0;
 	for (i = 0; i < numbufs; i++) {
 		uint64_t tocpy;
 		int64_t bufoff;
@@ -1147,8 +1159,8 @@ dmu_read_req(objset_t *os, uint64_t object, struct request *req)
 		if (tocpy == 0)
 			break;
 
-		didcpy = dmu_req_copy(db->db_data + bufoff, tocpy, req,
-		    req_offset);
+		didcpy = dmu_bio_copy(db->db_data + bufoff, tocpy, bio,
+		    bio_offset);
 
 		if (didcpy < tocpy)
 			err = EIO;
@@ -1158,7 +1170,7 @@ dmu_read_req(objset_t *os, uint64_t object, struct request *req)
 
 		size -= tocpy;
 		offset += didcpy;
-		req_offset += didcpy;
+		bio_offset += didcpy;
 		err = 0;
 	}
 	dmu_buf_rele_array(dbp, numbufs, FTAG);
@@ -1167,13 +1179,13 @@ dmu_read_req(objset_t *os, uint64_t object, struct request *req)
 }
 
 int
-dmu_write_req(objset_t *os, uint64_t object, struct request *req, dmu_tx_t *tx)
+dmu_write_bio(objset_t *os, uint64_t object, struct bio *bio, dmu_tx_t *tx)
 {
-	uint64_t size = blk_rq_bytes(req);
-	uint64_t offset = blk_rq_pos(req) << 9;
+	uint64_t offset = BIO_BI_SECTOR(bio) << 9;
+	uint64_t size = BIO_BI_SIZE(bio);
 	dmu_buf_t **dbp;
 	int numbufs, i, err;
-	size_t req_offset;
+	size_t bio_offset;
 
 	if (size == 0)
 		return (0);
@@ -1183,7 +1195,7 @@ dmu_write_req(objset_t *os, uint64_t object, struct request *req, dmu_tx_t *tx)
 	if (err)
 		return (err);
 
-	req_offset = 0;
+	bio_offset = 0;
 	for (i = 0; i < numbufs; i++) {
 		uint64_t tocpy;
 		int64_t bufoff;
@@ -1204,8 +1216,8 @@ dmu_write_req(objset_t *os, uint64_t object, struct request *req, dmu_tx_t *tx)
 		else
 			dmu_buf_will_dirty(db, tx);
 
-		didcpy = dmu_req_copy(db->db_data + bufoff, tocpy, req,
-		    req_offset);
+		didcpy = dmu_bio_copy(db->db_data + bufoff, tocpy, bio,
+		    bio_offset);
 
 		if (tocpy == db->db_size)
 			dmu_buf_fill_done(db, tx);
@@ -1218,7 +1230,7 @@ dmu_write_req(objset_t *os, uint64_t object, struct request *req, dmu_tx_t *tx)
 
 		size -= tocpy;
 		offset += didcpy;
-		req_offset += didcpy;
+		bio_offset += didcpy;
 		err = 0;
 	}
 
@@ -1646,7 +1658,7 @@ dmu_assign_arcbuf(dmu_buf_t *handle, uint64_t offset, arc_buf_t *buf,
 	DB_DNODE_ENTER(dbuf);
 	dn = DB_DNODE(dbuf);
 	rw_enter(&dn->dn_struct_rwlock, RW_READER);
-	blkid = dbuf_whichblock(dn, offset);
+	blkid = dbuf_whichblock(dn, 0, offset);
 	VERIFY((db = dbuf_hold(dn, blkid, FTAG)) != NULL);
 	rw_exit(&dn->dn_struct_rwlock);
 	DB_DNODE_EXIT(dbuf);
@@ -2077,8 +2089,10 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		 * as well.  Otherwise, the metadata checksum defaults
 		 * to fletcher4.
 		 */
-		if (zio_checksum_table[checksum].ci_correctable < 1 ||
-		    zio_checksum_table[checksum].ci_eck)
+		if (!(zio_checksum_table[checksum].ci_flags &
+		    ZCHECKSUM_FLAG_METADATA) ||
+		    (zio_checksum_table[checksum].ci_flags &
+		    ZCHECKSUM_FLAG_EMBEDDED))
 			checksum = ZIO_CHECKSUM_FLETCHER_4;
 
 		if (os->os_redundant_metadata == ZFS_REDUNDANT_METADATA_ALL ||
@@ -2098,7 +2112,7 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		 * pipeline.
 		 */
 		compress = ZIO_COMPRESS_OFF;
-		checksum = ZIO_CHECKSUM_OFF;
+		checksum = ZIO_CHECKSUM_NOPARITY;
 	} else {
 		compress = zio_compress_select(os->os_spa, dn->dn_compress,
 		    compress);
@@ -2117,18 +2131,21 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		 */
 		if (dedup_checksum != ZIO_CHECKSUM_OFF) {
 			dedup = (wp & WP_DMU_SYNC) ? B_FALSE : B_TRUE;
-			if (!zio_checksum_table[checksum].ci_dedup)
+			if (!(zio_checksum_table[checksum].ci_flags &
+				  ZCHECKSUM_FLAG_DEDUP))
 				dedup_verify = B_TRUE;
 		}
 
 		/*
-		 * Enable nopwrite if we have a cryptographically secure
-		 * checksum that has no known collisions (i.e. SHA-256)
-		 * and compression is enabled.  We don't enable nopwrite if
-		 * dedup is enabled as the two features are mutually exclusive.
+		 * Enable nopwrite if we have secure enough checksum
+		 * algorithm (see comment in zio_nop_write) and
+		 * compression is enabled.  We don't enable nopwrite if
+		 * dedup is enabled as the two features are mutually
+		 * exclusive.
 		 */
-		nopwrite = (!dedup && zio_checksum_table[checksum].ci_dedup &&
-		    compress != ZIO_COMPRESS_OFF && zfs_nopwrite_enabled);
+		nopwrite = (!dedup && (zio_checksum_table[checksum].ci_flags &
+							   ZCHECKSUM_FLAG_NOPWRITE) &&
+			compress != ZIO_COMPRESS_OFF && zfs_nopwrite_enabled);
 	}
 
 	zp->zp_checksum = checksum;
@@ -2145,25 +2162,20 @@ int
 dmu_offset_next(objset_t *os, uint64_t object, boolean_t hole, uint64_t *off)
 {
 	dnode_t *dn;
-	int i, err;
+	int err;
 
-	err = dnode_hold(os, object, FTAG, &dn);
-	if (err)
-		return (err);
 	/*
 	 * Sync any current changes before
 	 * we go trundling through the block pointers.
 	 */
-	for (i = 0; i < TXG_SIZE; i++) {
-		if (list_link_active(&dn->dn_dirty_link[i]))
-			break;
+	err = dmu_object_wait_synced(os, object);
+	if (err) {
+		return (err);
 	}
-	if (i != TXG_SIZE) {
-		dnode_rele(dn, FTAG);
-		txg_wait_synced(dmu_objset_pool(os), 0);
-		err = dnode_hold(os, object, FTAG, &dn);
-		if (err)
-			return (err);
+
+	err = dnode_hold(os, object, FTAG, &dn);
+	if (err) {
+		return (err);
 	}
 
 	err = dnode_next_offset(dn, (hole ? DNODE_FIND_HOLE : 0), off, 1, 1, 0);
@@ -2172,11 +2184,45 @@ dmu_offset_next(objset_t *os, uint64_t object, boolean_t hole, uint64_t *off)
 	return (err);
 }
 
+/*
+ * Given the ZFS object, if it contains any dirty nodes
+ * this function flushes all dirty blocks to disk. This
+ * ensures the DMU object info is updated. A more efficient
+ * future version might just find the TXG with the maximum
+ * ID and wait for that to be synced.
+ */
+int
+dmu_object_wait_synced(objset_t *os, uint64_t object)
+{
+	dnode_t *dn;
+	int error, i;
+
+	error = dnode_hold(os, object, FTAG, &dn);
+	if (error) {
+		return (error);
+	}
+
+	for (i = 0; i < TXG_SIZE; i++) {
+		if (list_link_active(&dn->dn_dirty_link[i])) {
+			break;
+		}
+	}
+	dnode_rele(dn, FTAG);
+	if (i != TXG_SIZE) {
+		txg_wait_synced(dmu_objset_pool(os), 0);
+	}
+
+	return (0);
+}
+
+
 void
 __dmu_object_info_from_dnode(dnode_t *dn, dmu_object_info_t *doi)
 {
-	dnode_phys_t *dnp = dn->dn_phys;
+	dnode_phys_t *dnp;
 	int i;
+
+	dnp = dn->dn_phys;
 
 	doi->doi_data_block_size = dn->dn_datablksz;
 	doi->doi_metadata_block_size = dn->dn_indblkshift ?
@@ -2193,6 +2239,7 @@ __dmu_object_info_from_dnode(dnode_t *dn, dmu_object_info_t *doi)
 	doi->doi_fill_count = 0;
 	for (i = 0; i < dnp->dn_nblkptr; i++)
 		doi->doi_fill_count += BP_GET_FILL(&dnp->dn_blkptr[i]);
+
 }
 
 void

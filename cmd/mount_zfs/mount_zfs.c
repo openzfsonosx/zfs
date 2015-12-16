@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <sys/file.h>
 #include <sys/mount.h>
+#include <sys/mntent.h>
 #include <sys/stat.h>
 #include <libzfs.h>
 #include <locale.h>
@@ -500,22 +501,21 @@ main(int argc, char **argv)
 			    ZFS_PROP_SELINUX_ROOTCONTEXT, MNTOPT_ROOTCONTEXT,
 			    mntopts, mtabopt);
 		} else {
-			__zfs_selinux_setcontext(MNTOPT_CONTEXT,
-			    prop, mntopts, mtabopt);
+			append_mntopt(MNTOPT_CONTEXT, prop,
+			    mntopts, mtabopt, B_TRUE);
 		}
 	}
 #endif
 
-	if (zhp) {
+	/* A hint used to determine an auto-mounted snapshot mount point */
+	append_mntopt(MNTOPT_MNTPOINT, mntpoint, mntopts, NULL, B_FALSE);
 
-		/* treat all snapshots as legacy mount points */
-		if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT)
-			(void) strlcpy(prop, ZFS_MOUNTPOINT_LEGACY, ZFS_MAXPROPLEN);
-		else
-			(void) zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT, prop,
-								sizeof (prop), NULL, NULL, 0, B_FALSE);
-
-	}
+	/* treat all snapshots as legacy mount points */
+	if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT)
+		(void) strlcpy(prop, ZFS_MOUNTPOINT_LEGACY, ZFS_MAXPROPLEN);
+	else
+		(void) zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT, prop,
+		    sizeof (prop), NULL, NULL, 0, B_FALSE);
 
 	/*
 	 * Fetch the max supported zfs version in case we get ENOTSUP

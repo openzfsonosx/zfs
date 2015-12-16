@@ -16,7 +16,7 @@
 # Required-Stop:     $local_fs zfs-import
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# X-Stop-After:      zfs-share
+# X-Stop-After:      zfs-zed
 # Short-Description: Mount ZFS filesystems and volumes
 # Description: Run the `zfs mount -a` or `zfs umount -a` commands.
 ### END INIT INFO
@@ -46,7 +46,18 @@ chkroot() {
 
 do_depend()
 {
-	after procfs zfs-import sysfs procps
+	# Try to allow people to mix and match fstab with ZFS in a way that makes sense.
+	if [ "$(mountinfo -s /)" = 'zfs' ]
+	then
+		before localmount
+	else
+		after localmount
+	fi
+
+	# bootmisc will log to /var which may be a different zfs than root.
+	before bootmisc logger
+
+	after zfs-import sysfs
 	use mtab
 	keyword -lxc -openvz -prefix -vserver
 }
@@ -163,7 +174,7 @@ do_unmount()
 
 do_start()
 {
-	check_module_loaded || exit 0
+	check_module_loaded "zfs" || exit 0
 
 	case "$ZFS_MOUNT" in
 		[Oo][Ff][Ff]|[Nn][Oo]|''|0)
@@ -189,7 +200,7 @@ do_stop()
 			;;
 	esac
 
-	check_module_loaded || exit 0
+	check_module_loaded "zfs" || exit 0
 
 	do_unmount
 }

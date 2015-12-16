@@ -912,43 +912,7 @@ zfs_register_callbacks(struct mount *vfsp)
 	return (0);
 
 unregister:
-	/*
-	 * We may attempt to unregister some callbacks that are not
-	 * registered, but this is OK; it will simply return ENOMSG,
-	 * which we will ignore.
-	 */
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_ATIME),
-	    atime_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_XATTR),
-	    xattr_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_RECORDSIZE),
-	    blksz_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_READONLY),
-	    readonly_changed_cb, zfsvfs);
-#ifdef illumos
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_DEVICES),
-	    devices_changed_cb, zfsvfs);
-#endif
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_SETUID),
-	    setuid_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_EXEC),
-	    exec_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_SNAPDIR),
-	    snapdir_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_ACLMODE),
-       acl_mode_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_ACLINHERIT),
-	    acl_inherit_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_VSCAN),
-	    vscan_changed_cb, zfsvfs);
-#ifdef __APPLE__
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_APPLE_BROWSE),
-	    finderbrowse_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_APPLE_IGNOREOWNER),
-	    ignoreowner_changed_cb, zfsvfs);
-	(void) dsl_prop_unregister(ds, zfs_prop_to_name(ZFS_PROP_APPLE_MIMIC_HFS),
-	    mimic_hfs_changed_cb, zfsvfs);
-#endif
+	dsl_prop_unregister_all(ds, zfsvfs);
 	return (error);
 }
 
@@ -1779,55 +1743,12 @@ void
 zfs_unregister_callbacks(zfsvfs_t *zfsvfs)
 {
 	objset_t *os = zfsvfs->z_os;
-	struct dsl_dataset *ds;
 
 	/*
 	 * Unregister properties.
 	 */
 	if (!dmu_objset_is_snapshot(os)) {
-		ds = dmu_objset_ds(os);
-		VERIFY(dsl_prop_unregister(ds, "atime", atime_changed_cb,
-		    zfsvfs) == 0);
-
-#ifdef LINUX
-		VERIFY(dsl_prop_unregister(ds, "relatime", relatime_changed_cb,
-		    zsb) == 0);
-#endif
-
-		VERIFY(dsl_prop_unregister(ds, "xattr", xattr_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "recordsize", blksz_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "readonly", readonly_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "setuid", setuid_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "exec", exec_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "snapdir", snapdir_changed_cb,
-		    zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "aclmode", acl_mode_changed_cb,
-            zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "aclinherit",
-		    acl_inherit_changed_cb, zfsvfs) == 0);
-
-		VERIFY(dsl_prop_unregister(ds, "vscan",
-		    vscan_changed_cb, zfsvfs) == 0);
-#ifdef __APPLE__
-		VERIFY(dsl_prop_unregister(ds, "com.apple.browse",
-		    finderbrowse_changed_cb, zfsvfs) == 0);
-		VERIFY(dsl_prop_unregister(ds, "com.apple.ignoreowner",
-		    ignoreowner_changed_cb, zfsvfs) == 0);
-		VERIFY(dsl_prop_unregister(ds, "com.apple.mimic_hfs",
-		    mimic_hfs_changed_cb, zfsvfs) == 0);
-#endif
+		dsl_prop_unregister_all(dmu_objset_ds(os), zfsvfs);
 	}
 }
 
@@ -2420,7 +2341,6 @@ out:
 }
 
 
-
 int
 zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t context)
 {
@@ -2430,6 +2350,11 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
     dprintf("vfs_getattr\n");
 
 	ZFS_ENTER(zfsvfs);
+
+	/* Finder will show the old/incorrect size, we can force a sync of the pool
+	 * to make it correct, but that has side effects which are undesirable.
+	 */
+	/* txg_wait_synced(dmu_objset_pool(zfsvfs->z_os), 0); */
 
 	dmu_objset_space(zfsvfs->z_os,
 	    &refdbytes, &availbytes, &usedobjs, &availobjs);
@@ -3331,8 +3256,10 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 								  strlen(findnode->hl_name),
 								  0,
 								  VNODE_UPDATE_NAME|VNODE_UPDATE_PARENT);
+			mutex_enter(&zp->z_lock);
 			strlcpy(zp->z_name_cache, findnode->hl_name, PATH_MAX);
 			zp->z_finder_parentid = findnode->hl_parent;
+			mutex_exit(&zp->z_lock);
 
 		// If we already have the name, cached in zfs_vnop_lookup
 		} else if (zp->z_name_cache[0]) {

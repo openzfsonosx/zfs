@@ -47,6 +47,7 @@ zfs_SOURCES = \
 	bplist.c \
 	bpobj.c \
 	bptree.c \
+	bqueue.c \
 	dbuf.c \
 	dbuf_stats.c \
 	ddt.c \
@@ -72,17 +73,20 @@ zfs_SOURCES = \
 	dsl_scan.c \
 	dsl_synctask.c \
 	dsl_userhold.c \
+	edonr_zfs.c \
 	fm.c \
 	gfs.c \
 	gzip.c \
 	lzjb.c \
 	lz4.c \
 	metaslab.c \
+	multilist.c \
 	range_tree.c \
 	refcount.c \
 	rrwlock.c \
 	sa.c \
 	sha256.c \
+	skein_zfs.c	\
 	spa.c \
 	spa_boot.c \
 	spa_config.c \

@@ -144,7 +144,8 @@ extern int zfs_set_prop_nvlist(const char *, zprop_source_t,
 static void zvol_log_truncate(zvol_state_t *zv, dmu_tx_t *tx, uint64_t off,
     uint64_t len, boolean_t sync);
 static int zvol_remove_zv(zvol_state_t *);
-static int zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio);
+static int zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
+						 znode_t *zp, rl_t *rl);
 // static int zvol_dumpify(zvol_state_t *zv);
 // static int zvol_dump_fini(zvol_state_t *zv);
 // static int zvol_dump_init(zvol_state_t *zv, boolean_t resize);
@@ -616,9 +617,6 @@ zvol_remove_zv(zvol_state_t *zv)
 	if (zv->zv_total_opens != 0)
 		return (EBUSY);
 
-	// Call IOKit to remove the ZVOL device
-	zvolRemoveDevice(zv);
-
 #if 0
 	ddi_remove_minor_node(zfs_dip, NULL);
 	ddi_remove_minor_node(zfs_dip, NULL);
@@ -635,6 +633,7 @@ zvol_remove_zv(zvol_state_t *zv)
 	return (0);
 }
 
+
 int
 zvol_remove_minor(const char *name)
 {
@@ -646,8 +645,16 @@ zvol_remove_minor(const char *name)
 		mutex_exit(&zfsdev_state_lock);
 		return (ENXIO);
 	}
+
+	/* Call IOKit to remove the ZVOL device, but we
+	 * can't hold any locks while doing so.
+	 */
+	mutex_exit(&zfsdev_state_lock);
+	zvolRemoveDevice(zv);
+	mutex_enter(&zfsdev_state_lock);
+
 	zvol_remove_minor_symlink(name);
-	rc = zvol_remove_zv(zv);
+	rc = zvol_remove_zv(zv); // Frees zv, if successful.
 	if (rc != 0)
 		zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
 	mutex_exit(&zfsdev_state_lock);
@@ -732,7 +739,7 @@ zvol_first_open(zvol_state_t *zv)
 	zvol_size_changed(zv, volsize);
 	zv->zv_zilog = zil_open(os, zvol_get_data);
 
-#ifdef __APPLE_
+#ifdef __APPLE__
 	error = dsl_prop_get_integer(zv->zv_name, "readonly", &readonly, NULL);
 	if (error)
 		printf("ZFS: Failed to lookup 'readonly' on '%s' error %d\n",
@@ -755,22 +762,30 @@ zvol_last_close(zvol_state_t *zv)
 {
 
 	dprintf("zvol_last_close\n");
+	if (zv->zv_total_opens != 0)
+		printf("ZFS: last_close but zv_total_opens==%d\n",
+			   zv->zv_total_opens);
 
-	zil_close(zv->zv_zilog);
+
+	if (zv->zv_zilog)
+		zil_close(zv->zv_zilog);
 	zv->zv_zilog = NULL;
 
-	dmu_buf_rele(zv->zv_dbuf, zvol_tag);
+	if (zv->zv_dbuf)
+		dmu_buf_rele(zv->zv_dbuf, zvol_tag);
 	zv->zv_dbuf = NULL;
 
 	/*
 	 * Evict cached data
 	 */
-	if (dsl_dataset_is_dirty(dmu_objset_ds(zv->zv_objset)) &&
-	    !(zv->zv_flags & ZVOL_RDONLY))
-		txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
-	dmu_objset_evict_dbufs(zv->zv_objset);
+	if (zv->zv_objset) {
+		if (dsl_dataset_is_dirty(dmu_objset_ds(zv->zv_objset)) &&
+			!(zv->zv_flags & ZVOL_RDONLY))
+			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
+		dmu_objset_evict_dbufs(zv->zv_objset);
 
-	dmu_objset_disown(zv->zv_objset, zvol_tag);
+		dmu_objset_disown(zv->zv_objset, zvol_tag);
+	}
 	zv->zv_objset = NULL;
 }
 
@@ -860,10 +875,14 @@ zvol_remove_minors(const char *name)
 		zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
 		if (zv == NULL)
 			continue;
-		if (strncmp(namebuf, zv->zv_name, strlen(namebuf)) == 0)
+		if (strncmp(namebuf, zv->zv_name, strlen(namebuf)) == 0) {
+			mutex_exit(&zfsdev_state_lock);
+			zvolRemoveDevice(zv);
+			mutex_enter(&zfsdev_state_lock);
 			(void) zvol_remove_zv(zv);
+		}
 	}
-	kmem_free(namebuf, strlen(name) + 2);
+	kmem_free(namebuf, name_buf_len);
 
 	mutex_exit(&zfsdev_state_lock);
 }
@@ -1189,12 +1208,15 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 
 	/*
 	 * You may get multiple opens, but only one close.
+	 * Also, if we failed to open, and first_open wasn't called, skip it here.
 	 */
 	// zv->zv_open_count[otyp]--;
-	zv->zv_total_opens--;
+	if (zv->zv_total_opens > 0) {
+		zv->zv_total_opens--;
 
-	if (zv->zv_total_opens == 0)
-		zvol_last_close(zv);
+		if (zv->zv_total_opens == 0)
+			zvol_last_close(zv);
+	}
 
 	mutex_exit(&zfsdev_state_lock);
 	return (error);
@@ -1243,7 +1265,8 @@ zvol_get_done(zgd_t *zgd, int error)
  * Get data to generate a TX_WRITE intent log record.
  */
 static int
-zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
+zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
+			  znode_t *zp, rl_t *rl)
 {
 	zvol_state_t *zv = arg;
 	objset_t *os = zv->zv_objset;
@@ -1260,7 +1283,8 @@ zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio)
 
 	zgd = kmem_zalloc(sizeof (zgd_t), KM_SLEEP);
 	zgd->zgd_zilog = zv->zv_zilog;
-	zgd->zgd_rl = zfs_range_lock(&zv->zv_znode, offset, size, RL_READER);
+	zgd->zgd_rl = rl;
+	//zgd->zgd_rl = zfs_range_lock(&zv->zv_znode, offset, size, RL_READER);
 
 	/*
 	 * Write records come in two flavors: immediate and indirect.
@@ -2735,7 +2759,7 @@ zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk, const char *bsd_rdisk)
 void
 zvol_remove_symlink(zvol_state_t *zv)
 {
-	if (!zv || !zv->zv_name)
+	if (!zv || !zv->zv_name[0])
 		return;
 
 	zfs_ereport_zvol_post(FM_EREPORT_ZVOL_REMOVE_SYMLINK,

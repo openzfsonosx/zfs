@@ -1,9 +1,9 @@
-
 ACLOCAL_AMFLAGS = -I config
 
 include $(top_srcdir)/config/rpm.am
 include $(top_srcdir)/config/deb.am
 include $(top_srcdir)/config/tgz.am
+
 if CONFIG_USER
 include $(top_srcdir)/etc/launchd/daemons/launchd-daemons.am
 endif
@@ -59,11 +59,11 @@ shellcheck:
 	 fi
 
 ctags:
-	$(RM) $(top_srcdir)/tags
+	$(RM) tags
 	find $(top_srcdir) -name .git -prune -o -name '*.[hc]' | xargs ctags
 
 etags:
-	$(RM) $(top_srcdir)/TAGS
+	$(RM) TAGS
 	find $(top_srcdir) -name .pc -prune -o -name '*.[hc]' | xargs etags -a
 
 tags: ctags etags
@@ -76,13 +76,13 @@ if CONFIG_USER
 install-data-hook::
 	@echo
 	for plistfile in $(launchddaemon_DATA); do \
-		label=`defaults read "$$PWD"/"$$plistfile" Label`; \
-		echo "Attempting to remove $$label ..."; \
-		$(DESTDIR)/bin/launchctl remove "$$label" \
-		    || echo "Ignoring errors"; \
 		bn=`basename "$$plistfile"`; \
+		echo "Attempting to unload $$bn ..."; \
+		$(DESTDIR)/bin/launchctl unload -F \
+		$(DESTDIR)$(launchddaemondir)/"$$bn" \
+		    || echo "Ignoring errors"; \
 		echo "Attempting to load $$bn ..."; \
-		$(DESTDIR)/bin/launchctl load -w \
+		$(DESTDIR)/bin/launchctl load -wF \
 		$(DESTDIR)$(launchddaemondir)/"$$bn" \
 		    || echo "Ignoring errors"; \
 	done

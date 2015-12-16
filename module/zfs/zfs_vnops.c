@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2015 by Chunwei Chen. All rights reserved.
  */
 
 /* Portions Copyright 2007 Jeremy Teo */
@@ -773,7 +774,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	int		max_blksz = zfsvfs->z_max_blksz;
 	int		error = 0;
 	arc_buf_t	*abuf;
-	iovec_t		*aiov = NULL;
+	const iovec_t	*aiov = NULL;
 	xuio_t		*xuio = NULL;
 	int		i_iov = 0;
 	//int		iovcnt = uio_iovcnt(uio);
@@ -1154,7 +1155,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
     dprintf("zfs_write done remainder %llu\n", n);
 
-
 	zfs_range_unlock(rl);
 
 	/*
@@ -1177,8 +1177,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 void
 zfs_get_done(zgd_t *zgd, int error)
 {
-	znode_t *zp = zgd->zgd_private;
-	objset_t *os = zp->z_zfsvfs->z_os;
+	//znode_t *zp = zgd->zgd_private;
+	//objset_t *os = zp->z_zfsvfs->z_os;
 
 	if (zgd->zgd_db)
 		dmu_buf_rele(zgd->zgd_db, zgd);
@@ -2097,6 +2097,7 @@ top:
 		 * release it directly. If recycl/reclaim didn't work out, defer
 		 * it by placing it on the unlinked list.
 		 */
+
 		zp->z_fastpath = B_TRUE;
 		if (vnode_recycle(vp) == 1) {
 			/* recycle/reclaim is done, so we can just release now */
@@ -2831,7 +2832,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 
 		/* Prefetch znode */
 		if (prefetch)
-			dmu_prefetch(os, objnum, 0, 0);
+			dmu_prefetch(os, objnum, 0, 0, 0, ZIO_PRIORITY_SYNC_READ);
 
 		/*
 		 * Move to the next entry, fill in the previous offset.
@@ -2899,8 +2900,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		zil_commit(zfsvfs->z_log, zp->z_id);
 		ZFS_EXIT(zfsvfs);
 	}
-	tsd_set(zfs_fsyncer_key, NULL);
-
+	//tsd_set(zfs_fsyncer_key, NULL);
 	return (0);
 }
 
@@ -3117,6 +3117,17 @@ zfs_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	mutex_exit(&zp->z_lock);
 
 #ifdef __APPLE__
+
+	/* If we are told to ignore owners, we scribble over the uid and gid here
+	 * unless root.
+	 */
+	if (((unsigned int)vfs_flags(zfsvfs->z_vfs)) & MNT_IGNORE_OWNERSHIP) {
+		if (kauth_cred_getuid(cr) != 0) {
+			vap->va_uid = UNKNOWNUID;
+			vap->va_gid = UNKNOWNGID;
+		}
+	}
+
 #else
     uint64_t blksize, nblocks;
 
@@ -3176,8 +3187,8 @@ zfs_getattr_fast(struct inode *ip, struct kstat *sp)
 		 */
 		sp->blksize = zsb->z_max_blksz;
 	}
+}
 #endif
-
 
 
 /*
@@ -3613,31 +3624,68 @@ top:
             ace_t	*aaclp;
             struct kauth_acl *kauth;
 
-            dprintf("Calling setacl\n");
-
             vsecattr.vsa_mask = VSA_ACE;
 
             kauth = vap->va_acl;
 
+#if HIDE_TRIVIAL_ACL
+			// We might have to add <up to> 3 trivial acls, depending on
+			// what was handed to us.
+            aclbsize = ( 3 + kauth->acl_entrycount ) * sizeof(ace_t);
+            dprintf("Given %d ACLs, adding 3\n", kauth->acl_entrycount);
+#else
             aclbsize = kauth->acl_entrycount * sizeof(ace_t);
-            vsecattr.vsa_aclentp = kmem_alloc(aclbsize, KM_SLEEP);
+            dprintf("Given %d ACLs\n", kauth->acl_entrycount);
+#endif
+
+			vsecattr.vsa_aclentp = kmem_zalloc(aclbsize, KM_SLEEP);
             aaclp = vsecattr.vsa_aclentp;
             vsecattr.vsa_aclentsz = aclbsize;
 
-            dprintf("aces_from_acl %d entries\n", kauth->acl_entrycount);
-            aces_from_acl(vsecattr.vsa_aclentp, &vsecattr.vsa_aclcnt, kauth);
+#if HIDE_TRIVIAL_ACL
+			// Add in the trivials, keep "seen_type" as a bit pattern of
+			// which trivials we have seen
+			int seen_type = 0;
 
-            err = zfs_setacl(zp, &vsecattr, B_TRUE, cr);
+            dprintf("aces_from_acl %d entries\n", kauth->acl_entrycount);
+            aces_from_acl(vsecattr.vsa_aclentp,
+						  &vsecattr.vsa_aclcnt, kauth, &seen_type);
+
+			// Add in trivials at end, based on the "seen_type".
+			zfs_addacl_trivial(zp, vsecattr.vsa_aclentp, &vsecattr.vsa_aclcnt,
+				seen_type);
+			dprintf("together at last: %d\n", vsecattr.vsa_aclcnt);
+#else
+            aces_from_acl(vsecattr.vsa_aclentp, &vsecattr.vsa_aclcnt, kauth);
+#endif
+
+			err = zfs_setacl(zp, &vsecattr, B_TRUE, cr);
             kmem_free(aaclp, aclbsize);
 
         } else {
-            struct kauth_acl blank_acl;
 
-            bzero(&blank_acl, sizeof blank_acl);
+			vsecattr_t blank_acl;
+			int seen_type = 0;
+            int		aclbsize;	/* size of acl list in bytes */
+			ace_t	*aaclp;
+
+            blank_acl.vsa_mask = VSA_ACE;
+			blank_acl.vsa_aclcnt = 0;
+            aclbsize = ( 3 ) * sizeof(ace_t);
+			blank_acl.vsa_aclentp = kmem_zalloc(aclbsize, KM_SLEEP);
+			aaclp = blank_acl.vsa_aclentp;
+            blank_acl.vsa_aclentsz = aclbsize;
+			// Clearing, we need to pass in the trivials only
+			zfs_addacl_trivial(zp, blank_acl.vsa_aclentp, &blank_acl.vsa_aclcnt,
+				seen_type);
+
             if ((err = zfs_setacl(zp, &blank_acl, B_TRUE, cr)))
                 dprintf("setattr: setacl failed: %d\n", err);
-        }
-        }
+
+            kmem_free(aaclp, aclbsize);
+
+        } // blank ACL?
+	} // ACL
 
 
 	if (mask & AT_MODE) {
@@ -4376,9 +4424,16 @@ top:
 				 * calling vnop_lookup first - it is easier to clear
 				 * it out and let getattr look it up if needed.
 				 */
-				if (tzp) tzp->z_name_cache[0] = 0;
-				if (szp) szp->z_name_cache[0] = 0;
-
+				if (tzp) {
+					mutex_enter(&tzp->z_lock);
+					tzp->z_name_cache[0] = 0;
+					mutex_exit(&tzp->z_lock);
+				}
+				if (szp) {
+					mutex_enter(&szp->z_lock);
+					szp->z_name_cache[0] = 0;
+					mutex_exit(&szp->z_lock);
+				}
 #endif
 
 			} else {
@@ -4879,10 +4934,59 @@ zfs_putapage(vnode_t *vp, page_t **pp, u_offset_t *offp,
 	 * 2) Before setting or clearing write back on a page the range lock
 	 *    must be held in order to prevent a lock inversion with the
 	 *    zfs_free_range() function.
+	 *
+	 * This presents a problem because upon entering this function the
+	 * page lock is already held.  To safely acquire the range lock the
+	 * page lock must be dropped.  This creates a window where another
+	 * process could truncate, invalidate, dirty, or write out the page.
+	 *
+	 * Therefore, after successfully reacquiring the range and page locks
+	 * the current page state is checked.  In the common case everything
+	 * will be as is expected and it can be written out.  However, if
+	 * the page state has changed it must be handled accordingly.
 	 */
+	mapping = pp->mapping;
+	redirty_page_for_writepage(wbc, pp);
 	unlock_page(pp);
+
 	rl = zfs_range_lock(zp, pgoff, pglen, RL_WRITER);
+	lock_page(pp);
+
+	/* Page mapping changed or it was no longer dirty, we're done */
+	if (unlikely((mapping != pp->mapping) || !PageDirty(pp))) {
+		unlock_page(pp);
+		zfs_range_unlock(rl);
+		ZFS_EXIT(zsb);
+		return (0);
+	}
+
+	/* Another process started write block if required */
+	if (PageWriteback(pp)) {
+		unlock_page(pp);
+		zfs_range_unlock(rl);
+
+		if (wbc->sync_mode != WB_SYNC_NONE)
+			wait_on_page_writeback(pp);
+
+		ZFS_EXIT(zsb);
+		return (0);
+	}
+
+	/* Clear the dirty flag the required locks are held */
+	if (!clear_page_dirty_for_io(pp)) {
+		unlock_page(pp);
+		zfs_range_unlock(rl);
+		ZFS_EXIT(zsb);
+		return (0);
+	}
+
+	/*
+	 * Counterpart for redirty_page_for_writepage() above.  This page
+	 * was in fact not skipped and should not be counted as if it were.
+	 */
+	wbc->pages_skipped--;
 	set_page_writeback(pp);
+	unlock_page(pp);
 
 	tx = dmu_tx_create(zsb->z_os);
 	dmu_tx_hold_write(tx, zp->z_id, pgoff, pglen);
@@ -5506,7 +5610,7 @@ zfs_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 
 	if (cmd != F_FREESP) {
 		ZFS_EXIT(zfsvfs);
-		return (SET_ERROR(EINVAL));
+		return (SET_ERROR(ENOTSUP));
 	}
 #ifndef __APPLE__
 	if (error = convoff(vp, bfp, 0, offset)) {

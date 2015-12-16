@@ -25,6 +25,8 @@
 extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
 
 
+int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid);
+
 /* Originally from illumos:uts/common/sys/vfs.h */
 typedef uint64_t vfs_feature_t;
 #define	VFSFT_XVATTR		0x100000001	/* Supports xvattr for attrs */
@@ -472,7 +474,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         kauth_cred_uid2guid(zp->z_uid, &vap->va_uuuid);
     }
 	if (VATTR_IS_ACTIVE(vap, va_guuid)) {
-        kauth_cred_uid2guid(zp->z_gid, &vap->va_guuid);
+        kauth_cred_gid2guid(zp->z_gid, &vap->va_guuid);
     }
 #endif
 
@@ -1583,7 +1585,8 @@ void nfsacl_set_wellknown(int wkg, guid_t *guid)
 /*
  * Convert Darwin ACL list, into ZFS ACL "aces" list.
  */
-void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
+void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl,
+	int *seen_type)
 {
     int i;
     ace_t *ace;
@@ -1595,16 +1598,16 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
     uint16_t  type = 0;
     u_int32_t  ace_flags;
     int wkg;
+	int err = 0;
 
     *nentries = k_acl->acl_entrycount;
 
-    bzero(aces, sizeof(*aces) * *nentries);
+    //bzero(aces, sizeof(*aces) * *nentries);
 
     //*nentries = aclp->acl_cnt;
 
     for (i = 0; i < *nentries; i++) {
         //entry = &(aclp->acl_entry[i]);
-        dprintf("aces %d\n", i);
 
         flags = 0;
         mask  = 0;
@@ -1617,29 +1620,38 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl)
 
         who = -1;
         wkg = kauth_wellknown_guid(guidp);
-        switch(wkg) {
+
+		switch(wkg) {
         case KAUTH_WKG_OWNER:
             flags |= ACE_OWNER;
+			if (seen_type) *seen_type |= ACE_OWNER;
             break;
         case KAUTH_WKG_GROUP:
             flags |= ACE_GROUP|ACE_IDENTIFIER_GROUP;
+			if (seen_type) *seen_type |= ACE_GROUP;
             break;
         case KAUTH_WKG_EVERYBODY:
             flags |= ACE_EVERYONE;
+			if (seen_type) *seen_type |= ACE_EVERYONE;
             break;
 
         case KAUTH_WKG_NOBODY:
         default:
             /* Try to get a uid from supplied guid */
-            if (kauth_cred_guid2uid(guidp, &who) != 0) {
-                /* If we couldn't generate a uid, try for a gid */
-                if (kauth_cred_guid2gid(guidp, &who) != 0) {
-                    *nentries=0;
-                    dprintf("returning due to guid2gid\n");
-                    return;
-                }
-            }
-        }
+			err = kauth_cred_guid2uid(guidp, &who);
+			if (err) {
+				err = kauth_cred_guid2gid(guidp, &who);
+				if (!err) {
+					flags |= ACE_IDENTIFIER_GROUP;
+				}
+			}
+			if (err) {
+				*nentries=0;
+				dprintf("ZFS: returning due to guid2gid\n");
+				return;
+			}
+
+        } // switch
 
         ace->a_who = who;
 

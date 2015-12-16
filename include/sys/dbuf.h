@@ -233,8 +233,24 @@ typedef struct dmu_buf_impl {
 	/* User callback information. */
 	dmu_buf_user_t *db_user;
 
-	uint8_t db_immediate_evict;
+	/*
+	 * Evict user data as soon as the dirty and reference
+	 * counts are equal.
+	 */
+	uint8_t db_user_immediate_evict;
+
+	/*
+	 * This block was freed while a read or write was
+	 * active.
+	 */
 	uint8_t db_freed_in_flight;
+
+	/*
+	 * dnode_evict_dbufs() or dnode_evict_bonus() tried to
+	 * evict this dbuf, but couldn't due to outstanding
+	 * references.  Evict once the refcount drops to 0.
+	 */
+	uint8_t db_pending_evict;
 
 	uint8_t db_dirtycnt;
 } dmu_buf_impl_t;
@@ -249,7 +265,7 @@ typedef struct dbuf_hash_table {
 } dbuf_hash_table_t;
 
 
-uint64_t dbuf_whichblock(struct dnode *di, uint64_t offset);
+uint64_t dbuf_whichblock(struct dnode *di, int64_t level, uint64_t offset);
 
 void dbuf_create_bonus(struct dnode *dn);
 int dbuf_spill_set_blksz(dmu_buf_t *db, uint64_t blksz, dmu_tx_t *tx);
@@ -259,10 +275,12 @@ void dbuf_rm_spill(struct dnode *dn, dmu_tx_t *tx);
 dmu_buf_impl_t *dbuf_hold(struct dnode *dn, uint64_t blkid, void *tag);
 dmu_buf_impl_t *dbuf_hold_level(struct dnode *dn, int level, uint64_t blkid,
     void *tag);
-int dbuf_hold_impl(struct dnode *dn, uint8_t level, uint64_t blkid, int create,
+int dbuf_hold_impl(struct dnode *dn, uint8_t level, uint64_t blkid,
+   boolean_t fail_sparse, boolean_t fail_uncached,
     void *tag, dmu_buf_impl_t **dbp);
 
-void dbuf_prefetch(struct dnode *dn, uint64_t blkid, zio_priority_t prio);
+void dbuf_prefetch(struct dnode *dn, int64_t level, uint64_t blkid,
+    zio_priority_t prio, arc_flags_t aflags);
 
 void dbuf_add_ref(dmu_buf_impl_t *db, void *tag);
 boolean_t dbuf_try_add_ref(dmu_buf_t *db, objset_t *os, uint64_t obj,
