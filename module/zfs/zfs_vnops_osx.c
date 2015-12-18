@@ -268,11 +268,11 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 				// Send the event to wake up Finder
 				struct vnode_attr vattr;
 				// Also calls VATTR_INIT
-				vfs_get_notify_attributes(&vattr);
+				spl_vfs_get_notify_attributes(&vattr);
 				// Fill in vap
 				vnode_getattr(vp, &vattr, kernelctx);
 				// Send event
-				vnode_notify(vp, VNODE_EVENT_ATTRIB, &vattr);
+				spl_vnode_notify(vp, VNODE_EVENT_ATTRIB, &vattr);
 
 				// Cleanup vp
 				vnode_put(vp);
