@@ -245,13 +245,13 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 		if (availbytes == delta)
 			goto out;
 
-		dprintf("ZFS: findernotify %p space delta %llu\n", mp, delta);
+		dprintf("ZFS: findernotify space delta %llu\n", mp, delta);
 
 		// Grab the root zp
 		if (!VFS_ROOT(mp, 0, &rootvp)) {
 
 			struct componentname cn;
-			char *tmpname = ".fseventsd";
+			char *tmpname = ".Trashes";
 
 			bzero(&cn, sizeof(cn));
 			cn.cn_nameiop = LOOKUP;
@@ -268,11 +268,11 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 				// Send the event to wake up Finder
 				struct vnode_attr vattr;
 				// Also calls VATTR_INIT
-				spl_vfs_get_notify_attributes(&vattr);
+				vfs_get_notify_attributes(&vattr);
 				// Fill in vap
 				vnode_getattr(vp, &vattr, kernelctx);
 				// Send event
-				spl_vnode_notify(vp, VNODE_EVENT_ATTRIB, &vattr);
+				vnode_notify(vp, VNODE_EVENT_ATTRIB, &vattr);
 
 				// Cleanup vp
 				vnode_put(vp);
@@ -296,6 +296,7 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 static void
 zfs_findernotify_thread(void *notused)
 {
+	clock_t			growtime = 0;
 	callb_cpr_t		cpr;
 
 	dprintf("ZFS: findernotify thread start\n");
