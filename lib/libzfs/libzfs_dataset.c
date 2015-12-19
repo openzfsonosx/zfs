@@ -1100,7 +1100,9 @@ zfs_valid_proplist(libzfs_handle_t *hdl, zfs_type_t type, nvlist_t *nvl,
 			 * penalty with large blocks.
 			 */
 			if (prop == ZFS_PROP_VOLBLOCKSIZE)
-				maxbs = SPA_OLD_MAXBLOCKSIZE;
+			  maxbs = zpool_get_prop_int(zpool_hdl,
+				     ZPOOL_PROP_MAXBLOCKSIZE, NULL);
+			  //maxbs = SPA_OLD_MAXBLOCKSIZE;
 			/*
 			 * The value must be a power of two between
 			 * SPA_MINBLOCKSIZE and maxbs.
