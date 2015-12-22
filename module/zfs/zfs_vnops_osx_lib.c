@@ -768,7 +768,7 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 		kmem_free(cn.pn_buf, cn.pn_bufsize);
 
 	/* The REPLACE error if doesn't exist is ENOATTR */
-	if ((flag & ZEXISTS) && (error == EEXIST))
+	if ((flag & ZEXISTS) && (error == ENOENT))
 		error = ENOATTR;
 
 	if (xzp)

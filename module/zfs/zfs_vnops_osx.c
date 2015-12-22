@@ -3146,7 +3146,7 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 		rw_enter(&zp->z_xattr_lock, RW_WRITER);
 
 		/* New, expect it to not exist .. */
-		if ((flag | ZNEW) &&
+		if ((flag & ZNEW) &&
 			(zpl_xattr_get_sa(vp, ap->a_name, NULL, 0) > 0)) {
 			error = EEXIST;
 			rw_exit(&zp->z_xattr_lock);
@@ -3154,9 +3154,9 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 		}
 
 		/* Replace, XATTR must exist .. */
-		if ((flag | ZEXISTS) &&
+		if ((flag & ZEXISTS) &&
 			((error = zpl_xattr_get_sa(vp, ap->a_name, NULL, 0)) <= 0) &&
-			error != -ENOENT) {
+			error == -ENOENT) {
 			error = ENOATTR;
 			rw_exit(&zp->z_xattr_lock);
 			goto out;
