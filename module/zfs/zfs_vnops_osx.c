@@ -3755,6 +3755,8 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 		if (value) {
 			rw_enter(&zp->z_xattr_lock, RW_READER);
 			error = zpl_xattr_get_sa(vp, ap->a_name, value, size);
+			rw_exit(&zp->z_xattr_lock);
+
 			//dprintf("ZFS: SA XATTR said %d\n", error);
 
 			if (error > 0) {
@@ -4166,7 +4168,7 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 					error = ERANGE;
 					break;
 				}
-				printf("ZFS: listxattr '%s'\n", nvpair_name(nvp));
+				dprintf("ZFS: listxattr '%s'\n", nvpair_name(nvp));
 				error = uiomove((caddr_t)nvpair_name(nvp), namelen,
 								UIO_READ, uio);
 				if (error)
