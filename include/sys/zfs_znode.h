@@ -505,6 +505,23 @@ extern void znode_stalker(znode_t *zp, whereami_t event);
 extern void znode_stalker_fini(znode_t *zp);
 #endif
 
+/*
+ * ===========================================================================
+ * Support functions for filling up a vnode_attr structure based on attributes
+ * requested.
+ * ===========================================================================
+ */
+extern void get_vattr_data_for_attrs(struct attrlist *alp,
+									 struct vnode_attr *vap,
+									 zfsvfs_t *zfsvfs,
+									 struct vnode *vp,
+									 znode_t *zp,
+									 void *atrp,
+									 void *datafork,
+									 void *rsrcfork,
+									 vfs_context_t ctx);
+
+
 #endif /* _KERNEL */
 
 extern int zfs_obj_to_path(objset_t *osp, uint64_t obj, char *buf, int len);

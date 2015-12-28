@@ -1723,6 +1723,363 @@ void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl,
 
 }
 
+/*
+ * ===========================================================================
+ * Support functions for filling up a vnode_attr structure based on attributes
+ * requested.
+ * ===========================================================================
+ */
+
+static void
+copy_name_attr(struct vnode_attr *vap, struct vnode *vp, const u_int8_t *name,
+			   int namelen)
+{
+	char *mpname;
+	size_t mpnamelen;
+	u_int32_t attrlength;
+	u_int8_t empty = 0;
+
+	/* A cnode's name may be incorrect for the root of a mounted
+	 * filesystem (it can be mounted on a different directory name
+	 * than the name of the volume, such as "blah-1").  So for the
+	 * root directory, it's best to return the last element of the
+	 location where the volume's mounted:
+	*/
+#if 0
+	if ((vp != NULL) && vnode_isvroot(vp) &&
+		(mpname = mountpointname(vnode_mount(vp)))) {
+		mpnamelen = strlen(mpname);
+
+		/* Trim off any trailing slashes: */
+		while ((mpnamelen > 0) && (mpname[mpnamelen-1] == '/'))
+			--mpnamelen;
+
+		/* If there's anything left, use it instead of the volume's name */
+		if (mpnamelen > 0) {
+			name = (u_int8_t *)mpname;
+			namelen = mpnamelen;
+		}
+	}
+#endif
+	if (name == NULL) {
+		name = &empty;
+		namelen = 0;
+	}
+
+	attrlength = namelen + 1;
+	(void) strncpy((char *)vap->va_name, (const char *) name, attrlength);
+	/*
+	 * round upto 8 and zero out the rounded up bytes.
+	 */
+	attrlength = min(MAXNAMELEN, ((attrlength + 7) & ~0x07));
+	bzero(vap->va_name + attrlength, MAXNAMELEN - attrlength);
+}
+
+static void
+vattr_data_for_common_attrs( struct attrlist *alp, struct vnode_attr *vap,
+							 zfsvfs_t *zfsvfs, struct vnode *vp,
+							 znode_t *zp,
+							 char *zapname, vfs_context_t ctx)
+{
+	attrgroup_t attr = alp->commonattr;
+	//struct mount *mp = vfs_fsprivate(zfsvfs);
+	struct mount *mp = zfsvfs->z_vfs;
+	uid_t cuid = 1;
+	int isroot = 0;
+	int error = 0;
+	uint64_t parent;
+	uint64_t mtime[2], ctime[2], crtime[2], atime[2];
+	uint64_t flags;
+	zfs_acl_phys_t acl_phys;
+	sa_bulk_attr_t bulk[4];
+	int count = 0;
+
+	if (ATTR_CMN_PAROBJID & attr) {
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_PARENT(zfsvfs), NULL, &parent, 8);
+	}
+
+	if (ATTR_CMN_CRTIME & attr) {
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CRTIME(zfsvfs), NULL,
+						 &crtime, sizeof(crtime));
+	}
+	if (ATTR_CMN_MODTIME & attr) {
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL,
+						 &mtime, sizeof(mtime));
+	}
+	if (ATTR_CMN_CHGTIME & attr) {
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL,
+						 &ctime, sizeof(ctime));
+	}
+	if (ATTR_CMN_ACCTIME & attr) {
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_ATIME(zfsvfs), NULL,
+						 &atime, sizeof(atime));
+	}
+	if ((ATTR_CMN_FNDRINFO & attr) ||
+		(ATTR_CMN_USERACCESS & attr)) {
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
+						 &flags, sizeof(flags));
+	}
+	if (ATTR_CMN_EXTENDED_SECURITY & attr) {
+		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_ZNODE_ACL(zfsvfs), NULL,
+						 &acl_phys, sizeof (acl_phys));
+	}
+
+	error = sa_bulk_lookup(zp->z_sa_hdl, bulk, count);
+	if (error) return;
+
+
+	if (attr & (ATTR_CMN_OWNERID | ATTR_CMN_GRPID)) {
+		cuid = kauth_cred_getuid(vfs_context_ucred(ctx));
+		isroot = cuid == 0;
+	}
+
+	if (ATTR_CMN_NAME & attr) {
+		if (vap->va_name) {
+			strlcpy(vap->va_name, zapname, MAXPATHLEN);
+			//printf("name set %s\n", vap->va_name);
+			VATTR_SET_SUPPORTED(vap, va_name);
+		} else {
+			VATTR_CLEAR_SUPPORTED(vap, va_name);
+		}
+	}
+
+	if (ATTR_CMN_DEVID & attr) {
+		vap->va_devid = vfs_statfs(mp)->f_fsid.val[0];
+		//vap->va_devid = hfsmp->hfs_raw_dev;
+		VATTR_SET_SUPPORTED(vap, va_devid);
+	}
+	if (ATTR_CMN_FSID & attr) {
+		vap->va_fsid64.val[0] = vfs_statfs(mp)->f_fsid.val[0];
+		vap->va_fsid64.val[1] = vfs_typenum(mp);
+		VATTR_SET_SUPPORTED(vap, va_fsid64);
+	}
+	/*
+	 * We always provide the objtype even if not asked because VFS helper
+	 * functions depend on knowing the object's type.
+	 */
+	vap->va_objtype = IFTOVT(zp->z_mode);
+	VATTR_SET_SUPPORTED(vap, va_objtype);
+
+	if (ATTR_CMN_OBJTAG & attr) {
+		vap->va_objtag = VT_ZFS;
+		VATTR_SET_SUPPORTED(vap, va_objtag);
+	}
+	/*
+	 * Exporting file IDs from HFS Plus:
+	 *
+	 * For "normal" files the c_fileid is the same value as the
+	 * c_cnid.  But for hard link files, they are different - the
+	 * c_cnid belongs to the active directory entry (ie the link)
+	 * and the c_fileid is for the actual inode (ie the data file).
+	 *
+	 * The stat call (getattr) will always return the c_fileid
+	 * and Carbon APIs, which are hardlink-ignorant, will always
+	 * receive the c_cnid (from getattrlist).
+	 */
+	if ((ATTR_CMN_OBJID & attr) ||
+		(ATTR_CMN_OBJPERMANENTID & attr)) {
+		vap->va_linkid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_id;
+		VATTR_SET_SUPPORTED(vap, va_linkid);
+	}
+
+	if (ATTR_CMN_PAROBJID & attr) {
+
+		if (zp->z_id == zfsvfs->z_root)
+			vap->va_parentid = 1;
+		else if (parent == zfsvfs->z_root)
+			vap->va_parentid = 2;
+		else
+			vap->va_parentid = parent;
+
+		VATTR_SET_SUPPORTED(vap, va_parentid);
+	}
+
+	if (ATTR_CMN_SCRIPT & attr) {
+		vap->va_encoding = kTextEncodingMacUnicode;
+		VATTR_SET_SUPPORTED(vap, va_encoding);
+	}
+
+	if (ATTR_CMN_CRTIME & attr) {
+		ZFS_TIME_DECODE(&vap->va_crtime, crtime);
+		VATTR_SET_SUPPORTED(vap, va_create_time);
+	}
+
+	if (ATTR_CMN_MODTIME & attr) {
+		ZFS_TIME_DECODE(&vap->va_mtime, mtime);
+		VATTR_SET_SUPPORTED(vap, va_modify_time);
+	}
+	if (ATTR_CMN_CHGTIME & attr) {
+		ZFS_TIME_DECODE(&vap->va_ctime, ctime);
+		VATTR_SET_SUPPORTED(vap, va_change_time);
+	}
+
+	if (ATTR_CMN_ACCTIME & attr) {
+		ZFS_TIME_DECODE(&vap->va_atime, atime);
+		VATTR_SET_SUPPORTED(vap, va_access_time);
+	}
+
+	if (ATTR_CMN_BKUPTIME & attr) {
+		vap->va_backup_time.tv_sec = 0;
+		vap->va_backup_time.tv_nsec = 0;
+		VATTR_SET_SUPPORTED(vap, va_backup_time);
+	}
+
+	if (ATTR_CMN_FNDRINFO & attr) {
+		finderinfo_t finderinfo;
+
+		getfinderinfo(zp, ctx, &finderinfo);
+		/* Shadow ZFS_HIDDEN to Finder Info's invisible bit */
+		if (flags & ZFS_HIDDEN) {
+			finderinfo.fi_flags |=
+				OSSwapHostToBigConstInt16(kIsInvisible);
+		}
+
+		bcopy(&finderinfo, &vap->va_finderinfo[0],
+			  sizeof(u_int8_t) * 32);
+
+#if 0
+		u_int8_t *finfo = NULL;
+
+		bcopy(&cap->ca_finderinfo, &vap->va_finderinfo[0],
+			  sizeof(u_int8_t) * 32);
+		finfo = (u_int8_t*)(&vap->va_finderinfo[0]);
+
+		/* Don't expose a symlink's private type/creator. */
+		if (S_ISLNK(cap->ca_mode)) {
+			struct FndrFileInfo *fip;
+
+			fip = (struct FndrFileInfo *)finfo;
+			fip->fdType = 0;
+			fip->fdCreator = 0;
+		}
+
+		/* advance 16 bytes into the attrbuf */
+		finfo = finfo + 16;
+
+		/* also don't expose the date_added or write_gen_counter fields */
+		if (S_ISREG(cap->ca_mode) || S_ISLNK(cap->ca_mode)) {
+			struct FndrExtendedFileInfo *extinfo =
+                            (struct FndrExtendedFileInfo *)finfo;
+			extinfo->document_id = 0;
+			extinfo->date_added = 0;
+			extinfo->write_gen_counter = 0;
+		} else if (S_ISDIR(cap->ca_mode)) {
+			struct FndrExtendedDirInfo *extinfo =
+				(struct FndrExtendedDirInfo *)finfo;
+			extinfo->document_id = 0;
+			extinfo->date_added = 0;
+			extinfo->write_gen_counter = 0;
+		}
+#endif
+
+		VATTR_SET_SUPPORTED(vap, va_finderinfo);
+	}
+
+	if ((ATTR_CMN_OWNERID & attr) ||
+		(ATTR_CMN_GRPID & attr)) {
+		zfs_fuid_map_ids(zp, ctx, &vap->va_uid, &vap->va_gid);
+		VATTR_SET_SUPPORTED(vap, va_gid);
+		VATTR_SET_SUPPORTED(vap, va_uid);
+	}
+
+	if (ATTR_CMN_ACCESSMASK & attr) {
+		vap->va_mode = zp->z_mode & ~S_IFMT;
+		VATTR_SET_SUPPORTED(vap, va_mode);
+	}
+
+	if (ATTR_CMN_FLAGS & attr) {
+		vap->va_flags = zfs_getbsdflags(zp);
+		VATTR_SET_SUPPORTED(vap, va_flags);
+	}
+
+	if (ATTR_CMN_GEN_COUNT & attr) {
+		vap->va_gen = zp->z_gen;
+		VATTR_SET_SUPPORTED(vap, va_write_gencount);
+	}
+
+#if 0
+	if (ATTR_CMN_DOCUMENT_ID & attr) {
+		vap->va_document_id = hfs_get_document_id_from_blob(
+			(const uint8_t *)cap->ca_finderinfo, cap->ca_mode);
+		VATTR_SET_SUPPORTED(vap, va_document_id);
+	}
+#endif
+
+	if (ATTR_CMN_USERACCESS & attr) {
+		u_int32_t user_access;
+
+		user_access = getuseraccess(zp, ctx);
+
+		/* Also consider READ-ONLY file system. */
+		if (vfs_flags(mp) & MNT_RDONLY) {
+			user_access &= ~W_OK;
+		}
+
+		/* Locked objects are not writable either */
+		if ((flags & ZFS_IMMUTABLE) &&
+		    (vfs_context_suser(ctx) != 0)) {
+			user_access &= ~W_OK;
+		}
+
+		vap->va_user_access = user_access;
+		VATTR_SET_SUPPORTED(vap, va_user_access);
+	}
+
+	if (ATTR_CMN_EXTENDED_SECURITY & attr) {
+
+		error = zfs_getacl(zp, &vap->va_acl, B_TRUE, ctx);
+		if (!error)
+			VATTR_SET_SUPPORTED(vap, va_acl);
+		/*
+		 * va_acl implies that va_uuuid and va_guuid are
+		 * also supported.
+		 */
+		VATTR_RETURN(vap, va_uuuid, kauth_null_guid);
+		VATTR_RETURN(vap, va_guuid, kauth_null_guid);
+	}
+
+	if (ATTR_CMN_FILEID & attr) {
+		vap->va_fileid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_id;
+		VATTR_SET_SUPPORTED(vap, va_fileid);
+	}
+
+#ifdef VNODE_ATTR_va_addedtime
+	if (ATTR_CMN_ADDEDTIME & attr) {
+		VATTR_RETURN(vap, va_addedtime, vap->va_ctime);
+	}
+#endif
+}
+
+
+
+
+
+
+void
+get_vattr_data_for_attrs(struct attrlist *alp, struct vnode_attr *vap,
+						 zfsvfs_t *zfsvfs, struct vnode *vp, znode_t *zp,
+						 void *atrp, void *datafork,
+						 void *rsrcfork,
+						 vfs_context_t ctx)
+{
+
+	/*
+	 * Insert magic here, see hfs_attlist.c
+	 */
+	if (alp->commonattr)
+		vattr_data_for_common_attrs(alp, vap, zfsvfs, vp, zp, atrp,
+									ctx);
+#if 0
+	if (alp->dirattr && (IFTOVT((mode_t)zp->z_mode) == VDIR))
+		vattr_data_for_dir_attrs(alp, vap, zfsvfs, vp, zp, atrp);
+
+	if (alp->fileattr && !(IFTOVT((mode_t)zp->z_mode) == VDIR)) {
+		vattr_data_for_file_attrs(alp, vap, zfsvfs, atrp, datafork,
+								  rsrcfork, vp);
+	}
+#endif
+}
+
 void finderinfo_update(uint8_t *finderinfo, znode_t *zp)
 {
 	u_int8_t *finfo = NULL;

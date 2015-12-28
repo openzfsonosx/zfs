@@ -236,7 +236,9 @@ const vol_capabilities_attr_t zfs_capabilities = {
 		VOL_CAP_INT_SEARCHFS |
 		VOL_CAP_INT_ATTRLIST |
 		VOL_CAP_INT_NFSEXPORT |
-        //VOL_CAP_INT_READDIRATTR |
+#ifdef WITH_READDIRATTR
+		VOL_CAP_INT_READDIRATTR |
+#endif
         VOL_CAP_INT_EXCHANGEDATA |
         VOL_CAP_INT_COPYFILE |
         VOL_CAP_INT_ALLOCATE |

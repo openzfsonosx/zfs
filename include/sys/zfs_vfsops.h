@@ -44,7 +44,7 @@ struct znode;
 #ifdef __APPLE__
 #define APPLE_SA_RECOVER
 /* #define WITH_SEARCHFS */
-/* #define WITH_READDIRATTR */
+#define WITH_READDIRATTR
 #define	HAVE_NAMED_STREAMS 1
 #define	HAVE_PAGEOUT_V2 1
 #define HIDE_TRIVIAL_ACL 1
@@ -244,7 +244,6 @@ extern void zfs_freevfs(struct mount *vfsp);
 
 extern int  zfsvfs_create(const char *osname, zfsvfs_t **zfvp);
 extern void zfsvfs_free(zfsvfs_t *zfsvfs);
-
 
 #ifdef	__cplusplus
 }
