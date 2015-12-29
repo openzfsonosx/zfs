@@ -37,9 +37,13 @@
 #ifndef HAVE_INTTYPES
 #include <inttypes.h>
 
-// Stop OS boolean_t from being included
-#define _MACH_MACHINE_BOOLEAN_H_
+#ifdef __APPLE__
+#include <mach/boolean.h>
+#define B_TRUE TRUE
+#define B_FALSE FALSE
+#else
 typedef enum boolean { B_FALSE, B_TRUE } boolean_t;
+#endif
 
 typedef unsigned char	uchar_t;
 typedef unsigned short	ushort_t;
