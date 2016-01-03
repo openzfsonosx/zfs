@@ -714,7 +714,8 @@ zfs_rmnode(znode_t *zp)
 	error = sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs),
 		&xattr_obj, sizeof (xattr_obj));
 	if (error == 0 && xattr_obj) {
-		error = zfs_zget(zfsvfs, xattr_obj, &xzp);
+		error = zfs_zget_ext(zfsvfs, xattr_obj, &xzp,
+		    ZGET_FLAG_WITHOUT_VNODE);
 		ASSERT(error == 0);
 	}
 
@@ -766,8 +767,14 @@ zfs_rmnode(znode_t *zp)
 
 	dmu_tx_commit(tx);
 out:
-	if (xzp)
-		VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)));
+	if (xzp) {
+		/* Only release object if we are the only user */
+		if (ZTOV(xzp) == NULL)
+			zfs_zinactive(xzp);
+		else
+			VN_RELE_ASYNC(ZTOV(xzp), dsl_pool_vnrele_taskq(
+			    dmu_objset_pool(zfsvfs->z_os)));
+	}
 }
 
 static uint64_t
