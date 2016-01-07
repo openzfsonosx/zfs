@@ -197,6 +197,8 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 		ZFS_ENTER_NOERROR(zfsvfs);
 		if (zfsvfs->z_unmounted) goto out;
 
+		if (zfs_vnop_create_negatives < 3) goto out;
+
 		/* Check if space usage has changed sufficiently to bother updating */
 		uint64_t refdbytes, availbytes, usedobjs, availobjs;
 		uint64_t delta;
@@ -221,6 +223,8 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 			goto out;
 
 		dprintf("ZFS: findernotify space delta %llu\n", mp, delta);
+
+		if (zfs_vnop_create_negatives < 4) goto out;
 
 		// Grab the root zp
 		if (!VFS_ROOT(mp, 0, &rootvp)) {
@@ -247,7 +251,8 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 				// Fill in vap
 				vnode_getattr(vp, &vattr, kernelctx);
 				// Send event
-				spl_vnode_notify(vp, VNODE_EVENT_ATTRIB, &vattr);
+				if (zfs_vnop_create_negatives >= 5)
+					spl_vnode_notify(vp, VNODE_EVENT_ATTRIB, &vattr);
 
 				// Cleanup vp
 				vnode_put(vp);
@@ -286,8 +291,11 @@ zfs_findernotify_thread(void *notused)
 							&zfs_findernotify_lock, ddi_get_lbolt() + (hz<<5));
 		CALLB_CPR_SAFE_END(&cpr, &zfs_findernotify_lock);
 
+
+		if (zfs_vnop_create_negatives >= 2) {
 		if (!zfs_findernotify_thread_exit)
 			vfs_iterate(LK_NOWAIT, zfs_findernotify_callback, NULL);
+		}
 
 	}
 
