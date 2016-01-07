@@ -106,7 +106,7 @@
 #endif /* __APPLE__ */
 
 //#define dprintf kprintf
-//#define dprintf printf
+#define dprintf printf
 
 #ifdef __APPLE__
 

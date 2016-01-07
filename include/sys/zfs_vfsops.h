@@ -110,6 +110,9 @@ struct zfsvfs {
 #ifdef APPLE_SA_RECOVER
 	    uint64_t        z_recover_parent;/* Temporary holder until SA corruption are gone */
 #endif /* APPLE_SA_RECOVER */
+
+	    uint64_t        z_findernotify_space;
+
 #endif
     	uint64_t	    z_userquota_obj;
         uint64_t	    z_groupquota_obj;

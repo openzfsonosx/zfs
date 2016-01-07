@@ -41,7 +41,7 @@ zfs.fs$(EXEEXT): zfs $(EN_INFO_PLIST_STRINGS) $(INFO_PLIST) $(PKGINFO)
 install-exec-local:: zfs.fs
 	rm -f $(FS_BUNDLEDIR)/Contents/$(PKGINFO)
 	rm -f $(FS_BUNDLEDIR)/Contents/$(INFO_PLIST)
-	rm -f $(FS_BUNDLEDIR)/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS)
+	rm -f $(FS_BUNDLEDIR)/Contents/Resources/English.lproj/$(EN_INFO_PLIST_STRINGS)
 	mkdir -p $(FS_BUNDLEDIR)
 	rsync -aH zfs.fs/ $(FS_BUNDLEDIR)/
 	chown -R root:wheel $(FS_BUNDLEDIR) || echo "Unable to chown root:wheel in $(FS_BUNDLEDIR)"

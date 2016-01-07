@@ -160,6 +160,171 @@ zfs_vfs_quotactl(__unused struct mount *mp, __unused int cmds,
 	return (ENOTSUP);
 }
 
+static kmutex_t		zfs_findernotify_lock;
+static kcondvar_t	zfs_findernotify_thread_cv;
+static boolean_t	zfs_findernotify_thread_exit;
+
+#define VNODE_EVENT_ATTRIB              0x00000008
+
+static int
+zfs_findernotify_callback(mount_t mp, __unused void *arg)
+{
+	/* Do some quick checks to see if it is ZFS */
+	struct vfsstatfs *vsf = vfs_statfs(mp);
+
+	// Filesystem ZFS?
+	if (vsf->f_fssubtype == MNTTYPE_ZFS_SUBTYPE) {
+		vfs_context_t kernelctx = spl_vfs_context_kernel();
+		struct vnode *rootvp, *vp;
+
+		/* Since potentially other filesystems could be using "our"
+		 * fssubtype, and we don't always announce as "zfs" due to
+		 * hfs-mimic requirements, we have to make extra care here to
+		 * make sure this "mp" really is ZFS.
+		 */
+		zfsvfs_t *zfsvfs;
+
+		zfsvfs = vfs_fsprivate(mp);
+
+		/* The first entry in struct zfsvfs is the vfs ptr, so they
+		 * should be equal if it is ZFS
+		 */
+		if (!zfsvfs ||
+			(mp != zfsvfs->z_vfs))
+			return (VFS_RETURNED);
+
+		/* Guard against unmount */
+		ZFS_ENTER_NOERROR(zfsvfs);
+		if (zfsvfs->z_unmounted) goto out;
+
+		/* Check if space usage has changed sufficiently to bother updating */
+		uint64_t refdbytes, availbytes, usedobjs, availobjs;
+		uint64_t delta;
+		dmu_objset_space(zfsvfs->z_os,
+						 &refdbytes, &availbytes, &usedobjs, &availobjs);
+		if (availbytes >= zfsvfs->z_findernotify_space) {
+			delta = availbytes - zfsvfs->z_findernotify_space;
+		} else {
+			delta = zfsvfs->z_findernotify_space - availbytes;
+		}
+
+#define ZFS_FINDERNOTIFY_THRESHOLD (1ULL<<20)
+
+		/* Under the limit ? */
+		if (delta <= ZFS_FINDERNOTIFY_THRESHOLD) goto out;
+
+		/* Over threadhold, so we will notify finder, remember the value */
+		zfsvfs->z_findernotify_space = availbytes;
+
+		/* If old value is zero (first run), don't bother sending events */
+		if (availbytes == delta)
+			goto out;
+
+		dprintf("ZFS: findernotify space delta %llu\n", mp, delta);
+
+		// Grab the root zp
+		if (!VFS_ROOT(mp, 0, &rootvp)) {
+
+			struct componentname cn;
+			char *tmpname = ".Trashes";
+
+			bzero(&cn, sizeof(cn));
+			cn.cn_nameiop = LOOKUP;
+			cn.cn_flags = ISLASTCN;
+			//cn.cn_context = kernelctx;
+			cn.cn_pnbuf = tmpname;
+			cn.cn_pnlen = sizeof(tmpname);
+			cn.cn_nameptr = cn.cn_pnbuf;
+			cn.cn_namelen = strlen(tmpname);
+
+			// Attempt to lookup .Trashes
+			if (!VOP_LOOKUP(rootvp, &vp, &cn, kernelctx)) {
+
+				// Send the event to wake up Finder
+				struct vnode_attr vattr;
+				// Also calls VATTR_INIT
+				spl_vfs_get_notify_attributes(&vattr);
+				// Fill in vap
+				vnode_getattr(vp, &vattr, kernelctx);
+				// Send event
+				spl_vnode_notify(vp, VNODE_EVENT_ATTRIB, &vattr);
+
+				// Cleanup vp
+				vnode_put(vp);
+
+			} // VNOP_LOOKUP
+
+			// Cleanup rootvp
+			vnode_put(rootvp);
+
+		} // VFS_ROOT
+
+	  out:
+		ZFS_EXIT(zfsvfs);
+
+	} // SUBTYPE_ZFS
+
+	return (VFS_RETURNED);
+}
+
+
+static void
+zfs_findernotify_thread(void *notused)
+{
+	clock_t			growtime = 0;
+	callb_cpr_t		cpr;
+
+	dprintf("ZFS: findernotify thread start\n");
+	CALLB_CPR_INIT(&cpr, &zfs_findernotify_lock, callb_generic_cpr, FTAG);
+
+	mutex_enter(&zfs_findernotify_lock);
+	while (!zfs_findernotify_thread_exit) {
+
+		/* Sleep 32 seconds */
+		CALLB_CPR_SAFE_BEGIN(&cpr);
+		(void) cv_timedwait(&zfs_findernotify_thread_cv,
+							&zfs_findernotify_lock, ddi_get_lbolt() + (hz<<5));
+		CALLB_CPR_SAFE_END(&cpr, &zfs_findernotify_lock);
+
+		if (!zfs_findernotify_thread_exit)
+			vfs_iterate(LK_NOWAIT, zfs_findernotify_callback, NULL);
+
+	}
+
+	zfs_findernotify_thread_exit = FALSE;
+	cv_broadcast(&zfs_findernotify_thread_cv);
+	CALLB_CPR_EXIT(&cpr);		/* drops arc_reclaim_lock */
+	dprintf("ZFS: findernotify thread exit\n");
+	thread_exit();
+}
+
+void zfs_start_notify_thread(void)
+{
+	mutex_init(&zfs_findernotify_lock, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&zfs_findernotify_thread_cv, NULL, CV_DEFAULT, NULL);
+	zfs_findernotify_thread_exit = FALSE;
+	(void) thread_create(NULL, 0, zfs_findernotify_thread, NULL, 0, &p0,
+	    TS_RUN, minclsyspri);
+}
+
+
+void zfs_stop_notify_thread(void)
+{
+	mutex_enter(&zfs_findernotify_lock);
+	zfs_findernotify_thread_exit = TRUE;
+	/*
+	 * The reclaim thread will set arc_reclaim_thread_exit back to
+	 * FALSE when it is finished exiting; we're waiting for that.
+	 */
+	while (zfs_findernotify_thread_exit) {
+		cv_signal(&zfs_findernotify_thread_cv);
+		cv_wait(&zfs_findernotify_thread_cv, &zfs_findernotify_lock);
+	}
+	mutex_exit(&zfs_findernotify_lock);
+	mutex_destroy(&zfs_findernotify_lock);
+	cv_destroy(&zfs_findernotify_thread_cv);
+}
+
 
 
 /*
@@ -4280,6 +4445,9 @@ zfs_vfsops_init(void)
 
 	zfs_init();
 
+	/* Start thread to notify Finder of changes */
+	zfs_start_notify_thread();
+
 	vfe.vfe_vfsops = &zfs_vfsops_template;
 	vfe.vfe_vopcnt = ZFS_VNOP_TBL_CNT;
 	vfe.vfe_opvdescs = zfs_vnodeop_opv_desc_list;
@@ -4309,6 +4477,9 @@ zfs_vfsops_init(void)
 int
 zfs_vfsops_fini(void)
 {
+
+	zfs_stop_notify_thread();
+
 	zfs_fini();
 
 	return (vfs_fsremove(zfs_vfsconf));

@@ -37,6 +37,9 @@
 #include <sys/mntent.h>
 #include <mntent.h>
 
+#define ZS_COMMENT      0x00000000      /* comment */
+#define ZS_ZFSUTIL      0x00000001      /* caller is zfs(8) */
+
 libzfs_handle_t *g_zfs;
 
 typedef struct option_map {
@@ -347,6 +350,21 @@ mtab_update(char *dataset, char *mntpoint, char *type, char *mntopts)
 
 	return (MOUNT_SUCCESS);
 #endif
+}
+
+static void
+append_mntopt(const char *name, const char *val, char *mntopts,
+    char *mtabopt, boolean_t quote)
+{
+	char tmp[MNT_LINE_MAX];
+
+	snprintf(tmp, MNT_LINE_MAX, quote ? ",%s=\"%s\"" : ",%s=%s", name, val);
+
+	if (mntopts)
+		strlcat(mntopts, tmp, MNT_LINE_MAX);
+
+	if (mtabopt)
+		strlcat(mtabopt, tmp, MNT_LINE_MAX);
 }
 
 

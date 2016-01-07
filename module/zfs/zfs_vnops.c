@@ -2094,7 +2094,7 @@ top:
 		/*
 		 * Call recycle which will call vnop_reclaim directly if it can
 		 * so tell reclaim to not do anything with this node, so we can
-		 * release it directly. If recycl/reclaim didn't work out, defer
+		 * release it directly. If recycle/reclaim didn't work out, defer
 		 * it by placing it on the unlinked list.
 		 */
 

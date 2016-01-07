@@ -661,7 +661,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #endif
 
 		(void)rmdir(mountpoint);
-#if 0
+#if 1
 		if (mkdirp(mountpoint, 0755) != 0) {
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "failed to create mountpoint"));
