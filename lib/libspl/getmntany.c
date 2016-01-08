@@ -215,7 +215,11 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 	else
 		OPTADD(MNTOPT_RW);
 	if (flags & MNT_NOSUID)
+#ifdef __FreeBSD__
 		OPTADD(MNTOPT_NOSUID);
+#elif defined(__APPLE__)
+		OPTADD(MNTOPT_NOSETUID);
+#endif
 	else
 		OPTADD(MNTOPT_SETUID);
 	if (flags & MNT_UPDATE)
@@ -226,8 +230,7 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 		OPTADD(MNTOPT_ATIME);
 #ifdef __FreeBSD__
 	OPTADD(MNTOPT_NOXATTR);
-#endif
-#ifdef __APPLE__
+#elif defined(__APPLE__)
 		{
 			struct attrBufS attrBuf;
 			attrlist_t      attrList;
@@ -252,6 +255,11 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 		OPTADD(MNTOPT_NOEXEC);
 	else
 		OPTADD(MNTOPT_EXEC);
+#ifdef __APPLE__
+	if (flags & MNT_NODEV)
+		OPTADD(MNTOPT_NODEVICES);
+	else
+		OPTADD(MNTOPT_DEVICES);
 	if (flags & MNT_DONTBROWSE)
 		OPTADD(MNTOPT_NOBROWSE);
 	else
@@ -260,6 +268,7 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 		OPTADD(MNTOPT_NOOWNERS);
 	else
 		OPTADD(MNTOPT_OWNERS);
+#endif
 #undef	OPTADD
 	mp->mnt_special = sfs->f_mntfromname;
 	mp->mnt_mountp = sfs->f_mntonname;

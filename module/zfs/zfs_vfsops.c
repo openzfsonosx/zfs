@@ -571,6 +571,17 @@ readonly_changed_cb(void *arg, uint64_t newval)
 }
 
 static void
+devices_changed_cb(void *arg, uint64_t newval)
+{
+	zfsvfs_t *zfsvfs = arg;
+	if (newval == B_FALSE) {
+        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NODEV);
+	} else {
+        vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NODEV);
+	}
+}
+
+static void
 setuid_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
@@ -854,10 +865,8 @@ zfs_register_callbacks(struct mount *vfsp)
 	    zfs_prop_to_name(ZFS_PROP_RECORDSIZE), blksz_changed_cb, zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_READONLY), readonly_changed_cb, zfsvfs);
-#ifdef illumos
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_DEVICES), devices_changed_cb, zfsvfs);
-#endif
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_SETUID), setuid_changed_cb, zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
@@ -885,9 +894,6 @@ zfs_register_callbacks(struct mount *vfsp)
 	if (error)
 		goto unregister;
 
-	if (do_readonly)
-		readonly_changed_cb(zfsvfs, readonly);
-#if 0
 	/*
 	 * Invoke our callbacks to restore temporary mount options.
 	 */
@@ -897,14 +903,19 @@ zfs_register_callbacks(struct mount *vfsp)
 		setuid_changed_cb(zfsvfs, setuid);
 	if (do_exec)
 		exec_changed_cb(zfsvfs, exec);
+	if (do_devices)
+		devices_changed_cb(zfsvfs, devices);
 	if (do_xattr)
 		xattr_changed_cb(zfsvfs, xattr);
 	if (do_atime)
 		atime_changed_cb(zfsvfs, atime);
+#ifdef __APPLE__
 	if (do_finderbrowse)
 		finderbrowse_changed_cb(zfsvfs, finderbrowse);
 	if (do_ignoreowner)
 		ignoreowner_changed_cb(zfsvfs, ignoreowner);
+#endif
+#ifndef __APPLE__
 
 	nbmand_changed_cb(zfsvfs, nbmand);
 #endif
@@ -2027,7 +2038,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	int		error = 0;
 	int		canwrite;
 	int		mflag;
-	int		flags = 0;
+	uint64_t	flags = vfs_flags(vfsp);
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
