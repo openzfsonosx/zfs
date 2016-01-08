@@ -771,22 +771,28 @@ zfs_register_callbacks(struct mount *vfsp)
 	/*
 	 * Invoke our callbacks to restore temporary mount options.
 	 */
-	if (zmo->z_do_readonly)
-		readonly_changed_cb(zsb, zmo->z_readonly);
-	if (zmo->z_do_setuid)
-		setuid_changed_cb(zsb, zmo->z_setuid);
-	if (zmo->z_do_exec)
-		exec_changed_cb(zsb, zmo->z_exec);
-	if (zmo->z_do_devices)
-		devices_changed_cb(zsb, zmo->z_devices);
-	if (zmo->z_do_xattr)
-		xattr_changed_cb(zsb, zmo->z_xattr);
-	if (zmo->z_do_atime)
-		atime_changed_cb(zsb, zmo->z_atime);
-	if (zmo->z_do_relatime)
-		relatime_changed_cb(zsb, zmo->z_relatime);
-	if (zmo->z_do_nbmand)
-		nbmand_changed_cb(zsb, zmo->z_nbmand);
+	if (do_readonly)
+		readonly_changed_cb(zfsvfs, readonly);
+	if (do_setuid)
+		setuid_changed_cb(zfsvfs, setuid);
+	if (do_exec)
+		exec_changed_cb(zfsvfs, exec);
+	if (do_devices)
+		devices_changed_cb(zfsvfs, devices);
+	if (do_xattr)
+		xattr_changed_cb(zfsvfs, xattr);
+	if (do_atime)
+		atime_changed_cb(zfsvfs, atime);
+#ifdef __APPLE__
+	if (do_finderbrowse)
+		finderbrowse_changed_cb(zfsvfs, finderbrowse);
+	if (do_ignoreowner)
+		ignoreowner_changed_cb(zfsvfs, ignoreowner);
+#endif
+#ifndef __APPLE__
+
+	nbmand_changed_cb(zfsvfs, nbmand);
+#endif
 
 	return (0);
 
@@ -1939,7 +1945,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	char		*options = NULL;
 	int		error = 0;
 	int		canwrite;
-	int		mflag = 0;
+	int		mflag;
 	uint64_t	flags = vfs_flags(vfsp);
 
 #ifdef __APPLE__
