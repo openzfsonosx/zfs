@@ -31,7 +31,6 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Portions Copyright 2013 Jorgen Lundman <lundman@lundman.net>
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
- * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
 #define __APPLE_API_PRIVATE
