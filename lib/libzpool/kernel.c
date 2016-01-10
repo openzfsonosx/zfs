@@ -1278,6 +1278,10 @@ crgetgroups(cred_t *cr)
 	return (NULL);
 }
 
+void
+crgetgroupsfree(gid_t *gids)
+{}
+
 int
 zfs_secpolicy_snapshot_perms(const char *name, cred_t *cr)
 {

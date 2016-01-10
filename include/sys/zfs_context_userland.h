@@ -278,6 +278,7 @@ extern uid_t crgetruid(cred_t *cr);
 extern gid_t crgetgid(cred_t *cr);
 extern int crgetngroups(cred_t *cr);
 extern gid_t *crgetgroups(cred_t *cr);
+extern void  crgetgroupsfree(gid_t *);
 
 /*
  * Condition variables
