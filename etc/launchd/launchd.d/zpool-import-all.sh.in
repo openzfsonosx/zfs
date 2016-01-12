@@ -32,7 +32,7 @@ sleep 10
 echo "Running zpool import -a"
 date
 
-"${ZPOOL}" import -a
+"${ZPOOL}" import -a -d /var/run/disk/by-id
 ret=$?
 
 date
