@@ -1418,6 +1418,7 @@ again:
 		 * should never find a sa handle that doesn't
 		 * know about the znode.
 		 */
+		ASSERT3P(zp, !=, NULL);
 
 		mutex_enter(&zp->z_lock);
 
@@ -1435,7 +1436,6 @@ again:
 		 * should never find a dbuf with a znode that doesn't
 		 * know about the dbuf.
 		 */
-		ASSERT3P(zp->z_dbuf, ==, db);
 		ASSERT3U(zp->z_id, ==, obj_num);
 
 		/*
