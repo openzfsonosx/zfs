@@ -1744,7 +1744,8 @@ dmu_sync_done(zio_t *zio, arc_buf_t *buf, void *varg)
 
 			ASSERT(BP_EQUAL(bp, bp_orig));
 			ASSERT(zio->io_prop.zp_compress != ZIO_COMPRESS_OFF);
-			ASSERT(zio_checksum_table[chksum].ci_dedup);
+			ASSERT(zio_checksum_table[chksum].ci_flags &
+				   ZCHECKSUM_FLAG_NOPWRITE);
 		}
 		dr->dt.dl.dr_overridden_by = *zio->io_bp;
 		dr->dt.dl.dr_override_state = DR_OVERRIDDEN;

@@ -1755,7 +1755,7 @@ arc_change_state(arc_state_t *new_state, arc_buf_hdr_t *hdr,
 			(void) refcount_remove_many(&old_state->arcs_size,
 			    hdr->b_size, hdr);
 		} else {
-			ASSERT3P(datacnt, !=, 0);
+			ASSERT3U(datacnt, !=, 0);
 
 			/*
 			 * Each individual buffer holds a unique reference,

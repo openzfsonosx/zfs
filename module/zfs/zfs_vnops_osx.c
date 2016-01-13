@@ -2705,7 +2705,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	znode_t	*zp = NULL;
 	zfsvfs_t *zfsvfs = NULL;
 	boolean_t fastpath;
-	ASSERT(zp != NULL);
 
 
 	/* Destroy the vm object and flush associated pages. */
@@ -2715,6 +2714,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 	/* Already been released? */
 	zp = VTOZ(vp);
+	ASSERT(zp != NULL);
 	dprintf("+vnop_reclaim zp %p/%p type %d\n", zp, vp, vnode_vtype(vp));
 	if (!zp) goto out;
 
