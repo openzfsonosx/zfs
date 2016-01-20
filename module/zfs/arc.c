@@ -5280,7 +5280,7 @@ arc_init(void)
 	arc_c_min = MAX(allmem / 32, 64 << 20);
 	/* set max to 1/4 of all memory, or all but 3GB, whichever is more */
 	if (allmem >= 1 << 30)
-		arc_c_max = allmem - (3 << 30);
+		arc_c_max = allmem - (3ULL << 30);
 	else
 		arc_c_max = arc_c_min;
 	arc_c_max = MAX(allmem * 1 / 4, arc_c_max);
