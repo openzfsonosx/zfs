@@ -5410,7 +5410,7 @@ arc_init(void)
 	/* set min cache to 1/32 of all memory, or 64MB, whichever is more */
 	arc_c_min = MAX(allmem / 32, 64 << 20);
 	/* set max to 1/4 of all memory, or all but 3GB, whichever is more */
-	if (allmem >= 1 << 30)
+	if (allmem >= 3ULL << 30)
 		arc_c_max = allmem - (3ULL << 30);
 	else
 		arc_c_max = arc_c_min;
