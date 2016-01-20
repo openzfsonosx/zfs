@@ -5278,12 +5278,12 @@ arc_init(void)
 
 	/* set min cache to 1/32 of all memory, or 64MB, whichever is more */
 	arc_c_min = MAX(allmem / 32, 64 << 20);
-	/* set max to 1/4 of all memory, or all but 3GB, whichever is more */
-	if (allmem >= 3ULL << 30)
-		arc_c_max = allmem - (3ULL << 30);
+	/* set max to 3/4 of all memory, or all but 1GB, whichever is more */
+	if (allmem >= 1 << 30)
+		arc_c_max = allmem - (1 << 30);
 	else
 		arc_c_max = arc_c_min;
-	arc_c_max = MAX(allmem * 1 / 4, arc_c_max);
+	arc_c_max = MAX(allmem * 3 / 4, arc_c_max);
 
 	/*
 	 * In userland, there's only the memory pressure that we artificially
