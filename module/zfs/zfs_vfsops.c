@@ -2821,7 +2821,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	 * hashes. Use the MSB set high as indicator.
 	 */
 	hardlinks_t *findnode = NULL;
-	if ((1<<31) & ino) {
+	if ((1ULL<<31) & ino) {
 		hardlinks_t searchnode;
 		avl_index_t loc;
 
