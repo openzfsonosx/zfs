@@ -615,8 +615,6 @@ extern void kernel_init(int);
 extern void kernel_fini(void);
 extern void thread_init(void);
 extern void thread_fini(void);
-extern void random_init(void);
-extern void random_fini(void);
 
 struct spa;
 extern void nicenum(uint64_t num, char *buf);
