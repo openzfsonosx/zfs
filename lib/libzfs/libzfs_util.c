@@ -1051,6 +1051,9 @@ zfs_resolve_shortname(const char *name, char *path, size_t len)
 		}
 		free(envdup);
 	} else {
+		(void) snprintf(path, len, DISK_ROOT"/%s", name);
+		if ((error = access(path, F_OK)) == 0)
+			goto out;
 		for (i = 0; i < DEFAULT_IMPORT_PATH_SIZE && error < 0; i++) {
 			(void) snprintf(path, len, "%s/%s",
 			    zpool_default_import_path[i], name);
@@ -1058,6 +1061,7 @@ zfs_resolve_shortname(const char *name, char *path, size_t len)
 		}
 	}
 
+out:
 	return (error ? ENOENT : 0);
 }
 
