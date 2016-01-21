@@ -742,7 +742,6 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 	    BP_IS_HOLE(db->db_blkptr)))) {
 		arc_buf_contents_t type = DBUF_GET_BUFC_TYPE(db);
 
-		DB_DNODE_EXIT(db);
 		dbuf_set_data(db, arc_buf_alloc(db->db_objset->os_spa,
 		    db->db.db_size, db, type));
 		bzero(db->db.db_data, db->db.db_size);
@@ -755,14 +754,19 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 				DB_DNODE(db)->dn_indblkshift) / sizeof (blkptr_t));
 				i++) {
 				blkptr_t *bp = &bps[i];
-				BP_SET_LSIZE(bp, BP_GET_LSIZE(db->db_blkptr));
+				ASSERT3U(BP_GET_LSIZE(db->db_blkptr), ==,
+					1 << dn->dn_indblkshift);
+				BP_SET_LSIZE(bp,
+					BP_GET_LEVEL(db->db_blkptr) == 1 ?
+					dn->dn_datablksz :
+					BP_GET_LSIZE(db->db_blkptr));
 				BP_SET_TYPE(bp, BP_GET_TYPE(db->db_blkptr));
 				BP_SET_LEVEL(bp,
 							 BP_GET_LEVEL(db->db_blkptr) - 1);
 				BP_SET_BIRTH(bp, db->db_blkptr->blk_birth, 0);
 			}
 		}
-
+		DB_DNODE_EXIT(db);
 		db->db_state = DB_CACHED;
 		mutex_exit(&db->db_mtx);
 		return (0);
