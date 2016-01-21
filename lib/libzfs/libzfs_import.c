@@ -19,9 +19,9 @@
  * CDDL HEADER END
  */
 /*
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -203,8 +203,10 @@ fix_paths(nvlist_t *nv, name_entry_t *names)
 	if ((devid = get_devid(best->ne_name)) == NULL) {
 		(void) nvlist_remove_all(nv, ZPOOL_CONFIG_DEVID);
 	} else {
-		if (nvlist_add_string(nv, ZPOOL_CONFIG_DEVID, devid) != 0)
+		if (nvlist_add_string(nv, ZPOOL_CONFIG_DEVID, devid) != 0) {
+			devid_str_free(devid);
 			return (-1);
+		}
 		devid_str_free(devid);
 	}
 
@@ -680,8 +682,10 @@ get_configs(libzfs_handle_t *hdl, pool_list_t *pl, boolean_t active_ok)
 				    nvlist_add_uint64(holey,
 				    ZPOOL_CONFIG_ID, c) != 0 ||
 				    nvlist_add_uint64(holey,
-				    ZPOOL_CONFIG_GUID, 0ULL) != 0)
+				    ZPOOL_CONFIG_GUID, 0ULL) != 0) {
+					nvlist_free(holey);
 					goto nomem;
+				}
 				child[c] = holey;
 			}
 		}
@@ -1442,7 +1446,6 @@ static nvlist_t *
 zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 {
 	int i, dirs = iarg->paths;
-	DIR *dirp = NULL;
 	struct dirent *dp;
 	char path[MAXPATHLEN];
 	char *end, **dir = iarg->path;
@@ -1483,6 +1486,8 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 		taskq_t *t;
 		char *rdsk;
 		int dfd;
+		boolean_t config_failed = B_FALSE;
+		DIR *dirp;
 
 		/* use realpath to normalize the path */
 		if (realpath(dir[i], path) == 0) {
@@ -1513,6 +1518,8 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 
 		if ((dfd = open(rdsk, O_RDONLY)) < 0 ||
 		    (dirp = fdopendir(dfd)) == NULL) {
+			if (dfd >= 0)
+				(void) close(dfd);
 			zfs_error_aux(hdl, strerror(errno));
 			(void) zfs_error_fmt(hdl, EZFS_BADPATH,
 			    dgettext(TEXT_DOMAIN, "cannot open '%s'"),
@@ -1564,7 +1571,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 		cookie = NULL;
 		while ((slice = avl_destroy_nodes(&slice_cache,
 		    &cookie)) != NULL) {
-			if (slice->rn_config != NULL) {
+			if (slice->rn_config != NULL && !config_failed) {
 				nvlist_t *config = slice->rn_config;
 				boolean_t matched = B_TRUE;
 
@@ -1585,14 +1592,16 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 				}
 				if (!matched) {
 					nvlist_free(config);
-					config = NULL;
-					continue;
+				} else {
+					/*
+					 * use the non-raw path for the config
+					 */
+					(void) strlcpy(end, slice->rn_name,
+					    pathleft);
+					if (add_config(hdl, &pools, path, i+1,
+					    slice->rn_num_labels, config) != 0)
+						config_failed = B_TRUE;
 				}
-				/* use the non-raw path for the config */
-				(void) strlcpy(end, slice->rn_name, pathleft);
-				if (add_config(hdl, &pools, path, i+1,
-				    slice->rn_num_labels, config))
-					goto error;
 			}
 			free(slice->rn_name);
 			free(slice);
@@ -1600,7 +1609,9 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 		avl_destroy(&slice_cache);
 
 		(void) closedir(dirp);
-		dirp = NULL;
+
+		if (config_failed)
+			goto error;
 	}
 
 #ifdef HAVE_LIBBLKID
@@ -1626,13 +1637,9 @@ error:
 
 	for (ne = pools.names; ne != NULL; ne = nenext) {
 		nenext = ne->ne_next;
-		if (ne->ne_name)
-			free(ne->ne_name);
+		free(ne->ne_name);
 		free(ne);
 	}
-
-	if (dirp)
-		(void) closedir(dirp);
 
 	return (ret);
 }
@@ -1991,9 +1998,9 @@ zpool_in_use(libzfs_handle_t *hdl, int fd, pool_state_t *state, char **namestr,
 		cb.cb_type = ZPOOL_CONFIG_SPARES;
 		if (zpool_iter(hdl, find_aux, &cb) == 1) {
 			name = (char *)zpool_get_name(cb.cb_zhp);
-			ret = TRUE;
+			ret = B_TRUE;
 		} else {
-			ret = FALSE;
+			ret = B_FALSE;
 		}
 		break;
 
@@ -2007,9 +2014,9 @@ zpool_in_use(libzfs_handle_t *hdl, int fd, pool_state_t *state, char **namestr,
 		cb.cb_type = ZPOOL_CONFIG_L2CACHE;
 		if (zpool_iter(hdl, find_aux, &cb) == 1) {
 			name = (char *)zpool_get_name(cb.cb_zhp);
-			ret = TRUE;
+			ret = B_TRUE;
 		} else {
-			ret = FALSE;
+			ret = B_FALSE;
 		}
 		break;
 
