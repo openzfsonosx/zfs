@@ -1417,12 +1417,17 @@ zpool_default_import_path[DEFAULT_IMPORT_PATH_SIZE] = {
 	"/dev/disk/by-id",	/* May be multiple entries and persistent */
 	"/dev/disk/by-path",	/* Encodes physical location and persistent */
 	"/dev/disk/by-label",	/* Custom persistent labels */
+	"/dev"			/* UNSAFE device names will change */
 #elif defined(__APPLE__)
 	"/private/var/run/disk/by-id",
 	"/private/var/run/disk/by-path",
+#ifndef __UNSAFE_DEFAULT_IMPORT_PATH__
+	"/private/var/run/disk/by-serial"
+#else
 	"/private/var/run/disk/by-serial",
-#endif /* __LINUX__ */
 	"/dev"			/* UNSAFE device names will change */
+#endif /* !__UNSAFE_DEFAULT_IMPORT_PATH__ */
+#endif /* __LINUX__ */
 };
 
 
