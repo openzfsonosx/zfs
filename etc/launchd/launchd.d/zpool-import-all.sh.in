@@ -7,6 +7,13 @@ export ZPOOL_IMPORT_ALL_COOKIE=/var/run/org.openzfsonosx.zpool-import-all.didRun
 export INVARIANT_DISKS_IDLE_FILE=/var/run/disk/invariant.idle
 export TIMEOUT_SECONDS=60
 export MAXIMUM_SLEEP_ITERATIONS=$((${TIMEOUT_SECONDS} * 10))
+export CACHEFILE=@sysconfdir@/zfs/zpool.cache
+
+if [ ! -f "${CACHEFILE}" ]
+then
+	echo "-zpool-import-all.sh 1"
+	exit 1
+fi
 
 2>&1 /usr/bin/time /usr/sbin/system_profiler SPParallelATADataType SPCardReaderDataType SPFibreChannelDataType SPFireWireDataType SPHardwareRAIDDataType SPNetworkDataType SPPCIDataType SPParallelSCSIDataType SPSASDataType SPSerialATADataType SPStorageDataType SPThunderboltDataType SPUSBDataType SPNetworkVolumeDataType 1>/dev/null
 /bin/sync
@@ -29,19 +36,19 @@ fi
 date
 
 sleep 10
-echo "Running zpool import -a"
+echo "Running zpool import -c ${CACHEFILE} -a"
 date
 
-"${ZPOOL}" import -a
+"${ZPOOL}" import -c "${CACHEFILE}" -a
 ret=$?
 
 date
-echo "Finished running zpool import -a : ${ret}"
+echo "Finished running zpool import -c "${CACHEFILE}" -a : ${ret}"
 
 echo "Touching the file ${ZPOOL_IMPORT_ALL_COOKIE}"
 touch "${ZPOOL_IMPORT_ALL_COOKIE}"
 
 date
-echo "-zpool-import-all.sh"
+echo "-zpool-import-all.sh 0"
 
 exit 0

@@ -75,7 +75,7 @@ int zfs_util_debug = 0;
 
 #define	printf	zfs_util_log
 
-#define ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
+#define ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY 1
 
 const char *progname;
 libzfs_handle_t *g_zfs;
