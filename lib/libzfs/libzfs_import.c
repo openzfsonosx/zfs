@@ -19,10 +19,9 @@
  * CDDL HEADER END
  */
 /*
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
- * Copyright 2015 RackTop Systems.
- * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright (c) 2012 by Delphix. All rights reserved.
  */
 
 /*
@@ -1682,7 +1681,6 @@ static nvlist_t *
 zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 {
 	int i, dirs = iarg->paths;
-	DIR *dirp = NULL;
 	struct dirent *dp;
 	char path[MAXPATHLEN];
 	char *end, **dir = iarg->path;
@@ -1808,7 +1806,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 		cookie = NULL;
 		while ((slice = avl_destroy_nodes(&slice_cache,
 		    &cookie)) != NULL) {
-			if (slice->rn_config != NULL) {
+			if (slice->rn_config != NULL && !config_failed) {
 				nvlist_t *config = slice->rn_config;
 				boolean_t matched = B_TRUE;
 
@@ -1839,11 +1837,6 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 					    slice->rn_num_labels, config) != 0)
 						config_failed = B_TRUE;
 				}
-				/* use the non-raw path for the config */
-				(void) strlcpy(end, slice->rn_name, pathleft);
-				if (add_config(hdl, &pools, path, i+1,
-				    slice->rn_num_labels, config))
-					goto error;
 			}
 			free(slice->rn_name);
 			free(slice);
