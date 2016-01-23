@@ -122,19 +122,6 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_free_max_blocks;
 	kstat_named_t zfs_free_bpobj_enabled;
 
-	kstat_named_t zfs_send_corrupt_data;
-	kstat_named_t zfs_send_queue_length;
-	kstat_named_t zfs_recv_queue_length;
-
-	kstat_named_t zfs_vdev_mirror_rotating_inc;
-	kstat_named_t zfs_vdev_mirror_rotating_seek_inc;
-	kstat_named_t zfs_vdev_mirror_rotating_seek_offset;
-	kstat_named_t zfs_vdev_mirror_non_rotating_inc;
-	kstat_named_t zfs_vdev_mirror_non_rotating_seek_inc;
-
-	kstat_named_t zvol_inhibit_dev;
-	kstat_named_t zfs_send_set_freerecords_bit;
-
 	kstat_named_t zfs_write_implies_delete_child;
 	kstat_named_t zfs_send_holes_without_birth_time;
 } osx_kstat_t;
@@ -212,20 +199,6 @@ extern int zfs_scan_idle;
 extern uint64_t zfs_free_max_blocks;
 extern int64_t zfs_free_bpobj_enabled;
 
-extern int zfs_send_corrupt_data;
-extern int zfs_send_queue_length;
-extern int zfs_recv_queue_length;
-
-extern uint64_t zfs_vdev_mirror_rotating_inc;
-extern uint64_t zfs_vdev_mirror_rotating_seek_inc;
-extern uint64_t zfs_vdev_mirror_rotating_seek_offset;
-extern uint64_t zfs_vdev_mirror_non_rotating_inc;
-extern uint64_t zfs_vdev_mirror_non_rotating_seek_inc;
-extern uint64_t zvol_inhibit_dev;
-extern uint64_t zfs_send_set_freerecords_bit;
-
-extern uint64_t zfs_write_implies_delete_child;
-extern uint64_t send_holes_without_birth_time;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);

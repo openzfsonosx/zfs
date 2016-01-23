@@ -149,6 +149,9 @@ osx_kstat_t osx_kstat = {
 	{"zfs_scan_idle",				KSTAT_DATA_INT64  },
 
 	{"zfs_recover",					KSTAT_DATA_INT64  },
+
+	{"zfs_free_max_blocks",				KSTAT_DATA_UINT64  },
+	{"zfs_free_bpobj_enabled",			KSTAT_DATA_INT64  },
 };
 
 
@@ -310,34 +313,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		zfs_free_bpobj_enabled	 =
 			ks->zfs_free_bpobj_enabled.value.i64;
 
-		zfs_send_corrupt_data =
-			ks->zfs_send_corrupt_data.value.ui64;
-		zfs_send_queue_length =
-			ks->zfs_send_queue_length.value.ui64;
-		zfs_recv_queue_length =
-			ks->zfs_recv_queue_length.value.ui64;
-
-		zfs_vdev_mirror_rotating_inc =
-			ks->zfs_vdev_mirror_rotating_inc.value.ui64;
-		zfs_vdev_mirror_rotating_seek_inc =
-			ks->zfs_vdev_mirror_rotating_seek_inc.value.ui64;
-		zfs_vdev_mirror_rotating_seek_offset =
-			ks->zfs_vdev_mirror_rotating_seek_offset.value.ui64;
-		zfs_vdev_mirror_non_rotating_inc =
-			ks->zfs_vdev_mirror_non_rotating_inc.value.ui64;
-		zfs_vdev_mirror_non_rotating_seek_inc =
-			ks->zfs_vdev_mirror_non_rotating_seek_inc.value.ui64;
-
-		zvol_inhibit_dev =
-			ks->zvol_inhibit_dev.value.ui64;
-		zfs_send_set_freerecords_bit =
-			ks->zfs_send_set_freerecords_bit.value.ui64;
-
-		zfs_write_implies_delete_child =
-			ks->zfs_write_implies_delete_child.value.ui64;
-		send_holes_without_birth_time =
-			ks->zfs_send_holes_without_birth_time.value.ui64;
-
 	} else {
 
 		/* kstat READ */
@@ -488,34 +463,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			zfs_free_max_blocks;
 		ks->zfs_free_bpobj_enabled.value.i64 =
 			zfs_free_bpobj_enabled;
-
-		ks->zfs_send_corrupt_data.value.ui64 =
-			zfs_send_corrupt_data;
-		ks->zfs_send_queue_length.value.ui64 =
-			zfs_send_queue_length;
-		ks->zfs_recv_queue_length.value.ui64 =
-			zfs_recv_queue_length;
-
-		ks->zfs_vdev_mirror_rotating_inc.value.ui64 =
-			zfs_vdev_mirror_rotating_inc;
-		ks->zfs_vdev_mirror_rotating_seek_inc.value.ui64 =
-			zfs_vdev_mirror_rotating_seek_inc;
-		ks->zfs_vdev_mirror_rotating_seek_offset.value.ui64 =
-			zfs_vdev_mirror_rotating_seek_offset;
-		ks->zfs_vdev_mirror_non_rotating_inc.value.ui64 =
-			zfs_vdev_mirror_non_rotating_inc;
-		ks->zfs_vdev_mirror_non_rotating_seek_inc.value.ui64 =
-			zfs_vdev_mirror_non_rotating_seek_inc;
-
-		ks->zvol_inhibit_dev.value.ui64 =
-			zvol_inhibit_dev;
-		ks->zfs_send_set_freerecords_bit.value.ui64 =
-			zfs_send_set_freerecords_bit;
-
-		ks->zfs_write_implies_delete_child.value.ui64 =
-			zfs_write_implies_delete_child;
-		ks->zfs_send_holes_without_birth_time.value.ui64 =
-			send_holes_without_birth_time;
 	}
 
 	return 0;

@@ -21,7 +21,6 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
- * Copyright 2016 Gary Mills
  */
 
 #include <sys/dsl_scan.h>
@@ -1969,9 +1968,37 @@ dsl_scan(dsl_pool_t *dp, pool_scan_func_t func)
 	    dsl_scan_setup_sync, &func, 0, ZFS_SPACE_CHECK_NONE));
 }
 
-static boolean_t
-dsl_scan_restarting(dsl_scan_t *scn, dmu_tx_t *tx)
-{
-	return (scn->scn_restart_txg != 0 &&
-			scn->scn_restart_txg <= tx->tx_txg);
-}
+#if defined(_KERNEL) && defined(HAVE_SPL)
+module_param(zfs_top_maxinflight, int, 0644);
+MODULE_PARM_DESC(zfs_top_maxinflight, "Max I/Os per top-level");
+
+module_param(zfs_resilver_delay, int, 0644);
+MODULE_PARM_DESC(zfs_resilver_delay, "Number of ticks to delay resilver");
+
+module_param(zfs_scrub_delay, int, 0644);
+MODULE_PARM_DESC(zfs_scrub_delay, "Number of ticks to delay scrub");
+
+module_param(zfs_scan_idle, int, 0644);
+MODULE_PARM_DESC(zfs_scan_idle, "Idle window in clock ticks");
+
+module_param(zfs_scan_min_time_ms, int, 0644);
+MODULE_PARM_DESC(zfs_scan_min_time_ms, "Min millisecs to scrub per txg");
+
+module_param(zfs_free_min_time_ms, int, 0644);
+MODULE_PARM_DESC(zfs_free_min_time_ms, "Min millisecs to free per txg");
+
+module_param(zfs_resilver_min_time_ms, int, 0644);
+MODULE_PARM_DESC(zfs_resilver_min_time_ms, "Min millisecs to resilver per txg");
+
+module_param(zfs_no_scrub_io, int, 0644);
+MODULE_PARM_DESC(zfs_no_scrub_io, "Set to disable scrub I/O");
+
+module_param(zfs_no_scrub_prefetch, int, 0644);
+MODULE_PARM_DESC(zfs_no_scrub_prefetch, "Set to disable scrub prefetching");
+
+module_param(zfs_free_max_blocks, ulong, 0644);
+MODULE_PARM_DESC(zfs_free_max_blocks, "Max number of blocks freed in one txg");
+
+module_param(zfs_free_bpobj_enabled, int, 0644);
+MODULE_PARM_DESC(zfs_free_bpobj_enabled, "Enable processing of the free_bpobj");
+#endif
