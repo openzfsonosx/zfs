@@ -165,6 +165,7 @@ osx_kstat_t osx_kstat = {
 	{"zfs_vdev_mirror_non_rotating_seek_inc",KSTAT_DATA_UINT64  },
 
 	{"zvol_inhibit_dev",KSTAT_DATA_UINT64  },
+	{"zfs_send_set_freerecords_bit",KSTAT_DATA_UINT64  },
 
 };
 
@@ -348,6 +349,8 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		zvol_inhibit_dev =
 			ks->zvol_inhibit_dev.value.ui64;
+		zfs_send_set_freerecords_bit =
+			ks->zfs_send_set_freerecords_bit.value.ui64;
 
 	} else {
 
@@ -521,6 +524,8 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		ks->zvol_inhibit_dev.value.ui64 =
 			zvol_inhibit_dev;
+		ks->zfs_send_set_freerecords_bit.value.ui64 =
+			zfs_send_set_freerecords_bit;
 	}
 
 	return 0;
