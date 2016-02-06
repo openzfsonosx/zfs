@@ -1705,7 +1705,7 @@ zvol_read(dev_t dev, struct uio *uio, int p)
 		if (bytes > volsize - uio_offset(uio))
 			bytes = volsize - uio_offset(uio);
 
-		error =  dmu_read_uio(zv->zv_objset, ZVOL_OBJ, uio, bytes);
+		error = dmu_read_uio_dbuf(zv->zv_dbuf, uio, bytes);
 		if (error) {
 			/* convert checksum errors into IO errors */
 			if (error == ECKSUM)
@@ -1821,7 +1821,7 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t position,
 		    "zvol_read_iokit: position",
 		    position, offset, count, bytes);
 
-		error =  dmu_read_iokit(zv->zv_objset, ZVOL_OBJ, &offset,
+		error =  dmu_read_iokit_dbuf(zv->zv_dbuf, ZVOL_OBJ, &offset,
 		    position, &bytes, iomem);
 
 		if (error) {
