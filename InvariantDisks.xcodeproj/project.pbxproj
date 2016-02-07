@@ -23,6 +23,7 @@
 		70C63F55190D4A4300929DAE /* IDMediaPathLinker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F53190D4A4300929DAE /* IDMediaPathLinker.cpp */; };
 		70C63F58190D574000929DAE /* IDFileUtils.mm in Sources */ = {isa = PBXBuildFile; fileRef = 70C63F56190D574000929DAE /* IDFileUtils.mm */; };
 		70C63F5A190D713B00929DAE /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70C63F59190D713B00929DAE /* IOKit.framework */; };
+		70C9002E1C6780EF001A40C8 /* IDImagePathLinker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70C9002C1C6780EF001A40C8 /* IDImagePathLinker.cpp */; };
 		70D4742E1BDD0E4200929DAE /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70D4742D1BDD0E4200929DAE /* Foundation.framework */; };
 		70D474311BDD17E800929DAE /* IDSymlinkHandle.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70D4742F1BDD17E800929DAE /* IDSymlinkHandle.cpp */; };
 		70D474371BDD21E100929DAE /* IDBaseLinker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70D474351BDD21E100929DAE /* IDBaseLinker.cpp */; };
@@ -71,6 +72,8 @@
 		70C63F56190D574000929DAE /* IDFileUtils.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = IDFileUtils.mm; sourceTree = "<group>"; };
 		70C63F57190D574000929DAE /* IDFileUtils.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDFileUtils.hpp; sourceTree = "<group>"; };
 		70C63F59190D713B00929DAE /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
+		70C9002C1C6780EF001A40C8 /* IDImagePathLinker.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDImagePathLinker.cpp; sourceTree = "<group>"; };
+		70C9002D1C6780EF001A40C8 /* IDImagePathLinker.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDImagePathLinker.hpp; sourceTree = "<group>"; };
 		70D4742D1BDD0E4200929DAE /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		70D4742F1BDD17E800929DAE /* IDSymlinkHandle.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = IDSymlinkHandle.cpp; sourceTree = "<group>"; };
 		70D474301BDD17E800929DAE /* IDSymlinkHandle.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = IDSymlinkHandle.hpp; sourceTree = "<group>"; };
@@ -133,6 +136,8 @@
 				700AE3C81915139C00929DAE /* IDUUIDLinker.hpp */,
 				700AE3CA191530A000929DAE /* IDSerialLinker.cpp */,
 				700AE3CB191530A000929DAE /* IDSerialLinker.hpp */,
+				70C9002C1C6780EF001A40C8 /* IDImagePathLinker.cpp */,
+				70C9002D1C6780EF001A40C8 /* IDImagePathLinker.hpp */,
 				70C63F49190D1AEF00929DAE /* IDDiskArbitrationDispatcher.cpp */,
 				70C63F4A190D1AEF00929DAE /* IDDiskArbitrationDispatcher.hpp */,
 				70C63F56190D574000929DAE /* IDFileUtils.mm */,
@@ -237,6 +242,7 @@
 				704C39201A3C777F00929DAE /* IDDispatchUtils.cpp in Sources */,
 				704C39231A3C7E9600929DAE /* IDDAHandlerIdle.cpp in Sources */,
 				70C63F35190CF87400929DAE /* IDException.cpp in Sources */,
+				70C9002E1C6780EF001A40C8 /* IDImagePathLinker.cpp in Sources */,
 				70D474311BDD17E800929DAE /* IDSymlinkHandle.cpp in Sources */,
 				707E3F0E1B6CDC2400929DAE /* IDASLUtils.cpp in Sources */,
 				70D474371BDD21E100929DAE /* IDBaseLinker.cpp in Sources */,
