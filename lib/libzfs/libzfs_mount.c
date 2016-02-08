@@ -154,19 +154,6 @@ is_shared(libzfs_handle_t *hdl, const char *mountpoint, zfs_share_proto_t proto)
 	char buf[MAXPATHLEN], *tab;
 	char *ptr, *path;
 
-#ifdef __APPLE__
-	// Check smb, since exports may not exist
-	if (proto == PROTO_SMB) {
-		if (smb_is_mountpoint_active(mountpoint))
-			return (SHARED_SMB);
-	}
-	// Check afp, since exports may not exist
-	if (proto == PROTO_AFP) {
-		if (afp_is_mountpoint_active(mountpoint))
-			return (SHARED_AFP);
-	}
-#endif
-
 	if (hdl->libzfs_sharetab == NULL)
 		return (SHARED_NOT_SHARED);
 
