@@ -1,7 +1,8 @@
 '\" te
-.\" Copyright (c) 2013 by Delphix. All rights reserved.
+.\" Copyright (c) 2012, 2015 by Delphix. All rights reserved.
 .\" Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
 .\" Copyright (c) 2014, Joyent, Inc. All rights reserved.
+.\" Copyright (c) 2014 Integros [integros.com]
 .\" The contents of this file are subject to the terms of the Common Development
 .\" and Distribution License (the "License").  You may not use this file except
 .\" in compliance with the License. You can obtain a copy of the license at
@@ -18,7 +19,6 @@
 .SH NAME
 zpool\-features \- ZFS pool feature descriptions
 .SH DESCRIPTION
-.sp
 .LP
 ZFS pool on\-disk format versions are specified via "features" which replace
 the old on\-disk format numbers (the last supported on\-disk format number is
@@ -36,7 +36,6 @@ format of the pool is specified by the set of all features marked as
 \fBactive\fR on the pool. If the pool was created by another software version
 this set may include unsupported features.
 .SS "Identifying features"
-.sp
 .LP
 Every feature has a guid of the form \fIcom.example:feature_name\fR. The reverse
 DNS name ensures that the feature's guid is unique across all ZFS
@@ -51,7 +50,6 @@ name is the portion of its guid which follows the ':' (e.g.
 however a feature's short name may differ across ZFS implementations if
 following the convention would result in name conflicts.
 .SS "Feature states"
-.sp
 .LP
 Features can be in one of three states:
 .sp
@@ -97,7 +95,6 @@ cannot be disabled once they have been enabled.
 The state of supported features is exposed through pool properties of the form
 \fIfeature@short_name\fR.
 .SS "Read\-only compatibility"
-.sp
 .LP
 Some features may make on\-disk format changes that do not interfere with other
 software's ability to read from the pool. These features are referred to as
@@ -106,7 +103,6 @@ compatible, the pool can be imported in read\-only mode by setting the
 \fBreadonly\fR property during import (see \fBzpool\fR(1M) for details on
 importing pools).
 .SS "Unsupported features"
-.sp
 .LP
 For each unsupported feature enabled on an imported pool a pool property
 named \fIunsupported@feature_guid\fR will indicate why the import was allowed
@@ -133,13 +129,11 @@ read\-only mode.
 .RE
 
 .SS "Feature dependencies"
-.sp
 .LP
 Some features depend on other features being enabled in order to function
 properly. Enabling a feature will automatically enable any features it
 depends on.
 .SH FEATURES
-.sp
 .LP
 The following features are supported on this system:
 .sp
@@ -243,8 +237,6 @@ giving approximately 10% better compression ratio.
 
 When the \fBlz4_compress\fR feature is set to \fBenabled\fR, the
 administrator can turn on \fBlz4\fR compression on any dataset on the
-pool using the \fBzfs\fR(8) command. Please note that doing so will
-immediately activate the \fBlz4_compress\fR feature on the underlying
 pool using the \fBzfs\fR(1M) command. Also, all newly written metadata
 will be compressed with \fBlz4\fR algorithm. Since this feature is not
 read-only compatible, this operation will render the pool unimportable
@@ -273,7 +265,28 @@ is organized within the pool. If this feature is \fBenabled\fR, ZFS will
 set this feature to \fBactive\fR when a new space map object is created or
 an existing space map is upgraded to the new format. Once the feature is
 \fBactive\fR, it will remain in that state until the pool is destroyed.
+.RE
 
+.sp
+.ne 2
+.na
+\fB\fBmulti_vdev_crash_dump\fR\fR
+.ad
+.RS 4n
+.TS
+l l .
+GUID	com.joyent:multi_vdev_crash_dump
+READ\-ONLY COMPATIBLE	no
+DEPENDENCIES	none
+.TE
+
+This feature allows a dump device to be configured with a pool comprised
+of multiple vdevs.  Those vdevs may be arranged in any mirrored or raidz
+configuration.
+
+When the \fBmulti_vdev_crash_dump\fR feature is set to \fBenabled\fR,
+the administrator can use the \fBdumpadm\fR(1M) command to configure a
+dump device on a pool comprised of multiple vdevs.
 .RE
 
 .sp
@@ -442,7 +455,7 @@ filesystems that have ever had their recordsize larger than 128KB are destroyed.
 l l .
 GUID	org.illumos:sha512
 READ\-ONLY COMPATIBLE	no
-DEPENDENCIES	extensible_dataset
+DEPENDENCIES	none
 .TE
 
 This feature enables the use of the SHA-512/256 truncated hash algorithm
@@ -475,7 +488,7 @@ the updated GRUB stage2 module is installed).
 l l .
 GUID	org.illumos:skein
 READ\-ONLY COMPATIBLE	no
-DEPENDENCIES	extensible_dataset
+DEPENDENCIES	none
 .TE
 
 This feature enables the use of the Skein hash algorithm for checksum
@@ -511,7 +524,7 @@ error.
 l l .
 GUID	org.illumos:edonr
 READ\-ONLY COMPATIBLE	no
-DEPENDENCIES	extensible_dataset
+DEPENDENCIES	none
 .TE
 
 This feature enables the use of the Edon-R hash algorithm for checksum,
@@ -542,4 +555,4 @@ Booting off of pools using \fBedonr\fR is \fBNOT\fR supported
 error.
 
 .SH "SEE ALSO"
-\fBzpool\fR(8)
+\fBzpool\fR(1M)
