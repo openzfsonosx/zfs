@@ -81,6 +81,7 @@ osx_kstat_t osx_kstat = {
 	{ "l2arc_write_boost",			KSTAT_DATA_UINT64 },
 	{ "l2arc_headroom",				KSTAT_DATA_UINT64 },
 	{ "l2arc_headroom_boost",		KSTAT_DATA_UINT64 },
+	{ "l2arc_max_block_size",		KSTAT_DATA_UINT64 },
 	{ "l2arc_feed_secs",			KSTAT_DATA_UINT64 },
 	{ "l2arc_feed_min_ms",			KSTAT_DATA_UINT64 },
 
@@ -191,6 +192,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		l2arc_write_boost = ks->l2arc_write_boost.value.ui64;
 		l2arc_headroom = ks->l2arc_headroom.value.ui64;
 		l2arc_headroom_boost = ks->l2arc_headroom_boost.value.ui64;
+		l2arc_max_block_size = ks->l2arc_max_block_size.value.ui64;
 		l2arc_feed_secs = ks->l2arc_feed_secs.value.ui64;
 		l2arc_feed_min_ms = ks->l2arc_feed_min_ms.value.ui64;
 
@@ -349,6 +351,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->l2arc_write_boost.value.ui64             = l2arc_write_boost;
 		ks->l2arc_headroom.value.ui64                = l2arc_headroom;
 		ks->l2arc_headroom_boost.value.ui64          = l2arc_headroom_boost;
+		ks->l2arc_max_block_size.value.ui64          = l2arc_max_block_size;
 		ks->l2arc_feed_secs.value.ui64               = l2arc_feed_secs;
 		ks->l2arc_feed_min_ms.value.ui64             = l2arc_feed_min_ms;
 

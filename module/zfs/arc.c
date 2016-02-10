@@ -585,6 +585,7 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_writes_done;
 	kstat_named_t arcstat_l2_writes_error;
 	kstat_named_t arcstat_l2_writes_lock_retry;
+	kstat_named_t arcstat_l2_writes_skip_toobig;
 	kstat_named_t arcstat_l2_evict_lock_retry;
 	kstat_named_t arcstat_l2_evict_reading;
 	kstat_named_t arcstat_l2_evict_l1cached;
@@ -673,6 +674,7 @@ static arc_stats_t arc_stats = {
 	{ "l2_writes_done",		KSTAT_DATA_UINT64 },
 	{ "l2_writes_error",		KSTAT_DATA_UINT64 },
 	{ "l2_writes_lock_retry",	KSTAT_DATA_UINT64 },
+	{ "l2_writes_skip_toobig",	KSTAT_DATA_UINT64 },
 	{ "l2_evict_lock_retry",	KSTAT_DATA_UINT64 },
 	{ "l2_evict_reading",		KSTAT_DATA_UINT64 },
 	{ "l2_evict_l1cached",		KSTAT_DATA_UINT64 },
@@ -979,6 +981,7 @@ uint64_t zfs_crc64_table[256];
 #define	L2ARC_HEADROOM_BOOST	200
 #define	L2ARC_FEED_SECS		1		/* caching interval secs */
 #define	L2ARC_FEED_MIN_MS	200		/* min caching interval ms */
+
 
 /*
  * Used to distinguish headers that are being process by
@@ -6026,7 +6029,20 @@ top:
 		 */
 		l2arc_release_cdata_buf(hdr);
 
-		if (zio->io_error != 0) {
+		/*
+		 * Skipped - drop L2ARC entry and mark the header as no
+		 * longer L2 eligibile.
+		 */
+		if (hdr->b_l2hdr.b_daddr == L2ARC_ADDR_UNSET) {
+			list_remove(buflist, hdr);
+			hdr->b_flags &= ~ARC_FLAG_HAS_L2HDR;
+			hdr->b_flags &= ~ARC_FLAG_L2CACHE;
+
+			ARCSTAT_BUMP(arcstat_l2_writes_skip_toobig);
+
+			(void) refcount_remove_many(&dev->l2ad_alloc,
+			    hdr->b_l2hdr.b_asize, hdr);
+		} else if (zio->io_error != 0) {
 			/*
 			 * Error - drop L2ARC entry.
 			 */
@@ -6571,6 +6587,16 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 		/* Compression may have squashed the buffer to zero length. */
 		if (buf_sz != 0) {
 			uint64_t buf_a_sz;
+
+			/*
+			 * Buffers which are larger than l2arc_max_block_size
+			 * after compression are skipped and removed from L2
+			 * eligibility.
+			 */
+			if (buf_sz > l2arc_max_block_size) {
+				hdr->b_l2hdr.b_daddr = L2ARC_ADDR_UNSET;
+				continue;
+			}
 
 			wzio = zio_write_phys(pio, dev->l2ad_vdev,
 			    dev->l2ad_hand, buf_sz, buf_data, ZIO_CHECKSUM_OFF,

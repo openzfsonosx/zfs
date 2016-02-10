@@ -50,6 +50,7 @@ typedef struct osx_kstat {
 	kstat_named_t l2arc_write_boost;
 	kstat_named_t l2arc_headroom;
 	kstat_named_t l2arc_headroom_boost;
+	kstat_named_t l2arc_max_block_size;
 	kstat_named_t l2arc_feed_secs;
 	kstat_named_t l2arc_feed_min_ms;
 
@@ -149,6 +150,7 @@ extern uint64_t l2arc_write_max;
 extern uint64_t l2arc_write_boost;
 extern uint64_t l2arc_headroom;
 extern uint64_t l2arc_headroom_boost;
+extern uint64_t l2arc_max_block_size;
 extern uint64_t l2arc_feed_secs;
 extern uint64_t l2arc_feed_min_ms;
 
