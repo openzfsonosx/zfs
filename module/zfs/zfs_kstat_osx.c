@@ -159,6 +159,12 @@ osx_kstat_t osx_kstat = {
 	{"zfs_send_queue_length",		KSTAT_DATA_UINT64  },
 	{"zfs_recv_queue_length",		KSTAT_DATA_UINT64  },
 
+	{"zfs_vdev_mirror_rotating_inc",		KSTAT_DATA_UINT64  },
+	{"zfs_vdev_mirror_rotating_seek_inc",	KSTAT_DATA_UINT64  },
+	{"zfs_vdev_mirror_rotating_seek_offset",KSTAT_DATA_UINT64  },
+	{"zfs_vdev_mirror_non_rotating_inc",	KSTAT_DATA_UINT64  },
+	{"zfs_vdev_mirror_non_rotating_seek_inc",KSTAT_DATA_UINT64  },
+
 };
 
 
@@ -328,6 +334,17 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		zfs_recv_queue_length =
 			ks->zfs_recv_queue_length.value.ui64;
 
+		zfs_vdev_mirror_rotating_inc =
+			ks->zfs_vdev_mirror_rotating_inc.value.ui64;
+		zfs_vdev_mirror_rotating_seek_inc =
+			ks->zfs_vdev_mirror_rotating_seek_inc.value.ui64;
+		zfs_vdev_mirror_rotating_seek_offset =
+			ks->zfs_vdev_mirror_rotating_seek_offset.value.ui64;
+		zfs_vdev_mirror_non_rotating_inc =
+			ks->zfs_vdev_mirror_non_rotating_inc.value.ui64;
+		zfs_vdev_mirror_non_rotating_seek_inc =
+			ks->zfs_vdev_mirror_non_rotating_seek_inc.value.ui64;
+
 	} else {
 
 		/* kstat READ */
@@ -487,6 +504,16 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->zfs_recv_queue_length.value.ui64 =
 			zfs_recv_queue_length;
 
+		ks->zfs_vdev_mirror_rotating_inc.value.ui64 =
+			zfs_vdev_mirror_rotating_inc;
+		ks->zfs_vdev_mirror_rotating_seek_inc.value.ui64 =
+			zfs_vdev_mirror_rotating_seek_inc;
+		ks->zfs_vdev_mirror_rotating_seek_offset.value.ui64 =
+			zfs_vdev_mirror_rotating_seek_offset;
+		ks->zfs_vdev_mirror_non_rotating_inc.value.ui64 =
+			zfs_vdev_mirror_non_rotating_inc;
+		ks->zfs_vdev_mirror_non_rotating_seek_inc.value.ui64 =
+			zfs_vdev_mirror_non_rotating_seek_inc;
 	}
 
 	return 0;
