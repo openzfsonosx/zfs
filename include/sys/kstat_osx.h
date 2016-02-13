@@ -127,6 +127,12 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_send_queue_length;
 	kstat_named_t zfs_recv_queue_length;
 
+	kstat_named_t zfs_vdev_mirror_rotating_inc;
+	kstat_named_t zfs_vdev_mirror_rotating_seek_inc;
+	kstat_named_t zfs_vdev_mirror_rotating_seek_offset;
+	kstat_named_t zfs_vdev_mirror_non_rotating_inc;
+	kstat_named_t zfs_vdev_mirror_non_rotating_seek_inc;
+
 } osx_kstat_t;
 
 
@@ -206,6 +212,12 @@ extern int64_t zfs_free_bpobj_enabled;
 extern int zfs_send_corrupt_data;
 extern int zfs_send_queue_length;
 extern int zfs_recv_queue_length;
+
+extern uint64_t zfs_vdev_mirror_rotating_inc;
+extern uint64_t zfs_vdev_mirror_rotating_seek_inc;
+extern uint64_t zfs_vdev_mirror_rotating_seek_offset;
+extern uint64_t zfs_vdev_mirror_non_rotating_inc;
+extern uint64_t zfs_vdev_mirror_non_rotating_seek_inc;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);
