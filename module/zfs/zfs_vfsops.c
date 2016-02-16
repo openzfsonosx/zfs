@@ -107,6 +107,9 @@
 
 //#define dprintf kprintf
 //#define dprintf printf
+extern unsigned int debug_vnop_osx_printf;
+#undef dprintf
+#define	dprintf if (debug_vnop_osx_printf) printf
 
 #ifdef __APPLE__
 
@@ -2175,7 +2178,6 @@ out:
 	return (error);
 }
 
-
 int
 zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t context)
 {
@@ -2195,7 +2197,6 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 
 	dmu_objset_space(zfsvfs->z_os,
 	    &refdbytes, &availbytes, &usedobjs, &availobjs);
-
 	VFSATTR_RETURN(fsap, f_objcount, usedobjs);
 	VFSATTR_RETURN(fsap, f_maxobjcount, 0x7fffffffffffffff);
 	/*
@@ -2825,7 +2826,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 		hardlinks_t searchnode;
 		avl_index_t loc;
 
-		dprintf("ZFS: vget looking for (%x,%u)\n", ino, ino);
+		dprintf("ZFS: vget looking for (%llx,%llu)\n", ino, ino);
 
 		searchnode.hl_linkid = ino;
 
@@ -3129,12 +3130,6 @@ zfs_suspend_fs(zfsvfs_t *zfsvfs)
 		dprintf("Warning: No delay at end of zfs_suspend_fs\n");
 #endif /* __APPLE__ */
 
-    /*
-     * For rollback and similar, we need to flush the name cache
-     */
-    dnlc_purge_vfsp(zfsvfs->z_vfs, 0);
-
-
 	return (0);
 }
 
@@ -3154,20 +3149,39 @@ zfs_resume_fs(zfsvfs_t *zfsvfs, const char *osname)
 	 * We already own this, so just hold and rele it to update the
 	 * objset_t, as the one we had before may have been evicted.
 	 */
-	objset_t *os;
-	VERIFY0(dmu_objset_hold(osname, zfsvfs, &os));
-	VERIFY3P(os->os_dsl_dataset->ds_owner, ==, zfsvfs);
-	VERIFY(dsl_dataset_long_held(os->os_dsl_dataset));
-	dmu_objset_rele(os, zfsvfs);
+	VERIFY0(dmu_objset_hold(osname, zfsvfs, &zfsvfs->z_os));
+	VERIFY3P(zfsvfs->z_os->os_dsl_dataset->ds_owner, ==, zfsvfs);
+	VERIFY(dsl_dataset_long_held(zfsvfs->z_os->os_dsl_dataset));
+	dmu_objset_rele(zfsvfs->z_os, zfsvfs);
 
-	err = zfsvfs_init(zfsvfs, os);
-	if (err != 0)
+	/*
+	 * Make sure version hasn't changed
+	 */
+
+	err = zfs_get_zplprop(zfsvfs->z_os, ZFS_PROP_VERSION,
+	    &zfsvfs->z_version);
+
+	if (err)
 		goto bail;
+
+	err = zap_lookup(zfsvfs->z_os, MASTER_NODE_OBJ,
+	    ZFS_SA_ATTRS, 8, 1, &sa_obj);
+
+	if (err && zfsvfs->z_version >= ZPL_VERSION_SA)
+		goto bail;
+
+	if ((err = sa_setup(zfsvfs->z_os, sa_obj,
+	    zfs_attr_table,  ZPL_END, &zfsvfs->z_attr_table)) != 0)
+		goto bail;
+
+	if (zfsvfs->z_version >= ZPL_VERSION_SA)
+		sa_register_update_callback(zfsvfs->z_os,
+		    zfs_sa_upgrade);
 
     VERIFY(zfsvfs_setup(zfsvfs, B_FALSE) == 0);
 
 	zfs_set_fuid_feature(zfsvfs);
-	//zfsvfs->z_rollback_time = jiffies;
+	//zsb->z_rollback_time = jiffies;
 
 	/*
 	 * Attempt to re-establish all the active inodes with their
@@ -3204,6 +3218,19 @@ bail:
 			(void) zfs_umount(zfsvfs->z_sb);
 #endif
 	}
+
+    /*
+     * For rollback and similar, we need to flush the name cache
+     */
+    dnlc_purge_vfsp(zfsvfs->z_vfs, 0);
+
+	/*
+	 * We need to tell Finder to update its view, and the easiest way to
+	 * do so, is to change the stored-available value, forcing delta
+	 * to trigger an update, in zfs_findernotify_callback()
+	 */
+	zfs_findernotify_now(zfsvfs);
+
 	return (err);
 }
 
