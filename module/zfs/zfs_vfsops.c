@@ -107,6 +107,9 @@
 
 //#define dprintf kprintf
 //#define dprintf printf
+extern unsigned int debug_vnop_osx_printf;
+#undef dprintf
+#define	dprintf if (debug_vnop_osx_printf) printf
 
 #ifdef __APPLE__
 
@@ -2080,7 +2083,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	error = ddi_copyin((const void *)mnt_args.optptr, (caddr_t)options,
 					   mnt_args.optlen, 0);
 
-	dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
+	dprintf("vfs_mount: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
 	    " options %s\n",
 	    mnt_args.fspec,
 	    mnt_args.mflag,
@@ -2267,7 +2270,6 @@ out:
 	return (error);
 }
 
-
 int
 zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t context)
 {
@@ -2285,7 +2287,6 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 
 	dmu_objset_space(zfsvfs->z_os,
 	    &refdbytes, &availbytes, &usedobjs, &availobjs);
-
 	VFSATTR_RETURN(fsap, f_objcount, usedobjs);
 	VFSATTR_RETURN(fsap, f_maxobjcount, 0x7fffffffffffffff);
 	/*
@@ -2905,7 +2906,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 		hardlinks_t searchnode;
 		avl_index_t loc;
 
-		dprintf("ZFS: vget looking for (%x,%u)\n", ino, ino);
+		dprintf("ZFS: vget looking for (%llx,%llu)\n", ino, ino);
 
 		searchnode.hl_linkid = ino;
 
@@ -3239,12 +3240,6 @@ zfs_suspend_fs(zfsvfs_t *zfsvfs)
 		dprintf("Warning: No delay at end of zfs_suspend_fs\n");
 #endif /* __APPLE__ */
 
-    /*
-     * For rollback and similar, we need to flush the name cache
-     */
-    dnlc_purge_vfsp(zfsvfs->z_vfs, 0);
-
-
 	return (0);
 }
 
@@ -3252,51 +3247,51 @@ zfs_suspend_fs(zfsvfs_t *zfsvfs)
  * Reopen zfsvfs_t::z_os and release VOPs.
  */
 int
-zfs_resume_fs(zfsvfs_t *zsb, const char *osname)
+zfs_resume_fs(zfsvfs_t *zfsvfs, const char *osname)
 {
 	int err, err2;
 	znode_t *zp;
 	uint64_t sa_obj = 0;
 
-	ASSERT(RRM_WRITE_HELD(&zsb->z_teardown_lock));
-	ASSERT(RW_WRITE_HELD(&zsb->z_teardown_inactive_lock));
+	ASSERT(RRM_WRITE_HELD(&zfsvfs->z_teardown_lock));
+	ASSERT(RW_WRITE_HELD(&zfsvfs->z_teardown_inactive_lock));
 
 	/*
 	 * We already own this, so just hold and rele it to update the
 	 * objset_t, as the one we had before may have been evicted.
 	 */
-	VERIFY0(dmu_objset_hold(osname, zsb, &zsb->z_os));
-	VERIFY3P(zsb->z_os->os_dsl_dataset->ds_owner, ==, zsb);
-	VERIFY(dsl_dataset_long_held(zsb->z_os->os_dsl_dataset));
-	dmu_objset_rele(zsb->z_os, zsb);
+	VERIFY0(dmu_objset_hold(osname, zfsvfs, &zfsvfs->z_os));
+	VERIFY3P(zfsvfs->z_os->os_dsl_dataset->ds_owner, ==, zfsvfs);
+	VERIFY(dsl_dataset_long_held(zfsvfs->z_os->os_dsl_dataset));
+	dmu_objset_rele(zfsvfs->z_os, zfsvfs);
 
 	/*
 	 * Make sure version hasn't changed
 	 */
 
-	err = zfs_get_zplprop(zsb->z_os, ZFS_PROP_VERSION,
-	    &zsb->z_version);
+	err = zfs_get_zplprop(zfsvfs->z_os, ZFS_PROP_VERSION,
+	    &zfsvfs->z_version);
 
 	if (err)
 		goto bail;
 
-	err = zap_lookup(zsb->z_os, MASTER_NODE_OBJ,
+	err = zap_lookup(zfsvfs->z_os, MASTER_NODE_OBJ,
 	    ZFS_SA_ATTRS, 8, 1, &sa_obj);
 
-	if (err && zsb->z_version >= ZPL_VERSION_SA)
+	if (err && zfsvfs->z_version >= ZPL_VERSION_SA)
 		goto bail;
 
-	if ((err = sa_setup(zsb->z_os, sa_obj,
-	    zfs_attr_table,  ZPL_END, &zsb->z_attr_table)) != 0)
+	if ((err = sa_setup(zfsvfs->z_os, sa_obj,
+	    zfs_attr_table,  ZPL_END, &zfsvfs->z_attr_table)) != 0)
 		goto bail;
 
-	if (zsb->z_version >= ZPL_VERSION_SA)
-		sa_register_update_callback(zsb->z_os,
+	if (zfsvfs->z_version >= ZPL_VERSION_SA)
+		sa_register_update_callback(zfsvfs->z_os,
 		    zfs_sa_upgrade);
 
-    VERIFY(zfsvfs_setup(zsb, B_FALSE) == 0);
+    VERIFY(zfsvfs_setup(zfsvfs, B_FALSE) == 0);
 
-	zfs_set_fuid_feature(zsb);
+	zfs_set_fuid_feature(zfsvfs);
 	//zsb->z_rollback_time = jiffies;
 
 	/*
@@ -3308,21 +3303,21 @@ zfs_resume_fs(zfsvfs_t *zsb, const char *osname)
 	 * VFS prunes the dentry holding the remaining references
 	 * on the stale inode.
 	 */
-	mutex_enter(&zsb->z_znodes_lock);
-	for (zp = list_head(&zsb->z_all_znodes); zp;
-	    zp = list_next(&zsb->z_all_znodes, zp)) {
+	mutex_enter(&zfsvfs->z_znodes_lock);
+	for (zp = list_head(&zfsvfs->z_all_znodes); zp;
+	    zp = list_next(&zfsvfs->z_all_znodes, zp)) {
 		err2 = zfs_rezget(zp);
 		if (err2) {
 			//remove_inode_hash(ZTOI(zp));
 			zp->z_is_stale = B_TRUE;
 		}
 	}
-	mutex_exit(&zsb->z_znodes_lock);
+	mutex_exit(&zfsvfs->z_znodes_lock);
 
 bail:
 	/* release the VFS ops */
-	rw_exit(&zsb->z_teardown_inactive_lock);
-	rrm_exit(&zsb->z_teardown_lock, FTAG);
+	rw_exit(&zfsvfs->z_teardown_inactive_lock);
+	rrm_exit(&zfsvfs->z_teardown_lock, FTAG);
 
 	if (err) {
 		/*
@@ -3330,10 +3325,23 @@ bail:
 		 * unmount this file system.
 		 */
 #ifndef __APPLE__
-		if (zsb->z_os)
-			(void) zfs_umount(zsb->z_sb);
+		if (zfsvfs->z_os)
+			(void) zfs_umount(zfsvfs->z_sb);
 #endif
 	}
+
+    /*
+     * For rollback and similar, we need to flush the name cache
+     */
+    dnlc_purge_vfsp(zfsvfs->z_vfs, 0);
+
+	/*
+	 * We need to tell Finder to update its view, and the easiest way to
+	 * do so, is to change the stored-available value, forcing delta
+	 * to trigger an update, in zfs_findernotify_callback()
+	 */
+	zfs_findernotify_now(zfsvfs);
+
 	return (err);
 }
 

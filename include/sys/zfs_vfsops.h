@@ -245,6 +245,7 @@ extern void zfs_freevfs(struct mount *vfsp);
 extern int  zfsvfs_create(const char *osname, zfsvfs_t **zfvp);
 extern void zfsvfs_free(zfsvfs_t *zfsvfs);
 
+extern void zfs_findernotify_now(zfsvfs_t *zfsvfs);
 
 #ifdef	__cplusplus
 }

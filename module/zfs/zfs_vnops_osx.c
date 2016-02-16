@@ -212,6 +212,7 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 
 		/* Under the limit ? */
 		if (delta <= ZFS_FINDERNOTIFY_THRESHOLD) goto out;
+		if (!zfsvfs->z_findernotify_space) goto out;
 
 		/* Over threadhold, so we will notify finder, remember the value */
 		zfsvfs->z_findernotify_space = availbytes;
@@ -220,7 +221,7 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 		if (availbytes == delta)
 			goto out;
 
-		dprintf("ZFS: findernotify space delta %llu\n", mp, delta);
+		dprintf("ZFS: findernotify %p space delta %llu\n", mp, delta);
 
 		// Grab the root zp
 		if (!VFS_ROOT(mp, 0, &rootvp)) {
@@ -242,13 +243,21 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 
 				// Send the event to wake up Finder
 				struct vnode_attr vattr;
+#if 0
+				// Just send "empty" event to make Finder call vfs_getattr
 				// Also calls VATTR_INIT
 				spl_vfs_get_notify_attributes(&vattr);
 				// Fill in vap
 				vnode_getattr(vp, &vattr, kernelctx);
 				// Send event
 				spl_vnode_notify(vp, VNODE_EVENT_ATTRIB, &vattr);
-
+#else
+				// .Trashes has to change something for rollback to work
+				VATTR_INIT(&vattr);
+				gethrestime(&vattr.va_modify_time);
+				VATTR_SET_SUPPORTED(&vattr, va_modify_time);
+				vnode_setattr(vp, &vattr, kernelctx);
+#endif
 				// Cleanup vp
 				vnode_put(vp);
 
@@ -271,7 +280,6 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 static void
 zfs_findernotify_thread(void *notused)
 {
-	clock_t			growtime = 0;
 	callb_cpr_t		cpr;
 
 	dprintf("ZFS: findernotify thread start\n");
@@ -296,6 +304,15 @@ zfs_findernotify_thread(void *notused)
 	CALLB_CPR_EXIT(&cpr);		/* drops arc_reclaim_lock */
 	dprintf("ZFS: findernotify thread exit\n");
 	thread_exit();
+}
+
+void zfs_findernotify_now(zfsvfs_t *zfsvfs)
+{
+	// Make sure delta triggers
+	zfsvfs->z_findernotify_space = 1;
+
+	// Wake thread up right now
+	cv_signal(&zfs_findernotify_thread_cv);
 }
 
 void zfs_start_notify_thread(void)
