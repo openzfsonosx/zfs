@@ -1203,11 +1203,7 @@ zpool_open_func(void *arg)
 	/*
 	 * Ignore failed stats.  We only want regular files and block devices.
 	 */
-#ifdef __APPLE__
-	if (fstatat(rn->rn_dfd, rn->rn_name, &statbuf, 0) != 0 ||
-#else
 	if (fstatat64(rn->rn_dfd, rn->rn_name, &statbuf, 0) != 0 ||
-#endif
 	    (!S_ISREG(statbuf.st_mode) && !S_ISBLK(statbuf.st_mode)))
 		return;
 
