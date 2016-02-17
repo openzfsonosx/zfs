@@ -3472,7 +3472,23 @@ zfs_do_rollback(int argc, char **argv)
 	 */
 	ret = zfs_rollback(zhp, snap, force);
 
-out:
+#include "zfs_osx.h"
+#ifdef __APPLE__
+	if (ret == 0) {
+		char sourceloc[ZFS_MAXNAMELEN];
+		char mountpoint[ZFS_MAXPROPLEN];
+        zprop_source_t sourcetype;
+
+        if (zfs_prop_valid_for_type(ZFS_PROP_MOUNTPOINT, zhp->zfs_type)) {
+			if (zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT,
+				mountpoint, sizeof(mountpoint),
+				&sourcetype, sourceloc, sizeof (sourceloc), B_FALSE) == 0)
+				libzfs_refresh_finder(mountpoint);
+		}
+	}
+#endif
+
+  out:
 	zfs_close(snap);
 	zfs_close(zhp);
 
