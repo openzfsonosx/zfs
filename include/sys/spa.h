@@ -397,6 +397,9 @@ _NOTE(CONSTCOND) } while (0)
 #define	BP_GET_LEVEL(bp)		BF64_GET((bp)->blk_prop, 56, 5)
 #define	BP_SET_LEVEL(bp, x)		BF64_SET((bp)->blk_prop, 56, 5, x)
 
+#define	BP_IS_ENCRYPTED(bp)		BF64_GET((bp)->blk_prop, 61, 1)
+#define	BP_SET_ENCRYPTED(bp, x)		BF64_SET((bp)->blk_prop, 61, 1, x)
+
 #define	BP_GET_DEDUP(bp)		BF64_GET((bp)->blk_prop, 62, 1)
 #define	BP_SET_DEDUP(bp, x)		BF64_SET((bp)->blk_prop, 62, 1, x)
 
@@ -455,6 +458,10 @@ _NOTE(CONSTCOND) } while (0)
 	((zc1).zc_word[2] - (zc2).zc_word[2]) | \
 	((zc1).zc_word[3] - (zc2).zc_word[3])))
 
+#define	ZIO_CHECKSUM_MAC_EQUAL(zc1, zc2) \
+	(0 == (((zc1).zc_word[0] - (zc2).zc_word[0]) | \
+	((zc1).zc_word[1] - (zc2).zc_word[1])))
+
 #define ZIO_CHECKSUM_IS_ZERO(zc)							\
 	(0 == ((zc)->zc_word[0] | (zc)->zc_word[1] |			\
 		   (zc)->zc_word[2] | (zc)->zc_word[3]))
@@ -476,6 +483,15 @@ _NOTE(CONSTCOND) } while (0)
 	(zcp)->zc_word[2] = w2;			\
 	(zcp)->zc_word[3] = w3;			\
 }
+
+#define	MAX_DATA_MAC_LEN 16
+#define	MAX_DATA_IV_LEN 12
+
+#define	ZIO_SET_MAC(bp, mac)	\
+	bcopy((mac), &(bp)->blk_cksum.zc_word[2], MAX_DATA_MAC_LEN);
+
+#define	ZIO_SET_IV(bp, iv)	\
+	bcopy((iv), (bp)->blk_pad, MAX_DATA_IV_LEN);
 
 #define	BP_IDENTITY(bp)		(ASSERT(!BP_IS_EMBEDDED(bp)), &(bp)->blk_dva[0])
 #define	BP_IS_GANG(bp)		\

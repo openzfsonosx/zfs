@@ -32,6 +32,7 @@
 #include <sys/zfs_acl.h>
 #include <sys/zfs_ioctl.h>
 #include <sys/zfs_znode.h>
+#include <sys/dsl_keychain.h>
 
 #include "zfs_prop.h"
 #include "zfs_deleg.h"
@@ -110,6 +111,18 @@ zfs_prop_init(void)
 		{ "gzip-9",	ZIO_COMPRESS_GZIP_9 },
 		{ "zle",	ZIO_COMPRESS_ZLE },
 		{ "lz4",	ZIO_COMPRESS_LZ4 },
+		{ NULL }
+	};
+
+	static zprop_index_t crypto_table[] = {
+		{ "on",		ZIO_CRYPT_ON },
+		{ "off",	ZIO_CRYPT_OFF },
+		{ "aes-128-ccm",	ZIO_CRYPT_AES_128_CCM },
+		{ "aes-192-ccm",	ZIO_CRYPT_AES_192_CCM },
+		{ "aes-256-ccm",	ZIO_CRYPT_AES_256_CCM },
+		{ "aes-128-gcm",	ZIO_CRYPT_AES_128_GCM },
+		{ "aes-192-gcm",	ZIO_CRYPT_AES_192_GCM },
+		{ "aes-256-gcm",	ZIO_CRYPT_AES_256_GCM },
 		{ NULL }
 	};
 
@@ -197,6 +210,13 @@ zfs_prop_init(void)
 		{ NULL }
 	};
 
+	static zprop_index_t keystatus_table[] = {
+		{ "none",			ZFS_KEYSTATUS_NONE},
+		{ "unavailable",	ZFS_KEYSTATUS_UNAVAILABLE},
+		{ "available",		ZFS_KEYSTATUS_AVAILABLE},
+		{ NULL }
+	};
+
 	static zprop_index_t logbias_table[] = {
 		{ "latency",	ZFS_LOGBIAS_LATENCY },
 		{ "throughput",	ZFS_LOGBIAS_THROUGHPUT },
@@ -262,6 +282,11 @@ zfs_prop_init(void)
 	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
 	    "on | off | lzjb | gzip | gzip-[1-9] | zle | lz4", "COMPRESS",
 	    compress_table);
+	zprop_register_index(ZFS_PROP_ENCRYPTION, "encryption",
+	    ZIO_CRYPT_DEFAULT, PROP_ONETIME, ZFS_TYPE_DATASET,
+		"on | off | aes-128-ccm | aes-192-ccm | aes-256-ccm | "
+		"aes-128-gcm | aes-192-gcm | aes-256-gcm", "ENCRYPTION",
+		crypto_table);
 	zprop_register_index(ZFS_PROP_SNAPDIR, "snapdir", ZFS_SNAPDIR_HIDDEN,
 	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM,
 	    "hidden | visible", "SNAPDIR", snapdir_table);
@@ -346,6 +371,11 @@ zfs_prop_init(void)
 	    PROP_READONLY, ZFS_TYPE_SNAPSHOT, "yes | no", "DEFER_DESTROY",
 	    boolean_table);
 
+    zprop_register_index(ZFS_PROP_KEYSTATUS, "keystatus",
+		ZFS_KEYSTATUS_NONE, PROP_READONLY, ZFS_TYPE_DATASET,
+		"none | unavailable | available",
+		"KEYSTATUS", keystatus_table);
+
 	/* set once index properties */
 	zprop_register_index(ZFS_PROP_NORMALIZE, "normalization", 0,
 	    PROP_ONETIME, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT,
@@ -404,6 +434,10 @@ zfs_prop_init(void)
 	    "none", PROP_DEFAULT, ZFS_TYPE_DATASET, "<selinux rootcontext>",
 	    "ROOTCONTEXT");
 #endif
+
+    zprop_register_string(ZFS_PROP_KEYSOURCE, "keysource",
+		"none", PROP_INHERIT, ZFS_TYPE_DATASET,
+		"<prompt | file>,<passphrase | raw>", "KEYSOURCE");
 
 	/* readonly number properties */
 	zprop_register_number(ZFS_PROP_USED, "used", 0, PROP_READONLY,
@@ -496,6 +530,8 @@ zfs_prop_init(void)
 	    PROP_READONLY, ZFS_TYPE_DATASET, "OBJSETID");
 	zprop_register_hidden(ZFS_PROP_INCONSISTENT, "inconsistent",
 	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "INCONSISTENT");
+	zprop_register_hidden(ZFS_PROP_SALT, "salt",
+	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "SALT");
     zprop_register_hidden(ZFS_PROP_PREV_SNAP, "prevsnap", PROP_TYPE_STRING,
 		PROP_READONLY, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME, "PREVSNAP");
 

@@ -92,6 +92,7 @@ struct objset {
 	enum zio_compress os_compress;
 	uint8_t os_copies;
 	enum zio_checksum os_dedup_checksum;
+	boolean_t os_encrypted;
 	boolean_t os_dedup_verify;
 	zfs_logbias_op_t os_logbias;
 	zfs_cache_type_t os_primary_cache;

@@ -42,6 +42,7 @@
 #include <sys/ddt.h>
 #include <sys/blkptr.h>
 #include <sys/zfeature.h>
+#include <sys/dsl_keychain.h>
 #include <sys/callb.h>
 
 /*
@@ -331,7 +332,7 @@ zio_pop_transforms(zio_t *zio)
 
 /*
  * ==========================================================================
- * I/O transform callbacks for subblocks and decompression
+ * I/O transform callbacks for subblocks, decompression, and encryption
  * ==========================================================================
  */
 static void
@@ -349,6 +350,19 @@ zio_decompress(zio_t *zio, void *data, uint64_t size)
 	if (zio->io_error == 0 &&
 	    zio_decompress_data(BP_GET_COMPRESS(zio->io_bp),
 	    zio->io_data, data, zio->io_size, size) != 0)
+		zio->io_error = SET_ERROR(EIO);
+}
+
+static void
+zio_decrypt(zio_t *zio, void *data, uint64_t size)
+{
+	blkptr_t *bp = zio->io_bp;
+
+	if (zio->io_error != 0)
+		return;
+
+	if (spa_decrypt_data(zio->io_spa, &zio->io_bookmark, bp->blk_birth,
+		BP_GET_TYPE(bp), bp, size, data, zio->io_data) != 0)
 		zio->io_error = SET_ERROR(EIO);
 }
 
@@ -1077,15 +1091,22 @@ static int
 zio_read_bp_init(zio_t *zio)
 {
 	blkptr_t *bp = zio->io_bp;
+	uint64_t psize =
+		    BP_IS_EMBEDDED(bp) ? BPE_GET_PSIZE(bp) : BP_GET_PSIZE(bp);
 
 	if (BP_GET_COMPRESS(bp) != ZIO_COMPRESS_OFF &&
 	    zio->io_child_type == ZIO_CHILD_LOGICAL &&
 	    !(zio->io_flags & ZIO_FLAG_RAW)) {
-		uint64_t psize =
-		    BP_IS_EMBEDDED(bp) ? BPE_GET_PSIZE(bp) : BP_GET_PSIZE(bp);
 		void *cbuf = zio_buf_alloc(psize);
 
 		zio_push_transform(zio, cbuf, psize, psize, zio_decompress);
+	}
+
+	if (BP_IS_ENCRYPTED(bp) && zio->io_child_type == ZIO_CHILD_LOGICAL &&
+		!(zio->io_flags & ZIO_FLAG_RAW)) {
+		void *cbuf = zio_buf_alloc(psize);
+
+		zio_push_transform(zio, cbuf, psize, psize, zio_decrypt);
 	}
 
 	if (BP_IS_EMBEDDED(bp) && BPE_GET_ETYPE(bp) == BP_EMBEDDED_TYPE_DATA) {
@@ -1113,10 +1134,13 @@ zio_write_bp_init(zio_t *zio)
 	spa_t *spa = zio->io_spa;
 	zio_prop_t *zp = &zio->io_prop;
 	enum zio_compress compress = zp->zp_compress;
+	boolean_t encrypt = zp->zp_encrypt;
 	blkptr_t *bp = zio->io_bp;
 	uint64_t lsize = zio->io_size;
 	uint64_t psize = lsize;
-	int pass = 1;
+	int pass = 1, ret = 0;
+	uint8_t iv[MAX_DATA_IV_LEN];
+	uint8_t mac[MAX_DATA_MAC_LEN];
 
 	/*
 	 * If our children haven't all reached the ready stage,
@@ -1199,7 +1223,8 @@ zio_write_bp_init(zio_t *zio)
 		if (psize == 0 || psize == lsize) {
 			compress = ZIO_COMPRESS_OFF;
 			zio_buf_free(cbuf, lsize);
-		} else if (!zp->zp_dedup && psize <= BPE_PAYLOAD_SIZE &&
+		} else if (!zp->zp_dedup && !encrypt &&
+			psize <= BPE_PAYLOAD_SIZE &&
 		    zp->zp_level == 0 && !DMU_OT_HAS_FILL(zp->zp_type) &&
 		    spa_feature_is_enabled(spa, SPA_FEATURE_EMBEDDED_DATA)) {
 			encode_embedded_bp_compressed(bp,
@@ -1237,6 +1262,25 @@ zio_write_bp_init(zio_t *zio)
 				psize = rounded;
 				zio_push_transform(zio, cbuf,
 				    psize, lsize, NULL);
+			}
+		}
+	}
+
+	if (encrypt && spa_feature_is_enabled(spa, SPA_FEATURE_ENCRYPTION)) {
+		if (psize == 0) {
+			encrypt = B_FALSE;
+		} else {
+			void *enc_buf = zio_buf_alloc(psize);
+
+			ret = spa_encrypt_data(spa, &zio->io_bookmark,
+				zio->io_txg, zp->zp_type, bp, psize,
+				zp->zp_dedup, iv, mac, zio->io_data, enc_buf);
+			if (ret) {
+				zio->io_error = SET_ERROR(EIO);
+				zio_buf_free(enc_buf, psize);
+			} else {
+				zio_push_transform(zio, enc_buf, psize,
+				    psize, NULL);
 			}
 		}
 	}
@@ -1280,6 +1324,13 @@ zio_write_bp_init(zio_t *zio)
 		BP_SET_CHECKSUM(bp, zp->zp_checksum);
 		BP_SET_DEDUP(bp, zp->zp_dedup);
 		BP_SET_BYTEORDER(bp, ZFS_HOST_BYTEORDER);
+		BP_SET_ENCRYPTED(bp, encrypt);
+
+		if (encrypt) {
+			ZIO_SET_MAC(bp, mac);
+			ZIO_SET_IV(bp, iv);
+		}
+
 		if (zp->zp_dedup) {
 			ASSERT(zio->io_child_type == ZIO_CHILD_LOGICAL);
 			ASSERT(!(zio->io_flags & ZIO_FLAG_IO_REWRITE));
@@ -2098,6 +2149,7 @@ zio_write_gang_block(zio_t *pio)
 
 		zp.zp_checksum = gio->io_prop.zp_checksum;
 		zp.zp_compress = ZIO_COMPRESS_OFF;
+		zp.zp_encrypt = B_FALSE;
 		zp.zp_type = DMU_OT_NONE;
 		zp.zp_level = 0;
 		zp.zp_copies = gio->io_prop.zp_copies;
@@ -3194,8 +3246,11 @@ zio_done(zio_t *zio)
 			ASSERT(zio->io_children[c][w] == 0);
 
 	if (zio->io_bp != NULL && !BP_IS_EMBEDDED(zio->io_bp)) {
-		ASSERT(zio->io_bp->blk_pad[0] == 0);
-		ASSERT(zio->io_bp->blk_pad[1] == 0);
+		if (!BP_IS_ENCRYPTED(zio->io_bp)) {
+			ASSERT(zio->io_bp->blk_pad[0] == 0);
+			ASSERT(zio->io_bp->blk_pad[1] == 0);
+		}
+
 		ASSERT(bcmp(zio->io_bp, &zio->io_bp_copy,
 		    sizeof (blkptr_t)) == 0 ||
 		    (zio->io_bp == zio_unique_parent(zio)->io_bp));

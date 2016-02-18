@@ -279,4 +279,9 @@ zpool_feature_init(void)
 		"org.illumos:edonr", "edonr",
 	    "Edon-R hash algorithm.",
 	    ZFEATURE_FLAG_PER_DATASET, edonr_deps);
+
+	zfeature_register(SPA_FEATURE_ENCRYPTION,
+		"com.datto:encryption", "encryption",
+		"Support for dataset level encryption",
+		0, NULL);
 }

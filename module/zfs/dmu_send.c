@@ -1395,7 +1395,7 @@ dmu_recv_begin_sync(void *arg, dmu_tx_t *tx)
 			    drba->drba_snapobj, FTAG, &snap));
 		}
 		dsobj = dsl_dataset_create_sync(ds->ds_dir, recv_clone_name,
-		    snap, crflags, drba->drba_cred, tx);
+		    snap, crflags, drba->drba_cred, NULL, tx);
 		if (drba->drba_snapobj != 0)
 			dsl_dataset_rele(snap, FTAG);
 		dsl_dataset_rele(ds, FTAG);
@@ -1414,7 +1414,7 @@ dmu_recv_begin_sync(void *arg, dmu_tx_t *tx)
 		/* Create new dataset. */
 		dsobj = dsl_dataset_create_sync(dd,
 		    strrchr(tofs, '/') + 1,
-		    origin, crflags, drba->drba_cred, tx);
+		    origin, crflags, drba->drba_cred, NULL, tx);
 		if (origin != NULL)
 			dsl_dataset_rele(origin, FTAG);
 		dsl_dir_rele(dd, FTAG);

@@ -151,6 +151,7 @@ typedef enum zfs_error {
 	EZFS_DIFF,		/* general failure of zfs diff */
 	EZFS_DIFFDATA,		/* bad zfs diff data */
 	EZFS_POOLREADONLY,	/* pool is in read-only mode */
+	EZFS_CRYPTOFAILED,	/* failed to setup encryption */
 	EZFS_UNKNOWN
 } zfs_error_t;
 
@@ -504,6 +505,17 @@ extern nvlist_t *zfs_get_user_props(zfs_handle_t *);
 extern nvlist_t *zfs_get_recvd_props(zfs_handle_t *);
 extern nvlist_t *zfs_get_clones_nvl(zfs_handle_t *);
 
+/*
+ * zfs encryption management
+ */
+extern int zfs_crypto_create(libzfs_handle_t *, nvlist_t *, char *);
+extern int zfs_crypto_clone(libzfs_handle_t *, zfs_handle_t *, nvlist_t *,
+	char *, boolean_t);
+extern int zfs_crypto_load_key(zfs_handle_t *);
+extern int zfs_crypto_unload_key(zfs_handle_t *);
+extern int zfs_crypto_add_key(zfs_handle_t *);
+extern int zfs_crypto_rewrap(zfs_handle_t *, nvlist_t *);
+
 typedef struct zprop_list {
 	int		pl_prop;
 	char		*pl_user_prop;
@@ -610,7 +622,7 @@ extern int zfs_create_ancestors(libzfs_handle_t *, const char *);
 extern int zfs_destroy(zfs_handle_t *, boolean_t);
 extern int zfs_destroy_snaps(zfs_handle_t *, char *, boolean_t);
 extern int zfs_destroy_snaps_nvl(libzfs_handle_t *, nvlist_t *, boolean_t);
-extern int zfs_clone(zfs_handle_t *, const char *, nvlist_t *);
+extern int zfs_clone(zfs_handle_t *, const char *, nvlist_t *, boolean_t);
 extern int zfs_snapshot(libzfs_handle_t *, const char *, boolean_t, nvlist_t *);
 extern int zfs_snapshot_nvl(libzfs_handle_t *hdl, nvlist_t *snaps,
     nvlist_t *props);
@@ -813,7 +825,8 @@ int zfs_smb_acl_rename(libzfs_handle_t *, char *, char *, char *, char *);
  * Enable and disable datasets within a pool by mounting/unmounting and
  * sharing/unsharing them.
  */
-extern int zpool_enable_datasets(zpool_handle_t *, const char *, int);
+extern int zpool_enable_datasets(zpool_handle_t *, const char *, int,
+    boolean_t);
 extern int zpool_disable_datasets(zpool_handle_t *, boolean_t);
 
 /*

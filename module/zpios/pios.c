@@ -197,7 +197,7 @@ zpios_dmu_setup(run_args_t *run_args)
 	t->start = zpios_timespec_now();
 
 	(void) snprintf(name, 32, "%s/id_%d", run_args->pool, run_args->id);
-	rc = dmu_objset_create(name, DMU_OST_OTHER, 0, NULL, NULL);
+	rc = dmu_objset_create(name, DMU_OST_OTHER, 0, NULL, NULL, NULL);
 	if (rc) {
 		zpios_print(run_args->file, "Error dmu_objset_create(%s, ...) "
 			    "failed: %d\n", name, rc);

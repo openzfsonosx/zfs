@@ -25,6 +25,7 @@ CFLAGS_KMOD = \
 	-DNAMEDSTREAMS=1 \
 	-DHAVE_SPL=1 \
 	-I$(top_srcdir)/include \
+	-I$(top_srcdir)/module/icp/include \
 	-I@SPL_OBJ@ -I@SPL_OBJ@/include \
 	-I@KERNELSRC@
 
@@ -68,6 +69,7 @@ zfs_SOURCES = \
 	dsl_deleg.c \
 	dsl_destroy.c \
 	dsl_dir.c \
+	dsl_keychain.c \
 	dsl_pool.c \
 	dsl_prop.c \
 	dsl_scan.c \
@@ -112,6 +114,7 @@ zfs_SOURCES = \
 	zap.c \
 	zap_leaf.c \
 	zap_micro.c \
+	zcrypt_common.c \
 	zfeature.c \
 	zfeature_common.c \
 	zfs_acl.c \
@@ -138,6 +141,7 @@ zfs_SOURCES = \
 	zio.c \
 	zio_checksum.c \
 	zio_compress.c \
+	zio_crypt.c \
 	zio_inject.c \
 	zle.c \
 	zrlock.c \
@@ -155,7 +159,32 @@ zfs_SOURCES = \
 	../zcommon/zfs_namecheck.c \
 	../zcommon/zfs_prop.c \
 	../zcommon/zpool_prop.c \
-	../zcommon/zprop_common.c
+	../zcommon/zprop_common.c \
+	../icp/api/kcf_cipher.c \
+	../icp/api/kcf_digest.c \
+	../icp/api/kcf_mac.c \
+	../icp/api/kcf_miscapi.c \
+	../icp/api/kcf_ctxops.c \
+	../icp/core/kcf_callprov.c \
+	../icp/core/kcf_prov_tabs.c \
+	../icp/core/kcf_sched.c \
+	../icp/core/kcf_mech_tabs.c \
+	../icp/core/kcf_prov_lib.c \
+	../icp/spi/kcf_spi.c \
+	../icp/io/aes.c \
+	../icp/io/sha2_mod.c \
+	../icp/os/modhash.c \
+	../icp/os/bitmap_arch.c \
+	../icp/os/modconf.c \
+	../icp/algs/modes/cbc.c \
+	../icp/algs/modes/ccm.c \
+	../icp/algs/modes/ctr.c \
+	../icp/algs/modes/ecb.c \
+	../icp/algs/modes/gcm.c \
+	../icp/algs/modes/modes.c \
+	../icp/algs/aes/aes_impl.c \
+	../icp/algs/sha2/sha2.c \
+	../icp/asm-x86_64/aes/aeskey.c
 
 zfs_CPPFLAGS=$(CFLAGS_KMOD)
 zfs_CXXFLAGS=$(CFLAGS_KMOD)
