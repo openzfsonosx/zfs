@@ -11,6 +11,7 @@ DEFAULT_INCLUDES += \
 lib_LTLIBRARIES = libzpool.la
 
 libzpool_la_SOURCES = \
+	crypto.c \
 	kernel.c \
 	taskq.c \
 	util.c \
@@ -48,6 +49,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/dsl_deleg.c \
 	../../module/zfs/dsl_destroy.c \
 	../../module/zfs/dsl_dir.c \
+	../../module/zfs/dsl_keychain.c \
 	../../module/zfs/dsl_pool.c \
 	../../module/zfs/dsl_prop.c \
 	../../module/zfs/dsl_scan.c \
@@ -90,6 +92,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/zap.c \
 	../../module/zfs/zap_leaf.c \
 	../../module/zfs/zap_micro.c \
+	../../module/zfs/zcrypt_common.c \
 	../../module/zfs/zfeature.c \
 	../../module/zfs/zfeature_common.c \
 	../../module/zfs/zfs_byteswap.c \
@@ -102,6 +105,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/zio.c \
 	../../module/zfs/zio_checksum.c \
 	../../module/zfs/zio_compress.c \
+	../../module/zfs/zio_crypt.c \
 	../../module/zfs/zio_inject.c \
 	../../module/zfs/zle.c \
 	../../module/zfs/zrlock.c

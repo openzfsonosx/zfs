@@ -33,6 +33,7 @@
 #include <sys/dsl_synctask.h>
 #include <sys/refcount.h>
 #include <sys/zfs_context.h>
+#include <sys/dsl_keychain.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -81,7 +82,8 @@ typedef struct dsl_dir_phys {
 	uint64_t dd_flags;
 	uint64_t dd_used_breakdown[DD_USED_NUM];
 	uint64_t dd_clones; /* dsl_dir objects */
-	uint64_t dd_pad[13]; /* pad out to 256 bytes for good measure */
+	uint64_t dd_keychain_obj; /* DSL Keychain object number */
+	uint64_t dd_pad[12]; /* pad out to 256 bytes for good measure */
 } dsl_dir_phys_t;
 
 struct dsl_dir {

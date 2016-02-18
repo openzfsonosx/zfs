@@ -49,7 +49,6 @@
 #include <sys/errno.h>
 #include <sys/uio.h>
 #include <sys/buf.h>
-#include <sys/modctl.h>
 #include <sys/open.h>
 #include <sys/kmem.h>
 #include <sys/conf.h>

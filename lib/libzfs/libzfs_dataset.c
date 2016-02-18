@@ -3316,6 +3316,7 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 	char errbuf[1024];
 	uint64_t zoned;
 	dmu_objset_type_t ost;
+	char parent[ZFS_MAXNAMELEN];
 
 	(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
 	    "cannot create '%s'"), path);
@@ -3408,6 +3409,10 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 			return (zfs_error(hdl, EZFS_BADPROP, errbuf));
 		}
 	}
+
+	(void) parent_name(path, parent, sizeof (parent));
+	if (zfs_crypto_create(hdl, props, parent) != 0)
+		return (zfs_error(hdl, EZFS_CRYPTOFAILED, errbuf));
 
 	/* create the dataset */
 	ret = lzc_create(path, ost, props);
@@ -3601,7 +3606,8 @@ zfs_destroy_snaps_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, boolean_t defer)
  * Clones the given dataset.  The target must be of the same type as the source.
  */
 int
-zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props)
+zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props,
+	boolean_t add_key)
 {
 	char parent[ZFS_MAXNAMELEN];
 	int ret;
@@ -3637,6 +3643,9 @@ zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props)
 			zhp, zhp->zpool_hdl, errbuf)) == NULL)
 			return (-1);
 	}
+
+	if (zfs_crypto_clone(hdl, zhp, props, parent, add_key) != 0)
+		return (zfs_error(hdl, EZFS_CRYPTOFAILED, errbuf));
 
 	ret = lzc_clone(target, zhp->zfs_name, props);
 	nvlist_free(props);

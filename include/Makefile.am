@@ -1,4 +1,4 @@
-SUBDIRS = sys
+SUBDIRS = sys arch
 
 COMMON_H = \
 	$(top_srcdir)/include/zfeature_common.h \
@@ -34,5 +34,5 @@ if CONFIG_KERNEL
 #kerneldir = @prefix@/src/zfs-$(VERSION)/include
 #kernel_HEADERS = $(COMMON_H) $(KERNEL_H)
 kerneldir =
-kernel_HEADERS = 
+kernel_HEADERS =
 endif

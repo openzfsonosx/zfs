@@ -1144,6 +1144,8 @@ spa_activate(spa_t *spa, int mode)
     OSKextRetainKextWithLoadTag(OSKextGetCurrentLoadTag());
 #endif
 
+	spa_keystore_init(&spa->spa_keystore);
+
 }
 
 /*
@@ -1189,9 +1191,10 @@ spa_deactivate(spa_t *spa)
 	 * still have errors left in the queues.  Empty them just in case.
 	 */
 	spa_errlog_drain(spa);
-
 	avl_destroy(&spa->spa_errlist_scrub);
 	avl_destroy(&spa->spa_errlist_last);
+
+	spa_keystore_fini(&spa->spa_keystore);
 
 	spa->spa_state = POOL_STATE_UNINITIALIZED;
 

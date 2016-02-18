@@ -68,6 +68,7 @@ zfs_SOURCES = \
 	dsl_deleg.c \
 	dsl_destroy.c \
 	dsl_dir.c \
+	dsl_keychain.c \
 	dsl_pool.c \
 	dsl_prop.c \
 	dsl_scan.c \
@@ -112,6 +113,7 @@ zfs_SOURCES = \
 	zap.c \
 	zap_leaf.c \
 	zap_micro.c \
+	zcrypt_common.c \
 	zfeature.c \
 	zfeature_common.c \
 	zfs_acl.c \
@@ -138,11 +140,38 @@ zfs_SOURCES = \
 	zio.c \
 	zio_checksum.c \
 	zio_compress.c \
+	zio_crypt.c \
 	zio_inject.c \
 	zle.c \
 	zrlock.c \
 	zvol.c \
 	zvolIO.cpp \
+	../icp/illumos-crypto.c \
+	../icp/api/kcf_cipher.c \
+	../icp/api/kcf_ctxops.c \
+	../icp/api/kcf_digest.c \
+	../icp/api/kcf_mac.c \
+	../icp/api/kcf_miscapi.c \
+	../icp/core/kcf_callprov.c \
+	../icp/core/kcf_mech_tabs.c \
+	../icp/core/kcf_prov_lib.c \
+	../icp/core/kcf_prov_tabs.c \
+	../icp/core/kcf_sched.c \
+	../icp/io/aes.c \
+	../icp/io/sha2_mod.c \
+	../icp/os/bitmap_arch.c \
+	../icp/os/modconf.c \
+	../icp/os/modhash.c \
+	../icp/spi/kcf_spi.c \
+	../icp/algs/aes/aes_impl.c \
+	../icp/algs/modes/cbc.c \
+	../icp/algs/modes/ccm.c \
+	../icp/algs/modes/ctr.c \
+	../icp/algs/modes/ecb.c \
+	../icp/algs/modes/gcm.c \
+	../icp/algs/modes/modes.c \
+	../icp/algs/sha2/sha2.c \
+	../icp/algs/aes/amd64/aeskey.c \
 	../nvpair/fnvpair.c \
 	../nvpair/nvpair.c \
 	../nvpair/nvpair_alloc_fixed.c \

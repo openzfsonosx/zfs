@@ -48,6 +48,7 @@
 #include <sys/uio.h>
 #include <sys/vnode.h>
 #include <sys/zio_priority.h>
+#include <sys/zio_crypt.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -197,6 +198,7 @@ typedef enum dmu_object_type {
 	DMU_OT_DEADLIST_HDR,		/* UINT64 */
 	DMU_OT_DSL_CLONES,		/* ZAP */
 	DMU_OT_BPOBJ_SUBOBJ,		/* UINT64 */
+	DMU_OT_DSL_KEYCHAIN,		/* ZAP */
 	/*
 	 * Do not allocate new object types here. Doing so makes the on-disk
 	 * format incompatible with any other format that uses the same object
@@ -285,7 +287,10 @@ int dmu_objset_open_ds(struct dsl_dataset *ds, objset_t **osp);
 
 void dmu_objset_evict_dbufs(objset_t *os);
 int dmu_objset_create(const char *name, dmu_objset_type_t type, uint64_t flags,
-    void (*func)(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx), void *arg);
+    dsl_crypto_params_t *dcp, void (*func)(objset_t *os, void *arg,
+	cred_t *cr, dmu_tx_t *tx), void *arg);
+int dmu_objset_clone(const char *name, const char *origin,
+	dsl_crypto_params_t *dcp);
 int dmu_objset_destroy(const char *name, boolean_t defer);
 int dmu_objset_snapshot(char *fsname, char *snapname, char *tag,
     struct nvlist *props, boolean_t recursive, boolean_t temporary, int fd);
@@ -293,7 +298,6 @@ int dmu_objset_snapshot(char *fsname, char *snapname, char *tag,
     // boolean_t recursive);
 #define  dmu_objset_rename(old, new, recursive)       dsl_dataset_rename((old), (new), (recursive))
 
-int dmu_objset_clone(const char *name, const char *origin);
 int dsl_destroy_snapshots_nvl(struct nvlist *snaps, boolean_t defer,
     struct nvlist *errlist);
 int dmu_objset_snapshot_one(const char *fsname, const char *snapname);

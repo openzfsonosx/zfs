@@ -833,6 +833,7 @@ typedef struct dmu_objset_create_arg {
 	void *doca_userarg;
 	dmu_objset_type_t doca_type;
 	uint64_t doca_flags;
+	dsl_crypto_params_t *doca_dcp;
 } dmu_objset_create_arg_t;
 
 /*ARGSUSED*/
@@ -855,8 +856,18 @@ dmu_objset_create_check(void *arg, dmu_tx_t *tx)
 		dsl_dir_rele(pdd, FTAG);
 		return (SET_ERROR(EEXIST));
 	}
+
+	if (doca->doca_dcp) {
+		error = dmu_objset_create_encryption_check(pdd, doca->doca_dcp);
+		if (error != 0) {
+			dsl_dir_rele(pdd, FTAG);
+			return (error);
+		}
+	}
+
 	error = dsl_fs_ss_limit_check(pdd, 1, ZFS_PROP_FILESYSTEM_LIMIT, NULL,
 	    doca->doca_cred);
+
 	dsl_dir_rele(pdd, FTAG);
 
 	return (error);
@@ -877,7 +888,7 @@ dmu_objset_create_sync(void *arg, dmu_tx_t *tx)
 	VERIFY0(dsl_dir_hold(dp, doca->doca_name, FTAG, &pdd, &tail));
 
 	obj = dsl_dataset_create_sync(pdd, tail, NULL, doca->doca_flags,
-	    doca->doca_cred, tx);
+	    doca->doca_cred, doca->doca_dcp, tx);
 
 	VERIFY0(dsl_dataset_hold_obj(pdd->dd_pool, obj, FTAG, &ds));
 	bp = dsl_dataset_get_blkptr(ds);
@@ -896,7 +907,8 @@ dmu_objset_create_sync(void *arg, dmu_tx_t *tx)
 
 int
 dmu_objset_create(const char *name, dmu_objset_type_t type, uint64_t flags,
-    void (*func)(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx), void *arg)
+    dsl_crypto_params_t *dcp, void (*func)(objset_t *os, void *arg,
+	cred_t *cr, dmu_tx_t *tx), void *arg)
 {
 	dmu_objset_create_arg_t doca;
 
@@ -906,6 +918,7 @@ dmu_objset_create(const char *name, dmu_objset_type_t type, uint64_t flags,
 	doca.doca_userfunc = func;
 	doca.doca_userarg = arg;
 	doca.doca_type = type;
+	doca.doca_dcp = dcp;
 
 	return (dsl_sync_task(name,
 	    dmu_objset_create_check, dmu_objset_create_sync, &doca,
@@ -916,6 +929,7 @@ typedef struct dmu_objset_clone_arg {
 	const char *doca_clone;
 	const char *doca_origin;
 	cred_t *doca_cred;
+	dsl_crypto_params_t *doca_dcp;
 } dmu_objset_clone_arg_t;
 
 /*ARGSUSED*/
@@ -946,7 +960,6 @@ dmu_objset_clone_check(void *arg, dmu_tx_t *tx)
 		dsl_dir_rele(pdd, FTAG);
 		return (SET_ERROR(EDQUOT));
 	}
-	dsl_dir_rele(pdd, FTAG);
 
 	error = dsl_dataset_hold(dp, doca->doca_origin, FTAG, &origin);
 	if (error != 0)
@@ -957,7 +970,19 @@ dmu_objset_clone_check(void *arg, dmu_tx_t *tx)
 		dsl_dataset_rele(origin, FTAG);
 		return (SET_ERROR(EINVAL));
 	}
+
+	if (doca->doca_dcp) {
+		error = dmu_objset_clone_encryption_check(pdd, origin->ds_dir,
+			doca->doca_dcp);
+		if (error != 0) {
+			dsl_dataset_rele(origin, FTAG);
+			dsl_dir_rele(pdd, FTAG);
+			return (error);
+		}
+	}
+
 	dsl_dataset_rele(origin, FTAG);
+	dsl_dir_rele(pdd, FTAG);
 
 	return (0);
 }
@@ -977,7 +1002,7 @@ dmu_objset_clone_sync(void *arg, dmu_tx_t *tx)
 	VERIFY0(dsl_dataset_hold(dp, doca->doca_origin, FTAG, &origin));
 
 	obj = dsl_dataset_create_sync(pdd, tail, origin, 0,
-	    doca->doca_cred, tx);
+	    doca->doca_cred, doca->doca_dcp, tx);
 
 	VERIFY0(dsl_dataset_hold_obj(pdd->dd_pool, obj, FTAG, &ds));
 	dsl_dataset_name(origin, namebuf);
@@ -989,13 +1014,15 @@ dmu_objset_clone_sync(void *arg, dmu_tx_t *tx)
 }
 
 int
-dmu_objset_clone(const char *clone, const char *origin)
+dmu_objset_clone(const char *clone, const char *origin,
+	dsl_crypto_params_t *dcp)
 {
 	dmu_objset_clone_arg_t doca;
 
 	doca.doca_clone = clone;
 	doca.doca_origin = origin;
 	doca.doca_cred = CRED();
+	doca.doca_dcp = dcp;
 
 	return (dsl_sync_task(clone,
 	    dmu_objset_clone_check, dmu_objset_clone_sync, &doca,

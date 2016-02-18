@@ -38,6 +38,7 @@
 #include <sys/zfs_context.h>
 #include <sys/dsl_deadlist.h>
 #include <sys/refcount.h>
+#include <sys/zio_crypt.h>
 #include <zfeature_common.h>
 
 #ifdef	__cplusplus
@@ -230,7 +231,7 @@ typedef struct dsl_dataset {
 static inline dsl_dataset_phys_t *
 dsl_dataset_phys(dsl_dataset_t *ds)
 {
-	return (ds->ds_dbuf->db_data);
+	return ((dsl_dataset_phys_t *)ds->ds_dbuf->db_data);
 }
 
 /*
@@ -261,9 +262,10 @@ void dsl_dataset_name(dsl_dataset_t *ds, char *name);
 boolean_t dsl_dataset_tryown(dsl_dataset_t *ds, void *tag);
 boolean_t dsl_dataset_has_owner(dsl_dataset_t *ds);
 uint64_t dsl_dataset_create_sync(dsl_dir_t *pds, const char *lastname,
-    dsl_dataset_t *origin, uint64_t flags, cred_t *, dmu_tx_t *);
+    dsl_dataset_t *origin, uint64_t flags, cred_t *, dsl_crypto_params_t *,
+	dmu_tx_t *);
 uint64_t dsl_dataset_create_sync_dd(dsl_dir_t *dd, dsl_dataset_t *origin,
-    uint64_t flags, dmu_tx_t *tx);
+		dsl_crypto_params_t *dcp, uint64_t flags, dmu_tx_t *tx);
 int dsl_dataset_snapshot(nvlist_t *snaps, nvlist_t *props, nvlist_t *errors);
 int dsl_dataset_promote(const char *name, char *conflsnap);
 int dsl_dataset_rename_snapshot(const char *fsname,
@@ -298,7 +300,7 @@ void dsl_dataset_space(dsl_dataset_t *ds,
     uint64_t *refdbytesp, uint64_t *availbytesp,
     uint64_t *usedobjsp, uint64_t *availobjsp);
 uint64_t dsl_dataset_fsid_guid(dsl_dataset_t *ds);
-int dsl_dataset_space_written(dsl_dataset_t *oldsnap, dsl_dataset_t *new,
+int dsl_dataset_space_written(dsl_dataset_t *oldsnap, dsl_dataset_t *newp,
     uint64_t *usedp, uint64_t *compp, uint64_t *uncompp);
 int dsl_dataset_space_wouldfree(dsl_dataset_t *firstsnap, dsl_dataset_t *last,
     uint64_t *usedp, uint64_t *compp, uint64_t *uncompp);

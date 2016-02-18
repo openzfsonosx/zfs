@@ -112,7 +112,8 @@ const dmu_object_type_info_t dmu_ot[DMU_OT_NUMTYPES] = {
 	{	DMU_BSWAP_ZAP,		TRUE,	"DSL deadlist map"	},
 	{	DMU_BSWAP_UINT64,	TRUE,	"DSL deadlist map hdr"	},
 	{	DMU_BSWAP_ZAP,		TRUE,	"DSL dir clones"	},
-	{	DMU_BSWAP_UINT64,	TRUE,	"bpobj subobj"		}
+	{	DMU_BSWAP_UINT64,	TRUE,	"bpobj subobj"		},
+	{	DMU_BSWAP_ZAP,		TRUE,	"DSL Keychain"		}
 };
 
 const dmu_object_byteswap_info_t dmu_ot_byteswap[DMU_BSWAP_NUMFUNCS] = {

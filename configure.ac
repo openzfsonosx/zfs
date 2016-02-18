@@ -145,11 +145,18 @@ AC_CONFIG_FILES([
 	module/zcommon/Makefile
 	module/zfs/Makefile
 	module/zpios/Makefile
+	module/icp/Makefile
 	include/Makefile
+	include/arch/Makefile
+	include/arch/intel/Makefile
+	include/arch/intel/ia32/Makefile
+	include/arch/intel/ia32/sys/Makefile
+	include/arch/intel/sys/Makefile
 	include/sys/Makefile
 	include/sys/fs/Makefile
 	include/sys/fm/Makefile
 	include/sys/fm/fs/Makefile
+	include/sys/crypto/Makefile
 	scripts/Makefile
 	scripts/zpios-profile/Makefile
 	scripts/zpios-test/Makefile

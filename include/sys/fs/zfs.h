@@ -165,6 +165,10 @@ typedef enum {
 	ZFS_PROP_REDUNDANT_METADATA,
 	ZFS_PROP_PREV_SNAP,
 	ZFS_PROP_OVERLAY,
+	ZFS_PROP_ENCRYPTION,
+	ZFS_PROP_SALT,
+	ZFS_PROP_KEYSOURCE,
+	ZFS_PROP_KEYSTATUS,
 	ZFS_PROP_RECEIVE_RESUME_TOKEN,
 	ZFS_NUM_PROPS
 } zfs_prop_t;
@@ -816,6 +820,7 @@ typedef struct ddt_histogram {
 #define	ZVOL_PROP_NAME		"name"
 
 #define	ZVOL_DEFAULT_BLOCKSIZE	8192
+
 
 /*
  * zvol ioctl to get dataset name
