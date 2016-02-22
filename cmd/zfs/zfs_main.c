@@ -24,8 +24,8 @@
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland.  All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #include <assert.h>
@@ -6446,6 +6446,15 @@ unshare_unmount(int op, int argc, char **argv)
 			    ZFS_TYPE_FILESYSTEM)) == NULL) {
 #endif
 				ret = 1;
+				continue;
+			}
+
+			/*
+			 * Ignore datasets that are excluded/restricted by
+			 * parent pool name.
+			 */
+			if (zpool_skip_pool(zfs_get_pool_name(zhp))) {
+				zfs_close(zhp);
 				continue;
 			}
 
