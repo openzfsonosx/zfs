@@ -443,9 +443,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		/* ioctl supported by ZFS and POSIX */
 
 		case F_FULLFSYNC:
-#ifdef F_BARRIERFSYNC
 		case F_BARRIERFSYNC:
-#endif
 			error = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 			break;
 
@@ -826,6 +824,17 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		case HFS_GET_FSINFO:
 			break;
 #endif
+
+#ifdef HFS_REPIN_HOTFILE_STATE
+		case HFS_REPIN_HOTFILE_STATE:
+			break;
+#endif
+
+#ifdef HFS_SET_HOTFILE_STATE
+		case HFS_SET_HOTFILE_STATE:
+			break;
+#endif
+
 			/* End HFS mimic ioctl */
 
 
