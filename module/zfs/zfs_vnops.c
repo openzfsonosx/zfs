@@ -5621,6 +5621,7 @@ zfs_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 	ZFS_VERIFY_ZP(zp);
 
 	if (cmd != F_FREESP) {
+		printf("ZFS: fallocate() called for non F_FREESP method!\n");
 		ZFS_EXIT(zfsvfs);
 		return (SET_ERROR(ENOTSUP));
 	}
