@@ -428,7 +428,8 @@ struct zio {
 	hrtime_t	io_timestamp;	/* submitted at */
 	hrtime_t    io_target_timestamp;
 	hrtime_t	io_delta;	/* vdev queue service delta */
-	uint64_t	io_delay;	/* vdev disk service delta (ticks) */
+	hrtime_t	io_delay;	/* Device access time (disk or */
+					/* file). */
 	avl_node_t	io_queue_node;
 	avl_node_t	io_offset_node;
 

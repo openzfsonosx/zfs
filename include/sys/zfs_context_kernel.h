@@ -111,6 +111,12 @@ typedef struct direntry dirent64_t;
 #define USEC_TO_TICK(usec)      ((usec) / (MICROSEC / hz))
 #define NSEC_TO_TICK(usec)      ((usec) / (NANOSEC / hz))
 
+
+#define IS_INDEXABLE(arg) (sizeof(arg[0]))
+#define IS_ARRAY(arg) (IS_INDEXABLE(arg) && (((void *) &arg) == ((void *) arg)))
+#define ARRAY_SIZE(arr) (IS_ARRAY(arr) ? (sizeof(arr) / sizeof(arr[0])) : 0)
+
+
 #endif /* _KERNEL */
 
 #ifdef __cplusplus
