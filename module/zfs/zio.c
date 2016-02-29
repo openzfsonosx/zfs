@@ -43,6 +43,7 @@
 #include <sys/blkptr.h>
 #include <sys/zfeature.h>
 #include <sys/callb.h>
+#include <sys/time.h>
 
 /*
  * ==========================================================================

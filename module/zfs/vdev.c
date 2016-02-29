@@ -2713,30 +2713,21 @@ vdev_get_child_stat_ex(vdev_t *cvd, vdev_stat_ex_t *vsx, vdev_stat_ex_t *cvsx)
 {
 	int t, b;
 	for (t = 0; t < ZIO_TYPES; t++) {
-		for (b = 0; b < ARRAY_SIZE(vsx->vsx_disk_histo[0]); b++)
+		for (b = 0; b < VDEV_HISTO_BUCKETS; b++) {
 			vsx->vsx_disk_histo[t][b] += cvsx->vsx_disk_histo[t][b];
-
-		for (b = 0; b < ARRAY_SIZE(vsx->vsx_total_histo[0]); b++) {
 			vsx->vsx_total_histo[t][b] +=
 			    cvsx->vsx_total_histo[t][b];
 		}
 	}
 
 	for (t = 0; t < ZIO_PRIORITY_NUM_QUEUEABLE; t++) {
-		for (b = 0; b < ARRAY_SIZE(vsx->vsx_queue_histo[0]); b++) {
+		for (b = 0; b < VDEV_HISTO_BUCKETS; b++) {
 			vsx->vsx_queue_histo[t][b] +=
 			    cvsx->vsx_queue_histo[t][b];
 		}
 		vsx->vsx_active_queue[t] += cvsx->vsx_active_queue[t];
 		vsx->vsx_pend_queue[t] += cvsx->vsx_pend_queue[t];
-
-		for (b = 0; b < ARRAY_SIZE(vsx->vsx_ind_histo[0]); b++)
-			vsx->vsx_ind_histo[t][b] += cvsx->vsx_ind_histo[t][b];
-
-		for (b = 0; b < ARRAY_SIZE(vsx->vsx_agg_histo[0]); b++)
-			vsx->vsx_agg_histo[t][b] += cvsx->vsx_agg_histo[t][b];
 	}
-
 }
 
 /*
@@ -2801,15 +2792,7 @@ vdev_get_stats_ex(vdev_t *vd, vdev_stat_t *vs, vdev_stat_ex_t *vsx)
 		if (vd->vdev_ops->vdev_op_leaf)
 			vs->vs_rsize += VDEV_LABEL_START_SIZE +
 			    VDEV_LABEL_END_SIZE;
-		/*
-		 * Report expandable space on top-level, non-auxillary devices only.
-		 * The expandable space is reported in terms of metaslab sized units
-		 * since that determines how much space the pool can expand.
-		 */
-		if (vd->vdev_aux == NULL && vd->vdev_top != NULL) {
-			vs->vs_esize = P2ALIGN(vd->vdev_max_asize - vd->vdev_asize,
-								   1ULL << vd->vdev_top->vdev_ms_shift);
-		}
+		vs->vs_esize = vd->vdev_max_asize - vd->vdev_asize;
 		if (vd->vdev_aux == NULL && vd == vd->vdev_top &&
 		    !vd->vdev_ishole) {
 			vs->vs_fragmentation = vd->vdev_mg->mg_fragmentation;
@@ -2920,21 +2903,13 @@ vdev_stat_update(zio_t *zio, uint64_t psize)
 			vs->vs_ops[type]++;
 			vs->vs_bytes[type] += psize;
 
-			if (flags & ZIO_FLAG_DELEGATED) {
-				vsx->vsx_agg_histo[zio->io_priority]
-				    [RQ_HISTO(zio->io_size)]++;
-			} else {
-				vsx->vsx_ind_histo[zio->io_priority]
-				    [RQ_HISTO(zio->io_size)]++;
-			}
-
 			if (zio->io_delta && zio->io_delay) {
 				vsx->vsx_queue_histo[zio->io_priority]
-				    [L_HISTO(zio->io_delta - zio->io_delay)]++;
+				    [HISTO(zio->io_delta - zio->io_delay)]++;
 				vsx->vsx_disk_histo[type]
-				    [L_HISTO(zio->io_delay)]++;
+				    [HISTO(zio->io_delay)]++;
 				vsx->vsx_total_histo[type]
-				    [L_HISTO(zio->io_delta)]++;
+				    [HISTO(zio->io_delta)]++;
 			}
 		}
 
