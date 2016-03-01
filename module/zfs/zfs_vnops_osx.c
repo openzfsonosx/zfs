@@ -418,7 +418,9 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		/* ioctl supported by ZFS and POSIX */
 
 		case F_FULLFSYNC:
+#ifdef F_BARRIERFSYNC
 		case F_BARRIERFSYNC:
+#endif
 			error = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 			break;
 
