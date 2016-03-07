@@ -760,8 +760,9 @@ zfs_rmnode(znode_t *zp)
 	}
 
 	/* Remove this znode from the unlinked set */
-	VERIFY3U(0, ==,
-	    zap_remove_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx));
+	if (zap_remove_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx) != 0) {
+		zfs_panic_recover("zfs: zfs_rmnode(zap_remove_int(z_unlinkedobj, %llu", zp->z_id);
+	}
 
 	zfs_znode_delete(zp, tx);
 
