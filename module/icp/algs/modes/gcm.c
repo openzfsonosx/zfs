@@ -28,6 +28,11 @@
 #include <sys/crypto/impl.h>
 #include <sys/byteorder.h>
 
+#ifdef __APPLE__
+// No assembler for now
+#undef __amd64
+#endif
+
 #ifdef __amd64
 
 #ifdef _KERNEL
@@ -367,9 +372,9 @@ gcm_mode_decrypt_contiguous_blocks(gcm_ctx_t *ctx, char *data, size_t length,
 	 */
 	if (length > 0) {
 		new_len = ctx->gcm_pt_buf_len + length;
-		new = vmem_alloc(new_len, ctx->gcm_kmflag);
+		new = kmem_alloc(new_len, ctx->gcm_kmflag);
 		bcopy(ctx->gcm_pt_buf, new, ctx->gcm_pt_buf_len);
-		vmem_free(ctx->gcm_pt_buf, ctx->gcm_pt_buf_len);
+		kmem_free(ctx->gcm_pt_buf, ctx->gcm_pt_buf_len);
 		if (new == NULL)
 			return (CRYPTO_HOST_MEMORY);
 

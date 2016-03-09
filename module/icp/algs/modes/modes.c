@@ -45,6 +45,21 @@ crypto_init_ptrs(crypto_data_t *out, void **iov_or_mp, offset_t *current_offset)
 	case CRYPTO_DATA_UIO: {
 		uio_t *uiop = out->cd_uio;
 		uintptr_t vec_idx;
+		user_size_t iov_len;
+
+#ifdef __APPLE__
+
+		offset = out->cd_offset;
+		for (vec_idx = 0;
+			 !uio_getiov(uiop, vec_idx, NULL, &iov_len) &&
+			 vec_idx < uio_iovcnt(uiop) && offset >= iov_len;
+			 offset -= iov_len, vec_idx++)
+			;
+
+		*current_offset = offset;
+		*iov_or_mp = (void *)vec_idx;
+
+#else // !APPLE
 
 		offset = out->cd_offset;
 		for (vec_idx = 0; vec_idx < uiop->uio_iovcnt &&
@@ -54,6 +69,7 @@ crypto_init_ptrs(crypto_data_t *out, void **iov_or_mp, offset_t *current_offset)
 
 		*current_offset = offset;
 		*iov_or_mp = (void *)vec_idx;
+#endif // !APPLE
 		break;
 	}
 	} /* end switch */
@@ -87,6 +103,43 @@ crypto_get_ptrs(crypto_data_t *out, void **iov_or_mp, offset_t *current_offset,
 		break;
 	}
 
+#ifdef __APPLE__
+	case CRYPTO_DATA_UIO: {
+		uio_t *uio = out->cd_uio;
+		offset_t offset;
+		uintptr_t vec_idx;
+		uint8_t *p;
+		user_addr_t iov_base = 0;
+		user_size_t iov_len = 0;
+
+		offset = *current_offset;
+		vec_idx = (uintptr_t)(*iov_or_mp);
+		uio_getiov(uio, vec_idx, &iov_base, &iov_len);
+
+		p = (uint8_t *)iov_base + offset;
+		*out_data_1 = p;
+
+		if (offset + amt <= iov_len) {
+			/* can fit one block into this iov */
+			*out_data_1_len = amt;
+			*out_data_2 = NULL;
+			*current_offset = offset + amt;
+		} else {
+			/* one block spans two iovecs */
+			*out_data_1_len = iov_len - offset;
+			if (vec_idx == uio_iovcnt(uio))
+				return;
+			vec_idx++;
+			uio_getiov(uio, vec_idx, &iov_base, &iov_len);
+			*out_data_2 = (uint8_t *)iov_base;
+			*current_offset = amt - *out_data_1_len;
+		}
+		*iov_or_mp = (void *)vec_idx;
+		break;
+	}
+
+#else // !APPLE
+
 	case CRYPTO_DATA_UIO: {
 		uio_t *uio = out->cd_uio;
 		iovec_t *iov;
@@ -118,6 +171,9 @@ crypto_get_ptrs(crypto_data_t *out, void **iov_or_mp, offset_t *current_offset,
 		*iov_or_mp = (void *)vec_idx;
 		break;
 	}
+
+#endif // !APPLE
+
 	} /* end switch */
 }
 
@@ -142,7 +198,7 @@ crypto_free_mode_ctx(void *ctx)
 
 	case CCM_MODE:
 		if (((ccm_ctx_t *)ctx)->ccm_pt_buf != NULL)
-			vmem_free(((ccm_ctx_t *)ctx)->ccm_pt_buf,
+			kmem_free(((ccm_ctx_t *)ctx)->ccm_pt_buf,
 			    ((ccm_ctx_t *)ctx)->ccm_data_len);
 
 		kmem_free(ctx, sizeof (ccm_ctx_t));
@@ -151,7 +207,7 @@ crypto_free_mode_ctx(void *ctx)
 	case GCM_MODE:
 	case GMAC_MODE:
 		if (((gcm_ctx_t *)ctx)->gcm_pt_buf != NULL)
-			vmem_free(((gcm_ctx_t *)ctx)->gcm_pt_buf,
+			kmem_free(((gcm_ctx_t *)ctx)->gcm_pt_buf,
 			    ((gcm_ctx_t *)ctx)->gcm_pt_buf_len);
 
 		kmem_free(ctx, sizeof (gcm_ctx_t));

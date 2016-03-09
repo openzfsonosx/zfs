@@ -26,7 +26,7 @@ if TARGET_ASM_I386
 ASM_SOURCES_C =
 ASM_SOURCES_AS =
 endif
-	
+
 if TARGET_ASM_GENERIC
 ASM_SOURCES_C =
 ASM_SOURCES_AS =
@@ -52,9 +52,11 @@ KERNEL_C = \
 	algs/modes/ccm.c \
 	algs/modes/ecb.c \
 	algs/sha2/sha2.c \
+	algs/sha1/sha1.c \
 	illumos-crypto.c \
 	io/aes.c \
 	io/sha2_mod.c \
+	io/sha1_mod.c \
 	os/bitmap_arch.c \
 	os/modhash.c \
 	os/modconf.c \
@@ -72,5 +74,5 @@ nodist_libicp_la_SOURCES = \
 	$(USER_ASM) \
 	$(KERNEL_C) \
 	$(KERNEL_ASM)
-	
-libicp_la_LIBADD = -lrt
+
+#libicp_la_LIBADD = -lrt

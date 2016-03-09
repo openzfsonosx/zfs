@@ -418,6 +418,9 @@ extern int crypto_get_all_mech_info(crypto_mech_type_t,
     crypto_mechanism_info_t **, uint_t *, int);
 extern void crypto_free_all_mech_info(crypto_mechanism_info_t *, uint_t);
 
+extern int  icp_init(void);
+extern void icp_fini(void);
+
 #ifdef	__cplusplus
 }
 #endif

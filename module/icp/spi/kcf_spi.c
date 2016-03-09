@@ -151,7 +151,7 @@ crypto_register_provider(crypto_provider_info_t *info,
 		 * for details on pd_description field.
 		 */
 		bcopy(info->pi_provider_description, prov_desc->pd_description,
-		    min(strlen(info->pi_provider_description),
+		    MIN(strlen(info->pi_provider_description),
 		    (size_t)CRYPTO_PROVIDER_DESCR_MAX_LEN));
 	}
 
