@@ -27,6 +27,11 @@
 #include <modes/modes.h>
 #include <aes/aes_impl.h>
 
+#ifdef __APPLE__
+// No assembler for now
+#undef __amd64
+#endif
+
 #ifdef __amd64
 
 #ifdef _KERNEL

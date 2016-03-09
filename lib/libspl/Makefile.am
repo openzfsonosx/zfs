@@ -30,6 +30,7 @@ libspl_la_SOURCES = \
 	mkdirp.c \
 	strnlen.c \
 	timestamp.c \
+	uio.c \
 	zmount.c \
 	zone.c \
 	xdr.c \

@@ -517,6 +517,8 @@ typedef enum zfs_ioc {
 	ZFS_IOC_GET_BOOKMARKS,
 	ZFS_IOC_DESTROY_BOOKMARKS,
 
+	ZFS_IOC_CRYPTO,
+
 	/*
 	 * Linux - 3/64 numbers reserved.
 	 */
