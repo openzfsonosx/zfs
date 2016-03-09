@@ -43,6 +43,11 @@
 
 #define	_RESTRICT_KYWD
 
+#ifdef __APPLE__
+// No assembler for now
+#undef __amd64
+#endif
+
 #ifdef _LITTLE_ENDIAN
 #include <sys/byteorder.h>
 #define	HAVE_HTONL
@@ -406,7 +411,6 @@ SHA2Update(SHA2_CTX *ctx, const void *inptr, size_t input_len)
 {
 	uint32_t	i, buf_index, buf_len, buf_limit;
 	const uint8_t	*input = inptr;
-	uint32_t	algotype = ctx->algotype;
 #if defined(__amd64)
 	uint32_t	block_count;
 #endif	/* !__amd64 */
@@ -416,30 +420,16 @@ SHA2Update(SHA2_CTX *ctx, const void *inptr, size_t input_len)
 	if (input_len == 0)
 		return;
 
-	if (algotype <= SHA256_HMAC_GEN_MECH_INFO_TYPE) {
-		buf_limit = 64;
+	buf_limit = 64;
 
-		/* compute number of bytes mod 64 */
-		buf_index = (ctx->count.c32[1] >> 3) & 0x3F;
+	/* compute number of bytes mod 64 */
+	buf_index = (ctx->count.c32[1] >> 3) & 0x3F;
 
-		/* update number of bits */
-		if ((ctx->count.c32[1] += (input_len << 3)) < (input_len << 3))
-			ctx->count.c32[0]++;
+	/* update number of bits */
+	if ((ctx->count.c32[1] += (input_len << 3)) < (input_len << 3))
+		ctx->count.c32[0]++;
 
-		ctx->count.c32[0] += (input_len >> 29);
-
-	} else {
-		buf_limit = 128;
-
-		/* compute number of bytes mod 128 */
-		buf_index = (ctx->count.c64[1] >> 3) & 0x7F;
-
-		/* update number of bits */
-		if ((ctx->count.c64[1] += (input_len << 3)) < (input_len << 3))
-			ctx->count.c64[0]++;
-
-		ctx->count.c64[0] += (input_len >> 29);
-	}
+	ctx->count.c32[0] += (input_len >> 29);
 
 	buf_len = buf_limit - buf_index;
 
@@ -458,27 +448,21 @@ SHA2Update(SHA2_CTX *ctx, const void *inptr, size_t input_len)
 		 */
 		if (buf_index) {
 			bcopy(input, &ctx->buf_un.buf8[buf_index], buf_len);
-			if (algotype <= SHA256_HMAC_GEN_MECH_INFO_TYPE)
-				SHA256Transform(ctx, ctx->buf_un.buf8);
-
+			SHA256Transform(ctx, ctx->buf_un.buf8);
 			i = buf_len;
 		}
 
 #if !defined(__amd64)
-		if (algotype <= SHA256_HMAC_GEN_MECH_INFO_TYPE) {
-			for (; i + buf_limit - 1 < input_len; i += buf_limit) {
-				SHA256Transform(ctx, &input[i]);
-			}
+		for (; i + buf_limit - 1 < input_len; i += buf_limit) {
+			SHA256Transform(ctx, &input[i]);
 		}
 
 #else
-		if (algotype <= SHA256_HMAC_GEN_MECH_INFO_TYPE) {
-			block_count = (input_len - i) >> 6;
-			if (block_count > 0) {
-				SHA256TransformBlocks(ctx, &input[i],
-				    block_count);
-				i += block_count << 6;
-			}
+		block_count = (input_len - i) >> 6;
+		if (block_count > 0) {
+			SHA256TransformBlocks(ctx, &input[i],
+			    block_count);
+			i += block_count << 6;
 		}
 #endif	/* !__amd64 */
 
@@ -518,15 +502,12 @@ SHA2Final(void *digest, SHA2_CTX *ctx)
 {
 	uint8_t		bitcount_be[sizeof (ctx->count.c32)];
 	uint32_t	index;
-	uint32_t	algotype = ctx->algotype;
 
-	if (algotype <= SHA256_HMAC_GEN_MECH_INFO_TYPE) {
-		index  = (ctx->count.c32[1] >> 3) & 0x3f;
-		Encode(bitcount_be, ctx->count.c32, sizeof (bitcount_be));
-		SHA2Update(ctx, PADDING, ((index < 56) ? 56 : 120) - index);
-		SHA2Update(ctx, bitcount_be, sizeof (bitcount_be));
-		Encode(digest, ctx->state.s32, sizeof (ctx->state.s32));
-	}
+	index  = (ctx->count.c32[1] >> 3) & 0x3f;
+	Encode(bitcount_be, ctx->count.c32, sizeof (bitcount_be));
+	SHA2Update(ctx, PADDING, ((index < 56) ? 56 : 120) - index);
+	SHA2Update(ctx, bitcount_be, sizeof (bitcount_be));
+	Encode(digest, ctx->state.s32, sizeof (ctx->state.s32));
 
 	/* zeroize sensitive information */
 	bzero(ctx, sizeof (*ctx));

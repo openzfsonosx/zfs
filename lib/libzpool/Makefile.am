@@ -51,6 +51,7 @@ USER_C = \
 	../../module/zfs/dsl_deleg.c \
 	../../module/zfs/dsl_destroy.c \
 	../../module/zfs/dsl_dir.c \
+	../../module/zfs/dsl_keychain.c \
 	../../module/zfs/dsl_pool.c \
 	../../module/zfs/dsl_prop.c \
 	../../module/zfs/dsl_scan.c \
@@ -105,6 +106,7 @@ USER_C = \
 	../../module/zfs/zio.c \
 	../../module/zfs/zio_checksum.c \
 	../../module/zfs/zio_compress.c \
+	../../module/zfs/zio_crypt.c \
 	../../module/zfs/zio_inject.c \
 	../../module/zfs/zle.c \
 	../../module/zfs/zrlock.c

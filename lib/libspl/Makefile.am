@@ -34,6 +34,8 @@ libspl_la_SOURCES = \
 	strlcpy.c \
 	strnlen.c \
 	timestamp.c \
+	uio.c \
+	zmount.c \
 	zone.c \
 	xdr.c \
 	include/sys/list.h \
