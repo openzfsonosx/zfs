@@ -49,7 +49,17 @@ crypto_init_ptrs(crypto_data_t *out, void **iov_or_mp, offset_t *current_offset)
 	case CRYPTO_DATA_UIO: {
 		uio_t *uiop = out->cd_uio;
 		uintptr_t vec_idx;
-#if 0 //portme
+
+#ifdef __APPLE__
+		offset = out->cd_offset;
+		uio_update(uiop, offset);
+		offset = 0;
+
+		*current_offset = 0;
+		*iov_or_mp = 0;
+
+#else // !APPLE
+
 		offset = out->cd_offset;
 		for (vec_idx = 0; vec_idx < uiop->uio_iovcnt &&
 		    offset >= uiop->uio_iov[vec_idx].iov_len;
@@ -58,7 +68,7 @@ crypto_init_ptrs(crypto_data_t *out, void **iov_or_mp, offset_t *current_offset)
 
 		*current_offset = offset;
 		*iov_or_mp = (void *)vec_idx;
-#endif
+#endif // !APPLE
 		break;
 	}
 	} /* end switch */
@@ -92,13 +102,51 @@ crypto_get_ptrs(crypto_data_t *out, void **iov_or_mp, offset_t *current_offset,
 		break;
 	}
 
+#ifdef __APPLE__
 	case CRYPTO_DATA_UIO: {
 		uio_t *uio = out->cd_uio;
 		iovec_t *iov;
 		offset_t offset;
 		uintptr_t vec_idx;
 		uint8_t *p;
-#if 0
+		offset = *current_offset;
+		vec_idx = (uintptr_t)(*iov_or_mp);
+		iov = uio_curriovbase(uio);
+		p = (uint8_t *)iov + offset;
+		*out_data_1 = p;
+
+		if (offset + amt <= uio_curriovlen(uio)) {
+			/* can fit one block into this iov */
+			*out_data_1_len = amt;
+			*out_data_2 = NULL;
+			*current_offset = offset + amt;
+		} else {
+			/* one block spans two iovecs */
+			*out_data_1_len = uio_curriovlen(uio) - offset;
+
+			/*
+			 * When XNU uio advances to next iov, it does so by
+			 * moving past previous ptr, so new "current" retains
+			 * index "0", and num_iov is decremented. This means
+			 * asking for position "1" is always "the next iov"
+			 */
+			if (uio_getiov(uio, 1, &out_data_2, NULL))
+				return;
+
+			*current_offset = amt - *out_data_1_len;
+		}
+		*iov_or_mp = (void *)vec_idx;
+		break;
+	}
+
+#else // !APPLE
+
+	case CRYPTO_DATA_UIO: {
+		uio_t *uio = out->cd_uio;
+		iovec_t *iov;
+		offset_t offset;
+		uintptr_t vec_idx;
+		uint8_t *p;
 		offset = *current_offset;
 		vec_idx = (uintptr_t)(*iov_or_mp);
 		iov = (iovec_t *)&uio->uio_iov[vec_idx];
@@ -121,9 +169,11 @@ crypto_get_ptrs(crypto_data_t *out, void **iov_or_mp, offset_t *current_offset,
 			*current_offset = amt - *out_data_1_len;
 		}
 		*iov_or_mp = (void *)vec_idx;
-#endif
 		break;
 	}
+
+#endif // !APPLE
+
 	} /* end switch */
 }
 

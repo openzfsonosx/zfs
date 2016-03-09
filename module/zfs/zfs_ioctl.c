@@ -6486,6 +6486,9 @@ zfs_ioctl_osx_init(void)
 	(void) mnttab_file_create();
 	zfs_ioctl_installed = 1;
 #endif
+
+	illumos_crypto_init();
+
 	printf("ZFS: Loaded module v%s-%s%s, "
 	    "ZFS pool version %s, ZFS filesystem version %s\n",
 	    ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
@@ -6519,6 +6522,8 @@ zfs_ioctl_osx_fini(void)
 		return (SET_ERROR(EBUSY));
 	}
 #endif
+
+	illumos_crypto_exit();
 
 	kstat_osx_fini();
 

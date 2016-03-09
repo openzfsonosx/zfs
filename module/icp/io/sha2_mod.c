@@ -33,8 +33,6 @@
 #define	_SHA2_IMPL
 #include <sha2/sha2.h>
 
-#ifdef LINUX
-
 /*
  * The sha2 module is created with two modlinkages:
  * - a modlmisc that allows consumers to directly call the entry points
@@ -52,7 +50,6 @@ static struct modlcrypto modlcrypto = {
 static struct modlinkage modlinkage = {
 	MODREV_1, {&modlcrypto, NULL}
 };
-#endif
 
 /*
  * CSPI information (entry points, provider info, etc.)
@@ -160,8 +157,6 @@ static int sha2_digest_final(crypto_ctx_t *, crypto_data_t *,
 static int sha2_digest_atomic(crypto_provider_handle_t, crypto_session_id_t,
     crypto_mechanism_t *, crypto_data_t *, crypto_data_t *,
     crypto_req_handle_t);
-
-#ifdef LINUX
 
 static void sha2_provider_status(crypto_provider_handle_t, uint_t *);
 
@@ -279,7 +274,6 @@ sha2_mod_fini(void)
 	return (mod_remove(&modlinkage));
 }
 
-#endif
 
 /*
  * KCF software provider control entry points.
@@ -314,6 +308,9 @@ sha2_digest_init(crypto_ctx_t *ctx, crypto_mechanism_t *mechanism,
 	return (CRYPTO_SUCCESS);
 }
 
+
+#ifdef __APPLE__
+
 /*
  * Helper SHA2 digest update function for uio data.
  */
@@ -324,20 +321,21 @@ sha2_digest_update_uio(SHA2_CTX *sha2_ctx, crypto_data_t *data)
 	size_t length = data->cd_length;
 	uint_t vec_idx;
 	size_t cur_len;
-#if 0 // portme
+
+
 	/* we support only kernel buffer */
-	if (data->cd_uio->uio_segflg != UIO_SYSSPACE)
+	if (uio_resid(data->cd_uio) <= 0) {
 		return (CRYPTO_ARGUMENTS_BAD);
+	}
 
 	/*
 	 * Jump to the first iovec containing data to be
 	 * digested.
 	 */
-	for (vec_idx = 0; vec_idx < data->cd_uio->uio_iovcnt &&
-	    offset >= data->cd_uio->uio_iov[vec_idx].iov_len;
-	    offset -= data->cd_uio->uio_iov[vec_idx++].iov_len)
-		;
-	if (vec_idx == data->cd_uio->uio_iovcnt) {
+	uio_update(data->cd_uio, offset);
+	offset = 0;
+
+	if (uio_resid(data->cd_uio) <= 0) {
 		/*
 		 * The caller specified an offset that is larger than the
 		 * total size of the buffers it provided.
@@ -348,12 +346,75 @@ sha2_digest_update_uio(SHA2_CTX *sha2_ctx, crypto_data_t *data)
 	/*
 	 * Now do the digesting on the iovecs.
 	 */
-	while (vec_idx < data->cd_uio->uio_iovcnt && length > 0) {
-		cur_len = MIN(data->cd_uio->uio_iov[vec_idx].iov_len -
+	while (uio_resid(data->cd_uio) && length > 0) {
+		cur_len = MIN(uio_curriovlen(data->cd_uio) -
 		    offset, length);
 
-		SHA2Update(sha2_ctx, (uint8_t *)data->cd_uio->
-		    uio_iov[vec_idx].iov_base + offset, cur_len);
+		SHA2Update(sha2_ctx,
+				   (uint8_t *)uio_curriovbase(data->cd_uio) + offset,
+				   cur_len);
+		uio_update(data->cd_uio, cur_len);
+		length -= cur_len;
+		vec_idx++;
+		offset = 0;
+	}
+
+	if (!uio_resid(data->cd_uio) && length > 0) {
+		/*
+		 * The end of the specified iovec's was reached but
+		 * the length requested could not be processed, i.e.
+		 * The caller requested to digest more data than it provided.
+		 */
+		return (CRYPTO_DATA_LEN_RANGE);
+	}
+
+	return (CRYPTO_SUCCESS);
+}
+
+#else // !APPLE
+
+/*
+ * Helper SHA2 digest update function for uio data.
+ */
+static int
+sha2_digest_update_uio(SHA2_CTX *sha2_ctx, crypto_data_t *data)
+{
+	off_t offset = data->cd_offset;
+	size_t length = data->cd_length;
+	uint_t vec_idx;
+	size_t cur_len;
+
+
+	/* we support only kernel buffer */
+	if (uio_resid(uiop) <= 0) {
+		return (CRYPTO_ARGUMENTS_BAD);
+
+	/*
+	 * Jump to the first iovec containing data to be
+	 * digested.
+	 */
+	uio_update(uiop, offset);
+	offset = 0;
+
+	if (uio_resid(uiop) <= 0) {
+		/*
+		 * The caller specified an offset that is larger than the
+		 * total size of the buffers it provided.
+		 */
+		return (CRYPTO_DATA_LEN_RANGE);
+	}
+
+	/*
+	 * Now do the digesting on the iovecs.
+	 */
+	while (uio_resid(uiop) && length > 0) {
+		cur_len = MIN(uio_curriovlen(data->cd_uio) -
+		    offset, length);
+
+		SHA2Update(sha2_ctx,
+				   (uint8_t *)uio_curriovbase(data->cd_uio) + offset,
+				   cur_len);
+		uio_update(uiop, cur_len);
 		length -= cur_len;
 		vec_idx++;
 		offset = 0;
@@ -369,8 +430,120 @@ sha2_digest_update_uio(SHA2_CTX *sha2_ctx, crypto_data_t *data)
 	}
 
 	return (CRYPTO_SUCCESS);
-#endif
 }
+
+#endif // !APPLE
+
+
+
+
+#ifdef __APPLE__
+/*
+ * Helper SHA2 digest final function for uio data.
+ * digest_len is the length of the desired digest. If digest_len
+ * is smaller than the default SHA2 digest length, the caller
+ * must pass a scratch buffer, digest_scratch, which must
+ * be at least the algorithm's digest length bytes.
+ */
+static int
+sha2_digest_final_uio(SHA2_CTX *sha2_ctx, crypto_data_t *digest,
+    ulong_t digest_len, uchar_t *digest_scratch)
+{
+	off_t offset = digest->cd_offset;
+	uint_t vec_idx;
+
+	/* we support only kernel buffer */
+	if (uio_isuserspace(digest->cd_uio))
+		return (CRYPTO_ARGUMENTS_BAD);
+
+	/*
+	 * Jump to the first iovec containing ptr to the digest to
+	 * be returned.
+	 */
+	uio_update(digest->cd_uio, offset);
+	offset = 0;
+
+	if (uio_resid(digest->cd_uio) <= 0) {
+		/*
+		 * The caller specified an offset that is
+		 * larger than the total size of the buffers
+		 * it provided.
+		 */
+		return (CRYPTO_DATA_LEN_RANGE);
+	}
+
+	if (offset + digest_len <=
+	    uio_curriovlen(digest->cd_uio)) {
+		/*
+		 * The computed SHA2 digest will fit in the current
+		 * iovec.
+		 */
+		if (((sha2_ctx->algotype <= SHA256_HMAC_GEN_MECH_INFO_TYPE) &&
+		    (digest_len != SHA256_DIGEST_LENGTH)) ||
+		    ((sha2_ctx->algotype > SHA256_HMAC_GEN_MECH_INFO_TYPE) &&
+		    (digest_len != SHA512_DIGEST_LENGTH))) {
+			/*
+			 * The caller requested a short digest. Digest
+			 * into a scratch buffer and return to
+			 * the user only what was requested.
+			 */
+			SHA2Final(digest_scratch, sha2_ctx);
+
+			bcopy(digest_scratch, (uchar_t *)
+				  uio_curriovbase(digest->cd_uio) + offset,
+				  digest_len);
+		} else {
+			SHA2Final((uchar_t *)
+					  uio_curriovbase(digest->cd_uio) + offset,
+					  sha2_ctx);
+
+		}
+	} else {
+		/*
+		 * The computed digest will be crossing one or more iovec's.
+		 * This is bad performance-wise but we need to support it.
+		 * Allocate a small scratch buffer on the stack and
+		 * copy it piece meal to the specified digest iovec's.
+		 */
+		uchar_t digest_tmp[SHA512_DIGEST_LENGTH];
+		off_t scratch_offset = 0;
+		size_t length = digest_len;
+		size_t cur_len;
+
+		SHA2Final(digest_tmp, sha2_ctx);
+
+		while (uio_resid(digest->cd_uio) && length > 0) {
+			cur_len =
+			    MIN(uio_curriovlen(digest->cd_uio) -
+			    offset, length);
+			bcopy(digest_tmp + scratch_offset,
+				  uio_curriovbase(digest->cd_uio) + offset,
+			    cur_len);
+
+			uio_update(digest->cd_uio, cur_len);
+			length -= cur_len;
+			vec_idx++;
+			scratch_offset += cur_len;
+			offset = 0;
+		}
+
+		if (!uio_resid(digest->cd_uio) && length > 0) {
+			/*
+			 * The end of the specified iovec's was reached but
+			 * the length requested could not be processed, i.e.
+			 * The caller requested to digest more data than it
+			 * provided.
+			 */
+			return (CRYPTO_DATA_LEN_RANGE);
+		}
+	}
+
+	return (CRYPTO_SUCCESS);
+}
+
+
+#else // !APPLE
+
 
 /*
  * Helper SHA2 digest final function for uio data.
@@ -385,7 +558,7 @@ sha2_digest_final_uio(SHA2_CTX *sha2_ctx, crypto_data_t *digest,
 {
 	off_t offset = digest->cd_offset;
 	uint_t vec_idx;
-#if 0 // portme
+
 	/* we support only kernel buffer */
 	if (digest->cd_uio->uio_segflg != UIO_SYSSPACE)
 		return (CRYPTO_ARGUMENTS_BAD);
@@ -473,8 +646,11 @@ sha2_digest_final_uio(SHA2_CTX *sha2_ctx, crypto_data_t *digest,
 	}
 
 	return (CRYPTO_SUCCESS);
-#endif
 }
+
+#endif // !APPLE
+
+
 
 /* ARGSUSED */
 static int
@@ -1280,6 +1456,8 @@ sha2_mac_verify_atomic(crypto_provider_handle_t provider,
 			ret = CRYPTO_INVALID_MAC;
 		break;
 
+#ifdef __APPLE__
+
 	case CRYPTO_DATA_UIO: {
 		off_t offset = mac->cd_offset;
 		uint_t vec_idx;
@@ -1287,7 +1465,54 @@ sha2_mac_verify_atomic(crypto_provider_handle_t provider,
 		size_t length = digest_len;
 		size_t cur_len;
 
-#if 0 // portme
+		/* we support only kernel buffer */
+		if (uio_isuserspace(mac->cd_uio))
+			return (CRYPTO_ARGUMENTS_BAD);
+
+		/* jump to the first iovec containing the expected digest */
+		uio_update(mac->cd_uio, offset);
+		offset = 0;
+
+		if (uio_resid(mac->cd_uio) <= 0) {
+			/*
+			 * The caller specified an offset that is
+			 * larger than the total size of the buffers
+			 * it provided.
+			 */
+			ret = CRYPTO_DATA_LEN_RANGE;
+			break;
+		}
+
+		/* do the comparison of computed digest vs specified one */
+		while (uio_resid(mac->cd_uio) && length > 0) {
+			cur_len = MIN(uio_curriovlen(mac->cd_uio) -
+			    offset, length);
+
+			if (bcmp(digest + scratch_offset,
+					 uio_curriovbase(mac->cd_uio) + offset,
+			    cur_len) != 0) {
+				ret = CRYPTO_INVALID_MAC;
+				break;
+			}
+
+			uio_update(mac->cd_uio, cur_len);
+			length -= cur_len;
+			vec_idx++;
+			scratch_offset += cur_len;
+			offset = 0;
+		}
+		break;
+	}
+
+#else // !APPLE
+
+	case CRYPTO_DATA_UIO: {
+		off_t offset = mac->cd_offset;
+		uint_t vec_idx;
+		off_t scratch_offset = 0;
+		size_t length = digest_len;
+		size_t cur_len;
+
 		/* we support only kernel buffer */
 		if (mac->cd_uio->uio_segflg != UIO_SYSSPACE)
 			return (CRYPTO_ARGUMENTS_BAD);
@@ -1325,9 +1550,9 @@ sha2_mac_verify_atomic(crypto_provider_handle_t provider,
 			scratch_offset += cur_len;
 			offset = 0;
 		}
-#endif
 		break;
 	}
+#endif // !APPLE
 
 	default:
 		ret = CRYPTO_ARGUMENTS_BAD;

@@ -37,8 +37,6 @@
 #include <sys/cmn_err.h>
 #include <sys/modctl.h>
 
-#ifdef LINUX
-
 #define	CRYPTO_PROVIDER_NAME "aes"
 
 /*
@@ -54,8 +52,6 @@ static struct modlcrypto modlcrypto = {
 static struct modlinkage modlinkage = {
 	MODREV_1, { (void *)&modlcrypto, NULL }
 };
-
-#endif // LINUX
 
 /*
  * CSPI information (entry points, provider info, etc.)
@@ -158,7 +154,6 @@ static int aes_create_ctx_template(crypto_provider_handle_t,
 static int aes_free_context(crypto_ctx_t *);
 
 
-#ifdef LINUX
 
 static crypto_cipher_ops_t aes_cipher_ops = {
 	aes_encrypt_init,
@@ -251,8 +246,6 @@ aes_mod_fini(void)
 
 	return (mod_remove(&modlinkage));
 }
-
-#endif // LINUX
 
 
 

@@ -26,8 +26,6 @@
 #include <sys/modctl.h>
 #include <sys/cmn_err.h>
 
-#ifdef LINUX
-
 /*
  * Null operations; used for uninitialized and "misc" modules.
  */
@@ -171,5 +169,3 @@ mod_info(struct modlinkage *modlp, struct modinfo *modinfop)
 		return (1);
 	return (0);
 }
-
-#endif

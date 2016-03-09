@@ -160,6 +160,7 @@ zfs_SOURCES = \
 	../zcommon/zfs_prop.c \
 	../zcommon/zpool_prop.c \
 	../zcommon/zprop_common.c \
+	../icp/illumos-crypto.c \
 	../icp/api/kcf_cipher.c \
 	../icp/api/kcf_digest.c \
 	../icp/api/kcf_mac.c \

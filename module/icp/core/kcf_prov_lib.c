@@ -38,11 +38,87 @@
  * Utility routine to apply the command, 'cmd', to the
  * data in the uio structure.
  */
+#ifdef __APPLE__
 int
 crypto_uio_data(crypto_data_t *data, uchar_t *buf, int len, cmd_type_t cmd,
     void *digest_ctx, void (*update)(void))
 {
-#if 0 // portme
+	uio_t *uiop = data->cd_uio;
+	off_t offset = data->cd_offset;
+	size_t length = len;
+	uint_t vec_idx;
+	size_t cur_len;
+	uchar_t *datap;
+
+	ASSERT(data->cd_format == CRYPTO_DATA_UIO);
+	if (uio_isuserspace(uiop))
+		return (CRYPTO_ARGUMENTS_BAD);
+
+	/*
+	 * Jump to the first iovec containing data to be
+	 * processed.
+	 */
+	uio_update(uiop, offset);
+	offset = 0;
+
+	if (uio_resid(uiop) <= 0) {
+		/*
+		 * The caller specified an offset that is larger than
+		 * the total size of the buffers it provided.
+		 */
+		return (CRYPTO_DATA_LEN_RANGE);
+	}
+
+	while (uio_resid(uiop) && length > 0) {
+		cur_len = MIN(uio_resid(uiop), length);
+
+		switch (cmd) {
+		case COPY_FROM_DATA:
+			uio_setrw(uiop, UIO_READ);
+			uiomove((const char *)buf, cur_len, 0, uiop);
+			break;
+		case COPY_TO_DATA:
+			uio_setrw(uiop, UIO_WRITE);
+			uiomove((const char *)buf, cur_len, 0, uiop);
+			break;
+		case COMPARE_TO_DATA:
+			if (bcmp((const void *)uio_curriovbase(uiop), buf, cur_len))
+				return (CRYPTO_SIGNATURE_INVALID);
+			uio_update(uiop, cur_len);
+			break;
+		case MD5_DIGEST_DATA:
+		case SHA1_DIGEST_DATA:
+		case SHA2_DIGEST_DATA:
+		case GHASH_DATA:
+			return (CRYPTO_ARGUMENTS_BAD);
+		}
+
+		length -= cur_len;
+	}
+
+	if (!uio_resid(uiop) && length > 0) {
+		/*
+		 * The end of the specified iovec's was reached but
+		 * the length requested could not be processed.
+		 */
+		switch (cmd) {
+		case COPY_TO_DATA:
+			data->cd_length = len;
+			return (CRYPTO_BUFFER_TOO_SMALL);
+		default:
+			return (CRYPTO_DATA_LEN_RANGE);
+		}
+	}
+
+	return (CRYPTO_SUCCESS);
+}
+
+#else // !APPLE
+
+int
+crypto_uio_data(crypto_data_t *data, uchar_t *buf, int len, cmd_type_t cmd,
+    void *digest_ctx, void (*update)(void))
+{
 	uio_t *uiop = data->cd_uio;
 	off_t offset = data->cd_offset;
 	size_t length = len;
@@ -119,8 +195,10 @@ crypto_uio_data(crypto_data_t *data, uchar_t *buf, int len, cmd_type_t cmd,
 	}
 
 	return (CRYPTO_SUCCESS);
-#endif
 }
+
+#endif //APPLE
+
 
 int
 crypto_put_output_data(uchar_t *buf, crypto_data_t *output, int len)
@@ -167,12 +245,79 @@ crypto_update_iov(void *ctx, crypto_data_t *input, crypto_data_t *output,
 	return (rv);
 }
 
+#ifdef __APPLE__
+
 int
 crypto_update_uio(void *ctx, crypto_data_t *input, crypto_data_t *output,
     int (*cipher)(void *, caddr_t, size_t, crypto_data_t *),
     void (*copy_block)(uint8_t *, uint64_t *))
 {
-#if 0 // portme
+	common_ctx_t *common_ctx = ctx;
+	uio_t *uiop = input->cd_uio;
+	off_t offset = input->cd_offset;
+	size_t length = input->cd_length;
+	uint_t vec_idx;
+	size_t cur_len;
+
+	if (input->cd_miscdata != NULL) {
+		copy_block((uint8_t *)input->cd_miscdata,
+		    &common_ctx->cc_iv[0]);
+	}
+
+	if (uio_isuserspace(uiop)) {
+		return (CRYPTO_ARGUMENTS_BAD);
+	}
+
+	/*
+	 * Jump to the first iovec containing data to be
+	 * processed.
+	 */
+	uio_update(uiop, offset);
+	offset = 0;
+
+	if (uio_resid(uiop) <= 0) {
+		/*
+		 * The caller specified an offset that is larger than the
+		 * total size of the buffers it provided.
+		 */
+		return (CRYPTO_DATA_LEN_RANGE);
+	}
+
+	/*
+	 * Now process the iovecs.
+	 */
+	while (uio_resid(uiop) && length > 0) {
+
+		cur_len = MIN(uio_curriovlen(uiop) - offset,
+					  length);
+
+		(cipher)(ctx, uio_curriovbase(uiop) + offset,
+		    cur_len, (input == output) ? NULL : output);
+
+		uio_update(uiop, cur_len);
+		length -= cur_len;
+		offset = 0;
+	}
+
+	if (!uio_resid(uiop) && length > 0) {
+		/*
+		 * The end of the specified iovec's was reached but
+		 * the length requested could not be processed, i.e.
+		 * The caller requested to digest more data than it provided.
+		 */
+
+		return (CRYPTO_DATA_LEN_RANGE);
+	}
+	return (CRYPTO_SUCCESS);
+}
+
+#else // !APPLE
+
+int
+crypto_update_uio(void *ctx, crypto_data_t *input, crypto_data_t *output,
+    int (*cipher)(void *, caddr_t, size_t, crypto_data_t *),
+    void (*copy_block)(uint8_t *, uint64_t *))
+{
 	common_ctx_t *common_ctx = ctx;
 	uio_t *uiop = input->cd_uio;
 	off_t offset = input->cd_offset;
@@ -230,5 +375,6 @@ crypto_update_uio(void *ctx, crypto_data_t *input, crypto_data_t *output,
 		return (CRYPTO_DATA_LEN_RANGE);
 	}
 	return (CRYPTO_SUCCESS);
-#endif
 }
+
+#endif // !APPLE
