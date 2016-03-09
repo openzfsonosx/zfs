@@ -303,7 +303,7 @@ typedef struct kcf_prov_mech_desc {
 #define	pm_ops_vector		pm_prov_desc.pd_ops_vector
 
 
-#define	KCF_CPU_PAD (128 - sizeof (crypto_mech_name_t) - \
+#define	KCF_CPU_PAD (256 - sizeof (crypto_mech_name_t) - \
     sizeof (crypto_mech_type_t) - \
     sizeof (kmutex_t) - 2 * sizeof (kcf_prov_mech_desc_t *) - \
     sizeof (int) - sizeof (uint32_t) - sizeof (size_t))

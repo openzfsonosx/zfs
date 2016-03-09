@@ -144,16 +144,20 @@ static __inline__ uint64_t
 ntohll(uint64_t n) {
 	return (n);
 }
+
 #else
+#if 0
 static __inline__ uint64_t
 htonll(uint64_t n) {
-	return ((((uint64_t)htonl(n)) << 32) + htonl(n >> 32));
+	return _OSSwapInt64(n);
 }
 
 static __inline__ uint64_t
 ntohll(uint64_t n) {
-	return ((((uint64_t)ntohl(n)) << 32) + ntohl(n >> 32));
+	return _OSSwapInt64(n);
 }
+#endif
+
 #endif
 
 /*

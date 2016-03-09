@@ -337,6 +337,7 @@ typedef struct zap_cursor {
 
 typedef struct {
 	int za_integer_length;
+	boolean_t za_binary_key; /* will be set if the zap keys are binary */
 	/*
 	 * za_normalization_conflict will be set if there are additional
 	 * entries with this normalized form (eg, "foo" and "Foo").
