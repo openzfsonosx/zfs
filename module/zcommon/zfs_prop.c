@@ -115,8 +115,8 @@ zfs_prop_init(void)
 	};
 
 	static zprop_index_t crypto_table[] = {
-		{ "on",		ZIO_CRYPT_ON },
-		{ "off",	ZIO_CRYPT_OFF },
+		{ "on",			ZIO_CRYPT_ON },
+		{ "off",		ZIO_CRYPT_OFF },
 		{ "aes-128-ccm",	ZIO_CRYPT_AES_128_CCM },
 		{ "aes-192-ccm",	ZIO_CRYPT_AES_192_CCM },
 		{ "aes-256-ccm",	ZIO_CRYPT_AES_256_CCM },
@@ -211,7 +211,7 @@ zfs_prop_init(void)
 	};
 
 	static zprop_index_t keystatus_table[] = {
-		{ "none",			ZFS_KEYSTATUS_NONE},
+		{ "none",		ZFS_KEYSTATUS_NONE},
 		{ "unavailable",	ZFS_KEYSTATUS_UNAVAILABLE},
 		{ "available",		ZFS_KEYSTATUS_AVAILABLE},
 		{ NULL }
@@ -532,13 +532,6 @@ zfs_prop_init(void)
 	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "SALT");
 	zprop_register_hidden(ZFS_PROP_PREV_SNAP, "prevsnap", PROP_TYPE_STRING,
 	    PROP_READONLY, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME, "PREVSNAP");
-
-	/*
-	 * Property to be removed once libbe is integrated
-	 */
-	zprop_register_hidden(ZFS_PROP_PRIVATE, "priv_prop",
-	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_FILESYSTEM,
-	    "PRIV_PROP");
 
 	/* oddball properties */
 	zprop_register_impl(ZFS_PROP_CREATION, "creation", PROP_TYPE_NUMBER, 0,

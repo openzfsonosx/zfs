@@ -49,9 +49,9 @@ l2arc_crypt_key_destroy(l2arc_crypt_key_t *key)
 		crypto_destroy_ctx_template(key->l2ck_ctx_tmpl);
 	if (key->l2ck_key.ck_data) {
 		bzero(key->l2ck_key.ck_data,
-			BITS_TO_BYTES(key->l2ck_key.ck_length));
+		    BITS_TO_BYTES(key->l2ck_key.ck_length));
 		kmem_free(key->l2ck_key.ck_data,
-			BITS_TO_BYTES(key->l2ck_key.ck_length));
+		    BITS_TO_BYTES(key->l2ck_key.ck_length));
 	}
 }
 
@@ -119,7 +119,7 @@ zio_crypt_key_destroy(zio_crypt_key_t *key)
 		bzero(key->zk_dd_key.ck_data,
 			BITS_TO_BYTES(key->zk_dd_key.ck_length));
 		kmem_free(key->zk_dd_key.ck_data,
-			BITS_TO_BYTES(key->zk_key.ck_length));
+			BITS_TO_BYTES(key->zk_dd_key.ck_length));
 	}
 }
 
@@ -297,7 +297,7 @@ zio_crypt_key_wrap(crypto_key_t *cwkey, uint64_t crypt, uint8_t *keydata,
 	bzero(dckp, sizeof (dsl_crypto_key_phys_t));
 
 	/* set the crypt */
-	dckp->dk_crypt_alg = crypt;
+	dckp->dk_crypt_alg = (uint8_t)crypt;
 
 	/* generate ivs */
 	ret = random_get_pseudo_bytes(dckp->dk_iv, WRAPPING_IV_LEN);
@@ -330,18 +330,19 @@ zio_crypt_key_unwrap(crypto_key_t *cwkey, dsl_crypto_key_phys_t *dckp,
 	uint8_t *keydata, uint8_t *dd_keydata)
 {
 	int ret;
+	uint64_t crypt = dckp->dk_crypt_alg;
 
 	ASSERT(dckp->dk_crypt_alg < ZIO_CRYPT_FUNCTIONS);
 	ASSERT(cwkey->ck_format == CRYPTO_KEY_RAW);
 
 	/* decrypt the keys and store the result in the output buffers */
-	ret = zio_decrypt_raw(dckp->dk_crypt_alg, cwkey, NULL,
+	ret = zio_decrypt_raw(crypt, cwkey, NULL,
 	    dckp->dk_iv, keydata, dckp->dk_keybuf,
 	    zio_crypt_table[dckp->dk_crypt_alg].ci_keylen);
 	if (ret)
 		goto error;
 
-	ret = zio_decrypt_raw(dckp->dk_crypt_alg, cwkey, NULL,
+	ret = zio_decrypt_raw(crypt, cwkey, NULL,
 	    dckp->dk_dd_iv, dd_keydata, dckp->dk_dd_keybuf, HMAC_SHA256_KEYLEN);
 	if (ret)
 		goto error;
@@ -567,7 +568,8 @@ zio_do_crypt_uio(boolean_t encrypt, uint64_t crypt, crypto_key_t *key,
 	CK_AES_GCM_PARAMS gcmp;
 	crypto_mechanism_t mech;
 	zio_crypt_info_t crypt_info;
-	uint_t plain_full_len, maclen;
+	uint_t plain_full_len;
+	user_size_t maclen = 0;
 
 	ASSERT(crypt < ZIO_CRYPT_FUNCTIONS);
 	ASSERT(key->ck_format == CRYPTO_KEY_RAW);
@@ -576,8 +578,11 @@ zio_do_crypt_uio(boolean_t encrypt, uint64_t crypt, crypto_key_t *key,
 	crypt_info = zio_crypt_table[crypt];
 
 	/* the mac will always be the last iovec_t in the cipher uio */
+#ifdef __APPLE__
+	uio_getiov(cuio, uio_iovcnt(cuio) - 1, NULL, &maclen);
+#else
 	maclen = cuio->uio_iov[cuio->uio_iovcnt - 1].iov_len;
-
+#endif
 	ASSERT(maclen <= MAX_DATA_MAC_LEN);
 
 	/* setup encryption mechanism (same as crypt) */
@@ -639,7 +644,7 @@ zio_do_crypt_uio(boolean_t encrypt, uint64_t crypt, crypto_key_t *key,
 	}
 
 	if (ret != CRYPTO_SUCCESS) {
-		ret = EIO;
+		ret = SET_ERROR(EIO);
 		goto error;
 	}
 
@@ -649,10 +654,197 @@ error:
 	return (ret);
 }
 
-static void zio_crypt_destroy_uio(uio_t *uio) {
+static void zio_crypt_destroy_uio(uio_t *uio)
+{
+#ifdef __APPLE__
+#ifdef _KERNEL
+	if (uio) uio_free(uio);
+#endif
+#else
 	if (uio->uio_iov)
 		kmem_free(uio->uio_iov, uio->uio_iovcnt * sizeof (iovec_t));
+#endif
 }
+
+
+
+#ifdef __APPLE__
+
+/*
+ * We do not check for older zil chain because this feature was not
+ * available before the newer zil chain was introduced. The goal here
+ * is to encrypt everything except the blkptr_t of a lr_write_t and
+ * the zil_chain_t header
+ */
+static int
+zio_crypt_init_uios_zil(boolean_t encrypt, uint8_t *plainbuf,
+	uint8_t *cipherbuf, uint_t datalen, uio_t **puio, uio_t **cuio,
+	uint_t *enc_len)
+{
+	int ret;
+	uint_t nr_src, nr_dst, lr_len, crypt_len, nr_iovecs = 0, total_len = 0;
+	uint8_t *src, *dst, *slrp, *dlrp, *end;
+	zil_chain_t *zilc;
+	lr_t *lr;
+	uio_t *srcuio = NULL, *dstuio = NULL;
+
+	/* if we are decrypting, the plainbuffer needs an extra iovec */
+	if (encrypt) {
+		src = plainbuf;
+		dst = cipherbuf;
+		nr_src = 0;
+		nr_dst = 1;
+	} else {
+		src = cipherbuf;
+		dst = plainbuf;
+		nr_src = 1;
+		nr_dst = 1;
+	}
+
+	/* find the start and end record of the log block */
+	zilc = (zil_chain_t *) src;
+	end = src + zilc->zc_nused;
+	slrp = src + sizeof (zil_chain_t);
+
+	/* calculate the number of encrypted iovecs we will need */
+	for (; slrp < end; slrp += lr_len) {
+		lr = (lr_t *) slrp;
+		lr_len = lr->lrc_reclen;
+
+		nr_iovecs++;
+		if (lr->lrc_txtype == TX_WRITE &&
+		    lr_len != sizeof (lr_write_t))
+			nr_iovecs++;
+	}
+
+	if (nr_iovecs == 0) {
+		return (ZIO_NO_ENCRYPTION_NEEDED);
+	}
+
+	nr_src += nr_iovecs;
+	nr_dst += nr_iovecs;
+
+
+	/* allocate the uio to hold iovecs */
+	srcuio = uio_create(nr_src, 0, UIO_SYSSPACE, UIO_READ);
+	if (!srcuio) {
+		ret = SET_ERROR(ENOMEM);
+		goto error;
+	}
+
+	dstuio = uio_create(nr_dst, 0, UIO_SYSSPACE, UIO_WRITE);
+	if (!dstuio) {
+		ret = SET_ERROR(ENOMEM);
+		goto error;
+	}
+
+	/* loop over records again, filling in iovecs */
+	nr_iovecs = 0;
+	slrp = src + sizeof (zil_chain_t);
+	dlrp = dst + sizeof (zil_chain_t);
+
+	for (; slrp < end; slrp += lr_len, dlrp += lr_len) {
+		lr = (lr_t *) slrp;
+		lr_len = lr->lrc_reclen;
+
+		if (lr->lrc_txtype == TX_WRITE) {
+			bcopy(slrp, dlrp, sizeof (lr_t));
+			crypt_len = sizeof (lr_write_t) -
+			    sizeof (lr_t) - sizeof (blkptr_t);
+
+			VERIFY0(uio_addiov(srcuio, (user_addr_t)slrp + sizeof (lr_t),
+							   crypt_len));
+			VERIFY0(uio_addiov(dstuio, (user_addr_t)dlrp + sizeof (lr_t),
+							   crypt_len));
+
+			/* copy the bp now since it will not be encrypted */
+			bcopy(slrp + sizeof (lr_write_t) - sizeof (blkptr_t),
+			    dlrp + sizeof (lr_write_t) - sizeof (blkptr_t),
+			    sizeof (blkptr_t));
+			nr_iovecs++;
+			total_len += crypt_len;
+
+			if (lr_len != sizeof (lr_write_t)) {
+				crypt_len = lr_len - sizeof (lr_write_t);
+
+				VERIFY0(uio_addiov(srcuio,
+								   (user_addr_t)slrp + sizeof (lr_write_t),
+								   crypt_len));
+				VERIFY0(uio_addiov(dstuio,
+								   (user_addr_t)dlrp + sizeof (lr_write_t),
+								   crypt_len));
+				nr_iovecs++;
+				total_len += crypt_len;
+			}
+		} else {
+			bcopy(slrp, dlrp, sizeof (lr_t));
+			crypt_len = lr_len - sizeof (lr_t);
+			VERIFY0(uio_addiov(srcuio, (user_addr_t)slrp + sizeof (lr_t),
+							   crypt_len));
+			VERIFY0(uio_addiov(dstuio, (user_addr_t)dlrp + sizeof (lr_t),
+							   crypt_len));
+			nr_iovecs++;
+			total_len += crypt_len;
+		}
+	}
+
+	/* copy the plain zil header over */
+	bcopy(src, dst, sizeof (zil_chain_t));
+
+	*enc_len = total_len;
+
+	if (encrypt) {
+		*puio = srcuio;
+		*cuio = dstuio;
+	} else {
+		*puio = dstuio;
+		*cuio = srcuio;
+	}
+
+	return (0);
+
+error:
+	if (srcuio) uio_free(srcuio);
+	if (dstuio) uio_free(dstuio);
+
+	*enc_len = 0;
+	return (ret);
+}
+
+static int
+zio_crypt_init_uios_normal(boolean_t encrypt, uint8_t *plainbuf,
+	uint8_t *cipherbuf, uint_t datalen, uio_t **puio, uio_t **cuio,
+	uint_t *enc_len)
+{
+	int error = 0;
+
+	if (encrypt) {
+		*puio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
+		*cuio = uio_create(2, 0, UIO_SYSSPACE, UIO_WRITE);
+	} else {
+		*puio = uio_create(2, 0, UIO_SYSSPACE, UIO_WRITE);
+		*cuio = uio_create(2, 0, UIO_SYSSPACE, UIO_READ);
+	}
+	if (!*puio || !*cuio) {
+		error = SET_ERROR(ENOMEM);
+		goto out;
+	}
+
+	uio_addiov(*puio, (user_addr_t)plainbuf, datalen);
+	uio_addiov(*cuio, (user_addr_t)cipherbuf, datalen);
+
+	*enc_len = datalen;
+
+	return (0);
+
+  out:
+	zio_crypt_destroy_uio(*puio);
+	zio_crypt_destroy_uio(*cuio);
+	return error;
+}
+
+
+#else // !__APPLE__
 
 /*
  * We do not check for older zil chain because this feature was not
@@ -738,6 +930,7 @@ zio_crypt_init_uios_zil(boolean_t encrypt, uint8_t *plainbuf,
 			bcopy(slrp, dlrp, sizeof (lr_t));
 			crypt_len = sizeof (lr_write_t) -
 			    sizeof (lr_t) - sizeof (blkptr_t);
+
 			src_iovecs[nr_iovecs].iov_base = slrp + sizeof (lr_t);
 			src_iovecs[nr_iovecs].iov_len = crypt_len;
 			dst_iovecs[nr_iovecs].iov_base = dlrp + sizeof (lr_t);
@@ -877,14 +1070,17 @@ error:
 	return (ret);
 }
 
+#endif // !__APPLE__
+
+
+
 static int
 zio_crypt_init_uios(boolean_t encrypt, dmu_object_type_t ot, uint8_t *plainbuf,
 	uint8_t *cipherbuf, uint_t datalen, uint8_t *mac, uint8_t *out_mac,
-	uio_t *puio, uio_t *cuio, uint_t *enc_len)
+	uio_t **puio, uio_t **cuio, uint_t *enc_len)
 {
 	int ret;
 	uint_t maclen;
-	iovec_t *mac_iov, *mac_out_iov;
 
 	ASSERT(DMU_OT_IS_ENCRYPTED(ot));
 
@@ -907,6 +1103,15 @@ zio_crypt_init_uios(boolean_t encrypt, dmu_object_type_t ot, uint8_t *plainbuf,
 	}
 
 	/* populate the uios */
+#ifdef __APPLE__
+	uio_addiov(*cuio, (user_addr_t)mac, maclen);
+
+	if (!encrypt) {
+		uio_addiov(*puio, (user_addr_t)out_mac, maclen);
+	}
+
+#else // !APPLE
+
 #ifdef _KERNEL
 	puio->uio_segflg = UIO_SYSSPACE;
 	cuio->uio_segflg = UIO_SYSSPACE;
@@ -924,6 +1129,7 @@ zio_crypt_init_uios(boolean_t encrypt, dmu_object_type_t ot, uint8_t *plainbuf,
 		mac_out_iov->iov_base = out_mac;
 		mac_out_iov->iov_len = maclen;
 	}
+#endif // !APPLE
 
 	return (0);
 
@@ -938,11 +1144,20 @@ zio_do_crypt_data(boolean_t encrypt, zio_crypt_key_t *key,
 {
 	int ret;
 	uint_t enc_len;
+#ifdef __APPLE__
+	/* We have to delay the allocaiton call uio_create() until we know
+	 * how many iovecs we want (as max).
+	 */
+	uio_t *puio = NULL, *cuio = NULL;
+#else
 	uio_t puio, cuio;
+#endif
 	uint8_t out_mac[MAX_DATA_MAC_LEN];
 
+#ifdef LINUX
 	bzero(&puio, sizeof (uio_t));
 	bzero(&cuio, sizeof (uio_t));
+#endif
 
 	/* create uios for encryption */
 	ret = zio_crypt_init_uios(encrypt, ot, plainbuf, cipherbuf, datalen,
@@ -962,18 +1177,18 @@ zio_do_crypt_data(boolean_t encrypt, zio_crypt_key_t *key,
 
 	/* perform the encryption */
 	ret = zio_do_crypt_uio(encrypt, key->zk_crypt, &key->zk_key,
-		key->zk_ctx_tmpl, iv, enc_len, &puio, &cuio);
+		key->zk_ctx_tmpl, iv, enc_len, puio, cuio);
 	if (ret)
 		goto error;
 
-	zio_crypt_destroy_uio(&puio);
-	zio_crypt_destroy_uio(&cuio);
+	zio_crypt_destroy_uio(puio);
+	zio_crypt_destroy_uio(cuio);
 
 	return (0);
 
 error:
-	zio_crypt_destroy_uio(&puio);
-	zio_crypt_destroy_uio(&cuio);
+	zio_crypt_destroy_uio(puio);
+	zio_crypt_destroy_uio(cuio);
 
 	return (ret);
 }

@@ -1222,6 +1222,7 @@ zpool_create(libzfs_handle_t *hdl, const char *pool, nvlist_t *nvroot,
 		}
 		if (zfs_crypto_create(hdl, NULL, zc_fsprops, props,
 		    &hidden_args) != 0) {
+			zfs_error(hdl, EZFS_CRYPTOFAILED, msg);
 			goto create_failed;
 		}
 		if (nvlist_add_nvlist(zc_props,

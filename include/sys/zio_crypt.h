@@ -45,6 +45,7 @@ struct zbookmark_phys;
 #define	L2ARC_MAC_LEN 8
 #define	ZIL_MAC_LEN 8
 
+#define	SHA1_DIGEST_LENGTH	20
 #define	SHA_256_DIGEST_LEN 32
 #define	HMAC_SHA256_KEYLEN 32
 
@@ -88,15 +89,19 @@ typedef struct zio_crypt_info {
 
 extern zio_crypt_info_t zio_crypt_table[ZIO_CRYPT_FUNCTIONS];
 
-/* physical representation of a wrapped key in the DSL Keychain */
+/*
+ * physical representation of a wrapped key in the DSL Keychain. Note
+ * that this structure must only contain uint8_t's for the ZAP byteswap
+ * function to work correctly.
+ */
 typedef struct dsl_crypto_key_phys {
 	/* encryption algorithm (see zio_encrypt enum) */
-	uint64_t dk_crypt_alg;
+	uint8_t dk_crypt_alg;
 
 	/* iv / nonce for unwrapping the key */
 	uint8_t dk_iv[13];
 
-	uint8_t dk_padding[3];
+	uint8_t dk_padding[2];
 
 	/* wrapped key data */
 	uint8_t dk_keybuf[48];

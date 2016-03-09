@@ -1108,7 +1108,7 @@ zio_read_bp_init(zio_t *zio)
 	}
 
 	if (BP_IS_ENCRYPTED(bp) && zio->io_child_type == ZIO_CHILD_LOGICAL &&
-		!(zio->io_flags & (ZIO_FLAG_RAW | ZIO_FLAG_NO_DECRYPT))) {
+		!(zio->io_flags & ZIO_FLAG_RAW)) {
 		void *cbuf = zio_buf_alloc(psize);
 
 		zio_push_transform(zio, cbuf, psize, psize, zio_decrypt);
@@ -3298,11 +3298,6 @@ zio_done(zio_t *zio)
 			ASSERT(zio->io_children[c][w] == 0);
 
 	if (zio->io_bp != NULL && !BP_IS_EMBEDDED(zio->io_bp)) {
-		if (!BP_IS_ENCRYPTED(zio->io_bp)) {
-			ASSERT(zio->io_bp->blk_pad[0] == 0);
-			ASSERT(zio->io_bp->blk_pad[1] == 0);
-		}
-
 		ASSERT(bcmp(zio->io_bp, &zio->io_bp_copy,
 		    sizeof (blkptr_t)) == 0 ||
 		    (zio->io_bp == zio_unique_parent(zio)->io_bp));

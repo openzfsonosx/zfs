@@ -1313,6 +1313,7 @@ zap_cursor_retrieve(zap_cursor_t *zc, zap_attribute_t *za)
 			za->za_normalization_conflict =
 			    mzap_normalization_conflict(zc->zc_zap, NULL, mze);
 			za->za_integer_length = 8;
+			za->za_binary_key = B_FALSE;
 			za->za_num_integers = 1;
 			za->za_first_integer = mzep->mze_value;
 			(void) strlcpy(za->za_name, mzep->mze_name, MAXNAMELEN);

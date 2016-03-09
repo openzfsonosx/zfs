@@ -48,6 +48,7 @@ struct dsl_dataset;
 
 #define	DD_FIELD_FILESYSTEM_COUNT	"com.joyent:filesystem_count"
 #define	DD_FIELD_SNAPSHOT_COUNT		"com.joyent:snapshot_count"
+#define	DD_FIELD_DSL_KEYCHAIN_OBJ	"com.datto:dsl_keychain_obj"
 
 typedef enum dd_used {
 	DD_USED_HEAD,
@@ -82,8 +83,7 @@ typedef struct dsl_dir_phys {
 	uint64_t dd_flags;
 	uint64_t dd_used_breakdown[DD_USED_NUM];
 	uint64_t dd_clones; /* dsl_dir objects */
-	uint64_t dd_keychain_obj; /* DSL Keychain object number */
-	uint64_t dd_pad[12]; /* pad out to 256 bytes for good measure */
+	uint64_t dd_pad[13]; /* pad out to 256 bytes for good measure */
 } dsl_dir_phys_t;
 
 struct dsl_dir {
@@ -91,6 +91,7 @@ struct dsl_dir {
 
 	/* These are immutable; no lock needed: */
 	uint64_t dd_object;
+	uint64_t dd_keychain_obj;
 	dsl_pool_t *dd_pool;
 
 	/* Stable until user eviction; no lock needed: */

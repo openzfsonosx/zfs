@@ -1134,7 +1134,8 @@ dmu_send_estimate_from_txg(dsl_dataset_t *ds, uint64_t from_txg,
 	 * traverse the blocks of the snapshot with birth times after
 	 * from_txg, summing their uncompressed size
 	 */
-	err = traverse_dataset(ds, from_txg, TRAVERSE_POST|TRAVERSE_NO_DECRYPT,
+	err = traverse_dataset(ds, from_txg,
+	    TRAVERSE_POST | TRAVERSE_NO_DECRYPT,
 	    dmu_calculate_send_traversal, &size);
 	if (err)
 		return (err);
@@ -1599,7 +1600,7 @@ dmu_recv_resume_begin_sync(void *arg, dmu_tx_t *tx)
 	dsobj = ds->ds_object;
 	dsl_dataset_rele(ds, FTAG);
 
-	VERIFY0(dsl_dataset_own_obj(dp, dsobj, dmu_recv_tag, &ds));
+	VERIFY0(dsl_dataset_own_obj(dp, dsobj, dmu_recv_tag, B_FALSE, &ds));
 
 	dmu_buf_will_dirty(ds->ds_dbuf, tx);
 	dsl_dataset_phys(ds)->ds_flags |= DS_FLAG_INCONSISTENT;

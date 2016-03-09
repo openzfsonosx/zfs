@@ -354,6 +354,7 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops, dsl_crypto_params_t *dcp,
 	/* create and open the MOS (meta-objset) */
 	dp->dp_meta_objset = dmu_objset_create_impl(spa,
 	    NULL, &dp->dp_meta_rootbp, DMU_OST_META, tx);
+	spa->spa_meta_objset = dp->dp_meta_objset;
 
 	/* create the pool directory */
 	err = zap_create_claim(dp->dp_meta_objset, DMU_POOL_DIRECTORY_OBJECT,
@@ -390,6 +391,17 @@ dsl_pool_create(spa_t *spa, nvlist_t *zplprops, dsl_crypto_params_t *dcp,
 
 	if (spa_version(spa) >= SPA_VERSION_DSL_SCRUB)
 		dsl_pool_create_origin(dp, tx);
+
+	/*
+	 * some features can get enabled when creating the root dataset, so we
+	 * create the feature objects here.
+	 */
+	if (spa_version(spa) >= SPA_VERSION_FEATURES)
+		spa_feature_create_zap_objects(spa, tx);
+
+	if (dcp && dcp->cp_crypt != ZIO_CRYPT_OFF &&
+	    dcp->cp_crypt != ZIO_CRYPT_INHERIT)
+		spa_feature_enable(spa, SPA_FEATURE_ENCRYPTION, tx);
 
 	/* create the root dataset */
 	obj = dsl_dataset_create_sync_dd(dp->dp_root_dir, NULL, dcp, 0, tx);

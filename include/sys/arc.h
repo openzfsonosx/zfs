@@ -131,6 +131,16 @@ typedef enum arc_space_type {
 	ARC_SPACE_NUMTYPES
 } arc_space_type_t;
 
+typedef enum arc_state_type {
+        ARC_STATE_ANON,
+        ARC_STATE_MRU,
+        ARC_STATE_MRU_GHOST,
+        ARC_STATE_MFU,
+        ARC_STATE_MFU_GHOST,
+        ARC_STATE_L2C_ONLY,
+        ARC_STATE_NUMTYPES
+} arc_state_type_t;
+
 void arc_space_consume(uint64_t space, arc_space_type_t type);
 void arc_space_return(uint64_t space, arc_space_type_t type);
 arc_buf_t *arc_buf_alloc(spa_t *spa, int size, void *tag,

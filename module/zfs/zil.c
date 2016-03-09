@@ -227,7 +227,7 @@ zil_read_log_block(zilog_t *zilog, boolean_t decrypt, const blkptr_t *bp,
 	    ZB_ZIL_OBJECT, ZB_ZIL_LEVEL, bp->blk_cksum.zc_word[ZIL_ZC_SEQ]);
 
 	if (!decrypt) {
-		zio_flags |= ZIO_FLAG_NO_DECRYPT;
+		zio_flags |= ZIO_FLAG_RAW;
 		data = zio_data_buf_alloc(BP_GET_LSIZE(bp));
 
 		error = zio_wait(zio_read(NULL, zilog->zl_spa,
@@ -341,7 +341,7 @@ zil_read_log_data(zilog_t *zilog, const lr_write_t *lr, void *wbuf)
 static int
 zil_check_log_data(zilog_t *zilog, const lr_write_t *lr)
 {
-	enum zio_flag zio_flags = ZIO_FLAG_CANFAIL | ZIO_FLAG_NO_DECRYPT;
+	enum zio_flag zio_flags = ZIO_FLAG_CANFAIL | ZIO_FLAG_RAW;
 	const blkptr_t *bp = &lr->lr_blkptr;
 	zbookmark_phys_t zb;
 	void *data = NULL;

@@ -704,9 +704,8 @@ dsl_dir_destroy_sync(uint64_t ddobj, dmu_tx_t *tx)
 	for (t = 0; t < DD_USED_NUM; t++)
 		ASSERT0(dsl_dir_phys(dd)->dd_used_breakdown[t]);
 
-	if (dsl_dir_phys(dd)->dd_keychain_obj != 0) {
-		dsl_keychain_destroy_sync(dsl_dir_phys(dd)->dd_keychain_obj,
-			tx);
+	if (dd->dd_keychain_obj != 0) {
+		dsl_keychain_destroy_sync(dd->dd_keychain_obj, tx);
 		(void) spa_keystore_unload_wkey_impl(dp->dp_spa,
 			dd->dd_object);
 	}

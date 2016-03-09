@@ -3847,7 +3847,6 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 
 	spa->spa_is_initializing = B_TRUE;
 	spa->spa_dsl_pool = dp = dsl_pool_create(spa, zplprops, dcp, txg);
-	spa->spa_meta_objset = dp->dp_meta_objset;
 	spa->spa_is_initializing = B_FALSE;
 
 	/*
@@ -3871,9 +3870,6 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	    sizeof (uint64_t), 1, &spa->spa_config_object, tx) != 0) {
 		cmn_err(CE_PANIC, "failed to add pool config");
 	}
-
-	if (spa_version(spa) >= SPA_VERSION_FEATURES)
-		spa_feature_create_zap_objects(spa, tx);
 
 	if (zap_add(spa->spa_meta_objset,
 	    DMU_POOL_DIRECTORY_OBJECT, DMU_POOL_CREATION_VERSION,
@@ -3931,11 +3927,6 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 		spa_configfile_set(spa, props, B_FALSE);
 		spa_sync_props(props, tx);
 	}
-
-	/* see comment in dsl_keychain_create_sync() */
-	if (dcp && dcp->cp_crypt != ZIO_CRYPT_INHERIT &&
-	    dcp->cp_crypt != ZIO_CRYPT_OFF)
-		spa_feature_incr(spa, SPA_FEATURE_ENCRYPTION, tx);
 
 	dmu_tx_commit(tx);
 

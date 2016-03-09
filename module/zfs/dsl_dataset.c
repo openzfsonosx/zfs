@@ -706,7 +706,7 @@ dsl_dataset_disown(dsl_dataset_t *ds, void *tag)
 	ASSERT(ds->ds_dbuf != NULL);
 
 	mutex_enter(&ds->ds_lock);
-	if (ds->ds_dir && dsl_dir_phys(ds->ds_dir)->dd_keychain_obj) {
+	if (ds->ds_dir && ds->ds_dir->dd_keychain_obj) {
 		(void) spa_keystore_remove_keychain_record(
 			ds->ds_dir->dd_pool->dp_spa, ds);
 	}
@@ -721,7 +721,7 @@ dsl_dataset_tryown(dsl_dataset_t *ds, void *tag, boolean_t key_required)
 {
 	int ret = 0;
 	spa_t *spa = ds->ds_dir->dd_pool->dp_spa;
-	uint64_t kcobj = dsl_dir_phys(ds->ds_dir)->dd_keychain_obj;
+	uint64_t kcobj = ds->ds_dir->dd_keychain_obj;
 
 	ASSERT(dsl_pool_config_held(ds->ds_dir->dd_pool));
 	mutex_enter(&ds->ds_lock);
@@ -788,7 +788,7 @@ dsl_dataset_create_sync_dd(dsl_dir_t *dd, dsl_dataset_t *origin,
 	dsl_pool_t *dp = dd->dd_pool;
 	dmu_buf_t *dbuf;
 	dsl_dataset_phys_t *dsphys;
-	uint64_t dsobj, crypt;
+	uint64_t dsobj, crypt, kcobj;
 	dsl_wrapping_key_t *wkey;
 	boolean_t add_key;
 	objset_t *mos = dp->dp_meta_objset;
@@ -913,8 +913,10 @@ dsl_dataset_create_sync_dd(dsl_dir_t *dd, dsl_dataset_t *origin,
 			wkey->wk_ddobj = dd->dd_object;
 		}
 
-		dsl_dir_phys(dd)->dd_keychain_obj =
-		    dsl_keychain_create_sync(crypt, wkey, tx);
+		dsl_dir_zapify(dd, tx);
+		kcobj = dsl_keychain_create_sync(crypt, wkey, tx);
+		VERIFY0(zap_add(mos, dd->dd_object, DD_FIELD_DSL_KEYCHAIN_OBJ,
+		    sizeof (uint64_t), 1, &kcobj, tx));
 
 		if (dcp == NULL || dcp->cp_wkey == NULL) {
 			dsl_wrapping_key_rele(wkey, FTAG);
@@ -922,7 +924,7 @@ dsl_dataset_create_sync_dd(dsl_dir_t *dd, dsl_dataset_t *origin,
 			VERIFY0(spa_keystore_load_wkey_impl(tx->tx_pool->dp_spa,
 			    wkey));
 		}
-	} else if (dsl_dir_phys(origin->ds_dir)->dd_keychain_obj != 0) {
+	} else if (origin->ds_dir->dd_keychain_obj != 0) {
 		VERIFY0(dsl_prop_get_dd(origin->ds_dir,
 		    zfs_prop_to_name(ZFS_PROP_ENCRYPTION), 8, 1,
 		    &crypt, NULL, B_FALSE));
@@ -942,9 +944,11 @@ dsl_dataset_create_sync_dd(dsl_dir_t *dd, dsl_dataset_t *origin,
 		    zfs_prop_to_name(ZFS_PROP_ENCRYPTION),
 		    8, 1, &crypt, tx));
 
-		dsl_dir_phys(dd)->dd_keychain_obj =
-		    dsl_keychain_clone_sync(origin->ds_dir, wkey,
+		dsl_dir_zapify(dd, tx);
+		kcobj = dsl_keychain_clone_sync(origin->ds_dir, wkey,
 		    add_key, tx);
+		VERIFY0(zap_add(mos, dd->dd_object, DD_FIELD_DSL_KEYCHAIN_OBJ,
+		    sizeof (uint64_t), 1, &kcobj, tx));
 
 		if (dcp == NULL || dcp->cp_wkey == NULL) {
 			dsl_wrapping_key_rele(wkey, FTAG);

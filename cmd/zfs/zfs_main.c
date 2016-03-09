@@ -107,7 +107,7 @@ static int zfs_do_holds(int argc, char **argv);
 static int zfs_do_release(int argc, char **argv);
 static int zfs_do_diff(int argc, char **argv);
 static int zfs_do_bookmark(int argc, char **argv);
-static int zfs_do_crypto(int argc, char **argv);
+static int zfs_do_key(int argc, char **argv);
 
 /*
  * Enable a reasonable set of defaults for libumem debugging on DEBUG builds.
@@ -155,7 +155,7 @@ typedef enum {
 	HELP_RELEASE,
 	HELP_DIFF,
 	HELP_BOOKMARK,
-	HELP_CRYPTO,
+	HELP_KEY,
 } zfs_help_t;
 
 typedef struct zfs_command {
@@ -209,7 +209,7 @@ static zfs_command_t command_table[] = {
 	{ "holds",	zfs_do_holds,		HELP_HOLDS		},
 	{ "release",	zfs_do_release,		HELP_RELEASE		},
 	{ "diff",	zfs_do_diff,		HELP_DIFF		},
-	{ "key",	zfs_do_crypto,		HELP_CRYPTO		},
+	{ "key",	zfs_do_key,		HELP_KEY		},
 };
 
 #define	NCOMMAND	(sizeof (command_table) / sizeof (command_table[0]))
@@ -328,7 +328,7 @@ get_usage(zfs_help_t idx)
 		    "[snapshot|filesystem]\n"));
 	case HELP_BOOKMARK:
 		return (gettext("\tbookmark <snapshot> <bookmark>\n"));
-	case HELP_CRYPTO:
+	case HELP_KEY:
 		return (gettext("\tkey [-luK] <filesystem|volume>\n"
 		    "\tkey -c [-o keysource=value] <filesystem|volume>\n"));
 	}
@@ -7058,7 +7058,7 @@ usage:
 }
 
 static int
-zfs_do_crypto(int argc, char **argv)
+zfs_do_key(int argc, char **argv)
 {
 	int c, ret = -1;
 	boolean_t load = B_FALSE, unload = B_FALSE;

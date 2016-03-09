@@ -5698,7 +5698,7 @@ zfs_ioctl_init(void)
 	    POOL_NAME,
 	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE, B_TRUE);
 
-	zfs_ioctl_register("cypto", ZFS_IOC_CRYPTO,
+	zfs_ioctl_register("crypto", ZFS_IOC_CRYPTO,
 	    zfs_ioc_crypto, zfs_secpolicy_crypto,
 	    DATASET_NAME, POOL_CHECK_SUSPENDED, B_TRUE, B_TRUE);
 
@@ -6515,6 +6515,8 @@ zfs_ioctl_osx_init(void)
 		return (0);
 #endif
 
+	icp_init();
+
 	if ((error = -zvol_init()) != 0)
 		return (error);
 
@@ -6554,6 +6556,7 @@ zfs_ioctl_osx_init(void)
 	(void) mnttab_file_create();
 	zfs_ioctl_installed = 1;
 #endif
+
 	printf("ZFS: Loaded module v%s-%s%s, "
 	    "ZFS pool version %s, ZFS filesystem version %s\n",
 	    ZFS_META_VERSION, ZFS_META_RELEASE, ZFS_DEBUG_STR,
@@ -6609,6 +6612,8 @@ zfs_ioctl_osx_fini(void)
 	if (zfs_nfsshare_inited || zfs_smbshare_inited)
 		(void) ddi_modclose(sharefs_mod);
 #endif
+
+	icp_fini();
 
 	tsd_destroy(&zfs_fsyncer_key);
 #ifndef illumos

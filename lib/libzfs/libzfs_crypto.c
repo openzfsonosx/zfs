@@ -414,8 +414,8 @@ pbkdf2(uint8_t *passphrase, size_t passphraselen, uint8_t *salt,
 	uint32_t blockptr, i, iter;
 	uint16_t hmac_key_len;
 	uint8_t *hmac_key;
-	uint8_t block[SHA_256_DIGEST_LEN * 2];
-	uint8_t *hmacresult = block + SHA_256_DIGEST_LEN;
+	uint8_t block[SHA1_DIGEST_LENGTH * 2];
+	uint8_t *hmacresult = block + SHA1_DIGEST_LENGTH;
 	crypto_mechanism_t mech;
 	crypto_key_t key;
 	crypto_data_t in_data, out_data;
@@ -429,10 +429,10 @@ pbkdf2(uint8_t *passphrase, size_t passphraselen, uint8_t *salt,
 	icp_init();
 
 	/* HMAC key size is max(sizeof(uint32_t) + salt len, sha 256 len) */
-	if (saltlen > SHA_256_DIGEST_LEN) {
+	if (saltlen > SHA1_DIGEST_LENGTH) {
 		hmac_key_len = saltlen + sizeof (uint32_t);
 	} else {
-		hmac_key_len = SHA_256_DIGEST_LEN;
+		hmac_key_len = SHA1_DIGEST_LENGTH;
 	}
 
 	hmac_key = calloc(hmac_key_len, 1);
@@ -442,7 +442,7 @@ pbkdf2(uint8_t *passphrase, size_t passphraselen, uint8_t *salt,
 	}
 
 	/* initialize sha 256 hmac mechanism */
-	mech.cm_type = crypto_mech2id(SUN_CKM_SHA256_HMAC);
+	mech.cm_type = crypto_mech2id(SUN_CKM_SHA1_HMAC);
 	mech.cm_param = NULL;
 	mech.cm_param_len = 0;
 
@@ -462,9 +462,9 @@ pbkdf2(uint8_t *passphrase, size_t passphraselen, uint8_t *salt,
 	/* initialize crypto data for the output data */
 	out_data.cd_format = CRYPTO_DATA_RAW;
 	out_data.cd_offset = 0;
-	out_data.cd_length = SHA_256_DIGEST_LEN;
+	out_data.cd_length = SHA1_DIGEST_LENGTH;
 	out_data.cd_raw.iov_base = (char *)hmacresult;
-	out_data.cd_raw.iov_len = SHA_256_DIGEST_LEN;
+	out_data.cd_raw.iov_len = SHA1_DIGEST_LENGTH;
 
 	/* initialize the context template */
 	ret = crypto_create_ctx_template(&mech, &key, &tmpl, KM_SLEEP);
@@ -475,23 +475,23 @@ pbkdf2(uint8_t *passphrase, size_t passphraselen, uint8_t *salt,
 
 	/* main loop */
 	for (blockptr = 0; blockptr < outputlen;
-	    blockptr += SHA_256_DIGEST_LEN) {
+	    blockptr += SHA1_DIGEST_LENGTH) {
 
 		/*
 		 * for the first iteration, the HMAC key is the user-provided
 		 * salt concatenated with the block index (1-indexed)
 		 */
-		i = htobe32(1 + (blockptr / SHA_256_DIGEST_LEN));
+		i = htobe32(1 + (blockptr / SHA1_DIGEST_LENGTH));
 		memmove(hmac_key, salt, saltlen);
 		memmove(hmac_key + saltlen, (uint8_t *)(&i), sizeof (uint32_t));
 
 		/* block initializes to zeroes (no XOR) */
-		memset(block, 0, SHA_256_DIGEST_LEN);
+		memset(block, 0, SHA1_DIGEST_LENGTH);
 
 		for (iter = 0; iter < iterations; iter++) {
 			if (iter > 0) {
-				in_data.cd_length = SHA_256_DIGEST_LEN;
-				in_data.cd_raw.iov_len = SHA_256_DIGEST_LEN;
+				in_data.cd_length = SHA1_DIGEST_LENGTH;
+				in_data.cd_raw.iov_len = SHA1_DIGEST_LENGTH;
 			} else {
 				in_data.cd_length = saltlen + sizeof (uint32_t);
 				in_data.cd_raw.iov_len =
@@ -506,10 +506,10 @@ pbkdf2(uint8_t *passphrase, size_t passphraselen, uint8_t *salt,
 			}
 
 			/* HMAC key now becomes the output of this iteration */
-			memmove(hmac_key, hmacresult, SHA_256_DIGEST_LEN);
+			memmove(hmac_key, hmacresult, SHA1_DIGEST_LENGTH);
 
 			/* XOR this iteration's result with the current block */
-			for (i = 0; i < SHA_256_DIGEST_LEN; i++) {
+			for (i = 0; i < SHA1_DIGEST_LENGTH; i++) {
 				block[i] ^= hmacresult[i];
 			}
 		}
@@ -518,10 +518,10 @@ pbkdf2(uint8_t *passphrase, size_t passphraselen, uint8_t *salt,
 		 * compute length of this block, make sure we don't write
 		 * beyond the end of the output, truncating if necessary
 		 */
-		if (blockptr + SHA_256_DIGEST_LEN > outputlen) {
+		if (blockptr + SHA1_DIGEST_LENGTH > outputlen) {
 			memmove(output + blockptr, block, outputlen - blockptr);
 		} else {
-			memmove(output + blockptr, block, SHA_256_DIGEST_LEN);
+			memmove(output + blockptr, block, SHA1_DIGEST_LENGTH);
 		}
 	}
 
@@ -529,7 +529,6 @@ pbkdf2(uint8_t *passphrase, size_t passphraselen, uint8_t *salt,
 	free(hmac_key);
 	icp_fini();
 	thread_fini();
-
 	return (0);
 
 error:
@@ -737,13 +736,15 @@ zfs_crypto_create(libzfs_handle_t *hdl, char *parent_name, nvlist_t *props,
 			goto error;
 		}
 	} else {
-		if (!nvlist_exists(pool_props, "feature@encryption")) {
+		if (!nvlist_exists(pool_props, "feature@encryption") &&
+			local_crypt) {
 			ret = EINVAL;
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "Encryption feature not enabled."));
+			goto error;
 		}
 
-		pcrypt = crypt;
+		pcrypt = ZIO_CRYPT_OFF;
 	}
 
 	/* Check for encryption being explicitly truned off */
@@ -949,7 +950,7 @@ zfs_crypto_load_key(zfs_handle_t *zhp)
 	key_format_t format;
 	key_locator_t locator;
 	char *uri;
-	uint8_t *key_material, *key_data;
+	uint8_t *key_material = NULL, *key_data = NULL;
 	size_t key_material_len;
 	nvlist_t *crypto_args = NULL;
 	zprop_source_t keysource_srctype;

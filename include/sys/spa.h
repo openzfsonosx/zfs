@@ -211,7 +211,7 @@ typedef struct zio_cksum_salt {
  * G		gang block indicator
  * B		byteorder (endianness)
  * D		dedup
- * X		encryption (on version 30, which is not supported)
+ * X		encryption
  * E		blkptr_t contains embedded data (see below)
  * lvl		level of indirection
  * type		DMU object type
@@ -329,7 +329,7 @@ typedef enum bp_embedded_type {
 typedef struct blkptr {
 	dva_t		blk_dva[SPA_DVAS_PER_BP]; /* Data Virtual Addresses */
 	uint64_t	blk_prop;	/* size, compression, type, etc	    */
-	uint64_t	blk_pad[2];	/* Extra space for the future	    */
+	uint64_t	blk_iv[2];	/* 96 bit IV for encryption	    */
 	uint64_t	blk_phys_birth;	/* txg when block was allocated	    */
 	uint64_t	blk_birth;	/* transaction group at birth	    */
 	uint64_t	blk_fill;	/* fill count			    */
@@ -492,7 +492,7 @@ _NOTE(CONSTCOND) } while (0)
 	bcopy((mac), &(bp)->blk_cksum.zc_word[2], MAX_DATA_MAC_LEN);
 
 #define	ZIO_SET_IV(bp, iv)	\
-	bcopy((iv), (bp)->blk_pad, MAX_DATA_IV_LEN);
+	bcopy((iv), (bp)->blk_iv, MAX_DATA_IV_LEN);
 
 #define	BP_IDENTITY(bp)		(ASSERT(!BP_IS_EMBEDDED(bp)), &(bp)->blk_dva[0])
 #define	BP_IS_GANG(bp)		\
@@ -515,8 +515,8 @@ _NOTE(CONSTCOND) } while (0)
 	(bp)->blk_dva[2].dva_word[0] = 0;	\
 	(bp)->blk_dva[2].dva_word[1] = 0;	\
 	(bp)->blk_prop = 0;			\
-	(bp)->blk_pad[0] = 0;			\
-	(bp)->blk_pad[1] = 0;			\
+	(bp)->blk_iv[0] = 0;			\
+	(bp)->blk_iv[1] = 0;			\
 	(bp)->blk_phys_birth = 0;		\
 	(bp)->blk_birth = 0;			\
 	(bp)->blk_fill = 0;			\

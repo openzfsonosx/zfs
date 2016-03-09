@@ -141,6 +141,7 @@
 #include <sys/kstat.h>
 #include <sys/dmu_tx.h>
 #include <sys/zio_crypt.h>
+#include <sys/arc_impl.h>
 #include <zfs_fletcher.h>
 #include <sys/time.h>
 
@@ -270,22 +271,6 @@ int zfs_arc_average_blocksize = 8 * 1024; /* 8KB */
  * buffer header in the hash table, so that reads that hit the
  * second level ARC benefit from these fast lookups.
  */
-
-typedef struct arc_state {
-	/*
-	 * list of evictable buffers
-	 */
-	multilist_t arcs_list[ARC_BUFC_NUMTYPES];
-	/*
-	 * total amount of evictable data in this state
-	 */
-	uint64_t arcs_lsize[ARC_BUFC_NUMTYPES];
-	/*
-	 * total amount of data in this state; this includes: evictable,
-	 * non-evictable, ARC_BUFC_DATA, and ARC_BUFC_METADATA.
-	 */
-	refcount_t arcs_size;
-} arc_state_t;
 
 /* The 6 states: */
 static arc_state_t ARC_anon;
@@ -672,26 +657,6 @@ static int		arc_no_grow;	/* Don't try to grow cache size */
 static uint64_t		arc_tempreserve;
 static uint64_t		arc_loaned_bytes;
 
-typedef struct arc_callback arc_callback_t;
-
-struct arc_callback {
-	void			*acb_private;
-	arc_done_func_t		*acb_done;
-	arc_buf_t		*acb_buf;
-	zio_t			*acb_zio_dummy;
-	arc_callback_t		*acb_next;
-};
-
-typedef struct arc_write_callback arc_write_callback_t;
-
-struct arc_write_callback {
-	void		*awcb_private;
-	arc_done_func_t	*awcb_ready;
-	arc_done_func_t	*awcb_children_ready;
-	arc_done_func_t	*awcb_physdone;
-	arc_done_func_t	*awcb_done;
-	arc_buf_t	*awcb_buf;
-};
 
 /*
  * ARC buffers are separated into multiple structs as a memory saving measure:
@@ -724,74 +689,8 @@ struct arc_write_callback {
  * words in pointers. arc_hdr_realloc() is used to switch a header between
  * these two allocation states.
  */
-typedef struct l1arc_buf_hdr {
-	kmutex_t		b_freeze_lock;
-#ifdef ZFS_DEBUG
-	/*
-	 * used for debugging wtih kmem_flags - by allocating and freeing
-	 * b_thawed when the buffer is thawed, we get a record of the stack
-	 * trace that thawed it.
-	 */
-	void			*b_thawed;
-#endif
-
-	arc_buf_t		*b_buf;
-	uint32_t		b_datacnt;
-	/* for waiting on writes to complete */
-	kcondvar_t		b_cv;
-
-	/* protected by arc state mutex */
-	arc_state_t		*b_state;
-	multilist_node_t	b_arc_node;
-
-	/* updated atomically */
-	clock_t			b_arc_access;
-
-	/* self protecting */
-	refcount_t		b_refcnt;
-
-	arc_callback_t		*b_acb;
-	/* temporary buffer holder for in-flight compressed data */
-	void			*b_tmp_cdata;
-} l1arc_buf_hdr_t;
 
 typedef struct l2arc_dev l2arc_dev_t;
-
-typedef struct l2arc_buf_hdr {
-	/* protected by arc_buf_hdr mutex */
-	l2arc_dev_t		*b_dev;		/* L2ARC device */
-	uint64_t		b_daddr;	/* disk address, offset byte */
-	/* real alloc'd buffer size depending on b_compress applied */
-	int32_t			b_asize;
-	uint8_t			b_compress;
-
-	list_node_t		b_l2node;
-} l2arc_buf_hdr_t;
-
-struct arc_buf_hdr {
-	/* protected by hash lock */
-	dva_t			b_dva;
-	uint64_t		b_birth;
-	/*
-	 * Even though this checksum is only set/verified when a buffer is in
-	 * the L1 cache, it needs to be in the set of common fields because it
-	 * must be preserved from the time before a buffer is written out to
-	 * L2ARC until after it is read back in.
-	 */
-	zio_cksum_t		*b_freeze_cksum;
-
-	arc_buf_hdr_t		*b_hash_next;
-	arc_flags_t		b_flags;
-
-	/* immutable */
-	int32_t			b_size;
-	uint64_t		b_spa;
-
-	/* L2ARC fields. Undefined when not in L2ARC. */
-	l2arc_buf_hdr_t		b_l2hdr;
-	/* L1ARC fields. Undefined when in l2arc_only state */
-	l1arc_buf_hdr_t		b_l1hdr;
-};
 
 static arc_buf_t *arc_eviction_list;
 static arc_buf_hdr_t arc_eviction_hdr;
@@ -908,23 +807,6 @@ boolean_t l2arc_noprefetch = B_TRUE;		/* don't cache prefetch bufs */
 boolean_t l2arc_feed_again = B_TRUE;		/* turbo warmup */
 boolean_t l2arc_norw = B_TRUE;			/* no reads during writes */
 
-/*
- * L2ARC Internals
- */
-struct l2arc_dev {
-	vdev_t			*l2ad_vdev;	/* vdev */
-	spa_t			*l2ad_spa;	/* spa */
-	uint64_t		l2ad_hand;	/* next write location */
-	uint64_t		l2ad_start;	/* first addr on device */
-	uint64_t		l2ad_end;	/* last addr on device */
-	boolean_t		l2ad_first;	/* first sweep through */
-	boolean_t		l2ad_writing;	/* currently writing */
-	kmutex_t		l2ad_mtx;	/* lock for buffer list */
-	list_t			l2ad_buflist;	/* buffer list */
-	list_node_t		l2ad_node;	/* device list node */
-	refcount_t		l2ad_alloc;	/* allocated bytes */
-};
-
 static list_t L2ARC_dev_list;			/* device list */
 static list_t *l2arc_dev_list;			/* device list pointer */
 static kmutex_t l2arc_dev_mtx;			/* device list mutex */
@@ -943,11 +825,6 @@ typedef struct l2arc_read_callback {
 	int			l2rcb_flags;		/* original flags */
 	uint8_t			l2rcb_transforms;	/* applied comp / enc */
 } l2arc_read_callback_t;
-
-typedef struct l2arc_write_callback {
-	l2arc_dev_t	*l2wcb_dev;		/* device info */
-	arc_buf_hdr_t	*l2wcb_head;		/* head of write buflist */
-} l2arc_write_callback_t;
 
 typedef struct l2arc_data_free {
 	/* protected by l2arc_free_on_write_mtx */
@@ -1341,13 +1218,6 @@ arc_hdr_realloc(arc_buf_hdr_t *hdr, kmem_cache_t *old, kmem_cache_t *new)
 		VERIFY(!HDR_L2_WRITING(hdr));
 		VERIFY3P(hdr->b_l1hdr.b_tmp_cdata, ==, NULL);
 
-#ifdef ZFS_DEBUG
-		if (hdr->b_l1hdr.b_thawed != NULL) {
-			kmem_free(hdr->b_l1hdr.b_thawed, 1);
-			hdr->b_l1hdr.b_thawed = NULL;
-		}
-#endif
-
 		nhdr->b_flags &= ~ARC_FLAG_HAS_L1HDR;
 	}
 	/*
@@ -1538,14 +1408,6 @@ arc_buf_thaw(arc_buf_t *buf)
 		buf->b_hdr->b_freeze_cksum = NULL;
 	}
 
-#ifdef ZFS_DEBUG
-	if (zfs_flags & ZFS_DEBUG_MODIFY) {
-		if (buf->b_hdr->b_l1hdr.b_thawed != NULL)
-			kmem_free(buf->b_hdr->b_l1hdr.b_thawed, 1);
-		buf->b_hdr->b_l1hdr.b_thawed = kmem_alloc(1, KM_SLEEP);
-	}
-#endif
-
 	mutex_exit(&buf->b_hdr->b_l1hdr.b_freeze_lock);
 
 	arc_buf_unwatch(buf);
@@ -1637,6 +1499,7 @@ remove_reference(arc_buf_hdr_t *hdr, kmutex_t *hash_lock, void *tag)
  * callers are strongly encourage not to do this.  However, it can be helpful
  * for targeted analysis so the functionality is provided.
  */
+#ifdef LINUX
 void
 arc_buf_info(arc_buf_t *ab, arc_buf_info_t *abi, int state_index)
 {
@@ -1676,6 +1539,7 @@ arc_buf_info(arc_buf_t *ab, arc_buf_info_t *abi, int state_index)
 	abi->abi_state_contents = arc_buf_type(hdr);
 	abi->abi_size = hdr->b_size;
 }
+#endif
 
 /*
  * Move the supplied buffer to the indicated state. The hash lock
@@ -2348,12 +2212,6 @@ arc_hdr_destroy(arc_buf_hdr_t *hdr)
 				arc_buf_destroy(hdr->b_l1hdr.b_buf, TRUE);
 			}
 		}
-#ifdef ZFS_DEBUG
-		if (hdr->b_l1hdr.b_thawed != NULL) {
-			kmem_free(hdr->b_l1hdr.b_thawed, 1);
-			hdr->b_l1hdr.b_thawed = NULL;
-		}
-#endif
 	}
 
 	ASSERT3P(hdr->b_hash_next, ==, NULL);
@@ -6748,10 +6606,8 @@ l2arc_decompress_zio(zio_t *zio, arc_buf_hdr_t *hdr, enum zio_compress c)
 static int
 l2arc_encrypt_buf(l2arc_crypt_key_t *key, arc_buf_hdr_t *hdr)
 {
-	int ret;
-	uio_t puio, cuio;
-	iovec_t plain_iov;
-	iovec_t cipher_iovs[2];
+	int ret = EIO;
+	uio_t *puio = NULL, *cuio = NULL;
 	uint8_t ivbuf[L2ARC_IV_LEN];
 	uint_t datalen = hdr->b_l2hdr.b_asize;
 	uint_t bufsize = hdr->b_size;
@@ -6762,25 +6618,15 @@ l2arc_encrypt_buf(l2arc_crypt_key_t *key, arc_buf_hdr_t *hdr)
 
 	crypt_buf = zio_data_buf_alloc(bufsize);
 
-	plain_iov.iov_base = hdr->b_l1hdr.b_tmp_cdata;
-	plain_iov.iov_len = datalen;
-	cipher_iovs[0].iov_base = crypt_buf;
-	cipher_iovs[0].iov_len = datalen;
-	cipher_iovs[1].iov_base = hdr->b_l2hdr.b_mac;
-	cipher_iovs[1].iov_len = L2ARC_MAC_LEN;
+	puio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
+	if (!puio) goto error;
+	cuio = uio_create(2, 0, UIO_SYSSPACE, UIO_WRITE);
+	if (!cuio) goto error;
 
-	puio.uio_iov = &plain_iov;
-	puio.uio_iovcnt = 1;
-	cuio.uio_iov = cipher_iovs;
-	cuio.uio_iovcnt = 2;
+	uio_addiov(puio, (user_addr_t)hdr->b_l1hdr.b_tmp_cdata, datalen);
 
-#ifdef _KERNEL
-	puio.uio_segflg = UIO_SYSSPACE;
-	cuio.uio_segflg = UIO_SYSSPACE;
-#else
-	puio.uio_segflg = UIO_USERSPACE;
-	cuio.uio_segflg = UIO_USERSPACE;
-#endif
+	uio_addiov(cuio, (user_addr_t)crypt_buf, datalen);
+	uio_addiov(cuio, (user_addr_t)hdr->b_l2hdr.b_mac, L2ARC_MAC_LEN);
 
 	ret = zio_crypt_generate_iv_l2arc(hdr->b_spa, &hdr->b_dva,
 	    hdr->b_birth, hdr->b_l2hdr.b_daddr, ivbuf);
@@ -6788,7 +6634,7 @@ l2arc_encrypt_buf(l2arc_crypt_key_t *key, arc_buf_hdr_t *hdr)
 		goto error;
 
 	ret = zio_encrypt_uio(key->l2ck_crypt, &key->l2ck_key,
-	    key->l2ck_ctx_tmpl, ivbuf, datalen, &puio, &cuio);
+	    key->l2ck_ctx_tmpl, ivbuf, datalen, puio, cuio);
 	if (ret)
 		goto error;
 
@@ -6808,9 +6654,14 @@ l2arc_encrypt_buf(l2arc_crypt_key_t *key, arc_buf_hdr_t *hdr)
 	hdr->b_l1hdr.b_tmp_cdata = crypt_buf;
 	L2TRANS_SET_ENC(hdr->b_l2hdr.b_transforms, B_TRUE);
 
+	if (puio) uio_free(puio);
+	if (cuio) uio_free(cuio);
+
 	return (0);
 
 error:
+	if (puio) uio_free(puio);
+	if (cuio) uio_free(cuio);
 	if (crypt_buf)
 		zio_data_buf_free(crypt_buf, bufsize);
 	return (ret);
@@ -6819,9 +6670,7 @@ error:
 static void
 l2arc_decrypt_zio(l2arc_crypt_key_t *key, zio_t *zio, arc_buf_hdr_t *hdr) {
 	int ret;
-	uio_t puio, cuio;
-	iovec_t plain_iovs[2];
-	iovec_t cipher_iovs[2];
+	uio_t *puio = NULL, *cuio = NULL;
 	uint8_t ivbuf[L2ARC_IV_LEN];
 	uint8_t outmac[L2ARC_MAC_LEN];
 	uint_t datalen = zio->io_size;
@@ -6833,27 +6682,15 @@ l2arc_decrypt_zio(l2arc_crypt_key_t *key, zio_t *zio, arc_buf_hdr_t *hdr) {
 	crypt_buf = zio_data_buf_alloc(datalen);
 	bcopy(zio->io_data, crypt_buf, datalen);
 
-	plain_iovs[0].iov_base = zio->io_data;
-	plain_iovs[0].iov_len = datalen;
-	plain_iovs[1].iov_base = outmac;
-	plain_iovs[1].iov_len = L2ARC_MAC_LEN;
-	cipher_iovs[0].iov_base = crypt_buf;
-	cipher_iovs[0].iov_len = datalen;
-	cipher_iovs[1].iov_base = hdr->b_l2hdr.b_mac;
-	cipher_iovs[1].iov_len = L2ARC_MAC_LEN;
+	puio = uio_create(2, 0, UIO_SYSSPACE, UIO_WRITE);
+	if (!puio) goto error;
+	cuio = uio_create(2, 0, UIO_SYSSPACE, UIO_READ);
+	if (!cuio) goto error;
 
-	puio.uio_iov = plain_iovs;
-	puio.uio_iovcnt = 2;
-	cuio.uio_iov = cipher_iovs;
-	cuio.uio_iovcnt = 2;
-
-#ifdef _KERNEL
-	puio.uio_segflg = UIO_SYSSPACE;
-	cuio.uio_segflg = UIO_SYSSPACE;
-#else
-	puio.uio_segflg = UIO_USERSPACE;
-	cuio.uio_segflg = UIO_USERSPACE;
-#endif
+	uio_addiov(puio, (user_addr_t)zio->io_data, datalen);
+	uio_addiov(puio, (user_addr_t)outmac, L2ARC_MAC_LEN);
+	uio_addiov(cuio, (user_addr_t)crypt_buf, datalen);
+	uio_addiov(cuio, (user_addr_t)hdr->b_l2hdr.b_mac, L2ARC_MAC_LEN);
 
 	ret = zio_crypt_generate_iv_l2arc(hdr->b_spa, &hdr->b_dva,
 	    hdr->b_birth, hdr->b_l2hdr.b_daddr, ivbuf);
@@ -6861,15 +6698,19 @@ l2arc_decrypt_zio(l2arc_crypt_key_t *key, zio_t *zio, arc_buf_hdr_t *hdr) {
 		goto error;
 
 	ret = zio_decrypt_uio(key->l2ck_crypt, &key->l2ck_key,
-	    key->l2ck_ctx_tmpl, ivbuf, datalen, &puio, &cuio);
+	    key->l2ck_ctx_tmpl, ivbuf, datalen, puio, cuio);
 	if (ret)
 		goto error;
 
 	zio_data_buf_free(crypt_buf, datalen);
 
+	if (puio) uio_free(puio);
+	if (cuio) uio_free(cuio);
 	return;
 
 error:
+	if (puio) uio_free(puio);
+	if (cuio) uio_free(cuio);
 	if (crypt_buf)
 		zio_data_buf_free(crypt_buf, datalen);
 	zio->io_error = EIO;

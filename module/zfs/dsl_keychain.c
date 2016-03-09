@@ -731,7 +731,7 @@ spa_keystore_keychain_hold_dd(spa_t *spa, dsl_dir_t *dd, void *tag,
 	avl_index_t where;
 	dsl_keychain_t *kc = NULL;
 	dsl_wrapping_key_t *wkey = NULL;
-	uint64_t kcobj = dsl_dir_phys(dd)->dd_keychain_obj;
+	uint64_t kcobj = dd->dd_keychain_obj;
 
 	/*
 	 * we need a write lock here because we might load a keychain
@@ -818,7 +818,6 @@ spa_keystore_load_wkey_impl(spa_t *spa, dsl_wrapping_key_t *wkey)
 		goto error_unlock;
 	}
 	avl_insert(&spa->spa_keystore.sk_wkeys, wkey, where);
-
 	rw_exit(&spa->spa_keystore.sk_wkeys_lock);
 
 	return (0);
@@ -856,7 +855,7 @@ spa_keystore_load_wkey(const char *dsname, dsl_crypto_params_t *dcp)
 
 	/* verify that the keychain is correct by opening its keychain */
 	ret = dsl_keychain_open(dp->dp_meta_objset, wkey,
-		dsl_dir_phys(dd)->dd_keychain_obj, FTAG, &kc);
+		dd->dd_keychain_obj, FTAG, &kc);
 	if (ret)
 		goto error;
 
@@ -944,7 +943,7 @@ spa_keystore_unload_wkey(const char *dsname)
 	dsl_dir_rele(dd, FTAG);
 
 	/* remove the zvol (if it is one) */
-	zvol_create_minors(dp->dp_spa, dsname, B_TRUE);
+	zvol_remove_minors(dp->dp_spa, dsname, B_TRUE);
 
 	dsl_pool_rele(dp, FTAG);
 
@@ -974,7 +973,7 @@ dsl_keychain_check_impl(const char *dsname, boolean_t needs_root,
 		return (ret);
 
 	/* check that this dd has a keychain */
-	if (dsl_dir_phys(dd)->dd_keychain_obj == 0) {
+	if (dd->dd_keychain_obj == 0) {
 		ret = SET_ERROR(EINVAL);
 		goto error;
 	}
@@ -1100,9 +1099,9 @@ spa_keystore_rewrap_sync_impl(uint64_t root_ddobj, uint64_t ddobj,
 
 	/* sync all keychain entries with the new wrapping key */
 	for (kce = list_head(&kc->kc_entries); kce;
-		kce = list_next(&kc->kc_entries, kce)) {
+	    kce = list_next(&kc->kc_entries, kce)) {
 		ret = dsl_keychain_entry_sync(kce, wkey,
-			dsl_dir_phys(dd)->dd_keychain_obj, tx);
+		    dd->dd_keychain_obj, tx);
 		if (ret)
 			goto error_unlock;
 	}
@@ -1326,7 +1325,7 @@ dsl_dataset_keystore_keystatus(dsl_dataset_t *ds)
 	dsl_wrapping_key_t *wkey;
 
 	/* check if this dataset has a keychain */
-	if (dsl_dir_phys(ds->ds_dir)->dd_keychain_obj == 0)
+	if (ds->ds_dir->dd_keychain_obj == 0)
 		return (ZFS_KEYSTATUS_NONE);
 
 	/* lookup the wkey. if it doesn't exist the key is unavailable */
@@ -1427,6 +1426,9 @@ dmu_objset_clone_encryption_check(dsl_dir_t *pdd, dsl_dir_t *odd,
 		return (SET_ERROR(EINVAL));
 	if (pcrypt != ZIO_CRYPT_OFF && ocrypt == ZIO_CRYPT_OFF)
 		return (SET_ERROR(EINVAL));
+	if (pcrypt == ZIO_CRYPT_OFF && ocrypt != ZIO_CRYPT_OFF &&
+		(!wkey || !keysource))
+		return (SET_ERROR(EINVAL));
 	if (cmd && cmd != ZFS_IOC_CRYPTO_ADD_KEY)
 		return (SET_ERROR(EINVAL));
 
@@ -1462,7 +1464,7 @@ dsl_keychain_create_sync(uint64_t crypt, dsl_wrapping_key_t *wkey,
 
 	/* create the DSL Keychain zap object */
 	kcobj = zap_create_flags(tx->tx_pool->dp_meta_objset, 0,
-		ZAP_FLAG_UINT64_KEY, DMU_OT_DSL_KEYCHAIN, SPA_MINBLOCKSHIFT,
+		ZAP_FLAG_UINT64_KEY, DMU_OTN_ZAP_METADATA, SPA_MINBLOCKSHIFT,
 		SPA_MINBLOCKSHIFT, DMU_OT_NONE, 0, tx);
 
 	/*
@@ -1472,16 +1474,8 @@ dsl_keychain_create_sync(uint64_t crypt, dsl_wrapping_key_t *wkey,
 	VERIFY0(dsl_keychain_entry_init(&kce, crypt, 0));
 	VERIFY0(dsl_keychain_entry_sync(&kce, wkey, kcobj, tx));
 
-	/*
-	 * Increment the encryption feature count. However, during
-	 * dsl_pool_create(), the root dataset it created before the pool's
-	 * feature objects are initialized. In this case it is up to the
-	 * caller to increment the feature count for us once the feature flags
-	 * are available.
-	 */
-	if (tx->tx_pool->dp_spa->spa_feat_for_write_obj != 0)
-		spa_feature_incr(tx->tx_pool->dp_spa,
-		    SPA_FEATURE_ENCRYPTION, tx);
+	/* Increment the encryption feature count */
+	spa_feature_incr(tx->tx_pool->dp_spa, SPA_FEATURE_ENCRYPTION, tx);
 
 	return (kcobj);
 }
@@ -1497,7 +1491,7 @@ dsl_keychain_clone_sync(dsl_dir_t *orig_dd, dsl_wrapping_key_t *wkey,
 
 	/* create the DSL Keychain zap object */
 	kcobj = zap_create_flags(tx->tx_pool->dp_meta_objset, 0,
-		ZAP_FLAG_UINT64_KEY, DMU_OT_DSL_KEYCHAIN, SPA_MINBLOCKSHIFT,
+		ZAP_FLAG_UINT64_KEY, DMU_OTN_ZAP_METADATA, SPA_MINBLOCKSHIFT,
 		SPA_MINBLOCKSHIFT, DMU_OT_NONE, 0, tx);
 
 	/* get the original keychain */
@@ -1616,7 +1610,7 @@ spa_decrypt_data(spa_t *spa, zbookmark_phys_t *bookmark, uint64_t txgid,
 		iv = zil_iv_buf;
 	} else {
 		mac = ((uint8_t *)&bp->blk_cksum.zc_word[2]);
-		iv = ((uint8_t *)bp->blk_pad);
+		iv = ((uint8_t *)bp->blk_iv);
 	}
 
 	/* lookup the keychain, then the key from the spa's keystore */

@@ -112,8 +112,7 @@ const dmu_object_type_info_t dmu_ot[DMU_OT_NUMTYPES] = {
 	{ DMU_BSWAP_ZAP,	TRUE,	FALSE,	"DSL deadlist map"	},
 	{ DMU_BSWAP_UINT64,	TRUE,	FALSE,	"DSL deadlist map hdr"	},
 	{ DMU_BSWAP_ZAP,	TRUE,	FALSE,	"DSL dir clones"	},
-	{ DMU_BSWAP_UINT64,	TRUE,	FALSE,	"bpobj subobj"		},
-	{ DMU_BSWAP_ZAP,	TRUE,	FALSE,	"DSL Keychain"		}
+	{ DMU_BSWAP_UINT64,	TRUE,	FALSE,	"bpobj subobj"		}
 };
 
 const dmu_object_byteswap_info_t dmu_ot_byteswap[DMU_BSWAP_NUMFUNCS] = {
@@ -539,7 +538,9 @@ dmu_buf_rele_array(dmu_buf_t **dbp_fake, int numbufs, void *tag)
  * the data starting at offset, and continuing to offset + len.
  *
  * Note that if the indirect blocks above the blocks being prefetched are not in
- * cache, they will be asychronously read in.
+ * cache, they will be asychronously read in. Also, callers should make sure
+ * not to attempt to prefetch encrypted data without the relevant encryption key
+ * being loaded.
  */
 void
 dmu_prefetch(objset_t *os, uint64_t object, int64_t level, uint64_t offset,

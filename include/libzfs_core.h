@@ -46,7 +46,7 @@ enum lzc_dataset_type {
 };
 
 int lzc_snapshot(nvlist_t *, nvlist_t *, nvlist_t **);
-int lzc_create(const char *, dmu_objset_type_t, nvlist_t *, nvlist_t *);
+int lzc_create(const char *, enum lzc_dataset_type, nvlist_t *, nvlist_t *);
 int lzc_clone(const char *, const char *, nvlist_t *, nvlist_t *);
 int lzc_destroy_snaps(nvlist_t *, boolean_t, nvlist_t **);
 int lzc_bookmark(nvlist_t *, nvlist_t **);
