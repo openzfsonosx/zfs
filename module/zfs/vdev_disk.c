@@ -21,6 +21,8 @@
 /*
  * Based on Apple MacZFS source code
  * Copyright (c) 2014,2016 by Jorgen Lundman. All rights reserved.
+ * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
@@ -260,6 +262,8 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		if (ddi_devid_str_decode(vd->vdev_devid, &dvd->vd_devid,
 		    &dvd->vd_minor) != 0) {
 			vd->vdev_stat.vs_aux = VDEV_AUX_BAD_LABEL;
+			vdev_dbgmsg(vd, "vdev_disk_open: invalid "
+			    "vdev_devid '%s'", vd->vdev_devid);
 			return (SET_ERROR(EINVAL));
 		}
 	}
@@ -371,6 +375,8 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 
 	if (error) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
+		vdev_dbgmsg(vd, "vdev_disk_open: failed to open [error=%d]",
+		    error);
 		return (error);
 	}
 
@@ -389,8 +395,8 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 			char *vd_devid;
 
 			vd_devid = ddi_devid_str_encode(devid, dvd->vd_minor);
-			zfs_dbgmsg("vdev %s: update devid from %s, "
-			    "to %s", vd->vdev_path, vd->vdev_devid, vd_devid);
+			vdev_dbgmsg(vd, "vdev_disk_open: update devid from "
+			    "'%s' to '%s'", vd->vdev_devid, vd_devid);
 			spa_strfree(vd->vdev_devid);
 			vd->vdev_devid = spa_strdup(vd_devid);
 			ddi_devid_str_free(vd_devid);
@@ -468,6 +474,7 @@ skip_open:
 	 */
 	if (ldi_get_size(dvd->vd_lh, psize) != 0) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
+		vdev_dbgmsg(vd, "vdev_disk_open: failed to get size");
 		return (SET_ERROR(EINVAL));
 	}
 
