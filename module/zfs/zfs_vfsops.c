@@ -2273,6 +2273,8 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 {
     zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 	uint64_t refdbytes, availbytes, usedobjs, availobjs;
+	uint64_t log_blksize;
+	uint64_t log_blkcnt;
 
     dprintf("vfs_getattr\n");
 
@@ -2296,11 +2298,21 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	VFSATTR_RETURN(fsap, f_dircount, usedobjs / 4);
 
 	/*
+	 * Model after HFS in working out if we should use the legacy size
+	 * 512, or go to 4096. Note that XNU only likes those two
+	 * blocksizes, so we don't use the ZFS recordsize
+	 */
+	log_blkcnt = (u_int64_t)((refdbytes + availbytes) >> SPA_MINBLOCKSHIFT);
+	log_blksize = (log_blkcnt > 0x000000007fffffff) ?
+		4096 :
+		(1 << SPA_MINBLOCKSHIFT);
+
+	/*
 	 * The underlying storage pool actually uses multiple block sizes.
 	 * We report the fragsize as the smallest block size we support,
 	 * and we report our blocksize as the filesystem's maximum blocksize.
 	 */
-	VFSATTR_RETURN(fsap, f_bsize, 1UL << SPA_MINBLOCKSHIFT);
+	VFSATTR_RETURN(fsap, f_bsize, log_blksize);
 	VFSATTR_RETURN(fsap, f_iosize, zfsvfs->z_max_blksz);
 
 	/*
@@ -2309,8 +2321,8 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	 * "fragment" size.
 	 */
 	VFSATTR_RETURN(fsap, f_blocks,
-	               (u_int64_t)((refdbytes + availbytes) >> SPA_MINBLOCKSHIFT));
-	VFSATTR_RETURN(fsap, f_bfree, (u_int64_t)(availbytes >> SPA_MINBLOCKSHIFT));
+	               (u_int64_t)((refdbytes + availbytes) / log_blksize));
+	VFSATTR_RETURN(fsap, f_bfree, (u_int64_t)(availbytes / log_blksize));
 	VFSATTR_RETURN(fsap, f_bavail, fsap->f_bfree);  /* no root reservation */
 	VFSATTR_RETURN(fsap, f_bused, fsap->f_blocks - fsap->f_bfree);
 
