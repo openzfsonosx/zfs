@@ -6666,6 +6666,36 @@ zfs_do_unshare(int argc, char **argv)
 }
 
 
+#ifdef __APPLE__
+#include <syslog.h>
+
+static char const *priov[] = {
+	"EMERG:",   "ALERT:",  "CRIT:", "ERR:", "WARNING:", "NOTICE:", "INFO:", "DEBUG:"
+};
+
+static size_t writer(void *cookie, char const *data, size_t leng)
+{
+    (void)cookie;
+    int     p = LOG_DEBUG, len;
+    do len = strlen(priov[p]);
+    while (memcmp(data, priov[p], len) && --p >= 0);
+
+    if (p < 0) p = LOG_NOTICE;
+    else data += len, leng -= len;
+    while (*data == ' ') ++data, --leng;
+
+    syslog(p, "%.*s", leng, data);
+    return  leng;
+}
+
+
+void tolog(FILE **pfp)
+{
+	setlogmask(LOG_UPTO(LOG_NOTICE));
+    setvbuf(*pfp = fwopen(NULL, writer), NULL, _IOLBF, 0);
+}
+#endif
+
 /*
  * Called when invoked as mount_zfs.  Do the mount if the mountpoint is
  * 'legacy'.  Otherwise, complain that user should be using 'zfs mount'.
@@ -6683,13 +6713,14 @@ manual_mount(int argc, char **argv)
 	int i;
 #ifdef __APPLE__
 	uint64_t zfs_version = 0;
-#endif
 
-	setlogmask(LOG_UPTO(LOG_NOTICE));
+	/* Redirect stderr to syslog, so we can see something if it fails */
+	tolog(&stderr);
 
 	syslog(LOG_NOTICE, "manual_mount arguments");
 	for (i = 0; i < argc; i++)
 		syslog(LOG_NOTICE, " '%s' +", argv[i]);
+#endif
 
 
 	/* check options */

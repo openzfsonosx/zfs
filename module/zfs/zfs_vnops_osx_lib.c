@@ -356,7 +356,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
                     MAXPATHLEN);
 
             VATTR_SET_SUPPORTED(vap, va_name);
-			printf("getattr root returning '%s'\n", vap->va_name);
+			dprintf("getattr root returning '%s'\n", vap->va_name);
         }
 	}
 

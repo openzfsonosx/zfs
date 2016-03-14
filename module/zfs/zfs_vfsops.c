@@ -106,7 +106,7 @@
 #endif /* __APPLE__ */
 
 //#define dprintf kprintf
-#define dprintf printf
+//#define dprintf printf
 
 #ifdef __APPLE__
 
@@ -2720,6 +2720,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			   fsap->f_uuid[2],
 			   fsap->f_uuid[3]);
     }
+#ifdef DEBUG
 	uint64_t missing = 0;
 	missing = (fsap->f_active ^ (fsap->f_active & fsap->f_supported));
 	if ( missing != 0) {
@@ -2727,12 +2728,9 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			   fsap->f_active, fsap->f_supported,
 			   missing);
 	}
+#endif
 
 	ZFS_EXIT(zfsvfs);
-
-	dprintf("vfs_getattr: asked %08x replied %08x       missing %08x\n",
-			fsap->f_active, fsap->f_supported,
-			fsap->f_active ^ (fsap->f_active & fsap->f_supported));
 
 	return (0);
 }
