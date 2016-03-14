@@ -392,7 +392,7 @@ vdev_disk_io_intr(struct buf *bp, void *arg)
 	}
 	buf_free(bp);
 
-	zio_interrupt(zio);
+	zio_delay_interrupt(zio);
 }
 
 static void
@@ -510,6 +510,8 @@ vdev_disk_io_start(zio_t *zio)
 
 	if (zio->io_flags & ZIO_FLAG_FAILFAST)
 		flags |= B_FAILFAST;
+
+	zio->io_target_timestamp = zio_handle_io_delay(zio);
 
 	bp = buf_alloc(dvd->vd_devvp);
 

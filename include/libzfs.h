@@ -24,7 +24,7 @@
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #ifndef	_LIBZFS_H
@@ -248,6 +248,7 @@ extern void zpool_free_handles(libzfs_handle_t *);
  */
 typedef int (*zpool_iter_f)(zpool_handle_t *, void *);
 extern int zpool_iter(libzfs_handle_t *, zpool_iter_f, void *);
+extern boolean_t zpool_skip_pool(const char *);
 
 /*
  * Functions to create and destroy pools
@@ -263,6 +264,7 @@ typedef struct splitflags {
 
 	/* after splitting, import the pool */
 	int import : 1;
+	int name_flags;
 } splitflags_t;
 
 /*
@@ -357,7 +359,7 @@ typedef enum {
 	ZPOOL_STATUS_VERSION_OLDER,	/* older legacy on-disk version */
 	ZPOOL_STATUS_FEAT_DISABLED,	/* supported features are disabled */
 	ZPOOL_STATUS_RESILVERING,	/* device being resilvered */
-	ZPOOL_STATUS_OFFLINE_DEV,	/* device online */
+	ZPOOL_STATUS_OFFLINE_DEV,	/* device offline */
 	ZPOOL_STATUS_REMOVED_DEV,	/* removed device */
 
 	/*
@@ -421,8 +423,15 @@ struct zfs_cmd;
 
 extern const char *zfs_history_event_names[];
 
+typedef enum {
+	VDEV_NAME_PATH		= 1 << 0,
+	VDEV_NAME_GUID		= 1 << 1,
+	VDEV_NAME_FOLLOW_LINKS	= 1 << 2,
+	VDEV_NAME_TYPE_ID	= 1 << 3,
+} vdev_name_t;
+
 extern char *zpool_vdev_name(libzfs_handle_t *, zpool_handle_t *, nvlist_t *,
-    nvlist_t *display_args);
+    int name_flags);
 extern int zpool_upgrade(zpool_handle_t *, uint64_t);
 extern int zpool_get_history(zpool_handle_t *, nvlist_t **);
 extern int zpool_history_unpack(char *, uint64_t, uint64_t *,
@@ -448,6 +457,7 @@ extern void zfs_close(zfs_handle_t *);
 extern zfs_type_t zfs_get_type(const zfs_handle_t *);
 extern const char *zfs_get_name(const zfs_handle_t *);
 extern zpool_handle_t *zfs_get_pool_handle(const zfs_handle_t *);
+extern const char *zfs_get_pool_name(const zfs_handle_t *);
 
 /*
  * Property management functions.  Some functions are shared with the kernel,

@@ -278,6 +278,7 @@ extern uid_t crgetruid(cred_t *cr);
 extern gid_t crgetgid(cred_t *cr);
 extern int crgetngroups(cred_t *cr);
 extern gid_t *crgetgroups(cred_t *cr);
+extern void  crgetgroupsfree(gid_t *);
 
 /*
  * Condition variables
@@ -588,6 +589,8 @@ extern int random_get_pseudo_bytes(uint8_t *ptr, size_t len);
 
 extern void kernel_init(int);
 extern void kernel_fini(void);
+extern void thread_init(void);
+extern void thread_fini(void);
 
 struct spa;
 extern void nicenum(uint64_t num, char *buf);

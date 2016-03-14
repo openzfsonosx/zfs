@@ -416,6 +416,9 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 	switch (ap->a_command) {
 		/* ioctl supported by ZFS and POSIX */
 		case F_FULLFSYNC:
+#ifdef F_BARRIERFSYNC
+		case F_BARRIERFSYNC:
+#endif
 			error = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 			break;
 		case SPOTLIGHT_GET_MOUNT_TIME:
@@ -798,6 +801,17 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		case HFS_GET_FSINFO:
 			break;
 #endif
+
+#ifdef HFS_REPIN_HOTFILE_STATE
+		case HFS_REPIN_HOTFILE_STATE:
+			break;
+#endif
+
+#ifdef HFS_SET_HOTFILE_STATE
+		case HFS_SET_HOTFILE_STATE:
+			break;
+#endif
+
 			/* End HFS mimic ioctl */
 
 
@@ -2705,7 +2719,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	znode_t	*zp = NULL;
 	zfsvfs_t *zfsvfs = NULL;
 	boolean_t fastpath;
-	ASSERT(zp != NULL);
 
 
 	/* Destroy the vm object and flush associated pages. */
@@ -2715,6 +2728,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 	/* Already been released? */
 	zp = VTOZ(vp);
+	ASSERT(zp != NULL);
 	dprintf("+vnop_reclaim zp %p/%p type %d\n", zp, vp, vnode_vtype(vp));
 	if (!zp) goto out;
 
@@ -2954,10 +2968,10 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	}
 #endif
 
-	mutex_enter(&zp->z_lock);
+	rw_enter(&zp->z_xattr_lock, RW_READER);
 	if (zp->z_xattr_cached == NULL)
 		error = -zfs_sa_get_xattr(zp);
-	mutex_exit(&zp->z_lock);
+	rw_exit(&zp->z_xattr_lock);
 
 	if (zfsvfs->z_use_sa && zp->z_is_sa) {
 		uint64_t size = uio_resid(uio);
@@ -2965,7 +2979,9 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 
 		if (!size) { /* Lookup size */
 
+			rw_enter(&zp->z_xattr_lock, RW_READER);
 			error = zpl_xattr_get_sa(vp, ap->a_name, NULL, 0);
+			rw_exit(&zp->z_xattr_lock);
 			if (error > 0) {
 				dprintf("ZFS: returning XATTR size %d\n", error);
 				*ap->a_size = error;
@@ -2976,7 +2992,10 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 
 		value = kmem_alloc(size, KM_SLEEP);
 		if (value) {
+			rw_enter(&zp->z_xattr_lock, RW_READER);
 			error = zpl_xattr_get_sa(vp, ap->a_name, value, size);
+			rw_exit(&zp->z_xattr_lock);
+
 			//dprintf("ZFS: SA XATTR said %d\n", error);
 
 			if (error > 0) {
@@ -3128,28 +3147,32 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	else
 		flag = 0;
 
-	mutex_enter(&zp->z_lock);
+	rw_enter(&zp->z_xattr_lock, RW_READER);
 	if (zp->z_xattr_cached == NULL)
 		error = -zfs_sa_get_xattr(zp);
-	mutex_exit(&zp->z_lock);
+	rw_exit(&zp->z_xattr_lock);
 
 	/* Preferentially store the xattr as a SA for better performance */
 	if (zfsvfs->z_use_sa && zfsvfs->z_xattr_sa && zp->z_is_sa) {
 		char *value;
 		uint64_t size;
 
+		rw_enter(&zp->z_xattr_lock, RW_WRITER);
+
 		/* New, expect it to not exist .. */
-		if ((flag | ZNEW) &&
+		if ((flag & ZNEW) &&
 			(zpl_xattr_get_sa(vp, ap->a_name, NULL, 0) > 0)) {
 			error = EEXIST;
+			rw_exit(&zp->z_xattr_lock);
 			goto out;
 		}
 
 		/* Replace, XATTR must exist .. */
-		if ((flag | ZEXISTS) &&
+		if ((flag & ZEXISTS) &&
 			((error = zpl_xattr_get_sa(vp, ap->a_name, NULL, 0)) <= 0) &&
-			error != -ENOENT) {
+			error == -ENOENT) {
 			error = ENOATTR;
+			rw_exit(&zp->z_xattr_lock);
 			goto out;
 		}
 
@@ -3167,10 +3190,14 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 									 flag, cr);
 			kmem_free(value, size);
 
-			if (error == 0)
+			if (error == 0) {
+				rw_exit(&zp->z_xattr_lock);
 				goto out;
+			}
 		}
 		dprintf("ZFS: zpl_xattr_set_sa failed %d\n", error);
+
+		rw_exit(&zp->z_xattr_lock);
 	}
 
 	/* Grab the hidden attribute directory vnode. */
@@ -3249,24 +3276,27 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 	}
 
 
-	mutex_enter(&zp->z_lock);
+	rw_enter(&zp->z_xattr_lock, RW_READER);
 	if (zp->z_xattr_cached == NULL)
 		error = -zfs_sa_get_xattr(zp);
-	mutex_exit(&zp->z_lock);
+	rw_exit(&zp->z_xattr_lock);
 
 	if (zfsvfs->z_use_sa && zfsvfs->z_xattr_sa && zp->z_is_sa) {
         nvlist_t *nvl;
 
 		nvl = zp->z_xattr_cached;
 
+		rw_enter(&zp->z_xattr_lock, RW_WRITER);
 		error = -nvlist_remove(nvl, ap->a_name, DATA_TYPE_BYTE_ARRAY);
 
 		dprintf("ZFS: removexattr nvlist_remove said %d\n", error);
 		if (!error) {
 			/* Update the SA for additions, modifications, and removals. */
 			error = -zfs_sa_set_xattr(zp);
+			rw_exit(&zp->z_xattr_lock);
 			goto out;
 		}
+		rw_exit(&zp->z_xattr_lock);
 	}
 
 	sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs), &xattr, sizeof (xattr));
@@ -3356,10 +3386,10 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 		goto out;
 	}
 
-	mutex_enter(&zp->z_lock);
+	rw_enter(&zp->z_xattr_lock, RW_READER);
 	if (zp->z_xattr_cached == NULL)
 		error = -zfs_sa_get_xattr(zp);
-	mutex_exit(&zp->z_lock);
+	rw_exit(&zp->z_xattr_lock);
 
 	if (zfsvfs->z_use_sa && zp->z_is_sa && zp->z_xattr_cached) {
         nvpair_t *nvp = NULL;
@@ -3377,7 +3407,7 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 					error = ERANGE;
 					break;
 				}
-				printf("ZFS: listxattr '%s'\n", nvpair_name(nvp));
+				dprintf("ZFS: listxattr '%s'\n", nvpair_name(nvp));
 				error = uiomove((caddr_t)nvpair_name(nvp), namelen,
 								UIO_READ, uio);
 				if (error)

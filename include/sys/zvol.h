@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_ZVOL_H
@@ -37,7 +38,10 @@ extern "C" {
 #define	ZVOL_ZAP_OBJ	2ULL
 
 
-#ifdef _KERNEL
+extern void zvol_create_minors(spa_t *spa, const char *name, boolean_t async);
+extern void zvol_remove_minors(spa_t *spa, const char *name, boolean_t async);
+extern void zvol_rename_minors(spa_t *spa, const char *oldname,
+    const char *newname, boolean_t async);
 
 /*
  * zvol specific flags
@@ -59,11 +63,13 @@ typedef struct zvol_state {
 	uint8_t zv_min_bs;	/* minimum addressable block shift */
 	uint8_t zv_flags;	/* readonly, dumpified, etc. */
 	objset_t *zv_objset;	/* objset handle */
-	uint32_t zv_open_count[OTYPCNT];	/* open counts */
+	uint32_t zv_open_count;	/* open counts */
 	uint32_t zv_total_opens;	/* total open count */
 	zilog_t *zv_zilog;	/* ZIL handle */
 	list_t zv_extents;	/* List of extents for dump */
+#ifdef _KERNEL
 	znode_t zv_znode;	/* for range locking */
+#endif
 	dmu_buf_t *zv_dbuf;	/* bonus handle */
 	void *zv_iokitdev;	/* C++ reference to IOKit class */
 	uint64_t zv_openflags;	/* Remember flags used at open */
@@ -85,22 +91,37 @@ typedef struct zfs_soft_state {
 	void *zss_data;
 } zfs_soft_state_t;
 
+typedef enum {
+	ZVOL_ASYNC_CREATE_MINORS,
+	ZVOL_ASYNC_REMOVE_MINORS,
+	ZVOL_ASYNC_RENAME_MINORS,
+	ZVOL_ASYNC_SET_SNAPDEV,
+	ZVOL_ASYNC_MAX
+} zvol_async_op_t;
 
+typedef struct {
+	zvol_async_op_t op;
+	char pool[MAXNAMELEN];
+	char name1[MAXNAMELEN];
+	char name2[MAXNAMELEN];
+	zprop_source_t source;
+	uint64_t snapdev;
+} zvol_task_t;
+
+
+#ifdef _KERNEL
 extern int zvol_check_volsize(uint64_t volsize, uint64_t blocksize);
 extern int zvol_check_volblocksize(uint64_t volblocksize);
 extern int zvol_get_stats(objset_t *os, nvlist_t *nv);
 extern boolean_t zvol_is_zvol(const char *);
 extern void zvol_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx);
+
 extern int zvol_create_minor(const char *name);
-extern int zvol_create_minors(const char *name);
-extern int zvol_remove_minor(const char *name);
 extern int zvol_remove_minor_symlink(const char *name);
-extern void zvol_remove_minors(const char *name);
 extern void zvol_remove_minors_symlink(const char *name);
-extern void zvol_rename_minors(const char *oldname, const char *newname);
 extern int zvol_set_volsize(const char *, uint64_t);
 extern int zvol_set_volblocksize(const char *, uint64_t);
-extern int zvol_set_snapdev(const char *, uint64_t);
+extern int zvol_set_snapdev(const char *, zprop_source_t, uint64_t);
 
 extern int zvol_open(dev_t dev, int flag, int otyp, struct proc *p);
 extern int zvol_close(dev_t dev, int flag, int otyp, struct proc *p);
@@ -109,6 +130,7 @@ extern int zvol_write(dev_t dev, struct uio *uiop, int p);
 
 extern int zvol_init(void);
 extern void zvol_fini(void);
+
 extern int zvol_ioctl(dev_t, unsigned long, caddr_t,
     int isblk, cred_t *, int *rvalp);
 

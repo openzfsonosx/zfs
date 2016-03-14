@@ -27,6 +27,7 @@ typedef struct osx_kstat {
 	kstat_named_t l2arc_write_boost;
 	kstat_named_t l2arc_headroom;
 	kstat_named_t l2arc_headroom_boost;
+	kstat_named_t l2arc_max_block_size;
 	kstat_named_t l2arc_feed_secs;
 	kstat_named_t l2arc_feed_min_ms;
 
@@ -96,7 +97,21 @@ typedef struct osx_kstat {
 
 	kstat_named_t zfs_recover;
 
+	kstat_named_t zfs_free_max_blocks;
+	kstat_named_t zfs_free_bpobj_enabled;
 
+	kstat_named_t zfs_send_corrupt_data;
+	kstat_named_t zfs_send_queue_length;
+	kstat_named_t zfs_recv_queue_length;
+
+	kstat_named_t zfs_vdev_mirror_rotating_inc;
+	kstat_named_t zfs_vdev_mirror_rotating_seek_inc;
+	kstat_named_t zfs_vdev_mirror_rotating_seek_offset;
+	kstat_named_t zfs_vdev_mirror_non_rotating_inc;
+	kstat_named_t zfs_vdev_mirror_non_rotating_seek_inc;
+
+	kstat_named_t zvol_inhibit_dev;
+	kstat_named_t zfs_send_set_freerecords_bit;
 } osx_kstat_t;
 
 
@@ -121,6 +136,7 @@ extern uint64_t l2arc_write_max;
 extern uint64_t l2arc_write_boost;
 extern uint64_t l2arc_headroom;
 extern uint64_t l2arc_headroom_boost;
+extern uint64_t l2arc_max_block_size;
 extern uint64_t l2arc_feed_secs;
 extern uint64_t l2arc_feed_min_ms;
 
@@ -169,6 +185,21 @@ extern int zfs_top_maxinflight;
 extern int zfs_resilver_delay;
 extern int zfs_scrub_delay;
 extern int zfs_scan_idle;
+
+extern uint64_t zfs_free_max_blocks;
+extern int64_t zfs_free_bpobj_enabled;
+
+extern int zfs_send_corrupt_data;
+extern int zfs_send_queue_length;
+extern int zfs_recv_queue_length;
+
+extern uint64_t zfs_vdev_mirror_rotating_inc;
+extern uint64_t zfs_vdev_mirror_rotating_seek_inc;
+extern uint64_t zfs_vdev_mirror_rotating_seek_offset;
+extern uint64_t zfs_vdev_mirror_non_rotating_inc;
+extern uint64_t zfs_vdev_mirror_non_rotating_seek_inc;
+extern uint64_t zvol_inhibit_dev;
+extern uint64_t zfs_send_set_freerecords_bit;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);

@@ -736,6 +736,9 @@ void dmu_prealloc(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 int dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
                uint64_t position,
                uint64_t *size, void *iomem);
+int dmu_read_iokit_dbuf(dmu_buf_t *zdb, uint64_t object, uint64_t *offset,
+						uint64_t position,
+						uint64_t *size, void *iomem);
 
 #ifdef _KERNEL
     //#include <linux/blkdev_compat.h>

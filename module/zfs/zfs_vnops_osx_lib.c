@@ -383,10 +383,12 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
 			if (!findnode) {
 				static uint32_t zfs_hardlink_sequence = 1<<31;
+				uint32_t id;
 
-				zfs_hardlink_addmap(zp, vap->va_parentid, zfs_hardlink_sequence);
-				VATTR_RETURN(vap, va_linkid, zfs_hardlink_sequence);
-				atomic_inc_32(&zfs_hardlink_sequence);
+				id = atomic_inc_32_nv(&zfs_hardlink_sequence);
+
+				zfs_hardlink_addmap(zp, vap->va_parentid, id);
+				VATTR_RETURN(vap, va_linkid, id);
 
 			} else {
 				VATTR_RETURN(vap, va_linkid, findnode->hl_linkid);
@@ -763,7 +765,7 @@ zfs_obtain_xattr(znode_t *dzp, const char *name, mode_t mode, cred_t *cr,
 		kmem_free(cn.pn_buf, cn.pn_bufsize);
 
 	/* The REPLACE error if doesn't exist is ENOATTR */
-	if ((flag & ZEXISTS) && (error == EEXIST))
+	if ((flag & ZEXISTS) && (error == ENOENT))
 		error = ENOATTR;
 
 	if (xzp)

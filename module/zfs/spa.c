@@ -25,6 +25,7 @@
  * Copyright (c) 2013, 2014, Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
+ * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
 /*
@@ -1144,6 +1145,23 @@ spa_activate(spa_t *spa, int mode)
     OSKextRetainKextWithLoadTag(OSKextGetCurrentLoadTag());
 #endif
 
+	/*
+	 * This taskq is used to perform zvol-minor-related tasks
+	 * asynchronously. This has several advantages, including easy
+	 * resolution of various deadlocks (zfsonlinux bug #3681).
+	 *
+	 * The taskq must be single threaded to ensure tasks are always
+	 * processed in the order in which they were dispatched.
+	 *
+	 * A taskq per pool allows one to keep the pools independent.
+	 * This way if one pool is suspended, it will not impact another.
+	 *
+	 * The preferred location to dispatch a zvol minor task is a sync
+	 * task. In this context, there is easy access to the spa_t and minimal
+	 * error handling is required because the sync task must succeed.
+	 */
+	spa->spa_zvol_taskq = taskq_create("z_zvol", 1, defclsyspri,
+	    1, INT_MAX, 0);
 }
 
 /*
@@ -1161,6 +1179,11 @@ spa_deactivate(spa_t *spa)
 	ASSERT(spa->spa_state != POOL_STATE_UNINITIALIZED);
 
 	spa_evicting_os_wait(spa);
+
+	if (spa->spa_zvol_taskq) {
+		taskq_destroy(spa->spa_zvol_taskq);
+		spa->spa_zvol_taskq = NULL;
+	}
 
 	txg_list_destroy(&spa->spa_vdev_txg_list);
 
@@ -1923,9 +1946,9 @@ spa_load_verify_done(zio_t *zio)
 	if (error) {
 		if ((BP_GET_LEVEL(bp) != 0 || DMU_OT_IS_METADATA(type)) &&
 		    type != DMU_OT_INTENT_LOG)
-			atomic_add_64(&sle->sle_meta_count, 1);
+			atomic_inc_64(&sle->sle_meta_count);
 		else
-			atomic_add_64(&sle->sle_data_count, 1);
+			atomic_inc_64(&sle->sle_data_count);
 	}
 	zio_data_buf_free(zio->io_data, zio->io_size);
 
@@ -3148,7 +3171,7 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 
 #ifdef _KERNEL
 	if (firstopen) {
-		zvol_create_minors(spa->spa_name);
+		zvol_create_minors(spa, spa_name(spa), B_TRUE);
 	}
 #endif
 
@@ -4326,10 +4349,7 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 
 	mutex_exit(&spa_namespace_lock);
 	spa_history_log_version(spa, "import");
-
-#ifdef _KERNEL
-	zvol_create_minors(pool);
-#endif
+	zvol_create_minors(spa, pool, B_TRUE);
 
 	spa_event_notify(spa, NULL, FM_EREPORT_ZFS_POOL_IMPORT);
 
@@ -4467,6 +4487,10 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 	spa_open_ref(spa, FTAG);
 	mutex_exit(&spa_namespace_lock);
 	spa_async_suspend(spa);
+	if (spa->spa_zvol_taskq) {
+		zvol_remove_minors(spa, spa_name(spa), B_TRUE);
+		taskq_wait(spa->spa_zvol_taskq);
+	}
 	mutex_enter(&spa_namespace_lock);
 	spa_close(spa, FTAG);
 

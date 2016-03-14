@@ -140,6 +140,7 @@
 #include <sys/callb.h>
 #include <sys/kstat.h>
 #include <zfs_fletcher.h>
+#include <sys/time.h>
 
 #ifdef __APPLE__
 #include <sys/kstat_osx.h>
@@ -481,6 +482,7 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_writes_done;
 	kstat_named_t arcstat_l2_writes_error;
 	kstat_named_t arcstat_l2_writes_lock_retry;
+	kstat_named_t arcstat_l2_writes_skip_toobig;
 	kstat_named_t arcstat_l2_evict_lock_retry;
 	kstat_named_t arcstat_l2_evict_reading;
 	kstat_named_t arcstat_l2_evict_l1cached;
@@ -569,6 +571,7 @@ static arc_stats_t arc_stats = {
 	{ "l2_writes_done",		KSTAT_DATA_UINT64 },
 	{ "l2_writes_error",		KSTAT_DATA_UINT64 },
 	{ "l2_writes_lock_retry",	KSTAT_DATA_UINT64 },
+	{ "l2_writes_skip_toobig",	KSTAT_DATA_UINT64 },
 	{ "l2_evict_lock_retry",	KSTAT_DATA_UINT64 },
 	{ "l2_evict_reading",		KSTAT_DATA_UINT64 },
 	{ "l2_evict_l1cached",		KSTAT_DATA_UINT64 },
@@ -864,6 +867,8 @@ uint64_t zfs_crc64_table[256];
 
 #define	L2ARC_WRITE_SIZE	(8 * 1024 * 1024)	/* initial write max */
 #define	L2ARC_HEADROOM		2			/* num of writes */
+#define	L2ARC_MAX_BLOCK_SIZE	(16 * 1024 * 1024)	/* max compress size */
+
 /*
  * If we discover during ARC scan any buffers to be compressed, we boost
  * our headroom for the next scanning cycle by this percentage multiple.
@@ -871,6 +876,7 @@ uint64_t zfs_crc64_table[256];
 #define	L2ARC_HEADROOM_BOOST	200
 #define	L2ARC_FEED_SECS		1		/* caching interval secs */
 #define	L2ARC_FEED_MIN_MS	200		/* min caching interval ms */
+
 
 /*
  * Used to distinguish headers that are being process by
@@ -890,6 +896,7 @@ uint64_t l2arc_write_max = L2ARC_WRITE_SIZE;	/* default max write size */
 uint64_t l2arc_write_boost = L2ARC_WRITE_SIZE;	/* extra write during warmup */
 uint64_t l2arc_headroom = L2ARC_HEADROOM;	/* number of dev writes */
 uint64_t l2arc_headroom_boost = L2ARC_HEADROOM_BOOST;
+uint64_t l2arc_max_block_size = L2ARC_MAX_BLOCK_SIZE;
 uint64_t l2arc_feed_secs = L2ARC_FEED_SECS;	/* interval seconds */
 uint64_t l2arc_feed_min_ms = L2ARC_FEED_MIN_MS;	/* min interval milliseconds */
 boolean_t l2arc_noprefetch = B_TRUE;		/* don't cache prefetch bufs */
@@ -1755,7 +1762,7 @@ arc_change_state(arc_state_t *new_state, arc_buf_hdr_t *hdr,
 			(void) refcount_remove_many(&old_state->arcs_size,
 			    hdr->b_size, hdr);
 		} else {
-			ASSERT3P(datacnt, !=, 0);
+			ASSERT3U(datacnt, !=, 0);
 
 			/*
 			 * Each individual buffer holds a unique reference,
@@ -3417,7 +3424,7 @@ arc_reclaim_thread(void *notused)
 arc_reclaim_thread(void)
 #endif
 {
-	clock_t			growtime = 0;
+	hrtime_t		growtime = 0;
 	callb_cpr_t		cpr;
 
 	CALLB_CPR_INIT(&cpr, &arc_reclaim_lock, callb_generic_cpr, FTAG);
@@ -3438,7 +3445,7 @@ arc_reclaim_thread(void)
 			 * Wait at least zfs_grow_retry (default 60) seconds
 			 * before considering growing.
 			 */
-			growtime = ddi_get_lbolt() + (arc_grow_retry * hz);
+			growtime = gethrtime() + SEC2NSEC(arc_grow_retry);
 
 			arc_kmem_reap_now();
 
@@ -3497,7 +3504,7 @@ arc_reclaim_thread(void)
 #endif // !_KERNEL
 		} else if (free_memory < arc_c >> arc_no_grow_shift) {
 			arc_no_grow = B_TRUE;
-		} else if (ddi_get_lbolt() >= growtime) {
+		} else if (gethrtime() >= growtime) {
 			arc_no_grow = B_FALSE;
 		}
 
@@ -3528,8 +3535,8 @@ arc_reclaim_thread(void)
 			 * even if we aren't being signalled)
 			 */
 			CALLB_CPR_SAFE_BEGIN(&cpr);
-			(void) cv_timedwait(&arc_reclaim_thread_cv,
-			    &arc_reclaim_lock, ddi_get_lbolt() + hz);
+			(void) cv_timedwait_hires(&arc_reclaim_thread_cv,
+			    &arc_reclaim_lock, SEC2NSEC(1), MSEC2NSEC(1), 0);
 			CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_lock);
 		}
 	}
@@ -5895,7 +5902,20 @@ top:
 		 */
 		l2arc_release_cdata_buf(hdr);
 
-		if (zio->io_error != 0) {
+		/*
+		 * Skipped - drop L2ARC entry and mark the header as no
+		 * longer L2 eligibile.
+		 */
+		if (hdr->b_l2hdr.b_daddr == L2ARC_ADDR_UNSET) {
+			list_remove(buflist, hdr);
+			hdr->b_flags &= ~ARC_FLAG_HAS_L2HDR;
+			hdr->b_flags &= ~ARC_FLAG_L2CACHE;
+
+			ARCSTAT_BUMP(arcstat_l2_writes_skip_toobig);
+
+			(void) refcount_remove_many(&dev->l2ad_alloc,
+			    hdr->b_l2hdr.b_asize, hdr);
+		} else if (zio->io_error != 0) {
 			/*
 			 * Error - drop L2ARC entry.
 			 */
@@ -6440,6 +6460,16 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 		/* Compression may have squashed the buffer to zero length. */
 		if (buf_sz != 0) {
 			uint64_t buf_a_sz;
+
+			/*
+			 * Buffers which are larger than l2arc_max_block_size
+			 * after compression are skipped and removed from L2
+			 * eligibility.
+			 */
+			if (buf_sz > l2arc_max_block_size) {
+				hdr->b_l2hdr.b_daddr = L2ARC_ADDR_UNSET;
+				continue;
+			}
 
 			wzio = zio_write_phys(pio, dev->l2ad_vdev,
 			    dev->l2ad_hand, buf_sz, buf_data, ZIO_CHECKSUM_OFF,

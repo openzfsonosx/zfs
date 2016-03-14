@@ -20,7 +20,8 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2015 by Chunwei Chen. All rights reserved.
  */
 
@@ -1961,6 +1962,12 @@ top:
 	VI_UNLOCK(vp);
 #endif
 
+#ifdef LINUX
+	mutex_enter(&zp->z_lock);
+	may_delete_now = atomic_read(&ip->i_count) == 1 && !(zp->z_is_mapped);
+	mutex_exit(&zp->z_lock);
+#endif
+
 	/*
 	 * We may delete the znode now, or we may put it in the unlinked set;
 	 * it depends on whether we're the last link, and on whether there are
@@ -2006,6 +2013,11 @@ top:
 	 */
 	if (may_delete_now)
 		dmu_tx_mark_netfree(tx);
+
+	/*
+	 * Mark this transaction as typically resulting in a net free of space
+	 */
+	dmu_tx_mark_netfree(tx);
 
 	error = dmu_tx_assign(tx, waited ? TXG_WAITED : TXG_NOWAIT);
 	if (error) {
@@ -5609,6 +5621,7 @@ zfs_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 	ZFS_VERIFY_ZP(zp);
 
 	if (cmd != F_FREESP) {
+		printf("ZFS: fallocate() called for non F_FREESP method!\n");
 		ZFS_EXIT(zfsvfs);
 		return (SET_ERROR(ENOTSUP));
 	}

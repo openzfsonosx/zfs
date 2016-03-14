@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Portions Copyright 2007-2009 Apple Inc. All rights reserved.
  * Use is subject to license terms.
  */
@@ -180,6 +180,7 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 	rw_init(&zp->z_parent_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zp->z_name_lock, NULL, RW_DEFAULT, NULL);
 	mutex_init(&zp->z_acl_lock, NULL, MUTEX_DEFAULT, NULL);
+	rw_init(&zp->z_xattr_lock, NULL, RW_DEFAULT, NULL);
 
 	mutex_init(&zp->z_range_lock, NULL, MUTEX_DEFAULT, NULL);
 	avl_create(&zp->z_range_avl, zfs_range_compare,
@@ -187,6 +188,7 @@ zfs_znode_cache_constructor(void *buf, void *arg, int kmflags)
 
 	zp->z_dirlocks = NULL;
 	zp->z_acl_cached = NULL;
+	zp->z_xattr_cached = NULL;
 	zp->z_moved = 0;
 	zp->z_fastpath = B_FALSE;
 	return (0);
@@ -206,11 +208,13 @@ zfs_znode_cache_destructor(void *buf, void *arg)
 	rw_destroy(&zp->z_parent_lock);
 	rw_destroy(&zp->z_name_lock);
 	mutex_destroy(&zp->z_acl_lock);
+	rw_destroy(&zp->z_xattr_lock);
 	avl_destroy(&zp->z_range_avl);
 	mutex_destroy(&zp->z_range_lock);
 
 	ASSERT(zp->z_dirlocks == NULL);
 	ASSERT(zp->z_acl_cached == NULL);
+	ASSERT(zp->z_xattr_cached == NULL);
 }
 
 #ifdef	ZNODE_STATS
@@ -1357,6 +1361,7 @@ again:
 		 * should never find a sa handle that doesn't
 		 * know about the znode.
 		 */
+		ASSERT3P(zp, !=, NULL);
 
 		mutex_enter(&zp->z_lock);
 
@@ -1372,7 +1377,6 @@ again:
 		 * should never find a dbuf with a znode that doesn't
 		 * know about the dbuf.
 		 */
-		ASSERT3P(zp->z_dbuf, ==, db);
 		ASSERT3U(zp->z_id, ==, obj_num);
 
 		/*
@@ -1524,19 +1528,20 @@ zfs_rezget(znode_t *zp)
 
 	dprintf("rezget: %p %p %p\n", zp, zp->z_xattr_lock,
 	    zp->z_xattr_parent);
-#ifdef __LINUX__
+
 	rw_enter(&zp->z_xattr_lock, RW_WRITER);
 	if (zp->z_xattr_cached) {
 		nvlist_free(zp->z_xattr_cached);
 		zp->z_xattr_cached = NULL;
 	}
 
+#ifdef __LINUX__
 	if (zp->z_xattr_parent) {
 		VN_RELE(ZTOI(zp->z_xattr_parent));
 		zp->z_xattr_parent = NULL;
 	}
-	rw_exit(&zp->z_xattr_lock);
 #endif
+	rw_exit(&zp->z_xattr_lock);
 
 	ASSERT(zp->z_sa_hdl == NULL);
 	err = sa_buf_hold(zfsvfs->z_os, obj_num, NULL, &db);
@@ -1870,7 +1875,7 @@ zfs_no_putpage(struct vnode *vp, page_t *pp, u_offset_t *offp, size_t *lenp,
  *	IN:	zp	- znode of file to free data in.
  *		end	- new end-of-file
  *
- * 	RETURN:	0 on success, error code on failure
+ *	RETURN:	0 on success, error code on failure
  */
 static int
 zfs_extend(znode_t *zp, uint64_t end)
@@ -1996,7 +2001,7 @@ zfs_zero_partial_page(znode_t *zp, uint64_t start, uint64_t len)
  *		off	- start of section to free.
  *		len	- length of section to free.
  *
- * 	RETURN:	0 on success, error code on failure
+ *	RETURN:	0 on success, error code on failure
  */
 static int
 zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
@@ -2086,8 +2091,7 @@ zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
  *	IN:	zp	- znode of file to free data in.
  *		end	- new end-of-file.
  *
- * =======
- * 	RETURN:	0 on success, error code on failure
+ *	RETURN:	0 on success, error code on failure
  */
 static int
 zfs_trunc(znode_t *zp, uint64_t end)
@@ -2164,7 +2168,7 @@ zfs_trunc(znode_t *zp, uint64_t end)
  *		flag	- current file open mode flags.
  *		log	- TRUE if this action should be logged
  *
- * 	RETURN:	0 on success, error code on failure
+ *	RETURN:	0 on success, error code on failure
  */
 int
 zfs_freesp(znode_t *zp, uint64_t off, uint64_t len, int flag, boolean_t log)

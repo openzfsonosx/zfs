@@ -571,6 +571,17 @@ readonly_changed_cb(void *arg, uint64_t newval)
 }
 
 static void
+devices_changed_cb(void *arg, uint64_t newval)
+{
+	zfsvfs_t *zfsvfs = arg;
+	if (newval == B_FALSE) {
+        vfs_setflags(zfsvfs->z_vfs, (uint64_t)MNT_NODEV);
+	} else {
+        vfs_clearflags(zfsvfs->z_vfs, (uint64_t)MNT_NODEV);
+	}
+}
+
+static void
 setuid_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
@@ -854,10 +865,8 @@ zfs_register_callbacks(struct mount *vfsp)
 	    zfs_prop_to_name(ZFS_PROP_RECORDSIZE), blksz_changed_cb, zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_READONLY), readonly_changed_cb, zfsvfs);
-#ifdef illumos
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_DEVICES), devices_changed_cb, zfsvfs);
-#endif
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_SETUID), setuid_changed_cb, zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
@@ -885,9 +894,6 @@ zfs_register_callbacks(struct mount *vfsp)
 	if (error)
 		goto unregister;
 
-	if (do_readonly)
-		readonly_changed_cb(zfsvfs, readonly);
-#if 0
 	/*
 	 * Invoke our callbacks to restore temporary mount options.
 	 */
@@ -897,14 +903,19 @@ zfs_register_callbacks(struct mount *vfsp)
 		setuid_changed_cb(zfsvfs, setuid);
 	if (do_exec)
 		exec_changed_cb(zfsvfs, exec);
+	if (do_devices)
+		devices_changed_cb(zfsvfs, devices);
 	if (do_xattr)
 		xattr_changed_cb(zfsvfs, xattr);
 	if (do_atime)
 		atime_changed_cb(zfsvfs, atime);
+#ifdef __APPLE__
 	if (do_finderbrowse)
 		finderbrowse_changed_cb(zfsvfs, finderbrowse);
 	if (do_ignoreowner)
 		ignoreowner_changed_cb(zfsvfs, ignoreowner);
+#endif
+#ifndef __APPLE__
 
 	nbmand_changed_cb(zfsvfs, nbmand);
 #endif
@@ -1733,7 +1744,7 @@ out:
 		dmu_objset_disown(zfsvfs->z_os, zfsvfs);
 		zfsvfs_free(zfsvfs);
 	} else {
-		atomic_add_32(&zfs_active_fs_count, 1);
+		atomic_inc_32(&zfs_active_fs_count);
 	}
 
 	return (error);
@@ -2080,7 +2091,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	int		error = 0;
 	int		canwrite;
 	int		mflag;
-	int		flags = 0;
+	uint64_t	flags = vfs_flags(vfsp);
 	char *realosname = NULL; // If allocated.
 
 	printf("mvp is %p : data is %p\n", mvp, data);
@@ -2346,6 +2357,8 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 {
     zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
 	uint64_t refdbytes, availbytes, usedobjs, availobjs;
+	uint64_t log_blksize;
+	uint64_t log_blkcnt;
 
     dprintf("vfs_getattr\n");
 
@@ -2369,11 +2382,21 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	VFSATTR_RETURN(fsap, f_dircount, usedobjs / 4);
 
 	/*
+	 * Model after HFS in working out if we should use the legacy size
+	 * 512, or go to 4096. Note that XNU only likes those two
+	 * blocksizes, so we don't use the ZFS recordsize
+	 */
+	log_blkcnt = (u_int64_t)((refdbytes + availbytes) >> SPA_MINBLOCKSHIFT);
+	log_blksize = (log_blkcnt > 0x000000007fffffff) ?
+		4096 :
+		(1 << SPA_MINBLOCKSHIFT);
+
+	/*
 	 * The underlying storage pool actually uses multiple block sizes.
 	 * We report the fragsize as the smallest block size we support,
 	 * and we report our blocksize as the filesystem's maximum blocksize.
 	 */
-	VFSATTR_RETURN(fsap, f_bsize, 1UL << SPA_MINBLOCKSHIFT);
+	VFSATTR_RETURN(fsap, f_bsize, log_blksize);
 	VFSATTR_RETURN(fsap, f_iosize, zfsvfs->z_max_blksz);
 
 	/*
@@ -2382,8 +2405,8 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	 * "fragment" size.
 	 */
 	VFSATTR_RETURN(fsap, f_blocks,
-	               (u_int64_t)((refdbytes + availbytes) >> SPA_MINBLOCKSHIFT));
-	VFSATTR_RETURN(fsap, f_bfree, (u_int64_t)(availbytes >> SPA_MINBLOCKSHIFT));
+	               (u_int64_t)((refdbytes + availbytes) / log_blksize));
+	VFSATTR_RETURN(fsap, f_bfree, (u_int64_t)(availbytes / log_blksize));
 	VFSATTR_RETURN(fsap, f_bavail, fsap->f_bfree);  /* no root reservation */
 	VFSATTR_RETURN(fsap, f_bused, fsap->f_blocks - fsap->f_bfree);
 
@@ -3177,7 +3200,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	 * hashes. Use the MSB set high as indicator.
 	 */
 	hardlinks_t *findnode = NULL;
-	if ((1<<31) & ino) {
+	if ((1ULL<<31) & ino) {
 		hardlinks_t searchnode;
 		avl_index_t loc;
 
@@ -3635,7 +3658,7 @@ zfs_freevfs(struct mount *vfsp)
 
 	zfsvfs_free(zfsvfs);
 
-	atomic_add_32(&zfs_active_fs_count, -1);
+	atomic_dec_32(&zfs_active_fs_count);
     dprintf("-freevfs\n");
 }
 

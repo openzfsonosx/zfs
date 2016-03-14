@@ -1523,6 +1523,67 @@ dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
 	return (err);
 }
 
+int
+dmu_read_iokit_dbuf(dmu_buf_t *zdb, uint64_t object, uint64_t *offset,
+					uint64_t position,
+					uint64_t *size, void *iomem)
+{
+	dmu_buf_impl_t *db = (dmu_buf_impl_t *)zdb;
+	dnode_t *dn;
+	int err;
+
+	if (*size == 0)
+		return (0);
+
+	DB_DNODE_ENTER(db);
+	dn = DB_DNODE(db);
+
+
+	dmu_buf_t **dbp;
+	int numbufs, i;
+
+	/*
+	 * NB: we could do this block-at-a-time, but it's nice
+	 * to be reading in parallel.
+	 */
+	err = dmu_buf_hold_array_by_dnode(dn, (position+*offset), *size,
+									  TRUE, FTAG, &numbufs, &dbp, 0);
+	if (err)
+		return (err);
+
+	for (i = 0; i < numbufs; i++) {
+		uint64_t tocpy;
+		int64_t bufoff;
+		dmu_buf_t *db = dbp[i];
+		uint64_t done;
+
+		ASSERT(size > 0);
+
+		bufoff = (position+*offset) - db->db_offset;
+		tocpy = MIN(db->db_size - bufoff, *size);
+
+		done = zvolIO_kit_read(iomem,
+							   *offset,
+							   (char *)db->db_data + bufoff,
+							   tocpy);
+
+		if (!done) {
+			err = EIO;
+			break;
+		}
+
+		*size -= done;
+		*offset += done;
+	}
+	dmu_buf_rele_array(dbp, numbufs, FTAG);
+
+	DB_DNODE_EXIT(db);
+
+	return (err);
+}
+
+
+
 
 static int
 dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset, uint64_t position,
@@ -1744,7 +1805,8 @@ dmu_sync_done(zio_t *zio, arc_buf_t *buf, void *varg)
 
 			ASSERT(BP_EQUAL(bp, bp_orig));
 			ASSERT(zio->io_prop.zp_compress != ZIO_COMPRESS_OFF);
-			ASSERT(zio_checksum_table[chksum].ci_dedup);
+			ASSERT(zio_checksum_table[chksum].ci_flags &
+				   ZCHECKSUM_FLAG_NOPWRITE);
 		}
 		dr->dt.dl.dr_overridden_by = *zio->io_bp;
 		dr->dt.dl.dr_override_state = DR_OVERRIDDEN;

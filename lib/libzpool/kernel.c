@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
 #include <assert.h>
@@ -75,7 +76,7 @@ pthread_mutex_t kthread_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_key_t kthread_key;
 int kthread_nr = 0;
 
-static void
+void
 thread_init(void)
 {
 	kthread_t *kt;
@@ -94,7 +95,7 @@ thread_init(void)
 	kthread_nr = 1;
 }
 
-static void
+void
 thread_fini(void)
 {
 	kthread_t *kt = curthread;
@@ -1037,8 +1038,9 @@ kobj_read_file(struct _buf *file, char *buf, unsigned size, unsigned off)
 {
 	ssize_t resid;
 
-	vn_rdwr(UIO_READ, (vnode_t *)file->_fd, buf, size, (offset_t)off,
-	    UIO_SYSSPACE, 0, 0, 0, &resid);
+	if (vn_rdwr(UIO_READ, (vnode_t *)file->_fd, buf, size, (offset_t)off,
+	    UIO_SYSSPACE, 0, 0, 0, &resid) != 0)
+		return (-1);
 
 	return (size - resid);
 }
@@ -1278,6 +1280,10 @@ crgetgroups(cred_t *cr)
 	return (NULL);
 }
 
+void
+crgetgroupsfree(gid_t *gids)
+{}
+
 int
 zfs_secpolicy_snapshot_perms(const char *name, cred_t *cr)
 {
@@ -1373,4 +1379,25 @@ int
 zfs_onexit_cb_data(minor_t minor, uint64_t action_handle, void **data)
 {
 	return (0);
+}
+
+void
+zvol_create_minors(spa_t *spa, const char *name, boolean_t async)
+{
+}
+
+void
+zvol_remove_minor(spa_t *spa, const char *name, boolean_t async)
+{
+}
+
+void
+zvol_remove_minors(spa_t *spa, const char *name, boolean_t async)
+{
+}
+
+void
+zvol_rename_minors(spa_t *spa, const char *oldname, const char *newname,
+    boolean_t async)
+{
 }
