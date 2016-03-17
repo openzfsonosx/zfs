@@ -40,6 +40,23 @@
 #include <IOKit/IOBSD.h>
 #include <libzfs.h>
 
+char * MYCFStringCopyUTF8String(CFStringRef aString)
+{
+  if (aString == NULL) {
+    return NULL;
+  }
+
+  CFIndex length = CFStringGetLength(aString);
+  CFIndex maxSize =
+  CFStringGetMaximumSizeForEncoding(length,
+                                    kCFStringEncodingUTF8);
+  char *buffer = (char *)malloc(maxSize);
+  if (CFStringGetCString(aString, buffer, maxSize,
+                         kCFStringEncodingUTF8)) {
+    return buffer;
+  }
+  return NULL;
+}
 
 char *iokit_device_to_dataset(char *device)
 {
@@ -75,8 +92,9 @@ char *iokit_device_to_dataset(char *device)
 		cfstr = IORegistryEntryCreateCFProperty(service,
 						CFSTR("DATASET"), kCFAllocatorDefault, 0);
 		if (cfstr) {
-			result = strdup(CFStringGetCStringPtr(cfstr,
-						kCFStringEncodingMacRoman));
+			result = MYCFStringCopyUTF8String(cfstr);
+			//result = strdup(CFStringGetCStringPtr(cfstr,
+			//			kCFStringEncodingUTF8));
 			CFRelease(cfstr);
 		}
 	}
@@ -197,25 +215,6 @@ int iokit_mark_device_to_mount(char *dataset)
 	free(special_name);
 
 	return 0;
-}
-
-
-
-char * MYCFStringCopyUTF8String(CFStringRef aString) {
-  if (aString == NULL) {
-    return NULL;
-  }
-
-  CFIndex length = CFStringGetLength(aString);
-  CFIndex maxSize =
-  CFStringGetMaximumSizeForEncoding(length,
-                                    kCFStringEncodingUTF8);
-  char *buffer = (char *)malloc(maxSize);
-  if (CFStringGetCString(aString, buffer, maxSize,
-                         kCFStringEncodingUTF8)) {
-    return buffer;
-  }
-  return NULL;
 }
 
 /*

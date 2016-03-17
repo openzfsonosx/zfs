@@ -49,6 +49,8 @@
 		<string>zfs.util</string>
 		<key>FSProbeOrder</key>
 		<integer>1000</integer>
+		<key>autodiskmount</key>
+		<false/>
 	  </dict>
 	  <key>zfs_pool_proxy</key>
 	  <dict>
@@ -63,21 +65,9 @@
 		<string>zfs.util</string>
 		<key>FSProbeOrder</key>
 		<integer>1000</integer>
-	  </dict>
-	  <key>zfs_snapshot_proxy</key>
-	  <dict>
-		<key>FSMediaProperties</key>
-		<dict>
-		  <key>Content Hint</key>
-		  <string>zfs_snapshot_proxy</string>
-		</dict>
-		<key>FSProbeArguments</key>
-		<string>-q</string>
-		<key>FSProbeExecutable</key>
-		<string>zfs.util</string>
-		<key>FSProbeOrder</key>
-		<integer>1000</integer>
-	  </dict>
+		<key>autodiskmount</key>
+		<false/>
+  </dict>
       <key>Whole</key>
       <dict>
         <key>FSMediaProperties</key>
