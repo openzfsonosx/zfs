@@ -22,10 +22,16 @@ zfs_util_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) -framework D
 
 install-exec-hook:
 	mkdir -p $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfs.fs/Contents/Resources
+	mkdir -p $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfssnapshot.fs/Contents/Resources
 	/bin/ln -f $(DESTDIR)$(sbindir)/zfs.util $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfs.fs/Contents/Resources/zfs.util
+	/bin/ln -f $(DESTDIR)$(sbindir)/zfs.util $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfssnapshot.fs/Contents/Resources/zfs.util
 	/bin/ln -fs Contents/Resources/zfs.util $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfs.fs/zfs.util
+	/bin/ln -fs Contents/Resources/zfs.util $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfssnapshot.fs/zfs.util
 	chown -R root:wheel ${DESTDIR}/@FILESYSTEMS_PREFIX@/zfs.fs || echo "Unable to chown root:wheel ${DESTDIR}/@FILESYSTEMS_PREFIX@/zfs.fs"
+	chown -R root:wheel ${DESTDIR}/@FILESYSTEMS_PREFIX@/zfssnapshot.fs || echo "Unable to chown root:wheel ${DESTDIR}/@FILESYSTEMS_PREFIX@/zfssnapshot.fs"
 
 uninstall-hook:
 	-$(RM) $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfs.fs/Contents/Resources/zfs.util
+	-$(RM) $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfssnapshot.fs/Contents/Resources/zfs.util
 	-$(RM) $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfs.fs/zfs.util
+	-$(RM) $(DESTDIR)/@FILESYSTEMS_PREFIX@/zfssnapshot.fs/zfs.util

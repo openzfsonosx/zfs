@@ -2,6 +2,9 @@ include $(top_srcdir)/config/Rules.am
 
 AUTOMAKE_OPTIONS = subdir-objects
 
+FS_BUNDLEPREFIX = @FILESYSTEMS_PREFIX@
+FS_BUNDLEDIR = $(DESTDIR)$(FS_BUNDLEPREFIX)/zfssnapshot.fs
+
 INFO_PLIST = Info.plist
 EN_INFO_PLIST_STRINGS = en.lproj/InfoPlist.strings
 PKGINFO = PkgInfo
@@ -23,7 +26,7 @@ zfs_LDADD = \
 
 zfs_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID) -framework DiskArbitration -framework CoreServices -framework IOKit
 
-ZFS_FS_DIR = $(DESTDIR)/System/Library/Filesystems/zfssnapshot.fs
+ZFS_FS_DIR = $(DESTDIR)/Library/Filesystems/zfssnapshot.fs
 
 dist_noinst_DATA = $(EN_INFO_PLIST_STRINGS) $(INFO_PLIST)
 
@@ -36,12 +39,15 @@ zfssnapshot.fs$(EXEEXT): zfs $(EN_INFO_PLIST_STRINGS) $(INFO_PLIST) $(PKGINFO)
 	cp -f $(PKGINFO) zfssnapshot.fs/Contents/
 
 install-exec-local:: zfssnapshot.fs
-	rm -f /System/Library/Filesystems/zfssnapshot.fs/Resources/$(EN_INFO_PLIST_STRINGS)
-	rm -f /System/Library/Filesystems/zfssnapshot.fs/$(INFO_PLIST)
-	rm -f /System/Library/Filesystems/zfssnapshot.fs/Contents/$(PKGINFO)
-	mkdir -p /System/Library/Filesystems/zfssnapshot.fs
-	rsync -aH zfssnapshot.fs/ /System/Library/Filesystems/zfssnapshot.fs
-	chown -R root:wheel /System/Library/Filesystems/zfssnapshot.fs
+	rm -f $(FS_BUNDLEDIR)/Contents/$(PKGINFO)
+	rm -f $(FS_BUNDLEDIR)/Contents/$(INFO_PLIST)
+	rm -f $(FS_BUNDLEDIR)/Contents/Resources/English.lproj/$(EN_INFO_PLIST_STRINGS)
+	mkdir -p $(FS_BUNDLEDIR)
+	rsync -aH zfssnapshot.fs/ $(FS_BUNDLEDIR)/
+	chown -R root:wheel $(FS_BUNDLEDIR)
 
 clean:
 	rm -rf zfssnapshot.fs
+
+uninstall-hook:
+	rm -rf "$(FS_BUNDLEDIR)"
