@@ -794,7 +794,62 @@ ace_trivial_common(void *acep, int aclcnt,
                    uint64_t (*walk)(void *, uint64_t, int aclcnt,
                                     uint16_t *, uint16_t *, uint32_t *))
 {
-    return 1;
+	uint16_t flags;
+	uint32_t mask;
+	uint16_t type;
+	uint64_t cookie = 0;
+
+	while ((cookie = walk(acep, cookie, aclcnt, &flags, &type, &mask))) {
+		switch (flags & ACE_TYPE_FLAGS) {
+			case ACE_OWNER:
+			case ACE_GROUP|ACE_IDENTIFIER_GROUP:
+			case ACE_EVERYONE:
+				break;
+			default:
+				return (1);
+
+		}
+
+		if (flags & (ACE_FILE_INHERIT_ACE|
+					 ACE_DIRECTORY_INHERIT_ACE|ACE_NO_PROPAGATE_INHERIT_ACE|
+					 ACE_INHERIT_ONLY_ACE))
+			return (1);
+
+		/*
+		 * Special check for some special bits
+		 *
+		 * Don't allow anybody to deny reading basic
+		 * attributes or a files ACL.
+		 */
+		if ((mask & (ACE_READ_ACL|ACE_READ_ATTRIBUTES)) &&
+			(type == ACE_ACCESS_DENIED_ACE_TYPE))
+			return (1);
+
+		/*
+		 * Delete permission is never set by default
+		 */
+		if (mask & ACE_DELETE)
+			return (1);
+
+		/*
+		 * Child delete permission should be accompanied by write
+                 */
+		if ((mask & ACE_DELETE_CHILD) && !(mask & ACE_WRITE_DATA))
+			return (1);
+		/*
+		 * only allow owner@ to have
+		 * write_acl/write_owner/write_attributes/write_xattr/
+		 */
+
+		if (type == ACE_ACCESS_ALLOWED_ACE_TYPE &&
+			(!(flags & ACE_OWNER) && (mask &
+			(ACE_WRITE_OWNER|ACE_WRITE_ACL| ACE_WRITE_ATTRIBUTES|
+			ACE_WRITE_NAMED_ATTRS))))
+			return (1);
+
+	}
+
+	return (0);
 }
 
 
@@ -805,7 +860,8 @@ acl_trivial_access_masks(mode_t mode, boolean_t isdir, trivial_acl_t *masks)
     uint32_t write_mask = ACE_WRITE_DATA|ACE_APPEND_DATA;
     uint32_t execute_mask = ACE_EXECUTE;
 
-    (void) isdir;   /* will need this later */
+	if (isdir)
+		write_mask |= ACE_DELETE_CHILD;
 
     masks->deny1 = 0;
     if (!(mode & S_IRUSR) && (mode & (S_IRGRP|S_IROTH)))
