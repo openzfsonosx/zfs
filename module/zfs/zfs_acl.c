@@ -2724,14 +2724,14 @@ uint64_t zfs_write_implies_delete_child = 1;
  *      |               | ACL Allows | ACL Denies| Delete     |
  *      |               |  Delete    |  Delete   | unspecified|
  *      -------------------------------------------------------
- *      | ACL Allows    | Permit     | Deny *    | Permit     |
- *      | DELETE_CHILD  |            |           |            |
+ *      |  ACL Allows   | Permit     | Permit *  | Permit     |
+ *      |  DELETE_CHILD |            |           |            |
  *      -------------------------------------------------------
- *      | ACL Denies    | Permit     | Deny      | Deny       |
- *      | DELETE_CHILD  |            |           |            |
+ *      |  ACL Denies   | Permit *   | Deny      | Deny       |
+ *      |  DELETE_CHILD |            |           |            |
  *      -------------------------------------------------------
  *      | ACL specifies |            |           |            |
- *      | only allow    | Permit     | Deny *    | Permit     |
+ *      | only allow    | Permit     | Permit *  | Permit     |
  *      | write and     |            |           |            |
  *      | execute       |            |           |            |
  *      -------------------------------------------------------
@@ -2744,21 +2744,24 @@ uint64_t zfs_write_implies_delete_child = 1;
  *         Re. execute permission on the directory:  if that's missing,
  *        the vnode lookup of the target will fail before we get here.
  *
- * Re [*] in the table above:  NFSv4 would normally Permit delete for
- * these two cells of the matrix.
- * See acl.h for notes on which ACE_... flags should be checked for which
- * operations.  Specifically, the NFSv4 committee recommendation is in
- * conflict with the Windows interpretation of DENY ACEs, where DENY ACEs
+ * Re [*] in the table above:  We are intentionally disregarding the
+ * NFSv4 committee recommendation for these three cells of the matrix
+ * because that recommendation conflicts with the behavior expected
+ * by Windows clients for ACL evaluation.  See acl.h for notes on
+ * which ACE_... flags should be checked for which operations.
+ * Specifically, the NFSv4 committee recommendation is in conflict
+ * with the Windows interpretation of DENY ACEs, where DENY ACEs
  * should take precedence ahead of ALLOW ACEs.
  *
- * This implementation always consults the target object's ACL first.
- * If a DENY ACE is present on the target object that specifies ACE_DELETE,
- * delete access is denied.  If an ALLOW ACE with ACE_DELETE is present on
- * the target object, access is allowed.  If and only if no entries with
- * ACE_DELETE are present in the object's ACL, check the container's ACL
- * for entries with ACE_DELETE_CHILD.
+ * This implementation takes a conservative approach by checking for
+ * DENY ACEs on both the target object and it's container; checking
+ * the ACE_DELETE on the target object, and ACE_DELETE_CHILD on the
+ * container.  If a DENY ACE is found for either of those, delete
+ * access is denied.  (Note that DENY ACEs are very rare.)
  *
- * A summary of the logic implemented from the table above is as follows:
+ * Note that after these changes, entire the second row and the
+ * entire middle column of the table above change to Deny.
+ * Accordingly, the logic here is somewhat simplified.
  *
  * First check for DENY ACEs that apply.
  * If either target or container has a deny, EACCES.

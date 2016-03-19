@@ -135,6 +135,8 @@ typedef struct osx_kstat {
 
 	kstat_named_t zvol_inhibit_dev;
 	kstat_named_t zfs_send_set_freerecords_bit;
+
+	kstat_named_t zfs_write_implies_delete_child;
 } osx_kstat_t;
 
 
@@ -222,6 +224,8 @@ extern uint64_t zfs_vdev_mirror_non_rotating_inc;
 extern uint64_t zfs_vdev_mirror_non_rotating_seek_inc;
 extern uint64_t zvol_inhibit_dev;
 extern uint64_t zfs_send_set_freerecords_bit;
+
+extern uint64_t zfs_write_implies_delete_child;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);
