@@ -1444,11 +1444,10 @@ zfs_acl_chmod(umode_t umode, uint64_t mode, boolean_t trim, zfs_acl_t *aclp)
 		} else {
 
 			/*
-			 * Limit permissions to be no greater than
-			 * group permissions.
-			 * The "aclinherit" and "aclmode" properties
-			 * affect policy for create and chmod(2),
-			 * respectively.
+			 * Limit permissions granted by ACEs to be no greater
+			 * than permissions of the requested group mode.
+			 * Applies when the "aclmode" property is set to
+			 * "groupmask".
 			 */
 			if ((type == ALLOW) && trim)
 				access_mask &= masks.group;
@@ -1767,7 +1766,7 @@ zfs_acl_ids_create(znode_t *dzp, int flag, vattr_t *vap, cred_t *cr,
 			acl_ids->z_aclp->z_hints |= (vap->va_type == VDIR) ?
 			    ZFS_ACL_AUTO_INHERIT : 0;
 			zfs_acl_chmod(vap->va_type, acl_ids->z_mode,
-			    (zfsvfs->z_acl_inherit == ZFS_ACL_RESTRICTED),
+			    (zfsvfs->z_acl_mode == ZFS_ACL_GROUPMASK),
 			    acl_ids->z_aclp);
 		}
 	}
