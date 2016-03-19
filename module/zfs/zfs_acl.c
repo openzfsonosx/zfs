@@ -1754,13 +1754,16 @@ zfs_acl_ids_create(znode_t *dzp, int flag, vattr_t *vap, cred_t *cr,
 		}
 		mutex_exit(&dzp->z_lock);
 		mutex_exit(&dzp->z_acl_lock);
-		if (need_chmod) {
-			acl_ids->z_aclp->z_hints |= (vap->va_type == VDIR) ?
-			    ZFS_ACL_AUTO_INHERIT : 0;
-			zfs_acl_chmod(vap->va_type, acl_ids->z_mode,
-			    (zfsvfs->z_acl_mode == ZFS_ACL_GROUPMASK),
-			    acl_ids->z_aclp);
-		}
+
+		if (vap->va_type == VDIR)
+			acl_ids->z_aclp->z_hints |= ZFS_ACL_AUTO_INHERIT;
+
+		if (zfsvfs->z_acl_mode == ZFS_ACL_GROUPMASK &&
+		    zfsvfs->z_acl_inherit != ZFS_ACL_PASSTHROUGH &&
+		    zfsvfs->z_acl_inherit != ZFS_ACL_PASSTHROUGH_X)
+			trim = B_TRUE;
+		zfs_acl_chmod(vap->va_type, acl_ids->z_mode, B_FALSE, trim,
+		    acl_ids->z_aclp);
 	}
 
 	if (inherited || vsecp) {
