@@ -581,7 +581,7 @@ zfs_purgedir(znode_t *dzp)
 							 ZGET_FLAG_WITHOUT_VNODE);
 		if (error) {
 #ifdef __APPLE__
-			if (error == ENXIO) {
+			if (error == EIO) {
 				printf("ZFS: Detected problem with item %llu\n",
 					   dzp->z_id);
 			}
@@ -647,7 +647,7 @@ zfs_purgedir(znode_t *dzp)
 		skipped += 1;
 
 #ifdef __APPLE__
-	if (error == ENXIO) {
+	if (error == EIO) {
 		printf("ZFS: purgedir detected corruption. dropping %llu\n",
 			   dzp->z_id);
 		return 0; // Remove this dir anyway
