@@ -483,6 +483,7 @@ zap_lockdir_impl(dmu_buf_t *db, void *tag, dmu_tx_t *tx,
 			 * mzap_open() didn't like what it saw on-disk.
 			 * Check for corruption!
 			 */
+			dmu_buf_rele(db, NULL);
 			return (SET_ERROR(EIO));
 		}
 	}

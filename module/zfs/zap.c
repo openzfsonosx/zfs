@@ -601,10 +601,12 @@ zap_deref_leaf(zap_t *zap, uint64_t h, dmu_tx_t *tx, krw_t lt, zap_leaf_t **lp)
 	ASSERT(zap->zap_dbuf == NULL ||
 	    zap_f_phys(zap) == zap->zap_dbuf->db_data);
 	ASSERT3U(zap_f_phys(zap)->zap_magic, ==, ZAP_MAGIC);
-#ifdef __APPLE__
-	if (zap_f_phys(zap)->zap_magic != ZAP_MAGIC) {
-		printf("ZFS: defer_leaf bad zap detected\n");
-		return ENXIO;
+
+	/* Reality check for corrupt zap objects (leaf or header). */
+	if ((zap_f_phys(zap)->zap_block_type != ZBT_LEAF &&
+		 zap_f_phys(zap)->zap_block_type != ZBT_HEADER) ||
+		zap_f_phys(zap)->zap_magic != ZAP_MAGIC) {
+		return (SET_ERROR(EIO));
 	}
 
 	idx = ZAP_HASH_IDX(h, zap_f_phys(zap)->zap_ptrtbl.zt_shift);
