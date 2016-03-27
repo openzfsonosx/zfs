@@ -6080,6 +6080,7 @@ main(int argc, char **argv)
 	int ret;
 	int i = 0;
 	char *cmdname;
+	zfs_cmd_t zc = {{0}};
 
 	(void) setlocale(LC_ALL, "");
 	//(void) textdomain(TEXT_DOMAIN);
@@ -6124,15 +6125,12 @@ main(int argc, char **argv)
 		current_command = &command_table[i];
 		ret = command_table[i].func(argc, argv);
 	} else if (strcmp(cmdname, "freeze") == 0 && argc == 3) {
-		/*
-		 * 'freeze' is a vile debugging abomination, so we treat
-		 * it as such.
-		 */
-		char buf[16384];
-
-		int fd = open(ZFS_DEV, O_RDWR);
-		(void) strcpy((void *)buf, argv[2]);
-		return (!!ioctl(fd, ZFS_IOC_POOL_FREEZE, buf));
+        	/*
+         	* 'freeze' is a vile debugging abomination, so we treat
+         	* it as such.
+         	*/
+		(void) strlcpy((void*)(&zc.zc_name), argv[2], sizeof(zc.zc_name));
+		return (!!zfs_ioctl(g_zfs, ZFS_IOC_POOL_FREEZE, &zc));
 	} else {
 		(void) fprintf(stderr, gettext("unrecognized "
 		    "command '%s'\n"), cmdname);
