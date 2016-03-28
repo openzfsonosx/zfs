@@ -151,6 +151,8 @@ typedef enum zfs_error {
 	EZFS_DIFF,		/* general failure of zfs diff */
 	EZFS_DIFFDATA,		/* bad zfs diff data */
 	EZFS_POOLREADONLY,	/* pool is in read-only mode */
+	EZFS_UNSHAREAFPFAILED,	/* failed to unshare over afp */
+	EZFS_SHAREAFPFAILED,	/* failed to share over afp */
 	EZFS_UNKNOWN
 } zfs_error_t;
 
@@ -762,13 +764,17 @@ extern int zfs_unshare(zfs_handle_t *);
  */
 extern boolean_t zfs_is_shared_nfs(zfs_handle_t *, char **);
 extern boolean_t zfs_is_shared_smb(zfs_handle_t *, char **);
+extern boolean_t zfs_is_shared_afp(zfs_handle_t *, char **);
 extern int zfs_share_nfs(zfs_handle_t *);
 extern int zfs_share_smb(zfs_handle_t *);
+extern int zfs_share_afp(zfs_handle_t *);
 extern int zfs_shareall(zfs_handle_t *);
 extern int zfs_unshare_nfs(zfs_handle_t *, const char *);
 extern int zfs_unshare_smb(zfs_handle_t *, const char *);
+extern int zfs_unshare_afp(zfs_handle_t *, const char *);
 extern int zfs_unshareall_nfs(zfs_handle_t *);
 extern int zfs_unshareall_smb(zfs_handle_t *);
+extern int zfs_unshareall_afp(zfs_handle_t *);
 extern int zfs_unshareall_bypath(zfs_handle_t *, const char *);
 extern int zfs_unshareall(zfs_handle_t *);
 extern int zfs_deleg_share_nfs(libzfs_handle_t *, char *, char *, char *,
