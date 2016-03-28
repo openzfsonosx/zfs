@@ -14,12 +14,6 @@ USER_C = \
 	nfs.c \
 	nfs.h \
 	smb.c \
-	smb.h
-
-KERNEL_C =
-
-nodist_libshare_la_SOURCES = \
-	$(USER_C)
-	$(KERNEL_C)
-
-EXTRA_DIST = $(USER_C)
+	smb.h \
+	afp.c \
+	afp.h

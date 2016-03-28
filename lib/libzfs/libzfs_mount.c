@@ -145,6 +145,7 @@ zfs_share_proto_t share_all_proto[] = {
  */
 #ifdef __APPLE__
 extern boolean_t smb_is_mountpoint_active(const char *mountpoint);
+extern boolean_t afp_is_mountpoint_active(const char *mountpoint);
 #endif
 
 static zfs_share_type_t
@@ -158,6 +159,11 @@ is_shared(libzfs_handle_t *hdl, const char *mountpoint, zfs_share_proto_t proto)
 	if (proto == PROTO_SMB) {
 		if (smb_is_mountpoint_active(mountpoint))
 			return (SHARED_SMB);
+	}
+	// Check afp, since exports may not exist
+	if (proto == PROTO_AFP) {
+		if (afp_is_mountpoint_active(mountpoint))
+			return (SHARED_AFP);
 	}
 #endif
 

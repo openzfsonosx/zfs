@@ -56,6 +56,8 @@ typedef struct smb_share_s {
 	char path[PATH_MAX];		/* Share path */
 	boolean_t guest_ok;		    /* boolean */
 
+	boolean_t afpshared;	    /* AFP sharing on? */
+
 	struct smb_share_s *next;
 } smb_share_t;
 
@@ -98,7 +100,7 @@ static int get_attribute(const char *attr, char *line, char **value, FILE *file)
 	return 0;
 }
 
-int spawn_with_pipe(const char *path, char *argv[], int flags)
+static int spawn_with_pipe(const char *path, char *argv[], int flags)
 {
 	int fd[2];
 	pid_t pid;
@@ -150,7 +152,7 @@ static int
 smb_retrieve_shares(void)
 {
 	char line[512];
-	char *path = NULL, *shared = NULL, *name = NULL;
+	char *path = NULL, *shared = NULL, *name = NULL, *afpshared = NULL;
 	char *guest = NULL, *r;
 	smb_share_t *shares, *new_shares = NULL;
 	int fd;
@@ -181,10 +183,13 @@ smb_retrieve_shares(void)
 		if (get_attribute("dsAttrTypeNative:smb_name:", line, &name, file) ||
 			get_attribute("dsAttrTypeNative:directory_path:", line, &path, file) ||
 			get_attribute("dsAttrTypeNative:smb_guestaccess:", line, &guest, file) ||
-			get_attribute("dsAttrTypeNative:smb_shared:", line, &shared, file)) {
+			get_attribute("dsAttrTypeNative:smb_shared:", line, &shared, file) ||
+			get_attribute("dsAttrTypeNative:afp_shared:", line, &afpshared, file)) {
 
-			// If we have all desired attributes, create a new share
-			if (name && path && guest && shared) {
+			// If we have all desired attributes, create a new share,
+			// AND it is currently shared (not just listed)
+			if (name && path && guest && shared && afpshared &&
+				atoi(shared) != 0) {
 
 				shares = (smb_share_t *)
 						malloc(sizeof (smb_share_t));
@@ -195,6 +200,8 @@ smb_retrieve_shares(void)
 					strlcpy(shares->path, path,
 							sizeof (shares->path));
 					shares->guest_ok = atoi(guest);
+
+					shares->afpshared = atoi(afpshared);
 
 #ifdef DEBUG
 					fprintf(stderr, "ZFS: smbshare '%s' mount '%s'\r\n",
@@ -217,6 +224,7 @@ smb_retrieve_shares(void)
 			if (path)   {	free(path); 	path  = NULL; }
 			if (guest)  {	free(guest);	guest = NULL; }
 			if (shared) {	free(shared);	shared = NULL; }
+			if (afpshared) {free(afpshared);afpshared = NULL; }
 		} // if "-"
 	} // while fgets
 
@@ -227,6 +235,7 @@ smb_retrieve_shares(void)
 	if (path)   {	free(path); 	path  = NULL; }
 	if (guest)  {	free(guest);	guest = NULL; }
 	if (shared) {	free(shared);	shared = NULL; }
+	if (afpshared) {free(afpshared);afpshared = NULL; }
 
 	/*
 	 * The ZOL implementation here just leaks the previous list in
@@ -251,20 +260,43 @@ smb_enable_share_one(const char *sharename, const char *sharepath)
 	smb_share_t *shares = smb_shares;
 	int afpshared = 0;
 
+	/* Loop through shares and check if our share is also smbshared */
+	while (shares != NULL) {
+		if (strcmp(sharepath, shares->path) == 0) {
+			afpshared = shares->afpshared;
+			break;
+		}
+		shares = shares->next;
+	}
+
 	/*
 	 * CMD: sharing -a /mountpoint -s 001 -g 001
 	 * Where -s 001 specified sharing smb, not ftp nor afp.
 	 *   and -g 001 specifies to enable guest on smb.
 	 * Note that the OS X 10.11 man-page incorrectly claims 010 for smb
 	 */
-	argv[0] = SHARING_CMD_PATH;
-	argv[1] = (char *)"-a";
-	argv[2] = (char *)sharepath;
-	argv[3] = (char *)"-s";
-	argv[4] = (char *)"001";
-	argv[5] = (char *)"-g";
-	argv[6] = (char *)"001";
-	argv[7] = NULL;
+	if (afpshared) {
+
+		argv[0] = SHARING_CMD_PATH;
+		argv[1] = (char *)"-e";
+		argv[2] = (char *)sharename;
+		argv[3] = (char *)"-s";
+		argv[4] = (char *)"101";
+		argv[5] = (char *)"-g";
+		argv[6] = (char *)"101";
+		argv[7] = NULL;
+
+	} else {
+
+		argv[0] = SHARING_CMD_PATH;
+		argv[1] = (char *)"-a";
+		argv[2] = (char *)sharepath;
+		argv[3] = (char *)"-s";
+		argv[4] = (char *)"001";
+		argv[5] = (char *)"-g";
+		argv[6] = (char *)"001";
+		argv[7] = NULL;
+	}
 
 #ifdef DEBUG
 	fprintf(stderr, "ZFS: enabling share '%s' at '%s'\r\n",
@@ -333,12 +365,6 @@ smb_disable_share_one(const char *sharename, int afpshared)
 		argv[2] = (char *)sharename;
 		argv[3] = NULL;
 	}
-
-	/* CMD: sharing -r name */
-	argv[0] = SHARING_CMD_PATH;
-	argv[1] = (char *)"-r";
-	argv[2] = (char *)sharename;
-	argv[3] = NULL;
 
 #ifdef DEBUG
 	fprintf(stderr, "ZFS: disabling share '%s' \r\n",
