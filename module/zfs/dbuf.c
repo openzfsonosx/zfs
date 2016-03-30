@@ -3585,45 +3585,6 @@ dbuf_write_ready(zio_t *zio, arc_buf_t *buf, void *vdb)
 	rw_exit(&dn->dn_struct_rwlock);
 }
 
-/* ARGSUSED */
-/*
- * This function gets called just prior to running through the compression
- * stage of the zio pipeline. If we're an indirect block comprised of only
- * holes, then we want this indirect to be compressed away to a hole. In
- * order to do that we must zero out any information about the holes that
- * this indirect points to prior to before we try to compress it.
- */
-static void
-dbuf_write_children_ready(zio_t *zio, arc_buf_t *buf, void *vdb)
-{
-	dmu_buf_impl_t *db = vdb;
-	dnode_t *dn;
-	blkptr_t *bp;
-	uint64_t i;
-	int epbs;
-
-	ASSERT3U(db->db_level, >, 0);
-	DB_DNODE_ENTER(db);
-	dn = DB_DNODE(db);
-	epbs = dn->dn_phys->dn_indblkshift - SPA_BLKPTRSHIFT;
-
-	/* Determine if all our children are holes */
-	for (i = 0, bp = db->db.db_data; i < 1 << epbs; i++, bp++) {
-		if (!BP_IS_HOLE(bp))
-			break;
-	}
-
-	/*
-	 * If all the children are holes, then zero them all out so that
-	 * we may get compressed away.
-	 */
-	if (i == 1 << epbs) {
-		/* didn't find any non-holes */
-		bzero(db->db.db_data, db->db.db_size);
-	}
-	DB_DNODE_EXIT(db);
-}
-
 /*
  * The SPA will call this callback several times for each zio - once
  * for every physical child i/o (zio->io_phys_children times).  This
@@ -3873,8 +3834,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 
 		dr->dr_zio = zio_write(zio, os->os_spa, txg,
 		    &dr->dr_bp_copy, contents, db->db.db_size, &zp,
-		    dbuf_write_override_ready, NULL, NULL,
-		    dbuf_write_override_done,
+		    dbuf_write_override_ready, NULL, dbuf_write_override_done,
 		    dr, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_MUSTSUCCEED, &zb);
 		mutex_enter(&db->db_mtx);
 		dr->dt.dl.dr_override_state = DR_NOT_OVERRIDDEN;
@@ -3886,8 +3846,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 			zp.zp_checksum == ZIO_CHECKSUM_NOPARITY);
 		dr->dr_zio = zio_write(zio, os->os_spa, txg,
 			&dr->dr_bp_copy, NULL, db->db.db_size, &zp,
-		    dbuf_write_nofill_ready, NULL, NULL,
-		    dbuf_write_nofill_done, db,
+		    dbuf_write_nofill_ready, NULL, dbuf_write_nofill_done, db,
 		    ZIO_PRIORITY_ASYNC_WRITE,
 		    ZIO_FLAG_MUSTSUCCEED | ZIO_FLAG_NODATA, &zb);
 	} else {
@@ -3904,7 +3863,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 
 		dr->dr_zio = arc_write(zio, os->os_spa, txg,
 			&dr->dr_bp_copy, data, DBUF_IS_L2CACHEABLE(db),
-		    &zp, dbuf_write_ready, children_ready_cb,
+		    DBUF_IS_L2COMPRESSIBLE(db), &zp, dbuf_write_ready,
 		    dbuf_write_physdone, dbuf_write_done, db,
 		    ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_MUSTSUCCEED, &zb);
 	}
