@@ -55,6 +55,7 @@
 #include <string.h>
 #include <strings.h>
 #include <pthread.h>
+#include <setjmp.h>
 #include <assert.h>
 #include <alloca.h>
 #include <umem.h>
@@ -114,8 +115,8 @@ extern void __dprintf(const char *file, const char *func,
     int line, const char *fmt, ...);
 extern void cmn_err(int, const char *, ...);
 extern void vcmn_err(int, const char *, va_list);
-extern void panic(const char *, ...);
-extern void vpanic(const char *, va_list);
+extern void panic(const char *, ...) __NORETURN;
+extern void vpanic(const char *, va_list) __NORETURN;
 
 #define       ERESTART (-1)            /* restart syscall */
 
@@ -328,6 +329,7 @@ extern void kstat_set_raw_ops(kstat_t *ksp,
 #define	KM_SLEEP		UMEM_NOFAIL
 #define	KM_PUSHPAGE		KM_SLEEP
 #define	KM_NOSLEEP		UMEM_DEFAULT
+#define	KM_NORMALPRI		0	/* not needed with UMEM_DEFAULT */
 #define	KM_NODEBUG		0x0
 #define	KMC_NODEBUG		UMC_NODEBUG
 #define	KMC_KMEM		0x0

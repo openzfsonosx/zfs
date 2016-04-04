@@ -81,6 +81,9 @@ boolean_t lzc_exists(const char *);
 
 int lzc_rollback(const char *, char *, int);
 
+int lzc_channel_program(const char *, const char *, uint64_t, uint64_t,
+    nvlist_t *, nvlist_t **);
+
 #ifdef	__cplusplus
 }
 #endif

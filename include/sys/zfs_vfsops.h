@@ -243,6 +243,7 @@ extern int  zfs_vnode_lock(vnode_t *vp, int flags);
 extern void zfs_freevfs(struct mount *vfsp);
 
 extern int  zfsvfs_create(const char *osname, zfsvfs_t **zfvp);
+extern int zfsvfs_create_impl(zfsvfs_t **zfvp, zfsvfs_t *zfsvfs, objset_t *os);
 extern void zfsvfs_free(zfsvfs_t *zfsvfs);
 
 

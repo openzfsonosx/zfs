@@ -6,7 +6,8 @@ AM_CFLAGS += $(DEBUG_STACKFLAGS) $(FRAME_LARGER_THAN)
 
 DEFAULT_INCLUDES += \
 	-I$(top_srcdir)/include \
-	-I$(top_srcdir)/lib/libspl/include
+	-I$(top_srcdir)/lib/libspl/include \
+	-I$(top_srcdir)/module/zfs/lua
 
 lib_LTLIBRARIES = libzpool.la
 
@@ -90,6 +91,11 @@ libzpool_la_SOURCES = \
 	../../module/zfs/zap.c \
 	../../module/zfs/zap_leaf.c \
 	../../module/zfs/zap_micro.c \
+	../../module/zfs/zcp.c \
+	../../module/zfs/zcp_get.c \
+	../../module/zfs/zcp_global.c \
+	../../module/zfs/zcp_iter.c \
+	../../module/zfs/zcp_synctask.c \
 	../../module/zfs/zfeature.c \
 	../../module/zfs/zfeature_common.c \
 	../../module/zfs/zfs_byteswap.c \
@@ -104,8 +110,34 @@ libzpool_la_SOURCES = \
 	../../module/zfs/zio_compress.c \
 	../../module/zfs/zio_inject.c \
 	../../module/zfs/zle.c \
-	../../module/zfs/zrlock.c
-
+	../../module/zfs/zrlock.c \
+	../../module/zfs/lua/lapi.c \
+	../../module/zfs/lua/lauxlib.c \
+	../../module/zfs/lua/lbaselib.c \
+	../../module/zfs/lua/lbitlib.c \
+	../../module/zfs/lua/lcode.c \
+	../../module/zfs/lua/lcompat.c \
+	../../module/zfs/lua/lcorolib.c \
+	../../module/zfs/lua/lctype.c \
+	../../module/zfs/lua/ldebug.c \
+	../../module/zfs/lua/ldo.c \
+	../../module/zfs/lua/ldump.c \
+	../../module/zfs/lua/lfunc.c \
+	../../module/zfs/lua/lgc.c \
+	../../module/zfs/lua/llex.c \
+	../../module/zfs/lua/lmem.c \
+	../../module/zfs/lua/lobject.c \
+	../../module/zfs/lua/lopcodes.c \
+	../../module/zfs/lua/lparser.c \
+	../../module/zfs/lua/lstate.c \
+	../../module/zfs/lua/lstring.c \
+	../../module/zfs/lua/lstrlib.c \
+	../../module/zfs/lua/ltable.c \
+	../../module/zfs/lua/ltablib.c \
+	../../module/zfs/lua/ltm.c \
+	../../module/zfs/lua/lundump.c \
+	../../module/zfs/lua/lvm.c \
+	../../module/zfs/lua/lzio.c
 
 libzpool_la_LIBADD = \
 	$(top_builddir)/lib/libunicode/libunicode.la \
