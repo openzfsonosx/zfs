@@ -13,7 +13,7 @@
  * When distributing Covered Code, include this CDDL HEADER in each
  * file and include the License file at usr/src/OPENSOLARIS.LICENSE.
  * If applicable, add the following below this CDDL HEADER, with the
- * fields enclosed by brackets "[]" replaced with your own identifying
+ *  enclosed by brackets "[]" replaced with your own identifying
  * information: Portions Copyright [yyyy] [name of copyright owner]
  *
  * CDDL HEADER END
@@ -239,7 +239,7 @@ extern zpool_handle_t *zpool_open_canfail(libzfs_handle_t *, const char *);
 extern void zpool_close(zpool_handle_t *);
 extern const char *zpool_get_name(zpool_handle_t *);
 extern int zpool_get_state(zpool_handle_t *);
-extern char *zpool_state_to_name(vdev_state_t, vdev_aux_t);
+extern const char *zpool_state_to_name(vdev_state_t, vdev_aux_t);
 extern const char *zpool_pool_state_to_name(pool_state_t);
 extern void zpool_free_handles(libzfs_handle_t *);
 
@@ -294,7 +294,7 @@ extern nvlist_t *zpool_find_vdev(zpool_handle_t *, const char *, boolean_t *,
 extern nvlist_t *zpool_find_vdev_by_physpath(zpool_handle_t *, const char *,
     boolean_t *, boolean_t *, boolean_t *);
 extern int zpool_label_disk_wait(char *, int);
-extern int zpool_label_disk(libzfs_handle_t *, zpool_handle_t *, char *);
+extern int zpool_label_disk(libzfs_handle_t *, zpool_handle_t *, const char *);
 
 /*
  * Functions to manage pool properties

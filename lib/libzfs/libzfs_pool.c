@@ -20,9 +20,9 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #include <ctype.h>
@@ -180,7 +180,7 @@ zpool_get_prop_int(zpool_handle_t *zhp, zpool_prop_t prop, zprop_source_t *src)
 /*
  * Map VDEV STATE to printed strings.
  */
-char *
+const char *
 zpool_state_to_name(vdev_state_t state, vdev_aux_t aux)
 {
 	switch (state) {
@@ -3461,7 +3461,6 @@ zpool_vdev_name(libzfs_handle_t *hdl, zpool_handle_t *zhp, nvlist_t *nv,
 	uint64_t value;
 	char buf[PATH_BUF_LEN];
 	char tmpbuf[PATH_BUF_LEN];
-	boolean_t verbose = B_FALSE, guid = B_FALSE, links = B_FALSE;
 	vdev_stat_t *vs;
 	uint_t vsc;
 
@@ -4122,7 +4121,7 @@ read_efi_label(nvlist_t *config, diskaddr_t *sb)
 	if (nvlist_lookup_string(config, ZPOOL_CONFIG_PATH, &path) != 0)
 		return (err);
 
-	(void) snprintf(diskname, sizeof (diskname), "%s%s", DISK_ROOT,
+	(void) snprintf(diskname, sizeof (diskname), "%s%s", ZFS_DISK_ROOT,
 	    strrchr(path, '/'));
 	if ((fd = open(diskname, O_RDWR|O_DIRECT)) >= 0) {
 		struct dk_gpt *vtoc;
@@ -4223,7 +4222,7 @@ zpool_label_disk_check(char *path)
  * stripped of any leading /dev path.
  */
 int
-zpool_label_disk(libzfs_handle_t *hdl, zpool_handle_t *zhp, char *name)
+zpool_label_disk(libzfs_handle_t *hdl, zpool_handle_t *zhp, const char *name)
 {
 	char path[MAXPATHLEN];
 	struct dk_gpt *vtoc;
@@ -4262,7 +4261,7 @@ zpool_label_disk(libzfs_handle_t *hdl, zpool_handle_t *zhp, char *name)
 		start_block = NEW_START_BLOCK;
 	}
 
-	(void) snprintf(path, sizeof (path), "%s/%s", DISK_ROOT, name);
+	(void) snprintf(path, sizeof (path), "%s/%s", ZFS_DISK_ROOT, name);
 
 	if ((fd = open(path, O_RDWR|O_DIRECT)) < 0) {
 		/*
@@ -4334,7 +4333,7 @@ zpool_label_disk(libzfs_handle_t *hdl, zpool_handle_t *zhp, char *name)
 
 	/* Wait for the first expected partition to appear. */
 
-	(void) snprintf(path, sizeof (path), "%s/%s", DISK_ROOT, name);
+	(void) snprintf(path, sizeof (path), "%s/%s", ZFS_DISK_ROOT, name);
 	(void) zfs_append_partition(path, MAXPATHLEN);
 
 	rval = zpool_label_disk_wait(path, 3000);
@@ -4345,7 +4344,7 @@ zpool_label_disk(libzfs_handle_t *hdl, zpool_handle_t *zhp, char *name)
 	}
 
 	/* We can't be to paranoid.  Read the label back and verify it. */
-	(void) snprintf(path, sizeof (path), "%s/%s", DISK_ROOT, name);
+	(void) snprintf(path, sizeof (path), "%s/%s", ZFS_DISK_ROOT, name);
 	rval = zpool_label_disk_check(path);
 	if (rval) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, "freshly written "

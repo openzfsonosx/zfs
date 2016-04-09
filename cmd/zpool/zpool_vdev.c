@@ -719,7 +719,7 @@ make_leaf_vdev(nvlist_t *props, const char *arg, uint64_t is_log)
 			if (err == ENOENT) {
 				(void) fprintf(stderr,
 				    gettext("cannot open '%s': no such "
-				    "device in %s\n"), arg, DISK_ROOT);
+				    "device in %s\n"), arg, ZFS_DISK_ROOT);
 				(void) fprintf(stderr,
 				    gettext("must be a full path or "
 				    "shorthand device name\n"));
