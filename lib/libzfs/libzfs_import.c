@@ -19,10 +19,10 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
  * Copyright 2015 RackTop Systems.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*
@@ -1307,238 +1307,6 @@ zpool_open_func(void *arg)
 }
 
 /*
- * Given disk2s1, look up "disk2" is IOKit and attempt to determine if
- * it is an optical device.
- */
-int is_optical_media(const char *bsdname)
-{
-	CFMutableDictionaryRef matchingDict;
-	int ret = 0;
-	io_service_t service, start;
-    kern_return_t   kernResult;
-    io_iterator_t   iter;
-
-	if ((matchingDict = IOBSDNameMatching(kIOMasterPortDefault, 0, bsdname))  == NULL)
-        return(0);
-
-	start = IOServiceGetMatchingService(kIOMasterPortDefault, matchingDict);
-	if (IO_OBJECT_NULL == start)
-		return (0);
-
-	service = start;
-
-	// Create an iterator across all parents of the service object passed in.
-	// since only disk2 would match with ConfirmsTo, and not disk2s1, so
-    // we search the parents until we find "Whole", ie, disk2.
-	kernResult = IORegistryEntryCreateIterator(service,
-                       kIOServicePlane,
-                       kIORegistryIterateRecursively | kIORegistryIterateParents,
-                       &iter);
-
-	if (KERN_SUCCESS == kernResult) {
-        Boolean isWholeMedia = false;
-        IOObjectRetain(service);
-        do {
-
-			// Lookup "Whole" if we can
-			if (IOObjectConformsTo(service, kIOMediaClass)) {
-				CFTypeRef wholeMedia;
-				wholeMedia = IORegistryEntryCreateCFProperty(service,
-													 CFSTR(kIOMediaWholeKey),
-                                                     kCFAllocatorDefault,
-                                                     0);
-				if (wholeMedia) {
-					isWholeMedia = CFBooleanGetValue(wholeMedia);
-					CFRelease(wholeMedia);
-				}
-			}
-
-			// If we found "Whole", check the service type.
-			if (isWholeMedia &&
-				( (IOObjectConformsTo(service, kIOCDMediaClass)) ||
-				  (IOObjectConformsTo(service, kIODVDMediaClass)) )) {
-				ret = 1; // Is optical, skip
-			}
-
-            IOObjectRelease(service);
-        } while ((service = IOIteratorNext(iter)) && !isWholeMedia);
-        IOObjectRelease(iter);
-	}
-
-	IOObjectRelease(start);
-	return ret;
-}
-
-jmp_buf buffer;
-
-void signal_alarm(int foo)
-{
-	longjmp(buffer, 1);
-}
-#endif
-
-static void
-zpool_open_func(void *arg)
-{
-	rdsk_node_t *rn = arg;
-#ifdef __APPLE__
-	struct stat statbuf;
-#else
-	struct stat64 statbuf;
-#endif
-	nvlist_t *config;
-	int num_labels;
-	int fd;
-
-	if (rn->rn_nozpool)
-		return;
-#if defined (__linux__) || defined (__APPLE__)
-	/*
-	 * Skip devices with well known prefixes there can be side effects
-	 * when opening devices which need to be avoided.
-	 *
-	 * core     - Symlink to /proc/kcore
-	 * fd*      - Floppy interface.
-	 * fuse     - Fuse control device.
-	 * hpet     - High Precision Event Timer
-	 * lp*      - Printer interface.
-	 * parport* - Parallel port interface.
-	 * ppp      - Generic PPP driver.
-	 * random   - Random device
-	 * rtc      - Real Time Clock
-	 * tty*     - Generic serial interface.
-	 * urandom  - Random device.
-	 * usbmon*  - USB IO monitor.
-	 * vcs*     - Virtual console memory.
-	 * watchdog - Watchdog must be closed in a special way.
-	 */
-	if ((strncmp(rn->rn_name, "core", 4) == 0) ||
-	    (strncmp(rn->rn_name, "fd", 2) == 0) ||
-	    (strncmp(rn->rn_name, "fuse", 4) == 0) ||
-	    (strncmp(rn->rn_name, "hpet", 4) == 0) ||
-	    (strncmp(rn->rn_name, "lp", 2) == 0) ||
-	    (strncmp(rn->rn_name, "parport", 7) == 0) ||
-	    (strncmp(rn->rn_name, "ppp", 3) == 0) ||
-	    (strncmp(rn->rn_name, "random", 6) == 0) ||
-	    (strncmp(rn->rn_name, "rtc", 3) == 0) ||
-	    (strncmp(rn->rn_name, "tty", 3) == 0) ||
-	    (strncmp(rn->rn_name, "urandom", 7) == 0) ||
-	    (strncmp(rn->rn_name, "usbmon", 6) == 0) ||
-	    (strncmp(rn->rn_name, "vcs", 3) == 0) ||
-#ifdef __APPLE__
-		(strncmp(rn->rn_name, "pty", 3) == 0) || // lots, skip for speed
-		(strncmp(rn->rn_name, "com", 3) == 0) || // /dev/com_digidesign_semiface
-#endif
-	    (strncmp(rn->rn_name, "watchdog", 8) == 0))
-		return;
-
-	/*
-	 * Ignore failed stats.  We only want regular files and block devices.
-	 */
-	if (fstatat64(rn->rn_dfd, rn->rn_name, &statbuf, 0) != 0 ||
-	    (!S_ISREG(statbuf.st_mode) && !S_ISBLK(statbuf.st_mode)))
-		return;
-
-#ifdef __APPLE__
-	/* It is desirable to skip optical media as well, as they are
-	 * also called /dev/diskX
-	 */
-	if (is_optical_media((char *)rn->rn_name))
-		return;
-#endif
-
-	if ((fd = openat64(rn->rn_dfd, rn->rn_name, O_RDONLY)) < 0) {
-		/* symlink to a device that's no longer there */
-		if (errno == ENOENT)
-			nozpool_all_slices(rn->rn_avl, rn->rn_name);
-		return;
-	}
-
-#else /* LINUX, APPLE -> IllumOS */
-
-	if ((fd = openat64(rn->rn_dfd, rn->rn_name, O_RDONLY)) < 0) {
-		/* symlink to a device that's no longer there */
-		if (errno == ENOENT)
-			nozpool_all_slices(rn->rn_avl, rn->rn_name);
-		return;
-	}
-	/*
-	 * Ignore failed stats.  We only want regular
-	 * files, character devs and block devs.
-	 */
-	if (fstat64(fd, &statbuf) != 0 ||
-	    (!S_ISREG(statbuf.st_mode) &&
-	    !S_ISCHR(statbuf.st_mode) &&
-	    !S_ISBLK(statbuf.st_mode))) {
-		(void) close(fd);
-		return;
-	}
-#endif
-	/* this file is too small to hold a zpool */
-	if (S_ISREG(statbuf.st_mode) &&
-	    statbuf.st_size < SPA_MINDEVSIZE) {
-		(void) close(fd);
-		return;
-	} else if (!S_ISREG(statbuf.st_mode)) {
-		/*
-		 * Try to read the disk label first so we don't have to
-		 * open a bunch of minor nodes that can't have a zpool.
-		 */
-		check_slices(rn->rn_avl, fd, rn->rn_name);
-	}
-
-#ifdef __APPLE__
-	int32_t blksz = 0;
-	if (S_ISBLK(statbuf.st_mode) &&
-		(ioctl(fd, DKIOCGETBLOCKSIZE, &blksz) || blksz == 0)) {
-		if (strncmp(rn->rn_name, "vn", 2) != 0)
-			fprintf(stderr, "device '%s' failed to report blocksize -- skipping\r\n",
-					rn->rn_name);
-		close(fd);
-		return;
-	}
-
-	struct sigaction sact;
-	sigemptyset(&sact.sa_mask);
-	sact.sa_flags = 0;
-	sact.sa_handler = signal_alarm;
-	sigaction(SIGALRM, &sact, NULL);
-
-	if (setjmp(buffer) != 0) {
-		printf("ZFS: Warning, timeout reading device '%s'\n", rn->rn_name);
-		close(fd);
-		return;
-	}
-
-	alarm(20);
-#endif
-
-	if ((zpool_read_label(fd, &config, &num_labels)) != 0) {
-#ifdef __APPLE__
-		alarm(0);
-#endif
-		(void) close(fd);
-		(void) no_memory(rn->rn_hdl);
-		return;
-	}
-
-#ifdef __APPLE__
-	alarm(0);
-#endif
-
-	if (num_labels == 0) {
-		(void) close(fd);
-		nvlist_free(config);
-		return;
-	}
-
-	(void) close(fd);
-
-	rn->rn_config = config;
-	rn->rn_num_labels = num_labels;
-}
-
-/*
  * Given a file descriptor, clear (zero) the label information.
  */
 int
@@ -1713,7 +1481,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 	 */
 	for (i = 0; i < dirs; i++) {
 		taskq_t *t;
-		char *rdsk;
+		char rdsk[MAXPATHLEN];
 		int dfd;
 		boolean_t config_failed = B_FALSE;
 		DIR *dirp;
