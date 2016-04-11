@@ -46,8 +46,9 @@ struct znode;
 /* #define WITH_SEARCHFS */
 /* #define WITH_READDIRATTR */
 #define	HAVE_NAMED_STREAMS 1
-#define	HAVE_PAGEOUT_V2 1
-#define HIDE_TRIVIAL_ACL 1
+#define	HAVE_PAGEOUT_V2    1
+#define	HAVE_PAGEIN_V2     1
+#define HIDE_TRIVIAL_ACL   1
 #endif
 
 

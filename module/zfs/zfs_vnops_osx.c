@@ -1941,6 +1941,220 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 
 
 
+int bluster_pagein(znode_t *zp, upl_t upl, upl_offset_t upl_offset,
+				   off_t f_offset, int size, off_t filesize, int flags,
+				   caddr_t vaddr)
+{
+	u_int         io_size;
+	int           rounded_size;
+	off_t         max_size;
+	int           retval;
+
+	if (upl == NULL || size < 0)
+		panic("cluster_pagein: NULL upl passed in");
+
+	/*
+	 * can't page-in from a negative offset
+	 * or if we're starting beyond the EOF
+	 * or if the file offset isn't page aligned
+	 * or the size requested isn't a multiple of PAGE_SIZE
+	 */
+	if (f_offset < 0 || f_offset >= filesize ||
+		(f_offset & PAGE_MASK_64) || (size & PAGE_MASK) || (upl_offset & PAGE_MASK)) {
+		if ((flags & UPL_NOCOMMIT) == 0)
+			ubc_upl_abort_range(upl, upl_offset, size, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR);
+		return (EINVAL);
+	}
+
+	max_size = filesize - f_offset;
+
+	if (size < max_size)
+		io_size = size;
+	else
+		io_size = max_size;
+
+	rounded_size = (io_size + (PAGE_SIZE - 1)) & ~PAGE_MASK;
+
+	if (size > rounded_size && ((flags & UPL_NOCOMMIT) == 0))
+		ubc_upl_abort_range(upl, upl_offset + rounded_size,
+							size - rounded_size, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR);
+
+	printf("ZFS: pagein2 offset 0x%llx size 0x%llx into memory offset 0x%llx\n",
+		   f_offset, size, upl_offset);
+	retval = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, f_offset, size,
+					  (void *)&vaddr[upl_offset], DMU_READ_PREFETCH);
+
+	return (retval);
+}
+
+
+int
+zfs_vnop_pageinv2(struct vnop_pagein_args *ap)
+#if 0
+	struct vnop_pagein_args {
+		struct vnode	*a_vp;
+		upl_t		a_pl;
+		vm_offset_t	a_pl_offset;
+		off_t		a_f_offset;
+		size_t		a_size;
+		int		a_flags;
+		vfs_context_t	a_context;
+	};
+#endif
+{
+	/* XXX Crib this from the Apple zfs_vnops.c. */
+	struct vnode *vp = ap->a_vp;
+	znode_t *zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	int error = 0;
+	upl_t           upl;
+	upl_page_info_t *pl;
+	off_t           f_offset;
+	off_t           page_needed_f_offset;
+	int             offset;
+	int             isize;
+	int             upl_size;
+	int             pg_index;
+	caddr_t         vaddr;
+
+	dprintf("+vnop_pagein_v2: %p/%p off 0x%llx size 0x%lx filesz 0x%llx\n",
+			zp, vp, ap->a_f_offset, ap->a_size, zp->z_size);
+
+	if (ap->a_pl != NULL) {
+		dprintf("zfs_vnop_pagein: no upl -> defaulting to v1");
+		/*
+		 * this can only happen for swap files now that
+		 * we're asking for V2 paging behavior...
+		 */
+		if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
+			error = EINVAL;
+			goto out;
+		}
+		error = bluster_pagein(zp, ap->a_pl, ap->a_pl_offset,ap->a_f_offset,
+							   ap->a_size, (off_t)zp->z_size, ap->a_flags,
+							   vaddr);
+		ubc_upl_unmap(upl);
+		goto pagein_done;
+	}
+
+	page_needed_f_offset = ap->a_f_offset + ap->a_pl_offset;
+
+  retry_pagein:
+
+	ZFS_ENTER(zfsvfs);
+
+	error = ubc_create_upl(vp, ap->a_f_offset, ap->a_size, &upl, &pl, UPL_UBC_PAGEIN | UPL_RET_ONLY_ABSENT);
+
+	if ((error != KERN_SUCCESS) || (upl == (upl_t) NULL)) {
+		error = EINVAL;
+		goto pagein_done;
+	}
+
+	spl_ubc_upl_range_needed(upl, ap->a_pl_offset / PAGE_SIZE, 1);
+
+	upl_size = isize = ap->a_size;
+
+	/*
+	 * Scan from the back to find the last page in the UPL, so that we
+	 * aren't looking at a UPL that may have already been freed by the
+	 * preceding aborts/completions.
+	 */
+	for (pg_index = ((isize) / PAGE_SIZE); pg_index > 0;) {
+		if (upl_page_present(pl, --pg_index))
+			break;
+		if (pg_index == 0) {
+			/*
+			 * no absent pages were found in the range specified
+			 * just abort the UPL to get rid of it and then we're done
+			 */
+			ubc_upl_abort_range(upl, 0, isize, UPL_ABORT_FREE_ON_EMPTY);
+			goto pagein_done;
+		}
+	}
+
+	/*
+	 * initialize the offset variables before we touch the UPL.
+	 * f_offset is the position into the file, in bytes
+	 * offset is the position into the UPL, in bytes
+	 * pg_index is the pg# of the UPL we're operating on
+	 * isize is the offset into the UPL of the last page that is present.
+	 */
+	isize = ((pg_index + 1) * PAGE_SIZE);
+	pg_index = 0;
+	offset = 0;
+	f_offset = ap->a_f_offset;
+
+	while (isize) {
+		int  xsize;
+		int  num_of_pages;
+
+		if ( !upl_page_present(pl, pg_index)) {
+			/*
+			 * we asked for RET_ONLY_ABSENT, so it's possible
+			 * to get back empty slots in the UPL.
+			 * just skip over them
+			 */
+			f_offset += PAGE_SIZE;
+			offset   += PAGE_SIZE;
+			isize    -= PAGE_SIZE;
+			pg_index++;
+
+			continue;
+		}
+		/*
+		 * We know that we have at least one absent page.
+		 * Now checking to see how many in a row we have
+		 */
+		num_of_pages = 1;
+		xsize = isize - PAGE_SIZE;
+
+		while (xsize) {
+			if ( !upl_page_present(pl, pg_index + num_of_pages))
+				break;
+			num_of_pages++;
+			xsize -= PAGE_SIZE;
+		}
+		xsize = num_of_pages * PAGE_SIZE;
+
+		if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
+			error = EINVAL;
+			goto pagein_done;
+		}
+		error = bluster_pagein(zp, upl, offset, f_offset, xsize,
+							   (off_t)zp->z_size, ap->a_flags, vaddr);
+		ubc_upl_unmap(upl);
+
+		if (!(ap->a_flags & UPL_NOCOMMIT))
+			ubc_upl_commit_range(upl, offset,
+								 xsize, UPL_COMMIT_FREE_ON_EMPTY);
+
+	  pagein_next_range:
+		f_offset += xsize;
+		offset   += xsize;
+		isize    -= xsize;
+		pg_index += num_of_pages;
+
+		error = 0;
+
+	} // while (isize)
+
+  pagein_done:
+	ZFS_EXIT(zfsvfs);
+
+	if (!(ap->a_flags & UPL_NOCOMMIT)) {
+		if (error)
+			ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
+		//else
+		//	ubc_upl_commit_range(upl, 0, ap->a_size, UPL_COMMIT_FREE_ON_EMPTY);
+	}
+
+  out:
+	if (error)
+		printf("-pagein %d\n", error);
+	return (error);
+}
+
+
 
 static int
 zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
@@ -4202,7 +4416,11 @@ struct vnodeopv_entry_desc zfs_fvnodeops_template[] = {
 	{&vnop_reclaim_desc,	(VOPFUNC)zfs_vnop_reclaim},
 	{&vnop_pathconf_desc,	(VOPFUNC)zfs_vnop_pathconf},
 	{&vnop_bwrite_desc, (VOPFUNC)zfs_inval},
+#if	HAVE_PAGEIN_V2
+	{&vnop_pagein_desc,	(VOPFUNC)zfs_vnop_pageinv2},
+#else
 	{&vnop_pagein_desc,	(VOPFUNC)zfs_vnop_pagein},
+#endif
 #if	HAVE_PAGEOUT_V2
 	{&vnop_pageout_desc,	(VOPFUNC)zfs_vnop_pageoutv2},
 #else
@@ -4335,7 +4553,11 @@ struct vnodeopv_entry_desc zfs_fifonodeops_template[] = {
 	{ &vnop_pathconf_desc, (VOPFUNC)fifo_pathconf },                /* pathconf */
 	{ &vnop_advlock_desc, (VOPFUNC)err_advlock },           /* advlock */
 	{ &vnop_bwrite_desc, (VOPFUNC)zfs_inval },
+#if	HAVE_PAGEIN_V2
+	{ &vnop_pagein_desc, (VOPFUNC)zfs_vnop_pageinv2 },              /* Pagein */
+#else
 	{ &vnop_pagein_desc, (VOPFUNC)zfs_vnop_pagein },                /* Pagein */
+#endif
 #if	HAVE_PAGEOUT_V2
 	{ &vnop_pageout_desc, (VOPFUNC)zfs_vnop_pageoutv2 },      /* Pageout */
 #else
@@ -4512,6 +4734,9 @@ zfs_vfsops_init(void)
 	vfe.vfe_flags = VFS_TBLTHREADSAFE | VFS_TBLNOTYPENUM | VFS_TBLLOCALVOL |
 	    VFS_TBL64BITREADY | VFS_TBLNATIVEXATTR | VFS_TBLGENERICMNTARGS |
 	    VFS_TBLREADDIR_EXTENDED;
+#if	HAVE_PAGEIN_V2
+	vfe.vfe_flags |= VFS_TBLVNOP_PAGEINV2;
+#endif
 #if	HAVE_PAGEOUT_V2
 	vfe.vfe_flags |= VFS_TBLVNOP_PAGEOUTV2;
 #endif
