@@ -991,8 +991,8 @@ zap_create_link(objset_t *os, dmu_object_type_t ot, uint64_t parent_obj,
 	uint64_t new_obj;
 
 	VERIFY((new_obj = zap_create(os, ot, DMU_OT_NONE, 0, tx)) > 0);
-	VERIFY(zap_add(os, parent_obj, name, sizeof (uint64_t), 1, &new_obj,
-	    tx) == 0);
+	VERIFY0(zap_add(os, parent_obj, name, sizeof (uint64_t), 1, &new_obj,
+	    tx));
 
 	return (new_obj);
 }
