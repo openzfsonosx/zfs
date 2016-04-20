@@ -162,6 +162,7 @@ zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func, void *arg,
 	char *stkstr;
 
 	ASSERT0(state & ~TS_RUN);
+	ASSERT0(len);
 
 	kt = umem_zalloc(sizeof (kthread_t), UMEM_NOFAIL);
 	kt->t_func = func;
