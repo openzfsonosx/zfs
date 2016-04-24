@@ -5,7 +5,7 @@
 
 # Variable Defaults
 #
-: "${ZED_LOCKDIR:="/var/lock"}"
+: "${ZED_LOCKDIR:="/var/run"}" # /var/lock is not present on OS X
 : "${ZED_NOTIFY_INTERVAL_SECS:=3600}"
 : "${ZED_NOTIFY_VERBOSE:=0}"
 : "${ZED_RUNDIR:="/var/run"}"
