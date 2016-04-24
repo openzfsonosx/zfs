@@ -8,7 +8,7 @@ function notify {
 	sudo -u "$(stat -f '%Su' /dev/console)" /usr/bin/osascript -e 'display notification "'"$1"'" with title "'"$2"'"'
 }
 
-test -f "${ZED_SCRIPT_DIR}/zed.rc" && . "${ZED_SCRIPT_DIR}/zed.rc"
+test -f "${ZED_ZEDLET_DIR}/zed.rc" && . "${ZED_ZEDLET_DIR}/zed.rc"
 
 test -n "${ZEVENT_POOL}" || exit 5
 test -n "${ZEVENT_SUBCLASS}" || exit 5
