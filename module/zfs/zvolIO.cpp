@@ -23,6 +23,8 @@
 
 #define	ZVOL_BSIZE	DEV_BSIZE
 
+static const char* ZVOL_PRODUCT_NAME_PREFIX = "ZVOL ";
+
 OSDefineMetaClassAndStructors(net_lundman_zfs_zvol_device, IOBlockStorageDevice)
 
 bool
@@ -51,6 +53,8 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	OSString *dataString = 0;
 	OSNumber *dataNumber = 0;
 
+	char product_name[strlen(ZVOL_PRODUCT_NAME_PREFIX) + MAXPATHLEN + 1];
+	
 	if (super::attach(provider) == false)
 		return (false);
 	m_provider = OSDynamicCast(net_lundman_zfs_zvol, provider);
@@ -159,6 +163,13 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	dataNumber->release();
 	dataNumber	= 0;
 
+	/* Publish the Device / Media name */
+	(void)snprintf(product_name, sizeof(product_name), "%s%s", ZVOL_PRODUCT_NAME_PREFIX, zv->zv_name);
+	dataString = OSString::withCString(product_name);
+	deviceCharacteristics->setObject(kIOPropertyProductNameKey, dataString);
+	dataString->release();
+	dataString = 0;
+	
 	/* Apply these characteristics */
 	setProperty(kIOPropertyDeviceCharacteristicsKey,
 	    deviceCharacteristics);
