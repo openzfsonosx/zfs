@@ -3125,7 +3125,19 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 									nvprops, outnvl);
 		if (error != 0)
 			(void) dsl_destroy_head(fsname);
+
+#ifdef __APPLE__
+		if (type == DMU_OST_ZVOL) {
+			if ((error = spa_open(fsname, &spa, FTAG)) != 0)
+				return (error);
+
+			zvol_create_minors(spa, fsname, B_TRUE);
+
+			spa_close(spa, FTAG);
+		}
+#endif
 	}
+
 	return (error);
 }
 
@@ -3170,6 +3182,15 @@ zfs_ioc_clone(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 									nvprops, outnvl);
 		if (error != 0)
 			(void) dsl_destroy_head(fsname);
+
+#ifdef __APPLE__
+			if ((error = spa_open(fsname, &spa, FTAG)) != 0)
+				return (error);
+
+			zvol_create_minors(spa, fsname, B_TRUE);
+
+			spa_close(spa, FTAG);
+#endif
 	}
 	return (error);
 }
