@@ -19,6 +19,7 @@
 #include "IDMediaPathLinker.hpp"
 #include "IDUUIDLinker.hpp"
 #include "IDSerialLinker.hpp"
+#include "IDImagePathLinker.hpp"
 #include "IDDispatchUtils.hpp"
 #include "IDASLUtils.hpp"
 
@@ -94,6 +95,7 @@ namespace ID
 		dispatcher.addHandler(std::make_shared<MediaPathLinker>(m_impl->basePath + "/by-path", logger));
 		dispatcher.addHandler(std::make_shared<UUIDLinker>(m_impl->basePath + "/by-id", logger));
 		dispatcher.addHandler(std::make_shared<SerialLinker>(m_impl->basePath + "/by-serial", logger));
+		dispatcher.addHandler(std::make_shared<ImagePathLinker>(m_impl->basePath + "/by-image-path", logger));
 		dispatcher.start();
 		CFRunLoopRun();
 		{
