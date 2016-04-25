@@ -3031,6 +3031,9 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 	int32_t type32;
 	dmu_objset_type_t type;
 	boolean_t is_insensitive = B_FALSE;
+#ifdef __APPLE__
+	spa_t *spa = 0;
+#endif
 
 	if (nvlist_lookup_int32(innvl, "type", &type32) != 0)
 		return (SET_ERROR(EINVAL));
@@ -3112,7 +3115,19 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 									nvprops, outnvl);
 		if (error != 0)
 			(void) dsl_destroy_head(fsname);
+
+#ifdef __APPLE__
+		if (type == DMU_OST_ZVOL) {
+			if ((error = spa_open(fsname, &spa, FTAG)) != 0)
+				return (error);
+
+			zvol_create_minors(spa, fsname, B_TRUE);
+
+			spa_close(spa, FTAG);
+		}
+#endif
 	}
+
 	return (error);
 }
 
@@ -3131,6 +3146,9 @@ zfs_ioc_clone(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 	int error = 0;
 	nvlist_t *nvprops = NULL;
 	char *origin_name;
+#ifdef __APPLE__
+	spa_t *spa = 0;
+#endif
 
 	if (nvlist_lookup_string(innvl, "origin", &origin_name) != 0)
 		return (SET_ERROR(EINVAL));
@@ -3154,6 +3172,15 @@ zfs_ioc_clone(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 									nvprops, outnvl);
 		if (error != 0)
 			(void) dsl_destroy_head(fsname);
+
+#ifdef __APPLE__
+			if ((error = spa_open(fsname, &spa, FTAG)) != 0)
+				return (error);
+
+			zvol_create_minors(spa, fsname, B_TRUE);
+
+			spa_close(spa, FTAG);
+#endif
 	}
 	return (error);
 }
