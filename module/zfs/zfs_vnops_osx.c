@@ -251,7 +251,7 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 		if (!VFS_ROOT(mp, 0, &rootvp)) {
 
 			struct componentname cn;
-			char *tmpname = ".Trashes";
+			char *tmpname = ".fseventsd";
 
 			bzero(&cn, sizeof(cn));
 			cn.cn_nameiop = LOOKUP;
