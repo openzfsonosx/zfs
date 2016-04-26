@@ -1979,7 +1979,7 @@ int bluster_pagein(znode_t *zp, upl_t upl, upl_offset_t upl_offset,
 		ubc_upl_abort_range(upl, upl_offset + rounded_size,
 							size - rounded_size, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR);
 
-	printf("ZFS: pagein2 offset 0x%llx size 0x%llx into memory offset 0x%llx\n",
+	dprintf("ZFS: pagein2 offset 0x%llx size 0x%llx into memory offset 0x%llx\n",
 		   f_offset, size, upl_offset);
 	retval = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, f_offset, size,
 					  (void *)&vaddr[upl_offset], DMU_READ_PREFETCH);
