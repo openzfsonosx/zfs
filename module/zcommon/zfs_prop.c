@@ -382,7 +382,12 @@ zfs_prop_init(void)
 	zprop_register_string(ZFS_PROP_SHARESMB, "sharesmb", "off",
 	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM,
 	    "on | off | sharemgr(1M) options", "SHARESMB");
-	zprop_register_string(ZFS_PROP_MLSLABEL, "mlslabel",
+#ifdef __APPLE__
+    zprop_register_string(ZFS_PROP_SHAREAFP, "shareafp", "off",
+	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM,
+	    "on | off | sharing(1) options", "SHAREAFP");
+#endif
+    zprop_register_string(ZFS_PROP_MLSLABEL, "mlslabel",
 	    ZFS_MLSLABEL_DEFAULT, PROP_INHERIT, ZFS_TYPE_DATASET,
 	    "<sensitivity label>", "MLSLABEL");
     zprop_register_string(ZFS_PROP_RECEIVE_RESUME_TOKEN,

@@ -4668,7 +4668,7 @@ deleg_perm_comment(zfs_deleg_note_t note)
 		str = gettext("");
 		break;
 	case ZFS_DELEG_NOTE_SHARE:
-		str = gettext("Allows sharing file systems over NFS or SMB"
+		str = gettext("Allows sharing file systems over NFS, SMB or AFP"
 		    "\n\t\t\t\tprotocols");
 		break;
 	case ZFS_DELEG_NOTE_SNAPSHOT:
@@ -5782,10 +5782,11 @@ share_mount_one(zfs_handle_t *zhp, int op, int flags, char *protocol,
 	char mountpoint[ZFS_MAXPROPLEN];
 	char shareopts[ZFS_MAXPROPLEN];
 	char smbshareopts[ZFS_MAXPROPLEN];
+	char afpshareopts[ZFS_MAXPROPLEN];
 	const char *cmdname = op == OP_SHARE ? "share" : "mount";
 	struct mnttab mnt;
 	uint64_t zoned, canmount;
-	boolean_t shared_nfs, shared_smb;
+	boolean_t shared_nfs, shared_smb, shared_afp;
 
     /*
      * We will allow snapshot for a short time as well on OSX
@@ -5830,9 +5831,12 @@ share_mount_one(zfs_handle_t *zhp, int op, int flags, char *protocol,
 	    sizeof (shareopts), NULL, NULL, 0, B_FALSE) == 0);
 	verify(zfs_prop_get(zhp, ZFS_PROP_SHARESMB, smbshareopts,
 	    sizeof (smbshareopts), NULL, NULL, 0, B_FALSE) == 0);
+	verify(zfs_prop_get(zhp, ZFS_PROP_SHAREAFP, afpshareopts,
+	    sizeof (afpshareopts), NULL, NULL, 0, B_FALSE) == 0);
 
 	if (op == OP_SHARE && strcmp(shareopts, "off") == 0 &&
-	    strcmp(smbshareopts, "off") == 0) {
+	    strcmp(smbshareopts, "off") == 0 &&
+	    strcmp(afpshareopts, "off") == 0) {
 		if (!explicit)
 			return (0);
 
@@ -5921,11 +5925,14 @@ share_mount_one(zfs_handle_t *zhp, int op, int flags, char *protocol,
 
 		shared_nfs = zfs_is_shared_nfs(zhp, NULL);
 		shared_smb = zfs_is_shared_smb(zhp, NULL);
+		shared_afp = zfs_is_shared_afp(zhp, NULL);
 
-		if ((shared_nfs && shared_smb) ||
+		if ((shared_nfs && shared_smb && shared_afp) ||
 		    ((shared_nfs && strcmp(shareopts, "on") == 0) &&
 		    (strcmp(smbshareopts, "off") == 0)) ||
 		    ((shared_smb && strcmp(smbshareopts, "on") == 0) &&
+		    (strcmp(shareopts, "off") == 0)) ||
+		    ((shared_afp && strcmp(afpshareopts, "on") == 0) &&
 		    (strcmp(shareopts, "off") == 0))) {
 			if (!explicit)
 				return (0);
@@ -5948,6 +5955,9 @@ share_mount_one(zfs_handle_t *zhp, int op, int flags, char *protocol,
 				return (1);
 		} else if (strcmp(protocol, "smb") == 0) {
 			if (zfs_share_smb(zhp))
+				return (1);
+		} else if (strcmp(protocol, "afp") == 0) {
+			if (zfs_share_afp(zhp))
 				return (1);
 		} else {
 			(void) fprintf(stderr, gettext("cannot share "
@@ -6092,9 +6102,10 @@ share_mount(int op, int argc, char **argv)
 
 		if (op == OP_SHARE && argc > 0) {
 			if (strcmp(argv[0], "nfs") != 0 &&
-			    strcmp(argv[0], "smb") != 0) {
+			    strcmp(argv[0], "smb") != 0 &&
+			    strcmp(argv[0], "afp") != 0) {
 				(void) fprintf(stderr, gettext("share type "
-				    "must be 'nfs' or 'smb'\n"));
+				    "must be 'nfs' or 'smb' or 'afp'\n"));
 				usage(B_FALSE);
 			}
 			protocol = argv[0];
@@ -6206,7 +6217,7 @@ zfs_do_mount(int argc, char **argv)
 }
 
 /*
- * zfs share -a [nfs | smb]
+ * zfs share -a [nfs | smb | afp]
  * zfs share filesystem
  *
  * Share all filesystems, or share the given filesystem.
@@ -6328,14 +6339,18 @@ unshare_unmount_path(int op, char *path, int flags, boolean_t is_manual)
 	if (op == OP_SHARE) {
 		char nfs_mnt_prop[ZFS_MAXPROPLEN];
 		char smbshare_prop[ZFS_MAXPROPLEN];
+		char afpshare_prop[ZFS_MAXPROPLEN];
 
 		verify(zfs_prop_get(zhp, ZFS_PROP_SHARENFS, nfs_mnt_prop,
 		    sizeof (nfs_mnt_prop), NULL, NULL, 0, B_FALSE) == 0);
 		verify(zfs_prop_get(zhp, ZFS_PROP_SHARESMB, smbshare_prop,
 		    sizeof (smbshare_prop), NULL, NULL, 0, B_FALSE) == 0);
+		verify(zfs_prop_get(zhp, ZFS_PROP_SHAREAFP, afpshare_prop,
+		    sizeof (afpshare_prop), NULL, NULL, 0, B_FALSE) == 0);
 
 		if (strcmp(nfs_mnt_prop, "off") == 0 &&
-		    strcmp(smbshare_prop, "off") == 0) {
+		    strcmp(smbshare_prop, "off") == 0 &&
+		    strcmp(afpshare_prop, "off") == 0) {
 			(void) fprintf(stderr, gettext("cannot unshare "
 			    "'%s': legacy share\n"), path);
 			(void) fprintf(stderr, gettext("use exportfs(8) "
@@ -6384,6 +6399,7 @@ unshare_unmount(int op, int argc, char **argv)
 	zfs_handle_t *zhp;
 	char nfs_mnt_prop[ZFS_MAXPROPLEN];
 	char sharesmb[ZFS_MAXPROPLEN];
+	char shareafp[ZFS_MAXPROPLEN];
 
 	/* check options */
 	while ((c = getopt(argc, argv, op == OP_SHARE ? "a" : "af")) != -1) {
@@ -6485,6 +6501,12 @@ unshare_unmount(int op, int argc, char **argv)
 				if (strcmp(nfs_mnt_prop, "off") != 0)
 					break;
 				verify(zfs_prop_get(zhp, ZFS_PROP_SHARESMB,
+				    nfs_mnt_prop,
+				    sizeof (nfs_mnt_prop),
+				    NULL, NULL, 0, B_FALSE) == 0);
+				if (strcmp(nfs_mnt_prop, "off") == 0)
+					continue;
+				verify(zfs_prop_get(zhp, ZFS_PROP_SHAREAFP,
 				    nfs_mnt_prop,
 				    sizeof (nfs_mnt_prop),
 				    NULL, NULL, 0, B_FALSE) == 0);
@@ -6611,9 +6633,13 @@ unshare_unmount(int op, int argc, char **argv)
 			verify(zfs_prop_get(zhp, ZFS_PROP_SHARESMB,
 			    sharesmb, sizeof (sharesmb), NULL, NULL,
 			    0, B_FALSE) == 0);
+			verify(zfs_prop_get(zhp, ZFS_PROP_SHAREAFP,
+			    shareafp, sizeof (shareafp), NULL, NULL,
+			    0, B_FALSE) == 0);
 
 			if (strcmp(nfs_mnt_prop, "off") == 0 &&
-			    strcmp(sharesmb, "off") == 0) {
+			    strcmp(sharesmb, "off") == 0 &&
+			    strcmp(shareafp, "off") == 0) {
 				(void) fprintf(stderr, gettext("cannot "
 				    "unshare '%s': legacy share\n"),
 				    zfs_get_name(zhp));
