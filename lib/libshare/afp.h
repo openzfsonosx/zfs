@@ -19,4 +19,4 @@
  * CDDL HEADER END
  */
 
-void libshare_smb_init(void);
+void libshare_afp_init(void);

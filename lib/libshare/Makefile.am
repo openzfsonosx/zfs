@@ -14,4 +14,6 @@ libshare_la_SOURCES = \
 	nfs.c \
 	nfs.h \
 	smb.c \
-	smb.h
+	smb.h \
+	afp.c \
+	afp.h
