@@ -909,18 +909,14 @@ libzfs_init(void)
 		return (NULL);
 	}
 
-#ifdef __APPLE__
-#define ZFS_EXPORTS_PATH "/etc/exports"
-#endif
-
-#ifdef ZFS_EXPORTS_PATH
+#ifdef SHARETAB
 	hdl->libzfs_sharetab = fopen(ZFS_EXPORTS_PATH, "r");
 #endif
 
 	if (libzfs_core_init() != 0) {
 		(void) close(hdl->libzfs_fd);
 		(void) fclose(hdl->libzfs_mnttab);
-#ifdef ZFS_EXPORTS_PATH
+#ifdef SHARETAB
 		(void) fclose(hdl->libzfs_sharetab);
 #endif
 		free(hdl);
