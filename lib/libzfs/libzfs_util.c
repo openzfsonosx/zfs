@@ -262,6 +262,10 @@ libzfs_error_description(libzfs_handle_t *hdl)
 		return (dgettext(TEXT_DOMAIN, "invalid diff data"));
 	case EZFS_POOLREADONLY:
 		return (dgettext(TEXT_DOMAIN, "pool is read-only"));
+	case EZFS_UNSHAREAFPFAILED:
+		return (dgettext(TEXT_DOMAIN, "afp remove share failed"));
+	case EZFS_SHAREAFPFAILED:
+		return (dgettext(TEXT_DOMAIN, "afp add share failed"));
 	case EZFS_UNKNOWN:
 		return (dgettext(TEXT_DOMAIN, "unknown error"));
 	default:

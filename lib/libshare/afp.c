@@ -20,9 +20,7 @@
  */
 
 /*
- * Copyright (c) 2002, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2016 Jorgen Lundman <lundman@lundman.net>, based on nfs.c
- *                         by Gunnar Beutner
+ * Copyright (c) 2016 Jorgen Lundman <lundman@lundman.net>
  *
  */
 
@@ -41,27 +39,27 @@
 #include <ctype.h>
 #include <sys/socket.h>
 #include "libshare_impl.h"
-#include "smb.h"
+#include "afp.h"
 
-static boolean_t smb_available(void);
+static boolean_t afp_available(void);
 
-static sa_fstype_t *smb_fstype;
+static sa_fstype_t *afp_fstype;
 
-#define	SMB_NAME_MAX		255
+#define	AFP_NAME_MAX		255
 
 #define	SHARING_CMD_PATH		"/usr/sbin/sharing"
 
-typedef struct smb_share_s {
-	char name[SMB_NAME_MAX];	/* Share name */
+typedef struct afp_share_s {
+	char name[AFP_NAME_MAX];	/* Share name */
 	char path[PATH_MAX];		/* Share path */
 	boolean_t guest_ok;		    /* boolean */
 
-	boolean_t afpshared;	    /* AFP sharing on? */
+	boolean_t smbshared;	    /* SMB sharing on? */
 
-	struct smb_share_s *next;
-} smb_share_t;
+	struct afp_share_s *next;
+} afp_share_t;
 
-smb_share_t *smb_shares = NULL;
+afp_share_t *afp_shares = NULL;
 
 /*
  * Parse out a "value" part of a "line" of input. By skipping white space.
@@ -131,15 +129,15 @@ static int spawn_with_pipe(const char *path, char *argv[], int flags)
 
 
 /*
- * Retrieve the list of SMB shares. We execute "dscl . -readall /SharePoints"
+ * Retrieve the list of AFP shares. We execute "dscl . -readall /SharePoints"
  * which gets us shares in the format:
  * dsAttrTypeNative:directory_path: /Volumes/BOOM/zfstest
- * dsAttrTypeNative:smb_name: zfstest
- * dsAttrTypeNative:smb_shared: 1
- * dsAttrTypeNative:smb_guestaccess: 1
+ * dsAttrTypeNative:afp_name: zfstest
+ * dsAttrTypeNative:afp_shared: 1
+ * dsAttrTypeNative:afp_guestaccess: 1
  *
  * Note that long lines can be continued on the next line, with a leading space:
- * dsAttrTypeNative:smb_name:
+ * dsAttrTypeNative:afp_name:
  *  lundman's Public Folder
  *
  * We don't use "sharing -l" as its output format is "peculiar".
@@ -149,12 +147,12 @@ static int spawn_with_pipe(const char *path, char *argv[], int flags)
  *
  */
 static int
-smb_retrieve_shares(void)
+afp_retrieve_shares(void)
 {
 	char line[512];
-	char *path = NULL, *shared = NULL, *name = NULL, *afpshared = NULL;
+	char *path = NULL, *shared = NULL, *name = NULL, *smbshared = NULL;
 	char *guest = NULL, *r;
-	smb_share_t *shares, *new_shares = NULL;
+	afp_share_t *shares, *new_shares = NULL;
 	int fd;
 	FILE *file = NULL;
 	char *argv[8] = {
@@ -180,31 +178,31 @@ smb_retrieve_shares(void)
 		if ((r = strchr(line, '\r'))) *r = 0;
 		if ((r = strchr(line, '\n'))) *r = 0;
 
-		if (get_attribute("dsAttrTypeNative:smb_name:", line, &name, file) ||
+		if (get_attribute("dsAttrTypeNative:afp_name:", line, &name, file) ||
 			get_attribute("dsAttrTypeNative:directory_path:", line, &path, file) ||
-			get_attribute("dsAttrTypeNative:smb_guestaccess:", line, &guest, file) ||
-			get_attribute("dsAttrTypeNative:smb_shared:", line, &shared, file) ||
-			get_attribute("dsAttrTypeNative:afp_shared:", line, &afpshared, file)) {
+			get_attribute("dsAttrTypeNative:afp_guestaccess:", line, &guest, file) ||
+			get_attribute("dsAttrTypeNative:afp_shared:", line, &shared, file) ||
+			get_attribute("dsAttrTypeNative:smb_shared:", line, &smbshared, file)) {
 
-			// If we have all desired attributes, create a new share,
-			// AND it is currently shared (not just listed)
-			if (name && path && guest && shared && afpshared &&
+			// If we have all desired attributes, create a new share
+			// AND currently shared (not just listed)
+			if (name && path && guest && shared && smbshared &&
 				atoi(shared) != 0) {
 
-				shares = (smb_share_t *)
-						malloc(sizeof (smb_share_t));
+				shares = (afp_share_t *)
+						malloc(sizeof (afp_share_t));
 
 				if (shares) {
 					strlcpy(shares->name, name,
 							sizeof (shares->name));
 					strlcpy(shares->path, path,
 							sizeof (shares->path));
-					shares->guest_ok = atoi(guest);
+					shares->guest_ok  = atoi(guest);
 
-					shares->afpshared = atoi(afpshared);
+					shares->smbshared = atoi(smbshared);
 
 #ifdef DEBUG
-					fprintf(stderr, "ZFS: smbshare '%s' mount '%s'\r\n",
+					fprintf(stderr, "ZFS: afpshare '%s' mount '%s'\r\n",
 							name, path);
 #endif
 
@@ -224,7 +222,7 @@ smb_retrieve_shares(void)
 			if (path)   {	free(path); 	path  = NULL; }
 			if (guest)  {	free(guest);	guest = NULL; }
 			if (shared) {	free(shared);	shared = NULL; }
-			if (afpshared) {free(afpshared);afpshared = NULL; }
+			if (smbshared) {free(smbshared);smbshared = NULL; }
 		} // if "-"
 	} // while fgets
 
@@ -235,47 +233,46 @@ smb_retrieve_shares(void)
 	if (path)   {	free(path); 	path  = NULL; }
 	if (guest)  {	free(guest);	guest = NULL; }
 	if (shared) {	free(shared);	shared = NULL; }
-	if (afpshared) {free(afpshared);afpshared = NULL; }
+	if (smbshared) {free(smbshared);smbshared = NULL; }
 
 	/*
 	 * The ZOL implementation here just leaks the previous list in
-	 * "smb_shares" each time this is called, and it is called a lot.
+	 * "afp_shares" each time this is called, and it is called a lot.
 	 * We really should iterate through and release nodes. Alternatively
 	 * only update if we have not run before, and have a way to force
 	 * a refresh after enabling/disabling a share.
 	 */
-	smb_shares = new_shares;
+	afp_shares = new_shares;
 
 	return (SA_OK);
 }
 
 /*
- * Used internally by smb_enable_share to enable sharing for a single host.
+ * Used internally by afp_enable_share to enable sharing for a single host.
  */
 static int
-smb_enable_share_one(const char *sharename, const char *sharepath)
+afp_enable_share_one(const char *sharename, const char *sharepath)
 {
 	char *argv[10];
 	int rc;
-	smb_share_t *shares = smb_shares;
-	int afpshared = 0;
+	afp_share_t *shares = afp_shares;
+	int smbshared = 0;
 
 	/* Loop through shares and check if our share is also smbshared */
 	while (shares != NULL) {
 		if (strcmp(sharepath, shares->path) == 0) {
-			afpshared = shares->afpshared;
+			smbshared = shares->smbshared;
 			break;
 		}
 		shares = shares->next;
 	}
 
 	/*
-	 * CMD: sharing -a /mountpoint -s 001 -g 001
-	 * Where -s 001 specified sharing smb, not ftp nor afp.
-	 *   and -g 001 specifies to enable guest on smb.
-	 * Note that the OS X 10.11 man-page incorrectly claims 010 for smb
+	 * CMD: sharing -a /mountpoint -s 100 -g 100
+	 * Where -s 100 specified sharing afp, not ftp nor smb.
+	 *   and -g 100 specifies to enable guest on afp.
 	 */
-	if (afpshared) {
+	if (smbshared) {
 
 		argv[0] = SHARING_CMD_PATH;
 		argv[1] = (char *)"-e";
@@ -292,9 +289,9 @@ smb_enable_share_one(const char *sharename, const char *sharepath)
 		argv[1] = (char *)"-a";
 		argv[2] = (char *)sharepath;
 		argv[3] = (char *)"-s";
-		argv[4] = (char *)"001";
+		argv[4] = (char *)"100";
 		argv[5] = (char *)"-g";
-		argv[6] = (char *)"001";
+		argv[6] = (char *)"100";
 		argv[7] = NULL;
 	}
 
@@ -308,23 +305,23 @@ smb_enable_share_one(const char *sharename, const char *sharepath)
 		return (SA_SYSTEM_ERR);
 
 	/* Reload the share file */
-	(void) smb_retrieve_shares();
+	(void) afp_retrieve_shares();
 
 	return (SA_OK);
 }
 
 /*
- * Enables SMB sharing for the specified share.
+ * Enables AFP sharing for the specified share.
  */
 static int
-smb_enable_share(sa_share_impl_t impl_share)
+afp_enable_share(sa_share_impl_t impl_share)
 {
 	char *shareopts;
 
-	if (!smb_available())
+	if (!afp_available())
 		return (SA_SYSTEM_ERR);
 
-	shareopts = FSINFO(impl_share, smb_fstype)->shareopts;
+	shareopts = FSINFO(impl_share, afp_fstype)->shareopts;
 	if (shareopts == NULL) /* on/off */
 		return (SA_SYSTEM_ERR);
 
@@ -332,29 +329,29 @@ smb_enable_share(sa_share_impl_t impl_share)
 		return (SA_OK);
 
 	/* Magic: Enable (i.e., 'create new') share */
-	return (smb_enable_share_one(impl_share->dataset,
-	    impl_share->sharepath));
+	return (afp_enable_share_one(impl_share->dataset,
+								 impl_share->sharepath));
 }
 
 /*
- * Used internally by smb_disable_share to disable sharing for a single host.
+ * Used internally by afp_disable_share to disable sharing for a single host.
  */
 static int
-smb_disable_share_one(const char *sharename, int afpshared)
+afp_disable_share_one(const char *sharename, int smbshared)
 {
 	int rc;
 	char *argv[8];
 
-	// If AFP shared as well, we need to just remove SMB.
-	if (afpshared) {
+	// If SMB shared as well, we need to just remove AFP.
+	if (smbshared) {
 
 		argv[0] = SHARING_CMD_PATH;
 		argv[1] = (char *)"-e";
 		argv[2] = (char *)sharename;
 		argv[3] = (char *)"-s";
-		argv[4] = (char *)"100";  // SMB off, AFP on.
+		argv[4] = (char *)"001";  // AFP off, SMB on.
 		argv[5] = (char *)"-g";
-		argv[6] = (char *)"100";  // SMB off, AFP on.
+		argv[6] = (char *)"001";  // AFP off, SMB on.
 		argv[7] = NULL;
 
 	} else {  // Not SMB shared, just remove share
@@ -379,14 +376,14 @@ smb_disable_share_one(const char *sharename, int afpshared)
 }
 
 /*
- * Disables SMB sharing for the specified share.
+ * Disables AFP sharing for the specified share.
  */
 static int
-smb_disable_share(sa_share_impl_t impl_share)
+afp_disable_share(sa_share_impl_t impl_share)
 {
-	smb_share_t *shares = smb_shares;
+	afp_share_t *shares = afp_shares;
 
-	if (!smb_available()) {
+	if (!afp_available()) {
 		/*
 		 * The share can't possibly be active, so nothing
 		 * needs to be done to disable it.
@@ -396,7 +393,7 @@ smb_disable_share(sa_share_impl_t impl_share)
 
 	while (shares != NULL) {
 		if (strcmp(impl_share->sharepath, shares->path) == 0)
-			return (smb_disable_share_one(shares->name, shares->afpshared));
+			return (afp_disable_share_one(shares->name, shares->smbshared));
 
 		shares = shares->next;
 	}
@@ -405,10 +402,10 @@ smb_disable_share(sa_share_impl_t impl_share)
 }
 
 /*
- * Checks whether the specified SMB share options are syntactically correct.
+ * Checks whether the specified AFP share options are syntactically correct.
  */
 static int
-smb_validate_shareopts(const char *shareopts)
+afp_validate_shareopts(const char *shareopts)
 {
 	/* TODO: Accept 'name' and sec/acl (?) */
 	if ((strcmp(shareopts, "off") == 0) || (strcmp(shareopts, "on") == 0))
@@ -420,36 +417,36 @@ smb_validate_shareopts(const char *shareopts)
 /*
  * Checks whether a share is currently active. Called from libzfs_mount
  */
-boolean_t smb_is_mountpoint_active(const char *mountpoint)
+boolean_t afp_is_mountpoint_active(const char *mountpoint)
 {
-	smb_retrieve_shares();
+	afp_retrieve_shares();
 
-	while (smb_shares != NULL) {
-		if (strcmp(mountpoint, smb_shares->path) == 0)
+	while (afp_shares != NULL) {
+		if (strcmp(mountpoint, afp_shares->path) == 0)
 			return (B_TRUE);
 
-		smb_shares = smb_shares->next;
+		afp_shares = afp_shares->next;
 	}
 
 	return (B_FALSE);
 }
 
 static boolean_t
-smb_is_share_active(sa_share_impl_t impl_share)
+afp_is_share_active(sa_share_impl_t impl_share)
 {
-	return smb_is_mountpoint_active(impl_share->sharepath);
+	return afp_is_mountpoint_active(impl_share->sharepath);
 }
 
 
 
 /*
  * Called to update a share's options. A share's options might be out of
- * date if the share was loaded from disk and the "sharesmb" dataset
+ * date if the share was loaded from disk and the "shareafp" dataset
  * property has changed in the meantime. This function also takes care
  * of re-enabling the share if necessary.
  */
 static int
-smb_update_shareopts(sa_share_impl_t impl_share, const char *resource,
+afp_update_shareopts(sa_share_impl_t impl_share, const char *resource,
     const char *shareopts)
 {
 	char *shareopts_dup;
@@ -459,15 +456,15 @@ smb_update_shareopts(sa_share_impl_t impl_share, const char *resource,
 	if (!impl_share)
 		return (SA_SYSTEM_ERR);
 
-	FSINFO(impl_share, smb_fstype)->active =
-	    smb_is_share_active(impl_share);
+	FSINFO(impl_share, afp_fstype)->active =
+	    afp_is_share_active(impl_share);
 
-	old_shareopts = FSINFO(impl_share, smb_fstype)->shareopts;
+	old_shareopts = FSINFO(impl_share, afp_fstype)->shareopts;
 
-	if (FSINFO(impl_share, smb_fstype)->active && old_shareopts != NULL &&
+	if (FSINFO(impl_share, afp_fstype)->active && old_shareopts != NULL &&
 		strcmp(old_shareopts, shareopts) != 0) {
 		needs_reshare = B_TRUE;
-		smb_disable_share(impl_share);
+		afp_disable_share(impl_share);
 	}
 
 	shareopts_dup = strdup(shareopts);
@@ -478,39 +475,39 @@ smb_update_shareopts(sa_share_impl_t impl_share, const char *resource,
 	if (old_shareopts != NULL)
 		free(old_shareopts);
 
-	FSINFO(impl_share, smb_fstype)->shareopts = shareopts_dup;
+	FSINFO(impl_share, afp_fstype)->shareopts = shareopts_dup;
 
 	if (needs_reshare)
-		smb_enable_share(impl_share);
+		afp_enable_share(impl_share);
 
 	return (SA_OK);
 }
 
 /*
- * Clears a share's SMB options. Used by libshare to
+ * Clears a share's AFP options. Used by libshare to
  * clean up shares that are about to be free()'d.
  */
 static void
-smb_clear_shareopts(sa_share_impl_t impl_share)
+afp_clear_shareopts(sa_share_impl_t impl_share)
 {
-	free(FSINFO(impl_share, smb_fstype)->shareopts);
-	FSINFO(impl_share, smb_fstype)->shareopts = NULL;
+	free(FSINFO(impl_share, afp_fstype)->shareopts);
+	FSINFO(impl_share, afp_fstype)->shareopts = NULL;
 }
 
-static const sa_share_ops_t smb_shareops = {
-	.enable_share = smb_enable_share,
-	.disable_share = smb_disable_share,
+static const sa_share_ops_t afp_shareops = {
+	.enable_share = afp_enable_share,
+	.disable_share = afp_disable_share,
 
-	.validate_shareopts = smb_validate_shareopts,
-	.update_shareopts = smb_update_shareopts,
-	.clear_shareopts = smb_clear_shareopts,
+	.validate_shareopts = afp_validate_shareopts,
+	.update_shareopts = afp_update_shareopts,
+	.clear_shareopts = afp_clear_shareopts,
 };
 
 /*
- * Provides a convenient wrapper for determining SMB availability
+ * Provides a convenient wrapper for determining AFP availability
  */
 static boolean_t
-smb_available(void)
+afp_available(void)
 {
 
 	if (access(SHARING_CMD_PATH, F_OK) != 0)
@@ -520,10 +517,10 @@ smb_available(void)
 }
 
 /*
- * Initializes the SMB functionality of libshare.
+ * Initializes the AFP functionality of libshare.
  */
 void
-libshare_smb_init(void)
+libshare_afp_init(void)
 {
-	smb_fstype = register_fstype("smb", &smb_shareops);
+	afp_fstype = register_fstype("afp", &afp_shareops);
 }

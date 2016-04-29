@@ -37,6 +37,7 @@
 #include "libshare_impl.h"
 #include "nfs.h"
 #include "smb.h"
+#include "afp.h"
 
 static sa_share_impl_t find_share(sa_handle_impl_t handle,
     const char *sharepath);
@@ -116,6 +117,7 @@ libshare_init(void)
 {
 	libshare_nfs_init();
 	libshare_smb_init();
+	libshare_afp_init();
 
 	/*
 	 * This bit causes /etc/dfs/sharetab to be updated before libzfs gets a
@@ -296,6 +298,14 @@ update_zfs_shares_cb(zfs_handle_t *zhp, void *pcookie)
 	    strcmp(shareopts, "off") != 0) {
 		(void) process_share(udata->handle, NULL, mountpoint, NULL,
 		    "smb", shareopts, NULL, dataset, B_FALSE);
+	}
+
+	if ((udata->proto == NULL || strcmp(udata->proto, "afp") == 0) &&
+	    zfs_prop_get(zhp, ZFS_PROP_SHAREAFP, shareopts,
+	    sizeof (shareopts), NULL, NULL, 0, B_FALSE) == 0 &&
+	    strcmp(shareopts, "off") != 0) {
+		(void) process_share(udata->handle, NULL, mountpoint, NULL,
+		    "afp", shareopts, NULL, dataset, B_FALSE);
 	}
 
 	zfs_close(zhp);
