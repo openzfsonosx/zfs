@@ -14,6 +14,4 @@ USER_C = \
 	nfs.c \
 	nfs.h \
 	smb.c \
-	smb.h \
-	afp.c \
-	afp.h
+	smb.h
