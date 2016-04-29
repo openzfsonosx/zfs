@@ -135,7 +135,7 @@ static zfs_share_type_t
 is_shared(libzfs_handle_t *hdl, const char *mountpoint, zfs_share_proto_t proto)
 {
 	char buf[MAXPATHLEN], *tab;
-	char *ptr;
+	char *ptr, *path;
 
 	if (hdl->libzfs_sharetab == NULL)
 		return (SHARED_NOT_SHARED);
@@ -148,8 +148,27 @@ is_shared(libzfs_handle_t *hdl, const char *mountpoint, zfs_share_proto_t proto)
 		if ((tab = strchr(buf, '\t')) == NULL)
 			continue;
 
+		path = buf;
+
+#ifdef __APPLE__
+		/* In OSX we wrap the name in quotes, "name" so that spaces work */
+		if (buf[0] == '"')
+			path = &buf[1];
+		--tab;
+		if (*tab == '"') *tab = 0;
+		++tab;
+#endif
+
 		*tab = '\0';
-		if (strcmp(buf, mountpoint) == 0) {
+		if (strcmp(path, mountpoint) == 0) {
+
+#ifdef __APPLE__
+			/* OSX export is only NFS */
+			if (proto == PROTO_NFS) {
+				return (SHARED_NFS);
+			}
+#endif
+
 			/*
 			 * the protocol field is the third field
 			 * skip over second field
