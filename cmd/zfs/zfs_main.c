@@ -3482,7 +3482,7 @@ zfs_do_rollback(int argc, char **argv)
 		char mountpoint[ZFS_MAXPROPLEN];
         zprop_source_t sourcetype;
 
-        if (zfs_prop_valid_for_type(ZFS_PROP_MOUNTPOINT, zhp->zfs_type)) {
+        if (zfs_prop_valid_for_type(ZFS_PROP_MOUNTPOINT, zhp->zfs_type, B_FALSE)) {
 			if (zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT,
 				mountpoint, sizeof(mountpoint),
 				&sourcetype, sourceloc, sizeof (sourceloc), B_FALSE) == 0)
