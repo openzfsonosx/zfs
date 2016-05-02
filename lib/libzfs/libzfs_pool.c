@@ -1258,6 +1258,21 @@ zpool_create(libzfs_handle_t *hdl, const char *pool, nvlist_t *nvroot,
 			    "lvm device"));
 			return (zfs_error(hdl, EZFS_BADDEV, msg));
 
+		case ERANGE:
+			/*
+			 * This happens if the record size is smaller or larger
+			 * than the allowed size range, or not a power of 2.
+			 *
+			 * NOTE: although zfs_valid_proplist is called earlier,
+			 * this case may have slipped through since the
+			 * pool does not exist yet and it is therefore
+			 * impossible to read properties e.g. max blocksize
+			 * from the pool.
+			 */
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+										"record size invalid"));
+			return (zfs_error(hdl, EZFS_BADPROP, msg));
+
 		case EOVERFLOW:
 			/*
 			 * This occurs when one of the devices is below

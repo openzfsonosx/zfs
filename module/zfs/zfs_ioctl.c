@@ -3723,7 +3723,7 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 			 */
 			if (zfs_is_bootfs(dsname) &&
 			    intval > SPA_OLD_MAXBLOCKSIZE) {
-				return (SET_ERROR(EDOM));
+				return (SET_ERROR(ERANGE));
 			}
 
 			/*
@@ -3732,7 +3732,7 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 			 */
 			if (intval > zfs_max_recordsize ||
 			    intval > SPA_MAXBLOCKSIZE)
-				return (SET_ERROR(EDOM));
+				return (SET_ERROR(ERANGE));
 
 			if ((err = spa_open(dsname, &spa, FTAG)) != 0)
 				return (err);
