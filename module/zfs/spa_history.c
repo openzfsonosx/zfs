@@ -181,15 +181,7 @@ spa_history_write(spa_t *spa, void *buf, uint64_t len, spa_history_phys_t *shpp,
 static char *
 spa_history_zone(void)
 {
-#ifdef _KERNEL
-#ifdef HAVE_SPL
-	return ("OSX");
-#else
-	return (curproc->p_zone->zone_name);
-#endif
-#else
 	return (NULL);
-#endif
 }
 
 /*
