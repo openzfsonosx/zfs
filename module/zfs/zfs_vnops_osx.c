@@ -472,12 +472,6 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			/* Required by Spotlight search */
 			break;
 
-		case F_FREESP:
-			/* Solaris fcntl which is not supported by XNU, but
-			 * test layer uses it
-			 */
-			return zfs_space(ap->a_vp, F_FREESP, (struct flock *)ap->a_data,
-							 FWRITE, 0, cr, ct);
 
 
 		/* ioctl required to simulate HFS mimic behavior */
