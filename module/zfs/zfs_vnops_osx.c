@@ -245,7 +245,7 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 		if (availbytes == delta)
 			goto out;
 
-		dprintf("ZFS: findernotify space delta %llu\n", mp, delta);
+		dprintf("ZFS: findernotify %p space delta %llu\n", mp, delta);
 
 		// Grab the root zp
 		if (!VFS_ROOT(mp, 0, &rootvp)) {
@@ -296,7 +296,6 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 static void
 zfs_findernotify_thread(void *notused)
 {
-	clock_t			growtime = 0;
 	callb_cpr_t		cpr;
 
 	dprintf("ZFS: findernotify thread start\n");
@@ -411,6 +410,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 	znode_t *zp = VTOZ(ap->a_vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error = 0;
+	static uint64_t flock_value = 0;
 	DECLARE_CRED_AND_CONTEXT(ap);
 
 	dprintf("vnop_ioctl %08lx: VTYPE %d\n", ap->a_command,
@@ -472,12 +472,37 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			/* Required by Spotlight search */
 			break;
 
-		case F_FREESP:
-			/* Solaris fcntl which is not supported by XNU, but
-			 * test layer uses it
+#ifdef ZFS_DEBUG
+			/*
+			 * Darwin will not let us define our own fcntl( , void *)
+			 * only of type "int", so we have two fcntl and send the
+			 * high portion of the ptr first. Clearly this is not
+			 * going to be OK.
 			 */
-			return zfs_space(ap->a_vp, F_FREESP, (struct flock *)ap->a_data,
-							 FWRITE, 0, cr, ct);
+		case F_FREESP_HIGH:
+			flock_value = (uint64_t) *(uint32_t *)ap->a_data<<32;
+			break;
+		case F_FREESP:
+		{
+			if (!flock_value) {
+				error = EINVAL;
+				goto out;
+			}
+
+			flock_value |= (uint64_t) *(uint32_t *)ap->a_data;
+			struct flock fl;
+
+			error = copyin((void *)flock_value, &fl, sizeof(fl));
+
+			dprintf("ZFS: %p %d freesp: whence %d start %llu len %llu\n",
+					fl, error,
+					fl.l_whence, fl.l_start, fl.l_len);
+			error = zfs_space(ap->a_vp, F_FREESP, &fl,
+							  FWRITE, 0, cr, ct);
+			flock_value = 0;
+		}
+			break;
+#endif
 
 
 		/* ioctl required to simulate HFS mimic behavior */
