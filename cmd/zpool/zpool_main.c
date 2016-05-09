@@ -321,7 +321,7 @@ get_usage(zpool_help_t idx) {
 	case HELP_LABELCLEAR:
 		return (gettext("\tlabelclear [-f] <vdev>\n"));
 	case HELP_LIST:
-		return (gettext("\tlist [-gHLPv] [-o property[,...]] "
+		return (gettext("\tlist [-gHLpPv] [-o property[,...]] "
 		    "[-T d|u] [pool] ... [interval [count]]\n"));
 	case HELP_OFFLINE:
 		return (gettext("\toffline [-t] <pool> <device> ...\n"));
@@ -3723,7 +3723,7 @@ list_callback(zpool_handle_t *zhp, void *data)
 }
 
 /*
- * zpool list [-gHLP] [-o prop[,prop]*] [-T d|u] [pool] ... [interval [count]]
+ * zpool list [-gHLpP] [-o prop[,prop]*] [-T d|u] [pool] ... [interval [count]]
  *
  *	-g	Display guid for individual vdev name.
  *	-H	Scripted mode.  Don't display headers, and separate properties
@@ -3732,6 +3732,7 @@ list_callback(zpool_handle_t *zhp, void *data)
  *	-o	List of properties to display.  Defaults to
  *		"name,size,allocated,free,expandsize,fragmentation,capacity,"
  *		"dedupratio,health,altroot"
+ * 	-p	Display values in parsable (exact) format.
  *	-P	Display full path for vdev name.
  *	-T	Display a timestamp in date(1) or Unix format
  *
@@ -3754,7 +3755,7 @@ zpool_do_list(int argc, char **argv)
 	boolean_t first = B_TRUE;
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":gHLo:PT:v")) != -1) {
+	while ((c = getopt(argc, argv, ":gHLo:pPT:v")) != -1) {
 		switch (c) {
 		case 'g':
 			cb.cb_name_flags |= VDEV_NAME_GUID;
@@ -3770,6 +3771,9 @@ zpool_do_list(int argc, char **argv)
 			break;
 		case 'P':
 			cb.cb_name_flags |= VDEV_NAME_PATH;
+			break;
+		case 'p':
+			cb.cb_literal = B_TRUE;
 			break;
 		case 'T':
 			get_timestamp_arg(*optarg);
