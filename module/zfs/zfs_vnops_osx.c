@@ -245,7 +245,7 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 		if (availbytes == delta)
 			goto out;
 
-		dprintf("ZFS: findernotify space delta %llu\n", mp, delta);
+		dprintf("ZFS: findernotify %p space delta %llu\n", mp, delta);
 
 		// Grab the root zp
 		if (!VFS_ROOT(mp, 0, &rootvp)) {
@@ -296,7 +296,6 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 static void
 zfs_findernotify_thread(void *notused)
 {
-	clock_t			growtime = 0;
 	callb_cpr_t		cpr;
 
 	dprintf("ZFS: findernotify thread start\n");
