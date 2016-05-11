@@ -789,7 +789,7 @@ send_iterate_prop(zfs_handle_t *zhp, nvlist_t *nv)
 static uint64_t
 get_snap_txg(libzfs_handle_t *hdl, const char *fs, const char *snap)
 {
-	char name[ZFS_MAX_DATASET_NAME_LEN];
+	char name[ZFS_MAXNAMELEN];
 	uint64_t txg = 0;
 
 	if (fs == NULL || fs[0] == '\0' || snap == NULL || snap[0] == '\0')
