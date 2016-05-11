@@ -597,7 +597,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		    {
 				uint32_t gen_counter;
 
-				printf("ZFS: F_MAKECOMPRESSED\n");
+				dprintf("ZFS: F_MAKECOMPRESSED\n");
 
 				if (vfs_isrdonly(zfsvfs->z_vfs) ||
 					!spa_writeable(dmu_objset_spa(zfsvfs->z_os))) {
@@ -1631,7 +1631,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 #endif
 
 	if (error)
-		printf("ZFS: vnop_setattr return failure %d\n", error);
+		dprintf("ZFS: vnop_setattr return failure %d\n", error);
 	return (error);
 }
 

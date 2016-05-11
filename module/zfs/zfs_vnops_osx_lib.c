@@ -258,7 +258,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	 */
 	error = sa_bulk_lookup(zp->z_sa_hdl, bulk, count);
 	if (error) {
-		printf("ZFS: Warning: getattr failed sa_bulk_lookup: %d, parent %llu, flags %llu\n",
+		dprintf("ZFS: Warning: getattr failed sa_bulk_lookup: %d, parent %llu, flags %llu\n",
 			   error, parent, zp->z_pflags );
 		mutex_exit(&zp->z_lock);
 		ZFS_EXIT(zfsvfs);
@@ -2044,7 +2044,7 @@ int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags)
 	int             count = 0;
 	sa_bulk_attr_t  bulk[2];
 
-	printf("ZFS: vnop_setattr(UF_TRACKED) obj %llu : documentid %08u\n",
+	dprintf("ZFS: vnop_setattr(UF_TRACKED) obj %llu : documentid %08u\n",
 		   zp->z_id,
 		   zp->z_document_id);
 
@@ -2074,7 +2074,7 @@ int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags)
 		}
 
 		if (error)
-			printf("ZFS: sa_update(SA_ZPL_DOCUMENTID) failed %d\n",
+			dprintf("ZFS: sa_update(SA_ZPL_DOCUMENTID) failed %d\n",
 				   error);
 
 	} // if z_use_sa && !readonly
