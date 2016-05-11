@@ -1094,26 +1094,13 @@ zfs_owner_overquota(zfsvfs_t *zfsvfs, znode_t *zp, boolean_t isgroup)
 	return (zfs_fuid_overquota(zfsvfs, isgroup, fuid));
 }
 
-zfs_mntopts_t *
-zfs_mntopts_alloc(void)
-{
-	return (kmem_zalloc(sizeof (zfs_mntopts_t), KM_SLEEP));
-}
-
-void
-zfs_mntopts_free(zfs_mntopts_t *zmo)
-{
-	if (zmo->z_osname)
-		strfree(zmo->z_osname);
-
-	if (zmo->z_mntpoint)
-		strfree(zmo->z_mntpoint);
-
-	kmem_free(zmo, sizeof (zfs_mntopts_t));
-}
-
-int
-zfs_sb_create(const char *osname, zfs_mntopts_t *zmo, zfs_sb_t **zsbp)
+/*
+ * Associate this zfsvfs with the given objset, which must be owned.
+ * This will cache a bunch of on-disk state from the objset in the
+ * zfsvfs.
+ */
+static int
+zfsvfs_init(zfsvfs_t *zfsvfs, objset_t *os)
 {
 	int error;
 	uint64_t val;
@@ -1144,32 +1131,10 @@ zfs_sb_create(const char *osname, zfs_mntopts_t *zmo, zfs_sb_t **zsbp)
 		return (error);
 	zfsvfs->z_norm = (int)val;
 
-	/*
-	 * Optional temporary mount options, free'd in zfs_sb_free().
-	 */
-	zsb->z_mntopts = (zmo ? zmo : zfs_mntopts_alloc());
-
-	/*
-	 * Initialize the zfs-specific filesystem structure.
-	 * Should probably make this a kmem cache, shuffle fields,
-	 * and just bzero up to z_hold_mtx[].
-	 */
-	zsb->z_sb = NULL;
-	zsb->z_parent = zsb;
-	zsb->z_max_blksz = SPA_OLD_MAXBLOCKSIZE;
-	zsb->z_show_ctldir = ZFS_SNAPDIR_VISIBLE;
-	zsb->z_os = os;
-
-	error = zfs_get_zplprop(os, ZFS_PROP_VERSION, &zsb->z_version);
-	if (error) {
-		goto out;
-	} else if (zsb->z_version > ZPL_VERSION) {
-		error = SET_ERROR(ENOTSUP);
-		goto out;
-	}
-	if ((error = zfs_get_zplprop(os, ZFS_PROP_NORMALIZE, &zval)) != 0)
-		goto out;
-	zsb->z_norm = (int)zval;
+	error = zfs_get_zplprop(os, ZFS_PROP_UTF8ONLY, &val);
+	if (error != 0)
+		return (error);
+	zfsvfs->z_utf8 = (val != 0);
 
 	error = zfs_get_zplprop(os, ZFS_PROP_CASE, &val);
 	if (error != 0)
@@ -1268,8 +1233,17 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	zfsvfs_t *zfsvfs;
 	int error;
 
-	*zsbp = zsb;
-	return (0);
+	zfsvfs = kmem_zalloc(sizeof (zfsvfs_t), KM_SLEEP);
+
+	/*
+	 * We claim to always be readonly so we can open snapshots;
+	 * other ZPL code will prevent us from writing to snapshots.
+	 */
+	error = dmu_objset_own(osname, DMU_OST_ZFS, B_TRUE, zfsvfs, &os);
+	if (error) {
+		kmem_free(zfsvfs, sizeof (zfsvfs_t));
+		return (error);
+	}
 
 	zfsvfs->z_vfs = NULL;
 	zfsvfs->z_parent = zfsvfs;
@@ -1289,8 +1263,16 @@ zfsvfs_create(const char *osname, zfsvfs_t **zfvp)
 	avl_create(&zfsvfs->z_hardlinks_linkid, hardlinks_compare_linkid,
 			   sizeof (hardlinks_t), offsetof(hardlinks_t, hl_node_linkid));
 #endif
-	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
+	for (int i = 0; i != ZFS_OBJ_MTX_SZ; i++)
 		mutex_init(&zfsvfs->z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
+
+	error = zfsvfs_init(zfsvfs, os);
+	if (error != 0) {
+		dmu_objset_disown(os, zfsvfs);
+		*zfvp = NULL;
+		kmem_free(zfsvfs, sizeof (zfsvfs_t));
+		return (error);
+	}
 
 	*zfvp = zfsvfs;
 	return (0);
@@ -3142,51 +3124,32 @@ zfs_suspend_fs(zfsvfs_t *zfsvfs)
  * Reopen zfsvfs_t::z_os and release VOPs.
  */
 int
-zfs_resume_fs(zfsvfs_t *zsb, const char *osname)
+zfs_resume_fs(zfsvfs_t *zfsvfs, const char *osname)
 {
 	int err, err2;
 	znode_t *zp;
 
-	ASSERT(RRM_WRITE_HELD(&zsb->z_teardown_lock));
-	ASSERT(RW_WRITE_HELD(&zsb->z_teardown_inactive_lock));
+	ASSERT(RRM_WRITE_HELD(&zfsvfs->z_teardown_lock));
+	ASSERT(RW_WRITE_HELD(&zfsvfs->z_teardown_inactive_lock));
 
 	/*
 	 * We already own this, so just hold and rele it to update the
 	 * objset_t, as the one we had before may have been evicted.
 	 */
-	VERIFY0(dmu_objset_hold(osname, zsb, &zsb->z_os));
-	VERIFY3P(zsb->z_os->os_dsl_dataset->ds_owner, ==, zsb);
-	VERIFY(dsl_dataset_long_held(zsb->z_os->os_dsl_dataset));
-	dmu_objset_rele(zsb->z_os, zsb);
+	objset_t *os;
+	VERIFY0(dmu_objset_hold(osname, zfsvfs, &os));
+	VERIFY3P(os->os_dsl_dataset->ds_owner, ==, zfsvfs);
+	VERIFY(dsl_dataset_long_held(os->os_dsl_dataset));
+	dmu_objset_rele(os, zfsvfs);
 
-	/*
-	 * Make sure version hasn't changed
-	 */
-
-	err = zfs_get_zplprop(zsb->z_os, ZFS_PROP_VERSION,
-	    &zsb->z_version);
-
-	if (err)
+	err = zfsvfs_init(zfsvfs, os);
+	if (err != 0)
 		goto bail;
 
-	err = zap_lookup(zsb->z_os, MASTER_NODE_OBJ,
-	    ZFS_SA_ATTRS, 8, 1, &sa_obj);
+    VERIFY(zfsvfs_setup(zfsvfs, B_FALSE) == 0);
 
-	if (err && zsb->z_version >= ZPL_VERSION_SA)
-		goto bail;
-
-	if ((err = sa_setup(zsb->z_os, sa_obj,
-	    zfs_attr_table,  ZPL_END, &zsb->z_attr_table)) != 0)
-		goto bail;
-
-	if (zsb->z_version >= ZPL_VERSION_SA)
-		sa_register_update_callback(zsb->z_os,
-		    zfs_sa_upgrade);
-
-    VERIFY(zfsvfs_setup(zsb, B_FALSE) == 0);
-
-	zfs_set_fuid_feature(zsb);
-	//zsb->z_rollback_time = jiffies;
+	zfs_set_fuid_feature(zfsvfs);
+	//zfsvfs->z_rollback_time = jiffies;
 
 	/*
 	 * Attempt to re-establish all the active inodes with their
@@ -3197,21 +3160,21 @@ zfs_resume_fs(zfsvfs_t *zsb, const char *osname)
 	 * VFS prunes the dentry holding the remaining references
 	 * on the stale inode.
 	 */
-	mutex_enter(&zsb->z_znodes_lock);
-	for (zp = list_head(&zsb->z_all_znodes); zp;
-	    zp = list_next(&zsb->z_all_znodes, zp)) {
+	mutex_enter(&zfsvfs->z_znodes_lock);
+	for (zp = list_head(&zfsvfs->z_all_znodes); zp;
+	    zp = list_next(&zfsvfs->z_all_znodes, zp)) {
 		err2 = zfs_rezget(zp);
 		if (err2) {
 			//remove_inode_hash(ZTOI(zp));
 			zp->z_is_stale = B_TRUE;
 		}
 	}
-	mutex_exit(&zsb->z_znodes_lock);
+	mutex_exit(&zfsvfs->z_znodes_lock);
 
 bail:
 	/* release the VFS ops */
-	rw_exit(&zsb->z_teardown_inactive_lock);
-	rrm_exit(&zsb->z_teardown_lock, FTAG);
+	rw_exit(&zfsvfs->z_teardown_inactive_lock);
+	rrm_exit(&zfsvfs->z_teardown_lock, FTAG);
 
 	if (err) {
 		/*
@@ -3219,8 +3182,8 @@ bail:
 		 * unmount this file system.
 		 */
 #ifndef __APPLE__
-		if (zsb->z_os)
-			(void) zfs_umount(zsb->z_sb);
+		if (zfsvfs->z_os)
+			(void) zfs_umount(zfsvfs->z_sb);
 #endif
 	}
 	return (err);
