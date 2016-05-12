@@ -61,11 +61,12 @@ crypto_uio_data(crypto_data_t *data, uchar_t *buf, int len, cmd_type_t cmd,
 	 */
 	for (vec_idx = 0;
 		 !uio_getiov(uiop, vec_idx, NULL, &iov_len) &&
-			 vec_idx < uio_iovcnt(uiop) && offset >= iov_len;
+			 vec_idx < uio_iovcnt(uiop) &&
+			 offset >= iov_len;
 		 offset -= iov_len, vec_idx++)
 		;
 
-	if (vec_idx == uio_iovcnt(uiop)) {
+	if (vec_idx == uio_iovcnt(uiop) && length > 0) {
 		/*
 		 * The caller specified an offset that is larger than
 		 * the total size of the buffers it provided.
@@ -152,7 +153,7 @@ crypto_uio_data(crypto_data_t *data, uchar_t *buf, int len, cmd_type_t cmd,
 	    offset -= uiop->uio_iov[vec_idx++].iov_len)
 		;
 
-	if (vec_idx == uiop->uio_iovcnt) {
+	if (vec_idx == uiop->uio_iovcnt && length > 0) {
 		/*
 		 * The caller specified an offset that is larger than
 		 * the total size of the buffers it provided.
@@ -288,11 +289,12 @@ crypto_update_uio(void *ctx, crypto_data_t *input, crypto_data_t *output,
 	 */
 	for (vec_idx = 0;
 		 !uio_getiov(uiop, vec_idx, NULL, &iov_len) &&
-			 vec_idx < uio_iovcnt(uiop) && offset >= iov_len;
+			 vec_idx < uio_iovcnt(uiop) &&
+			 offset >= iov_len;
 		 offset -= iov_len, vec_idx++)
 		;
 
-	if (vec_idx == uio_iovcnt(uiop)) {
+	if (vec_idx == uio_iovcnt(uiop) && length > 0) {
 		/*
 		 * The caller specified an offset that is larger than
 		 * the total size of the buffers it provided.
@@ -362,7 +364,7 @@ crypto_update_uio(void *ctx, crypto_data_t *input, crypto_data_t *output,
 	    offset >= uiop->uio_iov[vec_idx].iov_len;
 	    offset -= uiop->uio_iov[vec_idx++].iov_len)
 		;
-	if (vec_idx == uiop->uio_iovcnt) {
+	if (vec_idx == uiop->uio_iovcnt && length > 0) {
 		/*
 		 * The caller specified an offset that is larger than the
 		 * total size of the buffers it provided.

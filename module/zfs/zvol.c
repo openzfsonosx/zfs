@@ -543,7 +543,7 @@ zvol_create_minor_impl(const char *name)
 #endif
 
 	/* lie and say we're read-only */
-	error = dmu_objset_own(name, DMU_OST_ZVOL, B_TRUE, FTAG, &os);
+	error = dmu_objset_own(name, DMU_OST_ZVOL, B_TRUE, B_TRUE, FTAG, &os);
 
 	if (error) {
 		mutex_exit(&zfsdev_state_lock);
@@ -551,13 +551,13 @@ zvol_create_minor_impl(const char *name)
 	}
 
 	if ((minor = zfsdev_minor_alloc()) == 0) {
-		dmu_objset_disown(os, FTAG);
+		dmu_objset_disown(os, B_TRUE, FTAG);
 		mutex_exit(&zfsdev_state_lock);
 		return (ENXIO);
 	}
 
 	if (ddi_soft_state_zalloc(zfsdev_state, minor) != DDI_SUCCESS) {
-		dmu_objset_disown(os, FTAG);
+		dmu_objset_disown(os, B_TRUE, FTAG);
 		mutex_exit(&zfsdev_state_lock);
 		return (EAGAIN);
 	}
@@ -574,7 +574,7 @@ zvol_create_minor_impl(const char *name)
 	if (ddi_create_minor_node(zfs_dip, name, S_IFCHR,
 	    minor, DDI_PSEUDO, zfs_major) == DDI_FAILURE) {
 		ddi_soft_state_free(zfsdev_state, minor);
-		dmu_objset_disown(os, FTAG);
+		dmu_objset_disown(os, B_TRUE, FTAG);
 		mutex_exit(&zfsdev_state_lock);
 		return (EAGAIN);
 	}
@@ -583,7 +583,7 @@ zvol_create_minor_impl(const char *name)
 	    minor, DDI_PSEUDO, zfs_bmajor) == DDI_FAILURE) {
 		ddi_remove_minor_node(zfs_dip, chrbuf);
 		ddi_soft_state_free(zfsdev_state, minor);
-		dmu_objset_disown(os, FTAG);
+		dmu_objset_disown(os, B_TRUE, FTAG);
 		mutex_exit(&zfsdev_state_lock);
 		return (EAGAIN);
 	}
@@ -621,7 +621,7 @@ zvol_create_minor_impl(const char *name)
 
 #ifndef __APPLE__
 	// Delay these until after IOkit work
-	dmu_objset_disown(os, FTAG);
+	dmu_objset_disown(os, B_TRUE, FTAG);
 	zv->zv_objset = NULL;
 
 	zvol_minors++;
@@ -639,7 +639,7 @@ zvol_create_minor_impl(const char *name)
 	/* Retake lock to disown dmu objset */
 	mutex_enter(&zfsdev_state_lock);
 
-	dmu_objset_disown(os, FTAG);
+	dmu_objset_disown(os, B_TRUE, FTAG);
 	zv->zv_objset = NULL;
 
 	/* if IOKit device was created */
@@ -875,7 +875,7 @@ zvol_first_open(zvol_state_t *zv)
 
 	/* lie and say we're read-only */
 	error = dmu_objset_own(zv->zv_name, DMU_OST_ZVOL, B_TRUE,
-	    zvol_tag, &os);
+						   B_TRUE, zvol_tag, &os);
 	if (error)
 		return (error);
 
@@ -883,14 +883,14 @@ zvol_first_open(zvol_state_t *zv)
 	error = zap_lookup(os, ZVOL_ZAP_OBJ, "size", 8, 1, &volsize);
 	if (error) {
 		ASSERT(error == 0);
-		dmu_objset_disown(os, zvol_tag);
+		dmu_objset_disown(os, B_TRUE, zvol_tag);
 		zv->zv_objset = NULL;
 		return (error);
 	}
 
 	error = dmu_bonus_hold(os, ZVOL_OBJ, zvol_tag, &zv->zv_dbuf);
 	if (error) {
-		dmu_objset_disown(os, zvol_tag);
+		dmu_objset_disown(os, B_TRUE, zvol_tag);
 		zv->zv_objset = NULL;
 		return (error);
 	}
@@ -914,7 +914,7 @@ zvol_first_open(zvol_state_t *zv)
 
   out_owned:
 	if (error) {
-		dmu_objset_disown(os, zvol_tag);
+		dmu_objset_disown(os, B_TRUE, zvol_tag);
 		zv->zv_objset = NULL;
 	}
 
@@ -948,7 +948,7 @@ zvol_last_close(zvol_state_t *zv)
 			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 		dmu_objset_evict_dbufs(zv->zv_objset);
 
-		dmu_objset_disown(zv->zv_objset, zvol_tag);
+		dmu_objset_disown(zv->zv_objset, B_TRUE, zvol_tag);
 	}
 	zv->zv_objset = NULL;
 }
@@ -1186,7 +1186,7 @@ zvol_rename_minors_impl(const char *oldname, const char *newname)
  * - for each zvol, create a minor node, then check if the zvol's snapshots
  *   are 'visible', and only then iterate over the snapshots if needed
  *
- * If the name represents a snapshot, a check is perfromed if the snapshot is
+ * If the name represents a snapshot, a check is performed if the snapshot is
  * 'visible' (which also verifies that the parent is a zvol), and if so,
  * a minor node for that snapshot is created.
  */
@@ -1555,7 +1555,7 @@ zvol_set_volsize(const char *name, uint64_t volsize)
 
 	if (zv == NULL || zv->zv_objset == NULL) {
 		if ((error = dmu_objset_own(name, DMU_OST_ZVOL, B_FALSE,
-		    FTAG, &os)) != 0) {
+									B_TRUE, FTAG, &os)) != 0) {
 			if (locked) mutex_exit(&zfsdev_state_lock);
 			return (error);
 		}
@@ -1577,7 +1577,7 @@ zvol_set_volsize(const char *name, uint64_t volsize)
 		error = zvol_update_live_volsize(zv, volsize);
 out:
 	if (owned) {
-		dmu_objset_disown(os, FTAG);
+		dmu_objset_disown(os, B_TRUE, FTAG);
 		if (zv != NULL)
 			zv->zv_objset = NULL;
 	}
@@ -1681,8 +1681,6 @@ zvol_open(dev_t devp, int flag, int otyp, struct proc *p)
 
 	return (zvol_open_impl(zv, flag, otyp, p));
 }
-
-
 
 
 int
