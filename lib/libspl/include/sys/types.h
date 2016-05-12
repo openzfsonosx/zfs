@@ -76,6 +76,7 @@ typedef int		major_t;
 typedef uint_t	minor_t;
 
 typedef ushort_t o_mode_t; /* old file attribute type */
+typedef short		index_t;
 
 typedef unsigned long long rlim64_t;
 
