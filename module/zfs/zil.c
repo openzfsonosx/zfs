@@ -207,12 +207,13 @@ zil_init_log_chain(zilog_t *zilog, blkptr_t *bp)
  * Read a log block and make sure it's valid.
  */
 static int
-zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
-    char **end)
+zil_read_log_block(zilog_t *zilog, boolean_t decrypt, const blkptr_t *bp,
+    blkptr_t *nbp, void *dst, char **end)
 {
 	enum zio_flag zio_flags = ZIO_FLAG_CANFAIL;
 	arc_flags_t aflags = ARC_FLAG_WAIT;
 	arc_buf_t *abuf = NULL;
+	void *data = NULL;
 	zbookmark_phys_t zb;
 	int error;
 
@@ -225,8 +226,21 @@ zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
 	SET_BOOKMARK(&zb, bp->blk_cksum.zc_word[ZIL_ZC_OBJSET],
 	    ZB_ZIL_OBJECT, ZB_ZIL_LEVEL, bp->blk_cksum.zc_word[ZIL_ZC_SEQ]);
 
-	error = arc_read(NULL, zilog->zl_spa, bp, arc_getbuf_func, &abuf,
-	    ZIO_PRIORITY_SYNC_READ, zio_flags, &aflags, &zb);
+	if (!decrypt) {
+		/*
+		 * we can use lsize everywhere here because ZIL blocks
+		 * are not compressed
+		 */
+		zio_flags |= ZIO_FLAG_RAW;
+		data = zio_data_buf_alloc(BP_GET_PSIZE(bp));
+
+		error = zio_wait(zio_read(NULL, zilog->zl_spa,
+		    bp, data, BP_GET_PSIZE(bp), NULL, NULL,
+		    ZIO_PRIORITY_SYNC_READ, zio_flags, &zb));
+	} else {
+		error = arc_read(NULL, zilog->zl_spa, bp, arc_getbuf_func,
+		    &abuf, ZIO_PRIORITY_SYNC_READ, zio_flags, &aflags, &zb);
+	}
 
 	if (error == 0) {
 		zio_cksum_t cksum = bp->blk_cksum;
@@ -241,8 +255,11 @@ zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
 		 */
 		cksum.zc_word[ZIL_ZC_SEQ]++;
 
+		if (decrypt)
+			data = abuf->b_data;
+
 		if (BP_GET_CHECKSUM(bp) == ZIO_CHECKSUM_ZILOG2) {
-			zil_chain_t *zilc = abuf->b_data;
+			zil_chain_t *zilc = data;
 			char *lr = (char *)(zilc + 1);
 			uint64_t len = zilc->zc_nused - sizeof (zil_chain_t);
 
@@ -256,7 +273,7 @@ zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
 				*nbp = zilc->zc_next_blk;
 			}
 		} else {
-			char *lr = abuf->b_data;
+			char *lr = data;
 			uint64_t size = BP_GET_LSIZE(bp);
 			zil_chain_t *zilc = (zil_chain_t *)(lr + size) - 1;
 
@@ -273,8 +290,12 @@ zil_read_log_block(zilog_t *zilog, const blkptr_t *bp, blkptr_t *nbp, void *dst,
 			}
 		}
 
-		arc_buf_destroy(abuf, &abuf);
+		if (abuf)
+			arc_buf_destroy(abuf, &abuf);
 	}
+
+	if (!decrypt)
+		zio_data_buf_free(data, BP_GET_PSIZE(bp));
 
 	return (error);
 }
@@ -316,12 +337,47 @@ zil_read_log_data(zilog_t *zilog, const lr_write_t *lr, void *wbuf)
 	return (error);
 }
 
+
+/*
+ * Similar to zil_read_log_data(), but does not attempt to decrypt data now.
+ * The data will be decrypted during replay, when the key is loaded.
+ */
+static int
+zil_check_log_data(zilog_t *zilog, const lr_write_t *lr)
+{
+	enum zio_flag zio_flags = ZIO_FLAG_CANFAIL | ZIO_FLAG_RAW;
+	const blkptr_t *bp = &lr->lr_blkptr;
+	zbookmark_phys_t zb;
+	void *data = NULL;
+	int error;
+
+	if (BP_IS_HOLE(bp))
+		return (0);
+
+	if (zilog->zl_header->zh_claim_txg == 0)
+		zio_flags |= ZIO_FLAG_SPECULATIVE | ZIO_FLAG_SCRUB;
+
+	SET_BOOKMARK(&zb, dmu_objset_id(zilog->zl_os), lr->lr_foid,
+	    ZB_ZIL_LEVEL, lr->lr_offset / BP_GET_LSIZE(bp));
+
+	data = zio_data_buf_alloc(BP_GET_PSIZE(bp));
+
+	error = zio_wait(zio_read(NULL, zilog->zl_spa,
+	    bp, data, BP_GET_PSIZE(bp), NULL, NULL,
+	    ZIO_PRIORITY_SYNC_READ, zio_flags, &zb));
+
+	zio_data_buf_free(data, BP_GET_PSIZE(bp));
+
+	return (error);
+}
+
 /*
  * Parse the intent log, and call parse_func for each valid record within.
  */
 int
 zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
-    zil_parse_lr_func_t *parse_lr_func, void *arg, uint64_t txg)
+    zil_parse_lr_func_t *parse_lr_func, void *arg, uint64_t txg,
+    boolean_t decrypt)
 {
 	const zil_header_t *zh = zilog->zl_header;
 	boolean_t claimed = !!zh->zh_claim_txg;
@@ -362,7 +418,9 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 
 		if (blk_seq > claim_blk_seq)
 			break;
-		if ((error = parse_blk_func(zilog, &blk, arg, txg)) != 0)
+
+		error = parse_blk_func(zilog, &blk, arg, txg);
+		if (error != 0)
 			break;
 		ASSERT3U(max_blk_seq, <, blk_seq);
 		max_blk_seq = blk_seq;
@@ -371,7 +429,8 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 		if (max_lr_seq == claim_lr_seq && max_blk_seq == claim_blk_seq)
 			break;
 
-		error = zil_read_log_block(zilog, &blk, &next_blk, lrbuf, &end);
+		error = zil_read_log_block(zilog, decrypt, &blk, &next_blk,
+		    lrbuf, &end);
 		if (error != 0)
 			break;
 
@@ -381,7 +440,9 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 			ASSERT3U(reclen, >=, sizeof (lr_t));
 			if (lr->lrc_seq > claim_lr_seq)
 				goto done;
-			if ((error = parse_lr_func(zilog, lr, arg, txg)) != 0)
+
+			error = parse_lr_func(zilog, lr, arg, txg);
+			if (error != 0)
 				goto done;
 			ASSERT3U(max_lr_seq, <, lr->lrc_seq);
 			max_lr_seq = lr->lrc_seq;
@@ -437,9 +498,12 @@ zil_claim_log_record(zilog_t *zilog, lr_t *lrc, void *tx, uint64_t first_txg)
 	 * waited for all writes to be stable first), so it is semantically
 	 * correct to declare this the end of the log.
 	 */
-	if (lr->lr_blkptr.blk_birth >= first_txg &&
-	    (error = zil_read_log_data(zilog, lr, NULL)) != 0)
-		return (error);
+	if (lr->lr_blkptr.blk_birth >= first_txg) {
+		error = zil_check_log_data(zilog, lr);
+		if (error)
+			return (error);
+	}
+
 	return (zil_claim_log_block(zilog, &lr->lr_blkptr, tx, first_txg));
 }
 
@@ -569,8 +633,8 @@ zil_create(zilog_t *zilog)
 			BP_ZERO(&blk);
 		}
 
-		error = zio_alloc_zil(zilog->zl_spa, txg, &blk, NULL,
-		    ZIL_MIN_BLKSZ, B_TRUE);
+		error = zio_alloc_zil(zilog->zl_spa, zilog->zl_os, txg, &blk,
+		    NULL, ZIL_MIN_BLKSZ, B_TRUE);
 		fastwrite = TRUE;
 
 		if (error == 0)
@@ -663,7 +727,7 @@ zil_destroy_sync(zilog_t *zilog, dmu_tx_t *tx)
 {
 	ASSERT(list_is_empty(&zilog->zl_lwb_list));
 	(void) zil_parse(zilog, zil_free_log_block,
-	    zil_free_log_record, tx, zilog->zl_header->zh_claim_txg);
+	    zil_free_log_record, tx, zilog->zl_header->zh_claim_txg, B_FALSE);
 }
 
 int
@@ -677,7 +741,7 @@ zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 	int error;
 
 	error = dmu_objset_own_obj(dp, ds->ds_object,
-	    DMU_OST_ANY, B_FALSE, FTAG, &os);
+	    DMU_OST_ANY, B_FALSE, B_FALSE, FTAG, &os);
 	if (error != 0) {
 		/*
 		 * EBUSY indicates that the objset is inconsistent, in which
@@ -713,7 +777,7 @@ zil_claim(dsl_pool_t *dp, dsl_dataset_t *ds, void *txarg)
 	ASSERT3U(zh->zh_claim_txg, <=, first_txg);
 	if (zh->zh_claim_txg == 0 && !BP_IS_HOLE(&zh->zh_log)) {
 		(void) zil_parse(zilog, zil_claim_log_block,
-		    zil_claim_log_record, tx, first_txg);
+		    zil_claim_log_record, tx, first_txg, B_FALSE);
 		zh->zh_claim_txg = first_txg;
 		zh->zh_claim_blk_seq = zilog->zl_parse_blk_seq;
 		zh->zh_claim_lr_seq = zilog->zl_parse_lr_seq;
@@ -782,7 +846,8 @@ zil_check_log_chain(dsl_pool_t *dp, dsl_dataset_t *ds, void *tx)
 	 * which will update spa_max_claim_txg.  See spa_load() for details.
 	 */
 	error = zil_parse(zilog, zil_claim_log_block, zil_claim_log_record, tx,
-	    zilog->zl_header->zh_claim_txg ? -1ULL : spa_first_txg(os->os_spa));
+	    zilog->zl_header->zh_claim_txg ? -1ULL : spa_first_txg(os->os_spa),
+	    B_FALSE);
 
 	return ((error == ECKSUM || error == ENOENT) ? 0 : error);
 }
@@ -1041,8 +1106,8 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 	BP_ZERO(bp);
 	use_slog = USE_SLOG(zilog);
 	/* pass the old blkptr in order to spread log blocks across devs */
-	error = zio_alloc_zil(spa, txg, bp, &lwb->lwb_blk, zil_blksz, use_slog);
-
+	error = zio_alloc_zil(spa, zilog->zl_os, txg, bp, &lwb->lwb_blk,
+	    zil_blksz, use_slog);
 	if (use_slog) {
 		ZIL_STAT_BUMP(zil_itx_metaslab_slog_count);
 		ZIL_STAT_INCR(zil_itx_metaslab_slog_bytes, lwb->lwb_nused);
@@ -1074,7 +1139,7 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 		wsz = lwb->lwb_sz;
 	}
 
-	zilc->zc_pad = 0;
+	zilc->zc_mac = 0;
 	zilc->zc_nused = lwb->lwb_nused;
 	zilc->zc_eck.zec_cksum = lwb->lwb_blk.blk_cksum;
 
@@ -2289,7 +2354,7 @@ zil_replay(objset_t *os, void *arg, zil_replay_func_t replay_func[TX_MAX_TYPE])
 	zilog->zl_replay_time = ddi_get_lbolt();
 	ASSERT(zilog->zl_replay_blks == 0);
 	(void) zil_parse(zilog, zil_incr_blks, zil_replay_log_record, &zr,
-	    zh->zh_claim_txg);
+	    zh->zh_claim_txg, B_TRUE);
 	kmem_free(zr.zr_lr, 2 * SPA_MAXBLOCKSIZE);
 
 	zil_destroy(zilog, B_FALSE);

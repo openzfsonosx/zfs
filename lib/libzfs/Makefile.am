@@ -13,6 +13,7 @@ lib_LTLIBRARIES = libzfs.la
 libzfs_la_SOURCES = \
 	libzfs_changelist.c \
 	libzfs_config.c \
+	libzfs_crypto.c \
 	libzfs_dataset.c \
 	libzfs_diff.c \
 	libzfs_fru.c \

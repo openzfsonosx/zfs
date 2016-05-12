@@ -156,6 +156,7 @@ typedef enum zfs_error {
 	EZFS_POOLREADONLY,	/* pool is in read-only mode */
 	EZFS_UNSHAREAFPFAILED,	/* failed to unshare over afp */
 	EZFS_SHAREAFPFAILED,	/* failed to share over afp */
+	EZFS_CRYPTOFAILED,	/* failed to setup encryption */
 	EZFS_UNKNOWN
 } zfs_error_t;
 
@@ -477,7 +478,7 @@ extern boolean_t zfs_prop_align_right(zfs_prop_t);
 
 extern nvlist_t *zfs_valid_proplist(libzfs_handle_t *, zfs_type_t,
 	nvlist_t *, uint64_t, zfs_handle_t *, zpool_handle_t *,
-	const char *);
+	boolean_t, const char *);
 
 extern const char *zfs_prop_to_name(zfs_prop_t);
 extern int zfs_prop_set(zfs_handle_t *, const char *, const char *);
@@ -506,6 +507,17 @@ extern int zfs_prop_is_string(zfs_prop_t prop);
 extern nvlist_t *zfs_get_user_props(zfs_handle_t *);
 extern nvlist_t *zfs_get_recvd_props(zfs_handle_t *);
 extern nvlist_t *zfs_get_clones_nvl(zfs_handle_t *);
+
+/*
+ * zfs encryption management
+ */
+extern int zfs_crypto_create(libzfs_handle_t *, char *, nvlist_t *, nvlist_t *,
+    nvlist_t **);
+extern int zfs_crypto_clone(libzfs_handle_t *, zfs_handle_t *, char *,
+    nvlist_t *, nvlist_t **);
+extern int zfs_crypto_load_key(zfs_handle_t *);
+extern int zfs_crypto_unload_key(zfs_handle_t *);
+extern int zfs_crypto_rewrap(zfs_handle_t *, nvlist_t *);
 
 typedef struct zprop_list {
 	int		pl_prop;
@@ -831,7 +843,8 @@ int zfs_smb_acl_rename(libzfs_handle_t *, char *, char *, char *, char *);
  * Enable and disable datasets within a pool by mounting/unmounting and
  * sharing/unsharing them.
  */
-extern int zpool_enable_datasets(zpool_handle_t *, const char *, int);
+extern int zpool_enable_datasets(zpool_handle_t *, const char *, int,
+    boolean_t);
 extern int zpool_disable_datasets(zpool_handle_t *, boolean_t);
 
 /*

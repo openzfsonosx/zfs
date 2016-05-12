@@ -168,6 +168,8 @@ icp_fini(void)
 	mod_hash_fini();
 }
 
+int cipher_test2(int);
+
 /* roughly equivalent to kcf.c: _init() */
 int
 icp_init(void)
@@ -193,15 +195,16 @@ icp_init(void)
 
 	/* Uncomment me if you want to warm up the cipher and check it is
 	 * correct */
-	//cipher_test();
-
+#ifdef _KERNEL
+	//cipher_test2(1);
+#endif
 	return (0);
 }
 
 
 #endif // APPLE
 
-
+#if 0
 unsigned char key[16] = {
     0x5c, 0x95, 0x64, 0x42, 0x00, 0x82, 0x1c, 0x9e,
     0xd4, 0xac, 0x01, 0x83, 0xc4, 0x9c, 0x14, 0x97
@@ -245,14 +248,28 @@ int cipher_test(void)
     iv = kmem_alloc(ivsize, KM_SLEEP);
     if (!iv) goto out;
 
-    for (i = 0, d = 0; i < sizeof(plaindata); i++, d++)
+    size = 512;
+
+    for (i = 0, d = 0; i < size; i++, d++)
         plaindata[i] = d;
+
+	*out = 0;
+    cmn_err (CE_CONT, "plaintext input data\n");
+    for (i = 0; i < 32/* size */; i++) {
+
+        snprintf((char*)out, sizeof(out), "%s 0x%02x", out, plaindata[i]);
+        if ((i % 8)==7) {
+            cmn_err (CE_CONT, "%s\n", out);
+            *out = 0;
+        }
+    }
+    cmn_err (CE_CONT, "%s\n", out);
+
 
     ckey.ck_format = CRYPTO_KEY_RAW;
     ckey.cku_data.cku_key_value.cku_v_length = sizeof(key) * 8;
     ckey.cku_data.cku_key_value.cku_v_data   = (void *)&key;
 
-    size = 512;
 
     // Clear all outputs
     memset(cipherdata, 0, size);
@@ -273,31 +290,16 @@ int cipher_test(void)
 
     maclen = 16;
 
-#ifndef __APPLE__
-    dstiov = kmem_alloc(sizeof (iovec_t) * 2, KM_SLEEP);
-    if (!dstiov) goto out;
-
-    dstiov[0].iov_base = (void *)cipherdata;
-    dstiov[0].iov_len = size;
-    dstiov[1].iov_base = (void *)mac;
-    dstiov[1].iov_len = maclen;
-    dstuio.uio_iov = dstiov;
-    dstuio.uio_iovcnt = 2;
-    ciphertext.cd_length = size + maclen;
-
-    srcuio.uio_segflg = dstuio.uio_segflg = UIO_SYSSPACE;
-
-#else
 	dstuio = uio_create(2, 0, UIO_SYSSPACE, UIO_WRITE);
 	if (!dstuio) goto out;
 	uio_addiov(dstuio, (user_addr_t)cipherdata, size);
 	uio_addiov(dstuio, (user_addr_t)mac, maclen);
-#endif
 
     ciphertext.cd_format = CRYPTO_DATA_UIO;
     ciphertext.cd_offset = 0;
     ciphertext.cd_uio = dstuio;
     ciphertext.cd_miscdata = NULL;
+	ciphertext.cd_length = size + maclen;
 
     cmn_err (CE_CONT, "loaded CD structs\n");
 
@@ -362,6 +364,72 @@ int cipher_test(void)
 
 
 
+
+	/* Decrypt test */
+    cmn_err (CE_CONT, "***DECRYPTION TEST\n", out);
+    maclen = 16;
+
+	srcuio = uio_create(2, 0, UIO_SYSSPACE, UIO_READ);
+	if (!srcuio) goto out;
+
+	uio_reset(dstuio, 0, UIO_SYSSPACE, UIO_WRITE);
+
+    ckey.ck_format = CRYPTO_KEY_RAW;
+    ckey.cku_data.cku_key_value.cku_v_length = sizeof(key) * 8;
+    ckey.cku_data.cku_key_value.cku_v_data   = (void *)&key;
+    mech->cm_type = crypto_mech2id(SUN_CKM_AES_CCM);
+
+    size = 512;
+    memset(plaindata, 0, size);
+
+    plaintext.cd_format = CRYPTO_DATA_UIO;
+    plaintext.cd_offset = 0;
+    plaintext.cd_uio = dstuio;
+    plaintext.cd_miscdata = NULL;
+	plaintext.cd_length = size + maclen;
+    ciphertext.cd_format = CRYPTO_DATA_UIO;
+    ciphertext.cd_offset = 0;
+    ciphertext.cd_uio = srcuio;
+    ciphertext.cd_miscdata = NULL;
+	ciphertext.cd_length = size + maclen;
+	uio_addiov(srcuio, (user_addr_t)cipherdata, size);
+	uio_addiov(srcuio, (user_addr_t)mac, maclen);
+	uio_addiov(dstuio, (user_addr_t)plaindata, size);
+	uio_addiov(dstuio, (user_addr_t)out_mac, maclen);
+    ccmp->ulNonceSize = ivsize;
+    ccmp->ulAuthDataSize = 0;
+    ccmp->authData = NULL;
+    ccmp->ulDataSize = size + maclen;
+    ccmp->ulMACSize = 16;
+    mech->cm_param = (char *)ccmp;
+    mech->cm_param_len = sizeof (CK_AES_CCM_PARAMS);
+    cmn_err (CE_CONT, "Setting iv to: \n");
+    for (i = 0, d=0xa8; i < ivsize; i++,d++) {
+        iv[i] = d;
+        cmn_err (CE_CONT, "0x%02x ", iv[i]);
+    }
+    cmn_err (CE_CONT, "\n");
+
+    ccmp->nonce = (uchar_t *)iv;
+
+
+    err = crypto_decrypt(mech, &ciphertext, &ckey, NULL,
+                         &plaintext, NULL);
+
+    cmn_err (CE_CONT, "crypt_decrypt returns 0x%02X\n", err);
+    *out = 0;
+
+    for (i = 0; i < 32/* size */; i++) {
+
+        snprintf((char*)out, sizeof(out), "%s 0x%02x", out, plaindata[i]);
+        if ((i % 8)==7) {
+            cmn_err (CE_CONT, "%s\n", out);
+            *out = 0;
+        }
+    }
+    cmn_err (CE_CONT, "%s\n", out);
+
+
  out:
     if (ccmp)       kmem_free(ccmp, sizeof (CK_AES_CCM_PARAMS));
     if (plaindata)  kmem_free(plaindata, 512);
@@ -378,12 +446,183 @@ int cipher_test(void)
 /*
  * output from encryption should be:
  0x03 0x54 0x08 0xa4 0x52 0xb8 0xde 0xc4
- 0x68 0xfa 0xce 0x12 0xa0 0x0e 0xef 0x70
- 0x3d 0x79 0x8f 0xda 0xdf 0x80 0xd4 0x1f
- 0xf5 0x13 0x08 0xe0 0x55 0x07 0x31 0x1c
+ 0x9e 0x39 0x19 0xa3 0x52 0xc9 0x3c 0xc5
+ 0xd3 0xa2 0x40 0x73 0x35 0x5f 0x1f 0xb2
+ 0x13 0xc0 0xcf 0x41 0xb7 0xd0 0xf2 0xb9
  *
  * MAC output:
- * 0xc4 0x3e 0x15 0x88 0xab 0x48 0x65 0x0d 0x7b 0x3b 0x2c
- * 0x10 0x57 0x01 0x68 0x11
+ * 0x34 0x3a 0x26 0x91 0x2c 0xa8 0xda 0x96 0x9a 0xa6 0xc3
+ * 0x22 0x99 0x2c 0xc7 0x6b
  *
  */
+
+
+
+
+unsigned char statickey[32] = {
+    0x5c, 0x95, 0x64, 0x42, 0x00, 0x82, 0x1c, 0x9e,
+    0xd4, 0xac, 0x01, 0x83, 0xc4, 0x9c, 0x14, 0x97,
+    0x1c, 0x93, 0x04, 0xe2, 0x90, 0x99, 0x40, 0xfe,
+    0x54, 0xec, 0xf1, 0x8a, 0x54, 0x22, 0x11, 0xff
+};
+#include <sys/zio_crypt.h>
+int cipher_test2(int verbose)
+{
+    unsigned char *plaindata  = NULL;
+    unsigned char *cipherdata = NULL;
+    unsigned char *mac = NULL;
+    unsigned char *out_mac = NULL;
+    unsigned char *iv  = NULL;
+    unsigned char *salt= NULL;
+	int size     = 512;
+	int saltsize = 8;
+	int macsize  = 16;
+	int ivsize   = 12;
+	zio_crypt_key_t zkey;
+    unsigned char out[180];
+    unsigned char d = 0;
+	int i, ret = ENOMEM;
+
+	if (verbose) cmn_err (CE_CONT, "*** ENCRYPTION TEST\n");
+
+    plaindata  = kmem_alloc(size, KM_SLEEP);
+    if (!plaindata) goto out;
+    cipherdata = kmem_alloc(size, KM_SLEEP);
+    if (!cipherdata) goto out;
+    mac = kmem_alloc(macsize, KM_SLEEP);
+    if (!mac) goto out;
+    out_mac = kmem_alloc(macsize, KM_SLEEP);
+    if (!out_mac) goto out;
+    iv = kmem_alloc(ivsize, KM_SLEEP);
+    if (!iv) goto out;
+    salt = kmem_alloc(saltsize, KM_SLEEP);
+    if (!salt) goto out;
+
+    for (i = 0, d = 0; i < size; i++, d++)
+        plaindata[i] = d;
+    memset(cipherdata, 0, size);
+
+	if (verbose) cmn_err (CE_CONT, "Setting iv to: \n");
+    for (i = 0, d=0xa8; i < ivsize; i++,d++) {
+        iv[i] = d;
+        if (verbose) cmn_err (CE_CONT, "0x%02x ", iv[i]);
+    }
+    if (verbose) cmn_err (CE_CONT, "\n");
+	if (verbose) cmn_err (CE_CONT, "Setting salt to: \n");
+    for (i = 0, d=0x61; i < saltsize; i++,d++) {
+        salt[i] = d;
+        if (verbose) cmn_err (CE_CONT, "0x%02x ", salt[i]);
+    }
+    if (verbose) cmn_err (CE_CONT, "\n");
+
+
+	// Setup Key
+	zkey.zk_crypt = 5; /* aes-256-ccm */
+	zkey.zk_current_tmpl = NULL;
+	zkey.zk_salt_count = 0;
+	memcpy(zkey.zk_salt, salt, saltsize);
+	zkey.zk_current_key.ck_format = CRYPTO_KEY_RAW;
+	zkey.zk_current_key.ck_data = statickey;
+	zkey.zk_current_key.ck_length = BYTES_TO_BITS(sizeof(statickey));
+	rw_init(&zkey.zk_salt_lock, NULL, RW_DEFAULT, NULL);
+	// key done
+
+
+	ret = zio_do_crypt_data(B_TRUE, &zkey, salt, DMU_OT_NONE,
+							iv, mac, size, plaindata, cipherdata);
+
+    if (verbose) cmn_err (CE_CONT, "zio_do_crypt_data encrypt %d\n", ret);
+
+	if (ret) goto out;
+
+	/*
+	  0x5f 0x8a 0xcb 0x82 0xf3 0xb1 0x2b 0xce
+	  0xa6 0x32 0x90 0x9b 0x08 0x78 0x20 0x12
+	  0x3b 0x97 0x67 0x1f 0x7e 0x79 0x14 0xab
+	  0xbb 0x8f 0x5b 0x17 0x9a 0x97 0xb9 0xae
+
+	  MAC output: 0x98 0x14 0x82 0xe4 0xbd 0xcb 0xee 0x9f
+	  0x57 0x3a 0x37 0x55 0xce 0xb6 0xaa 0x57
+	*/
+
+	*out = 0;
+    for (i = 0; i < 32/* size */; i++) {
+        snprintf((char*)out, sizeof(out), "%s 0x%02x", out, cipherdata[i]);
+        if ((i % 8)==7) {
+            if (verbose) cmn_err (CE_CONT, "%s\n", out);
+            *out = 0;
+        }
+    }
+    if (verbose) cmn_err (CE_CONT, "%s\nMAC output:", out);
+    *out = 0;
+    for (i = 0; i < 16; i++) {
+        snprintf((char *)out, sizeof(out), "%s 0x%02x", out, mac[i]);
+    }
+    if (verbose) cmn_err (CE_CONT, "%s\n", out);
+
+
+
+
+	if (verbose) cmn_err (CE_CONT, "*** DECRYPTION TEST\n");
+
+
+
+	// unwrap can clear all this if failed.
+	zkey.zk_crypt = 5; /* aes-256-ccm */
+	zkey.zk_current_tmpl = NULL;
+	zkey.zk_salt_count = 0;
+	memcpy(zkey.zk_salt, salt, saltsize);
+	zkey.zk_current_key.ck_format = CRYPTO_KEY_RAW;
+	zkey.zk_current_key.ck_data = statickey;
+	zkey.zk_current_key.ck_length = BYTES_TO_BITS(sizeof(statickey));
+
+
+
+    memset(plaindata, 0, size);
+	if (verbose) cmn_err (CE_CONT, "Setting iv to: \n");
+    for (i = 0, d=0xa8; i < ivsize; i++,d++) {
+        iv[i] = d;
+        if (verbose) cmn_err (CE_CONT, "0x%02x ", iv[i]);
+    }
+    if (verbose) cmn_err (CE_CONT, "\n");
+	if (verbose) cmn_err (CE_CONT, "Setting salt to: \n");
+    for (i = 0, d=0x61; i < saltsize; i++,d++) {
+        salt[i] = d;
+        if (verbose) cmn_err (CE_CONT, "0x%02x ", salt[i]);
+    }
+    if (verbose) cmn_err (CE_CONT, "\n");
+
+	zkey.zk_salt_count = 0;
+	memcpy(zkey.zk_salt, salt, saltsize);
+
+
+	ret = zio_do_crypt_data(B_FALSE, &zkey, salt, DMU_OT_NONE,
+							iv, mac, size, plaindata, cipherdata);
+
+    if (verbose) cmn_err (CE_CONT, "zio_do_crypt_data decrypt %d\n", ret);
+
+
+	*out = 0;
+    for (i = 0; i < 32/* size */; i++) {
+        snprintf((char*)out, sizeof(out), "%s 0x%02x", out, plaindata[i]);
+        if ((i % 8)==7) {
+            if (verbose) cmn_err (CE_CONT, "%s\n", out);
+            *out = 0;
+        }
+    }
+    if (verbose) cmn_err (CE_CONT, "%s\n", out);
+
+
+	rw_destroy(&zkey.zk_salt_lock);
+
+ out:
+    if (salt)       kmem_free(salt, saltsize);
+    if (plaindata)  kmem_free(plaindata, size);
+    if (cipherdata) kmem_free(cipherdata, size);
+    if (mac)        kmem_free(mac, macsize);
+    if (out_mac)    kmem_free(out_mac, macsize);
+    if (iv)         kmem_free(iv, ivsize);
+
+	return ret;
+}
+#endif

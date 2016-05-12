@@ -251,8 +251,8 @@ zio_checksum_template_init(enum zio_checksum checksum, spa_t *spa)
  * Generate the checksum.
  */
 void
-zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
-	void *data, uint64_t size)
+zio_checksum_compute(zio_t *zio, enum zio_checksum checksum, void *data,
+    uint64_t size)
 {
 	blkptr_t *bp = zio->io_bp;
 	uint64_t offset = zio->io_offset;
@@ -289,7 +289,14 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		eck->zec_cksum = cksum;
 	} else {
 		ci->ci_func[0](data, size, spa->spa_cksum_tmpls[checksum],
-		    &bp->blk_cksum);
+		    &cksum);
+
+		if (BP_IS_ENCRYPTED(bp)) {
+			bp->blk_cksum.zc_word[0] = cksum.zc_word[0];
+			bp->blk_cksum.zc_word[1] = cksum.zc_word[1];
+		} else {
+			bp->blk_cksum = cksum;
+		}
 	}
 }
 
@@ -300,6 +307,7 @@ zio_checksum_error_impl(spa_t *spa, blkptr_t *bp, enum zio_checksum checksum,
 	zio_checksum_info_t *ci = &zio_checksum_table[checksum];
 	zio_cksum_t actual_cksum, expected_cksum;
 	int byteswap;
+	boolean_t mac = (bp) ? BP_IS_ENCRYPTED(bp) : B_FALSE;
 
 	if (checksum >= ZIO_CHECKSUM_FUNCTIONS || ci->ci_func[0] == NULL)
 		return (SET_ERROR(EINVAL));
@@ -326,6 +334,7 @@ zio_checksum_error_impl(spa_t *spa, blkptr_t *bp, enum zio_checksum checksum,
 				return (SET_ERROR(ECKSUM));
 
 			size = P2ROUNDUP_TYPED(nused, ZIL_MIN_BLKSZ, uint64_t);
+			mac = B_FALSE;
 		} else {
 			eck = (zio_eck_t *)((char *)data + size) - 1;
 		}
@@ -368,8 +377,18 @@ zio_checksum_error_impl(spa_t *spa, blkptr_t *bp, enum zio_checksum checksum,
 		info->zbc_has_cksum = 1;
 	}
 
-	if (!ZIO_CHECKSUM_EQUAL(actual_cksum, expected_cksum))
-		return (SET_ERROR(ECKSUM));
+	/*
+	 * MAC checksums are a special case since half of this checksum will
+	 * actually be the encryption MAC. This will be verified by the
+	 * decryption process, so we just check the real checksum now.
+	 */
+	if (mac) {
+		if (!ZIO_CHECKSUM_MAC_EQUAL(actual_cksum, expected_cksum))
+			return (SET_ERROR(ECKSUM));
+	} else {
+		if (!ZIO_CHECKSUM_EQUAL(actual_cksum, expected_cksum))
+			return (SET_ERROR(ECKSUM));
+	}
 
 	return (0);
 }

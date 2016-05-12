@@ -52,7 +52,9 @@ typedef enum zio_checksum_flags {
 	/* Uses salt value */
 	ZCHECKSUM_FLAG_SALTED = (1 << 4),
 	/* Strong enough for nopwrite? */
-	ZCHECKSUM_FLAG_NOPWRITE = (1 << 5)
+	ZCHECKSUM_FLAG_NOPWRITE = (1 << 5),
+	/* Make room for MAC? */
+	ZCHECKSUM_FLAG_MAC_COMPATIBLE = (1 << 6)
 } zio_checksum_flags_t;
 
 /*
@@ -82,6 +84,7 @@ extern zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS];
  * Checksum routines.
  */
 extern zio_checksum_t zio_checksum_SHA256;
+extern zio_checksum_t zio_checksum_SHAMAC;
 extern zio_checksum_t zio_checksum_SHA512_native;
 extern zio_checksum_t zio_checksum_SHA512_byteswap;
 

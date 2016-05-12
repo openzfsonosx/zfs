@@ -32,35 +32,47 @@
 
 /*ARGSUSED*/
 void
-zio_checksum_SHA256(const void *buf, uint64_t size,
-    const void *ctx_template, zio_cksum_t *zcp)
+zio_checksum_SHA256_common(const void *buf, uint64_t size, zio_cksum_t *zcp,
+	boolean_t truncate)
 {
-	SHA2_CTX ctx;
+	SHA2_CTX	ctx;
 	zio_cksum_t tmp;
 
 	SHA2Init(SHA256, &ctx);
 	SHA2Update(&ctx, buf, size);
 	SHA2Final(&tmp, &ctx);
 
-	/*
-	 * A prior implementation of this function had a
-	 * private SHA256 implementation always wrote things out in
-	 * Big Endian and there wasn't a byteswap variant of it.
-	 * To preseve on disk compatibility we need to force that
-	 * behaviour.
-	 */
 	zcp->zc_word[0] = BE_64(tmp.zc_word[0]);
 	zcp->zc_word[1] = BE_64(tmp.zc_word[1]);
-	zcp->zc_word[2] = BE_64(tmp.zc_word[2]);
-	zcp->zc_word[3] = BE_64(tmp.zc_word[3]);
+	if (!truncate) {
+		zcp->zc_word[2] = BE_64(tmp.zc_word[2]);
+		zcp->zc_word[3] = BE_64(tmp.zc_word[3]);
+	}
+}
+
+void
+zio_checksum_SHA256(const void *buf, uint64_t size,
+					const void *ctx_template, zio_cksum_t *zcp)
+{
+	zio_checksum_SHA256_common(buf, size, zcp, B_FALSE);
+}
+
+/*
+ * Same as zio_checksum_SHA256, but truncates to allow 96 bits for MAC
+ */
+void
+zio_checksum_SHAMAC(const void *buf, uint64_t size,
+					const void *ctx_template, zio_cksum_t *zcp)
+{
+	zio_checksum_SHA256_common(buf, size, zcp, B_TRUE);
 }
 
 /*ARGSUSED*/
 void
 zio_checksum_SHA512_native(const void *buf, uint64_t size,
-    const void *ctx_template, zio_cksum_t *zcp)
+	const void *ctx_template, zio_cksum_t *zcp)
 {
-	SHA2_CTX	ctx;
+	SHA2_CTX        ctx;
 
 	SHA2Init(SHA512_256, &ctx);
 	SHA2Update(&ctx, buf, size);
@@ -72,7 +84,7 @@ void
 zio_checksum_SHA512_byteswap(const void *buf, uint64_t size,
     const void *ctx_template, zio_cksum_t *zcp)
 {
-	zio_cksum_t	tmp;
+	zio_cksum_t     tmp;
 
 	zio_checksum_SHA512_native(buf, size, ctx_template, &tmp);
 	zcp->zc_word[0] = BSWAP_64(tmp.zc_word[0]);

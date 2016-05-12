@@ -164,6 +164,7 @@ dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,
 {
 	dmu_buf_t *dbuf;
 	dsl_dir_t *dd;
+	dmu_object_info_t doi;
 	int err;
 
 	ASSERT(dsl_pool_config_held(dp));
@@ -172,14 +173,11 @@ dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,
 	if (err != 0)
 		return (err);
 	dd = dmu_buf_get_user(dbuf);
-#ifdef ZFS_DEBUG
-	{
-		dmu_object_info_t doi;
-		dmu_object_info_from_db(dbuf, &doi);
-		ASSERT3U(doi.doi_bonus_type, ==, DMU_OT_DSL_DIR);
-		ASSERT3U(doi.doi_bonus_size, >=, sizeof (dsl_dir_phys_t));
-	}
-#endif
+
+	dmu_object_info_from_db(dbuf, &doi);
+	ASSERT3U(doi.doi_bonus_type, ==, DMU_OT_DSL_DIR);
+	ASSERT3U(doi.doi_bonus_size, >=, sizeof (dsl_dir_phys_t));
+
 	if (dd == NULL) {
 		dsl_dir_t *winner;
 
@@ -187,6 +185,15 @@ dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,
 		dd->dd_object = ddobj;
 		dd->dd_dbuf = dbuf;
 		dd->dd_pool = dp;
+
+		if (doi.doi_type == DMU_OTN_ZAP_METADATA &&
+		    zap_contains(dp->dp_meta_objset, ddobj,
+		    DD_FIELD_CRYPTO_KEY_OBJ) == 0) {
+			VERIFY0(zap_lookup(dp->dp_meta_objset,
+			    ddobj, DD_FIELD_CRYPTO_KEY_OBJ,
+			    sizeof (uint64_t), 1, &dd->dd_crypto_obj));
+		}
+
 		mutex_init(&dd->dd_lock, NULL, MUTEX_DEFAULT, NULL);
 
 		dsl_prop_init(dd);
@@ -923,6 +930,7 @@ dsl_dir_create_sync(dsl_pool_t *dp, dsl_dir_t *pds, const char *name,
 	    DMU_OT_DSL_DIR_CHILD_MAP, DMU_OT_NONE, 0, tx);
 	if (spa_version(dp->dp_spa) >= SPA_VERSION_USED_BREAKDOWN)
 		ddphys->dd_flags |= DD_FLAG_USED_BREAKDOWN;
+
 	dmu_buf_rele(dbuf, FTAG);
 
 	return (ddobj);

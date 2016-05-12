@@ -131,7 +131,7 @@ traverse_zil(traverse_data_t *td, zil_header_t *zh)
 	zilog = zil_alloc(spa_get_dsl(td->td_spa)->dp_meta_objset, zh);
 
 	(void) zil_parse(zilog, traverse_zil_block, traverse_zil_record, td,
-	    claim_txg);
+	    claim_txg, !(td->td_flags & TRAVERSE_NO_DECRYPT));
 
 	zil_free(zilog);
 }

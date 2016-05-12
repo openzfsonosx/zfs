@@ -61,7 +61,8 @@ crypto_uio_data(crypto_data_t *data, uchar_t *buf, int len, cmd_type_t cmd,
 	 */
 	for (vec_idx = 0;
 		 !uio_getiov(uiop, vec_idx, NULL, &iov_len) &&
-			 vec_idx < uio_iovcnt(uiop) && offset >= iov_len;
+			 vec_idx < uio_iovcnt(uiop) &&
+			 offset >= iov_len;
 		 offset -= iov_len, vec_idx++)
 		;
 
@@ -288,7 +289,8 @@ crypto_update_uio(void *ctx, crypto_data_t *input, crypto_data_t *output,
 	 */
 	for (vec_idx = 0;
 		 !uio_getiov(uiop, vec_idx, NULL, &iov_len) &&
-			 vec_idx < uio_iovcnt(uiop) && offset >= iov_len;
+			 vec_idx < uio_iovcnt(uiop) &&
+			 offset >= iov_len;
 		 offset -= iov_len, vec_idx++)
 		;
 

@@ -1019,6 +1019,9 @@ sa_setup(objset_t *os, uint64_t sa_obj, sa_attr_reg_t *reg_attrs, int count,
 	mutex_init(&sa->sa_lock, NULL, MUTEX_DEFAULT, NULL);
 	sa->sa_master_obj = sa_obj;
 
+	if (os->os_encrypted)
+		sa->sa_force_spill = B_TRUE;
+
 	os->os_sa = sa;
 	mutex_enter(&sa->sa_lock);
 	mutex_exit(&os->os_user_ptr_lock);

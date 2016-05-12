@@ -843,12 +843,12 @@ dbuf_verify(dmu_buf_impl_t *db)
 						DVA_IS_EMPTY(&bp->blk_dva[0]) &&
 						DVA_IS_EMPTY(&bp->blk_dva[1]) &&
 						DVA_IS_EMPTY(&bp->blk_dva[2]));
-                                       ASSERT0(bp->blk_fill);
-                                       ASSERT0(bp->blk_pad[0]);
-                                       ASSERT0(bp->blk_pad[1]);
-                                       ASSERT(!BP_IS_EMBEDDED(bp));
-                                       ASSERT(BP_IS_HOLE(bp));
-                                       ASSERT0(bp->blk_phys_birth);
+					ASSERT0(bp->blk_fill);
+					ASSERT0(bp->blk_pad[0]);
+					ASSERT0(bp->blk_pad[1]);
+					ASSERT(!BP_IS_EMBEDDED(bp));
+					ASSERT(BP_IS_HOLE(bp));
+					ASSERT0(bp->blk_phys_birth);
 				}
 			}
 		}
@@ -2398,7 +2398,7 @@ dbuf_prefetch_indirect_done(zio_t *zio, arc_buf_t *abuf, void *private)
 	 */
 	if (zio != NULL) {
 		ASSERT3S(BP_GET_LEVEL(zio->io_bp), ==, dpa->dpa_curlevel);
-		if (zio->io_flags & ZIO_FLAG_RAW) {
+		if (zio->io_flags & ZIO_FLAG_RAW_COMPRESS) {
 			ASSERT3U(BP_GET_PSIZE(zio->io_bp), ==, zio->io_size);
 		} else {
 			ASSERT3U(BP_GET_LSIZE(zio->io_bp), ==, zio->io_size);
@@ -3378,7 +3378,7 @@ dbuf_write_ready(zio_t *zio, arc_buf_t *buf, void *vdb)
 	DB_DNODE_EXIT(db);
 
 	if (!BP_IS_EMBEDDED(bp))
-		bp->blk_fill = fill;
+		BP_SET_FILL(bp, fill);
 
 	mutex_exit(&db->db_mtx);
 
@@ -3681,7 +3681,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 		mutex_enter(&db->db_mtx);
 		dr->dt.dl.dr_override_state = DR_NOT_OVERRIDDEN;
 		zio_write_override(dr->dr_zio, &dr->dt.dl.dr_overridden_by,
-		    dr->dt.dl.dr_copies, dr->dt.dl.dr_nopwrite);
+			dr->dt.dl.dr_copies, dr->dt.dl.dr_nopwrite);
 		mutex_exit(&db->db_mtx);
 	} else if (db->db_state == DB_NOFILL) {
 		ASSERT(zp.zp_checksum == ZIO_CHECKSUM_OFF ||
