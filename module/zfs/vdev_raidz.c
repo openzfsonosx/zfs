@@ -2006,7 +2006,6 @@ vdev_raidz_io_start(zio_t *zio)
 static void
 raidz_checksum_error(zio_t *zio, raidz_col_t *rc, void *bad_data)
 {
-	void *buf;
 	vdev_t *vd = zio->io_vd->vdev_child[rc->rc_devidx];
 
 	if (!(zio->io_flags & ZIO_FLAG_SPECULATIVE)) {
@@ -2020,11 +2019,9 @@ raidz_checksum_error(zio_t *zio, raidz_col_t *rc, void *bad_data)
 		zbc.zbc_has_cksum = 0;
 		zbc.zbc_injected = rm->rm_ecksuminjected;
 
-		buf = abd_borrow_buf_copy(rc->rc_abd, rc->rc_size);
-		zfs_ereport_post_checksum(zio->io_spa, vd, zio,
-		    rc->rc_offset, rc->rc_size, buf, bad_data,
-		    &zbc);
-		abd_return_buf(rc->rc_abd, buf, rc->rc_size);
+		zfs_ereport_post_checksum(zio->io_spa, vd,
+		    &zio->io_bookmark, zio, rc->rc_offset, rc->rc_size,
+		    rc->rc_abd, bad_data, &zbc);
 	}
 }
 
@@ -2521,7 +2518,8 @@ vdev_raidz_io_done(zio_t *zio)
 					zfs_ereport_start_checksum(
 					    zio->io_spa,
 					    vd->vdev_child[rc->rc_devidx],
-					    zio, rc->rc_offset, rc->rc_size,
+					    &zio->io_bookmark, zio,
+					    rc->rc_offset, rc->rc_size,
 					    (void *)(uintptr_t)c, &zbc);
 				}
 			}
