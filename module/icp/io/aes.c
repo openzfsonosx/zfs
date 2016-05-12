@@ -52,18 +52,6 @@ static struct modlinkage modlinkage = {
 	MODREV_1, { (void *)&modlcrypto, NULL }
 };
 
-
-/*
- * The following definitions are to keep EXPORT_SRC happy.
- */
-#ifndef AES_MIN_KEY_BYTES
-#define	AES_MIN_KEY_BYTES		0
-#endif
-
-#ifndef AES_MAX_KEY_BYTES
-#define	AES_MAX_KEY_BYTES		0
-#endif
-
 /*
  * Mechanism info structure passed to KCF during registration.
  */
@@ -142,14 +130,6 @@ static int aes_decrypt_update(crypto_ctx_t *, crypto_data_t *,
 static int aes_decrypt_atomic(crypto_provider_handle_t, crypto_session_id_t,
     crypto_mechanism_t *, crypto_key_t *, crypto_data_t *,
     crypto_data_t *, crypto_spi_ctx_template_t, crypto_req_handle_t);
-
-
-static int aes_create_ctx_template(crypto_provider_handle_t,
-    crypto_mechanism_t *, crypto_key_t *, crypto_spi_ctx_template_t *,
-    size_t *, crypto_req_handle_t);
-static int aes_free_context(crypto_ctx_t *);
-
-
 
 static crypto_cipher_ops_t aes_cipher_ops = {
 	aes_encrypt_init,
@@ -1220,11 +1200,11 @@ out:
 
 	if (aes_ctx.ac_flags & CCM_MODE) {
 		if (aes_ctx.ac_pt_buf != NULL) {
-			kmem_free(aes_ctx.ac_pt_buf, aes_ctx.ac_data_len);
+			vmem_free(aes_ctx.ac_pt_buf, aes_ctx.ac_data_len);
 		}
 	} else if (aes_ctx.ac_flags & (GCM_MODE|GMAC_MODE)) {
 		if (((gcm_ctx_t *)&aes_ctx)->gcm_pt_buf != NULL) {
-			kmem_free(((gcm_ctx_t *)&aes_ctx)->gcm_pt_buf,
+			vmem_free(((gcm_ctx_t *)&aes_ctx)->gcm_pt_buf,
 			    ((gcm_ctx_t *)&aes_ctx)->gcm_pt_buf_len);
 		}
 	}

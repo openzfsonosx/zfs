@@ -452,19 +452,17 @@ mod_hash_create_extended(
     int sleep)				/* whether to sleep for mem */
 {
 	mod_hash_t *mod_hash;
-	int size;
 	ASSERT(hname && keycmp && hash_alg && vdtor && kdtor);
 
 	if ((mod_hash = kmem_zalloc(MH_SIZE(nchains), sleep)) == NULL)
 		return (NULL);
 
-	size = strlen(hname) + 1;
-	mod_hash->mh_name = kmem_alloc(size, sleep);
+	mod_hash->mh_name = kmem_alloc(strlen(hname) + 1, sleep);
 	if (mod_hash->mh_name == NULL) {
 		kmem_free(mod_hash, MH_SIZE(nchains));
 		return (NULL);
 	}
-	(void) strlcpy(mod_hash->mh_name, hname, size);
+	(void) strcpy(mod_hash->mh_name, hname);
 
 	rw_init(&mod_hash->mh_contents, NULL, RW_DEFAULT, NULL);
 	mod_hash->mh_sleep = sleep;

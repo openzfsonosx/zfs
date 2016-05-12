@@ -1281,8 +1281,14 @@ kernel_init(int mode)
 	(void) snprintf(hw_serial, sizeof (hw_serial), "%ld",
 	    (mode & FWRITE) ? get_system_hostid() : 0);
 
+<<<<<<< HEAD
 	VERIFY((random_fd = open("/dev/random", O_RDONLY)) != -1);
 	VERIFY((urandom_fd = open("/dev/urandom", O_RDONLY)) != -1);
+=======
+	random_init();
+
+	VERIFY0(uname(&hw_utsname));
+>>>>>>> 015f843... Illumos Crypto Port module added to enable native encryption in zfs
 
 	thread_init();
 	system_taskq_init();

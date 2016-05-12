@@ -35,7 +35,6 @@
  *	Returns bit number + 1 of highest bit that is set, otherwise returns 0.
  * High order bit is 31 (or 63 in _LP64 kernel).
  */
-#ifdef LINUX
 int
 highbit(ulong_t i)
 {
@@ -101,4 +100,3 @@ lowbit(ulong_t i)
 	}
 	return (h);
 }
-#endif

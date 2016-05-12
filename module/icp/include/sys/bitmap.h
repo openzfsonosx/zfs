@@ -134,7 +134,7 @@ extern "C" {
 /*
  * return next available bit index from map with specified number of bits
  */
-extern int	bt_availbit(ulong_t *bitmap, size_t nbits);
+extern index_t	bt_availbit(ulong_t *bitmap, size_t nbits);
 /*
  * find the highest order bit that is on, and is within or below
  * the word specified by wx
@@ -147,10 +147,8 @@ extern int	bt_range(ulong_t *bitmap, size_t *pos1, size_t *pos2,
  *	Returns bit number + 1 of bit that is set, otherwise returns 0.
  * Low order bit is 0, high order bit is 31.
  */
-#ifdef LINUX
 extern int	highbit(ulong_t);
 extern int	lowbit(ulong_t);
-#endif
 extern int	bt_getlowbit(ulong_t *bitmap, size_t start, size_t stop);
 extern void	bt_copy(ulong_t *, ulong_t *, ulong_t);
 

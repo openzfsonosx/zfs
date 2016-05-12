@@ -897,7 +897,7 @@ ccm_init_ctx(ccm_ctx_t *ccm_ctx, char *param, int kmflag,
 	}
 	if (!is_encrypt_init) {
 		/* allocate buffer for storing decrypted plaintext */
-		ccm_ctx->ccm_pt_buf = kmem_alloc(ccm_ctx->ccm_data_len,
+		ccm_ctx->ccm_pt_buf = vmem_alloc(ccm_ctx->ccm_data_len,
 		    kmflag);
 		if (ccm_ctx->ccm_pt_buf == NULL) {
 			rv = CRYPTO_HOST_MEMORY;

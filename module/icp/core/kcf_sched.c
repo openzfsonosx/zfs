@@ -214,7 +214,7 @@ kcf_disp_sw_request(kcf_areq_node_t *areq)
 		 * The following ensures the number of threads in pool
 		 * does not exceed kcf_maxthreads.
 		 */
-		cnt = MIN(cnt, kcf_maxthreads - (int)kcfpool->kp_threads);
+		cnt = min(cnt, kcf_maxthreads - (int)kcfpool->kp_threads);
 		if (cnt > 0) {
 			/* Signal the creator thread for more threads */
 			mutex_enter(&kcfpool->kp_user_lock);
@@ -578,22 +578,11 @@ kcf_resubmit_request(kcf_areq_node_t *areq)
 
 static inline int EMPTY_TASKQ(taskq_t *tq)
 {
-#ifdef __APPLE__
-#ifdef _KERNEL
-	return  ((tq)->tq_task.tqent_next == &(tq)->tq_task);
-#else
-	return 0;
-#endif
-
-#else // !APPLE
-
 #ifdef _KERNEL
 	return (tq->tq_lowest_id == tq->tq_next_id);
 #else
 	return (tq->tq_task.tqent_next == &tq->tq_task || tq->tq_active == 0);
 #endif
-
-#endif // !APPLE
 }
 
 /*
@@ -682,11 +671,9 @@ kcf_submit_request(kcf_provider_desc_t *pd, crypto_ctx_t *ctx,
 				 * the synchronous case, we wait for the taskq
 				 * to become empty.
 				 */
-#ifdef _KERNEL
 				if (taskq->tq_nalloc >= crypto_taskq_maxalloc) {
 					taskq_wait(taskq);
 				}
-#endif
 
 				(void) taskq_dispatch(taskq, process_req_hwp,
 				    sreq, TQ_SLEEP);
@@ -777,13 +764,11 @@ kcf_submit_request(kcf_provider_desc_t *pd, crypto_ctx_t *ctx,
 			 * value if we exceeded maxalloc. Hence the check
 			 * here.
 			 */
-#ifdef _KERNEL
 			if (taskq->tq_nalloc >= crypto_taskq_maxalloc) {
 				error = CRYPTO_BUSY;
 				KCF_AREQ_REFRELE(areq);
 				goto done;
 			}
-#endif
 
 			if (!(crq->cr_flag & CRYPTO_SKIP_REQID)) {
 			/*
