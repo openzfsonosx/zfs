@@ -81,8 +81,9 @@ typedef enum arc_flags
 	ARC_FLAG_L2_WRITING		= 1 << 15,	/* write in progress */
 	ARC_FLAG_L2_EVICTED		= 1 << 16,	/* evicted during I/O */
 	ARC_FLAG_L2_WRITE_HEAD		= 1 << 17,	/* head of write list */
+	ARC_FLAG_L2_ENCRYPT		= 1 << 18,	/* encrypt in L2ARC */
 	/* indicates that the buffer contains metadata (otherwise, data) */
-	ARC_FLAG_BUFC_METADATA		= 1 << 18,
+	ARC_FLAG_BUFC_METADATA		= 1 << 19,
 
 	/* Flags specifying whether optional hdr struct fields are defined */
 	ARC_FLAG_HAS_L1HDR		= 1 << 19,

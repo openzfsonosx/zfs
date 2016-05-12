@@ -388,7 +388,7 @@ dump_intent_log(zilog_t *zilog)
 	if (verbose >= 2) {
 		(void) printf("\n");
 		(void) zil_parse(zilog, print_log_block, print_log_record, NULL,
-		    zh->zh_claim_txg);
+		    zh->zh_claim_txg, B_FALSE);
 		print_log_stats(verbose);
 	}
 }

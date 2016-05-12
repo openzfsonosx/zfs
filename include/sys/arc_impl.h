@@ -29,6 +29,7 @@
 #define	_SYS_ARC_IMPL_H
 
 #include <sys/arc.h>
+#include <sys/zio_crypt.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -184,12 +185,23 @@ typedef struct l2arc_buf_hdr {
 	/* protected by arc_buf_hdr mutex */
 	l2arc_dev_t		*b_dev;		/* L2ARC device */
 	uint64_t		b_daddr;	/* disk address, offset byte */
-	/* real alloc'd buffer size depending on b_compress applied */
+	/* real alloc'd buffer size depending on b_transforms applied */
 	uint32_t		b_hits;
 	int32_t			b_asize;
+	uint8_t			b_mac[L2ARC_MAC_LEN];
+	/* 7 bits of zio_compress, 1 bit indicating encryption */
+	uint8_t			b_transforms;
 
 	list_node_t		b_l2node;
 } l2arc_buf_hdr_t;
+
+#define	L2TRANS_COMP_MASK 0x7f
+#define	L2TRANS_GET_ENC(t) (!!((t) & (1 << 7)))
+#define	L2TRANS_SET_ENC(t, enc) ((t) |= ((!!(enc)) << 7))
+
+#define	L2TRANS_GET_COMP(t) ((t) & L2TRANS_COMP_MASK)
+#define	L2TRANS_SET_COMP(t, comp) \
+	((t) = (((t) & (1 << 7)) | ((comp) & L2TRANS_COMP_MASK)))
 
 typedef struct l2arc_write_callback {
 	l2arc_dev_t	*l2wcb_dev;		/* device info */

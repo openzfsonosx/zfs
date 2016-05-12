@@ -107,6 +107,7 @@ static int zfs_do_holds(int argc, char **argv);
 static int zfs_do_release(int argc, char **argv);
 static int zfs_do_diff(int argc, char **argv);
 static int zfs_do_bookmark(int argc, char **argv);
+static int zfs_do_crypto(int argc, char **argv);
 
 /*
  * Enable a reasonable set of defaults for libumem debugging on DEBUG builds.
@@ -154,6 +155,7 @@ typedef enum {
 	HELP_RELEASE,
 	HELP_DIFF,
 	HELP_BOOKMARK,
+	HELP_CRYPTO,
 } zfs_help_t;
 
 typedef struct zfs_command {
@@ -207,6 +209,7 @@ static zfs_command_t command_table[] = {
 	{ "holds",	zfs_do_holds,		HELP_HOLDS		},
 	{ "release",	zfs_do_release,		HELP_RELEASE		},
 	{ "diff",	zfs_do_diff,		HELP_DIFF		},
+	{ "key",	zfs_do_crypto,		HELP_CRYPTO		},
 };
 
 #define	NCOMMAND	(sizeof (command_table) / sizeof (command_table[0]))
@@ -325,6 +328,9 @@ get_usage(zfs_help_t idx)
 		    "[snapshot|filesystem]\n"));
 	case HELP_BOOKMARK:
 		return (gettext("\tbookmark <snapshot> <bookmark>\n"));
+	case HELP_CRYPTO:
+		return (gettext("\tkey [-luK] <filesystem|volume>\n"
+		    "\tkey -c [-o keysource=value] <filesystem|volume>\n"));
 	}
 
 	abort();
@@ -646,7 +652,7 @@ static int
 zfs_do_clone(int argc, char **argv)
 {
 	zfs_handle_t *zhp = NULL;
-	boolean_t parents = B_FALSE;
+	boolean_t parents = B_FALSE, add_key = B_FALSE;
 	nvlist_t *props;
 	int ret = 0;
 	int c;
@@ -655,7 +661,7 @@ zfs_do_clone(int argc, char **argv)
 		nomem();
 
 	/* check options */
-	while ((c = getopt(argc, argv, "o:p")) != -1) {
+	while ((c = getopt(argc, argv, "o:pK")) != -1) {
 		switch (c) {
 		case 'o':
 			if (parseprop(props, optarg) != 0)
@@ -663,6 +669,9 @@ zfs_do_clone(int argc, char **argv)
 			break;
 		case 'p':
 			parents = B_TRUE;
+			break;
+		case 'K':
+			add_key = B_TRUE;
 			break;
 		case '?':
 			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
@@ -709,7 +718,7 @@ zfs_do_clone(int argc, char **argv)
 	}
 
 	/* pass to libzfs */
-	ret = zfs_clone(zhp, argv[1], props);
+	ret = zfs_clone(zhp, argv[1], props, add_key);
 
 	/* create the mountpoint if necessary */
 	if (ret == 0) {
@@ -4075,6 +4084,8 @@ zfs_do_receive(int argc, char **argv)
 #define	ZFS_DELEG_PERM_RELEASE		"release"
 #define	ZFS_DELEG_PERM_DIFF		"diff"
 #define	ZFS_DELEG_PERM_BOOKMARK		"bookmark"
+#define	ZFS_DELEG_PERM_LOAD_KEY		"keyuse"
+#define	ZFS_DELEG_PERM_CHANGE_KEY	"keychange"
 
 #define	ZFS_NUM_DELEG_NOTES ZFS_DELEG_NOTE_NONE
 
@@ -4095,6 +4106,8 @@ static zfs_deleg_perm_tab_t zfs_deleg_perm_tbl[] = {
 	{ ZFS_DELEG_PERM_SHARE, ZFS_DELEG_NOTE_SHARE },
 	{ ZFS_DELEG_PERM_SNAPSHOT, ZFS_DELEG_NOTE_SNAPSHOT },
 	{ ZFS_DELEG_PERM_BOOKMARK, ZFS_DELEG_NOTE_BOOKMARK },
+	{ ZFS_DELEG_PERM_LOAD_KEY, ZFS_DELEG_NOTE_LOAD_KEY },
+	{ ZFS_DELEG_PERM_CHANGE_KEY, ZFS_DELEG_NOTE_CHANGE_KEY },
 
 	{ ZFS_DELEG_PERM_GROUPQUOTA, ZFS_DELEG_NOTE_GROUPQUOTA },
 	{ ZFS_DELEG_PERM_GROUPUSED, ZFS_DELEG_NOTE_GROUPUSED },
@@ -4659,6 +4672,12 @@ deleg_perm_comment(zfs_deleg_note_t note)
 		break;
 	case ZFS_DELEG_NOTE_SNAPSHOT:
 		str = gettext("");
+		break;
+	case ZFS_DELEG_NOTE_LOAD_KEY:
+		str = gettext("Allows loading or unloading an encryption key");
+		break;
+	case ZFS_DELEG_NOTE_CHANGE_KEY:
+		str = gettext("Allows changing or adding an encryption key");
 		break;
 /*
  *	case ZFS_DELEG_NOTE_VSCAN:
@@ -7035,6 +7054,117 @@ zfs_do_bookmark(int argc, char **argv)
 
 usage:
 	usage(B_FALSE);
+	return (-1);
+}
+
+static int
+zfs_do_crypto(int argc, char **argv)
+{
+	int c, ret = -1;
+	boolean_t load = B_FALSE, unload = B_FALSE;
+	boolean_t add_key = B_FALSE, rewrap = B_FALSE;
+	nvlist_t *props = NULL;
+	zfs_handle_t *zhp = NULL;
+
+	if (nvlist_alloc(&props, NV_UNIQUE_NAME, 0) != 0)
+		nomem();
+
+	while ((c = getopt(argc, argv, "ulKco:")) != -1) {
+		switch (c) {
+		case 'u':
+			if (ret == 0) {
+				(void) fprintf(stderr, gettext(
+					"multiple actions specified\n"));
+				goto usage;
+			}
+			unload = B_TRUE;
+			ret = 0;
+			break;
+		case 'l':
+			if (ret == 0) {
+				(void) fprintf(stderr, gettext(
+					"multiple actions specified\n"));
+				goto usage;
+			}
+			load = B_TRUE;
+			ret = 0;
+			break;
+		case 'K':
+			if (ret == 0) {
+				(void) fprintf(stderr, gettext(
+					"multiple actions specified\n"));
+				goto usage;
+			}
+			add_key = B_TRUE;
+			ret = 0;
+			break;
+		case 'c':
+			if (ret == 0) {
+				(void) fprintf(stderr, gettext(
+					"multiple actions specified\n"));
+				goto usage;
+			}
+			rewrap = B_TRUE;
+			ret = 0;
+			break;
+		case 'o':
+			if (parseprop(props, optarg) != 0)
+				return (1);
+			break;
+		default:
+			(void) fprintf(stderr,
+			    gettext("invalid option '%c'\n"), optopt);
+			goto usage;
+		}
+	}
+
+	if (ret) {
+		(void) fprintf(stderr,
+			gettext("No action specified\n"));
+		goto usage;
+	}
+
+	if (!rewrap && !nvlist_empty(props)) {
+		(void) fprintf(stderr,
+			gettext("Properties not accepted "
+				"for specified command\n"));
+		goto usage;
+	}
+
+	if (argc < 3) {
+		(void) fprintf(stderr, gettext("Too few arguments\n"));
+		goto usage;
+	}
+
+	zhp = zfs_open(g_zfs, argv[argc - 1],
+		ZFS_TYPE_FILESYSTEM|ZFS_TYPE_VOLUME);
+	if (zhp == NULL)
+		goto usage;
+
+	if (load)
+		ret = zfs_crypto_load_key(zhp);
+	else if (unload)
+		ret = zfs_crypto_unload_key(zhp);
+	else if (add_key)
+		ret = zfs_crypto_add_key(zhp);
+	else
+		ret = zfs_crypto_rewrap(zhp, props);
+
+	if (ret)
+		goto error;
+
+	nvlist_free(props);
+	zfs_close(zhp);
+	return (0);
+
+usage:
+	usage(B_FALSE);
+
+error:
+	if (props)
+		nvlist_free(props);
+	if (zhp)
+		zfs_close(zhp);
 	return (-1);
 }
 

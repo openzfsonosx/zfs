@@ -41,6 +41,7 @@
 #include <sys/refcount.h>
 #include <sys/bplist.h>
 #include <sys/bpobj.h>
+#include <sys/dsl_keychain.h>
 #include <sys/zfeature.h>
 #include <zfeature_common.h>
 
@@ -258,6 +259,8 @@ struct spa {
 	uint64_t	spa_deadman_synctime;	/* deadman expiration timer */
 	uint64_t	spa_errata;		/* errata issues detected */
 	spa_stats_t	spa_stats;		/* assorted spa statistics */
+	spa_keystore_t	spa_keystore;	/* loaded keychains */
+	hrtime_t	spa_ccw_fail_time;	/* Conf cache write fail time */
 	taskq_t		*spa_zvol_taskq;	/* Taskq for minor managment */
 
 	/*

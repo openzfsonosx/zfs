@@ -951,7 +951,7 @@ dmu_send(const char *tosnap, const char *fromsnap, boolean_t embedok,
 		 * We are sending a filesystem or volume.  Ensure
 		 * that it doesn't change by owning the dataset.
 		 */
-		err = dsl_dataset_own(dp, tosnap, FTAG, &ds);
+		err = dsl_dataset_own(dp, tosnap, FTAG, B_TRUE, &ds);
 		owned = B_TRUE;
 	} else {
 		err = dsl_dataset_hold(dp, tosnap, FTAG, &ds);
@@ -1134,7 +1134,7 @@ dmu_send_estimate_from_txg(dsl_dataset_t *ds, uint64_t from_txg,
 	 * traverse the blocks of the snapshot with birth times after
 	 * from_txg, summing their uncompressed size
 	 */
-	err = traverse_dataset(ds, from_txg, TRAVERSE_POST,
+	err = traverse_dataset(ds, from_txg, TRAVERSE_POST|TRAVERSE_NO_DECRYPT,
 	    dmu_calculate_send_traversal, &size);
 	if (err)
 		return (err);
@@ -1401,7 +1401,7 @@ dmu_recv_begin_sync(void *arg, dmu_tx_t *tx)
 			    drba->drba_snapobj, FTAG, &snap));
 		}
 		dsobj = dsl_dataset_create_sync(ds->ds_dir, recv_clone_name,
-		    snap, crflags, drba->drba_cred, tx);
+		    snap, crflags, drba->drba_cred, NULL, tx);
 		if (drba->drba_snapobj != 0)
 			dsl_dataset_rele(snap, FTAG);
 		dsl_dataset_rele(ds, FTAG);
@@ -1420,13 +1420,13 @@ dmu_recv_begin_sync(void *arg, dmu_tx_t *tx)
 		/* Create new dataset. */
 		dsobj = dsl_dataset_create_sync(dd,
 		    strrchr(tofs, '/') + 1,
-		    origin, crflags, drba->drba_cred, tx);
+		    origin, crflags, drba->drba_cred, NULL, tx);
 		if (origin != NULL)
 			dsl_dataset_rele(origin, FTAG);
 		dsl_dir_rele(dd, FTAG);
 		drba->drba_cookie->drc_newfs = B_TRUE;
 	}
-	VERIFY0(dsl_dataset_own_obj(dp, dsobj, dmu_recv_tag, &newds));
+	VERIFY0(dsl_dataset_own_obj(dp, dsobj, dmu_recv_tag, B_TRUE, &newds));
 
 	if (drba->drba_cookie->drc_resumable) {
 		dsl_dataset_zapify(newds, tx);
@@ -3078,8 +3078,12 @@ dmu_recv_end_sync(void *arg, dmu_tx_t *tx)
 	/*
 	 * Release the hold from dmu_recv_begin.  This must be done before
 	 * we return to open context, so that when we free the dataset's dnode,
-	 * we can evict its bonus buffer.
+	 * we can evict its bonus buffer. Since the dataset may be destroyed
+	 * at this point (and therefore won't have a valid pointer to the spa)
+	 * we release the keychain record manually here
 	 */
+	(void) spa_keystore_remove_keychain_record(dmu_tx_pool(tx)->dp_spa,
+	    drc->drc_ds);
 	dsl_dataset_disown(drc->drc_ds, dmu_recv_tag);
 	drc->drc_ds = NULL;
 }

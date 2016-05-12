@@ -612,7 +612,7 @@ dsl_scan_zil(dsl_pool_t *dp, zil_header_t *zh)
 	zilog = zil_alloc(dp->dp_meta_objset, zh);
 
 	(void) zil_parse(zilog, dsl_scan_zil_block, dsl_scan_zil_record, &zsa,
-	    claim_txg);
+	    claim_txg, B_TRUE);
 
 	zil_free(zilog);
 }

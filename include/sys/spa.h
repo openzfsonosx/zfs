@@ -58,6 +58,7 @@ typedef struct zbookmark_phys zbookmark_phys_t;
 
 struct dsl_pool;
 struct dsl_dataset;
+struct dsl_crypto_params;
 
 /*
  * General-purpose 32-bit and 64-bit bitfield encodings.
@@ -397,6 +398,9 @@ _NOTE(CONSTCOND) } while (0)
 #define	BP_GET_LEVEL(bp)		BF64_GET((bp)->blk_prop, 56, 5)
 #define	BP_SET_LEVEL(bp, x)		BF64_SET((bp)->blk_prop, 56, 5, x)
 
+#define	BP_IS_ENCRYPTED(bp)		BF64_GET((bp)->blk_prop, 61, 1)
+#define	BP_SET_ENCRYPTED(bp, x)		BF64_SET((bp)->blk_prop, 61, 1, x)
+
 #define	BP_GET_DEDUP(bp)		BF64_GET((bp)->blk_prop, 62, 1)
 #define	BP_SET_DEDUP(bp, x)		BF64_SET((bp)->blk_prop, 62, 1, x)
 
@@ -455,17 +459,21 @@ _NOTE(CONSTCOND) } while (0)
 	((zc1).zc_word[2] - (zc2).zc_word[2]) | \
 	((zc1).zc_word[3] - (zc2).zc_word[3])))
 
-#define ZIO_CHECKSUM_IS_ZERO(zc)							\
-	(0 == ((zc)->zc_word[0] | (zc)->zc_word[1] |			\
-		   (zc)->zc_word[2] | (zc)->zc_word[3]))
+#define	ZIO_CHECKSUM_MAC_EQUAL(zc1, zc2) \
+	(0 == (((zc1).zc_word[0] - (zc2).zc_word[0]) | \
+	((zc1).zc_word[1] - (zc2).zc_word[1])))
 
-#define ZIO_CHECKSUM_BSWAP(zcp)											\
-	{																	\
-        (zcp)->zc_word[0] = BSWAP_64((zcp)->zc_word[0]);				\
-        (zcp)->zc_word[1] = BSWAP_64((zcp)->zc_word[1]);				\
-        (zcp)->zc_word[2] = BSWAP_64((zcp)->zc_word[2]);				\
-        (zcp)->zc_word[3] = BSWAP_64((zcp)->zc_word[3]);				\
-	}
+#define	ZIO_CHECKSUM_IS_ZERO(zc) \
+	(0 == ((zc)->zc_word[0] | (zc)->zc_word[1] | \
+	(zc)->zc_word[2] | (zc)->zc_word[3]))
+
+#define	ZIO_CHECKSUM_BSWAP(zcp)					\
+{								\
+	(zcp)->zc_word[0] = BSWAP_64((zcp)->zc_word[0]);	\
+	(zcp)->zc_word[1] = BSWAP_64((zcp)->zc_word[1]);	\
+	(zcp)->zc_word[2] = BSWAP_64((zcp)->zc_word[2]);	\
+	(zcp)->zc_word[3] = BSWAP_64((zcp)->zc_word[3]);	\
+}
 
 #define	DVA_IS_VALID(dva)	(DVA_GET_ASIZE(dva) != 0)
 
@@ -476,6 +484,15 @@ _NOTE(CONSTCOND) } while (0)
 	(zcp)->zc_word[2] = w2;			\
 	(zcp)->zc_word[3] = w3;			\
 }
+
+#define	MAX_DATA_MAC_LEN 16
+#define	MAX_DATA_IV_LEN 12
+
+#define	ZIO_SET_MAC(bp, mac)	\
+	bcopy((mac), &(bp)->blk_cksum.zc_word[2], MAX_DATA_MAC_LEN);
+
+#define	ZIO_SET_IV(bp, iv)	\
+	bcopy((iv), (bp)->blk_pad, MAX_DATA_IV_LEN);
 
 #define	BP_IDENTITY(bp)		(ASSERT(!BP_IS_EMBEDDED(bp)), &(bp)->blk_dva[0])
 #define	BP_IS_GANG(bp)		\
@@ -610,8 +627,8 @@ extern int spa_open_rewind(const char *pool, spa_t **, void *tag,
     nvlist_t *policy, nvlist_t **config);
 extern int spa_get_stats(const char *pool, nvlist_t **config, char *altroot,
     size_t buflen);
-extern int spa_create(const char *pool, nvlist_t *config, nvlist_t *props,
-    nvlist_t *zplprops);
+extern int spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
+    nvlist_t *zplprops, struct dsl_crypto_params *dcp);
 extern int spa_import_rootpool(char *devpath, char *devid);
 extern int spa_import(char *pool, nvlist_t *config, nvlist_t *props,
     uint64_t flags);

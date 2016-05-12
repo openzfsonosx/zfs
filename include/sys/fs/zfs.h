@@ -170,6 +170,10 @@ typedef enum {
 	ZFS_PROP_REDUNDANT_METADATA,
 	ZFS_PROP_PREV_SNAP,
 	ZFS_PROP_OVERLAY,
+	ZFS_PROP_ENCRYPTION,
+	ZFS_PROP_SALT,
+	ZFS_PROP_KEYSOURCE,
+	ZFS_PROP_KEYSTATUS,
 	ZFS_PROP_RECEIVE_RESUME_TOKEN,
 	ZFS_NUM_PROPS
 } zfs_prop_t;
@@ -945,6 +949,12 @@ typedef enum {
 #define	ZPOOL_HIST_DSID		"dsid"
 
 /*
+ * Special nvlist name that will not have its args recorded in the pool's
+ * history log.
+ */
+#define	ZPOOL_HIDDEN_ARGS	"hidden_args"
+
+/*
  * Flags for ZFS_IOC_VDEV_SET_STATE
  */
 #define	ZFS_ONLINE_CHECKREMOVE	0x1
@@ -962,6 +972,7 @@ typedef enum {
 #define	ZFS_IMPORT_MISSING_LOG	0x4
 #define	ZFS_IMPORT_ONLY		0x8
 #define	ZFS_IMPORT_TEMP_NAME	0x10
+#define	ZFS_IMPORT_LOAD_KEYS	0x20
 
 /*
  * Sysevent payload members.  ZFS will generate the following sysevents with the

@@ -71,8 +71,10 @@ struct nvlist;
 struct arc_buf;
 struct zio_prop;
 struct sa_handle;
+
 struct request; // lund
 struct dsl_dataset;
+struct dsl_crypto_params;
 
 typedef struct objset objset_t;
 typedef struct dmu_tx dmu_tx_t;
@@ -101,16 +103,18 @@ typedef enum dmu_object_byteswap {
 
 #define	DMU_OT_NEWTYPE 0x80
 #define	DMU_OT_METADATA 0x40
-#define	DMU_OT_BYTESWAP_MASK 0x3f
+#define	DMU_OT_ENCRYPTED 0x20
+#define	DMU_OT_BYTESWAP_MASK 0x1f
 
 /*
  * Defines a uint8_t object type. Object types specify if the data
  * in the object is metadata (boolean) and how to byteswap the data
  * (dmu_object_byteswap_t).
  */
-#define	DMU_OT(byteswap, metadata) \
+#define	DMU_OT(byteswap, encrypted, metadata) \
 	(DMU_OT_NEWTYPE | \
 	((metadata) ? DMU_OT_METADATA : 0) | \
+	((encrypted) ? DMU_OT_ENCRYPTED : 0) | \
 	((byteswap) & DMU_OT_BYTESWAP_MASK))
 
 #define	DMU_OT_IS_VALID(ot) (((ot) & DMU_OT_NEWTYPE) ? \
@@ -120,6 +124,10 @@ typedef enum dmu_object_byteswap {
 #define	DMU_OT_IS_METADATA(ot) (((ot) & DMU_OT_NEWTYPE) ? \
 	((ot) & DMU_OT_METADATA) : \
 	dmu_ot[(int)(ot)].ot_metadata)
+
+#define	DMU_OT_IS_ENCRYPTED(ot) (((ot) & DMU_OT_NEWTYPE) ? \
+	((ot) & DMU_OT_ENCRYPTED) : \
+	dmu_ot[(int)(ot)].ot_encrypt)
 
 /*
  * These object types use bp_fill != 1 for their L0 bp's. Therefore they can't
@@ -197,6 +205,7 @@ typedef enum dmu_object_type {
 	DMU_OT_DEADLIST_HDR,		/* UINT64 */
 	DMU_OT_DSL_CLONES,		/* ZAP */
 	DMU_OT_BPOBJ_SUBOBJ,		/* UINT64 */
+	DMU_OT_DSL_KEYCHAIN,		/* ZAP */
 	/*
 	 * Do not allocate new object types here. Doing so makes the on-disk
 	 * format incompatible with any other format that uses the same object
@@ -216,16 +225,16 @@ typedef enum dmu_object_type {
 	/*
 	 * Names for valid types declared with DMU_OT().
 	 */
-	DMU_OTN_UINT8_DATA = DMU_OT(DMU_BSWAP_UINT8, B_FALSE),
-	DMU_OTN_UINT8_METADATA = DMU_OT(DMU_BSWAP_UINT8, B_TRUE),
-	DMU_OTN_UINT16_DATA = DMU_OT(DMU_BSWAP_UINT16, B_FALSE),
-	DMU_OTN_UINT16_METADATA = DMU_OT(DMU_BSWAP_UINT16, B_TRUE),
-	DMU_OTN_UINT32_DATA = DMU_OT(DMU_BSWAP_UINT32, B_FALSE),
-	DMU_OTN_UINT32_METADATA = DMU_OT(DMU_BSWAP_UINT32, B_TRUE),
-	DMU_OTN_UINT64_DATA = DMU_OT(DMU_BSWAP_UINT64, B_FALSE),
-	DMU_OTN_UINT64_METADATA = DMU_OT(DMU_BSWAP_UINT64, B_TRUE),
-	DMU_OTN_ZAP_DATA = DMU_OT(DMU_BSWAP_ZAP, B_FALSE),
-	DMU_OTN_ZAP_METADATA = DMU_OT(DMU_BSWAP_ZAP, B_TRUE),
+	DMU_OTN_UINT8_DATA = DMU_OT(DMU_BSWAP_UINT8, B_FALSE, B_FALSE),
+	DMU_OTN_UINT8_METADATA = DMU_OT(DMU_BSWAP_UINT8, B_FALSE, B_TRUE),
+	DMU_OTN_UINT16_DATA = DMU_OT(DMU_BSWAP_UINT16, B_FALSE, B_FALSE),
+	DMU_OTN_UINT16_METADATA = DMU_OT(DMU_BSWAP_UINT16, B_FALSE, B_TRUE),
+	DMU_OTN_UINT32_DATA = DMU_OT(DMU_BSWAP_UINT32, B_FALSE, B_FALSE),
+	DMU_OTN_UINT32_METADATA = DMU_OT(DMU_BSWAP_UINT32, B_FALSE, B_TRUE),
+	DMU_OTN_UINT64_DATA = DMU_OT(DMU_BSWAP_UINT64, B_FALSE, B_FALSE),
+	DMU_OTN_UINT64_METADATA = DMU_OT(DMU_BSWAP_UINT64, B_FALSE, B_TRUE),
+	DMU_OTN_ZAP_DATA = DMU_OT(DMU_BSWAP_ZAP, B_FALSE, B_FALSE),
+	DMU_OTN_ZAP_METADATA = DMU_OT(DMU_BSWAP_ZAP, B_FALSE, B_TRUE),
 } dmu_object_type_t;
 
 typedef enum txg_how {
@@ -273,27 +282,27 @@ void zfs_znode_byteswap(void *buf, size_t size);
  */
 #define	DMU_BONUS_BLKID		(-1ULL)
 #define	DMU_SPILL_BLKID		(-2ULL)
+
 /*
  * Public routines to create, destroy, open, and close objsets.
  */
 int dmu_objset_hold(const char *name, void *tag, objset_t **osp);
 int dmu_objset_own(const char *name, dmu_objset_type_t type,
-    boolean_t readonly, void *tag, objset_t **osp);
+    boolean_t readonly, boolean_t key_required, void *tag, objset_t **osp);
 void dmu_objset_rele(objset_t *os, void *tag);
 void dmu_objset_disown(objset_t *os, void *tag);
 int dmu_objset_open_ds(struct dsl_dataset *ds, objset_t **osp);
 
 void dmu_objset_evict_dbufs(objset_t *os);
 int dmu_objset_create(const char *name, dmu_objset_type_t type, uint64_t flags,
-    void (*func)(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx), void *arg);
+    struct dsl_crypto_params *dcp, void (*func)(objset_t *os, void *arg,
+	cred_t *cr, dmu_tx_t *tx), void *arg);
 int dmu_objset_destroy(const char *name, boolean_t defer);
 int dmu_objset_snapshot(char *fsname, char *snapname, char *tag,
     struct nvlist *props, boolean_t recursive, boolean_t temporary, int fd);
-    //int dmu_objset_rename(const char *name, const char *newname,
-    // boolean_t recursive);
 #define  dmu_objset_rename(old, new, recursive)       dsl_dataset_rename((old), (new), (recursive))
-
-int dmu_objset_clone(const char *name, const char *origin);
+int dmu_objset_clone(const char *name, const char *origin,
+	struct dsl_crypto_params *dcp);
 int dsl_destroy_snapshots_nvl(struct nvlist *snaps, boolean_t defer,
     struct nvlist *errlist);
 int dmu_objset_snapshot_one(const char *fsname, const char *snapname);
@@ -810,6 +819,7 @@ typedef struct dmu_object_info {
 typedef struct dmu_object_type_info {
 	dmu_object_byteswap_t	ot_byteswap;
 	boolean_t		ot_metadata;
+	boolean_t		ot_encrypt;
 	char			*ot_name;
 } dmu_object_type_info_t;
 

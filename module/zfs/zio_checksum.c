@@ -118,6 +118,9 @@ zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS] = {
 	{{zio_checksum_SHA256,		zio_checksum_SHA256},
 	    NULL, NULL, ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
 	    ZCHECKSUM_FLAG_NOPWRITE, "sha256"},
+	{{zio_checksum_SHAMAC,		zio_checksum_SHAMAC},
+	    NULL, NULL, ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
+	    ZCHECKSUM_FLAG_NOPWRITE, "sha256-mac"},
 	{{fletcher_4_native,		fletcher_4_byteswap},
 	    NULL, NULL, ZCHECKSUM_FLAG_EMBEDDED, "zilog2"},
 	{{zio_checksum_off,		zio_checksum_off},
@@ -374,8 +377,13 @@ zio_checksum_error(zio_t *zio, zio_bad_cksum_t *info)
 	info->zbc_injected = 0;
 	info->zbc_has_cksum = 1;
 
-	if (!ZIO_CHECKSUM_EQUAL(actual_cksum, expected_cksum))
-		return (SET_ERROR(ECKSUM));
+	if (checksum == ZIO_CHECKSUM_SHA256_MAC) {
+		if (!ZIO_CHECKSUM_MAC_EQUAL(actual_cksum, expected_cksum))
+			return (SET_ERROR(ECKSUM));
+	} else {
+		if (!ZIO_CHECKSUM_EQUAL(actual_cksum, expected_cksum))
+			return (SET_ERROR(ECKSUM));
+	}
 
 	if (zio_injection_enabled && !zio->io_error &&
 	    (error = zio_handle_fault_injection(zio, ECKSUM)) != 0) {

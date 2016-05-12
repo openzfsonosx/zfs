@@ -82,6 +82,7 @@ extern zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS];
  * Checksum routines.
  */
 extern zio_checksum_t zio_checksum_SHA256;
+extern zio_checksum_t zio_checksum_SHAMAC;
 extern zio_checksum_t zio_checksum_SHA512_native;
 extern zio_checksum_t zio_checksum_SHA512_byteswap;
 
