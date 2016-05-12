@@ -2005,8 +2005,11 @@ spa_load_verify_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 int
 verify_dataset_name_len(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
 {
-	if (dsl_dataset_namelen(ds) >= ZFS_MAX_DATASET_NAME_LEN)
+	char namebuf[MAXPATHLEN];
+	dsl_dataset_name(ds, namebuf);
+	if (strlen(namebuf) > MAXNAMELEN) {
 		return (SET_ERROR(ENAMETOOLONG));
+	}
 
 	return (0);
 }
