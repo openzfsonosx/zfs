@@ -64,6 +64,7 @@ zfs_SOURCES = \
 	dnode.c \
 	dnode_sync.c \
 	dsl_bookmark.c \
+	dsl_crypt.c \
 	dsl_dataset.c \
 	dsl_deadlist.c \
 	dsl_deleg.c \
@@ -142,6 +143,7 @@ zfs_SOURCES = \
 	zil.c \
 	zio.c \
 	zio_checksum.c \
+	zio_crypt.c \
 	zio_compress.c \
 	zio_inject.c \
 	zle.c \
