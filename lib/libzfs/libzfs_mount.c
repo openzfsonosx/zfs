@@ -1687,6 +1687,22 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 		zfs_share_proto_t *curr_proto;
 		for (curr_proto = share_all_proto; *curr_proto != PROTO_END;
 		    curr_proto++) {
+
+#if __APPLE__
+			/* Since shares can be exported manually, we need to let
+			 * users do that so if the share property is off, we
+			 * assume ZFS isn't sharing the fs
+			 */
+			char shareopts[ZFS_MAXPROPLEN];
+			char sourcestr[ZFS_MAXPROPLEN];
+			zprop_source_t sourcetype;
+			if (zfs_prop_get(zhp, proto_table[*curr_proto].p_prop,
+							 shareopts, sizeof (shareopts),
+							 &sourcetype, sourcestr,
+							 ZFS_MAXPROPLEN, B_FALSE) != 0 ||
+				strcmp(shareopts, "off") == 0)
+				continue;
+#endif
 			if (is_shared(hdl, mountpoints[i], *curr_proto) &&
 			    unshare_one(hdl, mountpoints[i],
 			    mountpoints[i], *curr_proto) != 0)
