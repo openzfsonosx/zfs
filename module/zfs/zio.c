@@ -1163,6 +1163,16 @@ zio_write_bp_init(zio_t *zio)
 	if (!IO_IS_ALLOCATING(zio))
 		return (ZIO_PIPELINE_CONTINUE);
 
+	if (zio->io_children_ready != NULL) {
+		/*
+		 * Now that all our children are ready, run the callback
+		 * associated with this zio in case it wants to modify the
+		 * data to be written.
+		 */
+		ASSERT3U(zp->zp_level, >, 0);
+		zio->io_children_ready(zio);
+	}
+
 	ASSERT(zio->io_child_type != ZIO_CHILD_DDT);
 
 	if (zio->io_bp_override) {
@@ -2202,21 +2212,7 @@ zio_write_gang_block(zio_t *pio)
 		    (char *)pio->io_data + (pio->io_size - resid), lsize, &zp,
 		    zio_write_gang_member_ready, NULL, NULL, NULL,
 		    &gn->gn_child[g], pio->io_priority,
-		    ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark);
-
-		if (pio->io_flags & ZIO_FLAG_IO_ALLOCATING) {
-			ASSERT(pio->io_priority == ZIO_PRIORITY_ASYNC_WRITE);
-			ASSERT(!(pio->io_flags & ZIO_FLAG_NODATA));
-
-			/*
-			 * Gang children won't throttle but we should
-			 * account for their work, so reserve an allocation
-			 * slot for them here.
-			 */
-			VERIFY(metaslab_class_throttle_reserve(mc,
-			    zp.zp_copies, cio, flags));
-		}
-		zio_nowait(cio);
+		    ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark));
 	}
 
 	/*

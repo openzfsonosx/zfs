@@ -789,6 +789,7 @@ typedef struct arc_write_callback arc_write_callback_t;
 struct arc_write_callback {
 	void		*awcb_private;
 	arc_done_func_t	*awcb_ready;
+	arc_done_func_t	*awcb_children_ready;
 	arc_done_func_t	*awcb_physdone;
 	arc_done_func_t	*awcb_done;
 	arc_buf_t	*awcb_buf;
@@ -4916,6 +4917,15 @@ arc_write_ready(zio_t *zio)
 }
 #endif
 
+static void
+arc_write_children_ready(zio_t *zio)
+{
+	arc_write_callback_t *callback = zio->io_private;
+	arc_buf_t *buf = callback->awcb_buf;
+
+	callback->awcb_children_ready(zio, buf, callback->awcb_private);
+}
+
 /*
  * This function *must* return indices evenly distributed between all
  * sublists of the multilist. This is needed due to how the ARC eviction
@@ -5015,7 +5025,8 @@ arc_state_init(void)
 zio_t *
 arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
     blkptr_t *bp, arc_buf_t *buf, boolean_t l2arc, boolean_t l2arc_compress,
-    const zio_prop_t *zp, arc_done_func_t *ready, arc_done_func_t *physdone,
+    const zio_prop_t *zp, arc_done_func_t *ready,
+    arc_done_func_t *children_ready, arc_done_func_t *physdone,
     arc_done_func_t *done, void *private, zio_priority_t priority,
     int zio_flags, const zbookmark_phys_t *zb)
 {
@@ -5035,13 +5046,16 @@ arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
 		hdr->b_flags |= ARC_FLAG_L2COMPRESS;
 	callback = kmem_zalloc(sizeof (arc_write_callback_t), KM_SLEEP);
 	callback->awcb_ready = ready;
+	callback->awcb_children_ready = children_ready;
 	callback->awcb_physdone = physdone;
 	callback->awcb_done = done;
 	callback->awcb_private = private;
 	callback->awcb_buf = buf;
 
 	zio = zio_write(pio, spa, txg, bp, buf->b_data, hdr->b_size, zp,
-	    arc_write_ready, arc_write_physdone, arc_write_done, callback,
+	    arc_write_ready,
+	    (children_ready != NULL) ? arc_write_children_ready : NULL,
+	    arc_write_physdone, arc_write_done, callback,
 	    priority, zio_flags, zb);
 
 	return (zio);

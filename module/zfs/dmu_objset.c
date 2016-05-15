@@ -1151,7 +1151,8 @@ dmu_objset_sync(objset_t *os, zio_t *pio, dmu_tx_t *tx)
 	dmu_write_policy(os, NULL, 0, 0, &zp);
 
 	zio = arc_write(pio, os->os_spa, tx->tx_txg,
-	    blkptr_copy, os->os_phys_buf, DMU_OS_IS_L2CACHEABLE(os),
+	    os->os_rootbp, os->os_phys_buf, DMU_OS_IS_L2CACHEABLE(os),
+	    DMU_OS_IS_L2COMPRESSIBLE(os),
 	    &zp, dmu_objset_write_ready, NULL, NULL, dmu_objset_write_done,
 	    os, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_MUSTSUCCEED, &zb);
 
