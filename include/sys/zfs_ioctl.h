@@ -407,6 +407,7 @@ typedef struct zfs_cmd {
 	uint32_t	zc_flags;
 	uint64_t	zc_action_handle;
 	int		zc_cleanup_fd;
+	uint8_t		zc_simple;
 	boolean_t       zc_resumable;
 	uint64_t	zc_sendobj;
 	uint64_t	zc_fromobj;
@@ -414,7 +415,6 @@ typedef struct zfs_cmd {
 	zfs_stat_t	zc_stat;
     int             zc_ioc_error; /* ioctl error value */
     uint64_t        zc_dev;      /* OSX doesn't have ddi_driver_major*/
-	uint8_t         zc_simple;
 } zfs_cmd_t;
 
 

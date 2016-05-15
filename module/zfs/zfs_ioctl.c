@@ -2149,6 +2149,7 @@ zfs_ioc_dataset_list_next(zfs_cmd_t *zc)
  * zc_name		name of filesystem
  * zc_cookie		zap cursor
  * zc_nvlist_dst_size	size of buffer for property nvlist
+ * zc_simple		when set, only name is requested
  *
  * outputs:
  * zc_name		name of next snapshot

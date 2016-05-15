@@ -196,7 +196,7 @@ zfs_free_sort_columns(zfs_sort_column_t *sc)
 	}
 }
 
-int
+boolean_t
 zfs_sort_only_by_name(const zfs_sort_column_t *sc)
 {
 	return (sc != NULL && sc->sc_next == NULL &&
