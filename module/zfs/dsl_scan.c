@@ -1969,6 +1969,14 @@ dsl_scan(dsl_pool_t *dp, pool_scan_func_t func)
 	    dsl_scan_setup_sync, &func, 0, ZFS_SPACE_CHECK_NONE));
 }
 
+static boolean_t
+dsl_scan_restarting(dsl_scan_t *scn, dmu_tx_t *tx)
+{
+	return (scn->scn_restart_txg != 0 &&
+			scn->scn_restart_txg <= tx->tx_txg);
+}
+
+
 #if defined(_KERNEL) && defined(HAVE_SPL)
 module_param(zfs_top_maxinflight, int, 0644);
 MODULE_PARM_DESC(zfs_top_maxinflight, "Max I/Os per top-level");
