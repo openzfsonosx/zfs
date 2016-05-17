@@ -577,19 +577,3 @@ spa_config_update(spa_t *spa, int what)
 	if (what == SPA_CONFIG_UPDATE_POOL)
 		spa_config_update(spa, SPA_CONFIG_UPDATE_VDEVS);
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-EXPORT_SYMBOL(spa_config_sync);
-EXPORT_SYMBOL(spa_config_load);
-EXPORT_SYMBOL(spa_all_configs);
-EXPORT_SYMBOL(spa_config_set);
-EXPORT_SYMBOL(spa_config_generate);
-EXPORT_SYMBOL(spa_config_update);
-
-module_param(spa_config_path, charp, 0444);
-MODULE_PARM_DESC(spa_config_path, "SPA config file (/etc/zfs/zpool.cache)");
-
-module_param(zfs_autoimport_disable, int, 0644);
-MODULE_PARM_DESC(zfs_autoimport_disable, "Disable pool import at module load");
-
-#endif

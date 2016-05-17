@@ -2324,38 +2324,3 @@ zil_vdev_offline(const char *osname, void *arg)
 		return (SET_ERROR(EEXIST));
 	return (0);
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-EXPORT_SYMBOL(zil_alloc);
-EXPORT_SYMBOL(zil_free);
-EXPORT_SYMBOL(zil_open);
-EXPORT_SYMBOL(zil_close);
-EXPORT_SYMBOL(zil_replay);
-EXPORT_SYMBOL(zil_replaying);
-EXPORT_SYMBOL(zil_destroy);
-EXPORT_SYMBOL(zil_destroy_sync);
-EXPORT_SYMBOL(zil_itx_create);
-EXPORT_SYMBOL(zil_itx_destroy);
-EXPORT_SYMBOL(zil_itx_assign);
-EXPORT_SYMBOL(zil_commit);
-EXPORT_SYMBOL(zil_vdev_offline);
-EXPORT_SYMBOL(zil_claim);
-EXPORT_SYMBOL(zil_check_log_chain);
-EXPORT_SYMBOL(zil_sync);
-EXPORT_SYMBOL(zil_clean);
-EXPORT_SYMBOL(zil_suspend);
-EXPORT_SYMBOL(zil_resume);
-EXPORT_SYMBOL(zil_add_block);
-EXPORT_SYMBOL(zil_bp_tree_add);
-EXPORT_SYMBOL(zil_set_sync);
-EXPORT_SYMBOL(zil_set_logbias);
-
-module_param(zil_replay_disable, int, 0644);
-MODULE_PARM_DESC(zil_replay_disable, "Disable intent logging replay");
-
-module_param(zfs_nocacheflush, int, 0644);
-MODULE_PARM_DESC(zfs_nocacheflush, "Disable cache flushes");
-
-module_param(zil_slog_limit, ulong, 0644);
-MODULE_PARM_DESC(zil_slog_limit, "Max commit bytes to separate log device");
-#endif

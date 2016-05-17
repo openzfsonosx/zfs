@@ -642,27 +642,3 @@ vdev_ops_t vdev_spare_ops = {
 	VDEV_TYPE_SPARE,	/* name of this vdev type */
 	B_FALSE			/* not a leaf vdev */
 };
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-module_param(zfs_vdev_mirror_rotating_inc, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_mirror_rotating_inc,
-	"Rotating media load increment for non-seeking I/O's");
-
-module_param(zfs_vdev_mirror_rotating_seek_inc, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_mirror_rotating_seek_inc,
-	"Rotating media load increment for seeking I/O's");
-
-module_param(zfs_vdev_mirror_rotating_seek_offset, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_mirror_rotating_seek_offset,
-	"Offset in bytes from the last I/O which "
-	"triggers a reduced rotating media seek increment");
-
-module_param(zfs_vdev_mirror_non_rotating_inc, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_mirror_non_rotating_inc,
-	"Non-rotating media load increment for non-seeking I/O's");
-
-module_param(zfs_vdev_mirror_non_rotating_seek_inc, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_mirror_non_rotating_seek_inc,
-	"Non-rotating media load increment for seeking I/O's");
-
-#endif

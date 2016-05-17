@@ -1644,15 +1644,4 @@ fm_fini(void)
 	}
 }
 
-#if 0
-module_param(zfs_zevent_len_max, int, 0644);
-MODULE_PARM_DESC(zfs_zevent_len_max, "Max event queue length");
-
-module_param(zfs_zevent_cols, int, 0644);
-MODULE_PARM_DESC(zfs_zevent_cols, "Max event column width");
-
-module_param(zfs_zevent_console, int, 0644);
-MODULE_PARM_DESC(zfs_zevent_console, "Log events to the console");
-#endif
-
 #endif /* _KERNEL */

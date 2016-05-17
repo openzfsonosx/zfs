@@ -3644,29 +3644,3 @@ zbookmark_subtree_completed(const dnode_phys_t *dnp,
 	    1ULL << (DNODE_BLOCK_SHIFT - SPA_MINBLOCKSHIFT), 0, &mod_zb,
 	    last_block) <= 0);
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-EXPORT_SYMBOL(zio_type_name);
-EXPORT_SYMBOL(zio_buf_alloc);
-EXPORT_SYMBOL(zio_data_buf_alloc);
-EXPORT_SYMBOL(zio_buf_free);
-EXPORT_SYMBOL(zio_data_buf_free);
-
-module_param(zio_delay_max, int, 0644);
-MODULE_PARM_DESC(zio_delay_max, "Max zio millisec delay before posting event");
-
-module_param(zio_requeue_io_start_cut_in_line, int, 0644);
-MODULE_PARM_DESC(zio_requeue_io_start_cut_in_line, "Prioritize requeued I/O");
-
-module_param(zfs_sync_pass_deferred_free, int, 0644);
-MODULE_PARM_DESC(zfs_sync_pass_deferred_free,
-	"Defer frees starting in this pass");
-
-module_param(zfs_sync_pass_dont_compress, int, 0644);
-MODULE_PARM_DESC(zfs_sync_pass_dont_compress,
-	"Don't compress starting in this pass");
-
-module_param(zfs_sync_pass_rewrite, int, 0644);
-MODULE_PARM_DESC(zfs_sync_pass_rewrite,
-	"Rewrite new bps starting in this pass");
-#endif

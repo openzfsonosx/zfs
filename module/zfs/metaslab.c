@@ -2705,39 +2705,3 @@ metaslab_check_free(spa_t *spa, const blkptr_t *bp)
 	}
 	spa_config_exit(spa, SCL_VDEV, FTAG);
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-module_param(metaslab_aliquot, ulong, 0644);
-module_param(metaslab_debug_load, int, 0644);
-module_param(metaslab_debug_unload, int, 0644);
-module_param(metaslab_preload_enabled, int, 0644);
-module_param(zfs_mg_noalloc_threshold, int, 0644);
-module_param(zfs_mg_fragmentation_threshold, int, 0644);
-module_param(zfs_metaslab_fragmentation_threshold, int, 0644);
-module_param(metaslab_fragmentation_factor_enabled, int, 0644);
-module_param(metaslab_lba_weighting_enabled, int, 0644);
-module_param(metaslab_bias_enabled, int, 0644);
-
-MODULE_PARM_DESC(metaslab_aliquot,
-	"allocation granularity (a.k.a. stripe size)");
-MODULE_PARM_DESC(metaslab_debug_load,
-	"load all metaslabs when pool is first opened");
-MODULE_PARM_DESC(metaslab_debug_unload,
-	"prevent metaslabs from being unloaded");
-MODULE_PARM_DESC(metaslab_preload_enabled,
-	"preload potential metaslabs during reassessment");
-
-MODULE_PARM_DESC(zfs_mg_noalloc_threshold,
-	"percentage of free space for metaslab group to allow allocation");
-MODULE_PARM_DESC(zfs_mg_fragmentation_threshold,
-	"fragmentation for metaslab group to allow allocation");
-
-MODULE_PARM_DESC(zfs_metaslab_fragmentation_threshold,
-	"fragmentation for metaslab to allow allocation");
-MODULE_PARM_DESC(metaslab_fragmentation_factor_enabled,
-	"use the fragmentation metric to prefer less fragmented metaslabs");
-MODULE_PARM_DESC(metaslab_lba_weighting_enabled,
-	"prefer metaslabs with lower LBAs");
-MODULE_PARM_DESC(metaslab_bias_enabled,
-	"enable metaslab group biasing");
-#endif /* _KERNEL && HAVE_SPL */

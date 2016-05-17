@@ -3525,17 +3525,3 @@ vdev_deadman(vdev_t *vd)
 		mutex_exit(&vq->vq_lock);
 	}
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-
-EXPORT_SYMBOL(vdev_fault);
-EXPORT_SYMBOL(vdev_degrade);
-EXPORT_SYMBOL(vdev_online);
-EXPORT_SYMBOL(vdev_offline);
-EXPORT_SYMBOL(vdev_clear);
-
-module_param(metaslabs_per_vdev, int, 0644);
-MODULE_PARM_DESC(metaslabs_per_vdev,
-	"Divide added vdev into approximately (but no more than) this number "
-	"of metaslabs");
-#endif

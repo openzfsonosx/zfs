@@ -701,9 +701,6 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	uint64_t parent;
 	sa_bulk_attr_t bulk[9];
 	int count = 0;
-#ifdef __FreeBSD__
-	struct vnodeopv_entry_desc *vops;
-#endif
 
 	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
 	//zfs_znode_cache_constructor(zp, zfsvfs->z_parent->z_vfs, 0);
@@ -768,16 +765,6 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	}
 
 	zp->z_mode = mode;
-
-#ifdef __Linux__
-	/*
-	 * xattr znodes hold a reference on their unique parent
-	 */
-	if (dip && zp->z_pflags & ZFS_XATTR) {
-		igrab(dip);
-		zp->z_xattr_parent = ITOZ(dip);
-	}
-#endif
 
 #ifndef __APPLE__
 	vp->v_type = IFTOVT((mode_t)mode);
@@ -1534,12 +1521,6 @@ zfs_rezget(znode_t *zp)
 		zp->z_xattr_cached = NULL;
 	}
 
-#ifdef __LINUX__
-	if (zp->z_xattr_parent) {
-		VN_RELE(ZTOI(zp->z_xattr_parent));
-		zp->z_xattr_parent = NULL;
-	}
-#endif
 	rw_exit(&zp->z_xattr_lock);
 
 	ASSERT(zp->z_sa_hdl == NULL);
@@ -1716,49 +1697,6 @@ zfs_znode_free(znode_t *zp)
 	VFS_RELE(zfsvfs->z_vfs);
 }
 
-#ifdef LINUX
-static inline int
-zfs_compare_timespec(struct timespec *t1, struct timespec *t2)
-{
-	if (t1->tv_sec < t2->tv_sec)
-		return (-1);
-
-	if (t1->tv_sec > t2->tv_sec)
-		return (1);
-
-	return (t1->tv_nsec - t2->tv_nsec);
-}
-#endif
-
-/*
- *  Determine whether the znode's atime must be updated.  The logic mostly
- *  duplicates the Linux kernel's relatime_need_update() functionality.
- *  This function is only called if the underlying filesystem actually has
- *  atime updates enabled.
- */
-#ifdef LINUX
-static inline boolean_t
-zfs_atime_need_update(znode_t *zp, timestruc_t *now)
-{
-	if (!ZTOZSB(zp)->z_relatime)
-		return (B_TRUE);
-
-	/*
-	 * In relatime mode, only update the atime if the previous atime
-	 * is earlier than either the ctime or mtime or if at least a day
-	 * has passed since the last update of atime.
-	 */
-	if (zfs_compare_timespec(&ZTOI(zp)->i_mtime, &ZTOI(zp)->i_atime) >= 0)
-		return (B_TRUE);
-
-	if (zfs_compare_timespec(&ZTOI(zp)->i_ctime, &ZTOI(zp)->i_atime) >= 0)
-		return (B_TRUE);
-
-	if ((long)now->tv_sec - ZTOI(zp)->i_atime.tv_sec >= 24*60*60)
-		return (B_TRUE);
-	return (B_FALSE);
-}
-#endif
 
 /*
  * Prepare to update znode time stamps.
@@ -1947,51 +1885,6 @@ zfs_extend(znode_t *zp, uint64_t end)
 	return (0);
 }
 
-/*
- * zfs_zero_partial_page - Modeled after update_pages() but
- * with different arguments and semantics for use by zfs_freesp().
- *
- * Zeroes a piece of a single page cache entry for zp at offset
- * start and length len.
- *
- * Caller must acquire a range lock on the file for the region
- * being zeroed in order that the ARC and page cache stay in sync.
- */
-#ifdef _LINUX
-static void
-zfs_zero_partial_page(znode_t *zp, uint64_t start, uint64_t len)
-{
-	struct address_space *mp = ZTOI(zp)->i_mapping;
-	struct page *pp;
-	int64_t	off;
-	void *pb;
-
-	ASSERT((start & PAGE_CACHE_MASK) ==
-	    ((start + len - 1) & PAGE_CACHE_MASK));
-
-	off = start & (PAGE_CACHE_SIZE - 1);
-	start &= PAGE_CACHE_MASK;
-
-	pp = find_lock_page(mp, start >> PAGE_CACHE_SHIFT);
-	if (pp) {
-		if (mapping_writably_mapped(mp))
-			flush_dcache_page(pp);
-
-		pb = kmap(pp);
-		bzero(pb + off, len);
-		kunmap(pp);
-
-		if (mapping_writably_mapped(mp))
-			flush_dcache_page(pp);
-
-		mark_page_accessed(pp);
-		SetPageUptodate(pp);
-		ClearPageError(pp);
-		unlock_page(pp);
-		page_cache_release(pp);
-	}
-}
-#endif
 
 /*
  * Free space in a file.
@@ -2237,22 +2130,10 @@ log:
 
 	dmu_tx_commit(tx);
 
-#ifdef _LINUX
-	zfs_inode_update(zp);
-#endif
 	error = 0;
 
 out:
 
-#ifdef _LINUX
-	/*
-	 * Truncate the page cache - for file truncate operations, use
-	 * the purpose-built API for truncations.  For punching operations,
-	 * the truncation is handled under a range lock in zfs_free_range.
-	 */
-	if (len == 0)
-		truncate_setsize(ZTOI(zp), off);
-#endif
 	return (error);
 }
 
