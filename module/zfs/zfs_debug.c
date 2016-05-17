@@ -189,69 +189,11 @@ __dprintf(const char *file, const char *func, int line, const char *fmt, ...)
 	char *buf;
 	char *nl;
 
-	if (!zfs_dbgmsg_enable && !(zfs_flags & ZFS_DEBUG_DPRINTF))
-		return;
-
-	size = 1024;
-	buf = kmem_alloc(size, KM_SLEEP);
-
-	/*
-	 * Get rid of annoying prefix to filename.
-	 */
-	newfile = strrchr(file, '/');
-	if (newfile != NULL) {
-		newfile = newfile + 1; /* Get rid of leading / */
-	} else {
-		newfile = file;
-	}
-
-	va_start(adx, fmt);
-	(void) vsnprintf(buf, size, fmt, adx);
-	va_end(adx);
-
-	/*
-	 * Get rid of trailing newline.
-	 */
-	nl = strrchr(buf, '\n');
-	if (nl != NULL)
-		*nl = '\0';
-
-	/*
-	 * To get this data enable the zfs__dprintf trace point as shown:
-	 *
-	 * # Enable zfs__dprintf tracepoint, clear the tracepoint ring buffer
-	 * $ echo 1 > /sys/module/zfs/parameters/zfs_flags
-	 * $ echo 1 > /sys/kernel/debug/tracing/events/zfs/enable
-	 * $ echo 0 > /sys/kernel/debug/tracing/trace
-	 *
-	 * # Dump the ring buffer.
-	 * $ cat /sys/kernel/debug/tracing/trace
-	 */
-	if (zfs_flags & ZFS_DEBUG_DPRINTF)
-		DTRACE_PROBE4(zfs__dprintf,
-		    char *, newfile, char *, func, int, line, char *, buf);
-
-	/*
-	 * To get this data enable the zfs debug log as shown:
-	 *
-	 * # Set zfs_dbgmsg enable, clear the log buffer
-	 * $ echo 1 > /sys/module/zfs/parameters/zfs_dbgmsg_enable
-	 * $ echo 0 > /proc/spl/kstat/zfs/dbgmsg
-	 *
-	 * # Dump the log buffer.
-	 * $ cat /proc/spl/kstat/zfs/dbgmsg
-	 */
-	if (zfs_dbgmsg_enable)
-		__zfs_dbgmsg(buf);
-
-	kmem_free(buf, size);
+	(void) printf("ZFS_DBGMSG(%s):\n", tag);
+	mutex_enter(&zfs_dbgmsgs_lock);
+	for (zdm = list_head(&zfs_dbgmsgs); zdm;
+	    zdm = list_next(&zfs_dbgmsgs, zdm))
+		(void) printf("%s\n", zdm->zdm_msg);
+	mutex_exit(&zfs_dbgmsgs_lock);
 }
-#endif /* _KERNEL */
-
-#ifdef _KERNEL
-module_param(zfs_dbgmsg_enable, int, 0644);
-MODULE_PARM_DESC(zfs_dbgmsg_enable, "Enable ZFS debug message log");
-
-module_param(zfs_dbgmsg_maxsize, int, 0644);
-MODULE_PARM_DESC(zfs_dbgmsg_maxsize, "Maximum ZFS debug log size");
 #endif

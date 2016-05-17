@@ -1594,12 +1594,6 @@ zfs_rezget(znode_t *zp)
 		zp->z_xattr_cached = NULL;
 	}
 
-#ifdef __LINUX__
-	if (zp->z_xattr_parent) {
-		VN_RELE(ZTOI(zp->z_xattr_parent));
-		zp->z_xattr_parent = NULL;
-	}
-#endif
 	rw_exit(&zp->z_xattr_lock);
 
 	ASSERT(zp->z_sa_hdl == NULL);
