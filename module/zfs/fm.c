@@ -681,7 +681,12 @@ zfs_zevent_wait(zfs_zevent_t *ze)
 		error = EINTR;
 
 	zevent_waiters--;
-out:
+
+	if (zevent_flags & ZEVENT_SHUTDOWN) {
+		error = ESHUTDOWN;
+	}
+
+  out:
 	mutex_exit(&zevent_lock);
 
 	return (error);
