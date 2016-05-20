@@ -2411,6 +2411,26 @@ zpool_get_physpath(zpool_handle_t *zhp, char *physpath, size_t phypath_size)
 }
 
 /*
+ * On OS X, there are System Daemons that open devices at various times, which
+ * can block ZFS from accessing the device. This function allows limited retries
+ * in order to work around this behavior.
+ */
+static int
+zpool_open_delay(int timeout, const char *path, int oflag)
+{
+	int i = 0;
+	int fd = open(path, oflag);
+
+	while ((fd == -1) && (errno == EBUSY) && (i < timeout)) {
+		i++;
+		usleep(1000);
+		fd = open(path, oflag);
+	}
+
+	return (fd);
+}
+
+/*
  * If the device has being dynamically expanded then we need to relabel
  * the disk to use the new unallocated space.
  */
@@ -2419,7 +2439,7 @@ zpool_relabel_disk(libzfs_handle_t *hdl, const char *path, const char *msg)
 {
 	int fd, error;
 
-	if ((fd = open(path, O_RDWR|O_DIRECT|O_SHLOCK)) < 0) {
+	if ((fd = zpool_open_delay(10, path, O_RDWR|O_DIRECT|O_SHLOCK)) < 0) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, "cannot "
 		    "relabel '%s': unable to open device: %d"), path, errno);
 		return (zfs_error(hdl, EZFS_OPENFAILED, msg));
@@ -3382,7 +3402,7 @@ path_to_devid(const char *path)
 	ddi_devid_t devid;
 	char *minor, *ret;
 
-	if ((fd = open(path, O_RDONLY)) < 0)
+	if ((fd = zpool_open_delay(10, path, O_RDONLY)) < 0)
 		return (NULL);
 
 	minor = NULL;
@@ -4136,7 +4156,7 @@ read_efi_label(nvlist_t *config, diskaddr_t *sb)
 
 	(void) snprintf(diskname, sizeof (diskname), "%s%s", ZFS_DISK_ROOT,
 	    strrchr(path, '/'));
-	if ((fd = open(diskname, O_RDWR|O_DIRECT)) >= 0) {
+	if ((fd = zpool_open_delay(10, diskname, O_RDWR|O_DIRECT)) >= 0) {
 		struct dk_gpt *vtoc;
 
 		if ((err = efi_alloc_and_read(fd, &vtoc)) >= 0) {
@@ -4211,7 +4231,7 @@ zpool_label_disk_check(char *path)
 	struct dk_gpt *vtoc;
 	int fd, err;
 
-	if ((fd = open(path, O_RDWR|O_DIRECT)) < 0)
+	if ((fd = zpool_open_delay(10, path, O_RDWR|O_DIRECT)) < 0)
 		return (errno);
 
 	if ((err = efi_alloc_and_read(fd, &vtoc)) != 0) {
@@ -4276,7 +4296,7 @@ zpool_label_disk(libzfs_handle_t *hdl, zpool_handle_t *zhp, const char *name)
 
 	(void) snprintf(path, sizeof (path), "%s/%s", ZFS_DISK_ROOT, name);
 
-	if ((fd = open(path, O_RDWR|O_DIRECT)) < 0) {
+	if ((fd = zpool_open_delay(10, path, O_RDWR|O_DIRECT)) < 0) {
 		/*
 		 * This shouldn't happen.  We've long since verified that this
 		 * is a valid device.
