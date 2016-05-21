@@ -126,6 +126,9 @@ extern "C" {
 #define	FM_EREPORT_ZVOL_CREATE_SYMLINK		"zvol.create"
 #define	FM_EREPORT_ZVOL_REMOVE_SYMLINK		"zvol.remove"
 
+#define FM_EREPORT_ZFS_VDEV_REMOVE_AUX         "vdev_remove_aux"
+#define FM_EREPORT_ZFS_VDEV_REMOVE_DEV         "vdev_remove_dev"
+
 #ifdef	__cplusplus
 }
 #endif

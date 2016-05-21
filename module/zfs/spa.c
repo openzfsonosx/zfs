@@ -5494,7 +5494,7 @@ spa_vdev_remove_evacuate(spa_t *spa, vdev_t *vd)
 	} else {
 		error = SET_ERROR(ENOTSUP);
 	}
-
+	spa_event_notify(spa, vd, FM_EREPORT_ZFS_VDEV_REMOVE_AUX);
 	if (error)
 		return (error);
 
@@ -5612,6 +5612,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		    ZPOOL_CONFIG_L2CACHE, l2cache, nl2cache, nv);
 		spa_load_l2cache(spa);
 		spa->spa_l2cache.sav_sync = B_TRUE;
+		spa_event_notify(spa, vd, FM_EREPORT_ZFS_VDEV_REMOVE_AUX);
 	} else if (vd != NULL && vd->vdev_islog) {
 		ASSERT(!locked);
 		ASSERT(vd == vd->vdev_top);
@@ -5650,6 +5651,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		 */
 		spa_vdev_remove_from_namespace(spa, vd);
 
+		spa_event_notify(spa, vd, FM_EREPORT_ZFS_VDEV_REMOVE_AUX);
 	} else if (vd != NULL) {
 		/*
 		 * Normal vdevs cannot be removed (yet).
@@ -5663,7 +5665,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 	}
 
 	if (!locked)
-		return (spa_vdev_exit(spa, NULL, txg, error));
+		error = spa_vdev_exit(spa, NULL, txg, error);
 
 	return (error);
 }
