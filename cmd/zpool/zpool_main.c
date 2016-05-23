@@ -4085,7 +4085,7 @@ zpool_do_iostat(int argc, char **argv)
 			verbose = B_TRUE;
 			break;
 		case 'p':
-			parseable = B_TRUE;
+			parsable = B_TRUE;
 			break;
 		case 'l':
 			latency = B_TRUE;
@@ -4118,7 +4118,7 @@ zpool_do_iostat(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
-	cb.cb_literal = parseable;
+	cb.cb_literal = parsable;
 	cb.cb_scripted = scripted;
 
 	if (guid)
