@@ -91,7 +91,6 @@
 #include <sys/ioccom.h>
 
 
-
 #ifdef _KERNEL
 #include <sys/sysctl.h>
 #include <sys/hfs_internal.h>
@@ -3676,7 +3675,11 @@ out:
  *	   like that of *time records, uid/gid, flags, mode, linkcount,
  *	   finderinfo, c_desc, c_attr, c_flag, and cache_purge().
  *
- * This call is deprecated in 10.8
+ * This implementation is fairly gross, but there is no clean way
+ * to do this with a COW filesystem.
+ * There is no real reason to use top level vnop entries and UIO
+ * either, so one day it could probably be replaced with direct dmu
+ * calls.
  */
 int
 zfs_vnop_exchange(struct vnop_exchange_args *ap)
@@ -3689,32 +3692,238 @@ zfs_vnop_exchange(struct vnop_exchange_args *ap)
 	};
 #endif
 {
-	vnode_t *fvp = ap->a_fvp;
-	vnode_t *tvp = ap->a_tvp;
-	znode_t  *fzp;
+	DECLARE_CRED_AND_CONTEXT(ap);
+	znode_t  *zp1;
+	znode_t  *zp2;
 	zfsvfs_t  *zfsvfs;
+	int error = 0;
+	uint64_t parentid = 0;
+	unsigned char *databuf = NULL;
+	struct componentname  cn;
+	struct vnode_attr  vattr;
+	char tmpname[15 + 20 + 1];
+	struct vnode *tmpvp = NULL;
+	struct uio *uio = NULL;
+	uint64_t offset, size, amount, tmpsize;
+	rl_t *rl1 = NULL, *rl2 = NULL;
+	znode_t *dzp = NULL;
 
-	/* The files must be on the same volume. */
-	if (vnode_mount(fvp) != vnode_mount(tvp))
-		return (EXDEV);
+	printf("ZFS: vnop_exchange start\n");
 
-	if (fvp == tvp)
-		return (EINVAL);
-
-	/* Only normal files can be exchanged. */
-	if (!vnode_isreg(fvp) || !vnode_isreg(tvp))
-		return (EINVAL);
-
-	fzp = VTOZ(fvp);
-	zfsvfs = fzp->z_zfsvfs;
+	/*
+	 * VFS does the following checks:
+	 * 1. Validate that both are files.
+	 * 2. Validate that both are on the same mount.
+	 * 3. Validate that they're not the same vnode.
+	 */
+	zp1 = VTOZ(ap->a_fvp);
+	zp2 = VTOZ(ap->a_tvp);
+	ASSERT(zp1->z_zfsvfs == zp2->z_zfsvfs);
+	zfsvfs = zp1->z_zfsvfs;
 
 	ZFS_ENTER(zfsvfs);
+	ZFS_VERIFY_ZP(zp1);
+	ZFS_VERIFY_ZP(zp2);
 
-	/* ADD MISSING CODE HERE */
+	/*
+	 * 0) Lock both files
+	 * 1) Open temporary file next to shortest file
+	 * 2) Copy shortest file to tmpfile
+	 * 3) Copy largest file over shortest file
+	 * 4) Copy tmpfile over largest file
+	 * 5) Swap internal information over
+	 * 6) Delete tmpfile
+	 * 7) Unlock both files
+	 */
+#define EXCHANGE_DATA_SIZE (1<<20)  // 1MB
 
+	databuf = kmem_alloc(EXCHANGE_DATA_SIZE, KM_SLEEP);
+	if (!databuf) {
+		error = ENOMEM;
+		goto failed;
+	}
+
+	uio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
+	if (!uio) {
+		error = ENOMEM;
+		goto failed;
+	}
+
+	/* Make sure zp1 is the shortest file, so swap them here if needed. */
+	if (zp1->z_size > zp2->z_size) {
+		znode_t *t = zp1;
+		zp1 = zp2;
+		zp2 = t;
+	}
+
+	/* Locate parent directory for tmpfile */
+	VERIFY(sa_lookup(zp1->z_sa_hdl, SA_ZPL_PARENT(zfsvfs),
+                        &parentid, sizeof (parentid)) == 0);
+	snprintf(tmpname, sizeof(tmpname), ".vnop.exchange.%llu",
+			 zp1->z_id);
+
+	error = zfs_zget(zfsvfs, parentid, &dzp);
+	if (error != 0) {
+		printf("ZFS: VNOP_EXCHANGE unable to locate parent %llu\n",
+				parentid);
+		goto failed;
+	}
+
+
+	/* 0) Lock both files */
+
+	// We can't take full locks, because then zfs_read() will wait
+	// forever. Find a solution here.
+	//rl1 = zfs_range_lock(zp1, 0, UINT64_MAX, RL_WRITER);
+	//rl2 = zfs_range_lock(zp2, 0, UINT64_MAX, RL_WRITER);
+
+
+	/* 1) Open temporary file next to shortest file */
+
+	bzero(&cn, sizeof (cn));
+	cn.cn_nameiop = CREATE;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_nameptr = (char *)tmpname;
+	cn.cn_namelen = strlen(cn.cn_nameptr);
+
+	VATTR_INIT(&vattr);
+	VATTR_SET(&vattr, va_type, VREG);
+	VATTR_SET(&vattr, va_mode, zp1->z_mode & ~S_IFMT);
+
+	error = zfs_create(ZTOV(dzp), tmpname, &vattr, EXCL,
+	    zp1->z_mode, &tmpvp, cr);
+	if (error != 0)
+		goto out;
+
+
+	/* 2) Copy shortest file to tmpfile */
+
+	printf("ZFS: vnop_exchange copy small->temp\n");
+
+	offset = 0;
+	while(offset < zp1->z_size) {
+		size = MIN(EXCHANGE_DATA_SIZE, zp1->z_size - offset);
+
+		uio_reset(uio, offset, UIO_SYSSPACE, UIO_READ);
+		uio_addiov(uio, (user_addr_t) databuf, size);
+		error = zfs_read(ZTOV(zp1), uio, 0, cr, ct);
+		if (error) goto out;
+
+		amount = size - uio_resid(uio);
+
+		uio_reset(uio, offset, UIO_SYSSPACE, UIO_WRITE);
+		uio_addiov(uio, (user_addr_t) databuf, amount);
+		error = zfs_write(tmpvp, uio, 0, cr, ct);
+		if (error) goto out;
+
+		if (uio_resid(uio)) {
+			error = EIO;
+			goto out;
+		}
+
+		offset += amount;
+	}
+	// Make sure it was committed to disk
+	error = zfs_fsync(tmpvp, /* flag */0, cr, ct);
+	tmpsize = offset;  // Remember the size
+
+
+	/* 3) Copy largest file over shortest file */
+
+	printf("ZFS: vnop_exchange copy large->small\n");
+	offset = 0;
+	while(offset < zp2->z_size) {
+		size = MIN(EXCHANGE_DATA_SIZE, zp2->z_size - offset);
+
+		uio_reset(uio, offset, UIO_SYSSPACE, UIO_READ);
+		uio_addiov(uio, (user_addr_t) databuf, size);
+		error = zfs_read(ZTOV(zp2), uio, 0, cr, ct);
+		if (error) goto out;
+
+		amount = size - uio_resid(uio);
+
+		uio_reset(uio, offset, UIO_SYSSPACE, UIO_WRITE);
+		uio_addiov(uio, (user_addr_t) databuf, amount);
+		error = zfs_write(ZTOV(zp1), uio, 0, cr, ct);
+		if (error) goto out;
+
+		if (uio_resid(uio)) {
+			error = EIO;
+			goto out;
+		}
+
+		offset += amount;
+	}
+	// Make sure it was committed to disk
+	error = zfs_fsync(ZTOV(zp1), /* flag */0, cr, ct);
+
+	uio_reset(uio, 0, UIO_SYSSPACE, UIO_READ);
+	uio_addiov(uio, (user_addr_t) databuf, EXCHANGE_DATA_SIZE);
+
+	/* 4) Copy tmpfile over largest file */
+
+	// Truncate the file since the large file gets the small
+	error = zfs_freesp(zp2, tmpsize, 0, 0, FALSE);
+	if (error) goto out;
+
+
+	printf("ZFS: vnop_exchange copy temp->large\n");
+	offset = 0;
+	while(offset < tmpsize) {
+		size = MIN(EXCHANGE_DATA_SIZE, tmpsize - offset);
+
+		uio_reset(uio, offset, UIO_SYSSPACE, UIO_READ);
+		uio_addiov(uio, (user_addr_t) databuf, size);
+		error = zfs_read(tmpvp, uio, 0, cr, ct);
+		if (error) goto out;
+
+		amount = size - uio_resid(uio);
+
+		uio_reset(uio, offset, UIO_SYSSPACE, UIO_WRITE);
+		uio_addiov(uio, (user_addr_t) databuf, amount);
+		error = zfs_write(ZTOV(zp2), uio, 0, cr, ct);
+		if (error) goto out;
+
+		if (uio_resid(uio)) {
+			error = EIO;
+			goto out;
+		}
+
+		offset += amount;
+	}
+	// Make sure it was committed to disk
+	error = zfs_fsync(ZTOV(zp2), /* flag */0, cr, ct);
+
+
+	/* 5) Swap internal information over */
+	printf("ZFS: vnop_exchange copy done\n");
+
+	// ?? TODO
+
+
+	/* 6) Delete tmpfile */
+	printf("ZFS: vnop_exchange removing tmp file\n");
+	error = zfs_remove(ZTOV(dzp), tmpname, cr, ct, 0);
+	if (error) goto out;
+
+
+	/* 7) Unlock both files */
+
+	printf("ZFS: vnop_exchange OK\n");
+	error = 0;
+
+  out:
+	if (uio) uio_free(uio);
+	if (tmpvp) VN_RELE(tmpvp);
+	//zfs_range_unlock(rl1);
+	//zfs_range_unlock(rl2);
+	VN_RELE(ZTOV(dzp));
+	kmem_free(databuf, EXCHANGE_DATA_SIZE);
+
+  failed:
 	ZFS_EXIT(zfsvfs);
-	dprintf("vnop_exchange: ENOTSUP\n");
-	return (ENOTSUP);
+	printf("ZFS: vnop_exchange: %d\n", error);
+	return (error);
 }
 
 int

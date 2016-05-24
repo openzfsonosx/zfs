@@ -198,7 +198,7 @@ const vol_capabilities_attr_t zfs_capabilities = {
 #ifdef WITH_READDIRATTR
 		VOL_CAP_INT_READDIRATTR |
 #endif
-		//VOL_CAP_INT_EXCHANGEDATA |
+		VOL_CAP_INT_EXCHANGEDATA |
 		//VOL_CAP_INT_COPYFILE |
 		//VOL_CAP_INT_ALLOCATE | // **
 
