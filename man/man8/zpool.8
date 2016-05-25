@@ -94,7 +94,7 @@ zpool \- configures ZFS storage pools
 
 .LP
 .nf
-\fB\fBzpool iostat\fR [\fB-T\fR \fBd\fR | \fBu\fR] [\fB-ghHLpPvy\fR] [\fB-G\fR|[\fB-lq\fR]]
+\fB\fBzpool iostat\fR [\fB-T\fR \fBd\fR | \fBu\fR] [\fB-ghHLpPvy\fR] [\fB-lq\fR]|[\fB-r\fR|-\fBw\fR]]
      [[\fIpool\fR ...]|[\fIpool vdev\fR ...]|[\fIvdev\fR ...]] [\fIinterval\fR[\fIcount\fR]]\fR
 
 .fi
@@ -1666,7 +1666,7 @@ Allows a pool to import when there is a missing log device.
 .ne 2
 .mk
 .na
-\fB\fBzpool iostat\fR [\fB-T\fR \fBd\fR | \fBu\fR] [\fB-ghHLpPvy\fR] [\fB-w\fR|[\fB-lq\fR]] [[\fIpool\fR ...]|[\fIpool vdev\fR ...]|[\fIvdev\fR ...]] [\fIinterval\fR[\fIcount\fR]]\fR
+\fB\fBzpool iostat\fR [\fB-T\fR \fBd\fR | \fBu\fR] [\fB-ghHLpPvy\fR] [[\fB-lq\fR]|[\fB-r\fR|\fB-w\fR]] [[\fIpool\fR ...]|[\fIpool vdev\fR ...]|[\fIvdev\fR ...]] [\fIinterval\fR[\fIcount\fR]]\fR
 
 .ad
 .sp .6
@@ -1753,6 +1753,19 @@ Display full paths for vdevs instead of only the last component of the path.  Th
 .sp
 .ne 2
 .mk
+.na
+\fB\fB-r\fR\fR
+.ad
+.RS 12n
+Print request size histograms for the leaf ZIOs.  This includes histograms of
+individual ZIOs ("ind") and aggregate ZIOs ("agg").  These stats can be useful
+for seeing how well the ZFS IO aggregator is working.  Do not confuse these
+request size stats with the block layer requests; it's possible ZIOs can
+be broken up before being sent to the block device.
+.RE
+
+.sp
+.ne 2
 .na
 \fB\fB-v\fR\fR
 .ad
