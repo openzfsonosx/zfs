@@ -346,7 +346,6 @@ vdev_config_generate_stats(vdev_t *vd, nvlist_t *nv)
 	fnvlist_add_nvlist(nv, ZPOOL_CONFIG_VDEV_STATS_EX, nvx);
 
 	fnvlist_free(nvx);
-
 	kmem_free(vsx, sizeof (*vsx));
 }
 
