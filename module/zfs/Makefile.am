@@ -42,6 +42,7 @@ noinst_PROGRAMS = zfs
 zfs_kext_SOURCE =
 
 zfs_SOURCES = \
+	abd.c \
 	arc.c \
 	blkptr.c \
 	bplist.c \

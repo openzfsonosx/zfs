@@ -246,11 +246,26 @@ vdev_file_io_start(zio_t *zio)
 	    TQ_PUSHPAGE), !=, 0);
 		*/
 
+		void *data;
+		if (zio->io_type == ZIO_TYPE_READ) {
+			data =
+				abd_borrow_buf(zio->io_abd, zio->io_size);
+		} else {
+			data =
+				abd_borrow_buf_copy(zio->io_abd, zio->io_size);
+		}
+
         zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
-                           UIO_READ : UIO_WRITE, vf->vf_vnode, zio->io_data,
+                           UIO_READ : UIO_WRITE, vf->vf_vnode, data,
                            zio->io_size, zio->io_offset, UIO_SYSSPACE,
                            0, RLIM64_INFINITY, kcred, &resid);
         vnode_put(vf->vf_vnode);
+
+		if (zio->io_type == ZIO_TYPE_READ) {
+			abd_return_buf_copy(zio->io_abd, data, zio->io_size);
+		} else {
+			abd_return_buf(zio->io_abd, data, zio->io_size);
+		}
     }
 
     if (resid != 0 && zio->io_error == 0)
