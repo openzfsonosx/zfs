@@ -28,7 +28,7 @@
  * Rewritten for Linux by:
  *   Rohan Puri <rohan.puri15@gmail.com>
  *   Brian Behlendorf <behlendorf1@llnl.gov>
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  *
  * Rewritten for OSX by (based on FreeBSD)
  *   Jorgen Lundman <lundman@lundman.net>
@@ -1019,8 +1019,8 @@ zfsctl_snapdir_rename(struct vnode *sdvp, char *snm, struct vnode *tdvp, char *t
 	zfsvfs_t *zfsvfs;
 	avl_index_t where;
 
-	char from[MAXNAMELEN], to[MAXNAMELEN];
-	char real[MAXNAMELEN];
+	char from[ZFS_MAX_DATASET_NAME_LEN], to[ZFS_MAX_DATASET_NAME_LEN];
+	char real[ZFS_MAX_DATASET_NAME_LEN];
 	int err;
 
 	zfsvfs = vfs_fsprivate(vnode_mount(sdvp));
@@ -1028,7 +1028,7 @@ zfsctl_snapdir_rename(struct vnode *sdvp, char *snm, struct vnode *tdvp, char *t
 
 	if ((flags & FIGNORECASE) || zfsvfs->z_case == ZFS_CASE_INSENSITIVE) {
 		err = dmu_snapshot_realname(zfsvfs->z_os, snm, real,
-		    MAXNAMELEN, NULL);
+		    sizeof (real), NULL);
 		if (err == 0) {
 			snm = real;
 		} else if (err != ENOTSUP) {
@@ -1039,9 +1039,9 @@ zfsctl_snapdir_rename(struct vnode *sdvp, char *snm, struct vnode *tdvp, char *t
 
 	ZFS_EXIT(zfsvfs);
 
-	err = zfsctl_snapshot_zname(sdvp, snm, MAXNAMELEN, from);
+	err = zfsctl_snapshot_zname(sdvp, snm, ZFS_MAX_DATASET_NAME_LEN, from);
 	if (!err)
-		err = zfsctl_snapshot_zname(tdvp, tnm, MAXNAMELEN, to);
+		err = zfsctl_snapshot_zname(tdvp, tnm, ZFS_MAX_DATASET_NAME_LEN, to);
 	if (!err)
 		err = zfs_secpolicy_rename_perms(from, to, cr);
 	if (err)
@@ -1094,8 +1094,8 @@ zfsctl_snapdir_remove(struct vnode *dvp, char *name, struct vnode *cwd, cred_t *
 	zfs_snapentry_t *sep = NULL;
 	zfs_snapentry_t search;
 	zfsvfs_t *zfsvfs;
-	char snapname[MAXNAMELEN];
-	char real[MAXNAMELEN];
+	char snapname[ZFS_MAX_DATASET_NAME_LEN];
+	char real[ZFS_MAX_DATASET_NAME_LEN];
 	int err;
 
 	zfsvfs = vfs_fsprivate(vnode_mount(dvp));
@@ -1104,7 +1104,7 @@ zfsctl_snapdir_remove(struct vnode *dvp, char *name, struct vnode *cwd, cred_t *
 	if ((flags & FIGNORECASE) || zfsvfs->z_case == ZFS_CASE_INSENSITIVE) {
 
 		err = dmu_snapshot_realname(zfsvfs->z_os, name, real,
-		    MAXNAMELEN, NULL);
+		    sizeof (real), NULL);
 		if (err == 0) {
 			name = real;
 		} else if (err != ENOTSUP) {
@@ -1115,7 +1115,7 @@ zfsctl_snapdir_remove(struct vnode *dvp, char *name, struct vnode *cwd, cred_t *
 
 	ZFS_EXIT(zfsvfs);
 
-	err = zfsctl_snapshot_zname(dvp, name, MAXNAMELEN, snapname);
+	err = zfsctl_snapshot_zname(dvp, name, ZFS_MAX_DATASET_NAME_LEN, snapname);
 	if (!err)
 		err = zfs_secpolicy_destroy_perms(snapname, cr);
 	if (err)
@@ -1236,8 +1236,8 @@ zfsctl_snapdir_lookup(ap)
 	char nm[NAME_MAX + 1];
 	zfsctl_snapdir_t *sdp = vnode_fsnode(dvp);
 	objset_t *snap;
-	char snapname[MAXNAMELEN];
-	char real[MAXNAMELEN];
+	char snapname[ZFS_MAX_DATASET_NAME_LEN];
+	char real[ZFS_MAX_DATASET_NAME_LEN];
 	char *mountpoint;
 	zfs_snapentry_t *sep, search;
 	size_t mountpoint_len;
@@ -1322,7 +1322,7 @@ zfsctl_snapdir_lookup(ap)
 			 * The snapshot was unmounted behind our backs,
 			 * try to remount it.
 			 */
-			VERIFY(zfsctl_snapshot_zname(dvp, nm, MAXNAMELEN, snapname) == 0);
+			VERIFY(zfsctl_snapshot_zname(dvp, nm, ZFS_MAX_DATASET_NAME_LEN, snapname) == 0);
             dprintf("goto domount\n");
 			goto domount;
 		} else {
@@ -1517,8 +1517,8 @@ zfsctl_snapdir_readdir_cb(struct vnode *vp, void *dp, int *eofp,
 
 	cookie = *offp;
     dsl_pool_config_enter(dmu_objset_pool(zfsvfs->z_os), FTAG);
-	error = dmu_snapshot_list_next(zfsvfs->z_os, MAXNAMELEN, snapname, &id,
-	    &cookie, &case_conflict);
+	error = dmu_snapshot_list_next(zfsvfs->z_os,
+	    sizeof (snapname), snapname, &id, &cookie, &case_conflict);
     dsl_pool_config_exit(dmu_objset_pool(zfsvfs->z_os), FTAG);
 	if (error) {
 		ZFS_EXIT(zfsvfs);
@@ -1530,7 +1530,7 @@ zfsctl_snapdir_readdir_cb(struct vnode *vp, void *dp, int *eofp,
 	}
 
     odp=dp;
-    (void) strlcpy(odp->d_name, snapname, MAXPATHLEN);
+    (void) strlcpy(odp->d_name, snapname, ZFS_MAX_DATASET_NAME_LEN);
     odp->d_ino = ZFSCTL_INO_SNAP(id);
 
 	*nextp = cookie;

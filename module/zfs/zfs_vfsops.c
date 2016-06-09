@@ -837,7 +837,7 @@ zfs_register_callbacks(struct mount *vfsp)
 	} else if (vfs_optionisset(vfsp, MNTOPT_NBMAND, NULL)) {
 		nbmand = B_TRUE;
 	} else {
-		char osname[MAXNAMELEN];
+		char osname[ZFS_MAX_DATASET_NAME_LEN];
 
 		dmu_objset_name(os, osname);
 		if (error = dsl_prop_get_integer(osname, "nbmand", &nbmand,
