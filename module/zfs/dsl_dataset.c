@@ -1806,7 +1806,7 @@ dsl_dataset_stats(dsl_dataset_t *ds, nvlist_t *nv)
 		get_clones_stat(ds, nv);
 	} else {
 		if (ds->ds_prev != NULL && ds->ds_prev != dp->dp_origin_snap) {
-			char buf[MAXNAMELEN];
+			char buf[ZFS_MAX_DATASET_NAME_LEN];
 			dsl_dataset_name(ds->ds_prev, buf);
 			dsl_prop_nvlist_add_string(nv, ZFS_PROP_PREV_SNAP, buf);
 		}
@@ -1868,12 +1868,15 @@ dsl_dataset_stats(dsl_dataset_t *ds, nvlist_t *nv)
 		 * stats set on our child named "%recv".  Check the child
 		 * for the prop.
 		 */
-		char recvname[ZFS_MAXNAMELEN];
+		/* 6 extra bytes for /%recv */
+		char recvname[ZFS_MAX_DATASET_NAME_LEN + 6];
 		dsl_dataset_t *recv_ds;
 		dsl_dataset_name(ds, recvname);
-		(void) strlcat(recvname, "/", ZFS_MAXNAMELEN);
-		(void) strlcat(recvname, recv_clone_name, ZFS_MAXNAMELEN);
-		if (dsl_dataset_hold(dp, recvname, FTAG, &recv_ds) == 0) {
+		if (strlcat(recvname, "/", sizeof (recvname)) <
+			sizeof (recvname) &&
+			strlcat(recvname, recv_clone_name, sizeof (recvname)) <
+			sizeof (recvname) &&
+			dsl_dataset_hold(dp, recvname, FTAG, &recv_ds) == 0) {
 			get_receive_resume_stats(recv_ds, nv);
 			dsl_dataset_rele(recv_ds, FTAG);
 		}

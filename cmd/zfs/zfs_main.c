@@ -3490,7 +3490,7 @@ zfs_do_rollback(int argc, char **argv)
 #include "zfs_osx.h"
 #ifdef __APPLE__
 	if (ret == 0) {
-		char sourceloc[ZFS_MAXNAMELEN];
+		char sourceloc[ZFS_MAX_DATASET_NAME_LEN];
 		char mountpoint[ZFS_MAXPROPLEN];
         zprop_source_t sourcetype;
 
@@ -4010,7 +4010,7 @@ zfs_do_receive(int argc, char **argv)
 			usage(B_FALSE);
 		}
 
-		char namebuf[ZFS_MAXNAMELEN];
+		char namebuf[ZFS_MAX_DATASET_NAME_LEN];
 		(void) snprintf(namebuf, sizeof (namebuf),
 		    "%s/%%recv", argv[0]);
 

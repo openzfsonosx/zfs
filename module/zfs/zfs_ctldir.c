@@ -1165,7 +1165,9 @@ zfsctl_snapdir_rename(struct inode *sdip, char *snm,
 	if (!zfs_admin_snapshot)
 		return (EACCES);
 
-	ZFS_ENTER(zsb);
+	char from[ZFS_MAX_DATASET_NAME_LEN], to[ZFS_MAX_DATASET_NAME_LEN];
+	char real[ZFS_MAX_DATASET_NAME_LEN];
+	int err;
 
 	zfsvfs = vfs_fsprivate(vnode_mount(sdvp));
 	ZFS_ENTER(zfsvfs);
@@ -1183,13 +1185,13 @@ zfsctl_snapdir_rename(struct inode *sdip, char *snm,
 
 	ZFS_EXIT(zfsvfs);
 
-	error = zfsctl_snapshot_name(ITOZSB(sdip), snm, MAXNAMELEN, from);
-	if (error == 0)
-		error = zfsctl_snapshot_name(ITOZSB(tdip), tnm, MAXNAMELEN, to);
-	if (error == 0)
-		error = zfs_secpolicy_rename_perms(from, to, cr);
-	if (error != 0)
-		goto out;
+	err = zfsctl_snapshot_zname(sdvp, snm, ZFS_MAX_DATASET_NAME_LEN, from);
+	if (!err)
+		err = zfsctl_snapshot_zname(tdvp, tnm, ZFS_MAX_DATASET_NAME_LEN, to);
+	if (!err)
+		err = zfs_secpolicy_rename_perms(from, to, cr);
+	if (err)
+		return (err);
 
 	/*
 	 * Cannot move snapshots out of the snapdir.
@@ -1233,9 +1235,13 @@ out:
 int
 zfsctl_snapdir_remove(struct inode *dip, char *name, cred_t *cr, int flags)
 {
-	zfs_sb_t *zsb = ITOZSB(dip);
-	char *snapname, *real;
-	int error;
+	zfsctl_snapdir_t *sdp = vnode_fsnode(dvp);
+	zfs_snapentry_t *sep = NULL;
+	zfs_snapentry_t search;
+	zfsvfs_t *zfsvfs;
+	char snapname[ZFS_MAX_DATASET_NAME_LEN];
+	char real[ZFS_MAX_DATASET_NAME_LEN];
+	int err;
 
 	if (!zfs_admin_snapshot)
 		return (EACCES);
@@ -1245,10 +1251,9 @@ zfsctl_snapdir_remove(struct inode *dip, char *name, cred_t *cr, int flags)
 	snapname = kmem_alloc(MAXNAMELEN, KM_SLEEP);
 	real = kmem_alloc(MAXNAMELEN, KM_SLEEP);
 
-	if (zsb->z_case == ZFS_CASE_INSENSITIVE) {
-		error = dmu_snapshot_realname(zsb->z_os, name, real,
-		    MAXNAMELEN, NULL);
-		if (error == 0) {
+		err = dmu_snapshot_realname(zfsvfs->z_os, name, real,
+		    sizeof (real), NULL);
+		if (err == 0) {
 			name = real;
 		} else if (err != ENOTSUP) {
 			ZFS_EXIT(zfsvfs);
@@ -1262,12 +1267,11 @@ zfsctl_snapdir_remove(struct inode *dip, char *name, cred_t *cr, int flags)
 	if (error != 0)
 		goto out;
 
-	error = zfsctl_snapshot_unmount(snapname, MNT_FORCE);
-	if ((error == 0) || (error == ENOENT))
-		error = dsl_destroy_snapshot(snapname, B_FALSE);
-out:
-	kmem_free(snapname, MAXNAMELEN);
-	kmem_free(real, MAXNAMELEN);
+	err = zfsctl_snapshot_zname(dvp, name, ZFS_MAX_DATASET_NAME_LEN, snapname);
+	if (!err)
+		err = zfs_secpolicy_destroy_perms(snapname, cr);
+	if (err)
+		return (err);
 
 	mutex_enter(&sdp->sd_lock);
 
@@ -1381,10 +1385,40 @@ zfsctl_snapdir_readdir_cb(struct vnode *vp, void *dp, int *eofp,
 int
 zfsctl_snapshot_unmount(char *snapname, int flags)
 {
-	char *argv[] = { "/bin/sh", "-c", NULL, NULL };
-	char *envp[] = { NULL };
-	zfs_snapentry_t *se;
-	int error;
+	struct vnode *dvp = ap->a_dvp;
+	struct vnode **vpp = ap->a_vpp;
+	struct componentname *cnp = ap->a_cnp;
+	char nm[NAME_MAX + 1];
+	zfsctl_snapdir_t *sdp = vnode_fsnode(dvp);
+	objset_t *snap;
+	char snapname[ZFS_MAX_DATASET_NAME_LEN];
+	char real[ZFS_MAX_DATASET_NAME_LEN];
+	char *mountpoint;
+	zfs_snapentry_t *sep, search;
+	size_t mountpoint_len;
+	avl_index_t where;
+	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(dvp));
+	int err;
+	int flags = 0;
+
+	/*
+	 * No extended attributes allowed under .zfs
+	 */
+#ifndef __APPLE__
+	if (flags & LOOKUP_XATTR)
+		return (EINVAL);
+#endif
+
+    if (!sdp) return ENOENT;
+
+	ASSERT(ap->a_cnp->cn_namelen < sizeof(nm));
+	strlcpy(nm, ap->a_cnp->cn_nameptr, ap->a_cnp->cn_namelen + 1);
+
+    dprintf("zfsctl_snapdir_lookup '%s'\n", nm);
+
+	ASSERT(vnode_isdir(dvp));
+
+    if (!strcmp(nm, ".autodiskmounted")) return EINVAL;
 
 	mutex_enter(&zfs_snapshot_lock);
 	if ((se = zfsctl_snapshot_find_by_name(snapname)) == NULL) {
@@ -1648,14 +1682,26 @@ zfsctl_umount_snapshots(vfs_t *vfsp, int fflags, cred_t *cr)
 
     dprintf("unmount_snapshots\n");
 
-	ASSERT(zfsvfs->z_ctldir != NULL);
-	error = zfsctl_root_lookup(zfsvfs->z_ctldir, "snapshot", &dvp,
-	    NULL, 0, NULL, cr, NULL, NULL, NULL);
-	if (error != 0)
+	cookie = *offp;
+    dsl_pool_config_enter(dmu_objset_pool(zfsvfs->z_os), FTAG);
+	error = dmu_snapshot_list_next(zfsvfs->z_os,
+	    sizeof (snapname), snapname, &id, &cookie, &case_conflict);
+    dsl_pool_config_exit(dmu_objset_pool(zfsvfs->z_os), FTAG);
+	if (error) {
+		ZFS_EXIT(zfsvfs);
+		if (error == ENOENT) {
+			*eofp = 1;
+			return (0);
+		}
 		return (error);
 
-	sdp = vnode_fsnode(dvp);
-    if (!sdp) return 0;
+    odp=dp;
+    (void) strlcpy(odp->d_name, snapname, ZFS_MAX_DATASET_NAME_LEN);
+    odp->d_ino = ZFSCTL_INO_SNAP(id);
+
+	*nextp = cookie;
+
+	ZFS_EXIT(zfsvfs);
 
 	mutex_enter(&sdp->sd_lock);
 

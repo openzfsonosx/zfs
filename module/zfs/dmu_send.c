@@ -1510,7 +1510,8 @@ dmu_recv_resume_begin_check(void *arg, dmu_tx_t *tx)
 	    !spa_feature_is_enabled(dp->dp_spa, SPA_FEATURE_LZ4_COMPRESS))
 		return (SET_ERROR(ENOTSUP));
 
-	char recvname[ZFS_MAXNAMELEN];
+	/* 6 extra bytes for /%recv */
+	char recvname[ZFS_MAX_DATASET_NAME_LEN + 6];
 
 	(void) snprintf(recvname, sizeof (recvname), "%s/%s",
 	    tofs, recv_clone_name);
@@ -1583,7 +1584,8 @@ dmu_recv_resume_begin_sync(void *arg, dmu_tx_t *tx)
 	const char *tofs = drba->drba_cookie->drc_tofs;
 	dsl_dataset_t *ds;
 	uint64_t dsobj;
-	char recvname[ZFS_MAXNAMELEN];
+	/* 6 extra bytes for /%recv */
+	char recvname[ZFS_MAX_DATASET_NAME_LEN + 6];
 
 	(void) snprintf(recvname, sizeof (recvname), "%s/%s",
 	    tofs, recv_clone_name);
@@ -2301,7 +2303,7 @@ dmu_recv_cleanup_ds(dmu_recv_cookie_t *drc)
 		txg_wait_synced(drc->drc_ds->ds_dir->dd_pool, 0);
 		dsl_dataset_disown(drc->drc_ds, dmu_recv_tag);
 	} else {
-		char name[MAXNAMELEN];
+		char name[ZFS_MAX_DATASET_NAME_LEN];
 		dsl_dataset_name(drc->drc_ds, name);
 		dsl_dataset_disown(drc->drc_ds, dmu_recv_tag);
 		(void) dsl_destroy_head(name);
@@ -3125,7 +3127,7 @@ dmu_recv_existing_end(dmu_recv_cookie_t *drc)
 	int error;
 
 #ifdef _KERNEL
-	char name[MAXNAMELEN];
+	char name[ZFS_MAX_DATASET_NAME_LEN];
 	/*
 	 * We will be destroying the ds; make sure its origin is unmounted if
 	 * necessary.

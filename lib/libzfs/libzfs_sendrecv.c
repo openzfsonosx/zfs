@@ -789,7 +789,7 @@ send_iterate_prop(zfs_handle_t *zhp, nvlist_t *nv)
 static uint64_t
 get_snap_txg(libzfs_handle_t *hdl, const char *fs, const char *snap)
 {
-	char name[ZFS_MAXNAMELEN];
+	char name[ZFS_MAX_DATASET_NAME_LEN];
 	uint64_t txg = 0;
 
 	if (fs == NULL || fs[0] == '\0' || snap == NULL || snap[0] == '\0')
@@ -1606,7 +1606,7 @@ zfs_send_resume(libzfs_handle_t *hdl, sendflags_t *flags, int outfd,
 	uint64_t resumeobj, resumeoff, toguid, fromguid, bytes;
 	zfs_handle_t *zhp;
 	int error = 0;
-	char name[ZFS_MAXNAMELEN];
+	char name[ZFS_MAX_DATASET_NAME_LEN];
 	enum lzc_send_flags lzc_flags = 0;
 
 	(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
@@ -2327,7 +2327,7 @@ static int
 guid_to_name(libzfs_handle_t *hdl, const char *parent, uint64_t guid,
     boolean_t bookmark_ok, char *name)
 {
-	char pname[ZFS_MAXNAMELEN];
+	char pname[ZFS_MAX_DATASET_NAME_LEN];
 	guid_to_name_data_t gtnd;
 
 	gtnd.guid = guid;
@@ -2891,7 +2891,7 @@ zfs_receive_package(libzfs_handle_t *hdl, int fd, const char *destname,
 	 * zfs_receive_one().
 	 */
 	(void) strlcpy(sendfs, drr->drr_u.drr_begin.drr_toname,
-	    ZFS_MAXNAMELEN);
+	    sizeof (sendfs));
 	if ((cp = strchr(sendfs, '@')) != NULL) {
 		*cp = '\0';
 		/*
@@ -3042,7 +3042,7 @@ static void
 recv_ecksum_set_aux(libzfs_handle_t *hdl, const char *target_snap,
     boolean_t resumable)
 {
-	char target_fs[ZFS_MAXNAMELEN];
+	char target_fs[ZFS_MAX_DATASET_NAME_LEN];
 
 	zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 	    "checksum mismatch or incomplete stream"));
@@ -3239,7 +3239,7 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 		if (flags->verbose)
 			(void) printf("found clone origin %s\n", zc.zc_string);
 	} else if (originsnap) {
-		(void) strncpy(zc.zc_string, originsnap, ZFS_MAXNAMELEN);
+		(void) strncpy(zc.zc_string, originsnap, sizeof (zc.zc_string));
 		if (flags->verbose)
 			(void) printf("using provided clone origin %s\n",
 						  zc.zc_string);

@@ -722,6 +722,31 @@ zfs_register_callbacks(struct mount *vfsp)
 	}
 
 	/*
+	 * nbmand is a special property.  It can only be changed at
+	 * mount time.
+	 *
+	 * This is weird, but it is documented to only be changeable
+	 * at mount time.
+	 */
+#ifdef __LINUX__
+	uint64_t nbmand = 0;
+
+	if (vfs_optionisset(vfsp, MNTOPT_NONBMAND, NULL)) {
+		nbmand = B_FALSE;
+	} else if (vfs_optionisset(vfsp, MNTOPT_NBMAND, NULL)) {
+		nbmand = B_TRUE;
+	} else {
+		char osname[ZFS_MAX_DATASET_NAME_LEN];
+
+		dmu_objset_name(os, osname);
+		if (error = dsl_prop_get_integer(osname, "nbmand", &nbmand,
+		    NULL)) {
+			return (error);
+		}
+	}
+#endif
+
+	/*
 	 * Register property callbacks.
 	 *
 	 * It would probably be fine to just check for i/o error from
