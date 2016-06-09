@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  */
 
 #ifndef	_SYS_ZAP_H
@@ -223,7 +223,7 @@ int zap_lookup_norm_by_dnode(dnode_t *dn, const char *name,
     matchtype_t mt, char *realname, int rn_len,
     boolean_t *ncp);
 
-int zap_count_write_by_dnode(dnode_t *dn, const char *name,
+int zap_count_write(objset_t *os, uint64_t zapobj, const char *name,
     int add, refcount_t *towrite, refcount_t *tooverwrite);
 
 /*

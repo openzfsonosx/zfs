@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
 
@@ -1438,7 +1438,7 @@ zap_get_stats(objset_t *os, uint64_t zapobj, zap_stats_t *zs)
 }
 
 int
-zap_count_write_by_dnode(dnode_t *dn, const char *name, int add,
+zap_count_write(objset_t *os, uint64_t zapobj, const char *name, int add,
     refcount_t *towrite, refcount_t *tooverwrite)
 {
 	zap_t *zap;
