@@ -19,10 +19,10 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright 2015 RackTop Systems.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*
@@ -187,7 +187,7 @@ fix_paths(nvlist_t *nv, name_entry_t *names)
 			}
 
 			/* Prefer paths earlier in the search order. */
-			if (best->ne_num_labels == best->ne_num_labels &&
+			if (ne->ne_num_labels == best->ne_num_labels &&
 			    ne->ne_order < best->ne_order) {
 				best = ne;
 				continue;
@@ -1307,9 +1307,7 @@ zpool_open_func(void *arg)
 }
 
 /*
- * Given a file descriptor, clear (zero) the label information.  This function
- * is used in the appliance stack as part of the ZFS sysevent module and
- * to implement the "zpool labelclear" command.
+ * Given a file descriptor, clear (zero) the label information.
  */
 int
 zpool_clear_label(int fd)
@@ -1419,12 +1417,17 @@ zpool_default_import_path[DEFAULT_IMPORT_PATH_SIZE] = {
 	"/dev/disk/by-id",	/* May be multiple entries and persistent */
 	"/dev/disk/by-path",	/* Encodes physical location and persistent */
 	"/dev/disk/by-label",	/* Custom persistent labels */
+	"/dev"			/* UNSAFE device names will change */
 #elif defined(__APPLE__)
 	"/private/var/run/disk/by-id",
 	"/private/var/run/disk/by-path",
+#ifndef __UNSAFE_DEFAULT_IMPORT_PATH__
+	"/private/var/run/disk/by-serial"
+#else
 	"/private/var/run/disk/by-serial",
-#endif /* __LINUX__ */
 	"/dev"			/* UNSAFE device names will change */
+#endif /* !__UNSAFE_DEFAULT_IMPORT_PATH__ */
+#endif /* __LINUX__ */
 };
 
 
@@ -1478,7 +1481,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 	 */
 	for (i = 0; i < dirs; i++) {
 		taskq_t *t;
-		char *rdsk;
+		char rdsk[MAXPATHLEN];
 		int dfd;
 		boolean_t config_failed = B_FALSE;
 		DIR *dirp;
@@ -1505,10 +1508,10 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 		 * reading the labels skips a bunch of slow operations during
 		 * close(2) processing, so we replace /dev/dsk with /dev/rdsk.
 		 */
-		if (strcmp(path, "/dev/dsk/") == 0)
-			rdsk = "/dev/rdsk/";
+		if (strcmp(path, ZFS_DISK_ROOTD) == 0)
+			(void) strlcpy(rdsk, ZFS_RDISK_ROOTD, sizeof (rdsk));
 		else
-			rdsk = path;
+			(void) strlcpy(rdsk, path, sizeof (rdsk));
 
 		if ((dfd = open(rdsk, O_RDONLY)) < 0 ||
 		    (dirp = fdopendir(dfd)) == NULL) {
@@ -1541,6 +1544,7 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			slice->rn_nozpool = B_FALSE;
 			avl_add(&slice_cache, slice);
 		}
+
 		/*
 		 * create a thread pool to do all of this in parallel;
 		 * rn_nozpool is not protected, so this is racy in that
@@ -1550,7 +1554,6 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 		 * locks in the kernel, so going beyond this doesn't
 		 * buy us much.
 		 */
-		thread_init();
 		t = taskq_create("z_import", 2 * max_ncpus, defclsyspri,
 		    2 * max_ncpus, INT_MAX, TASKQ_PREPOPULATE);
 		for (slice = avl_first(&slice_cache); slice;
@@ -1560,7 +1563,6 @@ zpool_find_import_impl(libzfs_handle_t *hdl, importargs_t *iarg)
 			    TQ_SLEEP);
 		taskq_wait(t);
 		taskq_destroy(t);
-		thread_fini();
 
 		cookie = NULL;
 		while ((slice = avl_destroy_nodes(&slice_cache,

@@ -351,8 +351,7 @@ spa_prop_get(spa_t *spa, nvlist_t **nvp)
 					break;
 				}
 
-				strval = kmem_alloc(
-				    MAXNAMELEN + strlen(MOS_DIR_NAME) + 1,
+				strval = kmem_alloc(ZFS_MAX_DATASET_NAME_LEN,
 				    KM_SLEEP);
 				dsl_dataset_name(ds, strval);
 				dsl_dataset_rele(ds, FTAG);
@@ -365,8 +364,7 @@ spa_prop_get(spa_t *spa, nvlist_t **nvp)
 			spa_prop_add_list(*nvp, prop, strval, intval, src);
 
 			if (strval != NULL)
-				kmem_free(strval,
-				    MAXNAMELEN + strlen(MOS_DIR_NAME) + 1);
+				kmem_free(strval, ZFS_MAX_DATASET_NAME_LEN);
 
 			break;
 
@@ -2004,6 +2002,16 @@ spa_load_verify_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	return (0);
 }
 
+/* ARGSUSED */
+int
+verify_dataset_name_len(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
+{
+	if (dsl_dataset_namelen(ds) >= ZFS_MAX_DATASET_NAME_LEN)
+		return (SET_ERROR(ENAMETOOLONG));
+
+	return (0);
+}
+
 static int
 spa_load_verify(spa_t *spa)
 {
@@ -2017,6 +2025,14 @@ spa_load_verify(spa_t *spa)
 
 	if (policy.zrp_request & ZPOOL_NEVER_REWIND)
 		return (0);
+
+	dsl_pool_config_enter(spa->spa_dsl_pool, FTAG);
+	error = dmu_objset_find_dp(spa->spa_dsl_pool,
+	    spa->spa_dsl_pool->dp_root_dir_obj, verify_dataset_name_len, NULL,
+	    DS_FIND_CHILDREN);
+	dsl_pool_config_exit(spa->spa_dsl_pool, FTAG);
+	if (error != 0)
+		return (error);
 
 	rio = zio_root(spa, NULL, &sle,
 	    ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE);
@@ -3321,6 +3337,8 @@ spa_add_l2cache(spa_t *spa, nvlist_t *config)
 			    ZPOOL_CONFIG_VDEV_STATS, (uint64_t **)&vs, &vsc)
 			    == 0);
 			vdev_get_stats(vd, vs);
+			vdev_config_generate_stats(vd, l2cache[i]);
+
 		}
 	}
 }
@@ -5514,7 +5532,7 @@ spa_vdev_remove_evacuate(spa_t *spa, vdev_t *vd)
 	} else {
 		error = SET_ERROR(ENOTSUP);
 	}
-
+	spa_event_notify(spa, vd, FM_EREPORT_ZFS_VDEV_REMOVE_AUX);
 	if (error)
 		return (error);
 
@@ -5632,6 +5650,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		    ZPOOL_CONFIG_L2CACHE, l2cache, nl2cache, nv);
 		spa_load_l2cache(spa);
 		spa->spa_l2cache.sav_sync = B_TRUE;
+		spa_event_notify(spa, vd, FM_EREPORT_ZFS_VDEV_REMOVE_AUX);
 	} else if (vd != NULL && vd->vdev_islog) {
 		ASSERT(!locked);
 		ASSERT(vd == vd->vdev_top);
@@ -5670,6 +5689,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		 */
 		spa_vdev_remove_from_namespace(spa, vd);
 
+		spa_event_notify(spa, vd, FM_EREPORT_ZFS_VDEV_REMOVE_AUX);
 	} else if (vd != NULL) {
 		/*
 		 * Normal vdevs cannot be removed (yet).
@@ -5683,7 +5703,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 	}
 
 	if (!locked)
-		return (spa_vdev_exit(spa, NULL, txg, error));
+		error = spa_vdev_exit(spa, NULL, txg, error);
 
 	return (error);
 }
@@ -6901,76 +6921,3 @@ spa_event_notify(spa_t *spa, vdev_t *vd, const char *name)
 	zfs_ereport_post(name, spa, vd, NULL, 0, 0);
 #endif
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-/* state manipulation functions */
-EXPORT_SYMBOL(spa_open);
-EXPORT_SYMBOL(spa_open_rewind);
-EXPORT_SYMBOL(spa_get_stats);
-EXPORT_SYMBOL(spa_create);
-EXPORT_SYMBOL(spa_import_rootpool);
-EXPORT_SYMBOL(spa_import);
-EXPORT_SYMBOL(spa_tryimport);
-EXPORT_SYMBOL(spa_destroy);
-EXPORT_SYMBOL(spa_export);
-EXPORT_SYMBOL(spa_reset);
-EXPORT_SYMBOL(spa_async_request);
-EXPORT_SYMBOL(spa_async_suspend);
-EXPORT_SYMBOL(spa_async_resume);
-EXPORT_SYMBOL(spa_inject_addref);
-EXPORT_SYMBOL(spa_inject_delref);
-EXPORT_SYMBOL(spa_scan_stat_init);
-EXPORT_SYMBOL(spa_scan_get_stats);
-
-/* device maniion */
-EXPORT_SYMBOL(spa_vdev_add);
-EXPORT_SYMBOL(spa_vdev_attach);
-EXPORT_SYMBOL(spa_vdev_detach);
-EXPORT_SYMBOL(spa_vdev_remove);
-EXPORT_SYMBOL(spa_vdev_setpath);
-EXPORT_SYMBOL(spa_vdev_setfru);
-EXPORT_SYMBOL(spa_vdev_split_mirror);
-
-/* spare statech is global across all pools) */
-EXPORT_SYMBOL(spa_spare_add);
-EXPORT_SYMBOL(spa_spare_remove);
-EXPORT_SYMBOL(spa_spare_exists);
-EXPORT_SYMBOL(spa_spare_activate);
-
-/* L2ARC statech is global across all pools) */
-EXPORT_SYMBOL(spa_l2cache_add);
-EXPORT_SYMBOL(spa_l2cache_remove);
-EXPORT_SYMBOL(spa_l2cache_exists);
-EXPORT_SYMBOL(spa_l2cache_activate);
-EXPORT_SYMBOL(spa_l2cache_drop);
-
-/* scanning */
-EXPORT_SYMBOL(spa_scan);
-EXPORT_SYMBOL(spa_scan_stop);
-
-/* spa syncing */
-EXPORT_SYMBOL(spa_sync); /* only for DMU use */
-EXPORT_SYMBOL(spa_sync_allpools);
-
-/* properties */
-EXPORT_SYMBOL(spa_prop_set);
-EXPORT_SYMBOL(spa_prop_get);
-EXPORT_SYMBOL(spa_prop_clear_bootfs);
-
-/* asynchronous event notification */
-EXPORT_SYMBOL(spa_event_notify);
-#endif
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-module_param(spa_load_verify_maxinflight, int, 0644);
-MODULE_PARM_DESC(spa_load_verify_maxinflight,
-	"Max concurrent traversal I/Os while verifying pool during import -X");
-
-module_param(spa_load_verify_metadata, int, 0644);
-MODULE_PARM_DESC(spa_load_verify_metadata,
-	"Set to traverse metadata on pool import");
-
-module_param(spa_load_verify_data, int, 0644);
-MODULE_PARM_DESC(spa_load_verify_data,
-	"Set to traverse data on pool import");
-#endif

@@ -19,15 +19,8 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
- * Portions Copyright 2007 Apple Inc. All rights reserved.
- * Use is subject to license terms.
- * Copyright (C) 2008-2010 Lawrence Livermore National Security, LLC.
- * Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
- * Rewritten for Linux by Brian Behlendorf <behlendorf1@llnl.gov>.
- * LLNL-CODE-403049.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Based on Apple MacZFS source code
+ * Copyright (c) 2014,2016 by Jorgen Lundman. All rights reserved.
  */
 
 #include <sys/zfs_context.h>

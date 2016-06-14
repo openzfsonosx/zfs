@@ -90,7 +90,7 @@
  */
 struct zfs_edge;
 typedef struct zfs_vertex {
-	char			zv_dataset[ZFS_MAXNAMELEN];
+	char			zv_dataset[ZFS_MAX_DATASET_NAME_LEN];
 	struct zfs_vertex	*zv_next;
 	int			zv_visited;
 	uint64_t		zv_txg;
@@ -164,7 +164,7 @@ zfs_vertex_create(libzfs_handle_t *hdl, const char *dataset)
 	if (zvp == NULL)
 		return (NULL);
 
-	assert(strlen(dataset) < ZFS_MAXNAMELEN);
+	assert(strlen(dataset) < ZFS_MAX_DATASET_NAME_LEN);
 
 	(void) strlcpy(zvp->zv_dataset, dataset, sizeof (zvp->zv_dataset));
 

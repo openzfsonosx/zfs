@@ -1,4 +1,29 @@
 /*
+ * CDDL HEADER START
+ *
+ * The contents of this file are subject to the terms of the
+ * Common Development and Distribution License (the "License").
+ * You may not use this file except in compliance with the License.
+ *
+ * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+ * or http://www.opensolaris.org/os/licensing.
+ * See the License for the specific language governing permissions
+ * and limitations under the License.
+ *
+ * When distributing Covered Code, include this CDDL HEADER in each
+ * file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+ * If applicable, add the following below this CDDL HEADER, with the
+ * fields enclosed by brackets "[]" replaced with your own identifying
+ * information: Portions Copyright [yyyy] [name of copyright owner]
+ *
+ * CDDL HEADER END
+ */
+/*
+ * Copyright (c) 2013 Will Andrews <will@firepipe.net>
+ * Copyright (c) 2013, 2016 Jorgen Lundman <lundman@lundman.net>
+ */
+
+/*
  * OS X ZFS vnode operation wrappers.
  *
  * The argument structure layouts were obtained from:
@@ -220,13 +245,13 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 		if (availbytes == delta)
 			goto out;
 
-		dprintf("ZFS: findernotify space delta %llu\n", mp, delta);
+		dprintf("ZFS: findernotify %p space delta %llu\n", mp, delta);
 
 		// Grab the root zp
 		if (!VFS_ROOT(mp, 0, &rootvp)) {
 
 			struct componentname cn;
-			char *tmpname = ".Trashes";
+			char *tmpname = ".fseventsd";
 
 			bzero(&cn, sizeof(cn));
 			cn.cn_nameiop = LOOKUP;
@@ -271,7 +296,6 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 static void
 zfs_findernotify_thread(void *notused)
 {
-	clock_t			growtime = 0;
 	callb_cpr_t		cpr;
 
 	dprintf("ZFS: findernotify thread start\n");
@@ -573,7 +597,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		    {
 				uint32_t gen_counter;
 
-				printf("ZFS: F_MAKECOMPRESSED\n");
+				dprintf("ZFS: F_MAKECOMPRESSED\n");
 
 				if (vfs_isrdonly(zfsvfs->z_vfs) ||
 					!spa_writeable(dmu_objset_spa(zfsvfs->z_os))) {
@@ -1611,7 +1635,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 #endif
 
 	if (error)
-		printf("ZFS: vnop_setattr return failure %d\n", error);
+		dprintf("ZFS: vnop_setattr return failure %d\n", error);
 	return (error);
 }
 
@@ -1910,7 +1934,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 
 	ZFS_EXIT(zfsvfs);
 	if (error)
-		printf("-pagein %d\n", error);
+		dprintf("-pagein %d\n", error);
 	return (error);
 }
 
@@ -2123,7 +2147,7 @@ out:
 exit:
 	ZFS_EXIT(zfsvfs);
 	if (err)
-		printf("ZFS: pageout failed %d\n", err);
+		dprintf("ZFS: pageout failed %d\n", err);
 	return (err);
 }
 
@@ -2288,7 +2312,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	 * pager (ie, swap - when we eventually support it)
 	 */
 	if (upl) {
-		printf("ZFS: Relaying vnop_pageoutv2 to vnop_pageout\n");
+		dprintf("ZFS: Relaying vnop_pageoutv2 to vnop_pageout\n");
 		return zfs_vnop_pageout(ap);
 	}
 
@@ -2343,7 +2367,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	error = ubc_create_upl(vp, ap->a_f_offset, ap->a_size, &upl, &pl,
 						   request_flags );
 	if (error || (upl == NULL)) {
-		printf("ZFS: Failed to create UPL! %d\n", error);
+		dprintf("ZFS: Failed to create UPL! %d\n", error);
 		goto pageout_done;
 	}
 
@@ -2385,7 +2409,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		if (upl_page_present(pl, --pg_index))
 			break;
 		if (pg_index == 0) {
-			printf("ZFS: failed on pg_index\n");
+			dprintf("ZFS: failed on pg_index\n");
 			dmu_tx_commit(tx);
 			if (vaddr) {
 				ubc_upl_unmap(upl);
@@ -2430,7 +2454,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		if ( !upl_dirty_page(pl, pg_index)) {
 			/* hfs has a call to panic here, but we trigger this *a lot* so
 			 * unsure what is going on */
-			printf ("zfs_vnop_pageoutv2: unforeseen clean page @ index %lld for UPL %p\n", pg_index, upl);
+			dprintf ("zfs_vnop_pageoutv2: unforeseen clean page @ index %lld for UPL %p\n", pg_index, upl);
 			f_offset += PAGE_SIZE;
 			offset   += PAGE_SIZE;
 			isize    -= PAGE_SIZE;
@@ -2472,7 +2496,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		if (!vaddr) {
 			if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
 				error = EINVAL;
-				printf("ZFS: unable to map\n");
+				dprintf("ZFS: unable to map\n");
 				goto out;
 			}
 			dprintf("ZFS: Mapped %p\n", vaddr);
@@ -2533,14 +2557,14 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 	ZFS_EXIT(zfsvfs);
 	if (error)
-		printf("ZFS: pageoutv2 failed %d\n", error);
+		dprintf("ZFS: pageoutv2 failed %d\n", error);
 	return (error);
 
   pageout_done:
 	zfs_range_unlock(rl);
 
   exit_abort:
-	printf("ZFS: pageoutv2 aborted %d\n", error);
+	dprintf("ZFS: pageoutv2 aborted %d\n", error);
 	//VERIFY(ubc_create_upl(vp, off, len, &upl, &pl, flags) == 0);
 	//ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 	if (zfsvfs)

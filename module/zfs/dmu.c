@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014, Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2015 by Chunwei Chen. All rights reserved.
@@ -441,9 +441,11 @@ dmu_buf_hold_array_by_dnode(dnode_t *dn, uint64_t offset, uint64_t length,
 			(void) dbuf_read(db, zio, dbuf_flags);
 		dbp[i] = &db->db;
 	}
-	if ((flags & DMU_READ_NO_PREFETCH) == 0 && read &&
-	    length <= zfetch_array_rd_sz) {
-		dmu_zfetch(&dn->dn_zfetch, blkid, nblks);
+
+	if ((flags & DMU_READ_NO_PREFETCH) == 0 &&
+	    DNODE_META_IS_CACHEABLE(dn) && length <= zfetch_array_rd_sz) {
+		dmu_zfetch(&dn->dn_zfetch, blkid, nblks,
+		    read && DNODE_IS_CACHEABLE(dn));
 	}
 	rw_exit(&dn->dn_struct_rwlock);
 
@@ -1072,174 +1074,6 @@ xuio_stat_wbuf_nocopy()
 
 #ifdef _KERNEL
 
-
-#if 0 // fixme
-
-/*
- * Copy up to size bytes between arg_buf and req based on the data direction
- * described by the req.  If an entire req's data cannot be transfered in one
- * pass, you should pass in @req_offset to indicate where to continue. The
- * return value is the number of bytes successfully copied to arg_buf.
- */
-static int
-dmu_bio_copy(void *arg_buf, int size, struct bio *bio, size_t bio_offset)
-{
-	struct bio_vec bv, *bvp = &bv;
-	bvec_iterator_t iter;
-	char *bv_buf;
-	int tocpy, bv_len, bv_offset;
-	int offset = 0;
-
-	bio_for_each_segment4(bv, bvp, bio, iter) {
-
-		/*
-		 * Fully consumed the passed arg_buf. We use goto here because
-		 * rq_for_each_segment is a double loop
-		 */
-		ASSERT3S(offset, <=, size);
-		if (size == offset)
-			goto out;
-
-		/* Skip already copied bvp */
-		if (bio_offset >= bvp->bv_len) {
-			bio_offset -= bvp->bv_len;
-			continue;
-		}
-
-		bv_len = bvp->bv_len - bio_offset;
-		bv_offset = bvp->bv_offset + bio_offset;
-		bio_offset = 0;
-
-		tocpy = MIN(bv_len, size - offset);
-		ASSERT3S(tocpy, >=, 0);
-
-		bv_buf = page_address(bvp->bv_page) + bv_offset;
-		ASSERT3P(bv_buf, !=, NULL);
-
-		if (bio_data_dir(bio) == WRITE)
-			memcpy(arg_buf + offset, bv_buf, tocpy);
-		else
-			memcpy(bv_buf, arg_buf + offset, tocpy);
-
-		offset += tocpy;
-	}
-out:
-	return (offset);
-}
-
-int
-dmu_read_bio(objset_t *os, uint64_t object, struct bio *bio)
-{
-	uint64_t offset = BIO_BI_SECTOR(bio) << 9;
-	uint64_t size = BIO_BI_SIZE(bio);
-	dmu_buf_t **dbp;
-	int numbufs, i, err;
-	size_t bio_offset;
-
-	/*
-	 * NB: we could do this block-at-a-time, but it's nice
-	 * to be reading in parallel.
-	 */
-	err = dmu_buf_hold_array(os, object, offset, size, TRUE, FTAG,
-	    &numbufs, &dbp);
-	if (err)
-		return (err);
-
-	bio_offset = 0;
-	for (i = 0; i < numbufs; i++) {
-		uint64_t tocpy;
-		int64_t bufoff;
-		int didcpy;
-		dmu_buf_t *db = dbp[i];
-
-		bufoff = offset - db->db_offset;
-		ASSERT3S(bufoff, >=, 0);
-
-		tocpy = MIN(db->db_size - bufoff, size);
-		if (tocpy == 0)
-			break;
-
-		didcpy = dmu_bio_copy(db->db_data + bufoff, tocpy, bio,
-		    bio_offset);
-
-		if (didcpy < tocpy)
-			err = EIO;
-
-		if (err)
-			break;
-
-		size -= tocpy;
-		offset += didcpy;
-		bio_offset += didcpy;
-		err = 0;
-	}
-	dmu_buf_rele_array(dbp, numbufs, FTAG);
-
-	return (err);
-}
-
-int
-dmu_write_bio(objset_t *os, uint64_t object, struct bio *bio, dmu_tx_t *tx)
-{
-	uint64_t offset = BIO_BI_SECTOR(bio) << 9;
-	uint64_t size = BIO_BI_SIZE(bio);
-	dmu_buf_t **dbp;
-	int numbufs, i, err;
-	size_t bio_offset;
-
-	if (size == 0)
-		return (0);
-
-	err = dmu_buf_hold_array(os, object, offset, size, FALSE, FTAG,
-	    &numbufs, &dbp);
-	if (err)
-		return (err);
-
-	bio_offset = 0;
-	for (i = 0; i < numbufs; i++) {
-		uint64_t tocpy;
-		int64_t bufoff;
-		int didcpy;
-		dmu_buf_t *db = dbp[i];
-
-		bufoff = offset - db->db_offset;
-		ASSERT3S(bufoff, >=, 0);
-
-		tocpy = MIN(db->db_size - bufoff, size);
-		if (tocpy == 0)
-			break;
-
-		ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
-
-		if (tocpy == db->db_size)
-			dmu_buf_will_fill(db, tx);
-		else
-			dmu_buf_will_dirty(db, tx);
-
-		didcpy = dmu_bio_copy(db->db_data + bufoff, tocpy, bio,
-		    bio_offset);
-
-		if (tocpy == db->db_size)
-			dmu_buf_fill_done(db, tx);
-
-		if (didcpy < tocpy)
-			err = EIO;
-
-		if (err)
-			break;
-
-		size -= tocpy;
-		offset += didcpy;
-		bio_offset += didcpy;
-		err = 0;
-	}
-
-	dmu_buf_rele_array(dbp, numbufs, FTAG);
-	return (err);
-}
-
-#endif
-
 static int
 dmu_read_uio_dnode(dnode_t *dn, uio_t *uio, uint64_t size)
 {
@@ -1360,8 +1194,6 @@ dmu_write_uio_dnode(dnode_t *dn, uio_t *uio, uint64_t size, dmu_tx_t *tx)
 	int err = 0;
 	int i;
 
-	//err = dmu_buf_hold_array_by_dnode(dn, uio->uio_loffset, size,
-    //   FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
 	err = dmu_buf_hold_array_by_dnode(dn, uio_offset(uio), size,
 	    FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
 	if (err)
@@ -1887,10 +1719,11 @@ dmu_sync_late_arrival(zio_t *pio, objset_t *os, dmu_sync_cb_t *done, zgd_t *zgd,
 	dsa->dsa_zgd = zgd;
 	dsa->dsa_tx = tx;
 
-	zio_nowait(zio_write(pio, os->os_spa, dmu_tx_get_txg(tx), zgd->zgd_bp,
-	    zgd->zgd_db->db_data, zgd->zgd_db->db_size, zp,
-	    dmu_sync_late_arrival_ready, NULL, dmu_sync_late_arrival_done, dsa,
-	    ZIO_PRIORITY_SYNC_WRITE, ZIO_FLAG_CANFAIL|ZIO_FLAG_FASTWRITE, zb));
+	zio_nowait(zio_write(pio, os->os_spa, dmu_tx_get_txg(tx),
+		zgd->zgd_bp, zgd->zgd_db->db_data, zgd->zgd_db->db_size,
+        zp, dmu_sync_late_arrival_ready, NULL,
+        NULL, dmu_sync_late_arrival_done, dsa, ZIO_PRIORITY_SYNC_WRITE,
+        ZIO_FLAG_CANFAIL, zb));
 
 	return (0);
 }
@@ -2043,8 +1876,8 @@ dmu_sync(zio_t *pio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd)
 	zio_nowait(arc_write(pio, os->os_spa, txg,
 	    bp, dr->dt.dl.dr_data, DBUF_IS_L2CACHEABLE(db),
 	    DBUF_IS_L2COMPRESSIBLE(db), &zp, dmu_sync_ready,
-	    NULL, dmu_sync_done, dsa, ZIO_PRIORITY_SYNC_WRITE,
-	    ZIO_FLAG_CANFAIL, &zb));
+	    NULL, NULL, dmu_sync_done, dsa,
+	    ZIO_PRIORITY_SYNC_WRITE, ZIO_FLAG_CANFAIL, &zb));
 
 	return (0);
 }
@@ -2470,40 +2303,3 @@ dmu_buf_add_ref(dmu_buf_t *db, void* tag)
 {
     dbuf_add_ref((dmu_buf_impl_t *)db, tag);
 }
-
-
-
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-EXPORT_SYMBOL(dmu_bonus_hold);
-EXPORT_SYMBOL(dmu_buf_hold_array_by_bonus);
-EXPORT_SYMBOL(dmu_buf_rele_array);
-EXPORT_SYMBOL(dmu_prefetch);
-EXPORT_SYMBOL(dmu_free_range);
-EXPORT_SYMBOL(dmu_free_long_range);
-EXPORT_SYMBOL(dmu_free_long_object);
-EXPORT_SYMBOL(dmu_read);
-EXPORT_SYMBOL(dmu_write);
-EXPORT_SYMBOL(dmu_prealloc);
-EXPORT_SYMBOL(dmu_object_info);
-EXPORT_SYMBOL(dmu_object_info_from_dnode);
-EXPORT_SYMBOL(dmu_object_info_from_db);
-EXPORT_SYMBOL(dmu_object_size_from_db);
-EXPORT_SYMBOL(dmu_object_set_blocksize);
-EXPORT_SYMBOL(dmu_object_set_checksum);
-EXPORT_SYMBOL(dmu_object_set_compress);
-EXPORT_SYMBOL(dmu_write_policy);
-EXPORT_SYMBOL(dmu_sync);
-EXPORT_SYMBOL(dmu_request_arcbuf);
-EXPORT_SYMBOL(dmu_return_arcbuf);
-EXPORT_SYMBOL(dmu_assign_arcbuf);
-EXPORT_SYMBOL(dmu_buf_hold);
-EXPORT_SYMBOL(dmu_ot);
-
-module_param(zfs_mdcomp_disable, int, 0644);
-MODULE_PARM_DESC(zfs_mdcomp_disable, "Disable meta data compression");
-
-module_param(zfs_nopwrite_enabled, int, 0644);
-MODULE_PARM_DESC(zfs_nopwrite_enabled, "Enable NOP writes");
-
-#endif

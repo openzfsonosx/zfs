@@ -24,16 +24,6 @@ namespace ID
 	{
 	}
 
-	bool isDevice(DiskInformation const & di)
-	{
-		return di.isDevice;
-	}
-
-	bool isWhole(DiskInformation const & di)
-	{
-		return di.mediaWhole;
-	}
-
 	static bool isInvalidSerialChar(char c)
 	{
 		if (isalnum(c))
@@ -50,21 +40,6 @@ namespace ID
 		if (first != std::string::npos)
 			return s.substr(first, last - first + 1);
 		return s;
-	}
-
-	std::string partitionSuffix(DiskInformation const & di)
-	{
-		if (isDevice(di) && !isWhole(di))
-		{
-			size_t suffixStart = di.mediaBSDName.find_last_not_of("0123456789");
-			if (suffixStart != std::string::npos &&
-				suffixStart+1 < di.mediaBSDName.size() &&
-				di.mediaBSDName[suffixStart] == 's')
-			{
-				return ':' + di.mediaBSDName.substr(suffixStart+1);
-			}
-		}
-		return std::string();
 	}
 
 	std::string formatSerial(DiskInformation const & di)

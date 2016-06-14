@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  */
 
@@ -406,6 +406,7 @@ struct zio {
 
 	/* Callback info */
 	zio_done_func_t *io_ready;
+	zio_done_func_t	*io_children_ready;
 	zio_done_func_t	*io_physdone;
 	zio_done_func_t	*io_done;
 	void		*io_private;
@@ -427,7 +428,8 @@ struct zio {
 	hrtime_t	io_timestamp;	/* submitted at */
 	hrtime_t    io_target_timestamp;
 	hrtime_t	io_delta;	/* vdev queue service delta */
-	uint64_t	io_delay;	/* vdev disk service delta (ticks) */
+	hrtime_t	io_delay;	/* Device access time (disk or */
+					/* file). */
 	avl_node_t	io_queue_node;
 	avl_node_t	io_offset_node;
 
@@ -472,9 +474,10 @@ extern zio_t *zio_read(zio_t *pio, spa_t *spa, const blkptr_t *bp, void *data,
 
 extern zio_t *zio_write(zio_t *pio, spa_t *spa, uint64_t txg, blkptr_t *bp,
     void *data, uint64_t size, const zio_prop_t *zp,
-    zio_done_func_t *ready, zio_done_func_t *physdone, zio_done_func_t *done,
-    void *_private,
-    zio_priority_t priority, enum zio_flag flags, const zbookmark_phys_t *zb);
+    zio_done_func_t *ready, zio_done_func_t *children_ready,
+    zio_done_func_t *physdone, zio_done_func_t *done,
+    void *_private, zio_priority_t priority, enum zio_flag flags,
+    const zbookmark_phys_t *zb);
 
 extern zio_t *zio_rewrite(zio_t *pio, spa_t *spa, uint64_t txg, blkptr_t *bp,
     void *data, uint64_t size, zio_done_func_t *done, void *_private,

@@ -469,7 +469,7 @@ zap_leaf_lookup_closest(zap_leaf_t *l,
 #ifdef __APPLE__
 	if (zap_leaf_phys(l)->l_hdr.lh_magic != ZAP_LEAF_MAGIC) {
 		printf("ZFS: Corrupt zap_leaf_lookup_closest detected\n");
-		return ENXIO;
+		return EIO;
 	}
 #endif
 

@@ -44,7 +44,7 @@ install-exec-local:: zfs.fs
 	rm -f $(FS_BUNDLEDIR)/Contents/Resources/English.lproj/$(EN_INFO_PLIST_STRINGS)
 	mkdir -p $(FS_BUNDLEDIR)
 	rsync -aH zfs.fs/ $(FS_BUNDLEDIR)/
-	cp -f $(top_builddir)/module/zfs/zfs $(FS_BUNDLEDIR)/Contents/Resources/mount_zfs
+	cp -f  $(DESTDIR)/$(MOUNTEXECDIR)/mount_zfs $(FS_BUNDLEDIR)/Contents/Resources/mount_zfs
 	chown -R root:wheel $(FS_BUNDLEDIR) || echo "Unable to chown root:wheel in $(FS_BUNDLEDIR)"
 
 clean:

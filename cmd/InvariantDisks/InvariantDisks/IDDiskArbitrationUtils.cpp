@@ -46,6 +46,7 @@ namespace ID
 			<< "\tBusName=\"" << disk.busName << "\"\n"
 			<< "\tBusPath=\"" << disk.busPath << "\"\n"
 			<< "\tIOSerial=\"" << disk.ioSerial << "\"\n"
+			<< "\tImagePath=\"" << disk.imagePath << "\"\n"
 			<< ")";
 	}
 
@@ -107,6 +108,13 @@ namespace ID
 		return std::string();
 	}
 
+	std::string interpret_as_string(CFDataRef data)
+	{
+		char const * bytesBegin = reinterpret_cast<char const *>(CFDataGetBytePtr(data));
+		char const * bytesEnd = bytesBegin + CFDataGetLength(data);
+		return std::string(bytesBegin, bytesEnd);
+	}
+
 	template<typename T>
 	std::string stringFromDictionary(CFDictionaryRef dict, CFStringRef key)
 	{
@@ -138,12 +146,12 @@ namespace ID
 	std::string stringFromIOObjectWithParents(io_object_t ioObject, CFStringRef key)
 	{
 		std::string result;
-		CFTypeRef serial = IORegistryEntrySearchCFProperty(ioObject, kIOServicePlane, key,
+		CFTypeRef resultRef = IORegistryEntrySearchCFProperty(ioObject, kIOServicePlane, key,
 			kCFAllocatorDefault, kIORegistryIterateRecursively | kIORegistryIterateParents);
-		if (serial)
+		if (resultRef)
 		{
-			result = to_string(serial);
-			CFRelease(serial);
+			result = to_string(resultRef);
+			CFRelease(resultRef);
 		}
 		return result;
 	}
@@ -160,6 +168,20 @@ namespace ID
 			std::string serial = stringFromIOObjectWithParents(ioObject, serialString);
 			if (!serial.empty())
 				return serial;
+		}
+		return std::string();
+	}
+
+	std::string imagePathFromIOObject(io_object_t ioObject)
+	{
+		CFStringRef key = CFSTR("image-path");
+		CFTypeRef resultRef = IORegistryEntrySearchCFProperty(ioObject, kIOServicePlane, key,
+			kCFAllocatorDefault, kIORegistryIterateRecursively | kIORegistryIterateParents);
+		if (resultRef && CFGetTypeID(resultRef) == CFDataGetTypeID())
+		{
+			CFDataRef resultDataRef = CFDataRef(resultRef);
+			std::string path = interpret_as_string(resultDataRef);
+			return path;
 		}
 		return std::string();
 	}
@@ -195,6 +217,7 @@ namespace ID
 		// IOKit
 		io_service_t io = DADiskCopyIOMedia(disk);
 		info.ioSerial = serialNumberFromIOObject(io);
+		info.imagePath = imagePathFromIOObject(io);
 		CFMutableDictionaryRef ioDict = nullptr;
 		if (IORegistryEntryCreateCFProperties(io, &ioDict, kCFAllocatorDefault, 0) == kIOReturnSuccess)
 		{
@@ -207,5 +230,30 @@ namespace ID
 		bool isVirtual = info.deviceProtocol == kIOPropertyPhysicalInterconnectTypeVirtual;
 		info.isDevice = !isCoreStorage && !isVirtual;
 		return info;
+	}
+
+	bool isDevice(DiskInformation const & di)
+	{
+		return di.isDevice;
+	}
+
+	bool isWhole(DiskInformation const & di)
+	{
+		return di.mediaWhole;
+	}
+
+	std::string partitionSuffix(DiskInformation const & di)
+	{
+		if (!isWhole(di))
+		{
+			size_t suffixStart = di.mediaBSDName.find_last_not_of("0123456789");
+			if (suffixStart != std::string::npos &&
+				suffixStart+1 < di.mediaBSDName.size() &&
+				di.mediaBSDName[suffixStart] == 's')
+			{
+				return ':' + di.mediaBSDName.substr(suffixStart+1);
+			}
+		}
+		return std::string();
 	}
 }

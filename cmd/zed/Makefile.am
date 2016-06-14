@@ -57,12 +57,15 @@ dist_zedexec_SCRIPTS = \
 	$(top_srcdir)/cmd/zed/zed.d/zpool.destroy.sh \
 	$(top_srcdir)/cmd/zed/zed.d/zvol.create.sh \
 	$(top_srcdir)/cmd/zed/zed.d/zvol.remove.sh \
-	$(top_srcdir)/cmd/zed/zed.d/snapshot.mount.sh
+	$(top_srcdir)/cmd/zed/zed.d/snapshot.mount.sh \
+	$(top_srcdir)/cmd/zed/zed.d/resilver.finish-notify.sh \
+	$(top_srcdir)/cmd/zed/zed.d/scrub.finish-notify.sh
 
 zedconfdefaults = \
 	all-syslog.sh \
 	config.sync.sh \
 	config.remove.sh \
+	checksum-notify.sh \
 	checksum-spare.sh \
 	data-notify.sh \
 	io-notify.sh \
@@ -71,7 +74,9 @@ zedconfdefaults = \
 	zpool.destroy.sh \
 	zvol.create.sh \
 	zvol.remove.sh \
-	snapshot.mount.sh
+	snapshot.mount.sh \
+	resilver.finish-notify.sh \
+	scrub.finish-notify.sh
 
 install-data-hook:
 	$(MKDIR_P) "$(DESTDIR)$(zedconfdir)"

@@ -1,6 +1,26 @@
 /*
- * This file is intended only for use by zfs_vnops_osx.c.  It should contain
- * a library of functions useful for vnode operations.
+ * CDDL HEADER START
+ *
+ * The contents of this file are subject to the terms of the
+ * Common Development and Distribution License (the "License").
+ * You may not use this file except in compliance with the License.
+ *
+ * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+ * or http://www.opensolaris.org/os/licensing.
+ * See the License for the specific language governing permissions
+ * and limitations under the License.
+ *
+ * When distributing Covered Code, include this CDDL HEADER in each
+ * file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+ * If applicable, add the following below this CDDL HEADER, with the
+ * fields enclosed by brackets "[]" replaced with your own identifying
+ * information: Portions Copyright [yyyy] [name of copyright owner]
+ *
+ * CDDL HEADER END
+ */
+/*
+ * Copyright (c) 2013 Will Andrews <will@firepipe.net>
+ * Copyright (c) 2013, 2016 Jorgen Lundman <lundman@lundman.net>
  */
 #include <sys/cred.h>
 #include <sys/vnode.h>
@@ -206,7 +226,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 	 */
 	error = sa_bulk_lookup(zp->z_sa_hdl, bulk, count);
 	if (error) {
-		printf("ZFS: Warning: getattr failed sa_bulk_lookup: %d, parent %llu, flags %llu\n",
+		dprintf("ZFS: Warning: getattr failed sa_bulk_lookup: %d, parent %llu, flags %llu\n",
 			   error, parent, zp->z_pflags );
 		mutex_exit(&zp->z_lock);
 		ZFS_EXIT(zfsvfs);
@@ -789,7 +809,62 @@ ace_trivial_common(void *acep, int aclcnt,
                    uint64_t (*walk)(void *, uint64_t, int aclcnt,
                                     uint16_t *, uint16_t *, uint32_t *))
 {
-    return 1;
+	uint16_t flags;
+	uint32_t mask;
+	uint16_t type;
+	uint64_t cookie = 0;
+
+	while ((cookie = walk(acep, cookie, aclcnt, &flags, &type, &mask))) {
+		switch (flags & ACE_TYPE_FLAGS) {
+			case ACE_OWNER:
+			case ACE_GROUP|ACE_IDENTIFIER_GROUP:
+			case ACE_EVERYONE:
+				break;
+			default:
+				return (1);
+
+		}
+
+		if (flags & (ACE_FILE_INHERIT_ACE|
+					 ACE_DIRECTORY_INHERIT_ACE|ACE_NO_PROPAGATE_INHERIT_ACE|
+					 ACE_INHERIT_ONLY_ACE))
+			return (1);
+
+		/*
+		 * Special check for some special bits
+		 *
+		 * Don't allow anybody to deny reading basic
+		 * attributes or a files ACL.
+		 */
+		if ((mask & (ACE_READ_ACL|ACE_READ_ATTRIBUTES)) &&
+			(type == ACE_ACCESS_DENIED_ACE_TYPE))
+			return (1);
+
+		/*
+		 * Delete permission is never set by default
+		 */
+		if (mask & ACE_DELETE)
+			return (1);
+
+		/*
+		 * Child delete permission should be accompanied by write
+                 */
+		if ((mask & ACE_DELETE_CHILD) && !(mask & ACE_WRITE_DATA))
+			return (1);
+		/*
+		 * only allow owner@ to have
+		 * write_acl/write_owner/write_attributes/write_xattr/
+		 */
+
+		if (type == ACE_ACCESS_ALLOWED_ACE_TYPE &&
+			(!(flags & ACE_OWNER) && (mask &
+			(ACE_WRITE_OWNER|ACE_WRITE_ACL| ACE_WRITE_ATTRIBUTES|
+			ACE_WRITE_NAMED_ATTRS))))
+			return (1);
+
+	}
+
+	return (0);
 }
 
 
@@ -800,7 +875,8 @@ acl_trivial_access_masks(mode_t mode, boolean_t isdir, trivial_acl_t *masks)
     uint32_t write_mask = ACE_WRITE_DATA|ACE_APPEND_DATA;
     uint32_t execute_mask = ACE_EXECUTE;
 
-    (void) isdir;   /* will need this later */
+	if (isdir)
+		write_mask |= ACE_DELETE_CHILD;
 
     masks->deny1 = 0;
     if (!(mode & S_IRUSR) && (mode & (S_IRGRP|S_IROTH)))
@@ -1946,7 +2022,7 @@ int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags)
 	int             count = 0;
 	sa_bulk_attr_t  bulk[2];
 
-	printf("ZFS: vnop_setattr(UF_TRACKED) obj %llu : documentid %08u\n",
+	dprintf("ZFS: vnop_setattr(UF_TRACKED) obj %llu : documentid %08u\n",
 		   zp->z_id,
 		   zp->z_document_id);
 
@@ -1976,7 +2052,7 @@ int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags)
 		}
 
 		if (error)
-			printf("ZFS: sa_update(SA_ZPL_DOCUMENTID) failed %d\n",
+			dprintf("ZFS: sa_update(SA_ZPL_DOCUMENTID) failed %d\n",
 				   error);
 
 	} // if z_use_sa && !readonly
