@@ -2278,12 +2278,22 @@ zio_write_gang_block(zio_t *pio)
 }
 
 /*
- * The zio_nop_write stage in the pipeline determines if allocating
- * a new bp is necessary.  By leveraging a cryptographically secure checksum,
- * such as SHA256, we can compare the checksums of the new data and the old
- * to determine if allocating a new block is required.  The nopwrite
- * feature can handle writes in either syncing or open context (i.e. zil
- * writes) and as a result is mutually exclusive with dedup.
+ * The zio_nop_write stage in the pipeline determines if allocating a
+ * new bp is necessary.  The nopwrite feature can handle writes in
+ * either syncing or open context (i.e. zil writes) and as a result is
+ * mutually exclusive with dedup.
+ *
+ * By leveraging a cryptographically secure checksum, such as SHA256, we
+ * can compare the checksums of the new data and the old to determine if
+ * allocating a new block is required.  Note that our requirements for
+ * cryptographic strength are fairly weak: there can't be any accidental
+ * hash collisions, but we don't need to be secure against intentional
+ * (malicious) collisions.  To trigger a nopwrite, you have to be able
+ * to write the file to begin with, and triggering an incorrect (hash
+ * collision) nopwrite is no worse than simply writing to the file.
+ * That said, there are no known attacks against the checksum algorithms
+ * used for nopwrite, assuming that the salt and the checksums
+ * themselves remain secret.
  */
 static int
 zio_nop_write(zio_t *zio)

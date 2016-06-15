@@ -19,7 +19,9 @@ ASM_SOURCES_AS = \
 	asm-x86_64/aes/aes_amd64.S \
 	asm-x86_64/aes/aes_intel.S \
 	asm-x86_64/modes/gcm_intel.S \
-	asm-x86_64/sha2/sha256_impl.S
+	asm-x86_64/sha1/sha1-x86_64.S \
+	asm-x86_64/sha2/sha256_impl.S \
+	asm-x86_64/sha2/sha512_impl.S
 endif
 
 if TARGET_ASM_I386
@@ -45,6 +47,7 @@ KERNEL_C = \
 	api/kcf_mac.c \
 	algs/aes/aes_impl.c \
 	algs/aes/aes_modes.c \
+	algs/edonr/edonr.c \
 	algs/modes/modes.c \
 	algs/modes/cbc.c \
 	algs/modes/gcm.c \
@@ -53,6 +56,9 @@ KERNEL_C = \
 	algs/modes/ecb.c \
 	algs/sha2/sha2.c \
 	algs/sha1/sha1.c \
+	algs/skein/skein.c \
+	algs/skein/skein_block.c \
+	algs/skein/skein_iv.c \
 	illumos-crypto.c \
 	io/aes.c \
 	io/sha2_mod.c \

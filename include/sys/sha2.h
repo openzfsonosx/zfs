@@ -27,7 +27,11 @@
 #ifndef _SYS_SHA2_H
 #define	_SYS_SHA2_H
 
+#ifdef  _KERNEL
 #include <sys/types.h>		/* for uint_* */
+#else
+#include <stdint.h>
+#endif
 
 #ifdef	__cplusplus
 extern "C" {
@@ -113,16 +117,6 @@ extern void SHA512Init(SHA512_CTX *);
 extern void SHA512Update(SHA512_CTX *, const void *, size_t);
 
 extern void SHA512Final(void *, SHA512_CTX *);
-
-#ifdef __APPLE__
-#define SHA256Update(X,Y,Z) SHA2Update((X),(Y),(Z))
-#define SHA384Update(X,Y,Z) SHA2Update((X),(Y),(Z))
-#define SHA512Update(X,Y,Z) SHA2Update((X),(Y),(Z))
-#define SHA256Final(X,Y) SHA2Final((X),(Y))
-#define SHA384Final(X,Y) SHA2Final((X),(Y))
-#define SHA512Final(X,Y) SHA2Final((X),(Y))
-#endif
-
 
 #ifdef _SHA2_IMPL
 /*

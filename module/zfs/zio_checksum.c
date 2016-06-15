@@ -247,7 +247,6 @@ zio_checksum_template_init(enum zio_checksum checksum, spa_t *spa)
 	mutex_exit(&spa->spa_cksum_tmpls_lock);
 }
 
-
 /*
  * Generate the checksum.
  */

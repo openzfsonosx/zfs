@@ -11,6 +11,7 @@ ASM_SOURCES += asm-x86_64/aes/aes_amd64.o
 ASM_SOURCES += asm-x86_64/aes/aes_intel.o
 ASM_SOURCES += asm-x86_64/modes/gcm_intel.o
 ASM_SOURCES += asm-x86_64/sha2/sha256_impl.o
+ASM_SOURCES += asm-x86_64/sha2/sha512_impl.o
 endif
 
 ifeq ($(TARGET_ASM_DIR), asm-i386)
@@ -55,8 +56,13 @@ $(MODULE)-objs += algs/modes/gcm.o
 $(MODULE)-objs += algs/modes/modes.o
 $(MODULE)-objs += algs/aes/aes_impl.o
 $(MODULE)-objs += algs/aes/aes_modes.o
+$(MODULE)-objs += algs/edonr/edonr.o
+$(MODULE)-objs += algs/sha1/sha1.o
 $(MODULE)-objs += algs/sha2/sha2.o
 $(MODULE)-objs += algs/sha1/sha1.o
+$(MODULE)-objs += algs/skein/skein.o
+$(MODULE)-objs += algs/skein/skein_block.o
+$(MODULE)-objs += algs/skein/skein_iv.o
 $(MODULE)-objs += $(ASM_SOURCES)
 
 ICP_DIRS = \
@@ -67,9 +73,11 @@ ICP_DIRS = \
 	os \
 	algs \
 	algs/aes \
+	algs/edonr \
 	algs/modes \
 	algs/sha2 \
 	algs/sha1 \
+	algs/skein \
 	asm-x86_64 \
 	asm-x86_64/aes \
 	asm-x86_64/modes \
