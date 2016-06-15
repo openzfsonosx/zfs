@@ -26,6 +26,17 @@
 #ifndef _SYS_SHA1_H
 #define	_SYS_SHA1_H
 
+#ifdef __APPLE__
+/*
+ * The XNU kernel defines SHA1Init SHA1Update SHA1Final so we
+ * need to juggle the names a little.
+ */
+#define SHA1Init   ZFS_SHA1Init
+#define SHA1Update ZFS_SHA1Update
+#define SHA1Final  ZFS_SHA1Final
+#endif /* APPLE */
+
+
 #include <sys/types.h>		/* for uint_* */
 
 #ifdef	__cplusplus

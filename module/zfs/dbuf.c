@@ -847,7 +847,8 @@ dbuf_verify(dmu_buf_impl_t *db)
 						DVA_IS_EMPTY(&bp->blk_dva[1]) &&
 						DVA_IS_EMPTY(&bp->blk_dva[2]));
                                        ASSERT0(bp->blk_fill);
-                                       ASSERT0(bp->blk_pad);
+                                       ASSERT0(bp->blk_pad[0]);
+                                       ASSERT0(bp->blk_pad[1]);
                                        ASSERT(!BP_IS_EMBEDDED(bp));
                                        ASSERT(BP_IS_HOLE(bp));
                                        ASSERT0(bp->blk_phys_birth);

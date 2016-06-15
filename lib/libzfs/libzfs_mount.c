@@ -845,20 +845,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 
 	/* Create the directory if it doesn't already exist */
 #ifdef __APPLE__
-	/*
-	 * If the filesystem is an encryption root the key must be
-	 * loaded in order to mount. If it isn't, we ask for the key now.
-	 * During a mount, it is possible that a parent key may be loaded
-	 * without updating this zhp. Just in case, we refresh the properties.
-	 */
-	zfs_refresh_properties(zhp);
-	keystatus = zfs_prop_get_int(zhp, ZFS_PROP_KEYSTATUS);
-	if (keystatus == ZFS_KEYSTATUS_UNAVAILABLE) {
-		rc = zfs_crypto_load_key(zhp);
-		if (rc)
-			return (rc);
-	}
-
 	if (zfs_get_type(zhp) != ZFS_TYPE_SNAPSHOT &&
 	    lstat(mountpoint, &buf) != 0) {
 #else

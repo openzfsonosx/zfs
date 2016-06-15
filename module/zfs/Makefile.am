@@ -68,7 +68,6 @@ zfs_SOURCES = \
 	dsl_deleg.c \
 	dsl_destroy.c \
 	dsl_dir.c \
-	dsl_keychain.c \
 	dsl_pool.c \
 	dsl_prop.c \
 	dsl_scan.c \
@@ -87,7 +86,7 @@ zfs_SOURCES = \
 	rrwlock.c \
 	sa.c \
 	sha256.c \
-	skein_zfs.c	\
+	skein_zfs.c \
 	spa.c \
 	spa_boot.c \
 	spa_config.c \
@@ -140,7 +139,6 @@ zfs_SOURCES = \
 	zio.c \
 	zio_checksum.c \
 	zio_compress.c \
-	zio_crypt.c \
 	zio_inject.c \
 	zle.c \
 	zrlock.c \
@@ -178,12 +176,18 @@ zfs_SOURCES = \
 	../icp/os/modhash.c \
 	../icp/os/bitmap_arch.c \
 	../icp/os/modconf.c \
+	../icp/algs/edonr/edonr.c \
 	../icp/algs/modes/cbc.c \
 	../icp/algs/modes/ccm.c \
 	../icp/algs/modes/ctr.c \
 	../icp/algs/modes/ecb.c \
 	../icp/algs/modes/gcm.c \
 	../icp/algs/modes/modes.c \
+	../icp/algs/sha1/sha1.c \
+	../icp/algs/sha2/sha2.c \
+	../icp/algs/skein/skein.c \
+	../icp/algs/skein/skein_block.c \
+	../icp/algs/skein/skein_iv.c \
 	../icp/algs/aes/aes_impl.c \
 	../icp/algs/aes/aes_modes.c \
 	../icp/asm-x86_64/aes/aeskey.c
