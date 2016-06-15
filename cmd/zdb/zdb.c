@@ -400,20 +400,11 @@ dump_zap(objset_t *os, uint64_t object, void *data, size_t size)
 	for (zap_cursor_init(&zc, os, object);
 	    zap_cursor_retrieve(&zc, &attr) == 0;
 	    zap_cursor_advance(&zc)) {
-		if (attr.za_binary_key) {
-			(void) printf("\t\t[binary key] = [%llu bytes]\n",
-			    (u_longlong_t)(attr.za_num_integers *
-			    attr.za_integer_length));
-			continue;
-		}
-
 		(void) printf("\t\t%s = ", attr.za_name);
-
 		if (attr.za_num_integers == 0) {
 			(void) printf("\n");
 			continue;
 		}
-
 		prop = umem_zalloc(attr.za_num_integers *
 		    attr.za_integer_length, UMEM_NOFAIL);
 		(void) zap_lookup(os, object, attr.za_name,

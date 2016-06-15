@@ -503,7 +503,7 @@ zvol_create_minor_impl(const char *name)
 	}
 
 	/* lie and say we're read-only */
-	error = dmu_objset_own(name, DMU_OST_ZVOL, B_TRUE, B_TRUE, FTAG, &os);
+	error = dmu_objset_own(name, DMU_OST_ZVOL, B_TRUE, FTAG, &os);
 
 	if (error) {
 		mutex_exit(&zfsdev_state_lock);
@@ -786,7 +786,7 @@ zvol_first_open(zvol_state_t *zv)
 
 	/* lie and say we're read-only */
 	error = dmu_objset_own(zv->zv_name, DMU_OST_ZVOL, B_TRUE,
-						   B_TRUE, zvol_tag, &os);
+	    zvol_tag, &os);
 	if (error)
 		return (error);
 
@@ -1425,7 +1425,7 @@ zvol_set_volsize(const char *name, uint64_t volsize)
 
 	if (zv == NULL || zv->zv_objset == NULL) {
 		if ((error = dmu_objset_own(name, DMU_OST_ZVOL, B_FALSE,
-									B_TRUE, FTAG, &os)) != 0) {
+		    FTAG, &os)) != 0) {
 			mutex_exit(&zfsdev_state_lock);
 			return (error);
 		}

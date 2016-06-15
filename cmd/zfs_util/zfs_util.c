@@ -192,7 +192,7 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 
 	if (zpool_get_state(zhp) != POOL_STATE_UNAVAIL &&
 	    !(flags & ZFS_IMPORT_ONLY) &&
-	    zpool_enable_datasets(zhp, mntopts, 0, B_TRUE) != 0) {
+	    zpool_enable_datasets(zhp, mntopts, 0) != 0) {
 		zpool_close(zhp);
 		return (1);
 	}

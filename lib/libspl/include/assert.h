@@ -87,6 +87,15 @@ assfail(const char *buf, const char *file, int line)
 #define	VERIFY0(x)		VERIFY3_IMPL(x, ==, 0, uint64_t)
 
 #ifndef DEBUG
+
+/* Compile time assert */
+#define	CTASSERT_GLOBAL(x)		_CTASSERT(x, __LINE__)
+#define	CTASSERT(x)			{ _CTASSERT(x, __LINE__); }
+#define	_CTASSERT(x, y)			__CTASSERT(x, y)
+#define	__CTASSERT(x, y)						\
+	typedef char __attribute__((unused))				\
+	__compile_time_assertion__ ## y[(x) ? 1 : -1]
+
 #define	ASSERT3S(x, y, z)	((void)0)
 #define	ASSERT3U(x, y, z)	((void)0)
 #define	ASSERT3P(x, y, z)	((void)0)
@@ -95,6 +104,7 @@ assfail(const char *buf, const char *file, int line)
 #define	IMPLY(A, B)		((void)0)
 #define	EQUIV(A, B)		((void)0)
 #else
+#define	CTASSERT(x)			((void)0)
 #define	ASSERT3S(x, y, z)	VERIFY3S(x, y, z)
 #define	ASSERT3U(x, y, z)	VERIFY3U(x, y, z)
 #define	ASSERT3P(x, y, z)	VERIFY3P(x, y, z)
