@@ -3202,7 +3202,6 @@ zfs_getattr_fast(struct inode *ip, struct kstat *sp)
 }
 #endif
 
-	mutex_exit(&zp->z_lock);
 
 /*
  * Set the file attributes to the values contained in the

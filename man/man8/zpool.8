@@ -1769,7 +1769,277 @@ be broken up before being sent to the block device.
 .ad
 .RS 12n
 .rt
+Display vdev GUIDs instead of the normal device names. These GUIDs can be used in place of device names for the zpool detach/offline/remove/replace commands.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-H\fR\fR
+.ad
+.RS 12n
+.rt
+Scripted mode. Do not display headers, and separate fields by a single tab instead of arbitrary space.
+.RE
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-w\fR\fR
+.ad
+.RS 12n
+.rt
+Display latency histograms:
+
+.sp
+.ne 2
+.mk
+.na
+total_wait:
+.ad
+.RS 20n
+.rt
+Total IO time (queuing + disk IO time).
+.RE
+.ne 2
+.mk
+.na
+disk_wait:
+.ad
+.RS 20n
+.rt
+Disk IO time (time reading/writing the disk).
+.RE
+.ne 2
+.mk
+.na
+syncq_wait:
+.ad
+.RS 20n
+.rt
+Amount of time IO spent in synchronous priority queues.  Does not include
+disk time.
+.RE
+.ne 2
+.mk
+.na
+asyncq_wait:
+.ad
+.RS 20n
+.rt
+Amount of time IO spent in asynchronous priority queues.  Does not include
+disk time.
+.RE
+.ne 2
+.mk
+.na
+scrub:
+.ad
+.RS 20n
+.rt
+Amount of time IO spent in scrub queue. Does not include disk time.
+
+
+.RE
+
+All histogram buckets are power-of-two sized.  The time labels are the end
+ranges of the buckets, so for example, a 15ns bucket stores latencies from
+8-15ns.  The last bucket is also a catch-all for latencies higher than the
+maximum.
+.RE
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-l\fR\fR
+.ad
+.RS 12n
+.rt
+Include average latency statistics:
+
+.sp
+.ne 2
+.mk
+.na
+total_wait:
+.ad
+.RS 20n
+.rt
+Average total IO time (queuing + disk IO time).
+.RE
+.ne 2
+.mk
+.na
+disk_wait:
+.ad
+.RS 20n
+.rt
+Average disk IO time (time reading/writing the disk).
+.RE
+.ne 2
+.mk
+.na
+syncq_wait:
+.ad
+.RS 20n
+.rt
+Average amount of time IO spent in synchronous priority queues.  Does not
+include disk time.
+.RE
+.ne 2
+.mk
+.na
+asyncq_wait:
+.ad
+.RS 20n
+.rt
+Average amount of time IO spent in asynchronous priority queues.  Does not
+include disk time.
+.RE
+.ne 2
+.mk
+.na
+scrub:
+.ad
+.RS 20n
+.rt
+Average queuing time in scrub queue.  Does not include disk time.
+.RE
+
+.RE
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-q\fR\fR
+.ad
+.RS 12n
+.rt
+Include active queue statistics.  Each priority queue has both pending ("pend")
+and active ("activ") IOs.  Pending IOs are waiting to be issued to the disk, and
+active IOs have been issued to disk and are waiting for completion.  These stats
+are broken out by priority queue:
+.sp
+.ne 2
+.mk
+.na
+syncq_read/write:
+.ad
+.RS 20n
+.rt
+Current number of entries in synchronous priority queues.
+.RE
+.ne 2
+.mk
+.na
+asyncq_read/write:
+.ad
+.RS 20n
+.rt
+Current number of entries in asynchronous priority queues.
+.RE
+.ne 2
+.mk
+.na
+scrubq_read:
+.ad
+.RS 20n
+.rt
+Current number of entries in scrub queue.
+.RE
+
+All queue statistics are instantaneous measurements of the number of entries
+in the queues.  If you specify an interval, the measurements will be sampled
+from the end of the interval.
+.RE
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzpool labelclear\fR [\fB-f\fR] \fIdevice\fR
+.ad
+.RS 12n
+Display numbers in parsable (exact) values.  Time values are in nanoseconds.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-P\fR\fR
+.ad
+.RS 12n
+.rt
+Display full paths for vdevs instead of only the last component of the path.  This can be used in conjunction with the \fB-L\fR flag.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fBzpool list\fR [\fB-T\fR \fBd\fR | \fBu\fR] [\fB-HgLpPv\fR] [\fB-o\fR \fIprops\fR[,...]] [\fIpool\fR] ... [\fIinterval\fR[\fIcount\fR]]\fR
+.ad
+.RS 12n
+Print request size histograms for the leaf ZIOs.  This includes histograms of
+individual ZIOs ("ind") and aggregate ZIOs ("agg").  These stats can be useful
+for seeing how well the ZFS IO aggregator is working.  Do not confuse these
+request size stats with the block layer requests; it's possible ZIOs can
+be broken up before being sent to the block device.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-v\fR\fR
+.ad
+.RS 12n
+.rt
 Verbose statistics. Reports usage statistics for individual \fIvdevs\fR within the pool, in addition to the pool-wide statistics.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-g\fR\fR
+.ad
+.RS 12n
+.rt
+Display vdev GUIDs instead of the normal device names. These GUIDs can be used in place of device names for the zpool detach/offline/remove/replace commands.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-L\fR\fR
+.ad
+.RS 12n
+.rt
+Display real paths for vdevs resolving all symbolic links. This can be used to look up the current block device name regardless of the /dev/disk/ path used to open it.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-p\fR\fR
+.ad
+.RS 12n
+.rt
+Display numbers in parsable (exact) values.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-P\fR\fR
+.ad
+.RS 12n
+.rt
+Display full paths for vdevs instead of only the last component of the path.  This can be used in conjunction with the \fB-L\fR flag.
 .RE
 
 .sp
@@ -1988,7 +2258,7 @@ Lists the given pools along with a health status and space usage. If no \fIpools
 .ne 2
 .mk
 .na
-\fB\fB-H\fR\fR
+\fBzpool split\fR [\fB-gLnP\fR] [\fB-R\fR \fIaltroot\fR] [\fB-o\fR \fIproperty=value\fR] \fIpool\fR \fInewpool\fR [\fIdevice\fR ...]
 .ad
 .RS 12n
 .rt
@@ -2001,7 +2271,7 @@ Scripted mode. Do not display headers, and separate fields by a single tab inste
 .na
 \fB\fB-g\fR\fR
 .ad
-.RS 12n
+.RS 6n
 .rt
 Display vdev GUIDs instead of the normal device names. These GUIDs can be used in place of device names for the zpool detach/offline/remove/replace commands.
 .RE
@@ -2011,6 +2281,39 @@ Display vdev GUIDs instead of the normal device names. These GUIDs can be used i
 .mk
 .na
 \fB\fB-L\fR\fR
+.ad
+.RS 6n
+.rt
+Display real paths for vdevs resolving all symbolic links. This can be used to look up the current block device name regardless of the /dev/disk/ path used to open it.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-n\fR \fR
+.ad
+.RS 12n
+.rt
+Display vdev GUIDs instead of the normal device names. These GUIDs can be used in place of device names for the zpool detach/offline/remove/replace commands.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-P\fR\fR
+.ad
+.RS 6n
+.rt
+Display full paths for vdevs instead of only the last component of the path.  This can be used in conjunction with the \fB-L\fR flag.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-R\fR \fIaltroot\fR \fR
 .ad
 .RS 12n
 .rt
@@ -2032,12 +2335,13 @@ Display numbers in parsable (exact) values.
 .ne 2
 .mk
 .na
-\fB\fB-P\fR\fR
+\fBzpool status\fR [\fB-gLPvxD\fR] [\fB-T\fR d | u] [\fIpool\fR] ... [\fIinterval\fR [\fIcount\fR]]
 .ad
-.RS 12n
-.rt
-Display full paths for vdevs instead of only the last component of the path.  This can be used in conjunction with the \fB-L\fR flag.
-.RE
+.sp .6
+.RS 4n
+Displays the detailed health status for the given pools. If no \fIpool\fR is specified, then the status of each pool in the system is displayed. For more information on pool and device health, see the "Device Failure and Recovery" section.
+.sp
+If a scrub or resilver is in progress, this command reports the percentage done and the estimated time to completion. Both of these are only approximate, because the amount of data in the pool and the other workloads on the system can change.
 
 .sp
 .ne 2
@@ -2047,20 +2351,29 @@ Display full paths for vdevs instead of only the last component of the path.  Th
 .ad
 .RS 12n
 .rt
-Display a time stamp.
-.sp
-Specify \fBu\fR for a printed representation of the internal representation of time. See \fBtime\fR(2). Specify \fBd\fR for standard date format. See \fBdate\fR(1).
+Display vdev GUIDs instead of the normal device names. These GUIDs can be used innplace of device names for the zpool detach/offline/remove/replace commands.
 .RE
 
 .sp
 .ne 2
 .mk
 .na
-\fB\fB-o\fR \fIprops\fR\fR
+\fB\fB-L\fR\fR
 .ad
 .RS 12n
 .rt
-Comma-separated list of properties to display. See the "Properties" section for a list of valid properties. The default list is "name, size, used, available, fragmentation, expandsize, capacity, dedupratio, health, altroot"
+Display real paths for vdevs resolving all symbolic links. This can be used to look up the current block device name regardless of the /dev/disk/ path used to open it.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-P\fR\fR
+.ad
+.RS 12n
+.rt
+Display full paths for vdevs instead of only the last component of the path.  This can be used in conjunction with the \fB-L\fR flag.
 .RE
 
 .sp
@@ -2080,7 +2393,18 @@ Verbose statistics. Reports usage statistics for individual \fIvdevs\fR within t
 .ne 2
 .mk
 .na
-\fB\fBzpool offline\fR [\fB-t\fR] \fIpool\fR \fIdevice\fR ...\fR
+\fB\fB-x\fR\fR
+.ad
+.RS 12n
+.rt
+Only display status for pools that are exhibiting errors or are otherwise unavailable. Warnings about pools not using the latest on-disk format will not be included.
+.RE
+
+.sp
+.ne 2
+.mk
+.na
+\fB\fB-D\fR\fR
 .ad
 .sp .6
 .RS 4n

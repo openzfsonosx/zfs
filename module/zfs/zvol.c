@@ -150,7 +150,7 @@ static void zvol_log_truncate(zvol_state_t *zv, dmu_tx_t *tx, uint64_t off,
     uint64_t len, boolean_t sync);
 static int zvol_remove_zv(zvol_state_t *);
 static int zvol_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
-						 znode_t *, rl_t *);
+						 znode_t *zp, rl_t *rl);
 // static int zvol_dumpify(zvol_state_t *zv);
 // static int zvol_dump_fini(zvol_state_t *zv);
 // static int zvol_dump_init(zvol_state_t *zv, boolean_t resize);
@@ -1253,6 +1253,184 @@ zvol_task_alloc(zvol_async_op_t op, const char *name1, const char *name2,
 {
 	zvol_task_t *task;
 	char *delim;
+
+	/* Never allow tasks on hidden names. */
+	if (name1[0] == '$')
+		return (NULL);
+
+	task = kmem_zalloc(sizeof (zvol_task_t), KM_SLEEP);
+	task->op = op;
+	task->snapdev = snapdev;
+	delim = strchr(name1, '/');
+	strlcpy(task->pool, name1, delim ? (delim - name1 + 1) : MAXNAMELEN);
+
+	strlcpy(task->name1, name1, MAXNAMELEN);
+	if (name2 != NULL)
+		strlcpy(task->name2, name2, MAXNAMELEN);
+
+	return (task);
+}
+
+static void
+zvol_task_free(zvol_task_t *task)
+{
+	kmem_free(task, sizeof (zvol_task_t));
+}
+
+/*
+ * The worker thread function performed asynchronously.
+ */
+static void
+zvol_task_cb(void *param)
+{
+       zvol_task_t *task = (zvol_task_t *)param;
+
+       switch (task->op) {
+       case ZVOL_ASYNC_CREATE_MINORS:
+               (void) zvol_create_minors_impl(task->name1);
+               break;
+       case ZVOL_ASYNC_REMOVE_MINORS:
+               zvol_remove_minors_impl(task->name1);
+               break;
+       case ZVOL_ASYNC_RENAME_MINORS:
+               zvol_rename_minors_impl(task->name1, task->name2);
+               break;
+       case ZVOL_ASYNC_SET_SNAPDEV:
+               zvol_set_snapdev_impl(task->name1, task->snapdev);
+               break;
+       default:
+               VERIFY(0);
+               break;
+       }
+
+       zvol_task_free(task);
+}
+
+typedef struct zvol_set_snapdev_arg {
+	const char *zsda_name;
+	uint64_t zsda_value;
+	zprop_source_t zsda_source;
+	dmu_tx_t *zsda_tx;
+} zvol_set_snapdev_arg_t;
+
+/*
+ * Sanity check the dataset for safe use by the sync task.  No additional
+ * conditions are imposed.
+ */
+static int
+zvol_set_snapdev_check(void *arg, dmu_tx_t *tx)
+{
+	zvol_set_snapdev_arg_t *zsda = arg;
+	dsl_pool_t *dp = dmu_tx_pool(tx);
+	dsl_dir_t *dd;
+	int error;
+
+	error = dsl_dir_hold(dp, zsda->zsda_name, FTAG, &dd, NULL);
+	if (error != 0)
+		return (error);
+
+	dsl_dir_rele(dd, FTAG);
+
+	return (error);
+}
+
+static int
+zvol_set_snapdev_sync_cb(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
+{
+	zvol_set_snapdev_arg_t *zsda = arg;
+	char dsname[MAXNAMELEN];
+	zvol_task_t *task;
+
+	dsl_dataset_name(ds, dsname);
+	dsl_prop_set_sync_impl(ds, zfs_prop_to_name(ZFS_PROP_SNAPDEV),
+						   zsda->zsda_source, sizeof (zsda->zsda_value), 1,
+						   &zsda->zsda_value, zsda->zsda_tx);
+
+	task = zvol_task_alloc(ZVOL_ASYNC_SET_SNAPDEV, dsname,
+						   NULL, zsda->zsda_value);
+	if (task == NULL)
+		return (0);
+
+	(void) taskq_dispatch(dp->dp_spa->spa_zvol_taskq, zvol_task_cb,
+						  task, TQ_SLEEP);
+	return (0);
+}
+
+/*
+ * Traverse all child snapshot datasets and apply snapdev appropriately.
+ */
+static void
+zvol_set_snapdev_sync(void *arg, dmu_tx_t *tx)
+{
+	zvol_set_snapdev_arg_t *zsda = arg;
+	dsl_pool_t *dp = dmu_tx_pool(tx);
+	dsl_dir_t *dd;
+
+	VERIFY0(dsl_dir_hold(dp, zsda->zsda_name, FTAG, &dd, NULL));
+	zsda->zsda_tx = tx;
+
+	dmu_objset_find_dp(dp, dd->dd_object, zvol_set_snapdev_sync_cb,
+					   zsda, DS_FIND_CHILDREN);
+
+	dsl_dir_rele(dd, FTAG);
+}
+
+int
+zvol_set_snapdev(const char *ddname, zprop_source_t source, uint64_t snapdev)
+{
+	zvol_set_snapdev_arg_t zsda;
+
+	zsda.zsda_name = ddname;
+	zsda.zsda_source = source;
+	zsda.zsda_value = snapdev;
+	return (dsl_sync_task(ddname, zvol_set_snapdev_check,
+						  zvol_set_snapdev_sync, &zsda, 0, ZFS_SPACE_CHECK_NONE));
+}
+
+void
+zvol_create_minors(spa_t *spa, const char *name, boolean_t async)
+{
+	zvol_task_t *task;
+	taskqid_t id;
+
+	task = zvol_task_alloc(ZVOL_ASYNC_CREATE_MINORS, name, NULL, ~0ULL);
+	if (task == NULL)
+		return;
+
+	id = taskq_dispatch(spa->spa_zvol_taskq, zvol_task_cb, task, TQ_SLEEP);
+	if ((async == B_FALSE) && (id != 0))
+		taskq_wait(spa->spa_zvol_taskq);
+}
+
+void
+zvol_remove_minors(spa_t *spa, const char *name, boolean_t async)
+{
+	zvol_task_t *task;
+	taskqid_t id;
+
+	task = zvol_task_alloc(ZVOL_ASYNC_REMOVE_MINORS, name, NULL, ~0ULL);
+	if (task == NULL)
+		return;
+	id = taskq_dispatch(spa->spa_zvol_taskq, zvol_task_cb, task, TQ_SLEEP);
+	if ((async == B_FALSE) && (id != 0))
+		taskq_wait(spa->spa_zvol_taskq);
+}
+
+void
+zvol_rename_minors(spa_t *spa, const char *name1, const char *name2,
+				   boolean_t async)
+{
+	zvol_task_t *task;
+	taskqid_t id;
+
+	task = zvol_task_alloc(ZVOL_ASYNC_RENAME_MINORS, name1, name2, ~0ULL);
+	if (task == NULL)
+		return;
+
+	id = taskq_dispatch(spa->spa_zvol_taskq, zvol_task_cb, task, TQ_SLEEP);
+	if ((async == B_FALSE) && (id != 0))
+		taskq_wait(spa->spa_zvol_taskq);
+}
 
 	/* Never allow tasks on hidden names. */
 	if (name1[0] == '$')

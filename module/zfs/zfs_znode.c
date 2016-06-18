@@ -1422,8 +1422,6 @@ again:
 
 		mutex_enter(&zp->z_lock);
 
-		mutex_enter(&zp->z_lock);
-
 		/*
 		 * Since zp may disappear after we unlock below,
 		 * we save a copy of vp and it's vid

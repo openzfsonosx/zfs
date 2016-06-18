@@ -2905,6 +2905,26 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 		// If we already have the name, cached in zfs_vnop_lookup
 		} else if (zp->z_name_cache[0]) {
 
+		// if its a hardlink cache
+		if (findnode) {
+
+			dprintf("vget: updating vnode to '%s' and parent %llu\n",
+				   findnode->hl_name, findnode->hl_parent);
+
+			vnode_update_identity(*vpp,
+								  NULL,
+								  findnode->hl_name,
+								  strlen(findnode->hl_name),
+								  0,
+								  VNODE_UPDATE_NAME|VNODE_UPDATE_PARENT);
+			mutex_enter(&zp->z_lock);
+			strlcpy(zp->z_name_cache, findnode->hl_name, PATH_MAX);
+			zp->z_finder_parentid = findnode->hl_parent;
+			mutex_exit(&zp->z_lock);
+
+		// If we already have the name, cached in zfs_vnop_lookup
+		} else if (zp->z_name_cache[0]) {
+
 			dprintf("vget: cached name '%s'\n", zp->z_name_cache);
 			vnode_update_identity(*vpp, NULL, zp->z_name_cache,
 								  strlen(zp->z_name_cache), 0,

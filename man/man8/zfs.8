@@ -29,250 +29,249 @@
 .\" Copyright 2016 Nexenta Systems, Inc.
 .\" Copyright (c) 2016 by Jorgen Lundman. All rights reserved.
 .\"
-.Dd April 9, 2016
-.Dt ZFS 8
-.Os
-.Sh NAME
-.Nm zfs
-.Nd configures ZFS file systems
-.Sh SYNOPSIS
-.Nm
-.Op Fl \?
-.Nm
-.Cm create
-.Op Fl p
-.Oo Fl o Ar property Ns = Ns Ar value Oc Ns ...
-.Ar filesystem
-.Nm
-.Cm create
-.Op Fl ps
-.Op Fl b Ar blocksize
-.Oo Fl o Ar property Ns = Ns Ar value Oc Ns ...
-.Fl V Ar size Ar volume
-.Nm
-.Cm destroy
-.Op Fl Rfnprv
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm destroy
-.Op Fl Rdnprv
-.Ar filesystem Ns | Ns Ar volume Ns @ Ns Ar snap Ns
-.Oo % Ns Ar snap Ns Oo , Ns Ar snap Ns Oo % Ns Ar snap Oc Oc Oc Ns ...
-.Nm
-.Cm destroy
-.Ar filesystem Ns | Ns Ar volume Ns # Ns Ar bookmark
-.Nm
-.Cm snapshot
-.Op Fl r
-.Oo Fl o Ar property Ns = Ns value Oc Ns ...
-.Ar filesystem Ns @ Ns Ar snapname Ns | Ns Ar volume Ns @ Ns Ar snapname Ns ...
-.Nm
-.Cm rollback
-.Op Fl Rfr
-.Ar snapshot
-.Nm
-.Cm clone
-.Op Fl p
-.Oo Fl o Ar property Ns = Ns Ar value Oc Ns ...
-.Ar snapshot Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm promote
-.Ar clone-filesystem
-.Nm
-.Cm rename
-.Op Fl f
-.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot
-.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot
-.Nm
-.Cm rename
-.Op Fl fp
-.Ar filesystem Ns | Ns Ar volume
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm rename
-.Fl r
-.Ar snapshot Ar snapshot
-.Nm
-.Cm list
-.Op Fl r Ns | Ns Fl d Ar depth
-.Op Fl Hp
-.Oo Fl o Ar property Ns Oo , Ns Ar property Oc Ns ... Oc
-.Oo Fl s Ar property Oc Ns ...
-.Oo Fl S Ar property Oc Ns ...
-.Oo Fl t Ar type Ns Oo , Ns Ar type Oc Ns ... Oc
-.Oo Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot Oc Ns ...
-.Nm
-.Cm set
-.Ar property Ns = Ns Ar value Oo Ar property Ns = Ns Ar value Oc Ns ...
-.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot Ns ...
-.Nm
-.Cm get
-.Op Fl r Ns | Ns Fl d Ar depth
-.Op Fl Hp
-.Oo Fl o Ar field Ns Oo , Ns Ar field Oc Ns ... Oc
-.Oo Fl s Ar source Ns Oo , Ns Ar source Oc Ns ... Oc
-.Oo Fl t Ar type Ns Oo , Ns Ar type Oc Ns ... Oc
-.Cm all | Ar property Ns Oo , Ns Ar property Oc Ns ...
-.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot Ns ...
-.Nm
-.Cm inherit
-.Op Fl rS
-.Ar property Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot Ns ...
-.Nm
-.Cm upgrade
-.Nm
-.Cm upgrade
-.Fl v
-.Nm
-.Cm upgrade
-.Op Fl r
-.Op Fl V Ar version
-.Fl a | Ar filesystem
-.Nm
-.Cm userspace
-.Op Fl Hinp
-.Oo Fl o Ar field Ns Oo , Ns Ar field Oc Ns ... Oc
-.Oo Fl s Ar field Oc Ns ...
-.Oo Fl S Ar field Oc Ns ...
-.Oo Fl t Ar type Ns Oo , Ns Ar type Oc Ns ... Oc
-.Ar filesystem Ns | Ns Ar snapshot
-.Nm
-.Cm groupspace
-.Op Fl Hinp
-.Oo Fl o Ar field Ns Oo , Ns Ar field Oc Ns ... Oc
-.Oo Fl s Ar field Oc Ns ...
-.Oo Fl S Ar field Oc Ns ...
-.Oo Fl t Ar type Ns Oo , Ns Ar type Oc Ns ... Oc
-.Ar filesystem Ns | Ns Ar snapshot
-.Nm
-.Cm mount
-.Nm
-.Cm mount
-.Op Fl Ov
-.Op Fl o Ar options
-.Fl a | Ar filesystem
-.Nm
-.Cm unmount
-.Op Fl f
-.Fl a | Ar filesystem Ns | Ns Ar mountpoint
-.Nm
-.Cm share
-.Fl a | Ar filesystem
-.Nm
-.Cm unshare
-.Fl a | Ar filesystem Ns | Ns Ar mountpoint
-.Nm
-.Cm bookmark
-.Ar snapshot bookmark
-.Nm
-.Cm send
-.Op Fl DLPRenpv
-.Op Oo Fl I Ns | Ns Fl i Oc Ar snapshot
-.Ar snapshot
-.Nm
-.Cm send
-.Op Fl Le
-.Op Fl i Ar snapshot Ns | Ns Ar bookmark
-.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot
-.Nm
+.TH zfs 8 "Nov 19, 2013" "ZFS pool 28, filesystem 5" "System Administration Commands"
+.SH NAME
+zfs \- configures ZFS file systems
+.SH SYNOPSIS
+.LP
+.nf
+\fBzfs\fR [\fB-?\fR]
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBcreate\fR [\fB-p\fR] [\fB-o\fR \fIproperty\fR=\fIvalue\fR] ... \fIfilesystem\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBcreate\fR [\fB-ps\fR] [\fB-b\fR \fIblocksize\fR] [\fB-o\fR \fIproperty\fR=\fIvalue\fR] ... \fB-V\fR \fIsize\fR \fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBdestroy\fR [\fB-fnpRrv\fR] \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBdestroy\fR [\fB-dnpRrv\fR] \fIfilesystem\fR|\fIvolume\fR@\fIsnap\fR[%\fIsnap\fR][,...]
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBdestroy\fR \fIfilesystem\fR|\fIvolume\fR#\fIbookmark\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBsnapshot | snap\fR [\fB-r\fR] [\fB-o\fR \fIproperty\fR=\fIvalue\fR] ... 
+      \fIfilesystem@snapname\fR|\fIvolume@snapname\fR ...
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBrollback\fR [\fB-rRf\fR] \fIsnapshot\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBclone\fR [\fB-p\fR] [\fB-o\fR \fIproperty\fR=\fIvalue\fR] ... \fIsnapshot\fR \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBpromote\fR \fIclone-filesystem\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBrename\fR [\fB-f\fR] \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR
+     \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBrename\fR [\fB-fp\fR] \fIfilesystem\fR|\fIvolume\fR \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBrename\fR \fB-r\fR \fIsnapshot\fR \fIsnapshot\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBlist\fR [\fB-r\fR|\fB-d\fR \fIdepth\fR][\fB-Hp\fR][\fB-o\fR \fIproperty\fR[,\fIproperty\fR]...] [\fB-t\fR \fItype\fR[,\fItype\fR]..]
+     [\fB-s\fR \fIproperty\fR] ... [\fB-S\fR \fIproperty\fR] ... [\fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR] ...
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBset\fR \fIproperty\fR=\fIvalue\fR \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR ...
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBget\fR [\fB-r\fR|\fB-d\fR \fIdepth\fR][\fB-Hp\fR][\fB-o\fR \fIfield\fR[,...]] [\fB-t\fR \fItype\fR[,...]] 
+    [\fB-s\fR \fIsource\fR[,...]] "\fIall\fR" | \fIproperty\fR[,...] \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR ...
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBinherit\fR [\fB-rS\fR] \fIproperty\fR \fIfilesystem\fR|\fIvolume|snapshot\fR ...
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBupgrade\fR [\fB-v\fR]
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBupgrade\fR [\fB-r\fR] [\fB-V\fR \fIversion\fR] \fB-a\fR | \fIfilesystem\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBuserspace\fR [\fB-Hinp\fR] [\fB-o\fR \fIfield\fR[,...]] [\fB-s\fR \fIfield\fR] ...
+    [\fB-S\fR \fIfield\fR] ... [\fB-t\fR \fItype\fR[,...]] \fIfilesystem\fR|\fIsnapshot\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBgroupspace\fR [\fB-Hinp\fR] [\fB-o\fR \fIfield\fR[,...]] [\fB-s\fR \fIfield\fR] ...
+    [\fB-S\fR \fIfield\fR] ... [\fB-t\fR \fItype\fR[,...]] \fIfilesystem\fR|\fIsnapshot\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBmount\fR 
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBmount\fR [\fB-vO\fR] [\fB-o \fIoptions\fR\fR] \fB-a\fR | \fIfilesystem\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBunmount | umount\fR [\fB-f\fR] \fB-a\fR | \fIfilesystem\fR|\fImountpoint\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBshare\fR \fB-a\fR | \fIfilesystem\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBunshare\fR \fB-a\fR \fIfilesystem\fR|\fImountpoint\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBbookmark\fR \fIsnapshot\fR \fIbookmark\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBsend\fR [\fB-DnPpRveL\fR] [\fB-\fR[\fBiI\fR] \fIsnapshot\fR] \fIsnapshot\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBsend\fR [\fB-eL\fR] [\fB-i \fIsnapshot\fR|\fIbookmark\fR]\fR \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR
+.fi
 .Cm send
 .Op Fl Penv
 .Fl t Ar receive_resume_token
 .Nm
-.Cm receive
-.Op Fl Fnsuv
-.Op Fl o Sy origin Ns = Ns Ar snapshot
-.Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot
-.Nm
-.Cm receive
-.Op Fl Fnsuv
-.Op Fl d Ns | Ns Fl e
-.Op Fl o Sy origin Ns = Ns Ar snapshot
-.Ar filesystem
-.Nm
+.LP
+.nf
+\fBzfs\fR \fBreceive | recv\fR [\fB-vnFus\fR] \fIfilesystem\fR|\fIvolume\fR|\fIsnapshot\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBreceive | recv\fR [\fB-vnFus\fR] [\fB-d\fR|\fB-e\fR] \fIfilesystem\fR
+.fi
 .Cm receive
 .Fl A
 .Ar filesystem Ns | Ns Ar volume
 .Nm
-.Cm allow
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm allow
-.Op Fl dglu
-.Ar user Ns | Ns Ar group Ns Oo , Ns Ar user Ns | Ns Ar group Oc Ns ...
-.Ar perm Ns | Ns @ Ns Ar setname Ns Oo , Ns Ar perm Ns | Ns @ Ns
-.Ar setname Oc Ns ...
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm allow
-.Op Fl dl
-.Fl e Ns | Ns Sy everyone
-.Ar perm Ns | Ns @ Ns Ar setname Ns Oo , Ns Ar perm Ns | Ns @ Ns
-.Ar setname Oc Ns ...
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm allow
-.Fl c
-.Ar perm Ns | Ns @ Ns Ar setname Ns Oo , Ns Ar perm Ns | Ns @ Ns
-.Ar setname Oc Ns ...
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm allow
-.Fl s No @ Ns Ar setname
-.Ar perm Ns | Ns @ Ns Ar setname Ns Oo , Ns Ar perm Ns | Ns @ Ns
-.Ar setname Oc Ns ...
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm unallow
-.Op Fl dglru
-.Ar user Ns | Ns Ar group Ns Oo , Ns Ar user Ns | Ns Ar group Oc Ns ...
-.Oo Ar perm Ns | Ns @ Ns Ar setname Ns Oo , Ns Ar perm Ns | Ns @ Ns
-.Ar setname Oc Ns ... Oc
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm unallow
-.Op Fl dlr
-.Fl e Ns | Ns Sy everyone
-.Oo Ar perm Ns | Ns @ Ns Ar setname Ns Oo , Ns Ar perm Ns | Ns @ Ns
-.Ar setname Oc Ns ... Oc
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm unallow
-.Op Fl r
-.Fl c
-.Oo Ar perm Ns | Ns @ Ns Ar setname Ns Oo , Ns Ar perm Ns | Ns @ Ns
-.Ar setname Oc Ns ... Oc
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm unallow
-.Op Fl r
-.Fl s @ Ns Ar setname
-.Oo Ar perm Ns | Ns @ Ns Ar setname Ns Oo , Ns Ar perm Ns | Ns @ Ns
-.Ar setname Oc Ns ... Oc
-.Ar filesystem Ns | Ns Ar volume
-.Nm
-.Cm hold
-.Op Fl r
-.Ar tag Ar snapshot Ns ...
-.Nm
-.Cm holds
-.Op Fl r
-.Ar snapshot Ns ...
-.Nm
-.Cm release
-.Op Fl r
-.Ar tag Ar snapshot Ns ...
-.Nm
-.Cm diff
-.Op Fl FHt
-.Ar snapshot Ar snapshot Ns | Ns Ar filesystem
-.Sh DESCRIPTION
-The
-.Nm
-command configures ZFS datasets within a ZFS storage pool, as described in
-.Xr zpool 1M .
-A dataset is identified by a unique path within the ZFS namespace. For example:
-.Bd -literal
+.LP
+.nf
+\fBzfs\fR \fBallow\fR \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBallow\fR [\fB-ldug\fR] "\fIeveryone\fR"|\fIuser\fR|\fIgroup\fR[,...] \fIperm\fR|\fI@setname\fR[,...] 
+     \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBallow\fR [\fB-ld\fR] \fB-e\fR \fIperm\fR|@\fIsetname\fR[,...] \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBallow\fR \fB-c\fR \fIperm\fR|@\fIsetname\fR[,...] \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBallow\fR \fB-s\fR @\fIsetname\fR \fIperm\fR|@\fIsetname\fR[,...] \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBunallow\fR [\fB-rldug\fR] "\fIeveryone\fR"|\fIuser\fR|\fIgroup\fR[,...] [\fIperm\fR|@\fIsetname\fR[,... ]] 
+     \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBunallow\fR [\fB-rld\fR] \fB-e\fR [\fIperm\fR|@\fIsetname\fR[,... ]] \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBunallow\fR [\fB-r\fR] \fB-c\fR [\fIperm\fR|@\fIsetname\fR[ ... ]] \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBunallow\fR [\fB-r\fR] \fB-s\fR @\fIsetname\fR [\fIperm\fR|@\fIsetname\fR[,... ]] \fIfilesystem\fR|\fIvolume\fR
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBhold\fR [\fB-r\fR] \fItag\fR \fIsnapshot\fR...
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBholds\fR [\fB-r\fR] \fIsnapshot\fR...
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBrelease\fR [\fB-r\fR] \fItag\fR \fIsnapshot\fR...
+.fi
+
+.LP
+.nf
+\fBzfs\fR \fBdiff\fR [\fB-FHt\fR] \fIsnapshot\fR \fIsnapshot|filesystem\fR
+
+.SH DESCRIPTION
+.LP
+The \fBzfs\fR command configures \fBZFS\fR datasets within a \fBZFS\fR storage pool, as described in \fBzpool\fR(8). A dataset is identified by a unique path within the \fBZFS\fR namespace. For example:
+.sp
+.in +2
+.nf
 pool/{filesystem,volume,snapshot}
 .Ed
 .Pp

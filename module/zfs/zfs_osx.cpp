@@ -428,6 +428,7 @@ uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t 
   return done;
 }
 
+#if 0
 #include <sys/vdev_impl.h>
 #include <sys/spa_impl.h>
 #include <sys/vdev_disk.h>
@@ -532,3 +533,4 @@ bool IOkit_disk_removed_callback(void* target,
 
 	return true;
 }
+#endif

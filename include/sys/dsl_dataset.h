@@ -122,6 +122,18 @@ struct dsl_pool;
 #define	DS_FIELD_RESUME_EMBEDOK "com.delphix:resume_embedok"
 
 /*
+ * These fields are set on datasets that are in the middle of a resumable
+ * receive, and allow the sender to resume the send if it is interrupted.
+ */
+#define	DS_FIELD_RESUME_FROMGUID "com.delphix:resume_fromguid"
+#define	DS_FIELD_RESUME_TONAME "com.delphix:resume_toname"
+#define	DS_FIELD_RESUME_TOGUID "com.delphix:resume_toguid"
+#define	DS_FIELD_RESUME_OBJECT "com.delphix:resume_object"
+#define	DS_FIELD_RESUME_OFFSET "com.delphix:resume_offset"
+#define	DS_FIELD_RESUME_BYTES "com.delphix:resume_bytes"
+#define	DS_FIELD_RESUME_EMBEDOK "com.delphix:resume_embedok"
+
+/*
  * DS_FLAG_CI_DATASET is set if the dataset contains a file system whose
  * name lookups should be performed case-insensitively.
  */

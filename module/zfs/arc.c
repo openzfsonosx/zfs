@@ -319,6 +319,9 @@ int		zfs_arc_overflow_shift = 8;
 /* shift of arc_c for calculating overflow limit in arc_get_data_buf */
 int		zfs_arc_overflow_shift = 8;
 
+/* shift of arc_c for calculating overflow limit in arc_get_data_buf */
+int		zfs_arc_overflow_shift = 8;
+
 /* shift of arc_c for calculating both min and max arc_p */
 static int		arc_p_min_shift = 4;
 
@@ -1592,6 +1595,33 @@ arc_buf_watch(arc_buf_t *buf)
 	}
 #endif
 #endif
+#endif
+}
+
+static arc_buf_contents_t
+arc_buf_type(arc_buf_hdr_t *hdr)
+{
+	if (HDR_ISTYPE_METADATA(hdr)) {
+		return (ARC_BUFC_METADATA);
+	} else {
+		return (ARC_BUFC_DATA);
+	}
+}
+
+static uint32_t
+arc_bufc_to_flags(arc_buf_contents_t type)
+{
+	switch (type) {
+	case ARC_BUFC_DATA:
+		/* metadata field is 0 if buffer contains normal data */
+		return (0);
+	case ARC_BUFC_METADATA:
+		return (ARC_FLAG_BUFC_METADATA);
+	default:
+		break;
+	}
+	panic("undefined ARC buffer type!");
+	return ((uint32_t)-1);
 }
 
 static arc_buf_contents_t
@@ -2135,12 +2165,9 @@ arc_buf_free_on_write(void *data, size_t size,
 	mutex_exit(&l2arc_free_on_write_mtx);
 }
 
-/*
- * Free the arc data buffer.  If it is an l2arc write in progress,
- * the buffer is placed on l2arc_free_on_write to be freed later.
- */
 static void
-arc_buf_data_free(arc_buf_t *buf, void (*free_func)(void *, size_t))
+arc_buf_free_on_write(void *data, size_t size,
+    void (*free_func)(void *, size_t))
 {
 	arc_buf_hdr_t *hdr = buf->b_hdr;
 
@@ -2208,9 +2235,8 @@ arc_buf_l2_cdata_free(arc_buf_hdr_t *hdr)
 }
 
 /*
- * Share the arc_buf_t's data with the hdr. Whenever we are sharing the
- * data buffer, we transfer the refcount ownership to the hdr and update
- * the appropriate kstats.
+ * Free the arc data buffer.  If it is an l2arc write in progress,
+ * the buffer is placed on l2arc_free_on_write to be freed later.
  */
 static void
 arc_buf_destroy(arc_buf_t *buf, boolean_t remove)
@@ -2333,7 +2359,7 @@ arc_hdr_l2hdr_destroy(arc_buf_hdr_t *hdr)
 }
 
 static void
-arc_hdr_destroy(arc_buf_hdr_t *hdr)
+arc_buf_l2_cdata_free(arc_buf_hdr_t *hdr)
 {
 	if (HDR_HAS_L1HDR(hdr)) {
 		ASSERT(hdr->b_l1hdr.b_buf == NULL ||
@@ -3705,7 +3731,6 @@ arc_user_evicts_thread(void)
 	thread_exit();
 }
 
-
 /*
  * Adapt arc info given the number of bytes we are trying to add and
  * the state that we are comming from.  This function is only called
@@ -3796,7 +3821,11 @@ arc_is_overflowing(void)
  * continue on.
  */
 static void
-arc_free_data_buf(arc_buf_hdr_t *hdr, void *data, uint64_t size, void *tag)
+#ifdef __APPLE__
+arc_reclaim_thread(void *notused)
+#else
+arc_reclaim_thread(void)
+#endif
 {
 	arc_state_t		*state = buf->b_hdr->b_l1hdr.b_state;
 	uint64_t		size = buf->b_hdr->b_size;
@@ -5131,6 +5160,535 @@ arc_max_bytes(void)
 	  return (SET_ERROR(EAGAIN));
 	}
 
+		if (*arc_flags & ARC_FLAG_WAIT)
+			return (zio_wait(rzio));
+
+		ASSERT(*arc_flags & ARC_FLAG_NOWAIT);
+		zio_nowait(rzio);
+	}
+	return (0);
+}
+
+void
+arc_set_callback(arc_buf_t *buf, arc_evict_func_t *func, void *private)
+{
+	ASSERT(buf->b_hdr != NULL);
+	ASSERT(buf->b_hdr->b_l1hdr.b_state != arc_anon);
+	ASSERT(!refcount_is_zero(&buf->b_hdr->b_l1hdr.b_refcnt) ||
+	    func == NULL);
+	ASSERT(buf->b_efunc == NULL);
+	ASSERT(!HDR_BUF_AVAILABLE(buf->b_hdr));
+
+	buf->b_efunc = func;
+	buf->b_private = private;
+}
+
+void
+arc_tempreserve_clear(uint64_t reserve)
+{
+	arc_buf_hdr_t *hdr;
+	kmutex_t *hash_lock;
+	uint64_t guid = spa_load_guid(spa);
+
+	ASSERT(!BP_IS_EMBEDDED(bp));
+
+	hdr = buf_hash_find(guid, bp, &hash_lock);
+	if (hdr == NULL)
+		return;
+	if (HDR_BUF_AVAILABLE(hdr)) {
+		arc_buf_t *buf = hdr->b_l1hdr.b_buf;
+		add_reference(hdr, hash_lock, FTAG);
+		hdr->b_flags &= ~ARC_FLAG_BUF_AVAILABLE;
+		mutex_exit(hash_lock);
+
+		arc_release(buf, FTAG);
+		(void) arc_buf_remove_ref(buf, FTAG);
+	} else {
+		mutex_exit(hash_lock);
+	}
+
+}
+
+int
+arc_tempreserve_space(uint64_t reserve, uint64_t txg)
+{
+	arc_buf_hdr_t *hdr;
+	kmutex_t *hash_lock;
+	arc_evict_func_t *efunc = buf->b_efunc;
+	void *private = buf->b_private;
+
+	mutex_enter(&buf->b_evict_lock);
+	hdr = buf->b_hdr;
+	if (hdr == NULL) {
+		/*
+		 * We are in arc_do_user_evicts().
+		 */
+		ASSERT(buf->b_data == NULL);
+		mutex_exit(&buf->b_evict_lock);
+		return (B_FALSE);
+	} else if (buf->b_data == NULL) {
+		/*
+		 * We are on the eviction list; process this buffer now
+		 * but let arc_do_user_evicts() do the reaping.
+		 */
+		buf->b_efunc = NULL;
+		mutex_exit(&buf->b_evict_lock);
+		VERIFY0(efunc(private));
+		return (B_TRUE);
+	}
+	hash_lock = HDR_LOCK(hdr);
+	mutex_enter(hash_lock);
+	hdr = buf->b_hdr;
+	ASSERT3P(hash_lock, ==, HDR_LOCK(hdr));
+
+	ASSERT3U(refcount_count(&hdr->b_l1hdr.b_refcnt), <,
+	    hdr->b_l1hdr.b_datacnt);
+	ASSERT(hdr->b_l1hdr.b_state == arc_mru ||
+	    hdr->b_l1hdr.b_state == arc_mfu);
+
+	buf->b_efunc = NULL;
+	buf->b_private = NULL;
+
+	if (hdr->b_l1hdr.b_datacnt > 1) {
+		mutex_exit(&buf->b_evict_lock);
+		arc_buf_destroy(buf, TRUE);
+	} else {
+		ASSERT(buf == hdr->b_l1hdr.b_buf);
+		hdr->b_flags |= ARC_FLAG_BUF_AVAILABLE;
+		mutex_exit(&buf->b_evict_lock);
+	}
+
+	mutex_exit(hash_lock);
+	VERIFY0(efunc(private));
+	return (B_TRUE);
+}
+
+static void
+arc_kstat_update_state(arc_state_t *state, kstat_named_t *size,
+    kstat_named_t *evict_data, kstat_named_t *evict_metadata)
+{
+	arc_buf_hdr_t *hdr = buf->b_hdr;
+
+	/*
+	 * It would be nice to assert that if it's DMU metadata (level >
+	 * 0 || it's the dnode file), then it must be syncing context.
+	 * But we don't know that information at this level.
+	 */
+
+	mutex_enter(&buf->b_evict_lock);
+
+	ASSERT(HDR_HAS_L1HDR(hdr));
+
+	/*
+	 * We don't grab the hash lock prior to this check, because if
+	 * the buffer's header is in the arc_anon state, it won't be
+	 * linked into the hash table.
+	 */
+	if (hdr->b_l1hdr.b_state == arc_anon) {
+		mutex_exit(&buf->b_evict_lock);
+		ASSERT(!HDR_IO_IN_PROGRESS(hdr));
+		ASSERT(!HDR_IN_HASH_TABLE(hdr));
+		ASSERT(!HDR_HAS_L2HDR(hdr));
+		ASSERT(BUF_EMPTY(hdr));
+
+		ASSERT3U(hdr->b_l1hdr.b_datacnt, ==, 1);
+		ASSERT3S(refcount_count(&hdr->b_l1hdr.b_refcnt), ==, 1);
+		ASSERT(!list_link_active(&hdr->b_l1hdr.b_arc_node));
+
+		ASSERT3P(buf->b_efunc, ==, NULL);
+		ASSERT3P(buf->b_private, ==, NULL);
+
+		hdr->b_l1hdr.b_arc_access = 0;
+		arc_buf_thaw(buf);
+
+		return;
+	}
+
+	kmutex_t *hash_lock = HDR_LOCK(hdr);
+	mutex_enter(hash_lock);
+
+	/*
+	 * This assignment is only valid as long as the hash_lock is
+	 * held, we must be careful not to reference state or the
+	 * b_state field after dropping the lock.
+	 */
+	arc_state_t *state = hdr->b_l1hdr.b_state;
+	ASSERT3P(hash_lock, ==, HDR_LOCK(hdr));
+	ASSERT3P(state, !=, arc_anon);
+
+	/* this buffer is not on any list */
+	ASSERT(refcount_count(&hdr->b_l1hdr.b_refcnt) > 0);
+
+	if (HDR_HAS_L2HDR(hdr)) {
+		mutex_enter(&hdr->b_l2hdr.b_dev->l2ad_mtx);
+
+		/*
+		 * We have to recheck this conditional again now that
+		 * we're holding the l2ad_mtx to prevent a race with
+		 * another thread which might be concurrently calling
+		 * l2arc_evict(). In that case, l2arc_evict() might have
+		 * destroyed the header's L2 portion as we were waiting
+		 * to acquire the l2ad_mtx.
+		 */
+		if (HDR_HAS_L2HDR(hdr))
+			arc_hdr_l2hdr_destroy(hdr);
+
+		mutex_exit(&hdr->b_l2hdr.b_dev->l2ad_mtx);
+	}
+
+	/*
+	 * Do we have more than one buf?
+	 */
+	if (hdr->b_l1hdr.b_datacnt > 1) {
+		arc_buf_hdr_t *nhdr;
+		arc_buf_t **bufp;
+		uint64_t blksz = hdr->b_size;
+		uint64_t spa = hdr->b_spa;
+		arc_buf_contents_t type = arc_buf_type(hdr);
+		uint32_t flags = hdr->b_flags;
+
+		ASSERT(hdr->b_l1hdr.b_buf != buf || buf->b_next != NULL);
+		/*
+		 * Pull the data off of this hdr and attach it to
+		 * a new anonymous hdr.
+		 */
+		(void) remove_reference(hdr, hash_lock, tag);
+		bufp = &hdr->b_l1hdr.b_buf;
+		while (*bufp != buf)
+			bufp = &(*bufp)->b_next;
+		*bufp = buf->b_next;
+		buf->b_next = NULL;
+
+		ASSERT3P(state, !=, arc_l2c_only);
+
+		(void) refcount_remove_many(
+		    &state->arcs_size, hdr->b_size, buf);
+
+		if (refcount_is_zero(&hdr->b_l1hdr.b_refcnt)) {
+			ASSERT3P(state, !=, arc_l2c_only);
+			uint64_t *size = &state->arcs_lsize[type];
+			ASSERT3U(*size, >=, hdr->b_size);
+			atomic_add_64(size, -hdr->b_size);
+		}
+
+		/*
+		 * We're releasing a duplicate user data buffer, update
+		 * our statistics accordingly.
+		 */
+		if (HDR_ISTYPE_DATA(hdr)) {
+			ARCSTAT_BUMPDOWN(arcstat_duplicate_buffers);
+			ARCSTAT_INCR(arcstat_duplicate_buffers_size,
+			    -hdr->b_size);
+		}
+		hdr->b_l1hdr.b_datacnt -= 1;
+		arc_cksum_verify(buf);
+		arc_buf_unwatch(buf);
+
+		mutex_exit(hash_lock);
+
+		nhdr = kmem_cache_alloc(hdr_full_cache, KM_PUSHPAGE);
+		nhdr->b_size = blksz;
+		nhdr->b_spa = spa;
+
+		nhdr->b_flags = flags & ARC_FLAG_L2_WRITING;
+		nhdr->b_flags |= arc_bufc_to_flags(type);
+		nhdr->b_flags |= ARC_FLAG_HAS_L1HDR;
+
+		nhdr->b_l1hdr.b_buf = buf;
+		nhdr->b_l1hdr.b_datacnt = 1;
+		nhdr->b_l1hdr.b_state = arc_anon;
+		nhdr->b_l1hdr.b_arc_access = 0;
+		nhdr->b_l1hdr.b_tmp_cdata = NULL;
+		nhdr->b_freeze_cksum = NULL;
+
+		(void) refcount_add(&nhdr->b_l1hdr.b_refcnt, tag);
+		buf->b_hdr = nhdr;
+		mutex_exit(&buf->b_evict_lock);
+		(void) refcount_add_many(&arc_anon->arcs_size, blksz, buf);
+	} else {
+		mutex_exit(&buf->b_evict_lock);
+		ASSERT(refcount_count(&hdr->b_l1hdr.b_refcnt) == 1);
+		/* protected by hash lock, or hdr is on arc_anon */
+		ASSERT(!multilist_link_active(&hdr->b_l1hdr.b_arc_node));
+		ASSERT(!HDR_IO_IN_PROGRESS(hdr));
+		arc_change_state(arc_anon, hdr, hash_lock);
+		hdr->b_l1hdr.b_arc_access = 0;
+		mutex_exit(hash_lock);
+
+		buf_discard_identity(hdr);
+		arc_buf_thaw(buf);
+	}
+	buf->b_efunc = NULL;
+	buf->b_private = NULL;
+}
+
+#ifdef sun
+static
+#endif
+int
+arc_kstat_update(kstat_t *ksp, int rw)
+{
+	int released;
+
+	mutex_enter(&buf->b_evict_lock);
+	released = (buf->b_data != NULL &&
+	    buf->b_hdr->b_l1hdr.b_state == arc_anon);
+	mutex_exit(&buf->b_evict_lock);
+	return (released);
+}
+
+#ifdef ZFS_DEBUG
+int
+arc_referenced(arc_buf_t *buf)
+{
+	int referenced;
+
+	mutex_enter(&buf->b_evict_lock);
+	referenced = (refcount_count(&buf->b_hdr->b_l1hdr.b_refcnt));
+	mutex_exit(&buf->b_evict_lock);
+	return (referenced);
+}
+
+static void
+arc_write_ready(zio_t *zio)
+{
+	arc_write_callback_t *callback = zio->io_private;
+	arc_buf_t *buf = callback->awcb_buf;
+	arc_buf_hdr_t *hdr = buf->b_hdr;
+
+	ASSERT(HDR_HAS_L1HDR(hdr));
+	ASSERT(!refcount_is_zero(&buf->b_hdr->b_l1hdr.b_refcnt));
+	ASSERT(hdr->b_l1hdr.b_datacnt > 0);
+	callback->awcb_ready(zio, buf, callback->awcb_private);
+
+	/*
+	 * If the IO is already in progress, then this is a re-write
+	 * attempt, so we need to thaw and re-compute the cksum.
+	 * It is the responsibility of the callback to handle the
+	 * accounting for any re-write attempt.
+	 */
+	if (HDR_IO_IN_PROGRESS(hdr)) {
+		mutex_enter(&hdr->b_l1hdr.b_freeze_lock);
+		if (hdr->b_freeze_cksum != NULL) {
+			kmem_free(hdr->b_freeze_cksum, sizeof (zio_cksum_t));
+			hdr->b_freeze_cksum = NULL;
+		}
+		mutex_exit(&hdr->b_l1hdr.b_freeze_lock);
+	}
+	arc_cksum_compute(buf, B_FALSE);
+	hdr->b_flags |= ARC_FLAG_IO_IN_PROGRESS;
+}
+
+static void
+arc_write_children_ready(zio_t *zio)
+{
+	arc_write_callback_t *callback = zio->io_private;
+	arc_buf_t *buf = callback->awcb_buf;
+
+	callback->awcb_children_ready(zio, buf, callback->awcb_private);
+}
+
+#ifdef __APPLE__
+/*
+ * Uses ARC static variables in logic.
+ */
+int arc_kstat_update_osx(kstat_t *ksp, int rw)
+{
+	arc_write_callback_t *cb = zio->io_private;
+	if (cb->awcb_physdone != NULL)
+		cb->awcb_physdone(zio, cb->awcb_buf, cb->awcb_private);
+}
+
+static void
+arc_write_done(zio_t *zio)
+{
+	arc_write_callback_t *callback = zio->io_private;
+	arc_buf_t *buf = callback->awcb_buf;
+	arc_buf_hdr_t *hdr = buf->b_hdr;
+
+	ASSERT(hdr->b_l1hdr.b_acb == NULL);
+
+	if (zio->io_error == 0) {
+		if (BP_IS_HOLE(zio->io_bp) || BP_IS_EMBEDDED(zio->io_bp)) {
+			buf_discard_identity(hdr);
+		} else {
+			hdr->b_dva = *BP_IDENTITY(zio->io_bp);
+			hdr->b_birth = BP_PHYSICAL_BIRTH(zio->io_bp);
+		}
+	} else {
+		ASSERT(BUF_EMPTY(hdr));
+	}
+
+	/*
+	 * If the block to be written was all-zero or compressed enough to be
+	 * embedded in the BP, no write was performed so there will be no
+	 * dva/birth/checksum.  The buffer must therefore remain anonymous
+	 * (and uncached).
+	 */
+	if (!BUF_EMPTY(hdr)) {
+		arc_buf_hdr_t *exists;
+		kmutex_t *hash_lock;
+
+		ASSERT(zio->io_error == 0);
+
+		arc_cksum_verify(buf);
+
+		exists = buf_hash_insert(hdr, &hash_lock);
+		if (exists != NULL) {
+			/*
+			 * This can only happen if we overwrite for
+			 * sync-to-convergence, because we remove
+			 * buffers from the hash table when we arc_free().
+			 */
+			if (zio->io_flags & ZIO_FLAG_IO_REWRITE) {
+				if (!BP_EQUAL(&zio->io_bp_orig, zio->io_bp))
+					panic("bad overwrite, hdr=%p exists=%p",
+					    (void *)hdr, (void *)exists);
+				ASSERT(refcount_is_zero(
+				    &exists->b_l1hdr.b_refcnt));
+				arc_change_state(arc_anon, exists, hash_lock);
+				mutex_exit(hash_lock);
+				arc_hdr_destroy(exists);
+				exists = buf_hash_insert(hdr, &hash_lock);
+				ASSERT3P(exists, ==, NULL);
+			} else if (zio->io_flags & ZIO_FLAG_NOPWRITE) {
+				/* nopwrite */
+				ASSERT(zio->io_prop.zp_nopwrite);
+				if (!BP_EQUAL(&zio->io_bp_orig, zio->io_bp))
+					panic("bad nopwrite, hdr=%p exists=%p",
+					    (void *)hdr, (void *)exists);
+			} else {
+				/* Dedup */
+				ASSERT(hdr->b_l1hdr.b_datacnt == 1);
+				ASSERT(hdr->b_l1hdr.b_state == arc_anon);
+				ASSERT(BP_GET_DEDUP(zio->io_bp));
+				ASSERT(BP_GET_LEVEL(zio->io_bp) == 0);
+			}
+		}
+		hdr->b_flags &= ~ARC_FLAG_IO_IN_PROGRESS;
+		/* if it's not anon, we are doing a scrub */
+		if (exists == NULL && hdr->b_l1hdr.b_state == arc_anon)
+			arc_access(hdr, hash_lock);
+		mutex_exit(hash_lock);
+	} else {
+		hdr->b_flags &= ~ARC_FLAG_IO_IN_PROGRESS;
+	}
+
+	ASSERT(!refcount_is_zero(&hdr->b_l1hdr.b_refcnt));
+	callback->awcb_done(zio, buf, callback->awcb_private);
+
+	kmem_free(callback, sizeof (arc_write_callback_t));
+}
+
+zio_t *
+arc_write(zio_t *pio, spa_t *spa, uint64_t txg,
+    blkptr_t *bp, arc_buf_t *buf, boolean_t l2arc, boolean_t l2arc_compress,
+    const zio_prop_t *zp, arc_done_func_t *ready,
+    arc_done_func_t *children_ready, arc_done_func_t *physdone,
+    arc_done_func_t *done, void *private, zio_priority_t priority,
+    int zio_flags, const zbookmark_phys_t *zb)
+{
+	arc_buf_hdr_t *hdr = buf->b_hdr;
+	arc_write_callback_t *callback;
+	zio_t *zio;
+
+	ASSERT(ready != NULL);
+	ASSERT(done != NULL);
+	ASSERT(!HDR_IO_ERROR(hdr));
+	ASSERT(!HDR_IO_IN_PROGRESS(hdr));
+	ASSERT(hdr->b_l1hdr.b_acb == NULL);
+	ASSERT(hdr->b_l1hdr.b_datacnt > 0);
+	if (l2arc)
+		hdr->b_flags |= ARC_FLAG_L2CACHE;
+	if (l2arc_compress)
+		hdr->b_flags |= ARC_FLAG_L2COMPRESS;
+	callback = kmem_zalloc(sizeof (arc_write_callback_t), KM_SLEEP);
+	callback->awcb_ready = ready;
+	callback->awcb_children_ready = children_ready;
+	callback->awcb_physdone = physdone;
+	callback->awcb_done = done;
+	callback->awcb_private = private;
+	callback->awcb_buf = buf;
+
+	zio = zio_write(pio, spa, txg, bp, buf->b_data, hdr->b_size, zp,
+	    arc_write_ready,
+	    (children_ready != NULL) ? arc_write_children_ready : NULL,
+	    arc_write_physdone, arc_write_done, callback,
+	    priority, zio_flags, zb);
+
+	return (zio);
+}
+
+static int
+arc_memory_throttle(uint64_t reserve, uint64_t txg)
+{
+#ifdef _KERNEL
+#ifdef sun
+	uint64_t available_memory = ptob(freemem);
+#endif
+#ifdef __APPLE__
+	int64_t available_memory = spl_free_wrapper();
+	int64_t freemem = available_memory / PAGESIZE;
+#endif
+
+	static uint64_t page_load = 0;
+	static uint64_t last_txg = 0;
+
+#if defined(__i386)
+	available_memory =
+	    MIN(available_memory, vmem_size(heap_arena, VMEM_FREE));
+#endif
+
+	if (freemem > physmem * arc_lotsfree_percent / 100)
+		return (0);
+
+	if (txg > last_txg) {
+		last_txg = txg;
+		page_load = 0;
+	}
+	/*
+	 * If we are in pageout, we know that memory is already tight,
+	 * the arc is already going to be evicting, so we just want to
+	 * continue to let page writes occur as quickly as possible.
+	 */
+
+#if 0 // smd : we might want to do something here if vm_page_free_wanted > 0
+#ifdef sun
+	if (curproc == proc_pageout) {
+		if (page_load > MAX(ptob(minfree), available_memory) / 4)
+			return (SET_ERROR(ERESTART));
+		/* Note: reserve is inflated, so we deflate */
+		page_load += reserve / 8;
+		return (0);
+	} else { /* DANGLING ELSE */
+#endif
+	if (page_load > 0 && arc_reclaim_needed()) {
+		/* memory is low, delay before restarting */
+		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
+		return (SET_ERROR(EAGAIN));
+	}
+#ifdef sun
+	}
+#endif
+	page_load = 0;
+#else // 0 - APPLE
+	// the return from here is used to block all writes, so we don't want to return 1
+	// except in exceptional cases - smd
+
+	if(spl_free_manual_pressure_wrapper() != 0) {
+	  cv_signal(&arc_reclaim_thread_cv);
+	  kpreempt(KPREEMPT_SYNC);
+	}
+
+	if(!spl_minimal_physmem_p() && page_load > 0) {
+	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
+	  printf("ZFS: %s: !spl_minimal_physmem_p(), available_memory == %lld, "
+		 "page_load = %llu, txg = %llu, reserve = %llu\n",
+		 __func__, available_memory, page_load, txg, reserve);
+	  cv_signal(&arc_reclaim_thread_cv);
+	  return (SET_ERROR(EAGAIN));
+	}
+
 	if(arc_reclaim_needed() && page_load > 0) {
 	  ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
 	  printf("ZFS: %s: arc_reclaim_needed(), available_memory == %lld, "
@@ -5165,9 +5723,17 @@ arc_tempreserve_clear(uint64_t reserve)
 	atomic_add_64(&arc_tempreserve, -reserve);
 	ASSERT((int64_t)arc_tempreserve >= 0);
 }
+#endif
 
-int
-arc_tempreserve_space(uint64_t reserve, uint64_t txg)
+/*
+ * This function *must* return indices evenly distributed between all
+ * sublists of the multilist. This is needed due to how the ARC eviction
+ * code is laid out; arc_evict_state() assumes ARC buffers are evenly
+ * distributed between all sublists and uses this assumption when
+ * deciding which sublist to evict from and how much to evict from it.
+ */
+unsigned int
+arc_state_multilist_index_func(multilist_t *ml, void *obj)
 {
 	int error;
 	uint64_t anon_size;

@@ -2609,6 +2609,83 @@ dbuf_prefetch_indirect_done(zio_t *zio, arc_buf_t *abuf, void *private)
 	(void) arc_buf_remove_ref(abuf, private);
 }
 
+typedef struct dbuf_prefetch_arg {
+	spa_t *dpa_spa; /* The spa to issue the prefetch in. */
+	zbookmark_phys_t dpa_zb; /* The target block to prefetch. */
+	int dpa_epbs; /* Entries (blkptr_t's) Per Block Shift. */
+	int dpa_curlevel; /* The current level that we're reading */
+	zio_priority_t dpa_prio; /* The priority I/Os should be issued at. */
+	zio_t *dpa_zio; /* The parent zio_t for all prefetches. */
+	arc_flags_t dpa_aflags; /* Flags to pass to the final prefetch. */
+} dbuf_prefetch_arg_t;
+
+/*
+ * Actually issue the prefetch read for the block given.
+ */
+static void
+dbuf_issue_final_prefetch(dbuf_prefetch_arg_t *dpa, blkptr_t *bp)
+{
+	if (BP_IS_HOLE(bp) || BP_IS_EMBEDDED(bp))
+		return;
+
+	arc_flags_t aflags =
+            dpa->dpa_aflags | ARC_FLAG_NOWAIT | ARC_FLAG_PREFETCH;
+
+	ASSERT3U(dpa->dpa_curlevel, ==, BP_GET_LEVEL(bp));
+	ASSERT3U(dpa->dpa_curlevel, ==, dpa->dpa_zb.zb_level);
+	ASSERT(dpa->dpa_zio != NULL);
+	(void) arc_read(dpa->dpa_zio, dpa->dpa_spa, bp, NULL, NULL,
+					dpa->dpa_prio, ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
+					&aflags, &dpa->dpa_zb);
+}
+
+/*
+ * Called when an indirect block above our prefetch target is read in.  This
+ * will either read in the next indirect block down the tree or issue the actual
+ * prefetch if the next block down is our target.
+ */
+static void
+dbuf_prefetch_indirect_done(zio_t *zio, arc_buf_t *abuf, void *private)
+{
+	dbuf_prefetch_arg_t *dpa = private;
+
+	ASSERT3S(dpa->dpa_zb.zb_level, <, dpa->dpa_curlevel);
+	ASSERT3S(dpa->dpa_curlevel, >, 0);
+	if (zio != NULL) {
+		ASSERT3S(BP_GET_LEVEL(zio->io_bp), ==, dpa->dpa_curlevel);
+		ASSERT3U(BP_GET_LSIZE(zio->io_bp), ==, zio->io_size);
+		ASSERT3P(zio->io_spa, ==, dpa->dpa_spa);
+	}
+
+	dpa->dpa_curlevel--;
+
+	uint64_t nextblkid = dpa->dpa_zb.zb_blkid >>
+		(dpa->dpa_epbs * (dpa->dpa_curlevel - dpa->dpa_zb.zb_level));
+	blkptr_t *bp = ((blkptr_t *)abuf->b_data) +
+		P2PHASE(nextblkid, 1ULL << dpa->dpa_epbs);
+	if (BP_IS_HOLE(bp) || (zio != NULL && zio->io_error != 0)) {
+		kmem_free(dpa, sizeof (*dpa));
+	} else if (dpa->dpa_curlevel == dpa->dpa_zb.zb_level) {
+		ASSERT3U(nextblkid, ==, dpa->dpa_zb.zb_blkid);
+		dbuf_issue_final_prefetch(dpa, bp);
+		kmem_free(dpa, sizeof (*dpa));
+	} else {
+		arc_flags_t iter_aflags = ARC_FLAG_NOWAIT;
+		zbookmark_phys_t zb;
+
+		ASSERT3U(dpa->dpa_curlevel, ==, BP_GET_LEVEL(bp));
+
+		SET_BOOKMARK(&zb, dpa->dpa_zb.zb_objset,
+					 dpa->dpa_zb.zb_object, dpa->dpa_curlevel, nextblkid);
+
+		(void) arc_read(dpa->dpa_zio, dpa->dpa_spa,
+						bp, dbuf_prefetch_indirect_done, dpa, dpa->dpa_prio,
+						ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
+						&iter_aflags, &zb);
+	}
+	(void) arc_buf_remove_ref(abuf, private);
+}
+
 /*
  * Issue prefetch reads for the given block on the given level.  If the indirect
  * blocks above that block are not in memory, we will read them in

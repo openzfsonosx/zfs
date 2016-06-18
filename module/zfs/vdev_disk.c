@@ -98,12 +98,23 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 {
 	spa_t *spa = vd->vdev_spa;
 	vdev_disk_t *dvd = vd->vdev_tsd;
-	vnode_t *devvp = NULLVP;
-	vfs_context_t context = NULL;
-	uint64_t blkcnt;
-	uint32_t blksize;
-	int fmode = 0;
-	int error = 0;
+	ldi_ev_cookie_t ecookie;
+	vdev_disk_ldi_cb_t *lcb;
+	union {
+		struct dk_minfo_ext ude;
+		struct dk_minfo ud;
+	} dks;
+	struct dk_minfo_ext *dkmext = &dks.ude;
+	struct dk_minfo *dkm = &dks.ud;
+	int error;
+/* XXX Apple - must leave devid unchanged */
+#ifdef illumos
+	dev_t dev;
+	int otyp;
+	boolean_t validate_devid = B_FALSE;
+	ddi_devid_t devid;
+#endif
+	uint64_t capacity = 0, blksz = 0, pbsize;
 	int isssd;
 
 	/*
@@ -237,6 +248,16 @@ skip_open:
 
 
 
+#if 0
+	int len = MAXPATHLEN;
+	if (vn_getpath(devvp, dvd->vd_readlinkname, &len) == 0) {
+		dprintf("ZFS: '%s' resolved name is '%s'\n",
+			   vd->vdev_path, dvd->vd_readlinkname);
+	} else {
+		dvd->vd_readlinkname[0] = 0;
+	}
+#endif
+
 skip_open:
 	/*
 	 * Determine the actual size of the device.
@@ -288,33 +309,22 @@ skip_open:
 
 	/* Inform the ZIO pipeline that we are non-rotational */
 	vd->vdev_nonrot = B_FALSE;
+#if 0
 	if (VNOP_IOCTL(devvp, DKIOCISSOLIDSTATE, (caddr_t)&isssd, 0,
 				   context) == 0) {
-		if (isssd)
-			vd->vdev_nonrot = B_TRUE;
+#else
+	if (ldi_ioctl(dvd->vd_lh, DKIOCISSOLIDSTATE, (intptr_t)&isssd,
+	    FKIOCTL, kcred, NULL) == 0) {
+#endif
+		vd->vdev_nonrot = (isssd ? B_TRUE : B_FALSE);
 	}
-	dprintf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "",
-			isssd);
+	dprintf("ZFS: vdev_disk(%s) isSSD %d\n",
+	    (vd->vdev_path ? vd->vdev_path : ""), isssd);
 
-	dvd->vd_devvp = devvp;
-out:
-	if (error) {
-	  if (devvp) {
-			vnode_close(devvp, fmode, context);
-			dvd->vd_devvp = NULL;
-	  }
-		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
-	}
-	if (context)
-		(void) vfs_context_rele(context);
-
-	if (error) printf("ZFS: vdev_disk_open('%s') failed error %d\n",
-					  vd->vdev_path ? vd->vdev_path : "", error);
-	return (error);
+	return (0);
 }
 
-
-
+#if 0
 /*
  * It appears on export/reboot, iokit can hold a lock, then call our
  * termination handler, and we end up locking-against-ourselves inside
@@ -331,6 +341,9 @@ static void vdev_disk_close_thread(void *arg)
 
 /* Not static so zfs_osx.cpp can call it on device removal */
 void
+#endif
+
+static void
 vdev_disk_close(vdev_t *vd)
 {
 	vdev_disk_t *dvd = vd->vdev_tsd;
@@ -377,7 +390,6 @@ __vdev_disk_physio(struct block_device *bdev, zio_t *zio, caddr_t kbuf_ptr,
 
 	if (dvd->vd_lh != NULL) {
 		(void) ldi_close(dvd->vd_lh, spa_mode(vd->vdev_spa), kcred);
-		dvd->vd_lh = NULL;
 	}
 #endif
 
@@ -436,9 +448,7 @@ vdev_disk_ioctl_done(void *zio_arg, int error)
 
 	zio->io_error = error;
 
-	zio_interrupt(zio);
-
-	BIO_END_IO_RETURN(0);
+	zio_delay_interrupt(zio);
 }
 
 static int
@@ -569,10 +579,47 @@ vdev_disk_io_start(zio_t *zio)
 	/* Stop OSX from also caching our data */
 	flags |= B_NOCACHE;
 
-	if (zio->io_flags & ZIO_FLAG_FAILFAST)
-		flags |= B_FAILFAST;
-
 	zio->io_target_timestamp = zio_handle_io_delay(zio);
+
+	vb = kmem_alloc(sizeof (vdev_buf_t), KM_SLEEP);
+
+	/* Stop OSX from also caching our data */
+	flags |= B_NOCACHE;
+
+	ASSERT(bp != NULL);
+	ASSERT(zio->io_data != NULL);
+	ASSERT(zio->io_size != 0);
+
+	bioinit(bp);
+	bp->b_flags = B_BUSY | flags;
+	if (!(zio->io_flags & (ZIO_FLAG_IO_RETRY | ZIO_FLAG_TRYHARD)))
+		bp->b_flags |= B_FAILFAST;
+	bp->b_bcount = zio->io_size;
+	bp->b_un.b_addr = zio->io_data;
+	bp->b_lblkno = lbtodb(zio->io_offset);
+	bp->b_bufsize = zio->io_size;
+	bp->b_iodone = (int (*)())vdev_disk_io_intr;
+
+#if 0
+	bp = buf_alloc(dvd->vd_devvp);
+
+	buf_setflags(bp, flags);
+	buf_setcount(bp, zio->io_size);
+	buf_setdataptr(bp, (uintptr_t)zio->io_data);
+
+	/*
+	 * Map offset to blcknumber, based on physical block number.
+	 * (512, 4096, ..). If we fail to map, default back to
+	 * standard 512. lbtodb() is fixed at 512.
+	 */
+	buf_setblkno(bp, zio->io_offset >> dvd->vd_ashift);
+	buf_setlblkno(bp, zio->io_offset >> dvd->vd_ashift);
+#endif
+
+#ifdef illumos
+	/* ldi_strategy() will return non-zero only on programming errors */
+	VERIFY(ldi_strategy(dvd->vd_lh, bp) == 0);
+#else /* !illumos */
 
 	bp = buf_alloc(dvd->vd_devvp);
 

@@ -2435,6 +2435,21 @@ zpool_do_import(int argc, char **argv)
 			nvlist_free(policy);
 			return (1);
 		}
+#ifdef __APPLE__
+		/*
+		 * Check for the SYS_CONFIG privilege.  We do this explicitly
+		 * here because otherwise any attempt to import the pool will
+		 * report "no such pool available."
+		 */
+		if (argc > 0 && !priv_ineffect(PRIV_SYS_CONFIG)) {
+			(void) fprintf(stderr, gettext("cannot "
+			    "import pools: permission denied\n"));
+			if (searchdirs != NULL)
+				free(searchdirs);
+
+			nvlist_free(policy);
+			return (1);
+		}
 #endif /* __APPLE__ */
 	}
 
@@ -2941,42 +2956,21 @@ print_iostat_header_impl(iostat_cbdata_t *cb, unsigned int force_column_width,
 	print_iostat_separator_impl(cb, force_column_width);
 }
 
-/*
- * Return the number of strings in a null-terminated string array.
- * For example:
- *
- *     const char foo[] = {"bar", "baz", NULL}
- *
- * returns 2
- */
-static uint64_t
-str_array_len(const char *array[])
+static void
+print_iostat_header(iostat_cbdata_t *cb)
 {
 	print_iostat_header_impl(cb, 0, NULL);
 }
 
 
 /*
- * Return a default column width for default/latency/queue columns. This does
- * not include histograms, which have their columns autosized.
+ * Display a single statistic.
  */
 static void
 print_one_stat(uint64_t value, enum zfs_nicenum_format format,
     unsigned int column_size, boolean_t scripted)
 {
-	unsigned long column_width = 5; /* Normal niceprint */
-	static unsigned long widths[] = {
-		/*
-		 * Choose some sane default column sizes for printing the
-		 * raw numbers.
-		 */
-		[IOS_DEFAULT] = 15, /* 1PB capacity */
-		[IOS_LATENCY] = 10, /* 1B ns = 10sec */
-		[IOS_QUEUES] = 6,   /* 1M queue entries */
-	};
-
-	if (cb->cb_literal)
-		column_width = widths[type];
+	char buf[64];
 
 	zfs_nicenum_format(value, buf, sizeof (buf), format);
 
@@ -3411,8 +3405,12 @@ print_vdev_stats(zpool_handle_t *zhp, const char *name, nvlist_t *oldnv,
 
 	calcvs = safe_malloc(sizeof (*calcvs));
 
-			rw_column_width = (column_width * columns) +
-			    (2 * (columns - 1));
+	if (oldnv != NULL) {
+		verify(nvlist_lookup_uint64_array(oldnv,
+		    ZPOOL_CONFIG_VDEV_STATS, (uint64_t **)&oldvs, &c) == 0);
+	} else {
+		oldvs = &zerovs;
+	}
 
 	/* Do we only want to see a specific vdev? */
 	for (i = 0; i < cb->cb_vdev_names_count; i++) {
@@ -3469,8 +3467,6 @@ print_vdev_stats(zpool_handle_t *zhp, const char *name, nvlist_t *oldnv,
 		else
 			scale = (double)NANOSEC / tdelta;
 	}
-	printf("\n");
-}
 
 	if (cb->cb_flags & IOS_DEFAULT_M) {
 		calc_default_iostats(oldvs, newvs, calcvs);
@@ -3506,25 +3502,14 @@ children:
 	for (c = 0; c < children; c++) {
 		uint64_t ishole = B_FALSE, islog = B_FALSE;
 
-static void
-print_iostat_separator_impl(iostat_cbdata_t *cb,
-    unsigned int force_column_width)
-{
-	print_iostat_dashes(cb, force_column_width, NULL);
-}
+		(void) nvlist_lookup_uint64(newchild[c], ZPOOL_CONFIG_IS_HOLE,
+		    &ishole);
 
-static void
-print_iostat_separator(iostat_cbdata_t *cb)
-{
-	print_iostat_separator_impl(cb, 0);
-}
+		(void) nvlist_lookup_uint64(newchild[c], ZPOOL_CONFIG_IS_LOG,
+		    &islog);
 
-static void
-print_iostat_header_impl(iostat_cbdata_t *cb, unsigned int force_column_width,
-    const char *histo_vdev_name)
-{
-	unsigned int namewidth;
-	const char *title;
+		if (ishole || islog)
+			continue;
 
 		vname = zpool_vdev_name(g_zfs, zhp, newchild[c],
 		    cb->cb_name_flags);
@@ -3533,8 +3518,9 @@ print_iostat_header_impl(iostat_cbdata_t *cb, unsigned int force_column_width,
 		free(vname);
 	}
 
-	namewidth = MAX(MAX(strlen(title), cb->cb_namewidth),
-	    histo_vdev_name ? strlen(histo_vdev_name) : 0);
+	/*
+	 * Log device section
+	 */
 
 	if (num_logs(newnv) > 0) {
 		if ((!(cb->cb_flags & IOS_ANYHISTO_M)) && !cb->cb_scripted &&
@@ -3542,6 +3528,10 @@ print_iostat_header_impl(iostat_cbdata_t *cb, unsigned int force_column_width,
 			print_iostat_dashes(cb, 0, "logs");
 		}
 
+		for (c = 0; c < children; c++) {
+			uint64_t islog = B_FALSE;
+			(void) nvlist_lookup_uint64(newchild[c],
+			    ZPOOL_CONFIG_IS_LOG, &islog);
 
 			if (islog) {
 				vname = zpool_vdev_name(g_zfs, zhp, newchild[c],
@@ -3553,7 +3543,7 @@ print_iostat_header_impl(iostat_cbdata_t *cb, unsigned int force_column_width,
 			}
 		}
 
-	printf("%-*s", namewidth, title);
+	}
 
 	/*
 	 * Include level 2 ARC devices in iostat output
