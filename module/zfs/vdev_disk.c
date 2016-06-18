@@ -50,10 +50,16 @@ typedef struct vdev_disk_ldi_cb {
 } vdev_disk_ldi_cb_t;
 #endif
 
-static void
+
+extern struct vnode *vdev_bootvp;
+
+void
 vdev_disk_alloc(vdev_t *vd)
 {
 	vdev_disk_t *dvd;
+
+	if (vd->vdev_tsd)
+		printf("ZFS: WARNING, vdev_tsd already allocated\n");
 
 	dvd = vd->vdev_tsd = kmem_zalloc(sizeof (vdev_disk_t), KM_SLEEP);
 #ifdef illumos
@@ -138,6 +144,13 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	 */
 	vdev_disk_alloc(vd);
 	dvd = vd->vdev_tsd;
+
+	if (vdev_bootvp) {
+		printf("ZFS: global bootvp\n");
+		devvp = vdev_bootvp;
+		//vdev_bootvp = NULL;
+		goto skip_open;
+	}
 
 	/*
 	 * When opening a disk device, we want to preserve the user's original
@@ -297,6 +310,7 @@ out:
 
 	if (error) printf("ZFS: vdev_disk_open('%s') failed error %d\n",
 					  vd->vdev_path ? vd->vdev_path : "", error);
+	if (error) panic("hello");
 	return (error);
 }
 
@@ -343,6 +357,9 @@ vdev_disk_close(vdev_t *vd)
 #endif
 
 #ifdef __APPLE__
+	/* Do not close it if it is the boot device */
+	if (dvd->vd_devvp == vdev_bootvp) return;
+
 	if (dvd->vd_devvp != NULL) {
 		/* vnode_close() can stall during removal, so clear vd_devvp now */
 		struct vnode *vp = dvd->vd_devvp;
@@ -592,3 +609,111 @@ vdev_ops_t vdev_disk_ops = {
 	VDEV_TYPE_DISK,	/* name of this vdev type */
 	B_TRUE	/* leaf vdev */
 };
+
+
+/*
+ * Given the root disk device devid or pathname, read the label from
+ * the device, and construct a configuration nvlist.
+ */
+int
+vdev_disk_read_rootlabel(struct vnode *rdev, nvlist_t **config)
+{
+	vdev_label_t *label;
+	uint64_t s, size;
+	int l;
+	int retval;
+	int error = 0;
+	char *minor_name;
+	u_int32_t log_blksize;
+	u_int32_t phys_blksize;
+	daddr64_t log_blkcnt;
+	u_int64_t disksize;
+	uint64_t resid;
+	vfs_context_t context = spl_vfs_context_kernel();
+
+	/*
+	 * Read the device label and build the nvlist.
+	 */
+	if (VNOP_IOCTL(rdev, DKIOCGETBLOCKSIZE, (caddr_t)&log_blksize, 0, context))
+		printf("ZFS: DKIOCGETBLOCKSIZE failed\n");
+
+	retval = VNOP_IOCTL(rdev, DKIOCGETPHYSICALBLOCKSIZE, (caddr_t)&phys_blksize, 0, context);
+	if (retval) {
+		printf("ZFS: DKIOCGETPHYSICALBLOCKSIZE failed\n");
+		/* If device does not support this ioctl, assume that physical
+		 * block size is same as logical block size
+		 */
+		phys_blksize = log_blksize;
+	}
+	/* Switch to 512 byte sectors (temporarily) */
+	if (log_blksize > 512) {
+		u_int32_t size512 = 512;
+
+		if (VNOP_IOCTL(rdev, DKIOCSETBLOCKSIZE, (caddr_t)&size512, FWRITE, context))
+			printf("ZFS: DKIOCSETBLOCKSIZE failed\n");
+	}
+	/* Get the number of 512 byte physical blocks. */
+	if (VNOP_IOCTL(rdev, DKIOCGETBLOCKCOUNT, (caddr_t)&log_blkcnt, 0, context)) {
+		/* resetting block size may fail if getting block count did */
+		(void)VNOP_IOCTL(rdev, DKIOCSETBLOCKSIZE, (caddr_t)&log_blksize, FWRITE, context);
+	}
+	/* Compute an accurate disk size (i.e. within 512 bytes) */
+	disksize = (u_int64_t)log_blkcnt * (u_int64_t)512;
+
+	if (log_blksize > 512) {
+		if (VNOP_IOCTL(rdev, DKIOCSETBLOCKSIZE, (caddr_t)&log_blksize, FWRITE, context))
+			printf("ZFS: DKIOCSETBLOCKSIZE2 failed\n");
+		/* Get the count of physical blocks. */
+		if (VNOP_IOCTL(rdev, DKIOCGETBLOCKCOUNT, (caddr_t)&log_blkcnt, 0,
+					   context))
+			printf("ZFS: DKIOCGETBLOCKCOUNT2 failed\n");
+	}
+
+	s = (uint64_t)log_blkcnt * phys_blksize;
+
+	size = P2ALIGN_TYPED(s, sizeof (vdev_label_t), uint64_t);
+	label = kmem_alloc(sizeof (vdev_label_t), KM_SLEEP);
+
+	printf("ZFS: looking for labels: size %llu\n", size);
+
+	*config = NULL;
+	for (l = 0; l < VDEV_LABELS; l++) {
+		uint64_t offset, state, txg = 0;
+
+		/* read vdev label */
+		offset = vdev_label_offset(size, l, 0);
+
+		if ((retval = vn_rdwr(UIO_READ, rdev, label,
+							  VDEV_SKIP_SIZE + VDEV_PHYS_SIZE, offset,
+							  UIO_SYSSPACE, 0, RLIM64_INFINITY, kcred, &resid))) {
+			continue;
+		}
+
+		if (nvlist_unpack(label->vl_vdev_phys.vp_nvlist,
+						  sizeof (label->vl_vdev_phys.vp_nvlist), config, 0) != 0) {
+			*config = NULL;
+			continue;
+		}
+		if (nvlist_lookup_uint64(*config, ZPOOL_CONFIG_POOL_STATE,
+								 &state) != 0 || state >= POOL_STATE_DESTROYED) {
+			nvlist_free(*config);
+			*config = NULL;
+			continue;
+		}
+
+		if (nvlist_lookup_uint64(*config, ZPOOL_CONFIG_POOL_TXG,
+								 &txg) != 0 || txg == 0) {
+			nvlist_free(*config);
+			*config = NULL;
+			continue;
+		}
+
+		break;
+	}
+
+	kmem_free(label, sizeof (vdev_label_t));
+	if (*config == NULL)
+		error = SET_ERROR(EIDRM);
+
+	return (error);
+}

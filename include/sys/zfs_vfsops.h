@@ -236,6 +236,7 @@ extern int  zfs_vfs_fhtovp (struct mount *mp, int fhlen, unsigned char *fhp, vno
 extern int  zfs_vfs_vptofh (vnode_t *vp, int *fhlenp, unsigned char *fhp, vfs_context_t context);
 extern int  zfs_vfs_sysctl (int *name, u_int namelen, user_addr_t oldp, size_t *oldlenp,  user_addr_t newp, size_t newlen, vfs_context_t context);
 extern int  zfs_vfs_quotactl ( struct mount *mp, int cmds, uid_t uid, caddr_t datap, vfs_context_t context);
+extern int  zfs_vfs_mountroot(struct mount *mp, struct vnode *vp, vfs_context_t context);
 
 extern void zfs_init(void);
 extern void zfs_fini(void);

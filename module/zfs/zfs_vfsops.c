@@ -1674,7 +1674,11 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 
 	error = dsl_prop_get_integer(osname, "com.apple.mimic_hfs", &mimic_hfs, NULL);
 
-	if(mimic_hfs) {
+	/* If we are readonly (ie, waiting for rootmount) we need to reply
+	 * honestly, so launchd runs fsck_zfs and mount_zfs
+	 */
+	if(mimic_hfs &&
+	   !(vfs_isrdonly(zfsvfs->z_vfs))) {
 	    struct vfsstatfs *vfsstatfs;
 	    vfsstatfs = vfs_statfs(vfsp);
 	    strlcpy(vfsstatfs->f_fstypename, "hfs", MFSTYPENAMELEN);
@@ -1741,6 +1745,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 		error = zfsvfs_setup(zfsvfs, B_TRUE);
 	}
 
+	printf("ZFS: mapping %d '%s' or '%s'\n", dev_mapping, devname, osname);
 	vfs_mountedfrom(vfsp, dev_mapping ? devname : osname);
 	if (devname) kmem_free(devname, MAXPATHLEN);
 
@@ -1971,111 +1976,99 @@ zfs_mount_label_policy(vfs_t *vfsp, char *osname)
 }
 #endif	/* SECLABEL */
 
-#ifdef OPENSOLARIS_MOUNTROOT
-static int
-zfs_mountroot(vfs_t *vfsp, enum whymountroot why)
+extern struct	vnode *rootvp;
+struct vnode *vdev_bootvp = NULL;
+int
+zfs_vfs_mountroot(struct mount *mp, struct vnode *rdev, vfs_context_t ctx)
 {
 	int error = 0;
 	static int zfsrootdone = 0;
 	zfsvfs_t *zfsvfs = NULL;
 	znode_t *zp = NULL;
-	vnode_t *vp = NULL;
 	char *zfs_bootfs;
 	char *zfs_devid;
 
 	ASSERT(vfsp);
+
+	printf("ZFS: zfs_vfs_mountroot\n");
 
 	/*
 	 * The filesystem that we mount as root is defined in the
 	 * boot property "zfs-bootfs" with a format of
 	 * "poolname/root-dataset-objnum".
 	 */
-	if (why == ROOT_INIT) {
-		if (zfsrootdone++)
-			return (EBUSY);
-		/*
-		 * the process of doing a spa_load will require the
-		 * clock to be set before we could (for example) do
-		 * something better by looking at the timestamp on
-		 * an uberblock, so just set it to -1.
-		 */
-		clkset(-1);
+	if (zfsrootdone++)
+		return (EBUSY);
+	/*
+	 * the process of doing a spa_load will require the
+	 * clock to be set before we could (for example) do
+	 * something better by looking at the timestamp on
+	 * an uberblock, so just set it to -1.
+	 */
+	//clkset(-1);
 
-		if ((zfs_bootfs = spa_get_bootprop("zfs-bootfs")) == NULL) {
-			cmn_err(CE_NOTE, "spa_get_bootfs: can not get "
-			    "bootfs name");
-			return (EINVAL);
-		}
-		zfs_devid = spa_get_bootprop("diskdevid");
-		error = spa_import_rootpool(rootfs.bo_name, zfs_devid);
-		if (zfs_devid)
-			spa_free_bootprop(zfs_devid);
-		if (error) {
-			spa_free_bootprop(zfs_bootfs);
-			cmn_err(CE_NOTE, "spa_import_rootpool: error %d",
+	/* rpool/ROOT/10.11 - first part is pool name */
+
+	error = spa_import_rootpool(rdev);
+
+	if (error) {
+		cmn_err(CE_NOTE, "spa_import_rootpool: error %d",
 			    error);
-			return (error);
-		}
-		if (error = zfs_parse_bootfs(zfs_bootfs, rootfs.bo_name)) {
-			spa_free_bootprop(zfs_bootfs);
-			cmn_err(CE_NOTE, "zfs_parse_bootfs: error %d",
-			    error);
-			return (error);
-		}
-
-		spa_free_bootprop(zfs_bootfs);
-
-		if (error = vfs_lock(vfsp))
-			return (error);
-
-		if (error = zfs_domount(vfsp, rootfs.bo_name)) {
-			cmn_err(CE_NOTE, "zfs_domount: error %d", error);
-			goto out;
-		}
-
-		zfsvfs = (zfsvfs_t *)vfsp->vfs_data;
-		ASSERT(zfsvfs);
-		if (error = zfs_zget(zfsvfs, zfsvfs->z_root, &zp)) {
-			cmn_err(CE_NOTE, "zfs_zget: error %d", error);
-			goto out;
-		}
-
-		vp = ZTOV(zp);
-		mutex_enter(&vp->v_lock);
-		vp->v_flag |= VROOT;
-		mutex_exit(&vp->v_lock);
-		rootvp = vp;
-
-		/*
-		 * Leave rootvp held.  The root file system is never unmounted.
-		 */
-
-		vfs_add((struct vnode *)0, vfsp,
-		    (vfsp->vfs_flag & VFS_RDONLY) ? MS_RDONLY : 0);
-out:
-		vfs_unlock(vfsp);
+		panic("failed");
 		return (error);
-	} else if (why == ROOT_REMOUNT) {
-		readonly_changed_cb(vfsp->vfs_data, B_FALSE);
-		vfsp->vfs_flag |= VFS_REMOUNT;
-
-		/* refresh mount options */
-		zfs_unregister_callbacks(vfsp->vfs_data);
-		return (zfs_register_callbacks(vfsp));
-
-	} else if (why == ROOT_UNMOUNT) {
-		zfs_unregister_callbacks((zfsvfs_t *)vfsp->vfs_data);
-		(void) zfs_sync(vfsp, 0, 0);
-		return (0);
 	}
 
+	/* Look up bootfs variable from pool here */
+	vdev_bootvp = rdev;
+
+	if (error = zfs_domount(mp, rdev, "rpool/ROOT/10.11", ctx)) {
+		cmn_err(CE_NOTE, "zfs_domount: error %d", error);
+		goto out;
+	}
+
+	// override the mount from field
+	vfs_mountedfrom(mp, "/dev/disk1s4");
+
+	zfsvfs = (zfsvfs_t *)vfs_fsprivate(mp);
+	ASSERT(zfsvfs);
+
+	if (error = zfs_zget(zfsvfs, zfsvfs->z_root, &zp)) {
+		cmn_err(CE_NOTE, "zfs_zget: error %d", error);
+		goto out;
+	}
+
+	// Should we set this in OSX?
+	//rootvp = ZTOV(zp); /* global var in XNU */
+	spl_setrootvnode(ZTOV(zp));
+
+#ifdef __OPPLE__
 	/*
-	 * if "why" is equal to anything else other than ROOT_INIT,
-	 * ROOT_REMOUNT, or ROOT_UNMOUNT, we do not support it.
+	 * We haven't booted far enough to have /dev/ so opening the disk
+	 * would have to be done via IOKit black magic. Since the vnode is
+	 * already open for us, we will pass it down to vdev_disk here.
 	 */
-	return (ENOTSUP);
+		{
+			spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
+			vdev_disk_alloc(bvd);
+			vdev_disk_t *dvd = bvd->vdev_tsd;
+			bvd->vdev_reopening = 1;
+			dvd->vd_devvp = rdev;
+			printf("ZFS: Setting devvp in vdev %p dvd %p to %p\n",
+				   bvd, dvd, dvd->vd_devvp);
+			spa_config_exit(spa, SCL_ALL, FTAG);
+		}
+#endif
+
+
+	/*
+	 * Leave rootvp held.  The root file system is never unmounted.
+	 */
+
+  out:
+
+	return (error);
+
 }
-#endif	/* OPENSOLARIS_MOUNTROOT */
 
 #ifdef __LINUX__
 static int
@@ -2143,7 +2136,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
             mnt_args.fspec = (char *)CAST_USER_ADDR_T(tmp);
         }
 
-		printf("Get sttring\n");
+		printf("Get string\n");
         // Copy over the string
         if ( (error = ddi_copyinstr((const void *)mnt_args.fspec, osname,
                                 MAXPATHLEN, &osnamelen)) )
@@ -2195,9 +2188,10 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	if (mflag & MS_FORCE)
 		flags |= MNT_FORCE;
 
-	if (mflag & MS_REMOUNT)
+	if (mflag & MS_REMOUNT) {
 		flags |= MNT_UPDATE;
-
+		printf("ZFS: update is set\n");
+	}
 	vfs_setflags(vfsp, (uint64_t)flags);
 
 #endif
@@ -2300,31 +2294,19 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 
 #ifndef __APPLE__
 	vfsp->vfs_flag |= MNT_NFS4ACLS;
+#endif
 
 	/*
 	 * When doing a remount, we simply refresh our temporary properties
 	 * according to those options set in the current VFS options.
 	 */
-	if (vfsp->vfs_flag & MS_REMOUNT) {
+	if (mflag & MS_REMOUNT) {
 		/* refresh mount options */
-		zfs_unregister_callbacks(vfsp->vfs_data);
+		printf("ZFS: doing remount\n");
+		zfs_unregister_callbacks(vfs_fsprivate(vfsp));
 		error = zfs_register_callbacks(vfsp);
 		goto out;
 	}
-
-	/* Initial root mount: try hard to import the requested root pool. */
-	if ((vfsp->vfs_flag & MNT_ROOTFS) != 0 &&
-	    (vfsp->vfs_flag & MNT_UPDATE) == 0) {
-		char pname[MAXNAMELEN];
-
-		error = getpoolname(osname, pname);
-		if (error == 0)
-			error = spa_import_rootpool(pname);
-		if (error)
-			goto out;
-	}
-#endif
-
 
 	error = zfs_domount(vfsp, 0, osname, context);
 
@@ -2337,6 +2319,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	if (error == 0 && ((zfsvfs_t *)vfsp->vfs_data)->z_issnap)
 		VFS_HOLD(mvp->v_vfsp);
 #endif	/* sun */
+
+out:
 
 #ifdef __APPLE__
 	if (error)
@@ -2358,7 +2342,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 #endif /* __APPLE__ */
 
 
-out:
 #ifdef __APPLE__
 	if (osname)
 		kmem_free(osname, MAXPATHLEN);

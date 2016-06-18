@@ -110,5 +110,7 @@
 		<key>net.lundman.spl</key>
 		<string>1.0.0</string>
 	</dict>
+	<key>OSBundleRequired</key>
+    <string>Root</string>
 </dict>
 </plist>

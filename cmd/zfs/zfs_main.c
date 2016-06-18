@@ -6719,16 +6719,16 @@ manual_mount(int argc, char **argv)
 	uint64_t zfs_version = 0;
 
 	/* Redirect stderr to syslog, so we can see something if it fails */
-	tolog(&stderr);
+	//tolog(&stderr);
 
-	syslog(LOG_NOTICE, "manual_mount arguments");
-	for (i = 0; i < argc; i++)
-		syslog(LOG_NOTICE, " '%s' +", argv[i]);
+	//syslog(LOG_NOTICE, "manual_mount arguments");
+	//for (i = 0; i < argc; i++)
+	//	syslog(LOG_NOTICE, " '%s' +", argv[i]);
 #endif
 
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":mo:O")) != -1) {
+	while ((c = getopt(argc, argv, ":mo:Ouw")) != -1) {
 		switch (c) {
 		case 'o':
 			(void) strlcat(mntopts, optarg, sizeof (mntopts));
@@ -6740,6 +6740,11 @@ manual_mount(int argc, char **argv)
 		case 'm':
 			flags |= MS_NOMNTTAB;
 			break;
+		case 'u': // update / remount
+			flags |= MS_REMOUNT;
+			break;
+		case 'w': // read/write
+				break;
 		case ':':
 			(void) fprintf(stderr, gettext("missing argument for "
 			    "'%c' option\n"), optopt);
@@ -6816,6 +6821,8 @@ manual_mount(int argc, char **argv)
 		return (1);
 	}
 #endif
+
+	fprintf(stderr, "ZFS: passing flags 0x%x\n", flags);
 
 	/* check for legacy mountpoint and complain appropriately */
 	ret = 0;

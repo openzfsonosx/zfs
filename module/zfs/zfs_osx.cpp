@@ -18,7 +18,9 @@
 #include <libkern/sysctl.h>
 
 
+
 extern "C" {
+#include <net/init.h>
 	extern kern_return_t _start(kmod_info_t *ki, void *data);
 	extern kern_return_t _stop(kmod_info_t *ki, void *data);
 	extern void *zfsdev_state;
@@ -178,22 +180,18 @@ IOService* net_lundman_zfs_zvol::probe (IOService* provider, SInt32* score)
     return res;
 }
 
-bool net_lundman_zfs_zvol::start (IOService *provider)
+extern "C" {
+static int bootload = 0;
+void start_real(void)
 {
-    bool res = super::start(provider);
 
-    IOLog("ZFS: Loading module ... \n");
-
-    sysctl_register_oid(&sysctl__zfs);
-    sysctl_register_oid(&sysctl__zfs_kext_version);
+    IOLog("ZFS: Stage 2 start ... \n");
 
 	/*
 	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
 	 */
 	zfs_ioctl_osx_init();
 
-	/* registerService() allows zconfigd to match against the service */
-	this->registerService();
 
 	///sysctl_register_oid(&sysctl__debug_maczfs);
 	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
@@ -206,6 +204,25 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
      */
     system_taskq_init();
 
+
+	if (bootload == 0)
+		spl_hijack_mountroot((void *)zfs_vfs_mountroot);
+
+}
+
+}
+
+bool net_lundman_zfs_zvol::start (IOService *provider)
+{
+    bool res = super::start(provider);
+
+    IOLog("ZFS: Stage 1 start ... \n");
+
+	/* registerService() allows zconfigd to match against the service */
+	this->registerService();
+
+    sysctl_register_oid(&sysctl__zfs);
+    sysctl_register_oid(&sysctl__zfs_kext_version);
 
     /*
      * hostid is left as 0 on OSX, and left to be set if developers wish to
@@ -243,8 +260,18 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 						IOkit_disk_removed_callback,
 						this, NULL, 0);
 
-    return res;
+
+	/* If we are loaded during boot, we need to delay the init.
+	 * net_init_add() returns error if we have already booted
+	 */
+	bootload = net_init_add(start_real);
+	if (bootload != 0)
+		start_real();
+
+	return res;
+
 }
+
 
 void net_lundman_zfs_zvol::stop (IOService *provider)
 {
@@ -482,7 +509,7 @@ bool net_lundman_zfs_zvol::createPseudoDevices(char *poolname,
 		nub->retain();
 		pseudo = OSDynamicCast(IOMedia, nub->getClient()->getClient());
 
-		printf("Calling scan again: nub %p pseudo %p pool_proxy %p\n",
+		printf("Calling scan again: nub %p pseudo %p \n",
 			   nub, pseudo);
 
 		nub->rescan(nub, NULL);
@@ -559,7 +586,6 @@ bool net_lundman_zfs_zvol::createPseudoDevices(char *poolname,
 
 	pseudo->registerService();
 
- bail:
     // Unconditionally release the nub object.
     if (nub != NULL)
         nub->release();
@@ -573,9 +599,9 @@ bool net_lundman_zfs_zvol::destroyPseudoDevices(char *poolname)
 {
     net_lundman_zfs_pseudo_device *nub = NULL;
     bool            result = true;
-	zfs_soft_state_t *zs;
+	//zfs_soft_state_t *zs;
 	zvol_state_t *zv = NULL;
-	minor_t minor;
+	minor_t minor = 0;
 
 	zv = zvol_minor_lookup(poolname);
 
@@ -614,7 +640,7 @@ char *net_lundman_zfs_zvol::findDataset(char *dev)
 {
 	printf("findDataset('%s')\n", dev);
 	OSDictionary *matchingDict;
-    io_service_t            service;
+    //io_service_t            service;
 	char *found = dev;
 
 	if (!strncasecmp("/dev/", dev, 5))
@@ -655,8 +681,8 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
     net_lundman_zfs_pseudo_device *nub = NULL;
     int            result = 1;
 	zvol_state_t *zv;
-	minor_t minor = 0;
-	zfs_soft_state_t *zs;
+	//minor_t minor = 0;
+	//zfs_soft_state_t *zs;
 	IOMedia *pseudo;
 	int poolstrlen;
 	char *poolstr = NULL, *r;
@@ -702,7 +728,7 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
 		nub->retain();
 		pseudo = OSDynamicCast(IOMedia, nub->getClient()->getClient());
 
-		printf("Calling scan again: nub %p pseudo %p pool_proxy %p\n",
+		printf("Calling scan again: nub %p pseudo %p\n",
 			   nub, pseudo);
 
 		nub->rescan(nub, snapname);
@@ -715,7 +741,6 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
 	result = 0;
 
 
-  bail:
     // Unconditionally release the nub object.
     if (nub != NULL)
         nub->release();

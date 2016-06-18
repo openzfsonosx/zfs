@@ -3977,18 +3977,18 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
  * during the system boot up time.
  */
 
-#if 0
+#if 1
 
-extern int vdev_disk_read_rootlabel(char *, char *, nvlist_t **);
+extern int vdev_disk_read_rootlabel(struct vnode *, nvlist_t **);
 
 static nvlist_t *
-spa_generate_rootconf(char *devpath, char *devid, uint64_t *guid)
+spa_generate_rootconf(struct vnode *rdev, uint64_t *guid)
 {
 	nvlist_t *config;
 	nvlist_t *nvtop, *nvroot;
 	uint64_t pgid;
 
-	if (vdev_disk_read_rootlabel(devpath, devid, &config) != 0)
+	if (vdev_disk_read_rootlabel(rdev, &config) != 0)
 		return (NULL);
 
 	/*
@@ -4037,8 +4037,8 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 		nvlist_t *label;
 		uint64_t label_txg;
 
-		if (vdev_disk_read_rootlabel(vd->vdev_physpath, vd->vdev_devid,
-		    &label) != 0)
+		//if (vdev_disk_read_rootlabel(vd->vdev_physpath, vd->vdev_devid,
+		//  &label) != 0)
 			return;
 
 		VERIFY(nvlist_lookup_uint64(label, ZPOOL_CONFIG_POOL_TXG,
@@ -4068,9 +4068,11 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
  * no matter the rootpool is a single device pool or a mirrored pool.
  * e.g.
  *	"/pci@1f,0/ide@d/disk@0,0:a"
+ *
+ * In OSX we are given a vnode of the device to boot
  */
 int
-spa_import_rootpool(char *devpath, char *devid)
+spa_import_rootpool(struct vnode *rdev)
 {
 	spa_t *spa;
 	vdev_t *rvd, *bvd /*, *avd = NULL*/;
@@ -4082,19 +4084,9 @@ spa_import_rootpool(char *devpath, char *devid)
 	/*
 	 * Read the label from the boot device and generate a configuration.
 	 */
-	//config = spa_generate_rootconf(devpath, devid, &guid);
-#if defined(_OBP) && defined(_KERNEL)
+	config = spa_generate_rootconf(rdev, &guid);
 	if (config == NULL) {
-		if (strstr(devpath, "/iscsi/ssd") != NULL) {
-			/* iscsi boot */
-			get_iscsi_bootpath_phy(devpath);
-			config = spa_generate_rootconf(devpath, devid, &guid);
-		}
-	}
-#endif
-	if (config == NULL) {
-		cmn_err(CE_NOTE, "Cannot read the pool label from '%s'",
-		    devpath);
+		cmn_err(CE_NOTE, "Cannot read the pool label");
 		return (SET_ERROR(EIO));
 	}
 
@@ -4171,6 +4163,7 @@ spa_import_rootpool(char *devpath, char *devid)
 	}
 
 	error = 0;
+
 out:
 	spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
 	vdev_free(rvd);
