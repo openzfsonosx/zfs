@@ -126,7 +126,6 @@ zfs_onexit_fd_hold(int fd, minor_t *minorp)
 {
 	file_t *fp = NULL;
 	zfs_onexit_t *zo;
-	int error;
 
     fp = getf(fd);
     if (fp == NULL)

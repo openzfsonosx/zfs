@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
  * Copyright 2014 HybridCluster. All rights reserved.
  */
 
@@ -50,6 +50,12 @@ dmu_object_alloc(objset_t *os, dmu_object_type_t ot, int blocksize,
 		 * reasonably sparse (at most 1/4 full).  Look from the
 		 * beginning once, but after that keep looking from here.
 		 * If we can't find one, just keep going from here.
+		 *
+		 * Note that dmu_traverse depends on the behavior that we use
+		 * multiple blocks of the dnode object before going back to
+		 * reuse objects.  Any change to this algorithm should preserve
+		 * that property or find another solution to the issues
+		 * described in traverse_visitbp.
 		 */
 		if (P2PHASE(object, L2_dnode_count) == 0) {
 			uint64_t offset = restarted ? object << DNODE_SHIFT : 0;
@@ -148,6 +154,11 @@ dmu_object_free(objset_t *os, uint64_t object, dmu_tx_t *tx)
 	return (0);
 }
 
+/*
+ * Return (in *objectp) the next object which is allocated (or a hole)
+ * after *object, taking into account only objects that may have been modified
+ * after the specified txg.
+ */
 int
 dmu_object_next(objset_t *os, uint64_t *objectp, boolean_t hole, uint64_t txg)
 {

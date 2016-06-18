@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -71,6 +71,9 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
     struct vnode *rootdir;
 
     dprintf("vdev_file_open %p\n", vd->vdev_tsd);
+
+	/* Rotational optimizations only make sense on block devices */
+	vd->vdev_nonrot = B_TRUE;
 
 	/*
 	 * We must have a pathname, and it must be absolute.
@@ -191,11 +194,18 @@ vdev_file_close(vdev_t *vd)
 		return;
 
 	if (vf->vf_vnode != NULL) {
+#if 0
 		vnode_getwithref(vf->vf_vnode);
 		vnode_rele(vf->vf_vnode);
 		VOP_FSYNC(vf->vf_vnode, FSYNC | FDSYNC, kcred, NULL);
+#endif
+
+        if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
+        // Also commented out in MacZFS
+		//(void) VOP_PUTPAGE(vf->vf_vnode, 0, 0, B_INVAL, kcred, NULL);
 		(void) VOP_CLOSE(vf->vf_vnode, spa_mode(vd->vdev_spa), 1, 0,
 		    kcred, NULL);
+		}
 	}
 
 	vd->vdev_delayed_close = B_FALSE;
@@ -258,6 +268,7 @@ vdev_file_io_strategy(void *arg)
 		(void) bp->b_iodone(bp);
 	}
 
+	vnode_put(vp);
 	kmem_free(bp, sizeof(vdev_file_buf_t));
 }
 
@@ -273,14 +284,13 @@ vdev_file_io_start(zio_t *zio)
 	vdev_file_buf_t *bp;
 #endif
 
-	if (zio->io_type == ZIO_TYPE_IOCTL) {
-		/* XXPOLICY */
-		if (!vdev_readable(vd)) {
-			zio->io_error = SET_ERROR(ENXIO);
-			zio_interrupt(zio);
-			return;
-		}
+	if (!vdev_readable(vd)) {
+		zio->io_error = SET_ERROR(ENXIO);
+		zio_interrupt(zio);
+		return;
+	}
 
+	if (zio->io_type == ZIO_TYPE_IOCTL) {
 		switch (zio->io_cmd) {
 		case DKIOCFLUSHWRITECACHE:
 			if (!vnode_getwithref(vf->vf_vnode)) {
@@ -297,6 +307,9 @@ vdev_file_io_start(zio_t *zio)
 		return;
 	}
 
+	ASSERT(zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE);
+	zio->io_target_timestamp = zio_handle_io_delay(zio);
+
 	bp = kmem_alloc(sizeof (vdev_file_buf_t), KM_SLEEP);
 	bzero(bp, sizeof (vdev_file_buf_t));
 
@@ -312,6 +325,8 @@ vdev_file_io_start(zio_t *zio)
 
 	VERIFY3U(taskq_dispatch(system_taskq, vdev_file_io_strategy, bp,
 	    TQ_SLEEP), !=, 0);
+
+	zio_delay_interrupt(zio);
 }
 
 /* ARGSUSED */

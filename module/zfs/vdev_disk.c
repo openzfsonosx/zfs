@@ -19,15 +19,8 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
- * Portions Copyright 2007 Apple Inc. All rights reserved.
- * Use is subject to license terms.
- * Copyright (C) 2008-2010 Lawrence Livermore National Security, LLC.
- * Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
- * Rewritten for Linux by Brian Behlendorf <behlendorf1@llnl.gov>.
- * LLNL-CODE-403049.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Based on Apple MacZFS source code
+ * Copyright (c) 2014,2016 by Jorgen Lundman. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -206,6 +199,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	ddi_devid_t devid;
 #endif
 	uint64_t capacity = 0, blksz = 0, pbsize;
+	int isssd;
 
 	/*
 	 * We must have a pathname, and it must be absolute.
@@ -456,6 +450,16 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	}
 #endif
 
+#if 0
+	int len = MAXPATHLEN;
+	if (vn_getpath(devvp, dvd->vd_readlinkname, &len) == 0) {
+		dprintf("ZFS: '%s' resolved name is '%s'\n",
+			   vd->vdev_path, dvd->vd_readlinkname);
+	} else {
+		dvd->vd_readlinkname[0] = 0;
+	}
+#endif
+
 skip_open:
 	/*
 	 * Determine the actual size of the device.
@@ -537,8 +541,41 @@ skip_open:
 	 */
 	vd->vdev_nowritecache = B_FALSE;
 
+	/* Inform the ZIO pipeline that we are non-rotational */
+	vd->vdev_nonrot = B_FALSE;
+#if 0
+	if (VNOP_IOCTL(devvp, DKIOCISSOLIDSTATE, (caddr_t)&isssd, 0,
+				   context) == 0) {
+#else
+	if (ldi_ioctl(dvd->vd_lh, DKIOCISSOLIDSTATE, (intptr_t)&isssd,
+	    FKIOCTL, kcred, NULL) == 0) {
+#endif
+		vd->vdev_nonrot = (isssd ? B_TRUE : B_FALSE);
+	}
+	dprintf("ZFS: vdev_disk(%s) isSSD %d\n",
+	    (vd->vdev_path ? vd->vdev_path : ""), isssd);
+
 	return (0);
 }
+
+#if 0
+/*
+ * It appears on export/reboot, iokit can hold a lock, then call our
+ * termination handler, and we end up locking-against-ourselves inside
+ * IOKit. We are then forced to make the vnode_close() call be async.
+ */
+static void vdev_disk_close_thread(void *arg)
+{
+	struct vnode *vp = arg;
+
+	(void) vnode_close(vp, 0,
+					   spl_vfs_context_kernel());
+	thread_exit();
+}
+
+/* Not static so zfs_osx.cpp can call it on device removal */
+void
+#endif
 
 static void
 vdev_disk_close(vdev_t *vd)
@@ -563,7 +600,6 @@ vdev_disk_close(vdev_t *vd)
 
 	if (dvd->vd_lh != NULL) {
 		(void) ldi_close(dvd->vd_lh, spa_mode(vd->vdev_spa), kcred);
-		dvd->vd_lh = NULL;
 	}
 
 	vd->vdev_delayed_close = B_FALSE;
@@ -665,7 +701,7 @@ vdev_disk_io_intr(ldi_buf_t *bp)
 
 	kmem_free(vb, sizeof (vdev_buf_t));
 
-	zio_interrupt(zio);
+	zio_delay_interrupt(zio);
 }
 
 static void
@@ -793,13 +829,24 @@ vdev_disk_io_start(zio_t *zio)
 		return;
 	} /* io_type */
 
+	ASSERT(zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE);
+
+	/* Stop OSX from also caching our data */
+	flags |= B_NOCACHE;
+
+	zio->io_target_timestamp = zio_handle_io_delay(zio);
+
 	vb = kmem_alloc(sizeof (vdev_buf_t), KM_SLEEP);
 
 	vb->vb_io = zio;
 	bp = &vb->vb_buf;
 
+	ASSERT(bp != NULL);
+	ASSERT(zio->io_data != NULL);
+	ASSERT(zio->io_size != 0);
+
 	bioinit(bp);
-	bp->b_flags = B_BUSY | B_NOCACHE | flags;
+	bp->b_flags = B_BUSY | flags;
 	if (!(zio->io_flags & (ZIO_FLAG_IO_RETRY | ZIO_FLAG_TRYHARD)))
 		bp->b_flags |= B_FAILFAST;
 	bp->b_bcount = zio->io_size;
@@ -807,6 +854,22 @@ vdev_disk_io_start(zio_t *zio)
 	bp->b_lblkno = lbtodb(zio->io_offset);
 	bp->b_bufsize = zio->io_size;
 	bp->b_iodone = (int (*)())vdev_disk_io_intr;
+
+#if 0
+	bp = buf_alloc(dvd->vd_devvp);
+
+	buf_setflags(bp, flags);
+	buf_setcount(bp, zio->io_size);
+	buf_setdataptr(bp, (uintptr_t)zio->io_data);
+
+	/*
+	 * Map offset to blcknumber, based on physical block number.
+	 * (512, 4096, ..). If we fail to map, default back to
+	 * standard 512. lbtodb() is fixed at 512.
+	 */
+	buf_setblkno(bp, zio->io_offset >> dvd->vd_ashift);
+	buf_setlblkno(bp, zio->io_offset >> dvd->vd_ashift);
+#endif
 
 #ifdef illumos
 	/* ldi_strategy() will return non-zero only on programming errors */

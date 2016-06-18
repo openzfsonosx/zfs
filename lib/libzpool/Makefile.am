@@ -27,6 +27,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/bplist.c \
 	../../module/zfs/bpobj.c \
 	../../module/zfs/bptree.c \
+	../../module/zfs/bqueue.c \
 	../../module/zfs/dbuf.c \
 	../../module/zfs/dbuf_stats.c \
 	../../module/zfs/ddt.c \
@@ -52,16 +53,19 @@ libzpool_la_SOURCES = \
 	../../module/zfs/dsl_scan.c \
 	../../module/zfs/dsl_synctask.c \
 	../../module/zfs/dsl_userhold.c \
+	../../module/zfs/edonr_zfs.c \
 	../../module/zfs/fm.c \
 	../../module/zfs/gzip.c \
 	../../module/zfs/lzjb.c \
 	../../module/zfs/lz4.c \
 	../../module/zfs/metaslab.c \
+	../../module/zfs/multilist.c \
 	../../module/zfs/range_tree.c \
 	../../module/zfs/refcount.c \
 	../../module/zfs/rrwlock.c \
 	../../module/zfs/sa.c \
 	../../module/zfs/sha256.c \
+	../../module/zfs/skein_zfs.c \
 	../../module/zfs/spa.c \
 	../../module/zfs/spa_boot.c \
 	../../module/zfs/spa_config.c \
@@ -109,23 +113,4 @@ libzpool_la_LIBADD = \
 
 libzpool_la_LDFLAGS = -lz -pthread -version-info 1:1:0
 
-EXTRA_DIST = \
-	$(top_srcdir)/module/zfs/vdev_disk.c \
-	$(top_srcdir)/module/zfs/zfs_acl.c \
-	$(top_srcdir)/module/zfs/zfs_ctldir.c \
-	$(top_srcdir)/module/zfs/zfs_dir.c \
-	$(top_srcdir)/module/zfs/zfs_ioctl.c \
-	$(top_srcdir)/module/zfs/zfs_log.c \
-	$(top_srcdir)/module/zfs/zfs_onexit.c \
-	$(top_srcdir)/module/zfs/zfs_replay.c \
-	$(top_srcdir)/module/zfs/zfs_rlock.c \
-	$(top_srcdir)/module/zfs/zfs_vfsops.c \
-	$(top_srcdir)/module/zfs/zfs_vnops.c \
-	$(top_srcdir)/module/zfs/zpl_ctldir.c \
-	$(top_srcdir)/module/zfs/zpl_export.c \
-	$(top_srcdir)/module/zfs/zpl_file.c \
-	$(top_srcdir)/module/zfs/zpl_inode.c \
-	$(top_srcdir)/module/zfs/zpl_super.c \
-	$(top_srcdir)/module/zfs/zpl_xattr.c \
-	$(top_srcdir)/module/zfs/zvol.c \
-	$(top_srcdir)/module/zpios/pios.c
+EXTRA_DIST = $(USER_C)

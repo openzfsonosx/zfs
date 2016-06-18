@@ -44,10 +44,11 @@ struct multilist_sublist {
 	 */
 	list_t		mls_list;
 	/*
-	 * Pad to cache line, in an effort to try and prevent cache line
-	 * contention.
+	 * Pad to cache line (64 bytes), in an effort to try and prevent
+	 * cache line contention.
 	 */
-} ____cacheline_aligned;
+	uint8_t		mls_pad[24];
+};
 
 struct multilist {
 	/*

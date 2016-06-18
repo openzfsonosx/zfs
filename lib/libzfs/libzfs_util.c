@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  */
 
 /*
@@ -598,27 +598,49 @@ zfs_strdup(libzfs_handle_t *hdl, const char *str)
  * Convert a number to an appropriately human-readable output.
  */
 void
-zfs_nicenum(uint64_t num, char *buf, size_t buflen)
+zfs_nicenum_format(uint64_t num, char *buf, size_t buflen,
+    enum zfs_nicenum_format format)
 {
 	uint64_t n = num;
 	int index = 0;
-	char u;
+	const char *u;
+	const char *units[3][7] = {
+	    [ZFS_NICENUM_1024] = {"", "K", "M", "G", "T", "P", "E"},
+	    [ZFS_NICENUM_TIME] = {"ns", "us", "ms", "s", "?", "?", "?"}
+	};
 
-	while (n >= 1024 && index < 6) {
-		n /= 1024;
+	const int units_len[] = {[ZFS_NICENUM_1024] = 6,
+	    [ZFS_NICENUM_TIME] = 4};
+
+	const int k_unit[] = {	[ZFS_NICENUM_1024] = 1024,
+	    [ZFS_NICENUM_TIME] = 1000};
+
+	double val;
+
+	if (format == ZFS_NICENUM_RAW) {
+		snprintf(buf, buflen, "%llu", (u_longlong_t) num);
+		return;
+	}
+
+
+	while (n >= k_unit[format] && index < units_len[format]) {
+		n /= k_unit[format];
 		index++;
 	}
 
-	u = " KMGTPE"[index];
+	u = units[format][index];
 
-	if (index == 0) {
-		(void) snprintf(buf, buflen, "%llu", (u_longlong_t) n);
-	} else if ((num & ((1ULL << 10 * index) - 1)) == 0) {
+	/* Don't print 0ns times */
+	if ((format == ZFS_NICENUM_TIME) && (num == 0)) {
+		(void) snprintf(buf, buflen, "-");
+	} else if ((index == 0) || ((num %
+	    (uint64_t) powl(k_unit[format], index)) == 0)) {
 		/*
 		 * If this is an even multiple of the base, always display
 		 * without any decimal precision.
 		 */
-		(void) snprintf(buf, buflen, "%llu%c", (u_longlong_t) n, u);
+		(void) snprintf(buf, buflen, "%llu%s", (u_longlong_t) n, u);
+
 	} else {
 		/*
 		 * We want to choose a precision that reflects the best choice
@@ -631,12 +653,60 @@ zfs_nicenum(uint64_t num, char *buf, size_t buflen)
 		 */
 		int i;
 		for (i = 2; i >= 0; i--) {
-			if (snprintf(buf, buflen, "%.*f%c", i,
-			    (double)num / (1ULL << 10 * index), u) <= 5)
-				break;
+			val = (double) num /
+			    (uint64_t) powl(k_unit[format], index);
+
+			/*
+			 * Don't print floating point values for time.  Note,
+			 * we use floor() instead of round() here, since
+			 * round can result in undesirable results.  For
+			 * example, if "num" is in the range of
+			 * 999500-999999, it will print out "1000us".  This
+			 * doesn't happen if we use floor().
+			 */
+			if (format == ZFS_NICENUM_TIME) {
+				if (snprintf(buf, buflen, "%d%s",
+				    (unsigned int) floor(val), u) <= 5)
+					break;
+
+			} else {
+				if (snprintf(buf, buflen, "%.*f%s", i,
+				    val, u) <= 5)
+					break;
+			}
 		}
 	}
 }
+
+/*
+ * Convert a number to an appropriately human-readable output.
+ */
+void
+zfs_nicenum(uint64_t num, char *buf, size_t buflen)
+{
+	zfs_nicenum_format(num, buf, buflen, ZFS_NICENUM_1024);
+}
+
+/*
+ * Convert a time to an appropriately human-readable output.
+ * @num:	Time in nanoseconds
+ */
+void
+zfs_nicetime(uint64_t num, char *buf, size_t buflen)
+{
+	zfs_nicenum_format(num, buf, buflen, ZFS_NICENUM_TIME);
+}
+
+/*
+ * Print out a raw number with correct column spacing
+ */
+void
+zfs_niceraw(uint64_t num, char *buf, size_t buflen)
+{
+	zfs_nicenum_format(num, buf, buflen, ZFS_NICENUM_RAW);
+}
+
+
 
 void
 libzfs_print_on_error(libzfs_handle_t *hdl, boolean_t printerr)
@@ -806,7 +876,6 @@ libzfs_handle_t *
 libzfs_init(void)
 {
 	libzfs_handle_t *hdl;
-	int error;
 
 	if (libzfs_load_module("zfs") != 0) {
 		(void) fprintf(stderr, gettext("Failed to load ZFS module "
@@ -980,6 +1049,13 @@ zfs_append_partition(char *path, size_t max_len)
 {
 	int len = strlen(path);
 
+	if (strncmp(path, UDISK_ROOT"/by-id",
+	    strlen(UDISK_ROOT) + 6) == 0 ||
+	    strncmp(path, UDISK_ROOT_ALT"/by-id",
+	    strlen(UDISK_ROOT_ALT) + 6) == 0) {
+		return (len);
+	}
+
 	if (strncmp(path, DISK_ROOT"/disk", strlen(DISK_ROOT) + 5) == 0) {
 		if (len + 2 >= max_len)
 			return (-1);
@@ -1045,6 +1121,9 @@ zfs_resolve_shortname(const char *name, char *path, size_t len)
 		}
 		free(envdup);
 	} else {
+		(void) snprintf(path, len, DISK_ROOT"/%s", name);
+		if ((error = access(path, F_OK)) == 0)
+			goto out;
 		for (i = 0; i < DEFAULT_IMPORT_PATH_SIZE && error < 0; i++) {
 			(void) snprintf(path, len, "%s/%s",
 			    zpool_default_import_path[i], name);
@@ -1052,6 +1131,7 @@ zfs_resolve_shortname(const char *name, char *path, size_t len)
 		}
 	}
 
+out:
 	return (error ? ENOENT : 0);
 }
 
@@ -1118,16 +1198,18 @@ zfs_strcmp_pathname(char *name, char *cmp, int wholedisk)
 	int path_len, cmp_len;
 	char path_name[MAXPATHLEN];
 	char cmp_name[MAXPATHLEN];
-	char *dir;
+	char *dir, *dup;
 
 	/* Strip redundant slashes if one exists due to ZPOOL_IMPORT_PATH */
 	memset(cmp_name, 0, MAXPATHLEN);
-	dir = strtok(cmp, "/");
+	dup = strdup(cmp);
+	dir = strtok(dup, "/");
 	while (dir) {
 		strcat(cmp_name, "/");
 		strcat(cmp_name, dir);
 		dir = strtok(NULL, "/");
 	}
+	free(dup);
 
 	if (name[0] != '/')
 		return (zfs_strcmp_shortname(name, cmp_name, wholedisk));
@@ -1158,8 +1240,9 @@ zcmd_alloc_dst_nvlist(libzfs_handle_t *hdl, zfs_cmd_t *zc, size_t len)
 	if (len == 0)
 		len = 16 * 1024;
 	zc->zc_nvlist_dst_size = len;
-	if ((zc->zc_nvlist_dst = (uint64_t)(uintptr_t)
-	    zfs_alloc(hdl, zc->zc_nvlist_dst_size)) == 0)
+	zc->zc_nvlist_dst =
+		(uint64_t)(uintptr_t)zfs_alloc(hdl, zc->zc_nvlist_dst_size);
+	if (zc->zc_nvlist_dst == 0)
 		return (-1);
 
 	return (0);
@@ -1174,8 +1257,9 @@ int
 zcmd_expand_dst_nvlist(libzfs_handle_t *hdl, zfs_cmd_t *zc)
 {
 	free((void *)(uintptr_t)zc->zc_nvlist_dst);
-	if ((zc->zc_nvlist_dst = (uint64_t)(uintptr_t)
-	    zfs_alloc(hdl, zc->zc_nvlist_dst_size)) == 0)
+	zc->zc_nvlist_dst =
+		(uint64_t)(uintptr_t)zfs_alloc(hdl, zc->zc_nvlist_dst_size);
+	if (zc->zc_nvlist_dst == 0)
 		return (-1);
 
 	return (0);
@@ -1190,6 +1274,9 @@ zcmd_free_nvlists(zfs_cmd_t *zc)
 	free((void *)(uintptr_t)zc->zc_nvlist_conf);
 	free((void *)(uintptr_t)zc->zc_nvlist_src);
 	free((void *)(uintptr_t)zc->zc_nvlist_dst);
+	zc->zc_nvlist_conf = NULL;
+	zc->zc_nvlist_src = NULL;
+	zc->zc_nvlist_dst = NULL;
 }
 
 static int
@@ -1731,7 +1818,7 @@ addlist(libzfs_handle_t *hdl, char *propname, zprop_list_t **listp,
 
 	prop = zprop_name_to_prop(propname, type);
 
-	if (prop != ZPROP_INVAL && !zprop_valid_for_type(prop, type, B_FALSE))
+	if (prop != ZPROP_INVAL && !zprop_valid_for_type(prop, type))
 		prop = ZPROP_INVAL;
 
 	/*

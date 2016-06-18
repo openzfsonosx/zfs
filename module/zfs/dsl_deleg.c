@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  */
 
 /*
@@ -330,7 +330,7 @@ dsl_deleg_get(const char *ddname, nvlist_t **nvp)
 	za = kmem_alloc(sizeof (zap_attribute_t), KM_SLEEP);
 	basezc = kmem_alloc(sizeof (zap_cursor_t), KM_SLEEP);
 	baseza = kmem_alloc(sizeof (zap_attribute_t), KM_SLEEP);
-	source = kmem_alloc(MAXNAMELEN + strlen(MOS_DIR_NAME) + 1, KM_SLEEP);
+	source = kmem_alloc(ZFS_MAX_DATASET_NAME_LEN + strlen(MOS_DIR_NAME) + 1, KM_SLEEP);
 	VERIFY(nvlist_alloc(nvp, NV_UNIQUE_NAME, KM_SLEEP) == 0);
 
 	for (dd = startdd; dd != NULL; dd = dd->dd_parent) {
@@ -370,7 +370,7 @@ dsl_deleg_get(const char *ddname, nvlist_t **nvp)
 		nvlist_free(sp_nvp);
 	}
 
-	kmem_free(source, MAXNAMELEN + strlen(MOS_DIR_NAME) + 1);
+	kmem_free(source, ZFS_MAX_DATASET_NAME_LEN + strlen(MOS_DIR_NAME) + 1);
 	kmem_free(baseza, sizeof (zap_attribute_t));
 	kmem_free(basezc, sizeof (zap_cursor_t));
 	kmem_free(za, sizeof (zap_attribute_t));
@@ -380,6 +380,97 @@ dsl_deleg_get(const char *ddname, nvlist_t **nvp)
 	dsl_pool_rele(dp, FTAG);
 	return (0);
 }
+
+
+#if defined(__APPLE__) && defined(_KERNEL)
+/*
+ * Find all the deleg lines containing group rules to return list
+ * of groupIDs
+ */
+gid_t *
+dsl_deleg_getgroups(objset_t *mos, uint64_t zapobj, int *ngids,
+    const gid_t *posixgroups, cred_t *cr)
+{
+	zap_cursor_t *basezc, *zc;
+	zap_attribute_t *baseza, *za;
+	int count = 0;
+	static gid_t gids[NGROUPS] = {0};
+	int num_posix = 0;
+	gid_t gid;
+	unsigned long value;
+	char *who;
+	int i;
+
+	if (ngids && posixgroups)
+		num_posix = *ngids;
+
+	zc = kmem_alloc(sizeof (zap_cursor_t), KM_SLEEP);
+	za = kmem_alloc(sizeof (zap_attribute_t), KM_SLEEP);
+	basezc = kmem_alloc(sizeof (zap_cursor_t), KM_SLEEP);
+	baseza = kmem_alloc(sizeof (zap_attribute_t), KM_SLEEP);
+
+	for (zap_cursor_init(basezc, mos, zapobj);
+	    zap_cursor_retrieve(basezc, baseza) == 0;
+	    zap_cursor_advance(basezc)) {
+		ASSERT(baseza->za_integer_length == 8);
+		ASSERT(baseza->za_num_integers == 1);
+
+		who = baseza->za_name;
+		if (who[2] != ZFS_DELEG_FIELD_SEP_CHR)
+			continue;
+
+		switch (who[0]) {
+			case ZFS_DELEG_GROUP:
+			case ZFS_DELEG_GROUP_SETS:
+				if (who[1] != ZFS_DELEG_LOCAL &&
+				    who[1] != ZFS_DELEG_DESCENDENT)
+					continue;
+
+				ddi_strtoul(&who[3], NULL, 10, &value);
+				gid = value;
+
+				/*
+				 * Check it isn't already in the list, since the
+				 * external resolve is slow.
+				 */
+				for (i = 0; i < count; i++) {
+					if (gids[i] == gid)
+						goto next;
+				}
+				// If in list of posixgroups, also skip
+				for (i = 0; i < num_posix; i++) {
+					if (posixgroups[i] == gid)
+						goto next;
+				}
+
+				// Test if this "cred" belongs to this group
+				if (spl_cred_ismember_gid(cr, gid)) {
+					dprintf("ZFS: adding group %u:%u\n",
+					    count, gid);
+					gids[count] = gid;
+					if (count < NGROUPS)
+						count++;
+				} // ismember
+			next:
+				break;
+		} // switch
+
+	} // for
+
+	zap_cursor_fini(basezc);
+
+	kmem_free(za, sizeof (zap_attribute_t));
+	kmem_free(zc, sizeof (zap_cursor_t));
+
+	if (ngids)
+		*ngids = count;
+
+	dprintf("ZFS: returning %u additional groups\n", count);
+
+	return (gids);
+}
+#endif
+
 
 /*
  * Routines for dsl_deleg_access() -- access checking.
@@ -438,9 +529,9 @@ static int
 dsl_check_user_access(objset_t *mos, uint64_t zapobj, const char *perm,
     int checkflag, cred_t *cr)
 {
-	//const	gid_t *gids;
-    //	int	ngids;
-	//int	i;
+	const	gid_t *gids;
+	int	ngids;
+	int	i;
 	uint64_t id;
 
 	/* check for user */
@@ -462,21 +553,41 @@ dsl_check_user_access(objset_t *mos, uint64_t zapobj, const char *perm,
 		return (0);
 
 	/* check each supplemental group user is a member of */
-/*XXX NOEL: get kauth equivs for the below, crgetngroups, crgetgroups*/
-#ifndef __APPLE__
-
 	ngids = crgetngroups(cr);
 	gids = crgetgroups(cr);
 	for (i = 0; i != ngids; i++) {
 		id = gids[i];
-		if (dsl_check_access(mos, zapobj,
-		    ZFS_DELEG_GROUP, checkflag, &id, perm) == 0)
+		if (dsl_check_access(mos, zapobj, ZFS_DELEG_GROUP, checkflag,
+		    &id, perm) == 0) {
+#ifdef __APPLE__
+			crgetgroupsfree((gid_t *)gids);
+#endif
 			return (0);
+		}
 	}
 
+#if defined(__APPLE__)
+#if defined(_KERNEL)
+	gid_t *gids2;
+
+	/* Also check the external resolver groups */
+	gids2 = dsl_deleg_getgroups(mos, zapobj, &ngids, gids, cr);
+
+	crgetgroupsfree((gid_t *)gids);
+
+	for (i = 0; i != ngids; i++) {
+		id = gids2[i];
+		if (dsl_check_access(mos, zapobj, ZFS_DELEG_GROUP, checkflag,
+		    &id, perm) == 0) {
+			return (0);
+		}
+	}
+#else // !_KERNEL
+	crgetgroupsfree((gid_t *)gids);
+#endif // _KERNEL
+#endif // __APPLE__
+
 	return (SET_ERROR(EPERM));
-#endif
-    return 0;
 }
 
 /*
@@ -526,8 +637,8 @@ static void
 dsl_load_user_sets(objset_t *mos, uint64_t zapobj, avl_tree_t *avl,
     char checkflag, cred_t *cr)
 {
-	//const	gid_t *gids;
-	//int	ngids, i;
+	const	gid_t *gids;
+	int	ngids, i;
 	uint64_t id;
 
 	id = crgetuid(cr);
@@ -541,7 +652,6 @@ dsl_load_user_sets(objset_t *mos, uint64_t zapobj, avl_tree_t *avl,
 	(void) dsl_load_sets(mos, zapobj,
 	    ZFS_DELEG_EVERYONE_SETS, checkflag, NULL, avl);
 
-#if 0
 	ngids = crgetngroups(cr);
 	gids = crgetgroups(cr);
 	for (i = 0; i != ngids; i++) {
@@ -549,7 +659,36 @@ dsl_load_user_sets(objset_t *mos, uint64_t zapobj, avl_tree_t *avl,
 		(void) dsl_load_sets(mos, zapobj,
 		    ZFS_DELEG_GROUP_SETS, checkflag, &id, avl);
 	}
+
+#if defined(__APPLE__) && defined(_KERNEL)
+	/*
+	 * IllumOS uses crgetgroups to build a complete set of groups that the
+	 * user belongs to, and test each groupID against the delegate rules.
+	 * On OS X, this list is only the POSIX groups, and is mostly legacy,
+	 * as the "EXTERNAL_RESOLVER" is more frequently used. The only API for
+	 * us to use is kauth_cred_ismember_gid(). Since it is undesirable to
+	 * loop through groupID {1..infinity} to determine which groups the
+	 * user is in, we read in all the delegate rules instead, and for each
+	 * groupID rule listed there, test against kauth_cred_ismember_gid()
+	 * and add it to the list of groups when positive.
+	 *
+	 * We also pass in "gids" from above, the list of POSIX groups, so that
+	 * we can skip the groups already known to us.
+	 */
+	gid_t *gids2;
+	gids2 = dsl_deleg_getgroups(mos, zapobj, &ngids, gids, cr);
+
+	for (i = 0; i != ngids; i++) {
+		id = gids2[i];
+		(void) dsl_load_sets(mos, zapobj, ZFS_DELEG_GROUP_SETS,
+		    checkflag, &id, avl);
+	}
 #endif
+
+#ifdef __APPLE__
+	crgetgroupsfree((gid_t *)gids);
+#endif
+
 }
 
 /*

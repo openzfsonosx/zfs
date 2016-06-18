@@ -21,8 +21,9 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2013 Saso Kiselkov. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -52,7 +53,7 @@
 #include <sys/ddt.h>
 #include <sys/stropts.h>
 #include "zfs_prop.h"
-#include "zfeature_common.h"
+#include <sys/zfeature.h>
 
 /*
  * SPA locking
@@ -338,14 +339,16 @@ spa_config_tryenter(spa_t *spa, int locks, void *tag, krw_t rw)
 		if (rw == RW_READER) {
 			if (scl->scl_writer || scl->scl_write_wanted) {
 				mutex_exit(&scl->scl_lock);
-				spa_config_exit(spa, locks ^ (1 << i), tag);
+				spa_config_exit(spa, locks & ((1 << i) - 1),
+				    tag);
 				return (0);
 			}
 		} else {
 			ASSERT(scl->scl_writer != curthread);
 			if (!refcount_is_zero(&scl->scl_count)) {
 				mutex_exit(&scl->scl_lock);
-				spa_config_exit(spa, locks ^ (1 << i), tag);
+				spa_config_exit(spa, locks & ((1 << i) - 1),
+				    tag);
 				return (0);
 			}
 			scl->scl_writer = (kthread_t *)curthread;
@@ -480,7 +483,7 @@ spa_deadman(void *arg)
 		vdev_deadman(spa->spa_root_vdev);
 
 	spa->spa_deadman_tqid = taskq_dispatch_delay(system_taskq,
-	    spa_deadman, spa, KM_SLEEP, ddi_get_lbolt() +
+	    spa_deadman, spa, TQ_SLEEP, ddi_get_lbolt() +
 	    NSEC_TO_TICK(spa->spa_deadman_synctime));
 }
 
@@ -508,6 +511,7 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	mutex_init(&spa->spa_history_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_proc_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_props_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_cksum_tmpls_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_scrub_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_suspend_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_vdev_top_lock, NULL, MUTEX_DEFAULT, NULL);
@@ -636,6 +640,8 @@ spa_remove(spa_t *spa)
 	for (t = 0; t < TXG_SIZE; t++)
 		bplist_destroy(&spa->spa_free_bplist[t]);
 
+	zio_checksum_templates_free(spa);
+
 	cv_destroy(&spa->spa_async_cv);
 	cv_destroy(&spa->spa_evicting_os_cv);
 	cv_destroy(&spa->spa_proc_cv);
@@ -649,6 +655,7 @@ spa_remove(spa_t *spa)
 	mutex_destroy(&spa->spa_history_lock);
 	mutex_destroy(&spa->spa_proc_lock);
 	mutex_destroy(&spa->spa_props_lock);
+	mutex_destroy(&spa->spa_cksum_tmpls_lock);
 	mutex_destroy(&spa->spa_scrub_lock);
 	mutex_destroy(&spa->spa_suspend_lock);
 	mutex_destroy(&spa->spa_vdev_top_lock);
@@ -1747,21 +1754,20 @@ spa_init(int mode)
 
 	spa_mode_global = mode;
 
-#ifndef _KERNEL
+#ifdef sun
+#ifdef _KERNEL
+	spa_arch_init();
+#else
 	if (spa_mode_global != FREAD && dprintf_find_string("watch")) {
-		struct sigaction sa;
-
-		sa.sa_flags = SA_SIGINFO;
-		sigemptyset(&sa.sa_mask);
-		sa.sa_sigaction = arc_buf_sigsegv;
-
-		if (sigaction(SIGSEGV, &sa, NULL) == -1) {
+		arc_procfd = open("/proc/self/ctl", O_WRONLY);
+		if (arc_procfd == -1) {
 			perror("could not enable watchpoints: "
-			    "sigaction(SIGSEGV, ...) = ");
+				   "opening /proc/self/ctl failed: ");
 		} else {
 			arc_watch = B_TRUE;
 		}
 	}
+#endif
 #endif
 
 	fm_init();
@@ -1938,96 +1944,3 @@ spa_maxblocksize(spa_t *spa)
 	else
 		return (SPA_OLD_MAXBLOCKSIZE);
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-/* Namespace manipulation */
-#if 0
-EXPORT_SYMBOL(spa_lookup);
-EXPORT_SYMBOL(spa_add);
-EXPORT_SYMBOL(spa_remove);
-EXPORT_SYMBOL(spa_next);
-
-/* Refcount functions */
-EXPORT_SYMBOL(spa_open_ref);
-EXPORT_SYMBOL(spa_close);
-EXPORT_SYMBOL(spa_refcount_zero);
-
-/* Pool configuration lock */
-EXPORT_SYMBOL(spa_config_tryenter);
-EXPORT_SYMBOL(spa_config_enter);
-EXPORT_SYMBOL(spa_config_exit);
-EXPORT_SYMBOL(spa_config_held);
-
-/* Pool vdev add/remove lock */
-EXPORT_SYMBOL(spa_vdev_enter);
-EXPORT_SYMBOL(spa_vdev_exit);
-
-/* Pool vdev state change lock */
-EXPORT_SYMBOL(spa_vdev_state_enter);
-EXPORT_SYMBOL(spa_vdev_state_exit);
-
-/* Accessor functions */
-EXPORT_SYMBOL(spa_shutting_down);
-EXPORT_SYMBOL(spa_get_dsl);
-EXPORT_SYMBOL(spa_get_rootblkptr);
-EXPORT_SYMBOL(spa_set_rootblkptr);
-EXPORT_SYMBOL(spa_altroot);
-EXPORT_SYMBOL(spa_sync_pass);
-EXPORT_SYMBOL(spa_name);
-EXPORT_SYMBOL(spa_guid);
-EXPORT_SYMBOL(spa_last_synced_txg);
-EXPORT_SYMBOL(spa_first_txg);
-EXPORT_SYMBOL(spa_syncing_txg);
-EXPORT_SYMBOL(spa_version);
-EXPORT_SYMBOL(spa_state);
-EXPORT_SYMBOL(spa_load_state);
-EXPORT_SYMBOL(spa_freeze_txg);
-EXPORT_SYMBOL(spa_get_asize);
-EXPORT_SYMBOL(spa_get_dspace);
-EXPORT_SYMBOL(spa_update_dspace);
-EXPORT_SYMBOL(spa_deflate);
-EXPORT_SYMBOL(spa_normal_class);
-EXPORT_SYMBOL(spa_log_class);
-EXPORT_SYMBOL(spa_max_replication);
-EXPORT_SYMBOL(spa_prev_software_version);
-EXPORT_SYMBOL(spa_get_failmode);
-EXPORT_SYMBOL(spa_suspended);
-EXPORT_SYMBOL(spa_bootfs);
-EXPORT_SYMBOL(spa_delegation);
-EXPORT_SYMBOL(spa_meta_objset);
-EXPORT_SYMBOL(spa_maxblocksize);
-
-/* Miscellaneous support routines */
-EXPORT_SYMBOL(spa_rename);
-EXPORT_SYMBOL(spa_guid_exists);
-EXPORT_SYMBOL(spa_strdup);
-EXPORT_SYMBOL(spa_strfree);
-EXPORT_SYMBOL(spa_get_random);
-EXPORT_SYMBOL(spa_generate_guid);
-EXPORT_SYMBOL(snprintf_blkptr);
-EXPORT_SYMBOL(spa_freeze);
-EXPORT_SYMBOL(spa_upgrade);
-EXPORT_SYMBOL(spa_evict_all);
-EXPORT_SYMBOL(spa_lookup_by_guid);
-EXPORT_SYMBOL(spa_has_spare);
-EXPORT_SYMBOL(dva_get_dsize_sync);
-EXPORT_SYMBOL(bp_get_dsize_sync);
-EXPORT_SYMBOL(bp_get_dsize);
-EXPORT_SYMBOL(spa_has_slogs);
-EXPORT_SYMBOL(spa_is_root);
-EXPORT_SYMBOL(spa_writeable);
-EXPORT_SYMBOL(spa_mode);
-
-EXPORT_SYMBOL(spa_namespace_lock);
-
-module_param(zfs_deadman_synctime_ms, ulong, 0644);
-MODULE_PARM_DESC(zfs_deadman_synctime_ms, "Expiration time in milliseconds");
-
-module_param(zfs_deadman_enabled, int, 0644);
-MODULE_PARM_DESC(zfs_deadman_enabled, "Enable deadman timer");
-
-module_param(spa_asize_inflation, int, 0644);
-MODULE_PARM_DESC(spa_asize_inflation,
-	"SPA size estimate multiplication factor");
-#endif
-#endif

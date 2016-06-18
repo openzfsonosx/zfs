@@ -44,9 +44,14 @@ namespace ID
 		std::string busName;
 		std::string busPath;
 		std::string ioSerial;
+		std::string imagePath;
 	};
 
 	DiskInformation getDiskInformation(DADiskRef disk);
+
+	bool isDevice(DiskInformation const & di);
+	bool isWhole(DiskInformation const & di);
+	std::string partitionSuffix(DiskInformation const & di);
 
 	std::ostream & operator<<(std::ostream & os, DADiskRef disk);
 	std::ostream & operator<<(std::ostream & os, DiskInformation const & disk);

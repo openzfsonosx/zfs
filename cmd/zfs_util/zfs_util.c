@@ -515,6 +515,7 @@ main(int argc, char **argv)
 		if (ret == FSUR_RECOGNIZED) {
 			printf("FSUC_PROBE %s : FSUR_RECOGNIZED : poolguid "
 			    "%llu\n", blockdevice, poolguid);
+#if 0
 			if (poolguid != 0) {
 #ifndef ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
 				importrc = zpool_import_by_guid(poolguid);
@@ -524,6 +525,7 @@ main(int argc, char **argv)
 				zpool_read_cachefile();
 #endif
 			}
+#endif
 		} else if (ret == FSUR_UNRECOGNIZED) {
 			printf("FSUC_PROBE %s : FSUR_UNRECOGNIZED\n",
 			    blockdevice);

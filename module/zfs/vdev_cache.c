@@ -102,7 +102,7 @@ static vdc_stats_t vdc_stats = {
 	{ "misses",		KSTAT_DATA_UINT64 }
 };
 
-#define	VDCSTAT_BUMP(stat)	atomic_add_64(&vdc_stats.stat.value.ui64, 1);
+#define	VDCSTAT_BUMP(stat)	atomic_inc_64(&vdc_stats.stat.value.ui64);
 
 static int
 vdev_cache_offset_compare(const void *a1, const void *a2)
@@ -426,14 +426,3 @@ vdev_cache_stat_fini(void)
 		vdc_ksp = NULL;
 	}
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-module_param(zfs_vdev_cache_max, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_cache_max, "Inflate reads small than max");
-
-module_param(zfs_vdev_cache_size, int, 0444);
-MODULE_PARM_DESC(zfs_vdev_cache_size, "Total size of the per-disk cache");
-
-module_param(zfs_vdev_cache_bshift, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_cache_bshift, "Shift size to inflate reads too");
-#endif

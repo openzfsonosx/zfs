@@ -50,8 +50,10 @@ AC_PROG_INSTALL
 dnl save $CFLAGS since AC_PROG_CC likes to insert "-g -O2"
 dnl if $CFLAGS is blank
 cflags_save="$CFLAGS"
-AC_PROG_CC
-AC_PROG_CXX
+AC_PROG_CC(clang)
+AC_PROG_CXX(clang++)
+AC_PROG_OBJC(clang)
+AC_PROG_OBJCXX(clang++)
 CFLAGS="$cflags_save"
 AC_PROG_LIBTOOL
 AM_PROG_CC_C_O

@@ -25,6 +25,7 @@
 #ifndef	_SYS_ZPL_H
 #define	_SYS_ZPL_H
 
+#include <sys/mntent.h>
 #include <sys/vfs.h>
 
 //#include <linux/vfs_compat.h>
@@ -66,11 +67,6 @@ extern const struct file_operations zpl_dir_file_operations;
 /* zpl_super.c */
 extern void zpl_prune_sbs(int64_t bytes_to_scan, void *);
 extern void zpl_prune_sb(int64_t nr_to_scan, void *arg);
-
-typedef struct zpl_mount_data {
-	const char *z_osname;	/* Dataset name */
-	void *z_data;		/* Mount options string */
-} zpl_mount_data_t;
 
 extern const struct super_operations zpl_super_operations;
 extern const struct export_operations zpl_export_operations;

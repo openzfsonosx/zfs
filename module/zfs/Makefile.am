@@ -47,6 +47,7 @@ zfs_SOURCES = \
 	bplist.c \
 	bpobj.c \
 	bptree.c \
+	bqueue.c \
 	dbuf.c \
 	dbuf_stats.c \
 	ddt.c \
@@ -72,6 +73,7 @@ zfs_SOURCES = \
 	dsl_scan.c \
 	dsl_synctask.c \
 	dsl_userhold.c \
+	edonr_zfs.c \
 	fm.c \
 	gfs.c \
 	gzip.c \
@@ -81,11 +83,13 @@ zfs_SOURCES = \
 	lzjb.c \
 	lz4.c \
 	metaslab.c \
+	multilist.c \
 	range_tree.c \
 	refcount.c \
 	rrwlock.c \
 	sa.c \
 	sha256.c \
+	skein_zfs.c	\
 	spa.c \
 	spa_boot.c \
 	spa_config.c \
@@ -191,7 +195,7 @@ install-exec-local:: zfs.kext
 	rm -rf $(KERNEL_MODDIR)
 	mkdir -p $(KERNEL_MODDIR)
 	rsync -r zfs.kext/ $(KERNEL_MODDIR)
-	chown -R root:wheel $(KERNEL_MODDIR)
+	chown -R root:wheel $(KERNEL_MODDIR) || echo "Unable to chown root:wheel $(KERNEL_MODDIR). KEXT will not load until it is"
 	@echo
 	@echo "To load module: kextload -v $(KERNEL_MODDIR)"
 	@echo "To uninstall module: rm -rf $(KERNEL_MODDIR)"
@@ -200,3 +204,6 @@ install-exec-local:: zfs.kext
 clean:
 	rm -rf zfs.kext/
 	rm -f *.o *.lo zfs
+
+uninstall-hook:
+	rm -rf "$(KERNEL_MODDIR)"

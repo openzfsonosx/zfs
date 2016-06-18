@@ -672,14 +672,3 @@ spa_stats_destroy(spa_t *spa)
 	spa_read_history_destroy(spa);
 	spa_io_history_destroy(spa);
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-module_param(zfs_read_history, int, 0644);
-MODULE_PARM_DESC(zfs_read_history, "Historic statistics for the last N reads");
-
-module_param(zfs_read_history_hits, int, 0644);
-MODULE_PARM_DESC(zfs_read_history_hits, "Include cache hits in read history");
-
-module_param(zfs_txg_history, int, 0644);
-MODULE_PARM_DESC(zfs_txg_history, "Historic statistics for the last N txgs");
-#endif

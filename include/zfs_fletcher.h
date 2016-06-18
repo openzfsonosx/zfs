@@ -37,10 +37,10 @@ extern "C" {
  * fletcher checksum functions
  */
 
-void fletcher_2_native(const void *, uint64_t, zio_cksum_t *);
-void fletcher_2_byteswap(const void *, uint64_t, zio_cksum_t *);
-void fletcher_4_native(const void *, uint64_t, zio_cksum_t *);
-void fletcher_4_byteswap(const void *, uint64_t, zio_cksum_t *);
+void fletcher_2_native(const void *, uint64_t, const void *, zio_cksum_t *);
+void fletcher_2_byteswap(const void *, uint64_t, const void *, zio_cksum_t *);
+void fletcher_4_native(const void *, uint64_t, const void *, zio_cksum_t *);
+void fletcher_4_byteswap(const void *, uint64_t, const void *, zio_cksum_t *);
 void fletcher_4_incremental_native(const void *, uint64_t,
     zio_cksum_t *);
 void fletcher_4_incremental_byteswap(const void *, uint64_t,

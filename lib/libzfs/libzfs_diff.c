@@ -22,6 +22,8 @@
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright (c) 2015 by Delphix. All rights reserved.
+ * Copyright 2016 Joyent, Inc.
  */
 
 /*
@@ -53,15 +55,6 @@
 #define	ZDIFF_MODIFIED	'M'
 #define	ZDIFF_REMOVED	'-'
 #define	ZDIFF_RENAMED	'R'
-
-static boolean_t
-do_name_cmp(const char *fpath, const char *tpath)
-{
-	char *fname, *tname;
-	fname = strrchr(fpath, '/') + 1;
-	tname = strrchr(tpath, '/') + 1;
-	return (strcmp(fname, tname) == 0);
-}
 
 typedef struct differ_info {
 	zfs_handle_t *zhp;
@@ -138,11 +131,14 @@ get_stats_for_obj(differ_info_t *di, const char *dsname, uint64_t obj,
 static void
 stream_bytes(FILE *fp, const char *string)
 {
-	while (*string) {
-		if (*string > ' ' && *string != '\\' && *string < '\177')
-			(void) fprintf(fp, "%c", *string++);
-		else
-			(void) fprintf(fp, "\\%04o", (unsigned char)*string++);
+	char c;
+
+	while ((c = *string++) != '\0') {
+		if (c > ' ' && c != '\\' && c < '\177') {
+			(void) fprintf(fp, "%c", c);
+		} else {
+			(void) fprintf(fp, "\\%04o", (uint8_t)c);
+		}
 	}
 }
 
@@ -258,7 +254,6 @@ static int
 write_inuse_diffs_one(FILE *fp, differ_info_t *di, uint64_t dobj)
 {
 	struct zfs_stat fsb, tsb;
-	boolean_t same_name;
 	mode_t fmode, tmode;
 	char fobjname[MAXPATHLEN], tobjname[MAXPATHLEN];
 	int fobjerr, tobjerr;
@@ -319,7 +314,6 @@ write_inuse_diffs_one(FILE *fp, differ_info_t *di, uint64_t dobj)
 
 	if (fmode != tmode && fsb.zs_gen == tsb.zs_gen)
 		tsb.zs_gen++;	/* Force a generational difference */
-	same_name = do_name_cmp(fobjname, tobjname);
 
 	/* Simple modification or no change */
 	if (fsb.zs_gen == tsb.zs_gen) {
@@ -330,7 +324,7 @@ write_inuse_diffs_one(FILE *fp, differ_info_t *di, uint64_t dobj)
 		if (change) {
 			print_link_change(fp, di, change,
 			    change > 0 ? fobjname : tobjname, &tsb);
-		} else if (same_name) {
+		} else if (strcmp(fobjname, tobjname) == 0) {
 			print_file(fp, di, ZDIFF_MODIFIED, fobjname, &tsb);
 		} else {
 			print_rename(fp, di, fobjname, tobjname, &tsb);
@@ -617,7 +611,7 @@ get_snapshot_names(differ_info_t *di, const char *fromsnap,
 		 * not the same dataset name, might be okay if
 		 * tosnap is a clone of a fromsnap descendant.
 		 */
-		char origin[ZFS_MAXNAMELEN];
+		char origin[ZFS_MAX_DATASET_NAME_LEN];
 		zprop_source_t src;
 		zfs_handle_t *zhp;
 

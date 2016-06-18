@@ -9,7 +9,7 @@
 		<key>ZFS</key>
 		<dict>
 			<key>FSName</key>
-			<string>ZFS File System</string>
+			<string>ZFS Dataset</string>
 		</dict>
 	</dict>
 </dict>

@@ -20,12 +20,13 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2015, STRATO AG, Inc. All rights reserved.
+ * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -362,6 +363,17 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 	 * checksum/compression/copies.
 	 */
 	if (ds != NULL) {
+		boolean_t needlock = B_FALSE;
+
+		/*
+		 * Note: it's valid to open the objset if the dataset is
+		 * long-held, in which case the pool_config lock will not
+		 * be held.
+		 */
+		if (!dsl_pool_config_held(dmu_objset_pool(os))) {
+			needlock = B_TRUE;
+			dsl_pool_config_enter(dmu_objset_pool(os), FTAG);
+		}
 		err = dsl_prop_register(ds,
 		    zfs_prop_to_name(ZFS_PROP_PRIMARYCACHE),
 		    primary_cache_changed_cb, os);
@@ -413,6 +425,8 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 				    recordsize_changed_cb, os);
 			}
 		}
+		if (needlock)
+			dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 		if (err != 0) {
 			VERIFY(arc_buf_remove_ref(os->os_phys_buf,
 			    &os->os_phys_buf));
@@ -470,6 +484,13 @@ int
 dmu_objset_from_ds(dsl_dataset_t *ds, objset_t **osp)
 {
 	int err = 0;
+
+	/*
+	 * We shouldn't be doing anything with dsl_dataset_t's unless the
+	 * pool_config lock is held, or the dataset is long-held.
+	 */
+	ASSERT(dsl_pool_config_held(ds->ds_dir->dd_pool) ||
+	    dsl_dataset_long_held(ds));
 
 	mutex_enter(&ds->ds_opening_lock);
 	if (ds->ds_objset == NULL) {
@@ -602,7 +623,7 @@ dmu_objset_refresh_ownership(objset_t *os, void *tag)
 {
 	dsl_pool_t *dp;
 	dsl_dataset_t *ds, *newds;
-	char name[MAXNAMELEN];
+	char name[ZFS_MAX_DATASET_NAME_LEN];
 
 	ds = os->os_dsl_dataset;
 	VERIFY3P(ds, !=, NULL);
@@ -612,7 +633,9 @@ dmu_objset_refresh_ownership(objset_t *os, void *tag)
 	dsl_dataset_name(ds, name);
 	dp = dmu_objset_pool(os);
 	dsl_pool_config_enter(dp, FTAG);
-	dmu_objset_disown(os, tag);
+	//dmu_objset_disown(os, tag);
+	dmu_objset_evict(os);
+	dmu_objset_own(name, DMU_OST_ZFS, B_TRUE, FTAG, &os);
 	VERIFY0(dsl_dataset_own(dp, name, tag, &newds));
 	VERIFY3P(newds, ==, os->os_dsl_dataset);
 	dsl_pool_config_exit(dp, FTAG);
@@ -688,45 +711,12 @@ dmu_objset_evict(objset_t *os)
 	for (t = 0; t < TXG_SIZE; t++)
 		ASSERT(!dmu_objset_is_dirty(os, t));
 
-	if (ds) {
-		if (!ds->ds_is_snapshot) {
-			VERIFY0(dsl_prop_unregister(ds,
-			    zfs_prop_to_name(ZFS_PROP_CHECKSUM),
-			    checksum_changed_cb, os));
-			VERIFY0(dsl_prop_unregister(ds,
-			    zfs_prop_to_name(ZFS_PROP_COMPRESSION),
-			    compression_changed_cb, os));
-			VERIFY0(dsl_prop_unregister(ds,
-			    zfs_prop_to_name(ZFS_PROP_COPIES),
-			    copies_changed_cb, os));
-			VERIFY0(dsl_prop_unregister(ds,
-			    zfs_prop_to_name(ZFS_PROP_DEDUP),
-			    dedup_changed_cb, os));
-			VERIFY0(dsl_prop_unregister(ds,
-			    zfs_prop_to_name(ZFS_PROP_LOGBIAS),
-			    logbias_changed_cb, os));
-			VERIFY0(dsl_prop_unregister(ds,
-			    zfs_prop_to_name(ZFS_PROP_SYNC),
-			    sync_changed_cb, os));
-			VERIFY0(dsl_prop_unregister(ds,
-			    zfs_prop_to_name(ZFS_PROP_REDUNDANT_METADATA),
-			    redundant_metadata_changed_cb, os));
-			VERIFY0(dsl_prop_unregister(ds,
-			    zfs_prop_to_name(ZFS_PROP_RECORDSIZE),
-			    recordsize_changed_cb, os));
-		}
-		VERIFY0(dsl_prop_unregister(ds,
-		    zfs_prop_to_name(ZFS_PROP_PRIMARYCACHE),
-		    primary_cache_changed_cb, os));
-		VERIFY0(dsl_prop_unregister(ds,
-		    zfs_prop_to_name(ZFS_PROP_SECONDARYCACHE),
-		    secondary_cache_changed_cb, os));
-	}
+	if (ds)
+		dsl_prop_unregister_all(ds, os);
 
 	if (os->os_sa)
 		sa_tear_down(os);
 
-	os->os_evicting = B_TRUE;
 	dmu_objset_evict_dbufs(os);
 
 	mutex_enter(&os->os_lock);
@@ -859,6 +849,9 @@ dmu_objset_create_check(void *arg, dmu_tx_t *tx)
 	if (strchr(doca->doca_name, '@') != NULL)
 		return (SET_ERROR(EINVAL));
 
+	if (strlen(doca->doca_name) >= ZFS_MAX_DATASET_NAME_LEN)
+		return (SET_ERROR(ENAMETOOLONG));
+
 	error = dsl_dir_hold(dp, doca->doca_name, FTAG, &pdd, &tail);
 	if (error != 0)
 		return (error);
@@ -901,6 +894,10 @@ dmu_objset_create_sync(void *arg, dmu_tx_t *tx)
 	}
 
 	spa_history_log_internal_ds(ds, "create", tx, "");
+#ifdef linux /* XXX */
+	zvol_create_minors(dp->dp_spa, doca->doca_name, B_TRUE);
+#endif
+
 	dsl_dataset_rele(ds, FTAG);
 	dsl_dir_rele(pdd, FTAG);
 }
@@ -943,6 +940,9 @@ dmu_objset_clone_check(void *arg, dmu_tx_t *tx)
 	if (strchr(doca->doca_clone, '@') != NULL)
 		return (SET_ERROR(EINVAL));
 
+	if (strlen(doca->doca_clone) >= ZFS_MAX_DATASET_NAME_LEN)
+		return (SET_ERROR(ENAMETOOLONG));
+
 	error = dsl_dir_hold(dp, doca->doca_clone, FTAG, &pdd, &tail);
 	if (error != 0)
 		return (error);
@@ -982,7 +982,7 @@ dmu_objset_clone_sync(void *arg, dmu_tx_t *tx)
 	const char *tail;
 	dsl_dataset_t *origin, *ds;
 	uint64_t obj;
-	char namebuf[MAXNAMELEN];
+	char namebuf[ZFS_MAX_DATASET_NAME_LEN];
 
 	VERIFY0(dsl_dir_hold(dp, doca->doca_clone, FTAG, &pdd, &tail));
 	VERIFY0(dsl_dataset_hold(dp, doca->doca_origin, FTAG, &origin));
@@ -994,6 +994,9 @@ dmu_objset_clone_sync(void *arg, dmu_tx_t *tx)
 	dsl_dataset_name(origin, namebuf);
 	spa_history_log_internal_ds(ds, "clone", tx,
 	    "origin=%s (%llu)", namebuf, origin->ds_object);
+#ifdef linux /* XXX */
+	zvol_create_minors(dp->dp_spa, doca->doca_clone, B_TRUE);
+#endif
 	dsl_dataset_rele(ds, FTAG);
 	dsl_dataset_rele(origin, FTAG);
 	dsl_dir_rele(pdd, FTAG);
@@ -1138,9 +1141,9 @@ dmu_objset_sync(objset_t *os, zio_t *pio, dmu_tx_t *tx)
 
 	zio = arc_write(pio, os->os_spa, tx->tx_txg,
 	    os->os_rootbp, os->os_phys_buf, DMU_OS_IS_L2CACHEABLE(os),
-	    DMU_OS_IS_L2COMPRESSIBLE(os), &zp, dmu_objset_write_ready,
-	    NULL, dmu_objset_write_done, os, ZIO_PRIORITY_ASYNC_WRITE,
-	    ZIO_FLAG_MUSTSUCCEED, &zb);
+	    DMU_OS_IS_L2COMPRESSIBLE(os),
+	    &zp, dmu_objset_write_ready, NULL, NULL, dmu_objset_write_done,
+	    os, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_MUSTSUCCEED, &zb);
 
 	/*
 	 * Sync special dnodes - the parent IO for the sync is the root block
@@ -1832,6 +1835,7 @@ dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
 		 * thread suffices. For now, stay single threaded.
 		 */
 		dmu_objset_find_dp_impl(dcp);
+		mutex_destroy(&err_lock);
 
 		return (error);
 	}
@@ -1839,10 +1843,12 @@ dmu_objset_find_dp(dsl_pool_t *dp, uint64_t ddobj,
 	ntasks = dmu_find_threads;
 	if (ntasks == 0)
 		ntasks = vdev_count_leaves(dp->dp_spa) * 4;
-	tq = taskq_create("dmu_objset_find", ntasks, minclsyspri, ntasks,
+	tq = taskq_create("dmu_objset_find", ntasks, maxclsyspri, ntasks,
 	    INT_MAX, 0);
 	if (tq == NULL) {
 		kmem_free(dcp, sizeof (*dcp));
+		mutex_destroy(&err_lock);
+
 		return (SET_ERROR(ENOMEM));
 	}
 	dcp->dc_tq = tq;
@@ -2012,7 +2018,7 @@ dmu_objset_get_user(objset_t *os)
 
 /*
  * Determine name of filesystem, given name of snapshot.
- * buf must be at least MAXNAMELEN bytes
+ * buf must be at least ZFS_MAX_DATASET_NAME_LEN bytes
  */
 int
 dmu_fsname(const char *snapname, char *buf)
@@ -2020,7 +2026,7 @@ dmu_fsname(const char *snapname, char *buf)
 	char *atp = strchr(snapname, '@');
 	if (atp == NULL)
 		return (SET_ERROR(EINVAL));
-	if (atp - snapname >= MAXNAMELEN)
+	if (atp - snapname >= ZFS_MAX_DATASET_NAME_LEN)
 		return (SET_ERROR(ENAMETOOLONG));
 	(void) strlcpy(buf, snapname, atp - snapname + 1);
 	return (0);

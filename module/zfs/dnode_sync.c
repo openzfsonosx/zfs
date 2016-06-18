@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
 
@@ -60,20 +60,14 @@ dnode_increase_indirection(dnode_t *dn, dmu_tx_t *tx)
 	dprintf("os=%p obj=%llu, increase to %d\n", dn->dn_objset,
 	    dn->dn_object, dn->dn_phys->dn_nlevels);
 
-	/* check for existing blkptrs in the dnode */
-	for (i = 0; i < nblkptr; i++)
-		if (!BP_IS_HOLE(&dn->dn_phys->dn_blkptr[i]))
-			break;
-	if (i != nblkptr) {
-		/* transfer dnode's block pointers to new indirect block */
-		(void) dbuf_read(db, NULL, DB_RF_MUST_SUCCEED|DB_RF_HAVESTRUCT);
-		ASSERT(db->db.db_data);
-		ASSERT(arc_released(db->db_buf));
-		ASSERT3U(sizeof (blkptr_t) * nblkptr, <=, db->db.db_size);
-		bcopy(dn->dn_phys->dn_blkptr, db->db.db_data,
-		    sizeof (blkptr_t) * nblkptr);
-		arc_buf_freeze(db->db_buf);
-	}
+	/* transfer dnode's block pointers to new indirect block */
+	(void) dbuf_read(db, NULL, DB_RF_MUST_SUCCEED|DB_RF_HAVESTRUCT);
+	ASSERT(db->db.db_data);
+	ASSERT(arc_released(db->db_buf));
+	ASSERT3U(sizeof (blkptr_t) * nblkptr, <=, db->db.db_size);
+	bcopy(dn->dn_phys->dn_blkptr, db->db.db_data,
+	    sizeof (blkptr_t) * nblkptr);
+	arc_buf_freeze(db->db_buf);
 
 	/* set dbuf's parent pointers to new indirect buf */
 	for (i = 0; i < nblkptr; i++) {
@@ -193,7 +187,7 @@ free_verify(dmu_buf_impl_t *db, uint64_t start, uint64_t end, dmu_tx_t *tx)
 
 		rw_enter(&dn->dn_struct_rwlock, RW_READER);
 		err = dbuf_hold_impl(dn, db->db_level-1,
-		    (db->db_blkid << epbs) + i, TRUE, FTAG, &child);
+		    (db->db_blkid << epbs) + i, TRUE, FALSE, FTAG, &child);
 		rw_exit(&dn->dn_struct_rwlock);
 		if (err == ENOENT)
 			continue;
@@ -290,7 +284,7 @@ free_children(dmu_buf_impl_t *db, uint64_t blkid, uint64_t nblks,
 				continue;
 			rw_enter(&dn->dn_struct_rwlock, RW_READER);
 			VERIFY0(dbuf_hold_impl(dn, db->db_level - 1,
-			    i, B_TRUE, FTAG, &subdb));
+				i, TRUE, FALSE, FTAG, &subdb));
 			rw_exit(&dn->dn_struct_rwlock);
 			ASSERT3P(bp, ==, subdb->db_blkptr);
 
@@ -364,7 +358,7 @@ dnode_sync_free_range_impl(dnode_t *dn, uint64_t blkid, uint64_t nblks,
 				continue;
 			rw_enter(&dn->dn_struct_rwlock, RW_READER);
 			VERIFY0(dbuf_hold_impl(dn, dnlevel - 1, i,
-			    TRUE, FTAG, &db));
+								   TRUE, FALSE, FTAG, &db));
 			rw_exit(&dn->dn_struct_rwlock);
 
 			free_children(db, blkid, nblks, tx);
@@ -434,6 +428,7 @@ dnode_evict_dbufs(dnode_t *dn)
 			db_next = AVL_NEXT(&dn->dn_dbufs, db_marker);
 			avl_remove(&dn->dn_dbufs, db_marker);
 		} else {
+			db->db_pending_evict = TRUE;
 			mutex_exit(&db->db_mtx);
 			db_next = AVL_NEXT(&dn->dn_dbufs, db);
 		}
@@ -449,10 +444,14 @@ void
 dnode_evict_bonus(dnode_t *dn)
 {
 	rw_enter(&dn->dn_struct_rwlock, RW_WRITER);
-	if (dn->dn_bonus && refcount_is_zero(&dn->dn_bonus->db_holds)) {
-		mutex_enter(&dn->dn_bonus->db_mtx);
-		dbuf_evict(dn->dn_bonus);
-		dn->dn_bonus = NULL;
+	if (dn->dn_bonus != NULL) {
+		if (refcount_is_zero(&dn->dn_bonus->db_holds)) {
+			mutex_enter(&dn->dn_bonus->db_mtx);
+			dbuf_evict(dn->dn_bonus);
+			dn->dn_bonus = NULL;
+		} else {
+			dn->dn_bonus->db_pending_evict = TRUE;
+		}
 	}
 	rw_exit(&dn->dn_struct_rwlock);
 }
@@ -504,7 +503,6 @@ dnode_sync_free(dnode_t *dn, dmu_tx_t *tx)
 
 	dnode_undirty_dbufs(&dn->dn_dirty_records[txgoff]);
 	dnode_evict_dbufs(dn);
-	ASSERT(avl_is_empty(&dn->dn_dbufs));
 
 	/*
 	 * XXX - It would be nice to assert this, but we may still

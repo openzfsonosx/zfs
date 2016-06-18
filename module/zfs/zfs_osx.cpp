@@ -143,91 +143,8 @@ zfs_vfs_sysctl(int *name, __unused u_int namelen, user_addr_t oldp, size_t *oldl
 #endif /* __APPLE__ */
 
 
-
-
-
 #include <sys/utsname.h>
 #include <string.h>
-
-
-/*
- * fnv_32a_str - perform a 32 bit Fowler/Noll/Vo FNV-1a hash on a string
- *
- * input:
- *	str	- string to hash
- *	hval	- previous hash value or 0 if first call
- *
- * returns:
- *	32 bit hash as a static hash type
- *
- * NOTE: To use the recommended 32 bit FNV-1a hash, use FNV1_32A_INIT as the
- *  	 hval arg on the first call to either fnv_32a_buf() or fnv_32a_str().
- */
-#define FNV1_32A_INIT ((uint32_t)0x811c9dc5)
-uint32_t
-fnv_32a_str(const char *str, uint32_t hval)
-{
-    unsigned char *s = (unsigned char *)str;	/* unsigned string */
-
-    /*
-     * FNV-1a hash each octet in the buffer
-     */
-    while (*s) {
-
-	/* xor the bottom with the current octet */
-	hval ^= (uint32_t)*s++;
-
-	/* multiply by the 32 bit FNV magic prime mod 2^32 */
-#if defined(NO_FNV_GCC_OPTIMIZATION)
-	hval *= FNV_32_PRIME;
-#else
-	hval += (hval<<1) + (hval<<4) + (hval<<7) + (hval<<8) + (hval<<24);
-#endif
-    }
-
-    /* return our new hash value */
-    return hval;
-}
-
-/*
- * fnv_32a_buf - perform a 32 bit Fowler/Noll/Vo FNV-1a hash on a buffer
- *
- * input:
- *buf- start of buffer to hash
- *len- length of buffer in octets
- *hval- previous hash value or 0 if first call
- *
- * returns:
- *32 bit hash as a static hash type
- *
- * NOTE: To use the recommended 32 bit FNV-1a hash, use FNV1_32A_INIT as the
- *  hval arg on the first call to either fnv_32a_buf() or fnv_32a_str().
- */
-uint32_t
-fnv_32a_buf(void *buf, size_t len, uint32_t hval)
-{
-    unsigned char *bp = (unsigned char *)buf;/* start of buffer */
-    unsigned char *be = bp + len;/* beyond end of buffer */
-
-    /*
-     * FNV-1a hash each octet in the buffer
-     */
-    while (bp < be) {
-
-		/* xor the bottom with the current octet */
-		hval ^= (uint32_t)*bp++;
-
-		/* multiply by the 32 bit FNV magic prime mod 2^32 */
-#if defined(NO_FNV_GCC_OPTIMIZATION)
-		hval *= FNV_32_PRIME;
-#else
-		hval += (hval<<1) + (hval<<4) + (hval<<7) + (hval<<8) + (hval<<24);
-#endif
-    }
-
-    /* return our new hash value */
-    return hval;
-}
 
 
 } // Extern "C"
@@ -350,7 +267,6 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     system_taskq_fini();
 
     zfs_ioctl_osx_fini();
-    zvol_fini();
     zfs_vfsops_fini();
 
 	ldi_fini();
@@ -513,3 +429,110 @@ uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t 
                                                           len);
   return done;
 }
+
+#if 0
+#include <sys/vdev_impl.h>
+#include <sys/spa_impl.h>
+#include <sys/vdev_disk.h>
+
+static vdev_t *
+vdev_lookup_by_path(vdev_t *vd, const char *name)
+{
+	vdev_t *mvd;
+	int c;
+	char *lookup_name;
+	vdev_disk_t *dvd = NULL;
+
+	if (!vd) return NULL;
+
+	dvd = (vdev_disk_t *)vd->vdev_tsd;
+
+	// Check both strings are valid
+	if (name && *name && dvd &&
+		vd->vdev_path && vd->vdev_path[0]) {
+		int off;
+
+		// Try normal path "vdev_path" or the readlink resolved
+
+		lookup_name = vd->vdev_path;
+
+		// Skip /dev/ or not?
+		strncmp("/dev/", lookup_name, 5) == 0 ? off=5 : off=0;
+
+		dprintf("ZFS: vdev '%s' == '%s' ?\n", name,
+				&lookup_name[off]);
+
+		if (!strcmp(name, &lookup_name[off])) return vd;
+
+
+		lookup_name = dvd->vd_readlinkname;
+
+		// Skip /dev/ or not?
+		strncmp("/dev/", lookup_name, 5) == 0 ? off=5 : off=0;
+
+		dprintf("ZFS: vdev '%s' == '%s' ?\n", name,
+				&lookup_name[off]);
+
+		if (!strcmp(name, &lookup_name[off])) return vd;
+	}
+
+	for (c = 0; c < vd->vdev_children; c++)
+		if ((mvd = vdev_lookup_by_path(vd->vdev_child[c], name)) !=
+			NULL)
+			return (mvd);
+
+	return (NULL);
+}
+
+
+/*
+ * Callback for device termination events, ie, disks removed.
+ */
+bool IOkit_disk_removed_callback(void* target,
+								 void* refCon,
+								 IOService* newService,
+								 IONotifier* notifier)
+{
+	OSObject *prop = 0;
+	OSString* bsdnameosstr = 0;
+
+	prop = newService->getProperty(kIOBSDNameKey, gIOServicePlane,
+								   kIORegistryIterateRecursively);
+	if (prop) {
+		spa_t *spa = NULL;
+
+		bsdnameosstr = OSDynamicCast(OSString, prop);
+		printf("ZFS: Device removal detected: '%s'\n",
+			   bsdnameosstr->getCStringNoCopy());
+
+		for (spa = spa_next(NULL);
+			 spa != NULL; spa = spa_next(spa)) {
+		  vdev_t *vd;
+
+		  dprintf("ZFS: Scanning pool '%s'\n", spa_name(spa));
+
+		  vd = vdev_lookup_by_path(spa->spa_root_vdev,
+								   bsdnameosstr->getCStringNoCopy());
+
+		  if (vd && vd->vdev_path) {
+			  vdev_disk_t *dvd = (vdev_disk_t *)vd->vdev_tsd;
+
+			  printf("ZFS: Device '%s' removal requested\n",
+					 vd->vdev_path);
+
+			  if (dvd) dvd->vd_offline = B_TRUE;
+			  vdev_disk_close(vd);
+
+			  vd->vdev_remove_wanted = B_TRUE;
+			  spa_async_request(spa, SPA_ASYNC_REMOVE);
+
+			  break;
+		  }
+
+		} // for all spa
+
+	} // if has BSDname
+
+	return true;
+}
+#endif

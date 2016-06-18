@@ -64,7 +64,8 @@ _NOTE(CONSTCOND) } while (0)
 
 struct _handle_vnode {
 	vnode_t		*devvp;
-};	/* 8b */
+	char *vd_readlinkname;
+};	/* 16b */
 
 #define	LH_VNODE(lhp)	lhp->lh_tsd.vnode_tsd->devvp
 
@@ -780,4 +781,49 @@ handle_check_media_vnode(struct ldi_handle *lhp, int *status)
 
 	/* Check if the device is available and responding */
 	return (0);
+}
+
+int
+handle_is_solidstate_vnode(struct ldi_handle *lhp, int *isssd)
+{
+	vfs_context_t context;
+	int error;
+
+	if (!lhp || !isssd) {
+		dprintf("%s missing lhp or invalid status\n", __func__);
+		return (EINVAL);
+	}
+
+	/* Validate vnode */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
+		return (ENODEV);
+	}
+
+	/* Allocate and validate context */
+	context = vfs_context_create(spl_vfs_context_kernel());
+	if (!context) {
+		dprintf("%s couldn't create VFS context\n", __func__);
+		return (ENOMEM);
+	}
+
+	/* Take an iocount on devvp vnode. */
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
+		dprintf("%s vnode_getwithref error %d\n",
+		    __func__, error);
+		vfs_context_rele(context);
+		return (ENODEV);
+	}
+	/* All code paths from here must vnode_put. */
+
+	error = VNOP_IOCTL(LH_VNODE(lhp), DKIOCISSOLIDSTATE,
+	    (caddr_t)isssd, 0, context);
+
+	/* Release iocount on vnode (still has usecount) */
+	vnode_put(LH_VNODE(lhp));
+	/* Drop vfs_context */
+	vfs_context_rele(context);
+
+	return (error);
 }

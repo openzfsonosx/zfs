@@ -14,7 +14,5 @@
 	<string>/private/var/log/org.openzfsonosx.zpool-import-all.err</string>
 	<key>StandardOutPath</key>
 	<string>/private/var/log/org.openzfsonosx.zpool-import-all.log</string>
-	<key>TimeOut</key>
-	<integer>0</integer>
 </dict>
 </plist>

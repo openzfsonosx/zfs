@@ -376,7 +376,7 @@ handle_sync_iokit(struct ldi_handle *lhp)
 #endif
 
 	/* Issue device sync */
-	if (LH_MEDIA(lhp)->synchronizeCache(LH_CLIENT(lhp)) !=
+	if (LH_MEDIA(lhp)->synchronize(LH_CLIENT(lhp), 0, 0, 0) !=
 	    kIOReturnSuccess) {
 		dprintf("%s %s\n", __func__,
 		    "IOMedia synchronizeCache failed");
@@ -1290,7 +1290,46 @@ handle_check_media_iokit(struct ldi_handle *lhp, int *status)
 	LH_MEDIA(lhp)->release();
 
 	/* Success */
-	status = 0;
+	*status = 0;
+	return (0);
+}
+
+int
+handle_is_solidstate_iokit(struct ldi_handle *lhp, int *isssd)
+{
+	OSDictionary *propDict = 0;
+	OSString *property = 0;
+
+	/* Validate arguments */
+	if (!lhp || !isssd) {
+		return (EINVAL);
+	}
+
+	/* Validate IOMedia */
+	if (!OSDynamicCast(IOMedia, LH_MEDIA(lhp))) {
+		dprintf("%s invalid IOKit handle\n", __func__);
+		return (ENODEV);
+	}
+
+	LH_MEDIA(lhp)->retain();
+
+	propDict = OSDynamicCast(OSDictionary, LH_MEDIA(lhp)->getProperty(
+	    kIOPropertyDeviceCharacteristicsKey, gIOServicePlane));
+
+	if (propDict != 0) {
+		property = OSDynamicCast(OSString,
+		    propDict->getObject(kIOPropertyMediumTypeKey));
+		propDict = 0;		
+	}
+
+	if (property != 0 &&
+	    property->isEqualTo(kIOPropertyMediumTypeSolidStateKey)) {
+		*isssd = 1;
+	}
+	property = 0;
+
+	LH_MEDIA(lhp)->release();
+
 	return (0);
 }
 

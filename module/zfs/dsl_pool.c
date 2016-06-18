@@ -96,15 +96,15 @@
  * capped at zfs_dirty_data_max_max.  It can also be overridden with a module
  * parameter.
  */
-unsigned long zfs_dirty_data_max = 0;
-unsigned long zfs_dirty_data_max_max = 0;
+uint64_t zfs_dirty_data_max = 0;
+uint64_t zfs_dirty_data_max_max = 4ULL * 1024 * 1024 * 1024;
 int zfs_dirty_data_max_percent = 10;
 int zfs_dirty_data_max_max_percent = 25;
 
 /*
  * If there is at least this much dirty data, push out a txg.
  */
-unsigned long zfs_dirty_data_sync = 64 * 1024 * 1024;
+uint64_t zfs_dirty_data_sync = 64 * 1024 * 1024;
 
 /*
  * Once there is this amount of dirty data, the dmu_tx_delay() will kick in
@@ -126,7 +126,7 @@ int zfs_delay_min_dirty_percent = 60;
  * Note: zfs_delay_scale * zfs_dirty_data_max must be < 2^64, due to the
  * multiply in dmu_tx_delay().
  */
-unsigned long zfs_delay_scale = 1000 * 1000 * 1000 / 2000;
+uint64_t zfs_delay_scale = 1000 * 1000 * 1000 / 2000;
 
 hrtime_t zfs_throttle_delay = MSEC2NSEC(10);
 hrtime_t zfs_throttle_resolution = MSEC2NSEC(10);
@@ -136,14 +136,6 @@ dsl_pool_open_special_dir(dsl_pool_t *dp, const char *name, dsl_dir_t **ddp)
 {
 	uint64_t obj;
 	int err;
-#if 0
-    printf("  +dsl_pool_open_special_dir: '%s'\n", name ? name : "(null)");
-    printf("   dp %p\n", dp);
-    printf("   dp->meta %p\n", dp->dp_meta_objset);
-    printf("   dp->root %p\n", dp->dp_root_dir);
-    printf("   dp->root->phys %p\n", dp->dp_root_dir->dd_phys);
-    printf("   dp->root->phys->zap %p\n", dp->dp_root_dir->dd_phys->dd_child_dir_zapobj);
-#endif
 
 	err = zap_lookup(dp->dp_meta_objset,
 	    dsl_dir_phys(dp->dp_root_dir)->dd_child_dir_zapobj,
@@ -332,7 +324,7 @@ dsl_pool_close(dsl_pool_t *dp)
 	 * this spa won't cause trouble, and they'll eventually fall
 	 * out of the ARC just like any other unused buffer.
 	 */
-	arc_flush(dp->dp_spa);
+	arc_flush(dp->dp_spa, FALSE);
 
 	txg_fini(dp);
 	dsl_scan_fini(dp);
@@ -1084,34 +1076,3 @@ dsl_pool_config_held_writer(dsl_pool_t *dp)
 {
 	return (RRW_WRITE_HELD(&dp->dp_config_rwlock));
 }
-
-#if defined(LINUX) && defined(_KERNEL) && defined(HAVE_SPL)
-EXPORT_SYMBOL(dsl_pool_config_enter);
-EXPORT_SYMBOL(dsl_pool_config_exit);
-
-/* zfs_dirty_data_max_percent only applied at module load in arc_init(). */
-module_param(zfs_dirty_data_max_percent, int, 0444);
-MODULE_PARM_DESC(zfs_dirty_data_max_percent, "percent of ram can be dirty");
-
-/* zfs_dirty_data_max_max_percent only applied at module load in arc_init(). */
-module_param(zfs_dirty_data_max_max_percent, int, 0444);
-MODULE_PARM_DESC(zfs_dirty_data_max_max_percent,
-	"zfs_dirty_data_max upper bound as % of RAM");
-
-module_param(zfs_delay_min_dirty_percent, int, 0644);
-MODULE_PARM_DESC(zfs_delay_min_dirty_percent, "transaction delay threshold");
-
-module_param(zfs_dirty_data_max, ulong, 0644);
-MODULE_PARM_DESC(zfs_dirty_data_max, "determines the dirty space limit");
-
-/* zfs_dirty_data_max_max only applied at module load in arc_init(). */
-module_param(zfs_dirty_data_max_max, ulong, 0444);
-MODULE_PARM_DESC(zfs_dirty_data_max_max,
-	"zfs_dirty_data_max upper bound in bytes");
-
-module_param(zfs_dirty_data_sync, ulong, 0644);
-MODULE_PARM_DESC(zfs_dirty_data_sync, "sync txg when this much dirty data");
-
-module_param(zfs_delay_scale, ulong, 0644);
-MODULE_PARM_DESC(zfs_delay_scale, "how quickly delay approaches infinity");
-#endif

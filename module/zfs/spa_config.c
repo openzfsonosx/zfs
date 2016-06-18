@@ -158,6 +158,9 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 	char *buf;
 	vnode_t *vp;
 	int oflags = FWRITE | FTRUNC | FCREAT | FOFFMAX;
+#ifdef __linux__
+	int error;
+#endif
 	char *temp;
 
 	/*
@@ -179,6 +182,26 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 	VERIFY(nvlist_pack(nvl, &buf, &buflen, NV_ENCODE_XDR,
 	    KM_SLEEP) == 0);
 
+#ifdef __linux__
+	/*
+	 * Write the configuration to disk.  Due to the complexity involved
+	 * in performing a rename from within the kernel the file is truncated
+	 * and overwritten in place.  In the event of an error the file is
+	 * unlinked to make sure we always have a consistent view of the data.
+	 */
+	error = vn_open(dp->scd_path, UIO_SYSSPACE, oflags, 0644, &vp, 0, 0);
+	if (error == 0) {
+		error = vn_rdwr(UIO_WRITE, vp, buf, buflen, 0,
+		    UIO_SYSSPACE, 0, RLIM64_INFINITY, kcred, NULL);
+		if (error == 0)
+			error = VOP_FSYNC(vp, FSYNC, kcred, NULL);
+
+		(void) VOP_CLOSE(vp, oflags, 1, 0, kcred, NULL);
+
+		if (error)
+			(void) vn_remove(dp->scd_path, UIO_SYSSPACE, RMFILE);
+	}
+#else
 	/*
 	 * Write the configuration to disk.  We need to do the traditional
 	 * 'write to temporary file, sync, move over original' to make sure we
@@ -197,6 +220,7 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 
 
 	(void) vn_remove(temp, UIO_SYSSPACE, RMFILE);
+#endif
 
 	kmem_free(buf, buflen);
 	kmem_free(temp, MAXPATHLEN);
@@ -553,19 +577,3 @@ spa_config_update(spa_t *spa, int what)
 	if (what == SPA_CONFIG_UPDATE_POOL)
 		spa_config_update(spa, SPA_CONFIG_UPDATE_VDEVS);
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-EXPORT_SYMBOL(spa_config_sync);
-EXPORT_SYMBOL(spa_config_load);
-EXPORT_SYMBOL(spa_all_configs);
-EXPORT_SYMBOL(spa_config_set);
-EXPORT_SYMBOL(spa_config_generate);
-EXPORT_SYMBOL(spa_config_update);
-
-module_param(spa_config_path, charp, 0444);
-MODULE_PARM_DESC(spa_config_path, "SPA config file (/etc/zfs/zpool.cache)");
-
-module_param(zfs_autoimport_disable, int, 0644);
-MODULE_PARM_DESC(zfs_autoimport_disable, "Disable pool import at module load");
-
-#endif

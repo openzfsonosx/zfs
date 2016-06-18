@@ -138,10 +138,14 @@ ddt_zap_walk(objset_t *os, uint64_t object, ddt_entry_t *dde, uint64_t *walk)
 	return (error);
 }
 
-static int
-ddt_zap_count(objset_t *os, uint64_t object, uint64_t *count)
+static uint64_t
+ddt_zap_count(objset_t *os, uint64_t object)
 {
-	return (zap_count(os, object, count));
+	uint64_t count = 0;
+
+	VERIFY(zap_count(os, object, &count) == 0);
+
+	return (count);
 }
 
 const ddt_ops_t ddt_zap_ops = {

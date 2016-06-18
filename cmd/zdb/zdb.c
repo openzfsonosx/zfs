@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2015, Intel Corporation.
  */
 
@@ -60,7 +60,6 @@
 #include <sys/ddt.h>
 #include <sys/zfeature.h>
 #include <zfs_comutil.h>
-#undef ZFS_MAXNAMELEN
 #include <libzfs.h>
 
 #define	ZDB_COMPRESS_NAME(idx) ((idx) < ZIO_COMPRESS_FUNCTIONS ?	\
@@ -173,7 +172,9 @@ usage(void)
 	    "has altroot/not in a cachefile\n");
 	(void) fprintf(stderr, "        -p <path> -- use one or more with "
 	    "-e to specify path to vdev dir\n");
-	(void) fprintf(stderr, "        -P print numbers in parseable form\n");
+	(void) fprintf(stderr, "        -x <dumpdir> -- "
+	    "dump all read blocks into specified directory\n");
+	(void) fprintf(stderr, "        -P print numbers in parsable form\n");
 	(void) fprintf(stderr, "        -t <txg> -- highest txg to use when "
 	    "searching for uberblocks\n");
 	(void) fprintf(stderr, "        -I <number of inflight I/Os> -- "
@@ -941,9 +942,7 @@ dump_ddt(ddt_t *ddt, enum ddt_type type, enum ddt_class class)
 		return;
 	ASSERT(error == 0);
 
-	error = ddt_object_count(ddt, type, class, &count);
-	ASSERT(error == 0);
-	if (count == 0)
+	if ((count = ddt_object_count(ddt, type, class)) == 0)
 		return;
 
 	dspace = doi.doi_physical_blocks_512 << 9;
@@ -2004,7 +2003,7 @@ dump_dir(objset_t *os)
 	uint64_t refdbytes, usedobjs, scratch;
 	char numbuf[32];
 	char blkbuf[BP_SPRINTF_LEN + 20];
-	char osname[MAXNAMELEN];
+	char osname[ZFS_MAX_DATASET_NAME_LEN];
 	char *type = "UNKNOWN";
 	int verbosity = dump_opt['d'];
 	int print_header = 1;
@@ -2217,10 +2216,11 @@ dump_label(const char *dev)
 	int len = strlen(dev) + 1;
 	int l;
 
-	if (strncmp(dev, "/dev/dsk/", 9) == 0) {
+	if (strncmp(dev, ZFS_DISK_ROOTD, strlen(ZFS_DISK_ROOTD)) == 0) {
 		len++;
 		path = malloc(len);
-		(void) snprintf(path, len, "%s%s", "/dev/rdsk/", dev + 9);
+		(void) snprintf(path, len, "%s%s", ZFS_RDISK_ROOTD,
+			dev + strlen(ZFS_DISK_ROOTD));
 	} else {
 		path = strdup(dev);
 	}
@@ -2277,7 +2277,7 @@ dump_label(const char *dev)
 	(void) close(fd);
 }
 
-static uint64_t num_large_blocks;
+static uint64_t dataset_feature_count[SPA_FEATURES];
 
 /*ARGSUSED*/
 static int
@@ -2291,8 +2291,15 @@ dump_one_dir(const char *dsname, void *arg)
 		(void) printf("Could not open %s, error %d\n", dsname, error);
 		return (0);
 	}
-	if (dmu_objset_ds(os)->ds_large_blocks)
-		num_large_blocks++;
+
+	for (spa_feature_t f = 0; f < SPA_FEATURES; f++) {
+		if (!dmu_objset_ds(os)->ds_feature_inuse[f])
+			continue;
+		ASSERT(spa_feature_table[f].fi_flags &
+			   ZFEATURE_FLAG_PER_DATASET);
+		dataset_feature_count[f]++;
+	}
+
 	dump_dir(os);
 	dmu_objset_disown(os, FTAG);
 	fuid_table_destroy();
@@ -2482,6 +2489,9 @@ zdb_blkptr_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	zdb_cb_t *zcb = arg;
 	dmu_object_type_t type;
 	boolean_t is_metadata;
+
+	if (bp == NULL)
+		return (0);
 
 	if (dump_opt['b'] >= 5 && bp->blk_birth > 0) {
 		char blkbuf[BP_SPRINTF_LEN];
@@ -2979,7 +2989,7 @@ zdb_ddt_add_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	avl_index_t where;
 	zdb_ddt_entry_t *zdde, zdde_search;
 
-	if (BP_IS_HOLE(bp) || BP_IS_EMBEDDED(bp))
+	if (bp == NULL || BP_IS_HOLE(bp) || BP_IS_EMBEDDED(bp))
 		return (0);
 
 	if (dump_opt['S'] > 1 && zb->zb_level == ZB_ROOT_LEVEL) {
@@ -3120,19 +3130,29 @@ dump_zpool(spa_t *spa)
 		(void) dmu_objset_find(spa_name(spa), dump_one_dir,
 		    NULL, DS_FIND_SNAPSHOTS | DS_FIND_CHILDREN);
 
-		if (feature_get_refcount(spa,
-		    &spa_feature_table[SPA_FEATURE_LARGE_BLOCKS],
-		    &refcount) != ENOTSUP) {
-			if (num_large_blocks != refcount) {
-				(void) printf("large_blocks feature refcount "
-				    "mismatch: expected %lld != actual %lld\n",
-				    (longlong_t)num_large_blocks,
-				    (longlong_t)refcount);
-				rc = 2;
+		for (spa_feature_t f = 0; f < SPA_FEATURES; f++) {
+			uint64_t refcount;
+
+			if (!(spa_feature_table[f].fi_flags &
+				ZFEATURE_FLAG_PER_DATASET) ||
+				!spa_feature_is_enabled(spa, f)) {
+				ASSERT0(dataset_feature_count[f]);
+				continue;
+			}
+			(void) feature_get_refcount(spa,
+				&spa_feature_table[f], &refcount);
+			if (dataset_feature_count[f] != refcount) {
+				(void) printf("%s feature refcount mismatch: "
+							  "%lld datasets != %lld refcount\n",
+							  spa_feature_table[f].fi_uname,
+							  (longlong_t)dataset_feature_count[f],
+							  (longlong_t)refcount);
+                                rc = 2;
 			} else {
-				(void) printf("Verified large_blocks feature "
-				    "refcount is correct (%llu)\n",
-				    (longlong_t)refcount);
+				(void) printf("Verified %s feature refcount "
+							  "of %llu is correct\n",
+							  spa_feature_table[f].fi_uname,
+							  (longlong_t)refcount);
 			}
 		}
 	}
@@ -3360,8 +3380,10 @@ zdb_read_block(char *thing, spa_t *spa)
 				continue;
 
 			p = &flagstr[i + 1];
-			if (bit == ZDB_FLAG_PRINT_BLKPTR)
+			if (bit == ZDB_FLAG_PRINT_BLKPTR) {
 				blkptr_offset = strtoull(p, &p, 16);
+				i = p - &flagstr[i + 1];
+			}
 			if (*p != ':' && *p != '\0') {
 				(void) printf("***Invalid flag arg: '%s'\n", s);
 				free(dup);
@@ -3525,7 +3547,7 @@ find_zpool(char **target, nvlist_t **configp, int dirc, char **dirv)
 	nvlist_t *match = NULL;
 	char *name = NULL;
 	char *sepp = NULL;
-	char sep = 0;
+	char sep = '\0';
 	int count = 0;
 	importargs_t args = { 0 };
 

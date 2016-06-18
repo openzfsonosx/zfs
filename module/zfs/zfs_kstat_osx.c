@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2014 Jorgen Lundman <lundman@lundman.net>
+ * Copyright 2014,2016 Jorgen Lundman <lundman@lundman.net>
  */
 
 #include <sys/spa.h>
@@ -61,7 +61,6 @@ osx_kstat_t osx_kstat = {
 	{ "zpl_version",				KSTAT_DATA_UINT64 },
 
 	{ "active_vnodes",				KSTAT_DATA_UINT64 },
-	{ "reclaim_nodes",				KSTAT_DATA_UINT64 },
 	{ "vnop_debug",					KSTAT_DATA_UINT64 },
 	{ "ignore_negatives",			KSTAT_DATA_UINT64 },
 	{ "ignore_positives",			KSTAT_DATA_UINT64 },
@@ -78,6 +77,14 @@ osx_kstat_t osx_kstat = {
 	{ "zfs_arc_p_min_shift",		KSTAT_DATA_UINT64 },
 	{ "zfs_disable_dup_eviction",	KSTAT_DATA_UINT64 },
 	{ "zfs_arc_average_blocksize",	KSTAT_DATA_UINT64 },
+
+	{ "l2arc_write_max",			KSTAT_DATA_UINT64 },
+	{ "l2arc_write_boost",			KSTAT_DATA_UINT64 },
+	{ "l2arc_headroom",				KSTAT_DATA_UINT64 },
+	{ "l2arc_headroom_boost",		KSTAT_DATA_UINT64 },
+	{ "l2arc_max_block_size",		KSTAT_DATA_UINT64 },
+	{ "l2arc_feed_secs",			KSTAT_DATA_UINT64 },
+	{ "l2arc_feed_min_ms",			KSTAT_DATA_UINT64 },
 
 	{ "max_active",					KSTAT_DATA_UINT64 },
 	{ "sync_read_min_active",		KSTAT_DATA_UINT64 },
@@ -108,7 +115,6 @@ osx_kstat_t osx_kstat = {
 	{"zfs_prefetch_disable",		KSTAT_DATA_INT64  },
 	{"zfetch_max_streams",			KSTAT_DATA_INT64  },
 	{"zfetch_min_sec_reap",			KSTAT_DATA_INT64  },
-	{"zfetch_block_cap",			KSTAT_DATA_INT64  },
 	{"zfetch_array_rd_sz",			KSTAT_DATA_INT64  },
 	{"zfs_default_bs",				KSTAT_DATA_INT64  },
 	{"zfs_default_ibs",				KSTAT_DATA_INT64  },
@@ -135,12 +141,35 @@ osx_kstat_t osx_kstat = {
 	{"zio_injection_enabled",		KSTAT_DATA_INT64  },
 	{"zvol_immediate_write_sz",		KSTAT_DATA_INT64  },
 
+	{ "l2arc_noprefetch",			KSTAT_DATA_INT64  },
+	{ "l2arc_feed_again",			KSTAT_DATA_INT64  },
+	{ "l2arc_norw",					KSTAT_DATA_INT64  },
+
 	{"zfs_top_maxinflight",			KSTAT_DATA_INT64  },
 	{"zfs_resilver_delay",			KSTAT_DATA_INT64  },
 	{"zfs_scrub_delay",				KSTAT_DATA_INT64  },
 	{"zfs_scan_idle",				KSTAT_DATA_INT64  },
 
-	{"zfs_recover",				KSTAT_DATA_INT64  },
+	{"zfs_recover",					KSTAT_DATA_INT64  },
+
+	{"zfs_free_max_blocks",				KSTAT_DATA_UINT64  },
+	{"zfs_free_bpobj_enabled",			KSTAT_DATA_INT64  },
+
+	{"zfs_send_corrupt_data",		KSTAT_DATA_UINT64  },
+	{"zfs_send_queue_length",		KSTAT_DATA_UINT64  },
+	{"zfs_recv_queue_length",		KSTAT_DATA_UINT64  },
+
+	{"zfs_vdev_mirror_rotating_inc",		KSTAT_DATA_UINT64  },
+	{"zfs_vdev_mirror_rotating_seek_inc",	KSTAT_DATA_UINT64  },
+	{"zfs_vdev_mirror_rotating_seek_offset",KSTAT_DATA_UINT64  },
+	{"zfs_vdev_mirror_non_rotating_inc",	KSTAT_DATA_UINT64  },
+	{"zfs_vdev_mirror_non_rotating_seek_inc",KSTAT_DATA_UINT64  },
+
+	{"zvol_inhibit_dev",KSTAT_DATA_UINT64  },
+	{"zfs_send_set_freerecords_bit",KSTAT_DATA_UINT64  },
+
+	{"zfs_write_implies_delete_child",KSTAT_DATA_UINT64  },
+
 };
 
 
@@ -168,7 +197,20 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		/* ARC */
 		arc_kstat_update(ksp, rw);
+		arc_kstat_update_osx(ksp, rw);
 
+		/* L2ARC */
+		l2arc_write_max = ks->l2arc_write_max.value.ui64;
+		l2arc_write_boost = ks->l2arc_write_boost.value.ui64;
+		l2arc_headroom = ks->l2arc_headroom.value.ui64;
+		l2arc_headroom_boost = ks->l2arc_headroom_boost.value.ui64;
+		l2arc_max_block_size = ks->l2arc_max_block_size.value.ui64;
+		l2arc_feed_secs = ks->l2arc_feed_secs.value.ui64;
+		l2arc_feed_min_ms = ks->l2arc_feed_min_ms.value.ui64;
+
+		l2arc_noprefetch = ks->l2arc_noprefetch.value.i64;
+		l2arc_feed_again = ks->l2arc_feed_again.value.i64;
+		l2arc_norw = ks->l2arc_norw.value.i64;
 
 		/* vdev_queue */
 
@@ -229,8 +271,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			ks->zfetch_max_streams.value.i64;
 		zfetch_min_sec_reap =
 			ks->zfetch_min_sec_reap.value.i64;
-		zfetch_block_cap =
-			ks->zfetch_block_cap.value.i64;
 		zfetch_array_rd_sz =
 			ks->zfetch_array_rd_sz.value.i64;
 		zfs_default_bs =
@@ -287,6 +327,37 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		zfs_recover =
 			ks->zfs_recover.value.i64;
 
+		zfs_free_max_blocks =
+			ks->zfs_free_max_blocks.value.ui64;
+		zfs_free_bpobj_enabled	 =
+			ks->zfs_free_bpobj_enabled.value.i64;
+
+		zfs_send_corrupt_data =
+			ks->zfs_send_corrupt_data.value.ui64;
+		zfs_send_queue_length =
+			ks->zfs_send_queue_length.value.ui64;
+		zfs_recv_queue_length =
+			ks->zfs_recv_queue_length.value.ui64;
+
+		zfs_vdev_mirror_rotating_inc =
+			ks->zfs_vdev_mirror_rotating_inc.value.ui64;
+		zfs_vdev_mirror_rotating_seek_inc =
+			ks->zfs_vdev_mirror_rotating_seek_inc.value.ui64;
+		zfs_vdev_mirror_rotating_seek_offset =
+			ks->zfs_vdev_mirror_rotating_seek_offset.value.ui64;
+		zfs_vdev_mirror_non_rotating_inc =
+			ks->zfs_vdev_mirror_non_rotating_inc.value.ui64;
+		zfs_vdev_mirror_non_rotating_seek_inc =
+			ks->zfs_vdev_mirror_non_rotating_seek_inc.value.ui64;
+
+		zvol_inhibit_dev =
+			ks->zvol_inhibit_dev.value.ui64;
+		zfs_send_set_freerecords_bit =
+			ks->zfs_send_set_freerecords_bit.value.ui64;
+
+		zfs_write_implies_delete_child =
+			ks->zfs_write_implies_delete_child.value.ui64;
+
 	} else {
 
 		/* kstat READ */
@@ -295,7 +366,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		/* Darwin */
 		ks->darwin_active_vnodes.value.ui64          = vnop_num_vnodes;
-		ks->darwin_reclaim_nodes.value.ui64          = vnop_num_reclaims;
 		ks->darwin_debug.value.ui64                  = debug_vnop_osx_printf;
 		ks->darwin_ignore_negatives.value.ui64       = zfs_vnop_ignore_negatives;
 		ks->darwin_ignore_positives.value.ui64       = zfs_vnop_ignore_positives;
@@ -305,6 +375,20 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		/* ARC */
 		arc_kstat_update(ksp, rw);
+		arc_kstat_update_osx(ksp, rw);
+
+		/* L2ARC */
+		ks->l2arc_write_max.value.ui64               = l2arc_write_max;
+		ks->l2arc_write_boost.value.ui64             = l2arc_write_boost;
+		ks->l2arc_headroom.value.ui64                = l2arc_headroom;
+		ks->l2arc_headroom_boost.value.ui64          = l2arc_headroom_boost;
+		ks->l2arc_max_block_size.value.ui64          = l2arc_max_block_size;
+		ks->l2arc_feed_secs.value.ui64               = l2arc_feed_secs;
+		ks->l2arc_feed_min_ms.value.ui64             = l2arc_feed_min_ms;
+
+		ks->l2arc_noprefetch.value.i64               = l2arc_noprefetch;
+		ks->l2arc_feed_again.value.i64               = l2arc_feed_again;
+		ks->l2arc_norw.value.i64                     = l2arc_norw;
 
 		/* vdev_queue */
 		ks->zfs_vdev_max_active.value.ui64 =
@@ -364,8 +448,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			zfetch_max_streams;
 		ks->zfetch_min_sec_reap.value.i64 =
 			zfetch_min_sec_reap;
-		ks->zfetch_block_cap.value.i64 =
-			zfetch_block_cap;
 		ks->zfetch_array_rd_sz.value.i64 =
 			zfetch_array_rd_sz;
 		ks->zfs_default_bs.value.i64 =
@@ -423,6 +505,36 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->zfs_recover.value.i64 =
 			zfs_recover;
 
+		ks->zfs_free_max_blocks.value.ui64 =
+			zfs_free_max_blocks;
+		ks->zfs_free_bpobj_enabled.value.i64 =
+			zfs_free_bpobj_enabled;
+
+		ks->zfs_send_corrupt_data.value.ui64 =
+			zfs_send_corrupt_data;
+		ks->zfs_send_queue_length.value.ui64 =
+			zfs_send_queue_length;
+		ks->zfs_recv_queue_length.value.ui64 =
+			zfs_recv_queue_length;
+
+		ks->zfs_vdev_mirror_rotating_inc.value.ui64 =
+			zfs_vdev_mirror_rotating_inc;
+		ks->zfs_vdev_mirror_rotating_seek_inc.value.ui64 =
+			zfs_vdev_mirror_rotating_seek_inc;
+		ks->zfs_vdev_mirror_rotating_seek_offset.value.ui64 =
+			zfs_vdev_mirror_rotating_seek_offset;
+		ks->zfs_vdev_mirror_non_rotating_inc.value.ui64 =
+			zfs_vdev_mirror_non_rotating_inc;
+		ks->zfs_vdev_mirror_non_rotating_seek_inc.value.ui64 =
+			zfs_vdev_mirror_non_rotating_seek_inc;
+
+		ks->zvol_inhibit_dev.value.ui64 =
+			zvol_inhibit_dev;
+		ks->zfs_send_set_freerecords_bit.value.ui64 =
+			zfs_send_set_freerecords_bit;
+
+		ks->zfs_write_implies_delete_child.value.ui64 =
+			zfs_write_implies_delete_child;
 	}
 
 	return 0;

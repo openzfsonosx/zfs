@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  */
 
 #ifndef	_LIBZFS_CORE_H
@@ -29,7 +29,6 @@
 #include <libnvpair.h>
 #include <sys/param.h>
 #include <sys/types.h>
-#include <sys/fs/zfs.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -38,8 +37,16 @@ extern "C" {
 int libzfs_core_init(void);
 void libzfs_core_fini(void);
 
+/*
+ * NB: this type should be kept binary compatible with dmu_objset_type_t.
+ */
+enum lzc_dataset_type {
+	LZC_DATSET_TYPE_ZFS = 2,
+	LZC_DATSET_TYPE_ZVOL
+};
+
 int lzc_snapshot(nvlist_t *, nvlist_t *, nvlist_t **);
-int lzc_create(const char *, dmu_objset_type_t, nvlist_t *);
+int lzc_create(const char *, enum lzc_dataset_type, nvlist_t *);
 int lzc_clone(const char *, const char *, nvlist_t *);
 int lzc_destroy_snaps(nvlist_t *, boolean_t, nvlist_t **);
 int lzc_bookmark(nvlist_t *, nvlist_t **);
@@ -58,8 +65,17 @@ enum lzc_send_flags {
 };
 
 int lzc_send(const char *, const char *, int, enum lzc_send_flags);
-int lzc_receive(const char *, nvlist_t *, const char *, boolean_t, int);
+int lzc_send_resume(const char *, const char *, int,
+    enum lzc_send_flags, uint64_t, uint64_t);
 int lzc_send_space(const char *, const char *, uint64_t *);
+
+struct dmu_replay_record;
+
+int lzc_receive(const char *, nvlist_t *, const char *, boolean_t, int);
+int lzc_receive_resumable(const char *, nvlist_t *, const char *,
+    boolean_t, int);
+int lzc_receive_with_header(const char *, nvlist_t *, const char *, boolean_t,
+    boolean_t, int, const struct dmu_replay_record *);
 
 boolean_t lzc_exists(const char *);
 

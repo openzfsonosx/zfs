@@ -130,6 +130,7 @@ int handle_get_media_info_iokit(struct ldi_handle *,
 int handle_get_media_info_ext_iokit(struct ldi_handle *,
     struct dk_minfo_ext *);
 int handle_check_media_iokit(struct ldi_handle *, int *);
+int handle_is_solidstate_iokit(struct ldi_handle *, int *);
 int handle_sync_iokit(struct ldi_handle *);
 int buf_strategy_iokit(ldi_buf_t *, struct ldi_handle *);
 int ldi_open_media_by_dev(dev_t, int, ldi_handle_t *);
@@ -146,6 +147,7 @@ int handle_get_media_info_vnode(struct ldi_handle *,
 int handle_get_media_info_ext_vnode(struct ldi_handle *,
     struct dk_minfo_ext *);
 int handle_check_media_vnode(struct ldi_handle *, int *);
+int handle_is_solidstate_vnode(struct ldi_handle *, int *);
 int handle_sync_vnode(struct ldi_handle *);
 int buf_strategy_vnode(ldi_buf_t *, struct ldi_handle *);
 int ldi_open_vnode_by_path(char *, dev_t, int, ldi_handle_t *);

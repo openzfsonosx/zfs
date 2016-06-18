@@ -196,9 +196,7 @@ zfs_sa_get_xattr(znode_t *zp)
 	int size;
 	int error;
 
-#ifdef __LINUX__
-	ASSERT(RW_LOCK_HELD(&zp->z_xattr_lock));
-#endif
+//	ASSERT(RW_LOCK_HELD(&zp->z_xattr_lock));
 	ASSERT(!zp->z_xattr_cached);
 	ASSERT(zp->z_is_sa);
 

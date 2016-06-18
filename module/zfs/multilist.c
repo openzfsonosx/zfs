@@ -18,7 +18,6 @@
 
 #include <sys/zfs_context.h>
 #include <sys/multilist.h>
-#include <sys/trace_multilist.h>
 
 /* needed for spa_get_random() */
 #include <sys/spa.h>
@@ -34,7 +33,6 @@ multilist_d2l(multilist_t *ml, void *obj)
 	return ((multilist_node_t *)((char *)obj + ml->ml_offset));
 }
 #endif
-
 /*
  * Initialize a new mutlilist using the parameters specified.
  *
@@ -66,8 +64,6 @@ void
 multilist_create(multilist_t *ml, size_t size, size_t offset, unsigned int num,
     multilist_sublist_index_func_t *index_func)
 {
-	int i;
-
 	ASSERT3P(ml, !=, NULL);
 	ASSERT3U(size, >, 0);
 	ASSERT3U(size, >=, offset + sizeof (multilist_node_t));
@@ -83,7 +79,7 @@ multilist_create(multilist_t *ml, size_t size, size_t offset, unsigned int num,
 
 	ASSERT3P(ml->ml_sublists, !=, NULL);
 
-	for (i = 0; i < ml->ml_num_sublists; i++) {
+	for (int i = 0; i < ml->ml_num_sublists; i++) {
 		multilist_sublist_t *mls = &ml->ml_sublists[i];
 		mutex_init(&mls->mls_lock, NULL, MUTEX_DEFAULT, NULL);
 		list_create(&mls->mls_list, size, offset);
@@ -96,11 +92,9 @@ multilist_create(multilist_t *ml, size_t size, size_t offset, unsigned int num,
 void
 multilist_destroy(multilist_t *ml)
 {
-	int i;
-
 	ASSERT(multilist_is_empty(ml));
 
-	for (i = 0; i < ml->ml_num_sublists; i++) {
+	for (int i = 0; i < ml->ml_num_sublists; i++) {
 		multilist_sublist_t *mls = &ml->ml_sublists[i];
 
 		ASSERT(list_is_empty(&mls->mls_list));
@@ -217,9 +211,7 @@ multilist_remove(multilist_t *ml, void *obj)
 int
 multilist_is_empty(multilist_t *ml)
 {
-	int i;
-
-	for (i = 0; i < ml->ml_num_sublists; i++) {
+	for (int i = 0; i < ml->ml_num_sublists; i++) {
 		multilist_sublist_t *mls = &ml->ml_sublists[i];
 		/* See comment in multilist_insert(). */
 		boolean_t need_lock = !MUTEX_HELD(&mls->mls_lock);

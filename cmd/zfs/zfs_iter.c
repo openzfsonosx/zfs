@@ -92,7 +92,7 @@ static int
 zfs_callback(zfs_handle_t *zhp, void *data)
 {
 	callback_data_t *cb = data;
-	boolean_t dontclose = B_FALSE;
+	boolean_t should_close = B_TRUE;
 	boolean_t include_snaps = zfs_include_snapshots(zhp, cb);
 	boolean_t include_bmarks = (cb->cb_types & ZFS_TYPE_BOOKMARK);
 
@@ -120,7 +120,7 @@ zfs_callback(zfs_handle_t *zhp, void *data)
 				}
 			}
 			uu_avl_insert(cb->cb_avl, node, idx);
-			dontclose = B_TRUE;
+			should_close = B_FALSE;
 		} else {
 			free(node);
 		}
@@ -146,7 +146,7 @@ zfs_callback(zfs_handle_t *zhp, void *data)
 		cb->cb_depth--;
 	}
 
-	if (!dontclose)
+	if (should_close)
 		zfs_close(zhp);
 
 	return (0);
@@ -196,7 +196,7 @@ zfs_free_sort_columns(zfs_sort_column_t *sc)
 	}
 }
 
-int
+boolean_t
 zfs_sort_only_by_name(const zfs_sort_column_t *sc)
 {
 	return (sc != NULL && sc->sc_next == NULL &&
@@ -333,9 +333,9 @@ zfs_sort(const void *larg, const void *rarg, void *data)
 			rstr = rbuf;
 		} else {
 			lvalid = zfs_prop_valid_for_type(psc->sc_prop,
-			    zfs_get_type(l), B_FALSE);
+			    zfs_get_type(l));
 			rvalid = zfs_prop_valid_for_type(psc->sc_prop,
-			    zfs_get_type(r), B_FALSE);
+			    zfs_get_type(r));
 
 			if (lvalid)
 				(void) zfs_prop_get_numeric(l, psc->sc_prop,

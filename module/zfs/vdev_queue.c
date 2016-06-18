@@ -251,11 +251,10 @@ vdev_queue_max_async_writes(spa_t *spa)
 {
 	int writes;
 	uint64_t dirty = spa->spa_dsl_pool->dp_dirty_total;
-	uint64_t min_bytes = zfs_dirty_data_max *
-	    zfs_vdev_async_write_active_min_dirty_percent / 100;
-	uint64_t max_bytes = zfs_dirty_data_max *
-	    zfs_vdev_async_write_active_max_dirty_percent / 100;
-
+	uint64_t min_bytes =  zfs_dirty_data_max *
+		zfs_vdev_async_write_active_min_dirty_percent / 100;
+	uint64_t max_bytes =  zfs_dirty_data_max *
+		zfs_vdev_async_write_active_max_dirty_percent / 100;
 	/*
 	 * Sync tasks correspond to interactive user actions. To reduce the
 	 * execution time of those actions we push data out as fast as possible.
@@ -276,10 +275,11 @@ vdev_queue_max_async_writes(spa_t *spa)
 	 * move up by min_writes
 	 */
 	writes = (dirty - min_bytes) *
-	    (zfs_vdev_async_write_max_active -
-	    zfs_vdev_async_write_min_active) /
-	    (max_bytes - min_bytes) +
-	    zfs_vdev_async_write_min_active;
+		zfs_vdev_async_write_max_active -
+		zfs_vdev_async_write_min_active /
+		(uint64_t)(
+		(max_bytes - min_bytes) +
+	    zfs_vdev_async_write_min_active);
 	ASSERT3U(writes, >=, zfs_vdev_async_write_min_active);
 	ASSERT3U(writes, <=, zfs_vdev_async_write_max_active);
 	return (writes);
@@ -349,6 +349,7 @@ vdev_queue_init(vdev_t *vd)
 
 	mutex_init(&vq->vq_lock, NULL, MUTEX_DEFAULT, NULL);
 	vq->vq_vdev = vd;
+	taskq_init_ent(&vd->vdev_queue.vq_io_search.io_tqent);
 
 	avl_create(&vq->vq_active_tree, vdev_queue_offset_compare,
 	    sizeof (zio_t), offsetof(struct zio, io_queue_node));
@@ -374,6 +375,8 @@ vdev_queue_init(vdev_t *vd)
 		avl_create(vdev_queue_class_tree(vq, p), compfn,
 			sizeof (zio_t), offsetof(struct zio, io_queue_node));
 	}
+
+	vq->vq_lastoffset = 0;
 }
 
 void
@@ -765,9 +768,6 @@ vdev_queue_io_done(zio_t *zio)
 	vdev_queue_t *vq = &zio->io_vd->vdev_queue;
 	zio_t *nio;
 
-	if (zio_injection_enabled)
-		delay(SEC_TO_TICK(zio_handle_io_delay(zio)));
-
 	mutex_enter(&vq->vq_lock);
 
 	vdev_queue_pending_remove(vq, zio);
@@ -790,62 +790,26 @@ vdev_queue_io_done(zio_t *zio)
 	mutex_exit(&vq->vq_lock);
 }
 
-#if defined(_KERNEL) && defined(HAVE_SPL)
-module_param(zfs_vdev_aggregation_limit, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_aggregation_limit, "Max vdev I/O aggregation size");
+/*
+ * As these three methods are only used for load calculations we're not
+ * concerned if we get an incorrect value on 32bit platforms due to lack of
+ * vq_lock mutex use here, instead we prefer to keep it lock free for
+ * performance.
+ */
+int
+vdev_queue_length(vdev_t *vd)
+{
+	return (avl_numnodes(&vd->vdev_queue.vq_active_tree));
+}
 
-module_param(zfs_vdev_read_gap_limit, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_read_gap_limit, "Aggregate read I/O over gap");
+uint64_t
+vdev_queue_lastoffset(vdev_t *vd)
+{
+	return (vd->vdev_queue.vq_lastoffset);
+}
 
-module_param(zfs_vdev_write_gap_limit, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_write_gap_limit, "Aggregate write I/O over gap");
-
-module_param(zfs_vdev_max_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_max_active, "Maximum number of active I/Os per vdev");
-
-module_param(zfs_vdev_async_write_active_max_dirty_percent, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_async_write_active_max_dirty_percent,
-	"Async write concurrency max threshold");
-
-module_param(zfs_vdev_async_write_active_min_dirty_percent, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_async_write_active_min_dirty_percent,
-	"Async write concurrency min threshold");
-
-module_param(zfs_vdev_async_read_max_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_async_read_max_active,
-	"Max active async read I/Os per vdev");
-
-module_param(zfs_vdev_async_read_min_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_async_read_min_active,
-	"Min active async read I/Os per vdev");
-
-module_param(zfs_vdev_async_write_max_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_async_write_max_active,
-	"Max active async write I/Os per vdev");
-
-module_param(zfs_vdev_async_write_min_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_async_write_min_active,
-	"Min active async write I/Os per vdev");
-
-module_param(zfs_vdev_scrub_max_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_scrub_max_active, "Max active scrub I/Os per vdev");
-
-module_param(zfs_vdev_scrub_min_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_scrub_min_active, "Min active scrub I/Os per vdev");
-
-module_param(zfs_vdev_sync_read_max_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_sync_read_max_active,
-	"Max active sync read I/Os per vdev");
-
-module_param(zfs_vdev_sync_read_min_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_sync_read_min_active,
-	"Min active sync read I/Os per vdev");
-
-module_param(zfs_vdev_sync_write_max_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_sync_write_max_active,
-	"Max active sync write I/Os per vdev");
-
-module_param(zfs_vdev_sync_write_min_active, int, 0644);
-MODULE_PARM_DESC(zfs_vdev_sync_write_min_active,
-	"Min active sync write I/Osper vdev");
-#endif
+void
+vdev_queue_register_lastoffset(vdev_t *vd, zio_t *zio)
+{
+	vd->vdev_queue.vq_lastoffset = zio->io_offset + zio->io_size;
+}

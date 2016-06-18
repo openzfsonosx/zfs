@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  */
 
 #ifndef	_SYS_FS_ZFS_ZNODE_H
@@ -65,6 +65,14 @@ extern "C" {
 #define	ZFS_REPARSE		0x0000080000000000ull
 #define	ZFS_OFFLINE		0x0000100000000000ull
 #define	ZFS_SPARSE		0x0000200000000000ull
+
+#ifdef __APPLE__
+	/* Unsure how we officially register new flags bits, but
+	 * I guess we will claim the whole nibble for OSX
+	 * 0x00n0000000000000ull : n = 1 2 4 8
+	 */
+#define	ZFS_TRACKED		0x0010000000000000ull
+#endif
 
 #define	ZFS_ATTR_SET(zp, attr, value, pflags, tx) \
 { \
@@ -149,17 +157,6 @@ extern "C" {
 #define	ZFS_SA_ATTRS		"SA_ATTRS"
 
 /*
- * Path component length
- *
- * The generic fs code uses MAXNAMELEN to represent
- * what the largest component length is.  Unfortunately,
- * this length includes the terminating NULL.  ZFS needs
- * to tell the users via pathconf() and statvfs() what the
- * true maximum length of a component is, excluding the NULL.
- */
-#define	ZFS_MAXNAMELEN	(MAXNAMELEN - 1)
-
-/*
  * Convert mode bits (zp_mode) to BSD-style DT_* values for storing in
  * the directory entries.  On Linux systems this value is already
  * defined correctly as part of the /usr/include/dirent.h header file.
@@ -237,8 +234,17 @@ typedef struct znode {
 #ifdef __APPLE__
 	list_node_t	z_link_reclaim_node;	/* all reclaim znodes in fs link */
     uint32_t    z_vid;  /* OSX vnode_vid */
-    /* Track vnop_lookup name for Finder - not for anything else */
-    char        z_finder_hardlink_name[MAXPATHLEN];
+	uint32_t    z_document_id;
+
+    /* Track vnop_lookup name for Finder - as Apple asks for va_name in
+	 * vnop_getattr and vfs_vget, it is expensive to lookup the name.
+	 * We also need to keep hardlink parentid to return the correct id in
+	 * getattr
+	 */
+    char        z_name_cache[MAXPATHLEN];
+	uint64_t    z_finder_parentid;
+	boolean_t   z_finder_hardlink;  /* set high if it ever had a hardlink hash */
+
 	boolean_t   z_fastpath;
 	boolean_t   z_reclaim_reentry; /* vnode_create()->vnop_reclaim() */
 	uint64_t    z_write_gencount;
@@ -290,7 +296,11 @@ typedef struct znode {
  */
 #define ZFS_ENTER(zfsvfs)                       \
     {                                                                   \
-		rrm_enter_read(&(zfsvfs)->z_teardown_lock, FTAG); \
+		if (!POINTER_IS_VALID(zfsvfs)) {								\
+			printf("ZFS: ZFS_ENTER on released %s:%d",					\
+				   __FILE__, __LINE__);									\
+			return EIO; }												\
+		rrm_enter_read(&(zfsvfs)->z_teardown_lock, FTAG);				\
         if ((zfsvfs)->z_unmounted) {                                    \
             ZFS_EXIT(zfsvfs);                                           \
             return (EIO);                                               \
@@ -381,7 +391,14 @@ extern void	zfs_grow_blocksize(znode_t *, uint64_t, dmu_tx_t *);
 extern int	zfs_freesp(znode_t *, uint64_t, uint64_t, int, boolean_t);
 extern void	zfs_znode_init(void);
 extern void	zfs_znode_fini(void);
+
+#define ZGET_FLAG_UNLINKED          (1<<0) /* Also lookup unlinked */
+#define ZGET_FLAG_WITHOUT_VNODE     (1<<1) /* Don't attach vnode */
+#define ZGET_FLAG_WITHOUT_VNODE_GET (1<<2) /* Don't attach vnode + vnode_get*/
 extern int zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp);
+extern int zfs_zget_ext(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp, int flags);
+#define zfs_zget(A,B,C) zfs_zget_ext((A),(B),(C),0)
+
 extern int	zfs_rezget(znode_t *);
 extern void	zfs_zinactive(znode_t *);
 extern void	zfs_znode_delete(znode_t *, dmu_tx_t *);
@@ -441,10 +458,16 @@ extern void zfs_znode_free(znode_t *zp);
 void zfs_perm_init(znode_t *zp, znode_t *parent, int flag,
                    vattr_t *vap, dmu_tx_t *tx, cred_t *cr);
 void zfs_time_stamper(znode_t *zp, uint_t flag, dmu_tx_t *tx);
-int zfs_attach_vnode(znode_t *zp);
 uint32_t zfs_getbsdflags(znode_t *zp);
 void zfs_setbsdflags(znode_t *zp, uint32_t bsdflags);
 void zfs_time_stamper_locked(znode_t *zp, uint_t flag, dmu_tx_t *tx);
+int zfs_setattr_set_documentid(znode_t *zp, boolean_t update_flags);
+void zfs_setattr_generate_id(znode_t *zp, uint64_t val, char *name);
+
+#define FNV1_32A_INIT ((uint32_t)0x811c9dc5)
+uint32_t fnv_32a_str(const char *str, uint32_t hval);
+uint32_t fnv_32a_buf(void *buf, size_t len, uint32_t hval);
+
 
 #ifdef ZFS_DEBUG
 typedef enum whereami {

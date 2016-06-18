@@ -82,6 +82,20 @@ Default value: \fB200\fR.
 .sp
 .ne 2
 .na
+\fBl2arc_max_block_size\fR (ulong)
+.ad
+.RS 12n
+The maximum block size which may be written to an L2ARC device, after
+compression and other factors.  This setting is used to prevent a small
+number of large blocks from pushing a larger number of small blocks out
+of the cache.
+.sp
+Default value: \fB16,777,216\fR.
+.RE
+
+.sp
+.ne 2
+.na
 \fBl2arc_nocompress\fR (int)
 .ad
 .RS 12n
@@ -304,6 +318,22 @@ Default value: 10000
 .sp
 .ne 2
 .na
+\fBspa_slop_shift\fR (int)
+.ad
+.RS 12n
+Normally, we don't allow the last 3.2% (1/(2^spa_slop_shift)) of space
+in the pool to be consumed.  This ensures that we don't run the pool
+completely out of space, due to unaccounted changes (e.g. to the MOS).
+It also limits the worst-case time to allocate space.  If we have
+less than this amount of free space, most ZPL operations (e.g. write,
+create) will return ENOSPC.
+.sp
+Default value: 5
+.RE
+
+.sp
+.ne 2
+.na
 \fBzfetch_array_rd_sz\fR (ulong)
 .ad
 .RS 12n
@@ -388,23 +418,24 @@ Default value: \fB5\fR.
 .sp
 .ne 2
 .na
+\fBzfs_arc_lotsfree_percent\fR (int)
+.ad
+.RS 12n
+Throttle I/O when free system memory drops below this percentage of total
+system memory.  Setting this value to 0 will disable the throttle.
+.sp
+Default value: \fB10\fR.
+.RE
+
+.sp
+.ne 2
+.na
 \fBzfs_arc_max\fR (ulong)
 .ad
 .RS 12n
 Max arc size
 .sp
 Default value: \fB0\fR.
-.RE
-
-.sp
-.ne 2
-.na
-\fBzfs_arc_memory_throttle_disable\fR (int)
-.ad
-.RS 12n
-Disable memory throttle
-.sp
-Use \fB1\fR for yes (default) and \fB0\fR to disable.
 .RE
 
 .sp
@@ -524,6 +555,18 @@ Default value: \fB8\fR.
 .sp
 .ne 2
 .na
+
+\fBzfs_arc_p_min_shift\fR (int)
+.ad
+.RS 12n
+arc_c shift to calc min/max arc_p
+.sp
+Default value: \fB4\fR.
+.RE
+
+.sp
+.ne 2
+.na
 \fBzfs_arc_p_aggressive_disable\fR (int)
 .ad
 .RS 12n
@@ -557,12 +600,50 @@ Default value: \fB5\fR.
 .sp
 .ne 2
 .na
+\fBzfs_arc_sys_free\fR (ulong)
+.ad
+.RS 12n
+The target number of bytes the ARC should leave as free memory on the system.
+Defaults to the larger of 1/64 of physical memory or 512K.  Setting this
+option to a non-zero value will override the default.
+.sp
+Default value: \fB0\fR.
+.RE
+
+.sp
+.ne 2
+.na
 \fBzfs_autoimport_disable\fR (int)
 .ad
 .RS 12n
 Disable pool import at module load by ignoring the cache file (typically \fB/etc/zfs/zpool.cache\fR).
 .sp
 Use \fB1\fR for yes (default) and \fB0\fR for no.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_dbgmsg_enable\fR (int)
+.ad
+.RS 12n
+Internally ZFS keeps a small log to facilitate debugging.  By default the log
+is disabled, to enable it set this option to 1.  The contents of the log can
+be accessed by reading the /proc/spl/kstat/zfs/dbgmsg file.  Writing 0 to
+this proc file clears the log.
+.sp
+Default value: \fB0\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_dbgmsg_maxsize\fR (int)
+.ad
+.RS 12n
+The maximum size in bytes of the internal ZFS debug log.
+.sp
+Default value: \fB4M\fR.
 .RE
 
 .sp
@@ -715,6 +796,17 @@ Default value: 10%, subject to \fBzfs_dirty_data_max_max\fR.
 Start syncing out a transaction group if there is at least this much dirty data.
 .sp
 Default value: \fB67,108,864\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_free_bpobj_enabled\fR (int)
+.ad
+.RS 12n
+Enable/disable the processing of the free_bpobj object.
+.sp
+Default value: \fB1\fR.
 .RE
 
 .sp
@@ -911,6 +1003,21 @@ Use \fB1\fR for yes and \fB0\fR for no (default).
 Seconds to expire .zfs/snapshot
 .sp
 Default value: \fB300\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_admin_snapshot\fR (int)
+.ad
+.RS 12n
+Allow the creation, removal, or renaming of entries in the .zfs/snapshot
+directory to cause the creation, destruction, or renaming of snapshots.
+When enabled this functionality works both locally and over NFS exports
+which have the 'no_root_squash' option set. This functionality is disabled
+by default.
+.sp
+Use \fB1\fR for yes and \fB0\fR for no (default).
 .RE
 
 .sp
@@ -1398,12 +1505,71 @@ Default value: \fB0\fR.
 .sp
 .ne 2
 .na
-\fBzfs_vdev_mirror_switch_us\fR (int)
+\fBzfs_vdev_mirror_rotating_inc\fR (int)
 .ad
 .RS 12n
-Switch mirrors every N usecs
+A number by which the balancing algorithm increments the load calculation for
+the purpose of selecting the least busy mirror member when an I/O immediately
+follows its predecessor on rotational vdevs for the purpose of making decisions
+based on load.
 .sp
-Default value: \fB10,000\fR.
+Default value: \fB0\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_vdev_mirror_rotating_seek_inc\fR (int)
+.ad
+.RS 12n
+A number by which the balancing algorithm increments the load calculation for
+the purpose of selecting the least busy mirror member when an I/O lacks
+locality as defined by the zfs_vdev_mirror_rotating_seek_offset.  I/Os within
+this that are not immediately following the previous I/O are incremented by
+half.
+.sp
+Default value: \fB5\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_vdev_mirror_rotating_seek_offset\fR (int)
+.ad
+.RS 12n
+The maximum distance for the last queued I/O in which the balancing algorithm
+considers an I/O to have locality.
+See the section "ZFS I/O SCHEDULER".
+.sp
+Default value: \fB1048576\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_vdev_mirror_non_rotating_inc\fR (int)
+.ad
+.RS 12n
+A number by which the balancing algorithm increments the load calculation for
+the purpose of selecting the least busy mirror member on non-rotational vdevs
+when I/Os do not immediately follow one another.
+.sp
+Default value: \fB0\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_vdev_mirror_non_rotating_seek_inc\fR (int)
+.ad
+.RS 12n
+A number by which the balancing algorithm increments the load calculation for
+the purpose of selecting the least busy mirror member when an I/O lacks
+locality as defined by the zfs_vdev_mirror_rotating_seek_offset. I/Os within
+this that are not immediately following the previous I/O are incremented by
+half.
+.sp
+Default value: \fB1\fR.
 .RE
 
 .sp
@@ -1547,17 +1713,6 @@ Default value: \fB230\fR.
 Max number of blocks to discard at once
 .sp
 Default value: \fB16,384\fR.
-.RE
-
-.sp
-.ne 2
-.na
-\fBzvol_threads\fR (uint)
-.ad
-.RS 12n
-Number of threads for zvol device
-.sp
-Default value: \fB32\fR.
 .RE
 
 .SH ZFS I/O SCHEDULER

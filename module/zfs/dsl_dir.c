@@ -24,6 +24,7 @@
  * Copyright (c) 2013 Martin Matuska. All rights reserved.
  * Copyright (c) 2014 Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
 #include <sys/dmu.h>
@@ -152,7 +153,7 @@ dsl_dir_evict(void *dbu)
 	 * The props callback list should have been cleaned up by
 	 * objset_evict().
 	 */
-	list_destroy(&dd->dd_prop_cbs);
+	dsl_prop_fini(dd);
 	mutex_destroy(&dd->dd_lock);
 	kmem_free(dd, sizeof (dsl_dir_t));
 }
@@ -188,8 +189,7 @@ dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,
 		dd->dd_pool = dp;
 		mutex_init(&dd->dd_lock, NULL, MUTEX_DEFAULT, NULL);
 
-		list_create(&dd->dd_prop_cbs, sizeof (dsl_prop_cb_record_t),
-		    offsetof(dsl_prop_cb_record_t, cbr_node));
+		dsl_prop_init(dd);
 
 		dsl_dir_snap_cmtime_update(dd);
 
@@ -245,6 +245,7 @@ dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,
 		if (winner != NULL) {
 			if (dd->dd_parent)
 				dsl_dir_rele(dd->dd_parent, dd);
+			dsl_prop_fini(dd);
 			mutex_destroy(&dd->dd_lock);
 			kmem_free(dd, sizeof (dsl_dir_t));
 			dd = winner;
@@ -273,6 +274,7 @@ dsl_dir_hold_obj(dsl_pool_t *dp, uint64_t ddobj,
 errout:
 	if (dd->dd_parent)
 		dsl_dir_rele(dd->dd_parent, dd);
+	dsl_prop_fini(dd);
 	mutex_destroy(&dd->dd_lock);
 	kmem_free(dd, sizeof (dsl_dir_t));
 	dmu_buf_rele(dbuf, tag);
@@ -302,13 +304,14 @@ dsl_dir_async_rele(dsl_dir_t *dd, void *tag)
 	dmu_buf_rele(dd->dd_dbuf, tag);
 }
 
-/* buf must be long enough (MAXNAMELEN + strlen(MOS_DIR_NAME) + 1 should do) */
+/* buf must be at least ZFS_MAX_DATASET_NAME_LEN bytes */
 void
 dsl_dir_name(dsl_dir_t *dd, char *buf)
 {
 	if (dd->dd_parent) {
 		dsl_dir_name(dd->dd_parent, buf);
-		(void) strlcat(buf, "/", MAXNAMELEN);
+		VERIFY3U(strlcat(buf, "/", ZFS_MAX_DATASET_NAME_LEN), <,
+			ZFS_MAX_DATASET_NAME_LEN);
 	} else {
 		buf[0] = '\0';
 	}
@@ -318,10 +321,12 @@ dsl_dir_name(dsl_dir_t *dd, char *buf)
 		 * dprintf_dd() with dd_lock held
 		 */
 		mutex_enter(&dd->dd_lock);
-		(void) strlcat(buf, dd->dd_myname, MAXNAMELEN);
+		VERIFY3U(strlcat(buf, dd->dd_myname, ZFS_MAX_DATASET_NAME_LEN),
+			<, ZFS_MAX_DATASET_NAME_LEN);
 		mutex_exit(&dd->dd_lock);
 	} else {
-		(void) strlcat(buf, dd->dd_myname, MAXNAMELEN);
+		VERIFY3U(strlcat(buf, dd->dd_myname, ZFS_MAX_DATASET_NAME_LEN),
+			<, ZFS_MAX_DATASET_NAME_LEN);
 	}
 }
 
@@ -370,12 +375,12 @@ getcomponent(const char *path, char *component, const char **nextp)
 		if (p != NULL &&
 		    (p[0] != '@' || strpbrk(path+1, "/@") || p[1] == '\0'))
 			return (SET_ERROR(EINVAL));
-		if (strlen(path) >= MAXNAMELEN)
+		if (strlen(path) >= ZFS_MAX_DATASET_NAME_LEN)
 			return (SET_ERROR(ENAMETOOLONG));
 		(void) strlcpy(component, path, MAXNAMELEN);
 		p = NULL;
 	} else if (p[0] == '/') {
-		if (p - path >= MAXNAMELEN)
+		if (p - path >= ZFS_MAX_DATASET_NAME_LEN)
 			return (SET_ERROR(ENAMETOOLONG));
 		(void) strncpy(component, path, p - path);
 		component[p - path] = '\0';
@@ -387,7 +392,7 @@ getcomponent(const char *path, char *component, const char **nextp)
 		 */
 		if (strchr(path, '/'))
 			return (SET_ERROR(EINVAL));
-		if (p - path >= MAXNAMELEN)
+		if (p - path >= ZFS_MAX_DATASET_NAME_LEN)
 			return (SET_ERROR(ENAMETOOLONG));
 		(void) strncpy(component, path, p - path);
 		component[p - path] = '\0';
@@ -415,7 +420,7 @@ dsl_dir_hold(dsl_pool_t *dp, const char *name, void *tag,
 	dsl_dir_t *dd;
 	uint64_t ddobj;
 
-	buf = kmem_alloc(MAXNAMELEN, KM_SLEEP);
+	buf = kmem_alloc(ZFS_MAX_DATASET_NAME_LEN, KM_SLEEP);
 	err = getcomponent(name, buf, &next);
 	if (err != 0)
 		goto error;
@@ -482,7 +487,7 @@ dsl_dir_hold(dsl_pool_t *dp, const char *name, void *tag,
 		*tailp = next;
 	*ddp = dd;
 error:
-	kmem_free(buf, MAXNAMELEN);
+	kmem_free(buf, ZFS_MAX_DATASET_NAME_LEN);
 	return (err);
 }
 
@@ -979,7 +984,7 @@ dsl_dir_stats(dsl_dir_t *dd, nvlist_t *nv)
 
 	if (dsl_dir_is_clone(dd)) {
 		dsl_dataset_t *ds;
-		char buf[MAXNAMELEN];
+		char buf[ZFS_MAX_DATASET_NAME_LEN];
 
 		VERIFY0(dsl_dataset_hold_obj(dd->dd_pool,
 		    dsl_dir_phys(dd)->dd_origin_obj, FTAG, &ds));
@@ -1696,11 +1701,11 @@ static int
 dsl_valid_rename(dsl_pool_t *dp, dsl_dataset_t *ds, void *arg)
 {
 	int *deltap = arg;
-	char namebuf[MAXNAMELEN];
+	char namebuf[ZFS_MAX_DATASET_NAME_LEN];
 
 	dsl_dataset_name(ds, namebuf);
 
-	if (strlen(namebuf) + *deltap >= MAXNAMELEN)
+	if (strlen(namebuf) + *deltap >= ZFS_MAX_DATASET_NAME_LEN)
 		return (SET_ERROR(ENAMETOOLONG));
 	return (0);
 }
@@ -1915,9 +1920,8 @@ dsl_dir_rename_sync(void *arg, dmu_tx_t *tx)
 	VERIFY0(zap_add(mos, dsl_dir_phys(newparent)->dd_child_dir_zapobj,
 	    dd->dd_myname, 8, 1, &dd->dd_object, tx));
 
-#ifdef _KERNEL
-	zvol_rename_minors(ddra->ddra_oldname, ddra->ddra_newname);
-#endif
+	zvol_rename_minors(dp->dp_spa, ddra->ddra_oldname,
+	    ddra->ddra_newname, B_TRUE);
 
 	dsl_prop_notify_all(dd);
 

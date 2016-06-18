@@ -28,3 +28,5 @@ libuutil_la_LIBADD = \
 	$(top_builddir)/lib/libefi/libefi.la
 
 libuutil_la_LDFLAGS = -pthread -version-info 1:1:0
+
+EXTRA_DIST = $(USER_C)

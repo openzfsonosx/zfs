@@ -41,6 +41,13 @@
 #include <sys/metaslab.h>
 #include <sys/trace_zil.h>
 
+
+#if defined (__APPLE__) && defined (KERNEL)
+#include <sys/zfs_rlock.h>
+#include <sys/zfs_znode.h>
+extern int    zfs_znode_getvnode( znode_t *zp, zfsvfs_t *zfsvfs);
+#endif
+
 /*
  * The zfs intent log (ZIL) saves transaction records of system calls
  * that change the file system in memory with enough information
@@ -562,7 +569,7 @@ zil_create(zilog_t *zilog)
 			BP_ZERO(&blk);
 		}
 
-		error = zio_alloc_zil(zilog->zl_spa, txg, &blk,
+		error = zio_alloc_zil(zilog->zl_spa, txg, &blk, NULL,
 		    ZIL_MIN_BLKSZ, B_TRUE);
 		fastwrite = TRUE;
 
@@ -1033,8 +1040,9 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 
 	BP_ZERO(bp);
 	use_slog = USE_SLOG(zilog);
-	error = zio_alloc_zil(spa, txg, bp, zil_blksz,
-	    USE_SLOG(zilog));
+	/* pass the old blkptr in order to spread log blocks across devs */
+	error = zio_alloc_zil(spa, txg, bp, &lwb->lwb_blk, zil_blksz, use_slog);
+
 	if (use_slog) {
 		ZIL_STAT_BUMP(zil_itx_metaslab_slog_count);
 		ZIL_STAT_INCR(zil_itx_metaslab_slog_bytes, lwb->lwb_nused);
@@ -1084,6 +1092,8 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 	return (nlwb);
 }
 
+
+
 static lwb_t *
 zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 {
@@ -1093,6 +1103,11 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 	uint64_t txg = lrc->lrc_txg;
 	uint64_t reclen = lrc->lrc_reclen;
 	uint64_t dlen = 0;
+	int error = 0;
+#if defined (__APPLE__) && defined (KERNEL)
+	znode_t *zp = NULL;
+	rl_t *rl = NULL;
+#endif
 
 	if (lwb == NULL)
 		return (NULL);
@@ -1104,6 +1119,55 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 	if (lrc->lrc_txtype == TX_WRITE && itx->itx_wr_state == WR_NEED_COPY)
 		dlen = P2ROUNDUP_TYPED(
 		    lrw->lr_length, sizeof (uint64_t), uint64_t);
+
+#if defined (__APPLE__) && defined (KERNEL)
+	/* to avoid deadlock, grab necessary range lock before hold the txg */
+	if (lrc->lrc_txtype == TX_WRITE && itx->itx_wr_state != WR_COPIED) {
+		uint64_t off = lrw->lr_offset;
+		int len = lrw->lr_length; /* this range never exceeds max blk size,
+									so int type is ok */
+		zfsvfs_t *zfsvfs = itx->itx_private;
+
+		error = zfs_zget_ext(zfsvfs, lrw->lr_foid, &zp,
+							 ZGET_FLAG_UNLINKED | ZGET_FLAG_WITHOUT_VNODE_GET );
+		if (error == 0) {
+
+			/* Attach vnode in different thread - if one is needed -
+			* since zil_lwb_commit is called multiple times for the same zp
+			* we only spawn the attach thread once.
+			*/
+			if (!ZTOV(zp)) {
+				printf("ZFS: zil is NULL case\n");
+			}
+
+			if (dlen) {                     /* immediate write */
+				rl = zfs_range_lock(zp, off, len, RL_READER);
+			} else {
+				uint64_t boff; /* block starting offset */
+
+				/*
+				 * Have to lock the whole block to ensure when it's
+				 * written out and it's checksum is being calculated
+				 * that no one can change the data. We need to re-check
+				 * blocksize after we get the lock in case it's changed!
+				 */
+				for (;;) {
+					if (ISP2(zp->z_blksz)) {
+						boff = P2ALIGN_TYPED(off, zp->z_blksz,
+											 uint64_t);
+					} else {
+						boff = 0;
+					}
+					len = zp->z_blksz;
+					rl = zfs_range_lock(zp, boff, len, RL_READER);
+					if (zp->z_blksz == len)
+						break;
+					zfs_range_unlock(rl);
+				}
+			} /* if (dlen) ... else */
+		} /* if (error == 0) */
+	}         /* if (lrc->lrc_txtype == TX_WRITE && itx->itx_wr_state != WR_COPIED) */
+#endif
 
 	zilog->zl_cur_used += (reclen + dlen);
 
@@ -1142,7 +1206,6 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 			ZIL_STAT_INCR(zil_itx_copied_bytes, lrw->lr_length);
 		} else {
 			char *dbuf;
-			int error;
 
 			if (dlen) {
 				ASSERT(itx->itx_wr_state == WR_NEED_COPY);
@@ -1158,8 +1221,18 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 				ZIL_STAT_INCR(zil_itx_indirect_bytes,
 				    lrw->lr_length);
 			}
-			error = zilog->zl_get_data(
-			    itx->itx_private, lrw, dbuf, lwb->lwb_zio);
+			if (error == 0) {
+				/* if error is not 0, the zfs_zget already failed,
+				 * no need to proceed */
+
+#if defined (__APPLE__) && defined (KERNEL)
+				error = zilog->zl_get_data(
+					itx->itx_private, lrw, dbuf, lwb->lwb_zio, zp, rl);
+#else
+				error = zilog->zl_get_data(
+					itx->itx_private, lrw, dbuf, lwb->lwb_zio, NULL, NULL);
+#endif
+			}
 			if (error == EIO) {
 				txg_wait_synced(zilog->zl_dmu_pool, txg);
 				return (lwb);
@@ -1657,6 +1730,7 @@ zil_commit(zilog_t *zilog, uint64_t foid)
 	zil_commit_writer(zilog);
 	zilog->zl_com_batch = mybatch;
 	zilog->zl_writer = B_FALSE;
+	mutex_exit(&zilog->zl_lock);
 
 	/* wake up one thread to become the next writer */
 	cv_signal(&zilog->zl_cv_batch[(mybatch+1) & 1]);
@@ -1664,7 +1738,6 @@ zil_commit(zilog_t *zilog, uint64_t foid)
 	/* wake up all threads waiting for this batch to be committed */
 	cv_broadcast(&zilog->zl_cv_batch[mybatch & 1]);
 
-	mutex_exit(&zilog->zl_lock);
 }
 
 /*
@@ -1891,7 +1964,7 @@ zil_open(objset_t *os, zil_get_data_t *get_data)
 	ASSERT(list_is_empty(&zilog->zl_lwb_list));
 
 	zilog->zl_get_data = get_data;
-	zilog->zl_clean_taskq = taskq_create("zil_clean", 1, minclsyspri,
+	zilog->zl_clean_taskq = taskq_create("zil_clean", 1, defclsyspri,
 	    2, 2, TASKQ_PREPOPULATE);
 
 	return (zilog);
@@ -2081,7 +2154,7 @@ typedef struct zil_replay_arg {
 static int
 zil_replay_error(zilog_t *zilog, lr_t *lr, int error)
 {
-	char name[MAXNAMELEN];
+	char name[ZFS_MAX_DATASET_NAME_LEN];
 
 	zilog->zl_replaying_seq--;	/* didn't actually replay this one */
 
@@ -2251,38 +2324,3 @@ zil_vdev_offline(const char *osname, void *arg)
 		return (SET_ERROR(EEXIST));
 	return (0);
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-EXPORT_SYMBOL(zil_alloc);
-EXPORT_SYMBOL(zil_free);
-EXPORT_SYMBOL(zil_open);
-EXPORT_SYMBOL(zil_close);
-EXPORT_SYMBOL(zil_replay);
-EXPORT_SYMBOL(zil_replaying);
-EXPORT_SYMBOL(zil_destroy);
-EXPORT_SYMBOL(zil_destroy_sync);
-EXPORT_SYMBOL(zil_itx_create);
-EXPORT_SYMBOL(zil_itx_destroy);
-EXPORT_SYMBOL(zil_itx_assign);
-EXPORT_SYMBOL(zil_commit);
-EXPORT_SYMBOL(zil_vdev_offline);
-EXPORT_SYMBOL(zil_claim);
-EXPORT_SYMBOL(zil_check_log_chain);
-EXPORT_SYMBOL(zil_sync);
-EXPORT_SYMBOL(zil_clean);
-EXPORT_SYMBOL(zil_suspend);
-EXPORT_SYMBOL(zil_resume);
-EXPORT_SYMBOL(zil_add_block);
-EXPORT_SYMBOL(zil_bp_tree_add);
-EXPORT_SYMBOL(zil_set_sync);
-EXPORT_SYMBOL(zil_set_logbias);
-
-module_param(zil_replay_disable, int, 0644);
-MODULE_PARM_DESC(zil_replay_disable, "Disable intent logging replay");
-
-module_param(zfs_nocacheflush, int, 0644);
-MODULE_PARM_DESC(zfs_nocacheflush, "Disable cache flushes");
-
-module_param(zil_slog_limit, ulong, 0644);
-MODULE_PARM_DESC(zil_slog_limit, "Max commit bytes to separate log device");
-#endif

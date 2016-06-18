@@ -1,9 +1,9 @@
-
 ACLOCAL_AMFLAGS = -I config
 
 include $(top_srcdir)/config/rpm.am
 include $(top_srcdir)/config/deb.am
 include $(top_srcdir)/config/tgz.am
+
 if CONFIG_USER
 include $(top_srcdir)/etc/launchd/daemons/launchd-daemons.am
 endif
@@ -16,10 +16,11 @@ extradir = @prefix@/src/zfs-$(VERSION)
 extra_HEADERS = zfs.release.in zfs_config.h.in
 
 kerneldir = /usr/src/zfs-$(VERSION)/$(LINUX_VERSION)
-nodist_kernel_HEADERS = zfs.release zfs_config.h
 endif
 if CONFIG_USER
-SUBDIRS += udev etc man scripts lib cmd zfs_bundle
+# O3X - trim out linux stuff.
+#SUBDIRS += udev etc man scripts lib cmd zfs_bundle
+SUBDIRS += etc man scripts lib cmd zfs_bundle
 endif
 
 
@@ -40,17 +41,6 @@ distclean-local::
 		-o -name '*.order' -o -name '*.markers' \) \
 		-type f -print | xargs $(RM)
 
-if CONFIG_KERNEL
-install-data-local:
-	release=$(ZFS_META_VERSION)-$(ZFS_META_RELEASE); \
-	instdest=$(DESTDIR)/usr/src/zfs-$$release/$(LINUX_VERSION); \
-	for instfile in $(noinst_HEADERS); do \
-		parentdir=`dirname $$instdest/$$instfile`; \
-		mkdir -p $$parentdir; \
-		$(INSTALL) $$instfile $$instdest/$$instfile; \
-	done
-endif
-
 
 checkstyle: cstyle shellcheck
 
@@ -69,11 +59,11 @@ shellcheck:
 	 fi
 
 ctags:
-	$(RM) $(top_srcdir)/tags
+	$(RM) tags
 	find $(top_srcdir) -name .git -prune -o -name '*.[hc]' | xargs ctags
 
 etags:
-	$(RM) $(top_srcdir)/TAGS
+	$(RM) TAGS
 	find $(top_srcdir) -name .pc -prune -o -name '*.[hc]' | xargs etags -a
 
 tags: ctags etags
@@ -86,16 +76,17 @@ if CONFIG_USER
 install-data-hook::
 	@echo
 	for plistfile in $(launchddaemon_DATA); do \
-		label=`defaults read "$$PWD"/"$$plistfile" Label`; \
-		echo "Attempting to remove $$label ..."; \
-		$(DESTDIR)/bin/launchctl remove "$$label" \
-		    || echo "Ignoring errors"; \
 		bn=`basename "$$plistfile"`; \
+		echo "Attempting to unload $$bn ..."; \
+		$(DESTDIR)/bin/launchctl unload -F \
+		$(DESTDIR)$(launchddaemondir)/"$$bn" \
+		    || echo "Ignoring errors"; \
 		echo "Attempting to load $$bn ..."; \
-		$(DESTDIR)/bin/launchctl load -w \
+		$(DESTDIR)/bin/launchctl load -wF \
 		$(DESTDIR)$(launchddaemondir)/"$$bn" \
 		    || echo "Ignoring errors"; \
 	done
+	echo "Install done."
 
 uninstall-hook::
 	@echo
@@ -105,7 +96,6 @@ uninstall-hook::
 		$(DESTDIR)/bin/launchctl remove "$$label" \
 		    || echo "Ignoring errors"; \
 	done
-	$(RM) -r /System/Library/Filesystems/zfs.fs
-	$(RM) -r /System/Library/Extensions/zfs.kext
-	$(RM) -r /Library/Extensions/zfs.kext
+	$(RM) -r $(DESTDIR)@FILESYSTEMS_PREFIX@/zfs.fs
+	$(RM) -r $(DESTDIR)@KERNEL_MODPREFIX@/zfs.kext
 endif

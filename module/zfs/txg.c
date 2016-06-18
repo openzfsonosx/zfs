@@ -205,7 +205,7 @@ txg_sync_start(dsl_pool_t *dp)
 	tx->tx_threads = 2;
 
 	tx->tx_quiesce_thread = thread_create(NULL, 0, txg_quiesce_thread,
-	    dp, 0, &p0, TS_RUN, minclsyspri);
+	    dp, 0, &p0, TS_RUN, defclsyspri);
 
 	/*
 	 * The sync thread can need a larger-than-default stack size on
@@ -213,7 +213,7 @@ txg_sync_start(dsl_pool_t *dp)
 	 * scrub_visitbp() recursion.
 	 */
 	tx->tx_sync_thread = thread_create(NULL, 32<<10, txg_sync_thread,
-	    dp, 0, &p0, TS_RUN, minclsyspri);
+	    dp, 0, &p0, TS_RUN, defclsyspri);
 
 	mutex_exit(&tx->tx_sync_lock);
 }
@@ -444,7 +444,7 @@ txg_dispatch_callbacks(dsl_pool_t *dp, uint64_t txg)
 			 * Commit callback taskq hasn't been created yet.
 			 */
 			tx->tx_commit_cb_taskq = taskq_create("tx_commit_cb",
-			    max_ncpus, minclsyspri, max_ncpus, max_ncpus * 2,
+			    max_ncpus, defclsyspri, max_ncpus, max_ncpus * 2,
 			    TASKQ_PREPOPULATE | TASKQ_DYNAMIC);
 		}
 
@@ -939,25 +939,3 @@ txg_list_next(txg_list_t *tl, void *p, uint64_t txg)
 
 	return (tn == NULL ? NULL : (char *)tn - tl->tl_offset);
 }
-
-#if defined(_KERNEL) && defined(HAVE_SPL)
-#if 0
-EXPORT_SYMBOL(txg_init);
-EXPORT_SYMBOL(txg_fini);
-EXPORT_SYMBOL(txg_sync_start);
-EXPORT_SYMBOL(txg_sync_stop);
-EXPORT_SYMBOL(txg_hold_open);
-EXPORT_SYMBOL(txg_rele_to_quiesce);
-EXPORT_SYMBOL(txg_rele_to_sync);
-EXPORT_SYMBOL(txg_register_callbacks);
-EXPORT_SYMBOL(txg_delay);
-EXPORT_SYMBOL(txg_wait_synced);
-EXPORT_SYMBOL(txg_wait_open);
-EXPORT_SYMBOL(txg_wait_callbacks);
-EXPORT_SYMBOL(txg_stalled);
-EXPORT_SYMBOL(txg_sync_waiting);
-
-module_param(zfs_txg_timeout, int, 0644);
-MODULE_PARM_DESC(zfs_txg_timeout, "Max seconds worth of delta per txg");
-#endif
-#endif

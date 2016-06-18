@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  */
 
 #include <sys/spa.h>
@@ -181,15 +181,7 @@ spa_history_write(spa_t *spa, void *buf, uint64_t len, spa_history_phys_t *shpp,
 static char *
 spa_history_zone(void)
 {
-#ifdef _KERNEL
-#ifdef HAVE_SPL
-	return ("OSX");
-#else
-	return (curproc->p_zone->zone_name);
-#endif
-#else
 	return (NULL);
-#endif
 }
 
 /*
@@ -495,7 +487,7 @@ spa_history_log_internal_ds(dsl_dataset_t *ds, const char *operation,
     dmu_tx_t *tx, const char *fmt, ...)
 {
 	va_list adx;
-	char namebuf[MAXNAMELEN];
+	char namebuf[ZFS_MAX_DATASET_NAME_LEN];
 	nvlist_t *nvl = fnvlist_alloc();
 
 	ASSERT(tx != NULL);
@@ -514,7 +506,7 @@ spa_history_log_internal_dd(dsl_dir_t *dd, const char *operation,
     dmu_tx_t *tx, const char *fmt, ...)
 {
 	va_list adx;
-	char namebuf[MAXNAMELEN];
+	char namebuf[ZFS_MAX_DATASET_NAME_LEN];
 	nvlist_t *nvl = fnvlist_alloc();
 
 	ASSERT(tx != NULL);

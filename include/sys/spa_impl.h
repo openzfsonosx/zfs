@@ -23,6 +23,8 @@
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2013 Saso Kiselkov. All rights reserved.
+ * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
 #ifndef _SYS_SPA_IMPL_H
@@ -119,7 +121,7 @@ struct spa {
 	/*
 	 * Fields protected by spa_namespace_lock.
 	 */
-	char		spa_name[MAXNAMELEN];	/* pool name */
+	char		spa_name[ZFS_MAX_DATASET_NAME_LEN];	/* pool name */
 	char		*spa_comment;		/* comment */
 	avl_node_t	spa_avl;		/* node in spa_namespace_avl */
 	nvlist_t	*spa_config;		/* last synced config */
@@ -165,6 +167,10 @@ struct spa {
 	uint64_t	spa_syncing_txg;	/* txg currently syncing */
 	bpobj_t		spa_deferred_bpobj;	/* deferred-free bplist */
 	bplist_t	spa_free_bplist[TXG_SIZE]; /* bplist of stuff to free */
+	zio_cksum_salt_t spa_cksum_salt;        /* secret salt for cksum */
+	/* checksum context templates */
+	kmutex_t        spa_cksum_tmpls_lock;
+	void            *spa_cksum_tmpls[ZIO_CHECKSUM_FUNCTIONS];
 	uberblock_t	spa_ubsync;		/* last synced uberblock */
 	uberblock_t	spa_uberblock;		/* current uberblock */
 	boolean_t	spa_extreme_rewind;	/* rewind past deferred frees */
@@ -252,6 +258,7 @@ struct spa {
 	uint64_t	spa_deadman_synctime;	/* deadman expiration timer */
 	uint64_t	spa_errata;		/* errata issues detected */
 	spa_stats_t	spa_stats;		/* assorted spa statistics */
+	taskq_t		*spa_zvol_taskq;	/* Taskq for minor managment */
 
 	/*
 	 * spa_refcount & spa_config_lock must be the last elements

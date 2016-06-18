@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016 Actifio, Inc. All rights reserved.
  */
 
 #include <assert.h>
@@ -75,7 +76,7 @@ pthread_mutex_t kthread_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_key_t kthread_key;
 int kthread_nr = 0;
 
-static void
+void
 thread_init(void)
 {
 	kthread_t *kt;
@@ -94,7 +95,7 @@ thread_init(void)
 	kthread_nr = 1;
 }
 
-static void
+void
 thread_fini(void)
 {
 	kthread_t *kt = curthread;
@@ -139,6 +140,9 @@ zk_thread_helper(void *arg)
 	VERIFY3S(pthread_mutex_lock(&kthread_lock), ==, 0);
 	kthread_nr++;
 	VERIFY3S(pthread_mutex_unlock(&kthread_lock), ==, 0);
+#ifdef LINUX
+	(void) setpriority(PRIO_PROCESS, 0, kt->t_pri);
+#endif
 
 	kt->t_tid = pthread_self();
 	((thread_func_arg_t) kt->t_func)(kt->t_arg);
@@ -158,10 +162,14 @@ zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func, void *arg,
 	char *stkstr;
 
 	ASSERT0(state & ~TS_RUN);
+	ASSERT0(len);
 
 	kt = umem_zalloc(sizeof (kthread_t), UMEM_NOFAIL);
 	kt->t_func = func;
 	kt->t_arg = arg;
+#ifdef LINUX
+	kt->t_pri = pri;
+#endif
 
 	VERIFY0(pthread_attr_init(&attr));
 	VERIFY0(pthread_attr_setdetachstate(&attr, detachstate));
@@ -1045,8 +1053,9 @@ kobj_read_file(struct _buf *file, char *buf, unsigned size, unsigned off)
 {
 	ssize_t resid;
 
-	vn_rdwr(UIO_READ, (vnode_t *)file->_fd, buf, size, (offset_t)off,
-	    UIO_SYSSPACE, 0, 0, 0, &resid);
+	if (vn_rdwr(UIO_READ, (vnode_t *)file->_fd, buf, size, (offset_t)off,
+	    UIO_SYSSPACE, 0, 0, 0, &resid) != 0)
+		return (-1);
 
 	return (size - resid);
 }
@@ -1116,6 +1125,50 @@ highbit64(uint64_t i)
 	}
 	return (h);
 }
+
+/*
+ * Find lowest one bit set.
+ * Returns bit number + 1 of lowest bit that is set, otherwise returns 0.
+ * This is basically a reimplementation of ffsll(), which is GNU specific.
+ */
+int
+lowbit64(uint64_t i)
+{
+	register int h = 64;
+	if (i == 0)
+		return (0);
+
+	if (i & 0x00000000ffffffffULL)
+		h -= 32;
+	else
+		i >>= 32;
+
+	if (i & 0x0000ffff)
+		h -= 16;
+	else
+		i >>= 16;
+
+	if (i & 0x00ff)
+		h -= 8;
+	else
+		i >>= 8;
+
+	if (i & 0x0f)
+		h -= 4;
+	else
+		i >>= 4;
+
+	if (i & 0x3)
+		h -= 2;
+	else
+		i >>= 2;
+
+	if (i & 0x1)
+		h -= 1;
+
+	return (h);
+}
+
 
 static int random_fd = -1, urandom_fd = -1;
 
@@ -1286,6 +1339,10 @@ crgetgroups(cred_t *cr)
 	return (NULL);
 }
 
+void
+crgetgroupsfree(gid_t *gids)
+{}
+
 int
 zfs_secpolicy_snapshot_perms(const char *name, cred_t *cr)
 {
@@ -1381,4 +1438,25 @@ int
 zfs_onexit_cb_data(minor_t minor, uint64_t action_handle, void **data)
 {
 	return (0);
+}
+
+void
+zvol_create_minors(spa_t *spa, const char *name, boolean_t async)
+{
+}
+
+void
+zvol_remove_minor(spa_t *spa, const char *name, boolean_t async)
+{
+}
+
+void
+zvol_remove_minors(spa_t *spa, const char *name, boolean_t async)
+{
+}
+
+void
+zvol_rename_minors(spa_t *spa, const char *oldname, const char *newname,
+    boolean_t async)
+{
 }

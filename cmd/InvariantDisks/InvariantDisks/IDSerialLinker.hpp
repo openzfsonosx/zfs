@@ -13,26 +13,20 @@
 #ifndef ID_SERIALLINKER_HPP
 #define ID_SERIALLINKER_HPP
 
-#include "IDDiskArbitrationHandler.hpp"
-
-#include <string>
+#include "IDBaseLinker.hpp"
 
 namespace ID
 {
-	class SerialLinker : public DiskArbitrationHandler
+	class SerialLinker : public BaseLinker
 	{
 	public:
 		explicit SerialLinker(std::string base, ASLClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;
-		virtual void diskDisappeared(DADiskRef disk, DiskInformation const & info) override;
 
 	private:
 		std::string formatSerialPath(DiskInformation const & di) const;
-
-	private:
-		std::string m_base;
 	};
 }
 

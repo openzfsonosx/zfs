@@ -2164,6 +2164,21 @@ ldi_ioctl(ldi_handle_t lh, int cmd, intptr_t arg,
 			return (ENOTSUP);
 		}
 
+	case DKIOCISSOLIDSTATE:
+		/* IOMedia or vnode */
+		switch (handlep->lh_type) {
+		case LDI_TYPE_IOKIT:
+			return (handle_is_solidstate_iokit(handlep,
+			    (int *)arg));
+
+		case LDI_TYPE_VNODE:
+			return (handle_is_solidstate_vnode(handlep,
+			    (int *)arg));
+
+		default:
+			return (ENOTSUP);
+		}
+
 	default:
 		return (ENOTSUP);
 	}

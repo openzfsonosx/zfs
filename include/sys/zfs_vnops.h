@@ -63,6 +63,8 @@ typedef struct user64_timespec	timespec_user64_t;
 #endif
 
 #define UNKNOWNUID ((uid_t)99)
+#define UNKNOWNGID ((gid_t)99)
+
 #define DTTOVT(dtype)   (iftovt_tab[(dtype)])
 #define kTextEncodingMacUnicode	0x7e
 #define ZAP_AVENAMELEN  (ZAP_MAXNAMELEN / 4)
@@ -188,8 +190,8 @@ extern int    zfs_setsecattr(vnode_t *vp, vsecattr_t *vsecp, int flag,
                              cred_t *cr, caller_context_t *ct);
 
 /* zfs_vops_osx.c calls */
-extern int    zfs_znode_getvnode( znode_t *zp, zfsvfs_t *zfsvfs,
-                                  struct vnode **vpp);
+extern int    zfs_znode_getvnode( znode_t *zp, zfsvfs_t *zfsvfs);
+
 extern void   getnewvnode_reserve( int num );
 extern void   getnewvnode_drop_reserve( void );
 extern int    zfs_vfsops_init(void);
@@ -241,8 +243,11 @@ extern int zpl_xattr_get_sa(struct vnode *vp, const char *name, void *value,
 #define KAUTH_WKG_EVERYBODY     4
 
 extern int kauth_wellknown_guid(guid_t *guid);
-extern void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl);
+extern void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl,
+						  int *seen_type);
 extern void nfsacl_set_wellknown(int wkg, guid_t *guid);
+extern int  zfs_addacl_trivial(znode_t *zp, ace_t *aces, int *nentries,
+							   int seen_type);
 
 
 #ifdef	__cplusplus

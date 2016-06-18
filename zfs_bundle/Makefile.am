@@ -2,7 +2,7 @@ include $(top_srcdir)/config/Rules.am
 
 AUTOMAKE_OPTIONS = subdir-objects
 
-FS_BUNDLEPREFIX = /System/Library/Filesystems
+FS_BUNDLEPREFIX = @FILESYSTEMS_PREFIX@
 FS_BUNDLEDIR = $(DESTDIR)$(FS_BUNDLEPREFIX)/zfs.fs
 
 PKGINFO = PkgInfo
@@ -33,7 +33,10 @@ install-exec-local:: zfs.fs
 	rm -f $(FS_BUNDLEDIR)/Contents/Resources/English.lproj/$(INFOPLIST_STRINGS)
 	mkdir -p $(FS_BUNDLEDIR)
 	rsync -aH zfs.fs/ $(FS_BUNDLEDIR)/
-	chown -R root:wheel $(FS_BUNDLEDIR)
+	chown -R root:wheel $(FS_BUNDLEDIR) || echo "Unable to chown root:wheel in $(FS_BUNDLEDIR)"
 
 clean:
 	rm -rf zfs.fs
+
+uninstall-hook:
+	rm -rf "$(FS_BUNDLEDIR)"

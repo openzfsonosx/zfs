@@ -46,6 +46,8 @@ struct znode;
 /* #define WITH_SEARCHFS */
 /* #define WITH_READDIRATTR */
 #define	HAVE_NAMED_STREAMS 1
+#define	HAVE_PAGEOUT_V2 1
+#define HIDE_TRIVIAL_ACL 1
 #endif
 
 
@@ -80,10 +82,6 @@ struct zfsvfs {
         list_t          z_all_znodes;   /* all vnodes in the fs */
         kmutex_t        z_znodes_lock;  /* lock for z_all_znodes */
         struct vnode   *z_ctldir;      /* .zfs directory pointer */
-        time_t          z_mount_time;           /* mount timestamp (for Spotlight) */
-        time_t          z_last_unmount_time;    /* unmount timestamp (for Spotlight) */
-        time_t          z_last_mtime_synced;    /* last fs mtime synced to disk */
-        struct vnode   *z_mtime_vp;            /* znode utilized for the fs mtime. */
         boolean_t       z_show_ctldir;  /* expose .zfs in the root dir */
         boolean_t       z_issnap;       /* true if this is a snapshot */
         boolean_t	    z_use_fuids;	/* version allows fuids */
@@ -92,25 +90,27 @@ struct zfsvfs {
 	    boolean_t       z_xattr_sa;     /* allow xattrs to be stores as SA */
         uint64_t        z_version;
         uint64_t        z_shares_dir;   /* hidden shares dir */
-	uint64_t	z_notification_conditions; /* used for HFSIOC_VOLUME_STATUS */
-	uint64_t	z_freespace_notify_warninglimit; /* HFSIOC_ vfs notification - number of free blocks */
-	uint64_t	z_freespace_notify_dangerlimit; /* HFSIOC_ vfs notification - number of free blocks */
-	uint64_t	z_freespace_notify_desiredlevel; /* HFSIOC_ vfs notification - number of free blocks */
         kmutex_t	    z_lock;
-#ifdef __APPLE__
-        kmutex_t	    z_reclaim_list_lock; /* lock for using z_reclaim_list*/
-        list_t          z_reclaim_znodes;/* all reclaimed vnodes in the fs*/
-        boolean_t       z_reclaim_thread_exit;
-        kmutex_t		z_reclaim_thr_lock;
-    	kcondvar_t	    z_reclaim_thr_cv;	/* used to signal reclaim thr */
 
-        kmutex_t	    z_vnodecreate_lock; /*lock for using z_vnodecreate_list*/
-        list_t          z_vnodecreate_list;/* all threads in vnode_create */
+#ifdef __APPLE__
+        time_t          z_mount_time;           /* mount timestamp (for Spotlight) */
+        time_t          z_last_unmount_time;    /* unmount timestamp (for Spotlight) */
         boolean_t       z_xattr;        /* enable atimes mount option */
 
+	    avl_tree_t   	z_hardlinks;    /* linkid hash avl tree for vget */
+	    avl_tree_t   	z_hardlinks_linkid; /* same tree, sorted on linkid */
+	    krwlock_t	    z_hardlinks_lock;	/* lock to access z_hardlinks */
+
+	    uint64_t	    z_notification_conditions; /* HFSIOC_VOLUME_STATUS */
+	    uint64_t	    z_freespace_notify_warninglimit; /* HFSIOC_ - number of free blocks */
+	    uint64_t	    z_freespace_notify_dangerlimit; /* HFSIOC_ - number of free blocks */
+	    uint64_t	    z_freespace_notify_desiredlevel; /* HFSIOC_ - number of free blocks */
+
 #ifdef APPLE_SA_RECOVER
-	uint64_t z_recover_parent;/* Temporary holder until SA corruption are gone */
+	    uint64_t        z_recover_parent;/* Temporary holder until SA corruption are gone */
 #endif /* APPLE_SA_RECOVER */
+
+	    uint64_t        z_findernotify_space;
 
 #endif
     	uint64_t	    z_userquota_obj;
@@ -121,12 +121,19 @@ struct zfsvfs {
         kmutex_t        z_hold_mtx[ZFS_OBJ_MTX_SZ];     /* znode hold locks */
 };
 
+
 #ifdef __APPLE__
-	struct vnodecreate {
-		thread_t thread;
-		list_node_t link;
-	};
+struct hardlinks_struct {
+	avl_node_t hl_node;
+	avl_node_t hl_node_linkid;
+	uint64_t hl_parent;     // parentid of entry
+	uint64_t hl_fileid;     // the fileid (z_id) for vget
+	uint32_t hl_linkid;     // the linkid, persistent over renames
+	char hl_name[PATH_MAX]; // cached name for vget
+};
+typedef struct hardlinks_struct hardlinks_t;
 #endif
+
 
 #define	ZFS_SUPER_MAGIC	0x2fc12fc1
 
@@ -205,6 +212,7 @@ extern int zfs_set_version(zfsvfs_t *zfsvfs, uint64_t newvers);
 
 extern int zfs_get_zplprop(objset_t *os, zfs_prop_t prop,
     uint64_t *value);
+
 extern int zfs_sb_create(const char *name, zfsvfs_t **zfsvfsp);
 extern int zfs_sb_setup(zfsvfs_t *zfsvfs, boolean_t mounting);
 extern void zfs_sb_free(zfsvfs_t *zfsvfs);

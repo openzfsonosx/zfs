@@ -33,6 +33,7 @@ COMMON_H = \
 	$(top_srcdir)/include/sys/efi_partition.h \
 	$(top_srcdir)/include/sys/metaslab.h \
 	$(top_srcdir)/include/sys/metaslab_impl.h \
+	$(top_srcdir)/include/sys/mntent.h \
 	$(top_srcdir)/include/sys/multilist.h \
 	$(top_srcdir)/include/sys/nvpair.h \
 	$(top_srcdir)/include/sys/nvpair_impl.h \
@@ -94,14 +95,18 @@ KERNEL_H = \
 
 USER_H =
 
-EXTRA_DIST = $(COMMON_H) $(KERNEL_H) $(USER_H)
+#EXTRA_DIST = $(COMMON_H) $(KERNEL_H) $(USER_H)
 
 if CONFIG_USER
-libzfsdir = $(includedir)/libzfs/sys
-libzfs_HEADERS = $(COMMON_H) $(USER_H)
+#libzfsdir = $(includedir)/libzfs/sys
+#libzfs_HEADERS = $(COMMON_H) $(USER_H)
+libzfsdir =
+libzfs_HEADERS =
 endif
 
 if CONFIG_KERNEL
-kerneldir = @prefix@/src/zfs-$(VERSION)/include/sys
-kernel_HEADERS = $(COMMON_H) $(KERNEL_H)
+#kerneldir = @prefix@/src/zfs-$(VERSION)/include/sys
+#kernel_HEADERS = $(COMMON_H) $(KERNEL_H)
+kerneldir =
+kernel_HEADERS = 
 endif

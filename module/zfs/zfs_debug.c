@@ -180,15 +180,3 @@ zfs_dbgmsg_print(const char *tag)
 	mutex_exit(&zfs_dbgmsgs_lock);
 }
 #endif
-
-#if defined(_KERNEL)
-module_param(zfs_flags, int, 0644);
-MODULE_PARM_DESC(zfs_flags, "Set additional debugging flags");
-
-module_param(zfs_recover, int, 0644);
-MODULE_PARM_DESC(zfs_recover, "Set to attempt to recover from fatal errors");
-
-module_param(zfs_free_leak_on_eio, int, 0644);
-MODULE_PARM_DESC(zfs_free_leak_on_eio,
-	"Set to ignore IO errors during free and permanently leak the space");
-#endif /* _KERNEL */

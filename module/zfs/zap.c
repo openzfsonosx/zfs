@@ -162,8 +162,9 @@ zap_table_grow(zap_t *zap, zap_table_phys_t *tbl,
 		newblk = zap_allocate_blocks(zap, tbl->zt_numblks * 2);
 		tbl->zt_nextblk = newblk;
 		ASSERT0(tbl->zt_blks_copied);
-		dmu_prefetch(zap->zap_objset, zap->zap_object,
-		    tbl->zt_blk << bs, tbl->zt_numblks << bs);
+		dmu_prefetch(zap->zap_objset, zap->zap_object, 0,
+			tbl->zt_blk << bs, tbl->zt_numblks << bs,
+			ZIO_PRIORITY_SYNC_READ);
 	}
 
 	/*
@@ -587,15 +588,15 @@ zap_deref_leaf(zap_t *zap, uint64_t h, dmu_tx_t *tx, krw_t lt, zap_leaf_t **lp)
 
 	ASSERT(zap->zap_dbuf == NULL ||
 	    zap_f_phys(zap) == zap->zap_dbuf->db_data);
+	ASSERT3U(zap_f_phys(zap)->zap_magic, ==, ZAP_MAGIC);
 
-#ifdef __APPLE__
-	if (zap_f_phys(zap)->zap_magic != ZAP_MAGIC) {
-		printf("ZFS: defer_leaf bad zap detected\n");
-		return ENXIO;
+	/* Reality check for corrupt zap objects (leaf or header). */
+	if ((zap_f_phys(zap)->zap_block_type != ZBT_LEAF &&
+		 zap_f_phys(zap)->zap_block_type != ZBT_HEADER) ||
+		zap_f_phys(zap)->zap_magic != ZAP_MAGIC) {
+		return (SET_ERROR(EIO));
 	}
-#else
-	ASSERT3U(zap->zap_f.zap_phys->zap_magic, ==, ZAP_MAGIC);
-#endif
+
 	idx = ZAP_HASH_IDX(h, zap_f_phys(zap)->zap_ptrtbl.zt_shift);
 	err = zap_idx_to_blk(zap, idx, &blk);
 	if (err != 0)
@@ -960,7 +961,8 @@ fzap_prefetch(zap_name_t *zn)
 	if (zap_idx_to_blk(zap, idx, &blk) != 0)
 		return;
 	bs = FZAP_BLOCK_SHIFT(zap);
-	dmu_prefetch(zap->zap_objset, zap->zap_object, blk << bs, 1 << bs);
+	dmu_prefetch(zap->zap_objset, zap->zap_object, 0, blk << bs, 1 << bs,
+		ZIO_PRIORITY_SYNC_READ);
 }
 
 /*
@@ -1306,9 +1308,10 @@ fzap_get_stats(zap_t *zap, zap_stats_t *zs)
 	} else {
 		int b;
 
-		dmu_prefetch(zap->zap_objset, zap->zap_object,
+		dmu_prefetch(zap->zap_objset, zap->zap_object, 0,
 		    zap_f_phys(zap)->zap_ptrtbl.zt_blk << bs,
-		    zap_f_phys(zap)->zap_ptrtbl.zt_numblks << bs);
+			zap_f_phys(zap)->zap_ptrtbl.zt_numblks << bs,
+			ZIO_PRIORITY_SYNC_READ);
 
 		for (b = 0; b < zap_f_phys(zap)->zap_ptrtbl.zt_numblks;
 		    b++) {
@@ -1328,8 +1331,8 @@ fzap_get_stats(zap_t *zap, zap_stats_t *zs)
 }
 
 int
-fzap_count_write(zap_name_t *zn, int add, uint64_t *towrite,
-    uint64_t *tooverwrite)
+fzap_count_write(zap_name_t *zn, int add, refcount_t *towrite,
+    refcount_t *tooverwrite)
 {
 	zap_t *zap = zn->zn_zap;
 	zap_leaf_t *l;
@@ -1339,9 +1342,11 @@ fzap_count_write(zap_name_t *zn, int add, uint64_t *towrite,
 	 * Account for the header block of the fatzap.
 	 */
 	if (!add && dmu_buf_freeable(zap->zap_dbuf)) {
-		*tooverwrite += zap->zap_dbuf->db_size;
+		(void) refcount_add_many(tooverwrite,
+		    zap->zap_dbuf->db_size, FTAG);
 	} else {
-		*towrite += zap->zap_dbuf->db_size;
+		(void) refcount_add_many(towrite,
+		    zap->zap_dbuf->db_size, FTAG);
 	}
 
 	/*
@@ -1353,10 +1358,13 @@ fzap_count_write(zap_name_t *zn, int add, uint64_t *towrite,
 	 *   could extend the table.
 	 */
 	if (add) {
-		if (zap_f_phys(zap)->zap_ptrtbl.zt_blk == 0)
-			*towrite += zap->zap_dbuf->db_size;
-		else
-			*towrite += (zap->zap_dbuf->db_size * 3);
+		if (zap_f_phys(zap)->zap_ptrtbl.zt_blk == 0) {
+			(void) refcount_add_many(towrite,
+			    zap->zap_dbuf->db_size, FTAG);
+		} else {
+			(void) refcount_add_many(towrite,
+			    zap->zap_dbuf->db_size * 3, FTAG);
+		}
 	}
 
 	/*
@@ -1369,13 +1377,14 @@ fzap_count_write(zap_name_t *zn, int add, uint64_t *towrite,
 	}
 
 	if (!add && dmu_buf_freeable(l->l_dbuf)) {
-		*tooverwrite += l->l_dbuf->db_size;
+		(void) refcount_add_many(tooverwrite, l->l_dbuf->db_size, FTAG);
 	} else {
 		/*
 		 * If this an add operation, the leaf block could split.
 		 * Hence, we need to account for an additional leaf block.
 		 */
-		*towrite += (add ? 2 : 1) * l->l_dbuf->db_size;
+		(void) refcount_add_many(towrite,
+		    (add ? 2 : 1) * l->l_dbuf->db_size, FTAG);
 	}
 
 	zap_put_leaf(l);
