@@ -2306,7 +2306,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		error = zfs_register_callbacks(vfsp);
 
 		/* Update the from name to have /dev/diskX for root */
-		vfs_mountedfrom(vfsp, );
+		//vfs_mountedfrom(vfsp, );
 		goto out;
 	}
 
