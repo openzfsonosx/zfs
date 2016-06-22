@@ -2019,15 +2019,14 @@ zfs_vfs_mountroot(struct mount *mp, struct vnode *rdev, vfs_context_t ctx)
 	}
 
 	/* Look up bootfs variable from pool here */
-	vdev_bootvp = rdev;
+	vdev_bootvp = rdev; // HACK, FIXME
 
-	if (error = zfs_domount(mp, rdev, "rpool/ROOT/10.11", ctx)) {
+	spa_iokit_pool("rpool"); // FIXME, look up bootfs from zpool props
+
+	if (error = zfs_domount(mp, rdev, "rpool/ROOT/10.11", ctx)) { // FIXME
 		cmn_err(CE_NOTE, "zfs_domount: error %d", error);
 		goto out;
 	}
-
-	// override the mount from field
-	vfs_mountedfrom(mp, "/dev/disk1s4");
 
 	zfsvfs = (zfsvfs_t *)vfs_fsprivate(mp);
 	ASSERT(zfsvfs);
@@ -2305,6 +2304,9 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		printf("ZFS: doing remount\n");
 		zfs_unregister_callbacks(vfs_fsprivate(vfsp));
 		error = zfs_register_callbacks(vfsp);
+
+		/* Update the from name to have /dev/diskX for root */
+		vfs_mountedfrom(vfsp, );
 		goto out;
 	}
 
