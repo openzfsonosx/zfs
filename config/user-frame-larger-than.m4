@@ -9,7 +9,7 @@ AC_DEFUN([ZFS_AC_CONFIG_USER_FRAME_LARGER_THAN], [
 
 	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [])],
 	[
-		FRAME_LARGER_THAN=-Wframe-larger-than=1024
+		FRAME_LARGER_THAN=-Wframe-larger-than=2700
 		AC_MSG_RESULT([yes])
 	],
 	[

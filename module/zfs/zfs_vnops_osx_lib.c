@@ -44,6 +44,19 @@
 
 extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
 
+/*
+ * Unfortunately Apple defines "KAUTH_VNODE_ACCESS (1<<31)" which
+ * generates: "warning: signed shift result (0x80000000) sets the
+ * sign bit of the shift expression's type ('int') and becomes negative."
+ * So until they fix their define, we override it here.
+ */
+
+#if KAUTH_VNODE_ACCESS == 0x80000000
+#undef KAUTH_VNODE_ACCESS
+#define KAUTH_VNODE_ACCESS (1ULL<<31)
+#endif
+
+
 
 int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid);
 
@@ -417,7 +430,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 			rw_exit(&zfsvfs->z_hardlinks_lock);
 
 			if (!findnode) {
-				static uint32_t zfs_hardlink_sequence = 1<<31;
+				static uint32_t zfs_hardlink_sequence = 1ULL<<31;
 				uint32_t id;
 
 				id = atomic_inc_32_nv(&zfs_hardlink_sequence);

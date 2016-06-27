@@ -3107,7 +3107,6 @@ dump_zpool(spa_t *spa)
 		dump_metaslab_groups(spa);
 
 	if (dump_opt['d'] || dump_opt['i']) {
-		uint64_t refcount;
 
 		dump_dir(dp->dp_meta_objset);
 		if (dump_opt['d'] >= 3) {

@@ -3987,6 +3987,7 @@ spa_generate_rootconf(char *devpath, char *devid, uint64_t *guid)
  * configuration. A configuration is "better" if the label on that
  * device has a more recent txg.
  */
+#ifdef sun
 static void
 spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 {
@@ -4016,7 +4017,7 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 		nvlist_free(label);
 	}
 }
-
+#endif
 #endif
 
 /*

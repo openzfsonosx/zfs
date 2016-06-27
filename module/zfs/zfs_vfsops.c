@@ -1487,7 +1487,6 @@ void
 zfsvfs_free(zfsvfs_t *zfsvfs)
 {
 	int i;
-
     dprintf("+zfsvfs_free\n");
 	/*
 	 * This is a barrier to prevent the filesystem from going away in
@@ -1927,8 +1926,6 @@ zfs_mountroot(vfs_t *vfsp, enum whymountroot why)
 	zfsvfs_t *zfsvfs = NULL;
 	znode_t *zp = NULL;
 	vnode_t *vp = NULL;
-	char *zfs_bootfs;
-	char *zfs_devid;
 
 	ASSERT(vfsp);
 
@@ -2055,7 +2052,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	char		*options = NULL;
 	int		error = 0;
 	int		canwrite;
-	int		mflag;
+	int		mflag = 0;
 	uint64_t	flags = vfs_flags(vfsp);
 
 #ifdef __APPLE__
@@ -2098,7 +2095,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	error = ddi_copyin((const void *)mnt_args.optptr, (caddr_t)options,
 					   mnt_args.optlen, 0);
 
-	dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
+	dprintf("vfs_mount: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
 	    " options %s\n",
 	    mnt_args.fspec,
 	    mnt_args.mflag,
