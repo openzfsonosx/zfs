@@ -2019,6 +2019,8 @@ zfs_vfs_mountroot(struct mount *mp, struct vnode *rdev, vfs_context_t ctx)
 	}
 
 	/* Look up bootfs variable from pool here */
+
+	vnode_ref(rdev);
 	vdev_bootvp = rdev; // HACK, FIXME
 
 	spa_iokit_pool("rpool"); // FIXME, look up bootfs from zpool props
@@ -2040,24 +2042,22 @@ zfs_vfs_mountroot(struct mount *mp, struct vnode *rdev, vfs_context_t ctx)
 	//rootvp = ZTOV(zp); /* global var in XNU */
 	spl_setrootvnode(ZTOV(zp));
 
-#ifdef __OPPLE__
-	/*
-	 * We haven't booted far enough to have /dev/ so opening the disk
-	 * would have to be done via IOKit black magic. Since the vnode is
-	 * already open for us, we will pass it down to vdev_disk here.
-	 */
-		{
-			spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
-			vdev_disk_alloc(bvd);
-			vdev_disk_t *dvd = bvd->vdev_tsd;
-			bvd->vdev_reopening = 1;
-			dvd->vd_devvp = rdev;
-			printf("ZFS: Setting devvp in vdev %p dvd %p to %p\n",
-				   bvd, dvd, dvd->vd_devvp);
-			spa_config_exit(spa, SCL_ALL, FTAG);
-		}
-#endif
+	/* Attempt to convert the mountpoint to pseudo /dev/disk */
+	//printf("ZFS: remount lookup '%s'\n", osname);
 
+	/*     boot            dataset
+	 * /dev/disk1s4 -> rpool/ROOT/10.11
+	 *
+	 *     dataset             pseudo
+	 * rpool/ROOT/10.11 -> /dev/disks2s2
+	 */
+#if 0
+	if (osname[0] == '/')
+		ZFSDriver_FindDataset(osname);
+	getBSDName(osname);
+	vfs_mountedfrom(vfsp, osname);
+#endif
+	vfs_mountedfrom(mp, "/dev/disk2s1s1");
 
 	/*
 	 * Leave rootvp held.  The root file system is never unmounted.
@@ -2300,13 +2300,14 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	 * according to those options set in the current VFS options.
 	 */
 	if (mflag & MS_REMOUNT) {
+		/* HACK, fix me */
+		if (vdev_bootvp) {
+			vnode_rele(vdev_bootvp);
+			vdev_bootvp = NULL;
+		}
 		/* refresh mount options */
-		printf("ZFS: doing remount\n");
 		zfs_unregister_callbacks(vfs_fsprivate(vfsp));
 		error = zfs_register_callbacks(vfsp);
-
-		/* Update the from name to have /dev/diskX for root */
-		//vfs_mountedfrom(vfsp, );
 		goto out;
 	}
 
