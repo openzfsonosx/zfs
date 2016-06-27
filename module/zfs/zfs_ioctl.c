@@ -3132,7 +3132,7 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 
 #ifdef __APPLE__
 	if (error == 0 && type == DMU_OST_ZFS) {
-		spa_iokit_pool(fsname);
+		spa_iokit_pool((char *)fsname);
 	}
 #endif
 
@@ -3193,7 +3193,7 @@ zfs_ioc_clone(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 
 #ifdef __APPLE__
 	if (error == 0)
-		spa_iokit_pool(fsname);
+		spa_iokit_pool((char *)fsname);
 #endif
 
 	return (error);

@@ -87,7 +87,6 @@ bool ZFSProxyMediaScheme::start (IOService *provider)
 
     return true;
 }
-#pragma warning "Watch out, this program uses c++!\n"
 
 void ZFSProxyMediaScheme::stop(IOService* provider)
 {
@@ -436,9 +435,6 @@ IOMedia* ZFSProxyMediaScheme::instantiateMediaObject(ZFSFilesystemEntry* fsEntry
 
 IOReturn ZFSProxyMediaScheme::setDONTMOUNTME(OSString value)
 {
-	IOMedia *media;
-    //media = OSDynamicCast(IOMedia, m_child_filesystems);
-	//media->setProperty("DONTMOUNTME", value);
 	return 0;
 }
 

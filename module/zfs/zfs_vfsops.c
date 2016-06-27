@@ -1487,7 +1487,7 @@ void
 zfsvfs_free(zfsvfs_t *zfsvfs)
 {
 	int i;
-	znode_t *zp, *next;
+	//znode_t *zp, *next;
     dprintf("+zfsvfs_free\n");
 	/*
 	 * This is a barrier to prevent the filesystem from going away in
@@ -1553,6 +1553,7 @@ zfs_set_fuid_feature(zfsvfs_t *zfsvfs)
 	zfsvfs->z_use_sa = USE_SA(zfsvfs->z_version, zfsvfs->z_os);
 }
 
+extern char *ZFSDriver_FindDataset(char *dev);
 static int
 zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx)
 {
@@ -1567,7 +1568,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 #endif
 	int dev_mapping = 0;
 	char *devname = NULL;
-	dev_t rdev;
+	dev_t rdev = 0;
 
 	ASSERT(vfsp);
 	ASSERT(osname);
@@ -1601,7 +1602,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 
 	}
 
-	printf("zfs_domount map '%s' with rdev id %llx\n", osname, rdev);
+	printf("zfs_domount map '%s' with rdev id %x\n", osname, rdev);
 #endif
 
 
@@ -1985,8 +1986,8 @@ zfs_vfs_mountroot(struct mount *mp, struct vnode *rdev, vfs_context_t ctx)
 	static int zfsrootdone = 0;
 	zfsvfs_t *zfsvfs = NULL;
 	znode_t *zp = NULL;
-	char *zfs_bootfs;
-	char *zfs_devid;
+	//char *zfs_bootfs;
+	//char *zfs_devid;
 
 	ASSERT(vfsp);
 
@@ -2025,7 +2026,7 @@ zfs_vfs_mountroot(struct mount *mp, struct vnode *rdev, vfs_context_t ctx)
 
 	spa_iokit_pool("rpool"); // FIXME, look up bootfs from zpool props
 
-	if (error = zfs_domount(mp, rdev, "rpool/ROOT/10.11", ctx)) { // FIXME
+	if ((error = zfs_domount(mp, 0, "rpool/ROOT/10.11", ctx))) { // FIXME
 		cmn_err(CE_NOTE, "zfs_domount: error %d", error);
 		goto out;
 	}
@@ -2033,7 +2034,7 @@ zfs_vfs_mountroot(struct mount *mp, struct vnode *rdev, vfs_context_t ctx)
 	zfsvfs = (zfsvfs_t *)vfs_fsprivate(mp);
 	ASSERT(zfsvfs);
 
-	if (error = zfs_zget(zfsvfs, zfsvfs->z_root, &zp)) {
+	if ((error = zfs_zget(zfsvfs, zfsvfs->z_root, &zp))) {
 		cmn_err(CE_NOTE, "zfs_zget: error %d", error);
 		goto out;
 	}
@@ -2100,11 +2101,11 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	char		*options = NULL;
 	int		error = 0;
 	int		canwrite;
-	int		mflag;
+	int		mflag = 0;
 	uint64_t	flags = vfs_flags(vfsp);
-	char *realosname = NULL; // If allocated.
+	//char *realosname = NULL; // If allocated.
 
-	printf("mvp is %p : data is %p\n", mvp, data);
+	printf("mvp is %p : data is %llx\n", mvp, data);
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
@@ -2168,7 +2169,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	error = ddi_copyin((const void *)mnt_args.optptr, (caddr_t)options,
 					   mnt_args.optlen, 0);
 
-	printf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
+	printf("vfs_mount: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
 	    " options %s\n",
 	    mnt_args.fspec,
 	    mnt_args.mflag,
@@ -3192,7 +3193,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	 */
 	if (ino == ZFSCTL_INO_ROOT || ino == ZFSCTL_INO_SNAPDIR ||
 	    (zfsvfs->z_shares_dir != 0 && ino == zfsvfs->z_shares_dir)) {
-		printf("vget %d EOPNOTSUPP\n", ino);
+		printf("vget %llu EOPNOTSUPP\n", ino);
 		return (EOPNOTSUPP);
 	}
 

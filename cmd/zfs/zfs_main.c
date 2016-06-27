@@ -6677,7 +6677,7 @@ static char const *priov[] = {
 	"EMERG:",   "ALERT:",  "CRIT:", "ERR:", "WARNING:", "NOTICE:", "INFO:", "DEBUG:"
 };
 
-static size_t writer(void *cookie, char const *data, size_t leng)
+static int writer(void *cookie, char const *data, int leng)
 {
     (void)cookie;
     int     p = LOG_DEBUG, len;
@@ -6688,7 +6688,7 @@ static size_t writer(void *cookie, char const *data, size_t leng)
     else data += len, leng -= len;
     while (*data == ' ') ++data, --leng;
 
-    syslog(p, "%.*s", leng, data);
+    syslog(p, "%.*s", (int)leng, data);
     return  leng;
 }
 
@@ -6714,9 +6714,9 @@ manual_mount(int argc, char **argv)
 	int c;
 	int flags = 0;
 	char *dataset, *path;
-	int i;
 #ifdef __APPLE__
 	uint64_t zfs_version = 0;
+	//int i;
 
 	/* Redirect stderr to syslog, so we can see something if it fails */
 	//tolog(&stderr);

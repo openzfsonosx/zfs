@@ -623,12 +623,11 @@ vdev_disk_read_rootlabel(struct vnode *rdev, nvlist_t **config)
 	int l;
 	int retval;
 	int error = 0;
-	char *minor_name;
 	u_int32_t log_blksize;
 	u_int32_t phys_blksize;
 	daddr64_t log_blkcnt;
 	u_int64_t disksize;
-	uint64_t resid;
+	ssize_t resid;
 	vfs_context_t context = spl_vfs_context_kernel();
 
 	/*
@@ -683,7 +682,7 @@ vdev_disk_read_rootlabel(struct vnode *rdev, nvlist_t **config)
 		/* read vdev label */
 		offset = vdev_label_offset(size, l, 0);
 
-		if ((retval = vn_rdwr(UIO_READ, rdev, label,
+		if ((retval = vn_rdwr(UIO_READ, rdev, (caddr_t)label,
 							  VDEV_SKIP_SIZE + VDEV_PHYS_SIZE, offset,
 							  UIO_SYSSPACE, 0, RLIM64_INFINITY, kcred, &resid))) {
 			continue;

@@ -70,12 +70,12 @@ IOMedia*  ZFSLabelScheme::scan(SInt32* score)
     m_device->setName("zfs vdev for 'mymir'");
     printf("Name is %s\n", m_device->getName());
     if (m_device == NULL)
-		return false;
+		return NULL;
 
 	//m_pool_proxy = instantiateMediaObject();
 
 	if (m_pool_proxy == NULL)
-		return false;
+		return NULL;
 
     return m_pool_proxy;
 }
@@ -99,8 +99,8 @@ IOMedia* ZFSLabelScheme::instantiateMediaObject ()
 							"zfs_pool_proxy"))
 		{
             //Fix me: get pool guid and vdev guid from the label
-            uint32_t zfs_pool_guid = 16504178780918792917UL;
-            uint32_t zfs_vdev_guid = 7851727243200360649UL;
+            uint32_t zfs_pool_guid = 165041787U;
+            uint32_t zfs_vdev_guid = 785172724U;
 
             newMedia->setProperty("ZFS_POOL_GUID", zfs_pool_guid, 32);
             newMedia->setProperty("ZFS_VDEV_GUID", zfs_vdev_guid, 32);

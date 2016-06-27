@@ -52,6 +52,7 @@
 #include <sys/fm/protocol.h>
 #include <sys/zfs_ioctl.h>
 #include <math.h>
+#include <sys/stropts.h>
 
 #include <libzfs.h>
 

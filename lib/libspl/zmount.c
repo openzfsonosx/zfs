@@ -148,8 +148,8 @@ int iokit_mark_device_to_mount(char *dataset)
 		io_name_t name;
 		io_connect_t connect;
 		kern_return_t status;
-		io_registry_entry_t *parent;
-		io_registry_entry_t *child;
+		//io_registry_entry_t *parent;
+		io_registry_entry_t child;
 		io_iterator_t children;
 
 		/*
@@ -183,7 +183,7 @@ int iokit_mark_device_to_mount(char *dataset)
 					/* Open connection to kernel */
 					status = IOServiceOpen(child,
 										   mach_task_self(), 0, &connect);
-					fprintf(stderr, "XXX child open say %d : %p\n",
+					fprintf(stderr, "XXX child open say %d : %u\n",
 							status,connect);
 
 					/* Fire off the request to change property */
@@ -191,7 +191,7 @@ int iokit_mark_device_to_mount(char *dataset)
 													CFSTR("DOMOUNTME"),
 													CFSTR("TRUE"));
 
-					fprintf(stderr, "XXX IOConnectSetCFProp say %d : %p\n",
+					fprintf(stderr, "XXX IOConnectSetCFProp say %d : %u\n",
 							status,connect);
 
 					IOServiceClose(connect);
@@ -256,7 +256,7 @@ iokit_dataset_to_device(const char *spec, io_name_t volname)
 	status = IOServiceGetMatchingServices(kIOMasterPortDefault,
 	    myMatchingDictionary, &iter);
 
-	fprintf(stderr, "status %d iter %p\n", status, iter);
+	fprintf(stderr, "status %d iter %u\n", status, iter);
 
 	if ((status != KERN_SUCCESS) || (iter == IO_OBJECT_NULL)) {
 		fprintf(stderr, "failed to GetMatchingService\n");
@@ -379,11 +379,11 @@ void DiskMountCallback(DADiskRef diskRef, DADissenterRef dissenter, void *contex
 	}
 }
 
-
+#if 0
 static int diskutil_mountXX(io_name_t device, const char *path, int flags)
 {
 	DADiskRef disk;
-    CFDictionaryRef descDict;
+    //CFDictionaryRef descDict;
     DASessionRef session = DASessionCreate(NULL);
 
 	sleep(1);
@@ -400,7 +400,7 @@ static int diskutil_mountXX(io_name_t device, const char *path, int flags)
 
 			url = CFURLCreateFromFileSystemRepresentation(
 				kCFAllocatorDefault,
-				path,
+				(const UInt8 *)path,
 				strlen(path),
 				true);
 
@@ -428,8 +428,9 @@ static int diskutil_mountXX(io_name_t device, const char *path, int flags)
 			CFRelease(session);
 		}
 	}
+	return 0;
 }
-
+#endif
 
 
 
@@ -460,8 +461,7 @@ zmount(const char *spec, const char *dir, int mflag, char *fstype,
 	 * translates it back again.
 	 */
 	if (iokit_dataset_to_device(spec, devname) == 0)
-		if (devname)
-			return (diskutil_mount(devname, dir, mflag));
+		return (diskutil_mount(devname, dir, mflag));
 
 	/* Regular mount wanted, from cmd/zfs manual_mount */
 	fprintf(stderr, "zmount manual '%s' \n", spec);

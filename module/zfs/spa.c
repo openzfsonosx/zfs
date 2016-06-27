@@ -3977,8 +3977,6 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
  * during the system boot up time.
  */
 
-#if 1
-
 extern int vdev_disk_read_rootlabel(struct vnode *, nvlist_t **);
 
 static nvlist_t *
@@ -4025,6 +4023,7 @@ spa_generate_rootconf(struct vnode *rdev, uint64_t *guid)
  * configuration. A configuration is "better" if the label on that
  * device has a more recent txg.
  */
+#ifdef sun
 static void
 spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 {
@@ -4054,7 +4053,6 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 		nvlist_free(label);
 	}
 }
-
 #endif
 
 /*
