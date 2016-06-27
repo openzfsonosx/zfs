@@ -3977,8 +3977,6 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
  * during the system boot up time.
  */
 
-#if 0
-
 extern int vdev_disk_read_rootlabel(char *, char *, nvlist_t **);
 
 static nvlist_t *
@@ -4025,6 +4023,7 @@ spa_generate_rootconf(char *devpath, char *devid, uint64_t *guid)
  * configuration. A configuration is "better" if the label on that
  * device has a more recent txg.
  */
+#ifdef sun
 static void
 spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 {
@@ -4054,7 +4053,6 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
 		nvlist_free(label);
 	}
 }
-
 #endif
 
 /*
@@ -4082,7 +4080,7 @@ spa_import_rootpool(char *devpath, char *devid)
 	/*
 	 * Read the label from the boot device and generate a configuration.
 	 */
-	//config = spa_generate_rootconf(devpath, devid, &guid);
+	config = spa_generate_rootconf(devpath, devid, &guid);
 #if defined(_OBP) && defined(_KERNEL)
 	if (config == NULL) {
 		if (strstr(devpath, "/iscsi/ssd") != NULL) {

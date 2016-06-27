@@ -517,7 +517,7 @@ net_lundman_zfs_pseudo_device::getProductString(void)
 {
 	dprintf("getProduct %p\n", zv);
 
-	if (zv && zv->zv_name)
+	if (zv)
 		return (zv->zv_name);
 
 	return ((char *)"ZFS Pseudo Device");

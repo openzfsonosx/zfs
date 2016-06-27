@@ -1667,7 +1667,7 @@ zfs_create(vnode_t *dvp, char *name, vattr_t *vap, int excl, int mode,
 	}
 
 	if (vap->va_mask & AT_XVATTR) {
-		if ((error = secpolicy_xvattr(dvp, (vattr_t *)vap,
+		if ((error = secpolicy_xvattr(dvp, vap,
 		    crgetuid(cr), cr, vap->va_type)) != 0) {
 			ZFS_EXIT(zfsvfs);
 			return (error);
@@ -2798,7 +2798,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			                      (u_int8_t *)eodp->d_name, &nfdlen,
 			                      MAXPATHLEN-1, UTF_DECOMPOSED) != 0) {
 				/* ASCII or normalization failed, just copy zap name. */
-                if ((namelen > 0) && eodp->d_name)
+                if ((namelen > 0))
                     (void) bcopy(zap.za_name, eodp->d_name, namelen + 1);
 			} else {
 				/* Normalization succeeded (already in buffer). */
@@ -2827,7 +2827,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			                      (u_int8_t *)odp->d_name, &nfdlen,
 			                      MAXNAMLEN, UTF_DECOMPOSED) != 0) {
 				/* ASCII or normalization failed, just copy zap name. */
-                if ((namelen > 0) && odp->d_name)
+                if ((namelen > 0))
                     (void) bcopy(zap.za_name, odp->d_name, namelen + 1);
 			} else {
 				/* Normalization succeeded (already in buffer). */

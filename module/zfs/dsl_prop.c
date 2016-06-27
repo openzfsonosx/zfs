@@ -415,6 +415,7 @@ dsl_prop_predict(dsl_dir_t *dd, const char *propname,
 		if (err == ENOENT)
 			*newvalp = value;
 		break;
+#pragma GCC diagnostic ignored "-Wswitch"
 	case (ZPROP_SRC_NONE | ZPROP_SRC_RECEIVED):
 		/*
 		 * We're clearing the received value, so the local setting (if

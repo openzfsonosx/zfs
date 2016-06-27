@@ -32,10 +32,10 @@ extern "C" {
 	zvol_minor_lookup(const char *name);
 };
 
-  __attribute__((visibility("default"))) KMOD_EXPLICIT_DECL(net.lundman.zfs, "1.0.0", _start, _stop)
-  __private_extern__ kmod_start_func_t *_realmain = 0;
-  __private_extern__ kmod_stop_func_t  *_antimain = 0;
-  __private_extern__ int _kext_apple_cc = __APPLE_CC__ ;
+__attribute__((visibility("default"))) KMOD_EXPLICIT_DECL(net.lundman.zfs, "1.0.0", _start, _stop)
+	kmod_start_func_t *_realmain = 0;
+kmod_stop_func_t  *_antimain = 0;
+int _kext_apple_cc = __APPLE_CC__ ;
 
 
 /*
@@ -483,7 +483,7 @@ bool net_lundman_zfs_zvol::createPseudoDevices(char *poolname,
 		nub->retain();
 		pseudo = OSDynamicCast(IOMedia, nub->getClient()->getClient());
 
-		printf("Calling scan again: nub %p pseudo %p pool_proxy %p\n",
+		printf("Calling scan again: nub %p pseudo %p\n",
 			   nub, pseudo);
 
 		nub->rescan(nub, NULL);
@@ -560,7 +560,6 @@ bool net_lundman_zfs_zvol::createPseudoDevices(char *poolname,
 
 	pseudo->registerService();
 
- bail:
     // Unconditionally release the nub object.
     if (nub != NULL)
         nub->release();
@@ -574,9 +573,9 @@ bool net_lundman_zfs_zvol::destroyPseudoDevices(char *poolname)
 {
     net_lundman_zfs_pseudo_device *nub = NULL;
     bool            result = true;
-	zfs_soft_state_t *zs;
+	//zfs_soft_state_t *zs;
 	zvol_state_t *zv = NULL;
-	minor_t minor;
+	minor_t minor = 0;
 
 	zv = zvol_minor_lookup(poolname);
 
@@ -615,7 +614,7 @@ char *net_lundman_zfs_zvol::findDataset(char *dev)
 {
 	printf("findDataset('%s')\n", dev);
 	OSDictionary *matchingDict;
-    io_service_t            service;
+    //io_service_t            service;
 	char *found = dev;
 
 	if (!strncasecmp("/dev/", dev, 5))
@@ -656,8 +655,7 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
     net_lundman_zfs_pseudo_device *nub = NULL;
     int            result = 1;
 	zvol_state_t *zv;
-	minor_t minor = 0;
-	zfs_soft_state_t *zs;
+	//zfs_soft_state_t *zs;
 	IOMedia *pseudo;
 	int poolstrlen;
 	char *poolstr = NULL, *r;
@@ -703,7 +701,7 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
 		nub->retain();
 		pseudo = OSDynamicCast(IOMedia, nub->getClient()->getClient());
 
-		printf("Calling scan again: nub %p pseudo %p pool_proxy %p\n",
+		printf("Calling scan again: nub %p pseudo %p\n",
 			   nub, pseudo);
 
 		nub->rescan(nub, snapname);
@@ -716,7 +714,6 @@ int net_lundman_zfs_zvol::mountSnapshot(char *snapname)
 	result = 0;
 
 
-  bail:
     // Unconditionally release the nub object.
     if (nub != NULL)
         nub->release();

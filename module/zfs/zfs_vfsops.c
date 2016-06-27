@@ -1487,7 +1487,7 @@ void
 zfsvfs_free(zfsvfs_t *zfsvfs)
 {
 	int i;
-	znode_t *zp, *next;
+	//znode_t *zp, *next;
     dprintf("+zfsvfs_free\n");
 	/*
 	 * This is a barrier to prevent the filesystem from going away in
@@ -1553,6 +1553,7 @@ zfs_set_fuid_feature(zfsvfs_t *zfsvfs)
 	zfsvfs->z_use_sa = USE_SA(zfsvfs->z_version, zfsvfs->z_os);
 }
 
+extern char *ZFSDriver_FindDataset(char *dev);
 static int
 zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx)
 {
@@ -1567,7 +1568,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 #endif
 	int dev_mapping = 0;
 	char *devname = NULL;
-	dev_t rdev;
+	dev_t rdev = 0;
 
 	ASSERT(vfsp);
 	ASSERT(osname);
@@ -1601,7 +1602,7 @@ zfs_domount(struct mount *vfsp, dev_t mount_dev, char *osname, vfs_context_t ctx
 
 	}
 
-	printf("zfs_domount map '%s' with rdev id %llx\n", osname, rdev);
+	printf("zfs_domount map '%s' with rdev id %x\n", osname, rdev);
 #endif
 
 
@@ -1971,111 +1972,86 @@ zfs_mount_label_policy(vfs_t *vfsp, char *osname)
 }
 #endif	/* SECLABEL */
 
-#ifdef OPENSOLARIS_MOUNTROOT
-static int
-zfs_mountroot(vfs_t *vfsp, enum whymountroot why)
+int
+zfs_vfs_mountroot(struct mount *vfsp, struct vnode *rdev, vfs_context_t ctx)
 {
 	int error = 0;
 	static int zfsrootdone = 0;
 	zfsvfs_t *zfsvfs = NULL;
 	znode_t *zp = NULL;
-	vnode_t *vp = NULL;
-	char *zfs_bootfs;
-	char *zfs_devid;
 
 	ASSERT(vfsp);
+
+	printf("ZFS: zfs_vfs_mountroot\n");
 
 	/*
 	 * The filesystem that we mount as root is defined in the
 	 * boot property "zfs-bootfs" with a format of
 	 * "poolname/root-dataset-objnum".
 	 */
-	if (why == ROOT_INIT) {
-		if (zfsrootdone++)
-			return (EBUSY);
-		/*
-		 * the process of doing a spa_load will require the
-		 * clock to be set before we could (for example) do
-		 * something better by looking at the timestamp on
-		 * an uberblock, so just set it to -1.
-		 */
-		clkset(-1);
+	if (zfsrootdone++)
+		return (EBUSY);
+	/* rpool/ROOT/10.11 - first part is pool name */
 
-		if ((zfs_bootfs = spa_get_bootprop("zfs-bootfs")) == NULL) {
-			cmn_err(CE_NOTE, "spa_get_bootfs: can not get "
-			    "bootfs name");
-			return (EINVAL);
-		}
-		zfs_devid = spa_get_bootprop("diskdevid");
-		error = spa_import_rootpool(rootfs.bo_name, zfs_devid);
-		if (zfs_devid)
-			spa_free_bootprop(zfs_devid);
-		if (error) {
-			spa_free_bootprop(zfs_bootfs);
-			cmn_err(CE_NOTE, "spa_import_rootpool: error %d",
-			    error);
-			return (error);
-		}
-		if (error = zfs_parse_bootfs(zfs_bootfs, rootfs.bo_name)) {
-			spa_free_bootprop(zfs_bootfs);
-			cmn_err(CE_NOTE, "zfs_parse_bootfs: error %d",
-			    error);
-			return (error);
-		}
+	// spa_import_rootpool(char *devpath, char *devid);
+	//error = spa_import_rootpool(rdev);
 
-		spa_free_bootprop(zfs_bootfs);
-
-		if (error = vfs_lock(vfsp))
-			return (error);
-
-		if (error = zfs_domount(vfsp, rootfs.bo_name)) {
-			cmn_err(CE_NOTE, "zfs_domount: error %d", error);
-			goto out;
-		}
-
-		zfsvfs = (zfsvfs_t *)vfsp->vfs_data;
-		ASSERT(zfsvfs);
-		if (error = zfs_zget(zfsvfs, zfsvfs->z_root, &zp)) {
-			cmn_err(CE_NOTE, "zfs_zget: error %d", error);
-			goto out;
-		}
-
-		vp = ZTOV(zp);
-		mutex_enter(&vp->v_lock);
-		vp->v_flag |= VROOT;
-		mutex_exit(&vp->v_lock);
-		rootvp = vp;
-
-		/*
-		 * Leave rootvp held.  The root file system is never unmounted.
-		 */
-
-		vfs_add((struct vnode *)0, vfsp,
-		    (vfsp->vfs_flag & VFS_RDONLY) ? MS_RDONLY : 0);
-out:
-		vfs_unlock(vfsp);
+	if (error) {
+		cmn_err(CE_NOTE, "spa_import_rootpool: error %d",
+				error);
+		panic("failed");
 		return (error);
-	} else if (why == ROOT_REMOUNT) {
-		readonly_changed_cb(vfsp->vfs_data, B_FALSE);
-		vfsp->vfs_flag |= VFS_REMOUNT;
-
-		/* refresh mount options */
-		zfs_unregister_callbacks(vfsp->vfs_data);
-		return (zfs_register_callbacks(vfsp));
-
-	} else if (why == ROOT_UNMOUNT) {
-		zfs_unregister_callbacks((zfsvfs_t *)vfsp->vfs_data);
-		(void) zfs_sync(vfsp, 0, 0);
-		return (0);
 	}
 
-	/*
-	 * if "why" is equal to anything else other than ROOT_INIT,
-	 * ROOT_REMOUNT, or ROOT_UNMOUNT, we do not support it.
+	/* Look up bootfs variable from pool here */
+
+	/* hfs grabs another ref in mountroot */
+	vnode_ref(rdev);
+
+	spa_iokit_pool("rpool"); // FIXME, look up bootfs from zpool props
+
+	if ((error = zfs_domount(vfsp, 0, "rpool/ROOT/10.11", ctx))) { // FIXME
+		cmn_err(CE_NOTE, "zfs_domount: error %d", error);
+		goto out;
+	}
+
+	zfsvfs = (zfsvfs_t *)vfs_fsprivate(vfsp);
+	ASSERT(zfsvfs);
+
+	if ((error = zfs_zget(zfsvfs, zfsvfs->z_root, &zp))) {
+		cmn_err(CE_NOTE, "zfs_zget: error %d", error);
+		goto out;
+	}
+
+	/* Set the global rootvp */
+	spl_setrootvnode(ZTOV(zp));
+
+	/* Attempt to convert the mountpoint to pseudo /dev/disk */
+	//printf("ZFS: remount lookup '%s'\n", osname);
+
+	/*     boot            dataset
+	 * /dev/disk1s4 -> rpool/ROOT/10.11
+	 *
+	 *     dataset             pseudo
+	 * rpool/ROOT/10.11 -> /dev/disks2s2
 	 */
-	return (ENOTSUP);
+#if 0
+	if (osname[0] == '/')
+		ZFSDriver_FindDataset(osname);
+	getBSDName(osname);
+	vfs_mountedfrom(vfsp, osname);
+#endif
+	vfs_mountedfrom(vfsp, "/dev/disk2s1s1");
+
+	/*
+	 * Leave rootvp held.  The root file system is never unmounted.
+	 */
+
+  out:
+
+	return (error);
 }
-#endif	/* OPENSOLARIS_MOUNTROOT */
+
 
 #ifdef __LINUX__
 static int
@@ -2108,11 +2084,11 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	char		*options = NULL;
 	int		error = 0;
 	int		canwrite;
-	int		mflag;
+	int		mflag = 0;
 	uint64_t	flags = vfs_flags(vfsp);
-	char *realosname = NULL; // If allocated.
+	//char *realosname = NULL; // If allocated.
 
-	printf("mvp is %p : data is %p\n", mvp, data);
+	printf("mvp is %p : data is %llx\n", mvp, data);
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
@@ -2176,7 +2152,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	error = ddi_copyin((const void *)mnt_args.optptr, (caddr_t)options,
 					   mnt_args.optlen, 0);
 
-	printf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
+	printf("vfs_mount: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
 	    " options %s\n",
 	    mnt_args.fspec,
 	    mnt_args.mflag,
@@ -3206,7 +3182,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	 */
 	if (ino == ZFSCTL_INO_ROOT || ino == ZFSCTL_INO_SNAPDIR ||
 	    (zfsvfs->z_shares_dir != 0 && ino == zfsvfs->z_shares_dir)) {
-		printf("vget %d EOPNOTSUPP\n", ino);
+		printf("vget %llu EOPNOTSUPP\n", ino);
 		return (EOPNOTSUPP);
 	}
 

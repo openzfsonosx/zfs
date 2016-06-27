@@ -245,9 +245,6 @@ dsl_dataset_remove_clones_key(dsl_dataset_t *ds, uint64_t mintxg, dmu_tx_t *tx)
 void
 dsl_destroy_snapshot_sync_impl(dsl_dataset_t *ds, boolean_t defer, dmu_tx_t *tx)
 {
-#ifdef ZFS_DEBUG
-	int err;
-#endif
 	int after_branch_point = FALSE;
 	dsl_pool_t *dp = ds->ds_dir->dd_pool;
 	objset_t *mos = dp->dp_meta_objset;

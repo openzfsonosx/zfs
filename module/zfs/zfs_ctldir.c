@@ -108,6 +108,12 @@
  */
 
 
+int IOKit_mount_snapshot(struct kthread *tr,         /* not used */
+						 struct vnode **vpp,   /* set if successful */
+						 char *type,           /* not used */
+						 char *mountpoint,     /* not used */
+						 char *snapname,
+						 int flags);           /* not used */
 
 
 #ifdef __APPLE__
@@ -1294,7 +1300,7 @@ zfsctl_snapdir_lookup(ap)
 	 */
 	if (MUTEX_HELD(&sdp->sd_lock)) {
 		printf("ZFS: called from mount: '%s'\n", nm);
-		err = gfs_dir_lookup(dvp, nm, vpp, vfs_context_current(),
+		err = gfs_dir_lookup(dvp, nm, vpp, kauth_cred_get(),
 							 flags, NULL, NULL);
 		printf("ZFS: returned %d\n", err);
 		return (err);
@@ -1516,7 +1522,7 @@ zfsctl_snapdir_lookup_mounting(ap)
 	} */ *ap;
 {
 
-
+	return ENOTSUP;
 }
 
 int
@@ -1530,6 +1536,7 @@ zfsctl_snapdir_lookupX(ap)
 	if (ctldir_mounting)
 		return zfsctl_snapdir_lookup_mounting(ap);
 	//return zfsctl_snapdir_lookup_trigger(ap);
+	return ENOTSUP;
 }
 
 
