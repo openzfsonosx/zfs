@@ -1877,23 +1877,8 @@ zfs_vfs_mountroot(struct mount *mp, struct vnode *devvp, vfs_context_t ctx)
 	static int zfsrootdone = 0;
 	*/
 	zfsvfs_t *zfsvfs = NULL;
-	//znode_t *zp = NULL;
-	spa_t *spa = 0;
-	char *zfs_bootfs = 0;
-	char *path = 0;
-	dev_t dev = 0;
-	int error = 0;
-	//int len = MAXPATHLEN;
-
-printf("ZFS: %s\n", __func__);
-	ASSERT(mp);
-	ASSERT(devvp);
-	ASSERT(ctx);
-	if (!mp || !devvp | !ctx) {
-		cmn_err(CE_NOTE, "%s: missing one of mp %p devvp %p"
-		    " or ctx %p", __func__, mp, devvp, ctx);
-		return (EINVAL);
-	}
+	znode_t *zp = NULL;
+	vnode_t *vp = NULL;
 
 	/* Look up bootfs variable from pool here */
 	zfs_bootfs = kmem_alloc(MAXPATHLEN, KM_SLEEP);
@@ -2063,8 +2048,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	uint64_t	flags = vfs_flags(vfsp);
 	int		error = 0;
 	int		canwrite;
-	int		rdonly = 0;
 	int		mflag = 0;
+	uint64_t	flags = vfs_flags(vfsp);
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
@@ -2136,11 +2121,8 @@ dprintf("%s cmdflags %u rdonly %d\n", __func__, cmdflags, rdonly);
 
 		options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
 
-		error = ddi_copyin((const void *)mnt_args.optptr, (caddr_t)options,
-						   mnt_args.optlen, 0);
-	//dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
-	printf("%s: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
-	    " options %s\n", __func__,
+	dprintf("vfs_mount: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
+	    " options %s\n",
 	    mnt_args.fspec,
 	    mnt_args.mflag,
 	    mnt_args.optptr,

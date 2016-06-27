@@ -60,12 +60,6 @@ extern int zfs_vnop_force_formd_normalized_output; /* disabled by default */
 
 int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid);
 
-int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid);
-
-int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid);
-
-int zfs_hardlink_addmap(znode_t *zp, uint64_t parentid, uint32_t linkid);
-
 /* Originally from illumos:uts/common/sys/vfs.h */
 typedef uint64_t vfs_feature_t;
 #define	VFSFT_XVATTR		0x100000001	/* Supports xvattr for attrs */
@@ -440,7 +434,7 @@ if (zp->z_gen != 0) dprintf("%s: va_gen %lld -> 0\n", __func__, zp->z_gen);
 			rw_exit(&zfsvfs->z_hardlinks_lock);
 
 			if (!findnode) {
-				static uint32_t zfs_hardlink_sequence = 1<<31;
+				static uint32_t zfs_hardlink_sequence = 1ULL<<31;
 				uint32_t id;
 
 				id = atomic_inc_32_nv(&zfs_hardlink_sequence);
