@@ -73,6 +73,7 @@
 
 #ifdef __APPLE__
 #include <sys/zfs_mount.h>
+#include <syslog.h>
 #endif /* __APPLE__ */
 
 libzfs_handle_t *g_zfs;
@@ -6701,7 +6702,7 @@ manual_mount(int argc, char **argv)
 #endif
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":mo:O")) != -1) {
+	while ((c = getopt(argc, argv, ":mo:Oruw")) != -1) {
 		switch (c) {
 		case 'o':
 			(void) strlcat(mntopts, optarg, sizeof (mntopts));
@@ -6712,6 +6713,15 @@ manual_mount(int argc, char **argv)
 			break;
 		case 'm':
 			flags |= MS_NOMNTTAB;
+			break;
+		case 'u':
+			flags |= MS_REMOUNT;
+			break;
+		case 'r':
+			flags |= MS_RDONLY;
+			break;
+		case 'w':
+			flags &= ~(MS_RDONLY);
 			break;
 		case ':':
 			(void) fprintf(stderr, gettext("missing argument for "
@@ -6750,6 +6760,25 @@ manual_mount(int argc, char **argv)
 
 	dataset = argv[0];
 	path = argv[1];
+
+	openlog("mount_zfs", LOG_CONS | LOG_PERROR, LOG_AUTH);
+	if (strncmp(dataset, "/dev/disk", 9) == 0) {
+		syslog(LOG_NOTICE, "%s: mount with %s on %s\n",
+		    __func__, dataset, path);
+		if (path[0] == '/' && strlen(path) == 1) {
+			syslog(LOG_NOTICE, "mountroot\n");
+		} else {
+			syslog(LOG_NOTICE, "automount\n");
+			return (0);
+		}
+
+		ret = zmount(dataset, path, MS_OPTIONSTR | flags, MNTTYPE_ZFS,
+		    NULL, 0, mntopts, sizeof (mntopts));
+		syslog(LOG_NOTICE, "%s: zmount %s on %s returned %d\n", __func__,
+		    dataset, path, ret);
+		return (ret);
+	}
+	closelog();
 
 	/* try to open the dataset */
 	if ((zhp = zfs_open(g_zfs, dataset, ZFS_TYPE_FILESYSTEM)) == NULL)

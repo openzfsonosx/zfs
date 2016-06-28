@@ -280,7 +280,11 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 
 	vap->va_data_size = zp->z_size;
 	vap->va_total_size = zp->z_size;
-	vap->va_gen = zp->z_gen;
+	//vap->va_gen = zp->z_gen;
+	vap->va_gen = 0;
+#if defined(DEBUG) || defined(ZFS_DEBUG)
+if (zp->z_gen != 0) dprintf("%s: va_gen %lld -> 0\n", __func__, zp->z_gen);
+#endif
 
 	if (vnode_isdir(vp)) {
 		vap->va_nlink = zp->z_size;
@@ -460,7 +464,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
         VATTR_RETURN(vap, va_filerev, 0);
     }
 	if (VATTR_IS_ACTIVE(vap, va_fsid)) {
-        VATTR_RETURN(vap, va_fsid, vfs_statfs(zfsvfs->z_vfs)->f_fsid.val[0]);
+        //VATTR_RETURN(vap, va_fsid, vfs_statfs(zfsvfs->z_vfs)->f_fsid.val[0]);
+        VATTR_RETURN(vap, va_fsid, zfsvfs->z_rdev);
     }
 	if (VATTR_IS_ACTIVE(vap, va_type)) {
         VATTR_RETURN(vap, va_type, vnode_vtype(ZTOV(zp)));
