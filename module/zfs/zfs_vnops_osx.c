@@ -182,6 +182,7 @@ int
 zfs_vfs_quotactl(__unused struct mount *mp, __unused int cmds,
     __unused uid_t uid, __unused caddr_t datap, __unused vfs_context_t context)
 {
+dprintf("%s ENOTSUP\n", __func__);
 	return (ENOTSUP);
 }
 
@@ -371,8 +372,7 @@ zfs_vnop_open(struct vnop_open_args *ap)
 
 	err = zfs_open(&ap->a_vp, ap->a_mode, cr, ct);
 
-	if (err) printf("zfs_open() failed %d\n", err);
-
+	if (err) dprintf("zfs_open() failed %d\n", err);
 	return (err);
 }
 
@@ -442,53 +442,88 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		/* ioctl supported by ZFS and POSIX */
 
 		case F_FULLFSYNC:
+			dprintf("%s F_FULLFSYNC\n", __func__);
 #ifdef F_BARRIERFSYNC
 		case F_BARRIERFSYNC:
+			dprintf("%s F_BARRIERFSYNC\n", __func__);
 #endif
 			error = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 			break;
 
 		case F_CHKCLEAN:
+			dprintf("%s F_CHKCLEAN\n", __func__);
 			/* normally calls http://fxr.watson.org/fxr/source/bsd/vfs/vfs_cluster.c?v=xnu-2050.18.24#L5839 */
 			break;
 
 		case F_RDADVISE:
-			dprintf("vnop_ioctl: F_RDADVISE\n");
+			dprintf("%s F_RDADVISE\n", __func__);
+	/* XXX Is there another easy way to prefetch the file? */
+#if 0
+			struct radvisory *ra;
+			rl_t *rl;
+			uint64_t file_size;
+
+			ra = (struct radvisory *)(ap->a_data);
+
+			ZFS_ENTER(zfsvfs);
+			file_size = zp->z_size;
+
+			/* XXX Check request size */
+
+			//rl = zfs_range_lock(zp, ra->ra_offset, ra->ra_count, RL_WRITER);
+			rl = zfs_range_lock(zp, ra->ra_offset, ra->ra_count, RL_READER);
+			ZFS_EXIT(zfsvfs);
+
+			advisory_read(ap->a_vp, file_size, ra->ra_offset, ra->ra_count);
+
+			ZFS_ENTER(zfsvfs);
+			zfs_range_unlock(rl);
+			ZFS_EXIT(zfsvfs);
+#endif
 			break;
 
 		case SPOTLIGHT_GET_MOUNT_TIME:
+			dprintf("%s SPOTLIGHT_GET_MOUNT_TIME\n", __func__);
+			*(uint32_t *)ap->a_data = zfsvfs->z_mount_time;
+			break;
 		case SPOTLIGHT_FSCTL_GET_MOUNT_TIME:
+			dprintf("%s SPOTLIGHT_FSCTL_GET_MOUNT_TIME\n", __func__);
 			*(uint32_t *)ap->a_data = zfsvfs->z_mount_time;
 			break;
 
 		case SPOTLIGHT_GET_UNMOUNT_TIME:
+			dprintf("%s SPOTLIGHT_GET_UNMOUNT_TIME\n", __func__);
+			*(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
+			break;
 		case SPOTLIGHT_FSCTL_GET_LAST_MTIME:
+			dprintf("%s SPOTLIGHT_FSCTL_GET_LAST_MTIME\n", __func__);
 			*(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
 			break;
 
 		case HFS_SET_ALWAYS_ZEROFILL:
+			dprintf("%s HFS_SET_ALWAYS_ZEROFILL\n", __func__);
+			/* Required by Spotlight search */
+			break;
 		case HFS_EXT_BULKACCESS_FSCTL:
+			dprintf("%s HFS_EXT_BULKACCESS_FSCTL\n", __func__);
 			/* Required by Spotlight search */
 			break;
 
-
-
 		/* ioctl required to simulate HFS mimic behavior */
-
-
 		case 0x80005802:
+			dprintf("%s 0x80005802 unknown\n", __func__);
 			/* unknown as to what this is - is from subsystem read, 'X', 2 */
 			break;
 
 		case HFS_GETPATH:
-			dprintf("ZFS: ioctl(HFS_GETPATH)\n");
+			dprintf("%s HFS_GETPATH\n", __func__);
   		    {
 				struct vfsstatfs *vfsp;
 				struct vnode *file_vp;
-                ino64_t cnid;
-                int  outlen;
-                char *bufptr;
-                int flags = 0;
+				ino64_t cnid;
+				int  outlen;
+				char *bufptr;
+				int flags = 0;
 
 				/* Caller must be owner of file system. */
 				vfsp = vfs_statfs(zfsvfs->z_vfs);
@@ -525,12 +560,12 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_TRANSFER_DOCUMENT_ID:
+			dprintf("%s HFS_TRANSFER_DOCUMENT_ID\n", __func__);
 		    {
 				u_int32_t to_fd = *(u_int32_t *)ap->a_data;
 				file_t *to_fp;
 				struct vnode *to_vp;
 				znode_t *to_zp;
-				dprintf("ZFS: HFS_TRANSFER_DOCUMENT_ID:\n");
 
 				to_fp = getf(to_fd);
 				if (to_fp == NULL) {
@@ -589,57 +624,41 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 
 
 		case F_MAKECOMPRESSED:
+			dprintf("%s F_MAKECOMPRESSED\n", __func__);
 			/*
 			 * Not entirely sure what this does, but HFS comments include:
 			 * "Make the file compressed; truncate & toggle BSD bits"
+			 * makes compressed copy of allocated blocks
+			 * shortens file to new length
+			 * sets BSD bits to indicate per-file compression
 			 *
+			 * On HFS, locks cnode and compresses its data. ZFS inband
+			 * compression makes this obsolete.
 			 */
-		    {
-				uint32_t gen_counter;
-
-				dprintf("ZFS: F_MAKECOMPRESSED\n");
-
-				if (vfs_isrdonly(zfsvfs->z_vfs) ||
-					!spa_writeable(dmu_objset_spa(zfsvfs->z_os))) {
-					error = EROFS;
-					goto out;
-				}
-
-				if (ap->a_data) {
-					/*
-					 * Cast the pointer into a uint32_t so we can extract the
-					 * supplied generation counter.
-					 */
-					gen_counter = *((uint32_t*)ap->a_data);
-                }
-                else {
-					error = EINVAL;
-					goto out;
-                }
-				/* Are there any other usecounts/FDs? */
-                if (vnode_isinuse(ap->a_vp, 1)) {
-					error = EBUSY;
-					goto out;
-				}
-				if (zp->z_pflags & ZFS_IMMUTABLE) {
-					error = EINVAL;
-					goto out;
-				}
-				if (zp->z_write_gencount == gen_counter) {
-					/*
-					 * OK, the gen_counter matched.  Go for it:
-					 * Toggle state bits,truncate file, and suppress mtime update
-					 */
-					// return OK
-				} else {
-					error = ESTALE;
-				}
-
+			if (vfs_isrdonly(zfsvfs->z_vfs) ||
+				!spa_writeable(dmu_objset_spa(zfsvfs->z_os))) {
+				error = EROFS;
+				goto out;
 			}
+
+			/* Are there any other usecounts/FDs? */
+			if (vnode_isinuse(ap->a_vp, 1)) {
+				error = EBUSY;
+				goto out;
+			}
+
+			if (zp->z_pflags & ZFS_IMMUTABLE) {
+				error = EINVAL;
+				goto out;
+			}
+
+			/* Return success */
+			error = 0;
 			break;
 
 		case HFS_PREV_LINK:
 		case HFS_NEXT_LINK:
+			dprintf("%s HFS_PREV/NEXT_LINK\n", __func__);
 		{
 			/*
 			 * Find sibling linkids with hardlinks. a_data points to the
@@ -722,45 +741,54 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_RESIZE_PROGRESS:
+			dprintf("%s HFS_RESIZE_PROGRESS\n", __func__);
 			/* fail as if requested of non-root fs */
 			error = EINVAL;
 			break;
 
 		case HFS_RESIZE_VOLUME:
+			dprintf("%s HFS_RESIZE_VOLUME\n", __func__);
 			/* fail as if requested of non-root fs */
 			error = EINVAL;
 			break;
 
 		case HFS_CHANGE_NEXT_ALLOCATION:
+			dprintf("%s HFS_CHANGE_NEXT_ALLOCATION\n", __func__);
 			/* fail as if requested of non-root fs */
 			error = EINVAL;
 			break;
 
 		case HFS_CHANGE_NEXTCNID:
+			dprintf("%s HFS_CHANGE_NEXTCNID\n", __func__);
 			/* FIXME : fail as though read only */
 			error = EROFS;
 			break;
 
 		case F_FREEZE_FS:
+			dprintf("%s F_FREEZE_FS\n", __func__);
 			/* Dont support freeze */
 			error = ENOTSUP;
 			break;
 
 		case F_THAW_FS:
+			dprintf("%s F_THAW_FS\n", __func__);
 			/* dont support fail as though insufficient privilege */
 			error = EACCES;
 			break;
 
 		case HFS_BULKACCESS_FSCTL:
+			dprintf("%s HFS_BULKACCESS_FSCTL\n", __func__);
 			/* Respond as if HFS_STANDARD flag is set */
 			error = EINVAL;
 			break;
 
 		case HFS_FSCTL_GET_VERY_LOW_DISK:
+			dprintf("%s HFS_FSCTL_GET_VERY_LOW_DISK\n", __func__);
 			*(uint32_t*)ap->a_data = zfsvfs->z_freespace_notify_dangerlimit;
 			break;
 
 		case HFS_FSCTL_SET_VERY_LOW_DISK:
+			dprintf("%s HFS_FSCTL_SET_VERY_LOW_DISK\n", __func__);
 			if (*(uint32_t *)ap->a_data >= zfsvfs->z_freespace_notify_warninglimit) {
 				error = EINVAL;
 			} else {
@@ -769,10 +797,12 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_FSCTL_GET_LOW_DISK:
+			dprintf("%s HFS_FSCTL_GET_LOW_DISK\n", __func__);
 			*(uint32_t*)ap->a_data = zfsvfs->z_freespace_notify_warninglimit;
 			break;
 
 		case HFS_FSCTL_SET_LOW_DISK:
+			dprintf("%s HFS_FSCTL_SET_LOW_DISK\n", __func__);
 			if (   *(uint32_t *)ap->a_data >= zfsvfs->z_freespace_notify_desiredlevel
 				   || *(uint32_t *)ap->a_data <= zfsvfs->z_freespace_notify_dangerlimit) {
 				error = EINVAL;
@@ -782,10 +812,12 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_FSCTL_GET_DESIRED_DISK:
+			dprintf("%s HFS_FSCTL_GET_DESIRED_DISK\n", __func__);
 			*(uint32_t*)ap->a_data = zfsvfs->z_freespace_notify_desiredlevel;
 			break;
 
 		case HFS_FSCTL_SET_DESIRED_DISK:
+			dprintf("%s HFS_FSCTL_SET_DESIRED_DISK\n", __func__);
 			if (*(uint32_t *)ap->a_data <= zfsvfs->z_freespace_notify_warninglimit) {
 				error = EINVAL;
 			} else {
@@ -794,19 +826,33 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			break;
 
 		case HFS_VOLUME_STATUS:
+			dprintf("%s HFS_VOLUME_STATUS\n", __func__);
 			/* For now we always reply "all ok" */
 			*(uint32_t *)ap->a_data = zfsvfs->z_notification_conditions;
 			break;
 
 		case HFS_SET_BOOT_INFO:
+			dprintf("%s HFS_SET_BOOT_INFO\n", __func__);
+			/* ZFS booting is not supported, mimic selection of a non-root HFS volume */
+			*(uint32_t *)ap->a_data = 0;
+			error = EINVAL;
+			break;
 		case HFS_GET_BOOT_INFO:
+			dprintf("%s HFS_GET_BOOT_INFO\n", __func__);
+			/* ZFS booting is not supported, mimic selection of a non-root HFS volume */
+			*(uint32_t *)ap->a_data = 0;
+			error = EINVAL;
+			break;
 		case HFS_MARK_BOOT_CORRUPT:
+			dprintf("%s HFS_MARK_BOOT_CORRUPT\n", __func__);
 			/* ZFS booting is not supported, mimic selection of a non-root HFS volume */
 			*(uint32_t *)ap->a_data = 0;
 			error = EINVAL;
 			break;
 
 		case HFS_FSCTL_GET_JOURNAL_INFO:
+dprintf("%s HFS_FSCTL_GET_JOURNAL_INFO\n", __func__);
+/* XXX We're setting the mount as 'Journaled' so this might conflict */
 			/* Respond as though journal is empty/disabled */
 		{
 		    struct hfs_journal_info *jip;
@@ -817,22 +863,26 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		break;
 
 		case HFS_DISABLE_METAZONE:
+			dprintf("%s HFS_DISABLE_METAZONE\n", __func__);
 			/* fail as though insufficient privs */
 			error = EACCES;
 			break;
 
 #ifdef HFS_GET_FSINFO
 		case HFS_GET_FSINFO:
+			dprintf("%s HFS_GET_FSINFO\n", __func__);
 			break;
 #endif
 
 #ifdef HFS_REPIN_HOTFILE_STATE
 		case HFS_REPIN_HOTFILE_STATE:
+			dprintf("%s HFS_REPIN_HOTFILE_STATE\n", __func__);
 			break;
 #endif
 
 #ifdef HFS_SET_HOTFILE_STATE
 		case HFS_SET_HOTFILE_STATE:
+			dprintf("%s HFS_SET_HOTFILE_STATE\n", __func__);
 			break;
 #endif
 
@@ -840,18 +890,18 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 
 
 		default:
-			printf("vnop_ioctl: Unknown ioctl %02lx ('%lu' + %lu)\n",
-				   ap->a_command, (ap->a_command&0xff00)>>8,
-				   ap->a_command&0xff);
+			dprintf("%s: Unknown ioctl %02lx ('%lu' + %lu)\n",
+			    __func__, ap->a_command, (ap->a_command&0xff00)>>8,
+			    ap->a_command&0xff);
 			error = ENOTTY;
 	}
 
   out:
-	if (error)
-		printf("vnop_ioctl failing ioctl: %02lx ('%lu' + %lu) returned %d\n",
-			ap->a_command, (ap->a_command&0xff00)>>8,
-			ap->a_command&0xff,
-			error);
+	if (error) {
+		dprintf("%s: failing ioctl: %02lx ('%lu' + %lu) returned %d\n",
+		    __func__, ap->a_command, (ap->a_command&0xff00)>>8,
+		    ap->a_command&0xff, error);
+	}
 
 	return (error);
 }
@@ -876,7 +926,7 @@ zfs_vnop_read(struct vnop_read_args *ap)
 	/* resid = uio_resid(ap->a_uio); */
 	error = zfs_read(ap->a_vp, ap->a_uio, ioflag, cr, ct);
 
-	/* dprintf("vnop_read(%d) ->%d\n", resid, error); */
+	if (error) dprintf("vnop_read %d\n", error);
 	return (error);
 }
 
@@ -909,6 +959,8 @@ zfs_vnop_write(struct vnop_write_args *ap)
 	/* if (tx_bytes != 0) { */
 	if (!error) {
 		ubc_setsize(ap->a_vp, VTOZ(ap->a_vp)->z_size);
+	} else {
+		dprintf("%s error %d\n", __func__, error);
 	}
 
 	return (error);
@@ -944,6 +996,7 @@ zfs_vnop_access(struct vnop_access_args *ap)
 	dprintf("vnop_access: action %04x -> mode %04x\n", action, mode);
 	error = zfs_access(ap->a_vp, mode, 0, cr, ct);
 
+	if (error) dprintf("%s: error %d\n", __func__, error);
 	return (error);
 }
 
@@ -1133,8 +1186,11 @@ zfs_vnop_create(struct vnop_create_args *ap)
 
 	error = zfs_create(ap->a_dvp, cnp->cn_nameptr, vap, excl, mode,
 	    ap->a_vpp, cr);
-	if (!error)
+	if (!error) {
 		cache_purge_negatives(ap->a_dvp);
+	} else {
+		dprintf("%s error %d\n", __func__, error);
+	}
 
 	return (error);
 }
@@ -1317,8 +1373,10 @@ zfs_vnop_remove(struct vnop_remove_args *ap)
 		zfs_remove_hardlink(ap->a_vp,
 							ap->a_dvp,
 							ap->a_cnp->cn_nameptr);
-
+	} else {
+		dprintf("%s error %d\n", __func__, error);
 	}
+
 	return (error);
 }
 
@@ -1359,8 +1417,11 @@ zfs_vnop_mkdir(struct vnop_mkdir_args *ap)
 	 */
 	error = zfs_mkdir(ap->a_dvp, ap->a_cnp->cn_nameptr, ap->a_vap,
 	    ap->a_vpp, cr, ct, /* flags */0, /* vsecp */NULL);
-	if (!error)
+	if (!error) {
 		cache_purge_negatives(ap->a_dvp);
+	} else {
+		dprintf("%s error %d\n", __func__, error);
+	}
 
 	return (error);
 }
@@ -1387,8 +1448,11 @@ zfs_vnop_rmdir(struct vnop_rmdir_args *ap)
 	 */
 	error = zfs_rmdir(ap->a_dvp, ap->a_cnp->cn_nameptr, /* cwd */NULL, cr,
 	    ct, /* flags */0);
-	if (!error)
+	if (!error) {
 		cache_purge(ap->a_vp);
+	} else {
+		dprintf("%s error %d\n", __func__, error);
+	}
 
 	return (error);
 }
@@ -1432,7 +1496,9 @@ zfs_vnop_readdir(struct vnop_readdir_args *ap)
 	if (*ap->a_numdirent == 0)
 		*ap->a_numdirent = 2; /* . and .. */
 
-	dprintf("-readdir %d (nument %d)\n", error, *ap->a_numdirent);
+	if (error) {
+		dprintf("-readdir %d (nument %d)\n", error, *ap->a_numdirent);
+	}
 	return (error);
 }
 
@@ -1474,6 +1540,8 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	//if (vnode_isrecycled(ap->a_vp)) return 0;
 
 	err = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
+
+	if (err) dprintf("%s err %d\n", __func__, err);
 
 	return (err);
 }
@@ -1696,6 +1764,7 @@ zfs_vnop_rename(struct vnop_rename_args *ap)
 
 	}
 
+	if (error) dprintf("%s: error %d\n", __func__, error);
 	return (error);
 }
 int
@@ -1724,8 +1793,11 @@ zfs_vnop_symlink(struct vnop_symlink_args *ap)
 	/* OS X doesn't need to set vap->va_mode? */
 	error = zfs_symlink(ap->a_dvp, ap->a_vpp, ap->a_cnp->cn_nameptr,
 	    ap->a_vap, ap->a_target, cr);
-	if (!error)
+	if (!error) {
 		cache_purge_negatives(ap->a_dvp);
+	} else {
+		dprintf("%s: error %d\n", __func__, error);
+	}
 	/* XXX zfs_attach_vnode()? */
 	return (error);
 }
@@ -1769,15 +1841,20 @@ zfs_vnop_link(struct vnop_link_args *ap)
 	dprintf("vnop_link\n");
 
 	/* XXX Translate this inside zfs_link() instead. */
-	if (vnode_mount(ap->a_vp) != vnode_mount(ap->a_tdvp))
+	if (vnode_mount(ap->a_vp) != vnode_mount(ap->a_tdvp)) {
+		dprintf("%s: vp and tdvp on different mounts\n", __func__);
 		return (EXDEV);
+	}
 
 	/*
 	 * XXX Understand why Apple made this comparison in so many places where
 	 * others do not.
 	 */
-	if (ap->a_cnp->cn_namelen >= ZAP_MAXNAMELEN)
+	if (ap->a_cnp->cn_namelen >= ZAP_MAXNAMELEN) {
+		dprintf("%s: name too long %d\n", __func__,
+		    ap->a_cnp->cn_namelen);
 		return (ENAMETOOLONG);
+	}
 
 	/*
 	 * extern int zfs_link(struct vnode *tdvp, struct vnode *svp,
@@ -1791,6 +1868,8 @@ zfs_vnop_link(struct vnop_link_args *ap)
 		vnode_setmultipath(ap->a_vp);
 		cache_purge(ap->a_vp);
 		cache_purge_negatives(ap->a_tdvp);
+	} else {
+		dprintf("%s error %d\n", __func__, error);
 	}
 
 	return (error);
@@ -1933,8 +2012,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 		rw_exit(&zp->z_map_lock);
 
 	ZFS_EXIT(zfsvfs);
-	if (error)
-		dprintf("-pagein %d\n", error);
+	if (error) dprintf("%s error %d\n", __func__, error);
 	return (error);
 }
 
@@ -2146,8 +2224,7 @@ out:
 	}
 exit:
 	ZFS_EXIT(zfsvfs);
-	if (err)
-		dprintf("ZFS: pageout failed %d\n", err);
+	if (err) dprintf("%s err %d\n", __func__, err);
 	return (err);
 }
 
@@ -2218,12 +2295,15 @@ static int bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 	 * we can't issue an abort because we don't know how
 	 * big the upl really is
 	 */
-	if (size <= 0)
+	if (size <= 0) {
+		dprintf("%s invalid size %d\n", __func__, size);
 		return (EINVAL);
+	}
 
 	if (vnode_vfsisrdonly(ZTOV(zp))) {
 		if (is_clcommit)
 			ubc_upl_abort_range(upl, upl_offset, size, UPL_ABORT_FREE_ON_EMPTY);
+		dprintf("%s: readonly fs\n", __func__);
 		return (EROFS);
 	}
 
@@ -2237,6 +2317,7 @@ static int bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 		(f_offset & PAGE_MASK_64) || (size & PAGE_MASK)) {
 		if (is_clcommit)
 			ubc_upl_abort_range(upl, upl_offset, size, UPL_ABORT_FREE_ON_EMPTY);
+		dprintf("%s: invalid offset or size\n", __func__);
 		return (EINVAL);
 	}
 	max_size = filesize - f_offset;
@@ -2825,8 +2906,21 @@ zfs_vnop_mknod(struct vnop_mknod_args *ap)
 	};
 #endif
 {
+	struct vnop_create_args create_ap;
 	int error;
-	error = zfs_vnop_create((struct vnop_create_args *)ap);
+
+	dprintf("%s\n", __func__);
+
+	bzero(&create_ap, sizeof(struct vnop_create_args));
+
+	create_ap.a_dvp = ap->a_dvp;
+	create_ap.a_vpp = ap->a_vpp;
+	create_ap.a_cnp = ap->a_cnp;
+	create_ap.a_vap = ap->a_vap;
+	create_ap.a_context = ap->a_context;
+
+	error = zfs_vnop_create(&create_ap);
+	if (error) dprintf("%s error %d\n", __func__, error);
 	return error;
 }
 
@@ -2843,7 +2937,10 @@ zfs_vnop_allocate(struct vnop_allocate_args *ap)
 	};
 #endif
 {
-	dprintf("vnop_allocate: 0\n");
+	dprintf("%s %llu %d %llu %llu\n", __func__, ap->a_length, ap->a_flags,
+	    (ap->a_bytesallocated ? *ap->a_bytesallocated : 0), ap->a_offset);
+
+//	*ap->a_bytesallocated = 0;
 
 	return (0);
 }
@@ -2939,7 +3036,7 @@ zfs_vnop_pathconf(struct vnop_pathconf_args *ap)
 		error = EINVAL;
 	}
 
-	dprintf("-vnop_patchconf vp %p : %d\n", ap->a_vp, error);
+	if (error) dprintf("%s vp %p : %d\n", __func__, ap->a_vp, error);
 	return (error);
 }
 
@@ -3131,6 +3228,7 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	};
 #endif
 {
+//dprintf("%s\n", __func__);
 	DECLARE_CRED(ap);
 	struct vnode *vp = ap->a_vp;
 	struct vnode *xdvp = NULLVP;
@@ -3256,7 +3354,7 @@ out:
 	}
 
 	ZFS_EXIT(zfsvfs);
-	dprintf("-setxattr vp %p: err %d\n", ap->a_vp, error);
+	if (error) dprintf("-setxattr vp %p: err %d\n", ap->a_vp, error);
 	return (error);
 }
 
@@ -3359,7 +3457,7 @@ out:
 	}
 
 	ZFS_EXIT(zfsvfs);
-	dprintf("-removexattr vp %p: error %d\n", ap->a_vp, error);
+	if (error) dprintf("%s vp %p: error %d\n", __func__, ap->a_vp, error);
 	return (error);
 }
 
@@ -3501,7 +3599,10 @@ out:
 	}
 
 	ZFS_EXIT(zfsvfs);
-	dprintf("-listxattr vp %p: error %d size %ld\n", ap->a_vp, error, size);
+	if (error) {
+		dprintf("%s vp %p: error %d size %ld\n", __func__,
+		    ap->a_vp, error, size);
+	}
 	return (error);
 }
 
@@ -3560,7 +3661,7 @@ out:
 		vnode_put(xdvp);
 
 	ZFS_EXIT(zfsvfs);
-	dprintf("-getnamedstream vp %p: error %d\n", ap->a_vp, error);
+	if (error) dprintf("%s vp %p: error %d\n", __func__, ap->a_vp, error);
 	return (error);
 }
 
@@ -3626,7 +3727,7 @@ out:
 		vnode_put(xdvp);
 
 	ZFS_EXIT(zfsvfs);
-	dprintf("-makenamedstream vp %p: error %d\n", ap->a_vp, error);
+	if (error) dprintf("%s vp %p: error %d\n", __func__, ap->a_vp, error);
 	return (error);
 }
 
@@ -3695,15 +3796,23 @@ zfs_vnop_exchange(struct vnop_exchange_args *ap)
 	zfsvfs_t  *zfsvfs;
 
 	/* The files must be on the same volume. */
-	if (vnode_mount(fvp) != vnode_mount(tvp))
+	if (vnode_mount(fvp) != vnode_mount(tvp)) {
+		dprintf("%s fvp and tvp not in same mountpoint\n",
+		    __func__);
 		return (EXDEV);
+	}
 
-	if (fvp == tvp)
+	if (fvp == tvp) {
+		dprintf("%s fvp == tvp\n", __func__);
 		return (EINVAL);
+	}
 
 	/* Only normal files can be exchanged. */
-	if (!vnode_isreg(fvp) || !vnode_isreg(tvp))
+	if (!vnode_isreg(fvp) || !vnode_isreg(tvp)) {
+		dprintf("%s fvp or tvp is not a regular file\n",
+		    __func__);
 		return (EINVAL);
+	}
 
 	fzp = VTOZ(fvp);
 	zfsvfs = fzp->z_zfsvfs;
@@ -3713,7 +3822,7 @@ zfs_vnop_exchange(struct vnop_exchange_args *ap)
 	/* ADD MISSING CODE HERE */
 
 	ZFS_EXIT(zfsvfs);
-	dprintf("vnop_exchange: ENOTSUP\n");
+	printf("vnop_exchange: ENOTSUP\n");
 	return (ENOTSUP);
 }
 
@@ -3741,8 +3850,7 @@ zfs_vnop_blktooff(struct vnop_blktooff_args *ap)
 #endif
 {
 	dprintf("vnop_blktooff: 0\n");
-
-	return (0);
+	return (ENOTSUP);
 }
 
 int
@@ -3755,21 +3863,8 @@ zfs_vnop_offtoblk(struct vnop_offtoblk_args *ap)
 	};
 #endif
 {
-	znode_t *zp;
-	zfsvfs_t *zfsvfs;
-
 	dprintf("+vnop_offtoblk\n");
-
-	if (ap->a_vp == NULL)
-		return (EINVAL);
-	zp = VTOZ(ap->a_vp);
-	if (!zp)
-		return (EINVAL);
-	zfsvfs = zp->z_zfsvfs;
-	if (!zfsvfs)
-		return (EINVAL);
-	*ap->a_lblkno = (daddr64_t)(ap->a_offset / zfsvfs->z_max_blksz);
-	return (0);
+	return (ENOTSUP);
 }
 
 int
@@ -3786,8 +3881,52 @@ zfs_vnop_blockmap(struct vnop_blockmap_args *ap)
 };
 #endif
 {
-	dprintf("vnop_blockmap\n");
+	dprintf("+vnop_blockmap\n");
 	return (ENOTSUP);
+
+#if 0
+	znode_t *zp;
+	zfsvfs_t *zfsvfs;
+
+	ASSERT(ap);
+	ASSERT(ap->a_vp);
+	ASSERT(ap->a_size);
+
+	if (!ap->a_bpn) {
+		return (0);
+	}
+
+	if (vnode_isdir(ap->a_vp)) {
+		return (ENOTSUP);
+	}
+
+	zp = VTOZ(ap->a_vp);
+	if (!zp) return (ENODEV);
+
+	zfsvfs = zp->z_zfsvfs;
+	if (!zfsvfs) return (ENODEV);
+
+	/* Return full request size as contiguous */
+	if (ap->a_run) {
+		//*ap->a_run = ap->a_size;
+		*ap->a_run = 0;
+	}
+	if (ap->a_poff) {
+		*((int *)(ap->a_poff)) = 0;
+		/*
+		 * returning offset of -1 asks the
+		 * caller to zero the ranges
+		 */
+		//*((int *)(ap->a_poff)) = -1;
+	}
+	*ap->a_bpn = 0;
+//	*ap->a_bpn = (daddr64_t)(ap->a_foffset / zfsvfs->z_max_blksz);
+
+	dprintf("%s ret %lu %d %llu\n", __func__,
+	    ap->a_size, *((int*)(ap->a_poff)), *((uint64_t *)(ap->a_bpn)));
+
+	return (0);
+#endif
 }
 
 int
@@ -3799,8 +3938,7 @@ zfs_vnop_strategy(struct vnop_strategy_args *ap)
 #endif
 {
 	dprintf("vnop_strategy: 0\n");
-
-	return (0);
+	return (ENOTSUP);
 }
 
 int
@@ -3816,8 +3954,7 @@ zfs_vnop_select(struct vnop_select_args *ap)
 	};
 #endif
 {
-	dprintf("vnop_select: 0\n");
-
+	dprintf("vnop_select: 1\n");
 	return (1);
 }
 
@@ -3859,7 +3996,9 @@ zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 	int prefetch = 0;
 	int error = 0;
 
-	printf("+vnop_readdirattr\n");
+#if 0
+	dprintf("+vnop_readdirattr\n");
+#endif
 
 	*(ap->a_actualcount) = 0;
 	*(ap->a_eofflag) = 0;
@@ -3869,6 +4008,7 @@ zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 	 */
 	if (((ap->a_options & ~(FSOPT_NOINMEMUPDATE | FSOPT_NOFOLLOW)) != 0) ||
 		(uio_resid(uio) <= 0) || (maxcount <= 0)) {
+		dprintf("%s invalid argument\n");
 		return (EINVAL);
 	}
 	/*
@@ -3879,6 +4019,7 @@ zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 	    (alp->dirattr & ~ZFS_ATTR_DIR_VALID) ||
 	    (alp->fileattr & ~ZFS_ATTR_FILE_VALID) ||
 	    (alp->volattr != 0 || alp->forkattr != 0)) {
+		dprintf("%s unsupported attr\n");
 		return (EINVAL);
 	}
 	/*
@@ -3898,6 +4039,7 @@ zfs_vnop_readdirattr(struct vnop_readdirattr_args *ap)
 		maxsize += ZAP_MAXNAMELEN + 1;
 	attrbufptr = (void*)kmem_alloc(maxsize, KM_SLEEP);
 	if (attrbufptr == NULL) {
+		dprintf("%s kmem_alloc failed\n");
 		return (ENOMEM);
 	}
 	attrptr = attrbufptr;
