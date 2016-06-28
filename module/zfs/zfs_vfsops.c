@@ -1995,6 +1995,8 @@ zfs_vfs_mountroot(struct mount *vfsp, struct vnode *rdev, vfs_context_t ctx)
 
 	// spa_import_rootpool(char *devpath, char *devid);
 	//error = spa_import_rootpool(rdev);
+	error = spa_import_rootpool((char *)vnode_getname(rdev),
+								"lundmanwashere");
 
 	if (error) {
 		cmn_err(CE_NOTE, "spa_import_rootpool: error %d",

@@ -56,7 +56,7 @@
 			<key>IOProviderClass</key>
 			<string>IOResources</string>
 			<key>IOResourceMatch</key>
-			<string>IOKit</string>
+			<string>IOBSD</string>
 		</dict>
 
 		<key>ZFSProxyMediaScheme</key>
@@ -110,5 +110,7 @@
 		<key>net.lundman.spl</key>
 		<string>1.0.0</string>
 	</dict>
+	<key>OSBundleRequired</key>
+	<string>Root</string>
 </dict>
 </plist>

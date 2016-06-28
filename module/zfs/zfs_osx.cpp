@@ -253,6 +253,13 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 	zfs_boot_init(this);
 #endif
 
+	/* We need to insert our vfc_mountroot callback here, since
+	 * Apple will not let us set it "legally". It would be nice to
+	 * only do this if we are loaded as part of the boot, and it
+	 * is needed. That test could live in SPL though.
+	 */
+	spl_hijack_mountroot((void *)zfs_vfs_mountroot);
+
     return res;
 }
 
