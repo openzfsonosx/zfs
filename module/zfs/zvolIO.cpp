@@ -56,7 +56,7 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	OSNumber *dataNumber = 0;
 
 	char product_name[strlen(ZVOL_PRODUCT_NAME_PREFIX) + MAXPATHLEN + 1];
-	
+
 	if (super::attach(provider) == false)
 		return (false);
 	m_provider = OSDynamicCast(net_lundman_zfs_zvol, provider);
@@ -126,6 +126,19 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 		return (true);
 	}
 
+	/* Set this device to be an SSD, for priority and VM paging */
+	dataString = OSString::withCString(
+	    kIOPropertyMediumTypeSolidStateKey);
+	if (!dataString) {
+		IOLog("could not create medium type string\n");
+		return (true);
+	}
+	deviceCharacteristics->setObject(kIOPropertyMediumTypeKey,
+	    dataString);
+
+	dataString->release();
+	dataString = 0;
+
 	/* Set logical block size to ZVOL_BSIZE (512b) */
 	dataNumber =	OSNumber::withNumber(ZVOL_BSIZE,
 	    8 * sizeof (ZVOL_BSIZE));
@@ -171,7 +184,7 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	deviceCharacteristics->setObject(kIOPropertyProductNameKey, dataString);
 	dataString->release();
 	dataString = 0;
-	
+
 	/* Apply these characteristics */
 	setProperty(kIOPropertyDeviceCharacteristicsKey,
 	    deviceCharacteristics);
@@ -282,14 +295,19 @@ bool
 net_lundman_zfs_zvol_device::handleOpen(IOService *client,
     IOOptionBits options, void *argument)
 {
+#if 0
 	IOStorageAccess access = (IOStorageAccess)(uint64_t)argument;
-	bool ret = true;
+#endif
+	bool ret = false;
 
 	dprintf("open: options %lx\n", options);
 
 	if (super::handleOpen(client, options, argument) == false)
 		return (false);
 
+    spa_exporting_vdevs = B_TRUE;
+
+#if 0
 	/*
 	 * It was the hope that openHandle would indicate the type of open
 	 * required such that we can set FREAD/FWRITE/ZVOL_EXCL as needed, but
@@ -310,7 +328,6 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 
 		case kIOStorageAccessReaderWriter:
 			// IOLog("handleOpen: options %04x\n", options);
-			zv->zv_openflags = FWRITE | ZVOL_EXCL;
 			break;
 
 		default:
@@ -318,21 +335,25 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 			//	access);
 			zv->zv_openflags = FWRITE;
 	}
+#endif
 
-	if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL)) {
-		dprintf("Open failed - testing readonly\n");
-
+	zv->zv_openflags = FWRITE | ZVOL_EXCL;
+	if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL) == 0) {
+		ret = true;
+	} else {
 		zv->zv_openflags = FREAD;
-		if (zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL))
-			ret = false;
-
+		if (zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL) == 0)
+			ret = true;
 	}
 
     spa_exporting_vdevs = B_FALSE;
 
 	dprintf("Open done\n");
 
-	return (true);
+	if (ret == false) {
+		super::handleClose(client, options);
+	}
+	return (ret);
 }
 
 

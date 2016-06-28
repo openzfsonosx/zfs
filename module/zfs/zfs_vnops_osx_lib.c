@@ -1909,7 +1909,9 @@ zpl_xattr_get_sa(struct vnode *vp, const char *name, void *value, size_t size)
 	uint_t nv_size;
 	int error = 0;
 
+#ifdef __LINUX__
 	ASSERT(RW_LOCK_HELD(&zp->z_xattr_lock));
+#endif
 
 	mutex_enter(&zp->z_lock);
 	if (zp->z_xattr_cached == NULL)

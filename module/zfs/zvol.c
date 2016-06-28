@@ -480,6 +480,30 @@ zvol_name2minor(const char *name, minor_t *minor)
 	return (zv ? 0 : -1);
 }
 
+static int
+zvol_snapdev_hidden(const char *name)
+{
+	uint64_t snapdev;
+	char *parent;
+	char *atp;
+	int error = 0;
+
+	parent = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+	(void) strlcpy(parent, name, MAXPATHLEN);
+
+	if ((atp = strrchr(parent, '@')) != NULL) {
+		*atp = '\0';
+		error = dsl_prop_get_integer(parent, "snapdev",
+		    &snapdev, NULL);
+		if ((error == 0) && (snapdev == ZFS_SNAPDEV_HIDDEN))
+			error = SET_ERROR(ENODEV);
+	}
+
+	kmem_free(parent, MAXPATHLEN);
+
+	return (SET_ERROR(error));
+}
+
 /*
  * Create a minor node (plus a whole lot more) for the specified volume.
  */
@@ -501,6 +525,19 @@ zvol_create_minor_impl(const char *name)
 		mutex_exit(&zfsdev_state_lock);
 		return (EEXIST);
 	}
+
+	/* On OS X we always check snapdev, for now */
+#ifdef linux
+	if (ignore_snapdev == B_FALSE) {
+#endif
+		error = zvol_snapdev_hidden(name);
+		if (error) {
+			mutex_exit(&zfsdev_state_lock);
+			return (error);
+		}
+#ifdef linux
+	}
+#endif
 
 	/* lie and say we're read-only */
 	error = dmu_objset_own(name, DMU_OST_ZVOL, B_TRUE, FTAG, &os);
@@ -2355,7 +2392,13 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 		 */
 		if (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
 			zil_commit(zv->zv_zilog, ZVOL_OBJ);
-			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
+			/*
+			 * Don't wait around for the transaction to
+			 * flush to disk. It has been committed to
+			 * the zil, which ensures consistency, and
+			 * fully syncing the transaction is expensive.
+			 */
+			// txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 		}
 	}
 
@@ -3037,9 +3080,7 @@ XXXXXzvol_create_minors(const char *name)
 		 */
 		dmu_objset_rele(os, FTAG);
 
-		if ((error = zvol_create_minor(name)) == 0)
-		/* error = zvol_create_snapshots(os, name) */;
-		else {
+		if ((error = zvol_create_minor(name)) != 0) {
 			dprintf("ZFS WARNING: %s %s (error=%d).\n",
 			    "Unable to create ZVOL",
 			    name, error);

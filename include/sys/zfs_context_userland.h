@@ -430,7 +430,9 @@ struct vnode {
 #define vnode_vid(vp) ((vp)->v_id)
 #define pwrite64 pwrite
 int vnode_getwithvid(vnode_t *vp, uint32_t id);
+int vnode_getwithref(vnode_t *vp);
 int vnode_put(vnode_t *vp);
+void vnode_rele(vnode_t *vp);
 #endif
 
 #undef vnode_t

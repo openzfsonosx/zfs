@@ -979,7 +979,8 @@ get_replication(nvlist_t *nvroot, boolean_t fatal)
 				 */
 				if (!dontreport &&
 				    (vdev_size != -1ULL &&
-				    (labs(size - vdev_size) >
+				    ((size > vdev_size ? (size - vdev_size) :
+				    (vdev_size - size)) >
 				    ZPOOL_FUZZ))) {
 					if (ret != NULL)
 						free(ret);
@@ -1221,7 +1222,10 @@ make_disks(zpool_handle_t *zhp, nvlist_t *nv)
 		    &wholedisk));
 
 		if (!wholedisk) {
+#ifdef __LINUX__
+/* XXX We don't need to jump through blkid hoops here. */
 			(void) zero_label(path);
+#endif
 			return (0);
 		}
 

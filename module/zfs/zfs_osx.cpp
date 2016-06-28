@@ -10,6 +10,12 @@
 #include <sys/zvolIO.h>
 #include <sys/osx_pseudo.h>
 
+#ifdef ZFS_BOOT
+#include <sys/zfs_boot.h>
+#endif
+
+#include <sys/ldi_osx.h>
+
 #include <sys/zfs_vnops.h>
 #include <sys/taskq.h>
 
@@ -36,12 +42,6 @@ extern "C" {
  * Can those with more C++ experience clean this up?
  */
 static void *global_c_interface = NULL;
-
-/* Notifier for disk removal */
-static IONotifier *disk_remove_notifier = NULL;
-
-static bool IOkit_disk_removed_callback(void* target, void* refCon, IOService* newService, IONotifier* notifier);
-
 
 // Define the superclass.
 #define super IOService
@@ -187,6 +187,17 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
     sysctl_register_oid(&sysctl__zfs);
     sysctl_register_oid(&sysctl__zfs_kext_version);
 
+	/* Init LDI */
+	int error = 0;
+	error = ldi_init(this);
+	if (error) {
+		IOLog("%s ldi_init error %d\n", __func__, error);
+		sysctl_unregister_oid(&sysctl__zfs_kext_version);
+		sysctl_unregister_oid(&sysctl__zfs);
+		return (false);
+		/* XXX Needs to fail ZFS start */
+	}
+
 	/*
 	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
 	 */
@@ -238,30 +249,19 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
       }
     }
 
-	disk_remove_notifier = addMatchingNotification(gIOTerminatedNotification,
-						serviceMatching("IOMedia"),
-						IOkit_disk_removed_callback,
-						this, NULL, 0);
+#ifdef ZFS_BOOT
+	zfs_boot_init(this);
+#endif
 
     return res;
 }
 
 void net_lundman_zfs_zvol::stop (IOService *provider)
 {
-
-	/* Stop being told about devices leaving */
-	if (disk_remove_notifier) disk_remove_notifier->remove();
-
-#if 0
-  // You can not stop unload :(
-	if (zfs_active_fs_count != 0 ||
-	    spa_busy() ||
-	    zvol_busy()) {
-
-      IOLog("ZFS: Can not unload as we have filesystems mounted.\n");
-      return;
-	}
+#ifdef ZFS_BOOT
+	zfs_boot_fini();
 #endif
+
     IOLog("ZFS: Attempting to unload ...\n");
 
     super::stop(provider);
@@ -272,10 +272,11 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     zfs_ioctl_osx_fini();
     zfs_vfsops_fini();
 
+	ldi_fini();
+
     sysctl_unregister_oid(&sysctl__zfs_kext_version);
     sysctl_unregister_oid(&sysctl__zfs);
     IOLog("ZFS: Unloaded module\n");
-
 }
 
 
@@ -848,6 +849,7 @@ uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t 
   return done;
 }
 
+#if 0
 #include <sys/vdev_impl.h>
 #include <sys/spa_impl.h>
 #include <sys/vdev_disk.h>
@@ -952,3 +954,4 @@ bool IOkit_disk_removed_callback(void* target,
 
 	return true;
 }
+#endif

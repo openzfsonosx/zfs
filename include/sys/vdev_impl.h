@@ -35,6 +35,10 @@
 #include <sys/dkio.h>
 #include <sys/uberblock_impl.h>
 
+#ifdef __APPLE__
+#include <sys/ldi_buf.h>
+#endif
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
