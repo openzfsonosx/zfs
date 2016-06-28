@@ -3977,16 +3977,16 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
  * during the system boot up time.
  */
 
-extern int vdev_disk_read_rootlabel(char *, char *, nvlist_t **);
+extern int vdev_disk_read_rootlabel(struct vnode *, nvlist_t **);
 
 static nvlist_t *
-spa_generate_rootconf(char *devpath, char *devid, uint64_t *guid)
+spa_generate_rootconf(struct vnode *vp, uint64_t *guid)
 {
 	nvlist_t *config;
 	nvlist_t *nvtop, *nvroot;
 	uint64_t pgid;
 
-	if (vdev_disk_read_rootlabel(devpath, devid, &config) != 0)
+	if (vdev_disk_read_rootlabel(vp, &config) != 0)
 		return (NULL);
 
 	/*
@@ -4068,7 +4068,7 @@ spa_alt_rootvdev(vdev_t *vd, vdev_t **avd, uint64_t *txg)
  *	"/pci@1f,0/ide@d/disk@0,0:a"
  */
 int
-spa_import_rootpool(char *devpath, char *devid)
+spa_import_rootpool(struct vnode *vp)
 {
 	spa_t *spa;
 	vdev_t *rvd, *bvd /*, *avd = NULL*/;
@@ -4080,7 +4080,7 @@ spa_import_rootpool(char *devpath, char *devid)
 	/*
 	 * Read the label from the boot device and generate a configuration.
 	 */
-	config = spa_generate_rootconf(devpath, devid, &guid);
+	config = spa_generate_rootconf(vp, &guid);
 #if defined(_OBP) && defined(_KERNEL)
 	if (config == NULL) {
 		if (strstr(devpath, "/iscsi/ssd") != NULL) {
@@ -4091,8 +4091,7 @@ spa_import_rootpool(char *devpath, char *devid)
 	}
 #endif
 	if (config == NULL) {
-		cmn_err(CE_NOTE, "Cannot read the pool label from '%s'",
-		    devpath);
+		cmn_err(CE_NOTE, "Cannot read the pool label");
 		return (SET_ERROR(EIO));
 	}
 

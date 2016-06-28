@@ -1976,7 +1976,6 @@ int
 zfs_vfs_mountroot(struct mount *vfsp, struct vnode *rdev, vfs_context_t ctx)
 {
 	int error = 0;
-	static int zfsrootdone = 0;
 	zfsvfs_t *zfsvfs = NULL;
 	znode_t *zp = NULL;
 
@@ -1989,14 +1988,12 @@ zfs_vfs_mountroot(struct mount *vfsp, struct vnode *rdev, vfs_context_t ctx)
 	 * boot property "zfs-bootfs" with a format of
 	 * "poolname/root-dataset-objnum".
 	 */
-	if (zfsrootdone++)
-		return (EBUSY);
+
 	/* rpool/ROOT/10.11 - first part is pool name */
 
 	// spa_import_rootpool(char *devpath, char *devid);
 	//error = spa_import_rootpool(rdev);
-	error = spa_import_rootpool((char *)vnode_getname(rdev),
-								"lundmanwashere");
+	error = spa_import_rootpool(rdev);
 
 	if (error) {
 		cmn_err(CE_NOTE, "spa_import_rootpool: error %d",
