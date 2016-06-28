@@ -2442,23 +2442,63 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	VFSATTR_RETURN(fsap, f_carbon_fsid, 0);
     // Make up a UUID here, based on the name
 	if (VFSATTR_IS_ACTIVE(fsap, f_uuid)) {
-        MD5_CTX  md5c;
+
+		MD5_CTX  md5c;
+		uint64_t guid = dmu_objset_fsid_guid(zfsvfs->z_os);
 		char osname[MAXNAMELEN];
 
-		// Get dataset name
-		dmu_objset_name(zfsvfs->z_os, osname);
+		if (guid != 0) {
+			/*
+			 * Seeding with the pool guid would
+			 * also avoid clashes across pools
+			 */
+			/* Print 16 hex chars for the 8b guid, plus null char */
+			snprintf(osname, 17, "%016llx", guid);
+			osname[16] = '\0'; // should have already from snprintf
+			dprintf("%s: using guid [%s]\n", __func__, osname);
+		} else {
 
-        char *fromname = osname;
-        MD5Init( &md5c );
-        MD5Update( &md5c, fromname, strlen(fromname));
-        MD5Final( fsap->f_uuid, &md5c );
-        VFSATTR_SET_SUPPORTED(fsap, f_uuid);
-		dprintf("Returning '%s' uuid '%02x%02x%02x%02x'\n", fromname,
-			   fsap->f_uuid[0],
-			   fsap->f_uuid[1],
-			   fsap->f_uuid[2],
-			   fsap->f_uuid[3]);
-    }
+			// Get dataset name
+			dmu_objset_name(zfsvfs->z_os, osname);
+			dprintf("%s: osname [%s]\n", __func__, osname);
+		}
+
+		MD5Init( &md5c );
+		MD5Update( &md5c, osname, strlen(osname));
+		MD5Final( fsap->f_uuid, &md5c );
+		VFSATTR_SET_SUPPORTED(fsap, f_uuid);
+
+#if defined(DEBUG) || defined(ZFS_DEBUG)
+	if (uuid_printed == 0)
+		printf("%s UUIDgen: [%s](%ld)->"
+		    "[%02x%02x%02x%02x-%02x%02x-%02x%02x-"
+		    "%02x%02x-%02x%02x%02x%02x%02x%02x]\n",
+		    __func__, osname, strlen(osname),
+		    fsap->f_uuid[0], fsap->f_uuid[1],
+		    fsap->f_uuid[2], fsap->f_uuid[3],
+		    fsap->f_uuid[4], fsap->f_uuid[5],
+		    fsap->f_uuid[6], fsap->f_uuid[7],
+		    fsap->f_uuid[8], fsap->f_uuid[9],
+		    fsap->f_uuid[10], fsap->f_uuid[11],
+		    fsap->f_uuid[12], fsap->f_uuid[13],
+		    fsap->f_uuid[14], fsap->f_uuid[15]);
+#else
+		dprintf("%s UUIDgen: [%s](%ld)->"
+		    "[%02x%02x%02x%02x-%02x%02x-%02x%02x-"
+		    "%02x%02x-%02x%02x%02x%02x%02x%02x]\n",
+		    __func__, osname, strlen(osname),
+		    fsap->f_uuid[0], fsap->f_uuid[1],
+		    fsap->f_uuid[2], fsap->f_uuid[3],
+		    fsap->f_uuid[4], fsap->f_uuid[5],
+		    fsap->f_uuid[6], fsap->f_uuid[7],
+		    fsap->f_uuid[8], fsap->f_uuid[9],
+		    fsap->f_uuid[10], fsap->f_uuid[11],
+		    fsap->f_uuid[12], fsap->f_uuid[13],
+		    fsap->f_uuid[14], fsap->f_uuid[15]);
+#endif
+
+	}
+
 	uint64_t missing = 0;
 	missing = (fsap->f_active ^ (fsap->f_active & fsap->f_supported));
 	if ( missing != 0) {
