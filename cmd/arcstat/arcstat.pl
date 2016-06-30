@@ -69,7 +69,13 @@ my %cols = (# HDR => [Size, Description]
 	"mtxmis"=>[6, "mutex_miss per second"],
 	"rmis"	=>[5, "recycle_miss per second"],
 	"dread"	=>[5, "Demand data accesses per second"],
-	"pread"	=>[5, "Prefetch accesses per second"],
+	    "pread"	=>[5, "Prefetch accesses per second"],
+	    "l2read" =>[8, "L2ARC reads per second"],
+	    "l2write" =>[8, "L2ARC writes per second"],
+	    "l2hits" =>[5, "L2ARC hits per second"],
+	    "l2miss" =>[5, "L2ARC misses per second"],
+	    "l2Hit%" =>[4, "L2ARC Hit%"],
+	    "l2miss%" =>[4, "L2ARC miss%"],
 );
 my %v=();
 my @hdr = qw(Time read miss miss% dmis dm% pmis pm% mmis mm% size tsize);
@@ -228,8 +234,14 @@ sub calculate {
 	%v=();
 	$v{"Time"} = strftime("%H:%M:%S", localtime);
 	$v{"hits"} = $d{"hits"}/$int;
+	$v{"l2hits"} = $d{"l2_hits"}/$int;
+	$v{"l2miss"} = $d{"l2_misses"}/$int;
 	$v{"miss"} = $d{"misses"}/$int;
 	$v{"read"} = $v{"hits"} + $v{"miss"};
+	$v{"l2read"} = $d{"l2_read_bytes"}/$int;
+	$v{"l2write"} = $d{"l2_write_bytes"}/$int;
+	$v{"l2Hit%"} = 100*$v{"l2hits"}/$v{"l2miss"} if $v{"l2miss"} > 0;
+	$v{"l2miss%"} = 100 - $v{"l2Hit%"} if $v{"l2miss"} > 0;
 	$v{"Hit%"} = 100*$v{"hits"}/$v{"read"} if $v{"read"} > 0;
 	$v{"miss%"} = 100 - $v{"Hit%"} if $v{"read"} > 0;
 
