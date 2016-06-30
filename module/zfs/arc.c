@@ -3755,6 +3755,7 @@ int64_t arc_swapfs_reserve = 64;
  * needed.  Positive if there is sufficient free memory, negative indicates
  * the amount of memory that needs to be freed up.
  */
+
 static int64_t
 arc_available_memory(void)
 {
@@ -3891,16 +3892,19 @@ arc_available_memory(void)
 static boolean_t
 arc_reclaim_needed(void)
 {
+    if(arc_available_memory() < 0) {
+      return 1;
+    }
 
 #ifdef __APPLE__
-#ifdef KERNEL
-    if (spl_vm_pool_low()) {
-		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
-		return 1;
-	}
+#ifdef _KERNEL
+    if(spl_free_manual_pressure_wrapper() != 0) {
+      return 1;
+    }
 #endif
 #endif
-	return (arc_available_memory() < 0);
+
+    return 0;
 }
 
 static void
@@ -3971,6 +3975,7 @@ arc_kmem_reap_now(void)
  * This possible deadlock is avoided by always acquiring a hash lock
  * using mutex_tryenter() from arc_reclaim_thread().
  */
+
 static void
 #ifdef __APPLE__
 arc_reclaim_thread(void *notused)
@@ -4004,7 +4009,15 @@ arc_reclaim_thread(void)
 
 		mutex_exit(&arc_reclaim_lock);
 
+#ifdef __APPLE
+#ifdef _KERNEL
+		if (free_memory < 0 || spl_free_manual_pressure_wrapper() != 0) {
+#else
+	        if (free_memory < 0) {
+#endif
+#else
 		if (free_memory < 0) {
+#endif
 
 			arc_no_grow = B_TRUE;
 			arc_warm = B_TRUE;
@@ -4078,7 +4091,7 @@ arc_reclaim_thread(void)
 
 		evicted = arc_adjust();
 
-		mutex_enter(&arc_reclaim_lock);
+               mutex_enter(&arc_reclaim_lock);
 
 		/*
 		 * If evicted is zero, we couldn't evict anything via
@@ -5820,6 +5833,18 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 				/* If user hasn't set it, update meta_min too */
 				if (!zfs_arc_meta_min)
 					arc_meta_min = arc_c_min / 2;
+								printf("ZFS: set arc_c_min %llu, arc_meta_min %llu, zfs_arc_meta_min %llu\n",
+				       arc_c_min, arc_meta_min, zfs_arc_meta_min);
+				if(arc_c < arc_c_min) {
+				  printf("ZFS: raise arc_c %llu to arc_c_min %llu\n",
+					 arc_c, arc_c_min);
+				  arc_c = arc_c_min;
+				  if(arc_p < (arc_c >> 1)) {
+				    printf("ZFS: raise arc_p %llu to %llu\n",
+					   arc_p, (arc_c >> 1));
+				    arc_p = (arc_c >> 1);
+				  }
+				}
 			}
 		}
 
