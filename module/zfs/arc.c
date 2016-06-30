@@ -5857,12 +5857,20 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 
 			if (arc_c_min < arc_meta_limit / 2 && zfs_arc_min == 0)
 				arc_c_min = arc_meta_limit / 2;
+
+			printf("ZFS: set arc_meta_limit %llu, arc_c_min %llu, zfs_arc_meta_limit %llu\n",
+			       arc_meta_limit, arc_c_min, zfs_arc_meta_limit);
 		}
 
 		if (ks->arc_zfs_arc_meta_min.value.ui64 != zfs_arc_meta_min) {
-			zfs_arc_meta_min  = ks->arc_zfs_arc_meta_min.value.ui64;
-			if (zfs_arc_meta_min > 0 && zfs_arc_meta_min <= arc_meta_limit)
-				arc_meta_min = zfs_arc_meta_min;
+		  zfs_arc_meta_min  = ks->arc_zfs_arc_meta_min.value.ui64;
+		  if (zfs_arc_meta_min >= arc_c_min) {
+		    printf("ZFS: probable error, zfs_arc_meta_min %llu >= arc_c_min %llu\n",
+			   zfs_arc_meta_min, arc_c_min);
+		  }
+		  if (zfs_arc_meta_min > 0 && zfs_arc_meta_min <= arc_meta_limit)
+		    arc_meta_min = zfs_arc_meta_min;
+		  printf("ZFS: set arc_meta_min %llu\n", arc_meta_min);
 		}
 
 		zfs_arc_grow_retry        = ks->arc_zfs_arc_grow_retry.value.ui64;
@@ -6079,13 +6087,13 @@ arc_init(void)
 #endif
 
 	/* set min cache to 1/32 of all memory, or 64MB, whichever is more */
-	arc_c_min = MAX(allmem / 32, 64 << 20);
+	arc_c_min = MAX(allmem / 32ULL, 64ULL << 20);
 	/* set max to 3/4 of all memory, or all but 1GB, whichever is more */
-	if (allmem >= 1 << 30)
-		arc_c_max = allmem - (1 << 30);
+	if (allmem >= 1ULL << 30)
+		arc_c_max = allmem - (1ULL << 30);
 	else
 		arc_c_max = arc_c_min;
-	arc_c_max = MAX(allmem * 3 / 4, arc_c_max);
+	arc_c_max = MAX(allmem * 3ULL / 4ULL, arc_c_max);
 
 	/*
 	 * In userland, there's only the memory pressure that we artificially
