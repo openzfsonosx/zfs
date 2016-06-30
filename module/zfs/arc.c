@@ -5541,8 +5541,8 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 	 * both succeed, when one of them should fail.  Not a huge deal.
 	 */
 
-	if (reserve + arc_tempreserve + anon_size > arc_c / 2 &&
-	    anon_size > arc_c / 4) {
+	if (reserve + arc_tempreserve + anon_size > arc_c / 4 &&
+	    anon_size > arc_c / 8) {
 		uint64_t meta_esize =
 		    refcount_count(&arc_anon->arcs_esize[ARC_BUFC_METADATA]);
 		uint64_t data_esize =
