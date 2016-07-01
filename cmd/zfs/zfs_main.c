@@ -6669,6 +6669,34 @@ zfs_do_unshare(int argc, char **argv)
 	return (unshare_unmount(OP_SHARE, argc, argv));
 }
 
+/* Only for manual_mount */
+static int
+parse_mount_opts(char *optstring)
+{
+	char *cur, *next;
+	int flags = 0;
+
+	cur = optstring;
+
+	while (cur != 0 && cur[0] != '\0') {
+		if (strncmp(cur, "update", 6) == 0) {
+			dprintf("remount\n");
+			flags |= MS_REMOUNT;
+		} else if (strncmp(cur, "ro", 2) == 0) {
+			dprintf("readonly\n");
+			flags |= MS_RDONLY;
+		}
+
+		next = strchr(cur, ',');
+		if (next && next > cur) {
+			cur = next+1;
+		} else {
+			cur = 0;
+		}
+	}
+
+	return (flags);
+}
 
 /*
  * Called when invoked as mount_zfs.  Do the mount if the mountpoint is
@@ -6680,18 +6708,24 @@ manual_mount(int argc, char **argv)
 	zfs_handle_t *zhp;
 	char mountpoint[ZFS_MAXPROPLEN];
 	char mntopts[MNT_LINE_MAX] = { '\0' };
+	char *dataset, *path;
 	int ret = 0;
 	int c;
 	int flags = 0;
-	char *dataset, *path;
+	int new_flags = 0;
 #ifdef __APPLE__
 	uint64_t zfs_version = 0;
 #endif
+
+	openlog("mount_zfs", LOG_CONS | LOG_PERROR, LOG_AUTH);
+	syslog(LOG_NOTICE, "zfs/mount_zfs %s\n", __func__);
 
 	/* check options */
 	while ((c = getopt(argc, argv, ":mo:Oruw")) != -1) {
 		switch (c) {
 		case 'o':
+			new_flags = parse_mount_opts(optarg);
+			flags |= new_flags;
 			(void) strlcat(mntopts, optarg, sizeof (mntopts));
 			(void) strlcat(mntopts, ",", sizeof (mntopts));
 			break;
@@ -6748,7 +6782,6 @@ manual_mount(int argc, char **argv)
 	dataset = argv[0];
 	path = argv[1];
 
-	openlog("mount_zfs", LOG_CONS | LOG_PERROR, LOG_AUTH);
 	if (strncmp(dataset, "/dev/disk", 9) == 0) {
 		syslog(LOG_NOTICE, "%s: mount with %s on %s\n",
 		    __func__, dataset, path);

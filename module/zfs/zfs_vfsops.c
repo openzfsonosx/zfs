@@ -2239,7 +2239,7 @@ dprintf("%s cmdflags %u rdonly %d\n", __func__, cmdflags, rdonly);
 		flags |= MNT_UPDATE;
 	}
 
-	//vfs_setflags(vfsp, (uint64_t)flags);
+	vfs_setflags(vfsp, (uint64_t)flags);
 
 #endif
 
@@ -2384,7 +2384,8 @@ dprintf("%s cmdflags %u rdonly %d\n", __func__, cmdflags, rdonly);
 		zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
 		ASSERT(zfsvfs);
 
-		if (zfsvfs->z_rdonly == 0 && vfs_isrdonly(vfsp)) {
+		if (zfsvfs->z_rdonly == 0 && (flags & MNT_RDONLY ||
+		    vfs_isrdonly(vfsp))) {
 			/* downgrade */
 			dprintf("%s: downgrade requested\n", __func__);
 			zfsvfs->z_rdonly = 1;
@@ -2397,7 +2398,8 @@ dprintf("%s cmdflags %u rdonly %d\n", __func__, cmdflags, rdonly);
 			}
 		}
 
-		if (zfsvfs->z_rdonly != 0 && vfs_iswriteupgrade(vfsp)) {
+		//if (zfsvfs->z_rdonly != 0 && vfs_iswriteupgrade(vfsp)) {
+		if (vfs_iswriteupgrade(vfsp)) {
 			/* upgrade */
 			dprintf("%s: upgrade requested\n", __func__);
 			zfsvfs->z_rdonly = 0;
@@ -2457,8 +2459,10 @@ out:
 #ifdef __APPLE__
 	//dprintf("%s out: %d\n", __func__, error);
 	if (error == 0) {
+#if 0
 		zfsvfs_t *zfsvfs = vfs_fsprivate(vfsp);
 		ASSERT(zfsvfs);
+#endif
 
 		//dprintf("%s: setting vfs flags\n", __func__);
 		/* Indicate to VFS that we support ACLs. */
@@ -2467,10 +2471,12 @@ out:
 		/* Advisory locking should be handled at the VFS layer */
 		vfs_setlocklocal(vfsp);
 
+#if 0
 		fsid.val[0] = zfsvfs->z_rdev;
 		fsid.val[1] = vfs_typenum(vfsp);
 
 		vfs_event_signal(&fsid, VQ_UPDATE, (uintptr_t)NULL);
+#endif
 	}
 
 	if (error)
