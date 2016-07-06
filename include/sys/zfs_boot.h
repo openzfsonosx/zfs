@@ -91,6 +91,7 @@ public:
 	virtual IOService* probe(IOService *, SInt32 *);
 #endif
 
+	virtual IOReturn doSynchronizeCache(void);
 	virtual IOReturn doAsyncReadWrite(IOMemoryDescriptor *,
 	    UInt64, UInt64, IOStorageAttributes *,
 	    IOStorageCompletion *);
