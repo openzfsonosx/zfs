@@ -151,7 +151,6 @@ typedef struct pool_list {
 	OSSet			*disks;
 	kmutex_t		lock;
 	kcondvar_t		cv;
-//	IOLock			*lock;
 	IOService		*zfs_hl;
 	IONotifier		*notifier;
 	volatile UInt64		terminating;
@@ -1289,14 +1288,12 @@ zfs_boot_probe_media(void* target, void* refCon,
 
 
 	/* Take pool_list lock */
-	// IOLockLock(pools->lock);
 	mutex_enter(&pools->lock);
 
 	/* Abort early */
 	if (pools->terminating != ZFS_BOOT_ACTIVE) {
 		dprintf("%s terminating 3\n", __func__);
 		/* Unlock the pool list lock */
-		// IOLockUnlock(pools->lock);
 		mutex_exit(&pools->lock);
 		goto out;
 	}
@@ -1305,11 +1302,9 @@ zfs_boot_probe_media(void* target, void* refCon,
 	pools->disks->setObject(media);
 
 	/* Unlock the pool list lock */
-	// IOLockUnlock(pools->lock);
 	mutex_exit(&pools->lock);
 
 	/* Wakeup zfs_boot_import_thread */
-	// IOLockWakeup(pools->lock, (void*)pools, true);
 	cv_signal(&pools->cv);
 
 out:
@@ -1499,11 +1494,7 @@ zfs_boot_free()
 	}
 
 	/* Release the lock */
-	// if (pools->lock) {
-		// IOLockFree(pools->lock);
-		mutex_destroy(&pools->lock);
-		// pools->lock = 0;
-	// }
+	mutex_destroy(&pools->lock);
 
 	/* Release the disk set */
 	if (pools->disks) {
@@ -1559,7 +1550,6 @@ zfs_boot_free()
 void
 zfs_boot_fini()
 {
-	// IOLock *lock;
 	pool_list_t *pools = zfs_boot_pool_list;
 
 	if (!pools) {
@@ -1805,7 +1795,6 @@ zfs_boot_import_thread(void *arg)
 		new_set = 0;
 
 		/* Release pool list lock */
-		// IOLockUnlock(pools->lock);
 		mutex_exit(&pools->lock);
 
 		/* Create an iterator over the objects in the set */
@@ -2176,10 +2165,6 @@ error:
 			pools->disks->release();
 			pools->disks = 0;
 		}
-		// if (pools->lock) {
-			// IOLockFree(pools->lock);
-			// pools->lock = 0;
-		// }
 		kmem_free(pools, sizeof (pool_list_t));
 		pools = 0;
 	}
