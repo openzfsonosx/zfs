@@ -67,7 +67,7 @@
 #include <IOKit/IODeviceTreeSupport.h>
 #include <IOKit/IOPlatformExpert.h>
 #include <IOKit/storage/IOMedia.h>
-#include <IOKit/IOBufferMemoryDescriptor.h>
+#include <IOKit/IOMemoryDescriptor.h>
 
 #include <sys/zfs_boot.h>
 
@@ -235,11 +235,28 @@ zfs_boot_fix_paths(nvlist_t *nv, name_entry_t *names)
 				break;
 			}
 
+#ifndef __APPLE__
 			if ((strlen(path) == strlen(ne->ne_name)) &&
 			    strncmp(path, ne->ne_name, strlen(path)) == 0) {
 				best = ne;
 				break;
 			}
+#else
+			/*
+			 * When dealing with /dev/ paths, the disk may
+			 * have renumbered, so skip this check.
+			 * InvariantDisks paths should be stable.
+			 * Technically, these are the only valid paths
+			 * at boot time.
+			 */
+			if (strncmp(path, "/dev/", 5) != 0 &&
+			    strncmp(path, "/private/var/disk/by-", 25) == 0 &&
+			    (strlen(path) == strlen(ne->ne_name)) &&
+			    strncmp(path, ne->ne_name, strlen(path)) == 0) {
+				best = ne;
+				break;
+			}
+#endif
 
 			if (best == NULL) {
 				best = ne;
@@ -253,7 +270,7 @@ zfs_boot_fix_paths(nvlist_t *nv, name_entry_t *names)
 			}
 
 			/* Prefer paths earlier in the search order. */
-			if (best->ne_num_labels == best->ne_num_labels &&
+			if (ne->ne_num_labels == best->ne_num_labels &&
 			    ne->ne_order < best->ne_order) {
 				best = ne;
 				continue;
@@ -270,8 +287,10 @@ zfs_boot_fix_paths(nvlist_t *nv, name_entry_t *names)
 	if ((devid = zfs_boot_get_devid(best->ne_name)) == NULL) {
 		(void) nvlist_remove_all(nv, ZPOOL_CONFIG_DEVID);
 	} else {
-		if (nvlist_add_string(nv, ZPOOL_CONFIG_DEVID, devid) != 0)
+		if (nvlist_add_string(nv, ZPOOL_CONFIG_DEVID, devid) != 0) {
+			spa_strfree(devid);
 			return (-1);
+		}
 		spa_strfree(devid);
 	}
 
@@ -354,9 +373,8 @@ zfs_boot_add_config(pool_list_t *pl, const char *path,
 	 * list of known pools.
 	 */
 	for (pe = pl->pools; pe != NULL; pe = pe->pe_next) {
-		if (pe->pe_guid == pool_guid) {
+		if (pe->pe_guid == pool_guid)
 			break;
-		}
 	}
 
 	if (pe == NULL) {
@@ -376,9 +394,8 @@ zfs_boot_add_config(pool_list_t *pl, const char *path,
 	 * missing.
 	 */
 	for (ve = pe->pe_vdevs; ve != NULL; ve = ve->ve_next) {
-		if (ve->ve_guid == top_guid) {
+		if (ve->ve_guid == top_guid)
 			break;
-		}
 	}
 
 	if (ve == NULL) {
@@ -399,9 +416,8 @@ zfs_boot_add_config(pool_list_t *pl, const char *path,
 	 * configs.
 	 */
 	for (ce = ve->ve_configs; ce != NULL; ce = ce->ce_next) {
-		if (ce->ce_txg == txg) {
+		if (ce->ce_txg == txg)
 			break;
-		}
 	}
 
 	if (ce == NULL) {
@@ -560,7 +576,7 @@ static nvlist_t *
 #else
 nvlist_t *
 #endif
-zfs_boot_get_configs(pool_list_t *pl, boolean_t active_ok)
+zfs_boot_get_configs(pool_list_t *pl, boolean_t active_ok, boolean_t fix_paths)
 {
 	pool_entry_t *pe;
 	vdev_entry_t *ve;
@@ -800,8 +816,10 @@ zfs_boot_get_configs(pool_list_t *pl, boolean_t active_ok)
 				    nvlist_add_uint64(holey,
 				    ZPOOL_CONFIG_ID, c) != 0 ||
 				    nvlist_add_uint64(holey,
-				    ZPOOL_CONFIG_GUID, 0ULL) != 0)
+				    ZPOOL_CONFIG_GUID, 0ULL) != 0) {
+					nvlist_free(holey);
 					goto nomem;
+				}
 				child[c] = holey;
 			}
 		}
@@ -854,13 +872,15 @@ zfs_boot_get_configs(pool_list_t *pl, boolean_t active_ok)
 		children = 0;
 		child = NULL;
 
-		/*
-		 * Go through and fix up any paths and/or devids based on our
-		 * known list of vdev GUID -> path mappings.
-		 */
-		if (zfs_boot_fix_paths(nvroot, pl->names) != 0) {
-			nvlist_free(nvroot);
-			goto nomem;
+		if (fix_paths == B_TRUE) {
+			/*
+			 * Go through and fix up any paths and/or devids based on our
+			 * known list of vdev GUID -> path mappings.
+			 */
+			if (zfs_boot_fix_paths(nvroot, pl->names) != 0) {
+				nvlist_free(nvroot);
+				goto nomem;
+			}
 		}
 
 		/*
@@ -914,28 +934,30 @@ zfs_boot_get_configs(pool_list_t *pl, boolean_t active_ok)
 		nvlist_free(config);
 		config = nvl;
 
-		/*
-		 * Go through and update the paths for spares, now that we have
-		 * them.
-		 */
-		verify(nvlist_lookup_nvlist(config, ZPOOL_CONFIG_VDEV_TREE,
-		    &nvroot) == 0);
-		if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_SPARES,
-		    &spares, &nspares) == 0) {
-			for (i = 0; i < nspares; i++) {
-				if (zfs_boot_fix_paths(spares[i], pl->names) != 0)
-					goto nomem;
+		if (fix_paths == B_TRUE) {
+			/*
+			 * Go through and update the paths for spares, now that we have
+			 * them.
+			 */
+			verify(nvlist_lookup_nvlist(config, ZPOOL_CONFIG_VDEV_TREE,
+			    &nvroot) == 0);
+			if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_SPARES,
+			    &spares, &nspares) == 0) {
+				for (i = 0; i < nspares; i++) {
+					if (zfs_boot_fix_paths(spares[i], pl->names) != 0)
+						goto nomem;
+				}
 			}
-		}
 
-		/*
-		 * Update the paths for l2cache devices.
-		 */
-		if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_L2CACHE,
-		    &l2cache, &nl2cache) == 0) {
-			for (i = 0; i < nl2cache; i++) {
-				if (zfs_boot_fix_paths(l2cache[i], pl->names) != 0)
-					goto nomem;
+			/*
+			 * Update the paths for l2cache devices.
+			 */
+			if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_L2CACHE,
+			    &l2cache, &nl2cache) == 0) {
+				for (i = 0; i < nl2cache; i++) {
+					if (zfs_boot_fix_paths(l2cache[i], pl->names) != 0)
+						goto nomem;
+				}
 			}
 		}
 
@@ -983,6 +1005,11 @@ error:
 	if (children > 0) {
 		kmem_free(child, children * sizeof (nvlist_t *));
 	}
+	/*
+	 * libzfs_import simply calls free(child), we need to
+	 * pass kmem_free the size of the array. Array is
+	 * allocated above as (children * sizeof nvlist_t*).
+	 */
 
 	return (NULL);
 }
@@ -1012,16 +1039,17 @@ static int
 #else
 int
 #endif
-zfs_boot_read_label(IOService *zfs_hl, IOMedia *media, nvlist_t **config, int *num_labels)
+zfs_boot_read_label(IOService *zfs_hl, IOMedia *media,
+    nvlist_t **config, int *num_labels)
 {
+	IOMemoryDescriptor *buffer = NULL;
 	uint64_t mediaSize;
 	uint64_t nread = 0;
-	int l, count = 0;
 	vdev_label_t *label;
 	nvlist_t *expected_config = NULL;
 	uint64_t expected_guid = 0, size, labelsize;
+	int l, count = 0;
 	IOReturn ret;
-	IOMemoryDescriptor *buffer = NULL;
 #if 0
 #ifdef DEBUG
 	boolean_t copyout = B_FALSE;
@@ -1133,9 +1161,8 @@ zfs_boot_read_label(IOService *zfs_hl, IOMedia *media, nvlist_t **config, int *n
 
 		/* Skip invalid labels that can't be unpacked */
 		if (nvlist_unpack(label->vl_vdev_phys.vp_nvlist,
-		    sizeof (label->vl_vdev_phys.vp_nvlist), config, 0) != 0) {
+		    sizeof (label->vl_vdev_phys.vp_nvlist), config, 0) != 0)
 			continue;
-		}
 
 		/* Verify GUID */
 		if (nvlist_lookup_uint64(*config, ZPOOL_CONFIG_GUID,
@@ -1187,19 +1214,13 @@ zfs_boot_read_label(IOService *zfs_hl, IOMedia *media, nvlist_t **config, int *n
 	/* Copy out the config and number of labels */
 	if (num_labels != NULL)
 		*num_labels = count;
+
+	kmem_free(label, labelsize);
+	buffer->release();
 	*config = expected_config;
 
-	/* Clean up */
-	if (buffer) {
-		buffer->release();
-		buffer = 0;
-	}
-	if (label) {
-		kmem_free(label, labelsize);
-		label = 0;
-	}
-
 	return (0);
+
 
 error:
 	/* Clean up */
@@ -1221,12 +1242,12 @@ static bool
 bool
 #endif
 zfs_boot_probe_media(void* target, void* refCon,
-    IOService* newService, IONotifier* notifier)
+    IOService* newService, __unused IONotifier* notifier)
 {
-	IOMedia *media;
-	OSObject *isLeaf;
-	OSString *ospath;
-	uint64_t mediaSize;
+	IOMedia *media = 0;
+	OSObject *isLeaf = 0;
+	OSString *ospath = 0;
+	uint64_t mediaSize = 0;
 	pool_list_t *pools = (pool_list_t*) refCon;
 
 	/* Verify pool list can be cast */
@@ -1287,11 +1308,6 @@ zfs_boot_probe_media(void* target, void* refCon,
 		goto out;
 	}
 
-	/*
-	 * XXX Alternate
-	 *
-	mediaSize = media->getProperty(kIOMediaSizeKey);
-	 */
 	mediaSize = media->getSize();
 	if (mediaSize < SPA_MINDEVSIZE) {
 #ifdef DEBUG
@@ -1359,8 +1375,9 @@ bool
 #endif
 zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 {
-	OSString *ospath;
+	OSString *ospath, *uuid;
 	char *path, *pname;
+	const char prefix[] = "/private/var/run/disk/by-id/media-";
 	uint64_t this_guid;
 	int num_labels, err, len = 0;
 	nvlist_t *config;
@@ -1402,36 +1419,44 @@ zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 		return (false);
 	}
 
-	/* Get the BSD name as a C string */
-	ospath = OSDynamicCast(OSString, media->getProperty(
-	    kIOBSDNameKey, gIOServicePlane,
-	    kIORegistryIterateRecursively));
-	if (!ospath || ospath->getLength() == 0) {
-#ifdef DEBUG
-		printf("%s %s\n", "zfs_boot_probe_disk",
-		    "skipping device with no bsd disk node");
-#endif
-		ospath = 0;
-		return (false);
-	}
+	/* Try to get a UUID from the media */
+	uuid = OSDynamicCast(OSString, media->getProperty(kIOMediaUUIDKey));
+	if (uuid && uuid->getLength() != 0) {
+		/* Allocate room for prefix, UUID, and null terminator */
+		len = (strlen(prefix) + uuid->getLength()) + 1;
 
-	/* Allocate room for "/dev/" + "diskNsN" + '\0' */
-	len = 6 + ospath->getLength();
-	path = (char*) kmem_alloc(len, KM_SLEEP);
-	if (!path) {
-#ifdef DEBUG
-		printf("zfs_boot_probe_disk couldn't allocate path\n");
-#endif
-		ospath = 0;
-		return (false);
-	}
+		path = (char*) kmem_alloc(len, KM_SLEEP);
+		if (!path) {
+			dprintf("%s couldn't allocate path\n", __func__);
+			return (false);
+		}
 
-	/* "/dev/" is 5 characters, plus null character */
-	snprintf(path, len, "/dev/%s", ospath->getCStringNoCopy());
-	ospath = 0;
-#ifdef DEBUG
-	printf("zfs_boot_probe_disk: len %d path %s\n", len, path);
-#endif
+		snprintf(path, len, "%s%s", prefix, uuid->getCStringNoCopy());
+		uuid = 0;
+	} else {
+		/* Get the BSD name as a C string */
+		ospath = OSDynamicCast(OSString, media->getProperty(
+		    kIOBSDNameKey, gIOServicePlane,
+		    kIORegistryIterateRecursively));
+		if (!ospath || (ospath->getLength() == 0)) {
+			dprintf("%s skipping device with no bsd disk node\n",
+			    __func__);
+			return (false);
+		}
+
+		/* Allocate room for "/dev/" + "diskNsN" + '\0' */
+		len = (strlen("/dev/") + ospath->getLength() + 1);
+		path = (char*) kmem_alloc(len, KM_SLEEP);
+		if (!path) {
+			dprintf("%s couldn't allocate path\n", __func__);
+			return (false);
+		}
+
+		/* "/dev/" is 5 characters, plus null character */
+		snprintf(path, len, "/dev/%s", ospath->getCStringNoCopy());
+		ospath = 0;
+	}
+	dprintf("%s path %s\n", __func__, path);
 
 	/* Abort early */
 	if (pools->terminating != ZFS_BOOT_ACTIVE) {
@@ -1455,15 +1480,12 @@ zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 	if (pools->pool_name != NULL &&
 	    (nvlist_lookup_string(config, ZPOOL_CONFIG_POOL_NAME,
 	    &pname) == 0)) {
-#ifdef DEBUG
-		printf("zfs_boot_probe_disk: found pool %s {%s}? %lu %lu\n",
-		    pname, pools->pool_name, strlen(pname), strlen(pools->pool_name));
-#endif
 		/* Compare with pool_name */
-		if (strncmp(pools->pool_name, pname,
+		if (strlen(pools->pool_name) == strlen(pname) &&
+		    strncmp(pools->pool_name, pname,
 		    strlen(pname)) == 0) {
-			printf("zfs_boot_probe_disk: matched pool %s\n",
-			    pname);
+			printf("%s matched pool %s\n",
+			    __func__, pname);
 			matched = B_TRUE;
 		}
 	/* Compare with pool_guid */
@@ -1480,6 +1502,12 @@ zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 		config = NULL;
 		goto out;
 	}
+
+	/* XXX
+	 * At this point, get path to this vdev from config, and
+	 * only update /dev/disk paths. InvariantDisk paths will
+	 * be translated by LDI.
+	 */
 
 	/* Abort early */
 	if (pools->terminating != ZFS_BOOT_ACTIVE) {
@@ -1921,7 +1949,8 @@ zfs_boot_import_thread(void *arg)
 		}
 
 		/* Generate a list of pool configs to import */
-		configs = zfs_boot_get_configs(pools, true);
+		configs = zfs_boot_get_configs(pools,
+		    /* active_ok */ B_TRUE, /* fix_paths */ B_FALSE);
 
 		/* Abort early */
 		if (pools->terminating != ZFS_BOOT_ACTIVE) {
@@ -1931,13 +1960,15 @@ zfs_boot_import_thread(void *arg)
 
 		/* Iterate over the nvlists (stored as nvpairs in an nvlist) */
 		elem = NULL;
-		while ((elem = nvlist_next_nvpair(configs, elem)) != NULL) {
+		while ((elem = nvlist_next_nvpair(configs,
+		    elem)) != NULL) {
 			/* Cast the nvpair back to nvlist */
 			nv = NULL;
 			verify(nvpair_value_nvlist(elem, &nv) == 0);
 
 			/* Check vdev state */
-			verify(nvlist_lookup_uint64(nv, ZPOOL_CONFIG_POOL_STATE,
+			verify(nvlist_lookup_uint64(nv,
+			    ZPOOL_CONFIG_POOL_STATE,
 			    &pool_state) == 0);
 			if (pool_state == POOL_STATE_DESTROYED) {
 				dprintf("%s %s\n", "zfs_boot_import_thread",
@@ -2065,8 +2096,12 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 	}
 
 	/* XXX Ugly hack to determine if this is early boot */
-	/* XXX Could just check if boot-uuid (or rd= or rootdev=)
-	 * are set, and abort otherwise */
+	/* XXX
+	 * Could just check if boot-uuid (or rd= or rootdev=)
+	 * are set, and abort otherwise
+	 * IOResource "boot-uuid" only published before root is
+	 * mounted, or "boot-uuid-media" once discovered
+	 */
 	clock_get_uptime(&uptime); /* uptime since boot in nanoseconds */
 	zfs_boot_log("%s uptime: %llu\n", __func__, uptime);
 
@@ -2088,7 +2123,8 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 		return (false);
 	}
 
-	result = PE_parse_boot_argn("zfs_boot", zfs_boot, ZFS_MAX_DATASET_NAME_LEN);
+	result = PE_parse_boot_argn("zfs_boot", zfs_boot,
+	    ZFS_MAX_DATASET_NAME_LEN);
 	// zfs_boot_log( "Raw zfs_boot: [%llu] {%s}\n",
 	//    (uint64_t)strlen(zfs_boot), zfs_boot);
 
@@ -2398,6 +2434,13 @@ ZFSBootDevice::probe(IOService *provider, SInt32 *score)
 	return (IOBlockStorageDevice::probe(provider, score));
 }
 #endif
+
+IOReturn
+ZFSBootDevice::doSynchronizeCache(void)
+{
+	dprintf("ZFSBootDevice %s\n", __func__);
+	return (kIOReturnSuccess);
+}
 
 IOReturn
 ZFSBootDevice::doAsyncReadWrite(IOMemoryDescriptor *buffer,
