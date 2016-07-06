@@ -1060,9 +1060,7 @@ zfs_boot_read_label(IOService *zfs_hl, IOMedia *media,
 
 	/* Verify IOMedia pointer and device size */
 	if (!media || (mediaSize = media->getSize()) == 0) {
-#ifdef DEBUG
-		printf("zfs_boot_read_label: couldn't get media or size\n");
-#endif
+		dprintf("%s couldn't get media or size\n", __func__);
 		return (-1);
 	}
 
@@ -1073,38 +1071,24 @@ zfs_boot_read_label(IOService *zfs_hl, IOMedia *media,
 	/* Allocate a buffer to read labels into */
 	label = (vdev_label_t*) kmem_alloc(labelsize, KM_SLEEP);
 	if (!label) {
-#ifdef DEBUG
-		printf("zfs_boot_read_label: couldn't allocate label for read\n");
-#endif
+		dprintf("%s couldn't allocate label for read\n", __func__);
 		return (-1);
 	}
 
 	/* Allocate a memory descriptor with the label pointer */
 	buffer = IOMemoryDescriptor::withAddress((void*)label, labelsize,
 	    kIODirectionIn);
-#if 0
-#ifndef DEBUG
-#else
-	buffer = IOBufferMemoryDescriptor::withCapacity(labelsize,
-	    kIODirectionIn, false);
-	copyout = B_TRUE;
-#endif
-#endif
 
 	/* Verify buffer was allocated */
 	if (!buffer || (buffer->getLength() != labelsize)) {
-#ifdef DEBUG
-		printf("zfs_boot_read_label: couldn't allocate buffer for read\n");
-#endif
+		dprintf("%s couldn't allocate buffer for read\n", __func__);
 		goto error;
 	}
 
 	/* Open the device for reads */
 	if (false == media->IOMedia::open(zfs_hl, 0,
 	    kIOStorageAccessReader)) {
-#ifdef DEBUG
-		printf("zfs_boot_read_label: media open failed\n");
-#endif
+		dprintf("%s media open failed\n", __func__);
 		goto error;
 	}
 
@@ -1128,19 +1112,14 @@ zfs_boot_read_label(IOService *zfs_hl, IOMedia *media,
 
 		/* Skip failed reads, try next label */
 		if (ret != kIOReturnSuccess) {
-#ifdef DEBUG
-			printf("%s %s\n", "zfs_boot_read_label",
-			    "media->read failed");
-#endif
+			dprintf("%s media->read failed\n", __func__);
 			continue;
 		}
 
 		/* Skip incomplete reads, try next label */
 		if (nread < labelsize) {
-#ifdef DEBUG
-			printf("zfs_boot_read_label: nread %llu / %llu\n",
-			    nread, labelsize);
-#endif
+			dprintf("%s nread %llu / %llu\n",
+			    __func__, nread, labelsize);
 			continue;
 		}
 
@@ -1167,9 +1146,8 @@ zfs_boot_read_label(IOService *zfs_hl, IOMedia *media,
 		/* Verify GUID */
 		if (nvlist_lookup_uint64(*config, ZPOOL_CONFIG_GUID,
 		    &guid) != 0 || guid == 0) {
-#ifdef DEBUG
-			printf("zfs_boot_read_label: nvlist_lookup guid failed %llu\n", guid);
-#endif
+			dprintf("%s nvlist_lookup guid failed %llu\n",
+			    __func__, guid);
 			nvlist_free(*config);
 			continue;
 		}
@@ -1177,9 +1155,8 @@ zfs_boot_read_label(IOService *zfs_hl, IOMedia *media,
 		/* Verify vdev state */
 		if (nvlist_lookup_uint64(*config, ZPOOL_CONFIG_POOL_STATE,
 		    &state) != 0 || state > POOL_STATE_L2CACHE) {
-#ifdef DEBUG
-			printf("zfs_boot_read_label: nvlist_lookup state failed %llu\n", state);
-#endif
+			dprintf("%s nvlist_lookup state failed %llu\n",
+			    __func__, state);
 			nvlist_free(*config);
 			continue;
 		}
@@ -1188,9 +1165,8 @@ zfs_boot_read_label(IOService *zfs_hl, IOMedia *media,
 		if (state != POOL_STATE_SPARE && state != POOL_STATE_L2CACHE &&
 		    (nvlist_lookup_uint64(*config, ZPOOL_CONFIG_POOL_TXG,
 		    &txg) != 0 || txg == 0)) {
-#ifdef DEBUG
-			printf("zfs_boot_read_label: nvlist_lookup txg failed %llu\n", txg);
-#endif
+			dprintf("%s nvlist_lookup txg failed %llu\n",
+			    __func__, txg);
 			nvlist_free(*config);
 			continue;
 		}
@@ -1252,32 +1228,9 @@ zfs_boot_probe_media(void* target, void* refCon,
 
 	/* Verify pool list can be cast */
 	if (!pools) {
-#ifdef DEBUG
-		printf("%s %p %s\n", "zfs_boot_probe_media",
-		    refCon, "couldn't be cast as pool_list_t*");
-#endif
+		dprintf("%s invalid refCon\n", __func__);
 		return (false);
 	}
-
-	/* Abort early */
-	if (pools->terminating != ZFS_BOOT_ACTIVE) {
-#ifdef DEBUG
-		printf("%s\n", "zfs_boot_probe_media terminating 1");
-#endif
-		return (false);
-	}
-
-	/* Validate pool name */
-	if (!pools->pool_name || strlen(pools->pool_name) == 0) {
-#ifdef DEBUG
-		printf("%s %s\n", "zfs_boot_probe_media",
-		    "no pool name specified");
-#endif
-		return (false);
-	}
-
-
-#ifdef DEBUG
 	/* Should never happen */
 	if (!newService) {
 		printf("%s %s\n", "zfs_boot_probe_media",
@@ -1285,35 +1238,37 @@ zfs_boot_probe_media(void* target, void* refCon,
 		return (false);
 	}
 
-#endif
+	/* Abort early */
+	if (pools->terminating != ZFS_BOOT_ACTIVE) {
+		dprintf("%s terminating 1\n", __func__);
+		return (false);
+	}
+
+	/* Validate pool name */
+	if (!pools->pool_name || strlen(pools->pool_name) == 0) {
+		dprintf("%s no pool name specified\n");
+		return (false);
+	}
 
 	/* Get the parent IOMedia device */
 	media = OSDynamicCast(IOMedia, newService->getProvider());
 
 	if (!media) {
-#ifdef DEBUG
-		printf("%s %p->%p %s\n", "zfs_boot_probe_media",
-		    newService, newService->getProvider(),
-		    "couldn't be cast as IOMedia");
-#endif
+		dprintf("%s couldn't be cast as IOMedia\n",
+		    __func__);
 		return (false);
 	}
 
 	isLeaf = media->getProperty(kIOMediaLeafKey);
 	if (!isLeaf) {
-#ifdef DEBUG
-		printf("%s %s\n", "zfs_boot_probe_media",
-		    "skipping non-leaf");
-#endif
+		dprintf("%s skipping non-leaf\n", __func__);
 		goto out;
 	}
 
 	mediaSize = media->getSize();
 	if (mediaSize < SPA_MINDEVSIZE) {
-#ifdef DEBUG
-		printf("%s %s %llu\n", "zfs_boot_probe_media",
-		    "skipping device with size", mediaSize);
-#endif
+		dprintf("%s skipping device with size %llu\n",
+		    __func__, mediaSize);
 		goto out;
 	}
 
@@ -1321,18 +1276,14 @@ zfs_boot_probe_media(void* target, void* refCon,
 	    kIOBSDNameKey, gIOServicePlane,
 	    kIORegistryIterateRecursively));
 	if (!ospath || (ospath->getLength() == 0)) {
-#ifdef DEBUG
-		printf("%s %s\n", "zfs_boot_probe_media",
-		    "skipping device with no bsd disk node");
-#endif
+		dprintf("%s skipping device with no bsd disk node\n",
+		    __func__);
 		goto out;
 	}
 
 	/* Abort early */
 	if (pools->terminating != ZFS_BOOT_ACTIVE) {
-#ifdef DEBUG
-		printf("%s\n", "zfs_boot_probe_media terminating 2");
-#endif
+		dprintf("%s terminating 2\n", __func__);
 		goto out;
 	}
 
@@ -1343,9 +1294,7 @@ zfs_boot_probe_media(void* target, void* refCon,
 
 	/* Abort early */
 	if (pools->terminating != ZFS_BOOT_ACTIVE) {
-#ifdef DEBUG
-		printf("%s\n", "zfs_boot_probe_media terminating 3");
-#endif
+		dprintf("%s terminating 3\n", __func__);
 		/* Unlock the pool list lock */
 		// IOLockUnlock(pools->lock);
 		mutex_exit(&pools->lock);
@@ -1383,39 +1332,25 @@ zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 	nvlist_t *config;
 	boolean_t matched = B_FALSE;
 
-#ifdef DEBUG
-	/* Should always be valid */
-	if (!media) {
-		printf("%s %s\n", "zfs_boot_probe_disk",
-		    "called with null media");
-		return (false);
-	}
-#endif
+	dprintf("%s: with %s media\n", __func__,
+	    (media ? "valid" : "missing"));
 	ASSERT3U(media, !=, NULL);
 
 	/* Verify pool list can be cast */
 	if (!pools) {
-#ifdef DEBUG
-		printf("%s %s\n", "zfs_boot_probe_disk",
-		    "missing pool_list");
-#endif
+		dprintf("%s missing pool_list\n", __func__);
 		return (false);
 	}
 
 	/* Abort early */
 	if (pools->terminating != ZFS_BOOT_ACTIVE) {
-#ifdef DEBUG
-		printf("%s\n", "zfs_boot_probe_disk terminating 1");
-#endif
+		dprintf("%s terminating 1\n", __func__);
 		return (false);
 	}
 
 	/* Validate pool name */
 	if (!pools->pool_name || strlen(pools->pool_name) == 0) {
-#ifdef DEBUG
-		printf("%s %s\n", "zfs_boot_probe_disk",
-		    "no pool name specified");
-#endif
+		dprintf("%s no pool name specified\n", __func__);
 		return (false);
 	}
 
@@ -1460,9 +1395,7 @@ zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 
 	/* Abort early */
 	if (pools->terminating != ZFS_BOOT_ACTIVE) {
-#ifdef DEBUG
-		printf("%s\n", "zfs_boot_probe_disk terminating 2");
-#endif
+		dprintf("%s terminating 2\n", __func__);
 		kmem_free(path, len);
 		return (false);
 	}
@@ -1511,9 +1444,7 @@ zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 
 	/* Abort early */
 	if (pools->terminating != ZFS_BOOT_ACTIVE) {
-#ifdef DEBUG
-		printf("%s\n", "zfs_boot_probe_disk terminating 3");
-#endif
+		dprintf("%s terminating 3\n", __func__);
 		goto out;
 	}
 
@@ -1522,13 +1453,11 @@ zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 	 * Always assigns order 1 since all disks are
 	 * referenced by /dev/diskNsN
 	 */
-#ifdef DEBUG
-	printf("zfs_boot_probe_disk: add_config %s\n", path);
-#endif
+	dprintf("%s: add_config %s\n", __func__, path);
 	if (zfs_boot_add_config(pools, path, 1,
 	    num_labels, config) != 0) {
-		printf("%s %s\n", "zfs_boot_probe_disk",
-		    "couldn't add config to pool list");
+		printf("%s couldn't add config to pool list\n",
+		    __func__);
 	}
 
 out:
@@ -1554,9 +1483,7 @@ zfs_boot_free()
 
 	/* Verify pool list can be cast */
 	if (!pools) {
-#ifdef DEBUG
-		printf("zfs_boot_free: no pool_list to clear\n");
-#endif
+		dprintf("%s: no pool_list to clear\n", __func__);
 		return;
 	}
 
@@ -1636,19 +1563,15 @@ zfs_boot_fini()
 	pool_list_t *pools = zfs_boot_pool_list;
 
 	if (!pools) {
-#ifdef DEBUG
-		printf("zfs_boot_fini: no pool_list to clear\n");
-#endif
+		printf("%s no pool_list to clear\n", __func__);
 		return;
 	}
 
 	/* Set terminating flag */
 	if (false == OSCompareAndSwap64(ZFS_BOOT_ACTIVE,
 	    ZFS_BOOT_TERMINATING, &(pools->terminating))) {
-#ifdef DEBUG
-		printf("already terminating? %llu\n",
-		    pools->terminating);
-#endif
+		printf("%s already terminating? %llu\n",
+		    __func__, pools->terminating);
 	}
 
 	/* Wakeup zfs_boot_import_thread */
@@ -1845,19 +1768,14 @@ zfs_boot_import_thread(void *arg)
 
 	/* Abort early */
 	if (pools->terminating != ZFS_BOOT_ACTIVE) {
-#ifdef DEBUG
-		printf("%s\n", "zfs_boot_import_thread terminating 1");
-#endif
+		dprintf("%s terminating 1\n", __func__);
 		goto out_unlocked;
 	}
 
 	new_set = OSSet::withCapacity(1);
 	/* To swap with pools->disks while locked */
 	if (!new_set) {
-#ifdef DEBUG
-		printf("%s %s\n", "zfs_boot_import_thread",
-		    "couldn't allocate new_set");
-#endif
+		dprintf("%s couldn't allocate new_set\n", __func__);
 		goto out_unlocked;
 	}
 
@@ -1870,14 +1788,13 @@ zfs_boot_import_thread(void *arg)
 	do {
 		/* Abort early */
 		if (pools->terminating != ZFS_BOOT_ACTIVE) {
-			dprintf("%s\n", "zfs_boot_import_thread terminating 2");
+			dprintf("%s terminating 2\n", __func__);
 			goto out_locked;
 		}
 
 		/* Check for work */
 		if (pools->disks->getCount() == 0) {
-			dprintf("%s %s\n", "zfs_boot_import_thread",
-			    "no disks to check");
+			dprintf("%s no disks to check\n", __func__);
 			goto next_locked;
 		}
 
@@ -1919,15 +1836,15 @@ zfs_boot_import_thread(void *arg)
 			media = OSDynamicCast(IOMedia, next);
 
 			if (!media) {
-				dprintf("%s %s %p\n", "zfs_boot_import_thread",
-				    "couldn't cast IOMedia", next);
+				dprintf("%s couldn't cast IOMedia\n",
+				    __func__);
 				continue;
 			}
 
 			/* Check this IOMedia device for a vdev label */
 			if (!zfs_boot_probe_disk(pools, media)) {
-				dprintf("%s %s %p\n", "zfs_boot_import_thread",
-				    "couldn't probe disk", next);
+				dprintf("%s couldn't probe disk\n",
+				    __func__);
 				continue;
 			}
 		}
@@ -1944,7 +1861,7 @@ zfs_boot_import_thread(void *arg)
 
 		/* Abort early */
 		if (pools->terminating != ZFS_BOOT_ACTIVE) {
-			dprintf("%s\n", "zfs_boot_import_thread terminating 3");
+			dprintf("%s terminating 3\n", __func__);
 			goto out_unlocked;
 		}
 
@@ -1954,11 +1871,11 @@ zfs_boot_import_thread(void *arg)
 
 		/* Abort early */
 		if (pools->terminating != ZFS_BOOT_ACTIVE) {
-			dprintf("%s\n", "zfs_boot_import_thread terminating 4");
+			dprintf("%s terminating 4\n", __func__);
 			goto out_unlocked;
 		}
 
-		/* Iterate over the nvlists (stored as nvpairs in an nvlist) */
+		/* Iterate over the nvlists (stored as nvpairs in nvlist) */
 		elem = NULL;
 		while ((elem = nvlist_next_nvpair(configs,
 		    elem)) != NULL) {
@@ -1971,14 +1888,14 @@ zfs_boot_import_thread(void *arg)
 			    ZPOOL_CONFIG_POOL_STATE,
 			    &pool_state) == 0);
 			if (pool_state == POOL_STATE_DESTROYED) {
-				dprintf("%s %s\n", "zfs_boot_import_thread",
-				    "skipping destroyed pool\n");
+				dprintf("%s skipping destroyed pool\n",
+				    __func__);
 				continue;
 			}
 
 			/* Abort early */
 			if (pools->terminating != ZFS_BOOT_ACTIVE) {
-				dprintf("%s\n", "zfs_boot_import_thread terminating 5");
+				dprintf("%s terminating 5\n", __func__);
 				goto out_unlocked;
 			}
 
@@ -2004,7 +1921,6 @@ zfs_boot_import_thread(void *arg)
 		}
 
 		/* Retake pool list lock */
-		// IOLockLock(pools->lock);
 		mutex_enter(&pools->lock);
 
 next_locked:
@@ -2015,11 +1931,11 @@ next_locked:
 
 		/* Abort early */
 		if (pools->terminating != ZFS_BOOT_ACTIVE) {
-			dprintf("%s\n", "zfs_boot_import_thread terminating 6");
+			dprintf("%s terminating 6\n", __func__);
 			goto out_locked;
 		}
 
-		dprintf("zfs_boot_import_thread: sleeping on lock\n");
+		dprintf("%s sleeping on lock\n", __func__);
 		/* Sleep on lock, thread is resumed with lock held */
 		cv_timedwait_sig(&pools->cv, &pools->lock,
 		    ddi_get_lbolt() + hz);
