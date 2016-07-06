@@ -501,6 +501,7 @@ media_matchdict_from_path(const char *path)
 	}
 	/* Translate /dev/diskN and InvariantDisks paths */
 	if (strncmp(path, "/dev/", 5) != 0 &&
+	    strncmp(path, "/var/run/disk/by-id/", 20) != 0 &&
 	    strncmp(path, "/private/var/run/disk/by-id/", 28) != 0) {
 		dprintf("%s Unrecognized path %s\n", __func__, path);
 		return (NULL);
@@ -508,6 +509,8 @@ media_matchdict_from_path(const char *path)
 
 	/* Validate path and alloc bsdName */
 	if (strncmp(path, "/dev/", 5) == 0) {
+
+		/* substr starts after '/dev/' */
 		substr = path + 5;
 		/* Get diskN from /dev/diskN or /dev/rdiskN */
 		if (strncmp(substr, "disk", 4) == 0) {
@@ -515,9 +518,14 @@ media_matchdict_from_path(const char *path)
 		} else if (strncmp(substr, "rdisk", 5) == 0) {
 			bsdName = OSString::withCString(substr + 1);
 		}
-	} else if (strncmp(path, "/private/var/run/disk/by-id/", 28) == 0) {
+	} else if (strncmp(path, "/var/run/disk/by-id/", 20) == 0 ||
+	    strncmp(path, "/private/var/run/disk/by-id/", 28) == 0) {
 	/* InvariantDisks paths */
-		substr = path + 28;
+
+		/* substr starts after '/by-id/' */
+		substr = path + 20;
+		if (strncmp(path, "/private", 8) == 0) substr += 8;
+
 		/* Handle media UUID, skip volume UUID or device GUID */
 		if (strncmp(substr, "media-", 6) == 0) {
 			/* Lookup IOMedia with UUID */
@@ -697,15 +705,21 @@ media_from_device_path(const char *path = 0)
 	OSString *osstr;
 	const char *string, *dash;
 
-	if (!path || strnlen(path, 1) != 1 ||
-	    strncmp(path, "/private/var/run/disk/by-path/", 30) != 0) {
+	/* Must be /var/run/disk/by-path/, but may have /private prefix */
+	if (!path || path[0] == 0 ||
+	    (strncmp(path, "/var/run/disk/by-path/", 22) != 0 &&
+	    strncmp(path, "/private/var/run/disk/by-path/", 30) != 0)) {
 		dprintf("%s invalid path [%s]\n", __func__,
 		    (path && path[0] != '\0' ? path : ""));
 		return (NULL);
 	}
 
-	/* We need the leading slash in the string, so trim 29 */
-	osstr = OSString::withCString(path+29);
+	/* We need the leading slash in the string, so trim 21 or 29 */
+	if (strncmp(path, "/private", 8) == 0) {
+		osstr = OSString::withCString(path+29);
+	} else {
+		osstr = OSString::withCString(path+21);
+	}
 	if (!osstr) {
 		dprintf("%s couldn't get string from path\n", __func__);
 		return (NULL);
@@ -768,13 +782,18 @@ media_from_serial(const char *path = 0)
 	int newlen = 0, soff = 0;
 	bool matched = false;
 
-	if (!path || strnlen(path, 1) != 1 ||
-	    strncmp(path, "/private/var/run/disk/by-serial/", 32) != 0) {
+	/* Must be /var/run/disk/by-serial/, but may have /private prefix */
+	if (!path || path[0] == 0 ||
+	    (strncmp(path, "/var/run/disk/by-serial/", 24) != 0 &&
+	    strncmp(path, "/private/var/run/disk/by-serial/", 32) != 0)) {
 		dprintf("%s invalid path [%s]\n", __func__,
 		    (path && path[0] != '\0' ? path : ""));
 		return (NULL);
 	}
-	substr = path + 32;
+
+	/* substr starts after '/by-serial/' */
+	substr = path + 24;
+	if (strncmp(path, "/private", 8) == 0) substr += 8;
 
 	/*
 	 * For each whole-disk IOMedia:
@@ -1059,14 +1078,16 @@ media_from_path(const char *path = 0)
 		return (NULL);
 	}
 
-	if (strncmp(path, "/private/var/run/disk/by-path/", 30) == 0) {
+	if (strncmp(path, "/var/run/disk/by-path/", 22) == 0 ||
+	    strncmp(path, "/private/var/run/disk/by-path/", 30) == 0) {
 		media = media_from_device_path(path);
 		dprintf("%s media_from_device_path %s\n", __func__,
 		    (media ? "succeeded" : "failed"));
 		return (media);
 	}
 
-	if (strncmp(path, "/private/var/run/disk/by-serial/", 32) == 0) {
+	if (strncmp(path, "/var/run/disk/by-serial/", 24) == 0 ||
+	    strncmp(path, "/private/var/run/disk/by-serial/", 32) == 0) {
 		media = media_from_serial(path);
 		dprintf("%s media_from_serial %s\n", __func__,
 		    (media ? "succeeded" : "failed"));
