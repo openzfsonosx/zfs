@@ -158,7 +158,6 @@ zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func, void *arg,
 	char *stkstr;
 
 	ASSERT0(state & ~TS_RUN);
-	ASSERT0(len);
 
 	kt = umem_zalloc(sizeof (kthread_t), UMEM_NOFAIL);
 	kt->t_func = func;
@@ -568,13 +567,13 @@ top:
 	error = pthread_cond_timedwait(&cv->cv, &mp->m_lock, &ts);
 	mp->m_owner = curthread;
 
-	if (error == ETIME)
+	if (error == ETIMEDOUT || error == ETIME)
 		return (-1);
 
 	if (error == EINTR)
 		goto top;
 
-	ASSERT(error == 0);
+	VERIFY0(error);
 
 	return (1);
 }
