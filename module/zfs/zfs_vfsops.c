@@ -1950,8 +1950,27 @@ zfs_mount_label_policy(vfs_t *vfsp, char *osname)
 }
 #endif	/* SECLABEL */
 
+/* Used by mountroot */
+#define	ZFS_BOOT_MOUNT_DEV	1
 int zfs_boot_get_path(char *, int);
 
+/*
+ * zfs_vfs_mountroot
+ * Given a device vnode created by vfs_mountroot bdevvp,
+ * and with the root pool already imported, root mount the
+ * dataset specified in the pool's bootfs property.
+ *
+ * Inputs:
+ * mp: VFS mount struct
+ * devvp: device vnode, currently only used to retrieve the
+ *  dev_t for the fsid. Could vnode_get, vnode_ref, vnode_put,
+ *  with matching get/rele/put in zfs_vfs_umount, but this is
+ *  already done by XNU as well.
+ * ctx: VFS context, unused.
+ *
+ * Return:
+ * 0 on success, positive int on failure.
+ */
 int
 zfs_vfs_mountroot(struct mount *mp, struct vnode *devvp, vfs_context_t ctx)
 {
@@ -1985,7 +2004,7 @@ printf("ZFS: %s\n", __func__);
 		return (ENOMEM);
 	}
 
-#ifdef ZFSBOOT_MOUNT_DEV
+#ifdef ZFS_BOOT_MOUNT_DEV
 	path = kmem_alloc(MAXPATHLEN, KM_SLEEP);
 	if (!path) {
 		cmn_err(CE_NOTE, "%s: path alloc failed",
@@ -2014,7 +2033,8 @@ printf("ZFS: %s\n", __func__);
 	}
 	mutex_exit(&spa_namespace_lock);
 
-#ifdef ZFSBOOT_MOUNT_DEV
+#ifdef ZFS_BOOT_MOUNT_DEV
+	/* XXX Could also do IOKit lookup from dev_t to diskN */
 	error = zfs_boot_get_path(path, MAXPATHLEN);
 	if (error != 0) {
 		cmn_err(CE_NOTE, "get_path: error %d", error);
@@ -2044,7 +2064,7 @@ printf("ZFS: %s\n", __func__);
 	}
 	// vfs_clearflags(mp, (u_int64_t)((unsigned int)MNT_AUTOMOUNTED));
 
-#ifdef ZFSBOOT_MOUNT_DEV
+#ifdef ZFS_BOOT_MOUNT_DEV
 	// override the mount from field
 	//vfs_mountedfrom(mp, "/dev/disk1s5");
 	if (strlen(path) > 0) {
@@ -2137,7 +2157,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	int		canwrite;
 	int		rdonly = 0;
 	int		mflag;
-	fsid_t		fsid;
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
@@ -2195,7 +2214,8 @@ dprintf("%s cmdflags %u rdonly %d\n", __func__, cmdflags, rdonly);
 		}
 	}
 
-	if (strncmp(osname, "/dev/disk", 9) == 0) {
+	if (strncmp(osname, "/dev/disk", 9) == 0 &&
+	    (vfs_flags(vfsp) & MNT_ROOTFS) == 0) {
 		printf("%s osname %s skip\n", __func__, osname);
 		error = ENODEV;
 		goto out;
@@ -2470,13 +2490,6 @@ out:
 
 		/* Advisory locking should be handled at the VFS layer */
 		vfs_setlocklocal(vfsp);
-
-#if 0
-		fsid.val[0] = zfsvfs->z_rdev;
-		fsid.val[1] = vfs_typenum(vfsp);
-
-		vfs_event_signal(&fsid, VQ_UPDATE, (uintptr_t)NULL);
-#endif
 	}
 
 	if (error)
