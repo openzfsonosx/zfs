@@ -44,7 +44,8 @@
 #include <IOKit/IOTypes.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>
-#include <IOKit/IOBufferMemoryDescriptor.h>
+#include <IOKit/IODeviceTreeSupport.h>
+#include <IOKit/IOMemoryDescriptor.h>
 #include <IOKit/storage/IOMedia.h>
 #include <IOKit/storage/IOBlockStorageDevice.h>
 #include <IOKit/storage/IOStorageDeviceCharacteristics.h>
@@ -60,16 +61,14 @@
 #include <sys/ldi_impl_osx.h>
 
 /* Debug prints */
-#ifdef DEBUG
+#if defined(DEBUG) || defined(ZFS_DEBUG)
 
 #ifdef dprintf
 #undef dprintf
 #endif
 
-#define	dprintf ldi_log
-
-#define	ldi_log(fmt, ...) do {		\
-	printf(fmt, __VA_ARGS__);	\
+#define	dprintf(fmt, ...) do {		\
+	IOLog(fmt, __VA_ARGS__);	\
 _NOTE(CONSTCOND) } while (0)
 #endif
 
@@ -480,46 +479,113 @@ media_matchdict_from_dev(dev_t device)
 }
 
 /* Returns NULL or dictionary with a retain count */
+/*
+ * media_matchdict_from_path
+ * translate from paths of the form /dev/diskNsN
+ * or /private/var/run/disk/by-id/media-<UUID> to a matching
+ * dictionary.
+ */
 static OSDictionary *
-media_matchdict_from_path(char *path)
+media_matchdict_from_path(const char *path)
 {
-	OSDictionary *matchDict;
-	OSString *bsdName;
+	OSDictionary *matchDict = 0;
+	OSString *bsdName = NULL;
+	OSString *uuid = NULL;
+	const char *substr = 0;
+	bool ret;
 
 	/* Validate path */
 	if (path == 0 || strlen(path) <= 1) {
 		dprintf("%s no path provided\n", __func__);
 		return (NULL);
 	}
-	if (strncmp(path, "/dev/", 5) != 0) {
-		dprintf("%s path %s doesn't start with '/dev/'\n",
-		    __func__, path);
+	/* Translate /dev/diskN and InvariantDisks paths */
+	if (strncmp(path, "/dev/", 5) != 0 &&
+	    strncmp(path, "/private/var/run/disk/by-id/", 28) != 0) {
+		dprintf("%s Unrecognized path %s\n", __func__, path);
 		return (NULL);
 	}
 
 	/* Validate path and alloc bsdName */
-	if (strncmp(path+5, "disk", 4) == 0) {
-		bsdName = OSString::withCString(path + 5);
-	} else if (strncmp(path+5, "rdisk", 5) == 0) {
-		bsdName = OSString::withCString(path + 6);
-	} else {
-		bsdName = NULL;
+	if (strncmp(path, "/dev/", 5) == 0) {
+		substr = path + 5;
+		/* Get diskN from /dev/diskN or /dev/rdiskN */
+		if (strncmp(substr, "disk", 4) == 0) {
+			bsdName = OSString::withCString(substr);
+		} else if (strncmp(substr, "rdisk", 5) == 0) {
+			bsdName = OSString::withCString(substr + 1);
+		}
+	} else if (strncmp(path, "/private/var/run/disk/by-id/", 28) == 0) {
+	/* InvariantDisks paths */
+		substr = path + 28;
+		/* Handle media UUID, skip volume UUID or device GUID */
+		if (strncmp(substr, "media-", 6) == 0) {
+			/* Lookup IOMedia with UUID */
+			uuid = OSString::withCString(substr+strlen("media-"));
+		} else if (strncmp(substr, "volume-", 7) == 0) {
+			/* XXX
+			 * volume-UUID is specified by DiskArbitration
+			 * when a Filesystem bundle is able to probe
+			 * the media and retrieve/generate a UUID for
+			 * it's contents.
+			 * So while we could use this and have zfs.util
+			 * probe for vdev GUID (and pool GUID) and
+			 * generate a UUID, we would need to do the same
+			 * here to find the disk, possibly probing
+			 * devices to get the vdev GUID in the process.
+			 */
+			dprintf("%s Unsupported volume-UUID path %s\n",
+			    __func__, path);
+		} else if (strncmp(substr, "device-", 7) == 0) {
+			/* Lookup IOMedia with device GUID */
+			/* XXX Not sure when this is used, no devices
+			 * seem to be presented this way.
+			 */
+			dprintf("%s Unsupported device-GUID path %s\n",
+			    __func__, path);
+		} else {
+			dprintf("%s unrecognized path %s\n", __func__, path);
+		}
+		/* by-path and by-serial are handled separately */
 	}
-	if (!bsdName) {
-		dprintf("%s Invalid path (or alloc failed) %s\n",
-		    __func__, path);
+
+	if (!bsdName && !uuid) {
+		dprintf("%s Invalid path %s\n", __func__, path);
 		return (NULL);
 	}
 
 	/* Match on IOMedia by BSD disk name */
 	matchDict = IOService::serviceMatching("IOMedia");
-	if (!matchDict ||
-	    matchDict->setObject(kIOBSDNameKey, bsdName) == false) {
+	if (!matchDict) {
 		dprintf("%s couldn't get matching dictionary\n", __func__);
-		bsdName->release();
+		if (bsdName) bsdName->release();
+		if (uuid) uuid->release();
 		return (NULL);
 	}
-	bsdName->release();
+	if (bsdName) {
+		ret = matchDict->setObject(kIOBSDNameKey, bsdName);
+		bsdName->release();
+
+		if (!ret) {
+			dprintf("%s couldn't setup bsd name matching"
+			    " dictionary\n", __func__);
+			matchDict->release();
+			matchDict = 0;
+		}
+		if (uuid) uuid->release();
+	} else if (uuid) {
+		if (matchDict->setObject(kIOMediaUUIDKey, uuid) == false) {
+			dprintf("%s couldn't setup UUID matching"
+			    " dictionary\n", __func__);
+			uuid->release();
+			matchDict->release();
+			matchDict = 0;
+		}
+	} else {
+		dprintf("%s missing matching property\n", __func__);
+		matchDict->release();
+		matchDict = 0;
+	}
 
 	/* Return NULL or valid OSDictionary with retain count */
 	return (matchDict);
@@ -529,8 +595,9 @@ media_matchdict_from_path(char *path)
 static IOMedia *
 media_from_matchdict(OSDictionary *matchDict)
 {
-	OSIterator *iter;
-	OSObject *obj;
+	OSIterator *iter = 0;
+	OSObject *obj = 0;
+	IOMedia *media = 0;
 
 	if (!matchDict) {
 		dprintf("%s missing matching dictionary\n", __func__);
@@ -549,31 +616,38 @@ media_from_matchdict(OSDictionary *matchDict)
 	}
 
 	/* Get first object from iterator */
-	obj = iter->getNextObject();
-	if (!obj) {
+	while ((obj = iter->getNextObject()) != NULL) {
+		if ((media = OSDynamicCast(IOMedia, obj)) == NULL) {
+			obj = 0;
+			continue;
+		}
+		if (media->isFormatted() == false) {
+			obj = 0;
+			media = 0;
+			continue;
+		}
+
+		media->retain();
+		break;
+	}
+
+	if (!media) {
 		dprintf("%s no match found\n", __func__);
 		iter->release();
 		return (NULL);
 	}
-	obj->retain();
+
 #ifdef DEBUG
 	/* Report if there were additional matches */
 	if (iter->getNextObject() != NULL) {
-		dprintf("%s Had more than one match\n", __func__);
+		dprintf("%s Had more potential matches\n", __func__);
 	}
 #endif
 	iter->release();
 	iter = 0;
 
-	/* Cast from IOService to IOMedia or release */
-	if (!OSDynamicCast(IOMedia, obj)) {
-		dprintf("%s couldn't cast match as IOMedia\n", __func__);
-		obj->release();
-		return (NULL);
-	}
-
 	/* Return valid IOMedia with retain count */
-	return (OSDynamicCast(IOMedia, obj));
+	return (media);
 }
 
 /*
@@ -609,12 +683,372 @@ media_from_dev(dev_t device = 0)
 }
 
 /*
+ * media_from_device_path
+ *
+ * translate /private/var/run/disk/by-path/<path> to an IOMedia
+ * handle. The remainder of the path should be a valid
+ * path in the IORegistry IODTPlane device tree.
+ */
+static IOMedia *
+media_from_device_path(const char *path = 0)
+{
+	IORegistryEntry *entry = 0;
+	IOMedia *media = 0;
+	OSString *osstr;
+	const char *string, *dash;
+
+	if (!path || strnlen(path, 1) != 1 ||
+	    strncmp(path, "/private/var/run/disk/by-path/", 30) != 0) {
+		dprintf("%s invalid path [%s]\n", __func__,
+		    (path && path[0] != '\0' ? path : ""));
+		return (NULL);
+	}
+
+	/* We need the leading slash in the string, so trim 29 */
+	osstr = OSString::withCString(path+29);
+	if (!osstr) {
+		dprintf("%s couldn't get string from path\n", __func__);
+		return (NULL);
+	}
+
+	string = osstr->getCStringNoCopy();
+	ASSERT(string);
+
+	/* Convert dashes to slashes */
+	while ((dash = strchr(string, '-')) != NULL) {
+		osstr->setChar('/', dash - string);
+	}
+	dprintf("%s string [%s]\n", __func__, string);
+
+	entry = IORegistryEntry::fromPath(string, gIODTPlane);
+	string = 0;
+	osstr->release();
+	osstr = 0;
+
+	if (!entry) {
+		dprintf("%s IORegistryEntry::fromPath failed\n", __func__);
+		return (NULL);
+	}
+
+	if ((media = OSDynamicCast(IOMedia, entry)) == NULL) {
+		entry->release();
+		return (0);
+	}
+
+	/* Leave a retain count on the media */
+	return (media);
+}
+
+/*
+ * media_from_serial
+ *
+ * translate /private/var/run/disk/by-serial/model-serial[:location]
+ * to an IOMedia handle. The path format is determined by
+ * InvariantDisks logic in IDSerialLinker.cpp.
+ */
+static IOMedia *
+media_from_serial(const char *path = 0)
+{
+	IORegistryEntry *entry = 0;
+	IOMedia *media = 0;
+	OSDictionary *matching = 0;
+	OSDictionary *deviceCharacteristics = 0;
+	OSIterator *iter = 0;
+	OSString *osstr = 0;
+	OSString *model = 0;
+	OSString *serial = 0;
+	OSNumber *bsdUnit = 0;
+	OSObject *property = 0;
+	OSObject *propDict = 0;
+	OSObject *obj = 0;
+	const char *substr = 0;
+	const char *sep1 = 0, *sep2 = 0;
+	const char *string = 0, *space = 0;
+	const char *location = 0, *entryLocation = 0;
+	int newlen = 0, soff = 0;
+	bool matched = false;
+
+	if (!path || strnlen(path, 1) != 1 ||
+	    strncmp(path, "/private/var/run/disk/by-serial/", 32) != 0) {
+		dprintf("%s invalid path [%s]\n", __func__,
+		    (path && path[0] != '\0' ? path : ""));
+		return (NULL);
+	}
+	substr = path + 32;
+
+	/*
+	 * For each whole-disk IOMedia:
+	 * Search parents for deviceCharacteristics, or skip.
+	 * Check for Model and Serial Number properties, or skip.
+	 * Trim trailing space and swap underscores within string.
+	 * If "model-serial" matches path so far:
+	 *  Match whole-disk IOMedia if no slice specified.
+	 *  Or get child IOMedia with matching Location property.
+	 */
+
+	sep1 = strchr(substr, '-');
+	sep2 = strrchr(substr, ':');
+	if (sep1 == 0) {
+		dprintf("%s invalid by-serial path [%s]\n", __func__, substr);
+		return (NULL);
+	}
+	if (sep2 == 0) {
+		dprintf("%s no slice, whole disk [%s]\n", __func__, substr);
+		sep2 = substr + (strlen(substr));
+	}
+
+	if ((matching = IOService::serviceMatching("IOMedia")) == NULL) {
+		dprintf("%s couldn't get matching dictionary\n", __func__);
+		return (NULL);
+	}
+
+	if ((matching->setObject(kIOMediaWholeKey, kOSBooleanTrue) == false) ||
+	    (iter = IOService::getMatchingServices(matching)) == NULL) {
+		dprintf("%s couldn't get IOMedia iterator\n", __func__);
+		matching->release();
+		return (NULL);
+	}
+	matching->release();
+	matching = 0;
+
+	while ((obj = iter->getNextObject()) != NULL) {
+		if ((entry = OSDynamicCast(IORegistryEntry, obj)) == NULL ||
+		    (media = OSDynamicCast(IOMedia, entry)) == NULL ||
+		    media->isFormatted() == false) {
+		    //media->isWhole() == false) {
+			continue;
+		}
+
+		propDict = media->getProperty(
+		    kIOPropertyDeviceCharacteristicsKey, gIOServicePlane,
+		    (kIORegistryIterateRecursively |
+		    kIORegistryIterateParents));
+		if ((deviceCharacteristics = OSDynamicCast(OSDictionary,
+		    propDict)) == NULL) {
+			dprintf("%s no device characteristics, skipping\n",
+			    __func__);
+			continue;
+		}
+
+		/*
+		 * Get each property, cast as OSString, then copy
+		 * to a new OSString.
+		 */
+		if ((property = deviceCharacteristics->getObject(
+		    kIOPropertyProductNameKey)) == NULL ||
+		    (osstr = OSDynamicCast(OSString, property)) == NULL ||
+		    (model = OSString::withString(osstr)) == NULL) {
+			dprintf("%s no product name, skipping\n", __func__);
+			continue;
+		}
+		if ((property = deviceCharacteristics->getObject(
+		    kIOPropertyProductSerialNumberKey)) == NULL ||
+		    (osstr = OSDynamicCast(OSString, property)) == NULL ||
+		    (serial = OSString::withString(osstr)) == NULL) {
+			dprintf("%s no serial number, skipping\n", __func__);
+			model->release();
+			model = 0;
+			continue;
+		}
+
+		string = model->getCStringNoCopy();
+		if (!string) {
+			model->release();
+			model = 0;
+			serial->release();
+			serial = 0;
+			continue;
+		}
+		/* Trim trailing whitespace */
+		for (newlen = strlen(string); newlen > 0; newlen--) {
+			if (string[newlen-1] != ' ') {
+				model->setChar('\0', newlen);
+				break;
+			}
+		}
+
+		/*
+		 * sep1 is the location of the first '-' in the path.
+		 * even if there is a '-' in the model name, we can skip
+		 * media with model names shorter than that.
+		 */
+		if (newlen == 0 ||
+		    (newlen < (sep1 - substr)) ||
+		    (substr[newlen] != '-')) {
+			model->release();
+			model = 0;
+			serial->release();
+			serial = 0;
+			continue;
+		}
+
+		/* Convert spaces to underscores */
+		while ((space = strchr(string, ' ')) != NULL) {
+			model->setChar('_', space - string);
+		}
+
+		/* Compare the model string with the path */
+		if (strncmp(substr, string, newlen) != 0) {
+			model->release();
+			model = 0;
+			serial->release();
+			serial = 0;
+			continue;
+		}
+		dprintf("%s model string matched [%s]\n",
+		    __func__, model->getCStringNoCopy());
+		model->release();
+		model = 0;
+
+		soff = newlen + 1;
+
+		string = serial->getCStringNoCopy();
+		if (!string) {
+			serial->release();
+			serial = 0;
+			continue;
+		}
+		/* Trim trailing whitespace */
+		for (newlen = strlen(string); newlen > 0; newlen--) {
+			if (string[newlen-1] != ' ') {
+				serial->setChar('\0', newlen);
+				break;
+			}
+		}
+		/*
+		 * sep2 is the location of the last ':' in the path, or
+		 * the end of the string if there is none.
+		 * even if there is a ':' in the serial number, we can skip
+		 * media with serial number strings shorter than that.
+		 */
+		if (newlen == 0 ||
+		    (newlen < (sep2 - sep1 - 1)) ||
+		    (substr[soff+newlen] != '\0' && substr[soff+newlen] != ':')) {
+			serial->release();
+			serial = 0;
+			continue;
+		}
+
+		/* Convert spaces to underscores */
+		while ((space = strchr(string, ' ')) != NULL) {
+			serial->setChar('_', space - string);
+		}
+
+		/* Compare the serial string with the path */
+		if (strncmp(substr+soff, string, newlen) != 0) {
+			serial->release();
+			serial = 0;
+			continue;
+		}
+		dprintf("%s serial string matched [%s]\n",
+		    __func__, serial->getCStringNoCopy());
+		serial->release();
+		serial = 0;
+
+		/* XXX
+		 * Still need to get the slice - the component
+		 * after an optional ':' at the end of the
+		 * string, by searching for IOMedia with that
+		 * location string below the whole-disk IOMedia.
+		 */
+		/* Set new location of ':' */
+		sep2 = substr + (soff + newlen);
+		/* Found match */
+		matched = true;
+		media->retain();
+		break;
+	}
+	iter->release();
+	iter = 0;
+
+	if (!matched || !media) {
+		dprintf("%s no matching devices found\n", __func__);
+		return (NULL);
+	}
+
+	/* Whole disk path will not end with ':<location>' */
+	if (sep2[0] != ':') {
+		dprintf("%s Found whole disk [%s]\n", __func__, path);
+		/* Leave a retain count on the media */
+		return (media);
+	}
+
+	/* Remainder of string is location */
+	location = sep2 + 1;
+	dprintf("%s location string [%s]\n", __func__, location);
+
+	if ((bsdUnit = OSDynamicCast(OSNumber,
+	    media->getProperty(kIOBSDUnitKey))) == NULL) {
+		dprintf("%s couldn't get BSD unit number\n", __func__);
+		media->release();
+		return (NULL);
+	}
+	if ((matching = IOService::serviceMatching("IOMedia")) == NULL ||
+	    (matching->setObject(kIOMediaWholeKey, kOSBooleanFalse)) == false ||
+	    (matching->setObject(kIOBSDUnitKey, bsdUnit)) == false ||
+	    (iter = IOService::getMatchingServices(matching)) == NULL) {
+		dprintf("%s iterator for location failed\n",
+		    __func__);
+
+		if (matching) matching->release();
+		/* We had a candidate, but couldn't get the location */
+		media->release();
+		return (NULL);
+	}
+	matching->release();
+	matching = 0;
+
+	/* Iterate over children checking for matching location */
+	matched = false;
+	entry = 0;
+	while ((obj = iter->getNextObject()) != NULL) {
+		if ((entry = OSDynamicCast(IORegistryEntry, obj)) == NULL ||
+		    (OSDynamicCast(IOMedia, entry)) == NULL) {
+			entry = 0;
+			continue;
+		}
+
+		if ((entryLocation = entry->getLocation()) == NULL ||
+		    (strlen(entryLocation) != strlen(location)) ||
+		    strcmp(entryLocation, location) != 0) {
+			entry = 0;
+			continue;
+		}
+
+		dprintf("%s found match\n", __func__);
+		matched = true;
+		entry->retain();
+		break;
+	}
+	iter->release();
+	iter = 0;
+
+	/* Drop the whole-disk media */
+	media->release();
+	media = 0;
+
+	/* Cast the new entry, if there is one */
+	if (!entry || (media = OSDynamicCast(IOMedia, entry)) == NULL) {
+if (entry) dprintf("%s had entry but couldn't cast\n", __func__);
+		dprintf("%s no media found for path %s\n",
+		    __func__, path);
+		if (entry) entry->release();
+		return (NULL);
+	}
+
+	dprintf("%s media from serial number succeeded\n", __func__);
+
+	/* Leave a retain count on the media */
+	return (matched ? media : NULL);
+}
+
+/*
  * media_from_path is intended to be called by ldi_open_by_name
  * with a char* path, and returns NULL or an IOMedia device with a
  * retain count that should be released on open.
  */
 static IOMedia *
-media_from_path(char *path = 0)
+media_from_path(const char *path = 0)
 {
 	IOMedia *media;
 	OSDictionary *matchDict;
@@ -625,6 +1059,21 @@ media_from_path(char *path = 0)
 		return (NULL);
 	}
 
+	if (strncmp(path, "/private/var/run/disk/by-path/", 30) == 0) {
+		media = media_from_device_path(path);
+		dprintf("%s media_from_device_path %s\n", __func__,
+		    (media ? "succeeded" : "failed"));
+		return (media);
+	}
+
+	if (strncmp(path, "/private/var/run/disk/by-serial/", 32) == 0) {
+		media = media_from_serial(path);
+		dprintf("%s media_from_serial %s\n", __func__,
+		    (media ? "succeeded" : "failed"));
+		return (media);
+	}
+
+	/* Try to get /dev/disk or /private/var/run/disk/by-id path */
 	matchDict = media_matchdict_from_path(path);
 	if (!matchDict) {
 		dprintf("%s couldn't get matching dictionary\n", __func__);
@@ -964,9 +1413,8 @@ ldi_open_media_by_path(char *path = 0, int fmode = 0,
 	/* In debug build, be loud if we potentially leak a handle */
 	ASSERT3U(*((struct ldi_handle **)lhp), ==, NULL);
 
-	/* For /dev/disk*, until InvariantDisk is supported */
-	media = media_from_path(path);
-	if ((media) == NULL) {
+	/* For /dev/disk*, and InvariantDisk paths */
+	if ((media = media_from_path(path)) == NULL) {
 		dprintf("%s media_from_path failed\n", __func__);
 		return (ENODEV);
 	}
