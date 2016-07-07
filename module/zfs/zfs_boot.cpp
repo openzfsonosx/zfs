@@ -234,28 +234,21 @@ zfs_boot_fix_paths(nvlist_t *nv, name_entry_t *names)
 				break;
 			}
 
-#ifndef __APPLE__
+#ifdef __APPLE__
+/*
+ * We are comparing with known valid paths here,
+ * and we'll only have one path to each device.
+ * It should be /by-id/ but might be /dev/.
+ * Either way, we have located the vdev with the
+ * correct guid, so its path overrides anything
+ * set in the config.
+ */
+#endif
 			if ((strlen(path) == strlen(ne->ne_name)) &&
 			    strncmp(path, ne->ne_name, strlen(path)) == 0) {
 				best = ne;
 				break;
 			}
-#else
-			/*
-			 * When dealing with /dev/ paths, the disk may
-			 * have renumbered, so skip this check.
-			 * InvariantDisks paths should be stable.
-			 * Technically, these are the only valid paths
-			 * at boot time.
-			 */
-			if (strncmp(path, "/dev/", 5) != 0 &&
-			    strncmp(path, "/private/var/disk/by-", 25) == 0 &&
-			    (strlen(path) == strlen(ne->ne_name)) &&
-			    strncmp(path, ne->ne_name, strlen(path)) == 0) {
-				best = ne;
-				break;
-			}
-#endif
 
 			if (best == NULL) {
 				best = ne;
@@ -476,34 +469,12 @@ zfs_boot_refresh_config(nvlist_t *config)
 {
 	nvlist_t *nvl = 0;
 
-#if 0
-	/* Allocate a new nvlist */
-	nvl = (nvlist_t**) kmem_alloc(sizeof (nvlist_t *),
-	    KM_SLEEP);
-	if (nvl == NULL) {
-#ifdef DEBUG
-		printf("%s %s\n", "zfs_boot_refresh_config",
-		    "couldn't allocate nvlist nvl");
-#endif
-		return (NULL);
-	}
-#endif
-
-	/* Duplicate config into nvl */
-	if (nvlist_dup(config, &nvl, KM_SLEEP) != 0) {
-#ifdef DEBUG
-		printf("%s %s\n", "zfs_boot_refresh_config",
-		    "couldn't nvlist_dup config to nvl");
-#endif
-		return (NULL);
-	}
-
 	/* Call tryimport and return nvl or NULL */
-	if (spa_tryimport(nvl) == 0) {
-		return (nvl);
-	}
-
-	return (NULL);
+	/* tryimport does not free conf_nvl, and returns new nvl
+	 * or null
+	 */
+	nvl = spa_tryimport(config);
+	return (nvl);
 
 #if 0
 	nvlist_t *nvl;
@@ -575,7 +546,7 @@ static nvlist_t *
 #else
 nvlist_t *
 #endif
-zfs_boot_get_configs(pool_list_t *pl, boolean_t active_ok, boolean_t fix_paths)
+zfs_boot_get_configs(pool_list_t *pl, boolean_t active_ok)
 {
 	pool_entry_t *pe;
 	vdev_entry_t *ve;
@@ -871,15 +842,13 @@ zfs_boot_get_configs(pool_list_t *pl, boolean_t active_ok, boolean_t fix_paths)
 		children = 0;
 		child = NULL;
 
-		if (fix_paths == B_TRUE) {
-			/*
-			 * Go through and fix up any paths and/or devids based on our
-			 * known list of vdev GUID -> path mappings.
-			 */
-			if (zfs_boot_fix_paths(nvroot, pl->names) != 0) {
-				nvlist_free(nvroot);
-				goto nomem;
-			}
+		/*
+		 * Go through and fix up any paths and/or devids based on our
+		 * known list of vdev GUID -> path mappings.
+		 */
+		if (zfs_boot_fix_paths(nvroot, pl->names) != 0) {
+			nvlist_free(nvroot);
+			goto nomem;
 		}
 
 		/*
@@ -933,30 +902,28 @@ zfs_boot_get_configs(pool_list_t *pl, boolean_t active_ok, boolean_t fix_paths)
 		nvlist_free(config);
 		config = nvl;
 
-		if (fix_paths == B_TRUE) {
-			/*
-			 * Go through and update the paths for spares, now that we have
-			 * them.
-			 */
-			verify(nvlist_lookup_nvlist(config, ZPOOL_CONFIG_VDEV_TREE,
-			    &nvroot) == 0);
-			if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_SPARES,
-			    &spares, &nspares) == 0) {
-				for (i = 0; i < nspares; i++) {
-					if (zfs_boot_fix_paths(spares[i], pl->names) != 0)
-						goto nomem;
-				}
+		/*
+		 * Go through and update the paths for spares, now that we have
+		 * them.
+		 */
+		verify(nvlist_lookup_nvlist(config, ZPOOL_CONFIG_VDEV_TREE,
+		    &nvroot) == 0);
+		if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_SPARES,
+		    &spares, &nspares) == 0) {
+			for (i = 0; i < nspares; i++) {
+				if (zfs_boot_fix_paths(spares[i], pl->names) != 0)
+					goto nomem;
 			}
+		}
 
-			/*
-			 * Update the paths for l2cache devices.
-			 */
-			if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_L2CACHE,
-			    &l2cache, &nl2cache) == 0) {
-				for (i = 0; i < nl2cache; i++) {
-					if (zfs_boot_fix_paths(l2cache[i], pl->names) != 0)
-						goto nomem;
-				}
+		/*
+		 * Update the paths for l2cache devices.
+		 */
+		if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_L2CACHE,
+		    &l2cache, &nl2cache) == 0) {
+			for (i = 0; i < nl2cache; i++) {
+				if (zfs_boot_fix_paths(l2cache[i], pl->names) != 0)
+					goto nomem;
 			}
 		}
 
@@ -1854,9 +1821,17 @@ zfs_boot_import_thread(void *arg)
 			goto out_unlocked;
 		}
 
+		mutex_enter(&pools->lock);
+		/* Check for work */
+		if (pools->disks->getCount() != 0) {
+			dprintf("%s more disks available, looping\n", __func__);
+			continue;
+		}
+		/* Release pool list lock */
+		mutex_exit(&pools->lock);
+
 		/* Generate a list of pool configs to import */
-		configs = zfs_boot_get_configs(pools,
-		    /* active_ok */ B_TRUE, /* fix_paths */ B_FALSE);
+		configs = zfs_boot_get_configs(pools, B_TRUE);
 
 		/* Abort early */
 		if (pools->terminating != ZFS_BOOT_ACTIVE) {
@@ -1889,13 +1864,16 @@ zfs_boot_import_thread(void *arg)
 			}
 
 			/* Try import */
-			newnv = NULL;
 			newnv = spa_tryimport(nv);
+			nvlist_free(nv);
+			nv = 0;
 			if (newnv) {
 				dprintf("%s newnv: %p\n", __func__, newnv);
 				/* Do import */
 				pool_imported = (spa_import(pools->pool_name,
 				    newnv, 0, 0) == 0 );
+				nvlist_free(newnv);
+				newnv = 0;
 				//pool_imported = spa_import_rootpool(nv);
 			} else {
 				dprintf("%s no newnv returned\n", __func__);
