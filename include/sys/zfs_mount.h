@@ -6,6 +6,7 @@ struct zfs_mount_args {
 	int		mflag;
 	char		*optptr;
 	int		optlen;
+	int struct_size;
 };
 
 /*
