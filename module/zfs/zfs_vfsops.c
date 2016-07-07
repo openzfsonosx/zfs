@@ -547,6 +547,7 @@ static void
 readonly_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
+
 	if (newval == B_TRUE) {
 		/* XXX locking on vfs_flag? */
 
@@ -693,7 +694,7 @@ mimic_hfs_changed_cb(void *arg, uint64_t newval)
 	if(newval == 0) {
 	    strlcpy(vfsstatfs->f_fstypename, "zfs", MFSTYPENAMELEN);
 	} else {
-	    strlcpy(vfsstatfs->f_fstypename, "hfs", MFSTYPENAMELEN);
+		strlcpy(vfsstatfs->f_fstypename, "hfs", MFSTYPENAMELEN);
 	}
 }
 
@@ -1543,8 +1544,7 @@ dprintf("%s\n", __func__);
 	/* If we are readonly (ie, waiting for rootmount) we need to reply
 	 * honestly, so launchd runs fsck_zfs and mount_zfs
 	 */
-	if(mimic_hfs &&
-	   !(vfs_isrdonly(zfsvfs->z_vfs))) {
+	if(mimic_hfs) {
 	    struct vfsstatfs *vfsstatfs;
 	    vfsstatfs = vfs_statfs(vfsp);
 	    strlcpy(vfsstatfs->f_fstypename, "hfs", MFSTYPENAMELEN);
@@ -1952,6 +1952,7 @@ printf("ZFS: %s\n", __func__);
 	 */
 	dev = vnode_specrdev(devvp);
 //	vnode_put(devvp);
+	printf("Setting readonly\n");
 
 	//if (error = zfs_domount(mp, dev, "rpool/ROOT/10.11", ctx)) {
 	if ((error = zfs_domount(mp, dev, zfs_bootfs, ctx)) != 0) {
@@ -1983,6 +1984,14 @@ printf("ZFS: %s\n", __func__);
 
 	/* Set this mount to read-only */
 	zfsvfs->z_rdonly = 1;
+
+	/*
+	 * Due to XNU mount flags, readonly gets set off for a short
+	 * while, which means mimic will kick in if enabled. But we need
+	 * to reply with true "zfs" until root has been remounted RW, so
+	 * that launchd tries to run mount_zfs instead of mount_hfs
+	 */
+	mimic_hfs_changed_cb(zfsvfs, B_FALSE);
 
 #if 0
 	if ((error = zfs_zget(zfsvfs, zfsvfs->z_root, &zp)) != 0) {
@@ -2055,7 +2064,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	int		error = 0;
 	int		canwrite;
 	int		rdonly = 0;
-	int		mflag;
+	int		mflag = 0;
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
@@ -2120,13 +2129,15 @@ dprintf("%s cmdflags %u rdonly %d\n", __func__, cmdflags, rdonly);
 		goto out;
 	}
 
-	mflag = mnt_args.mflag;
 
-	options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
+	if (mnt_args.struct_size == sizeof(mnt_args)) {
 
-	error = ddi_copyin((const void *)mnt_args.optptr, (caddr_t)options,
-					   mnt_args.optlen, 0);
+		mflag = mnt_args.mflag;
 
+		options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
+
+		error = ddi_copyin((const void *)mnt_args.optptr, (caddr_t)options,
+						   mnt_args.optlen, 0);
 	//dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
 	printf("%s: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
 	    " options %s\n", __func__,
@@ -2135,6 +2146,7 @@ dprintf("%s cmdflags %u rdonly %d\n", __func__, cmdflags, rdonly);
 	    mnt_args.optptr,
 	    mnt_args.optlen,
 	    options);
+	}
 
 //	(void) dnlc_purge_vfsp(vfsp, 0);
 
