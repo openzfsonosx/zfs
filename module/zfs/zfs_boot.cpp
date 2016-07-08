@@ -1450,6 +1450,8 @@ zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 	    num_labels, config) != 0) {
 		printf("%s couldn't add config to pool list\n",
 		    __func__);
+		/* Drop bootinfo to avoid memory leak */
+		bootinfo->release();
 	}
 	/* Leave bootinfo retained */
 	bootinfo = 0;
