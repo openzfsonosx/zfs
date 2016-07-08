@@ -3723,10 +3723,12 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 			 * the we don't allow large (>128K) blocks,
 			 * because GRUB doesn't support them.
 			 */
+#ifndef __APPLE__ /* OSX can boot it just fine */
 			if (zfs_is_bootfs(dsname) &&
 			    intval > SPA_OLD_MAXBLOCKSIZE) {
 				return (SET_ERROR(ERANGE));
 			}
+#endif
 
 			/*
 			 * We don't allow setting the property above 1MB,
