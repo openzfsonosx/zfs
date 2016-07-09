@@ -199,7 +199,9 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	ddi_devid_t devid;
 #endif
 	uint64_t capacity = 0, blksz = 0, pbsize;
+#ifdef __APPLE__
 	int isssd;
+#endif
 
 	/*
 	 * We must have a pathname, and it must be absolute.
@@ -538,6 +540,7 @@ skip_open:
 	 */
 	vd->vdev_nowritecache = B_FALSE;
 
+#ifdef __APPLE__
 	/* Inform the ZIO pipeline that we are non-rotational */
 	vd->vdev_nonrot = B_FALSE;
 #if 0
@@ -551,6 +554,7 @@ skip_open:
 	}
 	dprintf("ZFS: vdev_disk(%s) isSSD %d\n",
 	    (vd->vdev_path ? vd->vdev_path : ""), isssd);
+#endif
 
 	return (0);
 }
@@ -597,6 +601,7 @@ vdev_disk_close(vdev_t *vd)
 
 	if (dvd->vd_lh != NULL) {
 		(void) ldi_close(dvd->vd_lh, spa_mode(vd->vdev_spa), kcred);
+		dvd->vd_lh = NULL;
 	}
 
 	vd->vdev_delayed_close = B_FALSE;
