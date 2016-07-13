@@ -447,7 +447,7 @@ dnode_evict_bonus(dnode_t *dn)
 	if (dn->dn_bonus != NULL) {
 		if (refcount_is_zero(&dn->dn_bonus->db_holds)) {
 			mutex_enter(&dn->dn_bonus->db_mtx);
-			dbuf_evict(dn->dn_bonus);
+			dbuf_destroy(dn->dn_bonus);
 			dn->dn_bonus = NULL;
 		} else {
 			dn->dn_bonus->db_pending_evict = TRUE;

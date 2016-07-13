@@ -656,7 +656,22 @@ retry:
 	 * All entries are queued via taskq_dispatch_ent(), so min/maxalloc
 	 * configuration is not required.
 	 */
-	dbu_evict_taskq = taskq_create("dbu_evict", 1, defclsyspri, 0, 0, 0);
+	dbu_evict_taskq = taskq_create("dbu_evict", 1, minclsyspri, 0, 0, 0);
+
+	multilist_create(&dbuf_cache, sizeof (dmu_buf_impl_t),
+		offsetof(dmu_buf_impl_t, db_cache_link),
+		zfs_arc_num_sublists_per_state,
+		dbuf_cache_multilist_index_func);
+	refcount_create(&dbuf_cache_size);
+
+#ifdef _KERNEL
+	tsd_create(&zfs_dbuf_evict_key, NULL);
+#endif
+	dbuf_evict_thread_exit = B_FALSE;
+	mutex_init(&dbuf_evict_lock, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&dbuf_evict_cv, NULL, CV_DEFAULT, NULL);
+	dbuf_cache_evict_thread = thread_create(NULL, 0, dbuf_evict_thread,
+		NULL, 0, &p0, TS_RUN, minclsyspri);
 }
 
 void
@@ -999,7 +1014,7 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 	    BP_IS_HOLE(db->db_blkptr)))) {
 		arc_buf_contents_t type = DBUF_GET_BUFC_TYPE(db);
 
-		dbuf_set_data(db, arc_buf_alloc(db->db_objset->os_spa,
+		dbuf_set_data(db, arc_alloc_buf(db->db_objset->os_spa,
 		    db->db.db_size, db, type));
 		bzero(db->db.db_data, db->db.db_size);
 
@@ -2455,237 +2470,6 @@ dbuf_prefetch_indirect_done(zio_t *zio, arc_buf_t *abuf, void *private)
 	arc_buf_destroy(abuf, private);
 }
 
-typedef struct dbuf_prefetch_arg {
-	spa_t *dpa_spa; /* The spa to issue the prefetch in. */
-	zbookmark_phys_t dpa_zb; /* The target block to prefetch. */
-	int dpa_epbs; /* Entries (blkptr_t's) Per Block Shift. */
-	int dpa_curlevel; /* The current level that we're reading */
-	zio_priority_t dpa_prio; /* The priority I/Os should be issued at. */
-	zio_t *dpa_zio; /* The parent zio_t for all prefetches. */
-	arc_flags_t dpa_aflags; /* Flags to pass to the final prefetch. */
-} dbuf_prefetch_arg_t;
-
-/*
- * Actually issue the prefetch read for the block given.
- */
-static void
-dbuf_issue_final_prefetch(dbuf_prefetch_arg_t *dpa, blkptr_t *bp)
-{
-	if (BP_IS_HOLE(bp) || BP_IS_EMBEDDED(bp))
-		return;
-
-	arc_flags_t aflags =
-            dpa->dpa_aflags | ARC_FLAG_NOWAIT | ARC_FLAG_PREFETCH;
-
-	ASSERT3U(dpa->dpa_curlevel, ==, BP_GET_LEVEL(bp));
-	ASSERT3U(dpa->dpa_curlevel, ==, dpa->dpa_zb.zb_level);
-	ASSERT(dpa->dpa_zio != NULL);
-	(void) arc_read(dpa->dpa_zio, dpa->dpa_spa, bp, NULL, NULL,
-					dpa->dpa_prio, ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
-					&aflags, &dpa->dpa_zb);
-}
-
-/*
- * Called when an indirect block above our prefetch target is read in.  This
- * will either read in the next indirect block down the tree or issue the actual
- * prefetch if the next block down is our target.
- */
-static void
-dbuf_prefetch_indirect_done(zio_t *zio, arc_buf_t *abuf, void *private)
-{
-	dbuf_prefetch_arg_t *dpa = private;
-
-	ASSERT3S(dpa->dpa_zb.zb_level, <, dpa->dpa_curlevel);
-	ASSERT3S(dpa->dpa_curlevel, >, 0);
-	if (zio != NULL) {
-		ASSERT3S(BP_GET_LEVEL(zio->io_bp), ==, dpa->dpa_curlevel);
-		ASSERT3U(BP_GET_LSIZE(zio->io_bp), ==, zio->io_size);
-		ASSERT3P(zio->io_spa, ==, dpa->dpa_spa);
-	}
-
-	dpa->dpa_curlevel--;
-
-	uint64_t nextblkid = dpa->dpa_zb.zb_blkid >>
-		(dpa->dpa_epbs * (dpa->dpa_curlevel - dpa->dpa_zb.zb_level));
-	blkptr_t *bp = ((blkptr_t *)abuf->b_data) +
-		P2PHASE(nextblkid, 1ULL << dpa->dpa_epbs);
-	if (BP_IS_HOLE(bp) || (zio != NULL && zio->io_error != 0)) {
-		kmem_free(dpa, sizeof (*dpa));
-	} else if (dpa->dpa_curlevel == dpa->dpa_zb.zb_level) {
-		ASSERT3U(nextblkid, ==, dpa->dpa_zb.zb_blkid);
-		dbuf_issue_final_prefetch(dpa, bp);
-		kmem_free(dpa, sizeof (*dpa));
-	} else {
-		arc_flags_t iter_aflags = ARC_FLAG_NOWAIT;
-		zbookmark_phys_t zb;
-
-		ASSERT3U(dpa->dpa_curlevel, ==, BP_GET_LEVEL(bp));
-
-		SET_BOOKMARK(&zb, dpa->dpa_zb.zb_objset,
-					 dpa->dpa_zb.zb_object, dpa->dpa_curlevel, nextblkid);
-
-		(void) arc_read(dpa->dpa_zio, dpa->dpa_spa,
-						bp, dbuf_prefetch_indirect_done, dpa, dpa->dpa_prio,
-						ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
-						&iter_aflags, &zb);
-	}
-	(void) arc_buf_remove_ref(abuf, private);
-}
-
-typedef struct dbuf_prefetch_arg {
-	spa_t *dpa_spa; /* The spa to issue the prefetch in. */
-	zbookmark_phys_t dpa_zb; /* The target block to prefetch. */
-	int dpa_epbs; /* Entries (blkptr_t's) Per Block Shift. */
-	int dpa_curlevel; /* The current level that we're reading */
-	zio_priority_t dpa_prio; /* The priority I/Os should be issued at. */
-	zio_t *dpa_zio; /* The parent zio_t for all prefetches. */
-	arc_flags_t dpa_aflags; /* Flags to pass to the final prefetch. */
-} dbuf_prefetch_arg_t;
-
-/*
- * Actually issue the prefetch read for the block given.
- */
-static void
-dbuf_issue_final_prefetch(dbuf_prefetch_arg_t *dpa, blkptr_t *bp)
-{
-	if (BP_IS_HOLE(bp) || BP_IS_EMBEDDED(bp))
-		return;
-
-	arc_flags_t aflags =
-            dpa->dpa_aflags | ARC_FLAG_NOWAIT | ARC_FLAG_PREFETCH;
-
-	ASSERT3U(dpa->dpa_curlevel, ==, BP_GET_LEVEL(bp));
-	ASSERT3U(dpa->dpa_curlevel, ==, dpa->dpa_zb.zb_level);
-	ASSERT(dpa->dpa_zio != NULL);
-	(void) arc_read(dpa->dpa_zio, dpa->dpa_spa, bp, NULL, NULL,
-					dpa->dpa_prio, ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
-					&aflags, &dpa->dpa_zb);
-}
-
-/*
- * Called when an indirect block above our prefetch target is read in.  This
- * will either read in the next indirect block down the tree or issue the actual
- * prefetch if the next block down is our target.
- */
-static void
-dbuf_prefetch_indirect_done(zio_t *zio, arc_buf_t *abuf, void *private)
-{
-	dbuf_prefetch_arg_t *dpa = private;
-
-	ASSERT3S(dpa->dpa_zb.zb_level, <, dpa->dpa_curlevel);
-	ASSERT3S(dpa->dpa_curlevel, >, 0);
-	if (zio != NULL) {
-		ASSERT3S(BP_GET_LEVEL(zio->io_bp), ==, dpa->dpa_curlevel);
-		ASSERT3U(BP_GET_LSIZE(zio->io_bp), ==, zio->io_size);
-		ASSERT3P(zio->io_spa, ==, dpa->dpa_spa);
-	}
-
-	dpa->dpa_curlevel--;
-
-	uint64_t nextblkid = dpa->dpa_zb.zb_blkid >>
-		(dpa->dpa_epbs * (dpa->dpa_curlevel - dpa->dpa_zb.zb_level));
-	blkptr_t *bp = ((blkptr_t *)abuf->b_data) +
-		P2PHASE(nextblkid, 1ULL << dpa->dpa_epbs);
-	if (BP_IS_HOLE(bp) || (zio != NULL && zio->io_error != 0)) {
-		kmem_free(dpa, sizeof (*dpa));
-	} else if (dpa->dpa_curlevel == dpa->dpa_zb.zb_level) {
-		ASSERT3U(nextblkid, ==, dpa->dpa_zb.zb_blkid);
-		dbuf_issue_final_prefetch(dpa, bp);
-		kmem_free(dpa, sizeof (*dpa));
-	} else {
-		arc_flags_t iter_aflags = ARC_FLAG_NOWAIT;
-		zbookmark_phys_t zb;
-
-		ASSERT3U(dpa->dpa_curlevel, ==, BP_GET_LEVEL(bp));
-
-		SET_BOOKMARK(&zb, dpa->dpa_zb.zb_objset,
-					 dpa->dpa_zb.zb_object, dpa->dpa_curlevel, nextblkid);
-
-		(void) arc_read(dpa->dpa_zio, dpa->dpa_spa,
-						bp, dbuf_prefetch_indirect_done, dpa, dpa->dpa_prio,
-						ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
-						&iter_aflags, &zb);
-	}
-	(void) arc_buf_remove_ref(abuf, private);
-}
-
-typedef struct dbuf_prefetch_arg {
-	spa_t *dpa_spa; /* The spa to issue the prefetch in. */
-	zbookmark_phys_t dpa_zb; /* The target block to prefetch. */
-	int dpa_epbs; /* Entries (blkptr_t's) Per Block Shift. */
-	int dpa_curlevel; /* The current level that we're reading */
-	zio_priority_t dpa_prio; /* The priority I/Os should be issued at. */
-	zio_t *dpa_zio; /* The parent zio_t for all prefetches. */
-	arc_flags_t dpa_aflags; /* Flags to pass to the final prefetch. */
-} dbuf_prefetch_arg_t;
-
-/*
- * Actually issue the prefetch read for the block given.
- */
-static void
-dbuf_issue_final_prefetch(dbuf_prefetch_arg_t *dpa, blkptr_t *bp)
-{
-	if (BP_IS_HOLE(bp) || BP_IS_EMBEDDED(bp))
-		return;
-
-	arc_flags_t aflags =
-            dpa->dpa_aflags | ARC_FLAG_NOWAIT | ARC_FLAG_PREFETCH;
-
-	ASSERT3U(dpa->dpa_curlevel, ==, BP_GET_LEVEL(bp));
-	ASSERT3U(dpa->dpa_curlevel, ==, dpa->dpa_zb.zb_level);
-	ASSERT(dpa->dpa_zio != NULL);
-	(void) arc_read(dpa->dpa_zio, dpa->dpa_spa, bp, NULL, NULL,
-					dpa->dpa_prio, ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
-					&aflags, &dpa->dpa_zb);
-}
-
-/*
- * Called when an indirect block above our prefetch target is read in.  This
- * will either read in the next indirect block down the tree or issue the actual
- * prefetch if the next block down is our target.
- */
-static void
-dbuf_prefetch_indirect_done(zio_t *zio, arc_buf_t *abuf, void *private)
-{
-	dbuf_prefetch_arg_t *dpa = private;
-
-	ASSERT3S(dpa->dpa_zb.zb_level, <, dpa->dpa_curlevel);
-	ASSERT3S(dpa->dpa_curlevel, >, 0);
-	if (zio != NULL) {
-		ASSERT3S(BP_GET_LEVEL(zio->io_bp), ==, dpa->dpa_curlevel);
-		ASSERT3U(BP_GET_LSIZE(zio->io_bp), ==, zio->io_size);
-		ASSERT3P(zio->io_spa, ==, dpa->dpa_spa);
-	}
-
-	dpa->dpa_curlevel--;
-
-	uint64_t nextblkid = dpa->dpa_zb.zb_blkid >>
-		(dpa->dpa_epbs * (dpa->dpa_curlevel - dpa->dpa_zb.zb_level));
-	blkptr_t *bp = ((blkptr_t *)abuf->b_data) +
-		P2PHASE(nextblkid, 1ULL << dpa->dpa_epbs);
-	if (BP_IS_HOLE(bp) || (zio != NULL && zio->io_error != 0)) {
-		kmem_free(dpa, sizeof (*dpa));
-	} else if (dpa->dpa_curlevel == dpa->dpa_zb.zb_level) {
-		ASSERT3U(nextblkid, ==, dpa->dpa_zb.zb_blkid);
-		dbuf_issue_final_prefetch(dpa, bp);
-		kmem_free(dpa, sizeof (*dpa));
-	} else {
-		arc_flags_t iter_aflags = ARC_FLAG_NOWAIT;
-		zbookmark_phys_t zb;
-
-		ASSERT3U(dpa->dpa_curlevel, ==, BP_GET_LEVEL(bp));
-
-		SET_BOOKMARK(&zb, dpa->dpa_zb.zb_objset,
-					 dpa->dpa_zb.zb_object, dpa->dpa_curlevel, nextblkid);
-
-		(void) arc_read(dpa->dpa_zio, dpa->dpa_spa,
-						bp, dbuf_prefetch_indirect_done, dpa, dpa->dpa_prio,
-						ZIO_FLAG_CANFAIL | ZIO_FLAG_SPECULATIVE,
-						&iter_aflags, &zb);
-	}
-	(void) arc_buf_remove_ref(abuf, private);
-}
-
 /*
  * Issue prefetch reads for the given block on the given level.  If the indirect
  * blocks above that block are not in memory, we will read them in
@@ -2777,6 +2561,7 @@ dbuf_prefetch(dnode_t *dn, int64_t level, uint64_t blkid, zio_priority_t prio,
 	dpa->dpa_prio = prio;
 	dpa->dpa_aflags = aflags;
 	dpa->dpa_spa = dn->dn_objset->os_spa;
+	dpa->dpa_dnode = dn;
 	dpa->dpa_epbs = epbs;
 	dpa->dpa_zio = pio;
 
@@ -2864,18 +2649,8 @@ __dbuf_hold_impl(struct dbuf_hold_impl_data *dh)
 		return (SET_ERROR(ENOENT));
 	}
 
-	if (dh->dh_db->db_buf && refcount_is_zero(&dh->dh_db->db_holds)) {
-		arc_buf_add_ref(dh->dh_db->db_buf, dh->dh_db);
-		if (dh->dh_db->db_buf->b_data == NULL) {
-			dbuf_clear(dh->dh_db);
-			if (dh->dh_parent) {
-				dbuf_rele(dh->dh_parent, NULL);
-				dh->dh_parent = NULL;
-			}
-			goto top;
-		}
+	if (dh->dh_db->db_buf != NULL)
 		ASSERT3P(dh->dh_db->db.db_data, ==, dh->dh_db->db_buf->b_data);
-	}
 
 	if (dh->dh_db->db_buf != NULL)
 		ASSERT3P(dh->dh_db->db.db_data, ==, dh->dh_db->db_buf->b_data);
@@ -3161,37 +2936,13 @@ dbuf_rele_and_unlock(dmu_buf_impl_t *db, void *tag)
 				bp = *db->db_blkptr;
 			}
 
-			/*
-			 * A dbuf will be eligible for eviction if either the
-			 * 'primarycache' property is set or a duplicate
-			 * copy of this buffer is already cached in the arc.
-			 *
-			 * In the case of the 'primarycache' a buffer
-			 * is considered for eviction if it matches the
-			 * criteria set in the property.
-			 *
-			 * To decide if our buffer is considered a
-			 * duplicate, we must call into the arc to determine
-			 * if multiple buffers are referencing the same
-			 * block on-disk. If so, then we simply evict
-			 * ourselves.
-			 */
-			if (!DBUF_IS_CACHEABLE(db)) {
-				if (db->db_blkptr != NULL &&
-				    !BP_IS_HOLE(db->db_blkptr) &&
-				    !BP_IS_EMBEDDED(db->db_blkptr)) {
-					spa_t *spa =
-					    dmu_objset_spa(db->db_objset);
-					blkptr_t bp = *db->db_blkptr;
-					dbuf_clear(db);
-					arc_freed(spa, &bp);
-				} else {
-					dbuf_clear(db);
-				}
-			} else if (db->db_pending_evict ||
-			    arc_buf_eviction_needed(db->db_buf)) {
-				dbuf_clear(db);
-			} else {
+			if (!DBUF_IS_CACHEABLE(db) ||
+				db->db_pending_evict) {
+				dbuf_destroy(db);
+			} else if (!multilist_link_active(&db->db_cache_link)) {
+				multilist_insert(&dbuf_cache, db);
+				(void) refcount_add_many(&dbuf_cache_size,
+					db->db.db_size, db);
 				mutex_exit(&db->db_mtx);
 
 				dbuf_evict_notify();
@@ -3981,8 +3732,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 
 		dr->dr_zio = arc_write(zio, os->os_spa, txg,
 			&dr->dr_bp_copy, data, DBUF_IS_L2CACHEABLE(db),
-		    DBUF_IS_L2COMPRESSIBLE(db), &zp, dbuf_write_ready,
-		    children_ready_cb,
+		    &zp, dbuf_write_ready, children_ready_cb,
 		    dbuf_write_physdone, dbuf_write_done, db,
 		    ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_MUSTSUCCEED, &zb);
 	}

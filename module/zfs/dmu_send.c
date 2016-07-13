@@ -612,7 +612,7 @@ do_dump(dmu_sendarg_t *dsa, struct send_block_record *data)
 			return (SET_ERROR(EIO));
 
 		err = dump_spill(dsa, zb->zb_object, blksz, abuf->b_data);
-		(void) arc_buf_remove_ref(abuf, &abuf);
+		arc_buf_destroy(abuf, &abuf);
 	} else if (backup_do_embed(dsa, bp)) {
 		/* it's an embedded level-0 block of a regular object */
 		int blksz = dblkszsec << SPA_MINBLOCKSHIFT;
