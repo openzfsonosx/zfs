@@ -99,7 +99,6 @@
 #include "zfs_comutil.h"
 
 #ifdef __APPLE__
-#include <libkern/crypto/md5.h>
 #include <sys/zfs_vnops.h>
 #include <sys/systeminfo.h>
 #include <sys/zfs_mount.h>
@@ -1948,9 +1947,11 @@ zfs_mount_label_policy(vfs_t *vfsp, char *osname)
 }
 #endif	/* SECLABEL */
 
+#ifdef ZFS_BOOT
 /* Used by mountroot */
 #define	ZFS_BOOT_MOUNT_DEV	1
 int zfs_boot_get_path(char *, int);
+#endif
 
 /*
  * zfs_vfs_mountroot
@@ -2040,9 +2041,6 @@ printf("ZFS: %s\n", __func__);
 	}
 #endif
 
-	/* Leave a hold on the root device */
-//	vnode_ref(devvp);
-//	vnode_getwithref(devvp);
 	/*
 	 * By setting the dev_t value in the mount vfsp,
 	 * mount_zfs will be called with the /dev/diskN
@@ -2050,7 +2048,7 @@ printf("ZFS: %s\n", __func__);
 	 * the mountedfrom field
 	 */
 	dev = vnode_specrdev(devvp);
-//	vnode_put(devvp);
+
 	printf("Setting readonly\n");
 
 	//if (error = zfs_domount(mp, dev, "rpool/ROOT/10.11", ctx)) {
@@ -2065,7 +2063,6 @@ printf("ZFS: %s\n", __func__);
 
 #ifdef ZFS_BOOT_MOUNT_DEV
 	// override the mount from field
-	//vfs_mountedfrom(mp, "/dev/disk1s5");
 	if (strlen(path) > 0) {
 		vfs_mountedfrom(mp, path);
 	} else {
@@ -2829,6 +2826,20 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	}
 
 	if (VFSATTR_IS_ACTIVE(fsap, f_vol_name)) {
+		char osname[MAXNAMELEN], *slash;
+		dmu_objset_name(zfsvfs->z_os, osname);
+
+		slash = strrchr(osname, '/');
+		if (slash) {
+			/* Advance past last slash */
+			slash += 1;
+		} else {
+			/* Copy whole osname (pool root) */
+			slash = osname;
+		}
+		strlcpy(fsap->f_vol_name, slash, MAXPATHLEN);
+
+#if 0
 		/*
 		 * Finder volume name is set to the basename of the mountpoint path,
 		 * unless the mountpoint path is "/" or NULL, in which case we use
@@ -2849,9 +2860,11 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 				    MAXPATHLEN);
 			}
 		}
+#endif
 
 		VFSATTR_SET_SUPPORTED(fsap, f_vol_name);
 		dprintf("vfs_getattr: volume name '%s'\n", fsap->f_vol_name);
+printf("vfs_getattr: volume name '%s'\n", fsap->f_vol_name);
 	}
 /*
 	if (!zfsvfs->z_issnap) {
@@ -2874,44 +2887,51 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
     // Make up a UUID here, based on the name
 	if (VFSATTR_IS_ACTIVE(fsap, f_uuid)) {
 
-		MD5_CTX  md5c;
-		uint64_t guid = dmu_objset_fsid_guid(zfsvfs->z_os);
 		char osname[MAXNAMELEN];
+		int error;
 
-		if (guid != 0) {
+#if 0
+		uint64_t pguid = 0;
+		uint64_t guid = 0;
+		spa_t *spa = 0;
+
+		if (zfsvfs->z_os == NULL ||
+		    (guid = dmu_objset_fsid_guid(zfsvfs->z_os)) == 0ULL ||
+		    (spa = dmu_objset_spa(zfsvfs->z_os)) == NULL ||
+		    (pguid = spa_guid(spa)) == 0ULL) {
+			dprintf("%s couldn't get pguid or guid %llu %llu\n",
+			    __func__, pguid, guid);
+		}
+
+		if (guid != 0ULL && pguid != 0ULL) {
 			/*
 			 * Seeding with the pool guid would
 			 * also avoid clashes across pools
 			 */
-			/* Print 16 hex chars for the 8b guid, plus null char */
-			snprintf(osname, 17, "%016llx", guid);
-			osname[16] = '\0'; // should have already from snprintf
-			dprintf("%s: using guid [%s]\n", __func__, osname);
+			/* Print 16 hex chars (8b guid), plus null char */
+			/* snprintf puts null char */
+			snprintf(osname, 33, "%016llx%016llx", pguid, guid);
+			osname[32] = '\0'; /* just in case */
+			dprintf("%s: using pguid+guid [%s]\n", __func__, osname);
+printf("%s: using pguid+guid [%s]\n", __func__, osname);
 		} else {
-
+	/* XXX */
+#endif
 			// Get dataset name
 			dmu_objset_name(zfsvfs->z_os, osname);
 			dprintf("%s: osname [%s]\n", __func__, osname);
+printf("%s: osname [%s]\n", __func__, osname);
+#if 0
+	/* XXX */
 		}
-
-		MD5Init( &md5c );
-		MD5Update( &md5c, osname, strlen(osname));
-		MD5Final( fsap->f_uuid, &md5c );
-		VFSATTR_SET_SUPPORTED(fsap, f_uuid);
-
-		dprintf("%s UUIDgen: [%s](%ld)->"
-		    "[%02x%02x%02x%02x-%02x%02x-%02x%02x-"
-		    "%02x%02x-%02x%02x%02x%02x%02x%02x]\n",
-		    __func__, osname, strlen(osname),
-		    fsap->f_uuid[0], fsap->f_uuid[1],
-		    fsap->f_uuid[2], fsap->f_uuid[3],
-		    fsap->f_uuid[4], fsap->f_uuid[5],
-		    fsap->f_uuid[6], fsap->f_uuid[7],
-		    fsap->f_uuid[8], fsap->f_uuid[9],
-		    fsap->f_uuid[10], fsap->f_uuid[11],
-		    fsap->f_uuid[12], fsap->f_uuid[13],
-		    fsap->f_uuid[14], fsap->f_uuid[15]);
-
+#endif
+		if ((error = zfs_vfs_uuid_gen(osname,
+		    fsap->f_uuid)) != 0) {
+			dprintf("%s uuid_gen error %d\n", __func__, error);
+		} else {
+			/* return f_uuid in fsap */
+			VFSATTR_SET_SUPPORTED(fsap, f_uuid);
+		}
 	}
 
 	uint64_t missing = 0;
