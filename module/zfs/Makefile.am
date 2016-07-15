@@ -14,7 +14,6 @@ SPL_KMODDIR=	@SPL@/module/spl/spl.kext
 CFLAGS_KMOD = \
 	$(AM_CFLAGS) \
 	-Wall \
-	-nostdinc \
 	-mkernel \
 	-D_KERNEL \
 	-DKERNEL \
