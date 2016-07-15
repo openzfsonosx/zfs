@@ -3625,19 +3625,18 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 	zfsvfs_t  *zfsvfs = zp->z_zfsvfs;
 	pathname_t cn = { 0 };
 	int  error = ENOATTR;
-	uint64_t xattr;
+
 	dprintf("+getnamedstream vp %p\n", ap->a_vp);
 
 	*svpp = NULLVP;
 
 	ZFS_ENTER(zfsvfs);
 
-	sa_lookup(zp->z_sa_hdl, SA_ZPL_XATTR(zfsvfs), &xattr, sizeof (xattr));
 	/*
 	 * Mac OS X only supports the "com.apple.ResourceFork" stream.
 	 */
 	if (bcmp(ap->a_name, XATTR_RESOURCEFORK_NAME,
-	    sizeof (XATTR_RESOURCEFORK_NAME)) != 0 || xattr == 0)
+	    sizeof (XATTR_RESOURCEFORK_NAME)) != 0)
 		goto out;
 
 	/* Grab the hidden attribute directory vnode. */
@@ -3659,6 +3658,23 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 out:
 	if (xdvp)
 		vnode_put(xdvp);
+
+	/*
+	 * If the lookup is NS_OPEN, they are accessing "..namedfork/rsrc"
+	 * to which we should return 0 with empty vp to empty file.
+	 * See hfs_vnop_getnamedstream()
+	 */
+	if ((error == ENOATTR) &&
+		ap->a_operation == NS_OPEN) {
+
+		if ((error = zfs_get_xattrdir(zp, &xdvp, cr, CREATE_XATTR_DIR)) == 0) {
+			/* Lookup or create the named attribute. */
+			error = zfs_obtain_xattr(VTOZ(xdvp), ap->a_name,
+									 VTOZ(vp)->z_mode, cr, ap->a_svpp,
+									 ZNEW);
+			vnode_put(xdvp);
+		}
+	}
 
 	ZFS_EXIT(zfsvfs);
 	if (error) dprintf("%s vp %p: error %d\n", __func__, ap->a_vp, error);
