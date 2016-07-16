@@ -1876,8 +1876,6 @@ zfs_vfs_mountroot(struct mount *mp, struct vnode *devvp, vfs_context_t ctx)
 	static int zfsrootdone = 0;
 	*/
 	zfsvfs_t *zfsvfs = NULL;
-	znode_t *zp = NULL;
-	vnode_t *vp = NULL;
 	//znode_t *zp = NULL;
 	spa_t *spa = 0;
 	char *zfs_bootfs = 0;
@@ -2061,7 +2059,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	cred_t		*cr =  (cred_t *)vfs_context_ucred(context);
 	char		*osname = NULL;
 	char		*options = NULL;
-	uint64_t	flags = vfs_flags(vfsp);
 	int		error = 0;
 	int		canwrite;
 	uint64_t	flags = vfs_flags(vfsp);
