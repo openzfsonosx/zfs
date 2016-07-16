@@ -2652,9 +2652,6 @@ __dbuf_hold_impl(struct dbuf_hold_impl_data *dh)
 	if (dh->dh_db->db_buf != NULL)
 		ASSERT3P(dh->dh_db->db.db_data, ==, dh->dh_db->db_buf->b_data);
 
-	if (dh->dh_db->db_buf != NULL)
-		ASSERT3P(dh->dh_db->db.db_data, ==, dh->dh_db->db_buf->b_data);
-
 	ASSERT(dh->dh_db->db_buf == NULL || arc_referenced(dh->dh_db->db_buf));
 
 	/*

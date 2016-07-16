@@ -1591,11 +1591,14 @@ arc_buf_watch(arc_buf_t *buf)
 static arc_buf_contents_t
 arc_buf_type(arc_buf_hdr_t *hdr)
 {
+	arc_buf_contents_t type;
 	if (HDR_ISTYPE_METADATA(hdr)) {
-		return (ARC_BUFC_METADATA);
+		type = ARC_BUFC_METADATA;
 	} else {
-		return (ARC_BUFC_DATA);
+		type = ARC_BUFC_DATA;
 	}
+	VERIFY3U(hdr->b_type, ==, type);
+	return (type);
 }
 
 static uint32_t
@@ -2732,6 +2735,160 @@ arc_alloc_buf(spa_t *spa, int32_t size, void *tag, arc_buf_contents_t type)
 	arc_buf_t *buf = arc_buf_alloc_impl(hdr, tag);
 	arc_buf_thaw(buf);
 	return (buf);
+}
+
+static void
+arc_hdr_alloc_pdata(arc_buf_hdr_t *hdr)
+{
+	l2arc_buf_hdr_t *l2hdr = &hdr->b_l2hdr;
+	l2arc_dev_t *dev = l2hdr->b_dev;
+	uint64_t asize = arc_hdr_size(hdr);
+
+	ASSERT3P(hdr->b_l1hdr.b_pdata, ==, NULL);
+	hdr->b_l1hdr.b_pdata = arc_get_data_buf(hdr, arc_hdr_size(hdr), hdr);
+	hdr->b_l1hdr.b_byteswap = DMU_BSWAP_NUMFUNCS;
+	ASSERT3P(hdr->b_l1hdr.b_pdata, !=, NULL);
+
+	ARCSTAT_INCR(arcstat_compressed_size, arc_hdr_size(hdr));
+	ARCSTAT_INCR(arcstat_uncompressed_size, HDR_GET_LSIZE(hdr));
+}
+
+static void
+arc_hdr_free_pdata(arc_buf_hdr_t *hdr)
+{
+	ASSERT(HDR_HAS_L1HDR(hdr));
+	ASSERT3P(hdr->b_l1hdr.b_pdata, !=, NULL);
+
+	/*
+	 * If the hdr is currently being written to the l2arc then
+	 * we defer freeing the data by adding it to the l2arc_free_on_write
+	 * list. The l2arc will free the data once it's finished
+	 * writing it to the l2arc device.
+	 */
+	if (HDR_L2_WRITING(hdr)) {
+		arc_hdr_free_on_write(hdr);
+		ARCSTAT_BUMP(arcstat_l2_free_on_write);
+	} else {
+		arc_free_data_buf(hdr, hdr->b_l1hdr.b_pdata,
+		    arc_hdr_size(hdr), hdr);
+	}
+	hdr->b_l1hdr.b_pdata = NULL;
+	hdr->b_l1hdr.b_byteswap = DMU_BSWAP_NUMFUNCS;
+
+	ARCSTAT_INCR(arcstat_compressed_size, -arc_hdr_size(hdr));
+	ARCSTAT_INCR(arcstat_uncompressed_size, -HDR_GET_LSIZE(hdr));
+}
+
+static arc_buf_hdr_t *
+arc_hdr_alloc(uint64_t spa, int32_t psize, int32_t lsize,
+    enum zio_compress compress, arc_buf_contents_t type)
+{
+	arc_buf_hdr_t *hdr;
+
+	ASSERT3U(lsize, >, 0);
+	VERIFY(type == ARC_BUFC_DATA || type == ARC_BUFC_METADATA);
+
+	hdr = kmem_cache_alloc(hdr_full_cache, KM_PUSHPAGE);
+	ASSERT(HDR_EMPTY(hdr));
+	ASSERT3P(hdr->b_l1hdr.b_freeze_cksum, ==, NULL);
+	ASSERT3P(hdr->b_l1hdr.b_thawed, ==, NULL);
+	HDR_SET_PSIZE(hdr, psize);
+	HDR_SET_LSIZE(hdr, lsize);
+	hdr->b_spa = spa;
+	hdr->b_type = type;
+	hdr->b_flags = 0;
+	arc_hdr_set_flags(hdr, arc_bufc_to_flags(type) | ARC_FLAG_HAS_L1HDR);
+	arc_hdr_set_compress(hdr, compress);
+
+	hdr->b_l1hdr.b_state = arc_anon;
+	hdr->b_l1hdr.b_arc_access = 0;
+	hdr->b_l1hdr.b_bufcnt = 0;
+	hdr->b_l1hdr.b_buf = NULL;
+
+	/*
+	 * Allocate the hdr's buffer. This will contain either
+	 * the compressed or uncompressed data depending on the block
+	 * it references and compressed arc enablement.
+	 */
+	arc_hdr_alloc_pdata(hdr);
+	ASSERT(refcount_is_zero(&hdr->b_l1hdr.b_refcnt));
+
+	return (hdr);
+}
+
+/*
+ * Transition between the two allocation states for the arc_buf_hdr struct.
+ * The arc_buf_hdr struct can be allocated with (hdr_full_cache) or without
+ * (hdr_l2only_cache) the fields necessary for the L1 cache - the smaller
+ * version is used when a cache buffer is only in the L2ARC in order to reduce
+ * memory usage.
+ */
+static arc_buf_hdr_t *
+arc_hdr_realloc(arc_buf_hdr_t *hdr, kmem_cache_t *old, kmem_cache_t *new)
+{
+	ASSERT(HDR_HAS_L2HDR(hdr));
+
+	arc_buf_hdr_t *nhdr;
+	l2arc_dev_t *dev = hdr->b_l2hdr.b_dev;
+
+	ASSERT((old == hdr_full_cache && new == hdr_l2only_cache) ||
+	    (old == hdr_l2only_cache && new == hdr_full_cache));
+
+	nhdr = kmem_cache_alloc(new, KM_PUSHPAGE);
+
+	ASSERT(MUTEX_HELD(HDR_LOCK(hdr)));
+	buf_hash_remove(hdr);
+
+	bcopy(hdr, nhdr, HDR_L2ONLY_SIZE);
+
+	if (new == hdr_full_cache) {
+		arc_hdr_set_flags(nhdr, ARC_FLAG_HAS_L1HDR);
+		/*
+		 * arc_access and arc_change_state need to be aware that a
+		 * header has just come out of L2ARC, so we set its state to
+		 * l2c_only even though it's about to change.
+		 */
+		nhdr->b_l1hdr.b_state = arc_l2c_only;
+
+		/* Verify previous threads set to NULL before freeing */
+		ASSERT3P(nhdr->b_l1hdr.b_pdata, ==, NULL);
+	} else {
+		ASSERT3P(hdr->b_l1hdr.b_buf, ==, NULL);
+		ASSERT0(hdr->b_l1hdr.b_bufcnt);
+		ASSERT3P(hdr->b_l1hdr.b_freeze_cksum, ==, NULL);
+
+		/*
+		 * If we've reached here, We must have been called from
+		 * arc_evict_hdr(), as such we should have already been
+		 * removed from any ghost list we were previously on
+		 * (which protects us from racing with arc_evict_state),
+		 * thus no locking is needed during this check.
+		 */
+		ASSERT(!multilist_link_active(&hdr->b_l1hdr.b_arc_node));
+
+		/*
+		 * A buffer must not be moved into the arc_l2c_only
+		 * state if it's not finished being written out to the
+		 * l2arc device. Otherwise, the b_l1hdr.b_pdata field
+		 * might try to be accessed, even though it was removed.
+		 */
+		VERIFY(!HDR_L2_WRITING(hdr));
+		VERIFY3P(hdr->b_l1hdr.b_pdata, ==, NULL);
+
+#ifdef ZFS_DEBUG
+		if (hdr->b_l1hdr.b_thawed != NULL) {
+			kmem_free(hdr->b_l1hdr.b_thawed, 1);
+			hdr->b_l1hdr.b_thawed = NULL;
+		}
+#endif
+
+	ARCSTAT_INCR(arcstat_l2_asize, -asize);
+	ARCSTAT_INCR(arcstat_l2_size, -HDR_GET_LSIZE(hdr));
+
+	vdev_space_update(dev->l2ad_vdev, -asize, 0, 0);
+
+	(void) refcount_remove_many(&dev->l2ad_alloc, asize, hdr);
+	arc_hdr_clear_flags(hdr, ARC_FLAG_HAS_L2HDR);
 }
 
 static void
@@ -4874,9 +5031,10 @@ top:
 }
 
 /*
- * Uses ARC static variables in logic.
+ * Notify the arc that a block was freed, and thus will never be used again.
  */
-int arc_kstat_update_osx(kstat_t *ksp, int rw)
+void
+arc_freed(spa_t *spa, const blkptr_t *bp)
 {
 	arc_buf_hdr_t *hdr;
 	kmutex_t *hash_lock;

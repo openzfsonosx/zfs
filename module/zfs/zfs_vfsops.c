@@ -547,7 +547,6 @@ static void
 readonly_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
-
 	if (newval == B_TRUE) {
 		/* XXX locking on vfs_flag? */
 
@@ -694,7 +693,7 @@ mimic_hfs_changed_cb(void *arg, uint64_t newval)
 	if(newval == 0) {
 	    strlcpy(vfsstatfs->f_fstypename, "zfs", MFSTYPENAMELEN);
 	} else {
-		strlcpy(vfsstatfs->f_fstypename, "hfs", MFSTYPENAMELEN);
+	    strlcpy(vfsstatfs->f_fstypename, "hfs", MFSTYPENAMELEN);
 	}
 }
 
@@ -1879,6 +1878,23 @@ zfs_vfs_mountroot(struct mount *mp, struct vnode *devvp, vfs_context_t ctx)
 	zfsvfs_t *zfsvfs = NULL;
 	znode_t *zp = NULL;
 	vnode_t *vp = NULL;
+	//znode_t *zp = NULL;
+	spa_t *spa = 0;
+	char *zfs_bootfs = 0;
+	char *path = 0;
+	dev_t dev = 0;
+	int error = 0;
+	//int len = MAXPATHLEN;
+
+printf("ZFS: %s\n", __func__);
+	ASSERT(mp);
+	ASSERT(devvp);
+	ASSERT(ctx);
+	if (!mp || !devvp | !ctx) {
+		cmn_err(CE_NOTE, "%s: missing one of mp %p devvp %p"
+		    " or ctx %p", __func__, mp, devvp, ctx);
+		return (EINVAL);
+	}
 
 	/* Look up bootfs variable from pool here */
 	zfs_bootfs = kmem_alloc(MAXPATHLEN, KM_SLEEP);
@@ -2048,6 +2064,8 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	uint64_t	flags = vfs_flags(vfsp);
 	int		error = 0;
 	int		canwrite;
+	uint64_t	flags = vfs_flags(vfsp);
+	int		rdonly = 0;
 	int		mflag = 0;
 	uint64_t	flags = vfs_flags(vfsp);
 
