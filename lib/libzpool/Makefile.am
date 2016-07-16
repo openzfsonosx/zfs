@@ -111,6 +111,6 @@ libzpool_la_LIBADD = \
 	$(top_builddir)/lib/libuutil/libuutil.la \
 	$(top_builddir)/lib/libnvpair/libnvpair.la
 
-libzpool_la_LDFLAGS = -lz -pthread -version-info 1:1:0
+libzpool_la_LDFLAGS = -lz -version-info 1:1:0
 
 EXTRA_DIST = $(USER_C)

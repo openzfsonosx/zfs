@@ -26,4 +26,6 @@
 #ifndef _LIBSPL_SYS_STROPTS_H
 #define	_LIBSPL_SYS_STROPTS_H
 
+int lowbit64(unsigned long long i);
+
 #endif /* _LIBSPL_SYS_STROPTS_H */
