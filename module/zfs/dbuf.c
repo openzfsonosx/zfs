@@ -27,7 +27,7 @@
  */
 
 #include <sys/zfs_context.h>
-#include <sys/arc.h>
+
 #include <sys/dmu.h>
 #include <sys/dmu_send.h>
 #include <sys/dmu_impl.h>
@@ -1018,7 +1018,7 @@ dbuf_read_impl(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 		arc_buf_contents_t type = DBUF_GET_BUFC_TYPE(db);
 
 		DB_DNODE_EXIT(db);
-		dbuf_set_data(db, arc_buf_alloc(db->db_objset->os_spa,
+		dbuf_set_data(db, arc_alloc_buf(db->db_objset->os_spa,
 		    db->db.db_size, db, type));
 		bzero(db->db.db_data, db->db.db_size);
 
