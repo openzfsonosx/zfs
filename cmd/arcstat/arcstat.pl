@@ -282,7 +282,7 @@ sub calculate {
 
 	$v{"compress"} = $cur{"compressed_size"};
 	$v{"uncompress"} = $cur{"uncompressed_size"};
-	$v{"overhead"} = $cur{"overhead"};
+	$v{"overhead"} = $cur{"overhead_size"};
 
 	$v{"ratio%"} = 100*$v{"uncompress"}/$v{"compress"} if $v{"compress"} > 0;
 	
