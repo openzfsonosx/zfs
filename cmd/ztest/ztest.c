@@ -5028,7 +5028,7 @@ ztest_fault_inject(ztest_ds_t *zd, uint64_t id)
 	char *path0;
 	char *pathrand;
 	size_t fsize;
-	int bshift = SPA_MAXBLOCKSHIFT + 2;	/* don't scrog all labels */
+	int bshift = SPA_MAXBLOCKSHIFT + 2;
 	int iters = 1000;
 	int maxfaults;
 	int mirror_save;
