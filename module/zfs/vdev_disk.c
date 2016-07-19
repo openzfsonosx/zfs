@@ -520,10 +520,7 @@ skip_open:
 			 * Adjust max_psize upward accordingly since we know
 			 * we own the whole disk now.
 			 */
-			*max_psize += vdev_disk_get_space(vd, capacity, blksz);
-			zfs_dbgmsg("capacity change: vdev %s, psize %llu, "
-			    "max_psize %llu", vd->vdev_path, *psize,
-			    *max_psize);
+			*max_psize = capacity * blksz;
 		}
 #endif
 
