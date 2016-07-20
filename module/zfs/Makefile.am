@@ -118,6 +118,7 @@ zfs_SOURCES = \
 	zfeature.c \
 	zfeature_common.c \
 	zfs_acl.c \
+	zfs_boot.cpp \
 	zfs_byteswap.c \
 	zfs_ctldir.c \
 	zfs_debug.c \
@@ -146,6 +147,7 @@ zfs_SOURCES = \
 	zrlock.c \
 	zvol.c \
 	zvolIO.cpp \
+	ZFSPool.cpp \
 	../nvpair/fnvpair.c \
 	../nvpair/nvpair.c \
 	../nvpair/nvpair_alloc_fixed.c \
@@ -192,10 +194,6 @@ zfs_SOURCES = \
 	../icp/algs/aes/aes_impl.c \
 	../icp/algs/aes/aes_modes.c \
 	../icp/asm-x86_64/aes/aeskey.c
-
-if ZFS_BOOT
-zfs_SOURCES += zfs_boot.cpp
-endif
 
 zfs_CPPFLAGS=$(CFLAGS_KMOD)
 zfs_CXXFLAGS=$(CFLAGS_KMOD)

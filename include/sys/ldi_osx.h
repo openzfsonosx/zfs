@@ -94,12 +94,10 @@ struct dk_minfo_ext {
 	uint32_t		dki_pbsize;	/* Physical block size */
 };	/* (16b) */
 
-#ifdef ZFS_BOOT
 struct io_bootinfo {
 	char			dev_path[MAXPATHLEN];	/* IODeviceTree path */
 	uint64_t		dev_size;	/* IOMedia device size */
 };
-#endif
 
 /*
  * XXX This struct is defined in spl but was unused until now.

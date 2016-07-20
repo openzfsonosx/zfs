@@ -2,33 +2,37 @@
 #ifndef	ZFS_BOOT_H_INCLUDED
 #define	ZFS_BOOT_H_INCLUDED
 
-#ifdef ZFS_BOOT
-
 #ifdef __cplusplus
-#include <IOKit/IOService.h>
-#include <IOKit/storage/IOBlockStorageDevice.h>
-
 extern "C" {
-
 #endif	/* __cplusplus */
 
-#define ZFS_MOUNTROOT_RETRIES	50
-#define ZFS_BOOTLOG_DELAY	100
-
-int zfs_boot_get_path(char *, int);
+/* Link data vdevs to virtual devices */
 int zfs_boot_update_bootinfo(spa_t *spa);
+
+#ifdef ZFS_BOOT
+/* At boot time, get path from ZFSBootDevice */
+int zfs_boot_get_path(char *, int);
+#endif /* ZFS_BOOT */
 
 #ifdef __cplusplus
 } /* extern "C" */
 
+#if 0
+/* C++ struct, C uses opaque pointer reference */
 typedef struct zfs_bootinfo {
 	OSArray *info_array;
 } zfs_bootinfo_t;
+#endif
 
+#ifdef ZFS_BOOT
+/* Remainder is only needed for booting */
+
+#include <IOKit/IOService.h>
 bool zfs_boot_init(IOService *);
 void zfs_boot_fini();
 
 #pragma mark - ZFSBootDevice
+#include <IOKit/storage/IOBlockStorageDevice.h>
 
 class ZFSBootDevice : public IOBlockStorageDevice {
 	OSDeclareDefaultStructors(ZFSBootDevice);
@@ -47,10 +51,10 @@ public:
 	    UInt32) const;
 	virtual IOReturn doFormatMedia(UInt64 byteCapacity);
 	virtual IOReturn doEjectMedia();
-	virtual char* getVendorString();
-	virtual char* getProductString();
-	virtual char* getRevisionString();
-	virtual char* getAdditionalDeviceInfoString();
+	virtual char * getVendorString();
+	virtual char * getProductString();
+	virtual char * getRevisionString();
+	virtual char * getAdditionalDeviceInfoString();
 	virtual IOReturn reportWriteProtection(bool *);
 	virtual IOReturn reportRemovability(bool *);
 	virtual IOReturn reportMediaState(bool *, bool *);
@@ -67,7 +71,7 @@ private:
 	char *productString;
 	bool isReadOnly;
 };
+#endif /* ZFS_BOOT */
 #endif	/* __cplusplus */
 
-#endif /* ZFS_BOOT */
 #endif /* ZFS_BOOT_H_INCLUDED */
