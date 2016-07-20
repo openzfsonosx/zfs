@@ -3930,6 +3930,23 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa_evicting_os_wait(spa);
 	spa->spa_minref = refcount_count(&spa->spa_refcount);
 
+#if defined(_KERNEL)
+	/* Increase open refcount */
+	spa_open_ref(spa, FTAG);
+	mutex_exit(&spa_namespace_lock);
+
+#ifdef ZFS_BOOT
+	/* Cache vdev info, needs open ref above */
+	if (error == 0 && (error = zfs_boot_update_bootinfo(spa)) != 0) {
+		printf("%s update_bootinfo error %d\n", __func__, error);
+		/* create succeeded, ignore error from bootinfo */
+	}
+#endif /* ZFS_BOOT */
+
+	/* Drop open refcount */
+	mutex_enter(&spa_namespace_lock);
+	spa_close(spa, FTAG);
+#endif /* _KERNEL */
 	mutex_exit(&spa_namespace_lock);
 
 	return (0);
@@ -4325,12 +4342,30 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	 */
 	spa_async_request(spa, SPA_ASYNC_AUTOEXPAND);
 
+#if defined(__APPLE__) && defined(_KERNEL)
+	/* Adding open ref to update bootinfo and create zvols */
+	spa_open_ref(spa, FTAG);
+#endif
+
 	mutex_exit(&spa_namespace_lock);
+
 	spa_history_log_version(spa, "import");
+
+#if defined(__APPLE__) && defined(_KERNEL)
+#ifdef ZFS_BOOT
+	/* Cache vdev info before zvols and mountroot. */
+	zfs_boot_update_bootinfo(spa);
+#endif /* ZFS_BOOT */
+
 	zvol_create_minors(spa, pool, B_TRUE);
 
-	spa_event_notify(spa, NULL, FM_EREPORT_ZFS_POOL_IMPORT);
+	/* Retake namespace lock to drop open ref */
+	mutex_enter(&spa_namespace_lock);
+	spa_close(spa, FTAG);
+	mutex_exit(&spa_namespace_lock);
+#endif	/* __APPLE__ && _KERNEL */
 
+	spa_event_notify(spa, NULL, FM_EREPORT_ZFS_POOL_IMPORT);
 
 	return (0);
 }
@@ -4689,6 +4724,11 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	spa_config_update(spa, SPA_CONFIG_UPDATE_POOL);
 	mutex_exit(&spa_namespace_lock);
 
+#if defined(_KERNEL) && defined(ZFS_BOOT)
+	/* Cache vdev info, spa already has open ref from ioctl */
+	zfs_boot_update_bootinfo(spa);
+#endif
+
 	return (0);
 }
 
@@ -4898,6 +4938,11 @@ spa_vdev_attach(spa_t *spa, uint64_t guid, nvlist_t *nvroot, int replacing)
 
 	if (spa->spa_bootfs)
 		spa_event_notify(spa, newvd, FM_EREPORT_ZFS_BOOTFS_VDEV_ATTACH);
+
+#if defined(_KERNEL) && defined(ZFS_BOOT)
+	/* Cache vdev info, spa already has open ref from ioctl */
+	zfs_boot_update_bootinfo(spa);
+#endif
 
 	return (0);
 }
@@ -5138,6 +5183,11 @@ spa_vdev_detach(spa_t *spa, uint64_t guid, uint64_t pguid, int replace_done)
 	mutex_enter(&spa_namespace_lock);
 	spa_close(spa, FTAG);
 	mutex_exit(&spa_namespace_lock);
+
+#if defined(_KERNEL) && defined(ZFS_BOOT)
+	/* Cache vdev info, spa already has open ref from ioctl */
+	zfs_boot_update_bootinfo(spa);
+#endif
 
 	return (error);
 }
@@ -5399,6 +5449,11 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 		error = spa_export_common(newname, POOL_STATE_EXPORTED, NULL,
 		    B_FALSE, B_FALSE);
 
+#if defined(_KERNEL) && defined(ZFS_BOOT)
+	/* Cache vdev info, spa already has open ref from ioctl */
+	zfs_boot_update_bootinfo(spa);
+#endif
+
 	return (error);
 
 out:
@@ -5654,6 +5709,11 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		/*
 		 * Normal vdevs cannot be removed (yet).
 		 */
+#if defined(_KERNEL) && defined(ZFS_BOOT)
+/* future proof */
+		/* Cache vdev info, spa already has open ref from ioctl */
+		zfs_boot_update_bootinfo(spa);
+#endif
 		error = SET_ERROR(ENOTSUP);
 	} else {
 		/*
@@ -6048,12 +6108,12 @@ spa_async_resume(spa_t *spa)
 static void
 spa_async_dispatch(spa_t *spa)
 {
-#ifndef ZFS_BOOT
+#if defined(_KERNEL) && defined(ZFS_BOOT)
     vnode_t *rootdir = getrootdir();
 #endif
 
 	mutex_enter(&spa->spa_async_lock);
-#ifndef ZFS_BOOT
+#if defined(_KERNEL) && defined(ZFS_BOOT)
 	if (spa->spa_async_tasks && !spa->spa_async_suspended &&
 	    spa->spa_async_thread == NULL &&
 	    rootdir != NULL && !vn_is_readonly(rootdir)) {

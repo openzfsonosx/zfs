@@ -2179,6 +2179,23 @@ ldi_ioctl(ldi_handle_t lh, int cmd, intptr_t arg,
 			return (ENOTSUP);
 		}
 
+#ifdef ZFS_BOOT
+	case DKIOCGETBOOTINFO:
+		/* IOMedia or vnode */
+		switch (handlep->lh_type) {
+		case LDI_TYPE_IOKIT:
+			return (handle_get_bootinfo_iokit(handlep,
+			    (struct io_bootinfo *)arg));
+
+		case LDI_TYPE_VNODE:
+			return (handle_get_bootinfo_vnode(handlep,
+			    (struct io_bootinfo *)arg));
+
+		default:
+			return (ENOTSUP);
+		}
+#endif /* ZFS_BOOT */
+
 	default:
 		return (ENOTSUP);
 	}
