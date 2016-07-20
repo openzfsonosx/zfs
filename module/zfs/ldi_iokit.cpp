@@ -390,7 +390,6 @@ dprintf("%s got path [%s]\n", __func__, path);
 	return (0);
 }
 
-#ifdef ZFS_BOOT
 int handle_get_bootinfo_iokit(struct ldi_handle *lhp,
     struct io_bootinfo *bootinfo)
 {
@@ -414,7 +413,6 @@ printf("%s get size or dev_path error %d\n",
 
 	return (error);
 }
-#endif /* ZFS_BOOT */
 
 int
 handle_sync_iokit(struct ldi_handle *lhp)

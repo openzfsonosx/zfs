@@ -137,10 +137,8 @@ int handle_sync_iokit(struct ldi_handle *);
 int buf_strategy_iokit(ldi_buf_t *, struct ldi_handle *);
 int ldi_open_media_by_dev(dev_t, int, ldi_handle_t *);
 int ldi_open_media_by_path(char *, int, ldi_handle_t *);
-#ifdef ZFS_BOOT
 int handle_get_bootinfo_iokit(struct ldi_handle *,
     struct io_bootinfo *);
-#endif
 
 /* Handle vnode functions */
 dev_t dev_from_path(char *);
@@ -159,10 +157,8 @@ int handle_is_solidstate_vnode(struct ldi_handle *, int *);
 int handle_sync_vnode(struct ldi_handle *);
 int buf_strategy_vnode(ldi_buf_t *, struct ldi_handle *);
 int ldi_open_vnode_by_path(char *, dev_t, int, ldi_handle_t *);
-#ifdef ZFS_BOOT
 int handle_get_bootinfo_vnode(struct ldi_handle *,
     struct io_bootinfo *);
-#endif
 
 /*
  * LDI event information

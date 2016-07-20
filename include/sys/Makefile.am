@@ -92,10 +92,16 @@ COMMON_H = \
 	$(top_srcdir)/include/sys/zrlock.h
 
 KERNEL_H = \
+	$(top_srcdir)/include/sys/ldi_buf.h \
+	$(top_srcdir)/include/sys/ldi_impl_osx.h \
+	$(top_srcdir)/include/sys/ldi_osx.h \
 	$(top_srcdir)/include/sys/zfs_ioctl.h \
+	$(top_srcdir)/include/sys/zfs_boot.h \
 	$(top_srcdir)/include/sys/zfs_onexit.h \
 	${top_srcdir}/include/sys/zpl.h \
-	$(top_srcdir)/include/sys/zvol.h
+	$(top_srcdir)/include/sys/zvol.h \
+	$(top_srcdir)/include/sys/zvolIO.h \
+	$(top_srcdir)/include/sys/ZFSPool.h
 
 USER_H =
 

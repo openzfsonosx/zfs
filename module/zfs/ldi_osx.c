@@ -2179,7 +2179,6 @@ ldi_ioctl(ldi_handle_t lh, int cmd, intptr_t arg,
 			return (ENOTSUP);
 		}
 
-#ifdef ZFS_BOOT
 	case DKIOCGETBOOTINFO:
 		/* IOMedia or vnode */
 		switch (handlep->lh_type) {
@@ -2194,7 +2193,6 @@ ldi_ioctl(ldi_handle_t lh, int cmd, intptr_t arg,
 		default:
 			return (ENOTSUP);
 		}
-#endif /* ZFS_BOOT */
 
 	default:
 		return (ENOTSUP);

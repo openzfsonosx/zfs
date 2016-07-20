@@ -81,7 +81,11 @@
 #include <sys/sysdc.h>
 #include <sys/zone.h>
 #include <sys/vnode.h>
+#ifdef __APPLE__
 #include <libkern/OSKextLib.h>
+#include <sys/zfs_boot.h>
+#include <sys/ZFSPool.h>
+#endif /* __APPLE__ */
 #endif	/* _KERNEL */
 
 #include "zfs_prop.h"
@@ -3190,7 +3194,7 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 	if (firstopen) {
 		zvol_create_minors(spa, spa_name(spa), B_TRUE);
 	}
-#endif
+#endif /* _KERNEL */
 
 	*spapp = spa;
 
@@ -3936,13 +3940,18 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa_open_ref(spa, FTAG);
 	mutex_exit(&spa_namespace_lock);
 
-#ifdef ZFS_BOOT
-	/* Cache vdev info, needs open ref above */
+	/* Create IOKit pool proxy */
+	if ((error = spa_iokit_pool_proxy_create(spa)) != 0) {
+		printf("%s spa_iokit_pool_proxy_create error %d\n",
+		    __func__, error);
+		/* spa_create succeeded, ignore proxy error */
+	}
+
+	/* Cache vdev info, needs open ref above, and pool proxy */
 	if (error == 0 && (error = zfs_boot_update_bootinfo(spa)) != 0) {
 		printf("%s update_bootinfo error %d\n", __func__, error);
 		/* create succeeded, ignore error from bootinfo */
 	}
-#endif /* ZFS_BOOT */
 
 	/* Drop open refcount */
 	mutex_enter(&spa_namespace_lock);
@@ -4353,11 +4362,17 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	spa_history_log_version(spa, "import");
 
 #if defined(__APPLE__) && defined(_KERNEL)
-#ifdef ZFS_BOOT
+	/* Create IOKit pool proxy */
+	if ((error = spa_iokit_pool_proxy_create(spa)) != 0) {
+		printf("%s spa_iokit_pool_proxy_create error %d\n",
+		    __func__, error);
+		/* spa_create succeeded, ignore proxy error */
+	}
+
 	/* Cache vdev info before zvols and mountroot. */
 	zfs_boot_update_bootinfo(spa);
-#endif /* ZFS_BOOT */
 
+	/* create zvol devices */
 	zvol_create_minors(spa, pool, B_TRUE);
 
 	/* Retake namespace lock to drop open ref */
@@ -4562,8 +4577,9 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 		}
 	}
 
-#ifdef _KERNEL
-	zvol_remove_minors_symlink(pool);
+#if defined (__APPLE__) && defined(_KERNEL)
+	/* Remove IOKit pool proxy */
+	spa_iokit_pool_proxy_destroy(spa);
 #endif
 
 export_spa:
@@ -4725,7 +4741,7 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	spa_config_update(spa, SPA_CONFIG_UPDATE_POOL);
 	mutex_exit(&spa_namespace_lock);
 
-#if defined(_KERNEL) && defined(ZFS_BOOT)
+#if defined(_KERNEL)
 	/* Cache vdev info, spa already has open ref from ioctl */
 	zfs_boot_update_bootinfo(spa);
 #endif
@@ -4940,7 +4956,7 @@ spa_vdev_attach(spa_t *spa, uint64_t guid, nvlist_t *nvroot, int replacing)
 	if (spa->spa_bootfs)
 		spa_event_notify(spa, newvd, FM_EREPORT_ZFS_BOOTFS_VDEV_ATTACH);
 
-#if defined(_KERNEL) && defined(ZFS_BOOT)
+#if defined(_KERNEL)
 	/* Cache vdev info, spa already has open ref from ioctl */
 	zfs_boot_update_bootinfo(spa);
 #endif
@@ -5185,7 +5201,7 @@ spa_vdev_detach(spa_t *spa, uint64_t guid, uint64_t pguid, int replace_done)
 	spa_close(spa, FTAG);
 	mutex_exit(&spa_namespace_lock);
 
-#if defined(_KERNEL) && defined(ZFS_BOOT)
+#if defined(_KERNEL)
 	/* Cache vdev info, spa already has open ref from ioctl */
 	zfs_boot_update_bootinfo(spa);
 #endif
@@ -5450,7 +5466,7 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 		error = spa_export_common(newname, POOL_STATE_EXPORTED, NULL,
 		    B_FALSE, B_FALSE);
 
-#if defined(_KERNEL) && defined(ZFS_BOOT)
+#if defined(_KERNEL)
 	/* Cache vdev info, spa already has open ref from ioctl */
 	zfs_boot_update_bootinfo(spa);
 #endif
@@ -5708,7 +5724,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		/*
 		 * Normal vdevs cannot be removed (yet).
 		 */
-#if defined(_KERNEL) && defined(ZFS_BOOT)
+#if defined(_KERNEL)
 /* future proof */
 		/* Cache vdev info, spa already has open ref from ioctl */
 		zfs_boot_update_bootinfo(spa);
