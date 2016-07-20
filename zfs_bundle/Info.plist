@@ -57,6 +57,10 @@
 	<dict>
 		<key>ZFS</key>
 		<dict>
+			<key>FSName</key>
+			<string>ZFS</string>
+			<key>FSSubType</key>
+			<integer>1</integer>
 			<key>FSFormatInteractive</key>
 			<false/>
 			<key>FSFormatArguments</key>
@@ -69,8 +73,6 @@
 			<integer>268435456</integer>
 			<key>FSFormatMaximumSize</key>
 			<integer>9223372034707292160</integer>
-			<key>FSName</key>
-			<string>ZFS File System</string>
 		</dict>
 	</dict>
 </dict>

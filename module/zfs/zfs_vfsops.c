@@ -1591,6 +1591,11 @@ dprintf("%s\n", __func__);
 #ifdef __APPLE__
 	zfsvfs->z_rdev = mount_dev;
 
+	/* HFS sets this prior to mounting */
+	vfs_setflags(vfsp, (uint64_t)((unsigned int)MNT_DOVOLFS));
+	/* Advisory locking should be handled at the VFS layer */
+	vfs_setlocklocal(vfsp);
+
 	/*
 	 * Record the mount time (for Spotlight)
 	 */
@@ -1598,10 +1603,6 @@ dprintf("%s\n", __func__);
 	zfsvfs->z_mount_time = tv.tv_sec;
 
 	vfs_setfsprivate(vfsp, zfsvfs);
-
-	/* HFS sets this flag prior to mounting */
-	vfs_setflags(vfsp, (uint64_t)((unsigned int)MNT_DOVOLFS));
-
 #else
 	if (error = dsl_prop_get_integer(osname, "recordsize", &recordsize,
 	    NULL))
@@ -2495,9 +2496,6 @@ out:
 		//dprintf("%s: setting vfs flags\n", __func__);
 		/* Indicate to VFS that we support ACLs. */
 		vfs_setextendedsecurity(vfsp);
-
-		/* Advisory locking should be handled at the VFS layer */
-		vfs_setlocklocal(vfsp);
 	}
 
 	if (error)
