@@ -363,6 +363,60 @@ handle_get_size_iokit(struct ldi_handle *lhp, uint64_t *dev_size)
 }
 
 int
+handle_get_dev_path_iokit(struct ldi_handle *lhp,
+    char *path, int len)
+{
+	int retlen = len;
+
+	if (!lhp || !path || len == 0) {
+		dprintf("%s missing argument\n", __func__);
+		return (EINVAL);
+	}
+
+#ifdef DEBUG
+	/* Validate IOMedia */
+	if (!OSDynamicCast(IOMedia, LH_MEDIA(lhp))) {
+		dprintf("%s no IOMedia\n", __func__);
+		return (ENODEV);
+	}
+#endif
+
+	if (LH_MEDIA(lhp)->getPath(path, &retlen, gIODTPlane) == false) {
+		dprintf("%s getPath failed\n", __func__);
+		return (EIO);
+	}
+
+dprintf("%s got path [%s]\n", __func__, path);
+	return (0);
+}
+
+#ifdef ZFS_BOOT
+int handle_get_bootinfo_iokit(struct ldi_handle *lhp,
+    struct io_bootinfo *bootinfo)
+{
+	int error;
+
+	if (!lhp || !bootinfo) {
+		dprintf("%s missing argument\n", __func__);
+printf("%s missing argument\n", __func__);
+		return (EINVAL);
+	}
+
+	if ((error = handle_get_size_iokit(lhp,
+	    &bootinfo->dev_size)) != 0 ||
+	    (error = handle_get_dev_path_iokit(lhp, bootinfo->dev_path,
+	    sizeof(bootinfo->dev_path))) != 0) {
+		dprintf("%s get size or dev_path error %d\n",
+		    __func__, error);
+printf("%s get size or dev_path error %d\n",
+    __func__, error);
+	}
+
+	return (error);
+}
+#endif /* ZFS_BOOT */
+
+int
 handle_sync_iokit(struct ldi_handle *lhp)
 {
 #ifdef DEBUG
@@ -1788,7 +1842,7 @@ handle_is_solidstate_iokit(struct ldi_handle *lhp, int *isssd)
 	if (propDict != 0) {
 		property = OSDynamicCast(OSString,
 		    propDict->getObject(kIOPropertyMediumTypeKey));
-		propDict = 0;		
+		propDict = 0;
 	}
 
 	if (property != 0 &&
