@@ -207,8 +207,8 @@ handle_close_vnode(struct ldi_handle *lhp)
 static int
 handle_open_vnode(struct ldi_handle *lhp, char *path)
 {
-	int error = EINVAL;
 	vfs_context_t context;
+	int error = EINVAL;
 
 	ASSERT3U(lhp, !=, NULL);
 	ASSERT3U(path, !=, NULL);
@@ -327,6 +327,82 @@ handle_get_size_vnode(struct ldi_handle *lhp, uint64_t *dev_size)
 	}
 	return (0);
 }
+
+int
+handle_get_dev_path_vnode(struct ldi_handle *lhp, char *path, int len)
+{
+	vfs_context_t context;
+	int error;
+
+	if (!lhp || !path || len == 0) {
+		dprintf("%s missing argument\n", __func__);
+		return (EINVAL);
+	}
+
+	/* Validate vnode */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
+		return (ENODEV);
+	}
+
+	/* Allocate and validate context */
+	context = vfs_context_create(spl_vfs_context_kernel());
+	if (!context) {
+		dprintf("%s couldn't create VFS context\n", __func__);
+		return (ENOMEM);
+	}
+
+	/* Take an iocount on devvp vnode. */
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
+		dprintf("%s vnode_getwithref error %d\n",
+		    __func__, error);
+		vfs_context_rele(context);
+		return (ENODEV);
+	}
+	/* All code paths from here must vnode_put. */
+
+	if ((error = VNOP_IOCTL(LH_VNODE(lhp), DKIOCGETFIRMWAREPATH,
+	    (caddr_t)path, len, context)) != 0) {
+		dprintf("%s VNOP_IOCTL error %d\n", __func__, error);
+		/* Preserve error to return */
+	}
+
+	/* Drop iocount on vnode (still has usecount) */
+	vnode_put(LH_VNODE(lhp));
+	/* Drop VFS context */
+	vfs_context_rele(context);
+
+if (error == 0) dprintf("%s got device path [%s]\n", __func__, path);
+	return (error);
+}
+
+#ifdef ZFS_BOOT
+int
+handle_get_bootinfo_vnode(struct ldi_handle *lhp,
+    struct io_bootinfo *bootinfo)
+{
+	int error;
+
+	if (!lhp || !bootinfo) {
+		dprintf("%s missing argument\n", __func__);
+printf("%s missing argument\n", __func__);
+		return (EINVAL);
+	}
+
+	if ((error = handle_get_size_vnode(lhp,
+	    &bootinfo->dev_size)) != 0 ||
+	    (error = handle_get_dev_path_vnode(lhp, bootinfo->dev_path,
+	    sizeof (bootinfo->dev_path))) != 0) {
+		dprintf("%s get size or dev_path error %d\n",
+		    __func__, error);
+printf("%s get size or dev_path error %d\n",
+    __func__, error);
+	}
+
+	return (error);
+}
+#endif /* ZFS_BOOT */
 
 int
 handle_sync_vnode(struct ldi_handle *lhp)
