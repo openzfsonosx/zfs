@@ -453,33 +453,65 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 		case F_CHKCLEAN:
 			dprintf("%s F_CHKCLEAN\n", __func__);
 			/* normally calls http://fxr.watson.org/fxr/source/bsd/vfs/vfs_cluster.c?v=xnu-2050.18.24#L5839 */
+			/* XXX Why don't we? */
+off_t fsize = zp->z_size;
+			error = is_file_clean(ap->a_vp, fsize);
+			//error = is_file_clean(ap->a_vp, zp->z_size);
+
+/* XXX be loud */
+printf("F_CHKCLEAN size %llu ret %d\n", fsize, error);
+			if (error) dprintf("F_CHKCLEAN ret %d\n", error);
 			break;
 
 		case F_RDADVISE:
 			dprintf("%s F_RDADVISE\n", __func__);
-	/* XXX Is there another easy way to prefetch the file? */
-#if 0
-			struct radvisory *ra;
-			rl_t *rl;
 			uint64_t file_size;
+			struct radvisory *ra;
+			int len;
 
 			ra = (struct radvisory *)(ap->a_data);
 
-			ZFS_ENTER(zfsvfs);
 			file_size = zp->z_size;
+			len = ra->ra_count;
 
 			/* XXX Check request size */
+			if (ra->ra_offset > file_size) {
+				dprintf("invalid request offset\n");
+				error = EFBIG;
+				break;
+			}
 
-			//rl = zfs_range_lock(zp, ra->ra_offset, ra->ra_count, RL_WRITER);
-			rl = zfs_range_lock(zp, ra->ra_offset, ra->ra_count, RL_READER);
-			ZFS_EXIT(zfsvfs);
+			if ((ra->ra_offset + len) > file_size) {
+				len = file_size - ra->ra_offset;
+				dprintf("%s truncating F_RDADVISE from"
+				    " %08x -> %08x\n", __func__,
+				    ra->ra_count, len);
+			}
 
-			advisory_read(ap->a_vp, file_size, ra->ra_offset, ra->ra_count);
-
-			ZFS_ENTER(zfsvfs);
-			zfs_range_unlock(rl);
-			ZFS_EXIT(zfsvfs);
+			/*
+			 * Rather than advisory_read (which calls
+			 * cluster_io->VNOP_BLOCKMAP), prefetch
+			 * the level 0 metadata and level 1 data
+			 * at the requested offset + length.
+			 */
+			//error = advisory_read(ap->a_vp, file_size,
+			//    ra->ra_offset, len);
+			dmu_prefetch(zfsvfs->z_os, zp->z_id,
+			    0, 0, 0, ZIO_PRIORITY_SYNC_READ);
+			dmu_prefetch(zfsvfs->z_os, zp->z_id,
+			    1, ra->ra_offset, len,
+			    ZIO_PRIORITY_SYNC_READ);
+#if 0
+	{
+		const char *name = vnode_getname(ap->a_vp);
+		printf("%s F_RDADVISE: prefetch issued for "
+		    "[%s](0x%016llx) (0x%016llx 0x%08x)\n", __func__,
+		    (name ? name : ""), zp->z_id,
+		    ra->ra_offset, len);
+		if (name) vnode_putname(name);
+	}
 #endif
+
 			break;
 
 		case SPOTLIGHT_GET_MOUNT_TIME:
