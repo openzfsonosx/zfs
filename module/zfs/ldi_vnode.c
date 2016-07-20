@@ -377,7 +377,6 @@ if (error == 0) dprintf("%s got device path [%s]\n", __func__, path);
 	return (error);
 }
 
-#ifdef ZFS_BOOT
 int
 handle_get_bootinfo_vnode(struct ldi_handle *lhp,
     struct io_bootinfo *bootinfo)
@@ -402,7 +401,6 @@ printf("%s get size or dev_path error %d\n",
 
 	return (error);
 }
-#endif /* ZFS_BOOT */
 
 int
 handle_sync_vnode(struct ldi_handle *lhp)
