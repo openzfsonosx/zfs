@@ -50,6 +50,8 @@ extern void zvol_rename_minors(spa_t *spa, const char *oldname,
 #define	ZVOL_EXCL	0x4
 #define	ZVOL_WCE	0x8
 
+/* struct wrapper for IOKit class */
+typedef struct zvol_iokit zvol_iokit_t;
 
 /*
  * The in-core state of each volume.
@@ -70,7 +72,7 @@ typedef struct zvol_state {
 	znode_t zv_znode;	/* for range locking */
 #endif
 	dmu_buf_t *zv_dbuf;	/* bonus handle */
-	void *zv_iokitdev;	/* C++ reference to IOKit class */
+	zvol_iokit_t *zv_iokitdev;	/* IOKit device */
 	uint64_t zv_openflags;	/* Remember flags used at open */
 	char zv_bsdname[MAXPATHLEN];
 	/* 'rdiskX' name, use [1] for diskX */
@@ -142,10 +144,10 @@ extern int zvol_close_impl(zvol_state_t *zv, int flag,
 extern int zvol_get_volume_blocksize(dev_t dev);
 
 extern int zvol_read_iokit(zvol_state_t *zv, uint64_t offset,
-    uint64_t count, void *iomem);
+    uint64_t count, struct iomem *iomem);
 
 extern int zvol_write_iokit(zvol_state_t *zv, uint64_t offset,
-    uint64_t count, void *iomem);
+    uint64_t count, struct iomem *iomem);
 extern int zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes);
 
 extern void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk,
@@ -154,15 +156,17 @@ extern void zvol_add_symlink(zvol_state_t *zv, const char *bsd_disk,
 extern void zvol_remove_symlink(zvol_state_t *zv);
 
 /* These functions live in zvolIO.cpp to be called from C */
-extern uint64_t zvolIO_kit_read(void *iomem, uint64_t offset,
+extern uint64_t zvolIO_kit_read(struct iomem *iomem, uint64_t offset,
     char *address, uint64_t len);
 
-extern uint64_t zvolIO_kit_write(void *iomem, uint64_t offset,
+extern uint64_t zvolIO_kit_write(struct iomem *iomem, uint64_t offset,
     char *address, uint64_t len);
 
 extern int zvolRemoveDevice(zvol_state_t *zv);
 extern int zvolCreateNewDevice(zvol_state_t *zv);
+extern int zvolRegisterDevice(zvol_state_t *zv);
 
+extern int zvolRenameDevice(zvol_state_t *zv);
 extern int zvolSetVolsize(zvol_state_t *zv);
 
 extern int zvol_busy(void);

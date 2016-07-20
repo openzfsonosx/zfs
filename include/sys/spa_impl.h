@@ -117,6 +117,10 @@ typedef struct spa_taskqs {
 	taskq_t **stqs_taskq;
 } spa_taskqs_t;
 
+#ifdef __APPLE__
+typedef struct spa_iokit spa_iokit_t;
+#endif
+
 struct spa {
 	/*
 	 * Fields protected by spa_namespace_lock.
@@ -259,6 +263,9 @@ struct spa {
 	uint64_t	spa_errata;		/* errata issues detected */
 	spa_stats_t	spa_stats;		/* assorted spa statistics */
 	taskq_t		*spa_zvol_taskq;	/* Taskq for minor managment */
+#ifdef __APPLE__
+	spa_iokit_t	*spa_iokit_proxy;	/* IOKit pool proxy */
+#endif
 
 	/*
 	 * spa_refcount & spa_config_lock must be the last elements

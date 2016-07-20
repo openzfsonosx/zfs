@@ -1299,8 +1299,7 @@ dmu_write_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size,
  */
 int
 dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
-               uint64_t position,
-               uint64_t *size, void *iomem)
+    uint64_t position, uint64_t *size, struct iomem *iomem)
 {
 	dmu_buf_t **dbp;
 	int numbufs, i, err = 0;
@@ -1357,8 +1356,7 @@ dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
 
 int
 dmu_read_iokit_dbuf(dmu_buf_t *zdb, uint64_t object, uint64_t *offset,
-					uint64_t position,
-					uint64_t *size, void *iomem)
+    uint64_t position, uint64_t *size, struct iomem *iomem)
 {
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)zdb;
 	dnode_t *dn;
@@ -1414,12 +1412,9 @@ dmu_read_iokit_dbuf(dmu_buf_t *zdb, uint64_t object, uint64_t *offset,
 	return (err);
 }
 
-
-
-
 static int
 dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset, uint64_t position,
-                      uint64_t *size, void *iomem, dmu_tx_t *tx)
+    uint64_t *size, struct iomem *iomem, dmu_tx_t *tx)
 {
 	dmu_buf_t **dbp;
 	int numbufs;
@@ -1486,12 +1481,9 @@ dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset, uint64_t position,
 	return (err);
 }
 
-
 int
 dmu_write_iokit_dbuf(dmu_buf_t *zdb, uint64_t *offset, uint64_t position,
-                     uint64_t *size,
-                     void *iomem,
-                     dmu_tx_t *tx)
+    uint64_t *size, struct iomem *iomem, dmu_tx_t *tx)
 {
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)zdb;
 	dnode_t *dn;
@@ -1507,10 +1499,7 @@ dmu_write_iokit_dbuf(dmu_buf_t *zdb, uint64_t *offset, uint64_t position,
 
 	return (err);
 }
-
 #endif /* _KERNEL */
-
-
 
 /*
  * Allocate a loaned anonymous arc buffer.

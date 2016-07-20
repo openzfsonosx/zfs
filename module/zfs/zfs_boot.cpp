@@ -55,8 +55,6 @@
  * Empty and deallocate pool_list (and lock).
  */
 
-#ifdef ZFS_BOOT
-
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>
@@ -75,19 +73,19 @@ extern "C" {
 #include <sys/vdev_disk.h>
 #include <sys/spa_impl.h>
 #include <sys/spa_boot.h>
+#include <sys/spa.h>
 
 #include <sys/zfs_context.h>
 #include <sys/mount.h>
 #include <sys/fs/zfs.h>
 #include <sys/zfs_vfsops.h>
-#include <sys/spa.h>
-#include <sys/spa_impl.h>
 
 int dsl_dsobj_to_dsname(char *pname, uint64_t obj, char *buf);
 
 } /* extern "C" */
 
 #include <sys/zvolIO.h>
+#include <sys/ZFSPool.h>
 #include <sys/zfs_boot.h>
 
 #if defined(DEBUG) || defined(ZFS_DEBUG)
@@ -111,49 +109,17 @@ _NOTE(CONSTCOND) } while (0)
 #endif /* if DEBUG or ZFS_DEBUG */
 #endif /* ifndef dprintf */
 
+#ifdef ZFS_BOOT
+/* Most of this is only built when configured with --enable-boot */
+
 /* block size is 512 B, count is 512 M blocks */
 #define	ZFS_BOOT_DEV_BSIZE	(UInt64)(1<<9)
 #define	ZFS_BOOT_DEV_BCOUNT	(UInt64)(2<<29)
 #define	ZFS_BOOT_DATASET_NAME_KEY	"zfs_dataset_name"
 #define	ZFS_BOOT_DATASET_UUID_KEY	"zfs_dataset_uuid"
 #define	ZFS_BOOT_DATASET_RDONLY_KEY	"zfs_dataset_rdonly"
-
-/*
- * Returns handle to ZFS IOService, with a retain count.
- */
-static IOService *
-copy_zfs_handle()
-{
-	/* Get the ZFS service handle the 'hard way' */
-	OSDictionary *matching;
-	IOService *service = 0;
-
-	matching = IOService::serviceMatching("net_lundman_zfs_zvol");
-	if (matching) {
-		service = IOService::copyMatchingService(matching);
-		matching->release();
-		matching = 0;
-	}
-
-	if (!service) {
-		dprintf("%s couldn't get zfs IOService\n", __func__);
-		return (NULL);
-	}
-
-	return (service);
-#if 0
-	/* Got service, make sure it casts */
-	zfs_hl = OSDynamicCast(net_lundman_zfs_zvol, service);
-	if (zfs_hl == NULL) {
-		dprintf("%s couldn't get zfs_hl\n", __func__);
-		/* Drop retain from copyMatchingService */
-		service->release();
-		return (NULL);
-	}
-
-	return (zfs_hl);
-#endif
-}
+#define	ZFS_MOUNTROOT_RETRIES	50
+#define	ZFS_BOOTLOG_DELAY	100
 
 /*
  * C functions for boot-time vdev discovery
@@ -1456,6 +1422,7 @@ zfs_boot_fini()
 DSTATIC int
 zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 {
+	ZFSPool *pool_proxy = 0;
 	IOService *resourceService = 0;
 	OSDictionary *properties = 0;
 	spa_t *spa = 0;
@@ -1488,6 +1455,15 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 	if (bootfs == 0) {
 		mutex_exit(&spa_namespace_lock);
 		dprintf("%s no bootfs, nothing to do\n", __func__);
+		kmem_free(zfs_bootfs, len);
+		return (0);
+	}
+
+	/* Get pool proxy */
+	if (!spa->spa_iokit_proxy ||
+	    (pool_proxy = spa->spa_iokit_proxy->proxy) == NULL) {
+		mutex_exit(&spa_namespace_lock);
+		dprintf("%s no spa_pool_proxy\n", __func__);
 		kmem_free(zfs_bootfs, len);
 		return (0);
 	}
@@ -1598,8 +1574,10 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 		return (ENXIO);
 	}
 
-	if (bootdev->start(zfs_hl) == false) {
+	/* Technically should start but this doesn't do much */
+	if (bootdev->start(pool_proxy) == false) {
 		printf("%s start failed\n", __func__);
+		bootdev->detach(pool_proxy);
 		bootdev->release();
 		bootdev = 0;
 		return (ENXIO);
@@ -2125,7 +2103,8 @@ error:
 	return (false);
 }
 
-extern "C" {
+#endif /* ZFS_BOOT */
+/* Include these functions in all builds */
 
 /*
  * zfs_boot_update_bootinfo_vdev_leaf
@@ -2308,6 +2287,8 @@ zfs_boot_update_bootinfo_vdev(OSArray *array, vdev_t *vd)
 	return (0);
 }
 
+extern "C" {
+
 /*
  * zfs_boot_update_bootinfo
  * Inputs: spa: valid pool spa pointer.
@@ -2404,11 +2385,12 @@ zfs_boot_update_bootinfo(spa_t *spa)
 
 } /* extern "C" */
 
-//#pragma mark - IOMedia subclass ZFSBootDeviceNub
+#ifdef ZFS_BOOT
+/* Remainder only needed for boot */
 
 #define	DPRINTF_FUNC()	dprintf("%s\n", __func__)
 
-#pragma mark - IOMedia subclass ZFSBootDevice
+#pragma mark - ZFSBootDevice
 
 OSDefineMetaClassAndStructors(ZFSBootDevice, IOBlockStorageDevice);
 char ZFSBootDevice::vendorString[4] = "ZFS";
@@ -2437,52 +2419,6 @@ zfs_boot_get_path(char *path, int len)
 	}
 
 	return (-1);
-}
-
-DSTATIC void
-ZFSBootDevice_free_string(char **strPtr)
-{
-	if (strPtr && *strPtr) {
-		kmem_free(*strPtr, strlen(*strPtr)+1);
-		*strPtr = 0;
-	}
-}
-
-DSTATIC bool
-ZFSBootDevice_copy_string(char **strPtr, const char *src)
-{
-	char *oldStr = 0, *newStr = 0;
-	size_t len;
-
-	if (!strPtr || !src) {
-		dprintf("%s: missing argument\n", __func__);
-		return (false);
-	}
-
-	len = strlen(src);
-
-	newStr = (char *)kmem_alloc(len+1, KM_SLEEP);
-	if (!newStr) {
-		dprintf("%s: alloc failed\n", __func__);
-		return (false);
-	}
-
-	bcopy(src, newStr, len);
-	newStr[len] = '\0';
-	if (strlen(newStr) != len) {
-		dprintf("%s: bcopy failed\n", __func__);
-		kmem_free(newStr, len+1);
-		return (false);
-	}
-
-	oldStr = *strPtr;
-	*strPtr = newStr;
-
-	if (oldStr) {
-		ZFSBootDevice_free_string(&oldStr);
-	}
-
-	return (true);
 }
 
 bool
@@ -2956,5 +2892,4 @@ ZFSBootDevice::reportMaxValidBlock(UInt64 *maxBlock)
 
 	return (kIOReturnSuccess);
 }
-
 #endif /* ZFS_BOOT */
