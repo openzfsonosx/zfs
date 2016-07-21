@@ -3824,6 +3824,12 @@ main(int argc, char **argv)
 		size_t targetlen;
 
 		target_is_spa = B_FALSE;
+		/*
+		 * Remove any trailing slash.  Later code would get confused
+		 * by it, but we want to allow it so that "pool/" can
+		 * indicate that we want to dump the topmost filesystem,
+		 * rather than the whole pool.
+		 */
 		targetlen = strlen(target);
 		if (targetlen && target[targetlen - 1] == '/')
 			target[targetlen - 1] = '\0';
