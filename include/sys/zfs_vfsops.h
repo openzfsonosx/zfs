@@ -134,6 +134,9 @@ struct hardlinks_struct {
 	char hl_name[PATH_MAX]; // cached name for vget
 };
 typedef struct hardlinks_struct hardlinks_t;
+
+int zfs_vfs_uuid_unparse(uuid_t uuid, char *dst);
+int zfs_vfs_uuid_gen(const char *osname, uuid_t uuid);
 #endif
 
 

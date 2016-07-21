@@ -3,7 +3,6 @@
  *
  * While loading the kext, check if early boot and zfs-boot
  * kernel flag.
- * XXX Debug by importing a pool by name on every load.
  * Allocate pool_list (and lock).
  * Register matching notification zfs_boot_probe_disk to check
  * IOMediaBSDClient devices as they are published (or matched?),
@@ -13,7 +12,6 @@
  *
  * In notification handler zfs_boot_probe_disk:
  * Check provider IOMedia for:
- *  - Just leaf nodes, XXX or:
  *  1 Leaf node and whole disk.
  *  2 Leaf node and type ZFS.
  *  3 Leaf node and type FreeBSD-ZFS.
@@ -37,7 +35,6 @@
  * If config not found, insert new config, or update existing.
  * Unlock pool_list.
  * If found config is complete, wake import thread.
- * XXX Wake thread with lock held or after unlocking?
  *
  * In vdev_disk_read_rootlabel:
  * Use vdev_disk_physio to read label.
@@ -53,13 +50,10 @@
  * Loop checking for work and sleeping on lock between loops.
  * Take pool_list lock and check for work.
  * Attempt to import root pool using spa_import_rootpool.
- * XXX See if there are any early-boot issues with vdev_disk.
  * If successful, remove notification handler (waits for
  * all tasks).
  * Empty and deallocate pool_list (and lock).
  */
-
-#ifdef ZFS_BOOT
 
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
@@ -69,26 +63,36 @@
 #include <IOKit/storage/IOMedia.h>
 #include <IOKit/IOMemoryDescriptor.h>
 
-#include <sys/zfs_boot.h>
-
 extern "C" {
-
 #include <sys/taskq.h>
-
 #include <sys/param.h>
+#include <sys/uuid.h>
 #include <sys/nvpair.h>
 #include <sys/vdev.h>
 #include <sys/vdev_impl.h>
 #include <sys/vdev_disk.h>
 #include <sys/spa_impl.h>
 #include <sys/spa_boot.h>
+#include <sys/spa.h>
 
 #include <sys/zfs_context.h>
 #include <sys/mount.h>
 #include <sys/fs/zfs.h>
 #include <sys/zfs_vfsops.h>
-#include <sys/spa.h>
+
+int dsl_dsobj_to_dsname(char *pname, uint64_t obj, char *buf);
+
 } /* extern "C" */
+
+#include <sys/zvolIO.h>
+#include <sys/ZFSPool.h>
+#include <sys/zfs_boot.h>
+
+#if defined(DEBUG) || defined(ZFS_DEBUG)
+#define	DSTATIC
+#else
+#define	DSTATIC	static
+#endif
 
 #ifndef verify
 #define	verify(EX) (void)((EX) || \
@@ -105,10 +109,17 @@ _NOTE(CONSTCOND) } while (0)
 #endif /* if DEBUG or ZFS_DEBUG */
 #endif /* ifndef dprintf */
 
+#ifdef ZFS_BOOT
+/* Most of this is only built when configured with --enable-boot */
+
 /* block size is 512 B, count is 512 M blocks */
 #define	ZFS_BOOT_DEV_BSIZE	(UInt64)(1<<9)
 #define	ZFS_BOOT_DEV_BCOUNT	(UInt64)(2<<29)
-#define	ZFS_BOOT_DEVICE_PATHLEN	(MAXPATHLEN*2)
+#define	ZFS_BOOT_DATASET_NAME_KEY	"zfs_dataset_name"
+#define	ZFS_BOOT_DATASET_UUID_KEY	"zfs_dataset_uuid"
+#define	ZFS_BOOT_DATASET_RDONLY_KEY	"zfs_dataset_rdonly"
+#define	ZFS_MOUNTROOT_RETRIES	50
+#define	ZFS_BOOTLOG_DELAY	100
 
 /*
  * C functions for boot-time vdev discovery
@@ -138,7 +149,6 @@ typedef struct pool_entry {
 
 typedef struct name_entry {
 	char			*ne_name;
-	OSDictionary		*ne_bootinfo;
 	uint64_t		ne_guid;
 	uint64_t		ne_order;
 	uint64_t		ne_num_labels;
@@ -168,11 +178,7 @@ typedef struct pool_list {
 static ZFSBootDevice *bootdev = 0;
 static pool_list_t *zfs_boot_pool_list = 0;
 
-#ifndef DEBUG
-static char *
-#else
-char *
-#endif
+DSTATIC char *
 zfs_boot_get_devid(const char *path)
 {
 	/*
@@ -181,6 +187,9 @@ zfs_boot_get_devid(const char *path)
 	 * If we implement one in spl, it could
 	 * simplify import when device paths
 	 * have changed (e.g. USB pools).
+	 *
+	 * Could use ldi DeviceTree path, or
+	 * IOService path if not in DTPlane.
 	 */
 	return (NULL);
 }
@@ -191,11 +200,7 @@ zfs_boot_get_devid(const char *path)
  *
  * Copied from libzfs_import.c
  */
-#ifndef DEBUG
-static int
-#else
-int
-#endif
+DSTATIC int
 zfs_boot_fix_paths(nvlist_t *nv, name_entry_t *names)
 {
 	nvlist_t **child;
@@ -237,16 +242,6 @@ zfs_boot_fix_paths(nvlist_t *nv, name_entry_t *names)
 				break;
 			}
 
-#ifdef __APPLE__
-/*
- * We are comparing with known valid paths here,
- * and we'll only have one path to each device.
- * It should be /by-id/ but might be /dev/.
- * Either way, we have located the vdev with the
- * correct guid, so its path overrides anything
- * set in the config.
- */
-#endif
 			if ((strlen(path) == strlen(ne->ne_name)) &&
 			    strncmp(path, ne->ne_name, strlen(path)) == 0) {
 				best = ne;
@@ -298,15 +293,9 @@ zfs_boot_fix_paths(nvlist_t *nv, name_entry_t *names)
  * Copied from libzfs_import.c
  * diffs: kmem_alloc, kmem_free with size
  */
-#ifndef DEBUG
-static int
-#else
-int
-#endif
+DSTATIC int
 zfs_boot_add_config(pool_list_t *pl, const char *path,
-    OSDictionary *bootinfo, int order, int num_labels,
-    //const char *device_path, int order, int num_labels,
-    nvlist_t *config)
+    int order, int num_labels, nvlist_t *config)
 {
 	uint64_t pool_guid, vdev_guid, top_guid, txg, state;
 	pool_entry_t *pe;
@@ -314,10 +303,8 @@ zfs_boot_add_config(pool_list_t *pl, const char *path,
 	config_entry_t *ce;
 	name_entry_t *ne;
 
-	dprintf("%s %p [%s] %d %d %d %p\n", __func__,
-	    pl, path, (bootinfo ? 1 : 0),
-	    //pl, path, (device_path ? device_path : ""),
-	    order, num_labels, config);
+	dprintf("%s %p [%s] %d %d %p\n", __func__,
+	    pl, path, order, num_labels, config);
 
 	/*
 	 * If this is a hot spare not currently in use or level 2 cache
@@ -450,7 +437,6 @@ zfs_boot_add_config(pool_list_t *pl, const char *path,
 		return (-1);
 	}
 
-	ne->ne_bootinfo = bootinfo;
 	ne->ne_guid = vdev_guid;
 	ne->ne_order = order;
 	ne->ne_num_labels = num_labels;
@@ -467,73 +453,25 @@ zfs_boot_add_config(pool_list_t *pl, const char *path,
  * Since zfs_boot is already in-kernel, duplicate
  * config into nvl, and call spa_tryimport on it.
  */
-#ifndef DEBUG
-static nvlist_t *
-#else
-nvlist_t *
-#endif
+DSTATIC nvlist_t *
 zfs_boot_refresh_config(nvlist_t *config)
 {
 	nvlist_t *nvl = 0;
 
-	/* Call tryimport and return nvl or NULL */
-	/* tryimport does not free conf_nvl, and returns new nvl
-	 * or null
-	 */
+	/* tryimport does not free config, and returns new nvl or null */
 	nvl = spa_tryimport(config);
 	return (nvl);
-
-#if 0
-	nvlist_t *nvl;
-	int err;
-	zfs_cmd_t zc = {"\0"};
-
-	if (zcmd_write_conf_nvlist(hdl, &zc, config) != 0)
-		return (NULL);
-
-	if (zcmd_alloc_dst_nvlist(hdl, &zc,
-	    zc.zc_nvlist_conf_size * 2) != 0) {
-		zcmd_free_nvlists(&zc);
-		return (NULL);
-	}
-
-	while ((err = zfs_ioctl(hdl, ZFS_IOC_POOL_TRYIMPORT,
-	    &zc)) != 0 && errno == ENOMEM) {
-		if (zcmd_expand_dst_nvlist(hdl, &zc) != 0) {
-			zcmd_free_nvlists(&zc);
-			return (NULL);
-		}
-	}
-
-	if (err) {
-		zcmd_free_nvlists(&zc);
-		return (NULL);
-	}
-
-	if (zcmd_read_dst_nvlist(hdl, &zc, &nvl) != 0) {
-		zcmd_free_nvlists(&zc);
-		return (NULL);
-	}
-
-	zcmd_free_nvlists(&zc);
-	return (nvl);
-#endif
 }
 
 /*
  * Determine if the vdev id is a hole in the namespace.
  */
-#ifndef DEBUG
-static boolean_t
-#else
-boolean_t
-#endif
+DSTATIC boolean_t
 zfs_boot_vdev_is_hole(uint64_t *hole_array, uint_t holes, uint_t id)
 {
 	int c;
 
 	for (c = 0; c < holes; c++) {
-
 		/* Top-level is a hole */
 		if (hole_array[c] == id)
 			return (B_TRUE);
@@ -548,11 +486,7 @@ zfs_boot_vdev_is_hole(uint64_t *hole_array, uint_t holes, uint_t id)
  * pass to fix up any incorrect paths, and then add it to the main list to
  * return to the user.
  */
-#ifndef DEBUG
-static nvlist_t *
-#else
-nvlist_t *
-#endif
+DSTATIC nvlist_t *
 zfs_boot_get_configs(pool_list_t *pl, boolean_t active_ok)
 {
 	pool_entry_t *pe;
@@ -967,10 +901,6 @@ nomem:
 #ifdef DEBUG
 	printf("zfs_boot_get_configs failed to allocate memory\n");
 #endif
-#if 0
-/* Only used by isactive check */
-error:
-#endif
 	if (config) nvlist_free(config);
 	if (ret) nvlist_free(ret);
 	for (c = 0; c < children; c++)
@@ -990,11 +920,7 @@ error:
 /*
  * Return the offset of the given label.
  */
-#ifndef DEBUG
-static uint64_t
-#else
-uint64_t
-#endif
+DSTATIC uint64_t
 zfs_boot_label_offset(uint64_t size, int l)
 {
 	ASSERT(P2PHASE_TYPED(size, sizeof (vdev_label_t), uint64_t) == 0);
@@ -1007,11 +933,7 @@ zfs_boot_label_offset(uint64_t size, int l)
  * describing the configuration, if there is one.  The number of valid
  * labels found will be returned in num_labels when non-NULL.
  */
-#ifndef DEBUG
-static int
-#else
-int
-#endif
+DSTATIC int
 zfs_boot_read_label(IOService *zfs_hl, IOMedia *media,
     nvlist_t **config, int *num_labels)
 {
@@ -1023,11 +945,6 @@ zfs_boot_read_label(IOService *zfs_hl, IOMedia *media,
 	uint64_t expected_guid = 0, size, labelsize;
 	int l, count = 0;
 	IOReturn ret;
-#if 0
-#ifdef DEBUG
-	boolean_t copyout = B_FALSE;
-#endif
-#endif
 
 	*config = NULL;
 
@@ -1095,21 +1012,6 @@ zfs_boot_read_label(IOService *zfs_hl, IOMedia *media,
 			    __func__, nread, labelsize);
 			continue;
 		}
-
-#if 0
-#ifdef DEBUG
-		if (copyout) {
-			if (kIOReturnSuccess != (buffer->prepare(kIODirectionOut))) {
-				printf("zfs_boot_read_label: prepare (out) failed\n");
-			}
-			if (labelsize != (buffer->readBytes(0,
-			    (void*)label, labelsize))) {
-				printf("zfs_boot_read_label: readBytes failed\n");
-			}
-			buffer->complete(kIODirectionOut);
-		}
-#endif
-#endif
 
 		/* Skip invalid labels that can't be unpacked */
 		if (nvlist_unpack(label->vl_vdev_phys.vp_nvlist,
@@ -1185,11 +1087,7 @@ error:
 	return (-1);
 }
 
-#ifndef DEBUG
-static bool
-#else
-bool
-#endif
+DSTATIC bool
 zfs_boot_probe_media(void* target, void* refCon,
     IOService* newService, __unused IONotifier* notifier)
 {
@@ -1286,21 +1184,14 @@ out:
 	return (true);
 }
 
-#ifndef DEBUG
-static bool
-#else
-bool
-#endif
+DSTATIC bool
 zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 {
-	OSDictionary *bootinfo = 0;
-	OSString *devstr = 0, *ospath, *uuid;
-	OSNumber *devsize = 0;
-	char *devpath, *path = 0, *pname;
+	OSString *ospath, *uuid;
+	char *path = 0, *pname;
 	const char prefix[] = "/private/var/run/disk/by-id/media-";
 	uint64_t this_guid;
 	int num_labels, err, len = 0;
-	int dt_len;
 	nvlist_t *config;
 	boolean_t matched = B_FALSE;
 
@@ -1365,44 +1256,6 @@ zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 	}
 	dprintf("%s path [%s]\n", __func__, (path ? path : ""));
 
-	/*
-	 * Try to get the IODeviceTree path to this device.
-	 * Not all IOMedia are registered in the device tree.
-	 */
-	dt_len = ZFS_BOOT_DEVICE_PATHLEN;
-	if ((devpath = (char *)kmem_alloc(ZFS_BOOT_DEVICE_PATHLEN,
-	    KM_SLEEP)) == NULL) {
-		dprintf("%s couldn't allocate device tree path\n", __func__);
-		if (path) kmem_free(path, len);
-		return (false);
-	}
-	bzero(devpath, dt_len);
-
-	if (media->getPath(devpath, &dt_len,
-	    gIODTPlane) == true && dt_len > 0) {
-		dprintf("%s devicetree path: [%s]\n",
-		    __func__, devpath);
-
-		/* Only init bootinfo if we have devpath */
-		bootinfo = OSDictionary::withCapacity(2);
-		devstr = OSString::withCString(devpath);
-		devsize = OSNumber::withNumber(media->getSize(), 64);
-	}
-
-	if (bootinfo && devstr && devsize) {
-		if (bootinfo->setObject(kIOBootDevicePathKey,
-		    devstr) != 0 ||
-		    bootinfo->setObject(kIOBootDeviceSizeKey,
-		    devsize) != 0) {
-			dprintf("%s couldn't add bootinfo keys\n", __func__);
-		}
-
-		if (devstr) devstr->release();
-		devstr = 0;
-		if (devsize) devsize->release();
-		devsize = 0;
-	}
-
 	/* Read vdev labels, if any */
 	err = zfs_boot_read_label(pools->zfs_hl, media,
 	    &config, &num_labels);
@@ -1442,41 +1295,24 @@ zfs_boot_probe_disk(pool_list_t *pools, IOMedia *media)
 	/*
 	 * Add this config to the pool list.
 	 * Always assigns order 1 since all disks are
-	 * referenced by /dev/diskNsN
+	 * referenced by /private/var/run/disk/by-id/ paths.
 	 */
 	dprintf("%s: add_config %s\n", __func__, path);
-	//if (zfs_boot_add_config(pools, path, devpath, 1,
-	if (zfs_boot_add_config(pools, path, bootinfo, 1,
+	if (zfs_boot_add_config(pools, path, 1,
 	    num_labels, config) != 0) {
 		printf("%s couldn't add config to pool list\n",
 		    __func__);
-		/* Drop bootinfo to avoid memory leak */
-		bootinfo->release();
 	}
-	/* Leave bootinfo retained */
-	bootinfo = 0;
 
 out:
 	/* Clean up */
-#if 0
-	if (devpath) {
-		kmem_free(devpath, ZFS_BOOT_DEVICE_PATHLEN);
-	}
-#endif
-	if (bootinfo) {
-		bootinfo->release();
-	}
 	if (path && len > 0) {
 		kmem_free(path, len);
 	}
 	return (true);
 }
 
-#ifndef DEBUG
-static void
-#else
-void
-#endif
+DSTATIC void
 zfs_boot_free()
 {
 	pool_entry_t *pe, *penext;
@@ -1547,8 +1383,6 @@ zfs_boot_free()
 		nenext = ne->ne_next;
 		if (ne->ne_name)
 			spa_strfree(ne->ne_name);
-		if (ne->ne_bootinfo)
-			ne->ne_bootinfo->release();
 		kmem_free(ne, sizeof (name_entry_t));
 	}
 	pools->names = 0;
@@ -1558,7 +1392,6 @@ zfs_boot_free()
 	pools = 0;
 }
 
-extern "C" {
 void
 zfs_boot_fini()
 {
@@ -1583,82 +1416,21 @@ zfs_boot_fini()
 	pools = 0;
 }
 
-int dsl_dsobj_to_dsname(char *pname, uint64_t obj, char *buf);
-} /* extern "C" */
+#define	kBootUUIDKey		"boot-uuid"
+#define	kBootUUIDMediaKey	"boot-uuid-media"
 
-static int
-zfs_boot_get_bootinfo(pool_list_t *pools, OSArray *bootinfo)
-{
-	spa_t *spa;
-	vdev_t *vd;
-	name_entry_t *ne;
-	int error;
-
-	if (pools == NULL || bootinfo == NULL) {
-		dprintf("%s missing pool list or info array\n", __func__);
-		return (EINVAL);
-	}
-
-	mutex_enter(&spa_namespace_lock);
-	spa = spa_next(NULL);
-	mutex_exit(&spa_namespace_lock);
-
-	if (!spa) {
-		dprintf("%s no pools imported\n", __func__);
-		return (ENODEV);
-	}
-
-	if ((error = spa_open(spa_name(spa), &spa, FTAG)) != 0) {
-		return (error);
-	}
-
-	spa_vdev_state_enter(spa, SCL_NONE);
-
-	/* Walk name list and find vdevs */
-	for (ne = pools->names; ne != NULL; ne = ne->ne_next) {
-		/* Skip invalid vdevs */
-		if (ne->ne_guid == 0 || ne->ne_bootinfo == NULL) {
-			continue;
-		}
-
-		/* Get the vdev by guid */
-		vd = spa_lookup_by_guid(spa, ne->ne_guid, B_TRUE);
-
-		/* Skip hole, log, cache, and spare vdevs */
-		if (vd == NULL || vd->vdev_ishole || vd->vdev_islog ||
-		    vd->vdev_isl2cache || vd->vdev_isspare) {
-			continue;
-		}
-
-		bootinfo->setObject(ne->ne_bootinfo);
-	}
-
-	(void) spa_vdev_state_exit(spa, NULL, 0);
-
-	spa_close(spa, FTAG);
-
-	return (error);
-}
-
-#define kBootUUIDKey        "boot-uuid"
-#define kBootUUIDMediaKey   "boot-uuid-media"
-
-static int
+DSTATIC int
 zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 {
+	ZFSPool *pool_proxy = 0;
 	IOService *resourceService = 0;
-	//OSDictionary *properties = 0;
-	OSArray *bootinfo = 0;
-	OSString *name = 0;
-	OSNumber *number[3] = {0, 0, 0};
-	OSString *uuid = 0;
+	OSDictionary *properties = 0;
 	spa_t *spa = 0;
 	char *zfs_bootfs = 0;
 	uint64_t bootfs = 0;
 	int error, len = ZFS_MAX_DATASET_NAME_LEN;
 
-dprintf("%s\n", __func__);
-
+	dprintf("%s\n", __func__);
 	if (!zfs_hl || !pools) {
 		dprintf("%s missing argument\n", __func__);
 		return (EINVAL);
@@ -1687,6 +1459,15 @@ dprintf("%s\n", __func__);
 		return (0);
 	}
 
+	/* Get pool proxy */
+	if (!spa->spa_iokit_proxy ||
+	    (pool_proxy = spa->spa_iokit_proxy->proxy) == NULL) {
+		mutex_exit(&spa_namespace_lock);
+		dprintf("%s no spa_pool_proxy\n", __func__);
+		kmem_free(zfs_bootfs, len);
+		return (0);
+	}
+
 	error = dsl_dsobj_to_dsname(spa_name(spa),
 	    spa_bootfs(spa), zfs_bootfs);
 	mutex_exit(&spa_namespace_lock);
@@ -1699,23 +1480,72 @@ dprintf("%s\n", __func__);
 
 	printf("%s: publishing bootfs [%s]\n", __func__, zfs_bootfs);
 
-	//properties = OSDictionary::withCapacity(1);
-	bootinfo = OSArray::withCapacity(1);
-	//if (!properties || !bootinfo) {
-	if (!bootinfo) {
-		dprintf("%s property allocation failed\n", __func__);
-		//if (properties) properties->release();
-		//if (bootinfo) bootinfo->release();
+	/* Create prop dict for the proxy, with 6 or more keys */
+	if ((properties = OSDictionary::withCapacity(6)) == NULL) {
+		dprintf("%s prop dict allocation failed\n", __func__);
 		kmem_free(zfs_bootfs, len);
 		return (ENOMEM);
 	}
 
-	/* Get bootinfo array from spa and name list */
-	if (zfs_boot_get_bootinfo(pools, bootinfo) == 0) {
-		//properties->setObject(kIOBootDeviceKey, bootinfo);
-		//bootinfo->release();
-		//bootinfo = 0;
-	}
+	/* Set Content Hint and Content */
+	do {
+		const OSSymbol *partUUID;
+
+		/* ZFS (BF01) partition type */
+		if ((partUUID = OSSymbol::withCString(
+		    "6A898CC3-1DD2-11B2-99A6-080020736631")) == NULL) {
+			dprintf("%s couldn't make partUUID\n", __func__);
+			kmem_free(zfs_bootfs, len);
+			return (ENOMEM);
+		}
+
+		/* Assign ZFS partiton UUID to both */
+		if (properties->setObject(kIOMediaContentKey,
+		    partUUID) == false ||
+		    properties->setObject(kIOMediaContentHintKey,
+		    partUUID) == false) {
+			dprintf("%s content hint failed\n", __func__);
+			kmem_free(zfs_bootfs, len);
+			return (ENOMEM);
+		}
+		partUUID->release();
+	} while(0);
+
+	/* XXX Set dataset name, rdonly, and UUID */
+	do {
+		OSString *nameStr;
+		OSString *uuidStr;
+		char uuid_cstr[UUID_PRINTABLE_STRING_LENGTH];
+		uuid_t uuid;
+
+		bzero(uuid, sizeof (uuid_t));
+		bzero(uuid_cstr, UUID_PRINTABLE_STRING_LENGTH);
+
+		zfs_vfs_uuid_gen(zfs_bootfs, uuid);
+		zfs_vfs_uuid_unparse(uuid, uuid_cstr);
+
+		nameStr = OSString::withCString(zfs_bootfs);
+		uuidStr = OSString::withCString(uuid_cstr);
+
+		if (properties->setObject(ZFS_BOOT_DATASET_NAME_KEY,
+		    nameStr) == false ||
+		    properties->setObject(ZFS_BOOT_DATASET_UUID_KEY,
+		    uuidStr) == false ||
+		    properties->setObject(ZFS_BOOT_DATASET_RDONLY_KEY,
+		    kOSBooleanFalse) == false) {
+			dprintf("ZFSBootDevice::%s couldn't setup"
+			    "property dict\n", __func__);
+			nameStr->release();
+			uuidStr->release();
+			kmem_free(zfs_bootfs, len);
+			return (ENOMEM);
+		}
+		nameStr->release();
+		uuidStr->release();
+	} while (0);
+	/* Done with this string */
+	kmem_free(zfs_bootfs, len);
+	zfs_bootfs = 0;
 
 	/* Install vfc_mountroot handler */
 	spl_hijack_mountroot((void *)zfs_vfs_mountroot);
@@ -1724,138 +1554,112 @@ dprintf("%s\n", __func__);
 
 	if (!bootdev) {
 		printf("%s: couldn't create boot device\n", __func__);
-		kmem_free(zfs_bootfs, len);
-		bootinfo->release();
 		return (ENOMEM);
 	}
 
-	//if (bootdev->init(properties) == false) {
-	if (bootdev->init(0) == false) {
+	if (bootdev->init(properties) == false) {
 		printf("%s init failed\n", __func__);
-		//properties->release();
-		kmem_free(zfs_bootfs, len);
-		bootdev->free();
+		properties->release();
+		bootdev->release();
 		bootdev = 0;
-		bootinfo->release();
 		return (ENXIO);
 	}
-	//properties->release();
-	//properties = 0;
-
-	if (bootdev->setDatasetName(zfs_bootfs) == false) {
-		printf("%s setDatasetName failed\n", __func__);
-		kmem_free(zfs_bootfs, len);
-		bootdev->free();
-		bootdev = 0;
-		bootinfo->release();
-		return (ENXIO);
-	}
-	kmem_free(zfs_bootfs, len);
-	zfs_bootfs = 0;
+	properties->release();
+	properties = 0;
 
 	if (bootdev->attach(zfs_hl) == false) {
 		printf("%s attach failed\n", __func__);
-		bootdev->free();
+		bootdev->release();
 		bootdev = 0;
-		bootinfo->release();
 		return (ENXIO);
 	}
 
-	if (bootdev->start(zfs_hl) == false) {
+	/* Technically should start but this doesn't do much */
+	if (bootdev->start(pool_proxy) == false) {
 		printf("%s start failed\n", __func__);
-		bootdev->detach(zfs_hl);
-		bootdev->free();
+		bootdev->detach(pool_proxy);
+		bootdev->release();
 		bootdev = 0;
-		bootinfo->release();
 		return (ENXIO);
 	}
 
-	bootdev->retain();
-
+	/* Get matching started */
 	bootdev->registerService(kIOServiceAsynchronous);
 	//bootdev->registerService(kIOServiceSynchronous);
 
 	IOMedia *media = 0;
-	IOOptionBits options = kIORegistryIterateRecursively;
 	do {
 		if (bootdev->getClient() != 0) {
 			media = OSDynamicCast(IOMedia,
 			    bootdev->getClient()->getClient());
+			if (media) {
+				media->retain();
+				break;
+			}
 		}
 
-		if (!media) { IOSleep(500); continue; }
-
-		if ((name = OSDynamicCast(OSString,
-		    bootdev->getProperty(kIOBSDNameKey, gIOServicePlane,
-		    options))) == 0 ||
-		    (number[0] = OSDynamicCast(OSNumber,
-		    bootdev->getProperty(kIOBSDUnitKey, gIOServicePlane,
-		    options))) == 0 ||
-		    (number[1] = OSDynamicCast(OSNumber,
-		    bootdev->getProperty(kIOBSDMajorKey, gIOServicePlane,
-		    options))) == 0 ||
-		    (number[2] = OSDynamicCast(OSNumber,
-		    bootdev->getProperty(kIOBSDMinorKey, gIOServicePlane,
-		    options))) == 0) {
-
-			printf("%s getBSDName, Unit, Major, or Minor results:"
-			    " \"%s\" %d %d %d\n", __func__,
-			    (name ? name->getCStringNoCopy() : "" ),
-			    (number[0] ? number[0]->unsigned32BitValue() : 0),
-			    (number[1] ? number[1]->unsigned32BitValue() : 0),
-			    (number[2] ? number[2]->unsigned32BitValue() : 0));
-		}
-
+		/* Sleep until media is available */
+		/*
+		 * XXX Should use waitForServiceMatching or IONotifier
+		 */
+		IOSleep(200);
 	} while (!media);
 
 	if (!media) {
-		printf("%s: couldn't get bootdev media\n", __func__);
-		bootinfo->release();
+		/* XXX currently unreachable */
+		printf("%s couldn't get bootdev media\n", __func__);
 		return (ENXIO);
 	}
 
-	if (media->setProperty(kIOBootDeviceKey, bootinfo) == false)
-		dprintf("%s couldn't set IOBootDevice\n", __func__);
-
-	bootinfo->release();
-	bootinfo = 0;
-
 	resourceService = IOService::getResourceService();
-	if (!resourceService) panic("missing resource IOService\n");
+	if (!resourceService) {
+		dprintf("%s missing resource service\n", __func__);
+		/* Handle error */
+		media->release();
+		return (ENXIO);
+	}
 
-#if 0
+#if 1
 	/* XXX publish an IOMedia as the BootUUIDMedia resource */
+	/* uses same method as AppleFileSystemDriver */
+
+	/* Set IOMedia UUID */
+	/* XXX skip (moved get uuid below) */
+	//media->setProperty(kIOMediaUUIDKey, uuid);
+	/* Publish this IOMedia as the boot-uuid-media */
 	IOService::publishResource(kBootUUIDMediaKey, media);
+
+	/* Drop retain from earlier */
+	media->release();
+	/* Remove boot-uuid key so AppleFileSystem stops matching */
 	resourceService->removeProperty(kBootUUIDKey);
-
-	/* XXX Or use below and let AppleFileSystemDriver match it */
-#endif
-
+#else
+	OSString *uuid = 0;
 	/* Get the current boot-uuid string */
 	uuid = OSDynamicCast(OSString,
 	    resourceService->getProperty(kBootUUIDKey, gIOServicePlane));
 	if (!uuid) {
-		panic("missing UUID\n");
+		dprintf("%s missing boot-uuid IOResource\n", __func__);
 		/* Handle error */
 		return (ENXIO);
 	}
-
 	printf("%s: got boot-uuid %s\n", __func__, uuid->getCStringNoCopy());
 
+	/* XXX Or use below and let AppleFileSystemDriver match it */
+	/* Leaves the Apple_Boot content hint (at least for now) */
 	media->setProperty(kIOMediaContentHintKey, "Apple_Boot");
 	media->setProperty(kIOMediaUUIDKey, uuid);
+	/* Register for notifications (not matching) */
 	media->registerService(kIOServiceAsynchronous);
+	/* Drop retain from earlier */
+	media->release();
+#endif
 
-//bootdev->release();
 	printf("%s done\n", __func__);
 	return (0);
 }
 
-#ifndef DEBUG
-static void
-#else
-void
-#endif
+DSTATIC void
 zfs_boot_import_thread(void *arg)
 {
 	nvlist_t *configs, *nv, *newnv;
@@ -1946,6 +1750,12 @@ zfs_boot_import_thread(void *arg)
 			/* Cast each IOMedia object */
 			media = OSDynamicCast(IOMedia, next);
 
+			if (!iter->isValid()) {
+				/* Oh gosh, need to start over */
+				iter->reset();
+				continue;
+			}
+
 			if (!media) {
 				dprintf("%s couldn't cast IOMedia\n",
 				    __func__);
@@ -2024,9 +1834,14 @@ zfs_boot_import_thread(void *arg)
 			nv = 0;
 			if (newnv) {
 				dprintf("%s newnv: %p\n", __func__, newnv);
+
+				/* Stop probing disks */
+				if (pools->notifier)
+					pools->notifier->disable();
+
 				/* Do import */
 				pool_imported = (spa_import(pools->pool_name,
-				    newnv, 0, 0) == 0 );
+				    newnv, 0, 0) == 0);
 				nvlist_free(newnv);
 				newnv = 0;
 				//pool_imported = spa_import_rootpool(nv);
@@ -2046,6 +1861,10 @@ zfs_boot_import_thread(void *arg)
 				}
 
 				goto out_unlocked;
+			} else {
+				/* Resume notifications */
+				if (pools->notifier)
+					pools->notifier->enable(true);
 			}
 		}
 
@@ -2093,11 +1912,7 @@ out_unlocked:
 #endif
 }
 
-#ifndef DEBUG
-static bool
-#else
-bool
-#endif
+DSTATIC bool
 zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 {
 	/*
@@ -2126,17 +1941,17 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 	 * mounted, or "boot-uuid-media" once discovered
 	 */
 	clock_get_uptime(&uptime); /* uptime since boot in nanoseconds */
-	zfs_boot_log("%s uptime: %llu\n", __func__, uptime);
+	dprintf("%s uptime: %llu\n", __func__, uptime);
 
 	/* 3 billion nanoseconds ~= 3 seconds */
 	//if (uptime >= 3LLU<<30) {
 	/* 60 billion nanoseconds ~= 60 seconds */
 	if (uptime >= 7LLU<<33) {
-		zfs_boot_log("%s %s\n", __func__, "Already booted");
+		dprintf("%s %s\n", __func__, "Already booted");
 
 		return (false);
 	} else {
-		zfs_boot_log("%s %s\n", __func__, "Boot time");
+		dprintf("%s %s\n", __func__, "Boot time");
 	}
 
 	zfs_boot = (char*) kmem_alloc(ZFS_MAX_DATASET_NAME_LEN, KM_SLEEP);
@@ -2148,7 +1963,7 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 
 	result = PE_parse_boot_argn("zfs_boot", zfs_boot,
 	    ZFS_MAX_DATASET_NAME_LEN);
-	// zfs_boot_log( "Raw zfs_boot: [%llu] {%s}\n",
+	// dprintf( "Raw zfs_boot: [%llu] {%s}\n",
 	//    (uint64_t)strlen(zfs_boot), zfs_boot);
 
 	result = (result && (zfs_boot != 0) && strlen(zfs_boot) > 0);
@@ -2159,7 +1974,7 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 		result = (result && (zfs_boot != 0) &&
 		    strlen(zfs_boot) > 0 &&
 		    strncmp(zfs_boot, "zfs:", 4));
-		// zfs_boot_log("Raw rd: [%llu] {%s}\n",
+		// dprintf("Raw rd: [%llu] {%s}\n",
 		//    (uint64_t)strlen(zfs_boot), zfs_boot );
 	}
 	if (!result) {
@@ -2168,13 +1983,13 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 		result = (result && (zfs_boot != 0) &&
 		    strlen(zfs_boot) > 0 &&
 		    strncmp(zfs_boot, "zfs:", 4));
-		// zfs_boot_log("Raw rootdev: [%llu] {%s}\n",
+		// dprintf("Raw rootdev: [%llu] {%s}\n",
 		//    (uint64_t)strlen(zfs_boot), zfs_boot );
 	}
 
-/*
- * XXX To Do - parse zpool_guid boot arg
- */
+	/*
+	 * XXX To Do - parse zpool_guid boot arg
+	 */
 	*pool_guid = 0;
 
 	if (result) {
@@ -2189,13 +2004,12 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 		}
 
 		*pool_name = (char*) kmem_alloc(len+1, KM_SLEEP);
-		// strncpy(*pool_name, zfs_boot, len+1);
 		snprintf(*pool_name, len+1, "%s", zfs_boot);
 
-		zfs_boot_log("Got zfs_boot: [%llu] {%s}->{%s}\n",
+		dprintf("Got zfs_boot: [%llu] {%s}->{%s}\n",
 		    *pool_guid, zfs_boot, *pool_name);
 	} else {
-		zfs_boot_log("%s\n", "No zfs_boot\n");
+		dprintf("%s\n", "No zfs_boot\n");
 		pool_name = 0;
 	}
 
@@ -2203,8 +2017,6 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 	zfs_boot = 0;
 	return (result);
 }
-
-extern "C" {
 
 bool
 zfs_boot_init(IOService *zfs_hl)
@@ -2238,8 +2050,8 @@ zfs_boot_init(IOService *zfs_hl)
 	}
 	bzero(pools, sizeof(pool_list_t));
 
-	if (0 == (pools->disks = OSSet::withCapacity(
-				    ZFS_BOOT_PREALLOC_SET))) {
+	if ((pools->disks = OSSet::withCapacity(
+	    ZFS_BOOT_PREALLOC_SET)) == NULL) {
 		/* Fail if memory couldn't be allocated */
 		goto error;
 	}
@@ -2291,15 +2103,299 @@ error:
 	return (false);
 }
 
+#endif /* ZFS_BOOT */
+/* Include these functions in all builds */
+
+/*
+ * zfs_boot_update_bootinfo_vdev_leaf
+ * Inputs: spa: valid pool spa pointer. vd: valid vdev pointer.
+ * Return: 0 on success, positive integer errno on failure.
+ * Callers: zfs_boot_update_bootinfo_vdev
+ *
+ * called by bootinfo_vdev with each leaf vdev.
+ */
+DSTATIC int
+zfs_boot_update_bootinfo_vdev_leaf(OSArray *array, vdev_t *vd)
+{
+	OSDictionary *dict;
+	OSString *dev_str;
+	OSNumber *dev_size;
+	vdev_disk_t *dvd;
+	struct io_bootinfo *info;
+	int error;
+
+	/* Validate inputs */
+	if (!array || !vd) {
+		dprintf("%s missing argument\n", __func__);
+		return (EINVAL);
+	}
+
+	/* Should be called with leaf vdev */
+	if (!vd->vdev_ops->vdev_op_leaf) {
+		dprintf("%s not a leaf vdev\n", __func__);
+		return (EINVAL);
+	}
+
+	/* Skip hole vdevs */
+	if (vd->vdev_ishole) {
+		dprintf("%s skipping hole in namespace\n", __func__);
+		return (0);
+	}
+
+	/* No info available if missing */
+	if (strcmp(vd->vdev_ops->vdev_op_type, VDEV_TYPE_MISSING) == 0) {
+		dprintf("%s skipping missing vdev\n", __func__);
+		return (0);
+	}
+
+	/* Must be a disk, not a file */
+	if (strcmp(vd->vdev_ops->vdev_op_type, VDEV_TYPE_DISK) != 0) {
+		dprintf("%s skipping non-disk vdev\n", __func__);
+		return (0);
+	}
+
+	/* Skip obviously non-bootable vdevs */
+	if (vd->vdev_wholedisk == 1 || vd->vdev_islog ||
+	    vd->vdev_isl2cache || vd->vdev_isspare) {
+		dprintf("%s skipping non-bootable\n", __func__);
+		return (0);
+	}
+
+	/* Get vdev type-specific data */
+	dvd = (vdev_disk_t *)vd->vdev_tsd;
+	if (!dvd || !dvd->vd_lh) {
+		dprintf("%s missing dvd or ldi handle\n", __func__);
+		return (0);
+	}
+
+	/* Allocate an ldi io_bootinfo struct */
+	info = (struct io_bootinfo *)kmem_alloc(
+	    sizeof (struct io_bootinfo), KM_SLEEP);
+	if (!info) {
+		dprintf("%s info alloc failed\n", __func__);
+		return (ENOMEM);
+	}
+	bzero(info, sizeof (struct io_bootinfo));
+
+	/* Ask the vdev handle to fill in the info */
+	error = ldi_ioctl(dvd->vd_lh, DKIOCGETBOOTINFO,
+	    (intptr_t)info, 0, 0, 0);
+	if (error != 0) {
+		dprintf("%s ioctl error %d\n", __func__, error);
+		kmem_free(info, sizeof (struct io_bootinfo));
+		return (EIO);
+	}
+
+	/* Allocate dictionary to hold the keys */
+	if ((dict = OSDictionary::withCapacity(2)) == NULL) {
+		dprintf("%s dictionary alloc failed\n", __func__);
+		kmem_free(info, sizeof (struct io_bootinfo));
+		return (ENOMEM);
+	}
+
+	/* Keys are path (string) and size (number) */
+	dev_str = OSString::withCString(info->dev_path);
+	dev_size = OSNumber::withNumber(info->dev_size,
+	    (8 * sizeof (info->dev_size)));
+	kmem_free(info, sizeof (struct io_bootinfo));
+	info = 0;
+
+	/* Add keys to dictionary or bail */
+	if (!dev_str || !dev_size ||
+	    dict->setObject(kIOBootDevicePathKey,
+	    dev_str) == false ||
+	    dict->setObject(kIOBootDeviceSizeKey,
+	    dev_size) == false) {
+		dprintf("%s dictionary setup failed\n", __func__);
+		if (dev_str) dev_str->release();
+		if (dev_size) dev_size->release();
+		dict->release();
+		dict = 0;
+		return (ENOMEM);
+	}
+	dev_str->release();
+	dev_str = 0;
+	dev_size->release();
+	dev_size = 0;
+
+	/* Add dict to array */
+	if (array->setObject(dict) == false) {
+		dprintf("%s couldn't set bootinfo\n", __func__);
+		dict->release();
+		dict = 0;
+		return (ENOMEM);
+	}
+	dict->release();
+	dict = 0;
+
+	return (0);
+}
+
+/*
+ * zfs_boot_update_bootinfo_vdev
+ * Inputs: spa: valid pool spa pointer. vd: valid vdev pointer.
+ * Return: 0 on success, positive integer errno on failure.
+ * Callers: zfs_boot_update_bootinfo
+ *
+ * called by bootinfo with root vdev, and recursively calls
+ * itself while iterating over children (vdevs only have a
+ * few levels of nesting at most).
+ */
+DSTATIC int
+zfs_boot_update_bootinfo_vdev(OSArray *array, vdev_t *vd)
+{
+	int c, error;
+
+	/* Validate inputs */
+	if (!array || !vd) {
+		dprintf("%s missing argument\n", __func__);
+		return (EINVAL);
+	}
+
+	/* Skip obviously non-bootable vdevs */
+	if (vd->vdev_wholedisk == 1 || vd->vdev_islog ||
+	    vd->vdev_isl2cache || vd->vdev_isspare) {
+		dprintf("%s skipping non-bootable\n", __func__);
+		return (0);
+	}
+
+	/* Process leaf vdevs */
+	if (vd->vdev_ops->vdev_op_leaf) {
+		error = zfs_boot_update_bootinfo_vdev_leaf(array, vd);
+		if (error) dprintf("%s bootinfo_vdev_leaf error %d\n",
+		    __func__, error);
+		return (error);
+	}
+
+	/* Iterate over child vdevs */
+	for (c = 0; c < vd->vdev_children; c++) {
+		if (vd->vdev_child[c] == NULL) {
+			dprintf("%s hole in vdev namespace\n", __func__);
+			continue;
+		}
+
+		/* Recursion */
+		error = zfs_boot_update_bootinfo_vdev(array,
+		    vd->vdev_child[c]);
+		if (error != 0) {
+			dprintf("%s bootinfo_vdev_leaf error %d\n",
+			    __func__, error);
+			return (error);
+		}
+	}
+
+	return (0);
+}
+
+extern "C" {
+
+/*
+ * zfs_boot_update_bootinfo
+ * Inputs: spa: valid pool spa pointer.
+ * Return: 0 on success, positive integer errno on failure.
+ * Callers: spa_open_common, spa_vdev_add, spa_vdev_remove,
+ * spa_vdev_attach, spa_vdev_detach.
+ *
+ * Called from spa.c on changes to the vdev layout. This
+ * information is assigned to the pool proxy so all zvols
+ * and datasets will retrieve the property through IOKit
+ * since it is retrieved via recursion.
+ * (see bless-105/Misc/BLCreateBooterInformationDictionary.c).
+ * If IOBootDevice property is needed for each dataset and
+ * zvol, we can revisit this and assign/update on all of
+ * these (already implemented a prototype that worked fine).
+ *
+ * Note: bootinfo is only collected for data vdevs.
+ * XXX We only want boot helpers there, unless there is a
+ * compelling argument for log, cache, or spares having
+ * boot helpers.
+ */
+int
+zfs_boot_update_bootinfo(spa_t *spa)
+{
+	ZFSPool *pool_proxy;
+	OSArray *array;
+	int error;
+
+	if (!spa) {
+		dprintf("%s missing spa\n", __func__);
+		return (EINVAL);
+	}
+
+	/* XXX Could count vdevs first? */
+	if ((array = OSArray::withCapacity(1)) == NULL) {
+		dprintf("%s allocation failed\n", __func__);
+		return (ENOMEM);
+	}
+
+	/* Grab necessary locks */
+	mutex_enter(&spa_namespace_lock);
+	spa_open_ref(spa, FTAG);
+
+	/* Get pool proxy */
+	if (!spa->spa_iokit_proxy ||
+	    (pool_proxy = spa->spa_iokit_proxy->proxy) == NULL) {
+		spa_close(spa, FTAG);
+		mutex_exit(&spa_namespace_lock);
+		dprintf("%s no spa_pool_proxy\n", __func__);
+		return (0);
+	}
+	/* Avoid it disappearing from under us */
+	pool_proxy->retain();
+
+	/* Don't need to hold this throughout */
+	mutex_exit(&spa_namespace_lock);
+
+	/* vdev state lock only requires an spa open ref */
+	spa_vdev_state_enter(spa, SCL_NONE);
+
+	/* Iterate over all vdevs */
+	if ((error = zfs_boot_update_bootinfo_vdev(array,
+	    spa->spa_root_vdev)) != 0) {
+
+		dprintf("%s bootinfo_vdev error %d\n",
+		    __func__, error);
+
+		/* Drop locks */
+		(void) spa_vdev_state_exit(spa, NULL, 0);
+		mutex_enter(&spa_namespace_lock);
+		spa_close(spa, FTAG);
+		mutex_exit(&spa_namespace_lock);
+		return (error);
+	}
+
+	/* Release locks, passing NULL vd (no change) */
+	error = spa_vdev_state_exit(spa, NULL, 0);
+	if (error != 0) {
+		dprintf("%s spa_vdev_state_exit error %d\n",
+		    __func__, error);
+	}
+
+	/* setProperty adds a retain */
+	pool_proxy->setProperty(kIOBootDeviceKey, array);
+	pool_proxy->release();
+	array->release();
+
+	/* Drop locks */
+	mutex_enter(&spa_namespace_lock);
+	spa_close(spa, FTAG);
+	mutex_exit(&spa_namespace_lock);
+	return (0);
+}
+
 } /* extern "C" */
 
-#pragma mark - IOMedia subclass ZFSBootDeviceNub
+#ifdef ZFS_BOOT
+/* Remainder only needed for boot */
 
 #define	DPRINTF_FUNC()	dprintf("%s\n", __func__)
 
-#pragma mark - IOMedia subclass ZFSBootDevice
+#pragma mark - ZFSBootDevice
 
 OSDefineMetaClassAndStructors(ZFSBootDevice, IOBlockStorageDevice);
+char ZFSBootDevice::vendorString[4] = "ZFS";
+char ZFSBootDevice::revisionString[4] = "0.1";
+char ZFSBootDevice::infoString[12] = "ZFS dataset";
 
 int
 zfs_boot_get_path(char *path, int len)
@@ -2325,92 +2421,163 @@ zfs_boot_get_path(char *path, int len)
 	return (-1);
 }
 
-static void
-ZFSBootDevice_free_string(char **strPtr)
-{
-	if (strPtr && *strPtr) {
-		kmem_free(*strPtr, strlen(*strPtr)+1);
-		*strPtr = 0;
-	}
-}
-
-static bool
-ZFSBootDevice_copy_string(char **strPtr, const char *src)
-{
-	char *oldStr = 0, *newStr = 0;
-	size_t len;
-
-	if (!strPtr || !src) {
-		dprintf("%s: missing argument\n", __func__);
-		return (false);
-	}
-
-	len = strlen(src);
-
-	newStr = (char *)kmem_alloc(len+1, KM_SLEEP);
-	if (!newStr) {
-		dprintf("%s: alloc failed\n", __func__);
-		return (false);
-	}
-
-	bcopy(src, newStr, len);
-	newStr[len] = '\0';
-	if (strlen(newStr) != len) {
-		dprintf("%s: bcopy failed\n", __func__);
-		kmem_free(newStr, len+1);
-		return (false);
-	}
-
-	oldStr = *strPtr;
-	*strPtr = newStr;
-
-	if (oldStr) {
-		ZFSBootDevice_free_string(&oldStr);
-	}
-
-	return (true);
-}
-
 bool
 ZFSBootDevice::init(OSDictionary *properties)
 {
-	bool ret = IOBlockStorageDevice::init(properties);
+	/* Allocate dictionaries and symbols */
+	OSDictionary *pdict = OSDictionary::withCapacity(2);
+	OSDictionary *ddict = OSDictionary::withCapacity(4);
+	const OSSymbol *virtualSymbol = OSSymbol::withCString(
+	    kIOPropertyPhysicalInterconnectTypeVirtual);
+	const OSSymbol *ramSymbol = OSSymbol::withCString(
+	    kIOPropertyInterconnectRAMKey);
+	const OSSymbol *ssdSymbol = OSSymbol::withCString(
+	    kIOPropertyMediumTypeSolidStateKey);
+	OSNumber *physSize = OSNumber::withNumber((uint32_t)4096, 32);
+	OSNumber *logSize = OSNumber::withNumber((uint32_t)512, 32);
+	const OSSymbol *vendorSymbol = 0;
+	const OSSymbol *revisionSymbol = 0;
+	const OSSymbol *blankSymbol = 0;
+	OSBoolean *rdonly = 0;
+	OSString *str = 0;
+	const char *cstr = 0;
+	bool ret = false;
 
-	if (!ret) {
-		dprintf("%s BlockStorageDevice init failed\n", __func__);
-		return (false);
+	DPRINTF_FUNC();
+
+	/* Validate allocations */
+	if (!pdict || !ddict || !virtualSymbol || !ramSymbol ||
+	    !ssdSymbol || !physSize || !logSize) {
+		dprintf("ZFSBootDevice::%s allocation failed\n", __func__);
+		goto error;
 	}
 
-	/* IOMedia name is 'Vendor Product Media' */
-	do {
-		ZFSBootDevice_copy_string(&vendorString, "ZFS");
-		ZFSBootDevice_copy_string(&revisionString, "1.0");
-		ZFSBootDevice_copy_string(&additionalString, "n/a");
+	/* Init class statics every time an instance inits */
+	/* Shared across instances, but doesn't hurt to reprint */
+	snprintf(vendorString, strlen("ZFS")+1, "ZFS");
+	snprintf(revisionString, strlen("0.1")+1, "0.1");
+	snprintf(infoString, strlen("ZFS dataset")+1, "ZFS dataset");
 
-		if (setDatasetName("invalid") == true) {
-			return (true);
+	/* For IORegistry keys, cache OSSymbols for class statics */
+	/* Leverages OSSymbol cahce pool to reuse across instances */
+	vendorSymbol = OSSymbol::withCString(vendorString);
+	revisionSymbol = OSSymbol::withCString(revisionString);
+	blankSymbol = OSSymbol::withCString("");
+	if (!vendorSymbol || !revisionSymbol || !blankSymbol) {
+		dprintf("ZFSBootDevice::%s class symbols failed\n", __func__);
+		goto error;
+	}
+
+	/* Call super init */
+	if (IOBlockStorageDevice::init(properties) == false) {
+		dprintf("ZFSBootDevice::%s device init failed\n", __func__);
+		goto error;
+	}
+
+	/* Set class private vars */
+	productString = NULL;
+	isReadOnly = false; // XXX should really be true initially
+
+	/* Set Protocol Characteristics */
+	if (pdict->setObject(kIOPropertyPhysicalInterconnectLocationKey,
+	    ramSymbol) == false ||
+	    pdict->setObject(kIOPropertyPhysicalInterconnectTypeKey,
+	    virtualSymbol) == false) {
+		dprintf("%s pdict set properties failed\n", __func__);
+		goto error;
+	}
+	setProperty(kIOPropertyProtocolCharacteristicsKey, pdict);
+
+	/* Set Device Characteristics */
+	if (ddict->setObject(kIOPropertyVendorNameKey,
+	    vendorSymbol) == false ||
+	    ddict->setObject(kIOPropertyProductRevisionLevelKey,
+	    revisionSymbol) == false ||
+	    ddict->setObject(kIOPropertyProductSerialNumberKey,
+	    blankSymbol) == false ||
+	    ddict->setObject(kIOPropertyPhysicalBlockSizeKey,
+	    physSize) == false ||
+	    ddict->setObject(kIOPropertyLogicalBlockSizeKey,
+	    logSize) == false ||
+	    ddict->setObject(kIOPropertyMediumTypeKey,
+	    ssdSymbol) == false) {
+		dprintf("%s ddict set properties failed\n", __func__);
+		goto error;
+	}
+	setProperty(kIOPropertyDeviceCharacteristicsKey, ddict);
+
+	/* Check for passed in readonly status */
+	if (properties && (rdonly = OSDynamicCast(OSBoolean,
+	    properties->getObject(ZFS_BOOT_DATASET_RDONLY_KEY))) != NULL) {
+		/* Got the boolean */
+		isReadOnly = rdonly->getValue();
+		dprintf("ZFSBootDevice %s set %s\n", __func__,
+		    (isReadOnly ? "readonly" : "readwrite"));
+	}
+
+	/* Check for passed in dataset UUID */
+	if (properties && (str = OSDynamicCast(OSString,
+	    properties->getObject(ZFS_BOOT_DATASET_UUID_KEY))) != NULL &&
+	    (cstr = str->getCStringNoCopy()) != NULL) {
+		/* Got the string, try to set UUID */
+		str->retain();
+		if (ddict->setObject("Dataset UUID", str) == false) {
+			dprintf("ZFSBootDevice::%s failed UUID [%s]\n",
+			    __func__, cstr);
+			str->release();
+			goto error;
 		}
-	} while (0);
+		dprintf("ZFSBootDevice::%s set UUID [%s]\n",
+		    __func__, cstr);
+		str->release();
+	}
 
-	dprintf("ZFSBootDevice::%s product string failed\n", __func__);
-	ZFSBootDevice_free_string(&vendorString);
-	ZFSBootDevice_free_string(&productString);
-	ZFSBootDevice_free_string(&revisionString);
-	ZFSBootDevice_free_string(&additionalString);
+	/* Check for passed in dataset name */
+	if (properties && (str = OSDynamicCast(OSString,
+	    properties->getObject(ZFS_BOOT_DATASET_NAME_KEY))) != NULL &&
+	    (cstr = str->getCStringNoCopy()) != NULL) {
+		/* Got the string, try to set name */
+		str->retain();
+		if (setDatasetName(cstr) == false) {
+			/* Unlikely */
+			dprintf("ZFSBootDevice %s couldn't setup dataset"
+			    " name property [%s]\n", __func__, cstr);
+			str->release();
+			goto error;
+		}
 
-	return (false);
+		dprintf("ZFSBootDevice %s set dataset name [%s]\n",
+		    __func__, cstr);
+		str->release();
+	} else {
+		if (setDatasetName("invalid") == false) {
+			dprintf("ZFSBootDevice::%s setDatasetName failed\n",
+			    __func__);
+			goto error;
+		}
+		dprintf("ZFSBootDevice %s set name [invalid]\n", __func__);
+	}
+
+	/* Success */
+	ret = true;
+
+error:
+	if (pdict) pdict->release();
+	if (ddict) ddict->release();
+	if (virtualSymbol) virtualSymbol->release();
+	if (ramSymbol) ramSymbol->release();
+	if (ssdSymbol) ssdSymbol->release();
+	if (physSize) physSize->release();
+	if (logSize) logSize->release();
+	if (vendorSymbol) vendorSymbol->release();
+	if (revisionSymbol) revisionSymbol->release();
+	if (blankSymbol) blankSymbol->release();
+	return (ret);
 }
 
 void
 ZFSBootDevice::free()
 {
-	DPRINTF_FUNC();
-
-	ZFSBootDevice_free_string(&vendorString);
-	ZFSBootDevice_free_string(&productString);
-	ZFSBootDevice_free_string(&revisionString);
-	ZFSBootDevice_free_string(&additionalString);
-
 	IOBlockStorageDevice::free();
 }
 
@@ -2476,29 +2643,44 @@ ZFSBootDevice::doAsyncReadWrite(IOMemoryDescriptor *buffer,
 
 	if (!buffer) {
 		IOStorage::complete(completion, kIOReturnError, 0);
-	} else {
-		/* Read vs. write */
-		if (buffer->getDirection() == kIODirectionIn) {
-			/* Zero the read buffer */
-			bzero(zero, ZFS_BOOT_DEV_BSIZE);
-			len = buffer->getLength();
-			while (len > 0) {
-				cur = (len > ZFS_BOOT_DEV_BSIZE ?
-				    ZFS_BOOT_DEV_BSIZE : len);
-				buffer->writeBytes(/* offset */ off,
-				    /* buf */ zero, /* length */ cur);
-				off += cur;
-				len -= cur;
-			}
-			dprintf("%s: read: %llu %llu\n",
-			    __func__, block, nblks);
-		} else {
-			dprintf("%s: write: %llu %llu\n",
-			    __func__, block, nblks);
+		return (kIOReturnSuccess);
+	}
+
+	/* Read vs. write */
+	if (buffer->getDirection() == kIODirectionIn) {
+		/* Zero the read buffer */
+		bzero(zero, ZFS_BOOT_DEV_BSIZE);
+		len = buffer->getLength();
+		while (len > 0) {
+			cur = (len > ZFS_BOOT_DEV_BSIZE ?
+			    ZFS_BOOT_DEV_BSIZE : len);
+			buffer->writeBytes(/* offset */ off,
+			    /* buf */ zero, /* length */ cur);
+			off += cur;
+			len -= cur;
 		}
+		//dprintf("%s: read: %llu %llu\n",
+		//    __func__, block, nblks);
 		IOStorage::complete(completion, kIOReturnSuccess,
 		    buffer->getLength());
+		return (kIOReturnSuccess);
 	}
+
+	if (buffer->getDirection() != kIODirectionOut) {
+		dprintf("%s invalid direction %d\n", __func__,
+		    buffer->getDirection());
+		IOStorage::complete(completion, kIOReturnError, 0);
+		return (kIOReturnSuccess);
+	}
+
+	/*
+	 * XXX For now this just returns error for all writes.
+	 * If it turns out that mountroot/bdevvp try to
+	 * verify writable status by reading a block and writing
+	 * it back to disk, lie and say it succeeded.
+	 */
+	dprintf("%s: write: %llu %llu\n", __func__, block, nblks);
+	IOStorage::complete(completion, kIOReturnError, 0);
 	return (kIOReturnSuccess);
 }
 
@@ -2506,6 +2688,7 @@ IOReturn
 ZFSBootDevice::doEjectMedia()
 {
 	DPRINTF_FUNC();
+	/* XXX Called at shutdown, maybe return success? */
 	return (kIOReturnError);
 }
 
@@ -2513,7 +2696,9 @@ IOReturn
 ZFSBootDevice::doFormatMedia(UInt64 byteCapacity)
 {
 	DPRINTF_FUNC();
-	return (kIOReturnSuccess);
+	/* XXX shouldn't need it */
+	return (kIOReturnError);
+	//return (kIOReturnSuccess);
 }
 
 UInt32
@@ -2522,8 +2707,7 @@ ZFSBootDevice::doGetFormatCapacities(UInt64 *capacities,
 {
 	DPRINTF_FUNC();
 	if (capacities && capacitiesMaxCount > 0) {
-		capacities[0] = (ZFS_BOOT_DEV_BSIZE *
-		    ZFS_BOOT_DEV_BCOUNT);
+		capacities[0] = (ZFS_BOOT_DEV_BSIZE * ZFS_BOOT_DEV_BCOUNT);
 		dprintf("ZFSBootDevice %s: capacity %llu\n",
 		    __func__, capacities[0]);
 	}
@@ -2532,55 +2716,131 @@ ZFSBootDevice::doGetFormatCapacities(UInt64 *capacities,
 	return (1);
 }
 
+/* Assign dataset name from null-terminated string */
 bool
 ZFSBootDevice::setDatasetName(const char *dsname)
 {
-	if (!dsname) {
+	OSDictionary *dict;
+	OSString *dsstr;
+	char *newname, *oldname;
+	size_t len;
+
+	DPRINTF_FUNC();
+
+	/* Validate arguments */
+	if (!dsname || (len = strnlen(dsname,
+	    ZFS_MAX_DATASET_NAME_LEN)) == 0) {
 		dprintf("%s: missing argument\n", __func__);
 		return (false);
 	}
 
-	size_t len = strnlen(dsname, ZFS_MAX_DATASET_NAME_LEN+1);
+	/* Truncate too-long names (shouldn't happen) */
+	if (len == ZFS_MAX_DATASET_NAME_LEN &&
+	    dsname[ZFS_MAX_DATASET_NAME_LEN] != '\0') {
+		dprintf("%s: dsname too long [%s]\n",
+		    __func__, dsname);
+		/* XXX Just truncate the name */
+		len--;
+	}
 
-	if (len > ZFS_MAX_DATASET_NAME_LEN) {
-		/* XXX Could truncate dsname */
-		dprintf("%s: dsname too long\n", __func__);
+	/* Allocate room for name plus null char */
+	newname = (char *)kmem_alloc(len+1, KM_SLEEP);
+	if (!newname) {
+		dprintf("ZFSBootDevice::%s string alloc failed\n", __func__);
+		return (false);
+	}
+	snprintf(newname, len+1, "%s", dsname);
+	newname[len] = '\0'; /* just in case */
+
+	/* Save an OSString copy for IORegistry */
+	dsstr = OSString::withCString(newname);
+	if (!dsstr) {
+		dprintf("ZFSBootDevice::%s OSString failed\n", __func__);
+		kmem_free(newname, len+1);
 		return (false);
 	}
 
-	return (ZFSBootDevice_copy_string(&productString, dsname));
+	/* Swap into class private var */
+	oldname = productString;
+	productString = newname;
+	newname = 0;
+	if (oldname) {
+		kmem_free(oldname, strlen(oldname)+1);
+		oldname = 0;
+	}
+
+	/* Get and clone device characteristics prop dict */
+	if ((dict = OSDynamicCast(OSDictionary,
+	    getProperty(kIOPropertyDeviceCharacteristicsKey))) == NULL ||
+	    (dict = OSDictionary::withDictionary(dict)) == NULL) {
+		dprintf("%s couldn't clone prop dict\n", __func__);
+		/* Should only happen during initialization */
+	}
+
+	if (dict) {
+		/* Copy string, add to dictionary, and replace prop dict */
+		if (dict->setObject(kIOPropertyProductNameKey,
+		    dsstr) == false ||
+		    setProperty(kIOPropertyDeviceCharacteristicsKey,
+		    dict) == false) {
+			dprintf("%s couldn't set name\n", __func__);
+			dsstr->release();
+			dict->release();
+			return (false);
+		}
+		dict->release();
+		dict = 0;
+	}
+
+	/* Finally, set the IORegistryEntry/IOService name */
+	setName(dsstr->getCStringNoCopy());
+	dsstr->release();
+
+	return (true);
 }
 
-char *
-ZFSBootDevice::getVendorString()
-{
-	return (vendorString);
-}
+/* Returns full dataset name from instance private var */
 char *
 ZFSBootDevice::getProductString()
 {
+	dprintf("ZFSBootDevice %s [%s]\n", productString);
+	/* Return class private string */
 	return (productString);
+}
+
+/* Returns readonly status from instance private var */
+IOReturn
+ZFSBootDevice::reportWriteProtection(bool *isWriteProtected)
+{
+	DPRINTF_FUNC();
+	if (isWriteProtected) *isWriteProtected = isReadOnly;
+	return (kIOReturnSuccess);
+}
+
+/* These return class static string for all instances */
+char *
+ZFSBootDevice::getVendorString()
+{
+	dprintf("ZFSBootDevice %s [%s]\n", vendorString);
+	/* Return class static string */
+	return (vendorString);
 }
 char *
 ZFSBootDevice::getRevisionString()
 {
+	dprintf("ZFSBootDevice %s [%s]\n", revisionString);
+	/* Return class static string */
 	return (revisionString);
 }
 char *
 ZFSBootDevice::getAdditionalDeviceInfoString()
 {
-	DPRINTF_FUNC();
-	return (additionalString);
+	dprintf("ZFSBootDevice %s [%s]\n", infoString);
+	/* Return class static string */
+	return (infoString);
 }
 
-IOReturn
-ZFSBootDevice::reportWriteProtection(bool *isWriteProtected)
-{
-	DPRINTF_FUNC();
-	if (isWriteProtected) *isWriteProtected = false;
-	return (kIOReturnSuccess);
-}
-
+/* Always return media present and unchanged */
 IOReturn
 ZFSBootDevice::reportMediaState(bool *mediaPresent,
     bool *changedState)
@@ -2591,6 +2851,23 @@ ZFSBootDevice::reportMediaState(bool *mediaPresent,
 	return (kIOReturnSuccess);
 }
 
+/* Always report nonremovable and nonejectable */
+IOReturn
+ZFSBootDevice::reportRemovability(bool *isRemoveable)
+{
+	DPRINTF_FUNC();
+	if (isRemoveable) *isRemoveable = false;
+	return (kIOReturnSuccess);
+}
+IOReturn
+ZFSBootDevice::reportEjectability(bool *isEjectable)
+{
+	DPRINTF_FUNC();
+	if (isEjectable) *isEjectable = false;
+	return (kIOReturnSuccess);
+}
+
+/* Always report 512b blocksize */
 IOReturn
 ZFSBootDevice::reportBlockSize(UInt64 *blockSize)
 {
@@ -2601,22 +2878,8 @@ ZFSBootDevice::reportBlockSize(UInt64 *blockSize)
 	return (kIOReturnSuccess);
 }
 
-IOReturn
-ZFSBootDevice::reportRemovability(bool *isRemoveable)
-{
-	DPRINTF_FUNC();
-	if (isRemoveable) *isRemoveable = false;
-	return (kIOReturnSuccess);
-}
-
-IOReturn
-ZFSBootDevice::reportEjectability(bool *isEjectable)
-{
-	DPRINTF_FUNC();
-	if (isEjectable) *isEjectable = false;
-	return (kIOReturnSuccess);
-}
-
+/* XXX Calculate from dev_bcount, should get size from objset */
+/* XXX Can issue message kIOMessageMediaParametersHaveChanged to update */
 IOReturn
 ZFSBootDevice::reportMaxValidBlock(UInt64 *maxBlock)
 {
@@ -2625,10 +2888,8 @@ ZFSBootDevice::reportMaxValidBlock(UInt64 *maxBlock)
 
 	//*maxBlock = 0;
 	*maxBlock = ZFS_BOOT_DEV_BCOUNT - 1;
-	dprintf("ZFSBootDevice %s: maxBlock %llu\n",
-	    __func__, *maxBlock);
+	dprintf("ZFSBootDevice %s: maxBlock %llu\n", __func__, *maxBlock);
 
 	return (kIOReturnSuccess);
 }
-
 #endif /* ZFS_BOOT */

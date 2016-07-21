@@ -11,6 +11,7 @@
 
 #ifdef ZFS_BOOT
 #include <sys/zfs_boot.h>
+#include <sys/spa_impl.h>
 #endif
 
 #include <sys/ldi_osx.h>
@@ -32,11 +33,6 @@ extern "C" {
 	kmod_stop_func_t  *_antimain = 0;
 	int _kext_apple_cc = __APPLE_CC__ ;
 };
-
-/*
- * Can those with more C++ experience clean this up?
- */
-static void *global_c_interface = NULL;
 
 // Define the superclass.
 #define super IOService
@@ -153,7 +149,6 @@ bool net_lundman_zfs_zvol::init (OSDictionary* dict)
 {
     bool res = super::init(dict);
     //IOLog("ZFS::init\n");
-    global_c_interface = (void *)this;
     return res;
 }
 
@@ -161,7 +156,6 @@ bool net_lundman_zfs_zvol::init (OSDictionary* dict)
 void net_lundman_zfs_zvol::free (void)
 {
   //IOLog("ZFS::free\n");
-    global_c_interface = NULL;
     super::free();
 }
 
@@ -275,263 +269,12 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     IOLog("ZFS: Unloaded module\n");
 }
 
-
-IOReturn net_lundman_zfs_zvol::doEjectMedia(void *arg1)
+bool
+net_lundman_zfs_zvol::isOpen(const IOService *forClient) const
 {
-  zvol_state_t *nub = (zvol_state_t *)arg1;
-  IOLog("block svc ejecting\n");
-  if(nub) {
-
-    // Only 10.6 needs special work to eject
-    if ((version_major == 10) &&
-	(version_minor == 8))
-      destroyBlockStorageDevice(nub);
-
-  }
-
-  IOLog("block svc ejected\n");
-  return kIOReturnSuccess;
+	bool ret;
+	IOLog("net_lundman_zfs_zvol %s\n", __func__);
+	ret = IOService::isOpen(forClient);
+	IOLog("net_lundman_zfs_zvol %s ret %d\n", __func__, ret);
+	return (ret);
 }
-
-
-
-bool net_lundman_zfs_zvol::createBlockStorageDevice (zvol_state_t *zv)
-{
-    net_lundman_zfs_zvol_device *nub = NULL;
-    bool            result = false;
-
-    if (!zv) goto bail;
-
-    //IOLog("createBlock size %llu\n", zv->zv_volsize);
-
-    // Allocate a new IOBlockStorageDevice nub.
-    nub = new net_lundman_zfs_zvol_device;
-    if (nub == NULL)
-        goto bail;
-
-    // Call the custom init method (passing the overall disk size).
-    if (nub->init(zv) == false)
-        goto bail;
-
-    // Attach the IOBlockStorageDevice to the this driver.
-    // This call increments the reference count of the nub object,
-    // so we can release our reference at function exit.
-    if (nub->attach(this) == false)
-        goto bail;
-
-    // Allow the upper level drivers to match against the IOBlockStorageDevice.
-    /*
-     * We here use Synchronous, so that all services are attached now, then
-     * we can go look for the BSDName. We need this to create the correct
-     * symlinks.
-     */
-    nub->registerService(kIOServiceSynchronous);
-
-    if (nub->getBSDName() == 0) {
-        if ((version_major != 10) &&
-            (version_minor != 8))
-            zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
-            result = true;
-    } else
-        result = false;
-
- bail:
-    // Unconditionally release the nub object.
-    if (nub != NULL)
-        nub->release();
-
-   return result;
-}
-
-bool net_lundman_zfs_zvol::destroyBlockStorageDevice (zvol_state_t *zv)
-{
-    net_lundman_zfs_zvol_device *nub = NULL;
-    bool            result = true;
-
-    if (zv->zv_iokitdev) {
-
-      //IOLog("removeBlockdevice\n");
-
-      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
-
-      zv->zv_iokitdev = NULL;
-      zv = NULL;
-
-		if (nub)
-			nub->terminate(kIOServiceRequired|
-			    kIOServiceSynchronous);
-    }
-
-    return result;
-}
-
-bool net_lundman_zfs_zvol::updateVolSize(zvol_state_t *zv)
-{
-    net_lundman_zfs_zvol_device *nub = NULL;
-    //bool            result = true;
-
-    // Is it ok to keep a pointer reference to the nub like this?
-    if (zv->zv_iokitdev) {
-      nub = static_cast<net_lundman_zfs_zvol_device*>(zv->zv_iokitdev);
-
-      if (!nub)
-          return false;
-
-      //IOLog("Attempting to update volsize\n");
-      nub->retain();
-      nub->registerService(kIOServiceSynchronous);
-      nub->release();
-    }
-    return true;
-}
-
-/*
- * C language interfaces
- */
-
-int zvolCreateNewDevice(zvol_state_t *zv)
-{
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->createBlockStorageDevice(zv);
-    return 0;
-}
-
-int zvolRemoveDevice(zvol_state_t *zv)
-{
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->destroyBlockStorageDevice(zv);
-    return 0;
-}
-
-int zvolSetVolsize(zvol_state_t *zv)
-{
-    static_cast<net_lundman_zfs_zvol*>(global_c_interface)->updateVolSize(zv);
-    return 0;
-}
-
-uint64_t zvolIO_kit_read(void *iomem, uint64_t offset, char *address, uint64_t len)
-{
-  IOByteCount done;
-  //IOLog("zvolIO_kit_read offset %p count %llx to offset %llx\n",
-  //    address, len, offset);
-  done=static_cast<IOMemoryDescriptor*>(iomem)->writeBytes(offset,
-                                                           (void *)address,
-                                                           len);
-  return done;
-}
-
-uint64_t zvolIO_kit_write(void *iomem, uint64_t offset, char *address, uint64_t len)
-{
-  IOByteCount done;
-  //IOLog("zvolIO_kit_write offset %p count %llx to offset %llx\n",
-  //    address, len, offset);
-  done=static_cast<IOMemoryDescriptor*>(iomem)->readBytes(offset,
-                                                          (void *)address,
-                                                          len);
-  return done;
-}
-
-#if 0
-#include <sys/vdev_impl.h>
-#include <sys/spa_impl.h>
-#include <sys/vdev_disk.h>
-
-static vdev_t *
-vdev_lookup_by_path(vdev_t *vd, const char *name)
-{
-	vdev_t *mvd;
-	int c;
-	char *lookup_name;
-	vdev_disk_t *dvd = NULL;
-
-	if (!vd) return NULL;
-
-	dvd = (vdev_disk_t *)vd->vdev_tsd;
-
-	// Check both strings are valid
-	if (name && *name && dvd &&
-		vd->vdev_path && vd->vdev_path[0]) {
-		int off;
-
-		// Try normal path "vdev_path" or the readlink resolved
-
-		lookup_name = vd->vdev_path;
-
-		// Skip /dev/ or not?
-		strncmp("/dev/", lookup_name, 5) == 0 ? off=5 : off=0;
-
-		dprintf("ZFS: vdev '%s' == '%s' ?\n", name,
-				&lookup_name[off]);
-
-		if (!strcmp(name, &lookup_name[off])) return vd;
-
-
-		lookup_name = dvd->vd_readlinkname;
-
-		// Skip /dev/ or not?
-		strncmp("/dev/", lookup_name, 5) == 0 ? off=5 : off=0;
-
-		dprintf("ZFS: vdev '%s' == '%s' ?\n", name,
-				&lookup_name[off]);
-
-		if (!strcmp(name, &lookup_name[off])) return vd;
-	}
-
-	for (c = 0; c < vd->vdev_children; c++)
-		if ((mvd = vdev_lookup_by_path(vd->vdev_child[c], name)) !=
-			NULL)
-			return (mvd);
-
-	return (NULL);
-}
-
-
-/*
- * Callback for device termination events, ie, disks removed.
- */
-bool IOkit_disk_removed_callback(void* target,
-								 void* refCon,
-								 IOService* newService,
-								 IONotifier* notifier)
-{
-	OSObject *prop = 0;
-	OSString* bsdnameosstr = 0;
-
-	prop = newService->getProperty(kIOBSDNameKey, gIOServicePlane,
-								   kIORegistryIterateRecursively);
-	if (prop) {
-		spa_t *spa = NULL;
-
-		bsdnameosstr = OSDynamicCast(OSString, prop);
-		printf("ZFS: Device removal detected: '%s'\n",
-			   bsdnameosstr->getCStringNoCopy());
-
-		for (spa = spa_next(NULL);
-			 spa != NULL; spa = spa_next(spa)) {
-		  vdev_t *vd;
-
-		  dprintf("ZFS: Scanning pool '%s'\n", spa_name(spa));
-
-		  vd = vdev_lookup_by_path(spa->spa_root_vdev,
-								   bsdnameosstr->getCStringNoCopy());
-
-		  if (vd && vd->vdev_path) {
-			  vdev_disk_t *dvd = (vdev_disk_t *)vd->vdev_tsd;
-
-			  printf("ZFS: Device '%s' removal requested\n",
-					 vd->vdev_path);
-
-			  if (dvd) dvd->vd_offline = B_TRUE;
-			  vdev_disk_close(vd);
-
-			  vd->vdev_remove_wanted = B_TRUE;
-			  spa_async_request(spa, SPA_ASYNC_REMOVE);
-
-			  break;
-		  }
-
-		} // for all spa
-
-	} // if has BSDname
-
-	return true;
-}
-#endif

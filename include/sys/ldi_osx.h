@@ -94,6 +94,11 @@ struct dk_minfo_ext {
 	uint32_t		dki_pbsize;	/* Physical block size */
 };	/* (16b) */
 
+struct io_bootinfo {
+	char			dev_path[MAXPATHLEN];	/* IODeviceTree path */
+	uint64_t		dev_size;	/* IOMedia device size */
+};
+
 /*
  * XXX This struct is defined in spl but was unused until now.
  * There is a reference in zvol.c zvol_ioctl, commented out.
@@ -116,6 +121,9 @@ struct dk_callback {
 #define	DKIOCSETWCE		(DKIOC | 37)
 #define	DKIOCGMEDIAINFO		(DKIOC | 42)
 #define	DKIOCGMEDIAINFOEXT	(DKIOC | 48)
+
+/* XXX Created this additional ioctl */
+#define	DKIOCGETBOOTINFO	(DKIOC | 99)
 
 /*
  * This state enum is the argument passed to the DKIOCSTATE ioctl.
