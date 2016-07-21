@@ -2257,6 +2257,10 @@ arc_buf_alloc_impl(arc_buf_hdr_t *hdr, void *tag)
 	}
 	VERIFY3P(buf->b_data, !=, NULL);
 
+	buf = kmem_cache_alloc(buf_cache, KM_PUSHPAGE);
+	buf->b_hdr = hdr;
+	buf->b_data = NULL;
+	buf->b_next = hdr->b_l1hdr.b_buf;
 	hdr->b_l1hdr.b_buf = buf;
 	hdr->b_l1hdr.b_bufcnt += 1;
 
@@ -2881,27 +2885,6 @@ arc_hdr_realloc(arc_buf_hdr_t *hdr, kmem_cache_t *old, kmem_cache_t *new)
 			hdr->b_l1hdr.b_thawed = NULL;
 		}
 #endif
-
-	ARCSTAT_INCR(arcstat_l2_asize, -asize);
-	ARCSTAT_INCR(arcstat_l2_size, -HDR_GET_LSIZE(hdr));
-
-	vdev_space_update(dev->l2ad_vdev, -asize, 0, 0);
-
-	(void) refcount_remove_many(&dev->l2ad_alloc, asize, hdr);
-	arc_hdr_clear_flags(hdr, ARC_FLAG_HAS_L2HDR);
-}
-
-static void
-arc_hdr_l2hdr_destroy(arc_buf_hdr_t *hdr)
-{
-	l2arc_buf_hdr_t *l2hdr = &hdr->b_l2hdr;
-	l2arc_dev_t *dev = l2hdr->b_dev;
-	uint64_t asize = arc_hdr_size(hdr);
-
-	ASSERT(MUTEX_HELD(&dev->l2ad_mtx));
-	ASSERT(HDR_HAS_L2HDR(hdr));
-
-	list_remove(&dev->l2ad_buflist, hdr);
 
 	ARCSTAT_INCR(arcstat_l2_asize, -asize);
 	ARCSTAT_INCR(arcstat_l2_size, -HDR_GET_LSIZE(hdr));
@@ -5732,8 +5715,8 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 	buf->b_efunc = NULL;
 	buf->b_private = NULL;
 
-	if (reserve + arc_tempreserve + anon_size > arc_c / 4 &&
-	    anon_size > arc_c / 8) {
+	if (reserve + arc_tempreserve + anon_size > arc_c / 2 &&
+	    anon_size > arc_c / 4) {
 		uint64_t meta_esize =
 		    refcount_count(&arc_anon->arcs_esize[ARC_BUFC_METADATA]);
 		uint64_t data_esize =
