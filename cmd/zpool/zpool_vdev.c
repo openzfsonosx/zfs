@@ -986,7 +986,8 @@ get_replication(nvlist_t *nvroot, boolean_t fatal)
 				 */
 				if (!dontreport &&
 				    (vdev_size != -1ULL &&
-					 ((size - vdev_size) >
+				    ((size > vdev_size ? (size - vdev_size) :
+				    (vdev_size - size)) >
 				    ZPOOL_FUZZ))) {
 					if (ret != NULL)
 						free(ret);

@@ -321,9 +321,17 @@ skip_open:
 #endif
 		vd->vdev_nonrot = (isssd ? B_TRUE : B_FALSE);
 	}
-	dprintf("ZFS: vdev_disk(%s) isSSD %d\n",
-	    (vd->vdev_path ? vd->vdev_path : ""), isssd);
-#endif
+	// smd - search static table in #if block above
+	if(isssd == 0) {
+	  if(vd->vdev_path) {
+	    isssd = ssd_search(vd->vdev_path);
+	  }
+	}
+
+	printf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "",
+			isssd);
+#endif //__APPLE__
+
 	return (0);
 }
 

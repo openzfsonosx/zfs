@@ -2057,9 +2057,9 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	cred_t		*cr =  (cred_t *)vfs_context_ucred(context);
 	char		*osname = NULL;
 	char		*options = NULL;
+	uint64_t	flags = vfs_flags(vfsp);
 	int		error = 0;
 	int		canwrite;
-	uint64_t	flags = vfs_flags(vfsp);
 	int		rdonly = 0;
 	int		mflag = 0;
 	uint64_t	flags = vfs_flags(vfsp);

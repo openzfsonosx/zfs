@@ -3953,6 +3953,24 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 		/* create succeeded, ignore error from bootinfo */
 	}
 
+#if defined(_KERNEL)
+	/* Increase open refcount */
+	spa_open_ref(spa, FTAG);
+	mutex_exit(&spa_namespace_lock);
+
+	/* Create IOKit pool proxy */
+	if ((error = spa_iokit_pool_proxy_create(spa)) != 0) {
+		printf("%s spa_iokit_pool_proxy_create error %d\n",
+		    __func__, error);
+		/* spa_create succeeded, ignore proxy error */
+	}
+
+	/* Cache vdev info, needs open ref above, and pool proxy */
+	if (error == 0 && (error = zfs_boot_update_bootinfo(spa)) != 0) {
+		printf("%s update_bootinfo error %d\n", __func__, error);
+		/* create succeeded, ignore error from bootinfo */
+	}
+
 	/* Drop open refcount */
 	mutex_enter(&spa_namespace_lock);
 	spa_close(spa, FTAG);

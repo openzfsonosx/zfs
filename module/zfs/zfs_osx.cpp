@@ -265,7 +265,6 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     sysctl_unregister_oid(&sysctl__zfs_kext_version);
     sysctl_unregister_oid(&sysctl__zfs);
     IOLog("ZFS: Unloaded module\n");
-
 }
 
 bool
