@@ -75,7 +75,6 @@ osx_kstat_t osx_kstat = {
 	{ "zfs_arc_grow_retry",			KSTAT_DATA_UINT64 },
 	{ "zfs_arc_shrink_shift",		KSTAT_DATA_UINT64 },
 	{ "zfs_arc_p_min_shift",		KSTAT_DATA_UINT64 },
-	{ "zfs_disable_dup_eviction",	KSTAT_DATA_UINT64 },
 	{ "zfs_arc_average_blocksize",	KSTAT_DATA_UINT64 },
 
 	{ "l2arc_write_max",			KSTAT_DATA_UINT64 },

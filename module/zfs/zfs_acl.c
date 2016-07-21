@@ -2080,7 +2080,7 @@ zfs_vsec_2_aclp(zfsvfs_t *zfsvfs, umode_t obj_mode,
  * Set a file's ACL
  */
 int
-zfs_setacl(znode_t *zp, struct kauth_acl *vsecp, boolean_t skipaclchk, cred_t *cr)
+zfs_setacl(znode_t *zp, vsecattr_t *vsecp, boolean_t skipaclchk, cred_t *cr)
 {
 	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
 	zilog_t		*zilog = zfsvfs->z_log;

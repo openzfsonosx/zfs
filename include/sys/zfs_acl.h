@@ -222,7 +222,7 @@ int zfs_acl_ids_create(struct znode *, int, vattr_t *,
 void zfs_acl_ids_free(zfs_acl_ids_t *);
 boolean_t zfs_acl_ids_overquota(zfsvfs_t *, zfs_acl_ids_t *);
 int zfs_getacl(struct znode *, struct kauth_acl **, boolean_t, cred_t *);
-int zfs_setacl(struct znode *, struct kauth_acl *, boolean_t, cred_t *);
+int zfs_setacl(struct znode *, vsecattr_t *, boolean_t, cred_t *);
 void zfs_acl_rele(void *);
 void zfs_oldace_byteswap(ace_t *, int);
 void zfs_ace_byteswap(void *, size_t, boolean_t);

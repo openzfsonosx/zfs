@@ -1489,7 +1489,6 @@ void
 zfsvfs_free(zfsvfs_t *zfsvfs)
 {
 	int i;
-
     dprintf("+zfsvfs_free\n");
 	/*
 	 * This is a barrier to prevent the filesystem from going away in

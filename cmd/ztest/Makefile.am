@@ -20,7 +20,7 @@ ztest_LDADD = \
 	$(top_builddir)/lib/libzfs/libzfs.la \
 	$(top_builddir)/lib/libzfs_core/libzfs_core.la
 
-ztest_LDFLAGS = -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID)
+ztest_LDFLAGS = -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID)
 
 
 ztest_static_SOURCES = \
@@ -32,4 +32,4 @@ ztest_static_LDADD = \
 	$(top_builddir)/lib/libzpool/libzpool.la \
 	$(top_builddir)/lib/libzfs/libzfs.la
 
-ztest_static_LDFLAGS = -static -pthread -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID)
+ztest_static_LDFLAGS = -static -lm $(ZLIB) -ldl $(LIBUUID) $(LIBBLKID)
