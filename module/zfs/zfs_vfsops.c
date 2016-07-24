@@ -2645,6 +2645,11 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_INT_VOL_RENAME |
 			VOL_CAP_INT_ADVLOCK |
 			VOL_CAP_INT_FLOCK |
+			VOL_CAP_INT_EXTENDED_ATTR |
+#if NAMEDSTREAMS
+			VOL_CAP_INT_NAMEDSTREAMS |      // ZFS
+#endif
+
 			VOL_CAP_INT_MANLOCK ;
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_RESERVED1] = 0;
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_RESERVED2] = 0;
@@ -3431,7 +3436,7 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 
 	/* We can not be locked during zget. */
 	if (!ino) {
-		printf("%s: setting ino from %lld to 2\n", __func__, ino);
+		dprintf("%s: setting ino from %lld to 2\n", __func__, ino);
 		ino = 2;
 	}
 
