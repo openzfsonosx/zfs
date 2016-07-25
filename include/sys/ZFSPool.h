@@ -12,6 +12,11 @@ class ZFSPool : public IOStorage {
 	OSDeclareDefaultStructors(ZFSPool);
 
 protected:
+	virtual bool open(IOService *client,
+	    IOOptionBits options, void *arg = 0);
+	virtual void close(IOService *client,
+	    IOOptionBits options);
+
 	virtual bool handleOpen(IOService *client,
 	    IOOptionBits options, void *access);
 	virtual bool handleIsOpen(const IOService *client) const;

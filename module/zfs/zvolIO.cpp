@@ -65,9 +65,10 @@ net_lundman_zfs_zvol_device::init(zvol_state_t *c_zv,
 
 	/* Store reference to zvol_state_t in the iokitdev */
 	zv = c_zv;
-
-	/* And store reference to iokitdev in zvol_state_t */
+	/* Store reference to iokitdev in zvol_state_t */
 	iokitdev->dev = this;
+
+	/* Assign to zv once completely initialized */
 	zv->zv_iokitdev = iokitdev;
 
 	/* Apply the name from the full dataset path */
@@ -1028,32 +1029,25 @@ zvolRegisterDevice(zvol_state_t *zv)
 	return (ret);
 }
 
-/* XXX not fully thread safe, but does clear iokitdev
- * before release */
+/* Struct passed in will be freed before returning */
 int
-zvolRemoveDevice(zvol_state_t *zv)
+zvolRemoveDevice(zvol_iokit_t *iokitdev)
 {
 	net_lundman_zfs_zvol_device *zvol;
-	zvol_iokit_t *iokitdev;
+	//zvol_iokit_t *iokitdev;
 	IOService *provider;
 	dprintf("%s\n", __func__);
 
-	if (!zv) {
-		dprintf("%s invalid zvol\n", __func__);
+	if (!iokitdev) {
+		dprintf("%s missing argument\n", __func__);
 		return (EINVAL);
 	}
 
-	/* Grab and clear pointer in zv */
-	iokitdev = zv->zv_iokitdev;
-	zv->zv_iokitdev = NULL;
+	zvol = iokitdev->dev;
+	/* Free the wrapper struct */
+	kmem_free(iokitdev, sizeof (zvol_iokit_t));
 
-	/*
-	 * If we lose a race with another thread, it may clear
-	 * the iokitdev pointer. XXX Fix me: two threads could
-	 * wind up copying out the iokitdev pointer (unlikely).
-	 */
-	if (!iokitdev ||
-	    (zvol = iokitdev->dev) == NULL) {
+	if (zvol == NULL) {
 		dprintf("%s couldn't get IOKit handle\n", __func__);
 		return (ENXIO);
 	}
