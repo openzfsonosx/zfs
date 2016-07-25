@@ -66,20 +66,32 @@ copy_zfs_handle()
 OSDefineMetaClassAndStructors(ZFSPool, IOStorage);
 
 bool
+ZFSPool::open(IOService *client, IOOptionBits options, void *arg)
+{
+	/* XXX Does nothing at the moment */
+	return (true);
+}
+
+void
+ZFSPool::close(IOService *client, IOOptionBits options)
+{
+	/* XXX Does nothing at the moment */
+	return;
+}
+
+bool
 ZFSPool::handleOpen(IOService *client,
     IOOptionBits options, void *access)
 {
 	IOLog("ZFSPool %s\n", __func__);
-	//return (IOService::handleOpen(client, options, access));
-	return (IOStorage::handleOpen(client, options, access));
+	return (IOService::handleOpen(client, options, NULL));
 }
 
 bool
 ZFSPool::handleIsOpen(const IOService *client) const
 {
 	IOLog("ZFSPool %s\n", __func__);
-	//return (IOService::handleIsOpen(client));
-	return (IOStorage::handleIsOpen(client));
+	return (IOService::handleIsOpen(client));
 }
 
 void
@@ -87,8 +99,7 @@ ZFSPool::handleClose(IOService *client,
     IOOptionBits options)
 {
 	IOLog("ZFSPool %s\n", __func__);
-	//IOService::handleClose(client, options);
-	IOStorage::handleClose(client, options);
+	IOService::handleClose(client, options);
 }
 
 bool

@@ -1567,7 +1567,7 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 	properties->release();
 	properties = 0;
 
-	if (bootdev->attach(zfs_hl) == false) {
+	if (bootdev->attach(pool_proxy) == false) {
 		printf("%s attach failed\n", __func__);
 		bootdev->release();
 		bootdev = 0;
