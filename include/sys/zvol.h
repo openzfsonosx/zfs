@@ -162,7 +162,7 @@ extern uint64_t zvolIO_kit_read(struct iomem *iomem, uint64_t offset,
 extern uint64_t zvolIO_kit_write(struct iomem *iomem, uint64_t offset,
     char *address, uint64_t len);
 
-extern int zvolRemoveDevice(zvol_state_t *zv);
+extern int zvolRemoveDevice(zvol_iokit_t *iokitdev);
 extern int zvolCreateNewDevice(zvol_state_t *zv);
 extern int zvolRegisterDevice(zvol_state_t *zv);
 

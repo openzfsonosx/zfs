@@ -708,7 +708,9 @@ int
 zvol_remove_minor_impl(const char *name)
 {
 	zvol_state_t *zv;
-	zvol_state_t tmp_zv;
+#ifdef __APPLE__
+	zvol_iokit_t *iokitdev;
+#endif
 	int rc;
 
 	mutex_enter(&zfsdev_state_lock);
@@ -722,9 +724,19 @@ zvol_remove_minor_impl(const char *name)
 	 * can't hold any locks while doing so.
 	 */
 	zvol_remove_symlink(zv);
-	mutex_exit(&zfsdev_state_lock);
-	zvolRemoveDevice(zv);
-	mutex_enter(&zfsdev_state_lock);
+
+	/* Get and clear the iokitdev handle while locked */
+	iokitdev = zv->zv_iokitdev;
+	zv->zv_iokitdev = 0;
+
+	/* drop the lock to remove the device */
+	/* XXX Should issue async */
+	if (iokitdev) {
+		mutex_exit(&zfsdev_state_lock);
+		zvolRemoveDevice(iokitdev);
+		iokitdev = 0;
+		mutex_enter(&zfsdev_state_lock);
+	}
 #endif
 
 	rc = zvol_remove_zv(zv); // Frees zv, if successful.
@@ -1016,6 +1028,9 @@ static void
 zvol_remove_minors_impl(const char *name)
 {
 	zvol_state_t *zv;
+#ifdef __APPLE__
+	zvol_iokit_t *iokitdev;
+#endif
 	minor_t minor;
 	int namelen = ((name) ? strlen(name) : 0);
 
@@ -1039,13 +1054,21 @@ zvol_remove_minors_impl(const char *name)
 			if (zv->zv_open_count > 0)
 				continue;
 
+#ifdef __APPLE__
 			zvol_remove_symlink(zv);
 			// We had to drop this lock or we would deadlock against
 			// ourselves due to IOKit, but, since this is now ASYNC
 			// it should in theory no longer be needed?
 			//mutex_exit(&zfsdev_state_lock);
-			zvolRemoveDevice(zv);
+			//zvolRemoveDevice(zv);
+
+			/* Get and clear the iokitdev handle while locked */
+			iokitdev = zv->zv_iokitdev;
+			zv->zv_iokitdev = 0;
+
+			zvolRemoveDevice(iokitdev);
 			//mutex_enter(&zfsdev_state_lock);
+#endif /* __APPLE__ */
 			(void) zvol_remove_zv(zv);
 			mutex_exit(&zfsdev_state_lock);
 
