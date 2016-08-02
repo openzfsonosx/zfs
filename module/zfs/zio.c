@@ -42,6 +42,7 @@
 #include <sys/ddt.h>
 #include <sys/blkptr.h>
 #include <sys/zfeature.h>
+#include <sys/metaslab_impl.h>
 #include <sys/callb.h>
 #include <sys/time.h>
 
@@ -1164,16 +1165,6 @@ zio_write_bp_init(zio_t *zio)
 	if (!IO_IS_ALLOCATING(zio))
 		return (ZIO_PIPELINE_CONTINUE);
 
-	if (zio->io_children_ready != NULL) {
-		/*
-		 * Now that all our children are ready, run the callback
-		 * associated with this zio in case it wants to modify the
-		 * data to be written.
-		 */
-		ASSERT3U(zp->zp_level, >, 0);
-		zio->io_children_ready(zio);
-	}
-
 	ASSERT(zio->io_child_type != ZIO_CHILD_DDT);
 
 	if (zio->io_bp_override) {
@@ -1214,8 +1205,49 @@ zio_write_bp_init(zio_t *zio)
 			zio->io_pipeline |= ZIO_STAGE_DDT_WRITE;
 			return (ZIO_PIPELINE_CONTINUE);
 		}
+
+		/*
+		 * We were unable to handle this as an override bp, treat
+		 * it as a regular write I/O.
+		 */
 		zio->io_bp_override = NULL;
-		BP_ZERO(bp);
+		*bp = zio->io_bp_orig;
+		zio->io_pipeline = zio->io_orig_pipeline;
+	}
+
+	return (ZIO_PIPELINE_CONTINUE);
+}
+
+static int
+zio_write_compress(zio_t *zio)
+{
+	spa_t *spa = zio->io_spa;
+	zio_prop_t *zp = &zio->io_prop;
+	enum zio_compress compress = zp->zp_compress;
+	blkptr_t *bp = zio->io_bp;
+	uint64_t lsize = zio->io_size;
+	uint64_t psize = lsize;
+	int pass = 1;
+
+	/*
+	 * If our children haven't all reached the ready stage,
+	 * wait for them and then repeat this pipeline stage.
+	 */
+	if (zio_wait_for_children(zio, ZIO_CHILD_GANG, ZIO_WAIT_READY) ||
+	    zio_wait_for_children(zio, ZIO_CHILD_LOGICAL, ZIO_WAIT_READY))
+		return (ZIO_PIPELINE_STOP);
+
+	if (!IO_IS_ALLOCATING(zio))
+		return (ZIO_PIPELINE_CONTINUE);
+
+	if (zio->io_children_ready != NULL) {
+		/*
+		 * Now that all our children are ready, run the callback
+		 * associated with this zio in case it wants to modify the
+		 * data to be written.
+		 */
+		ASSERT3U(zp->zp_level, >, 0);
+		zio->io_children_ready(zio);
 	}
 
 	ASSERT(zio->io_child_type != ZIO_CHILD_DDT);
@@ -2213,7 +2245,21 @@ zio_write_gang_block(zio_t *pio)
 		    (char *)pio->io_data + (pio->io_size - resid), lsize, &zp,
 		    zio_write_gang_member_ready, NULL, NULL, NULL,
 		    &gn->gn_child[g], pio->io_priority,
-		    ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark));
+		    ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark);
+
+		if (pio->io_flags & ZIO_FLAG_IO_ALLOCATING) {
+			ASSERT(pio->io_priority == ZIO_PRIORITY_ASYNC_WRITE);
+			ASSERT(!(pio->io_flags & ZIO_FLAG_NODATA));
+
+			/*
+			 * Gang children won't throttle but we should
+			 * account for their work, so reserve an allocation
+			 * slot for them here.
+			 */
+			VERIFY(metaslab_class_throttle_reserve(mc,
+			    zp.zp_copies, cio, flags));
+		}
+		zio_nowait(cio);
 	}
 
 	/*
@@ -2878,14 +2924,12 @@ zio_alloc_zil(spa_t *spa, uint64_t txg, blkptr_t *new_bp, blkptr_t *old_bp,
 
 	if (use_slog) {
 		error = metaslab_alloc(spa, spa_log_class(spa), size,
-		    new_bp, 1, txg, old_bp,
-		    METASLAB_HINTBP_AVOID | METASLAB_GANG_AVOID);
+		    new_bp, 1, txg, old_bp, METASLAB_HINTBP_AVOID, NULL);
 	}
 
 	if (error) {
 		error = metaslab_alloc(spa, spa_normal_class(spa), size,
-		    new_bp, 1, txg, old_bp,
-		    METASLAB_HINTBP_AVOID);
+		    new_bp, 1, txg, old_bp, METASLAB_HINTBP_AVOID, NULL);
 	}
 
 	if (error == 0) {
@@ -3470,7 +3514,7 @@ zio_done(zio_t *zio)
 {
 	zio_t *pio, *pio_next;
 	int c, w;
-#ifdef ZFS_DEBUG
+#ifdef DEBUG
 	metaslab_class_t *mc = spa_normal_class(zio->io_spa);
 #endif
 	zio_link_t *zl = NULL;
