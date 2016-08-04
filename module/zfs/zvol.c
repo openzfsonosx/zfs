@@ -2490,13 +2490,6 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 		 */
 		if (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
 			zil_commit(zv->zv_zilog, ZVOL_OBJ);
-			/*
-			 * Don't wait around for the transaction to
-			 * flush to disk. It has been committed to
-			 * the zil, which ensures consistency, and
-			 * fully syncing the transaction is expensive.
-			 */
-			// txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 		}
 	}
 

@@ -13,13 +13,31 @@
 	<key>CFBundlePackageType</key>
 	<string>fs  </string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3.0</string>
+	<string>1.5.2</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.3</string>
+	<string>1.5.2</string>
 	<key>FSMediaTypes</key>
 	<dict>
+		<key>ZFS_Dataset</key>
+		<dict>
+			<key>FSMediaProperties</key>
+			<dict>
+				<key>Content Hint</key>
+				<string>ZFS_Dataset</string>
+				<key>Leaf</key>
+				<true/>
+			</dict>
+			<key>FSProbeArguments</key>
+			<string>-p</string>
+			<key>FSProbeExecutable</key>
+			<string>zfs.util</string>
+			<key>FSProbeOrder</key>
+			<integer>1000</integer>
+			<key>autodiskmount</key>
+			<false/>
+		</dict>
 		<key>6A898CC3-1DD2-11B2-99A6-080020736631</key>
 		<dict>
 			<key>FSMediaProperties</key>
@@ -35,6 +53,8 @@
 			<string>zfs.util</string>
 			<key>FSProbeOrder</key>
 			<integer>850</integer>
+			<key>autodiskmount</key>
+			<false/>
 		</dict>
                 <key>Whole</key>
                 <dict>
@@ -51,6 +71,8 @@
                         <string>zfs.util</string>
                         <key>FSProbeOrder</key>
                         <integer>2000</integer>
+			<key>autodiskmount</key>
+			<false/>
                 </dict>
 	</dict>
 	<key>FSPersonalities</key>
@@ -59,20 +81,48 @@
 		<dict>
 			<key>FSName</key>
 			<string>ZFS</string>
-			<key>FSSubType</key>
-			<integer>1</integer>
-			<key>FSFormatInteractive</key>
-			<false/>
+		<!--			<key>FSFormatInteractive</key>
+			<false/> -->
 			<key>FSFormatArguments</key>
 			<string></string>
 			<key>FSFormatContentMask</key>
-			<string>6A898CC3-1DD2-11B2-99A6-080020736631</string>
+			<string>ZFS_Dataset</string>
 			<key>FSFormatExecutable</key>
 			<string>zfs.util</string>
+			<key>FSMountExecutable</key>
+			<string>zfs.util</string>
+			<key>FSMountArguments</key>
+			<string></string>
+			<key>FSVerificationExecutable</key>
+			<string>fsck_zfs</string>
+			<key>FSVerificationArguments</key>
+			<string></string>
+			<key>FSLiveVerificationArguments</key>
+			<string></string>
+			<key>FSXMLOutputArgument</key>
+			<string>-x</string>
+			<key>FSRepairExecutable</key>
+			<string>fsck_zfs</string>
+			<key>FSRepairArguments</key>
+			<string></string>
 			<key>FSFormatMinimumSize</key>
 			<integer>268435456</integer>
 			<key>FSFormatMaximumSize</key>
 			<integer>9223372034707292160</integer>
+		</dict>
+		<key>ZFS Pool</key>
+		<dict>
+			<key>FSName</key>
+			<string>ZFS Pool</string>
+			<key>FSSubType</key>
+			<integer>0</integer>
+		</dict>
+		<key>ZFS Dataset</key>
+		<dict>
+			<key>FSName</key>
+			<string>ZFS Dataset</string>
+			<key>FSSubType</key>
+			<integer>1</integer>
 		</dict>
 	</dict>
 </dict>

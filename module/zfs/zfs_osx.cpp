@@ -145,29 +145,108 @@ zfs_vfs_sysctl(int *name, __unused u_int namelen, user_addr_t oldp, size_t *oldl
 } // Extern "C"
 
 
-bool net_lundman_zfs_zvol::init (OSDictionary* dict)
+bool
+net_lundman_zfs_zvol::init (OSDictionary* dict)
 {
-    bool res = super::init(dict);
-    //IOLog("ZFS::init\n");
-    return res;
+	bool res;
+
+	/* Need an OSSet for open clients */
+	_openClients = OSSet::withCapacity(1);
+	if (_openClients == NULL) {
+		dprintf("client OSSet failed");
+		return (false);
+	}
+
+	res = super::init(dict);
+
+	//IOLog("ZFS::init\n");
+	return res;
 }
 
-
-void net_lundman_zfs_zvol::free (void)
+void
+net_lundman_zfs_zvol::free (void)
 {
-  //IOLog("ZFS::free\n");
-    super::free();
+	OSSafeReleaseNULL(_openClients);
+
+	//IOLog("ZFS::free\n");
+	super::free();
 }
 
+bool
+net_lundman_zfs_zvol::isOpen(const IOService *forClient) const
+{
+	bool ret;
+	IOLog("net_lundman_zfs_zvol %s\n", __func__);
+	ret = IOService::isOpen(forClient);
+	IOLog("net_lundman_zfs_zvol %s ret %d\n", __func__, ret);
+	return (ret);
+}
 
-IOService* net_lundman_zfs_zvol::probe (IOService* provider, SInt32* score)
+bool
+net_lundman_zfs_zvol::handleOpen(IOService *client,
+    IOOptionBits options, void *arg)
+{
+	bool ret = true;
+
+	dprintf("");
+	//IOLog("ZFSPool %s\n", __func__);
+
+	/* XXX IOService open() locks for arbitration around handleOpen */
+	//lockForArbitration();
+	_openClients->setObject(client);
+	ret = _openClients->containsObject(client);
+	//unlockForArbitration();
+
+	return (ret);
+//	return (IOService::handleOpen(client, options, NULL));
+}
+
+bool
+net_lundman_zfs_zvol::handleIsOpen(const IOService *client) const
+{
+	bool ret;
+
+	dprintf("");
+	//IOLog("ZFSPool %s\n", __func__);
+
+	/* XXX IOService isOpen() locks for arbitration around handleIsOpen */
+	//lockForArbitration();
+	ret = _openClients->containsObject(client);
+	//unlockForArbitration();
+
+	return (ret);
+//	return (IOService::handleIsOpen(client));
+}
+
+void
+net_lundman_zfs_zvol::handleClose(IOService *client,
+    IOOptionBits options)
+{
+	dprintf("");
+	//IOLog("ZFSPool %s\n", __func__);
+
+	/* XXX IOService close() locks for arbitration around handleClose */
+	//lockForArbitration();
+	if (_openClients->containsObject(client) == false) {
+		dprintf("not open");
+	}
+	/* Remove client from set */
+	_openClients->removeObject(client);
+	//unlockForArbitration();
+
+//	IOService::handleClose(client, options);
+}
+
+IOService*
+net_lundman_zfs_zvol::probe (IOService* provider, SInt32* score)
 {
     IOService *res = super::probe(provider, score);
     //IOLog("ZFS::probe\n");
     return res;
 }
 
-bool net_lundman_zfs_zvol::start (IOService *provider)
+bool
+net_lundman_zfs_zvol::start (IOService *provider)
 {
     bool res = super::start(provider);
 
@@ -246,7 +325,8 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
     return res;
 }
 
-void net_lundman_zfs_zvol::stop (IOService *provider)
+void
+net_lundman_zfs_zvol::stop (IOService *provider)
 {
 #ifdef ZFS_BOOT
 	zfs_boot_fini();
@@ -267,14 +347,4 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     sysctl_unregister_oid(&sysctl__zfs_kext_version);
     sysctl_unregister_oid(&sysctl__zfs);
     IOLog("ZFS: Unloaded module\n");
-}
-
-bool
-net_lundman_zfs_zvol::isOpen(const IOService *forClient) const
-{
-	bool ret;
-	IOLog("net_lundman_zfs_zvol %s\n", __func__);
-	ret = IOService::isOpen(forClient);
-	IOLog("net_lundman_zfs_zvol %s ret %d\n", __func__, ret);
-	return (ret);
 }

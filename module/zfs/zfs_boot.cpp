@@ -86,6 +86,7 @@ int dsl_dsobj_to_dsname(char *pname, uint64_t obj, char *buf);
 
 #include <sys/zvolIO.h>
 #include <sys/ZFSPool.h>
+#include <sys/ZFSDatasetScheme.h>
 #include <sys/zfs_boot.h>
 
 #if defined(DEBUG) || defined(ZFS_DEBUG)
@@ -175,7 +176,9 @@ typedef struct pool_list {
 
 #define ZFS_BOOT_PREALLOC_SET	5
 
+#if 0
 static ZFSBootDevice *bootdev = 0;
+#endif
 static pool_list_t *zfs_boot_pool_list = 0;
 
 DSTATIC char *
@@ -1422,12 +1425,13 @@ zfs_boot_fini()
 DSTATIC int
 zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 {
-	ZFSPool *pool_proxy = 0;
-	IOService *resourceService = 0;
-	OSDictionary *properties = 0;
-	spa_t *spa = 0;
-	char *zfs_bootfs = 0;
-	uint64_t bootfs = 0;
+	ZFSDataset *dataset = NULL;
+	IOMedia *media;
+	IOService *resourceService = NULL;
+	OSDictionary *properties = NULL;
+	spa_t *spa = NULL;
+	char *zfs_bootfs = NULL;
+	uint64_t bootfs = NULL;
 	int error, len = ZFS_MAX_DATASET_NAME_LEN;
 
 	dprintf("%s\n", __func__);
@@ -1436,16 +1440,20 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 		return (EINVAL);
 	}
 
+#if 0
+	ZFSPool *pool_proxy = NULL;
 	if (bootdev) {
 		dprintf("%s bootdev already set\n", __func__);
 		return (EBUSY);
 	}
+#endif
 
 	zfs_bootfs = (char *)kmem_alloc(len, KM_SLEEP);
 	if (!zfs_bootfs) {
 		printf("%s string alloc failed\n", __func__);
 		return (ENOMEM);
 	}
+	zfs_bootfs[0] = '\0';
 
 	mutex_enter(&spa_namespace_lock);
 	spa = spa_next(NULL);
@@ -1459,6 +1467,7 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 		return (0);
 	}
 
+#if 0
 	/* Get pool proxy */
 	if (!spa->spa_iokit_proxy ||
 	    (pool_proxy = spa->spa_iokit_proxy->proxy) == NULL) {
@@ -1467,6 +1476,7 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 		kmem_free(zfs_bootfs, len);
 		return (0);
 	}
+#endif
 
 	error = dsl_dsobj_to_dsname(spa_name(spa),
 	    spa_bootfs(spa), zfs_bootfs);
@@ -1495,8 +1505,9 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 		if ((partUUID = OSSymbol::withCString(
 		    "6A898CC3-1DD2-11B2-99A6-080020736631")) == NULL) {
 			dprintf("%s couldn't make partUUID\n", __func__);
-			kmem_free(zfs_bootfs, len);
-			return (ENOMEM);
+			break;
+			// kmem_free(zfs_bootfs, len);
+			// return (ENOMEM);
 		}
 
 		/* Assign ZFS partiton UUID to both */
@@ -1505,8 +1516,8 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 		    properties->setObject(kIOMediaContentHintKey,
 		    partUUID) == false) {
 			dprintf("%s content hint failed\n", __func__);
-			kmem_free(zfs_bootfs, len);
-			return (ENOMEM);
+			// kmem_free(zfs_bootfs, len);
+			// return (ENOMEM);
 		}
 		partUUID->release();
 	} while(0);
@@ -1543,13 +1554,34 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 		nameStr->release();
 		uuidStr->release();
 	} while (0);
-	/* Done with this string */
-	kmem_free(zfs_bootfs, len);
-	zfs_bootfs = 0;
 
 	/* Install vfc_mountroot handler */
 	spl_hijack_mountroot((void *)zfs_vfs_mountroot);
 
+	/* Create proxy device */
+	error = zfs_osx_proxy_create(zfs_bootfs);
+	if (error == 0) {
+		dataset = zfs_osx_proxy_get(zfs_bootfs);
+	}
+	/* Done with this string */
+	kmem_free(zfs_bootfs, len);
+	zfs_bootfs = 0;
+
+	if (!dataset) {
+		printf("%s: couldn't create proxy device\n",
+		    __func__);
+		return (ENXIO);
+	}
+
+	media = OSDynamicCast(IOMedia, dataset);
+	if (!media) {
+		printf("%s: couldn't cast proxy media\n",
+		    __func__);
+		dataset->release();
+		return (ENXIO);
+	}
+
+#if 0
 	bootdev = new ZFSBootDevice;
 
 	if (!bootdev) {
@@ -1587,7 +1619,6 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 	bootdev->registerService(kIOServiceAsynchronous);
 	//bootdev->registerService(kIOServiceSynchronous);
 
-	IOMedia *media = 0;
 	do {
 		if (bootdev->getClient() != 0) {
 			media = OSDynamicCast(IOMedia,
@@ -1610,6 +1641,7 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 		printf("%s couldn't get bootdev media\n", __func__);
 		return (ENXIO);
 	}
+#endif
 
 	resourceService = IOService::getResourceService();
 	if (!resourceService) {
@@ -2385,6 +2417,7 @@ zfs_boot_update_bootinfo(spa_t *spa)
 
 } /* extern "C" */
 
+#if 0
 #ifdef ZFS_BOOT
 /* Remainder only needed for boot */
 
@@ -2397,6 +2430,7 @@ char ZFSBootDevice::vendorString[4] = "ZFS";
 char ZFSBootDevice::revisionString[4] = "0.1";
 char ZFSBootDevice::infoString[12] = "ZFS dataset";
 
+#if 0
 int
 zfs_boot_get_path(char *path, int len)
 {
@@ -2420,6 +2454,7 @@ zfs_boot_get_path(char *path, int len)
 
 	return (-1);
 }
+#endif
 
 bool
 ZFSBootDevice::init(OSDictionary *properties)
@@ -2578,6 +2613,11 @@ error:
 void
 ZFSBootDevice::free()
 {
+	char *pstring = (char *)productString;
+	productString = 0;
+
+	if (pstring) kmem_free(pstring, strlen(pstring) + 1);
+
 	IOBlockStorageDevice::free();
 }
 
@@ -2892,4 +2932,5 @@ ZFSBootDevice::reportMaxValidBlock(UInt64 *maxBlock)
 
 	return (kIOReturnSuccess);
 }
-#endif /* ZFS_BOOT */
+#endif	/* ZFS_BOOT */
+#endif	/* 0 */

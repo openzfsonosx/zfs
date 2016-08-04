@@ -1652,3 +1652,108 @@ out:
 
 	return (ret);
 }
+
+#ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOBSD.h>
+#include <IOKit/IOTypes.h>
+#include <IOKit/IOKitLib.h>
+//#include <IOKit/storage/IOMedia.h>
+
+/*
+ * Try to retrieve a proxy device and its bsd name.
+ */
+int
+get_proxy_bsdname(const char *osname, char *bsdname, int len)
+{
+	io_service_t service;
+	//kern_return_t ret;
+	CFMutableDictionaryRef matchDict;
+	CFStringRef bsdstr;
+	CFRange range;
+	CFIndex outlen;
+	char servicename[MAXPATHLEN];
+	//char bsdname[24];	/* disk[0-9s] with up to 19c + null */
+
+	/* Validate arguments */
+	if (!osname || osname[0] == '\0') {
+		fprintf(stderr, "%s missing dataset name\n", __func__);
+		return (EINVAL);
+	}
+	if (!bsdname || len == 0) {
+		fprintf(stderr, "%s invalid bsdname or len\n", __func__);
+		return (EINVAL);
+	}
+
+	/* Format the IOService name from dataset name */
+	snprintf(servicename, MAXPATHLEN, "ZFS %s Media", osname);
+
+	/* Get matching dictionary for service-by-name */
+	matchDict = IOServiceNameMatching(servicename);
+	if (!matchDict) {
+		fprintf(stderr, "%s no matching dictionary\n", __func__);
+		return (ENOMEM);
+	}
+
+	/* Consumes CFDictionary */
+	service = IOServiceGetMatchingService(kIOMasterPortDefault,
+	    matchDict);
+	if (!service) {
+		fprintf(stderr, "%s no matching service\n", __func__);
+		return (ENOENT);
+	}
+
+	/* Retrieve bsd name from service */
+	bsdstr = IORegistryEntryCreateCFProperty(service,
+	    CFSTR(kIOBSDNameKey), kCFAllocatorDefault, /* options */ 0);
+	if (!bsdstr) {
+		fprintf(stderr, "%s no bsd name\n", __func__);
+		return (ENOENT);
+	}
+	IOObjectRelease(service);
+
+	/* Allow for null char terminator */
+	//range = CFRangeMake(0, len-1);
+	/* Allow for /dev/ prefix and null terminator */
+	//range = CFRangeMake(0, len-6);
+	range = CFRangeMake(0, MIN(len - 6, CFStringGetLength(bsdstr)));
+
+	/* Get CFString length */
+	outlen = CFStringGetBytes(bsdstr, range,
+	    CFStringGetSystemEncoding(), /* lossByte */ 0,
+	    /* isExternal */ 0, /* buffer */ 0,
+	    /* buflen */ 0, /* usedlen */ 0);
+	/* Should have at least diskN */
+	if (outlen < 5) {
+		fprintf(stderr, "%s bsd name error\n", __func__);
+		CFRelease(bsdstr);
+		return (ENXIO);
+	}
+
+	/* Ensure buffer is large enough to hold bsdname */
+	if (outlen > len) {
+		fprintf(stderr, "%s buffer too small\n", __func__);
+		/* Should report actual len back to caller */
+		CFRelease(bsdstr);
+		return (EAGAIN);
+	}
+	range = CFRangeMake(0, outlen);
+
+	/* Now copy the string out */
+	bzero(bsdname, sizeof (bsdname));
+	snprintf(bsdname, (5+1), "/dev/"); // null terminated
+	outlen = CFStringGetBytes(bsdstr, range,
+	    CFStringGetSystemEncoding(), /* lossByte */ 0,
+	    /* isExternal */ 0, /* buffer */ (UInt8 *)bsdname+5,
+	    /* buflen */ len, /* usedlen */ 0);
+	/* Null terminate */
+	bsdname[len-1] = '\0';
+	CFRelease(bsdstr);
+
+	/* Debug output */
+	fprintf(stderr, "%s got bsdname %s for %s\n", __func__,
+	    bsdname, osname);
+	//snprintf(bsdout, len, bsdname);
+	return (0);
+}
+#endif /* __APPLE__ */

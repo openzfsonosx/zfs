@@ -9,10 +9,12 @@ extern "C" {
 /* Link data vdevs to virtual devices */
 int zfs_boot_update_bootinfo(spa_t *spa);
 
+#if 0
 #ifdef ZFS_BOOT
 /* At boot time, get path from ZFSBootDevice */
 int zfs_boot_get_path(char *, int);
 #endif /* ZFS_BOOT */
+#endif
 
 #ifdef __cplusplus
 } /* extern "C" */
@@ -31,6 +33,7 @@ typedef struct zfs_bootinfo {
 bool zfs_boot_init(IOService *);
 void zfs_boot_fini();
 
+#if 0
 #pragma mark - ZFSBootDevice
 #include <IOKit/storage/IOBlockStorageDevice.h>
 
@@ -71,7 +74,8 @@ private:
 	char *productString;
 	bool isReadOnly;
 };
-#endif /* ZFS_BOOT */
+#endif	/* 0 */
+#endif	/* ZFS_BOOT */
 #endif	/* __cplusplus */
 
 #endif /* ZFS_BOOT_H_INCLUDED */
