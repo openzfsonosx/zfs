@@ -3,6 +3,7 @@
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>
 #include <IOKit/IOService.h>
+#include <IOKit/IODeviceTreeSupport.h>
 
 extern "C" {
 #include <sys/spa_impl.h>
@@ -280,7 +281,8 @@ ZFSPool::init(OSDictionary *properties, spa_t *spa)
 	const OSSymbol *virtualSymbol = OSSymbol::withCString(
 	    kIOPropertyPhysicalInterconnectTypeVirtual);
 	const OSSymbol *locationSymbol = OSSymbol::withCString(
-	    kIOPropertyInternalExternalKey);
+	    kIOPropertyExternalKey);
+	//    kIOPropertyInternalExternalKey);
 	const OSSymbol *ssdSymbol = OSSymbol::withCString(
 	    kIOPropertyMediumTypeSolidStateKey);
 	OSNumber *physSize = NULL, *logSize = NULL;
@@ -540,6 +542,7 @@ void
 spa_iokit_pool_proxy_destroy(spa_t *spa)
 {
 	ZFSPool *proxy;
+	IORegistryEntry *provider;
 	spa_iokit_t *wrapper;
 
 	if (!spa) {
@@ -565,10 +568,17 @@ spa_iokit_pool_proxy_destroy(spa_t *spa)
 		return;
 	}
 
+	provider = proxy->getParentEntry(gIODTPlane);
 	if (proxy->terminate(kIOServiceSynchronous|
 	    kIOServiceRequired) == false) {
 		dprintf("terminate failed");
 	}
+
+	if (!provider) {
+		dprintf("couldn't detach from Device Tree");
+	}
+	proxy->detachFromParent(provider, gIODTPlane);
+	provider = NULL;
 	proxy->release();
 
 	/*
@@ -644,6 +654,25 @@ ZFSPool::withProviderAndPool(IOService *zfs_hl, spa_t *spa)
 		OSSafeReleaseNULL(proxy);
 		return (0);
 	}
+
+	if (proxy->attachToParent(zfs_hl, gIODTPlane) == false) {
+		dprintf("couldn't attach to Device Tree");
+		// OSSafeReleaseNULL(proxy);
+		// return (0);
+	}
+
+	/* XXX
+	 * Copy registry entry ID as the unit number for now.
+	 * This allows all IOBlockStorageDrivers above us to
+	 * attach their child IOMedia to the Device Tree with
+	 * the unit number provided. ZFSDatasetProxy, each
+	 * ZFSDataset, and each net_lundman_zfs_zvol_device
+	 * should set a unit and unitLUN (each 32-bit) from
+	 * the 64-bit object ID, 64-bit GUID, or a hash of
+	 * the dataset/zvol name.
+	 */
+	proxy->setProperty("IOUnit", 0ULL, 32);
+	proxy->setLocation("0", gIODTPlane);
 
 	if (proxy->start(zfs_hl) == false) {
 		printf("start failed");

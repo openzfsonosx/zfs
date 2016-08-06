@@ -90,10 +90,10 @@ bool
 ZFSDatasetProxy::start(IOService *provider)
 {
 	OSObject *property = NULL, *size = NULL;
-	OSString *nameString = NULL;
+	OSString *nameString = NULL, *typeString = NULL;
 	OSNumber *sizeNum = NULL;
 	OSDictionary *deviceDict = NULL, *protocolDict = NULL;
-	const OSSymbol *virtualSymbol = NULL, *internalSymbol = NULL;
+	OSString *virtualSymbol = NULL, *locationSymbol = NULL;
 	const char *cstr = NULL;
 	char *pstring = NULL;
 	int plen = 0;
@@ -186,6 +186,17 @@ ZFSDatasetProxy::start(IOService *provider)
 	deviceDict->setObject(kIOPropertyProductNameKey, nameString);
 	OSSafeReleaseNULL(nameString);
 
+	/* Set this device to be an SSD, for priority and VM paging */
+	typeString = OSString::withCString(
+	    kIOPropertyMediumTypeSolidStateKey);
+	if (!typeString) {
+		IOLog("could not create medium type string\n");
+		return (true);
+	}
+	deviceDict->setObject(kIOPropertyMediumTypeKey, typeString);
+	typeString->release();
+	typeString = NULL;
+
 	if (setProperty(kIOPropertyDeviceCharacteristicsKey,
 	    deviceDict) == false) {
 		dprintf("device dict setProperty failed");
@@ -214,11 +225,13 @@ ZFSDatasetProxy::start(IOService *provider)
 		goto error;
 	}
 
-	virtualSymbol = OSSymbol::withCString(
+	virtualSymbol = OSString::withCString(
 	    kIOPropertyPhysicalInterconnectTypeVirtual);
-	internalSymbol = OSSymbol::withCString(
-	    kIOPropertyInternalKey);
-	if (!virtualSymbol || !internalSymbol) {
+	//locationSymbol = OSString::withCString(
+	//    kIOPropertyInternalExternalKey);
+	locationSymbol = OSString::withCString(
+	    kIOPropertyExternalKey);
+	if (!virtualSymbol || !locationSymbol) {
 		dprintf("symbol alloc failed");
 		goto error;
 	}
@@ -226,10 +239,10 @@ ZFSDatasetProxy::start(IOService *provider)
 	protocolDict->setObject(kIOPropertyPhysicalInterconnectTypeKey,
 	    virtualSymbol);
 	protocolDict->setObject(kIOPropertyPhysicalInterconnectLocationKey,
-	    internalSymbol);
+	    locationSymbol);
 
 	OSSafeReleaseNULL(virtualSymbol);
-	OSSafeReleaseNULL(internalSymbol);
+	OSSafeReleaseNULL(locationSymbol);
 
 	if (setProperty(kIOPropertyProtocolCharacteristicsKey,
 	    protocolDict) == false) {
@@ -249,7 +262,7 @@ error:
 	OSSafeReleaseNULL(protocolDict);
 	OSSafeReleaseNULL(nameString);
 	OSSafeReleaseNULL(virtualSymbol);
-	OSSafeReleaseNULL(internalSymbol);
+	OSSafeReleaseNULL(locationSymbol);
 	if (pstring) IOFree(pstring, plen);
 	if (started) IOBlockStorageDevice::stop(provider);
 	return (false);

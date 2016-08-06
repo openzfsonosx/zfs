@@ -890,10 +890,12 @@ ZFSDatasetScheme::addDataset(const char *osname)
 		OSSafeReleaseNULL(dataset);
 		return (false);
 	}
+	attachMediaObjectToDeviceTree(dataset);
 
 	if (dataset->start(this) == false) {
 		dprintf("start failed");
 		dataset->detach(this);
+                detachMediaObjectFromDeviceTree(dataset);
 		OSSafeReleaseNULL(dataset);
 		return (false);
 	}
@@ -975,6 +977,7 @@ ZFSDatasetScheme::removeDataset(const char *osname, bool force)
 		dataset->terminate(kIOServiceSynchronous);
 	}
 
+	detachMediaObjectFromDeviceTree(dataset);
 	dataset->release();
 	dataset = 0;
 

@@ -2,6 +2,8 @@
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>
+#include <IOKit/IOService.h>
+#include <IOKit/IODeviceTreeSupport.h>
 
 #include <sys/zfs_ioctl.h>
 #include <sys/zfs_znode.h>
@@ -248,8 +250,18 @@ net_lundman_zfs_zvol::probe (IOService* provider, SInt32* score)
 bool
 net_lundman_zfs_zvol::start (IOService *provider)
 {
+	IORegistryEntry *platform;
     bool res = super::start(provider);
 
+	platform = IOService::fromPath("/", gIODTPlane);
+	if (platform == NULL || attachToParent(platform,
+	    gIODTPlane) == false) {
+		IOLog("couldn't attach to Device Tree");
+		// super::stop(provider);
+		// return (false);
+	}
+	setProperty("IOUnit", 0ULL, 32);
+	setLocation("0", gIODTPlane);
 
     IOLog("ZFS: Loading module ... \n");
 
@@ -328,9 +340,17 @@ net_lundman_zfs_zvol::start (IOService *provider)
 void
 net_lundman_zfs_zvol::stop (IOService *provider)
 {
+	IORegistryEntry *platform;
+
 #ifdef ZFS_BOOT
 	zfs_boot_fini();
 #endif
+
+	platform = getParentEntry(gIODTPlane);
+	if (platform == NULL) {
+		IOLog("couldn't detach from Device Tree");
+	}
+	detachFromParent(platform, gIODTPlane);
 
     IOLog("ZFS: Attempting to unload ...\n");
 

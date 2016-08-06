@@ -94,16 +94,8 @@
 			<key>FSMountArguments</key>
 			<string></string>
 			<key>FSVerificationExecutable</key>
-			<string>fsck_zfs</string>
+			<string></string>
 			<key>FSVerificationArguments</key>
-			<string></string>
-			<key>FSLiveVerificationArguments</key>
-			<string></string>
-			<key>FSXMLOutputArgument</key>
-			<string>-x</string>
-			<key>FSRepairExecutable</key>
-			<string>fsck_zfs</string>
-			<key>FSRepairArguments</key>
 			<string></string>
 			<key>FSFormatMinimumSize</key>
 			<integer>268435456</integer>

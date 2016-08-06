@@ -432,8 +432,8 @@ ZFSDataset::setDatasetName(const char *name)
 	/* Assign plain ZFS Dataset name */
 	setProperty(kZFSDatasetNameKey, datasetString);
 	/* Assign IOMedia name */
-	//setName(name);
-	setName(newname);
+	//setName(newname);
+	setName(name);
 
 	/* Unlock IORegistryEntry and cleanup allocations */
 	unlockForArbitration();

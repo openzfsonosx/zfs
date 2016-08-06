@@ -75,6 +75,8 @@
 		<dict>
 			<key>CFBundleIdentifier</key>
 			<string>net.lundman.zfs</string>
+			<key>Content Mask</key>
+			<string>ZFS_Dataset_Partiton_Scheme</string>
 			<key>IOClass</key>
 			<string>ZFSDatasetScheme</string>
 			<key>IOProbeScore</key>

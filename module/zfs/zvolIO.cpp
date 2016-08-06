@@ -98,7 +98,7 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	OSDictionary *deviceCharacteristics = 0;
 	OSDictionary *storageFeatures = 0;
 	OSBoolean *unmapFeature = 0;
-	const OSSymbol *propSymbol = 0;
+	OSString *propString = 0;
 	OSString *dataString = 0;
 	OSNumber *dataNumber = 0;
 
@@ -129,29 +129,29 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 		return (true);
 	}
 
-	propSymbol = OSSymbol::withCString(
+	propString = OSString::withCString(
 	    kIOPropertyPhysicalInterconnectTypeVirtual);
 
-	if (!propSymbol) {
+	if (!propString) {
 		IOLog("could not create interconnect type string\n");
 		return (true);
 	}
 	protocolCharacteristics->setObject(
-	    kIOPropertyPhysicalInterconnectTypeKey, propSymbol);
+	    kIOPropertyPhysicalInterconnectTypeKey, propString);
 
-	propSymbol->release();
-	propSymbol = 0;
+	propString->release();
+	propString = 0;
 
-	propSymbol = OSSymbol::withCString(kIOPropertyInterconnectFileKey);
-	if (!propSymbol) {
+	propString = OSString::withCString(kIOPropertyInterconnectFileKey);
+	if (!propString) {
 		IOLog("could not create interconnect location string\n");
 		return (true);
 	}
 	protocolCharacteristics->setObject(
-	    kIOPropertyPhysicalInterconnectLocationKey, propSymbol);
+	    kIOPropertyPhysicalInterconnectLocationKey, propString);
 
-	propSymbol->release();
-	propSymbol = 0;
+	propString->release();
+	propString = 0;
 
 	setProperty(kIOPropertyProtocolCharacteristicsKey,
 	    protocolCharacteristics);
@@ -176,17 +176,17 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 	}
 
 	/* Set this device to be an SSD, for priority and VM paging */
-	propSymbol = OSSymbol::withCString(
+	propString = OSString::withCString(
 	    kIOPropertyMediumTypeSolidStateKey);
-	if (!propSymbol) {
+	if (!propString) {
 		IOLog("could not create medium type string\n");
 		return (true);
 	}
 	deviceCharacteristics->setObject(kIOPropertyMediumTypeKey,
-	    propSymbol);
+	    propString);
 
-	propSymbol->release();
-	propSymbol = 0;
+	propString->release();
+	propString = 0;
 
 	/* Set logical block size to ZVOL_BSIZE (512b) */
 	dataNumber =	OSNumber::withNumber(ZVOL_BSIZE,
@@ -290,6 +290,15 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 
 	setProperty(kIOBlockStorageDeviceTypeKey,
 	    kIOBlockStorageDeviceTypeGeneric);
+
+	/* XXX Set IO Unit for device tree support */
+	if (zv) {
+		uint64_t objid = dmu_objset_id(zv->zv_objset);
+		setProperty("IOUnit", objid>>32, 32);
+		setProperty("IOUnitLUN", (objid&0xffffffff), 32);
+	} else {
+		setProperty("IOUnit", 0ULL, 32);
+	}
 
 	return (true);
 }
