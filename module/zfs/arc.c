@@ -3827,6 +3827,8 @@ arc_available_memory(void)
 	}
 #endif
 
+#endif // sun
+
 	/*
 	 * If zio data pages are being allocated out of a separate heap segment,
 	 * then enforce that the size of available vmem for this arena remains
@@ -3837,6 +3839,7 @@ arc_available_memory(void)
 	 * memory fragmentation issues.
 	 */
 	if (zio_arena != NULL) {
+		int64_t n;
 		n = vmem_size(zio_arena, VMEM_FREE) -
 		    (vmem_size(zio_arena, VMEM_ALLOC) >> 4);
 		if (n < lowest) {
@@ -3844,8 +3847,6 @@ arc_available_memory(void)
 			r = FMR_ZIO_ARENA;
 		}
 	}
-
-#endif // sun
 
 #ifdef __APPLE__
 	lowest = spl_free_wrapper();
