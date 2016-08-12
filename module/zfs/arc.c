@@ -3704,11 +3704,11 @@ arc_available_memory(void)
 	}
 #endif
 
-#else  // KERNEL
+#else  // _KERNEL
 	/* Every 100 calls, free a small amount */
 	if (spa_get_random(100) == 0)
 		lowest = -1024;
-#endif // KERNEL
+#endif // _KERNEL
 
 	last_free_memory = lowest;
 	last_free_reason = r;
@@ -3781,7 +3781,7 @@ arc_kmem_reap_now(void)
 	kmem_cache_reap_now(hdr_l2only_cache);
 	kmem_cache_reap_now(range_seg_cache);
 
-#ifdef KERNEL
+#ifdef _KERNEL
 	if (zio_arena != NULL) {
 		/*
 		 * Ask the vmem arena to reclaim unused memory from its
