@@ -271,6 +271,7 @@
 #include <sys/kstat_osx.h>
 #ifdef _KERNEL
 extern vmem_t *zio_arena;
+extern vmem_t *heap_arena;
 #endif
 #endif
 
@@ -3658,6 +3659,11 @@ arc_available_memory(void)
 	}
 
 #if defined(__i386)
+
+#endif
+
+#endif // sun
+
 	/*
 	 * If we're on an i386 platform, it's possible that we'll exhaust the
 	 * kernel heap space before we ever run out of available physical
@@ -3669,15 +3675,16 @@ arc_available_memory(void)
 	 * heap is allocated.  (Or, in the calculation, if less than 1/4th is
 	 * free)
 	 */
-	n = vmem_size(heap_arena, VMEM_FREE) -
+	// likewise, in Mac OS X, we often find ourselves with little free memory
+	// as reported by vm.page* variables, and spl signalling might not be quick
+	// enough to trigger an arc reclaim (which also reaps the zio caches)
+	// reusing Illumos logic here seems fairly sensible.
+	int64_t n = vmem_size(heap_arena, VMEM_FREE) -
 	    (vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC) >> 2);
 	if (n < lowest) {
 		lowest = n;
 		r = FMR_HEAP_ARENA;
 	}
-#endif
-
-#endif // sun
 
 	/*
 	 * If zio data pages are being allocated out of a separate heap segment,
@@ -3689,7 +3696,6 @@ arc_available_memory(void)
 	 * memory fragmentation issues.
 	 */
 	if (zio_arena != NULL) {
-		int64_t n;
 		n = vmem_size(zio_arena, VMEM_FREE) -
 		    (vmem_size(zio_arena, VMEM_ALLOC) >> 4);
 		if (n < lowest) {
