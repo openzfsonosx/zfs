@@ -3689,8 +3689,19 @@ arc_available_memory(void)
 	// as reported by vm.page* variables, and spl signalling might not be quick
 	// enough to trigger an arc reclaim (which also reaps the zio caches)
 	// reusing Illumos logic here seems fairly sensible.
-	int64_t n = spl_vmem_size(heap_arena, VMEM_FREE) -
-	    (spl_vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC) >> 2);
+
+	int64_t n;
+
+	size_t heap_total = spl_vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC);
+	size_t heap_free = spl_vmem_size(heap_arena, VMEM_FREE);
+
+	size_t heap_quarter_total = heap_total / 4;
+
+	if (heap_free < heap_quarter_total)
+		n = heap_free - heap_quarter_total;
+	else
+		n = lowest;
+
 	if (n < lowest) {
 		lowest = n;
 		r = FMR_HEAP_ARENA;
