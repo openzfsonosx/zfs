@@ -3569,6 +3569,8 @@ typedef enum free_memory_reason_t {
 	FMR_PAGES_PP_MAXIMUM,
 	FMR_HEAP_ARENA,
 	FMR_ZIO_ARENA,
+	FMR_SPL_FREE,
+	FMR_SPL_PRESSURE,
 } free_memory_reason_t;
 
 int64_t last_free_memory;
@@ -3664,6 +3666,14 @@ arc_available_memory(void)
 
 #endif // sun
 
+#ifdef __APPLE__
+	lowest = spl_free_wrapper();
+	r = FMR_SPL_FREE;
+	if((lowest - spl_free_manual_pressure_wrapper()) < 0) {
+		lowest -= spl_free_manual_pressure_wrapper();
+		r = FMR_SPL_PRESSURE;
+	}
+
 	/*
 	 * If we're on an i386 platform, it's possible that we'll exhaust the
 	 * kernel heap space before we ever run out of available physical
@@ -3679,8 +3689,8 @@ arc_available_memory(void)
 	// as reported by vm.page* variables, and spl signalling might not be quick
 	// enough to trigger an arc reclaim (which also reaps the zio caches)
 	// reusing Illumos logic here seems fairly sensible.
-	int64_t n = vmem_size(heap_arena, VMEM_FREE) -
-	    (vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC) >> 2);
+	int64_t n = spl_vmem_size(heap_arena, VMEM_FREE) -
+	    (spl_vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC) >> 2);
 	if (n < lowest) {
 		lowest = n;
 		r = FMR_HEAP_ARENA;
@@ -3696,21 +3706,15 @@ arc_available_memory(void)
 	 * memory fragmentation issues.
 	 */
 	if (zio_arena != NULL) {
-		n = vmem_size(zio_arena, VMEM_FREE) -
-		    (vmem_size(zio_arena, VMEM_ALLOC) >> 4);
+		n = spl_vmem_size(zio_arena, VMEM_FREE) -
+		    (spl_vmem_size(zio_arena, VMEM_ALLOC) >> 4);
 		if (n < lowest) {
 			lowest = n;
 			r = FMR_ZIO_ARENA;
 		}
 	}
 
-#ifdef __APPLE__
-	lowest = spl_free_wrapper();
-	if((lowest - spl_free_manual_pressure_wrapper()) < 0) {
-		lowest -= spl_free_manual_pressure_wrapper();
-	}
-#endif
-
+#endif // __APPLE__
 #else  // _KERNEL
 	/* Every 100 calls, free a small amount */
 	if (spa_get_random(100) == 0)
