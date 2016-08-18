@@ -227,11 +227,15 @@ zil_read_log_block(zilog_t *zilog, boolean_t decrypt, const blkptr_t *bp,
 	    ZB_ZIL_OBJECT, ZB_ZIL_LEVEL, bp->blk_cksum.zc_word[ZIL_ZC_SEQ]);
 
 	if (!decrypt) {
+		/*
+		 * we can use lsize everywhere here because ZIL blocks
+		 * are not compressed
+		 */
 		zio_flags |= ZIO_FLAG_RAW;
-		data = zio_data_buf_alloc(BP_GET_LSIZE(bp));
+		data = zio_data_buf_alloc(BP_GET_PSIZE(bp));
 
 		error = zio_wait(zio_read(NULL, zilog->zl_spa,
-		    bp, data, BP_GET_LSIZE(bp), NULL, NULL,
+		    bp, data, BP_GET_PSIZE(bp), NULL, NULL,
 		    ZIO_PRIORITY_SYNC_READ, zio_flags, &zb));
 	} else {
 		error = arc_read(NULL, zilog->zl_spa, bp, arc_getbuf_func,
@@ -291,7 +295,7 @@ zil_read_log_block(zilog_t *zilog, boolean_t decrypt, const blkptr_t *bp,
 	}
 
 	if (!decrypt)
-		zio_data_buf_free(data, BP_GET_LSIZE(bp));
+		zio_data_buf_free(data, BP_GET_PSIZE(bp));
 
 	return (error);
 }
@@ -356,13 +360,13 @@ zil_check_log_data(zilog_t *zilog, const lr_write_t *lr)
 	SET_BOOKMARK(&zb, dmu_objset_id(zilog->zl_os), lr->lr_foid,
 	    ZB_ZIL_LEVEL, lr->lr_offset / BP_GET_LSIZE(bp));
 
-	data = zio_data_buf_alloc(BP_GET_LSIZE(bp));
+	data = zio_data_buf_alloc(BP_GET_PSIZE(bp));
 
 	error = zio_wait(zio_read(NULL, zilog->zl_spa,
-	    bp, data, BP_GET_LSIZE(bp), NULL, NULL,
+	    bp, data, BP_GET_PSIZE(bp), NULL, NULL,
 	    ZIO_PRIORITY_SYNC_READ, zio_flags, &zb));
 
-	zio_data_buf_free(data, BP_GET_LSIZE(bp));
+	zio_data_buf_free(data, BP_GET_PSIZE(bp));
 
 	return (error);
 }
@@ -414,7 +418,9 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 
 		if (blk_seq > claim_blk_seq)
 			break;
-		if ((error = parse_blk_func(zilog, &blk, arg, txg)) != 0)
+
+		error = parse_blk_func(zilog, &blk, arg, txg);
+		if (error != 0)
 			break;
 		ASSERT3U(max_blk_seq, <, blk_seq);
 		max_blk_seq = blk_seq;
@@ -434,7 +440,9 @@ zil_parse(zilog_t *zilog, zil_parse_blk_func_t *parse_blk_func,
 			ASSERT3U(reclen, >=, sizeof (lr_t));
 			if (lr->lrc_seq > claim_lr_seq)
 				goto done;
-			if ((error = parse_lr_func(zilog, lr, arg, txg)) != 0)
+
+			error = parse_lr_func(zilog, lr, arg, txg);
+			if (error != 0)
 				goto done;
 			ASSERT3U(max_lr_seq, <, lr->lrc_seq);
 			max_lr_seq = lr->lrc_seq;
@@ -625,8 +633,8 @@ zil_create(zilog_t *zilog)
 			BP_ZERO(&blk);
 		}
 
-		error = zio_alloc_zil(zilog->zl_spa, txg, &blk, NULL,
-			ZIL_MIN_BLKSZ, zilog->zl_os->os_encrypted, B_TRUE);
+		error = zio_alloc_zil(zilog->zl_spa, zilog->zl_os, txg, &blk,
+		    NULL, ZIL_MIN_BLKSZ, B_TRUE);
 		fastwrite = TRUE;
 
 		if (error == 0)
@@ -943,7 +951,7 @@ zil_lwb_write_done(zio_t *zio)
 	ASSERT(BP_GET_BYTEORDER(zio->io_bp) == ZFS_HOST_BYTEORDER);
 	ASSERT(!BP_IS_GANG(zio->io_bp));
 	ASSERT(!BP_IS_HOLE(zio->io_bp));
-	ASSERT(BP_GET_FILL(zio->io_bp) == 0);
+	ASSERT(BP_GET_FILL(zio->io_bp) == 0 || BP_IS_ENCRYPTED(zio->io_bp));
 
 	/*
 	 * Ensure the lwb buffer pointer is cleared before releasing
@@ -1098,8 +1106,8 @@ zil_lwb_write_start(zilog_t *zilog, lwb_t *lwb)
 	BP_ZERO(bp);
 	use_slog = USE_SLOG(zilog);
 	/* pass the old blkptr in order to spread log blocks across devs */
-	error = zio_alloc_zil(spa, txg, bp, &lwb->lwb_blk, zil_blksz,
-	    zilog->zl_os->os_encrypted, use_slog);
+	error = zio_alloc_zil(spa, zilog->zl_os, txg, bp, &lwb->lwb_blk,
+	    zil_blksz, use_slog);
 	if (use_slog) {
 		ZIL_STAT_BUMP(zil_itx_metaslab_slog_count);
 		ZIL_STAT_INCR(zil_itx_metaslab_slog_bytes, lwb->lwb_nused);

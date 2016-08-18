@@ -52,7 +52,9 @@ typedef enum zio_checksum_flags {
 	/* Uses salt value */
 	ZCHECKSUM_FLAG_SALTED = (1 << 4),
 	/* Strong enough for nopwrite? */
-	ZCHECKSUM_FLAG_NOPWRITE = (1 << 5)
+	ZCHECKSUM_FLAG_NOPWRITE = (1 << 5),
+	/* Make room for MAC? */
+	ZCHECKSUM_FLAG_MAC_COMPATIBLE = (1 << 6)
 } zio_checksum_flags_t;
 
 /*

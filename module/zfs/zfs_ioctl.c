@@ -82,7 +82,7 @@
 #include <sys/dsl_scan.h>
 #include <sharefs/share.h>
 #include <sys/fm/util.h>
-#include <sys/dsl_keychain.h>
+#include <sys/dsl_crypt.h>
 
 #include <sys/dmu_send.h>
 #include <sys/dsl_destroy.h>
@@ -1203,7 +1203,6 @@ zfs_secpolicy_crypto(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 		ret = zfs_secpolicy_write_perms(zc->zc_name,
 		    ZFS_DELEG_PERM_LOAD_KEY, cr);
 		break;
-	case ZFS_IOC_CRYPTO_ADD_KEY:
 	case ZFS_IOC_CRYPTO_REWRAP:
 		ret = zfs_secpolicy_write_perms(zc->zc_name,
 		    ZFS_DELEG_PERM_CHANGE_KEY, cr);
@@ -1432,7 +1431,7 @@ zfs_ioc_pool_create(zfs_cmd_t *zc)
 		}
 
 		(void) nvlist_lookup_nvlist(props, ZPOOL_HIDDEN_ARGS, &ha);
-		error = dsl_crypto_params_init_nvlist(rootprops, ha, &dcp);
+		error = dsl_crypto_params_create_nvlist(rootprops, ha, &dcp);
 		if (error != 0) {
 			nvlist_free(config);
 			nvlist_free(props);
@@ -3060,23 +3059,6 @@ zfs_fill_zplprops_root(uint64_t spa_vers, nvlist_t *createprops,
 	return (error);
 }
 
-static void
-zfs_destroy_temp_keychain_record(const char *dsname) {
-	int error;
-	objset_t *os;
-
-	error = dmu_objset_hold(dsname, FTAG, &os);
-	if (error != 0)
-		return;
-
-	if (os->os_encrypted)
-		(void) spa_keystore_remove_keychain_record(os->os_spa,
-		    os->os_dsl_dataset);
-
-	dmu_objset_rele(os, FTAG);
-}
-
-
 /*
  * innvl: {
  *     "type" -> dmu_objset_type_t (int32)
@@ -3171,7 +3153,7 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 		}
 	}
 
-	error = dsl_crypto_params_init_nvlist(nvprops, hidden_args, &dcp);
+	error = dsl_crypto_params_create_nvlist(nvprops, hidden_args, &dcp);
 	if (error != 0) {
 		nvlist_free(zct.zct_zplprops);
 		return (error);
@@ -3182,10 +3164,6 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 
 	nvlist_free(zct.zct_zplprops);
 	dsl_crypto_params_free(dcp, !!error);
-
-	/* See comment in zfs_create_fs() for details */
-	if (type == DMU_OST_ZFS && error == 0)
-		zfs_destroy_temp_keychain_record(fsname);
 
 	/*
 	 * It would be nice to do this atomically.
@@ -3245,7 +3223,7 @@ zfs_ioc_clone(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 	if (dataset_namecheck(origin_name, NULL, NULL) != 0)
 		return (SET_ERROR(EINVAL));
 
-	error = dsl_crypto_params_init_nvlist(nvprops, hidden_args, &dcp);
+	error = dsl_crypto_params_create_nvlist(nvprops, hidden_args, &dcp);
 	if (error != 0)
 		return (error);
 
@@ -4373,7 +4351,8 @@ zfs_ioc_send(zfs_cmd_t *zc)
 		if (error != 0)
 			return (error);
 
-		error = dsl_dataset_hold_obj(dp, zc->zc_sendobj, FTAG, &tosnap);
+		error = dsl_dataset_hold_crypt_obj(dp, zc->zc_sendobj,
+		    FTAG, &tosnap);
 		if (error != 0) {
 			dsl_pool_rele(dp, FTAG);
 			return (error);
@@ -4383,7 +4362,7 @@ zfs_ioc_send(zfs_cmd_t *zc)
 			error = dsl_dataset_hold_obj(dp, zc->zc_fromobj,
 										 FTAG, &fromsnap);
 			if (error != 0) {
-				dsl_dataset_rele(tosnap, FTAG);
+				dsl_dataset_rele_crypt(tosnap, FTAG);
 				dsl_pool_rele(dp, FTAG);
 				return (error);
 			}
@@ -4394,7 +4373,7 @@ zfs_ioc_send(zfs_cmd_t *zc)
 
 		if (fromsnap != NULL)
 			dsl_dataset_rele(fromsnap, FTAG);
-		dsl_dataset_rele(tosnap, FTAG);
+		dsl_dataset_rele_crypt(tosnap, FTAG);
 		dsl_pool_rele(dp, FTAG);
 	} else {
 		file_t *fp = getf(zc->zc_cookie);
@@ -5472,7 +5451,7 @@ zfs_ioc_crypto(const char *dsname, nvlist_t *innvl, nvlist_t *outnvl) {
 			goto error;
 		}
 
-		ret = dsl_crypto_params_init_nvlist(NULL, hidden_args, &dcp);
+		ret = dsl_crypto_params_create_nvlist(NULL, hidden_args, &dcp);
 		if (ret)
 			goto error;
 
@@ -5483,12 +5462,6 @@ zfs_ioc_crypto(const char *dsname, nvlist_t *innvl, nvlist_t *outnvl) {
 		break;
 	case ZFS_IOC_CRYPTO_UNLOAD_KEY:
 		ret = spa_keystore_unload_wkey(dsname);
-		if (ret)
-			goto error;
-
-		break;
-	case ZFS_IOC_CRYPTO_ADD_KEY:
-		ret = spa_keystore_keychain_add_key(dsname);
 		if (ret)
 			goto error;
 
@@ -5507,7 +5480,7 @@ zfs_ioc_crypto(const char *dsname, nvlist_t *innvl, nvlist_t *outnvl) {
 			goto error;
 		}
 
-		ret = dsl_crypto_params_init_nvlist(args, hidden_args, &dcp);
+		ret = dsl_crypto_params_create_nvlist(args, hidden_args, &dcp);
 		if (ret)
 			goto error;
 

@@ -652,7 +652,7 @@ static int
 zfs_do_clone(int argc, char **argv)
 {
 	zfs_handle_t *zhp = NULL;
-	boolean_t parents = B_FALSE, add_key = B_FALSE;
+	boolean_t parents = B_FALSE;
 	nvlist_t *props;
 	int ret = 0;
 	int c;
@@ -661,7 +661,7 @@ zfs_do_clone(int argc, char **argv)
 		nomem();
 
 	/* check options */
-	while ((c = getopt(argc, argv, "o:pK")) != -1) {
+	while ((c = getopt(argc, argv, "o:p")) != -1) {
 		switch (c) {
 		case 'o':
 			if (parseprop(props, optarg) != 0)
@@ -669,9 +669,6 @@ zfs_do_clone(int argc, char **argv)
 			break;
 		case 'p':
 			parents = B_TRUE;
-			break;
-		case 'K':
-			add_key = B_TRUE;
 			break;
 		case '?':
 			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
@@ -718,7 +715,7 @@ zfs_do_clone(int argc, char **argv)
 	}
 
 	/* pass to libzfs */
-	ret = zfs_clone(zhp, argv[1], props, add_key);
+	ret = zfs_clone(zhp, argv[1], props);
 
 	/* create the mountpoint if necessary */
 	if (ret == 0) {
@@ -7061,15 +7058,14 @@ static int
 zfs_do_key(int argc, char **argv)
 {
 	int c, ret = -1;
-	boolean_t load = B_FALSE, unload = B_FALSE;
-	boolean_t add_key = B_FALSE, rewrap = B_FALSE;
+	boolean_t load = B_FALSE, unload = B_FALSE, rewrap = B_FALSE;
 	nvlist_t *props = NULL;
 	zfs_handle_t *zhp = NULL;
 
 	if (nvlist_alloc(&props, NV_UNIQUE_NAME, 0) != 0)
 		nomem();
 
-	while ((c = getopt(argc, argv, "ulKco:")) != -1) {
+	while ((c = getopt(argc, argv, "ulco:")) != -1) {
 		switch (c) {
 		case 'u':
 			if (ret == 0) {
@@ -7087,15 +7083,6 @@ zfs_do_key(int argc, char **argv)
 				goto usage;
 			}
 			load = B_TRUE;
-			ret = 0;
-			break;
-		case 'K':
-			if (ret == 0) {
-				(void) fprintf(stderr, gettext(
-					"multiple actions specified\n"));
-				goto usage;
-			}
-			add_key = B_TRUE;
 			ret = 0;
 			break;
 		case 'c':
@@ -7126,8 +7113,7 @@ zfs_do_key(int argc, char **argv)
 
 	if (!rewrap && !nvlist_empty(props)) {
 		(void) fprintf(stderr,
-			gettext("Properties not accepted "
-				"for specified command\n"));
+		    gettext("Properties not allowed for specified command\n"));
 		goto usage;
 	}
 
@@ -7145,8 +7131,6 @@ zfs_do_key(int argc, char **argv)
 		ret = zfs_crypto_load_key(zhp);
 	else if (unload)
 		ret = zfs_crypto_unload_key(zhp);
-	else if (add_key)
-		ret = zfs_crypto_add_key(zhp);
 	else
 		ret = zfs_crypto_rewrap(zhp, props);
 

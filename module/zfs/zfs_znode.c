@@ -2156,18 +2156,6 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	zfs_acl_ids_t	acl_ids;
 
 	/*
-	 * At this time, the objset is not owned and so it does not have its
-	 * keychain record in the keystore. We create it here, but we cannot
-	 * destroy it until after syncing is complete. Therefore any function
-	 * that calls this must clean up the keychain record after syncing.
-	 */
-	if (os->os_encrypted) {
-		error = spa_keystore_create_keychain_record(os->os_spa,
-		    os->os_dsl_dataset);
-		ASSERT(error == 0);
-	}
-
-	/*
 	 * First attempt to create master node.
 	 */
 	/*

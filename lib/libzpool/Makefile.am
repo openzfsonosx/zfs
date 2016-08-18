@@ -48,7 +48,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/dsl_deleg.c \
 	../../module/zfs/dsl_destroy.c \
 	../../module/zfs/dsl_dir.c \
-	../../module/zfs/dsl_keychain.c \
+	../../module/zfs/dsl_crypt.c \
 	../../module/zfs/dsl_pool.c \
 	../../module/zfs/dsl_prop.c \
 	../../module/zfs/dsl_scan.c \

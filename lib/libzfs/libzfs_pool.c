@@ -1213,7 +1213,7 @@ zpool_create(libzfs_handle_t *hdl, const char *pool, nvlist_t *nvroot,
 		    strcmp(zonestr, "on") == 0);
 
 		if ((zc_fsprops = zfs_valid_proplist(hdl,
-			ZFS_TYPE_FILESYSTEM, fsprops, zoned, NULL, NULL, msg)) == NULL) {
+			ZFS_TYPE_FILESYSTEM, fsprops, zoned, NULL, NULL, B_TRUE, msg)) == NULL) {
 			goto create_failed;
 		}
 		if (!zc_props &&

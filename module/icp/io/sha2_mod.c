@@ -419,7 +419,8 @@ sha2_digest_final_uio(SHA2_CTX *sha2_ctx, crypto_data_t *digest,
 	 */
 	for (vec_idx = 0;
 		 !uio_getiov(digest->cd_uio, vec_idx, &iov_base, &iov_len) &&
-			 vec_idx < uio_iovcnt(digest->cd_uio) && offset >= iov_len;
+		 offset >= iov_len &&
+		 vec_idx < uio_iovcnt(digest->cd_uio);
 		 offset -= iov_len, vec_idx++)
 		;
 
@@ -1363,7 +1364,8 @@ sha2_mac_verify_atomic(crypto_provider_handle_t provider,
 		/* jump to the first iovec containing the expected digest */
 		for (vec_idx = 0;
 			 !uio_getiov(mac->cd_uio, vec_idx, NULL, &iov_len) &&
-				 vec_idx < uio_iovcnt(mac->cd_uio) && offset >= iov_len;
+				 offset >= iov_len &&
+				 vec_idx < uio_iovcnt(mac->cd_uio);
 			 offset -= iov_len, vec_idx++)
 			;
 
@@ -1372,7 +1374,8 @@ sha2_mac_verify_atomic(crypto_provider_handle_t provider,
 			 * The caller specified an offset that is larger than
 			 * the total size of the buffers it provided.
 			 */
-			return (CRYPTO_DATA_LEN_RANGE);
+			ret = CRYPTO_DATA_LEN_RANGE;
+			break;
 		}
 
 		/* do the comparison of computed digest vs specified one */

@@ -6393,7 +6393,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 			}
 		}
 
-		if (HDR_L2_ENCRYPT(hdr) && hdr->b_l2hdr.b_asize != 0)
+		if (HDR_L2_ENCRYPT(hdr))
 			VERIFY0(l2arc_encrypt_buf(&l2arc_crypto_key, hdr));
 
 		/*
@@ -6613,8 +6613,11 @@ l2arc_encrypt_buf(l2arc_crypt_key_t *key, arc_buf_hdr_t *hdr)
 	uint_t bufsize = hdr->b_size;
 	void *crypt_buf = NULL;
 
-	ASSERT(L2TRANS_GET_COMP(hdr->b_l2hdr.b_transforms) !=
-	    ZIO_COMPRESS_EMPTY);
+	if (L2TRANS_GET_COMP(hdr->b_l2hdr.b_transforms) ==
+	    ZIO_COMPRESS_EMPTY) {
+		L2TRANS_SET_ENC(hdr->b_l2hdr.b_transforms, B_FALSE);
+		return (0);
+	}
 
 	crypt_buf = zio_data_buf_alloc(bufsize);
 

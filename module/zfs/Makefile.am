@@ -69,7 +69,7 @@ zfs_SOURCES = \
 	dsl_deleg.c \
 	dsl_destroy.c \
 	dsl_dir.c \
-	dsl_keychain.c \
+	dsl_crypt.c \
 	dsl_pool.c \
 	dsl_prop.c \
 	dsl_scan.c \
@@ -185,6 +185,8 @@ zfs_SOURCES = \
 	../icp/algs/modes/modes.c \
 	../icp/algs/aes/aes_impl.c \
 	../icp/algs/aes/aes_modes.c \
+	../icp/algs/sha1/sha1.c \
+	../icp/algs/sha2/sha2.c \
 	../icp/asm-x86_64/aes/aeskey.c
 
 zfs_CPPFLAGS=$(CFLAGS_KMOD)

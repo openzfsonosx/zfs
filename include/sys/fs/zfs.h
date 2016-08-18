@@ -173,6 +173,7 @@ typedef enum {
 	ZFS_PROP_RECEIVE_RESUME_TOKEN,
 	ZFS_PROP_ENCRYPTION,
 	ZFS_PROP_SALT,
+	ZFS_PROP_PBKDF2_ITERS,
 	ZFS_PROP_KEYSOURCE,
 	ZFS_PROP_KEYSTATUS,
 	ZFS_NUM_PROPS
@@ -278,6 +279,7 @@ uint64_t zfs_prop_default_numeric(zfs_prop_t);
 boolean_t zfs_prop_readonly(zfs_prop_t);
 boolean_t zfs_prop_inheritable(zfs_prop_t);
 boolean_t zfs_prop_setonce(zfs_prop_t);
+boolean_t zfs_prop_encryption_key_param(zfs_prop_t prop);
 const char *zfs_prop_to_name(zfs_prop_t);
 zfs_prop_t zfs_name_to_prop(const char *);
 boolean_t zfs_prop_user(const char *);

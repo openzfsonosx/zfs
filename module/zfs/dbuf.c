@@ -571,11 +571,12 @@ dbuf_verify(dmu_buf_impl_t *db)
 						DVA_IS_EMPTY(&bp->blk_dva[0]) &&
 						DVA_IS_EMPTY(&bp->blk_dva[1]) &&
 						DVA_IS_EMPTY(&bp->blk_dva[2]));
-                                       ASSERT0(bp->blk_fill);
-                                       ASSERT0(bp->blk_pad);
-                                       ASSERT(!BP_IS_EMBEDDED(bp));
-                                       ASSERT(BP_IS_HOLE(bp));
-                                       ASSERT0(bp->blk_phys_birth);
+					ASSERT0(bp->blk_fill);
+					ASSERT0(bp->blk_pad[0]);
+					ASSERT0(bp->blk_pad[1]);
+					ASSERT(!BP_IS_EMBEDDED(bp));
+					ASSERT(BP_IS_HOLE(bp));
+					ASSERT0(bp->blk_phys_birth);
 				}
 			}
 		}
@@ -3114,7 +3115,7 @@ dbuf_write_ready(zio_t *zio, arc_buf_t *buf, void *vdb)
 	}
 	DB_DNODE_EXIT(db);
 
-	if (!BP_IS_EMBEDDED(bp))
+	if (!BP_IS_EMBEDDED(bp) && !BP_IS_ENCRYPTED(bp))
 		bp->blk_fill = fill;
 
 	mutex_exit(&db->db_mtx);
@@ -3423,7 +3424,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 		mutex_enter(&db->db_mtx);
 		dr->dt.dl.dr_override_state = DR_NOT_OVERRIDDEN;
 		zio_write_override(dr->dr_zio, &dr->dt.dl.dr_overridden_by,
-		    dr->dt.dl.dr_copies, dr->dt.dl.dr_nopwrite);
+			dr->dt.dl.dr_copies, dr->dt.dl.dr_nopwrite);
 		mutex_exit(&db->db_mtx);
 	} else if (db->db_state == DB_NOFILL) {
 		ASSERT(zp.zp_checksum == ZIO_CHECKSUM_OFF ||

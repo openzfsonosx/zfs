@@ -32,7 +32,7 @@
 #include <sys/zfs_acl.h>
 #include <sys/zfs_ioctl.h>
 #include <sys/zfs_znode.h>
-#include <sys/dsl_keychain.h>
+#include <sys/dsl_crypt.h>
 
 #include "zfs_prop.h"
 #include "zfs_deleg.h"
@@ -434,7 +434,7 @@ zfs_prop_init(void)
 	    "ROOTCONTEXT");
 #endif
 	zprop_register_string(ZFS_PROP_KEYSOURCE, "keysource",
-	    "none", PROP_INHERIT, ZFS_TYPE_DATASET,
+	    "none", PROP_ONETIME, ZFS_TYPE_DATASET,
 	    "<prompt | file>,<passphrase | raw>", "KEYSOURCE");
 
 	/* readonly number properties */
@@ -473,6 +473,8 @@ zfs_prop_init(void)
 	    PROP_READONLY, ZFS_TYPE_DATASET, "<size>", "LUSED");
 	zprop_register_number(ZFS_PROP_LOGICALREFERENCED, "logicalreferenced",
 	    0, PROP_READONLY, ZFS_TYPE_DATASET, "<size>", "LREFER");
+	zprop_register_number(ZFS_PROP_PBKDF2_ITERS, "pbkdf2iters",
+	    0, PROP_ONETIME, ZFS_TYPE_DATASET, "<iters>", "PBKDF2ITERS");
 
 	/* default number properties */
 	zprop_register_number(ZFS_PROP_QUOTA, "quota", 0, PROP_DEFAULT,
@@ -528,10 +530,10 @@ zfs_prop_init(void)
 	    PROP_READONLY, ZFS_TYPE_DATASET, "OBJSETID");
 	zprop_register_hidden(ZFS_PROP_INCONSISTENT, "inconsistent",
 	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "INCONSISTENT");
-	zprop_register_hidden(ZFS_PROP_SALT, "salt",
-	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "SALT");
 	zprop_register_hidden(ZFS_PROP_PREV_SNAP, "prevsnap", PROP_TYPE_STRING,
 	    PROP_READONLY, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME, "PREVSNAP");
+	zprop_register_hidden(ZFS_PROP_SALT, "salt",
+	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "SALT");
 
 	/* oddball properties */
 	zprop_register_impl(ZFS_PROP_CREATION, "creation", PROP_TYPE_NUMBER, 0,

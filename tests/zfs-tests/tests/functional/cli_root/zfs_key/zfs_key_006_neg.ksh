@@ -33,18 +33,49 @@
 
 #
 # DESCRIPTION:
-# 'zfs key -K' should not add an encryption key if there is not keychain.
+# 'zfs key -c' should not be able to change an unloaded
+# wrapping key or allow a change to an invalid key
 #
 # STRATEGY:
-# 1. Attempt to add a key to an unencrypted dataset
+# 1. Create an encrypted dataset and unmount it
+# 2. Attempt to change the wrapping key to an invalid key
+# 3. Verify that the old key still works for the encrypted system
+# 4. Unload the wrapping key
+# 5. Attempt to change the key and keysource to a valid key
+# 6. Verify that the old key still works for the encrypted system
+# 7. Attempt to change the key and keysource on an unencrypted filesystem
 #
 
 verify_runnable "both"
 
-log_assert "'zfs key -K' should not add an encryption key to an \
-	unencrypted dataset"
+function cleanup
+{
+	destroy_default_encrypted_dataset
+}
 
-log_mustnot $ZFS key -K $TESTPOOL
+log_onexit cleanup
 
-log_pass "'zfs key -K' fails to add an encryption key to an \
-	unencrypted dataset"
+log_assert "'zfs key -c' should not change an unloaded wrapping key \
+	or allow a change to an invalid key"
+
+create_default_encrypted_dataset
+log_must $ZFS unmount $TESTPOOL/$CRYPTDS
+
+log_mustnot eval '$ECHO $SHORT_PKEY | \
+	$ZFS key -c -o keysource=passphrase,prompt $TESTPOOL/$CRYPTDS'
+
+log_must $ZFS key -u $TESTPOOL/$CRYPTDS
+log_must eval '$ECHO $PKEY | $ZFS key -l $TESTPOOL/$CRYPTDS'
+check_key_available $TESTPOOL/$CRYPTDS
+
+log_must $ZFS key -u $TESTPOOL/$CRYPTDS
+
+log_mustnot eval '$ECHO $HKEY | $ZFS key -c -o keysource=hex,prompt \
+	$TESTPOOL/$CRYPTDS'
+check_key_unavailable $TESTPOOL/$CRYPTDS
+
+log_mustnot eval '$ECHO $PKEY | $ZFS key -c -o keysource=passphrase,prompt \
+	$TESTPOOL'
+
+log_pass "'zfs key -c' does not change an unloaded wrapping key \
+	or allow a change to an invalid key"

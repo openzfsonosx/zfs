@@ -36,22 +36,42 @@
 /* forward declarations */
 struct zbookmark_phys;
 
-/* macros defining key encryption lengths */
-#define	MAX_CRYPT_KEY_LEN 32
+/* macros defining encryption lengths */
+#define	MAX_MASTER_KEY_LEN 32
+#define	DATA_IV_LEN 12
+#define	DATA_SALT_LEN 8
+#define	DATA_MAC_LEN 16
+
 #define	WRAPPING_KEY_LEN 32
-#define	WRAPPING_IV_LEN 13
+#define	WRAPPING_IV_LEN DATA_IV_LEN
 #define	WRAPPING_MAC_LEN 16
-#define	L2ARC_IV_LEN 32
+
+#define	L2ARC_IV_LEN 12
 #define	L2ARC_MAC_LEN 8
 #define	ZIL_MAC_LEN 8
 
-#define	SHA1_DIGEST_LENGTH	20
+#define	SHA1_DIGEST_LEN	20
 #define	SHA_256_DIGEST_LEN 32
 #define	HMAC_SHA256_KEYLEN 32
 
 #define	L2ARC_DEFAULT_CRYPT ZIO_CRYPT_AES_256_CCM
 
 #define	ZIO_NO_ENCRYPTION_NEEDED -1
+
+/*
+ * After encrypting many blocks with the same salt we may start to run
+ * up against the theoretical limits of how much data can securely be
+ * encrypted a single key using the supported encryption modes. To
+ * counteract this we generate a new salt after writing
+ * ZIO_CRYPT_MAX_SALT_USAGE blocks of data, tracked by zk_salt_count.
+ * The current value was chosen because it is approximately the number
+ * of blocks that would have to be written in order to acheive a
+ * 1 / 1 trillion chance of having an IV collision. Developers looking to
+ * change this number should make sure they take into account the
+ * birthday problem in regards to IV generation and the limits of what the
+ * underlying mode can actually handle.
+ */
+#define	ZIO_CRYPT_MAX_SALT_USAGE 400000000
 
 /* utility macros */
 #define	BITS_TO_BYTES(x) (((x) + 7) >> 3)
@@ -62,7 +82,6 @@ typedef enum zfs_ioc_crypto_cmd {
 	ZFS_IOC_CRYPTO_CMD_NONE = 0,
 	ZFS_IOC_CRYPTO_LOAD_KEY,
 	ZFS_IOC_CRYPTO_UNLOAD_KEY,
-	ZFS_IOC_CRYPTO_ADD_KEY,
 	ZFS_IOC_CRYPTO_REWRAP,
 } zfs_ioc_crypto_cmd_t;
 
@@ -89,48 +108,47 @@ typedef struct zio_crypt_info {
 
 extern zio_crypt_info_t zio_crypt_table[ZIO_CRYPT_FUNCTIONS];
 
-/*
- * physical representation of a wrapped key in the DSL Keychain. Note
- * that this structure must only contain uint8_t's for the ZAP byteswap
- * function to work correctly.
- */
-typedef struct dsl_crypto_key_phys {
-	/* encryption algorithm (see zio_encrypt enum) */
-	uint8_t dk_crypt_alg;
-
-	/* iv / nonce for unwrapping the key */
-	uint8_t dk_iv[13];
-
-	uint8_t dk_padding[2];
-
-	/* wrapped key data */
-	uint8_t dk_keybuf[48];
-
-	/* iv / nonce for unwrapping the dedup HMAC key */
-	uint8_t dk_dd_iv[13];
-
-	uint8_t dk_padding2[3];
-
-	/* wrapped dedup HMAC key data */
-	uint8_t dk_dd_keybuf[48];
-} dsl_crypto_key_phys_t;
+/* ZAP entry keys for DSL Encryption Keys stored on disk */
+#define	DSL_CRYPTO_KEY_CRYPT "DSL_CRYPTO_CRYPT"
+#define	DSL_CRYPTO_KEY_IV "DSL_CRYPTO_IV"
+#define	DSL_CRYPTO_KEY_MAC "DSL_CRYPTO_MAC"
+#define	DSL_CRYPTO_KEY_MASTER_BUF "DSL_CRYPTO_MASTER"
+#define	DSL_CRYPTO_KEY_HMAC_KEY_BUF "DSL_CRYPTO_HMAC_KEY"
 
 /* in memory representation of an unwrapped key that is loaded into memory */
 typedef struct zio_crypt_key {
 	/* encryption algorithm */
-	enum zio_encrypt zk_crypt;
+	uint64_t zk_crypt;
 
-	/* illumos crypto api key representation */
-	crypto_key_t zk_key;
+	/* buffer for master key */
+	uint8_t zk_master_keydata[MAX_MASTER_KEY_LEN];
 
-	/* private data for illumos crypto api */
-	crypto_ctx_template_t zk_ctx_tmpl;
+	/* buffer for hmac key */
+	uint8_t zk_hmac_keydata[HMAC_SHA256_KEYLEN];
 
-	/* illumos crypto api dedup key */
-	crypto_key_t zk_dd_key;
+	/* buffer for currrent encryption key derived from master key */
+	uint8_t zk_current_keydata[MAX_MASTER_KEY_LEN];
 
-	/* private data for dedup key */
-	crypto_ctx_template_t zk_dd_ctx_tmpl;
+	/* current 64 bit salt for deriving an encryption key */
+	uint8_t zk_salt[DATA_SALT_LEN];
+
+	/* count of how many times the current salt has been used */
+	uint64_t zk_salt_count;
+
+	/* illumos crypto api current encryption key */
+	crypto_key_t zk_current_key;
+
+	/* template of current encryption key for illumos crypto api */
+	crypto_ctx_template_t zk_current_tmpl;
+
+	/* illumos crypto api current hmac key */
+	crypto_key_t zk_hmac_key;
+
+	/* template of hmac key for illumos crypto api */
+	crypto_ctx_template_t zk_hmac_tmpl;
+
+	/* lock for changing the salt and dependant values */
+	krwlock_t zk_salt_lock;
 } zio_crypt_key_t;
 
 /* in memory representation of the global L2ARC encryption key */
@@ -148,28 +166,8 @@ typedef struct l2arc_crypt_key {
 void l2arc_crypt_key_destroy(l2arc_crypt_key_t *key);
 int l2arc_crypt_key_init(l2arc_crypt_key_t *key);
 void zio_crypt_key_destroy(zio_crypt_key_t *key);
-int zio_crypt_key_init(uint64_t crypt, uint8_t *keydata, uint8_t *dd_keydata,
-    zio_crypt_key_t *key);
-
-int zio_crypt_key_wrap(crypto_key_t *cwkey, uint64_t crypt, uint8_t *keydata,
-    uint8_t *dd_keydata, dsl_crypto_key_phys_t *dckp);
-int zio_crypt_key_unwrap(crypto_key_t *cwkey, dsl_crypto_key_phys_t *dckp,
-    uint8_t *keydata, uint8_t *dd_keydata);
-
-int zio_crypt_generate_iv(struct zbookmark_phys *bookmark, uint64_t txgid,
-    uint_t ivlen, uint8_t *ivbuf);
-int zio_crypt_generate_iv_dd(zio_crypt_key_t *key, uint8_t *plainbuf,
-    uint_t datalen, uint_t ivlen, uint8_t *ivbuf);
-int zio_crypt_generate_iv_l2arc(uint64_t spa, dva_t *dva, uint64_t birth,
-    uint64_t daddr, uint8_t *ivbuf);
-
-int zio_do_crypt_data(boolean_t encrypt, zio_crypt_key_t *key,
-    dmu_object_type_t ot, uint8_t *iv, uint8_t *mac, uint_t datalen,
-    uint8_t *plainbuf, uint8_t *cipherbuf);
-#define	zio_encrypt_data(key, ot, iv, mac, datalen, pb, cb) \
-    zio_do_crypt_data(B_TRUE, key, ot, iv, mac, datalen, pb, cb)
-#define	zio_decrypt_data(key, ot, iv, mac, datalen, pb, cb) \
-    zio_do_crypt_data(B_FALSE, key, ot, iv, mac, datalen, pb, cb)
+int zio_crypt_key_init(uint64_t crypt, zio_crypt_key_t *key);
+int zio_crypt_key_get_salt(zio_crypt_key_t *key, uint8_t *salt_out);
 
 int zio_do_crypt_uio(boolean_t encrypt, uint64_t crypt, crypto_key_t *key,
     crypto_ctx_template_t tmpl, uint8_t *ivbuf, uint_t datalen,
@@ -178,5 +176,19 @@ int zio_do_crypt_uio(boolean_t encrypt, uint64_t crypt, crypto_key_t *key,
     zio_do_crypt_uio(B_TRUE, crypt, key, tmpl, iv, datalen, pu, cu)
 #define	zio_decrypt_uio(crypt, key, tmpl, iv, datalen, pu, cu) \
     zio_do_crypt_uio(B_FALSE, crypt, key, tmpl, iv, datalen, pu, cu)
+
+int zio_crypt_key_wrap(crypto_key_t *cwkey, zio_crypt_key_t *key, uint8_t *iv,
+    uint8_t *mac, uint8_t *keydata_out, uint8_t *hmac_keydata_out);
+int zio_crypt_key_unwrap(crypto_key_t *cwkey, uint64_t crypt, uint8_t *keydata,
+    uint8_t *hmac_keydata, uint8_t *iv, uint8_t *mac, zio_crypt_key_t *key);
+int zio_crypt_generate_iv(uint8_t *ivbuf);
+int zio_crypt_generate_iv_salt_dedup(zio_crypt_key_t *key, uint8_t *data,
+    uint_t datalen, uint8_t *ivbuf, uint8_t *salt);
+int zio_crypt_generate_iv_l2arc(uint64_t spa, dva_t *dva, uint64_t birth,
+    uint64_t daddr, uint8_t *ivbuf);
+
+int zio_do_crypt_data(boolean_t encrypt, zio_crypt_key_t *key, uint8_t *salt,
+    dmu_object_type_t ot, uint8_t *iv, uint8_t *mac, uint_t datalen,
+    uint8_t *plainbuf, uint8_t *cipherbuf);
 
 #endif

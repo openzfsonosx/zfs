@@ -365,7 +365,6 @@ Encode(uint8_t *_RESTRICT_KYWD output, uint32_t *_RESTRICT_KYWD input,
 void
 SHA2Init(uint64_t mech, SHA2_CTX *ctx)
 {
-
 	switch (mech) {
 	case SHA256_MECH_INFO_TYPE:
 	case SHA256_HMAC_MECH_INFO_TYPE:

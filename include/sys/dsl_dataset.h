@@ -38,7 +38,7 @@
 #include <sys/zfs_context.h>
 #include <sys/dsl_deadlist.h>
 #include <sys/refcount.h>
-#include <sys/dsl_keychain.h>
+#include <sys/dsl_crypt.h>
 #include <zfeature_common.h>
 
 #ifdef	__cplusplus
@@ -254,6 +254,11 @@ boolean_t dsl_dataset_try_add_ref(struct dsl_pool *dp, dsl_dataset_t *ds,
 int dsl_dataset_hold_obj(struct dsl_pool *dp, uint64_t dsobj, void *tag,
     dsl_dataset_t **);
 void dsl_dataset_rele(dsl_dataset_t *ds, void *tag);
+int dsl_dataset_hold_crypt(struct dsl_pool *dp, const char *name, void *tag,
+    dsl_dataset_t **dsp);
+int dsl_dataset_hold_crypt_obj(struct dsl_pool *dp, uint64_t dsobj,
+    void *tag, dsl_dataset_t **dsp);
+void dsl_dataset_rele_crypt(dsl_dataset_t *ds, void *tag);
 int dsl_dataset_own(struct dsl_pool *dp, const char *name,
     void *tag, boolean_t key_required, dsl_dataset_t **dsp);
 int dsl_dataset_own_obj(struct dsl_pool *dp, uint64_t dsobj,

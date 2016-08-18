@@ -1607,7 +1607,7 @@ dmu_sync_ready(zio_t *zio, arc_buf_t *buf, void *varg)
 			 * block size still needs to be known for replay.
 			 */
 			BP_SET_LSIZE(bp, db->db_size);
-		} else if (!BP_IS_EMBEDDED(bp)) {
+		} else if (!BP_IS_EMBEDDED(bp) && !BP_IS_ENCRYPTED(bp)) {
 			ASSERT(BP_GET_LEVEL(bp) == 0);
 			bp->blk_fill = 1;
 		}
@@ -2048,12 +2048,19 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 
 	/*
 	 * Encrypted objects override the checksum type with sha256-mac (which
-	 * is dedupable).
+	 * is dedupable). Encrypted, dedup'd ojects cannot use all available
+	 * copies since we use the last one to store the IV. Encryption is also
+	 * incompatible with nopwrite because encrypted checksums are not
+	 * reproducible (unless dedup is on).
 	 */
 	if (os->os_encrypted && DMU_OT_IS_ENCRYPTED(type) &&
 	    !(wp & WP_NOFILL) && level <= 0) {
 		encrypt = B_TRUE;
+		nopwrite = B_FALSE;
 		checksum = ZIO_CHECKSUM_SHA256_MAC;
+
+ 		if (copies >= SPA_DVAS_PER_BP)
+ 			copies = SPA_DVAS_PER_BP - 1;
 	}
 
 	zp->zp_checksum = checksum;
@@ -2065,6 +2072,8 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 	zp->zp_dedup_verify = dedup && dedup_verify;
 	zp->zp_nopwrite = nopwrite;
 	zp->zp_encrypt = encrypt;
+
+	ASSERT(!(zp->zp_encrypt && zp->zp_copies >= 3));
 }
 
 int

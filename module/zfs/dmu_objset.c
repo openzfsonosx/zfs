@@ -651,7 +651,7 @@ dmu_objset_refresh_ownership(objset_t *os, void *tag)
 	VERIFY(dsl_dataset_long_held(ds));
 
 	if (os->os_encrypted &&
-	    (spa_keystore_lookup_keychain_record(os->os_spa,
+	    (spa_keystore_lookup_key(os->os_spa,
 	    os->os_dsl_dataset->ds_object, NULL) == 0))
 		key_needed = B_TRUE;
 	else
@@ -919,6 +919,18 @@ dmu_objset_create_sync(void *arg, dmu_tx_t *tx)
 	os = dmu_objset_create_impl(pdd->dd_pool->dp_spa,
 	    ds, bp, doca->doca_type, tx);
 
+	/*
+	 * At this time, the objset is not owned and so it does not have its
+	 * key mapping in the keystore. This mapping might be needed to create
+	 * encrypted objects in the dataset. We create it here manually, but we
+	 * cannot destroy it until after syncing is complete. Therefore any
+	 * function that calls this must clean up the key mapping after syncing.
+	 */
+	if (os->os_encrypted) {
+		(void) spa_keystore_create_mapping(os->os_spa,
+		    os->os_dsl_dataset, doca);
+	}
+
 	if (doca->doca_userfunc != NULL) {
 		doca->doca_userfunc(os, doca->doca_userarg,
 		    doca->doca_cred, tx);
@@ -938,6 +950,8 @@ dmu_objset_create(const char *name, dmu_objset_type_t type, uint64_t flags,
     dsl_crypto_params_t *dcp, void (*func)(objset_t *os, void *arg,
 	cred_t *cr, dmu_tx_t *tx), void *arg)
 {
+	int ret;
+	objset_t *os;
 	dmu_objset_create_arg_t doca;
 
 	doca.doca_name = name;
@@ -948,9 +962,24 @@ dmu_objset_create(const char *name, dmu_objset_type_t type, uint64_t flags,
 	doca.doca_type = type;
 	doca.doca_dcp = dcp;
 
-	return (dsl_sync_task(name,
+	ret = dsl_sync_task(name,
 	    dmu_objset_create_check, dmu_objset_create_sync, &doca,
-	    5, ZFS_SPACE_CHECK_NORMAL));
+	    5, ZFS_SPACE_CHECK_NORMAL);
+	if (ret)
+		return (ret);
+
+	ret = dmu_objset_hold(name, FTAG, &os);
+	if (ret)
+		return (ret);
+
+	/* See comment in dmu_objset_create_sync() for details */
+	if (os->os_encrypted)
+		(void) spa_keystore_remove_mapping(os->os_spa,
+		    os->os_dsl_dataset, &doca);
+
+	dmu_objset_rele(os, FTAG);
+
+	return (0);
 }
 
 typedef struct dmu_objset_clone_arg {

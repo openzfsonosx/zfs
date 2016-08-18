@@ -120,7 +120,8 @@ zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS] = {
 	    ZCHECKSUM_FLAG_NOPWRITE, "sha256"},
 	{{zio_checksum_SHAMAC,		zio_checksum_SHAMAC},
 	    NULL, NULL, ZCHECKSUM_FLAG_METADATA | ZCHECKSUM_FLAG_DEDUP |
-	    ZCHECKSUM_FLAG_NOPWRITE, "sha256-mac"},
+	    ZCHECKSUM_FLAG_NOPWRITE | ZCHECKSUM_FLAG_MAC_COMPATIBLE,
+	 "sha256-mac"},
 	{{fletcher_4_native,		fletcher_4_byteswap},
 	    NULL, NULL, ZCHECKSUM_FLAG_EMBEDDED, "zilog2"},
 	{{zio_checksum_off,		zio_checksum_off},
@@ -377,7 +378,12 @@ zio_checksum_error(zio_t *zio, zio_bad_cksum_t *info)
 	info->zbc_injected = 0;
 	info->zbc_has_cksum = 1;
 
-	if (checksum == ZIO_CHECKSUM_SHA256_MAC) {
+	/*
+	 * MAC checksums are a special case since half of this checksum will
+	 * actually be the encryption MAC. This will be verified by the
+	 * decryption process, so we just check the real checksum now.
+	 */
+	if (ci->ci_flags & ZCHECKSUM_FLAG_MAC_COMPATIBLE) {
 		if (!ZIO_CHECKSUM_MAC_EQUAL(actual_cksum, expected_cksum))
 			return (SET_ERROR(ECKSUM));
 	} else {

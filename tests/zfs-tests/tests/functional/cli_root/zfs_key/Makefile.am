@@ -9,6 +9,4 @@ dist_pkgdata_SCRIPTS = \
 	zfs_key_003_pos.ksh \
 	zfs_key_004_neg.ksh \
 	zfs_key_005_pos.ksh \
-	zfs_key_006_neg.ksh \
-	zfs_key_007_pos.ksh \
-	zfs_key_008_neg.ksh
+	zfs_key_006_neg.ksh

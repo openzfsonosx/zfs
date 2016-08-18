@@ -72,7 +72,7 @@
 #include <sys/mntent.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
-#include <sys/dsl_keychain.h>
+#include <sys/dsl_crypt.h>
 
 #include <libzfs.h>
 #include <fcntl.h>
@@ -646,20 +646,6 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 		return (zfs_error_fmt(hdl, EZFS_MOUNTFAILED,
 		    dgettext(TEXT_DOMAIN, "cannot mount '%s'"),
 		    mountpoint));
-	}
-
-	/*
-	 * If the filesystem is an encryption root the key must be
-	 * loaded in order to mount. If it isn't, we ask for the key now.
-	 * During a mount, it is possible that a parent key may be loaded
-	 * without updating this zhp. Just in case, we refresh the properties.
-	 */
-	zfs_refresh_properties(zhp);
-	keystatus = zfs_prop_get_int(zhp, ZFS_PROP_KEYSTATUS);
-	if (keystatus == ZFS_KEYSTATUS_UNAVAILABLE) {
-		rc = zfs_crypto_load_key(zhp);
-		if (rc)
-			return (rc);
 	}
 
 	/*
