@@ -3751,6 +3751,7 @@ arc_available_memory(void)
 #ifdef _KERNEL
 #ifdef __APPLE__
 	if(spl_free_manual_pressure_wrapper() != 0) {
+	  r = FMR_SPL_PRESSURE;
 	  cv_signal(&arc_reclaim_thread_cv);
 	  kpreempt(KPREEMPT_SYNC);
 	  if(spl_free_fast_pressure_wrapper() != FALSE) {
@@ -3824,6 +3825,7 @@ arc_available_memory(void)
 		r = FMR_SPL_PRESSURE;
 	}
 
+#if 0
 	/*
 	 * If we're on an i386 platform, it's possible that we'll exhaust the
 	 * kernel heap space before we ever run out of available physical
@@ -3849,7 +3851,9 @@ arc_available_memory(void)
 			r = FMR_HEAP_ARENA;
 		}
 	}
+#endif //0
 
+#if 0
 	/*
 	 * If zio data pages are being allocated out of a separate heap segment,
 	 * then enforce that the size of available vmem for this arena remains
@@ -3875,6 +3879,7 @@ arc_available_memory(void)
 			r = FMR_ZIO_ARENA;
 		}
 	}
+#endif //0
 
 #ifdef sun
 	if (zio_arena != NULL) {
