@@ -3691,7 +3691,7 @@ arc_available_memory(void)
 	// reusing Illumos logic here seems fairly sensible.
 
 	int64_t n;
-
+#if 0
 	size_t heap_total = spl_vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC);
 	size_t heap_free = spl_vmem_size(heap_arena, VMEM_FREE);
 
@@ -3706,7 +3706,7 @@ arc_available_memory(void)
 		lowest = n;
 		r = FMR_HEAP_ARENA;
 	}
-
+#endif
 	/*
 	 * If zio data pages are being allocated out of a separate heap segment,
 	 * then enforce that the size of available vmem for this arena remains
