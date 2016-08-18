@@ -4104,9 +4104,12 @@ arc_reclaim_thread(void)
 #ifndef _KERNEL
 			}
 #endif // !_KERNEL
-		} else if (free_memory < arc_c >> arc_no_grow_shift) {
+		} else if (free_memory < (arc_c >> arc_no_grow_shift)) {
 			arc_no_grow = B_TRUE;
-		} else if (gethrtime() >= growtime) {
+		} else if (growtime > 0 && gethrtime() >= growtime) {
+			if (arc_no_grow == B_TRUE)
+				printf("ZFS: arc growtime expired\n");
+			growtime = 0;
 			arc_no_grow = B_FALSE;
 		}
 
