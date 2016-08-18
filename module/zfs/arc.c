@@ -3694,7 +3694,7 @@ arc_available_memory(void)
 		size_t heap_free = spl_vmem_size(heap_arena, VMEM_FREE);
 		int64_t n = heap_free;
 
-		if (n < lowest) {
+		if (n != 0 && n < lowest) {
 			lowest = n;
 			r = FMR_HEAP_ARENA;
 		}
@@ -3717,7 +3717,7 @@ arc_available_memory(void)
 
 		int64_t n = zio_free;
 
-		if (zio_free < zio_sixteenth_total)
+		if (zio_free != 0 && zio_free < zio_sixteenth_total)
 			n = zio_free - zio_sixteenth_total;
 
 		if (n < lowest) {
