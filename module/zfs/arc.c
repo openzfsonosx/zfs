@@ -3840,23 +3840,16 @@ arc_available_memory(void)
 	// enough to trigger an arc reclaim (which also reaps the zio caches)
 	// reusing Illumos logic here seems fairly sensible.
 
-	int64_t n;
-#if 0
-	size_t heap_total = spl_vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC);
-	size_t heap_free = spl_vmem_size(heap_arena, VMEM_FREE);
+	if (heap_arena != NULL) {
+		size_t heap_free = spl_vmem_size(heap_arena, VMEM_FREE);
+		int64_t n = heap_free;
 
-	size_t heap_quarter_total = heap_total / 4;
-
-	if (heap_free < heap_quarter_total)
-		n = heap_free - heap_quarter_total;
-	else
-		n = lowest;
-
-	if (n < lowest) {
-		lowest = n;
-		r = FMR_HEAP_ARENA;
+		if (n < lowest) {
+			lowest = n;
+			r = FMR_HEAP_ARENA;
+		}
 	}
-#endif
+
 	/*
 	 * If zio data pages are being allocated out of a separate heap segment,
 	 * then enforce that the size of available vmem for this arena remains
@@ -3866,6 +3859,24 @@ arc_available_memory(void)
 	 * to aggressively evict memory from the arc in order to avoid
 	 * memory fragmentation issues.
 	 */
+
+	if (zio_arena != NULL) {
+		size_t zio_total = spl_vmem_size(zio_arena, VMEM_FREE | VMEM_ALLOC);
+		size_t zio_sixteenth_total = zio_total / 16;
+		size_t zio_free = spl_vmem_size(zio_arena, VMEM_FREE);
+
+		int64_t n = zio_free;
+
+		if (zio_free < zio_sixteenth_total)
+			n = zio_free - zio_sixteenth_total;
+
+		if (n < lowest) {
+			lowest = n;
+			r = FMR_ZIO_ARENA;
+		}
+	}
+
+#ifdef sun
 	if (zio_arena != NULL) {
 		n = spl_vmem_size(zio_arena, VMEM_FREE) -
 		    (spl_vmem_size(zio_arena, VMEM_ALLOC) >> 4);
@@ -3874,7 +3885,7 @@ arc_available_memory(void)
 			r = FMR_ZIO_ARENA;
 		}
 	}
-
+#endif
 #endif // __APPLE__
 #else  // _KERNEL
 	/* Every 100 calls, free a small amount */
