@@ -3690,7 +3690,7 @@ arc_available_memory(void)
 	// enough to trigger an arc reclaim (which also reaps the zio caches)
 	// reusing Illumos logic here seems fairly sensible.
 	int64_t n = spl_vmem_size(heap_arena, VMEM_FREE) -
-	    (spl_vmem_size(heap_arena, VMEM_ALLOC) >> 2);
+	    (spl_vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC) >> 2);
 	if (n < lowest) {
 		lowest = n;
 		r = FMR_HEAP_ARENA;
