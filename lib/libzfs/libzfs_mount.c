@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2015 by Delphix. All rights reserved.
  */
 
 /*
@@ -62,6 +63,7 @@
 #include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <libgen.h>
 #include <libintl.h>
 #include <stdio.h>
@@ -88,6 +90,8 @@
 static off_t snowflake_icon_size = 196764; // bytes
 static unsigned char snowflake_icon_md[] = {0x77, 0x1b, 0x99, 0x36, 0x77, 0x8c, 0xc9, 0xb1, 0x19, 0x4e, 0x70, 0x9b, 0x9e, 0xc0, 0xf6, 0x5e}; // md5sum
 #endif /* __APPLE__ */
+
+#include <AvailabilityMacros.h>
 
 //#dprintf printf
 
@@ -183,6 +187,44 @@ is_shared(libzfs_handle_t *hdl, const char *mountpoint, zfs_share_proto_t proto)
  * directory at all, return true so that the mount can fail with a more
  * informative error message.
  */
+
+/*
+ * "openat" came to OS X Version 10.10.
+ */
+#if (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_10)
+
+static boolean_t
+dir_is_empty(const char *dirname)
+{
+	DIR *dirp;
+	struct dirent *dp;
+	int dirfd;
+
+	if ((dirfd = openat(AT_FDCWD, dirname,
+	    O_RDONLY | O_NDELAY | O_CLOEXEC, 0)) < 0) {
+		return (B_TRUE);
+	}
+
+	if ((dirp = fdopendir(dirfd)) == NULL) {
+		return (B_TRUE);
+	}
+
+	while ((dp = readdir(dirp)) != NULL) {
+
+		if (strcmp(dp->d_name, ".") == 0 ||
+		    strcmp(dp->d_name, "..") == 0)
+			continue;
+
+		(void) closedir(dirp);
+		return (B_FALSE);
+	}
+
+	(void) closedir(dirp);
+	return (B_TRUE);
+}
+
+#else /* <= MAC_OS_X_VERSION_10_9 */
+
 static boolean_t
 dir_is_empty(const char *dirname)
 {
@@ -205,6 +247,9 @@ dir_is_empty(const char *dirname)
 	(void) closedir(dirp);
 	return (B_TRUE);
 }
+
+
+#endif
 
 /*
  * Checks to see if the mount is active.  If the filesystem is mounted, we fill
