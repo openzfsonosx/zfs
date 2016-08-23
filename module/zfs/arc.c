@@ -4089,6 +4089,7 @@ arc_reclaim_thread(void)
 #endif // __APPLE__
 #endif // _KERNEL
 				arc_shrink(to_free);
+				spl_free_wrapper_reset();
 #ifdef _KERNEL
 #ifdef	__APPLE__
 			} else if(old_to_free > 0) {
