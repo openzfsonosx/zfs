@@ -3941,12 +3941,14 @@ arc_reclaim_thread(void)
 				arc_shrink(to_free);
 #ifdef _KERNEL
 #ifdef	__APPLE__
-				spl_free_wrapper_reset();
+				if (spl_free_wrapper() < 0)
+					spl_free_wrapper_reset();
 			} else if(old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
 				 __func__, old_to_free);
 			  old_to_free = 0;
-			  spl_free_wrapper_reset();
+			  if (spl_free_wrapper() < 0)
+				  spl_free_wrapper_reset();
 			}
 #endif // __APPLE__
 #ifdef sun
