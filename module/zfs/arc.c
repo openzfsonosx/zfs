@@ -4092,13 +4092,13 @@ arc_reclaim_thread(void)
 #ifdef _KERNEL
 #ifdef	__APPLE__
 				if (spl_free_wrapper() < 0)
-					spl_free_wrapper_reset();
+					spl_free_wrapper_set(2 * SPA_MAXBLOCKSIZE);
 			} else if(old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
 				 __func__, old_to_free);
 			  old_to_free = 0;
 			  if (spl_free_wrapper() < 0)
-				  spl_free_wrapper_reset();
+				  spl_free_wrapper_set(2 * SPA_MAXBLOCKSIZE);
 			}
 #endif // __APPLE__
 #ifdef sun
