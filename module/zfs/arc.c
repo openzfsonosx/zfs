@@ -643,6 +643,8 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_meta_min;
 	kstat_named_t arcstat_sync_wait_for_async;
 	kstat_named_t arcstat_demand_hit_predictive_prefetch;
+	kstat_named_t arcstat_tempreserve;
+	kstat_named_t arcstat_loaned_bytes;
 } arc_stats_t;
 
 static arc_stats_t arc_stats = {
@@ -728,6 +730,8 @@ static arc_stats_t arc_stats = {
 	{ "arc_meta_min",		KSTAT_DATA_UINT64 },
 	{ "sync_wait_for_async",	KSTAT_DATA_UINT64 },
 	{ "demand_hit_predictive_prefetch", KSTAT_DATA_UINT64 },
+	{ "tempreserve", KSTAT_DATA_UINT64 },
+	{ "loaned_bytes", KSTAT_DATA_UINT64 },
 };
 
 #define	ARCSTAT(stat)	(arc_stats.stat.value.ui64)
@@ -794,6 +798,7 @@ static arc_state_t	*arc_l2c_only;
 #define	arc_meta_used	ARCSTAT(arcstat_meta_used) /* size of metadata */
 #define	arc_meta_max	ARCSTAT(arcstat_meta_max) /* max size of metadata */
 
+
 /* compressed size of entire arc */
 #define	arc_compressed_size	ARCSTAT(arcstat_compressed_size)
 /* uncompressed size of entire arc */
@@ -802,8 +807,10 @@ static arc_state_t	*arc_l2c_only;
 #define	arc_overhead_size	ARCSTAT(arcstat_overhead_size)
 
 static int		arc_no_grow;	/* Don't try to grow cache size */
-static uint64_t		arc_tempreserve;
-static uint64_t		arc_loaned_bytes;
+// arcstat: static uint64_t		arc_tempreserve;
+#define arc_tempreserve ARCSTAT(arcstat_tempreserve) /* space temporarily reserverd */
+// arcstat: static uint64_t		arc_loaned_bytes;
+#define arc_loaned_bytes ARCSTAT(arcstat_loaned_bytes) /* bytes loaned out as dbuf */
 
 typedef struct arc_callback arc_callback_t;
 
