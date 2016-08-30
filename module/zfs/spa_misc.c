@@ -1642,8 +1642,12 @@ void
 spa_evicting_os_wait(spa_t *spa)
 {
 	mutex_enter(&spa->spa_evicting_os_lock);
-	while (!list_is_empty(&spa->spa_evicting_os_list))
-		cv_wait(&spa->spa_evicting_os_cv, &spa->spa_evicting_os_lock);
+	while (!list_is_empty(&spa->spa_evicting_os_list)) {
+		cv_timedwait(&spa->spa_evicting_os_cv, &spa->spa_evicting_os_lock,
+					 ddi_get_lbolt() + hz*5);
+		printf("ZFS: waiting for spa_evicting_os: empty %d\n",
+			   list_is_empty(&spa->spa_evicting_os_list));
+	}
 	mutex_exit(&spa->spa_evicting_os_lock);
 
 	dmu_buf_user_evict_wait();
