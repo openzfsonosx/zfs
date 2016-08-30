@@ -3086,8 +3086,9 @@ dmu_recv_end_sync(void *arg, dmu_tx_t *tx)
 			(void) zap_remove(dp->dp_meta_objset, ds->ds_object,
 			    DS_FIELD_RESUME_TONAME, tx);
 		}
+		drc->drc_newsnapobj =
+		    dsl_dataset_phys(drc->drc_ds)->ds_prev_snap_obj;
 	}
-	drc->drc_newsnapobj = dsl_dataset_phys(drc->drc_ds)->ds_prev_snap_obj;
 	zvol_create_minors(dp->dp_spa, drc->drc_tofs, B_TRUE);
 	/*
 	 * Release the hold from dmu_recv_begin.  This must be done before
@@ -3131,8 +3132,6 @@ static int dmu_recv_end_modified_blocks = 3;
 static int
 dmu_recv_existing_end(dmu_recv_cookie_t *drc)
 {
-	int error;
-
 #ifdef _KERNEL
 	char name[ZFS_MAX_DATASET_NAME_LEN];
 	/*
