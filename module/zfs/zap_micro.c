@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
 
@@ -483,7 +483,6 @@ zap_lockdir_impl(dmu_buf_t *db, void *tag, dmu_tx_t *tx,
 			 * mzap_open() didn't like what it saw on-disk.
 			 * Check for corruption!
 			 */
-			dmu_buf_rele(db, NULL);
 			return (SET_ERROR(EIO));
 		}
 	}
@@ -534,24 +533,6 @@ zap_lockdir_impl(dmu_buf_t *db, void *tag, dmu_tx_t *tx,
 
 	*zapp = zap;
 	return (0);
-}
-
-static int
-zap_lockdir_by_dnode(dnode_t *dn, dmu_tx_t *tx,
-    krw_t lti, boolean_t fatreader, boolean_t adding, void *tag, zap_t **zapp)
-{
-	dmu_buf_t *db;
-	int err;
-
-	err = dmu_buf_hold_by_dnode(dn, 0, tag, &db, DMU_READ_NO_PREFETCH);
-	if (err != 0) {
-		return (err);
-	}
-	err = zap_lockdir_impl(db, tag, tx, lti, fatreader, adding, zapp);
-	if (err != 0) {
-		dmu_buf_rele(db, tag);
-	}
-	return (err);
 }
 
 int
@@ -870,33 +851,6 @@ zap_lookup_norm(objset_t *os, uint64_t zapobj, const char *name,
 	int err;
 
 	err = zap_lockdir(os, zapobj, NULL, RW_READER, TRUE, FALSE, FTAG, &zap);
-	if (err != 0)
-		return (err);
-	err = zap_lookup_impl(zap, name, integer_size,
-	    num_integers, buf, mt, realname, rn_len, ncp);
-	zap_unlockdir(zap, FTAG);
-	return (err);
-}
-
-int
-zap_lookup_by_dnode(dnode_t *dn, const char *name,
-    uint64_t integer_size, uint64_t num_integers, void *buf)
-{
-	return (zap_lookup_norm_by_dnode(dn, name, integer_size,
-	    num_integers, buf, MT_EXACT, NULL, 0, NULL));
-}
-
-int
-zap_lookup_norm_by_dnode(dnode_t *dn, const char *name,
-    uint64_t integer_size, uint64_t num_integers, void *buf,
-    matchtype_t mt, char *realname, int rn_len,
-    boolean_t *ncp)
-{
-	zap_t *zap;
-	int err;
-
-	err = zap_lockdir_by_dnode(dn, NULL, RW_READER, TRUE, FALSE,
-	    FTAG, &zap);
 	if (err != 0)
 		return (err);
 	err = zap_lookup_impl(zap, name, integer_size,
@@ -1467,7 +1421,7 @@ zap_count_write(objset_t *os, uint64_t zapobj, const char *name, int add,
 	 * At present we are just evaluating the possibility of this operation
 	 * and hence we do not want to trigger an upgrade.
 	 */
-	err = zap_lockdir_by_dnode(dn, NULL, RW_READER, TRUE, FALSE,
+	err = zap_lockdir(os, zapobj, NULL, RW_READER, TRUE, FALSE,
 	    FTAG, &zap);
 	if (err != 0)
 		return (err);

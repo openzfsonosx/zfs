@@ -635,8 +635,6 @@ void *dmu_buf_remove_user(dmu_buf_t *db, dmu_buf_user_t *user);
 void *dmu_buf_get_user(dmu_buf_t *db);
 
 objset_t *dmu_buf_get_objset(dmu_buf_t *db);
-dnode_t *dmu_buf_dnode_enter(dmu_buf_t *db);
-void dmu_buf_dnode_exit(dmu_buf_t *db);
 
 /* Block until any in-progress dmu buf user evictions complete. */
 void dmu_buf_user_evict_wait(void);
