@@ -76,11 +76,11 @@ my %cols = (# HDR => [Size, Description]
 	    "l2miss" =>[5, "L2ARC misses per second"],
 	    "l2Hit%" =>[4, "L2ARC Hit%"],
 	    "l2miss%" =>[4, "L2ARC miss%"],
-	    "compress" =>[5, "bytes of cache consumed by compressed blocks"],
-	    "uncompress" =>[5, "bytes required to cache compress if the same data decompressed"],
-	    "overhead" =>[5, "amount of uncompressed data cache is currently using"],
-	    "capacity%" =>[4, "capacity of arc"],
-	    "ratio%" =>[4, "ratio between uncompressed and compressed size"],
+	    "comprs" =>[5, "bytes of cache consumed by compressed blocks"],
+	    "uncomp" =>[5, "bytes required to cache compress if the same data decompressed"],
+	    "ovrhd" =>[5, "amount of uncompressed data cache is currently using"],
+	    "cap%" =>[4, "capacity of arc"],
+	    "rat%" =>[4, "ratio between uncompressed and compressed size"],
 );
 my %v=();
 my @hdr = qw(Time read miss miss% dmis dm% pmis pm% mmis mm% size tsize);
@@ -280,12 +280,12 @@ sub calculate {
 	$v{"rmiss"} = $d{"recycle_miss"}/$int;
 	$v{"mtxmis"} = $d{"mutex_miss"}/$int;
 
-	$v{"compress"} = $cur{"compressed_size"};
-	$v{"uncompress"} = $cur{"uncompressed_size"};
-	$v{"overhead"} = $cur{"overhead_size"};
+	$v{"comprs"} = $cur{"compressed_size"};
+	$v{"uncomp"} = $cur{"uncompressed_size"};
+	$v{"ovrhd"} = $cur{"overhead_size"};
 
-	$v{"ratio%"} = 100*$v{"uncompress"}/$v{"compress"} if $v{"compress"} > 0;
-	
+	$v{"rat%"} = 100*$v{"uncomp"}/$v{"comprs"} if $v{"comprs"} > 0;
+
 }
 
 sub main {
