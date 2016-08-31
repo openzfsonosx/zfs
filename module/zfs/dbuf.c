@@ -1507,6 +1507,9 @@ dbuf_redirty(dbuf_dirty_record_t *dr)
 
 	ASSERT(MUTEX_HELD(&db->db_mtx));
 
+	void arcstat_bump_dbuf_redirtied(void);
+	arcstat_bump_dbuf_redirtied();
+
 	if (db->db_level == 0 && db->db_blkid != DMU_BONUS_BLKID) {
 		/*
 		 * If this buffer has already been written out,
