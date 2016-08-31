@@ -645,6 +645,7 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_demand_hit_predictive_prefetch;
 	kstat_named_t arcstat_tempreserve;
 	kstat_named_t arcstat_loaned_bytes;
+	kstat_named_t arcstat_dbuf_redirtied;
 } arc_stats_t;
 
 static arc_stats_t arc_stats = {
@@ -732,6 +733,7 @@ static arc_stats_t arc_stats = {
 	{ "demand_hit_predictive_prefetch", KSTAT_DATA_UINT64 },
 	{ "tempreserve", KSTAT_DATA_UINT64 },
 	{ "loaned_bytes", KSTAT_DATA_UINT64 },
+	{ "dbuf_redirtied", KSTAT_DATA_UINT64 },
 };
 
 #define	ARCSTAT(stat)	(arc_stats.stat.value.ui64)
@@ -811,6 +813,14 @@ static int		arc_no_grow;	/* Don't try to grow cache size */
 #define arc_tempreserve ARCSTAT(arcstat_tempreserve) /* space temporarily reserverd */
 // arcstat: static uint64_t		arc_loaned_bytes;
 #define arc_loaned_bytes ARCSTAT(arcstat_loaned_bytes) /* bytes loaned out as dbuf */
+
+#define zfs_dbuf_redirtied ARCSTAT(arcstat_dbuf_redirtied) /* number of invocations of dbuf.c:dbuf_redirty() */
+void
+arcstat_bump_dbuf_redirtied(void)
+{
+	ARCSTAT_BUMP(arcstat_dbuf_redirtied);
+}
+
 
 typedef struct arc_callback arc_callback_t;
 
