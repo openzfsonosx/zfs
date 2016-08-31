@@ -81,6 +81,7 @@ my %cols = (# HDR => [Size, Description]
 	    "ovrhd" =>[5, "amount of uncompressed data cache is currently using"],
 	    "cap%" =>[4, "capacity of arc"],
 	    "rat%" =>[4, "ratio between uncompressed and compressed size"],
+	    "redirt" =>[6, "number of calls to dbuf_redirty()"],
 );
 my %v=();
 my @hdr = qw(Time read miss miss% dmis dm% pmis pm% mmis mm% size tsize);
@@ -285,6 +286,8 @@ sub calculate {
 	$v{"ovrhd"} = $cur{"overhead_size"};
 
 	$v{"rat%"} = 100*$v{"uncomp"}/$v{"comprs"} if $v{"comprs"} > 0;
+
+	$v{"redirt"} = $cur{"redirtied_blocks"};
 
 }
 
