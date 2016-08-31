@@ -287,7 +287,7 @@ sub calculate {
 
 	$v{"rat%"} = 100*$v{"uncomp"}/$v{"comprs"} if $v{"comprs"} > 0;
 
-	$v{"redirt"} = $cur{"redirtied_blocks"};
+	$v{"redirt"} = $d{"dbuf_redirtied"}/$int;
 
 }
 
