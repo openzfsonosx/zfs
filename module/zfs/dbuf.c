@@ -1500,16 +1500,12 @@ dbuf_release_bp(dmu_buf_impl_t *db)
  * We already have a dirty record for this TXG, and we are being
  * dirtied again.
  */
-uint64_t zfs_redirtied_blocks = 0;
-
 static void
 dbuf_redirty(dbuf_dirty_record_t *dr)
 {
 	dmu_buf_impl_t *db = dr->dr_dbuf;
 
 	ASSERT(MUTEX_HELD(&db->db_mtx));
-
-	atomic_inc_64(&zfs_redirtied_blocks);
 
 	if (db->db_level == 0 && db->db_blkid != DMU_BONUS_BLKID) {
 		/*

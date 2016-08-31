@@ -138,7 +138,6 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_send_set_freerecords_bit;
 
 	kstat_named_t zfs_write_implies_delete_child;
-	kstat_named_t zfs_redirtied_blocks;
 } osx_kstat_t;
 
 
@@ -229,7 +228,6 @@ extern uint64_t zvol_inhibit_dev;
 extern uint64_t zfs_send_set_freerecords_bit;
 
 extern uint64_t zfs_write_implies_delete_child;
-extern uint64_t zfs_redirtied_blocks;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);
