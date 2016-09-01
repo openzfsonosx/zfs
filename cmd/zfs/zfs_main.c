@@ -659,7 +659,8 @@ zfs_do_clone(int argc, char **argv)
 	while ((c = getopt(argc, argv, "o:p")) != -1) {
 		switch (c) {
 		case 'o':
-			if (parseprop(props, optarg) != 0)
+			if (parseprop(props, optarg) != 0) {
+				nvlist_free(props);
 				return (1);
 			}
 			break;
@@ -3659,7 +3660,9 @@ zfs_do_snapshot(int argc, char **argv)
 	while ((c = getopt(argc, argv, "ro:")) != -1) {
 		switch (c) {
 		case 'o':
-			if (parseprop(props, optarg))
+			if (parseprop(props, optarg) != 0) {
+				nvlist_free(sd.sd_nvl);
+				nvlist_free(props);
 				return (1);
 			}
 			break;
@@ -3951,8 +3954,10 @@ zfs_do_receive(int argc, char **argv)
 	while ((c = getopt(argc, argv, ":o:denuvFsA")) != -1) {
 		switch (c) {
 		case 'o':
-			if (parseprop(props, optarg) != 0)
+			if (parseprop(props, optarg) != 0) {
+				nvlist_free(props);
 				return (1);
+			}
 			break;
 		case 'd':
 			flags.isprefix = B_TRUE;
@@ -4019,9 +4024,12 @@ zfs_do_receive(int argc, char **argv)
 		    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME)) {
 			zfs_handle_t *zhp = zfs_open(g_zfs,
 			    namebuf, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME);
-			if (zhp == NULL)
+			if (zhp == NULL) {
+				nvlist_free(props);
 				return (1);
+			}
 			err = zfs_destroy(zhp, B_FALSE);
+			zfs_close(zhp);
 		} else {
 			zfs_handle_t *zhp = zfs_open(g_zfs,
 			    argv[0], ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME);
@@ -4034,11 +4042,14 @@ zfs_do_receive(int argc, char **argv)
 				    gettext("'%s' does not have any "
 				    "resumable receive state to abort\n"),
 				    argv[0]);
+				nvlist_free(props);
+				zfs_close(zhp);
 				return (1);
 			}
 			err = zfs_destroy(zhp, B_FALSE);
+			zfs_close(zhp);
 		}
-
+		nvlist_free(props);
 		return (err != 0);
 	}
 
@@ -4059,6 +4070,7 @@ zfs_do_receive(int argc, char **argv)
 	}
 
 	err = zfs_receive(g_zfs, argv[0], props, &flags, STDIN_FILENO, NULL);
+	nvlist_free(props);
 
 	return (err != 0);
 }
