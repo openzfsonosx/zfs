@@ -74,6 +74,7 @@
 #include <sys/mntent.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <libzfs.h>
 #include <fcntl.h>
 #include <sys/xattr.h>
@@ -228,19 +229,36 @@ is_shared(libzfs_handle_t *hdl, const char *mountpoint, zfs_share_proto_t proto)
 	return (SHARED_NOT_SHARED);
 }
 
-/*
- * Returns true if the specified directory is empty.  If we can't open the
- * directory at all, return true so that the mount can fail with a more
- * informative error message.
- */
+static boolean_t
+dir_is_empty_stat(const char *dirname)
+{
+	struct stat st;
+
+	/*
+	 * We only want to return false if the given path is a non empty
+	 * directory, all other errors are handled elsewhere.
+	 */
+	if (stat(dirname, &st) < 0 || !S_ISDIR(st.st_mode)) {
+		return (B_TRUE);
+	}
+
+	/*
+	 * An empty directory will still have two entries in it, one
+	 * entry for each of "." and "..".
+	 */
+	if (st.st_size > 2) {
+		return (B_FALSE);
+	}
+
+	return (B_TRUE);
+}
 
 /*
  * "openat" came to OS X Version 10.10.
  */
 #if (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_10)
-
 static boolean_t
-dir_is_empty(const char *dirname)
+dir_is_empty_readdir(const char *dirname)
 {
 	DIR *dirp;
 	struct dirent *dp;
@@ -272,7 +290,7 @@ dir_is_empty(const char *dirname)
 #else /* <= MAC_OS_X_VERSION_10_9 */
 
 static boolean_t
-dir_is_empty(const char *dirname)
+dir_is_empty_readdir(const char *dirname)
 {
 	DIR *dirp;
 	struct dirent *dp;
@@ -296,6 +314,44 @@ dir_is_empty(const char *dirname)
 
 
 #endif
+
+ /*
+ * Returns true if the specified directory is empty.  If we can't open the
+ * directory at all, return true so that the mount can fail with a more
+ * informative error message.
+ */
+static boolean_t
+dir_is_empty(const char *dirname)
+{
+	struct statfs st;
+
+	/*
+	 * If the statvfs call fails or the filesystem is not a ZFS
+	 * filesystem, fall back to the slow path which uses readdir.
+	 */
+	if ((statfs(dirname, &st) != 0) ||
+	    (strcmp(st.f_fstypename, "zfs") != 0)) {
+		return (dir_is_empty_readdir(dirname));
+	}
+
+	/*
+	 * At this point, we know the provided path is on a ZFS
+	 * filesystem, so we can use stat instead of readdir to
+	 * determine if the directory is empty or not. We try to avoid
+	 * using readdir because that requires opening "dirname"; this
+	 * open file descriptor can potentially end up in a child
+	 * process if there's a concurrent fork, thus preventing the
+	 * zfs_mount() from otherwise succeeding (the open file
+	 * descriptor inherited by the child process will cause the
+	 * parent's mount to fail with EBUSY). The performance
+	 * implications of replacing the open, read, and close with a
+	 * single stat is nice; but is not the main motivation for the
+	 * added complexity.
+	 */
+	return (dir_is_empty_stat(dirname));
+}
+
+
 
 /*
  * Checks to see if the mount is active.  If the filesystem is mounted, we fill
