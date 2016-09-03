@@ -4053,7 +4053,7 @@ arc_reclaim_thread(void)
 		boolean_t fastpressure = spl_free_fast_pressure_wrapper();
 
 		if (manual_pressure == 0)
-			spl_set_fast_pressure(B_FALSE);
+			spl_free_set_fast_pressure(B_FALSE);
 
 		if (free_memory < 0 || manual_pressure != 0) {
 #else
