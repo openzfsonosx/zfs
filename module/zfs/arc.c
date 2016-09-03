@@ -4096,7 +4096,6 @@ arc_reclaim_thread(void)
 #endif
 #ifdef __APPLE__
 				to_free = MAX(to_free, spl_free_manual_pressure_wrapper());
-				spl_free_set_pressure(0);
 
 				if (to_free > old_to_free) {
 				  printf("ZFS: %s, to_free == %lld increased above %lld old_to_free (delta: %lld)\n",
@@ -4108,14 +4107,28 @@ arc_reclaim_thread(void)
 				arc_shrink(to_free);
 #ifdef _KERNEL
 #ifdef	__APPLE__
-				if (spl_free_wrapper() < 0)
-					spl_free_wrapper_set(2 * SPA_MAXBLOCKSIZE);
-			} else if(old_to_free > 0) {
+				boolean_t fastpressure = spl_free_fast_pressure_wrapper();
+
+				// we don't want to keep spl_free negative after arc_shrink
+				// set it to zero (avoiding any but emergency arc growth)
+				// if spl is in very low memory condition, or to a small value
+				// (too small for arc_grow to go true) otherwise
+				if (spl_free_wrapper() < 0) {
+					if (fastpressure)
+						spl_free_set_pressure(0); // clears spl_free_fast_pressure
+					else
+						spl_free_wrapper_set(2 * SPA_MAXBLOCKSIZE);
+				}
+			} else if (old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
 				 __func__, old_to_free);
 			  old_to_free = 0;
-			  if (spl_free_wrapper() < 0)
-				  spl_free_wrapper_set(2 * SPA_MAXBLOCKSIZE);
+			  if (spl_free_wrapper() < 0) {
+				  if (spl_free_fast_pressure_wrapper())
+					  spl_free_set_pressure(0); // clear spl_free_fast_pressure
+				  else
+					  spl_free_wrapper_set(2 * SPA_MAXBLOCKSIZE);
+			  }
 			}
 #endif // __APPLE__
 #ifdef sun
