@@ -3902,8 +3902,7 @@ arc_reclaim_thread(void)
 		int64_t manual_pressure = spl_free_manual_pressure_wrapper();
 		boolean_t fastpressure = spl_free_fast_pressure_wrapper();
 
-		if (manual_pressure == 0)
-			spl_free_set_fast_pressure(B_FALSE);
+		spl_free_set_pressure(0); // clears both above
 
 		if (free_memory < 0 || manual_pressure != 0) {
 #else
@@ -3963,15 +3962,18 @@ arc_reclaim_thread(void)
 				arc_shrink(to_free);
 #ifdef _KERNEL
 #ifdef	__APPLE__
-				// we don't want to keep spl_free negative after arc_shrink
-				// set it to zero (avoiding any but emergency arc growth)
-				// if spl is in very low memory condition, or to a small value
-				// (too small for arc_grow to go true) otherwise
+				/*
+				 * if we had manual pressure, then use
+				 * the wrapper_set function to set
+				 * spl_free.
+				 * zero:  if there was fast pressure (will throttle writes)
+				 * 32MiB otherwise (will not throttle writes)
+				 */
 				if (spl_free_wrapper() < 0 || manual_pressure != 0) {
 					if (fastpressure)
-						spl_free_set_pressure(0); // clears spl_free_fast_pressure
+						spl_free_wrapper_set(0);
 					else
-						spl_free_set_pressure(2 * SPA_MAXBLOCKSIZE);
+						spl_free_wrapper_set(2 * SPA_MAXBLOCKSIZE);
 				}
 			} else if (old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
@@ -3979,9 +3981,9 @@ arc_reclaim_thread(void)
 			  old_to_free = 0;
 			  if (spl_free_wrapper() < 0) {
 				  if (fastpressure)
-					  spl_free_set_pressure(0); // clear spl_free_fast_pressure
+					  spl_free_wrapper_set(0);
 				  else
-					  spl_free_set_pressure(2 * SPA_MAXBLOCKSIZE);
+					  spl_free_wrapper_set(2 * SPA_MAXBLOCKSIZE);
 			  }
 			}
 #endif // __APPLE__
