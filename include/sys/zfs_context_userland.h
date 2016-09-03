@@ -782,9 +782,6 @@ typedef struct taskq {
 #include <libkern/OSByteOrder.h>
 #define htobe32(x) OSSwapHostToBigInt32(x)
 
-#include <libkern/OSByteOrder.h>
-#define htobe32(x) OSSwapHostToBigInt32(x)
-
 
 #endif /* !_KERNEL */
 
