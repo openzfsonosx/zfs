@@ -21,28 +21,9 @@
 
 /*
  * Copyright (c) 2002, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011,2012 Turbo Fredriksson <turbo@bayour.com>, based on nfs.c
+ * Copyright (c) 2016 Jorgen Lundman <lundman@lundman.net>, based on nfs.c
  *                         by Gunnar Beutner
  *
- * This is an addition to the zfs device driver to add, modify and remove SMB
- * shares using the 'net share' command that comes with Samba.
- *
- * TESTING
- * Make sure that samba listens to 'localhost' (127.0.0.1) and that the options
- * 'usershare max shares' and 'usershare owner only' have been rewied/set
- * accordingly (see zfs(8) for information).
- *
- * Once configuration in samba have been done, test that this
- * works with the following three commands (in this case, my ZFS
- * filesystem is called 'share/Test1'):
- *
- *	(root)# net -U root -S 127.0.0.1 usershare add Test1 /share/Test1 \
- *		"Comment: /share/Test1" "Everyone:F"
- *	(root)# net usershare list | grep -i test
- *	(root)# net -U root -S 127.0.0.1 usershare delete Test1
- *
- * The first command will create a user share that gives everyone full access.
- * To limit the access below that, use normal UNIX commands (chmod, chown etc).
  */
 
 #include <time.h>
@@ -57,143 +38,215 @@
 #include <sys/stat.h>
 #include <libzfs.h>
 #include <libshare.h>
+#include <ctype.h>
+#include <sys/socket.h>
 #include "libshare_impl.h"
 #include "smb.h"
 
 static boolean_t smb_available(void);
 
-smb_share_t *smb_shares = NULL;
-
 static sa_fstype_t *smb_fstype;
 
+#define	SMB_NAME_MAX		255
+
+#define	SHARING_CMD_PATH		"/usr/sbin/sharing"
+
+typedef struct smb_share_s {
+	char name[SMB_NAME_MAX];	/* Share name */
+	char path[PATH_MAX];		/* Share path */
+	boolean_t guest_ok;		    /* boolean */
+
+	boolean_t afpshared;	    /* AFP sharing on? */
+
+	struct smb_share_s *next;
+} smb_share_t;
+
+smb_share_t *smb_shares = NULL;
+
 /*
- * Retrieve the list of SMB shares.
+ * Parse out a "value" part of a "line" of input. By skipping white space.
+ * If line ends up being empty, read the next line, skipping white spare.
+ * strdup() value before returning.
+ */
+static int get_attribute(const char *attr, char *line, char **value, FILE *file)
+{
+	char *r = line;
+	char line2[512];
+
+	if (strncasecmp(attr, line, strlen(attr))) return 0;
+
+	r += strlen(attr);
+
+	//fprintf(stderr, "ZFS: matched '%s' in '%s'\r\n", attr, line);
+
+	while(isspace(*r)) r++; // Skip whitespace
+
+	// Nothing left? Read next line
+	if (!*r) {
+		if (!fgets(line2, sizeof(line2), file)) return 0;
+		// Eat newlines
+		if ((r = strchr(line2, '\r'))) *r = 0;
+		if ((r = strchr(line2, '\n'))) *r = 0;
+		// Parse new input
+		r = line2;
+		while(isspace(*r)) r++; // Skip whitespace
+	}
+
+	// Did we get something?
+	if (*r) {
+		*value = strdup(r);
+		return 1;
+	}
+	return 0;
+}
+
+static int spawn_with_pipe(const char *path, char *argv[], int flags)
+{
+	int fd[2];
+	pid_t pid;
+
+	if( socketpair(AF_UNIX, SOCK_STREAM, 0, fd) != 0 ) return -1;
+
+	pid = vfork();
+
+	// Child
+	if (pid == 0) {
+		close(fd[0]);
+		dup2(fd[1], STDIN_FILENO);
+		dup2(fd[1], STDOUT_FILENO);
+		if (flags) dup2(fd[1], STDERR_FILENO);
+		(void) execvp(path, argv);
+		_exit(-1);
+	}
+	// Parent and error
+	close(fd[1]);
+	if (pid == -1) {
+		close(fd[0]);
+		return -1;
+	}
+	return fd[0];
+}
+
+
+
+
+/*
+ * Retrieve the list of SMB shares. We execute "dscl . -readall /SharePoints"
+ * which gets us shares in the format:
+ * dsAttrTypeNative:directory_path: /Volumes/BOOM/zfstest
+ * dsAttrTypeNative:smb_name: zfstest
+ * dsAttrTypeNative:smb_shared: 1
+ * dsAttrTypeNative:smb_guestaccess: 1
+ *
+ * Note that long lines can be continued on the next line, with a leading space:
+ * dsAttrTypeNative:smb_name:
+ *  lundman's Public Folder
+ *
+ * We don't use "sharing -l" as its output format is "peculiar".
+ *
+ * This is a temporary implementation that should be replaced with
+ * direct DirectoryService API calls.
+ *
  */
 static int
 smb_retrieve_shares(void)
 {
-	int rc = SA_OK;
-	char file_path[PATH_MAX], line[512], *token, *key, *value;
-	char *dup_value, *path = NULL, *comment = NULL, *name = NULL;
-	char *guest_ok = NULL;
-	DIR *shares_dir;
-	FILE *share_file_fp = NULL;
-	struct dirent *directory;
-	struct stat eStat;
+	char line[512];
+	char *path = NULL, *shared = NULL, *name = NULL, *afpshared = NULL;
+	char *guest = NULL, *r;
 	smb_share_t *shares, *new_shares = NULL;
+	int fd;
+	FILE *file = NULL;
+	char *argv[8] = {
+		"/usr/bin/dscl",
+		".",
+		"-readall",
+		"/SharePoints"
+	};
 
-	/* opendir(), stat() */
-	shares_dir = opendir(SHARE_DIR);
-	if (shares_dir == NULL)
+	fd = spawn_with_pipe(argv[0], argv, 0);
+
+	if (fd < 0)
 		return (SA_SYSTEM_ERR);
 
-	/* Go through the directory, looking for shares */
-	while ((directory = readdir(shares_dir))) {
-		if (directory->d_name[0] == '.')
-			continue;
+	file = fdopen(fd, "r");
+	if (!file) {
+		close(fd);
+		return (SA_SYSTEM_ERR);
+	}
 
-		snprintf(file_path, sizeof (file_path),
-		    "%s/%s", SHARE_DIR, directory->d_name);
+	while(fgets(line, sizeof(line), file)) {
 
-		if (stat(file_path, &eStat) == -1) {
-			rc = SA_SYSTEM_ERR;
-			goto out;
-		}
+		if ((r = strchr(line, '\r'))) *r = 0;
+		if ((r = strchr(line, '\n'))) *r = 0;
 
-		if (!S_ISREG(eStat.st_mode))
-			continue;
+		if (get_attribute("dsAttrTypeNative:smb_name:", line, &name, file) ||
+			get_attribute("dsAttrTypeNative:directory_path:", line, &path, file) ||
+			get_attribute("dsAttrTypeNative:smb_guestaccess:", line, &guest, file) ||
+			get_attribute("dsAttrTypeNative:smb_shared:", line, &shared, file) ||
+			get_attribute("dsAttrTypeNative:afp_shared:", line, &afpshared, file)) {
 
-		if ((share_file_fp = fopen(file_path, "r")) == NULL) {
-			rc = SA_SYSTEM_ERR;
-			goto out;
-		}
+			// If we have all desired attributes, create a new share,
+			// AND it is currently shared (not just listed)
+			if (name && path && guest && shared && afpshared &&
+				atoi(shared) != 0) {
 
-		name = strdup(directory->d_name);
-		if (name == NULL) {
-			rc = SA_NO_MEMORY;
-			goto out;
-		}
-
-		while (fgets(line, sizeof (line), share_file_fp)) {
-			if (line[0] == '#')
-				continue;
-
-			/* Trim trailing new-line character(s). */
-			while (line[strlen(line) - 1] == '\r' ||
-			    line[strlen(line) - 1] == '\n')
-				line[strlen(line) - 1] = '\0';
-
-			/* Split the line in two, separated by '=' */
-			token = strchr(line, '=');
-			if (token == NULL)
-				continue;
-
-			key = line;
-			value = token + 1;
-			*token = '\0';
-
-			dup_value = strdup(value);
-			if (dup_value == NULL) {
-				rc = SA_NO_MEMORY;
-				goto out;
-			}
-
-			if (strcmp(key, "path") == 0)
-				path = dup_value;
-			if (strcmp(key, "comment") == 0)
-				comment = dup_value;
-			if (strcmp(key, "guest_ok") == 0)
-				guest_ok = dup_value;
-
-			if (path == NULL || comment == NULL || guest_ok == NULL)
-				continue; /* Incomplete share definition */
-			else {
 				shares = (smb_share_t *)
 						malloc(sizeof (smb_share_t));
-				if (shares == NULL) {
-					rc = SA_NO_MEMORY;
-					goto out;
-				}
 
-				strncpy(shares->name, name,
-					sizeof (shares->name));
-				shares->name [sizeof (shares->name) - 1] = '\0';
+				if (shares) {
+					strlcpy(shares->name, name,
+							sizeof (shares->name));
+					strlcpy(shares->path, path,
+							sizeof (shares->path));
+					shares->guest_ok = atoi(guest);
 
-				strncpy(shares->path, path,
-				    sizeof (shares->path));
-				shares->path [sizeof (shares->path) - 1] = '\0';
+					shares->afpshared = atoi(afpshared);
 
-				strncpy(shares->comment, comment,
-				    sizeof (shares->comment));
-				shares->comment[sizeof (shares->comment)-1] =
-				    '\0';
+#ifdef DEBUG
+					fprintf(stderr, "ZFS: smbshare '%s' mount '%s'\r\n",
+							name, path);
+#endif
 
-				shares->guest_ok = atoi(guest_ok);
+					shares->next = new_shares;
+					new_shares = shares;
+				} // shares malloc
 
-				shares->next = new_shares;
-				new_shares = shares;
+				// Make it free all variables
+				strlcpy(line, "-", sizeof(line));
 
-				name = NULL;
-				path = NULL;
-				comment = NULL;
-				guest_ok = NULL;
-			}
-		}
+			} // if all
 
-out:
-		if (share_file_fp != NULL)
-			fclose(share_file_fp);
+		} // if got_attribute
 
-		free(name);
-		free(path);
-		free(comment);
-		free(guest_ok);
-	}
-	closedir(shares_dir);
+		if (!strncmp("-", line, sizeof(line))) {
+			if (name)   {	free(name); 	name  = NULL; }
+			if (path)   {	free(path); 	path  = NULL; }
+			if (guest)  {	free(guest);	guest = NULL; }
+			if (shared) {	free(shared);	shared = NULL; }
+			if (afpshared) {free(afpshared);afpshared = NULL; }
+		} // if "-"
+	} // while fgets
 
+	fclose(file);
+	close(fd);
+
+	if (name)   {	free(name); 	name  = NULL; }
+	if (path)   {	free(path); 	path  = NULL; }
+	if (guest)  {	free(guest);	guest = NULL; }
+	if (shared) {	free(shared);	shared = NULL; }
+	if (afpshared) {free(afpshared);afpshared = NULL; }
+
+	/*
+	 * The ZOL implementation here just leaks the previous list in
+	 * "smb_shares" each time this is called, and it is called a lot.
+	 * We really should iterate through and release nodes. Alternatively
+	 * only update if we have not run before, and have a way to force
+	 * a refresh after enabling/disabling a share.
+	 */
 	smb_shares = new_shares;
 
-	return (rc);
+	return (SA_OK);
 }
 
 /*
@@ -202,43 +255,53 @@ out:
 static int
 smb_enable_share_one(const char *sharename, const char *sharepath)
 {
-	char *argv[10], *pos;
-	char name[SMB_NAME_MAX], comment[SMB_COMMENT_MAX];
+	char *argv[10];
 	int rc;
+	smb_share_t *shares = smb_shares;
+	int afpshared = 0;
 
-	/* Support ZFS share name regexp '[[:alnum:]_-.: ]' */
-	strncpy(name, sharename, sizeof (name));
-	name [sizeof (name)-1] = '\0';
-
-	pos = name;
-	while (*pos != '\0') {
-		switch (*pos) {
-		case '/':
-		case '-':
-		case ':':
-		case ' ':
-			*pos = '_';
+	/* Loop through shares and check if our share is also smbshared */
+	while (shares != NULL) {
+		if (strcmp(sharepath, shares->path) == 0) {
+			afpshared = shares->afpshared;
+			break;
 		}
-
-		++pos;
+		shares = shares->next;
 	}
 
 	/*
-	 * CMD: net -S NET_CMD_ARG_HOST usershare add Test1 /share/Test1 \
-	 *      "Comment" "Everyone:F"
+	 * CMD: sharing -a /mountpoint -s 001 -g 001
+	 * Where -s 001 specified sharing smb, not ftp nor afp.
+	 *   and -g 001 specifies to enable guest on smb.
+	 * Note that the OS X 10.11 man-page incorrectly claims 010 for smb
 	 */
-	snprintf(comment, sizeof (comment), "Comment: %s", sharepath);
+	if (afpshared) {
 
-	argv[0] = NET_CMD_PATH;
-	argv[1] = (char *)"-S";
-	argv[2] = NET_CMD_ARG_HOST;
-	argv[3] = (char *)"usershare";
-	argv[4] = (char *)"add";
-	argv[5] = (char *)name;
-	argv[6] = (char *)sharepath;
-	argv[7] = (char *)comment;
-	argv[8] = "Everyone:F";
-	argv[9] = NULL;
+		argv[0] = SHARING_CMD_PATH;
+		argv[1] = (char *)"-e";
+		argv[2] = (char *)sharename;
+		argv[3] = (char *)"-s";
+		argv[4] = (char *)"101";
+		argv[5] = (char *)"-g";
+		argv[6] = (char *)"101";
+		argv[7] = NULL;
+
+	} else {
+
+		argv[0] = SHARING_CMD_PATH;
+		argv[1] = (char *)"-a";
+		argv[2] = (char *)sharepath;
+		argv[3] = (char *)"-s";
+		argv[4] = (char *)"001";
+		argv[5] = (char *)"-g";
+		argv[6] = (char *)"001";
+		argv[7] = NULL;
+	}
+
+#ifdef DEBUG
+	fprintf(stderr, "ZFS: enabling share '%s' at '%s'\r\n",
+			sharename, sharepath);
+#endif
 
 	rc = libzfs_run_process(argv[0], argv, 0);
 	if (rc < 0)
@@ -277,19 +340,36 @@ smb_enable_share(sa_share_impl_t impl_share)
  * Used internally by smb_disable_share to disable sharing for a single host.
  */
 static int
-smb_disable_share_one(const char *sharename)
+smb_disable_share_one(const char *sharename, int afpshared)
 {
 	int rc;
-	char *argv[7];
+	char *argv[8];
 
-	/* CMD: net -S NET_CMD_ARG_HOST usershare delete Test1 */
-	argv[0] = NET_CMD_PATH;
-	argv[1] = (char *)"-S";
-	argv[2] = NET_CMD_ARG_HOST;
-	argv[3] = (char *)"usershare";
-	argv[4] = (char *)"delete";
-	argv[5] = strdup(sharename);
-	argv[6] = NULL;
+	// If AFP shared as well, we need to just remove SMB.
+	if (afpshared) {
+
+		argv[0] = SHARING_CMD_PATH;
+		argv[1] = (char *)"-e";
+		argv[2] = (char *)sharename;
+		argv[3] = (char *)"-s";
+		argv[4] = (char *)"100";  // SMB off, AFP on.
+		argv[5] = (char *)"-g";
+		argv[6] = (char *)"100";  // SMB off, AFP on.
+		argv[7] = NULL;
+
+	} else {  // Not SMB shared, just remove share
+
+		/* CMD: sharing -r name */
+		argv[0] = SHARING_CMD_PATH;
+		argv[1] = (char *)"-r";
+		argv[2] = (char *)sharename;
+		argv[3] = NULL;
+	}
+
+#ifdef DEBUG
+	fprintf(stderr, "ZFS: disabling share '%s' \r\n",
+			sharename);
+#endif
 
 	rc = libzfs_run_process(argv[0], argv, 0);
 	if (rc < 0)
@@ -316,7 +396,7 @@ smb_disable_share(sa_share_impl_t impl_share)
 
 	while (shares != NULL) {
 		if (strcmp(impl_share->sharepath, shares->path) == 0)
-			return (smb_disable_share_one(shares->name));
+			return (smb_disable_share_one(shares->name, shares->afpshared));
 
 		shares = shares->next;
 	}
@@ -338,19 +418,14 @@ smb_validate_shareopts(const char *shareopts)
 }
 
 /*
- * Checks whether a share is currently active.
+ * Checks whether a share is currently active. Called from libzfs_mount
  */
-static boolean_t
-smb_is_share_active(sa_share_impl_t impl_share)
+boolean_t smb_is_mountpoint_active(const char *mountpoint)
 {
-	if (!smb_available())
-		return (B_FALSE);
-
-	/* Retrieve the list of (possible) active shares */
 	smb_retrieve_shares();
 
 	while (smb_shares != NULL) {
-		if (strcmp(impl_share->sharepath, smb_shares->path) == 0)
+		if (strcmp(mountpoint, smb_shares->path) == 0)
 			return (B_TRUE);
 
 		smb_shares = smb_shares->next;
@@ -358,6 +433,14 @@ smb_is_share_active(sa_share_impl_t impl_share)
 
 	return (B_FALSE);
 }
+
+static boolean_t
+smb_is_share_active(sa_share_impl_t impl_share)
+{
+	return smb_is_mountpoint_active(impl_share->sharepath);
+}
+
+
 
 /*
  * Called to update a share's options. A share's options might be out of
@@ -429,13 +512,8 @@ static const sa_share_ops_t smb_shareops = {
 static boolean_t
 smb_available(void)
 {
-	struct stat statbuf;
 
-	if (lstat(SHARE_DIR, &statbuf) != 0 ||
-	    !S_ISDIR(statbuf.st_mode))
-		return (B_FALSE);
-
-	if (access(NET_CMD_PATH, F_OK) != 0)
+	if (access(SHARING_CMD_PATH, F_OK) != 0)
 		return (B_FALSE);
 
 	return (B_TRUE);

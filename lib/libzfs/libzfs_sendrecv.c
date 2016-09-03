@@ -63,6 +63,7 @@
 #include <sys/zio_checksum.h>
 #include <sys/ddt.h>
 #include <sys/socket.h>
+#include <sys/sha2.h>
 
 #ifdef __APPLE__
 #include <sys/zfs_mount.h>

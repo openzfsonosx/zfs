@@ -162,6 +162,7 @@ typedef enum {
     ZFS_PROP_APPLE_IGNOREOWNER,
 	ZFS_PROP_APPLE_LASTUNMOUNT, /* not exposed to the user */
     ZFS_PROP_APPLE_MIMIC_HFS,
+	ZFS_PROP_SHAREAFP,
 #endif
 #ifdef LINUX
 	ZFS_PROP_ACLTYPE,
@@ -351,7 +352,9 @@ typedef enum zfs_share_op {
 	ZFS_SHARE_NFS = 0,
 	ZFS_UNSHARE_NFS = 1,
 	ZFS_SHARE_SMB = 2,
-	ZFS_UNSHARE_SMB = 3
+	ZFS_UNSHARE_SMB = 3,
+	ZFS_SHARE_AFP = 4,
+	ZFS_UNSHARE_AFP = 5
 } zfs_share_op_t;
 
 typedef enum zfs_smb_acl_op {

@@ -713,7 +713,6 @@ dbuf_fini(void)
 /*
  * Other stuff.
  */
-
 #ifdef ZFS_DEBUG
 static void
 dbuf_verify(dmu_buf_impl_t *db)
