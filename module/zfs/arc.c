@@ -3966,14 +3966,17 @@ arc_reclaim_thread(void)
 				 * if we had manual pressure, then use
 				 * the wrapper_set function to set
 				 * spl_free.
-				 * zero:  if there was fast pressure (will throttle writes)
-				 * 32MiB otherwise (will not throttle writes)
+				 * 128kiB:  if there was fast pressure
+				 *          (should be close to zero, but
+				 *          actual zero throttles everything
+				 *          enough that OS X watchdog may fire)
+				 * 32MiB: otherwise (will not throttle writes)
 				 */
 				if (spl_free_wrapper() < 0 || manual_pressure != 0) {
 					if (fastpressure)
-						spl_free_wrapper_set(0);
+						spl_free_wrapper_set(128LL * 1024LL);
 					else
-						spl_free_wrapper_set(2 * SPA_MAXBLOCKSIZE);
+						spl_free_wrapper_set(2LL * SPA_MAXBLOCKSIZE);
 				}
 			} else if (old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
@@ -3981,9 +3984,9 @@ arc_reclaim_thread(void)
 			  old_to_free = 0;
 			  if (spl_free_wrapper() < 0) {
 				  if (fastpressure)
-					  spl_free_wrapper_set(0);
+					  spl_free_wrapper_set(128LL * 1024LL);
 				  else
-					  spl_free_wrapper_set(2 * SPA_MAXBLOCKSIZE);
+					  spl_free_wrapper_set(2LL * SPA_MAXBLOCKSIZE);
 			  }
 			}
 #endif // __APPLE__
