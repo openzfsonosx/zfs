@@ -646,6 +646,7 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_tempreserve;
 	kstat_named_t arcstat_loaned_bytes;
 	kstat_named_t arcstat_dbuf_redirtied;
+	kstat_named_t arcstat_arc_no_grow;
 } arc_stats_t;
 
 static arc_stats_t arc_stats = {
@@ -734,6 +735,7 @@ static arc_stats_t arc_stats = {
 	{ "tempreserve", KSTAT_DATA_UINT64 },
 	{ "loaned_bytes", KSTAT_DATA_UINT64 },
 	{ "dbuf_redirtied", KSTAT_DATA_UINT64 },
+	{ "arc_no_grow", KSTAT_DATA_UINT64 },
 };
 
 #define	ARCSTAT(stat)	(arc_stats.stat.value.ui64)
@@ -808,7 +810,8 @@ static arc_state_t	*arc_l2c_only;
 /* number of bytes in the arc from arc_buf_t's */
 #define	arc_overhead_size	ARCSTAT(arcstat_overhead_size)
 
-static int		arc_no_grow;	/* Don't try to grow cache size */
+// arcstat: static int		arc_no_grow;	/* Don't try to grow cache size */
+#define arc_no_grow ARCSTAT(arcstat_arc_no_grow)	
 // arcstat: static uint64_t		arc_tempreserve;
 #define arc_tempreserve ARCSTAT(arcstat_tempreserve) /* space temporarily reserverd */
 // arcstat: static uint64_t		arc_loaned_bytes;
