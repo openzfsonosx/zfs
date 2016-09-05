@@ -4123,7 +4123,7 @@ arc_reclaim_thread(void)
 				int64_t cur_spl_free = spl_free_wrapper();
 
 				if (arc_shrink_freed > 0 &&
-				    cur_spl_free < SPA_MAXBLOCKSIZE) {
+				    cur_spl_free < (int64_t)SPA_MAXBLOCKSIZE) {
 					spl_free_wrapper_set(cur_spl_free + arc_shrink_freed);
 				}
 
@@ -4131,7 +4131,7 @@ arc_reclaim_thread(void)
 					printf("ZFS: %s, arc_shrink freed %lld, zeroing old_to_free from %lld\n",
 					    __func__, arc_shrink_freed, old_to_free);
 					old_to_free = 0;
-				} else if (arc_shrink_freed > 2LL * SPA_MAXBLOCKSIZE) {
+				} else if (arc_shrink_freed > 2LL * (int64_t)SPA_MAXBLOCKSIZE) {
 					printf("ZFS: %s, arc_shrink freed %lld, setting old_to_free to %lld from %lld\n",
 					    __func__, arc_shrink_freed, left_to_free, old_to_free);
 					old_to_free = left_to_free;
