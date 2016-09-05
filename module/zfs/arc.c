@@ -3960,37 +3960,38 @@ arc_reclaim_thread(void)
 					 __func__, to_free, old_to_free, to_free - old_to_free);
 				  old_to_free = to_free;
 				}
+
+				int64_t old_arc_size = (int64_t)arc_size;
 #endif // __APPLE__
 #endif // _KERNEL
 				arc_shrink(to_free);
 #ifdef _KERNEL
 #ifdef	__APPLE__
-				/*
-				 * if we had manual pressure, then use
-				 * the wrapper_set function to set
-				 * spl_free.
-				 * 128kiB:  if there was fast pressure
-				 *          (should be close to zero, but
-				 *          actual zero throttles everything
-				 *          enough that OS X watchdog may fire)
-				 * 32MiB: otherwise (will not throttle writes)
-				 */
-				if (spl_free_wrapper() < 0 || manual_pressure != 0) {
-					if (fastpressure)
-						spl_free_wrapper_set(128LL * 1024LL);
-					else
-						spl_free_wrapper_set(2LL * SPA_MAXBLOCKSIZE);
+				int64_t new_arc_size = (int64_t)arc_size;
+				int64_t arc_shrink_freed = old_arc_size - new_arc_size;
+				int64_t left_to_free = to_free - arc_shrink_freed;
+				int64_t cur_spl_free = spl_free_wrapper();
+
+				if (arc_shrink_freed > 0 &&
+				    cur_spl_free < SPA_MAXBLOCKSIZE) {
+					spl_free_wrapper_set(cur_spl_free + arc_shrink_freed);
+				}
+
+				if (left_to_free <= 0) {
+					printf("ZFS: %s, arc_shrink freed %lld, zeroing old_to_free from %lld\n",
+					    __func__, arc_shrink_freed, old_to_free);
+					old_to_free = 0;
+				} else if (arc_shrink_freed > 2LL * SPA_MAXBLOCKSIZE) {
+					printf("ZFS: %s, arc_shrink freed %lld, setting old_to_free to %lld from %lld\n",
+					    __func__, arc_shrink_freed, left_to_free, old_to_free);
+					old_to_free = left_to_free;
+				} else {
+					old_to_free = left_to_free;
 				}
 			} else if (old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
 				 __func__, old_to_free);
 			  old_to_free = 0;
-			  if (spl_free_wrapper() < 0) {
-				  if (fastpressure)
-					  spl_free_wrapper_set(128LL * 1024LL);
-				  else
-					  spl_free_wrapper_set(2LL * SPA_MAXBLOCKSIZE);
-			  }
 			}
 #endif // __APPLE__
 #ifdef sun
