@@ -148,11 +148,8 @@ lzc_ioctl(zfs_ioc_t ioc, const char *name,
 		if (zc.zc_ioc_error != 0) {
 			errno = zc.zc_ioc_error;
 		} else if (ioctl_err != -1) {
-			dprintf("ioctl should return 0, or both return -1 and set errno, "
-			   "but instead : ioctl_err %d : errno %d\n", ioctl_err, errno);
 			errno = ioctl_err;
 		} else if (ioctl_err == -1 && errno == 0) {
-			dprintf("ioctl returned -1, so errno should have been nonzero.\n");
 			errno = -1;
 		}
 
