@@ -3727,6 +3727,8 @@ arc_shrink(int64_t to_free)
 			printf("ZFS: %s, arc_c_min %llu -> %llu\n",
 			    __func__, arc_c_min, new_arc_c_min);
 			atomic_swap_64(&arc_c_min, new_arc_c_min);
+			if (arc_c_min > arc_c)
+				atomic_swap_64(&arc_c, arc_c_min);
 		}
 	}
 #endif
