@@ -797,16 +797,30 @@ SHA2Update(SHA2_CTX *ctx, const void *inptr, size_t input_len)
 	if (input_len == 0)
 		return;
 
-	buf_limit = 64;
+	if (algotype <= SHA256_HMAC_GEN_MECH_INFO_TYPE) {
+		buf_limit = 64;
 
-	/* compute number of bytes mod 64 */
-	buf_index = (ctx->count.c32[1] >> 3) & 0x3F;
+		/* compute number of bytes mod 64 */
+		buf_index = (ctx->count.c32[1] >> 3) & 0x3F;
 
-	/* update number of bits */
-	if ((ctx->count.c32[1] += (input_len << 3)) < (input_len << 3))
-		ctx->count.c32[0]++;
+		/* update number of bits */
+		if ((ctx->count.c32[1] += (input_len << 3)) < (input_len << 3))
+			ctx->count.c32[0]++;
 
-	ctx->count.c32[0] += (input_len >> 29);
+		ctx->count.c32[0] += (input_len >> 29);
+
+	} else {
+		buf_limit = 128;
+
+		/* compute number of bytes mod 128 */
+		buf_index = (ctx->count.c64[1] >> 3) & 0x7F;
+
+		/* update number of bits */
+		if ((ctx->count.c64[1] += (input_len << 3)) < (input_len << 3))
+			ctx->count.c64[0]++;
+
+		ctx->count.c64[0] += (input_len >> 29);
+	}
 
 	buf_len = buf_limit - buf_index;
 
