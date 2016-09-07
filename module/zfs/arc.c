@@ -5761,11 +5761,8 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 #endif
 			if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max) {
 				arc_c_min = zfs_arc_min;
-				/* If user hasn't set it, update meta_min too */
-				if (!zfs_arc_meta_min)
-					arc_meta_min = arc_c_min / 2;
-								printf("ZFS: set arc_c_min %llu, arc_meta_min %llu, zfs_arc_meta_min %llu\n",
-				       arc_c_min, arc_meta_min, zfs_arc_meta_min);
+				printf("ZFS: set arc_c_min %llu, arc_meta_min %llu, zfs_arc_meta_min %llu\n",
+				    arc_c_min, arc_meta_min, zfs_arc_meta_min);
 				if(arc_c < arc_c_min) {
 				  printf("ZFS: raise arc_c %llu to arc_c_min %llu\n",
 					 arc_c, arc_c_min);
