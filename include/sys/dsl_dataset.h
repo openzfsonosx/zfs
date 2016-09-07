@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
@@ -84,13 +84,6 @@ struct dsl_pool;
  * in the refcount of the SPA_FEATURES_BOOKMARKS feature.
  */
 #define	DS_FIELD_BOOKMARK_NAMES "com.delphix:bookmarks"
-
-/*
- * This field is present (with value=0) if this dataset may contain large
- * blocks (>128KB).  If it is present, then this dataset
- * is counted in the refcount of the SPA_FEATURE_LARGE_BLOCKS feature.
- */
-#define	DS_FIELD_LARGE_BLOCKS "org.open-zfs:large_blocks"
 
 /*
  * These fields are set on datasets that are in the middle of a resumable
@@ -159,9 +152,6 @@ typedef struct dsl_dataset {
 	/* only used in syncing context, only valid for non-snapshots: */
 	struct dsl_dataset *ds_prev;
 	uint64_t ds_bookmarks;  /* DMU_OTN_ZAP_METADATA */
-
-	boolean_t ds_large_blocks;
-	boolean_t ds_need_large_blocks;
 
 	/* has internal locking: */
 	dsl_deadlist_t ds_deadlist;
@@ -303,8 +293,6 @@ int dsl_dataset_space_written(dsl_dataset_t *oldsnap, dsl_dataset_t *_new,
 int dsl_dataset_space_wouldfree(dsl_dataset_t *firstsnap, dsl_dataset_t *last,
     uint64_t *usedp, uint64_t *compp, uint64_t *uncompp);
 boolean_t dsl_dataset_is_dirty(dsl_dataset_t *ds);
-int dsl_dataset_activate_large_blocks(const char *dsname);
-void dsl_dataset_activate_large_blocks_sync_impl(uint64_t dsobj, dmu_tx_t *tx);
 
 int dsl_dsobj_to_dsname(char *pname, uint64_t obj, char *buf);
 
@@ -345,6 +333,9 @@ void dsl_dataset_zapify(dsl_dataset_t *ds, dmu_tx_t *tx);
 boolean_t dsl_dataset_is_zapified(dsl_dataset_t *ds);
 boolean_t dsl_dataset_has_resume_receive_state(dsl_dataset_t *ds);
 int dsl_dataset_rollback(const char *fsname, void *owner, nvlist_t *result);
+
+void dsl_dataset_deactivate_feature(uint64_t dsobj,
+    spa_feature_t f, dmu_tx_t *tx);
 
 int dmu_send_estimate(dsl_dataset_t *ds, dsl_dataset_t *fromds,
     uint64_t *sizep);

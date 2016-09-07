@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 RackTop Systems.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
@@ -3518,7 +3518,6 @@ dsl_dataset_is_before(dsl_dataset_t *later, dsl_dataset_t *earlier,
 	dsl_dataset_rele(origin, FTAG);
 	return (ret);
 }
-
 
 void
 dsl_dataset_zapify(dsl_dataset_t *ds, dmu_tx_t *tx)
