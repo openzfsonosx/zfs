@@ -3573,7 +3573,7 @@ arc_shrink(int64_t to_free)
 #ifdef __APPLE__
 	if (zfs_dynamic_arc_c_min)  {
 		uint64_t new_arc_c_min = spl_arc_c_min_update(arc_c_min);
-		if (new_arc_c_min != arc_c_min) {
+		if (new_arc_c_min != arc_c_min) { // note different comparison below
 			printf("ZFS: %s, arc_c_min %llu -> %llu\n",
 			    __func__, arc_c_min, new_arc_c_min);
 			atomic_swap_64(&arc_c_min, new_arc_c_min);
@@ -4037,6 +4037,20 @@ arc_reclaim_thread(void)
 #endif // !_KERNEL
 		} else if (free_memory < (arc_c >> arc_no_grow_shift)) {
 			arc_no_grow = B_TRUE;
+#ifdef _KERNEL
+#ifdef __APPLE__
+			if (zfs_dynamic_arc_c_min)  {
+				uint64_t new_arc_c_min = spl_arc_c_min_update(arc_c_min);
+				if (new_arc_c_min > arc_c_min) { // note different comparison above
+					printf("ZFS: %s, arc_c_min %llu -> %llu\n",
+					    __func__, arc_c_min, new_arc_c_min);
+					atomic_swap_64(&arc_c_min, new_arc_c_min);
+					if (arc_c_min > arc_c)
+						atomic_swap_64(&arc_c, arc_c_min);
+				}
+			}
+#endif
+#endif
 		} else if (growtime > 0 && gethrtime() >= growtime) {
 			if (arc_no_grow == B_TRUE)
 				printf("ZFS: arc growtime expired\n");
