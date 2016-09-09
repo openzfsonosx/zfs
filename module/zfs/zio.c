@@ -69,7 +69,7 @@ kmem_cache_t *zio_data_buf_cache[SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT];
 int zio_delay_max = ZIO_DELAY_MAX;
 
 #ifdef _KERNEL
-extern vmem_t *zio_alloc_arena;
+extern vmem_t *zio_arena;
 #endif
 #define	ZIO_PIPELINE_CONTINUE		0x100
 #define	ZIO_PIPELINE_STOP		0x101
@@ -116,7 +116,7 @@ zio_init(void)
     size_t c;
 
 #ifdef _KERNEL
-	vmem_t *data_alloc_arena = zio_alloc_arena;
+	vmem_t *data_alloc_arena = zio_arena;
 #else
 	vmem_t *data_alloc_arena = NULL;
 #endif
