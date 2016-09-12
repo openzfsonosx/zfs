@@ -360,7 +360,7 @@ static boolean_t arc_warm;
  */
 uint64_t zfs_arc_max;
 uint64_t zfs_arc_min;
-uint64_t zfs_dynamic_arc_c_min = 1ULL;
+uint64_t zfs_dynamic_arc_c_min = 0;
 uint64_t zfs_arc_meta_limit = 0;
 uint64_t zfs_arc_meta_min = 0;
 int zfs_arc_grow_retry = 0;
