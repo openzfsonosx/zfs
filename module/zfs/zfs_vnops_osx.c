@@ -134,7 +134,7 @@ static struct vfsops zfs_vfsops_template = {
 	zfs_vfs_init,
 	zfs_vfs_sysctl,
 	zfs_vfs_setattr,
-	{NULL}
+	NULL
 };
 extern struct vnodeopv_desc zfs_dvnodeop_opv_desc;
 extern struct vnodeopv_desc zfs_fvnodeop_opv_desc;
