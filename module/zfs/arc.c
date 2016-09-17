@@ -3981,9 +3981,9 @@ arc_reclaim_thread(void)
 				if (to_free > old_to_free) {
 					int64_t delta = to_free - old_to_free;
 					const int64_t mib = 1024ULL*1024ULL;
-					if (delta <= mib && manual_pressure)
+					if (delta == mib && (manual_pressure || old_to_free == 0))
 						printf("ZFS: %s, to_free == %lld increased above %lld old_to_free (delta: %lld)\n",
-						    __func__, to_free, old_to_free, to_free - old_to_free);
+						    __func__, to_free, old_to_free, delta);
 				}
 
 				int64_t old_arc_size = (int64_t)arc_size;
