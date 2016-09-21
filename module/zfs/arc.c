@@ -271,6 +271,7 @@
 #include <sys/kstat_osx.h>
 #ifdef _KERNEL
 extern vmem_t *zio_arena;
+extern vmem_t *heap_arena;
 #endif
 #endif
 
@@ -350,6 +351,7 @@ static boolean_t arc_warm;
  */
 uint64_t zfs_arc_max;
 uint64_t zfs_arc_min;
+uint64_t zfs_dynamic_arc_c_min = 0;
 uint64_t zfs_arc_meta_limit = 0;
 uint64_t zfs_arc_meta_min = 0;
 int zfs_arc_grow_retry = 0;
@@ -642,6 +644,10 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_meta_min;
 	kstat_named_t arcstat_sync_wait_for_async;
 	kstat_named_t arcstat_demand_hit_predictive_prefetch;
+	kstat_named_t arcstat_tempreserve;
+	kstat_named_t arcstat_loaned_bytes;
+	kstat_named_t arcstat_dbuf_redirtied;
+	kstat_named_t arcstat_arc_no_grow;
 } arc_stats_t;
 
 static arc_stats_t arc_stats = {
@@ -727,6 +733,10 @@ static arc_stats_t arc_stats = {
 	{ "arc_meta_min",		KSTAT_DATA_UINT64 },
 	{ "sync_wait_for_async",	KSTAT_DATA_UINT64 },
 	{ "demand_hit_predictive_prefetch", KSTAT_DATA_UINT64 },
+	{ "tempreserve", KSTAT_DATA_UINT64 },
+	{ "loaned_bytes", KSTAT_DATA_UINT64 },
+	{ "dbuf_redirtied", KSTAT_DATA_UINT64 },
+	{ "arc_no_grow", KSTAT_DATA_UINT64 },
 };
 
 #define	ARCSTAT(stat)	(arc_stats.stat.value.ui64)
@@ -793,6 +803,7 @@ static arc_state_t	*arc_l2c_only;
 #define	arc_meta_used	ARCSTAT(arcstat_meta_used) /* size of metadata */
 #define	arc_meta_max	ARCSTAT(arcstat_meta_max) /* max size of metadata */
 
+
 /* compressed size of entire arc */
 #define	arc_compressed_size	ARCSTAT(arcstat_compressed_size)
 /* uncompressed size of entire arc */
@@ -800,9 +811,20 @@ static arc_state_t	*arc_l2c_only;
 /* number of bytes in the arc from arc_buf_t's */
 #define	arc_overhead_size	ARCSTAT(arcstat_overhead_size)
 
-static int		arc_no_grow;	/* Don't try to grow cache size */
-static uint64_t		arc_tempreserve;
-static uint64_t		arc_loaned_bytes;
+// arcstat: static int		arc_no_grow;	/* Don't try to grow cache size */
+#define arc_no_grow ARCSTAT(arcstat_arc_no_grow)	
+// arcstat: static uint64_t		arc_tempreserve;
+#define arc_tempreserve ARCSTAT(arcstat_tempreserve) /* space temporarily reserverd */
+// arcstat: static uint64_t		arc_loaned_bytes;
+#define arc_loaned_bytes ARCSTAT(arcstat_loaned_bytes) /* bytes loaned out as dbuf */
+
+#define zfs_dbuf_redirtied ARCSTAT(arcstat_dbuf_redirtied) /* number of invocations of dbuf.c:dbuf_redirty() */
+void
+arcstat_bump_dbuf_redirtied(void)
+{
+	ARCSTAT_BUMP(arcstat_dbuf_redirtied);
+}
+
 
 typedef struct arc_callback arc_callback_t;
 
@@ -3537,9 +3559,31 @@ arc_flush(spa_t *spa, boolean_t retry)
 	(void) arc_flush_state(arc_mfu_ghost, guid, ARC_BUFC_METADATA, retry);
 }
 
+#ifdef _KERNEL
+#ifdef __APPLE__
+extern uint64_t spl_arc_c_min_update(uint64_t);
+#endif
+#endif
+
 void
 arc_shrink(int64_t to_free)
 {
+
+#ifdef _KERNEL
+#ifdef __APPLE__
+	if (zfs_dynamic_arc_c_min)  {
+		uint64_t new_arc_c_min = spl_arc_c_min_update(arc_c_min);
+		if (new_arc_c_min != arc_c_min) { // note different comparison below
+			printf("ZFS: %s, arc_c_min %llu -> %llu\n",
+			    __func__, arc_c_min, new_arc_c_min);
+			atomic_swap_64(&arc_c_min, new_arc_c_min);
+			if (arc_c_min > arc_c)
+				atomic_swap_64(&arc_c, arc_c_min);
+		}
+	}
+#endif
+#endif
+
 	if (arc_c > arc_c_min) {
 
 		if (arc_c > arc_c_min + to_free)
@@ -3568,6 +3612,8 @@ typedef enum free_memory_reason_t {
 	FMR_PAGES_PP_MAXIMUM,
 	FMR_HEAP_ARENA,
 	FMR_ZIO_ARENA,
+	FMR_SPL_FREE,
+	FMR_SPL_PRESSURE,
 } free_memory_reason_t;
 
 int64_t last_free_memory;
@@ -3588,6 +3634,7 @@ int64_t arc_swapfs_reserve = 64;
  * needed.  Positive if there is sufficient free memory, negative indicates
  * the amount of memory that needs to be freed up.
  */
+
 static int64_t
 arc_available_memory(void)
 {
@@ -3597,6 +3644,7 @@ arc_available_memory(void)
 #ifdef _KERNEL
 #ifdef __APPLE__
 	if(spl_free_manual_pressure_wrapper() != 0) {
+	  r = FMR_SPL_PRESSURE;
 	  cv_signal(&arc_reclaim_thread_cv);
 	  kpreempt(KPREEMPT_SYNC);
 	  if(spl_free_fast_pressure_wrapper() != FALSE) {
@@ -3657,6 +3705,20 @@ arc_available_memory(void)
 	}
 
 #if defined(__i386)
+
+#endif
+
+#endif // sun
+
+#ifdef __APPLE__
+	lowest = spl_free_wrapper();
+	r = FMR_SPL_FREE;
+	if((lowest - spl_free_manual_pressure_wrapper()) < 0) {
+		lowest -= spl_free_manual_pressure_wrapper();
+		r = FMR_SPL_PRESSURE;
+	}
+
+#if 0
 	/*
 	 * If we're on an i386 platform, it's possible that we'll exhaust the
 	 * kernel heap space before we ever run out of available physical
@@ -3668,14 +3730,23 @@ arc_available_memory(void)
 	 * heap is allocated.  (Or, in the calculation, if less than 1/4th is
 	 * free)
 	 */
-	n = vmem_size(heap_arena, VMEM_FREE) -
-	    (vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC) >> 2);
-	if (n < lowest) {
-		lowest = n;
-		r = FMR_HEAP_ARENA;
-	}
-#endif
+	// likewise, in Mac OS X, we often find ourselves with little free memory
+	// as reported by vm.page* variables, and spl signalling might not be quick
+	// enough to trigger an arc reclaim (which also reaps the zio caches)
+	// reusing Illumos logic here seems fairly sensible.
 
+	if (heap_arena != NULL) {
+		size_t heap_free = spl_vmem_size(heap_arena, VMEM_FREE);
+		int64_t n = heap_free;
+
+		if (n != 0 && n < lowest) {
+			lowest = n;
+			r = FMR_HEAP_ARENA;
+		}
+	}
+#endif //0
+
+#if 0
 	/*
 	 * If zio data pages are being allocated out of a separate heap segment,
 	 * then enforce that the size of available vmem for this arena remains
@@ -3685,29 +3756,40 @@ arc_available_memory(void)
 	 * to aggressively evict memory from the arc in order to avoid
 	 * memory fragmentation issues.
 	 */
+
 	if (zio_arena != NULL) {
-		n = vmem_size(zio_arena, VMEM_FREE) -
-		    (vmem_size(zio_arena, VMEM_ALLOC) >> 4);
+		size_t zio_total = spl_vmem_size(zio_arena, VMEM_FREE | VMEM_ALLOC);
+		size_t zio_sixteenth_total = zio_total / 16;
+		size_t zio_free = spl_vmem_size(zio_arena, VMEM_FREE);
+
+		int64_t n = zio_free;
+
+		if (zio_free != 0 && zio_free < zio_sixteenth_total)
+			n = zio_free - zio_sixteenth_total;
+
 		if (n < lowest) {
 			lowest = n;
 			r = FMR_ZIO_ARENA;
 		}
 	}
+#endif //0
 
-#endif // sun
-
-#ifdef __APPLE__
-	lowest = spl_free_wrapper();
-	if((lowest - spl_free_manual_pressure_wrapper()) < 0) {
-		lowest -= spl_free_manual_pressure_wrapper();
+#ifdef sun
+	if (zio_arena != NULL) {
+		n = spl_vmem_size(zio_arena, VMEM_FREE) -
+		    (spl_vmem_size(zio_arena, VMEM_ALLOC) >> 4);
+		if (n < lowest) {
+			lowest = n;
+			r = FMR_ZIO_ARENA;
+		}
 	}
 #endif
-
-#else  // KERNEL
+#endif // __APPLE__
+#else  // _KERNEL
 	/* Every 100 calls, free a small amount */
 	if (spa_get_random(100) == 0)
 		lowest = -1024;
-#endif // KERNEL
+#endif // _KERNEL
 
 	last_free_memory = lowest;
 	last_free_reason = r;
@@ -3724,16 +3806,19 @@ arc_available_memory(void)
 static boolean_t
 arc_reclaim_needed(void)
 {
+    if(arc_available_memory() < 0) {
+      return 1;
+    }
 
 #ifdef __APPLE__
-#ifdef KERNEL
-    if (spl_vm_pool_low()) {
-		ARCSTAT_INCR(arcstat_memory_throttle_count, 1);
-		return 1;
-	}
+#ifdef _KERNEL
+    if(spl_free_manual_pressure_wrapper() != 0) {
+      return 1;
+    }
 #endif
 #endif
-	return (arc_available_memory() < 0);
+
+    return 0;
 }
 
 static void
@@ -3777,7 +3862,7 @@ arc_kmem_reap_now(void)
 	kmem_cache_reap_now(hdr_l2only_cache);
 	kmem_cache_reap_now(range_seg_cache);
 
-#ifdef KERNEL
+#ifdef _KERNEL
 	if (zio_arena != NULL) {
 		/*
 		 * Ask the vmem arena to reclaim unused memory from its
@@ -3804,6 +3889,7 @@ arc_kmem_reap_now(void)
  * This possible deadlock is avoided by always acquiring a hash lock
  * using mutex_tryenter() from arc_reclaim_thread().
  */
+
 static void
 #ifdef __APPLE__
 arc_reclaim_thread(void *notused)
@@ -3837,7 +3923,20 @@ arc_reclaim_thread(void)
 
 		mutex_exit(&arc_reclaim_lock);
 
+#ifdef __APPLE__
+#ifdef _KERNEL
+		int64_t manual_pressure = spl_free_manual_pressure_wrapper();
+		boolean_t fastpressure = spl_free_fast_pressure_wrapper();
+
+		spl_free_set_pressure(0); // clears both above
+
+		if (free_memory < 0 || manual_pressure != 0) {
+#else
+	        if (free_memory < 0) {
+#endif
+#else
 		if (free_memory < 0) {
+#endif
 
 			arc_no_grow = B_TRUE;
 			arc_warm = B_TRUE;
@@ -3869,7 +3968,7 @@ arc_reclaim_thread(void)
 			if (to_free > 0) {
 #else
 #ifdef __APPLE__
-			if(to_free > 0 || spl_free_manual_pressure_wrapper() != 0) {
+			if(to_free > 0 || manual_pressure != 0) {
 #endif
 #endif
 #ifdef _KERNEL
@@ -3877,20 +3976,56 @@ arc_reclaim_thread(void)
 				to_free = MAX(to_free, ptob(needfree));
 #endif
 #ifdef __APPLE__
-				to_free = MAX(to_free, spl_free_manual_pressure_wrapper());
-				spl_free_set_pressure(0);
+				to_free = MAX(to_free, manual_pressure);
 
 				if (to_free > old_to_free) {
-				  printf("ZFS: %s, to_free == %lld increased above %lld old_to_free (delta: %lld)\n",
-					 __func__, to_free, old_to_free, to_free - old_to_free);
-				  old_to_free = to_free;
+					int64_t delta = to_free - old_to_free;
+					const int64_t mib = 1024ULL*1024ULL;
+					if (delta == mib && (manual_pressure || old_to_free == 0))
+						printf("ZFS: %s, to_free == %lld increased above %lld old_to_free (delta: %lld)\n",
+						    __func__, to_free, old_to_free, delta);
 				}
+
+				int64_t old_arc_size = (int64_t)arc_size;
 #endif // __APPLE__
 #endif // _KERNEL
 				arc_shrink(to_free);
 #ifdef _KERNEL
 #ifdef	__APPLE__
-			} else if(old_to_free > 0) {
+				int64_t new_arc_size = (int64_t)arc_size;
+				int64_t arc_shrink_freed = old_arc_size - new_arc_size;
+				int64_t left_to_free = to_free - arc_shrink_freed;
+				int64_t cur_spl_free = spl_free_wrapper();
+
+				/*
+				 * avoid uselessly re-processing the same spl_free signal
+				 * by changing spl_free before spl_free_thread() changes it
+				 */
+				if (arc_shrink_freed > 0 &&
+				    cur_spl_free < (int64_t)SPA_MAXBLOCKSIZE) {
+					// grow spl_free by how much arc shrank
+					spl_free_wrapper_set(cur_spl_free + arc_shrink_freed);
+				} else if (!fastpressure && old_to_free == to_free) {
+					static uint64_t last_update = 0;
+
+					if (last_update <= hz/10) // hz/10 is from spl_free_thread()'s cv_timedwait().
+						spl_free_wrapper_set((int64_t)SPA_MAXBLOCKSIZE);
+
+					last_update = ddi_get_lbolt();
+				}
+
+				if (left_to_free <= 0) {
+					printf("ZFS: %s, arc_shrink freed %lld, zeroing old_to_free from %lld\n",
+					    __func__, arc_shrink_freed, old_to_free);
+					old_to_free = 0;
+				} else if (arc_shrink_freed > 2LL * (int64_t)SPA_MAXBLOCKSIZE) {
+					printf("ZFS: %s, arc_shrink freed %lld, setting old_to_free to %lld from %lld\n",
+					    __func__, arc_shrink_freed, left_to_free, old_to_free);
+					old_to_free = left_to_free;
+				} else {
+					old_to_free = left_to_free;
+				}
+			} else if (old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
 				 __func__, old_to_free);
 			  old_to_free = 0;
@@ -3903,15 +4038,32 @@ arc_reclaim_thread(void)
 #ifndef _KERNEL
 			}
 #endif // !_KERNEL
-		} else if (free_memory < arc_c >> arc_no_grow_shift) {
+		} else if (free_memory < (arc_c >> arc_no_grow_shift)) {
 			arc_no_grow = B_TRUE;
-		} else if (gethrtime() >= growtime) {
+#ifdef _KERNEL
+#ifdef __APPLE__
+			if (zfs_dynamic_arc_c_min)  {
+				uint64_t new_arc_c_min = spl_arc_c_min_update(arc_c_min);
+				if (new_arc_c_min > arc_c_min) { // note different comparison above
+					printf("ZFS: %s, arc_c_min %llu -> %llu\n",
+					    __func__, arc_c_min, new_arc_c_min);
+					atomic_swap_64(&arc_c_min, new_arc_c_min);
+					if (arc_c_min > arc_c)
+						atomic_swap_64(&arc_c, arc_c_min);
+				}
+			}
+#endif
+#endif
+		} else if (growtime > 0 && gethrtime() >= growtime) {
+			if (arc_no_grow == B_TRUE)
+				printf("ZFS: arc growtime expired\n");
+			growtime = 0;
 			arc_no_grow = B_FALSE;
 		}
 
 		evicted = arc_adjust();
 
-		mutex_enter(&arc_reclaim_lock);
+               mutex_enter(&arc_reclaim_lock);
 
 		/*
 		 * If evicted is zero, we couldn't evict anything via
@@ -5528,8 +5680,8 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 	 * both succeed, when one of them should fail.  Not a huge deal.
 	 */
 
-	if (reserve + arc_tempreserve + anon_size > arc_c / 2 &&
-	    anon_size > arc_c / 4) {
+	if (reserve + arc_tempreserve + anon_size > arc_c / 4 &&
+	    anon_size > arc_c / 8) {
 		uint64_t meta_esize =
 		    refcount_count(&arc_anon->arcs_esize[ARC_BUFC_METADATA]);
 		uint64_t data_esize =
@@ -5621,12 +5773,25 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 		}
 
 		if (ks->arc_zfs_arc_min.value.ui64 != zfs_arc_min) {
-			zfs_arc_min               = ks->arc_zfs_arc_min.value.ui64;
+#ifdef _KERNEL
+			zfs_arc_min = spl_zfs_arc_min_set(ks->arc_zfs_arc_min.value.ui64);
+#else
+			zfs_arc_min = ks->arc_zfs_arc_min.value.ui64;
+#endif
 			if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max) {
 				arc_c_min = zfs_arc_min;
-				/* If user hasn't set it, update meta_min too */
-				if (!zfs_arc_meta_min)
-					arc_meta_min = arc_c_min / 2;
+				printf("ZFS: set arc_c_min %llu, arc_meta_min %llu, zfs_arc_meta_min %llu\n",
+				    arc_c_min, arc_meta_min, zfs_arc_meta_min);
+				if(arc_c < arc_c_min) {
+				  printf("ZFS: raise arc_c %llu to arc_c_min %llu\n",
+					 arc_c, arc_c_min);
+				  arc_c = arc_c_min;
+				  if(arc_p < (arc_c >> 1)) {
+				    printf("ZFS: raise arc_p %llu to %llu\n",
+					   arc_p, (arc_c >> 1));
+				    arc_p = (arc_c >> 1);
+				  }
+				}
 			}
 		}
 
@@ -5639,12 +5804,20 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 
 			if (arc_c_min < arc_meta_limit / 2 && zfs_arc_min == 0)
 				arc_c_min = arc_meta_limit / 2;
+
+			printf("ZFS: set arc_meta_limit %llu, arc_c_min %llu, zfs_arc_meta_limit %llu\n",
+			       arc_meta_limit, arc_c_min, zfs_arc_meta_limit);
 		}
 
 		if (ks->arc_zfs_arc_meta_min.value.ui64 != zfs_arc_meta_min) {
-			zfs_arc_meta_min  = ks->arc_zfs_arc_meta_min.value.ui64;
-			if (zfs_arc_meta_min > 0 && zfs_arc_meta_min <= arc_meta_limit)
-				arc_meta_min = zfs_arc_meta_min;
+		  zfs_arc_meta_min  = ks->arc_zfs_arc_meta_min.value.ui64;
+		  if (zfs_arc_meta_min >= arc_c_min) {
+		    printf("ZFS: probable error, zfs_arc_meta_min %llu >= arc_c_min %llu\n",
+			   zfs_arc_meta_min, arc_c_min);
+		  }
+		  if (zfs_arc_meta_min > 0 && zfs_arc_meta_min <= arc_meta_limit)
+		    arc_meta_min = zfs_arc_meta_min;
+		  printf("ZFS: set arc_meta_min %llu\n", arc_meta_min);
 		}
 
 		zfs_arc_grow_retry        = ks->arc_zfs_arc_grow_retry.value.ui64;
@@ -5861,13 +6034,13 @@ arc_init(void)
 #endif
 
 	/* set min cache to 1/32 of all memory, or 64MB, whichever is more */
-	arc_c_min = MAX(allmem / 32, 64 << 20);
+	arc_c_min = MAX(allmem / 32ULL, 64ULL << 20);
 	/* set max to 3/4 of all memory, or all but 1GB, whichever is more */
-	if (allmem >= 1 << 30)
-		arc_c_max = allmem - (1 << 30);
+	if (allmem >= 1ULL << 30)
+		arc_c_max = allmem - (1ULL << 30);
 	else
 		arc_c_max = arc_c_min;
-	arc_c_max = MAX(allmem * 3 / 4, arc_c_max);
+	arc_c_max = MAX(allmem * 3ULL / 4ULL, arc_c_max);
 
 	/*
 	 * In userland, there's only the memory pressure that we artificially
@@ -5889,6 +6062,11 @@ arc_init(void)
 	}
 	if (zfs_arc_min > 64 << 20 && zfs_arc_min <= arc_c_max)
 		arc_c_min = zfs_arc_min;
+#ifdef _KERNEL
+#ifdef __APPLE__
+	(void) spl_zfs_arc_min_set(arc_c_min);
+#endif
+#endif
 
 	arc_c = arc_c_max;
 	arc_p = (arc_c >> 1);
@@ -5933,9 +6111,11 @@ arc_init(void)
 		zfs_arc_num_sublists_per_state = MAX(boot_ncpus, 1);
 #endif
 
+#if 0 //smd, let's not deflate ARC
 	/* if kmem_flags are set, lets try to use less memory */
 	if (kmem_debugging())
 		arc_c = arc_c / 2;
+#endif //smd	
 	if (arc_c < arc_c_min)
 		arc_c = arc_c_min;
 
