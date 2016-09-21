@@ -1808,6 +1808,7 @@ dsl_dir_rename_check(void *arg, dmu_tx_t *tx)
 				dsl_dir_rele(dd, FTAG);
 				return (err);
 			}
+
 		}
 
 		/* no rename into our descendant */

@@ -196,7 +196,7 @@ enum zio_flag {
 	 * Flags not inherited by any children.
 	 */
 	ZIO_FLAG_DONT_QUEUE	= 1 << 19,	/* must be first for INHERIT */
-	ZIO_FLAG_DONT_PROPAGATE	= 1 << 10,
+	ZIO_FLAG_DONT_PROPAGATE	= 1 << 20,
 	ZIO_FLAG_IO_BYPASS	= 1 << 21,
 	ZIO_FLAG_IO_REWRITE	= 1 << 22,
 	ZIO_FLAG_RAW		= 1 << 23,
