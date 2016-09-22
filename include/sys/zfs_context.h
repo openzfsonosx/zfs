@@ -56,6 +56,7 @@
 
 #define noinline
 #define EBADE EBADMACHO
+#define ENOTACTIVE ENOPOLICY
 #ifndef MAX_UPL_TRANSFER
 #define MAX_UPL_TRANSFER 256
 #endif

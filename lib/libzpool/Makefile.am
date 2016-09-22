@@ -84,11 +84,15 @@ libzpool_la_SOURCES = \
 	../../module/zfs/vdev.c \
 	../../module/zfs/vdev_cache.c \
 	../../module/zfs/vdev_file.c \
+	../../module/zfs/vdev_indirect.c \
+	../../module/zfs/vdev_indirect_births.c \
+	../../module/zfs/vdev_indirect_mapping.c \
 	../../module/zfs/vdev_label.c \
 	../../module/zfs/vdev_mirror.c \
 	../../module/zfs/vdev_missing.c \
 	../../module/zfs/vdev_queue.c \
 	../../module/zfs/vdev_raidz.c \
+	../../module/zfs/vdev_removal.c \
 	../../module/zfs/vdev_root.c \
 	../../module/zfs/zap.c \
 	../../module/zfs/zap_leaf.c \
