@@ -4075,8 +4075,10 @@ arc_reclaim_thread(void)
 
 #ifdef __APPLE__
 #ifdef _KERNEL
+		int64_t cur_spl_free = spl_free_wrapper();
+		int64_t t = MIN(cur_spl_free, free_memory);
+		free_memory = t;
 		int64_t manual_pressure = spl_free_manual_pressure_wrapper();
-		boolean_t fastpressure = spl_free_fast_pressure_wrapper();
 
 		spl_free_set_pressure(0); // clears both above
 
@@ -4145,24 +4147,6 @@ arc_reclaim_thread(void)
 				int64_t new_arc_size = (int64_t)arc_size;
 				int64_t arc_shrink_freed = old_arc_size - new_arc_size;
 				int64_t left_to_free = to_free - arc_shrink_freed;
-				int64_t cur_spl_free = spl_free_wrapper();
-
-				/*
-				 * avoid uselessly re-processing the same spl_free signal
-				 * by changing spl_free before spl_free_thread() changes it
-				 */
-				if (arc_shrink_freed > 0 &&
-				    cur_spl_free < (int64_t)SPA_MAXBLOCKSIZE) {
-					// grow spl_free by how much arc shrank
-					spl_free_wrapper_set(cur_spl_free + arc_shrink_freed);
-				} else if (!fastpressure && old_to_free == to_free) {
-					static uint64_t last_update = 0;
-
-					if (last_update <= hz/10) // hz/10 is from spl_free_thread()'s cv_timedwait().
-						spl_free_wrapper_set((int64_t)SPA_MAXBLOCKSIZE);
-
-					last_update = ddi_get_lbolt();
-				}
 
 				if (left_to_free <= 0) {
 					printf("ZFS: %s, arc_shrink freed %lld, zeroing old_to_free from %lld\n",
@@ -4239,7 +4223,7 @@ arc_reclaim_thread(void)
 			 */
 			CALLB_CPR_SAFE_BEGIN(&cpr);
 			(void) cv_timedwait_hires(&arc_reclaim_thread_cv,
-			    &arc_reclaim_lock, SEC2NSEC(1), MSEC2NSEC(1), 0);
+			    &arc_reclaim_lock, MSEC2NSEC(500), MSEC2NSEC(1), 0);
 			CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_lock);
 		}
 	}
