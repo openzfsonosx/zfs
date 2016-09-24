@@ -22,6 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 Pawel Jakub Dawidek <pawel@dawidek.net>.
  * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -2825,7 +2826,7 @@ zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
 /*
  * Teardown the zfsvfs::z_os.
  *
- * Note, if 'unmounting' if FALSE, we return with the 'z_teardown_lock'
+ * Note, if 'unmounting' is FALSE, we return with the 'z_teardown_lock'
  * and 'z_teardown_inactive_lock' held.
  */
 static int
@@ -3800,6 +3801,29 @@ zfs_get_zplprop(objset_t *os, zfs_prop_t prop, uint64_t *value)
 		error = 0;
 	}
 	return (error);
+}
+
+/*
+ * Return true if the coresponding vfs's unmounted flag is set.
+ * Otherwise return false.
+ * If this function returns true we know VFS unmount has been initiated.
+ */
+boolean_t
+zfs_get_vfs_flag_unmounted(objset_t *os)
+{
+	zfsvfs_t *zfvp;
+	boolean_t unmounted = B_FALSE;
+
+	ASSERT(dmu_objset_type(os) == DMU_OST_ZFS);
+
+	mutex_enter(&os->os_user_ptr_lock);
+	zfvp = dmu_objset_get_user(os);
+	if (zfvp != NULL && zfvp->z_vfs != NULL &&
+		(vfs_isunmount(zfvp->z_vfs)))
+		unmounted = B_TRUE;
+	mutex_exit(&os->os_user_ptr_lock);
+
+	return (unmounted);
 }
 
 #ifdef _KERNEL
