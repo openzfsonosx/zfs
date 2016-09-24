@@ -3238,11 +3238,6 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 		}
 		if (flags->verbose)
 			(void) printf("found clone origin %s\n", zc.zc_string);
-	} else if (originsnap) {
-		(void) strncpy(zc.zc_string, originsnap, sizeof (zc.zc_string));
-		if (flags->verbose)
-			(void) printf("using provided clone origin %s\n",
-						  zc.zc_string);
 	}
 
 	boolean_t resuming = DMU_GET_FEATUREFLAGS(drrb->drr_versioninfo) &

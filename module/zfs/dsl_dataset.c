@@ -1949,7 +1949,6 @@ dsl_dataset_space(dsl_dataset_t *ds,
 boolean_t
 dsl_dataset_modified_since_snap(dsl_dataset_t *ds, dsl_dataset_t *snap)
 {
- 	dsl_pool_t *dp = ds->ds_dir->dd_pool;
 	uint64_t birth;
 
 	ASSERT(dsl_pool_config_held(ds->ds_dir->dd_pool));
