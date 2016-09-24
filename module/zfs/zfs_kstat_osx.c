@@ -168,6 +168,7 @@ osx_kstat_t osx_kstat = {
 	{"zfs_send_set_freerecords_bit",KSTAT_DATA_UINT64  },
 
 	{"zfs_write_implies_delete_child",KSTAT_DATA_UINT64  },
+	{"zfs_send_holes_without_birth_time",KSTAT_DATA_UINT64  },
 
 };
 
@@ -356,6 +357,8 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		zfs_write_implies_delete_child =
 			ks->zfs_write_implies_delete_child.value.ui64;
+		send_holes_without_birth_time =
+			ks->zfs_send_holes_without_birth_time.value.ui64;
 
 	} else {
 
@@ -534,6 +537,8 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		ks->zfs_write_implies_delete_child.value.ui64 =
 			zfs_write_implies_delete_child;
+		ks->zfs_send_holes_without_birth_time.value.ui64 =
+			send_holes_without_birth_time;
 	}
 
 	return 0;
