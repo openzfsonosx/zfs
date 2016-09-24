@@ -38,6 +38,7 @@
 #include <sys/zfs_context.h>
 #include <sys/dsl_deadlist.h>
 #include <sys/refcount.h>
+#include <sys/rrwlock.h>
 #include <zfeature_common.h>
 
 #ifdef	__cplusplus
