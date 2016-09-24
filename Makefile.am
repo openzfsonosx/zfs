@@ -46,7 +46,7 @@ checkstyle: cstyle shellcheck
 
 cstyle:
 	@find ${top_srcdir} -name '*.[hc]' ! -name 'zfs_config.*' \
-		! -name '*.mod.c' -type f -exec scripts/cstyle.pl {} \+
+		! -name '*.mod.c' -type f -exec scripts/cstyle.pl -cPp {} \+
 
 shellcheck:
 	@if type shellcheck > /dev/null 2>&1; then \
