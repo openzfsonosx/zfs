@@ -698,9 +698,7 @@ int
 zvol_remove_minor_impl(const char *name)
 {
 	zvol_state_t *zv;
-#ifdef __APPLE__
-	zvol_iokit_t *iokitdev;
-#endif
+	zvol_state_t tmp_zv;
 	int rc;
 
 	mutex_enter(&zfsdev_state_lock);
@@ -709,29 +707,12 @@ zvol_remove_minor_impl(const char *name)
 		return (ENXIO);
 	}
 
-#ifdef __APPLE__
-	/* Call IOKit to remove the ZVOL device, but we
-	 * can't hold any locks while doing so.
-	 */
-	zvol_remove_symlink(zv);
-
-	/* Get and clear the iokitdev handle while locked */
-	iokitdev = zv->zv_iokitdev;
-	zv->zv_iokitdev = 0;
-
-	/* drop the lock to remove the device */
-	/* XXX Should issue async */
-	if (iokitdev) {
-		mutex_exit(&zfsdev_state_lock);
-		zvolRemoveDevice(iokitdev);
-		iokitdev = 0;
-		mutex_enter(&zfsdev_state_lock);
-	}
-#endif
+	// Remember the iokit ptr so we can free it after releasing locks.
+	tmp_zv.zv_iokitdev = zv->zv_iokitdev;
+	strlcpy(tmp_zv.zv_name, zv->zv_name, sizeof(tmp_zv.zv_name));
+	strlcpy(tmp_zv.zv_bsdname, zv->zv_bsdname, sizeof(tmp_zv.zv_bsdname));
 
 	rc = zvol_remove_zv(zv); // Frees zv, if successful.
-	if (rc != 0)
-		zvol_add_symlink(zv, &zv->zv_bsdname[1], zv->zv_bsdname);
 	mutex_exit(&zfsdev_state_lock);
 
 	// Send zed notification
@@ -1040,27 +1021,22 @@ zvol_remove_minors_impl(const char *name)
 			(strncmp(zv->zv_name, name, namelen) == 0 &&
 			 (zv->zv_name[namelen] == '/' ||
 			  zv->zv_name[namelen] == '@'))) {
+			zvol_state_t tmp_zv;
 
 			/* If in use, leave alone */
 			if (zv->zv_open_count > 0)
 				continue;
 
-#ifdef __APPLE__
-			zvol_remove_symlink(zv);
-			// We had to drop this lock or we would deadlock against
-			// ourselves due to IOKit, but, since this is now ASYNC
-			// it should in theory no longer be needed?
-			//mutex_exit(&zfsdev_state_lock);
-			//zvolRemoveDevice(zv);
-
-			/* Get and clear the iokitdev handle while locked */
-			iokitdev = zv->zv_iokitdev;
-			zv->zv_iokitdev = 0;
-
-			zvolRemoveDevice(iokitdev);
-			//mutex_enter(&zfsdev_state_lock);
-#endif /* __APPLE__ */
+			// Assign a temporary zv holder to call IOKit with
+			// release zv while we have mutex, then drop it.
+			tmp_zv.zv_iokitdev = zv->zv_iokitdev;
+			strlcpy(tmp_zv.zv_name, zv->zv_name, sizeof(tmp_zv.zv_name));
+			strlcpy(tmp_zv.zv_bsdname, zv->zv_bsdname, sizeof(tmp_zv.zv_bsdname));
 			(void) zvol_remove_zv(zv);
+			mutex_exit(&zfsdev_state_lock);
+
+			zvolRemoveDevice(&tmp_zv);
+			mutex_enter(&zfsdev_state_lock);
 		}
 	}
 	mutex_exit(&zfsdev_state_lock);
@@ -3027,316 +3003,6 @@ zvol_fini(void)
 	ddi_soft_state_fini(&zfsdev_state);
 }
 
-#if 0 // unused function
-static int
-zvol_dump_init(zvol_state_t *zv, boolean_t resize)
-{
-	dmu_tx_t *tx;
-	int error = 0;
-	objset_t *os = zv->zv_objset;
-	nvlist_t *nv = NULL;
-	uint64_t version = spa_version(dmu_objset_spa(zv->zv_objset));
-
-	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
-	error = dmu_free_long_range(zv->zv_objset, ZVOL_OBJ, 0,
-	    DMU_OBJECT_END);
-	/* wait for dmu_free_long_range to actually free the blocks */
-	txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
-
-	tx = dmu_tx_create(os);
-	dmu_tx_hold_zap(tx, ZVOL_ZAP_OBJ, TRUE, NULL);
-	dmu_tx_hold_bonus(tx, ZVOL_OBJ);
-	error = dmu_tx_assign(tx, TXG_WAIT);
-	if (error) {
-		dmu_tx_abort(tx);
-		return (error);
-	}
-
-	/*
-	 * If we are resizing the dump device then we only need to
-	 * update the refreservation to match the newly updated
-	 * zvolsize. Otherwise, we save off the original state of the
-	 * zvol so that we can restore them if the zvol is ever undumpified.
-	 */
-	if (resize) {
-		error = zap_update(os, ZVOL_ZAP_OBJ,
-		    zfs_prop_to_name(ZFS_PROP_REFRESERVATION), 8, 1,
-		    &zv->zv_volsize, tx);
-	} else {
-		uint64_t checksum, compress, refresrv, vbs, dedup;
-
-		error = dsl_prop_get_integer(zv->zv_name,
-		    zfs_prop_to_name(ZFS_PROP_COMPRESSION), &compress, NULL);
-		error = error ? error : dsl_prop_get_integer(zv->zv_name,
-		    zfs_prop_to_name(ZFS_PROP_CHECKSUM), &checksum, NULL);
-		error = error ? error : dsl_prop_get_integer(zv->zv_name,
-		    zfs_prop_to_name(ZFS_PROP_REFRESERVATION), &refresrv, NULL);
-		error = error ? error : dsl_prop_get_integer(zv->zv_name,
-		    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE), &vbs, NULL);
-		if (version >= SPA_VERSION_DEDUP) {
-			error = error ? error :
-			    dsl_prop_get_integer(zv->zv_name,
-			    zfs_prop_to_name(ZFS_PROP_DEDUP), &dedup, NULL);
-		}
-
-		error = error ? error : zap_update(os, ZVOL_ZAP_OBJ,
-		    zfs_prop_to_name(ZFS_PROP_COMPRESSION), 8, 1,
-		    &compress, tx);
-		error = error ? error : zap_update(os, ZVOL_ZAP_OBJ,
-		    zfs_prop_to_name(ZFS_PROP_CHECKSUM), 8, 1, &checksum, tx);
-		error = error ? error : zap_update(os, ZVOL_ZAP_OBJ,
-		    zfs_prop_to_name(ZFS_PROP_REFRESERVATION), 8, 1,
-		    &refresrv, tx);
-		error = error ? error : zap_update(os, ZVOL_ZAP_OBJ,
-		    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE), 8, 1,
-		    &vbs, tx);
-		error = error ? error : dmu_object_set_blocksize(
-		    os, ZVOL_OBJ, SPA_MAXBLOCKSIZE, 0, tx);
-		if (version >= SPA_VERSION_DEDUP) {
-			error = error ? error : zap_update(os, ZVOL_ZAP_OBJ,
-			    zfs_prop_to_name(ZFS_PROP_DEDUP), 8, 1,
-			    &dedup, tx);
-		}
-		if (error == 0)
-			zv->zv_volblocksize = SPA_MAXBLOCKSIZE;
-	}
-	dmu_tx_commit(tx);
-
-	/*
-	 * We only need update the zvol's property if we are initializing
-	 * the dump area for the first time.
-	 */
-	if (!resize) {
-		VERIFY(nvlist_alloc(&nv, NV_UNIQUE_NAME, KM_SLEEP) == 0);
-		VERIFY(nvlist_add_uint64(nv,
-		    zfs_prop_to_name(ZFS_PROP_REFRESERVATION), 0) == 0);
-		VERIFY(nvlist_add_uint64(nv,
-		    zfs_prop_to_name(ZFS_PROP_COMPRESSION),
-		    ZIO_COMPRESS_OFF) == 0);
-		VERIFY(nvlist_add_uint64(nv,
-		    zfs_prop_to_name(ZFS_PROP_CHECKSUM),
-		    ZIO_CHECKSUM_OFF) == 0);
-		if (version >= SPA_VERSION_DEDUP) {
-			VERIFY(nvlist_add_uint64(nv,
-			    zfs_prop_to_name(ZFS_PROP_DEDUP),
-			    ZIO_CHECKSUM_OFF) == 0);
-		}
-
-		error = zfs_set_prop_nvlist(zv->zv_name, ZPROP_SRC_LOCAL,
-		    nv, NULL);
-		nvlist_free(nv);
-
-		if (error)
-			return (error);
-	}
-
-	/* Allocate the space for the dump */
-	error = zvol_prealloc(zv);
-	return (error);
-}
-
-static int
-zvol_dumpify(zvol_state_t *zv)
-{
-	int error = 0;
-	uint64_t dumpsize = 0;
-	dmu_tx_t *tx;
-	objset_t *os = zv->zv_objset;
-
-	if (zv->zv_flags & ZVOL_RDONLY)
-		return (EROFS);
-
-	if (zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ, ZVOL_DUMPSIZE,
-	    8, 1, &dumpsize) != 0 ||
-	    dumpsize != zv->zv_volsize) {
-
-		boolean_t resize = (dumpsize > 0);
-
-		if ((error = zvol_dump_init(zv, resize)) != 0) {
-			(void) zvol_dump_fini(zv);
-			return (error);
-		}
-	}
-
-	/*
-	 * Build up our lba mapping.
-	 */
-	error = zvol_get_lbas(zv);
-	if (error) {
-		(void) zvol_dump_fini(zv);
-		return (error);
-	}
-
-	tx = dmu_tx_create(os);
-	dmu_tx_hold_zap(tx, ZVOL_ZAP_OBJ, TRUE, NULL);
-	error = dmu_tx_assign(tx, TXG_WAIT);
-	if (error) {
-		dmu_tx_abort(tx);
-		(void) zvol_dump_fini(zv);
-		return (error);
-	}
-
-	zv->zv_flags |= ZVOL_DUMPIFIED;
-	error = zap_update(os, ZVOL_ZAP_OBJ, ZVOL_DUMPSIZE, 8, 1,
-	    &zv->zv_volsize, tx);
-	dmu_tx_commit(tx);
-
-	if (error) {
-		(void) zvol_dump_fini(zv);
-		return (error);
-	}
-
-	txg_wait_synced(dmu_objset_pool(os), 0);
-	return (0);
-}
-
-
-	tx = dmu_tx_create(os);
-	dmu_tx_hold_zap(tx, ZVOL_ZAP_OBJ, TRUE, NULL);
-	error = dmu_tx_assign(tx, TXG_WAIT);
-	if (error) {
-		dmu_tx_abort(tx);
-		return (error);
-	}
-	(void) zap_remove(os, ZVOL_ZAP_OBJ, ZVOL_DUMPSIZE, tx);
-	dmu_tx_commit(tx);
-
-	(void) zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
-	    zfs_prop_to_name(ZFS_PROP_CHECKSUM),
-	    8, 1, &checksum);
-	(void) zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
-	    zfs_prop_to_name(ZFS_PROP_COMPRESSION),
-	    8, 1, &compress);
-	(void) zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
-	    zfs_prop_to_name(ZFS_PROP_REFRESERVATION),
-	    8, 1, &refresrv);
-	(void) zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
-	    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE),
-	    8, 1, &vbs);
-
-	VERIFY(nvlist_alloc(&nv, NV_UNIQUE_NAME, KM_SLEEP) == 0);
-	(void) nvlist_add_uint64(nv,
-	    zfs_prop_to_name(ZFS_PROP_CHECKSUM),
-	    checksum);
-	(void) nvlist_add_uint64(nv,
-	    zfs_prop_to_name(ZFS_PROP_COMPRESSION),
-	    compress);
-	(void) nvlist_add_uint64(nv,
-	    zfs_prop_to_name(ZFS_PROP_REFRESERVATION),
-	    refresrv);
-	if (version >= SPA_VERSION_DEDUP &&
-	    zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
-	    zfs_prop_to_name(ZFS_PROP_DEDUP),
-	    8, 1, &dedup) == 0) {
-
-		(void) nvlist_add_uint64(nv,
-		    zfs_prop_to_name(ZFS_PROP_DEDUP), dedup);
-	}
-	(void) zfs_set_prop_nvlist(zv->zv_name, ZPROP_SRC_LOCAL,
-	    nv, NULL);
-	nvlist_free(nv);
-
-	zvol_free_extents(zv);
-	zv->zv_flags &= ~ZVOL_DUMPIFIED;
-	(void) dmu_free_long_range(os, ZVOL_OBJ, 0, DMU_OBJECT_END);
-	/* wait for dmu_free_long_range to actually free the blocks */
-	txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
-	tx = dmu_tx_create(os);
-	dmu_tx_hold_bonus(tx, ZVOL_OBJ);
-	error = dmu_tx_assign(tx, TXG_WAIT);
-	if (error) {
-		dmu_tx_abort(tx);
-		return (error);
-	}
-	if (dmu_object_set_blocksize(os, ZVOL_OBJ, vbs, 0, tx) == 0)
-		zv->zv_volblocksize = vbs;
-	dmu_tx_commit(tx);
-
-	return (0);
-}
-
-#endif
-
-
-
-#if 0
-int
-XXXXXzvol_create_minors(const char *name)
-{
-	uint64_t cookie;
-	objset_t *os;
-	char *osname, *p;
-	int error, len;
-
-	if (dataset_name_hidden(name))
-		return (0);
-
-	if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
-		dprintf("ZFS WARNING 1: Unable to put hold on %s (error=%d).\n",
-		    name, error);
-		return (error);
-	}
-
-	if (dmu_objset_type(os) == DMU_OST_ZVOL) {
-		/*
-		 * In OSX, create_minor() will call IOKit, which may end up
-		 * calling zvol_first_open(), so we can not hold a lock here.
-		 */
-		dmu_objset_rele(os, FTAG);
-
-		if ((error = zvol_create_minor(name)) == 0)
-		/* error = zvol_create_snapshots(os, name) */;
-		else {
-			dprintf("ZFS WARNING: %s %s (error=%d).\n",
-			    "Unable to create ZVOL",
-			    name, error);
-		}
-		return (error);
-	}
-	if (dmu_objset_type(os) != DMU_OST_ZFS) {
-		dmu_objset_rele(os, FTAG);
-		return (0);
-	}
-
-	osname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
-	if (snprintf(osname, MAXPATHLEN, "%s/", name) >= MAXPATHLEN) {
-		dmu_objset_rele(os, FTAG);
-		kmem_free(osname, MAXPATHLEN);
-		return (ENOENT);
-	}
-	p = osname + strlen(osname);
-	len = MAXPATHLEN - (p - osname);
-
-#if 0
-	/* Prefetch the datasets. */
-	cookie = 0;
-	while (dmu_dir_list_next(os, len, p, NULL, &cookie) == 0) {
-		if (!dataset_name_hidden(osname))
-			(void) dmu_objset_prefetch(osname, NULL);
-	}
-#endif
-
-	cookie = 0;
-	while (dmu_dir_list_next(os, MAXPATHLEN - (p - osname), p, NULL,
-	    &cookie) == 0) {
-		dmu_objset_rele(os, FTAG);
-		(void) zvol_create_minors(osname);
-		if ((error = dmu_objset_hold(name, FTAG, &os)) != 0) {
-			dprintf("ZFS WARNING 2: %s %s (error=%d).\n",
-			    "Unable to put hold on",
-			    name, error);
-			kmem_free(osname, MAXPATHLEN);
-			return (error);
-		}
-	}
-
-	dmu_objset_rele(os, FTAG);
-	kmem_free(osname, MAXPATHLEN);
-	return (0);
-}
-
-
-#endif
 
 
 /*
