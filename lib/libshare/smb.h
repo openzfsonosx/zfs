@@ -19,31 +19,4 @@
  * CDDL HEADER END
  */
 
-/*
- * Copyright (c) 2011 Turbo Fredriksson <turbo@bayour.com>.
- */
-
-/*
- * The maximum SMB share name seems to be 254 characters, though good
- * references are hard to find.
- */
-
-#define	SMB_NAME_MAX		255
-#define	SMB_COMMENT_MAX		255
-
-#define	SHARE_DIR		"/var/lib/samba/usershares"
-#define	NET_CMD_PATH		"/usr/bin/net"
-#define	NET_CMD_ARG_HOST	"127.0.0.1"
-
-typedef struct smb_share_s {
-	char name[SMB_NAME_MAX];	/* Share name */
-	char path[PATH_MAX];		/* Share path */
-	char comment[SMB_COMMENT_MAX];	/* Share's comment */
-	boolean_t guest_ok;		/* 'y' or 'n' */
-
-	struct smb_share_s *next;
-} smb_share_t;
-
-extern smb_share_t *smb_shares;
-
 void libshare_smb_init(void);

@@ -11,16 +11,16 @@
 .\"
 .\"
 .\" Copyright 2012, Richard Lowe.
-.\" Copyright (c) 2012 by Delphix. All rights reserved.
+.\" Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 .\"
-.TH "ZDB" "8" "February 15, 2012" "" ""
+.TH "ZDB" "8" "Feb 4, 2016" "" ""
 
 .SH "NAME"
 \fBzdb\fR - Display zpool debugging and consistency information
 
 .SH "SYNOPSIS"
-\fBzdb\fR [-CumdibcsDvhLMXFPA] [-e [-p \fIpath\fR...]] [-t \fItxg\fR]
-    [-U \fIcache\fR] [-I \fIinflight I/Os\fR]
+\fBzdb\fR [-CumdibcsDvhLMXFPAG] [-e [-p \fIpath\fR...]] [-t \fItxg\fR]
+    [-U \fIcache\fR] [-I \fIinflight I/Os\fR] [-x \fIdumpdir\fR]
     [\fIpoolname\fR [\fIobject\fR ...]]
 
 .P
@@ -48,7 +48,7 @@
 The \fBzdb\fR utility displays information about a ZFS pool useful for
 debugging and performs some amount of consistency checking. It is a not a
 general purpose tool and options (and facilities) may change. This is neither
-a fsck(8) nor an fsdb(8) utility.
+a fsck(1M) nor an fsdb(1M) utility.
 
 .P
 The output of this command in general reflects the on-disk structure of a ZFS
@@ -375,12 +375,37 @@ Operate on an exported pool, not present in \fB/etc/zfs/zpool.cache\fR. The
 .sp
 .ne 2
 .na
+\fB-x\fR \fIdumpdir\fR
+.ad
+.sp .6
+.RS 4n
+All blocks accessed will be copied to files in the specified directory.
+The blocks will be placed in sparse files whose name is the same as
+that of the file or device read.  zdb can be then run on the generated files.
+Note that the \fB-bbc\fR flags are sufficient to access (and thus copy)
+all metadata on the pool.
+.RE
+
+.sp
+.ne 2
+.na
 \fB-F\fR
 .ad
 .sp .6
 .RS 4n
 Attempt to make an unreadable pool readable by trying progressively older
 transactions.
+.RE
+
+.sp
+.ne 2
+.na
+\fB-G\fR
+.ad
+.sp .6
+.RS 4n
+Dump the contents of the zfs_dbgmsg buffer before exiting zdb. zfs_dbgmsg is
+a buffer used by ZFS to dump advanced debug information.
 .RE
 
 .sp
@@ -449,17 +474,6 @@ Attempt \'extreme\' transaction rewind, that is attempt the same recovery as
 \fB-F\fR but read transactions otherwise deemed too old.
 .RE
 
-.sp
-.ne 2
-.na
-\fB-V\fR
-.ad
-.sp .6
-.RS 4n
-Attempt a verbatim import. This mimics the behavior of the kernel when loading
-a pool from a cachefile.
-.RE
-
 .P
 Specifying a display option more than once enables verbosity for only that
 option, with more occurrences enabling more verbosity.
@@ -497,8 +511,7 @@ Dataset rpool/swap [ZVOL], ID 59, cr_txg 356, 486M, 2 objects
 .sp
 
 .LP
-\fBExample 3 \fRDisplay basic information about object 0
-in 'rpool/export/home'
+\fBExample 3 \fRDisplay basic information about object 0 in 'rpool/export/home'
 .sp
 .in +2
 .nf
@@ -519,7 +532,7 @@ Dataset rpool/export/home [ZPL], ID 137, cr_txg 1546, 32K, 8 objects
 # zdb -S rpool
 Simulated DDT histogram:
 
-bucket              allocated                       referenced          
+bucket              allocated                       referenced
 ______   ______________________________   ______________________________
 refcnt   blocks   LSIZE   PSIZE   DSIZE   blocks   LSIZE   PSIZE   DSIZE
 ------   ------   -----   -----   -----   ------   -----   -----   -----
@@ -530,11 +543,6 @@ dedup = 1.11, compress = 1.80, copies = 1.00, dedup * compress / copies = 2.00
 .fi
 .in -2
 .sp
-
-.SH "ENVIRONMENT VARIABLES"
-.TP
-.B "SPA_CONFIG_PATH"
-Override the default \fBspa_config_path\fR (\fI/etc/zfs/zpool.cache\fR) setting. If \fB-U\fR flag is specified it will override this environment variable settings once again.
 
 .SH "SEE ALSO"
 zfs(8), zpool(8)

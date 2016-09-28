@@ -491,8 +491,10 @@ dmu_objset_from_ds(dsl_dataset_t *ds, objset_t **osp)
 	mutex_enter(&ds->ds_opening_lock);
 	if (ds->ds_objset == NULL) {
 		objset_t *os;
+		rrw_enter(&ds->ds_bp_rwlock, RW_READER, FTAG);
 		err = dmu_objset_open_impl(dsl_dataset_get_spa(ds),
 		    ds, dsl_dataset_get_blkptr(ds), &os);
+		rrw_exit(&ds->ds_bp_rwlock, FTAG);
 
 		if (err == 0) {
 			mutex_enter(&ds->ds_lock);
@@ -886,9 +888,11 @@ dmu_objset_create_sync(void *arg, dmu_tx_t *tx)
 	    doca->doca_cred, tx);
 
 	VERIFY0(dsl_dataset_hold_obj(pdd->dd_pool, obj, FTAG, &ds));
+	rrw_enter(&ds->ds_bp_rwlock, RW_READER, FTAG);
 	bp = dsl_dataset_get_blkptr(ds);
 	os = dmu_objset_create_impl(pdd->dd_pool->dp_spa,
 	    ds, bp, doca->doca_type, tx);
+	rrw_exit(&ds->ds_bp_rwlock, FTAG);
 
 	if (doca->doca_userfunc != NULL) {
 		doca->doca_userfunc(os, doca->doca_userarg,
@@ -1063,14 +1067,11 @@ dmu_objset_sync_dnodes(list_t *list, list_t *newlist, dmu_tx_t *tx)
 static void
 dmu_objset_write_ready(zio_t *zio, arc_buf_t *abuf, void *arg)
 {
-	int i;
-
 	blkptr_t *bp = zio->io_bp;
 	objset_t *os = arg;
 	dnode_phys_t *dnp = &os->os_phys->os_meta_dnode;
 
 	ASSERT(!BP_IS_EMBEDDED(bp));
-	ASSERT3P(bp, ==, os->os_rootbp);
 	ASSERT3U(BP_GET_TYPE(bp), ==, DMU_OT_OBJSET);
 	ASSERT0(BP_GET_LEVEL(bp));
 
@@ -1081,8 +1082,13 @@ dmu_objset_write_ready(zio_t *zio, arc_buf_t *abuf, void *arg)
 	 * dnode and user/group accounting objects).
 	 */
 	bp->blk_fill = 0;
-	for (i = 0; i < dnp->dn_nblkptr; i++)
+	for (int i = 0; i < dnp->dn_nblkptr; i++)
 		bp->blk_fill += BP_GET_FILL(&dnp->dn_blkptr[i]);
+	if (os->os_dsl_dataset != NULL)
+		rrw_enter(&os->os_dsl_dataset->ds_bp_rwlock, RW_WRITER, FTAG);
+	*os->os_rootbp = *bp;
+	if (os->os_dsl_dataset != NULL)
+		rrw_exit(&os->os_dsl_dataset->ds_bp_rwlock, FTAG);
 }
 
 /* ARGSUSED */
@@ -1102,6 +1108,7 @@ dmu_objset_write_done(zio_t *zio, arc_buf_t *abuf, void *arg)
 		(void) dsl_dataset_block_kill(ds, bp_orig, tx, B_TRUE);
 		dsl_dataset_block_born(ds, bp, tx);
 	}
+	kmem_free(bp, sizeof (*bp));
 }
 
 /* called from dsl */
@@ -1115,6 +1122,8 @@ dmu_objset_sync(objset_t *os, zio_t *pio, dmu_tx_t *tx)
 	list_t *list;
 	list_t *newlist = NULL;
 	dbuf_dirty_record_t *dr;
+	blkptr_t *blkptr_copy = kmem_alloc(sizeof (*os->os_rootbp), KM_SLEEP);
+	*blkptr_copy = *os->os_rootbp;
 
 	dprintf_ds(os->os_dsl_dataset, "txg=%llu\n", tx->tx_txg);
 
@@ -1142,7 +1151,7 @@ dmu_objset_sync(objset_t *os, zio_t *pio, dmu_tx_t *tx)
 	dmu_write_policy(os, NULL, 0, 0, &zp);
 
 	zio = arc_write(pio, os->os_spa, tx->tx_txg,
-	    os->os_rootbp, os->os_phys_buf, DMU_OS_IS_L2CACHEABLE(os),
+	    blkptr_copy, os->os_phys_buf, DMU_OS_IS_L2CACHEABLE(os),
 	    &zp, dmu_objset_write_ready, NULL, NULL, dmu_objset_write_done,
 	    os, ZIO_PRIORITY_ASYNC_WRITE, ZIO_FLAG_MUSTSUCCEED, &zb);
 

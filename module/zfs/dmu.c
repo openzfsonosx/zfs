@@ -129,6 +129,26 @@ const dmu_object_byteswap_info_t dmu_ot_byteswap[DMU_BSWAP_NUMFUNCS] = {
 };
 
 int
+dmu_buf_hold_noread_by_dnode(dnode_t *dn, uint64_t offset,
+    void *tag, dmu_buf_t **dbp)
+{
+	uint64_t blkid;
+	dmu_buf_impl_t *db;
+
+	blkid = dbuf_whichblock(dn, 0, offset);
+	rw_enter(&dn->dn_struct_rwlock, RW_READER);
+	db = dbuf_hold(dn, blkid, tag);
+	rw_exit(&dn->dn_struct_rwlock);
+
+	if (db == NULL) {
+		*dbp = NULL;
+		return (SET_ERROR(EIO));
+	}
+
+	*dbp = &db->db;
+	return (0);
+}
+int
 dmu_buf_hold_noread(objset_t *os, uint64_t object, uint64_t offset,
     void *tag, dmu_buf_t **dbp)
 {
@@ -152,6 +172,29 @@ dmu_buf_hold_noread(objset_t *os, uint64_t object, uint64_t offset,
 	}
 
 	*dbp = &db->db;
+	return (err);
+}
+
+int
+dmu_buf_hold_by_dnode(dnode_t *dn, uint64_t offset,
+    void *tag, dmu_buf_t **dbp, int flags)
+{
+	int err;
+	int db_flags = DB_RF_CANFAIL;
+
+	if (flags & DMU_READ_NO_PREFETCH)
+		db_flags |= DB_RF_NOPREFETCH;
+
+	err = dmu_buf_hold_noread_by_dnode(dn, offset, tag, dbp);
+	if (err == 0) {
+		dmu_buf_impl_t *db = (dmu_buf_impl_t *)(*dbp);
+		err = dbuf_read(db, NULL, db_flags);
+		if (err != 0) {
+			dbuf_rele(db, tag);
+			*dbp = NULL;
+		}
+	}
+
 	return (err);
 }
 
@@ -1627,7 +1670,7 @@ dmu_sync_done(zio_t *zio, arc_buf_t *buf, void *varg)
 			ASSERT(BP_EQUAL(bp, bp_orig));
 			ASSERT(zio->io_prop.zp_compress != ZIO_COMPRESS_OFF);
 			ASSERT(zio_checksum_table[chksum].ci_flags &
-				   ZCHECKSUM_FLAG_NOPWRITE);
+				ZCHECKSUM_FLAG_NOPWRITE);
 		}
 		dr->dt.dl.dr_overridden_by = *zio->io_bp;
 		dr->dt.dl.dr_override_state = DR_OVERRIDDEN;
@@ -2015,7 +2058,7 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		if (dedup_checksum != ZIO_CHECKSUM_OFF) {
 			dedup = (wp & WP_DMU_SYNC) ? B_FALSE : B_TRUE;
 			if (!(zio_checksum_table[checksum].ci_flags &
-				  ZCHECKSUM_FLAG_DEDUP))
+			    ZCHECKSUM_FLAG_DEDUP))
 				dedup_verify = B_TRUE;
 		}
 

@@ -134,6 +134,32 @@ extern	in_port_t ntohs(in_port_t);
 #define	BE_64(x)	BSWAP_64(x)
 #endif
 
+#ifdef _BIG_ENDIAN
+static __inline__ uint64_t
+htonll(uint64_t n) {
+	return (n);
+}
+
+static __inline__ uint64_t
+ntohll(uint64_t n) {
+	return (n);
+}
+
+#else
+#if 0
+static __inline__ uint64_t
+htonll(uint64_t n) {
+	return _OSSwapInt64(n);
+}
+
+static __inline__ uint64_t
+ntohll(uint64_t n) {
+	return _OSSwapInt64(n);
+}
+#endif
+
+#endif
+
 /*
  * Macros to read unaligned values from a specific byte order to
  * native byte order

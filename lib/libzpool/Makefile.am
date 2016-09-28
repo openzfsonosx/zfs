@@ -106,10 +106,12 @@ libzpool_la_SOURCES = \
 	../../module/zfs/zle.c \
 	../../module/zfs/zrlock.c
 
+
 libzpool_la_LIBADD = \
 	$(top_builddir)/lib/libunicode/libunicode.la \
 	$(top_builddir)/lib/libuutil/libuutil.la \
-	$(top_builddir)/lib/libnvpair/libnvpair.la
+	$(top_builddir)/lib/libnvpair/libnvpair.la \
+	$(top_builddir)/lib/libicp/libicp.la
 
 libzpool_la_LDFLAGS = -lz -version-info 1:1:0
 
