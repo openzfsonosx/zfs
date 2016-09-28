@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2013 by Joyent, Inc. All rights reserved.
  * Copyright (c) 2016 Actifio, Inc. All rights reserved.
@@ -254,7 +254,9 @@ dsl_destroy_snapshot_sync_impl(dsl_dataset_t *ds, boolean_t defer, dmu_tx_t *tx)
 
 
 	ASSERT(RRW_WRITE_HELD(&dp->dp_config_rwlock));
+	rrw_enter(&ds->ds_bp_rwlock, RW_READER, FTAG);
 	ASSERT3U(dsl_dataset_phys(ds)->ds_bp.blk_birth, <=, tx->tx_txg);
+	rrw_exit(&ds->ds_bp_rwlock, FTAG);
 	ASSERT(refcount_is_zero(&ds->ds_longholds));
 
 	if (defer &&
@@ -276,9 +278,11 @@ dsl_destroy_snapshot_sync_impl(dsl_dataset_t *ds, boolean_t defer, dmu_tx_t *tx)
 
 	obj = ds->ds_object;
 
-	if (ds->ds_large_blocks) {
-		ASSERT0(zap_contains(mos, obj, DS_FIELD_LARGE_BLOCKS));
-		spa_feature_decr(dp->dp_spa, SPA_FEATURE_LARGE_BLOCKS, tx);
+	for (spa_feature_t f = 0; f < SPA_FEATURES; f++) {
+		if (ds->ds_feature_inuse[f]) {
+			dsl_dataset_deactivate_feature(obj, f, tx);
+			ds->ds_feature_inuse[f] = B_FALSE;
+		}
 	}
 	if (dsl_dataset_phys(ds)->ds_prev_snap_obj != 0) {
 		ASSERT3P(ds->ds_prev, ==, NULL);
@@ -724,7 +728,9 @@ dsl_destroy_head_sync_impl(dsl_dataset_t *ds, dmu_tx_t *tx)
 	ASSERT3U(dsl_dataset_phys(ds)->ds_num_children, <=, 1);
 	ASSERT(ds->ds_prev == NULL ||
 	    dsl_dataset_phys(ds->ds_prev)->ds_next_snap_obj != ds->ds_object);
+	rrw_enter(&ds->ds_bp_rwlock, RW_READER, FTAG);
 	ASSERT3U(dsl_dataset_phys(ds)->ds_bp.blk_birth, <=, tx->tx_txg);
+	rrw_exit(&ds->ds_bp_rwlock, FTAG);
 	ASSERT(RRW_WRITE_HELD(&dp->dp_config_rwlock));
 
 	/* We need to log before removing it from the namespace. */
@@ -743,12 +749,16 @@ dsl_destroy_head_sync_impl(dsl_dataset_t *ds, dmu_tx_t *tx)
 		ASSERT0(ds->ds_reserved);
 	}
 
-	if (ds->ds_large_blocks)
-		spa_feature_decr(dp->dp_spa, SPA_FEATURE_LARGE_BLOCKS, tx);
+	obj = ds->ds_object;
+
+	for (spa_feature_t f = 0; f < SPA_FEATURES; f++) {
+		if (ds->ds_feature_inuse[f]) {
+			dsl_dataset_deactivate_feature(obj, f, tx);
+			ds->ds_feature_inuse[f] = B_FALSE;
+		}
+	}
 
 	dsl_scan_ds_destroyed(ds, tx);
-
-	obj = ds->ds_object;
 
 	if (dsl_dataset_phys(ds)->ds_prev_snap_obj != 0) {
 		/* This is a clone */
@@ -811,10 +821,12 @@ dsl_destroy_head_sync_impl(dsl_dataset_t *ds, dmu_tx_t *tx)
 		ASSERT(!DS_UNIQUE_IS_ACCURATE(ds) ||
 		    dsl_dataset_phys(ds)->ds_unique_bytes == used);
 
+		rrw_enter(&ds->ds_bp_rwlock, RW_READER, FTAG);
 		bptree_add(mos, dp->dp_bptree_obj,
 		    &dsl_dataset_phys(ds)->ds_bp,
 		    dsl_dataset_phys(ds)->ds_prev_snap_txg,
 		    used, comp, uncomp, tx);
+		rrw_exit(&ds->ds_bp_rwlock, FTAG);
 		dsl_dir_diduse_space(ds->ds_dir, DD_USED_HEAD,
 		    -used, -comp, -uncomp, tx);
 		dsl_dir_diduse_space(dp->dp_free_dir, DD_USED_HEAD,

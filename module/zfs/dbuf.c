@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
@@ -710,7 +710,6 @@ dbuf_fini(void)
 /*
  * Other stuff.
  */
-
 #ifdef ZFS_DEBUG
 static void
 dbuf_verify(dmu_buf_impl_t *db)
@@ -1546,10 +1545,18 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	 * objects may be dirtied in syncing context, but only if they
 	 * were already pre-dirtied in open context.
 	 */
+#ifdef DEBUG
+	if (dn->dn_objset->os_dsl_dataset != NULL) {
+		rrw_enter(&dn->dn_objset->os_dsl_dataset->ds_bp_rwlock,
+		    RW_READER, FTAG);
+	}
 	ASSERT(!dmu_tx_is_syncing(tx) ||
 	    BP_IS_HOLE(dn->dn_objset->os_rootbp) ||
 	    DMU_OBJECT_IS_SPECIAL(dn->dn_object) ||
 	    dn->dn_objset->os_dsl_dataset == NULL);
+	if (dn->dn_objset->os_dsl_dataset != NULL)
+		rrw_exit(&dn->dn_objset->os_dsl_dataset->ds_bp_rwlock, FTAG);
+#endif
 	/*
 	 * We make this assert for private objects as well, but after we
 	 * check if we're already dirty.  They are allowed to re-dirty
@@ -1574,12 +1581,21 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	 * Don't set dirtyctx to SYNC if we're just modifying this as we
 	 * initialize the objset.
 	 */
-	if (dn->dn_dirtyctx == DN_UNDIRTIED &&
-	    !BP_IS_HOLE(dn->dn_objset->os_rootbp)) {
-		dn->dn_dirtyctx =
-		    (dmu_tx_is_syncing(tx) ? DN_DIRTY_SYNC : DN_DIRTY_OPEN);
-		ASSERT(dn->dn_dirtyctx_firstset == NULL);
-		dn->dn_dirtyctx_firstset = kmem_alloc(1, KM_SLEEP);
+	if (dn->dn_dirtyctx == DN_UNDIRTIED) {
+		if (dn->dn_objset->os_dsl_dataset != NULL) {
+			rrw_enter(&dn->dn_objset->os_dsl_dataset->ds_bp_rwlock,
+			    RW_READER, FTAG);
+		}
+		if (!BP_IS_HOLE(dn->dn_objset->os_rootbp)) {
+			dn->dn_dirtyctx = (dmu_tx_is_syncing(tx) ?
+			    DN_DIRTY_SYNC : DN_DIRTY_OPEN);
+			ASSERT(dn->dn_dirtyctx_firstset == NULL);
+			dn->dn_dirtyctx_firstset = kmem_alloc(1, KM_SLEEP);
+		}
+		if (dn->dn_objset->os_dsl_dataset != NULL) {
+			rrw_exit(&dn->dn_objset->os_dsl_dataset->ds_bp_rwlock,
+			    FTAG);
+		}
 	}
 	mutex_exit(&dn->dn_mtx);
 
@@ -1624,8 +1640,14 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	 * this assertion only if we're not already dirty.
 	 */
 	os = dn->dn_objset;
+#ifdef DEBUG
+	if (dn->dn_objset->os_dsl_dataset != NULL)
+		rrw_enter(&os->os_dsl_dataset->ds_bp_rwlock, RW_READER, FTAG);
 	ASSERT(!dmu_tx_is_syncing(tx) || DMU_OBJECT_IS_SPECIAL(dn->dn_object) ||
 	    os->os_dsl_dataset == NULL || BP_IS_HOLE(os->os_rootbp));
+	if (dn->dn_objset->os_dsl_dataset != NULL)
+		rrw_exit(&os->os_dsl_dataset->ds_bp_rwlock, FTAG);
+#endif
 	ASSERT(db->db.db_size != 0);
 
 	dprintf_dbuf(db, "size=%llx\n", (u_longlong_t)db->db.db_size);
@@ -3011,6 +3033,28 @@ dmu_buf_get_blkptr(dmu_buf_t *db)
 {
 	dmu_buf_impl_t *dbi = (dmu_buf_impl_t *)db;
 	return (dbi->db_blkptr);
+}
+
+objset_t *
+dmu_buf_get_objset(dmu_buf_t *db)
+{
+	dmu_buf_impl_t *dbi = (dmu_buf_impl_t *)db;
+	return (dbi->db_objset);
+}
+
+dnode_t *
+dmu_buf_dnode_enter(dmu_buf_t *db)
+{
+	dmu_buf_impl_t *dbi = (dmu_buf_impl_t *)db;
+	DB_DNODE_ENTER(dbi);
+	return (DB_DNODE(dbi));
+}
+
+void
+dmu_buf_dnode_exit(dmu_buf_t *db)
+{
+	dmu_buf_impl_t *dbi = (dmu_buf_impl_t *)db;
+	DB_DNODE_EXIT(dbi);
 }
 
 static void

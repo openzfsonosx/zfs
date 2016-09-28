@@ -13,6 +13,25 @@ s:usr/src/lib/libzfs/common:lib/libzfs:g
 s:usr/src/lib/libzfs_core/common:lib/libzfs_core:g
 s:lib/libzpool/common/sys:include/sys:g
 s:lib/libzpool/common:lib/libzpool:g
-s:usr/src/test/zfs-tests:zfs-test/test/zfs-tests:g
-s:usr/src/common/zfs:module/zcommon:g
 
+#
+# The usr/src/common/zfs/ files go in a couple different dirs.
+# usr/src/common/zfs/zfeature_common.c goes in module/zfs
+#
+s:usr/src/common/zfs/zfeature_common.c:module/zfs/zfeature_common.c:g
+
+# ...but most of the rest of the C files go in module/zcommon
+s/usr\/src\/common\/zfs\/\(.*\)\.c/module\/zcommon\/\1.c/g
+
+# crypto framework
+s:usr/src/common/crypto:module/icp/algs:g
+s:usr/src/uts/common/crypto/io:module/icp/io:g
+
+# Headers
+s:usr/src/common/zfs/\(.*\)\.h:include/\1.h:g
+
+# Tests
+s:usr/src/test:tests:g
+
+# Man pages
+s:usr/src/man:man:g

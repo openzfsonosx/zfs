@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2015, Intel Corporation.
  */
 
@@ -119,7 +119,7 @@ static void
 usage(void)
 {
 	(void) fprintf(stderr,
-	    "Usage: %s [-CumMdibcsDvhLXFPA] [-t txg] [-e [-p path...]] "
+	    "Usage: %s [-CumMdibcsDvhLXFPAG] [-t txg] [-e [-p path...]] "
 	    "[-U config] [-I inflight I/Os] poolname [object...]\n"
 	    "       %s [-divPA] [-e -p path...] [-U config] dataset "
 	    "[object...]\n"
@@ -180,10 +180,21 @@ usage(void)
 	(void) fprintf(stderr, "        -I <number of inflight I/Os> -- "
 	    "specify the maximum number of checksumming I/Os "
 	    "[default is 200]\n");
+	(void) fprintf(stderr, "        -G dump zfs_dbgmsg buffer before "
+	    "exiting\n");
 	(void) fprintf(stderr, "Specify an option more than once (e.g. -bb) "
 	    "to make only that option verbose\n");
 	(void) fprintf(stderr, "Default is to dump everything non-verbosely\n");
 	exit(1);
+}
+
+static void
+dump_debug_buffer()
+{
+	if (dump_opt['G']) {
+		(void) printf("\n");
+		zfs_dbgmsg_print("zdb");
+	}
 }
 
 /*
@@ -201,6 +212,8 @@ fatal(const char *fmt, ...)
 	(void) vfprintf(stderr, fmt, ap);
 	va_end(ap);
 	(void) fprintf(stderr, "\n");
+
+	dump_debug_buffer();
 
 	exit(1);
 }
@@ -3167,8 +3180,10 @@ dump_zpool(spa_t *spa)
 	if (dump_opt['h'])
 		dump_history(spa);
 
-	if (rc != 0)
+	if (rc != 0) {
+		dump_debug_buffer();
 		exit(rc);
+	}
 }
 
 #define	ZDB_FLAG_CHECKSUM	0x0001
@@ -3625,9 +3640,9 @@ main(int argc, char **argv)
 	int rewind = ZPOOL_NEVER_REWIND;
 	char *spa_config_path_env;
 #ifdef __APPLE__
-	const char *opts = "bcdhilmMI:suCDRSAFLXevp:t:U:PZ";
+	const char *opts = "bcdhilmMI:suCDRSAFLXevp:t:U:PGZ";
 #else
-	const char *opts = "bcdhilmMI:suCDRSAFLXevp:t:U:P";
+	const char *opts = "bcdhilmMI:suCDRSAFLXevp:t:U:PG";
 #endif
 	boolean_t target_is_spa = B_TRUE;
 
@@ -3661,6 +3676,7 @@ main(int argc, char **argv)
 		case 'M':
 		case 'R':
 		case 'S':
+		case 'G':
 			dump_opt[c]++;
 			dump_all = 0;
 			break;
@@ -3907,6 +3923,8 @@ main(int argc, char **argv)
 
 	fuid_table_destroy();
 	sa_loaded = B_FALSE;
+
+	dump_debug_buffer();
 
 	libzfs_fini(g_zfs);
 	kernel_fini();
