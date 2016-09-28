@@ -533,6 +533,19 @@ zvol_create_minor_impl(const char *name)
 	}
 	mutex_exit(&zfsdev_state_lock);
 
+	/* On OS X we always check snapdev, for now */
+#ifdef linux
+	if (ignore_snapdev == B_FALSE) {
+#endif
+		error = zvol_snapdev_hidden(name);
+		if (error) {
+			mutex_exit(&zfsdev_state_lock);
+			return (error);
+		}
+#ifdef linux
+	}
+#endif
+
 	/* lie and say we're read-only */
 	error = dmu_objset_own(name, DMU_OST_ZVOL, B_TRUE, FTAG, &os);
 
@@ -719,7 +732,7 @@ zvol_remove_minor_impl(const char *name)
 	if (rc == 0) zvol_remove_symlink(&tmp_zv);
 
 	// Remove device from IOKit
-	zvolRemoveDevice(&tmp_zv);
+	zvolRemoveDevice(tmp_zv.zv_iokitdev);
 	return (rc);
 }
 
@@ -1001,9 +1014,6 @@ static void
 zvol_remove_minors_impl(const char *name)
 {
 	zvol_state_t *zv;
-#ifdef __APPLE__
-	zvol_iokit_t *iokitdev;
-#endif
 	minor_t minor;
 	int namelen = ((name) ? strlen(name) : 0);
 
@@ -1035,7 +1045,7 @@ zvol_remove_minors_impl(const char *name)
 			(void) zvol_remove_zv(zv);
 			mutex_exit(&zfsdev_state_lock);
 
-			zvolRemoveDevice(&tmp_zv);
+			zvolRemoveDevice(tmp_zv.zv_iokitdev);
 			mutex_enter(&zfsdev_state_lock);
 		}
 	}

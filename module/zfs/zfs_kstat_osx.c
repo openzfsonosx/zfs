@@ -361,9 +361,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		zfs_send_holes_without_birth_time =
 			ks->zfs_send_holes_without_birth_time.value.ui64;
 
-		zfs_dynamic_arc_c_min =
-		    ks->zfs_dynamic_arc_c_min.value.ui64;
-
 	} else {
 
 		/* kstat READ */
