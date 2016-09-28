@@ -190,11 +190,6 @@ vdev_file_close(vdev_t *vd)
 		return;
 
 	if (vf->vf_vnode != NULL) {
-#if 0
-		vnode_getwithref(vf->vf_vnode);
-		vnode_rele(vf->vf_vnode);
-		VOP_FSYNC(vf->vf_vnode, FSYNC | FDSYNC, kcred, NULL);
-#endif
 
         if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
         // Also commented out in MacZFS
@@ -209,65 +204,6 @@ vdev_file_close(vdev_t *vd)
 	vd->vdev_tsd = NULL;
 }
 
-typedef struct vdev_file_buf {
-	union {
-		void	*b_addr;
-	} b_un;
-	void		*b_private;
-	zio_t		*vb_io;
-	vnode_t		*b_vnode;
-	ssize_t		b_bcount;
-	ssize_t		b_bufsize;
-	ssize_t		b_lblkno;
-	ssize_t		b_resid;
-	int		(*b_iodone)(struct vdev_file_buf *);
-	int		b_flags;
-	int		b_error;
-	int		pad[4];
-} vdev_file_buf_t; /* 80b, padded to 96b */
-
-static void
-vdev_file_io_intr(vdev_file_buf_t *bp)
-{
-	zio_t *zio = bp->vb_io;
-
-	zio->io_error = (bp->b_error != 0 ? EIO : 0);
-	if (zio->io_error == 0 && bp->b_resid != 0)
-		zio->io_error = SET_ERROR(ENOSPC);
-
-	/* bp is freed by io_strategy */
-	zio_interrupt(zio);
-}
-
-static void
-vdev_file_io_strategy(void *arg)
-{
-	vdev_file_buf_t *bp = arg;
-	vnode_t *vp = bp->b_vnode; /* better not be null */
-	ssize_t resid = 0;
-	int error;
-
-	if ((error = vnode_getwithref(vp)) == 0) {
-		error = vn_rdwr(bp->b_flags & FREAD ?  UIO_READ : UIO_WRITE,
-		    vp, bp->b_un.b_addr, bp->b_bcount, dbtolb(bp->b_lblkno),
-		    UIO_SYSSPACE, 0, RLIM64_INFINITY, kcred, &resid);
-		vnode_put(vp);
-	}
-
-	if (error == 0) {
-		bp->b_resid = resid;
-	} else {
-		bp->b_error = error;
-	}
-
-	if (bp->b_iodone) {
-		(void) bp->b_iodone(bp);
-	}
-
-	vnode_put(vp);
-	kmem_free(bp, sizeof(vdev_file_buf_t));
-}
-
 static void
 vdev_file_io_start(zio_t *zio)
 {
@@ -275,49 +211,54 @@ vdev_file_io_start(zio_t *zio)
     vdev_file_t *vf = vd->vdev_tsd;
     ssize_t resid = 0;
 
-	if (!vdev_readable(vd)) {
-		zio->io_error = SET_ERROR(ENXIO);
+
+    if (zio->io_type == ZIO_TYPE_IOCTL) {
+
+        if (!vdev_readable(vd)) {
+            zio->io_error = SET_ERROR(ENXIO);
+			zio_interrupt(zio);
+            return;
+        }
+
+        switch (zio->io_cmd) {
+        case DKIOCFLUSHWRITECACHE:
+            if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
+                zio->io_error = VOP_FSYNC(vf->vf_vnode, FSYNC | FDSYNC,
+                                          kcred, NULL);
+                vnode_put(vf->vf_vnode);
+            }
+            break;
+        default:
+            zio->io_error = SET_ERROR(ENOTSUP);
+        }
+
 		zio_interrupt(zio);
-		return;
-	}
-
-	if (zio->io_type == ZIO_TYPE_IOCTL) {
-		switch (zio->io_cmd) {
-		case DKIOCFLUSHWRITECACHE:
-			if (!vnode_getwithref(vf->vf_vnode)) {
-				zio->io_error = VOP_FSYNC(vf->vf_vnode,
-				    FSYNC | FDSYNC, kcred, NULL);
-				vnode_put(vf->vf_vnode);
-			}
-			break;
-		default:
-			zio->io_error = SET_ERROR(ENOTSUP);
-		}
-
-		zio_execute(zio);
-		return;
-	}
+        return;
+    }
 
 	ASSERT(zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE);
 	zio->io_target_timestamp = zio_handle_io_delay(zio);
 
-	bp = kmem_alloc(sizeof (vdev_file_buf_t), KM_SLEEP);
-	bzero(bp, sizeof (vdev_file_buf_t));
+    if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
 
-	bp->vb_io = zio;
-	bp->b_vnode = vf->vf_vnode;
+		/*
+		VERIFY3U(taskq_dispatch(vdev_file_taskq, vdev_file_io_strategy, zio,
+	    TQ_PUSHPAGE), !=, 0);
+		*/
 
-	bp->b_flags = (zio->io_type == ZIO_TYPE_READ ?  FREAD : FWRITE);
-	bp->b_bcount = zio->io_size;
-	bp->b_un.b_addr = zio->io_data;
-	bp->b_lblkno = lbtodb(zio->io_offset);
-	bp->b_bufsize = zio->io_size;
-	bp->b_iodone = (int (*)())(*vdev_file_io_intr);
+        zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
+                           UIO_READ : UIO_WRITE, vf->vf_vnode, zio->io_data,
+                           zio->io_size, zio->io_offset, UIO_SYSSPACE,
+                           0, RLIM64_INFINITY, kcred, &resid);
+        vnode_put(vf->vf_vnode);
+    }
 
-	VERIFY3U(taskq_dispatch(system_taskq, vdev_file_io_strategy, bp,
-	    TQ_SLEEP), !=, 0);
+    if (resid != 0 && zio->io_error == 0)
+        zio->io_error = SET_ERROR(ENOSPC);
 
-	zio_delay_interrupt(zio);
+    zio_delay_interrupt(zio);
+
+    return;
 }
 
 
