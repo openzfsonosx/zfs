@@ -89,6 +89,7 @@ AC_CONFIG_FILES([
 	man/man5/Makefile
 	man/man8/Makefile
 	lib/Makefile
+	lib/libdiskmgt/Makefile
 	lib/libspl/Makefile
 	lib/libspl/asm-generic/Makefile
 	lib/libspl/asm-i386/Makefile
