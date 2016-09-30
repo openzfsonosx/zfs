@@ -23,8 +23,45 @@
  * Copyright (c) 2016, Brendon Humphrey (brendon.humphrey@mac.com). All rights reserved.
  */
 
+#include <libgen.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/sysctl.h>
+#include <sys/types.h>
+
+extern char *dirname(char *path);
+
+static const char* SWAP_PATH_SYSCTL_NAME = "vm.swapfileprefix";
+
 int
-dm_inuse_swap(const char *dev_name, int *errp)
+dm_in_swap_dir(const char *dev_name)
 {
-	return 0;
+	size_t oldlen;
+	char *tmp;
+	char *tmp2;
+	char *swap_filename;
+	char real_swap_path[MAXPATHLEN];
+	char real_dev_path[MAXPATHLEN];
+	
+	/* 
+	 * Get the directory portion of the vm.swapfileprefix sysctl
+	 * once links etc have been resolved.
+	 */
+	sysctlbyname(SWAP_PATH_SYSCTL_NAME, NULL, &oldlen, NULL, 0);
+	swap_filename = (char*)malloc(oldlen);
+	sysctlbyname(SWAP_PATH_SYSCTL_NAME, swap_filename, &oldlen, NULL, 0);
+	tmp = realpath(swap_filename, NULL);
+	tmp2 = dirname(swap_filename);
+	(void) strlcpy(real_swap_path, tmp2, MAXPATHLEN);
+	free(swap_filename);
+	free(tmp);
+	
+	/* Get the directory portion of dev_name, once links etc have been resolved */
+	tmp = realpath(dev_name, NULL);
+	tmp2 = dirname(tmp);
+	(void) strlcpy(real_dev_path, tmp2, MAXPATHLEN);
+	free(tmp);
+	
+	return (strcmp(real_dev_path, real_swap_path) == 0);
 }

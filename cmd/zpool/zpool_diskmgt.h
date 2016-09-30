@@ -35,7 +35,10 @@ extern "C" {
  * functions found in Illumos libdiskmgt, adapted for OSX use.
  */
 	
-int	dm_inuse_swap(const char *dev_name, int *errp);	
+int	dm_in_swap_dir(const char *dev_name);	
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif
