@@ -339,6 +339,16 @@ check_file(const char *file, boolean_t force, boolean_t isspare)
 	pool_state_t state;
 	boolean_t inuse;
 
+	
+	if (dm_inuse_swap(file, &err)) {
+		if (err)
+			libdiskmgt_error(err);
+		else
+			vdev_error(gettext("%s is currently used by swap. "
+							   "Please see swap(1M).\n"), file);
+		return (-1);
+	}
+	
 	if ((fd = open(file, O_RDONLY)) < 0)
 		return (0);
 

@@ -13,7 +13,8 @@ zpool_SOURCES = \
 	zpool_main.c \
 	zpool_util.c \
 	zpool_util.h \
-	zpool_vdev.c
+	zpool_vdev.c \
+	zpool_diskmgt.c
 
 zpool_LDADD = \
 	$(top_builddir)/lib/libnvpair/libnvpair.la \
