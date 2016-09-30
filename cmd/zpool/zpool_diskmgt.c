@@ -32,7 +32,7 @@
 
 extern char *dirname(char *path);
 
-static const char* SWAP_PATH_SYSCTL_NAME = "vm.swapfileprefix";
+static const char *SWAP_SYSCTL_NAME = "vm.swapfileprefix";
 
 int
 dm_in_swap_dir(const char *dev_name)
@@ -44,13 +44,15 @@ dm_in_swap_dir(const char *dev_name)
 	char real_swap_path[MAXPATHLEN];
 	char real_dev_path[MAXPATHLEN];
 	
-	/* 
+	/* Obtain the swap file prefix (path + prototype basename) */
+	sysctlbyname(SWAP_SYSCTL_NAME, NULL, &oldlen, NULL, 0);
+	swap_filename = (char*)malloc(oldlen);
+	sysctlbyname(SWAP_SYSCTL_NAME, swap_filename, &oldlen, NULL, 0);
+
+	/*
 	 * Get the directory portion of the vm.swapfileprefix sysctl
 	 * once links etc have been resolved.
 	 */
-	sysctlbyname(SWAP_PATH_SYSCTL_NAME, NULL, &oldlen, NULL, 0);
-	swap_filename = (char*)malloc(oldlen);
-	sysctlbyname(SWAP_PATH_SYSCTL_NAME, swap_filename, &oldlen, NULL, 0);
 	tmp = realpath(swap_filename, NULL);
 	tmp2 = dirname(swap_filename);
 	(void) strlcpy(real_swap_path, tmp2, MAXPATHLEN);
@@ -63,5 +65,6 @@ dm_in_swap_dir(const char *dev_name)
 	(void) strlcpy(real_dev_path, tmp2, MAXPATHLEN);
 	free(tmp);
 	
+	/* If the strings are equal, the file is in the swap dir */
 	return (strcmp(real_dev_path, real_swap_path) == 0);
 }
