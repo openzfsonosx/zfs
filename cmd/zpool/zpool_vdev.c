@@ -342,7 +342,7 @@ check_file(const char *file, boolean_t force, boolean_t isspare)
 
 	
 	if (dm_in_swap_dir(file)) {
-		vdev_error(gettext("%s is located within a the swapfile directory.\n"), file);
+		vdev_error(gettext("%s is located within the swapfile directory.\n"), file);
 		return (-1);
 	}
 	
