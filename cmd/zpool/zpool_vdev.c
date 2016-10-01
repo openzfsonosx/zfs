@@ -86,7 +86,7 @@
 #endif /* HAVE_LIBBLKID */
 
 #include "zpool_util.h"
-#include "zpool_diskmgt.h"
+#include "libdiskmgt.h"
 #include <sys/zfs_context.h>
 
 /*

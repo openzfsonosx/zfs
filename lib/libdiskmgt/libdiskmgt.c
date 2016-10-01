@@ -48,7 +48,7 @@ dm_in_swap_dir(const char *dev_name)
 	sysctlbyname(SWAP_SYSCTL_NAME, NULL, &oldlen, NULL, 0);
 	swap_filename = (char*)malloc(oldlen);
 	sysctlbyname(SWAP_SYSCTL_NAME, swap_filename, &oldlen, NULL, 0);
-
+	
 	/*
 	 * Get the directory portion of the vm.swapfileprefix sysctl
 	 * once links etc have been resolved.

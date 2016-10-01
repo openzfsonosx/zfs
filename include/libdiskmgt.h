@@ -23,20 +23,19 @@
  * Copyright (c) 2016, Brendon Humphrey (brendon.humphrey@mac.com). All rights reserved.
  */
 
-#ifndef ZPOOL_DISKMGT_H
-#define ZPOOL_DISKMGT_H
+#ifndef _LIBDISKMGT_H
+#define _LIBDISKMGT_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/*
- * This is a very simple, totally incomplete implementation of some
- * functions found in Illumos libdiskmgt, adapted for OSX use.
- */
 	
-int	dm_in_swap_dir(const char *dev_name);	
-
+	/*
+	 * This is a partial implementation of (or similar to) libdiskmgt, adapted for OSX use.
+	 */
+	
+	int	dm_in_swap_dir(const char *dev_name);
+	
 #ifdef __cplusplus
 }
 #endif
