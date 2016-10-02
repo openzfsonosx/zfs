@@ -271,6 +271,7 @@
 #include <sys/kstat_osx.h>
 #ifdef _KERNEL
 extern vmem_t *zio_arena;
+extern vmem_t *zio_metadata_arena;
 extern vmem_t *heap_arena;
 #endif
 #endif
@@ -4019,6 +4020,10 @@ arc_kmem_reap_now(void)
 		 * quantum caches.
 		 */
 		vmem_qcache_reap(zio_arena);
+	}
+
+	if (zio_metadata_arena != NULL) {
+		vmem_qcache_reap(zio_metadata_arena);
 	}
 #endif
 }
