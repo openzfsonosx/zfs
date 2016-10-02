@@ -134,10 +134,7 @@ extern "C" {
 /*
  * return next available bit index from map with specified number of bits
  */
-#ifdef __APPLE__
-typedef short index_t;
-#endif
-extern index_t	bt_availbit(ulong_t *bitmap, size_t nbits);
+extern int	bt_availbit(ulong_t *bitmap, size_t nbits);
 /*
  * find the highest order bit that is on, and is within or below
  * the word specified by wx

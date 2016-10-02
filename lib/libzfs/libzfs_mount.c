@@ -256,7 +256,8 @@ dir_is_empty_stat(const char *dirname)
 /*
  * "openat" came to OS X Version 10.10.
  */
-#if (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_10)
+#if defined (MAC_OS_X_VERSION_10_10) && \
+            (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_10)
 static boolean_t
 dir_is_empty_readdir(const char *dirname)
 {
