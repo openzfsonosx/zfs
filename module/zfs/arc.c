@@ -352,7 +352,6 @@ static boolean_t arc_warm;
  */
 uint64_t zfs_arc_max;
 uint64_t zfs_arc_min;
-uint64_t zfs_dynamic_arc_c_min = 0;
 uint64_t zfs_arc_meta_limit = 0;
 uint64_t zfs_arc_meta_min = 0;
 int zfs_arc_grow_retry = 0;
@@ -3570,21 +3569,6 @@ void
 arc_shrink(int64_t to_free)
 {
 
-#ifdef _KERNEL
-#ifdef __APPLE__
-	if (zfs_dynamic_arc_c_min)  {
-		uint64_t new_arc_c_min = spl_arc_c_min_update(arc_c_min);
-		if (new_arc_c_min != arc_c_min) { // note different comparison below
-			printf("ZFS: %s, arc_c_min %llu -> %llu\n",
-			    __func__, arc_c_min, new_arc_c_min);
-			atomic_swap_64(&arc_c_min, new_arc_c_min);
-			if (arc_c_min > arc_c)
-				atomic_swap_64(&arc_c, arc_c_min);
-		}
-	}
-#endif
-#endif
-
 	if (arc_c > arc_c_min) {
 
 		if (arc_c > arc_c_min + to_free)
@@ -4029,20 +4013,6 @@ arc_reclaim_thread(void)
 #endif // !_KERNEL
 		} else if (free_memory < (arc_c >> arc_no_grow_shift)) {
 			arc_no_grow = B_TRUE;
-#ifdef _KERNEL
-#ifdef __APPLE__
-			if (zfs_dynamic_arc_c_min)  {
-				uint64_t new_arc_c_min = spl_arc_c_min_update(arc_c_min);
-				if (new_arc_c_min > arc_c_min) { // note different comparison above
-					printf("ZFS: %s, arc_c_min %llu -> %llu\n",
-					    __func__, arc_c_min, new_arc_c_min);
-					atomic_swap_64(&arc_c_min, new_arc_c_min);
-					if (arc_c_min > arc_c)
-						atomic_swap_64(&arc_c, arc_c_min);
-				}
-			}
-#endif
-#endif
 		} else if (growtime > 0 && gethrtime() >= growtime) {
 			if (arc_no_grow == B_TRUE)
 				printf("ZFS: arc growtime expired\n");
@@ -5762,11 +5732,7 @@ int arc_kstat_update_osx(kstat_t *ksp, int rw)
 		}
 
 		if (ks->arc_zfs_arc_min.value.ui64 != zfs_arc_min) {
-#ifdef _KERNEL
-			zfs_arc_min = spl_zfs_arc_min_set(ks->arc_zfs_arc_min.value.ui64);
-#else
 			zfs_arc_min = ks->arc_zfs_arc_min.value.ui64;
-#endif
 			if (zfs_arc_min > 64<<20 && zfs_arc_min <= arc_c_max) {
 				arc_c_min = zfs_arc_min;
 				printf("ZFS: set arc_c_min %llu, arc_meta_min %llu, zfs_arc_meta_min %llu\n",
@@ -6051,11 +6017,6 @@ arc_init(void)
 	}
 	if (zfs_arc_min > 64 << 20 && zfs_arc_min <= arc_c_max)
 		arc_c_min = zfs_arc_min;
-#ifdef _KERNEL
-#ifdef __APPLE__
-	(void) spl_zfs_arc_min_set(arc_c_min);
-#endif
-#endif
 
 	arc_c = arc_c_max;
 	arc_p = (arc_c >> 1);
