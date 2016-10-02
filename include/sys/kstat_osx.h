@@ -231,7 +231,6 @@ extern uint64_t zfs_send_set_freerecords_bit;
 extern uint64_t zfs_write_implies_delete_child;
 extern uint64_t send_holes_without_birth_time;
 extern uint64_t zfs_send_holes_without_birth_time;
-extern uint64_t zfs_dynamic_arc_c_min;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);
