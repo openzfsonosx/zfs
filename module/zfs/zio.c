@@ -70,6 +70,7 @@ int zio_delay_max = ZIO_DELAY_MAX;
 
 #ifdef _KERNEL
 extern vmem_t *zio_arena;
+extern vmem_t *zio_metadata_arena;
 #endif
 #define	ZIO_PIPELINE_CONTINUE		0x100
 #define	ZIO_PIPELINE_STOP		0x101
@@ -117,8 +118,10 @@ zio_init(void)
 
 #ifdef _KERNEL
 	vmem_t *data_alloc_arena = zio_arena;
+	vmem_t *metadata_alloc_arena = zio_metadata_arena;
 #else
 	vmem_t *data_alloc_arena = NULL;
+	vmem_t *metadata_alloc_arena = NULL;
 #endif
 
 	zio_cache = kmem_cache_create("zio_cache",
@@ -169,7 +172,8 @@ zio_init(void)
 			char name[36];
 			(void) snprintf(name, sizeof(name), "zio_buf_%lu", (ulong_t)size);
 			zio_buf_cache[c] = kmem_cache_create(name, size,
-			    align, NULL, NULL, NULL, NULL, NULL, cflags);
+			    align, NULL, NULL, NULL, NULL,
+			    metadata_alloc_arena, cflags);
 
 			(void) snprintf(name, sizeof(name), "zio_data_buf_%lu",
                             (ulong_t)size);
