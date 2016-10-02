@@ -95,6 +95,10 @@ extern	in_port_t ntohs(in_port_t);
 #define htonll(x)       __DARWIN_OSSwapInt64(x)
 #endif
 
+#if !defined(ntohll)
+#define ntohll(x)       __DARWIN_OSSwapInt64(x)
+#endif
+
 
 #if !defined(_XPG4_2) || defined(__EXTENSIONS__)
 

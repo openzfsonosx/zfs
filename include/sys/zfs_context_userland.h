@@ -362,8 +362,8 @@ typedef enum kmem_cbrc {
 /*
  * Task queues
  */
-typedef struct taskq taskq_t;
-typedef uintptr_t taskqid_t;
+#define TASKQ_NAMELEN   31
+
 typedef void (task_func_t)(void *);
 
 typedef struct taskq_ent {
@@ -373,6 +373,27 @@ typedef struct taskq_ent {
 	void			*tqent_arg;
 	uintptr_t		tqent_flags;
 } taskq_ent_t;
+
+typedef struct taskq {
+	char            tq_name[TASKQ_NAMELEN + 1];
+	kmutex_t        tq_lock;
+	krwlock_t       tq_threadlock;
+	kcondvar_t      tq_dispatch_cv;
+	kcondvar_t      tq_wait_cv;
+	kthread_t       **tq_threadlist;
+	int             tq_flags;
+	int             tq_active;
+	int             tq_nthreads;
+	int             tq_nalloc;
+	int             tq_minalloc;
+	int             tq_maxalloc;
+	kcondvar_t      tq_maxalloc_cv;
+	int             tq_maxalloc_wait;
+	taskq_ent_t     *tq_freelist;
+	taskq_ent_t     tq_task;
+} taskq_t;
+typedef uintptr_t taskqid_t;
+
 
 #define	TQENT_FLAG_PREALLOC	0x1	/* taskq_dispatch_ent used */
 
@@ -736,29 +757,6 @@ void uio_update( struct uio *a_uio, user_size_t a_count );
 
 #define kpreempt(X)
 
-#define TASKQ_NAMELEN   31
-
-typedef uintptr_t taskqid_t;
-typedef void (task_func_t)(void *);
-
-typedef struct taskq {
-        char            tq_name[TASKQ_NAMELEN + 1];
-        kmutex_t        tq_lock;
-        krwlock_t       tq_threadlock;
-        kcondvar_t      tq_dispatch_cv;
-        kcondvar_t      tq_wait_cv;
-        kthread_t       **tq_threadlist;
-        int             tq_flags;
-        int             tq_active;
-        int             tq_nthreads;
-        int             tq_nalloc;
-        int             tq_minalloc;
-        int             tq_maxalloc;
-        kcondvar_t      tq_maxalloc_cv;
-        int             tq_maxalloc_wait;
-        taskq_ent_t     *tq_freelist;
-        taskq_ent_t     tq_task;
-} taskq_t;
 
 #include <libkern/OSByteOrder.h>
 #define htobe32(x) OSSwapHostToBigInt32(x)
