@@ -3996,6 +3996,10 @@ arc_kmem_reap_now(void)
 	kmem_cache_reap_now(hdr_full_cache);
 	kmem_cache_reap_now(hdr_l2only_cache);
 	kmem_cache_reap_now(range_seg_cache);
+	extern kmem_cache_t *dnode_cache;
+	kmem_cache_reap_now(dnode_cache);
+	extern kmem_cache_t *znode_cache;
+	kmem_cache_reap_now(znode_cache);
 
 #ifdef _KERNEL
 	if (zio_arena != NULL) {

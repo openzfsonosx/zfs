@@ -108,7 +108,7 @@ zfs_release_sa_handle(sa_handle_t *hdl, dmu_buf_t *db, void *tag);
  */
 krwlock_t zfsvfs_lock;
 
-static kmem_cache_t *znode_cache = NULL;
+kmem_cache_t *znode_cache = NULL;
 
 /*ARGSUSED*/
 #if 0 // unused function
