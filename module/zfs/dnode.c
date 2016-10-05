@@ -39,7 +39,7 @@
 #include <sys/range_tree.h>
 #include <sys/trace_dnode.h>
 
-static kmem_cache_t *dnode_cache;
+kmem_cache_t *dnode_cache;
 /*
  * Define DNODE_STATS to turn on statistic gathering. By default, it is only
  * turned on when DEBUG is also defined.
