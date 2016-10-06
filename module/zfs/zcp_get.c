@@ -42,6 +42,10 @@
 #include <sys/zfs_vfsops.h>
 #endif
 
+#ifdef __APPLE__
+#define vfs_optionisset(X, Y, Z) (vfs_flags(X)&(Y))
+#endif
+
 static int
 get_objset_type(dsl_dataset_t *ds, zfs_type_t *type)
 {
@@ -240,7 +244,11 @@ get_temporary_prop(dsl_dataset_t *ds, zfs_prop_t zfs_prop, uint64_t *val,
 		return (error);
 
 	vfsp = zfvp->z_vfs;
-
+	/*
+	 * OSX: Update this section to call vfs_flags() with MNT_NOEXEC
+	 * instead of MNTOPT_NOEXEC, etc.
+	 */
+#ifdef sun
 	switch (zfs_prop) {
 	case ZFS_PROP_ATIME:
 		if (vfs_optionisset(vfsp, MNTOPT_NOATIME, NULL))
@@ -288,6 +296,7 @@ get_temporary_prop(dsl_dataset_t *ds, zfs_prop_t zfs_prop, uint64_t *val,
 		VFS_RELE(vfsp);
 		return (ENOENT);
 	}
+#endif
 
 	VFS_RELE(vfsp);
 	if (tmp != *val) {

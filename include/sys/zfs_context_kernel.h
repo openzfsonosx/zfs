@@ -116,6 +116,67 @@ typedef struct direntry dirent64_t;
 #define IS_ARRAY(arg) (IS_INDEXABLE(arg) && (((void *) &arg) == ((void *) arg)))
 #define ARRAY_SIZE(arr) (IS_ARRAY(arr) ? (sizeof(arr) / sizeof(arr[0])) : 0)
 
+#define PRId64 "lld"
+
+// Cheat a little here
+#define	ddi_strtoll ddi_strtol
+
+#define isalpha(C) ((C) >= 'A' && (C) <= 'Z') || ((C) >= 'a' && (C) <= 'z')
+#define isdigit(C) ((C) >= '0' && (C) <= '9')
+#define isalnum(C) isalpha((C)) || isdigit((C))
+
+/*
+  Copyright (c) 2005 David Schultz <das@FreeBSD.ORG>
+*/
+#define IDX(c)  ((u_char)(c) / LONG_BIT)
+#define BIT(c)  ((u_long)1 << ((u_char)(c) % LONG_BIT))
+
+static inline size_t
+strspn(const char *s, const char *charset)
+{
+	const char *s1;
+	u_long bit;
+	u_long tbl[(UCHAR_MAX + 1) / LONG_BIT];
+	int idx;
+	if(*s == '\0')
+		return (0);
+	tbl[3] = tbl[2] = tbl[1] = tbl[0] = 0;
+	for (; *charset != '\0'; charset++) {
+		idx = IDX(*charset);
+		bit = BIT(*charset);
+		tbl[idx] |= bit;
+	}
+	for(s1 = s; ; s1++) {
+		idx = IDX(*s1);
+		bit = BIT(*s1);
+		if ((tbl[idx] & bit) == 0)
+			break;
+	}
+	return (s1 - s);
+}
+
+/*
+ *  dtrace_glue.c 2002-01-24  gvdl    Initial implementation of strstr
+ */
+static inline const char *
+strstr(const char *in, const char *str)
+{
+	char c;
+    size_t len;
+    c = *str++;
+    if (!c)
+        return (const char *) in;
+    len = strlen(str);
+    do {
+        char sc;
+        do {
+            sc = *in++;
+            if (!sc)
+                return (char *) 0;
+        } while (sc != c);
+    } while (strncmp(in, str, len) != 0);
+    return (const char *) (in - 1);
+}
 
 #endif /* _KERNEL */
 

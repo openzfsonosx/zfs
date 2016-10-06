@@ -10,7 +10,12 @@
 
 #include <sys/zfs_context.h>
 
+#ifdef sun
 #include <sys/int_fmtio.h>
+#endif
+#ifdef __APPLE__
+#include <stddef.h>
+#endif
 
 extern ssize_t lcompat_sprintf(char *, const char *, ...);
 extern int64_t lcompat_strtoll(const char *, char **);
@@ -549,4 +554,3 @@ extern int64_t lcompat_pow(int64_t, int64_t);
 #endif
 
 #endif
-

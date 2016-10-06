@@ -16,7 +16,12 @@
  */
 
 #include <sys/zfs_context.h>
+#ifdef sun
 #include <sys/ctype.h>
+#endif
+#ifdef __APPLE__
+
+#endif
 #define	toupper(C)	(((C) >= 'a' && (C) <= 'z')? (C) - 'a' + 'A': (C))
 
 #define lbaselib_c
@@ -289,4 +294,3 @@ LUAMOD_API int luaopen_base (lua_State *L) {
   lua_setfield(L, -2, "_VERSION");  /* set global _VERSION */
   return 1;
 }
-

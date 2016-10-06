@@ -5,7 +5,9 @@
 */
 
 
+#ifdef sun
 #include <sys/ctype.h>
+#endif
 #include <sys/zfs_context.h>
 
 #define lstrlib_c
@@ -40,6 +42,23 @@
     ((C) >= 0x3A && (C) <= 0x40) || \
     ((C) >= 0x5B && (C) <= 0x60) || \
     ((C) >= 0x7B && (C) <= 0x7E))
+
+#if defined (__APPLE__) && defined(_KERNEL)
+#define islower(C) ((C) >= 'a' && (C) <= 'z')
+#define isspace(C) (C) == ' ' || (C) == '\t' || (C) == '\n' || (C) == '\v' || (C) == '\f' || (C) == '\r'
+#define isupper(C) ((C) >= 'A' && (C) <= 'Z')
+#define isxdigit(C) isdigit(C) || (tolower(C) >= 'a' && tolower(C) <= 'f')
+// XNU defines memchr() but doesn't let kext call it, tedious
+static char *zfs_memchr(const char *big, int ch, size_t length)
+{
+	size_t n;
+	for (n = 0; n < length; n++)
+		if (big[n] == ch)
+			return &big[n];
+	return NULL;
+}
+#define memchr zfs_memchr
+#endif
 
 /*
  * The provided version of sprintf returns a char *, but str_format expects
@@ -1040,4 +1059,3 @@ LUAMOD_API int luaopen_string (lua_State *L) {
   createmetatable(L);
   return 1;
 }
-

@@ -1,0 +1,8 @@
+lastsnap = zfs.list.snapshots(input. fsname)
+clone = zfs.list.clones(lastsnap)
+err = zfs.sync.promote(clone)
+if err ~= 0 then
+   return err
+end
+return zfs.sync.destroy(input.fsname)
+

@@ -47,9 +47,28 @@
 #if !defined(LUAI_THROW)
 
 #ifdef _KERNEL
+
+#ifdef sun
 #define LUAI_THROW(L,c)		longjmp(&(c)->b)
 #define LUAI_TRY(L,c,a)		if (setjmp(&(c)->b) == 0) { a }
 #define luai_jmpbuf		label_t
+#endif
+
+#ifdef __APPLE__
+#include <setjmp.h>
+/* So XNU does not have longjmp, we would need to implement our
+ * own, insert that code here:
+ */
+#define LUAI_THROW(L,c)		__builtin_longjmp((c)->b,1)
+#define LUAI_THROW(L,c)		do { } while(0)
+#define LUAI_TRY(L,c,a)		if (__builtin_setjmp((c)->b) == 0) { a }
+#define LUAI_TRY(L,c,a)		do { } while(0)
+#define luai_jmpbuf		jmp_buf
+#ifdef __APPLE__
+#undef panic
+#endif
+#endif
+
 #else
 #if defined(__cplusplus) && !defined(LUA_USE_LONGJMP)
 /* C++ exceptions */
@@ -116,7 +135,7 @@ l_noret luaD_throw (lua_State *L, int errcode) {
       luaD_throw(G(L)->mainthread, errcode);  /* re-throw in main thread */
     }
     else {  /* no handler at all; abort */
-      if (G(L)->panic) {  /* panic function? */
+		if (G(L)->panic) {  /* panic function? */
         lua_unlock(L);
         G(L)->panic(L);  /* call it (last chance to jump out) */
       }
@@ -681,5 +700,3 @@ int luaD_protectedparser (lua_State *L, ZIO *z, const char *name,
   L->nny--;
   return status;
 }
-
-
