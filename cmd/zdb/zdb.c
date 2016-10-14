@@ -85,9 +85,6 @@ int zfs_vdev_async_read_max_active;
 
 const char cmdname[] = "zdb";
 uint8_t dump_opt[256];
-#ifdef __APPLE__
-volatile int zdb_forever = 0;
-#endif
 
 typedef void object_viewer_t(objset_t *, uint64_t, void *data, size_t size);
 
@@ -120,7 +117,8 @@ usage(void)
 {
 	(void) fprintf(stderr,
 	    "Usage: %s [-CumMdibcsDvhLXFPAG] [-t txg] [-e [-p path...]] "
-	    "[-U config] [-I inflight I/Os] poolname [object...]\n"
+	    "[-U config] [-I inflight I/Os] [-x dumpdir] [-o var=value] "
+	    "poolname [object...]\n"
 	    "       %s [-divPA] [-e -p path...] [-U config] dataset "
 	    "[object...]\n"
 	    "       %s -mM [-LXFPA] [-t txg] [-e [-p path...]] [-U config] "
@@ -182,6 +180,8 @@ usage(void)
 	    "[default is 200]\n");
 	(void) fprintf(stderr, "        -G dump zfs_dbgmsg buffer before "
 	    "exiting\n");
+	(void) fprintf(stderr, "        -o <variable>=<value> set global "
+	    "variable to an unsigned 32-bit integer value\n");
 	(void) fprintf(stderr, "Specify an option more than once (e.g. -bb) "
 	    "to make only that option verbose\n");
 	(void) fprintf(stderr, "Default is to dump everything non-verbosely\n");
@@ -3639,11 +3639,7 @@ main(int argc, char **argv)
 	int flags = ZFS_IMPORT_MISSING_LOG;
 	int rewind = ZPOOL_NEVER_REWIND;
 	char *spa_config_path_env;
-#ifdef __APPLE__
-	const char *opts = "bcdhilmMI:suCDRSAFLXevp:t:U:PGZ";
-#else
-	const char *opts = "bcdhilmMI:suCDRSAFLXevp:t:U:PG";
-#endif
+	const char *opts = "bcdhilmMI:suCDRSAFLXevp:t:U:PGo:";
 	boolean_t target_is_spa = B_TRUE;
 
 	(void) setrlimit(RLIMIT_NOFILE, &rl);
@@ -3726,13 +3722,13 @@ main(int argc, char **argv)
 		case 'U':
 			spa_config_path = optarg;
 			break;
-#ifdef __APPLE__
-		case 'Z':
-			zdb_forever = 1;
-			break;
-#endif
 		case 'v':
 			verbose++;
+			break;
+		case 'o':
+			error = set_global_var(optarg);
+			if (error != 0)
+				usage();
 			break;
 		default:
 			usage();
@@ -3744,14 +3740,6 @@ main(int argc, char **argv)
 		(void) fprintf(stderr, "-p option requires use of -e\n");
 		usage();
 	}
-
-#ifdef __APPLE__
-	if (zdb_forever) {
-		fprintf(stderr, "zdb pid: %lu\n", (unsigned long)getpid());
-	}
-	while (zdb_forever != 0)
-	    sleep(1);
-#endif
 
 #if defined(_LP64)
 	/*
