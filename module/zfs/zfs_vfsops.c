@@ -3037,6 +3037,8 @@ zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
 	znode_t *rootzp;
 	int error;
 
+	if (!zfsvfs) return EIO;
+
 	ZFS_ENTER_NOERROR(zfsvfs);
 
 	error = zfs_zget(zfsvfs, zfsvfs->z_root, &rootzp);
