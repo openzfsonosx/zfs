@@ -1734,7 +1734,8 @@ zvol_write(struct bio *bio)
 int
 zvol_set_snapdev(const char *ddname, zprop_source_t source, uint64_t snapdev)
 {
-	zvol_set_snapdev_arg_t zsda;
+	int error = 0;
+	//mutex_enter(&zfsdev_state_lock);
 
 	zsda.zsda_name = ddname;
 	zsda.zsda_source = source;
@@ -1833,6 +1834,7 @@ zvol_read(struct bio *bio)
 			zvol_last_close(zv);
 	}
 
+	//mutex_exit(&zfsdev_state_lock);
 	return (error);
 }
 
