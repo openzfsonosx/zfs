@@ -1679,7 +1679,7 @@ int
 zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 {
 	int error = 0;
-	mutex_enter(&zfsdev_state_lock);
+	//mutex_enter(&zfsdev_state_lock);
 
 	dprintf("zvol_close_impl\n");
 
@@ -1708,7 +1708,7 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 			zvol_last_close(zv);
 	}
 
-	mutex_exit(&zfsdev_state_lock);
+	//mutex_exit(&zfsdev_state_lock);
 	return (error);
 }
 
