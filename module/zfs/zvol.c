@@ -1753,6 +1753,12 @@ zvol_set_snapdev(const char *ddname, zprop_source_t source, uint64_t snapdev)
 		locked = 1;
 	}
 
+
+	if (!MUTEX_HELD(&spa_namespace_lock)) {
+		mutex_enter(&zfsdev_state_lock);
+		locked = 1;
+	}
+
 	zsda.zsda_name = ddname;
 	zsda.zsda_source = source;
 	zsda.zsda_value = snapdev;
