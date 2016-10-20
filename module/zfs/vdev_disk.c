@@ -21,6 +21,7 @@
 /*
  * Based on Apple MacZFS source code
  * Copyright (c) 2014,2016 by Jorgen Lundman. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -516,55 +517,16 @@ vdev_disk_io_start(zio_t *zio)
 				return;
 			}
 
-			switch (zio->io_cmd) {
+			zio->io_error = error;
 
-				case DKIOCFLUSHWRITECACHE:
+			break;
 
-					if (zfs_nocacheflush)
-						break;
+		default:
+			zio->io_error = SET_ERROR(ENOTSUP);
+		} /* io_cmd */
 
-					if (vd->vdev_nowritecache) {
-						zio->io_error = SET_ERROR(ENOTSUP);
-						break;
-					}
-
-					context = vfs_context_create(spl_vfs_context_kernel());
-					error = VNOP_IOCTL(dvd->vd_devvp, DKIOCSYNCHRONIZECACHE,
-									   NULL, FWRITE, context);
-					(void) vfs_context_rele(context);
-
-					if (error == 0)
-						vdev_disk_ioctl_done(zio, error);
-					else
-						error = ENOTSUP;
-
-					if (error == 0) {
-						/*
-						 * The ioctl will be done asychronously,
-						 * and will call vdev_disk_ioctl_done()
-						 * upon completion.
-						 */
-						return;
-					} else if (error == ENOTSUP || error == ENOTTY) {
-						/*
-						 * If we get ENOTSUP or ENOTTY, we know that
-						 * no future attempts will ever succeed.
-						 * In this case we set a persistent bit so
-						 * that we don't bother with the ioctl in the
-						 * future.
-						 */
-						vd->vdev_nowritecache = B_TRUE;
-					}
-					zio->io_error = error;
-
-					break;
-
-				default:
-					zio->io_error = SET_ERROR(ENOTSUP);
-			} /* io_cmd */
-
-			zio_execute(zio);
-			return;
+		zio_execute(zio);
+		return;
 
 	case ZIO_TYPE_WRITE:
 		if (zio->io_priority == ZIO_PRIORITY_SYNC_WRITE)
