@@ -21,6 +21,7 @@
 /*
  * Based on Apple MacZFS source code
  * Copyright (c) 2014,2016 by Jorgen Lundman. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -163,7 +164,7 @@ const char *devids[] = {
   "media-ACFA2BBB-88DE-451C-8455-5D83F6F188B0",
   "media-5EDEE597-C7F6-4788-841A-790ECAD8FA26",
   "media-56FFB24C-E400-4FF0-8042-D86E0AD87F07",
-  
+
 NULL
 };
 
@@ -676,7 +677,7 @@ skip_open:
 
 	printf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "",
 			isssd);
-#endif //__APPLE__	
+#endif //__APPLE__
 
 	return (0);
 }
@@ -912,16 +913,6 @@ vdev_disk_io_start(zio_t *zio)
 				return;
 			}
 
-			if (error == ENOTSUP || error == ENOTTY) {
-				/*
-				 * If we get ENOTSUP or ENOTTY, we know that
-				 * no future attempts will ever succeed.
-				 * In this case we set a persistent bit so
-				 * that we don't bother with the ioctl in the
-				 * future.
-				 */
-				vd->vdev_nowritecache = B_TRUE;
-			}
 			zio->io_error = error;
 
 			break;
