@@ -531,7 +531,6 @@ zvol_create_minor_impl(const char *name)
 		mutex_exit(&zfsdev_state_lock);
 		return (EEXIST);
 	}
-	mutex_exit(&zfsdev_state_lock);
 
 	/* On OS X we always check snapdev, for now */
 #ifdef linux
@@ -550,14 +549,13 @@ zvol_create_minor_impl(const char *name)
 	error = dmu_objset_own(name, DMU_OST_ZVOL, B_TRUE, FTAG, &os);
 
 	if (error) {
+		mutex_exit(&zfsdev_state_lock);
 		return (error);
 	}
 
-	// we should hold mutex_enter(&zfsdev_state_lock);
-	mutex_enter(&zfsdev_state_lock);
 	if ((minor = zfsdev_minor_alloc()) == 0) {
-		mutex_exit(&zfsdev_state_lock);
 		dmu_objset_disown(os, FTAG);
+		mutex_exit(&zfsdev_state_lock);
 		return (ENXIO);
 	}
 
@@ -625,6 +623,7 @@ zvol_create_minor_impl(const char *name)
 	}
 
 #ifndef __APPLE__
+	// Delay these until after IOkit work
 	dmu_objset_disown(os, FTAG);
 	zv->zv_objset = NULL;
 
@@ -711,7 +710,7 @@ int
 zvol_remove_minor_impl(const char *name)
 {
 	zvol_state_t *zv;
-	zvol_state_t tmp_zv;
+	zvol_state_t tmp_zv = {0};
 	int rc;
 
 	mutex_enter(&zfsdev_state_lock);
@@ -1031,7 +1030,7 @@ zvol_remove_minors_impl(const char *name)
 			(strncmp(zv->zv_name, name, namelen) == 0 &&
 			 (zv->zv_name[namelen] == '/' ||
 			  zv->zv_name[namelen] == '@'))) {
-			zvol_state_t tmp_zv;
+			zvol_state_t tmp_zv = { 0 };
 
 			/* If in use, leave alone */
 			if (zv->zv_open_count > 0)
@@ -1735,7 +1734,24 @@ int
 zvol_set_snapdev(const char *ddname, zprop_source_t source, uint64_t snapdev)
 {
 	int error = 0;
-	//mutex_enter(&zfsdev_state_lock);
+	int locked = 0;
+	/* Thread A:
+	 * zvol_first_open(grabs zfsdev_state_lock mutex) ->
+	 *       spa_open_common(wants spa_namespace_lock mutex)
+	 *
+	 * Thread B:
+	 * spa_export_common(grabs spa_namespace_lock mutex) ->
+	 *       vdev_close -> zvol_close_impl(wants zfsdev_state_lock mutex)
+	 *
+	 * So if we already have spa_namespace_lock, lets skip the
+	 * zfsdev_state_lock mutex
+	 */
+
+
+	if (!MUTEX_HELD(&spa_namespace_lock)) {
+		mutex_enter(&zfsdev_state_lock);
+		locked = 1;
+	}
 
 	zsda.zsda_name = ddname;
 	zsda.zsda_source = source;
@@ -1834,7 +1850,8 @@ zvol_read(struct bio *bio)
 			zvol_last_close(zv);
 	}
 
-	//mutex_exit(&zfsdev_state_lock);
+	if (locked)
+		mutex_exit(&zfsdev_state_lock);
 	return (error);
 }
 
