@@ -812,7 +812,7 @@ static arc_state_t	*arc_l2c_only;
 #define	arc_overhead_size	ARCSTAT(arcstat_overhead_size)
 
 // arcstat: static int		arc_no_grow;	/* Don't try to grow cache size */
-#define arc_no_grow ARCSTAT(arcstat_arc_no_grow)	
+#define arc_no_grow ARCSTAT(arcstat_arc_no_grow)
 // arcstat: static uint64_t		arc_tempreserve;
 #define arc_tempreserve ARCSTAT(arcstat_tempreserve) /* space temporarily reserverd */
 // arcstat: static uint64_t		arc_loaned_bytes;
@@ -3846,12 +3846,12 @@ arc_kmem_reap_now(void)
 	kmem_cache_reap_now(hdr_full_cache);
 	kmem_cache_reap_now(hdr_l2only_cache);
 	kmem_cache_reap_now(range_seg_cache);
-	extern kmem_cache_t *dnode_cache;
-	kmem_cache_reap_now(dnode_cache);
-	extern kmem_cache_t *znode_cache;
-	kmem_cache_reap_now(znode_cache);
-
 #ifdef _KERNEL
+	extern kmem_cache_t *dnode_cache;
+	if (dnode_cache) kmem_cache_reap_now(dnode_cache);
+	extern kmem_cache_t *znode_cache;
+	if (znode_cache) kmem_cache_reap_now(znode_cache);
+
 	if (zio_arena != NULL) {
 		/*
 		 * Ask the vmem arena to reclaim unused memory from its
@@ -6069,7 +6069,7 @@ arc_init(void)
 	/* if kmem_flags are set, lets try to use less memory */
 	if (kmem_debugging())
 		arc_c = arc_c / 2;
-#endif //smd	
+#endif //smd
 	if (arc_c < arc_c_min)
 		arc_c = arc_c_min;
 
