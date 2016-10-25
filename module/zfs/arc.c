@@ -4032,7 +4032,8 @@ arc_reclaim_thread(void)
 					// This may take many milliseconds, but we would
 					// otherwise be waiting up to half a minute for the
 					// vacuum thread in spl to do this.
-					if (arc_shrink_freed > 4LL * huge_amount) {
+					if (arc_shrink_freed > 4LL * huge_amount &&
+						zio_arena != NULL && zio_metadata_arena != NULL) {
 						void vmem_vacuum_free_arena(void);
 						void vmem_vacuum_xnu_import_arena(void);
 						vmem_vacuum_free_arena();
