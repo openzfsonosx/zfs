@@ -3915,6 +3915,11 @@ arc_reclaim_thread(void)
 
 		mutex_exit(&arc_reclaim_lock);
 
+#ifdef __APPLE__
+#ifdef _KERNEL
+		int64_t pre_evict_free_memory = MIN(spl_free_wrapper(),arc_available_memory());
+#endif
+#endif
 		/*
 		 * We call arc_adjust() before (possibly) calling
 		 * arc_kmem_reap_now(), so that we can wake up
@@ -3930,9 +3935,10 @@ arc_reclaim_thread(void)
 		free_memory = t;
 		int64_t manual_pressure = spl_free_manual_pressure_wrapper();
 
-		spl_free_set_pressure(0); // clears both above
+		spl_free_set_pressure(0); // clears both spl pressure variables
 
-		if (free_memory < 0 || manual_pressure != 0) {
+		if (free_memory < 0 || manual_pressure != 0 ||
+			pre_evict_free_memory > free_memory) {
 #else
 	        if (free_memory < 0) {
 #endif
@@ -3971,6 +3977,14 @@ arc_reclaim_thread(void)
 #else
 #ifdef __APPLE__
 			if(to_free > 0 || manual_pressure != 0) {
+				const int64_t large_amount = 32LL * 1024LL * 1024LL; // 2 * SPA_MAXBLOCKSIZE
+				const int64_t huge_amount = 128LL * 1024LL * 1024LL;
+
+				if (to_free > large_amount || evicted > huge_amount)
+					printf("SPL: %s: post-reap %lld post-evict %lld evicted %lld "
+					    "pre-adjust %lld to-free %lld pressure %lld\n",
+					    __func__, free_memory, t, evicted,
+					    pre_evict_free_memory, to_free, manual_pressure);
 #endif
 #endif
 #ifdef _KERNEL
@@ -3979,14 +3993,6 @@ arc_reclaim_thread(void)
 #endif
 #ifdef __APPLE__
 				to_free = MAX(to_free, manual_pressure);
-
-				if (to_free > old_to_free) {
-					int64_t delta = to_free - old_to_free;
-					const int64_t mib = 1024ULL*1024ULL;
-					if (delta == mib && (manual_pressure || old_to_free == 0))
-						printf("ZFS: %s, to_free == %lld increased above %lld old_to_free (delta: %lld)\n",
-						    __func__, to_free, old_to_free, delta);
-				}
 
 				int64_t old_arc_size = (int64_t)arc_size;
 #endif // __APPLE__
@@ -3997,10 +4003,12 @@ arc_reclaim_thread(void)
 				int64_t new_arc_size = (int64_t)arc_size;
 				int64_t arc_shrink_freed = old_arc_size - new_arc_size;
 				int64_t left_to_free = to_free - arc_shrink_freed;
-
 				if (left_to_free <= 0) {
-					printf("ZFS: %s, arc_shrink freed %lld, zeroing old_to_free from %lld\n",
-					    __func__, arc_shrink_freed, old_to_free);
+					if (arc_shrink_freed > large_amount) {
+						printf("ZFS: %s, arc_shrink freed %lld, "
+						    "zeroing old_to_free from %lld\n",
+						    __func__, arc_shrink_freed, old_to_free);
+					}
 					old_to_free = 0;
 				} else if (arc_shrink_freed > 2LL * (int64_t)SPA_MAXBLOCKSIZE) {
 					printf("ZFS: %s, arc_shrink freed %lld, setting old_to_free to %lld from %lld\n",
@@ -4008,6 +4016,28 @@ arc_reclaim_thread(void)
 					old_to_free = left_to_free;
 				} else {
 					old_to_free = left_to_free;
+				}
+
+				// If we have reduced ARC by a lot before this point,
+				// try to give memory back to lower arenas (and possibly xnu).
+
+				int64_t total_freed = arc_shrink_freed + evicted;
+				if (total_freed >= huge_amount) {
+					if (zio_arena != NULL)
+						vmem_qcache_reap(zio_arena);
+					if (zio_metadata_arena != NULL)
+						vmem_qcache_reap(zio_metadata_arena);
+					// If we have freed a truly huge amount, then
+					// try to return memory to xnu.
+					// This may take many milliseconds, but we would
+					// otherwise be waiting up to half a minute for the
+					// vacuum thread in spl to do this.
+					if (arc_shrink_freed > 4LL * huge_amount) {
+						void vmem_vacuum_free_arena(void);
+						void vmem_vacuum_xnu_import_arena(void);
+						vmem_vacuum_free_arena();
+						vmem_vacuum_xnu_import_arena();
+					}
 				}
 			} else if (old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
