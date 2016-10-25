@@ -3897,7 +3897,6 @@ arc_reclaim_thread(void)
 
 	mutex_enter(&arc_reclaim_lock);
 	while (!arc_reclaim_thread_exit) {
-		int64_t free_memory = arc_available_memory();
 		uint64_t evicted = 0;
 
 		/*
@@ -3916,6 +3915,14 @@ arc_reclaim_thread(void)
 
 		mutex_exit(&arc_reclaim_lock);
 
+		/*
+		 * We call arc_adjust() before (possibly) calling
+		 * arc_kmem_reap_now(), so that we can wake up
+		 * arc_get_data_buf() sooner.
+		 */
+		evicted = arc_adjust();
+
+		int64_t free_memory = arc_available_memory();
 #ifdef __APPLE__
 #ifdef _KERNEL
 		int64_t cur_spl_free = spl_free_wrapper();
@@ -4023,8 +4030,6 @@ arc_reclaim_thread(void)
 			growtime = 0;
 			arc_no_grow = B_FALSE;
 		}
-
-		evicted = arc_adjust();
 
                mutex_enter(&arc_reclaim_lock);
 
