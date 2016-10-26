@@ -164,161 +164,6 @@ static int hardlinks_compare_linkid(const void *arg1, const void *arg2)
 
 
 
-// move these structs to _osx once wrappers are updated
-
-/*
- * ZFS file system features.
- */
-const vol_capabilities_attr_t zfs_capabilities = {
-	{
-		/* Format capabilities we support: */
-		VOL_CAP_FMT_PERSISTENTOBJECTIDS |
-		VOL_CAP_FMT_SYMBOLICLINKS |
-		VOL_CAP_FMT_HARDLINKS |
-		VOL_CAP_FMT_JOURNAL |
-		VOL_CAP_FMT_JOURNAL_ACTIVE |
-		VOL_CAP_FMT_SPARSE_FILES |
-		VOL_CAP_FMT_ZERO_RUNS |
-		/*VOL_CAP_FMT_CASE_SENSITIVE*/ /* Moved down to vfs_getattr */
-		VOL_CAP_FMT_CASE_PRESERVING |
-		VOL_CAP_FMT_FAST_STATFS |
-		VOL_CAP_FMT_2TB_FILESIZE |
-		VOL_CAP_FMT_HIDDEN_FILES |
-		VOL_CAP_FMT_PATH_FROM_ID |
-		VOL_CAP_FMT_64BIT_OBJECT_IDS |
-        0,
-
-		/* Interface capabilities we support: */
-#ifdef WITH_SEARCHFS
-		VOL_CAP_INT_SEARCHFS |
-#endif
-		VOL_CAP_INT_ATTRLIST |
-		VOL_CAP_INT_NFSEXPORT |
-#ifdef WITH_READDIRATTR
-		VOL_CAP_INT_READDIRATTR |
-#endif
-		//VOL_CAP_INT_EXCHANGEDATA |
-		//VOL_CAP_INT_COPYFILE |
-		//VOL_CAP_INT_ALLOCATE | // **
-
-		VOL_CAP_INT_VOL_RENAME |
-		VOL_CAP_INT_ADVLOCK |
-		VOL_CAP_INT_FLOCK |
-		VOL_CAP_INT_EXTENDED_SECURITY |
-#if NAMEDSTREAMS
-		VOL_CAP_INT_NAMEDSTREAMS |
-#endif
-		/*VOL_CAP_INT_EXTENDED_ATTR ,*/
-
-		0 , 0
-	},
-	{
-		/* Format capabilities we know about: */
-		VOL_CAP_FMT_PERSISTENTOBJECTIDS |
-		VOL_CAP_FMT_SYMBOLICLINKS |
-		VOL_CAP_FMT_HARDLINKS |
-		VOL_CAP_FMT_JOURNAL |
-		VOL_CAP_FMT_JOURNAL_ACTIVE |
-		VOL_CAP_FMT_NO_ROOT_TIMES |
-		VOL_CAP_FMT_SPARSE_FILES |
-		VOL_CAP_FMT_ZERO_RUNS |
-		VOL_CAP_FMT_CASE_SENSITIVE |
-		VOL_CAP_FMT_CASE_PRESERVING |
-		VOL_CAP_FMT_FAST_STATFS |
-		VOL_CAP_FMT_2TB_FILESIZE |
-		VOL_CAP_FMT_OPENDENYMODES |
-		VOL_CAP_FMT_64BIT_OBJECT_IDS |
-		VOL_CAP_FMT_HIDDEN_FILES |
-		VOL_CAP_FMT_PATH_FROM_ID ,
-
-		/* Interface capabilities we know about: */
-		VOL_CAP_INT_SEARCHFS |
-		VOL_CAP_INT_ATTRLIST |
-		VOL_CAP_INT_NFSEXPORT |
-        //VOL_CAP_INT_READDIRATTR |
-        VOL_CAP_INT_EXCHANGEDATA |
-        VOL_CAP_INT_COPYFILE |
-        VOL_CAP_INT_ALLOCATE |
-		VOL_CAP_INT_VOL_RENAME |
-		VOL_CAP_INT_ADVLOCK |
-		VOL_CAP_INT_FLOCK |
-		VOL_CAP_INT_EXTENDED_SECURITY |
-		VOL_CAP_INT_USERACCESS |
-		VOL_CAP_INT_MANLOCK |
-		VOL_CAP_INT_NAMEDSTREAMS |
-		VOL_CAP_INT_EXTENDED_ATTR ,
-
-		0, 0
-	}
-};
-
-
-
-
-/*
- * ZFS file system attributes (for getattrlist).
- */
-const attribute_set_t zfs_attributes = {
-		ATTR_CMN_NAME	|
-		ATTR_CMN_DEVID	|
-		ATTR_CMN_FSID	|
-		ATTR_CMN_OBJTYPE |
-		ATTR_CMN_OBJTAG	|
-		ATTR_CMN_OBJID	|
-		ATTR_CMN_OBJPERMANENTID |
-		ATTR_CMN_PAROBJID |
-		ATTR_CMN_CRTIME |
-		ATTR_CMN_MODTIME |
-		ATTR_CMN_CHGTIME |
-		ATTR_CMN_ACCTIME |
-		ATTR_CMN_BKUPTIME |
-		ATTR_CMN_FNDRINFO |
-		ATTR_CMN_OWNERID |
-		ATTR_CMN_GRPID	|
-		ATTR_CMN_ACCESSMASK |
-		ATTR_CMN_FLAGS	|
-		ATTR_CMN_USERACCESS |
-		ATTR_CMN_EXTENDED_SECURITY |
-		ATTR_CMN_UUID |
-		ATTR_CMN_GRPUUID |
-		ATTR_CMN_PARENTID ,
-
-		ATTR_VOL_FSTYPE	|
-		ATTR_VOL_SIGNATURE |
-		ATTR_VOL_SIZE	|
-		ATTR_VOL_SPACEFREE |
-		ATTR_VOL_SPACEAVAIL |
-		ATTR_VOL_MINALLOCATION |
-		ATTR_VOL_ALLOCATIONCLUMP |
-		ATTR_VOL_IOBLOCKSIZE |
-		ATTR_VOL_OBJCOUNT |
-		ATTR_VOL_FILECOUNT |
-		ATTR_VOL_DIRCOUNT |
-		ATTR_VOL_MAXOBJCOUNT |
-		ATTR_VOL_MOUNTPOINT |
-		ATTR_VOL_NAME	|
-		ATTR_VOL_MOUNTFLAGS |
-		ATTR_VOL_MOUNTEDDEVICE |
-		ATTR_VOL_CAPABILITIES |
-		ATTR_VOL_ATTRIBUTES ,
-
-		ATTR_DIR_LINKCOUNT |
-		ATTR_DIR_ENTRYCOUNT |
-		ATTR_DIR_MOUNTSTATUS ,
-
-		ATTR_FILE_LINKCOUNT |
-		ATTR_FILE_TOTALSIZE |
-		ATTR_FILE_ALLOCSIZE |
-		/* ATTR_FILE_IOBLOCKSIZE */
-		ATTR_FILE_DEVTYPE |
-		ATTR_FILE_DATALENGTH |
-		ATTR_FILE_DATAALLOCSIZE |
-		ATTR_FILE_RSRCLENGTH |
-		ATTR_FILE_RSRCALLOCSIZE ,
-
-		0
-};
-
 
 /*
  * Mac OS X needs a file system modify time
@@ -2592,7 +2437,14 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_FMT_2TB_FILESIZE |   // ZFS
 			VOL_CAP_FMT_JOURNAL | VOL_CAP_FMT_JOURNAL_ACTIVE | // ZFS
 			VOL_CAP_FMT_SYMBOLICLINKS |  // msdos..
-			VOL_CAP_FMT_NO_ROOT_TIMES |
+
+			// ZFS has root times just fine
+			/*VOL_CAP_FMT_NO_ROOT_TIMES |*/
+
+			// Ask XNU to remember zero-runs, instead of writing
+			// zeros to it.
+			VOL_CAP_FMT_ZERO_RUNS |
+
 			VOL_CAP_FMT_CASE_PRESERVING |
 			VOL_CAP_FMT_FAST_STATFS |
 			VOL_CAP_FMT_PATH_FROM_ID |
@@ -2609,14 +2461,24 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_INT_VOL_RENAME |        // msdos..
 			VOL_CAP_INT_ADVLOCK |
 
-			VOL_CAP_INT_EXCHANGEDATA|
-			VOL_CAP_INT_COPYFILE|
-			VOL_CAP_INT_ALLOCATE|
+			// ZFS does not yet have exchangedata (it's in a branch)
+			/* VOL_CAP_INT_EXCHANGEDATA| */
+
+			// ZFS does not yet have copyfile
+			/* VOL_CAP_INT_COPYFILE| */
+
+			// ZFS does not yet have allocate
+			/*VOL_CAP_INT_ALLOCATE|*/
 
 			VOL_CAP_INT_FLOCK ;
 		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_RESERVED1] = 0;
 		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_RESERVED2] = 0;
 
+		/* This is the list of valid capabilities at time of
+		 * compile. The valid list should have them all defined
+		 * and the "capability" list above should enable only
+		 * those we have implemented
+		 */
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_FORMAT] =
 			VOL_CAP_FMT_PERSISTENTOBJECTIDS |
 			VOL_CAP_FMT_SYMBOLICLINKS |
@@ -2633,6 +2495,8 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_FMT_OPENDENYMODES |
 			VOL_CAP_FMT_PATH_FROM_ID |
 			VOL_CAP_FMT_64BIT_OBJECT_IDS |
+			VOL_CAP_FMT_NO_VOLUME_SIZES |
+			VOL_CAP_FMT_DECMPFS_COMPRESSION |
 			VOL_CAP_FMT_HIDDEN_FILES ;
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_INTERFACES] =
 			VOL_CAP_INT_SEARCHFS |
@@ -2646,8 +2510,9 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_INT_ADVLOCK |
 			VOL_CAP_INT_FLOCK |
 			VOL_CAP_INT_EXTENDED_ATTR |
+			VOL_CAP_INT_USERACCESS |
 #if NAMEDSTREAMS
-			VOL_CAP_INT_NAMEDSTREAMS |      // ZFS
+			VOL_CAP_INT_NAMEDSTREAMS |
 #endif
 
 			VOL_CAP_INT_MANLOCK ;
