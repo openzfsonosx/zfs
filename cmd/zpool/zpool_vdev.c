@@ -86,6 +86,7 @@
 #endif /* HAVE_LIBBLKID */
 
 #include "zpool_util.h"
+#include "libdiskmgt.h"
 #include <sys/zfs_context.h>
 
 /*
@@ -338,6 +339,12 @@ check_file(const char *file, boolean_t force, boolean_t isspare)
 	int ret = 0;
 	pool_state_t state;
 	boolean_t inuse;
+
+
+	if (dm_in_swap_dir(file)) {
+		vdev_error(gettext("%s is located within the swapfile directory.\n"), file);
+		return (-1);
+	}
 
 	if ((fd = open(file, O_RDONLY)) < 0)
 		return (0);
