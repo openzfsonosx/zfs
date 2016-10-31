@@ -4177,18 +4177,6 @@ arc_reclaim_thread(void)
 						vmem_qcache_reap(zio_arena);
 					if (zio_metadata_arena != NULL)
 						vmem_qcache_reap(zio_metadata_arena);
-					// If we have freed a truly huge amount, then
-					// try to return memory to xnu.
-					// This may take many milliseconds, but we would
-					// otherwise be waiting up to half a minute for the
-					// vacuum thread in spl to do this.
-					if (arc_shrink_freed > 4LL * huge_amount &&
-						zio_arena != NULL && zio_metadata_arena != NULL) {
-						void vmem_vacuum_free_arena(void);
-						void vmem_vacuum_xnu_import_arena(void);
-						vmem_vacuum_free_arena();
-						vmem_vacuum_xnu_import_arena();
-					}
 				}
 			} else if (old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
