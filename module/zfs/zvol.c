@@ -109,7 +109,6 @@ static char *zvol_tag = "zvol_tag";
 
 extern kmutex_t zfsdev_state_lock;
 
-
 void *
 zfsdev_get_soft_state(minor_t minor, enum zfs_soft_state_type which)
 {
@@ -736,6 +735,7 @@ zvol_remove_minor_impl(const char *name)
 	}
 #endif
 
+	zv->zv_name[0] = 0;
 	rc = zvol_remove_zv(zv); // Frees zv, if successful.
 	mutex_exit(&zfsdev_state_lock);
 
@@ -1051,21 +1051,12 @@ zvol_remove_minors_impl(const char *name)
 			if (zv->zv_open_count > 0)
 				continue;
 
-#ifdef __APPLE__
-			zvol_remove_symlink(zv);
-			// We had to drop this lock or we would deadlock against
-			// ourselves due to IOKit, but, since this is now ASYNC
-			// it should in theory no longer be needed?
-			//mutex_exit(&zfsdev_state_lock);
-			//zvolRemoveDevice(zv);
-
-			/* Get and clear the iokitdev handle while locked */
-			iokitdev = zv->zv_iokitdev;
-			zv->zv_iokitdev = 0;
-
-			zvolRemoveDevice(iokitdev);
-			//mutex_enter(&zfsdev_state_lock);
-#endif /* __APPLE__ */
+			// Assign a temporary zv holder to call IOKit with
+			// release zv while we have mutex, then drop it.
+			tmp_zv.zv_iokitdev = zv->zv_iokitdev;
+			strlcpy(tmp_zv.zv_name, zv->zv_name, sizeof(tmp_zv.zv_name));
+			strlcpy(tmp_zv.zv_bsdname, zv->zv_bsdname, sizeof(tmp_zv.zv_bsdname));
+			zv->zv_name[0] = 0;
 			(void) zvol_remove_zv(zv);
 			mutex_exit(&zfsdev_state_lock);
 
