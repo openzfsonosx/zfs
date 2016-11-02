@@ -129,6 +129,7 @@ ZFSKextLoaded(void *refCon, io_iterator_t iterator)
 	while ((myservice = IOIteratorNext(iterator))) {
 		fprintf(stderr, "Found match\n");
 		doAction = TRUE;
+		IOObjectRelease(myservice);
 	}
 	if (doAction && stat(ZSYSCTL_CONF_FILE, &sbuf) == 0) {
 		fprintf(stderr, "Running "ZSYSCTL_CMD_WITH_ARGS"\n");
