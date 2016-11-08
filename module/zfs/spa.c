@@ -3948,10 +3948,18 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	}
 
 	/* Cache vdev info, needs open ref above, and pool proxy */
+
+	/* This call here, will leak ZFSPool class reference, which
+	 * stops kextunload from unloading zfs.kext. Since it is
+	 * used for BOOT only, we are running without it, until we can
+	 * find the correct solution.
+	 */
+#if 0
 	if (error == 0 && (error = zfs_boot_update_bootinfo(spa)) != 0) {
 		printf("%s update_bootinfo error %d\n", __func__, error);
 		/* create succeeded, ignore error from bootinfo */
 	}
+#endif
 
 	/* Drop open refcount */
 	mutex_enter(&spa_namespace_lock);
