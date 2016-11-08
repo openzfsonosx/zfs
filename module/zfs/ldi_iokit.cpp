@@ -393,7 +393,7 @@ dprintf("%s got path [%s]\n", __func__, path);
 int handle_get_bootinfo_iokit(struct ldi_handle *lhp,
     struct io_bootinfo *bootinfo)
 {
-	int error;
+	int error=0;
 
 	if (!lhp || !bootinfo) {
 		dprintf("%s missing argument\n", __func__);
@@ -407,8 +407,6 @@ printf("%s missing argument\n", __func__);
 	    sizeof(bootinfo->dev_path))) != 0) {
 		dprintf("%s get size or dev_path error %d\n",
 		    __func__, error);
-printf("%s get size or dev_path error %d\n",
-    __func__, error);
 	}
 
 	return (error);
@@ -1649,8 +1647,8 @@ handle_set_wce_iokit(struct ldi_handle *lhp, int *wce)
 
 	result = device->getWriteCacheState(&value);
 	if (result != kIOReturnSuccess) {
-		dprintf("%s couldn't get current write cache state %d\n",
-		    __func__, ldi_zfs_handle->errnoFromReturn(result));
+		//dprintf("%s couldn't get current write cache state %d\n",
+		//   __func__, ldi_zfs_handle->errnoFromReturn(result));
 		return (ENXIO);
 	}
 
@@ -1663,8 +1661,8 @@ handle_set_wce_iokit(struct ldi_handle *lhp, int *wce)
 
 	/* Set error and wce to return */
 	if (result != kIOReturnSuccess) {
-		dprintf("%s couldn't set write cache %d\n",
-		    __func__, ldi_zfs_handle->errnoFromReturn(result));
+		//dprintf("%s couldn't set write cache %d\n",
+		//   __func__, ldi_zfs_handle->errnoFromReturn(result));
 		/* Flip wce to indicate current status */
 		*wce = !(*wce);
 		return (ENXIO);

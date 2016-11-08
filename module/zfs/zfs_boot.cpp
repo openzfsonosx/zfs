@@ -2361,6 +2361,7 @@ zfs_boot_update_bootinfo(spa_t *spa)
 		mutex_enter(&spa_namespace_lock);
 		spa_close(spa, FTAG);
 		mutex_exit(&spa_namespace_lock);
+		array->release();
 		return (error);
 	}
 
