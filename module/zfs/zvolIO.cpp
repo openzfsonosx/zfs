@@ -1000,6 +1000,7 @@ zvolRegisterDevice(zvol_state_t *zv)
 
 	if (!media) {
 		dprintf("%s no IOMedia\n", __func__);
+		service->release();
 		return (false);
 	}
 
