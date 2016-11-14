@@ -2352,7 +2352,6 @@ zfs_boot_update_bootinfo(spa_t *spa)
 	/* Iterate over all vdevs */
 	if ((error = zfs_boot_update_bootinfo_vdev(array,
 	    spa->spa_root_vdev)) != 0) {
-
 		dprintf("%s bootinfo_vdev error %d\n",
 		    __func__, error);
 
@@ -2362,6 +2361,7 @@ zfs_boot_update_bootinfo(spa_t *spa)
 		spa_close(spa, FTAG);
 		mutex_exit(&spa_namespace_lock);
 		array->release();
+		pool_proxy->release();
 		return (error);
 	}
 
