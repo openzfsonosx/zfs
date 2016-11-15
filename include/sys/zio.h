@@ -177,7 +177,6 @@ enum zio_flag {
 	ZIO_FLAG_DONT_CACHE	= 1 << 11,
 	ZIO_FLAG_NODATA		= 1 << 12,
 	ZIO_FLAG_INDUCE_DAMAGE	= 1 << 13,
-	ZIO_FLAG_IO_ALLOCATING	= 1 << 14,
 
 #define	ZIO_FLAG_DDT_INHERIT	(ZIO_FLAG_IO_RETRY - 1)
 #define	ZIO_FLAG_GANG_INHERIT	(ZIO_FLAG_IO_RETRY - 1)
@@ -185,28 +184,28 @@ enum zio_flag {
 	/*
 	 * Flags inherited by vdev children.
 	 */
-	ZIO_FLAG_IO_RETRY	= 1 << 15,	/* must be first for INHERIT */
-	ZIO_FLAG_PROBE		= 1 << 16,
-	ZIO_FLAG_TRYHARD	= 1 << 17,
-	ZIO_FLAG_OPTIONAL	= 1 << 18,
+	ZIO_FLAG_IO_RETRY	= 1 << 14,	/* must be first for INHERIT */
+	ZIO_FLAG_PROBE		= 1 << 15,
+	ZIO_FLAG_TRYHARD	= 1 << 16,
+	ZIO_FLAG_OPTIONAL	= 1 << 17,
 
 #define	ZIO_FLAG_VDEV_INHERIT	(ZIO_FLAG_DONT_QUEUE - 1)
 
 	/*
 	 * Flags not inherited by any children.
 	 */
-	ZIO_FLAG_DONT_QUEUE	= 1 << 19,	/* must be first for INHERIT */
-	ZIO_FLAG_DONT_PROPAGATE	= 1 << 10,
-	ZIO_FLAG_IO_BYPASS	= 1 << 21,
-	ZIO_FLAG_IO_REWRITE	= 1 << 22,
-	ZIO_FLAG_RAW		= 1 << 23,
-	ZIO_FLAG_GANG_CHILD	= 1 << 24,
-	ZIO_FLAG_DDT_CHILD	= 1 << 25,
-	ZIO_FLAG_GODFATHER	= 1 << 26,
-	ZIO_FLAG_NOPWRITE	= 1 << 27,
-	ZIO_FLAG_REEXECUTED	= 1 << 28,
-	ZIO_FLAG_DELEGATED	= 1 << 29,
-	ZIO_FLAG_FASTWRITE	= 1 << 30,
+	ZIO_FLAG_DONT_QUEUE	= 1 << 18,	/* must be first for INHERIT */
+	ZIO_FLAG_DONT_PROPAGATE	= 1 << 19,
+	ZIO_FLAG_IO_BYPASS	= 1 << 20,
+	ZIO_FLAG_IO_REWRITE	= 1 << 21,
+	ZIO_FLAG_RAW		= 1 << 22,
+	ZIO_FLAG_GANG_CHILD	= 1 << 23,
+	ZIO_FLAG_DDT_CHILD	= 1 << 24,
+	ZIO_FLAG_GODFATHER	= 1 << 25,
+	ZIO_FLAG_NOPWRITE	= 1 << 26,
+	ZIO_FLAG_REEXECUTED	= 1 << 27,
+	ZIO_FLAG_DELEGATED	= 1 << 28,
+	ZIO_FLAG_FASTWRITE	= 1 << 29,
 };
 
 #define	ZIO_FLAG_MUSTSUCCEED		0
@@ -247,7 +246,6 @@ enum zio_wait_type {
 
 typedef void zio_done_func_t(zio_t *zio);
 
-extern boolean_t zio_dva_throttle_enabled;
 extern const char *zio_type_name[ZIO_TYPES];
 
 /*
@@ -402,6 +400,7 @@ struct zio {
 	blkptr_t	io_bp_copy;
 	list_t		io_parent_list;
 	list_t		io_child_list;
+	zio_link_t	*io_walk_link;
 	zio_t		*io_logical;
 	zio_transform_t *io_transform_stack;
 
@@ -427,14 +426,12 @@ struct zio {
 
 	uint64_t	io_offset;
 	hrtime_t	io_timestamp;	/* submitted at */
-	hrtime_t	io_queued_timestamp;
 	hrtime_t    io_target_timestamp;
 	hrtime_t	io_delta;	/* vdev queue service delta */
 	hrtime_t	io_delay;	/* Device access time (disk or */
 					/* file). */
 	avl_node_t	io_queue_node;
 	avl_node_t	io_offset_node;
-	avl_node_t	io_alloc_node;
 
 	/* Internal pipeline state */
 	enum zio_flag	io_flags;
@@ -443,7 +440,6 @@ struct zio {
 	enum zio_flag	io_orig_flags;
 	enum zio_stage	io_orig_stage;
 	enum zio_stage	io_orig_pipeline;
-	enum zio_stage	io_pipeline_trace;
 	int		io_error;
 	int		io_child_error[ZIO_CHILD_TYPES];
 	uint64_t	io_children[ZIO_CHILD_TYPES][ZIO_WAIT_TYPES];
@@ -465,8 +461,6 @@ struct zio {
 	/* Taskq dispatching state */
 	taskq_ent_t	io_tqent;
 };
-
-extern int zio_timestamp_compare(const void *, const void *);
 
 extern zio_t *zio_null(zio_t *pio, spa_t *spa, vdev_t *vd,
     zio_done_func_t *done, void *_private, enum zio_flag flags);
@@ -527,8 +521,8 @@ extern void zio_interrupt(zio_t *zio);
 extern void zio_delay_init(zio_t *zio);
 extern void zio_delay_interrupt(zio_t *zio);
 
-extern zio_t *zio_walk_parents(zio_t *cio, zio_link_t **);
-extern zio_t *zio_walk_children(zio_t *pio, zio_link_t **);
+extern zio_t *zio_walk_parents(zio_t *cio);
+extern zio_t *zio_walk_children(zio_t *pio);
 extern zio_t *zio_unique_parent(zio_t *cio);
 extern void zio_add_child(zio_t *pio, zio_t *cio);
 

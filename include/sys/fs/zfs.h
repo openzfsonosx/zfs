@@ -944,8 +944,7 @@ typedef enum {
 	SPA_LOAD_IMPORT,	/* import in progress	*/
 	SPA_LOAD_TRYIMPORT,	/* tryimport in progress */
 	SPA_LOAD_RECOVER,	/* recovery requested	*/
-	SPA_LOAD_ERROR,		/* load failed		*/
-	SPA_LOAD_CREATE		/* creation in progress */
+	SPA_LOAD_ERROR		/* load failed		*/
 } spa_load_state_t;
 
 /*

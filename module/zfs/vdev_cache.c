@@ -23,7 +23,7 @@
  * Use is subject to license terms.
  */
 /*
- * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -238,8 +238,7 @@ vdev_cache_fill(zio_t *fio)
 	 * any reads that were queued up before the missed update are still
 	 * valid, so we can satisfy them from this line before we evict it.
 	 */
-	zio_link_t *zl = NULL;
-	while ((pio = zio_walk_parents(fio, &zl)) != NULL)
+	while ((pio = zio_walk_parents(fio)) != NULL)
 		vdev_cache_hit(vc, ve, pio);
 
 	if (fio->io_error || ve->ve_missed_update)
