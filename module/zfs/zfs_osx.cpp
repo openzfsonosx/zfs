@@ -265,6 +265,15 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
     sysctl_unregister_oid(&sysctl__zfs_kext_version);
     sysctl_unregister_oid(&sysctl__zfs);
     IOLog("ZFS: Unloaded module\n");
+
+	/*
+	 * There is no way to ensure all threads have actually got to the
+	 * thread_exit() call, before we exit here (and XNU unloads all
+	 * memory for the KEXT). So we increase the odds of that happening
+	 * by delaying a little bit before we return to XNU. Quite possibly
+	 * the worst "solution" but Apple has not given any good options.
+	 */
+	delay(hz);
 }
 
 bool
