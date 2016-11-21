@@ -3528,16 +3528,19 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 static int
 zfs_ioc_rollback(const char *fsname, nvlist_t *args, nvlist_t *outnvl)
 {
-	zfsvfs_t *zsb;
+	zfsvfs_t *zfsvfs;
 	int error;
 
-	if (getzfsvfs(fsname, &zsb) == 0) {
-		error = zfs_suspend_fs(zsb);
+	if (getzfsvfs(fsname, &zfsvfs) == 0) {
+		dsl_dataset_t *ds;
+
+		ds = dmu_objset_ds(zfsvfs->z_os);
+		error = zfs_suspend_fs(zfsvfs);
 		if (error == 0) {
 			int resume_err;
 
-			error = dsl_dataset_rollback(fsname, zsb, outnvl);
-			resume_err = zfs_resume_fs(zsb, fsname);
+			error = dsl_dataset_rollback(fsname, zfsvfs, outnvl);
+			resume_err = zfs_resume_fs(zfsvfs, ds);
 			error = error ? error : resume_err;
 		}
         VFS_RELE(zfsvfs->z_vfs);
@@ -4126,24 +4129,26 @@ zfs_ioc_recv(zfs_cmd_t *zc)
                             &zc->zc_action_handle);
 
     if (error == 0) {
-        zfsvfs_t *zsb = NULL;
+        zfsvfs_t *zfsvfs = NULL;
 
-        if (getzfsvfs(tofs, &zsb) == 0) {
+        if (getzfsvfs(tofs, &zfsvfs) == 0) {
             /* online recv */
+			dsl_dataset_t *ds;
             int end_err;
 
-            error = zfs_suspend_fs(zsb);
+			ds = dmu_objset_ds(zfsvfs->z_os);
+            error = zfs_suspend_fs(zfsvfs);
             /*
              * If the suspend fails, then the recv_end will
              * likely also fail, and clean up after itself.
              */
-            end_err = dmu_recv_end(&drc, zsb);
+            end_err = dmu_recv_end(&drc, zfsvfs);
             if (error == 0)
-                error = zfs_resume_fs(zsb, tofs);
+				error = zfs_resume_fs(zfsvfs, ds);
             error = error ? error : end_err;
-            //deactivate_super(zsb->z_sb);
+            //deactivate_super(zfsvfs->z_sb);
         } else {
-            error = dmu_recv_end(&drc, zsb);
+            error = dmu_recv_end(&drc, zfsvfs);
         }
 
 		/* Set delayed properties now, after we're done receiving. */
@@ -4663,24 +4668,27 @@ zfs_ioc_userspace_upgrade(zfs_cmd_t *zc)
 {
 	objset_t *os;
 	int error = 0;
-	zfsvfs_t *zsb;
+	zfsvfs_t *zfsvfs;
 
-	if (getzfsvfs(zc->zc_name, &zsb) == 0) {
-		if (!dmu_objset_userused_enabled(zsb->z_os)) {
+	if (getzfsvfs(zc->zc_name, &zfsvfs) == 0) {
+		if (!dmu_objset_userused_enabled(zfsvfs->z_os)) {
 			/*
 			 * If userused is not enabled, it may be because the
 			 * objset needs to be closed & reopened (to grow the
 			 * objset_phys_t).  Suspend/resume the fs will do that.
 			 */
-			error = zfs_suspend_fs(zsb);
+			dsl_dataset_t *ds;
+
+			ds = dmu_objset_ds(zfsvfs->z_os);
+			error = zfs_suspend_fs(zfsvfs);
 			if (error == 0) {
-				dmu_objset_refresh_ownership(zsb->z_os,
-											 zsb);
-				error = zfs_resume_fs(zsb, zc->zc_name);
+				dmu_objset_refresh_ownership(zfsvfs->z_os,
+											 zfsvfs);
+				error = zfs_resume_fs(zfsvfs, ds);
 			}
 		}
 		if (error == 0)
-			error = dmu_objset_userspace_upgrade(zsb->z_os);
+			error = dmu_objset_userspace_upgrade(zfsvfs->z_os);
 		//deactivate_super(zsb->z_sb);
 	} else {
 		/* XXX kind of reading contents without owning */
