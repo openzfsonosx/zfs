@@ -1158,13 +1158,6 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 	if (error)
 		return (error);
 
-	/*
-	 * Set the objset user_ptr to track its zfsvfs.
-	 */
-	mutex_enter(&zfsvfs->z_os->os_user_ptr_lock);
-	dmu_objset_set_user(zfsvfs->z_os, zfsvfs);
-	mutex_exit(&zfsvfs->z_os->os_user_ptr_lock);
-
 	zfsvfs->z_log = zil_open(zfsvfs->z_os, zfs_get_data);
 
 	/*
@@ -1222,6 +1215,13 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 			}
 		}
 	}
+
+	/*
+	 * Set the objset user_ptr to track its zfsvfs.
+	 */
+	mutex_enter(&zfsvfs->z_os->os_user_ptr_lock);
+	dmu_objset_set_user(zfsvfs->z_os, zfsvfs);
+	mutex_exit(&zfsvfs->z_os->os_user_ptr_lock);
 
 	return (0);
 }
