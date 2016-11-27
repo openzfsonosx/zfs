@@ -3918,6 +3918,10 @@ arc_reclaim_thread(void)
 #ifdef __APPLE__
 #ifdef _KERNEL
 		int64_t pre_evict_free_memory = MIN(spl_free_wrapper(),arc_available_memory());
+
+		int64_t manual_pressure = spl_free_manual_pressure_wrapper();
+
+		spl_free_set_pressure(0); // clears both spl pressure variables
 #endif
 #endif
 		/*
@@ -3933,9 +3937,6 @@ arc_reclaim_thread(void)
 		int64_t cur_spl_free = spl_free_wrapper();
 		int64_t t = MIN(cur_spl_free, free_memory);
 		free_memory = t;
-		int64_t manual_pressure = spl_free_manual_pressure_wrapper();
-
-		spl_free_set_pressure(0); // clears both spl pressure variables
 
 		if (free_memory < 0 || manual_pressure != 0 ||
 			pre_evict_free_memory > free_memory) {
