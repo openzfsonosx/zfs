@@ -3917,10 +3917,9 @@ arc_reclaim_thread(void)
 
 #ifdef __APPLE__
 #ifdef _KERNEL
-		int64_t pre_evict_free_memory = MIN(spl_free_wrapper(),arc_available_memory());
+		int64_t pre_adjust_free_memory = MIN(spl_free_wrapper(), arc_available_memory());
 
 		int64_t manual_pressure = spl_free_manual_pressure_wrapper();
-
 		spl_free_set_pressure(0); // clears both spl pressure variables
 #endif
 #endif
@@ -3934,12 +3933,31 @@ arc_reclaim_thread(void)
 		int64_t free_memory = arc_available_memory();
 #ifdef __APPLE__
 #ifdef _KERNEL
-		int64_t cur_spl_free = spl_free_wrapper();
-		int64_t t = MIN(cur_spl_free, free_memory);
-		free_memory = t;
+		int64_t post_adjust_manual_pressure = spl_free_manual_pressure_wrapper();
+		manual_pressure = MAX(manual_pressure,post_adjust_manual_pressure);
+		spl_free_set_pressure(0);
 
-		if (free_memory < 0 || manual_pressure != 0 ||
-			pre_evict_free_memory > free_memory) {
+		int64_t post_adjust_free_memory = MIN(spl_free_wrapper(), arc_available_memory());
+
+		// if arc_adjust() evicted, we expect post_adjust_free_memory to be
+		// larger than pre_adjust_free_memory (as there should be more free memory).
+		int64_t d_adj = post_adjust_free_memory - pre_adjust_free_memory;
+
+		if (manual_pressure > 0 && post_adjust_manual_pressure == 0) {
+			// pressure did not get re-signalled during the arc_adjust()
+			if (d_adj >= 0) {
+				manual_pressure -= MIN(evicted, d_adj);
+			} else {
+				manual_pressure -= evicted;
+			}
+		} else if (evicted > 0 && manual_pressure > 0 && post_adjust_manual_pressure > 0) {
+			// otherwise use the most recent pressure value
+			manual_pressure = post_adjust_manual_pressure;
+		}
+
+		free_memory = post_adjust_free_memory;
+
+		if (free_memory < 0 || manual_pressure > 0) {
 #else
 	        if (free_memory < 0) {
 #endif
@@ -3982,10 +4000,10 @@ arc_reclaim_thread(void)
 				const int64_t huge_amount = 128LL * 1024LL * 1024LL;
 
 				if (to_free > large_amount || evicted > huge_amount)
-					printf("SPL: %s: post-reap %lld post-evict %lld evicted %lld "
+					printf("SPL: %s: post-reap %lld post-evict %lld adjusted %lld "
 					    "pre-adjust %lld to-free %lld pressure %lld\n",
-					    __func__, free_memory, t, evicted,
-					    pre_evict_free_memory, to_free, manual_pressure);
+					    __func__, free_memory, d_adj, evicted,
+					    pre_adjust_free_memory, to_free, manual_pressure);
 #endif
 #endif
 #ifdef _KERNEL
