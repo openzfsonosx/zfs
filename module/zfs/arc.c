@@ -3628,13 +3628,13 @@ arc_available_memory(void)
 
 #ifdef _KERNEL
 #ifdef __APPLE__
-	if(spl_free_manual_pressure_wrapper() != 0) {
-	  r = FMR_SPL_PRESSURE;
-	  cv_signal(&arc_reclaim_thread_cv);
-	  kpreempt(KPREEMPT_SYNC);
-	  if(spl_free_fast_pressure_wrapper() != FALSE) {
-	    return(-1);
-	  }
+	// memory logic is in spl_free_wrapper(), including absorption
+	// of pressure terms
+	lowest = spl_free_wrapper();
+	r = FMR_SPL_FREE;
+	if(spl_free_fast_pressure_wrapper() != FALSE) {
+		// wake up arc_reclaim_thread() if it is sleeping
+		cv_signal(&arc_reclaim_thread_cv);
 	}
 #endif //__APPLE__
 #ifdef sun
@@ -3695,70 +3695,6 @@ arc_available_memory(void)
 
 #endif // sun
 
-#ifdef __APPLE__
-	lowest = spl_free_wrapper();
-	r = FMR_SPL_FREE;
-	if((lowest - spl_free_manual_pressure_wrapper()) < 0) {
-		lowest -= spl_free_manual_pressure_wrapper();
-		r = FMR_SPL_PRESSURE;
-	}
-
-#if 0
-	/*
-	 * If we're on an i386 platform, it's possible that we'll exhaust the
-	 * kernel heap space before we ever run out of available physical
-	 * memory.  Most checks of the size of the heap_area compare against
-	 * tune.t_minarmem, which is the minimum available real memory that we
-	 * can have in the system.  However, this is generally fixed at 25 pages
-	 * which is so low that it's useless.  In this comparison, we seek to
-	 * calculate the total heap-size, and reclaim if more than 3/4ths of the
-	 * heap is allocated.  (Or, in the calculation, if less than 1/4th is
-	 * free)
-	 */
-	// likewise, in Mac OS X, we often find ourselves with little free memory
-	// as reported by vm.page* variables, and spl signalling might not be quick
-	// enough to trigger an arc reclaim (which also reaps the zio caches)
-	// reusing Illumos logic here seems fairly sensible.
-
-	if (heap_arena != NULL) {
-		size_t heap_free = spl_vmem_size(heap_arena, VMEM_FREE);
-		int64_t n = heap_free;
-
-		if (n != 0 && n < lowest) {
-			lowest = n;
-			r = FMR_HEAP_ARENA;
-		}
-	}
-#endif //0
-
-#if 0
-	/*
-	 * If zio data pages are being allocated out of a separate heap segment,
-	 * then enforce that the size of available vmem for this arena remains
-	 * above about 1/16th free.
-	 *
-	 * Note: The 1/16th arena free requirement was put in place
-	 * to aggressively evict memory from the arc in order to avoid
-	 * memory fragmentation issues.
-	 */
-
-	if (zio_arena != NULL) {
-		size_t zio_total = spl_vmem_size(zio_arena, VMEM_FREE | VMEM_ALLOC);
-		size_t zio_sixteenth_total = zio_total / 16;
-		size_t zio_free = spl_vmem_size(zio_arena, VMEM_FREE);
-
-		int64_t n = zio_free;
-
-		if (zio_free != 0 && zio_free < zio_sixteenth_total)
-			n = zio_free - zio_sixteenth_total;
-
-		if (n < lowest) {
-			lowest = n;
-			r = FMR_ZIO_ARENA;
-		}
-	}
-#endif //0
-
 #ifdef sun
 	if (zio_arena != NULL) {
 		n = spl_vmem_size(zio_arena, VMEM_FREE) -
@@ -3769,7 +3705,7 @@ arc_available_memory(void)
 		}
 	}
 #endif
-#endif // __APPLE__
+
 #else  // _KERNEL
 	/* Every 100 calls, free a small amount */
 	if (spa_get_random(100) == 0)
