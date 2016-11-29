@@ -2893,4 +2893,15 @@ ZFSBootDevice::reportMaxValidBlock(UInt64 *maxBlock)
 
 	return (kIOReturnSuccess);
 }
+
+IOReturn ZFSBootDevice::setWriteCacheState(bool enabled)
+{
+	return kIOReturnSuccess;
+}
+
+IOReturn ZFSBootDevice::getWriteCacheState(bool *enabled)
+{
+	return kIOReturnSuccess;
+}
+
 #endif /* ZFS_BOOT */

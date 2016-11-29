@@ -256,3 +256,8 @@ ZFSPool::withServiceAndPool(IOService *zfs_hl,
 
 	return (proxy);
 }
+
+IOReturn ZFSPool::synchronizeCache(IOService * client)
+{
+	return kIOReturnSuccess;
+}

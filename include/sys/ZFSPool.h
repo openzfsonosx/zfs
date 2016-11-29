@@ -34,6 +34,7 @@ public:
 	virtual void write(IOService *client, UInt64 byteStart,
 	    IOMemoryDescriptor *buffer, IOStorageAttributes *attr,
 	    IOStorageCompletion *completion);
+	virtual IOReturn synchronizeCache(IOService * client);
 
 	static ZFSPool * withServiceAndPool(IOService *, spa_t *);
 private:
