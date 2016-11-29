@@ -47,6 +47,7 @@
 #include <sys/fs/zfs.h>
 #include <sys/uio.h>
 #include <sys/vnode.h>
+#include <sys/zio_compress.h>
 #include <sys/zio_priority.h>
 
 #ifdef	__cplusplus
@@ -435,7 +436,7 @@ dmu_write_embedded(objset_t *os, uint64_t object, uint64_t offset,
 #define	WP_SPILL	0x4
 
 void dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp,
-    struct zio_prop *zp);
+    enum zio_compress compress_override, struct zio_prop *zp);
 /*
  * The bonus data is accessed more or less like a regular buffer.
  * You must dmu_bonus_hold() to get the buffer, which will give you a
