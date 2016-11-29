@@ -424,6 +424,8 @@ handle_sync_iokit(struct ldi_handle *lhp)
 	}
 #endif
 
+#if defined (MAC_OS_X_VERSION_10_10) &&        \
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_10)
 	/* Issue device sync */
 	if (LH_MEDIA(lhp)->synchronize(LH_CLIENT(lhp), 0, 0, 0) !=
 	    kIOReturnSuccess) {
@@ -431,6 +433,7 @@ handle_sync_iokit(struct ldi_handle *lhp)
 		    "IOMedia synchronizeCache failed");
 		return (ENOTSUP);
 	}
+#endif
 
 	/* Success */
 	return (0);
