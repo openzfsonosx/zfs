@@ -273,7 +273,7 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 	 * by delaying a little bit before we return to XNU. Quite possibly
 	 * the worst "solution" but Apple has not given any good options.
 	 */
-	delay(hz);
+	delay(hz*5);
 }
 
 bool
