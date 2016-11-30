@@ -228,10 +228,20 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
       }
     }
 
-	disk_remove_notifier = addMatchingNotification(gIOTerminatedNotification,
-						serviceMatching("IOMedia"),
-						IOkit_disk_removed_callback,
-						this, NULL, 0);
+
+	/*
+	 * We need to call spl_vfs_start() here if we are NOT in boot/mountroot
+	 * situation.
+	 * If we are booting, then it is set in vfs_root. We
+	 * could do better checks for boot time maybe (can provider be
+	 * checked for IOkit match?)  zfs_boot_init() also sets it if
+	 * it detects it is not boot time, but kextload.
+	 */
+#ifdef ZFS_BOOT
+	zfs_boot_init(this);
+#else
+	spl_vfs_start();
+#endif
 
     return res;
 }

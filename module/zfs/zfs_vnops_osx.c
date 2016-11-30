@@ -4701,9 +4701,15 @@ zfs_vfsops_init(void)
 	vfe.vfe_flags = VFS_TBLTHREADSAFE | VFS_TBLNOTYPENUM | VFS_TBLLOCALVOL |
 	    VFS_TBL64BITREADY | VFS_TBLNATIVEXATTR | VFS_TBLGENERICMNTARGS |
 	    VFS_TBLREADDIR_EXTENDED;
+
 #if	HAVE_PAGEOUT_V2
 	vfe.vfe_flags |= VFS_TBLVNOP_PAGEOUTV2;
 #endif
+
+#ifdef VFS_TBLCANMOUNTROOT  // From 10.12
+	vfe.vfe_flags |= VFS_TBLCANMOUNTROOT;
+#endif
+
 	vfe.vfe_reserv[0] = 0;
 	vfe.vfe_reserv[1] = 0;
 

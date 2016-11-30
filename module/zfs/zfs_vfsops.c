@@ -1836,24 +1836,6 @@ printf("ZFS: %s\n", __func__);
 	 */
 	mimic_hfs_changed_cb(zfsvfs, B_FALSE);
 
-#if 0
-	if ((error = zfs_zget(zfsvfs, zfsvfs->z_root, &zp)) != 0) {
-		cmn_err(CE_NOTE, "zfs_zget: error %d", error);
-		goto out;
-	}
-
-	if (zp) {
-		devvp = ZTOV(zp);
-		//spl_setrootvnode(devvp);
-		//vnode_ref(ZTOV(zp));
-		//vnode_getwithref(ZTOV(zp));
-	}
-
-	// Should we set this in OSX?
-	//rootvp = ZTOV(zp); // global var in XNU
-	spl_setrootvnode(ZTOV(zp));
-#endif
-
 	/*
 	 * Leave rootvp held.  The root file system is never unmounted.
 	 *
@@ -1921,9 +1903,16 @@ dprintf("%s\n", __func__);
 dprintf("%s cmdflags %u rdonly %d\n", __func__, cmdflags, rdonly);
 
 	if (!data) {
-		printf("%s: missing data\n", __func__);
-		return (EINVAL);
+		/*
+		 * From 10.12, if you set VFS_TBLCANMOUNTROOT, XNU will
+		 * call vfs_mountroot if set (and we can not set it), OR
+		 * call vfs_mount if not set. Since data is always passed NULL
+		 * in this case, we know we are supposed to call mountroot.
+		 */
+		printf("ZFS: vfs_mount -> vfs_mountroot\n");
+		return zfs_vfs_mountroot(vfsp, mvp, context);
 	}
+
 	/*
 	* Get the objset name (the "special" mount argument).
 	*/
@@ -2819,6 +2808,14 @@ zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
 #endif
 	if (error != 0)
 		*vpp = NULL;
+
+	/* zfs_vfs_mountroot() can be called first, and we need to stop
+	 * getrootdir() from being called until root is mounted. XNU calls
+	 * vfs_start() once that is done, then VFS_ROOT(&rootvnode) to set
+	 * the rootvnode, so we inform SPL that getrootdir() is ready to
+	 * be called. We only need to call this one, worth optimising?
+	 */
+	spl_vfs_start();
 
 	return (error);
 }
