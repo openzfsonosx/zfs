@@ -1547,9 +1547,6 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 	kmem_free(zfs_bootfs, len);
 	zfs_bootfs = 0;
 
-	/* Install vfc_mountroot handler */
-	spl_hijack_mountroot((void *)zfs_vfs_mountroot);
-
 	bootdev = new ZFSBootDevice;
 
 	if (!bootdev) {
@@ -1948,7 +1945,11 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 	/* 60 billion nanoseconds ~= 60 seconds */
 	if (uptime >= 7LLU<<33) {
 		dprintf("%s %s\n", __func__, "Already booted");
-
+		/* Start the getrootdir() from working, the vfs_start() call
+		 * isn't called until first mount, which is too late for
+		 * spa_async_dispatch().
+		 */
+		spl_vfs_start();
 		return (false);
 	} else {
 		dprintf("%s %s\n", __func__, "Boot time");
