@@ -458,23 +458,24 @@ bool
 net_lundman_zfs_zvol_device::handleOpen(IOService *client,
     IOOptionBits options, void *argument)
 {
+#if 0
 	IOStorageAccess access = (IOStorageAccess)(uint64_t)argument;
-	bool ret = true;
+#endif
+	bool ret = false;
 
 	dprintf("open: options %x\n", options);
 
 	if (super::handleOpen(client, options, argument) == false)
 		return (false);
 
+    spa_exporting_vdevs = B_TRUE;
+
+#if 0
 	/*
 	 * It was the hope that openHandle would indicate the type of open
 	 * required such that we can set FREAD/FWRITE/ZVOL_EXCL as needed, but
 	 * alas, "access" is always 0 here.
 	 */
-
-
-    spa_exporting_vdevs = B_TRUE;
-
 	switch (access) {
 
 		case kIOStorageAccessReader:
@@ -485,7 +486,6 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 
 		case kIOStorageAccessReaderWriter:
 			// IOLog("handleOpen: options %04x\n", options);
-			zv->zv_openflags = FWRITE | ZVOL_EXCL;
 			break;
 
 		default:
@@ -493,21 +493,25 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 			//	access);
 			zv->zv_openflags = FWRITE;
 	}
+#endif
 
-	if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL)) {
-		dprintf("Open failed - testing readonly\n");
-
+	zv->zv_openflags = FWRITE | ZVOL_EXCL;
+	if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL) == 0) {
+		ret = true;
+	} else {
 		zv->zv_openflags = FREAD;
-		if (zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL))
-			ret = false;
-
+		if (zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL) == 0)
+			ret = true;
 	}
 
     spa_exporting_vdevs = B_FALSE;
 
 	dprintf("Open %s\n", (ret ? "done" : "failed"));
 
-	return (true);
+	if (ret == false) {
+		super::handleClose(client, options);
+	}
+	return (ret);
 }
 
 

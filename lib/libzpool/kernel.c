@@ -630,18 +630,32 @@ get_disk_size_libzpool(int fd)
 	return (d_size);
 }
 
-/* vdev_file uses vnode_getwithid(), so supply a userspace version. */
+/* vdev_file uses vnode_getwithvid(), so supply a userspace version. */
 int
 vnode_getwithvid(vnode_t *vp, uint32_t id)
 {
 	return (vp->v_id == id) ? 0 : ENOENT;
 }
 
+/* vdev_file uses vnode_getwithref(), so supply a userspace version. */
+int
+vnode_getwithref(vnode_t *vp)
+{
+	return (0);
+}
+
+/* vdev_file ses vnode_rele(), supply a userspace version. */
+void
+vnode_rele(vnode_t *vp)
+{
+	return;
+}
+
 /* vdev_file ses vnode_put(), supply a userspace version. */
 int
 vnode_put(vnode_t *vp)
 {
-	return 0;
+	return (0);
 }
 
 vnode_t *

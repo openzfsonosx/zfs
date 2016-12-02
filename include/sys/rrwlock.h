@@ -29,8 +29,6 @@
 #ifndef	_SYS_RR_RW_LOCK_H
 #define	_SYS_RR_RW_LOCK_H
 
-
-
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -62,7 +60,7 @@ typedef struct rrwlock {
 	boolean_t	rr_writer_wanted;
 	boolean_t	rr_track_all;
 #ifdef __APPLE__
-    struct rrw_node *rr_node_list;
+	struct rrw_node	*rr_node_list;
 #endif
 } rrwlock_t;
 

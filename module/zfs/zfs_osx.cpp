@@ -177,6 +177,17 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
     sysctl_register_oid(&sysctl__zfs);
     sysctl_register_oid(&sysctl__zfs_kext_version);
 
+	/* Init LDI */
+	int error = 0;
+	error = ldi_init(this);
+	if (error) {
+		IOLog("%s ldi_init error %d\n", __func__, error);
+		sysctl_unregister_oid(&sysctl__zfs_kext_version);
+		sysctl_unregister_oid(&sysctl__zfs);
+		return (false);
+		/* XXX Needs to fail ZFS start */
+	}
+
 	/*
 	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
 	 */
@@ -248,20 +259,10 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
 
 void net_lundman_zfs_zvol::stop (IOService *provider)
 {
-
-	/* Stop being told about devices leaving */
-	if (disk_remove_notifier) disk_remove_notifier->remove();
-
-#if 0
-  // You can not stop unload :(
-	if (zfs_active_fs_count != 0 ||
-	    spa_busy() ||
-	    zvol_busy()) {
-
-      IOLog("ZFS: Can not unload as we have filesystems mounted.\n");
-      return;
-	}
+#ifdef ZFS_BOOT
+	zfs_boot_fini();
 #endif
+
     IOLog("ZFS: Attempting to unload ...\n");
 
     super::stop(provider);
@@ -271,6 +272,8 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 
     zfs_ioctl_osx_fini();
     zfs_vfsops_fini();
+
+	ldi_fini();
 
     sysctl_unregister_oid(&sysctl__zfs_kext_version);
     sysctl_unregister_oid(&sysctl__zfs);

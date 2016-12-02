@@ -2211,7 +2211,7 @@ out:
 void
 zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 {
-	zfsvfs_t	zfsvfs;
+	zfsvfs_t	*zfsvfs;
 	uint64_t	moid, obj, sa_obj, version;
 	uint64_t	sense = ZFS_CASE_SENSITIVE;
 	uint64_t	norm = 0;
@@ -2297,8 +2297,6 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	vattr.va_uid = crgetuid(cr);
 	vattr.va_gid = crgetgid(cr);
 
-	bzero(&zfsvfs, sizeof (zfsvfs_t));
-
 	rootzp = kmem_cache_alloc(znode_cache, KM_SLEEP);
 	//zfs_znode_cache_constructor(rootzp, NULL, 0);
 	ASSERT(!POINTER_IS_VALID(rootzp->z_zfsvfs));
@@ -2314,15 +2312,19 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	rootzp->z_vnode = &vnode;
 #endif
 
-	zfsvfs.z_os = os;
-	zfsvfs.z_parent = &zfsvfs;
-	zfsvfs.z_version = version;
-	zfsvfs.z_use_fuids = USE_FUIDS(version, os);
-	zfsvfs.z_use_sa = USE_SA(version, os);
-	zfsvfs.z_norm = norm;
+	zfsvfs = kmem_alloc(sizeof (zfsvfs_t), KM_SLEEP);
+#ifdef __APPLE__
+	bzero(zfsvfs, sizeof (zfsvfs_t));
+#endif
+	zfsvfs->z_os = os;
+	zfsvfs->z_parent = zfsvfs;
+	zfsvfs->z_version = version;
+	zfsvfs->z_use_fuids = USE_FUIDS(version, os);
+	zfsvfs->z_use_sa = USE_SA(version, os);
+	zfsvfs->z_norm = norm;
 
 	error = sa_setup(os, sa_obj, zfs_attr_table, ZPL_END,
-	    &zfsvfs.z_attr_table);
+	    &zfsvfs->z_attr_table);
 
 	ASSERT(error == 0);
 
@@ -2331,16 +2333,16 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	 * insensitive.
 	 */
 	if (sense == ZFS_CASE_INSENSITIVE || sense == ZFS_CASE_MIXED)
-		zfsvfs.z_norm |= U8_TEXTPREP_TOUPPER;
+		zfsvfs->z_norm |= U8_TEXTPREP_TOUPPER;
 
-	mutex_init(&zfsvfs.z_znodes_lock, NULL, MUTEX_DEFAULT, NULL);
-	list_create(&zfsvfs.z_all_znodes, sizeof (znode_t),
+	mutex_init(&zfsvfs->z_znodes_lock, NULL, MUTEX_DEFAULT, NULL);
+	list_create(&zfsvfs->z_all_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_node));
 
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
-		mutex_init(&zfsvfs.z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
+		mutex_init(&zfsvfs->z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
 
-	rootzp->z_zfsvfs = &zfsvfs;
+	rootzp->z_zfsvfs = zfsvfs;
 	VERIFY(0 == zfs_acl_ids_create(rootzp, IS_ROOT_NODE, &vattr,
 	    cr, NULL, &acl_ids));
 	zfs_mknode(rootzp, &vattr, tx, cr, IS_ROOT_NODE, &zp, &acl_ids);
@@ -2358,12 +2360,13 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	 * Create shares directory
 	 */
 
-	error = zfs_create_share_dir(&zfsvfs, tx);
+	error = zfs_create_share_dir(zfsvfs, tx);
 
 	ASSERT(error == 0);
 
 	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
-		mutex_destroy(&zfsvfs.z_hold_mtx[i]);
+		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
+	kmem_free(zfsvfs, sizeof (zfsvfs_t));
 }
 
 #endif /* _KERNEL */

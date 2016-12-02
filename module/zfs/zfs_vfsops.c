@@ -1890,7 +1890,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 	int		canwrite;
 	int		rdonly = 0;
 	int		mflag = 0;
-	uint64_t	flags = vfs_flags(vfsp);
 
 #ifdef __APPLE__
     struct zfs_mount_args mnt_args;
@@ -1969,8 +1968,11 @@ dprintf("%s cmdflags %u rdonly %d\n", __func__, cmdflags, rdonly);
 
 		options = kmem_alloc(mnt_args.optlen, KM_SLEEP);
 
-	dprintf("vfs_mount: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
-	    " options %s\n",
+		error = ddi_copyin((const void *)mnt_args.optptr, (caddr_t)options,
+						   mnt_args.optlen, 0);
+	//dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
+	printf("%s: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
+	    " options %s\n", __func__,
 	    mnt_args.fspec,
 	    mnt_args.mflag,
 	    mnt_args.optptr,

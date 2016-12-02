@@ -796,6 +796,7 @@ static arc_state_t	*arc_l2c_only;
 #define	arc_sys_free	ARCSTAT(arcstat_sys_free) /* target system free bytes */
 
 
+
 /* compressed size of entire arc */
 #define	arc_compressed_size	ARCSTAT(arcstat_compressed_size)
 /* uncompressed size of entire arc */
@@ -1711,6 +1712,12 @@ arc_buf_type(arc_buf_hdr_t *hdr)
 	return (type);
 }
 
+boolean_t
+arc_is_metadata(arc_buf_t *buf)
+{
+	return (HDR_ISTYPE_METADATA(buf->b_hdr) != 0);
+}
+
 static uint32_t
 arc_bufc_to_flags(arc_buf_contents_t type)
 {
@@ -2539,10 +2546,6 @@ arc_buf_alloc_impl(arc_buf_hdr_t *hdr, void *tag, boolean_t compressed,
 	}
 	VERIFY3P(buf->b_data, !=, NULL);
 
-	buf = kmem_cache_alloc(buf_cache, KM_PUSHPAGE);
-	buf->b_hdr = hdr;
-	buf->b_data = NULL;
-	buf->b_next = hdr->b_l1hdr.b_buf;
 	hdr->b_l1hdr.b_buf = buf;
 	hdr->b_l1hdr.b_bufcnt += 1;
 
@@ -6075,8 +6078,8 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 	buf->b_efunc = NULL;
 	buf->b_private = NULL;
 
-	if (reserve + arc_tempreserve + anon_size > arc_c / 2 &&
-	    anon_size > arc_c / 4) {
+	if (reserve + arc_tempreserve + anon_size > arc_c / 4 &&
+	    anon_size > arc_c / 8) {
 		uint64_t meta_esize =
 		    refcount_count(&arc_anon->arcs_esize[ARC_BUFC_METADATA]);
 		uint64_t data_esize =

@@ -510,6 +510,30 @@ zvol_check_volblocksize(const char *name, uint64_t volblocksize)
 	return (zv ? 0 : -1);
 }
 
+static int
+zvol_snapdev_hidden(const char *name)
+{
+	uint64_t snapdev;
+	char *parent;
+	char *atp;
+	int error = 0;
+
+	parent = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+	(void) strlcpy(parent, name, MAXPATHLEN);
+
+	if ((atp = strrchr(parent, '@')) != NULL) {
+		*atp = '\0';
+		error = dsl_prop_get_integer(parent, "snapdev",
+		    &snapdev, NULL);
+		if ((error == 0) && (snapdev == ZFS_SNAPDEV_HIDDEN))
+			error = SET_ERROR(ENODEV);
+	}
+
+	kmem_free(parent, MAXPATHLEN);
+
+	return (SET_ERROR(error));
+}
+
 /*
  * Create a minor node (plus a whole lot more) for the specified volume.
  */
@@ -1552,7 +1576,7 @@ zvol_set_snapdev_check(void *arg, dmu_tx_t *tx)
 	if (zv == NULL || zv->zv_objset == NULL) {
 		if ((error = dmu_objset_own(name, DMU_OST_ZVOL, B_FALSE,
 		    FTAG, &os)) != 0) {
-			mutex_exit(&zfsdev_state_lock);
+			if (locked) mutex_exit(&zfsdev_state_lock);
 			return (error);
 		}
 		owned = B_TRUE;
@@ -1757,6 +1781,12 @@ zvol_set_snapdev(const char *ddname, zprop_source_t source, uint64_t snapdev)
 	 * So if we already have spa_namespace_lock, lets skip the
 	 * zfsdev_state_lock mutex
 	 */
+
+
+	if (!MUTEX_HELD(&spa_namespace_lock)) {
+		mutex_enter(&zfsdev_state_lock);
+		locked = 1;
+	}
 
 
 	if (!MUTEX_HELD(&spa_namespace_lock)) {
@@ -2696,7 +2726,13 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 		 */
 		if (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
 			zil_commit(zv->zv_zilog, ZVOL_OBJ);
-			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
+			/*
+			 * Don't wait around for the transaction to
+			 * flush to disk. It has been committed to
+			 * the zil, which ensures consistency, and
+			 * fully syncing the transaction is expensive.
+			 */
+			// txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 		}
 	}
 
