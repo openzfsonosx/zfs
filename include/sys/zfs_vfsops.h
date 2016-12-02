@@ -93,6 +93,8 @@ struct zfsvfs {
         kmutex_t	    z_lock;
 
 #ifdef __APPLE__
+	dev_t		z_rdev;		/* proxy device for mount */
+	boolean_t	z_rdonly;	/* is mount read-only? */
         time_t          z_mount_time;           /* mount timestamp (for Spotlight) */
         time_t          z_last_unmount_time;    /* unmount timestamp (for Spotlight) */
         boolean_t       z_xattr;        /* enable atimes mount option */
@@ -132,6 +134,9 @@ struct hardlinks_struct {
 	char hl_name[PATH_MAX]; // cached name for vget
 };
 typedef struct hardlinks_struct hardlinks_t;
+
+int zfs_vfs_uuid_unparse(uuid_t uuid, char *dst);
+int zfs_vfs_uuid_gen(const char *osname, uuid_t uuid);
 #endif
 
 
@@ -197,7 +202,7 @@ typedef struct zfid_long {
 extern uint_t zfs_fsyncer_key;
 
 extern int zfs_suspend_fs(zfsvfs_t *zfsvfs);
-extern int zfs_resume_fs(zfsvfs_t *zfsvfs, const char *osname);
+extern int zfs_resume_fs(zfsvfs_t *zfsvfs, struct dsl_dataset *ds);
 extern int zfs_userspace_one(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
     const char *domain, uint64_t rid, uint64_t *valuep);
 extern int zfs_userspace_many(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
@@ -235,6 +240,7 @@ extern int  zfs_vfs_fhtovp (struct mount *mp, int fhlen, unsigned char *fhp, vno
 extern int  zfs_vfs_vptofh (vnode_t *vp, int *fhlenp, unsigned char *fhp, vfs_context_t context);
 extern int  zfs_vfs_sysctl (int *name, u_int namelen, user_addr_t oldp, size_t *oldlenp,  user_addr_t newp, size_t newlen, vfs_context_t context);
 extern int  zfs_vfs_quotactl ( struct mount *mp, int cmds, uid_t uid, caddr_t datap, vfs_context_t context);
+extern int  zfs_vfs_mountroot(struct mount *mp, struct vnode *vp, vfs_context_t context);
 
 extern void zfs_init(void);
 extern void zfs_fini(void);

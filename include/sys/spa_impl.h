@@ -117,6 +117,10 @@ typedef struct spa_taskqs {
 	taskq_t **stqs_taskq;
 } spa_taskqs_t;
 
+#ifdef __APPLE__
+typedef struct spa_iokit spa_iokit_t;
+#endif
+
 struct spa {
 	/*
 	 * Fields protected by spa_namespace_lock.
@@ -159,8 +163,6 @@ struct spa {
 	uint64_t	spa_last_synced_guid;	/* last synced guid */
 	list_t		spa_config_dirty_list;	/* vdevs with dirty config */
 	list_t		spa_state_dirty_list;	/* vdevs with dirty state */
-	kmutex_t	spa_alloc_lock;
-	avl_tree_t	spa_alloc_tree;
 	spa_aux_vdev_t	spa_spares;		/* hot spares */
 	spa_aux_vdev_t	spa_l2cache;		/* L2ARC cache devices */
 	nvlist_t	*spa_label_features;	/* Features for reading MOS */
@@ -261,6 +263,9 @@ struct spa {
 	uint64_t	spa_errata;		/* errata issues detected */
 	spa_stats_t	spa_stats;		/* assorted spa statistics */
 	taskq_t		*spa_zvol_taskq;	/* Taskq for minor managment */
+#ifdef __APPLE__
+	spa_iokit_t	*spa_iokit_proxy;	/* IOKit pool proxy */
+#endif
 
 	/*
 	 * spa_refcount & spa_config_lock must be the last elements

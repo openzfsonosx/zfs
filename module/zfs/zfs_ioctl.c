@@ -3528,16 +3528,19 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 static int
 zfs_ioc_rollback(const char *fsname, nvlist_t *args, nvlist_t *outnvl)
 {
-	zfsvfs_t *zsb;
+	zfsvfs_t *zfsvfs;
 	int error;
 
-	if (getzfsvfs(fsname, &zsb) == 0) {
-		error = zfs_suspend_fs(zsb);
+	if (getzfsvfs(fsname, &zfsvfs) == 0) {
+		dsl_dataset_t *ds;
+
+		ds = dmu_objset_ds(zfsvfs->z_os);
+		error = zfs_suspend_fs(zfsvfs);
 		if (error == 0) {
 			int resume_err;
 
-			error = dsl_dataset_rollback(fsname, zsb, outnvl);
-			resume_err = zfs_resume_fs(zsb, fsname);
+			error = dsl_dataset_rollback(fsname, zfsvfs, outnvl);
+			resume_err = zfs_resume_fs(zfsvfs, ds);
 			error = error ? error : resume_err;
 		}
         VFS_RELE(zfsvfs->z_vfs);
@@ -3732,10 +3735,12 @@ zfs_check_settable(const char *dsname, nvpair_t *pair, cred_t *cr)
 			 * the we don't allow large (>128K) blocks,
 			 * because GRUB doesn't support them.
 			 */
+#ifndef __APPLE__ /* OSX can boot it just fine */
 			if (zfs_is_bootfs(dsname) &&
 			    intval > SPA_OLD_MAXBLOCKSIZE) {
 				return (SET_ERROR(ERANGE));
 			}
+#endif
 
 			/*
 			 * We don't allow setting the property above 1MB,
@@ -4124,24 +4129,26 @@ zfs_ioc_recv(zfs_cmd_t *zc)
                             &zc->zc_action_handle);
 
     if (error == 0) {
-        zfsvfs_t *zsb = NULL;
+        zfsvfs_t *zfsvfs = NULL;
 
-        if (getzfsvfs(tofs, &zsb) == 0) {
+        if (getzfsvfs(tofs, &zfsvfs) == 0) {
             /* online recv */
+			dsl_dataset_t *ds;
             int end_err;
 
-            error = zfs_suspend_fs(zsb);
+			ds = dmu_objset_ds(zfsvfs->z_os);
+            error = zfs_suspend_fs(zfsvfs);
             /*
              * If the suspend fails, then the recv_end will
              * likely also fail, and clean up after itself.
              */
-            end_err = dmu_recv_end(&drc, zsb);
+            end_err = dmu_recv_end(&drc, zfsvfs);
             if (error == 0)
-                error = zfs_resume_fs(zsb, tofs);
+				error = zfs_resume_fs(zfsvfs, ds);
             error = error ? error : end_err;
-            //deactivate_super(zsb->z_sb);
+            //deactivate_super(zfsvfs->z_sb);
         } else {
-            error = dmu_recv_end(&drc, zsb);
+            error = dmu_recv_end(&drc, zfsvfs);
         }
 
 		/* Set delayed properties now, after we're done receiving. */
@@ -4264,6 +4271,7 @@ zfs_ioc_send(zfs_cmd_t *zc)
 	boolean_t estimate = (zc->zc_guid != 0);
 	boolean_t embedok = (zc->zc_flags & 0x1);
 	boolean_t large_block_ok = (zc->zc_flags & 0x2);
+	boolean_t compressok = (zc->zc_flags & 0x4);
 
 	if (zc->zc_obj != 0) {
 		dsl_pool_t *dp;
@@ -4310,7 +4318,7 @@ zfs_ioc_send(zfs_cmd_t *zc)
 			}
 		}
 
-		error = dmu_send_estimate(tosnap, fromsnap,
+		error = dmu_send_estimate(tosnap, fromsnap, compressok,
 								  &zc->zc_objset_type);
 
 		if (fromsnap != NULL)
@@ -4324,7 +4332,7 @@ zfs_ioc_send(zfs_cmd_t *zc)
 
 		off = fp->f_offset;
 		error = dmu_send_obj(zc->zc_name, zc->zc_sendobj,
-		    zc->zc_fromobj, embedok, large_block_ok,
+		    zc->zc_fromobj, embedok, large_block_ok, compressok,
 		    zc->zc_cookie, fp->f_vnode, &off);
 
 		//if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
@@ -4661,24 +4669,27 @@ zfs_ioc_userspace_upgrade(zfs_cmd_t *zc)
 {
 	objset_t *os;
 	int error = 0;
-	zfsvfs_t *zsb;
+	zfsvfs_t *zfsvfs;
 
-	if (getzfsvfs(zc->zc_name, &zsb) == 0) {
-		if (!dmu_objset_userused_enabled(zsb->z_os)) {
+	if (getzfsvfs(zc->zc_name, &zfsvfs) == 0) {
+		if (!dmu_objset_userused_enabled(zfsvfs->z_os)) {
 			/*
 			 * If userused is not enabled, it may be because the
 			 * objset needs to be closed & reopened (to grow the
 			 * objset_phys_t).  Suspend/resume the fs will do that.
 			 */
-			error = zfs_suspend_fs(zsb);
+			dsl_dataset_t *ds;
+
+			ds = dmu_objset_ds(zfsvfs->z_os);
+			error = zfs_suspend_fs(zfsvfs);
 			if (error == 0) {
-				dmu_objset_refresh_ownership(zsb->z_os,
-											 zsb);
-				error = zfs_resume_fs(zsb, zc->zc_name);
+				dmu_objset_refresh_ownership(zfsvfs->z_os,
+											 zfsvfs);
+				error = zfs_resume_fs(zfsvfs, ds);
 			}
 		}
 		if (error == 0)
-			error = dmu_objset_userspace_upgrade(zsb->z_os);
+			error = dmu_objset_userspace_upgrade(zfsvfs->z_os);
 		//deactivate_super(zsb->z_sb);
 	} else {
 		/* XXX kind of reading contents without owning */
@@ -5223,6 +5234,8 @@ zfs_ioc_space_snaps(const char *lastsnap, nvlist_t *innvl, nvlist_t *outnvl)
  *         indicates that blocks > 128KB are permitted
  *     (optional) "embedok" -> (value ignored)
  *         presence indicates DRR_WRITE_EMBEDDED records are permitted
+ *     (optional) "compressok" -> (value ignored)
+ *         presence indicates compressed DRR_WRITE records are permitted
  *     (optional) "resume_object" and "resume_offset" -> (uint64)
  *         if present, resume send stream from specified object and offset.
  * }
@@ -5240,6 +5253,7 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 	file_t *fp;
 	boolean_t largeblockok;
 	boolean_t embedok;
+	boolean_t compressok;
 	uint64_t resumeobj = 0;
 	uint64_t resumeoff = 0;
 
@@ -5251,6 +5265,7 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 
 	largeblockok = nvlist_exists(innvl, "largeblockok");
 	embedok = nvlist_exists(innvl, "embedok");
+	compressok = nvlist_exists(innvl, "compressok");
 
 	(void) nvlist_lookup_uint64(innvl, "resume_object", &resumeobj);
 	(void) nvlist_lookup_uint64(innvl, "resume_offset", &resumeoff);
@@ -5261,8 +5276,8 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 #ifndef __APPLE__
 	off = fp->f_offset;
 #endif
-	error = dmu_send(snapname, fromname, embedok, largeblockok, fd,
-		resumeobj, resumeoff, fp->f_vnode, &off);
+	error = dmu_send(snapname, fromname, embedok, largeblockok, compressok,
+		fd,	resumeobj, resumeoff, fp->f_vnode, &off);
 
 #ifndef __APPLE__
 	if (VOP_SEEK(fp->f_vnode, fp->f_offset, &off, NULL) == 0)
@@ -5280,6 +5295,12 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
  * innvl: {
  *     (optional) "from" -> full snap or bookmark name to send an incremental
  *                          from
+ *     (optional) "largeblockok" -> (value ignored)
+ *         indicates that blocks > 128KB are permitted
+ *     (optional) "embedok" -> (value ignored)
+ *         presence indicates DRR_WRITE_EMBEDDED records are permitted
+ *     (optional) "compressok" -> (value ignored)
+ *         presence indicates compressed DRR_WRITE records are permitted
  * }
  *
  * outnvl: {
@@ -5293,6 +5314,11 @@ zfs_ioc_send_space(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 	dsl_dataset_t *tosnap;
 	int error;
 	char *fromname;
+	/* LINTED E_FUNC_SET_NOT_USED */
+	boolean_t largeblockok;
+	/* LINTED E_FUNC_SET_NOT_USED */
+	boolean_t embedok;
+	boolean_t compressok;
 	uint64_t space;
 
 	error = dsl_pool_hold(snapname, FTAG, &dp);
@@ -5304,6 +5330,10 @@ zfs_ioc_send_space(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 		dsl_pool_rele(dp, FTAG);
 		return (error);
 	}
+
+	largeblockok = nvlist_exists(innvl, "largeblockok");
+	embedok = nvlist_exists(innvl, "embedok");
+	compressok = nvlist_exists(innvl, "compressok");
 
 	error = nvlist_lookup_string(innvl, "from", &fromname);
 	if (error == 0) {
@@ -5317,7 +5347,8 @@ zfs_ioc_send_space(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 			error = dsl_dataset_hold(dp, fromname, FTAG, &fromsnap);
 			if (error != 0)
 				goto out;
-			error = dmu_send_estimate(tosnap, fromsnap, &space);
+			error = dmu_send_estimate(tosnap, fromsnap, compressok,
+			    &space);
 			dsl_dataset_rele(fromsnap, FTAG);
 		} else if (strchr(fromname, '#') != NULL) {
 			/*
@@ -5332,7 +5363,7 @@ zfs_ioc_send_space(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 			if (error != 0)
 				goto out;
 			error = dmu_send_estimate_from_txg(tosnap,
-			    frombm.zbm_creation_txg, &space);
+			    frombm.zbm_creation_txg, compressok, &space);
 		} else {
 			/*
 			 * from is not properly formatted as a snapshot or
@@ -5343,7 +5374,7 @@ zfs_ioc_send_space(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 		}
 	} else {
 		// If estimating the size of a full send, use dmu_send_estimate
-		error = dmu_send_estimate(tosnap, NULL, &space);
+		error = dmu_send_estimate(tosnap, NULL, compressok, &space);
 	}
 
 	fnvlist_add_uint64(outnvl, "space", space);
@@ -6371,7 +6402,10 @@ zfs_ioctl_osx_init(void)
 
 	kstat_osx_init();
 
+#ifndef ZFS_BOOT
+/* If the kext is loading during boot, this will panic */
 	(void) mnttab_file_create();
+#endif
 	zfs_ioctl_installed = 1;
 #endif
 	printf("ZFS: Loaded module v%s-%s%s, "

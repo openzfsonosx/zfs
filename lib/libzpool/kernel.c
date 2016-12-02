@@ -164,7 +164,6 @@ zk_thread_create(caddr_t stk, size_t stksize, thread_func_t func, void *arg,
 	char *stkstr;
 
 	ASSERT0(state & ~TS_RUN);
-	ASSERT0(len);
 
 	kt = umem_zalloc(sizeof (kthread_t), UMEM_NOFAIL);
 	kt->t_func = func;
@@ -574,13 +573,13 @@ top:
 	error = pthread_cond_timedwait(&cv->cv, &mp->m_lock, &ts);
 	mp->m_owner = curthread;
 
-	if (error == ETIME)
+	if (error == ETIMEDOUT || error == ETIME)
 		return (-1);
 
 	if (error == EINTR)
 		goto top;
 
-	ASSERT(error == 0);
+	VERIFY0(error);
 
 	return (1);
 }
@@ -637,18 +636,32 @@ get_disk_size_libzpool(int fd)
 	return (d_size);
 }
 
-/* vdev_file uses vnode_getwithid(), so supply a userspace version. */
+/* vdev_file uses vnode_getwithvid(), so supply a userspace version. */
 int
 vnode_getwithvid(vnode_t *vp, uint32_t id)
 {
 	return (vp->v_id == id) ? 0 : ENOENT;
 }
 
+/* vdev_file uses vnode_getwithref(), so supply a userspace version. */
+int
+vnode_getwithref(vnode_t *vp)
+{
+	return (0);
+}
+
+/* vdev_file ses vnode_rele(), supply a userspace version. */
+void
+vnode_rele(vnode_t *vp)
+{
+	return;
+}
+
 /* vdev_file ses vnode_put(), supply a userspace version. */
 int
 vnode_put(vnode_t *vp)
 {
-	return 0;
+	return (0);
 }
 
 vnode_t *

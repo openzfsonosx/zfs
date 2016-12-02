@@ -1,0 +1,94 @@
+Differences from upstream-20150909
+
+	(see below for differences sourced from Illumos, ZoL, and O3X master)
+
+My changes:
+
+	* dmu_zfetch_stream_create fixed to work even though we don't have a working rw_tryupgrade
+
+	* add zfs_free_max_blocks tunable
+
+	ARC work :
+
+	* kmem_avail() is superseded by spl_free_wrapper()
+
+	* spl_free_wrapper() returns the amount of memory arc may use;
+		the number may be negative, which can trigger reclaims and throttles.
+		It is analogous to Illumos's freemem variable.
+
+	* kmem_num_pages_wanted() is retired
+
+	* spl_free_manual_pressure_wrapper() returns the number of bytes of pressure
+		sent in via a sysctl call.   Positive numbers result in arc being shrunk
+		by that number of bytes, if posslble.
+
+	* Additional plumbing to get arc_reclaim_thread() to deal with this pressure
+        	in reasonable time
+
+	* as in illumos, arc_reclaim_thread(), arc_available_memory()  and arc_memory_throttle() expect
+		that spl_free_wrapper() may be negative
+
+	* some debugging in arc_reclaim_thread()
+		** dprintfs and also a printf that tracks when arc_reclaim_thread()'s
+		to_free has increased since the last time it was calculated
+
+	* arc_memory_throttle() throttles only when system memory is really tight
+		(which is NOT what spl_free_wrapper() indicates)
+		spl_minimal_physmem_p() is false roughly when Illumos's tight-memory code would run
+
+	* defensive changes in sysctl-handling code for several limit tunables
+
+	* some new Illumos tunables as sysctls
+
+	* don't use less memory at start if kmem_flags are set (don't need that with new spl)
+
+Others' changes brought in:
+
+	Illumos 6414 vdev_config_sync could be simpler
+	Illumos 6388 Failure of userland copy should return EFAULT
+	Illumos 5752 dump_nvlist() is not aware of boolean array()
+	Illumos 6385 Fix unlocking order in zfs_zget()
+	Patches 1-5 of 2605 want to resume interrupted zfs send (from reviews.csiden.org)
+	Illumos 6367 spa_config_tryenter incorrectly handles the multiple-lock case
+	Illumos 6292 exporting a pool while an async destroy is running can leave entries ...
+	Illumos 6293 ztest failure: error == 28 (0xc == 0x1c) in ztest_tx_assign()
+	Illumos 6295 metaslab_condense's dbgmsg should include vdev id
+	webrev 264 - spa_config_tryenter incorrectly handles the multiple lock case (diff 1)
+	             (NEX-2403)
+        3525  Persistent L2ARC 	https://reviews.csiden.org/r/267/diff/4#index_header
+	4185 add new cryptographic checkusm to ZFS: SHA-512, Skein, Edon-R (via lundman)
+	5960 zfs recv should prefetch indirect blocks (via lundman)
+	5925 zfs receive -o origin= (via lundman)
+	6370 ZFS send fails to transmit some holes
+	6393 zfs receive a full send as a clone
+	
+O3X commits:
+
+	Simple script to pull in upstream commits - lundman
+	Wrap mutex calls around rename clearing of name cache - me
+	fix launchctl remove / load race in Makefile.am - lundman
+	Group ACL was incorrectly looked up - lundman
+	Protect the vget update of cache name with mutex - lundman
+	Use mutex when updating znodes - lundman
+	Force VNOP_LOOKUP to update hardlinks after rename - lundman
+	Update the parentid on rename for vget - lundman
+	Remove idle timeout key (not used and removed) - jmovs
+	Clear out iname cache on hardlink removal - lundman
+	Do not cache directories, allowed unlinked getattr - lundman
+	The original source hardlink needs to retain fileid as linkid - lundman
+	When hardlink targets go away, retain linkid hash for sole entry - lundman
+	Correct hardlink usage with Finder. Introduce name cache - lundman
+	Build system updates for latest InvariantDisks - ilovezfs
+	New InvariantDisks stuff - cblack
+	Check for PRIV_SYS_CONFIG before attempting import - ilovezfs
+	Fix panic in zfs_finder_keep_hardlink due to ctldir - ilovezfs
+	get_history() should use zfs_ioctl() not ioctl() - ilovezfs
+	Force zed to run since KeepAlive=true is already set anyway - ilovezfs
+	Pick a better error code in zfs_space when its not FREESP
+	Add missing .mk line to O3X's zpool.8
+	Hide trivial ACLs from OS X
+	Clearing of ACLs also needs to read trivials
+	Change default mode from discard to passthrough
+	Include notice that nobrowse disables Spotlight
+	chown is a noop with MNT_IGNORE_OWNERSHIP
+	More debug around zvol's readonly bug
