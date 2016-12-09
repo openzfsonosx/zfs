@@ -675,7 +675,7 @@ skip_open:
 	  }
 	}
 
-	printf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "",
+	dprintf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "",
 			isssd);
 #endif //__APPLE__
 

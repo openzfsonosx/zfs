@@ -93,6 +93,7 @@ typedef enum {
 	ZVOL_ASYNC_REMOVE_MINORS,
 	ZVOL_ASYNC_RENAME_MINORS,
 	ZVOL_ASYNC_SET_SNAPDEV,
+	ZVOL_ASYNC_REGISTER_DEV,
 	ZVOL_ASYNC_MAX
 } zvol_async_op_t;
 
@@ -103,6 +104,7 @@ typedef struct {
 	char name2[MAXNAMELEN];
 	zprop_source_t source;
 	uint64_t snapdev;
+	zvol_state_t *zv;
 } zvol_task_t;
 
 
