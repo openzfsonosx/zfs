@@ -109,6 +109,7 @@ static char *zvol_tag = "zvol_tag";
 #define	ZVOL_DUMPSIZE		"dumpsize"
 
 extern kmutex_t zfsdev_state_lock;
+void zvol_register_device(spa_t *spa, zvol_state_t *zv);
 
 void *
 zfsdev_get_soft_state(minor_t minor, enum zfs_soft_state_type which)
@@ -677,7 +678,9 @@ zvol_create_minor_impl(const char *name)
 
 	/* Register IOKit zvol after disown and unlock */
 	if (error == 0) {
-		error = zvolRegisterDevice(zv);
+		// can we still use "os" here since it was disowned
+		zvol_register_device(dmu_objset_spa(os), zv);
+			//error = zvolRegisterDevice(zv);
 		if (error != 0) {
 			dprintf("%s zvolRegisterDevice error %d\n",
 			    __func__, error);
@@ -1375,27 +1378,37 @@ zvol_task_free(zvol_task_t *task)
 static void
 zvol_task_cb(void *param)
 {
-       zvol_task_t *task = (zvol_task_t *)param;
+	zvol_task_t *task = (zvol_task_t *)param;
 
-       switch (task->op) {
-       case ZVOL_ASYNC_CREATE_MINORS:
-               (void) zvol_create_minors_impl(task->name1);
-               break;
-       case ZVOL_ASYNC_REMOVE_MINORS:
-               zvol_remove_minors_impl(task->name1);
-               break;
-       case ZVOL_ASYNC_RENAME_MINORS:
-               zvol_rename_minors_impl(task->name1, task->name2);
-               break;
-       case ZVOL_ASYNC_SET_SNAPDEV:
-               zvol_set_snapdev_impl(task->name1, task->snapdev);
-               break;
-       default:
-               VERIFY(0);
-               break;
-       }
+	switch (task->op) {
+		case ZVOL_ASYNC_CREATE_MINORS:
+			(void) zvol_create_minors_impl(task->name1);
+			break;
+		case ZVOL_ASYNC_REMOVE_MINORS:
+			zvol_remove_minors_impl(task->name1);
+			break;
+		case ZVOL_ASYNC_RENAME_MINORS:
+			zvol_rename_minors_impl(task->name1, task->name2);
+			break;
+		case ZVOL_ASYNC_SET_SNAPDEV:
+			zvol_set_snapdev_impl(task->name1, task->snapdev);
+			break;
+		case ZVOL_ASYNC_REGISTER_DEV:
+			/*
+			 * The create process holds spa_namespace, then needs to
+			 * call waitForArbitration. But diskarbitrationd kicks in
+			 * way early,
+			 */
+			mutex_enter(&spa_namespace_lock);
+			mutex_exit(&spa_namespace_lock);
+			zvolRegisterDevice(task->zv);
+			break;
+		default:
+			VERIFY(0);
+			break;
+	}
 
-       zvol_task_free(task);
+	zvol_task_free(task);
 }
 
 typedef struct zvol_set_snapdev_arg {
@@ -1524,25 +1537,22 @@ zvol_rename_minors(spa_t *spa, const char *name1, const char *name2,
 		taskq_wait(spa->spa_zvol_taskq);
 }
 
-	/* Never allow tasks on hidden names. */
-	if (name1[0] == '$')
-		return (NULL);
+void
+zvol_register_device(spa_t *spa, zvol_state_t *zv)
+{
+	zvol_task_t *task;
+	taskqid_t id;
 
-	task = kmem_zalloc(sizeof (zvol_task_t), KM_SLEEP);
-	task->op = op;
-	task->snapdev = snapdev;
-	delim = strchr(name1, '/');
-	strlcpy(task->pool, name1, delim ? (delim - name1 + 1) : MAXNAMELEN);
-
-	strlcpy(task->name1, name1, MAXNAMELEN);
-	if (name2 != NULL)
-		strlcpy(task->name2, name2, MAXNAMELEN);
-
-	return (task);
+	task = zvol_task_alloc(ZVOL_ASYNC_REGISTER_DEV, "notused", NULL, ~0ULL);
+	if (task == NULL)
+		return;
+	task->zv = zv;
+	id = taskq_dispatch(spa->spa_zvol_taskq, zvol_task_cb, task, TQ_SLEEP);
 }
 
-static void
-zvol_task_free(zvol_task_t *task)
+
+int
+zvol_set_volsize(const char *name, uint64_t volsize)
 {
 	zvol_state_t *zv = NULL;
 	objset_t *os;

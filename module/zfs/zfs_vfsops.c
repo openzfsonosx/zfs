@@ -2559,8 +2559,6 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		fsap->f_create_time.tv_sec  = value;
 		fsap->f_create_time.tv_nsec = 0;
 		VFSATTR_SET_SUPPORTED(fsap, f_create_time);
-		printf("ZFS: Creation time %llu\n",
-			   value);
 	}
 	if (VFSATTR_IS_ACTIVE(fsap, f_modify_time)) {
         timestruc_t  now;
@@ -2622,7 +2620,6 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 
 		VFSATTR_SET_SUPPORTED(fsap, f_vol_name);
 		dprintf("vfs_getattr: volume name '%s'\n", fsap->f_vol_name);
-printf("vfs_getattr: volume name '%s'\n", fsap->f_vol_name);
 	}
 /*
 	if (!zfsvfs->z_issnap) {
@@ -2671,14 +2668,12 @@ printf("vfs_getattr: volume name '%s'\n", fsap->f_vol_name);
 			snprintf(osname, 33, "%016llx%016llx", pguid, guid);
 			osname[32] = '\0'; /* just in case */
 			dprintf("%s: using pguid+guid [%s]\n", __func__, osname);
-printf("%s: using pguid+guid [%s]\n", __func__, osname);
 		} else {
 	/* XXX */
 #endif
 			// Get dataset name
 			dmu_objset_name(zfsvfs->z_os, osname);
 			dprintf("%s: osname [%s]\n", __func__, osname);
-printf("%s: osname [%s]\n", __func__, osname);
 #if 0
 	/* XXX */
 		}
