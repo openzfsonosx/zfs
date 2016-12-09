@@ -653,7 +653,6 @@ zfs_purgedir(znode_t *dzp)
 		return 0; // Remove this dir anyway
 	}
 #endif
-
 	return (skipped);
 }
 

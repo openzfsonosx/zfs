@@ -2181,7 +2181,7 @@ zfs_vfs_uuid_gen(const char *osname, uuid_t uuid)
 
 	/* Print all caps */
 	//dprintf("%s UUIDgen: [%s](%ld)->"
-	printf("%s UUIDgen: [%s](%ld) -> "
+	dprintf("%s UUIDgen: [%s](%ld) -> "
 	    "[%02X%02X%02X%02X-%02X%02X-%02X%02X-"
 	    "%02X%02X-%02X%02X%02X%02X%02X%02X]\n",
 	    __func__, osname, strlen(osname),
