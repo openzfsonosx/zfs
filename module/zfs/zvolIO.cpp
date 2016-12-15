@@ -969,6 +969,10 @@ zvolRegisterDevice(zvol_state_t *zv)
 		return (EINVAL);
 	}
 
+	if (!zvol->getVendorString()) {
+		return (EINVAL);
+	}
+
 	/* Create matching string and dictionary */
 	{
 		char str[MAXNAMELEN];
