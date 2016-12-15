@@ -49,6 +49,7 @@ typedef enum {
 #define	ZFS_PERMSET_MAXLEN	64
 
 int pool_namecheck(const char *, namecheck_err_t *, char *);
+int entity_namecheck(const char *, namecheck_err_t *, char *);
 int dataset_namecheck(const char *, namecheck_err_t *, char *);
 int mountpoint_namecheck(const char *, namecheck_err_t *);
 int zfs_component_namecheck(const char *, namecheck_err_t *, char *);

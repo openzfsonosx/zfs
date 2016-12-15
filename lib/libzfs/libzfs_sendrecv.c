@@ -248,7 +248,6 @@ cksummer(void *arg)
 	char *buf = zfs_alloc(dda->dedup_hdl, SPA_MAXBLOCKSIZE);
 	dmu_replay_record_t thedrr;
 	dmu_replay_record_t *drr = &thedrr;
-	struct drr_write *drrw = &thedrr.drr_u.drr_write;
 	FILE *ofp;
 	int outfd;
 	dmu_replay_record_t wbr_drr = {0};

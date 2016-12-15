@@ -748,7 +748,7 @@ int
 zvol_remove_minor_impl(const char *name)
 {
 	zvol_state_t *zv;
-	zvol_state_t tmp_zv = {0};
+	zvol_state_t tmp_zv = {{0}};
 	int rc;
 
 	mutex_enter(&zfsdev_state_lock);
@@ -1068,7 +1068,7 @@ zvol_remove_minors_impl(const char *name)
 			(strncmp(zv->zv_name, name, namelen) == 0 &&
 			 (zv->zv_name[namelen] == '/' ||
 			  zv->zv_name[namelen] == '@'))) {
-			zvol_state_t tmp_zv = { 0 };
+			zvol_state_t tmp_zv = {{ 0 }};
 
 			/* If in use, leave alone */
 			if (zv->zv_open_count > 0)
