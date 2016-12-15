@@ -134,7 +134,14 @@ static struct vfsops zfs_vfsops_template = {
 	zfs_vfs_init,
 	zfs_vfs_sysctl,
 	zfs_vfs_setattr,
+#if defined (MAC_OS_X_VERSION_10_12) &&							\
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_12)
+	NULL, /* vfs_ioctl */
+	NULL, /* vfs_vget_snapdir */
+	NULL
+#else
 	{NULL}
+#endif
 };
 extern struct vnodeopv_desc zfs_dvnodeop_opv_desc;
 extern struct vnodeopv_desc zfs_fvnodeop_opv_desc;
