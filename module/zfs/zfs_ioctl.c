@@ -99,7 +99,9 @@
 
 #define MNTTAB "/etc/mtab"
 
+#ifndef ZFS_BOOT
 static int mnttab_file_create(void);
+#endif
 #endif
 
 //#define dprintf printf
@@ -6221,6 +6223,7 @@ static void * zfs_devnode = NULL;
 #define ZFS_MAJOR  -24
 
 #ifdef __APPLE__
+#ifndef ZFS_BOOT
 static int
 mnttab_file_create(void)
 {
@@ -6240,6 +6243,7 @@ mnttab_file_create(void)
 		printf("mnttab_file_create : error %d\n", error);
 	return error;
 }
+#endif
 #endif
 
 static int

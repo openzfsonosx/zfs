@@ -1699,7 +1699,7 @@ deadlist_enqueue_cb(void *arg, const blkptr_t *bp, dmu_tx_t *tx)
 void
 dsl_dataset_sync_done(dsl_dataset_t *ds, dmu_tx_t *tx)
 {
-	objset_t *os = ds->ds_objset;
+	ASSERTV(objset_t *os = ds->ds_objset);
 
 	bplist_iterate(&ds->ds_pending_deadlist,
 	    deadlist_enqueue_cb, &ds->ds_deadlist, tx);
