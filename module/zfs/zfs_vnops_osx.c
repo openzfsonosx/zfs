@@ -877,10 +877,17 @@ printf("F_CHKCLEAN size %llu ret %d\n", fsize, error);
 			error = EINVAL;
 			break;
 		case HFS_GET_BOOT_INFO:
-			dprintf("%s HFS_GET_BOOT_INFO\n", __func__);
-			/* ZFS booting is not supported, mimic selection of a non-root HFS volume */
-			*(uint32_t *)ap->a_data = 0;
-			error = EINVAL;
+			{
+				u_int32_t       vcbFndrInfo[8];
+				printf("%s HFS_GET_BOOT_INFO\n", __func__);
+				/* ZFS booting is not supported, mimic selection of a non-root HFS volume */
+				memset(vcbFndrInfo, 0, sizeof(vcbFndrInfo));
+				struct vfsstatfs *vfsstatfs;
+				vfsstatfs = vfs_statfs(zfsvfs->z_vfs);
+				vcbFndrInfo[6] = vfsstatfs->f_fsid.val[0];
+				vcbFndrInfo[7] = vfsstatfs->f_fsid.val[1];
+				bcopy(vcbFndrInfo, ap->a_data, sizeof(vcbFndrInfo));
+			}
 			break;
 		case HFS_MARK_BOOT_CORRUPT:
 			dprintf("%s HFS_MARK_BOOT_CORRUPT\n", __func__);
@@ -4666,7 +4673,17 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 
 	dprintf("Assigned zp %p with vp %p\n", zp, vp);
 
-	vnode_settag(vp, VT_ZFS);
+	/*
+	 * Unfortunately, when it comes to IOCTL_GET_BOOT_INFO and getting
+	 * the volume finderinfo, XNU checks the tags, and only acts on
+	 * HFS. So we have to set it to HFS on the root. It is pretty gross
+	 * but until XNU adds supporting code..
+	 * The only place we use tags in ZFS is ctldir checking for VT_OTHER
+	 */
+	if (zp->z_id == zfsvfs->z_root)
+		vnode_settag(vp, VT_HFS);
+	else
+		vnode_settag(vp, VT_ZFS);
 
 	zp->z_vid = vnode_vid(vp);
 	zp->z_vnode = vp;
