@@ -297,7 +297,7 @@ zpool_import_by_guid(uint64_t searchguid)
 	 */
 	if (err == 0) {
 		if (found_config == NULL) {
-			printf("cannot import '%llu': no such pool available\n",
+			printf("zfs.util: FATAL cannot import '%llu': no such pool available\n",
 			    searchguid);
 			err = B_TRUE;
 		} else {
@@ -333,6 +333,7 @@ struct probe_args {
 };
 typedef struct probe_args probe_args_t;
 
+char *UNKNOWN_STRING = "Unknown";
 
 static int
 zfs_probe(const char *devpath, probe_args_t *args)
@@ -341,7 +342,7 @@ zfs_probe(const char *devpath, probe_args_t *args)
 	int ret = FSUR_UNRECOGNIZED;
 	int fd;
 	uint64_t guid;
-	int i;
+	int i, again = 0;
 	struct stat sbuf;
 
 	printf("+zfs_probe : devpath %s\n", devpath);
@@ -360,18 +361,21 @@ zfs_probe(const char *devpath, probe_args_t *args)
 			i++;
 		}
 		if (i == INVARIANT_DISKS_TIMEOUT_SECONDS) {
-			printf("File %s not found within %d seconds\n",
+			printf("zfs.util: FATAL: File %s not found within %d seconds\n",
 			    INVARIANT_DISKS_IDLE_FILE,
 			    INVARIANT_DISKS_TIMEOUT_SECONDS);
 		}
 	}
 
+  retry:
+
 	if ((fd = open(devpath, O_RDONLY)) < 0) {
-		printf("Could not open devpath %s : fd %d\n", devpath, fd);
+		printf("zfs.util: FATAL: Could not open devpath %s : fd %d\n", devpath, errno);
 		goto out;
 	}
 
 	if (zpool_read_label(fd, &config, NULL) != 0) {
+		printf("zfs.util: FATAL: Could not read label devpath %s : fd %d\n", devpath, errno);
 		(void) close(fd);
 		goto out;
 	}
@@ -379,15 +383,27 @@ zfs_probe(const char *devpath, probe_args_t *args)
 	(void) close(fd);
 
 	if (config != NULL) {
+		char *name;
 		ret = FSUR_RECOGNIZED;
 		args->pool_guid = (nvlist_lookup_uint64(config,
 		    ZPOOL_CONFIG_POOL_GUID, &guid) == 0) ? guid : 0;
 		args->vdev_guid = (nvlist_lookup_uint64(config,
 		    ZPOOL_CONFIG_GUID, &guid) == 0) ? guid : 0;
+		if (args->pool_name &&
+			nvlist_lookup_string(config, ZPOOL_CONFIG_POOL_NAME,
+				&name) == 0)
+			strlcpy(args->pool_name, name, MAXPATHLEN);
 		nvlist_free(config);
+	} else {
+		if (again++ < 5) {
+			printf("zfs.util: read_label config is NULL\n");
+			sleep(1);
+			goto retry;
+		}
+		printf("zfs.util: FATAL: read_label config is NULL\n");
 	}
 out:
-	printf("-zfs_probe : ret %d\n", ret);
+	printf("-zfs_probe : ret %s\n", ret == FSUR_RECOGNIZED ? "FSUR_RECOGNIZED" : "FSUR_UNRECOGNIZED");
 	return (ret);
 }
 
@@ -472,7 +488,7 @@ int zfs_util_uuid_gen(probe_args_t *probe, char *uuid_str)
 
 	/* Validate arguments */
 	if (!probe->vdev_guid) {
-		printf("zfs.util: %s missing argument\n", __func__);
+		printf("zfs.util: FATAL: %s missing argument\n", __func__);
 		return (EINVAL);
 	}
 
@@ -531,6 +547,7 @@ main(int argc, char **argv)
 	struct attrlist attr;
 	struct attrNameBuf nameBuf;
 	char volname[MAXPATHLEN];
+	char *pool_name = NULL;
 
 	for (int argindex = 0; argindex < argc; argindex++) {
 		printf("argv[%d]: %s\n", argindex, argv[argindex]);
@@ -547,7 +564,7 @@ main(int argc, char **argv)
 	}
 
 	what = argv[0][1];
-	printf("zfs.util called with option %c\n", what);
+	printf("zfs.util called with option %c: pid %d\n", what, getpid());
 
 	devname = argv[1];
 	cp = strrchr(devname, '/');
@@ -567,8 +584,18 @@ main(int argc, char **argv)
 	(void) snprintf(blockdevice, sizeof (blockdevice), "/dev/%s", devname);
 	printf("blockdevice is %s\n", blockdevice);
 
-	if (stat(blockdevice, &sb) != 0) {
-		printf("%s: stat %s failed, %s\n", progname, blockdevice,
+
+	/* Sometimes this is a bit of a race, so we will retry a few times */
+	for (i = 0; i < 5; i++) {
+
+		if (stat(blockdevice, &sb) == 0) break;
+
+		printf("%s: %d stat %s failed, %s\n", progname, i, blockdevice,
+		    strerror(errno));
+		sleep(1);
+	}
+	if (i >= 5) {
+		printf("%s: FATAL: stat %s failed, %s\n", progname, blockdevice,
 		    strerror(errno));
 		goto out;
 	}
@@ -579,7 +606,7 @@ main(int argc, char **argv)
 	do {
 		num = getmntinfo(&statfs, MNT_NOWAIT);
 		if (num <= 0) {
-			printf("%s getmntinfo error %d\n",
+			printf("%s: FATAL: getmntinfo error %d\n",
 			    __func__, num);
 			break;
 		}
@@ -598,10 +625,24 @@ main(int argc, char **argv)
 		}
 
 		if (!is_mounted) {
-			printf("%s no match\n", __func__);
+			printf("%s no match - not mounted\n", __func__);
 			break;
 		}
 	} while (0);
+
+
+	bzero(&probe_args, sizeof (probe_args_t));
+	len = MAXNAMELEN;
+	pool_name = kmem_alloc(len, KM_SLEEP);
+	if (!pool_name) {
+		printf("FATAL: alloc failed\n");
+		ret = FSUR_UNRECOGNIZED;
+		goto out;
+	}
+
+	probe_args.pool_name = pool_name;
+	probe_args.name_len = len;
+
 
 	/* Check the request type */
 	switch (what) {
@@ -610,19 +651,6 @@ main(int argc, char **argv)
 		/* XXX For now only checks mounted fs (root fs) */
 		if (!is_mounted) {
 			printf("FSUR_PROBE : unmounted fs\n");
-			char *pool_name;
-
-			bzero(&probe_args, sizeof (probe_args_t));
-			len = MAXNAMELEN;
-			pool_name = kmem_alloc(len, KM_SLEEP);
-			if (!pool_name) {
-				printf("FSUC_PROBE : alloc failed\n");
-				ret = FSUR_UNRECOGNIZED;
-				break;
-			}
-
-			probe_args.pool_name = pool_name;
-			probe_args.name_len = len;
 
 			ret = zfs_probe(rawdevice, &probe_args);
 
@@ -643,14 +671,13 @@ main(int argc, char **argv)
 				    probe_args.pool_guid,
 				    probe_args.vdev_guid);
 				/* Output pool name for DiskArbitration */
-				write(1, pool_name, strlen(pool_name));
+				write(1, probe_args.pool_name, strlen(probe_args.pool_name));
 			} else {
 				printf("FSUC_PROBE %s : FSUR_UNRECOGNIZED :"
 				    " %d\n", blockdevice, ret);
 				ret = FSUR_UNRECOGNIZED;
 			}
 
-			kmem_free(pool_name, len);
 			break;
 
 
@@ -669,18 +696,18 @@ main(int argc, char **argv)
 			ret = getattrlist(statfs[i].f_mntonname, &attr, &nameBuf,
 				sizeof (nameBuf), 0);
 			if (ret != 0) {
-				printf("%s couldn't get mount [%s] attr\n",
+				printf("%s FATAL: couldn't get mount [%s] attr\n",
 					__func__, statfs[i].f_mntonname);
 				ret = FSUR_UNRECOGNIZED;
 				break;
 			}
 			if (nameBuf.length < offsetof (struct attrNameBuf, name)) {
-				printf("PROBE: short attrlist return\n");
+				printf("PROBE: FATAL: short attrlist return\n");
 				ret = FSUR_UNRECOGNIZED;
 				break;
 			}
 			if (nameBuf.length > sizeof (nameBuf)) {
-				printf("PROBE: overflow attrlist return\n");
+				printf("PROBE: FATAL: overflow attrlist return\n");
 				ret = FSUR_UNRECOGNIZED;
 				break;
 			}
@@ -764,7 +791,7 @@ main(int argc, char **argv)
 			ret = getattrlist(statfs[i].f_mntonname, &attr,
 				&buf, sizeof (buf), 0);
 			if (ret != 0) {
-				printf("%s couldn't get mount [%s] attr\n",
+				printf("%s FATAL: couldn't get mount [%s] attr\n",
 					__func__, statfs[i].f_mntonname);
 				ret = FSUR_IO_FAIL;
 				break;
@@ -773,7 +800,7 @@ main(int argc, char **argv)
 			/* buf[0] is count of uint32_t values returned,
 			 * including itself */
 			if (buf[0] < (5 * sizeof (uint32_t))) {
-				printf("getattrlist result len %d != %d\n",
+				printf("FATAL: getattrlist result len %d != %d\n",
 					buf[0], (5 * sizeof (uint32_t)));
 				ret = FSUR_IO_FAIL;
 				break;
@@ -800,12 +827,12 @@ main(int argc, char **argv)
 			 */
 			// (reverse) buf[2] = (buf[2] & 0xFFFF0FFF) | 0x00003000;
 			if (buf[2] != ((buf[2] & 0xFFFF0FFF) | 0x00003000)) {
-				printf("missing version 3 in UUID\n");
+				printf("FATAL: missing version 3 in UUID\n");
 				ret = FSUR_IO_FAIL;
 			}
 			// (reverse) buf[3] = (buf[3] & 0x3FFFFFFF) | 0x80000000;
 			if (buf[3] != ((buf[3] & 0x3FFFFFFF) | 0x80000000)) {
-				printf("missing variant bits in UUID\n");
+				printf("FATAL: missing variant bits in UUID\n");
 				ret = FSUR_IO_FAIL;
 			}
 			if (ret == FSUR_IO_FAIL) break;
@@ -851,6 +878,9 @@ main(int argc, char **argv)
 		usage();
 	}
 out:
+	if (pool_name)
+		kmem_free(pool_name, len);
+	printf("Clean exit: %d (%d)\n", getpid(), ret);
 	closelog();
 	exit(ret);
 
