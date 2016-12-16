@@ -322,12 +322,20 @@ error:
 	return (err ? 1 : 0);
 }
 
-#if 0
+#if 1
 extern int is_optical_media(char *bsdname);
+
+struct probe_args {
+	char *pool_name;
+	int name_len;
+	uint64_t pool_guid;
+	uint64_t vdev_guid;
+};
+typedef struct probe_args probe_args_t;
 
 
 static int
-zfs_probe(const char *devpath, uint64_t *outpoolguid)
+zfs_probe(const char *devpath, probe_args_t *args)
 {
 	nvlist_t *config = NULL;
 	int ret = FSUR_UNRECOGNIZED;
@@ -358,9 +366,6 @@ zfs_probe(const char *devpath, uint64_t *outpoolguid)
 		}
 	}
 
-	if (outpoolguid == NULL)
-		goto out;
-
 	if ((fd = open(devpath, O_RDONLY)) < 0) {
 		printf("Could not open devpath %s : fd %d\n", devpath, fd);
 		goto out;
@@ -375,7 +380,7 @@ zfs_probe(const char *devpath, uint64_t *outpoolguid)
 
 	if (config != NULL) {
 		ret = FSUR_RECOGNIZED;
-		*outpoolguid = (nvlist_lookup_uint64(config,
+		args->pool_guid = (nvlist_lookup_uint64(config,
 		    ZPOOL_CONFIG_POOL_GUID, &guid) == 0) ? guid : 0;
 		nvlist_free(config);
 	}
@@ -460,6 +465,7 @@ main(int argc, char **argv)
 	char what;
 	char *cp;
 	char *devname;
+	probe_args_t probe_args;
 	struct stat sb;
 	int ret = FSUR_INVAL;
 #if 0
@@ -494,7 +500,8 @@ main(int argc, char **argv)
 		devname++;
 
 /* XXX Only checking ZFS pseudo devices, so this can be skipped */
-#if 0
+/* We have to check all probe devices to get rid of the popup */
+#if 1
 	if (is_optical_media(devname)) {
 		printf("zfs.util: is_optical_media(%s)\n", devname);
 		goto out;
@@ -548,7 +555,50 @@ main(int argc, char **argv)
 		/* XXX For now only checks mounted fs (root fs) */
 		if (!is_mounted) {
 			printf("FSUR_PROBE : unmounted fs\n");
-			ret = FSUR_UNRECOGNIZED;
+			char *pool_name;
+
+			bzero(&probe_args, sizeof (probe_args_t));
+			len = MAXNAMELEN;
+			pool_name = kmem_alloc(len, KM_SLEEP);
+			if (!pool_name) {
+				printf("FSUC_PROBE : alloc failed\n");
+				ret = FSUR_UNRECOGNIZED;
+				break;
+			}
+
+			probe_args.pool_name = pool_name;
+			probe_args.name_len = len;
+
+			ret = zfs_probe(rawdevice, &probe_args);
+
+			/*
+			 * Validate guid and name, valid vdev
+			 * must have a vdev_guid, but not
+			 * necessarily a pool_guid
+			 */
+#if 0 // we dont lookup vdev_guid yet
+			if (ret == FSUR_RECOGNIZED &&
+			    (probe_args.vdev_guid == 0 ||
+					strlen(probe_args.pool_name) == 0)) {
+				ret = FSUR_UNRECOGNIZED;
+			}
+#endif
+
+			if (ret == FSUR_RECOGNIZED) {
+				printf("FSUC_PROBE %s : FSUR_RECOGNIZED :"
+				    " %s : vdev guid 0x%016LLx\n",
+				    blockdevice, probe_args.pool_name,
+				    probe_args.pool_guid,
+				    probe_args.vdev_guid);
+				/* Output pool name for DiskArbitration */
+				write(1, pool_name, strlen(pool_name));
+			} else {
+				printf("FSUC_PROBE %s : FSUR_UNRECOGNIZED :"
+				    " %d\n", blockdevice, ret);
+				ret = FSUR_UNRECOGNIZED;
+			}
+
+			kmem_free(pool_name, len);
 			break;
 		}
 
@@ -652,7 +702,7 @@ main(int argc, char **argv)
 		printf("FSUC_GETUUID\n");
 		uint32_t buf[5];
 
-#if 0
+#if 1
 		/* Try to get a UUID either way */
 		/* First, zpool vdev disks */
 		if (!is_mounted) {
@@ -675,7 +725,7 @@ main(int argc, char **argv)
 				ret = FSUR_IO_FAIL;
 				break;
 			}
-
+#if 0
 			/* Generate valid UUID from guids */
 			if (zfs_util_uuid_gen(probe_args.pool_guid,
 			    probe_args.vdev_guid, uuid,
@@ -686,7 +736,7 @@ main(int argc, char **argv)
 				ret = FSUR_IO_FAIL;
 				break;
 			}
-
+#endif
 			printf("FSUC_GET_UUID %s : FSUR_RECOGNIZED :"
 			    " pool guid 0x%016llx :"
 			    " vdev guid 0x%016llx : UUID %s\n",
@@ -701,13 +751,14 @@ main(int argc, char **argv)
 		}
 #endif
 
+#if 0
 		/* Ignore zpool vdev disks */
 		if (!is_mounted) {
 			printf("skipping vdev disk [%s]\n", blockdevice);
 			ret = FSUR_IO_FAIL;
 			break;
 		}
-
+#endif
 		/* Otherwise, ZFS filesystem pseudo device */
 
 		//struct attrlist attr;
