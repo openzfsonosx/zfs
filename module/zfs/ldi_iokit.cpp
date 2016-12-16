@@ -433,6 +433,14 @@ handle_sync_iokit(struct ldi_handle *lhp)
 		    "IOMedia synchronizeCache failed");
 		return (ENOTSUP);
 	}
+#else
+	/* Issue device sync */
+	if (LH_MEDIA(lhp)->synchronizeCache(LH_CLIENT(lhp)) !=
+	    kIOReturnSuccess) {
+		dprintf("%s %s\n", __func__,
+		    "IOMedia synchronizeCache failed");
+		return (ENOTSUP);
+	}
 #endif
 
 	/* Success */
