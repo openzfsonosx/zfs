@@ -73,6 +73,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/skein_zfs.c \
 	../../module/zfs/spa.c \
 	../../module/zfs/spa_boot.c \
+	../../module/zfs/spa_checkpoint.c \
 	../../module/zfs/spa_config.c \
 	../../module/zfs/spa_errlog.c \
 	../../module/zfs/spa_history.c \
