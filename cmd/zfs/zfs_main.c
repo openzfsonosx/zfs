@@ -6862,8 +6862,8 @@ manual_mount(int argc, char **argv)
 		if (path[0] == '/' && strlen(path) == 1) {
 			syslog(LOG_NOTICE, "mountroot\n");
 		} else {
-			syslog(LOG_NOTICE, "automount\n");
-			return (0);
+			syslog(LOG_NOTICE, "no automount\n");
+			return (1);
 		}
 
 		ret = zmount(dataset, path, MS_OPTIONSTR | flags, MNTTYPE_ZFS,
