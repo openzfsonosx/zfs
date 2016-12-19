@@ -170,6 +170,8 @@ osx_kstat_t osx_kstat = {
 
 	{"zfs_write_implies_delete_child",KSTAT_DATA_UINT64  },
 	{"zfs_send_holes_without_birth_time",KSTAT_DATA_UINT64  },
+
+	{"dbuf_cache_max_bytes",KSTAT_DATA_UINT64  },
 };
 
 
@@ -359,6 +361,10 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			ks->zfs_write_implies_delete_child.value.ui64;
 		send_holes_without_birth_time =
 			ks->zfs_send_holes_without_birth_time.value.ui64;
+
+		dbuf_cache_max_bytes =
+		    ks->dbuf_cache_max_bytes.value.ui64;
+
 	} else {
 
 		/* kstat READ */
@@ -539,6 +545,8 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			zfs_write_implies_delete_child;
 		ks->zfs_send_holes_without_birth_time.value.ui64 =
 			send_holes_without_birth_time;
+
+		ks->dbuf_cache_max_bytes.value.ui64 = dbuf_cache_max_bytes;
 	}
 
 	return 0;
