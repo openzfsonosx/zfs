@@ -3489,6 +3489,7 @@ zfs_suspend_fs(zfsvfs_t *zfsvfs)
 		delay(hz*zfs_vfs_suspend_fs_begin_delay);
 	else
 		dprintf("Warning: No delay at beginning of zfs_suspend_fs\n");
+	membar_producer(); // mfence
 #endif /* __APPLE__ */
 
 	int error;
@@ -3497,6 +3498,7 @@ zfs_suspend_fs(zfsvfs_t *zfsvfs)
 		return (error);
 
 #ifdef __APPLE__
+	membar_producer(); // mfence
 	if (zfs_vfs_suspend_fs_end_delay >= 32)
 		delay(hz*32);
 	else if (zfs_vfs_suspend_fs_end_delay >= 1)
