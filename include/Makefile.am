@@ -21,13 +21,13 @@ USER_H = \
 	$(top_srcdir)/include/libzfs_core.h \
 	$(top_srcdir)/include/libzfs_impl.h
 
-#EXTRA_DIST = $(COMMON_H) $(KERNEL_H) $(USER_H)
+#EXTRA_DIST = $(COMMON_H) $(USER_H)
 
 if CONFIG_USER
-#libzfsdir = $(includedir)/libzfs
-#libzfs_HEADERS = $(COMMON_H) $(USER_H)
-libzfsdir =
-libzfs_HEADERS =
+libzfsdir = $(includedir)/libzfs
+libzfs_HEADERS = $(COMMON_H) $(USER_H)
+#libzfsdir =
+#libzfs_HEADERS =
 endif
 
 if CONFIG_KERNEL
