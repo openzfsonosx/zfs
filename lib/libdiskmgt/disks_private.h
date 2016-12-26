@@ -23,16 +23,32 @@
  * Copyright (c) 2016, Brendon Humphrey (brendon.humphrey@mac.com). All rights reserved.
  */
 
-#include <libgen.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/sysctl.h>
-#include <sys/types.h>
-#include "disks_private.h"
+#ifndef DISKS_PRIVATE_H
+#define DISKS_PRIVATE_H
 
-int
-dm_in_swap_dir(const char *dev_name)
-{
-  return (inuse_macswap(dev_name));
+#include <libnvpair.h>
+//#include <libdiskmgt.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define	NVATTRS	NV_UNIQUE_NAME | NV_UNIQUE_NAME_TYPE
+#define	NVATTRS_STAT	0x0
+  
+  int inuse_fs(char *slice, nvlist_t *attrs, int *errp);
+  int inuse_macswap(const char *dev_name);
+  int inuse_mnt(char *slice, nvlist_t *attrs, int *errp);  
+  int inuse_mnt(char *slice, nvlist_t *attrs, int *errp);
+  int inuse_active_zpool(char *slice, nvlist_t *attrs, int *errp);
+  int inuse_exported_zpool(char *slice, nvlist_t *attrs, int *errp);
+  
+  void libdiskmgt_add_str(nvlist_t *attrs, char *name, char *val, int *errp);
+
+  nvlist_t *slice_get_stats(char *slice, int stat_type, int *errp);
+  
+#ifdef __cplusplus
 }
+#endif
+
+#endif

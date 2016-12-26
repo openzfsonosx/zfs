@@ -23,16 +23,13 @@
  * Copyright (c) 2016, Brendon Humphrey (brendon.humphrey@mac.com). All rights reserved.
  */
 
-#include <libgen.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/sysctl.h>
-#include <sys/types.h>
-#include "disks_private.h"
+#include <libnvpair.h>
 
+/*
+ * Use the heuristics to check for a filesystem on the slice.
+ */
 int
-dm_in_swap_dir(const char *dev_name)
+inuse_fs(char *slice, nvlist_t *attrs, int *errp)
 {
-  return (inuse_macswap(dev_name));
+  return (0);
 }

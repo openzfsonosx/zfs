@@ -7,10 +7,16 @@ DEFAULT_INCLUDES += \
 lib_LTLIBRARIES = libdiskmgt.la
 
 libdiskmgt_la_SOURCES = \
-	libdiskmgt.c
+	libdiskmgt.c \
+	entry.c \
+	inuse_fs.c \
+	inuse_macswap.c \
+	inuse_mnt.c \
+	inuse_zpool.c \
+	slice.c
 
-#libzfs_core_la_LIBADD = \
-#	$(top_builddir)/lib/libnvpair/libnvpair.la
+libdiskmgt_core_la_LIBADD = \
+	$(top_builddir)/lib/libnvpair/libnvpair.la
 
 libdiskmgt_la_LDFLAGS = -version-info 1:0:0
 
