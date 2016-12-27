@@ -772,8 +772,22 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 		flags |= MS_RDONLY;
 #endif /* __LINUX__ */
 
+#ifdef __APPLE__
+	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL)) {
+		if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT &&
+		    strcmp(mountpoint, "none") == 0) {
+			(void) fprintf(stderr, gettext("cannot mount '%s': no "
+			    "mountpoint set for its parent\n"),
+			    zfs_get_name(zhp));
+			return (1);
+		} else {
+			return (0);
+		}
+	}
+#else
 	if (!zfs_is_mountable(zhp, mountpoint, sizeof (mountpoint), NULL))
 		return (0);
+#endif
 
 #ifdef __LINUX__
 
