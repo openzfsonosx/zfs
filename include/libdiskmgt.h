@@ -166,7 +166,8 @@ extern "C" {
    * This is a partial implementation of (or similar to) libdiskmgt, adapted for OSX use.
    */
   int dm_in_swap_dir(const char *dev_name);
-	
+  int dm_inuse(char *dev_name, char **msg, dm_who_type_t who, int *errp);	
+
 #ifdef __cplusplus
 }
 #endif

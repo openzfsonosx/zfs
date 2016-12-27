@@ -405,41 +405,68 @@ check_error(int err)
 	    "failed: %s\n"), strerror(err));
 }
 
+static void
+libdiskmgt_error(int error)
+{
+	/*
+	 * ENXIO/ENODEV is a valid error message if the device doesn't live in
+	 * /dev/dsk.  Don't bother printing an error message in this case.
+	 */
+	if (error == ENXIO || error == ENODEV)
+		return;
+
+	(void) fprintf(stderr, gettext("warning: device in use checking "
+	    "failed: %s\n"), strerror(error));
+}
+
 static int
 check_slice(const char *path, blkid_cache cache, int force, boolean_t isspare)
 {
-	int err;
-#ifdef HAVE_LIBBLKID
-	char *value;
+  char *msg;
+  int error = 0;
+  dm_who_type_t who;
+  
+  if (force)
+    who = DM_WHO_ZPOOL_FORCE;
+  else if (isspare)
+    who = DM_WHO_ZPOOL_SPARE;
+  else
+    who = DM_WHO_ZPOOL;
 
-	/* No valid type detected device is safe to use */
-	value = blkid_get_tag_value(cache, "TYPE", path);
-	if (value == NULL)
-		return (0);
+  if (dm_inuse((char *)path, &msg, who, &error) || error) {
+    if (error != 0) {
+      libdiskmgt_error(error);
+      return (0);
+    } else {
+      vdev_error("%s", msg);
+      free(msg);
+      return (-1);
+    }
+  }
 
-	/*
-	 * If libblkid detects a ZFS device, we check the device
-	 * using check_file() to see if it's safe.  The one safe
-	 * case is a spare device shared between multiple pools.
-	 */
-	if (strcmp(value, "zfs_member") == 0) {
-		err = check_file(path, force, isspare);
-	} else {
-		if (force) {
-			err = 0;
-		} else {
-			err = -1;
-			vdev_error(gettext("%s contains a filesystem of "
-			    "type '%s'\n"), path, value);
-		}
-	}
+#if 0
+  /*
+   * If we're given a whole disk, ignore overlapping slices since we're
+   * about to label it anyway.
+   */
+  error = 0;
+  if (!wholedisk && !force &&
+      (dm_isoverlapping((char *)path, &msg, &error) || error)) {
+    if (error == 0) {
+      /* dm_isoverlapping returned -1 */
+      vdev_error(gettext("%s overlaps with %s\n"), path, msg);
+      free(msg);
+      return (-1);
+    } else if (error != ENODEV) {
+      /* libdiskmgt's devcache only handles physical drives */
+      libdiskmgt_error(error);
+      return (0);
+    }
+  }
 
-	free(value);
-#else
-	err = check_file(path, force, isspare);
-#endif /* HAVE_LIBBLKID */
-
-	return (err);
+#endif
+	
+  return (0);
 }
 
 /*
