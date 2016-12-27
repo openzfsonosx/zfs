@@ -31,5 +31,5 @@
 int
 inuse_fs(char *slice, nvlist_t *attrs, int *errp)
 {
-  return (0);
+	return (0);
 }

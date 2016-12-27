@@ -63,19 +63,19 @@ slice_get_stats(char *slice, int stat_type, int *errp)
 	nvlist_t	*stats;
 
 	if (stat_type != DM_SLICE_STAT_USE) {
-	    *errp = EINVAL;
-	    return (NULL);
+		*errp = EINVAL;
+		return (NULL);
 	}
 
 	*errp = 0;
 
 	if (nvlist_alloc(&stats, NVATTRS_STAT, 0) != 0) {
-	    *errp = ENOMEM;
-	    return (NULL);
+		*errp = ENOMEM;
+		return (NULL);
 	}
 
 	if ((*errp = add_inuse(slice, stats)) != 0) {
-	    return (NULL);
+		return (NULL);
 	}
 
 	return (stats);
@@ -87,16 +87,16 @@ slice_get_stats(char *slice, int stat_type, int *errp)
 static int
 add_inuse(char *name, nvlist_t *attrs)
 {
-	int	i;
-	int	error;
+	int	i = 0;
+	int	error = 0;
 
 	for (i = 0; detectors[i] != NULL; i ++) {
-	    if (detectors[i](name, attrs, &error) || error != 0) {
-		if (error != 0) {
-		    return (error);
+		if (detectors[i](name, attrs, &error) || error != 0) {
+			if (error != 0) {
+				return (error);
+			}
+			break;
 		}
-		break;
-	    }
 	}
 
 	return (0);

@@ -52,7 +52,7 @@
  * Pointers to libzfs.so functions that we dynamically resolve.
  */
 static int (*zfsdl_zpool_in_use)(libzfs_handle_t *hdl, int fd,
-    pool_state_t *state, char **name, boolean_t *);
+pool_state_t *state, char **name, boolean_t *);
 static libzfs_handle_t *(*zfsdl_libzfs_init)(boolean_t);
 
 static boolean_t		initialized = false;
@@ -71,7 +71,7 @@ inuse_zpool_common(char *slice, nvlist_t *attrs, int *errp, char *type)
 
 	*errp = 0;
 	if (slice == NULL) {
-	    return (found);
+		return (found);
 	}
 
 	/*
@@ -87,7 +87,7 @@ inuse_zpool_common(char *slice, nvlist_t *attrs, int *errp, char *type)
 	if ((fd = open(slice, O_RDONLY)) > 0) {
 		name = NULL;
 		if (zfsdl_zpool_in_use(zfs_hdl, fd, &state,
-		    &name, &used) == 0 && used) {
+			&name, &used) == 0 && used) {
 			if (strcmp(type, DM_USE_ACTIVE_ZPOOL) == 0) {
 				if (state == POOL_STATE_ACTIVE) {
 					found = 1;
@@ -146,7 +146,7 @@ init_zpool()
 	 * data
 	 */
 	if ((zfsdl_libzfs_init = (libzfs_handle_t *(*)(boolean_t))
-	    dlsym(lh, "libzfs_init")) == NULL ||
+		dlsym(lh, "libzfs_init")) == NULL ||
 	    (zfsdl_zpool_in_use = (int (*)(libzfs_handle_t *, int,
 	    pool_state_t *, char **, boolean_t *))
 	    dlsym(lh, "zpool_in_use")) == NULL) {

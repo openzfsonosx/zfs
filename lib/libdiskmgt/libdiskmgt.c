@@ -34,5 +34,5 @@
 int
 dm_in_swap_dir(const char *dev_name)
 {
-  return (inuse_macswap(dev_name));
+	return (inuse_macswap(dev_name));
 }

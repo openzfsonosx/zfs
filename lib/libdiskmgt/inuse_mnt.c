@@ -58,22 +58,22 @@
 int
 inuse_mnt(char *slice, nvlist_t *attrs, int *errp)
 {
-  struct statfs* mounts;
-  
-  /* Read the current set of mounts */
-  int num_mounts = getmntinfo(&mounts, MNT_WAIT);
-	
-  /* Check whether slice is presently in use */
-  for (int i = 0; i < num_mounts; i++) {
-    int slice_found = (strcmp(mounts[i].f_mntfromname, slice) == 0);
+	struct statfs* mounts;
 
-    if (slice_found) {
-      libdiskmgt_add_str(attrs, DM_USED_BY, DM_USE_MOUNT, errp);
-      libdiskmgt_add_str(attrs, DM_USED_NAME, mounts[i].f_mntonname, errp);
-      return 1;
-    }
-  }
-  
-  return 0;
+	/* Read the current set of mounts */
+	int num_mounts = getmntinfo(&mounts, MNT_WAIT);
+	
+	/* Check whether slice is presently in use */
+	for (int i = 0; i < num_mounts; i++) {
+		int slice_found = (strcmp(mounts[i].f_mntfromname, slice) == 0);
+
+		if (slice_found) {
+			libdiskmgt_add_str(attrs, DM_USED_BY, DM_USE_MOUNT, errp);
+			libdiskmgt_add_str(attrs, DM_USED_NAME, mounts[i].f_mntonname, errp);
+			return 1;
+		}
+	}
+
+	return 0;
 }
 

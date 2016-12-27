@@ -43,23 +43,23 @@
 #include "disks_private.h"
 
 #define	ANY_ZPOOL_USE(who)			\
-  (((who) == DM_WHO_ZPOOL_FORCE) ||		\
-   ((who) == DM_WHO_ZPOOL) ||			\
-   ((who) == DM_WHO_ZPOOL_SPARE))
+	(((who) == DM_WHO_ZPOOL_FORCE) ||	\
+	((who) == DM_WHO_ZPOOL) ||		\
+	((who) == DM_WHO_ZPOOL_SPARE))
 
 void dm_get_slice_stats(char *slice, nvlist_t **dev_stats, int *errp);
 nvlist_t *dm_get_stats(char *slice, int stat_type, int *errp);
 static int build_usage_string(char *dname, char *by, char *data, char **msg,
-		   int *found, int *errp);
+int *found, int *errp);
 void dm_get_usage_string(char *what, char *how, char **usage_string);
 
 
 void
 libdiskmgt_add_str(nvlist_t *attrs, char *name, char *val, int *errp)
 {
-  if (*errp == 0) {
-    *errp = nvlist_add_string(attrs, name, val);
-  }
+	if (*errp == 0) {
+		*errp = nvlist_add_string(attrs, name, val);
+	}
 }
 
 /*
@@ -72,134 +72,132 @@ libdiskmgt_add_str(nvlist_t *attrs, char *name, char *val, int *errp)
 int
 dm_inuse(char *dev_name, char **msg, dm_who_type_t who, int *errp)
 {
-  nvlist_t *dev_stats = NULL;
-  char *by, *data;
-  nvpair_t *nvwhat = NULL;
-  nvpair_t *nvdesc = NULL;
-  int	found = 0;
-  // int	err;
-  //  char	*dname = NULL;
+	nvlist_t *dev_stats = NULL;
+	char *by, *data;
+	nvpair_t *nvwhat = NULL;
+	nvpair_t *nvdesc = NULL;
+	int	found = 0;
 
-  *errp = 0;
-  *msg = NULL;
-
-  /*
-   * If the user doesn't want to do in use checking, return.
-   */
-
-  if (NOINUSE_SET)
-    return (0);
-	
-  dm_get_slice_stats(dev_name, &dev_stats, errp);
-  if (dev_stats == NULL) {
-    /*
-     * If there is an error, but it isn't a no device found error
-     * return the error as recorded. Otherwise, with a full
-     * block name, we might not be able to get the slice
-     * associated, and will get an ENODEV error. For example,
-     * an SVM metadevice will return a value from getfullblkname()
-     * but libdiskmgt won't be able to find this device for
-     * statistics gathering. This is expected and we should not
-     * report errnoneous errors.
-     */
-    if (*errp) {
-      if (*errp == ENODEV) {
 	*errp = 0;
-      }
-    }
-    //    free(dname);
-    return (found);
-  }
+	*msg = NULL;
 
-  for (;;) {
+	/*
+	 * If the user doesn't want to do in use checking, return.
+	 */
 
-    nvwhat = nvlist_next_nvpair(dev_stats, nvdesc);
-    nvdesc = nvlist_next_nvpair(dev_stats, nvwhat);
-
-    /*
-     * End of the list found.
-     */
-    if (nvwhat == NULL || nvdesc == NULL) {
-      break;
-    }
-    /*
-     * Otherwise, we check to see if this client(who) cares
-     * about this in use scenario
-     */
-
-    ASSERT(strcmp(nvpair_name(nvwhat), DM_USED_BY) == 0);
-    ASSERT(strcmp(nvpair_name(nvdesc), DM_USED_NAME) == 0);
-    /*
-     * If we error getting the string value continue on
-     * to the next pair(if there is one)
-     */
-    if (nvpair_value_string(nvwhat, &by)) {
-      continue;
-    }
-    if (nvpair_value_string(nvdesc, &data)) {
-      continue;
-    }
-
-    switch (who) {
-
-    case DM_WHO_ZPOOL_FORCE:
-      if (strcmp(by, DM_USE_FS) == 0 ||
-	  strcmp(by, DM_USE_EXPORTED_ZPOOL) == 0)
-	break;
-      /* FALLTHROUGH */
-    case DM_WHO_ZPOOL:
-      if (build_usage_string(dev_name,
-			     by, data, msg, &found, errp) != 0) {
-	if (*errp)
-	  goto out;
-      }
-      break;
-
-    case DM_WHO_ZPOOL_SPARE:
-      if (strcmp(by, DM_USE_SPARE_ZPOOL) != 0) {
-	if (build_usage_string(dev_name, by,
-			       data, msg, &found, errp) != 0) {
-	  if (*errp)
-	    goto out;
+	if (NOINUSE_SET)
+		return (0);
+	
+	dm_get_slice_stats(dev_name, &dev_stats, errp);
+	if (dev_stats == NULL) {
+		/*
+		 * If there is an error, but it isn't a no device found error
+		 * return the error as recorded. Otherwise, with a full
+		 * block name, we might not be able to get the slice
+		 * associated, and will get an ENODEV error. For example,
+		 * an SVM metadevice will return a value from getfullblkname()
+		 * but libdiskmgt won't be able to find this device for
+		 * statistics gathering. This is expected and we should not
+		 * report errnoneous errors.
+		 */
+		if (*errp) {
+			if (*errp == ENODEV) {
+				*errp = 0;
+			}
+		}
+		//    free(dname);
+		return (found);
 	}
-      }
-      break;
 
-    default:
-      /*
-       * nothing found in use for this client
-       * of libdiskmgt. Default is 'not in use'.
-       */
-      break;
-    }
-  }
- out:
-  nvlist_free(dev_stats);
+	for (;;) {
 
-  return (found);
+		nvwhat = nvlist_next_nvpair(dev_stats, nvdesc);
+		nvdesc = nvlist_next_nvpair(dev_stats, nvwhat);
+
+		/*
+		 * End of the list found.
+		 */
+		if (nvwhat == NULL || nvdesc == NULL) {
+			break;
+		}
+		/*
+		 * Otherwise, we check to see if this client(who) cares
+		 * about this in use scenario
+		 */
+
+		ASSERT(strcmp(nvpair_name(nvwhat), DM_USED_BY) == 0);
+		ASSERT(strcmp(nvpair_name(nvdesc), DM_USED_NAME) == 0);
+		/*
+		 * If we error getting the string value continue on
+		 * to the next pair(if there is one)
+		 */
+		if (nvpair_value_string(nvwhat, &by)) {
+			continue;
+		}
+		if (nvpair_value_string(nvdesc, &data)) {
+			continue;
+		}
+
+		switch (who) {
+
+		case DM_WHO_ZPOOL_FORCE:
+			if (strcmp(by, DM_USE_FS) == 0 ||
+			strcmp(by, DM_USE_EXPORTED_ZPOOL) == 0)
+				break;
+			/* FALLTHROUGH */
+		case DM_WHO_ZPOOL:
+			if (build_usage_string(dev_name,
+			by, data, msg, &found, errp) != 0) {
+				if (*errp)
+					goto out;
+			}
+			break;
+
+		case DM_WHO_ZPOOL_SPARE:
+			if (strcmp(by, DM_USE_SPARE_ZPOOL) != 0) {
+				if (build_usage_string(dev_name, by,
+					data, msg, &found, errp) != 0) {
+					if (*errp)
+						goto out;
+				}
+			}
+			break;
+
+		default:
+			/*
+			 * nothing found in use for this client
+			 * of libdiskmgt. Default is 'not in use'.
+			 */
+			break;
+		}
+	}
+  out:
+	nvlist_free(dev_stats);
+
+	return (found);
 }
 
 nvlist_t *
 dm_get_stats(char *slice, int stat_type, int *errp)
 {
-  nvlist_t	*stats = NULL;
+	nvlist_t	*stats = NULL;
 
-  /* BGH - removed everything except ability to check a slice */
+	/* BGH - removed everything except ability to check a slice */
   
-  if (stat_type == DM_SLICE_STAT_USE) {
-    /*
-     * If NOINUSE_CHECK is set, we do not perform
-     * the in use checking if the user has set stat_type
-     * DM_SLICE_STAT_USE
-     */
-    if (NOINUSE_SET) {
-      stats = NULL;
-      return (stats);
-    }
-  }
-  stats = slice_get_stats(slice, stat_type, errp);
+	if (stat_type == DM_SLICE_STAT_USE) {
+		/*
+		 * If NOINUSE_CHECK is set, we do not perform
+		 * the in use checking if the user has set stat_type
+		 * DM_SLICE_STAT_USE
+		 */
+		if (NOINUSE_SET) {
+			stats = NULL;
+			return (stats);
+		}
+	}
+	stats = slice_get_stats(slice, stat_type, errp);
 
-  return (stats);
+	return (stats);
 }
 
 
@@ -212,14 +210,14 @@ dm_get_stats(char *slice, int stat_type, int *errp)
 void
 dm_get_slice_stats(char *slice, nvlist_t **dev_stats, int *errp)
 {
-  *dev_stats = NULL;
-  *errp = 0;
+	*dev_stats = NULL;
+	*errp = 0;
 
-  if (slice == NULL) {
-    return;
-  }
+	if (slice == NULL) {
+		return;
+	}
 
-  *dev_stats = dm_get_stats(slice, DM_SLICE_STAT_USE, errp);
+	*dev_stats = dm_get_stats(slice, DM_SLICE_STAT_USE, errp);
 }
 
 void
@@ -272,7 +270,7 @@ dm_get_usage_string(char *what, char *how, char **usage_string)
  */
 static int
 build_usage_string(char *dname, char *by, char *data, char **msg,
-    int *found, int *errp)
+int *found, int *errp)
 {
 	int	len0;
 	int	len1;
