@@ -35,17 +35,42 @@ extern "C" {
 
 #define	NVATTRS	NV_UNIQUE_NAME | NV_UNIQUE_NAME_TYPE
 #define	NVATTRS_STAT	0x0
-  
-  int inuse_fs(char *slice, nvlist_t *attrs, int *errp);
-  int inuse_macswap(const char *dev_name);
-  int inuse_mnt(char *slice, nvlist_t *attrs, int *errp);  
-  int inuse_mnt(char *slice, nvlist_t *attrs, int *errp);
-  int inuse_active_zpool(char *slice, nvlist_t *attrs, int *errp);
-  int inuse_exported_zpool(char *slice, nvlist_t *attrs, int *errp);
-  
-  void libdiskmgt_add_str(nvlist_t *attrs, char *name, char *val, int *errp);
 
-  nvlist_t *slice_get_stats(char *slice, int stat_type, int *errp);
+	struct DU_CS_Info {
+		int valid;
+		char *summary;
+	};
+
+	struct DU_Info {
+		int valid;
+		char *summary;
+	};
+	
+	void destroy_diskutil_cs_info(struct DU_CS_Info *info);
+	void get_diskutil_cs_info(char *slice, struct DU_CS_Info *info);
+	int is_cs_disk(struct DU_CS_Info *info);
+	int is_converted(struct DU_CS_Info *info);
+	int is_locked(struct DU_CS_Info *info);
+	int is_logical_volume(struct DU_CS_Info *info);
+	int is_physical_volume(struct DU_CS_Info *info);
+	int is_online(struct DU_CS_Info *info);
+	char* get_LV_status(struct DU_CS_Info *info);
+	
+
+	void destroy_diskutil_info(struct DU_Info *info);
+	void get_diskutil_info(char *slice, struct DU_Info *info);
+
+	int inuse_corestorage(char *slice, nvlist_t *attrs, int *errp);	
+	int inuse_fs(char *slice, nvlist_t *attrs, int *errp);
+	int inuse_macswap(const char *dev_name);
+	int inuse_mnt(char *slice, nvlist_t *attrs, int *errp);  
+	int inuse_mnt(char *slice, nvlist_t *attrs, int *errp);
+	int inuse_active_zpool(char *slice, nvlist_t *attrs, int *errp);
+	int inuse_exported_zpool(char *slice, nvlist_t *attrs, int *errp);
+  
+	void libdiskmgt_add_str(nvlist_t *attrs, char *name, char *val, int *errp);
+
+	nvlist_t *slice_get_stats(char *slice, int stat_type, int *errp);
   
 #ifdef __cplusplus
 }

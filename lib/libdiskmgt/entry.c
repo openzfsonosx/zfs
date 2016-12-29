@@ -24,9 +24,7 @@
  */
 
 #include <fcntl.h>
-//#include <libdevinfo.h>
 #include <stdio.h>
-//#include <sys/sunddi.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -35,8 +33,6 @@
 #include <locale.h>
 #include <sys/debug.h>
 #include <strings.h>
-//#include <sys/stat.h>
-//#include <sys/swap.h>
 
 #include <libnvpair.h>
 #include <libdiskmgt.h>
@@ -223,8 +219,6 @@ dm_get_slice_stats(char *slice, nvlist_t **dev_stats, int *errp)
 void
 dm_get_usage_string(char *what, char *how, char **usage_string)
 {
-
-
 	if (usage_string == NULL || what == NULL) {
 		return;
 	}
@@ -259,6 +253,24 @@ dm_get_usage_string(char *what, char *how, char **usage_string)
 		*usage_string = dgettext(TEXT_DOMAIN,
 		    "%s is in use as a cache device for ZFS pool %s.  "
 		    "Please see zpool(1M).\n");
+	} else if (strcmp(what, DM_USE_CORESTORAGE_PV) == 0) {
+		*usage_string = dgettext(TEXT_DOMAIN,
+		    "%s is in use as a corestorage physical volume.  "
+		    "Please see diskutil(8).\n");
+	} else if (strcmp(what, DM_USE_CORESTORAGE_LOCKED_LV) == 0) {
+		*usage_string = dgettext(TEXT_DOMAIN,
+		    "%s is a corestorage logical volume, "
+		    "but cannot be used as it is locked.  "
+		    "Please see diskutil(8).\n");
+	} else if (strcmp(what, DM_USE_CORESTORAGE_CONVERTING_LV) == 0) {
+		*usage_string = dgettext(TEXT_DOMAIN,
+		    "%s is a corestorage physical volume, but is still converting (%s).\n "
+		    "Creating a zpool while converting will result in data corruption.\n"
+		    "Please see diskutil(8).\n");
+	} else if (strcmp(what, DM_USE_CORESTORAGE_OFFLINE_LV) == 0) {
+		*usage_string = dgettext(TEXT_DOMAIN,
+		    "%s is a corestorage physical volume, but is not online (%s). "
+		    "Please see diskutil(8).\n");
 	}
 }
 

@@ -8,7 +8,9 @@ lib_LTLIBRARIES = libdiskmgt.la
 
 libdiskmgt_la_SOURCES = \
 	libdiskmgt.c \
+	diskutil.c \
 	entry.c \
+	inuse_corestorage.c \
 	inuse_fs.c \
 	inuse_macswap.c \
 	inuse_mnt.c \
@@ -18,6 +20,6 @@ libdiskmgt_la_SOURCES = \
 libdiskmgt_core_la_LIBADD = \
 	$(top_builddir)/lib/libnvpair/libnvpair.la
 
-libdiskmgt_la_LDFLAGS = -version-info 1:0:0
+libdiskmgt_la_LDFLAGS = -version-info 1:0:0 -framework DiskArbitration -framework CoreServices
 
 EXTRA_DIST = $(USER_C)
