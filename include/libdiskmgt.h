@@ -38,6 +38,7 @@ extern "C" {
 #define	DM_USED_NAME		"used_name"
 #define	DM_USE_MOUNT		"mount"
 #define	DM_USE_FS		"fs"
+#define	DM_USE_FS_NO_FORCE	"fs_nf"
 #define	DM_USE_EXPORTED_ZPOOL	"exported_zpool"
 #define	DM_USE_ACTIVE_ZPOOL	"active_zpool"
 #define	DM_USE_SPARE_ZPOOL	"spare_zpool"

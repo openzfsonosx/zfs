@@ -268,10 +268,22 @@ get_diskutil_info(char *slice, struct DU_Info *info)
 	}
 }
 
+int
+diskutil_info_valid(struct DU_Info *info)
+{
+	return info->valid;
+}
+
 static int
 compare_diskutil_key(struct DU_Info *info, char *key, char *value)
 {
 	return compare_key(info->summary, key, value);
+}
+
+static char*
+get_diskutil_value(struct DU_Info *info, char *key)
+{
+	return (get_value(info->summary, key));
 }
 
 int
@@ -304,8 +316,8 @@ is_MSDOS_partition(struct DU_Info *info)
 	return (compare_diskutil_key(info, "Partition Type", "Microsoft Basic Data"));	
 }
 
-int
-diskutil_info_valid(struct DU_Info *info)
+char*
+get_bundle_type(struct DU_Info *info)
 {
-	return (info->valid);
+	return (get_diskutil_value(info, "Type (Bundle)"));
 }

@@ -141,37 +141,37 @@ dm_inuse(char *dev_name, char **msg, dm_who_type_t who, int *errp)
 			strcmp(by, DM_USE_EXPORTED_ZPOOL) == 0 ||
 			strcmp(by,  DM_USE_OS_PARTITION) == 0)
 				break;
-		/* FALLTHROUGH */
-	case DM_WHO_ZPOOL:
-		if (build_usage_string(dev_name,
-		by, data, msg, &found, errp) != 0) {
-			if (*errp)
-				goto out;
-		}
-		break;
-
-	case DM_WHO_ZPOOL_SPARE:
-		if (strcmp(by, DM_USE_SPARE_ZPOOL) != 0) {
-			if (build_usage_string(dev_name, by,
-				data, msg, &found, errp) != 0) {
+			/* FALLTHROUGH */
+		case DM_WHO_ZPOOL:
+			if (build_usage_string(dev_name,
+			by, data, msg, &found, errp) != 0) {
 				if (*errp)
 					goto out;
 			}
+			break;
+
+		case DM_WHO_ZPOOL_SPARE:
+			if (strcmp(by, DM_USE_SPARE_ZPOOL) != 0) {
+				if (build_usage_string(dev_name, by,
+					data, msg, &found, errp) != 0) {
+					if (*errp)
+						goto out;
+				}
+			}
+			break;
+
+		default:
+			/*
+			 * nothing found in use for this client
+			 * of libdiskmgt. Default is 'not in use'.
+			 */
+			break;
 		}
-		break;
-
-	default:
-		/*
-		 * nothing found in use for this client
-		 * of libdiskmgt. Default is 'not in use'.
-		 */
-		break;
 	}
-}
-out:
-nvlist_free(dev_stats);
+  out:
+	nvlist_free(dev_stats);
 
-return (found);
+	return (found);
 }
 
 nvlist_t *
@@ -235,7 +235,8 @@ dm_get_usage_string(char *what, char *how, char **usage_string)
 			    "%s is currently mounted on %s."
 			    " Please see umount(1M).\n");
 		}
-	} else if (strcmp(what, DM_USE_FS) == 0) {
+	} else if (strcmp(what, DM_USE_FS) == 0 ||
+	strcmp(what, DM_USE_FS_NO_FORCE) == 0) {
 		*usage_string = dgettext(TEXT_DOMAIN,
 		    "%s contains a %s filesystem.\n");
 	} else if (strcmp(what, DM_USE_EXPORTED_ZPOOL) == 0) {
@@ -272,7 +273,8 @@ dm_get_usage_string(char *what, char *how, char **usage_string)
 		*usage_string = dgettext(TEXT_DOMAIN,
 		    "%s is a corestorage physical volume, but is not online (%s). "
 		    "Please see diskutil(8).\n");
-	} else if (strcmp(what, DM_USE_OS_PARTITION) == 0) {
+	} else if (strcmp(what, DM_USE_OS_PARTITION) == 0 ||
+	strcmp(what, DM_USE_OS_PARTITION_NO_FORCE) == 0) {
 		*usage_string = dgettext(TEXT_DOMAIN,
 		    "%s is a %s partition. "
 		    "Please see diskutil(8).\n");

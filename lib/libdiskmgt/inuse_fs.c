@@ -23,8 +23,11 @@
  * Copyright (c) 2016, Brendon Humphrey (brendon.humphrey@mac.com). All rights reserved.
  */
 
+#include <string.h>
 #include <libnvpair.h>
+#include <libdiskmgt.h>
 #include "disks_private.h"
+
 
 /*
  * Use the heuristics to check for a filesystem on the slice.
@@ -32,5 +35,36 @@
 int
 inuse_fs(char *slice, nvlist_t *attrs, int *errp)
 {
-	return (0);
+	int in_use = 0;
+	struct DU_Info info;
+
+	init_diskutil_info(&info);
+	get_diskutil_info(slice, &info);
+
+	if (diskutil_info_valid(&info)) {
+		char *bundle_type = get_bundle_type(&info);
+
+		if (bundle_type &&
+		    strlen(bundle_type) &&
+		    (strcmp(bundle_type, "zfs") != 0)) {
+			
+			if(strcmp(bundle_type, "apfs") == 0) {
+				libdiskmgt_add_str(attrs, DM_USED_BY,
+				    DM_USE_FS_NO_FORCE, errp);
+			} else {
+				libdiskmgt_add_str(attrs, DM_USED_BY,
+				    DM_USE_FS, errp);
+			}
+
+			libdiskmgt_add_str(attrs, DM_USED_NAME,
+			    bundle_type, errp);
+
+			free(bundle_type);
+			in_use = 1;			
+		}
+	}
+	
+	destroy_diskutil_info(&info);
+	
+	return (in_use);
 }
