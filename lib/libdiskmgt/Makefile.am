@@ -14,6 +14,7 @@ libdiskmgt_la_SOURCES = \
 	inuse_fs.c \
 	inuse_macswap.c \
 	inuse_mnt.c \
+	inuse_partition.c \
 	inuse_zpool.c \
 	slice.c
 

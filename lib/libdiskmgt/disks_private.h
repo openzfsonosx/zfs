@@ -59,12 +59,14 @@ extern "C" {
 
 	void destroy_diskutil_info(struct DU_Info *info);
 	void get_diskutil_info(char *slice, struct DU_Info *info);
-
+	int is_efi_partition(struct DU_Info *info);
+	int is_recovery_partition(struct DU_Info *info);
+	
 	int inuse_corestorage(char *slice, nvlist_t *attrs, int *errp);	
 	int inuse_fs(char *slice, nvlist_t *attrs, int *errp);
 	int inuse_macswap(const char *dev_name);
 	int inuse_mnt(char *slice, nvlist_t *attrs, int *errp);  
-	int inuse_mnt(char *slice, nvlist_t *attrs, int *errp);
+	int inuse_partition(char *slice, nvlist_t *attrs, int *errp);	
 	int inuse_active_zpool(char *slice, nvlist_t *attrs, int *errp);
 	int inuse_exported_zpool(char *slice, nvlist_t *attrs, int *errp);
   

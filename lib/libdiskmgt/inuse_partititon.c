@@ -30,7 +30,28 @@
  * Use the heuristics to check for a filesystem on the slice.
  */
 int
-inuse_fs(char *slice, nvlist_t *attrs, int *errp)
+inuse_partition(char *slice, nvlist_t *attrs, int *errp)
 {
-	return (0);
+	int in_use = 0;
+	DS_Info info;
+
+	get_diskutil_info(slice, &info);
+
+	if (is_efi_partition(&info)) {
+		libdiskmgt_add_str(attrs, DM_USED_BY,
+		   DM_USE_OS_PARTITION, errp);
+		libdiskmgt_add_str(attrs, DM_USED_NAME,
+		    "EFI", errp);
+		in_use = 1;
+	} else if (is_recovery_partition(&info)) {
+		libdiskmgt_add_str(attrs, DM_USED_BY,
+		   DM_USE_OS_PARTITION, errp);
+		libdiskmgt_add_str(attrs, DM_USED_NAME,
+		    "Recovery", errp);
+		in_use = 1;
+	}
+	
+	destroy_diskutil_info(&info);
+	
+	return (in_use);
 }

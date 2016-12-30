@@ -50,6 +50,7 @@ typedef int (*detectorp)(char *, nvlist_t *, int *);
 static detectorp detectors[] = {
 	inuse_mnt,
 	inuse_corestorage,
+	inuse_partition,
 	inuse_active_zpool,
 	inuse_exported_zpool,
 	inuse_fs,  /* fs should always be last */

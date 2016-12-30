@@ -252,3 +252,14 @@ compare_diskutil_key(struct DU_Info *info, char *key, char *value)
 {
 	return compare_key(info->summary, key, value);
 }
+
+int
+is_efi_partition(struct DU_Info *info)
+{
+	return (compare_diskutil_key(info, "Partition Type", "EFI"));
+}
+
+int is_recovery_partition(struct DU_Info *info)
+{
+	return (compare_diskutil_key(info, "Partition Type", "Apple_Boot"));
+}

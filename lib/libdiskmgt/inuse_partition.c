@@ -24,13 +24,29 @@
  */
 
 #include <libnvpair.h>
+#include <libdiskmgt.h>
 #include "disks_private.h"
 
 /*
  * Use the heuristics to check for a filesystem on the slice.
  */
 int
-inuse_fs(char *slice, nvlist_t *attrs, int *errp)
+inuse_partition(char *slice, nvlist_t *attrs, int *errp)
 {
-	return (0);
+	int in_use = 0;
+	struct DU_Info info;
+
+	get_diskutil_info(slice, &info);
+
+	if (is_efi_partition(&info)) {
+		libdiskmgt_add_str(attrs, DM_USED_BY,
+		   DM_USE_OS_PARTITION, errp);
+		libdiskmgt_add_str(attrs, DM_USED_NAME,
+		    slice, errp);
+		in_use = 1;
+	}	
+	
+	destroy_diskutil_info(&info);
+	
+	return (in_use);
 }

@@ -271,6 +271,10 @@ dm_get_usage_string(char *what, char *how, char **usage_string)
 		*usage_string = dgettext(TEXT_DOMAIN,
 		    "%s is a corestorage physical volume, but is not online (%s). "
 		    "Please see diskutil(8).\n");
+	} else if (strcmp(what, DM_USE_OS_PARTITION) == 0) {
+		*usage_string = dgettext(TEXT_DOMAIN,
+		    "%s is a %s partition. "
+		    "Please see diskutil(8).\n");
 	}
 }
 
