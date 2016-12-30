@@ -36,16 +36,43 @@ inuse_partition(char *slice, nvlist_t *attrs, int *errp)
 	int in_use = 0;
 	struct DU_Info info;
 
+	init_diskutil_info(&info);
 	get_diskutil_info(slice, &info);
 
-	if (is_efi_partition(&info)) {
-		libdiskmgt_add_str(attrs, DM_USED_BY,
-		   DM_USE_OS_PARTITION, errp);
-		libdiskmgt_add_str(attrs, DM_USED_NAME,
-		    slice, errp);
-		in_use = 1;
-	}	
-	
+	if (diskutil_info_valid(&info)) {
+		if (is_efi_partition(&info)) {
+			libdiskmgt_add_str(attrs, DM_USED_BY,
+			    DM_USE_OS_PARTITION, errp);
+			libdiskmgt_add_str(attrs, DM_USED_NAME,
+			    "EFI", errp);
+			in_use = 1;
+		} else if (is_recovery_partition(&info)) {
+			libdiskmgt_add_str(attrs, DM_USED_BY,
+			    DM_USE_OS_PARTITION_NO_FORCE, errp);
+			libdiskmgt_add_str(attrs, DM_USED_NAME,
+			    "Recovery", errp);
+			in_use = 1;
+		} else if (is_APFS_partition(&info)) {
+			libdiskmgt_add_str(attrs, DM_USED_BY,
+			    DM_USE_OS_PARTITION_NO_FORCE, errp);
+			libdiskmgt_add_str(attrs, DM_USED_NAME,
+			    "APFS", errp);
+			in_use = 1;
+		} else if (is_HFS_partition(&info)) {
+			libdiskmgt_add_str(attrs, DM_USED_BY,
+			    DM_USE_OS_PARTITION, errp);
+			libdiskmgt_add_str(attrs, DM_USED_NAME,
+			    "HFS", errp);
+			in_use = 1;
+		} else if (is_MSDOS_partition(&info)) {
+			libdiskmgt_add_str(attrs, DM_USED_BY,
+			    DM_USE_OS_PARTITION, errp);
+			libdiskmgt_add_str(attrs, DM_USED_NAME,
+			    "MSDOS", errp);
+			in_use = 1;
+		}
+	}
+
 	destroy_diskutil_info(&info);
 	
 	return (in_use);

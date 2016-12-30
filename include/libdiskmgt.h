@@ -47,6 +47,7 @@ extern "C" {
 #define DM_USE_CORESTORAGE_CONVERTING_LV "corestorage_converting_lv"
 #define DM_USE_CORESTORAGE_OFFLINE_LV    "corestorage_offline_lv"
 #define DM_USE_OS_PARTITION     "reserved_os_partititon"
+#define DM_USE_OS_PARTITION_NO_FORCE     "reserved_os_partititon_nf"
   
 #define	NOINUSE_SET	getenv("NOINUSE_CHECK") != NULL
   

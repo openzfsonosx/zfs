@@ -32,51 +32,50 @@ inuse_corestorage(char *slice, nvlist_t *attrs, int *errp)
 {
 	struct DU_CS_Info info;
 	int in_use = 0;
-	
+
+	init_diskutil_cs_info(&info);	
 	get_diskutil_cs_info(slice, &info);
 
-	if (is_cs_disk(&info)) {
-		// slice is a physical cs device
-		if (is_physical_volume(&info)) {
-			libdiskmgt_add_str(attrs, DM_USED_BY,
-			    DM_USE_CORESTORAGE_PV, errp);
-			libdiskmgt_add_str(attrs, DM_USED_NAME,
-			    slice, errp);
-			in_use = 1;
-		}
-
-		// slice is a logical cs device, conditions precluding use:
-		// -- converting
-		// -- locked
-		// -- !Online
-		if (is_logical_volume(&info)) {
-			if (is_locked(&info)) {
+	if (diskutil_cs_info_valid(&info)) {
+		if (is_cs_disk(&info)) {
+			// slice is a physical cs device
+			if (is_physical_volume(&info)) {
 				libdiskmgt_add_str(attrs, DM_USED_BY,
-				    DM_USE_CORESTORAGE_LOCKED_LV, errp);
+				    DM_USE_CORESTORAGE_PV, errp);
 				libdiskmgt_add_str(attrs, DM_USED_NAME,
 				    slice, errp);
 				in_use = 1;
 			}
-			
-			if (!is_converted(&info)) {
-				char *lv_status = get_LV_status(&info);
-				libdiskmgt_add_str(attrs, DM_USED_BY,
-				    DM_USE_CORESTORAGE_CONVERTING_LV, errp);
-				libdiskmgt_add_str(attrs, DM_USED_NAME,
-				    lv_status, errp);
-				free(lv_status);
-				in_use = 1;
-			}
 
-			if (!is_online(&info)) {
-				char *lv_status = get_LV_status(&info);
-				libdiskmgt_add_str(attrs, DM_USED_BY,
-				    DM_USE_CORESTORAGE_OFFLINE_LV, errp);
-				libdiskmgt_add_str(attrs, DM_USED_NAME,
-				    lv_status, errp);
-				free(lv_status);
-				in_use = 1;
-			}			
+			// slice is a logical cs device, conditions precluding use:
+			// -- converting
+			// -- locked
+			// -- !Online
+			if (is_logical_volume(&info)) {
+				if (is_locked(&info)) {
+					libdiskmgt_add_str(attrs, DM_USED_BY,
+					    DM_USE_CORESTORAGE_LOCKED_LV, errp);
+					libdiskmgt_add_str(attrs, DM_USED_NAME,
+					    slice, errp);
+					in_use = 1;
+				} else if (!is_converted(&info)) {
+					char *lv_status = get_LV_status(&info);
+					libdiskmgt_add_str(attrs, DM_USED_BY,
+					    DM_USE_CORESTORAGE_CONVERTING_LV, errp);
+					libdiskmgt_add_str(attrs, DM_USED_NAME,
+					    lv_status, errp);
+					free(lv_status);
+					in_use = 1;
+				} else if (!is_online(&info)) {
+					char *lv_status = get_LV_status(&info);
+					libdiskmgt_add_str(attrs, DM_USED_BY,
+					    DM_USE_CORESTORAGE_OFFLINE_LV, errp);
+					libdiskmgt_add_str(attrs, DM_USED_NAME,
+					    lv_status, errp);
+					free(lv_status);
+					in_use = 1;
+				}			
+			}
 		}
 	}
 	

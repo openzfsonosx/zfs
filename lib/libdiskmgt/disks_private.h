@@ -45,9 +45,11 @@ extern "C" {
 		int valid;
 		char *summary;
 	};
-	
+
+	void init_diskutil_cs_info(struct DU_CS_Info *info);
 	void destroy_diskutil_cs_info(struct DU_CS_Info *info);
 	void get_diskutil_cs_info(char *slice, struct DU_CS_Info *info);
+	int diskutil_cs_info_valid(struct DU_CS_Info *info);	
 	int is_cs_disk(struct DU_CS_Info *info);
 	int is_converted(struct DU_CS_Info *info);
 	int is_locked(struct DU_CS_Info *info);
@@ -57,10 +59,15 @@ extern "C" {
 	char* get_LV_status(struct DU_CS_Info *info);
 	
 
+	void init_diskutil_info(struct DU_Info *info);	
 	void destroy_diskutil_info(struct DU_Info *info);
 	void get_diskutil_info(char *slice, struct DU_Info *info);
+	int diskutil_info_valid(struct DU_Info *info);
 	int is_efi_partition(struct DU_Info *info);
 	int is_recovery_partition(struct DU_Info *info);
+	int is_APFS_partition(struct DU_Info *info);
+	int is_HFS_partition(struct DU_Info *info);
+	int is_MSDOS_partition(struct DU_Info *info);
 	
 	int inuse_corestorage(char *slice, nvlist_t *attrs, int *errp);	
 	int inuse_fs(char *slice, nvlist_t *attrs, int *errp);

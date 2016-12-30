@@ -74,6 +74,13 @@ read_buffers(char *out_buffer, int out_length)
 }
 
 void
+init_diskutil_cs_info(struct DU_CS_Info *info)
+{
+	info->valid = 0;
+	info->summary = NULL;
+}
+
+void
 destroy_diskutil_cs_info(struct DU_CS_Info *info)
 {
 	info->valid = 0;
@@ -81,6 +88,12 @@ destroy_diskutil_cs_info(struct DU_CS_Info *info)
 		free(info->summary);
 		info->summary = NULL;
 	}
+}
+
+int
+diskutil_cs_info_valid(struct DU_CS_Info *info)
+{
+	return info->valid;
 }
 
 void
@@ -123,6 +136,7 @@ compare_key(char *summary, char *key, char *value)
 			sscanf(token, " %[^:]: %[^\n]", k, v);
 			
 			if(strcmp(k, key) == 0) {
+				//printf("compare ->%s<-, ->%s<- with ->%s<- ::: %d\n", k, v, value,  (strcmp(v, value) == 0));
 				matched = (strcmp(v, value) == 0);
 				break;
 			}
@@ -218,6 +232,13 @@ is_physical_volume(struct DU_CS_Info *info)
 }
 
 void
+init_diskutil_info(struct DU_Info *info)
+{
+	info->valid = 0;
+	info->summary = NULL;
+}
+
+void
 destroy_diskutil_info(struct DU_Info *info)
 {
 	info->valid = 0;
@@ -233,7 +254,7 @@ get_diskutil_info(char *slice, struct DU_Info *info)
 	int status = 0;
 	int out_length = 0;
 	char *cc[] = {"/usr/sbin/diskutil", "info", slice, NULL};
-	
+
 	destroy_diskutil_info(info);
 	
 	status = run_command(cc, &out_length);
@@ -259,7 +280,32 @@ is_efi_partition(struct DU_Info *info)
 	return (compare_diskutil_key(info, "Partition Type", "EFI"));
 }
 
-int is_recovery_partition(struct DU_Info *info)
+int
+is_recovery_partition(struct DU_Info *info)
 {
 	return (compare_diskutil_key(info, "Partition Type", "Apple_Boot"));
+}
+
+int
+is_APFS_partition(struct DU_Info *info)
+{
+	return (compare_diskutil_key(info, "Partition Type", "Apple_APFS"));
+}
+
+int
+is_HFS_partition(struct DU_Info *info)
+{
+	return (compare_diskutil_key(info, "Partition Type", "Apple_HFS"));
+}
+
+int
+is_MSDOS_partition(struct DU_Info *info)
+{
+	return (compare_diskutil_key(info, "Partition Type", "Microsoft Basic Data"));	
+}
+
+int
+diskutil_info_valid(struct DU_Info *info)
+{
+	return (info->valid);
 }

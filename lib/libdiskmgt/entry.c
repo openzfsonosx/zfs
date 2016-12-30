@@ -138,39 +138,40 @@ dm_inuse(char *dev_name, char **msg, dm_who_type_t who, int *errp)
 
 		case DM_WHO_ZPOOL_FORCE:
 			if (strcmp(by, DM_USE_FS) == 0 ||
-			strcmp(by, DM_USE_EXPORTED_ZPOOL) == 0)
+			strcmp(by, DM_USE_EXPORTED_ZPOOL) == 0 ||
+			strcmp(by,  DM_USE_OS_PARTITION) == 0)
 				break;
-			/* FALLTHROUGH */
-		case DM_WHO_ZPOOL:
-			if (build_usage_string(dev_name,
-			by, data, msg, &found, errp) != 0) {
+		/* FALLTHROUGH */
+	case DM_WHO_ZPOOL:
+		if (build_usage_string(dev_name,
+		by, data, msg, &found, errp) != 0) {
+			if (*errp)
+				goto out;
+		}
+		break;
+
+	case DM_WHO_ZPOOL_SPARE:
+		if (strcmp(by, DM_USE_SPARE_ZPOOL) != 0) {
+			if (build_usage_string(dev_name, by,
+				data, msg, &found, errp) != 0) {
 				if (*errp)
 					goto out;
 			}
-			break;
-
-		case DM_WHO_ZPOOL_SPARE:
-			if (strcmp(by, DM_USE_SPARE_ZPOOL) != 0) {
-				if (build_usage_string(dev_name, by,
-					data, msg, &found, errp) != 0) {
-					if (*errp)
-						goto out;
-				}
-			}
-			break;
-
-		default:
-			/*
-			 * nothing found in use for this client
-			 * of libdiskmgt. Default is 'not in use'.
-			 */
-			break;
 		}
-	}
-  out:
-	nvlist_free(dev_stats);
+		break;
 
-	return (found);
+	default:
+		/*
+		 * nothing found in use for this client
+		 * of libdiskmgt. Default is 'not in use'.
+		 */
+		break;
+	}
+}
+out:
+nvlist_free(dev_stats);
+
+return (found);
 }
 
 nvlist_t *
