@@ -55,6 +55,7 @@
 #include <sys/stropts.h>
 
 #include <libzfs.h>
+#include <libdiskmgt.h>
 
 #include "zpool_util.h"
 #include "zfs_comutil.h"
@@ -7452,6 +7453,8 @@ main(int argc, char **argv)
 		return (1);
 	}
 
+	libdiskmgt_init();
+	
 	libzfs_print_on_error(g_zfs, B_TRUE);
 
 	zfs_save_arguments(argc, argv, history_str, sizeof (history_str));
@@ -7484,7 +7487,8 @@ main(int argc, char **argv)
 		(void) zpool_log_history(g_zfs, history_str);
 
 	libzfs_fini(g_zfs);
-
+	libdiskmgt_fini();
+	
 	/*
 	 * The 'ZFS_ABORT' environment variable causes us to dump core on exit
 	 * for the purposes of running ::findleaks.

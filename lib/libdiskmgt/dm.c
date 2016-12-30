@@ -23,16 +23,14 @@
  * Copyright (c) 2016, Brendon Humphrey (brendon.humphrey@mac.com). All rights reserved.
  */
 
-#include <libgen.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/sysctl.h>
-#include <sys/types.h>
 #include "disks_private.h"
 
-int
-dm_in_swap_dir(const char *dev_name)
+void libdiskmgt_init()
 {
-	return (inuse_macswap(dev_name));
+	diskutil_init();
+}
+
+void libdiskmgt_fini()
+{
+	diskutil_fini();
 }
