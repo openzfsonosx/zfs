@@ -128,7 +128,8 @@ zio_init(void)
 	/*
 	 * For small buffers, we want a cache for each multiple of
 	 * SPA_MINBLOCKSIZE.  For larger buffers, we want a cache
-	 * for each quarter-power of 2.
+	 * for each sixteenth-power of 2 below 128k and each eighth
+	 * power-of-two above 128k.
 	 */
 	for (c = 0; c < SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT; c++) {
 		size_t size = (c + 1) << SPA_MINBLOCKSHIFT;
@@ -160,8 +161,10 @@ zio_init(void)
 #endif
 		if (size <= 4 * SPA_MINBLOCKSIZE) {
 			align = SPA_MINBLOCKSIZE;
-		} else if (IS_P2ALIGNED(size, p2 >> 2)) {
-			align = MIN(p2 >> 2, PAGESIZE);
+		} else if (size <= 128 * 1024 && IS_P2ALIGNED(size, p2 >> 4)) {
+			align = MIN(p2 >> 4, PAGESIZE);
+		} else if (IS_P2ALIGNED(size, p2 >> 3)) {
+			align = MIN(p2 >> 3, PAGESIZE);
 		}
 
 		if (align != 0) {
