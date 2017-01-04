@@ -4405,6 +4405,17 @@ arc_adapt(int bytes, arc_state_t *state)
 		return;
 	}
 
+#ifdef __APPLE__
+#ifdef _KERNEL
+	// spl_arc_no_grow(bytes) is true when the relevant bucket is
+	// fragmemted or when xnu_alloc_throttled_bail() has been called
+	// in the last minute
+	extern boolean_t spl_arc_no_grow(size_t);
+	if (spl_arc_no_grow((size_t)bytes))
+		return;
+#endif
+#endif
+
 	if (arc_no_grow)
 		return;
 
