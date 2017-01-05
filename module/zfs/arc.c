@@ -4558,6 +4558,12 @@ arc_adapt(int bytes, arc_state_t *state)
 		return;
 	}
 
+	if (arc_no_grow)
+		return;
+
+	if (arc_c >= arc_c_max)
+		return;
+
 #ifdef __APPLE__
 #ifdef _KERNEL
 	// spl_arc_no_grow(bytes) is true when the relevant bucket is
@@ -4568,13 +4574,6 @@ arc_adapt(int bytes, arc_state_t *state)
 		return;
 #endif
 #endif
-
-	if (arc_no_grow)
-		return;
-
-	if (arc_c >= arc_c_max)
-		return;
-
 	/*
 	 * If we're within (2 * maxblocksize) bytes of the target
 	 * cache size, increment the target cache size
