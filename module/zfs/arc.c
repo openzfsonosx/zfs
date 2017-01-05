@@ -4028,12 +4028,6 @@ arc_flush(spa_t *spa, boolean_t retry)
 	(void) arc_flush_state(arc_mfu_ghost, guid, ARC_BUFC_METADATA, retry);
 }
 
-#ifdef _KERNEL
-#ifdef __APPLE__
-extern uint64_t spl_arc_c_min_update(uint64_t);
-#endif
-#endif
-
 void
 arc_shrink(int64_t to_free)
 {
@@ -4570,8 +4564,16 @@ arc_adapt(int bytes, arc_state_t *state)
 	// fragmemted or when xnu_alloc_throttled_bail() has been called
 	// in the last minute
 	extern boolean_t spl_arc_no_grow(size_t);
-	if (spl_arc_no_grow((size_t)bytes))
-		return;
+	if (spl_arc_no_grow((size_t)bytes)) {
+		// if we are likely to have to wait in our
+		// caller arc_get_data_buf(), then don't return
+		// early to it
+		uint64_t overflow = MAX(SPA_MAXBLOCKSIZE + bytes,
+		    arc_c >> zfs_arc_overflow_shift);
+		boolean_t overflowing = (arc_size >= arc_c + overflow);
+		if (!overflowing)
+			return;
+	}
 #endif
 #endif
 	/*
@@ -6063,10 +6065,23 @@ arc_tempreserve_clear(uint64_t reserve)
 int
 arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 {
-	arc_buf_hdr_t *hdr;
-	kmutex_t *hash_lock;
-	arc_evict_func_t *efunc = buf->b_efunc;
-	void *private = buf->b_private;
+	int error;
+	uint64_t anon_size;
+
+#ifdef __APPLE__
+#ifdef __KERNEL__
+	extern boolean_t spl_arc_no_grow(size_t);
+	if (reserve > arc_c/4 && !arc_no_grow &&
+	    !spl_arc_no_grow((size_t)reserve))
+#else
+	if (reserve > arc_c/4 && !arc_no_grow)
+#endif
+#else
+	if (reserve > arc_c/4 && !arc_no_grow)
+#endif
+		arc_c = MIN(arc_c_max, reserve * 4);
+	if (reserve > arc_c)
+		return (SET_ERROR(ENOMEM));
 
 	/*
 	 * Don't count loaned bufs as in flight dirty data to prevent long

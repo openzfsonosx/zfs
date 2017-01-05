@@ -254,7 +254,17 @@ zio_buf_alloc(size_t size)
 
 	VERIFY3U(c, <, SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT);
 
+#ifdef __APPLE__
+#ifdef _KERNEL
+	extern void *spl_zio_kmem_cache_alloc(kmem_cache_t *, int, size_t, size_t);
+
+	return (spl_zio_kmem_cache_alloc(zio_buf_cache[c], KM_PUSHPAGE, size, c));
+#else
 	return (kmem_cache_alloc(zio_buf_cache[c], KM_PUSHPAGE));
+#endif
+#else
+	return (kmem_cache_alloc(zio_buf_cache[c], KM_PUSHPAGE));
+#endif
 }
 
 /*
@@ -270,7 +280,17 @@ zio_data_buf_alloc(size_t size)
 
 	VERIFY3U(c, <, SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT);
 
+#ifdef __APPLE__
+#ifdef _KERNEL
+	extern void *spl_zio_kmem_cache_alloc(kmem_cache_t *, int, size_t, size_t);
+
+	return (spl_zio_kmem_cache_alloc(zio_data_buf_cache[c], KM_PUSHPAGE, size, c));
+#else
 	return (kmem_cache_alloc(zio_data_buf_cache[c], KM_PUSHPAGE));
+#endif
+#else
+	return (kmem_cache_alloc(zio_data_buf_cache[c], KM_PUSHPAGE));
+#endif
 }
 
 void
