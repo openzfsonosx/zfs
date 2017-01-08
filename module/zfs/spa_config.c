@@ -140,7 +140,7 @@ spa_config_load(void)
 			continue;
 		(void) spa_add(nvpair_name(nvpair), child, NULL);
 	}
-	mutex_exit(&spa_namespace_lock);
+ 	mutex_exit(&spa_namespace_lock);
 
 	nvlist_free(nvlist);
 
@@ -158,7 +158,7 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 	char *buf;
 	vnode_t *vp;
 	int oflags = FWRITE | FTRUNC | FCREAT | FOFFMAX;
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 	int error;
 #endif
 	char *temp;
@@ -182,7 +182,7 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 	VERIFY(nvlist_pack(nvl, &buf, &buflen, NV_ENCODE_XDR,
 	    KM_SLEEP) == 0);
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
 	/*
 	 * Write the configuration to disk.  Due to the complexity involved
 	 * in performing a rename from within the kernel the file is truncated
@@ -213,7 +213,7 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 		if (vn_rdwr(UIO_WRITE, vp, buf, buflen, 0, UIO_SYSSPACE,
 		    0, RLIM64_INFINITY, kcred, NULL) == 0 &&
 		    VOP_FSYNC(vp, FSYNC, kcred, NULL) == 0) {
-			(void) vn_rename(temp, dp->scd_path, UIO_SYSSPACE);
+		  (void) vn_rename(temp, dp->scd_path, UIO_SYSSPACE);
 		}
 		(void) VOP_CLOSE(vp, oflags, 1, 0, kcred, NULL);
 	}
