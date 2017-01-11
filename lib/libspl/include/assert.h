@@ -50,8 +50,6 @@ __assert_c99(const char *expr, const char *file, int line, const char *func)
 #undef VERIFY
 #undef ASSERT
 
-#define DEBUG 1
-
 #ifdef DEBUG
 #define	VERIFY(x)	verify(x)
 #define	ASSERT(x)	assert(x)
