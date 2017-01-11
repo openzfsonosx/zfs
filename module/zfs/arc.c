@@ -6071,8 +6071,9 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 #ifdef __APPLE__
 #ifdef __KERNEL__
 	extern boolean_t spl_arc_no_grow(size_t);
-	if (reserve > arc_c/4 && !arc_no_grow &&
-	    !spl_arc_no_grow((size_t)reserve))
+//	if (reserve > arc_c/4 && !arc_no_grow &&
+//	    !spl_arc_no_grow((size_t)reserve))
+	if (reserve > arc_c/4 && !arc_no_grow)
 #else
 	if (reserve > arc_c/4 && !arc_no_grow)
 #endif
