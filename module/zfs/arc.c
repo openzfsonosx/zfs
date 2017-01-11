@@ -2367,7 +2367,7 @@ arc_hdr_free_on_write(arc_buf_hdr_t *hdr)
 static void
 arc_share_buf(arc_buf_hdr_t *hdr, arc_buf_t *buf)
 {
-#ifdef DEBUG
+#ifdef ZFS_DEBUG
 	arc_state_t *state = hdr->b_l1hdr.b_state;
 #endif
 
@@ -2398,7 +2398,7 @@ arc_share_buf(arc_buf_hdr_t *hdr, arc_buf_t *buf)
 static void
 arc_unshare_buf(arc_buf_hdr_t *hdr, arc_buf_t *buf)
 {
-#ifdef DEBUG
+#ifdef ZFS_DEBUG
 	arc_state_t *state = hdr->b_l1hdr.b_state;
 #endif
 
