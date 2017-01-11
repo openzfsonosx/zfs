@@ -3285,6 +3285,9 @@ zio_done(zio_t *zio)
 {
 	zio_t *pio, *pio_next;
 	int c, w;
+#ifdef ZFS_DEBUG
+	metaslab_class_t *mc = spa_normal_class(zio->io_spa);
+#endif
 
 	/*
 	 * If our children haven't all completed,
