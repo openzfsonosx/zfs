@@ -39,11 +39,10 @@ extern "C" {
 #endif
 
 /*
- * ZFS debugging - Always enabled for user space builds.
+ * ZFS debugging
  */
-
-#if !defined(ZFS_DEBUG) && !defined(_KERNEL)
-#define	ZFS_DEBUG
+#if defined(DEBUG) || !defined(_KERNEL)
+#define ZFS_DEBUG
 #endif
 
 extern int zfs_flags;
