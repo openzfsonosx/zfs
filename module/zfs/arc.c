@@ -25,6 +25,7 @@
  * Copyright (c) 2014 by Saso Kiselkov. All rights reserved.
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2015 Jorgen Lundman.  All rights reserved.
+ * Copyright 2017 Sean Doran.  All rights reserved.
  */
 
 /*
@@ -282,6 +283,7 @@
 extern vmem_t *zio_arena;
 extern vmem_t *zio_metadata_arena;
 extern vmem_t *heap_arena;
+static _Atomic int64_t reclaim_shrink_target = 0;
 #endif
 #endif
 
@@ -4316,6 +4318,11 @@ arc_reclaim_thread(void)
 
 #ifdef __APPLE__
 #ifdef _KERNEL
+		if (reclaim_shrink_target > 0) {
+			arc_shrink(reclaim_shrink_target);
+			reclaim_shrink_target = 0;
+		}
+
 		int64_t pre_adjust_free_memory = MIN(spl_free_wrapper(), arc_available_memory());
 
 		int64_t manual_pressure = spl_free_manual_pressure_wrapper();
@@ -4571,8 +4578,12 @@ arc_adapt(int bytes, arc_state_t *state)
 		uint64_t overflow = MAX(SPA_MAXBLOCKSIZE + bytes,
 		    arc_c >> zfs_arc_overflow_shift);
 		boolean_t overflowing = (arc_size >= arc_c + overflow);
-		if (!overflowing)
+		if (!overflowing) {
 			return;
+		} else {
+			reclaim_shrink_target += bytes;
+			cv_signal(&arc_reclaim_thread_cv);
+		}
 	}
 #endif
 #endif
@@ -6068,19 +6079,9 @@ arc_tempreserve_space(uint64_t reserve, uint64_t txg)
 	int error;
 	uint64_t anon_size;
 
-#ifdef __APPLE__
-#ifdef __KERNEL__
-	extern boolean_t spl_arc_no_grow(size_t);
-//	if (reserve > arc_c/4 && !arc_no_grow &&
-//	    !spl_arc_no_grow((size_t)reserve))
 	if (reserve > arc_c/4 && !arc_no_grow)
-#else
-	if (reserve > arc_c/4 && !arc_no_grow)
-#endif
-#else
-	if (reserve > arc_c/4 && !arc_no_grow)
-#endif
 		arc_c = MIN(arc_c_max, reserve * 4);
+
 	if (reserve > arc_c)
 		return (SET_ERROR(ENOMEM));
 
