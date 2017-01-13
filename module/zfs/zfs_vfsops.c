@@ -110,10 +110,6 @@
 
 #ifdef __APPLE__
 
-unsigned int zfs_vfs_suspend_fs_begin_delay = 2;
-unsigned int zfs_vfs_suspend_fs_end_delay = 2;
-unsigned int zfs_vnop_skip_unlinked_drain = 0;
-
 int  zfs_module_start(kmod_info_t *ki, void *data);
 int  zfs_module_stop(kmod_info_t *ki, void *data);
 extern int getzfsvfs(const char *dsname, zfsvfs_t **zfvp);
@@ -3592,36 +3588,10 @@ dprintf("%s\n", __func__);
 int
 zfs_suspend_fs(zfsvfs_t *zfsvfs)
 {
-#ifdef __APPLE__
-	if (zfs_vfs_suspend_fs_begin_delay >= 32)
-		delay(hz*32);
-	else if (zfs_vfs_suspend_fs_begin_delay >= 1)
-		delay(hz*zfs_vfs_suspend_fs_begin_delay);
-	else
-		dprintf("Warning: No delay at beginning of zfs_suspend_fs\n");
-	membar_producer(); // mfence
-#endif /* __APPLE__ */
-
 	int error;
 
 	if ((error = zfsvfs_teardown(zfsvfs, B_FALSE)) != 0)
 		return (error);
-
-#ifdef __APPLE__
-	membar_producer(); // mfence
-	if (zfs_vfs_suspend_fs_end_delay >= 32)
-		delay(hz*32);
-	else if (zfs_vfs_suspend_fs_end_delay >= 1)
-		delay(hz*zfs_vfs_suspend_fs_end_delay);
-	else
-		dprintf("Warning: No delay at end of zfs_suspend_fs\n");
-#endif /* __APPLE__ */
-
-    /*
-     * For rollback and similar, we need to flush the name cache
-     */
-    dnlc_purge_vfsp(zfsvfs->z_vfs, 0);
-
 
 	return (0);
 }
