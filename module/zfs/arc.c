@@ -4319,8 +4319,10 @@ arc_reclaim_thread(void)
 #ifdef __APPLE__
 #ifdef _KERNEL
 		if (reclaim_shrink_target > 0) {
-			arc_shrink(reclaim_shrink_target);
+			int64_t t = reclaim_shrink_target;
 			reclaim_shrink_target = 0;
+			arc_shrink(t);
+			IOSleep(1);
 		}
 
 		int64_t pre_adjust_free_memory = MIN(spl_free_wrapper(), arc_available_memory());
