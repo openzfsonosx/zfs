@@ -1293,7 +1293,11 @@ put_nvlist(zfs_cmd_t *zc, nvlist_t *nvl)
 }
 
 
-
+/*
+ * OSX:
+ * This call withh lock VFS with vfs_busy() if it succeeds, the
+ * caller has to call vfs_unbusy(); when done with 'zfsvfs'.
+ */
 int
 getzfsvfs(const char *dsname, zfsvfs_t **zfvp)
 {
@@ -1311,12 +1315,13 @@ getzfsvfs(const char *dsname, zfsvfs_t **zfvp)
     mutex_enter(&os->os_user_ptr_lock);
     *zfvp = dmu_objset_get_user(os);
     if (*zfvp) {
-        VFS_HOLD((*zfvp)->z_vfs);
+		error = vfs_busy((*zfvp)->z_vfs, LK_NOWAIT);
     } else {
 		error = SET_ERROR(ESRCH);
     }
     mutex_exit(&os->os_user_ptr_lock);
     dmu_objset_rele(os, FTAG);
+	if (error != 0) *zfvp = NULL;
     return (error);
 }
 
@@ -1356,7 +1361,7 @@ zfsvfs_rele(zfsvfs_t *zfsvfs, void *tag)
     rrm_exit(&zfsvfs->z_teardown_lock, tag);
 
     if (zfsvfs->z_vfs) {
-        VFS_RELE(zfsvfs->z_vfs);
+		vfs_unbusy(zfsvfs->z_vfs);
     } else {
         dmu_objset_disown(zfsvfs->z_os, zfsvfs);
         zfsvfs_free(zfsvfs);
@@ -3545,7 +3550,7 @@ zfs_ioc_rollback(const char *fsname, nvlist_t *args, nvlist_t *outnvl)
 			resume_err = zfs_resume_fs(zfsvfs, ds);
 			error = error ? error : resume_err;
 		}
-        VFS_RELE(zfsvfs->z_vfs);
+		vfs_unbusy(zfsvfs->z_vfs);
 	} else {
 		error = dsl_dataset_rollback(fsname, NULL, outnvl);
 	}
@@ -4148,7 +4153,7 @@ zfs_ioc_recv(zfs_cmd_t *zc)
             if (error == 0)
 				error = zfs_resume_fs(zfsvfs, ds);
             error = error ? error : end_err;
-            //deactivate_super(zfsvfs->z_sb);
+			vfs_unbusy(zfsvfs->z_vfs);
         } else {
             error = dmu_recv_end(&drc, zfsvfs);
         }
@@ -4692,7 +4697,7 @@ zfs_ioc_userspace_upgrade(zfs_cmd_t *zc)
 		}
 		if (error == 0)
 			error = dmu_objset_userspace_upgrade(zfsvfs->z_os);
-		//deactivate_super(zsb->z_sb);
+		vfs_unbusy(zfsvfs->z_vfs);
 	} else {
 		/* XXX kind of reading contents without owning */
 		error = dmu_objset_hold(zc->zc_name, FTAG, &os);

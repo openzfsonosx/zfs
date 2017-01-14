@@ -109,6 +109,7 @@
 //#define dprintf printf
 
 #ifdef __APPLE__
+unsigned int zfs_vnop_skip_unlinked_drain = 0;
 
 int  zfs_module_start(kmod_info_t *ki, void *data);
 int  zfs_module_stop(kmod_info_t *ki, void *data);
@@ -1425,7 +1426,7 @@ dprintf("%s\n", __func__);
 		if (error == 0) {
 			if (fs_zfsvfs->z_unmounted)
 				error = SET_ERROR(EINVAL);
-			VFS_RELE(fs_zfsvfs->z_vfs);
+			vfs_unbusy(fs_zfsvfs->z_vfs);
 		}
 		if (error) {
 			printf("file system '%s' is unmounted : error %d\n",
