@@ -4577,9 +4577,9 @@ arc_adapt(int bytes, arc_state_t *state)
 		// if we are likely to have to wait in our
 		// caller arc_get_data_buf(), then don't return
 		// early to it
-		uint64_t overflow = MAX(SPA_MAXBLOCKSIZE + bytes,
+		uint64_t overflow = MAX(SPA_MAXBLOCKSIZE,
 		    arc_c >> zfs_arc_overflow_shift);
-		boolean_t overflowing = (arc_size >= arc_c + overflow);
+		boolean_t overflowing = (arc_size + (bytes * 2) >= arc_c + overflow);
 		if (!overflowing) {
 			return;
 		} else {
