@@ -1440,7 +1440,9 @@ zfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct componentname *cnp,
 				return (0);
 			}
 			return (error);
-		} else {
+		} else if (!zdp->z_zfsvfs->z_norm &&
+		    (zdp->z_zfsvfs->z_case == ZFS_CASE_SENSITIVE)) {
+
 			vnode_t *tvp = dnlc_lookup(dvp, nm);
 
 			if (tvp) {

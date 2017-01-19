@@ -25,6 +25,7 @@
  * Copyright (c) 2014 RackTop Systems.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2016 Actifio, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #include <sys/dmu_objset.h>
@@ -345,17 +346,15 @@ dsl_dataset_snap_lookup(dsl_dataset_t *ds, const char *name, uint64_t *value)
 {
 	objset_t *mos = ds->ds_dir->dd_pool->dp_meta_objset;
 	uint64_t snapobj = dsl_dataset_phys(ds)->ds_snapnames_zapobj;
-	matchtype_t mt;
+	matchtype_t mt = 0;
 	int err;
 
 	if (dsl_dataset_phys(ds)->ds_flags & DS_FLAG_CI_DATASET)
-		mt = MT_FIRST;
-	else
-		mt = MT_EXACT;
+		mt = MT_NORMALIZE;
 
 	err = zap_lookup_norm(mos, snapobj, name, 8, 1,
 	    value, mt, NULL, 0, NULL);
-	if (err == ENOTSUP && mt == MT_FIRST)
+	if (err == ENOTSUP && (mt & MT_NORMALIZE))
 		err = zap_lookup(mos, snapobj, name, 8, 1, value);
 	return (err);
 }
@@ -366,18 +365,16 @@ dsl_dataset_snap_remove(dsl_dataset_t *ds, const char *name, dmu_tx_t *tx,
 {
 	objset_t *mos = ds->ds_dir->dd_pool->dp_meta_objset;
 	uint64_t snapobj = dsl_dataset_phys(ds)->ds_snapnames_zapobj;
-	matchtype_t mt;
+	matchtype_t mt = 0;
 	int err;
 
 	dsl_dir_snap_cmtime_update(ds->ds_dir);
 
 	if (dsl_dataset_phys(ds)->ds_flags & DS_FLAG_CI_DATASET)
-		mt = MT_FIRST;
-	else
-		mt = MT_EXACT;
+		mt = MT_NORMALIZE;
 
 	err = zap_remove_norm(mos, snapobj, name, mt, tx);
-	if (err == ENOTSUP && mt == MT_FIRST)
+	if (err == ENOTSUP && (mt & MT_NORMALIZE))
 		err = zap_remove(mos, snapobj, name, tx);
 
 	if (err == 0 && adj_cnt)

@@ -24,9 +24,9 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright (c) 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2015, STRATO AG, Inc. All rights reserved.
  * Copyright (c) 2016 Actifio, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -1653,7 +1653,7 @@ dmu_snapshot_realname(objset_t *os, char *name, char *real, int maxlen,
 
 	return (zap_lookup_norm(ds->ds_dir->dd_pool->dp_meta_objset,
 	    dsl_dataset_phys(ds)->ds_snapnames_zapobj, name, 8, 1, &ignored,
-	    MT_FIRST, real, maxlen, conflict));
+	    MT_NORMALIZE, real, maxlen, conflict));
 }
 
 int
