@@ -4521,7 +4521,11 @@ arc_reclaim_thread(void)
  * when we are adding new content to the cache.
  */
 static void
+#ifdef __APPLE__
+arc_adapt(int bytes, arc_state_t *state, arc_buf_contents_t type)
+#else
 arc_adapt(int bytes, arc_state_t *state)
+#endif
 {
 	int mult;
 	uint64_t arc_p_min = (arc_c >> arc_p_min_shift);
@@ -4572,8 +4576,12 @@ arc_adapt(int bytes, arc_state_t *state)
 	// spl_arc_no_grow(bytes) is true when the relevant bucket is
 	// fragmemted or when xnu_alloc_throttled_bail() has been called
 	// in the last minute
-	extern boolean_t spl_arc_no_grow(size_t);
-	if (spl_arc_no_grow((size_t)bytes)) {
+	boolean_t buf_is_metadata = B_FALSE;
+	if (type == ARC_BUFC_METADATA) {
+		buf_is_metadata = B_TRUE;
+	}
+	extern boolean_t spl_arc_no_grow(size_t, boolean_t);
+	if (spl_arc_no_grow((size_t)bytes, buf_is_metadata)) {
 		// if we are likely to have to wait in our
 		// caller arc_get_data_buf(), then don't return
 		// early to it
@@ -4632,7 +4640,11 @@ arc_get_data_buf(arc_buf_hdr_t *hdr, uint64_t size, void *tag)
 	arc_state_t		*state = hdr->b_l1hdr.b_state;
 	arc_buf_contents_t	type = arc_buf_type(hdr);
 
+#ifdef __APPLE__
+	arc_adapt(size, state, type);
+#else
 	arc_adapt(size, state);
+#endif
 
 	/*
 	 * If arc_size is currently overflowing, and has grown past our
