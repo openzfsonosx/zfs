@@ -284,6 +284,7 @@ extern vmem_t *zio_arena;
 extern vmem_t *zio_metadata_arena;
 extern vmem_t *heap_arena;
 static _Atomic int64_t reclaim_shrink_target = 0;
+void IOSleep(unsigned milliseconds);
 #endif
 #endif
 
