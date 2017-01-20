@@ -233,6 +233,13 @@ zio_fini(void)
 	zio_inject_fini();
 
 	lz4_fini();
+
+#ifdef __APPLE__
+#ifdef _KERNEL
+	extern void spl_zio_no_grow_fini(void);
+	spl_zio_no_grow_fini();
+#endif
+#endif
 }
 
 /*
