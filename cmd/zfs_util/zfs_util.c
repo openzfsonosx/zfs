@@ -345,16 +345,16 @@ zfs_probe(const char *devpath, probe_args_t *args)
 	int i, again = 0;
 	struct stat sbuf;
 
-	printf("+zfs_probe : devpath %s\n", devpath);
+	//printf("+zfs_probe : devpath %s\n", devpath);
 
 	if (system(IS_INVARIANT_DISKS_LOADED_CMD) == 0) {
 		/* InvariantDisks is loaded */
 		i = 0;
 		while(i != INVARIANT_DISKS_TIMEOUT_SECONDS) {
 			if (stat(INVARIANT_DISKS_IDLE_FILE, &sbuf) == 0) {
-				printf("Found %s after %d iterations of "
-				    "sleeping 1 second\n",
-				    INVARIANT_DISKS_IDLE_FILE, i);
+				//printf("Found %s after %d iterations of "
+				//    "sleeping 1 second\n",
+				//    INVARIANT_DISKS_IDLE_FILE, i);
 				break;
 			}
 			sleep(1);
@@ -396,11 +396,11 @@ zfs_probe(const char *devpath, probe_args_t *args)
 		nvlist_free(config);
 	} else {
 		if (again++ < 5) {
-			printf("zfs.util: read_label config is NULL\n");
+			//printf("zfs.util: read_label config is NULL\n");
 			sleep(1);
 			goto retry;
 		}
-		printf("zfs.util: FATAL: read_label config is NULL\n");
+		//printf("zfs.util: FATAL: read_label config is NULL\n");
 	}
 out:
 	printf("-zfs_probe : ret %s\n", ret == FSUR_RECOGNIZED ? "FSUR_RECOGNIZED" : "FSUR_UNRECOGNIZED");
@@ -420,7 +420,7 @@ zpool_read_cachefile(void)
 	uint64_t guid;
 	int importrc = 0;
 
-	printf("reading cachefile\n");
+	//printf("reading cachefile\n");
 
 	fd = open(ZPOOL_CACHE, O_RDONLY);
 	if (fd < 0)
@@ -549,9 +549,9 @@ main(int argc, char **argv)
 	char volname[MAXPATHLEN];
 	char *pool_name = NULL;
 
-	for (int argindex = 0; argindex < argc; argindex++) {
-		printf("argv[%d]: %s\n", argindex, argv[argindex]);
-	}
+	//for (int argindex = 0; argindex < argc; argindex++) {
+	//	printf("argv[%d]: %s\n", argindex, argv[argindex]);
+	//}
 
 	/* save & strip off program name */
 	progname = argv[0];
@@ -582,7 +582,7 @@ main(int argc, char **argv)
 
 	(void) snprintf(rawdevice, sizeof (rawdevice), "/dev/r%s", devname);
 	(void) snprintf(blockdevice, sizeof (blockdevice), "/dev/%s", devname);
-	printf("blockdevice is %s\n", blockdevice);
+	//printf("blockdevice is %s\n", blockdevice);
 
 
 	/* Sometimes this is a bit of a race, so we will retry a few times */
@@ -590,8 +590,8 @@ main(int argc, char **argv)
 
 		if (stat(blockdevice, &sb) == 0) break;
 
-		printf("%s: %d stat %s failed, %s\n", progname, i, blockdevice,
-		    strerror(errno));
+		//printf("%s: %d stat %s failed, %s\n", progname, i, blockdevice,
+		//    strerror(errno));
 		sleep(1);
 	}
 	if (i >= 5) {
@@ -616,8 +616,8 @@ main(int argc, char **argv)
 			if (strlen(statfs[i].f_mntfromname) == len &&
 			    strcmp(statfs[i].f_mntfromname,
 			    blockdevice) == 0) {
-				printf("matched mountpoint %s\n",
-				    statfs[i].f_mntonname);
+				//printf("matched mountpoint %s\n",
+				//  statfs[i].f_mntonname);
 				is_mounted = B_TRUE;
 				break;
 			}
@@ -728,7 +728,7 @@ main(int argc, char **argv)
 		/* Done */
 
 	case FSUC_GETUUID:
-		printf("FSUC_GETUUID\n");
+	{
 		uint32_t buf[5];
 
 		/* Try to get a UUID either way */
@@ -774,7 +774,6 @@ main(int argc, char **argv)
 			ret = FSUR_IO_SUCCESS;
 
 			break;
-
 
 		} else { /* is_mounted == true */
 
@@ -855,6 +854,7 @@ main(int argc, char **argv)
 			break;
 		}
 		break;
+		}
 
 
 	case FSUC_SETUUID:
