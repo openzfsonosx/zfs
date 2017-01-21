@@ -3,26 +3,13 @@
 echo "+zpool-import-all.sh"
 date
 export ZPOOL=@sbindir@/zpool
-export ZFS=@sbindir@/zfs
 export ZPOOL_IMPORT_ALL_COOKIE=/var/run/org.openzfsonosx.zpool-import-all.didRun
 export INVARIANT_DISKS_IDLE_FILE=/var/run/disk/invariant.idle
 export TIMEOUT_SECONDS=60
 export MAXIMUM_SLEEP_ITERATIONS=$((${TIMEOUT_SECONDS} * 10))
 
-/usr/bin/time /usr/sbin/system_profiler SPParallelATADataType SPCardReaderDataType SPFibreChannelDataType SPFireWireDataType SPHardwareRAIDDataType SPNetworkDataType SPPCIDataType SPParallelSCSIDataType SPSASDataType SPSerialATADataType SPStorageDataType SPThunderboltDataType SPUSBDataType SPNetworkVolumeDataType 1>/dev/null
+2>&1 /usr/bin/time /usr/sbin/system_profiler SPParallelATADataType SPCardReaderDataType SPFibreChannelDataType SPFireWireDataType SPHardwareRAIDDataType SPNetworkDataType SPPCIDataType SPParallelSCSIDataType SPSASDataType SPSerialATADataType SPStorageDataType SPThunderboltDataType SPUSBDataType SPNetworkVolumeDataType 1>/dev/null
 /bin/sync
-
-if [ ! -f /etc/zfs/noautomount ];
-then
-       # if we are booted from rpool, zfs mount -a (swap, smd $TEMP)
-       ${ZPOOL} list rpool && ${ZFS} mount -a
-fi
-
-if [ -f /etc/zfs/noautoimport ];
-then
-    echo "/etc/zfs/noautoimport exits, exiting";
-    exit 0;
-fi
 
 echo "Waiting up to ${TIMEOUT_SECONDS} seconds for the InvariantDisks idle file ${INVARIANT_DISKS_IDLE_FILE} to exist"
 
@@ -41,141 +28,18 @@ else
 fi
 date
 
-# try caches first
+sleep 10
+echo "Running zpool import -a"
+date
 
-ZPOOL_CACHE_DONE=0
-if [ -f /etc/zfs/zpool.cache ]
-then
-    # but this isn't a superb idea because import order is all over the map
-    # and importing ssdpool last is [a] system-slowing and [b] leaves empty directories mounted
-    #echo "Running zpool import -c /etc/zfs/zpool.cache -a"
-    #"${ZPOOL}" import -c /etc/zfs/zpool.cache -a && ZPOOL_CACHE_DONE=1
-    echo "zpool.cache file found!"
-fi
+"${ZPOOL}" import -a -d /var/run/disk/by-id
+ret=$?
 
-function testcacheimport () (c=/etc/zfs/caches/$1.cache;
-			if [ -f $c ]
-			then
-			    echo testing importability using cachefile $c
-			    im=`${ZPOOL} import -c $c 2>&1`; export im
-			    res=`echo $im | egrep -i 'degrad|unavail|faulted|damaged|corrupted|missing|cannot.(discover|import)|no.pools.avail'`; export res
-			    if [ "x$res" == "x" ]
-			    then
-				echo OK;
-				echo res: $res
-				echo im: $im
-				return 0;
-			    else
-				echo BAD;
-				echo res: $res
-				echo im: $im
-				return -1;
-			    fi
-			else
-			    echo cannot import because no such file $c
-			    return -1
-			fi
-			    )
-
-function docacheimport () (c=/etc/zfs/caches/$1.cache
-			   echo testing importability of $1...
-			   testcacheimport $1 || return -1
-			   echo testcacheimport returned OK, importing $1...
-			   testcacheimport $1 && "${ZPOOL}" import -c $c -a
-			   return $?)
-
-if ((!ZPOOL_CACHE_DONE))
-then
-    set -e
-    SSDPOOL_CACHE_DONE=0
-    TRINITY_CACHE_DONE=0
-    SAFETY_CACHE_DONE=0
-    DUAL_CACHE_DONE=0
-    HOMEPOOL_CACHE_DONE=0
-    echo "ZPOOL_CACHE_DONE = 0, therefore trying individual caches"
-    if [ -f /etc/zfs/caches/ssdpool.cache ]
-    then
-	docacheimport ssdpool && SSDPOOL_CACHE_DONE=1
-	if ((!SSDPOOL_CACHE_DONE))
-	then
-	    echo "ssdpool cache import failed, this is critical. bye."
-	    exit 1
-	fi
-    fi
-    if [ -f /etc/zfs/caches/Trinity.cache ]
-    then
-	docacheimport Trinity && TRINITY_CACHE_DONE=1
-    fi
-    if [ -f /etc/zfs/caches/Safety.cache ]
-    then
-	docacheimport Safety && SAFETY_CACHE_DONE=1
-    fi
-    if [ -f /etc/zfs/caches/Quarto.cache ]
-    then
-	docacheimport Quarto && QUARTO_CACHE_DONE=1
-    fi
-    if [ -f /etc/zfs/caches/homepool.cache ]
-    then
-	echo "attempting to cache import homepool"
-	docacheimport homepool && HOMEPOOL_CACHE_DONE=1
-	if ((!HOMEPOOL_CACHE_DONE))
-	then
-	    echo "homepool cache import failed, this is critical. bye."
-	    exit 1
-	fi
-    fi
-    if [ -f /etc/zfs/caches/Dual.cache ]
-    then
-	docacheimport Dual && DUAL_CACHE_DONE=1
-    fi
-fi
-
-set +e
-if((ZPOOL_CACHE_DONE)); then echo Everything imported via cache.; fi
-if((SSDPOOL_CACHE_DONE)); then echo ssdpool imported via cache.; fi
-if((TRINITY_CACHE_DONE)); then echo Trinity imported via cache.; fi
-if((SAFETY_CACHE_DONE)); then echo Safety imported via cache.; fi
-if((QUARTO_CACHE_DONE)); then echo Quarto imported via cache.; fi
-if((HOMEPOOL_CACHE_DONE)); then echo homepool imported via cache.; fi
-if((DUAL_CACHE_DONE)); then echo Dual imported via cache.; fi
-
-if ((!ZPOOL_IMPORT_CACHE && ((! ((SSDPOOL_CACHE_DONE || SAFETY_CACHE_DONE || QUARTO_CACHE_DONE || TRINITY_CACHE_DONE || HOMEPOOL_CACHE_DONE || DUAL_CACHE_DONE ))))))
-then
-    echo "Nothing imported via caches.  Running zpool import -d /etc/zfs/devices"
-    "${ZPOOL}" import -d /etc/zfs/devices
-    date
-
-    # should also make this work on mis; for now fallback will have to be manual
-    echo "Running zpool import -d /etc/zfs/devices ssdpool || exit 1"
-    "${ZPOOL}" import -d /etc/zfs/devices ssdpool || exit 1
-    date
-
-    echo "Running zfs mount -a || exit 1"
-    "${ZFS}" mount -a  || exit 1
-    date
-
-    echo "Running zpool import -d /etc/zfs/devices Trinity || exit 1"
-    "${ZPOOL}" import -d /etc/zfs/devices Trinity || exit 1
-    date
-
-    echo "Running zpool import -d /etc/zfs/devices -a"
-    date
-
-    "${ZPOOL}" import -d /etc/zfs/devices -a
-    ret=$?
-
-    date
-    echo "Finished running zpool import -a : ${ret}"
-fi
+date
+echo "Finished running zpool import -a : ${ret}"
 
 echo "Touching the file ${ZPOOL_IMPORT_ALL_COOKIE}"
 touch "${ZPOOL_IMPORT_ALL_COOKIE}"
-
-echo "Setting cachefile properties"
-for i in ssdpool Safety Trinity Quarto homepool Dual
-do
-    "${ZPOOL}" set cachefile=/etc/zfs/caches/$i.cache $i
-done
 
 date
 echo "-zpool-import-all.sh"

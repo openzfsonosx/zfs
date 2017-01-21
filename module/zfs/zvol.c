@@ -730,25 +730,10 @@ zvol_remove_minor_impl(const char *name)
 		return (ENXIO);
 	}
 
-#ifdef __APPLE__
-	/* Call IOKit to remove the ZVOL device, but we
-	 * can't hold any locks while doing so.
-	 */
-	zvol_remove_symlink(zv);
-
-	/* Get and clear the iokitdev handle while locked */
-	iokitdev = zv->zv_iokitdev;
-	zv->zv_iokitdev = 0;
-
-	/* drop the lock to remove the device */
-	/* XXX Should issue async */
-	if (iokitdev) {
-		mutex_exit(&zfsdev_state_lock);
-		zvolRemoveDevice(iokitdev);
-		iokitdev = 0;
-		mutex_enter(&zfsdev_state_lock);
-	}
-#endif
+	// Remember the iokit ptr so we can free it after releasing locks.
+	tmp_zv.zv_iokitdev = zv->zv_iokitdev;
+	strlcpy(tmp_zv.zv_name, zv->zv_name, sizeof(tmp_zv.zv_name));
+	strlcpy(tmp_zv.zv_bsdname, zv->zv_bsdname, sizeof(tmp_zv.zv_bsdname));
 
 	rc = zvol_remove_zv(zv); // Frees zv, if successful.
 	mutex_exit(&zfsdev_state_lock);
@@ -757,7 +742,7 @@ zvol_remove_minor_impl(const char *name)
 	if (rc == 0) zvol_remove_symlink(&tmp_zv);
 
 	// Remove device from IOKit
-	zvolRemoveDevice(&tmp_zv);
+	zvolRemoveDevice(tmp_zv.zv_iokitdev);
 	return (rc);
 }
 
@@ -1044,9 +1029,6 @@ static void
 zvol_remove_minors_impl(const char *name)
 {
 	zvol_state_t *zv;
-#ifdef __APPLE__
-	zvol_iokit_t *iokitdev;
-#endif
 	minor_t minor;
 	int namelen = ((name) ? strlen(name) : 0);
 
@@ -1078,7 +1060,7 @@ zvol_remove_minors_impl(const char *name)
 			(void) zvol_remove_zv(zv);
 			mutex_exit(&zfsdev_state_lock);
 
-			zvolRemoveDevice(&tmp_zv);
+			zvolRemoveDevice(tmp_zv.zv_iokitdev);
 			mutex_enter(&zfsdev_state_lock);
 		}
 	}
