@@ -818,6 +818,11 @@ zfs_space_delta_cb(dmu_object_type_t bonustype, void *data,
 			sa.sa_layout_info = BSWAP_16(sa.sa_layout_info);
 			swap = B_TRUE;
 		} else {
+			if (sa.sa_magic != SA_MAGIC) {
+				printf("ZFS: sa.sa_magic %x is not SA_MAGIC\n",
+					sa.sa_magic);
+				return -1;
+			}
 			VERIFY3U(sa.sa_magic, ==, SA_MAGIC);
 		}
 
