@@ -19,12 +19,14 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Portions Copyright 2008 Apple Inc. All rights reserved.
  * Use is subject to license terms.
  */
-
+/*
+ * Copyright (c) 2012 by Delphix. All rights reserved.
+ */
 
 #include <sys/refcount.h>
 #include <sys/rrwlock.h>
@@ -92,7 +94,7 @@ typedef struct rrw_node {
 
 
 #ifndef KERNEL
-#define current_thread(x) 0
+#define current_thread(x) curthread
 #endif
 
 static rrw_node_t *
@@ -105,6 +107,7 @@ rrn_find(rrwlock_t *rrl)
 
 	if (refcount_count(&rrl->rr_linked_rcount) == 0)
 		return (NULL);
+
 #ifdef __APPLE__
 	for (rn = rrl->rr_node_list; rn != NULL; rn = rn->rn_next) {
 		if (rn->rn_thread == t)
@@ -195,7 +198,7 @@ rrw_init(rrwlock_t *rrl, boolean_t track_all)
 	refcount_create(&rrl->rr_anon_rcount);
 	refcount_create(&rrl->rr_linked_rcount);
 	rrl->rr_writer_wanted = B_FALSE;
-    rrl->rr_track_all = track_all;
+	rrl->rr_track_all = track_all;
 }
 
 void
@@ -212,6 +215,18 @@ static void
 rrw_enter_read_impl(rrwlock_t *rrl, boolean_t prio, void *tag)
 {
 	mutex_enter(&rrl->rr_lock);
+#if !defined(DEBUG) && defined(_KERNEL)
+	if (rrl->rr_writer == NULL && !rrl->rr_writer_wanted &&
+	    !rrl->rr_track_all) {
+		rrl->rr_anon_rcount.rc_count++;
+		mutex_exit(&rrl->rr_lock);
+		return;
+	}
+#ifdef illumos
+	DTRACE_PROBE(zfs__rrwfastpath__rdmiss);
+#endif
+#endif
+
 	ASSERT(rrl->rr_writer != curthread);
 	ASSERT(refcount_count(&rrl->rr_anon_rcount) >= 0);
 
@@ -220,7 +235,7 @@ rrw_enter_read_impl(rrwlock_t *rrl, boolean_t prio, void *tag)
 	    rrn_find(rrl) == NULL))
 		cv_wait(&rrl->rr_cv, &rrl->rr_lock);
 
-	if (rrl->rr_writer_wanted) {
+	if (rrl->rr_writer_wanted || rrl->rr_track_all) {
 		/* may or may not be a re-entrant enter */
 		rrn_add(rrl);
 		(void) refcount_add(&rrl->rr_linked_rcount, tag);
@@ -279,20 +294,33 @@ rrw_enter(rrwlock_t *rrl, krw_t rw, void *tag)
 void
 rrw_exit(rrwlock_t *rrl, void *tag)
 {
+	int64_t count;
 	mutex_enter(&rrl->rr_lock);
+#if !defined(DEBUG) && defined(_KERNEL)
+	if (!rrl->rr_writer && rrl->rr_linked_rcount.rc_count == 0) {
+		rrl->rr_anon_rcount.rc_count--;
+		if (rrl->rr_anon_rcount.rc_count == 0)
+			cv_broadcast(&rrl->rr_cv);
+		mutex_exit(&rrl->rr_lock);
+		return;
+	}
+#ifdef illumos
+	DTRACE_PROBE(zfs__rrwfastpath__exitmiss);
+#endif
+#endif
 	ASSERT(!refcount_is_zero(&rrl->rr_anon_rcount) ||
 	    !refcount_is_zero(&rrl->rr_linked_rcount) ||
 	    rrl->rr_writer != NULL);
 
 	if (rrl->rr_writer == NULL) {
 		if (rrn_find_and_remove(rrl)) {
-			if (refcount_remove(&rrl->rr_linked_rcount, tag) == 0)
-				cv_broadcast(&rrl->rr_cv);
-
+			count = refcount_remove(&rrl->rr_linked_rcount, tag);
 		} else {
-			if (refcount_remove(&rrl->rr_anon_rcount, tag) == 0)
-				cv_broadcast(&rrl->rr_cv);
+			ASSERT(!rrl->rr_track_all);
+			count = refcount_remove(&rrl->rr_anon_rcount, tag);
 		}
+		if (count == 0)
+			cv_broadcast(&rrl->rr_cv);
 	} else {
 		ASSERT(rrl->rr_writer == curthread);
 		ASSERT(refcount_is_zero(&rrl->rr_anon_rcount) &&
@@ -303,6 +331,11 @@ rrw_exit(rrwlock_t *rrl, void *tag)
 	mutex_exit(&rrl->rr_lock);
 }
 
+/*
+ * If the lock was created with track_all, rrw_held(RW_READER) will return
+ * B_TRUE iff the current thread has the lock for reader.  Otherwise it may
+ * return B_TRUE if any thread has the lock for reader.
+ */
 boolean_t
 rrw_held(rrwlock_t *rrl, krw_t rw)
 {
@@ -313,7 +346,7 @@ rrw_held(rrwlock_t *rrl, krw_t rw)
 		held = (rrl->rr_writer == (kthread_t *)curthread);
 	} else {
 		held = (!refcount_is_zero(&rrl->rr_anon_rcount) ||
-		    !refcount_is_zero(&rrl->rr_linked_rcount));
+		    rrn_find(rrl) != NULL);
 	}
 	mutex_exit(&rrl->rr_lock);
 

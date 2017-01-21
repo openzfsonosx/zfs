@@ -55,6 +55,7 @@ zmount(const char *spec, const char *dir, int mflag, char *fstype,
 	mnt_args.mflag = mflag;
 	mnt_args.optptr = optptr;
 	mnt_args.optlen = optlen;
+	mnt_args.struct_size = sizeof(mnt_args);
 
 	/* There is a bug in XNU where /var/tmp is resolved as
 	 * "private/var/tmp" without the leading "/", and both mount(2) and

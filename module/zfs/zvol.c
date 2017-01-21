@@ -108,7 +108,7 @@ static char *zvol_tag = "zvol_tag";
 #define	ZVOL_DUMPSIZE		"dumpsize"
 
 extern kmutex_t zfsdev_state_lock;
-
+void zvol_register_device(spa_t *spa, zvol_state_t *zv);
 
 void *
 zfsdev_get_soft_state(minor_t minor, enum zfs_soft_state_type which)
@@ -160,13 +160,17 @@ zvol_size_changed(zvol_state_t *zv, uint64_t volsize)
 	(void) makedevice(zfs_major, zv->zv_minor);
 
 	zv->zv_volsize = volsize;
+
+#ifdef __APPLE__
+	/* XXX nothing further, for now */
+	return;
+#endif
+
 	VERIFY(ddi_prop_update_int64(dev, zfs_dip,
 	    "Size", volsize) == DDI_SUCCESS);
 	VERIFY(ddi_prop_update_int64(dev, zfs_dip,
 	    "Nblocks",
 	    volsize / zv_zv_volblocksize) == DDI_SUCCESS);
-
-	// zvolSetVolsize(zv);
 
 	/* Notify specfs to invalidate the cached size */
 	// spec_size_invalidate(dev, VBLK);
@@ -480,6 +484,30 @@ zvol_name2minor(const char *name, minor_t *minor)
 	return (zv ? 0 : -1);
 }
 
+static int
+zvol_snapdev_hidden(const char *name)
+{
+	uint64_t snapdev;
+	char *parent;
+	char *atp;
+	int error = 0;
+
+	parent = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+	(void) strlcpy(parent, name, MAXPATHLEN);
+
+	if ((atp = strrchr(parent, '@')) != NULL) {
+		*atp = '\0';
+		error = dsl_prop_get_integer(parent, "snapdev",
+		    &snapdev, NULL);
+		if ((error == 0) && (snapdev == ZFS_SNAPDEV_HIDDEN))
+			error = SET_ERROR(ENODEV);
+	}
+
+	kmem_free(parent, MAXPATHLEN);
+
+	return (SET_ERROR(error));
+}
+
 /*
  * Create a minor node (plus a whole lot more) for the specified volume.
  */
@@ -500,20 +528,31 @@ zvol_create_minor_impl(const char *name)
 		mutex_exit(&zfsdev_state_lock);
 		return (EEXIST);
 	}
-	mutex_exit(&zfsdev_state_lock);
+
+	/* On OS X we always check snapdev, for now */
+#ifdef linux
+	if (ignore_snapdev == B_FALSE) {
+#endif
+		error = zvol_snapdev_hidden(name);
+		if (error) {
+			mutex_exit(&zfsdev_state_lock);
+			return (error);
+		}
+#ifdef linux
+	}
+#endif
 
 	/* lie and say we're read-only */
 	error = dmu_objset_own(name, DMU_OST_ZVOL, B_TRUE, FTAG, &os);
 
 	if (error) {
+		mutex_exit(&zfsdev_state_lock);
 		return (error);
 	}
 
-	// we should hold mutex_enter(&zfsdev_state_lock);
-	mutex_enter(&zfsdev_state_lock);
 	if ((minor = zfsdev_minor_alloc()) == 0) {
-		mutex_exit(&zfsdev_state_lock);
 		dmu_objset_disown(os, FTAG);
+		mutex_exit(&zfsdev_state_lock);
 		return (ENXIO);
 	}
 
@@ -552,6 +591,9 @@ zvol_create_minor_impl(const char *name)
 	zs = ddi_get_soft_state(zfsdev_state, minor);
 	zs->zss_type = ZSST_ZVOL;
 	zv = zs->zss_data = kmem_zalloc(sizeof (zvol_state_t), KM_SLEEP);
+#ifdef __APPLE__
+	bzero(zv, sizeof(zvol_state_t));
+#endif
 	(void) strlcpy(zv->zv_name, name, MAXPATHLEN);
 	zv->zv_min_bs = DEV_BSHIFT;
 	zv->zv_minor = minor;
@@ -577,20 +619,47 @@ zvol_create_minor_impl(const char *name)
 			zil_replay(os, zv, zvol_replay_vector);
 	}
 
-	// Call IOKit to create a new ZVOL device, we like the size being
-	// set here.
-
+#ifndef __APPLE__
+	// Delay these until after IOkit work
 	dmu_objset_disown(os, FTAG);
 	zv->zv_objset = NULL;
 
 	zvol_minors++;
+#endif
 
 	mutex_exit(&zfsdev_state_lock);
 
-	// The iokit framework may call Open, so we can not be locked.
-	zvolCreateNewDevice(zv);
+#ifdef __APPLE__
+	/* Create the IOKit zvol while owned */
+	if ((error = zvolCreateNewDevice(zv)) != 0) {
+		dprintf("%s zvolCreateNewDevice error %d\n",
+		    __func__, error);
+	}
 
+	/* Retake lock to disown dmu objset */
+	mutex_enter(&zfsdev_state_lock);
 
+	dmu_objset_disown(os, FTAG);
+	zv->zv_objset = NULL;
+
+	/* if IOKit device was created */
+	if (error == 0) {
+		zvol_minors++;
+	}
+
+	mutex_exit(&zfsdev_state_lock);
+
+	/* Register IOKit zvol after disown and unlock */
+	if (error == 0) {
+		// can we still use "os" here since it was disowned
+		zvol_register_device(dmu_objset_spa(os), zv);
+			//error = zvolRegisterDevice(zv);
+		if (error != 0) {
+			dprintf("%s zvolRegisterDevice error %d\n",
+			    __func__, error);
+		}
+	}
+#endif /* __APPLE__ */
 
 	return (0);
 }
@@ -616,9 +685,21 @@ zvol_remove_zv(zvol_state_t *zv)
 	minor_t minor = zv->zv_minor;
 
 	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
-	if (zv->zv_total_opens != 0)
-		return (EBUSY);
+	if (zv->zv_total_opens != 0) {
+		printf("ZFS: Warning, %s called but device busy. \n",
+			__func__);
+		/* Since the callers of this function currently expect
+		 * the release to always work, we can not let the not-freed
+		 * 'zv' to be found again, or we will use ptrs that are
+		 * no longer relevant. For now, we zero out the name, so
+		 * this 'zv' can not be matched again, and we leak a 'zv'
+		 * node. In future, we should correct the callers of
+		 * zvol_remove_zv to handle the error and rewind.
+		 */
+		zv->zv_name[0] = 0;
 
+		return (EBUSY);
+	}
 #if 0
 	ddi_remove_minor_node(zfs_dip, NULL);
 	ddi_remove_minor_node(zfs_dip, NULL);
@@ -640,7 +721,7 @@ int
 zvol_remove_minor_impl(const char *name)
 {
 	zvol_state_t *zv;
-	zvol_state_t tmp_zv;
+	zvol_state_t tmp_zv = {{0}};
 	int rc;
 
 	mutex_enter(&zfsdev_state_lock);
@@ -661,7 +742,7 @@ zvol_remove_minor_impl(const char *name)
 	if (rc == 0) zvol_remove_symlink(&tmp_zv);
 
 	// Remove device from IOKit
-	zvolRemoveDevice(&tmp_zv);
+	zvolRemoveDevice(tmp_zv.zv_iokitdev);
 	return (rc);
 }
 
@@ -681,7 +762,6 @@ zvol_remove_minor_symlink(const char *name)
 /*
  * Rename a block device minor mode for the specified volume.
  */
-#if 0 // unused function
 static void
 __zvol_rename_minor(zvol_state_t *zv, const char *newname)
 {
@@ -691,7 +771,19 @@ __zvol_rename_minor(zvol_state_t *zv, const char *newname)
 
 	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 
+#ifdef __APPLE__
+	zvol_remove_symlink(zv);
+#endif
+
 	strlcpy(zv->zv_name, newname, sizeof (zv->zv_name));
+
+#ifdef __APPLE__
+	/* Need to drop the state lock in order to refresh device */
+	mutex_exit(&zfsdev_state_lock);
+	zvolRenameDevice(zv);
+	mutex_enter(&zfsdev_state_lock);
+	zvol_add_symlink(zv, zv->zv_bsdname + 1, zv->zv_bsdname);
+#endif
 
 #ifdef LINUX
 	/*
@@ -706,7 +798,6 @@ __zvol_rename_minor(zvol_state_t *zv, const char *newname)
 	set_disk_ro(zv->zv_disk, readonly);
 #endif
 }
-#endif
 
 /*
  * Mask errors to continue dmu_objset_find() traversal
@@ -806,23 +897,28 @@ zvol_first_open(zvol_state_t *zv)
 		return (error);
 	}
 
+	error = dsl_prop_get_integer(zv->zv_name, "readonly", &readonly, NULL);
+	if (error) {
+		printf("ZFS: Failed to lookup 'readonly' on '%s' error %d\n",
+			   zv->zv_name, error);
+		goto out_owned;
+	}
+
 	zvol_size_changed(zv, volsize);
 	zv->zv_zilog = zil_open(os, zvol_get_data);
 
-#ifdef __APPLE__
-	error = dsl_prop_get_integer(zv->zv_name, "readonly", &readonly, NULL);
-	if (error)
-		printf("ZFS: Failed to lookup 'readonly' on '%s' error %d\n",
-			   zv->zv_name, error);
-#else
-	VERIFY(dsl_prop_get_integer(zv->zv_name, "readonly", &readonly,
-	    NULL) == 0);
-#endif
 	if (readonly || dmu_objset_is_snapshot(os) ||
 	    !spa_writeable(dmu_objset_spa(os)))
 		zv->zv_flags |= ZVOL_RDONLY;
 	else
 		zv->zv_flags &= ~ZVOL_RDONLY;
+
+
+  out_owned:
+	if (error) {
+		dmu_objset_disown(os, zvol_tag);
+		zv->zv_objset = NULL;
+	}
 
 	return (error);
 }
@@ -950,7 +1046,7 @@ zvol_remove_minors_impl(const char *name)
 			(strncmp(zv->zv_name, name, namelen) == 0 &&
 			 (zv->zv_name[namelen] == '/' ||
 			  zv->zv_name[namelen] == '@'))) {
-			zvol_state_t tmp_zv;
+			zvol_state_t tmp_zv = {{ 0 }};
 
 			/* If in use, leave alone */
 			if (zv->zv_open_count > 0)
@@ -964,7 +1060,7 @@ zvol_remove_minors_impl(const char *name)
 			(void) zvol_remove_zv(zv);
 			mutex_exit(&zfsdev_state_lock);
 
-			zvolRemoveDevice(&tmp_zv);
+			zvolRemoveDevice(tmp_zv.zv_iokitdev);
 			mutex_enter(&zfsdev_state_lock);
 		}
 	}
@@ -1037,10 +1133,8 @@ zvol_rename_minors_impl(const char *oldname, const char *newname)
 	int oldnamelen, newnamelen;
 	char *name;
 
-#ifdef LINUX
 	if (zvol_inhibit_dev)
 		return;
-#endif
 
 	oldnamelen = strlen(oldname);
 	newnamelen = strlen(newname);
@@ -1050,9 +1144,16 @@ zvol_rename_minors_impl(const char *oldname, const char *newname)
 
 #ifdef LINUX
 	zvol_state_t *zv, *zv_next;
-
 	for (zv = list_head(&zvol_state_list); zv != NULL; zv = zv_next) {
 		zv_next = list_next(&zvol_state_list, zv);
+#elif __APPLE__
+	zvol_state_t *zv;
+	minor_t minor;
+	for (minor = 1; minor <= ZFSDEV_MAX_MINOR; minor++) {
+		zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
+		if (zv == NULL)
+			continue;
+#endif /* __APPLE__ */
 
 		if (strcmp(zv->zv_name, oldname) == 0) {
 			__zvol_rename_minor(zv, newname);
@@ -1067,7 +1168,6 @@ zvol_rename_minors_impl(const char *oldname, const char *newname)
 
 		}
 	}
-#endif
 
 	mutex_exit(&zfsdev_state_lock);
 
@@ -1256,27 +1356,37 @@ zvol_task_free(zvol_task_t *task)
 static void
 zvol_task_cb(void *param)
 {
-       zvol_task_t *task = (zvol_task_t *)param;
+	zvol_task_t *task = (zvol_task_t *)param;
 
-       switch (task->op) {
-       case ZVOL_ASYNC_CREATE_MINORS:
-               (void) zvol_create_minors_impl(task->name1);
-               break;
-       case ZVOL_ASYNC_REMOVE_MINORS:
-               zvol_remove_minors_impl(task->name1);
-               break;
-       case ZVOL_ASYNC_RENAME_MINORS:
-               zvol_rename_minors_impl(task->name1, task->name2);
-               break;
-       case ZVOL_ASYNC_SET_SNAPDEV:
-               zvol_set_snapdev_impl(task->name1, task->snapdev);
-               break;
-       default:
-               VERIFY(0);
-               break;
-       }
+	switch (task->op) {
+		case ZVOL_ASYNC_CREATE_MINORS:
+			(void) zvol_create_minors_impl(task->name1);
+			break;
+		case ZVOL_ASYNC_REMOVE_MINORS:
+			zvol_remove_minors_impl(task->name1);
+			break;
+		case ZVOL_ASYNC_RENAME_MINORS:
+			zvol_rename_minors_impl(task->name1, task->name2);
+			break;
+		case ZVOL_ASYNC_SET_SNAPDEV:
+			zvol_set_snapdev_impl(task->name1, task->snapdev);
+			break;
+		case ZVOL_ASYNC_REGISTER_DEV:
+			/*
+			 * The create process holds spa_namespace, then needs to
+			 * call waitForArbitration. But diskarbitrationd kicks in
+			 * way early,
+			 */
+			mutex_enter(&spa_namespace_lock);
+			mutex_exit(&spa_namespace_lock);
+			zvolRegisterDevice(task->zv);
+			break;
+		default:
+			VERIFY(0);
+			break;
+	}
 
-       zvol_task_free(task);
+	zvol_task_free(task);
 }
 
 typedef struct zvol_set_snapdev_arg {
@@ -1405,6 +1515,20 @@ zvol_rename_minors(spa_t *spa, const char *name1, const char *name2,
 		taskq_wait(spa->spa_zvol_taskq);
 }
 
+void
+zvol_register_device(spa_t *spa, zvol_state_t *zv)
+{
+	zvol_task_t *task;
+	taskqid_t id;
+
+	task = zvol_task_alloc(ZVOL_ASYNC_REGISTER_DEV, "notused", NULL, ~0ULL);
+	if (task == NULL)
+		return;
+	task->zv = zv;
+	id = taskq_dispatch(spa->spa_zvol_taskq, zvol_task_cb, task, TQ_SLEEP);
+}
+
+
 int
 zvol_set_volsize(const char *name, uint64_t volsize)
 {
@@ -1413,7 +1537,7 @@ zvol_set_volsize(const char *name, uint64_t volsize)
 	int error;
 	dmu_object_info_t doi;
 	uint64_t readonly;
-	boolean_t owned = B_FALSE;
+	boolean_t owned = B_FALSE, locked = B_FALSE;
 
 	dprintf("zvol_set_volsize %llu\n", volsize);
 
@@ -1425,13 +1549,16 @@ zvol_set_volsize(const char *name, uint64_t volsize)
 	if (readonly)
 		return (EROFS);
 
-	mutex_enter(&zfsdev_state_lock);
+	if (!MUTEX_HELD(&zfsdev_state_lock)) {
+		mutex_enter(&zfsdev_state_lock);
+		locked = B_TRUE;
+	}
 	zv = zvol_minor_lookup(name);
 
 	if (zv == NULL || zv->zv_objset == NULL) {
 		if ((error = dmu_objset_own(name, DMU_OST_ZVOL, B_FALSE,
 		    FTAG, &os)) != 0) {
-			mutex_exit(&zfsdev_state_lock);
+			if (locked) mutex_exit(&zfsdev_state_lock);
 			return (error);
 		}
 		owned = B_TRUE;
@@ -1456,7 +1583,17 @@ out:
 		if (zv != NULL)
 			zv->zv_objset = NULL;
 	}
-	mutex_exit(&zfsdev_state_lock);
+	if (locked) mutex_exit(&zfsdev_state_lock);
+
+#ifdef __APPLE__
+	/* We must not be holding the zfsdev_state_lock
+	 * or own the dmu_objset when calling this */
+	if (error == 0 && zv != NULL) {
+		/* IOKit will try to re-open the device */
+		zvolSetVolsize(zv);
+	}
+#endif /* __APPLE__ */
+
 	return (error);
 }
 
@@ -1465,14 +1602,19 @@ int
 zvol_open_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 {
 	int err = 0;
+	boolean_t locked = B_FALSE;
 
-	mutex_enter(&zfsdev_state_lock);
+	if (!MUTEX_HELD(&zfsdev_state_lock)) {
+		mutex_enter(&zfsdev_state_lock);
+		locked = B_TRUE;
+	}
 
 	if (zv->zv_total_opens == 0)
 		err = zvol_first_open(zv);
 
 	if (err) {
-	    mutex_exit(&zfsdev_state_lock);
+		if (locked)
+			mutex_exit(&zfsdev_state_lock);
 		return (err);
 	}
 	if ((flag & FWRITE) && (zv->zv_flags & ZVOL_RDONLY)) {
@@ -1500,14 +1642,16 @@ zvol_open_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 #endif
 	zv->zv_total_opens++;
 
-	mutex_exit(&zfsdev_state_lock);
+	if (locked)
+		mutex_exit(&zfsdev_state_lock);
 
 	dprintf("zol_open()->%d\n", err);
 	return (err);
 out:
 	if (zv->zv_total_opens == 0)
 		zvol_last_close(zv);
-	mutex_exit(&zfsdev_state_lock);
+	if (locked)
+		mutex_exit(&zfsdev_state_lock);
 	dprintf("zol_open(x)->%d\n", err);
 	return (err);
 }
@@ -1547,7 +1691,24 @@ int
 zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 {
 	int error = 0;
-	mutex_enter(&zfsdev_state_lock);
+	int locked = 0;
+	/* Thread A:
+	 * zvol_first_open(grabs zfsdev_state_lock mutex) ->
+	 *       spa_open_common(wants spa_namespace_lock mutex)
+	 *
+	 * Thread B:
+	 * spa_export_common(grabs spa_namespace_lock mutex) ->
+	 *       vdev_close -> zvol_close_impl(wants zfsdev_state_lock mutex)
+	 *
+	 * So if we already have spa_namespace_lock, lets skip the
+	 * zfsdev_state_lock mutex
+	 */
+
+
+	if (!MUTEX_HELD(&spa_namespace_lock)) {
+		mutex_enter(&zfsdev_state_lock);
+		locked = 1;
+	}
 
 	dprintf("zvol_close_impl\n");
 
@@ -1576,7 +1737,8 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 			zvol_last_close(zv);
 	}
 
-	mutex_exit(&zfsdev_state_lock);
+	if (locked)
+		mutex_exit(&zfsdev_state_lock);
 	return (error);
 }
 
@@ -2146,7 +2308,7 @@ zvol_write(dev_t dev, struct uio *uio, int p)
  */
 int
 zvol_read_iokit(zvol_state_t *zv, uint64_t position,
-    uint64_t count, void *iomem)
+    uint64_t count, struct iomem *iomem)
 {
 	uint64_t volsize;
 	rl_t *rl;
@@ -2182,8 +2344,8 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t position,
 		    "zvol_read_iokit: position",
 		    position, offset, count, bytes);
 
-		error =  dmu_read_iokit_dbuf(zv->zv_dbuf, ZVOL_OBJ, &offset,
-		    position, &bytes, iomem);
+		error =  dmu_read_iokit_dbuf(zv->zv_dbuf, ZVOL_OBJ,
+		    &offset, position, &bytes, iomem);
 
 		if (error) {
 			/* convert checksum errors into IO errors */
@@ -2206,13 +2368,15 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t position,
 
 int
 zvol_write_iokit(zvol_state_t *zv, uint64_t position,
-    uint64_t count, void *iomem)
+    uint64_t count, struct iomem *iomem)
 {
 	uint64_t volsize;
 	rl_t *rl;
 	int error = 0;
 	boolean_t sync;
 	uint64_t offset = 0;
+	uint64_t bytes;
+	uint64_t off;
 
 	if (zv == NULL)
 		return (ENXIO);
@@ -2230,17 +2394,20 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 	}
 #endif
 
-	dprintf("zvol_write_iokit(position %llu offset 0x%llx bytes 0x%llx)\n",
-	    position, offset, count);
+	dprintf("zvol_write_iokit(position %llu offset "
+	    "0x%llx bytes 0x%llx)\n", position, offset, count);
 
 	sync = !(zv->zv_flags & ZVOL_WCE) ||
 	    (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS);
 
+	/* Lock the entire range */
 	rl = zfs_range_lock(&zv->zv_znode, position, count,
 	    RL_WRITER);
+	/* Iterate over (DMU_MAX_ACCESS/2) segments */
 	while (count > 0 && (position + offset) < volsize) {
-		uint64_t bytes = MIN(count, DMU_MAX_ACCESS >> 1);
-		uint64_t off = offset;
+		/* bytes for this segment */
+		bytes = MIN(count, DMU_MAX_ACCESS >> 1);
+		off = offset;
 		dmu_tx_t *tx = dmu_tx_create(zv->zv_objset);
 
 		/* don't write past the end */
@@ -2254,11 +2421,12 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 			break;
 		}
 
-		error = dmu_write_iokit_dbuf(zv->zv_dbuf, &offset, position,
-		    &bytes, iomem, tx);
+		error = dmu_write_iokit_dbuf(zv->zv_dbuf, &offset,
+		    position, &bytes, iomem, tx);
 
 		if (error == 0) {
-			count -= MIN(count, DMU_MAX_ACCESS >> 1) + bytes;
+			count -= MIN(count,
+			    (DMU_MAX_ACCESS >> 1)) + bytes;
 			zvol_log_write(zv, tx, off, bytes, sync);
 		}
 		dmu_tx_commit(tx);
@@ -2267,6 +2435,7 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 			break;
 	}
 	zfs_range_unlock(rl);
+
 	if (sync)
 		zil_commit(zv->zv_zilog, ZVOL_OBJ);
 
@@ -2358,7 +2527,13 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 		 */
 		if (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
 			zil_commit(zv->zv_zilog, ZVOL_OBJ);
-			txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
+			/*
+			 * Don't wait around for the transaction to
+			 * flush to disk. It has been committed to
+			 * the zil, which ensures consistency, and
+			 * fully syncing the transaction is expensive.
+			 */
+			// txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 		}
 	}
 

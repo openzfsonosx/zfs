@@ -125,7 +125,7 @@ zed_lock()
     # Obtain a lock on the file bound to the given file descriptor.
     #
     eval "exec ${fd}> '${lockfile}'"
-    err="$(flock --exclusive "${fd}" 2>&1)"
+    err="$(/opt/homebrew/bin/flock "${fd}" 2>&1)"
     if [ $? -ne 0 ]; then
         zed_log_err "failed to lock \"${lockfile}\": ${err}"
     fi
@@ -163,7 +163,7 @@ zed_unlock()
 
     # Release the lock and close the file descriptor.
     #
-    err="$(flock --unlock "${fd}" 2>&1)"
+    err="$(/opt/homebrew/bin/flock -u "${fd}" 2>&1)"
     if [ $? -ne 0 ]; then
         zed_log_err "failed to unlock \"${lockfile}\": ${err}"
     fi

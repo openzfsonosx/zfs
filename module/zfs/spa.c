@@ -81,7 +81,11 @@
 #include <sys/sysdc.h>
 #include <sys/zone.h>
 #include <sys/vnode.h>
+#ifdef __APPLE__
 #include <libkern/OSKextLib.h>
+#include <sys/zfs_boot.h>
+#include <sys/ZFSPool.h>
+#endif /* __APPLE__ */
 #endif	/* _KERNEL */
 
 #include "zfs_prop.h"
@@ -519,12 +523,14 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				    &propval)) == 0 &&
 				    !BOOTFS_COMPRESS_VALID(propval)) {
 					error = SET_ERROR(ENOTSUP);
+#ifndef __APPLE__ /* OSX can boot large recordsize just fine */
 				} else if ((error =
 				    dsl_prop_get_int_ds(dmu_objset_ds(os),
 				    zfs_prop_to_name(ZFS_PROP_RECORDSIZE),
 				    &propval)) == 0 &&
 				    propval > SPA_OLD_MAXBLOCKSIZE) {
 					error = SET_ERROR(ENOTSUP);
+#endif
 				} else {
 					objnum = dmu_objset_id(os);
 				}
@@ -1353,6 +1359,7 @@ spa_unload(spa_t *spa)
 	}
 
 	ddt_unload(spa);
+
 
 	/*
 	 * Drop and purge level 2 cache
@@ -3188,7 +3195,7 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 	if (firstopen) {
 		zvol_create_minors(spa, spa_name(spa), B_TRUE);
 	}
-#endif
+#endif /* _KERNEL */
 
 	*spapp = spa;
 
@@ -3743,7 +3750,6 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa->spa_uberblock.ub_txg = txg - 1;
 	spa->spa_uberblock.ub_version = version;
 	spa->spa_ubsync = spa->spa_uberblock;
-	spa->spa_load_state = SPA_LOAD_CREATE;
 
 	/*
 	 * Create "The Godfather" zio to hold all async IOs
@@ -3927,8 +3933,30 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	 */
 	spa_evicting_os_wait(spa);
 	spa->spa_minref = refcount_count(&spa->spa_refcount);
-	spa->spa_load_state = SPA_LOAD_NONE;
 
+#if defined(_KERNEL)
+	/* Increase open refcount */
+	spa_open_ref(spa, FTAG);
+	mutex_exit(&spa_namespace_lock);
+
+	/* Create IOKit pool proxy */
+	if ((error = spa_iokit_pool_proxy_create(spa)) != 0) {
+		printf("%s spa_iokit_pool_proxy_create error %d\n",
+		    __func__, error);
+		/* spa_create succeeded, ignore proxy error */
+	}
+
+	/* Cache vdev info, needs open ref above, and pool proxy */
+
+	if (error == 0 && (error = zfs_boot_update_bootinfo(spa)) != 0) {
+		printf("%s update_bootinfo error %d\n", __func__, error);
+		/* create succeeded, ignore error from bootinfo */
+	}
+
+	/* Drop open refcount */
+	mutex_enter(&spa_namespace_lock);
+	spa_close(spa, FTAG);
+#endif /* _KERNEL */
 	mutex_exit(&spa_namespace_lock);
 
 	return (0);
@@ -4324,12 +4352,36 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	 */
 	spa_async_request(spa, SPA_ASYNC_AUTOEXPAND);
 
+#if defined(__APPLE__) && defined(_KERNEL)
+	/* Adding open ref to update bootinfo and create zvols */
+	spa_open_ref(spa, FTAG);
+#endif
+
 	mutex_exit(&spa_namespace_lock);
+
 	spa_history_log_version(spa, "import");
+
+#if defined(__APPLE__) && defined(_KERNEL)
+	/* Create IOKit pool proxy */
+	if ((error = spa_iokit_pool_proxy_create(spa)) != 0) {
+		printf("%s spa_iokit_pool_proxy_create error %d\n",
+		    __func__, error);
+		/* spa_create succeeded, ignore proxy error */
+	}
+
+	/* Cache vdev info before zvols and mountroot. */
+	zfs_boot_update_bootinfo(spa);
+
+	/* create zvol devices */
 	zvol_create_minors(spa, pool, B_TRUE);
 
-	spa_event_notify(spa, NULL, FM_EREPORT_ZFS_POOL_IMPORT);
+	/* Retake namespace lock to drop open ref */
+	mutex_enter(&spa_namespace_lock);
+	spa_close(spa, FTAG);
+	mutex_exit(&spa_namespace_lock);
+#endif	/* __APPLE__ && _KERNEL */
 
+	spa_event_notify(spa, NULL, FM_EREPORT_ZFS_POOL_IMPORT);
 
 	return (0);
 }
@@ -4525,8 +4577,9 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 		}
 	}
 
-#ifdef _KERNEL
-	zvol_remove_minors_symlink(pool);
+#if defined (__APPLE__) && defined(_KERNEL)
+	/* Remove IOKit pool proxy */
+	spa_iokit_pool_proxy_destroy(spa);
 #endif
 
 export_spa:
@@ -4687,6 +4740,11 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	mutex_enter(&spa_namespace_lock);
 	spa_config_update(spa, SPA_CONFIG_UPDATE_POOL);
 	mutex_exit(&spa_namespace_lock);
+
+#if defined(_KERNEL)
+	/* Cache vdev info, spa already has open ref from ioctl */
+	zfs_boot_update_bootinfo(spa);
+#endif
 
 	return (0);
 }
@@ -4897,6 +4955,11 @@ spa_vdev_attach(spa_t *spa, uint64_t guid, nvlist_t *nvroot, int replacing)
 
 	if (spa->spa_bootfs)
 		spa_event_notify(spa, newvd, FM_EREPORT_ZFS_BOOTFS_VDEV_ATTACH);
+
+#if defined(_KERNEL)
+	/* Cache vdev info, spa already has open ref from ioctl */
+	zfs_boot_update_bootinfo(spa);
+#endif
 
 	return (0);
 }
@@ -5137,6 +5200,11 @@ spa_vdev_detach(spa_t *spa, uint64_t guid, uint64_t pguid, int replace_done)
 	mutex_enter(&spa_namespace_lock);
 	spa_close(spa, FTAG);
 	mutex_exit(&spa_namespace_lock);
+
+#if defined(_KERNEL)
+	/* Cache vdev info, spa already has open ref from ioctl */
+	zfs_boot_update_bootinfo(spa);
+#endif
 
 	return (error);
 }
@@ -5398,6 +5466,11 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 		error = spa_export_common(newname, POOL_STATE_EXPORTED, NULL,
 		    B_FALSE, B_FALSE);
 
+#if defined(_KERNEL)
+	/* Cache vdev info, spa already has open ref from ioctl */
+	zfs_boot_update_bootinfo(spa);
+#endif
+
 	return (error);
 
 out:
@@ -5491,7 +5564,7 @@ spa_vdev_remove_evacuate(spa_t *spa, vdev_t *vd)
 	} else {
 		error = SET_ERROR(ENOTSUP);
 	}
-	spa_event_notify(spa, vd, FM_EREPORT_ZFS_VDEV_REMOVE_AUX);
+
 	if (error)
 		return (error);
 
@@ -5609,7 +5682,6 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		    ZPOOL_CONFIG_L2CACHE, l2cache, nl2cache, nv);
 		spa_load_l2cache(spa);
 		spa->spa_l2cache.sav_sync = B_TRUE;
-		spa_event_notify(spa, vd, FM_EREPORT_ZFS_VDEV_REMOVE_AUX);
 	} else if (vd != NULL && vd->vdev_islog) {
 		ASSERT(!locked);
 		ASSERT(vd == vd->vdev_top);
@@ -5648,11 +5720,15 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		 */
 		spa_vdev_remove_from_namespace(spa, vd);
 
-		spa_event_notify(spa, vd, FM_EREPORT_ZFS_VDEV_REMOVE_AUX);
 	} else if (vd != NULL) {
 		/*
 		 * Normal vdevs cannot be removed (yet).
 		 */
+#if defined(_KERNEL)
+/* future proof */
+		/* Cache vdev info, spa already has open ref from ioctl */
+		zfs_boot_update_bootinfo(spa);
+#endif
 		error = SET_ERROR(ENOTSUP);
 	} else {
 		/*
@@ -5662,7 +5738,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 	}
 
 	if (!locked)
-		error = spa_vdev_exit(spa, NULL, txg, error);
+		return (spa_vdev_exit(spa, NULL, txg, error));
 
 	return (error);
 }
@@ -6052,9 +6128,10 @@ spa_async_dispatch(spa_t *spa)
 	mutex_enter(&spa->spa_async_lock);
 	if (spa->spa_async_tasks && !spa->spa_async_suspended &&
 	    spa->spa_async_thread == NULL &&
-	    rootdir != NULL && !vn_is_readonly(rootdir))
+	    rootdir != NULL && !vn_is_readonly(rootdir)) {
 		spa->spa_async_thread = thread_create(NULL, 0,
 		    spa_async_thread, spa, 0, &p0, TS_RUN, maxclsyspri);
+	}
 	mutex_exit(&spa->spa_async_lock);
 }
 
@@ -6480,8 +6557,6 @@ spa_sync(spa_t *spa, uint64_t txg)
 	dmu_tx_t *tx;
 	int error;
 	int c;
-	uint32_t max_queue_depth = zfs_vdev_async_write_max_active *
-	    zfs_vdev_queue_depth_pct / 100;
 
 	VERIFY(spa_writeable(spa));
 
@@ -6492,10 +6567,6 @@ spa_sync(spa_t *spa, uint64_t txg)
 
 	spa->spa_syncing_txg = txg;
 	spa->spa_sync_pass = 0;
-
-	mutex_enter(&spa->spa_alloc_lock);
-	VERIFY0(avl_numnodes(&spa->spa_alloc_tree));
-	mutex_exit(&spa->spa_alloc_lock);
 
 	/*
 	 * If there are any pending vdev state changes, convert them
@@ -6551,38 +6622,6 @@ spa_sync(spa_t *spa, uint64_t txg)
 			    sizeof (uint64_t), 1, &spa->spa_deflate, tx));
 		}
 	}
-
-	/*
-	 * Set the top-level vdev's max queue depth. Evaluate each
-	 * top-level's async write queue depth in case it changed.
-	 * The max queue depth will not change in the middle of syncing
-	 * out this txg.
-	 */
-	uint64_t queue_depth_total = 0;
-	for (int c = 0; c < rvd->vdev_children; c++) {
-		vdev_t *tvd = rvd->vdev_child[c];
-		metaslab_group_t *mg = tvd->vdev_mg;
-
-		if (mg == NULL || mg->mg_class != spa_normal_class(spa) ||
-		    !metaslab_group_initialized(mg))
-			continue;
-
-		/*
-		 * It is safe to do a lock-free check here because only async
-		 * allocations look at mg_max_alloc_queue_depth, and async
-		 * allocations all happen from spa_sync().
-		 */
-		ASSERT0(refcount_count(&mg->mg_alloc_queue_depth));
-		mg->mg_max_alloc_queue_depth = max_queue_depth;
-		queue_depth_total += mg->mg_max_alloc_queue_depth;
-	}
-	metaslab_class_t *mc = spa_normal_class(spa);
-	ASSERT0(refcount_count(&mc->mc_alloc_slots));
-	mc->mc_alloc_max_slots = queue_depth_total;
-	mc->mc_alloc_throttle_enabled = zio_dva_throttle_enabled;
-
-	ASSERT3U(mc->mc_alloc_max_slots, <=,
-	    max_queue_depth * rvd->vdev_children);
 
 	/*
 	 * Iterate to convergence.
@@ -6723,10 +6762,6 @@ spa_sync(spa_t *spa, uint64_t txg)
 	spa->spa_ubsync = spa->spa_uberblock;
 
 	dsl_pool_sync_done(dp, txg);
-
-	mutex_enter(&spa->spa_alloc_lock);
-	VERIFY0(avl_numnodes(&spa->spa_alloc_tree));
-	mutex_exit(&spa->spa_alloc_lock);
 
 	/*
 	 * Update usable space statistics.

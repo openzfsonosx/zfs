@@ -31,6 +31,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
+#include <getopt.h>
 #include <libgen.h>
 #include <libintl.h>
 #include <libuutil.h>
@@ -73,6 +74,7 @@
 
 #ifdef __APPLE__
 #include <sys/zfs_mount.h>
+#include <syslog.h>
 #endif /* __APPLE__ */
 
 libzfs_handle_t *g_zfs;
@@ -235,7 +237,7 @@ get_usage(zfs_help_t idx)
 		    "[-o \"all\" | field[,...]]\n"
 		    "\t    [-t type[,...]] [-s source[,...]]\n"
 		    "\t    <\"all\" | property[,...]> "
-		    "[filesystem|volume|snapshot] ...\n"));
+		    "[filesystem|volume|snapshot|bookmark] ...\n"));
 	case HELP_INHERIT:
 		return (gettext("\tinherit [-rS] <property> "
 		    "<filesystem|volume|snapshot> ...\n"));
@@ -265,7 +267,7 @@ get_usage(zfs_help_t idx)
 	case HELP_ROLLBACK:
 		return (gettext("\trollback [-rRf] <snapshot>\n"));
 	case HELP_SEND:
-		return (gettext("\tsend [-DnPpRvLe] [-[iI] snapshot] "
+		return (gettext("\tsend [-DnPpRvLec] [-[iI] snapshot] "
 		    "<snapshot>\n"
 		    "\tsend [-Le] [-i snapshot|bookmark] "
 		    "<filesystem|volume|snapshot>\n"
@@ -1595,7 +1597,7 @@ zfs_do_get(int argc, char **argv)
 {
 	zprop_get_cbdata_t cb = { 0 };
 	int i, c, flags = ZFS_ITER_ARGS_CAN_BE_PATHS;
-	int types = ZFS_TYPE_DATASET;
+	int types = ZFS_TYPE_DATASET | ZFS_TYPE_BOOKMARK;
 	char *value, *fields;
 	int ret = 0;
 	int limit = 0;
@@ -3734,8 +3736,23 @@ zfs_do_send(int argc, char **argv)
 	nvlist_t *dbgnv = NULL;
 	boolean_t extraverbose = B_FALSE;
 
+	struct option long_options[] = {
+		{"replicate",	no_argument,		NULL, 'R'},
+		{"props",	no_argument,		NULL, 'p'},
+		{"parsable",	no_argument,		NULL, 'P'},
+		{"dedup",	no_argument,		NULL, 'D'},
+		{"verbose",	no_argument,		NULL, 'v'},
+		{"dryrun",	no_argument,		NULL, 'n'},
+		{"large-block",	no_argument,		NULL, 'L'},
+		{"embed",	no_argument,		NULL, 'e'},
+		{"resume",	required_argument,	NULL, 't'},
+		{"compressed",	no_argument,		NULL, 'c'},
+		{0, 0, 0, 0}
+	};
+
 	/* check options */
-	while ((c = getopt(argc, argv, ":i:I:RDpvnPLet:")) != -1) {
+	while ((c = getopt_long(argc, argv, ":i:I:RbDpvnPLet:c", long_options,
+	    NULL)) != -1) {
 		switch (c) {
 		case 'i':
 			if (fromname)
@@ -3779,12 +3796,17 @@ zfs_do_send(int argc, char **argv)
 		case 't':
 			resume_token = optarg;
 			break;
+		case 'c':
+			flags.compress = B_TRUE;
+			break;
 		case ':':
 			(void) fprintf(stderr, gettext("missing argument for "
 			    "'%c' option\n"), optopt);
 			usage(B_FALSE);
 			break;
 		case '?':
+			/*FALLTHROUGH*/
+		default:
 			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
 			    optopt);
 			usage(B_FALSE);
@@ -3855,6 +3877,8 @@ zfs_do_send(int argc, char **argv)
 			lzc_flags |= LZC_SEND_FLAG_LARGE_BLOCK;
 		if (flags.embed_data)
 			lzc_flags |= LZC_SEND_FLAG_EMBED_DATA;
+		if (flags.compress)
+			lzc_flags |= LZC_SEND_FLAG_COMPRESS;
 
 		if (fromname != NULL &&
 		    (fromname[0] == '#' || fromname[0] == '@')) {
@@ -6719,6 +6743,34 @@ zfs_do_unshare(int argc, char **argv)
 	return (unshare_unmount(OP_SHARE, argc, argv));
 }
 
+/* Only for manual_mount */
+static int
+parse_mount_opts(char *optstring)
+{
+	char *cur, *next;
+	int flags = 0;
+
+	cur = optstring;
+
+	while (cur != 0 && cur[0] != '\0') {
+		if (strncmp(cur, "update", 6) == 0) {
+			dprintf("remount\n");
+			flags |= MS_REMOUNT;
+		} else if (strncmp(cur, "ro", 2) == 0) {
+			dprintf("readonly\n");
+			flags |= MS_RDONLY;
+		}
+
+		next = strchr(cur, ',');
+		if (next && next > cur) {
+			cur = next+1;
+		} else {
+			cur = 0;
+		}
+	}
+
+	return (flags);
+}
 
 /*
  * Called when invoked as mount_zfs.  Do the mount if the mountpoint is
@@ -6730,18 +6782,24 @@ manual_mount(int argc, char **argv)
 	zfs_handle_t *zhp;
 	char mountpoint[ZFS_MAXPROPLEN];
 	char mntopts[MNT_LINE_MAX] = { '\0' };
+	char *dataset, *path;
 	int ret = 0;
 	int c;
 	int flags = 0;
-	char *dataset, *path;
+	int new_flags = 0;
 #ifdef __APPLE__
 	uint64_t zfs_version = 0;
 #endif
 
+	openlog("mount_zfs", LOG_CONS | LOG_PERROR, LOG_AUTH);
+	syslog(LOG_NOTICE, "zfs/mount_zfs %s\n", __func__);
+
 	/* check options */
-	while ((c = getopt(argc, argv, ":mo:O")) != -1) {
+	while ((c = getopt(argc, argv, ":mo:Oruw")) != -1) {
 		switch (c) {
 		case 'o':
+			new_flags = parse_mount_opts(optarg);
+			flags |= new_flags;
 			(void) strlcat(mntopts, optarg, sizeof (mntopts));
 			(void) strlcat(mntopts, ",", sizeof (mntopts));
 			break;
@@ -6750,6 +6808,15 @@ manual_mount(int argc, char **argv)
 			break;
 		case 'm':
 			flags |= MS_NOMNTTAB;
+			break;
+		case 'u':
+			flags |= MS_REMOUNT;
+			break;
+		case 'r':
+			flags |= MS_RDONLY;
+			break;
+		case 'w':
+			flags &= ~(MS_RDONLY);
 			break;
 		case ':':
 			(void) fprintf(stderr, gettext("missing argument for "
@@ -6788,6 +6855,24 @@ manual_mount(int argc, char **argv)
 
 	dataset = argv[0];
 	path = argv[1];
+
+	if (strncmp(dataset, "/dev/disk", 9) == 0) {
+		syslog(LOG_NOTICE, "%s: mount with %s on %s\n",
+		    __func__, dataset, path);
+		if (path[0] == '/' && strlen(path) == 1) {
+			syslog(LOG_NOTICE, "mountroot\n");
+		} else {
+			syslog(LOG_NOTICE, "no automount\n");
+			return (1);
+		}
+
+		ret = zmount(dataset, path, MS_OPTIONSTR | flags, MNTTYPE_ZFS,
+		    NULL, 0, mntopts, sizeof (mntopts));
+		syslog(LOG_NOTICE, "%s: zmount %s on %s returned %d\n", __func__,
+		    dataset, path, ret);
+		return (ret);
+	}
+	closelog();
 
 	/* try to open the dataset */
 	if ((zhp = zfs_open(g_zfs, dataset, ZFS_TYPE_FILESYSTEM)) == NULL)
