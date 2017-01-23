@@ -97,6 +97,85 @@ vdev_disk_free(vdev_t *vd)
 }
 
 static int
+vdev_disk_off_notify(ldi_handle_t lh, ldi_ev_cookie_t ecookie, void *arg,
+    void *ev_data)
+{
+	vdev_t *vd = (vdev_t *)arg;
+	vdev_disk_t *dvd = vd->vdev_tsd;
+
+	/*
+	 * Ignore events other than offline.
+	 */
+	if (strcmp(ldi_ev_get_type(ecookie), LDI_EV_OFFLINE) != 0)
+		return (LDI_EV_SUCCESS);
+
+	/*
+	 * All LDI handles must be closed for the state change to succeed, so
+	 * call on vdev_disk_close() to do this.
+	 *
+	 * We inform vdev_disk_close that it is being called from offline
+	 * notify context so it will defer cleanup of LDI event callbacks and
+	 * freeing of vd->vdev_tsd to the offline finalize or a reopen.
+	 */
+	dvd->vd_ldi_offline = B_TRUE;
+	vdev_disk_close(vd);
+
+	/*
+	 * Now that the device is closed, request that the spa_async_thread
+	 * mark the device as REMOVED and notify FMA of the removal.
+	 */
+	zfs_post_remove(vd->vdev_spa, vd);
+	vd->vdev_remove_wanted = B_TRUE;
+	spa_async_request(vd->vdev_spa, SPA_ASYNC_REMOVE);
+
+	return (LDI_EV_SUCCESS);
+}
+
+/* ARGSUSED */
+static void
+vdev_disk_off_finalize(ldi_handle_t lh, ldi_ev_cookie_t ecookie,
+    int ldi_result, void *arg, void *ev_data)
+{
+	vdev_t *vd = (vdev_t *)arg;
+
+	/*
+	 * Ignore events other than offline.
+	 */
+	if (strcmp(ldi_ev_get_type(ecookie), LDI_EV_OFFLINE) != 0)
+		return;
+
+	/*
+	 * We have already closed the LDI handle in notify.
+	 * Clean up the LDI event callbacks and free vd->vdev_tsd.
+	 */
+	vdev_disk_free(vd);
+	/*
+	 * Request that the vdev be reopened if the offline state change was
+	 * unsuccessful.
+	 */
+	if (ldi_result != LDI_EV_SUCCESS) {
+		vd->vdev_probe_wanted = B_TRUE;
+		spa_async_request(vd->vdev_spa, SPA_ASYNC_PROBE);
+	}
+}
+
+static ldi_ev_callback_t vdev_disk_off_callb = {
+	.cb_vers = LDI_EV_CB_VERS,
+	.cb_notify = vdev_disk_off_notify,
+	.cb_finalize = vdev_disk_off_finalize
+};
+
+/*
+ * We want to be loud in DEBUG kernels when DKIOCGMEDIAINFOEXT fails, or when
+ * even a fallback to DKIOCGMEDIAINFO fails.
+ */
+#ifdef DEBUG
+#define        VDEV_DEBUG(...) cmn_err(CE_NOTE, __VA_ARGS__)
+#else
+#define        VDEV_DEBUG(...) /* Nothing... */
+#endif
+
+static int
 vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
     uint64_t *ashift)
 {
@@ -185,27 +264,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	}
 #endif
 
-	v->vdev_tsd = vd;
-	vd->vd_bdev = bdev;
-
-skip_open:
-	/*  Determine the physical block size */
-	block_size = vdev_bdev_block_size(vd->vd_bdev);
-
-	/* Clear the nowritecache bit, causes vdev_reopen() to try again. */
-	v->vdev_nowritecache = B_FALSE;
-
-	/* Inform the ZIO pipeline that we are non-rotational */
-	v->vdev_nonrot = blk_queue_nonrot(bdev_get_queue(vd->vd_bdev));
-
-	/* Physical volume size in bytes */
-	*psize = bdev_capacity(vd->vd_bdev);
-
-	/* TODO: report possible expansion size */
-	*max_psize = *psize;
-
-	/* Based on the minimum sector size set the block size */
-	*ashift = highbit64(MAX(block_size, SPA_MINBLOCKSIZE)) - 1;
+	error = EINVAL;		/* presume failure */
 
 	if (vd->vdev_path != NULL) {
 
@@ -402,16 +461,6 @@ skip_open:
 	}
 #endif
 
-#if 0
-	int len = MAXPATHLEN;
-	if (vn_getpath(devvp, dvd->vd_readlinkname, &len) == 0) {
-		dprintf("ZFS: '%s' resolved name is '%s'\n",
-			   vd->vdev_path, dvd->vd_readlinkname);
-	} else {
-		dvd->vd_readlinkname[0] = 0;
-	}
-#endif
-
 skip_open:
 	/*
 	 * Determine the actual size of the device.
@@ -493,24 +542,10 @@ skip_open:
 #ifdef __APPLE__
 	/* Inform the ZIO pipeline that we are non-rotational */
 	vd->vdev_nonrot = B_FALSE;
-#if 0
-	if (VNOP_IOCTL(devvp, DKIOCISSOLIDSTATE, (caddr_t)&isssd, 0,
-				   context) == 0) {
-#else
 	if (ldi_ioctl(dvd->vd_lh, DKIOCISSOLIDSTATE, (intptr_t)&isssd,
 	    FKIOCTL, kcred, NULL) == 0) {
-#endif
 		vd->vdev_nonrot = (isssd ? B_TRUE : B_FALSE);
 	}
-	// smd - search static table in #if block above
-	if(isssd == 0) {
-	  if(vd->vdev_path) {
-	    isssd = ssd_search(vd->vdev_path);
-	  }
-	}
-
-	dprintf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "",
-			isssd);
 #endif //__APPLE__
 
 	return (0);
@@ -570,10 +605,8 @@ vdev_disk_close(vdev_t *vd)
 	if (dvd->vd_ldi_offline)
 		return;
 
-	/* Extra reference to protect dio_request during vdev_submit_bio */
-	vdev_disk_dio_get(dr);
-	if (zio)
-		zio->io_delay = jiffies_64;
+	vdev_disk_free(vd);
+}
 
 int
 vdev_disk_physio(vdev_t *vd, caddr_t data,
@@ -683,32 +716,7 @@ vdev_disk_ioctl_done(void *zio_arg, int error)
 
 	zio->io_error = error;
 
-	zio_delay_interrupt(zio);
-}
-
-static int
-vdev_disk_io_flush(struct block_device *bdev, zio_t *zio)
-{
-	struct request_queue *q;
-	struct bio *bio;
-
-	q = bdev_get_queue(bdev);
-	if (!q)
-		return (ENXIO);
-
-	bio = bio_alloc(GFP_NOIO, 0);
-	/* bio_alloc() with __GFP_WAIT never returns NULL */
-	if (unlikely(bio == NULL))
-		return (ENOMEM);
-
-	bio->bi_end_io = vdev_disk_io_flush_completion;
-	bio->bi_private = zio;
-	bio->bi_bdev = bdev;
-	zio->io_delay = jiffies_64;
-	vdev_submit_bio(VDEV_WRITE_FLUSH_FUA, bio);
-	invalidate_bdev(bdev);
-
-	return (0);
+	zio_interrupt(zio);
 }
 
 static void
@@ -810,36 +818,7 @@ vdev_disk_io_start(zio_t *zio)
 	/* Stop OSX from also caching our data */
 	flags |= B_NOCACHE | B_PASSIVE; // smd: also do B_PASSIVE for anti throttling test
 
-	bioinit(bp);
-	bp->b_flags = B_BUSY | flags;
-	if (!(zio->io_flags & (ZIO_FLAG_IO_RETRY | ZIO_FLAG_TRYHARD)))
-		bp->b_flags |= B_FAILFAST;
-	bp->b_bcount = zio->io_size;
-	bp->b_un.b_addr = zio->io_data;
-	bp->b_lblkno = lbtodb(zio->io_offset);
-	bp->b_bufsize = zio->io_size;
-	bp->b_iodone = (int (*)())vdev_disk_io_intr;
-
-#if 0
-	bp = buf_alloc(dvd->vd_devvp);
-
-	buf_setflags(bp, flags);
-	buf_setcount(bp, zio->io_size);
-	buf_setdataptr(bp, (uintptr_t)zio->io_data);
-
-	/*
-	 * Map offset to blcknumber, based on physical block number.
-	 * (512, 4096, ..). If we fail to map, default back to
-	 * standard 512. lbtodb() is fixed at 512.
-	 */
-	buf_setblkno(bp, zio->io_offset >> dvd->vd_ashift);
-	buf_setlblkno(bp, zio->io_offset >> dvd->vd_ashift);
-#endif
-
-#ifdef illumos
-	/* ldi_strategy() will return non-zero only on programming errors */
-	VERIFY(ldi_strategy(dvd->vd_lh, bp) == 0);
-#else /* !illumos */
+	zio->io_target_timestamp = zio_handle_io_delay(zio);
 
 	vb = kmem_alloc(sizeof (vdev_buf_t), KM_SLEEP);
 

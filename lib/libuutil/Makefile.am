@@ -10,7 +10,7 @@ DEFAULT_INCLUDES += \
 
 lib_LTLIBRARIES = libuutil.la
 
-USER_C = \
+libuutil_la_SOURCES = \
 	uu_alloc.c \
 	uu_avl.c \
 	uu_dprintf.c \
@@ -21,12 +21,6 @@ USER_C = \
 	uu_pname.c \
 	uu_string.c \
 	uu_strtoint.c
-
-KERNEL_C =
-
-nodist_libuutil_la_SOURCES = \
-	$(USER_C) \
-	$(KERNEL_C)
 
 libuutil_la_LIBADD = \
 	$(top_builddir)/lib/libavl/libavl.la \

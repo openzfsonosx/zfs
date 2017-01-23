@@ -672,86 +672,15 @@ zfs_znode_dmu_fini(znode_t *zp)
 	zp->z_sa_hdl = NULL;
 }
 
-/*
- * Called by new_inode() to allocate a new inode.
- */
-int
-zfs_inode_alloc(struct super_block *sb, struct inode **ip)
-{
-	znode_t *zp;
-
-	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
-	*ip = ZTOI(zp);
-
-	return (0);
-}
-
-/*
- * Called in multiple places when an inode should be destroyed.
- */
-void
-zfs_inode_destroy(struct inode *ip)
-{
-	znode_t *zp = ITOZ(ip);
-	zfs_sb_t *zsb = ZTOZSB(zp);
-
-	mutex_enter(&zsb->z_znodes_lock);
-	if (list_link_active(&zp->z_link_node)) {
-		list_remove(&zsb->z_all_znodes, zp);
-		zsb->z_nr_znodes--;
-	}
-	mutex_exit(&zsb->z_znodes_lock);
-
-	if (zp->z_acl_cached) {
-		zfs_acl_free(zp->z_acl_cached);
-		zp->z_acl_cached = NULL;
-	}
-
-	if (zp->z_xattr_cached) {
-		nvlist_free(zp->z_xattr_cached);
-		zp->z_xattr_cached = NULL;
-	}
-
-	if (zp->z_xattr_parent) {
-		zfs_iput_async(ZTOI(zp->z_xattr_parent));
-		zp->z_xattr_parent = NULL;
-	}
-
-	kmem_cache_free(znode_cache, zp);
-}
-
 static void
 zfs_vnode_forget(struct vnode *vp)
 {
 
-	case S_IFLNK:
-		ip->i_op = &zpl_symlink_inode_operations;
-		break;
-
-	/*
-	 * rdev is only stored in a SA only for device files.
-	 */
-	case S_IFCHR:
-	case S_IFBLK:
-		sa_lookup(ITOZ(ip)->z_sa_hdl, SA_ZPL_RDEV(zsb), &rdev,
-		    sizeof (rdev));
-		/*FALLTHROUGH*/
-	case S_IFIFO:
-	case S_IFSOCK:
-		init_special_inode(ip, ip->i_mode, rdev);
-		ip->i_op = &zpl_special_inode_operations;
-		break;
-
-	default:
-		zfs_panic_recover("inode %llu has invalid mode: 0x%x\n",
-		    (u_longlong_t)ip->i_ino, ip->i_mode);
-
-		/* Assume the inode is a file and attempt to continue */
-		ip->i_mode = S_IFREG | 0644;
-		ip->i_op = &zpl_inode_operations;
-		ip->i_fop = &zpl_file_operations;
-		ip->i_mapping->a_ops = &zpl_address_space_operations;
-		break;
+	/* copied from insmntque_stddtr */
+	if (vp) {
+		vnode_clearfsnode(vp);
+		vnode_put(vp);
+		vnode_recycle(vp);
 	}
 }
 

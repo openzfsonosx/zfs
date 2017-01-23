@@ -8,7 +8,7 @@ DEFAULT_INCLUDES += \
 
 noinst_LTLIBRARIES = libshare.la
 
-USER_C = \
+libshare_la_SOURCES = \
 	libshare_impl.h \
 	libshare.c \
 	nfs.c \

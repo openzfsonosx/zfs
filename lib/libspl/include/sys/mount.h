@@ -27,6 +27,8 @@
 #ifndef _LIBSPL_SYS_MOUNT_H
 #define	_LIBSPL_SYS_MOUNT_H
 
+#include <sys/vnode.h>
+#include <sys/mntent.h>
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>

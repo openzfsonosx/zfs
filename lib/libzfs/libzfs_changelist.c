@@ -504,18 +504,7 @@ change_one(zfs_handle_t *zhp, void *data)
 			 * This is necessary when the original mountpoint
 			 * is legacy or none.
 			 */
-#ifdef __APPLE__
-			if (zhp->zfs_type == ZFS_TYPE_SNAPSHOT &&
-			    clp->cl_prop == ZFS_PROP_MOUNTPOINT) {
-				zfs_close(zhp);
-				return (0);
-			}
-
-			ASSERT(!clp->cl_alldependents ||
-			    clp->cl_realprop == ZFS_PROP_NAME);
-#else
 			ASSERT(!clp->cl_alldependents);
-#endif
 			verify(uu_list_insert_before(clp->cl_list,
 			    uu_list_first(clp->cl_list), cn) == 0);
 		}

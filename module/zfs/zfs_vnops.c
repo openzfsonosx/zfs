@@ -778,7 +778,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	const iovec_t	*aiov = NULL;
 	xuio_t		*xuio = NULL;
 	int		i_iov = 0;
-	const iovec_t	*iovp = uio->uio_iov;
+	//int		iovcnt = uio_iovcnt(uio);
+	iovec_t		*iovp =  (iovec_t *)uio_curriovbase(uio);
 	int		write_eof;
 	int		count = 0;
 	sa_bulk_attr_t	bulk[4];
@@ -926,7 +927,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
             dprintf("  xuio  \n");
 #if 0 //fixme
 			ASSERT(i_iov < iovcnt);
-			ASSERT3U(uio->uio_segflg, !=, UIO_BVEC);
+#endif
 			aiov = &iovp[i_iov];
 			abuf = dmu_xuio_arcbuf(xuio, i_iov);
 			dmu_xuio_clear(xuio, i_iov);
@@ -1170,7 +1171,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
 		zil_commit(zilog, zp->z_id);
 
-	ZFS_EXIT(zsb);
+	ZFS_EXIT(zfsvfs);
 	return (0);
 }
 
@@ -4913,17 +4914,9 @@ zfs_putapage(vnode_t *vp, page_t **pp, u_offset_t *offp,
 	znode_t		*zp = VTOZ(vp);
 	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
 	dmu_tx_t	*tx;
-	caddr_t		va;
-	int		err = 0;
-	uint64_t	mtime[2], ctime[2];
-	sa_bulk_attr_t	bulk[3];
-	int		cnt = 0;
-	struct address_space *mapping;
-
-	ZFS_ENTER(zsb);
-	ZFS_VERIFY_ZP(zp);
-
-	ASSERT(PageLocked(pp));
+	u_offset_t	off, koff;
+	size_t		len, klen;
+	int		err;
 
 	off = pp->p_offset;
 	len = PAGESIZE;
@@ -5183,14 +5176,25 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
 
-	/* Only read lock if we haven't already write locked, e.g. rollback */
-	if (!RW_WRITE_HELD(&zsb->z_teardown_inactive_lock)) {
-		need_unlock = 1;
-		rw_enter(&zsb->z_teardown_inactive_lock, RW_READER);
-	}
+	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 	if (zp->z_sa_hdl == NULL) {
-		if (need_unlock)
-			rw_exit(&zsb->z_teardown_inactive_lock);
+		/*
+		 * The fs has been unmounted, or we did a
+		 * suspend/resume and this file no longer exists.
+		 */
+		rw_exit(&zfsvfs->z_teardown_inactive_lock);
+		vnode_recycle(vp);
+		return;
+	}
+
+	mutex_enter(&zp->z_lock);
+	if (zp->z_unlinked) {
+		/*
+		 * Fast path to recycle a vnode of a removed file.
+		 */
+		mutex_exit(&zp->z_lock);
+		rw_exit(&zfsvfs->z_teardown_inactive_lock);
+		vnode_recycle(vp);
 		return;
 	}
 	mutex_exit(&zp->z_lock);
@@ -5212,10 +5216,7 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 			dmu_tx_commit(tx);
 		}
 	}
-
-	zfs_zinactive(zp);
-	if (need_unlock)
-		rw_exit(&zsb->z_teardown_inactive_lock);
+	rw_exit(&zfsvfs->z_teardown_inactive_lock);
 }
 
 #ifdef sun

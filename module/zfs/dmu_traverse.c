@@ -546,7 +546,6 @@ traverse_prefetch_thread(void *arg)
 	td_main->td_pfd->pd_exited = B_TRUE;
 	cv_broadcast(&td_main->td_pfd->pd_cv);
 	mutex_exit(&td_main->td_pfd->pd_mtx);
-	spl_fstrans_unmark(cookie);
 }
 
 /*

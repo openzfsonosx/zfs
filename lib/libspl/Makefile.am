@@ -1,8 +1,6 @@
 include $(top_srcdir)/config/Rules.am
 
-VPATH = \
-	$(top_srcdir)/lib/libspl \
-	$(top_srcdir)/lib/libspl/$(TARGET_ASM_DIR)
+AUTOMAKE_OPTIONS = subdir-objects
 
 AM_CFLAGS += $(DEBUG_STACKFLAGS) $(FRAME_LARGER_THAN)
 
@@ -30,26 +28,14 @@ libspl_la_SOURCES = \
 	getmntany.c \
 	list.c \
 	mkdirp.c \
-	strlcat.c \
-	strlcpy.c \
 	strnlen.c \
 	timestamp.c \
 	uio.c \
 	zmount.c \
 	zone.c \
 	xdr.c \
+	asm-generic/atomic.S \
 	include/sys/list.h \
 	include/sys/list_impl.h
 
-USER_ASM = atomic.S
-
-KERNEL_C =
-
-nodist_libspl_la_SOURCES = \
-	$(USER_C) \
-	$(USER_ASM) \
-	$(KERNEL_C)
-
-libspl_la_LIBADD = -lrt
-
-EXTRA_DIST = $(USER_C)
+#libspl_la_LDFLAGS = -lrt

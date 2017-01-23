@@ -1333,22 +1333,22 @@ getzfsvfs(const char *dsname, zfsvfs_t **zfvp)
  * which prevents all vnode ops from running.
  */
 static int
-zfs_sb_hold(const char *name, void *tag, zfs_sb_t **zsbp, boolean_t writer)
+zfsvfs_hold(const char *name, void *tag, zfsvfs_t **zfvp, boolean_t writer)
 {
-	int error = 0;
+    int error = 0;
 
-	if (get_zfs_sb(name, zsbp) != 0)
-		error = zfs_sb_create(name, NULL, zsbp);
-	if (error == 0) {
-		rrm_enter(&(*zsbp)->z_teardown_lock, (writer) ? RW_WRITER :
-		    RW_READER, tag);
-		if ((*zsbp)->z_unmounted) {
-			/*
-			 * XXX we could probably try again, since the unmounting
-			 * thread should be just about to disassociate the
-			 * objset from the zsb.
-			 */
-			rrm_exit(&(*zsbp)->z_teardown_lock, tag);
+    if (getzfsvfs(name, zfvp) != 0)
+        error = zfsvfs_create(name, zfvp);
+    if (error == 0) {
+        rrm_enter(&(*zfvp)->z_teardown_lock, (writer) ? RW_WRITER :
+                  RW_READER, tag);
+        if ((*zfvp)->z_unmounted) {
+            /*
+             * XXX we could probably try again, since the unmounting
+             * thread should be just about to disassociate the
+             * objset from the zfsvfs.
+             */
+            rrm_exit(&(*zfvp)->z_teardown_lock, tag);
 			return (SET_ERROR(EBUSY));
         }
     }
@@ -6313,9 +6313,26 @@ zfs_attach(void)
 static void
 zfs_detach(void)
 {
+#ifdef linux
+	int error;
+#endif
 	zfsdev_state_t *zs, *zsprev = NULL;
 
-	misc_deregister(&zfs_misc);
+#ifdef linux
+	error = misc_deregister(&zfs_misc);
+	if (error != 0)
+		printk(KERN_INFO "ZFS: misc_deregister() failed %d\n", error);
+#elif defined(__APPLE__)
+	if (zfs_devnode) {
+		devfs_remove(zfs_devnode);
+		zfs_devnode = NULL;
+	}
+	if (zfs_major) {
+		(void) cdevsw_remove(zfs_major, &zfs_cdevsw);
+		zfs_major = 0;
+	}
+#endif
+
 	mutex_destroy(&zfsdev_state_lock);
 
 	for (zs = zfsdev_state_list; zs != NULL; zs = zs->zs_next) {
