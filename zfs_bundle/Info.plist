@@ -35,6 +35,8 @@
 			<string>zfs.util</string>
 			<key>FSProbeOrder</key>
 			<integer>850</integer>
+			<key>autodiskmount</key>
+			<false/>
 		</dict>
                 <key>Whole</key>
                 <dict>
@@ -51,12 +53,18 @@
                         <string>zfs.util</string>
                         <key>FSProbeOrder</key>
                         <integer>2000</integer>
+						<key>autodiskmount</key>
+						<false/>
                 </dict>
 	</dict>
 	<key>FSPersonalities</key>
 	<dict>
 		<key>ZFS</key>
 		<dict>
+			<key>FSName</key>
+			<string>ZFS</string>
+			<key>FSSubType</key>
+			<integer>1</integer>
 			<key>FSFormatInteractive</key>
 			<false/>
 			<key>FSFormatArguments</key>
@@ -69,8 +77,8 @@
 			<integer>268435456</integer>
 			<key>FSFormatMaximumSize</key>
 			<integer>9223372034707292160</integer>
-			<key>FSName</key>
-			<string>ZFS File System</string>
+			<key>autodiskmount</key>
+			<false/>
 		</dict>
 	</dict>
 </dict>

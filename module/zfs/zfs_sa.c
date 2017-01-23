@@ -229,7 +229,9 @@ zfs_sa_set_xattr(znode_t *zp)
 	size_t size;
 	int error;
 
+#ifdef __LINUX__
 	ASSERT(RW_WRITE_HELD(&zp->z_xattr_lock));
+#endif
 	ASSERT(zp->z_xattr_cached);
 	ASSERT(zp->z_is_sa);
 

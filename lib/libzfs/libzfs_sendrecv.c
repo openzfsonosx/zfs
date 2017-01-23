@@ -248,7 +248,6 @@ cksummer(void *arg)
 	char *buf = zfs_alloc(dda->dedup_hdl, SPA_MAXBLOCKSIZE);
 	dmu_replay_record_t thedrr;
 	dmu_replay_record_t *drr = &thedrr;
-	struct drr_write *drrw = &thedrr.drr_u.drr_write;
 	FILE *ofp;
 	int outfd;
 	dmu_replay_record_t wbr_drr = {0};
@@ -368,9 +367,12 @@ cksummer(void *arg)
 
 		case DRR_WRITE:
 		{
+ 			struct drr_write *drrw = &drr->drr_u.drr_write;
 			dataref_t	dataref;
+			uint64_t	payload_size;
 
-			(void) ssread(buf, drrw->drr_length, ofp);
+			payload_size = DRR_WRITE_PAYLOAD_SIZE(drrw);
+			(void) ssread(buf, payload_size, ofp);
 
 			/*
 			 * Use the existing checksum if it's dedup-capable,
@@ -384,7 +386,7 @@ cksummer(void *arg)
 				zio_cksum_t tmpsha256;
 
 				SHA256Init(&ctx);
-				SHA256Update(&ctx, buf, drrw->drr_length);
+				SHA256Update(&ctx, buf, payload_size);
 				SHA256Final(&tmpsha256, &ctx);
 
 				drrw->drr_key.ddk_cksum.zc_word[0] =
@@ -415,7 +417,7 @@ cksummer(void *arg)
 
 				wbr_drrr->drr_object = drrw->drr_object;
 				wbr_drrr->drr_offset = drrw->drr_offset;
-				wbr_drrr->drr_length = drrw->drr_length;
+				wbr_drrr->drr_length = drrw->drr_logical_size;
 				wbr_drrr->drr_toguid = drrw->drr_toguid;
 				wbr_drrr->drr_refguid = dataref.ref_guid;
 				wbr_drrr->drr_refobject =
@@ -437,7 +439,7 @@ cksummer(void *arg)
 					goto out;
 			} else {
 				/* block not previously seen */
-				if (dump_record(drr, buf, drrw->drr_length,
+				if (dump_record(drr, buf, payload_size,
 				    &stream_cksum, outfd) != 0)
 					goto out;
 			}
@@ -961,7 +963,7 @@ typedef struct send_dump_data {
 	uint64_t prevsnap_obj;
 	boolean_t seenfrom, seento, replicate, doall, fromorigin;
 	boolean_t verbose, dryrun, parsable, progress, embed_data, std_out;
-	boolean_t large_block;
+	boolean_t large_block, compress;
 	int outfd;
 	boolean_t err;
 	nvlist_t *fss;
@@ -977,7 +979,7 @@ typedef struct send_dump_data {
 
 static int
 estimate_ioctl(zfs_handle_t *zhp, uint64_t fromsnap_obj,
-    boolean_t fromorigin, uint64_t *sizep)
+    boolean_t fromorigin, enum lzc_send_flags flags, uint64_t *sizep)
 {
 	zfs_cmd_t zc = {"\0"};
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
@@ -990,6 +992,7 @@ estimate_ioctl(zfs_handle_t *zhp, uint64_t fromsnap_obj,
 	zc.zc_sendobj = zfs_prop_get_int(zhp, ZFS_PROP_OBJSETID);
 	zc.zc_fromobj = fromsnap_obj;
 	zc.zc_guid = 1;  /* estimate flag */
+	zc.zc_flags = flags;
 
 	if (zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_SEND, &zc) != 0) {
 		char errbuf[1024];
@@ -1230,6 +1233,7 @@ dump_snapshot(zfs_handle_t *zhp, void *arg)
 	progress_arg_t pa = { 0 };
 	pthread_t tid;
 	char *thissnap;
+	enum lzc_send_flags flags = 0;
 	int err;
 	boolean_t isfromsnap, istosnap, fromorigin;
 	boolean_t exclude = B_FALSE;
@@ -1257,6 +1261,13 @@ dump_snapshot(zfs_handle_t *zhp, void *arg)
 	istosnap = (strcmp(sdd->tosnap, thissnap) == 0);
 	if (istosnap)
 		sdd->seento = B_TRUE;
+
+	if (sdd->large_block)
+		flags |= LZC_SEND_FLAG_LARGE_BLOCK;
+	if (sdd->embed_data)
+		flags |= LZC_SEND_FLAG_EMBED_DATA;
+	if (sdd->compress)
+		flags |= LZC_SEND_FLAG_COMPRESS;
 
 	if (!sdd->doall && !isfromsnap && !istosnap) {
 		if (sdd->replicate) {
@@ -1304,7 +1315,7 @@ dump_snapshot(zfs_handle_t *zhp, void *arg)
 	if (sdd->verbose) {
 		uint64_t size = 0;
 		(void) estimate_ioctl(zhp, sdd->prevsnap_obj,
-		    fromorigin, &size);
+		    fromorigin, flags, &size);
 
 		send_print_verbose(fout, zhp->zfs_name,
 		    sdd->prevsnap[0] ? sdd->prevsnap : NULL,
@@ -1328,12 +1339,6 @@ dump_snapshot(zfs_handle_t *zhp, void *arg)
 				return (err);
 			}
 		}
-
-		enum lzc_send_flags flags = 0;
-		if (sdd->large_block)
-			flags |= LZC_SEND_FLAG_LARGE_BLOCK;
-		if (sdd->embed_data)
-			flags |= LZC_SEND_FLAG_EMBED_DATA;
 
 		err = dump_ioctl(zhp, sdd->prevsnap, sdd->prevsnap_obj,
 		    fromorigin, sdd->outfd, flags, sdd->debugnv);
@@ -1640,8 +1645,12 @@ zfs_send_resume(libzfs_handle_t *hdl, sendflags_t *flags, int outfd,
 	fromguid = 0;
 	(void) nvlist_lookup_uint64(resume_nvl, "fromguid", &fromguid);
 
+	if (flags->largeblock || nvlist_exists(resume_nvl, "largeblockok"))
+		lzc_flags |= LZC_SEND_FLAG_LARGE_BLOCK;
 	if (flags->embed_data || nvlist_exists(resume_nvl, "embedok"))
 		lzc_flags |= LZC_SEND_FLAG_EMBED_DATA;
+	if (flags->compress || nvlist_exists(resume_nvl, "compressok"))
+		lzc_flags |= LZC_SEND_FLAG_COMPRESS;
 
 	if (guid_to_name(hdl, toname, toguid, B_FALSE, name) != 0) {
 		if (zfs_dataset_exists(hdl, toname, ZFS_TYPE_DATASET)) {
@@ -1674,7 +1683,8 @@ zfs_send_resume(libzfs_handle_t *hdl, sendflags_t *flags, int outfd,
 
 	if (flags->verbose) {
 		uint64_t size = 0;
-		error = lzc_send_space(zhp->zfs_name, fromname, &size);
+		error = lzc_send_space(zhp->zfs_name, fromname,
+		    lzc_flags, &size);
 		if (error == 0)
 			size = MAX(0, (int64_t)(size - bytes));
 		send_print_verbose(stderr, zhp->zfs_name, fromname,
@@ -1905,6 +1915,7 @@ zfs_send(zfs_handle_t *zhp, const char *fromsnap, const char *tosnap,
 	sdd.dryrun = flags->dryrun;
 	sdd.large_block = flags->largeblock;
 	sdd.embed_data = flags->embed_data;
+	sdd.compress = flags->compress;
 	sdd.filter_cb = filter_func;
 	sdd.filter_cb_arg = cb_arg;
 	if (debugnvp)
@@ -2998,11 +3009,17 @@ recv_skip(libzfs_handle_t *hdl, int fd, boolean_t byteswap)
 
 		case DRR_WRITE:
 			if (byteswap) {
-				drr->drr_u.drr_write.drr_length =
-				    BSWAP_64(drr->drr_u.drr_write.drr_length);
+				drr->drr_u.drr_write.drr_logical_size =
+				    BSWAP_64(
+				    drr->drr_u.drr_write.drr_logical_size);
+				drr->drr_u.drr_write.drr_compressed_size =
+				    BSWAP_64(
+				    drr->drr_u.drr_write.drr_compressed_size);
 			}
+			uint64_t payload_size =
+			    DRR_WRITE_PAYLOAD_SIZE(&drr->drr_u.drr_write);
 			(void) recv_read(hdl, fd, buf,
-			    drr->drr_u.drr_write.drr_length, B_FALSE, NULL);
+			    payload_size, B_FALSE, NULL);
 			break;
 		case DRR_SPILL:
 			if (byteswap) {
@@ -3608,7 +3625,8 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 	}
 
 	if (clp) {
-		err |= changelist_postfix(clp);
+		if (!flags->nomount)
+			err |= changelist_postfix(clp);
 		changelist_free(clp);
 	}
 

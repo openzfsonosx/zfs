@@ -96,7 +96,9 @@ struct dsl_pool;
 #define	DS_FIELD_RESUME_OBJECT "com.delphix:resume_object"
 #define	DS_FIELD_RESUME_OFFSET "com.delphix:resume_offset"
 #define	DS_FIELD_RESUME_BYTES "com.delphix:resume_bytes"
+#define	DS_FIELD_RESUME_LARGEBLOCK "com.delphix:resume_largeblockok"
 #define	DS_FIELD_RESUME_EMBEDOK "com.delphix:resume_embedok"
+#define	DS_FIELD_RESUME_COMPRESSOK "com.delphix:resume_compressok"
 
 /*
  * DS_FLAG_CI_DATASET is set if the dataset contains a file system whose
@@ -272,6 +274,7 @@ boolean_t dsl_dataset_modified_since_snap(dsl_dataset_t *ds,
     dsl_dataset_t *snap);
 
 void dsl_dataset_sync(dsl_dataset_t *os, zio_t *zio, dmu_tx_t *tx);
+void dsl_dataset_sync_done(dsl_dataset_t *os, dmu_tx_t *tx);
 
 void dsl_dataset_block_born(dsl_dataset_t *ds, const blkptr_t *bp,
     dmu_tx_t *tx);
@@ -338,9 +341,6 @@ int dsl_dataset_rollback(const char *fsname, void *owner, nvlist_t *result);
 
 void dsl_dataset_deactivate_feature(uint64_t dsobj,
     spa_feature_t f, dmu_tx_t *tx);
-
-int dmu_send_estimate(dsl_dataset_t *ds, dsl_dataset_t *fromds,
-    uint64_t *sizep);
 
 #ifdef ZFS_DEBUG
 #define	dprintf_ds(ds, fmt, ...) do { \

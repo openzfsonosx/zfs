@@ -62,6 +62,7 @@ osx_kstat_t osx_kstat = {
 
 	{ "active_vnodes",				KSTAT_DATA_UINT64 },
 	{ "vnop_debug",					KSTAT_DATA_UINT64 },
+	{ "reclaim_nodes",				KSTAT_DATA_UINT64 },
 	{ "ignore_negatives",			KSTAT_DATA_UINT64 },
 	{ "ignore_positives",			KSTAT_DATA_UINT64 },
 	{ "create_negatives",			KSTAT_DATA_UINT64 },
@@ -170,6 +171,7 @@ osx_kstat_t osx_kstat = {
 	{"zfs_write_implies_delete_child",KSTAT_DATA_UINT64  },
 	{"zfs_send_holes_without_birth_time",KSTAT_DATA_UINT64  },
 
+	{"dbuf_cache_max_bytes",KSTAT_DATA_UINT64  },
 };
 
 
@@ -360,6 +362,9 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		send_holes_without_birth_time =
 			ks->zfs_send_holes_without_birth_time.value.ui64;
 
+		dbuf_cache_max_bytes =
+		    ks->dbuf_cache_max_bytes.value.ui64;
+
 	} else {
 
 		/* kstat READ */
@@ -368,6 +373,7 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		/* Darwin */
 		ks->darwin_active_vnodes.value.ui64          = vnop_num_vnodes;
+		ks->darwin_reclaim_nodes.value.ui64          = vnop_num_reclaims;
 		ks->darwin_debug.value.ui64                  = debug_vnop_osx_printf;
 		ks->darwin_ignore_negatives.value.ui64       = zfs_vnop_ignore_negatives;
 		ks->darwin_ignore_positives.value.ui64       = zfs_vnop_ignore_positives;
@@ -539,6 +545,8 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			zfs_write_implies_delete_child;
 		ks->zfs_send_holes_without_birth_time.value.ui64 =
 			send_holes_without_birth_time;
+
+		ks->dbuf_cache_max_bytes.value.ui64 = dbuf_cache_max_bytes;
 	}
 
 	return 0;

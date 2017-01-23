@@ -928,7 +928,7 @@ typedef struct ddt_histogram {
 
 #define	ZVOL_PROP_NAME		"name"
 
-#define	ZVOL_DEFAULT_BLOCKSIZE	8192
+#define	ZVOL_DEFAULT_BLOCKSIZE	131072
 
 /*
  * zvol ioctl to get dataset name
@@ -944,8 +944,7 @@ typedef enum {
 	SPA_LOAD_IMPORT,	/* import in progress	*/
 	SPA_LOAD_TRYIMPORT,	/* tryimport in progress */
 	SPA_LOAD_RECOVER,	/* recovery requested	*/
-	SPA_LOAD_ERROR,		/* load failed		*/
-	SPA_LOAD_CREATE		/* creation in progress */
+	SPA_LOAD_ERROR		/* load failed		*/
 } spa_load_state_t;
 
 /*
