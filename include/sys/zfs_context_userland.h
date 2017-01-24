@@ -291,6 +291,7 @@ typedef struct kcondvar {
 } kcondvar_t;
 
 #define	CV_DEFAULT	0
+#define CALLOUT_FLAG_ABSOLUTE   0x2
 
 extern void cv_init(kcondvar_t *cv, char *name, int type, void *arg);
 extern void cv_destroy(kcondvar_t *cv);
