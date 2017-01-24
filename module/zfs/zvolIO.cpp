@@ -452,50 +452,24 @@ net_lundman_zfs_zvol_device::detach(IOService *provider)
 	super::detach(provider);
 }
 
-extern boolean_t spa_exporting_vdevs;
-
 bool
 net_lundman_zfs_zvol_device::handleOpen(IOService *client,
     IOOptionBits options, void *argument)
 {
-#if 0
-	IOStorageAccess access = (IOStorageAccess)(uint64_t)argument;
-#endif
+	IOStorageAccess access = ( uintptr_t )argument;
 	bool ret = false;
-
-	dprintf("open: options %x\n", options);
 
 	if (super::handleOpen(client, options, argument) == false)
 		return (false);
 
-    spa_exporting_vdevs = B_TRUE;
+	atomic_inc_64(&spa_exporting_vdevs);
 
-#if 0
-	/*
-	 * It was the hope that openHandle would indicate the type of open
-	 * required such that we can set FREAD/FWRITE/ZVOL_EXCL as needed, but
-	 * alas, "access" is always 0 here.
-	 */
-	switch (access) {
-
-		case kIOStorageAccessReader:
-			//IOLog("handleOpen: readOnly\n");
-			zv->zv_openflags = FREAD;
-			zvol_open_impl(zv, FREAD /* ZVOL_EXCL */, 0, NULL);
-			break;
-
-		case kIOStorageAccessReaderWriter:
-			// IOLog("handleOpen: options %04x\n", options);
-			break;
-
-		default:
-			// IOLog("handleOpen with unknown access %04lu\n",
-			//	access);
-			zv->zv_openflags = FWRITE;
+	if (access & kIOStorageAccessReaderWriter) {
+		zv->zv_openflags = FWRITE | ZVOL_EXCL;
+	} else {
+		zv->zv_openflags = FREAD;
 	}
-#endif
 
-	zv->zv_openflags = FWRITE | ZVOL_EXCL;
 	if (zvol_open_impl(zv, zv->zv_openflags, 0, NULL) == 0) {
 		ret = true;
 	} else {
@@ -504,9 +478,10 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 			ret = true;
 	}
 
-    spa_exporting_vdevs = B_FALSE;
+	atomic_dec_64(&spa_exporting_vdevs);
 
-	dprintf("Open %s\n", (ret ? "done" : "failed"));
+	dprintf("Open %s (openflags %x)\n", (ret ? "done" : "failed"),
+		zv->zv_openflags);
 
 	if (ret == false) {
 		super::handleClose(client, options);
@@ -523,9 +498,9 @@ net_lundman_zfs_zvol_device::handleClose(IOService *client,
 	super::handleClose(client, options);
 
 	// IOLog("handleClose\n");
-    spa_exporting_vdevs = B_TRUE;
+	atomic_inc_64(&spa_exporting_vdevs);
 	zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
-    spa_exporting_vdevs = B_FALSE;
+	atomic_dec_64(&spa_exporting_vdevs);
 
 }
 

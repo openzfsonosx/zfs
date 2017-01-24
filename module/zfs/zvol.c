@@ -863,8 +863,6 @@ zvol_create_minors_cb(const char *dsname, void *arg)
 }
 
 
-extern boolean_t spa_exporting_vdevs;
-
 int
 zvol_first_open(zvol_state_t *zv)
 {

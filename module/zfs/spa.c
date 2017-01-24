@@ -1302,7 +1302,7 @@ spa_config_parse(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent,
 	return (0);
 }
 
-boolean_t spa_exporting_vdevs = B_FALSE;
+uint64_t spa_exporting_vdevs = 0;
 
 
 /*
@@ -3086,7 +3086,7 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
     /*
      * Alas, our recursion call comes from IOKit, and is a different thread
      */
-    if (spa_exporting_vdevs == B_TRUE) {
+    if (spa_exporting_vdevs != 0) {
         locked = B_FALSE;
     } else {
         if (mutex_owner(&spa_namespace_lock) != curthread) {
