@@ -97,6 +97,122 @@ vdev_disk_free(vdev_t *vd)
 	vd->vdev_tsd = NULL;
 }
 
+// smd
+#if 1
+const char *devids[] = {
+  "DT_HyperX_30-1C6F65C7B80DBCB131FB000D:1",
+"DT_HyperX_30-1C6F65C7B80DBCB131FB000D:2",
+  "DT_HyperX_30-1C6F65C7BF55BCB111D10001:2",
+  "media-862B354A-1FA6-46B9-9E1E-3A141921EEC3",
+  "media-09D41BB2-F9B4-43D8-9FDA-4343AAEE62ED",
+  "media-913ACAC6-2F9B-4044-AC4D-7767757A39EA",
+  "media-51E41B74-4B9C-44F4-9914-264BED4F86A2",
+  "media-B1CFCE85-67DE-449F-8F6D-7AFE8FA347D4",
+  "media-06B5B4F9-E348-77C0-06B5-B4F9E34877C0", // Quarto l2
+  "media-06AFD533-6738-9440-06AF-D53367389440", // Quarto log0
+  "media-06AFD556-769F-DB40-06AF-D556769FDB40", // Quarto log1
+  "media-06B5B500-8B97-08C0-06B5-B5008B9708C0", // Safety l2
+  "media-06AFD54C-50ED-A600-06AF-D54C50EDA600", // Safety log0
+  "media-06AFD522-9139-D840-06AF-D5229139D840", // Safety log1
+  "media-06B5B50B-0341-C900-06B5-B50B0341C900", // Trinity l2
+  "media-06AFD52B-E487-6940-06AF-D52BE4876940", // Trinity log0
+  "media-06AFD550-DBD1-7E40-06AF-D550DBD17E40", // Trinity log1
+  "media-06B5ABA7-D6C1-F940-06B5-ABA7D6C1F940", // homepool vdev on 840
+  "media-F375E0F6-CF0D-834E-9D67-9B97D632FEA1", // homepool vdev on 256 (wholedisk)
+  "media-06B5C205-A171-4F40-06B5-C205A1714F40", // homepool log0
+  "media-06B5C225-CA24-FAC0-06B5-C225CA24FAC0", // homepool log1
+  "media-06B5C2F0-9123-5200-06B5-C2F091235200", // homepool l2
+  "C400-MTFDDAC256MAM-0000000012290910996E:1", // homepool alt vdev on 256 (wholedisk)
+  "media-06B5C239-A7B9-3E80-06B5-C239A7B93E80", // Dual log0
+  "media-06B5D8FA-B893-09C0-06B5-D8FAB89309C0", // Dual log1
+  "media-06B5C2DE-CF65-F440-06B5-C2DECF65F440", // Dual cache0
+  "media-06B5C2B2-8B1A-1180-06B5-C2B28B1A1180", // Dual cache1
+  "media-06AFD55B-F4EA-6E40-06AF-D55BF4EA6E40", // ssdpool mirror0
+  "media-06AFD541-5320-07C0-06AF-D541532007C0", // ssdpool mirror1
+  "media-E5A6E54B-236E-4D84-B15C-5EB57D362E9F", // ssedpool l2
+  "media-06B5C2CB-ED7F-2600-06B5-C2CBED7F2600", // Newmis log0
+  "media-06B5C2A4-7057-F100-06B5-C2A47057F100", // Newmis log1
+  "DT_HyperX_30-1C6F65C7BF55BCB111D10001:1", // Newmis cache
+"Patriot_Memory-070727D062444554:1",
+"media-06435AE2-F97D-7100-0643-5AE2F97D7100",
+"media-06435AEA-7E68-8E00-0643-5AEA7E688E00",
+"media-06435B07-8095-9180-0643-5B0780959180",
+"media-065BAEFF-FB1E-49C0-065B-AEFFFB1E49C0",
+"media-065BAF0F-CE5A-7400-065B-AF0FCE5A7400",
+"media-065BAF14-6020-7940-065B-AF1460207940",
+"media-065BAF19-295F-CE00-065B-AF19295FCE00",
+"media-065BAF21-0F98-F780-065B-AF210F98F780",
+"media-065BF90D-6464-3880-065B-F90D64643880",
+"media-065BF912-67CC-F440-065B-F91267CCF440",
+"media-065BF919-1448-4AC0-065B-F91914484AC0",
+"media-065BFA0C-15F3-B500-065B-FA0C15F3B500",
+"media-065BFA1D-A7CA-E940-065B-FA1DA7CAE940",
+"media-065BFA2B-16AD-57C0-065B-FA2B16AD57C0",
+"media-065BFA34-D7DE-9000-065B-FA34D7DE9000",
+"media-06AFDE29-2122-4980-06AF-DE2921224980",
+"media-06AFDE30-8725-46C0-06AF-DE30872546C0",
+"media-06AFDE38-897E-D540-06AF-DE38897ED540",
+"media-06AFDE40-5D0C-CA80-06AF-DE405D0CCA80",
+"media-06AFDF9B-AD66-6FC0-06AF-DF9BAD666FC0",
+"media-06AFDFA2-B124-5640-06AF-DFA2B1245640",
+"media-06AFDFAD-9862-CB00-06AF-DFAD9862CB00",
+"media-06AFDFB4-AC1A-6E00-06AF-DFB4AC1A6E00",
+"media-970A550F-BA71-4D05-8D02-E6D7C7489670",
+"media-AC58DF37-2193-480D-9992-4ACD67D3E351",
+  "media-1B6FCCEA-C35C-4F60-AC1D-1BA08408F143",
+  "media-D3A240CA-AE2A-427C-83AD-87927C04B4E4",
+  "media-048F8673-0403-4BF0-BC4F-E3F427B3242C",
+  "media-ACFA2BBB-88DE-451C-8455-5D83F6F188B0",
+  "media-5EDEE597-C7F6-4788-841A-790ECAD8FA26",
+  "media-56FFB24C-E400-4FF0-8042-D86E0AD87F07",
+
+NULL
+};
+
+// from http://www.opensource.apple.com/source/xnu/xnu-792.13.8/libsa/strstr.c
+
+static inline char *
+smd_strstr(const char *in, const char *str)
+{
+  char c;
+  size_t len;
+
+  c = *str++;
+  if (!c)
+    return (char *) in;	// Trivial empty string case
+
+  len = strlen(str);
+  do {
+    char sc;
+
+    do {
+      sc = *in++;
+      if (!sc)
+	return (char *) 0;
+    } while (sc != c);
+  } while (strncmp(in, str, len) != 0);
+
+  return (char *) (in - 1);
+}
+
+
+static inline int
+ssd_search(const char a[]) {
+  int i;
+  char *p = NULL;
+
+  for(i=0; devids[i] != NULL; i++) {
+    if((p=smd_strstr(a, devids[i]))!=NULL) {
+      printf("ZFS: smd: issid: %s\n", a);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+#endif
+
+
 static int
 vdev_disk_off_notify(ldi_handle_t lh, ldi_ev_cookie_t ecookie, void *arg,
     void *ev_data)
@@ -150,6 +266,7 @@ vdev_disk_off_finalize(ldi_handle_t lh, ldi_ev_cookie_t ecookie,
 	 * Clean up the LDI event callbacks and free vd->vdev_tsd.
 	 */
 	vdev_disk_free(vd);
+
 	/*
 	 * Request that the vdev be reopened if the offline state change was
 	 * unsuccessful.
@@ -171,9 +288,9 @@ static ldi_ev_callback_t vdev_disk_off_callb = {
  * even a fallback to DKIOCGMEDIAINFO fails.
  */
 #ifdef DEBUG
-#define        VDEV_DEBUG(...) cmn_err(CE_NOTE, __VA_ARGS__)
+#define	VDEV_DEBUG(...)	cmn_err(CE_NOTE, __VA_ARGS__)
 #else
-#define        VDEV_DEBUG(...) /* Nothing... */
+#define	VDEV_DEBUG(...)	/* Nothing... */
 #endif
 
 static int
@@ -543,10 +660,24 @@ skip_open:
 #ifdef __APPLE__
 	/* Inform the ZIO pipeline that we are non-rotational */
 	vd->vdev_nonrot = B_FALSE;
+#if 0
+	if (VNOP_IOCTL(devvp, DKIOCISSOLIDSTATE, (caddr_t)&isssd, 0,
+				   context) == 0) {
+#else
 	if (ldi_ioctl(dvd->vd_lh, DKIOCISSOLIDSTATE, (intptr_t)&isssd,
 	    FKIOCTL, kcred, NULL) == 0) {
+#endif
 		vd->vdev_nonrot = (isssd ? B_TRUE : B_FALSE);
 	}
+	// smd - search static table in #if block above
+	if(isssd == 0) {
+	  if(vd->vdev_path) {
+	    isssd = ssd_search(vd->vdev_path);
+	  }
+	}
+
+	dprintf("ZFS: vdev_disk(%s) isSSD %d\n", vd->vdev_path ? vd->vdev_path : "",
+			isssd);
 #endif //__APPLE__
 
 	return (0);
