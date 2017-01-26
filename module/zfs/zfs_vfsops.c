@@ -1831,7 +1831,7 @@ zfs_vfs_mountroot(struct mount *mp, struct vnode *devvp, vfs_context_t ctx)
 	char *zfs_bootfs = 0;
 	char *path = 0;
 	dev_t dev = 0;
-	int error = 0;
+	int error = EINVAL;
 	//int len = MAXPATHLEN;
 
 printf("ZFS: %s\n", __func__);
@@ -1900,7 +1900,6 @@ printf("ZFS: %s\n", __func__);
 
 	printf("Setting readonly\n");
 
-	//if (error = zfs_domount(mp, dev, "rpool/ROOT/10.11", ctx)) {
 	if ((error = zfs_domount(mp, dev, zfs_bootfs, ctx)) != 0) {
 		//cmn_err(CE_NOTE, "zfs_domount: error %d", error);
 		printf("zfs_domount: error %d", error);
