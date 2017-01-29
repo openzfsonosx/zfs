@@ -2074,7 +2074,7 @@ dprintf("%s cmdflags %u rdonly %d\n", __func__, cmdflags, rdonly);
 	//dprintf("vfs_mount: fspec '%s' : mflag %04llx : optptr %p : optlen %d :"
 	printf("%s: fspec '%s' : mflag %04x : optptr %p : optlen %d :"
 	    " options %s\n", __func__,
-	    mnt_args.fspec,
+	    osname,
 	    mnt_args.mflag,
 	    mnt_args.optptr,
 	    mnt_args.optlen,
