@@ -56,7 +56,7 @@
 			<key>IOProviderClass</key>
 			<string>IOResources</string>
 			<key>IOResourceMatch</key>
-			<string>IOKit</string>
+			<string>IOBSD</string>
 		</dict>
 	</dict>
 	<key>NSHumanReadableCopyright</key>
