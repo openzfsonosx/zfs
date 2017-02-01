@@ -96,12 +96,6 @@
 
 #ifdef __APPLE__
 #include <sys/kstat_osx.h>
-
-#define MNTTAB "/etc/mtab"
-
-#ifndef ZFS_BOOT
-static int mnttab_file_create(void);
-#endif
 #endif
 
 //#define dprintf printf
@@ -6227,30 +6221,6 @@ static void * zfs_devnode = NULL;
 
 #define ZFS_MAJOR  -24
 
-#ifdef __APPLE__
-#ifndef ZFS_BOOT
-static int
-mnttab_file_create(void)
-{
-	int error = 0;
-	vnode_t *vp;
-	int oflags = FCREAT;
-
-	if ((error = vn_open(MNTTAB, UIO_SYSSPACE,
-						 oflags, 0666, &vp, CRCREAT, 0)) == 0) {
-		if ((error =VOP_FSYNC(vp, FSYNC, kcred,
-							  NULL)) == 0) {
-			error = VOP_CLOSE(vp, oflags, 1, 0,
-							  kcred, NULL);
-		}
-	}
-	if (error)
-		printf("mnttab_file_create : error %d\n", error);
-	return error;
-}
-#endif
-#endif
-
 static int
 zfs_devfs_clone(__unused dev_t dev, int action)
 {
@@ -6411,10 +6381,6 @@ zfs_ioctl_osx_init(void)
 
 	kstat_osx_init();
 
-#ifndef ZFS_BOOT
-/* If the kext is loading during boot, this will panic */
-	(void) mnttab_file_create();
-#endif
 	zfs_ioctl_installed = 1;
 #endif
 	printf("ZFS: Loaded module v%s-%s%s, "

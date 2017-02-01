@@ -42,14 +42,11 @@
 #include <dirent.h>
 #include <sys/fcntl.h>
 
-#define BUFSIZE (MNT_LINE_MAX + 2)
-
-/*__thread*/ char buf[BUFSIZE];
-
 #define DIFF(xx) ((mrefp->xx != NULL) && \
 		  (mgetp->xx == NULL || strcmp(mrefp->xx, mgetp->xx) != 0))
 
-#ifdef __APPLE__
+static struct statfs *gsfs = NULL;
+static int allfs = 0;
 /*
  * We will also query the extended filesystem capabilities API, to lookup
  * other mount options, for example, XATTR. We can not use the MNTNOUSERXATTR
@@ -63,8 +60,6 @@ struct attrBufS {
 	u_int32_t       length;
 	vol_capabilities_set_t caps;
 } __attribute__((aligned(4), packed));
-#endif
-
 
 
 DIR *
@@ -228,9 +223,6 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 		OPTADD(MNTOPT_NOATIME);
 	else
 		OPTADD(MNTOPT_ATIME);
-#ifdef __FreeBSD__
-	OPTADD(MNTOPT_NOXATTR);
-#elif defined(__APPLE__)
 		{
 			struct attrBufS attrBuf;
 			attrlist_t      attrList;
@@ -250,12 +242,10 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 				} // If EXTENDED
 			} // if getattrlist
 		}
-#endif
 	if (flags & MNT_NOEXEC)
 		OPTADD(MNTOPT_NOEXEC);
 	else
 		OPTADD(MNTOPT_EXEC);
-#ifdef __APPLE__
 	if (flags & MNT_NODEV)
 		OPTADD(MNTOPT_NODEVICES);
 	else
@@ -268,19 +258,15 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 		OPTADD(MNTOPT_NOOWNERS);
 	else
 		OPTADD(MNTOPT_OWNERS);
-#endif
+
 #undef	OPTADD
+
 	mp->mnt_special = sfs->f_mntfromname;
 	mp->mnt_mountp = sfs->f_mntonname;
 	mp->mnt_fstype = sfs->f_fstypename;
 	mp->mnt_mntopts = mntopts;
 	mp->mnt_fssubtype = sfs->f_fssubtype;
-	//if (strcmp(mp->mnt_fstype, MNTTYPE_ZFS) == 0)
-		//printf("mnttab: %s %s %s %s\n", mp->mnt_special, mp->mnt_mountp, mp->mnt_fstype, mp->mnt_mntopts);
 }
-
-static struct statfs *gsfs = NULL;
-static int allfs = 0;
 
 static int
 statfs_init(void)
@@ -318,7 +304,6 @@ fail:
 int
 getmntany(FILE *fd __unused, struct mnttab *mgetp, struct mnttab *mrefp)
 {
-	//struct statfs *sfs; //Not sure what FreeBSD was planning to do with this.
 	int i, error;
 
 	error = statfs_init();
@@ -347,22 +332,25 @@ getmntany(FILE *fd __unused, struct mnttab *mgetp, struct mnttab *mrefp)
 int
 getmntent(FILE *fp, struct mnttab *mp)
 {
-	//struct statfs *sfs; //Not sure what FreeBSD was planning to do with this.
-	int error, nfs;
+	static int index = -1;
+	int error = 0;
 
-	nfs = (int)lseek(fileno(fp), 0, SEEK_CUR);
-	if (nfs == -1)
-		return (errno);
-	/* If nfs is 0, we want to refresh out cache. */
-	if (nfs == 0 || gsfs == NULL) {
+	if (index < 0) {
 		error = statfs_init();
-		if (error != 0)
-			return (error);
 	}
-	if (nfs >= allfs)
-		return (-1);
-	statfs2mnttab(&gsfs[nfs], mp);
-	if (lseek(fileno(fp), 1, SEEK_CUR) == -1)
-		return (errno);
+
+	if (error != 0)
+		return (error);
+
+	index++;
+
+	// If we have finished "reading" the mnttab, reset it to
+	// start from the beginning, and return EOF.
+	if (index >= allfs) {
+		index = -1;
+		return -1;
+	}
+
+	statfs2mnttab(&gsfs[index], mp);
 	return (0);
 }

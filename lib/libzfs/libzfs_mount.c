@@ -1706,9 +1706,11 @@ zpool_disable_datasets(zpool_handle_t *zhp, boolean_t force)
 
 	namelen = strlen(zhp->zpool_name);
 
+#ifdef LINUX
 	/* Reopen MNTTAB to prevent reading stale data from open file */
 	if (freopen(MNTTAB, "r", hdl->libzfs_mnttab) == NULL)
 		return (ENOENT);
+#endif
 
 	used = alloc = 0;
 	while (getmntent(hdl->libzfs_mnttab, &entry) == 0) {

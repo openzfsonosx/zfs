@@ -815,7 +815,6 @@ libzfs_mnttab_update(libzfs_handle_t *hdl)
 {
 	struct mnttab entry;
 
-	rewind(hdl->libzfs_mnttab);
 	while (getmntent(hdl->libzfs_mnttab, &entry) == 0) {
 		mnttab_node_t *mtn;
 		avl_index_t where;
@@ -888,7 +887,6 @@ libzfs_mnttab_find(libzfs_handle_t *hdl, const char *fsname,
 
 		if (avl_numnodes(&hdl->libzfs_mnttab_cache))
 			libzfs_mnttab_fini(hdl);
-		rewind(hdl->libzfs_mnttab);
 		srch.mnt_special = (char *)fsname;
 		//srch.mnt_fstype = MNTTYPE_ZFS;
 		srch.mnt_fstype = NULL; // search for zfs or mimic

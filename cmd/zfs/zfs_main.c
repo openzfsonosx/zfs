@@ -79,7 +79,7 @@
 
 libzfs_handle_t *g_zfs;
 
-static FILE *mnttab_file;
+static FILE *mnttab_file = NULL;
 static char history_str[HIS_MAX_RECORD_LEN];
 static boolean_t log_history = B_TRUE;
 
@@ -6187,9 +6187,11 @@ share_mount(int op, int argc, char **argv)
 		 * automatically.
 		 */
 
+#ifdef LINUX
 		/* Reopen MNTTAB to prevent reading stale data from open file */
 		if (freopen(MNTTAB, "r", mnttab_file) == NULL)
 			return (ENOENT);
+#endif
 
 		while (getmntent(mnttab_file, &entry) == 0) {
 
@@ -6490,8 +6492,10 @@ unshare_unmount(int op, int argc, char **argv)
 			nomem();
 
 		/* Reopen MNTTAB to prevent reading stale data from open file */
+#ifdef LINUX
 		if (freopen(MNTTAB, "r", mnttab_file) == NULL)
 			return (ENOENT);
+#endif
 
 		while (getmntent(mnttab_file, &entry) == 0) {
 
@@ -7199,12 +7203,13 @@ main(int argc, char **argv)
 
 	libzfs_print_on_error(g_zfs, B_TRUE);
 
+#ifdef LINUX
 	if ((mnttab_file = fopen(MNTTAB, "r")) == NULL) {
                 (void) fprintf(stderr, gettext("internal error: unable to "
                     "open %s\n"), MNTTAB);
                 return (1);
         }
-
+#endif
 	/*
 	 * This command also doubles as the /sbin/mount_zfs program (mount -t zfs).
 	 * Determine if we should take this behavior based on argv[0].
@@ -7269,7 +7274,9 @@ main(int argc, char **argv)
 		libzfs_mnttab_cache(g_zfs, B_FALSE);
 	}
 
+#ifdef LINUX
 	(void) fclose(mnttab_file);
+#endif
 
 	if (ret == 0 && log_history)
 		(void) zpool_log_history(g_zfs, history_str);

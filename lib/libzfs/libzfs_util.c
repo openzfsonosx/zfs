@@ -903,6 +903,8 @@ libzfs_init(void)
 		return (NULL);
 	}
 
+#ifdef LINUX
+
 #ifdef HAVE_SETMNTENT
 	if ((hdl->libzfs_mnttab = setmntent(MNTTAB, "r")) == NULL) {
 #else
@@ -912,6 +914,8 @@ libzfs_init(void)
 		free(hdl);
 		return (NULL);
 	}
+
+#endif /* LINUX */
 
 #ifdef __APPLE__
 #define ZFS_EXPORTS_PATH "/etc/exports"
@@ -923,7 +927,9 @@ libzfs_init(void)
 
 	if (libzfs_core_init() != 0) {
 		(void) close(hdl->libzfs_fd);
+#ifdef LINUX
 		(void) fclose(hdl->libzfs_mnttab);
+#endif
 #ifdef ZFS_EXPORTS_PATH
 		(void) fclose(hdl->libzfs_sharetab);
 #endif
@@ -948,12 +954,14 @@ void
 libzfs_fini(libzfs_handle_t *hdl)
 {
 	(void) close(hdl->libzfs_fd);
+#ifdef LINUX
 	if (hdl->libzfs_mnttab)
 #ifdef HAVE_SETMNTENT
 		(void) endmntent(hdl->libzfs_mnttab);
 #else
 		(void) fclose(hdl->libzfs_mnttab);
 #endif
+#endif /*LINUX */
 	if (hdl->libzfs_sharetab)
 		(void) fclose(hdl->libzfs_sharetab);
 	zfs_uninit_libshare(hdl);

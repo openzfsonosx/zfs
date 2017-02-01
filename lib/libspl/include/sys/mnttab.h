@@ -40,7 +40,18 @@
 #undef MNTTAB
 #endif /* MNTTAB */
 
+/*
+ * mnttab file is updated by kernel to show current mounts on
+ * other platforms, there is no such file in macOS. We call
+ * getfsstat() instead, but build a "mnttab" list to be
+ * compatible. But since the existance of the MNTTAB is required
+ * (and fails silently) the "fd" work has been removed.
+ */
+
+#ifdef LINUX
 #define	MNTTAB		"/etc/mtab"
+#endif
+
 #define	MNT_LINE_MAX	4096
 
 #define	MNT_TOOLONG	1	/* entry exceeds MNT_LINE_MAX */
@@ -58,11 +69,6 @@ struct mnttab {
 };
 #define        extmnttab        mnttab
 
-//Replacing with FreeBSD versions
-//extern int getmntany(FILE *fp, struct mnttab *mgetp, struct mnttab *mrefp);
-//extern char *mntopt(char **p);
-//extern char *hasmntopt(struct mnttab *mnt, char *opt);
-//extern int getmntent(FILE *fp, struct mnttab *mgetp);
 extern DIR *fdopendir(int fd);
 extern int openat64(int, const char *, int, ...);
 
