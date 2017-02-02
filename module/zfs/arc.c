@@ -4187,8 +4187,8 @@ arc_reclaim_thread(void)
 		evicted = arc_adjust();
 
 		int64_t free_memory = arc_available_memory();
-#ifdef __APPLE__
-#ifdef _KERNEL
+
+#if defined(__APPLE__) && defined(_KERNEL)
 		int64_t post_adjust_manual_pressure = spl_free_manual_pressure_wrapper();
 		manual_pressure = MAX(manual_pressure,post_adjust_manual_pressure);
 		spl_free_set_pressure(0);
@@ -4214,21 +4214,28 @@ arc_reclaim_thread(void)
 		free_memory = post_adjust_free_memory;
 
 		if (free_memory < 0 || manual_pressure > 0) {
+
+			if (free_memory <= (arc_c >> arc_no_grow_shift) + SPA_MAXBLOCKSIZE) {
+				arc_no_grow = B_TRUE;
+				/*
+				 * Wait at least zfs_grow_retry (default 60) seconds
+				 * before considering growing.
+				 */
+				growtime = gethrtime() + SEC2NSEC(arc_grow_retry);
+			}
 #else
 	        if (free_memory < 0) {
-#endif
-#else
-		if (free_memory < 0) {
-#endif
 
 			arc_no_grow = B_TRUE;
-			arc_warm = B_TRUE;
 
 			/*
 			 * Wait at least zfs_grow_retry (default 60) seconds
 			 * before considering growing.
 			 */
 			growtime = gethrtime() + SEC2NSEC(arc_grow_retry);
+#endif
+
+			arc_warm = B_TRUE;
 
 			arc_kmem_reap_now();
 
@@ -4316,7 +4323,7 @@ arc_reclaim_thread(void)
 #ifndef _KERNEL
 			}
 #endif // !_KERNEL
-		} else if (free_memory < (arc_c >> arc_no_grow_shift)) {
+		} else if (free_memory < (arc_c >> arc_no_grow_shift) && arc_size >= arc_c_min) {
 			arc_no_grow = B_TRUE;
 		} else if (growtime > 0 && gethrtime() >= growtime) {
 			if (arc_no_grow == B_TRUE)
@@ -4408,6 +4415,7 @@ arc_adapt(int bytes, arc_state_t *state)
 	}
 	ASSERT((int64_t)arc_p >= 0);
 
+#if !(defined(__APPLE__) && defined(_KERNEL))
 	if (arc_reclaim_needed()) {
 		cv_signal(&arc_reclaim_thread_cv);
 		return;
@@ -4419,31 +4427,85 @@ arc_adapt(int bytes, arc_state_t *state)
 	if (arc_c >= arc_c_max)
 		return;
 
-#ifdef __APPLE__
-#ifdef _KERNEL
-	// spl_arc_no_grow(bytes) is true when the relevant bucket is
-	// fragmemted or when xnu_alloc_throttled_bail() has been called
-	// in the last minute
+#else
+	if (arc_c >= arc_c_max) {
+		return;
+	}
+
 	boolean_t buf_is_metadata = B_FALSE;
 	if (type == ARC_BUFC_METADATA) {
 		buf_is_metadata = B_TRUE;
 	}
-	extern boolean_t spl_arc_no_grow(size_t, boolean_t);
-	if (spl_arc_no_grow((size_t)bytes, buf_is_metadata)) {
-		// if we are likely to have to wait in our
-		// caller arc_get_data_buf(), then don't return
-		// early to it
-		uint64_t overflow = MAX(SPA_MAXBLOCKSIZE,
-		    arc_c >> zfs_arc_overflow_shift);
-		boolean_t overflowing = (arc_size + (bytes * 2) >= arc_c + overflow);
-		if (!overflowing) {
+
+	/*
+	 * ignore arc_no_grow if arc_size < arc_c_min, which
+	 * can happen if there was a large removal of buffers from ARC
+	 * after a txg sync (e.g. upon pool export, zfs unmount, large
+	 * return of loaned buffers).
+	 *
+	 * otherwise, if we are about to exceed our overall ARC target size
+	 * or we are metadata and are about to exceed the max metadata size,
+	 * then arc_no_grow means we should just return now.
+	 */
+	if (arc_no_grow && arc_size >= arc_c_min) {
+		if (buf_is_metadata) {
+			if (arc_meta_used + bytes >= arc_meta_limit) {
+				return;
+			} else if (arc_size + bytes >= arc_c) {
+				return;
+			}
+		} else if (!buf_is_metadata && arc_size + bytes >= arc_c) {
 			return;
-		} else {
-			reclaim_shrink_target += bytes;
-			cv_signal(&arc_reclaim_thread_cv);
 		}
 	}
-#endif
+
+	// we have to send a pointer to these zio arrays to SPL because they are
+	// defined and initialized within zfs.kext (in zio.c, specifically)
+
+	extern kmem_cache_t *zio_buf_cache[];
+	extern kmem_cache_t *zio_data_buf_cache[];
+	kmem_cache_t **z = zio_buf_cache;
+	if (buf_is_metadata) {
+		z = zio_data_buf_cache;
+	}
+
+	// check to see if we need a reclaim; logic is in SPL to allow
+	// for detailed policy based on variables internal to SPL.
+	// if we need a reclaim, we do not grow the ARC here.
+
+	extern boolean_t spl_arc_reclaim_needed(size_t, kmem_cache_t **);
+	if (spl_arc_reclaim_needed((size_t)bytes, z)) {
+		cv_signal(&arc_reclaim_thread_cv);
+		return;
+	}
+
+	// spl_arc_no_grow(bytes, is_metadata) decides whether
+	// ARC growth should be suppressed because of bucket arena
+	// fragmentation or because recently an allocation had to
+	// descend to the bucket arena
+
+	extern boolean_t spl_arc_no_grow(size_t, boolean_t);
+	if (arc_no_grow ||
+	    spl_free_manual_pressure_wrapper() > 0 ||
+	    spl_free_wrapper() < (int64_t)bytes) {
+		if (spl_arc_no_grow((size_t)bytes, buf_is_metadata)) {
+			// if we are likely to have to wait in our
+			// caller arc_get_data_buf(), then don't return
+			// early to it
+			uint64_t overflow = MAX(SPA_MAXBLOCKSIZE,
+			    arc_c >> zfs_arc_overflow_shift);
+			boolean_t overflowing = (arc_size + (bytes * 2) >= arc_c + overflow);
+			if (!overflowing) {
+				return;
+			} else {
+				reclaim_shrink_target += bytes;
+				cv_signal(&arc_reclaim_thread_cv);
+			}
+		}
+	}
+
+	/* no reclaim needed, arc_no_grow is not set or we are overflowing if we just return */
+
 #endif
 	/*
 	 * If we're within (2 * maxblocksize) bytes of the target
