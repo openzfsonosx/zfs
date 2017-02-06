@@ -183,9 +183,9 @@ int zfs_vdev_write_gap_limit = 4 << 10;
  * to 30 allocations per device.
  */
 #ifdef _KERNEL
-int zfs_vdev_queue_depth_pct = 1000;
+uint64_t zfs_vdev_queue_depth_pct = 1000;
 #else
-int zfs_vdev_queue_depth_pct = 300;
+uint64_t zfs_vdev_queue_depth_pct = 300;
 #endif
 
 int

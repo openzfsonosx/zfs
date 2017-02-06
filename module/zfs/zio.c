@@ -108,8 +108,9 @@ int zio_buf_debug_limit = 16384;
 int zio_buf_debug_limit = 0;
 #endif
 
-static void zio_taskq_dispatch(zio_t *, zio_taskq_type_t, boolean_t);
-static inline void __zio_execute(zio_t *zio);
+static inline __attribute__((always_inline)) void zio_taskq_dispatch(zio_t *, zio_taskq_type_t, boolean_t);
+static inline __attribute__((always_inline)) void __zio_execute(zio_t *zio);
+static inline __attribute__((always_inline)) void zio_reexecute(zio_t *pio);
 
 void
 zio_init(void)
@@ -1446,8 +1447,8 @@ zio_free_bp_init(zio_t *zio)
  * Execute the I/O pipeline
  * ==========================================================================
  */
-
-static void
+__attribute__((always_inline))
+static inline void
 zio_taskq_dispatch(zio_t *zio, zio_taskq_type_t q, boolean_t cutinline)
 {
 	spa_t *spa = zio->io_spa;
@@ -1486,7 +1487,7 @@ zio_taskq_dispatch(zio_t *zio, zio_taskq_type_t q, boolean_t cutinline)
 #ifdef __linux__
 	ASSERT(taskq_empty_ent(&zio->io_tqent));
 #endif
-	spa_taskq_dispatch_ent(spa, t, q, (task_func_t *)zio_execute, zio,
+	spa_taskq_dispatch_ent(spa, t, q, (task_func_t *)__zio_execute, zio,
 	    flags, &zio->io_tqent);
 }
 
@@ -1604,7 +1605,7 @@ zio_execute(zio_t *zio)
 	__zio_execute(zio);
 }
 
-/* __attribute__((always_inline)) */
+__attribute__((always_inline))
 static inline void
 __zio_execute(zio_t *zio)
 {
@@ -1741,7 +1742,9 @@ zio_nowait(zio_t *zio)
  * ==========================================================================
  */
 
-static void
+
+__attribute__((always_inline))
+static inline void
 zio_reexecute(zio_t *pio)
 {
 	zio_t *cio, *cio_next;
@@ -3716,7 +3719,7 @@ zio_done(zio_t *zio)
 		 * at the block level.  We ignore these errors if the
 		 * device is currently unavailable.
 		 */
-#ifndef __APPLE__
+#ifndef __OPPLE__
 		if (zio->io_error != ECKSUM && zio->io_vd != NULL &&
 			!vdev_is_dead(zio->io_vd))
 			zfs_ereport_post(FM_EREPORT_ZFS_IO, zio->io_spa,

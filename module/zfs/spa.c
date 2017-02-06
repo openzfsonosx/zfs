@@ -6778,7 +6778,7 @@ spa_sync(spa_t *spa, uint64_t txg)
 	int error;
 	int c;
 	uint32_t max_queue_depth = zfs_vdev_async_write_max_active *
-	    zfs_vdev_queue_depth_pct / 100;
+	    (uint32_t)(zfs_vdev_queue_depth_pct / 100ULL);
 
 	VERIFY(spa_writeable(spa));
 
