@@ -82,19 +82,6 @@ zfs_release_sa_handle(sa_handle_t *hdl, dmu_buf_t *db, void *tag);
 
 // #define dprintf printf
 
-/*
- * Define ZNODE_STATS to turn on statistic gathering. By default, it is only
- * turned on when DEBUG is also defined.
- */
-#ifdef	DEBUG
-#define	ZNODE_STATS
-#endif	/* DEBUG */
-
-#ifdef	ZNODE_STATS
-#define	ZNODE_STAT_ADD(stat)			((stat)++)
-#else
-#define	ZNODE_STAT_ADD(stat)			/* nothing */
-#endif	/* ZNODE_STATS */
 
 /*
  * Functions needed for userland (ie: libzpool) are not put under
@@ -216,18 +203,6 @@ zfs_znode_cache_destructor(void *buf, void *arg)
 	ASSERT(zp->z_acl_cached == NULL);
 	ASSERT(zp->z_xattr_cached == NULL);
 }
-
-#ifdef	ZNODE_STATS
-static struct {
-	uint64_t zms_zfsvfs_invalid;
-	uint64_t zms_zfsvfs_recheck1;
-	uint64_t zms_zfsvfs_unmounted;
-	uint64_t zms_zfsvfs_recheck2;
-	uint64_t zms_obj_held;
-	uint64_t zms_vnode_locked;
-	uint64_t zms_not_only_dnlc;
-} znode_move_stats;
-#endif	/* ZNODE_STATS */
 
 #ifdef sun
 static void

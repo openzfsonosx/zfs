@@ -42,7 +42,9 @@ extern "C" {
  * ZFS debugging
  */
 #if defined(DEBUG) || !defined(_KERNEL)
-#define ZFS_DEBUG
+#ifndef ZFS_DEBUG
+#define ZFS_DEBUG 1
+#endif
 #endif
 
 extern int zfs_flags;

@@ -3631,7 +3631,7 @@ zio_done(zio_t *zio)
 	if (zio->io_flags & ZIO_FLAG_IO_ALLOCATING) {
 		ASSERT(zio->io_type == ZIO_TYPE_WRITE);
 		ASSERT(zio->io_priority == ZIO_PRIORITY_ASYNC_WRITE);
-		ASSERT(bp != NULL);
+		ASSERT(zio->io_bp != NULL);
 		metaslab_group_alloc_verify(spa, zio->io_bp, zio);
 		VERIFY(refcount_not_held(&mc->mc_alloc_slots, zio));
 	}
