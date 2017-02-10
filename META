@@ -1,8 +1,8 @@
 Meta:         1
 Name:         zfs
 Branch:       1.0
-Version:      1.6.0
-Release:      2
+Version:      1.6.1
+Release:      1
 Release-Tags: relext
 License:      CDDL
 Author:       OpenZFS on OS X
