@@ -230,8 +230,8 @@ zpool_import_by_guid(uint64_t searchguid)
 
 	/* In the future, we can capture further policy and include it here */
 	if (nvlist_alloc(&policy, NV_UNIQUE_NAME, 0) != 0 ||
-	    nvlist_add_uint64(policy, ZPOOL_REWIND_REQUEST_TXG, txg) != 0 ||
-	    nvlist_add_uint32(policy, ZPOOL_REWIND_REQUEST, rewind_policy) != 0)
+	    nvlist_add_uint64(policy, ZPOOL_LOAD_REQUEST_TXG, txg) != 0 ||
+	    nvlist_add_uint32(policy, ZPOOL_LOAD_REWIND_POLICY, rewind_policy) != 0)
 		goto error;
 
 	if (!priv_ineffect(PRIV_SYS_CONFIG)) {
@@ -276,7 +276,7 @@ zpool_import_by_guid(uint64_t searchguid)
 		if (pool_state == POOL_STATE_DESTROYED)
 			continue;
 
-		verify(nvlist_add_nvlist(config, ZPOOL_REWIND_POLICY,
+		verify(nvlist_add_nvlist(config, ZPOOL_LOAD_POLICY,
 		    policy) == 0);
 
 		uint64_t guid;
