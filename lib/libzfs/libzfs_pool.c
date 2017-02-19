@@ -2516,6 +2516,7 @@ zpool_vdev_online(zpool_handle_t *zhp, const char *path, int flags,
 		if (wholedisk) {
 			const char *fullpath = path;
 			char buf[MAXPATHLEN];
+			char expanded[MAXPATHLEN];
 
 			if (path[0] != '/') {
 				error = zfs_resolve_shortname(path, buf,
@@ -2525,6 +2526,26 @@ zpool_vdev_online(zpool_handle_t *zhp, const char *path, int flags,
 					    msg));
 
 				fullpath = buf;
+
+
+				// If path is invd /var/run/disk path, follow symlink
+				// and get /dev/disk name.
+				if (readlink(buf, expanded, sizeof(expanded)) != -1) {
+					ushort_t disknum, partnum;
+
+					fullpath = expanded;
+
+					// Reading EFI from, say, disk2s1 doesn't work, we
+					// need to feed it "disk2". But what happens if there
+					// are non-ZFS partitions too?
+					if (sscanf(expanded, "/dev/disk%hus%hu",
+							&disknum,
+							&partnum) == 2) {
+						snprintf(expanded, sizeof(expanded),
+							"/dev/disk%hu",
+							disknum);
+					}
+				}
 			}
 
 			error = zpool_relabel_disk(hdl, fullpath, msg);
