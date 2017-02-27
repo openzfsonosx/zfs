@@ -2156,7 +2156,7 @@ zfs_boot_update_bootinfo_vdev_leaf(OSArray *array, vdev_t *vd)
 	}
 
 	/* Skip obviously non-bootable vdevs */
-	if (vd->vdev_wholedisk == 1 || vd->vdev_islog ||
+	if (vd->vdev_islog ||
 	    vd->vdev_isl2cache || vd->vdev_isspare) {
 		dprintf("%s skipping non-bootable\n", __func__);
 		return (0);
@@ -2254,7 +2254,7 @@ zfs_boot_update_bootinfo_vdev(OSArray *array, vdev_t *vd)
 	}
 
 	/* Skip obviously non-bootable vdevs */
-	if (vd->vdev_wholedisk == 1 || vd->vdev_islog ||
+	if (vd->vdev_islog ||
 	    vd->vdev_isl2cache || vd->vdev_isspare) {
 		dprintf("%s skipping non-bootable\n", __func__);
 		return (0);
