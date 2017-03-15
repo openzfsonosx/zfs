@@ -112,7 +112,8 @@ libzpool_la_SOURCES = \
 	../../module/zfs/zio_crypt.c \
 	../../module/zfs/zio_inject.c \
 	../../module/zfs/zle.c \
-	../../module/zfs/zrlock.c
+	../../module/zfs/zrlock.c \
+	../../module/zfs/zthr.c
 
 
 libzpool_la_LIBADD = \

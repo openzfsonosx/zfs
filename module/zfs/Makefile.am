@@ -154,6 +154,7 @@ zfs_SOURCES = \
 	zio_inject.c \
 	zle.c \
 	zrlock.c \
+	zthr.c \
 	zvol.c \
 	zvolIO.cpp \
 	ZFSPool.cpp \
