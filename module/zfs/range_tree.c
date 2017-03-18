@@ -242,6 +242,87 @@ range_tree_add(void *arg, uint64_t start, uint64_t size)
 	rt->rt_space += size;
 }
 
+int
+range_tree_add_safe(void *arg, uint64_t start, uint64_t size)
+{
+	range_tree_t *rt = arg;
+	avl_index_t where;
+	range_seg_t rsearch, *rs_before, *rs_after, *rs;
+	uint64_t end = start + size;
+	boolean_t merge_before, merge_after;
+
+	ASSERT(MUTEX_HELD(rt->rt_lock));
+	VERIFY(size != 0);
+
+	rsearch.rs_start = start;
+	rsearch.rs_end = end;
+	rs = avl_find(&rt->rt_root, &rsearch, &where);
+
+	if (rs != NULL && rs->rs_start <= start && rs->rs_end >= end) {
+		zfs_panic_recover("zfs: allocating allocated segment"
+		    "(offset=%llu size=%llu)\n",
+		    (longlong_t)start, (longlong_t)size);
+		return (1);
+	}
+
+	/* Make sure we don't overlap with either of our neighbors */
+	//VERIFY(rs == NULL);
+	if (rs != NULL) {
+		printf("ZFS: %s: VERIFY(rs == NULL) WOULD FAIL\n", __func__);
+		return (1);
+	}
+
+	rs_before = avl_nearest(&rt->rt_root, where, AVL_BEFORE);
+	rs_after = avl_nearest(&rt->rt_root, where, AVL_AFTER);
+
+	merge_before = (rs_before != NULL && rs_before->rs_end == start);
+	merge_after = (rs_after != NULL && rs_after->rs_start == end);
+
+	if (merge_before && merge_after) {
+		avl_remove(&rt->rt_root, rs_before);
+		if (rt->rt_ops != NULL) {
+			rt->rt_ops->rtop_remove(rt, rs_before, rt->rt_arg);
+			rt->rt_ops->rtop_remove(rt, rs_after, rt->rt_arg);
+		}
+
+		range_tree_stat_decr(rt, rs_before);
+		range_tree_stat_decr(rt, rs_after);
+
+		rs_after->rs_start = rs_before->rs_start;
+		kmem_cache_free(range_seg_cache, rs_before);
+		rs = rs_after;
+	} else if (merge_before) {
+		if (rt->rt_ops != NULL)
+			rt->rt_ops->rtop_remove(rt, rs_before, rt->rt_arg);
+
+		range_tree_stat_decr(rt, rs_before);
+
+		rs_before->rs_end = end;
+		rs = rs_before;
+	} else if (merge_after) {
+		if (rt->rt_ops != NULL)
+			rt->rt_ops->rtop_remove(rt, rs_after, rt->rt_arg);
+
+		range_tree_stat_decr(rt, rs_after);
+
+		rs_after->rs_start = start;
+		rs = rs_after;
+	} else {
+		rs = kmem_cache_alloc(range_seg_cache, KM_SLEEP);
+		rs->rs_start = start;
+		rs->rs_end = end;
+		avl_insert(&rt->rt_root, rs, where);
+	}
+
+	if (rt->rt_ops != NULL)
+		rt->rt_ops->rtop_add(rt, rs, rt->rt_arg);
+
+	range_tree_stat_incr(rt, rs);
+	rt->rt_space += size;
+
+	return (0);
+}
+
 void
 range_tree_remove(void *arg, uint64_t start, uint64_t size)
 {

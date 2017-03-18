@@ -67,7 +67,11 @@ space_map_load(space_map_t *sm, range_tree_t *rt, maptype_t maptype)
 	VERIFY0(range_tree_space(rt));
 
 	if (maptype == SM_FREE) {
-		range_tree_add(rt, sm->sm_start, sm->sm_size);
+		if(0!=range_tree_add_safe(rt, sm->sm_start, sm->sm_size)) {
+			printf("ZFS: %s %d returning error after range_tree_add_safe != 0\n",
+			    __func__, __LINE__);
+			return (ENOSPC);
+		}
 		space = sm->sm_size - space;
 	}
 
@@ -116,13 +120,19 @@ space_map_load(space_map_t *sm, range_tree_t *rt, maptype_t maptype)
 			if (SM_TYPE_DECODE(e) == maptype) {
 				VERIFY3U(range_tree_space(rt) + size, <=,
 				    sm->sm_size);
-				range_tree_add(rt, offset, size);
+				if(0 != range_tree_add_safe(rt, offset, size)) {
+					printf("ZFS: %s %d returning error after range_tree_add_safe != 0\n",
+					    __func__, __LINE__);
+					error = ENOSPC;
+					goto out;
+				}
 			} else {
 				range_tree_remove(rt, offset, size);
 			}
 		}
 	}
 
+out:
 	if (error == 0)
 		VERIFY3U(range_tree_space(rt), ==, space);
 	else
