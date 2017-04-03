@@ -160,7 +160,7 @@ boolean_t zfs_abd_scatter_enabled = B_TRUE;
 size_t zfs_abd_chunk_size = 1024;
 
 #ifdef _KERNEL
-extern vmem_t *zio_alloc_arena;
+extern vmem_t *zio_arena;
 #endif
 
 kmem_cache_t *abd_chunk_cache;
@@ -186,7 +186,7 @@ abd_init(void)
 	vmem_t *data_alloc_arena = NULL;
 
 #ifdef _KERNEL
-	data_alloc_arena = zio_alloc_arena;
+	data_alloc_arena = zio_arena;
 #endif
 
 	/*
