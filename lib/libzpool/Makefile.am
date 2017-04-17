@@ -22,6 +22,7 @@ libzpool_la_SOURCES = \
 	../../module/zcommon/zfs_uio.c \
 	../../module/zcommon/zpool_prop.c \
 	../../module/zcommon/zprop_common.c \
+	../../module/zfs/abd.c \
 	../../module/zfs/arc.c \
 	../../module/zfs/blkptr.c \
 	../../module/zfs/bplist.c \
