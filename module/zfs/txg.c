@@ -479,6 +479,7 @@ static void
 txg_sync_thread(void *arg)
 {
 	dsl_pool_t *dp = (dsl_pool_t *)arg;
+
 	spa_t *spa = dp->dp_spa;
 	tx_state_t *tx = &dp->dp_tx;
 	callb_cpr_t cpr;

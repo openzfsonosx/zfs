@@ -375,7 +375,7 @@ zvol_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx)
  * implement DKIOCFREE/free-long-range.
  */
 static int
-zvol_replay_truncate(void *zv, char *lr, boolean_t byteswap)
+zvol_replay_truncate(void *zv, void *lr, boolean_t byteswap)
 {
 	zvol_state_t *the_zv = (zvol_state_t *)zv;
 	lr_truncate_t *the_lr = (lr_truncate_t *)lr;
@@ -397,7 +397,7 @@ zvol_replay_truncate(void *zv, char *lr, boolean_t byteswap)
  * after a system failure
  */
 static int
-zvol_replay_write(void *zv, char *lr, boolean_t byteswap)
+zvol_replay_write(void *zv, void *lr, boolean_t byteswap)
 {
 	zvol_state_t *the_zv = (zvol_state_t *)zv;
 	lr_write_t *the_lr = (lr_write_t *)lr;
@@ -439,7 +439,7 @@ zvol_replay_write(void *zv, char *lr, boolean_t byteswap)
 
 /* ARGSUSED */
 static int
-zvol_replay_err(void *zv, char *lr, boolean_t byteswap)
+zvol_replay_err(void *zv, void *lr, boolean_t byteswap)
 {
 	return (ENOTSUP);
 }
@@ -448,7 +448,7 @@ zvol_replay_err(void *zv, char *lr, boolean_t byteswap)
  * Callback vectors for replaying records.
  * Only TX_WRITE and TX_TRUNCATE are needed for zvol.
  */
-zil_replay_func_t zvol_replay_vector[TX_MAX_TYPE] = {
+zil_replay_func_t *zvol_replay_vector[TX_MAX_TYPE] = {
 	zvol_replay_err,	/* 0 no such transaction type */
 	zvol_replay_err,	/* TX_CREATE */
 	zvol_replay_err,	/* TX_MKDIR */
