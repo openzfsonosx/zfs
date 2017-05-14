@@ -52,7 +52,7 @@
                         <key>FSProbeExecutable</key>
                         <string>zfs.util</string>
                         <key>FSProbeOrder</key>
-                        <integer>2000</integer>
+                        <integer>20000</integer>
 						<key>autodiskmount</key>
 						<false/>
                 </dict>
