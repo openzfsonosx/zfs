@@ -833,7 +833,7 @@ vdev_disk_io_start(zio_t *zio)
 	bp = &vb->vb_buf;
 
 	ASSERT(bp != NULL);
-	ASSERT(zio->io_data != NULL);
+	ASSERT(zio->io_abd != NULL);
 	ASSERT(zio->io_size != 0);
 
 	bioinit(bp);
