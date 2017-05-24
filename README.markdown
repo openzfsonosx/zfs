@@ -12,7 +12,7 @@ Open Issues:
 
   https://github.com/openzfsonosx/zfs/issues?state=open
 
-Please repository directories "spl" and "zfs" next to each other, on
+Place repository directories "spl" and "zfs" next to each other, on
 the same level.
 
 ```
