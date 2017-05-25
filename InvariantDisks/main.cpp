@@ -16,11 +16,9 @@
 
 #include <iostream>
 
-static char const * const logFacility = "net.the-color-black.InvariantDisk";
-
 int main(int argc, char ** argv)
 {
-	ID::LogClient logger(logFacility);
+	ID::LogClient logger;
 	try
 	{
 		ID::CLI idCommandLine(argc, argv, logger);

@@ -24,6 +24,9 @@
 #include <os/log.h>
 #endif
 
+static char const * const logFacility = "net.the-color-black";
+static char const * const logCategory = "InvariantDisks";
+
 namespace ID
 {
 #ifdef ID_USE_ASL
@@ -31,8 +34,8 @@ namespace ID
 	class LogClient::Impl
 	{
 	public:
-		explicit Impl(char const * facility) :
-			client(asl_open(NULL, facility, ASL_OPT_STDERR))
+		explicit Impl() :
+			client(asl_open(logCategory, logFacility, ASL_OPT_STDERR))
 		{
 		}
 
@@ -104,13 +107,15 @@ namespace ID
 	class LogClient::Impl
 	{
 	public:
-		Impl(char const * facility) :
-			client(OS_LOG_DEFAULT)
+		Impl() :
+			client(os_log_create(logFacility, logCategory))
 		{
 		}
 
 		~Impl()
 		{
+			// Should release client from os_log_create, but no function for
+			// this is documented or defined.
 		}
 
 	public:
@@ -150,8 +155,8 @@ namespace ID
 
 #endif
 
-	LogClient::LogClient(char const * facility) :
-		m_impl(std::make_shared<Impl>(facility))
+	LogClient::LogClient() :
+		m_impl(std::make_shared<Impl>())
 	{
 	}
 

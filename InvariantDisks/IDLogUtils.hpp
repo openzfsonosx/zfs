@@ -21,7 +21,7 @@ namespace ID
 	class LogClient
 	{
 	public:
-		explicit LogClient(char const * facility);
+		explicit LogClient();
 
 	public:
 		int addLogFile(char const * logFile);
