@@ -20,7 +20,7 @@ namespace ID
 	class SerialLinker : public BaseLinker
 	{
 	public:
-		explicit SerialLinker(std::string base, ASLClient const & logger);
+		explicit SerialLinker(std::string base, LogClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;

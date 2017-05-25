@@ -16,7 +16,7 @@
 
 namespace ID
 {
-	MediaPathLinker::MediaPathLinker(std::string const & base, ASLClient const & logger) :
+	MediaPathLinker::MediaPathLinker(std::string const & base, LogClient const & logger) :
 		BaseLinker(base, logger)
 	{
 	}

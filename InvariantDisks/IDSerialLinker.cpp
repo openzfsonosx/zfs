@@ -19,7 +19,7 @@
 
 namespace ID
 {
-	SerialLinker::SerialLinker(std::string base, ASLClient const & logger) :
+	SerialLinker::SerialLinker(std::string base, LogClient const & logger) :
 		BaseLinker(std::move(base), logger)
 	{
 	}

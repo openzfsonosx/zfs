@@ -22,7 +22,7 @@ namespace ID
 	class DiskInfoLogger : public DiskArbitrationHandler
 	{
 	public:
-		explicit DiskInfoLogger(bool verbose, ASLClient const & logger);
+		explicit DiskInfoLogger(bool verbose, LogClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;

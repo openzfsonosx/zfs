@@ -25,7 +25,7 @@ namespace ID
 	class BaseLinker : public DiskArbitrationHandler
 	{
 	public:
-		explicit BaseLinker(std::string base, ASLClient const & logger);
+		explicit BaseLinker(std::string base, LogClient const & logger);
 
 	public:
 		virtual void diskDisappeared(DADiskRef disk, DiskInformation const & info) override;

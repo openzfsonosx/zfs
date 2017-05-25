@@ -20,7 +20,7 @@ namespace ID
 	class UUIDLinker : public BaseLinker
 	{
 	public:
-		explicit UUIDLinker(std::string const & base, ASLClient const & logger);
+		explicit UUIDLinker(std::string const & base, LogClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;

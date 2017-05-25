@@ -21,7 +21,7 @@
 #include "IDSerialLinker.hpp"
 #include "IDImagePathLinker.hpp"
 #include "IDDispatchUtils.hpp"
-#include "IDASLUtils.hpp"
+#include "IDLogUtils.hpp"
 
 #include <vector>
 #include <map>
@@ -39,9 +39,6 @@
 
 namespace ID
 {
-	static char const * const logFacility = "net.the-color-black.InvariantDisk";
-	static char const * const logIdent = "InvariantDisk";
-
 	struct CLI::Impl
 	{
 		std::mutex mutex;
@@ -53,11 +50,13 @@ namespace ID
 		std::string logPath;
 		int64_t idleTimeoutNS = 4000000000;
 		CFRunLoopRef runloop = nullptr;
+		LogClient * logger = nullptr;
 	};
 
-	CLI::CLI(int & argc, char ** argv) :
+	CLI::CLI(int & argc, char ** argv, LogClient & logger) :
 		m_impl(new Impl)
 	{
+		m_impl->logger = &logger;
 		// Setup
 		dispatch_function_t stopHandler = [](void * ctx){ static_cast<CLI*>(ctx)->stop();};
 		m_impl->signalSourceINT = createSourceSignal(SIGINT, this, stopHandler);
@@ -86,7 +85,7 @@ namespace ID
 				throw Exception("CLI already running");
 			m_impl->runloop = CFRunLoopGetCurrent();
 		}
-		ASLClient logger(logIdent, logFacility, ASL_OPT_STDERR);
+		auto & logger = *m_impl->logger;
 		if (!m_impl->logPath.empty())
 			logger.addLogFile(m_impl->logPath.c_str());
 		DiskArbitrationDispatcher dispatcher;
