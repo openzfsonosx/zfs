@@ -44,12 +44,14 @@ zfs_kext_SOURCE =
 
 zfs_SOURCES = \
 	abd.c \
+	aggsum.c \
 	arc.c \
 	blkptr.c \
 	bplist.c \
 	bpobj.c \
 	bptree.c \
 	bqueue.c \
+	cityhash.c \
 	dbuf.c \
 	dbuf_stats.c \
 	ddt.c \

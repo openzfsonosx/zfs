@@ -23,12 +23,14 @@ libzpool_la_SOURCES = \
 	../../module/zcommon/zpool_prop.c \
 	../../module/zcommon/zprop_common.c \
 	../../module/zfs/abd.c \
+	../../module/zfs/aggsum.c \
 	../../module/zfs/arc.c \
 	../../module/zfs/blkptr.c \
 	../../module/zfs/bplist.c \
 	../../module/zfs/bpobj.c \
 	../../module/zfs/bptree.c \
 	../../module/zfs/bqueue.c \
+	../../module/zfs/cityhash.c \
 	../../module/zfs/dbuf.c \
 	../../module/zfs/dbuf_stats.c \
 	../../module/zfs/ddt.c \
