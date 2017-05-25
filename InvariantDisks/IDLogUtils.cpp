@@ -135,17 +135,17 @@ namespace ID
 
 	void LogClient::logInfo(std::string const & msg) const
 	{
-		os_log_with_type(m_impl->client, OS_LOG_TYPE_INFO, "%s", msg.c_str());
+		os_log_with_type(m_impl->client, OS_LOG_TYPE_INFO, "%{public}s", msg.c_str());
 	}
 
 	void LogClient::logDefault(std::string const & msg) const
 	{
-		os_log_with_type(m_impl->client, OS_LOG_TYPE_DEFAULT, "%s", msg.c_str());
+		os_log_with_type(m_impl->client, OS_LOG_TYPE_DEFAULT, "%{public}s", msg.c_str());
 	}
 
 	void LogClient::logError(std::string const & msg) const
 	{
-		os_log_with_type(m_impl->client, OS_LOG_TYPE_ERROR, "%s", msg.c_str());
+		os_log_with_type(m_impl->client, OS_LOG_TYPE_ERROR, "%{public}s", msg.c_str());
 	}
 
 #endif
