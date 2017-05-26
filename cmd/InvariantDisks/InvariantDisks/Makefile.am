@@ -8,8 +8,8 @@ DEFAULT_INCLUDES += \
 sbin_PROGRAMS = InvariantDisks
 
 InvariantDisks_SOURCES = \
-	IDASLUtils.cpp \
-	IDASLUtils.hpp \
+	IDLogUtils.cpp \
+	IDLogUtils.hpp \
 	IDBaseLinker.cpp \
 	IDBaseLinker.hpp \
 	IDCLI.cpp \
