@@ -2907,14 +2907,6 @@ zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
 	if (error != 0)
 		*vpp = NULL;
 
-	/* zfs_vfs_mountroot() can be called first, and we need to stop
-	 * getrootdir() from being called until root is mounted. XNU calls
-	 * vfs_start() once that is done, then VFS_ROOT(&rootvnode) to set
-	 * the rootvnode, so we inform SPL that getrootdir() is ready to
-	 * be called. We only need to call this one, worth optimising?
-	 */
-	spl_vfs_start();
-
 	return (error);
 }
 

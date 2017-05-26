@@ -1949,7 +1949,6 @@ zfs_boot_check_mountroot(char **pool_name, uint64_t *pool_guid)
 		 * isn't called until first mount, which is too late for
 		 * spa_async_dispatch().
 		 */
-		spl_vfs_start();
 		return (false);
 	} else {
 		dprintf("%s %s\n", __func__, "Boot time");
