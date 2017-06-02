@@ -726,7 +726,7 @@ libzfs_module_loaded(const char *module)
 	FILE *fp = NULL;
 	int ret = 0;
 
-	if (asprintf(&modname, "net.lundman.%s", module) == -1)
+	if (asprintf(&modname, "org.openzfsonosx.%s", module) == -1)
 		return (0);
 
 	fp = popen("/usr/sbin/kextstat", "r");

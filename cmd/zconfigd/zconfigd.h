@@ -34,7 +34,7 @@ extern "C" {
 #define	ZSYSCTL_CONF_FILE		SYSCONFDIR "/zfs/zsysctl.conf"
 #define	ZSYSCTL_CMD_WITH_ARGS		ZSYSCTL_CMD_PATH" -f "ZSYSCTL_CONF_FILE
 
-#define	kNetLundmanZfsZvol		"net_lundman_zfs_zvol"
+#define	kNetLundmanZfsZvol		"org_openzfsonosx_zfs_zvol"
 
 #ifdef  __cplusplus
 }

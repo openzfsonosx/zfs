@@ -35,25 +35,25 @@ typeset ZFS_KEXT=/System/Library/Extensions/zfs.kext
 
 #
 # There are three kexts that should be loaded
-# net.lundman.kernel.dependencies
-# net.lundman.spl
-# net.lundman.zfs
+# org.openzfsonosx.kernel.dependencies
+# org.openzfsonosx.spl
+# org.openzfsonosx.zfs
 #
 function verify_kexts_loaded
 {
-	kextstat | grep net.lundman.kernel.dependencies > /dev/null 2>&1
+	kextstat | grep org.openzfsonosx.kernel.dependencies > /dev/null 2>&1
 	if [[ $? == 1 ]]; then
 		log_fail "Unable to detect kernel dependencies kext"
 		return 1
 	fi
 
-	kextstat | grep net.lundman.spl > /dev/null 2>&1
+	kextstat | grep org.openzfsonosx.spl > /dev/null 2>&1
 	if [[ $? == 1 ]]; then
 		log_fail "Unable to detect SPL kext"
 		return 1
 	fi
 
-	kextstat | grep net.lundman.zfs > /dev/null 2>&1
+	kextstat | grep org.openzfsonosx.zfs > /dev/null 2>&1
 	if [[ $? == 1 ]]; then
 		log_fail "Unable to detect ZFS kext"
 		return 1
@@ -65,13 +65,13 @@ function verify_kexts_loaded
 
 function verify_kexts_unloaded
 {
-	kextstat | grep net.lundman.spl > /dev/null 2>&1
+	kextstat | grep org.openzfsonosx.spl > /dev/null 2>&1
 	if [[ $? == 0 ]]; then
 		log_fail "SPL kext is loaded"
 		return 1
 	fi
 
-	kextstat | grep net.lundman.zfs > /dev/null 2>&1
+	kextstat | grep org.openzfsonosx.zfs > /dev/null 2>&1
 	if [[ $? == 0 ]]; then
 		log_fail "ZFS kext is loaded"
 		return 1

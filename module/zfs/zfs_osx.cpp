@@ -28,7 +28,7 @@ extern "C" {
 	extern kern_return_t _start(kmod_info_t *ki, void *data);
 	extern kern_return_t _stop(kmod_info_t *ki, void *data);
 
-	__attribute__((visibility("default"))) KMOD_EXPLICIT_DECL(net.lundman.zfs, "1.0.0", _start, _stop)
+	__attribute__((visibility("default"))) KMOD_EXPLICIT_DECL(org.openzfsonosx.zfs, "1.0.0", _start, _stop)
 	kmod_start_func_t *_realmain = 0;
 	kmod_stop_func_t  *_antimain = 0;
 	int _kext_apple_cc = __APPLE_CC__ ;
@@ -37,7 +37,7 @@ extern "C" {
 // Define the superclass.
 #define super IOService
 
-OSDefineMetaClassAndStructors(net_lundman_zfs_zvol, IOService)
+OSDefineMetaClassAndStructors(org_openzfsonosx_zfs_zvol, IOService)
 
 
 /*
@@ -145,7 +145,7 @@ zfs_vfs_sysctl(int *name, __unused u_int namelen, user_addr_t oldp, size_t *oldl
 } // Extern "C"
 
 
-bool net_lundman_zfs_zvol::init (OSDictionary* dict)
+bool org_openzfsonosx_zfs_zvol::init (OSDictionary* dict)
 {
     bool res = super::init(dict);
     //IOLog("ZFS::init\n");
@@ -153,21 +153,21 @@ bool net_lundman_zfs_zvol::init (OSDictionary* dict)
 }
 
 
-void net_lundman_zfs_zvol::free (void)
+void org_openzfsonosx_zfs_zvol::free (void)
 {
   //IOLog("ZFS::free\n");
     super::free();
 }
 
 
-IOService* net_lundman_zfs_zvol::probe (IOService* provider, SInt32* score)
+IOService* org_openzfsonosx_zfs_zvol::probe (IOService* provider, SInt32* score)
 {
     IOService *res = super::probe(provider, score);
     //IOLog("ZFS::probe\n");
     return res;
 }
 
-bool net_lundman_zfs_zvol::start (IOService *provider)
+bool org_openzfsonosx_zfs_zvol::start (IOService *provider)
 {
     bool res = super::start(provider);
 
@@ -246,7 +246,7 @@ bool net_lundman_zfs_zvol::start (IOService *provider)
     return res;
 }
 
-void net_lundman_zfs_zvol::stop (IOService *provider)
+void org_openzfsonosx_zfs_zvol::stop (IOService *provider)
 {
 #ifdef ZFS_BOOT
 	zfs_boot_fini();
@@ -279,11 +279,11 @@ void net_lundman_zfs_zvol::stop (IOService *provider)
 }
 
 bool
-net_lundman_zfs_zvol::isOpen(const IOService *forClient) const
+org_openzfsonosx_zfs_zvol::isOpen(const IOService *forClient) const
 {
 	bool ret;
-	IOLog("net_lundman_zfs_zvol %s\n", __func__);
+	IOLog("org_openzfsonosx_zfs_zvol %s\n", __func__);
 	ret = IOService::isOpen(forClient);
-	IOLog("net_lundman_zfs_zvol %s ret %d\n", __func__, ret);
+	IOLog("org_openzfsonosx_zfs_zvol %s ret %d\n", __func__, ret);
 	return (ret);
 }

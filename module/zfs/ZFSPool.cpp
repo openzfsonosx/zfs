@@ -36,7 +36,7 @@ copy_zfs_handle()
 	OSDictionary *matching;
 	IOService *service = 0;
 
-	matching = IOService::serviceMatching("net_lundman_zfs_zvol");
+	matching = IOService::serviceMatching("org_openzfsonosx_zfs_zvol");
 	if (matching) {
 		service = IOService::copyMatchingService(matching);
 		matching->release();
@@ -51,7 +51,7 @@ copy_zfs_handle()
 	return (service);
 #if 0
 	/* Got service, make sure it casts */
-	zfs_hl = OSDynamicCast(net_lundman_zfs_zvol, service);
+	zfs_hl = OSDynamicCast(org_openzfsonosx_zfs_zvol, service);
 	if (zfs_hl == NULL) {
 		dprintf("%s couldn't get zfs_hl\n", __func__);
 		/* Drop retain from copyMatchingService */

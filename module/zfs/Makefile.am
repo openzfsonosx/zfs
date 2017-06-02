@@ -211,8 +211,8 @@ zfs.kext$(EXEEXT): zfs $(PLIST_STRING) $(INFO_PLIST)
 	cp -f $(INFO_PLIST) zfs.kext/Contents/
 	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(ZFS_META_VERSION)" zfs.kext/Contents/Info.plist
 	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(ZFS_META_VERSION)" zfs.kext/Contents/Info.plist
-	/usr/libexec/PlistBuddy -c "Set :OSBundleLibraries:net.lundman.spl $(ZFS_META_VERSION)" zfs.kext/Contents/Info.plist
-	if [ "0$(ZFS_BOOT)" -eq 1 ]; then /usr/libexec/PlistBuddy -c "Add :OSBundleRequired string Root" zfs.kext/Contents/Info.plist && /usr/libexec/PlistBuddy -c "Set :IOKitPersonalities:net.lundman.zfs:IOResourceMatch IOBSD" zfs.kext/Contents/Info.plist; fi
+	/usr/libexec/PlistBuddy -c "Set :OSBundleLibraries:org.openzfsonosx.spl $(ZFS_META_VERSION)" zfs.kext/Contents/Info.plist
+	if [ "0$(ZFS_BOOT)" -eq 1 ]; then /usr/libexec/PlistBuddy -c "Add :OSBundleRequired string Root" zfs.kext/Contents/Info.plist && /usr/libexec/PlistBuddy -c "Set :IOKitPersonalities:org.openzfsonosx.zfs:IOResourceMatch IOBSD" zfs.kext/Contents/Info.plist; fi
 	cp -f $(PLIST_STRING) zfs.kext/Contents/Resources/English.lproj/
 	plutil -convert binary1 zfs.kext/Contents/Resources/English.lproj/InfoPlist.strings
 	cp -f $(top_srcdir)/VolumeIcon.icns zfs.kext/Contents/Resources/

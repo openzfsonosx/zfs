@@ -45,9 +45,9 @@ uint64_t zvolIO_kit_write(struct iomem *iomem, uint64_t offset,
 #ifdef __cplusplus
 } /* extern "C" */
 
-class net_lundman_zfs_zvol : public IOService
+class org_openzfsonosx_zfs_zvol : public IOService
 {
-	OSDeclareDefaultStructors(net_lundman_zfs_zvol)
+	OSDeclareDefaultStructors(org_openzfsonosx_zfs_zvol)
 
 private:
 
@@ -62,9 +62,9 @@ public:
 
 #include <IOKit/storage/IOBlockStorageDevice.h>
 
-class net_lundman_zfs_zvol_device : public IOBlockStorageDevice
+class org_openzfsonosx_zfs_zvol_device : public IOBlockStorageDevice
 {
-	OSDeclareDefaultStructors(net_lundman_zfs_zvol_device)
+	OSDeclareDefaultStructors(org_openzfsonosx_zfs_zvol_device)
 
 private:
 	IOService *m_provider;

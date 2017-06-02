@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>zfs</string>
 	<key>CFBundleIdentifier</key>
-	<string>net.lundman.zfs</string>
+	<string>org.openzfsonosx.zfs</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -38,18 +38,18 @@
 	<string>6C131e</string>
 	<key>IOKitPersonalities</key>
 	<dict>
-		<key>net.lundman.zfs</key>
+		<key>org.openzfsonosx.zfs</key>
 		<dict>
 			<key>CFBundleIdentifier</key>
-			<string>net.lundman.zfs</string>
+			<string>org.openzfsonosx.zfs</string>
 			<key>IOClass</key>
-			<string>net_lundman_zfs_zvol</string>
+			<string>org_openzfsonosx_zfs_zvol</string>
 			<key>IOMatchCategory</key>
-			<string>net_lundman_zfs_zvol</string>
+			<string>org_openzfsonosx_zfs_zvol</string>
 			<key>IOMediaIcon</key>
 			<dict>
 				<key>CFBundleIdentifier</key>
-				<string>net.lundman.zfs</string>
+				<string>org.openzfsonosx.zfs</string>
 				<key>IOBundleResourceFile</key>
 				<string>VolumeIcon.icns</string>
 			</dict>
@@ -77,7 +77,7 @@
 		<string>10.0</string>
 		<key>com.apple.kpi.unsupported</key>
 		<string>10.0</string>
-		<key>net.lundman.spl</key>
+		<key>org.openzfsonosx.spl</key>
 		<string>1.0.0</string>
 	</dict>
 </dict>

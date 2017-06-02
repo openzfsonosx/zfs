@@ -44,7 +44,7 @@ end
 
 run "/usr/libexec/stackshot -i -f #{@stackshot}"
 
-@domain = "net.lundman"
+@domain = "org.openzfsonosx"
 # Only work on modules actually loaded.
 @mods = %w(spl zfs).select {|mod| @kexts["#{@domain}.#{mod}"]}
 @modules = @mods.collect {|mod| "/System/Library/Extensions/#{mod}.kext"}
