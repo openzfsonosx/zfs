@@ -497,6 +497,27 @@ do_unmount(const char *mntpt, int flags)
 	argv[count] = (char *)mntpt;
 	rc = libzfs_run_process(argv[0], argv, STDOUT_VERBOSE|STDERR_VERBOSE);
 
+#ifdef __APPLE__
+	/* There is a bug, where we can not unmount, with the error
+	 * already unmounted, even though it wasn't. But it is easy
+	 * to work around by calling 'umount'. Until a real fix is done...
+	 */
+	if (rc != 0) {
+		char *argv[7] = {
+			"/sbin/umount",
+			NULL, NULL, NULL, NULL };
+		int rc, count = 1;
+
+		fprintf(stderr, "Fallback umount called\r\n");
+		if (flags & MS_FORCE) {
+			argv[count] = "-f";
+			count++;
+		}
+		argv[count] = (char *)mntpt;
+		rc = libzfs_run_process(argv[0], argv, STDOUT_VERBOSE|STDERR_VERBOSE);
+	}
+#endif
+
 	return (rc ? EINVAL : 0);
 }
 
@@ -883,7 +904,7 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 #ifdef __LINUX__
 	rc = do_mount(zfs_get_name(zhp), mountpoint, mntopts);
 #elif defined(__APPLE__) || defined (__FREEBSD__)
-	if (zmount(zfs_get_name(zhp), mountpoint, MS_OPTIONSTR | flags,
+	if (zmount(zhp, zfs_get_name(zhp), mountpoint, MS_OPTIONSTR | flags,
 	    MNTTYPE_ZFS, NULL, 0, mntopts, sizeof (mntopts)) != 0) {
 #elif defined(__illumos__)
 	if (mount(zfs_get_name(zhp), mountpoint, MS_OPTIONSTR | flags,

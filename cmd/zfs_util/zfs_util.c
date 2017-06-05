@@ -690,8 +690,7 @@ main(int argc, char **argv)
 			bzero(&nameBuf, sizeof (nameBuf));
 			bzero(&volname, sizeof (volname));
 			attr.bitmapcount = 5;
-			attr.commonattr = ATTR_CMN_NAME;
-			//attr.volattr = ATTR_VOL_INFO | ATTR_VOL_NAME;
+			attr.volattr = ATTR_VOL_INFO | ATTR_VOL_NAME;
 
 			ret = getattrlist(statfs[i].f_mntonname, &attr, &nameBuf,
 				sizeof (nameBuf), 0);
@@ -717,7 +716,7 @@ main(int argc, char **argv)
 				nameBuf.nameRef.attr_dataoffset);
 
 			printf("volname [%s]\n", volname);
-			write(1, volname, sizeof(volname));
+			write(1, volname, strlen(volname));
 			ret = FSUR_RECOGNIZED;
 			break;
 

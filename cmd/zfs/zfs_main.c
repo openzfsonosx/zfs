@@ -6940,19 +6940,18 @@ manual_mount(int argc, char **argv)
 	path = argv[1];
 
 	if (strncmp(dataset, "/dev/disk", 9) == 0) {
+
 		syslog(LOG_NOTICE, "%s: mount with %s on %s\n",
 		    __func__, dataset, path);
 		if (path[0] == '/' && strlen(path) == 1) {
 			syslog(LOG_NOTICE, "mountroot\n");
-		} else {
-			syslog(LOG_NOTICE, "no automount\n");
-			return (1);
 		}
 
-		ret = zmount(dataset, path, MS_OPTIONSTR | flags, MNTTYPE_ZFS,
-		    NULL, 0, mntopts, sizeof (mntopts));
-		syslog(LOG_NOTICE, "%s: zmount %s on %s returned %d\n", __func__,
-		    dataset, path, ret);
+		ret = zmount(NULL, dataset, path, MS_OPTIONSTR | flags,
+		    MNTTYPE_ZFS, NULL, 0, mntopts, sizeof (mntopts));
+
+		syslog(LOG_NOTICE, "%s: zmount %s on %s returned %d\n",
+		    __func__, dataset, path, ret);
 		return (ret);
 	}
 	closelog();
@@ -6974,30 +6973,33 @@ manual_mount(int argc, char **argv)
 	if (zfs_version == 0) {
 		fprintf(stderr, gettext("unable to fetch "
 		    "ZFS version for filesystem '%s'\n"), dataset);
+		zfs_close(zhp);
 		return (1);
 	}
-#endif
+#endif /* __APPLE__ */
 
 	/* check for legacy mountpoint and complain appropriately */
 	ret = 0;
 	if (strcmp(mountpoint, ZFS_MOUNTPOINT_LEGACY) == 0) {
-		if (zmount(dataset, path, MS_OPTIONSTR | flags, MNTTYPE_ZFS,
+		if (zmount(zhp, dataset, path, MS_OPTIONSTR | flags, MNTTYPE_ZFS,
 		    NULL, 0, mntopts, sizeof (mntopts)) != 0) {
 #ifdef __APPLE__
-			if (errno == ENOTSUP && zfs_version > ZPL_VERSION) {
+
+			if (errno == ENOTSUP &&
+			    zfs_version > ZPL_VERSION) {
 				(void) fprintf(stderr,
 				    gettext("filesystem '%s' (v%d) is not "
 				    "supported by this implementation of "
 				    "ZFS (max v%d).\n"), dataset,
 				    (int) zfs_version, (int) ZPL_VERSION);
 			} else {
-#endif
+#endif /* __APPLE__ */
 				(void) fprintf(stderr,
 				    gettext("mount failed: %s\n"),
 				    strerror(errno));
 #ifdef __APPLE__
 			}
-#endif
+#endif /* __APPLE__ */
 			ret = 1;
 		}
 	} else {
@@ -7012,6 +7014,7 @@ manual_mount(int argc, char **argv)
 		ret = 1;
 	}
 
+	zfs_close(zhp);
 	return (ret);
 }
 

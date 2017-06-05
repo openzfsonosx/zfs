@@ -2056,6 +2056,9 @@ void zfs_setattr_generate_id(znode_t *zp, uint64_t val, char *name)
 								 ZFS_DIRENT_OBJ(-1ULL), filename) == 0) {
 
 				nameptr = filename;
+				// Might as well keep this name too.
+				strlcpy(zp->z_name_cache, filename,
+					MAXPATHLEN);
 			}
 		}
 
@@ -2065,7 +2068,6 @@ void zfs_setattr_generate_id(znode_t *zp, uint64_t val, char *name)
 
 		if (filename)
 			kmem_free(filename, MAXPATHLEN + 2);
-
 	} // !document_id
 }
 

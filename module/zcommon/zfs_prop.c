@@ -266,6 +266,15 @@ zfs_prop_init(void)
 		{ NULL }
 	};
 
+#ifdef __APPLE__
+	static zprop_index_t devdisk_table[] = {
+		{ "poolonly",	ZFS_DEVDISK_POOLONLY },
+		{ "off",		ZFS_DEVDISK_OFF },
+		{ "on",			ZFS_DEVDISK_ON },
+		{ NULL }
+	};
+#endif
+
 	/* inherit index properties */
 	zprop_register_index(ZFS_PROP_REDUNDANT_METADATA, "redundant_metadata",
 	    ZFS_REDUNDANT_METADATA_ALL,
@@ -580,6 +589,8 @@ zfs_prop_init(void)
 	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "LASTUNMOUNT");
 	zprop_register_index(ZFS_PROP_APPLE_MIMIC_HFS, "com.apple.mimic_hfs", 0, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM, "on | off", "COM.APPLE.MIMIC_HFS", boolean_table);
+	zprop_register_index(ZFS_PROP_APPLE_DEVDISK, "com.apple.devdisk", 0, PROP_INHERIT,
+	    ZFS_TYPE_FILESYSTEM, "poolonly | on | off", "COM.APPLE.DEVDISK", devdisk_table);
 #endif
 
 

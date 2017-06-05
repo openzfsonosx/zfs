@@ -131,7 +131,7 @@ typedef struct zio_taskq_info {
 } zio_taskq_info_t;
 
 static const char *const zio_taskq_types[ZIO_TASKQ_TYPES] = {
-	"iss", "iss_h", "int", "int_h"
+	"issue", "issue_high", "intr", "intr_high"
 };
 
 /*
@@ -171,6 +171,7 @@ uint_t		zio_taskq_batch_pct = 75;	/* 1 thread per cpu in pset */
 id_t		zio_taskq_psrset_bind = PS_NONE;
 boolean_t	zio_taskq_sysdc = B_TRUE;	/* use SDC scheduling class */
 uint_t		zio_taskq_basedc = 80;		/* base duty cycle */
+/* sysdc / basedc is never used on OsX */
 
 boolean_t	spa_create_process = B_TRUE;	/* no process ==> no sysdc */
 
@@ -981,6 +982,9 @@ spa_taskqs_init(spa_t *spa, zio_type_t t, zio_taskq_type_t q)
 			    zio_type_name[t], zio_taskq_types[q]);
 		}
 
+		/* sysdc is never called/used in OsX, and as
+		 * support is lacking in taskq, it will call panic
+		 */
 		if (zio_taskq_sysdc && spa->spa_proc != &p0) {
 			if (batch)
 				flags |= TASKQ_DC_BATCH;
@@ -994,17 +998,13 @@ spa_taskqs_init(spa_t *spa, zio_type_t t, zio_taskq_type_t q)
 			 * intensive.  Run it at slightly less important
 			 * priority than the other taskqs.  Under Linux this
 			 * means incrementing the priority value on platforms
-			 * like illumos it should be decremented.
+			 * like IllumOS/OsX it should be decremented.
 			 */
 			if (t == ZIO_TYPE_WRITE && q == ZIO_TASKQ_ISSUE)
-#ifdef LINUX
-				pri++;
-#else
 				pri--;
-#endif
 
 			tq = taskq_create_proc(name, value, pri, 50,
-			    INT_MAX, spa->spa_proc, flags);
+				INT_MAX, spa->spa_proc, flags);
 		}
 
 		tqs->stqs_taskq[i] = tq;
@@ -1047,6 +1047,7 @@ spa_taskq_dispatch_ent(spa_t *spa, zio_type_t t, zio_taskq_type_t q,
 	ASSERT3P(tqs->stqs_taskq, !=, NULL);
 	ASSERT3U(tqs->stqs_count, !=, 0);
 
+	/* BATCH will have count == 1, but many taskqs behind it. */
 	if (tqs->stqs_count == 1) {
 		tq = tqs->stqs_taskq[0];
 	} else {

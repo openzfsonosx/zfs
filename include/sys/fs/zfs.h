@@ -165,6 +165,7 @@ typedef enum {
     ZFS_PROP_APPLE_IGNOREOWNER,
 	ZFS_PROP_APPLE_LASTUNMOUNT, /* not exposed to the user */
     ZFS_PROP_APPLE_MIMIC_HFS,
+    ZFS_PROP_APPLE_DEVDISK,
 	ZFS_PROP_SHAREAFP,
 #endif
 #ifdef LINUX

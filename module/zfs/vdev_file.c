@@ -89,11 +89,6 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	if (vd->vdev_tsd != NULL) {
 		ASSERT(vd->vdev_reopening);
 		vf = vd->vdev_tsd;
-        if ((error = vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) != 0) {
-			vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
-			printf("%s: getwithvid failed: %d\n", __func__, error);
-			return (error);
-		}
         dprintf("skip to open\n");
 		goto skip_open;
 	}
@@ -150,6 +145,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	if (!vnode_isreg(vp)) {
         vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
         VN_RELE(vf->vf_vnode);
+		vf->vf_vnode = NULL;
 		return (SET_ERROR(ENODEV));
 	}
 
@@ -171,6 +167,7 @@ skip_open:
 	if (error) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
         VN_RELE(vf->vf_vnode);
+		vf->vf_vnode = NULL;
 		return (error);
 	}
 
@@ -183,8 +180,8 @@ skip_open:
 	*max_psize = *psize = vp->v_size;
 #endif
     *ashift = SPA_MINBLOCKSHIFT;
-    VN_RELE(vf->vf_vnode);
 
+	// Keep the iocount while the file is open
 	return (0);
 }
 
@@ -198,16 +195,10 @@ vdev_file_close(vdev_t *vd)
 
 	if (vf->vf_vnode != NULL) {
 
-        if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
-
-			// Release long time ref
-			vnode_rele(vf->vf_vnode);
-
-			// Also commented out in MacZFS
-			//(void) VOP_PUTPAGE(vf->vf_vnode, 0, 0, B_INVAL, kcred, NULL);
-			(void) VOP_CLOSE(vf->vf_vnode, spa_mode(vd->vdev_spa), 1, 0,
-				kcred, NULL);
-		}
+		// Also commented out in MacZFS
+		//(void) VOP_PUTPAGE(vf->vf_vnode, 0, 0, B_INVAL, kcred, NULL);
+		(void) VOP_CLOSE(vf->vf_vnode, spa_mode(vd->vdev_spa), 1, 0,
+		    kcred, NULL);
 	}
 
 	vd->vdev_delayed_close = B_FALSE;
@@ -229,56 +220,46 @@ vdev_file_io_strategy(void *arg)
 	ssize_t resid;
 	void *data;
 
-    if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
-
 #ifdef DEBAG
-		if (zio->io_abd->abd_size != zio->io_size) {
-			zfs_vdev_file_size_mismatch_cnt++;
+	if (zio->io_abd->abd_size != zio->io_size) {
+		zfs_vdev_file_size_mismatch_cnt++;
 
-			// this dprintf can be very noisy
-			dprintf("ZFS: %s: trimming zio->io_abd from 0x%x to 0x%llx\n",
-				__func__, zio->io_abd->abd_size, zio->io_size);
-		}
+		// this dprintf can be very noisy
+		dprintf("ZFS: %s: trimming zio->io_abd from 0x%x to 0x%llx\n",
+		    __func__, zio->io_abd->abd_size, zio->io_size);
+	}
 #endif
-		if (zio->io_type == ZIO_TYPE_READ) {
-			ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
-			data =
-				abd_borrow_buf(zio->io_abd, zio->io_abd->abd_size);
-		} else {
-			ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
-			data =
-				abd_borrow_buf_copy(zio->io_abd, zio->io_abd->abd_size);
-		}
+	if (zio->io_type == ZIO_TYPE_READ) {
+		ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
+		data =
+			abd_borrow_buf(zio->io_abd, zio->io_abd->abd_size);
+	} else {
+		ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
+		data =
+			abd_borrow_buf_copy(zio->io_abd, zio->io_abd->abd_size);
+	}
 
-		zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
-		    UIO_READ : UIO_WRITE, vf->vf_vnode, data, zio->io_size,
-			zio->io_offset, UIO_SYSSPACE, 0, RLIM64_INFINITY, kcred, &resid);
+	zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
+	    UIO_READ : UIO_WRITE, vf->vf_vnode, data, zio->io_size,
+	    zio->io_offset, UIO_SYSSPACE, 0, RLIM64_INFINITY, kcred, &resid);
 
-		zio->io_error = (zio->io_error != 0 ? EIO : 0);
+	zio->io_error = (zio->io_error != 0 ? EIO : 0);
 
-		if (zio->io_error == 0 && resid != 0)
-			zio->io_error = SET_ERROR(ENOSPC);
+	if (zio->io_error == 0 && resid != 0)
+		zio->io_error = SET_ERROR(ENOSPC);
 
-		if (zio->io_type == ZIO_TYPE_READ) {
-			if (zio->io_abd->abd_size == zio->io_size) {
-				abd_return_buf_copy(zio->io_abd, data, zio->io_size);
-			} else {
-				VERIFY3S(zio->io_abd->abd_size,>=,zio->io_size);
-				abd_return_buf_copy_off(zio->io_abd, data,
-					0, zio->io_size, zio->io_abd->abd_size);
-			}
+	if (zio->io_type == ZIO_TYPE_READ) {
+		if (zio->io_abd->abd_size == zio->io_size) {
+			abd_return_buf_copy(zio->io_abd, data, zio->io_size);
 		} else {
 			VERIFY3S(zio->io_abd->abd_size,>=,zio->io_size);
-			abd_return_buf_off(zio->io_abd, data, 0, zio->io_size,
-				zio->io_abd->abd_size);
+			abd_return_buf_copy_off(zio->io_abd, data,
+			    0, zio->io_size, zio->io_abd->abd_size);
 		}
-
-        vnode_put(vf->vf_vnode);
-
-	} else { // vnode_getwithvid()
-
-		zio->io_error = EIO;
-
+	} else {
+		VERIFY3S(zio->io_abd->abd_size,>=,zio->io_size);
+		abd_return_buf_off(zio->io_abd, data, 0, zio->io_size,
+			zio->io_abd->abd_size);
 	}
 
 	zio_delay_interrupt(zio);
@@ -300,11 +281,8 @@ vdev_file_io_start(zio_t *zio)
 
         switch (zio->io_cmd) {
         case DKIOCFLUSHWRITECACHE:
-            if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
-                zio->io_error = VOP_FSYNC(vf->vf_vnode, FSYNC | FDSYNC,
-                                          kcred, NULL);
-                vnode_put(vf->vf_vnode);
-            }
+			zio->io_error = VOP_FSYNC(vf->vf_vnode, FSYNC | FDSYNC,
+			    kcred, NULL);
             break;
         default:
             zio->io_error = SET_ERROR(ENOTSUP);

@@ -50,6 +50,7 @@ else
         testpool=${TESTPOOL%%/*}
 fi
 
+# Used to have 1.23 in here, but that is valid here. (and useful)
 set -A args "" "-?" "-f" "nonexistpool" "$TESTPOOL/$TESTFS" \
 	"$testpool 0" "$testpool -1" "$testpool 1 0" \
 	"$testpool 0 0"

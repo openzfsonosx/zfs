@@ -57,7 +57,16 @@ public:
 	virtual IOService* probe(IOService* provider, SInt32* score);
 	virtual bool start(IOService* provider);
 	virtual void stop(IOService* provider);
+	
+	virtual bool handleOpen(IOService *client,
+	    IOOptionBits options, void *arg);
+	virtual bool handleIsOpen(const IOService *client) const;
+	virtual void handleClose(IOService *client,
+	    IOOptionBits options);
 	virtual bool isOpen(const IOService *forClient = 0) const;
+
+private:
+	OSSet *_openClients;
 };
 
 #include <IOKit/storage/IOBlockStorageDevice.h>
@@ -67,7 +76,7 @@ class net_lundman_zfs_zvol_device : public IOBlockStorageDevice
 	OSDeclareDefaultStructors(net_lundman_zfs_zvol_device)
 
 private:
-	IOService *m_provider;
+	//IOService *m_provider;
 	zvol_state_t *zv;
 
 public:
