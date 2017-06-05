@@ -721,6 +721,8 @@ zvol_remove_zv(zvol_state_t *zv)
 	ddi_remove_minor_node(zfs_dip, NULL);
 #endif
 
+	zv->zv_iokitdev = NULL;
+
 	avl_destroy(&zv->zv_znode.z_range_avl);
 	mutex_destroy(&zv->zv_znode.z_range_lock);
 
@@ -749,9 +751,12 @@ zvol_remove_minor_impl(const char *name)
 	// Remember the iokit ptr so we can free it after releasing locks.
 	iokitdev = zv->zv_iokitdev;
 
+	mutex_exit(&zfsdev_state_lock);
+
 	// Send zed notification to remove zvol symlink
 	zvol_remove_symlink(zv);
 
+	mutex_enter(&zfsdev_state_lock);
 	rc = zvol_remove_zv(zv); // Frees zv, if successful.
 	mutex_exit(&zfsdev_state_lock);
 
@@ -2544,13 +2549,6 @@ zvol_unmap(zvol_state_t *zv, uint64_t off, uint64_t bytes)
 		 */
 		if (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS) {
 			zil_commit(zv->zv_zilog, ZVOL_OBJ);
-			/*
-			 * Don't wait around for the transaction to
-			 * flush to disk. It has been committed to
-			 * the zil, which ensures consistency, and
-			 * fully syncing the transaction is expensive.
-			 */
-			// txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 		}
 	}
 

@@ -108,6 +108,8 @@ struct zfsvfs {
 	    uint64_t	    z_freespace_notify_dangerlimit; /* HFSIOC_ - number of free blocks */
 	    uint64_t	    z_freespace_notify_desiredlevel; /* HFSIOC_ - number of free blocks */
 
+	void *z_devdisk; /* Hold fake disk if prop devdisk is on */
+
 #ifdef APPLE_SA_RECOVER
 	    uint64_t        z_recover_parent;/* Temporary holder until SA corruption are gone */
 #endif /* APPLE_SA_RECOVER */

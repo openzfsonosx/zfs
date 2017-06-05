@@ -2502,7 +2502,11 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		error = EIO;
 		goto exit_abort;
 	}
-
+	if (vfs_flags(zfsvfs->z_vfs) & MNT_RDONLY) {
+		dprintf("ZFS: vnop_pageoutv2: readonly\n");
+		error = EROFS;
+		goto exit_abort;
+	}
 	ASSERT(vn_has_cached_data(ZTOV(zp)));
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
@@ -2542,10 +2546,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	error = dmu_tx_assign(tx, TXG_WAIT);
 	if (error != 0) {
 		dmu_tx_abort(tx);
-		if (vaddr) {
-			ubc_upl_unmap(upl);
-			vaddr = NULL;
-		}
 		ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
 		goto pageout_done;
 	}
@@ -2573,10 +2573,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		if (pg_index == 0) {
 			dprintf("ZFS: failed on pg_index\n");
 			dmu_tx_commit(tx);
-			if (vaddr) {
-				ubc_upl_unmap(upl);
-				vaddr = NULL;
-			}
 			ubc_upl_abort_range(upl, 0, isize, UPL_ABORT_FREE_ON_EMPTY);
 			goto pageout_done;
 		}
@@ -2656,8 +2652,10 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 		// Map it if needed
 		if (!vaddr) {
-			if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
+			if ((ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) ||
+				vaddr == NULL) {
 				error = EINVAL;
+				vaddr = NULL;
 				dprintf("ZFS: unable to map\n");
 				goto out;
 			}
@@ -2699,12 +2697,12 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	}
 	dmu_tx_commit(tx);
 
-  out:
 	// unmap
 	if (vaddr) {
 		ubc_upl_unmap(upl);
 		vaddr = NULL;
 	}
+  out:
 
 	zfs_range_unlock(rl);
 	if (a_flags & UPL_IOSYNC)

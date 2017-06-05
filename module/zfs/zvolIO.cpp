@@ -1,3 +1,26 @@
+/*
+ * CDDL HEADER START
+ *
+ * The contents of this file are subject to the terms of the
+ * Common Development and Distribution License (the "License").
+ * You may not use this file except in compliance with the License.
+ *
+ * You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+ * or http://www.opensolaris.org/os/licensing.
+ * See the License for the specific language governing permissions
+ * and limitations under the License.
+ *
+ * When distributing Covered Code, include this CDDL HEADER in each
+ * file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+ * If applicable, add the following below this CDDL HEADER, with the
+ * fields enclosed by brackets "[]" replaced with your own identifying
+ * information: Portions Copyright [yyyy] [name of copyright owner]
+ *
+ * CDDL HEADER END
+ */
+/*
+ * Copyright (c) 2013-2017, Jorgen Lundman.  All rights reserved.
+ */
 
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
@@ -21,6 +44,18 @@
  * ZVOL Device
  */
 
+#if defined(DEBUG) || defined(ZFS_DEBUG)
+#ifdef	dprintf
+#undef	dprintf
+#endif
+#define	dprintf(fmt, ...) do {							\
+	IOLog("zvolIO %s " fmt "\n", __func__, ##__VA_ARGS__);	\
+_NOTE(CONSTCOND) } while (0)
+#else
+#ifndef dprintf
+#define	dprintf(fmt, ...)	do { } while (0);
+#endif
+#endif /* if DEBUG or ZFS_DEBUG */
 
 //#define dprintf IOLog
 
@@ -92,11 +127,12 @@ net_lundman_zfs_zvol_device::attach(IOService* provider)
 
 	char product_name[strlen(ZVOL_PRODUCT_NAME_PREFIX) + MAXPATHLEN + 1];
 
-	if (super::attach(provider) == false)
+	if (!provider) {
+		dprintf("ZVOL attach missing provider\n");
 		return (false);
+	}
 
-	m_provider = provider;
-	if (m_provider == NULL)
+	if (super::attach(provider) == false)
 		return (false);
 
 	/*
@@ -447,8 +483,6 @@ net_lundman_zfs_zvol_device::getBSDName(void)
 void
 net_lundman_zfs_zvol_device::detach(IOService *provider)
 {
-	if (m_provider == provider)
-		m_provider = NULL;
 	super::detach(provider);
 }
 
@@ -573,8 +607,6 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 	dprintf("%s offset @block %llu numblocks %llu: blksz %u\n",
 	    direction == kIODirectionIn ? "Read" : "Write",
 	    block, nblks, (ZVOL_BSIZE));
-	// IOLog("getMediaBlockSize is %llu\n",
-	//	m_provider->getMediaBlockSize());
 
 	/* Perform the read or write operation through the transport driver. */
 	actualByteCount = (nblks*(ZVOL_BSIZE));
@@ -593,8 +625,9 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 #endif
 
 	/* Make sure we don't go away while the command is being executed */
-	retain();
-	m_provider->retain();
+	/* Open should be holding a retain */
+	//retain();
+	//m_provider->retain();
 
 	if (direction == kIODirectionIn) {
 
@@ -623,8 +656,9 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 
 	}
 
-	m_provider->release();
-	release();
+	/* Open should be holding a retain */
+	//m_provider->release();
+	//release();
 
 #if 0
 	/* If async, this would happen in io_done() */
@@ -778,8 +812,6 @@ IOReturn
 net_lundman_zfs_zvol_device::doEjectMedia(void)
 {
 	dprintf("ejectMedia\n");
-	// this->m_provider->doEjectMedia(this);
-	//this->m_provider->doEjectMedia(zv);
 /* XXX */
 	// Only 10.6 needs special work to eject
 	//if ((version_major == 10) && (version_minor == 8))
@@ -923,7 +955,7 @@ zvolCreateNewDevice(zvol_state_t *zv)
 		if (zvol) zvol->release();
 		return (ENOMEM);
 	}
-	/* Start the service, so it is ready to operate */
+	/* Start the service */
 	if (zvol->start(pool_proxy) == false) {
 		dprintf("%s device start failed\n", __func__);
 		zvol->detach(pool_proxy);
@@ -931,7 +963,16 @@ zvolCreateNewDevice(zvol_state_t *zv)
 		return (ENXIO);
 	}
 
-	/* We're done with the zvol, but do not release */
+	/* Open pool_proxy provider */
+	if (pool_proxy->open(zvol) == false) {
+		dprintf("%s open provider failed\n", __func__);
+		zvol->stop(pool_proxy);
+		zvol->detach(pool_proxy);
+		zvol->release();
+		return (ENXIO);
+	}
+	/* Is retained by provider */
+	zvol->release();
 	zvol = 0;
 
 	return (0);
@@ -948,7 +989,7 @@ zvolRegisterDevice(zvol_state_t *zv)
 	uint64_t timeout = (5ULL * kSecondScale);
 	bool ret = false;
 
-	if (!zv || !zv->zv_iokitdev || strnlen(zv->zv_name, 1) == 0) {
+	if (!zv || !zv->zv_iokitdev || zv->zv_name[0] == 0) {
 		dprintf("%s missing zv, iokitdev, or name\n", __func__);
 		return (EINVAL);
 	}
@@ -1032,8 +1073,6 @@ int
 zvolRemoveDevice(zvol_iokit_t *iokitdev)
 {
 	net_lundman_zfs_zvol_device *zvol;
-	//zvol_iokit_t *iokitdev;
-	IOService *provider;
 	dprintf("%s\n", __func__);
 
 	if (!iokitdev) {
@@ -1050,6 +1089,8 @@ zvolRemoveDevice(zvol_iokit_t *iokitdev)
 		return (ENXIO);
 	}
 
+#if 0
+	IOService *provider;
 	provider = zvol->getProvider();
 
 	/* Ask the IOBlockStorageDriver to decommission media */
@@ -1058,18 +1099,14 @@ zvolRemoveDevice(zvol_iokit_t *iokitdev)
 	    provider)) != kIOReturnSuccess) {
 		dprintf("%s media close failed %d\n", __func__, ret);
 	}
-#if 0
-	/* XXX This may also work, but we can't be holding the
-	 * zfsdev_state_lock as it will call handleClose() */
-	zvol->offlineDevice();
 #endif
-	/* Stop and terminate */
-	zvol->stop(provider);
-	if (zvol->terminate(kIOServiceTerminate) != kIOReturnSuccess) {
-		IOLog("%s terminate failed, issuing force\n", __func__);
-		zvol->terminate(kIOServiceTerminate|kIOServiceRequired);
+
+	/* Terminate */
+	if (zvol->terminate(kIOServiceTerminate|
+	    kIOServiceRequired) == false) {
+		IOLog("%s terminate failed\n", __func__);
 	}
-	zvol->release();
+	//zvol->release();
 	zvol = 0;
 
 	return (0);

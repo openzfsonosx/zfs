@@ -71,6 +71,15 @@ extern "C" {
 #define	ZFS_ACLTYPE_OFF			0
 #define	ZFS_ACLTYPE_POSIXACL		1
 
+#ifdef __APPLE__
+/*
+ * Property values for devdisk
+ */
+#define	ZFS_DEVDISK_POOLONLY		0
+#define	ZFS_DEVDISK_OFF		1
+#define	ZFS_DEVDISK_ON		2
+#endif
+
 /*
  * Field manipulation macros for the drr_versioninfo field of the
  * send stream header.
@@ -597,6 +606,15 @@ typedef enum zfs_ioc {
 	ZFS_IOC_FREEBSD = _IOWR('Z', 0, struct zfs_cmd) + 0xC0,
 #else
 	ZFS_IOC_FREEBSD = ('Z' << 8) + 0xC0,
+#endif
+
+	/*
+	 * Apple - 1/64 numbers reserved.
+	 */
+#ifdef __APPLE__
+	ZFS_IOC_PROXY_DATASET = _IOWR('Z', 0, struct zfs_cmd) + 0xD0,
+#else
+	ZFS_IOC_PROXY_DATASET = ('Z' << 8) + 0xD0,
 #endif
 
 	ZFS_IOC_LAST

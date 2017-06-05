@@ -195,6 +195,83 @@ optadd(char *mntopts, size_t size, const char *opt)
 	strlcat(mntopts, opt, size);
 }
 
+
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreServices/CoreServices.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/storage/IOMedia.h>
+#include <IOKit/IOBSD.h>
+
+
+char * MYCFStringCopyUTF8String(CFStringRef aString)
+{
+  if (aString == NULL) {
+    return NULL;
+  }
+
+  CFIndex length = CFStringGetLength(aString);
+  CFIndex maxSize =
+  CFStringGetMaximumSizeForEncoding(length,
+                                    kCFStringEncodingUTF8);
+  char *buffer = (char *)malloc(maxSize);
+  if (CFStringGetCString(aString, buffer, maxSize,
+                         kCFStringEncodingUTF8)) {
+    return buffer;
+  }
+  return NULL;
+}
+
+/*
+ * Given "/dev/disk6" connect to IOkit and fetch the dataset
+ * name "BOOM/lower", and use it instead.
+ */
+void expand_disk_to_zfs(char *devname, int len)
+{
+	char *result = NULL;
+	CFMutableDictionaryRef matchingDict;
+	io_service_t service;
+	CFStringRef cfstr;
+	char *device;
+
+	if (strncmp(devname, "/dev/disk", 9) != 0)
+		return;
+
+	device = &devname[5];
+
+	matchingDict = IOBSDNameMatching(kIOMasterPortDefault, 0, device);
+	if (NULL == matchingDict)
+		return;
+
+	/*
+	 * Fetch the object with the matching BSD node name.
+	 * Note that there should only be one match, so
+	 * IOServiceGetMatchingService is used instead of
+	 * IOServiceGetMatchingServices to simplify the code.
+	 */
+	service = IOServiceGetMatchingService(kIOMasterPortDefault,
+										  matchingDict);
+
+	if (IO_OBJECT_NULL == service) {
+		return;
+	}
+
+	cfstr = IORegistryEntryCreateCFProperty(service,
+		CFSTR("ZFS Dataset"), kCFAllocatorDefault, 0);
+	if (cfstr) {
+		result = MYCFStringCopyUTF8String(cfstr);
+		CFRelease(cfstr);
+	}
+
+	IOObjectRelease(service);
+
+	if (result) {
+		strlcpy(devname, result, len);
+		free(result);
+	}
+}
+
+
+
 void
 statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 {
@@ -261,11 +338,18 @@ statfs2mnttab(struct statfs *sfs, struct mnttab *mp)
 
 #undef	OPTADD
 
+	// If a disk is /dev/diskX, lets see if it has "zfs_dataset_name"
+	// set, and if so, use it instead, for mount matching.
+	expand_disk_to_zfs(sfs->f_mntfromname, sizeof(sfs->f_mntfromname));
+
+
+
 	mp->mnt_special = sfs->f_mntfromname;
 	mp->mnt_mountp = sfs->f_mntonname;
 	mp->mnt_fstype = sfs->f_fstypename;
 	mp->mnt_mntopts = mntopts;
 	mp->mnt_fssubtype = sfs->f_fssubtype;
+
 }
 
 static int

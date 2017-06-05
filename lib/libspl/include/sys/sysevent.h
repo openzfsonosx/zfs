@@ -27,4 +27,8 @@
 #ifndef _LIBSPL_SYS_SYSEVENT_H
 #define	_LIBSPL_SYS_SYSEVENT_H
 
+typedef struct sysevent {
+	void *resource;
+} sysevent_t;
+
 #endif

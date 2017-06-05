@@ -5691,6 +5691,50 @@ error:
 	return (ret);
 }
 
+/* for spa_iokit_dataset_proxy_create */
+#include <sys/ZFSDataset.h>
+
+/*
+ * inputs:
+ * zc_name		name of the pool
+ *
+ * outputs:
+ * zc_cookie		real errno
+ * zc_nvlist_dst	config nvlist
+ * zc_nvlist_dst_size	size of config nvlist
+ */
+
+/*
+ * inputs:
+ * zc_name:		name of dataset
+ *
+ * outputs:
+ * zc_cookie		real errno
+ */
+#include <sys/ZFSDatasetScheme.h>
+static int
+zfs_ioc_osx_proxy_dataset(zfs_cmd_t *zc)
+{
+	int error;
+	const char *osname;
+
+	/* XXX Get osname */
+	osname = zc->zc_name;
+
+	/* Create new virtual disk, and return /dev/disk name */
+	error = zfs_osx_proxy_create(osname);
+
+	if (!error)
+		error = zfs_osx_proxy_get_bsdname(osname,
+			zc->zc_value, sizeof(zc->zc_value));
+	if (error)
+		printf("%s: Created virtual disk '%s' for '%s'\n", __func__,
+			zc->zc_value, osname);
+
+	return (error);
+}
+
+
 static zfs_ioc_vec_t zfs_ioc_vec[ZFS_IOC_LAST - ZFS_IOC_FIRST];
 
 static void
@@ -6025,6 +6069,14 @@ zfs_ioctl_init(void)
 							  zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
 	zfs_ioctl_register_legacy(ZFS_IOC_EVENTS_SEEK, zfs_ioc_events_seek,
 							  zfs_secpolicy_config, NO_NAME, B_FALSE, POOL_CHECK_NONE);
+
+#ifdef __APPLE__
+	zfs_ioctl_register_legacy(ZFS_IOC_PROXY_DATASET,
+	    zfs_ioc_osx_proxy_dataset, zfs_secpolicy_config, NO_NAME,
+	    B_FALSE, POOL_CHECK_NONE);
+#endif /* __APPLE__ */
+
+
 }
 
 

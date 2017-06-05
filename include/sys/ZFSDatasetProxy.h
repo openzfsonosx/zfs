@@ -22,58 +22,21 @@
  * Copyright (c) 2016, Evan Susarret.  All rights reserved.
  */
 
-#ifndef	ZFS_BOOT_H_INCLUDED
-#define	ZFS_BOOT_H_INCLUDED
+#ifndef ZFSDATASETPROXY_H_INCLUDED
+#define	ZFSDATASETPROXY_H_INCLUDED
 
-#ifdef __cplusplus
-extern "C" {
-#endif	/* __cplusplus */
-
-/* Link data vdevs to virtual devices */
-int zfs_boot_update_bootinfo(spa_t *spa);
-
-#if 0
-#ifdef ZFS_BOOT
-/* At boot time, get path from ZFSBootDevice */
-int zfs_boot_get_path(char *, int);
-#endif /* ZFS_BOOT */
-#endif
-
-int zfs_attach_devicedisk(zfsvfs_t *zfsvfs);
-int zfs_detach_devicedisk(zfsvfs_t *zfsvfs);
-int zfs_devdisk_get_path(void *, char *, int);
-
-
-#ifdef __cplusplus
-} /* extern "C" */
-
-#if 0
-/* C++ struct, C uses opaque pointer reference */
-typedef struct zfs_bootinfo {
-	OSArray *info_array;
-} zfs_bootinfo_t;
-#endif
-
-#ifdef ZFS_BOOT
-/* Remainder is only needed for booting */
-
-#include <IOKit/IOService.h>
-bool zfs_boot_init(IOService *);
-void zfs_boot_fini();
-
-#if 0
-#pragma mark - ZFSBootDevice
 #include <IOKit/storage/IOBlockStorageDevice.h>
 
-class ZFSBootDevice : public IOBlockStorageDevice {
-	OSDeclareDefaultStructors(ZFSBootDevice);
+class ZFSDatasetProxy : public IOBlockStorageDevice
+{
+	OSDeclareDefaultStructors(ZFSDatasetProxy);
 public:
 
-	bool setDatasetName(const char *);
+	virtual void free(void);
+	virtual bool init(OSDictionary *properties);
+	virtual bool start(IOService *provider);
 
-	virtual bool init(OSDictionary *);
-	virtual void free();
-
+	/* IOBlockStorageDevice */
 	virtual IOReturn doSynchronizeCache(void);
 	virtual IOReturn doAsyncReadWrite(IOMemoryDescriptor *,
 	    UInt64, UInt64, IOStorageAttributes *,
@@ -93,20 +56,25 @@ public:
 	virtual IOReturn reportEjectability(bool *);
 	virtual IOReturn reportMaxValidBlock(UInt64 *);
 
-	virtual IOReturn setWriteCacheState(bool enabled);
-	virtual IOReturn    getWriteCacheState(bool *enabled);
+#if 0
+	virtual void read(IOService *client, UInt64 byteStart,
+	    IOMemoryDescriptor *buffer, IOStorageAttributes *attr,
+	    IOStorageCompletion *completion);
+	virtual void write(IOService *client, UInt64 byteStart,
+	    IOMemoryDescriptor *buffer, IOStorageAttributes *attr,
+	    IOStorageCompletion *completion);
+#endif
 
+protected:
 private:
 	/* These are declared class static to share across instances */
-	static char vendorString[4];
-	static char revisionString[4];
-	static char infoString[12];
+	const char *vendorString;
+	const char *revisionString;
+	const char *infoString;
 	/* These are per-instance */
-	char *productString;
+	const char *productString;
+	uint64_t _pool_bcount;
 	bool isReadOnly;
 };
-#endif	/* 0 */
-#endif	/* ZFS_BOOT */
-#endif	/* __cplusplus */
 
-#endif /* ZFS_BOOT_H_INCLUDED */
+#endif /* ZFSDATASETPROXY_H_INCLUDED */

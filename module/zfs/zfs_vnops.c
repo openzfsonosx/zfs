@@ -1208,9 +1208,11 @@ zfs_get_done(zgd_t *zgd, int error)
 	 * allocate new vnode, we don't (ZGET_FLAG_WITHOUT_VNODE), and it is
 	 * attached after zfs_get_data() is finished (and immediately released).
 	 */
+#ifndef __APPLE__
 	if (ZTOV(zp)) {
 		VN_RELE_ASYNC(ZTOV(zp), dsl_pool_vnrele_taskq(dmu_objset_pool(os)));
 	}
+#endif
 	if (error == 0 && zgd->zgd_bp)
 		zil_lwb_add_block(zgd->zgd_lwb, zgd->zgd_bp);
 
@@ -1244,15 +1246,18 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, 	struct lwb *lwb,
 	/*
 	 * Nothing to do if the file has been removed
 	 */
-	if (zfs_zget(zfsvfs, object, &zp) != 0)
+	if (zfs_zget_ext(zfsvfs, object, &zp,
+			ZGET_FLAG_UNLINKED | ZGET_FLAG_WITHOUT_VNODE_GET) != 0)
 		return (SET_ERROR(ENOENT));
 	if (zp->z_unlinked) {
 		/*
 		 * Release the vnode asynchronously as we currently have the
 		 * txg stopped from syncing.
 		 */
+#ifndef __APPLE__
 		VN_RELE_ASYNC(ZTOV(zp),
 		    dsl_pool_vnrele_taskq(dmu_objset_pool(os)));
+#endif
 		return (SET_ERROR(ENOENT));
 	}
 
