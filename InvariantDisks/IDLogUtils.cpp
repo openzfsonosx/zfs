@@ -14,14 +14,27 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#ifdef ID_USE_ASL
+// Auto Detect the use of ASL or OS Log if it is not already enforced by the
+// build environment
+#if !(defined(ID_USE_ASL) || defined(ID_USE_OS_LOG))
+	#include <AvailabilityMacros.h>
+	#if defined (MAC_OS_X_VERSION_10_12) && (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_12)
+		#define ID_USE_OS_LOG
+	#else
+		#define ID_USE_ASL
+	#endif
+#endif
+
+#if defined(ID_USE_ASL)
 // Uses ASL:
 // https://developer.apple.com/legacy/library/documentation/Darwin/Reference/ManPages/man3/asl.3.html
 #include <asl.h>
-#else
+#elif defined(ID_USE_OS_LOG)
 // Uses the new OS Log facilities:
 // https://developer.apple.com/reference/os/logging
 #include <os/log.h>
+#else
+#error "Neither ID_USE_ASL nor ID_USE_OS_LOG have been defined"
 #endif
 
 static char const * const logFacility = "net.the-color-black";
@@ -29,7 +42,7 @@ static char const * const logCategory = "InvariantDisks";
 
 namespace ID
 {
-#ifdef ID_USE_ASL
+#if defined(ID_USE_ASL)
 
 	class LogClient::Impl
 	{
@@ -102,7 +115,7 @@ namespace ID
 		asl_log(m_impl->client, 0, ASL_LEVEL_ERR, "%s", msg.c_str());
 	}
 
-#else
+#elif defined(ID_USE_OS_LOG)
 
 	class LogClient::Impl
 	{
