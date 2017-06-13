@@ -434,7 +434,7 @@ zvol_replay_write(void *zv, void *lr, boolean_t byteswap)
 	if (error) {
 		dmu_tx_abort(tx);
 	} else {
-		dmu_write(os, ZVOL_OBJ, offset, length, data, tx);
+		dmu_write_by_dnode(the_zv->zv_dn, offset, length, data, tx);
 		dmu_tx_commit(tx);
 	}
 
@@ -711,8 +711,6 @@ static int
 zvol_get_data(void *arg, lr_write_t *lr, char *buf, struct lwb *lwb, zio_t *zio)
 {
 	zvol_state_t *zv = arg;
-	objset_t *os = zv->zv_objset;
-	uint64_t object = ZVOL_OBJ;
 	uint64_t offset = lr->lr_offset;
 	uint64_t size = lr->lr_length;
 	dmu_buf_t *db;
@@ -736,7 +734,7 @@ zvol_get_data(void *arg, lr_write_t *lr, char *buf, struct lwb *lwb, zio_t *zio)
 	if (buf != NULL) { /* immediate write */
 		zgd->zgd_lr = rangelock_enter(&zv->zv_rangelock, offset, size,
 		    RL_READER);
-		error = dmu_read(os, object, offset, size, buf,
+		error = dmu_read_by_dnode(zv->zv_dn, offset, size, buf,
 			DMU_READ_NO_PREFETCH);
 	} else { /* indirect write */
 		/*
@@ -749,7 +747,7 @@ zvol_get_data(void *arg, lr_write_t *lr, char *buf, struct lwb *lwb, zio_t *zio)
 		offset = P2ALIGN_TYPED(offset, size, uint64_t);
 		zgd->zgd_lr = rangelock_enter(&zv->zv_rangelock, offset, size,
 		    RL_READER);
-		error = dmu_buf_hold(os, object, offset, zgd, &db,
+		error = dmu_buf_hold_by_dnode(zv->zv_dn, offset, zgd, &db,
 			DMU_READ_NO_PREFETCH);
 		if (error == 0) {
 			blkptr_t *bp = &lr->lr_blkptr;
@@ -1098,7 +1096,7 @@ zvol_first_open(zvol_state_t *zv)
 		return (error);
 	}
 
-	error = dmu_bonus_hold(os, ZVOL_OBJ, zvol_tag, &zv->zv_dbuf);
+	error = dnode_hold(os, ZVOL_OBJ, FTAG, &zv->zv_dn);
 	if (error) {
 		dmu_objset_disown(os, B_TRUE, zvol_tag);
 		zv->zv_objset = NULL;
@@ -1123,6 +1121,9 @@ zvol_first_open(zvol_state_t *zv)
 
   out_owned:
 	if (error) {
+		if (zv->zv_dn != NULL)
+			dnode_rele(zv->zv_dn, FTAG);
+		zv->zv_dn = NULL;
 		dmu_objset_disown(os, B_TRUE, zvol_tag);
 		zv->zv_objset = NULL;
 	}
@@ -1145,9 +1146,9 @@ zvol_last_close(zvol_state_t *zv)
 		zil_close(zv->zv_zilog);
 	zv->zv_zilog = NULL;
 
-	if (zv->zv_dbuf)
-		dmu_buf_rele(zv->zv_dbuf, zvol_tag);
-	zv->zv_dbuf = NULL;
+	if (zv->zv_dn != NULL)
+		dnode_rele(zv->zv_dn, FTAG);
+	zv->zv_dn = NULL;
 
 	/*
 	 * Evict cached data
@@ -2030,8 +2031,8 @@ zvol_log_write(zvol_state_t *zv, dmu_tx_t *tx, offset_t off, ssize_t resid,
 		itx = zil_itx_create(TX_WRITE, sizeof (*lr) +
 		    (write_state == WR_COPIED ? len : 0));
 		lr = (lr_write_t *)&itx->itx_lr;
-		if (write_state == WR_COPIED && dmu_read(zv->zv_objset,
-		    ZVOL_OBJ, off, len, lr + 1,
+		if (write_state == WR_COPIED && dmu_read_by_dnode(zv->zv_dn,
+		    off, len, lr + 1,
 		    DMU_READ_NO_PREFETCH) != 0) {
 
 			zil_itx_destroy(itx);
@@ -2234,7 +2235,7 @@ zvol_strategy(struct buf *bp)
 			error = zvol_dumpio(zv, addr, off, size,
 			    doread, B_FALSE);
 		} else if (doread) {
-			error = dmu_read(os, ZVOL_OBJ, off, size, addr,
+			error = dmu_read_by_dnode(zv->zv_dn, off, size, addr,
 			    DMU_READ_PREFETCH);
 		} else {
 			dmu_tx_t *tx = dmu_tx_create(os);
@@ -2243,7 +2244,7 @@ zvol_strategy(struct buf *bp)
 			if (error) {
 				dmu_tx_abort(tx);
 			} else {
-				dmu_write(os, ZVOL_OBJ, off, size, addr, tx);
+				dmu_write_by_dnode(zv->zv_dn, off, size, addr, tx);
 				zvol_log_write(zv, tx, off, size, sync);
 				dmu_tx_commit(tx);
 			}
@@ -2358,7 +2359,7 @@ zvol_read(dev_t dev, struct uio *uio, int p)
 		if (bytes > volsize - uio_offset(uio))
 			bytes = volsize - uio_offset(uio);
 
-		error = dmu_read_uio_dbuf(zv->zv_dbuf, uio, bytes);
+		error = dmu_read_uio_dnode(zv->zv_dn, uio, bytes);
 		if (error) {
 			/* convert checksum errors into IO errors */
 			if (error == ECKSUM)
@@ -2432,7 +2433,7 @@ zvol_write(dev_t dev, struct uio *uio, int p)
 			dmu_tx_abort(tx);
 			break;
 		}
-		error = dmu_write_uio_dbuf(zv->zv_dbuf, uio, bytes, tx);
+		error = dmu_write_uio_dnode(zv->zv_dn, uio, bytes, tx);
 		if (error == 0)
 			zvol_log_write(zv, tx, off, bytes, sync);
 		dmu_tx_commit(tx);
@@ -2477,6 +2478,7 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t position,
 
 	lr = rangelock_enter(&zv->zv_rangelock, position, count,
 	    RL_READER);
+
 	while (count > 0 && (position+offset) < volsize) {
 		uint64_t bytes = MIN(count, DMU_MAX_ACCESS >> 1);
 
@@ -2488,8 +2490,8 @@ zvol_read_iokit(zvol_state_t *zv, uint64_t position,
 		    "zvol_read_iokit: position",
 		    position, offset, count, bytes);
 
-		error =  dmu_read_iokit_dbuf(zv->zv_dbuf, ZVOL_OBJ,
-		    &offset, position, &bytes, iomem);
+		error = dmu_read_iokit_dnode(zv->zv_dn, &offset, position,
+		    &bytes, iomem);
 
 		if (error) {
 			/* convert checksum errors into IO errors */
@@ -2547,6 +2549,7 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 	/* Lock the entire range */
 	lr = rangelock_enter(&zv->zv_rangelock, position, count,
 	    RL_WRITER);
+
 	/* Iterate over (DMU_MAX_ACCESS/2) segments */
 	while (count > 0 && (position + offset) < volsize) {
 		/* bytes for this segment */
@@ -2565,13 +2568,13 @@ zvol_write_iokit(zvol_state_t *zv, uint64_t position,
 			break;
 		}
 
-		error = dmu_write_iokit_dbuf(zv->zv_dbuf, &offset,
-		    position, &bytes, iomem, tx);
+		error = dmu_write_iokit_dnode(zv->zv_dn, &offset,
+			position, &bytes, iomem, tx);
 
 		if (error == 0) {
 			count -= MIN(count,
-			    (DMU_MAX_ACCESS >> 1)) + bytes;
-			zvol_log_write(zv, tx, off, bytes, sync);
+				(DMU_MAX_ACCESS >> 1)) + bytes;
+			zvol_log_write(zv, tx, offset, bytes, sync);
 		}
 		dmu_tx_commit(tx);
 
@@ -2739,36 +2742,6 @@ zvol_getefi(void *arg, int flag, uint64_t vs, uint8_t bs)
 /*
  * BEGIN entry points to allow external callers access to the volume.
  */
-/*
- * Return the volume parameters needed for access from an external caller.
- * These values are invariant as long as the volume is held open.
- */
-int
-zvol_get_volume_params(minor_t minor, uint64_t *blksize,
-    uint64_t *max_xfer_len, void **minor_hdl,
-    void **objset_hdl, void **zil_hdl,
-    void **rl_hdl, void **bonus_hdl)
-{
-	zvol_state_t *zv;
-
-	zv = zfsdev_get_soft_state(minor, ZSST_ZVOL);
-	if (zv == NULL)
-		return (ENXIO);
-	if (zv->zv_flags & ZVOL_DUMPIFIED)
-		return (ENXIO);
-
-	ASSERT(blksize && max_xfer_len && minor_hdl &&
-	    objset_hdl && zil_hdl && rl_hdl && bonus_hdl);
-
-	*blksize = zv->zv_volblocksize;
-	*max_xfer_len = (uint64_t)zvol_maxphys;
-	*minor_hdl = zv;
-	*objset_hdl = zv->zv_objset;
-	*zil_hdl = zv->zv_zilog;
-	*rl_hdl = NULL;
-	*bonus_hdl = zv->zv_dbuf;
-	return (0);
-}
 
 /*
  * Return the current volume size to an external caller.

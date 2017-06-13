@@ -73,13 +73,37 @@ typedef struct zvol_state {
 	uint32_t zv_total_opens;	/* total open count */
 	zilog_t *zv_zilog;	/* ZIL handle */
 	rangelock_t		zv_rangelock;	/* for range locking */
+	dnode_t			*zv_dn;		/* dnode hold */
 	list_t zv_extents;	/* List of extents for dump */
-	dmu_buf_t *zv_dbuf;	/* bonus handle */
 	zvol_iokit_t *zv_iokitdev;	/* IOKit device */
 	uint64_t zv_openflags;	/* Remember flags used at open */
 	char zv_bsdname[MAXPATHLEN];
 	/* 'rdiskX' name, use [1] for diskX */
 } zvol_state_t;
+
+#if 0
+struct zvol_state {
+	char			zv_name[MAXNAMELEN];	/* name */
+	uint64_t		zv_volsize;		/* advertised space */
+	uint64_t		zv_volblocksize;	/* volume block size */
+	objset_t		*zv_objset;	/* objset handle */
+	uint32_t		zv_flags;	/* ZVOL_* flags */
+	uint32_t		zv_open_count;	/* open counts */
+	uint32_t		zv_changed;	/* disk changed */
+	zilog_t			*zv_zilog;	/* ZIL handle */
+	zfs_rlock_t		zv_range_lock;	/* range lock */
+	dnode_t			*zv_dn;		/* dnode hold */
+	dev_t			zv_dev;		/* device id */
+	struct gendisk		*zv_disk;	/* generic disk */
+	struct request_queue	*zv_queue;	/* request queue */
+	list_node_t		zv_next;	/* next zvol_state_t linkage */
+	uint64_t		zv_hash;	/* name hash */
+	struct hlist_node	zv_hlink;	/* hash link */
+	kmutex_t		zv_state_lock;	/* protects zvol_state_t */
+	atomic_t		zv_suspend_ref;	/* refcount for suspend */
+	krwlock_t		zv_suspend_lock;	/* suspend lock */
+};
+#endif
 
 enum zfs_soft_state_type {
 	ZSST_ZVOL,

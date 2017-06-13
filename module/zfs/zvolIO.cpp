@@ -579,10 +579,11 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 		dprintf("asyncReadWrite notActive fail\n");
 		return (kIOReturnNotAttached);
 	}
+
 	// These variables are set in zvol_first_open(), which should have been
 	// called already.
-	if (!zv->zv_objset || !zv->zv_dbuf) {
-		dprintf("asyncReadWrite no objset nor dbuf\n");
+	if (!zv->zv_dn) {
+		dprintf("asyncReadWrite no zvol dnode\n");
 		return (kIOReturnNotAttached);
 	}
 

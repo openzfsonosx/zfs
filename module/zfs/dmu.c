@@ -1420,8 +1420,7 @@ xuio_stat_wbuf_nocopy(void)
 }
 
 #ifdef _KERNEL
-
-static int
+int
 dmu_read_uio_dnode(dnode_t *dn, uio_t *uio, uint64_t size)
 {
 	dmu_buf_t **dbp;
@@ -1515,25 +1514,24 @@ dmu_read_uio_dbuf(dmu_buf_t *zdb, uio_t *uio, uint64_t size)
 int
 dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
 {
-        dnode_t *dn;
-        int err;
+	dnode_t *dn;
+	int err;
 
-        if (size == 0)
-                return (0);
+	if (size == 0)
+		return (0);
 
-        err = dnode_hold(os, object, FTAG, &dn);
-        if (err)
-                return (err);
+	err = dnode_hold(os, object, FTAG, &dn);
+	if (err)
+		return (err);
 
-        err = dmu_read_uio_dnode(dn, uio, size);
+	err = dmu_read_uio_dnode(dn, uio, size);
 
-        dnode_rele(dn, FTAG);
+	dnode_rele(dn, FTAG);
 
-        return (err);
+	return (err);
 }
 
-
-static int
+int
 dmu_write_uio_dnode(dnode_t *dn, uio_t *uio, uint64_t size, dmu_tx_t *tx)
 {
 	dmu_buf_t **dbp;
@@ -1640,78 +1638,14 @@ dmu_write_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size,
 	return (err);
 }
 
-/*
- * Support function for IOKit, iomem is an IOMemoryDescriptor passed back
- * into zvolIO.cpp
- */
 int
-dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
+dmu_read_iokit_dnode(dnode_t *dn, uint64_t *offset,
     uint64_t position, uint64_t *size, struct iomem *iomem)
 {
-	dmu_buf_t **dbp;
-	int numbufs, i, err = 0;
-	/*
-	 * NB: we could do this block-at-a-time, but it's nice
-	 * to be reading in parallel.
-	 */
-	//err = dmu_buf_hold_array(os, object, uio->uio_loffset, size, TRUE, FTAG,
-    //   &numbufs, &dbp);
-	err = dmu_buf_hold_array(os, object, position+*offset, *size, TRUE, FTAG,
-	    &numbufs, &dbp);
-	if (err)
-		return (err);
-
-	while (*size > 0) {
-
-        for (i = 0; i < numbufs; i++) {
-            int tocpy;
-            int bufoff;
-            dmu_buf_t *db = dbp[i];
-            uint64_t done;
-
-            ASSERT(size > 0);
-
-            //bufoff = uio->uio_loffset - db->db_offset;
-            bufoff = (position+*offset) - db->db_offset;
-            tocpy = (int)MIN(db->db_size - bufoff, *size);
-
-            /*
-              err = uiomove((char *)db->db_data + bufoff, tocpy,
-              UIO_READ, uio);
-            */
-
-            done = zvolIO_kit_read(iomem,
-                                   *offset,
-                                   (char *)db->db_data + bufoff,
-                                   tocpy);
-
-            if (done > 0) {
-                (*offset) += done;
-                (*size) -= done;
-            }
-
-            //size -= tocpy;
-        }
-    }
-	dmu_buf_rele_array(dbp, numbufs, FTAG);
-
-	return (err);
-}
-
-int
-dmu_read_iokit_dbuf(dmu_buf_t *zdb, uint64_t object, uint64_t *offset,
-    uint64_t position, uint64_t *size, struct iomem *iomem)
-{
-	dmu_buf_impl_t *db = (dmu_buf_impl_t *)zdb;
-	dnode_t *dn;
 	int err;
 
 	if (*size == 0)
 		return (0);
-
-	DB_DNODE_ENTER(db);
-	dn = DB_DNODE(db);
-
 
 	dmu_buf_t **dbp;
 	int numbufs, i;
@@ -1749,14 +1683,32 @@ dmu_read_iokit_dbuf(dmu_buf_t *zdb, uint64_t object, uint64_t *offset,
 		*size -= done;
 		*offset += done;
 	}
-	dmu_buf_rele_array(dbp, numbufs, FTAG);
 
+	dmu_buf_rele_array(dbp, numbufs, FTAG);
+	return (err);
+}
+
+
+int
+dmu_read_iokit_dbuf(dmu_buf_t *zdb, uint64_t *offset,
+    uint64_t position, uint64_t *size, struct iomem *iomem)
+{
+	dmu_buf_impl_t *db = (dmu_buf_impl_t *)zdb;
+	dnode_t *dn;
+	int err;
+
+	if (size == 0)
+		return (0);
+
+	DB_DNODE_ENTER(db);
+	dn = DB_DNODE(db);
+	err = dmu_read_iokit_dnode(dn, offset, position, size, iomem);
 	DB_DNODE_EXIT(db);
 
 	return (err);
 }
 
-static int
+int
 dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset, uint64_t position,
     uint64_t *size, struct iomem *iomem, dmu_tx_t *tx)
 {
@@ -1765,58 +1717,45 @@ dmu_write_iokit_dnode(dnode_t *dn, uint64_t *offset, uint64_t position,
 	int err = 0;
 	int i;
 
-	//err = dmu_buf_hold_array_by_dnode(dn, uio->uio_loffset, size,
-    //   FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
 	err = dmu_buf_hold_array_by_dnode(dn, *offset+position, *size,
 	    FALSE, FTAG, &numbufs, &dbp, DMU_READ_PREFETCH);
 	if (err)
 		return (err);
 
-    while(*size > 0) {
+	while(*size > 0) {
 
-        for (i = 0; i < numbufs; i++) {
+		for (i = 0; i < numbufs; i++) {
             int tocpy;
-            int bufoff;
-            uint64_t done;
-            dmu_buf_t *db = dbp[i];
+			int bufoff;
+			uint64_t done;
+			dmu_buf_t *db = dbp[i];
 
-            ASSERT(size > 0);
+			ASSERT(size > 0);
 
-            //bufoff = uio->uio_loffset - db->db_offset;
-            bufoff = (position + *offset) - db->db_offset;
-            tocpy = (int)MIN(db->db_size - bufoff, *size);
+			bufoff = (position + *offset) - db->db_offset;
+			tocpy = (int)MIN(db->db_size - bufoff, *size);
 
-            ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
+			ASSERT(i == 0 || i == numbufs-1 || tocpy == db->db_size);
 
-            if (tocpy == db->db_size)
-                dmu_buf_will_fill(db, tx);
-            else
-                dmu_buf_will_dirty(db, tx);
+			if (tocpy == db->db_size)
+				dmu_buf_will_fill(db, tx);
+			else
+				dmu_buf_will_dirty(db, tx);
 
-            /*
-             * XXX uiomove could block forever (eg.nfs-backed
-             * pages).  There needs to be a uiolockdown() function
-             * to lock the pages in memory, so that uiomove won't
-             * block.
-             */
-            /*
-              err = uiomove((char *)db->db_data + bufoff, tocpy,
-              UIO_WRITE, uio);
-            */
-            done = zvolIO_kit_write(iomem,
-                                    *offset,
-                                    (char *)db->db_data + bufoff,
-                                    tocpy);
+			done = zvolIO_kit_write(iomem,
+			    *offset,
+			    (char *)db->db_data + bufoff,
+			    tocpy);
 
-            if (tocpy == db->db_size)
-                dmu_buf_fill_done(db, tx);
+			if (tocpy == db->db_size)
+				dmu_buf_fill_done(db, tx);
 
-            if (done > 0) {
-                *offset += done;
-                *size -= done;
-            }
-        }
-    }
+			if (done > 0) {
+				*offset += done;
+				*size -= done;
+			}
+		}
+	}
 
 	dmu_buf_rele_array(dbp, numbufs, FTAG);
 	return (err);
