@@ -96,8 +96,8 @@ bqueue_dequeue(bqueue_t *q)
 	ret = list_remove_head(&q->bq_list);
 	item_size = obj2node(q, ret)->bqn_size;
 	q->bq_size -= item_size;
-	mutex_exit(&q->bq_lock);
 	cv_signal(&q->bq_add_cv);
+	mutex_exit(&q->bq_lock);
 	return (ret);
 }
 
