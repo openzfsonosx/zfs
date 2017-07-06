@@ -24,7 +24,7 @@ namespace ID
 	{
 	public:
 		explicit DAHandlerIdle(std::string base, int64_t idleTimeoutNS,
-							   ASLClient const & logger);
+							   LogClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;

@@ -17,7 +17,7 @@
 
 namespace ID
 {
-	BaseLinker::BaseLinker(std::string base, ASLClient const & logger) :
+	BaseLinker::BaseLinker(std::string base, LogClient const & logger) :
 		DiskArbitrationHandler(logger),
 		m_base(std::move(base))
 	{
@@ -36,12 +36,12 @@ namespace ID
 			if (link.empty())
 				return;
 			std::string devicePath = "/dev/" + di.mediaBSDName;
-			logger().log(ASL_LEVEL_NOTICE, "Creating symlink: ", link, " -> ", devicePath);
+			logger().logDefault("Creating symlink: ", link, " -> ", devicePath);
 			m_links.emplace(devicePath, SymlinkHandle(link, devicePath));
 		}
 		catch (std::exception const & e)
 		{
-			logger().log(ASL_LEVEL_ERR, "Could not create symlink: ", e.what());
+			logger().logError("Could not create symlink: ", e.what());
 		}
 	}
 
@@ -53,14 +53,14 @@ namespace ID
 			auto found = m_links.equal_range(devicePath);
 			for (auto it = found.first; it != found.second; ++it)
 			{
-				logger().log(ASL_LEVEL_NOTICE, "Removing symlink: ", it->second.link());
+				logger().logDefault("Removing symlink: ", it->second.link());
 				it->second.reset();
 			}
 			m_links.erase(found.first, found.second);
 		}
 		catch (std::exception const & e)
 		{
-			logger().log(ASL_LEVEL_ERR, "Could not remove symlink: ", e.what());
+			logger().logError("Could not remove symlink: ", e.what());
 		}
 	}
 

@@ -174,16 +174,20 @@ namespace ID
 
 	std::string imagePathFromIOObject(io_object_t ioObject)
 	{
+		std::string path;
 		CFStringRef key = CFSTR("image-path");
 		CFTypeRef resultRef = IORegistryEntrySearchCFProperty(ioObject, kIOServicePlane, key,
 			kCFAllocatorDefault, kIORegistryIterateRecursively | kIORegistryIterateParents);
-		if (resultRef && CFGetTypeID(resultRef) == CFDataGetTypeID())
+		if (resultRef)
 		{
-			CFDataRef resultDataRef = CFDataRef(resultRef);
-			std::string path = interpret_as_string(resultDataRef);
-			return path;
+			if (CFGetTypeID(resultRef) == CFDataGetTypeID())
+			{
+				CFDataRef resultDataRef = CFDataRef(resultRef);
+				path = interpret_as_string(resultDataRef);
+			}
+			CFRelease(resultRef);
 		}
-		return std::string();
+		return path;
 	}
 
 	static std::string coreStorageMark = "/CoreStoragePhysical/";

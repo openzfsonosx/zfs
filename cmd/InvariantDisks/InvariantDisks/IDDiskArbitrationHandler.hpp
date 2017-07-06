@@ -15,7 +15,7 @@
 
 #include <DiskArbitration/DADisk.h>
 
-#include "IDASLUtils.hpp"
+#include "IDLogUtils.hpp"
 
 namespace ID
 {
@@ -24,7 +24,7 @@ namespace ID
 	class DiskArbitrationHandler
 	{
 	public:
-		explicit DiskArbitrationHandler(ASLClient const & logger) : m_logger(logger) {}
+		explicit DiskArbitrationHandler(LogClient const & logger) : m_logger(logger) {}
 		virtual ~DiskArbitrationHandler() = default;
 
 	public:
@@ -32,10 +32,10 @@ namespace ID
 		virtual void diskDisappeared(DADiskRef disk, DiskInformation const & info) = 0;
 
 	protected:
-		ASLClient const & logger() const { return m_logger; }
+		LogClient const & logger() const { return m_logger; }
 
 	private:
-		ASLClient m_logger;
+		LogClient m_logger;
 	};
 }
 

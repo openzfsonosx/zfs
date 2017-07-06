@@ -16,7 +16,7 @@
 
 namespace ID
 {
-	ImagePathLinker::ImagePathLinker(std::string const & base, ASLClient const & logger) :
+	ImagePathLinker::ImagePathLinker(std::string const & base, LogClient const & logger) :
 		BaseLinker(base, logger)
 	{
 	}

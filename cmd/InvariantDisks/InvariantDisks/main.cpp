@@ -12,31 +12,29 @@
 
 #include "IDCLI.hpp"
 #include "IDException.hpp"
+#include "IDLogUtils.hpp"
 
-#include <asl.h>
 #include <iostream>
 
 int main(int argc, char ** argv)
 {
+	ID::LogClient logger;
 	try
 	{
-		ID::CLI idCommandLine(argc, argv);
+		ID::CLI idCommandLine(argc, argv, logger);
 		return idCommandLine.exec();
 	}
 	catch (ID::Exception const & e)
 	{
-		asl_log(0, 0, ASL_LEVEL_CRIT, "%s", e.what());
-		std::cerr << e.what() << std::endl;
+		logger.logError(e.what());
 	}
 	catch (std::exception const & e)
 	{
-		asl_log(0, 0, ASL_LEVEL_CRIT, "Terminated by exception: %s", e.what());
-		std::cerr << "Terminated by exception: " << e.what() << std::endl;
+		logger.logError("Terminated by exception: ", e.what());
 	}
 	catch (...)
 	{
-		asl_log(0, 0, ASL_LEVEL_CRIT, "Terminated by unknown exception");
-		std::cerr << "Terminated by unknown exception" << std::endl;
+		logger.logError("Terminated by unknown exception");
 	}
 	return -1;
 }

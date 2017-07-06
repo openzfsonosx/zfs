@@ -18,10 +18,12 @@
 
 namespace ID
 {
+	class LogClient;
+
 	class CLI
 	{
 	public:
-		CLI(int & argc, char ** argv);
+		CLI(int & argc, char ** argv, LogClient & logger);
 		~CLI();
 
 	public:

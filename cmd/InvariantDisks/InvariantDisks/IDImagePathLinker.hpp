@@ -20,7 +20,7 @@ namespace ID
 	class ImagePathLinker : public BaseLinker
 	{
 	public:
-		explicit ImagePathLinker(std::string const & base, ASLClient const & logger);
+		explicit ImagePathLinker(std::string const & base, LogClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;

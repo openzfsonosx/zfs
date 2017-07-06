@@ -20,7 +20,7 @@ namespace ID
 	class MediaPathLinker : public BaseLinker
 	{
 	public:
-		explicit MediaPathLinker(std::string const & base, ASLClient const & logger);
+		explicit MediaPathLinker(std::string const & base, LogClient const & logger);
 
 	public:
 		virtual void diskAppeared(DADiskRef disk, DiskInformation const & info) override;

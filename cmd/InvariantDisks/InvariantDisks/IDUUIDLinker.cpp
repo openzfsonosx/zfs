@@ -18,7 +18,7 @@
 
 namespace ID
 {
-	UUIDLinker::UUIDLinker(std::string const & base, ASLClient const & logger) :
+	UUIDLinker::UUIDLinker(std::string const & base, LogClient const & logger) :
 		BaseLinker(base, logger)
 	{
 	}

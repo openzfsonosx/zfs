@@ -20,7 +20,7 @@
 
 namespace ID
 {
-	DiskInfoLogger::DiskInfoLogger(bool verbose, ASLClient const & logger) :
+	DiskInfoLogger::DiskInfoLogger(bool verbose, LogClient const & logger) :
 		DiskArbitrationHandler(logger),
 		m_verbose(verbose)
 	{
@@ -29,13 +29,13 @@ namespace ID
 	void DiskInfoLogger::diskAppeared(DADiskRef /*disk*/, DiskInformation const & info)
 	{
 		if (m_verbose)
-			logger().log(ASL_LEVEL_NOTICE, "Disk Appeared: ", formatDisk(info));
+			logger().logInfo("Disk Appeared: ", formatDisk(info));
 	}
 
 	void DiskInfoLogger::diskDisappeared(DADiskRef /*disk*/, DiskInformation const & info)
 	{
 		if (m_verbose)
-			logger().log(ASL_LEVEL_NOTICE, "Disk Disappeared: ", formatDisk(info));
+			logger().logInfo("Disk Disappeared: ", formatDisk(info));
 	}
 
 	std::string DiskInfoLogger::formatDisk(DiskInformation const & info) const
