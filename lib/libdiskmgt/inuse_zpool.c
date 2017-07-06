@@ -58,7 +58,7 @@ static libzfs_handle_t *(*zfsdl_libzfs_init)(boolean_t);
 static boolean_t		initialized = false;
 static libzfs_handle_t		*zfs_hdl;
 
-static void	*init_zpool();
+static void	*init_zpool(void);
 
 static int
 inuse_zpool_common(char *slice, nvlist_t *attrs, int *errp, char *type)
@@ -133,7 +133,7 @@ inuse_exported_zpool(char *slice, nvlist_t *attrs, int *errp)
  * Try to dynamically link the zfs functions we need.
  */
 static void*
-init_zpool()
+init_zpool(void)
 {
 	void	*lh = NULL;
 

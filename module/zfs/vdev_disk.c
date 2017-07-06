@@ -852,7 +852,7 @@ vdev_disk_io_start(zio_t *zio)
 
 	bp->b_lblkno = lbtodb(zio->io_offset);
 	bp->b_bufsize = zio->io_size;
-	bp->b_iodone = (int (*)())vdev_disk_io_intr;
+	bp->b_iodone = (int (*)(struct ldi_buf *))vdev_disk_io_intr;
 
 #if 0
 	bp = buf_alloc(dvd->vd_devvp);

@@ -33,7 +33,7 @@ extern "C" {
 #endif
 
   /* attribute definitions */
-  
+
 #define	DM_USED_BY		"used_by"
 #define	DM_USED_NAME		"used_name"
 #define	DM_USE_MOUNT		"mount"
@@ -49,9 +49,9 @@ extern "C" {
 #define DM_USE_CORESTORAGE_OFFLINE_LV    "corestorage_offline_lv"
 #define DM_USE_OS_PARTITION     "reserved_os_partititon"
 #define DM_USE_OS_PARTITION_NO_FORCE     "reserved_os_partititon_nf"
-  
+
 #define	NOINUSE_SET	getenv("NOINUSE_CHECK") != NULL
-  
+
   typedef enum {
     DM_WHO_ZPOOL = 0,
     DM_WHO_ZPOOL_FORCE,
@@ -67,14 +67,14 @@ extern "C" {
    * Unlike the Solaris implementation, libdiskmgt must be initialised,
    * and torn down when no longer used.
    */
-  void libdiskmgt_init();
-  void libdiskmgt_fini();
-  
+  void libdiskmgt_init(void);
+  void libdiskmgt_fini(void);
+
   /*
    * This is a partial implementation of (or similar to) libdiskmgt, adapted for OSX use.
    */
   int dm_in_swap_dir(const char *dev_name);
-  int dm_inuse(char *dev_name, char **msg, dm_who_type_t who, int *errp);	
+  int dm_inuse(char *dev_name, char **msg, dm_who_type_t who, int *errp);
 
 #ifdef __cplusplus
 }

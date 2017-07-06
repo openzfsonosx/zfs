@@ -38,10 +38,10 @@ extern "C" {
 
 	typedef void* DU_Info;
 
-	void diskutil_init();
-	void diskutil_fini();
+	void diskutil_init(void);
+	void diskutil_fini(void);
 
-	void init_diskutil_info(DU_Info *info);	
+	void init_diskutil_info(DU_Info *info);
 	int diskutil_info_valid(DU_Info info);
 	void get_diskutil_cs_info(char *slice, DU_Info *info);
 	void get_diskutil_info(char *slice, DU_Info *info);
@@ -61,19 +61,19 @@ extern "C" {
 	int is_MSDOS_partition(DU_Info info);
 	int has_filesystem_type(DU_Info info);
 	CFStringRef get_filesystem_type(DU_Info info);
-	
-	int inuse_corestorage(char *slice, nvlist_t *attrs, int *errp);	
+
+	int inuse_corestorage(char *slice, nvlist_t *attrs, int *errp);
 	int inuse_fs(char *slice, nvlist_t *attrs, int *errp);
 	int inuse_macswap(const char *dev_name);
-	int inuse_mnt(char *slice, nvlist_t *attrs, int *errp);  
-	int inuse_partition(char *slice, nvlist_t *attrs, int *errp);	
+	int inuse_mnt(char *slice, nvlist_t *attrs, int *errp);
+	int inuse_partition(char *slice, nvlist_t *attrs, int *errp);
 	int inuse_active_zpool(char *slice, nvlist_t *attrs, int *errp);
 	int inuse_exported_zpool(char *slice, nvlist_t *attrs, int *errp);
-  
+
 	void libdiskmgt_add_str(nvlist_t *attrs, char *name, char *val, int *errp);
 
 	nvlist_t *slice_get_stats(char *slice, int stat_type, int *errp);
-  
+
 #ifdef __cplusplus
 }
 #endif

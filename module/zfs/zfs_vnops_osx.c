@@ -4331,8 +4331,8 @@ zfs_vnop_searchfs(struct vnop_searchfs_args *ap)
  * style" function declaration that does not include arguments so that we won't
  * get type mismatch errors in the initializations that follow.
  */
-static int zfs_inval();
-static int zfs_isdir();
+static int zfs_inval(void);
+static int zfs_isdir(void);
 
 static int
 zfs_inval()

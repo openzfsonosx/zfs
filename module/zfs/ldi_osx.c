@@ -1561,7 +1561,7 @@ ldi_invoke_notify(__unused dev_info_t *dip, dev_t dev, int spec_type,
 		}
 
 		lecp->lec_lhp->lh_flags |= LH_FLAGS_NOTIFY;
-		if (lecp->lec_notify(lecp->lec_lhp, lecp->lec_cookie,
+		if (lecp->lec_notify((ldi_handle_t)lecp->lec_lhp, lecp->lec_cookie,
 		    lecp->lec_arg, ev_data) != LDI_EV_SUCCESS) {
 			ret = LDI_EV_FAILURE;
 			LDI_EVDBG((CE_NOTE, "ldi_invoke_notify(): notify"
@@ -1721,7 +1721,7 @@ ldi_invoke_finalize(__unused dev_info_t *dip, dev_t dev, int spec_type,
 
 		found = 1;
 
-		lecp->lec_finalize(lecp->lec_lhp, lecp->lec_cookie,
+		lecp->lec_finalize((ldi_handle_t)lecp->lec_lhp, lecp->lec_cookie,
 		    ldi_result, lecp->lec_arg, ev_data);
 
 		/*

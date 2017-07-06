@@ -812,12 +812,12 @@ static const fs_operation_def_t zfsctl_tops_root[] = {
  */
 /* ARGSUSED */
 int
-zfsctl_freebsd_root_lookup(ap)
-	struct vnop_lookup_args /* {
+zfsctl_freebsd_root_lookup(struct vnop_lookup_args *ap)
+/* struct vnop_lookup_args  {
 		struct vnode *a_dvp;
 		struct vnode **a_vpp;
 		struct componentname *a_cnp;
-	} */ *ap;
+	} */
 {
 	struct vnode *dvp = ap->a_dvp;
 	struct vnode **vpp = ap->a_vpp;
@@ -1223,12 +1223,11 @@ zfsctl_snapdir_readdir_cb(struct vnode *vp, void *dp, int *eofp,
  */
 /* ARGSUSED */
 int
-zfsctl_snapdir_lookup(ap)
-	struct vnop_lookup_args /* {
+zfsctl_snapdir_lookup(struct vnop_lookup_args /* {
 		struct vnode *a_dvp;
 		struct vnode **a_vpp;
 		struct componentname *a_cnp;
-	} */ *ap;
+		} */ *ap)
 {
 	struct vnode *dvp = ap->a_dvp;
 	struct vnode **vpp = ap->a_vpp;

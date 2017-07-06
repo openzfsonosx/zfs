@@ -1180,7 +1180,7 @@ static void arc_free_data_impl(arc_buf_hdr_t *hdr, uint64_t size, void *tag);
 static void arc_hdr_free_pabd(arc_buf_hdr_t *);
 static void arc_hdr_alloc_pabd(arc_buf_hdr_t *);
 static void arc_access(arc_buf_hdr_t *, kmutex_t *);
-/*static*/ boolean_t arc_is_overflowing();
+/*static*/ boolean_t arc_is_overflowing(void);
 static void arc_buf_watch(arc_buf_t *);
 
 static arc_buf_contents_t arc_buf_type(arc_buf_hdr_t *);

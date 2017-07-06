@@ -52,7 +52,7 @@
 
 /*
  Modified November 1, 2000, by Ryan Rempel, ryan.rempel@utoronto.ca
- 
+
  The Darwin sysctl mechanism is in a state of flux. Parts of the kernel use the old
  style of BSD sysctl definition, and other parts use the new style. The sysctl (8)
  command that shipped with Darwin 1.2 (OS X PB) did not allow you to access
@@ -61,13 +61,13 @@
  command compiled and ran under Darwin 1.2, and it did permit access to
  sysctl values created by kernel extensions, as well as several others. However, it
  did not permit access to many other values which the Darwin 1.2 sysctl could access.
- 
+
  What I have done is merge the Darwin 1.2 sysctl and the freeBSD sysctl. Essentially,
  there are two points of merger. When showing all values (i.e. -a, -A, or -X), sysctl now
  runs the Darwin 1.2 routine to show all values, and then the freeBSD routine. This does
  result in some duplication. When getting or setting a particular value, sysctl now tries
  the freeBSD way first. If it cannot find the value, then it tries the Darwin 1.2 way.
- 
+
  There are a few oddities which this creates (aside from some duplication with -a, -A,
  and -X). The freeBSD version of sysctl now supports two extra options, -b and -X.
  In this syctl, those options are supported where the value is retrieved by the freeBSD
@@ -75,7 +75,7 @@
  The freeBSD sysctl uses a ':' to separate the name and the value, whereas Darwin 1.2's
  sysctl uses a '='. I have left this way, as it lets you know which routine was used,
  should it matter.
- 
+
  I have also fixed several lines which gave warnings previously, one of which appears
  to have been an actual bug (bufp was dereferenced when it shouldn't have been).
  I have also incoporated my previous patch to permit setting kern.hostid as an unsigned
@@ -161,10 +161,10 @@ static int	invalid_name_used = 0;
 
 void listall(char *prefix, struct list *lp);
 void old_parse(char *string, int flags);
-void debuginit();
-void vfsinit();
+void debuginit(void);
+void vfsinit(void);
 int  findname(char *string, char *level, char **bufp, struct list *namelist);
-void usage();
+void usage(void);
 
 static void 	parse(char *string, int flags);
 static int	parsefile(const char *);
@@ -188,7 +188,7 @@ char *argv[];
     //	extern char *optarg;   // unused
     extern int optind;
     int ch, lvl1;
-    
+
     while ((ch = getopt(argc, argv, "Aabf:nwX")) != EOF) {
         switch (ch) {
             case 'A': Aflag = 1; break;
@@ -204,7 +204,7 @@ char *argv[];
     }
     argc -= optind;
     argv += optind;
-    
+
     if (argc == 0 && (Aflag || aflag)) {
         debuginit();
         vfsinit();
@@ -216,14 +216,14 @@ char *argv[];
     if(conffile != NULL) {
         exit(parsefile(conffile));
     }
-    
+
     if (argc == 0)
         usage();
-        
+
     for (; *argv != NULL; ++argv)
             parse(*argv, 1);
-        
-        
+
+
     exit(invalid_name_used ? 1 : 0);
 
 }
@@ -238,7 +238,7 @@ struct list *lp;
 {
     int lvl2;
     char *cp, name[BUFSIZ];
-    
+
     if (lp->list == 0)
         return;
     strcpy(name, prefix);
@@ -274,7 +274,7 @@ int flags;
     struct vfsconf vfc;
     int mib[CTL_MAXNAME];
     char *cp, *bufp, buf[BUFSIZ] /*, strval[BUFSIZ] */ ;
-    
+
     bufp = buf;
     snprintf(buf, BUFSIZ, "%s", string);
     if ((cp = strchr(string, '=')) != NULL) {
@@ -312,7 +312,7 @@ int flags;
     type = lp->list[indx].ctl_type;
     len = 2;
     switch (mib[0]) {
-            
+
         case CTL_KERN:
             switch (mib[1]) {
                 case KERN_PROF:
@@ -355,17 +355,17 @@ int flags;
                     break;
             }
             break;
-            
+
         case CTL_HW:
             useUnsignedInt = 1;
             break;
-            
+
         case CTL_VM: break;
 #if 0 /* XXX Handled by the new sysctl mechanism */
             switch (mib[1]) {
                 case VM_LOADAVG: {	/* XXX this is bogus */
                     double loads[3];
-                    
+
                     getloadavg(loads, 3);
                     if (!nflag)
                         fprintf(stdout, "%s: ", string);
@@ -376,7 +376,7 @@ int flags;
                 case VM_SWAPUSAGE: {
                     struct xsw_usage	xsu;
                     int			saved_errno;
-                    
+
                     size = sizeof (xsu);
                     if (sysctl(mib, 2, &xsu, &size, NULL, 0) != 0) {
                         if (flags == 0)
@@ -388,7 +388,7 @@ int flags;
                                 strerror(saved_errno));
                         return;
                     }
-                    
+
                     if (!nflag)
                         fprintf(stdout, "%s: ", string);
                     fprintf(stdout,
@@ -406,19 +406,19 @@ int flags;
                     "Use vmstat or systat to view %s information\n", string);
             return;
 #endif
-            
+
         case CTL_DEBUG:
             mib[2] = CTL_DEBUG_VALUE;
             len = 3;
             break;
-            
+
         case CTL_MACHDEP:
 #ifdef CPU_CONSDEV
             if (mib[1] == CPU_CONSDEV)
                 special |= CONSDEV;
 #endif
             break;
-            
+
         case CTL_VFS:
             mib[3] = mib[1];
             mib[1] = VFS_GENERIC;
@@ -438,14 +438,14 @@ int flags;
             else
                 fprintf(stdout, "%d\n", vfc.vfc_refcount);
             return;
-            
+
         case CTL_USER:
             break;
-            
+
         default:
             fprintf(stderr, "Illegal top level value: %d\n", mib[0]);
             return;
-            
+
     }
     if (bufp) {
         fprintf(stderr, "name %s in %s is unknown\n", bufp, string);
@@ -474,7 +474,7 @@ int flags;
                     newsize = sizeof intval;
                 }
                 break;
-                
+
             case CTLTYPE_QUAD:
                 quadval = strtoq(newval, NULL, 0);
                 if ((quadval == 0) && (errno == EINVAL)) {
@@ -514,7 +514,7 @@ int flags;
     }
     if (special & CLOCK) {
         struct clockinfo *clkp = (struct clockinfo *)buf;
-        
+
         if (!nflag)
             fprintf(stdout, "%s: ", string);
         fprintf(stdout,
@@ -524,7 +524,7 @@ int flags;
     }
     if (special & BOOTTIME) {
         struct timeval *btp = (struct timeval *)buf;
-        
+
         if (!nflag)
             fprintf(stdout, "%s = %s\n", string,
                     ctime((time_t *) &btp->tv_sec));
@@ -534,7 +534,7 @@ int flags;
     }
     if (special & CONSDEV) {
         dev_t dev = *(dev_t *)buf;
-        
+
         if (!nflag)
             fprintf(stdout, "%s = %s\n", string,
                     devname(dev, S_IFCHR));
@@ -555,7 +555,7 @@ int flags;
                 fprintf(stdout, useUnsignedInt ? "%u\n" : "%d\n", *(int *)newval);
             }
             return;
-            
+
         case CTLTYPE_STRING:
             if (newsize == 0) {
                 if (!nflag)
@@ -567,7 +567,7 @@ int flags;
                 fprintf(stdout, "%s\n", (char *) newval);
             }
             return;
-            
+
         case CTLTYPE_QUAD:
             if (newsize == 0) {
                 if (!nflag)
@@ -580,11 +580,11 @@ int flags;
                 fprintf(stdout, "%qd\n", *(quad_t *)newval);
             }
             return;
-            
+
         case CTLTYPE_NODE:
         case CTLTYPE_STRUCT:
             return;
-            
+
         default:
             fprintf(stderr, "%s: unknown type returned\n",
                     string);
@@ -599,7 +599,7 @@ void debuginit()
 {
     int mib[3], loc, i;
     size_t size;
-    
+
     if (secondlevel[CTL_DEBUG].list != 0)
         return;
     secondlevel[CTL_DEBUG].list = debugname;
@@ -625,7 +625,7 @@ void vfsinit()
     int mib[4], maxtypenum, cnt, loc, size;
     struct vfsconf vfc;
     size_t buflen;
-    
+
     if (secondlevel[CTL_VFS].list != 0)
         return;
     mib[0] = CTL_VFS;
@@ -672,7 +672,7 @@ struct list *namelist;
 {
     char *name;
     int i;
-    
+
     /* Make 'sysctl kern.' style behave the same as 'sysctl kern' 3360872*/
     if (bufp[0][strlen(*bufp)-1] == '.')
         bufp[0][strlen(*bufp)-1]='\0';
@@ -726,7 +726,7 @@ parse(char *string, int flags)
     int mib[CTL_MAXNAME];
     char *cp, *bufp, buf[BUFSIZ], fmt[BUFSIZ];
     u_int kind;
-    
+
     bufp = buf;
     if (snprintf(buf, BUFSIZ, "%s", string) >= BUFSIZ)
         errx(1, "MIB too long");
@@ -745,7 +745,7 @@ parse(char *string, int flags)
             usage();
     }
     len = name2oid(bufp, mib);
-    
+
     if (len < 0) {
         if (cp != NULL) {
             while (*cp != '\0') cp--;
@@ -754,7 +754,7 @@ parse(char *string, int flags)
         old_parse (string, flags);
         return;
     }
-    
+
     /*
      * An non-zero return here is an OID space containing parameters which
      * needs to be ignored in the interests of backward compatibility with
@@ -762,7 +762,7 @@ parse(char *string, int flags)
      */
     if (oidfmt(mib, len, fmt, &kind))
         return;
-    
+
     if (!wflag) {
         if ((kind & CTLTYPE) == CTLTYPE_NODE) {
             sysctl_all(mib, len);
@@ -776,10 +776,10 @@ parse(char *string, int flags)
     } else {
         if ((kind & CTLTYPE) == CTLTYPE_NODE)
             errx(1, "oid '%s' isn't a leaf node", bufp);
-        
+
         if (!(kind&CTLFLAG_WR))
             errx(1, "oid '%s' is read only", bufp);
-        
+
         switch (kind & CTLTYPE) {
             case CTLTYPE_INT:
                 if ((*fmt == 'I') && (*(fmt + 1) == 'U')) {
@@ -820,7 +820,7 @@ parse(char *string, int flags)
                      " cannot set that", bufp,
                      kind & CTLTYPE);
         }
-        
+
         i = show_var(mib, len, 1);
         if (sysctl(mib, len, 0, 0, newval, newsize) == -1) {
             if (!i && !bflag)
@@ -857,7 +857,7 @@ parsefile(const char *filename)
     FILE *file;
     char line[BUFSIZ], *p, *pq, *pdq;
     int warncount = 0, lineno = 0;
-    
+
     file = fopen(filename, "r");
     if (file == NULL)
         err(1, "%s", filename);
@@ -897,7 +897,7 @@ parsefile(const char *filename)
         /*warncount += */parse(p, 1); //lineno);
     }
     fclose(file);
-    
+
     return (warncount);
 }
 
@@ -907,7 +907,7 @@ static int
 S_clockinfo(int l2, void *p)
 {
     struct clockinfo *ci = (struct clockinfo*)p;
-    
+
     if (l2 != sizeof(*ci)) {
         warnx("S_clockinfo %d != %ld", l2, sizeof(*ci));
         return (1);
@@ -922,7 +922,7 @@ static int
 S_loadavg(int l2, void *p)
 {
     struct loadavg *tv = (struct loadavg*)p;
-    
+
     if (l2 != sizeof(*tv)) {
         warnx("S_loadavg %d != %ld", l2, sizeof(*tv));
         return (1);
@@ -940,7 +940,7 @@ S_timeval(int l2, void *p)
     struct timeval *tv = (struct timeval*)p;
     time_t tv_sec;
     char *p1, *p2;
-    
+
     if (l2 != sizeof(*tv)) {
         warnx("S_timeval %d != %ld", l2, sizeof(*tv));
         return (1);
@@ -962,7 +962,7 @@ static int
 S_xswusage(int l2, void *p)
 {
     struct xsw_usage *xsu = (struct xsw_usage *)p;
-    
+
     if (l2 != sizeof(*xsu)) {
         warnx("S_xswusage %d != %ld", l2, sizeof(*xsu));
         return (1);
@@ -980,7 +980,7 @@ static int
 T_dev_t(int l2, void *p)
 {
     dev_t *d = (dev_t *)p;
-    
+
     if (l2 != sizeof(*d)) {
         warnx("T_dev_T %d != %ld", l2, sizeof(*d));
         return (1);
@@ -1011,10 +1011,10 @@ name2oid(char *name, int *oidp)
     int oid[2];
     int i;
     size_t j;
-    
+
     oid[0] = 0;
     oid[1] = 3;
-    
+
     j = CTL_MAXNAME * sizeof (int);
     i = sysctl(oid, 2, oidp, &j, name, strlen(name));
     if (i < 0)
@@ -1030,11 +1030,11 @@ oidfmt(int *oid, int len, char *fmt, u_int *kind)
     u_char buf[BUFSIZ];
     int i;
     size_t j;
-    
+
     qoid[0] = 0;
     qoid[1] = 4;
     memcpy(qoid + 2, oid, len * sizeof(int));
-    
+
     j = sizeof(buf);
     i = sysctl(qoid, len + 2, buf, &j, 0, 0);
     if (i) {
@@ -1049,10 +1049,10 @@ oidfmt(int *oid, int len, char *fmt, u_int *kind)
             return ENOENT;
         err(1, "sysctl fmt %d %ld %d", i, j, errno);
     }
-    
+
     if (kind)
         *kind = *(u_int *)buf;
-    
+
     if (fmt)
         strcpy(fmt, (char *)(buf + sizeof(u_int)));
     return (0);
@@ -1077,21 +1077,21 @@ show_var(int *oid, int nlen, int show_masked)
     size_t j, len;
     u_int kind;
     int (*func)(int, void *) = 0;
-    
+
     qoid[0] = 0;
     memcpy(qoid + 2, oid, nlen * sizeof(int));
-    
+
     qoid[1] = 1;
     j = sizeof name;
     i = sysctl(qoid, nlen + 2, name, &j, 0, 0);
     if (i || !j)
         err(1, "sysctl name %d %ld %d", i, j, errno);
-    
+
     /* find an estimate of how much we need for this var */
     j = 0;
     i = sysctl(oid, nlen, 0, &j, 0, 0);
     j += j; /* we want to be sure :-) */
-    
+
     val = mval = malloc(j);
     len = j;
     i = sysctl(oid, nlen, val, &len, 0, 0);
@@ -1099,13 +1099,13 @@ show_var(int *oid, int nlen, int show_masked)
         retval = 1;
         goto RETURN;
     }
-    
+
     if (bflag) {
         fwrite(val, 1, len, stdout);
         retval = 0;
         goto RETURN;
     }
-    
+
     qoid[1] = 4;
     j = sizeof buf;
     i = sysctl(qoid, nlen + 2, buf, &j, 0, 0);
@@ -1120,33 +1120,33 @@ show_var(int *oid, int nlen, int show_masked)
         retval = 1;
         goto RETURN;
     }
-    
+
     if (i || !j)
         err(1, "sysctl fmt %d %ld %d", i, j, errno);
-    
+
     kind = *(u_int *)buf;
     if (!show_masked && (kind & CTLFLAG_MASKED)) {
         retval = 1;
         goto RETURN;
     }
-    
+
     fmt = (char *)(buf + sizeof(u_int));
-    
+
     p = val;
     switch (*fmt) {
         case '-':
             /* deprecated, do not print */
             retval = 0;
             goto RETURN;
-            
-            
+
+
         case 'A':
             if (!nflag)
                 printf("%s: ", name);
             printf("%s", p);
             retval = 0;
             goto RETURN;
-            
+
         case 'I':
             if (!nflag)
                 printf("%s: ", name);
@@ -1163,7 +1163,7 @@ show_var(int *oid, int nlen, int show_masked)
             }
             retval = 0;
             goto RETURN;
-            
+
         case 'L':
             if (!nflag)
                 printf("%s: ", name);
@@ -1180,14 +1180,14 @@ show_var(int *oid, int nlen, int show_masked)
             }
             retval = 0;
             goto RETURN;
-            
+
         case 'P':
             if (!nflag)
                 printf("%s: ", name);
             printf("%p", *(void **)p);
             retval = 0;
             goto RETURN;
-            
+
         case 'Q':
             if (!nflag)
                 printf("%s: ", name);
@@ -1204,8 +1204,8 @@ show_var(int *oid, int nlen, int show_masked)
             }
             retval = 0;
             goto RETURN;
-            
-            
+
+
         case 'T':
         case 'S':
             i = 0;
@@ -1239,7 +1239,7 @@ show_var(int *oid, int nlen, int show_masked)
             retval = 0;
             goto RETURN;
     }
-    
+
     retval = 1;
 RETURN:
     free(mval);
@@ -1252,7 +1252,7 @@ sysctl_all (int *oid, int len)
     int name1[22], name2[22];
     int i, j;
     size_t l1, l2;
-    
+
     name1[0] = 0;
     name1[1] = 2;
     l1 = 2;
@@ -1272,20 +1272,20 @@ sysctl_all (int *oid, int len)
             else
                 err(1, "sysctl(getnext) %d %ld", j, l2);
         }
-        
+
         l2 /= sizeof (int);
-        
+
         if (l2 < len)
             return 0;
-        
+
         for (i = 0; i < len; i++)
             if (name2[i] != oid[i])
                 return 0;
-        
+
         i = show_var(name2, l2, 0);
         if (!i && !bflag)
             putchar('\n');
-        
+
         memcpy(name1+2, name2, l2*sizeof (int));
         l1 = 2 + l2;
     }

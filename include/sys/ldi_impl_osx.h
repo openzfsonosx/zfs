@@ -170,8 +170,8 @@ typedef struct ldi_ev_callback_impl {
 #endif
 	dev_t			lec_dev;
 	int			lec_spec;
-	int			(*lec_notify)();
-	void			(*lec_finalize)();
+	int			(*lec_notify)(ldi_handle_t, ldi_ev_cookie_t, void *, void *);
+	void			(*lec_finalize)(ldi_handle_t, ldi_ev_cookie_t, int, void *, void *);
 	void			*lec_arg;
 	void			*lec_cookie;
 	void			*lec_id;
