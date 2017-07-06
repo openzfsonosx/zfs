@@ -1391,6 +1391,7 @@ again:
 			 * call is missing in 10a286 - lundman */
 			VN_RELE(vp);
 			dprintf("ZFS: the vids do not match part 1\n");
+			//delay(1);
 			goto again;
 		}
 		if (vnode_vid(vp) != zp->z_vid)

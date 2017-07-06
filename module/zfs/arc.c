@@ -1173,14 +1173,14 @@ static uint8_t l2arc_thread_exit;
 
 static abd_t *arc_get_data_abd(arc_buf_hdr_t *, uint64_t, void *);
 static void *arc_get_data_buf(arc_buf_hdr_t *, uint64_t, void *);
-static void arc_get_data_impl(arc_buf_hdr_t *, uint64_t, void *);
+void arc_get_data_impl(arc_buf_hdr_t *, uint64_t, void *);
 static void arc_free_data_abd(arc_buf_hdr_t *, abd_t *, uint64_t, void *);
 static void arc_free_data_buf(arc_buf_hdr_t *, void *, uint64_t, void *);
 static void arc_free_data_impl(arc_buf_hdr_t *hdr, uint64_t size, void *tag);
 static void arc_hdr_free_pabd(arc_buf_hdr_t *);
 static void arc_hdr_alloc_pabd(arc_buf_hdr_t *);
 static void arc_access(arc_buf_hdr_t *, kmutex_t *);
-static boolean_t arc_is_overflowing();
+/*static*/ boolean_t arc_is_overflowing();
 static void arc_buf_watch(arc_buf_t *);
 
 static arc_buf_contents_t arc_buf_type(arc_buf_hdr_t *);
@@ -4113,7 +4113,7 @@ arc_available_memory(void)
  * to reclaim memory. A return value of B_TRUE indicates that the system
  * is under memory pressure and that the arc should adjust accordingly.
  */
-static boolean_t
+boolean_t
 arc_reclaim_needed(void)
 {
     if(arc_available_memory() < 0) {
@@ -4635,7 +4635,7 @@ arc_adapt(int bytes, arc_state_t *state)
  * Check if arc_size has grown past our upper threshold, determined by
  * zfs_arc_overflow_shift.
  */
-static boolean_t
+boolean_t
 arc_is_overflowing(void)
 {
 	/* Always allow at least one block of overflow */
@@ -4679,7 +4679,7 @@ arc_get_data_buf(arc_buf_hdr_t *hdr, uint64_t size, void *tag)
  * thread to catch up. If we're past the target size but below the hard
  * limit, we'll only signal the reclaim thread and continue on.
  */
-static void
+void
 arc_get_data_impl(arc_buf_hdr_t *hdr, uint64_t size, void *tag)
 {
 	arc_state_t *state = hdr->b_l1hdr.b_state;
