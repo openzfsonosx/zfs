@@ -1190,8 +1190,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 void
 zfs_get_done(zgd_t *zgd, int error)
 {
-	//znode_t *zp = zgd->zgd_private;
-	//objset_t *os = zp->z_zfsvfs->z_os;
+	znode_t *zp = zgd->zgd_private;
+	objset_t *os = zp->z_zfsvfs->z_os;
 
 	if (zgd->zgd_db)
 		dmu_buf_rele(zgd->zgd_db, zgd);
@@ -1208,14 +1208,11 @@ zfs_get_done(zgd_t *zgd, int error)
 	 * allocate new vnode, we don't (ZGET_FLAG_WITHOUT_VNODE), and it is
 	 * attached after zfs_get_data() is finished (and immediately released).
 	 */
-#if 0
 	if (ZTOV(zp)) {
-		printf("vn_rele_async\n");
 		VN_RELE_ASYNC(ZTOV(zp), dsl_pool_vnrele_taskq(dmu_objset_pool(os)));
 	}
-#endif
 	if (error == 0 && zgd->zgd_bp)
-		zil_add_block(zgd->zgd_zilog, zgd->zgd_bp);
+		zil_lwb_add_block(zgd->zgd_lwb, zgd->zgd_bp);
 
 	kmem_free(zgd, sizeof (zgd_t));
 }
@@ -1228,8 +1225,8 @@ static int zil_fault_io = 0;
  * Get data to generate a TX_WRITE intent log record.
  */
 int
-zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
-			 znode_t *zp, rl_t *rl)
+zfs_get_data(void *arg, lr_write_t *lr, char *buf, 	struct lwb *lwb,
+	zio_t *zio, znode_t *zp, rl_t *rl)
 {
 	zfsvfs_t *zfsvfs = arg;
 	objset_t *os = zfsvfs->z_os;
@@ -1240,10 +1237,10 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
 	zgd_t *zgd;
 	int error = 0;
 
-	ASSERT(zio != NULL);
-	ASSERT(size != 0);
+	ASSERT3P(lwb, !=, NULL);
+	ASSERT3P(zio, !=, NULL);
+	ASSERT3U(size, !=, 0);
 
-#ifndef __APPLE__
 	/*
 	 * Nothing to do if the file has been removed
 	 */
@@ -1258,12 +1255,10 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
 		    dsl_pool_vnrele_taskq(dmu_objset_pool(os)));
 		return (SET_ERROR(ENOENT));
 	}
-#endif
 
 	zgd = (zgd_t *)kmem_zalloc(sizeof (zgd_t), KM_SLEEP);
-	zgd->zgd_zilog = zfsvfs->z_log;
+	zgd->zgd_lwb = lwb;
 	zgd->zgd_private = zp;
-	zgd->zgd_rl = rl;
 
 	/*
 	 * Write records come in two flavors: immediate and indirect.
@@ -1274,9 +1269,7 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
 	 */
 	if (buf != NULL) { /* immediate write */
 
-#ifndef __APPLE__
 		zgd->zgd_rl = zfs_range_lock(zp, offset, size, RL_READER);
-#endif
 
 		/* test for truncation needs to be done while range locked */
 		if (offset >= zp->z_size) {
@@ -1289,7 +1282,7 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
 	} else { /* indirect write */
 		/*
 		 * Have to lock the whole block to ensure when it's
-		 * written out and it's checksum is being calculated
+		 * written out and its checksum is being calculated
 		 * that no one can change the data. We need to re-check
 		 * blocksize after we get the lock in case it's changed!
 		 */
@@ -1298,10 +1291,8 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
 			size = zp->z_blksz;
 			blkoff = ISP2(size) ? P2PHASE(offset, size) : offset;
 			offset -= blkoff;
-#ifndef __APPLE__
 			zgd->zgd_rl = zfs_range_lock(zp, offset, size,
 			    RL_READER);
-#endif
 			if (zp->z_blksz == size)
 				break;
 			offset += blkoff;
@@ -1344,6 +1335,18 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, zio_t *zio,
 
 			if (error == EALREADY) {
 				lr->lr_common.lrc_txtype = TX_WRITE2;
+				/*
+				 * TX_WRITE2 relies on the data previously
+				 * written by the TX_WRITE that caused
+				 * EALREADY.  We zero out the BP because
+				 * it is the old, currently-on-disk BP,
+				 * so there's no need to zio_flush() its
+				 * vdevs (flushing would needlesly hurt
+				 * performance, and doesn't work on
+				 * indirect vdevs).
+				 */
+				zgd->zgd_bp = NULL;
+				BP_ZERO(bp);
 				error = 0;
 			}
 		}
