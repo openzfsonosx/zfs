@@ -395,14 +395,9 @@ zfs_vnop_close(struct vnop_close_args *ap)
 {
 	int count = 1;
 	int offset = 0;
-	int error;
 	DECLARE_CRED_AND_CONTEXT(ap);
 
-	error = zfs_close(ap->a_vp, ap->a_fflag, count, offset, cr, ct);
-
-	if (!error) vnode_recycle(ap->a_vp);
-
-	return error;
+	return (zfs_close(ap->a_vp, ap->a_fflag, count, offset, cr, ct));
 }
 
 int
@@ -2846,7 +2841,6 @@ zfs_vnop_inactive(struct vnop_inactive_args *ap)
 
 	/* We can call it directly, huzzah! */
 	zfs_inactive(vp, cr, NULL);
-	vnode_recycle(vp);
 
 	/* dprintf("-vnop_inactive\n"); */
 	return (0);
@@ -2937,7 +2931,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 
 #ifdef _KERNEL
-//	atomic_inc_64(&vnop_num_reclaims);
+	atomic_inc_64(&vnop_num_reclaims);
 #endif
 
   out:
@@ -3713,7 +3707,6 @@ out:
 	if (xdvp)
 		vnode_put(xdvp);
 
-#if 0
 	/*
 	 * If the lookup is NS_OPEN, they are accessing "..namedfork/rsrc"
 	 * to which we should return 0 with empty vp to empty file.
@@ -3730,7 +3723,6 @@ out:
 			vnode_put(xdvp);
 		}
 	}
-#endif
 
 	ZFS_EXIT(zfsvfs);
 	if (error) dprintf("%s vp %p: error %d\n", __func__, ap->a_vp, error);
