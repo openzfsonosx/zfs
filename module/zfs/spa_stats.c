@@ -21,6 +21,7 @@
 
 #include <sys/zfs_context.h>
 #include <sys/spa_impl.h>
+#include <sys/vdev_impl.h>
 
 /*
  * Keeps stats on last N reads per spa_t, disabled by default.
@@ -36,6 +37,11 @@ int zfs_read_history_hits = 0;
  * Keeps stats on the last N txgs, disabled by default.
  */
 int zfs_txg_history = 0;
+
+/*
+ * Keeps stats on the last N MMP updates, disabled by default.
+ */
+int zfs_multihost_history = 0;
 
 /*
  * ==========================================================================
@@ -655,6 +661,198 @@ spa_io_history_destroy(spa_t *spa)
 	mutex_destroy(&ssh->lock);
 }
 
+/*
+ * ==========================================================================
+ * SPA MMP History Routines
+ * ==========================================================================
+ */
+
+/*
+ * MMP statistics - Information exported regarding each MMP update
+ */
+
+typedef struct spa_mmp_history {
+	uint64_t	txg;		/* txg of last sync */
+	uint64_t	timestamp;	/* UTC time of of last sync */
+	uint64_t	mmp_delay;	/* nanosec since last MMP write */
+	uint64_t	vdev_guid;	/* unique ID of leaf vdev */
+	char		*vdev_path;
+	uint64_t	vdev_label;	/* vdev label */
+	list_node_t	smh_link;
+} spa_mmp_history_t;
+
+static int
+spa_mmp_history_headers(char *buf, size_t size)
+{
+	(void) snprintf(buf, size, "%-10s %-10s %-12s %-24s %-10s %s\n",
+	    "txg", "timestamp", "mmp_delay", "vdev_guid", "vdev_label",
+	    "vdev_path");
+	return (0);
+}
+
+static int
+spa_mmp_history_data(char *buf, size_t size, void *data)
+{
+	spa_mmp_history_t *smh = (spa_mmp_history_t *)data;
+
+	(void) snprintf(buf, size, "%-10llu %-10llu %-12llu %-24llu %-10llu "
+	    "%s\n",
+	    (u_longlong_t)smh->txg, (u_longlong_t)smh->timestamp,
+	    (u_longlong_t)smh->mmp_delay, (u_longlong_t)smh->vdev_guid,
+	    (u_longlong_t)smh->vdev_label,
+	    (smh->vdev_path ? smh->vdev_path : "-"));
+
+	return (0);
+}
+
+/*
+ * Calculate the address for the next spa_stats_history_t entry.  The
+ * ssh->lock will be held until ksp->ks_ndata entries are processed.
+ */
+static void *
+spa_mmp_history_addr(kstat_t *ksp, off_t n)
+{
+	spa_t *spa = ksp->ks_private;
+	spa_stats_history_t *ssh = &spa->spa_stats.mmp_history;
+
+	ASSERT(MUTEX_HELD(&ssh->lock));
+
+	if (n == 0)
+		ssh->_private = list_tail(&ssh->list);
+	else if (ssh->_private)
+		ssh->_private = list_prev(&ssh->list, ssh->_private);
+
+	return (ssh->_private);
+}
+
+/*
+ * When the kstat is written discard all spa_mmp_history_t entries.  The
+ * ssh->lock will be held until ksp->ks_ndata entries are processed.
+ */
+static int
+spa_mmp_history_update(kstat_t *ksp, int rw)
+{
+	spa_t *spa = ksp->ks_private;
+	spa_stats_history_t *ssh = &spa->spa_stats.mmp_history;
+
+	ASSERT(MUTEX_HELD(&ssh->lock));
+
+	if (rw == KSTAT_WRITE) {
+		spa_mmp_history_t *smh;
+
+		while ((smh = list_remove_head(&ssh->list))) {
+			ssh->size--;
+			if (smh->vdev_path)
+				strfree(smh->vdev_path);
+			kmem_free(smh, sizeof (spa_mmp_history_t));
+		}
+
+		ASSERT3U(ssh->size, ==, 0);
+	}
+
+	ksp->ks_ndata = ssh->size;
+	ksp->ks_data_size = ssh->size * sizeof (spa_mmp_history_t);
+
+	return (0);
+}
+
+static void
+spa_mmp_history_init(spa_t *spa)
+{
+	spa_stats_history_t *ssh = &spa->spa_stats.mmp_history;
+	char name[KSTAT_STRLEN];
+	kstat_t *ksp;
+
+	mutex_init(&ssh->lock, NULL, MUTEX_DEFAULT, NULL);
+	list_create(&ssh->list, sizeof (spa_mmp_history_t),
+	    offsetof(spa_mmp_history_t, smh_link));
+
+	ssh->count = 0;
+	ssh->size = 0;
+	ssh->_private = NULL;
+
+	(void) snprintf(name, KSTAT_STRLEN, "zfs/%s", spa_name(spa));
+
+	ksp = kstat_create(name, 0, "multihost", "misc",
+	    KSTAT_TYPE_RAW, 0, KSTAT_FLAG_VIRTUAL);
+	ssh->kstat = ksp;
+
+	if (ksp) {
+		ksp->ks_lock = &ssh->lock;
+		ksp->ks_data = NULL;
+		ksp->ks_private = spa;
+		ksp->ks_update = spa_mmp_history_update;
+		kstat_set_raw_ops(ksp, spa_mmp_history_headers,
+		    spa_mmp_history_data, spa_mmp_history_addr);
+		kstat_install(ksp);
+	}
+}
+
+static void
+spa_mmp_history_destroy(spa_t *spa)
+{
+	spa_stats_history_t *ssh = &spa->spa_stats.mmp_history;
+	spa_mmp_history_t *smh;
+	kstat_t *ksp;
+
+	ksp = ssh->kstat;
+	if (ksp)
+		kstat_delete(ksp);
+
+	mutex_enter(&ssh->lock);
+	while ((smh = list_remove_head(&ssh->list))) {
+		ssh->size--;
+		if (smh->vdev_path)
+			strfree(smh->vdev_path);
+		kmem_free(smh, sizeof (spa_mmp_history_t));
+	}
+
+	ASSERT3U(ssh->size, ==, 0);
+	list_destroy(&ssh->list);
+	mutex_exit(&ssh->lock);
+
+	mutex_destroy(&ssh->lock);
+}
+
+/*
+ * Add a new MMP update to historical record.
+ */
+void
+spa_mmp_history_add(uint64_t txg, uint64_t timestamp, uint64_t mmp_delay,
+    vdev_t *vd, int label)
+{
+	spa_t *spa = vd->vdev_spa;
+	spa_stats_history_t *ssh = &spa->spa_stats.mmp_history;
+	spa_mmp_history_t *smh, *rm;
+
+	if (zfs_multihost_history == 0 && ssh->size == 0)
+		return;
+
+	smh = kmem_zalloc(sizeof (spa_mmp_history_t), KM_SLEEP);
+	smh->txg = txg;
+	smh->timestamp = timestamp;
+	smh->mmp_delay = mmp_delay;
+	smh->vdev_guid = vd->vdev_guid;
+	if (vd->vdev_path)
+		smh->vdev_path = spa_strdup(vd->vdev_path);
+	smh->vdev_label = label;
+
+	mutex_enter(&ssh->lock);
+
+	list_insert_head(&ssh->list, smh);
+	ssh->size++;
+
+	while (ssh->size > zfs_multihost_history) {
+		ssh->size--;
+		rm = list_remove_tail(&ssh->list);
+		if (rm->vdev_path)
+			strfree(rm->vdev_path);
+		kmem_free(rm, sizeof (spa_mmp_history_t));
+	}
+
+	mutex_exit(&ssh->lock);
+}
+
 void
 spa_stats_init(spa_t *spa)
 {
@@ -662,6 +860,7 @@ spa_stats_init(spa_t *spa)
 	spa_txg_history_init(spa);
 	spa_tx_assign_init(spa);
 	spa_io_history_init(spa);
+	spa_mmp_history_init(spa);
 }
 
 void
@@ -671,4 +870,5 @@ spa_stats_destroy(spa_t *spa)
 	spa_txg_history_destroy(spa);
 	spa_read_history_destroy(spa);
 	spa_io_history_destroy(spa);
+	spa_mmp_history_destroy(spa);
 }

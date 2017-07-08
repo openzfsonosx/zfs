@@ -110,6 +110,7 @@ zfs_SOURCES = \
 	lzjb.c \
 	lz4.c \
 	metaslab.c \
+	mmp.c \
 	multilist.c \
 	range_tree.c \
 	refcount.c \

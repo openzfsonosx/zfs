@@ -371,10 +371,12 @@ struct spa {
 	spa_stats_t	spa_stats;		/* assorted spa statistics */
 	spa_keystore_t	spa_keystore;		/* loaded crypto keys */
 	hrtime_t	spa_ccw_fail_time;	/* Conf cache write fail time */
-	taskq_t		*spa_zvol_taskq;	/* Taskq for minor managment */
+	taskq_t		*spa_zvol_taskq;	/* Taskq for minor management */
 #ifdef __APPLE__
 	spa_iokit_t	*spa_iokit_proxy;	/* IOKit pool proxy */
 #endif
+	uint64_t	spa_multihost;		/* multihost aware (mmp) */
+	mmp_thread_t	spa_mmp;		/* multihost mmp thread */
 
 	/*
 	 * spa_refcount & spa_config_lock must be the last elements
