@@ -131,6 +131,18 @@ zfs_dbgmsg_fini(void)
  * When used with libzpool, monitor with:
  * dtrace -qn 'zfs$pid::zfs_dbgmsg:probe1{printf("%s\n", copyinstr(arg1))}'
  */
+
+#ifdef __APPLE__
+/*
+ * MacOS X's dtrace doesn't handle the PROBEs, so
+ * we have a utility function that we can watch with
+ * sudo dtrace -qn 'zfs_dbgmsg_mac:entry{printf("%s\n", stringof(arg0));}'
+ */
+
+noinline char *zfs_dbgmsg_mac(char *str) __attribute__((noinline)) __attribute__((optnone));
+
+#endif
+
 void
 zfs_dbgmsg(const char *fmt, ...)
 {
@@ -154,6 +166,10 @@ zfs_dbgmsg(const char *fmt, ...)
 	va_end(adx);
 
 	DTRACE_PROBE1(zfs__dbgmsg, char *, zdm->zdm_msg);
+
+#ifdef __APPLE__
+	(void) zfs_dbgmsg_mac(zdm->zdm_msg);
+#endif
 
 	mutex_enter(&zfs_dbgmsgs_lock);
 	list_insert_tail(&zfs_dbgmsgs, zdm);
@@ -179,4 +195,14 @@ zfs_dbgmsg_print(const char *tag)
 		(void) printf("%s\n", zdm->zdm_msg);
 	mutex_exit(&zfs_dbgmsgs_lock);
 }
+
+#ifdef __APPLE__
+noinline char *
+zfs_dbgmsg_mac(char *str)
+	__attribute__((noinline))
+	__attribute((optnone))
+{
+	return(str);
+}
+#endif
 #endif
