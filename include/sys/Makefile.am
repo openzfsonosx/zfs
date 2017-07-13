@@ -97,6 +97,7 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/ldi_osx.h \
 	$(top_srcdir)/include/sys/zfs_ioctl.h \
 	$(top_srcdir)/include/sys/zfs_boot.h \
+	$(top_srcdir)/include/sys/zfs_dtrace.h \
 	$(top_srcdir)/include/sys/zfs_onexit.h \
 	${top_srcdir}/include/sys/zpl.h \
 	$(top_srcdir)/include/sys/zvol.h \
@@ -120,3 +121,8 @@ if CONFIG_KERNEL
 kerneldir =
 kernel_HEADERS =
 endif
+
+BUILT_SOURCES=zfs_dtrace_gen.h
+
+zfs_dtrace_gen.h: zfs_dtrace.d
+	${DTRACE} -h -o zfs_dtrace_gen.h -s zfs_dtrace.d

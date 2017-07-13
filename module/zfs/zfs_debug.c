@@ -24,6 +24,7 @@
  */
 
 #include <sys/zfs_context.h>
+#include <sys/zfs_dtrace.h>
 
 #if !defined(_KERNEL) || !defined(__linux__)
 list_t zfs_dbgmsgs;
