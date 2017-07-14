@@ -43,7 +43,7 @@
 #include <sys/abd.h>
 
 
-#if defined (__APPLE__) && defined (KERNEL)
+#if defined (__APPLE__) && defined (_KERNEL)
 #include <sys/zfs_rlock.h>
 #include <sys/zfs_znode.h>
 extern int    zfs_znode_getvnode( znode_t *zp, zfsvfs_t *zfsvfs);
@@ -1104,7 +1104,7 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 	uint64_t txg = lrc->lrc_txg;
 	uint64_t reclen = lrc->lrc_reclen;
 	uint64_t dlen = 0;
-#if defined (__APPLE__) && defined (KERNEL)
+#if defined (__APPLE__) && defined (_KERNEL)
 	znode_t *zp = NULL;
 	rl_t *rl = NULL;
 #endif
@@ -1162,7 +1162,7 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 			}
 
 
-#if defined (__APPLE__) && defined (KERNEL)
+#if defined (__APPLE__) && defined (_KERNEL)
 			/* to avoid deadlock, grab necessary range lock before hold the txg */
 			uint64_t off = lrw->lr_offset;
 			int len = lrw->lr_length; /* this range never exceeds max blk size,
@@ -1214,7 +1214,7 @@ zil_lwb_commit(zilog_t *zilog, itx_t *itx, lwb_t *lwb)
 				/* if error is not 0, the zfs_zget already failed,
 				 * no need to proceed */
 
-#if defined (__APPLE__) && defined (KERNEL)
+#if defined (__APPLE__) && defined (_KERNEL)
 				error = zilog->zl_get_data(
 					itx->itx_private, lrw, dbuf, lwb->lwb_zio, zp, rl);
 #else
