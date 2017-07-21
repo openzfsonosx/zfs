@@ -695,9 +695,13 @@ vdev_disk_io_intr(ldi_buf_t *bp)
 		zio->io_error = SET_ERROR(EIO);
 
 	if (zio->io_type == ZIO_TYPE_READ) {
-		abd_return_buf_copy(zio->io_abd, bp->b_un.b_addr, zio->io_size);
+		VERIFY3S(zio->io_abd->abd_size,>=,zio->io_size);
+		abd_return_buf_copy_off(zio->io_abd, bp->b_un.b_addr,
+		    0, zio->io_size, zio->io_abd->abd_size);
 	} else {
-		abd_return_buf(zio->io_abd, bp->b_un.b_addr, zio->io_size);
+		VERIFY3S(zio->io_abd->abd_size,>=,zio->io_size);
+		abd_return_buf_off(zio->io_abd, bp->b_un.b_addr,
+		    0, zio->io_size, zio->io_abd->abd_size);
 	}
 
 	kmem_free(vb, sizeof (vdev_buf_t));
@@ -843,11 +847,13 @@ vdev_disk_io_start(zio_t *zio)
 	bp->b_bcount = zio->io_size;
 
 	if (zio->io_type == ZIO_TYPE_READ) {
+		ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
 		bp->b_un.b_addr =
-		    abd_borrow_buf(zio->io_abd, zio->io_size);
+		    abd_borrow_buf(zio->io_abd, zio->io_abd->abd_size);
 	} else {
+		ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
 		bp->b_un.b_addr =
-		    abd_borrow_buf_copy(zio->io_abd, zio->io_size);
+		    abd_borrow_buf_copy(zio->io_abd, zio->io_abd->abd_size);
 	}
 
 	bp->b_lblkno = lbtodb(zio->io_offset);
