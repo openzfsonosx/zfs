@@ -54,7 +54,8 @@
  * ==========================================================================
  */
 const char *zio_type_name[ZIO_TYPES] = {
-	"z_null", "z_rd", "z_wr", "z_fr", "z_cl", "z_ioctl"
+	"zio_null", "zio_read", "zio_write", "zio_free", "zio_claim",
+	"z_ioctl"
 };
 
 boolean_t zio_dva_throttle_enabled = B_TRUE;
