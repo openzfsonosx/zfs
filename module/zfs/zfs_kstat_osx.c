@@ -177,6 +177,8 @@ osx_kstat_t osx_kstat = {
 	{"zio_dva_throttle_enabled",KSTAT_DATA_UINT64  },
 
 	{"zfs_vdev_file_size_mismatch_cnt",KSTAT_DATA_UINT64  },
+
+	{"zvol_disable_unmap",KSTAT_DATA_UINT64  },
 };
 
 
@@ -378,6 +380,9 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		zio_dva_throttle_enabled =
 		    (boolean_t) ks->zio_dva_throttle_enabled.value.ui64;
+
+		zvol_disable_unmap =
+		    (boolean_t) ks->zvol_disable_unmap.value.ui64;
 	} else {
 
 		/* kstat READ */
@@ -565,6 +570,8 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->zio_dva_throttle_enabled.value.ui64 = (uint64_t) zio_dva_throttle_enabled;
 
 		ks->zfs_vdev_file_size_mismatch_cnt.value.ui64 = zfs_vdev_file_size_mismatch_cnt;
+
+		ks->zvol_disable_unmap.value.ui64 = (uint64_t) zvol_disable_unmap;
 	}
 
 	return 0;

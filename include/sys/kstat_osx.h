@@ -146,6 +146,8 @@ typedef struct osx_kstat {
 	kstat_named_t zio_dva_throttle_enabled;
 
 	kstat_named_t zfs_vdev_file_size_mismatch_cnt;
+
+	kstat_named_t zvol_disable_unmap;
 } osx_kstat_t;
 
 
@@ -245,6 +247,8 @@ extern uint64_t zfs_vdev_queue_depth_pct;
 extern boolean_t zio_dva_throttle_enabled;
 
 extern uint64_t zfs_vdev_file_size_mismatch_cnt;
+
+extern boolean_t zvol_disable_unmap;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);
