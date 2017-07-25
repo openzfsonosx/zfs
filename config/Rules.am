@@ -1,6 +1,6 @@
 DEFAULT_INCLUDES = -include ${top_builddir}/zfs_config.h
 
-AM_LIBTOOLFLAGS = --silent
+AM_LIBTOOLFLAGS = --silent --tag CC
 AM_CFLAGS  = -Wall -Wstrict-prototypes
 AM_CFLAGS += -fno-strict-aliasing ${NO_UNUSED_BUT_SET_VARIABLE} ${DEBUG_CFLAGS} -Wno-tautological-constant-out-of-range-compare
 AM_CFLAGS += -D_GNU_SOURCE -D__EXTENSIONS__ -D_REENTRANT
