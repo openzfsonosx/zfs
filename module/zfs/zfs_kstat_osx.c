@@ -179,6 +179,9 @@ osx_kstat_t osx_kstat = {
 	{"zfs_vdev_file_size_mismatch_cnt",KSTAT_DATA_UINT64  },
 
 	{"zvol_disable_unmap",KSTAT_DATA_UINT64  },
+
+	{"zfs_scan_min_time_ms",KSTAT_DATA_UINT64  },
+	{"zfs_resilver_min_time_ms",KSTAT_DATA_UINT64  },
 };
 
 
@@ -383,7 +386,13 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		zvol_disable_unmap =
 		    (boolean_t) ks->zvol_disable_unmap.value.ui64;
-	} else {
+
+		zfs_scan_min_time_ms =
+		    (int) ks->zfs_scan_min_time_ms.value.ui64;
+
+		zfs_resilver_min_time_ms =
+		    (int) ks->zfs_resilver_min_time_ms.value.ui64;
+} else {
 
 		/* kstat READ */
 		ks->spa_version.value.ui64                   = SPA_VERSION;
@@ -572,6 +581,9 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		ks->zfs_vdev_file_size_mismatch_cnt.value.ui64 = zfs_vdev_file_size_mismatch_cnt;
 
 		ks->zvol_disable_unmap.value.ui64 = (uint64_t) zvol_disable_unmap;
+
+		ks->zfs_scan_min_time_ms.value.ui64 = (uint64_t) zfs_scan_min_time_ms;
+		ks->zfs_resilver_min_time_ms.value.ui64 = (uint64_t) zfs_resilver_min_time_ms;
 	}
 
 	return 0;
