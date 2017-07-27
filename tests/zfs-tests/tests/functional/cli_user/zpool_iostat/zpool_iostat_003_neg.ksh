@@ -51,7 +51,7 @@ else
 fi
 
 set -A args "" "-?" "-f" "nonexistpool" "$TESTPOOL/$TESTFS" \
-	"$testpool 1.23" "$testpool 0" "$testpool -1" "$testpool 1 0" \
+	"$testpool 0" "$testpool -1" "$testpool 1 0" \
 	"$testpool 0 0"
 
 log_assert "Executing 'zpool iostat' with bad options fails"

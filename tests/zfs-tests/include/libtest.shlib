@@ -1188,7 +1188,7 @@ function setup_nfs_server
 			while [[ timeout -ne 0 && $($SHARE) == "^$dummy" ]]
 			do
 				log_must $SLEEP 1
-	
+
 				((timeout -= 1))
 			done
 		else
@@ -1200,18 +1200,18 @@ function setup_nfs_server
 			while [[ timeout -ne 0 && $($SVCS -Ho STA $nfs_fmri) == *'*' ]]
 			do
 				log_must $SLEEP 1
-	
+
 				((timeout -= 1))
 			done
 		fi
-	
+
 		if [[ -n "$LINUX" ]]; then
 			log_must $UNSHARE -u "*:$dummy"
 		else
 			log_must $UNSHARE $dummy
 		fi
 		log_must $RM -rf $dummy
-	
+
 		log_note "Current NFS status: '$($SVCS -Ho STA,FMRI $nfs_fmri)'"
 	fi
 }
@@ -1334,8 +1334,9 @@ function destroy_pool #pool
 				/sbin/umount /private/var/tmp/testdir*
 				$ZFS umount -af
 				$ZPOOL destroy -f ${opts} $pool
+				echo "Moving on"
 			done
-			
+
 
 			[[ -d $mtpt ]] && \
 				log_must $RM -rf $mtpt
