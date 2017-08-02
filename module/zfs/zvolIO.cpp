@@ -480,7 +480,7 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 
 	atomic_dec_64(&spa_exporting_vdevs);
 
-	dprintf("Open %s (openflags %x)\n", (ret ? "done" : "failed"),
+	dprintf("Open %s (openflags %llx)\n", (ret ? "done" : "failed"),
 		zv->zv_openflags);
 
 	if (ret == false) {

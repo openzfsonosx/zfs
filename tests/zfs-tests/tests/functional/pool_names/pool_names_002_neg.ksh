@@ -53,7 +53,7 @@ POOLNAME=""
 function cleanup
 {
 	destroy_pool $POOLNAME
-
+	$ZPOOL export -a
 	if [[ -d $TESTDIR ]]; then
 		log_must $RM -rf $TESTDIR
 	fi

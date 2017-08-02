@@ -56,7 +56,7 @@ EOF
 	slice_nr=1
 elif [[ -n "$OSX" ]]; then
     slice_part=s
-    slice_nr=2
+    slice_nr=1
 fi
 
 default_setup $DISK${slice_part}${slice_nr}

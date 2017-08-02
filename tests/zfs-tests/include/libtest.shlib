@@ -828,6 +828,7 @@ function partition_disk	#<slice_size> <whole_disk_name>	<total_slices>
         while ((i < $total_slices)); do
             set_partition $i "" $slice_size $disk_name
             ((i = i+1))
+            $SLEEP 0.5
         done
     else
         zero_partitions $disk_name
