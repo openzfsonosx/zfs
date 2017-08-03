@@ -143,25 +143,6 @@ snapentry_compare(const void *a, const void *b)
 		return (0);
 }
 
-#ifdef sun
-vnodeops_t *zfsctl_ops_root;
-vnodeops_t *zfsctl_ops_snapdir;
-vnodeops_t *zfsctl_ops_snapshot;
-vnodeops_t *zfsctl_ops_shares;
-vnodeops_t *zfsctl_ops_shares_dir;
-
-static const fs_operation_def_t zfsctl_tops_root[];
-static const fs_operation_def_t zfsctl_tops_snapdir[];
-static const fs_operation_def_t zfsctl_tops_snapshot[];
-static const fs_operation_def_t zfsctl_tops_shares[];
-#endif	/* !sun */
-#ifdef __FreeBSD__
-static struct vop_vector zfsctl_ops_root;
-static struct vop_vector zfsctl_ops_snapdir;
-static struct vop_vector zfsctl_ops_snapshot;
-static struct vop_vector zfsctl_ops_shares;
-static struct vop_vector zfsctl_ops_shares_dir;
-#endif	/* !sun */
 #ifdef __APPLE__
 struct vnodeopv_desc zfsctl_ops_root;
 struct vnodeopv_desc zfsctl_ops_snapdir;
@@ -173,16 +154,6 @@ static struct vnode *zfsctl_mknode_snapdir(struct vnode *);
 static struct vnode *zfsctl_snapshot_mknode(struct vnode *, uint64_t objset);
 static int zfsctl_unmount_snap(zfs_snapentry_t *, int, cred_t *);
 
-#ifdef sun
-static gfs_opsvec_t zfsctl_opsvec[] = {
-	{ ".zfs", zfsctl_tops_root, &zfsctl_ops_root },
-	{ ".zfs/snapshot", zfsctl_tops_snapdir, &zfsctl_ops_snapdir },
-	{ ".zfs/snapshot/vnode", zfsctl_tops_snapshot, &zfsctl_ops_snapshot },
-    { ".zfs/shares", zfsctl_tops_shares, &zfsctl_ops_shares_dir },
-	{ ".zfs/shares/vnode", zfsctl_tops_shares, &zfsctl_ops_shares },
-	{ NULL }
-};
-#endif	/* sun */
 
 /*
  * Root directory elements.  We only have two entries
@@ -503,10 +474,8 @@ zfsctl_common_getattr(struct vnode *vp, vattr_t *vap)
 {
 	timestruc_t	now;
 
-    dprintf("zfsctl: +getattr: %p iocount %d usecount %d\n",
-            vp,
-            ((uint32_t *)vp)[23],
-            ((uint32_t *)vp)[22]);
+    dprintf("zfsctl: +getattr: %p\n",
+		vp);
 
 #ifdef __APPLE__
     VATTR_SET_SUPPORTED(vap, va_mode);
@@ -534,8 +503,8 @@ zfsctl_common_getattr(struct vnode *vp, vattr_t *vap)
     //	vap->va_blksize = 0;
     vap->va_data_alloc = 512;
     vap->va_total_alloc = 512;
-    vap->va_data_size = 0;
-    vap->va_total_size = 0;
+    vap->va_data_size = 2; // . + ..
+    vap->va_total_size = 2;
 	vap->va_nblocks = 0;
 	//vap->va_seq = 0;
 	vap->va_gen = 0;
@@ -560,75 +529,6 @@ zfsctl_common_getattr(struct vnode *vp, vattr_t *vap)
     dprintf("zfsctl: -getattr\n");
 }
 
-#ifndef __APPLE__
-/*ARGSUSED*/
-static int
-zfsctl_common_fid(ap)
-	struct vnop_fid_args /* {
-		struct vnode *a_vp;
-		struct fid *a_fid;
-	} */ *ap;
-{
-	struct vnode		*vp = ap->a_vp;
-	fid_t		*fidp = (void *)ap->a_fid;
-	zfsvfs_t	*zfsvfs = vfs_fsprivate(vnode_mount(vp));
-	zfsctl_node_t	*zcp = vnode_fsnode(vp);
-	uint64_t	object = zcp->zc_id;
-	zfid_short_t	*zfid;
-	int		i;
-
-	ZFS_ENTER(zfsvfs);
-
-	fidp->fid_len = SHORT_FID_LEN;
-
-	zfid = (zfid_short_t *)fidp;
-
-	zfid->zf_len = SHORT_FID_LEN;
-
-	for (i = 0; i < sizeof (zfid->zf_object); i++)
-		zfid->zf_object[i] = (uint8_t)(object >> (8 * i));
-
-	/* .zfs znodes always have a generation number of 0 */
-	for (i = 0; i < sizeof (zfid->zf_gen); i++)
-		zfid->zf_gen[i] = 0;
-
-	ZFS_EXIT(zfsvfs);
-	return (0);
-}
-#endif
-
-/*ARGSUSED*/
-#ifndef __APPLE__
-static int
-zfsctl_shares_fid(ap)
-	struct vop_fid_args /* {
-		struct vnode *a_vp;
-		struct fid *a_fid;
-	} */ *ap;
-{
-	struct vnode		*vp = ap->a_vp;
-	fid_t		*fidp = (void *)ap->a_fid;
-	zfsvfs_t	*zfsvfs = vp->v_vfsp->vfs_data;
-	znode_t		*dzp;
-	int		error;
-
-	ZFS_ENTER(zfsvfs);
-
-	if (zfsvfs->z_shares_dir == 0) {
-		ZFS_EXIT(zfsvfs);
-		return (ENOTSUP);
-	}
-
-	if ((error = zfs_zget(zfsvfs, zfsvfs->z_shares_dir, &dzp)) == 0) {
-		error = VOP_FID(ZTOV(dzp), fidp);
-		VN_RELE(ZTOV(dzp));
-	}
-
-	ZFS_EXIT(zfsvfs);
-	return (error);
-}
-#endif
-
 /*
  * Gets the full dataset name that corresponds to the given snapshot name
  * Example:
@@ -644,7 +544,7 @@ zfsctl_common_reclaim(ap)
 	struct vnode *vp = ap->a_vp;
 	gfs_file_t *fp = vnode_fsnode(vp);
 
-    dprintf("zfsctl: +reclaim vp %p mountedon %d\n", vp,
+    dprintf("zfsctl: +reclaim vp %p mountedon %p\n", vp,
             vnode_mountedhere(vp));
 
 	/*
@@ -670,11 +570,6 @@ zfsctl_common_reclaim(ap)
     vnode_removefsref(vp); /* ADDREF from vnode_create */
     vnode_clearfsnode(vp); /* vp->v_data = NULL */
 
-#else
-	vnode_destroy_vobject(vp);
-	VI_LOCK(vp);
-	vp->v_data = NULL;
-	VI_UNLOCK(vp);
 #endif
 
     dprintf("zfsctl: -reclaim vp %p\n", vp);
@@ -755,11 +650,6 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
 
 	if (strcmp(nm, "..") == 0) {
         err = VFS_ROOT(vnode_mount(dvp), LK_EXCLUSIVE, vpp);
-#ifdef __FreeBSD__
-		if (err == 0) {
-			VOP_UNLOCK(*vpp, 0);
-        }
-#endif
 	} else {
 		err = gfs_vop_lookup(dvp, nm, vpp, pnp, flags, rdir,
 		    cr, ct, direntflags, realpnp);
@@ -772,40 +662,6 @@ zfsctl_root_lookup(struct vnode *dvp, char *nm, struct vnode **vpp, pathname_t *
 
 
 
-#ifdef sun
-static int
-zfsctl_pathconf(struct vnode *vp, int cmd, ulong_t *valp, cred_t *cr,
-    caller_context_t *ct)
-{
-	/*
-	 * We only care about ACL_ENABLED so that libsec can
-	 * display ACL correctly and not default to POSIX draft.
-	 */
-	if (cmd == _PC_ACL_ENABLED) {
-		*valp = _ACL_ACE_ENABLED;
-		return (0);
-	}
-
-	return (fs_pathconf(vp, cmd, valp, cr, ct));
-}
-#endif	/* sun */
-
-#ifdef sun
-static const fs_operation_def_t zfsctl_tops_root[] = {
-	{ VOPNAME_OPEN,		{ .vop_open = zfsctl_common_open }	},
-	{ VOPNAME_CLOSE,	{ .vop_close = zfsctl_common_close }	},
-	{ VOPNAME_IOCTL,	{ .error = fs_inval }			},
-	{ VOPNAME_GETATTR,	{ .vop_getattr = zfsctl_root_getattr }	},
-	{ VOPNAME_ACCESS,	{ .vop_access = zfsctl_common_access }	},
-	{ VOPNAME_READDIR,	{ .vop_readdir = gfs_vop_readdir } 	},
-	{ VOPNAME_LOOKUP,	{ .vop_lookup = zfsctl_root_lookup }	},
-	{ VOPNAME_SEEK,		{ .vop_seek = fs_seek }			},
-	{ VOPNAME_INACTIVE,	{ .vop_inactive = gfs_vop_inactive }	},
-	{ VOPNAME_PATHCONF,	{ .vop_pathconf = zfsctl_pathconf }	},
-	{ VOPNAME_FID,		{ .vop_fid = zfsctl_common_fid	}	},
-	{ NULL }
-};
-#endif	/* sun */
 
 /*
  * Special case the handling of "..".
@@ -848,24 +704,6 @@ zfsctl_freebsd_root_lookup(struct vnop_lookup_args *ap)
 	return (err);
 }
 
-#ifdef __FreeBSD__
-static struct vop_vector zfsctl_ops_root = {
-	.vop_default =	&default_vnodeops,
-	.vop_open =	zfsctl_common_open,
-	.vop_close =	zfsctl_common_close,
-	.vop_ioctl =	VOP_EINVAL,
-	.vop_getattr =	zfsctl_root_getattr,
-	.vop_access =	zfsctl_common_access,
-	.vop_readdir =	gfs_vop_readdir,
-	.vop_lookup =	zfsctl_freebsd_root_lookup,
-	.vop_inactive =	gfs_vop_inactive,
-	.vop_reclaim =	zfsctl_common_reclaim,
-#ifdef TODO
-	.vop_pathconf =	zfsctl_pathconf,
-#endif
-	.vop_fid =	zfsctl_common_fid,
-};
-#endif
 
 #ifdef __APPLE__
 #define VOPFUNC int (*)(void *)
@@ -926,15 +764,6 @@ zfsctl_unmount_snap(zfs_snapentry_t *sep, int fflags, cred_t *cr)
 	if ((error = vn_vfswlock(svp)) != 0)
 		return (error);
 
-#ifdef sun
-	VN_HOLD(svp);
-	error = dounmount(vn_mountedvfs(svp), fflags, cr);
-	if (error) {
-		VN_RELE(svp);
-		return (error);
-	}
-#endif
-
 	/*
 	 * We can't use VN_RELE(), as that will try to invoke
 	 * zfsctl_snapdir_inactive(), which would cause us to destroy
@@ -953,197 +782,6 @@ zfsctl_unmount_snap(zfs_snapentry_t *sep, int fflags, cred_t *cr)
 	return (0);
 }
 
-#ifdef sun
-static void
-zfsctl_rename_snap(zfsctl_snapdir_t *sdp, zfs_snapentry_t *sep, const char *nm)
-{
-	avl_index_t where;
-	vfs_t *vfsp;
-	refstr_t *pathref;
-	char newpath[MAXNAMELEN];
-	char *tail;
-
-	ASSERT(MUTEX_HELD(&sdp->sd_lock));
-	ASSERT(sep != NULL);
-
-	vfsp = vnode_mount(sep->se_root);
-	ASSERT(vfsp != NULL);
-
-	vfs_lock_wait(vfsp);
-
-	/*
-	 * Change the name in the AVL tree.
-	 */
-	avl_remove(&sdp->sd_snaps, sep);
-	kmem_free(sep->se_name, strlen(sep->se_name) + 1);
-	sep->se_name = kmem_alloc(strlen(nm) + 1, KM_SLEEP);
-	(void) strcpy(sep->se_name, nm);
-	VERIFY(avl_find(&sdp->sd_snaps, sep, &where) == NULL);
-	avl_insert(&sdp->sd_snaps, sep, where);
-
-	/*
-	 * Change the current mountpoint info:
-	 * 	- update the tail of the mntpoint path
-	 *	- update the tail of the resource path
-	 */
-	pathref = vfs_getmntpoint(vfsp);
-	(void) strncpy(newpath, refstr_value(pathref), sizeof (newpath));
-	VERIFY((tail = strrchr(newpath, '/')) != NULL);
-	*(tail+1) = '\0';
-	ASSERT3U(strlen(newpath) + strlen(nm), <, sizeof (newpath));
-	(void) strcat(newpath, nm);
-	refstr_rele(pathref);
-	vfs_setmntpoint(vfsp, newpath, 0);
-
-	pathref = vfs_getresource(vfsp);
-	(void) strncpy(newpath, refstr_value(pathref), sizeof (newpath));
-	VERIFY((tail = strrchr(newpath, '@')) != NULL);
-	*(tail+1) = '\0';
-	ASSERT3U(strlen(newpath) + strlen(nm), <, sizeof (newpath));
-	(void) strcat(newpath, nm);
-	refstr_rele(pathref);
-	vfs_setresource(vfsp, newpath, 0);
-
-	vfs_unlock(vfsp);
-}
-#endif	/* sun */
-
-#ifdef sun
-/*ARGSUSED*/
-static int
-zfsctl_snapdir_rename(struct vnode *sdvp, char *snm, struct vnode *tdvp, char *tnm,
-    cred_t *cr, caller_context_t *ct, int flags)
-{
-	zfsctl_snapdir_t *sdp = vnode_fsnode(sdvp);
-	zfs_snapentry_t search, *sep;
-	zfsvfs_t *zfsvfs;
-	avl_index_t where;
-
-	char from[ZFS_MAX_DATASET_NAME_LEN], to[ZFS_MAX_DATASET_NAME_LEN];
-	char real[ZFS_MAX_DATASET_NAME_LEN];
-	int err;
-
-	zfsvfs = vfs_fsprivate(vnode_mount(sdvp));
-	ZFS_ENTER(zfsvfs);
-
-	if ((flags & FIGNORECASE) || zfsvfs->z_case == ZFS_CASE_INSENSITIVE) {
-		err = dmu_snapshot_realname(zfsvfs->z_os, snm, real,
-		    sizeof (real), NULL);
-		if (err == 0) {
-			snm = real;
-		} else if (err != ENOTSUP) {
-			ZFS_EXIT(zfsvfs);
-			return (err);
-		}
-	}
-
-	ZFS_EXIT(zfsvfs);
-
-	err = zfsctl_snapshot_zname(sdvp, snm, ZFS_MAX_DATASET_NAME_LEN, from);
-	if (!err)
-		err = zfsctl_snapshot_zname(tdvp, tnm, ZFS_MAX_DATASET_NAME_LEN, to);
-	if (!err)
-		err = zfs_secpolicy_rename_perms(from, to, cr);
-	if (err)
-		return (err);
-
-	/*
-	 * Cannot move snapshots out of the snapdir.
-	 */
-	if (sdvp != tdvp)
-		error = SET_ERROR(EINVAL);
-		goto out;
-	}
-
-	/*
-	 * No-op when names are identical.
-	 */
-	if (strcmp(snm, tnm) == 0) {
-		error = 0;
-		goto out;
-	}
-
-	if (strcmp(snm, tnm) == 0)
-		return (0);
-
-	mutex_enter(&sdp->sd_lock);
-
-	search.se_name = (char *)snm;
-	if ((sep = avl_find(&sdp->sd_snaps, &search, &where)) == NULL) {
-		mutex_exit(&sdp->sd_lock);
-		return (ENOENT);
-	}
-
-	err = dmu_objset_rename(from, to, 0);
-	if (err == 0)
-		zfsctl_rename_snap(sdp, sep, tnm);
-
-	mutex_exit(&sdp->sd_lock);
-
-	return (err);
-}
-#endif	/* sun */
-
-#ifdef sun
-/* ARGSUSED */
-static int
-zfsctl_snapdir_remove(struct vnode *dvp, char *name, struct vnode *cwd, cred_t *cr,
-    caller_context_t *ct, int flags)
-{
-	zfsctl_snapdir_t *sdp = vnode_fsnode(dvp);
-	zfs_snapentry_t *sep = NULL;
-	zfs_snapentry_t search;
-	zfsvfs_t *zfsvfs;
-	char snapname[ZFS_MAX_DATASET_NAME_LEN];
-	char real[ZFS_MAX_DATASET_NAME_LEN];
-	int err;
-
-	zfsvfs = vfs_fsprivate(vnode_mount(dvp));
-	ZFS_ENTER(zfsvfs);
-
-	if ((flags & FIGNORECASE) || zfsvfs->z_case == ZFS_CASE_INSENSITIVE) {
-
-		err = dmu_snapshot_realname(zfsvfs->z_os, name, real,
-		    sizeof (real), NULL);
-		if (err == 0) {
-			name = real;
-		} else if (err != ENOTSUP) {
-			ZFS_EXIT(zfsvfs);
-			return (err);
-		}
-	}
-
-	ZFS_EXIT(zfsvfs);
-
-	err = zfsctl_snapshot_zname(dvp, name, ZFS_MAX_DATASET_NAME_LEN, snapname);
-	if (!err)
-		err = zfs_secpolicy_destroy_perms(snapname, cr);
-	if (err)
-		return (err);
-
-	mutex_enter(&sdp->sd_lock);
-
-	search.se_name = name;
-	sep = avl_find(&sdp->sd_snaps, &search, NULL);
-	if (sep) {
-		avl_remove(&sdp->sd_snaps, sep);
-		err = zfsctl_unmount_snap(sep, MS_FORCE, cr);
-		if (err) {
-			avl_index_t where;
-
-			if (avl_find(&sdp->sd_snaps, sep, &where) == NULL)
-				avl_insert(&sdp->sd_snaps, sep, where);
-		} else
-			err = dmu_objset_destroy(snapname, B_FALSE);
-	} else {
-		err = ENOENT;
-	}
-
-	mutex_exit(&sdp->sd_lock);
-
-	return (err);
-}
-#endif	/* sun */
 
 /*
  * This creates a snapshot under '.zfs/snapshot'.
@@ -1305,6 +943,8 @@ zfsctl_snapdir_lookup(struct vnop_lookup_args /* {
 #endif
 	}
 
+	dprintf("looking for name '%s'\n", nm);
+
 	mutex_enter(&sdp->sd_lock);
 	search.se_name = (char *)nm;
 	if ((sep = avl_find(&sdp->sd_snaps, &search, &where)) != NULL) {
@@ -1441,64 +1081,9 @@ domount:
     /*
      * Gross hack for now, fix meeeee
      */
-#if DEBUG
-    if ((err == 0) && (((uint32_t *)*vpp)[23]==0)) {
-            VN_HOLD(*vpp);
-            printf("Uhoh, was about to return vp %p with iocount==0!\n",
-                   *vpp);
-        }
-
-    if ((err == 0) && (((uint32_t *)*vpp)[23]==2)) {
-            VN_RELE(*vpp);
-            printf("Uhoh, was about to return vp %p with iocount==2!\n",
-                   *vpp);
-        }
-#endif
     dprintf("Lookup complete: %d %p\n", err, err==0?*vpp:NULL);
 	return (err);
 }
-
-/* ARGSUSED */
-#ifndef __APPLE__
-int
-zfsctl_shares_lookup(ap)
-	struct vnop_lookup_args /* {
-		struct vnode *a_dvp;
-		struct vnode **a_vpp;
-		struct componentname *a_cnp;
-	} */ *ap;
-{
-	struct vnode *dvp = ap->a_dvp;
-	struct vnode **vpp = ap->a_vpp;
-	struct componentname *cnp = ap->a_cnp;
-	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(dvp));
-	char nm[NAME_MAX + 1];
-	znode_t *dzp;
-	int error;
-
-	ZFS_ENTER(zfsvfs);
-
-	ASSERT(cnp->cn_namelen < sizeof(nm));
-	strlcpy(nm, cnp->cn_nameptr, cnp->cn_namelen + 1);
-
-	if (gfs_lookup_dot(vpp, dvp, zfsvfs->z_ctldir, nm) == 0) {
-		ZFS_EXIT(zfsvfs);
-		return (0);
-	}
-
-	if (zfsvfs->z_shares_dir == 0) {
-		ZFS_EXIT(zfsvfs);
-		return (ENOTSUP);
-	}
-	if ((error = zfs_zget(zfsvfs, zfsvfs->z_shares_dir, &dzp)) == 0)
-		error = VOP_LOOKUP(ZTOV(dzp), vpp, cnp);
-
-	VN_RELE(ZTOV(dzp));
-	ZFS_EXIT(zfsvfs);
-
-	return (error);
-}
-#endif
 
 /* ARGSUSED */
 static int
@@ -1539,49 +1124,6 @@ zfsctl_snapdir_readdir_cb(struct vnode *vp, void *dp, int *eofp,
 	return (0);
 }
 
-#ifndef __APPLE__
-/* ARGSUSED */
-static int
-zfsctl_shares_readdir(ap)
-	struct vnop_readdir_args /* {
-		struct vnode *a_vp;
-		struct uio *a_uio;
-		struct ucred *a_cred;
-		int *a_eofflag;
-		int *a_ncookies;
-		u_long **a_cookies;
-	} */ *ap;
-{
-	struct vnode *vp = ap->a_vp;
-	uio_t *uiop = ap->a_uio;
-	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
-	int *eofp = ap->a_eofflag;
-	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(vp));
-	znode_t *dzp;
-	int error = 0;
-    ulong *cookies;
-
-	ZFS_ENTER(zfsvfs);
-
-	if (zfsvfs->z_shares_dir == 0) {
-		ZFS_EXIT(zfsvfs);
-		return (ENOTSUP);
-	}
-#if 0
-	if ((error = zfs_zget(zfsvfs, zfsvfs->z_shares_dir, &dzp)) == 0) {
-		vn_lock(ZTOV(dzp), LK_SHARED | LK_RETRY);
-		error = VOP_READDIR(ZTOV(dzp), uiop, cr, eofp, ap->a_numdirent, &cookies);
-		VN_RELE(ZTOV(dzp));
-	} else {
-		*eofp = 1;
-		error = ENOENT;
-	}
-#endif
-
-	ZFS_EXIT(zfsvfs);
-	return (error);
-}
-#endif
 
 /*
  * pvp is the '.zfs' directory (zfsctl_node_t).
@@ -1615,59 +1157,6 @@ zfsctl_mknode_snapdir(struct vnode *pvp)
     dprintf("-mknode_snapdir: %p\n", vp);
 	return (vp);
 }
-
-#ifndef __APPLE__
-struct vnode *
-zfsctl_mknode_shares(struct vnode *pvp)
-{
-	struct vnode *vp;
-	zfsctl_node_t *sdp;
-
-	vp = gfs_dir_create(sizeof (zfsctl_node_t), pvp, pvp->v_vfsp,
-	    &zfsctl_ops_shares, NULL, NULL, MAXNAMELEN,
-	    NULL, NULL);
-	sdp = vnode_fsnode(vp);
-	sdp->zc_cmtime = ((zfsctl_node_t *)vnode_fsnode(pvp))->zc_cmtime;
-	VOP_UNLOCK(vp, 0);
-	return (vp);
-
-}
-#endif
-
-#ifndef __APPLE__
-/* ARGSUSED */
-static int
-zfsctl_shares_getattr(ap)
-	struct vnop_getattr_args /* {
-		struct vnode *a_vp;
-		struct vattr *a_vap;
-		struct ucred *a_cred;
-		struct thread *a_td;
-	} */ *ap;
-{
-	struct vnode *vp = ap->a_vp;
-	vattr_t *vap = ap->a_vap;
-	cred_t *cr = (cred_t *)vfs_context_ucred((ap)->a_context);
-	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(vp));
-	znode_t *dzp;
-	int error;
-
-	ZFS_ENTER(zfsvfs);
-	if (zfsvfs->z_shares_dir == 0) {
-		ZFS_EXIT(zfsvfs);
-		return (ENOTSUP);
-	}
-	if ((error = zfs_zget(zfsvfs, zfsvfs->z_shares_dir, &dzp)) == 0) {
-		vn_lock(ZTOV(dzp), LK_SHARED | LK_RETRY);
-		error = VOP_GETATTR(ZTOV(dzp), vap, cr);
-		VN_RELE(ZTOV(dzp));
-	}
-	ZFS_EXIT(zfsvfs);
-	return (error);
-
-
-}
-#endif
 
 /* ARGSUSED */
 static int
@@ -1726,6 +1215,7 @@ zfsctl_snapdir_reclaim(ap)
 	 */
 	mutex_enter(&sdp->sd_lock);
 	while ((sep = avl_first(&sdp->sd_snaps)) != NULL) {
+		dprintf("Removing (reclaim) snap '%s'\n", sep->se_name);
 		avl_remove(&sdp->sd_snaps, sep);
 		kmem_free(sep->se_name, strlen(sep->se_name) + 1);
 		kmem_free(sep, sizeof (zfs_snapentry_t));
@@ -1741,70 +1231,6 @@ zfsctl_snapdir_reclaim(ap)
 
 	return (0);
 }
-
-#ifdef sun
-static const fs_operation_def_t zfsctl_tops_snapdir[] = {
-	{ VOPNAME_OPEN,		{ .vop_open = zfsctl_common_open }	},
-	{ VOPNAME_CLOSE,	{ .vop_close = zfsctl_common_close }	},
-	{ VOPNAME_IOCTL,	{ .error = fs_inval }			},
-	{ VOPNAME_GETATTR,	{ .vop_getattr = zfsctl_snapdir_getattr } },
-	{ VOPNAME_ACCESS,	{ .vop_access = zfsctl_common_access }	},
-	{ VOPNAME_RENAME,	{ .vop_rename = zfsctl_snapdir_rename }	},
-	{ VOPNAME_RMDIR,	{ .vop_rmdir = zfsctl_snapdir_remove }	},
-	{ VOPNAME_MKDIR,	{ .vop_mkdir = zfsctl_snapdir_mkdir }	},
-	{ VOPNAME_READDIR,	{ .vop_readdir = gfs_vop_readdir }	},
-	{ VOPNAME_LOOKUP,	{ .vop_lookup = zfsctl_snapdir_lookup }	},
-	{ VOPNAME_SEEK,		{ .vop_seek = fs_seek }			},
-	{ VOPNAME_INACTIVE,	{ .vop_inactive = zfsctl_snapdir_inactive } },
-	{ VOPNAME_FID,		{ .vop_fid = zfsctl_common_fid }	},
-	{ NULL }
-};
-
-static const fs_operation_def_t zfsctl_tops_shares[] = {
-	{ VOPNAME_OPEN,		{ .vop_open = zfsctl_common_open }	},
-	{ VOPNAME_CLOSE,	{ .vop_close = zfsctl_common_close }	},
-	{ VOPNAME_IOCTL,	{ .error = fs_inval }			},
-	{ VOPNAME_GETATTR,	{ .vop_getattr = zfsctl_shares_getattr } },
-	{ VOPNAME_ACCESS,	{ .vop_access = zfsctl_common_access }	},
-	{ VOPNAME_READDIR,	{ .vop_readdir = zfsctl_shares_readdir } },
-	{ VOPNAME_LOOKUP,	{ .vop_lookup = zfsctl_shares_lookup }	},
-	{ VOPNAME_SEEK,		{ .vop_seek = fs_seek }			},
-	{ VOPNAME_INACTIVE,	{ .vop_inactive = gfs_vop_inactive } },
-	{ VOPNAME_FID,		{ .vop_fid = zfsctl_shares_fid } },
-	{ NULL }
-};
-#endif	/* !sun */
-
-#ifdef __FreeBSD__
-static struct vop_vector zfsctl_ops_snapdir = {
-	.vop_default =	&default_vnodeops,
-	.vop_open =	zfsctl_common_open,
-	.vop_close =	zfsctl_common_close,
-	.vop_ioctl =	VOP_EINVAL,
-	.vop_getattr =	zfsctl_snapdir_getattr,
-	.vop_access =	zfsctl_common_access,
-	.vop_mkdir =	zfsctl_freebsd_snapdir_mkdir,
-	.vop_readdir =	gfs_vop_readdir,
-	.vop_lookup =	zfsctl_snapdir_lookup,
-	.vop_inactive =	zfsctl_snapdir_inactive,
-	.vop_reclaim =	zfsctl_common_reclaim,
-	.vop_fid =	zfsctl_common_fid,
-};
-
-static struct vop_vector zfsctl_ops_shares = {
-	.vop_default =	&default_vnodeops,
-	.vop_open =	zfsctl_common_open,
-	.vop_close =	zfsctl_common_close,
-	.vop_ioctl =	VOP_EINVAL,
-	.vop_getattr =	zfsctl_shares_getattr,
-	.vop_access =	zfsctl_common_access,
-	.vop_readdir =	zfsctl_shares_readdir,
-	.vop_lookup =	zfsctl_shares_lookup,
-	.vop_inactive =	gfs_vop_inactive,
-	.vop_reclaim =	zfsctl_common_reclaim,
-	.vop_fid =	zfsctl_shares_fid,
-};
-#endif	/* FreeBSD */
 
 #ifdef __APPLE__
 
@@ -1825,26 +1251,6 @@ static struct vnodeopv_entry_desc zfsctl_ops_snapdir_template[] = {
 };
 struct vnodeopv_desc zfsctl_ops_snapdir =
 { &zfsctl_ops_snapdir_dvnodeops, zfsctl_ops_snapdir_template };
-
-#ifndef __APPLE__
-int (**zfsctl_ops_shares_dvnodeops) (void *);
-static struct vnodeopv_entry_desc zfsctl_ops_shares_template[] = {
-	{&vnop_default_desc, 	(VOPFUNC)vn_default_error },
-	{&vnop_open_desc,	(VOPFUNC)zfsctl_common_open},
-	{&vnop_close_desc,	(VOPFUNC)zfsctl_common_close},
-	//{&vnop_ioctl_desc,	(VOPFUNC)zfs_vnop_ioctl},
-	{&vnop_getattr_desc,	(VOPFUNC)zfsctl_shares_getattr},
-	{&vnop_access_desc,	(VOPFUNC)zfsctl_common_access},
-	{&vnop_readdir_desc,	(VOPFUNC)zfsctl_shares_readdir},
-	//{&vnop_readdirattr_desc, (VOPFUNC)zfs_vnop_readdirattr},
-	{&vnop_lookup_desc,	(VOPFUNC)zfsctl_shares_lookup},
-	{&vnop_inactive_desc,	(VOPFUNC)gfs_vop_inactive},
-	{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
-	{NULL, (VOPFUNC)NULL }
-};
-struct vnodeopv_desc zfsctl_ops_shares =
-{ &zfsctl_ops_shares_dvnodeops, zfsctl_ops_shares_template };
-#endif
 
 #endif
 
@@ -1905,9 +1311,17 @@ zfsctl_snapshot_inactive(ap)
 		next = AVL_NEXT(&sdp->sd_snaps, sep);
 
 		if (sep->se_root == vp) {
+			dprintf("Removing (inactive) snap '%s'\n", sep->se_name);
 			avl_remove(&sdp->sd_snaps, sep);
 			kmem_free(sep->se_name, strlen(sep->se_name) + 1);
 			kmem_free(sep, sizeof (zfs_snapentry_t));
+			/*
+			 * After releasing the snapshot/$name entry, we need to
+			 * recycle the vnode, as we will always create a new one
+			 * in zfsctl_snapdir_lookup() - we do not keep a reference
+			 * to it once the AVL node is removed.
+			 */
+			vnode_recycle(vp);
 			break;
 		}
 		sep = next;
@@ -1929,44 +1343,6 @@ end:
 	iap.a_vp = vp;
 	return (gfs_vop_inactive(&iap));
 }
-
-#if 0 // unused function
-static int
-zfsctl_traverse_begin(struct vnode **vpp, int lktype)
-{
-	VN_HOLD(*vpp);
-	/* Snapshot should be already mounted, but just in case. */
-    if (vnode_mount(*vpp) == NULL)
-        return (ENOENT);
-	return (traverse(vpp, lktype));
-}
-
-static void
-zfsctl_traverse_end(struct vnode *vp, int err)
-{
-    VN_RELE(vp);
-}
-
-static int
-zfsctl_snapshot_getattr(ap)
-	struct vnop_getattr_args /* {
-		struct vnode *a_vp;
-		struct vattr *a_vap;
-		struct ucred *a_cred;
-	} */ *ap;
-{
-	struct vnode *vp = ap->a_vp;
-	int err;
-
-    dprintf("zfsctl: XXX +snapshot_getattr\n");
-	err = zfsctl_traverse_begin(&vp, LK_SHARED | LK_RETRY);
-	if (err == 0)
-		err = VOP_GETATTR(vp, ap->a_vap, 0, NULL, NULL);
-	zfsctl_traverse_end(vp, err);
-    dprintf("zfsctl: XXX -snapshot_getattr\n");
-	return (err);
-}
-#endif
 
 #ifdef __APPLE__
 /*
@@ -1996,7 +1372,7 @@ zfsctl_snapshot_getattr(ap)
 	ZFS_ENTER(zfsvfs);
 	zfsctl_common_getattr(vp, vap);
 	vap->va_nodeid = gfs_file_inode(vp);
-	vap->va_nlink = vap->va_size = avl_numnodes(&sdp->sd_snaps) + 2;
+	vap->va_nlink = vap->va_size = 2;
 	vap->va_ctime = vap->va_mtime = vap->va_mtime = dmu_objset_snap_cmtime(zfsvfs->z_os);
 #ifdef __APPLE__
     VATTR_SET_SUPPORTED(vap, va_modify_time);
@@ -2011,27 +1387,6 @@ zfsctl_snapshot_getattr(ap)
 	return (0);
 }
 
-#endif
-
-
-
-#ifndef __APPLE__
-static int
-zfsctl_snapshot_fid(ap)
-	struct vnop_fid_args /* {
-		struct vnode *a_vp;
-		struct fid *a_fid;
-	} */ *ap;
-{
-	struct vnode *vp = ap->a_vp;
-	int err;
-
-	err = zfsctl_traverse_begin(&vp, LK_SHARED | LK_RETRY);
-	if (err == 0)
-		err = VOP_VPTOFH(vp, (void *)ap->a_fid);
-	zfsctl_traverse_end(vp, err);
-	return (err);
-}
 #endif
 
 #if 1 // unused function
@@ -2059,111 +1414,15 @@ zfsctl_snapshot_lookup(ap)
 	ASSERT(vnode_isdir(dvp));
 	ASSERT(zfsvfs->z_ctldir != NULL);
 
-    dprintf("zfsctl_snapshot_lookup 'snapshot'\n");
+    dprintf("zfsctl_snapshot_lookup 'snapshot' name '%s'\n",
+		cnp->cn_nameptr);
 
 	error = zfsctl_root_lookup(zfsvfs->z_ctldir, "snapshot", vpp,
 	    NULL, 0, NULL, cr, NULL, NULL, NULL);
 
-    dprintf("snapshot_lookup vp %p iocount is %d at exit\n",
-            *vpp, ((uint32_t *)*vpp)[23]);
-
 	return (error);
 }
 #endif
-
-#ifndef __APPLE__
-static int
-zfsctl_snapshot_vptocnp(struct vnop_vptocnp_args *ap)
-{
-	zfsvfs_t *zfsvfs = vfs_fsprivate(vnode_mount(ap->a_vp));
-	struct vnode *dvp, *vp;
-	zfsctl_snapdir_t *sdp;
-	zfs_snapentry_t *sep;
-	int error;
-
-	ASSERT(zfsvfs->z_ctldir != NULL);
-	error = zfsctl_root_lookup(zfsvfs->z_ctldir, "snapshot", &dvp,
-	    NULL, 0, NULL, kcred, NULL, NULL, NULL);
-	if (error != 0)
-		return (error);
-	sdp = vnode_fsnode(dvp);
-
-	mutex_enter(&sdp->sd_lock);
-	sep = avl_first(&sdp->sd_snaps);
-	while (sep != NULL) {
-		vp = sep->se_root;
-		if (vp == ap->a_vp)
-			break;
-		sep = AVL_NEXT(&sdp->sd_snaps, sep);
-	}
-	if (sep == NULL) {
-		mutex_exit(&sdp->sd_lock);
-		error = ENOENT;
-	} else {
-		size_t len;
-
-		len = strlen(sep->se_name);
-		*ap->a_buflen -= len;
-		bcopy(sep->se_name, ap->a_buf + *ap->a_buflen, len);
-		mutex_exit(&sdp->sd_lock);
-		vref(dvp);
-		*ap->a_vpp = dvp;
-	}
-	VN_RELE(dvp);
-
-	return (error);
-}
-#endif
-
-/*
- * These VP's should never see the light of day.  They should always
- * be covered.
- */
-#ifndef __APPLE__
-static struct vop_vector zfsctl_ops_snapshot = {
-	.vop_default =	&default_vnodeops,
-	.vop_inactive =	zfsctl_snapshot_inactive,
-	.vop_lookup =	zfsctl_snapshot_lookup,
-	.vop_reclaim =	zfsctl_common_reclaim,
-	.vop_getattr =	zfsctl_snapshot_getattr,
-	.vop_fid =	zfsctl_snapshot_fid,
-	.vop_vptocnp =	zfsctl_snapshot_vptocnp,
-};
-#endif
-
-#ifdef __APPLE__
-static struct vnodeopv_entry_desc zfsctl_ops_snapshot_template[] = {
-	{&vnop_default_desc, 	(VOPFUNC)vn_default_error },
-	{&vnop_inactive_desc,	(VOPFUNC)zfsctl_snapshot_inactive},
-	{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
-
-    /*
-     * In normal ZFS, the ".zfs/snashot/snap", the "snap" is immediately
-     * mounted over, so these vnodeops are not used. But in OSX, since we
-     * are unable to mount from the kernel, we need to define enough vnodeops
-     * such that userland mount call will succeed.
-     */
-	{&vnop_getattr_desc,	(VOPFUNC)zfsctl_snapshot_getattr},
-    {&vnop_revoke_desc,     (VOPFUNC)err_revoke },
-    {&vnop_fsync_desc,      (VOPFUNC)nop_fsync },
-
-	{&vnop_lookup_desc,	    (VOPFUNC)zfsctl_snapshot_lookup},
-
-	//{&vnop_readdir_desc,	(VOPFUNC)gfs_vop_readdir},
-	{&vnop_readdir_desc,	(VOPFUNC)nop_readdir},
-
-    //	{&vnop_open_desc,	(VOPFUNC)zfsctl_common_openX},
-	//{&vnop_close_desc,	(VOPFUNC)zfsctl_common_closeX},
-    //{&vnop_open_desc,	(VOPFUNC)nop_open},
-	//{&vnop_close_desc,	(VOPFUNC)nop_close},
-
-	{NULL, (VOPFUNC)NULL }
-};
-struct vnodeopv_desc zfsctl_ops_snapshot =
-{ &zfsctl_ops_snapshot_dvnodeops, zfsctl_ops_snapshot_template };
-#endif
-
-
 
 int
 zfsctl_lookup_objset(vfs_t *vfsp, uint64_t objsetid, zfsvfs_t **zfsvfsp)
@@ -2284,3 +1543,85 @@ zfsctl_umount_snapshots(vfs_t *vfsp, int fflags, cred_t *cr)
     dprintf("umount_snapshot err %d\n", error);
 	return (error);
 }
+
+
+
+/*
+ * Covered VNOPs, from before the snapshot is mounted
+ */
+/* ARGSUSED */
+static int
+zfsctl_covered_open(struct vnop_open_args *ap)
+{
+	int flags = ap->a_mode;
+
+    dprintf("%s: %p on %p\n", __func__,
+           ap->a_vp, vnode_mountedhere(ap->a_vp));
+
+	if (flags & FWRITE)
+        return (EACCES);
+
+	return (0);
+}
+
+/* ARGSUSED */
+static int
+zfsctl_covered_close(struct vnop_close_args *ap)
+{
+	return (0);
+}
+
+static int
+zfsctl_covered_readdir(struct vnop_readdir_args *ap)
+#if 0
+	struct vnop_readdir_args {
+		struct vnode	a_vp;
+		struct uio	*a_uio;
+		int		a_flags;
+		int		*a_eofflag;
+		int		*a_numdirent;
+		vfs_context_t	a_context;
+	};
+#endif
+{
+
+	dprintf("%s: %p\n", __func__, ap->a_vp);
+
+	if (*ap->a_numdirent == 0)
+		*ap->a_numdirent = 2; /* . and .. */
+
+	return 0;
+}
+
+
+#ifdef __APPLE__
+static struct vnodeopv_entry_desc zfsctl_ops_snapshot_template[] = {
+	{&vnop_default_desc, 	(VOPFUNC)vn_default_error },
+	{&vnop_inactive_desc,	(VOPFUNC)zfsctl_snapshot_inactive},
+	{&vnop_reclaim_desc,	(VOPFUNC)zfsctl_common_reclaim},
+
+    /*
+     * In normal ZFS, the ".zfs/snashot/snap", the "snap" is immediately
+     * mounted over, so these vnodeops are not used. But in OSX, since we
+     * are unable to mount from the kernel, we need to define enough vnodeops
+     * such that userland mount call will succeed.
+     */
+	{&vnop_getattr_desc,	(VOPFUNC)zfsctl_snapshot_getattr},
+    {&vnop_revoke_desc,     (VOPFUNC)err_revoke },
+    {&vnop_fsync_desc,      (VOPFUNC)nop_fsync },
+
+	{&vnop_lookup_desc,	    (VOPFUNC)zfsctl_snapshot_lookup},
+
+	//{&vnop_readdir_desc,	(VOPFUNC)gfs_vop_readdir},
+	{&vnop_readdir_desc,	(VOPFUNC)zfsctl_covered_readdir},
+
+	{&vnop_open_desc,	(VOPFUNC)zfsctl_covered_open},
+	{&vnop_close_desc,	(VOPFUNC)zfsctl_covered_close},
+    //{&vnop_open_desc,	(VOPFUNC)nop_open},
+	//{&vnop_close_desc,	(VOPFUNC)nop_close},
+
+	{NULL, (VOPFUNC)NULL }
+};
+struct vnodeopv_desc zfsctl_ops_snapshot =
+{ &zfsctl_ops_snapshot_dvnodeops, zfsctl_ops_snapshot_template };
+#endif
