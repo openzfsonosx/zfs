@@ -142,7 +142,7 @@ function setup_snap_env
 				#
 				if [[ $dtst == $VOL ]]; then
 					if [[ -n "$LINUX" || -n "$OSX" ]]; then
-						log_mustnot $LOCKFS -t $TESTDIR1 2> /dev/null
+						log_mustnot $LOCKFS -xt $TESTDIR1 2> /dev/null
 					else
 						log_must $LOCKFS -f $TESTDIR1
 					fi

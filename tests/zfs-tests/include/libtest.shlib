@@ -2977,6 +2977,39 @@ function user_run
 	return $?
 }
 
+#
+# Check if the pool contains the specified vdevs
+#
+# $1 pool
+# $2..n <vdev> ...
+#
+# Return 0 if the vdevs are contained in the pool, 1 if any of the specified
+# vdevs is not in the pool, and 2 if pool name is missing.
+#
+function vdevs_in_pool
+{
+        typeset pool=$1
+        typeset vdev
+
+        if [[ -z $pool ]]; then
+                log_note "Missing pool name."
+                return 2
+        fi
+
+        shift
+
+        typeset tmpfile=$(mktemp)
+        zpool list -Hv "$pool" >$tmpfile
+        for vdev in $@; do
+                grep -w ${vdev##*/} $tmpfile >/dev/null 2>&1
+                [[ $? -ne 0 ]] && return 1
+        done
+
+        rm -f $tmpfile
+
+        return 0;
+}
+
 # 'udevd' on Linux creates links in many different places
 # to a physical device in /dev. Find this here.
 function get_physical_device
@@ -3036,6 +3069,9 @@ function update_lo_mappings
 #    echo $the_dev
 #}
 
+# This uses symlinks created by zed
+# alternate way would be:
+# ioreg -rn "ZVOL $pool/$volume Media"|grep "BSD Name"|awk -F\" '{print $4}'
 function find_zvol_rpath #vol
 {
 	typeset vol=$1

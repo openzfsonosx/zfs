@@ -70,10 +70,12 @@ while ((i < ${#dataset[*]} )); do
 
 	if [[ ${dataset[i]} == *@* ]]; then
 		data=$(snapshot_mountpoint ${dataset[i]})/$TESTFILE0
+		log_must $ZFS mount ${dataset[i]} # OSX
 	elif [[ ${dataset[i]} == "$TESTPOOL/$TESTVOL" ]] && is_global_zone; then
 		typeset vol_dev
 		if [[ -n "$OSX" ]]; then
 			vol_dev=$(find_zvol_rpath $TESTPOOL/$TESTVOL)
+			log_note "find_zvol_rpath $TESTPOOL/$TESTVOL:$rdev:"
 		else
 			vol_dev=${VOL_R_PATH}
 		fi
@@ -86,6 +88,10 @@ while ((i < ${#dataset[*]} )); do
 
 	if ! cmp_data $DATA $data; then
 		log_fail "$data gets corrupted after $iters times rename operations."
+	fi
+
+	if [[ ${dataset[i]} == *@* ]]; then
+		log_must $ZFS unmount ${dataset[i]} # OSX
 	fi
 
 	((i = i + 1))

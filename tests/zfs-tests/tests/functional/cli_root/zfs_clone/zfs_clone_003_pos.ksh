@@ -72,6 +72,7 @@ while (( $i < ${#RW_FS_PROP[*]} )); do
 		log_fail "${RW_FS_PROP[i]} is failed to set."
 	destroy_dataset -f $TESTPOOL/$TESTCLONE
 	(( i = i + 1 ))
+	$SLEEP 1
 done
 
 log_pass "'zfs clone -o property=value filesystem' can successfully create" \

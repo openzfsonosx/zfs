@@ -68,8 +68,10 @@ typeset -l mb_block=0
 ((mb_block = 1024 * 1024))
 # approximate metadata on dataset when empty is 32KB
 
-# O3X - we write writes an icon file which takes additional space
-if [[ -n "$OSX" ]]; then
+# O3X - we write an icon file which takes additional space
+# but only if /Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns
+# exist
+if [[ -n "OSX" && -e "/Library/Extensions/zfs.kext/Contents/Resources/VolumeIcon.icns" ]]; then
 	((metadata = 285 * 1024))
 else
 	((metadata = 32 * 1024))

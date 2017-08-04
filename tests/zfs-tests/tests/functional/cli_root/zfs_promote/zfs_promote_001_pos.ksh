@@ -114,13 +114,20 @@ log_must $MKFILE $FILESIZE $cfile
 
 log_must $ZFS promote $clone
 # verify the 'promote' operation
+
+
+log_must $ZFS mount $csnap   # OSX
 testing_verify $fs $file1 $snapfile $clone $cfile $csnapfile
+log_must $ZFS unmount $csnap # OSX
 
 log_note "Verify 'zfs promote' can change back the dependency relationship."
 log_must $ZFS promote $fs
 #verify the result
+
+log_must $ZFS mount $snap   # OSX
 testing_verify $clone $cfile $csnapfile $fs $file1 $snapfile
+log_must $ZFS unmount $snap # OSX
+
 
 log_pass "'zfs promote' reverses the clone parent-child dependency relationship"\
 	"as expected."
-

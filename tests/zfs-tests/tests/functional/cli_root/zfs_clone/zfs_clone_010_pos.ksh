@@ -217,6 +217,10 @@ typeset -i j=200
 i=1
 fs=$TESTPOOL/$TESTFS1
 log_must $ZFS create $fs
+
+mntp=$(get_prop mountpoint $fs)
+/usr/bin/mdutil -i off $mntp
+
 log_must $ZFS snapshot $fs@snap
 while((i < 7)); do
 	log_must $ZFS clone $fs@snap $fs/$TESTCLONE$(python -c 'print "x" * 200').$i

@@ -75,10 +75,17 @@ while (( i < ${#mountable[*]} )); do
 		mtpt=$(get_prop mountpoint ${mountable[i]})
 	else
 		mtpt=$(snapshot_mountpoint ${mountable[i]})
+		log_must $ZFS mount ${mountable[i]} # OSX
 	fi
 
 	if ! cmp_data $DATA $mtpt/$TESTFILE0 ; then
 		log_fail "$mtpt/$TESTFILE0 gets corrupted after rename operation."
+	fi
+
+	if [[ ${mountable[i]} != *@* ]]; then
+		log_note ""
+	else
+		log_must $ZFS unmount ${mountable[i]} # OSX
 	fi
 
 	((i = i + 1))

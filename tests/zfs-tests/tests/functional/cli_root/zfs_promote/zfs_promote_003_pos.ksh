@@ -47,6 +47,7 @@ verify_runnable "both"
 
 function cleanup
 {
+
 	if snapexists ${csnap[2]}; then
 		log_must $ZFS promote $fs
 	fi
@@ -108,6 +109,7 @@ for ds in ${snap[3]} ${csnap[*]}; do
 	! snapexists $ds && \
 		log_fail "The snapshot $ds disappear after zfs promote."
 done
+
 for data in ${csnapfile[*]} $TESTDIR/$TESTFILE3 /$clone/$CLONEFILE; do
 	[[ ! -e $data ]] && \
 		log_fail "The data file $data loses after zfs promote."
@@ -129,5 +131,5 @@ origin_prop=$(get_prop origin $clone)
 [[ "$origin_prop" != "-" ]] && \
 	log_fail "The dependency is not correct for $clone after zfs promote."
 
-log_pass "'zfs promote' deal with multi-point snapshots as expected."
 
+log_pass "'zfs promote' deal with multi-point snapshots as expected."

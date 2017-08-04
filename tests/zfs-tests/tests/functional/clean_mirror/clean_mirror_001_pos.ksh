@@ -49,6 +49,8 @@ verify_runnable "global"
 log_assert "The primary side of a zpool mirror may be completely wiped" \
 	"without affecting the content of the pool"
 
-overwrite_verify_mirror $SIDE_PRIMARY /dev/zero
+# On OSX you can not open the disk device in a pool, unless you use RAW
+SIDE_PRIMARY_RAW=${SIDE_PRIMARY/disk/rdisk}
+overwrite_verify_mirror $SIDE_PRIMARY_RAW /dev/zero
 
 log_pass "The overwrite had no effect on the data"

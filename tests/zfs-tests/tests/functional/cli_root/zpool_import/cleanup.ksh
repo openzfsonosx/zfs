@@ -39,6 +39,8 @@ for pool in "$TESTPOOL" "$TESTPOOL1"; do
 	destroy_pool -f $pool
 done
 
+$ZPOOL export -fa
+
 typeset FS="ufs"
 [[ -n "$LINUX" ]] && FS="ext2"
 [[ -n "$OSX" ]] && FS="hfs"

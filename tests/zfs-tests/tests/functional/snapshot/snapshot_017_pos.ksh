@@ -163,6 +163,9 @@ verify_structure
 log_must $ZFS snapshot $TESTPOOL/$TESTFS@snap_a
 log_must $ZFS snapshot $TESTPOOL/$TESTFS@snap_b
 
+log_must $ZFS mount $TESTPOOL/$TESTFS@snap_a # OSX
+log_must $ZFS mount $TESTPOOL/$TESTFS@snap_b # OSX
+
 # Change the filesystem structure by renaming files in the original structure
 # The snapshot file structure should not change
 cd $TESTDIR
@@ -197,5 +200,8 @@ verify_dir ../snap_b
 cd ..
 verify_dir snap_a
 verify_dir snap_b
+
+log_must $ZFS unmount $TESTPOOL/$TESTFS@snap_a # OSX
+log_must $ZFS unmount $TESTPOOL/$TESTFS@snap_b # OSX
 
 log_pass "Directory structure of snapshots reflects filesystem structure."
