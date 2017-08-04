@@ -3,16 +3,15 @@
 # Log the zevent via syslog.
 #
 
+# ZEVENT_CACHEFILE=/etc/zfs/zpool.cache
+CACHEFILE="${ZEVENT_CACHEFILE}"
 
 if [ -d /etc/zfs ]; then
 
-	rm -f /etc/zfs/zpool.cache
-
-	logger -t "${ZED_SYSLOG_TAG:=zed}" -p "${ZED_SYSLOG_PRIORITY:=daemon.notice}" \
-	    eid="${ZEVENT_EID}" class="${ZEVENT_SUBCLASS}" \
-	    "${ZEVENT_POOL:+pool=$ZEVENT_POOL}"
-
+    if [[ x"${CACHEFILE:0:9}" == x"/etc/zfs/" ||
+			  x"${CACHEFILE:0:9}" == x"/var/tmp/" ||
+			  x"${CACHEFILE:0:5}" == x"/tmp/" ]]; then
+		rm -f "${CACHEFILE}"
 	fi
-
 fi
 echo 0

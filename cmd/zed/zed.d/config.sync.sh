@@ -8,22 +8,11 @@ function notify {
 	sudo -u "$(stat -f '%Su' /dev/console)" /usr/bin/osascript -e 'display notification "'"$1"'" with title "'"$2"'"'
 }
 
+logger -t "${ZED_SYSLOG_TAG:=zed}" \
+       -p "${ZED_SYSLOG_PRIORITY:=daemon.notice}" \
+       eid="${ZEVENT_EID}" class="${ZEVENT_SUBCLASS}" \
+       "${ZEVENT_POOL:+pool=$ZEVENT_POOL} ${CACHEFILE}"
 
-if [ -d /etc/zfs ]; then
+notify "{$CACHEFILE} file has been renamed" "config.sync"
 
-	if [ -f /etc/zfs/zpool.cache.tmp ]; then
-
-	rm -f /etc/zfs/zpool.cache
-	mv /etc/zfs/zpool.cache.tmp /etc/zfs/zpool.cache
-
-	logger -t "${ZED_SYSLOG_TAG:=zed}" -p "${ZED_SYSLOG_PRIORITY:=daemon.notice}" \
-	    eid="${ZEVENT_EID}" class="${ZEVENT_SUBCLASS}" \
-	    "${ZEVENT_POOL:+pool=$ZEVENT_POOL}"
-
-	notify "zpool.cache file has been renamed" "config.sync"
-
-	fi
-else
-	mkdir -p /etc/zfs
-fi
 echo 0

@@ -46,6 +46,7 @@ dist_zedexec_SCRIPTS = \
 	$(top_srcdir)/cmd/zed/zed.d/all-debug.sh \
 	$(top_srcdir)/cmd/zed/zed.d/all-syslog.sh \
 	$(top_srcdir)/cmd/zed/zed.d/config.sync.sh \
+	$(top_srcdir)/cmd/zed/zed.d/config.rename.sh \
 	$(top_srcdir)/cmd/zed/zed.d/config.remove.sh \
 	$(top_srcdir)/cmd/zed/zed.d/checksum-notify.sh \
 	$(top_srcdir)/cmd/zed/zed.d/checksum-spare.sh \
@@ -64,6 +65,7 @@ dist_zedexec_SCRIPTS = \
 zedconfdefaults = \
 	all-syslog.sh \
 	config.sync.sh \
+	config.rename.sh \
 	config.remove.sh \
 	checksum-notify.sh \
 	checksum-spare.sh \
