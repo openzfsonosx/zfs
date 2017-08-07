@@ -7547,7 +7547,7 @@ main(int argc, char **argv)
 	}
 
 	libdiskmgt_init();
-	
+
 	libzfs_print_on_error(g_zfs, B_TRUE);
 
 	zfs_save_arguments(argc, argv, history_str, sizeof (history_str));
@@ -7581,7 +7581,7 @@ main(int argc, char **argv)
 
 	libzfs_fini(g_zfs);
 	libdiskmgt_fini();
-	
+
 	/*
 	 * The 'ZFS_ABORT' environment variable causes us to dump core on exit
 	 * for the purposes of running ::findleaks.
