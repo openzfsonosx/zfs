@@ -211,7 +211,6 @@ vdev_file_io_start(zio_t *zio)
     vdev_file_t *vf = vd->vdev_tsd;
     ssize_t resid = 0;
 
-
     if (zio->io_type == ZIO_TYPE_IOCTL) {
 
         if (!vdev_readable(vd)) {
@@ -247,18 +246,22 @@ vdev_file_io_start(zio_t *zio)
 		*/
 
 		void *data;
+		ASSERT3S(zio->io_abd->abd_size,==,zio->io_size);
 		if (zio->io_type == ZIO_TYPE_READ) {
+			ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
 			data =
 				abd_borrow_buf(zio->io_abd, zio->io_size);
 		} else {
+			ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
 			data =
 				abd_borrow_buf_copy(zio->io_abd, zio->io_size);
 		}
 
-        zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
+		zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
                            UIO_READ : UIO_WRITE, vf->vf_vnode, data,
                            zio->io_size, zio->io_offset, UIO_SYSSPACE,
                            0, RLIM64_INFINITY, kcred, &resid);
+
         vnode_put(vf->vf_vnode);
 
 		if (zio->io_type == ZIO_TYPE_READ) {

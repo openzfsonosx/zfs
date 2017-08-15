@@ -2145,8 +2145,6 @@ arc_buf_untransform_in_place(arc_buf_t *buf, kmutex_t *hash_lock)
 {
 	arc_buf_hdr_t *hdr = buf->b_hdr;
 
-	printf("%s: %p\n", __func__, buf);
-
 	ASSERT(HDR_ENCRYPTED(hdr));
 	ASSERT3U(hdr->b_crypt_hdr.b_ot, ==, DMU_OT_DNODE);
 	ASSERT(HDR_LOCK(hdr) == NULL || MUTEX_HELD(HDR_LOCK(hdr)));
