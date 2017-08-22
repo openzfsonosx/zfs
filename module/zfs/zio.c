@@ -3991,6 +3991,7 @@ static int
 zio_done(zio_t *zio)
 {
 	zio_t *pio, *pio_next;
+	uint64_t psize = zio->io_size;
 	int c, w;
 	zio_link_t *zl = NULL;
 

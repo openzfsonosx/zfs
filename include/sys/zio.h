@@ -627,7 +627,7 @@ extern void zfs_ereport_free_checksum(zio_cksum_report_t *report);
 /* If we have the good data in hand, this function can be used */
 extern void zfs_ereport_post_checksum(spa_t *spa, vdev_t *vd,
 	zbookmark_phys_t *zb, struct zio *zio, uint64_t offset, uint64_t length,
-    const void *good_data, const void *bad_data, struct zio_bad_cksum *info);
+    const abd_t *good_data, const abd_t *bad_data, struct zio_bad_cksum *info);
 
 /* Called from spa_sync(), but primarily an injection handler */
 extern void spa_handle_ignored_writes(spa_t *spa);
