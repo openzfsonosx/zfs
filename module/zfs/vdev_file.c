@@ -210,11 +210,74 @@ vdev_file_close(vdev_t *vd)
 _Atomic uint64_t zfs_vdev_file_size_mismatch_cnt = 0;
 
 static void
+vdev_file_io_strategy(void *arg)
+{
+	zio_t *zio = (zio_t *)arg;
+	vdev_t *vd = zio->io_vd;
+	vdev_file_t *vf = vd->vdev_tsd;
+	ssize_t resid;
+	void *data;
+
+    if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
+
+#ifdef DEBUG
+		if (zio->io_abd->abd_size != zio->io_size) {
+			zfs_vdev_file_size_mismatch_cnt++;
+
+			// this dprintf can be very noisy
+			dprintf("ZFS: %s: trimming zio->io_abd from 0x%x to 0x%llx\n",
+				__func__, zio->io_abd->abd_size, zio->io_size);
+		}
+#endif
+		if (zio->io_type == ZIO_TYPE_READ) {
+			ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
+			data =
+				abd_borrow_buf(zio->io_abd, zio->io_abd->abd_size);
+		} else {
+			ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
+			data =
+				abd_borrow_buf_copy(zio->io_abd, zio->io_abd->abd_size);
+		}
+
+		zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
+		    UIO_READ : UIO_WRITE, vf->vf_vnode, data, zio->io_size,
+			zio->io_offset, UIO_SYSSPACE, 0, RLIM64_INFINITY, kcred, &resid);
+
+		zio->io_error = (zio->io_error != 0 ? EIO : 0);
+
+		if (zio->io_error == 0 && resid != 0)
+			zio->io_error = SET_ERROR(ENOSPC);
+
+		if (zio->io_type == ZIO_TYPE_READ) {
+			if (zio->io_abd->abd_size == zio->io_size) {
+				abd_return_buf_copy(zio->io_abd, data, zio->io_size);
+			} else {
+				VERIFY3S(zio->io_abd->abd_size,>=,zio->io_size);
+				abd_return_buf_copy_off(zio->io_abd, data,
+					0, zio->io_size, zio->io_abd->abd_size);
+			}
+		} else {
+			VERIFY3S(zio->io_abd->abd_size,>=,zio->io_size);
+			abd_return_buf_off(zio->io_abd, data, 0, zio->io_size,
+				zio->io_abd->abd_size);
+		}
+
+        vnode_put(vf->vf_vnode);
+
+	} else { // vnode_getwithvid()
+
+		zio->io_error = EIO;
+
+	}
+
+	zio_delay_interrupt(zio);
+}
+
+static void
 vdev_file_io_start(zio_t *zio)
 {
     vdev_t *vd = zio->io_vd;
     vdev_file_t *vf = vd->vdev_tsd;
-    ssize_t resid = 0;
 
     if (zio->io_type == ZIO_TYPE_IOCTL) {
 
@@ -236,6 +299,7 @@ vdev_file_io_start(zio_t *zio)
             zio->io_error = SET_ERROR(ENOTSUP);
         }
 
+
 		zio_interrupt(zio);
         return;
     }
@@ -243,65 +307,8 @@ vdev_file_io_start(zio_t *zio)
 	ASSERT(zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE);
 	zio->io_target_timestamp = zio_handle_io_delay(zio);
 
-    if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
-
-		/*
-		VERIFY3U(taskq_dispatch(vdev_file_taskq, vdev_file_io_strategy, zio,
-	    TQ_PUSHPAGE), !=, 0);
-		*/
-
-#ifdef DEBUG
-	    if (zio->io_abd->abd_size != zio->io_size) {
-		    zfs_vdev_file_size_mismatch_cnt++;
-
-		    // this dprintf can be very noisy
-		    dprintf("ZFS: %s: trimming zio->io_abd from 0x%x to 0x%llx\n",
-			__func__, zio->io_abd->abd_size, zio->io_size);
-	    }
-#endif
-		void *data;
-
-		if (zio->io_type == ZIO_TYPE_READ) {
-			ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
-			data =
-				abd_borrow_buf(zio->io_abd, zio->io_abd->abd_size);
-		} else {
-			ASSERT3S(zio->io_abd->abd_size,>=,zio->io_size);
-			data =
-				abd_borrow_buf_copy(zio->io_abd, zio->io_abd->abd_size);
-		}
-
-		/* This is required to avoid panic */
-		kpreempt(KPREEMPT_SYNC);
-
-		zio->io_error = vn_rdwr(zio->io_type == ZIO_TYPE_READ ?
-                           UIO_READ : UIO_WRITE, vf->vf_vnode, data,
-                           zio->io_size, zio->io_offset, UIO_SYSSPACE,
-                           0, RLIM64_INFINITY, kcred, &resid);
-
-        vnode_put(vf->vf_vnode);
-
-		if (zio->io_type == ZIO_TYPE_READ) {
-			if (zio->io_abd->abd_size == zio->io_size) {
-				abd_return_buf_copy(zio->io_abd, data, zio->io_size);
-			} else {
-				VERIFY3S(zio->io_abd->abd_size,>=,zio->io_size);
-				abd_return_buf_copy_off(zio->io_abd, data,
-				    0, zio->io_size, zio->io_abd->abd_size);
-			}
-		} else {
-			VERIFY3S(zio->io_abd->abd_size,>=,zio->io_size);
-			abd_return_buf_off(zio->io_abd, data, 0, zio->io_size, zio->io_abd->abd_size);
-		}
-
-    }
-
-    if (resid != 0 && zio->io_error == 0)
-        zio->io_error = SET_ERROR(ENOSPC);
-
-    zio_delay_interrupt(zio);
-
-    return;
+	VERIFY3U(taskq_dispatch(system_taskq, vdev_file_io_strategy, zio,
+        TQ_SLEEP), !=, 0);
 }
 
 
