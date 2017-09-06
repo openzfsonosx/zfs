@@ -3137,14 +3137,15 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	}
 #endif
 
-	rw_enter(&zp->z_xattr_lock, RW_READER);
-	if (zp->z_xattr_cached == NULL)
-		error = -zfs_sa_get_xattr(zp);
-	rw_exit(&zp->z_xattr_lock);
 
 	if (zfsvfs->z_use_sa && zp->z_is_sa) {
 		uint64_t size = uio_resid(uio);
 		char *value;
+
+		rw_enter(&zp->z_xattr_lock, RW_READER);
+		if (zp->z_xattr_cached == NULL)
+			error = -zfs_sa_get_xattr(zp);
+		rw_exit(&zp->z_xattr_lock);
 
 		if (!size) { /* Lookup size */
 
@@ -3317,15 +3318,16 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	else
 		flag = 0;
 
-	rw_enter(&zp->z_xattr_lock, RW_READER);
-	if (zp->z_xattr_cached == NULL)
-		error = -zfs_sa_get_xattr(zp);
-	rw_exit(&zp->z_xattr_lock);
 
 	/* Preferentially store the xattr as a SA for better performance */
 	if (zfsvfs->z_use_sa && zfsvfs->z_xattr_sa && zp->z_is_sa) {
 		char *value;
 		uint64_t size;
+
+		rw_enter(&zp->z_xattr_lock, RW_READER);
+		if (zp->z_xattr_cached == NULL)
+			error = -zfs_sa_get_xattr(zp);
+		rw_exit(&zp->z_xattr_lock);
 
 		rw_enter(&zp->z_xattr_lock, RW_WRITER);
 
@@ -3445,14 +3447,13 @@ zfs_vnop_removexattr(struct vnop_removexattr_args *ap)
 		goto out;
 	}
 
-
-	rw_enter(&zp->z_xattr_lock, RW_READER);
-	if (zp->z_xattr_cached == NULL)
-		error = -zfs_sa_get_xattr(zp);
-	rw_exit(&zp->z_xattr_lock);
-
 	if (zfsvfs->z_use_sa && zfsvfs->z_xattr_sa && zp->z_is_sa) {
         nvlist_t *nvl;
+
+		rw_enter(&zp->z_xattr_lock, RW_READER);
+		if (zp->z_xattr_cached == NULL)
+			error = -zfs_sa_get_xattr(zp);
+		rw_exit(&zp->z_xattr_lock);
 
 		nvl = zp->z_xattr_cached;
 
@@ -3556,13 +3557,13 @@ zfs_vnop_listxattr(struct vnop_listxattr_args *ap)
 		goto out;
 	}
 
-	rw_enter(&zp->z_xattr_lock, RW_READER);
-	if (zp->z_xattr_cached == NULL)
-		error = -zfs_sa_get_xattr(zp);
-	rw_exit(&zp->z_xattr_lock);
-
 	if (zfsvfs->z_use_sa && zp->z_is_sa && zp->z_xattr_cached) {
         nvpair_t *nvp = NULL;
+
+		rw_enter(&zp->z_xattr_lock, RW_READER);
+		if (zp->z_xattr_cached == NULL)
+			error = -zfs_sa_get_xattr(zp);
+		rw_exit(&zp->z_xattr_lock);
 
 		while ((nvp = nvlist_next_nvpair(zp->z_xattr_cached, nvp)) != NULL) {
 			ASSERT3U(nvpair_type(nvp), ==, DATA_TYPE_BYTE_ARRAY);
