@@ -458,11 +458,15 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 {
 	IOStorageAccess access = ( uintptr_t )argument;
 	bool ret = false;
+	int locked = 0;
 
 	if (super::handleOpen(client, options, argument) == false)
 		return (false);
 
-	atomic_inc_64(&spa_exporting_vdevs);
+	if (!MUTEX_HELD(&spa_namespace_lock)) {
+		mutex_enter(&spa_namespace_lock);
+		locked = 1;
+	}
 
 	if (access & kIOStorageAccessReaderWriter) {
 		zv->zv_openflags = FWRITE | ZVOL_EXCL;
@@ -478,7 +482,8 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 			ret = true;
 	}
 
-	atomic_dec_64(&spa_exporting_vdevs);
+	if (locked)
+		mutex_exit(&spa_namespace_lock);
 
 	dprintf("Open %s (openflags %llx)\n", (ret ? "done" : "failed"),
 		zv->zv_openflags);
@@ -495,12 +500,18 @@ void
 net_lundman_zfs_zvol_device::handleClose(IOService *client,
     IOOptionBits options)
 {
+	int locked = 0;
+
 	super::handleClose(client, options);
 
 	// IOLog("handleClose\n");
-	atomic_inc_64(&spa_exporting_vdevs);
+	if (!MUTEX_HELD(&spa_namespace_lock)) {
+		mutex_enter(&spa_namespace_lock);
+		locked = 1;
+	}
 	zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
-	atomic_dec_64(&spa_exporting_vdevs);
+	if (locked)
+		mutex_exit(&spa_namespace_lock);
 
 }
 

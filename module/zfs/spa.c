@@ -1310,9 +1310,6 @@ spa_config_parse(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent,
 	return (0);
 }
 
-uint64_t spa_exporting_vdevs = 0;
-
-
 /*
  * Opposite of spa_load().
  */
@@ -3187,29 +3184,10 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 	 * up calling spa_open() again.  The real fix is to figure out how to
 	 * avoid dsl_dir_open() calling this in the first place.
 	 */
-#ifdef __APPLE__
-    /*
-     * Alas, our recursion call comes from IOKit, and is a different thread
-     */
-    if (spa_exporting_vdevs != 0) {
-        locked = B_FALSE;
-    } else {
-        if (mutex_owner(&spa_namespace_lock) != curthread) {
-            mutex_enter(&spa_namespace_lock);
-            locked = B_TRUE;
-        }
-    }
-
-#else /* !APPLE */
-
     if (mutex_owner(&spa_namespace_lock) != curthread) {
         mutex_enter(&spa_namespace_lock);
 		locked = B_TRUE;
 	}
-
-#endif
-
-
 
 	if ((spa = spa_lookup(pool)) == NULL) {
 		if (locked)

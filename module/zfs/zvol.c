@@ -873,6 +873,8 @@ zvol_first_open(zvol_state_t *zv)
 
 	dprintf("zvol_first_open: '%s'\n", zv->zv_name);
 
+	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
+
 	/* lie and say we're read-only */
 	error = dmu_objset_own(zv->zv_name, DMU_OST_ZVOL, B_TRUE,
 						   B_TRUE, zvol_tag, &os);
@@ -924,6 +926,7 @@ zvol_first_open(zvol_state_t *zv)
 void
 zvol_last_close(zvol_state_t *zv)
 {
+	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 
 	dprintf("zvol_last_close\n");
 	if (zv->zv_total_opens != 0)
@@ -950,6 +953,7 @@ zvol_last_close(zvol_state_t *zv)
 
 		dmu_objset_disown(zv->zv_objset, B_TRUE, zvol_tag);
 	}
+	VERIFY(MUTEX_HELD(&zfsdev_state_lock));
 	zv->zv_objset = NULL;
 }
 
@@ -1701,7 +1705,7 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 	 */
 
 
-	if (!MUTEX_HELD(&spa_namespace_lock)) {
+	if (!MUTEX_HELD(&zfsdev_state_lock)) {
 		mutex_enter(&zfsdev_state_lock);
 		locked = 1;
 	}
