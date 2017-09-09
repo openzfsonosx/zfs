@@ -1648,6 +1648,11 @@ zio_taskq_dispatch(zio_t *zio, zio_taskq_type_t q, boolean_t cutinline)
 	spa_t *spa = zio->io_spa;
 	zio_type_t t = zio->io_type;
 	int flags = (cutinline ? TQ_FRONT : 0);
+	zio_priority_t p = zio->io_priority;
+
+	ASSERT(q == ZIO_TASKQ_ISSUE || q == ZIO_TASKQ_INTERRUPT);
+	IMPLY(p == ZIO_PRIORITY_SYNC_WRITE, t == ZIO_TYPE_WRITE);
+	IMPLY(p == ZIO_PRIORITY_SYNC_READ, t = ZIO_TYPE_READ);
 
 	/*
 	 * If we're a config writer or a probe, the normal issue and
@@ -1664,10 +1669,16 @@ zio_taskq_dispatch(zio_t *zio, zio_taskq_type_t q, boolean_t cutinline)
 		t = ZIO_TYPE_NULL;
 
 	/*
+	 * Consider synchronous writes and reads as high priority I/O.
+	 */
+	if (p == ZIO_PRIORITY_SYNC_WRITE || p == ZIO_PRIORITY_SYNC_READ)
+		p = ZIO_PRIORITY_NOW;
+
+	/*
 	 * If this is a high priority I/O, then use the high priority taskq if
 	 * available.
 	 */
-	if (zio->io_priority == ZIO_PRIORITY_NOW &&
+	if (p == ZIO_PRIORITY_NOW &&
 	    spa->spa_zio_taskq[t][q + 1].stqs_count != 0)
 		q++;
 
