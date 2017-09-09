@@ -265,6 +265,70 @@ vdev_queue_class_min_active(zio_priority_t p)
 	}
 }
 
+#ifdef __APPLE__
+static int
+vdev_queue_max_async_writes(spa_t *spa)
+{
+	const uint64_t dirty = spa->spa_dsl_pool->dp_dirty_total;
+
+	/*
+	 * Returnt early if we are at the highest allowed dirty value
+	 */
+	if (dirty >= zfs_dirty_data_max)
+		return (zfs_vdev_async_write_max_active);
+
+	/*
+	 * Sync tasks correspond to interactive user actions. To reduce the
+	 * execution time of those actions we push data out as fast as possible.
+	 */
+	if (spa_has_pending_synctask(spa)) {
+		return (zfs_vdev_async_write_max_active);
+	}
+
+	/*
+	 * We have dirty_pct as the percentage of zfs_dirty_data_max
+	 * that is dirty in this spa (e.g. 25).
+	 *
+	 * We also have the zfs_vdev_async_write_active_{min,max}_dirty_percent
+	 * which are e.g. 20 and 60 respectively.
+	 *
+	 * At the lower value, we return zfs_vdev_async_write_min_active (e.g. 3)
+	 * At the higher value, we return zfs_vdev_async_write_max_active (e.g. 10)
+	 * In between, we linearly interpolate to an integer value.
+	 */
+
+	const uint64_t dirty_pct = dirty / zfs_dirty_data_max * 100ULL;
+
+	if (dirty_pct <= zfs_vdev_async_write_active_min_dirty_percent)
+		return (zfs_vdev_async_write_min_active);
+	if (dirty_pct >= zfs_vdev_async_write_active_max_dirty_percent)
+		return (zfs_vdev_async_write_max_active);
+
+	/*
+	 * slope equation : (y2-y1) / (x2-x1)
+	 * where y2,y1 is pct_above_min,zfs_vdev_async_write_active_{max,min}_dirty_pct
+	 * and x2,x1 are zfs_vdev_async_write_{max,min}_active
+	 */
+	const uint64_t scale = 1000ULL;
+	const uint64_t y2 = zfs_vdev_async_write_max_active; // 10
+	const uint64_t y1 = zfs_vdev_async_write_min_active; //  3
+	ASSERT3U(y2, >, y1);
+	const uint64_t y2y1 = scale * (y2 - y1);  // 7 000
+	const uint64_t x2 = zfs_vdev_async_write_active_max_dirty_percent; // 60
+	const uint64_t x1 = zfs_vdev_async_write_active_min_dirty_percent; // 20
+	ASSERT3U(x2, >, x1);
+	const uint64_t x2x1 = ((x2 - x1) == 0) ? 1 : (x2 - x1); // div by zero paranoia, 40
+	const uint64_t slope = y2y1 / x2x1; // 7 000 / 40 == 175
+	const uint64_t xval = dirty_pct; // 25
+	const uint64_t yval = y1 + ((slope * xval) / scale);
+
+	ASSERT3U(yval, >=, zfs_vdev_async_write_min_active);
+	ASSERT3U(yval, <=, zfs_vdev_async_write_max_active);
+
+	return (yval);
+}
+
+#else
 static int
 vdev_queue_max_async_writes(spa_t *spa)
 {
@@ -274,6 +338,7 @@ vdev_queue_max_async_writes(spa_t *spa)
 		zfs_vdev_async_write_active_min_dirty_percent / 100;
 	uint64_t max_bytes =  zfs_dirty_data_max *
 		zfs_vdev_async_write_active_max_dirty_percent / 100;
+
 	/*
 	 * Sync tasks correspond to interactive user actions. To reduce the
 	 * execution time of those actions we push data out as fast as possible.
@@ -299,10 +364,12 @@ vdev_queue_max_async_writes(spa_t *spa)
 		(uint64_t)(
 		(max_bytes - min_bytes) +
 	    zfs_vdev_async_write_min_active);
-	ASSERT3U(writes, >=, zfs_vdev_async_write_min_active);
-	ASSERT3U(writes, <=, zfs_vdev_async_write_max_active);
+
+	ASSERT3S(((int64_t)writes), >=, (int64_t)zfs_vdev_async_write_min_active);
+	ASSERT3U(((int64_t)writes), <=, (int64_t)zfs_vdev_async_write_max_active);
 	return (writes);
 }
+#endif
 
 static int
 vdev_queue_class_max_active(spa_t *spa, zio_priority_t p)
