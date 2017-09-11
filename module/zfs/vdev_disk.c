@@ -805,7 +805,7 @@ vdev_disk_ldi_physio(ldi_handle_t vd_lh, caddr_t data,
 	ASSERT(flags & B_READ || flags & B_WRITE);
 
 	bp = getrbuf(KM_SLEEP);
-	bp->b_flags = flags | B_BUSY | B_NOCACHE | B_FAILFAST;
+	bp->b_flags = flags | B_NOCACHE | B_FAILFAST;
 	bp->b_bcount = size;
 	bp->b_un.b_addr = (void *)data;
 	bp->b_lblkno = lbtodb(offset);
@@ -1022,7 +1022,7 @@ vdev_disk_io_start(zio_t *zio)
 	ASSERT(zio->io_size != 0);
 
 	bioinit(bp);
-	bp->b_flags = B_BUSY | flags;
+	bp->b_flags = flags;
 	if (!(zio->io_flags & (ZIO_FLAG_IO_RETRY | ZIO_FLAG_TRYHARD)))
 		bp->b_flags |= B_FAILFAST;
 	bp->b_bcount = zio->io_size;

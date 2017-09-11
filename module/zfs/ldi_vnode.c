@@ -575,7 +575,9 @@ buf_strategy_vnode(ldi_buf_t *lbp, struct ldi_handle *lhp)
 
 	/* Setup buffer */
 	buf_setflags(bp, B_NOCACHE | (lbp->b_flags & B_READ ?
-	    B_READ : B_WRITE));
+		B_READ : B_WRITE) |
+	    (lbp->b_flags & (B_PASSIVE | B_PHYS | B_RAW)) |
+	    ((lbp->b_iodone == NULL) ? 0 : B_ASYNC));
 	buf_setcount(bp, lbp->b_bcount);
 	buf_setdataptr(bp, (uintptr_t)lbp->b_un.b_addr);
 	buf_setblkno(bp, lbp->b_lblkno);
