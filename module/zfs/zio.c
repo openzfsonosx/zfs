@@ -59,6 +59,9 @@ const char *zio_type_name[ZIO_TYPES] = {
 };
 
 boolean_t zio_dva_throttle_enabled = B_TRUE;
+uint64_t zio_dva_throttle_continued = 0;
+uint64_t zio_dva_throttle_stopped = 0;
+uint64_t zio_dva_throttle_switched = 0;
 
 /*
  * ==========================================================================
@@ -3091,10 +3094,14 @@ zio_dva_throttle(zio_t *zio)
 	spa_t *spa = zio->io_spa;
 	zio_t *nio;
 
+	if (zio_dva_throttle_enabled == B_FALSE)
+		return (ZIO_PIPELINE_CONTINUE);
+
 	if (zio->io_priority == ZIO_PRIORITY_SYNC_WRITE ||
 	    !spa_normal_class(zio->io_spa)->mc_alloc_throttle_enabled ||
 	    zio->io_child_type == ZIO_CHILD_GANG ||
 	    zio->io_flags & ZIO_FLAG_NODATA) {
+		//atomic_inc_64(&zio_dva_throttle_continued);
 		return (ZIO_PIPELINE_CONTINUE);
 	}
 
@@ -3111,8 +3118,10 @@ zio_dva_throttle(zio_t *zio)
 	nio = zio_io_to_allocate(zio->io_spa);
 	mutex_exit(&spa->spa_alloc_lock);
 
-	if (nio == zio)
+	if (nio == zio) {
+		atomic_inc_64(&zio_dva_throttle_continued);
 		return (ZIO_PIPELINE_CONTINUE);
+	}
 
 	if (nio != NULL) {
 		ASSERT(nio->io_stage == ZIO_STAGE_DVA_THROTTLE);
@@ -3124,8 +3133,10 @@ zio_dva_throttle(zio_t *zio)
 		 * it to go to the head of the taskq since it's already
 		 * been waiting.
 		 */
+		atomic_inc_64(&zio_dva_throttle_switched);
 		zio_taskq_dispatch(nio, ZIO_TASKQ_ISSUE, B_TRUE);
 	}
+	atomic_inc_64(&zio_dva_throttle_stopped);
 	return (ZIO_PIPELINE_STOP);
 }
 

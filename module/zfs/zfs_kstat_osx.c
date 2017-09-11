@@ -175,6 +175,9 @@ osx_kstat_t osx_kstat = {
 
 	{"zfs_vdev_queue_depth_pct",KSTAT_DATA_UINT64  },
 	{"zio_dva_throttle_enabled",KSTAT_DATA_UINT64  },
+	{"zio_dva_throttle_continued", KSTAT_DATA_UINT64 },
+	{"zio_dva_throttle_stopped", KSTAT_DATA_UINT64 },
+	{"zio_dva_throttle_switched", KSTAT_DATA_UINT64 },
 
 	{"zfs_vdev_file_size_mismatch_cnt",KSTAT_DATA_UINT64  },
 
@@ -577,6 +580,9 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		ks->zfs_vdev_queue_depth_pct.value.ui64 = zfs_vdev_queue_depth_pct;
 		ks->zio_dva_throttle_enabled.value.ui64 = (uint64_t) zio_dva_throttle_enabled;
+		ks->zio_dva_throttle_continued.value.ui64 = (uint64_t) zio_dva_throttle_continued;
+		ks->zio_dva_throttle_stopped.value.ui64 = (uint64_t) zio_dva_throttle_stopped;
+		ks->zio_dva_throttle_switched.value.ui64 = (uint64_t) zio_dva_throttle_switched;
 
 		ks->zfs_vdev_file_size_mismatch_cnt.value.ui64 = zfs_vdev_file_size_mismatch_cnt;
 

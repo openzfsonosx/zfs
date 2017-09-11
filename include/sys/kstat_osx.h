@@ -144,6 +144,9 @@ typedef struct osx_kstat {
 
 	kstat_named_t zfs_vdev_queue_depth_pct;
 	kstat_named_t zio_dva_throttle_enabled;
+	kstat_named_t zio_dva_throttle_continued;
+	kstat_named_t zio_dva_throttle_stopped;
+	kstat_named_t zio_dva_throttle_switched;
 
 	kstat_named_t zfs_vdev_file_size_mismatch_cnt;
 
@@ -248,6 +251,9 @@ extern uint64_t dbuf_cache_max_bytes;
 
 extern uint64_t zfs_vdev_queue_depth_pct;
 extern boolean_t zio_dva_throttle_enabled;
+extern uint64_t zio_dva_throttle_continued;
+extern uint64_t zio_dva_throttle_stopped;
+extern uint64_t zio_dva_throttle_switched;
 
 extern uint64_t zfs_vdev_file_size_mismatch_cnt;
 
