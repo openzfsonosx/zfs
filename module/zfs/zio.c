@@ -3369,10 +3369,34 @@ zio_vdev_io_start(zio_t *zio)
 	    vd == vd->vdev_top && !vd->vdev_islog &&
 	    zio->io_bookmark.zb_objset != DMU_META_OBJSET &&
 	    zio->io_txg != spa_syncing_txg(spa)) {
-		uint64_t old = spa->spa_last_io;
-		uint64_t new = ddi_get_lbolt64();
-		if (old != new)
-			(void) atomic_cas_64(&spa->spa_last_io, old, new);
+		for (unsigned int i = 1; ; i++) {
+			if (i > 255) {
+				printf("ZFS: %s CAS loop timed out! old=%llx new=%llx\n",
+				    __func__, spa->spa_last_io, ddi_get_lbolt64());
+				break;
+			}
+
+			if (i % 60) {
+#ifdef _KERNEL
+				void IOSleep(unsigned milliseconds);
+				IOSleep(1);
+#else
+				delay(1);
+#endif
+			}
+
+			uint64_t new = ddi_get_lbolt64();
+			uint64_t old = spa->spa_last_io;
+			uint64_t res = 0;
+
+			if (old == new)
+				break;
+
+			res = atomic_cas_64(&spa->spa_last_io, old, new);
+
+			if (res == old)
+				break;
+		}
 	}
 
 	align = 1ULL << vd->vdev_top->vdev_ashift;
