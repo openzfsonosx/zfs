@@ -1333,6 +1333,9 @@ buf_strategy_iokit(ldi_buf_t *lbp, struct ldi_handle *lhp)
 	bzero(&iobp->ioattr, sizeof (IOStorageAttributes));
 #endif
 
+	/* Priority of I/O */
+	iobp->ioattr.priority = kIOStoragePriorityHigh;
+
 	/* Allocate a memory descriptor pointing to the data address */
 	iobp->iomem = IOMemoryDescriptor::withAddress(
 	    lbp->b_un.b_addr, lbp->b_bcount,
