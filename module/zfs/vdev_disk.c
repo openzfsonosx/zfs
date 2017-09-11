@@ -34,6 +34,8 @@
 #ifdef __APPLE__
 /* XXX If renamed to sunldi.h, no ifdef required */
 #include <sys/ldi_osx.h>
+#include <sys/resource.h>
+extern void spl_throttle_set_thread_io_policy(int policy);
 #else
 #include <sys/sunldi.h>
 #endif
@@ -951,17 +953,28 @@ vdev_disk_io_start(zio_t *zio)
 		return;
 
 	case ZIO_TYPE_WRITE:
-		if (zio->io_priority == ZIO_PRIORITY_SYNC_WRITE)
+		if (zio->io_priority == ZIO_PRIORITY_SYNC_WRITE) {
 			flags = B_WRITE;
-		else
-			flags = B_WRITE | B_ASYNC;
+			spl_throttle_set_thread_io_policy(IOPOL_IMPORTANT);
+		} else if (zio->io_priority == ZIO_PRIORITY_SCRUB) {
+			flags = B_WRITE | B_ASYNC | B_PASSIVE;
+			spl_throttle_set_thread_io_policy(IOPOL_PASSIVE);
+		} else {
+			flags = B_WRITE | B_ASYNC | B_PASSIVE;
+		}       spl_throttle_set_thread_io_policy(IOPOL_PASSIVE);
 		break;
 
 	case ZIO_TYPE_READ:
-		if (zio->io_priority == ZIO_PRIORITY_SYNC_READ)
-			flags = B_READ;
-		else
-			flags = B_READ | B_ASYNC;
+		if (zio->io_priority == ZIO_PRIORITY_SYNC_READ) {
+			flags = B_READ | B_PASSIVE;
+			spl_throttle_set_thread_io_policy(IOPOL_PASSIVE);
+		} else if (zio->io_priority == ZIO_PRIORITY_SCRUB) {
+			flags = B_READ | B_ASYNC | B_PASSIVE;
+			spl_throttle_set_thread_io_policy(IOPOL_PASSIVE);
+		} else {
+			flags = B_READ | B_ASYNC | B_PASSIVE;
+			spl_throttle_set_thread_io_policy(IOPOL_PASSIVE);
+		}
 		break;
 
 	default:
@@ -973,7 +986,7 @@ vdev_disk_io_start(zio_t *zio)
 	ASSERT(zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE);
 
 	/* Stop OSX from also caching our data */
-	flags |= B_NOCACHE | B_PASSIVE; // smd: also do B_PASSIVE for anti throttling test
+	flags |= B_NOCACHE;
 
 	zio->io_target_timestamp = zio_handle_io_delay(zio);
 
@@ -1028,6 +1041,8 @@ vdev_disk_io_start(zio_t *zio)
 #else /* !illumos */
 
 	error = ldi_strategy(dvd->vd_lh, bp);
+	spl_throttle_set_thread_io_policy(IOPOL_PASSIVE);
+
 	if (error != 0) {
 		printf("%s error from ldi_strategy %d\n", __func__, error);
 		zio->io_error = EIO;
