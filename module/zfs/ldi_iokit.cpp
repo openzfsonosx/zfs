@@ -427,11 +427,16 @@ handle_sync_iokit(struct ldi_handle *lhp)
 #if defined (MAC_OS_X_VERSION_10_11) &&        \
 	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_11)
 	/* Issue device sync */
-	if (LH_MEDIA(lhp)->synchronize(LH_CLIENT(lhp), 0, 0, 0) !=
+	if (LH_MEDIA(lhp)->synchronize(LH_CLIENT(lhp), 0, 0, kIOStorageSynchronizeOptionBarrier) !=
 	    kIOReturnSuccess) {
-		dprintf("%s %s\n", __func__,
-		    "IOMedia synchronizeCache failed");
-		return (ENOTSUP);
+	  printf("%s %s\n", __func__,
+		       "ZFS: IOMedia synchronizeCache (with write barrier) failed");
+		if (LH_MEDIA(lhp)->synchronize(LH_CLIENT(lhp), 0, 0, 0) !=
+		    kIOReturnSuccess) {
+		  printf("%s %s\n", __func__,
+			 "ZFS: IOMedia synchronizeCache (standard) failed");
+			    return (ENOTSUP);
+		}
 	}
 #else
 	/* Issue device sync */
