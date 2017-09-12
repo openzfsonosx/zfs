@@ -83,6 +83,7 @@
 #include <sys/zfs_vnops.h>
 #include <sys/zfs_vfsops.h>
 #include <sys/vnode.h>
+#include <sys/vdev.h>
 
 //#define dprintf printf
 
@@ -2916,7 +2917,8 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 
 	(void) tsd_set(zfs_fsyncer_key, (void *)zfs_fsync_sync_cnt);
 
-	if (zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED) {
+	if (zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED
+		&& zfs_nocacheflush == 0) {
 		ZFS_ENTER(zfsvfs);
 		ZFS_VERIFY_ZP(zp);
 		zil_commit(zfsvfs->z_log, zp->z_id);
