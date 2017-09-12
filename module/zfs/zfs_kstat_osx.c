@@ -185,6 +185,9 @@ osx_kstat_t osx_kstat = {
 
 	{"zfs_scan_min_time_ms",KSTAT_DATA_UINT64  },
 	{"zfs_resilver_min_time_ms",KSTAT_DATA_UINT64  },
+
+	{"zio_delay_max", KSTAT_DATA_UINT64 },
+
 };
 
 
@@ -395,6 +398,10 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		zfs_resilver_min_time_ms =
 		    (int) ks->zfs_resilver_min_time_ms.value.ui64;
+
+		zio_delay_max =
+		    (int) ks->zio_delay_max.value.ui64;
+
 } else {
 
 		/* kstat READ */
@@ -590,6 +597,8 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 
 		ks->zfs_scan_min_time_ms.value.ui64 = (uint64_t) zfs_scan_min_time_ms;
 		ks->zfs_resilver_min_time_ms.value.ui64 = (uint64_t) zfs_resilver_min_time_ms;
+
+		ks->zio_delay_max.value.ui64 = (uint64_t) zio_delay_max;
 	}
 
 	return 0;
