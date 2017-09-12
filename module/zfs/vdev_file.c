@@ -299,8 +299,7 @@ vdev_file_io_start(zio_t *zio)
             zio->io_error = SET_ERROR(ENOTSUP);
         }
 
-
-		zio_interrupt(zio);
+	zio_execute(zio);
         return;
     }
 

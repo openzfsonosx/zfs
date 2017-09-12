@@ -1029,11 +1029,10 @@ vdev_disk_io_start(zio_t *zio)
 
 	error = ldi_strategy(dvd->vd_lh, bp);
 	if (error != 0) {
-		dprintf("%s error from ldi_strategy %d\n", __func__, error);
+		printf("%s error from ldi_strategy %d\n", __func__, error);
 		zio->io_error = EIO;
 		kmem_free(vb, sizeof (vdev_buf_t));
-		zio_execute(zio);
-		// zio_interrupt(zio);
+		zio_interrupt(zio);
 	}
 #endif /* !illumos */
 
