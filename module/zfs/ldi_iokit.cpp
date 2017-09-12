@@ -1264,6 +1264,9 @@ buf_sync_strategy_iokit(ldi_buf_t *lbp, ldi_iokit_buf_t *iobp,
 	UInt64 actualByteCount = 0;
 	IOReturn result;
 
+	iobp->ioattr.priority = 0;
+	iobp->ioattr.options = 0;
+
 	/* Read or write */
 	if (lbp->b_flags & B_READ) {
 		result = LH_MEDIA(lhp)->IOStorage::read(LH_CLIENT(lhp),
