@@ -2012,8 +2012,86 @@ dsl_scan_scrub_cb(dsl_pool_t *dp,
 		uint64_t maxinflight = rvd->vdev_children * zfs_top_maxinflight;
 
 		mutex_enter(&spa->spa_scrub_lock);
+#ifndef __APPLE__
 		while (spa->spa_scrub_inflight >= maxinflight)
 			cv_wait(&spa->spa_scrub_io_cv, &spa->spa_scrub_lock);
+#else
+
+		/*
+		 * When a user is logged in at the macOS GUI, we would
+		 * often hit the cv_wait() and stay there for many
+		 * seconds.  Scrubs and resilvers would thus stall for
+		 * long periods, and take an eternity to finish for a
+		 * sizable job.
+		 *
+		 * If we stall after ~ 500 ms, then we wake up once a
+		 * millisecond, and if there hasbeen neither an
+		 * intervening "important" I/O nor other progress on the
+		 * scrub, we stop waiting for a signal, even if we are
+		 * over maxinflight (but not if we are over
+		 * dribble_threshold).
+		 */
+
+		const hrtime_t begin = gethrtime();
+		const int dribble_threshold = 10000; // about ten seconds of work
+		const hrtime_t dribble_every = MSEC2NSEC(1);
+		const hrtime_t stalled_after = MSEC2NSEC(500);
+		boolean_t stalled = B_FALSE;
+		uint32_t wakeups = 0;
+
+		for (; spa->spa_scrub_inflight >= maxinflight; wakeups++) {
+			(void) cv_timedwait_hires(&spa->spa_scrub_io_cv,
+			    &spa->spa_scrub_lock,
+			    (stalled) ? dribble_every : stalled_after,
+			    MSEC2NSEC(1), 0);
+
+			stalled = B_TRUE;
+
+			if (spa->spa_scrub_inflight < maxinflight)
+				break;
+
+			if (spa->spa_scrub_inflight >= dribble_threshold)
+				continue;
+
+			const hrtime_t now = gethrtime();
+			const boolean_t very_recent_dribble =
+			    (now >= spa->spa_scrub_inflight_iss)
+			    ? ((now - spa->spa_scrub_inflight_iss) <= dribble_every)
+			    : B_TRUE;
+
+			if (very_recent_dribble)
+				continue;
+
+			const uint64_t lbnow = ddi_get_lbolt64();
+			const uint64_t lastio = spa->spa_last_io;
+			const boolean_t recent_io =
+			    (lbnow >= lastio)
+			    ? ((lbnow - lastio) <= zfs_scan_idle)
+			    : B_TRUE;
+
+			if (recent_io) {
+				stalled = B_FALSE;
+				continue;
+			}
+
+			/*
+			 * We have had neither recent important I/O nor have issued a
+			 * scrub zio very recently, and we are below dribble_threshold.
+			 *
+			 * If we have been here for stalled_after, then make our escape.
+			 */
+
+			if ((now - begin) > stalled_after)
+				break;
+		}
+
+		const hrtime_t end = gethrtime();
+		if ((end - begin) > SEC2NSEC(3)) {
+			printf("ZFS: %s: out of loop after %llu seconds and %u wakeups (inflight %lld)\n",
+			    __func__, NSEC2SEC(end-begin), wakeups, spa->spa_scrub_inflight);
+		}
+		spa->spa_scrub_inflight_iss = end;
+#endif
 		spa->spa_scrub_inflight++;
 		mutex_exit(&spa->spa_scrub_lock);
 

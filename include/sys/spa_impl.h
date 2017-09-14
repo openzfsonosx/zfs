@@ -192,6 +192,7 @@ struct spa {
 	uint64_t	spa_last_io;		/* lbolt of last non-scan I/O */
 	kmutex_t	spa_scrub_lock;		/* resilver/scrub lock */
 	uint64_t	spa_scrub_inflight;	/* in-flight scrub I/Os */
+	hrtime_t        spa_scrub_inflight_iss; /* time we exceeded inflight */
 	kcondvar_t	spa_scrub_io_cv;	/* scrub I/O completion */
 	uint8_t		spa_scrub_active;	/* active or suspended? */
 	uint8_t		spa_scrub_type;		/* type of scrub we're doing */
