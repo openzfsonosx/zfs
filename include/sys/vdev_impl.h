@@ -248,6 +248,9 @@ struct vdev {
 	kmutex_t	vdev_dtl_lock;	/* vdev_dtl_{map,resilver}	*/
 	kmutex_t	vdev_stat_lock;	/* vdev_stat			*/
 	kmutex_t	vdev_probe_lock; /* protects vdev_probe_zio	*/
+
+	/* Are we already doing a cache flush?" */
+	_Atomic uint32_t  vdev_cache_flush_count;
 };
 
 #define	VDEV_RAIDZ_MAXPARITY	3

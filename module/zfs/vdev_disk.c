@@ -922,6 +922,16 @@ vdev_disk_io_start(zio_t *zio)
 				break;
 			}
 
+			if (vd->vdev_cache_flush_count > 1) {
+				printf("ZFS: %s: flush count %d (p: %s d: %s pp: %s)\n",
+				    __func__, vd->vdev_cache_flush_count,
+				    vd->vdev_path? vd->vdev_path : "(null)",
+				    vd->vdev_devid ? vd->vdev_devid : "(null)",
+				    vd->vdev_physpath ? vd->vdev_physpath : "(null)");
+			}
+			vd->vdev_cache_flush_count++;
+			const hrtime_t flushstart = gethrtime();
+
 			zio->io_vsd = dkc = kmem_alloc(sizeof (*dkc), KM_SLEEP);
 			zio->io_vsd_ops = &vdev_disk_vsd_ops;
 
@@ -931,6 +941,18 @@ vdev_disk_io_start(zio_t *zio)
 
 			error = ldi_ioctl(dvd->vd_lh, zio->io_cmd,
 			    (uintptr_t)dkc, FKIOCTL, kcred, NULL);
+
+			vd->vdev_cache_flush_count--;
+			const hrtime_t flushend = gethrtime();
+			const hrtime_t flushtime = flushend- flushstart;
+
+			if (flushtime >= SEC2NSEC(5)) {
+				printf("ZFS: %s: long flush %lld ms ( p: %s d: %s pp: %s)\n",
+                                    __func__, NSEC2MSEC(flushtime),
+                                    vd->vdev_path? vd->vdev_path : "(null)",
+                                    vd->vdev_devid ? vd->vdev_devid : "(null)",
+			            vd->vdev_physpath ? vd->vdev_physpath : "(null)");
+			}
 
 			if (error == 0) {
 				/*
@@ -1040,8 +1062,24 @@ vdev_disk_io_start(zio_t *zio)
 	VERIFY(ldi_strategy(dvd->vd_lh, bp) == 0);
 #else /* !illumos */
 
+	const hrtime_t iostart = gethrtime();
+
 	error = ldi_strategy(dvd->vd_lh, bp);
 	spl_throttle_set_thread_io_policy(IOPOL_PASSIVE);
+
+	const hrtime_t ioend = gethrtime();
+	const hrtime_t iotime = ioend - iostart;
+
+	if (iotime > SEC2NSEC(5)) {
+		printf("ZFS: %s: long I/O %lld ms ( p: %s d: %s pp: %s, err: %d, ziop: %d, ziot %d\n",
+		    __func__, NSEC2MSEC(iotime),
+		    vd->vdev_path? vd->vdev_path : "(null)",
+		    vd->vdev_devid ? vd->vdev_devid : "(null)",
+		    vd->vdev_physpath ? vd->vdev_physpath : "(null)",
+		    error,
+		    zio->io_priority, zio->io_type);
+	}
+
 
 	if (error != 0) {
 		printf("%s error from ldi_strategy %d\n", __func__, error);
