@@ -243,6 +243,11 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 #ifndef __APPLE__
 	cleanlocks(vp, ddi_get_pid(), 0);
 	cleanshares(vp, ddi_get_pid());
+#else
+	if (vn_has_cached_data(vp) &&
+	    vnode_isreg(vp) && !vnode_isswap(vp)) {
+		(void) cluster_push(vp, IO_SYNC | IO_CLOSE);
+	}
 #endif
 
 	ZFS_ENTER(zfsvfs);
@@ -2912,7 +2917,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 
 	if (vn_has_cached_data(vp) /*&& !(syncflag & FNODSYNC)*/ &&
 		vnode_isreg(vp) && !vnode_isswap(vp)) {
-		cluster_push(vp, /* waitdata ? IO_SYNC : */ 0);
+		(void) cluster_push(vp, IO_SYNC);
 	}
 
 	(void) tsd_set(zfs_fsyncer_key, (void *)zfs_fsync_sync_cnt);
