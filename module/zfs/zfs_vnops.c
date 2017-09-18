@@ -381,64 +381,67 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 		return;
 	}
 
-    for (upl_page = 0; len > 0; ++upl_page) {
-        uint64_t bytes = MIN(PAGESIZE - off, len);
-        //uint64_t woff = uio_offset(uio);
-        /*
-         * We don't want a new page to "appear" in the middle of
-         * the file update (because it may not get the write
-         * update data), so we grab a lock to block
-         * zfs_getpage().
-         */
+	/*
+	 * We lock against zfs_vnops_pagein(), which might be trying to
+	 * page in from the current file, which was mmap()ed at some
+	 * point in the past (and may still be mmap()ed).
+	 *
+	 * We also lock against other writers to the same file.
+	 *
+	 * While this penalizes writes to a file that has been mmap()ed,
+	 * we can guarantee that whole zfs_write() updates or whole pageins
+	 * complete, rather than interleaving them.
+	 */
         rw_enter(&zp->z_map_lock, RW_WRITER);
-        if (pl && upl_valid_page(pl, upl_page)) {
-            rw_exit(&zp->z_map_lock);
-            uio_setrw(uio, UIO_WRITE);
-           error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
-            if (error == 0) {
 
+	for (upl_page = 0; len > 0; ++upl_page) {
+		uint64_t bytes = MIN(PAGESIZE - off, len);
+
+		if (pl && upl_valid_page(pl, upl_page)) {
+			uio_setrw(uio, UIO_WRITE);
+			error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
+			ASSERT(error == 0);
+			if (error == 0) {
 				/*
 				  dmu_write(zfsvfs->z_os, zp->z_id,
 				  woff, bytes, (caddr_t)vaddr + off, tx);
 				*/
-                /*
-                 * We don't need a ubc_upl_commit_range()
-                 * here since the dmu_write() effectively
-                 * pushed this page to disk.
-                 */
-            } else {
-                /*
-                 * page is now in an unknown state so dump it.
-                 */
-                ubc_upl_abort_range(upl, upl_start, PAGESIZE,
+				/*
+				 * We don't need a ubc_upl_commit_range()
+				 * here since the dmu_write() effectively
+				 * pushed this page to disk.
+				 */
+			} else {
+				/*
+				 * page is now in an unknown state so dump it.
+				 */
+				ubc_upl_abort_range(upl, upl_start, PAGESIZE,
                                     UPL_ABORT_DUMP_PAGES);
-            }
-        } else { // !upl_valid_page
+			}
+		} else { // !upl_valid_page
 			/*
 			  error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
 			  uio, bytes, tx);
 			*/
-            rw_exit(&zp->z_map_lock);
-        }
+		}
+		vaddr += PAGE_SIZE;
+		upl_start += PAGE_SIZE;
+		len -= bytes;
+		off = 0;
+		if (error)
+			break;
+	}
+	rw_exit(&zp->z_map_lock);
 
-        vaddr += PAGE_SIZE;
-        upl_start += PAGE_SIZE;
-        len -= bytes;
-        off = 0;
-        if (error)
-            break;
-    }
-
-    /*
-     * Unmap the page list and free the UPL.
-     */
+	/*
+	 * Unmap the page list and free the UPL.
+	 */
 	(void) ubc_upl_unmap(upl);
 	/*
 	 * We want to abort here since due to dmu_write()
 	 * we effectively didn't dirty any pages.
 	 */
 	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-
 }
 #endif
 
@@ -1071,17 +1074,17 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (tx_bytes && vn_has_cached_data(vp)) {
 #ifdef __APPLE__
-            if (uio_copy) {
-                dprintf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
-                       woff, uio_offset(uio_copy), tx_bytes, uio_iovcnt(uio_copy));
-                update_pages(vp, tx_bytes, uio_copy, tx);
-                uio_free(uio_copy);
-                uio_copy = NULL;
-            } else {
-                dprintf("XXXXUpdatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
-                       woff, uio_offset(uio), tx_bytes, uio_iovcnt(uio));
-                update_pages(vp, tx_bytes, uio, tx);
-            }
+			if (uio_copy) {
+				dprintf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
+				    woff, uio_offset(uio_copy), tx_bytes, uio_iovcnt(uio_copy));
+				update_pages(vp, tx_bytes, uio_copy, tx);
+				uio_free(uio_copy);
+				uio_copy = NULL;
+			} else {
+				dprintf("XXXXUpdatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
+				    woff, uio_offset(uio), tx_bytes, uio_iovcnt(uio));
+				update_pages(vp, tx_bytes, uio, tx);
+			}
 #else
 			update_pages(vp, woff, tx_bytes, zfsvfs->z_os,
                          zp->z_id, 0, tx);

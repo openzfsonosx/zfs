@@ -1994,12 +1994,15 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 * If we already own the lock, then we must be page faulting in the
 	 * middle of a write to this file (i.e., we are writing to this file
 	 * using data from a mapped region of the file).
+	 *
+	 * We lock against update_pages() which is called from
+	 * zfs_write() to update the UBC.  If we have contention, then
+	 * we serialize the whole contending operations.
 	 */
 	if (!rw_write_held(&zp->z_map_lock)) {
 		rw_enter(&zp->z_map_lock, RW_WRITER);
 		need_unlock = TRUE;
 	}
-
 
 	if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
 		dprintf("zfs_vnop_pagein: failed to ubc_upl_map");
