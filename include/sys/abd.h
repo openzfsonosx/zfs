@@ -46,6 +46,8 @@ typedef struct abd {
 	uint_t		abd_size;	/* excludes scattered abd_offset */
 	kmutex_t        abd_mutex;
 	hrtime_t        abd_create_time;
+	hrtime_t        abd_move_time;
+	uint32_t        abd_move_count;
 	struct abd	*abd_parent;
 	refcount_t	abd_children;
 	union {

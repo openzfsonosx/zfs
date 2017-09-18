@@ -303,6 +303,7 @@ static void arc_abd_move_thr_init(void);
 static void arc_abd_move_thr_fini(void);
 static kcondvar_t arc_abd_move_thr_cv;
 static _Atomic boolean_t arc_reclaim_in_loop = B_FALSE;
+static _Atomic uint64_t recently_evicted = 0;
 #ifdef _KERNEL
 extern vmem_t *zio_arena_parent;
 extern vmem_t *heap_arena;
@@ -4848,8 +4849,10 @@ arc_reclaim_thread(void)
 		evicted = arc_adjust();
 
 #ifdef __APPLE__
-		if (evicted > 64LL*1024LL*1024LL)
+		if (evicted > 64LL*1024LL*1024LL) {
+			recently_evicted += evicted;
 			cv_signal(&arc_abd_move_thr_cv);
+		}
 #endif
 
 		int64_t free_memory = arc_available_memory();
@@ -5023,6 +5026,11 @@ arc_reclaim_thread(void)
 					old_to_free = left_to_free;
 				}
 
+				if (arc_shrink_freed > 0) {
+					recently_evicted += arc_shrink_freed;
+					evicted += arc_shrink_freed;
+				}
+
 				// If we have reduced ARC by a lot before this point,
 				// try to give memory back to lower arenas (and possibly xnu).
 
@@ -5032,8 +5040,6 @@ arc_reclaim_thread(void)
 						vmem_qcache_reap(zio_arena_parent);
 					cv_signal(&arc_abd_move_thr_cv);
 				}
-				if (arc_shrink_freed > 0)
-					evicted += arc_shrink_freed;
 			} else if (old_to_free > 0) {
 			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
 				 __func__, old_to_free);
@@ -9043,6 +9049,7 @@ l2arc_stop(void)
 #elif !defined(ZDB_DEBUG)
 #define fprintf(...)
 #endif
+
 /*
  * check that this header is movable, and if so ask abd to move it
  * return B_TRUE if we have moved the abd
@@ -9099,7 +9106,8 @@ arc_abd_try_move(arc_buf_hdr_t *hdr)
 
 	const hrtime_t now = gethrtime();
 
-	if (hdr->b_l1hdr.b_pabd->abd_create_time + fivemin > now) {
+	if (hdr->b_l1hdr.b_pabd->abd_move_time + fivemin > now &&
+		hdr->b_l1hdr.b_pabd->abd_create_time + fivemin > now) {
 		ARCSTAT_BUMP(abd_move_skip_young_abd);
 #ifdef _KERNEL
 		return (B_FALSE);
@@ -9199,6 +9207,7 @@ arc_abd_move_thread(void *notused)
 #else
 	clock_t wait_time = SEC2NSEC(5);
 #endif
+	uint64_t ev = 0;
 
 	CALLB_CPR_INIT(&cpr, &arc_abd_move_thr_lock, callb_generic_cpr, FTAG);
 
@@ -9217,17 +9226,42 @@ arc_abd_move_thread(void *notused)
 
 		wait_time = SEC2NSEC(6);
 
+		/*
+		 * ev holds how much memory arc_reclaim_thread has evicted
+		 * since the last time we woke up
+		 */
+		ev = recently_evicted;
+		recently_evicted = 0;
+
+		if (ev > 0)
+			wait_time = SEC2NSEC(1);
+
 #ifdef _KERNEL
 		int64_t buckets_free = vmem_buckets_size(VMEM_FREE);
 
-		if (buckets_free < threshold)
+		if (buckets_free < threshold && ev == 0)
 			continue;
-#endif
 
 		if (arc_c > arc_c_min + ((arc_c_max - arc_c_min) >> 2)) {
+			/*
+			 * arc is large, and should be able to grow into spare
+			 * memory rather than return it to xnu only to re-request
+			 * it shortly.  However moving is not counterproductive if we
+			 * have too much spare (> 10% of memory) unused in
+			 * the buckets layer.
+			 */
+			if (buckets_free < threshold && ev < (threshold << 2)) {
+				ARCSTAT_BUMP(abd_scan_big_arc);
+				continue;
+			}
+		}
+
+#else
+		if (arc_c > arc_c_min + ((arc_c_max - arc_c_min) >> 2) && ev == 0) {
 			ARCSTAT_BUMP(abd_scan_big_arc);
 			continue;
 		}
+#endif
 
 		if(arc_abd_move_scan()) {
 #ifdef _KERNEL
@@ -9256,8 +9290,9 @@ arc_abd_move_thread(void *notused)
 
 /* return true if we have moved an abd */
 
-static boolean_t
-arc_abd_move_sublist(multilist_sublist_t *mls, boolean_t scan_forward, hrtime_t deadline)
+static boolean_t __attribute__((always_inline))
+arc_abd_move_sublist(multilist_sublist_t *mls, boolean_t scan_forward,
+    hrtime_t deadline, uint32_t generation)
 {
 
 	boolean_t moved_something = B_FALSE;
@@ -9324,14 +9359,42 @@ arc_abd_move_sublist(multilist_sublist_t *mls, boolean_t scan_forward, hrtime_t 
 			continue;
 		}
 
-		const hrtime_t timediff = now - hdr->b_l1hdr.b_pabd->abd_create_time;
+		if (hdr->b_l1hdr.b_pabd->abd_move_count != generation) {
+			mutex_exit(hash_lock);
+			continue;
+		}
+
+		/* move old ABDs less frequently */
+		const hrtime_t ctimediff = now - hdr->b_l1hdr.b_pabd->abd_create_time;
+
+		if (generation < 25) {
+			/* move gen 0 after 256 seconds */
+			const int      scale = 8 + generation;
+			const uint64_t secs  = 1ULL << scale;
+			const hrtime_t thresh = SEC2NSEC(secs);
+			if (ctimediff < thresh) {
+				ARCSTAT_BUMP(abd_scan_skip_young);
+				mutex_exit(hash_lock);
+				continue;
+			}
+		}
+
+		const hrtime_t mtimediff = now - hdr->b_l1hdr.b_pabd->abd_move_time;
+
 #ifdef _KERNEL
 		const hrtime_t old_enough = SEC2NSEC(5*59); // cf. test in arc_abd_try_move()
 #else
 		const hrtime_t old_enough = SEC2NSEC(5); // small in order to test frequently
 #endif
 
-		if (timediff >= old_enough) {
+		/*
+		 * Keep an ABD in its generation for a minimal amount of time.
+		 * Recheck ctimediff because mtimediff == now for a newly
+		 * created abd (since at creation its abd_move_time is 0)
+		 */
+
+		if (mtimediff >= old_enough &&
+			ctimediff >= old_enough) {
 			if (arc_abd_try_move(hdr)) {
 				moved_something = B_TRUE;
 				update_now = B_TRUE;
@@ -9339,7 +9402,6 @@ arc_abd_move_sublist(multilist_sublist_t *mls, boolean_t scan_forward, hrtime_t 
 		} else {
 			ARCSTAT_BUMP(abd_scan_skip_young);
 		}
-
 		mutex_exit(hash_lock);
 	}
 
@@ -9389,7 +9451,7 @@ arc_abd_move_scan(void)
 	const int try_order[4] = { 2, 3, 1, 0 };
 	const boolean_t scan_fwd[4] = { B_FALSE, B_FALSE, B_TRUE, B_TRUE };
 
-	uint16_t pass = 0;
+	uint32_t pass = 0;
 
 	for (; now <= end_all_after && pass < maxpass; pass++) {
 		for (int try = 0; try <= 3; try++) {
@@ -9405,7 +9467,8 @@ arc_abd_move_scan(void)
 
 			multilist_sublist_t *mls = l2arc_sublist_lock(try_order[try]);
 
-			if(arc_abd_move_sublist(mls, scan_fwd[try], end_sublist_after))
+			/* don't bother moving anything older than 2^16 seconds ~ 6 months */
+			if(arc_abd_move_sublist(mls, scan_fwd[try], end_sublist_after, (pass % 16)))
 				moved_something = B_TRUE;
 
 			multilist_sublist_unlock(mls);

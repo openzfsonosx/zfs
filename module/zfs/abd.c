@@ -403,6 +403,8 @@ abd_alloc_struct(size_t chunkcnt)
 	abd->abd_magic = ABD_DEBUG_MAGIC;
 #endif
 	abd->abd_create_time = gethrtime();
+	abd->abd_move_time = 0;
+	abd->abd_move_count = 0;
 	mutex_init(&abd->abd_mutex, NULL, MUTEX_DEFAULT, NULL);
 
 	return (abd);
@@ -421,6 +423,8 @@ abd_free_struct(abd_t *abd)
 	// poison the memory to catch UAF;
 	abd->abd_u.abd_scatter.abd_chunk_size = 0;
 	abd->abd_create_time = 0;
+	abd->abd_move_time = 0;
+	abd->abd_move_count = 0;
 	abd->abd_flags = 0;
 	abd->abd_parent = NULL;
 	abd->abd_size = 0;
@@ -1388,7 +1392,7 @@ abd_try_move_scattered_impl(abd_t *abd)
 	}
 
 	// update time
-	abd->abd_create_time = gethrtime();
+	abd->abd_move_time = gethrtime();
 
 	abd_verify(abd);
 
@@ -1442,7 +1446,8 @@ abd_try_move_linear_impl(abd_t *abd)
 		zio_data_buf_free(oldbuf, bsize);
 
 	// update time
-	abd->abd_create_time = gethrtime();
+	abd->abd_move_time = gethrtime();
+	abd->abd_move_count++;
 
 	mutex_exit(&abd->abd_mutex);
 
