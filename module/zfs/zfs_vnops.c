@@ -382,15 +382,19 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	}
 
 	/*
-	 * We lock against zfs_vnops_pagein(), which might be trying to
-	 * page in from the current file, which was mmap()ed at some
-	 * point in the past (and may still be mmap()ed).
+	 * We lock against zfs_vnops_pagein() for this file, as it may
+	 * be trying to page in from the current file, which was
+	 * mmap()ed at some point in the past (and may still be
+	 * mmap()ed).
 	 *
 	 * We also lock against other writers to the same file.
 	 *
 	 * While this penalizes writes to a file that has been mmap()ed,
 	 * we can guarantee that whole zfs_write() updates or whole pageins
 	 * complete, rather than interleaving them.
+	 *
+	 * Finally, we also lock against zfs_vnop_pageoutv2() and
+	 * zfs_vnop_pageout() to this file.
 	 */
         rw_enter(&zp->z_map_lock, RW_WRITER);
 
