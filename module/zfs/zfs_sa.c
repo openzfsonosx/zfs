@@ -256,10 +256,7 @@ zfs_sa_set_xattr(znode_t *zp)
 	} else {
 		error = sa_update(zp->z_sa_hdl, SA_ZPL_DXATTR(zfsvfs),
 		    obj, size, tx);
-		if (error)
-			dmu_tx_abort(tx);
-		else
-			dmu_tx_commit(tx);
+		dmu_tx_commit(tx);
 	}
 out_free:
 	zio_buf_free(obj, size);
