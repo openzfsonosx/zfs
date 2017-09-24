@@ -9057,6 +9057,8 @@ l2arc_stop(void)
 static boolean_t
 arc_abd_try_move(arc_buf_hdr_t *hdr)
 {
+	ASSERT(MUTEX_HELD(HDR_LOCK(hdr)));
+
 	ARCSTAT_BUMP(abd_move_try);
 
 	if (!HDR_HAS_L1HDR(hdr) || GHOST_STATE(hdr->b_l1hdr.b_state) ||
@@ -9070,10 +9072,14 @@ arc_abd_try_move(arc_buf_hdr_t *hdr)
 		return (B_FALSE);
 	}
 
+	abd_t *abd = hdr->b_l1hdr.b_pabd;
+	mutex_enter(&abd->abd_mutex);
+
 	if (HDR_SHARED_DATA(hdr) ||
 	    (hdr->b_l1hdr.b_buf != NULL &&
 		hdr->b_l1hdr.b_buf->b_data !=
-		hdr->b_l1hdr.b_pabd)) {
+		abd)) {
+		mutex_exit(&abd->abd_mutex);
 		fprintf(stderr, "c");
 		ARCSTAT_BUMP(abd_move_no_shared);
 		return (B_FALSE);
@@ -9095,6 +9101,7 @@ arc_abd_try_move(arc_buf_hdr_t *hdr)
 	const size_t empty = qsize - totused;
 
 	if (empty <= (qsize >> 4)) {
+		mutex_exit(&abd->abd_mutex);
 		ARCSTAT_BUMP(abd_move_no_small_qcache);
 		return (B_FALSE);
 	}
@@ -9106,10 +9113,11 @@ arc_abd_try_move(arc_buf_hdr_t *hdr)
 
 	const hrtime_t now = gethrtime();
 
-	if (hdr->b_l1hdr.b_pabd->abd_move_time + fivemin > now &&
-		hdr->b_l1hdr.b_pabd->abd_create_time + fivemin > now) {
+	if (abd->abd_move_time + fivemin > now &&
+		abd->abd_create_time + fivemin > now) {
 		ARCSTAT_BUMP(abd_move_skip_young_abd);
 #ifdef _KERNEL
+		mutex_exit(&abd->abd_mutex);
 		return (B_FALSE);
 #endif
 	}
@@ -9118,34 +9126,40 @@ arc_abd_try_move(arc_buf_hdr_t *hdr)
 	    ((hdr->b_flags & (ARC_FLAG_PREFETCH | ARC_FLAG_INDIRECT)) &&
 		ddi_get_lbolt() - hdr->b_l1hdr.b_arc_access <
 		arc_min_prefetch_lifespan)) {
+		mutex_exit(&abd->abd_mutex);
 		ARCSTAT_BUMP(abd_move_buf_too_young);
 		fprintf(stderr, "f");
 		return (B_FALSE);
 	}
 
 	if (HDR_L2_WRITING(hdr)) {
+		mutex_exit(&abd->abd_mutex);
 		ARCSTAT_BUMP(abd_move_buf_busy);
 		fprintf(stderr, "g");
 		return (B_FALSE);
 	}
 
 	if (refcount_count(&hdr->b_l1hdr.b_refcnt) > 0) {
+		mutex_exit(&abd->abd_mutex);
 		fprintf(stderr, "h");
 		return (B_FALSE);
 	}
 
 	// (abd) FIXME: make it safe to move all linear
 	if (abd_is_linear(hdr->b_l1hdr.b_pabd)) {
+		mutex_exit(&abd->abd_mutex);
 		ARCSTAT_BUMP(abd_move_no_linear);
 		fprintf(stderr, "j");
 		return (B_FALSE);
 	}
 
 
+	boolean_t retval = abd_try_move(abd);
+	mutex_exit(&abd->abd_mutex);
 #ifdef _KERNEL
-	return(abd_try_move(hdr->b_l1hdr.b_pabd));
+	return (retval);
 #else
-	if (abd_try_move(hdr->b_l1hdr.b_pabd) == B_TRUE) {
+	if (retval == B_TRUE) {
 		fprintf(stderr, "+");
 		return (B_TRUE);
 	} else {
@@ -9419,7 +9433,8 @@ arc_abd_move_scan(void)
 	boolean_t moved_something = B_FALSE;
 	hrtime_t now = gethrtime();
 	extern int zfs_multilist_num_sublists;
-	const uint16_t maxpass = MAX(4, MAX(max_ncpus, zfs_multilist_num_sublists));
+	const uint16_t num_generations = 16;
+	const uint16_t maxpass = MAX(num_generations, MAX(max_ncpus, zfs_multilist_num_sublists));
 	const hrtime_t end_sublist_delta = MSEC2NSEC(2);
 	const hrtime_t end_all_after = now + (end_sublist_delta * maxpass * 2LL);
 
@@ -9453,7 +9468,7 @@ arc_abd_move_scan(void)
 
 	uint32_t pass = 0;
 
-	for (; now <= end_all_after && pass < maxpass; pass++) {
+	for (; now <= end_all_after && pass <= maxpass; pass++) {
 		for (int try = 0; try <= 3; try++) {
 
 			const hrtime_t end_sublist_after = MIN((now + end_sublist_delta), end_all_after);
@@ -9468,8 +9483,11 @@ arc_abd_move_scan(void)
 			multilist_sublist_t *mls = l2arc_sublist_lock(try_order[try]);
 
 			/* don't bother moving anything older than 2^16 seconds ~ 6 months */
-			if(arc_abd_move_sublist(mls, scan_fwd[try], end_sublist_after, (pass % 16)))
-				moved_something = B_TRUE;
+			if (arc_abd_move_sublist(mls, scan_fwd[try],
+	                                         end_sublist_after,
+                                                 (pass % num_generations))) {
+                               moved_something = B_TRUE;
+                        }
 
 			multilist_sublist_unlock(mls);
 

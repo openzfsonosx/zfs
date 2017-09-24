@@ -170,6 +170,8 @@ typedef struct abd_stats {
 	kstat_named_t abdstat_moved_scattered_filedata;
 	kstat_named_t abdstat_moved_scattered_metadata;
 	kstat_named_t abdstat_move_to_buf_flag_fail;
+	kstat_named_t abdstat_move_has_children;
+	kstat_named_t abdstat_move_has_parent;
 } abd_stats_t;
 
 static abd_stats_t abd_stats = {
@@ -215,6 +217,8 @@ static abd_stats_t abd_stats = {
 	{ "moved_scattered_filedata",           KSTAT_DATA_UINT64 },
 	{ "moved_scattered_metadata",           KSTAT_DATA_UINT64 },
 	{ "move_to_buf_flag_fail",              KSTAT_DATA_UINT64 },
+	{ "move_has_children",                  KSTAT_DATA_UINT64 },
+	{ "move_has_parent",                    KSTAT_DATA_UINT64 },
 };
 
 #define	ABDSTAT(stat)		(abd_stats.stat.value.ui64)
@@ -1350,13 +1354,10 @@ abd_try_move_scattered_impl(abd_t *abd)
 {
 
 	VERIFY0(abd->abd_flags & ABD_FLAG_LINEAR);
-
-	mutex_enter(&abd->abd_mutex);
-
+	ASSERT(MUTEX_HELD(&abd->abd_mutex));
 	abd_verify(abd);
 
 	if (!refcount_is_zero(&abd->abd_children)) {
-		mutex_exit(&abd->abd_mutex);
 		ABDSTAT_BUMP(abdstat_move_refcount_nonzero);
 		return (B_FALSE);
 	}
@@ -1394,12 +1395,10 @@ abd_try_move_scattered_impl(abd_t *abd)
 	// update time
 	abd->abd_move_time = gethrtime();
 
-	abd_verify(abd);
-
 	// release partialabd
 	kmem_free(partialabd, hsize);
 
-	mutex_exit(&abd->abd_mutex);
+	abd_verify(abd);
 
 	return (B_TRUE);
 }
@@ -1408,13 +1407,10 @@ static boolean_t
 abd_try_move_linear_impl(abd_t *abd)
 {
 	ASSERT((abd->abd_flags & ABD_FLAG_LINEAR) == ABD_FLAG_LINEAR);
-
-	mutex_enter(&abd->abd_mutex);
-
+	ASSERT(MUTEX_HELD(&abd->abd_mutex));
 	abd_verify(abd);
 
 	if (!refcount_is_zero(&abd->abd_children)) {
-		mutex_exit(&abd->abd_mutex);
 		ABDSTAT_BUMP(abdstat_move_refcount_nonzero);
 		return (B_FALSE);
 	}
@@ -1449,9 +1445,9 @@ abd_try_move_linear_impl(abd_t *abd)
 	abd->abd_move_time = gethrtime();
 	abd->abd_move_count++;
 
-	mutex_exit(&abd->abd_mutex);
-
 	kmem_free(partialabd, hsize);
+
+	abd_verify(abd);
 
 	return(B_TRUE);
 }
@@ -1461,6 +1457,7 @@ abd_try_move_linear_impl(abd_t *abd)
 static boolean_t
 abd_try_move_impl(abd_t *abd)
 {
+	ASSERT(MUTEX_HELD(&abd->abd_mutex));
 
 	if ((abd->abd_flags & ABD_FLAG_NOMOVE) == ABD_FLAG_NOMOVE) {
 		ABDSTAT_BUMP(abdstat_move_to_buf_flag_fail);
@@ -1497,8 +1494,27 @@ abd_try_move_impl(abd_t *abd)
 boolean_t
 abd_try_move(abd_t *abd)
 {
-	abd_verify(abd);
-	return(abd_try_move_impl(abd));
+	ASSERT(MUTEX_HELD(&abd->abd_mutex));
+
+	ASSERT3U(abd->abd_size, >, 0);
+	ASSERT3U(abd->abd_size, <=, SPA_MAXBLOCKSIZE);
+	ASSERT3U(abd->abd_flags, ==, abd->abd_flags & (ABD_FLAG_LINEAR |
+		ABD_FLAG_OWNER | ABD_FLAG_META | ABD_FLAG_SMALL | ABD_FLAG_NOMOVE));
+	IMPLY(abd->abd_parent != NULL, !(abd->abd_flags & ABD_FLAG_OWNER));
+	IMPLY(abd->abd_flags & ABD_FLAG_META, abd->abd_flags & ABD_FLAG_OWNER);
+
+	if (! refcount_is_zero(&abd->abd_children)) {
+		ABDSTAT_BUMP(abdstat_move_has_children);
+		return (B_FALSE);
+	}
+
+	if (abd->abd_parent != NULL) {
+		ABDSTAT_BUMP(abdstat_move_has_parent);
+		return (B_FALSE);
+	}
+
+	boolean_t retval = abd_try_move_impl(abd);
+	return (retval);
 }
 
 #ifdef _KERNEL
