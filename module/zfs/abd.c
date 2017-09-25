@@ -964,6 +964,15 @@ abd_release_ownership_of_buf(abd_t *abd)
 	abd_verify(abd);
 
 	abd->abd_flags &= ~ABD_FLAG_OWNER;
+
+	int64_t unsize = -(int64_t)abd->abd_size;
+	if ((abd->abd_flags & ABD_FLAG_META) == ABD_FLAG_META) {
+		abd->abd_flags |= ABD_FLAG_META;
+		ABDSTAT_INCR(abdstat_is_metadata_linear, unsize);
+	} else {
+		ABDSTAT_INCR(abdstat_is_file_data_linear, unsize);
+	}
+
 	/* Disable this flag since we no longer own the data buffer */
 	abd->abd_flags &= ~ABD_FLAG_META;
 
