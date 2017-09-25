@@ -1584,7 +1584,7 @@ dmu_read_iokit(objset_t *os, uint64_t object, uint64_t *offset,
             dmu_buf_t *db = dbp[i];
             uint64_t done;
 
-            ASSERT(size > 0);
+            ASSERT3U(*size, >, 0);
 
             //bufoff = uio->uio_loffset - db->db_offset;
             bufoff = (position+*offset) - db->db_offset;
@@ -1646,7 +1646,7 @@ dmu_read_iokit_dbuf(dmu_buf_t *zdb, uint64_t object, uint64_t *offset,
 		dmu_buf_t *db = dbp[i];
 		uint64_t done;
 
-		ASSERT(size > 0);
+		ASSERT3U(*size, >, 0);
 
 		bufoff = (position+*offset) - db->db_offset;
 		tocpy = MIN(db->db_size - bufoff, *size);

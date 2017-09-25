@@ -634,7 +634,8 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 #endif
 
 	if (actualByteCount != nblks*(ZVOL_BSIZE))
-		dprintf("Read/Write operation failed\n");
+	  printf("ZFS: %s: Read/Write operation failed (Actual = %lld, wanted %lld\n",
+		 __func__, actualByteCount, nblks*(ZVOL_BSIZE));
 
 	// Call the completion function.
 	(completion->action)(completion->target, completion->parameter,
