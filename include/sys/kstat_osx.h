@@ -96,7 +96,6 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_vdev_cache_size;
 	kstat_named_t zfs_vdev_cache_bshift;
 	kstat_named_t vdev_mirror_shift;
-	kstat_named_t zfs_scrub_limit;
 	kstat_named_t zfs_no_scrub_io;
 	kstat_named_t zfs_no_scrub_prefetch;
 	kstat_named_t fzap_default_block_shift;

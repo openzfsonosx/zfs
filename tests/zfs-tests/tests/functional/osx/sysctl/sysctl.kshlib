@@ -142,7 +142,6 @@ set -A ZFS_TUNEABLE_SYSCTLS \
 "kstat.zfs.darwin.tunable.zfs_vdev_cache_size" \
 "kstat.zfs.darwin.tunable.zfs_vdev_cache_bshift" \
 "kstat.zfs.darwin.tunable.vdev_mirror_shift" \
-"kstat.zfs.darwin.tunable.zfs_scrub_limit" \
 "kstat.zfs.darwin.tunable.zfs_no_scrub_io" \
 "kstat.zfs.darwin.tunable.zfs_no_scrub_prefetch" \
 "kstat.zfs.darwin.tunable.fzap_default_block_shift" \
@@ -393,6 +392,3 @@ function write_sysctl # OID value
 	`$SYSCTL -w $OID $value`
 	return $?
 }
-
-
-

@@ -127,7 +127,6 @@ osx_kstat_t osx_kstat = {
 	{"zfs_vdev_cache_size",			KSTAT_DATA_INT64  },
 	{"zfs_vdev_cache_bshift",		KSTAT_DATA_INT64  },
 	{"vdev_mirror_shift",			KSTAT_DATA_INT64  },
-	{"zfs_scrub_limit",				KSTAT_DATA_INT64  },
 	{"zfs_no_scrub_io",				KSTAT_DATA_INT64  },
 	{"zfs_no_scrub_prefetch",		KSTAT_DATA_INT64  },
 	{"fzap_default_block_shift",	KSTAT_DATA_INT64  },
