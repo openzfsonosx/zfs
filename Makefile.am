@@ -75,27 +75,31 @@ pkg-utils: @DEFAULT_PACKAGE@-utils
 if CONFIG_USER
 install-data-hook::
 	@echo
-	for plistfile in $(launchddaemon_DATA); do \
-		bn=`basename "$$plistfile"`; \
-		echo "Attempting to unload $$bn ..."; \
-		$(DESTDIR)/bin/launchctl unload -F \
-		$(DESTDIR)$(launchddaemondir)/"$$bn" \
-		    || echo "Ignoring errors"; \
-		echo "Attempting to load $$bn ..."; \
-		$(DESTDIR)/bin/launchctl load -wF \
-		$(DESTDIR)$(launchddaemondir)/"$$bn" \
-		    || echo "Ignoring errors"; \
-	done
+	if [ -z "$(DESTDIR)" ] || [ x"$(DESTDIR)" = x"/" ]; then \
+		for plistfile in $(launchddaemon_DATA); do \
+			bn=`basename "$$plistfile"`; \
+			echo "Attempting to unload $$bn ..."; \
+			$(DESTDIR)/bin/launchctl unload -F \
+			$(DESTDIR)$(launchddaemondir)/"$$bn" \
+			    || echo "Ignoring errors"; \
+			echo "Attempting to load $$bn ..."; \
+			$(DESTDIR)/bin/launchctl load -wF \
+			$(DESTDIR)$(launchddaemondir)/"$$bn" \
+			    || echo "Ignoring errors"; \
+		done \
+	fi
 	echo "Install done."
 
 uninstall-hook::
 	@echo
-	for plistfile in $(launchddaemon_DATA); do \
-		label=`defaults read "$$PWD"/"$$plistfile" Label`; \
-		echo "Attempting to remove $$label ..."; \
-		$(DESTDIR)/bin/launchctl remove "$$label" \
-		    || echo "Ignoring errors"; \
-	done
+	if [ -z "$(DESTDIR)" ] || [ x"$(DESTDIR)" == x"/" ]; then \
+		for plistfile in $(launchddaemon_DATA); do \
+			label=`defaults read "$$PWD"/"$$plistfile" Label`; \
+			echo "Attempting to remove $$label ..."; \
+			$(DESTDIR)/bin/launchctl remove "$$label" \
+		    	|| echo "Ignoring errors"; \
+		done \
+	fi
 	$(RM) -r $(DESTDIR)@FILESYSTEMS_PREFIX@/zfs.fs
 	$(RM) -r $(DESTDIR)@KERNEL_MODPREFIX@/zfs.kext
 endif
