@@ -939,7 +939,8 @@ vdev_label_init(vdev_t *vd, uint64_t crtxg, vdev_labeltype_t reason)
 	 */
 	ub_abd = abd_alloc_linear(VDEV_UBERBLOCK_RING, B_TRUE);
 	abd_zero(ub_abd, VDEV_UBERBLOCK_RING);
-	abd_copy_from_buf(ub_abd, &spa->spa_uberblock, sizeof (uberblock_t));
+	ASSERT3U(sizeof (uberblock_t), <=, ub_abd->abd_size);
+	abd_copy_from_buf_off(ub_abd, &spa->spa_uberblock, 0, sizeof (uberblock_t));
 	ub = abd_to_buf(ub_abd);
 	ub->ub_txg = 0;
 
