@@ -35,7 +35,7 @@ int zfs_read_history_hits = 0;
 /*
  * Keeps stats on the last N txgs, disabled by default.
  */
-int zfs_txg_history = 0;
+int zfs_txg_history = 100;
 
 /*
  * ==========================================================================
