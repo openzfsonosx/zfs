@@ -56,6 +56,7 @@ libzpool_la_SOURCES = \
 	../../module/zfs/dsl_synctask.c \
 	../../module/zfs/dsl_userhold.c \
 	../../module/zfs/edonr_zfs.c \
+	../../module/zfs/hkdf.c \
 	../../module/zfs/fm.c \
 	../../module/zfs/gzip.c \
 	../../module/zfs/lzjb.c \

@@ -76,6 +76,7 @@ zfs_SOURCES = \
 	dsl_synctask.c \
 	dsl_userhold.c \
 	edonr_zfs.c \
+	hkdf.c \
 	fm.c \
 	gfs.c \
 	gzip.c \

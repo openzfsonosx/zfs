@@ -523,7 +523,7 @@ int cipher_test2(int verbose)
 	memcpy(zkey.zk_salt, salt, saltsize);
 	zkey.zk_current_key.ck_format = CRYPTO_KEY_RAW;
 	zkey.zk_current_key.ck_data = statickey;
-	zkey.zk_current_key.ck_length = BYTES_TO_BITS(sizeof(statickey));
+	zkey.zk_current_key.ck_length = CRYPTO_BYTES2BITS(sizeof(statickey));
 	rw_init(&zkey.zk_salt_lock, NULL, RW_DEFAULT, NULL);
 	// key done
 
@@ -574,7 +574,7 @@ int cipher_test2(int verbose)
 	memcpy(zkey.zk_salt, salt, saltsize);
 	zkey.zk_current_key.ck_format = CRYPTO_KEY_RAW;
 	zkey.zk_current_key.ck_data = statickey;
-	zkey.zk_current_key.ck_length = BYTES_TO_BITS(sizeof(statickey));
+	zkey.zk_current_key.ck_length = CRYPTO_BYTES2BITS(sizeof(statickey));
 
 
 
