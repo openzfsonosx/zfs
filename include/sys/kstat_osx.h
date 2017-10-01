@@ -140,6 +140,7 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_send_holes_without_birth_time;
 
 	kstat_named_t dbuf_cache_max_bytes;
+	kstat_named_t dbuf_cache_max_shift;
 
 	kstat_named_t zfs_vdev_queue_depth_pct;
 	kstat_named_t zio_dva_throttle_enabled;
@@ -249,6 +250,7 @@ extern uint64_t send_holes_without_birth_time;
 extern uint64_t zfs_send_holes_without_birth_time;
 
 extern uint64_t dbuf_cache_max_bytes;
+extern uint64_t dbuf_cache_max_shift;
 
 extern uint64_t zfs_vdev_queue_depth_pct;
 extern boolean_t zio_dva_throttle_enabled;
