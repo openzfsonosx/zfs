@@ -1144,8 +1144,6 @@ abd_copy_to_buf_off_cb(void *buf, size_t size, void *private)
 void
 abd_copy_to_buf_off(void *buf, abd_t *abd, size_t off, size_t size)
 {
-	struct buf_arg ba_ptr = { buf };
-
 	VERIFY3P(buf,!=,NULL);
 	VERIFY_BUF_NOMAGIC(buf, off+size);
 	VERIFY_ABD_MAGIC(abd);
@@ -1154,6 +1152,8 @@ abd_copy_to_buf_off(void *buf, abd_t *abd, size_t off, size_t size)
 	ASSERT3S(off, >=, 0);
 	ASSERT3S((size_t)abd->abd_size, >=, off+size);
 	ASSERT3S((size_t)abd->abd_size, >, 0);
+
+	struct buf_arg ba_ptr = { buf };
 
 	(void) abd_iterate_func(abd, off, size, abd_copy_to_buf_off_cb,
 	    &ba_ptr);
