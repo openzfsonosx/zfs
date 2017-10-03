@@ -409,9 +409,6 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 			uint64_t nused;
 
 			ASSERT3S(abd->abd_size,>=,sizeof (zil_chain_t));
-#ifdef DEBUG
-			bzero(&zilc, sizeof (zil_chain_t));
-#endif
 			abd_copy_to_buf_off(&zilc, abd, 0, sizeof (zil_chain_t));
 
 			eck = zilc.zc_eck;
