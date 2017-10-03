@@ -430,6 +430,7 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 			size = P2ROUNDUP_TYPED(nused, ZIL_MIN_BLKSZ, uint64_t);
 		} else {
 			eck_offset = size - sizeof (zio_eck_t);
+			ASSERT3S(abd->abd_size, >=, eck_offset + sizeof (zio_eck_t));
 			abd_copy_to_buf_off(&eck, abd, eck_offset,
 			    sizeof (zio_eck_t));
 			eck_offset += offsetof(zio_eck_t, zec_cksum);
