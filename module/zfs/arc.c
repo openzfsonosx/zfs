@@ -4756,20 +4756,20 @@ arc_kmem_reap_now(void)
 		if (zio_buf_cache[i] != prev_cache) {
 			prev_cache = zio_buf_cache[i];
 			if (zero_now == B_TRUE) {
-				kmem_cache_reap_now(zio_buf_cache[i]);
+				kmem_cache_full_reap_now(zio_buf_cache[i]);
 			} else if (zio_buf_cache[i]->cache_bufsize > (1024*1024) &&
 			    curtime - last_big_zio_zero > big_zio_zero_interval) {
-				kmem_cache_reap_now(zio_buf_cache[i]);
+				kmem_cache_full_reap_now(zio_buf_cache[i]);
 				did_big_zio_zero = B_TRUE;
 			}
 		}
 		if (zio_data_buf_cache[i] != prev_data_cache) {
 			prev_data_cache = zio_data_buf_cache[i];
 			if (zero_now == B_TRUE) {
-				kmem_cache_reap_now(zio_data_buf_cache[i]);
+				kmem_cache_full_reap_now(zio_data_buf_cache[i]);
 			} else if (zio_data_buf_cache[i]->cache_bufsize > (1024*1024) &&
 			    curtime - last_big_zio_zero > big_zio_zero_interval) {
-				kmem_cache_reap_now(zio_buf_cache[i]);
+				kmem_cache_full_reap_now(zio_buf_cache[i]);
 				did_big_zio_zero = B_TRUE;
 			}
 		}
@@ -4787,30 +4787,34 @@ arc_kmem_reap_now(void)
 	}
 
 	if (zero_now == B_FALSE) {
-		kmem_reap();
+		kmem_reap(); // working set reap
 		return;
 	}
 
 	/*
-	 *  aggressively reclaim some memory: kmem_cache_reap_now invokes
-	 *  kmem_depot_ws_reap on the kmem_cache, destroying all magazines
-	 *  that are destroyable
+	 * aggressively reclaim some memory: kmem_cache_full_reap_now()
+	 * destroys all magazines that are destroyable, whereas
+	 * kmem_cache_ws_reap_now() destroys only those outside the
+	 * working set that are destroyable.   BOTH functions cause
+	 * kmem_depot_ws_zero() to shrink the working set, so they
+	 * are both considerably stronger than kmem_reap().
 	 */
 
-	kmem_cache_reap_now(abd_chunk_cache);
-	kmem_cache_reap_now(buf_cache);
-	kmem_cache_reap_now(hdr_full_cache);
-	kmem_cache_reap_now(hdr_l2only_cache);
-	kmem_cache_reap_now(range_seg_cache);
+	kmem_cache_ws_reap_now(abd_chunk_cache);
+	kmem_cache_ws_reap_now(buf_cache);
+	kmem_cache_ws_reap_now(hdr_full_cache);
+	kmem_cache_ws_reap_now(hdr_l2only_cache);
+	kmem_cache_ws_reap_now(range_seg_cache);
 
 	extern kmem_cache_t *dnode_cache;
-	if (dnode_cache) kmem_cache_reap_now(dnode_cache);
+	if (dnode_cache) kmem_cache_ws_reap_now(dnode_cache);
 	extern kmem_cache_t *znode_cache;
-	if (znode_cache) kmem_cache_reap_now(znode_cache);
+	if (znode_cache) kmem_cache_ws_reap_now(znode_cache);
 
 	/*
 	 * kmem logic will control the effect of this on caches
-	 * zeroed above.
+	 * zeroed above.   Other caches will not have their working
+	 * sets zeroed.
 	 */
 	kmem_reap();
 }
@@ -4878,7 +4882,7 @@ arc_reclaim_thread(void)
 			reclaim_shrink_target = 0;
 			evicted = arc_shrink(t);
 			extern kmem_cache_t	*abd_chunk_cache;
-			kmem_cache_reap_now(abd_chunk_cache);
+			kmem_cache_ws_reap_now(abd_chunk_cache);
 			IOSleep(1);
 			goto lock_and_sleep;
 		}
@@ -4933,7 +4937,7 @@ arc_reclaim_thread(void)
 
 		if (free_memory >= 0 && manual_pressure <= 0 && evicted > 0) {
 			extern kmem_cache_t	*abd_chunk_cache;
-			kmem_cache_reap_now(abd_chunk_cache);
+			kmem_cache_ws_reap_now(abd_chunk_cache);
 		}
 
 		if (free_memory < 0 || manual_pressure > 0) {
