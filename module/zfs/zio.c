@@ -154,8 +154,10 @@ zio_init(void)
 		size_t size = (c + 1) << SPA_MINBLOCKSHIFT;
 		size_t p2 = size;
 		size_t align = 0;
-		size_t cflags = (size > zio_buf_debug_limit) ? KMC_NODEBUG : 0;
+		//size_t cflags = (size > zio_buf_debug_limit) ? KMC_NODEBUG : 0;
 		//size_t cflags = KMF_BUFTAG | KMF_HASH | KMF_LITE;
+		// debug multifrees and eternal buf_avail > 0 in large arenas
+		size_t cflags = (size > 8388608) ? (KMF_BUFTAG | KMF_HASH | KMF_LITE) : 0;
 
 #ifdef _ILP32
 		/*
