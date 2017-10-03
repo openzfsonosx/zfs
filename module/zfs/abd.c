@@ -1144,8 +1144,6 @@ abd_copy_to_buf_off_cb(void *buf, size_t size, void *private)
 void
 abd_copy_to_buf_off(void *buf, abd_t *abd, size_t off, size_t size)
 {
-	struct buf_arg ba_ptr = { buf };
-
 	VERIFY3P(buf,!=,NULL);
 	VERIFY_BUF_NOMAGIC(buf, off+size);
 	VERIFY_ABD_MAGIC(abd);
@@ -1154,6 +1152,45 @@ abd_copy_to_buf_off(void *buf, abd_t *abd, size_t off, size_t size)
 	ASSERT3S(off, >=, 0);
 	ASSERT3S((size_t)abd->abd_size, >=, off+size);
 	ASSERT3S((size_t)abd->abd_size, >, 0);
+
+	struct buf_arg ba_ptr = { buf };
+
+	(void) abd_iterate_func(abd, off, size, abd_copy_to_buf_off_cb,
+	    &ba_ptr);
+}
+
+void
+abd_copy_to_buf_off_defanged(const char *f, int l, void *buf, abd_t *abd, size_t off, size_t size)
+{
+	VERIFY3P(buf,!=,NULL);
+	VERIFY_ABD_MAGIC(abd);
+
+	const uint64_t m = ((abd_t *)buf)->abd_magic;
+	if (size >= sizeof(abd_t) && m == ABD_DEBUG_MAGIC) {
+		abd_t *a = (abd_t *)buf;
+		printf("ZFS: %s: (from %s : %d): magic m 0x%llx a->magic 0x%llx a->size 0x%x a->create_time %llu "
+		    "now %llu off,size %lld %lld, linear? %d owner? %d meta? %d\n",
+		    __func__, f, l,
+		    m, a->abd_magic, a->abd_size, a->abd_create_time,
+		    gethrtime(), (int64_t)off, (int64_t)size,
+		    (a->abd_flags & ABD_FLAG_LINEAR) ? 1 : 0,
+		    (a->abd_flags & ABD_FLAG_OWNER) ? 1 : 0,
+		    (a->abd_flags & ABD_FLAG_META) ? 1 : 0);
+#ifdef _KERNEL
+		extern void IODelay(unsigned microseconds);
+		IODelay(100000);
+		abd_verify(a);
+		IODelay(500000);
+#endif
+		panic("%s: (from %s : %d)magic spotted in buffer", __func__, f, l);
+	}
+
+	ASSERT3S(size, >=, 0);
+	ASSERT3S(off, >=, 0);
+	ASSERT3S((size_t)abd->abd_size, >=, off+size);
+	ASSERT3S((size_t)abd->abd_size, >, 0);
+
+	struct buf_arg ba_ptr = { buf };
 
 	(void) abd_iterate_func(abd, off, size, abd_copy_to_buf_off_cb,
 	    &ba_ptr);

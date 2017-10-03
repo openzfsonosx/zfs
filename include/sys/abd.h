@@ -112,6 +112,7 @@ int abd_iterate_func2(abd_t *, abd_t *, size_t, size_t, size_t,
 void abd_copy_off(abd_t *, abd_t *, size_t, size_t, size_t);
 void abd_copy_from_buf_off(abd_t *, const void *, size_t, size_t);
 void abd_copy_to_buf_off(void *, abd_t *, size_t, size_t);
+	void abd_copy_to_buf_off_defanged(const char *, int, void *, abd_t *, size_t, size_t);
 int abd_cmp(abd_t *, abd_t *, size_t);
 int abd_cmp_buf_off(abd_t *, const void *, size_t, size_t);
 void abd_zero_off(abd_t *, size_t, size_t);

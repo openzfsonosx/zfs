@@ -336,7 +336,7 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		if (checksum == ZIO_CHECKSUM_ZILOG2) {
 			zil_chain_t zilc;
 			ASSERT3S(abd->abd_size,>=,sizeof (zil_chain_t));
-			abd_copy_to_buf_off(&zilc, abd, 0, sizeof (zil_chain_t));
+			abd_copy_to_buf_off_defanged(__func__, __LINE__, &zilc, abd, 0, sizeof (zil_chain_t));
 
 			size = P2ROUNDUP_TYPED(zilc.zc_nused, ZIL_MIN_BLKSZ,
 			    uint64_t);
@@ -345,7 +345,7 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		} else {
 			eck_offset = size - sizeof (zio_eck_t);
 			ASSERT3S(abd->abd_size,>=,eck_offset + sizeof (zio_eck_t));
-			abd_copy_to_buf_off(&eck, abd, eck_offset,
+			abd_copy_to_buf_off_defanged(__func__, __LINE__, &eck, abd, eck_offset,
 			    sizeof (zio_eck_t));
 		}
 
@@ -409,7 +409,7 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 			uint64_t nused;
 
 			ASSERT3S(abd->abd_size,>=,sizeof (zil_chain_t));
-			abd_copy_to_buf_off(&zilc, abd, 0, sizeof (zil_chain_t));
+			abd_copy_to_buf_off_defanged(__func__, __LINE__, &zilc, abd, 0, sizeof (zil_chain_t));
 
 			eck = zilc.zc_eck;
 			eck_offset = offsetof(zil_chain_t, zc_eck) +
@@ -431,7 +431,7 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 		} else {
 			eck_offset = size - sizeof (zio_eck_t);
 			ASSERT3S(abd->abd_size, >=, eck_offset + sizeof (zio_eck_t));
-			abd_copy_to_buf_off(&eck, abd, eck_offset,
+			abd_copy_to_buf_off_defanged(__func__, __LINE__, &eck, abd, eck_offset,
 			    sizeof (zio_eck_t));
 			eck_offset += offsetof(zio_eck_t, zec_cksum);
 		}
