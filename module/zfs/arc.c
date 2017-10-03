@@ -290,6 +290,7 @@
 #include <vm/anon.h>
 #include <sys/fs/swapnode.h>
 #include <sys/dnlc.h>
+#include <sys/kmem_impl.h>
 #endif
 #include <sys/callb.h>
 #include <sys/kstat.h>
@@ -4691,6 +4692,7 @@ arc_reclaim_needed(void)
     return 0;
 }
 
+#ifdef _KERNEL
 static void
 arc_kmem_reap_now(void)
 {
@@ -4704,21 +4706,28 @@ arc_kmem_reap_now(void)
 	extern vmem_t           *abd_chunk_arena;
 
 	static hrtime_t last_reap = 0;
+	static hrtime_t last_zero = 0;
+	static hrtime_t last_big_zio_zero = 0;
 	const hrtime_t reap_interval = SEC2NSEC(60);
+	const hrtime_t big_zio_zero_interval = SEC2NSEC(300);
+	const hrtime_t zero_interval = SEC2NSEC(3600);
 	const hrtime_t curtime = gethrtime();
 	boolean_t reap_now = B_FALSE;
+	boolean_t zero_now = B_FALSE;
 
-	if (curtime - last_reap > reap_interval) {
+	if (curtime - last_reap > reap_interval)
 		reap_now = B_TRUE;
-	} else {
-#ifdef _KERNEL
-		extern uint64_t vmem_xnu_useful_bytes_free(void);
-		const uint64_t reap_now_threshold = 2ULL * SPA_MAXBLOCKSIZE;
-		if (vmem_xnu_useful_bytes_free() < reap_now_threshold)
-			reap_now = B_TRUE;
-#else
-		reap_now = B_FALSE;
-#endif
+
+	if (curtime - last_zero > zero_interval) {
+		reap_now = B_TRUE;
+		zero_now = B_TRUE;
+	}
+
+	extern uint64_t vmem_xnu_useful_bytes_free(void);
+	const uint64_t reap_now_threshold = 2ULL * SPA_MAXBLOCKSIZE;
+	if (vmem_xnu_useful_bytes_free() < reap_now_threshold) {
+		reap_now = B_TRUE;
+		zero_now = B_TRUE;
 	}
 
 	if (reap_now == B_FALSE)
@@ -4726,7 +4735,9 @@ arc_kmem_reap_now(void)
 	else
 		last_reap = curtime;
 
-#ifdef _KERNEL
+	if (zero_now == B_TRUE)
+		last_zero = curtime;
+
 	if (arc_meta_used >= arc_meta_limit) {
 		/*
 		 * We are exceeding our meta-data cache limit.
@@ -4734,44 +4745,81 @@ arc_kmem_reap_now(void)
 		 */
 		dnlc_reduce_cache((void *)(uintptr_t)arc_reduce_dnlc_percent);
 	}
-#if defined(__i386)
-	/*
-	 * Reclaim unused memory from all kmem caches.
-	 */
-	kmem_reap();
-#endif
-#endif
 
+	/*
+	 * Periodically run kmem_cache_reap_now on the largest zio caches,
+	 * and on all of them if zero_now is set.
+	 */
+
+	boolean_t did_big_zio_zero = B_FALSE;
 	for (i = 0; i < SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT; i++) {
 		if (zio_buf_cache[i] != prev_cache) {
 			prev_cache = zio_buf_cache[i];
-			kmem_cache_reap_now(zio_buf_cache[i]);
+			if (zero_now == B_TRUE) {
+				kmem_cache_reap_now(zio_buf_cache[i]);
+			} else if (zio_buf_cache[i]->cache_bufsize > (1024*1024) &&
+			    curtime - last_big_zio_zero > big_zio_zero_interval) {
+				kmem_cache_reap_now(zio_buf_cache[i]);
+				did_big_zio_zero = B_TRUE;
+			}
 		}
 		if (zio_data_buf_cache[i] != prev_data_cache) {
 			prev_data_cache = zio_data_buf_cache[i];
-			kmem_cache_reap_now(zio_data_buf_cache[i]);
+			if (zero_now == B_TRUE) {
+				kmem_cache_reap_now(zio_data_buf_cache[i]);
+			} else if (zio_data_buf_cache[i]->cache_bufsize > (1024*1024) &&
+			    curtime - last_big_zio_zero > big_zio_zero_interval) {
+				kmem_cache_reap_now(zio_buf_cache[i]);
+				did_big_zio_zero = B_TRUE;
+			}
 		}
 	}
+
+	if (did_big_zio_zero == B_TRUE || zero_now == B_TRUE) {
+		last_big_zio_zero = curtime;
+		if (zio_arena_parent != NULL) {
+			/*
+			 * Ask the vmem arena to reclaim unused memory from its
+			 * quantum caches.
+			 */
+			vmem_qcache_reap(zio_arena_parent);
+		}
+	}
+
+	if (zero_now == B_FALSE) {
+		kmem_reap();
+		return;
+	}
+
+	/*
+	 *  aggressively reclaim some memory: kmem_cache_reap_now invokes
+	 *  kmem_depot_ws_reap on the kmem_cache, destroying all magazines
+	 *  that are destroyable
+	 */
+
 	kmem_cache_reap_now(abd_chunk_cache);
 	kmem_cache_reap_now(buf_cache);
 	kmem_cache_reap_now(hdr_full_cache);
 	kmem_cache_reap_now(hdr_l2only_cache);
 	kmem_cache_reap_now(range_seg_cache);
-#ifdef _KERNEL
+
 	extern kmem_cache_t *dnode_cache;
 	if (dnode_cache) kmem_cache_reap_now(dnode_cache);
 	extern kmem_cache_t *znode_cache;
 	if (znode_cache) kmem_cache_reap_now(znode_cache);
 
-	if (zio_arena_parent != NULL) {
-		/*
-		 * Ask the vmem arena to reclaim unused memory from its
-		 * quantum caches.
-		 */
-		vmem_qcache_reap(zio_arena_parent);
-	}
-#endif
+	/*
+	 * kmem logic will control the effect of this on caches
+	 * zeroed above.
+	 */
+	kmem_reap();
 }
+#else
+static void
+arc_kmem_reap_now(void)
+{
+}
+#endif
 
 /*
  * Threads can block in arc_get_data_impl() waiting for this thread to evict
