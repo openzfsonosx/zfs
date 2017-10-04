@@ -1524,7 +1524,7 @@ arc_hdr_get_compress(arc_buf_hdr_t *hdr)
 	    HDR_GET_COMPRESS(hdr) : ZIO_COMPRESS_OFF);
 }
 
-#define        ARC_MINTIME     (hz>>4) /* 62 ms */
+#define        ARC_MINTIME     1 /* hz = 10, so this is 100 ms */
 
 static inline boolean_t
 arc_buf_is_shared(arc_buf_t *buf)
@@ -5630,7 +5630,7 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 		 */
 		if (now > hdr->b_l1hdr.b_arc_access + ARC_MINTIME) {
 			/*
-			 * More than 125ms have passed since we
+			 * More than 100ms have passed since we
 			 * instantiated this buffer.  Move it to the
 			 * most frequently used state.
 			 */
