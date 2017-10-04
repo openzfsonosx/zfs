@@ -6319,6 +6319,7 @@ top:
 				 */
 				ASSERT3U(arc_hdr_get_compress(hdr), !=,
 				    ZIO_COMPRESS_EMPTY);
+				ASSERT3U(asize, ==, (uint64_t)abd->abd_size);
 				rzio = zio_read_phys(pio, vd, addr,
                     asize, abd,
 				    ZIO_CHECKSUM_OFF,
@@ -6360,6 +6361,7 @@ top:
 			}
 		}
 
+		ASSERT3U(size, ==, (uint64_t)hdr_abd->abd_size);
 		rzio = zio_read(pio, spa, bp, hdr_abd, size,
 		    arc_read_done, hdr, priority, zio_flags, zb);
 
@@ -8281,11 +8283,11 @@ l2arc_read_done(zio_t *zio)
 		 */
 		if (zio->io_waiter == NULL) {
 			zio_t *pio = zio_unique_parent(zio);
-			void *abd = (using_rdata) ?
+			abd_t *abd = (using_rdata) ?
                 hdr->b_crypt_hdr.b_rabd : hdr->b_l1hdr.b_pabd;
 
 			ASSERT(!pio || pio->io_child_type == ZIO_CHILD_LOGICAL);
-
+			ASSERT3U((uint64_t)zio->io_size, ==, (uint64_t)abd->abd_size);
 			zio_nowait(zio_read(pio, zio->io_spa, zio->io_bp,
 				    abd, zio->io_size, arc_read_done,
 				    hdr, zio->io_priority, cb->l2rcb_flags,
