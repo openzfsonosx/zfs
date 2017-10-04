@@ -185,8 +185,10 @@ zio_init(void)
 			align = SPA_MINBLOCKSIZE;
 		} else if (size <= 128 * 1024 && IS_P2ALIGNED(size, p2 >> 4)) {
 			align = MIN(p2 >> 4, PAGESIZE);
-		} else if (IS_P2ALIGNED(size, p2 >> 3)) {
+		} else if (size <= 1024 * 1024 && IS_P2ALIGNED(size, p2 >> 3)) {
 			align = MIN(p2 >> 3, PAGESIZE);
+		} else if (IS_P2ALIGNED(size, p2 >> 2)) {
+			align = MIN(p2 >> 2, PAGESIZE);
 		}
 
 		if (align != 0) {
