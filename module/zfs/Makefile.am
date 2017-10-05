@@ -13,6 +13,7 @@ SPL_KMODDIR=	@SPL@/module/spl/spl.kext
 
 CFLAGS_KMOD = \
 	$(AM_CFLAGS) \
+	-Wframe-larger-than=1024 \
 	-Wall \
 	-mkernel \
 	-D_KERNEL \
