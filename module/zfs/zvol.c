@@ -721,7 +721,7 @@ int
 zvol_remove_minor_impl(const char *name)
 {
 	zvol_state_t *zv;
-	zvol_state_t tmp_zv = {{0}};
+	void *iokitdev = NULL;
 	int rc;
 
 	mutex_enter(&zfsdev_state_lock);
@@ -731,18 +731,20 @@ zvol_remove_minor_impl(const char *name)
 	}
 
 	// Remember the iokit ptr so we can free it after releasing locks.
-	tmp_zv.zv_iokitdev = zv->zv_iokitdev;
-	strlcpy(tmp_zv.zv_name, zv->zv_name, sizeof(tmp_zv.zv_name));
-	strlcpy(tmp_zv.zv_bsdname, zv->zv_bsdname, sizeof(tmp_zv.zv_bsdname));
+	iokitdev = zv->zv_iokitdev;
+
+	// Send zed notification to remove zvol symlink
+	zvol_remove_symlink(zv);
 
 	rc = zvol_remove_zv(zv); // Frees zv, if successful.
 	mutex_exit(&zfsdev_state_lock);
 
-	// Send zed notification
-	if (rc == 0) zvol_remove_symlink(&tmp_zv);
+	// Send zed notification to re-create symlinks if we cant,
+	// zv is still valid as it failed to free
+	if (rc != 0) zvol_add_symlink(zv, zv->zv_bsdname + 1, zv->zv_bsdname);
 
 	// Remove device from IOKit
-	zvolRemoveDevice(tmp_zv.zv_iokitdev);
+	zvolRemoveDevice(iokitdev);
 	return (rc);
 }
 
@@ -1048,7 +1050,7 @@ zvol_remove_minors_impl(const char *name)
 			(strncmp(zv->zv_name, name, namelen) == 0 &&
 			 (zv->zv_name[namelen] == '/' ||
 			  zv->zv_name[namelen] == '@'))) {
-			zvol_state_t tmp_zv = {{ 0 }};
+			void *iokitdev;
 
 			/* If in use, leave alone */
 			if (zv->zv_open_count > 0)
@@ -1056,14 +1058,14 @@ zvol_remove_minors_impl(const char *name)
 
 			// Assign a temporary zv holder to call IOKit with
 			// release zv while we have mutex, then drop it.
-			tmp_zv.zv_iokitdev = zv->zv_iokitdev;
-			strlcpy(tmp_zv.zv_name, zv->zv_name, sizeof(tmp_zv.zv_name));
-			strlcpy(tmp_zv.zv_bsdname, zv->zv_bsdname, sizeof(tmp_zv.zv_bsdname));
-			(void) zvol_remove_zv(zv);
-			mutex_exit(&zfsdev_state_lock);
+			iokitdev = zv->zv_iokitdev;
 
-			zvolRemoveDevice(tmp_zv.zv_iokitdev);
+			(void) zvol_remove_zv(zv);
+
+			mutex_exit(&zfsdev_state_lock);
+			zvolRemoveDevice(iokitdev);
 			mutex_enter(&zfsdev_state_lock);
+
 		}
 	}
 	mutex_exit(&zfsdev_state_lock);

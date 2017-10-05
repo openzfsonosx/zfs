@@ -861,6 +861,9 @@ zfsctl_snapdir_readdir_cb(struct vnode *vp, void *dp, int *eofp,
  * Perform a mount of the associated dataset on top of the vnode.
  */
 /* ARGSUSED */
+#if !defined (__OPTIMIZE__)
+#pragma GCC diagnostic ignored "-Wframe-larger-than="
+#endif
 int
 zfsctl_snapdir_lookup(struct vnop_lookup_args /* {
 		struct vnode *a_dvp;

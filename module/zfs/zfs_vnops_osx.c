@@ -727,12 +727,15 @@ printf("F_CHKCLEAN size %llu ret %d\n", fsize, error);
 			/* Attempt to find the linkid in the hardlink_link AVL tree
 			 * If found, call to get prev or next.
 			 */
-			hardlinks_t searchnode, *findnode, *sibling;
+			hardlinks_t *searchnode, *findnode, *sibling;
 			avl_index_t loc;
-			searchnode.hl_linkid = linkfileid;
+
+			searchnode = kmem_alloc(sizeof(hardlinks_t), KM_SLEEP);
+			searchnode->hl_linkid = linkfileid;
 
 			rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
-			findnode = avl_find(&zfsvfs->z_hardlinks_linkid, &searchnode, &loc);
+			findnode = avl_find(&zfsvfs->z_hardlinks_linkid, searchnode, &loc);
+			kmem_free(searchnode, sizeof(hardlinks_t));
 
 			if (!findnode) {
 				rw_exit(&zfsvfs->z_hardlinks_lock);
@@ -1250,7 +1253,7 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp, char *name)
 	 * if an entry was a hardlink, we simply check if the avltree has the
 	 * name.
 	 */
-	hardlinks_t searchnode, *findnode;
+	hardlinks_t *searchnode, *findnode;
 	avl_index_t loc;
 
 	if (!vp || !VTOZ(vp)) return 1;
@@ -1271,13 +1274,15 @@ static int zfs_remove_hardlink(struct vnode *vp, struct vnode *dvp, char *name)
 		   dzp->z_id, zp->z_id, name);
 
 	// Attempt to remove from hardlink avl, if its there
-	searchnode.hl_parent = dzp->z_id == zfsvfs->z_root ? 2 : dzp->z_id;
-	searchnode.hl_fileid = zp->z_id;
-	strlcpy(searchnode.hl_name, name, PATH_MAX);
+	searchnode = kmem_alloc(sizeof(hardlinks_t), KM_SLEEP);
+	searchnode->hl_parent = dzp->z_id == zfsvfs->z_root ? 2 : dzp->z_id;
+	searchnode->hl_fileid = zp->z_id;
+	strlcpy(searchnode->hl_name, name, PATH_MAX);
 
 	rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
-	findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
+	findnode = avl_find(&zfsvfs->z_hardlinks, searchnode, &loc);
 	rw_exit(&zfsvfs->z_hardlinks_lock);
+	kmem_free(searchnode, sizeof(hardlinks_t));
 
 	// Found it? remove it
 	if (findnode) {
@@ -1307,7 +1312,7 @@ static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 	 * if an entry was a hardlink, we simply check if the avltree has the
 	 * name.
 	 */
-	hardlinks_t searchnode, *findnode, *delnode;
+	hardlinks_t *searchnode, *findnode, *delnode;
 	avl_index_t loc;
 	uint64_t parent_fid, parent_tid;
 	int ishardlink = 0;
@@ -1339,12 +1344,13 @@ static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 
 
 	// Attempt to remove from hardlink avl, if its there
-	searchnode.hl_parent = parent_fid;
-	searchnode.hl_fileid = zp->z_id;
-	strlcpy(searchnode.hl_name, from, PATH_MAX);
+	searchnode = kmem_alloc(sizeof(hardlinks_t), KM_SLEEP);
+	searchnode->hl_parent = parent_fid;
+	searchnode->hl_fileid = zp->z_id;
+	strlcpy(searchnode->hl_name, from, PATH_MAX);
 
 	rw_enter(&zfsvfs->z_hardlinks_lock, RW_READER);
-	findnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
+	findnode = avl_find(&zfsvfs->z_hardlinks, searchnode, &loc);
 	rw_exit(&zfsvfs->z_hardlinks_lock);
 
 	// Found it? update it
@@ -1358,9 +1364,9 @@ static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 
 		// If we already have a hashid for "to" and the rename presumably
 		// unlinked it, we need to remove it first.
-		searchnode.hl_parent = parent_tid;
-		strlcpy(searchnode.hl_name, to, PATH_MAX);
-		delnode = avl_find(&zfsvfs->z_hardlinks, &searchnode, &loc);
+		searchnode->hl_parent = parent_tid;
+		strlcpy(searchnode->hl_name, to, PATH_MAX);
+		delnode = avl_find(&zfsvfs->z_hardlinks, searchnode, &loc);
 		if (delnode) {
 			dprintf("ZFS: apparently %llu:'%s' exists, deleting\n",
 				   parent_tid, to);
@@ -1384,8 +1390,12 @@ static int zfs_rename_hardlink(struct vnode *vp, struct vnode *tvp,
 		avl_add(&zfsvfs->z_hardlinks_linkid, findnode);
 
 		rw_exit(&zfsvfs->z_hardlinks_lock);
+		kmem_free(searchnode, sizeof(hardlinks_t));
+
 		return 1;
 	}
+
+	kmem_free(searchnode, sizeof(hardlinks_t));
 	return 0;
 }
 
