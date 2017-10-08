@@ -1081,6 +1081,18 @@ typedef enum {
 #define	ZFS_EV_POOL_GUID	"pool_guid"
 #define	ZFS_EV_VDEV_PATH	"vdev_path"
 #define	ZFS_EV_VDEV_GUID	"vdev_guid"
+#define ZFS_EV_HIST_TIME        "history_time"
+#define ZFS_EV_HIST_CMD         "history_command"
+#define ZFS_EV_HIST_WHO         "history_who"
+#define ZFS_EV_HIST_ZONE        "history_zone"
+#define ZFS_EV_HIST_HOST        "history_hostname"
+#define ZFS_EV_HIST_TXG         "history_txg"
+#define ZFS_EV_HIST_INT_EVENT   "history_internal_event"
+#define ZFS_EV_HIST_INT_STR     "history_internal_str"
+#define ZFS_EV_HIST_INT_NAME    "history_internal_name"
+#define ZFS_EV_HIST_IOCTL       "history_ioctl"
+#define ZFS_EV_HIST_DSNAME      "history_dsname"
+#define ZFS_EV_HIST_DSID        "history_dsid"
 
 /*
  * Note: This is encoded on-disk, so new events must be added to the

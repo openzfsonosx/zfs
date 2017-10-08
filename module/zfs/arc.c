@@ -6064,10 +6064,10 @@ top:
 				acb->acb_next = hdr->b_l1hdr.b_acb;
 				hdr->b_l1hdr.b_acb = acb;
 				mutex_exit(hash_lock);
-				return (0);
+				goto out;
 			}
 			mutex_exit(hash_lock);
-			return (0);
+			goto out;
 		}
 
 		ASSERT(hdr->b_l1hdr.b_state == arc_mru ||
@@ -6335,12 +6335,12 @@ top:
 
 				if (*arc_flags & ARC_FLAG_NOWAIT) {
 					zio_nowait(rzio);
-					return (0);
+					goto out;
 				}
 
 				ASSERT(*arc_flags & ARC_FLAG_WAIT);
 				if (zio_wait(rzio) == 0)
-					return (0);
+					goto out;
 
 				/* l2arc read error; goto zio_read() */
 			} else {
@@ -6365,13 +6365,18 @@ top:
 		rzio = zio_read(pio, spa, bp, hdr_abd, size,
 		    arc_read_done, hdr, priority, zio_flags, zb);
 
-		if (*arc_flags & ARC_FLAG_WAIT)
-			return (zio_wait(rzio));
+		if (*arc_flags & ARC_FLAG_WAIT) {
+			rc = zio_wait(rzio);
+			goto out;
+		}
 
 		ASSERT(*arc_flags & ARC_FLAG_NOWAIT);
 		zio_nowait(rzio);
 	}
-	return (0);
+
+out:
+	spa_read_history_add(spa, zb, *arc_flags);
+	return (rc);
 }
 
 /*

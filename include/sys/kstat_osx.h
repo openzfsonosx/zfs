@@ -93,6 +93,8 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_flags;
 	kstat_named_t zfs_txg_timeout;
 	kstat_named_t zfs_txg_history;
+	kstat_named_t zfs_read_history;
+	kstat_named_t zfs_read_history_hits;
 	kstat_named_t zfs_vdev_cache_max;
 	kstat_named_t zfs_vdev_cache_size;
 	kstat_named_t zfs_vdev_cache_bshift;
@@ -212,6 +214,8 @@ extern int zfs_default_bs;
 extern int zfs_default_ibs;
 extern uint64_t metaslab_aliquot;
 extern int zfs_txg_history;
+extern int zfs_read_history;
+extern int zfs_read_history_hits;
 extern int zfs_vdev_cache_max;
 extern int spa_max_replication_override;
 extern int zfs_no_scrub_io;

@@ -502,6 +502,7 @@ txg_sync_thread(void *arg)
 		clock_t timer, timeout;
 		uint64_t txg;
 		uint64_t ndirty;
+		txg_stat_t *ts;
 
 		timeout = zfs_txg_timeout * hz;
 
@@ -553,14 +554,13 @@ txg_sync_thread(void *arg)
 		tx->tx_quiesced_txg = 0;
 		tx->tx_syncing_txg = txg;
 		DTRACE_PROBE2(txg__syncing, dsl_pool_t *, dp, uint64_t, txg);
+		ts = spa_txg_history_init_io(spa, txg, dp);
 		cv_broadcast(&tx->tx_quiesce_more_cv);
 
 		dprintf("txg=%llu quiesce_txg=%llu sync_txg=%llu\n",
 		    txg, tx->tx_quiesce_txg_waiting, tx->tx_sync_txg_waiting);
 		mutex_exit(&tx->tx_sync_lock);
 
-		spa_txg_history_set(spa, txg, TXG_STATE_WAIT_FOR_SYNC,
-		    gethrtime());
 		ndirty = dp->dp_dirty_pertxg[txg & TXG_MASK];
 
 		start = ddi_get_lbolt();
@@ -571,6 +571,7 @@ txg_sync_thread(void *arg)
 		tx->tx_synced_txg = txg;
 		tx->tx_syncing_txg = 0;
 		DTRACE_PROBE2(txg__synced, dsl_pool_t *, dp, uint64_t, txg);
+		spa_txg_history_fini_io(spa, ts);
 		cv_broadcast(&tx->tx_sync_done_cv);
 
 		/*
@@ -581,13 +582,6 @@ txg_sync_thread(void *arg)
 		spa_config_enter(spa, SCL_ALL, FTAG, RW_READER);
 		vdev_get_stats(spa->spa_root_vdev, vs2);
 		spa_config_exit(spa, SCL_ALL, FTAG);
-		spa_txg_history_set_io(spa, txg,
-		    vs2->vs_bytes[ZIO_TYPE_READ]-vs1->vs_bytes[ZIO_TYPE_READ],
-		    vs2->vs_bytes[ZIO_TYPE_WRITE]-vs1->vs_bytes[ZIO_TYPE_WRITE],
-		    vs2->vs_ops[ZIO_TYPE_READ]-vs1->vs_ops[ZIO_TYPE_READ],
-		    vs2->vs_ops[ZIO_TYPE_WRITE]-vs1->vs_ops[ZIO_TYPE_WRITE],
-		    ndirty);
-		spa_txg_history_set(spa, txg, TXG_STATE_SYNCED, gethrtime());
 	}
 }
 

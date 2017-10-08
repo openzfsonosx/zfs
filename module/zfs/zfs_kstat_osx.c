@@ -124,6 +124,8 @@ osx_kstat_t osx_kstat = {
 	{"zfs_flags",					KSTAT_DATA_INT64  },
 	{"zfs_txg_timeout",				KSTAT_DATA_INT64  },
 	{"zfs_txg_history",				KSTAT_DATA_INT64  },
+	{"zfs_read_history",				KSTAT_DATA_INT64  },
+	{"zfs_read_history_hits",			KSTAT_DATA_INT64  },
 	{"zfs_vdev_cache_max",			KSTAT_DATA_INT64  },
 	{"zfs_vdev_cache_size",			KSTAT_DATA_INT64  },
 	{"zfs_vdev_cache_bshift",		KSTAT_DATA_INT64  },
@@ -311,6 +313,10 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			ks->zfs_txg_timeout.value.i64;
 		zfs_txg_history =
 		        ks->zfs_txg_history.value.i64;
+		zfs_read_history =
+		        ks->zfs_read_history.value.i64;
+		zfs_read_history_hits =
+		        ks->zfs_read_history_hits.value.i64;
 		zfs_vdev_cache_max =
 			ks->zfs_vdev_cache_max.value.i64;
 		zfs_vdev_cache_size =
@@ -516,6 +522,10 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 		        zfs_txg_timeout;
 		ks->zfs_txg_history.value.i64 =
 		        zfs_txg_history;
+		ks->zfs_read_history.value.i64 =
+		        zfs_read_history;
+		ks->zfs_read_history_hits.value.i64 =
+		        zfs_read_history_hits;
 		ks->zfs_vdev_cache_max.value.i64 =
 			zfs_vdev_cache_max;
 		ks->zfs_vdev_cache_size.value.i64 =
