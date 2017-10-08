@@ -48,6 +48,7 @@
 #include <sys/zfeature.h>
 #include <sys/abd.h>
 #ifdef _KERNEL
+#include <sys/kstat_osx.h>
 #include <sys/vmsystm.h>
 #include <sys/zfs_znode.h>
 #include <sys/ubc.h>
@@ -2659,6 +2660,10 @@ void
 dmu_init(void)
 {
 	abd_init();
+#if defined(__APPLE__) && defined(_KERNEL)
+	vnops_osx_stat_init();
+	vnops_stat_init();
+#endif
 	zfs_dbgmsg_init();
 	sa_cache_init();
 	xuio_stat_init();
@@ -2684,6 +2689,10 @@ dmu_fini(void)
 	xuio_stat_fini();
 	sa_cache_fini();
 	zfs_dbgmsg_fini();
+#if defined(__APPLE__) && defined(_KERNEL)
+	vnops_osx_stat_fini();
+	vnops_stat_fini();
+#endif
 	abd_fini();
 }
 

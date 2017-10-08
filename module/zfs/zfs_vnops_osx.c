@@ -90,7 +90,62 @@
 #include <vfs/vfs_support.h>
 #include <sys/ioccom.h>
 
+typedef struct vnops_osx_stats {
+	kstat_named_t mmap_calls;
+	kstat_named_t mmap_set;
+	kstat_named_t mmap_idem;
+	kstat_named_t mnomap_calls;
+	kstat_named_t reclaim_mapped;
+	kstat_named_t null_reclaim;
+	kstat_named_t unexpected_dirty_page;
+	kstat_named_t bluster_pageout_pages;
+	kstat_named_t pageoutv2_to_pageout;
+	kstat_named_t pageoutv1_pages;
+	kstat_named_t pagein_pages;
+} vnops_osx_stats_t;
 
+static vnops_osx_stats_t vnops_osx_stats = {
+	/* */
+	{ "mmap_calls",                        KSTAT_DATA_UINT64 },
+	{ "mmap_set",                          KSTAT_DATA_UINT64 },
+	{ "mmap_idem",                         KSTAT_DATA_UINT64 },
+	{ "mnomap_calls",                      KSTAT_DATA_UINT64 },
+	{ "reclaim_mapped",                    KSTAT_DATA_UINT64 },
+	{ "null_reclaim",                      KSTAT_DATA_UINT64 },
+	{ "unexpected_dirty_page",             KSTAT_DATA_UINT64 },
+	{ "bluster_pageout_pages",             KSTAT_DATA_UINT64 },
+	{ "pageoutv2_to_pageout",              KSTAT_DATA_UINT64 },
+	{ "pageoutv1_pages",                      KSTAT_DATA_UINT64 },
+	{ "pagein_pages",                      KSTAT_DATA_UINT64 },
+};
+
+#define VNOPS_OSX_STAT(statname)           (vnops_osx_stats.statname.value.ui64)
+#define VNOPS_OSX_STAT_INCR(statname, val) \
+	atomic_add_64(&vnops_osx_stats.statname.value.ui64, (val))
+#define VNOPS_OSX_STAT_BUMP(stat)      VNOPS_OSX_STAT_INCR(stat, 1)
+#define VNOPS_OSX_STAT_BUMPDOWN(stat)  VNOPS_OSX_STAT_INCR(stat, -1)
+
+static kstat_t *vnops_osx_ksp;
+
+void
+vnops_osx_stat_init(void)
+{
+	vnops_osx_ksp = kstat_create("zfs", 0, "vnops_osx", "misc", KSTAT_TYPE_NAMED,
+	    sizeof (vnops_osx_stats) / sizeof (kstat_named_t), KSTAT_FLAG_VIRTUAL);
+	if (vnops_osx_ksp != NULL) {
+		vnops_osx_ksp->ks_data = &vnops_osx_stats;
+		kstat_install(vnops_osx_ksp);
+	}
+}
+
+void
+vnops_osx_stat_fini(void)
+{
+	if (vnops_osx_ksp != NULL) {
+		kstat_delete(vnops_osx_ksp);
+		vnops_osx_ksp = NULL;
+	}
+}
 
 #ifdef _KERNEL
 #include <sys/sysctl.h>
@@ -2033,6 +2088,8 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	/*
 	 * Fill pages with data from the file.
 	 */
+	uint64_t bytes_read = 0;
+
 	while (len > 0) {
 		uint64_t readlen;
 
@@ -2046,12 +2103,21 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 		if (error) {
 			printf("zfs_vnop_pagein: dmu_read err %d\n", error);
 			break;
+		} else {
+			bytes_read += readlen;
 		}
 		off += readlen;
 		vaddr += readlen;
 		len -= readlen;
 	}
 	ubc_upl_unmap(upl);
+
+	if (bytes_read > 0) {
+		const uint64_t pgsz = (uint64_t)PAGESIZE;
+		const uint64_t rup = P2ROUNDUP(bytes_read, pgsz);
+		const uint64_t pgs = 1ULL + rup/pgsz;
+		VNOPS_OSX_STAT_INCR(pagein_pages, pgs);
+	}
 
 	if (!(flags & UPL_NOCOMMIT)) {
 		if (error)
@@ -2078,9 +2144,6 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	if (error) dprintf("%s error %d\n", __func__, error);
 	return (error);
 }
-
-
-
 
 static int
 zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
@@ -2218,6 +2281,7 @@ top:
 	}
 
 	va += upl_offset;
+	uint64_t pages_written = 0;
 	while (len >= PAGESIZE) {
 		ssize_t sz = PAGESIZE;
 
@@ -2227,6 +2291,7 @@ top:
 		va += sz;
 		off += sz;
 		len -= sz;
+		pages_written++;
 	}
 
 	/*
@@ -2243,6 +2308,8 @@ top:
 		off += sz;
 		len -= sz;
 
+		pages_written++;
+
 		/*
 		 * Zero out the remainder of the PAGE that didn't fit within
 		 * the file size.
@@ -2251,7 +2318,10 @@ top:
 		//dprintf("zero last 0x%lx bytes.\n", PAGESIZE-sz);
 
 	}
+
 	ubc_upl_unmap(upl);
+
+	VNOPS_OSX_STAT_INCR(pageoutv1_pages, pages_written);
 
 	if (err == 0) {
 		uint64_t mtime[2], ctime[2];
@@ -2292,8 +2362,6 @@ exit:
 	if (err) dprintf("%s err %d\n", __func__, err);
 	return (err);
 }
-
-
 
 int
 zfs_vnop_pageout(struct vnop_pageout_args *ap)
@@ -2361,7 +2429,6 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 
 	return (retval);
 }
-
 
 static int bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 					upl_offset_t upl_offset, off_t f_offset, int size,
@@ -2436,11 +2503,13 @@ static int bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 
 	dmu_write(zfsvfs->z_os, zp->z_id, f_offset, size, &vaddr[upl_offset], tx);
 
+	VNOPS_OSX_STAT_INCR(bluster_pageout_pages,
+	    1ULL+
+	    (P2ROUNDUP((uint64_t)size/(uint64_t)PAGESIZE, (uint64_t)PAGESIZE) /
+		(uint64_t)PAGESIZE));
+
 	return 0;
 }
-
-
-
 
 /*
  * In V2 of vnop_pageout, we are given a NULL upl, so that we can
@@ -2481,6 +2550,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	 */
 	if (upl) {
 		dprintf("ZFS: Relaying vnop_pageoutv2 to vnop_pageout\n");
+		VNOPS_OSX_STAT_BUMP(pageoutv2_to_pageout);
 		return zfs_vnop_pageout(ap);
 	}
 
@@ -2635,6 +2705,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 			 * unsure what is going on */
 			printf ("ZFS: %s: unforeseen clean page @ index %lld for UPL %p, need_unlock = %d\n",
 			    __func__,  pg_index, upl, need_unlock);
+			VNOPS_OSX_STAT_BUMP(unexpected_dirty_page);
 			f_offset += PAGE_SIZE;
 			offset   += PAGE_SIZE;
 			isize    -= PAGE_SIZE;
@@ -2757,11 +2828,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	return (error);
 }
 
-
-
-
-
-
 int
 zfs_vnop_mmap(struct vnop_mmap_args *ap)
 #if 0
@@ -2790,8 +2856,13 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 		return (ENODEV);
 	}
 	mutex_enter(&zp->z_lock);
+	if (zp->z_is_mapped == 1)
+		VNOPS_OSX_STAT_BUMP(mmap_idem);
+	else
+		VNOPS_OSX_STAT_BUMP(mmap_set);
 	zp->z_is_mapped = 1;
 	mutex_exit(&zp->z_lock);
+	VNOPS_OSX_STAT_BUMP(mmap_calls);
 
 	ZFS_EXIT(zfsvfs);
 	dprintf("-vnop_mmap\n");
@@ -2830,14 +2901,12 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	 */
 	/* zp->z_is_mapped = 0; */
 	mutex_exit(&zp->z_lock);
+	VNOPS_OSX_STAT_BUMP(mnomap_calls);
 
 	ZFS_EXIT(zfsvfs);
 	dprintf("-vnop_mnomap\n");
 	return (0);
 }
-
-
-
 
 int
 zfs_vnop_inactive(struct vnop_inactive_args *ap)
@@ -2939,7 +3008,9 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	zp = VTOZ(vp);
 	ASSERT(zp != NULL);
 	dprintf("+vnop_reclaim zp %p/%p type %d\n", zp, vp, vnode_vtype(vp));
+	if (!zp) VNOPS_OSX_STAT_BUMP(null_reclaim);
 	if (!zp) goto out;
+	if (zp->z_is_mapped == 1) VNOPS_OSX_STAT_BUMP(reclaim_mapped);
 
 	zfsvfs = zp->z_zfsvfs;
 
@@ -2993,10 +3064,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
   out:
 	return (0);
 }
-
-
-
-
 
 int
 zfs_vnop_mknod(struct vnop_mknod_args *ap)

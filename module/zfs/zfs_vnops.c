@@ -89,6 +89,49 @@
 
 int zfs_vnop_force_formd_normalized_output = 0; /* disabled by default */
 
+typedef struct vnops_stats {
+	kstat_named_t update_pages;
+	kstat_named_t mappedread_pages;
+	kstat_named_t dmu_read_uio_dbuf_pages;
+	kstat_named_t cluster_push;
+	kstat_named_t zfs_sync;
+} vnops_stats_t;
+
+static vnops_stats_t vnops_stats = {
+	{ "update_pages",                                KSTAT_DATA_UINT64 },
+	{ "mappedread_pages",                            KSTAT_DATA_UINT64 },
+	{ "dmu_read_uio_dbuf_pages",                     KSTAT_DATA_UINT64 },
+	{ "cluster_push",                                    KSTAT_DATA_UINT64 },
+	{ "zfs_sync",                                    KSTAT_DATA_UINT64 },
+};
+
+#define VNOPS_STAT(statname)           (vnops_stats.statname.value.ui64)
+#define VNOPS_STAT_INCR(statname, val) \
+        atomic_add_64(&vnops_stats.statname.value.ui64, (val))
+#define VNOPS_STAT_BUMP(stat)      VNOPS_STAT_INCR(stat, 1)
+#define VNOPS_STAT_BUMPDOWN(stat)  VNOPS_STAT_INCR(stat, -1)
+
+static kstat_t *vnops_ksp;
+
+void
+vnops_stat_init(void)
+{
+	vnops_ksp = kstat_create("zfs", 0, "vnops", "misc", KSTAT_TYPE_NAMED,
+            sizeof (vnops_stats) / sizeof (kstat_named_t), KSTAT_FLAG_VIRTUAL);
+        if (vnops_ksp != NULL) {
+                vnops_ksp->ks_data = &vnops_stats;
+                kstat_install(vnops_ksp);
+	}
+}
+
+void
+vnops_stat_fini(void)
+{
+        if (vnops_ksp != NULL) {
+                kstat_delete(vnops_ksp);
+                vnops_ksp = NULL;
+        }
+}
 
 /*
  * Programming rules.
@@ -446,6 +489,9 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * we effectively didn't dirty any pages.
 	 */
 	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+
+	if (upl_page > 0)
+		VNOPS_STAT_INCR(update_pages, (uint64_t) upl_page);
 }
 #endif
 
@@ -532,7 +578,6 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     int upl_page;
     off_t off;
 
-
     upl_start = uio_offset(uio);
     off = upl_start & PAGE_MASK;
     upl_start &= ~PAGE_MASK;
@@ -586,6 +631,9 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
      */
 	(void) ubc_upl_unmap(upl);
 	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+
+	if (upl_page > 0)
+		VNOPS_STAT_INCR(mappedread_pages, (uint64_t) upl_page);
 
     return (error);
 }
@@ -730,9 +778,17 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 #endif /* __FreeBSD__ */
 		if (vn_has_cached_data(vp))
 			error = mappedread(vp, nbytes, uio);
-		else
+		else {
 			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, nbytes);
+			if (error == 0) {
+				VNOPS_STAT_INCR(dmu_read_uio_dbuf_pages,
+				    1ULL+
+				    P2ROUNDUP((uint64_t)nbytes/(uint64_t)PAGESIZE, (uint64_t)PAGESIZE) /
+				    (uint64_t)PAGESIZE);
+			}
+		}
+
 		if (error) {
 			/* convert checksum errors into IO errors */
 			if (error == ECKSUM)
@@ -2925,6 +2981,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	if (vn_has_cached_data(vp) /*&& !(syncflag & FNODSYNC)*/ &&
 		vnode_isreg(vp) && !vnode_isswap(vp)) {
 		(void) cluster_push(vp, IO_SYNC);
+		VNOPS_STAT_BUMP(cluster_push);
 	}
 
 	(void) tsd_set(zfs_fsyncer_key, (void *)zfs_fsync_sync_cnt);
@@ -2935,6 +2992,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		ZFS_VERIFY_ZP(zp);
 		zil_commit(zfsvfs->z_log, zp->z_id);
 		ZFS_EXIT(zfsvfs);
+		VNOPS_STAT_BUMP(zfs_sync);
 	}
 	//tsd_set(zfs_fsyncer_key, NULL);
 	return (0);
