@@ -5558,17 +5558,19 @@ ztest_run_zdb(char *pool)
 	bin = umem_alloc(MAXPATHLEN + MAXNAMELEN + 20, UMEM_NOFAIL);
 	zdb = umem_alloc(MAXPATHLEN + MAXNAMELEN + 20, UMEM_NOFAIL);
 	zbuf = umem_alloc(1024, UMEM_NOFAIL);
-
 	VERIFY(realpath(getexecname(), bin) != NULL);
+	printf("Checking path '%s'\n", bin);
 	if (strncmp(bin, "/usr/sbin/ztest", 15) == 0) {
 		strcpy(bin, "/usr/sbin/zdb"); /* Installed */
 	} else if (strncmp(bin, "/sbin/ztest", 11) == 0) {
 		strcpy(bin, "/sbin/zdb"); /* Installed */
 	} else if (strncmp(bin, "/usr/local/sbin/ztest", 21) == 0) {
 		strcpy(bin, "/usr/local/sbin/zdb"); /* Installed */
+	} else if (strncmp(bin, "/usr/local/bin/ztest", 21) == 0) {
+		strcpy(bin, "/usr/local/sbin/zdb"); /* Installed */
 	} else {
 		strstr(bin, "/ztest/")[0] = '\0'; /* In-tree */
-		strcat(bin, "/zdb/zdb");
+		strcat(bin, ".sh zdb");
 	}
 
 	(void) sprintf(zdb,
