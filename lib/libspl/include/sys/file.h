@@ -37,10 +37,10 @@
 
 #define FCREAT  O_CREAT
 #define FTRUNC  O_TRUNC
-#define FOFFMAX 0
+//#define FOFFMAX 0
 #define FSYNC   O_SYNC
 #define FDSYNC  O_DSYNC
-#define FRSYNC  O_RSYNC
+//#define FRSYNC  O_RSYNC
 #define FEXCL   O_EXCL
 
 #define O_DIRECT 0

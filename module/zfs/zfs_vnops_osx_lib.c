@@ -607,7 +607,11 @@ zfs_ioflags(int ap_ioflag)
 	if (ap_ioflag & IO_NDELAY)
 		flags |= FNONBLOCK;
 	if (ap_ioflag & IO_SYNC)
+#ifndef __APPLE__
 		flags |= (FSYNC | FDSYNC | FRSYNC);
+#else
+		flags |= (FSYNC | FDSYNC);
+#endif
 
 	return (flags);
 }

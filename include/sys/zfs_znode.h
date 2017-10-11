@@ -230,11 +230,14 @@ typedef struct znode {
 	boolean_t	z_is_mapped;	/* are we mmap'ed */
 	boolean_t	z_is_ctldir;	/* are we .zfs entry */
 
-    krwlock_t   z_map_lock;     /* page map lock */
+	krwlock_t       z_map_lock;     /* page map lock */
+	const char      *z_map_lock_holder;  /* function that holds the rw_lock */
+	uint32_t        z_fsync_flag;   /* are we fsyncing? */
+	uint32_t        z_fsync_cnt;    /* how many fsyncers are working on this file */
 
 #ifdef __APPLE__
 	list_node_t	z_link_reclaim_node;	/* all reclaim znodes in fs link */
-    uint32_t    z_vid;  /* OSX vnode_vid */
+	uint32_t    z_vid;  /* OSX vnode_vid */
 	uint32_t    z_document_id;
 
     /* Track vnop_lookup name for Finder - as Apple asks for va_name in
@@ -242,7 +245,7 @@ typedef struct znode {
 	 * We also need to keep hardlink parentid to return the correct id in
 	 * getattr
 	 */
-    char        z_name_cache[MAXPATHLEN];
+	char        z_name_cache[MAXPATHLEN];
 	uint64_t    z_finder_parentid;
 	boolean_t   z_finder_hardlink;  /* set high if it ever had a hardlink hash */
 

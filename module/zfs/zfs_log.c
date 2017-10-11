@@ -515,6 +515,8 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 
 		itx->itx_private = zp->z_zfsvfs;
 
+		ASSERT3U(zp->z_sync_cnt, <, 1024); // XXX: ARBITRARY
+		ASSERT3S(zp->z_sync_cnt, >=, 0);   // XXX: SIGN STUFF
 		if (!(ioflag & (FSYNC | FDSYNC)) && (zp->z_sync_cnt == 0) &&
 		    (fsync_cnt == 0))
 			itx->itx_sync = B_FALSE;
@@ -547,6 +549,8 @@ zfs_log_truncate(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 	lr->lr_offset = off;
 	lr->lr_length = len;
 
+	ASSERT3U(zp->z_sync_cnt, <, 1024); // XXX: ARBITRARY
+	ASSERT3S(zp->z_sync_cnt, >=, 0); // XXX: SIGN STUFF
 	itx->itx_sync = (zp->z_sync_cnt != 0);
 	zil_itx_assign(zilog, itx, tx);
 }
@@ -609,6 +613,8 @@ zfs_log_setattr(zilog_t *zilog, dmu_tx_t *tx, uint64_t txtype,
 	if (fuidp)
 		(void) zfs_log_fuid_domains(fuidp, start);
 
+	ASSERT3U(zp->z_sync_cnt, <, 1024); // XXX: ARBITRARY
+	ASSERT3S(zp->z_sync_cnt, >=, 0); // XXX: SIGN STUFF
 	itx->itx_sync = (zp->z_sync_cnt != 0);
 	zil_itx_assign(zilog, itx, tx);
 }
@@ -675,6 +681,8 @@ zfs_log_acl(zilog_t *zilog, dmu_tx_t *tx, znode_t *zp,
 		}
 	}
 
+	ASSERT3U(zp->z_sync_cnt, <, 1024); // XXX: ARBITRARY
+	ASSERT3S(zp->z_sync_cnt, >=, 0); // XXX: SIGN STUFF
 	itx->itx_sync = (zp->z_sync_cnt != 0);
 	zil_itx_assign(zilog, itx, tx);
 }

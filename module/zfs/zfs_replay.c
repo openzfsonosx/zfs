@@ -753,8 +753,13 @@ zfs_replay_truncate(zfsvfs_t *zsb, lr_truncate_t *lr, boolean_t byteswap)
 	fl.l_start = lr->lr_offset;
 	fl.l_len = lr->lr_length;
 
+#ifndef __APPLE__
 	error = zfs_space(ZTOV(zp), F_FREESP, &fl, FWRITE | FOFFMAX,
                       lr->lr_offset, kcred, NULL);
+#else
+	error = zfs_space(ZTOV(zp), F_FREESP, &fl, FWRITE,
+                      lr->lr_offset, kcred, NULL);
+#endif
 
 	vnode_put(ZTOV(zp));
 

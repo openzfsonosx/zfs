@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2013 Will Andrews <will@firepipe.net>
  * Copyright (c) 2013, 2016 Jorgen Lundman <lundman@lundman.net>
+ * Copyright (c) 2017 Sean Doran <smd@use.net>.  All rights reserved.
  */
 
 /*
@@ -90,18 +91,28 @@
 #include <vfs/vfs_support.h>
 #include <sys/ioccom.h>
 
+#include <sys/znode_z_map_lock.h>
+
 typedef struct vnops_osx_stats {
 	kstat_named_t mmap_calls;
 	kstat_named_t mmap_set;
 	kstat_named_t mmap_idem;
 	kstat_named_t mnomap_calls;
 	kstat_named_t reclaim_mapped;
-	kstat_named_t null_reclaim;
-	kstat_named_t unexpected_dirty_page;
+	kstat_named_t bluster_pageout_calls;
+	kstat_named_t bluster_pageout_error;
+	kstat_named_t bluster_pageout_dmu_bytes;
 	kstat_named_t bluster_pageout_pages;
+	kstat_named_t pageoutv2_calls;
+	kstat_named_t pageoutv2_want_lock;
+	kstat_named_t pageoutv2_msync_flag;
 	kstat_named_t pageoutv2_to_pageout;
+	kstat_named_t pageoutv2_backscan_pages;
+	kstat_named_t pageoutv2_skip_clean_pages;
 	kstat_named_t pageoutv1_pages;
+	kstat_named_t pageoutv1_want_lock;
 	kstat_named_t pagein_pages;
+	kstat_named_t pagein_want_lock;
 } vnops_osx_stats_t;
 
 static vnops_osx_stats_t vnops_osx_stats = {
@@ -111,12 +122,20 @@ static vnops_osx_stats_t vnops_osx_stats = {
 	{ "mmap_idem",                         KSTAT_DATA_UINT64 },
 	{ "mnomap_calls",                      KSTAT_DATA_UINT64 },
 	{ "reclaim_mapped",                    KSTAT_DATA_UINT64 },
-	{ "null_reclaim",                      KSTAT_DATA_UINT64 },
-	{ "unexpected_dirty_page",             KSTAT_DATA_UINT64 },
+	{ "bluster_pageout_calls",             KSTAT_DATA_UINT64 },
+	{ "bluster_pageout_error",             KSTAT_DATA_UINT64 },
+	{ "bluster_pageout_dmu_bytes",         KSTAT_DATA_UINT64 },
 	{ "bluster_pageout_pages",             KSTAT_DATA_UINT64 },
+	{ "pageoutv2_calls",                   KSTAT_DATA_UINT64 },
+	{ "pageoutv2_want_lock",               KSTAT_DATA_UINT64 },
+	{ "pageoutv2_msync_flag",              KSTAT_DATA_UINT64 },
 	{ "pageoutv2_to_pageout",              KSTAT_DATA_UINT64 },
-	{ "pageoutv1_pages",                      KSTAT_DATA_UINT64 },
+	{ "pageoutv2_backscan_pages",          KSTAT_DATA_UINT64 },
+	{ "pageoutv2_skip_clean_pages",        KSTAT_DATA_UINT64 },
+	{ "pageoutv1_pages",                   KSTAT_DATA_UINT64 },
+	{ "pageoutv1_want_lock",               KSTAT_DATA_UINT64 },
 	{ "pagein_pages",                      KSTAT_DATA_UINT64 },
+	{ "pagein_want_lock",                  KSTAT_DATA_UINT64 },
 };
 
 #define VNOPS_OSX_STAT(statname)           (vnops_osx_stats.statname.value.ui64)
@@ -510,8 +529,6 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 			dprintf("%s F_BARRIERFSYNC\n", __func__);
 #endif
 			error = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
-			break;
-
 		case F_CHKCLEAN:
 			dprintf("%s F_CHKCLEAN\n", __func__);
 			/* normally calls http://fxr.watson.org/fxr/source/bsd/vfs/vfs_cluster.c?v=xnu-2050.18.24#L5839 */
@@ -1642,14 +1659,6 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	if (!zfsvfs)
 		return (0);
 
-	/*
-	 * If we come here via vnode_create()->vclean() we can not end up in
-	 * zil_commit() or we will deadlock. But we know that vnop_reclaim will
-	 * be called next, so we just return success.
-	 */
-	// this might not be needed now
-	//if (vnode_isrecycled(ap->a_vp)) return 0;
-
 	err = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 
 	if (err) dprintf("%s err %d\n", __func__, err);
@@ -2011,7 +2020,6 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	caddr_t vaddr = NULL;
 	/* vm_offset_t vaddr = NULL; */
 	int flags = ap->a_flags;
-	int need_unlock = 0;
 	int error = 0;
 	uint64_t file_sz;
 
@@ -2057,18 +2065,27 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 * We also lock against zfs_vnop_pageoutv2 and zfs_vnop_pageout,
 	 * and ourselves (if in other threads), since any of these may
 	 * modify the UBC with respect to this file.
+	 *
+	 * Finally we also lock against new callers of zfs_vnop_mmap() and
+	 * zfs_vnop_mnomap(), since those may update the file as well.
 	 */
+
+	boolean_t need_release = B_FALSE;
+	boolean_t need_upgrade = B_FALSE;
 	if (!rw_write_held(&zp->z_map_lock)) {
-		rw_enter(&zp->z_map_lock, RW_WRITER);
-		need_unlock = TRUE;
+		ASSERT3S(zp->z_is_mapped, >, 0);
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+		VNOPS_OSX_STAT_INCR(pagein_want_lock, tries);
+	} else {
+		ASSERT3S(zp->z_is_mapped, >, 0);
+		printf("ZFS: %s: already have z_map_lock\n", __func__);
 	}
 
 	if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
 		dprintf("zfs_vnop_pagein: failed to ubc_upl_map");
 		if (!(flags & UPL_NOCOMMIT))
 			(void) ubc_upl_abort(upl, 0);
-		if (need_unlock)
-			rw_exit(&zp->z_map_lock);
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
 		ZFS_EXIT(zfsvfs);
 		return (ENOMEM);
 	}
@@ -2113,9 +2130,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	ubc_upl_unmap(upl);
 
 	if (bytes_read > 0) {
-		const uint64_t pgsz = (uint64_t)PAGESIZE;
-		const uint64_t rup = P2ROUNDUP(bytes_read, pgsz);
-		const uint64_t pgs = 1ULL + rup/pgsz;
+		uint64_t pgs = 1ULL + atop_64(bytes_read);
 		VNOPS_OSX_STAT_INCR(pagein_pages, pgs);
 	}
 
@@ -2137,8 +2152,8 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 */
 	if (ap->a_f_offset >= file_sz)
 		error = EFAULT;
-	if (need_unlock)
-		rw_exit(&zp->z_map_lock);
+
+	z_map_drop_lock(zp, &need_release, &need_upgrade);
 
 	ZFS_EXIT(zfsvfs);
 	if (error) dprintf("%s error %d\n", __func__, error);
@@ -2176,7 +2191,6 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 		ZFS_EXIT(zfsvfs);
 		return EIO;
 	}
-
 
 	ASSERT(vn_has_cached_data(ZTOV(zp)));
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
@@ -2407,13 +2421,15 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 * for this file.
 	 */
 
-	boolean_t need_unlock = B_FALSE;
+	boolean_t need_release = B_FALSE;
+	boolean_t need_upgrade = B_FALSE;
 
 	if (!rw_write_held(&zp->z_map_lock)) {
-		rw_enter(&zp->z_map_lock, RW_WRITER);
-		need_unlock = B_TRUE;
+		ASSERT3S(zp->z_is_mapped, >, 0);
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+		VNOPS_OSX_STAT_INCR(pageoutv1_want_lock, tries);
 	} else {
-		printf("ZFS: %s: z_map_lock already heald\n", __func__);
+		printf("ZFS: %s: z_map_lock already held\n", __func__);
 	}
 
 	/*
@@ -2424,8 +2440,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	int retval =  zfs_pageout(zfsvfs, zp, upl, upl_offset, ap->a_f_offset,
 					   len, flags);
 
-	if (need_unlock)
-		rw_exit(&zp->z_map_lock);
+	z_map_drop_lock(zp, &need_release, &need_upgrade);
 
 	return (retval);
 }
@@ -2440,6 +2455,8 @@ static int bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 	off_t         max_size;
 	int           is_clcommit = 0;
 
+	VNOPS_OSX_STAT_BUMP(bluster_pageout_calls);
+
 	if ((flags & UPL_NOCOMMIT) == 0)
 		is_clcommit = 1;
 
@@ -2448,6 +2465,7 @@ static int bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 	 * we can't issue an abort because we don't know how
 	 * big the upl really is
 	 */
+	ASSERT3S(size, >, 0);
 	if (size <= 0) {
 		dprintf("%s invalid size %d\n", __func__, size);
 		return (EINVAL);
@@ -2456,7 +2474,7 @@ static int bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 	if (vnode_vfsisrdonly(ZTOV(zp))) {
 		if (is_clcommit)
 			ubc_upl_abort_range(upl, upl_offset, size, UPL_ABORT_FREE_ON_EMPTY);
-		dprintf("%s: readonly fs\n", __func__);
+		printf("ZFS: %s: readonly fs\n", __func__);
 		return (EROFS);
 	}
 
@@ -2470,7 +2488,7 @@ static int bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 		(f_offset & PAGE_MASK_64) || (size & PAGE_MASK)) {
 		if (is_clcommit)
 			ubc_upl_abort_range(upl, upl_offset, size, UPL_ABORT_FREE_ON_EMPTY);
-		dprintf("%s: invalid offset or size\n", __func__);
+		printf("ZFS: %s: invalid offset or size\n", __func__);
 		return (EINVAL);
 	}
 	max_size = filesize - f_offset;
@@ -2500,13 +2518,13 @@ static int bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 	}
 #endif
 
-
 	dmu_write(zfsvfs->z_os, zp->z_id, f_offset, size, &vaddr[upl_offset], tx);
+	VNOPS_OSX_STAT_INCR(bluster_pageout_dmu_bytes, size);
 
-	VNOPS_OSX_STAT_INCR(bluster_pageout_pages,
-	    1ULL+
-	    (P2ROUNDUP((uint64_t)size/(uint64_t)PAGESIZE, (uint64_t)PAGESIZE) /
-		(uint64_t)PAGESIZE));
+	if (size > 0) {
+		uint64_t pgs = atop_64(size) + 1ULL;
+		VNOPS_OSX_STAT_INCR(bluster_pageout_pages, pgs);
+	}
 
 	return 0;
 }
@@ -2543,7 +2561,8 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	dmu_tx_t *tx;
 	caddr_t vaddr = NULL;
 	int merror = 0;
-	boolean_t need_unlock = B_FALSE;
+
+	VNOPS_OSX_STAT_BUMP(pageoutv2_calls);
 
 	/* We can still get into this function as non-v2 style, by the default
 	 * pager (ie, swap - when we eventually support it)
@@ -2583,6 +2602,8 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 	ASSERT3U(zp->z_is_mapped,==,1);
 
+	rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
+
 	/*
 	 * We lock against update_pages() [part of zfs_write()],
 	 * zfs_vnop_pageout(), and zfs_vnop_pagein(), and ourselves (in
@@ -2590,14 +2611,15 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	 * file.
 	 */
 
+	boolean_t need_release = B_FALSE;
+	boolean_t need_upgrade = B_FALSE;
 	if (!rw_write_held(&zp->z_map_lock)) {
-		rw_enter(&zp->z_map_lock, RW_WRITER);
-		need_unlock = B_TRUE;
+		ASSERT3S(zp->z_is_mapped, >, 0);
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+		VNOPS_OSX_STAT_INCR(pageoutv2_want_lock, tries);
 	} else {
-		printf("ZFS: %s: z_map_lock already held\n", __func__);
+		dprintf("ZFS: %s: z_map_lock already held\n", __func__);
 	}
-
-	rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
 
 	/* Grab UPL now */
 	int request_flags;
@@ -2611,6 +2633,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 	if (a_flags & UPL_MSYNC) {
 		request_flags = UPL_UBC_MSYNC | UPL_RET_ONLY_DIRTY;
+		VNOPS_OSX_STAT_BUMP(pageoutv2_msync_flag);
 	}
 	else {
 		request_flags = UPL_UBC_PAGEOUT | UPL_RET_ONLY_DIRTY;
@@ -2619,7 +2642,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	error = ubc_create_upl(vp, ap->a_f_offset, ap->a_size, &upl, &pl,
 						   request_flags );
 	if (error || (upl == NULL)) {
-		dprintf("ZFS: Failed to create UPL! %d\n", error);
+		printf("ZFS: %s: Failed to create UPL! %d\n", __func__, error);
 		goto pageout_done;
 	}
 
@@ -2629,6 +2652,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	zfs_sa_upgrade_txholds(tx, zp);
 	error = dmu_tx_assign(tx, TXG_WAIT);
+	ASSERT3S(error, ==, 0);
 	if (error != 0) {
 		dmu_tx_abort(tx);
 		if (vaddr) {
@@ -2655,8 +2679,10 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	 * preceding aborts/completions.
 	 */
 	for (pg_index = ((isize) / PAGE_SIZE); pg_index > 0;) {
+		VNOPS_OSX_STAT_BUMP(pageoutv2_backscan_pages);
 		if (upl_page_present(pl, --pg_index))
 			break;
+		ASSERT3S(pg_index, >, 0);
 		if (pg_index == 0) {
 			dprintf("ZFS: failed on pg_index\n");
 			dmu_tx_commit(tx);
@@ -2693,6 +2719,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 			 * to get back empty slots in the UPL.
 			 * just skip over them
 			 */
+			VNOPS_OSX_STAT_BUMP(pageoutv2_skip_clean_pages);
 			f_offset += PAGE_SIZE;
 			offset   += PAGE_SIZE;
 			isize    -= PAGE_SIZE;
@@ -2703,9 +2730,8 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		if ( !upl_dirty_page(pl, pg_index)) {
 			/* hfs has a call to panic here, but we trigger this *a lot* so
 			 * unsure what is going on */
-			printf ("ZFS: %s: unforeseen clean page @ index %lld for UPL %p, need_unlock = %d\n",
-			    __func__,  pg_index, upl, need_unlock);
-			VNOPS_OSX_STAT_BUMP(unexpected_dirty_page);
+			printf ("ZFS: %s: unforeseen clean page @ index %lld for UPL %p, need_release = %d\n",
+			    __func__,  pg_index, upl, need_release);
 			f_offset += PAGE_SIZE;
 			offset   += PAGE_SIZE;
 			isize    -= PAGE_SIZE;
@@ -2747,7 +2773,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		if (!vaddr) {
 			if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
 				error = EINVAL;
-				dprintf("ZFS: unable to map\n");
+				printf("ZFS: %s: unable to map\n", __func__);
 				goto out;
 			}
 			dprintf("ZFS: Mapped %p\n", vaddr);
@@ -2757,6 +2783,10 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 			   offset, f_offset, xsize, filesize);
 		merror = bluster_pageout(zfsvfs, zp, upl, offset, f_offset, xsize,
 								 filesize, a_flags, vaddr, tx);
+		ASSERT3S(merror, ==, 0);
+		if (merror != 0)
+			VNOPS_OSX_STAT_BUMP(bluster_pageout_error);
+
 		/* remember the first error */
 		if ((error == 0) && (merror))
 			error = merror;
@@ -2767,6 +2797,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		pg_index += num_of_pages;
 	} // while isize
 
+	ASSERT3S(error, ==, 0);
 	/* finish off transaction */
 	if (error == 0) {
 		uint64_t mtime[2], ctime[2];
@@ -2794,6 +2825,8 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		vaddr = NULL;
 	}
 
+	z_map_drop_lock(zp, &need_release, &need_upgrade);
+
 	zfs_range_unlock(rl);
 
 	if (a_flags & UPL_IOSYNC)
@@ -2805,19 +2838,15 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 	upl = NULL;
 
-	if (need_unlock)
-		rw_exit(&zp->z_map_lock);
-
 	ZFS_EXIT(zfsvfs);
 	if (error)
 		dprintf("ZFS: pageoutv2 failed %d\n", error);
 	return (error);
 
   pageout_done:
-	zfs_range_unlock(rl);
+	z_map_drop_lock(zp, &need_release, &need_upgrade);
 
-	if (need_unlock)
-		rw_exit(&zp->z_map_lock);
+	zfs_range_unlock(rl);
 
   exit_abort:
 	dprintf("ZFS: pageoutv2 aborted %d\n", error);
@@ -2843,6 +2872,8 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs;
 
+	DECLARE_CRED_AND_CONTEXT(ap);
+
 	if (!zp) return ENODEV;
 
 	zfsvfs = zp->z_zfsvfs;
@@ -2855,10 +2886,19 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 		ZFS_EXIT(zfsvfs);
 		return (ENODEV);
 	}
+	/*
+	 * XXX: we set z_is_mapped only once but read it often, so a
+	 *      mutex is overkill; instead, it should be a proper
+	 *      _Atomic structure member, or at least be set atomically
+	 *      with one of the Illumos atomic functions.
+	 */
 	mutex_enter(&zp->z_lock);
-	if (zp->z_is_mapped == 1)
+	if (zp->z_is_mapped > 0) {
+		mutex_exit(&zp->z_lock);
+		zfs_fsync(vp, 0, cr, ct);
+		mutex_enter(&zp->z_lock);
 		VNOPS_OSX_STAT_BUMP(mmap_idem);
-	else
+	} else
 		VNOPS_OSX_STAT_BUMP(mmap_set);
 	zp->z_is_mapped = 1;
 	mutex_exit(&zp->z_lock);
@@ -2884,6 +2924,8 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
+	DECLARE_CRED_AND_CONTEXT(ap);
+
 	dprintf("+vnop_mnomap: %p\n", ap->a_vp);
 
 	ZFS_ENTER(zfsvfs);
@@ -2900,7 +2942,11 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	 * keep updating both places on zfs_write().
 	 */
 	/* zp->z_is_mapped = 0; */
+	ASSERT3U((uint64_t)zp->z_is_mapped, >, 0ULL);
 	mutex_exit(&zp->z_lock);
+
+	zfs_fsync(vp, 0, cr, ct);
+
 	VNOPS_OSX_STAT_BUMP(mnomap_calls);
 
 	ZFS_EXIT(zfsvfs);
@@ -3008,9 +3054,14 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	zp = VTOZ(vp);
 	ASSERT(zp != NULL);
 	dprintf("+vnop_reclaim zp %p/%p type %d\n", zp, vp, vnode_vtype(vp));
-	if (!zp) VNOPS_OSX_STAT_BUMP(null_reclaim);
 	if (!zp) goto out;
-	if (zp->z_is_mapped == 1) VNOPS_OSX_STAT_BUMP(reclaim_mapped);
+
+	if (zp->z_is_mapped > 0) {
+		VNOPS_OSX_STAT_BUMP(reclaim_mapped);
+		(void)ubc_msync(vp, (off_t)0,
+		    ubc_getsize(vp), NULL,
+		    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
+	}
 
 	zfsvfs = zp->z_zfsvfs;
 

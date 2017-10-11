@@ -157,7 +157,11 @@ spa_config_write(spa_config_dirent_t *dp, nvlist_t *nvl)
 	size_t buflen;
 	char *buf;
 	vnode_t *vp;
+#ifndef __APPLE__
 	int oflags = FWRITE | FTRUNC | FCREAT | FOFFMAX;
+#else
+	int oflags = FWRITE | FTRUNC | FCREAT;
+#endif
 #ifdef __linux__
 	int error;
 #endif

@@ -23,6 +23,7 @@
  * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2015 by Chunwei Chen. All rights reserved.
+ * Copyright 2017, Sean Doran <smd@use.net>.  All rights reserved.
  */
 
 /* Portions Copyright 2007 Jeremy Teo */
@@ -84,6 +85,7 @@
 #include <sys/zfs_vfsops.h>
 #include <sys/vnode.h>
 #include <sys/vdev.h>
+#include <sys/znode_z_map_lock.h>
 
 //#define dprintf printf
 
@@ -91,18 +93,48 @@ int zfs_vnop_force_formd_normalized_output = 0; /* disabled by default */
 
 typedef struct vnops_stats {
 	kstat_named_t update_pages;
+	kstat_named_t update_pages_want_lock;
+	kstat_named_t update_pages_lock_timeout;
+	kstat_named_t update_pages_not_mapped;
 	kstat_named_t mappedread_pages;
 	kstat_named_t dmu_read_uio_dbuf_pages;
 	kstat_named_t cluster_push;
-	kstat_named_t zfs_sync;
+	kstat_named_t zfs_fsync;
+	kstat_named_t zfs_fsync_want_lock;
+	kstat_named_t write_updatepage_uio_copy;
+	kstat_named_t write_updatepage_uio;
+	kstat_named_t update_pages_updated_pages;
+	kstat_named_t update_pages_aborted_pages;
+	kstat_named_t update_pages_skipped_pages;
+	kstat_named_t update_pages_error_pages;
+	kstat_named_t zfs_fsync_cas_miss;
+	kstat_named_t fsync_disabled;
+	kstat_named_t fsync_disabled_mapped;
+	kstat_named_t zfs_read_sync_mapped;
+	kstat_named_t zfs_read_zil_commit;
 } vnops_stats_t;
 
 static vnops_stats_t vnops_stats = {
 	{ "update_pages",                                KSTAT_DATA_UINT64 },
+	{ "update_pages_want_lock",                      KSTAT_DATA_UINT64 },
+	{ "update_pages_lock_timeout",                   KSTAT_DATA_UINT64 },
+	{ "update_pages_not_mapped",                     KSTAT_DATA_UINT64 },
 	{ "mappedread_pages",                            KSTAT_DATA_UINT64 },
 	{ "dmu_read_uio_dbuf_pages",                     KSTAT_DATA_UINT64 },
-	{ "cluster_push",                                    KSTAT_DATA_UINT64 },
-	{ "zfs_sync",                                    KSTAT_DATA_UINT64 },
+	{ "cluster_push",                                KSTAT_DATA_UINT64 },
+	{ "zfs_fsync",                                   KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_want_lock",                         KSTAT_DATA_UINT64 },
+	{ "write_updatepage_uio_copy",                   KSTAT_DATA_UINT64 },
+	{ "write_updatepage_uio",                        KSTAT_DATA_UINT64 },
+	{ "update_pages_updated_pages",                  KSTAT_DATA_UINT64 },
+	{ "update_pages_aborted_pages",                  KSTAT_DATA_UINT64 },
+	{ "update_pages_skipped_pages",                  KSTAT_DATA_UINT64 },
+	{ "update_pages_error_pages",                    KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_cas_miss",                          KSTAT_DATA_UINT64 },
+	{ "fsync_disabled",                              KSTAT_DATA_UINT64 },
+	{ "fsync_disabled_mapped",                       KSTAT_DATA_UINT64 },
+	{ "zfs_read_sync_mapped",                        KSTAT_DATA_UINT64 },
+	{ "zfs_read_zil_commit",                         KSTAT_DATA_UINT64 },
 };
 
 #define VNOPS_STAT(statname)           (vnops_stats.statname.value.ui64)
@@ -265,8 +297,11 @@ zfs_open(vnode_t **vpp, int flag, cred_t *cr, caller_context_t *ct)
 #endif
 
 	/* Keep a count of the synchronous opens in the znode */
-	if (flag & (FSYNC | FDSYNC))
+	if (flag & (FSYNC | FDSYNC)) {
+		ASSERT3S(&zp->z_sync_cnt, <, UINT32_MAX);
+		ASSERT3S(&zp->z_sync_cnt, <, 1024);  // XXX: ARBITRARY
 		atomic_inc_32(&zp->z_sync_cnt);
+	}
 
 	ZFS_EXIT(zfsvfs);
 	return (0);
@@ -297,8 +332,10 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 	ZFS_VERIFY_ZP(zp);
 
 	/* Decrement the synchronous opens in the znode */
-	if ((flag & (FSYNC | FDSYNC)) && (count == 1))
+	if ((flag & (FSYNC | FDSYNC)) && (count == 1)) {
+		ASSERT3U(&zp->z_sync_cnt, >, 0);
 		atomic_dec_32(&zp->z_sync_cnt);
+	}
 
 #if 0
 	if (!zfs_has_ctldir(zp) && zp->z_zfsvfs->z_vscan &&
@@ -396,6 +433,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     upl_t upl;
     upl_page_info_t *pl = NULL;
     off_t upl_start;
+    off_t upl_current;
     int upl_size;
     int upl_page;
     off_t off;
@@ -407,12 +445,64 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
     dprintf("update_pages %llu - %llu (adjusted %llu - %llu): off %llu\n",
            uio_offset(uio), nbytes, upl_start, upl_size, off);
-    /*
-     * Create a UPL for the current range and map its
-     * page list into the kernel virtual address space.
-     */
-    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-						   UPL_FILE_IO | UPL_SET_LITE);
+
+	 /* check if we are updating z_is_mapped for this file; if it is,
+	  * then it always will be.   If it isn't, we need to lock out
+	  * mmap()-callers.
+	  */
+	boolean_t z_lock_held = B_FALSE;
+	mutex_enter(&zp->z_lock);
+	z_lock_held = B_TRUE;
+	int mapped = zp->z_is_mapped;
+	if (mapped > 0) {
+		mutex_exit(&zp->z_lock);
+		z_lock_held = B_FALSE;
+	}
+
+	/*
+	 * We lock against zfs_vnops_pagein() for this file, as it may
+	 * be trying to page in from the current file, which was
+	 * mmap()ed at some point in the past (and may still be
+	 * mmap()ed).
+	 *
+	 * We also lock against other writers to the same file,
+	 * and new callers of zfs_vnop_mmap() or zfs_vnop_mnomap(),
+	 * since those may update the file as well.
+	 *
+	 * While this penalizes writes to a file that has been mmap()ed,
+	 * we can guarantee that whole zfs_write() updates or whole pageins
+	 * complete, rather than interleaving them.
+	 *
+	 * Finally, we also lock against zfs_vnop_pageoutv2() and
+	 * zfs_vnop_pageout() to this file.
+	 */
+
+	boolean_t need_release = B_FALSE;
+	boolean_t need_upgrade = B_FALSE;
+	if (mapped > 0 && !rw_write_held(&zp->z_map_lock)) {
+		ASSERT(!MUTEX_HELD(&zp->z_lock));
+		ASSERT3U((uint64_t)z_lock_held, ==, (uint64_t)B_FALSE);
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+		VNOPS_STAT_INCR(update_pages_want_lock, tries);
+	} else if (mapped > 0) {
+		ASSERT(!MUTEX_HELD(&zp->z_lock));
+		ASSERT3U((uint64_t)z_lock_held, ==, (uint64_t)B_FALSE);
+		printf("ZFS: %s: already holds z_map_lock\n", __func__);
+	} else {
+		ASSERT(MUTEX_HELD(&zp->z_lock));
+		printf("ZFS: %s: file not mapped\n", __func__);
+	}
+
+	/* we now hold EITHER z_lock or z_map_lock, but not both */
+	EQUIV(MUTEX_HELD(&zp->z_lock), mapped == 0);
+	EQUIV(!rw_write_held(&zp->z_map_lock), MUTEX_HELD(&zp->z_lock));
+
+	/*
+	 * Create a UPL for the current range and map its
+	 * page list into the kernel virtual address space.
+	 */
+	error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
+	    UPL_SET_LITE | UPL_WILL_MODIFY);
 	if ((error != KERN_SUCCESS) || !upl) {
 		printf("ZFS: update_pages failed to ubc_create_upl: %d\n", error);
 		return;
@@ -424,23 +514,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 		return;
 	}
 
-	/*
-	 * We lock against zfs_vnops_pagein() for this file, as it may
-	 * be trying to page in from the current file, which was
-	 * mmap()ed at some point in the past (and may still be
-	 * mmap()ed).
-	 *
-	 * We also lock against other writers to the same file.
-	 *
-	 * While this penalizes writes to a file that has been mmap()ed,
-	 * we can guarantee that whole zfs_write() updates or whole pageins
-	 * complete, rather than interleaving them.
-	 *
-	 * Finally, we also lock against zfs_vnop_pageoutv2() and
-	 * zfs_vnop_pageout() to this file.
-	 */
-        rw_enter(&zp->z_map_lock, RW_WRITER);
-
+	upl_current = upl_start;
 	for (upl_page = 0; len > 0; ++upl_page) {
 		uint64_t bytes = MIN(PAGESIZE - off, len);
 
@@ -449,36 +523,37 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 			error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
 			ASSERT(error == 0);
 			if (error == 0) {
-				/*
-				  dmu_write(zfsvfs->z_os, zp->z_id,
-				  woff, bytes, (caddr_t)vaddr + off, tx);
-				*/
-				/*
-				 * We don't need a ubc_upl_commit_range()
-				 * here since the dmu_write() effectively
-				 * pushed this page to disk.
-				 */
+				VNOPS_STAT_BUMP(update_pages_updated_pages);
 			} else {
 				/*
 				 * page is now in an unknown state so dump it.
 				 */
-				ubc_upl_abort_range(upl, upl_start, PAGESIZE,
-                                    UPL_ABORT_DUMP_PAGES);
+				printf("ZFS: %s: dumping page\n", __func__);
+				ubc_upl_abort_range(upl, upl_current, PAGESIZE,
+                                    UPL_ABORT_DUMP_PAGES | UPL_ABORT_ERROR);
+				VNOPS_STAT_BUMP(update_pages_aborted_pages);
 			}
 		} else { // !upl_valid_page
 			/*
 			  error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
 			  uio, bytes, tx);
 			*/
+			dprintf("ZFS: %s invalid upl page cur = %llu, len = %d \n",
+			    __func__, upl_current, len);
+			VNOPS_STAT_BUMP(update_pages_skipped_pages);
+		}
+		if (error) {
+			uint64_t pgs = 1ULL + atop_64(len);
+			VNOPS_STAT_INCR(update_pages_error_pages, pgs);
+			printf("ZFS: %s: uiomove error, cur = %llu, len = %d\n",
+			    __func__, upl_current, len);
+			break;
 		}
 		vaddr += PAGE_SIZE;
-		upl_start += PAGE_SIZE;
+		upl_current += PAGE_SIZE;
 		len -= bytes;
 		off = 0;
-		if (error)
-			break;
 	}
-	rw_exit(&zp->z_map_lock);
 
 	/*
 	 * Unmap the page list and free the UPL.
@@ -489,6 +564,14 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * we effectively didn't dirty any pages.
 	 */
 	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+
+	/* release locks as necessary */
+	z_map_drop_lock(zp, &need_release, &need_upgrade);
+
+	if (z_lock_held == B_TRUE)
+		mutex_exit(&zp->z_lock);
+
+	ASSERT(!MUTEX_HELD(&zp->z_lock));
 
 	if (upl_page > 0)
 		VNOPS_STAT_INCR(update_pages, (uint64_t) upl_page);
@@ -592,7 +675,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
      * page list into the kernel virtual address space.
      */
     error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-						   UPL_FILE_IO | UPL_SET_LITE);
+						   UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
 	if ((error != KERN_SUCCESS) || !upl) {
 		printf("ZFS: mappedread failed to ubc_create_upl: %d\n", error);
 		return EIO;
@@ -712,12 +795,42 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	}
 #endif
 
+#ifndef __APPLE__
 	/*
 	 * If we're in FRSYNC mode, sync out this znode before reading it.
 	 */
 	if (zfsvfs->z_log &&
 	    (ioflag & FRSYNC || zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS))
 		zil_commit(zfsvfs->z_log, zp->z_id);
+#else
+	/*
+	 * if we are in ZFS_SYNC_ALWAYS, or the file is mapped,
+	 * sync out this znode before readng it.
+	 */
+	if (zfsvfs->z_log && zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED) {
+		/* XXX: on x86-64 we can probably do this without
+		 * the mutex, or alternatively we can make z_is_mapped
+		 * an _Atomic and then simply not lock it, because we
+		 * only ever set it from 0->1, but we read it fairly often
+		 */
+		int mapped = 0;
+		boolean_t need_unlock = B_FALSE;
+		if (!MUTEX_HELD(&zp->z_lock)) {
+			mutex_enter(&zp->z_lock);
+			need_unlock = B_TRUE;
+		}
+		mapped = zp->z_is_mapped;
+		if (need_unlock == B_TRUE)
+			mutex_exit(&zp->z_lock);
+		if (mapped == B_TRUE) {
+			zfs_fsync(vp, 0, cr, ct); // does a zil commit
+			VNOPS_STAT_BUMP(zfs_read_sync_mapped);
+		} else if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS) {
+			zil_commit(zfsvfs->z_log, zp->z_id);
+			VNOPS_STAT_BUMP(zfs_read_zil_commit);
+		}
+	}
+#endif
 
 	/*
 	 * Lock the range against changes.
@@ -781,11 +894,9 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		else {
 			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, nbytes);
-			if (error == 0) {
-				VNOPS_STAT_INCR(dmu_read_uio_dbuf_pages,
-				    1ULL+
-				    P2ROUNDUP((uint64_t)nbytes/(uint64_t)PAGESIZE, (uint64_t)PAGESIZE) /
-				    (uint64_t)PAGESIZE);
+			if (error == 0 && nbytes > 0) {
+				uint64_t pgs = 1ULL + atop_64(nbytes);
+				VNOPS_STAT_INCR(dmu_read_uio_dbuf_pages, pgs);
 			}
 		}
 
@@ -1098,8 +1209,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (abuf == NULL) {
 
-            if ( vn_has_cached_data(vp) )
-                uio_copy = uio_duplicate(uio);
+			if ( vn_has_cached_data(vp) )
+				uio_copy = uio_duplicate(uio);
 
 			tx_bytes = uio_resid(uio);
 
@@ -1135,12 +1246,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (tx_bytes && vn_has_cached_data(vp)) {
 #ifdef __APPLE__
 			if (uio_copy) {
+				VNOPS_STAT_BUMP(write_updatepage_uio_copy);
 				dprintf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
 				    woff, uio_offset(uio_copy), tx_bytes, uio_iovcnt(uio_copy));
 				update_pages(vp, tx_bytes, uio_copy, tx);
 				uio_free(uio_copy);
 				uio_copy = NULL;
 			} else {
+				VNOPS_STAT_BUMP(write_updatepage_uio);
 				dprintf("XXXXUpdatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
 				    woff, uio_offset(uio), tx_bytes, uio_iovcnt(uio));
 				update_pages(vp, tx_bytes, uio, tx);
@@ -1249,8 +1362,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	}
 
 	if (ioflag & (FSYNC | FDSYNC) ||
-	    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
+	    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS) {
 		zil_commit(zilog, zp->z_id);
+	}
 
 	ZFS_EXIT(zfsvfs);
 	return (0);
@@ -2978,10 +3092,84 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
+	/* for this file, we serialize fsyncs using a
+	 * CAS spin-sleep loop */
+	ASSERT3U(zp->z_fsync_cnt, <, 1024); // XXX: ARBITRARY
+	ASSERT3S(zp->z_fsync_cnt, >=, 0); // SIGN STUFF
+	/* first thread into the loop turns 0->1 and
+	 * exits the loop immediately.
+	 *
+	 * second thread fails to set 0->1 (because it's 1),
+	 * so loops around.
+	 *
+	 * third (or nth) thread fails to set 0->1 (because it's 1), so
+	 * loops around.
+	 *
+	 * ultimately first thread finishes up, turns 1->0, and returns.
+	 * this lets the second or third (or nth) thread turn 0->1 and
+	 * exit the lop.
+	 */
+
+	static _Atomic uint32_t mynum_ctr = 1; // yes, start at 1
+	uint32_t mynum = 0;
+	while ((mynum = __c11_atomic_fetch_add(&mynum_ctr, 1, __ATOMIC_SEQ_CST)) == 0)
+	    /* when wrapping around, skip 0 */
+	    ;
+	for (int i = 1; ; i++) { // yes, start at 1 because of modulo ops below
+		uint32_t cas = atomic_cas_32(
+		    &zp->z_fsync_flag, 0, mynum);
+		if (cas == mynum)  // we have done 0->mynum
+			break;
+		VNOPS_STAT_BUMP(zfs_fsync_cas_miss);
+		if ((i % 10)==0)
+			kpreempt(KPREEMPT_SYNC);
+		if ((i % 512)==0) {
+			delay(2);
+		}
+		if ((i % 2048)==0) {
+			printf("ZFS: %s in CAS loop (i=%d) (z_fsync_cnt=%u) (mynum=%u)\n",
+			    __func__, i, zp->z_fsync_cnt, mynum);
+		}
+		if (i > 1000000)
+			panic("%s stuck in CAS loop", __func__);
+	}
+	ASSERT3U(zp->z_fsync_flag, ==, mynum);
+	/* increase the number of threads fsyncing on this file */
+	atomic_inc_32(&zp->z_fsync_cnt);
+	ASSERT3U(zp->z_fsync_cnt, ==, 1);
+
+	int mapped = 0;
+	if (zfsvfs->z_os->os_sync == ZFS_SYNC_DISABLED) {
+		mapped = 0;
+		VNOPS_STAT_BUMP(fsync_disabled);
+		if (zp->z_is_mapped)
+			VNOPS_STAT_BUMP(fsync_disabled_mapped);
+	} else {
+		mutex_enter(&zp->z_lock);
+		mapped = zp->z_is_mapped;
+		mutex_exit(&zp->z_lock);
+	}
+
+	boolean_t need_release = B_FALSE;
+	boolean_t need_upgrade = B_FALSE;
+
+	if (mapped > 0) {
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, "zfs_fsync (init)");
+		VNOPS_STAT_INCR(zfs_fsync_want_lock, tries);
+	}
+
+	if (mapped > 0)
+		z_map_downgrade_lock(zp, &need_release, &need_upgrade);
+
 	if (vn_has_cached_data(vp) /*&& !(syncflag & FNODSYNC)*/ &&
 		vnode_isreg(vp) && !vnode_isswap(vp)) {
 		(void) cluster_push(vp, IO_SYNC);
 		VNOPS_STAT_BUMP(cluster_push);
+	}
+
+	if (mapped > 0) {
+		uint64_t tries = z_map_upgrade_lock(zp, &need_release, &need_upgrade, "zfs_fsync (post clpush)");
+		VNOPS_STAT_INCR(zfs_fsync_want_lock, tries);
 	}
 
 	(void) tsd_set(zfs_fsyncer_key, (void *)zfs_fsync_sync_cnt);
@@ -2990,11 +3178,39 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		&& zfs_nocacheflush == 0) {
 		ZFS_ENTER(zfsvfs);
 		ZFS_VERIFY_ZP(zp);
+		if (mapped > 0)
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
+
 		zil_commit(zfsvfs->z_log, zp->z_id);
+
+		if (mapped > 0) {
+			uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, "zfs_fsync (post zil_commit)");
+			VNOPS_STAT_INCR(zfs_fsync_want_lock, tries);
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
+			if (ubc_msync(vp, 0, ubc_getsize(vp),
+				NULL, UBC_PUSHALL | UBC_SYNC)) {
+				printf("ZFS: %s: ubc_msync failed!\n", __func__);
+			}
+			tries = z_map_rw_lock(zp, &need_release, &need_upgrade, "zfs_fsync (post ubc_msync)");
+			VNOPS_STAT_INCR(zfs_fsync_want_lock, tries);
+		}
+		VNOPS_STAT_BUMP(zfs_fsync);
 		ZFS_EXIT(zfsvfs);
-		VNOPS_STAT_BUMP(zfs_sync);
 	}
+
+	if (need_release != B_FALSE)
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+
 	//tsd_set(zfs_fsyncer_key, NULL);
+	/* reduce counter of threads fsyncing on this file */
+	ASSERT3U(zp->z_fsync_cnt, ==, 1);
+	atomic_dec_32(&zp->z_fsync_cnt);
+	ASSERT3U(zp->z_fsync_cnt, ==, 0);
+
+	/* open the gate for another thread */
+	ASSERT3U(zp->z_fsync_flag, ==, mynum);
+	uint32_t cas = atomic_cas_32(&zp->z_fsync_flag, mynum, 0);
+	ASSERT3U(cas, ==, mynum);
 	return (0);
 }
 
