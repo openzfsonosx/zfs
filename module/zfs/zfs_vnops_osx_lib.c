@@ -401,10 +401,14 @@ if (zp->z_gen != 0) dprintf("%s: va_gen %lld -> 0\n", __func__, zp->z_gen);
              * The vroot objects must return a unique name for Finder to
              * be able to distringuish between mounts. For this reason
              * we simply return the fullname, from the statfs mountedfrom
+			 *
+			 * dataset     mountpoint
+			 * foo         /bar
+			 * As we used to return "foo" to ATTR_CMN_NAME of "/bar" we
+			 * change this to return "bar" as expected.
              */
-			char osname[MAXNAMELEN];
-			char *r;
-			dmu_objset_name(zfsvfs->z_os, osname);
+			char *r, *osname;
+			osname = vfs_statfs(zfsvfs->z_vfs)->f_mntonname;
 			r = strrchr(osname, '/');
             strlcpy(vap->va_name,
                     r ? &r[1] : osname,
