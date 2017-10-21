@@ -100,6 +100,7 @@ typedef struct vnops_stats {
 	kstat_named_t dmu_read_uio_dbuf_pages;
 	kstat_named_t cluster_push;
 	kstat_named_t zfs_fsync;
+	kstat_named_t zfs_fsync_abandoned;
 	kstat_named_t zfs_fsync_want_lock;
 	kstat_named_t write_updatepage_uio_copy;
 	kstat_named_t write_updatepage_uio;
@@ -123,6 +124,7 @@ static vnops_stats_t vnops_stats = {
 	{ "dmu_read_uio_dbuf_pages",                     KSTAT_DATA_UINT64 },
 	{ "cluster_push",                                KSTAT_DATA_UINT64 },
 	{ "zfs_fsync",                                   KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_abandoned",                         KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_want_lock",                         KSTAT_DATA_UINT64 },
 	{ "write_updatepage_uio_copy",                   KSTAT_DATA_UINT64 },
 	{ "write_updatepage_uio",                        KSTAT_DATA_UINT64 },
@@ -3131,8 +3133,13 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			printf("ZFS: %s in CAS loop (i=%d) (z_fsync_cnt=%u) (mynum=%u) (cas=%u) (flag=%u)\n",
 			    __func__, i, zp->z_fsync_cnt, mynum, cas, zp->z_fsync_flag);
 		}
-		if (i > 1000000)
-			panic("%s stuck in CAS loop", __func__);
+		if (i > 1000000) {
+			VNOPS_STAT_BUMP(zfs_fsync_abandoned);
+			printf("ZFS: %s ERROR! leaving CAS loop (i=%d)(z_fsync_cnt=%u)(mynum=%u)(cas=%u)(flag=%u) (fsync_abandoned=%llu)\n",
+			    __func__, i, zp->z_fsync_cnt, mynum, cas, zp->z_fsync_flag,
+			    VNOPS_STAT(zfs_fsync_abandoned));
+			return (EINTR);
+		}
 	}
 	/* increase the number of threads fsyncing on this file */
 	atomic_inc_32(&zp->z_fsync_cnt);
