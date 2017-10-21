@@ -194,13 +194,20 @@ zfs_znode_cache_destructor(void *buf, void *arg)
 	ASSERT(ZTOV(zp) == NULL);
 	vn_free(ZTOV(zp));
 	ASSERT(!list_link_active(&zp->z_link_node));
+	ASSERT(!MUTEX_HELD(&zp->z_lock));
 	mutex_destroy(&zp->z_lock);
+	ASSERT(!rw_lock_held(&zp->z_map_lock));
 	rw_destroy(&zp->z_map_lock);
+	ASSERT(!rw_lock_held(&zp->z_parent_lock));
 	rw_destroy(&zp->z_parent_lock);
+	ASSERT(!rw_lock_held(&zp->z_name_lock));
 	rw_destroy(&zp->z_name_lock);
+	ASSERT(!MUTEX_HELD(&zp->z_acl_lock));
 	mutex_destroy(&zp->z_acl_lock);
+	ASSERT(!rw_lock_held(&zp->z_xattr_lock));
 	rw_destroy(&zp->z_xattr_lock);
 	avl_destroy(&zp->z_range_avl);
+	ASSERT(!MUTEX_HELD(&zp->z_range_lock));
 	mutex_destroy(&zp->z_range_lock);
 
 	ASSERT(zp->z_dirlocks == NULL);

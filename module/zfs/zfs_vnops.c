@@ -3116,6 +3116,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	    /* when wrapping around, skip 0 */
 	    ;
 	for (int i = 1; ; i++) { // yes, start at 1 because of modulo ops below
+		ASSERT3P(zp->z_sa_hdl, !=, NULL);
 		uint32_t cas = atomic_cas_32(
 		    &zp->z_fsync_flag, 0, mynum);
 		if (cas == mynum)  // we have done 0->mynum
@@ -3127,16 +3128,16 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			delay(2);
 		}
 		if ((i % 2048)==0) {
-			printf("ZFS: %s in CAS loop (i=%d) (z_fsync_cnt=%u) (mynum=%u)\n",
-			    __func__, i, zp->z_fsync_cnt, mynum);
+			printf("ZFS: %s in CAS loop (i=%d) (z_fsync_cnt=%u) (mynum=%u) (cas=%u) (flag=%u)\n",
+			    __func__, i, zp->z_fsync_cnt, mynum, cas, zp->z_fsync_flag);
 		}
 		if (i > 1000000)
 			panic("%s stuck in CAS loop", __func__);
 	}
-	ASSERT3U(zp->z_fsync_flag, ==, mynum);
 	/* increase the number of threads fsyncing on this file */
 	atomic_inc_32(&zp->z_fsync_cnt);
 	ASSERT3U(zp->z_fsync_cnt, ==, 1);
+	ASSERT3U(zp->z_fsync_flag, ==, mynum);
 
 	int mapped = 0;
 	if (zfsvfs->z_os->os_sync == ZFS_SYNC_DISABLED) {
@@ -3197,6 +3198,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		VNOPS_STAT_BUMP(zfs_fsync);
 		ZFS_EXIT(zfsvfs);
 	}
+	ASSERT3P(zp->z_sa_hdl, !=, NULL);
 
 	if (need_release != B_FALSE)
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
@@ -3209,8 +3211,30 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 
 	/* open the gate for another thread */
 	ASSERT3U(zp->z_fsync_flag, ==, mynum);
-	uint32_t cas = atomic_cas_32(&zp->z_fsync_flag, mynum, 0);
-	ASSERT3U(cas, ==, mynum);
+	for(int i = 0; ; i++) {
+		uint32_t cas = atomic_cas_32(&zp->z_fsync_flag, mynum, 0);
+		if (cas == mynum)
+			break;
+		kpreempt(KPREEMPT_SYNC);
+		if (zp->z_sa_hdl == NULL) {
+			printf("ZFS: %s: z_sa_hdl unexpectedly NULL!!! (flag = %u)\n",
+			    __func__, zp->z_fsync_flag);
+			break;
+		}
+		if ((i%10)==0)
+			delay(2);
+		if (zp->z_fsync_flag != mynum)
+			printf("ZFS: %s: Can't CAS-unlock (i=%d), mynum=%u flag=%u, cas=%u\n",
+			    __func__, mynum, zp->z_fsync_flag, mynum, i);
+		if (i > 1000000)
+			panic("zfs_fsync: CAS UNLOCK FAIL");
+		if (zp->z_fsync_flag == 0) {
+			printf("ZFS: %s: flag unexpectedly zero (i=%d) (mynum=%u)!!\n",
+			    __func__, i, mynum);
+			break;
+		}
+	}
+
 	return (0);
 }
 
