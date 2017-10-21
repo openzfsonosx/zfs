@@ -3175,6 +3175,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 
 	(void) tsd_set(zfs_fsyncer_key, (void *)zfs_fsync_sync_cnt);
 
+	boolean_t need_zfs_exit = B_FALSE;
 	if (zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED
 		&& zfs_nocacheflush == 0) {
 		ZFS_ENTER(zfsvfs);
@@ -3196,7 +3197,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			VNOPS_STAT_INCR(zfs_fsync_want_lock, tries);
 		}
 		VNOPS_STAT_BUMP(zfs_fsync);
-		ZFS_EXIT(zfsvfs);
+		need_zfs_exit = B_TRUE;
 	}
 	ASSERT3P(zp->z_sa_hdl, !=, NULL);
 
@@ -3234,6 +3235,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			break;
 		}
 	}
+
+	if (need_zfs_exit == B_TRUE)
+		ZFS_EXIT(zfsvfs);
 
 	return (0);
 }
