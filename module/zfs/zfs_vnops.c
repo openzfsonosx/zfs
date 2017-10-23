@@ -3188,6 +3188,8 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		}
 		// keep waiting, with occasional breaks and complaints
 		ASSERT3S(now_serving, <=, my_ticket);
+		if (now_serving == my_ticket)
+			continue;
 		const unsigned int tickdiff = (unsigned int) (my_ticket - now_serving);
 		const unsigned int scale = MAX(4, tickdiff);
 		const unsigned int bigscale = 131072 >> scale;
