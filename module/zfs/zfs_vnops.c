@@ -107,6 +107,7 @@ typedef struct vnops_stats {
 	kstat_named_t zfs_fsync_wait;
 	kstat_named_t zfs_fsync_disabled;
 	kstat_named_t zfs_fsync_disabled_mapped;
+	kstat_named_t zfs_fsync_z_map_lock_held_at_entry;
 	kstat_named_t write_updatepage_uio_copy;
 	kstat_named_t write_updatepage_uio;
 	kstat_named_t update_pages_updated_pages;
@@ -133,6 +134,7 @@ static vnops_stats_t vnops_stats = {
 	{ "zfs_fsync_wait",                              KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_disabled",                          KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_disabled_mapped",                   KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_z_map_lock_held_at_entry",          KSTAT_DATA_UINT64 },
 	{ "write_updatepage_uio_copy",                   KSTAT_DATA_UINT64 },
 	{ "write_updatepage_uio",                        KSTAT_DATA_UINT64 },
 	{ "update_pages_updated_pages",                  KSTAT_DATA_UINT64 },
@@ -3132,7 +3134,8 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 
 	/* 0. make sure I'm not holding locks */
 	ASSERT(!MUTEX_HELD(&zp->z_lock));
-	ASSERT(!rw_lock_held(&zp->z_map_lock));
+	if (rw_lock_held(&zp->z_map_lock))
+		VNOPS_STAT_BUMP(zfs_fsync_z_map_lock_held_at_entry);
 	/* 0. bounds check on number of waiters */
 	ASSERT3S(zp->z_fsync_cnt, <, 1024); // XXX: ARBITRARY
 	ASSERT3S(zp->z_fsync_cnt, >=, 0); // SIGN STUFF
