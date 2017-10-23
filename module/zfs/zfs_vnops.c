@@ -3169,33 +3169,47 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		}
 		if (my_ticket == zp->z_now_serving)
 			break;
+		const uint64_t now_serving = zp->z_now_serving;
 		ASSERT3S(zp->z_fsync_cnt, >, 0);
 		//complain if we have been skipped over
-		if (my_ticket < zp->z_now_serving) {
+		if (my_ticket < now_serving) {
 			VNOPS_STAT_BUMP(zfs_fsync_queue_jump);
 			printf("ZFS: %s EINTR after queue jumper wrecked my day (i=%u)"
-			    " (z_fsync_cnt = %d) (my_ticket=%llu) (z_now_serving=%llu)",
-			    __func__, i, zp->z_fsync_cnt, my_ticket, zp->z_now_serving);
+			    " (z_fsync_cnt = %d) (my_ticket=%llu) now_serving=%llu)",
+			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving);
 			atomic_dec_s32_nv(&zp->z_fsync_cnt);
 			return(EINTR);
 		}
 		// keep waiting, with occasional breaks and complaints
 	        VNOPS_STAT_BUMP(zfs_fsync_wait);
-		if ((i % 2048)==0) {
+		ASSERT3S(now_serving, <, my_ticket);
+		const unsigned int tickdiff = (unsigned int) (my_ticket - now_serving);
+		const unsigned int scale = MAX(4, tickdiff);
+		const unsigned int bigscale = 131072 >> scale;
+		const unsigned int medscale = 32768 >> scale;
+		const unsigned int smallscale = 1024 >> scale;
+		if ((i % bigscale)==0) {
 			printf("ZFS: %s in waiting room (i=%u)"
-			    " (z_fsync_cnt=%d) (my_ticket=%llu) (z_now_serving=%llu)\n",
-			    __func__, i, zp->z_fsync_cnt, my_ticket, zp->z_now_serving);
-		}
-		if ((i % 256)==0)
+			    " (z_fsync_cnt=%d) (my_ticket=%llu) (now_serving=%llu)\n",
+			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving);
 			delay(2);
-		if ((i % 10) == 0)
+			continue;
+		}
+		if ((i % medscale)==0) {
+			extern void IOSleep(unsigned milliseconds);
+			IOSleep(1);
+			continue;
+		} if ((i % smallscale) == 0) {
 			kpreempt(KPREEMPT_SYNC);
-		if (i > 1000000) {
-			ASSERT3U(zp->z_now_serving, <, my_ticket);
+			continue;
+		}
+		if (i >= (1 << 30)) {
+			ASSERT3U(zp->z_now_serving, ==, now_serving);
+			ASSERT3U(now_serving, <, my_ticket);
 			VNOPS_STAT_BUMP(zfs_fsync_abandoned);
 			printf("ZFS: %s ERROR! got tired of waiting (i=%u)"
-			    " (z_fsync_cnt=%d) (my_ticket=%llu) (z_now_serving = %llu) returning EINTR\n",
-			    __func__, i, zp->z_fsync_cnt, my_ticket, zp->z_now_serving);
+			    " (z_fsync_cnt=%d) (my_ticket=%llu) (now_serving = %llu) returning EINTR\n",
+			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving);
 			atomic_dec_s32_nv(&zp->z_fsync_cnt);
 			return (EINTR);
 		}
