@@ -326,7 +326,7 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 #else
 	if (vn_has_cached_data(vp) &&
 	    vnode_isreg(vp) && !vnode_isswap(vp)) {
-		(void) cluster_push(vp, IO_SYNC | IO_CLOSE);
+		(void) cluster_push(vp, IO_SYNC | IO_CLOSE | IO_PASSIVE);
 	}
 #endif
 
@@ -3171,7 +3171,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 
 	if (vn_has_cached_data(vp) /*&& !(syncflag & FNODSYNC)*/ &&
 		vnode_isreg(vp) && !vnode_isswap(vp)) {
-		(void) cluster_push(vp, IO_SYNC);
+		(void) cluster_push(vp, IO_SYNC | IO_PASSIVE);
 		VNOPS_STAT_BUMP(cluster_push);
 	}
 
