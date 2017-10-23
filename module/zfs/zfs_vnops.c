@@ -3186,7 +3186,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			    " (z_fsync_cnt=%d) (my_ticket=%llu) (z_now_serving=%llu)\n",
 			    __func__, i, zp->z_fsync_cnt, my_ticket, zp->z_now_serving);
 		}
-		if ((i % 512)==0)
+		if ((i % 256)==0)
 			delay(2);
 		if ((i % 10) == 0)
 			kpreempt(KPREEMPT_SYNC);
