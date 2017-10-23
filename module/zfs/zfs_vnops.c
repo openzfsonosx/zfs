@@ -116,6 +116,7 @@ typedef struct vnops_stats {
 	kstat_named_t update_pages_error_pages;
 	kstat_named_t zfs_read_sync_mapped;
 	kstat_named_t zfs_read_zil_commit;
+	kstat_named_t zfs_close_cluster_push;
 } vnops_stats_t;
 
 static vnops_stats_t vnops_stats = {
@@ -143,6 +144,7 @@ static vnops_stats_t vnops_stats = {
 	{ "update_pages_error_pages",                    KSTAT_DATA_UINT64 },
 	{ "zfs_read_sync_mapped",                        KSTAT_DATA_UINT64 },
 	{ "zfs_read_zil_commit",                         KSTAT_DATA_UINT64 },
+	{ "zfs_close_cluster_push",                      KSTAT_DATA_UINT64 },
 };
 
 #define VNOPS_STAT(statname)           (vnops_stats.statname.value.ui64)
@@ -350,7 +352,8 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 #else
 	if (vn_has_cached_data(vp) &&
 	    vnode_isreg(vp) && !vnode_isswap(vp)) {
-		(void) cluster_push(vp, IO_SYNC | IO_CLOSE | IO_PASSIVE);
+		(void) cluster_push(vp, IO_SYNC | IO_CLOSE);
+		VNOPS_STAT_BUMP(zfs_close_cluster_push);
 	}
 #endif
 
@@ -3184,7 +3187,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			return(EINTR);
 		}
 		// keep waiting, with occasional breaks and complaints
-		ASSERT3S(now_serving, <, my_ticket);
+		ASSERT3S(now_serving, <=, my_ticket);
 		const unsigned int tickdiff = (unsigned int) (my_ticket - now_serving);
 		const unsigned int scale = MAX(4, tickdiff);
 		const unsigned int bigscale = 131072 >> scale;
@@ -3247,9 +3250,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	if (mapped > 0)
 		z_map_downgrade_lock(zp, &need_release, &need_upgrade);
 
-	if (vn_has_cached_data(vp) /*&& !(syncflag & FNODSYNC)*/ &&
+	if (vn_has_cached_data(vp) &&
 		vnode_isreg(vp) && !vnode_isswap(vp)) {
-		(void) cluster_push(vp, IO_SYNC | IO_PASSIVE);
+		(void) cluster_push(vp, IO_SYNC);
 		VNOPS_STAT_BUMP(zfs_fsync_cluster_push);
 	}
 
