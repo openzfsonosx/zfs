@@ -3165,10 +3165,13 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			    __func__);
 			ASSERT3S(zp->z_fsync_cnt, >, 0);
 			atomic_dec_s32_nv(&zp->z_fsync_cnt);
+			VNOPS_STAT_INCR(zfs_fsync_wait, (i - 1));
 			return(EINTR);
 		}
-		if (my_ticket == zp->z_now_serving)
+		if (my_ticket == zp->z_now_serving) {
+			VNOPS_STAT_INCR(zfs_fsync_wait, (i - 1));
 			break;
+		}
 		const uint64_t now_serving = zp->z_now_serving;
 		ASSERT3S(zp->z_fsync_cnt, >, 0);
 		//complain if we have been skipped over
@@ -3181,7 +3184,6 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			return(EINTR);
 		}
 		// keep waiting, with occasional breaks and complaints
-	        VNOPS_STAT_BUMP(zfs_fsync_wait);
 		ASSERT3S(now_serving, <, my_ticket);
 		const unsigned int tickdiff = (unsigned int) (my_ticket - now_serving);
 		const unsigned int scale = MAX(4, tickdiff);
@@ -3211,6 +3213,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			    " (z_fsync_cnt=%d) (my_ticket=%llu) (now_serving = %llu) returning EINTR\n",
 			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving);
 			atomic_dec_s32_nv(&zp->z_fsync_cnt);
+			VNOPS_STAT_INCR(zfs_fsync_wait, (i - 1));
 			return (EINTR);
 		}
 	}
