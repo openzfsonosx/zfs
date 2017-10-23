@@ -98,19 +98,21 @@ typedef struct vnops_stats {
 	kstat_named_t update_pages_not_mapped;
 	kstat_named_t mappedread_pages;
 	kstat_named_t dmu_read_uio_dbuf_pages;
-	kstat_named_t cluster_push;
 	kstat_named_t zfs_fsync;
+	kstat_named_t zfs_fsync_cluster_push;
 	kstat_named_t zfs_fsync_abandoned;
 	kstat_named_t zfs_fsync_want_lock;
+	kstat_named_t zfs_fsync_file_gone;
+	kstat_named_t zfs_fsync_queue_jump;
+	kstat_named_t zfs_fsync_wait;
+	kstat_named_t zfs_fsync_disabled;
+	kstat_named_t zfs_fsync_disabled_mapped;
 	kstat_named_t write_updatepage_uio_copy;
 	kstat_named_t write_updatepage_uio;
 	kstat_named_t update_pages_updated_pages;
 	kstat_named_t update_pages_aborted_pages;
 	kstat_named_t update_pages_skipped_pages;
 	kstat_named_t update_pages_error_pages;
-	kstat_named_t zfs_fsync_cas_miss;
-	kstat_named_t fsync_disabled;
-	kstat_named_t fsync_disabled_mapped;
 	kstat_named_t zfs_read_sync_mapped;
 	kstat_named_t zfs_read_zil_commit;
 } vnops_stats_t;
@@ -122,19 +124,21 @@ static vnops_stats_t vnops_stats = {
 	{ "update_pages_not_mapped",                     KSTAT_DATA_UINT64 },
 	{ "mappedread_pages",                            KSTAT_DATA_UINT64 },
 	{ "dmu_read_uio_dbuf_pages",                     KSTAT_DATA_UINT64 },
-	{ "cluster_push",                                KSTAT_DATA_UINT64 },
 	{ "zfs_fsync",                                   KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_cluster_push",                      KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_abandoned",                         KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_want_lock",                         KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_file_gone",                         KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_queue_jump",                        KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_wait",                              KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_disabled",                          KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_disabled_mapped",                   KSTAT_DATA_UINT64 },
 	{ "write_updatepage_uio_copy",                   KSTAT_DATA_UINT64 },
 	{ "write_updatepage_uio",                        KSTAT_DATA_UINT64 },
 	{ "update_pages_updated_pages",                  KSTAT_DATA_UINT64 },
 	{ "update_pages_aborted_pages",                  KSTAT_DATA_UINT64 },
 	{ "update_pages_skipped_pages",                  KSTAT_DATA_UINT64 },
 	{ "update_pages_error_pages",                    KSTAT_DATA_UINT64 },
-	{ "zfs_fsync_cas_miss",                          KSTAT_DATA_UINT64 },
-	{ "fsync_disabled",                              KSTAT_DATA_UINT64 },
-	{ "fsync_disabled_mapped",                       KSTAT_DATA_UINT64 },
 	{ "zfs_read_sync_mapped",                        KSTAT_DATA_UINT64 },
 	{ "zfs_read_zil_commit",                         KSTAT_DATA_UINT64 },
 };
@@ -270,6 +274,24 @@ vnops_stat_fini(void)
  */
 
 
+#ifdef __APPLE__
+/*
+ *  utility function, since our Solaris emulator for atomic_inc_s32_nv requires
+ *  volatile uint32_t *
+ */
+static inline int32_t
+atomic_inc_s32_nv(_Atomic int32_t *target)
+{
+	return __c11_atomic_fetch_add(target, 1, __ATOMIC_SEQ_CST);
+}
+
+static inline int32_t
+atomic_dec_s32_nv(_Atomic int32_t *target)
+{
+	return __c11_atomic_fetch_sub(target, 1, __ATOMIC_SEQ_CST);
+}
+#endif
+
 /* ARGSUSED */
 int
 zfs_open(vnode_t **vpp, int flag, cred_t *cr, caller_context_t *ct)
@@ -300,8 +322,8 @@ zfs_open(vnode_t **vpp, int flag, cred_t *cr, caller_context_t *ct)
 
 	/* Keep a count of the synchronous opens in the znode */
 	if (flag & (FSYNC | FDSYNC)) {
-		ASSERT3S(&zp->z_sync_cnt, <, UINT32_MAX);
-		ASSERT3S(&zp->z_sync_cnt, <, 1024);  // XXX: ARBITRARY
+		ASSERT3U(zp->z_sync_cnt, <, UINT32_MAX);
+		ASSERT3U(zp->z_sync_cnt, <, 1024);  // XXX: ARBITRARY
 		atomic_inc_32(&zp->z_sync_cnt);
 	}
 
@@ -335,7 +357,7 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 
 	/* Decrement the synchronous opens in the znode */
 	if ((flag & (FSYNC | FDSYNC)) && (count == 1)) {
-		ASSERT3U(&zp->z_sync_cnt, >, 0);
+		ASSERT3U(zp->z_sync_cnt, >, 0);
 		atomic_dec_32(&zp->z_sync_cnt);
 	}
 
@@ -3094,64 +3116,100 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-	/* for this file, we serialize fsyncs using a
-	 * CAS spin-sleep loop */
-	ASSERT3U(zp->z_fsync_cnt, <, 1024); // XXX: ARBITRARY
-	ASSERT3S(zp->z_fsync_cnt, >=, 0); // SIGN STUFF
-	/* first thread into the loop turns 0->1 and
-	 * exits the loop immediately.
+	/*
+	 * for this file we serialize as follows:
+	 * 0. validations (esp. no locks held)
+	 * 1. take a ticket from the ticket machine (z_next_ticket++)
+	 * 2. wait until my ticket has been called (z_now_serving, complain if exceeded!)
+	 * 3. process cluster_push->zil_commit->ubc_msync
+	 * 4. validations (esp. still serving me)
+	 * 5. increment z_now_serving and return
 	 *
-	 * second thread fails to set 0->1 (because it's 1),
-	 * so loops around.
-	 *
-	 * third (or nth) thread fails to set 0->1 (because it's 1), so
-	 * loops around.
-	 *
-	 * ultimately first thread finishes up, turns 1->0, and returns.
-	 * this lets the second or third (or nth) thread turn 0->1 and
-	 * exit the lop.
+	 * Open question: do we use a per-znode cv and cv_wait on 2 and cv_signal on 5?
+	 *                that would require a mutex and a condvar in znode_t
+	 *                but would be more Solaris-like
 	 */
 
-	static _Atomic uint32_t mynum_ctr = 1; // yes, start at 1
-	uint32_t mynum = 0;
-	while ((mynum = __c11_atomic_fetch_add(&mynum_ctr, 1, __ATOMIC_SEQ_CST)) == 0)
-	    /* when wrapping around, skip 0 */
-	    ;
-	for (int i = 1; ; i++) { // yes, start at 1 because of modulo ops below
-		ASSERT3P(zp->z_sa_hdl, !=, NULL);
-		uint32_t cas = atomic_cas_32(
-		    &zp->z_fsync_flag, 0, mynum);
-		if (cas == mynum)  // we have done 0->mynum
+	/* 0. make sure I'm not holding locks */
+	ASSERT(!MUTEX_HELD(&zp->z_lock));
+	ASSERT(!rw_lock_held(&zp->z_map_lock));
+	/* 0. bounds check on number of waiters */
+	ASSERT3S(zp->z_fsync_cnt, <, 1024); // XXX: ARBITRARY
+	ASSERT3S(zp->z_fsync_cnt, >=, 0); // SIGN STUFF
+
+	/* 1. take a ticket, increment number of waiters */
+
+	uint64_t my_ticket = 0ULL;
+	while ((my_ticket = __c11_atomic_fetch_add(&zp->z_next_ticket, 1ULL,
+		    __ATOMIC_SEQ_CST)) == 0) {
+		/* skip 0 initially, and if we wrap around, skip 0 again */
+		/* useful if we reduce the integral type to something
+		 * smaller than uint64_t */
+	}
+
+	atomic_inc_s32_nv(&zp->z_fsync_cnt);
+
+	/* 2. Cool off in waiting room until i am being served
+	 *    i.e., when zp->z_now_serving == my_ticket.
+	 *    Complain if we are skipped (zp->z_now_serving > my_ticket).
+	 */
+
+	for (unsigned int i = 1; ; i++) { // yes, start at 1 because of modulo ops below
+		// assert we are still a valid file
+		if (zp->z_sa_hdl == NULL) {
+			VNOPS_STAT_BUMP(zfs_fsync_file_gone);
+			printf("ZFS: %s: zp->z_sa_hdl went away! (returning EINTR)\n",
+			    __func__);
+			ASSERT3S(zp->z_fsync_cnt, >, 0);
+			atomic_dec_s32_nv(&zp->z_fsync_cnt);
+			return(EINTR);
+		}
+		if (my_ticket == zp->z_now_serving)
 			break;
-		VNOPS_STAT_BUMP(zfs_fsync_cas_miss);
-		if ((i % 10)==0)
-			kpreempt(KPREEMPT_SYNC);
-		if ((i % 512)==0) {
-			delay(2);
+		ASSERT3S(zp->z_fsync_cnt, >, 0);
+		//complain if we have been skipped over
+		if (my_ticket < zp->z_now_serving) {
+			VNOPS_STAT_BUMP(zfs_fsync_queue_jump);
+			printf("ZFS: %s EINTR after queue jumper wrecked my day (i=%u)"
+			    " (z_fsync_cnt = %d) (my_ticket=%llu) (z_now_serving=%llu)",
+			    __func__, i, zp->z_fsync_cnt, my_ticket, zp->z_now_serving);
+			atomic_dec_s32_nv(&zp->z_fsync_cnt);
+			return(EINTR);
 		}
+		// keep waiting, with occasional breaks and complaints
+	        VNOPS_STAT_BUMP(zfs_fsync_wait);
 		if ((i % 2048)==0) {
-			printf("ZFS: %s in CAS loop (i=%d) (z_fsync_cnt=%u) (mynum=%u) (cas=%u) (flag=%u)\n",
-			    __func__, i, zp->z_fsync_cnt, mynum, cas, zp->z_fsync_flag);
+			printf("ZFS: %s in waiting room (i=%u)"
+			    " (z_fsync_cnt=%d) (my_ticket=%llu) (z_now_serving=%llu)\n",
+			    __func__, i, zp->z_fsync_cnt, my_ticket, zp->z_now_serving);
 		}
+		if ((i % 512)==0)
+			delay(2);
+		if ((i % 10) == 0)
+			kpreempt(KPREEMPT_SYNC);
 		if (i > 1000000) {
+			ASSERT3U(zp->z_now_serving, <, my_ticket);
 			VNOPS_STAT_BUMP(zfs_fsync_abandoned);
-			printf("ZFS: %s ERROR! leaving CAS loop (i=%d)(z_fsync_cnt=%u)(mynum=%u)(cas=%u)(flag=%u) (fsync_abandoned=%llu)\n",
-			    __func__, i, zp->z_fsync_cnt, mynum, cas, zp->z_fsync_flag,
-			    VNOPS_STAT(zfs_fsync_abandoned));
+			printf("ZFS: %s ERROR! got tired of waiting (i=%u)"
+			    " (z_fsync_cnt=%d) (my_ticket=%llu) (z_now_serving = %llu) returning EINTR\n",
+			    __func__, i, zp->z_fsync_cnt, my_ticket, zp->z_now_serving);
+			atomic_dec_s32_nv(&zp->z_fsync_cnt);
 			return (EINTR);
 		}
 	}
-	/* increase the number of threads fsyncing on this file */
-	atomic_inc_32(&zp->z_fsync_cnt);
-	ASSERT3U(zp->z_fsync_cnt, ==, 1);
-	ASSERT3U(zp->z_fsync_flag, ==, mynum);
+
+	ASSERT3P(zp->z_sa_hdl, !=, NULL);
+
+	/* 4. process cluster_push->zil_commit->ubc_msync
+	 *    as necessary and with appropriate locking
+	 */
 
 	int mapped = 0;
 	if (zfsvfs->z_os->os_sync == ZFS_SYNC_DISABLED) {
 		mapped = 0;
-		VNOPS_STAT_BUMP(fsync_disabled);
+		VNOPS_STAT_BUMP(zfs_fsync_disabled);
 		if (zp->z_is_mapped)
-			VNOPS_STAT_BUMP(fsync_disabled_mapped);
+			VNOPS_STAT_BUMP(zfs_fsync_disabled_mapped);
 	} else {
 		mutex_enter(&zp->z_lock);
 		mapped = zp->z_is_mapped;
@@ -3172,7 +3230,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	if (vn_has_cached_data(vp) /*&& !(syncflag & FNODSYNC)*/ &&
 		vnode_isreg(vp) && !vnode_isswap(vp)) {
 		(void) cluster_push(vp, IO_SYNC | IO_PASSIVE);
-		VNOPS_STAT_BUMP(cluster_push);
+		VNOPS_STAT_BUMP(zfs_fsync_cluster_push);
 	}
 
 	if (mapped > 0) {
@@ -3212,43 +3270,32 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
 
 	//tsd_set(zfs_fsyncer_key, NULL);
-	/* reduce counter of threads fsyncing on this file */
-	ASSERT3U(zp->z_fsync_cnt, ==, 1);
-	atomic_dec_32(&zp->z_fsync_cnt);
-	ASSERT3U(zp->z_fsync_cnt, ==, 0);
+
+	/* 4. validations */
+
+	ASSERT3P(zp->z_sa_hdl, !=, NULL);
+
+	/* 5. increment z_now_serving  and return */
+
+	ASSERT3S(zp->z_fsync_cnt, >, 0);
+	atomic_dec_s32_nv(&zp->z_fsync_cnt);
 
 	/* open the gate for another thread */
-	ASSERT3U(zp->z_fsync_flag, ==, mynum);
-	for(int i = 0; ; i++) {
-		uint32_t cas = atomic_cas_32(&zp->z_fsync_flag, mynum, 0);
-		if (cas == mynum)
-			break;
-		kpreempt(KPREEMPT_SYNC);
-		if (zp->z_sa_hdl == NULL) {
-			printf("ZFS: %s: z_sa_hdl unexpectedly NULL!!! (flag = %u)\n",
-			    __func__, zp->z_fsync_flag);
-			break;
-		}
-		if ((i%10)==0)
-			delay(2);
-		if (zp->z_fsync_flag != mynum)
-			printf("ZFS: %s: Can't CAS-unlock (i=%d), mynum=%u flag=%u, cas=%u\n",
-			    __func__, mynum, zp->z_fsync_flag, mynum, i);
-		if (i > 1000000)
-			panic("zfs_fsync: CAS UNLOCK FAIL");
-		if (zp->z_fsync_flag == 0) {
-			printf("ZFS: %s: flag unexpectedly zero (i=%d) (mynum=%u)!!\n",
-			    __func__, i, mynum);
-			break;
-		}
+
+	ASSERT3U(zp->z_now_serving, ==, my_ticket);
+	uint64_t should_be_me = 0ULL;
+	while ((should_be_me = __c11_atomic_fetch_add(&zp->z_now_serving, 1ULL,
+		    __ATOMIC_SEQ_CST)) == 0) {
+		    // handle wraparound
 	}
+	ASSERT3U(should_be_me, ==, my_ticket);
+	ASSERT3U(zp->z_now_serving, >, my_ticket);
 
 	if (need_zfs_exit == B_TRUE)
 		ZFS_EXIT(zfsvfs);
 
 	return (0);
 }
-
 
 /*
  * Get the requested file attributes and place them in the provided

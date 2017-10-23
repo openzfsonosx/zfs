@@ -230,15 +230,17 @@ typedef struct znode {
 	boolean_t	z_is_mapped;	/* are we mmap'ed */
 	boolean_t	z_is_ctldir;	/* are we .zfs entry */
 
-	krwlock_t       z_map_lock;     /* page map lock */
-	const char      *z_map_lock_holder;  /* function that holds the rw_lock */
-	uint32_t        z_fsync_flag;   /* are we fsyncing? */
-	uint32_t        z_fsync_cnt;    /* how many fsyncers are working on this file */
-
 #ifdef __APPLE__
+	krwlock_t       z_map_lock;             /* page map lock */
+	const char      *z_map_lock_holder;     /* function that holds the rw_lock */
+
+	_Atomic int32_t         z_fsync_cnt;    /* how many fsyncers are working on this file */
+	_Atomic uint64_t        z_now_serving;  /* who are we serving now? */
+	_Atomic uint64_t        z_next_ticket;  /* the number waiting in the ticket machine */
+
 	list_node_t	z_link_reclaim_node;	/* all reclaim znodes in fs link */
-	uint32_t    z_vid;  /* OSX vnode_vid */
-	uint32_t    z_document_id;
+	uint32_t        z_vid;                  /* OSX vnode_vid */
+	uint32_t        z_document_id;          /* OSX document ID */
 
     /* Track vnop_lookup name for Finder - as Apple asks for va_name in
 	 * vnop_getattr and vfs_vget, it is expensive to lookup the name.
