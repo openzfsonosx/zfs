@@ -112,6 +112,7 @@ typedef struct vnops_stats {
 	kstat_named_t zfs_fsync_busy_sleeps;
 	kstat_named_t zfs_fsync_busy_suspends;
 	kstat_named_t zfs_fsync_busy_prints;
+	kstat_named_t zfs_fsync_recursive_tidy;
 	kstat_named_t write_updatepage_uio_copy;
 	kstat_named_t write_updatepage_uio;
 	kstat_named_t update_pages_updated_pages;
@@ -144,6 +145,7 @@ static vnops_stats_t vnops_stats = {
 	{ "zfs_fsync_busy_sleeps",                       KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_busy_suspends",                     KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_busy_prints",                       KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_recursive_tidy",                    KSTAT_DATA_UINT64 },
 	{ "write_updatepage_uio_copy",                   KSTAT_DATA_UINT64 },
 	{ "write_updatepage_uio",                        KSTAT_DATA_UINT64 },
 	{ "update_pages_updated_pages",                  KSTAT_DATA_UINT64 },
@@ -3129,6 +3131,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
+	boolean_t sync_disabled = B_FALSE;
 	/*
 	 * for this file we serialize as follows:
 	 * 0. validations (esp. no locks held)
@@ -3145,8 +3148,11 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 
 	/* 0. make sure I'm not holding locks */
 	ASSERT(!MUTEX_HELD(&zp->z_lock));
-	if (rw_lock_held(&zp->z_map_lock))
+	boolean_t z_map_lock_held_at_entry = B_FALSE;
+	if (rw_lock_held(&zp->z_map_lock)) {
 		VNOPS_STAT_BUMP(zfs_fsync_z_map_lock_held_at_entry);
+		z_map_lock_held_at_entry = B_TRUE;
+	}
 	/* 0. bounds check on number of waiters */
 	ASSERT3S(zp->z_fsync_cnt, <, 1024); // XXX: ARBITRARY
 	ASSERT3S(zp->z_fsync_cnt, >=, 0); // SIGN STUFF
@@ -3293,10 +3299,18 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		VNOPS_STAT_BUMP(zfs_fsync_disabled);
 		if (zp->z_is_mapped)
 			VNOPS_STAT_BUMP(zfs_fsync_disabled_mapped);
-	} else {
+		sync_disabled = B_TRUE;
+	} else if (z_map_lock_held_at_entry == B_FALSE) {
 		mutex_enter(&zp->z_lock);
 		mapped = zp->z_is_mapped;
 		mutex_exit(&zp->z_lock);
+	} else {
+		/* we have recursed here within a single thread */
+		/* tidy up pages */
+		VNOPS_STAT_BUMP(zfs_fsync_recursive_tidy);
+		/* asynchronous call */
+		(void) cluster_push(vp, 0);
+		goto validateout;
 	}
 
 	boolean_t need_release = B_FALSE;
@@ -3315,6 +3329,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		(void) cluster_push(vp, IO_SYNC);
 		VNOPS_STAT_BUMP(zfs_fsync_cluster_push);
 	}
+
+	if (sync_disabled == B_TRUE)
+		goto releaseout;
 
 	if (mapped > 0) {
 		uint64_t tries = z_map_upgrade_lock(zp, &need_release, &need_upgrade, "zfs_fsync (post clpush)");
@@ -3349,13 +3366,15 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	}
 	ASSERT3P(zp->z_sa_hdl, !=, NULL);
 
+releaseout:
+
 	if (need_release != B_FALSE)
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
 
 	//tsd_set(zfs_fsyncer_key, NULL);
 
 	/* 4. validations */
-
+validateout:
 	ASSERT3P(zp->z_sa_hdl, !=, NULL);
 
 	/* 5. increment z_now_serving  and return */
