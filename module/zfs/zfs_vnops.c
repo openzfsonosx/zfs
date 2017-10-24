@@ -3192,9 +3192,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			continue;
 		const unsigned int tickdiff = (unsigned int) (my_ticket - now_serving);
 		const unsigned int scale = MAX(4, tickdiff);
-		const unsigned int bigscale = 131072 >> scale;
-		const unsigned int medscale = 32768 >> scale;
-		const unsigned int smallscale = 1024 >> scale;
+		const unsigned int bigscale = 524288 >> scale;
+		const unsigned int medscale = 65536 >> scale;
+		const unsigned int smallscale = 2048 >> scale;
 		if ((i % bigscale)==0) {
 			printf("ZFS: %s in waiting room (i=%u)"
 			    " (z_fsync_cnt=%d) (my_ticket=%llu) (now_serving=%llu)\n",
