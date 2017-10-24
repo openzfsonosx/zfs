@@ -108,6 +108,10 @@ typedef struct vnops_stats {
 	kstat_named_t zfs_fsync_disabled;
 	kstat_named_t zfs_fsync_disabled_mapped;
 	kstat_named_t zfs_fsync_z_map_lock_held_at_entry;
+	kstat_named_t zfs_fsync_busy_delays;
+	kstat_named_t zfs_fsync_busy_sleeps;
+	kstat_named_t zfs_fsync_busy_suspends;
+	kstat_named_t zfs_fsync_busy_prints;
 	kstat_named_t write_updatepage_uio_copy;
 	kstat_named_t write_updatepage_uio;
 	kstat_named_t update_pages_updated_pages;
@@ -136,6 +140,10 @@ static vnops_stats_t vnops_stats = {
 	{ "zfs_fsync_disabled",                          KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_disabled_mapped",                   KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_z_map_lock_held_at_entry",          KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_busy_delays",                       KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_busy_sleeps",                       KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_busy_suspends",                     KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_busy_prints",                       KSTAT_DATA_UINT64 },
 	{ "write_updatepage_uio_copy",                   KSTAT_DATA_UINT64 },
 	{ "write_updatepage_uio",                        KSTAT_DATA_UINT64 },
 	{ "update_pages_updated_pages",                  KSTAT_DATA_UINT64 },
@@ -3160,6 +3168,15 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	 *    Complain if we are skipped (zp->z_now_serving > my_ticket).
 	 */
 
+	/*
+	 * some local counters to reduce atomic pounding on kstats;
+	 * we add these to the kstats when exiting the loop via break
+	 * or via return(SOMEERROR), and periodically such as when we
+	 * want to log that we are still in the waiting room
+	 */
+	unsigned int busydelays = 0;
+	unsigned int busysleeps = 0;
+	unsigned int busysuspends = 0;
 	for (unsigned int i = 1; ; i++) { // yes, start at 1 because of modulo ops below
 		// assert we are still a valid file
 		if (zp->z_sa_hdl == NULL) {
@@ -3169,6 +3186,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(zp->z_fsync_cnt, >, 0);
 			atomic_dec_s32_nv(&zp->z_fsync_cnt);
 			VNOPS_STAT_INCR(zfs_fsync_wait, (i - 1));
+			VNOPS_STAT_INCR(zfs_fsync_busy_delays, busydelays);
+			VNOPS_STAT_INCR(zfs_fsync_busy_sleeps, busysleeps);
+			VNOPS_STAT_INCR(zfs_fsync_busy_suspends, busysuspends);
 			return(EINTR);
 		}
 		if (my_ticket == zp->z_now_serving) {
@@ -3180,6 +3200,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		//complain if we have been skipped over
 		if (my_ticket < now_serving) {
 			VNOPS_STAT_BUMP(zfs_fsync_queue_jump);
+			VNOPS_STAT_INCR(zfs_fsync_busy_delays, busydelays);
+			VNOPS_STAT_INCR(zfs_fsync_busy_sleeps, busysleeps);
+			VNOPS_STAT_INCR(zfs_fsync_busy_suspends, busysuspends);
 			printf("ZFS: %s EINTR after queue jumper wrecked my day (i=%u)"
 			    " (z_fsync_cnt = %d) (my_ticket=%llu) now_serving=%llu)",
 			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving);
@@ -3192,22 +3215,51 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			continue;
 		const unsigned int tickdiff = (unsigned int) (my_ticket - now_serving);
 		const unsigned int scale = MAX(4, tickdiff);
-		const unsigned int bigscale = 524288 >> scale;
-		const unsigned int medscale = 65536 >> scale;
-		const unsigned int smallscale = 2048 >> scale;
-		if ((i % bigscale)==0) {
+		const unsigned int printfscale = (1 << 20) >> scale;
+		const unsigned int sleepscale = 16384 >> scale;
+		const unsigned int preemptscale = 2048 >> scale;
+		const unsigned int delayscale = 512 >> scale;
+		/* order from least frequent to most frequent because of continues */
+		if ((i % printfscale)==0) {
+			/* we don't keep a local counter for this, because it's rare */
+			VNOPS_STAT_BUMP(zfs_fsync_busy_prints);
+			/* update the kstats, reset the local counters */
+			VNOPS_STAT_INCR(zfs_fsync_busy_delays, busydelays);
+			busydelays = 0;
+			VNOPS_STAT_INCR(zfs_fsync_busy_sleeps, busysleeps);
+			busysleeps = 0;
+			VNOPS_STAT_INCR(zfs_fsync_busy_suspends, busysuspends);
+			busysuspends = 0;
+			/* handy syslog message */
 			printf("ZFS: %s in waiting room (i=%u)"
-			    " (z_fsync_cnt=%d) (my_ticket=%llu) (now_serving=%llu)\n",
-			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving);
+			    " (z_fsync_cnt=%d) (my_ticket=%llu) (now_serving=%llu) (name=%s)\n",
+			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving, zp->z_name_cache);
 			delay(2);
 			continue;
 		}
-		if ((i % medscale)==0) {
+		if ((i % sleepscale)==0) {
+			/* go onto xnu waitq_assert_wait64_locked */
 			extern void IOSleep(unsigned milliseconds);
 			IOSleep(1);
+			busysleeps++;
 			continue;
-		} if ((i % smallscale) == 0) {
+		}
+		if ((i % preemptscale) == 0) {
 			kpreempt(KPREEMPT_SYNC);
+			busysuspends++;
+			continue;
+		}
+		if ((i % delayscale)==0) {
+			/*
+			 * execute cpu_pause() which is rep;nop
+			 * which [a] can be descheduled and
+			 * [b] on hyperthread platforms, lets the other
+			 * HT run.  This takes some read pressure off
+			 * the zp->z_now_serving cacheline.
+			 */
+			extern void IODelay(unsigned microseconds);
+			IODelay(1);
+			busydelays++;
 			continue;
 		}
 		if (i >= (1 << 30)) {
@@ -3219,9 +3271,15 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving);
 			atomic_dec_s32_nv(&zp->z_fsync_cnt);
 			VNOPS_STAT_INCR(zfs_fsync_wait, (i - 1));
+			VNOPS_STAT_INCR(zfs_fsync_busy_delays, busydelays);
+			VNOPS_STAT_INCR(zfs_fsync_busy_sleeps, busysleeps);
+			VNOPS_STAT_INCR(zfs_fsync_busy_suspends, busysuspends);
 			return (EINTR);
 		}
 	}
+	VNOPS_STAT_INCR(zfs_fsync_busy_delays, busydelays);
+	VNOPS_STAT_INCR(zfs_fsync_busy_sleeps, busysleeps);
+	VNOPS_STAT_INCR(zfs_fsync_busy_suspends, busysuspends);
 
 	ASSERT3P(zp->z_sa_hdl, !=, NULL);
 
