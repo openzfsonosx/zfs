@@ -862,8 +862,12 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (need_unlock == B_TRUE)
 			mutex_exit(&zp->z_lock);
 		if (mapped == B_TRUE) {
-			zfs_fsync(vp, 0, cr, ct); // does a zil commit
+			//zfs_fsync(vp, 0, cr, ct); // does a zil commit
+			boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
+			cluster_push(vp, sync ? IO_SYNC : 0);
 			VNOPS_STAT_BUMP(zfs_read_sync_mapped);
+			if (sync == B_TRUE)
+				zil_commit(zfsvfs->z_log, zp->z_id);
 		} else if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS) {
 			zil_commit(zfsvfs->z_log, zp->z_id);
 			VNOPS_STAT_BUMP(zfs_read_zil_commit);
