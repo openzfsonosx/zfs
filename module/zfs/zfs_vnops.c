@@ -865,6 +865,8 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			//zfs_fsync(vp, 0, cr, ct); // does a zil commit
 			boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
 			cluster_push(vp, sync ? IO_SYNC : 0);
+			ASSERT0(ubc_msync(vp, 0, ubc_getsize(vp), NULL,
+				sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL));
 			VNOPS_STAT_BUMP(zfs_read_sync_mapped);
 			if (sync == B_TRUE)
 				zil_commit(zfsvfs->z_log, zp->z_id);
