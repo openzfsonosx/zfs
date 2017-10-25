@@ -363,6 +363,8 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 	if (vn_has_cached_data(vp) &&
 	    vnode_isreg(vp) && !vnode_isswap(vp)) {
 		(void) cluster_push(vp, IO_SYNC | IO_CLOSE);
+		ASSERT0(ubc_msync(vp, 0, ubc_getsize(vp), NULL,
+			UBC_PUSHALL | UBC_SYNC));
 		VNOPS_STAT_BUMP(zfs_close_cluster_push);
 	}
 #endif
