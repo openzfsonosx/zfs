@@ -31,6 +31,7 @@
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.
  * Copyright (c) 2017 Datto Inc.
+ * Copyright (c) 2017 Open-E, Inc. All Rights Reserved.
  */
 
 #ifndef	_LIBZFS_H
@@ -298,7 +299,7 @@ extern int zpool_initialize(zpool_handle_t *, pool_initialize_func_t,
     nvlist_t *);
 extern int zpool_clear(zpool_handle_t *, const char *, nvlist_t *);
 extern int zpool_reguid(zpool_handle_t *);
-extern int zpool_reopen(zpool_handle_t *);
+extern int zpool_reopen_one(zpool_handle_t *, void *);
 
 extern int zpool_sync_one(zpool_handle_t *, void *);
 
