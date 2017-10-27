@@ -3059,9 +3059,9 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 	if (zp->z_is_mapped > 0) {
 		VNOPS_OSX_STAT_BUMP(reclaim_mapped);
-		ASSERT0(ubc_msync(vp, (off_t)0,
+		(void) ubc_msync(vp, (off_t)0,
 		    ubc_getsize(vp), NULL,
-			UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC));
+		    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
 		ASSERT3P(zp->z_sa_hdl, !=, NULL);
 	}
 
