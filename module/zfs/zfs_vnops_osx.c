@@ -4679,11 +4679,11 @@ zfs_vnop_searchfs(struct vnop_searchfs_args *ap)
  * style" function declaration that does not include arguments so that we won't
  * get type mismatch errors in the initializations that follow.
  */
-static int zfs_inval(void);
+int zfs_vnop_inval(void);
 static int zfs_isdir(void);
 
-static int
-zfs_inval()
+int
+zfs_vnop_inval()
 {
 	dprintf("ZFS: Bad vnop: returning EINVAL\n");
 	return (EINVAL);
@@ -4762,7 +4762,7 @@ struct vnodeopv_entry_desc zfs_fvnodeops_template[] = {
 	{&vnop_inactive_desc,	(VOPFUNC)zfs_vnop_inactive},
 	{&vnop_reclaim_desc,	(VOPFUNC)zfs_vnop_reclaim},
 	{&vnop_pathconf_desc,	(VOPFUNC)zfs_vnop_pathconf},
-	{&vnop_bwrite_desc, (VOPFUNC)zfs_inval},
+	{&vnop_bwrite_desc, (VOPFUNC)zfs_vnop_inval},
 	{&vnop_pagein_desc,	(VOPFUNC)zfs_vnop_pagein},
 #if	HAVE_PAGEOUT_V2
 	{&vnop_pageout_desc,	(VOPFUNC)zfs_vnop_pageoutv2},
@@ -4826,7 +4826,7 @@ struct vnodeopv_entry_desc zfs_xdvnodeops_template[] = {
 	{&vnop_lookup_desc,	(VOPFUNC)zfs_vnop_lookup},
 	{&vnop_create_desc,	(VOPFUNC)zfs_vnop_create},
 	{&vnop_whiteout_desc,	(VOPFUNC)zfs_vnop_whiteout},
-	{&vnop_mknod_desc,	(VOPFUNC)zfs_inval},
+	{&vnop_mknod_desc,	(VOPFUNC)zfs_vnop_inval},
 	{&vnop_open_desc,	(VOPFUNC)zfs_vnop_open},
 	{&vnop_close_desc,	(VOPFUNC)zfs_vnop_close},
 	{&vnop_access_desc,	(VOPFUNC)zfs_vnop_access},
@@ -4840,9 +4840,9 @@ struct vnodeopv_entry_desc zfs_xdvnodeops_template[] = {
 	{&vnop_remove_desc,	(VOPFUNC)zfs_vnop_remove},
 	{&vnop_link_desc,	(VOPFUNC)zfs_vnop_link},
 	{&vnop_rename_desc,	(VOPFUNC)zfs_vnop_rename},
-	{&vnop_mkdir_desc,	(VOPFUNC)zfs_inval},
+	{&vnop_mkdir_desc,	(VOPFUNC)zfs_vnop_inval},
 	{&vnop_rmdir_desc,	(VOPFUNC)zfs_vnop_rmdir},
-	{&vnop_symlink_desc,	(VOPFUNC)zfs_inval},
+	{&vnop_symlink_desc,	(VOPFUNC)zfs_vnop_inval},
 	{&vnop_readdir_desc,	(VOPFUNC)zfs_vnop_readdir},
 	{&vnop_inactive_desc,	(VOPFUNC)zfs_vnop_inactive},
 	{&vnop_reclaim_desc,	(VOPFUNC)zfs_vnop_reclaim},
@@ -4895,7 +4895,7 @@ struct vnodeopv_entry_desc zfs_fifonodeops_template[] = {
 	{ &vnop_strategy_desc, (VOPFUNC)fifo_strategy },                /* strategy */
 	{ &vnop_pathconf_desc, (VOPFUNC)fifo_pathconf },                /* pathconf */
 	{ &vnop_advlock_desc, (VOPFUNC)err_advlock },           /* advlock */
-	{ &vnop_bwrite_desc, (VOPFUNC)zfs_inval },
+	{ &vnop_bwrite_desc, (VOPFUNC)zfs_vnop_inval },
 	{ &vnop_pagein_desc, (VOPFUNC)zfs_vnop_pagein },                /* Pagein */
 #if	HAVE_PAGEOUT_V2
 	{ &vnop_pageout_desc, (VOPFUNC)zfs_vnop_pageoutv2 },      /* Pageout */
