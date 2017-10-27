@@ -4090,8 +4090,53 @@ zfs_vnop_blktooff(struct vnop_blktooff_args *ap)
 	};
 #endif
 {
+#if 0
 	dprintf("vnop_blktooff: 0\n");
 	return (ENOTSUP);
+#else
+	ASSERT3P(ap, !=, NULL);
+	ASSERT3P(ap->a_vp, !=, NULL);
+
+	vnode_t *vp = ap->a_vp;
+
+	// must be a regular file
+	boolean_t isreg = vnode_isreg(vp);
+	ASSERT3S(isreg, !=, B_FALSE);
+	if (isreg == B_FALSE)
+		return (ENOTSUP);
+
+	znode_t *zp = VTOZ(ap->a_vp);
+	ASSERT3P(zp, !=, NULL);
+	if (zp == NULL)
+		return (ENODEV);
+
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	ASSERT3P(zfsvfs, !=, NULL);
+	if (zfsvfs == NULL)
+		return (ENODEV);
+
+	ZFS_ENTER(zfsvfs);
+	ZFS_VERIFY_ZP(zp);
+
+	ASSERT3U(zp->z_blksz, >=, SPA_MINBLOCKSIZE);
+	ASSERT3U(zp->z_blksz, <=, SPA_MAXBLOCKSIZE);
+
+	uint32_t blocksize = MIN(zp->z_blksz, SPA_MINBLOCKSIZE);
+
+	if (blocksize < SPA_MINBLOCKSIZE || zp->z_blksz > SPA_MAXBLOCKSIZE) {
+		const uint64_t fs_max_blksize = zfsvfs->z_max_blksz;
+		ASSERT3U(fs_max_blksize, >=, SPA_MINBLOCKSIZE);
+		ASSERT3U(fs_max_blksize, <=, SPA_MAXBLOCKSIZE);
+		blocksize = fs_max_blksize;
+	}
+	VERIFY3U(blocksize, >, 0);
+
+	*ap->a_offset = (off_t)(ap->a_lblkno * blocksize);
+
+	ZFS_EXIT(zfsvfs);
+
+	return (0);
+#endif
 }
 
 int
@@ -4104,8 +4149,55 @@ zfs_vnop_offtoblk(struct vnop_offtoblk_args *ap)
 	};
 #endif
 {
+#if 0
 	dprintf("+vnop_offtoblk\n");
 	return (ENOTSUP);
+#else
+	ASSERT3P(ap, !=, NULL);
+	ASSERT3P(ap->a_vp, !=, NULL);
+
+	vnode_t *vp = ap->a_vp;
+
+	// must be a regular file
+	boolean_t isreg = vnode_isreg(vp);
+	ASSERT3S(isreg, !=, B_FALSE);
+	if (isreg == B_FALSE)
+		return (ENOTSUP);
+
+	znode_t *zp = VTOZ(ap->a_vp);
+	ASSERT3P(zp, !=, NULL);
+	if (zp == NULL)
+		return (ENODEV);
+
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	ASSERT3P(zfsvfs, !=, NULL);
+	if (zfsvfs == NULL)
+		return (ENODEV);
+
+	ZFS_ENTER(zfsvfs);
+	ZFS_VERIFY_ZP(zp);
+
+	ASSERT3U(zp->z_blksz, >=, SPA_MINBLOCKSIZE);
+	ASSERT3U(zp->z_blksz, <=, SPA_MAXBLOCKSIZE);
+
+	uint32_t blocksize = MIN(zp->z_blksz, SPA_MINBLOCKSIZE);
+	if (blocksize > SPA_MAXBLOCKSIZE)
+		blocksize = SPA_MAXBLOCKSIZE;
+
+	if (blocksize < SPA_MINBLOCKSIZE || zp->z_blksz > SPA_MAXBLOCKSIZE) {
+		const uint64_t fs_max_blksize = zfsvfs->z_max_blksz;
+		ASSERT3U(fs_max_blksize, >=, SPA_MINBLOCKSIZE);
+		ASSERT3U(fs_max_blksize, <=, SPA_MAXBLOCKSIZE);
+		blocksize = fs_max_blksize;
+	}
+	VERIFY3U(blocksize, >, 0);
+
+	*ap->a_lblkno = (daddr64_t)(ap->a_offset / blocksize);
+
+	ZFS_EXIT(zfsvfs);
+
+	return (0);
+#endif
 }
 
 int
@@ -4162,19 +4254,28 @@ zfs_vnop_blockmap(struct vnop_blockmap_args *ap)
 	off_t foffset = ap->a_foffset;
 	size_t *run = ap->a_run;
 
-	ASSERT3U(zp->z_blksz, >, 0);
-	uint64_t file_blksize = MAX(1, (uint64_t)zp->z_blksz);
-	ASSERT3U(zfsvfs->z_max_blksz, >, 0);
-	uint64_t fs_max_blksize = zfsvfs->z_max_blksz;
-	uint64_t blksize = MIN(file_blksize, fs_max_blksize);
+	ASSERT3U(zp->z_blksz, >=, SPA_MINBLOCKSIZE);
+	ASSERT3U(zp->z_blksz, <=, SPA_MAXBLOCKSIZE);
+
+	uint32_t blocksize = MIN(zp->z_blksz, SPA_MINBLOCKSIZE);
+	if (blocksize > SPA_MAXBLOCKSIZE)
+		blocksize = SPA_MAXBLOCKSIZE;
+
+	if (blocksize < SPA_MINBLOCKSIZE || zp->z_blksz > SPA_MAXBLOCKSIZE) {
+		const uint64_t fs_max_blksize = zfsvfs->z_max_blksz;
+		ASSERT3U(fs_max_blksize, >=, SPA_MINBLOCKSIZE);
+		ASSERT3U(fs_max_blksize, <=, SPA_MAXBLOCKSIZE);
+		blocksize = fs_max_blksize;
+	}
+	VERIFY3U(blocksize, >, 0);
 
 	/* xnu says: "... the vnode must be VREG (init), and the mapping will be 1 to 1.
 	 * This also means that [the] request should always be contiguous, so the run
 	 * calculation is easy!"
 	 */
 
-	*blkno = foffset / blksize;
-	ASSERT3S(blkno, >, 0);
+	*blkno = foffset / blocksize; // block number within the file
+	ASSERT3S(blkno, >=, 0);
 
 	size_t io_size = ap->a_size;
 	size_t filesize = zp->z_size;
