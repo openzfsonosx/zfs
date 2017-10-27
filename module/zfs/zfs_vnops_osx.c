@@ -4114,16 +4114,94 @@ zfs_vnop_blockmap(struct vnop_blockmap_args *ap)
 	struct vnop_blockmap_args {
 		struct vnode	*a_vp;
 		off_t		a_foffset;
-		size_t		a_size;
-		daddr64_t	*a_bpn;
-		size_t		*a_run;
-		void		*a_poff;
-		int		a_flags;
+		size_t		a_size; // io_size
+		daddr64_t	*a_bpn; // &blkno
+		size_t		*a_run; // &io_size_tmp, run
+		void		*a_poff;// generally NULL
+		int		a_flags;// bmap_flags (e.g. VNODE_READ)
 };
 #endif
 {
 	dprintf("+vnop_blockmap\n");
+#if 0
 	return (ENOTSUP);
+#else
+	/* partially from mockfs_blockmap() in bsd/mockfs/mockfs_vnops.c,
+	 * partially from #if 0 below */
+
+	ASSERT3P(ap, !=, NULL);
+	ASSERT3P(ap->a_vp, !=, NULL);
+	ASSERT3S(ap->a_size, !=, 0);
+
+	vnode_t *vp = ap->a_vp;
+	daddr64_t *blkno = ap->a_bpn;
+
+	ASSERT3P(blkno, !=, NULL);
+	if (blkno == NULL)
+		return (ENOTSUP);
+
+	// must be a regular file
+	boolean_t isreg = vnode_isreg(vp);
+	ASSERT3S(isreg, !=, B_FALSE);
+	if (isreg == B_FALSE)
+		return (ENOTSUP);
+
+	znode_t *zp = VTOZ(ap->a_vp);
+	ASSERT3P(zp, !=, NULL);
+	if (zp == NULL)
+		return (ENODEV);
+
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	ASSERT3P(zfsvfs, !=, NULL);
+	if (zfsvfs == NULL)
+		return (ENODEV);
+
+	ZFS_ENTER(zfsvfs);
+	ZFS_VERIFY_ZP(zp);
+
+	off_t foffset = ap->a_foffset;
+	size_t *run = ap->a_run;
+
+	ASSERT3U(zp->z_blksz, >, 0);
+	uint64_t file_blksize = MAX(1, (uint64_t)zp->z_blksz);
+	ASSERT3U(zfsvfs->z_max_blksz, >, 0);
+	uint64_t fs_max_blksize = zfsvfs->z_max_blksz;
+	uint64_t blksize = MIN(file_blksize, fs_max_blksize);
+
+	/* xnu says: "... the vnode must be VREG (init), and the mapping will be 1 to 1.
+	 * This also means that [the] request should always be contiguous, so the run
+	 * calculation is easy!"
+	 */
+
+	*blkno = foffset / blksize;
+	ASSERT3S(blkno, >, 0);
+
+	size_t io_size = ap->a_size;
+	size_t filesize = zp->z_size;
+
+	ASSERT3S(filesize, >, foffset);
+	int64_t run_target = MAX(filesize - foffset, SPA_MAXBLOCKSIZE);
+	ASSERT3S(run_target, >, 0);
+	if (run_target < 0) {
+		// prevent underflow of &io_size_tmp
+		// NB: if cluster_io sees 0 in io_size_tmp,
+		//     it will be as if we returned EINVAL
+		run_target = 0;
+	}
+
+	*run = (size_t)run_target; // run is io_size_tmp in caller
+
+	int retval = 0;
+
+	ASSERT3S(io_size, <=, *run);
+	if (io_size > *run)
+		retval = ENOTSUP;
+
+	ZFS_EXIT(zfsvfs);
+
+	return (retval);
+
+#endif
 
 #if 0
 	znode_t *zp;
