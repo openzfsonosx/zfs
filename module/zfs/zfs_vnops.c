@@ -98,7 +98,8 @@ typedef struct vnops_stats {
 	kstat_named_t update_pages_not_mapped;
 	kstat_named_t mappedread_pages;
 	kstat_named_t dmu_read_uio_dbuf_pages;
-	kstat_named_t zfs_fsync;
+	kstat_named_t zfs_fsync_zil_commit;
+	kstat_named_t zfs_fsync_ubc_msync;
 	kstat_named_t zfs_fsync_cluster_push;
 	kstat_named_t zfs_fsync_abandoned;
 	kstat_named_t zfs_fsync_want_lock;
@@ -131,7 +132,8 @@ static vnops_stats_t vnops_stats = {
 	{ "update_pages_not_mapped",                     KSTAT_DATA_UINT64 },
 	{ "mappedread_pages",                            KSTAT_DATA_UINT64 },
 	{ "dmu_read_uio_dbuf_pages",                     KSTAT_DATA_UINT64 },
-	{ "zfs_fsync",                                   KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_zil_commit",                        KSTAT_DATA_UINT64 },
+	{ "zfs_fsync_ubc_msync",                         KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_cluster_push",                      KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_abandoned",                         KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_want_lock",                         KSTAT_DATA_UINT64 },
@@ -360,11 +362,13 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 	cleanlocks(vp, ddi_get_pid(), 0);
 	cleanshares(vp, ddi_get_pid());
 #else
+	vnode_ref(vp); // hold usecount ref while syncing
 	if (vn_has_cached_data(vp) &&
 	    vnode_isreg(vp) && !vnode_isswap(vp)) {
-		(void) cluster_push(vp, IO_SYNC | IO_CLOSE);
 		ASSERT0(ubc_msync(vp, 0, ubc_getsize(vp), NULL,
 			UBC_PUSHALL | UBC_SYNC));
+		ASSERT3P(zp->z_sa_hdl, !=, NULL);
+		(void) cluster_push(vp, IO_SYNC | IO_CLOSE);
 		VNOPS_STAT_BUMP(zfs_close_cluster_push);
 	}
 #endif
@@ -383,6 +387,10 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 	    ZTOV(zp)->v_type == VREG &&
 	    !(zp->z_pflags & ZFS_AV_QUARANTINED) && zp->z_size > 0)
 		VERIFY(fs_vscan(vp, cr, 1) == 0);
+#endif
+
+#ifdef __APPLE__
+	vnode_rele(vp);
 #endif
 
 	ZFS_EXIT(zfsvfs);
@@ -866,9 +874,10 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (mapped == B_TRUE) {
 			//zfs_fsync(vp, 0, cr, ct); // does a zil commit
 			boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
-			cluster_push(vp, sync ? IO_SYNC : 0);
 			ASSERT0(ubc_msync(vp, 0, ubc_getsize(vp), NULL,
 				sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL));
+			ASSERT3P(zp->z_sa_hdl, !=, NULL);
+			cluster_push(vp, sync ? IO_SYNC : 0);
 			VNOPS_STAT_BUMP(zfs_read_sync_mapped);
 			if (sync == B_TRUE)
 				zil_commit(zfsvfs->z_log, zp->z_id);
@@ -3145,7 +3154,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	 * 0. validations (esp. no locks held)
 	 * 1. take a ticket from the ticket machine (z_next_ticket++)
 	 * 2. wait until my ticket has been called (z_now_serving, complain if exceeded!)
-	 * 3. process cluster_push->zil_commit->ubc_msync
+	 * 3. process ubc_msync->cluster_push->zil_commit
 	 * 4. validations (esp. still serving me)
 	 * 5. increment z_now_serving and return
 	 *
@@ -3317,9 +3326,24 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		/* tidy up pages */
 		VNOPS_STAT_BUMP(zfs_fsync_recursive_tidy);
 		/* asynchronous call */
+		ASSERT0(ubc_msync(vp, 0, ubc_getsize(vp),
+			NULL, UBC_PUSHALL));
 		(void) cluster_push(vp, 0);
 		goto validateout;
 	}
+
+	// set tsd (?) XXX
+	(void) tsd_set(zfs_fsyncer_key, (void *)zfs_fsync_sync_cnt);
+
+	// ubc msync, without mutexes
+	// should take a vnode reference XXX
+	if (mapped > 0) {
+		VNOPS_STAT_BUMP(zfs_fsync_ubc_msync);
+		ASSERT0(ubc_msync(vp, 0, ubc_getsize(vp), NULL,
+			UBC_PUSHALL | UBC_SYNC));
+	}
+
+	ASSERT3P(zp->z_sa_hdl, !=, NULL);
 
 	boolean_t need_release = B_FALSE;
 	boolean_t need_upgrade = B_FALSE;
@@ -3329,6 +3353,10 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		VNOPS_STAT_INCR(zfs_fsync_want_lock, tries);
 	}
 
+	if (sync_disabled == B_TRUE)
+		goto releaseout;
+
+	// cluster push, with downgraded mutex
 	if (mapped > 0)
 		z_map_downgrade_lock(zp, &need_release, &need_upgrade);
 
@@ -3338,15 +3366,12 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		VNOPS_STAT_BUMP(zfs_fsync_cluster_push);
 	}
 
-	if (sync_disabled == B_TRUE)
-		goto releaseout;
+	ASSERT3P(zp->z_sa_hdl, !=, NULL);
 
 	if (mapped > 0) {
 		uint64_t tries = z_map_upgrade_lock(zp, &need_release, &need_upgrade, "zfs_fsync (post clpush)");
 		VNOPS_STAT_INCR(zfs_fsync_want_lock, tries);
 	}
-
-	(void) tsd_set(zfs_fsyncer_key, (void *)zfs_fsync_sync_cnt);
 
 	boolean_t need_zfs_exit = B_FALSE;
 	if (zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED
@@ -3358,18 +3383,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 
 		zil_commit(zfsvfs->z_log, zp->z_id);
 
-		if (mapped > 0) {
-			uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, "zfs_fsync (post zil_commit)");
-			VNOPS_STAT_INCR(zfs_fsync_want_lock, tries);
-			z_map_drop_lock(zp, &need_release, &need_upgrade);
-			if (ubc_msync(vp, 0, ubc_getsize(vp),
-				NULL, UBC_PUSHALL | UBC_SYNC)) {
-				printf("ZFS: %s: ubc_msync failed!\n", __func__);
-			}
-			tries = z_map_rw_lock(zp, &need_release, &need_upgrade, "zfs_fsync (post ubc_msync)");
-			VNOPS_STAT_INCR(zfs_fsync_want_lock, tries);
-		}
-		VNOPS_STAT_BUMP(zfs_fsync);
+		VNOPS_STAT_BUMP(zfs_fsync_zil_commit);
 		need_zfs_exit = B_TRUE;
 	}
 	ASSERT3P(zp->z_sa_hdl, !=, NULL);

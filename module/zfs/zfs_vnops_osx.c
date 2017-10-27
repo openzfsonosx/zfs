@@ -3052,15 +3052,17 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 	/* Already been released? */
 	zp = VTOZ(vp);
-	ASSERT(zp != NULL);
+	ASSERT3P(zp, !=, NULL);
+	ASSERT3P(zp->z_sa_hdl, !=, NULL);
 	dprintf("+vnop_reclaim zp %p/%p type %d\n", zp, vp, vnode_vtype(vp));
 	if (!zp) goto out;
 
 	if (zp->z_is_mapped > 0) {
 		VNOPS_OSX_STAT_BUMP(reclaim_mapped);
-		(void)ubc_msync(vp, (off_t)0,
+		ASSERT0(ubc_msync(vp, (off_t)0,
 		    ubc_getsize(vp), NULL,
-		    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
+			UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC));
+		ASSERT3P(zp->z_sa_hdl, !=, NULL);
 	}
 
 	zfsvfs = zp->z_zfsvfs;
