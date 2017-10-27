@@ -4350,6 +4350,18 @@ zfs_vnop_blockmap(struct vnop_blockmap_args *ap)
 }
 
 int
+zfs_vnop_bwrite(struct vnop_bwrite_args *ap)
+{
+	int retval = 0;
+
+	retval = vn_bwrite (ap);
+
+	ASSERT3S(retval, !=, 0);
+
+	return (retval);
+}
+
+int
 zfs_vnop_strategy(struct vnop_strategy_args *ap)
 #if 0
 	struct vnop_strategy_args {
@@ -4895,7 +4907,7 @@ struct vnodeopv_entry_desc zfs_fifonodeops_template[] = {
 	{ &vnop_strategy_desc, (VOPFUNC)fifo_strategy },                /* strategy */
 	{ &vnop_pathconf_desc, (VOPFUNC)fifo_pathconf },                /* pathconf */
 	{ &vnop_advlock_desc, (VOPFUNC)err_advlock },           /* advlock */
-	{ &vnop_bwrite_desc, (VOPFUNC)zfs_vnop_inval },
+	{ &vnop_bwrite_desc, (VOPFUNC)zfs_vnop_bwrite },
 	{ &vnop_pagein_desc, (VOPFUNC)zfs_vnop_pagein },                /* Pagein */
 #if	HAVE_PAGEOUT_V2
 	{ &vnop_pageout_desc, (VOPFUNC)zfs_vnop_pageoutv2 },      /* Pageout */
