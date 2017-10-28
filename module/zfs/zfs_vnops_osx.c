@@ -4290,7 +4290,7 @@ zfs_vnop_blockmap(struct vnop_blockmap_args *ap)
 	 */
 
 	*blkno = foffset / blocksize; // block number within the file
-	ASSERT3S(blkno, >=, 0);
+	ASSERT3S(*blkno, >=, 0);
 
 	size_t io_size = ap->a_size;
 	size_t filesize = zp->z_size;
