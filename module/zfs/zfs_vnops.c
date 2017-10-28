@@ -365,8 +365,13 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 	vnode_ref(vp); // hold usecount ref while syncing
 	if (vn_has_cached_data(vp) &&
 	    vnode_isreg(vp) && !vnode_isswap(vp)) {
-		ASSERT0(ubc_msync(vp, 0, ubc_getsize(vp), NULL,
+		ASSERT(ubc_pages_resident(vp));
+		off_t ubcsize = ubc_getsize(vp);
+		ASSERT3S(zp->z_size, ==, ubcsize);
+		off_t resid_off = 0;
+		ASSERT0(ubc_msync(vp, 0, ubcsize, &resid_off,
 			UBC_PUSHALL | UBC_SYNC));
+		ASSERT3S(resid_off, ==, ubcsize);
 		ASSERT3P(zp->z_sa_hdl, !=, NULL);
 		(void) cluster_push(vp, IO_SYNC | IO_CLOSE);
 		VNOPS_STAT_BUMP(zfs_close_cluster_push);
@@ -874,8 +879,13 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (mapped == B_TRUE) {
 			//zfs_fsync(vp, 0, cr, ct); // does a zil commit
 			boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
-			ASSERT0(ubc_msync(vp, 0, ubc_getsize(vp), NULL,
+			ASSERT(ubc_pages_resident(vp));
+			off_t ubcsize = ubc_getsize(vp);
+			ASSERT3S(zp->z_size, ==, ubcsize);
+			off_t resid_off = 0;
+			ASSERT0(ubc_msync(vp, 0, ubcsize, &resid_off,
 				sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL));
+			ASSERT3S(resid_off, ==, ubcsize);
 			ASSERT3P(zp->z_sa_hdl, !=, NULL);
 			cluster_push(vp, sync ? IO_SYNC : 0);
 			VNOPS_STAT_BUMP(zfs_read_sync_mapped);
@@ -3326,8 +3336,13 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		/* tidy up pages */
 		VNOPS_STAT_BUMP(zfs_fsync_recursive_tidy);
 		/* asynchronous call */
-		ASSERT0(ubc_msync(vp, 0, ubc_getsize(vp),
-			NULL, UBC_PUSHALL));
+		ASSERT(ubc_pages_resident(vp));
+		off_t ubcsize = ubc_getsize(vp);
+		ASSERT3U(zp->z_size, ==, ubcsize);
+		off_t resid_off = 0;
+		ASSERT0(ubc_msync(vp, 0, ubcsize,
+			&resid_off, UBC_PUSHALL));
+		ASSERT3S(resid_off, ==, ubcsize);
 		(void) cluster_push(vp, 0);
 		goto validateout;
 	}
@@ -3339,8 +3354,13 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	// should take a vnode reference XXX
 	if (mapped > 0) {
 		VNOPS_STAT_BUMP(zfs_fsync_ubc_msync);
-		ASSERT0(ubc_msync(vp, 0, ubc_getsize(vp), NULL,
+		ASSERT(ubc_pages_resident(vp));
+		off_t ubcsize = ubc_getsize(vp);
+		ASSERT3S(zp->z_size, ==, ubcsize);
+		off_t resid_off = 0;
+		ASSERT0(ubc_msync(vp, 0, ubcsize, &resid_off,
 			UBC_PUSHALL | UBC_SYNC));
+		ASSERT3S(resid_off, ==, ubcsize);
 	}
 
 	ASSERT3P(zp->z_sa_hdl, !=, NULL);
