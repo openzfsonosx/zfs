@@ -169,8 +169,23 @@ dnode_dest(void *arg, void *unused)
 	int i;
 	dnode_t *dn = arg;
 
+	ASSERT(!rw_lock_held(&dn->dn_struct_rwlock));
+	if (rw_lock_held(&dn->dn_struct_rwlock)) {
+		rw_enter(&dn->dn_struct_rwlock, RW_WRITER);
+		rw_exit(&dn->dn_struct_rwlock);
+	}
 	rw_destroy(&dn->dn_struct_rwlock);
+	ASSERT(!MUTEX_HELD(&dn->dn_mtx));
+	if (MUTEX_HELD(&dn->dn_mtx)) {
+		mutex_enter(&dn->dn_mtx);
+		mutex_exit(&dn->dn_mtx);
+	}
 	mutex_destroy(&dn->dn_mtx);
+	ASSERT(!MUTEX_HELD(&dn->dn_dbufs_mtx));
+	if (MUTEX_HELD(&dn->dn_dbufs_mtx)) {
+		mutex_enter(&dn->dn_dbufs_mtx);
+		mutex_exit(&dn->dn_dbufs_mtx);
+	}
 	mutex_destroy(&dn->dn_dbufs_mtx);
 	cv_destroy(&dn->dn_notxholds);
 	refcount_destroy(&dn->dn_holds);
