@@ -3061,7 +3061,7 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 
 	if (zp->z_is_mapped > 0) {
 		VNOPS_OSX_STAT_BUMP(reclaim_mapped);
-		ASSERT(ubc_pages_resident(vp));
+		//ASSERT(ubc_pages_resident(vp));
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3S(zp->z_size, ==, ubcsize);
 		off_t resid_off = 0;
