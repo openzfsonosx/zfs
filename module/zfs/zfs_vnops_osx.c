@@ -2193,6 +2193,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	}
 
 	ASSERT(vn_has_cached_data(ZTOV(zp)));
+	ASSERT(ubc_pages_resident(ZTOV(zp)));
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
 	if (len <= 0) {
@@ -2599,6 +2600,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	}
 
 	ASSERT(vn_has_cached_data(ZTOV(zp)));
+	ASSERT(ubc_pages_resident(ZTOV(zp)));
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 	ASSERT3U(zp->z_is_mapped,==,1);
 

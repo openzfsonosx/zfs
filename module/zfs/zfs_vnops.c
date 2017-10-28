@@ -363,7 +363,7 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 	cleanshares(vp, ddi_get_pid());
 #else
 	vnode_ref(vp); // hold usecount ref while syncing
-	if (vn_has_cached_data(vp) &&
+	if ((vn_has_cached_data(vp) || ubc_pages_resident(vp)) &&
 	    vnode_isreg(vp) && !vnode_isswap(vp)) {
 		ASSERT(ubc_pages_resident(vp));
 		off_t ubcsize = ubc_getsize(vp);
@@ -955,7 +955,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			error = mappedread_sf(vp, nbytes, uio);
 		else
 #endif /* __FreeBSD__ */
-		if (vn_has_cached_data(vp))
+		if (vn_has_cached_data(vp) || ubc_pages_resident(vp))
 			error = mappedread(vp, nbytes, uio);
 		else {
 			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
@@ -1275,7 +1275,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (abuf == NULL) {
 
-			if ( vn_has_cached_data(vp) )
+			if ( vn_has_cached_data(vp) || ubc_pages_resident(vp) )
 				uio_copy = uio_duplicate(uio);
 
 			tx_bytes = uio_resid(uio);
@@ -1309,7 +1309,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uioskip(uio, tx_bytes);
 		}
 
-		if (tx_bytes && vn_has_cached_data(vp)) {
+		if (tx_bytes && (vn_has_cached_data(vp) || ubc_pages_resident(vp))) {
 #ifdef __APPLE__
 			if (uio_copy) {
 				VNOPS_STAT_BUMP(write_updatepage_uio_copy);
@@ -2213,7 +2213,8 @@ top:
 	 * open on it, even though it's dropping it shortly.
 	 */
 #ifdef __APPLE__
-	may_delete_now = !vnode_isinuse(vp, 0) && !vn_has_cached_data(vp);
+	may_delete_now = !vnode_isinuse(vp, 0) && !vn_has_cached_data(vp) &&
+	    ubc_pages_resident(vp) == 0;
 #else
 	VI_LOCK(vp);
 	may_delete_now = vp->v_count == 1 && !vn_has_cached_data(vp);
@@ -2320,6 +2321,7 @@ top:
 		    &xattr_obj_unlinked, sizeof (xattr_obj_unlinked));
 		delete_now = may_delete_now && !toobig &&
 		    !vnode_isinuse(vp,0) && !vn_has_cached_data(vp) &&
+		    ubc_pages_resident(vp) == 0 &&
 		    xattr_obj == xattr_obj_unlinked && zfs_external_acl(zp) ==
 		    acl_obj;
 #ifndef __APPLE__
@@ -3380,7 +3382,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	if (mapped > 0)
 		z_map_downgrade_lock(zp, &need_release, &need_upgrade);
 
-	if (vn_has_cached_data(vp) &&
+	if ((vn_has_cached_data(vp) || ubc_pages_resident(vp)) &&
 		vnode_isreg(vp) && !vnode_isswap(vp)) {
 		(void) cluster_push(vp, IO_SYNC);
 		VNOPS_STAT_BUMP(zfs_fsync_cluster_push);
