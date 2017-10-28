@@ -3063,14 +3063,20 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 		VNOPS_OSX_STAT_BUMP(reclaim_mapped);
 		//ASSERT(ubc_pages_resident(vp));
 		off_t ubcsize = ubc_getsize(vp);
-		ASSERT3S(zp->z_size, ==, ubcsize);
-		off_t resid_off = 0;
-		int retval = ubc_msync(vp, (off_t)0,
-		    ubcsize, &resid_off,
-		    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
-		ASSERT3S(retval, ==, 0);
-		if (retval != 0)
-			ASSERT3S(resid_off, ==, ubcsize);
+		ASSERT3S(ubcsize, >=, 0);
+		if (ubcsize == 0)
+			ASSERT0(ubc_pages_resident(vp));
+		if (ubcsize > 0) {
+			ASSERT(ubc_pages_resident(vp));
+			ASSERT3S(zp->z_size, ==, ubcsize);
+			off_t resid_off = 0;
+			int retval = ubc_msync(vp, (off_t)0,
+			    ubcsize, &resid_off,
+			    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
+			ASSERT3S(retval, ==, 0);
+			if (retval != 0)
+				ASSERT3S(resid_off, ==, ubcsize);
+		}
 		ASSERT3P(zp->z_sa_hdl, !=, NULL);
 	}
 
