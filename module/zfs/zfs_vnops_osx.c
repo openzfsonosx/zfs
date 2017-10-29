@@ -576,10 +576,15 @@ printf("F_CHKCLEAN size %llu ret %d\n", fsize, error);
 			//error = advisory_read(ap->a_vp, file_size,
 			//    ra->ra_offset, len);
 			dmu_prefetch(zfsvfs->z_os, zp->z_id,
-			    0, 0, 0, ZIO_PRIORITY_SYNC_READ);
+			    0, 0, 0, ZIO_PRIORITY_ASYNC_READ);
 			dmu_prefetch(zfsvfs->z_os, zp->z_id,
 			    1, ra->ra_offset, len,
-			    ZIO_PRIORITY_SYNC_READ);
+			    ZIO_PRIORITY_ASYNC_READ);
+
+			/* follow some of the logic from advisory_read_ext */
+
+
+
 #if 0
 	{
 		const char *name = vnode_getname(ap->a_vp);
@@ -5137,4 +5142,180 @@ zfs_vfsops_fini(void)
 	zfs_fini();
 
 	return (vfs_fsremove(zfs_vfsconf));
+}
+
+/*
+ * implement an advisory_read() for zfs
+ */
+
+int
+zfs_advisory_read_ext(vnode_t *vp, off_t filesize, off_t f_offset, int resid, int (*callback)(buf_t, void *), void
+*callback_arg, int bflag)
+{
+        upl_page_info_t *pl;
+        upl_t            upl;
+        vm_offset_t      upl_offset;
+        int              upl_size;
+        off_t            upl_f_offset;
+        int              start_offset;
+        int              start_pg;
+        int              last_pg;
+        int              pages_in_upl;
+        off_t            max_size;
+        int              io_size;
+        kern_return_t    kret;
+        int              retval = 0;
+        int              issued_io;
+        int              skip_range;
+        uint32_t         max_io_size;
+
+
+//        if ( !UBCINFOEXISTS(vp))
+//                return(EINVAL);
+
+	/* should really be a bit like mappedread */
+	/* or use cluster_copy_upl_data or cluster_copy_ubc_data */
+
+	if (ubc_getsize(vp) == 0)
+		return(EINVAL);
+
+        if (resid < 0)
+                return(EINVAL);
+
+	max_io_size = (512 * 1024); // from speculative_prefetch_max_iosize
+
+        while (resid && f_offset < filesize && retval == 0) {
+                /*
+                 * compute the size of the upl needed to encompass
+                 * the requested read... limit each call to cluster_io
+                 * to the maximum UPL size... cluster_io will clip if
+                 * this exceeds the maximum io_size for the device,
+                 * make sure to account for
+                 * a starting offset that's not page aligned
+                 */
+                start_offset = (int)(f_offset & PAGE_MASK_64);
+                upl_f_offset = f_offset - (off_t)start_offset;
+                max_size     = filesize - f_offset;
+
+                if (resid < max_size)
+                        io_size = resid;
+                else
+                        io_size = max_size;
+
+                upl_size = (start_offset + io_size + (PAGE_SIZE - 1)) & ~PAGE_MASK;
+                if ((uint32_t)upl_size > max_io_size)
+                        upl_size = max_io_size;
+
+                skip_range = 0;
+                /*
+                 * return the number of contiguously present pages in the cache
+                 * starting at upl_f_offset within the file
+                 */
+                ubc_range_op(vp, upl_f_offset, upl_f_offset + upl_size, UPL_ROP_PRESENT, &skip_range);
+
+                if (skip_range) {
+                        /*
+                         * skip over pages already present in the cache
+                         */
+                        io_size = skip_range - start_offset;
+
+                        f_offset += io_size;
+                        resid    -= io_size;
+
+                        if (skip_range == upl_size)
+                                continue;
+                        /*
+                         * have to issue some real I/O
+                         * at this point, we know it's starting on a page boundary
+                         * because we've skipped over at least the first page in the request
+                         */
+                        start_offset = 0;
+                        upl_f_offset += skip_range;
+			                }
+                pages_in_upl = upl_size / PAGE_SIZE;
+
+                kret = ubc_create_upl(vp,
+                                      upl_f_offset,
+                                      upl_size,
+                                      &upl,
+                                      &pl,
+                                      UPL_RET_ONLY_ABSENT | UPL_SET_LITE);
+                if (kret != KERN_SUCCESS)
+                        return(retval);
+                issued_io = 0;
+
+                /*
+                 * before we start marching forward, we must make sure we end on
+                 * a present page, otherwise we will be working with a freed
+                 * upl
+                 */
+                for (last_pg = pages_in_upl - 1; last_pg >= 0; last_pg--) {
+                        if (upl_page_present(pl, last_pg))
+                                break;
+                }
+                pages_in_upl = last_pg + 1;
+
+                for (last_pg = 0; last_pg < pages_in_upl; ) {
+                        /*
+                         * scan from the beginning of the upl looking for the first
+                         * page that is present.... this will become the first page in
+                         * the request we're going to make to 'cluster_io'... if all
+                         * of the pages are absent, we won't call through to 'cluster_io'
+                         */
+                        for (start_pg = last_pg; start_pg < pages_in_upl; start_pg++) {
+                                if (upl_page_present(pl, start_pg))
+                                        break;
+                        }
+
+                        /*
+                         * scan from the starting present page looking for an absent
+                         * page before the end of the upl is reached, if we
+                         * find one, then it will terminate the range of pages being
+                         * presented to 'cluster_io'
+                         */
+                        for (last_pg = start_pg; last_pg < pages_in_upl; last_pg++) {
+                                if (!upl_page_present(pl, last_pg))
+                                        break;
+                        }
+
+                        if (last_pg > start_pg) {
+                                /*
+                                 * we found a range of pages that must be filled
+                                 * if the last page in this range is the last page of the file
+                                 * we may have to clip the size of it to keep from reading past
+                                 * the end of the last physical block associated with the file
+                                 */
+                                upl_offset = start_pg * PAGE_SIZE;
+                                io_size    = (last_pg - start_pg) * PAGE_SIZE;
+
+                                if ((off_t)(upl_f_offset + upl_offset + io_size) > filesize)
+                                        io_size = filesize - (upl_f_offset + upl_offset);
+
+                                /*
+                                 * issue an asynchronous read to cluster_io
+                                 */
+//                                retval = cluster_io(vp, upl, upl_offset, upl_f_offset + upl_offset, io_size,
+//                                                    CL_ASYNC | CL_READ | CL_COMMIT | CL_AGE | bflag, (buf_t)NULL, (struct clios *)NULL, callback, callback_arg);
+
+                                issued_io = 1;
+                        }
+                }
+                if (issued_io == 0)
+                        ubc_upl_abort(upl, 0);
+
+                io_size = upl_size - start_offset;
+
+                if (io_size > resid)
+                        io_size = resid;
+                f_offset += io_size;
+                resid    -= io_size;
+		        }
+
+        return(retval);
+}
+
+int
+zfs_advisory_read(vnode_t *vp, off_t filesize, off_t f_offset, int resid)
+{
+        return zfs_advisory_read_ext(vp, filesize, f_offset, resid, NULL, NULL, 0);
 }
