@@ -29,6 +29,15 @@
 /* Portions Copyright 2007 Jeremy Teo */
 /* Portions Copyright 2010 Robert Milkowski */
 /* Portions Copyright 2013 Jorgen Lundman */
+/* Portions Copyright 2017 Sean Doran */
+
+#ifdef __APPLE__
+/*
+ * cluster_copy_ubc_data takes XNU's uio_t which is (struct uio *)
+ * whereas ZFS's uio_t is (struct uio)
+ */
+#define cluster_copy_ubc_data kern_cluster_copy_ubc_data
+#endif
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -87,6 +96,15 @@
 #include <sys/vdev.h>
 #include <sys/znode_z_map_lock.h>
 
+#ifdef __APPLE__
+/*
+ * cluster_copy_ubc_data takes XNU's uio_t which is (struct uio *)
+ * whereas ZFS's uio_t is (struct uio)
+ */
+#undef cluster_copy_ubc_data
+extern int cluster_copy_ubc_data(vnode_t *, uio_t *, int *, int);
+#endif
+
 //#define dprintf printf
 
 int zfs_vnop_force_formd_normalized_output = 0; /* disabled by default */
@@ -97,6 +115,9 @@ typedef struct vnops_stats {
 	kstat_named_t update_pages_lock_timeout;
 	kstat_named_t update_pages_not_mapped;
 	kstat_named_t mappedread_pages;
+	kstat_named_t mappedread_ubc_copy_error;
+	kstat_named_t mappedread_ubc_copied;
+	kstat_named_t mappedread_ubc_satisfied_all;
 	kstat_named_t dmu_read_uio_dbuf_pages;
 	kstat_named_t zfs_fsync_zil_commit;
 	kstat_named_t zfs_fsync_ubc_msync;
@@ -131,6 +152,9 @@ static vnops_stats_t vnops_stats = {
 	{ "update_pages_lock_timeout",                   KSTAT_DATA_UINT64 },
 	{ "update_pages_not_mapped",                     KSTAT_DATA_UINT64 },
 	{ "mappedread_pages",                            KSTAT_DATA_UINT64 },
+	{ "mappedread_ubc_copy_error",                   KSTAT_DATA_UINT64 },
+	{ "mappedread_ubc_copied",                       KSTAT_DATA_UINT64 },
+	{ "mappedread_ubc_satisfied_all",                KSTAT_DATA_UINT64 },
 	{ "dmu_read_uio_dbuf_pages",                     KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_zil_commit",                        KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_ubc_msync",                         KSTAT_DATA_UINT64 },
@@ -717,10 +741,102 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     int upl_page;
     off_t off;
 
+    ASSERT3S(nbytes, >, 0);
+    ASSERT3S(uio_offset(uio), <=, zp->z_size); // offset is within file
+    ASSERT3S(uio_resid(uio), <=, zp->z_size);  // resid is smaller than file
+    ASSERT3S(uio_resid(uio) + uio_offset(uio), <=, zp->z_size); // both fit within file
+    ASSERT3S(ubc_getsize(vp), ==, zp->z_size); // ought not to  be 0
+
+    /* give the cluster layer a chance to fill in whatever data it already has */
+    const int64_t orig_file_size = zp->z_size;
+    const int64_t orig_nbytes = nbytes;
+    ASSERT3S(orig_nbytes, <=, orig_file_size);
+    const user_ssize_t orig_resid = uio_resid(uio);
+    const off_t orig_offset = uio_offset(uio);
+    const off_t orig_ubc_size = ubc_getsize(vp);
+    ASSERT3S(orig_resid, >=, 0);
+    ASSERT3S(orig_resid, <=, orig_file_size);
+    ASSERT3S(orig_resid + orig_offset, <=, orig_file_size);
+    ASSERT3S(orig_resid + orig_offset, >=, orig_nbytes);
+    ASSERT3S(orig_nbytes, <=, orig_resid);
+    const int64_t target_resid = MIN(orig_nbytes, orig_resid);
+    const int orig_cache_resid = (target_resid > INT_MAX) ? INT_MAX : target_resid;
+    ASSERT3S(orig_cache_resid, <=, nbytes);
+    ASSERT3S((int64_t)orig_cache_resid + orig_offset, <=, orig_file_size);
+    IMPLY(orig_resid > 0, orig_cache_resid > 0);
+    EQUIV(target_resid > 0, orig_cache_resid > 0);
+    EQUIV(target_resid == 0, orig_cache_resid == 0);
+    EQUIV(orig_resid == 0, orig_cache_resid == 0);
+    int cache_resid = orig_cache_resid;
+    // ask UBC to work in the uio
+    int cache_error = 0;
+    if (orig_ubc_size > 0 && orig_resid > 0) {
+	    ASSERT3S(cache_resid, >, 0);
+	    cache_error = cluster_copy_ubc_data(vp, uio, &cache_resid, 0);
+	    ASSERT3S(cache_resid, >=, 0);
+	    ASSERT3S(orig_cache_resid, >=, cache_resid);
+    }
+    ASSERT3S(cache_error, ==, 0);
+    if (cache_error != 0) {
+	    printf("ZFS: %s: cache_error = %d\n", __func__, cache_error);
+	    VNOPS_STAT_BUMP(mappedread_ubc_copy_error);
+	    return (cache_error);
+    }
+    /* did we satisfy everything from UBC ? */
+    if (orig_ubc_size > 0 && orig_cache_resid > 0 && cache_resid == 0) {
+	    VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
+	    VNOPS_STAT_INCR(mappedread_ubc_copied, nbytes);
+	    return (0);
+    }
+    ASSERT3S(orig_cache_resid, >=, cache_resid);
+    const int fb = orig_cache_resid - cache_resid;
+    int64_t found_bytes = fb;
+    ASSERT3S(found_bytes, >=, 0);
+    const int64_t nb = nbytes;
+    if (orig_ubc_size > 0 && orig_resid > 0) {
+	    off_t cur_offset = uio_offset(uio);
+	    if (cur_offset >= orig_offset + nb) {
+		    printf("ZFS: %s: cur offset %lld >= orig %lld + nb %lld = %lld (returning)\n",
+			__func__, cur_offset, orig_offset, nb, orig_offset + nb);
+		    VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
+		    VNOPS_STAT_INCR(mappedread_ubc_copied, nbytes);
+		    return (0);
+	    }
+	    ASSERT3S(found_bytes, <=, nb);
+    } else {
+	    ASSERT3S(found_bytes, ==, 0);
+	    found_bytes = 0;
+    }
+    if (found_bytes > 0) {
+	    VNOPS_STAT_INCR(mappedread_ubc_copied, found_bytes);
+    }
+    const int64_t bytes_left_after_ubc = nb - found_bytes;
+    ASSERT3S(bytes_left_after_ubc, >, 0);
+    IMPLY(orig_ubc_size == 0, bytes_left_after_ubc == nb);
+
+    if (orig_ubc_size > 0 && bytes_left_after_ubc == 0) {
+	    if (nbytes > 0)
+		    VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
+	    return (0);
+    }
+
+    ASSERT3S(bytes_left_after_ubc, <=, nb);
+    ASSERT3S(bytes_left_after_ubc, <=, INT_MAX);
+
+    // update nbytes, shrinking down to 32 bits
+    nbytes = (bytes_left_after_ubc > INT_MAX) ? INT_MAX : bytes_left_after_ubc;
+
+    ASSERT3S(nbytes, <=, orig_nbytes);
+    ASSERT3S(nbytes, >, 0);
+
+    len = nbytes;
+
     upl_start = uio_offset(uio);
     off = upl_start & PAGE_MASK;
     upl_start &= ~PAGE_MASK;
     upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
+
+    ASSERT3S(upl_start + upl_size, <=, 1 + (zp->z_size | PAGE_MASK));
 
     dprintf("zfs_mappedread: %llu - %d (adj %llu - %llu)\n",
             uio_offset(uio), nbytes,
