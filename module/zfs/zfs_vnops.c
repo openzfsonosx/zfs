@@ -3375,6 +3375,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			VNOPS_STAT_INCR(zfs_fsync_wait, (i - 1));
 			break;
 		}
+		if (loop_start == 0)
+			loop_start = gethrtime();
+		ASSERT3U(loop_start, >, 0);
 		const uint64_t now_serving = zp->z_now_serving;
 		ASSERT3S(zp->z_fsync_cnt, >, 0);
 		//complain if we have been skipped over
@@ -3403,7 +3406,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		const unsigned int delayscale = 512 >> scale;
 		const hrtime_t loop_abort_after = SEC2NSEC(300);
 		/* order from least frequent to most frequent because of continues */
-		if ((i % printfscale)==0) {
+		if ((i % printfscale)==0 && i > 0) {
 			/* update local counter */
 			busyprints++;
 			/* this is sufficiently rare that we can just increment directly */
@@ -3438,19 +3441,19 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			delay(2 * busyprints);
 			continue;
 		}
-		if ((i % sleepscale)==0) {
+		if ((i % sleepscale)==0 && i > 0) {
 			/* go onto xnu waitq_assert_wait64_locked */
 			extern void IOSleep(unsigned milliseconds);
 			IOSleep(1);
 			busysleeps++;
 			continue;
 		}
-		if ((i % preemptscale) == 0) {
+		if ((i % preemptscale) == 0 && i > 0) {
 			kpreempt(KPREEMPT_SYNC);
 			busysuspends++;
 			continue;
 		}
-		if ((i % delayscale)==0) {
+		if ((i % delayscale)==0 && i > 0) {
 			/*
 			 * execute cpu_pause() which is rep;nop
 			 * which [a] can be descheduled and
@@ -3461,9 +3464,6 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			extern void IODelay(unsigned microseconds);
 			IODelay(1);
 			busydelays++;
-			// start timer if not yet set
-			if (loop_start == 0)
-				loop_start = gethrtime();
 			continue;
 		}
 		if (i >= (1 << 30)) {
@@ -3625,10 +3625,10 @@ validateout:
 		VERIFY3S(i, <, 1000000);
 	}
 	ASSERT3S(also_increment_by, ==, 0); // reminder that we are dealing with an exception
-	uint64_t incs = 1ULL + (uint64_t)
-	    (also_increment_by >= 0)
+	const uint64_t incs = 1ULL +
+	    ((also_increment_by >= 0)
 	    ? (uint64_t) also_increment_by
-	    : 0ULL;
+	    : 0ULL);
 	ASSERT3U(incs, >=, 1);
 	const int32_t inval = zp->z_now_serving;
 	uint64_t should_be_me = 0ULL;
