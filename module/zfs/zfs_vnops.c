@@ -3354,6 +3354,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	unsigned int busydelays = 0;
 	unsigned int busysleeps = 0;
 	unsigned int busysuspends = 0;
+	unsigned int busyprints = 0;
 	for (unsigned int i = 1; ; i++) { // yes, start at 1 because of modulo ops below
 		// assert we are still a valid file
 		if (zp->z_sa_hdl == NULL) {
@@ -3381,8 +3382,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			VNOPS_STAT_INCR(zfs_fsync_busy_sleeps, busysleeps);
 			VNOPS_STAT_INCR(zfs_fsync_busy_suspends, busysuspends);
 			printf("ZFS: %s EINTR after queue jumper wrecked my day (i=%u)"
-			    " (z_fsync_cnt = %d) (my_ticket=%llu) now_serving=%llu)",
-			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving);
+			    " (z_fsync_cnt = %d) (my_ticket=%llu) now_serving=%llu) [file: %s]\n",
+			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving,
+			    zp->z_name_cache);
 			atomic_dec_s32_nv(&zp->z_fsync_cnt);
 			return(EINTR);
 		}
@@ -3396,9 +3398,13 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		const unsigned int sleepscale = 16384 >> scale;
 		const unsigned int preemptscale = 2048 >> scale;
 		const unsigned int delayscale = 512 >> scale;
+		const hrtime_t loop_abort_after = SEC2NSEC(300);
+		hrtime_t loop_start = 0;
 		/* order from least frequent to most frequent because of continues */
 		if ((i % printfscale)==0) {
-			/* we don't keep a local counter for this, because it's rare */
+			/* update local counter */
+			busyprints++;
+			/* this is sufficiently rare that we can just increment directly */
 			VNOPS_STAT_BUMP(zfs_fsync_busy_prints);
 			/* update the kstats, reset the local counters */
 			VNOPS_STAT_INCR(zfs_fsync_busy_delays, busydelays);
@@ -3409,9 +3415,24 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			busysuspends = 0;
 			/* handy syslog message */
 			printf("ZFS: %s in waiting room (i=%u)"
-			    " (z_fsync_cnt=%d) (my_ticket=%llu) (now_serving=%llu) (name=%s)\n",
-			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving, zp->z_name_cache);
-			delay(2);
+			    " (z_fsync_cnt=%d) (my_ticket=%llu) (now_serving=%llu) (name=%s) (print = %d)\n",
+			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving, zp->z_name_cache,
+			    busyprints);
+			/* should we exit via timeout? */
+			ASSERT3S(loop_start, >, 0);
+			if (loop_start + loop_abort_after > gethrtime()) {
+				ASSERT3U(zp->z_now_serving, ==, now_serving);
+				ASSERT3U(now_serving, <, my_ticket);
+				VNOPS_STAT_BUMP(zfs_fsync_abandoned);
+				printf("ZFS: %s  timed out waiting to sync (name=%s) (print = %d)\n",
+				    __func__, zp->z_name_cache, busyprints);
+				atomic_dec_s32_nv(&zp->z_fsync_cnt);
+				/* we already updated the other kstats */
+				VNOPS_STAT_INCR(zfs_fsync_wait, (i - 1));
+				return (EINTR);
+			}
+			/* increase delay with number of prints */
+			delay(2 * busyprints);
 			continue;
 		}
 		if ((i % sleepscale)==0) {
@@ -3437,6 +3458,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			extern void IODelay(unsigned microseconds);
 			IODelay(1);
 			busydelays++;
+			// start timer if not yet set
+			if (loop_start == 0)
+				loop_start = gethrtime();
 			continue;
 		}
 		if (i >= (1 << 30)) {
@@ -3444,8 +3468,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3U(now_serving, <, my_ticket);
 			VNOPS_STAT_BUMP(zfs_fsync_abandoned);
 			printf("ZFS: %s ERROR! got tired of waiting (i=%u)"
-			    " (z_fsync_cnt=%d) (my_ticket=%llu) (now_serving = %llu) returning EINTR\n",
-			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving);
+			    " (z_fsync_cnt=%d) (my_ticket=%llu) (now_serving = %llu) returning EINTR"
+			    " [name: %s]\n",
+			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving, zp->z_name_cache);
 			atomic_dec_s32_nv(&zp->z_fsync_cnt);
 			VNOPS_STAT_INCR(zfs_fsync_wait, (i - 1));
 			VNOPS_STAT_INCR(zfs_fsync_busy_delays, busydelays);
@@ -3499,16 +3524,18 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	// ubc msync, without mutexes
 	// should take a vnode reference XXX
 	if (mapped > 0) {
-		VNOPS_STAT_BUMP(zfs_fsync_ubc_msync);
 		//ASSERT(ubc_pages_resident(vp));
 		off_t ubcsize = ubc_getsize(vp);
-		ASSERT3S(zp->z_size, ==, ubcsize);
-		off_t resid_off = 0;
-		int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
-		    UBC_PUSHALL | UBC_SYNC);
-		ASSERT3S(retval, ==, 0);
-		if (retval != 0)
-			ASSERT3S(resid_off, ==, ubcsize);
+		if (ubcsize > 0) {
+			ASSERT3S(zp->z_size, ==, ubcsize);
+			VNOPS_STAT_BUMP(zfs_fsync_ubc_msync);
+			off_t resid_off = 0;
+			int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
+			    UBC_PUSHALL | UBC_SYNC);
+			ASSERT3S(retval, ==, 0);
+			if (retval != 0)
+				ASSERT3S(resid_off, ==, ubcsize);
+		}
 	}
 
 	ASSERT3P(zp->z_sa_hdl, !=, NULL);
