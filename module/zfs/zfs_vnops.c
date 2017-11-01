@@ -874,9 +874,13 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		return ENOMEM;
 	}
 
+	/* mark the range as needed so it doesn't immediately get discarded upon abort */
+	ubc_upl_range_neeed(upl, upl_start / PAGESIZE, 1);
+
     for (upl_page = 0; len > 0; ++upl_page) {
         uint64_t bytes = MIN(PAGE_SIZE - off, len);
         if (pl && upl_valid_page(pl, upl_page)) {
+	    ASSERT(upl_page_present(pl, upl_page));
             uio_setrw(uio, UIO_READ);
 
             dprintf("uiomove to addy %p (%llu) for %llu bytes\n", vaddr+off,
