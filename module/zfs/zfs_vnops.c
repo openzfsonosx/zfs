@@ -3631,9 +3631,18 @@ validateout:
 	    : 0ULL;
 	const int32_t inval = zp->z_now_serving;
 	uint64_t should_be_me = 0ULL;
+	int icnt = 0;
 	while ((should_be_me = __c11_atomic_fetch_add(&zp->z_now_serving, incs,
 		    __ATOMIC_SEQ_CST)) == 0) {
-		// wraparound
+		extern void IODelay(unsigned microseconds);
+		IODelay(1);
+		if ((icnt % 10000) == 0) {
+			printf("ZFS: %s: should I be here? "
+			    "should_be_me = %llu now_serving = %llu, incs = %llu (name: %s)\n",
+			    __func__, should_be_me, now_serving, incs, zp->z_name_cache);
+			VERIFY3S(icnt, <=, 50000);
+		}
+		icnt++;
 	}
 	ASSERT3U(should_be_me, ==, my_ticket);
 	ASSERT3U(zp->z_now_serving, >=, inval + incs);
