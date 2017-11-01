@@ -114,11 +114,13 @@ typedef struct vnops_stats {
 	kstat_named_t update_pages_want_lock;
 	kstat_named_t update_pages_lock_timeout;
 	kstat_named_t update_pages_not_mapped;
-	kstat_named_t mappedread_pages;
+	kstat_named_t mappedread_vn_has_cached_data;
+	kstat_named_t mappedread_with_ubc_only;
 	kstat_named_t mappedread_ubc_copy_error;
-	kstat_named_t mappedread_ubc_copied;
 	kstat_named_t mappedread_ubc_satisfied_all;
-	kstat_named_t dmu_read_uio_dbuf_pages;
+	kstat_named_t mappedread_ubc_copied_bytes;
+	kstat_named_t mappedread_pages_as_bytes;
+	kstat_named_t dmu_read_uio_dbuf_bytes;
 	kstat_named_t zfs_fsync_zil_commit;
 	kstat_named_t zfs_fsync_ubc_msync;
 	kstat_named_t zfs_fsync_cluster_push;
@@ -151,11 +153,13 @@ static vnops_stats_t vnops_stats = {
 	{ "update_pages_want_lock",                      KSTAT_DATA_UINT64 },
 	{ "update_pages_lock_timeout",                   KSTAT_DATA_UINT64 },
 	{ "update_pages_not_mapped",                     KSTAT_DATA_UINT64 },
-	{ "mappedread_pages",                            KSTAT_DATA_UINT64 },
+	{ "mappedread_vn_has_cached_data",               KSTAT_DATA_UINT64 },
+	{ "mappedread_with_ubc_only",                    KSTAT_DATA_UINT64 },
 	{ "mappedread_ubc_copy_error",                   KSTAT_DATA_UINT64 },
-	{ "mappedread_ubc_copied",                       KSTAT_DATA_UINT64 },
 	{ "mappedread_ubc_satisfied_all",                KSTAT_DATA_UINT64 },
-	{ "dmu_read_uio_dbuf_pages",                     KSTAT_DATA_UINT64 },
+	{ "mappedread_ubc_copied_bytes",                 KSTAT_DATA_UINT64 },
+	{ "mappedread_pages_as_bytes",                   KSTAT_DATA_UINT64 },
+	{ "dmu_read_uio_dbuf_bytes",                     KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_zil_commit",                        KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_ubc_msync",                         KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_cluster_push",                      KSTAT_DATA_UINT64 },
@@ -796,7 +800,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     /* did we satisfy everything from UBC ? */
     if (orig_ubc_size > 0 && orig_cache_resid > 0 && cache_resid == 0) {
 	    VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
-	    VNOPS_STAT_INCR(mappedread_ubc_copied, nbytes);
+	    VNOPS_STAT_INCR(mappedread_ubc_copied_bytes, nbytes);
 	    return (0);
     }
     ASSERT3S(orig_cache_resid, >=, cache_resid);
@@ -810,7 +814,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		    printf("ZFS: %s: cur offset %lld >= orig %lld + nb %lld = %lld (returning)\n",
 			__func__, cur_offset, orig_offset, nb, orig_offset + nb);
 		    VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
-		    VNOPS_STAT_INCR(mappedread_ubc_copied, nbytes);
+		    VNOPS_STAT_INCR(mappedread_ubc_copied_bytes, nbytes);
 		    return (0);
 	    }
 	    ASSERT3S(found_bytes, <=, nb);
@@ -819,7 +823,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 	    found_bytes = 0;
     }
     if (found_bytes > 0) {
-	    VNOPS_STAT_INCR(mappedread_ubc_copied, found_bytes);
+	    VNOPS_STAT_INCR(mappedread_ubc_copied_bytes, found_bytes);
     }
     const int64_t bytes_left_after_ubc = nb - found_bytes;
     ASSERT3S(bytes_left_after_ubc, >, 0);
@@ -899,7 +903,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 
 	if (upl_page > 0)
-		VNOPS_STAT_INCR(mappedread_pages, (uint64_t) upl_page);
+		VNOPS_STAT_INCR(mappedread_pages_as_bytes, (uint64_t) upl_page * PAGE_SIZE);
 
     return (error);
 }
@@ -1086,14 +1090,17 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			error = mappedread_sf(vp, nbytes, uio);
 		else
 #endif /* __FreeBSD__ */
-		if (vn_has_cached_data(vp) || ubc_pages_resident(vp))
+		if (vn_has_cached_data(vp) || ubc_pages_resident(vp)) {
+			if (vn_has_cached_data(vp))
+				VNOPS_STAT_BUMP(mappedread_vn_has_cached_data);
+		        else
+				VNOPS_STAT_BUMP(mappedread_with_ubc_only);
 			error = mappedread(vp, nbytes, uio);
-		else {
+		} else {
 			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, nbytes);
 			if (error == 0 && nbytes > 0) {
-				uint64_t pgs = 1ULL + atop_64(nbytes);
-				VNOPS_STAT_INCR(dmu_read_uio_dbuf_pages, pgs);
+				VNOPS_STAT_INCR(dmu_read_uio_dbuf_bytes, nbytes);
 			}
 		}
 
