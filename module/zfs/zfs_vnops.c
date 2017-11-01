@@ -3363,6 +3363,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			    __func__);
 			ASSERT3S(zp->z_fsync_cnt, >, 0);
 			atomic_dec_s32_nv(&zp->z_fsync_cnt);
+			atomic_inc_s32_nv(&zp->z_fsync_abandoned);
 			VNOPS_STAT_INCR(zfs_fsync_wait, (i - 1));
 			VNOPS_STAT_INCR(zfs_fsync_busy_delays, busydelays);
 			VNOPS_STAT_INCR(zfs_fsync_busy_sleeps, busysleeps);
@@ -3386,6 +3387,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			    __func__, i, zp->z_fsync_cnt, my_ticket, now_serving,
 			    zp->z_name_cache);
 			atomic_dec_s32_nv(&zp->z_fsync_cnt);
+			atomic_inc_s32_nv(&zp->z_fsync_abandoned);
 			return(EINTR);
 		}
 		// keep waiting, with occasional breaks and complaints
@@ -3429,6 +3431,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 				atomic_dec_s32_nv(&zp->z_fsync_cnt);
 				/* we already updated the other kstats */
 				VNOPS_STAT_INCR(zfs_fsync_wait, (i - 1));
+				atomic_inc_s32_nv(&zp->z_fsync_abandoned);
 				return (EINTR);
 			}
 			/* increase delay with number of prints */
@@ -3476,6 +3479,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			VNOPS_STAT_INCR(zfs_fsync_busy_delays, busydelays);
 			VNOPS_STAT_INCR(zfs_fsync_busy_sleeps, busysleeps);
 			VNOPS_STAT_INCR(zfs_fsync_busy_suspends, busysuspends);
+			atomic_inc_s32_nv(&zp->z_fsync_abandoned);
 			return (EINTR);
 		}
 	}
@@ -3602,12 +3606,37 @@ validateout:
 	/* open the gate for another thread */
 
 	ASSERT3U(zp->z_now_serving, ==, my_ticket);
+	int32_t also_increment_by = zp->z_fsync_abandoned;
+	for (int i = 0;  zp->z_fsync_abandoned != 0;
+	     also_increment_by = zp->z_fsync_abandoned) {
+		// bool = __c11...strong(object, expected, desired)
+		// compare object and expected
+		// if equal, bool is true and object = desired
+		// otherwise, bool is false
+		_Bool res =
+		    __c11_atomic_compare_exchange_strong(&zp->z_fsync_abandoned,
+			&also_increment_by, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+		ASSERT3S(res, ==, TRUE);
+		if (res == TRUE)
+			break;
+		i++;
+		extern void IODelay(unsigned microseconds);
+		IODelay(1);
+		VERIFY3S(i, <, 1000000);
+	}
+	ASSERT3S(also_increment_by, ==, 0); // reminder that we are dealing with an exception
+	uint64_t incs = 1ULL + (uint64_t)
+	    (also_increment_by >= 0)
+	    ? (uint64_t) also_increment_by
+	    : 0ULL;
+	const int32_t inval = zp->z_now_serving;
 	uint64_t should_be_me = 0ULL;
-	while ((should_be_me = __c11_atomic_fetch_add(&zp->z_now_serving, 1ULL,
+	while ((should_be_me = __c11_atomic_fetch_add(&zp->z_now_serving, incs,
 		    __ATOMIC_SEQ_CST)) == 0) {
-		    // handle wraparound
+		// wraparound
 	}
 	ASSERT3U(should_be_me, ==, my_ticket);
+	ASSERT3U(zp->z_now_serving, >=, inval + incs);
 	ASSERT3U(zp->z_now_serving, >, my_ticket);
 
 	if (need_zfs_exit == B_TRUE)

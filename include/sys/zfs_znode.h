@@ -235,6 +235,7 @@ typedef struct znode {
 	const char      *z_map_lock_holder;     /* function that holds the rw_lock */
 
 	_Atomic int32_t         z_fsync_cnt;    /* how many fsyncers are working on this file */
+	_Atomic int32_t         z_fsync_abandoned; /* how much extra we add on successful fsync */
 	_Atomic uint64_t        z_now_serving;  /* who are we serving now? */
 	_Atomic uint64_t        z_next_ticket;  /* the number waiting in the ticket machine */
 
