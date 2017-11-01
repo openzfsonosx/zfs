@@ -95,8 +95,7 @@
 
 typedef struct vnops_osx_stats {
 	kstat_named_t mmap_calls;
-	kstat_named_t mmap_set;
-	kstat_named_t mmap_idem;
+	kstat_named_t mmap_file_first_mmapped;
 	kstat_named_t mnomap_calls;
 	kstat_named_t reclaim_mapped;
 	kstat_named_t bluster_pageout_calls;
@@ -105,9 +104,7 @@ typedef struct vnops_osx_stats {
 	kstat_named_t bluster_pageout_pages;
 	kstat_named_t pageoutv2_calls;
 	kstat_named_t pageoutv2_want_lock;
-	kstat_named_t pageoutv2_msync_flag;
-	kstat_named_t pageoutv2_to_pageout;
-	kstat_named_t pageoutv2_backscan_pages;
+	kstat_named_t pageoutv2_without_msync_flag;
 	kstat_named_t pageoutv2_skip_clean_pages;
 	kstat_named_t pageoutv1_pages;
 	kstat_named_t pageoutv1_want_lock;
@@ -118,8 +115,7 @@ typedef struct vnops_osx_stats {
 static vnops_osx_stats_t vnops_osx_stats = {
 	/* */
 	{ "mmap_calls",                        KSTAT_DATA_UINT64 },
-	{ "mmap_set",                          KSTAT_DATA_UINT64 },
-	{ "mmap_idem",                         KSTAT_DATA_UINT64 },
+	{ "mmap_file_first_mmapped",           KSTAT_DATA_UINT64 },
 	{ "mnomap_calls",                      KSTAT_DATA_UINT64 },
 	{ "reclaim_mapped",                    KSTAT_DATA_UINT64 },
 	{ "bluster_pageout_calls",             KSTAT_DATA_UINT64 },
@@ -128,9 +124,7 @@ static vnops_osx_stats_t vnops_osx_stats = {
 	{ "bluster_pageout_pages",             KSTAT_DATA_UINT64 },
 	{ "pageoutv2_calls",                   KSTAT_DATA_UINT64 },
 	{ "pageoutv2_want_lock",               KSTAT_DATA_UINT64 },
-	{ "pageoutv2_msync_flag",              KSTAT_DATA_UINT64 },
-	{ "pageoutv2_to_pageout",              KSTAT_DATA_UINT64 },
-	{ "pageoutv2_backscan_pages",          KSTAT_DATA_UINT64 },
+	{ "pageoutv2_without_msync_flag",      KSTAT_DATA_UINT64 },
 	{ "pageoutv2_skip_clean_pages",        KSTAT_DATA_UINT64 },
 	{ "pageoutv1_pages",                   KSTAT_DATA_UINT64 },
 	{ "pageoutv1_want_lock",               KSTAT_DATA_UINT64 },
@@ -2575,7 +2569,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	 */
 	if (upl) {
 		dprintf("ZFS: Relaying vnop_pageoutv2 to vnop_pageout\n");
-		VNOPS_OSX_STAT_BUMP(pageoutv2_to_pageout);
 		return zfs_vnop_pageout(ap);
 	}
 
@@ -2640,10 +2633,11 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 	if (a_flags & UPL_MSYNC) {
 		request_flags = UPL_UBC_MSYNC | UPL_RET_ONLY_DIRTY;
-		VNOPS_OSX_STAT_BUMP(pageoutv2_msync_flag);
 	}
 	else {
 		request_flags = UPL_UBC_PAGEOUT | UPL_RET_ONLY_DIRTY;
+		VNOPS_OSX_STAT_BUMP(pageoutv2_without_msync_flag);
+
 	}
 
 	error = ubc_create_upl(vp, ap->a_f_offset, ap->a_size, &upl, &pl,
@@ -2686,7 +2680,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	 * preceding aborts/completions.
 	 */
 	for (pg_index = ((isize) / PAGE_SIZE); pg_index > 0;) {
-		VNOPS_OSX_STAT_BUMP(pageoutv2_backscan_pages);
 		if (upl_page_present(pl, --pg_index))
 			break;
 		ASSERT3S(pg_index, >, 0);
@@ -2904,9 +2897,8 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 		mutex_exit(&zp->z_lock);
 		zfs_fsync(vp, 0, cr, ct);
 		mutex_enter(&zp->z_lock);
-		VNOPS_OSX_STAT_BUMP(mmap_idem);
 	} else
-		VNOPS_OSX_STAT_BUMP(mmap_set);
+		VNOPS_OSX_STAT_BUMP(mmap_file_first_mmapped);
 	zp->z_is_mapped = 1;
 	mutex_exit(&zp->z_lock);
 	VNOPS_OSX_STAT_BUMP(mmap_calls);
