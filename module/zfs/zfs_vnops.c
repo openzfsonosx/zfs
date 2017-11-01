@@ -760,15 +760,17 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     const off_t orig_offset = uio_offset(uio);
     const off_t orig_ubc_size = ubc_getsize(vp);
     ASSERT3S(orig_resid, >=, 0);
+    ASSERT3S(orig_nbytes, <=, orig_resid + orig_offset);
     //ASSERT3S(orig_resid, <=, orig_file_size);
     //ASSERT3S(orig_resid + orig_offset, <=, orig_file_size);
     // more detail for these
-    if (orig_resid + orig_offset > orig_file_size) {
+    if (orig_resid + orig_offset > orig_file_size &&
+	orig_nbytes > orig_file_size) {
 	    const char *fn = vnode_getname(vp);
 	    const char *pn = (fn == NULL) ? "<NULL>" : fn;
-	    printf("ZFS: %s orig_resid(%lld)+orig_offset(%lld)(%lld) > orig_file_size(%lld)"
+	    printf("ZFS: %s either orig_nbytes(%lld) or [orig_resid(%lld)+orig_offset(%lld)](%lld) > orig_file_size(%lld)"
 		" [vnode name: %s cache name: %s]\n",
-		__func__,
+		__func__, orig_nbytes,
 		orig_resid, orig_offset, orig_resid + orig_offset, orig_file_size,
 		pn, zp->z_name_cache);
 
