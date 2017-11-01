@@ -3355,6 +3355,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	unsigned int busysleeps = 0;
 	unsigned int busysuspends = 0;
 	unsigned int busyprints = 0;
+	hrtime_t loop_start = 0;
 	for (unsigned int i = 1; ; i++) { // yes, start at 1 because of modulo ops below
 		// assert we are still a valid file
 		if (zp->z_sa_hdl == NULL) {
@@ -3401,7 +3402,6 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		const unsigned int preemptscale = 2048 >> scale;
 		const unsigned int delayscale = 512 >> scale;
 		const hrtime_t loop_abort_after = SEC2NSEC(300);
-		hrtime_t loop_start = 0;
 		/* order from least frequent to most frequent because of continues */
 		if ((i % printfscale)==0) {
 			/* update local counter */
@@ -3629,21 +3629,26 @@ validateout:
 	    (also_increment_by >= 0)
 	    ? (uint64_t) also_increment_by
 	    : 0ULL;
+	ASSERT3U(incs, >=, 1);
 	const int32_t inval = zp->z_now_serving;
 	uint64_t should_be_me = 0ULL;
-	int icnt = 0;
-	while ((should_be_me = __c11_atomic_fetch_add(&zp->z_now_serving, incs,
-		    __ATOMIC_SEQ_CST)) == 0) {
+	for(int icnt = 0; ; icnt++) {
+		if (zp->z_now_serving > my_ticket + incs) {
+			printf("ZFS: %s z_now_serving (%llu) > my_ticket (%llu) (file: %s)\n",
+			    __func__, zp->z_now_serving, my_ticket, zp->z_name_cache);
+			break;
+		}
+		should_be_me = __c11_atomic_fetch_add(&zp->z_now_serving,
+		    incs, __ATOMIC_SEQ_CST);
+		if (should_be_me == my_ticket) {
+			ASSERT3U(zp->z_now_serving, >=, my_ticket + incs);
+			break;
+		}
 		extern void IODelay(unsigned microseconds);
 		IODelay(1);
-		if ((icnt % 10000) == 0) {
-			printf("ZFS: %s: should I be here? "
-			    "should_be_me = %llu now_serving = %llu, incs = %llu (name: %s)\n",
-			    __func__, should_be_me, zp->z_now_serving, incs, zp->z_name_cache);
-			VERIFY3S(icnt, <=, 50000);
-		}
-		icnt++;
+		VERIFY3S(icnt, <, 500000);
 	}
+
 	ASSERT3U(should_be_me, ==, my_ticket);
 	ASSERT3U(zp->z_now_serving, >=, inval + incs);
 	ASSERT3U(zp->z_now_serving, >, my_ticket);
