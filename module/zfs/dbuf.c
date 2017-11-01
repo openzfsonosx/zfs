@@ -181,8 +181,12 @@ static void
 dbuf_dest(void *vdb, void *unused)
 {
 	dmu_buf_impl_t *db = vdb;
-	mutex_destroy(&db->db_mtx);
 	cv_destroy(&db->db_changed);
+	if (!MUTEX_HELD(&db->db_mtx)) {
+		mutex_enter(&db->db_mtx);
+		mutex_exit(&db->db_mtx);
+	}
+	mutex_destroy(&db->db_mtx);
 	ASSERT(!multilist_link_active(&db->db_cache_link));
 	refcount_destroy(&db->db_holds);
 }
