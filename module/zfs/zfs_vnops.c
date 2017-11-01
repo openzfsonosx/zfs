@@ -603,6 +603,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 		uint64_t bytes = MIN(PAGESIZE - off, len);
 
 		if (pl && upl_valid_page(pl, upl_page)) {
+			ASSERT(upl_page_present(pl, upl_page));
 			uio_setrw(uio, UIO_WRITE);
 			error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
 			ASSERT(error == 0);
