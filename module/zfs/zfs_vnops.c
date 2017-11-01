@@ -3639,7 +3639,7 @@ validateout:
 		if ((icnt % 10000) == 0) {
 			printf("ZFS: %s: should I be here? "
 			    "should_be_me = %llu now_serving = %llu, incs = %llu (name: %s)\n",
-			    __func__, should_be_me, now_serving, incs, zp->z_name_cache);
+			    __func__, should_be_me, zp->z_now_serving, incs, zp->z_name_cache);
 			VERIFY3S(icnt, <=, 50000);
 		}
 		icnt++;
