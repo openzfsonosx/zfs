@@ -743,8 +743,8 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 
     ASSERT3S(nbytes, >, 0);
     ASSERT3S(uio_offset(uio), <=, zp->z_size); // offset is within file
-    ASSERT3S(uio_resid(uio), <=, zp->z_size);  // resid is smaller than file
-    ASSERT3S(uio_resid(uio) + uio_offset(uio), <=, zp->z_size); // both fit within file
+    //ASSERT3S(uio_resid(uio), <=, zp->z_size);  // resid is smaller than file
+    //ASSERT3S(uio_resid(uio) + uio_offset(uio), <=, zp->z_size); // both fit within file
     ASSERT3S(ubc_getsize(vp), ==, zp->z_size); // ought not to  be 0
 
     /* give the cluster layer a chance to fill in whatever data it already has */
@@ -755,8 +755,19 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     const off_t orig_offset = uio_offset(uio);
     const off_t orig_ubc_size = ubc_getsize(vp);
     ASSERT3S(orig_resid, >=, 0);
-    ASSERT3S(orig_resid, <=, orig_file_size);
-    ASSERT3S(orig_resid + orig_offset, <=, orig_file_size);
+    //ASSERT3S(orig_resid, <=, orig_file_size);
+    //ASSERT3S(orig_resid + orig_offset, <=, orig_file_size);
+    // more detail for these
+    if (orig_resid + orig_offset > orig_file_size) {
+	    const char *fn = vnode_getname(vp);
+	    const char *pn = (fn == NULL) ? "<NULL>" : fn;
+	    printf("ZFS: %s orig_resid(%lld)+orig_offset(%lld)(%lld) > orig_file_size(%lld)"
+		" [vnode name: %s cache name: %s]\n",
+		__func__,
+		orig_resid, orig_offset, orig_resid + orig_offset, orig_file_size,
+		pn, zp->z_name_cache);
+
+    }
     ASSERT3S(orig_resid + orig_offset, >=, orig_nbytes);
     ASSERT3S(orig_nbytes, <=, orig_resid);
     const int64_t target_resid = MIN(orig_nbytes, orig_resid);
