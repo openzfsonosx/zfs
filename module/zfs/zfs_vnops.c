@@ -394,13 +394,12 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 #else
 	if ((ubc_pages_resident(vp) || (vn_has_cached_data(vp))) &&
 	    vnode_isreg(vp) && !vnode_isswap(vp)) {
-		//ASSERT(ubc_pages_resident(vp));
 		ASSERT(vn_has_cached_data(vp));
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3S(zp->z_size, ==, ubcsize);
 		off_t resid_off = 0;
 		int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
-		    UBC_PUSHALL | UBC_SYNC);
+		    UBC_PUSHDIRTY | UBC_SYNC);
 	        ASSERT3S(retval, ==, 0);
 		if (retval != 0)
 			ASSERT3S(resid_off, ==, ubcsize);
@@ -1019,7 +1018,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(zp->z_size, ==, ubcsize);
 			off_t resid_off = 0;
 			int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
-				sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
+				sync ? UBC_PUSHDIRTY | UBC_SYNC : UBC_PUSHDIRTY);
 			ASSERT3S(retval, ==, 0);
 			if (retval != 0)
 				ASSERT3S(resid_off, ==, ubcsize);
@@ -3516,7 +3515,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		ASSERT3U(zp->z_size, ==, ubcsize);
 		off_t resid_off = 0;
 		int retval = ubc_msync(vp, 0, ubcsize,
-		    &resid_off, UBC_PUSHALL);
+		    &resid_off, UBC_PUSHDIRTY);
 		ASSERT3S(retval, ==, 0);
 		if (retval != 0)
 			ASSERT3S(resid_off, ==, ubcsize);
@@ -3537,7 +3536,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			VNOPS_STAT_BUMP(zfs_fsync_ubc_msync);
 			off_t resid_off = 0;
 			int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
-			    UBC_PUSHALL | UBC_SYNC);
+			    UBC_PUSHDIRTY | UBC_SYNC);
 			ASSERT3S(retval, ==, 0);
 			if (retval != 0)
 				ASSERT3S(resid_off, ==, ubcsize);
