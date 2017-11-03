@@ -4381,8 +4381,53 @@ zfs_vnop_strategy(struct vnop_strategy_args *ap)
 	};
 #endif
 {
+#if 1
 	dprintf("vnop_strategy: 0\n");
 	return (ENOTSUP);
+#else
+	//wip
+	/* buf_bwrite(): after data in buffer has been modified, buf_bwrite()
+	 * calls VNOP_STRATEGY to send it to disk.   Unless B_ASYNC
+	 * is set on the buffer, data will be written to disk by
+	 * the time buf_bwrite returns.
+	 *
+	 * buf_bread(): read a single logical block of a file through
+	 * the buffer cache.  tries to find buffer memory in core,
+	 * and calls VNOP_STRATEGY if necessary to bring the data
+	 * into memory.   it will not be used for more than PAGESIZE I/O.
+	 *
+	 * retval seems to be ignored mainly, but not entirely
+	 *
+	 * spec_strategy() is interesting and lengthy
+	 * ultimately it calls the device strategy routine
+	 *
+	 * vn_strategy calls down to file_io() which ultimately
+	 * calls VNOP_READ or VNOP_WRITE after making an auio, this
+	 * is a decent model
+	 *
+	 * hfs_vnop_strategy() just calls buf_strategy on the device, so
+	 * is not a useful model.
+	 */
+
+	int error = 0;
+	buf_t bp = ap->a_bp;
+	VERIFY3P(bp, !=, NULL);
+
+	// get vp from buf and znode from vp
+
+	// check alignment; do transfers have to be a particular size?
+
+	// check bounds; read or write less if crossing EOF from below,
+	// but error if above EOF
+
+done:
+	if (error) {
+		buf_seterror(bp, error);
+	}
+	buf_biodone(bp);
+	return (error);
+
+#endif
 }
 
 int
