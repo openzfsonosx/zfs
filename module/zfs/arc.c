@@ -5037,8 +5037,8 @@ arc_reclaim_thread(void)
 #else
 #ifdef __APPLE__
 			if(to_free > 0 || manual_pressure != 0) {
-				const int64_t large_amount = 32LL * 1024LL * 1024LL; // 2 * SPA_MAXBLOCKSIZE
-				const int64_t huge_amount = 128LL * 1024LL * 1024LL;
+				const int64_t large_amount = 128LL * 1024LL * 1024LL; // 2 * SPA_MAXBLOCKSIZE
+				const int64_t huge_amount = 512LL * 1024LL * 1024LL;
 
 				if (to_free > large_amount || evicted > huge_amount)
 					printf("SPL: %s: post-reap %lld post-evict %lld adjusted %lld "
