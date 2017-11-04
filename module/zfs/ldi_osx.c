@@ -354,7 +354,8 @@
 
 /* Debug prints */
 #ifdef DEBUG
-#define	LDI_EVDBG(args)		cmn_err args
+/*#define	LDI_EVDBG(args)		cmn_err args*/
+#define LDI_EVDBG(args)         do {} while(0)
 #define	LDI_EVTRC(args)		cmn_err args
 #else
 #define	LDI_EVDBG(args)		do {} while(0)
