@@ -253,7 +253,8 @@ typedef struct znode {
 	boolean_t   z_finder_hardlink;  /* set high if it ever had a hardlink hash */
 
 	boolean_t   z_fastpath;
-	boolean_t   z_reclaim_reentry; /* vnode_create()->vnop_reclaim() */
+	boolean_t   z_reclaim_reentry;  /* vnode_create()->vnop_reclaim() */
+	boolean_t   z_drain;            /* for unlinked_drain */
 	uint64_t    z_write_gencount;
 #endif
 

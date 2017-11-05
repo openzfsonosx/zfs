@@ -2379,7 +2379,11 @@ top:
 	 */
 #ifdef __APPLE__
 	may_delete_now = !vnode_isinuse(vp, 0) && !vn_has_cached_data(vp);
-	IMPLY(may_delete_now, ubc_pages_resident(vp) == 0);
+	if (zp->z_drain != B_TRUE) {
+		// zfs_unlinked_drain's zfs_zget may bring in pages
+		// so this would trip in that case
+		IMPLY(may_delete_now, ubc_pages_resident(vp) == 0);
+	}
 #else
 	VI_LOCK(vp);
 	may_delete_now = vp->v_count == 1 && !vn_has_cached_data(vp);
@@ -2489,7 +2493,11 @@ top:
 		    xattr_obj == xattr_obj_unlinked && zfs_external_acl(zp) ==
 		    acl_obj;
 #ifndef __APPLE__
-		IMPLY(!vn_has_cached_data(vp), ubc_pages_resident(vp) == 0);
+		if (zp->z_drain != B_TRUE) {
+			// zfs_unlinked_drain's call to zfs_zget may
+			// make pages become resident
+			IMPLY(delete_now, ubc_pages_resident(vp) == 0);
+		}
 		VI_UNLOCK(vp);
 #endif
 	}

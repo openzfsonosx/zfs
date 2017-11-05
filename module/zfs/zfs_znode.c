@@ -713,6 +713,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_blksz = blksz;
 	zp->z_seq = 0x7A4653;
 	zp->z_sync_cnt = 0;
+	zp->z_drain = B_FALSE;
 
 	zp->z_is_zvol = 0;
 	zp->z_is_mapped = 0;
@@ -2230,7 +2231,10 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	vnode.v_type = VDIR;
 	vnode.v_data = rootzp;
 	rootzp->z_vnode = &vnode;
+#else
+	rootzp->z_drain = B_FALSE;
 #endif
+
 
 	zfsvfs = kmem_alloc(sizeof (zfsvfs_t), KM_SLEEP);
 #ifdef __APPLE__
