@@ -110,18 +110,22 @@ extern int cluster_copy_ubc_data(vnode_t *, uio_t *, int *, int);
 int zfs_vnop_force_formd_normalized_output = 0; /* disabled by default */
 
 typedef struct vnops_stats {
+	kstat_named_t zfs_write_calls;
+        kstat_named_t zfs_zero_length_write;
 	kstat_named_t update_pages;
 	kstat_named_t update_pages_want_lock;
 	kstat_named_t update_pages_lock_timeout;
 	kstat_named_t update_pages_not_mapped;
+	kstat_named_t zfs_read_calls;
 	kstat_named_t mappedread_vn_and_ubc_have_cached_data;
 	kstat_named_t mappedread_vn_has_cached_data_only;
 	kstat_named_t mappedread_with_ubc_only;
 	kstat_named_t mappedread_ubc_copy_error;
 	kstat_named_t mappedread_ubc_satisfied_all;
 	kstat_named_t mappedread_ubc_copied_bytes;
-	kstat_named_t mappedread_pages_as_bytes;
-	kstat_named_t dmu_read_uio_dbuf_bytes;
+	kstat_named_t mappedread_present_bytes_uiomoved;
+	kstat_named_t mappedread_absent_bytes_dmu_read;
+	kstat_named_t zfs_read_dmu_read_uio_dbuf_bytes;
 	kstat_named_t zfs_fsync_zil_commit;
 	kstat_named_t zfs_fsync_ubc_msync;
 	kstat_named_t zfs_fsync_cluster_push;
@@ -150,18 +154,22 @@ typedef struct vnops_stats {
 } vnops_stats_t;
 
 static vnops_stats_t vnops_stats = {
+	{ "zfs_write_calls",                             KSTAT_DATA_UINT64 },
+	{ "zfs_zero_length_write",                       KSTAT_DATA_UINT64 },
 	{ "update_pages",                                KSTAT_DATA_UINT64 },
 	{ "update_pages_want_lock",                      KSTAT_DATA_UINT64 },
 	{ "update_pages_lock_timeout",                   KSTAT_DATA_UINT64 },
 	{ "update_pages_not_mapped",                     KSTAT_DATA_UINT64 },
+	{ "zfs_read_calls",                              KSTAT_DATA_UINT64 },
 	{ "mappedread_vn_and_ubc_have_cached_data",      KSTAT_DATA_UINT64 },
 	{ "mappedread_vn_has_cached_data_only",          KSTAT_DATA_UINT64 },
 	{ "mappedread_with_ubc_only",                    KSTAT_DATA_UINT64 },
 	{ "mappedread_ubc_copy_error",                   KSTAT_DATA_UINT64 },
 	{ "mappedread_ubc_satisfied_all",                KSTAT_DATA_UINT64 },
 	{ "mappedread_ubc_copied_bytes",                 KSTAT_DATA_UINT64 },
-	{ "mappedread_pages_as_bytes",                   KSTAT_DATA_UINT64 },
-	{ "dmu_read_uio_dbuf_bytes",                     KSTAT_DATA_UINT64 },
+	{ "mappedread_present_bytes_uiomoved",           KSTAT_DATA_UINT64 },
+	{ "mappedread_absent_bytes_dmu_read",            KSTAT_DATA_UINT64 },
+	{ "zfs_read_dmu_read_uio_dbuf_bytes",            KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_zil_commit",                        KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_ubc_msync",                         KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_cluster_push",                      KSTAT_DATA_UINT64 },
@@ -874,6 +882,9 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		return ENOMEM;
 	}
 
+	ASSERT3S(len, <=, INT_MAX);
+	int present_bytes_uiomoved = 0;
+	int absent_bytes_dmu_read = 0;
     for (upl_page = 0; len > 0; ++upl_page) {
         uint64_t bytes = MIN(PAGE_SIZE - off, len);
         if (pl && upl_valid_page(pl, upl_page)) {
@@ -884,10 +895,14 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
                    off, bytes);
 
             error = uiomove((caddr_t)vaddr + off, bytes, UIO_READ, uio);
+	    if (!error)
+		    present_bytes_uiomoved += bytes;
         } else {
             dprintf("dmu_read to addy %llu for %llu bytes\n",
                    uio_offset(uio), bytes);
             error = dmu_read_uio(os, zp->z_id, uio, bytes);
+	    if (!error)
+		    absent_bytes_dmu_read += bytes;
         }
 
         vaddr += PAGE_SIZE;
@@ -903,8 +918,8 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 	(void) ubc_upl_unmap(upl);
 	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 
-	if (upl_page > 0)
-		VNOPS_STAT_INCR(mappedread_pages_as_bytes, (uint64_t) upl_page * PAGE_SIZE);
+	VNOPS_STAT_INCR(mappedread_present_bytes_uiomoved, present_bytes_uiomoved);
+	VNOPS_STAT_INCR(mappedread_absent_bytes_dmu_read, absent_bytes_dmu_read);
 
     return (error);
 }
@@ -941,6 +956,8 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 #ifndef __APPLE__
 	xuio_t		*xuio = NULL;
 #endif
+
+	VNOPS_STAT_BUMP(zfs_read_calls);
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
@@ -1102,7 +1119,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, nbytes);
 			if (error == 0 && nbytes > 0) {
-				VNOPS_STAT_INCR(dmu_read_uio_dbuf_bytes, nbytes);
+				VNOPS_STAT_INCR(zfs_read_dmu_read_uio_dbuf_bytes, nbytes);
 			}
 		}
 
@@ -1171,12 +1188,17 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	sa_bulk_attr_t	bulk[4];
 	uint64_t	mtime[2], ctime[2];
     struct uio *uio_copy = NULL;
+
+
+    VNOPS_STAT_BUMP(zfs_write_calls);
 	/*
 	 * Fasttrack empty write
 	 */
 	n = start_resid;
-	if (n == 0)
+	if (n == 0) {
+		VNOPS_STAT_BUMP(zfs_zero_length_write);
 		return (0);
+	}
 
 	if (limit == RLIM64_INFINITY || limit > MAXOFFSET_T)
 		limit = MAXOFFSET_T;
