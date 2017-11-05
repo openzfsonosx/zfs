@@ -539,7 +539,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
                  */
                 if (error != 0) continue;
 
-				entries++;
+		entries++;
                 zp->z_unlinked = B_TRUE;
 
                 VN_RELE(ZTOV(zp));
