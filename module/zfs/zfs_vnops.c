@@ -994,23 +994,42 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 					VNOPS_STAT_INCR(mappedread_lock_tries, tries);
 			}
 			// cluster copy this page into userland
+			ASSERT3S(bytes, <, INT_MAX);
 			int io_requested = bytes;
+			const int c_io_requested = io_requested;
+			ASSERT3S(upl_current, <, INT_MAX);
 			int upl_offset = upl_current; // i think
 			error = cluster_copy_upl_data(uio, upl, upl_offset, &io_requested);
 			ASSERT3S(error, ==, 0);
 			if (error == 0) {
-				VERIFY(ubc_upl_commit_range(upl, upl_current, PAGE_SIZE,
-					UPL_COMMIT_CLEAR_DIRTY));
+				kern_return_t kret_commit =
+				    ubc_upl_commit_range(upl, upl_current, PAGE_SIZE,
+					UPL_COMMIT_CLEAR_DIRTY);
+				ASSERT3S(kret_commit, !=, KERN_INVALID_ARGUMENT);
+				ASSERT3S(kret_commit, !=, KERN_FAILURE);
+				if (kret_commit != KERN_SUCCESS) {
+					printf("ZFS: %s: failed cluster copy"
+					    " offs %d reqout %d reqin %d\n",
+					    __func__, upl_offset, io_requested, c_io_requested);
+				}
 			} else {
 				ASSERT3S(io_requested, ==, bytes);
-				VERIFY(ubc_upl_abort_range(upl, upl_current, PAGE_SIZE,
-					UPL_ABORT_ERROR));
+				kern_return_t kret =
+				    ubc_upl_abort_range(upl, upl_current, PAGE_SIZE,
+					UPL_ABORT_ERROR);
+				ASSERT3S(kret, !=, KERN_INVALID_ARGUMENT);
+				ASSERT3S(kret, !=, KERN_FAILURE);
+				ASSERT3S(kret, ==, KERN_SUCCESS);
 			}
 			if (zp->z_is_mapped != 0) {
 				z_map_drop_lock(zp, &need_release, &need_upgrade);
 			}
 		} else {
-			VERIFY(ubc_upl_abort_range(upl, upl_current, PAGE_SIZE, UPL_ABORT_ERROR));
+			kern_return_t kret =
+			    ubc_upl_abort_range(upl, upl_current, PAGE_SIZE, UPL_ABORT_ERROR);
+			ASSERT3S(kret, !=, KERN_INVALID_ARGUMENT);
+			ASSERT3S(kret, !=, KERN_FAILURE);
+			ASSERT3S(kret, ==, KERN_SUCCESS);
 		}
         }
 
