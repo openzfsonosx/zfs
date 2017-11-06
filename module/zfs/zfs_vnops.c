@@ -1117,7 +1117,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			error = mappedread(vp, nbytes, uio);
 		} else {
 			error = mappedread(vp, nbytes, uio);
-			ASSERT3S(error, !=, 0);
+			ASSERT3S(error, ==, 0);
 			if (error == 0 && nbytes > 0) {
 				VNOPS_STAT_INCR(zfs_read_mappedread_unmapped_file_bytes, nbytes);
 			}
