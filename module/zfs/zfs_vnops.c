@@ -125,7 +125,7 @@ typedef struct vnops_stats {
 	kstat_named_t mappedread_ubc_copied_bytes;
 	kstat_named_t mappedread_present_bytes_uiomoved;
 	kstat_named_t mappedread_absent_bytes_dmu_read;
-	kstat_named_t zfs_read_dmu_read_uio_dbuf_bytes;
+	kstat_named_t zfs_read_mappedread_unmapped_file_bytes;
 	kstat_named_t zfs_fsync_zil_commit;
 	kstat_named_t zfs_fsync_ubc_msync;
 	kstat_named_t zfs_fsync_cluster_push;
@@ -169,7 +169,7 @@ static vnops_stats_t vnops_stats = {
 	{ "mappedread_ubc_copied_bytes",                 KSTAT_DATA_UINT64 },
 	{ "mappedread_present_bytes_uiomoved",           KSTAT_DATA_UINT64 },
 	{ "mappedread_absent_bytes_dmu_read",            KSTAT_DATA_UINT64 },
-	{ "zfs_read_dmu_read_uio_dbuf_bytes",            KSTAT_DATA_UINT64 },
+	{ "zfs_read_mappedread_unmapped_file_bytes",     KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_zil_commit",                        KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_ubc_msync",                         KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_cluster_push",                      KSTAT_DATA_UINT64 },
@@ -1116,10 +1116,10 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			}
 			error = mappedread(vp, nbytes, uio);
 		} else {
-			error = dmu_read_uio_dbuf(sa_get_db(zp->z_sa_hdl),
-			    uio, nbytes);
+			error = mappedread(vp, nbytes, uio);
+			ASSERT3S(error, !=, 0);
 			if (error == 0 && nbytes > 0) {
-				VNOPS_STAT_INCR(zfs_read_dmu_read_uio_dbuf_bytes, nbytes);
+				VNOPS_STAT_INCR(zfs_read_mappedread_unmapped_file_bytes, nbytes);
 			}
 		}
 
