@@ -118,7 +118,6 @@ typedef struct vnops_stats {
 	kstat_named_t update_pages;
 	kstat_named_t update_pages_want_lock;
 	kstat_named_t update_pages_lock_timeout;
-	kstat_named_t update_pages_not_mapped;
 	kstat_named_t zfs_read_calls;
 	kstat_named_t mappedread_vn_and_ubc_have_cached_data;
 	kstat_named_t mappedread_vn_has_cached_data_only;
@@ -163,7 +162,6 @@ static vnops_stats_t vnops_stats = {
 	{ "update_pages",                                KSTAT_DATA_UINT64 },
 	{ "update_pages_want_lock",                      KSTAT_DATA_UINT64 },
 	{ "update_pages_lock_timeout",                   KSTAT_DATA_UINT64 },
-	{ "update_pages_not_mapped",                     KSTAT_DATA_UINT64 },
 	{ "zfs_read_calls",                              KSTAT_DATA_UINT64 },
 	{ "mappedread_vn_and_ubc_have_cached_data",      KSTAT_DATA_UINT64 },
 	{ "mappedread_vn_has_cached_data_only",          KSTAT_DATA_UINT64 },
