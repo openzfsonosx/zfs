@@ -222,12 +222,40 @@ extern "C" {
  * ZFS subclass definitions.  supporting attributes (name/value paris) are found
  * in sys/fs/zfs.h
  */
-#define	ESC_ZFS_RESILVER_START	"ESC_ZFS_resilver_start"
-#define	ESC_ZFS_RESILVER_FINISH	"ESC_ZFS_resilver_finish"
-#define	ESC_ZFS_VDEV_REMOVE	"ESC_ZFS_vdev_remove"
-#define	ESC_ZFS_POOL_DESTROY	"ESC_ZFS_pool_destroy"
-#define	ESC_ZFS_VDEV_CLEAR	"ESC_ZFS_vdev_clear"
-#define	ESC_ZFS_VDEV_CHECK	"ESC_ZFS_vdev_check"
+#define	ESC_ZFS_RESILVER_START		"ESC_ZFS_resilver_start"
+#define	ESC_ZFS_RESILVER_FINISH		"ESC_ZFS_resilver_finish"
+#define	ESC_ZFS_VDEV_REMOVE		"ESC_ZFS_vdev_remove"
+#define	ESC_ZFS_VDEV_REMOVE_AUX		"ESC_ZFS_vdev_remove_aux"
+#define	ESC_ZFS_VDEV_REMOVE_DEV		"ESC_ZFS_vdev_remove_dev"
+#define	ESC_ZFS_POOL_CREATE		"ESC_ZFS_pool_create"
+#define	ESC_ZFS_POOL_DESTROY		"ESC_ZFS_pool_destroy"
+#define	ESC_ZFS_POOL_IMPORT		"ESC_ZFS_pool_import"
+#define	ESC_ZFS_VDEV_ADD		"ESC_ZFS_vdev_add"
+#define	ESC_ZFS_VDEV_ATTACH		"ESC_ZFS_vdev_attach"
+#define	ESC_ZFS_VDEV_CLEAR		"ESC_ZFS_vdev_clear"
+#define	ESC_ZFS_VDEV_CHECK		"ESC_ZFS_vdev_check"
+#define	ESC_ZFS_VDEV_ONLINE		"ESC_ZFS_vdev_online"
+#define	ESC_ZFS_CONFIG_SYNC		"ESC_ZFS_config_sync"
+#define	ESC_ZFS_SCRUB_START		"ESC_ZFS_scrub_start"
+#define	ESC_ZFS_SCRUB_FINISH		"ESC_ZFS_scrub_finish"
+#define	ESC_ZFS_SCRUB_ABORT		"ESC_ZFS_scrub_abort"
+#define	ESC_ZFS_SCRUB_RESUME		"ESC_ZFS_scrub_resume"
+#define	ESC_ZFS_SCRUB_PAUSED		"ESC_ZFS_scrub_paused"
+#define	ESC_ZFS_VDEV_SPARE		"ESC_ZFS_vdev_spare"
+#define	ESC_ZFS_BOOTFS_VDEV_ATTACH	"ESC_ZFS_bootfs_vdev_attach"
+#define	ESC_ZFS_POOL_REGUID		"ESC_ZFS_pool_reguid"
+#define	ESC_ZFS_HISTORY_EVENT		"ESC_ZFS_history_event"
+
+/*
+ * datalink subclass definitions.
+ */
+#define	ESC_DATALINK_PHYS_ADD	"ESC_datalink_phys_add"	/* new physical link */
+
+/*
+ * VRRP subclass definitions. Supporting attributes (name/value paris) are
+ * found in sys/sysevent/vrrp.h
+ */
+#define	ESC_VRRP_STATE_CHANGE	"ESC_vrrp_state_change"
 
 #ifdef	__cplusplus
 }
