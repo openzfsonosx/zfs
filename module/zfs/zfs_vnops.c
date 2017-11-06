@@ -128,6 +128,7 @@ typedef struct vnops_stats {
 	kstat_named_t mappedread_ubc_copied_bytes;
 	kstat_named_t mappedread_present_bytes_uiomoved;
 	kstat_named_t mappedread_absent_bytes_dmu_read;
+	kstat_named_t mappedread_lock_tries;
 	kstat_named_t zfs_read_mappedread_unmapped_file_bytes;
 	kstat_named_t zfs_fsync_zil_commit;
 	kstat_named_t zfs_fsync_ubc_msync;
@@ -172,6 +173,7 @@ static vnops_stats_t vnops_stats = {
 	{ "mappedread_ubc_copied_bytes",                 KSTAT_DATA_UINT64 },
 	{ "mappedread_present_bytes_uiomoved",           KSTAT_DATA_UINT64 },
 	{ "mappedread_absent_bytes_dmu_read",            KSTAT_DATA_UINT64 },
+	{ "mappedread_lock_tries",                       KSTAT_DATA_UINT64 },
 	{ "zfs_read_mappedread_unmapped_file_bytes",     KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_zil_commit",                        KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_ubc_msync",                         KSTAT_DATA_UINT64 },
@@ -959,6 +961,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
                    off, bytes);
 
             error = uiomove((caddr_t)vaddr + off, bytes, UIO_READ, uio);
+	    ASSERT3S(error, ==, 0);
 	    if (!error)
 		    present_bytes_uiomoved += bytes;
 	    VERIFY(ubc_upl_abort_range(upl, upl_current, PAGE_SIZE, 0));
@@ -985,15 +988,28 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		uio_free(tmpuio);
 		if (error == 0) {
 			absent_bytes_dmu_read += bytes;
+			boolean_t need_release = B_FALSE;
+			boolean_t need_upgrade = B_FALSE;
+			if (zp->z_is_mapped != 0) {
+				uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+				if (tries > 0)
+					VNOPS_STAT_INCR(mappedread_lock_tries, tries);
+			}
 			// cluster copy this page into userland
 			int io_requested = bytes;
 			int upl_offset = upl_current; // i think
 			error = cluster_copy_upl_data(uio, upl, upl_offset, &io_requested);
-			if (error == 0)
-				VERIFY(ubc_upl_commit_range(upl, upl_current, PAGE_SIZE, 0));
-			else {
+			ASSERT3S(error, ==, 0);
+			if (error == 0) {
+				VERIFY(ubc_upl_commit_range(upl, upl_current, PAGE_SIZE,
+					UPL_COMMIT_CLEAR_DIRTY));
+			} else {
 				ASSERT3S(io_requested, ==, bytes);
-				VERIFY(ubc_upl_abort_range(upl, upl_current, PAGE_SIZE, UPL_ABORT_ERROR));
+				VERIFY(ubc_upl_abort_range(upl, upl_current, PAGE_SIZE,
+					UPL_ABORT_ERROR));
+			}
+			if (zp->z_is_mapped != 0) {
+				z_map_drop_lock(zp, &need_release, &need_upgrade);
 			}
 		} else {
 			VERIFY(ubc_upl_abort_range(upl, upl_current, PAGE_SIZE, UPL_ABORT_ERROR));
