@@ -1448,6 +1448,32 @@ dmu_read_uio(objset_t *os, uint64_t object, uio_t *uio, uint64_t size)
         return (err);
 }
 
+#if 0
+/* read bytes directly into upl then copy them into uio dmu_read_uio() style */
+static int
+dmu_read_upl_dnode(dnode_t *dn, upl_t *upl, uio_t *uio, uint64_t size)
+{
+}
+
+/* wrap dnode_hold & dnode_release around dmu_read_upl_held() */
+int
+dmu_read_upl(objset_t *os, uint64_t object, upl_t *upl, uio_t *uio, uint64_t size, int flags)
+{
+	// hold dnode
+	dnode_t *dn;
+	int err;
+
+	if (size == 0)
+		return (0);
+
+	err = dnode_hold(os, object, FTAG, &dn);
+	if (err)
+		return (err);
+
+	err = dmu_read_upl_dnode(dn, upl, uio, size);
+
+}
+#endif
 
 static int
 dmu_write_uio_dnode(dnode_t *dn, uio_t *uio, uint64_t size, dmu_tx_t *tx)
