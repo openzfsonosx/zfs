@@ -405,7 +405,7 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 #else
 	if ((ubc_pages_resident(vp) || (vn_has_cached_data(vp))) &&
 	    vnode_isreg(vp) && !vnode_isswap(vp)) {
-		ASSERT(vn_has_cached_data(vp));
+		ASSERT(vn_has_cached_data(vp) || ubc_pages_resident(vp));
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3S(zp->z_size, ==, ubcsize);
 		off_t resid_off = 0;
@@ -922,6 +922,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
 
     ASSERT3S(upl_start + upl_size, <=, 1 + (zp->z_size | PAGE_MASK));
+    ASSERT3S(upl_size, >, 0);
 
     dprintf("zfs_mappedread: %llu - %d (adj %llu - %llu)\n",
             uio_offset(uio), nbytes,
@@ -932,7 +933,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
      * page list into the kernel virtual address space.
      */
     error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
+	UPL_RET_ONLY_ABSENT | UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
 	if ((error != KERN_SUCCESS) || !upl) {
 		printf("ZFS: mappedread failed to ubc_create_upl: %d\n", error);
 		return EIO;
@@ -944,6 +945,18 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		return ENOMEM;
 	}
 
+	// hold on to upl (no, we can't use this :( )
+	// ubc_upl_range_needed(upl, 0, upl_start / PAGE_SIZE, 1);
+	const int upl_pages = upl_size / PAGE_SIZE;
+	typedef enum upl_page_diposition {
+		D_UNDEFINED = 0,
+		D_COMMIT,
+		D_ABORT,
+		D_ABORT_ERROR,
+	} upl_page_disposition_t;
+	const int should_commit_size = upl_pages * sizeof(upl_page_disposition_t);
+	upl_page_disposition_t *should_commit = kmem_zalloc(should_commit_size, KM_SLEEP);
+
 	ASSERT3S(len, <=, INT_MAX);
 	int present_bytes_uiomoved = 0;
 	int absent_bytes_dmu_read = 0;
@@ -954,7 +967,8 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
         if (pl && upl_valid_page(pl, upl_page)) {
 	    ASSERT(upl_page_present(pl, upl_page));
             uio_setrw(uio, UIO_READ);
-
+	    printf("ZFS: %s: (RET_ONLY_ABSENT) - should we be here? upl_current %lld upl_page %d len %d\n",
+		__func__, upl_current, upl_page, len);
             dprintf("uiomove to addy %p (%llu) for %llu bytes\n", vaddr+off,
                    off, bytes);
 
@@ -962,7 +976,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 	    ASSERT3S(error, ==, 0);
 	    if (!error)
 		    present_bytes_uiomoved += bytes;
-	    VERIFY(ubc_upl_abort_range(upl, upl_current, PAGE_SIZE, 0));
+	    should_commit[upl_page] = D_ABORT;
         } else {
 		/* here we should move data from the file to the upl,
 		 * which we could do in several ways.  e.g. dmu read
@@ -985,7 +999,6 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		ASSERT3S(error, ==, 0);
 		uio_free(tmpuio);
 		if (error == 0) {
-			absent_bytes_dmu_read += bytes;
 			boolean_t need_release = B_FALSE;
 			boolean_t need_upgrade = B_FALSE;
 			if (zp->z_is_mapped != 0) {
@@ -1002,34 +1015,18 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 			error = cluster_copy_upl_data(uio, upl, upl_offset, &io_requested);
 			ASSERT3S(error, ==, 0);
 			if (error == 0) {
-				kern_return_t kret_commit =
-				    ubc_upl_commit_range(upl, upl_current, PAGE_SIZE,
-					UPL_COMMIT_CLEAR_DIRTY);
-				ASSERT3S(kret_commit, !=, KERN_INVALID_ARGUMENT);
-				ASSERT3S(kret_commit, !=, KERN_FAILURE);
-				if (kret_commit != KERN_SUCCESS) {
-					printf("ZFS: %s: failed cluster copy"
-					    " offs %d reqout %d reqin %d\n",
-					    __func__, upl_offset, io_requested, c_io_requested);
-				}
+				ASSERT3S(io_requested, ==, c_io_requested);
+				should_commit[upl_page] = D_COMMIT;
+				absent_bytes_dmu_read += bytes;
 			} else {
 				ASSERT3S(io_requested, ==, bytes);
-				kern_return_t kret =
-				    ubc_upl_abort_range(upl, upl_current, PAGE_SIZE,
-					UPL_ABORT_ERROR);
-				ASSERT3S(kret, !=, KERN_INVALID_ARGUMENT);
-				ASSERT3S(kret, !=, KERN_FAILURE);
-				ASSERT3S(kret, ==, KERN_SUCCESS);
+				should_commit[upl_page] = D_ABORT_ERROR;
 			}
 			if (zp->z_is_mapped != 0) {
 				z_map_drop_lock(zp, &need_release, &need_upgrade);
 			}
 		} else {
-			kern_return_t kret =
-			    ubc_upl_abort_range(upl, upl_current, PAGE_SIZE, UPL_ABORT_ERROR);
-			ASSERT3S(kret, !=, KERN_INVALID_ARGUMENT);
-			ASSERT3S(kret, !=, KERN_FAILURE);
-			ASSERT3S(kret, ==, KERN_SUCCESS);
+			should_commit[upl_page] = D_ABORT_ERROR;
 		}
         }
 
@@ -1045,7 +1042,33 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
      * Unmap the page list and free the UPL.
      */
 	(void) ubc_upl_unmap(upl);
-	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+
+	upl_current = upl_start;
+	for (int u = 0; u < upl_pages; u++) {
+		if (should_commit[u] == D_COMMIT) {
+			kern_return_t kret_commit =
+			    ubc_upl_commit_range(upl, upl_current, PAGE_SIZE,
+				UPL_COMMIT_CLEAR_DIRTY | UPL_COMMIT_FREE_ON_EMPTY);
+			ASSERT3S(kret_commit, ==, KERN_SUCCESS);
+		} else if (should_commit[u] == D_ABORT ||
+		    should_commit[u] == D_ABORT_ERROR) {
+			kern_return_t kret_abort =
+			    ubc_upl_abort_range(upl, upl_current, PAGE_SIZE,
+				(should_commit[u] == D_ABORT_ERROR)
+				? (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY)
+				: (UPL_ABORT_FREE_ON_EMPTY));
+			ASSERT3S(kret_abort, ==, KERN_SUCCESS);
+		} else {
+			ASSERT3S(should_commit[u], ==, D_UNDEFINED);
+			kern_return_t kret_abort_undef =
+			    ubc_upl_abort_range(upl, upl_current, PAGE_SIZE,
+				UPL_ABORT_FREE_ON_EMPTY);
+			ASSERT3S(kret_abort_undef, ==, KERN_SUCCESS);
+		}
+		upl_current += PAGE_SIZE;
+	}
+
+	kmem_free(should_commit, should_commit_size);
 
 	VNOPS_STAT_INCR(mappedread_present_bytes_uiomoved, present_bytes_uiomoved);
 	VNOPS_STAT_INCR(mappedread_absent_bytes_dmu_read, absent_bytes_dmu_read);
@@ -1233,7 +1256,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
                      P2PHASE(uio_offset(uio), zfs_read_chunk_size));
 
 		if (ubc_pages_resident(vp) || vn_has_cached_data(vp)) {
-			ASSERT(vn_has_cached_data(vp));
+			//ASSERT(vn_has_cached_data(vp));
 			if (vn_has_cached_data(vp) && ubc_pages_resident(vp)) {
 				VNOPS_STAT_BUMP(mappedread_vn_and_ubc_have_cached_data);
 			} else if (ubc_pages_resident(vp) && !vn_has_cached_data(vp)) {
