@@ -953,7 +953,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		D_COMMIT,
 		D_ABORT,
 		D_ABORT_ERROR,
-	} upl_page_disposition_t;
+	} __attribute__((packed)) upl_page_disposition_t;
 	const int should_commit_size = upl_pages * sizeof(upl_page_disposition_t);
 	upl_page_disposition_t *should_commit = kmem_zalloc(should_commit_size, KM_SLEEP);
 
