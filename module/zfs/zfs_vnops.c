@@ -977,7 +977,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		 */
 		// fill in this hole - cf. update_pages
 		// make a uio pointing at vaddr + off and bytes
-		uio_t *tmpuio = uio_create(1, 0, UIO_SYSSPACE, UIO_WRITE);
+		uio_t *tmpuio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
 		ASSERT3P(tmpuio, !=, NULL);
 		uio_addiov(tmpuio, CAST_USER_ADDR_T(vaddr) + off, bytes);
 		// read into the temporary uio that points into upl
