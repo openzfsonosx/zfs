@@ -738,6 +738,25 @@ mappedread_sf(vnode_t *vp, int nbytes, uio_t *uio)
 }
 #endif
 
+/*
+ * Create block-aligned UPL and read data into it
+ */
+static int
+zfs_read_file_into_upl(vnode_t *vp, objset_t *os, uint64_t object, struct uio *uio,
+    uint64_t nbytes, int flags)
+{
+	/*
+	 * 1. dnode_hold
+	 * 2. check sizes
+	 * 3. make PAGE_SIZE and record size aligned UPL
+	 * 4. fill in data, skipping over holes
+	 * 5. cluster_copy_upl_data into userspace
+	 * 6. commit and abort pages
+	 * 7. dnode_rele
+	 */
+	return (0);
+}
+
 static int
 copy_upl_to_mem(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info_t *pl)
 {
@@ -933,7 +952,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
      * page list into the kernel virtual address space.
      */
     error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	UPL_RET_ONLY_ABSENT | UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
+	UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
 	if ((error != KERN_SUCCESS) || !upl) {
 		printf("ZFS: mappedread failed to ubc_create_upl: %d\n", error);
 		return EIO;
@@ -963,19 +982,30 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 
 	off_t upl_current = upl_start;
     for (upl_page = 0; len > 0; ++upl_page) {
-        uint64_t bytes = MIN(PAGE_SIZE - off, len);
+        const uint64_t bytes = MIN(PAGE_SIZE - off, len);
         if (pl && upl_valid_page(pl, upl_page)) {
+		// Redundant after above?   We've already updated
+		// the uio with cluster_copy_ubc_data.
+		// Maybe only do this if z_is_mapped?
+		// This originally copied present-in-the-pager pages into
+		// userspace, rather than fetching from the dmu layer.
+		// But we could end up here because there is a hole in
+		// the pager data associated with the uio.   Maybe should
+		// deal with that above.
 	    ASSERT(upl_page_present(pl, upl_page));
             uio_setrw(uio, UIO_READ);
-	    printf("ZFS: %s: (RET_ONLY_ABSENT) - should we be here? upl_current %lld upl_page %d len %d\n",
-		__func__, upl_current, upl_page, len);
+	    printf("ZFS: %s: should we be here? upl_current %lld upl_page %d len %d bytes %llu\n",
+		__func__, upl_current, upl_page, len, bytes);
             dprintf("uiomove to addy %p (%llu) for %llu bytes\n", vaddr+off,
                    off, bytes);
-
+	    // UIO_READ means we uiomove from the upl to the uio
             error = uiomove((caddr_t)vaddr + off, bytes, UIO_READ, uio);
 	    ASSERT3S(error, ==, 0);
 	    if (!error)
 		    present_bytes_uiomoved += bytes;
+	    // originally we aborted the entire upl because
+	    // we were only reading from it above; here we
+	    // just indicate that we should abort this page
 	    should_commit[upl_page] = D_ABORT;
         } else {
 		/* here we should move data from the file to the upl,
@@ -993,37 +1023,33 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		// make a uio pointing at vaddr + off and bytes
 		uio_t *tmpuio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
 		ASSERT3P(tmpuio, !=, NULL);
-		uio_addiov(tmpuio, CAST_USER_ADDR_T(vaddr) + off, bytes);
-		// read into the temporary uio that points into upl
+		uio_addiov(tmpuio, CAST_USER_ADDR_T(vaddr+off), bytes);
+		// read into the temporary uio that points into mapped
+		// virtual space associated with the upl
 		error = dmu_read_uio(os, zp->z_id, tmpuio, bytes);
 		ASSERT3S(error, ==, 0);
 		uio_free(tmpuio);
 		if (error == 0) {
-			boolean_t need_release = B_FALSE;
-			boolean_t need_upgrade = B_FALSE;
-			if (zp->z_is_mapped != 0) {
-				uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-				if (tries > 0)
-					VNOPS_STAT_INCR(mappedread_lock_tries, tries);
-			}
 			// cluster copy this page into userland
 			ASSERT3S(bytes, <, INT_MAX);
 			int io_requested = bytes;
-			const int c_io_requested = io_requested;
 			ASSERT3S(upl_current, <, INT_MAX);
 			int upl_offset = upl_current; // i think
+			// uio_iodirection is UIO_READ
+			// and this does uiomove64(uplphyspage+uploffset, iorequested, uio)
+			// where physpage is the upl_offset from the start of the upl
+			// and UIO_READ means copy from uplphyspage to uio (which is userland)
+			// cluster_copy_upl_data may return EFAULT
+			// and should return 0 if we completed OK
 			error = cluster_copy_upl_data(uio, upl, upl_offset, &io_requested);
 			ASSERT3S(error, ==, 0);
 			if (error == 0) {
-				ASSERT3S(io_requested, ==, c_io_requested);
+				ASSERT3S(io_requested, ==, 0);
 				should_commit[upl_page] = D_COMMIT;
 				absent_bytes_dmu_read += bytes;
 			} else {
-				ASSERT3S(io_requested, ==, bytes);
+				ASSERT3S(io_requested, ==, 0);
 				should_commit[upl_page] = D_ABORT_ERROR;
-			}
-			if (zp->z_is_mapped != 0) {
-				z_map_drop_lock(zp, &need_release, &need_upgrade);
 			}
 		} else {
 			should_commit[upl_page] = D_ABORT_ERROR;
@@ -1045,25 +1071,34 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 
 	upl_current = upl_start;
 	for (int u = 0; u < upl_pages; u++) {
-		if (should_commit[u] == D_COMMIT) {
+		if (error == 0 && should_commit[u] == D_COMMIT) {
 			kern_return_t kret_commit =
 			    ubc_upl_commit_range(upl, upl_current, PAGE_SIZE,
 				UPL_COMMIT_CLEAR_DIRTY | UPL_COMMIT_FREE_ON_EMPTY);
-			ASSERT3S(kret_commit, ==, KERN_SUCCESS);
-		} else if (should_commit[u] == D_ABORT ||
+			if (kret_commit != KERN_SUCCESS) {
+				printf("ZFS: %s: unable to commit upl_current %lld\n",
+				    __func__, upl_current);
+			}
+		} else if (error != 0 || should_commit[u] == D_ABORT ||
 		    should_commit[u] == D_ABORT_ERROR) {
 			kern_return_t kret_abort =
 			    ubc_upl_abort_range(upl, upl_current, PAGE_SIZE,
-				(should_commit[u] == D_ABORT_ERROR)
+				(error !=0 || should_commit[u] == D_ABORT_ERROR)
 				? (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY)
 				: (UPL_ABORT_FREE_ON_EMPTY));
-			ASSERT3S(kret_abort, ==, KERN_SUCCESS);
+			if (kret_abort != KERN_SUCCESS) {
+				printf("ZFS: %s: unable to abort upl_current %lld\n",
+				    __func__, upl_current);
+			}
 		} else {
 			ASSERT3S(should_commit[u], ==, D_UNDEFINED);
 			kern_return_t kret_abort_undef =
 			    ubc_upl_abort_range(upl, upl_current, PAGE_SIZE,
 				UPL_ABORT_FREE_ON_EMPTY);
-			ASSERT3S(kret_abort_undef, ==, KERN_SUCCESS);
+			if (kret_abort_undef != KERN_SUCCESS) {
+				printf("ZFS: %s: unable to abort undef page upl_current %lld\n",
+				    __func__, upl_current);
+			}
 		}
 		upl_current += PAGE_SIZE;
 	}
@@ -1164,13 +1199,13 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 * if we are in ZFS_SYNC_ALWAYS, or the file is mapped,
 	 * sync out this znode before readng it.
 	 */
+	int mapped = 0;
 	if (zfsvfs->z_log && zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED) {
 		/* XXX: on x86-64 we can probably do this without
 		 * the mutex, or alternatively we can make z_is_mapped
 		 * an _Atomic and then simply not lock it, because we
 		 * only ever set it from 0->1, but we read it fairly often
 		 */
-		int mapped = 0;
 		boolean_t need_unlock = B_FALSE;
 		if (!MUTEX_HELD(&zp->z_lock)) {
 			mutex_enter(&zp->z_lock);
@@ -1257,6 +1292,8 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (ubc_pages_resident(vp) || vn_has_cached_data(vp)) {
 			//ASSERT(vn_has_cached_data(vp));
+			boolean_t need_release = B_FALSE;
+			boolean_t need_upgrade = B_FALSE;
 			if (vn_has_cached_data(vp) && ubc_pages_resident(vp)) {
 				VNOPS_STAT_BUMP(mappedread_vn_and_ubc_have_cached_data);
 			} else if (ubc_pages_resident(vp) && !vn_has_cached_data(vp)) {
@@ -1266,7 +1303,15 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			} else {
 				printf("ZFS: %s: we shouldn't be here\n", __func__);
 			}
+			if (mapped != 0) {
+				uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+				if (tries > 0)
+					VNOPS_STAT_INCR(mappedread_lock_tries, tries);
+			}
 			error = mappedread(vp, nbytes, uio);
+			if (mapped != 0) {
+				z_map_drop_lock(zp, &need_release, &need_upgrade);
+			}
 		} else {
 			error = mappedread(vp, nbytes, uio);
 			ASSERT3S(error, ==, 0);
