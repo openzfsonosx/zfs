@@ -950,6 +950,11 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     /*
      * Create a UPL for the current range and map its
      * page list into the kernel virtual address space.
+     *
+     * The upl is page aligned and contains the whole
+     * of the range left in this transaction.
+     *
+     * off is some value that is within the first page of the upl.
      */
     error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
 	UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
@@ -963,9 +968,8 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 		return ENOMEM;
 	}
+	// vaddr is aligned to the upl, so off is some offset within the first page
 
-	// hold on to upl (no, we can't use this :( )
-	// ubc_upl_range_needed(upl, 0, upl_start / PAGE_SIZE, 1);
 	const int upl_pages = upl_size / PAGE_SIZE;
 	typedef enum upl_page_diposition {
 		D_UNDEFINED = 0,
@@ -984,21 +988,26 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
     for (upl_page = 0; len > 0; ++upl_page) {
         const uint64_t bytes = MIN(PAGE_SIZE - off, len);
         if (pl && upl_valid_page(pl, upl_page)) {
-		// Redundant after above?   We've already updated
-		// the uio with cluster_copy_ubc_data.
-		// Maybe only do this if z_is_mapped?
-		// This originally copied present-in-the-pager pages into
-		// userspace, rather than fetching from the dmu layer.
-		// But we could end up here because there is a hole in
-		// the pager data associated with the uio.   Maybe should
-		// deal with that above.
+		/* We are here because cluster_copy_ubc_data copied
+		 * up to the edge of a "hole" in the in-memory vnode pager
+		 * data.  We must have filled in the hole before we got
+		 * here, so assert that.
+		 * XXX: should really deal with holes above, filling in
+		 *      everything possible using cluster_copy_ubc_data
+		 *      and then assert that we should do nothing in this
+		 *      if statement.
+		 */
+            ASSERT3S(upl_page, >, 0);
 	    ASSERT(upl_page_present(pl, upl_page));
             uio_setrw(uio, UIO_READ);
 	    printf("ZFS: %s: should we be here? upl_current %lld upl_page %d len %d bytes %llu\n",
 		__func__, upl_current, upl_page, len, bytes);
             dprintf("uiomove to addy %p (%llu) for %llu bytes\n", vaddr+off,
                    off, bytes);
-	    // UIO_READ means we uiomove from the upl to the uio
+	    // Note that off cannot be nonzero if upl_page is > 0
+	    // as we set it below
+	    IMPLY(upl_page > 0, off == 0);
+	    // UIO_READ means we uiomove from the upl to the uio.
             error = uiomove((caddr_t)vaddr + off, bytes, UIO_READ, uio);
 	    ASSERT3S(error, ==, 0);
 	    if (!error)
@@ -1008,6 +1017,19 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 	    // just indicate that we should abort this page
 	    should_commit[upl_page] = D_ABORT;
         } else {
+		/* XXX: what do we do about the last page in the upl, if
+		 * the read is short (bytes < PAGE_SIZE), that is if we
+		 * aren't dmu_reading a whole page here ?  We can just
+		 * read it in as a whole page, if the file is large
+		 * enough.
+		 * But if the file is not large enough, maybe
+		 * zero-fill (cf zfs_vnop_pagein)?
+		 *
+		 * Since the page isn't valid&present, we can just
+		 * dmu_read here and not update the ubc; mark the
+		 * page as abortable.
+		 */
+		ASSERT3S(bytes, ==, PAGE_SIZE);
 		/* here we should move data from the file to the upl,
 		 * which we could do in several ways.  e.g. dmu read
 		 * into a buffer and copy_mem_to_upl it, doing a
@@ -1023,6 +1045,9 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		// make a uio pointing at vaddr + off and bytes
 		uio_t *tmpuio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
 		ASSERT3P(tmpuio, !=, NULL);
+		// off can only be nonzero for the first page, since
+		// it is set to 0 below
+		IMPLY(upl_page > 0, off == 0);
 		uio_addiov(tmpuio, CAST_USER_ADDR_T(vaddr+off), bytes);
 		// read into the temporary uio that points into mapped
 		// virtual space associated with the upl
