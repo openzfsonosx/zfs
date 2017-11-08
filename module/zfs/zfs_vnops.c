@@ -1032,7 +1032,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 		 * The tail will not be added to the pager object.
 		 */
 		ASSERT3P(pl, !=, NULL);
-		if (pl) { ASSERT(!upl_page_present(pl, upl_page)); }
+		if (pl) { ASSERT(!upl_valid_page(pl, upl_page)); }
 		IMPLY(upl_page > 0, off == 0);
 		error = dmu_read_uio(os, zp->z_id, uio, bytes);
 		if (error == 0) {
@@ -1048,7 +1048,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
         } else {
 		ASSERT3S(bytes, ==, PAGE_SIZE);
 		ASSERT3P(pl, !=, NULL);
-		if (pl) { ASSERT(!upl_page_present(pl, upl_page)); }
+		if (pl) { ASSERT(!upl_valid_page(pl, upl_page)); }
 		/* here we should move data from the file to the upl,
 		 * which we could do in several ways.  e.g. dmu read
 		 * into a buffer and copy_mem_to_upl it, doing a
@@ -1114,6 +1114,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 	(void) ubc_upl_unmap(upl);
 
 	upl_current = upl_start;
+	boolean_t full_abort = B_FALSE;
 	for (int u = 0; u < upl_pages; u++) {
 		if (error == 0 && should_commit[u] == D_COMMIT) {
 			kern_return_t kret_commit =
@@ -1122,6 +1123,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 			if (kret_commit != KERN_SUCCESS) {
 				printf("ZFS: %s: unable to commit upl_current %lld\n",
 				    __func__, upl_current);
+				full_abort = B_TRUE;
 			}
 		} else if (error != 0 || should_commit[u] == D_ABORT ||
 		    should_commit[u] == D_ABORT_ERROR) {
@@ -1133,6 +1135,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 			if (kret_abort != KERN_SUCCESS) {
 				printf("ZFS: %s: unable to abort upl_current %lld\n",
 				    __func__, upl_current);
+				full_abort = B_TRUE;
 			}
 		} else {
 			ASSERT3S(should_commit[u], ==, D_UNDEFINED);
@@ -1142,9 +1145,18 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 			if (kret_abort_undef != KERN_SUCCESS) {
 				printf("ZFS: %s: unable to abort undef page upl_current %lld\n",
 				    __func__, upl_current);
+				full_abort = B_TRUE;
 			}
 		}
 		upl_current += PAGE_SIZE;
+		if (full_abort == B_TRUE)
+			break;
+	}
+	if (full_abort == B_TRUE) {
+		printf("ZFS: %s aborting whole UPL\n", __func__);
+		kern_return_t kret_abort_full =
+		    ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+		ASSERT3S(kret_abort_full, ==, KERN_SUCCESS);
 	}
 
 	kmem_free(should_commit, should_commit_size);
