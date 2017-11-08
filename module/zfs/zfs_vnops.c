@@ -128,6 +128,8 @@ typedef struct vnops_stats {
 	kstat_named_t mappedread_present_bytes_uiomoved;
 	kstat_named_t mappedread_absent_bytes_dmu_read;
 	kstat_named_t mappedread_lock_tries;
+	kstat_named_t mappedread_short_read_bytes;
+	kstat_named_t mappedread_short_read_errors;
 	kstat_named_t zfs_read_mappedread_unmapped_file_bytes;
 	kstat_named_t zfs_fsync_zil_commit;
 	kstat_named_t zfs_fsync_ubc_msync;
@@ -172,6 +174,8 @@ static vnops_stats_t vnops_stats = {
 	{ "mappedread_present_bytes_uiomoved",           KSTAT_DATA_UINT64 },
 	{ "mappedread_absent_bytes_dmu_read",            KSTAT_DATA_UINT64 },
 	{ "mappedread_lock_tries",                       KSTAT_DATA_UINT64 },
+	{ "mappedread_short_read_bytes",                 KSTAT_DATA_UINT64 },
+	{ "mappedread_short_read_errors",                KSTAT_DATA_UINT64 },
 	{ "zfs_read_mappedread_unmapped_file_bytes",     KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_zil_commit",                        KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_ubc_msync",                         KSTAT_DATA_UINT64 },
@@ -1016,20 +1020,35 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 	    // we were only reading from it above; here we
 	    // just indicate that we should abort this page
 	    should_commit[upl_page] = D_ABORT;
-        } else {
-		/* XXX: what do we do about the last page in the upl, if
-		 * the read is short (bytes < PAGE_SIZE), that is if we
-		 * aren't dmu_reading a whole page here ?  We can just
-		 * read it in as a whole page, if the file is large
-		 * enough.
-		 * But if the file is not large enough, maybe
-		 * zero-fill (cf zfs_vnop_pagein)?
+	} else if (off + len > zp->z_size || bytes < PAGE_SIZE) {
+		/*
+		 * Here we have an absent page (assert that),
+		 * and want to read less than a full page,
+		 * either because that's all the caller wanted,
+		 * or because that's all the file has left at
+		 * its tail.
 		 *
-		 * Since the page isn't valid&present, we can just
-		 * dmu_read here and not update the ubc; mark the
-		 * page as abortable.
+		 * Satisfy the tail read by doing a dmu_read_uio.
+		 * The tail will not be added to the pager object.
 		 */
+		ASSERT3P(pl, !=, NULL);
+		if (pl) { ASSERT(!upl_page_present(pl, upl_page)); }
+		IMPLY(upl_page > 0, off == 0);
+		error = dmu_read_uio(os, zp->z_id, uio, bytes);
+		if (error == 0) {
+			VNOPS_STAT_INCR(mappedread_short_read_bytes, bytes);
+			/* we want to preserve this page's state */
+			should_commit[upl_page] = D_ABORT;
+		} else {
+			VNOPS_STAT_BUMP(mappedread_short_read_errors);
+			printf("ZFS: %s: (short read) dmu_read_uio returned error %d for %llu bytes\n",
+			    __func__, error, bytes);
+			should_commit[upl_page] = D_ABORT_ERROR;
+		}
+        } else {
 		ASSERT3S(bytes, ==, PAGE_SIZE);
+		ASSERT3P(pl, !=, NULL);
+		if (pl) { ASSERT(!upl_page_present(pl, upl_page)); }
 		/* here we should move data from the file to the upl,
 		 * which we could do in several ways.  e.g. dmu read
 		 * into a buffer and copy_mem_to_upl it, doing a
