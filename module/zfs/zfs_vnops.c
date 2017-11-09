@@ -836,17 +836,23 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			ASSERT3S(bufsiz, <=, SPA_MAXBLOCKSIZE);
 			void *buf = zio_buf_alloc(bufsiz);
 			VERIFY3P(buf, !=, NULL);
-			err = dmu_read(os, object, start_off, bytes_to_copy,
+			ASSERT3S(start_off, >=, offset);
+			printf("ZFS: %s: dmu_read(os, obj, (%llu - %llu) = %llu, %lu, buf, 0)\n",
+			    __func__, start_off, offset, start_off - offset, bytes_to_copy);
+			err = dmu_read(os, object, start_off - offset, bytes_to_copy,
 			    buf, DMU_READ_PREFETCH);
 			if (err != 0) {
 				printf("ZFS: %s: partial dmu_read of %s"
 				    " (off %llu, size %lu) returned err %d\n",
-				    __func__, filename, start_off, bytes_to_copy, err);
+				    __func__, filename, start_off - offset, bytes_to_copy, err);
 				zio_buf_free(buf, bufsiz);
 				goto exit;
 			}
-			ASSERT3S(page_index_hole_start + pagenum, <, page_index_hole_end);
-			err = copy_mem_to_upl(upl, page_index_hole_start + pagenum,
+			ASSERT3S(upl_off, <=, start_off);
+			printf("ZFS: %s: copy_mem_to_upl(upl, (%llu - %llu) = %llu, buf, %lu, NULL)\n",
+			    __func__,
+			    start_off, upl_off, start_off - upl_off, bytes_to_copy);
+			err = copy_mem_to_upl(upl, start_off - upl_off,
 			    buf, bytes_to_copy, NULL);
 			if (err) {
 				printf("ZFS: %s err %d from copy_mem_to_upl for file %s\n",
@@ -863,6 +869,9 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			VERIFY3P(buf, !=, NULL);
 			err = dmu_read(os, object, offset, bytes_to_copy,
 			    buf, DMU_READ_PREFETCH);
+			printf("ZFS: %s: dmu_read(os, obj, %llu, %lu, buf, 0)\n",
+			    __func__,
+			    offset, bytes_to_copy);
 			if (err != 0) {
 				printf("ZFS: %s: full dmu_read of %s"
 				    " (off %llu, size %lu) returned err %d\n",
@@ -875,6 +884,11 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			 * and the ending page
 			 */
 			ASSERT3S(page_index_hole_start + pagenum, <, page_index_hole_end);
+			printf("ZFS: %s: 2 copy_mem_to_upl(upl, (%d + %llu) = %llu, buf, %lu, NULL)\n",
+			    __func__,
+			    page_index_hole_start, pagenum,
+			    page_index_hole_start + pagenum,
+			    bytes_to_copy);
 			err = copy_mem_to_upl(upl, page_index_hole_start + pagenum, buf,
 			    bytes_to_copy, NULL);
 			if (err) {
