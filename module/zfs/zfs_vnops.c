@@ -798,18 +798,95 @@ copy_mem_to_upl(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info
  * Create block-aligned UPL and read data into it
  */
 static int
-dmu_copy_file_to_upl(vnode_t *vp, off_t offset, size_t bytes_to_copy, upl_t upl, int maxpageid)
+dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
+    const off_t file_offset, const size_t numbytes, upl_t upl, const int maxpageid,
+    const off_t upl_start, const off_t upl_off,
+    const int page_index_hole_start, const int page_index_hole_end)
 {
-	/*
-	 * 1. dnode_hold
-	 * 2. check sizes
-	 * 3. make PAGE_SIZE and record size aligned UPL
-	 * 4. fill in data, skipping over holes
-	 * 5. cluster_copy_upl_data into userspace
-	 * 6. commit and abort pages
-	 * 7. dnode_rele
-	 */
-	return (0);
+
+	/* called with dnode held */
+	znode_t *zp = VTOZ(vp);
+	objset_t *os = zp->z_zfsvfs->z_os;
+	uint64_t object = zp->z_id;
+	const char *filename = zp->z_name_cache;
+
+	int err = 0;
+	off_t offset, pagenum, startpage, endpage;
+	uint64_t start_off, end_off;
+	size_t bytes_left;
+
+	startpage = file_offset / PAGE_SIZE;
+	endpage = MIN(howmany(file_offset + numbytes, PAGE_SIZE), maxpageid + 1);
+
+	size_t bytes_to_copy = numbytes;
+	bytes_left = bytes_to_copy;
+
+	for (pagenum = startpage; pagenum < endpage; pagenum++) {
+		offset = pagenum * PAGE_SIZE;
+		if (offset < file_offset ||
+		    (uint64_t)(offset + PAGE_SIZE) > (uint64_t)(file_offset + bytes_to_copy)) {
+			start_off = MAX(offset, file_offset);
+			end_off = MIN((uint64_t)(offset + PAGE_SIZE),
+			    (uint64_t)(file_offset + bytes_to_copy));
+			bytes_to_copy = end_off - start_off;
+			ASSERT3S(bytes_to_copy, <=, bytes_left);
+			ASSERT3S(bytes_to_copy, <=, PAGE_SIZE);
+			const size_t bufsiz = bytes_to_copy;
+			void *buf = zio_buf_alloc(bufsiz);
+			VERIFY3P(buf, !=, NULL);
+			err = dmu_read(os, object, start_off, bytes_to_copy,
+			    buf, DMU_READ_PREFETCH);
+			if (err != 0) {
+				printf("ZFS: %s: partial dmu_read of %s"
+				    " (off %llu, size %lu) returned err %d\n",
+				    __func__, filename, start_off, bytes_to_copy, err);
+				zio_buf_free(buf, bufsiz);
+				goto exit;
+			}
+			ASSERT3S(page_index_hole_start + pagenum, <, page_index_hole_end);
+			err = copy_mem_to_upl(upl, page_index_hole_start + pagenum,
+			    buf, bytes_to_copy, NULL);
+			if (err) {
+				printf("ZFS: %s err %d from copy_mem_to_upl for file %s\n",
+				    __func__, err, filename);
+				zio_buf_free(buf, bufsiz);
+				goto exit;
+			}
+		} else {
+			/* this page is aligned with a upl page */
+			bytes_to_copy = MIN(bytes_left, PAGE_SIZE);
+			ASSERT3S(bytes_to_copy, >=, PAGE_SIZE);
+			const size_t bufsiz = bytes_to_copy;
+			void *buf = zio_buf_alloc(bufsiz);
+			VERIFY3P(buf, !=, NULL);
+			err = dmu_read(os, object, offset, bytes_to_copy,
+			    buf, DMU_READ_PREFETCH);
+			if (err != 0) {
+				printf("ZFS: %s: full dmu_read of %s"
+				    " (off %llu, size %lu) returned err %d\n",
+				    __func__, filename, offset, bytes_to_copy, err);
+				zio_buf_free(buf, bufsiz);
+				goto exit;
+			}
+			/* we have to copy to the correct upl buffer
+			 * so we want to know where the starting page is
+			 * and the ending page
+			 */
+			ASSERT3S(page_index_hole_start + pagenum, <, page_index_hole_end);
+			err = copy_mem_to_upl(upl, page_index_hole_start + pagenum, buf,
+			    bytes_to_copy, NULL);
+			if (err) {
+				printf("ZFS: %s err %d from copy_mem_to_upl for file %s\n",
+				    __func__, err, filename);
+				zio_buf_free(buf, bufsiz);
+				goto exit;
+			}
+			bytes_left -= bytes_to_copy;
+		}
+	} /* for */
+
+exit:
+	return(err);
 }
 
 static int
@@ -913,7 +990,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	size_t bytes_left;
 	off_t offset;
 	int bytes_to_copy;
-	int page_index = 0, page_index_hole_end;
+	int page_index = 0, page_index_hole_start, page_index_hole_end;
 
 	/* fill in the hole of the UPL with valid data */
 
@@ -932,6 +1009,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			continue;
 		}
 		/* this is a hole.  find its end. */
+		page_index_hole_start = page_index;
 		for (page_index_hole_end = page_index + 1;
 		     page_index_hole_end < page_index_end;
 		     page_index_hole_end++) {
@@ -943,7 +1021,9 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		bytes_left -= bytes_to_copy;
 
 		offset = upl_start + page_index * PAGE_SIZE;
-		error = dmu_copy_file_to_upl(vp, offset, bytes_to_copy, upl, maxpageid);
+		error = dmu_copy_file_to_upl(vp, dn,
+		    offset, bytes_to_copy, upl, maxpageid,
+		    upl_start, upl_off, page_index_hole_start, page_index_hole_end);
 		if (error)
 			break;
 		else
