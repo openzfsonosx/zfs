@@ -824,14 +824,16 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	for (pagenum = startpage; pagenum < endpage; pagenum++) {
 		offset = pagenum * PAGE_SIZE;
 		if (offset < file_offset ||
-		    (uint64_t)(offset + PAGE_SIZE) > (uint64_t)(file_offset + bytes_to_copy)) {
+		    (uint64_t)(offset + PAGE_SIZE) > (uint64_t)(file_offset + numbytes)) {
 			start_off = MAX(offset, file_offset);
 			end_off = MIN((uint64_t)(offset + PAGE_SIZE),
-			    (uint64_t)(file_offset + bytes_to_copy));
+			    (uint64_t)(file_offset + numbytes));
+			ASSERT3U(start_off, <, end_off);
 			bytes_to_copy = end_off - start_off;
 			ASSERT3S(bytes_to_copy, <=, bytes_left);
 			ASSERT3S(bytes_to_copy, <=, PAGE_SIZE);
 			const size_t bufsiz = bytes_to_copy;
+			ASSERT3S(bufsiz, <=, SPA_MAXBLOCKSIZE);
 			void *buf = zio_buf_alloc(bufsiz);
 			VERIFY3P(buf, !=, NULL);
 			err = dmu_read(os, object, start_off, bytes_to_copy,
