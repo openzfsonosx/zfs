@@ -96,6 +96,7 @@
 #include <sys/vnode.h>
 #include <sys/vdev.h>
 #include <sys/znode_z_map_lock.h>
+#include <sys/dnode.h>
 
 #ifdef __APPLE__
 /*
@@ -742,25 +743,6 @@ mappedread_sf(vnode_t *vp, int nbytes, uio_t *uio)
 }
 #endif
 
-/*
- * Create block-aligned UPL and read data into it
- */
-static int
-zfs_read_file_into_upl(vnode_t *vp, objset_t *os, uint64_t object, struct uio *uio,
-    uint64_t nbytes, int flags)
-{
-	/*
-	 * 1. dnode_hold
-	 * 2. check sizes
-	 * 3. make PAGE_SIZE and record size aligned UPL
-	 * 4. fill in data, skipping over holes
-	 * 5. cluster_copy_upl_data into userspace
-	 * 6. commit and abort pages
-	 * 7. dnode_rele
-	 */
-	return (0);
-}
-
 static int
 copy_upl_to_mem(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info_t *pl)
 {
@@ -812,6 +794,216 @@ copy_mem_to_upl(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info
 	return (error);
 }
 
+/*
+ * Create block-aligned UPL and read data into it
+ */
+static int
+dmu_copy_file_to_upl(vnode_t *vp, off_t offset, size_t bytes_to_copy, upl_t upl, int maxpageid)
+{
+	/*
+	 * 1. dnode_hold
+	 * 2. check sizes
+	 * 3. make PAGE_SIZE and record size aligned UPL
+	 * 4. fill in data, skipping over holes
+	 * 5. cluster_copy_upl_data into userspace
+	 * 6. commit and abort pages
+	 * 7. dnode_rele
+	 */
+	return (0);
+}
+
+static int
+mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
+{
+	// 1. validate uio
+	// 2. make a upl across the relevant part of the file
+	// 3. loop:
+	// 3a. if page exists then while pages exist, mark as preserved
+	// 3b. if page does not exist then find next page that exists, which
+	//     is "end of hole".   fill in hole with reads from dmu.  mark
+	//     as committable if no error, abortable otherwise
+	// 4. cluster_copy_upl_data(uio, upl, offset, &bytes
+	// 5. release upl
+	// 6. return
+
+	// the "fill in hole with reads from dmu" part can be a separate function
+
+	znode_t *zp = VTOZ(vp);
+	objset_t *os = zp->z_zfsvfs->z_os;
+	uint64_t object = zp->z_id;
+	const char *filename = zp->z_name_cache;
+	dnode_t *dn;
+	int err = dnode_hold(os, object, FTAG, &dn);
+	if (err != 0) {
+		printf("ZFS: %s: unable to dnode_hold %s\n",
+		    __func__, filename);
+	}
+
+	const uint64_t inbytes = arg_bytes;
+	const size_t filesize = zp->z_size;
+
+
+	ASSERT3S(inbytes, >, 0);
+	ASSERT3S(uio_offset(uio), <=, filesize);
+	ASSERT3S(ubc_getsize(vp), ==, filesize);
+
+	const user_ssize_t orig_resid = uio_resid(uio);
+	const off_t orig_offset = uio_offset(uio);
+
+	ASSERT3S(orig_resid, >=, 0);
+	ASSERT3S(inbytes, <=, orig_resid + orig_offset);
+	const int MAX_UPL_SIZE_BYTES = 64*1024*1024;
+	ASSERT3S(inbytes, <=, MAX_UPL_SIZE_BYTES);
+
+	/* check against file size */
+	if (orig_resid + orig_offset > filesize &&
+	    inbytes > filesize) {
+		const char *fn = vnode_getname(vp);
+		const char *pn = (fn == NULL) ? "<NULL>" : fn;
+		printf("ZFS: %s either orig_nbytes(%lld) or"
+		    " [orig_resid(%lld)+orig_offset(%lld)](%lld) >"
+		    " filesize(%lu)"
+		    " [vnode name: %s cache name: %s]\n",
+		    __func__, inbytes,
+		    orig_resid, orig_offset, orig_resid + orig_offset,
+		    filesize, pn, filename);
+	}
+
+	ASSERT3S(orig_resid + orig_offset, >=, inbytes);
+	ASSERT3S(inbytes, <=, orig_resid);
+
+	/* make UPL */
+
+	/* the UPL should be page aligned; upl_off will be
+	 * somewhere in the first page, and the last page
+	 * will be relevant for its first upl_off bytes
+	 */
+	const off_t upl_start = orig_offset & (~PAGE_MASK);
+	const off_t upl_off = orig_offset & PAGE_MASK;
+	const int upl_size = (upl_off + inbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
+
+	ASSERT3S(upl_start + upl_size, <=, 1 + (filesize | PAGE_MASK));
+	ASSERT3S(upl_size, >, 0);
+	ASSERT3S(upl_size, <=, MAX_UPL_SIZE_BYTES);
+
+	int error = 0;
+
+	upl_t upl;
+	upl_page_info_t *pl = NULL;
+
+	error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
+	    UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
+	if ((error != KERN_SUCCESS) || (upl == NULL)) {
+		printf("ZFS: %s: failed to create upl: %d\n", __func__, error);
+		dnode_rele(dn, FTAG);
+		return (EIO);
+	}
+
+	typedef enum upl_page_diposition {
+                D_UNDEFINED = 0,
+                D_COMMIT,
+                D_ABORT,
+                D_ABORT_ERROR,
+        } __attribute__((packed)) upl_page_disposition_t;
+
+	const int maxpageid = howmany(filesize, PAGE_SIZE) - 1;
+	const int page_disposition_size = maxpageid * sizeof(upl_page_disposition_t);
+        upl_page_disposition_t *page_disposition = kmem_zalloc(page_disposition_size, KM_SLEEP);
+
+	size_t bytes_left;
+	off_t offset;
+	int bytes_to_copy;
+	int page_index = 0, page_index_hole_end;
+
+	/* fill in the hole of the UPL with valid data */
+
+	int present_bytes_skipped = 0, absent_bytes_read = 0;
+
+	const int page_index_end = howmany(upl_size, PAGE_SIZE);
+	bytes_left = MIN((maxpageid + 1), upl_size);
+	ASSERT3S(bytes_left, >, 0);
+
+	while(page_index < page_index_end) {
+		if (upl_valid_page(pl, page_index)) {
+			/* preserve this page's state */
+			page_disposition[page_index] = D_ABORT;
+			page_index++;
+			present_bytes_skipped += PAGE_SIZE;
+			continue;
+		}
+		/* this is a hole.  find its end. */
+		for (page_index_hole_end = page_index + 1;
+		     page_index_hole_end < page_index_end;
+		     page_index_hole_end++) {
+			if (upl_valid_page(pl, page_index_hole_end))
+				break;
+		}
+		/* now fill in the hole */
+		bytes_to_copy = MIN((page_index_hole_end - page_index) * PAGE_SIZE, bytes_left);
+		bytes_left -= bytes_to_copy;
+
+		offset = upl_start + page_index * PAGE_SIZE;
+		error = dmu_copy_file_to_upl(vp, offset, bytes_to_copy, upl, maxpageid);
+		if (error)
+			break;
+		else
+			absent_bytes_read += bytes_to_copy;
+
+		page_index = page_index_hole_end;
+	}
+
+	int io_requested = inbytes;
+	offset = orig_offset - upl_start;
+	error = cluster_copy_upl_data(uio, upl, (int)offset, &io_requested);
+
+	/* release UPL */
+
+	for (page_index = 0; page_index < page_index_end; page_index++) {
+		offset = page_index * PAGE_SIZE;
+		if (page_disposition[page_index] == D_COMMIT) {
+			if (error) {
+				kern_return_t kret_abort =
+				    ubc_upl_abort_range(upl, offset, PAGE_SIZE,
+					UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY);
+				if (kret_abort != KERN_SUCCESS) {
+					printf("ZFS: %s abort on error page %d failed with"
+					    " error %d, file %s\n",
+					    __func__, page_index, error, filename);
+				}
+			} else {
+				kern_return_t kret_commit =
+				    ubc_upl_commit_range(upl, offset, PAGE_SIZE,
+					UPL_COMMIT_FREE_ON_EMPTY);
+				if (kret_commit != KERN_SUCCESS) {
+					error = kret_commit;
+					printf("ZFS: %s commit failed for page %d, file %s\n",
+					    __func__, page_index, filename);
+				}
+			}
+		} else {
+			kern_return_t kret_skip =
+			    ubc_upl_abort_range(upl, offset, PAGE_SIZE,
+				UPL_ABORT_FREE_ON_EMPTY);
+			if (kret_skip != KERN_SUCCESS) {
+				if (error == 0)
+					error = kret_skip;
+				printf("ZFS: %s abort skip failed for page %d, file %s\n",
+				    __func__, page_index, filename);
+			}
+		}
+	}
+
+	dnode_rele(dn, FTAG);
+
+	kmem_free(page_disposition, page_disposition_size);
+
+	VNOPS_STAT_INCR(mappedread_present_bytes_uiomoved, present_bytes_skipped);
+	VNOPS_STAT_INCR(mappedread_absent_bytes_dmu_read, absent_bytes_read);
+
+	return (error);
+}
+
+#if 0
 static int
 mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 {
@@ -1172,6 +1364,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 
     return (error);
 }
+#endif
 
 offset_t zfs_read_chunk_size = MAX_UPL_TRANSFER * PAGE_SIZE; /* Tunable */
 
@@ -1370,12 +1563,12 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				if (tries > 0)
 					VNOPS_STAT_INCR(mappedread_lock_tries, tries);
 			}
-			error = mappedread(vp, nbytes, uio);
+			error = mappedread_new(vp, nbytes, uio);
 			if (mapped != 0) {
 				z_map_drop_lock(zp, &need_release, &need_upgrade);
 			}
 		} else {
-			error = mappedread(vp, nbytes, uio);
+			error = mappedread_new(vp, nbytes, uio);
 			ASSERT3S(error, ==, 0);
 			if (error == 0 && nbytes > 0) {
 				VNOPS_STAT_INCR(zfs_read_mappedread_unmapped_file_bytes, nbytes);
