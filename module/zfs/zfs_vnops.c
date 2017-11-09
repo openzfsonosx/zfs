@@ -743,7 +743,7 @@ mappedread_sf(vnode_t *vp, int nbytes, uio_t *uio)
 }
 #endif
 
-static int
+int
 copy_upl_to_mem(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info_t *pl)
 {
 	int error = 0;
@@ -765,7 +765,7 @@ copy_upl_to_mem(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info
 	return (error);
 }
 
-static int
+int
 copy_mem_to_upl(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info_t *pl)
 {
 	int error = 0;
@@ -797,7 +797,7 @@ copy_mem_to_upl(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info
 /*
  * Create block-aligned UPL and read data into it
  */
-static int
+int
 dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
     const off_t file_offset, const size_t numbytes, upl_t upl, const int maxpageid,
     const off_t upl_start, const off_t upl_off,
@@ -889,7 +889,7 @@ exit:
 	return(err);
 }
 
-static int
+int
 mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 {
 	// 1. validate uio
@@ -906,6 +906,9 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	// the "fill in hole with reads from dmu" part can be a separate function
 
 	znode_t *zp = VTOZ(vp);
+	VERIFY3P(zp, !=, NULL);
+	VERIFY3P(zp->z_zfsvfs, !=, NULL);
+	VERIFY3P(zp->z_zfsvfs->z_os, !=, NULL);
 	objset_t *os = zp->z_zfsvfs->z_os;
 	uint64_t object = zp->z_id;
 	const char *filename = zp->z_name_cache;
@@ -984,7 +987,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
         } __attribute__((packed)) upl_page_disposition_t;
 
 	const int maxpageid = howmany(filesize, PAGE_SIZE) - 1;
-	const int page_disposition_size = maxpageid * sizeof(upl_page_disposition_t);
+	const int page_disposition_size = (1 + maxpageid) * sizeof(upl_page_disposition_t);
         upl_page_disposition_t *page_disposition = kmem_zalloc(page_disposition_size, KM_SLEEP);
 
 	size_t bytes_left;
@@ -994,7 +997,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	/* fill in the hole of the UPL with valid data */
 
-	int present_bytes_skipped = 0, absent_bytes_read = 0;
+	uint64_t present_bytes_skipped = 0, absent_bytes_read = 0;
 
 	const int page_index_end = howmany(upl_size, PAGE_SIZE);
 	bytes_left = MIN((maxpageid + 1), upl_size);
