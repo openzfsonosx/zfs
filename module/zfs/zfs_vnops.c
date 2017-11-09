@@ -787,6 +787,8 @@ copy_mem_to_upl(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info
 	 * uiomove64(upl_phys_page(), size, uio) and adjusts
 	 * nbytes to reflect the work remaining (should be 0)
 	 */
+	printf("ZFS: %s cluster_copy_upl_data(uio, upl, %d, %d)\n",
+	    __func__, upl_offset, nbytes);
 	error = cluster_copy_upl_data(uio, upl, upl_offset, &nbytes);
 	ASSERT3S(error, ==, 0);
 	if (error == 0) { ASSERT3S(nbytes, ==, 0); }
@@ -837,7 +839,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			void *buf = zio_buf_alloc(bufsiz);
 			VERIFY3P(buf, !=, NULL);
 			ASSERT3S(start_off, >=, offset);
-			printf("ZFS: %s: dmu_read(os, obj, (%llu - %llu) = %llu, %lu, buf, 0)\n",
+			printf("ZFS: %s: (1) dmu_read(os, obj, offs (%llu - %llu) = %llu, sz %lu, buf, 0)\n",
 			    __func__, start_off, offset, start_off - offset, bytes_to_copy);
 			err = dmu_read(os, object, start_off - offset, bytes_to_copy,
 			    buf, DMU_READ_PREFETCH);
@@ -849,7 +851,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 				goto exit;
 			}
 			ASSERT3S(upl_off, <=, start_off);
-			printf("ZFS: %s: copy_mem_to_upl(upl, (%llu - %llu) = %llu, buf, %lu, NULL)\n",
+			printf("ZFS: %s: (1) copy_mem_to_upl(upl, (%llu - %llu) = %llu, buf, %lu, NULL)\n",
 			    __func__,
 			    start_off, upl_off, start_off - upl_off, bytes_to_copy);
 			err = copy_mem_to_upl(upl, start_off - upl_off,
@@ -869,7 +871,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			VERIFY3P(buf, !=, NULL);
 			err = dmu_read(os, object, offset, bytes_to_copy,
 			    buf, DMU_READ_PREFETCH);
-			printf("ZFS: %s: dmu_read(os, obj, %llu, %lu, buf, 0)\n",
+			printf("ZFS: %s: (2) dmu_read(os, obj, ofs %llu, sz %lu, buf, 0)\n",
 			    __func__,
 			    offset, bytes_to_copy);
 			if (err != 0) {
@@ -884,7 +886,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			 * and the ending page
 			 */
 			ASSERT3S(page_index_hole_start + pagenum, <, page_index_hole_end);
-			printf("ZFS: %s: 2 copy_mem_to_upl(upl, (%d + %llu) = %llu, buf, %lu, NULL)\n",
+			printf("ZFS: %s: (2) copy_mem_to_upl(upl, (%d + %llu) = %llu, buf, %lu, NULL)\n",
 			    __func__,
 			    page_index_hole_start, pagenum,
 			    page_index_hole_start + pagenum,
@@ -1040,6 +1042,10 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		bytes_left -= bytes_to_copy;
 
 		offset = upl_start + page_index * PAGE_SIZE;
+		printf("ZFS: %s: dmu_copy_file_to_upl(.., ofs %llu,"
+		    " byt %d, ..., maxpg %d, upls %lld, uplo %lld, pist %d, pihe %d)\n",
+		    __func__, offset, bytes_to_copy, maxpageid,
+		    upl_start, upl_off, page_index_hole_start, page_index_hole_end);
 		error = dmu_copy_file_to_upl(vp, dn,
 		    offset, bytes_to_copy, upl, maxpageid,
 		    upl_start, upl_off, page_index_hole_start, page_index_hole_end);
