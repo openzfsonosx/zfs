@@ -814,14 +814,17 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	objset_t *os = zp->z_zfsvfs->z_os;
 	uint64_t object = zp->z_id;
 	const char *filename = zp->z_name_cache;
+	const size_t filesize = zp->z_size;
 
 	int err = 0;
 	off_t pagenum, startpage, endpage;
 	uint64_t start_off, end_off;
 	size_t bytes_left;
 	int bytes_from_start_of_upl;
+	off_t bytes_from_start_of_file;
 
 	startpage = first_upl_page_file_position / PAGE_SIZE;
+	ASSERT3S(maxpageid, <=, page_index_hole_end - page_index_hole_start);
 	endpage = MIN(howmany(first_upl_page_file_position + numbytes, PAGE_SIZE), maxpageid + 1);
 
 	size_t bytes_to_copy = numbytes;
@@ -829,6 +832,8 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 
 	for (pagenum = startpage; pagenum < endpage; pagenum++) {
 		bytes_from_start_of_upl = pagenum * PAGE_SIZE;
+		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
+		ASSERT3S(bytes_from_start_of_file, <=, filesize);
 		if (bytes_from_start_of_upl < first_upl_page_file_position ||
 		    ((uint64_t)(bytes_from_start_of_upl + PAGE_SIZE) >
 			(uint64_t)(first_upl_page_file_position + numbytes))) {
@@ -844,10 +849,10 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			void *buf = zio_buf_alloc(bufsiz);
 			VERIFY3P(buf, !=, NULL);
 			ASSERT3S(start_off, >=, bytes_from_start_of_upl);
-			size_t file_offset_for_dmu_read = start_off - bytes_from_start_of_upl;
-			printf("ZFS: %s: (1) dmu_read(os, obj, offs (%llu - %d) = %lu, sz %lu, buf, 0)\n",
+			size_t file_offset_for_dmu_read = start_off - bytes_from_start_of_file;
+			printf("ZFS: %s: (1) dmu_read(os, obj, offs (%llu - %lld) = %lu, sz %lu, buf, 0)\n",
 			    __func__,
-			    start_off, bytes_from_start_of_upl,
+			    start_off, bytes_from_start_of_file,
 			    file_offset_for_dmu_read,
 			    bytes_to_copy);
 			err = dmu_read(os, object, file_offset_for_dmu_read, bytes_to_copy,
@@ -881,10 +886,10 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			void *buf = zio_buf_alloc(bufsiz);
 			VERIFY3P(buf, !=, NULL);
 			size_t file_pos_for_dmu_read =
-			    first_upl_page_file_position + bytes_from_start_of_upl;
-			printf("ZFS: %s: (2) dmu_read(os, obj, ofs %llu, sz %lu, buf, 0)\n",
+			    bytes_from_start_of_file;
+			printf("ZFS: %s: (2) dmu_read(os, obj, ofs %lu, sz %lu, buf, 0)\n",
 			    __func__,
-			    first_upl_page_file_position, bytes_to_copy);
+			    file_pos_for_dmu_read, bytes_to_copy);
 			err = dmu_read(os, object, file_pos_for_dmu_read, bytes_to_copy,
 			    buf, DMU_READ_PREFETCH);
 			if (err != 0) {
@@ -898,7 +903,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			 * so we want to know where the starting page is
 			 * and the ending page
 			 */
-			ASSERT3S(page_index_hole_start + pagenum, <, page_index_hole_end);
+			ASSERT3S(page_index_hole_start + pagenum, <=, page_index_hole_end);
 			int byte_offset_in_upl = (page_index_hole_start + pagenum) * PAGE_SIZE;
 			ASSERT3S(byte_offset_in_upl, <=, MAX_UPL_SIZE_BYTES);
 			printf("ZFS: %s: (2) copy_mem_to_upl(upl, (pis %d + pnum %llu) * 4k = %d,"
@@ -1000,13 +1005,9 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	ASSERT3S(upl_size_bytes, >, 0);
 	ASSERT3S(upl_size_bytes, <=, MAX_UPL_SIZE_BYTES);
 
-	const off_t upl_end_pos = upl_first_page_pos + upl_size_bytes;
-
 	const off_t uio_start_file_pos = orig_offset;
-	const off_t uio_end_file_pos = orig_offset + orig_resid;
 
 	ASSERT3S(upl_first_page_pos, >=, uio_start_file_pos);
-	ASSERT3S(upl_end_pos, >=, uio_end_file_pos);
 
 	int error = 0;
 
