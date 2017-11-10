@@ -958,8 +958,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	 */
 	const off_t upl_first_page_pos = (off_t)orig_offset & (off_t)(~(off_t)PAGE_MASK);
 	const off_t upl_off_in_first_upl_page = (off_t)orig_offset & (off_t)PAGE_MASK;
-	const off_t upl_size_bytes = (upl_first_page_pos  + (off_t)inbytes + ((off_t)PAGE_SIZE - (off_t)1LL)) &
-	    (off_t)(~(off_t)PAGE_MASK);
+	const off_t upl_size_bytes = roundup(uio_offset(uio) + inbytes - upl_first_page_pos, PAGE_SIZE);
 
 	ASSERT3S(upl_size_bytes, >, 0);
 	ASSERT3S(upl_size_bytes, <=, MAX_UPL_SIZE_BYTES);
