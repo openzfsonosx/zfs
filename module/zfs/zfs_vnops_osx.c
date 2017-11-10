@@ -2599,6 +2599,11 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 	ASSERT(vn_has_cached_data(ZTOV(zp)));
 	ASSERT(ubc_pages_resident(ZTOV(zp)));
+	if (!vn_has_cached_data(ZTOV(zp)) &&
+	    ubc_pages_resident(ZTOV(zp))) {
+		printf("ZFS: %s for non-z_is_mapped file %s\n",
+		    __func__, zp->z_name_cache);
+	}
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 	ASSERT3U(zp->z_is_mapped,==,1);
 
