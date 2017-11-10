@@ -123,14 +123,16 @@ typedef struct vnops_stats {
 	kstat_named_t mappedread_vn_and_ubc_have_cached_data;
 	kstat_named_t mappedread_vn_has_cached_data_only;
 	kstat_named_t mappedread_with_ubc_only;
-	kstat_named_t mappedread_ubc_copy_error;
+	kstat_named_t mappedread_tail_block_committed;
+	kstat_named_t mappedread_tail_aborted_with_reference;
 	kstat_named_t mappedread_ubc_satisfied_all;
-	kstat_named_t mappedread_ubc_copied_bytes;
-	kstat_named_t mappedread_present_bytes_uiomoved;
+	kstat_named_t mappedread_uio_bytes_moved;
+	kstat_named_t mappedread_present_pages_skipped;
 	kstat_named_t mappedread_absent_bytes_dmu_read;
 	kstat_named_t mappedread_lock_tries;
 	kstat_named_t mappedread_short_read_bytes;
 	kstat_named_t mappedread_short_read_errors;
+	kstat_named_t zfs_read_mappedread_mapped_file_bytes;
 	kstat_named_t zfs_read_mappedread_unmapped_file_bytes;
 	kstat_named_t zfs_fsync_zil_commit;
 	kstat_named_t zfs_fsync_ubc_msync;
@@ -169,14 +171,16 @@ static vnops_stats_t vnops_stats = {
 	{ "mappedread_vn_and_ubc_have_cached_data",      KSTAT_DATA_UINT64 },
 	{ "mappedread_vn_has_cached_data_only",          KSTAT_DATA_UINT64 },
 	{ "mappedread_with_ubc_only",                    KSTAT_DATA_UINT64 },
-	{ "mappedread_ubc_copy_error",                   KSTAT_DATA_UINT64 },
+	{ "mappedread_tail_block_committed",             KSTAT_DATA_UINT64 },
+	{ "mappedread_tail_aborted_with_reference",      KSTAT_DATA_UINT64 },
 	{ "mappedread_ubc_satisfied_all",                KSTAT_DATA_UINT64 },
-	{ "mappedread_ubc_copied_bytes",                 KSTAT_DATA_UINT64 },
-	{ "mappedread_present_bytes_uiomoved",           KSTAT_DATA_UINT64 },
+	{ "mappedread_uio_bytes_moved",                  KSTAT_DATA_UINT64 },
+	{ "mappedread_present_pages_skipped",            KSTAT_DATA_UINT64 },
 	{ "mappedread_absent_bytes_dmu_read",            KSTAT_DATA_UINT64 },
 	{ "mappedread_lock_tries",                       KSTAT_DATA_UINT64 },
 	{ "mappedread_short_read_bytes",                 KSTAT_DATA_UINT64 },
 	{ "mappedread_short_read_errors",                KSTAT_DATA_UINT64 },
+	{ "zfs_read_mappedread_mapped_file_bytes",       KSTAT_DATA_UINT64 },
 	{ "zfs_read_mappedread_unmapped_file_bytes",     KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_zil_commit",                        KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_ubc_msync",                         KSTAT_DATA_UINT64 },
@@ -685,85 +689,6 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
  * map them into contiguous KVA region and populate them
  * in one single dmu_read() call.
  */
-#ifndef __APPLE__
-static int
-mappedread_sf(vnode_t *vp, int nbytes, uio_t *uio)
-{
-	znode_t *zp = VTOZ(vp);
-	objset_t *os = zp->z_zfsvfs->z_os;
-	struct sf_buf *sf;
-	vm_object_t obj;
-	page_t *pp;
-	int64_t start;
-	caddr_t va;
-	int len = nbytes;
-	int off;
-	int error = 0;
-
-	ASSERT(uio->uio_segflg == UIO_NOCOPY);
-	ASSERT(vp->v_mount != NULL);
-	obj = vp->v_object;
-	ASSERT(obj != NULL);
-	ASSERT((uio->uio_loffset & PAGEOFFSET) == 0);
-
-	zfs_vmobject_wlock(obj);
-	for (start = uio->uio_loffset; len > 0; start += PAGESIZE) {
-		int bytes = MIN(PAGESIZE, len);
-
-		pp = vm_page_grab(obj, OFF_TO_IDX(start), VM_ALLOC_NOBUSY |
-		    VM_ALLOC_NORMAL | VM_ALLOC_RETRY | VM_ALLOC_IGN_SBUSY);
-		if (pp->valid == 0) {
-			vm_page_io_start(pp);
-			zfs_vmobject_wunlock(obj);
-			va = zfs_map_page(pp, &sf);
-			error = dmu_read(os, zp->z_id, start, bytes, va,
-			    DMU_READ_PREFETCH);
-			if (bytes != PAGESIZE && error == 0)
-				bzero(va + bytes, PAGESIZE - bytes);
-			zfs_unmap_page(sf);
-			zfs_vmobject_wlock(obj);
-			vm_page_io_finish(pp);
-			vm_page_lock(pp);
-			if (error) {
-				vm_page_free(pp);
-			} else {
-				pp->valid = VM_PAGE_BITS_ALL;
-				vm_page_activate(pp);
-			}
-			vm_page_unlock(pp);
-		}
-		if (error)
-			break;
-		uio->uio_resid -= bytes;
-		uio->uio_offset += bytes;
-		len -= bytes;
-	}
-	zfs_vmobject_wunlock(obj);
-	return (error);
-}
-#endif
-
-static int
-copy_upl_to_mem(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info_t *pl)
-{
-	int error = 0;
-
-	// assert lack of holes
-	if (pl) {
-		const int page_index_start = upl_offset / PAGE_SIZE;
-		const int page_index_end = howmany(upl_offset + nbytes, PAGE_SIZE);
-		for (int i = page_index_start; i < page_index_end; i++) {
-			ASSERT(upl_valid_page(pl, i));
-		}
-	}
-
-	uio_t *uio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
-	uio_addiov(uio, CAST_USER_ADDR_T(data), nbytes);
-	error = cluster_copy_upl_data(uio, upl, upl_offset, &nbytes);
-	ASSERT3S(error, ==, 0);
-	uio_free(uio);
-	return (error);
-}
 
 const int MAX_UPL_SIZE_BYTES = 16*1024*1024;
 
@@ -789,7 +714,7 @@ copy_mem_to_upl(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info
 	 * uiomove64(upl_phys_page(), size, uio) and adjusts
 	 * nbytes to reflect the work remaining (should be 0)
 	 */
-	printf("ZFS: %s cluster_copy_upl_data(uio, upl, %d, %d)\n",
+	dprintf("ZFS: %s cluster_copy_upl_data(uio, upl, %d, %d)\n",
 	    __func__, upl_offset, nbytes);
 	error = cluster_copy_upl_data(uio, upl, upl_offset, &nbytes);
 	ASSERT3S(error, ==, 0);
@@ -870,7 +795,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			/* do a partial block read */
 			ASSERT3S(filesize - bytes_from_start_of_file, <, PAGE_SIZE);
 			const off_t actually_readable_bytes = filesize - bytes_from_start_of_file;
-			printf("ZFS: %s: partial block read from 0x%llx to 0x%llx (instead of 0x%llx)\n",
+			dprintf("ZFS: %s: partial block read from 0x%llx to 0x%llx (instead of 0x%llx)\n",
 			    __func__, bytes_from_start_of_file,
 			    bytes_from_start_of_file + actually_readable_bytes,
 			    upl_page_outer_boundary);
@@ -881,21 +806,21 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			VERIFY3P(buf, !=, NULL);
 			/* zero out the buffer, to avoid garbage in the tail */
 			bzero(buf, bufsiz);
-			printf("ZFS: %s: (1) dmu_read(os, obj, offs %llu, sz %llu, buf, 0)\n",
+			dprintf("ZFS: %s: (1) dmu_read(os, obj, offs %llu, sz %llu, buf, 0)\n",
 			    __func__,
 			    bytes_from_start_of_file,
 			    actually_readable_bytes);
 			err = dmu_read(os, object, bytes_from_start_of_file, actually_readable_bytes,
 			    buf, DMU_READ_PREFETCH);
 			if (err != 0) {
-				printf("ZFS: %s: partial dmu_read of %s"
+				dprintf("ZFS: %s: partial dmu_read of %s"
 				    " (off %llu, size %llu) returned err %d\n",
 				    __func__, filename, bytes_from_start_of_file,
 				    actually_readable_bytes, err);
 				kmem_free(buf, bufsiz);
 				goto exit;
 			}
-			printf("ZFS: %s: (1) copy_mem_to_upl(upl, uofs %d, buf, nby %llu, NULL)\n",
+			dprintf("ZFS: %s: (1) copy_mem_to_upl(upl, uofs %d, buf, nby %llu, NULL)\n",
 			    __func__,
 			    bytes_from_start_of_upl, actually_readable_bytes);
 			err = copy_mem_to_upl(upl, bytes_from_start_of_upl,
@@ -917,13 +842,13 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			VERIFY3P(buf, !=, NULL);
 			size_t file_pos_for_dmu_read =
 			    bytes_from_start_of_file;
-			printf("ZFS: %s: (2) dmu_read(os, obj, ofs %lu, sz %lu, buf, 0)\n",
+			dprintf("ZFS: %s: (2) dmu_read(os, obj, ofs %lu, sz %lu, buf, 0)\n",
 			    __func__,
 			    file_pos_for_dmu_read, bytes_to_copy);
 			err = dmu_read(os, object, file_pos_for_dmu_read, bytes_to_copy,
 			    buf, DMU_READ_PREFETCH);
 			if (err != 0) {
-				printf("ZFS: %s: full dmu_read of %s"
+				dprintf("ZFS: %s: full dmu_read of %s"
 				    " (off %lu, size %lu) returned err %d\n",
 				    __func__, filename, file_pos_for_dmu_read, bytes_to_copy, err);
 				kmem_free(buf, bufsiz);
@@ -936,7 +861,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			ASSERT3S(page_index_hole_start + pgindex, <=, page_index_hole_end);
 			int byte_offset_in_upl = (page_index_hole_start + pgindex) * PAGE_SIZE;
 			ASSERT3S(byte_offset_in_upl, <=, MAX_UPL_SIZE_BYTES);
-			printf("ZFS: %s: (2) copy_mem_to_upl(upl, (pis %d + pidx %llu) * 4k = %d,"
+			dprintf("ZFS: %s: (2) copy_mem_to_upl(upl, (pis %d + pidx %llu) * 4k = %d,"
 			    " buf, %lu, NULL)\n",
 			    __func__,
 			    page_index_hole_start, pgindex,
@@ -1074,7 +999,8 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	/* fill in the hole of the UPL with valid data */
 
-	uint64_t present_bytes_skipped = 0, absent_bytes_read = 0;
+	uint64_t present_pages_skipped = 0, absent_bytes_read = 0;
+	uint64_t tail_block_committed = 0, tail_block_aborted_with_reference = 0;
 
 	const int page_index_end = howmany(upl_size_bytes, PAGE_SIZE);
 	bytes_left = MIN((file_maxpageid + 1) * PAGE_SIZE, upl_size_bytes);
@@ -1085,7 +1011,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			/* preserve this page's state */
 			page_disposition[page_index] = D_ABORT_PRESENT;
 			page_index++;
-			present_bytes_skipped += PAGE_SIZE;
+			present_pages_skipped++;
 			continue;
 		}
 		/* this is a hole.  find its end. */
@@ -1101,7 +1027,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		bytes_left -= bytes_to_copy;
 
 		file_position_offset = upl_first_page_pos + (page_index * PAGE_SIZE);
-		printf("ZFS: %s: dmu_copy_file_to_upl(.., ofs %llu,"
+		dprintf("ZFS: %s: dmu_copy_file_to_upl(.., ofs %llu,"
 		    " byt %d, ..., f_maxpg %d, u_pgs %d upls %lld, uplo %lld, pist %d, pihe %d)\n",
 		    __func__, file_position_offset, bytes_to_copy, file_maxpageid, upl_num_pages,
 		    upl_first_page_pos, upl_off_in_first_upl_page,
@@ -1113,10 +1039,20 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		if (error) {
 			break;
 		} else {
-			for (int i = page_index_hole_start; i < page_index_hole_end; i++) {
+			absent_bytes_read += bytes_to_copy;
+			ASSERT3S(page_index_hole_start, <=, page_index_hole_end - 1);
+			for (int i = page_index_hole_start; i < page_index_hole_end - 1; i++) {
 				page_disposition[i] = D_COMMIT;
 			}
-			absent_bytes_read += bytes_to_copy;
+			if ((bytes_to_copy % PAGE_SIZE)==0) {
+				tail_block_committed++;
+				page_disposition[page_index_hole_end] = D_COMMIT;
+			}
+			else {
+				tail_block_aborted_with_reference++;
+				page_disposition[page_index_hole_end] = D_ABORT_PRESENT;
+			}
+
 		}
 
 		page_index = page_index_hole_end;
@@ -1126,14 +1062,15 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	int io_requested = inbytes;
 	int userland_target_byte = uio_offset(uio) - upl_first_page_pos;
-	printf("ZFS: %s ccud(uio, upl, offs %d, iorq %d)\n",
+	dprintf("ZFS: %s ccud(uio, upl, offs %d, iorq %d)\n",
 	    __func__, (int)userland_target_byte, io_requested);
 	error = cluster_copy_upl_data(uio, upl, (int)userland_target_byte, &io_requested);
 	if (error != 0) {
 		printf("ZFS: %s: cluster_copy_upl_data failed with error %d\n",
 		    __func__, error);
 	} else if (io_requested == 0)  {
-		printf("ZFS: %s cluster_copy_upl_data done OK\n", __func__);
+		VNOPS_STAT_INCR(mappedread_uio_bytes_moved, inbytes);
+		dprintf("ZFS: %s cluster_copy_upl_data done OK\n", __func__);
 	} else {
 		printf("ZFS: %s cluster_copy_upl_data ret %d io_requested now %d\n",
 		    __func__, error, io_requested);
@@ -1184,379 +1121,20 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	kmem_free(page_disposition, page_disposition_size);
 
-	VNOPS_STAT_INCR(mappedread_present_bytes_uiomoved, present_bytes_skipped);
+	VNOPS_STAT_INCR(mappedread_present_pages_skipped, present_pages_skipped);
 	VNOPS_STAT_INCR(mappedread_absent_bytes_dmu_read, absent_bytes_read);
+	VNOPS_STAT_INCR(mappedread_tail_block_committed, tail_block_committed);
+	VNOPS_STAT_INCR(mappedread_tail_aborted_with_reference, tail_block_aborted_with_reference);
 
 	if (error == 0) {
-		printf("ZFS: %s: done with no error, file %s\n",
+		dprintf("ZFS: %s: done with no error, file %s\n",
 		    __func__, filename);
+		if (absent_bytes_read == 0 && inbytes > 0)
+			VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
 	}
 
 	return (error);
 }
-
-#if 0
-static int
-mappedread(vnode_t *vp, int nbytes, struct uio *uio)
-{
-    znode_t *zp = VTOZ(vp);
-    objset_t *os = zp->z_zfsvfs->z_os;
-    int len = nbytes;
-    int error = 0;
-    vm_offset_t vaddr = 0;
-    upl_t upl;
-    upl_page_info_t *pl = NULL;
-    off_t upl_start;
-    int upl_size;
-    int upl_page;
-    off_t off;
-
-    ASSERT3S(nbytes, >, 0);
-    ASSERT3S(uio_offset(uio), <=, zp->z_size); // offset is within file
-    //ASSERT3S(uio_resid(uio), <=, zp->z_size);  // resid is smaller than file
-    //ASSERT3S(uio_resid(uio) + uio_offset(uio), <=, zp->z_size); // both fit within file
-    ASSERT3S(ubc_getsize(vp), ==, zp->z_size); // ought not to  be 0
-
-    /* give the cluster layer a chance to fill in whatever data it already has */
-    const int64_t orig_file_size = zp->z_size;
-    const int64_t orig_nbytes = nbytes;
-    ASSERT3S(orig_nbytes, <=, orig_file_size);
-    const user_ssize_t orig_resid = uio_resid(uio);
-    const off_t orig_offset = uio_offset(uio);
-    const off_t orig_ubc_size = ubc_getsize(vp);
-    ASSERT3S(orig_resid, >=, 0);
-    ASSERT3S(orig_nbytes, <=, orig_resid + orig_offset);
-    //ASSERT3S(orig_resid, <=, orig_file_size);
-    //ASSERT3S(orig_resid + orig_offset, <=, orig_file_size);
-    // more detail for these
-    if (orig_resid + orig_offset > orig_file_size &&
-	orig_nbytes > orig_file_size) {
-	    const char *fn = vnode_getname(vp);
-	    const char *pn = (fn == NULL) ? "<NULL>" : fn;
-	    printf("ZFS: %s either orig_nbytes(%lld) or [orig_resid(%lld)+orig_offset(%lld)](%lld) > orig_file_size(%lld)"
-		" [vnode name: %s cache name: %s]\n",
-		__func__, orig_nbytes,
-		orig_resid, orig_offset, orig_resid + orig_offset, orig_file_size,
-		pn, zp->z_name_cache);
-
-    }
-    ASSERT3S(orig_resid + orig_offset, >=, orig_nbytes);
-    ASSERT3S(orig_nbytes, <=, orig_resid);
-    const int64_t target_resid = MIN(orig_nbytes, orig_resid);
-    const int orig_cache_resid = (target_resid > INT_MAX) ? INT_MAX : target_resid;
-    ASSERT3S(orig_cache_resid, <=, nbytes);
-    ASSERT3S((int64_t)orig_cache_resid + orig_offset, <=, orig_file_size);
-    IMPLY(orig_resid > 0, orig_cache_resid > 0);
-    EQUIV(target_resid > 0, orig_cache_resid > 0);
-    EQUIV(target_resid == 0, orig_cache_resid == 0);
-    EQUIV(orig_resid == 0, orig_cache_resid == 0);
-    int cache_resid = orig_cache_resid;
-    // ask UBC to work in the uio
-    int cache_error = 0;
-    if (orig_ubc_size > 0 && orig_resid > 0) {
-	    ASSERT3S(cache_resid, >, 0);
-	    /*
-	     * cluster_copy_ubc_data gets the pager upl associated
-	     * with the vp file then feeds that to memory_object_control_uiomove
-	     * which effectively does uiomove64(uplphyspages, residual_size, uio).
-	     * The final argument is take_reference, which is meaningless if
-	     * orig offiset is 0 or residual_size is more than pagesize, which
-	     * will override a 0 value.   The 0 value means that while the vm page
-	     * queues are locked, vm_page_lru is run on each page.
-	     */
-	    cache_error = cluster_copy_ubc_data(vp, uio, &cache_resid, 0);
-	    ASSERT3S(cache_resid, >=, 0);
-	    ASSERT3S(orig_cache_resid, >=, cache_resid);
-    }
-    ASSERT3S(cache_error, ==, 0);
-    if (cache_error != 0) {
-	    printf("ZFS: %s: cache_error = %d\n", __func__, cache_error);
-	    VNOPS_STAT_BUMP(mappedread_ubc_copy_error);
-	    return (cache_error);
-    }
-    /* did we satisfy everything from UBC ? */
-    if (orig_ubc_size > 0 && orig_cache_resid > 0 && cache_resid == 0) {
-	    VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
-	    VNOPS_STAT_INCR(mappedread_ubc_copied_bytes, nbytes);
-	    return (0);
-    }
-    ASSERT3S(orig_cache_resid, >=, cache_resid);
-    const int fb = orig_cache_resid - cache_resid;
-    int64_t found_bytes = fb;
-    ASSERT3S(found_bytes, >=, 0);
-    const int64_t nb = nbytes;
-    if (orig_ubc_size > 0 && orig_resid > 0) {
-	    off_t cur_offset = uio_offset(uio);
-	    if (cur_offset >= orig_offset + nb) {
-		    printf("ZFS: %s: cur offset %lld >= orig %lld + nb %lld = %lld (returning)\n",
-			__func__, cur_offset, orig_offset, nb, orig_offset + nb);
-		    VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
-		    VNOPS_STAT_INCR(mappedread_ubc_copied_bytes, nbytes);
-		    return (0);
-	    }
-	    ASSERT3S(found_bytes, <=, nb);
-    } else {
-	    ASSERT3S(found_bytes, ==, 0);
-	    found_bytes = 0;
-    }
-    if (found_bytes > 0) {
-	    VNOPS_STAT_INCR(mappedread_ubc_copied_bytes, found_bytes);
-    }
-    const int64_t bytes_left_after_ubc = nb - found_bytes;
-    ASSERT3S(bytes_left_after_ubc, >, 0);
-    IMPLY(orig_ubc_size == 0, bytes_left_after_ubc == nb);
-
-    if (orig_ubc_size > 0 && bytes_left_after_ubc == 0) {
-	    if (nbytes > 0)
-		    VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
-	    return (0);
-    }
-
-    ASSERT3S(bytes_left_after_ubc, <=, nb);
-    ASSERT3S(bytes_left_after_ubc, <=, INT_MAX);
-
-    // update nbytes, shrinking down to 32 bits
-    nbytes = (bytes_left_after_ubc > INT_MAX) ? INT_MAX : bytes_left_after_ubc;
-
-    ASSERT3S(nbytes, <=, orig_nbytes);
-    ASSERT3S(nbytes, >, 0);
-
-    len = nbytes;
-
-    upl_start = uio_offset(uio);
-    off = upl_start & PAGE_MASK;
-    upl_start &= ~PAGE_MASK;
-    upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
-
-    ASSERT3S(upl_start + upl_size, <=, 1 + (zp->z_size | PAGE_MASK));
-    ASSERT3S(upl_size, >, 0);
-
-    dprintf("zfs_mappedread: %llu - %d (adj %llu - %llu)\n",
-            uio_offset(uio), nbytes,
-            upl_start, upl_size);
-
-    /*
-     * Create a UPL for the current range and map its
-     * page list into the kernel virtual address space.
-     *
-     * The upl is page aligned and contains the whole
-     * of the range left in this transaction.
-     *
-     * off is some value that is within the first page of the upl.
-     */
-    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
-	if ((error != KERN_SUCCESS) || !upl) {
-		printf("ZFS: mappedread failed to ubc_create_upl: %d\n", error);
-		return EIO;
-	}
-
-	if (ubc_upl_map(upl, &vaddr) != KERN_SUCCESS) {
-		printf("ZFS: mappedread failed to ubc_upl_map: %d\n", error);
-		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-		return ENOMEM;
-	}
-	// vaddr is aligned to the upl, so off is some offset within the first page
-
-	const int upl_pages = upl_size / PAGE_SIZE;
-	typedef enum upl_page_diposition {
-		D_UNDEFINED = 0,
-		D_COMMIT,
-		D_ABORT_PRESENT,
-		D_ABORT_ERROR,
-	} __attribute__((packed)) upl_page_disposition_t;
-	const int should_commit_size = upl_pages * sizeof(upl_page_disposition_t);
-	upl_page_disposition_t *should_commit = kmem_zalloc(should_commit_size, KM_SLEEP);
-
-	ASSERT3S(len, <=, INT_MAX);
-	int present_bytes_uiomoved = 0;
-	int absent_bytes_dmu_read = 0;
-
-	off_t upl_current = upl_start;
-	boolean_t errflag = B_FALSE;
-    for (upl_page = 0; len > 0; ++upl_page) {
-        const uint64_t bytes = MIN(PAGE_SIZE - off, len);
-        if (pl && upl_valid_page(pl, upl_page)) {
-		/* We are here because cluster_copy_ubc_data copied
-		 * up to the edge of a "hole" in the in-memory vnode pager
-		 * data.  We must have filled in the hole before we got
-		 * here, so assert that.
-		 * XXX: should really deal with holes above, filling in
-		 *      everything possible using cluster_copy_ubc_data
-		 *      and then assert that we should do nothing in this
-		 *      if statement.
-		 */
-            ASSERT3S(upl_page, >, 0);
-	    ASSERT(upl_page_present(pl, upl_page));
-            uio_setrw(uio, UIO_READ);
-	    printf("ZFS: %s: should we be here? upl_current %lld upl_page %d len %d bytes %llu\n",
-		__func__, upl_current, upl_page, len, bytes);
-            dprintf("uiomove to addy %p (%llu) for %llu bytes\n", vaddr+off,
-                   off, bytes);
-	    // Note that off cannot be nonzero if upl_page is > 0
-	    // as we set it below
-	    IMPLY(upl_page > 0, off == 0);
-	    // UIO_READ means we uiomove from the upl to the uio.
-            error = uiomove((caddr_t)vaddr + off, bytes, UIO_READ, uio);
-	    ASSERT3S(error, ==, 0);
-	    if (!error)
-		    present_bytes_uiomoved += bytes;
-	    // originally we aborted the entire upl because
-	    // we were only reading from it above; here we
-	    // just indicate that we should abort this page
-	    should_commit[upl_page] = D_ABORT;
-	} else if (off + len > zp->z_size || bytes < PAGE_SIZE) {
-		/*
-		 * Here we have an absent page (assert that),
-		 * and want to read less than a full page,
-		 * either because that's all the caller wanted,
-		 * or because that's all the file has left at
-		 * its tail.
-		 *
-		 * Satisfy the tail read by doing a dmu_read_uio.
-		 * The tail will not be added to the pager object.
-		 */
-		ASSERT3P(pl, !=, NULL);
-		if (pl) { ASSERT(!upl_valid_page(pl, upl_page)); }
-		IMPLY(upl_page > 0, off == 0);
-		error = dmu_read_uio(os, zp->z_id, uio, bytes);
-		if (error == 0) {
-			VNOPS_STAT_INCR(mappedread_short_read_bytes, bytes);
-			/* we want to preserve this page's state */
-			should_commit[upl_page] = D_ABORT;
-		} else {
-			VNOPS_STAT_BUMP(mappedread_short_read_errors);
-			printf("ZFS: %s: (short read) dmu_read_uio returned error %d for %llu bytes\n",
-			    __func__, error, bytes);
-			should_commit[upl_page] = D_ABORT_ERROR;
-		}
-        } else {
-		ASSERT3S(bytes, ==, PAGE_SIZE);
-		ASSERT3P(pl, !=, NULL);
-		if (pl) { ASSERT(!upl_valid_page(pl, upl_page)); }
-		/* here we should move data from the file to the upl,
-		 * which we could do in several ways.  e.g. dmu read
-		 * into a buffer and copy_mem_to_upl it, doing a
-		 * upl_commit_range as we go.
-		 * once we have committed the upl ranges, we can
-		 * cluster_copy_upl_data to copy the data from the
-		 * upl into the uio (i.e., into userland)
-		 *
-		 * we here used to do a dmu_read_uio(os, zp->z_id, uio, bytes)
-		 * which wraps dnode_hold & dnode_rele around dmu_read_uio_dnode.
-		 */
-		// fill in this hole - cf. update_pages
-		// make a uio pointing at vaddr + off and bytes
-		uio_t *tmpuio = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
-		ASSERT3P(tmpuio, !=, NULL);
-		// off can only be nonzero for the first page, since
-		// it is set to 0 below
-		IMPLY(upl_page > 0, off == 0);
-		uio_addiov(tmpuio, CAST_USER_ADDR_T(vaddr+off), bytes);
-		// read into the temporary uio that points into mapped
-		// virtual space associated with the upl
-		error = dmu_read_uio(os, zp->z_id, tmpuio, bytes);
-		ASSERT3S(error, ==, 0);
-		uio_free(tmpuio);
-		if (error == 0) {
-			// cluster copy this page into userland
-			ASSERT3S(bytes, <, INT_MAX);
-			int io_requested = bytes;
-			ASSERT3S(upl_current, <, INT_MAX);
-			int upl_offset = upl_current; // i think
-			// uio_iodirection is UIO_READ
-			// and this does uiomove64(uplphyspage+uploffset, iorequested, uio)
-			// where physpage is the upl_offset from the start of the upl
-			// and UIO_READ means copy from uplphyspage to uio (which is userland)
-			// cluster_copy_upl_data may return EFAULT
-			// and should return 0 if we completed OK
-			int ccpud_error = cluster_copy_upl_data(uio, upl, upl_offset, &io_requested);
-			ASSERT3S(ccpud_error, ==, 0);
-			if (ccpud_error == 0) {
-				ASSERT3S(io_requested, ==, 0);
-				should_commit[upl_page] = D_COMMIT;
-				absent_bytes_dmu_read += bytes;
-			} else {
-				ASSERT3S(io_requested, ==, 0);
-				errflag = B_TRUE;
-				should_commit[upl_page] = D_ABORT;
-			}
-		} else {
-			should_commit[upl_page] = D_ABORT_ERROR;
-		}
-        }
-
-        vaddr += PAGE_SIZE;
-	upl_current += PAGE_SIZE;
-        len -= bytes;
-        off = 0;
-        if (error)
-            break;
-    }
-
-    if (errflag == B_TRUE && error == 0) {
-	    error = 14;
-    }
-
-    /*
-     * Unmap the page list and free the UPL.
-     */
-	(void) ubc_upl_unmap(upl);
-
-	upl_current = upl_start;
-	boolean_t full_abort = errflag;
-	for (int u = 0; u < upl_pages; u++) {
-		if (error == 0 && should_commit[u] == D_COMMIT) {
-			kern_return_t kret_commit =
-			    ubc_upl_commit_range(upl, upl_current, PAGE_SIZE,
-				UPL_COMMIT_CLEAR_DIRTY | UPL_COMMIT_FREE_ON_EMPTY);
-			if (kret_commit != KERN_SUCCESS) {
-				printf("ZFS: %s: unable to commit upl_current %lld page %d\n",
-				    __func__, upl_current, u);
-				full_abort = B_TRUE;
-			}
-		} else if (error != 0 || should_commit[u] == D_ABORT ||
-		    should_commit[u] == D_ABORT_ERROR) {
-			kern_return_t kret_abort =
-			    ubc_upl_abort_range(upl, upl_current, PAGE_SIZE,
-				(error !=0 || should_commit[u] == D_ABORT_ERROR)
-				? (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY)
-				: (UPL_ABORT_FREE_ON_EMPTY));
-			if (kret_abort != KERN_SUCCESS) {
-				printf("ZFS: %s: unable to abort upl_current %lld page %d\n",
-				    __func__, upl_current, u);
-				full_abort = B_TRUE;
-			}
-		} else {
-			ASSERT3S(should_commit[u], ==, D_UNDEFINED);
-			kern_return_t kret_abort_undef =
-			    ubc_upl_abort_range(upl, upl_current, PAGE_SIZE,
-				UPL_ABORT_FREE_ON_EMPTY);
-			if (kret_abort_undef != KERN_SUCCESS) {
-				printf("ZFS: %s: unable to abort undef page upl_current %lld page %d\n",
-				    __func__, upl_current, u);
-				full_abort = B_TRUE;
-			}
-		}
-		upl_current += PAGE_SIZE;
-		if (full_abort == B_TRUE)
-			break;
-	}
-	if (full_abort == B_TRUE) {
-		printf("ZFS: %s aborting whole UPL\n", __func__);
-		kern_return_t kret_abort_full =
-		    ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-		ASSERT3S(kret_abort_full, ==, KERN_SUCCESS);
-	}
-
-	kmem_free(should_commit, should_commit_size);
-
-	VNOPS_STAT_INCR(mappedread_present_bytes_uiomoved, present_bytes_uiomoved);
-	VNOPS_STAT_INCR(mappedread_absent_bytes_dmu_read, absent_bytes_dmu_read);
-
-    return (error);
-}
-#endif
 
 offset_t zfs_read_chunk_size = MAX_UPL_TRANSFER * PAGE_SIZE; /* Tunable */
 
@@ -1758,6 +1336,9 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			error = mappedread_new(vp, nbytes, uio);
 			if (mapped != 0) {
 				z_map_drop_lock(zp, &need_release, &need_upgrade);
+			}
+			if (error == 0 && nbytes > 0) {
+				VNOPS_STAT_INCR(zfs_read_mappedread_mapped_file_bytes, nbytes);
 			}
 		} else {
 			error = mappedread_new(vp, nbytes, uio);
