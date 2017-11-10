@@ -1057,7 +1057,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	typedef enum upl_page_diposition {
                 D_UNDEFINED = 0,
                 D_COMMIT,
-                D_ABORT,
+                D_ABORT_PRESENT,
                 D_ABORT_ERROR,
         } __attribute__((packed)) upl_page_disposition_t;
 
@@ -1083,7 +1083,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	while(page_index < page_index_end) {
 		if (upl_valid_page(pl, page_index)) {
 			/* preserve this page's state */
-			page_disposition[page_index] = D_ABORT;
+			page_disposition[page_index] = D_ABORT_PRESENT;
 			page_index++;
 			present_bytes_skipped += PAGE_SIZE;
 			continue;
@@ -1110,10 +1110,14 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		    file_position_offset, bytes_to_copy, upl, file_maxpageid, upl_num_pages,
 		    upl_first_page_pos, upl_off_in_first_upl_page,
 		    page_index_hole_start, page_index_hole_end);
-		if (error)
+		if (error) {
 			break;
-		else
+		} else {
+			for (int i = page_index_hole_start; i < page_index_hole_end; i++) {
+				page_disposition[i] = D_COMMIT;
+			}
 			absent_bytes_read += bytes_to_copy;
+		}
 
 		page_index = page_index_hole_end;
 	}
@@ -1152,7 +1156,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			} else {
 				kern_return_t kret_commit =
 				    ubc_upl_commit_range(upl, upl_page_as_bytes, PAGE_SIZE,
-					UPL_COMMIT_CLEAR_DIRTY | UPL_COMMIT_FREE_ON_EMPTY);
+					UPL_COMMIT_INACTIVATE | UPL_COMMIT_CLEAR_DIRTY | UPL_COMMIT_FREE_ON_EMPTY);
 				if (kret_commit != KERN_SUCCESS) {
 					error = kret_commit;
 					printf("ZFS: %s commit failed for page %d, file %s\n",
@@ -1160,6 +1164,10 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 				}
 			}
 		} else {
+			int commit_flag = UPL_ABORT_FREE_ON_EMPTY;
+			if (page_disposition[page_index] == D_ABORT_PRESENT) {
+				commit_flag |= UPL_ABORT_REFERENCE;
+			}
 			kern_return_t kret_skip =
 			    ubc_upl_abort_range(upl, upl_page_as_bytes, PAGE_SIZE,
 				UPL_ABORT_FREE_ON_EMPTY);
@@ -1354,7 +1362,7 @@ mappedread(vnode_t *vp, int nbytes, struct uio *uio)
 	typedef enum upl_page_diposition {
 		D_UNDEFINED = 0,
 		D_COMMIT,
-		D_ABORT,
+		D_ABORT_PRESENT,
 		D_ABORT_ERROR,
 	} __attribute__((packed)) upl_page_disposition_t;
 	const int should_commit_size = upl_pages * sizeof(upl_page_disposition_t);
