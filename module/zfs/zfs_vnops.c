@@ -844,16 +844,17 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 
 	// whole upl fits in file
 	ASSERT3S(first_upl_page_file_position + ((upl_num_pages - 1) * PAGE_SIZE), <=, filesize);
-	// this hole fits in file
-	ASSERT3S(first_upl_page_file_position + (hole_pagerange_pages * PAGE_SIZE), <=, filesize);
+	// this hole fits in file or at least the EOF is within the last page of the hole
+	ASSERT3S(first_upl_page_file_position + ((hole_pagerange_pages - 1) * PAGE_SIZE), <=, filesize);
 
 	for (pagenum = hole_startpage; pagenum <= hole_endpage; pagenum++) {
+		off_t pgindex = (pagenum - hole_startpage);
 		if (bytes_left <= 0) {
 			printf("ZFS: %s: ran out of bytes_left (%lld), pagenum %lld, hole pages %lld\n",
-			    __func__, bytes_left, pagenum, hole_pagerange_pages);
+			    __func__, bytes_left, pgindex, hole_pagerange_pages);
 			goto exit;
 		}
-		bytes_from_start_of_upl = pagenum * PAGE_SIZE;
+		bytes_from_start_of_upl = pgindex * PAGE_SIZE;
 		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
 		ASSERT3S(bytes_from_start_of_file, <=, filesize);
 		/*
@@ -928,13 +929,13 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			 * so we want to know where the starting page is
 			 * and the ending page
 			 */
-			ASSERT3S(page_index_hole_start + pagenum, <=, page_index_hole_end);
-			int byte_offset_in_upl = (page_index_hole_start + pagenum) * PAGE_SIZE;
+			ASSERT3S(page_index_hole_start + pgindex, <=, page_index_hole_end);
+			int byte_offset_in_upl = (page_index_hole_start + pgindex) * PAGE_SIZE;
 			ASSERT3S(byte_offset_in_upl, <=, MAX_UPL_SIZE_BYTES);
-			printf("ZFS: %s: (2) copy_mem_to_upl(upl, (pis %d + pnum %llu) * 4k = %d,"
+			printf("ZFS: %s: (2) copy_mem_to_upl(upl, (pis %d + pidx %llu) * 4k = %d,"
 			    " buf, %lu, NULL)\n",
 			    __func__,
-			    page_index_hole_start, pagenum,
+			    page_index_hole_start, pgindex,
 			    byte_offset_in_upl,
 			    bytes_to_copy);
 			err = copy_mem_to_upl(upl, byte_offset_in_upl, buf,
