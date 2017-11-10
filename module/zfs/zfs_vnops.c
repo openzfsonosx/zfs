@@ -818,7 +818,6 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 
 	int err = 0;
 	off_t pagenum;
-	size_t bytes_left;
 	int bytes_from_start_of_upl;
 	off_t bytes_from_start_of_file;
 
@@ -826,8 +825,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	const off_t hole_pagerange_pages = page_index_hole_end - page_index_hole_start;
 	ASSERT3S(hole_pagerange_pages, ==, upl_num_pages);
 
-	size_t bytes_to_copy = numbytes;
-	bytes_left = bytes_to_copy;
+	int64_t bytes_left = numbytes;
 
 	/*
 	 * We have been given a hole (no pages present in memory) in the
@@ -846,6 +844,11 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	ASSERT3S(first_upl_page_file_position + ((upl_num_pages - 1) * PAGE_SIZE), <=, filesize);
 
 	for (pagenum = hole_startpage; pagenum < upl_num_pages; pagenum++) {
+		if (bytes_left <= 0) {
+			printf("ZFS: %s: ran out of bytes_left (%lld), pagenum %lld, upl_num_pages %d\n",
+			    __func__, bytes_left, pagenum, upl_num_pages);
+			goto exit;
+		}
 		bytes_from_start_of_upl = pagenum * PAGE_SIZE;
 		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
 		ASSERT3S(bytes_from_start_of_file, <=, filesize);
@@ -893,11 +896,13 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 				zio_buf_free(buf, bufsiz);
 				goto exit;
 			}
+			zio_buf_free(buf, bufsiz);
+			bytes_left -= actually_readable_bytes;
 		} else {
 			/* this page is aligned with a upl page */
-			bytes_to_copy = MIN(bytes_left, PAGE_SIZE);
-			ASSERT3S(bytes_to_copy, >=, PAGE_SIZE);
-			const size_t bufsiz = bytes_to_copy;
+			ASSERT3S(bytes_left, >, 0); /* important */
+			size_t bytes_to_copy = MIN(bytes_left, PAGE_SIZE);
+			const size_t bufsiz = PAGE_SIZE;
 			void *buf = zio_buf_alloc(bufsiz);
 			VERIFY3P(buf, !=, NULL);
 			size_t file_pos_for_dmu_read =
@@ -935,6 +940,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 				zio_buf_free(buf, bufsiz);
 				goto exit;
 			}
+			zio_buf_free(buf, bufsiz);
 			bytes_left -= bytes_to_copy;
 		}
 	} /* for */
