@@ -822,13 +822,28 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	int bytes_from_start_of_upl;
 	off_t bytes_from_start_of_file;
 
-	//const off_t file_startpage = first_upl_page_file_position / PAGE_SIZE;
 	const off_t hole_startpage = page_index_hole_start;
 	const off_t hole_pagerange_pages = page_index_hole_end - page_index_hole_start;
 	ASSERT3S(hole_pagerange_pages, ==, upl_num_pages);
 
 	size_t bytes_to_copy = numbytes;
 	bytes_left = bytes_to_copy;
+
+	/*
+	 * We have been given a hole (no pages present in memory) in the
+	 * UPL, and the hole runs from page_index_start to
+	 * page_index_end.  We read whole pages into the
+	 * UPL.
+	 *
+	 * The end of the file is either "to the right" of our UPL
+	 * or lives within the last page of our UPL.
+	 *
+	 * If the end-of-file is in the last page, might not be able to
+	 * read a whole page case because the file isn't long enough,
+	 * so deal with that specially.
+	 */
+
+	ASSERT3S(first_upl_page_file_position + ((upl_num_pages - 1) * PAGE_SIZE), <=, filesize);
 
 	for (pagenum = hole_startpage; pagenum < upl_num_pages; pagenum++) {
 		bytes_from_start_of_upl = pagenum * PAGE_SIZE;
