@@ -776,7 +776,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	// this hole fits in file or at least the EOF is within the last page of the hole
 	ASSERT3S(first_upl_page_file_position + ((hole_pagerange_pages - 1) * PAGE_SIZE), <=, filesize);
 
-	for (pagenum = hole_startpage; pagenum <= hole_endpage; pagenum++) {
+	for (pagenum = hole_startpage; pagenum < hole_endpage; pagenum++) {
 		off_t pgindex = (pagenum - hole_startpage);
 		if (bytes_left <= 0) {
 			printf("ZFS: %s: ran out of bytes_left (%lld), pagenum %lld, hole pages %lld\n",
@@ -1092,8 +1092,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	int upl_page_as_bytes;
 	for (page_index = 0; page_index < page_index_end; page_index++) {
 		upl_page_as_bytes = page_index * PAGE_SIZE;
-		if (page_disposition[page_index] == D_COMMIT &&
-		    zp->z_is_mapped == 0) {
+		if (page_disposition[page_index] == D_COMMIT) {
 			if (error) {
 				kern_return_t kret_abort =
 				    ubc_upl_abort_range(upl, upl_page_as_bytes, PAGE_SIZE,
@@ -1115,8 +1114,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			}
 		} else {
 			int commit_flag = UPL_ABORT_FREE_ON_EMPTY;
-			if (page_disposition[page_index] == D_ABORT_PRESENT &&
-			    zp->z_is_mapped == 0) {
+			if (page_disposition[page_index] == D_ABORT_PRESENT) {
 				commit_flag |= UPL_ABORT_REFERENCE;
 			}
 			kern_return_t kret_skip =
