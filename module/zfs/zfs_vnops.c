@@ -856,7 +856,11 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 		}
 		bytes_from_start_of_upl = pgindex * PAGE_SIZE;
 		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
-		ASSERT3S(bytes_from_start_of_file, <=, filesize);
+		if (bytes_from_start_of_file <= filesize) {
+			printf("ZFS: %s: bytes_from_start_of_file %llu <= %lu filesize (bytes_left %llu)\n",
+			    __func__, bytes_from_start_of_file, filesize, bytes_left);
+			goto exit;
+		}
 		/*
 		 * our last page may not be as long as the file.
 		 * our last page may also be our first page.
