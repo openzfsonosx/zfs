@@ -818,7 +818,6 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 
 	int err = 0;
 	off_t pagenum;
-	uint64_t start_off, end_off;
 	size_t bytes_left;
 	int bytes_from_start_of_upl;
 	off_t bytes_from_start_of_file;
@@ -835,44 +834,44 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 		bytes_from_start_of_upl = pagenum * PAGE_SIZE;
 		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
 		ASSERT3S(bytes_from_start_of_file, <=, filesize);
-		if (bytes_from_start_of_upl < first_upl_page_file_position ||
-		    ((uint64_t)(bytes_from_start_of_upl + PAGE_SIZE) >
-			(uint64_t)(first_upl_page_file_position + numbytes))) {
-			start_off = MAX(bytes_from_start_of_upl, first_upl_page_file_position);
-			end_off = MIN((uint64_t)(bytes_from_start_of_upl + PAGE_SIZE),
-			    (uint64_t)(first_upl_page_file_position + numbytes));
-			ASSERT3U(start_off, <, end_off);
-			bytes_to_copy = end_off - start_off;
-			ASSERT3S(bytes_to_copy, <=, bytes_left);
-			ASSERT3S(bytes_to_copy, <=, PAGE_SIZE);
-			const size_t bufsiz = bytes_to_copy;
+		/*
+		 * our last page may not be as long as the file.
+		 * our last page may also be our first page.
+		 */
+		const off_t upl_page_outer_boundary = bytes_from_start_of_file + PAGE_SIZE;
+		if (upl_page_outer_boundary > filesize) {
+			/* do a partial block read */
+			ASSERT3S(filesize - bytes_from_start_of_file, <, PAGE_SIZE);
+			const off_t actually_readable_bytes = filesize - bytes_from_start_of_file;
+			printf("ZFS: %s: partial block read from %llx to %llx (instead of %llx)\n",
+			    __func__, bytes_from_start_of_file,
+			    actually_readable_bytes, upl_page_outer_boundary);
+			ASSERT3S(actually_readable_bytes, <, PAGE_SIZE);
+			const size_t bufsiz = MAX(actually_readable_bytes, PAGE_SIZE);
 			ASSERT3S(bufsiz, <=, SPA_MAXBLOCKSIZE);
 			void *buf = zio_buf_alloc(bufsiz);
 			VERIFY3P(buf, !=, NULL);
-			ASSERT3S(start_off, >=, bytes_from_start_of_upl);
-			size_t file_offset_for_dmu_read = start_off - bytes_from_start_of_file;
-			printf("ZFS: %s: (1) dmu_read(os, obj, offs (%llu - %lld) = %lu, sz %lu, buf, 0)\n",
+			/* zero out the buffer, to avoid garbage in the tail */
+			bzero(buf, bufsiz);
+			printf("ZFS: %s: (1) dmu_read(os, obj, offs %llu, sz %llu, buf, 0)\n",
 			    __func__,
-			    start_off, bytes_from_start_of_file,
-			    file_offset_for_dmu_read,
-			    bytes_to_copy);
-			err = dmu_read(os, object, file_offset_for_dmu_read, bytes_to_copy,
+			    bytes_from_start_of_file,
+			    actually_readable_bytes);
+			err = dmu_read(os, object, bytes_from_start_of_file, actually_readable_bytes,
 			    buf, DMU_READ_PREFETCH);
 			if (err != 0) {
 				printf("ZFS: %s: partial dmu_read of %s"
-				    " (off %lu, size %lu) returned err %d\n",
-				    __func__, filename, file_offset_for_dmu_read, bytes_to_copy, err);
+				    " (off %llu, size %llu) returned err %d\n",
+				    __func__, filename, bytes_from_start_of_file,
+				    actually_readable_bytes, err);
 				zio_buf_free(buf, bufsiz);
 				goto exit;
 			}
-			ASSERT3S(upl_first_page_pos, <=, start_off);
-			ASSERT3S(start_off - upl_first_page_pos, <=, MAX_UPL_SIZE_BYTES);
-			int byte_offset_in_upl = start_off - upl_first_page_pos;
-			printf("ZFS: %s: (1) copy_mem_to_upl(upl, (%llu - %llu) = %d, buf, %lu, NULL)\n",
+			printf("ZFS: %s: (1) copy_mem_to_upl(upl, uofs %d, buf, nby %llu, NULL)\n",
 			    __func__,
-			    start_off, upl_first_page_pos, byte_offset_in_upl, bytes_to_copy);
-			err = copy_mem_to_upl(upl, byte_offset_in_upl,
-			    buf, bytes_to_copy, NULL);
+			    bytes_from_start_of_upl, actually_readable_bytes);
+			err = copy_mem_to_upl(upl, bytes_from_start_of_upl,
+			    buf, actually_readable_bytes, NULL);
 			if (err) {
 				printf("ZFS: %s err %d from copy_mem_to_upl for file %s\n",
 				    __func__, err, filename);
@@ -1095,6 +1094,15 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	printf("ZFS: %s ccud(uio, upl, offs %d, iorq %d)\n",
 	    __func__, (int)userland_target_byte, io_requested);
 	error = cluster_copy_upl_data(uio, upl, (int)userland_target_byte, &io_requested);
+	if (error != 0) {
+		printf("ZFS: %s: cluster_copy_upl_data failed with error %d\n",
+		    __func__, error);
+	} else if (io_requested == 0)  {
+		printf("ZFS: %s cluster_copy_upl_data done OK\n", __func__);
+	} else {
+		printf("ZFS: %s cluster_copy_upl_data ret %d io_requested now %d\n",
+		    __func__, error, io_requested);
+	}
 
 	/* release UPL */
 	int upl_page_as_bytes;
@@ -1139,6 +1147,11 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	VNOPS_STAT_INCR(mappedread_present_bytes_uiomoved, present_bytes_skipped);
 	VNOPS_STAT_INCR(mappedread_absent_bytes_dmu_read, absent_bytes_read);
+
+	if (error == 0) {
+		printf("ZFS: %s: done with no error, file %s\n",
+		    __func__, filename);
+	}
 
 	return (error);
 }
