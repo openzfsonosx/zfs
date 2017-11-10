@@ -857,7 +857,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 		bytes_from_start_of_upl = pgindex * PAGE_SIZE;
 		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
 		if (bytes_from_start_of_file <= filesize) {
-			printf("ZFS: %s: bytes_from_start_of_file %llu <= %lu filesize (bytes_left %llu)\n",
+			printf("ZFS: %s: leaving: bytes_from_start_of_file %llu >= %lu filesize (bytes_left %llu)\n",
 			    __func__, bytes_from_start_of_file, filesize, bytes_left);
 			goto exit;
 		}
