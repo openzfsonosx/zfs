@@ -743,7 +743,7 @@ mappedread_sf(vnode_t *vp, int nbytes, uio_t *uio)
 }
 #endif
 
-int
+static int
 copy_upl_to_mem(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info_t *pl)
 {
 	int error = 0;
@@ -767,7 +767,7 @@ copy_upl_to_mem(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info
 
 const int MAX_UPL_SIZE_BYTES = 16*1024*1024;
 
-int
+static int
 copy_mem_to_upl(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info_t *pl)
 {
 	int error = 0;
@@ -801,7 +801,7 @@ copy_mem_to_upl(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info
 /*
  * Create block-aligned UPL and read data into it
  */
-int
+static int
 dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
     const off_t first_upl_page_file_position, const size_t numbytes, upl_t upl,
     const int file_maxpageid, const int upl_num_pages,
@@ -822,8 +822,9 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	off_t bytes_from_start_of_file;
 
 	const off_t hole_startpage = page_index_hole_start;
+	const off_t hole_endpage = page_index_hole_end;
 	const off_t hole_pagerange_pages = page_index_hole_end - page_index_hole_start;
-	ASSERT3S(hole_pagerange_pages, ==, upl_num_pages);
+	ASSERT3S(hole_pagerange_pages, <=, upl_num_pages);
 
 	int64_t bytes_left = numbytes;
 
@@ -841,12 +842,15 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	 * so deal with that specially.
 	 */
 
+	// whole upl fits in file
 	ASSERT3S(first_upl_page_file_position + ((upl_num_pages - 1) * PAGE_SIZE), <=, filesize);
+	// this hole fits in file
+	ASSERT3S(first_upl_page_file_position + (hole_pagerange_pages * PAGE_SIZE), <=, filesize);
 
-	for (pagenum = hole_startpage; pagenum < upl_num_pages; pagenum++) {
+	for (pagenum = hole_startpage; pagenum <= hole_endpage; pagenum++) {
 		if (bytes_left <= 0) {
-			printf("ZFS: %s: ran out of bytes_left (%lld), pagenum %lld, upl_num_pages %d\n",
-			    __func__, bytes_left, pagenum, upl_num_pages);
+			printf("ZFS: %s: ran out of bytes_left (%lld), pagenum %lld, hole pages %lld\n",
+			    __func__, bytes_left, pagenum, hole_pagerange_pages);
 			goto exit;
 		}
 		bytes_from_start_of_upl = pagenum * PAGE_SIZE;
@@ -861,13 +865,14 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			/* do a partial block read */
 			ASSERT3S(filesize - bytes_from_start_of_file, <, PAGE_SIZE);
 			const off_t actually_readable_bytes = filesize - bytes_from_start_of_file;
-			printf("ZFS: %s: partial block read from %llx to %llx (instead of %llx)\n",
+			printf("ZFS: %s: partial block read from 0x%llx to 0x%llx (instead of 0x%llx)\n",
 			    __func__, bytes_from_start_of_file,
-			    actually_readable_bytes, upl_page_outer_boundary);
+			    bytes_from_start_of_file + actually_readable_bytes,
+			    upl_page_outer_boundary);
 			ASSERT3S(actually_readable_bytes, <, PAGE_SIZE);
 			const size_t bufsiz = MAX(actually_readable_bytes, PAGE_SIZE);
 			ASSERT3S(bufsiz, <=, SPA_MAXBLOCKSIZE);
-			void *buf = zio_buf_alloc(bufsiz);
+			void *buf = kmem_alloc(bufsiz, KM_SLEEP);
 			VERIFY3P(buf, !=, NULL);
 			/* zero out the buffer, to avoid garbage in the tail */
 			bzero(buf, bufsiz);
@@ -882,7 +887,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 				    " (off %llu, size %llu) returned err %d\n",
 				    __func__, filename, bytes_from_start_of_file,
 				    actually_readable_bytes, err);
-				zio_buf_free(buf, bufsiz);
+				kmem_free(buf, bufsiz);
 				goto exit;
 			}
 			printf("ZFS: %s: (1) copy_mem_to_upl(upl, uofs %d, buf, nby %llu, NULL)\n",
@@ -893,17 +898,17 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			if (err) {
 				printf("ZFS: %s err %d from copy_mem_to_upl for file %s\n",
 				    __func__, err, filename);
-				zio_buf_free(buf, bufsiz);
+				kmem_free(buf, bufsiz);
 				goto exit;
 			}
-			zio_buf_free(buf, bufsiz);
+			kmem_free(buf, bufsiz);
 			bytes_left -= actually_readable_bytes;
 		} else {
 			/* this page is aligned with a upl page */
 			ASSERT3S(bytes_left, >, 0); /* important */
 			size_t bytes_to_copy = MIN(bytes_left, PAGE_SIZE);
 			const size_t bufsiz = PAGE_SIZE;
-			void *buf = zio_buf_alloc(bufsiz);
+			void *buf = kmem_alloc(bufsiz, KM_SLEEP);
 			VERIFY3P(buf, !=, NULL);
 			size_t file_pos_for_dmu_read =
 			    bytes_from_start_of_file;
@@ -916,7 +921,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 				printf("ZFS: %s: full dmu_read of %s"
 				    " (off %lu, size %lu) returned err %d\n",
 				    __func__, filename, file_pos_for_dmu_read, bytes_to_copy, err);
-				zio_buf_free(buf, bufsiz);
+				kmem_free(buf, bufsiz);
 				goto exit;
 			}
 			/* we have to copy to the correct upl buffer
@@ -937,10 +942,10 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			if (err) {
 				printf("ZFS: %s err %d from copy_mem_to_upl for file %s\n",
 				    __func__, err, filename);
-				zio_buf_free(buf, bufsiz);
+				kmem_free(buf, bufsiz);
 				goto exit;
 			}
-			zio_buf_free(buf, bufsiz);
+			kmem_free(buf, bufsiz);
 			bytes_left -= bytes_to_copy;
 		}
 	} /* for */
@@ -1021,7 +1026,6 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	const off_t upl_first_page_pos = orig_offset & (~PAGE_MASK);
 	const off_t upl_off_in_first_upl_page = orig_offset & PAGE_MASK;
 	const off_t upl_size_bytes = (upl_first_page_pos  + inbytes + (PAGE_SIZE - 1LL)) & ~PAGE_MASK;
-	ASSERT3S(upl_first_page_pos + upl_size_bytes, <=, 1LL + (filesize | PAGE_MASK));
 
 	ASSERT3S(upl_size_bytes, >, 0);
 	ASSERT3S(upl_size_bytes, <=, MAX_UPL_SIZE_BYTES);
@@ -1037,7 +1041,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	upl_page_info_t *pl = NULL;
 
 	error = ubc_create_upl(vp, upl_first_page_pos, upl_size_bytes, &upl, &pl,
-	    UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
+	    UPL_FILE_IO | UPL_SET_LITE);
 	if ((error != KERN_SUCCESS) || (upl == NULL)) {
 		printf("ZFS: %s: failed to create upl: %d\n", __func__, error);
 		dnode_rele(dn, FTAG);
