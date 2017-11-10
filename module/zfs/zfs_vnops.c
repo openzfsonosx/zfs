@@ -817,15 +817,18 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	const size_t filesize = zp->z_size;
 
 	int err = 0;
-	off_t pagenum, startpage, endpage;
+	off_t pagenum;
 	uint64_t start_off, end_off;
 	size_t bytes_left;
 	int bytes_from_start_of_upl;
 	off_t bytes_from_start_of_file;
 
-	startpage = first_upl_page_file_position / PAGE_SIZE;
-	ASSERT3S(maxpageid, <=, page_index_hole_end - page_index_hole_start);
-	endpage = MIN(howmany(first_upl_page_file_position + numbytes, PAGE_SIZE), maxpageid + 1);
+	const off_t startpage = first_upl_page_file_position / PAGE_SIZE;
+	const off_t hole_pagerange_pages = page_index_hole_end - page_index_hole_start;
+	ASSERT3S(maxpageid, <=, hole_pagerange_pages);
+	const off_t maxfilepage = MIN(howmany(first_upl_page_file_position + numbytes, PAGE_SIZE),
+	    maxpageid + 1);
+	const off_t endpage = MIN(maxfilepage, startpage + hole_pagerange_pages);
 
 	size_t bytes_to_copy = numbytes;
 	bytes_left = bytes_to_copy;
