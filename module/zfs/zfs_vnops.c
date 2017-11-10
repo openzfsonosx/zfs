@@ -1152,7 +1152,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			} else {
 				kern_return_t kret_commit =
 				    ubc_upl_commit_range(upl, upl_page_as_bytes, PAGE_SIZE,
-					UPL_COMMIT_FREE_ON_EMPTY);
+					UPL_COMMIT_CLEAR_DIRTY | UPL_COMMIT_FREE_ON_EMPTY);
 				if (kret_commit != KERN_SUCCESS) {
 					error = kret_commit;
 					printf("ZFS: %s commit failed for page %d, file %s\n",
