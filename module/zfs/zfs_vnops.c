@@ -804,7 +804,7 @@ copy_mem_to_upl(upl_t upl, int upl_offset, void *data, int nbytes, upl_page_info
 int
 dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
     const off_t first_upl_page_file_position, const size_t numbytes, upl_t upl,
-    const int maxpageid,
+    const int file_maxpageid, const int upl_num_pages,
     const off_t upl_first_page_pos, const off_t upl_off_in_first_upl_page,
     const int page_index_hole_start, const int page_index_hole_end)
 {
@@ -826,15 +826,12 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	//const off_t file_startpage = first_upl_page_file_position / PAGE_SIZE;
 	const off_t hole_startpage = page_index_hole_start;
 	const off_t hole_pagerange_pages = page_index_hole_end - page_index_hole_start;
-	ASSERT3S(maxpageid, <=, hole_pagerange_pages);
-	const off_t maxfilepage = MIN(howmany(first_upl_page_file_position + numbytes, PAGE_SIZE),
-	    maxpageid + 1);
-	const off_t endpage = MIN(maxfilepage, hole_startpage + hole_pagerange_pages);
+	ASSERT3S(hole_pagerange_pages, ==, upl_num_pages);
 
 	size_t bytes_to_copy = numbytes;
 	bytes_left = bytes_to_copy;
 
-	for (pagenum = hole_startpage; pagenum < endpage; pagenum++) {
+	for (pagenum = hole_startpage; pagenum < upl_num_pages; pagenum++) {
 		bytes_from_start_of_upl = pagenum * PAGE_SIZE;
 		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
 		ASSERT3S(bytes_from_start_of_file, <=, filesize);
@@ -1011,7 +1008,8 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	const off_t uio_start_file_pos = orig_offset;
 
-	ASSERT3S(upl_first_page_pos, >=, uio_start_file_pos);
+	ASSERT3S(upl_first_page_pos, <=, uio_start_file_pos);
+	ASSERT3S(upl_first_page_pos + PAGE_SIZE, >=, uio_start_file_pos);
 
 	int error = 0;
 
@@ -1033,9 +1031,10 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
                 D_ABORT_ERROR,
         } __attribute__((packed)) upl_page_disposition_t;
 
-	const int maxpageid = howmany(filesize, PAGE_SIZE) - 1;
+	const int file_maxpageid = howmany(filesize, PAGE_SIZE) - 1;
+	const int upl_num_pages = upl_size_bytes / PAGE_SIZE;
 
-	const int page_disposition_size = (1 + maxpageid) * sizeof(upl_page_disposition_t);
+	const int page_disposition_size = upl_num_pages * sizeof(upl_page_disposition_t);
         upl_page_disposition_t *page_disposition = kmem_zalloc(page_disposition_size, KM_SLEEP);
 
 	size_t bytes_left;
@@ -1048,7 +1047,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	uint64_t present_bytes_skipped = 0, absent_bytes_read = 0;
 
 	const int page_index_end = howmany(upl_size_bytes, PAGE_SIZE);
-	bytes_left = MIN((maxpageid + 1) * PAGE_SIZE, upl_size_bytes);
+	bytes_left = MIN((file_maxpageid + 1) * PAGE_SIZE, upl_size_bytes);
 	ASSERT3S(bytes_left, >, 0);
 
 	while(page_index < page_index_end) {
@@ -1073,12 +1072,12 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 		file_position_offset = upl_first_page_pos + (page_index * PAGE_SIZE);
 		printf("ZFS: %s: dmu_copy_file_to_upl(.., ofs %llu,"
-		    " byt %d, ..., maxpg %d, upls %lld, uplo %lld, pist %d, pihe %d)\n",
-		    __func__, file_position_offset, bytes_to_copy, maxpageid,
+		    " byt %d, ..., f_maxpg %d, u_pgs %d upls %lld, uplo %lld, pist %d, pihe %d)\n",
+		    __func__, file_position_offset, bytes_to_copy, file_maxpageid, upl_num_pages,
 		    upl_first_page_pos, upl_off_in_first_upl_page,
 		    page_index_hole_start, page_index_hole_end);
 		error = dmu_copy_file_to_upl(vp, dn,
-		    file_position_offset, bytes_to_copy, upl, maxpageid,
+		    file_position_offset, bytes_to_copy, upl, file_maxpageid, upl_num_pages,
 		    upl_first_page_pos, upl_off_in_first_upl_page,
 		    page_index_hole_start, page_index_hole_end);
 		if (error)
