@@ -125,6 +125,8 @@ typedef struct vnops_stats {
 	kstat_named_t mappedread_with_ubc_only;
 	kstat_named_t mappedread_tail_block_committed;
 	kstat_named_t mappedread_tail_aborted_with_reference;
+	kstat_named_t mappedread_single_block_committed;
+	kstat_named_t mappedread_single_aborted_with_reference;
 	kstat_named_t mappedread_ubc_satisfied_all;
 	kstat_named_t mappedread_uio_bytes_moved;
 	kstat_named_t mappedread_present_pages_skipped;
@@ -173,6 +175,8 @@ static vnops_stats_t vnops_stats = {
 	{ "mappedread_with_ubc_only",                    KSTAT_DATA_UINT64 },
 	{ "mappedread_tail_block_committed",             KSTAT_DATA_UINT64 },
 	{ "mappedread_tail_aborted_with_reference",      KSTAT_DATA_UINT64 },
+	{ "mappedread_single_block_committed",           KSTAT_DATA_UINT64 },
+	{ "mappedread_single_aborted_with_reference",    KSTAT_DATA_UINT64 },
 	{ "mappedread_ubc_satisfied_all",                KSTAT_DATA_UINT64 },
 	{ "mappedread_uio_bytes_moved",                  KSTAT_DATA_UINT64 },
 	{ "mappedread_present_pages_skipped",            KSTAT_DATA_UINT64 },
@@ -1001,6 +1005,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	uint64_t present_pages_skipped = 0, absent_bytes_read = 0;
 	uint64_t tail_block_committed = 0, tail_block_aborted_with_reference = 0;
+	uint64_t single_block_committed = 0, single_block_aborted_with_reference = 0;
 
 	const int page_index_end = howmany(upl_size_bytes, PAGE_SIZE);
 	bytes_left = MIN((file_maxpageid + 1) * PAGE_SIZE, upl_size_bytes);
@@ -1040,19 +1045,28 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			break;
 		} else {
 			absent_bytes_read += bytes_to_copy;
-			ASSERT3S(page_index_hole_start, <=, page_index_hole_end - 1);
-			for (int i = page_index_hole_start; i < page_index_hole_end - 1; i++) {
-				page_disposition[i] = D_COMMIT;
+			// is this just one page?
+			if (page_index_hole_start + 1 == page_index_hole_end) {
+				if (bytes_to_copy == PAGE_SIZE) {
+					page_disposition[page_index_hole_start] = D_COMMIT;
+					single_block_committed++;
+				} else {
+					page_disposition[page_index_hole_start] = D_ABORT_PRESENT;
+					single_block_aborted_with_reference++;
+				}
+			} else {
+				for (int i = page_index_hole_start; i < page_index_hole_end; i++) {
+					page_disposition[i] = D_COMMIT;
+				}
+				if ((bytes_to_copy % PAGE_SIZE)==0) {
+					tail_block_committed++;
+					page_disposition[page_index_hole_end-1] = D_COMMIT;
+				}
+				else {
+					tail_block_aborted_with_reference++;
+					page_disposition[page_index_hole_end-1] = D_ABORT_PRESENT;
+				}
 			}
-			if ((bytes_to_copy % PAGE_SIZE)==0) {
-				tail_block_committed++;
-				page_disposition[page_index_hole_end] = D_COMMIT;
-			}
-			else {
-				tail_block_aborted_with_reference++;
-				page_disposition[page_index_hole_end] = D_ABORT_PRESENT;
-			}
-
 		}
 
 		page_index = page_index_hole_end;
@@ -1125,6 +1139,8 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	VNOPS_STAT_INCR(mappedread_absent_bytes_dmu_read, absent_bytes_read);
 	VNOPS_STAT_INCR(mappedread_tail_block_committed, tail_block_committed);
 	VNOPS_STAT_INCR(mappedread_tail_aborted_with_reference, tail_block_aborted_with_reference);
+	VNOPS_STAT_INCR(mappedread_single_block_committed, single_block_committed);
+	VNOPS_STAT_INCR(mappedread_single_aborted_with_reference, single_block_aborted_with_reference);
 
 	if (error == 0) {
 		dprintf("ZFS: %s: done with no error, file %s\n",
