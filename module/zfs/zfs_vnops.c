@@ -416,7 +416,7 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 	cleanlocks(vp, ddi_get_pid(), 0);
 	cleanshares(vp, ddi_get_pid());
 #else
-	if ((ubc_pages_resident(vp) || (vn_has_cached_data(vp))) &&
+	if (vn_has_cached_data(vp) &&
 	    vnode_isreg(vp) && !vnode_isswap(vp)) {
 		ASSERT(vn_has_cached_data(vp) || ubc_pages_resident(vp));
 		off_t ubcsize = ubc_getsize(vp);
@@ -921,7 +921,6 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	const uint64_t inbytes = arg_bytes;
 	const size_t filesize = zp->z_size;
 
-
 	ASSERT3S(inbytes, >, 0);
 	ASSERT3S(uio_offset(uio), <=, filesize);
 	ASSERT3S(ubc_getsize(vp), ==, filesize);
@@ -1094,7 +1093,8 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	int upl_page_as_bytes;
 	for (page_index = 0; page_index < page_index_end; page_index++) {
 		upl_page_as_bytes = page_index * PAGE_SIZE;
-		if (page_disposition[page_index] == D_COMMIT) {
+		if (page_disposition[page_index] == D_COMMIT &&
+		    zp->z_is_mapped == 0) {
 			if (error) {
 				kern_return_t kret_abort =
 				    ubc_upl_abort_range(upl, upl_page_as_bytes, PAGE_SIZE,
@@ -1116,12 +1116,13 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			}
 		} else {
 			int commit_flag = UPL_ABORT_FREE_ON_EMPTY;
-			if (page_disposition[page_index] == D_ABORT_PRESENT) {
+			if (page_disposition[page_index] == D_ABORT_PRESENT &&
+			    zp->z_is_mapped == 0) {
 				commit_flag |= UPL_ABORT_REFERENCE;
 			}
 			kern_return_t kret_skip =
 			    ubc_upl_abort_range(upl, upl_page_as_bytes, PAGE_SIZE,
-				UPL_ABORT_FREE_ON_EMPTY);
+				commit_flag);
 			if (kret_skip != KERN_SUCCESS) {
 				if (error == 0)
 					error = kret_skip;
@@ -1258,7 +1259,6 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (mapped == B_TRUE) {
 			//zfs_fsync(vp, 0, cr, ct); // does a zil commit
 			boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
-			//ASSERT(ubc_pages_resident(vp));
 			off_t ubcsize = ubc_getsize(vp);
 			ASSERT3S(zp->z_size, ==, ubcsize);
 			off_t resid_off = 0;
@@ -1332,7 +1332,6 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
                      P2PHASE(uio_offset(uio), zfs_read_chunk_size));
 
 		if (ubc_pages_resident(vp) || vn_has_cached_data(vp)) {
-			//ASSERT(vn_has_cached_data(vp));
 			boolean_t need_release = B_FALSE;
 			boolean_t need_upgrade = B_FALSE;
 			if (vn_has_cached_data(vp) && ubc_pages_resident(vp)) {
@@ -1678,8 +1677,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (abuf == NULL) {
 
-			if (  ubc_pages_resident(vp) || vn_has_cached_data(vp) ) {
-				ASSERT(vn_has_cached_data(vp));
+			if ( vn_has_cached_data(vp) ) {
 				uio_copy = uio_duplicate(uio);
 			}
 
@@ -1714,9 +1712,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uioskip(uio, tx_bytes);
 		}
 
-		if (tx_bytes && (ubc_pages_resident(vp) || vn_has_cached_data(vp))) {
+		if (tx_bytes && vn_has_cached_data(vp)) {
 #ifdef __APPLE__
-			ASSERT(vn_has_cached_data(vp));
 			if (uio_copy) {
 				VNOPS_STAT_BUMP(write_updatepage_uio_copy);
 				dprintf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
@@ -3781,7 +3778,6 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		/* tidy up pages */
 		VNOPS_STAT_BUMP(zfs_fsync_recursive_tidy);
 		/* asynchronous call */
-		//ASSERT(ubc_pages_resident(vp));
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3U(zp->z_size, ==, ubcsize);
 		off_t resid_off = 0;
@@ -3800,7 +3796,6 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 	// ubc msync, without mutexes
 	// should take a vnode reference XXX
 	if (mapped > 0) {
-		//ASSERT(ubc_pages_resident(vp));
 		off_t ubcsize = ubc_getsize(vp);
 		if (ubcsize > 0) {
 			ASSERT3S(zp->z_size, ==, ubcsize);
