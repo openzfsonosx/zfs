@@ -856,7 +856,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 		}
 		bytes_from_start_of_upl = pgindex * PAGE_SIZE;
 		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
-		if (bytes_from_start_of_file <= filesize) {
+		if (bytes_from_start_of_file > filesize) {
 			printf("ZFS: %s: leaving: bytes_from_start_of_file %llu >= %lu filesize (bytes_left %llu)\n",
 			    __func__, bytes_from_start_of_file, filesize, bytes_left);
 			goto exit;
@@ -1028,9 +1028,10 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	 * somewhere in the first page, and the last page
 	 * will be relevant for its first upl_off bytes
 	 */
-	const off_t upl_first_page_pos = orig_offset & (~PAGE_MASK);
-	const off_t upl_off_in_first_upl_page = orig_offset & PAGE_MASK;
-	const off_t upl_size_bytes = (upl_first_page_pos  + inbytes + (PAGE_SIZE - 1LL)) & ~PAGE_MASK;
+	const off_t upl_first_page_pos = (off_t)orig_offset & (off_t)(~(off_t)PAGE_MASK);
+	const off_t upl_off_in_first_upl_page = (off_t)orig_offset & (off_t)PAGE_MASK;
+	const off_t upl_size_bytes = (upl_first_page_pos  + (off_t)inbytes + ((off_t)PAGE_SIZE - (off_t)1LL)) &
+	    (off_t)(~(off_t)PAGE_MASK);
 
 	ASSERT3S(upl_size_bytes, >, 0);
 	ASSERT3S(upl_size_bytes, <=, MAX_UPL_SIZE_BYTES);
