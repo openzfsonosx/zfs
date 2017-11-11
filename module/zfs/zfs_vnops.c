@@ -897,6 +897,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 		}
 	} /* for */
 
+	ASSERT3S(bytes_left, ==, 0);
 exit:
 	return(err);
 }
