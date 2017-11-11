@@ -1304,10 +1304,10 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			mutex_enter(&zp->z_lock);
 			need_unlock = B_TRUE;
 		}
-		mapped = zp->z_is_mapped;
+		mapped = (zp->z_is_mapped) ? 1 : 0;
 		if (need_unlock == B_TRUE)
 			mutex_exit(&zp->z_lock);
-		if (mapped == B_TRUE) {
+		if (mapped != 0) {
 			//zfs_fsync(vp, 0, cr, ct); // does a zil commit
 			boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
 			off_t ubcsize = ubc_getsize(vp);
@@ -1326,6 +1326,14 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		} else if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS) {
 			zil_commit(zfsvfs->z_log, zp->z_id);
 			VNOPS_STAT_BUMP(zfs_read_zil_commit);
+		}
+		if (mapped == 0 && (ubc_pages_resident(vp) || vn_has_cached_data(vp))) {
+			off_t resid_off = 0;
+			off_t ubcsize = ubc_getsize(vp);
+			int retval = ubc_msync(vp, 0, ubcsize, &resid_off, UBC_PUSHDIRTY);
+			ASSERT3S(retval, ==, 0);
+			if (retval != 0)
+				ASSERT3S(resid_off, ==, ubcsize);
 		}
 	}
 #endif
@@ -1351,9 +1359,10 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		nbytes = MIN(n, zfs_read_chunk_size -
                      P2PHASE(uio_offset(uio), zfs_read_chunk_size));
 
-		if (ubc_pages_resident(vp) || vn_has_cached_data(vp)) {
+		if (mapped != 0 && (ubc_pages_resident(vp) || vn_has_cached_data(vp))) {
 			boolean_t need_release = B_FALSE;
 			boolean_t need_upgrade = B_FALSE;
+			ASSERT3U(mapped, !=, 0);
 			if (vn_has_cached_data(vp) && ubc_pages_resident(vp)) {
 				VNOPS_STAT_BUMP(mappedread_vn_and_ubc_have_cached_data);
 			} else if (ubc_pages_resident(vp) && !vn_has_cached_data(vp)) {
@@ -1376,7 +1385,13 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				VNOPS_STAT_INCR(zfs_read_mappedread_mapped_file_bytes, nbytes);
 			}
 		} else {
+			boolean_t need_release = B_FALSE;
+			boolean_t need_upgrade = B_FALSE;
+			uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+			if (tries > 0)
+				VNOPS_STAT_INCR(mappedread_lock_tries, tries);
 			error = mappedread_new(vp, nbytes, uio);
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
 			ASSERT3S(error, ==, 0);
 			if (error == 0 && nbytes > 0) {
 				VNOPS_STAT_INCR(zfs_read_mappedread_unmapped_file_bytes, nbytes);
