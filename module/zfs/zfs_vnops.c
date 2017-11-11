@@ -828,15 +828,16 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			    buf, DMU_READ_PREFETCH);
 			if (err != 0) {
 				printf("ZFS: %s: partial dmu_read of %s"
-				    " (off %llu, size %llu) returned err %d\n",
+				    " (off %llu, size %lu) returned err %d (actually readable %llu)\n",
 				    __func__, filename, bytes_from_start_of_file,
-				    actually_readable_bytes, err);
+				    adj_actually_readable_bytes, err,
+				    actually_readable_bytes);
 				kmem_free(buf, bufsiz);
 				goto exit;
 			}
 			dprintf("ZFS: %s: (1) copy_mem_to_upl(upl, uofs %d, buf, nby %llu, NULL)\n",
 			    __func__,
-			    bytes_from_start_of_upl, actually_readable_bytes);
+			    bytes_from_start_of_upl, adj_actually_readable_bytes);
 			err = copy_mem_to_upl(upl, bytes_from_start_of_upl,
 			    buf, adj_actually_readable_bytes, NULL);
 			if (err) {
@@ -846,8 +847,8 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 				goto exit;
 			}
 			kmem_free(buf, bufsiz);
-			bytes_left -= actually_readable_bytes;
-			*bycopied += actually_readable_bytes;
+			bytes_left -= adj_actually_readable_bytes;
+			*bycopied += adj_actually_readable_bytes;
 			*pgcopied += 1;
 		} else {
 			/* this page is aligned with a upl page */
@@ -900,8 +901,10 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 		}
 	} /* for */
 
-	ASSERT3S(bytes_left, ==, 0);
+	if (!err) ASSERT3S(bytes_left, ==, 0);
 exit:
+	if (err)
+		printf("ZFS: %s returning error %d with bytes_left %lld\n", __func__, err, bytes_left);
 	return(err);
 }
 
