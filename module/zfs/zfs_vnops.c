@@ -1903,6 +1903,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		zil_commit(zilog, zp->z_id);
 	}
 
+	/* OS X: pageout requires that the UBC file size be current. */
+        if (tx_bytes != 0) {
+		rw_enter(&zp->z_map_lock, RW_WRITER);
+                ubc_setsize(vp, zp->z_size);
+		rw_exit(&zp->z_map_lock);
+        }
+
 	ZFS_EXIT(zfsvfs);
 	return (0);
 }
