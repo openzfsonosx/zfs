@@ -777,9 +777,9 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	//ASSERT3S(first_upl_page_file_position + ((upl_num_pages - 1) * PAGE_SIZE), <=, filesize);
 	const uint64_t worksize = first_upl_page_file_position + ((upl_num_pages - 1) * PAGE_SIZE);
 	if (worksize > filesize) {
-		printf("ZFS: %s:%d :  worksize %llu > %lu filesize, returning EIO\n",
+		printf("ZFS: %s:%d :  worksize %llu > %lu filesize, returning ERANGE\n",
 		    __func__, __LINE__, worksize, filesize);
-		return (EIO);
+		return (ERANGE);
 	}
 	// this hole fits in file or at least the EOF is within the last page of the hole
 	ASSERT3S(first_upl_page_file_position + ((hole_pagerange_pages - 1) * PAGE_SIZE), <=, filesize);
@@ -938,6 +938,13 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	uint64_t object = zp->z_id;
 	const char *filename = zp->z_name_cache;
 	dnode_t *dn;
+
+	uio_t *uio_save = uio_duplicate(uio);
+	ASSERT3P(uio_save, !=, NULL);
+	if (uio_save == NULL) {
+		return (EIO);
+	}
+
 	int err = dnode_hold(os, object, FTAG, &dn);
 	if (err != 0) {
 		printf("ZFS: %s: unable to dnode_hold %s\n",
@@ -1207,6 +1214,14 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
 	}
 
+	if (error == ERANGE) {
+		printf("ZFS: %s: ERANGE: resetting uio\n", __func__);
+		uio = uio_save;
+	}
+
+	if (uio_save)
+		uio_free(uio_save);
+
 	return (error);
 }
 
@@ -1402,6 +1417,12 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			if (error == 0 && nbytes > 0) {
 				VNOPS_STAT_INCR(zfs_read_mappedread_unmapped_file_bytes, nbytes);
 			}
+		}
+
+		if (error == ERANGE) {
+			/* return short read */
+			error = 0;
+			break;
 		}
 
 		if (error) {
