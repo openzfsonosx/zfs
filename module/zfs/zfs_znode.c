@@ -2075,7 +2075,7 @@ zfs_trunc(znode_t *zp, uint64_t end)
 		//       "by ubc_setsize()"  but does not call
 		// ubc_setsize, or anything in this rw_locked block,
 		// whereas we call it here:
-		vnode_pager_setsize(vp, end);
+		//vnode_pager_setsize(vp, end);
 	}
 	rw_exit(&zp->z_map_lock);
 
