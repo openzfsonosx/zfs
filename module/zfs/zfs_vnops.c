@@ -1025,7 +1025,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	/* we need to be wary here */
 	bytes_left = MIN((file_maxpageid + 1) * PAGE_SIZE, upl_size_bytes);
 	ASSERT3S(bytes_left, >, 0);
-	ASSERT3S(bytes_left + upl_first_page_pos, <=, filesize);
+	//ASSERT3S(bytes_left + upl_first_page_pos, <=, filesize);
 
 	while(page_index < page_index_end) {
 		ASSERT3S(filesize, ==, zp->z_size);
@@ -1106,7 +1106,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	/* copy the data into userland */
 
 	const int inbytes_diff = inbytes - inbytes_remaining;
-	ASSERT3S(inbytes_diff, ==, 0);
+	ASSERT3S(inbytes_diff, ==, inbytes);
 	int io_requested = bytes_for_cluster_copy_ioreq;
 	const int c_io_requested = io_requested;
 	ASSERT3S(c_io_requested, ==, inbytes_diff);
