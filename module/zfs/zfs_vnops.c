@@ -1010,7 +1010,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	size_t bytes_left;
 	off_t file_position_offset;
-	int bytes_to_copy;
+	int bytes_to_copy, bytes_for_ioreq = 0;
 	int page_index = 0, page_index_hole_start, page_index_hole_end;
 
 	/* fill in the hole of the UPL with valid data */
@@ -1020,9 +1020,10 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	uint64_t single_block_committed = 0, single_block_aborted_with_reference = 0;
 
 	const int page_index_end = howmany(upl_size_bytes, PAGE_SIZE);
+	/* we need to be wary here */
 	bytes_left = MIN((file_maxpageid + 1) * PAGE_SIZE, upl_size_bytes);
 	ASSERT3S(bytes_left, >, 0);
-
+	ASSERT3S(bytes_left + upl_first_page_pos, <=, filesize);
 
 	while(page_index < page_index_end) {
 		ASSERT3S(filesize, ==, zp->z_size);
@@ -1033,6 +1034,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			page_disposition[page_index] = D_ABORT_PRESENT;
 			page_index++;
 			present_pages_skipped++;
+			bytes_for_ioreq += PAGE_SIZE;
 			continue;
 		}
 		/* this is a hole.  find its end. */
@@ -1045,6 +1047,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		}
 		/* now fill in the hole */
 		bytes_to_copy = MIN((page_index_hole_end - page_index) * PAGE_SIZE, bytes_left);
+		ASSERT3S(bytes_to_copy, >, 0);
 
 		file_position_offset = upl_first_page_pos + (page_index * PAGE_SIZE);
 		dprintf("ZFS: %s: dmu_copy_file_to_upl(.., ofs %llu,"
@@ -1063,6 +1066,8 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		} else {
 			ASSERT3S(pgcopied, ==, pagerange);
 			ASSERT3S(bytescopied, ==, bytes_to_copy);
+			bytes_left -= bytescopied;
+			bytes_for_ioreq += bytescopied;
 			absent_bytes_read += bytescopied;
 			// is this just one page?
 			if (page_index_hole_start + 1 == page_index_hole_end) {
@@ -1095,6 +1100,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	/* copy the data into userland */
 
+	ASSERT3S(bytes_for_ioreq, ==, inbytes);
 	int io_requested = inbytes;
 	int userland_target_byte = uio_offset(uio) - upl_first_page_pos;
 	dprintf("ZFS: %s ccud(uio, upl, offs %d, iorq %d)\n",
