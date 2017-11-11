@@ -735,7 +735,8 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
     const off_t first_upl_page_file_position, const size_t numbytes, upl_t upl,
     const int file_maxpageid, const int upl_num_pages,
     const off_t upl_first_page_pos, const off_t upl_off_in_first_upl_page,
-    const int page_index_hole_start, const int page_index_hole_end)
+    const int page_index_hole_start, const int page_index_hole_end,
+    int *pgcopied, int *bycopied)
 {
 
 	/* called with dnode held */
@@ -744,6 +745,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	uint64_t object = zp->z_id;
 	const char *filename = zp->z_name_cache;
 	const size_t filesize = zp->z_size;
+	const size_t usize = ubc_getsize(vp);
 
 	int err = 0;
 	off_t pagenum;
@@ -777,6 +779,8 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	ASSERT3S(first_upl_page_file_position + ((hole_pagerange_pages - 1) * PAGE_SIZE), <=, filesize);
 
 	for (pagenum = hole_startpage; pagenum < hole_endpage; pagenum++) {
+		ASSERT3S(filesize, ==, zp->z_size);
+		ASSERT3S(usize, ==, ubc_getsize(vp));
 		off_t pgindex = (pagenum - hole_startpage);
 		if (bytes_left <= 0) {
 			printf("ZFS: %s: ran out of bytes_left (%lld), pagenum %lld, hole pages %lld\n",
@@ -786,8 +790,13 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 		bytes_from_start_of_upl = pgindex * PAGE_SIZE;
 		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
 		if (bytes_from_start_of_file > filesize) {
-			printf("ZFS: %s: leaving: bytes_from_start_of_file %llu >= %lu filesize (bytes_left %llu)\n",
+			printf("ZFS: %s: leaving: bytes_from_start_of_file %llu > %lu filesize (bytes_left %llu)\n",
 			    __func__, bytes_from_start_of_file, filesize, bytes_left);
+			goto exit;
+		} else if (bytes_from_start_of_file > zp->z_size ||
+		    bytes_from_start_of_file > ubc_getsize(vp)) {
+			printf("ZFS: %s: leaving bytes_from_start_of_file %llu > (z_size %llu, newusize %llu)\n",
+			    __func__, bytes_from_start_of_file, zp->z_size, ubc_getsize(vp));
 			goto exit;
 		}
 		/*
@@ -837,6 +846,8 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			}
 			kmem_free(buf, bufsiz);
 			bytes_left -= actually_readable_bytes;
+			*bycopied += actually_readable_bytes;
+			*pgcopied += 1;
 		} else {
 			/* this page is aligned with a upl page */
 			ASSERT3S(bytes_left, >, 0); /* important */
@@ -881,6 +892,8 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			}
 			kmem_free(buf, bufsiz);
 			bytes_left -= bytes_to_copy;
+			*bycopied += bytes_to_copy;
+			*pgcopied += 1;
 		}
 	} /* for */
 
@@ -920,6 +933,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	const uint64_t inbytes = arg_bytes;
 	const size_t filesize = zp->z_size;
+	const size_t usize = ubc_getsize(vp);
 
 	ASSERT3S(inbytes, >, 0);
 	ASSERT3S(uio_offset(uio), <=, filesize);
@@ -1009,7 +1023,11 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	bytes_left = MIN((file_maxpageid + 1) * PAGE_SIZE, upl_size_bytes);
 	ASSERT3S(bytes_left, >, 0);
 
+
 	while(page_index < page_index_end) {
+		ASSERT3S(filesize, ==, zp->z_size);
+		ASSERT3S(usize, ==, ubc_getsize(vp));
+		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 		if (upl_valid_page(pl, page_index)) {
 			/* preserve this page's state */
 			page_disposition[page_index] = D_ABORT_PRESENT;
@@ -1027,7 +1045,6 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		}
 		/* now fill in the hole */
 		bytes_to_copy = MIN((page_index_hole_end - page_index) * PAGE_SIZE, bytes_left);
-		bytes_left -= bytes_to_copy;
 
 		file_position_offset = upl_first_page_pos + (page_index * PAGE_SIZE);
 		dprintf("ZFS: %s: dmu_copy_file_to_upl(.., ofs %llu,"
@@ -1035,14 +1052,18 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		    __func__, file_position_offset, bytes_to_copy, file_maxpageid, upl_num_pages,
 		    upl_first_page_pos, upl_off_in_first_upl_page,
 		    page_index_hole_start, page_index_hole_end);
+		int pgcopied = 0, bytescopied = 0;
+		const int pagerange = page_index_hole_end - page_index_hole_start;
 		error = dmu_copy_file_to_upl(vp, dn,
 		    file_position_offset, bytes_to_copy, upl, file_maxpageid, upl_num_pages,
 		    upl_first_page_pos, upl_off_in_first_upl_page,
-		    page_index_hole_start, page_index_hole_end);
+		    page_index_hole_start, page_index_hole_end, &pgcopied, &bytescopied);
 		if (error) {
 			break;
 		} else {
-			absent_bytes_read += bytes_to_copy;
+			ASSERT3S(pgcopied, ==, pagerange);
+			ASSERT3S(bytescopied, ==, bytes_to_copy);
+			absent_bytes_read += bytescopied;
 			// is this just one page?
 			if (page_index_hole_start + 1 == page_index_hole_end) {
 				if (bytes_to_copy == PAGE_SIZE) {
@@ -1053,7 +1074,9 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 					single_block_aborted_with_reference++;
 				}
 			} else {
-				for (int i = page_index_hole_start; i < page_index_hole_end; i++) {
+				const int loopend = MIN(page_index_hole_end,
+				    page_index_hole_start + pgcopied);
+				for (int i = page_index_hole_start; i < loopend; i++) {
 					page_disposition[i] = D_COMMIT;
 				}
 				if ((bytes_to_copy % PAGE_SIZE)==0) {
