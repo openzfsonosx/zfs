@@ -783,35 +783,33 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 		ASSERT3S(usize, ==, ubc_getsize(vp));
 		off_t pgindex = (pagenum - hole_startpage);
 		if (bytes_left <= 0) {
-			printf("ZFS: %s: ran out of bytes_left (%lld), pagenum %lld, hole pages %lld\n",
+			printf("ZFS: %s: ran out of bytes_left (%lld), pagenum %lld, hole pages %lld, reading whole block anyway\n",
 			    __func__, bytes_left, pgindex, hole_pagerange_pages);
-			goto exit;
 		}
 		bytes_from_start_of_upl = pgindex * PAGE_SIZE;
 		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
 		if (bytes_from_start_of_file > filesize) {
-			printf("ZFS: %s: leaving: bytes_from_start_of_file %llu > %lu filesize (bytes_left %llu)\n",
+			printf("ZFS: %s: leaving: bytes_from_start_of_file %llu > %lu filesize (bytes_left %llu), reading whole block anyway \n",
 			    __func__, bytes_from_start_of_file, filesize, bytes_left);
-			goto exit;
 		} else if (bytes_from_start_of_file > zp->z_size ||
 		    bytes_from_start_of_file > ubc_getsize(vp)) {
-			printf("ZFS: %s: leaving bytes_from_start_of_file %llu > (z_size %llu, newusize %llu)\n",
+			printf("ZFS: %s: leaving bytes_from_start_of_file %llu > (z_size %llu, newusize %llu), reading whole block anyway\n",
 			    __func__, bytes_from_start_of_file, zp->z_size, ubc_getsize(vp));
-			goto exit;
 		}
 		/*
 		 * our last page may not be as long as the file.
 		 * our last page may also be our first page.
+		 * read the whole page anyway.
 		 */
 		const off_t upl_page_outer_boundary = bytes_from_start_of_file + PAGE_SIZE;
 		if (upl_page_outer_boundary > filesize) {
 			/* do a partial block read */
 			ASSERT3S(filesize - bytes_from_start_of_file, <, PAGE_SIZE);
 			const off_t actually_readable_bytes = filesize - bytes_from_start_of_file;
-			dprintf("ZFS: %s: partial block read from 0x%llx to 0x%llx (instead of 0x%llx)\n",
+			dprintf("ZFS: %s: partial block read from 0x%llx to 0x%llx (instead of 0x%llx) EOF @ 0x%llx\n",
 			    __func__, bytes_from_start_of_file,
 			    bytes_from_start_of_file + actually_readable_bytes,
-			    upl_page_outer_boundary);
+			    upl_page_outer_boundary, filesize);
 			ASSERT3S(actually_readable_bytes, <, PAGE_SIZE);
 			const size_t bufsiz = MAX(actually_readable_bytes, PAGE_SIZE);
 			ASSERT3S(bufsiz, <=, SPA_MAXBLOCKSIZE);
@@ -823,10 +821,13 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			    __func__,
 			    bytes_from_start_of_file,
 			    actually_readable_bytes);
-			err = dmu_read(os, object, bytes_from_start_of_file, actually_readable_bytes,
+			size_t adj_actually_readable_bytes = actually_readable_bytes;
+			if (adj_actually_readable_bytes < PAGE_SIZE)
+				adj_actually_readable_bytes = PAGE_SIZE;
+			err = dmu_read(os, object, bytes_from_start_of_file, adj_actually_readable_bytes,
 			    buf, DMU_READ_PREFETCH);
 			if (err != 0) {
-				dprintf("ZFS: %s: partial dmu_read of %s"
+				printf("ZFS: %s: partial dmu_read of %s"
 				    " (off %llu, size %llu) returned err %d\n",
 				    __func__, filename, bytes_from_start_of_file,
 				    actually_readable_bytes, err);
@@ -837,7 +838,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			    __func__,
 			    bytes_from_start_of_upl, actually_readable_bytes);
 			err = copy_mem_to_upl(upl, bytes_from_start_of_upl,
-			    buf, actually_readable_bytes, NULL);
+			    buf, adj_actually_readable_bytes, NULL);
 			if (err) {
 				printf("ZFS: %s err %d from copy_mem_to_upl for file %s\n",
 				    __func__, err, filename);
@@ -850,8 +851,10 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			*pgcopied += 1;
 		} else {
 			/* this page is aligned with a upl page */
+			/* we will read a page here */
 			ASSERT3S(bytes_left, >, 0); /* important */
-			size_t bytes_to_copy = MIN(bytes_left, PAGE_SIZE);
+			ASSERT3S(bytes_left, >, PAGE_SIZE);
+			size_t bytes_to_copy = PAGE_SIZE;
 			const size_t bufsiz = PAGE_SIZE;
 			void *buf = kmem_alloc(bufsiz, KM_SLEEP);
 			VERIFY3P(buf, !=, NULL);
