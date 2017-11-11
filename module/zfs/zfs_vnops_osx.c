@@ -1078,7 +1078,14 @@ zfs_vnop_write(struct vnop_write_args *ap)
 	 */
 	/* if (tx_bytes != 0) { */
 	if (!error) {
+		/* grow the file: we lock here to avoid interfering with
+		 * an in-progress pagein, pageoutv2, mappedread,
+		 * update_pages, or another ubc_setsize call
+		 */
+		znode_t *zp = VTOZ(ap->a_vp);
+		rw_enter(&zp->z_map_lock, RW_WRITER);
 		ubc_setsize(ap->a_vp, VTOZ(ap->a_vp)->z_size);
+		rw_exit(&zp->z_map_lock);
 	} else {
 		dprintf("%s error %d\n", __func__, error);
 	}
@@ -1785,8 +1792,16 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 		if (VATTR_IS_ACTIVE(vap, va_data_size)) {
 			dprintf("ZFS: setattr new size %llx %llx\n", vap->va_size,
 					ubc_getsize(ap->a_vp));
+			/* take a lock when calling ubc_setsize, to avoid
+			 * interfering with an in-progress update_pages,
+			 * mappedread, pagein, pageoutv2, or other caller
+			 * of ubc_setsize/vnode_pager_setsize
+			 */
+			znode_t *zp = VTOZ(ap->a_vp);
+			rw_enter(&zp->z_map_lock, RW_WRITER);
 			ubc_setsize(ap->a_vp, vap->va_size);
 			VATTR_SET_SUPPORTED(vap, va_data_size);
+			rw_exit(&zp->z_map_lock);
 		}
 		if (VATTR_IS_ACTIVE(vap, va_mode))
 			VATTR_SET_SUPPORTED(vap, va_mode);

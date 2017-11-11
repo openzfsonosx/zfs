@@ -1115,7 +1115,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	/* bytes_for_cluster_copy_ioreq can be larger than inbytes, so trim */
 	int io_requested = MIN(bytes_for_cluster_copy_ioreq, inbytes);
 	const int c_io_requested = io_requested;
-	if (!error) ASSERT3S(c_io_requested, ==, inbytes_diff);
+	if (!error) ASSERT3S(c_io_requested, <=, inbytes_diff);
 
 	int userland_target_byte = uio_offset(uio) - upl_first_page_pos;
 	if (error == 0) {
@@ -1692,8 +1692,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 */
 		nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
 
-		if (woff + nbytes > zp->z_size)
+		if (woff + nbytes > zp->z_size) {
+			/* modify this under the lock to avoid
+			 * intefering with mappedread_new etc.
+			 */
+			rw_enter(&zp->z_map_lock, RW_WRITER);
 			vnode_pager_setsize(vp, woff + nbytes);
+			rw_exit(&zp->z_map_lock);
+		}
 
 		if (abuf == NULL) {
 
@@ -2792,7 +2798,12 @@ top:
 		VI_UNLOCK(vp);
 #endif
 		mutex_exit(&zp->z_lock);
+		/* modify this under the lock to avoid interfering
+		 * with mappedread_new etc
+		 */
+		rw_enter(&zp->z_map_lock, RW_WRITER);
 		vnode_pager_setsize(vp, 0);
+		rw_exit(&zp->z_map_lock);
 		VN_RELE(vp);
 		/*
 		 * Call recycle which will call vnop_reclaim directly if it can

@@ -1586,9 +1586,15 @@ zfs_rezget(znode_t *zp)
 	zp->z_unlinked = (zp->z_links == 0);
 	zp->z_blksz = doi.doi_data_block_size;
 	if (vp != NULL) {
+		/* modify this under the lock, to avoid
+		 * interfering with other users of the
+		 * file size (notably update_pages, mappedread
+		 */
+		rw_enter(&zp->z_map_lock, RW_WRITER);
 		vn_pages_remove(vp, 0, 0);
 		if (zp->z_size != size)
 			vnode_pager_setsize(vp, zp->z_size);
+		rw_exit(&zp->z_map_lock);
 	}
 
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
@@ -1868,7 +1874,16 @@ zfs_extend(znode_t *zp, uint64_t end)
 	    &zp->z_size,
 	    sizeof (zp->z_size), tx));
 
+	/*
+	 * lock around vnode_pager_setsize, which just calls
+	 * ubc_setsize.  So far we are not testing for being mapped or
+	 * having resident pages but we do want to lock to avoid
+	 * interfering with an in-progress mappedread, pagein, pageoutv2,
+	 * or update_pages.
+	 */
+	rw_enter(&zp->z_map_lock, RW_WRITER);
 	vnode_pager_setsize(ZTOV(zp), end);
+	rw_exit(&zp->z_map_lock);
 
 	zfs_range_unlock(rl);
 
@@ -1918,7 +1933,12 @@ zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
 		 * but only at the end of a file, so this code path should
 		 * never happen.
 		 */
+		/* modify the size under the lock to avoid interfering with
+		 * other users of the size, including mappedread_new
+		 */
+		rw_enter(&zp->z_map_lock, RW_WRITER);
 		vnode_pager_setsize(ZTOV(zp), off);
+		rw_exit(&zp->z_map_lock);
 	}
 
 #ifdef _LINUX
@@ -2036,7 +2056,28 @@ zfs_trunc(znode_t *zp, uint64_t end)
 	 * a deadlock with someone trying to push a page that we are
 	 * about to invalidate.
 	 */
-	vnode_pager_setsize(vp, end);
+
+	/*
+	 * OSX :  vnode_pager_setsize is a wrapper around ubc_setsize
+	 *        Also, we need to take the RW_WRITER lock here otherwise
+	 *        we will interfere with in-progress I/O.
+	 *        (notably, fsx failures without -L (no truncations) flag,
+	 *        if a range of pages is ubc_resident and is cut by the
+	 *        truncation).
+	 *
+	 *        Taking the z_map_lock also serializes the other vnops
+	 *        (notably pagein/pageoutv2/update_pages/mappedread_new).
+	 */
+
+	rw_enter(&zp->z_map_lock, RW_WRITER);
+	if (vn_has_cached_data(vp) || ubc_pages_resident(vp)) {
+		// note: 10a286 says "This work is accomplished
+		//       "by ubc_setsize()"  but does not call
+		// ubc_setsize, or anything in this rw_locked block,
+		// whereas we call it here:
+		vnode_pager_setsize(vp, end);
+	}
+	rw_exit(&zp->z_map_lock);
 
 	zfs_range_unlock(rl);
 
