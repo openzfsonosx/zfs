@@ -1010,7 +1010,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	size_t bytes_left;
 	off_t file_position_offset;
-	int bytes_to_copy, bytes_for_ioreq = 0;
+	int bytes_to_copy, bytes_for_cluster_copy_ioreq = 0;
 	int page_index = 0, page_index_hole_start, page_index_hole_end;
 
 	/* fill in the hole of the UPL with valid data */
@@ -1024,6 +1024,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	bytes_left = MIN((file_maxpageid + 1) * PAGE_SIZE, upl_size_bytes);
 	ASSERT3S(bytes_left, >, 0);
 	ASSERT3S(bytes_left + upl_first_page_pos, <=, filesize);
+	size_t resid_left = orig_resid;
 
 	while(page_index < page_index_end) {
 		ASSERT3S(filesize, ==, zp->z_size);
@@ -1034,7 +1035,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			page_disposition[page_index] = D_ABORT_PRESENT;
 			page_index++;
 			present_pages_skipped++;
-			bytes_for_ioreq += PAGE_SIZE;
+			bytes_for_cluster_copy_ioreq += PAGE_SIZE;
 			continue;
 		}
 		/* this is a hole.  find its end. */
@@ -1067,7 +1068,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			ASSERT3S(pgcopied, ==, pagerange);
 			ASSERT3S(bytescopied, ==, bytes_to_copy);
 			bytes_left -= bytescopied;
-			bytes_for_ioreq += bytescopied;
+			bytes_for_cluster_copy_ioreq += bytescopied;
 			absent_bytes_read += bytescopied;
 			// is this just one page?
 			if (page_index_hole_start + 1 == page_index_hole_end) {
@@ -1100,8 +1101,14 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	/* copy the data into userland */
 
-	ASSERT3S(bytes_for_ioreq, ==, inbytes);
-	int io_requested = inbytes;
+	int io_requested = bytes_for_cluster_copy_ioreq;
+	const int c_io_requested = io_requested;
+	resid_left = uio_resid(uio);
+	ASSERT3S(resid_left, ==, inbytes);
+	if (io_requested > resid_left) {
+		printf("ZFS: %s ccupd overage io_requested %d > resid_left %lu should trim ?\n",
+		    __func__, io_requested, resid_left);
+	}
 	int userland_target_byte = uio_offset(uio) - upl_first_page_pos;
 	dprintf("ZFS: %s ccud(uio, upl, offs %d, iorq %d)\n",
 	    __func__, (int)userland_target_byte, io_requested);
@@ -1109,12 +1116,15 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	if (error != 0) {
 		printf("ZFS: %s: cluster_copy_upl_data failed with error %d\n",
 		    __func__, error);
+		ASSERT3S(uio_resid(uio), ==, 0);
 	} else if (io_requested == 0)  {
-		VNOPS_STAT_INCR(mappedread_uio_bytes_moved, inbytes);
+		VNOPS_STAT_INCR(mappedread_uio_bytes_moved, c_io_requested);
 		dprintf("ZFS: %s cluster_copy_upl_data done OK\n", __func__);
 	} else {
-		printf("ZFS: %s cluster_copy_upl_data ret %d io_requested now %d\n",
-		    __func__, error, io_requested);
+		const int io_diff = c_io_requested - io_requested;
+		printf("ZFS: %s cluster_copy_upl_data for %d bytes ret %d io_requested now %d (diff %d)\n",
+		    __func__, c_io_requested, error, io_requested, io_diff);
+		VNOPS_STAT_INCR(mappedread_uio_bytes_moved, io_diff);
 	}
 
 	/* release UPL */
