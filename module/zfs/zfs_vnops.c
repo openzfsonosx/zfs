@@ -939,6 +939,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	const char *filename = zp->z_name_cache;
 	dnode_t *dn;
 
+	boolean_t erange = B_FALSE;
 	uio_t *uio_save = uio_duplicate(uio);
 	ASSERT3P(uio_save, !=, NULL);
 	if (uio_save == NULL) {
@@ -1123,6 +1124,12 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	/* copy the data into userland */
 
+	if (error == ERANGE) {
+		printf("ZFS: %s ERANGE", __func__);
+		erange = B_TRUE;
+		error = 0;
+	}
+
 	const int inbytes_diff = inbytes - inbytes_remaining;
 	if (!error) ASSERT3S(inbytes_diff, >=, inbytes);
 	/* bytes_for_cluster_copy_ioreq can be larger than inbytes, so trim */
@@ -1214,13 +1221,11 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			VNOPS_STAT_BUMP(mappedread_ubc_satisfied_all);
 	}
 
-	if (error == ERANGE) {
-		printf("ZFS: %s: ERANGE: resetting uio\n", __func__);
-		uio = uio_save;
-	}
-
 	if (uio_save)
 		uio_free(uio_save);
+
+	if (erange)
+		return (ERANGE);
 
 	return (error);
 }
