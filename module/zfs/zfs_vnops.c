@@ -774,15 +774,9 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 	 */
 
 	// whole upl fits in file
-	//ASSERT3S(first_upl_page_file_position + ((upl_num_pages - 1) * PAGE_SIZE), <=, filesize);
-	const uint64_t worksize = first_upl_page_file_position + ((upl_num_pages - 1) * PAGE_SIZE);
-	if (worksize > filesize) {
-		printf("ZFS: %s:%d :  worksize %llu > %lu filesize, returning ERANGE\n",
-		    __func__, __LINE__, worksize, filesize);
-		return (ERANGE);
-	}
+	ASSERT3S((upl_first_page_pos + ((upl_num_pages - 1)) * PAGE_SIZE), <=, filesize);
 	// this hole fits in file or at least the EOF is within the last page of the hole
-	ASSERT3S(first_upl_page_file_position + ((hole_pagerange_pages - 1) * PAGE_SIZE), <=, filesize);
+	ASSERT3S(upl_first_page_pos + ((hole_pagerange_pages - 1) * PAGE_SIZE), <=, filesize);
 
 	for (pagenum = hole_startpage; pagenum < hole_endpage; pagenum++) {
 		ASSERT3S(filesize, ==, zp->z_size);
@@ -793,7 +787,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			    __func__, bytes_left, pgindex, hole_pagerange_pages);
 		}
 		bytes_from_start_of_upl = pgindex * PAGE_SIZE;
-		bytes_from_start_of_file = first_upl_page_file_position + bytes_from_start_of_upl;
+		bytes_from_start_of_file = upl_first_page_pos + bytes_from_start_of_upl;
 		if (bytes_from_start_of_file > filesize) {
 			printf("ZFS: %s: leaving: bytes_from_start_of_file %llu > %lu filesize (bytes_left %llu), reading whole block anyway \n",
 			    __func__, bytes_from_start_of_file, filesize, bytes_left);
