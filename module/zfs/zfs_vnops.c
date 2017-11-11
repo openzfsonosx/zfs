@@ -1112,9 +1112,8 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	const int inbytes_diff = inbytes - inbytes_remaining;
 	if (!error) ASSERT3S(inbytes_diff, >=, inbytes);
-	// these should be the same or the uio will be at the wrong place ?
-	if (!error) ASSERT3S(bytes_for_cluster_copy_ioreq, ==, inbytes);
-	int io_requested = bytes_for_cluster_copy_ioreq;
+	/* bytes_for_cluster_copy_ioreq can be larger than inbytes, so trim */
+	int io_requested = MIN(bytes_for_cluster_copy_ioreq, inbytes);
 	const int c_io_requested = io_requested;
 	if (!error) ASSERT3S(c_io_requested, ==, inbytes_diff);
 
