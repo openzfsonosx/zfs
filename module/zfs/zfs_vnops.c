@@ -970,7 +970,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	}
 
 	ASSERT3S(orig_resid + orig_offset, >=, inbytes_remaining);
-	ASSERT3S(inbytes_remaining, <=, orig_resid);
+	ASSERT3S(inbytes, <=, orig_resid);
 
 	/* make UPL */
 
