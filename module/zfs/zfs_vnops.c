@@ -607,7 +607,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * page list into the kernel virtual address space.
 	 */
 	error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	    UPL_WILL_MODIFY | UPL_FILE_IO | UPL_SET_LITE);
+	    UPL_FILE_IO | UPL_SET_LITE);
 	if ((error != KERN_SUCCESS) || !upl) {
 		printf("ZFS: update_pages failed to ubc_create_upl: %d\n", error);
 		return;
