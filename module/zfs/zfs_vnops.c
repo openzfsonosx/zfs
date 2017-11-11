@@ -789,8 +789,9 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 		bytes_from_start_of_upl = pgindex * PAGE_SIZE;
 		bytes_from_start_of_file = upl_first_page_pos + bytes_from_start_of_upl;
 		if (bytes_from_start_of_file + PAGE_SIZE > filesize) {
-			printf("ZFS: %s: warning PAGE_SIZE + bytes_from_start_of_file %llu > %lu filesize (bytes_left %llu), reading whole block anyway \n",
-			    __func__, bytes_from_start_of_file, filesize, bytes_left);
+			printf("ZFS: %s: warning PAGE_SIZE + bytes_from_start_of_file %llu > %lu filesize (bytes_left %llu) (diff %llu), reading whole block anyway \n",
+			    __func__, bytes_from_start_of_file, filesize, bytes_left,
+			    bytes_from_start_of_file + PAGE_SIZE - filesize);
 		} else if (bytes_from_start_of_file + PAGE_SIZE > zp->z_size ||
 		    bytes_from_start_of_file > ubc_getsize(vp)) {
 			printf("ZFS: %s: warning PAGE_SIZE + bytes_from_start_of_file %llu > (z_size %llu, newusize %llu), reading whole block anyway\n",
