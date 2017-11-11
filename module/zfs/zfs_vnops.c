@@ -853,7 +853,7 @@ dmu_copy_file_to_upl(vnode_t *vp, dnode_t *dn,
 			/* this page is aligned with a upl page */
 			/* we will read a page here */
 			ASSERT3S(bytes_left, >, 0); /* important */
-			ASSERT3S(bytes_left, >, PAGE_SIZE);
+			ASSERT3S(bytes_left, >=, PAGE_SIZE);
 			size_t bytes_to_copy = PAGE_SIZE;
 			const size_t bufsiz = PAGE_SIZE;
 			void *buf = kmem_alloc(bufsiz, KM_SLEEP);
@@ -1034,7 +1034,6 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		ASSERT3S(filesize, ==, zp->z_size);
 		ASSERT3S(usize, ==, ubc_getsize(vp));
 		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
-		ASSERT3S(inbytes_remaining, >, 0);
 		if (upl_valid_page(pl, page_index)) {
 			/* preserve this page's state */
 			page_disposition[page_index] = D_ABORT_PRESENT;
@@ -1109,15 +1108,22 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	/* copy the data into userland */
 
 	const int inbytes_diff = inbytes - inbytes_remaining;
-	ASSERT3S(inbytes_diff, ==, inbytes);
+	if (!error) ASSERT3S(inbytes_diff, >=, inbytes);
+	// these should be the same or the uio will be at the wrong place ?
+	if (!error) ASSERT3S(bytes_for_cluster_copy_ioreq, ==, inbytes);
 	int io_requested = bytes_for_cluster_copy_ioreq;
 	const int c_io_requested = io_requested;
-	ASSERT3S(c_io_requested, ==, inbytes_diff);
+	if (!error) ASSERT3S(c_io_requested, ==, inbytes_diff);
 
 	int userland_target_byte = uio_offset(uio) - upl_first_page_pos;
-	dprintf("ZFS: %s ccud(uio, upl, offs %d, iorq %d)\n",
-	    __func__, (int)userland_target_byte, io_requested);
-	error = cluster_copy_upl_data(uio, upl, (int)userland_target_byte, &io_requested);
+	if (error == 0) {
+		dprintf("ZFS: %s ccud(uio, upl, offs %d, iorq %d)\n",
+		    __func__, (int)userland_target_byte, io_requested);
+		error = cluster_copy_upl_data(uio, upl, (int)userland_target_byte, &io_requested);
+	} else {
+		printf("ZFS: %s error was %d so skipping cluster_copy_upl_data\n", __func__, error);
+	}
+
 	if (error != 0) {
 		printf("ZFS: %s: cluster_copy_upl_data failed with error %d\n",
 		    __func__, error);
