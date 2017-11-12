@@ -1001,6 +1001,9 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 				printf("ZFS: %s: upl_abort failed (err: %d, pass: %d, file: %s)\n",
 				    __func__, err, i, filename);
 				/* break? */
+			} else {
+				upl = NULL;
+				pl = NULL;
 			}
 
 			/*
@@ -1044,9 +1047,37 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		}
 	}
 
-	/* now release this UPL, which updates the vnode pager object */
+	ASSERT3P(upl, ==, NULL);
+	ASSERT3P(pl, ==, NULL);
 
-	err = commit_release_upl(upl, upl_num_pages, page_disposition, err, filename, "first scan");
+	/*
+	 * we have brought in all the holes, so now we have to build the UPL again,
+	 * assuming we have not yet hit an error
+	 */
+
+	if (err == 0) {
+		err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl,
+		    UPL_FILE_IO | UPL_SET_LITE);
+
+		if (err != KERN_SUCCESS || (upl == NULL)) {
+			printf("ZFS: %s: failed to create final upl: err %d file %s\n",
+			    __func__, err, filename);
+		}
+
+		ASSERT3P(upl, !=, NULL);
+		ASSERT3P(pl, !=, NULL);
+		ASSERT3P(page_disposition, !=, NULL);
+
+		/* now release the hole-free final UPL, which updates the vnode pager object */
+
+		if (err == 0 && upl != NULL) {
+			err = commit_release_upl(upl, upl_num_pages, page_disposition, err,
+			    filename, "after empty scan");
+		}
+
+		upl = NULL;
+		pl = NULL;
+	}
 
 	/* now we copy from the vnode pager object to the uio */
 
