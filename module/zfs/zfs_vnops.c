@@ -883,7 +883,10 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	 */
 
 	for (int i = 0; err == 0; i++) {
+		ASSERT3P(upl, ==, NULL);
+		ASSERT3P(pl, ==, NULL);
 		pl = NULL;
+		upl = NULL;
 
 		err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl,
 		    UPL_FILE_IO | UPL_SET_LITE);
@@ -895,11 +898,11 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			return (EIO);
 		}
 
-		ASSERT3P(pl, !=, NULL);
-
 		int page_index = 0, page_index_hole_start, page_index_hole_end;
 
 		while (page_index < upl_num_pages && err == 0) {
+			ASSERT3P(upl, !=, NULL);
+			ASSERT3P(pl, !=, NULL);
 			if (upl_valid_page(pl, page_index)) {
 				page_index++;
 				/* don't count pages not present during first pass */
@@ -935,9 +938,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 				    __func__, err, i, filename);
 				upl = NULL;
 				pl = NULL;
-			} else {
-				upl = NULL;
-				pl = NULL;
+				break;
 			}
 
 			/*
@@ -955,6 +956,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 				for (int i = page_index_hole_start;
 				     i < page_index_hole_end;
 				     i++) {
+					/* placeholder: if nothing else here, optimizer uses arithmetic */
 					absent_pages_filled++;
 				}
 			}
@@ -962,7 +964,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		}
 
 		/* out of while loop, still in for loop */
-		/* we may still have a live UPL in the event of an error */
+		/* the UPL may either be NULL or still alive (NULL it below) */
 
 		if (page_index >= upl_num_pages) {
 			/* no holes left */
