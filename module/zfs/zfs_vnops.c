@@ -899,7 +899,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 		int page_index = 0, page_index_hole_start, page_index_hole_end;
 
-		while (page_index < upl_num_pages) {
+		while (page_index < upl_num_pages && err == 0) {
 			if (upl_valid_page(pl, page_index)) {
 				page_index++;
 				/* don't count pages not present during first pass */
@@ -933,7 +933,6 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			if (err != 0) {
 				printf("ZFS: %s: upl_abort failed (err: %d, pass: %d, file: %s)\n",
 				    __func__, err, i, filename);
-				/* break? */
 				upl = NULL;
 				pl = NULL;
 			} else {
@@ -961,36 +960,60 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			}
 			page_index = page_index_hole_end;
 		}
+
 		/* out of while loop, still in for loop */
+		/* we may still have a live UPL in the event of an error */
 
 		if (page_index >= upl_num_pages) {
 			/* no holes left */
-			err = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-			if (err != 0) {
-				printf("ZFS: %s: no holes left, but upl_abort failed"
-				    " with error %d, file %s\n",
-				    __func__, err, filename);
+			if (upl != NULL) {
+				err = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+				if (err != 0) {
+					printf("ZFS: %s: no holes left, but upl_abort failed"
+					    " with error %d, file %s\n",
+					    __func__, err, filename);
+				}
+				upl = NULL;
+				pl = NULL;
 			}
-			upl = NULL;
-			pl = NULL;
 			break;
 		}
 
-		if (i >= 16384) {
+		if (err != 0 || i >= 16384) {
 			// 16k is the maximum number of UPL pages possible, so
 			// we should only see about 8k holes; this could be improved
 			// after some experience is gained
-			printf("ZFS: %s: aborting hole-filling loop after %d passes, file: %s\n",
-			    __func__, i, filename);
-			err = EIO;
+			if (err == 0) {
+				printf("ZFS: %s: aborting hole-filling loop after %d passes, file: %s\n",
+				    __func__, i, filename);
+				err = EIO;
+			} else {
+				printf("ZFS: %s: error %d in hole-filling loop after %d passes, file %s\n",
+				    __func__, err, i, filename);
+			}
+			if (upl != NULL) {
+				int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+				if (error != 0) {
+					printf("ZFS: %s: while aborting loop, upl_abort error %d\n",
+					    __func__, error);
+				}
+				upl = NULL;
+				pl = NULL;
+			}
+			break;
+		}
+
+		if (upl != NULL) {
+			printf("ZFS: %s: WOAH: why are we here? Aborting non-NULL UPL.\n", __func__);
 			int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 			if (error != 0) {
-				printf("ZFS: %s: while aborting loop, upl_abort error %d\n",
-				    __func__, error);
+				printf("ZFS: %s in woah, error %d aborting upl for file %s\n",
+				    __func__, error, filename);
+				break;
 			}
 			upl = NULL;
 			pl = NULL;
-			break;
+			continue;
 		}
 	}
 
