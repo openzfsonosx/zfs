@@ -1061,6 +1061,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			}
 			upl = NULL;
 			pl = NULL;
+			break;
 		}
 	}
 
