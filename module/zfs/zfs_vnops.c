@@ -872,6 +872,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
         if (err != 0) {
                 printf("ZFS: %s: unable to dnode_hold %s\n",
                     __func__, filename);
+		return (EIO);
         }
 
 	/* useful variables and sanity checking */
@@ -932,61 +933,115 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	upl_t upl;
 	upl_page_info_t *pl = NULL;
-	err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl,
-	    UPL_FILE_IO | UPL_SET_LITE);
-
-	if (err != KERN_SUCCESS || (upl == NULL)) {
-		printf("ZFS: %s: failed to create upl: err %d\n", __func__, err);
-		dnode_rele(dn, FTAG);
-		return (EIO);
-	}
-
-	ASSERT3P(pl, !=, NULL);
 
 	const int upl_num_pages = upl_size / PAGE_SIZE;
 
 	const int page_disposition_size = upl_num_pages * sizeof(page_disposition_t);
 	page_disposition_t *page_disposition = kmem_zalloc(page_disposition_size, KM_SLEEP);
-
 	uint64_t present_pages_skipped = 0, absent_pages_filled = 0;
-	int page_index = 0, page_index_hole_start, page_index_hole_end;
 
-	while (page_index < upl_num_pages) {
-		if (upl_valid_page(pl, page_index)) {
-			/* preserve this resident page's state */
-			page_disposition[page_index] = D_ABORT_PRESENT;
-			page_index++;
-			present_pages_skipped++;
-			continue;
+	/*
+	 * loop around, create a upl to find holes, exit loop when no
+	 * holes are found.
+	 *
+	 * this loop is linear with the number of holes.
+	 */
+
+	for (int i = 0; err == 0; i++) {
+		pl = NULL;
+
+		err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl,
+		    UPL_FILE_IO | UPL_SET_LITE);
+
+		if (err != KERN_SUCCESS || (upl == NULL)) {
+			printf("ZFS: %s: failed to create upl: err %d (pass %d, file %s)\n",
+			    __func__, err, i,filename);
+			dnode_rele(dn, FTAG);
+			return (EIO);
 		}
-		/* this is a hole.  find its end */
-		page_index_hole_start = page_index;
-		for (page_index_hole_end = page_index + 1;
-		     page_index_hole_end < upl_num_pages;
-		     page_index_hole_end++) {
-			if (upl_valid_page(pl, page_index_hole_end))
-				break;
-		}
-		/* the hole runs from page_index_hole_start to ..._end */
-		/* fill hole makes a sub upl and commits within that */
-		err = fill_hole(vp, upl_file_offset, page_index_hole_start, page_index_hole_end,
-			filename);
-		if (err != 0) {
-			printf("ZFS: %s: fill_hole failed with err %d\n", __func__, err);
-			break;
-		} else {
-			/* as fill_hole has modified the vnode's pager object that
-			 * our UPL points to, we just abort the pages
-			 * to preserve their state
-			 */
-			for (int i = page_index_hole_start;
-			     i < page_index_hole_end;
-			     i++) {
-			    absent_pages_filled++;
-			    page_disposition[page_index] = D_ABORT;
+
+		ASSERT3P(pl, !=, NULL);
+
+		int page_index = 0, page_index_hole_start, page_index_hole_end;
+
+		while (page_index < upl_num_pages) {
+			if (upl_valid_page(pl, page_index)) {
+				/* preserve this resident page's state */
+				page_disposition[page_index] = D_ABORT_PRESENT;
+				page_index++;
+				/* don't count pages not present during first pass */
+				if (i == 0) present_pages_skipped++;
+				continue;
 			}
+			/* this is a hole.  find its end */
+			page_index_hole_start = page_index;
+			for (page_index_hole_end = page_index + 1;
+			     page_index_hole_end < upl_num_pages;
+			     page_index_hole_end++) {
+				if (upl_valid_page(pl, page_index_hole_end))
+					break;
+			}
+
+			/*
+			 *since we are calling fill_hole and it creates a UPL within
+			 * the pagerange of our upl, we need to release our upl
+			 * or there will be a hang when one of its pages is touched
+			 * e.g. by dmu_read's bzero.
+			 *
+			 * upl_abort(upl, ... | UPL_FREE_ON_EMPTY) does this.
+			 *
+			 * maybe we will chose to add UPL_ABORT_REFERENCE, which
+			 * boosts the presesnt pages in the page LRU, but looping
+			 * will in any event bring them back in
+			 */
+
+			err = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+
+			if (err != 0) {
+				printf("ZFS: %s: upl_abort failed (err: %d, pass: %d, file: %s)\n",
+				    __func__, err, i, filename);
+				/* break? */
+			}
+
+			/*
+			 * the hole runs from page_index_hole_start to ..._end
+			 * fill hole makes a sub upl and commits within that
+			 */
+
+			err = fill_hole(vp, upl_file_offset, page_index_hole_start, page_index_hole_end,
+			    filename);
+			if (err != 0) {
+				printf("ZFS: %s: fill_hole failed with err %d\n", __func__, err);
+				break;
+			} else {
+				/* as fill_hole has modified the vnode's pager object that
+				 * our UPL points to, we just abort the pages
+				 * to preserve their state
+				 */
+				for (int i = page_index_hole_start;
+				     i < page_index_hole_end;
+				     i++) {
+					absent_pages_filled++;
+					page_disposition[page_index] = D_ABORT;
+				}
+			}
+			page_index = page_index_hole_end;
 		}
-		page_index = page_index_hole_end;
+		/* out of while loop, still in for loop */
+
+		if (page_index >= upl_num_pages) {
+			/* no holes left */
+			break;
+		}
+
+		if (i >= 16384) {
+			// 16k is the maximum number of UPL pages possible, so
+			// we should only see about 8k holes; this could be improved
+			// after some experience is gained
+			printf("ZFS: %s: aborting hole-filling loop after %d passes, file: %s\n",
+			    __func__, i, filename);
+			err = EIO;
+		}
 	}
 
 	/* now release this UPL, which updates the vnode pager object */
