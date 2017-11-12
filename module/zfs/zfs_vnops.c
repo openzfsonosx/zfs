@@ -805,6 +805,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		    __func__, err, upl_size, filename);
 		(void) ubc_upl_unmap(upl);
 		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+		return (err);
 	}
 
 	err = ubc_upl_unmap(upl);
