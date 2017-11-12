@@ -868,7 +868,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	// size of the UPL, page-aligned bytes
 	const off_t upl_size = roundup(orig_offset + inbytes - upl_file_offset, PAGE_SIZE);
 
-	upl_t upl;
+	upl_t upl = NULL;
 	upl_page_info_t *pl = NULL;
 
 	const int upl_num_pages = upl_size / PAGE_SIZE;
@@ -938,6 +938,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 				    __func__, err, i, filename);
 				upl = NULL;
 				pl = NULL;
+				/* goto exit? */
 				break;
 			}
 
@@ -950,6 +951,9 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			    filename);
 			if (err != 0) {
 				printf("ZFS: %s: fill_hole failed with err %d\n", __func__, err);
+				/* UPL is already aborted */
+				upl = NULL;
+				pl = NULL;
 				break;
 			} else {
 				/* count the absent pages that fill_page filled */
