@@ -1001,6 +1001,8 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 				printf("ZFS: %s: upl_abort failed (err: %d, pass: %d, file: %s)\n",
 				    __func__, err, i, filename);
 				/* break? */
+				upl = NULL;
+				pl = NULL;
 			} else {
 				upl = NULL;
 				pl = NULL;
@@ -1034,6 +1036,14 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 		if (page_index >= upl_num_pages) {
 			/* no holes left */
+			err = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+			if (err != 0) {
+				printf("ZFS: %s: no holes left, but upl_abort failed"
+				    " with error %d, file %s\n",
+				    __func__, err, filename);
+			}
+			upl = NULL;
+			pl = NULL;
 			break;
 		}
 
@@ -1044,6 +1054,13 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			printf("ZFS: %s: aborting hole-filling loop after %d passes, file: %s\n",
 			    __func__, i, filename);
 			err = EIO;
+			int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+			if (error != 0) {
+				printf("ZFS: %s: while aborting loop, upl_abort error %d\n",
+				    __func__, error);
+			}
+			upl = NULL;
+			pl = NULL;
 		}
 	}
 
