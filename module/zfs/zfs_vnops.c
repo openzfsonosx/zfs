@@ -771,13 +771,14 @@ fill_hole(vnode_t *vp, const off_t foffset,
     int page_hole_start, int page_hole_end, const char *filename)
 {
 	const off_t upl_size = (page_hole_end - page_hole_start) * (off_t)PAGE_SIZE;
+	const off_t upl_start = foffset + (page_hole_start * PAGE_SIZE);
 	upl_t upl;
 	upl_page_info_t *pl = NULL;
 
 	int err = 0;
 
-	err = ubc_create_upl(vp, foffset, upl_size, &upl, &pl,
-	    UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
+	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
+	    UPL_FILE_IO | UPL_SET_LITE);
 
 	if (err != KERN_SUCCESS) {
 		printf("ZFS: %s: failed to create (sub) upl: err %d\n", __func__, err);
@@ -932,7 +933,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	upl_t upl;
 	upl_page_info_t *pl = NULL;
 	err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl,
-	    UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
+	    UPL_FILE_IO | UPL_SET_LITE);
 
 	if (err != KERN_SUCCESS || (upl == NULL)) {
 		printf("ZFS: %s: failed to create upl: err %d\n", __func__, err);
