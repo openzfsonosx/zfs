@@ -778,7 +778,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	int err = 0;
 
 	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	    UPL_FILE_IO | UPL_SET_LITE | UPL_RET_ONLY_ABSENT);
+	    UPL_FILE_IO | UPL_SET_LITE | UPL_RET_ONLY_ABSENT | UPL_NOBLOCK);
 
 	if (err != KERN_SUCCESS) {
 		printf("ZFS: %s: failed to create (sub) upl: err %d\n", __func__, err);
