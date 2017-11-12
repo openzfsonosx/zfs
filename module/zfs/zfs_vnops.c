@@ -690,69 +690,6 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
 const int MAX_UPL_SIZE_BYTES = 16*1024*1024;
 
-typedef enum upl_page_diposition {
-	D_UNDEFINED = 0,
-	D_COMMIT,
-	D_ABORT,
-	D_ABORT_PRESENT,
-	D_ABORT_ERROR,
-} __attribute__((packed)) page_disposition_t;
-
-static int
-commit_release_upl(upl_t upl, const int num_pages,
-    page_disposition_t *page_disposition, const int dump,
-    const char *filename, const char *tag)
-{
-
-	if (dump != 0) {
-		printf("ZFS: %s: dumping pages in file %s (tag: %s)\n",
-		    __func__, filename, tag);
-		for (int page_index = 0; page_index < num_pages; page_index++) {
-			const int page_index_as_bytes = page_index * PAGE_SIZE;
-			kern_return_t kret_dump =
-			    ubc_upl_abort_range(upl, page_index_as_bytes, PAGE_SIZE,
-				UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY);
-			if (kret_dump != KERN_SUCCESS) {
-				printf("ZFS: %s: error %d prevented dump abort of page %d (tag: %s, file: %s)\n",
-				    __func__, kret_dump, page_index, tag, filename);
-			}
-		}
-		return (dump);
-	}
-
-	int err = 0;
-	for (int page_index = 0; page_index < num_pages; page_index++) {
-		int upl_page_as_bytes = page_index * PAGE_SIZE;
-		if (page_disposition[page_index] == D_COMMIT) {
-			int flags = UPL_COMMIT_INACTIVATE
-			    | UPL_COMMIT_CLEAR_DIRTY
-			    | UPL_COMMIT_FREE_ON_EMPTY;
-			kern_return_t kret_commit =
-			    ubc_upl_commit_range(upl, upl_page_as_bytes, PAGE_SIZE, flags);
-			if (kret_commit != KERN_SUCCESS) {
-				err = kret_commit;
-				printf("ZFS: %s: commit failed for page %d\n (tag: %s, file: %s)",
-				    __func__, page_index, tag, filename);
-			}
-		} else {
-			int flag = UPL_ABORT_FREE_ON_EMPTY;
-			if (page_disposition[page_index] == D_ABORT_ERROR)
-				flag |= UPL_ABORT_ERROR;
-			else if (page_disposition[page_index] == D_ABORT_PRESENT)
-				flag |= UPL_ABORT_REFERENCE;
-			kern_return_t kret_abort =
-			    ubc_upl_abort_range(upl, upl_page_as_bytes, PAGE_SIZE, flag);
-			if (kret_abort != KERN_SUCCESS) {
-				err = kret_abort;
-				printf("ZFS: %s: abort failed for page %d (tag: %s, file: %s)\n",
-				    __func__, err, tag, filename);
-			}
-		}
-	}
-
-	return (err);
-}
-
 /*
  * read bytes from file vp into a hole in a upl.
  *
@@ -936,8 +873,6 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 	const int upl_num_pages = upl_size / PAGE_SIZE;
 
-	const int page_disposition_size = upl_num_pages * sizeof(page_disposition_t);
-	page_disposition_t *page_disposition = kmem_zalloc(page_disposition_size, KM_SLEEP);
 	uint64_t present_pages_skipped = 0, absent_pages_filled = 0;
 
 	/*
@@ -966,8 +901,6 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 		while (page_index < upl_num_pages) {
 			if (upl_valid_page(pl, page_index)) {
-				/* preserve this resident page's state */
-				page_disposition[page_index] = D_ABORT_PRESENT;
 				page_index++;
 				/* don't count pages not present during first pass */
 				if (i == 0) present_pages_skipped++;
@@ -1019,15 +952,11 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 				printf("ZFS: %s: fill_hole failed with err %d\n", __func__, err);
 				break;
 			} else {
-				/* as fill_hole has modified the vnode's pager object that
-				 * our UPL points to, we just abort the pages
-				 * to preserve their state
-				 */
+				/* count the absent pages that fill_page filled */
 				for (int i = page_index_hole_start;
 				     i < page_index_hole_end;
 				     i++) {
 					absent_pages_filled++;
-					page_disposition[page_index] = D_ABORT;
 				}
 			}
 			page_index = page_index_hole_end;
@@ -1069,8 +998,9 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	ASSERT3P(pl, ==, NULL);
 
 	/*
-	 * we have brought in all the holes, so now we have to build the UPL again,
-	 * assuming we have not yet hit an error
+	 * we have brought in all the holes, so make a final UPL in order
+	 * to set UPL_ABORT_REFERENCE on the pages, which explicitly references
+	 * the page, putting it into the LRU queue.
 	 */
 
 	if (err == 0) {
@@ -1084,15 +1014,10 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 		ASSERT3P(upl, !=, NULL);
 		ASSERT3P(pl, !=, NULL);
-		ASSERT3P(page_disposition, !=, NULL);
 
-		/* now release the hole-free final UPL, which updates the vnode pager object */
-
-		if (err == 0 && upl != NULL) {
-			err = commit_release_upl(upl, upl_num_pages, page_disposition, err,
-			    filename, "after empty scan");
+		if (err == 0) {
+			err = ubc_upl_abort(upl, UPL_ABORT_REFERENCE | UPL_ABORT_FREE_ON_EMPTY);
 		}
-
 		upl = NULL;
 		pl = NULL;
 	}
@@ -1114,8 +1039,6 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	}
 
 	dnode_rele(dn, FTAG);
-
-	kmem_free(page_disposition, page_disposition_size);
 
 	VNOPS_STAT_INCR(mappedread_present_pages_skipped, present_pages_skipped);
 	VNOPS_STAT_INCR(mappedread_absent_pages_filled, absent_pages_filled);
