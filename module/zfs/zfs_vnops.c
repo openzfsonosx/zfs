@@ -528,6 +528,8 @@ zfs_holey(struct vnode *vp, int cmd, loff_t *off)
  * On Write:    If we find a memory mapped page, we write to *both*
  *              the page and the dmu buffer.
  */
+static int mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio);
+
 static void
 update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     dmu_tx_t *tx, int oldstyle)
@@ -551,7 +553,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
 	    int xfer_resid = nbytes;
 
-	    struct uio *uio_copy = uio_duplicate(uio);
+	    //struct uio *uio_copy = uio_duplicate(uio);
 
 	    ASSERT3S(uio, !=, NULL);
 
@@ -562,19 +564,18 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 		    if (xfer_resid != 0) {
 			    printf("ZFS: %s: nonzero xfer_resid %d ~ nbytes %lld\n",
 				__func__, xfer_resid, nbytes);
-			    retval = cluster_copy_ubc_data(vp, uio_copy, &xfer_resid, 1);
-			    ASSERT3S(retval, ==, 0);
-			    if (retval == 0) {
-				    if (xfer_resid != 0) {
-					    printf("ZFS: %s: DIRTY copy nonzero xfer_resid %d "
-						" ~ nbytes %lld\n",
-						__func__, xfer_resid, nbytes);
-				    }
+			    // try it with the residue of this uio
+			    retval = mappedread_new(vp, xfer_resid, uio);
+			    if (retval != 0) {
+				    printf("ZFS: %s: mappedread_new returned error %d\n",
+					__func__, retval);
+			    } else {
+				    xfer_resid = 0;
 			    }
 		    }
 		    VNOPS_STAT_INCR(update_pages, nbytes - xfer_resid);
 	    }
-	    uio_free(uio_copy);
+	    //uio_free(uio_copy);
 	    return;
     }
 
