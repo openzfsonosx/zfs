@@ -530,7 +530,7 @@ zfs_holey(struct vnode *vp, int cmd, loff_t *off)
  */
 static void
 update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
-             dmu_tx_t *tx)
+    dmu_tx_t *tx, int oldstyle)
 {
     znode_t *zp = VTOZ(vp);
     //zfsvfs_t *zfsvfs = zp->z_zfsvfs;
@@ -544,6 +544,24 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     int upl_size;
     int upl_page;
     off_t off;
+
+    if (oldstyle == 0) {
+	    ASSERT3S(nbytes, <=, INT_MAX);
+	    ASSERT3S(nbytes, >, 0);
+
+	    int xfer_resid = nbytes;
+
+	    int retval = cluster_copy_ubc_data(vp, uio, &xfer_resid, 0);
+
+	    ASSERT3S(retval, ==, 0);
+	    if (retval == 0) {
+		    if (xfer_resid < nbytes)
+			    printf("ZFS: %s: xfer_resid %d < nbytes %lld\n",
+				__func__, xfer_resid, nbytes);
+		    VNOPS_STAT_INCR(update_pages, nbytes);
+	    }
+	    return;
+    }
 
     upl_start = uio_offset(uio);
     off = upl_start & (PAGE_SIZE - 1);
@@ -1671,14 +1689,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				VNOPS_STAT_BUMP(write_updatepage_uio_copy);
 				dprintf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
 				    woff, uio_offset(uio_copy), tx_bytes, uio_iovcnt(uio_copy));
-				update_pages(vp, tx_bytes, uio_copy, tx);
+				update_pages(vp, tx_bytes, uio_copy, tx, 0);
 				uio_free(uio_copy);
 				uio_copy = NULL;
 			} else {
 				VNOPS_STAT_BUMP(write_updatepage_uio);
 				dprintf("XXXXUpdatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
 				    woff, uio_offset(uio), tx_bytes, uio_iovcnt(uio));
-				update_pages(vp, tx_bytes, uio, tx);
+				update_pages(vp, tx_bytes, uio, tx, 0);
 			}
 #else
 			update_pages(vp, woff, tx_bytes, zfsvfs->z_os,
