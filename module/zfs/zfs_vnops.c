@@ -722,11 +722,20 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		return (err);
 	}
 
+	for (int pg = 0; ((pg + 1) * PAGE_SIZE) <= upl_size; pg++) {
+		if (!upl_valid_page(pl, pg)) {
+			printf("ZFS: %s: pg %d (upl_size = %lld, upl_start = %lld) of file %s is INVALID\n",
+			    __func__, pg, upl_size, upl_start, filename);
+			(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+			return (EAGAIN);
+		}
+	}
+
 	vm_offset_t vaddr = 0;
 	err = ubc_upl_map(upl, &vaddr);
 	if (err != KERN_SUCCESS) {
 		printf("ZFS: %s: failed to ubc_map_upl: err %d\n", __func__, err);
-		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_DUMP_PAGES | UPL_ABORT_ERROR);
+		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR);
 		return (err);
 	}
 
@@ -959,6 +968,12 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 			err = fill_hole(vp, upl_file_offset, page_index_hole_start, page_index_hole_end,
 			    filename);
+
+			if (err == EAGAIN) {
+				err = 0;
+				page_index = 0;
+				break;
+			}
 			if (err != 0) {
 				printf("ZFS: %s: fill_hole failed with err %d\n", __func__, err);
 				break;
