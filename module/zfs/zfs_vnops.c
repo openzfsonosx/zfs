@@ -564,7 +564,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 			    printf("ZFS: %s: nonzero xfer_resid %d ~ nbytes %lld\n",
 				__func__, xfer_resid, nbytes);
 			    // try it with the residue of this uio
-			    uio_setrw(uio_copy, UIO_READ);
+			    uio_setrw(uio_copy, UIO_WRITE);
 			    retval = mappedread_new(vp, nbytes, uio_copy);
 			    if (retval != 0) {
 				    printf("ZFS: %s: mappedread_new returned error %d\n",
