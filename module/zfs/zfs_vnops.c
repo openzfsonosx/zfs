@@ -1665,7 +1665,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uioskip(uio, tx_bytes);
 		}
 
-		if (tx_bytes && (vn_has_cached_data(vp) || ubc_pages_resident(vp))) {
+		if (tx_bytes && vn_has_cached_data(vp)) {
 #ifdef __APPLE__
 			if (uio_copy) {
 				VNOPS_STAT_BUMP(write_updatepage_uio_copy);
