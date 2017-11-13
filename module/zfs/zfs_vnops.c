@@ -555,8 +555,8 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
 	    ASSERT3S(retval, ==, 0);
 	    if (retval == 0) {
-		    if (xfer_resid < nbytes)
-			    printf("ZFS: %s: xfer_resid %d < nbytes %lld\n",
+		    if (xfer_resid != 0)
+			    printf("ZFS: %s: nonzero xfer_resid %d < nbytes %lld\n",
 				__func__, xfer_resid, nbytes);
 		    VNOPS_STAT_INCR(update_pages, nbytes);
 	    }
