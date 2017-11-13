@@ -1665,7 +1665,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uioskip(uio, tx_bytes);
 		}
 
-		if (tx_bytes && vn_has_cached_data(vp)) {
+		if (tx_bytes && (vn_has_cached_data(vp) || ubc_pages_resident(vp))) {
 #ifdef __APPLE__
 			if (uio_copy) {
 				VNOPS_STAT_BUMP(write_updatepage_uio_copy);
@@ -1786,13 +1786,23 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	if (ioflag & (FSYNC | FDSYNC) ||
 	    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS) {
 		zil_commit(zilog, zp->z_id);
+		int ubc_msync_err = 0;
+		ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), NULL, UBC_PUSHDIRTY | UBC_SYNC);
+		ASSERT3S(ubc_msync_err, ==, 0);
 	}
 
 	/* OS X: pageout requires that the UBC file size be current. */
         if (tx_bytes != 0) {
+		int ubcsetsize_err = 0;
 		rw_enter(&zp->z_map_lock, RW_WRITER);
-                ubc_setsize(vp, zp->z_size);
+                ubcsetsize_err = ubc_setsize(vp, zp->z_size);
 		rw_exit(&zp->z_map_lock);
+		ASSERT3S(ubcsetsize_err, !=, 0);
+		if (ubc_pages_resident(vp)) {
+			int ubc_msync_err = 0;
+			ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), NULL, UBC_PUSHDIRTY);
+			ASSERT3S(ubc_msync_err, ==, 0);
+		}
         }
 
 	ZFS_EXIT(zfsvfs);
