@@ -723,8 +723,8 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	}
 
 	for (int pg = 0; ((pg + 1) * PAGE_SIZE) <= upl_size; pg++) {
-		if (!upl_valid_page(pl, pg)) {
-			printf("ZFS: %s: pg %d (upl_size = %lld, upl_start = %lld) of file %s is INVALID\n",
+		if (upl_valid_page(pl, pg)) {
+			printf("ZFS: %s: pg %d (upl_size = %lld, upl_start = %lld) of file %s is VALID\n",
 			    __func__, pg, upl_size, upl_start, filename);
 			(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 			return (EAGAIN);
@@ -752,6 +752,10 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		    __func__, err, upl_size, filename);
 		(void) ubc_upl_unmap(upl);
 		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR | UPL_ABORT_DUMP_PAGES);
+		if (err == EAGAIN) {
+			printf("ZFS: %s: WARNING converting EAGAIN from dmu_read into EIO\n", __func__);
+			err = EIO;
+		}
 		return (err);
 	}
 
@@ -970,8 +974,6 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			    filename);
 
 			if (err == EAGAIN) {
-				err = 0;
-				page_index = 0;
 				break;
 			}
 			if (err != 0) {
@@ -1003,6 +1005,9 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			}
 			break;
 		}
+
+		if (err == EAGAIN && i < 16384)
+			continue;
 
 		if (err != 0 || i >= 16384) {
 			// 16k is the maximum number of UPL pages possible, so
