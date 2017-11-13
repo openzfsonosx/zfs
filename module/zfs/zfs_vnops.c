@@ -715,7 +715,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	int err = 0;
 
 	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	    UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
+	    UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT);
 
 	if (err != KERN_SUCCESS) {
 		printf("ZFS: %s: failed to create (sub) upl: err %d\n", __func__, err);
@@ -753,8 +753,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		return (err);
 	}
 
-	const int commit_flags = UPL_COMMIT_INACTIVATE
-	    | UPL_COMMIT_CLEAR_DIRTY
+	const int commit_flags = UPL_COMMIT_CLEAR_DIRTY
 	    | UPL_COMMIT_FREE_ON_EMPTY;
 
 	ASSERT3U(upl_size, <=, INT_MAX);
