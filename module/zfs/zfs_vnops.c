@@ -553,7 +553,8 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
 	    int xfer_resid = nbytes;
 
-	    struct uio *uio_copy = NULL;
+	    struct uio *uio_copy = uio_duplicate(uio);
+	    ASSERT3P(uio_copy, !=, NULL);
 
 	    int retval = cluster_copy_ubc_data(vp, uio, &xfer_resid, 0);
 
@@ -563,10 +564,8 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 			    printf("ZFS: %s: nonzero xfer_resid %d ~ nbytes %lld\n",
 				__func__, xfer_resid, nbytes);
 			    // try it with the residue of this uio
-			    uio_copy = uio_duplicate(uio);
 			    uio_setrw(uio_copy, UIO_READ);
-			    ASSERT3P(uio_copy, !=, NULL);
-			    retval = mappedread_new(vp, xfer_resid, uio_copy);
+			    retval = mappedread_new(vp, nbytes, uio_copy);
 			    if (retval != 0) {
 				    printf("ZFS: %s: mappedread_new returned error %d\n",
 					__func__, retval);
