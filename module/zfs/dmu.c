@@ -1423,6 +1423,25 @@ dmu_read_uio_dbuf(dmu_buf_t *zdb, uio_t *uio, uint64_t size)
         return (err);
 }
 
+int
+dmu_read_dbuf(dmu_buf_t *zdb, uint64_t offset,
+    uint64_t size, void *buf, uint32_t flags)
+{
+	dmu_buf_impl_t *db = (dmu_buf_impl_t *)zdb;
+	dnode_t *dn;
+	int err;
+
+	if (size == 0)
+		return (0);
+
+	DB_DNODE_ENTER(db);
+	dn = DB_DNODE(db);
+	err = dmu_read_impl(dn, offset, size, buf, flags);
+	DB_DNODE_EXIT(db);
+
+	return (err);
+}
+
 /*
  * Read 'size' bytes into the uio buffer.
  * From the specified object

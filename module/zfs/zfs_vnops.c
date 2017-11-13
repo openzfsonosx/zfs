@@ -742,10 +742,15 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	znode_t *zp = VTOZ(vp);
 	VERIFY3P(zp, !=, NULL);
 	VERIFY3P(zp->z_zfsvfs, !=, NULL);
-	objset_t *os = zp->z_zfsvfs->z_os;
+	/*
+	 * objset_t *os = zp->z_zfsvfs->z_os;
+	 *
+	 * err = dmu_read(os, zp->z_id, foffset, upl_size, (caddr_t)vaddr,
+	 *     DMU_READ_PREFETCH);
+	 */
 
-	err = dmu_read(os, zp->z_id, foffset, upl_size, (caddr_t)vaddr,
-	    DMU_READ_PREFETCH);
+	err = dmu_read_dbuf(sa_get_db(zp->z_sa_hdl),
+	    foffset, upl_size, (caddr_t)vaddr, DMU_READ_PREFETCH);
 
 	if (err != 0) {
 		printf("ZFS: %s: dmu_read error %d reading %llu bytes from file %s\n",
