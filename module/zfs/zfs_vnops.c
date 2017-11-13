@@ -555,10 +555,20 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
 	    ASSERT3S(retval, ==, 0);
 	    if (retval == 0) {
-		    if (xfer_resid != 0)
-			    printf("ZFS: %s: nonzero xfer_resid %d < nbytes %lld\n",
+		    if (xfer_resid != 0) {
+			    printf("ZFS: %s: nonzero xfer_resid %d ~ nbytes %lld\n",
 				__func__, xfer_resid, nbytes);
-		    VNOPS_STAT_INCR(update_pages, nbytes);
+			    retval = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
+			    ASSERT3S(retval, ==, 0);
+			    if (retval == 0) {
+				    if (xfer_resid != 0) {
+					    printf("ZFS: %s: DIRTY copy nonzero xfer_resid %d "
+						" ~ nbytes %lld\n",
+						__func__, xfer_resid, nbytes);
+				    }
+			    }
+		    }
+		    VNOPS_STAT_INCR(update_pages, nbytes - xfer_resid);
 	    }
 	    return;
     }
