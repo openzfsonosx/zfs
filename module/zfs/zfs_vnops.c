@@ -900,9 +900,15 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 		int page_index = 0, page_index_hole_start, page_index_hole_end;
 
+
+		/*
+		 * Loop until we find a hole, or reach the end of the UPL.
+		 * If we find a hole, we fill it, then exit the loop.
+		 * We also exit the loop on error.
+		 */
 		while (page_index < upl_num_pages && err == 0) {
-			ASSERT3P(upl, !=, NULL);
-			ASSERT3P(pl, !=, NULL);
+			VERIFY3P(upl, !=, NULL);
+			VERIFY3P(pl, !=, NULL);
 			if (upl_valid_page(pl, page_index)) {
 				page_index++;
 				/* don't count pages not present during first pass */
@@ -942,6 +948,9 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 				break;
 			}
 
+			upl = NULL;
+			pl = NULL;
+
 			/*
 			 * the hole runs from page_index_hole_start to ..._end
 			 * fill hole makes a sub upl and commits within that
@@ -951,20 +960,20 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			    filename);
 			if (err != 0) {
 				printf("ZFS: %s: fill_hole failed with err %d\n", __func__, err);
-				/* UPL is already aborted */
-				upl = NULL;
-				pl = NULL;
 				break;
-			} else {
-				/* count the absent pages that fill_page filled */
-				for (int i = page_index_hole_start;
-				     i < page_index_hole_end;
-				     i++) {
-					/* placeholder: if nothing else here, optimizer uses arithmetic */
-					absent_pages_filled++;
-				}
 			}
+
+			/* count the absent pages that fill_page filled */
+			for (int i = page_index_hole_start;
+			     i < page_index_hole_end;
+			     i++) {
+				/* placeholder: if nothing else here, optimizer uses arithmetic */
+				absent_pages_filled++;
+				break;
+			}
+
 			page_index = page_index_hole_end;
+			break;
 		}
 
 		/* out of while loop, still in for loop */
