@@ -556,6 +556,8 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	    struct uio *uio_copy = uio_duplicate(uio);
 	    ASSERT3P(uio_copy, !=, NULL);
 
+	    /* or maybe first we want to make sure all the pages are present */
+
 	    int retval = cluster_copy_ubc_data(vp, uio, &xfer_resid, 0);
 
 	    ASSERT3S(retval, ==, 0);
@@ -563,7 +565,18 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 		    if (xfer_resid != 0) {
 			    printf("ZFS: %s: nonzero xfer_resid %d ~ nbytes %lld\n",
 				__func__, xfer_resid, nbytes);
-			    // try it with the residue of this uio
+
+			    /*
+			     * Check here for various things about the file, for
+			     * instance that it's the size we expect and that
+			     * there are pages resident at all.
+			     *
+			     * Then build a UPL, find holes in it, and fill
+			     * the holes.
+			     *
+			     */
+
+                            // try it with the residue of this uio
 			    uio_setrw(uio_copy, UIO_WRITE);
 			    retval = mappedread_new(vp, nbytes, uio_copy);
 			    if (retval != 0) {
