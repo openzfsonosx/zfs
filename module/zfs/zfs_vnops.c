@@ -609,7 +609,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * page list into the kernel virtual address space.
 	 */
 	error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	    UPL_FILE_IO | UPL_SET_LITE);
+	    UPL_SET_LITE | UPL_WILL_MODIFY);
 	if ((error != KERN_SUCCESS) || !upl) {
 		printf("ZFS: update_pages failed to ubc_create_upl: %d\n", error);
 		return;
@@ -671,7 +671,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * We want to abort here since due to dmu_write()
 	 * we effectively didn't dirty any pages.
 	 */
-	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+	(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_REFERENCE);
 
 	/* release locks as necessary */
 	z_map_drop_lock(zp, &need_release, &need_upgrade);
@@ -715,7 +715,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	int err = 0;
 
 	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	    UPL_FILE_IO | UPL_SET_LITE | UPL_RET_ONLY_ABSENT | UPL_NOBLOCK);
+	    UPL_FILE_IO | UPL_SET_LITE);
 
 	if (err != KERN_SUCCESS) {
 		printf("ZFS: %s: failed to create (sub) upl: err %d\n", __func__, err);
@@ -726,7 +726,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	err = ubc_upl_map(upl, &vaddr);
 	if (err != KERN_SUCCESS) {
 		printf("ZFS: %s: failed to ubc_map_upl: err %d\n", __func__, err);
-		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_DUMP_PAGES | UPL_ABORT_ERROR);
 		return (err);
 	}
 
@@ -742,14 +742,14 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		printf("ZFS: %s: dmu_read error %d reading %llu bytes from file %s\n",
 		    __func__, err, upl_size, filename);
 		(void) ubc_upl_unmap(upl);
-		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR | UPL_ABORT_DUMP_PAGES);
 		return (err);
 	}
 
 	err = ubc_upl_unmap(upl);
 	if (err != 0) {
 		printf("ZFS: %s: error %d unmapping upl\n", __func__, err);
-		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR | UPL_ABORT_DUMP_PAGES);
 		return (err);
 	}
 
@@ -937,7 +937,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			 * will in any event bring them back in
 			 */
 
-			err = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+			err = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_REFERENCE);
 
 			if (err != 0) {
 				printf("ZFS: %s: upl_abort failed (err: %d, pass: %d, file: %s)\n",
@@ -982,7 +982,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		if (page_index >= upl_num_pages) {
 			/* no holes left */
 			if (upl != NULL) {
-				err = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+				err = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_REFERENCE);
 				if (err != 0) {
 					printf("ZFS: %s: no holes left, but upl_abort failed"
 					    " with error %d, file %s\n",
@@ -1007,7 +1007,8 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 				    __func__, err, i, filename);
 			}
 			if (upl != NULL) {
-				int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+				int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY
+				    | UPL_ABORT_REFERENCE | UPL_ABORT_DUMP_PAGES);
 				if (error != 0) {
 					printf("ZFS: %s: while aborting loop, upl_abort error %d\n",
 					    __func__, error);
@@ -1020,7 +1021,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 
 		if (upl != NULL) {
 			printf("ZFS: %s: WOAH: why are we here? Aborting non-NULL UPL.\n", __func__);
-			int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+			int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_REFERENCE);
 			if (error != 0) {
 				printf("ZFS: %s in woah, error %d aborting upl for file %s\n",
 				    __func__, error, filename);
