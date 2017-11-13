@@ -715,7 +715,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	int err = 0;
 
 	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	    UPL_FILE_IO | UPL_SET_LITE);
+	    UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
 
 	if (err != KERN_SUCCESS) {
 		printf("ZFS: %s: failed to create (sub) upl: err %d\n", __func__, err);
@@ -753,17 +753,19 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		return (err);
 	}
 
-	const int flags = UPL_COMMIT_INACTIVATE
+	const int commit_flags = UPL_COMMIT_INACTIVATE
 	    | UPL_COMMIT_CLEAR_DIRTY
 	    | UPL_COMMIT_FREE_ON_EMPTY;
 
-	for (int pg = 0; pg < (page_hole_end - page_hole_start); pg++) {
-		int commit_err = ubc_upl_commit_range(upl, pg * PAGE_SIZE, PAGE_SIZE, flags);
-		if (commit_err != 0) {
-			printf("ZFS: %s: failed to commit upl page %d error %d file %s\n",
-			    __func__, pg, err, filename);
-			err = commit_err;
-		}
+	ASSERT3U(upl_size, <=, INT_MAX);
+	ASSERT3U(upl_size, >, 0);
+
+	err = ubc_upl_commit_range(upl, 0, (int)upl_size, commit_flags);
+
+	if (err != 0) {
+		printf("ZFS: %s: error committing range [0, %d] (vs %lld) for file %s\n",
+		    __func__, (int)upl_size, upl_size, filename);
+		return (err);
 	}
 
 	return (err);
@@ -964,13 +966,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 			}
 
 			/* count the absent pages that fill_page filled */
-			for (int i = page_index_hole_start;
-			     i < page_index_hole_end;
-			     i++) {
-				/* placeholder: if nothing else here, optimizer uses arithmetic */
-				absent_pages_filled++;
-				break;
-			}
+			absent_pages_filled += (page_index_hole_end - page_index_hole_start);
 
 			page_index = page_index_hole_end;
 			break;
