@@ -1072,23 +1072,8 @@ zfs_vnop_write(struct vnop_write_args *ap)
 	/* resid=uio_resid(ap->a_uio); */
 	error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct);
 
-	/*
-	 * Mac OS X: pageout requires that the UBC file size be current.
-	 * Possibly, we could update it only if size has changed.
-	 */
-	/* if (tx_bytes != 0) { */
-	if (!error) {
-		/* grow the file: we lock here to avoid interfering with
-		 * an in-progress pagein, pageoutv2, mappedread,
-		 * update_pages, or another ubc_setsize call
-		 */
-		znode_t *zp = VTOZ(ap->a_vp);
-		rw_enter(&zp->z_map_lock, RW_WRITER);
-		ubc_setsize(ap->a_vp, VTOZ(ap->a_vp)->z_size);
-		rw_exit(&zp->z_map_lock);
-	} else {
+	if (error)
 		dprintf("%s error %d\n", __func__, error);
-	}
 
 	return (error);
 }
@@ -1799,9 +1784,10 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 			 */
 			znode_t *zp = VTOZ(ap->a_vp);
 			rw_enter(&zp->z_map_lock, RW_WRITER);
-			ubc_setsize(ap->a_vp, vap->va_size);
-			VATTR_SET_SUPPORTED(vap, va_data_size);
+			int setsize_retval = ubc_setsize(ap->a_vp, vap->va_size);
 			rw_exit(&zp->z_map_lock);
+			VATTR_SET_SUPPORTED(vap, va_data_size);
+			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 		}
 		if (VATTR_IS_ACTIVE(vap, va_mode))
 			VATTR_SET_SUPPORTED(vap, va_mode);

@@ -1091,14 +1091,15 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	ssize_t		n, nbytes;
 	int		error = 0;
 	rl_t		*rl;
-#ifndef __APPLE__
-	xuio_t		*xuio = NULL;
-#endif
 
 	VNOPS_STAT_BUMP(zfs_read_calls);
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
+
+	const size_t initial_z_size = zp->z_size;
+	const size_t initial_u_size = ubc_getsize(vp);
+	ASSERT3U(initial_z_size, ==, initial_u_size);
 
 	os = zfsvfs->z_os;
 
@@ -1188,6 +1189,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (mapped == 0 && (ubc_pages_resident(vp) || vn_has_cached_data(vp))) {
 			off_t resid_off = 0;
 			off_t ubcsize = ubc_getsize(vp);
+			ASSERT3U(zp->z_size, ==, ubcsize);
 			int retval = ubc_msync(vp, 0, ubcsize, &resid_off, UBC_PUSHDIRTY);
 			ASSERT3S(retval, ==, 0);
 			if (retval != 0)
@@ -1205,12 +1207,15 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 * If we are reading past end-of-file we can skip
 	 * to the end; but we might still need to set atime.
 	 */
+
 	if (uio_offset(uio) >= zp->z_size) {
+		// can we?: think about truncation and pages
+		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 		error = 0;
 		goto out;
 	}
 
-	ASSERT(uio_offset(uio) < zp->z_size);
+	ASSERT3S(uio_offset(uio), <, zp->z_size); // at least one byte will be read
 	n = MIN(uio_resid(uio), zp->z_size - uio_offset(uio));
 
 	while (n > 0) {
@@ -1272,10 +1277,14 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		n -= nbytes;
 	}
 out:
+	ASSERT3U(initial_z_size, ==, zp->z_size);
+	ASSERT3U(initial_u_size, ==, ubc_getsize(vp));
+
 	zfs_range_unlock(rl);
 
 	ZFS_ACCESSTIME_STAMP(zfsvfs, zp);
 	ZFS_EXIT(zfsvfs);
+
     if (error) dprintf("zfs_read returning error %d\n", error);
 	return (error);
 }
@@ -1523,8 +1532,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 * intefering with mappedread_new etc.
 			 */
 			rw_enter(&zp->z_map_lock, RW_WRITER);
-			vnode_pager_setsize(vp, woff + nbytes);
+			int setsize_retval = vnode_pager_setsize(vp, woff + nbytes);
 			rw_exit(&zp->z_map_lock);
+			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 		}
 
 		if ( vn_has_cached_data(vp) || ubc_pages_resident(vp) ) {
@@ -1602,11 +1612,20 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * Update the file size (zp_size) if it has changed;
 		 * account for possible concurrent updates.
 		 */
+		uint64_t size_update_ctr = 0;
+		uint64_t starting_uioffset = uio_offset(uio);
 		while ((end_size = zp->z_size) < uio_offset(uio)) {
+			size_update_ctr++;
 			(void) atomic_cas_64(&zp->z_size, end_size,
                                  uio_offset(uio));
 			ASSERT(error == 0);
 		}
+		if (size_update_ctr > 1) {
+			printf("ZFS: %s: %llu tries to increase zp->z_size above"
+			    " uio_offset %lld (which is now %lld)\n",
+			    __func__, size_update_ctr, starting_uioffset, uio_offset(uio));
+		}
+		ASSERT3U(starting_uioffset, ==, uio_offset(uio));
 
 		/*
 		 * If we are replaying and eof is non zero then force
@@ -1651,11 +1670,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	/* OS X: pageout requires that the UBC file size be current. */
         if (tx_bytes != 0) {
-		int ubcsetsize_err = 0;
 		rw_enter(&zp->z_map_lock, RW_WRITER);
-                ubcsetsize_err = ubc_setsize(vp, zp->z_size);
+		off_t zp_size = zp->z_size;
+		off_t ubc_size = ubc_getsize(vp);
+                int setsize_retval = ubc_setsize(vp, zp->z_size);
 		rw_exit(&zp->z_map_lock);
-		ASSERT3S(ubcsetsize_err, !=, 0);
+		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
+		ASSERT3S(ubc_size, <, zp_size); // we ought to have grown the file above
+
 		if (ubc_pages_resident(vp)) {
 			int ubc_msync_err = 0;
 			ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), NULL, UBC_PUSHDIRTY);
@@ -2604,8 +2626,9 @@ top:
 		 * with mappedread_new etc
 		 */
 		rw_enter(&zp->z_map_lock, RW_WRITER);
-		vnode_pager_setsize(vp, 0);
+		int setsize_retval = vnode_pager_setsize(vp, 0);
 		rw_exit(&zp->z_map_lock);
+		ASSERT3S(setsize_retval, !=, 0); // setsize returns true on success
 		VN_RELE(vp);
 		/*
 		 * Call recycle which will call vnop_reclaim directly if it can

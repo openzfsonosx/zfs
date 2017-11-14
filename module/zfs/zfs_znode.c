@@ -1590,11 +1590,22 @@ zfs_rezget(znode_t *zp)
 		 * interfering with other users of the
 		 * file size (notably update_pages, mappedread
 		 */
+		int setsize_retval = 0;
+		boolean_t did_setsize = B_FALSE;
 		rw_enter(&zp->z_map_lock, RW_WRITER);
-		vn_pages_remove(vp, 0, 0);
-		if (zp->z_size != size)
-			vnode_pager_setsize(vp, zp->z_size);
+		off_t ubcsize = ubc_getsize(vp);
+		off_t zsize = zp->z_size;
+		vn_pages_remove(vp, 0, 0); // does nothing in O3X
+		if (zp->z_size != size) {
+			setsize_retval = vnode_pager_setsize(vp, zp->z_size);
+			did_setsize = B_TRUE;
+		}
 		rw_exit(&zp->z_map_lock);
+		if (did_setsize == B_TRUE) {
+			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
+			printf("ZFS: %s: setsize: size was %lld, zp->z_size was %lld, ubcsize was %lld\n",
+			    __func__, size, zsize, ubcsize);
+		}
 	}
 
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
@@ -1882,8 +1893,9 @@ zfs_extend(znode_t *zp, uint64_t end)
 	 * or update_pages.
 	 */
 	rw_enter(&zp->z_map_lock, RW_WRITER);
-	vnode_pager_setsize(ZTOV(zp), end);
+	int setsize_retval = vnode_pager_setsize(ZTOV(zp), end);
 	rw_exit(&zp->z_map_lock);
+	ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 
 	zfs_range_unlock(rl);
 
@@ -1937,8 +1949,16 @@ zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
 		 * other users of the size, including mappedread_new
 		 */
 		rw_enter(&zp->z_map_lock, RW_WRITER);
-		vnode_pager_setsize(ZTOV(zp), off);
+		int setsize_retval = vnode_pager_setsize(ZTOV(zp), off);
 		rw_exit(&zp->z_map_lock);
+		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true for success
+		printf("ZFS: %s:%d off == %llu, len == %llu, file = %s\n",
+		    __func__, __LINE__, off, len, zp->z_name_cache);
+	} else {
+		// OSX note: ubc_setsize [aka vnode_pager_setsize] carefully
+		// does a cluster_zero on the tail of the last surviving page
+		printf("ZFS: %s:%d error from dmu_free_long_range(... off %lld, len %lld) for file %s\n",
+		    __func__, __LINE__, off, len, zp->z_name_cache);
 	}
 
 #ifdef _LINUX
@@ -2075,7 +2095,8 @@ zfs_trunc(znode_t *zp, uint64_t end)
 		//       "by ubc_setsize()"  but does not call
 		// ubc_setsize, or anything in this rw_locked block,
 		// whereas we call it here:
-		//vnode_pager_setsize(vp, end);
+		int setsize_retval = vnode_pager_setsize(vp, end);
+		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true for success
 	}
 	rw_exit(&zp->z_map_lock);
 
