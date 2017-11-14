@@ -1714,7 +1714,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	if (ioflag & (FSYNC | FDSYNC) ||
 	    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS) {
 		zil_commit(zilog, zp->z_id);
-		do_ubc_sync == B_TRUE;
+		do_ubc_sync = B_TRUE;
 	}
 
 	/*
