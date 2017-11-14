@@ -1676,7 +1676,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
                 int setsize_retval = ubc_setsize(vp, zp->z_size);
 		rw_exit(&zp->z_map_lock);
 		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
-		ASSERT3S(ubc_size, <, zp_size); // we ought to have grown the file above
+		ASSERT3S(ubc_size, <=, zp_size); // we ought to have grown the file above
 
 		if (ubc_pages_resident(vp)) {
 			int ubc_msync_err = 0;
@@ -4229,6 +4229,27 @@ top:
 	/*
 	 * First validate permissions
 	 */
+
+        if (VATTR_IS_ACTIVE(vap, va_data_size)) {
+                /*
+                 * XXX - Note, we are not providing any open
+                 * mode flags here (like FNDELAY), so we may
+                 * block if there are locks present... this
+                 * should be addressed in openat().
+                 */
+                /* XXX - would it be OK to generate a log record here? */
+                err = zfs_freesp(zp, vap->va_size, 0, 0, FALSE);
+                if (err) {
+			goto out3;
+		}
+                /* Mac OS X: pageout requires that the UBC file size to be current. */
+		rw_enter(&zp->z_map_lock, RW_WRITER);
+                int setsize_retval = ubc_setsize(vp, vap->va_data_size);
+		rw_exit(&zp->z_map_lock);
+		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
+
+                VATTR_SET_SUPPORTED(vap, va_data_size);
+        }
 
 	if (mask & AT_SIZE) {
 		err = zfs_zaccess(zp, ACE_WRITE_DATA, 0, skipaclchk, cr);
