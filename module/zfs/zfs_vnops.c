@@ -569,7 +569,6 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 		printf("ZFS: %s: already holds z_map_lock\n", __func__);
 	} else {
 		ASSERT(MUTEX_HELD(&zp->z_lock));
-		printf("ZFS: %s: file not mapped\n", __func__);
 	}
 
 	/* we now hold EITHER z_lock or z_map_lock, but not both */
@@ -1317,12 +1316,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	rl_t		*rl;
 	int		max_blksz = zfsvfs->z_max_blksz;
 	int		error = 0;
-	arc_buf_t	*abuf;
-	const iovec_t	*aiov = NULL;
-	xuio_t		*xuio = NULL;
-	int		i_iov = 0;
-	//int		iovcnt = uio_iovcnt(uio);
-	iovec_t		*iovp =  (iovec_t *)uio_curriovbase(uio);
 	int		write_eof;
 	int		count = 0;
 	sa_bulk_attr_t	bulk[4];
@@ -1472,57 +1465,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
            n,uio_offset(uio), rl->r_len, zp->z_blksz );
 
 	while (n > 0) {
-		abuf = NULL;
 		woff = uio_offset(uio);
 
 		if (zfs_owner_overquota(zfsvfs, zp, B_FALSE) ||
 		    zfs_owner_overquota(zfsvfs, zp, B_TRUE)) {
-			if (abuf != NULL)
-				dmu_return_arcbuf(abuf);
 			error = SET_ERROR(EDQUOT);
 			break;
-		}
-
-		if (xuio && abuf == NULL) {
-            dprintf("  xuio  \n");
-#if 0 //fixme
-			ASSERT(i_iov < iovcnt);
-#endif
-			aiov = &iovp[i_iov];
-			abuf = dmu_xuio_arcbuf(xuio, i_iov);
-			dmu_xuio_clear(xuio, i_iov);
-			DTRACE_PROBE3(zfs_cp_write, int, i_iov,
-			    iovec_t *, aiov, arc_buf_t *, abuf);
-			ASSERT((aiov->iov_base == abuf->b_data) ||
-			    ((char *)aiov->iov_base - (char *)abuf->b_data +
-			    aiov->iov_len == arc_buf_size(abuf)));
-			i_iov++;
-		} else if (abuf == NULL && n >= max_blksz &&
-		    woff >= zp->z_size &&
-		    P2PHASE(woff, max_blksz) == 0 &&
-		    zp->z_blksz == max_blksz) {
-			/*
-			 * This write covers a full block.  "Borrow" a buffer
-			 * from the dmu so that we can fill it before we enter
-			 * a transaction.  This avoids the possibility of
-			 * holding up the transaction if the data copy hangs
-			 * up on a pagefault (e.g., from an NFS server mapping).
-			 */
-			size_t cbytes;
-
-			abuf = dmu_request_arcbuf(sa_get_db(zp->z_sa_hdl),
-			    max_blksz);
-			ASSERT(abuf != NULL);
-			ASSERT(arc_buf_size(abuf) == max_blksz);
-            dprintf("  uiocopy  before %llu\n", uio_offset(uio));
-			if ((error = uiocopy(abuf->b_data, max_blksz,
-                                 UIO_WRITE, uio, &cbytes))) {
-				dmu_return_arcbuf(abuf);
-				break;
-			}
-            dprintf("  uiocopy  after %llu cbytes %llu\n",
-                   uio_offset(uio), cbytes);
-			ASSERT(cbytes == max_blksz);
 		}
 
 		/*
@@ -1535,8 +1483,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
 			dmu_tx_abort(tx);
-			if (abuf != NULL)
-				dmu_return_arcbuf(abuf);
 			break;
 		}
 
@@ -1581,42 +1527,15 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			rw_exit(&zp->z_map_lock);
 		}
 
-		if (abuf == NULL) {
-
-			if ( vn_has_cached_data(vp) || ubc_pages_resident(vp) ) {
-				uio_copy = uio_duplicate(uio);
-			}
-
-			tx_bytes = uio_resid(uio);
-
-			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
-									   uio, nbytes, tx);
-			tx_bytes -= uio_resid(uio);
-
-		} else {
-			tx_bytes = nbytes;
-			ASSERT(xuio == NULL || tx_bytes == aiov->iov_len);
-			/*
-			 * If this is not a full block write, but we are
-			 * extending the file past EOF and this data starts
-			 * block-aligned, use assign_arcbuf().  Otherwise,
-			 * write via dmu_write().
-			 */
-			if (tx_bytes < max_blksz && (!write_eof ||
-			    aiov->iov_base != abuf->b_data)) {
-				ASSERT(xuio);
-				dmu_write(zfsvfs->z_os, zp->z_id, woff,
-				    aiov->iov_len, aiov->iov_base, tx);
-				dmu_return_arcbuf(abuf);
-				xuio_stat_wbuf_copied();
-			} else {
-				ASSERT(xuio || tx_bytes == max_blksz);
-				dmu_assign_arcbuf_by_dbuf(
-				    sa_get_db(zp->z_sa_hdl), woff, abuf, tx);
-			}
-			ASSERT(tx_bytes <= uio_resid(uio));
-			uioskip(uio, tx_bytes);
+		if ( vn_has_cached_data(vp) || ubc_pages_resident(vp) ) {
+			uio_copy = uio_duplicate(uio);
 		}
+
+		tx_bytes = uio_resid(uio);
+
+		error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
+		    uio, nbytes, tx);
+		tx_bytes -= uio_resid(uio);
 
 		if (tx_bytes && (vn_has_cached_data(vp) || ubc_pages_resident(vp))) {
 #ifdef __APPLE__
@@ -1707,20 +1626,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			break;
 		ASSERT(tx_bytes == nbytes);
 		n -= nbytes;
-
-#ifdef sun
-		if (!xuio && n > 0)
-			uio_prefaultpages(MIN(n, max_blksz), uio);
-#endif	/* sun */
-#ifdef __APPLE__
-		if (!xuio && n > 0)
-			zfs_prefault_write(MIN(n, max_blksz), uio);
-
-		atomic_inc_64(&zp->z_write_gencount);
-
-#endif	/* sun */
-
-
 	}
 
     dprintf("zfs_write done remainder %llu\n", n);

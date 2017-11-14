@@ -502,13 +502,6 @@ if (zp->z_gen != 0) dprintf("%s: va_gen %lld -> 0\n", __func__, zp->z_gen);
         VATTR_SET_SUPPORTED(vap, va_fsid64);
     }
 #endif
-#ifdef VNODE_ATTR_va_write_gencount
-	if (VATTR_IS_ACTIVE(vap, va_write_gencount)) {
-		if (!zp->z_write_gencount)
-			atomic_inc_64(&zp->z_write_gencount);
-        VATTR_RETURN(vap, va_write_gencount, (uint32_t)zp->z_write_gencount);
-    }
-#endif
 
 #ifdef VNODE_ATTR_va_document_id
 	if (VATTR_IS_ACTIVE(vap, va_document_id)) {
