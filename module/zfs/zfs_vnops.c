@@ -1549,6 +1549,51 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (tx_bytes && (vn_has_cached_data(vp) || ubc_pages_resident(vp))) {
 #ifdef __APPLE__
+			/*
+			 * Although we repeat this below, since we have
+			 * changed the file size we need to feed
+			 * the new filesize to xnu so that VM operations
+			 * below update_pages work correctly.
+			 *
+			 * In particular, ubc_setsize will correctly handle
+			 * a partially filled final page, zero-filling it after
+			 * between the EOF and the final page boundary.
+			 */
+			uint64_t size_update_ctr = 0;
+			uint64_t starting_uioffset = uio_offset(uio);
+			while ((end_size = zp->z_size) < uio_offset(uio)) {
+				size_update_ctr++;
+				(void) atomic_cas_64(&zp->z_size, end_size,
+				    uio_offset(uio));
+				ASSERT3S(error, ==, 0);
+			}
+			if (size_update_ctr > 1) {
+				printf("ZFS: %s:%d: %llu tries to increase zp->z_size above"
+				    " uio_offset %lld (which is now %lld)\n",
+				    __func__, __LINE__, size_update_ctr, starting_uioffset, uio_offset(uio));
+			}
+			ASSERT3U(starting_uioffset, ==, uio_offset(uio));
+
+			/*
+			 * Now that zp->z_size is correct, let's update UBC.
+			 * Again, this is repeated verbatim below, but we
+			 * want to do this before update_pages.
+			 */
+
+			rw_enter(&zp->z_map_lock, RW_WRITER);
+			off_t zp_size = zp->z_size;
+			off_t ubc_size = ubc_getsize(vp);
+			int setsize_retval = ubc_setsize(vp, zp->z_size);
+			rw_exit(&zp->z_map_lock);
+			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
+			ASSERT3S(ubc_size, <=, zp_size); // we ought to have grown the file above
+
+			if (ubc_pages_resident(vp)) {
+				int ubc_msync_err = 0;
+				ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), NULL, UBC_PUSHDIRTY);
+				ASSERT3S(ubc_msync_err, ==, 0);
+			}
+
 			if (uio_copy) {
 				VNOPS_STAT_BUMP(write_updatepage_uio_copy);
 				dprintf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
@@ -1576,7 +1621,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			(void) sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
 			    (void *)&zp->z_size, sizeof (uint64_t), tx);
 			dmu_tx_commit(tx);
-			ASSERT(error != 0);
+			ASSERT3S(error, !=, 0);
 			break;
 		}
 
@@ -1611,6 +1656,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		/*
 		 * Update the file size (zp_size) if it has changed;
 		 * account for possible concurrent updates.
+		 *
+		 * We did this above in the case of tx_bytes > 0 and
+		 * a file with UBC data.    This might be omittable
+		 * in the case that it was done above.    However,
+		 * this is a cheap couple of tests if z_size is up to date.
 		 */
 		uint64_t size_update_ctr = 0;
 		uint64_t starting_uioffset = uio_offset(uio);
@@ -1618,12 +1668,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			size_update_ctr++;
 			(void) atomic_cas_64(&zp->z_size, end_size,
                                  uio_offset(uio));
-			ASSERT(error == 0);
+			ASSERT3S(error, ==, 0);
 		}
 		if (size_update_ctr > 1) {
-			printf("ZFS: %s: %llu tries to increase zp->z_size above"
+			printf("ZFS: %s:%d: %llu tries to increase zp->z_size above"
 			    " uio_offset %lld (which is now %lld)\n",
-			    __func__, size_update_ctr, starting_uioffset, uio_offset(uio));
+			    __func__, __LINE__, size_update_ctr, starting_uioffset, uio_offset(uio));
 		}
 		ASSERT3U(starting_uioffset, ==, uio_offset(uio));
 
@@ -1660,15 +1710,20 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		return (error);
 	}
 
+	boolean_t do_ubc_sync = B_FALSE;
 	if (ioflag & (FSYNC | FDSYNC) ||
 	    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS) {
 		zil_commit(zilog, zp->z_id);
-		int ubc_msync_err = 0;
-		ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), NULL, UBC_PUSHDIRTY | UBC_SYNC);
-		ASSERT3S(ubc_msync_err, ==, 0);
+		do_ubc_sync == B_TRUE;
 	}
 
-	/* OS X: pageout requires that the UBC file size be current. */
+	/*
+	 * OS X: pageout requires that the UBC file size be current.
+	 * Note: we may have done the ubc_setsize above already in the event that
+	 *       the file had UBC data associated with it in the first
+	 *       place.
+	 *       However, we have not yet done a ubc_msync, so let's do that now.
+	 */
         if (tx_bytes != 0) {
 		rw_enter(&zp->z_map_lock, RW_WRITER);
 		off_t zp_size = zp->z_size;
@@ -1680,7 +1735,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (ubc_pages_resident(vp)) {
 			int ubc_msync_err = 0;
-			ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), NULL, UBC_PUSHDIRTY);
+			int flag = UBC_PUSHDIRTY | (do_ubc_sync == B_TRUE) ? UBC_SYNC : 0);
+			ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), NULL, flag);
 			ASSERT3S(ubc_msync_err, ==, 0);
 		}
         }
