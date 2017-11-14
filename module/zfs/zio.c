@@ -433,6 +433,8 @@ zio_decrypt(zio_t *zio, abd_t *data, uint64_t size)
 	int ret;
 	void *tmp;
 	blkptr_t *bp = zio->io_bp;
+	spa_t *spa = zio->io_spa;
+	uint64_t dsobj = zio->io_bookmark.zb_objset;
 	uint64_t lsize = BP_GET_LSIZE(bp);
 	dmu_object_type_t ot = BP_GET_TYPE(bp);
 	uint8_t salt[ZIO_DATA_SALT_LEN];
@@ -491,13 +493,12 @@ zio_decrypt(zio_t *zio, abd_t *data, uint64_t size)
 	 */
 	if (BP_IS_AUTHENTICATED(bp)) {
 		if (ot == DMU_OT_OBJSET) {
-			ret = spa_do_crypt_objset_mac_abd(B_FALSE, zio->io_spa,
-			    zio->io_bookmark.zb_objset, zio->io_abd, size,
-			    BP_SHOULD_BYTESWAP(bp));
+			ret = spa_do_crypt_objset_mac_abd(B_FALSE, spa,
+			    dsobj, zio->io_abd, size, BP_SHOULD_BYTESWAP(bp));
 		} else {
 			zio_crypt_decode_mac_bp(bp, mac);
-			ret = spa_do_crypt_mac_abd(B_FALSE, zio->io_spa,
-			    zio->io_bookmark.zb_objset, zio->io_abd, size, mac);
+			ret = spa_do_crypt_mac_abd(B_FALSE, spa, dsobj,
+			    zio->io_abd, size, mac);
 		}
 		abd_copy(data, zio->io_abd, size);
 
@@ -517,9 +518,8 @@ zio_decrypt(zio_t *zio, abd_t *data, uint64_t size)
 		zio_crypt_decode_mac_bp(bp, mac);
 	}
 
-	ret = spa_do_crypt_abd(B_FALSE, zio->io_spa, zio->io_bookmark.zb_objset,
-	    bp, bp->blk_birth, size, data, zio->io_abd, iv, mac, salt,
-	    &no_crypt);
+	ret = spa_do_crypt_abd(B_FALSE, spa, dsobj, bp, bp->blk_birth,
+	    size, data, zio->io_abd, iv, mac, salt, &no_crypt);
 	if (no_crypt)
 		abd_copy(data, zio->io_abd, size);
 
@@ -540,7 +540,7 @@ error:
 		ret = SET_ERROR(EIO);
 		if ((zio->io_flags & ZIO_FLAG_SPECULATIVE) == 0) {
 			zfs_ereport_post(FM_EREPORT_ZFS_AUTHENTICATION,
-			    zio->io_spa, NULL, &zio->io_bookmark, zio, 0, 0);
+			    spa, NULL, &zio->io_bookmark, zio, 0, 0);
 		}
 	} else {
 		zio->io_error = ret;
@@ -3634,6 +3634,7 @@ zio_encrypt(zio_t *zio)
 	spa_t *spa = zio->io_spa;
 	blkptr_t *bp = zio->io_bp;
 	uint64_t psize = BP_GET_PSIZE(bp);
+	uint64_t dsobj = zio->io_bookmark.zb_objset;
 	dmu_object_type_t ot = BP_GET_TYPE(bp);
 	void *enc_buf = NULL;
 	abd_t *eabd = NULL;
@@ -3684,17 +3685,16 @@ zio_encrypt(zio_t *zio)
 		ASSERT0(DMU_OT_IS_ENCRYPTED(ot));
 		ASSERT3U(BP_GET_COMPRESS(bp), ==, ZIO_COMPRESS_OFF);
 		BP_SET_CRYPT(bp, B_TRUE);
-		VERIFY0(spa_do_crypt_objset_mac_abd(B_TRUE, spa,
-		    zio->io_bookmark.zb_objset, zio->io_abd, psize,
-		    BP_SHOULD_BYTESWAP(bp)));
+		VERIFY0(spa_do_crypt_objset_mac_abd(B_TRUE, spa, dsobj,
+		    zio->io_abd, psize, BP_SHOULD_BYTESWAP(bp)));
 		return (ZIO_PIPELINE_CONTINUE);
 	}
 
 	/* unencrypted object types are only authenticated with a MAC */
 	if (!DMU_OT_IS_ENCRYPTED(ot)) {
 		BP_SET_CRYPT(bp, B_TRUE);
-		VERIFY0(spa_do_crypt_mac_abd(B_TRUE, spa,
-		    zio->io_bookmark.zb_objset, zio->io_abd, psize, mac));
+		VERIFY0(spa_do_crypt_mac_abd(B_TRUE, spa, dsobj,
+		    zio->io_abd, psize, mac));
 		zio_crypt_encode_mac_bp(bp, mac);
 		return (ZIO_PIPELINE_CONTINUE);
 	}
@@ -3728,8 +3728,8 @@ zio_encrypt(zio_t *zio)
 	}
 
 	/* Perform the encryption. This should not fail */
-	VERIFY0(spa_do_crypt_abd(B_TRUE, spa, zio->io_bookmark.zb_objset, bp,
-	    zio->io_txg, psize, zio->io_abd, eabd, iv, mac, salt, &no_crypt));
+	VERIFY0(spa_do_crypt_abd(B_TRUE, spa, dsobj, bp, zio->io_txg,
+	    psize, zio->io_abd, eabd, iv, mac, salt, &no_crypt));
 
 	/* encode encryption metadata into the bp */
 	if (ot == DMU_OT_INTENT_LOG) {

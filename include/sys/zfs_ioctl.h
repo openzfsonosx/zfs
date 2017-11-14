@@ -238,7 +238,8 @@ typedef struct dmu_replay_record {
 			uint8_t drr_flags;
 			uint32_t drr_raw_bonuslen;
 			uint64_t drr_toguid;
-			/* only nonzero for raw streams */
+			/* only (possibly) nonzero for raw streams */
+			uint64_t drr_maxblkid;
 			uint8_t drr_indblkshift;
 			uint8_t drr_nlevels;
 			uint8_t drr_nblkptr;

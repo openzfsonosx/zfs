@@ -693,6 +693,18 @@ dnode_sync(dnode_t *dn, dmu_tx_t *tx)
 		mutex_exit(&dn->dn_mtx);
 	}
 
+	/* Must be done after dnode_sync_free_range */
+	mutex_enter(&dn->dn_mtx);
+	if (dn->dn_maxblkid > dnp->dn_maxblkid) {
+		dnp->dn_maxblkid = dn->dn_maxblkid;
+
+		/* assert that maxblkid is possible with nlevels and ibs */
+		ASSERT3U(dnp->dn_maxblkid, <=, dn->dn_nblkptr *
+		    (1ULL << ((dn->dn_indblkshift - SPA_BLKPTRSHIFT) *
+		    (dn->dn_nlevels - 1))));
+	}
+	mutex_exit(&dn->dn_mtx);
+
 	if (freeing_dnode) {
 		dn->dn_objset->os_freed_dnodes++;
 		dnode_sync_free(dn, tx);

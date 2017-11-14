@@ -521,6 +521,7 @@ dump_dnode(dmu_sendarg_t *dsp, const blkptr_t *bp, uint64_t object,
 			drro->drr_flags |= DRR_RAW_BYTESWAP;
 
 		/* needed for reconstructing dnp on recv side */
+		drro->drr_maxblkid = dnp->dn_maxblkid;
 		drro->drr_indblkshift = dnp->dn_indblkshift;
 		drro->drr_nlevels = dnp->dn_nlevels;
 		drro->drr_nblkptr = dnp->dn_nblkptr;
@@ -2468,6 +2469,8 @@ receive_object(struct receive_writer_arg *rwa, struct drr_object *drro,
 		    drro->drr_blksz, drro->drr_indblkshift, tx));
 		VERIFY0(dmu_object_set_nlevels(rwa->os, drro->drr_object,
 		    drro->drr_nlevels, tx));
+		VERIFY0(dmu_object_set_maxblkid(rwa->os, drro->drr_object,
+		    drro->drr_maxblkid, tx));
 	}
 
 	if (data != NULL) {
