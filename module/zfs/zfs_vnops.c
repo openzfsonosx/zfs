@@ -517,10 +517,18 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     int upl_size;
     off_t off;
 
-    upl_start = uio_offset(uio);
-    off = upl_start & (PAGE_SIZE - 1);
-    upl_start &= ~PAGE_MASK;
-    upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
+    const off_t orig_offset = uio_offset(uio);
+    upl_start = orig_offset;
+    off = upl_start & (PAGE_SIZE_64 - 1LL);
+    upl_start &= ~PAGE_MASK_64;
+    upl_size = (off + nbytes + (PAGE_SIZE_64 - 1)) & ~PAGE_MASK_64;
+
+
+    const off_t upl_file_offset = orig_offset / PAGE_SIZE * PAGE_SIZE;
+    const size_t nupl_size = roundup(orig_offset + nbytes - upl_file_offset, PAGE_SIZE);
+
+    ASSERT3U(upl_start, ==, upl_file_offset);
+    ASSERT3U(upl_size, ==, nupl_size);
 
     dprintf("update_pages %llu - %llu (adjusted %llu - %llu): off %llu\n",
            uio_offset(uio), nbytes, upl_start, upl_size, off);
@@ -574,6 +582,33 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	/* we now hold EITHER z_lock or z_map_lock, but not both */
 	EQUIV(MUTEX_HELD(&zp->z_lock), mapped == 0);
 	EQUIV(!rw_write_held(&zp->z_map_lock), MUTEX_HELD(&zp->z_lock));
+
+	/*
+	 * Invalidate the very first and very last pages of the UPL range,
+	 * to make sure they are read in from the ARC.
+	 */
+
+	off_t resid_msync = 0;
+	int retval_msync =  ubc_msync(vp, upl_file_offset, PAGE_SIZE_64, &resid_msync, UBC_INVALIDATE);
+	if (retval_msync != 0)
+		ASSERT3U(resid_msync, ==, PAGE_SIZE_64);
+	else
+		printf("ZFS: %s:%d: msync error %d invalidating %lld @ %lld, resid = %lld, file %s\n",
+		    __func__, __LINE__, retval_msync, upl_file_offset, PAGE_SIZE_64,
+		    resid_msync, zp->z_name_cache);
+
+	resid_msync = 0;
+	const off_t start_of_last_page = upl_file_offset + (nbytes / PAGE_SIZE_64) * PAGE_SIZE_64;
+
+	ASSERT3U((upl_file_offset % PAGE_SIZE_64), ==, 0);
+	retval_msync = ubc_msync(vp, start_of_last_page, PAGE_SIZE_64, &resid_msync, UBC_INVALIDATE);
+	if (retval_msync != 0)
+		ASSERT3U(resid_msync, ==, PAGE_SIZE_64);
+	else
+		printf("ZFS: %s:%d: msync error %d invalidating %lld @ %lld, resid = %lld,"
+		    " filesize %lld, file %s\n",
+		    __func__, __LINE__, retval_msync, start_of_last_page, PAGE_SIZE_64,
+		    resid_msync, zp->z_size, zp->z_name_cache);
 
 	/*
 	 * Loop through the pages, looking for holes to fill.
