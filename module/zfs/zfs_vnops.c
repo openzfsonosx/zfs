@@ -1739,7 +1739,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			off_t ubcsize = ubc_getsize(vp);
 			ASSERT3U(ubcsize, >, 0);
 			int flag = UBC_PUSHDIRTY | (do_ubc_sync == B_TRUE) ? UBC_SYNC : 0;
-			ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), &resid_off, flag);
+			ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp) - 1, &resid_off, flag);
 			if (ubc_msync_err != 0) {
 				printf("ZFS: %s:%d: ubc_msync returned error %d resid_off %lld"
 				    " ubcsize was %lld (sync == %d)\n",
