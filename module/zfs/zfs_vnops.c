@@ -1742,8 +1742,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), &resid_off, flag);
 			if (ubc_msync_err != 0) {
 				printf("ZFS: %s:%d: ubc_msync returned error %d resid_off %lld"
-				    " ubcsize was %lld\n",
-				    __func__, __LINE__, ubc_msync_err, resid_off, ubcsize);
+				    " ubcsize was %lld (sync == %d)\n",
+				    __func__, __LINE__, ubc_msync_err, resid_off, ubcsize, do_ubc_sync);
 			}
 		}
         }
