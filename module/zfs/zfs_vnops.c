@@ -1735,9 +1735,16 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (ubc_pages_resident(vp)) {
 			int ubc_msync_err = 0;
+			off_t resid_off = 0;
+			off_t ubcsize = ubc_getsize(vp);
+			ASSERT3U(ubcsize, >, 0);
 			int flag = UBC_PUSHDIRTY | (do_ubc_sync == B_TRUE) ? UBC_SYNC : 0;
-			ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), NULL, flag);
-			ASSERT3S(ubc_msync_err, ==, 0);
+			ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), &resid_off, flag);
+			if (ubc_msync_err != 0) {
+				printf("ZFS: %s:%d: ubc_msync returned error %d resid_off %lld"
+				    " ubcsize was %lld\n",
+				    __func__, __LINE__, ubc_msync_err, resid_off, ubcsize);
+			}
 		}
         }
 
