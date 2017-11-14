@@ -496,6 +496,33 @@ zfs_holey(struct vnode *vp, int cmd, loff_t *off)
 
 #endif /* SEEK_HOLE && SEEK_DATA */
 
+static
+int invalidate_range(vnode_t *vp, off_t start, off_t end)
+{
+	ASSERT3U((start % PAGE_SIZE_64), ==, PAGE_SIZE_64);
+	ASSERT3U((end % PAGE_SIZE_64), ==, PAGE_SIZE_64);
+
+	znode_t *zp = VTOZ(vp);
+
+	off_t resid_msync = 0;
+	off_t size = end - start;
+	int retval_msync =  ubc_msync(vp, start, end, &resid_msync, UBC_INVALIDATE);
+	if (retval_msync != 0) {
+		if (resid_msync != PAGE_SIZE_64)
+			printf("ZFS: %s:%d: msync error %d invalidating %lld - %lld (%lld),"
+			    " resid = %lld, file %s\n",
+			    __func__, __LINE__, retval_msync, start, end, size,
+			    resid_msync, zp->z_name_cache);
+		else
+			ASSERT3U(resid_msync, ==, size);
+	} else {
+		printf("ZFS: (DEBUG) %s:%d: inval %lld - %lld (%lld), resid %lld , file %s\n",
+		    __func__, __LINE__, start, end, size,
+		    resid_msync, zp->z_name_cache);
+	}
+	return (retval_msync);
+}
+
 /*
  * When a file is memory mapped, we must keep the IO data synchronized
  * between the DMU cache and the memory mapped pages.  What this means:
@@ -588,29 +615,15 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * to make sure they are read in from the ARC.
 	 */
 
-	off_t resid_msync = 0;
-	int retval_msync =  ubc_msync(vp, upl_file_offset, upl_file_offset + PAGE_SIZE_64,
-	    &resid_msync, UBC_INVALIDATE);
-	if (retval_msync != 0)
-		ASSERT3U(resid_msync, ==, PAGE_SIZE_64);
-	else if (resid_msync != PAGE_SIZE_64)
-		printf("ZFS: %s:%d: msync error %d invalidating %lld @ %lld, resid = %lld, file %s\n",
-		    __func__, __LINE__, retval_msync, PAGE_SIZE_64, upl_file_offset,
-		    resid_msync, zp->z_name_cache);
-
-	resid_msync = 0;
-	const off_t start_of_last_page = upl_file_offset + (nbytes / PAGE_SIZE_64) * PAGE_SIZE_64;
-
 	ASSERT3U((upl_file_offset % PAGE_SIZE_64), ==, 0);
-	retval_msync = ubc_msync(vp, start_of_last_page,
-	    start_of_last_page + PAGE_SIZE_64, &resid_msync, UBC_INVALIDATE);
-	if (retval_msync != 0)
-		ASSERT3U(resid_msync, ==, PAGE_SIZE_64);
-	else if (resid_msync != PAGE_SIZE_64)
-		printf("ZFS: %s:%d: msync error %d invalidating %lld @ %lld, resid = %lld,"
-		    " filesize %lld, file %s\n",
-		    __func__, __LINE__, retval_msync, PAGE_SIZE_64, start_of_last_page,
-		    resid_msync, zp->z_size, zp->z_name_cache);
+	int retval_msync_first = invalidate_range(vp, upl_file_offset, upl_file_offset + PAGE_SIZE_64);
+	ASSERT3S(retval_msync_first, ==, 0);
+
+	ASSERT3S(nbytes, >, 0);
+	const off_t start_of_last_page = upl_file_offset + ((nbytes - 1) / PAGE_SIZE_64) * PAGE_SIZE_64;
+
+	int retval_msync_last = invalidate_range(vp, start_of_last_page, start_of_last_page + PAGE_SIZE_64);
+	ASSERT3U(retval_msync_last, ==, 0);
 
 	/*
 	 * Loop through the pages, looking for holes to fill.
