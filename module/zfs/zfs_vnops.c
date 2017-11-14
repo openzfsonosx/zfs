@@ -557,6 +557,12 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	    ASSERT3P(uio_copy, !=, NULL);
 
 	    /* or maybe first we want to make sure all the pages are present */
+	    /* is_file_clean is exported */
+
+	    // "read old content from where uio finishes till page end or EOF"
+	    // -- (says dmu_write_upl, which deals with short start and end blocks)
+
+	    // maybe dump the relevant pages if they aren't present?
 
 	    int retval = cluster_copy_ubc_data(vp, uio, &xfer_resid, 0);
 
@@ -565,6 +571,14 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 		    if (xfer_resid != 0) {
 			    printf("ZFS: %s: nonzero xfer_resid %d ~ nbytes %lld\n",
 				__func__, xfer_resid, nbytes);
+
+			    /*
+			     * what has likely happened here is that in
+			     * memory_object_control_uiomove (in osfmk/vm/bsd_vm.c)
+			     * we have hit "we hit a 'hole' in the cache or a page
+			     * we don't want to handle so bail at this point"
+			     *
+			     */
 
 			    /*
 			     * Check here for various things about the file, for
