@@ -589,25 +589,27 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 */
 
 	off_t resid_msync = 0;
-	int retval_msync =  ubc_msync(vp, upl_file_offset, PAGE_SIZE_64, &resid_msync, UBC_INVALIDATE);
+	int retval_msync =  ubc_msync(vp, upl_file_offset, upl_file_offset + PAGE_SIZE_64,
+	    &resid_msync, UBC_INVALIDATE);
 	if (retval_msync != 0)
 		ASSERT3U(resid_msync, ==, PAGE_SIZE_64);
-	else
+	else if (resid_msync != PAGE_SIZE_64)
 		printf("ZFS: %s:%d: msync error %d invalidating %lld @ %lld, resid = %lld, file %s\n",
-		    __func__, __LINE__, retval_msync, upl_file_offset, PAGE_SIZE_64,
+		    __func__, __LINE__, retval_msync, PAGE_SIZE_64, upl_file_offset,
 		    resid_msync, zp->z_name_cache);
 
 	resid_msync = 0;
 	const off_t start_of_last_page = upl_file_offset + (nbytes / PAGE_SIZE_64) * PAGE_SIZE_64;
 
 	ASSERT3U((upl_file_offset % PAGE_SIZE_64), ==, 0);
-	retval_msync = ubc_msync(vp, start_of_last_page, PAGE_SIZE_64, &resid_msync, UBC_INVALIDATE);
+	retval_msync = ubc_msync(vp, start_of_last_page,
+	    start_of_last_page + PAGE_SIZE_64, &resid_msync, UBC_INVALIDATE);
 	if (retval_msync != 0)
 		ASSERT3U(resid_msync, ==, PAGE_SIZE_64);
-	else
+	else if (resid_msync != PAGE_SIZE_64)
 		printf("ZFS: %s:%d: msync error %d invalidating %lld @ %lld, resid = %lld,"
 		    " filesize %lld, file %s\n",
-		    __func__, __LINE__, retval_msync, start_of_last_page, PAGE_SIZE_64,
+		    __func__, __LINE__, retval_msync, PAGE_SIZE_64, start_of_last_page,
 		    resid_msync, zp->z_size, zp->z_name_cache);
 
 	/*
