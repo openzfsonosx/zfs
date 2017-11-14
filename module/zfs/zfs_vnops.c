@@ -499,8 +499,8 @@ zfs_holey(struct vnode *vp, int cmd, loff_t *off)
 static
 int invalidate_range(vnode_t *vp, off_t start, off_t end)
 {
-	ASSERT3U((start % PAGE_SIZE_64), ==, PAGE_SIZE_64);
-	ASSERT3U((end % PAGE_SIZE_64), ==, PAGE_SIZE_64);
+	ASSERT3U((start % PAGE_SIZE_64), ==, 0);
+	ASSERT3U((end % PAGE_SIZE_64), ==, 0);
 
 	znode_t *zp = VTOZ(vp);
 
