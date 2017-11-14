@@ -1934,8 +1934,11 @@ zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
 		return (0);
 	}
 
-	if (off + len > zp->z_size)
+	boolean_t trim_at_tail = B_FALSE;
+	if (off + len > zp->z_size) {
 		len = zp->z_size - off;
+		trim_at_tail = B_TRUE;
+	}
 
 	error = dmu_free_long_range(zfsvfs->z_os, zp->z_id, off, len);
 
@@ -1948,12 +1951,32 @@ zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
 		/* modify the size under the lock to avoid interfering with
 		 * other users of the size, including mappedread_new
 		 */
-		rw_enter(&zp->z_map_lock, RW_WRITER);
-		int setsize_retval = vnode_pager_setsize(ZTOV(zp), off);
-		rw_exit(&zp->z_map_lock);
-		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true for success
-		printf("ZFS: %s:%d off == %llu, len == %llu, file = %s\n",
-		    __func__, __LINE__, off, len, zp->z_name_cache);
+		/* should we do this *before* the dmu_free_long_range ? */
+		vnode_t *vp = ZTOV(zp);
+		const off_t ubcsize = ubc_getsize(vp);
+		/* we can set to off if off + len is greater than file size*/
+		if (trim_at_tail || off + len >= zp->z_size) {
+			rw_enter(&zp->z_map_lock, RW_WRITER);
+			int setsize_retval = vnode_pager_setsize(vp, off);
+			rw_exit(&zp->z_map_lock);
+			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true for success
+			printf("ZFS: %s:%d off == %llu, len == %llu, file = %s,"
+			    " ubc_getsize = (now) %lld (was) %lld\n",
+			    __func__, __LINE__, off, len, zp->z_name_cache,
+			    ubc_getsize(vp), ubcsize);
+		} else  if (ubc_getsize(vp) != 0) {
+			/* there is data at the end of the file */
+			off_t resid_off = 0;
+			int flags = UBC_INVALIDATE;
+			int ubc_msync_retval = ubc_msync(ZTOV(zp), off, len, &resid_off, flags);
+			if (ubc_msync_retval != 0) {
+				printf("ZFS: %s:%d: ubc_msync returned %d, resid %lld,"
+				    " off %lld len %lld, ubcsize was %lld is now %lld, file %s\n",
+				    __func__, __LINE__, ubc_msync_retval, resid_off,
+				    off, len, ubcsize, ubc_getsize(vp), zp->z_name_cache);
+			}
+		}
+
 	} else {
 		// OSX note: ubc_setsize [aka vnode_pager_setsize] carefully
 		// does a cluster_zero on the tail of the last surviving page
