@@ -1527,16 +1527,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 */
 		nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
 
-		if (woff + nbytes > zp->z_size) {
-			/* modify this under the lock to avoid
-			 * intefering with mappedread_new etc.
-			 */
-			rw_enter(&zp->z_map_lock, RW_WRITER);
-			int setsize_retval = vnode_pager_setsize(vp, woff + nbytes);
-			rw_exit(&zp->z_map_lock);
-			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
-		}
-
 		if ( vn_has_cached_data(vp) || ubc_pages_resident(vp) ) {
 			uio_copy = uio_duplicate(uio);
 		}
@@ -1587,12 +1577,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			rw_exit(&zp->z_map_lock);
 			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 			ASSERT3S(ubc_size, <=, zp_size); // we ought to have grown the file above
-
-			if (ubc_pages_resident(vp)) {
-				int ubc_msync_err = 0;
-				ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), NULL, UBC_PUSHDIRTY);
-				ASSERT3S(ubc_msync_err, ==, 0);
-			}
 
 			if (uio_copy) {
 				VNOPS_STAT_BUMP(write_updatepage_uio_copy);
