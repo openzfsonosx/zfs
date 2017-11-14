@@ -2626,7 +2626,11 @@ top:
 		 * with mappedread_new etc
 		 */
 		rw_enter(&zp->z_map_lock, RW_WRITER);
-		int setsize_retval = vnode_pager_setsize(vp, 0);
+		int setsize_retval;
+		if (ubc_getsize(vp) != 0)
+			setsize_retval = vnode_pager_setsize(vp, 0);
+		else
+			setsize_retval = 1;
 		rw_exit(&zp->z_map_lock);
 		ASSERT3S(setsize_retval, !=, 0); // setsize returns true on success
 		VN_RELE(vp);
