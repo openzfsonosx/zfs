@@ -38,6 +38,8 @@
  */
 #define cluster_copy_ubc_data kern_cluster_copy_ubc_data
 #define cluster_copy_upl_data kern_cluster_copy_upl_data
+#define round_page_64(x) (((uint64_t)(x) + PAGE_MASK_64) & ~((uint64_t)PAGE_MASK_64))
+#define trunc_page_64(x) ((uint64_t)(x) & ~((uint64_t)PAGE_MASK_64))
 #endif
 
 #include <sys/types.h>
@@ -497,21 +499,8 @@ zfs_holey(struct vnode *vp, int cmd, loff_t *off)
 #endif /* SEEK_HOLE && SEEK_DATA */
 
 static
-int invalidate_range(vnode_t *vp, off_t start, off_t end)
+int ubc_invalidate_range_impl(vnode_t *vp, off_t start, off_t end)
 {
-	if ((start % PAGE_SIZE_64) != 0)
-		printf("ZFS: %s start not page aligned %lld\n", __func__, start);
-
-	if (((end + 1) % PAGE_SIZE_64) != 0) {
-		printf("ZFS: %s end not aligned at end of page %lld\n", __func__, end);
-		if ((end % PAGE_SIZE_64) == 0 && end != 0) {
-			off_t oldend = end;
-			end = end - 1;
-			ASSERT3S((end + 1) % PAGE_SIZE_64, ==, 0);
-			printf("ZFS: %s end %lld adjusted downward to %lld\n", __func__, oldend, end);
-		}
-	}
-
 	znode_t *zp = VTOZ(vp);
 
 	off_t resid_msync = 0;
@@ -534,15 +523,19 @@ int invalidate_range(vnode_t *vp, off_t start, off_t end)
 }
 
 int
-ubc_invalidate_range(vnode_t *vp, off_t start_byte, off_t end_byte) {
-
-	off_t start = start_byte & ~(PAGE_MASK_64);
-	off_t end = roundup(end_byte, PAGE_MASK_64);
+ubc_invalidate_range(vnode_t *vp, off_t start_byte, off_t end_byte)
+{
+	/*
+	 * these roundings are done by ubc_msync_internal, but are
+	 * useful for our own range debugging
+	 */
+	off_t start = trunc_page_64(start_byte);
+	off_t end = round_page_64(end_byte);
 
 	ASSERT3U(start, <=, start_byte);
 	ASSERT3U(end, >=, end_byte);
 
-	return(invalidate_range(vp, start, end));
+	return(ubc_invalidate_range_impl(vp, start, end));
 }
 
 /*
