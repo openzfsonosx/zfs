@@ -563,7 +563,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     upl_size = round_page_64(nbytes) + PAGE_SIZE_64;
 
     const off_t upl_file_offset = orig_offset / PAGE_SIZE * PAGE_SIZE;
-    const size_t nupl_size = roundup(orig_offset + nbytes - upl_file_offset, PAGE_SIZE) + PAGE_SIZE;
+    const size_t nupl_size = roundup(orig_offset + nbytes - upl_file_offset, PAGE_SIZE);
 
     ASSERT3U(upl_start, ==, upl_file_offset);
     ASSERT3U(upl_size, ==, nupl_size);
@@ -985,6 +985,47 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 	}
 
 	return (err);
+}
+
+int
+ubc_fill_holes_in_range(vnode_t *vp, off_t start_byte, off_t end_byte)
+{
+
+	ASSERT3S(start_byte, <, end_byte);
+	ASSERT3S(end_byte, <=, ubc_getsize(vp));
+	ASSERT3S(start_byte, <=, ubc_getsize(vp));
+
+	const off_t aligned_file_offset = trunc_page_64(start_byte);
+	const size_t nbytes = end_byte - start_byte;
+	const size_t upl_size = round_page_64(nbytes) + PAGE_SIZE_64;
+
+	int err = fill_holes_in_range(vp, aligned_file_offset, upl_size);
+	return (err);
+}
+
+int
+ubc_refresh_range(vnode_t *vp, off_t start_byte, off_t end_byte)
+{
+	znode_t *zp = VTOZ(vp);
+	const char *filename = zp->z_name_cache;
+
+	int inval_err = ubc_invalidate_range(vp, start_byte, end_byte);
+	if (inval_err) {
+		printf("ZFS: %s: error from ubc_invalidate_range [%lld, %lld], file %s\n",
+		    __func__, start_byte, end_byte, filename);
+	}
+
+	int fill_err = ubc_fill_holes_in_range(vp, start_byte, end_byte);
+	if (fill_err) {
+		printf("ZFS: %s: error filling holes [%lld, %lld], file %s\n",
+		    __func__, start_byte, end_byte, filename);
+	}
+
+	if (inval_err != 0 || fill_err != 0) {
+		return (1);
+	}
+
+	return (0);
 }
 
 static int
