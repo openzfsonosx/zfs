@@ -523,6 +523,18 @@ int invalidate_range(vnode_t *vp, off_t start, off_t end)
 	return (retval_msync);
 }
 
+int
+ubc_invalidate_range(vnode_t *vp, off_t start_byte, off_t end_byte) {
+
+	off_t start = start_byte & ~(PAGE_MASK_64);
+	off_t end = roundup(end_byte, PAGE_MASK_64);
+
+	ASSERT3U(start, <=, start_byte);
+	ASSERT3U(end, >=, end_byte);
+
+	return(invalidate_range(vp, start, end));
+}
+
 /*
  * When a file is memory mapped, we must keep the IO data synchronized
  * between the DMU cache and the memory mapped pages.  What this means:
@@ -1514,6 +1526,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	write_eof = (woff + n > zp->z_size);
 
 	end_size = MAX(zp->z_size, woff + n);
+
+	int inval_retval = ubc_invalidate_range(ZTOV(zp), 0, ubc_getsize(ZTOV(zp)));
+	ASSERT3S(inval_retval, ==, 0);
 
 	/*
 	 * Write the file in reasonable size chunks.  Each chunk is written

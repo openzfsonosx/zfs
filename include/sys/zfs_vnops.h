@@ -249,6 +249,7 @@ extern void nfsacl_set_wellknown(int wkg, guid_t *guid);
 extern int  zfs_addacl_trivial(znode_t *zp, ace_t *aces, int *nentries,
 							   int seen_type);
 
+extern int ubc_invalidate_range(vnode_t *vp, off_t start_byte, off_t end_byte);
 
 #ifdef	__cplusplus
 }

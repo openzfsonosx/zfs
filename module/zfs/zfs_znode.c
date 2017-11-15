@@ -1845,6 +1845,9 @@ zfs_extend(znode_t *zp, uint64_t end)
 		return (0);
 	}
 
+	int inval_retval = ubc_invalidate_range(ZTOV(zp), 0, ubc_getsize(ZTOV(zp)));
+	ASSERT3S(inval_retval, ==, 0);
+
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	zfs_sa_upgrade_txholds(tx, zp);
@@ -1933,6 +1936,9 @@ zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
 		zfs_range_unlock(rl);
 		return (0);
 	}
+
+	int inval_retval = ubc_invalidate_range(ZTOV(zp), 0, ubc_getsize(ZTOV(zp)));
+	ASSERT3S(inval_retval, ==, 0);
 
 	boolean_t trim_at_tail = B_FALSE;
 	if (off + len > zp->z_size) {
@@ -2062,6 +2068,9 @@ zfs_trunc(znode_t *zp, uint64_t end)
 		zfs_range_unlock(rl);
 		return (0);
 	}
+
+	int inval_retval = ubc_invalidate_range(ZTOV(zp), 0, ubc_getsize(ZTOV(zp)));
+	ASSERT3S(inval_retval, ==, 0);
 
 	error = dmu_free_long_range(zfsvfs->z_os, zp->z_id, end,  -1);
 	if (error) {
