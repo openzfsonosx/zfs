@@ -638,13 +638,13 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 */
 
 	ASSERT3U((upl_file_offset % PAGE_SIZE_64), ==, 0);
-	int retval_msync_first = invalidate_range(vp, upl_file_offset, upl_file_offset + PAGE_SIZE_64);
+	int retval_msync_first = ubc_invalidate_range(vp, upl_file_offset, upl_file_offset + PAGE_SIZE_64);
 	ASSERT3S(retval_msync_first, ==, 0);
 
 	ASSERT3S(nbytes, >, 0);
 	const off_t start_of_last_page = upl_file_offset + ((nbytes - 1) / PAGE_SIZE_64) * PAGE_SIZE_64;
 
-	int retval_msync_last = invalidate_range(vp, start_of_last_page, start_of_last_page + PAGE_SIZE_64);
+	int retval_msync_last = ubc_invalidate_range(vp, start_of_last_page, start_of_last_page + PAGE_SIZE_64);
 	ASSERT3U(retval_msync_last, ==, 0);
 
 	/*
