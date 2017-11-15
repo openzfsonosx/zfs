@@ -557,13 +557,10 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     int error = 0;
     off_t upl_start;
     int upl_size;
-    off_t off;
 
     const off_t orig_offset = uio_offset(uio);
-    upl_start = orig_offset;
-    off = upl_start & (PAGE_SIZE_64 - 1LL);
-    upl_start &= ~PAGE_MASK_64;
-    upl_size = (off + nbytes + (PAGE_SIZE_64 - 1)) & ~PAGE_MASK_64;
+    upl_start = trunc_page_64(orig_offset);
+    upl_size = round_page_64(orig_offset + nbytes);
 
 
     const off_t upl_file_offset = orig_offset / PAGE_SIZE * PAGE_SIZE;
@@ -572,8 +569,8 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     ASSERT3U(upl_start, ==, upl_file_offset);
     ASSERT3U(upl_size, ==, nupl_size);
 
-    dprintf("update_pages %llu - %llu (adjusted %llu - %llu): off %llu\n",
-           uio_offset(uio), nbytes, upl_start, upl_size, off);
+    printf("update_pages %llu - %llu (adjusted %llu - %d)\n",
+           uio_offset(uio), nbytes, upl_start, upl_size);
 
 	 /* check if we are updating z_is_mapped for this file; if it is,
 	  * then it always will be.   If it isn't, we need to lock out
@@ -630,14 +627,17 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * to make sure they are read in from the ARC.
 	 */
 
-	ASSERT3U((upl_file_offset % PAGE_SIZE_64), ==, 0);
-	int retval_msync_first = ubc_invalidate_range(vp, upl_file_offset, upl_file_offset + PAGE_SIZE_64);
+	printf("ZFS: %s:%d: trimming first page [%lld - %lld]\n",
+	    __func__, __LINE__, orig_offset, orig_offset + PAGE_SIZE_64);
+	int retval_msync_first = ubc_invalidate_range(vp, orig_offset, orig_offset + PAGE_SIZE_64);
 	ASSERT3S(retval_msync_first, ==, 0);
 
 	ASSERT3S(nbytes, >, 0);
-	const off_t start_of_last_page = upl_file_offset + ((nbytes - 1) / PAGE_SIZE_64) * PAGE_SIZE_64;
+	const off_t last_page = trunc_page_64(orig_offset + nbytes);
 
-	int retval_msync_last = ubc_invalidate_range(vp, start_of_last_page, start_of_last_page + PAGE_SIZE_64);
+	printf("ZFS: %s:%d: trimming last page [%lld - %lld]\n",
+	    __func__, __LINE__, last_page, last_page + PAGE_SIZE_64);
+	int retval_msync_last = ubc_invalidate_range(vp, last_page, last_page + PAGE_SIZE_64);
 	ASSERT3U(retval_msync_last, ==, 0);
 
 	/*
@@ -703,8 +703,8 @@ static int
 fill_hole(vnode_t *vp, const off_t foffset,
     int page_hole_start, int page_hole_end, const char *filename)
 {
-	const off_t upl_size = (page_hole_end - page_hole_start) * (off_t)PAGE_SIZE;
-	const off_t upl_start = foffset + (page_hole_start * PAGE_SIZE);
+	const off_t upl_size = (page_hole_end - page_hole_start) * PAGE_SIZE_64;
+	const off_t upl_start = foffset + (page_hole_start * PAGE_SIZE_64);
 	upl_t upl;
 	upl_page_info_t *pl = NULL;
 
@@ -1066,9 +1066,9 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	 */
 
 	// where in the file the UPL starts, page aligned bytes
-	const off_t upl_file_offset = orig_offset / PAGE_SIZE * PAGE_SIZE;
+	const off_t upl_file_offset = trunc_page_64(orig_offset);
 	// size of the UPL, page-aligned bytes
-	const size_t upl_size = roundup(orig_offset + inbytes - upl_file_offset, PAGE_SIZE);
+	const size_t upl_size = round_page_64(orig_offset + inbytes);
 
 	err = fill_holes_in_range(vp, upl_file_offset, upl_size);
 
