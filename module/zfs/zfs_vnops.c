@@ -1598,9 +1598,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 */
 		nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
 
+#if 0
 		if ( vn_has_cached_data(vp) || ubc_pages_resident(vp) ) {
 			uio_copy = uio_duplicate(uio);
 		}
+#else
+		if  (vnode_isreg(vp)) /* vn_has_cached_data(vp) || ubc_pages_resident(vp) */
+			uio_copy = uio_duplicate(uio);
+#endif
 
 		tx_bytes = uio_resid(uio);
 
@@ -1608,8 +1613,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		    uio, nbytes, tx);
 		tx_bytes -= uio_resid(uio);
 
-		if (tx_bytes && (vn_has_cached_data(vp) || ubc_pages_resident(vp))) {
-#ifdef __APPLE__
+		if (tx_bytes && uio_copy != NULL) {
+
+			/* && (vn_has_cached_data(vp) || ubc_pages_resident(vp))*/
+
 			/*
 			 * Although we repeat this below, since we have
 			 * changed the file size we need to feed
@@ -1649,23 +1656,17 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 			ASSERT3S(ubc_size, <=, zp_size); // we ought to have grown the file above
 
-			if (uio_copy) {
-				VNOPS_STAT_BUMP(write_updatepage_uio_copy);
-				dprintf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
-				    woff, uio_offset(uio_copy), tx_bytes, uio_iovcnt(uio_copy));
-				update_pages(vp, tx_bytes, uio_copy, tx, 0);
-				uio_free(uio_copy);
-				uio_copy = NULL;
-			} else {
-				VNOPS_STAT_BUMP(write_updatepage_uio);
-				dprintf("XXXXUpdatepage call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
-				    woff, uio_offset(uio), tx_bytes, uio_iovcnt(uio));
-				update_pages(vp, tx_bytes, uio, tx, 0);
-			}
-#else
-			update_pages(vp, woff, tx_bytes, zfsvfs->z_os,
-                         zp->z_id, 0, tx);
-#endif
+			VNOPS_STAT_BUMP(write_updatepage_uio_copy);
+			dprintf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
+			    woff, uio_offset(uio_copy), tx_bytes, uio_iovcnt(uio_copy));
+			update_pages(vp, tx_bytes, uio_copy, tx, 0);
+			uio_free(uio_copy);
+			uio_copy = NULL;
+		}
+
+		if (uio_copy != NULL) {
+			uio_free(uio_copy);
+			uio_copy = NULL;
 		}
 
 		/*
