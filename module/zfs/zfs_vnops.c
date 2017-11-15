@@ -499,8 +499,18 @@ zfs_holey(struct vnode *vp, int cmd, loff_t *off)
 static
 int invalidate_range(vnode_t *vp, off_t start, off_t end)
 {
-	ASSERT3U((start % PAGE_SIZE_64), ==, 0);
-	ASSERT3U((end % PAGE_SIZE_64), ==, 0);
+	if ((start % PAGE_SIZE_64) != 0)
+		printf("ZFS: %s start not page aligned %lld\n", __func__, start);
+
+	if (((end + 1) % PAGE_SIZE_64) != 0) {
+		printf("ZFS: %s end not aligned at end of page %lld\n", __func__, end);
+		if ((end % PAGE_SIZE_64) == 0 && end != 0) {
+			off_t oldend = end;
+			end = end - 1;
+			ASSERT3S((end + 1) % PAGE_SIZE_64, ==, 0);
+			printf("ZFS: %s end %lld adjusted downward to %lld\n", __func__, oldend, end);
+		}
+	}
 
 	znode_t *zp = VTOZ(vp);
 
