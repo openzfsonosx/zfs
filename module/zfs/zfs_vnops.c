@@ -621,6 +621,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	EQUIV(MUTEX_HELD(&zp->z_lock), mapped == 0);
 	EQUIV(!rw_write_held(&zp->z_map_lock), MUTEX_HELD(&zp->z_lock));
 
+#if 0
 	/*
 	 * Invalidate the very first and very last pages of the UPL range,
 	 * to make sure they are read in from the ARC.
@@ -638,6 +639,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	    __func__, __LINE__, last_page, last_page + PAGE_SIZE_64);
 	int retval_msync_last = ubc_invalidate_range(vp, last_page, last_page + PAGE_SIZE_64);
 	ASSERT3U(retval_msync_last, ==, 0);
+#endif
 
 	/*
 	 * Loop through the pages, looking for holes to fill.
@@ -1529,8 +1531,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	end_size = MAX(zp->z_size, woff + n);
 
+#if 0
 	int inval_retval = ubc_invalidate_range(ZTOV(zp), 0, ubc_getsize(ZTOV(zp)));
 	ASSERT3S(inval_retval, ==, 0);
+#endif
 
 	/*
 	 * Write the file in reasonable size chunks.  Each chunk is written
