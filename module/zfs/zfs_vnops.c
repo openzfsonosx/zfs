@@ -1265,7 +1265,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	/*
 	 * Lock the range against changes.
 	 */
-	rl = zfs_range_lock(zp, uio_offset(uio), uio_resid(uio), RL_READER);
+	rl = zfs_range_lock(zp, trunc_page_64(uio_offset(uio)), round_page_64(uio_resid(uio)), RL_READER);
 
 	/*
 	 * If we are reading past end-of-file we can skip
@@ -1487,7 +1487,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * Obtain an appending range lock to guarantee file append
 		 * semantics.  We reset the write offset once we have the lock.
 		 */
-		rl = zfs_range_lock(zp, 0, n, RL_APPEND);
+		rl = zfs_range_lock(zp, 0, round_page_64(n), RL_APPEND);
 		woff = rl->r_off;
 		if (rl->r_len == UINT64_MAX) {
 			/*
@@ -1504,7 +1504,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * this write, then this range lock will lock the entire file
 		 * so that we can re-write the block safely.
 		 */
-		rl = zfs_range_lock(zp, woff, n, RL_WRITER);
+		rl = zfs_range_lock(zp, trunc_page_64(woff), round_page_64(n), RL_WRITER);
 	}
 
 #ifndef __APPLE__

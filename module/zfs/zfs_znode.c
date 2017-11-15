@@ -1927,7 +1927,10 @@ zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
 	/*
 	 * Lock the range being freed.
 	 */
-	rl = zfs_range_lock(zp, off, len, RL_WRITER);
+
+#define round_page_64(x) (((uint64_t)(x) + PAGE_MASK_64) & ~((uint64_t)PAGE_MASK_64))
+#define trunc_page_64(x) ((uint64_t)(x) & ~((uint64_t)PAGE_MASK_64))
+	rl = zfs_range_lock(zp, trunc_page_64(off), round_page_64(len), RL_WRITER);
 
 	/*
 	 * Nothing to do if file already at desired length.
