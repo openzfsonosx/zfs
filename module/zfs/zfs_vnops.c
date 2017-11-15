@@ -505,7 +505,7 @@ int ubc_invalidate_range_impl(vnode_t *vp, off_t start, off_t end)
 
 	off_t resid_msync = 0;
 	off_t size = end - start;
-	int retval_msync =  ubc_msync(vp, start, end, &resid_msync, UBC_INVALIDATE);
+	int retval_msync =  ubc_msync(vp, start, end, &resid_msync, UBC_PUSHALL | UBC_INVALIDATE);
 	if (retval_msync != 0) {
 		if (resid_msync != PAGE_SIZE_64)
 			printf("ZFS: %s:%d: msync error %d invalidating %lld - %lld (%lld),"
