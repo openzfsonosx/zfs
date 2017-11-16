@@ -463,7 +463,7 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 	if (super::handleOpen(client, options, argument) == false)
 		return (false);
 
-	if (!MUTEX_HELD(&spa_namespace_lock)) {
+	if (!mutex_owned(&spa_namespace_lock)) {
 		mutex_enter(&spa_namespace_lock);
 		locked = 1;
 	}
@@ -485,6 +485,7 @@ net_lundman_zfs_zvol_device::handleOpen(IOService *client,
 	if (locked)
 		mutex_exit(&spa_namespace_lock);
 
+
 	dprintf("Open %s (openflags %llx)\n", (ret ? "done" : "failed"),
 		zv->zv_openflags);
 
@@ -505,11 +506,13 @@ net_lundman_zfs_zvol_device::handleClose(IOService *client,
 	super::handleClose(client, options);
 
 	// IOLog("handleClose\n");
-	if (!MUTEX_HELD(&spa_namespace_lock)) {
+	if (!mutex_owned(&spa_namespace_lock)) {
 		mutex_enter(&spa_namespace_lock);
 		locked = 1;
 	}
+
 	zvol_close_impl(zv, zv->zv_openflags, 0, NULL);
+
 	if (locked)
 		mutex_exit(&spa_namespace_lock);
 
