@@ -648,7 +648,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * Loop through the pages, looking for holes to fill.
 	 */
 
-	error = fill_holes_in_range(vp, upl_start, upl_size);
+	error = ubc_fill_holes_in_range(vp, upl_start, upl_size);
 	if (error != 0) {
 		printf("ZFS: %s: fill_holes_in_range error %d range [%lld, +%d], filename %s\n",
 		    __func__, error, upl_start, upl_size, filename);
@@ -824,8 +824,8 @@ fill_hole(vnode_t *vp, const off_t foffset,
  * 6. release the dnode, return
  */
 
-static
-int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_size)
+static int
+fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_size)
 {
 
 	/* the range should be page aligned */
@@ -1054,7 +1054,7 @@ ubc_fill_holes_in_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 
 	const off_t aligned_file_offset = trunc_page_64(start_byte);
 	const size_t nbytes = end_byte - start_byte;
-	const size_t upl_size = round_page_64(nbytes) + PAGE_SIZE_64;
+	const size_t upl_size = round_page_64(nbytes);
 
 	int err = fill_holes_in_range(vp, aligned_file_offset, upl_size);
 	return (err);
