@@ -562,12 +562,6 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     upl_start = trunc_page_64(orig_offset);
     upl_size = round_page_64(nbytes) + PAGE_SIZE_64;
 
-    const off_t upl_file_offset = orig_offset / PAGE_SIZE * PAGE_SIZE;
-    const size_t nupl_size = roundup(orig_offset + nbytes - upl_file_offset, PAGE_SIZE);
-
-    ASSERT3U(upl_start, ==, upl_file_offset);
-    ASSERT3U(upl_size, ==, nupl_size);
-
     printf("update_pages %llu - %llu (adjusted %llu - %d)\n",
            uio_offset(uio), nbytes, upl_start, upl_size);
 
