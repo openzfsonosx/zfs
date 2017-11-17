@@ -1904,10 +1904,12 @@ zfs_extend(znode_t *zp, uint64_t end)
 	 * interfering with an in-progress mappedread, pagein, pageoutv2,
 	 * or update_pages.
 	 */
+#if 0
 	rw_enter(&zp->z_map_lock, RW_WRITER);
 	int setsize_retval = vnode_pager_setsize(ZTOV(zp), end);
 	rw_exit(&zp->z_map_lock);
 	ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
+#endif
 
 	return (0);
 }
