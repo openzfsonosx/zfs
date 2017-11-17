@@ -770,7 +770,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	const off_t upl_first_page = trunc_page_64(upl_start) / PAGE_SIZE_64;
 	const off_t upl_last_page = upl_first_page +  page_hole_end - page_hole_start;
 
-	if (upl_last_page >= eof_page) {
+	if (upl_last_page >= eof_page && upl_first_page <= eof_page) {
 		ASSERT3U(upl_first_page, <=, eof_page);
 		printf("ZFS: %s:%d page range [%lld - %lld] contains eof page %lld (eof byte %lld)\n",
 		    __func__, __LINE__,
