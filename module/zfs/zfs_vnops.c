@@ -826,6 +826,7 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 	ASSERT3S((upl_file_offset % PAGE_SIZE), ==, 0);
 	ASSERT3U((upl_size % PAGE_SIZE), ==, 0);
 	ASSERT3U(upl_size, >, 0);
+	ASSERT3U(upl_size, <=, MAX_UPL_SIZE_BYTES);
 
 	znode_t *zp = VTOZ(vp);
 	const char *filename = zp->z_name_cache;
@@ -872,7 +873,8 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 		if (cur_upl_size <= 0)
 			break;
 
-		ASSERT3U(cur_upl_file_offset, <=, zp->z_size);
+		if (cur_upl_file_offset > zp->z_size)
+			break;
 
 		ASSERT3S(err, ==, 0);
 
