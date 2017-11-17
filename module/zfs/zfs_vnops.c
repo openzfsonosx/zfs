@@ -835,6 +835,7 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 
 	/* the sizes should be identical */
 	ASSERT3U(zp->z_size, ==, ubc_getsize(vp));
+	ASSERT3U(upl_file_offset, <=, zp->z_size);
 
 	const off_t upl_first_page = trunc_page_64(upl_file_offset) / PAGE_SIZE_64;
 	const off_t upl_last_page = trunc_page_64(upl_file_offset + upl_size) / PAGE_SIZE_64;
