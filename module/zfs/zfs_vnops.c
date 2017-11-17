@@ -563,7 +563,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
     ASSERT3U(zp->z_size, ==, ubc_getsize(vp));
 
-    const off_t eof_page = trunc_page_64(zp->z_size);
+    const off_t eof_page = trunc_page_64(zp->z_size) / PAGE_SIZE_64;
 
     printf("ZFS: update_pages range %llu - %llu (pages %llu - %d) EOF byte, page %lld, %lld \n",
 	uio_offset(uio), nbytes, upl_start, upl_size, zp->z_size, eof_page);
@@ -766,7 +766,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	 */
 
 	const off_t eof_byte = zp->z_size;
-	const off_t eof_page = trunc_page_64(eof_byte);
+	const off_t eof_page = trunc_page_64(eof_byte) / PAGE_SIZE_64;
 	const off_t upl_first_page = trunc_page_64(upl_start) / PAGE_SIZE_64;
 	const off_t upl_last_page = upl_first_page +  page_hole_end - page_hole_start;
 
@@ -834,9 +834,9 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 	/* the sizes should be identical */
 	ASSERT3U(zp->z_size, ==, ubc_getsize(vp));
 
-	const off_t upl_first_page = trunc_page_64(upl_file_offset);
-	const off_t upl_last_page = trunc_page_64(upl_file_offset + upl_size);
-	const off_t eof_page = trunc_page_64(zp->z_size);
+	const off_t upl_first_page = trunc_page_64(upl_file_offset) / PAGE_SIZE_64;
+	const off_t upl_last_page = trunc_page_64(upl_file_offset + upl_size) / PAGE_SIZE_64;
+	const off_t eof_page = trunc_page_64(zp->z_size) / PAGE_SIZE_64;
 
 	const int upl_num_pages = trunc_page_64(upl_size);
 
