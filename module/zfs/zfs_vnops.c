@@ -1159,7 +1159,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	// where in the file the UPL starts, page aligned bytes
 	const off_t upl_file_offset = trunc_page_64(orig_offset);
 	// size of the UPL, page-aligned bytes
-	const size_t upl_size = round_page_64(inbytes) + PAGE_SIZE_64;
+	const size_t upl_size = round_page_64(inbytes);
 
 	err = fill_holes_in_range(vp, upl_file_offset, upl_size);
 
