@@ -767,18 +767,19 @@ fill_hole(vnode_t *vp, const off_t foffset,
 
 	const off_t eof_byte = zp->z_size;
 	const off_t eof_page = trunc_page_64(eof_byte);
-	const off_t upl_first_page = trunc_page_64(upl_start);
-	const off_t upl_last_page = page_hole_end - page_hole_start;
+	const off_t upl_first_page = trunc_page_64(upl_start) / PAGE_SIZE_64;
+	const off_t upl_last_page = upl_first_page +  page_hole_end - page_hole_start;
 
 	if (upl_last_page >= eof_page) {
-		printf("ZFS: %s:%d page range [%lld - %lld] contains eof page %lld\n",
+		ASSERT3U(upl_first_page, <=, eof_page);
+		printf("ZFS: %s:%d page range [%lld - %lld] contains eof page %lld (eof byte %lld)\n",
 		    __func__, __LINE__,
-		    upl_first_page, upl_last_page, eof_page);
+		    upl_first_page, upl_last_page, eof_page, eof_byte);
 
 		const off_t start_zerofill_file_byte = eof_byte - upl_start;
 		const off_t num_zerofill_bytes = PAGE_SIZE_64 - (eof_byte & PAGE_MASK_64);
 
-		printf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) from %lld-%lld\n",
+		printf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) from byte %lld-%lld\n",
 		    __func__, __LINE__, eof_page, eof_page * PAGE_SIZE_64,
 		    start_zerofill_file_byte, num_zerofill_bytes);
 
