@@ -861,7 +861,7 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 	 * this loop is linear with the number of holes.
 	 */
 
-	for (int i = 0; err == 0; i++) {
+	for (int i = 0; err == 0 && cur_upl_size > 0; i++) {
 		ASSERT3P(upl, ==, NULL);
 		ASSERT3P(pl, ==, NULL);
 		pl = NULL;
