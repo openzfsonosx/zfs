@@ -1893,6 +1893,10 @@ zfs_extend(znode_t *zp, uint64_t end)
 	    &zp->z_size,
 	    sizeof (zp->z_size), tx));
 
+	zfs_range_unlock(rl);
+
+	dmu_tx_commit(tx);
+
 	/*
 	 * lock around vnode_pager_setsize, which just calls
 	 * ubc_setsize.  So far we are not testing for being mapped or
@@ -1904,10 +1908,6 @@ zfs_extend(znode_t *zp, uint64_t end)
 	int setsize_retval = vnode_pager_setsize(ZTOV(zp), end);
 	rw_exit(&zp->z_map_lock);
 	ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
-
-	zfs_range_unlock(rl);
-
-	dmu_tx_commit(tx);
 
 	return (0);
 }
