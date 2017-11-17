@@ -40,6 +40,8 @@
 #define cluster_copy_upl_data kern_cluster_copy_upl_data
 #define round_page_64(x) (((uint64_t)(x) + PAGE_MASK_64) & ~((uint64_t)PAGE_MASK_64))
 #define trunc_page_64(x) ((uint64_t)(x) & ~((uint64_t)PAGE_MASK_64))
+const int MAX_UPL_SIZE_BYTES = 16*1024*1024;
+
 #endif
 
 #include <sys/types.h>
@@ -559,14 +561,18 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
     const off_t orig_offset = uio_offset(uio);
     upl_start = trunc_page_64(orig_offset);
-    upl_size = round_page_64(nbytes) + PAGE_SIZE_64;
+    upl_size = round_page_64(nbytes);
 
     ASSERT3U(zp->z_size, ==, ubc_getsize(vp));
 
+    ASSERT3U(upl_size, <=, MAX_UPL_SIZE_BYTES);
+    ASSERT3U(upl_size, >, 0);
+
     const off_t eof_page = trunc_page_64(zp->z_size) / PAGE_SIZE_64;
 
-    printf("ZFS: update_pages range %llu - %llu (pages %llu - %d) EOF byte, page %lld, %lld \n",
-	uio_offset(uio), nbytes, upl_start, upl_size, zp->z_size, eof_page);
+    printf("ZFS: update_pages range %llu - %llu (pages %llu - %lld) EOF byte, page %lld, %lld \n",
+	uio_offset(uio), nbytes, upl_start / PAGE_SIZE_64, (upl_start + upl_size) / PAGE_SIZE_64,
+	zp->z_size, eof_page);
 
 	 /* check if we are updating z_is_mapped for this file; if it is,
 	  * then it always will be.   If it isn't, we need to lock out
@@ -682,7 +688,7 @@ drop_and_exit:
 
 /* OSX UBC-aware implementation of zfs_read and mappedread follows */
 
-const int MAX_UPL_SIZE_BYTES = 16*1024*1024;
+
 
 /*
  * read bytes from file vp into a hole in a upl.
