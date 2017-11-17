@@ -767,21 +767,22 @@ fill_hole(vnode_t *vp, const off_t foffset,
 
 	const off_t eof_byte = zp->z_size;
 	const off_t eof_page = trunc_page_64(eof_byte) / PAGE_SIZE_64;
-	const off_t upl_first_page = trunc_page_64(upl_start) / PAGE_SIZE_64;
-	const off_t upl_last_page = upl_first_page +  page_hole_end - page_hole_start;
+	const off_t upl_first_page = trunc_page_64(upl_start) / PAGE_SIZE_64; // absolute-in-file
+	const off_t upl_last_page = page_hole_end - page_hole_start; // relative-to-upl
 
 	if (upl_last_page >= eof_page && upl_first_page <= eof_page) {
 		ASSERT3U(upl_first_page, <=, eof_page);
 		printf("ZFS: %s:%d page range [%lld - %lld] contains eof page %lld (eof byte %lld)\n",
 		    __func__, __LINE__,
-		    upl_first_page, upl_last_page, eof_page, eof_byte);
+		    upl_first_page, upl_first_page + upl_last_page, eof_page, eof_byte);
 
 		const off_t start_zerofill_file_byte = eof_byte - upl_start;
 		const off_t num_zerofill_bytes = PAGE_SIZE_64 - (eof_byte & PAGE_MASK_64);
 
-		printf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) from byte %lld-%lld\n",
+		printf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) from byte %lld-%lld (size %lld)\n",
 		    __func__, __LINE__, eof_page, eof_page * PAGE_SIZE_64,
-		    start_zerofill_file_byte, num_zerofill_bytes);
+		    start_zerofill_file_byte, start_zerofill_file_byte + num_zerofill_bytes,
+		    num_zerofill_bytes);
 
 		cluster_zero(upl, start_zerofill_file_byte, num_zerofill_bytes, NULL);
 
@@ -841,7 +842,7 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 	const int upl_num_pages = trunc_page_64(upl_size);
 
 	if (upl_last_page >= eof_page) {
-		printf("ZFS: %s:%d: fill @%lld sz  %ld"
+		printf("ZFS: %s:%d: fill @ %lld sz %ld bytes"
 		    " pages [%lld, %lld] will read eof @ %lld / %lld\n",
 		    __func__, __LINE__,
 		    upl_file_offset, upl_size,
@@ -850,6 +851,8 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 	}
 
 	uint64_t present_pages_skipped = 0, absent_pages_filled = 0;
+	off_t cur_upl_file_offset = upl_file_offset;
+	size_t cur_upl_size = upl_size;
 
 	/*
 	 * loop around, create a upl to find holes, exit loop when no
@@ -864,7 +867,9 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 		pl = NULL;
 		upl = NULL;
 
-		err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl,
+		ASSERT3S(cur_upl_size, >, 0);
+
+		err = ubc_create_upl(vp, cur_upl_file_offset, cur_upl_size, &upl, &pl,
 		    UPL_FILE_IO | UPL_SET_LITE);
 
 		if (err != KERN_SUCCESS || (upl == NULL)) {
@@ -930,7 +935,7 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 			 * fill hole makes a sub upl and commits within that
 			 */
 
-			err = fill_hole(vp, upl_file_offset, page_index_hole_start, page_index_hole_end,
+			err = fill_hole(vp, cur_upl_file_offset, page_index_hole_start, page_index_hole_end,
 			    filename);
 
 			if (err == EAGAIN) {
@@ -944,7 +949,10 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 			/* count the absent pages that fill_page filled */
 			absent_pages_filled += (page_index_hole_end - page_index_hole_start);
 
+			cur_upl_file_offset += (page_index_hole_end - page_index_hole_start) * PAGE_SIZE_64;
+			cur_upl_size -= (page_index_hole_end - page_index_hole_start) * PAGE_SIZE_64;
 			page_index = page_index_hole_end;
+
 			break;
 		}
 
@@ -1152,7 +1160,6 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	if (err != 0) {
 		printf("ZFS: %s: fill_holes_in_range (%lld, %ld) error %d file %s\n",
 		    __func__, upl_file_offset, upl_size, err, filename);
-
 	}
 
 	/*
