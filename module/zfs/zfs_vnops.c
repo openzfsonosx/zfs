@@ -552,7 +552,6 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     dmu_tx_t *tx, int oldstyle)
 {
     znode_t *zp = VTOZ(vp);
-    //zfsvfs_t *zfsvfs = zp->z_zfsvfs;
     const char *filename = zp->z_name_cache;
     int error = 0;
     off_t upl_start;
@@ -562,8 +561,12 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     upl_start = trunc_page_64(orig_offset);
     upl_size = round_page_64(nbytes) + PAGE_SIZE_64;
 
-    printf("update_pages %llu - %llu (adjusted %llu - %d)\n",
-           uio_offset(uio), nbytes, upl_start, upl_size);
+    ASSERT3U(zp->z_size, ==, ubc_getsize(vp));
+
+    const off_t eof_page = trunc_page_64(zp->z_size);
+
+    printf("ZFS: update_pages range %llu - %llu (pages %llu - %d) EOF byte, page %lld, %lld \n",
+	uio_offset(uio), nbytes, upl_start, upl_size, zp->z_size, eof_page);
 
 	 /* check if we are updating z_is_mapped for this file; if it is,
 	  * then it always will be.   If it isn't, we need to lock out
@@ -703,6 +706,11 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	upl_t upl;
 	upl_page_info_t *pl = NULL;
 
+	znode_t *zp = VTOZ(vp);
+	VERIFY3P(zp, !=, NULL);
+	VERIFY3P(zp->z_zfsvfs, !=, NULL);
+	VERIFY3P(zp->z_sa_hdl, !=, NULL);
+
 	int err = 0;
 
 	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
@@ -730,16 +738,6 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		return (err);
 	}
 
-	znode_t *zp = VTOZ(vp);
-	VERIFY3P(zp, !=, NULL);
-	VERIFY3P(zp->z_zfsvfs, !=, NULL);
-	/*
-	 * objset_t *os = zp->z_zfsvfs->z_os;
-	 *
-	 * err = dmu_read(os, zp->z_id, foffset, upl_size, (caddr_t)vaddr,
-	 *     DMU_READ_PREFETCH);
-	 */
-
 	err = dmu_read_dbuf(sa_get_db(zp->z_sa_hdl),
 	    foffset, upl_size, (caddr_t)vaddr, DMU_READ_PREFETCH);
 
@@ -760,6 +758,32 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		printf("ZFS: %s: error %d unmapping upl\n", __func__, err);
 		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR | UPL_ABORT_DUMP_PAGES);
 		return (err);
+	}
+
+	/*
+	 * dmu_read_buf might not fill the whole of vaddr,
+	 * in particular when EOF is somewhere in vaddr itself.
+	 */
+
+	const off_t eof_byte = zp->z_size;
+	const off_t eof_page = trunc_page_64(eof_byte);
+	const off_t upl_first_page = trunc_page_64(upl_start);
+	const off_t upl_last_page = page_hole_end - page_hole_start;
+
+	if (upl_last_page >= eof_page) {
+		printf("ZFS: %s:%d page range [%lld - %lld] contains eof page %lld\n",
+		    __func__, __LINE__,
+		    upl_first_page, upl_last_page, eof_page);
+
+		const off_t start_zerofill_file_byte = eof_byte - upl_start;
+		const off_t num_zerofill_bytes = PAGE_SIZE_64 - (eof_byte & PAGE_MASK_64);
+
+		printf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) from %lld-%lld\n",
+		    __func__, __LINE__, eof_page, eof_page * PAGE_SIZE_64,
+		    start_zerofill_file_byte, num_zerofill_bytes);
+
+		cluster_zero(upl, start_zerofill_file_byte, num_zerofill_bytes, NULL);
+
 	}
 
 	const int commit_flags = UPL_COMMIT_CLEAR_DIRTY
@@ -806,7 +830,23 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 	upl_t upl = NULL;
 	upl_page_info_t *pl = NULL;
 
-	const int upl_num_pages = upl_size / PAGE_SIZE;
+	/* the sizes should be identical */
+	ASSERT3U(zp->z_size, ==, ubc_getsize(vp));
+
+	const off_t upl_first_page = trunc_page_64(upl_file_offset);
+	const off_t upl_last_page = trunc_page_64(upl_file_offset + upl_size);
+	const off_t eof_page = trunc_page_64(zp->z_size);
+
+	const int upl_num_pages = trunc_page_64(upl_size);
+
+	if (upl_last_page >= eof_page) {
+		printf("ZFS: %s:%d: fill @%lld sz  %ld"
+		    " pages [%lld, %lld] will read eof @ %lld / %lld\n",
+		    __func__, __LINE__,
+		    upl_file_offset, upl_size,
+		    upl_first_page, upl_last_page,
+		    zp->z_size, eof_page);
+	}
 
 	uint64_t present_pages_skipped = 0, absent_pages_filled = 0;
 
