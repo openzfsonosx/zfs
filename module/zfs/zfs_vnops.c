@@ -848,8 +848,6 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 	const off_t upl_last_page = trunc_page_64(upl_file_offset + upl_size) / PAGE_SIZE_64;
 	const off_t eof_page = trunc_page_64(zp->z_size) / PAGE_SIZE_64;
 
-	const int upl_num_pages = trunc_page_64(upl_size);
-
 	if (upl_last_page >= eof_page) {
 		printf("ZFS: %s:%d: fill @ %lld sz %ld bytes"
 		    " pages [%lld, %lld] will read eof @ %lld / %lld\n",
@@ -893,6 +891,7 @@ int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t u
 			return (EIO);
 		}
 
+		const int upl_num_pages = trunc_page_64(cur_upl_size);
 		int page_index = 0, page_index_hole_start, page_index_hole_end;
 
 		/*
