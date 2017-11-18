@@ -666,8 +666,8 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 0);
 	if (error == 0) {
 		if (xfer_resid != 0) {
-			printf("ZFS: %s:%d nonzero xfer_resid %d ~ nbytes %lld, file %s\n",
-			    __func__, __LINE__, xfer_resid, nbytes, filename);
+			printf("ZFS: %s:%d nonzero xfer_resid %d ~ nbytes %lld, uioffs in %lld now %lld, file %s\n",
+			    __func__, __LINE__, xfer_resid, nbytes, orig_offset, uio_offset(uio), filename);
 		} else {
 			xfer_resid = 0;
 		}
