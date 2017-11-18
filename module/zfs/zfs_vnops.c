@@ -570,7 +570,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
     const off_t eof_page = trunc_page_64(zp->z_size) / PAGE_SIZE_64;
 
-    printf("ZFS: %s:%d uiooff %llu sz %llu (pagesst %llu pgs %lld) EOF byte %lld eofpg %lld file %s \n",
+    dprintf("ZFS: %s:%d uiooff %llu sz %llu (pagesst %llu pgs %lld) EOF byte %lld eofpg %lld file %s \n",
 	__func__, __LINE__,
 	uio_offset(uio), nbytes, upl_start / PAGE_SIZE_64, upl_size / PAGE_SIZE_64,
 	zp->z_size, eof_page, filename);
