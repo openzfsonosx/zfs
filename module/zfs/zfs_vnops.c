@@ -570,10 +570,10 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
     const off_t eof_page = trunc_page_64(zp->z_size) / PAGE_SIZE_64;
 
-    printf("ZFS: %s:%d uiooff %llu sz %llu (pagesst %llu pgs %lld) EOF byte %lld eofpg %lld \n",
+    printf("ZFS: %s:%d uiooff %llu sz %llu (pagesst %llu pgs %lld) EOF byte %lld eofpg %lld file %s \n",
 	__func__, __LINE__,
 	uio_offset(uio), nbytes, upl_start / PAGE_SIZE_64, upl_size / PAGE_SIZE_64,
-	zp->z_size, eof_page);
+	zp->z_size, eof_page, filename);
 
 	 /* check if we are updating z_is_mapped for this file; if it is,
 	  * then it always will be.   If it isn't, we need to lock out
@@ -666,8 +666,8 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 0);
 	if (error == 0) {
 		if (xfer_resid != 0) {
-			printf("ZFS: %s: nonzero xfer_resid %d ~ nbytes %lld\n",
-			    __func__, xfer_resid, nbytes);
+			printf("ZFS: %s:%d nonzero xfer_resid %d ~ nbytes %lld, file %s\n",
+			    __func__, __LINE__, xfer_resid, nbytes, filename);
 		} else {
 			xfer_resid = 0;
 		}
@@ -851,7 +851,7 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 	const off_t eof_page = trunc_page_64(zp->z_size) / PAGE_SIZE_64;
 
 	if (upl_last_page >= eof_page) {
-		printf("ZFS: %s:%d: fill @ %lld sz %ld bytes"
+		dprintf("ZFS: %s:%d: fill @ %lld sz %ld bytes"
 		    " pages [%lld, %lld] will read eof @ %lld / %lld\n",
 		    __func__, __LINE__,
 		    upl_file_offset, upl_size,
