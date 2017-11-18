@@ -557,7 +557,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
     const char *filename = zp->z_name_cache;
     int error = 0;
     off_t upl_start;
-    int upl_size;
+    off_t upl_size;
 
     const off_t orig_offset = uio_offset(uio);
     upl_start = trunc_page_64(orig_offset);
@@ -565,13 +565,15 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
     ASSERT3U(zp->z_size, ==, ubc_getsize(vp));
 
-    ASSERT3U(upl_size, <=, MAX_UPL_SIZE_BYTES);
-    ASSERT3U(upl_size, >, 0);
+    ASSERT3S(upl_size, <=, MAX_UPL_SIZE_BYTES);
+    ASSERT3S(upl_size, >, 0);
+    ASSERT3S(upl_start, <=, upl_size);
 
     const off_t eof_page = trunc_page_64(zp->z_size) / PAGE_SIZE_64;
 
-    printf("ZFS: update_pages range %llu - %llu (pages %llu - %lld) EOF byte, page %lld, %lld \n",
-	uio_offset(uio), nbytes, upl_start / PAGE_SIZE_64, (upl_start + upl_size) / PAGE_SIZE_64,
+    printf("ZFS: %s:%d uiooff %llu sz %llu (pagesst %llu pgs %lld) EOF byte %lld eofpg %lld \n",
+	__func__, __LINE__,
+	uio_offset(uio), nbytes, upl_start / PAGE_SIZE_64, upl_size / PAGE_SIZE_64,
 	zp->z_size, eof_page);
 
 	 /* check if we are updating z_is_mapped for this file; if it is,
@@ -650,7 +652,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
 	error = ubc_fill_holes_in_range(vp, upl_start, upl_size);
 	if (error != 0) {
-		printf("ZFS: %s: fill_holes_in_range error %d range [%lld, +%d], filename %s\n",
+		printf("ZFS: %s: fill_holes_in_range error %d range [%lld, +%lld], filename %s\n",
 		    __func__, error, upl_start, upl_size, filename);
 		goto drop_and_exit;
 	}
@@ -831,9 +833,9 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 
 	/* the range should be page aligned */
 	ASSERT3S((upl_file_offset % PAGE_SIZE), ==, 0);
-	ASSERT3U((upl_size % PAGE_SIZE), ==, 0);
-	ASSERT3U(upl_size, >, 0);
-	ASSERT3U(upl_size, <=, MAX_UPL_SIZE_BYTES);
+	ASSERT3S((upl_size % PAGE_SIZE), ==, 0);
+	ASSERT3S(upl_size, >, 0);
+	ASSERT3S(upl_size, <=, MAX_UPL_SIZE_BYTES);
 
 	znode_t *zp = VTOZ(vp);
 	const char *filename = zp->z_name_cache;
@@ -842,8 +844,8 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 	upl_page_info_t *pl = NULL;
 
 	/* the sizes should be identical */
-	ASSERT3U(zp->z_size, ==, ubc_getsize(vp));
-	ASSERT3U(upl_file_offset, <=, zp->z_size);
+	ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
+	ASSERT3S(upl_file_offset, <=, zp->z_size);
 
 	const off_t upl_first_page = trunc_page_64(upl_file_offset) / PAGE_SIZE_64;
 	const off_t upl_last_page = trunc_page_64(upl_file_offset + upl_size) / PAGE_SIZE_64;
@@ -1049,13 +1051,16 @@ int
 ubc_fill_holes_in_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 {
 
-	ASSERT3S(start_byte, <, end_byte);
-	ASSERT3S(end_byte, <=, ubc_getsize(vp));
-	ASSERT3S(start_byte, <=, ubc_getsize(vp));
+	ASSERT3S(start_byte, <=, end_byte);
+	ASSERT3S(end_byte, <=, round_page_64(ubc_getsize(vp)));
+	ASSERT3S(start_byte, <=, round_page_64(ubc_getsize(vp)));
 
 	const off_t aligned_file_offset = trunc_page_64(start_byte);
 	const size_t nbytes = end_byte - start_byte;
 	const size_t upl_size = round_page_64(nbytes);
+
+	ASSERT3S(nbytes, >, 0);
+	ASSERT3S(upl_size, >, 0);
 
 	int err = fill_holes_in_range(vp, aligned_file_offset, upl_size);
 	return (err);
