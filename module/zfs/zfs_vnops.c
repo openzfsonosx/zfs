@@ -567,7 +567,6 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
     ASSERT3S(upl_size, <=, MAX_UPL_SIZE_BYTES);
     ASSERT3S(upl_size, >, 0);
-    ASSERT3S(upl_start, <=, upl_size);
 
     const off_t eof_page = trunc_page_64(zp->z_size) / PAGE_SIZE_64;
 
@@ -650,7 +649,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * Loop through the pages, looking for holes to fill.
 	 */
 
-	error = ubc_fill_holes_in_range(vp, upl_start, upl_size);
+	error = ubc_fill_holes_in_range(vp, upl_start, upl_start + upl_size);
 	if (error != 0) {
 		printf("ZFS: %s: fill_holes_in_range error %d range [%lld, +%lld], filename %s\n",
 		    __func__, error, upl_start, upl_size, filename);
