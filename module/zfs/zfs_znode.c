@@ -1904,12 +1904,10 @@ zfs_extend(znode_t *zp, uint64_t end)
 	 * interfering with an in-progress mappedread, pagein, pageoutv2,
 	 * or update_pages.
 	 */
-#if 0
 	rw_enter(&zp->z_map_lock, RW_WRITER);
 	int setsize_retval = vnode_pager_setsize(ZTOV(zp), end);
 	rw_exit(&zp->z_map_lock);
 	ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
-#endif
 
 	return (0);
 }
@@ -2104,7 +2102,7 @@ zfs_trunc(znode_t *zp, uint64_t end)
 	 *        Taking the z_map_lock also serializes the other vnops
 	 *        (notably pagein/pageoutv2/update_pages/mappedread_new).
 	 */
-#if 0
+
 	rw_enter(&zp->z_map_lock, RW_WRITER);
 	if (vnode_isreg(vp) || vn_has_cached_data(vp) || ubc_pages_resident(vp)) {
 		// note: 10a286 says "This work is accomplished
@@ -2115,7 +2113,7 @@ zfs_trunc(znode_t *zp, uint64_t end)
 		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true for success
 	}
 	rw_exit(&zp->z_map_lock);
-#endif
+
 
 	zfs_range_unlock(rl);
 
