@@ -847,7 +847,7 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 	ASSERT3S(upl_file_offset, <=, zp->z_size);
 
 	const off_t upl_first_page = trunc_page_64(upl_file_offset) / PAGE_SIZE_64;
-	const off_t upl_last_page = trunc_page_64(upl_file_offset + upl_size) / PAGE_SIZE_64;
+	const off_t upl_last_page = round_page_64(upl_file_offset + upl_size) / PAGE_SIZE_64;
 	const off_t eof_page = trunc_page_64(zp->z_size) / PAGE_SIZE_64;
 
 	if (upl_last_page >= eof_page) {
