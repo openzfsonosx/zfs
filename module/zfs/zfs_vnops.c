@@ -561,7 +561,9 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 
     const off_t orig_offset = uio_offset(uio);
     upl_start = trunc_page_64(orig_offset);
-    upl_size = round_page_64(nbytes);
+    const off_t upl_start_align_offset = orig_offset - upl_start;
+    ASSERT3S(upl_start_align_offset, >=, 0);
+    upl_size = round_page_64(nbytes + upl_start_align_offset);
 
     ASSERT3U(zp->z_size, ==, ubc_getsize(vp));
 
