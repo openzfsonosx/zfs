@@ -893,7 +893,7 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 			return (EIO);
 		}
 
-		const int upl_num_pages = trunc_page_64(cur_upl_size);
+		const int upl_num_pages = round_page_64(cur_upl_size) / PAGE_SIZE_64;
 		int page_index = 0, page_index_hole_start, page_index_hole_end;
 
 		/*
