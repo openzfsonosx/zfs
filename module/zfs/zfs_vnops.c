@@ -710,7 +710,10 @@ static int
 fill_hole(vnode_t *vp, const off_t foffset,
     int page_hole_start, int page_hole_end, const char *filename)
 {
-	const off_t upl_size = (page_hole_end - page_hole_start) * PAGE_SIZE_64;
+	ASSERT3S(page_hole_end - page_hole_start, >, 0);
+	const int upl_pages = page_hole_end - page_hole_start;
+	const off_t upl_size = (off_t)upl_pages * PAGE_SIZE_64;
+	ASSERT3S(upl_size, >=, PAGE_SIZE_64);
 	const off_t upl_start = foffset + (page_hole_start * PAGE_SIZE_64);
 	upl_t upl;
 	upl_page_info_t *pl = NULL;
@@ -730,7 +733,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		return (err);
 	}
 
-	for (int pg = 0; ((pg + 1) * PAGE_SIZE) <= upl_size; pg++) {
+	for (int pg = 0; pg < upl_pages; pg++) {
 		if (upl_valid_page(pl, pg)) {
 			printf("ZFS: %s: pg %d (upl_size = %lld, upl_start = %lld) of file %s is VALID\n",
 			    __func__, pg, upl_size, upl_start, filename);
