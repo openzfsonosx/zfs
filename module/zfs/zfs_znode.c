@@ -1596,7 +1596,7 @@ zfs_rezget(znode_t *zp)
 		off_t ubcsize = ubc_getsize(vp);
 		off_t zsize = zp->z_size;
 		vn_pages_remove(vp, 0, 0); // does nothing in O3X
-		if (zp->z_size != size) {
+		if (zp->z_size != size || zp->z_size != ubcsize) {
 			setsize_retval = vnode_pager_setsize(vp, zp->z_size);
 			did_setsize = B_TRUE;
 		}
