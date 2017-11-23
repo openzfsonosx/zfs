@@ -786,7 +786,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		const off_t upl_page_range = page_hole_end - page_hole_start; // relative-to-upl
 		const off_t upl_last_page = upl_first_page + upl_page_range; // absolute-in-file
 
-		ASSERT3U(upl_last_page, >, eof_page);
+		ASSERT3U(upl_last_page, >=, eof_page);
 		if (upl_last_page == eof_page && upl_first_page <= eof_page) {
 			dprintf("ZFS: %s:%d page range [%lld - %lld] contains eof page %lld (eof byte %lld)\n",
 			    __func__, __LINE__,
