@@ -4482,12 +4482,13 @@ top:
                 if (err) {
 			goto out3;
 		}
+#if 0
                 /* Mac OS X: pageout requires that the UBC file size to be current. */
 		rw_enter(&zp->z_map_lock, RW_WRITER);
                 int setsize_retval = ubc_setsize(vp, vap->va_data_size);
 		rw_exit(&zp->z_map_lock);
 		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
-
+#endif
                 VATTR_SET_SUPPORTED(vap, va_data_size);
         }
 
