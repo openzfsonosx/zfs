@@ -1980,7 +1980,16 @@ zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
 		/* modify the size under the lock to avoid interfering with
 		 * other users of the size, including mappedread_new
 		 */
-		/* should we do this *before* the dmu_free_long_range ? */
+
+		/* here we could instead of ubc_refresh_range(vp, off, len)
+		 * we could build a upl for the first page and cluster_zero in
+		 * that, then build a upl for the last page and cluster_zero
+		 * in that in turn, then invalidate everything in the middle.
+		 *
+		 * alternatively we could rely on dmu_free_long_range still,
+		 * and re-read only the first and last pages in the range,
+		 * rather than the whole range.  [probably this]
+		 */
 
 		vnode_t *vp = ZTOV(zp);
 		int refresh_err = ubc_refresh_range(vp, off, len);
