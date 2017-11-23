@@ -2079,6 +2079,8 @@ zfs_trunc(znode_t *zp, uint64_t end)
 		return (error);
 	}
 
+	uint64_t oldsize = zp->z_size;
+
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	zfs_sa_upgrade_txholds(tx, zp);
@@ -2128,6 +2130,14 @@ zfs_trunc(znode_t *zp, uint64_t end)
 		//       "by ubc_setsize()"  but does not call
 		// ubc_setsize, or anything in this rw_locked block,
 		// whereas we call it here:
+		/* first we grow the ubc size to the old size,
+		 * then we shrink it down; the shrinking will
+		 * guarantee ubc_setsize sees nsize < osize,
+		 * which causes it to cluster_zero out junk
+		 * as necessary
+		 */
+		int orig_setsize_retval = ubc_setsize(vp, oldsize);
+		ASSERT3S(orig_setsize_retval, !=, 0); // ubc_setsize returns true for success
 		int setsize_retval = vnode_pager_setsize(vp, end);
 		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true for success
 	}
