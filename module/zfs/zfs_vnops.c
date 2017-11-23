@@ -777,6 +777,8 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	/*
 	 * dmu_read_buf might not fill the whole of vaddr,
 	 * in particular when EOF is somewhere in vaddr itself.
+	 *
+	 * note: cluster_zero will panic if we call it wrong.
 	 */
 
 	const off_t eof_byte = zp->z_size;
@@ -787,22 +789,33 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		const off_t upl_last_page = upl_first_page + upl_page_range; // absolute-in-file
 
 		ASSERT3U(upl_last_page, >=, eof_page);
-		if (upl_last_page == eof_page && upl_first_page <= eof_page) {
+		if (upl_last_page == eof_page && upl_first_page <= eof_page &&
+		    (eof_byte & PAGE_MASK_64) != 0) {
 			dprintf("ZFS: %s:%d page range [%lld - %lld] contains eof page %lld (eof byte %lld)\n",
 			    __func__, __LINE__,
 			    upl_first_page, upl_last_page, eof_page, eof_byte);
 
-			const off_t start_zerofill_file_byte = eof_byte - upl_start;
+			const off_t start_zerofill_file_byte = eof_byte;
 			const off_t num_zerofill_bytes = PAGE_SIZE_64 - (eof_byte & PAGE_MASK_64);
 
-			printf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) file offset %lld"
-			    " from byte %lld-%lld (size %lld)\n",
-			    __func__, __LINE__, eof_page, eof_page * PAGE_SIZE_64,
-			    upl_start,
-			    start_zerofill_file_byte, start_zerofill_file_byte + num_zerofill_bytes,
-			    num_zerofill_bytes);
+			ASSERT3S(start_zerofill_file_byte + num_zerofill_bytes, ==, upl_start+upl_size);
 
-			cluster_zero(upl, start_zerofill_file_byte, num_zerofill_bytes, NULL);
+			if (start_zerofill_file_byte + num_zerofill_bytes == upl_start+upl_size) {
+				printf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) file offset %lld"
+				    " from byte %lld-%lld (size %lld) file %s\n",
+				    __func__, __LINE__, eof_page, eof_page * PAGE_SIZE_64,
+				    upl_start,
+				    start_zerofill_file_byte, start_zerofill_file_byte + num_zerofill_bytes,
+				    num_zerofill_bytes, filename);
+
+				cluster_zero(upl, start_zerofill_file_byte, num_zerofill_bytes, NULL);
+			} else {
+				printf("ZFS: %s:%d WARNING cluster_zero(upl, offs %lld, siz %lld, NULL)"
+				    " SKIPPED,"
+				    " eof %lld upl_start %lld upl_size %lld file %s\n",
+				    __func__, __LINE__, start_zerofill_file_byte, num_zerofill_bytes,
+				    eof_byte, upl_start, upl_size, filename);
+			}
 		}
 	}
 
