@@ -1983,7 +1983,7 @@ zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
 		/* should we do this *before* the dmu_free_long_range ? */
 
 		vnode_t *vp = ZTOV(zp);
-		int refresh_err = ubc_refresh_range(vp, off, off + len);
+		int refresh_err = ubc_refresh_range(vp, off, len);
 		if (refresh_err != 0) {
 			printf("ZFS: %s:%d: error refreshing range for off %lld len %lld file %s\n",
 			    __func__, __LINE__, off, len, zp->z_name_cache);
