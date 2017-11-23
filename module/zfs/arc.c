@@ -4769,7 +4769,7 @@ arc_kmem_reap_now(void)
 				kmem_cache_full_reap_now(zio_data_buf_cache[i]);
 			} else if (zio_data_buf_cache[i]->cache_bufsize > (1024*1024) &&
 			    curtime - last_big_zio_zero > big_zio_zero_interval) {
-				kmem_cache_full_reap_now(zio_buf_cache[i]);
+				kmem_cache_full_reap_now(zio_data_buf_cache[i]);
 				did_big_zio_zero = B_TRUE;
 			}
 		}
