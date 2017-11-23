@@ -794,8 +794,10 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		const off_t start_zerofill_file_byte = eof_byte - upl_start;
 		const off_t num_zerofill_bytes = PAGE_SIZE_64 - (eof_byte & PAGE_MASK_64);
 
-		printf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) from byte %lld-%lld (size %lld)\n",
+		printf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) file offset %lld"
+		    " from byte %lld-%lld (size %lld)\n",
 		    __func__, __LINE__, eof_page, eof_page * PAGE_SIZE_64,
+		    upl_start,
 		    start_zerofill_file_byte, start_zerofill_file_byte + num_zerofill_bytes,
 		    num_zerofill_bytes);
 
