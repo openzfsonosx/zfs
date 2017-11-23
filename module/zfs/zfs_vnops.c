@@ -1240,12 +1240,12 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 		err = cluster_copy_ubc_data(vp, uio, &cache_resid, 0);
 		if (err != 0) {
 			printf("ZFS: %s: cluster_copy_ubc_data returned error %d,"
-			    " cache_resid now %d, arg_bytes was %d filname %s\n",
-			    __func__, err, cache_resid, arg_bytes, filename);
+			    " cache_resid now %d, arg_bytes was %d orig offset %lld filname %s\n",
+			    __func__, err, cache_resid, arg_bytes, orig_offset, filename);
 		} else if (cache_resid != 0) {
 			printf("ZFS: %s: cluster_copy_ubc_data short read,"
-			    " arg_bytes was %d cache_resid now %d\n filename %s",
-			    __func__, arg_bytes, cache_resid, filename);
+			    " arg_bytes was %d cache_resid now %d orig offset %lld filename %s\n",
+			    __func__, arg_bytes, cache_resid, orig_offset, filename);
 		}
 	}
 
