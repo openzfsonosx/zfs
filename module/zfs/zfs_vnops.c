@@ -1060,14 +1060,28 @@ ubc_fill_holes_in_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 	ASSERT3S(start_byte, <=, round_page_64(ubc_getsize(vp)));
 
 	const off_t aligned_file_offset = trunc_page_64(start_byte);
-	const size_t nbytes = end_byte - start_byte;
-	const size_t upl_size = round_page_64(nbytes);
+	const off_t aligned_file_end = round_page_64(end_byte);
+	const size_t total_size = aligned_file_end - aligned_file_offset;
 
-	ASSERT3S(nbytes, >, 0);
-	ASSERT3S(upl_size, >, 0);
+	ASSERT3S(total_size, >, 0);
 
-	int err = fill_holes_in_range(vp, aligned_file_offset, upl_size);
-	return (err);
+	off_t cur_off = aligned_file_offset;
+	off_t size_done = 0;
+
+	for (int i = 0; size_done < total_size; i++) {
+		const off_t todo = total_size - size_done;
+		const off_t cur_size = MIN(todo, MAX_UPL_SIZE_BYTES);
+
+		int err = fill_holes_in_range(vp, cur_off, cur_size);
+		if (err) {
+			printf("ZFS: %s:%d: error %d from fill_holes_in_range(vp, %lld, %lld) todo %lld iter %d\n",
+			    __func__, __LINE__, err, cur_off, cur_size, todo, i);
+			return (err);
+		}
+		cur_off += cur_size;
+		size_done += cur_size;
+	}
+	return (0);
 }
 
 int
