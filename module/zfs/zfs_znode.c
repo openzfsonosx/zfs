@@ -1613,6 +1613,8 @@ zfs_rezget(znode_t *zp)
 					    __func__, __LINE__, size, zsize, zp->z_name_cache);
 				}
 			}
+		} else {
+			ASSERT3S(zsize, ==, ubcsize);
 		}
 	}
 
@@ -1853,6 +1855,8 @@ zfs_extend(znode_t *zp, uint64_t end)
 		return (0);
 	}
 
+	uint64_t oldsize = zp->z_size;
+
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	zfs_sa_upgrade_txholds(tx, zp);
@@ -1905,10 +1909,25 @@ zfs_extend(znode_t *zp, uint64_t end)
 	 * or update_pages.
 	 */
 	rw_enter(&zp->z_map_lock, RW_WRITER);
-	int setsize_retval = vnode_pager_setsize(ZTOV(zp), end);
+	/*
+	 * ubc_getsize() carefully trims the last page when nsize < osize,
+	 * but here we have osize < nsize (we return above otherwise).
+	 * rather than construct a upl and call cluster_zero ourselves,
+	 * or do an RMW via ubc_refresh_range, we can do this by
+	 * advancing the ubc's size, then setsizing back to
+	 * the oldsize, then setting to the new size.
+	 */
+	vnode_t *vp = ZTOV(zp);
+	const int grow_first_time_retval = ubc_setsize(vp, end);
+	ASSERT3S(grow_first_time_retval, !=, 0); // ubc_setsize returns true on success
+	const int shrink_to_old_retval = ubc_setsize(vp, oldsize);
+	ASSERT3S(shrink_to_old_retval, !=, 0);
+	const int grow_to_new_retval = ubc_setsize(vp, end);
+	if (grow_to_new_retval != 0) {
+		printf("ZFS: %s:%d: error setting ubc size to %lld from %lld (delta %lld) for file %s\n",
+		    __func__, __LINE__, end, oldsize, end - oldsize, zp->z_name_cache);
+	}
 	rw_exit(&zp->z_map_lock);
-	ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
-
 	return (0);
 }
 
