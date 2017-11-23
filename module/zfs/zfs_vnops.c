@@ -723,6 +723,8 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	VERIFY3P(zp->z_zfsvfs, !=, NULL);
 	VERIFY3P(zp->z_sa_hdl, !=, NULL);
 
+	ASSERT3S(upl_start, <=, zp->z_size);
+
 	int err = 0;
 
 	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
@@ -754,8 +756,8 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	    foffset, upl_size, (caddr_t)vaddr, DMU_READ_PREFETCH);
 
 	if (err != 0) {
-		printf("ZFS: %s: dmu_read error %d reading %llu bytes from file %s\n",
-		    __func__, err, upl_size, filename);
+		printf("ZFS: %s: dmu_read error %d reading %llu bytes offs %llu from file %s\n",
+		    __func__, err, upl_size, upl_start, filename);
 		(void) ubc_upl_unmap(upl);
 		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR | UPL_ABORT_DUMP_PAGES);
 		if (err == EAGAIN) {
@@ -780,25 +782,24 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	const off_t eof_byte = zp->z_size;
 	const off_t eof_page = trunc_page_64(eof_byte) / PAGE_SIZE_64;
 	const off_t upl_first_page = trunc_page_64(upl_start) / PAGE_SIZE_64; // absolute-in-file
-	const off_t upl_last_page = page_hole_end - page_hole_start; // relative-to-upl
+	const off_t upl_page_range = page_hole_end - page_hole_start; // relative-to-upl
+	const off_t upl_last_page = upl_first_page + upl_page_range; // absolute-in-file
 
-	if (upl_last_page >= eof_page && upl_first_page <= eof_page &&
-	    ((eof_byte % PAGE_SIZE_64) != 0)) {
+	if (upl_last_page >= eof_page && upl_first_page <= eof_page) {
 		ASSERT3U(upl_first_page, <=, eof_page);
 		dprintf("ZFS: %s:%d page range [%lld - %lld] contains eof page %lld (eof byte %lld)\n",
 		    __func__, __LINE__,
-		    upl_first_page, upl_first_page + upl_last_page, eof_page, eof_byte);
+		    upl_first_page, upl_last_page, eof_page, eof_byte);
 
 		const off_t start_zerofill_file_byte = eof_byte - upl_start;
 		const off_t num_zerofill_bytes = PAGE_SIZE_64 - (eof_byte & PAGE_MASK_64);
 
-		dprintf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) from byte %lld-%lld (size %lld)\n",
+		printf("ZFS: %s:%d zeroing in eof page %lld (byte %lld) from byte %lld-%lld (size %lld)\n",
 		    __func__, __LINE__, eof_page, eof_page * PAGE_SIZE_64,
 		    start_zerofill_file_byte, start_zerofill_file_byte + num_zerofill_bytes,
 		    num_zerofill_bytes);
 
 		cluster_zero(upl, start_zerofill_file_byte, num_zerofill_bytes, NULL);
-
 	}
 
 	const int commit_flags = UPL_COMMIT_CLEAR_DIRTY
@@ -884,8 +885,12 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 		if (cur_upl_size <= 0)
 			break;
 
-		if (cur_upl_file_offset > zp->z_size)
+		if (cur_upl_file_offset > zp->z_size) {
+			printf("ZFS: %s:%d: cur upl foff %lld starts past %lld (pass %d, args %lld %ld)\n",
+			    __func__, __LINE__, cur_upl_file_offset, zp->z_size, i,
+			    upl_file_offset, upl_size);
 			break;
+		}
 
 		ASSERT3S(err, ==, 0);
 
@@ -893,12 +898,19 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 		    UPL_FILE_IO | UPL_SET_LITE);
 
 		if (err != KERN_SUCCESS || (upl == NULL)) {
-			printf("ZFS: %s: failed to create upl: err %d (pass %d, file %s)\n",
-			    __func__, err, i,filename);
+			printf("ZFS: %s: failed to create upl: err %d (pass %d, curoff %lld,"
+			    " cursz %ld, file %s)\n",
+			    __func__, err, i, cur_upl_file_offset, cur_upl_size, filename);
 			return (EIO);
+		} else {
+			ASSERT3S(err, ==, 0);
+			err = 0;
 		}
 
 		const int upl_num_pages = round_page_64(cur_upl_size) / PAGE_SIZE_64;
+		ASSERT3S(upl_num_pages, >, 0);
+		ASSERT3S(upl_num_pages, <=, MAX_UPL_SIZE_BYTES/PAGE_SIZE_64);
+
 		int page_index = 0, page_index_hole_start, page_index_hole_end;
 
 		/*
@@ -960,10 +972,13 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 			    filename);
 
 			if (err == EAGAIN) {
+				printf("ZFS: %s:%d: EAGAIN curoff %lld pist %d pien %d pass %d file %s\n",
+				    __func__, __LINE__, cur_upl_file_offset,
+				    page_index_hole_start, page_index_hole_end, i, filename);
 				break;
 			}
 			if (err != 0) {
-				printf("ZFS: %s: fill_hole failed with err %d\n", __func__, err);
+				printf("ZFS: %s:%d fill_hole failed with err %d\n", __func__, __LINE__, err);
 				break;
 			}
 
