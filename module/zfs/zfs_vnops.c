@@ -1195,6 +1195,8 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	const size_t upl_size = round_page_64(inbytes + upl_sz_vs_fsize);
 
 	ASSERT3S(upl_file_offset + upl_size, <=, round_page_64(zp->z_size));
+	ASSERT3S(upl_size, >=, PAGE_SIZE_64);
+	ASSERT3S(upl_size, >=, inbytes);
 
 	err = fill_holes_in_range(vp, upl_file_offset, upl_size);
 
