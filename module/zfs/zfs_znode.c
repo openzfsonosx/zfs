@@ -1897,8 +1897,6 @@ zfs_extend(znode_t *zp, uint64_t end)
 	    &zp->z_size,
 	    sizeof (zp->z_size), tx));
 
-	zfs_range_unlock(rl);
-
 	dmu_tx_commit(tx);
 
 	/*
@@ -1928,6 +1926,9 @@ zfs_extend(znode_t *zp, uint64_t end)
 		    __func__, __LINE__, end, oldsize, end - oldsize, zp->z_name_cache);
 	}
 	rw_exit(&zp->z_map_lock);
+
+	zfs_range_unlock(rl);
+
 	return (0);
 }
 
