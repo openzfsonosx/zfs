@@ -1921,7 +1921,7 @@ zfs_extend(znode_t *zp, uint64_t end)
 	const int shrink_to_old_retval = ubc_setsize(vp, oldsize);
 	ASSERT3S(shrink_to_old_retval, !=, 0);
 	const int grow_to_new_retval = ubc_setsize(vp, end);
-	if (grow_to_new_retval != 0) {
+	if (grow_to_new_retval == 0) {
 		printf("ZFS: %s:%d: error setting ubc size to %lld from %lld (delta %lld) for file %s\n",
 		    __func__, __LINE__, end, oldsize, end - oldsize, zp->z_name_cache);
 	}
