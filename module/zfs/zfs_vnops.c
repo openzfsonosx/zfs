@@ -1722,7 +1722,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 			dprintf("growing buffer to %llu\n", new_blksz);
 			zfs_grow_blocksize(zp, new_blksz, tx);
-			ASSERT3S(zp->z_blksz, ==, new_blksz);
+			ASSERT3S(zp->z_blksz, >=, new_blksz);
 			zfs_range_reduce(rl, woff, n);
 		}
 
@@ -1733,8 +1733,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (cur_dbuf_blksz < max_blksz) {
 			printf("ZFS: %s:%d: WARNING cur_dbuf_blksz %d < max_blksz %d,"
-			    " resetting (file %s)\n",
-			    __func__, __LINE__, cur_dbuf_blksz, max_blksz, zp->z_name_cache);
+			    " resetting (file %s) (write_eof %d)\n",
+			    __func__, __LINE__, cur_dbuf_blksz, max_blksz, zp->z_name_cache, write_eof);
 			max_blksz = cur_dbuf_blksz;
 		} else {
 			ASSERT3S(zp->z_blksz, ==, cur_dbuf_blksz);
