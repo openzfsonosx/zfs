@@ -517,7 +517,7 @@ int ubc_invalidate_range_impl(vnode_t *vp, off_t start, off_t end)
 		else
 			ASSERT3U(resid_msync, ==, size);
 	} else {
-		printf("ZFS: (DEBUG) %s:%d: inval %lld - %lld (%lld), resid %lld , file %s\n",
+		dprintf("ZFS: (DEBUG) %s:%d: inval %lld - %lld (%lld), resid %lld , file %s\n",
 		    __func__, __LINE__, start, end, size,
 		    resid_msync, zp->z_name_cache);
 	}
@@ -626,26 +626,6 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	/* we now hold EITHER z_lock or z_map_lock, but not both */
 	EQUIV(MUTEX_HELD(&zp->z_lock), mapped == 0);
 	EQUIV(!rw_write_held(&zp->z_map_lock), MUTEX_HELD(&zp->z_lock));
-
-#if 0
-	/*
-	 * Invalidate the very first and very last pages of the UPL range,
-	 * to make sure they are read in from the ARC.
-	 */
-
-	printf("ZFS: %s:%d: trimming first page [%lld - %lld]\n",
-	    __func__, __LINE__, orig_offset, orig_offset + PAGE_SIZE_64);
-	int retval_msync_first = ubc_invalidate_range(vp, orig_offset, orig_offset + PAGE_SIZE_64);
-	ASSERT3S(retval_msync_first, ==, 0);
-
-	ASSERT3S(nbytes, >, 0);
-	const off_t last_page = trunc_page_64(orig_offset + nbytes);
-
-	printf("ZFS: %s:%d: trimming last page [%lld - %lld]\n",
-	    __func__, __LINE__, last_page, last_page + PAGE_SIZE_64);
-	int retval_msync_last = ubc_invalidate_range(vp, last_page, last_page + PAGE_SIZE_64);
-	ASSERT3U(retval_msync_last, ==, 0);
-#endif
 
 	/*
 	 * Loop through the pages, looking for holes to fill.
@@ -1688,11 +1668,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	write_eof = (woff + n > zp->z_size);
 
 	end_size = MAX(zp->z_size, woff + n);
-
-#if 0
-	int inval_retval = ubc_invalidate_range(ZTOV(zp), 0, ubc_getsize(ZTOV(zp)));
-	ASSERT3S(inval_retval, ==, 0);
-#endif
 
 	/*
 	 * Write the file in reasonable size chunks.  Each chunk is written
