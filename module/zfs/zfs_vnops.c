@@ -1500,10 +1500,10 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		n -= nbytes;
 	}
-out:
+
 	ASSERT3U(initial_z_size, ==, zp->z_size);
 	ASSERT3U(initial_u_size, ==, ubc_getsize(vp));
-
+out:
 	zfs_range_unlock(rl);
 
 	ZFS_ACCESSTIME_STAMP(zfsvfs, zp);
@@ -1761,8 +1761,21 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uio_copy = uio_duplicate(uio);
 		}
 #else
-		if  (vnode_isreg(vp)) /* vn_has_cached_data(vp) || ubc_pages_resident(vp) */
+		/*
+		 * regular files will have update_pages invoked on them,
+		 * and the ubc size must be large enough to hold the write,
+		 * or we will trigger "accessing past end of object" panic in
+		 * dmu_buf_array_by_dnode.
+		 */
+
+		if  (vnode_isreg(vp))  {
 			uio_copy = uio_duplicate(uio);
+			off_t cur_ubc_sz = ubc_getsize(vp);
+			if (cur_ubc_sz < woff + nbytes) {
+				int setsize_retval = ubc_setsize(vp, woff + nbytes);
+				ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
+			}
+		}
 #endif
 
 		tx_bytes = uio_resid(uio);
@@ -2751,10 +2764,15 @@ top:
 	 */
 #ifdef __APPLE__
 	may_delete_now = !vnode_isinuse(vp, 0) && !vn_has_cached_data(vp);
-	if (zp->z_drain != B_TRUE) {
+
+	if (may_delete_now && ubc_pages_resident(vp) != 0) {
 		// zfs_unlinked_drain's zfs_zget may bring in pages
-		// so this would trip in that case
-		IMPLY(may_delete_now, ubc_pages_resident(vp) == 0);
+		// we should report and invalidate any
+		printf("ZFS: %s:%d: may_delete_now but ubc_pages_resident is true (z_drain %d) file %s\n",
+		    __func__, __LINE__, zp->z_drain, zp->z_name_cache);
+		int inval_err = ubc_invalidate_range(vp, 0, ubc_getsize(vp));
+		ASSERT3S(inval_err, ==, 0);
+		ASSERT3S(ubc_pages_resident(vp), ==, 0);
 	}
 #else
 	VI_LOCK(vp);
