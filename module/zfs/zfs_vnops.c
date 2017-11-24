@@ -2763,6 +2763,7 @@ top:
 		int inval_err = ubc_invalidate_range(vp, 0, ubc_getsize(vp));
 		ASSERT3S(inval_err, ==, 0);
 		ASSERT3S(ubc_pages_resident(vp), ==, 0);
+		ASSERT0(vnode_isinuse(vp, 0));
 	}
 #else
 	VI_LOCK(vp);
@@ -2873,12 +2874,9 @@ top:
 		    xattr_obj == xattr_obj_unlinked && zfs_external_acl(zp) ==
 		    acl_obj;
 #ifndef __APPLE__
-		if (zp->z_drain != B_TRUE) {
-			// zfs_unlinked_drain's call to zfs_zget may
-			// make pages become resident
-			IMPLY(delete_now, ubc_pages_resident(vp) == 0);
-		}
 		VI_UNLOCK(vp);
+#else
+		IMPLY(delete_now, ubc_pages_resident(vp) == 0);
 #endif
 	}
 
