@@ -1728,14 +1728,15 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		uint32_t cur_dbuf_blksz = 0;
 		u_longlong_t cur_nblk_512 = 0;
+		boolean_t write_with_dbuf = B_TRUE;
 
 		dmu_object_size_from_db(sa_get_db(zp->z_sa_hdl), &cur_dbuf_blksz, &cur_nblk_512);
 
 		if (cur_dbuf_blksz < max_blksz) {
 			printf("ZFS: %s:%d: WARNING cur_dbuf_blksz %d < max_blksz %d,"
-			    " resetting (file %s) (write_eof %d)\n",
-			    __func__, __LINE__, cur_dbuf_blksz, max_blksz, zp->z_name_cache, write_eof);
-			max_blksz = cur_dbuf_blksz;
+			    "using slow path (write_eof %d) (file %s)\n",
+			    __func__, __LINE__, cur_dbuf_blksz, max_blksz, write_eof, zp->z_name_cache);
+			write_with_dbuf = B_FALSE;
 		} else {
 			ASSERT3S(zp->z_blksz, ==, cur_dbuf_blksz);
 		}
@@ -1770,8 +1771,21 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		tx_bytes = uio_resid(uio);
 
-		error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
-		    uio, nbytes, tx);
+		if (write_with_dbuf == B_TRUE) {
+			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
+			    uio, nbytes, tx);
+		} else {
+			/* we are growing the file and don't
+			 * have a buffer of the correct size
+			 * in z_sa_hdl, so go the slower dmu_write_uio path
+			 */
+			VERIFY3P(zp->z_zfsvfs, !=, NULL);
+			objset_t *os = zp->z_zfsvfs->z_os;
+			uint64_t object = zp->z_id;
+			error = dmu_write_uio(os, object,
+			    uio, nbytes, tx);
+		}
+
 		tx_bytes -= uio_resid(uio);
 
 		if (tx_bytes && uio_copy != NULL) {
