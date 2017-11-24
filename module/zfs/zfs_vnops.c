@@ -1745,9 +1745,24 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				new_blksz = MIN(end_size, max_blksz);
 			}
 
-            dprintf("growing buffer to %llu\n", new_blksz);
+			dprintf("growing buffer to %llu\n", new_blksz);
 			zfs_grow_blocksize(zp, new_blksz, tx);
+			ASSERT3S(zp->z_blksz, ==, new_blksz);
 			zfs_range_reduce(rl, woff, n);
+		}
+
+		uint32_t cur_dbuf_blksz = 0;
+		u_longlong_t cur_nblk_512 = 0;
+
+		dmu_object_size_from_db(sa_get_db(zp->z_sa_hdl), &cur_dbuf_blksz, &cur_nblk_512);
+
+		if (cur_dbuf_blksz < max_blksz) {
+			printf("ZFS: %s:%d: WARNING cur_dbuf_blksz %d < max_blksz %d,"
+			    " resetting (file %s)\n",
+			    __func__, __LINE__, cur_dbuf_blksz, max_blksz, zp->z_name_cache);
+			max_blksz = cur_dbuf_blksz;
+		} else {
+			ASSERT3S(zp->z_blksz, ==, cur_dbuf_blksz);
 		}
 
 		/*
