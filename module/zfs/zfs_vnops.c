@@ -1493,6 +1493,47 @@ out:
 	return (error);
 }
 
+static boolean_t
+zfs_write_with_dbuf_check(znode_t *zp, uio_t *uio, off_t length)
+{
+
+	/*
+	 * duplicate logic from dmu_buf_hold_array_by_dnode() which
+	 * turns the printf into a panic
+	 */
+
+	off_t offset = uio_offset(uio);
+	dmu_buf_impl_t *db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
+	dnode_t *dn;
+	uint64_t nblks;
+
+	DB_DNODE_ENTER(db);
+	dn = DB_DNODE(db);
+	rw_enter(&dn->dn_struct_rwlock, RW_READER);
+	if (dn->dn_datablkshift) {
+		int blkshift = dn->dn_datablkshift;
+		nblks = (P2ROUNDUP(offset + length, 1ULL << blkshift) -
+		    P2ALIGN(offset, 1ULL << blkshift)) >> blkshift;
+	} else {
+		if (offset + length > dn->dn_datablksz) {
+			printf("ZFS: %s:%d (would be) accessing past end of object "
+			    "(size=%u access=%llu+%llu) file %s",
+			    __func__, __LINE__,
+			    dn->dn_datablksz,
+			    (longlong_t)offset, (longlong_t)length, zp->z_name_cache);
+			rw_exit(&dn->dn_struct_rwlock);
+			DB_DNODE_EXIT(db);
+			return (B_FALSE);
+		}
+		nblks = 1;
+	}
+	rw_exit(&dn->dn_struct_rwlock);
+	DB_DNODE_EXIT(db);
+	ASSERT3S(nblks, >, 0);
+	return (B_TRUE);
+}
+
+
 /*
  * Write the bytes to a file.
  *
@@ -1754,36 +1795,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 			}
 
-			uint32_t cur_dbuf_blksz = 0;
-			u_longlong_t cur_nblk_512 = 0;
-
-			dmu_object_size_from_db(sa_get_db(zp->z_sa_hdl), &cur_dbuf_blksz, &cur_nblk_512);
-
-			/*
-			 * we panic in dbuf_hold_array_by_dnode () if
-			 * uio_offset(uio)+length will be greater than
-			 * cur_dbuf_blksz
-			 *
-			 * instead we take the slow path
-			 */
-
-			ASSERT3S(uio_offset(uio), <=, UINT32_MAX);
-			const off_t arr_need_sz = uio_offset(uio) + nbytes;
-			ASSERT3S(arr_need_sz, <=, UINT32_MAX);
-
-			if ((off_t)cur_dbuf_blksz < arr_need_sz) {
-				printf("ZFS: %s:%d: WARNING cur_dbuf_blksz %d < arr_need_sz %lld,"
-				    "using slow path (write_eof %d) (file %s)\n",
-				    __func__, __LINE__, cur_dbuf_blksz, arr_need_sz, write_eof,
-				    zp->z_name_cache);
-				write_with_dbuf = B_FALSE;
-			} else {
-				ASSERT3S(zp->z_blksz, ==, cur_dbuf_blksz);
-			}
+			write_with_dbuf = zfs_write_with_dbuf_check(zp, uio, nbytes);
 		}
 
 #endif
-
 		tx_bytes = uio_resid(uio);
 
 		if (write_with_dbuf == B_TRUE) {
@@ -1959,7 +1974,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (error != 0)
 			break;
-		ASSERT(tx_bytes == nbytes);
+		ASSERT3S(tx_bytes, ==, nbytes);
 		n -= nbytes;
 	}
 
