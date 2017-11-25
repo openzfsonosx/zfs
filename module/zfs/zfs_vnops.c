@@ -1794,6 +1794,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 			}
 
+			/* use arithmetic here (in the aux function) to
+			 * determine how much we can safely write
+			 */
 			write_with_dbuf = zfs_write_with_dbuf_check(zp, uio, nbytes);
 		}
 
@@ -1807,7 +1810,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		} else if (tx_bytes < max_blksz && !write_eof) {
 			error = dmu_write_uio(zfsvfs->z_os, zp->z_id, uio, tx_bytes, tx);
 			tx_bytes -= uio_resid(uio);
-		} else {
+		} else if (nbytes == max_blksz) {
 			/* we are growing the file and don't have a
 			 * buffer of the correct size in z_sa_hdl, so
 			 * borrow, fill, and assign an arcbuf of the
