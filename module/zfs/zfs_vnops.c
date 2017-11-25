@@ -1493,12 +1493,12 @@ out:
 	return (error);
 }
 
-static boolean_t
-zfs_write_with_dbuf_check(znode_t *zp, uio_t *uio, off_t length)
+static off_t
+zfs_safe_dbuf_write_size(znode_t *zp, uio_t *uio, off_t length)
 {
 
 	/*
-	 * duplicate logic from dmu_buf_hold_array_by_dnode() which
+	 * modify logic from dmu_buf_hold_array_by_dnode() which
 	 * turns the printf into a panic
 	 */
 
@@ -1516,21 +1516,35 @@ zfs_write_with_dbuf_check(znode_t *zp, uio_t *uio, off_t length)
 		    P2ALIGN(offset, 1ULL << blkshift)) >> blkshift;
 	} else {
 		if (offset + length > dn->dn_datablksz) {
-			printf("ZFS: %s:%d (would be) accessing past end of object "
-			    "(size=%u access=%llu+%llu) file %s\n",
-			    __func__, __LINE__,
-			    dn->dn_datablksz,
-			    (longlong_t)offset, (longlong_t)length, zp->z_name_cache);
+			int64_t safe_len = dn->dn_datablksz - offset;
+			if (safe_len > 0) {
+				printf("ZFS: %s:%d (would be) accessing past end of object "
+				    "(size=%u access=%llu+%llu), try using %lld instead, file %s\n",
+				    __func__, __LINE__,
+				    dn->dn_datablksz,
+				    (longlong_t)offset, (longlong_t)length,
+				    safe_len, zp->z_name_cache);
+			}
+			else {
+				printf("ZFS: %s:%d would access past end of object (size=%u,"
+				    " access %llu+%llu), AND safe_len is %lld, so returning 0,"
+				    " file %s\n",
+				    __func__, __LINE__,
+				    dn->dn_datablksz,
+				    (longlong_t)offset, (longlong_t)length,
+				    safe_len, zp->z_name_cache);
+				safe_len = 0;
+			}
 			rw_exit(&dn->dn_struct_rwlock);
 			DB_DNODE_EXIT(db);
-			return (B_FALSE);
+			return (safe_len);
 		}
 		nblks = 1;
 	}
 	rw_exit(&dn->dn_struct_rwlock);
 	DB_DNODE_EXIT(db);
 	ASSERT3S(nblks, >, 0);
-	return (B_TRUE);
+	return (length);
 }
 
 
@@ -1766,25 +1780,45 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			zfs_range_reduce(rl, woff, n);
 		}
 
+#ifdef __APPLE__
+		boolean_t write_with_dbuf = B_TRUE;
+
+		/* Pick the size of the write we hand to the DMU/DBUF layer */
+
+		if (vnode_isreg(vp)) {
+			/*
+			 * regular files will have update_pages invoked
+			 * on them.  the dbuf must be able to hold the
+			 * write, or we will trigger "accessing past end
+			 * of object" panic in dmu_buf_array_by_dnode.
+			 * However, we are not limited to max_blksz, we
+			 * can write any size chunk we like less than
+			 * SPA_MAXBLOCKSIZE
+			 */
+			off_t max_max_n = MIN(SPA_MAXBLOCKSIZE, MAX_UPL_SIZE_BYTES);
+			off_t max_n = MIN(n, max_max_n);
+			off_t safe_write_n = zfs_safe_dbuf_write_size(zp, uio, max_n);
+			nbytes = MIN(safe_write_n, max_max_n - P2PHASE(woff, max_max_n));
+			if (nbytes < 1) {
+				printf("ZFS: %s:%d: WARNING nbytes == %ld, safe_write_n == %lld,"
+				    " n == %ld, file %s\n", __func__, __LINE__,
+				    nbytes, safe_write_n, n, zp->z_name_cache);
+				nbytes = 0;
+				write_with_dbuf = B_FALSE;
+			}
+		} else {
+                        /* use the logic from openzfs */
+			nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
+			/* but check that we won't paneek! */
+			ASSERT3S(nbytes, <=, zfs_safe_dbuf_write_size(zp, uio, nbytes));
+		}
+#else
 		/*
 		 * XXX - should we really limit each write to z_max_blksz?
 		 * Perhaps we should use SPA_MAXBLOCKSIZE chunks?
 		 */
 		nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
-
-#if 0
-		if ( vn_has_cached_data(vp) || ubc_pages_resident(vp) ) {
-			uio_copy = uio_duplicate(uio);
-		}
-#else
-		/*
-		 * regular files will have update_pages invoked on them,
-		 * and the ubc size must be large enough to hold the write,
-		 * or we will trigger "accessing past end of object" panic in
-		 * dmu_buf_array_by_dnode.
-		 */
-
-		boolean_t write_with_dbuf = B_TRUE;
+#endif
 
 		if  (vnode_isreg(vp))  {
 			uio_copy = uio_duplicate(uio);
@@ -1793,44 +1827,50 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				int setsize_retval = ubc_setsize(vp, woff + nbytes);
 				ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 			}
-
-			/* use arithmetic here (in the aux function) to
-			 * determine how much we can safely write
-			 */
-			write_with_dbuf = zfs_write_with_dbuf_check(zp, uio, nbytes);
 		}
 
-#endif
-		tx_bytes = uio_resid(uio);
-
+		/* reset tx_bytes, we have not written anything in this TX yet */
+		tx_bytes = 0;
 		if (write_with_dbuf == B_TRUE) {
+			/* set tx_bytes to what the uio still wants */
+			tx_bytes = uio_resid(uio);
 			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, nbytes, tx);
+			/* dmu_write_uio_dbuf updated the uio */
 			tx_bytes -= uio_resid(uio);
-		} else if (tx_bytes < max_blksz && !write_eof) {
-			error = dmu_write_uio(zfsvfs->z_os, zp->z_id, uio, tx_bytes, tx);
-			tx_bytes -= uio_resid(uio);
-		} else if (nbytes == max_blksz) {
-			/* we are growing the file and don't have a
+		}
+#if 0
+		 else if (write_eof &&
+		    (nbytes == max_blksz || (nbytes >= SPA_MINBLOCKSIZE && ISP2(nbytes)))) {
+			ASSERT(ISP2(max_blksz));
+		       /* set tx_bytes, this guarantees the ASSERT3S at
+			* the bottom of the while(n > 0) loop will not complain
+			*/
+		       tx_bytes = nbytes;
+			/* here we are growing the file and don't have a
 			 * buffer of the correct size in z_sa_hdl, so
 			 * borrow, fill, and assign an arcbuf of the
 			 * right size.
 			 */
 			ASSERT(write_eof);
-			IMPLY(nbytes == 0, n == max_blksz);
-			tx_bytes = nbytes;
-			if (tx_bytes == 0) {
-				printf("ZFS: %s:%d: setting tx_bytes from 0 to %d\n",
-				    __func__, __LINE__, max_blksz);
-				tx_bytes = max_blksz;
-			}
 			ASSERT3S(tx_bytes, >, 0);
 			ASSERT(vnode_isreg(vp));
 			size_t cbytes;
 			arc_buf_t *arcbuf = dmu_request_arcbuf(sa_get_db(zp->z_sa_hdl),
                             tx_bytes);
 			ASSERT3P(arcbuf, !=, NULL);
+			if (arcbuf == NULL) {
+				tx_bytes = 0;
+				error = ENOMEM;
+				break;
+			}
 			ASSERT3S(arc_buf_size(arcbuf), ==, tx_bytes);
+			if (arc_buf_size(arcbuf) < tx_bytes) {
+				tx_bytes = 0;
+				error = ENOMEM;
+				dmu_return_arcbuf(arcbuf);
+				break;
+			}
 			int assign_path_uiocopy_err;
 			if ((assign_path_uiocopy_err = uiocopy(arcbuf->b_data, tx_bytes,
 				    UIO_WRITE, uio, &cbytes))) {
@@ -1844,20 +1884,39 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(tx_bytes, <=, uio_resid(uio));
 			uioskip(uio, tx_bytes);
 		}
+#endif
 
-		if (tx_bytes && uio_copy != NULL) {
-
-			/* && (vn_has_cached_data(vp) || ubc_pages_resident(vp))*/
-
+                /* If we've written anything to a regular file, we have
+		 * to update the UBC.
+		 *
+		 * Note: 10a286 does this the other way around; it marks
+		 *       the buffers in the (UBC) UPL as DIRTY and then
+		 *       uses its cluster write now function to write
+		 *       them out to disk, doing no DMU work at all in
+		 *       its zfs_vnop_write.
+		 *
+		 *       Illumos on the other hand updates its pages after
+		 *       the write (or dmu assignment of an arcbuf if the write
+		 *       is the same as the file's current maximum record
+		 *       size (which is no more than the dataset recordsize).
+		 */
+		if (tx_bytes > 0 && uio_copy != NULL) {
+			ASSERT(vnode_isreg(vp));
 			/*
 			 * Although we repeat this below, since we have
 			 * changed the file size we need to feed
 			 * the new filesize to xnu so that VM operations
 			 * below update_pages work correctly.
 			 *
-			 * In particular, ubc_setsize will correctly handle
-			 * a partially filled final page, zero-filling it after
+			 * We use end_size, calculated above, to set the
+			 * UBC size.
+			 *
+			 * ubc_setsize will correctly handle a partially
+			 * filled final page, zero-filling it after
 			 * between the EOF and the final page boundary.
+			 *
+			 * We also bump zp->z_size to be bigger than the
+			 * present uio_offset.
 			 */
 			uint64_t size_update_ctr = 0;
 			uint64_t starting_uioffset = uio_offset(uio);
@@ -1875,7 +1934,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3U(starting_uioffset, ==, uio_offset(uio));
 
 			/*
-			 * Now that zp->z_size is correct, let's update UBC.
+			 * Now that zp->z_size is correct, let's update UBC's size.
 			 * Again, this is repeated verbatim below, but we
 			 * want to do this before update_pages.
 			 */
@@ -1888,22 +1947,24 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 			ASSERT3S(ubc_size, <=, zp_size); // we ought to have grown the file above
 
-			VNOPS_STAT_BUMP(write_updatepage_uio_copy);
-			dprintf("Updatepage copy call %llu vs %llu (tx_bytes %llu) numvecs %d\n",
-			    woff, uio_offset(uio_copy), tx_bytes, uio_iovcnt(uio_copy));
+			/* actually update the UBC pages */
 			update_pages(vp, tx_bytes, uio_copy, tx, 0);
+
+			VNOPS_STAT_BUMP(write_updatepage_uio_copy);
 			uio_free(uio_copy);
 			uio_copy = NULL;
 		}
 
+		/* we may have made a uio copy, but were unable to do
+		 * any write or update_pages work
+		 */
 		if (uio_copy != NULL) {
 			uio_free(uio_copy);
 			uio_copy = NULL;
 		}
 
 		/*
-		 * If we made no progress, we're done.  If we made even
-		 * partial progress, update the znode and ZIL accordingly.
+		 * If we made no progress, we're done.
 		 */
 		if (tx_bytes == 0) {
 			(void) sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
@@ -1912,6 +1973,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(error, !=, 0);
 			break;
 		}
+		/*
+		 * If we made even partial progress, update the znode
+		 * and ZIL accordingly.
+		 */
 
 		/*
 		 * Clear Set-UID/Set-GID bits on successful write if not
@@ -1946,9 +2011,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * account for possible concurrent updates.
 		 *
 		 * We did this above in the case of tx_bytes > 0 and
-		 * a file with UBC data.    This might be omittable
+		 * a regular file with UBC data.    This might be omittable
 		 * in the case that it was done above.    However,
-		 * this is a cheap couple of tests if z_size is up to date.
+		 * this is a cheap couple of tests when z_size is up to date.
 		 */
 		uint64_t size_update_ctr = 0;
 		uint64_t starting_uioffset = uio_offset(uio);
@@ -1981,11 +2046,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (error != 0)
 			break;
+		/* dmu_write_uio should have done nbytes of work */
 		ASSERT3S(tx_bytes, ==, nbytes);
 		n -= nbytes;
+		/* loop around and try to commit another fraction of our write call */
 	}
 
-    dprintf("zfs_write done remainder %llu\n", n);
+	// n could be nonzero, we are allowed to do partial writes by VNOP_WRITE rules
+	dprintf("zfs_write done remainder %llu\n", n);
 
 	zfs_range_unlock(rl);
 
