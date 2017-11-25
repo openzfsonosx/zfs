@@ -1814,13 +1814,15 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 * right size.
 			 */
 			ASSERT(write_eof);
+			IMPLY(nbytes == 0, n == max_blksz);
 			tx_bytes = nbytes;
+			if (tx_bytes == 0) {
+				printf("ZFS: %s:%d: setting tx_bytes from 0 to %d\n",
+				    __func__, __LINE__, max_blksz);
+				tx_bytes = max_blksz;
+			}
+			ASSERT3S(tx_bytes, >, 0);
 			ASSERT(vnode_isreg(vp));
-#if 0
-			VERIFY3P(zp->z_zfsvfs, !=, NULL);
-			objset_t *os = zp->z_zfsvfs->z_os;
-			uint64_t object = zp->z_id;
-#endif
 			size_t cbytes;
 			arc_buf_t *arcbuf = dmu_request_arcbuf(sa_get_db(zp->z_sa_hdl),
                             tx_bytes);
@@ -1839,8 +1841,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(tx_bytes, <=, uio_resid(uio));
 			uioskip(uio, tx_bytes);
 		}
-
-
 
 		if (tx_bytes && uio_copy != NULL) {
 
