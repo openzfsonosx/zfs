@@ -2897,7 +2897,7 @@ top:
 	if (may_delete_now && ubc_pages_resident(vp) != 0) {
 		// zfs_unlinked_drain's zfs_zget may bring in pages
 		// we should report and invalidate any
-		printf("ZFS: %s:%d: may_delete_now but ubc_pages_resident is true (z_drain %d) file %s\n",
+		dprintf("ZFS: %s:%d: may_delete_now but ubc_pages_resident is true (z_drain %d) file %s\n",
 		    __func__, __LINE__, zp->z_drain, zp->z_name_cache);
 		int inval_err = ubc_invalidate_range(vp, 0, ubc_getsize(vp));
 		ASSERT3S(inval_err, ==, 0);
