@@ -1829,7 +1829,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3P(arcbuf, !=, NULL);
 			ASSERT3S(arc_buf_size(arcbuf), ==, tx_bytes);
 			int assign_path_uiocopy_err;
-			if ((assign_path_uiocopy_err = uiocopy(arcbuf->b_data, max_blksz,
+			if ((assign_path_uiocopy_err = uiocopy(arcbuf->b_data, tx_bytes,
 				    UIO_WRITE, uio, &cbytes))) {
 				error = assign_path_uiocopy_err;
 				ASSERT3S(assign_path_uiocopy_err, ==, 0); // emit an assertion
