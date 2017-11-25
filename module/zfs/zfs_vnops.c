@@ -1517,7 +1517,7 @@ zfs_write_with_dbuf_check(znode_t *zp, uio_t *uio, off_t length)
 	} else {
 		if (offset + length > dn->dn_datablksz) {
 			printf("ZFS: %s:%d (would be) accessing past end of object "
-			    "(size=%u access=%llu+%llu) file %s",
+			    "(size=%u access=%llu+%llu) file %s\n",
 			    __func__, __LINE__,
 			    dn->dn_datablksz,
 			    (longlong_t)offset, (longlong_t)length, zp->z_name_cache);
@@ -1763,7 +1763,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 			dprintf("growing buffer to %llu\n", new_blksz);
 			zfs_grow_blocksize(zp, new_blksz, tx);
-			ASSERT3S(zp->z_blksz, >=, new_blksz);
 			zfs_range_reduce(rl, woff, n);
 		}
 
@@ -1804,12 +1803,18 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (write_with_dbuf == B_TRUE) {
 			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
 			    uio, nbytes, tx);
+			tx_bytes -= uio_resid(uio);
+		} else if (tx_bytes < max_blksz && !write_eof) {
+			error = dmu_write_uio(zfsvfs->z_os, zp->z_id, uio, tx_bytes, tx);
+			tx_bytes -= uio_resid(uio);
 		} else {
 			/* we are growing the file and don't have a
 			 * buffer of the correct size in z_sa_hdl, so
 			 * borrow, fill, and assign an arcbuf of the
 			 * right size.
 			 */
+			ASSERT(write_eof);
+			tx_bytes = nbytes;
 			ASSERT(vnode_isreg(vp));
 #if 0
 			VERIFY3P(zp->z_zfsvfs, !=, NULL);
@@ -1818,9 +1823,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 #endif
 			size_t cbytes;
 			arc_buf_t *arcbuf = dmu_request_arcbuf(sa_get_db(zp->z_sa_hdl),
-                            max_blksz);
+                            tx_bytes);
 			ASSERT3P(arcbuf, !=, NULL);
-			ASSERT3S(arc_buf_size(arcbuf), ==, max_blksz);
+			ASSERT3S(arc_buf_size(arcbuf), ==, tx_bytes);
 			int assign_path_uiocopy_err;
 			if ((assign_path_uiocopy_err = uiocopy(arcbuf->b_data, max_blksz,
 				    UIO_WRITE, uio, &cbytes))) {
@@ -1829,14 +1834,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
                                 dmu_return_arcbuf(arcbuf);
                                 break;
                         }
-			ASSERT3S(cbytes, ==, max_blksz);
-			ASSERT(write_eof);
+			ASSERT3S(cbytes, ==, tx_bytes);
 			dmu_assign_arcbuf_by_dbuf(sa_get_db(zp->z_sa_hdl), woff, arcbuf, tx);
 			ASSERT3S(tx_bytes, <=, uio_resid(uio));
 			uioskip(uio, tx_bytes);
 		}
 
-		tx_bytes -= uio_resid(uio);
+
 
 		if (tx_bytes && uio_copy != NULL) {
 
