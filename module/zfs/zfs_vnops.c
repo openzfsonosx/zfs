@@ -122,11 +122,14 @@ typedef struct vnops_stats {
 	kstat_named_t fill_holes_present_pages_skipped;
 	kstat_named_t fill_holes_absent_pages_filled;
 	kstat_named_t zfs_write_calls;
+	kstat_named_t zfs_write_msync;
         kstat_named_t zfs_zero_length_write;
 	kstat_named_t update_pages;
 	kstat_named_t update_pages_want_lock;
 	kstat_named_t update_pages_lock_timeout;
 	kstat_named_t zfs_read_calls;
+	kstat_named_t zfs_read_sync_mapped;
+	kstat_named_t zfs_read_unmapped_zil_commit;
 	kstat_named_t mappedread_vn_and_ubc_have_cached_data;
 	kstat_named_t mappedread_vn_has_cached_data_only;
 	kstat_named_t mappedread_with_ubc_only;
@@ -149,11 +152,7 @@ typedef struct vnops_stats {
 	kstat_named_t zfs_fsync_busy_suspends;
 	kstat_named_t zfs_fsync_busy_prints;
 	kstat_named_t zfs_fsync_recursive_tidy;
-	kstat_named_t write_updatepage_uio_copy;
-	kstat_named_t write_updatepage_uio;
-	kstat_named_t zfs_read_sync_mapped;
-	kstat_named_t zfs_read_zil_commit;
-	kstat_named_t zfs_close_cluster_push;
+	kstat_named_t zfs_close_msync;
 } vnops_stats_t;
 
 static vnops_stats_t vnops_stats = {
@@ -161,11 +160,14 @@ static vnops_stats_t vnops_stats = {
 	{ "fill_holes_present_pages_skipped",            KSTAT_DATA_UINT64 },
 	{ "fill_holes_absent_pages_filled",              KSTAT_DATA_UINT64 },
 	{ "zfs_write_calls",                             KSTAT_DATA_UINT64 },
+	{ "zfs_write_msync",                             KSTAT_DATA_UINT64 },
 	{ "zfs_zero_length_write",                       KSTAT_DATA_UINT64 },
 	{ "update_pages",                                KSTAT_DATA_UINT64 },
 	{ "update_pages_want_lock",                      KSTAT_DATA_UINT64 },
 	{ "update_pages_lock_timeout",                   KSTAT_DATA_UINT64 },
 	{ "zfs_read_calls",                              KSTAT_DATA_UINT64 },
+	{ "zfs_read_sync_mapped",                        KSTAT_DATA_UINT64 },
+	{ "zfs_read_unmapped_zil_commit",                KSTAT_DATA_UINT64 },
 	{ "mappedread_vn_and_ubc_have_cached_data",      KSTAT_DATA_UINT64 },
 	{ "mappedread_vn_has_cached_data_only",          KSTAT_DATA_UINT64 },
 	{ "mappedread_with_ubc_only",                    KSTAT_DATA_UINT64 },
@@ -188,11 +190,7 @@ static vnops_stats_t vnops_stats = {
 	{ "zfs_fsync_busy_suspends",                     KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_busy_prints",                       KSTAT_DATA_UINT64 },
 	{ "zfs_fsync_recursive_tidy",                    KSTAT_DATA_UINT64 },
-	{ "write_updatepage_uio_copy",                   KSTAT_DATA_UINT64 },
-	{ "write_updatepage_uio",                        KSTAT_DATA_UINT64 },
-	{ "zfs_read_sync_mapped",                        KSTAT_DATA_UINT64 },
-	{ "zfs_read_zil_commit",                         KSTAT_DATA_UINT64 },
-	{ "zfs_close_cluster_push",                      KSTAT_DATA_UINT64 },
+	{ "zfs_close_msync",                             KSTAT_DATA_UINT64 },
 };
 
 #define VNOPS_STAT(statname)           (vnops_stats.statname.value.ui64)
@@ -404,14 +402,15 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3S(zp->z_size, ==, ubcsize);
 		off_t resid_off = 0;
+		int sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
 		int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
-		    UBC_PUSHALL | UBC_SYNC);
+		    sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
 	        ASSERT3S(retval, ==, 0);
 		if (retval != 0)
 			ASSERT3S(resid_off, ==, ubcsize);
 		ASSERT3P(zp->z_sa_hdl, !=, NULL);
-		(void) cluster_push(vp, IO_SYNC | IO_CLOSE);
-		VNOPS_STAT_BUMP(zfs_close_cluster_push);
+		(void) cluster_push(vp, sync ? IO_SYNC | IO_CLOSE : IO_CLOSE);
+		VNOPS_STAT_BUMP(zfs_close_msync);
 	}
 #endif
 
@@ -1373,23 +1372,26 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		if (mapped != 0) {
 			//zfs_fsync(vp, 0, cr, ct); // does a zil commit
 			boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
-			off_t ubcsize = ubc_getsize(vp);
-			ASSERT3S(zp->z_size, ==, ubcsize);
-			off_t resid_off = 0;
-			int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
-				sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
-			ASSERT3S(retval, ==, 0);
-			if (retval != 0)
-				ASSERT3S(resid_off, ==, ubcsize);
-			ASSERT3P(zp->z_sa_hdl, !=, NULL);
-			cluster_push(vp, sync ? IO_SYNC : 0);
-			VNOPS_STAT_BUMP(zfs_read_sync_mapped);
-			if (sync == B_TRUE)
-				zil_commit(zfsvfs->z_log, zp->z_id);
+			if (sync) {
+				off_t ubcsize = ubc_getsize(vp);
+				ASSERT3S(zp->z_size, ==, ubcsize);
+				off_t resid_off = 0;
+				int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
+				    sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
+				ASSERT3S(retval, ==, 0);
+				if (retval != 0)
+					ASSERT3S(resid_off, ==, ubcsize);
+				ASSERT3P(zp->z_sa_hdl, !=, NULL);
+				cluster_push(vp, sync ? IO_SYNC : 0);
+				VNOPS_STAT_BUMP(zfs_read_sync_mapped);
+				if (sync == B_TRUE)
+					zil_commit(zfsvfs->z_log, zp->z_id);
+			}
 		} else if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS) {
 			zil_commit(zfsvfs->z_log, zp->z_id);
-			VNOPS_STAT_BUMP(zfs_read_zil_commit);
+			VNOPS_STAT_BUMP(zfs_read_unmapped_zil_commit);
 		}
+#if 0
 		if (mapped == 0 && (ubc_pages_resident(vp) || vn_has_cached_data(vp))) {
 			off_t resid_off = 0;
 			off_t ubcsize = ubc_getsize(vp);
@@ -1399,6 +1401,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			if (retval != 0)
 				ASSERT3S(resid_off, ==, ubcsize);
 		}
+#endif
 	}
 #endif
 
@@ -1950,7 +1953,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			/* actually update the UBC pages */
 			update_pages(vp, tx_bytes, uio_copy, tx, 0);
 
-			VNOPS_STAT_BUMP(write_updatepage_uio_copy);
 			uio_free(uio_copy);
 			uio_copy = NULL;
 		}
@@ -2098,6 +2100,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				ASSERT3U(ubcsize, >, 0);
 				int flag = UBC_PUSHALL | (do_ubc_sync == B_TRUE) ? UBC_SYNC : 0;
 				ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), &resid_off, flag);
+				VNOPS_STAT_BUMP(zfs_write_msync);
 				if (ubc_msync_err != 0 &&
 				    !(ubc_msync_err != EINVAL && resid_off == ubcsize)) {
 					/* we can get back spurious EINVALs here even though the full
