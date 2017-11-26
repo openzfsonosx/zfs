@@ -128,7 +128,8 @@ typedef struct vnops_stats {
 	kstat_named_t update_pages_want_lock;
 	kstat_named_t update_pages_lock_timeout;
 	kstat_named_t zfs_read_calls;
-	kstat_named_t zfs_read_sync_mapped;
+	kstat_named_t zfs_read_clean_on_read;
+	kstat_named_t zfs_read_sync_push_mapped;
 	kstat_named_t zfs_read_unmapped_zil_commit;
 	kstat_named_t mappedread_vn_and_ubc_have_cached_data;
 	kstat_named_t mappedread_vn_has_cached_data_only;
@@ -166,7 +167,8 @@ static vnops_stats_t vnops_stats = {
 	{ "update_pages_want_lock",                      KSTAT_DATA_UINT64 },
 	{ "update_pages_lock_timeout",                   KSTAT_DATA_UINT64 },
 	{ "zfs_read_calls",                              KSTAT_DATA_UINT64 },
-	{ "zfs_read_sync_mapped",                        KSTAT_DATA_UINT64 },
+	{ "zfs_read_clean_on_read",                      KSTAT_DATA_UINT64 },
+	{ "zfs_read_sync_push_mapped",                   KSTAT_DATA_UINT64 },
 	{ "zfs_read_unmapped_zil_commit",                KSTAT_DATA_UINT64 },
 	{ "mappedread_vn_and_ubc_have_cached_data",      KSTAT_DATA_UINT64 },
 	{ "mappedread_vn_has_cached_data_only",          KSTAT_DATA_UINT64 },
@@ -1371,9 +1373,9 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			mutex_exit(&zp->z_lock);
 		if (mapped != 0) {
 			//zfs_fsync(vp, 0, cr, ct); // does a zil commit
-			boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
-			if (sync) {
-				off_t ubcsize = ubc_getsize(vp);
+			off_t ubcsize = ubc_getsize(vp);
+			if (!is_file_clean(vp, ubcsize)) {
+				boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
 				ASSERT3S(zp->z_size, ==, ubcsize);
 				off_t resid_off = 0;
 				int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
@@ -1383,9 +1385,11 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					ASSERT3S(resid_off, ==, ubcsize);
 				ASSERT3P(zp->z_sa_hdl, !=, NULL);
 				cluster_push(vp, sync ? IO_SYNC : 0);
-				VNOPS_STAT_BUMP(zfs_read_sync_mapped);
 				if (sync == B_TRUE)
 					zil_commit(zfsvfs->z_log, zp->z_id);
+				if (sync == B_TRUE)
+					VNOPS_STAT_BUMP(zfs_read_sync_push_mapped);
+				VNOPS_STAT_BUMP(zfs_read_clean_on_read);
 			}
 		} else if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS) {
 			zil_commit(zfsvfs->z_log, zp->z_id);
