@@ -1753,7 +1753,16 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 */
 		tx = dmu_tx_create(zfsvfs->z_os);
 		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+#ifndef __APPLE__
 		dmu_tx_hold_write(tx, zp->z_id, woff, MIN(n, max_blksz));
+#else
+		/*
+		 * for the new UBC read/write system, we have to
+		 * hold a larger write range, aligned to the page
+		 * boundaries
+		 */
+		dmu_tx_hold_write(tx, zp->z_id, trunc_page_64(woff), round_page_64(MIN(n, max_blksz)));
+#endif
 		zfs_sa_upgrade_txholds(tx, zp);
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
@@ -1784,7 +1793,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 			dprintf("growing buffer to %llu\n", new_blksz);
 			zfs_grow_blocksize(zp, new_blksz, tx);
-			zfs_range_reduce(rl, woff, n);
+			zfs_range_reduce(rl, trunc_page_64(woff), round_page_64(n));
 		}
 
 #ifdef __APPLE__
