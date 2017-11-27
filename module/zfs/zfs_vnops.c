@@ -1859,41 +1859,30 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		/*
 		 * We have two write cases:
 		 *
-		 * i) borrow, fill, and assign an arcbuf, which we do in the
-		 *    case where we:
-		 *    (a) are at the end of the file and are extending it
-		 *        and are max_blksz-aligned
-		 * or (b) have a write whose range includes the EOF and is
-		 *        exactly max_blksz aligned, max_blksz data
+		 * i) borrow, fill, and assign an arcbuf, which we do in
+		 *    the case where weare at the end of the file and
+		 *    are extending it and are max_blksz-aligned
 		 *
 		 * ii) dmu_write_uio, which we do if it is safe
 		 *
 		 * If we can't do either, print a warning and this will end
 		 * up being a short write.
 		 */
-		if ((woff >= zp->z_size && P2PHASE(woff, max_blksz) == 0) ||
-		    (write_eof &&
-				nbytes == max_blksz &&
-				P2PHASE(woff, max_blksz) == 0 &&
-				zp->z_blksz == max_blksz)) {
+		if (n >= max_blksz && woff >= zp->z_size &&
+		    P2PHASE(woff, max_blksz) == 0 && zp->z_blksz == max_blksz) {
 			ASSERT(ISP2(max_blksz));
 			/*
 			 * reset nbytes, so we don't trip an assert at the
 			 * end of the whlie loop below
 			 */
-			const ssize_t onbytes = nbytes;
-			nbytes = MIN(onbytes, max_blksz - P2PHASE(woff, max_blksz));
-			ASSERT3S(onbytes, <=, nbytes);
+			nbytes = max_blksz;
 			tx_bytes = nbytes;
-			ASSERT3S(tx_bytes, <=, max_blksz);
 			/* here we are growing the file and don't have a
 			 * buffer of the correct size in z_sa_hdl, so
 			 * borrow, fill, and assign an arcbuf of the
 			 * right size.
 			 */
 			ASSERT(write_eof);
-			ASSERT3S(tx_bytes, >, 0);
-			IMPLY(tx_bytes < max_blksz, woff > zp->z_size);
 			ASSERT(vnode_isreg(vp));
 			size_t cbytes;
 			arc_buf_t *arcbuf = dmu_request_arcbuf(sa_get_db(zp->z_sa_hdl),
