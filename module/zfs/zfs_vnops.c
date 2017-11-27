@@ -1871,10 +1871,15 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				P2PHASE(woff, max_blksz) == 0 &&
 				zp->z_blksz == max_blksz)) {
 			ASSERT(ISP2(max_blksz));
-		       /* set tx_bytes, this guarantees the ASSERT3S at
-			* the bottom of the while(n > 0) loop will not complain
-			*/
-		       tx_bytes = nbytes;
+			/* 
+			 * reset nbytes, so we don't trip an assert at the
+			 * end of the whlie loop below
+			 */
+			ssize_t onbytes = nbytes;
+			nbytes = MIN(nbytes, max_blksz - P2PHASE(woff, max_blksz));
+			ASSERT3S(onbytes, <=, nbytes);
+			tx_bytes = nbytes;
+			ASSERT3S(tx_bytes, <=, max_blksz);
 			/* here we are growing the file and don't have a
 			 * buffer of the correct size in z_sa_hdl, so
 			 * borrow, fill, and assign an arcbuf of the
@@ -1893,15 +1898,15 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				error = ENOMEM;
 				break;
 			}
-			ASSERT3S(arc_buf_size(arcbuf), ==, tx_bytes);
-			if (arc_buf_size(arcbuf) < tx_bytes) {
+			ASSERT3S(arc_buf_size(arcbuf), ==, max_blksz);
+			if (arc_buf_size(arcbuf) < max_blksz) {
 				tx_bytes = 0;
 				error = ENOMEM;
 				dmu_return_arcbuf(arcbuf);
 				break;
 			}
 			int assign_path_uiocopy_err;
-			if ((assign_path_uiocopy_err = uiocopy(arcbuf->b_data, tx_bytes,
+			if ((assign_path_uiocopy_err = uiocopy(arcbuf->b_data, max_blksz,
 				    UIO_WRITE, uio, &cbytes))) {
 				error = assign_path_uiocopy_err;
 				ASSERT3S(assign_path_uiocopy_err, ==, 0); // emit an assertion
