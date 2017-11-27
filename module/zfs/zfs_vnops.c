@@ -1991,7 +1991,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			int setsize_retval = ubc_setsize(vp, zp->z_size);
 			rw_exit(&zp->z_map_lock);
 			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
-			ASSERT3S(ubc_size, <=, zp_size); // we ought to have grown the file above
 
 			/* actually update the UBC pages */
 			update_pages(vp, tx_bytes, uio_copy, tx, 0);
