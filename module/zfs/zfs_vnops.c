@@ -1769,7 +1769,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * hold a larger write range, aligned to the page
 		 * boundaries
 		 */
-		dmu_tx_hold_write(tx, zp->z_id, trunc_page_64(woff), round_page_64(MIN(n, max_blksz)));
+		dmu_tx_hold_write(tx, zp->z_id, trunc_page_64(woff),
+		    MIN(round_page_64(n), round_page_64(max_blksz)));
 #endif
 		zfs_sa_upgrade_txholds(tx, zp);
 		error = dmu_tx_assign(tx, TXG_WAIT);
@@ -1793,10 +1794,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				 * the next power of 2.
 				 */
 				ASSERT(!ISP2(zp->z_blksz));
-				new_blksz = MIN(end_size,
+				new_blksz = MIN(round_page_64(end_size),
 				    1 << highbit64(zp->z_blksz));
 			} else {
-				new_blksz = MIN(end_size, max_blksz);
+				new_blksz = MIN(round_page_64(end_size), max_blksz);
 			}
 
 			dprintf("growing buffer to %llu\n", new_blksz);
@@ -1827,7 +1828,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				printf("ZFS: %s:%d: WARNING nbytes == %ld, safe_write_n == %lld,"
 				    " n == %ld, file %s\n", __func__, __LINE__,
 				    nbytes, safe_write_n, n, zp->z_name_cache);
-				nbytes = 0;
+				nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz);
 				write_with_dbuf = B_FALSE;
 			}
 		} else {
@@ -1929,6 +1930,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    " n %ld max_blksz %d filesz %lld file %s\n",
 			    __func__, __LINE__, woff, nbytes, n, max_blksz,
 			    zp->z_size, zp->z_name_cache);
+			nbytes = 0;
+			tx_bytes = 0;
 		}
 
 
@@ -1953,9 +1956,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 * changed the file size we need to feed
 			 * the new filesize to xnu so that VM operations
 			 * below update_pages work correctly.
-			 *
-			 * We use end_size, calculated above, to set the
-			 * UBC size.
 			 *
 			 * ubc_setsize will correctly handle a partially
 			 * filled final page, zero-filling it after
