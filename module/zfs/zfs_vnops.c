@@ -1747,7 +1747,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
     dprintf("zfs_write: resid/n %llu : offset %llu (rl_len %llu) blksz %llu\n",
            n,uio_offset(uio), rl->r_len, zp->z_blksz );
 
-    int retry_count = 10;
+    const int max_retry_count = 10;
+    int retry_count = max_retry_count;
 	while (n > 0) {
 		retry_count--;
 		woff = uio_offset(uio);
@@ -1806,7 +1807,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				off_t max_n = MIN(n, max_max_n);
 				off_t safe_write_n = zfs_safe_dbuf_write_size(zp, uio, max_n);
 				nbytes = MIN(safe_write_n, max_max_n - P2PHASE(woff, max_max_n));
-				if (nbytes < 1) {
+				if (nbytes < 1 && retry_count < (max_retry_count - 1)) {
 					printf("ZFS: %s:%d (retry_count %d):"
 					    " growing buffer from %d to %llu file %s\n",
 					    __func__, __LINE__, retry_count,
