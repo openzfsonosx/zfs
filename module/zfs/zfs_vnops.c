@@ -124,7 +124,10 @@ typedef struct vnops_stats {
 	kstat_named_t zfs_write_calls;
 	kstat_named_t zfs_write_msync;
 	kstat_named_t zfs_write_arcbuf_assign;
-        kstat_named_t zfs_zero_length_write;
+	kstat_named_t zfs_write_arcbuf_assign_bytes;
+	kstat_named_t zfs_write_uio_dbufs;
+	kstat_named_t zfs_write_uio_dbuf_bytes;
+	kstat_named_t zfs_zero_length_write;
 	kstat_named_t update_pages;
 	kstat_named_t update_pages_want_lock;
 	kstat_named_t update_pages_lock_timeout;
@@ -164,6 +167,9 @@ static vnops_stats_t vnops_stats = {
 	{ "zfs_write_calls",                             KSTAT_DATA_UINT64 },
 	{ "zfs_write_msync",                             KSTAT_DATA_UINT64 },
 	{ "zfs_write_arcbuf_assign",                     KSTAT_DATA_UINT64 },
+	{ "zfs_write_arcbuf_assign_bytes",               KSTAT_DATA_UINT64 },
+	{ "zfs_write_uio_dbufs",                         KSTAT_DATA_UINT64 },
+	{ "zfs_write_uio_dbuf_bytes",                    KSTAT_DATA_UINT64 },
 	{ "zfs_zero_length_write",                       KSTAT_DATA_UINT64 },
 	{ "update_pages",                                KSTAT_DATA_UINT64 },
 	{ "update_pages_want_lock",                      KSTAT_DATA_UINT64 },
@@ -1871,7 +1877,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				P2PHASE(woff, max_blksz) == 0 &&
 				zp->z_blksz == max_blksz)) {
 			ASSERT(ISP2(max_blksz));
-			/* 
+			/*
 			 * reset nbytes, so we don't trip an assert at the
 			 * end of the whlie loop below
 			 */
@@ -1906,7 +1912,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				break;
 			}
 			int assign_path_uiocopy_err;
-			if ((assign_path_uiocopy_err = uiocopy(arcbuf->b_data, max_blksz,
+			if ((assign_path_uiocopy_err = uiocopy(arcbuf->b_data, tx_bytes,
 				    UIO_WRITE, uio, &cbytes))) {
 				error = assign_path_uiocopy_err;
 				ASSERT3S(assign_path_uiocopy_err, ==, 0); // emit an assertion
@@ -1918,6 +1924,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(tx_bytes, <=, uio_resid(uio));
 			uioskip(uio, tx_bytes);
 			VNOPS_STAT_BUMP(zfs_write_arcbuf_assign);
+			VNOPS_STAT_INCR(zfs_write_arcbuf_assign_bytes, tx_bytes);
 		} else if (write_with_dbuf == B_TRUE) {
 			/* set tx_bytes to what the uio still wants */
 			tx_bytes = uio_resid(uio);
@@ -1925,6 +1932,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    uio, nbytes, tx);
 			ASSERT3S(error, ==, 0);
 			/* dmu_write_uio_dbuf updated the uio */
+			VNOPS_STAT_BUMP(zfs_write_uio_dbufs);
+			VNOPS_STAT_INCR(zfs_write_uio_dbuf_bytes, tx_bytes - uio_resid(uio));
 			tx_bytes -= uio_resid(uio);
 		} else {
 			printf("ZFS: %s:%d: warning: fell through offset %lld nbytes %ld"
