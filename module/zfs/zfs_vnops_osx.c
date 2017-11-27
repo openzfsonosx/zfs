@@ -2154,8 +2154,11 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 * truncation as this leads to deadlock. So we need to recheck the file
 	 * size.
 	 */
+	    ASSERT3S(file_sz, ==, zp->z_size);
 	    ASSERT3S(ap->a_f_offset, <, file_sz);
-	if (ap->a_f_offset >= file_sz)
+	    ASSERT3S(ap->a_f_offset, <, zp->z_size);
+
+	if (ap->a_f_offset >= file_sz || ap->a_f_offset >= zp->z_size)
 		error = EFAULT;
 
 	z_map_drop_lock(zp, &need_release, &need_upgrade);
