@@ -123,6 +123,7 @@ typedef struct vnops_stats {
 	kstat_named_t fill_holes_absent_pages_filled;
 	kstat_named_t zfs_write_calls;
 	kstat_named_t zfs_write_msync;
+	kstat_named_t zfs_write_arcbuf_assign;
         kstat_named_t zfs_zero_length_write;
 	kstat_named_t update_pages;
 	kstat_named_t update_pages_want_lock;
@@ -162,6 +163,7 @@ static vnops_stats_t vnops_stats = {
 	{ "fill_holes_absent_pages_filled",              KSTAT_DATA_UINT64 },
 	{ "zfs_write_calls",                             KSTAT_DATA_UINT64 },
 	{ "zfs_write_msync",                             KSTAT_DATA_UINT64 },
+	{ "zfs_write_arcbuf_assign",                     KSTAT_DATA_UINT64 },
 	{ "zfs_zero_length_write",                       KSTAT_DATA_UINT64 },
 	{ "update_pages",                                KSTAT_DATA_UINT64 },
 	{ "update_pages_want_lock",                      KSTAT_DATA_UINT64 },
@@ -1854,9 +1856,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    uio, nbytes, tx);
 			/* dmu_write_uio_dbuf updated the uio */
 			tx_bytes -= uio_resid(uio);
-		}
-#if 0
-		 else if (write_eof &&
+		} else if (write_eof &&
 		    (nbytes == max_blksz || (nbytes >= SPA_MINBLOCKSIZE && ISP2(nbytes)))) {
 			ASSERT(ISP2(max_blksz));
 		       /* set tx_bytes, this guarantees the ASSERT3S at
@@ -1899,8 +1899,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			dmu_assign_arcbuf_by_dbuf(sa_get_db(zp->z_sa_hdl), woff, arcbuf, tx);
 			ASSERT3S(tx_bytes, <=, uio_resid(uio));
 			uioskip(uio, tx_bytes);
+			VNOPS_STAT_BUMP(zfs_write_arcbuf_assign);
 		}
-#endif
 
                 /* If we've written anything to a regular file, we have
 		 * to update the UBC.
