@@ -1881,8 +1881,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 * reset nbytes, so we don't trip an assert at the
 			 * end of the whlie loop below
 			 */
-			ssize_t onbytes = nbytes;
-			nbytes = MIN(nbytes, max_blksz - P2PHASE(woff, max_blksz));
+			const ssize_t onbytes = nbytes;
+			nbytes = MIN(onbytes, max_blksz - P2PHASE(woff, max_blksz));
 			ASSERT3S(onbytes, <=, nbytes);
 			tx_bytes = nbytes;
 			ASSERT3S(tx_bytes, <=, max_blksz);
