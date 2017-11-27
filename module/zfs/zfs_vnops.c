@@ -1747,7 +1747,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
     dprintf("zfs_write: resid/n %llu : offset %llu (rl_len %llu) blksz %llu\n",
            n,uio_offset(uio), rl->r_len, zp->z_blksz );
 
+    int retry_count = 10;
 	while (n > 0) {
+		retry_count--;
 		woff = uio_offset(uio);
 
 		if (zfs_owner_overquota(zfsvfs, zp, B_FALSE) ||
@@ -1799,8 +1801,19 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			} else {
 				new_blksz = MIN(round_page_64(end_size), max_blksz);
 			}
+			if (vnode_isreg(vp)) {
+				off_t max_max_n = MIN(SPA_MAXBLOCKSIZE, MAX_UPL_SIZE_BYTES);
+				off_t max_n = MIN(n, max_max_n);
+				off_t safe_write_n = zfs_safe_dbuf_write_size(zp, uio, max_n);
+				nbytes = MIN(safe_write_n, max_max_n - P2PHASE(woff, max_max_n));
+				if (nbytes < 1) {
+					printf("ZFS: %s:%d (retry_count %d):"
+					    " growing buffer from %d to %llu file %s\n",
+					    __func__, __LINE__, retry_count,
+					    zp->z_blksz, new_blksz, zp->z_name_cache);
 
-			dprintf("growing buffer to %llu\n", new_blksz);
+				}
+			}
 			zfs_grow_blocksize(zp, new_blksz, tx);
 			zfs_range_reduce(rl, trunc_page_64(woff), round_page_64(n));
 		}
@@ -1926,10 +1939,24 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			VNOPS_STAT_INCR(zfs_write_uio_dbuf_bytes, tx_bytes - uio_resid(uio));
 			tx_bytes -= uio_resid(uio);
 		} else {
-			printf("ZFS: %s:%d: warning: fell through offset %lld nbytes %ld"
+			printf("ZFS: %s:%d: fell through (retry_count %d) offset %lld nbytes %ld"
 			    " n %ld max_blksz %d filesz %lld file %s\n",
-			    __func__, __LINE__, woff, nbytes, n, max_blksz,
+			    __func__, __LINE__, retry_count, woff, nbytes, n, max_blksz,
 			    zp->z_size, zp->z_name_cache);
+			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
+			/* arrrrgh, what to do here?
+			 *
+			 * returning and letting there be short write
+			 * leads to problems.  an option might be to
+			 * stuff a dirty page into UBC and let the vm
+			 * sort it all out.  another might be to invoke
+			 * zfs_extend logic (some of which is already in
+			 * zfs_write, notably the sa update, the
+			 * zfs_grow_blocksize and the tx commit, which
+			 * we now do in the retry_count continue below.
+			 *
+			 * what we're missing is the ubc size update.
+			 */
 			nbytes = 0;
 			tx_bytes = 0;
 		}
@@ -1986,8 +2013,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 */
 
 			rw_enter(&zp->z_map_lock, RW_WRITER);
-			off_t zp_size = zp->z_size;
-			off_t ubc_size = ubc_getsize(vp);
 			int setsize_retval = ubc_setsize(vp, zp->z_size);
 			rw_exit(&zp->z_map_lock);
 			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
@@ -2008,14 +2033,24 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		}
 
 		/*
-		 * If we made no progress, we're done.
+		 * If we made no progress, we're done after retry_count attempts.
 		 */
-		if (tx_bytes == 0) {
+		if (tx_bytes == 0 && retry_count <= 0) {
+			ASSERT3S(n, >, 0);
 			(void) sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
 			    (void *)&zp->z_size, sizeof (uint64_t), tx);
 			dmu_tx_commit(tx);
 			ASSERT3S(error, ==, 0);
 			break;
+		} else if (tx_bytes == 0) {
+			ASSERT3S(n, >, 0);
+			(void) sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
+			    (void *)&zp->z_size, sizeof (uint64_t), tx);
+			dmu_tx_commit(tx);
+			ASSERT3S(error, ==, 0);
+			extern void IOSleep(unsigned milliseconds);
+			IOSleep(1);
+			continue;
 		}
 		/*
 		 * If we made even partial progress, update the znode
@@ -2126,12 +2161,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 */
         if (tx_bytes != 0) {
 		rw_enter(&zp->z_map_lock, RW_WRITER);
-		off_t zp_size = zp->z_size;
-		off_t ubc_size = ubc_getsize(vp);
                 int setsize_retval = ubc_setsize(vp, zp->z_size);
 		rw_exit(&zp->z_map_lock);
 		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
-		ASSERT3S(ubc_size, <=, zp_size); // we ought to have grown the file above
 
 		if (ubc_pages_resident(vp)) {
 			int ubc_msync_err = 0;
