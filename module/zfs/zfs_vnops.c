@@ -1828,7 +1828,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				printf("ZFS: %s:%d: WARNING nbytes == %ld, safe_write_n == %lld,"
 				    " n == %ld, file %s\n", __func__, __LINE__,
 				    nbytes, safe_write_n, n, zp->z_name_cache);
-				nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz);
+				nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
 				write_with_dbuf = B_FALSE;
 			}
 		} else {

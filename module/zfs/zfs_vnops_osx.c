@@ -2078,10 +2078,13 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 		VNOPS_OSX_STAT_INCR(pagein_want_lock, tries);
 	} else {
 		ASSERT3S(zp->z_is_mapped, >, 0);
-		printf("ZFS: %s: already have z_map_lock\n", __func__);
+		printf("ZFS: %s:%d already have z_map_lock for file %s\n",
+		    __func__, __LINE__, zp->z_name_cache);
 	}
 
-	if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
+	int ubc_map_retval = 0;
+	if ((ubc_map_retval = ubc_upl_map(upl, (vm_offset_t *)&vaddr)) != KERN_SUCCESS) {
+		ASSERT3S(ubc_map_retval, ==, KERN_SUCCESS);
 		dprintf("zfs_vnop_pagein: failed to ubc_upl_map");
 		if (!(flags & UPL_NOCOMMIT))
 			(void) ubc_upl_abort(upl, 0);
@@ -2118,7 +2121,8 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 		error = dmu_read(zp->z_zfsvfs->z_os, zp->z_id, off, readlen,
 		    (void *)vaddr, DMU_READ_PREFETCH);
 		if (error) {
-			printf("zfs_vnop_pagein: dmu_read err %d\n", error);
+			printf("ZFS: %s:%d: zfs_vnop_pagein: dmu_read err %d file %s\n",
+			    __func__, __LINE__, error, zp->z_name_cache);
 			break;
 		} else {
 			bytes_read += readlen;
@@ -2150,6 +2154,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 * truncation as this leads to deadlock. So we need to recheck the file
 	 * size.
 	 */
+	    ASSERT3S(ap->a_f_offset, >=, file_sz);
 	if (ap->a_f_offset >= file_sz)
 		error = EFAULT;
 
@@ -2175,6 +2180,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 			off, len, upl_offset, zp->z_blksz,
 			zp->z_size, upl, flags);
 
+	ASSERT3P(upl, !=, NULL);
 	if (upl == (upl_t)NULL) {
 		dprintf("ZFS: vnop_pageout: failed on NULL upl\n");
 		return EINVAL;
@@ -2243,7 +2249,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 top:
 	rl = zfs_range_lock(zp, off, len, RL_WRITER);
 	/*
-	 * can't push pages passed end-of-file
+	 * can't push pages past end-of-file
 	 */
 	filesz = zp->z_size;
 	if (off >= filesz) {
