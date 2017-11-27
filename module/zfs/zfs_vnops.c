@@ -1533,7 +1533,7 @@ zfs_safe_dbuf_write_size(znode_t *zp, uio_t *uio, off_t length)
 		if (offset + length > dn->dn_datablksz) {
 			int64_t safe_len = dn->dn_datablksz - offset;
 			if (safe_len > 0) {
-				printf("ZFS: %s:%d (would be) accessing past end of object "
+				dprintf("ZFS: %s:%d (would be) accessing past end of object "
 				    "(size=%u access=%llu+%llu), try using %lld instead, file %s\n",
 				    __func__, __LINE__,
 				    dn->dn_datablksz,
@@ -1541,7 +1541,7 @@ zfs_safe_dbuf_write_size(znode_t *zp, uio_t *uio, off_t length)
 				    safe_len, zp->z_name_cache);
 			}
 			else {
-				printf("ZFS: %s:%d would access past end of object (size=%u,"
+				dprintf("ZFS: %s:%d would access past end of object (size=%u,"
 				    " access %llu+%llu), AND safe_len is %lld, so returning 0,"
 				    " file %s\n",
 				    __func__, __LINE__,
@@ -1823,6 +1823,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		/* Pick the size of the write we hand to the DMU/DBUF layer */
 
+		off_t safe_write_n = INT_MAX;
 		if (vnode_isreg(vp)) {
 			/*
 			 * regular files will have update_pages invoked
@@ -1838,7 +1839,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			off_t safe_write_n = zfs_safe_dbuf_write_size(zp, uio, max_n);
 			nbytes = MIN(safe_write_n, max_max_n - P2PHASE(woff, max_max_n));
 			if (nbytes < 1) {
-				printf("ZFS: %s:%d: WARNING nbytes == %ld, safe_write_n == %lld,"
+				dprintf("ZFS: %s:%d: WARNING nbytes == %ld, safe_write_n == %lld,"
 				    " n == %ld, file %s\n", __func__, __LINE__,
 				    nbytes, safe_write_n, n, zp->z_name_cache);
 				nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
@@ -1860,11 +1861,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if  (vnode_isreg(vp))  {
 			uio_copy = uio_duplicate(uio);
-			off_t cur_ubc_sz = ubc_getsize(vp);
-			if (cur_ubc_sz < woff + nbytes) {
-				int setsize_retval = ubc_setsize(vp, woff + nbytes);
-				ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
-			}
 		}
 
 		/* reset tx_bytes, we have not written anything in this TX yet */
@@ -1940,10 +1936,34 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			tx_bytes -= uio_resid(uio);
 		} else {
 			printf("ZFS: %s:%d: fell through (retry_count %d) offset %lld nbytes %ld"
-			    " n %ld max_blksz %d filesz %lld file %s\n",
+			    " n %ld max_blksz %d filesz %lld safe_write_n %lld file %s\n",
 			    __func__, __LINE__, retry_count, woff, nbytes, n, max_blksz,
-			    zp->z_size, zp->z_name_cache);
+			    zp->z_size, safe_write_n, zp->z_name_cache);
+#if 0
+			/* interestingly this assertion fails:
+			 * ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
+			 * and the difference is exactly the shortfall.
+			 * perhaps the UBC is onto something?
+			 */
+			if (zp->z_size < ubc_getsize(vp)) {
+				/* let's treat UBC as the source of truth */
+				uint64_t size_update_ctr = 0;
+				uint64_t starting_ubcsize = ubc_getsize(vp);
+				uint64_t starting_zsize = zp->z_size;
+				while ((end_size = zp->z_size) < ubc_getsize(vp)) {
+					size_update_ctr++;
+					(void) atomic_cas_64(&zp->z_size, end_size,
+					    ubc_getsize(vp));
+				}
+				printf("ZFS: %s:%d: bumped zp->z_size from %lld to %lld"
+				    " (starting_ubcsize %lld) after %lld tries\n",
+				    __func__, __LINE__, starting_zsize, zp->z_size,
+				    starting_ubcsize, size_update_ctr);
+			}
+#else
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
+#endif
+
 			/* arrrrgh, what to do here?
 			 *
 			 * returning and letting there be short write
@@ -2165,7 +2185,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		rw_exit(&zp->z_map_lock);
 		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 
-		if (ubc_pages_resident(vp)) {
+		if (vnode_isreg(vp)) {
 			int ubc_msync_err = 0;
 			off_t resid_off = 0;
 			off_t ubcsize = ubc_getsize(vp);
