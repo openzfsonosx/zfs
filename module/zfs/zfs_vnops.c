@@ -1837,7 +1837,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 */
 			off_t max_max_n = MIN(SPA_MAXBLOCKSIZE, MAX_UPL_SIZE_BYTES);
 			off_t max_n = MIN(n, max_max_n);
-			off_t safe_write_n = zfs_safe_dbuf_write_size(zp, uio, max_n);
+			safe_write_n = zfs_safe_dbuf_write_size(zp, uio, max_n);
 			nbytes = MIN(safe_write_n, max_max_n - P2PHASE(woff, max_max_n));
 			if (nbytes < 1) {
 				dprintf("ZFS: %s:%d: WARNING nbytes == %ld, safe_write_n == %lld,"
@@ -1868,7 +1868,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		tx_bytes = 0;
 
 		/*
-		 * We have two write cases:
+		 * For regular files, we have two write cases:
 		 *
 		 * i) borrow, fill, and assign an arcbuf, which we do in
 		 *    the case where weare at the end of the file and
@@ -1925,7 +1925,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uioskip(uio, tx_bytes);
 			VNOPS_STAT_BUMP(zfs_write_arcbuf_assign);
 			VNOPS_STAT_INCR(zfs_write_arcbuf_assign_bytes, tx_bytes);
-		} else if (write_with_dbuf == B_TRUE) {
+		} else if (write_with_dbuf == B_TRUE || !vnode_isreg(vp)) {
 			/* set tx_bytes to what the uio still wants */
 			tx_bytes = uio_resid(uio);
 			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
@@ -1936,6 +1936,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			VNOPS_STAT_INCR(zfs_write_uio_dbuf_bytes, tx_bytes - uio_resid(uio));
 			tx_bytes -= uio_resid(uio);
 		} else {
+			ASSERT(vnode_isreg(vp));
 			printf("ZFS: %s:%d: fell through (retry_count %d) offset %lld nbytes %ld"
 			    " n %ld max_blksz %d filesz %lld safe_write_n %lld file %s\n",
 			    __func__, __LINE__, retry_count, woff, nbytes, n, max_blksz,
