@@ -1849,15 +1849,27 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		/* reset tx_bytes, we have not written anything in this TX yet */
 		tx_bytes = 0;
-		if (write_with_dbuf == B_TRUE) {
-			/* set tx_bytes to what the uio still wants */
-			tx_bytes = uio_resid(uio);
-			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
-			    uio, nbytes, tx);
-			/* dmu_write_uio_dbuf updated the uio */
-			tx_bytes -= uio_resid(uio);
-		} else if (write_eof &&
-		    (nbytes == max_blksz || (nbytes >= SPA_MINBLOCKSIZE && ISP2(nbytes)))) {
+
+		/*
+		 * We have two write cases:
+		 *
+		 * i) borrow, fill, and assign an arcbuf, which we do in the
+		 *    case where we:
+		 *    (a) are at the end of the file and are extending it
+		 *        and are max_blksz-aligned
+		 * or (b) have a write whose range includes the EOF and is
+		 *        exactly max_blksz aligned, max_blksz data
+		 *
+		 * ii) dmu_write_uio, which we do if it is safe
+		 *
+		 * If we can't do either, print a warning and this will end
+		 * up being a short write.
+		 */
+		if ((woff >= zp->z_size && P2PHASE(woff, max_blksz) == 0) ||
+		    (write_eof &&
+				nbytes == max_blksz &&
+				P2PHASE(woff, max_blksz) == 0 &&
+				zp->z_blksz == max_blksz)) {
 			ASSERT(ISP2(max_blksz));
 		       /* set tx_bytes, this guarantees the ASSERT3S at
 			* the bottom of the while(n > 0) loop will not complain
@@ -1870,10 +1882,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 */
 			ASSERT(write_eof);
 			ASSERT3S(tx_bytes, >, 0);
+			IMPLY(tx_bytes < max_blksz, woff > zp->z_size);
 			ASSERT(vnode_isreg(vp));
 			size_t cbytes;
 			arc_buf_t *arcbuf = dmu_request_arcbuf(sa_get_db(zp->z_sa_hdl),
-                            tx_bytes);
+                            max_blksz);
 			ASSERT3P(arcbuf, !=, NULL);
 			if (arcbuf == NULL) {
 				tx_bytes = 0;
@@ -1900,7 +1913,21 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(tx_bytes, <=, uio_resid(uio));
 			uioskip(uio, tx_bytes);
 			VNOPS_STAT_BUMP(zfs_write_arcbuf_assign);
+		} else if (write_with_dbuf == B_TRUE) {
+			/* set tx_bytes to what the uio still wants */
+			tx_bytes = uio_resid(uio);
+			error = dmu_write_uio_dbuf(sa_get_db(zp->z_sa_hdl),
+			    uio, nbytes, tx);
+			ASSERT3S(error, ==, 0);
+			/* dmu_write_uio_dbuf updated the uio */
+			tx_bytes -= uio_resid(uio);
+		} else {
+			printf("ZFS: %s:%d: warning: fell through offset %lld nbytes %ld"
+			    " n %ld max_blksz %d filesz %lld file %s\n",
+			    __func__, __LINE__, woff, nbytes, n, max_blksz,
+			    zp->z_size, zp->z_name_cache);
 		}
+
 
                 /* If we've written anything to a regular file, we have
 		 * to update the UBC.
