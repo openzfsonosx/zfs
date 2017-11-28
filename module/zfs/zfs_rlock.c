@@ -136,11 +136,11 @@ zfs_range_lock_writer(znode_t *zp, rl_t *new)
 			 * avoid races.
 			 */
 			end_size = MAX(zp->z_size, new->r_off + len);
-            if (end_size > zp->z_blksz && (!ISP2(zp->z_blksz) ||
-                                           zp->z_blksz < zp->z_zfsvfs->z_max_blksz)) {
-                new->r_off = 0;
-                new->r_len = UINT64_MAX;
-            }
+			if (end_size > zp->z_blksz && (!ISP2(zp->z_blksz) ||
+			    zp->z_blksz < zp->z_zfsvfs->z_max_blksz)) {
+				new->r_off = 0;
+				new->r_len = UINT64_MAX;
+			}
 		}
 
 		/*
