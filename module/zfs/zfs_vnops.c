@@ -1812,7 +1812,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				}
 			}
 			zfs_grow_blocksize(zp, new_blksz, tx);
-			zfs_range_reduce(rl, trunc_page_64(woff), round_page_64(n));
+			zfs_range_reduce(rl, woff, n);
 		}
 
 #ifdef __APPLE__
