@@ -1794,9 +1794,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				 * the next power of 2.
 				 */
 				ASSERT(!ISP2(zp->z_blksz));
-				new_blksz = MIN(round_page_64(end_size), SPA_MAXBLOCKSIZE);
+				new_blksz = MIN(end_size, SPA_MAXBLOCKSIZE);
 			} else {
-				new_blksz = MIN(round_page_64(end_size), max_blksz);
+				new_blksz = MIN(end_size, max_blksz);
 			}
 			if (vnode_isreg(vp)) {
 				off_t max_max_n = MIN(SPA_MAXBLOCKSIZE, MAX_UPL_SIZE_BYTES);
