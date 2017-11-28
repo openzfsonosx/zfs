@@ -1387,7 +1387,8 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			//zfs_fsync(vp, 0, cr, ct); // does a zil commit
 			off_t ubcsize = ubc_getsize(vp);
 			if (!is_file_clean(vp, ubcsize)) {
-				boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
+				boolean_t sync = (ioflag & (/*FRSYNC |*/ FDSYNC | FSYNC)) ||
+				    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
 				ASSERT3S(zp->z_size, ==, ubcsize);
 				off_t resid_off = 0;
 				int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
@@ -1660,10 +1661,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 * unless sync is disabled, push them (syncing if we are sync
 	 * always)
 	 */
-	if (zp->z_is_mapped && zfsvfs->z_log && zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED) {
+	if (zp->z_is_mapped && zfsvfs->z_log &&
+	    (zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED || (ioflag & (FSYNC | FDSYNC)))) {
 		off_t ubcsize = ubc_getsize(vp);
 		if (!is_file_clean(vp, ubcsize)) {
-			boolean_t sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
+			boolean_t sync = (ioflag & (FSYNC | FDSYNC)) ||
+			    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
 			ASSERT3S(zp->z_size, ==, ubcsize);
 			off_t resid_off = 0;
 			int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
