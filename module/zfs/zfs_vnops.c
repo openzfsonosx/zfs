@@ -1680,10 +1680,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * Obtain an appending range lock to guarantee file append
 		 * semantics.  We reset the write offset once we have the lock.
 		 */
-		/* We don't round n here as it is past zp-z_size automatically,
-		 * and we want to avoid an unsafe write size
-		 */
-		rl = zfs_range_lock(zp, 0, n, RL_APPEND);
+		rl = zfs_range_lock(zp, 0, round_page_64(n), RL_APPEND);
 		woff = rl->r_off;
 		if (rl->r_len == UINT64_MAX) {
 			/*
@@ -1709,18 +1706,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * so that we can re-write the block safely.
 		 */
 		/*
-		 * Unless woff+n takes us past the EOF, then we round
-		 * up n to pagesize, to protect update_pages from interference
-		 * from file-changers affecting its last page.
-		 *
-		 * (We shouldn't do this for the very last page in the file,
-		 * as it leads to an unsafe write size).
-		 *
-		 * We protect the first page of the range in all cases.
+		 * We round woff and n to the nearest page size here to protect
+		 * update_apges from interference from concurrent file changes
+		 * adjusting bytes within its first and last UPLs.
 		 */
-		rl = zfs_range_lock(zp, trunc_page_64(woff),
-		    (woff + n > zp->z_size) ? n : round_page_64(n),
-		    RL_WRITER);
+		rl = zfs_range_lock(zp, trunc_page_64(woff), round_page_64(n),  RL_WRITER);
 	}
 
 	if (woff >= limit) {
@@ -1736,6 +1726,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	write_eof = (woff + n > zp->z_size);
 
 	end_size = MAX(zp->z_size, woff + n);
+	uint64_t end_size_aligned = MAX(round_page_64(zp->z_size),
+	    trunc_page_64(woff) + round_page_64(n));
 
 	/*
 	 * Write the file in reasonable size chunks.  Each chunk is written
@@ -1788,9 +1780,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				 * the next power of 2.
 				 */
 				ASSERT(!ISP2(zp->z_blksz));
-				new_blksz = MIN(end_size, SPA_MAXBLOCKSIZE);
+				new_blksz = MIN(end_size_aligned, SPA_MAXBLOCKSIZE);
 			} else {
-				new_blksz = MIN(end_size, max_blksz);
+				new_blksz = MIN(end_size_aligned, max_blksz);
 			}
 			if (vnode_isreg(vp)) {
 				off_t max_max_n = MIN(SPA_MAXBLOCKSIZE, MAX_UPL_SIZE_BYTES);
@@ -1806,8 +1798,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				}
 			}
 			zfs_grow_blocksize(zp, new_blksz, tx);
-			zfs_range_reduce(rl, trunc_page_64(woff),
-			    (woff + n >= zp->z_size) ? n : round_page_64(n));
+			zfs_range_reduce(rl, trunc_page_64(woff), round_page_64(n));
 		}
 
 #ifdef __APPLE__
@@ -1930,10 +1921,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			tx_bytes -= uio_resid(uio);
 		} else {
 			ASSERT(vnode_isreg(vp));
-			printf("ZFS: %s:%d: fell through ioflag %d end_size %lld offset %lld nbytes %ld"
+			printf("ZFS: %s:%d: fell through ioflag %d end_size %lld end_size_aligned %lld"
+			    " offset %lld nbytes %ld"
 			    " n %ld max_blksz %d filesz %lld safe_write_n %lld new_blksz %lld"
 			    " z_blksz %d file %s\n",
-			    __func__, __LINE__, ioflag, end_size, woff, nbytes, n, max_blksz,
+			    __func__, __LINE__, ioflag, end_size, end_size_aligned,
+			    woff, nbytes, n, max_blksz,
 			    zp->z_size, safe_write_n, new_blksz, zp->z_blksz, zp->z_name_cache);
 
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
@@ -1982,7 +1975,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					    end_size);
 					ASSERT3S(error, ==, 0);
 				}
-				if (size_update_ctr > 1) {
+				if (size_update_ctr > 0) {
 					printf("ZFS: %s:%d: %llu tries to increase zp->z_size to end_size"
 					    "  %lld (it is now %lld)\n",
 					    __func__, __LINE__, size_update_ctr,
