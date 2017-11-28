@@ -1747,10 +1747,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
     dprintf("zfs_write: resid/n %llu : offset %llu (rl_len %llu) blksz %llu\n",
            n,uio_offset(uio), rl->r_len, zp->z_blksz );
 
-    const int max_retry_count = 10;
-    int retry_count = max_retry_count;
 	while (n > 0) {
-		retry_count--;
 		woff = uio_offset(uio);
 
 		if (zfs_owner_overquota(zfsvfs, zp, B_FALSE) ||
@@ -1788,8 +1785,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * on the first iteration since zfs_range_reduce() will
 		 * shrink down r_len to the appropriate size.
 		 */
+		uint64_t new_blksz;
 		if (rl->r_len == UINT64_MAX) {
-			uint64_t new_blksz;
 			if (zp->z_blksz > max_blksz) {
 				/*
 				 * File's blocksize is already larger than the
@@ -1806,10 +1803,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				off_t max_n = MIN(n, max_max_n);
 				off_t safe_write_n = zfs_safe_dbuf_write_size(zp, uio, max_n);
 				nbytes = MIN(safe_write_n, max_max_n - P2PHASE(woff, max_max_n));
-				if (nbytes < 1 && retry_count < (max_retry_count - 1)) {
-					printf("ZFS: %s:%d (retry_count %d):"
+				if (nbytes < 1) {
+					dprintf("ZFS: %s:%d:"
 					    " growing buffer from %d to %llu file %s\n",
-					    __func__, __LINE__, retry_count,
+					    __func__, __LINE__,
 					    zp->z_blksz, new_blksz, zp->z_name_cache);
 
 				}
@@ -1938,34 +1935,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			tx_bytes -= uio_resid(uio);
 		} else {
 			ASSERT(vnode_isreg(vp));
-			printf("ZFS: %s:%d: fell through (retry_count %d) offset %lld nbytes %ld"
-			    " n %ld max_blksz %d filesz %lld safe_write_n %lld file %s\n",
-			    __func__, __LINE__, retry_count, woff, nbytes, n, max_blksz,
-			    zp->z_size, safe_write_n, zp->z_name_cache);
-#if 0
-			/* interestingly this assertion fails:
-			 * ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
-			 * and the difference is exactly the shortfall.
-			 * perhaps the UBC is onto something?
-			 */
-			if (zp->z_size < ubc_getsize(vp)) {
-				/* let's treat UBC as the source of truth */
-				uint64_t size_update_ctr = 0;
-				uint64_t starting_ubcsize = ubc_getsize(vp);
-				uint64_t starting_zsize = zp->z_size;
-				while ((end_size = zp->z_size) < ubc_getsize(vp)) {
-					size_update_ctr++;
-					(void) atomic_cas_64(&zp->z_size, end_size,
-					    ubc_getsize(vp));
-				}
-				printf("ZFS: %s:%d: bumped zp->z_size from %lld to %lld"
-				    " (starting_ubcsize %lld) after %lld tries\n",
-				    __func__, __LINE__, starting_zsize, zp->z_size,
-				    starting_ubcsize, size_update_ctr);
-			}
-#else
+			printf("ZFS: %s:%d: fell through offset %lld nbytes %ld"
+			    " n %ld max_blksz %d filesz %lld safe_write_n %lld new_blksz %lld file %s\n",
+			    __func__, __LINE__, woff, nbytes, n, max_blksz,
+			    zp->z_size, safe_write_n, new_blksz, zp->z_name_cache);
+
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
-#endif
 
 			/* arrrrgh, what to do here?
 			 *
@@ -1975,7 +1950,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 * sort it all out.  another might be to invoke
 			 * zfs_extend logic (some of which is already in
 			 * zfs_write, notably the sa update, the
-			 * zfs_grow_blocksize and the tx commit, which
 			 * we now do in the retry_count continue below.
 			 *
 			 * what we're missing is the ubc size update.
@@ -2060,24 +2034,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		/*
 		 * If we made no progress, we're done after retry_count attempts.
 		 */
-		if (tx_bytes == 0 && retry_count <= 0) {
+		if (tx_bytes == 0) {
 			ASSERT3S(n, >, 0);
 			(void) sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
 			    (void *)&zp->z_size, sizeof (uint64_t), tx);
 			dmu_tx_commit(tx);
 			ASSERT3S(error, ==, 0);
 			break;
-		} else if (tx_bytes == 0) {
-			ASSERT3S(n, >, 0);
-			(void) sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
-			    (void *)&zp->z_size, sizeof (uint64_t), tx);
-			dmu_tx_commit(tx);
-			ASSERT3S(error, ==, 0);
-			extern void IOSleep(unsigned milliseconds);
-			IOSleep(1);
-			continue;
 		}
-
 		/*
 		 * If we made even partial progress, update the znode
 		 * and ZIL accordingly.
