@@ -1727,7 +1727,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	end_size = MAX(zp->z_size, woff + n);
 	uint64_t end_size_aligned = MAX(round_page_64(zp->z_size),
-	    trunc_page_64(woff) + round_page_64(n));
+	    woff + round_page_64(n));
 
 	/*
 	 * Write the file in reasonable size chunks.  Each chunk is written
