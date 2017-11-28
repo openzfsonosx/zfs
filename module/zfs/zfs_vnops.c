@@ -1603,7 +1603,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	int		count = 0;
 	sa_bulk_attr_t	bulk[4];
 	uint64_t	mtime[2], ctime[2];
-    struct uio *uio_copy = NULL;
+	struct uio      *uio_copy = NULL;
 
 
     VNOPS_STAT_BUMP(zfs_write_calls);
@@ -1680,6 +1680,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * Obtain an appending range lock to guarantee file append
 		 * semantics.  We reset the write offset once we have the lock.
 		 */
+		/* We don't round n here as it is past zp-z_size automatically,
+		 * and we want to avoid an unsafe write size
+		 */
 		rl = zfs_range_lock(zp, 0, n, RL_APPEND);
 		woff = rl->r_off;
 		if (rl->r_len == UINT64_MAX) {
@@ -1705,7 +1708,19 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * this write, then this range lock will lock the entire file
 		 * so that we can re-write the block safely.
 		 */
-		rl = zfs_range_lock(zp, woff, n, RL_WRITER);
+		/*
+		 * Unless woff+n takes us past the EOF, then we round
+		 * up n to pagesize, to protect update_pages from interference
+		 * from file-changers affecting its last page.
+		 *
+		 * (We shouldn't do this for the very last page in the file,
+		 * as it leads to an unsafe write size).
+		 *
+		 * We protect the first page of the range in all cases.
+		 */
+		rl = zfs_range_lock(zp, trunc_page_64(woff),
+		    (woff + n > zp->z_size) ? n : round_page_64(n),
+		    RL_WRITER);
 	}
 
 	if (woff >= limit) {
@@ -1791,7 +1806,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				}
 			}
 			zfs_grow_blocksize(zp, new_blksz, tx);
-			zfs_range_reduce(rl, woff, n);
+			zfs_range_reduce(rl, trunc_page_64(woff),
+			    (woff + n >= zp->z_size) ? n : round_page_64(n));
 		}
 
 #ifdef __APPLE__
