@@ -1797,8 +1797,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				 * the next power of 2.
 				 */
 				ASSERT(!ISP2(zp->z_blksz));
-				new_blksz = MIN(round_page_64(end_size),
-				    1 << highbit64(zp->z_blksz));
+				new_blksz = MIN(round_page_64(end_size), SPA_MAXBLOCKSIZE);
 			} else {
 				new_blksz = MIN(round_page_64(end_size), max_blksz);
 			}
@@ -1864,8 +1863,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uio_copy = uio_duplicate(uio);
 		}
 
-		/* reset tx_bytes, we have not written anything in this TX yet */
-		tx_bytes = 0;
+		/* set tx_bytes to the amount we hope to write in this tx */
+		rw_enter(&zp->z_map_lock, RW_READER);
+		tx_bytes = uio_resid(uio);
+		rw_exit(&zp->z_map_lock);
 
 		/*
 		 * For regular files, we have two write cases:
@@ -1979,10 +1980,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 *
 			 * what we're missing is the ubc size update.
 			 */
-			nbytes = 0;
-			tx_bytes = 0;
+			tx_bytes -= uio_resid(uio);
+			nbytes = tx_bytes;
+			ASSERT3S(tx_bytes, ==, 0);
 		}
-
 
                 /* If we've written anything to a regular file, we have
 		 * to update the UBC.
@@ -2009,8 +2010,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 * ubc_setsize will correctly handle a partially
 			 * filled final page, zero-filling it after
 			 * between the EOF and the final page boundary.
-			 *
-			 * We also bump zp->z_size to be bigger than the
+			 */
+
+			/*
+			 * Bump zp->z_size to be bigger than the
 			 * present uio_offset.
 			 */
 			uint64_t size_update_ctr = 0;
@@ -2074,6 +2077,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			IOSleep(1);
 			continue;
 		}
+
 		/*
 		 * If we made even partial progress, update the znode
 		 * and ZIL accordingly.
