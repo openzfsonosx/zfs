@@ -1785,7 +1785,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * on the first iteration since zfs_range_reduce() will
 		 * shrink down r_len to the appropriate size.
 		 */
-		uint64_t new_blksz;
+		uint64_t new_blksz = 0;
 		if (rl->r_len == UINT64_MAX) {
 			if (zp->z_blksz > max_blksz) {
 				/*
@@ -1935,10 +1935,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			tx_bytes -= uio_resid(uio);
 		} else {
 			ASSERT(vnode_isreg(vp));
-			printf("ZFS: %s:%d: fell through offset %lld nbytes %ld"
-			    " n %ld max_blksz %d filesz %lld safe_write_n %lld new_blksz %lld file %s\n",
-			    __func__, __LINE__, woff, nbytes, n, max_blksz,
-			    zp->z_size, safe_write_n, new_blksz, zp->z_name_cache);
+			printf("ZFS: %s:%d: fell through end_size %lld offset %lld nbytes %ld"
+			    " n %ld max_blksz %d filesz %lld safe_write_n %lld new_blksz %lld"
+			    " z_blksz %d file %s\n",
+			    __func__, __LINE__, end_size, woff, nbytes, n, max_blksz,
+			    zp->z_size, safe_write_n, new_blksz, zp->z_blksz, zp->z_name_cache);
 
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 
@@ -1954,9 +1955,51 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 *
 			 * what we're missing is the ubc size update.
 			 */
-			tx_bytes -= uio_resid(uio);
-			nbytes = tx_bytes;
-			ASSERT3S(tx_bytes, ==, 0);
+
+			if (end_size >= zp->z_size) {
+				tx_bytes -= uio_resid(uio);
+				nbytes = tx_bytes;
+				ASSERT3S(tx_bytes, ==, 0);
+			} else {
+				/* make the file bigger and continue */
+				/* maybe bump the block size again */
+				uint64_t n_new_blksz = 0;
+				if (end_size > zp->z_blksz &&
+				    (!ISP2(zp->z_blksz) || zp->z_blksz < zfsvfs->z_max_blksz)) {
+					// growing file past current block size
+					if (zp->z_blksz > zp->z_zfsvfs->z_max_blksz) {
+						// already larger than recordsize
+						ASSERT(!ISP2(zp->z_blksz));
+						n_new_blksz = MIN(end_size, SPA_MAXBLOCKSIZE);
+					} else {
+						n_new_blksz = MIN(end_size, max_blksz);
+					}
+				}
+				if (n_new_blksz > 0) {
+					ASSERT3S(n_new_blksz, >, new_blksz);
+					zfs_grow_blocksize(zp, n_new_blksz, tx);
+				}
+				uint64_t size_update_ctr = 0;
+				uint64_t n_end_size;
+				while ((n_end_size = zp->z_size) < end_size) {
+					size_update_ctr++;
+					(void) atomic_cas_64(&zp->z_size, n_end_size,
+					    end_size);
+					ASSERT3S(error, ==, 0);
+				}
+				if (size_update_ctr > 1) {
+					printf("ZFS: %s:%d: %llu tries to increase zp->z_size to end_size"
+					    "  %lld (it is now %lld)\n",
+					    __func__, __LINE__, size_update_ctr,
+					    end_size, zp->z_size);
+				}
+
+				VERIFY3S(0, ==, sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
+					&zp->z_size, sizeof(zp->z_size), tx));
+
+				dmu_tx_commit(tx);
+				continue;
+			}
 		}
 
                 /* If we've written anything to a regular file, we have
