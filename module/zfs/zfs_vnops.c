@@ -1662,32 +1662,15 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		return (SET_ERROR(EINVAL));
 	}
 
-#ifndef __APPLE__
-	/*
-	 * Check for mandatory locks before calling zfs_range_lock()
-	 * in order to prevent a deadlock with locks set via fcntl().
-	 */
-	if (MANDMODE((mode_t)zp->z_mode) &&
-	    (error = chklock(vp, FWRITE, woff, n, uio->uio_fmode, ct)) != 0) {
-		ZFS_EXIT(zfsvfs);
-		return (SET_ERROR(EAGAIN));
-	}
-#endif
+	/* Illumos here checks for mandatory locks; OSX (and Linux) do this elsewhere */
 
-#ifdef sun
 	/*
-	 * Pre-fault the pages to ensure slow (eg NFS) pages
-	 * don't hold up txg.
-	 * Skip this if uio contains loaned arc_buf.
+	 * Illumos and ZOL here do page-prefaulting on the uio so that
+	 * if the uio has been paged out of RAM, it will be back in RAM
+	 * before the tx_* calls.  In the unlikely event that this
+	 * happens to XNU in the real world, we could build a
+	 * prefaulting function that walks through a copy of the uio.
 	 */
-#ifdef HAVE_UIO_ZEROCOPY
-	if ((uio->uio_extflg == UIO_XUIO) &&
-	    (((xuio_t *)uio)->xu_type == UIOTYPE_ZEROCOPY))
-		xuio = (xuio_t *)uio;
-	else
-#endif
-		zfs_prefault_write(MIN(n, max_blksz), uio);
-#endif	/* sun */
 
 	/*
 	 * If in append mode, set the io offset pointer to eof.
@@ -1697,7 +1680,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * Obtain an appending range lock to guarantee file append
 		 * semantics.  We reset the write offset once we have the lock.
 		 */
-		rl = zfs_range_lock(zp, 0, round_page_64(n), RL_APPEND);
+		rl = zfs_range_lock(zp, 0, n, RL_APPEND);
 		woff = rl->r_off;
 		if (rl->r_len == UINT64_MAX) {
 			/*
@@ -1706,6 +1689,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 * Note that zp_size cannot change with this lock held.
 			 */
 			woff = zp->z_size;
+			/*** NOTE: this erases the block change in the while loop ***/
+			/***       That is, if there is a block size change required
+			 ***       for a file in append mode, the test for overlocking
+			 ***       in the first pass of the while (n > 0) loop will
+			 ***       not succeed.    We could either break DRY here, or
+			 ***       also test for a block size change in FAPPEND mode,
+			 ***       if indeed this is the cause of unsafe write sizes.
+			 ***/
 		}
 		uio_setoffset(uio, woff);
 	} else {
@@ -1714,16 +1705,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * this write, then this range lock will lock the entire file
 		 * so that we can re-write the block safely.
 		 */
-		rl = zfs_range_lock(zp, trunc_page_64(woff), round_page_64(n), RL_WRITER);
+		rl = zfs_range_lock(zp, woff, n, RL_WRITER);
 	}
-
-#ifndef __APPLE__
-	if (vn_rlimit_fsize(vp, uio, uio->uio_td)) {
-		zfs_range_unlock(rl);
-		ZFS_EXIT(zfsvfs);
-		return (SET_ERROR(EFBIG));
-	}
-#endif
 
 	if (woff >= limit) {
 		zfs_range_unlock(rl);
@@ -1761,17 +1744,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 */
 		tx = dmu_tx_create(zfsvfs->z_os);
 		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
-#ifndef __APPLE__
+
 		dmu_tx_hold_write(tx, zp->z_id, woff, MIN(n, max_blksz));
-#else
-		/*
-		 * for the new UBC read/write system, we have to
-		 * hold a larger write range, aligned to the page
-		 * boundaries
-		 */
-		dmu_tx_hold_write(tx, zp->z_id, trunc_page_64(woff),
-		    MIN(round_page_64(n), round_page_64(max_blksz)));
-#endif
 		zfs_sa_upgrade_txholds(tx, zp);
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
@@ -1784,6 +1758,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * and then reduce the lock range.  This will only happen
 		 * on the first iteration since zfs_range_reduce() will
 		 * shrink down r_len to the appropriate size.
+		 */
+		/* XXX: we may want to retest here for a file that was opened
+		 *      with ioflag & FAPPEND, as r->r_len was reset above.
+		 *      Alternatively, we may not want to do the reduce range
+		 *      in the F_APPEND case
 		 */
 		uint64_t new_blksz = 0;
 		if (rl->r_len == UINT64_MAX) {
@@ -1935,10 +1914,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			tx_bytes -= uio_resid(uio);
 		} else {
 			ASSERT(vnode_isreg(vp));
-			printf("ZFS: %s:%d: fell through end_size %lld offset %lld nbytes %ld"
+			printf("ZFS: %s:%d: fell through ioflag %d end_size %lld offset %lld nbytes %ld"
 			    " n %ld max_blksz %d filesz %lld safe_write_n %lld new_blksz %lld"
 			    " z_blksz %d file %s\n",
-			    __func__, __LINE__, end_size, woff, nbytes, n, max_blksz,
+			    __func__, __LINE__, ioflag, end_size, woff, nbytes, n, max_blksz,
 			    zp->z_size, safe_write_n, new_blksz, zp->z_blksz, zp->z_name_cache);
 
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
