@@ -1690,18 +1690,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 #endif	/* sun */
 
 	/*
-	 * Extend the file before acquiring range locks
-	 */
-	if (zp->z_size <= uio_offset(uio) ||
-	    zp->z_size < uio_offset(uio) + start_resid) {
-		printf("ZFS: %s:%d: calling zfs_freesp zp->z_size %lld off %lld size %ld"
-		    " flag %d #f for file %s\n", __func__, __LINE__,
-		    zp->z_size, uio_offset(uio), start_resid, ioflag, zp->z_name_cache);
-		int freesp_err = zfs_freesp(zp, uio_offset(uio), start_resid, ioflag, B_FALSE);
-		ASSERT3S(freesp_err, ==, 0);
-	}
-
-	/*
 	 * If in append mode, set the io offset pointer to eof.
 	 */
 	if (ioflag & FAPPEND) {
