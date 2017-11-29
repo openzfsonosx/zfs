@@ -1721,7 +1721,15 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uio_setoffset(uio, woff);
 		}
 
-		/* should rangelock */
+		/* should rangelock? */
+
+		/* grab the map lock, protecting against other zfs UBC users */
+		boolean_t need_release = B_FALSE;
+		boolean_t need_upgrade = B_FALSE;
+		ASSERT(!rw_write_held(&zp->z_map_lock));
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+		VNOPS_STAT_INCR(update_pages_want_lock, tries);
+
 		end_size = MAX(zp->z_size, woff + start_resid);
 		if (end_size > zp->z_size) {
 			int setsize_retval = ubc_setsize(vp, end_size);
@@ -1790,10 +1798,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    __func__, __LINE__, error, woff, start_resid,
 			    uio_offset(uio), uio_resid(uio),
 			    zp->z_name_cache);
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
 			VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
 			ZFS_EXIT(zfsvfs);
 			return(error);
 		}
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
 
 		/* adjust the UBC size to reflect the completed uiomove */
 		if (end_size != zp->z_size || end_size != ubc_getsize(vp)) {
@@ -1856,6 +1866,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    woff, start_resid, end_range,
 			    ubcsize, zp->z_name_cache);
 		}
+
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
