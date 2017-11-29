@@ -1720,7 +1720,18 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uio_setoffset(uio, woff);
 		}
 
+		end_size = MAX(zp->z_size, woff + start_resid);
+		if (end_size > zp->z_size) {
+			int setsize_retval = ubc_setsize(vp, end_size);
+			if (setsize_retval == 0) {
+				// ubc_setsize returns TRUE on success
+				printf("ZFS: %s:%d: ubc_setsize(vp, %lld) failed for file %s\n",
+				    __func__, __LINE__, end_size, zp->z_name_cache);
+			}
+		}
+
 		/* uiomove the data to the UBC */
+		ASSERT3S(ubc_getsize(vp), >=, uio_offset(uio) + uio_resid(uio));
 		int xfer_resid = (int)start_resid;
 		error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
 		if (error == 0) {
@@ -1730,6 +1741,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				    "uio_off %lld, file %s\n",
 				    __func__, __LINE__, xfer_resid, start_resid,
 				    woff, uio_offset(uio), zp->z_name_cache);
+				ASSERT3S(start_resid, >=, xfer_resid);
+				end_size = woff + start_resid - xfer_resid;
 			} else {
 				VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
 			}
@@ -1745,16 +1758,17 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		}
 
 		/* adjust the UBC size to reflect the completed uiomove */
-		end_size = MAX(zp->z_size, woff + start_resid);
-		if (end_size > zp->z_size) {
+		if (end_size != zp->z_size || end_size != ubc_getsize(vp)) {
 			int setsize_retval = ubc_setsize(vp, end_size);
-			if (setsize_retval != 0) {
-				printf("ZFS: %s:%d: ubc_setsize(vp, %lld) returned %d for file %s\n",
-				    __func__, __LINE__, end_size, setsize_retval, zp->z_name_cache);
+			if (setsize_retval == 0) {
+				// ubc_setsize returns TRUE on success
+				printf("ZFS: %s:%d: ubc_setsize(vp, %lld) failed for file %s\n",
+				    __func__, __LINE__, end_size, zp->z_name_cache);
 			}
 
 			/* adjust the file size in the znode */
 			uint64_t size_update_ctr = 0;
+			uint64_t prev_size = zp->z_size;
 			uint64_t n_end_size;
 			while ((n_end_size = zp->z_size) < end_size) {
 				size_update_ctr++;
@@ -1762,11 +1776,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				    end_size);
 				ASSERT3S(error, ==, 0);
 			}
-			if (size_update_ctr > 0) {
+			if (size_update_ctr > 1) {
 				printf("ZFS: %s:%d: %llu tries to increase zp->z_size to end_size"
-				    "  %lld (it is now %lld)\n",
+				    "  %lld (it is now %lld, and was %lld)\n",
 				    __func__, __LINE__, size_update_ctr,
-				    end_size, zp->z_size);
+				    end_size, zp->z_size, prev_size);
 			}
 
 			/* commit the znode change */
