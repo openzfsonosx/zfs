@@ -1601,7 +1601,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	zilog_t		*zilog;
 	offset_t	woff;
 	ssize_t		n, nbytes;
-	rl_t		*rl;
+	rl_t		*rl, *rl_first = NULL, *rl_last = NULL;
 	int		max_blksz = zfsvfs->z_max_blksz;
 	int		error = 0;
 	int		write_eof;
@@ -1739,9 +1739,23 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * so that we can re-write the block safely.
 		 */
 		rl = zfs_range_lock(zp, woff, n,  RL_WRITER);
+
+		if (woff > 1 && trunc_page_64(woff) < woff - 1) {
+			ASSERT3P(rl_first, ==, NULL);
+			rl_first = zfs_range_lock(zp, trunc_page_64(woff), woff - 1, RL_READER);
+		}
+
+		uint64_t r_end_pg = round_page_64(woff + n);
+		uint64_t r_end_real = woff + n;
+		if (r_end_pg > r_end_real + 1) {
+			ASSERT3P(rl_last, ==, NULL);
+			rl_last = zfs_range_lock(zp, r_end_real + 1, r_end_pg, RL_READER);
+		}
 	}
 
 	if (woff >= limit) {
+		if (rl_first) zfs_range_unlock(rl_first);
+		if (rl_last) zfs_range_unlock(rl_last);
 		zfs_range_unlock(rl);
 		ZFS_EXIT(zfsvfs);
 		return ((EFBIG));
@@ -1825,6 +1839,20 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			}
 			zfs_grow_blocksize(zp, new_blksz, tx);
 			zfs_range_reduce(rl, woff, n);
+
+			/* We now lock the remainders of the first and last pages */
+			ASSERT3P(rl_first, ==, NULL);
+			if (rl_first == NULL && woff > 1 && trunc_page_64(woff) < woff - 1) {
+				rl_first = zfs_range_lock(zp, trunc_page_64(woff), woff - 1, RL_READER);
+			}
+
+			uint64_t r_end_pg = round_page_64(woff + n);
+			uint64_t r_end_real = woff + n;
+			ASSERT3P(rl_last, ==, NULL);
+			if (rl_last == NULL && r_end_pg > r_end_real + 1) {
+				ASSERT3P(rl_last, ==, NULL);
+				rl_last = zfs_range_lock(zp, r_end_real + 1, r_end_pg, RL_READER);
+			}
 		}
 
 #ifdef __APPLE__
@@ -2073,18 +2101,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 *                and from woff+n+1 to round_page_64(woff+n).
 			 */
 
-			rl_t *rl_first = NULL;
-			rl_t *rl_last = NULL;
-
-			if (woff > 1 && trunc_page_64(woff) < woff - 1) {
-				rl_first = zfs_range_lock(zp, trunc_page_64(woff), woff - 1, RL_READER);
-			}
-
-			uint64_t r_end_pg = round_page_64(woff + n);
-			uint64_t r_end_real = woff + n;
-			if (r_end_pg > r_end_real + 1) {
-				rl_last = zfs_range_lock(zp, r_end_real + 1, r_end_pg, RL_READER);
-			}
 
 			rw_enter(&zp->z_map_lock, RW_WRITER);
 			int setsize_retval = ubc_setsize(vp, zp->z_size);
@@ -2093,11 +2109,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 			/* actually update the UBC pages */
 			update_pages(vp, tx_bytes, uio_copy, tx, 0);
-
-			if (rl_first)
-				zfs_range_unlock(rl_first);
-			if (rl_last)
-				zfs_range_unlock(rl_last);
 
 			uio_free(uio_copy);
 			uio_copy = NULL;
@@ -2203,6 +2214,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	// n could be nonzero, we are allowed to do partial writes by VNOP_WRITE rules
 	dprintf("zfs_write done remainder %llu\n", n);
+
+	if (rl_first)
+		zfs_range_unlock(rl_first);
+	if (rl_last)
+		zfs_range_unlock(rl_last);
 
 	zfs_range_unlock(rl);
 
