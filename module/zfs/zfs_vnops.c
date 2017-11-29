@@ -1715,10 +1715,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 */
 
 	if (vnode_isreg(vp)) {
+		/* if we are appending, bump the offset to woff */
 		if (ioflag & FAPPEND) {
 			uio_setoffset(uio, woff);
 		}
 
+		/* uiomove the data to the UBC */
 		int xfer_resid = (int)start_resid;
 		error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
 		if (error == 0) {
@@ -1740,6 +1742,50 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    zp->z_name_cache);
 			VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
 			return(error);
+		}
+
+		/* adjust the UBC size to reflect the completed uiomove */
+		end_size = woff + start_resid;
+		int setsize_retval = ubc_setsize(vp, end_size);
+		if (setsize_retval != 0) {
+			printf("ZFS: %s:%d: ubc_setsize(vp, %lld) returned %d for file %s\n",
+			    __func__, __LINE__, end_size, setsize_retval, zp->z_name_cache);
+		}
+
+		/* adjust the file size in the znode */
+		uint64_t size_update_ctr = 0;
+		uint64_t n_end_size;
+		while ((n_end_size = zp->z_size) < end_size) {
+			size_update_ctr++;
+			(void) atomic_cas_64(&zp->z_size, n_end_size,
+			    end_size);
+			ASSERT3S(error, ==, 0);
+		}
+		if (size_update_ctr > 0) {
+			printf("ZFS: %s:%d: %llu tries to increase zp->z_size to end_size"
+			    "  %lld (it is now %lld)\n",
+			    __func__, __LINE__, size_update_ctr,
+			    end_size, zp->z_size);
+		}
+
+		/* commit the znode change */
+		tx = dmu_tx_create(zfsvfs->z_os);
+		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+		zfs_sa_upgrade_txholds(tx, zp);
+		error = dmu_tx_assign(tx, TXG_WAIT);
+		if (error) {
+			printf("ZFS: %s:%d: error %d from dmu_tx_assign\n", __func__, __LINE__, error);
+			dmu_tx_abort(tx);
+		} else {
+			error = sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
+			    (void *)&zp->z_size, sizeof (uint64_t), tx);
+			if (error) {
+				printf("ZFS: %s:%d sa_update returned error %d\n",
+				    __func__, __LINE__, error);
+				dmu_tx_abort(tx);
+			} else {
+			dmu_tx_commit(tx);
+			}
 		}
 
 		boolean_t do_sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS ||
