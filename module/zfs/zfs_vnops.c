@@ -1755,6 +1755,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    uio_offset(uio), uio_resid(uio),
 			    zp->z_name_cache);
 			VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
+			ZFS_EXIT(zfsvfs);
 			return(error);
 		}
 
@@ -1798,10 +1799,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				if (error) {
 					printf("ZFS: %s:%d sa_update returned error %d\n",
 					    __func__, __LINE__, error);
-					dmu_tx_abort(tx);
-				} else {
-					dmu_tx_commit(tx);
 				}
+				dmu_tx_commit(tx);
 			}
 		}
 
@@ -1823,6 +1822,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    woff, start_resid, end_range,
 			    ubcsize, zp->z_name_cache);
 		}
+		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
 
