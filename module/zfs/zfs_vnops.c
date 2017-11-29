@@ -2069,19 +2069,21 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 */
 
 			/*
-			 * Grab a READER lock from trunc_page_64(woff) to woff
-			 *                and from round_page_64(n).
+			 * Grab a READER lock from trunc_page_64(woff) to woff-1
+			 *                and from woff+n+1 to round_page_64(woff+n).
 			 */
 
 			rl_t *rl_first = NULL;
 			rl_t *rl_last = NULL;
 
-			if (trunc_page_64(woff) < woff) {
-				rl_first = zfs_range_lock(zp, trunc_page_64(woff), woff, RL_READER);
+			if (woff > 1 && trunc_page_64(woff) < woff - 1) {
+				rl_first = zfs_range_lock(zp, trunc_page_64(woff), woff - 1, RL_READER);
 			}
 
-			if (round_page_64(woff + n) > woff + n) {
-				rl_last = zfs_range_lock(zp, woff + n, round_page_64(woff + n), RL_READER);
+			uint64_t r_end_pg = round_page_64(woff + n);
+			uint64_t r_end_real = woff + n;
+			if (r_end_pg > r_end_real + 1) {
+				rl_last = zfs_range_lock(zp, r_end_real + 1, r_end_pg, RL_READER);
 			}
 
 			rw_enter(&zp->z_map_lock, RW_WRITER);
