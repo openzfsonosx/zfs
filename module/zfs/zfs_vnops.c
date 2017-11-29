@@ -1721,6 +1721,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uio_setoffset(uio, woff);
 		}
 
+		/* should rangelock */
 		end_size = MAX(zp->z_size, woff + start_resid);
 		if (end_size > zp->z_size) {
 			int setsize_retval = ubc_setsize(vp, end_size);
@@ -1728,6 +1729,41 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				// ubc_setsize returns TRUE on success
 				printf("ZFS: %s:%d: ubc_setsize(vp, %lld) failed for file %s\n",
 				    __func__, __LINE__, end_size, zp->z_name_cache);
+			}
+
+			/* adjust the file size in the znode */
+			uint64_t size_update_ctr = 0;
+			uint64_t prev_size = zp->z_size;
+			uint64_t n_end_size;
+			while ((n_end_size = zp->z_size) < end_size) {
+				size_update_ctr++;
+				(void) atomic_cas_64(&zp->z_size, n_end_size,
+				    end_size);
+				ASSERT3S(error, ==, 0);
+			}
+			if (size_update_ctr > 1) {
+				printf("ZFS: %s:%d: %llu tries to increase zp->z_size to end_size"
+				    "  %lld (it is now %lld, and was %lld)\n",
+				    __func__, __LINE__, size_update_ctr,
+				    end_size, zp->z_size, prev_size);
+			}
+
+			/* commit the znode change */
+			tx = dmu_tx_create(zfsvfs->z_os);
+			dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+			zfs_sa_upgrade_txholds(tx, zp);
+			error = dmu_tx_assign(tx, TXG_WAIT);
+			if (error) {
+				printf("ZFS: %s:%d: error %d from dmu_tx_assign\n", __func__, __LINE__, error);
+				dmu_tx_abort(tx);
+			} else {
+				error = sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
+				    (void *)&zp->z_size, sizeof (uint64_t), tx);
+				if (error) {
+					printf("ZFS: %s:%d sa_update returned error %d\n",
+					    __func__, __LINE__, error);
+				}
+				dmu_tx_commit(tx);
 			}
 		}
 
@@ -1767,7 +1803,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				printf("ZFS: %s:%d: ubc_setsize(vp, %lld) failed for file %s\n",
 				    __func__, __LINE__, end_size, zp->z_name_cache);
 			}
-
 			/* adjust the file size in the znode */
 			uint64_t size_update_ctr = 0;
 			uint64_t prev_size = zp->z_size;
@@ -1784,7 +1819,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				    __func__, __LINE__, size_update_ctr,
 				    end_size, zp->z_size, prev_size);
 			}
-
 			/* commit the znode change */
 			tx = dmu_tx_create(zfsvfs->z_os);
 			dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
