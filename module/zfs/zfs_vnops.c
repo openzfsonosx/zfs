@@ -1734,71 +1734,73 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
                 /* break the work into reasonable sized chunks */
 		const off_t chunk_size = (off_t)SPA_MAXBLOCKSIZE;
+		const int proj_chunks = howmany(start_resid, chunk_size);
 
-//	   for (int todo = start_resid; todo > 0; ) {
-		/* uiomove the data to the UBC */
+		for (int c = proj_chunks ; uio_resid(uio) > 0; c--) {
+			ASSERT3S(c, >=, 0);
+			/* uiomove the data to the UBC */
 
-		const off_t this_off = uio_offset(uio);
-		const size_t this_chunk = MIN(uio_resid(uio),
+			const off_t this_off = uio_offset(uio);
+			const size_t this_chunk = MIN(uio_resid(uio),
 			    chunk_size - P2PHASE(this_off, chunk_size));
 
-		end_size = MAX(ubc_getsize(vp), this_off + this_chunk);
-		if (end_size > ubc_getsize(vp)) {
-			int setsize_retval = ubc_setsize(vp, end_size);
-			if (setsize_retval == 0) {
-				// ubc_setsize returns TRUE on success
-				printf("ZFS: %s:%d: ubc_setsize(vp, %lld) failed for file %s\n",
-				    __func__, __LINE__, end_size, zp->z_name_cache);
+			end_size = MAX(ubc_getsize(vp), this_off + this_chunk);
+			if (end_size > ubc_getsize(vp)) {
+				int setsize_retval = ubc_setsize(vp, end_size);
+				if (setsize_retval == 0) {
+					// ubc_setsize returns TRUE on success
+					printf("ZFS: %s:%d: ubc_setsize(vp, %lld) failed for file %s\n",
+					    __func__, __LINE__, end_size, zp->z_name_cache);
+				}
 			}
-		}
 
-		ASSERT3S(uio_offset(uio), ==, this_off);
-		ASSERT3S(ubc_getsize(vp), >, uio_offset(uio));
-		ASSERT3S(ubc_getsize(vp), >=, uio_offset(uio) + this_chunk);
-		ASSERT3S(this_chunk, <=, SPA_MAXBLOCKSIZE);
-		ASSERT3S(this_chunk, >, 0);
+			ASSERT3S(uio_offset(uio), ==, this_off);
+			ASSERT3S(ubc_getsize(vp), >, uio_offset(uio));
+			ASSERT3S(ubc_getsize(vp), >=, uio_offset(uio) + this_chunk);
+			ASSERT3S(this_chunk, <=, SPA_MAXBLOCKSIZE);
+			ASSERT3S(this_chunk, >, 0);
 
-		int xfer_resid = (int) this_chunk;
-		error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
-		if (error == 0) {
-			VNOPS_STAT_BUMP(zfs_write_cluster_copy_ok);
-			if (xfer_resid != 0) {
-				printf("ZFS: %s:%d nonzero xfer_resid %d this_chunk %ld this_off %lld,"
-				    "uio_off %lld, file %s\n",
-				    __func__, __LINE__, xfer_resid, this_chunk,
-				    this_off, uio_offset(uio), zp->z_name_cache);
-				ASSERT3S(this_chunk, >=, xfer_resid);
-				IMPLY(xfer_resid == this_chunk, uio_offset(uio) == this_off);
-				if (this_off == uio_offset(uio)) {
-					printf("ZFS: %s:%d no progress on file %s, returning short write\n",
-					    __func__, __LINE__, zp->z_name_cache);
-					z_map_drop_lock(zp, &need_release, &need_upgrade);
-					VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
-					ZFS_EXIT(zfsvfs);
-					ASSERT3S(woff, <, this_off);
-					if (woff < this_off) {
-						return (0);
-					} else {
-						VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
-						return (EIO);
+			int xfer_resid = (int) this_chunk;
+			error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
+			if (error == 0) {
+				VNOPS_STAT_BUMP(zfs_write_cluster_copy_ok);
+				if (xfer_resid != 0) {
+					printf("ZFS: %s:%d nonzero xfer_resid %d this_chunk %ld this_off %lld,"
+					    "uio_off %lld, file %s\n",
+					    __func__, __LINE__, xfer_resid, this_chunk,
+					    this_off, uio_offset(uio), zp->z_name_cache);
+					ASSERT3S(this_chunk, >=, xfer_resid);
+					IMPLY(xfer_resid == this_chunk, uio_offset(uio) == this_off);
+					if (this_off == uio_offset(uio)) {
+						printf("ZFS: %s:%d no progress on file %s, returning short write\n",
+						    __func__, __LINE__, zp->z_name_cache);
+						z_map_drop_lock(zp, &need_release, &need_upgrade);
+						VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
+						ZFS_EXIT(zfsvfs);
+						ASSERT3S(woff, <, this_off);
+						if (woff < this_off) {
+							return (0);
+						} else {
+							VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
+							return (EIO);
+						}
 					}
-		                }
+				} else {
+					VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
+				}
+				VNOPS_STAT_INCR(zfs_write_cluster_copy_bytes, this_chunk - xfer_resid);
 			} else {
-				VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
+				printf("ZFS: %s:%d: error %d from cluster_copy_ubc_data"
+				    " (woff %lld, resid %ld) (now %lld %lld) file %s\n",
+				    __func__, __LINE__, error, woff, start_resid,
+				    uio_offset(uio), uio_resid(uio),
+				    zp->z_name_cache);
+				z_map_drop_lock(zp, &need_release, &need_upgrade);
+				VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
+				ZFS_EXIT(zfsvfs);
+				return(error);
 			}
-			VNOPS_STAT_INCR(zfs_write_cluster_copy_bytes, this_chunk - xfer_resid);
-		} else {
-			printf("ZFS: %s:%d: error %d from cluster_copy_ubc_data"
-			    " (woff %lld, resid %ld) (now %lld %lld) file %s\n",
-			    __func__, __LINE__, error, woff, start_resid,
-			    uio_offset(uio), uio_resid(uio),
-			    zp->z_name_cache);
-			z_map_drop_lock(zp, &need_release, &need_upgrade);
-			VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
-			ZFS_EXIT(zfsvfs);
-			return(error);
-		}
-//	   } // for
+		} // for
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
 
 		/* adjust the UBC size to reflect the completed uiomove */
