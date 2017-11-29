@@ -1741,7 +1741,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			/* uiomove the data to the UBC */
 
 			const off_t this_off = uio_offset(uio);
-			ASSERT3S(this_off, >, 0);
+			ASSERT3S(this_off, >=, 0);
 
 			const size_t this_chunk = MIN(uio_resid(uio),
 			    chunk_size - P2PHASE(this_off, chunk_size));
