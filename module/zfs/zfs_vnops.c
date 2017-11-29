@@ -1741,9 +1741,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			/* uiomove the data to the UBC */
 
 			const off_t this_off = uio_offset(uio);
+			ASSERT3S(this_off, >, 0);
+
 			const size_t this_chunk = MIN(uio_resid(uio),
 			    chunk_size - P2PHASE(this_off, chunk_size));
+			ASSERT3S(this_chunk, <=, SPA_MAXBLOCKSIZE);
+			ASSERT3S(this_chunk, >, 0);
 
+			/* increase ubc size if we are growing the file */
 			end_size = MAX(ubc_getsize(vp), this_off + this_chunk);
 			if (end_size > ubc_getsize(vp)) {
 				int setsize_retval = ubc_setsize(vp, end_size);
@@ -1757,8 +1762,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(uio_offset(uio), ==, this_off);
 			ASSERT3S(ubc_getsize(vp), >, uio_offset(uio));
 			ASSERT3S(ubc_getsize(vp), >=, uio_offset(uio) + this_chunk);
-			ASSERT3S(this_chunk, <=, SPA_MAXBLOCKSIZE);
-			ASSERT3S(this_chunk, >, 0);
+
+			/* fill any holes */
+			int fill_err = ubc_fill_holes_in_range(vp, this_off, this_off + this_chunk);
+			if (fill_err) {
+				printf("ZFS: %s:%d: error filling holes [%lld, %lld] file %s\n",
+				    __func__, __LINE__, this_off, this_off + this_chunk, zp->z_name_cache);
+			}
 
 			int xfer_resid = (int) this_chunk;
 			error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
