@@ -1718,6 +1718,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	if (vnode_isreg(vp)) {
 		ASSERT3S(start_resid, <=, INT_MAX);
+
 		/* if we are appending, bump the offset to woff */
 		if (ioflag & FAPPEND) {
 			uio_setoffset(uio, woff);
@@ -1725,20 +1726,17 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		/* should rangelock? */
 
-		/* grab the map lock, protecting against other zfs UBC users */
-		boolean_t need_release = B_FALSE;
-		boolean_t need_upgrade = B_FALSE;
-		ASSERT(!rw_write_held(&zp->z_map_lock));
-		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-		VNOPS_STAT_INCR(update_pages_want_lock, tries);
-
                 /* break the work into reasonable sized chunks */
 		const off_t chunk_size = (off_t)SPA_MAXBLOCKSIZE;
 		const int proj_chunks = howmany(start_resid, chunk_size);
 
 		for (int c = proj_chunks ; uio_resid(uio) > 0; c--) {
 			ASSERT3S(c, >=, 0);
-			/* uiomove the data to the UBC */
+			ASSERT(!rw_lock_held(&zp->z_map_lock));
+
+			const off_t this_z_size_start = zp->z_size;
+			const off_t this_ubc_size_start = ubc_getsize(vp);
+			ASSERT3S(this_z_size_start, ==, this_ubc_size_start);
 
 			const off_t this_off = uio_offset(uio);
 			ASSERT3S(this_off, >=, 0);
@@ -1747,6 +1745,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    chunk_size - P2PHASE(this_off, chunk_size));
 			ASSERT3S(this_chunk, <=, SPA_MAXBLOCKSIZE);
 			ASSERT3S(this_chunk, >, 0);
+
+			/* grab the map lock, protecting against other zfs UBC users */
+			boolean_t need_release = B_FALSE;
+			boolean_t need_upgrade = B_FALSE;
+			uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+			VNOPS_STAT_INCR(update_pages_want_lock, tries);
 
 			/* increase ubc size if we are growing the file */
 			end_size = MAX(ubc_getsize(vp), this_off + this_chunk);
@@ -1828,51 +1832,55 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				ZFS_EXIT(zfsvfs);
 				return(error);
 			}
-		} // for
-		z_map_drop_lock(zp, &need_release, &need_upgrade);
+			ASSERT3S(error, ==, 0);
 
-		/* adjust the UBC size to reflect the completed uiomove */
-		if (end_size != zp->z_size || end_size != ubc_getsize(vp)) {
-			int setsize_retval = ubc_setsize(vp, end_size);
-			if (setsize_retval == 0) {
-				// ubc_setsize returns TRUE on success
-				printf("ZFS: %s:%d: ubc_setsize(vp, %lld) failed for file %s\n",
-				    __func__, __LINE__, end_size, zp->z_name_cache);
-			}
-			/* adjust the file size in the znode */
-			uint64_t size_update_ctr = 0;
-			uint64_t prev_size = zp->z_size;
-			uint64_t n_end_size;
-			while ((n_end_size = zp->z_size) < end_size) {
-				size_update_ctr++;
-				(void) atomic_cas_64(&zp->z_size, n_end_size,
-				    end_size);
-				ASSERT3S(error, ==, 0);
-			}
-			if (size_update_ctr > 1) {
-				printf("ZFS: %s:%d: %llu tries to increase zp->z_size to end_size"
-				    "  %lld (it is now %lld, and was %lld)\n",
-				    __func__, __LINE__, size_update_ctr,
-				    end_size, zp->z_size, prev_size);
-			}
+			ASSERT3S(zp->z_size, >=, uio_offset(uio));
+			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
+
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
+
+			/* NOTE: in principle we could have a waiting
+			 *       file truncation happen *right now* that
+			 *       we will undo with the znode change commit.
+			 *
+			 * option 1 is zfs_range_lock early in our vnode_isreg
+			 *       but is that safe for the fill holes activity?
+			 *       (check vs. previous zfs_write, pageoutv2, etc.)
+			 *
+			 * option 2 is bad : grabbing a zfs_range_lock
+			 *                   while holding the
+			 *                   z_map_lock invites a
+			 *                   deadlock if another thread
+			 *                   has the range lock and
+			 *                   wants the map lock.
+			 */
+
+			/*  as we have completed a uio_move, commit the size change */
+
 			/* commit the znode change */
-			tx = dmu_tx_create(zfsvfs->z_os);
-			dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
-			zfs_sa_upgrade_txholds(tx, zp);
-			error = dmu_tx_assign(tx, TXG_WAIT);
-			if (error) {
-				printf("ZFS: %s:%d: error %d from dmu_tx_assign\n", __func__, __LINE__, error);
-				dmu_tx_abort(tx);
-			} else {
-				error = sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
-				    (void *)&zp->z_size, sizeof (uint64_t), tx);
+			if (zp->z_size > this_z_size_start) {
+				tx = dmu_tx_create(zfsvfs->z_os);
+				dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+				zfs_sa_upgrade_txholds(tx, zp);
+				error = dmu_tx_assign(tx, TXG_WAIT);
 				if (error) {
-					printf("ZFS: %s:%d sa_update returned error %d\n",
+					printf("ZFS: %s:%d: error %d from dmu_tx_assign\n",
 					    __func__, __LINE__, error);
+					dmu_tx_abort(tx);
+				} else {
+					error = sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zfsvfs),
+					    (void *)&zp->z_size, sizeof (uint64_t), tx);
+					if (error) {
+						printf("ZFS: %s:%d sa_update returned error %d\n",
+						    __func__, __LINE__, error);
+					}
+					dmu_tx_commit(tx);
 				}
-				dmu_tx_commit(tx);
 			}
-		}
+		} // for
+
+		ASSERT(!rw_lock_held(&zp->z_map_lock));
+
 
 		/* push out the modified pages, syncing if required */
 
