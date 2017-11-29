@@ -1609,7 +1609,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	zilog_t		*zilog;
 	offset_t	woff;
 	ssize_t		n, nbytes;
-	rl_t		*rl, *rl_first = NULL, *rl_last = NULL;
+	rl_t		*rl;
 	int		max_blksz = zfsvfs->z_max_blksz;
 	int		error = 0;
 	int		write_eof;
@@ -1851,28 +1851,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * so that we can re-write the block safely.
 		 */
 		rl = zfs_range_lock(zp, woff, n,  RL_WRITER);
-
-		if (woff + 1 < zp->z_size && woff > 1 && trunc_page_64(woff) < woff - 1) {
-			ASSERT3P(rl_first, ==, NULL);
-			printf("ZFS: %s:%d: zrl1(zp, %lld, %lld) eof %lld\n",
-			    __func__, __LINE__, trunc_page_64(woff), woff - 1, zp->z_size);
-			rl_first = zfs_range_lock(zp, trunc_page_64(woff), woff - 1, RL_READER);
-		}
-
-		ASSERT3S(start_resid, ==, n);
-		uint64_t r_end_pg = round_page_64(woff + start_resid);
-		uint64_t r_end_real = woff + start_resid;
-		if (r_end_real + 1 < zp->z_size && r_end_pg > r_end_real + 1) {
-			ASSERT3P(rl_last, ==, NULL);
-			printf("ZFS: %s:%d: zrl2(zp, %lld, %lld) eof %lld\n",
-			    __func__, __LINE__, r_end_real+1, r_end_pg, zp->z_size);
-			rl_last = zfs_range_lock(zp, r_end_real + 1, r_end_pg, RL_READER);
-		}
 	}
 
 	if (woff >= limit) {
-		if (rl_first) zfs_range_unlock(rl_first);
-		if (rl_last) zfs_range_unlock(rl_last);
 		zfs_range_unlock(rl);
 		ZFS_EXIT(zfsvfs);
 		return ((EFBIG));
@@ -1893,8 +1874,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 */
     dprintf("zfs_write: resid/n %llu : offset %llu (rl_len %llu) blksz %llu\n",
            n,uio_offset(uio), rl->r_len, zp->z_blksz );
-
-    const offset_t start_woff = woff;
 
 	while (n > 0) {
 		woff = uio_offset(uio);
@@ -1958,27 +1937,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			}
 			zfs_grow_blocksize(zp, new_blksz, tx);
 			zfs_range_reduce(rl, woff, n);
-
-			/* We now lock the remainders of the first and last pages */
-			ASSERT3P(start_woff, ==, woff);
-			ASSERT3P(rl_first, ==, NULL);
-			if (rl_first == NULL && woff > 1 &&
-			    woff + 1 < zp->z_size && trunc_page_64(woff) < woff - 1) {
-				printf("ZFS: %s:%d: zrl3(zp, %lld, %lld) eof %lld\n",
-				    __func__, __LINE__, trunc_page_64(woff), woff - 1, zp->z_size);
-				rl_first = zfs_range_lock(zp, trunc_page_64(woff), woff - 1, RL_READER);
-			}
-
-			ASSERT3S(start_resid, ==, n);
-			uint64_t r_end_pg = round_page_64(woff + start_resid);
-			uint64_t r_end_real = woff + start_resid;
-			ASSERT3P(rl_last, ==, NULL);
-			if (rl_last == NULL && r_end_real + 1 < zp->z_size && r_end_pg > r_end_real + 1) {
-				ASSERT3P(rl_last, ==, NULL);
-				printf("ZFS: %s:%d: zrl4(zp, %lld, %lld) eof %lld\n",
-				    __func__, __LINE__, r_end_real+1, r_end_pg, zp->z_size);
-				rl_last = zfs_range_lock(zp, r_end_real + 1, r_end_pg, RL_READER);
-			}
 		}
 
 #ifdef __APPLE__
@@ -2340,11 +2298,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	// n could be nonzero, we are allowed to do partial writes by VNOP_WRITE rules
 	dprintf("zfs_write done remainder %llu\n", n);
-
-	if (rl_first)
-		zfs_range_unlock(rl_first);
-	if (rl_last)
-		zfs_range_unlock(rl_last);
 
 	zfs_range_unlock(rl);
 
