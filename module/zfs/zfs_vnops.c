@@ -1602,7 +1602,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	znode_t		*zp = VTOZ(vp);
 	rlim64_t	limit = MAXOFFSET_T;
 	const ssize_t	start_resid = uio_resid(uio);
-	const off_t     start_offset = uio_offset(uio);
 	ssize_t		tx_bytes;
 	uint64_t	end_size;
 	dmu_tx_t	*tx;
@@ -1660,9 +1659,20 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 */
 	if ((zp->z_pflags & ZFS_IMMUTABLE) ||
 	    ((zp->z_pflags & ZFS_APPENDONLY) && !(ioflag & FAPPEND) &&
-         (uio_offset(uio) < zp->z_size))) {
+		(uio_offset(uio) < zp->z_size))) {
 		ZFS_EXIT(zfsvfs);
 		return (SET_ERROR(EPERM));
+	}
+
+	zilog = zfsvfs->z_log;
+
+	/*
+	 * Validate file offset
+	 */
+	woff = ioflag & FAPPEND ? zp->z_size : uio_offset(uio);
+	if (woff < 0) {
+		ZFS_EXIT(zfsvfs);
+		return (SET_ERROR(EINVAL));
 	}
 
 	/*
@@ -1678,18 +1688,19 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
 			ASSERT3S(zp->z_size, ==, ubcsize);
 			off_t resid_off = 0;
-			int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
+			int retval = ubc_msync(vp, woff, woff + start_resid, &resid_off,
 			    sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
 			ASSERT3S(retval, ==, 0);
-			if (retval != 0)
-				ASSERT3S(resid_off, ==, ubcsize);
-			ASSERT3P(zp->z_sa_hdl, !=, NULL);
-			cluster_push(vp, sync ? IO_SYNC : 0);
-			if (sync == B_TRUE)
-				zil_commit(zfsvfs->z_log, zp->z_id);
-			if (sync == B_TRUE)
-				VNOPS_STAT_BUMP(zfs_write_sync_push_mapped);
-			VNOPS_STAT_BUMP(zfs_write_clean_on_write);
+			if (retval != 0) {
+				ASSERT3S(resid_off, ==, start_resid);
+			} else {
+				ASSERT3P(zp->z_sa_hdl, !=, NULL);
+				if (sync == B_TRUE) {
+					zil_commit(zfsvfs->z_log, zp->z_id);
+					VNOPS_STAT_BUMP(zfs_write_sync_push_mapped);
+				}
+				VNOPS_STAT_BUMP(zfs_write_clean_on_write);
+			}
 		}
 	}
 
@@ -1704,39 +1715,50 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 */
 
 	if (vnode_isreg(vp)) {
-		    int xfer_resid = (int)start_resid;
-		    error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
-		    if (error == 0) {
-			    VNOPS_STAT_BUMP(zfs_write_cluster_copy_ok);
-			    if (xfer_resid != 0) {
-				    printf("ZFS: %s:%d nonzero xfer_resid %d ~ start_resid %ld,"
-					"uioffs in %lld now %lld, file %s\n",
-					__func__, __LINE__, xfer_resid, start_resid,
-					start_offset, uio_offset(uio), zp->z_name_cache);
-			    } else {
-				    VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
-			    }
-			    VNOPS_STAT_INCR(zfs_write_cluster_copy_bytes, start_resid - xfer_resid);
-		    } else {
-			    printf("ZFS: %s:%d: error %d from cluster_copy_ubc_data"
-				" (start off %lld, resid %ld) (now %lld %lld) file %s\n",
-				__func__, __LINE__, error, start_offset, start_resid,
-				uio_offset(uio), uio_resid(uio),
-				zp->z_name_cache);
-			    VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
-		    }
-		    return (error);
-	}
+		if (ioflag & FAPPEND) {
+			uio_setoffset(uio, woff);
+		}
 
-	zilog = zfsvfs->z_log;
+		int xfer_resid = (int)start_resid;
+		error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
+		if (error == 0) {
+			VNOPS_STAT_BUMP(zfs_write_cluster_copy_ok);
+			if (xfer_resid != 0) {
+				printf("ZFS: %s:%d nonzero xfer_resid %d start_resid %ld woff %lld,"
+				    "uio_off %lld, file %s\n",
+				    __func__, __LINE__, xfer_resid, start_resid,
+				    woff, uio_offset(uio), zp->z_name_cache);
+			} else {
+				VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
+			}
+			VNOPS_STAT_INCR(zfs_write_cluster_copy_bytes, start_resid - xfer_resid);
+		} else {
+			printf("ZFS: %s:%d: error %d from cluster_copy_ubc_data"
+			    " (woff %lld, resid %ld) (now %lld %lld) file %s\n",
+			    __func__, __LINE__, error, woff, start_resid,
+			    uio_offset(uio), uio_resid(uio),
+			    zp->z_name_cache);
+			VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
+			return(error);
+		}
 
-	/*
-	 * Validate file offset
-	 */
-	woff = ioflag & FAPPEND ? zp->z_size : uio_offset(uio);
-	if (woff < 0) {
-		ZFS_EXIT(zfsvfs);
-		return (SET_ERROR(EINVAL));
+		boolean_t do_sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS ||
+		    ((ioflag & (FDSYNC | FSYNC)) && zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED);
+
+		size_t end_range = woff + start_resid;
+		off_t msync_resid = 0;
+		off_t ubcsize = ubc_getsize(vp);
+		error = ubc_msync(vp, woff, end_range, &msync_resid,
+		    (do_sync) ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
+		if (error != 0) {
+			printf("ZFS: %s:%d: ubc_msync error %d msync_resid %lld"
+			    " woff %lld start_resid %ld end_range %ld"
+			    " ubcsize %lld file %s\n",
+			    __func__, __LINE__, error, msync_resid,
+			    woff, start_resid, end_range,
+			    ubcsize, zp->z_name_cache);
+		}
+		return (error);
 	}
 
 	/* Illumos here checks for mandatory locks; OSX (and Linux) do this elsewhere */
