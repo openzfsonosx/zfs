@@ -1715,6 +1715,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 */
 
 	if (vnode_isreg(vp)) {
+		ASSERT3S(start_resid, <=, INT_MAX);
 		/* if we are appending, bump the offset to woff */
 		if (ioflag & FAPPEND) {
 			uio_setoffset(uio, woff);
