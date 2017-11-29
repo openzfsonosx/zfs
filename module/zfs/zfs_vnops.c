@@ -2068,6 +2068,22 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 * want to do this before update_pages.
 			 */
 
+			/*
+			 * Grab a READER lock from trunc_page_64(woff) to woff
+			 *                and from round_page_64(n).
+			 */
+
+			rl_t *rl_first = NULL;
+			rl_t *rl_last = NULL;
+
+			if (trunc_page_64(woff) < woff) {
+				rl_first = zfs_range_lock(zp, trunc_page_64(woff), woff, RL_READER);
+			}
+
+			if (round_page_64(woff + n) > woff + n) {
+				rl_last = zfs_range_lock(zp, woff + n, round_page_64(woff + n), RL_READER);
+			}
+
 			rw_enter(&zp->z_map_lock, RW_WRITER);
 			int setsize_retval = ubc_setsize(vp, zp->z_size);
 			rw_exit(&zp->z_map_lock);
@@ -2075,6 +2091,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 			/* actually update the UBC pages */
 			update_pages(vp, tx_bytes, uio_copy, tx, 0);
+
+			if (rl_first)
+				zfs_range_unlock(rl_first);
+			if (rl_last)
+				zfs_range_unlock(rl_last);
 
 			uio_free(uio_copy);
 			uio_copy = NULL;
