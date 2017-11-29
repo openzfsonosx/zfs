@@ -1758,6 +1758,24 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					    __func__, __LINE__, end_size, zp->z_name_cache);
 				}
 			}
+			if (end_size > zp->z_size || ubc_getsize(vp) > zp->z_size) {
+				uint64_t size_update_ctr = 0;
+				uint64_t prev_size = zp->z_size;
+				uint64_t n_end_size;
+				while ((n_end_size = zp->z_size) < end_size) {
+					size_update_ctr++;
+					(void) atomic_cas_64(&zp->z_size, n_end_size,
+					    end_size);
+					ASSERT3S(error, ==, 0);
+				}
+				if (size_update_ctr > 1) {
+					printf("ZFS: %s:%d: %llu tries to increase zp->z_size to end_size"
+					    "  %lld (it is now %lld, and was %lld)\n",
+					    __func__, __LINE__, size_update_ctr,
+					    end_size, zp->z_size, prev_size);
+				}
+			}
+			ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 
 			ASSERT3S(uio_offset(uio), ==, this_off);
 			ASSERT3S(ubc_getsize(vp), >, uio_offset(uio));
