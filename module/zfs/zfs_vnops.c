@@ -1743,7 +1743,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				    __func__, __LINE__, xfer_resid, start_resid,
 				    woff, uio_offset(uio), zp->z_name_cache);
 				ASSERT3S(start_resid, >=, xfer_resid);
-				end_size = woff + start_resid - xfer_resid;
+				end_size = MAX(zp->z_size, woff + start_resid - xfer_resid);
 			} else {
 				VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
 			}

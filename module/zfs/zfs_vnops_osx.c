@@ -2607,7 +2607,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		goto exit_abort;
 	}
 
-	ASSERT(vn_has_cached_data(ZTOV(zp)));
 	ASSERT(ubc_pages_resident(ZTOV(zp)));
 	if (!vn_has_cached_data(ZTOV(zp)) &&
 	    ubc_pages_resident(ZTOV(zp))) {
@@ -2615,7 +2614,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		    __func__, zp->z_name_cache);
 	}
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
-	ASSERT3U(zp->z_is_mapped,==,1);
 
 	rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
 
@@ -2629,7 +2627,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	boolean_t need_release = B_FALSE;
 	boolean_t need_upgrade = B_FALSE;
 	if (!rw_write_held(&zp->z_map_lock)) {
-		ASSERT3S(zp->z_is_mapped, >, 0);
 		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		VNOPS_OSX_STAT_INCR(pageoutv2_want_lock, tries);
 	} else {
