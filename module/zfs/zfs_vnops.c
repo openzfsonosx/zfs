@@ -1740,14 +1740,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 */
 		rl = zfs_range_lock(zp, woff, n,  RL_WRITER);
 
-		if (woff > 1 && trunc_page_64(woff) < woff - 1) {
+		if (woff + 1 < zp->z_size && woff > 1 && trunc_page_64(woff) < woff - 1) {
 			ASSERT3P(rl_first, ==, NULL);
 			rl_first = zfs_range_lock(zp, trunc_page_64(woff), woff - 1, RL_READER);
 		}
 
 		uint64_t r_end_pg = round_page_64(woff + n);
 		uint64_t r_end_real = woff + n;
-		if (r_end_pg > r_end_real + 1) {
+		if (r_end_real + 1 < zp->z_size && r_end_pg > r_end_real + 1) {
 			ASSERT3P(rl_last, ==, NULL);
 			rl_last = zfs_range_lock(zp, r_end_real + 1, r_end_pg, RL_READER);
 		}
@@ -1842,14 +1842,15 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 			/* We now lock the remainders of the first and last pages */
 			ASSERT3P(rl_first, ==, NULL);
-			if (rl_first == NULL && woff > 1 && trunc_page_64(woff) < woff - 1) {
+			if (rl_first == NULL && woff > 1 &&
+			    woff + 1 < zp->z_size && trunc_page_64(woff) < woff - 1) {
 				rl_first = zfs_range_lock(zp, trunc_page_64(woff), woff - 1, RL_READER);
 			}
 
 			uint64_t r_end_pg = round_page_64(woff + n);
 			uint64_t r_end_real = woff + n;
 			ASSERT3P(rl_last, ==, NULL);
-			if (rl_last == NULL && r_end_pg > r_end_real + 1) {
+			if (rl_last == NULL && r_end_real + 1 < zp->z_size && r_end_pg > r_end_real + 1) {
 				ASSERT3P(rl_last, ==, NULL);
 				rl_last = zfs_range_lock(zp, r_end_real + 1, r_end_pg, RL_READER);
 			}
