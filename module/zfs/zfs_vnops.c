@@ -124,6 +124,10 @@ typedef struct vnops_stats {
 	kstat_named_t zfs_write_calls;
 	kstat_named_t zfs_write_clean_on_write;
 	kstat_named_t zfs_write_sync_push_mapped;
+	kstat_named_t zfs_write_cluster_copy_ok;
+	kstat_named_t zfs_write_cluster_copy_complete;
+	kstat_named_t zfs_write_cluster_copy_bytes;
+	kstat_named_t zfs_write_cluster_copy_error;
 	kstat_named_t zfs_write_msync;
 	kstat_named_t zfs_write_arcbuf_assign;
 	kstat_named_t zfs_write_arcbuf_assign_bytes;
@@ -169,6 +173,10 @@ static vnops_stats_t vnops_stats = {
 	{ "zfs_write_calls",                             KSTAT_DATA_UINT64 },
 	{ "zfs_write_clean_on_write",                    KSTAT_DATA_UINT64 },
 	{ "zfs_write_sync_push_mapped",                  KSTAT_DATA_UINT64 },
+	{ "zfs_write_sync_cluster_copy_ok",              KSTAT_DATA_UINT64 },
+	{ "zfs_write_sync_cluster_copy_complete",        KSTAT_DATA_UINT64 },
+	{ "zfs_write_sync_cluster_copy_bytes",           KSTAT_DATA_UINT64 },
+	{ "zfs_write_sync_cluster_copy_error",           KSTAT_DATA_UINT64 },
 	{ "zfs_write_msync",                             KSTAT_DATA_UINT64 },
 	{ "zfs_write_arcbuf_assign",                     KSTAT_DATA_UINT64 },
 	{ "zfs_write_arcbuf_assign_bytes",               KSTAT_DATA_UINT64 },
@@ -1594,6 +1602,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	znode_t		*zp = VTOZ(vp);
 	rlim64_t	limit = MAXOFFSET_T;
 	const ssize_t	start_resid = uio_resid(uio);
+	const off_t     start_offset = uio_offset(uio);
 	ssize_t		tx_bytes;
 	uint64_t	end_size;
 	dmu_tx_t	*tx;
@@ -1682,6 +1691,41 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				VNOPS_STAT_BUMP(zfs_write_sync_push_mapped);
 			VNOPS_STAT_BUMP(zfs_write_clean_on_write);
 		}
+	}
+
+	/* now that we have maybe undirtied ubc, let's copy our data in */
+	/* need to read first block?   need to read last block?
+	 * or do we rely on pagein for this?  see cluster_write_copy
+	 * xxx: refactor into its own function
+	 *
+	 *
+	 * can we *just* do a cluster_copy_ubc_data(vp, uio, &xfer_resid, 1)
+	 * and let pageoutv2 do the heavy lifting?
+	 */
+
+	if (vnode_isreg(vp)) {
+		    int xfer_resid = (int)start_resid;
+		    error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
+		    if (error == 0) {
+			    VNOPS_STAT_BUMP(zfs_write_cluster_copy_ok);
+			    if (xfer_resid != 0) {
+				    printf("ZFS: %s:%d nonzero xfer_resid %d ~ start_resid %ld,"
+					"uioffs in %lld now %lld, file %s\n",
+					__func__, __LINE__, xfer_resid, start_resid,
+					start_offset, uio_offset(uio), zp->z_name_cache);
+			    } else {
+				    VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
+			    }
+			    VNOPS_STAT_INCR(zfs_write_cluster_copy_bytes, start_resid - xfer_resid);
+		    } else {
+			    printf("ZFS: %s:%d: error %d from cluster_copy_ubc_data"
+				" (start off %lld, resid %ld) (now %lld %lld) file %s\n",
+				__func__, __LINE__, error, start_offset, start_resid,
+				uio_offset(uio), uio_resid(uio),
+				zp->z_name_cache);
+			    VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
+		    }
+		    return (error);
 	}
 
 	zilog = zfsvfs->z_log;
