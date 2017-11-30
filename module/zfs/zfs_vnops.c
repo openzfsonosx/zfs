@@ -2084,6 +2084,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * worry about direct synchronization from the taskq
 		 * task, especially since it may be dropping and
 		 * reacquiring all sorts of locks.
+		 *
+		 * Another option is that we could turn the taskq_dispatch
+		 * into an in-this-thread call for the do_sync case (or inded
+		 * for both cases; it is also not clear that in the non-do_sync
+		 * case that we actually have to do a ubc_msync here (but we do
+		 * for the do_sync case!)).
 		 */
 		return (error);
 	}
