@@ -1961,7 +1961,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		} // for
 
 		ASSERT(!rw_lock_held(&zp->z_map_lock));
-		ASSERT3S(error, !=, 0);
+		ASSERT3S(error, ==, 0);
 
 		/*
 		 * Give up the range lock now, since our msync here may lead
