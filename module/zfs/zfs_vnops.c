@@ -1607,6 +1607,10 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
+	/* wait until the range_lock in zfs_write is dropped */
+	rl_t *rl = zfs_range_lock(zp, woff, end_range, RL_WRITER);
+	zfs_range_unlock(rl);
+
 	/* debug the past-end-of-file problem */
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
 	dnode_t        *dn;
@@ -2036,6 +2040,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		boolean_t do_sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS ||
 		    ((ioflag & (FDSYNC | FSYNC)) && zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED);
 
+
+		/*
+		 * The taskq task zfs_write_sync_range needs some information
+		 * in its *arg argument; it is responsible for freeing the
+		 * communications structure, not us.
+		 */
 		sync_range_t *sync_range = kmem_zalloc(sizeof(sync_range_t), KM_SLEEP);
 
 		if (sync_range == NULL) {
@@ -2064,6 +2074,17 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		zfs_range_unlock(rl);
 
 		ZFS_EXIT(zfsvfs);
+		/*
+		 * strictly speaking, in the do_sync == TRUE case we
+		 * should not return here until the zfs_write_sync_range
+		 * operation has completed successfully.
+		 *
+		 * this could be done with e.g. a condvar, however we
+		 * could also wait on is_file_clean if we don't want to
+		 * worry about direct synchronization from the taskq
+		 * task, especially since it may be dropping and
+		 * reacquiring all sorts of locks.
+		 */
 		return (error);
 	}
 
