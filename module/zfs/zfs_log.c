@@ -466,6 +466,7 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 
 	extern const int MAX_UPL_SIZE_BYTES;
 	ASSERT3U(resid, <=, (ssize_t) MAX_UPL_SIZE_BYTES);
+	ASSERT3S(resid, >, 0);
 
 	if (zil_replaying(zilog, tx) || zp->z_unlinked) {
 		if (callback != NULL)
