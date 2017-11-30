@@ -1724,7 +1724,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			uio_setoffset(uio, woff);
 		}
 
-		/* should rangelock? */
+		/*
+		 * The range lock principally protects us against
+		 * pageoutv2, which takes an RL and then the z_map_lock.
+		 */
+		rl = zfs_range_lock(zp, woff, start_resid, RL_WRITER);
 
                 /* break the work into reasonable sized chunks */
 		const off_t chunk_size = (off_t)SPA_MAXBLOCKSIZE;
@@ -1807,6 +1811,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 						printf("ZFS: %s:%d no progress on file %s, returning short write\n",
 						    __func__, __LINE__, zp->z_name_cache);
 						z_map_drop_lock(zp, &need_release, &need_upgrade);
+						zfs_range_unlock(rl);
 						VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
 						ZFS_EXIT(zfsvfs);
 						ASSERT3S(woff, <, this_off);
@@ -1828,6 +1833,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				    uio_offset(uio), uio_resid(uio),
 				    zp->z_name_cache);
 				z_map_drop_lock(zp, &need_release, &need_upgrade);
+				zfs_range_unlock(rl);
 				VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
 				ZFS_EXIT(zfsvfs);
 				return(error);
@@ -1881,6 +1887,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		ASSERT(!rw_lock_held(&zp->z_map_lock));
 
+		/*
+		 * Give up the range lock now, since our msync here may lead
+		 * to a dmu_write in pageoutv2 in this thread
+		 */
+
+		zfs_range_unlock(rl);
 
 		/* push out the modified pages, syncing if required */
 
