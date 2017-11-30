@@ -1608,8 +1608,8 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 	ZFS_VERIFY_ZP(zp);
 
 	/* wait until the range_lock in zfs_write is dropped */
-	rl_t *rl = zfs_range_lock(zp, woff, end_range, RL_WRITER);
-	zfs_range_unlock(rl);
+	//rl_t *rl = zfs_range_lock(zp, woff, end_range, RL_WRITER);
+	//zfs_range_unlock(rl);
 
 	/* debug the past-end-of-file problem */
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
