@@ -464,6 +464,9 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 	itx_wr_state_t write_state;
 	uintptr_t fsync_cnt;
 
+	extern const int MAX_UPL_SIZE_BYTES;
+	ASSERT3U(resid, <=, (ssize_t) MAX_UPL_SIZE_BYTES);
+
 	if (zil_replaying(zilog, tx) || zp->z_unlinked) {
 		if (callback != NULL)
 			callback(callback_data);
@@ -484,7 +487,7 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 		(void) tsd_set(zfs_fsyncer_key, (void *)(fsync_cnt - 1));
 	}
 
-	while (resid) {
+	while (resid > 0) {
 		itx_t *itx;
 		lr_write_t *lr;
 		itx_wr_state_t wr_state = write_state;
@@ -494,6 +497,8 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 			wr_state = WR_NEED_COPY;
 		else if (wr_state == WR_INDIRECT)
 			len = MIN(blocksize - P2PHASE(off, blocksize), resid);
+		ASSERT3S(len, >, 0);
+		ASSERT3S(len, <=, resid);
 
 		itx = zil_itx_create(txtype, sizeof (*lr) +
 		    (wr_state == WR_COPIED ? len : 0));
@@ -525,6 +530,7 @@ zfs_log_write(zilog_t *zilog, dmu_tx_t *tx, int txtype,
 		itx->itx_callback_data = callback_data;
 		zil_itx_assign(zilog, itx, tx);
 
+		ASSERT3S(len, >, 0);
 		off += len;
 		resid -= len;
 	}
