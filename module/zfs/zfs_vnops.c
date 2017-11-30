@@ -1607,6 +1607,70 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
+	/* debug the past-end-of-file problem */
+	dmu_buf_impl_t *db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
+	dnode_t        *dn;
+
+	DB_DNODE_ENTER(db);
+	dn = DB_DNODE(db);
+	rw_enter(&dn->dn_struct_rwlock, RW_READER);
+	if (!dn->dn_datablkshift && end_range > dn->dn_datablksz) {
+		hrtime_t ptime = 0;
+		hrtime_t etime = gethrtime() + SEC2NSEC(60);
+		uint32_t dsz   = dn->dn_datablksz;
+		uint8_t  dshft = dn->dn_datablkshift;
+		extern void IOSleep(unsigned milliseconds);
+		extern void IODelay(unsigned microseconds);
+		for (int i = 0; end_range > dsz && !dshft; i++) {
+			rw_exit(&dn->dn_struct_rwlock);
+			DB_DNODE_EXIT(db);
+			hrtime_t curtime = gethrtime();
+			if (curtime > etime) {
+				panic("%s:%d: could not safely msync file %s\n",
+				    __func__, __LINE__, zp->z_name_cache);
+			}
+			if (zp->z_size < woff || ubc_getsize(vp) < woff) {
+				ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
+				printf("ZFS: %s:%d: woff is %lld but z_size is smaller at %lld"
+				    " (ubcsize %lld) for file %s, abandoning wait.\n",
+				    __func__, __LINE__,
+				    woff, zp->z_size, ubc_getsize(vp),
+				    zp->z_name_cache);
+				IOSleep(1);
+			}
+			if (ptime < curtime) {
+				ptime = curtime = MSEC2NSEC(100);
+				printf("ZFS: %s:%d waiting to sync %lld to %lld,"
+				    " dn->datablksz == %d (pass %d) z_size %lld ubcsize %lld file %s\n",
+				    __func__, __LINE__, woff, end_range,
+				    dsz, i, zp->z_size, ubc_getsize(vp), zp->z_name_cache);
+			}
+			if (i < 10000) {
+				IODelay(1);
+				if ((i % 500)==0 && i > 0) {
+					ZFS_EXIT(zfsvfs);
+					ZFS_ENTER(zfsvfs);
+					ZFS_VERIFY_ZP(zp);
+					db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
+				}
+			} else {
+				ZFS_EXIT(zfsvfs);
+				IOSleep(1);
+				ZFS_ENTER(zfsvfs);
+				ZFS_VERIFY_ZP(zp);
+				db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
+			}
+			DB_DNODE_ENTER(db);
+			dn = DB_DNODE(db);
+			rw_enter(&dn->dn_struct_rwlock, RW_READER);
+			dsz   = dn->dn_datablksz;
+			dshft = dn->dn_datablkshift;
+		}
+		printf("ZFS: %s:%d now syncing file %s\n", __func__, __LINE__, zp->z_name_cache);
+	}
+	DB_DNODE_EXIT(db);
+	rw_exit(&dn->dn_struct_rwlock);
+
 	off_t ubcsize = ubc_getsize(vp);
 	off_t msync_resid = 0;
 
