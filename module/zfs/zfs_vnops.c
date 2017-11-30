@@ -1577,6 +1577,81 @@ zfs_safe_dbuf_write_size(znode_t *zp, uio_t *uio, off_t length)
 	return (length);
 }
 
+/*
+ * Structure and function to do a ubc_msync in a taskq task
+ *
+ * We can't ubc_msync in the zfs_write context without risking
+ * a zfs_panic_recover for bluster_pageout writing past the end
+ * of the object.
+ *
+ * We also have to ZFS_ENTER etc, and so the helper function is
+ * needed in order for those macros to return an int result; the
+ * taskq function must return nothing.
+ */
+typedef struct sync_range {
+	vnode_t  *vp;
+	off_t     start;
+	off_t     end;
+	size_t    start_resid;
+	boolean_t sync;
+} sync_range_t;
+
+static int
+zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
+    size_t start_resid, boolean_t do_sync)
+{
+	znode_t  *zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	int       error = 0;
+
+	ZFS_ENTER(zfsvfs);
+	ZFS_VERIFY_ZP(zp);
+
+	off_t ubcsize = ubc_getsize(vp);
+	off_t msync_resid = 0;
+
+	error = ubc_msync(vp, woff, end_range, &msync_resid,
+	    (do_sync) ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
+	if (error != 0) {
+		printf("ZFS: %s:%d: ubc_msync error %d msync_resid %lld"
+		    " woff %lld start_resid %ld end_range %lld"
+		    " ubcsize %lld file %s\n",
+		    __func__, __LINE__, error, msync_resid,
+		    woff, start_resid, end_range,
+		    ubcsize, zp->z_name_cache);
+	}
+
+	ZFS_EXIT(zfsvfs);
+	return (error);
+}
+
+static void
+zfs_write_sync_range(void *arg)
+{
+	sync_range_t *sync_range = arg;
+
+	off_t    woff        = sync_range->start;
+	off_t    end_range   = sync_range->end;
+	size_t   start_resid = sync_range->start_resid;
+	int      do_sync     = sync_range->sync;
+	vnode_t  *vp         = sync_range->vp;
+
+	int error = zfs_write_sync_range_helper(vp, woff, end_range,
+	    start_resid, do_sync);
+
+	if (error != 0) {
+		znode_t *zp = VTOZ(vp);
+		if (do_sync) {
+			zfs_panic_recover("%s:%d failed with error %d file %s",
+			    __func__, __LINE__, error, zp->z_name_cache);
+		} else {
+			printf("ZFS: %s:%d sync failed, error %d file %s\n",
+			    __func__, __LINE__, error, zp->z_name_cache);
+		}
+	}
+
+	kmem_free(sync_range, sizeof(sync_range_t));
+}
 
 /*
  * Write the bytes to a file.
@@ -1886,36 +1961,49 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		} // for
 
 		ASSERT(!rw_lock_held(&zp->z_map_lock));
+		ASSERT3S(error, !=, 0);
 
 		/*
 		 * Give up the range lock now, since our msync here may lead
 		 * to a dmu_write in pageoutv2 in this thread
 		 */
 
-		zfs_range_unlock(rl);
-
 		/* push out the modified pages, syncing if required */
-
 		boolean_t do_sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS ||
 		    ((ioflag & (FDSYNC | FSYNC)) && zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED);
 
-		size_t end_range = woff + start_resid;
-		off_t msync_resid = 0;
-		off_t ubcsize = ubc_getsize(vp);
-		error = ubc_msync(vp, woff, end_range, &msync_resid,
-		    (do_sync) ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
-		if (error != 0) {
-			printf("ZFS: %s:%d: ubc_msync error %d msync_resid %lld"
-			    " woff %lld start_resid %ld end_range %ld"
-			    " ubcsize %lld file %s\n",
-			    __func__, __LINE__, error, msync_resid,
-			    woff, start_resid, end_range,
-			    ubcsize, zp->z_name_cache);
+		sync_range_t *sync_range = kmem_zalloc(sizeof(sync_range_t), KM_SLEEP);
+
+		if (sync_range == NULL) {
+			if (do_sync) {
+				zfs_panic_recover("cannot sync as kmem_zalloc returned NULL"
+				    " to %s:%d file %s\n",
+				    __func__, __LINE__, zp->z_name_cache);
+				goto skip_sync;
+			} else {
+				printf("ZFS: %s:%d: kmem_zalloc returned NULL! could not push file %s\n",
+				    __func__, __LINE__, zp->z_name_cache);
+				goto skip_sync;
+			}
 		}
+
+		sync_range->sync        = do_sync;
+		sync_range->end         = woff + start_resid;
+		sync_range->start       = woff;
+		sync_range->start_resid = start_resid;
+		sync_range->vp          = vp;
+
+		VERIFY3U(taskq_dispatch(system_taskq, zfs_write_sync_range, sync_range,
+			TQ_SLEEP), !=, 0);
+
+	skip_sync:
+		zfs_range_unlock(rl);
 
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
+
+	VERIFY(!vnode_isreg(vp));
 
 	/* Illumos here checks for mandatory locks; OSX (and Linux) do this elsewhere */
 
