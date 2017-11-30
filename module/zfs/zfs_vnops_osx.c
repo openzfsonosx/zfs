@@ -93,6 +93,8 @@
 
 #include <sys/znode_z_map_lock.h>
 
+extern const size_t MAX_UPL_SIZE_BYTES;
+
 typedef struct vnops_osx_stats {
 	kstat_named_t mmap_calls;
 	kstat_named_t mmap_file_first_mmapped;
@@ -2546,8 +2548,8 @@ bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
  * In V2 of vnop_pageout, we are given a NULL upl, so that we can
  * grab the file locks first, then request the upl to lock down pages.
  */
-int
-zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
+static int
+pageoutv2_helper(struct vnop_pageout_args *ap)
 #if 0
 	struct vnop_pageout_args {
 		struct vnode	*a_vp;
@@ -2651,7 +2653,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 	}
 
-	const size_t MAX_UPL_SIZE_BYTES = 16*1024*1024;
 	ASSERT3S(ap->a_size, <=, MAX_UPL_SIZE_BYTES);
 
 	error = ubc_create_upl(vp, ap->a_f_offset, ap->a_size, &upl, &pl,
@@ -2873,6 +2874,75 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		ZFS_EXIT(zfsvfs);
 	return (error);
 }
+
+int
+zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
+#if 0
+	struct vnop_pageout_args {
+		struct vnode	*a_vp;
+		upl_t		a_pl;
+		vm_offset_t	a_pl_offset;
+		off_t		a_f_offset;
+		size_t		a_size;
+		int		a_flags;
+		vfs_context_t	a_context;
+#endif
+{
+	if (ap->a_size <= MAX_UPL_SIZE_BYTES || ap->a_pl != NULL)
+		return(pageoutv2_helper(ap));
+
+	/*
+	 * break the work into UPL-fitting pieces
+	 */
+
+	struct vnop_pageout_args *cur_ap = kmem_zalloc(sizeof(struct vnop_pageout_args), KM_SLEEP);
+	VERIFY3P(cur_ap, !=, NULL);
+
+	cur_ap->a_vp = ap->a_vp;
+	cur_ap->a_pl = ap->a_pl;
+	cur_ap->a_pl_offset = ap->a_pl_offset;
+	cur_ap->a_f_offset = ap->a_f_offset;
+	cur_ap->a_size = ap->a_size;
+	cur_ap->a_flags = ap->a_flags;
+	cur_ap->a_context = ap->a_context;
+
+	ASSERT3P(cur_ap->a_pl, ==, NULL);
+
+	size_t cur_size = cur_ap->a_size;
+	const int proj_calls = howmany(cur_size, MAX_UPL_SIZE_BYTES);
+	int error = 0;
+
+	for (int c = proj_calls; cur_size > 0; c--) {
+		ASSERT3S(c, >=, 0);
+		const off_t  call_offset = cur_ap->a_f_offset;
+		const size_t call_size = MIN(cur_size,
+		    MAX_UPL_SIZE_BYTES - P2PHASE(call_offset, MAX_UPL_SIZE_BYTES));
+		ASSERT3S(call_size, <=, MAX_UPL_SIZE_BYTES);
+		ASSERT3S(call_size, >, 0);
+		cur_ap->a_size = call_size;
+		int cur_error = pageoutv2_helper(cur_ap);
+		if (cur_error != 0) {
+			printf("ZFS: %s:%d: (passes togo: %d) pageoutv2 error %d : %ld@%lld\n",
+			    __func__, __LINE__, c, cur_error, call_size, call_offset);
+			if (error == 0) {
+				error = cur_error;
+			} else if (error != cur_error) {
+				printf("ZFS: %s:%d already had an error %d so not setting to %d\n",
+				    __func__, __LINE__, error, cur_error);
+			}
+		}
+		ASSERT3S(cur_ap->a_size, ==, call_size);
+		ASSERT3S(cur_ap->a_f_offset, ==, call_offset);
+		ASSERT3P(cur_ap->a_context, ==, ap->a_context);
+		ASSERT3S(cur_ap->a_flags, ==, ap->a_flags);
+		ASSERT3P(cur_ap->a_pl, ==, NULL);
+
+		cur_size -= call_size;
+		cur_ap->a_f_offset = call_offset + call_size;
+	}
+	return (error);
+}
+
 
 int
 zfs_vnop_mmap(struct vnop_mmap_args *ap)
