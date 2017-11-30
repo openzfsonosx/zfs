@@ -106,6 +106,7 @@ typedef struct vnops_osx_stats {
 	kstat_named_t pageoutv2_want_lock;
 	kstat_named_t pageoutv2_without_msync_flag;
 	kstat_named_t pageoutv2_skip_clean_pages;
+	kstat_named_t pageoutv2_all_previously_freed;
 	kstat_named_t pageoutv1_pages;
 	kstat_named_t pageoutv1_want_lock;
 	kstat_named_t pagein_pages;
@@ -126,6 +127,7 @@ static vnops_osx_stats_t vnops_osx_stats = {
 	{ "pageoutv2_want_lock",               KSTAT_DATA_UINT64 },
 	{ "pageoutv2_without_msync_flag",      KSTAT_DATA_UINT64 },
 	{ "pageoutv2_skip_clean_pages",        KSTAT_DATA_UINT64 },
+	{ "pageoutv2_all_previously_freed",    KSTAT_DATA_UINT64 },
 	{ "pageoutv1_pages",                   KSTAT_DATA_UINT64 },
 	{ "pageoutv1_want_lock",               KSTAT_DATA_UINT64 },
 	{ "pagein_pages",                      KSTAT_DATA_UINT64 },
@@ -2690,7 +2692,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	for (pg_index = ((isize) / PAGE_SIZE); pg_index > 0;) {
 		if (upl_page_present(pl, --pg_index))
 			break;
-		ASSERT3S(pg_index, >, 0);
+		VNOPS_OSX_STAT_BUMP(pageoutv2_all_previously_freed);
 		if (pg_index == 0) {
 			dprintf("ZFS: failed on pg_index\n");
 			dmu_tx_commit(tx);
