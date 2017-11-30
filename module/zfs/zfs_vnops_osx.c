@@ -2457,10 +2457,11 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	return (retval);
 }
 
-static int bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
-					upl_offset_t upl_offset, off_t f_offset, int size,
-						   uint64_t filesize, int flags, caddr_t vaddr,
-						   dmu_tx_t *tx)
+static int
+bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
+    upl_offset_t upl_offset, off_t f_offset, int size,
+    uint64_t filesize, int flags, caddr_t vaddr,
+    dmu_tx_t *tx)
 {
 	int           io_size;
 	int           rounded_size;
@@ -2650,6 +2651,9 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 	}
 
+	const size_t MAX_UPL_SIZE_BYTES = 16*1024*1024;
+	ASSERT3S(ap->a_size, <=, MAX_UPL_SIZE_BYTES);
+
 	error = ubc_create_upl(vp, ap->a_f_offset, ap->a_size, &upl, &pl,
 						   request_flags );
 	if (error || (upl == NULL)) {
@@ -2791,6 +2795,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 		dprintf("ZFS: bluster offset %lld fileoff %lld size %lld filesize %lld\n",
 			   offset, f_offset, xsize, filesize);
+		ASSERT3S(xsize, <=, MAX_UPL_SIZE_BYTES);
 		merror = bluster_pageout(zfsvfs, zp, upl, offset, f_offset, xsize,
 								 filesize, a_flags, vaddr, tx);
 		ASSERT3S(merror, ==, 0);
@@ -2801,31 +2806,33 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		if ((error == 0) && (merror))
 			error = merror;
 
+		ASSERT3S(error, ==, 0);
+
+		/* update the SA attributes and zfs_log_write our progress */
+		if (error == 0) {
+			uint64_t mtime[2], ctime[2];
+			sa_bulk_attr_t bulk[3];
+			int count = 0;
+
+			SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL,
+			    &mtime, 16);
+			SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL,
+			    &ctime, 16);
+			SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
+			    &zp->z_pflags, 8);
+			zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime,
+			    B_TRUE);
+			zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, f_offset,
+			    xsize, 0, NULL, NULL);
+		}
+
 		f_offset += xsize;
 		offset   += xsize;
 		isize    -= xsize;
 		pg_index += num_of_pages;
 	} // while isize
 
-	ASSERT3S(error, ==, 0);
 	/* finish off transaction */
-	if (error == 0) {
-		uint64_t mtime[2], ctime[2];
-		sa_bulk_attr_t bulk[3];
-		int count = 0;
-
-		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL,
-		    &mtime, 16);
-		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL,
-		    &ctime, 16);
-		SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
-		    &zp->z_pflags, 8);
-		zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime,
-		    B_TRUE);
-		zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, ap->a_f_offset,
-					  a_size, 0,
-		    NULL, NULL);
-	}
 	dmu_tx_commit(tx);
 
   out:
