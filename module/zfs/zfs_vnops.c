@@ -1656,7 +1656,7 @@ zfs_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 				IOSleep(1);
 			}
 			if (ptime < curtime) {
-				ptime = curtime = SEC2NSEC(1);
+				ptime = curtime + SEC2NSEC(1);
 				printf("ZFS: %s:%d waiting to sync %lld to %lld,"
 				    " dn->datablksz == %d (pass %d) z_size %lld ubcsize %lld file %s\n",
 				    __func__, __LINE__, woff, end_range,
@@ -1683,7 +1683,8 @@ zfs_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 			dsz   = dn->dn_datablksz;
 			dshft = dn->dn_datablkshift;
 		}
-		printf("ZFS: %s:%d now syncing file %s\n", __func__, __LINE__, zp->z_name_cache);
+		printf("ZFS: %s:%d after %d now syncing file %s\n", __func__, __LINE__,
+		    i, zp->z_name_cache);
 	}
 	rw_exit(&dn->dn_struct_rwlock);
 	DB_DNODE_EXIT(db);
