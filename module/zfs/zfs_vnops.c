@@ -1988,6 +1988,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 			/* end the tx */
 			dmu_tx_commit(tx);
+
+			printf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld (end == %lld)\n",
+			    __func__, __LINE__, zp->z_size, ubc_getsize(vp), end);
+			zp->z_size = ubc_getsize(vp);
 		}
 
                 /* break the work into reasonable sized chunks */
@@ -1999,8 +2003,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT(!rw_lock_held(&zp->z_map_lock));
 
 			const off_t this_z_size_start = zp->z_size;
-			const off_t this_ubc_size_start = ubc_getsize(vp);
-			ASSERT3S(this_z_size_start, ==, this_ubc_size_start);
 
 			const off_t this_off = uio_offset(uio);
 			ASSERT3S(this_off, >=, 0);
@@ -2147,6 +2149,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		ASSERT(!rw_lock_held(&zp->z_map_lock));
 		ASSERT3S(error, ==, 0);
+		ASSERT3S(get_ubcsize(vp), ==, zp->z_size);
 
 		/*
 		 * Give up the range lock now, since our msync here may lead
