@@ -2618,6 +2618,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	}
 
 	ASSERT(ubc_pages_resident(ZTOV(zp)));
+	ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
