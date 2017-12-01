@@ -1475,6 +1475,7 @@ zfs_vnop_mkdir(struct vnop_mkdir_args *ap)
 	    ap->a_vpp, cr, ct, /* flags */0, /* vsecp */NULL);
 	if (!error) {
 		cache_purge_negatives(ap->a_dvp);
+		vnode_update_identity (*ap->a_vpp, ap->a_dvp, (const char *)ap->a_cnp->cn_nameptr, ap->a_cnp->cn_namelen, 0, VNODE_UPDATE_NAME);
 	} else {
 		dprintf("%s error %d\n", __func__, error);
 	}
