@@ -1590,32 +1590,15 @@ zfs_safe_dbuf_write_size(znode_t *zp, uio_t *uio, off_t length)
  * needed in order for those macros to return an int result; the
  * taskq function must return nothing.
  */
-typedef struct sync_range {
-	vnode_t  *vp;
-	off_t     start;
-	off_t     end;
-	size_t    start_resid;
-	boolean_t sync;
-} sync_range_t;
 
 static int
-zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
-    size_t start_resid, boolean_t do_sync)
+zfs_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 {
-	znode_t  *zp = VTOZ(vp);
-	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	int       error = 0;
-
-	ZFS_ENTER(zfsvfs);
-	ZFS_VERIFY_ZP(zp);
-
-	/* wait until the range_lock in zfs_write is dropped */
-	//rl_t *rl = zfs_range_lock(zp, woff, end_range, RL_WRITER);
-	//zfs_range_unlock(rl);
-
 	/* debug the past-end-of-file problem */
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
 	dnode_t        *dn;
+	vnode_t        *vp = ZTOV(zp);
+	zfsvfs_t       *zfsvfs = zp->z_zfsvfs;
 
 	DB_DNODE_ENTER(db);
 	dn = DB_DNODE(db);
@@ -1633,8 +1616,9 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 			DB_DNODE_EXIT(db);
 			hrtime_t curtime = gethrtime();
 			if (curtime > etime) {
-				panic("%s:%d: could not safely msync file %s\n",
+				printf("%s:%d: could not safely msync file %s\n",
 				    __func__, __LINE__, zp->z_name_cache);
+				return(EIO);
 			}
 			if (zp->z_size < woff || ubc_getsize(vp) < woff) {
 				ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
@@ -1679,6 +1663,45 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 	rw_exit(&dn->dn_struct_rwlock);
 
 	if (i > 0) { VNOPS_STAT_INCR(zfs_write_helper_iters, i); }
+
+	return (0);
+}
+
+
+typedef struct sync_range {
+	vnode_t  *vp;
+	off_t     start;
+	off_t     end;
+	size_t    start_resid;
+	boolean_t sync;
+	boolean_t range_lock;
+	boolean_t safety_check;
+} sync_range_t;
+
+static int
+zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
+    size_t start_resid, boolean_t do_sync, boolean_t range_lock, boolean_t safety_check)
+{
+	znode_t  *zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	int       error = 0;
+
+	ZFS_ENTER(zfsvfs);
+	ZFS_VERIFY_ZP(zp);
+
+	if (range_lock) {
+		/* wait until the range_lock in zfs_write is dropped */
+		rl_t *rl = zfs_range_lock(zp, woff, end_range, RL_WRITER);
+		zfs_range_unlock(rl);
+	}
+
+	if (safety_check) {
+		error = zfs_write_wait_safe(zp, woff, end_range);
+		// uncomment, so we can just panic in ubc_msync
+		// ZFS_EXIT(zfsvfs);
+		// return (error);
+	}
+
 	off_t ubcsize = ubc_getsize(vp);
 	off_t msync_resid = 0;
 
@@ -1702,14 +1725,16 @@ zfs_write_sync_range(void *arg)
 {
 	sync_range_t *sync_range = arg;
 
-	off_t    woff        = sync_range->start;
-	off_t    end_range   = sync_range->end;
-	size_t   start_resid = sync_range->start_resid;
-	int      do_sync     = sync_range->sync;
-	vnode_t  *vp         = sync_range->vp;
+	off_t     woff         = sync_range->start;
+	off_t     end_range    = sync_range->end;
+	size_t    start_resid  = sync_range->start_resid;
+	vnode_t   *vp          = sync_range->vp;
+	boolean_t do_sync      = sync_range->sync;
+	boolean_t range_lock   = sync_range->range_lock;
+	boolean_t safety_check = sync_range->safety_check;
 
 	int error = zfs_write_sync_range_helper(vp, woff, end_range,
-	    start_resid, do_sync);
+	    start_resid, do_sync, range_lock, safety_check);
 
 	if (error != 0) {
 		znode_t *zp = VTOZ(vp);
@@ -2044,38 +2069,54 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		boolean_t do_sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS ||
 		    ((ioflag & (FDSYNC | FSYNC)) && zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED);
 
-#if 0
+#if 1
 		/*
 		 * The taskq task zfs_write_sync_range needs some information
 		 * in its *arg argument; it is responsible for freeing the
 		 * communications structure, not us.
 		 */
-		sync_range_t *sync_range = kmem_zalloc(sizeof(sync_range_t), KM_SLEEP);
+		if (!do_sync) {
+			sync_range_t *sync_range = kmem_zalloc(sizeof(sync_range_t), KM_SLEEP);
 
-		if (sync_range == NULL) {
-			if (do_sync) {
-				zfs_panic_recover("cannot sync as kmem_zalloc returned NULL"
-				    " to %s:%d file %s\n",
-				    __func__, __LINE__, zp->z_name_cache);
-				goto skip_sync;
-			} else {
-				printf("ZFS: %s:%d: kmem_zalloc returned NULL! could not push file %s\n",
-				    __func__, __LINE__, zp->z_name_cache);
-				goto skip_sync;
+			if (sync_range == NULL) {
+				if (do_sync) {
+					zfs_panic_recover("cannot sync as kmem_zalloc returned NULL"
+					    " to %s:%d file %s\n",
+					    __func__, __LINE__, zp->z_name_cache);
+					goto skip_sync;
+				} else {
+					printf("ZFS: %s:%d: kmem_zalloc returned NULL! could not push file %s\n",
+					    __func__, __LINE__, zp->z_name_cache);
+					goto skip_sync;
+				}
 			}
+
+			sync_range->safety_check = B_TRUE;
+			sync_range->range_lock   = B_TRUE;
+			sync_range->sync         = do_sync;
+			sync_range->end          = woff + start_resid;
+			sync_range->start        = woff;
+			sync_range->start_resid  = start_resid;
+			sync_range->vp           = vp;
+
+			VERIFY3U(taskq_dispatch(system_taskq, zfs_write_sync_range, sync_range,
+				TQ_SLEEP), !=, 0);
 		}
-
-		sync_range->sync        = do_sync;
-		sync_range->end         = woff + start_resid;
-		sync_range->start       = woff;
-		sync_range->start_resid = start_resid;
-		sync_range->vp          = vp;
-
-		VERIFY3U(taskq_dispatch(system_taskq, zfs_write_sync_range, sync_range,
-			TQ_SLEEP), !=, 0);
 
 	skip_sync:
 		zfs_range_unlock(rl);
+
+		if (do_sync) {
+			error = zfs_write_sync_range_helper(vp, woff, woff + start_resid,
+			    start_resid, do_sync, B_FALSE, B_TRUE);
+			if (error != 0) {
+				zfs_panic_recover("%s:%d zfs_write_sync_range_helper"
+				    " returned error %d for range [%lld, %lld], file %s\n",
+				    __func__, __LINE__, error,
+				    woff, woff+start_resid, zp->z_name_cache);
+			}
+
+		}
 #else
 		zfs_range_unlock(rl);
 		error = zfs_write_sync_range_helper(vp, woff, woff + start_resid,
