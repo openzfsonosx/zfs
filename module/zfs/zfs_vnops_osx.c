@@ -2728,6 +2728,8 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		dmu_tx_commit(tx);
 		printf("ZFS: %s:%d: retoring z_size from %lld to ubc size %lld (end = %lld)\n",
 		    __func__, __LINE__, zp->z_size, ubc_getsize(vp), end);
+		zp->z_size = ubc_getsize(vp);
+
 		/* now create the next tx */
 		tx = dmu_tx_create(zfsvfs->z_os);
 		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
