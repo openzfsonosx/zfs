@@ -1606,6 +1606,7 @@ dmu_write_is_safe(znode_t *zp, off_t woff, off_t end_range)
 
 	if (!dn->dn_datablkshift && end_range > dn->dn_datablksz) {
 		is_safe = B_FALSE;
+		ASSERT3S(dn->dn_datablksz, ==, zp->z_blksz);
 	} else {
 		is_safe = B_TRUE;
 	}
