@@ -2617,7 +2617,6 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
 	rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
-
 	/*
 	 * We lock against update_pages() [part of zfs_write()],
 	 * zfs_vnop_pageout(), and zfs_vnop_pagein(), and ourselves (in
@@ -2677,6 +2676,37 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		}
 		ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
 		goto pageout_done;
+	}
+
+	/*
+	 * If zfs_range_lock() over-locked we grow the blocksize
+	 * and then reduce the lock range.  This will only happen
+	 * on the first iteration since zfs_range_reduce() will
+	 * shrink down r_len to the appropriate size.
+	 */
+	if (rl->r_len == UINT64_MAX) {
+		off_t woff = ap->a_f_offset;
+		off_t end_size = MAX(zp->z_size, woff + a_size);
+		size_t n = a_size;
+		uint64_t new_blksz;
+		int max_blksz = zfsvfs->z_max_blksz;
+		if (zp->z_blksz > max_blksz) {
+			/*
+			 * File's blocksize is already larger than the
+			 * "recordsize" property.  Only let it grow to
+			 * the next power of 2.
+			 */
+			ASSERT(!ISP2(zp->z_blksz));
+			new_blksz = MIN(end_size,
+			    1 << highbit64(zp->z_blksz));
+		} else {
+			new_blksz = MIN(end_size, max_blksz);
+		}
+
+		printf("ZFS: %s:%d growing buffer to %llu (from %d) file %s\n",
+		    __func__, __LINE__, new_blksz, zp->z_blksz, zp->z_name_cache);
+		zfs_grow_blocksize(zp, new_blksz, tx);
+		zfs_range_reduce(rl, woff, n);
 	}
 
 	off_t f_offset;
@@ -2809,24 +2839,6 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 
 		ASSERT3S(error, ==, 0);
 
-		/* update the SA attributes and zfs_log_write our progress */
-		if (error == 0) {
-			uint64_t mtime[2], ctime[2];
-			sa_bulk_attr_t bulk[3];
-			int count = 0;
-
-			SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL,
-			    &mtime, 16);
-			SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL,
-			    &ctime, 16);
-			SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
-			    &zp->z_pflags, 8);
-			zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime,
-			    B_TRUE);
-			zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, f_offset,
-			    xsize, 0, NULL, NULL);
-		}
-
 		f_offset += xsize;
 		offset   += xsize;
 		isize    -= xsize;
@@ -2834,6 +2846,23 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	} // while isize
 
 	/* finish off transaction */
+        if (error == 0) {
+                uint64_t mtime[2], ctime[2];
+                sa_bulk_attr_t bulk[3];
+                int count = 0;
+
+                SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL,
+                    &mtime, 16);
+                SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL,
+                    &ctime, 16);
+                SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
+                    &zp->z_pflags, 8);
+                zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime,
+                    B_TRUE);
+                zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, ap->a_f_offset,
+                                          a_size, 0,
+                    NULL, NULL);
+        }
 	dmu_tx_commit(tx);
 
   out:
