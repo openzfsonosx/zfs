@@ -1924,7 +1924,71 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * The range lock principally protects us against
 		 * pageoutv2, which takes an RL and then the z_map_lock.
 		 */
+
 		rl = zfs_range_lock(zp, woff, start_resid, RL_WRITER);
+
+		/* extend the file if necessary */
+		off_t end = woff + start_resid;
+		if (rl->r_len == UINT64_MAX ||
+		    (end > zp->z_blksz &&
+			(!ISP2(zp->z_blksz || zp->z_blksz < zfsvfs->z_max_blksz))) ||
+		    !dmu_write_is_safe(zp, woff, end)) {
+			uint64_t newblksz;
+			const int max_blksz = zfsvfs->z_max_blksz;
+			/* start a transaction */
+			tx = dmu_tx_create(zfsvfs->z_os);
+			dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+			zfs_sa_upgrade_txholds(tx, zp);
+
+			if (end > zp->z_blksz &&
+			    (!ISP2(zp->z_blksz) || zp->z_blksz < zfsvfs->z_max_blksz)) {
+				/*
+				 * We are growing the file past the current block size.
+				 */
+				if (zp->z_blksz > zp->z_zfsvfs->z_max_blksz) {
+					/*
+					 * File's blocksize is already larger than the
+					 * "recordsize" property.  Only let it grow to
+					 * the next power of 2.
+					 */
+					ASSERT(!ISP2(zp->z_blksz));
+					newblksz = MIN(end, 1 << highbit64(zp->z_blksz));
+				} else {
+					newblksz = MIN(end, zp->z_zfsvfs->z_max_blksz);
+				}
+				if (ISP2(newblksz) && newblksz < max_blksz) {
+					uint64_t new_new_blksz = newblksz + 1;
+					printf("ZFS: %s:%d: bumping new_blksz from %lld to %lld, file %s\n",
+					    __func__, __LINE__, newblksz, new_new_blksz, zp->z_name_cache);
+					ASSERT(!ISP2(new_new_blksz));
+					newblksz = new_new_blksz;
+				}
+				dmu_tx_hold_write(tx, zp->z_id, 0, newblksz);
+			} else {
+				newblksz = 0;
+			}
+			error = dmu_tx_assign(tx, TXG_WAIT);
+			if (error) {
+				dmu_tx_abort(tx);
+				zfs_range_unlock(rl);
+				return (error);
+			}
+
+			if (newblksz)
+				zfs_grow_blocksize(zp, newblksz, tx);
+
+			if (rl->r_len == UINT64_MAX)
+				zfs_range_reduce(rl, woff, start_resid);
+
+			zp->z_size = end;
+
+			VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
+				&zp->z_size,
+				sizeof (zp->z_size), tx));
+
+			/* end the tx */
+			dmu_tx_commit(tx);
+		}
 
                 /* break the work into reasonable sized chunks */
 		const off_t chunk_size = (off_t)SPA_MAXBLOCKSIZE;
