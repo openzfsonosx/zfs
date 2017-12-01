@@ -2075,7 +2075,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			TQ_SLEEP), !=, 0);
 
 	skip_sync:
+		zfs_range_unlock(rl);
 #else
+		zfs_range_unlock(rl);
 		error = zfs_write_sync_range_helper(vp, woff, woff + start_resid,
 		    start_resid, do_sync);
 		if (error != 0) {
@@ -2085,8 +2087,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    woff, woff+start_resid, zp->z_name_cache);
 		}
 #endif
-		zfs_range_unlock(rl);
-
 		ZFS_EXIT(zfsvfs);
 		/*
 		 * strictly speaking, in the do_sync == TRUE case we
