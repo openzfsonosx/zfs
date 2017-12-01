@@ -2703,8 +2703,19 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			ASSERT(!ISP2(zp->z_blksz));
 			new_blksz = MIN(end_size,
 			    1 << highbit64(zp->z_blksz));
+			if (new_blksz == end_size) {
+				ASSERT(!ISP2(end_size));
+			}
 		} else {
 			new_blksz = MIN(end_size, max_blksz);
+			ASSERT(!ISP2(new_blksz));
+		}
+		if (ISP2(new_blksz) && new_blksz < 1 << highbit64(zp->z_blksz)) {
+			uint64_t new_new_blksz = new_blksz + (SPA_MINBLOCKSIZE-1);
+			printf("ZFS: %s:%d: bumping new_blksz from %lld to %lld\n",
+			    __func__, __LINE__, new_blksz, new_new_blksz);
+			ASSERT(!ISP2(new_new_blksz));
+			new_blksz = new_new_blksz;
 		}
 
 		printf("ZFS: %s:%d growing buffer to %llu (from %d) file %s\n",
