@@ -2924,6 +2924,9 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	 * break the work into UPL-fitting pieces
 	 */
 
+	printf("ZFS: %s:%d breaking up %ld bytes of work\n",
+	    __func__, __LINE__, ap->a_size);
+
 	struct vnop_pageout_args *cur_ap = kmem_zalloc(sizeof(struct vnop_pageout_args), KM_SLEEP);
 	VERIFY3P(cur_ap, !=, NULL);
 
