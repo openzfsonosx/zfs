@@ -2716,6 +2716,9 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		if (newblksz)
 			zfs_grow_blocksize(zp, newblksz, tx);
 
+		if (rl->r_len == UINT64_MAX)
+			zfs_range_reduce(rl, ap->a_f_offset, ap->a_size);
+
 		zp->z_size = end;
 
 		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
