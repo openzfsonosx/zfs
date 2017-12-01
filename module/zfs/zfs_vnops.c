@@ -1591,6 +1591,32 @@ zfs_safe_dbuf_write_size(znode_t *zp, uio_t *uio, off_t length)
  * taskq function must return nothing.
  */
 
+static boolean_t
+zfs_write_is_safe(znode_t *zp, off_t woff, off_t end_range)
+{
+	/* debug the past-end-of-file problem */
+	dmu_buf_impl_t *db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
+	dnode_t        *dn;
+
+	boolean_t is_safe;
+
+	DB_DNODE_ENTER(db);
+	dn = DB_DNODE(db);
+	rw_enter(&dn->dn_struct_rwlock, RW_READER);
+
+	if (!dn->dn_datablkshift && end_range > dn->dn_datablksz) {
+		is_safe = B_FALSE;
+	} else {
+		is_safe = B_TRUE;
+	}
+
+	rw_exit(&dn->dn_struct_rwlock);
+	DB_DNODE_EXIT(db);
+
+	return (is_safe);
+}
+
+
 static int
 zfs_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 {
@@ -1630,7 +1656,7 @@ zfs_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 				IOSleep(1);
 			}
 			if (ptime < curtime) {
-				ptime = curtime = MSEC2NSEC(100);
+				ptime = curtime = SEC2NSEC(1);
 				printf("ZFS: %s:%d waiting to sync %lld to %lld,"
 				    " dn->datablksz == %d (pass %d) z_size %lld ubcsize %lld file %s\n",
 				    __func__, __LINE__, woff, end_range,
@@ -1659,8 +1685,8 @@ zfs_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 		}
 		printf("ZFS: %s:%d now syncing file %s\n", __func__, __LINE__, zp->z_name_cache);
 	}
-	DB_DNODE_EXIT(db);
 	rw_exit(&dn->dn_struct_rwlock);
+	DB_DNODE_EXIT(db);
 
 	if (i > 0) { VNOPS_STAT_INCR(zfs_write_helper_iters, i); }
 
@@ -2075,7 +2101,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * in its *arg argument; it is responsible for freeing the
 		 * communications structure, not us.
 		 */
-		if (!do_sync) {
+		const boolean_t is_safe = zfs_write_is_safe(zp, woff, woff + start_resid);
+		if (!is_safe) {
+			printf("ZFS: %s:%d: sending %s write [%lld, %lld] to task file %s\n",
+			    __func__, __LINE__,
+			    (do_sync) ? "sync" : "standard",
+			    woff, woff + start_resid, zp->z_name_cache);
 			sync_range_t *sync_range = kmem_zalloc(sizeof(sync_range_t), KM_SLEEP);
 
 			if (sync_range == NULL) {
@@ -2085,7 +2116,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					    __func__, __LINE__, zp->z_name_cache);
 					goto skip_sync;
 				} else {
-					printf("ZFS: %s:%d: kmem_zalloc returned NULL! could not push file %s\n",
+					printf("ZFS: %s:%d: kmem_zalloc returned NULL!"
+					    " could not push file %s\n",
 					    __func__, __LINE__, zp->z_name_cache);
 					goto skip_sync;
 				}
@@ -2106,7 +2138,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	skip_sync:
 		zfs_range_unlock(rl);
 
-		if (do_sync) {
+		if (is_safe) {
 			error = zfs_write_sync_range_helper(vp, woff, woff + start_resid,
 			    start_resid, do_sync, B_FALSE, B_TRUE);
 			if (error != 0) {
@@ -2406,7 +2438,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			printf("ZFS: %s:%d: fell through ioflag %d end_size %lld"
 			    " offset %lld nbytes %ld"
 			    " n %ld max_blksz %d filesz %lld safe_write_n %lld new_blksz %lld"
-			    " z_blksz %d file %s\n",
+			    " z_blksz %d@file %s\n",
 			    __func__, __LINE__, ioflag, end_size,
 			    woff, nbytes, n, max_blksz,
 			    zp->z_size, safe_write_n, new_blksz, zp->z_blksz, zp->z_name_cache);
