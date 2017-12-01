@@ -2076,15 +2076,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	skip_sync:
 #else
-		if (do_sync) {
-			error = zfs_write_sync_range_helper(vp, woff, woff + start_resid,
-			    start_resid, do_sync);
-			if (error != 0) {
-				zfs_panic_recover("%s:%d zfs_write_sync_range_helper"
-				    " returned error %d for range [%lld, %lld], file %s\n",
-				    __func__, __LINE__, error,
-				    woff, woff+start_resid, zp->z_name_cache);
-			}
+		error = zfs_write_sync_range_helper(vp, woff, woff + start_resid,
+		    start_resid, do_sync);
+		if (error != 0) {
+			zfs_panic_recover("%s:%d zfs_write_sync_range_helper"
+			    " returned error %d for range [%lld, %lld], file %s\n",
+			    __func__, __LINE__, error,
+			    woff, woff+start_resid, zp->z_name_cache);
 		}
 #endif
 		zfs_range_unlock(rl);
