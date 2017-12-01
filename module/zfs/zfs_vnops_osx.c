@@ -2711,7 +2711,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			new_blksz = MIN(end_size, max_blksz);
 			ASSERT(!ISP2(new_blksz));
 		}
-		if (ISP2(new_blksz) && new_blksz < 1 << highbit64(zp->z_blksz)) {
+		if (ISP2(new_blksz) && new_blksz < max_blksz) {
 			uint64_t new_new_blksz = new_blksz + (SPA_MINBLOCKSIZE-1);
 			printf("ZFS: %s:%d: bumping new_blksz from %lld to %lld\n",
 			    __func__, __LINE__, new_blksz, new_new_blksz);
