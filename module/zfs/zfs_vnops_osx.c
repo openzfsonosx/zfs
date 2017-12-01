@@ -2726,7 +2726,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			sizeof (zp->z_size), tx));
 
 		dmu_tx_commit(tx);
-		printf("ZFS: %s:%d: retoring z_size from %lld to ubc size %lld (end = %lld)\n",
+		printf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld (end = %lld)\n",
 		    __func__, __LINE__, zp->z_size, ubc_getsize(vp), end);
 		zp->z_size = ubc_getsize(vp);
 
