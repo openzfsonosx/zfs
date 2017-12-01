@@ -1625,7 +1625,6 @@ dmu_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
 	dnode_t        *dn;
 	vnode_t        *vp = ZTOV(zp);
-	zfsvfs_t       *zfsvfs = zp->z_zfsvfs;
 
 	int error = 0;
 
@@ -1671,18 +1670,8 @@ dmu_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 			}
 			if (i < 10000) {
 				IODelay(1);
-				if ((i % 500)==0 && i > 0) {
-					ZFS_EXIT(zfsvfs);
-					ZFS_ENTER(zfsvfs);
-					ZFS_VERIFY_ZP(zp);
-					db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
-				}
 			} else {
-				ZFS_EXIT(zfsvfs);
 				IOSleep(1);
-				ZFS_ENTER(zfsvfs);
-				ZFS_VERIFY_ZP(zp);
-				db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
 			}
 			DB_DNODE_ENTER(db);
 			dn = DB_DNODE(db);
