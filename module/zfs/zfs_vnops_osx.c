@@ -2726,7 +2726,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			sizeof (zp->z_size), tx));
 
 		dmu_tx_commit(tx);
-		printf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld (end = %lld)\n",
+		dprintf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld (end = %lld)\n",
 		    __func__, __LINE__, zp->z_size, ubc_getsize(vp), end);
 		zp->z_size = ubc_getsize(vp);
 
@@ -2778,7 +2778,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		}
 		if (ISP2(new_blksz) && new_blksz < max_blksz) {
 			uint64_t new_new_blksz = new_blksz + 1;
-			printf("ZFS: %s:%d: bumping new_blksz from %lld to %lld\n",
+			dprintf("ZFS: %s:%d: bumping new_blksz from %lld to %lld\n",
 			    __func__, __LINE__, new_blksz, new_new_blksz);
 			ASSERT(!ISP2(new_new_blksz));
 			new_blksz = new_new_blksz;
