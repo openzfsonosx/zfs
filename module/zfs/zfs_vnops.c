@@ -1627,6 +1627,8 @@ dmu_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 	vnode_t        *vp = ZTOV(zp);
 	zfsvfs_t       *zfsvfs = zp->z_zfsvfs;
 
+	int error = 0;
+
 	DB_DNODE_ENTER(db);
 	dn = DB_DNODE(db);
 	int i = 0;
@@ -1645,7 +1647,8 @@ dmu_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 			if (curtime > etime) {
 				printf("%s:%d: could not safely msync file %s\n",
 				    __func__, __LINE__, zp->z_name_cache);
-				return(EIO);
+				error = EIO;
+				goto out;
 			}
 			if (zp->z_size < woff || ubc_getsize(vp) < woff) {
 				ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
@@ -1655,6 +1658,8 @@ dmu_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 				    woff, zp->z_size, ubc_getsize(vp),
 				    zp->z_name_cache);
 				IOSleep(1);
+				error = EIO;
+				goto out;
 			}
 			if (ptime < curtime) {
 				ptime = curtime + SEC2NSEC(1);
@@ -1691,9 +1696,10 @@ dmu_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 	rw_exit(&dn->dn_struct_rwlock);
 	DB_DNODE_EXIT(db);
 
+out:
 	if (i > 0) { VNOPS_STAT_INCR(zfs_write_helper_iters, i); }
 
-	return (0);
+	return (error);
 }
 
 
