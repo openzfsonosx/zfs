@@ -2709,7 +2709,6 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			}
 		} else {
 			new_blksz = MIN(end_size, max_blksz);
-			ASSERT(!ISP2(new_blksz));
 		}
 		if (ISP2(new_blksz) && new_blksz < max_blksz) {
 			uint64_t new_new_blksz = new_blksz + (SPA_MINBLOCKSIZE-1);
@@ -2845,7 +2844,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		ASSERT3S(xsize, <=, MAX_UPL_SIZE_BYTES);
 		merror = bluster_pageout(zfsvfs, zp, upl, offset, f_offset, xsize,
 								 filesize, a_flags, vaddr, tx);
-		ASSERT3S(merror, ==, 0);
+		if (merror != 35) { ASSERT3S(merror, ==, 0); }
 		if (merror != 0)
 			VNOPS_OSX_STAT_BUMP(bluster_pageout_error);
 
@@ -2853,7 +2852,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		if ((error == 0) && (merror))
 			error = merror;
 
-		ASSERT3S(error, ==, 0);
+		if (error != 35) { ASSERT3S(error, ==, 0); }
 
 		f_offset += xsize;
 		offset   += xsize;
