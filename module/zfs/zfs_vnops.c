@@ -1658,9 +1658,10 @@ dmu_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 			if (ptime < curtime) {
 				ptime = curtime + SEC2NSEC(1);
 				printf("ZFS: %s:%d waiting to sync %lld to %lld,"
-				    " dn->datablksz == %d (pass %d) z_size %lld ubcsize %lld file %s\n",
+				    " dn->datablksz == %d z_datablksz %d (pass %d) z_size %lld"
+				    " ubcsize %lld file %s\n",
 				    __func__, __LINE__, woff, end_range,
-				    dsz, i, zp->z_size, ubc_getsize(vp), zp->z_name_cache);
+				    dsz, zp->z_blksz, i, zp->z_size, ubc_getsize(vp), zp->z_name_cache);
 			}
 			if (i < 10000) {
 				IODelay(1);

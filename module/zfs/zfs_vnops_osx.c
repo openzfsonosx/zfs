@@ -2533,8 +2533,9 @@ bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 	}
 #endif
 	if (!dmu_write_is_safe(zp, f_offset, f_offset + size)) {
-		printf("ZFS: %s:%d: cannot safely write [%lld, %lld] file %s\n",
-		    __func__, __LINE__, f_offset, f_offset + size, zp->z_name_cache);
+		printf("ZFS: %s:%d: cannot safely write [%lld, %lld] z_blksz %d file %s\n",
+		    __func__, __LINE__, f_offset, f_offset + size,
+		    zp->z_blksz, zp->z_name_cache);
 		return(EAGAIN);
 	}
 	dmu_write(zfsvfs->z_os, zp->z_id, f_offset, size, &vaddr[upl_offset], tx);
