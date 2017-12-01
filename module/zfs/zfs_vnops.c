@@ -129,6 +129,7 @@ typedef struct vnops_stats {
 	kstat_named_t zfs_write_cluster_copy_bytes;
 	kstat_named_t zfs_write_cluster_copy_error;
 	kstat_named_t zfs_write_cluster_copy_short_write;
+	kstat_named_t zfs_write_helper_iters;
 	kstat_named_t zfs_write_msync;
 	kstat_named_t zfs_write_arcbuf_assign;
 	kstat_named_t zfs_write_arcbuf_assign_bytes;
@@ -179,6 +180,7 @@ static vnops_stats_t vnops_stats = {
 	{ "zfs_write_sync_cluster_copy_bytes",           KSTAT_DATA_UINT64 },
 	{ "zfs_write_sync_cluster_copy_error",           KSTAT_DATA_UINT64 },
 	{ "zfs_write_sync_cluster_short_write",          KSTAT_DATA_UINT64 },
+	{ "zfs_write_helper_iters",                      KSTAT_DATA_UINT64 },
 	{ "zfs_write_msync",                             KSTAT_DATA_UINT64 },
 	{ "zfs_write_arcbuf_assign",                     KSTAT_DATA_UINT64 },
 	{ "zfs_write_arcbuf_assign_bytes",               KSTAT_DATA_UINT64 },
@@ -1617,6 +1619,7 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 
 	DB_DNODE_ENTER(db);
 	dn = DB_DNODE(db);
+	int i = 0;
 	rw_enter(&dn->dn_struct_rwlock, RW_READER);
 	if (!dn->dn_datablkshift && end_range > dn->dn_datablksz) {
 		hrtime_t ptime = 0;
@@ -1625,7 +1628,7 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 		uint8_t  dshft = dn->dn_datablkshift;
 		extern void IOSleep(unsigned milliseconds);
 		extern void IODelay(unsigned microseconds);
-		for (int i = 0; end_range > dsz && !dshft; i++) {
+		for (i = 0; end_range > dsz && !dshft; i++) {
 			rw_exit(&dn->dn_struct_rwlock);
 			DB_DNODE_EXIT(db);
 			hrtime_t curtime = gethrtime();
@@ -1675,6 +1678,7 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 	DB_DNODE_EXIT(db);
 	rw_exit(&dn->dn_struct_rwlock);
 
+	if (i > 0) { VNOPS_STAT_INCR(zfs_write_helper_iters, i); }
 	off_t ubcsize = ubc_getsize(vp);
 	off_t msync_resid = 0;
 
