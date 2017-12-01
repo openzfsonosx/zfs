@@ -2702,7 +2702,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 				ASSERT(!ISP2(new_new_blksz));
 				newblksz = new_new_blksz;
 			}
-			dmu_tx_hold_write(tx, zp->z_id, 0, newblksz);
+			dmu_tx_hold_write(tx, zp->z_id, 0, end);
 		} else {
 			newblksz = 0;
 		}

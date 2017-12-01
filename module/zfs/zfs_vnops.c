@@ -1963,7 +1963,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					ASSERT(!ISP2(new_new_blksz));
 					newblksz = new_new_blksz;
 				}
-				dmu_tx_hold_write(tx, zp->z_id, 0, newblksz);
+				dmu_tx_hold_write(tx, zp->z_id, 0, end);
 			} else {
 				newblksz = 0;
 			}
