@@ -2532,7 +2532,8 @@ bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 			size = filesize - f_offset;
 	}
 #endif
-
+	int safe_wait_ret = dmu_write_wait_safe(zp, f_offset, f_offset + size);
+        ASSERT3S(safe_wait_ret, ==, 0);
 	dmu_write(zfsvfs->z_os, zp->z_id, f_offset, size, &vaddr[upl_offset], tx);
 	VNOPS_OSX_STAT_INCR(bluster_pageout_dmu_bytes, size);
 

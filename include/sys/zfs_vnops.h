@@ -248,10 +248,10 @@ extern void aces_from_acl(ace_t *aces, int *nentries, struct kauth_acl *k_acl,
 extern void nfsacl_set_wellknown(int wkg, guid_t *guid);
 extern int  zfs_addacl_trivial(znode_t *zp, ace_t *aces, int *nentries,
 							   int seen_type);
-
 extern int ubc_invalidate_range(vnode_t *vp, off_t start_byte, off_t end_byte);
 extern int ubc_fill_holes_in_range(vnode_t *vp, off_t start_byte, off_t end_byte);
 extern int ubc_refresh_range(vnode_t *vp, off_t start_byte, off_t end_byte);
+extern int dmu_write_wait_safe(znode_t *zp, off_t start_range, off_t end_range);
 
 #ifdef	__cplusplus
 }

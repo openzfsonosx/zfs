@@ -1591,8 +1591,8 @@ zfs_safe_dbuf_write_size(znode_t *zp, uio_t *uio, off_t length)
  * taskq function must return nothing.
  */
 
-static boolean_t
-zfs_write_is_safe(znode_t *zp, off_t woff, off_t end_range)
+boolean_t
+dmu_write_is_safe(znode_t *zp, off_t woff, off_t end_range)
 {
 	/* debug the past-end-of-file problem */
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
@@ -1617,8 +1617,8 @@ zfs_write_is_safe(znode_t *zp, off_t woff, off_t end_range)
 }
 
 
-static int
-zfs_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
+int
+dmu_write_wait_safe(znode_t *zp, off_t woff, off_t end_range)
 {
 	/* debug the past-end-of-file problem */
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)sa_get_db(zp->z_sa_hdl);
@@ -1723,7 +1723,7 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 	}
 
 	if (safety_check) {
-		error = zfs_write_wait_safe(zp, woff, end_range);
+		error = dmu_write_wait_safe(zp, woff, end_range);
 		// uncomment, so we can just panic in ubc_msync
 		// ZFS_EXIT(zfsvfs);
 		// return (error);
@@ -2102,7 +2102,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		 * in its *arg argument; it is responsible for freeing the
 		 * communications structure, not us.
 		 */
-		const boolean_t is_safe = zfs_write_is_safe(zp, woff, woff + start_resid);
+		const boolean_t is_safe = dmu_write_is_safe(zp, woff, woff + start_resid);
 		if (!is_safe) {
 			printf("ZFS: %s:%d: sending %s write [%lld, %lld] to task file %s\n",
 			    __func__, __LINE__,
