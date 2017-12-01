@@ -2149,7 +2149,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		ASSERT(!rw_lock_held(&zp->z_map_lock));
 		ASSERT3S(error, ==, 0);
-		ASSERT3S(get_ubcsize(vp), ==, zp->z_size);
+		ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 
 		/*
 		 * Give up the range lock now, since our msync here may lead
