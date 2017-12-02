@@ -419,7 +419,11 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 #ifndef __APPLE__
 	cleanlocks(vp, ddi_get_pid(), 0);
 	cleanshares(vp, ddi_get_pid());
-#else
+#endif
+
+	ZFS_ENTER(zfsvfs);
+	ZFS_VERIFY_ZP(zp);
+
 	if ((((flag & FWRITE) != 0) && ubc_pages_resident(vp)) ||
 	    (vn_has_cached_data(vp) && vnode_isreg(vp) && !vnode_isswap(vp))) {
 		ASSERT(vn_has_cached_data(vp) || ubc_pages_resident(vp));
@@ -436,10 +440,6 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 		ASSERT3P(zp->z_sa_hdl, !=, NULL);
 		VNOPS_STAT_BUMP(zfs_close_msync);
 	}
-#endif
-
-	ZFS_ENTER(zfsvfs);
-	ZFS_VERIFY_ZP(zp);
 
 	/* Decrement the synchronous opens in the znode */
 	if ((flag & (FSYNC | FDSYNC)) && (count == 1)) {
