@@ -1969,7 +1969,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					}
 					newblksz = new_new_blksz;
 				}
-				dmu_tx_hold_write(tx, zp->z_id, 0, end);
+				dmu_tx_hold_write(tx, zp->z_id, 0, newblksz);
 			} else {
 				newblksz = 0;
 			}
@@ -1986,7 +1986,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			if (rl->r_len == UINT64_MAX)
 				zfs_range_reduce(rl, woff, start_resid);
 
-			zp->z_size = end;
+			uint64_t pre = zp->z_size;
+			zp->z_size = woff;
 
 			VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
 				&zp->z_size,
@@ -1995,9 +1996,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			/* end the tx */
 			dmu_tx_commit(tx);
 
-			dprintf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld (end == %lld)\n",
-			    __func__, __LINE__, zp->z_size, ubc_getsize(vp), end);
-			zp->z_size = ubc_getsize(vp);
+			if (zp->z_size != ubc_getsize(vp)) {
+				printf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld"
+				    "(woff = %lld, end = %lld, pre = %lld)\n",
+				    __func__, __LINE__, zp->z_size, ubc_getsize(vp), woff, end, pre);
+				zp->z_size = ubc_getsize(vp);
+			}
 		}
 
                 /* break the work into reasonable sized chunks */

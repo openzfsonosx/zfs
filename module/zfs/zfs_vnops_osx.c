@@ -2723,17 +2723,22 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		if (rl->r_len == UINT64_MAX)
 			zfs_range_reduce(rl, ap->a_f_offset, ap->a_size);
 
-		zp->z_size = end;
+		uint64_t pre = zp->z_size;
+		uint64_t woff = ap->a_f_offset;
+		zp->z_size = woff;
 
 		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
 			&zp->z_size,
 			sizeof (zp->z_size), tx));
 
 		dmu_tx_commit(tx);
-		dprintf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld (end = %lld)\n",
-		    __func__, __LINE__, zp->z_size, ubc_getsize(vp), end);
-		zp->z_size = ubc_getsize(vp);
 
+		if (zp->z_size != ubc_getsize(vp)) {
+			dprintf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld"
+			    " (woff = %lld, end = %lld, pre = %lld)\n",
+			    __func__, __LINE__, zp->z_size, ubc_getsize(vp), woff, end, pre);
+			zp->z_size = ubc_getsize(vp);
+		}
 		/* now create the next tx */
 		tx = dmu_tx_create(zfsvfs->z_os);
 		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
