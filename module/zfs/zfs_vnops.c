@@ -420,8 +420,8 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 	cleanlocks(vp, ddi_get_pid(), 0);
 	cleanshares(vp, ddi_get_pid());
 #else
-	if (vn_has_cached_data(vp) &&
-	    vnode_isreg(vp) && !vnode_isswap(vp)) {
+	if ((((flag & FWRITE) != 0) && ubc_pages_resident(vp)) ||
+	    (vn_has_cached_data(vp) && vnode_isreg(vp) && !vnode_isswap(vp))) {
 		ASSERT(vn_has_cached_data(vp) || ubc_pages_resident(vp));
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3S(zp->z_size, ==, ubcsize);
