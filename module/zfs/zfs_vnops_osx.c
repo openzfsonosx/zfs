@@ -2696,7 +2696,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			} else {
 				newblksz = MIN(end, zp->z_zfsvfs->z_max_blksz);
 			}
-                        if (ISP2(newblksz) && newblksz < max_blksz) {
+                        if (ISP2(newblksz) && newblksz < max_blksz && newblksz != 1) {
 				uint64_t new_new_blksz = newblksz + 1;
 				dprintf("ZFS: %s:%d: bumping new_blksz from %lld to %lld, file %s\n",
 				    __func__, __LINE__, newblksz, new_new_blksz, zp->z_name_cache);
