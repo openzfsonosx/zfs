@@ -2061,6 +2061,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(uio_offset(uio), ==, this_off);
 			ASSERT3S(ubc_getsize(vp), >, uio_offset(uio));
 			ASSERT3S(ubc_getsize(vp), >=, uio_offset(uio) + this_chunk);
+			uint64_t ubcsize_before_cluster_ops = ubc_getsize(vp);
 
 			/* fill any holes */
 			int fill_err = ubc_fill_holes_in_range(vp, this_off, this_off + this_chunk);
@@ -2068,6 +2069,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				printf("ZFS: %s:%d: error filling holes [%lld, %lld] file %s\n",
 				    __func__, __LINE__, this_off, this_off + this_chunk, zp->z_name_cache);
 			}
+
+			ASSERT3S(ubcsize_before_cluster_ops, ==, ubc_getsize(vp));
 
 			int xfer_resid = (int) this_chunk;
 			error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
@@ -2113,10 +2116,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			}
 			ASSERT3S(error, ==, 0);
 
+			ASSERT3S(ubcsize_before_cluster_ops, ==, ubc_getsize(vp));
 			ASSERT3S(zp->z_size, >=, uio_offset(uio));
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
+			ASSERT3S(zp->z_size, <=, woff + start_resid);
+			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
+			ASSERT3S(ubc_getsize, <=, woff + start_resid);
 
-			z_map_drop_lock(zp, &need_release, &need_upgrade);
 
 			/* NOTE: in principle we could have a waiting
 			 *       file truncation happen *right now* that
@@ -2156,6 +2162,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					dmu_tx_commit(tx);
 				}
 			}
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
 		} // for
 
 		ASSERT(!rw_lock_held(&zp->z_map_lock));
@@ -2571,6 +2578,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					    __func__, __LINE__, size_update_ctr,
 					    end_size, zp->z_size);
 				}
+
+				/*
+				 * If we are replaying and eof is non zero then force
+				 * the file size to the specified eof. Note, there's no
+				 * concurrency during replay.
+				 */
+				if (zfsvfs->z_replay && zfsvfs->z_replay_eof != 0)
+					zp->z_size = zfsvfs->z_replay_eof;
 
 				VERIFY3S(0, ==, sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
 					&zp->z_size, sizeof(zp->z_size), tx));

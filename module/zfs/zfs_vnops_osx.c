@@ -2503,11 +2503,11 @@ bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 		(f_offset & PAGE_MASK_64) || (size & PAGE_MASK)) {
 		if (is_clcommit)
 			ubc_upl_abort_range(upl, upl_offset, size, UPL_ABORT_FREE_ON_EMPTY);
-		printf("ZFS: %s: invalid offset or size\n", __func__);
+		printf("ZFS: %s:%d invalid offset or size (off %lld, size %d, filesize %lld)"
+		    " file %s\n" , __func__, __LINE__, f_offset, size, filesize, zp->z_name_cache);
 		return (EINVAL);
 	}
 	max_size = filesize - f_offset;
-
 
 	if (size < max_size)
 		io_size = size;
@@ -2522,16 +2522,20 @@ bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 								UPL_ABORT_FREE_ON_EMPTY);
 	}
 
-#if 1
-	if (f_offset + size > filesize) {
-		dprintf("ZFS: lowering size %u to %llu\n",
-			   size, f_offset > filesize ? 0 : filesize - f_offset);
-		if (f_offset > filesize)
-			size = 0;
-		else
-			size = filesize - f_offset;
+	if (f_offset > filesize) {
+		printf("ZFS: %s:%d: trying to write starting past filesize %lld : off %lld, size %u,"
+		    " filename %s\n",
+		    __func__, __LINE__, filesize, f_offset, size, zp->z_name_cache);
+		return (SET_ERROR(EINVAL));
 	}
-#endif
+
+	if (f_offset + size > filesize) {
+		printf("ZFS: %s:%d (trying to extend file) lowering size %u to %llu, file %s\n",
+		    __func__, __LINE__,
+		    size, f_offset > filesize ? 0ULL : filesize - f_offset, zp->z_name_cache);
+		size = filesize - f_offset;
+	}
+
 	if (!dmu_write_is_safe(zp, f_offset, f_offset + size)) {
 		printf("ZFS: %s:%d: cannot safely write [%lld, %lld] z_blksz %d file %s\n",
 		    __func__, __LINE__, f_offset, f_offset + size,
@@ -2725,7 +2729,11 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 
 		uint64_t pre = zp->z_size;
 		uint64_t woff = ap->a_f_offset;
-		zp->z_size = woff;
+		// zp->z_size = woff;
+
+		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
+		ASSERT3S(zp->z_size, >, ap->a_f_offset);
+		ASSERT3S(zp->z_size, >=, ap->a_f_offset + ap->a_size);
 
 		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
 			&zp->z_size,
