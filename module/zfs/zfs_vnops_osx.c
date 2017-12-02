@@ -4319,7 +4319,7 @@ zfs_vnop_blktooff(struct vnop_blktooff_args *ap)
 	};
 #endif
 {
-#if 0
+#if 1
 	dprintf("vnop_blktooff: 0\n");
 	return (ENOTSUP);
 #else
@@ -4378,7 +4378,7 @@ zfs_vnop_offtoblk(struct vnop_offtoblk_args *ap)
 	};
 #endif
 {
-#if 0
+#if 1
 	dprintf("+vnop_offtoblk\n");
 	return (ENOTSUP);
 #else
@@ -4444,7 +4444,7 @@ zfs_vnop_blockmap(struct vnop_blockmap_args *ap)
 #endif
 {
 	dprintf("+vnop_blockmap\n");
-#if 0
+#if 1
 	return (ENOTSUP);
 #else
 	/* partially from mockfs_blockmap() in bsd/mockfs/mockfs_vnops.c,
