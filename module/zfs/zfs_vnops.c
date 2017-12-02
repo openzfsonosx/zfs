@@ -1962,8 +1962,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					dprintf("ZFS: %s:%d: bumping new_blksz from %lld to %lld, file %s\n",
 					    __func__, __LINE__, newblksz, new_new_blksz, zp->z_name_cache);
 					if (ISP2(new_new_blksz)) {
-						printf("ZFS: %s:%d !ISP2(%lld) failed (newblksz = %lld)!\n",
-						    __func__, __LINE__, new_new_blksz, newblksz);
+						printf("ZFS: %s:%d !ISP2(%lld) failed"
+						    " (newblksz = %lld) file %s!\n",
+						    __func__, __LINE__, new_new_blksz, newblksz,
+						    zp->z_name_cache);
 					}
 					newblksz = new_new_blksz;
 				}
