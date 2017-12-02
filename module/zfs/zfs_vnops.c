@@ -2114,9 +2114,16 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(ubcsize_before_cluster_ops, ==, ubc_getsize(vp));
 			ASSERT3S(zp->z_size, >=, uio_offset(uio));
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
-			ASSERT3S(zp->z_size, >=, woff + start_resid);
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
-			ASSERT3S(ubc_getsize(vp), >=, woff + start_resid);
+			if (0) {
+				ASSERT3S(zp->z_size, >=, woff + start_resid);
+				ASSERT3S(ubc_getsize(vp), >=, woff + start_resid);
+			} else if (zp->z_size < woff + start_resid) {
+				printf("ZFS: %s:%d: z_size %lld should be at least"
+				    " woff+start_resid %lld, file %s\n",
+				    __func__, __LINE__, zp->z_size, woff + start_resid,
+				    zp->z_name_cache);
+			}
 
 			/*  as we have completed a uio_move, commit the size change */
 
