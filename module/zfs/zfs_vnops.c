@@ -1403,6 +1403,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
 				ASSERT3S(zp->z_size, ==, ubcsize);
 				off_t resid_off = 0;
+				// we don't have to do this for non-mapped files here
 				int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
 				    sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
 				ASSERT3S(retval, ==, 0);
@@ -4777,18 +4778,16 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 
 	// ubc msync, without mutexes
 	// should take a vnode reference XXX
-	if (mapped > 0) {
-		off_t ubcsize = ubc_getsize(vp);
-		if (ubcsize > 0) {
-			ASSERT3S(zp->z_size, ==, ubcsize);
-			VNOPS_STAT_BUMP(zfs_fsync_ubc_msync);
-			off_t resid_off = 0;
-			int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
-			    UBC_PUSHALL | UBC_SYNC);
-			ASSERT3S(retval, ==, 0);
-			if (retval != 0)
-				ASSERT3S(resid_off, ==, ubcsize);
-		}
+	off_t ubcsize = ubc_getsize(vp);
+	if (ubcsize > 0) {
+		ASSERT3S(zp->z_size, ==, ubcsize);
+		VNOPS_STAT_BUMP(zfs_fsync_ubc_msync);
+		off_t resid_off = 0;
+		int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
+		    UBC_PUSHALL | UBC_SYNC);
+		ASSERT3S(retval, ==, 0);
+		if (retval != 0)
+			ASSERT3S(resid_off, ==, ubcsize);
 	}
 
 	ASSERT3P(zp->z_sa_hdl, !=, NULL);

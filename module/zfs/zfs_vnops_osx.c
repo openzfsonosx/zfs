@@ -3267,26 +3267,24 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	dprintf("+vnop_reclaim zp %p/%p type %d\n", zp, vp, vnode_vtype(vp));
 	if (!zp) goto out;
 
-	if (zp->z_is_mapped > 0) {
-		VNOPS_OSX_STAT_BUMP(reclaim_mapped);
-		//ASSERT(ubc_pages_resident(vp));
-		off_t ubcsize = ubc_getsize(vp);
-		ASSERT3S(ubcsize, >=, 0);
-		if (ubcsize == 0)
-			ASSERT0(ubc_pages_resident(vp));
-		if (ubcsize > 0) {
-			ASSERT(ubc_pages_resident(vp));
-			ASSERT3S(zp->z_size, ==, ubcsize);
-			off_t resid_off = 0;
-			int retval = ubc_msync(vp, (off_t)0,
-			    ubcsize, &resid_off,
-			    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
-			ASSERT3S(retval, ==, 0);
-			if (retval != 0)
-				ASSERT3S(resid_off, ==, ubcsize);
-		}
-		ASSERT3P(zp->z_sa_hdl, !=, NULL);
+	VNOPS_OSX_STAT_BUMP(reclaim_mapped);
+	//ASSERT(ubc_pages_resident(vp));
+	off_t ubcsize = ubc_getsize(vp);
+	ASSERT3S(ubcsize, >=, 0);
+	if (ubcsize == 0)
+		ASSERT0(ubc_pages_resident(vp));
+	if (ubcsize > 0) {
+		ASSERT(ubc_pages_resident(vp));
+		ASSERT3S(zp->z_size, ==, ubcsize);
+		off_t resid_off = 0;
+		int retval = ubc_msync(vp, (off_t)0,
+		    ubcsize, &resid_off,
+		    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
+		ASSERT3S(retval, ==, 0);
+		if (retval != 0)
+			ASSERT3S(resid_off, ==, ubcsize);
 	}
+	ASSERT3P(zp->z_sa_hdl, !=, NULL);
 
 	zfsvfs = zp->z_zfsvfs;
 
