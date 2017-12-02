@@ -2005,13 +2005,18 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			}
 		}
 
+		/* grab the map lock, protecting against other zfs UBC users */
+		boolean_t need_release = B_FALSE;
+		boolean_t need_upgrade = B_FALSE;
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+		VNOPS_STAT_INCR(update_pages_want_lock, tries);
+
                 /* break the work into reasonable sized chunks */
 		const off_t chunk_size = (off_t)SPA_MAXBLOCKSIZE;
 		const int proj_chunks = howmany(start_resid, chunk_size);
 
 		for (int c = proj_chunks ; uio_resid(uio) > 0; c--) {
 			ASSERT3S(c, >=, 0);
-			ASSERT(!rw_lock_held(&zp->z_map_lock));
 
 			const off_t this_z_size_start = zp->z_size;
 
@@ -2022,12 +2027,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			    chunk_size - P2PHASE(this_off, chunk_size));
 			ASSERT3S(this_chunk, <=, SPA_MAXBLOCKSIZE);
 			ASSERT3S(this_chunk, >, 0);
-
-			/* grab the map lock, protecting against other zfs UBC users */
-			boolean_t need_release = B_FALSE;
-			boolean_t need_upgrade = B_FALSE;
-			uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-			VNOPS_STAT_INCR(update_pages_want_lock, tries);
 
 			/* increase ubc size if we are growing the file */
 			end_size = MAX(ubc_getsize(vp), this_off + this_chunk);
@@ -2123,23 +2122,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 			ASSERT3S(ubc_getsize, <=, woff + start_resid);
 
-
-			/* NOTE: in principle we could have a waiting
-			 *       file truncation happen *right now* that
-			 *       we will undo with the znode change commit.
-			 *
-			 * option 1 is zfs_range_lock early in our vnode_isreg
-			 *       but is that safe for the fill holes activity?
-			 *       (check vs. previous zfs_write, pageoutv2, etc.)
-			 *
-			 * option 2 is bad : grabbing a zfs_range_lock
-			 *                   while holding the
-			 *                   z_map_lock invites a
-			 *                   deadlock if another thread
-			 *                   has the range lock and
-			 *                   wants the map lock.
-			 */
-
 			/*  as we have completed a uio_move, commit the size change */
 
 			/* commit the znode change */
@@ -2162,8 +2144,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					dmu_tx_commit(tx);
 				}
 			}
-			z_map_drop_lock(zp, &need_release, &need_upgrade);
 		} // for
+
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
 
 		ASSERT(!rw_lock_held(&zp->z_map_lock));
 		ASSERT3S(error, ==, 0);
