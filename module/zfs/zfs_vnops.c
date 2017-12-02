@@ -2200,7 +2200,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	skip_sync:
 		zfs_range_unlock(rl);
 
-		if (is_safe && do_sync) {
+		if (is_safe) {
 			error = zfs_write_sync_range_helper(vp, woff, woff + start_resid,
 			    start_resid, do_sync, B_FALSE, B_TRUE);
 			if (error != 0) {
