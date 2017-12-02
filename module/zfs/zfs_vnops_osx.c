@@ -106,7 +106,7 @@ typedef struct vnops_osx_stats {
 	kstat_named_t bluster_pageout_pages;
 	kstat_named_t pageoutv2_calls;
 	kstat_named_t pageoutv2_want_lock;
-	kstat_named_t pageoutv2_without_msync_flag;
+	kstat_named_t pageoutv2_upl_iosync;
 	kstat_named_t pageoutv2_skip_clean_pages;
 	kstat_named_t pageoutv2_all_previously_freed;
 	kstat_named_t pageoutv1_pages;
@@ -127,7 +127,7 @@ static vnops_osx_stats_t vnops_osx_stats = {
 	{ "bluster_pageout_pages",             KSTAT_DATA_UINT64 },
 	{ "pageoutv2_calls",                   KSTAT_DATA_UINT64 },
 	{ "pageoutv2_want_lock",               KSTAT_DATA_UINT64 },
-	{ "pageoutv2_without_msync_flag",      KSTAT_DATA_UINT64 },
+	{ "pageoutv2_upl_iosync",      KSTAT_DATA_UINT64 },
 	{ "pageoutv2_skip_clean_pages",        KSTAT_DATA_UINT64 },
 	{ "pageoutv2_all_previously_freed",    KSTAT_DATA_UINT64 },
 	{ "pageoutv1_pages",                   KSTAT_DATA_UINT64 },
@@ -2654,8 +2654,6 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	}
 	else {
 		request_flags = UPL_UBC_PAGEOUT | UPL_RET_ONLY_DIRTY;
-		VNOPS_OSX_STAT_BUMP(pageoutv2_without_msync_flag);
-
 	}
 
 	ASSERT3S(ap->a_size, <=, MAX_UPL_SIZE_BYTES);
@@ -2963,8 +2961,10 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 
 	zfs_range_unlock(rl);
 
-	if (a_flags & UPL_IOSYNC)
+	if (a_flags & UPL_IOSYNC) {
 		zil_commit(zfsvfs->z_log, zp->z_id);
+		VNOPS_OSX_STAT_BUMP(pageoutv2_upl_iosync);
+	}
 	if (error)
 		ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
 	else
