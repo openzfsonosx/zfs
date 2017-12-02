@@ -189,7 +189,22 @@ extern void zfs_ioctl_fini(void);
 #endif
 
 
-
+static int
+zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
+{
+	if (vnode_isreg(vp) && ubc_pages_resident(vp)) {
+		off_t resid_off = 0;
+		off_t ubcsize = ubc_getsize(vp);
+		int msync_retval = ubc_msync(vp, (off_t)0, ubcsize, &resid_off, UBC_PUSHALL);
+		if (msync_retval != 0 &&
+		    !(msync_retval == EINVAL && resid_off == ubcsize)) {
+			/* we can get an EINVAL spuriously */
+			printf("ZFS: %s:%d: ubc_msync returned error %d\n", __func__, __LINE__,
+			    msync_retval);
+		}
+	}
+	return (0);
+}
 
 int
 zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t context)
@@ -220,6 +235,8 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
             ZFS_EXIT(zfsvfs);
             return (0);
         }
+
+	vnode_iterate(vfsp, 0, zfs_vfs_umcallback, 0);
 
         if (zfsvfs->z_log != NULL)
             zil_commit(zfsvfs->z_log, 0);
