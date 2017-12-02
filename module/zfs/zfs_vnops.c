@@ -396,8 +396,8 @@ zfs_open(vnode_t **vpp, int flag, cred_t *cr, caller_context_t *ct)
 
 	/* Keep a count of the synchronous opens in the znode */
 	if (flag & (FSYNC | FDSYNC)) {
-		ASSERT3U(zp->z_sync_cnt, <, UINT32_MAX);
-		ASSERT3U(zp->z_sync_cnt, <, 1024);  // XXX: ARBITRARY
+		ASSERT3S(zp->z_sync_cnt, <, UINT32_MAX);
+		ASSERT3S(zp->z_sync_cnt, <, 1024);  // XXX: ARBITRARY
 		atomic_inc_32(&zp->z_sync_cnt);
 	}
 
@@ -442,7 +442,7 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 
 	/* Decrement the synchronous opens in the znode */
 	if ((flag & (FSYNC | FDSYNC)) && (count == 1)) {
-		ASSERT3U(zp->z_sync_cnt, >, 0);
+		ASSERT3S(zp->z_sync_cnt, >, 0);
 		atomic_dec_32(&zp->z_sync_cnt);
 	}
 
