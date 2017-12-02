@@ -426,7 +426,8 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3S(zp->z_size, ==, ubcsize);
 		off_t resid_off = 0;
-		int sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
+		int sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS ||
+		    (flag & (FSYNC | FDSYNC)) != 0;
 		int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
 		    sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
 	        ASSERT3S(retval, ==, 0);
