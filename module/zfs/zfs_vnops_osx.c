@@ -2530,7 +2530,7 @@ bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 	}
 
 	if (f_offset + size > filesize) {
-		printf("ZFS: %s:%d (trying to extend file) lowering size %u to %llu, file %s\n",
+		dprintf("ZFS: %s:%d (trying to extend file) lowering size %u to %llu, file %s\n",
 		    __func__, __LINE__,
 		    size, f_offset > filesize ? 0ULL : filesize - f_offset, zp->z_name_cache);
 		size = filesize - f_offset;
@@ -2700,7 +2700,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			}
                         if (ISP2(newblksz) && newblksz < max_blksz && newblksz != 1) {
 				uint64_t new_new_blksz = newblksz + 1;
-				printf("ZFS: %s:%d: bumping new_blksz from %lld to %lld, file %s\n",
+				dprintf("ZFS: %s:%d: bumping new_blksz from %lld to %lld, file %s\n",
 				    __func__, __LINE__, newblksz, new_new_blksz, zp->z_name_cache);
 				if (ISP2(new_new_blksz)) {
 					printf("ZFS: %s:%d !ISP2(%lld) failed"
@@ -2733,7 +2733,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 
 		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 		ASSERT3S(zp->z_size, >, ap->a_f_offset);
-		ASSERT3S(zp->z_size, >=, ap->a_f_offset + ap->a_size);
+		//ASSERT3S(zp->z_size, >=, ap->a_f_offset + ap->a_size);
 
 		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
 			&zp->z_size,
