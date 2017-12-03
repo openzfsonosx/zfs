@@ -424,6 +424,8 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
+#if 0
+	// maybe should lock, maybe should do this only if last closer
 	if ((((flag & FWRITE) != 0) && ubc_pages_resident(vp)) ||
 	    (vn_has_cached_data(vp) && vnode_isreg(vp) && !vnode_isswap(vp))) {
 		ASSERT(vn_has_cached_data(vp) || ubc_pages_resident(vp));
@@ -440,6 +442,7 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 		ASSERT3P(zp->z_sa_hdl, !=, NULL);
 		VNOPS_STAT_BUMP(zfs_close_msync);
 	}
+#endif
 
 	/* Decrement the synchronous opens in the znode */
 	if ((flag & (FSYNC | FDSYNC)) && (count == 1)) {
