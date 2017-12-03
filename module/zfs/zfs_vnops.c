@@ -1985,7 +1985,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		    RL_WRITER);
 		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		zfs_range_unlock(rl);
-		if (!is_file_clean(vp, ubcsize)) {
+		if (!(0 == is_file_clean(vp, ubcsize))) {
 			boolean_t sync = (ioflag & (FSYNC | FDSYNC)) ||
 			    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
 			ASSERT3S(zp->z_size, ==, ubcsize);

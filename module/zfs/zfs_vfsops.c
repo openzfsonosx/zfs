@@ -194,7 +194,7 @@ extern void zfs_ioctl_fini(void);
 static int
 zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 {
-	if (vnode_isreg(vp) && ubc_pages_resident(vp) && !is_file_clean(vp, ubc_getsize(vp))) {
+	if (vnode_isreg(vp) && ubc_pages_resident(vp) && (0 != is_file_clean(vp, ubc_getsize(vp)))) {
 		znode_t *zp = VTOZ(vp);
 		zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 		ZFS_ENTER(zfsvfs);
