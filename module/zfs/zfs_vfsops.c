@@ -203,7 +203,24 @@ zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 		rl_t *rl = zfs_range_lock(zp, 0, ubc_getsize(vp), RL_WRITER);
 		/* take z_map_lock */
 		boolean_t need_release = B_FALSE, need_upgrade = B_TRUE;
-		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+		/*
+		 * we try very briefly to grab the z_map_lock and give up
+		 * if we can't get it
+		 */
+		for (int tries = 0; tries < 10; tries++) {
+			if (rw_tryenter(&zp->z_map_lock, RW_WRITER)) {
+				need_release = B_TRUE;
+				zp->z_map_lock_holder = __func__;
+				break;
+			}
+			kpreempt(KPREEMPT_SYNC);
+		}
+		if (!rw_write_held(&zp->z_map_lock)) {
+			printf("ZFS: %s:%d: (skipping sync) could not acquire z_map_lock for file %s\n",
+			    __func__, __LINE__, zp->z_name_cache);
+			zfs_range_unlock(rl);
+			ZFS_EXIT(zfsvfs);
+		}
 		off_t resid_off = 0;
 		off_t ubcsize = ubc_getsize(vp);
 		/* give up range_lock, since pageoutv2 may need it */
@@ -218,10 +235,6 @@ zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 			    msync_retval);
 		}
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
-		if (tries > 20) {
-			printf("ZFS: %s:%d: long wait (tries %lld) for lock for file %s\n",
-			    __func__, __LINE__, tries, zp->z_name_cache);
-		}
 		ZFS_EXIT(zfsvfs);
 	}
 	return (0);
