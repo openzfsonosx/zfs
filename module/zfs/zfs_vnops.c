@@ -692,9 +692,120 @@ drop_and_exit:
 	ASSERT3S(error, ==, 0);
 }
 
+static void
+adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
+{
+
+	/*
+	 * like update_pages but is called with z_map_lock already held,
+	 * and it will dirty the updated page(s)
+	 */
+
+    znode_t *zp = VTOZ(vp);
+    //zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+    int len = nbytes;
+    int error = 0;
+    vm_offset_t vaddr = 0;
+    upl_t upl;
+    upl_page_info_t *pl = NULL;
+    off_t upl_start;
+    int upl_size;
+    int upl_page;
+    off_t off;
+
+    upl_start = uio_offset(uio);
+    off = upl_start & (PAGE_SIZE - 1);
+    upl_start &= ~PAGE_MASK;
+    upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
+
+    dprintf("update_pages %llu - %llu (adjusted %llu - %llu): off %llu\n",
+           uio_offset(uio), nbytes, upl_start, upl_size, off);
+    /*
+     * Create a UPL for the current range and map its
+     * page list into the kernel virtual address space.
+     */
+    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
+	UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
+        if ((error != KERN_SUCCESS) || !upl) {
+                printf("ZFS: update_pages failed to ubc_create_upl: %d\n", error);
+                return;
+        }
+
+        if (ubc_upl_map(upl, &vaddr) != KERN_SUCCESS) {
+                printf("ZFS: update_pages failed to ubc_upl_map: %d\n", error);
+                (void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+                return;
+        }
+
+    for (upl_page = 0; len > 0; ++upl_page) {
+        uint64_t bytes = MIN(PAGESIZE - off, len);
+        //uint64_t woff = uio_offset(uio);
+        /*
+         * We don't want a new page to "appear" in the middle of
+         * the file update (because it may not get the write
+         * update data), so we grab a lock to block
+         * zfs_getpage().
+         */
+
+        if (pl && upl_valid_page(pl, upl_page)) {
+            rw_exit(&zp->z_map_lock);
+            uio_setrw(uio, UIO_WRITE);
+           error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
+            if (error == 0) {
+
+                                /*
+                                  dmu_write(zfsvfs->z_os, zp->z_id,
+                                  woff, bytes, (caddr_t)vaddr + off, tx);
+                                */
+                /*
+                 * We don't need a ubc_upl_commit_range()
+                 * here since the dmu_write() effectively
+                 * pushed this page to disk.
+                 */
+
+		    kern_return_t kret = ubc_upl_commit_range(upl, upl_start, PAGESIZE,
+			UPL_COMMIT_FREE_ON_EMPTY | UPL_COMMIT_SET_DIRTY);
+
+		    printf("ZFS: %s:%d: committed off %lld bytes %lld kret %d\n",
+			__func__, __LINE__, off, bytes, kret);
+
+            } else {
+                /*
+                 * page is now in an unknown state so dump it.
+                 */
+
+                kern_return_t kret = ubc_upl_abort_range(upl, upl_start, PAGESIZE,
+		    UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_DUMP_PAGES);
+
+		    printf("ZFS: %s:%d: uiomove error %d off %lld bytes %lld upl_abort_range kret %d\n",
+			__func__, __LINE__, error, off, bytes, kret);
+
+            }
+        } else { // !upl_valid_page
+                        /*
+                          error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
+                          uio, bytes, tx);
+                        */
+		kern_return_t kret = ubc_upl_abort_range(upl, upl_start, PAGESIZE, UPL_ABORT_FREE_ON_EMPTY);
+
+		printf("ZFS: %s:%d: aborted invalid page %d off %lld bytes %lld upl_abort_range ret %d\n",
+		    __func__, __LINE__, upl_page, off, bytes, kret);
+
+        }
+
+        vaddr += PAGE_SIZE;
+        upl_start += PAGE_SIZE;
+        len -= bytes;
+        off = 0;
+    }
+    /*
+     * Unmap the page list and free the UPL.
+     */
+        kern_return_t unmap_ret = ubc_upl_unmap(upl);
+	ASSERT3S(unmap_ret, ==, 0);
+}
+
 /* OSX UBC-aware implementation of zfs_read and mappedread follows */
-
-
 
 /*
  * read bytes from file vp into a hole in a upl.
@@ -2083,17 +2194,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					    " returning short write, woff %lld,"
 					    " this_off %lld uio_offset %lld uio_resid %lld"
 					    " this_chunk %ld xfer_resid %d file_size %lld %lld"
-					    " ioflag %d\n",
+					    " ioflag %d - punting to update pages function\n",
 					    __func__, __LINE__, zp->z_name_cache,
 					    woff, this_off, uio_offset(uio), uio_resid(uio),
 					    this_chunk, xfer_resid,
 					    zp->z_size, ubc_getsize(vp), ioflag);
 					VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
-					// we could try doing a dmu_write_uio here if
-					// it's safe to do so?
-					// just unlocking and returning 0 is the wrong thing here
-					// and break basically does that too
-					break;
+					adjusted_master_update_pages(vp, xfer_resid, uio);
 				} else {
 					VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
 				}
