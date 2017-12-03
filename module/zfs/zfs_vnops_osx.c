@@ -2683,6 +2683,8 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	}
 	ASSERT(rw_write_held(&zp->z_map_lock));
 
+	zp->z_map_lock_holder = __func__;
+
 	if (secs == 0) {
 		printf("ZFS: %s:%d: lock was already held for %s\n",
 		    __func__, __LINE__, zp->z_name_cache);
