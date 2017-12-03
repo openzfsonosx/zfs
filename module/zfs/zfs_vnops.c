@@ -426,6 +426,17 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 
 #if 0
 	// maybe should lock, maybe should do this only if last closer
+	/*
+	 * vn_has_cached_data is a useless test which will always be
+	 * true if the file has ever been mmapped, so get rid of that
+	 * part of the test, or kablam (mds does a read-only zfs_close,
+	 * while ranlib or fish_history or whatever is doing a write()
+	 * or FWRITE zfs_close()).
+	 *
+	 * we probably don't want to wait for locks held by other
+	 * threads/processes here anyway, let zfs_vfs_sync and the
+	 * writers sort it out among themselves.
+	 */
 	if ((((flag & FWRITE) != 0) && ubc_pages_resident(vp)) ||
 	    (vn_has_cached_data(vp) && vnode_isreg(vp) && !vnode_isswap(vp))) {
 		ASSERT(vn_has_cached_data(vp) || ubc_pages_resident(vp));

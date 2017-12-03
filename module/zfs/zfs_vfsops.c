@@ -193,6 +193,16 @@ static int
 zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 {
 	if (vnode_isreg(vp) && ubc_pages_resident(vp)) {
+		znode_t *zp = VTOZ(vp);
+		zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+		ZFS_ENTER(zfsvfs);
+		ZFS_VERIFY_ZP(zp);
+		if (!rw_tryenter(&zp->z_map_lock, RW_WRITER)) {
+			printf("ZFS: %s:%d cannot get z_map_lock, skipping zfs_vfs_sync for file %s\n",
+			    __func__, __LINE__, zp->z_name_cache);
+			ZFS_EXIT(zfsvfs);
+			return (0);
+		}
 		off_t resid_off = 0;
 		off_t ubcsize = ubc_getsize(vp);
 		int msync_retval = ubc_msync(vp, (off_t)0, ubcsize, &resid_off, UBC_PUSHALL);
@@ -202,6 +212,8 @@ zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 			printf("ZFS: %s:%d: ubc_msync returned error %d\n", __func__, __LINE__,
 			    msync_retval);
 		}
+		rw_exit(&zp->z_map_lock);
+		ZFS_EXIT(zfsvfs);
 	}
 	return (0);
 }
