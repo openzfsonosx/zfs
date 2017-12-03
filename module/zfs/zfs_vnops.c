@@ -2080,19 +2080,19 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					ASSERT3S(this_chunk, >=, xfer_resid);
 					IMPLY(xfer_resid == this_chunk, uio_offset(uio) == this_off);
 					if (this_off == uio_offset(uio)) {
-						printf("ZFS: %s:%d no progress on file %s, returning short write\n",
-						    __func__, __LINE__, zp->z_name_cache);
+						printf("ZFS: %s:%d no progress on file %s,"
+						    " returning short write, woff %lld,"
+						    " this_off %lld uio_offset %lld uio_resid %lld"
+						    " this_chunk %ld xfer_resid %d\n",
+						    __func__, __LINE__, zp->z_name_cache,
+						    woff, this_off, uio_offset(uio), uio_resid(uio),
+						    this_chunk, xfer_resid);
 						z_map_drop_lock(zp, &need_release, &need_upgrade);
 						zfs_range_unlock(rl);
 						VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
 						ZFS_EXIT(zfsvfs);
 						ASSERT3S(woff, <, this_off);
-						if (woff < this_off) {
-							return (0);
-						} else {
-							VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
-							return (EIO);
-						}
+						return (0);
 					}
 				} else {
 					VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
