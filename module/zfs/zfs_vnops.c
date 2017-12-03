@@ -1804,7 +1804,11 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 	off_t ubcsize = ubc_getsize(vp);
 	off_t msync_resid = 0;
 
-	rw_enter(&zp->z_map_lock, RW_WRITER);
+	if (!rw_tryenter(&zp->z_map_lock, RW_WRITER)) {
+		printf("ZFS: %s:%d: rw_tryenter failed, blocking for file %s\n",
+		    __func__, __LINE__, zp->z_name_cache);
+		rw_enter(&zp->z_map_lock, RW_WRITER);
+	}
 	error = ubc_msync(vp, woff, end_range, &msync_resid,
 	    (do_sync) ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
 	rw_exit(&zp->z_map_lock);
