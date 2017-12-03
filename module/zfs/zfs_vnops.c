@@ -2073,27 +2073,27 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			if (error == 0) {
 				VNOPS_STAT_BUMP(zfs_write_cluster_copy_ok);
 				if (xfer_resid != 0) {
-					printf("ZFS: %s:%d nonzero xfer_resid %d this_chunk %ld this_off %lld,"
-					    "uio_off %lld, file %s\n",
+					dprintf("ZFS: %s:%d nonzero xfer_resid %d this_chunk %ld this_off %lld,"
+					    " uio_off %lld, file %s\n",
 					    __func__, __LINE__, xfer_resid, this_chunk,
 					    this_off, uio_offset(uio), zp->z_name_cache);
 					ASSERT3S(this_chunk, >=, xfer_resid);
 					IMPLY(xfer_resid == this_chunk, uio_offset(uio) == this_off);
-					if (this_off == uio_offset(uio)) {
-						printf("ZFS: %s:%d no progress on file %s,"
-						    " returning short write, woff %lld,"
-						    " this_off %lld uio_offset %lld uio_resid %lld"
-						    " this_chunk %ld xfer_resid %d\n",
-						    __func__, __LINE__, zp->z_name_cache,
-						    woff, this_off, uio_offset(uio), uio_resid(uio),
-						    this_chunk, xfer_resid);
-						z_map_drop_lock(zp, &need_release, &need_upgrade);
-						zfs_range_unlock(rl);
-						VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
-						ZFS_EXIT(zfsvfs);
-						ASSERT3S(woff, <, this_off);
-						return (0);
-					}
+					printf("ZFS: %s:%d no progress on file %s,"
+					    " returning short write, woff %lld,"
+					    " this_off %lld uio_offset %lld uio_resid %lld"
+					    " this_chunk %ld xfer_resid %d file_size %lld %lld"
+					    " ioflag %d\n",
+					    __func__, __LINE__, zp->z_name_cache,
+					    woff, this_off, uio_offset(uio), uio_resid(uio),
+					    this_chunk, xfer_resid,
+					    zp->z_size, ubc_getsize(vp), ioflag);
+					VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
+					// we could try doing a dmu_write_uio here if
+					// it's safe to do so?
+					// just unlocking and returning 0 is the wrong thing here
+					// and break basically does that too
+					break;
 				} else {
 					VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
 				}
