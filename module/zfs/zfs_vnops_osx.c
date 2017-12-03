@@ -2626,23 +2626,68 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	ASSERT(ubc_pages_resident(ZTOV(zp)));
 	ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 
-	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
+	/*
+	 * To avoid deadlocking, we must take the range lock, then
+	 * acquire the z_map_lock lock.  If we enter with the
+	 * z_map_enter lock held, drop it.  Then go through the process
+	 * of (a) acquire range lock (b) try to acquire z_map_lock.  If
+	 * we can't acquire z_map_lock, then if there are other waiters
+	 * for this range lock, we drop the range lock, then reacquire
+	 * it, and continue with (b).
+	 *
+	 * Eventually we have ordered: [1] rl [2] z_map_lock.
+	 */
+
+	if (rw_write_held(&zp->z_map_lock)) {
+		printf("ZFS: %s:%d: dropping held-on-entry z_map_lock for file %s\n",
+		    __func__, __LINE__, zp->z_name_cache);
+		rw_exit(&zp->z_map_lock);
+	}
 
 	rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
-	/*
-	 * We lock against update_pages() [part of zfs_write()],
-	 * zfs_vnop_pageout(), and zfs_vnop_pagein(), and ourselves (in
-	 * other threads), since any of these may dirty the UBC for this
-	 * file.
-	 */
 
 	boolean_t need_release = B_FALSE;
 	boolean_t need_upgrade = B_FALSE;
-	if (!rw_write_held(&zp->z_map_lock)) {
-		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-		VNOPS_OSX_STAT_INCR(pageoutv2_want_lock, tries);
+
+	hrtime_t print_time = gethrtime() + SEC2NSEC(1);
+	int secs = 0;
+
+	extern void IOSleep(unsigned milliseconds); // yields thread
+	extern void IODelay(unsigned microseconds); // x86_64 rep nop
+
+	while(!rw_write_held(&zp->z_map_lock)){
+		if (secs == 0)
+			secs = 1;
+		if (rw_tryenter(&zp->z_map_lock, RW_WRITER))
+			break;
+		// couldn't get it, maybe drop the range lock
+		if (rl->r_write_wanted || rl->r_read_wanted) {
+			printf("ZFS: %s:%d range lock contended, dropping it for [%lld, %ld] for file %s\n",
+			    __func__, __LINE__, ap->a_f_offset, a_size, zp->z_name_cache);
+			zfs_range_unlock(rl);
+			IOSleep(1); // we hold no locks, so let work be done
+			rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
+		}
+		hrtime_t cur_time = gethrtime();
+		if (cur_time > print_time) {
+			secs++;
+			printf("ZFS: %s:%d: looping for z_map_lock for %d sec"
+			    " (held by %s) file %s\n", __func__, __LINE__, secs,
+                            (zp->z_map_lock_holder != NULL)
+                            ? zp->z_map_lock_holder
+                            : "(NULL)",
+			    zp->z_name_cache);
+			print_time = cur_time + SEC2NSEC(1);
+		}
+		IODelay(1);
+	}
+	ASSERT(rw_write_held(&zp->z_map_lock));
+
+	if (secs == 0) {
+		printf("ZFS: %s:%d: lock was already held for %s\n",
+		    __func__, __LINE__, zp->z_name_cache);
 	} else {
-		dprintf("ZFS: %s: z_map_lock already held\n", __func__);
+		VNOPS_OSX_STAT_INCR(pageoutv2_want_lock, secs);
 	}
 
 	/* Grab UPL now */
