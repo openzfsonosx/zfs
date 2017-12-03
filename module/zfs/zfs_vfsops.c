@@ -210,7 +210,10 @@ zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 			    msync_retval);
 		}
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
-		ASSERT3S(tries, <=, 2);
+		if (tries > 20) {
+			printf("ZFS: %s:%d: long wait (tries %lld) for lock for file %s\n",
+			    __func__, __LINE__, tries, zp->z_name_cache);
+		}
 		ZFS_EXIT(zfsvfs);
 	}
 	return (0);
