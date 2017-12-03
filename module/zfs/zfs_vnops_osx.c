@@ -1787,9 +1787,11 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 			 * of ubc_setsize/vnode_pager_setsize
 			 */
 			znode_t *zp = VTOZ(ap->a_vp);
-			rw_enter(&zp->z_map_lock, RW_WRITER);
+			boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+			uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 			int setsize_retval = ubc_setsize(ap->a_vp, vap->va_size);
-			rw_exit(&zp->z_map_lock);
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
+			ASSERT3U(tries, <=, 2);
 			VATTR_SET_SUPPORTED(vap, va_data_size);
 			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 		}
@@ -3286,28 +3288,12 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 		ASSERT3S(zp->z_size, ==, ubcsize);
 		off_t resid_off = 0;
 		int retval = 0;
-		if (!rw_write_held(&zp->z_map_lock)) {
-			rw_enter(&zp->z_map_lock, RW_WRITER);
-			retval = ubc_msync(vp, (off_t)0,
-			    ubcsize, &resid_off,
-			    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
-			rw_exit(&zp->z_map_lock);
-			printf("ZFS: %s:%d: anomaly: lock was already held for file %s\n",
-			    __func__, __LINE__, zp->z_name_cache);
-		} else if (rw_tryenter(&zp->z_map_lock, RW_WRITER)) {
-			retval = ubc_msync(vp, (off_t)0,
-			    ubcsize, &resid_off,
-			    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
-			rw_exit(&zp->z_map_lock);
-		} else {
-			printf("ZFS: %s:%d: lock not held, so blocking on it for file %s\n",
-			    __func__, __LINE__, zp->z_name_cache);
-			rw_enter(&zp->z_map_lock, RW_WRITER);
-			retval = ubc_msync(vp, (off_t)0,
-			    ubcsize, &resid_off,
-			    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
-			rw_exit(&zp->z_map_lock);
-		}
+		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+		retval = ubc_msync(vp, (off_t)0, ubcsize, &resid_off,
+		    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		ASSERT3S(tries, <=, 2);
 		ASSERT3S(retval, ==, 0);
 		if (retval != 0)
 			ASSERT3S(resid_off, ==, ubcsize);

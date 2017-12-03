@@ -103,6 +103,8 @@
 #include <sys/zfs_vnops.h>
 #include <sys/systeminfo.h>
 #include <sys/zfs_mount.h>
+
+#include <sys/znode_z_map_lock.h>
 #endif /* __APPLE__ */
 
 //#define dprintf kprintf
@@ -188,21 +190,16 @@ extern void zfs_ioctl_fini(void);
 
 #endif
 
-
 static int
 zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 {
-	if (vnode_isreg(vp) && ubc_pages_resident(vp)) {
+	if (vnode_isreg(vp) && ubc_pages_resident(vp) && !is_file_clean(vp, ubc_getsize(vp))) {
 		znode_t *zp = VTOZ(vp);
 		zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 		ZFS_ENTER(zfsvfs);
 		ZFS_VERIFY_ZP(zp);
-		if (!rw_tryenter(&zp->z_map_lock, RW_WRITER)) {
-			printf("ZFS: %s:%d cannot get z_map_lock, skipping zfs_vfs_sync for file %s\n",
-			    __func__, __LINE__, zp->z_name_cache);
-			ZFS_EXIT(zfsvfs);
-			return (0);
-		}
+		boolean_t need_release = B_FALSE, need_upgrade = B_TRUE;
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		off_t resid_off = 0;
 		off_t ubcsize = ubc_getsize(vp);
 		int msync_retval = ubc_msync(vp, (off_t)0, ubcsize, &resid_off, UBC_PUSHALL);
@@ -212,7 +209,8 @@ zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 			printf("ZFS: %s:%d: ubc_msync returned error %d\n", __func__, __LINE__,
 			    msync_retval);
 		}
-		rw_exit(&zp->z_map_lock);
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		ASSERT3S(tries, <=, 2);
 		ZFS_EXIT(zfsvfs);
 	}
 	return (0);

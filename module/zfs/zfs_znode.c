@@ -71,6 +71,7 @@
 #include "zfs_prop.h"
 #include "zfs_comutil.h"
 
+#include <sys/znode_z_map_lock.h>
 /* Used by fstat(1). */
 #ifndef __APPLE__
 SYSCTL_INT(_debug_sizeof, OID_AUTO, znode, CTLFLAG_RD, 0, sizeof (znode_t),
@@ -1592,7 +1593,8 @@ zfs_rezget(znode_t *zp)
 		 */
 		int setsize_retval = 0;
 		boolean_t did_setsize = B_FALSE;
-		rw_enter(&zp->z_map_lock, RW_WRITER);
+		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		off_t ubcsize = ubc_getsize(vp);
 		off_t zsize = zp->z_size;
 		vn_pages_remove(vp, 0, 0); // does nothing in O3X
@@ -1600,16 +1602,20 @@ zfs_rezget(znode_t *zp)
 			setsize_retval = vnode_pager_setsize(vp, zp->z_size);
 			did_setsize = B_TRUE;
 		}
-		rw_exit(&zp->z_map_lock);
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		ASSERT3S(tries, <=, 2);
+
 		if (did_setsize == B_TRUE) {
 			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 			printf("ZFS: %s: setsize: size was %lld, zp->z_size was %lld, ubcsize was %lld\n",
 			    __func__, size, zsize, ubcsize);
 			if (zsize > size) {
 				ASSERT3S(zsize, ==, zp->z_size);
-				rw_enter(&zp->z_map_lock, RW_WRITER);
+				boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+				uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 				int refresh_retval = ubc_refresh_range(vp, size, zsize);
-				rw_exit(&zp->z_map_lock);
+				z_map_drop_lock(zp, &need_release, &need_upgrade);
+				ASSERT3S(tries, <=, 2);
 				if (refresh_retval != 0) {
 					printf("ZFS: %s:%d: refresh range [%lld, %lld] failed for file %s\n",
 					    __func__, __LINE__, size, zsize, zp->z_name_cache);
@@ -1908,7 +1914,8 @@ zfs_extend(znode_t *zp, uint64_t end)
 	 * interfering with an in-progress mappedread, pagein, pageoutv2,
 	 * or update_pages.
 	 */
-	rw_enter(&zp->z_map_lock, RW_WRITER);
+	boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+	uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 	/*
 	 * ubc_getsize() carefully trims the last page when nsize < osize,
 	 * but here we have osize < nsize (we return above otherwise).
@@ -1927,7 +1934,8 @@ zfs_extend(znode_t *zp, uint64_t end)
 		printf("ZFS: %s:%d: error setting ubc size to %lld from %lld (delta %lld) for file %s\n",
 		    __func__, __LINE__, end, oldsize, end - oldsize, zp->z_name_cache);
 	}
-	rw_exit(&zp->z_map_lock);
+	z_map_drop_lock(zp, &need_release, &need_upgrade);
+	ASSERT3S(tries, <=, 2);
 
 	zfs_range_unlock(rl);
 
@@ -2136,7 +2144,9 @@ zfs_trunc(znode_t *zp, uint64_t end)
 	 *        (notably pagein/pageoutv2/update_pages/mappedread_new).
 	 */
 
-	rw_enter(&zp->z_map_lock, RW_WRITER);
+	boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+	uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+
 	if (vnode_isreg(vp) || vn_has_cached_data(vp) || ubc_pages_resident(vp)) {
 		// note: 10a286 says "This work is accomplished
 		//       "by ubc_setsize()"  but does not call
@@ -2153,8 +2163,10 @@ zfs_trunc(znode_t *zp, uint64_t end)
 		int setsize_retval = vnode_pager_setsize(vp, end);
 		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true for success
 	}
-	rw_exit(&zp->z_map_lock);
 
+	z_map_drop_lock(zp, &need_release, &need_upgrade);
+
+	ASSERT3S(tries, <=, 2);
 
 	zfs_range_unlock(rl);
 

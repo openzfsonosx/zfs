@@ -535,16 +535,13 @@ int ubc_invalidate_range_impl(vnode_t *vp, off_t start, off_t end)
 	off_t resid_msync = 0;
 	off_t size = end - start;
 	int retval_msync = 0;
-	if (rw_write_held(&zp->z_map_lock)) {
-		retval_msync = ubc_msync(vp, start, end, &resid_msync, UBC_PUSHALL | UBC_INVALIDATE);
-	} else if (rw_tryenter(&zp->z_map_lock, RW_WRITER)) {
-		retval_msync = ubc_msync(vp, start, end, &resid_msync, UBC_PUSHALL | UBC_INVALIDATE);
-		rw_exit(&zp->z_map_lock);
-	} else {
-		printf("ZFS: %s:%d skipped ubc_msync for lack of z_map_lock file %s\n",
-		    __func__, __LINE__, zp->z_name_cache);
-		retval_msync = EDEADLK;
-	}
+
+	boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+	uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+	retval_msync = ubc_msync(vp, start, end, &resid_msync, UBC_PUSHALL | UBC_INVALIDATE);
+	z_map_drop_lock(zp, &need_release, &need_upgrade);
+	ASSERT3S(tries, <=, 2);
+
 	if (retval_msync != 0) {
 		if (resid_msync != PAGE_SIZE_64)
 			printf("ZFS: %s:%d: msync error %d invalidating %lld - %lld (%lld),"
@@ -1522,10 +1519,12 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			off_t ubcsize = ubc_getsize(vp);
 			ASSERT3S(zp->z_size, ==, ubcsize);
 			off_t resid_off = 0;
-			rw_enter(&zp->z_map_lock, RW_WRITER);
+			boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+                        uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 			int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
 			    UBC_PUSHALL | UBC_SYNC);
-			rw_exit(&zp->z_map_lock);
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
+			ASSERT3S(tries, <=, 2);
 			ASSERT3S(retval, ==, 0);
 			if (retval != 0)
 				ASSERT3S(resid_off, ==, ubcsize);
@@ -1804,14 +1803,14 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 	off_t ubcsize = ubc_getsize(vp);
 	off_t msync_resid = 0;
 
-	if (!rw_tryenter(&zp->z_map_lock, RW_WRITER)) {
-		printf("ZFS: %s:%d: rw_tryenter failed, blocking for file %s\n",
-		    __func__, __LINE__, zp->z_name_cache);
-		rw_enter(&zp->z_map_lock, RW_WRITER);
-	}
+	boolean_t need_release = B_FALSE;
+	boolean_t need_upgrade = B_FALSE;
+	uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 	error = ubc_msync(vp, woff, end_range, &msync_resid,
 	    (do_sync) ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
-	rw_exit(&zp->z_map_lock);
+	z_map_drop_lock(zp, &need_release, &need_upgrade);
+	ASSERT3U(tries, <=, 2);
+
 	if (error != 0) {
 		printf("ZFS: %s:%d: ubc_msync error %d msync_resid %lld"
 		    " woff %lld start_resid %ld end_range %lld"
@@ -1962,7 +1961,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	if (zp->z_is_mapped && zfsvfs->z_log &&
 	    (zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED || (ioflag & (FSYNC | FDSYNC)))) {
 		off_t ubcsize = ubc_getsize(vp);
-		rw_enter(&zp->z_map_lock, RW_WRITER);
+		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		if (!is_file_clean(vp, ubcsize)) {
 			boolean_t sync = (ioflag & (FSYNC | FDSYNC)) ||
 			    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
@@ -1982,7 +1982,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 				VNOPS_STAT_BUMP(zfs_write_clean_on_write);
 			}
 		}
-		rw_exit(&zp->z_map_lock);
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		ASSERT3U(tries, <=, 2);
 	}
 
 	/* now that we have maybe undirtied ubc, let's copy our data in */
@@ -2551,9 +2552,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		}
 
 		/* set tx_bytes to the amount we hope to write in this tx */
-		rw_enter(&zp->z_map_lock, RW_READER);
+		boolean_t need_release = B_FALSE;
+		boolean_t need_upgrade = B_FALSE;
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		tx_bytes = uio_resid(uio);
-		rw_exit(&zp->z_map_lock);
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		ASSERT3S(tries, <=, 2);
 
 		/*
 		 * For regular files, we have two write cases:
@@ -2759,10 +2763,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			 *                and from woff+n+1 to round_page_64(woff+n).
 			 */
 
-
-			rw_enter(&zp->z_map_lock, RW_WRITER);
+			boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+                        uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 			int setsize_retval = ubc_setsize(vp, zp->z_size);
-			rw_exit(&zp->z_map_lock);
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
+			ASSERT3S(tries, <=, 2);
+
 			ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 
 			/* actually update the UBC pages */
@@ -2899,9 +2905,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	 *       However, we have not yet done a ubc_msync, so let's do that now.
 	 */
         if (tx_bytes != 0) {
-		rw_enter(&zp->z_map_lock, RW_WRITER);
+		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
                 int setsize_retval = ubc_setsize(vp, zp->z_size);
-		rw_exit(&zp->z_map_lock);
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		ASSERT3S(tries, <=, 2);
 		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 
 		if (vnode_isreg(vp)) {
@@ -2912,9 +2920,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			if (clean_before != 0) {
 				ASSERT3U(ubcsize, >, 0);
 				int flag = UBC_PUSHALL | (do_ubc_sync == B_TRUE) ? UBC_SYNC : 0;
-				rw_enter(&zp->z_map_lock, RW_WRITER);
+				boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+				uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 				ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), &resid_off, flag);
-				rw_exit(&zp->z_map_lock);
+				z_map_drop_lock(zp, &need_release, &need_upgrade);
+				ASSERT3S(tries, <=, 2);
 				VNOPS_STAT_BUMP(zfs_write_msync);
 				if (ubc_msync_err != 0 &&
 				    !(ubc_msync_err == EINVAL && resid_off == ubcsize)) {
@@ -3872,13 +3882,15 @@ top:
 		/* modify this under the lock to avoid interfering
 		 * with mappedread_new etc
 		 */
-		rw_enter(&zp->z_map_lock, RW_WRITER);
+		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		int setsize_retval;
 		if (ubc_getsize(vp) != 0)
 			setsize_retval = vnode_pager_setsize(vp, 0);
 		else
 			setsize_retval = 1;
-		rw_exit(&zp->z_map_lock);
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		ASSERT3S(tries, <=, 2);
 		ASSERT3S(setsize_retval, !=, 0); // setsize returns true on success
 		VN_RELE(vp);
 		/*
@@ -4918,17 +4930,17 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 			ASSERT3S(retval, ==, 0);
 			if (retval != 0)
 				ASSERT3S(resid_off, ==, ubcsize);
-		} else if (rw_tryenter(&zp->z_map_lock, RW_WRITER)) {
+		} else {
+			boolean_t need_release = B_FALSE;
+			boolean_t need_upgrade = B_FALSE;
+			uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 			int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
 			    UBC_PUSHALL | UBC_SYNC);
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
+			ASSERT3S(tries, <=, 2);
 			ASSERT3S(retval, ==, 0);
 			if (retval != 0)
 				ASSERT3S(resid_off, ==, ubcsize);
-			rw_exit(&zp->z_map_lock);
-		} else {
-			if (is_file_dirty(vp))
-			    printf("ZFS: %s:%d: skipping ubc_msync for DIRTY file %s\n",
-				__func__, __LINE__, zp->z_name_cache);
 		}
 	}
 
@@ -5495,9 +5507,11 @@ top:
 		}
 #if 0
                 /* Mac OS X: pageout requires that the UBC file size to be current. */
-		rw_enter(&zp->z_map_lock, RW_WRITER);
+		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
                 int setsize_retval = ubc_setsize(vp, vap->va_data_size);
-		rw_exit(&zp->z_map_lock);
+		z_map_drop_lock(zp, &need_release, &need_upgrade, __func__);
+		ASSERT3S(tries, <=, 2);
 		ASSERT3S(setsize_retval, !=, 0); // ubc_setsize returns true on success
 #endif
                 VATTR_SET_SUPPORTED(vap, va_data_size);
