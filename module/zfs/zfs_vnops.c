@@ -2242,6 +2242,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					if (0 !=
 					    (error == adjusted_master_update_pages(vp, xfer_resid, uio))) {
 						z_map_drop_lock(zp, &need_release, &need_upgrade);
+						printf("ZFS: %s:%d: error %d from"
+						    " adjusted_master_update_pages, file %s\n",
+						    __func__, __LINE__, error, zp->z_name_cache);
 						zfs_range_unlock(rl);
 						VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
 						ZFS_EXIT(zfsvfs);
