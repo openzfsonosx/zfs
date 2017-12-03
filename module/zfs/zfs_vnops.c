@@ -825,6 +825,8 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
 	if (error == 0 && unmap_ret != 0)
 		error = unmap_ret;
 
+	printf("ZFS: %s:%d: returning %d for %s\n", __func__, __LINE__,
+	    error, zp->z_name_cache);
 	return (error);
 }
 
