@@ -2649,7 +2649,17 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		need_release = B_TRUE;
 	}
 
-	rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
+	/*
+	 * We need to lock whole pages, because we have to lock
+	 * whole pages for the UPL.  We *must* prevent this thread
+	 * from trying to build a UPL that contains a page that's
+	 * held by another threaad.
+	 */
+
+	const off_t rloff = trunc_page_64(ap->a_f_offset);
+	const off_t rllen = round_page_64(a_size);
+
+	rl = zfs_range_lock(zp, rloff, rllen, RL_WRITER);
 
 	hrtime_t print_time = gethrtime() + SEC2NSEC(1);
 	int secs = 0;
@@ -2668,7 +2678,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			    __func__, __LINE__, ap->a_f_offset, a_size, zp->z_name_cache);
 			zfs_range_unlock(rl);
 			IOSleep(1); // we hold no locks, so let work be done
-			rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
+			rl = zfs_range_lock(zp, rloff, rllen, RL_WRITER);
 		}
 		hrtime_t cur_time = gethrtime();
 		if (cur_time > print_time) {
@@ -2777,7 +2787,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			zfs_grow_blocksize(zp, newblksz, tx);
 
 		if (rl->r_len == UINT64_MAX)
-			zfs_range_reduce(rl, ap->a_f_offset, ap->a_size);
+			zfs_range_reduce(rl, rllen, rloff);
 
 		uint64_t pre = zp->z_size;
 		uint64_t woff = ap->a_f_offset;
@@ -2827,7 +2837,6 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	if (rl->r_len == UINT64_MAX) {
 		off_t woff = ap->a_f_offset;
 		off_t end_size = MAX(zp->z_size, woff + a_size);
-		size_t n = a_size;
 		uint64_t new_blksz;
 		int max_blksz = zfsvfs->z_max_blksz;
 		if (zp->z_blksz > max_blksz) {
@@ -2856,7 +2865,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		printf("ZFS: %s:%d growing buffer to %llu (from %d) file %s\n",
 		    __func__, __LINE__, new_blksz, zp->z_blksz, zp->z_name_cache);
 		zfs_grow_blocksize(zp, new_blksz, tx);
-		zfs_range_reduce(rl, woff, n);
+		zfs_range_reduce(rl, rloff, rllen);
 	}
 
 	off_t f_offset;
@@ -3022,6 +3031,13 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		vaddr = NULL;
 	}
 
+	if (error)
+		ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
+	else
+		ubc_upl_commit_range(upl, 0, a_size, UPL_COMMIT_FREE_ON_EMPTY);
+
+	upl = NULL;
+
 	z_map_drop_lock(zp, &need_release, &need_upgrade);
 
 	zfs_range_unlock(rl);
@@ -3030,12 +3046,6 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		zil_commit(zfsvfs->z_log, zp->z_id);
 		VNOPS_OSX_STAT_BUMP(pageoutv2_upl_iosync);
 	}
-	if (error)
-		ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
-	else
-		ubc_upl_commit_range(upl, 0, a_size, UPL_COMMIT_FREE_ON_EMPTY);
-
-	upl = NULL;
 
 	ZFS_EXIT(zfsvfs);
 	if (error)

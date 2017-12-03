@@ -1787,14 +1787,21 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
+	rl_t *rl = NULL;
+
 	if (range_lock) {
-		/* wait until the range_lock in zfs_write is dropped */
-		rl_t *rl = zfs_range_lock(zp, woff, end_range, RL_WRITER);
-		zfs_range_unlock(rl);
+		/*
+		 * wait until the range_lock in zfs_write is dropped,
+		 * and protect against other sub-page activity
+		 */
+		rl = zfs_range_lock(zp, trunc_page_64(woff),
+		    round_page_64(end_range), RL_WRITER);
 	}
 
 	if (safety_check) {
 		error = dmu_write_wait_safe(zp, woff, end_range);
+		printf("ZFS: %s:%d safety_check failed with error %d\n",
+		    __func__, __LINE__, error);
 		// uncomment, so we can just panic in ubc_msync
 		// ZFS_EXIT(zfsvfs);
 		// return (error);
@@ -1803,11 +1810,19 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 	off_t ubcsize = ubc_getsize(vp);
 	off_t msync_resid = 0;
 
-	boolean_t need_release = B_FALSE;
-	boolean_t need_upgrade = B_FALSE;
+	boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
 	uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+
+	if (range_lock) {
+		/*
+		 * ubc_msync may call down to pageoutv2, which will
+		 * take this range lock
+		 */
+		zfs_range_unlock(rl);
+	}
 	error = ubc_msync(vp, woff, end_range, &msync_resid,
 	    (do_sync) ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
+
 	z_map_drop_lock(zp, &need_release, &need_upgrade);
 	ASSERT3U(tries, <=, 2);
 
@@ -2331,7 +2346,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		if (is_safe & do_sync) {
 			error = zfs_write_sync_range_helper(vp, woff, woff + start_resid,
-			    start_resid, do_sync, B_FALSE, B_TRUE);
+			    start_resid, do_sync, B_TRUE, B_TRUE);
 			if (error != 0) {
 				zfs_panic_recover("%s:%d zfs_write_sync_range_helper"
 				    " returned error %d for range [%lld, %lld], file %s\n",

@@ -105,6 +105,7 @@
 #include <sys/zfs_mount.h>
 
 #include <sys/znode_z_map_lock.h>
+#include <sys/zfs_rlock.h>
 #endif /* __APPLE__ */
 
 //#define dprintf kprintf
@@ -198,11 +199,18 @@ zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 		zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 		ZFS_ENTER(zfsvfs);
 		ZFS_VERIFY_ZP(zp);
+		/* take a range lock */
+		rl_t *rl = zfs_range_lock(zp, 0, ubc_getsize(vp), RL_WRITER);
+		/* take z_map_lock */
 		boolean_t need_release = B_FALSE, need_upgrade = B_TRUE;
 		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		off_t resid_off = 0;
 		off_t ubcsize = ubc_getsize(vp);
+		/* give up range_lock, since pageoutv2 may need it */
+		zfs_range_unlock(rl);
+		/* do the msync */
 		int msync_retval = ubc_msync(vp, (off_t)0, ubcsize, &resid_off, UBC_PUSHALL);
+		/* error checking, unlocking, and returning */
 		if (msync_retval != 0 &&
 		    !(msync_retval == EINVAL && resid_off == ubcsize)) {
 			/* we can get an EINVAL spuriously */
