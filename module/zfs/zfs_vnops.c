@@ -2205,7 +2205,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 #endif
 					if (0 !=
-					    (error == adjusted_master_update_pages(vp, xfer_resid, uio))) {
+					    (error = adjusted_master_update_pages(vp, xfer_resid, uio))) {
 						z_map_drop_lock(zp, &need_release, &need_upgrade);
 						printf("ZFS: %s:%d: error %d from"
 						    " adjusted_master_update_pages, file %s\n",
