@@ -2107,8 +2107,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 			if (zp->z_size != ubc_getsize(vp)) {
 				printf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld"
-				    "(woff = %lld, end = %lld, pre = %lld)\n",
-				    __func__, __LINE__, zp->z_size, ubc_getsize(vp), woff, end, pre);
+				    "(woff = %lld, end = %lld, pre = %lld) file %s\n",
+				    __func__, __LINE__, zp->z_size, ubc_getsize(vp), woff, end, pre,
+				    zp->z_name_cache);
 				zp->z_size = ubc_getsize(vp);
 			}
 		}
