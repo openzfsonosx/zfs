@@ -2084,7 +2084,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 		VNOPS_OSX_STAT_INCR(pagein_want_lock, tries);
 	} else {
 		ASSERT3S(zp->z_is_mapped, >, 0);
-		printf("ZFS: %s:%d already have z_map_lock for file %s\n",
+		dprintf("ZFS: %s:%d already have z_map_lock for file %s\n",
 		    __func__, __LINE__, zp->z_name_cache);
 	}
 
@@ -2639,7 +2639,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	 */
 
 	if (rw_write_held(&zp->z_map_lock)) {
-		printf("ZFS: %s:%d: dropping held-on-entry z_map_lock for file %s\n",
+		dprintf("ZFS: %s:%d: dropping held-on-entry z_map_lock for file %s\n",
 		    __func__, __LINE__, zp->z_name_cache);
 		rw_exit(&zp->z_map_lock);
 	}

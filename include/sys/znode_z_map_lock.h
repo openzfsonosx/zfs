@@ -70,7 +70,7 @@ z_map_rw_lock(znode_t *zp, boolean_t *need_release, boolean_t *need_upgrade, con
 	uint64_t lock_tries = 0;
 
 	if (rw_write_held(&zp->z_map_lock)) {
-		printf("ZFS: %s: z_map_lock already held (for %s)\n", __func__, caller);
+		dprintf("ZFS: %s: z_map_lock already held (for %s)\n", __func__, caller);
 		*need_release = B_FALSE;
 		*need_upgrade = B_FALSE;
 		return (lock_tries);

@@ -2273,7 +2273,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
 
-		ASSERT(!rw_write_held(&zp->z_map_lock));
+		//ASSERT(!rw_write_held(&zp->z_map_lock));
 		ASSERT3S(error, ==, 0);
 		ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 
