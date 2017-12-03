@@ -1800,11 +1800,12 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 
 	if (safety_check) {
 		error = dmu_write_wait_safe(zp, woff, end_range);
-		printf("ZFS: %s:%d safety_check failed with error %d\n",
-		    __func__, __LINE__, error);
-		// uncomment, so we can just panic in ubc_msync
-		// ZFS_EXIT(zfsvfs);
-		// return (error);
+		printf("ZFS: %s:%d safety_check failed with error %d for file %s\n",
+		    __func__, __LINE__, error, zp->z_name_cache);
+		if (range_lock)
+			zfs_range_unlock(rl);
+		ZFS_EXIT(zfsvfs);
+		return (EDEADLK);
 	}
 
 	off_t ubcsize = ubc_getsize(vp);
