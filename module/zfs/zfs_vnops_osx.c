@@ -2638,16 +2638,18 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	 * Eventually we have ordered: [1] rl [2] z_map_lock.
 	 */
 
+	boolean_t need_release = B_FALSE;
+	boolean_t need_upgrade = B_FALSE;
+
 	if (rw_write_held(&zp->z_map_lock)) {
 		dprintf("ZFS: %s:%d: dropping held-on-entry z_map_lock for file %s\n",
 		    __func__, __LINE__, zp->z_name_cache);
 		rw_exit(&zp->z_map_lock);
+	} else {
+		need_release = B_TRUE;
 	}
 
 	rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
-
-	boolean_t need_release = B_FALSE;
-	boolean_t need_upgrade = B_FALSE;
 
 	hrtime_t print_time = gethrtime() + SEC2NSEC(1);
 	int secs = 0;
@@ -2766,6 +2768,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
 			dmu_tx_abort(tx);
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
 			zfs_range_unlock(rl);
 			return (error);
 		}
