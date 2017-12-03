@@ -3093,7 +3093,7 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs;
 
-	DECLARE_CRED_AND_CONTEXT(ap);
+	//DECLARE_CRED_AND_CONTEXT(ap);
 
 	if (!zp) return ENODEV;
 
@@ -3114,16 +3114,12 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 	 *      with one of the Illumos atomic functions.
 	 */
 	mutex_enter(&zp->z_lock);
-	if (zp->z_is_mapped > 0) {
-		mutex_exit(&zp->z_lock);
-		zfs_fsync(vp, 0, cr, ct);
-		mutex_enter(&zp->z_lock);
-	} else
+	if (zp->z_is_mapped == 0) {
 		VNOPS_OSX_STAT_BUMP(mmap_file_first_mmapped);
+	}
 	zp->z_is_mapped = 1;
 	mutex_exit(&zp->z_lock);
 	VNOPS_OSX_STAT_BUMP(mmap_calls);
-
 	ZFS_EXIT(zfsvfs);
 	dprintf("-vnop_mmap\n");
 	return (0);
@@ -3144,7 +3140,7 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
-	DECLARE_CRED_AND_CONTEXT(ap);
+	//DECLARE_CRED_AND_CONTEXT(ap);
 
 	dprintf("+vnop_mnomap: %p\n", ap->a_vp);
 
@@ -3164,8 +3160,6 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	/* zp->z_is_mapped = 0; */
 	ASSERT3U((uint64_t)zp->z_is_mapped, >, 0ULL);
 	mutex_exit(&zp->z_lock);
-
-	zfs_fsync(vp, 0, cr, ct);
 
 	VNOPS_OSX_STAT_BUMP(mnomap_calls);
 
