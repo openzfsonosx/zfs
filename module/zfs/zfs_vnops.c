@@ -718,8 +718,8 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
     upl_start &= ~PAGE_MASK;
     upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
 
-    dprintf("update_pages %llu - %llu (adjusted %llu - %llu): off %llu\n",
-           uio_offset(uio), nbytes, upl_start, upl_size, off);
+    printf("ZFS: %s:%d  @ %llu : %llu bytes (adjusted %llu - %d): off %llu file %s\n", __func__, __LINE__,
+	uio_offset(uio), nbytes, upl_start, upl_size, off, zp->z_name_cache);
     /*
      * Create a UPL for the current range and map its
      * page list into the kernel virtual address space.
@@ -748,7 +748,6 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
          */
 
         if (pl && upl_valid_page(pl, upl_page)) {
-            rw_exit(&zp->z_map_lock);
             uio_setrw(uio, UIO_WRITE);
            error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
             if (error == 0) {
