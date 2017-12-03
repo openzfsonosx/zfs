@@ -692,7 +692,7 @@ drop_and_exit:
 	ASSERT3S(error, ==, 0);
 }
 
-static void
+static int
 adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
 {
 
@@ -728,13 +728,13 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
 	UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
         if ((error != KERN_SUCCESS) || !upl) {
                 printf("ZFS: update_pages failed to ubc_create_upl: %d\n", error);
-                return;
+                return (error);
         }
 
         if (ubc_upl_map(upl, &vaddr) != KERN_SUCCESS) {
                 printf("ZFS: update_pages failed to ubc_upl_map: %d\n", error);
                 (void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-                return;
+                return (error);
         }
 
     for (upl_page = 0; len > 0; ++upl_page) {
@@ -746,6 +746,8 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
          * update data), so we grab a lock to block
          * zfs_getpage().
          */
+
+	int ret_error = 0;
 
         if (pl && upl_valid_page(pl, upl_page)) {
             uio_setrw(uio, UIO_WRITE);
@@ -768,6 +770,8 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
 		    printf("ZFS: %s:%d: committed off %lld bytes %lld kret %d\n",
 			__func__, __LINE__, off, bytes, kret);
 
+		    ret_error = error;
+
             } else {
                 /*
                  * page is now in an unknown state so dump it.
@@ -778,6 +782,9 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
 
 		    printf("ZFS: %s:%d: uiomove error %d off %lld bytes %lld upl_abort_range kret %d\n",
 			__func__, __LINE__, error, off, bytes, kret);
+
+		    if (kret != KERN_SUCCESS && error == 0)
+			    ret_error = error;
 
             }
         } else { // !upl_valid_page
@@ -790,6 +797,8 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
 		printf("ZFS: %s:%d: aborted invalid page %d off %lld bytes %lld upl_abort_range ret %d\n",
 		    __func__, __LINE__, upl_page, off, bytes, kret);
 
+		if (kret != KERN_SUCCESS && error == 0)
+			ret_error = error;
         }
 
         vaddr += PAGE_SIZE;
@@ -802,6 +811,10 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
      */
         kern_return_t unmap_ret = ubc_upl_unmap(upl);
 	ASSERT3S(unmap_ret, ==, 0);
+	if (error == 0 && unmap_ret != 0)
+		error = unmap_ret;
+
+	return (error);
 }
 
 /* OSX UBC-aware implementation of zfs_read and mappedread follows */
@@ -2194,13 +2207,43 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					    " returning short write, woff %lld,"
 					    " this_off %lld uio_offset %lld uio_resid %lld"
 					    " this_chunk %ld xfer_resid %d file_size %lld %lld"
-					    " ioflag %d - punting to update pages function\n",
+					    " ioflag %d - punting to update pages function (mapped %d)\n",
 					    __func__, __LINE__, zp->z_name_cache,
 					    woff, this_off, uio_offset(uio), uio_resid(uio),
 					    this_chunk, xfer_resid,
-					    zp->z_size, ubc_getsize(vp), ioflag);
+					    zp->z_size, ubc_getsize(vp), ioflag, zp->z_is_mapped);
 					VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
-					adjusted_master_update_pages(vp, xfer_resid, uio);
+					/*
+					 * it's possible that a concurrently dirtied
+					 * page is waiting to go out to disk, which is
+					 * why we have a partial result from cluster_copy_ubc_data.
+					 * drop locks, ubc_msync the file, punt to
+					 * update_pages.
+					 *
+					 * it would be nice if we could sit here retrying
+					 * the cluster copy.   maybe we should?
+					 */
+					z_map_drop_lock(zp, &need_release, &need_upgrade);
+					const uint64_t rloff = rl->r_off;
+					const uint64_t rllen = rl->r_len;
+					zfs_range_unlock(rl);
+					off_t retry_ubcresid_off = 0;
+					off_t retry_ubcsize = ubc_getsize(vp);
+					int retry_ubcretval = ubc_msync(vp, 0, retry_ubcsize,
+					    &retry_ubcresid_off, UBC_PUSHALL);
+					ASSERT3S(retry_ubcretval, ==, 0);
+					if (retry_ubcretval != 0)
+						ASSERT3S(retry_ubcresid_off, ==, retry_ubcsize);
+					rl = zfs_range_lock(zp, rloff, rllen, RL_WRITER);
+					z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+					if (0 !=
+					    (error == adjusted_master_update_pages(vp, xfer_resid, uio))) {
+						z_map_drop_lock(zp, &need_release, &need_upgrade);
+						zfs_range_unlock(rl);
+						VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
+						ZFS_EXIT(zfsvfs);
+						return (error);
+					}
 				} else {
 					VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
 				}
