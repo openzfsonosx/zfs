@@ -1971,6 +1971,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		return (SET_ERROR(EINVAL));
 	}
 
+#if 0
 	/*
 	 * if this file has been mmapped and there are dirty pages, in
 	 * our range, then unless sync is disabled, push them (syncing
@@ -2007,16 +2008,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		rl = NULL;
 		ASSERT3U(tries, <=, 2);
 	}
+#endif
 
-	/* now that we have maybe undirtied ubc, let's copy our data in */
-	/* need to read first block?   need to read last block?
-	 * or do we rely on pagein for this?  see cluster_write_copy
-	 * xxx: refactor into its own function
-	 *
-	 *
-	 * can we *just* do a cluster_copy_ubc_data(vp, uio, &xfer_resid, 1)
-	 * and let pageoutv2 do the heavy lifting?
+	/*
+	 * if we are a regular file, we move our data into UBC, and if
+	 * we are synchronous, we trigger a ubc_msync
 	 */
+
 
 	if (vnode_isreg(vp)) {
 		ASSERT3S(start_resid, <=, INT_MAX);
