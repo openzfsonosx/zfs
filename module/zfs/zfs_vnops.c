@@ -4926,8 +4926,9 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 				ASSERT3S(resid_off, ==, ubcsize);
 			rw_exit(&zp->z_map_lock);
 		} else {
-			printf("ZFS: %s:%d: skipping ubc_msync for file %s\n",
-			    __func__, __LINE__, zp->z_name_cache);
+			if (is_file_dirty(vp))
+			    printf("ZFS: %s:%d: skipping ubc_msync for DIRTY file %s\n",
+				__func__, __LINE__, zp->z_name_cache);
 		}
 	}
 
