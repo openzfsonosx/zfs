@@ -1980,6 +1980,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	    (zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED || (ioflag & (FSYNC | FDSYNC)))) {
 		off_t ubcsize = ubc_getsize(vp);
 		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+		rl = zfs_range_lock(zp, trunc_page_64(woff), round_page_64(woff+start_resid),
+		    RL_WRITER);
 		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		if (!is_file_clean(vp, ubcsize)) {
 			boolean_t sync = (ioflag & (FSYNC | FDSYNC)) ||
@@ -2001,6 +2003,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			}
 		}
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		zfs_range_unlock(rl);
+		rl = NULL;
 		ASSERT3U(tries, <=, 2);
 	}
 
