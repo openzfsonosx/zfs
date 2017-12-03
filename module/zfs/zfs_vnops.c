@@ -2222,6 +2222,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					rl = zfs_range_lock(zp, rloff, rllen, RL_WRITER);
 					z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 #endif
+					off_t resid_before = uio_resid(uio);
 					if (0 !=
 					    (error = adjusted_master_update_pages(vp, xfer_resid, uio))) {
 						z_map_drop_lock(zp, &need_release, &need_upgrade);
@@ -2232,6 +2233,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 						VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
 						ZFS_EXIT(zfsvfs);
 						return (error);
+					} else {
+						printf("ZFS: %s:%d: uio_resid before %lld after %lld file %s\n",
+						    __func__, __LINE__, resid_before,
+						    uio_resid(uio), zp->z_name_cache);
 					}
 				} else {
 					VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
