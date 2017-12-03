@@ -2229,6 +2229,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 					z_map_drop_lock(zp, &need_release, &need_upgrade);
 					const uint64_t rloff = rl->r_off;
 					const uint64_t rllen = rl->r_len;
+					printf("ZFS: %s:%d: rl->r_read_wanted %d rl->r_write_wanted %d"
+					    " file %s\n", __func__, __LINE__,
+					    rl->r_read_wanted, rl->r_write_wanted, zp->z_name_cache);
 					zfs_range_unlock(rl);
 					off_t retry_ubcresid_off = 0;
 					off_t retry_ubcsize = ubc_getsize(vp);
