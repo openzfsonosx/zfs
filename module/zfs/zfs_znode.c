@@ -1607,7 +1607,9 @@ zfs_rezget(znode_t *zp)
 			    __func__, size, zsize, ubcsize);
 			if (zsize > size) {
 				ASSERT3S(zsize, ==, zp->z_size);
+				rw_enter(&zp->z_map_lock, RW_WRITER);
 				int refresh_retval = ubc_refresh_range(vp, size, zsize);
+				rw_exit(&zp->z_map_lock);
 				if (refresh_retval != 0) {
 					printf("ZFS: %s:%d: refresh range [%lld, %lld] failed for file %s\n",
 					    __func__, __LINE__, size, zsize, zp->z_name_cache);

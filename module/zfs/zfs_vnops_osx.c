@@ -3285,9 +3285,29 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 		ASSERT(ubc_pages_resident(vp));
 		ASSERT3S(zp->z_size, ==, ubcsize);
 		off_t resid_off = 0;
-		int retval = ubc_msync(vp, (off_t)0,
-		    ubcsize, &resid_off,
-		    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
+		int retval = 0;
+		if (!rw_write_held(&zp->z_map_lock)) {
+			rw_enter(&zp->z_map_lock, RW_WRITER);
+			retval = ubc_msync(vp, (off_t)0,
+			    ubcsize, &resid_off,
+			    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
+			rw_exit(&zp->z_map_lock);
+			printf("ZFS: %s:%d: anomaly: lock was already held for file %s\n",
+			    __func__, __LINE__, zp->z_name_cache);
+		} else if (rw_tryenter(&zp->z_map_lock, RW_WRITER)) {
+			retval = ubc_msync(vp, (off_t)0,
+			    ubcsize, &resid_off,
+			    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
+			rw_exit(&zp->z_map_lock);
+		} else {
+			printf("ZFS: %s:%d: lock not held, so blocking on it for file %s\n",
+			    __func__, __LINE__, zp->z_name_cache);
+			rw_enter(&zp->z_map_lock, RW_WRITER);
+			retval = ubc_msync(vp, (off_t)0,
+			    ubcsize, &resid_off,
+			    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
+			rw_exit(&zp->z_map_lock);
+		}
 		ASSERT3S(retval, ==, 0);
 		if (retval != 0)
 			ASSERT3S(resid_off, ==, ubcsize);
