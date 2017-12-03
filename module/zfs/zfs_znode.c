@@ -55,7 +55,13 @@
 #include <sys/fs/zfs.h>
 #include <sys/kidmap.h>
 #include <sys/zfs_vnops.h>
+#include <sys/znode_z_map_lock.h>
 #endif /* _KERNEL */
+
+#ifndef _KERNEL
+#define z_map_rw_lock(...)
+#define z_map_drop_lock(...)
+#endif
 
 #include <sys/dmu.h>
 #include <sys/dmu_objset.h>
@@ -63,6 +69,7 @@
 #include <sys/stat.h>
 #include <sys/zap.h>
 #include <sys/zfs_znode.h>
+
 #include <sys/sa.h>
 #include <sys/zfs_sa.h>
 #include <sys/zfs_stat.h>
@@ -71,7 +78,6 @@
 #include "zfs_prop.h"
 #include "zfs_comutil.h"
 
-#include <sys/znode_z_map_lock.h>
 /* Used by fstat(1). */
 #ifndef __APPLE__
 SYSCTL_INT(_debug_sizeof, OID_AUTO, znode, CTLFLAG_RD, 0, sizeof (znode_t),
