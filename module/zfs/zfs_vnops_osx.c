@@ -1138,6 +1138,8 @@ zfs_vnop_write(struct vnop_write_args *ap)
 			    " (resid = %lld cum_bytes = %lld)\n",
 			    __func__, __LINE__, (file_name != NULL) ? file_name : "(NULL)",
 			    returned_uioresid, cum_bytes);
+			if (cum_bytes < 0)
+				error = EIO;
 			break;
 		}
 
