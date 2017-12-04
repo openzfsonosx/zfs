@@ -1080,34 +1080,67 @@ zfs_vnop_write(struct vnop_write_args *ap)
 	 */
 
 	uio_t *uio = ap->a_uio;
-	const off_t start_resid=uio_resid(uio);
+	const off_t start_resid = uio_resid(uio);
+	const off_t start_eof = ubc_getsize(ap->a_vp);
 	int64_t cur_resid = start_resid;
 	ASSERT3S(cur_resid, >, 0);
+	off_t cum_bytes = 0;
 	char *file_name = NULL;
 
 	const hrtime_t start_time = gethrtime();
+	off_t last_resid = uio_resid(uio);
 
 	for (int i = 0; cur_resid > 0; cur_resid = uio_resid(uio)) {
 		i++;
-
 		if (i > 1) {
 			uint64_t elapsed_msec = NSEC2MSEC(gethrtime() - start_time);
-			printf("ZFS: %s:%d (pass %d, msec %lld) continuing to progress uio"
-			    " (resid = %lld) for file %s\n", __func__, __LINE__,
+			printf("ZFS: %s:%d (retry %d, msec %lld) continuing to progress uio"
+			    " (resid = %lld) for file %s (cum_bytes %lld)\n", __func__, __LINE__,
 			    i, elapsed_msec, cur_resid,
-			    (file_name != NULL) ? file_name : "(NULL)");
-			kpreempt(KPREEMPT_SYNC);
+			    (file_name != NULL) ? file_name : "(NULL)", cum_bytes);
+			extern void IOSleep(unsigned milliseconds);
+			IOSleep(i);
 		}
 
 		error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct, &file_name);
 
 		if (error) {
 			uint64_t elapsed_msec = NSEC2MSEC(gethrtime() - start_time);
-			printf("ZFS: %s:%d error %d pass %d msec %lld from zfs_write for file %s\n",
+			printf("ZFS: %s:%d error %d pass %d msec %lld from zfs_write for file"
+			    " %s (cum_bytes %lld)\n",
 			    __func__, __LINE__, error, i, elapsed_msec,
-			    (file_name != NULL) ? file_name : "(NULL)");
+			    (file_name != NULL) ? file_name : "(NULL)", cum_bytes);
 			break;
 		}
+
+		if (uio_resid(uio) == 0)
+			return (0);
+
+		const int64_t returned_uioresid = uio_resid(uio);
+		ASSERT3S(returned_uioresid, >, 0);
+		cum_bytes += cur_resid - returned_uioresid;
+
+		if (returned_uioresid < last_resid) {
+			/* we made progress */
+			last_resid = returned_uioresid;
+			i = 0;
+			/*
+			 * strip out FAPPEND, as we would have mutated the uio_offset in the
+			 * previous pass
+			 */
+			IMPLY(ioflag & FAPPEND, uio_offset(uio) == start_eof + cum_bytes);
+			ioflag &= ~(FAPPEND);
+			continue;
+		}
+
+		if (i > 6) {
+			printf("ZFS: %s:%d aborting, out of retries for file %s"
+			    " (resid = %lld cum_bytes = %lld)\n",
+			    __func__, __LINE__, (file_name != NULL) ? file_name : "(NULL)",
+			    returned_uioresid, cum_bytes);
+			break;
+		}
+
 	}
 
 	return (error);
