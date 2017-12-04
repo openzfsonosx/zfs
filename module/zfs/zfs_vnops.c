@@ -2225,34 +2225,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 					    this_chunk, xfer_resid,
 					    zp->z_size, ubc_getsize(vp), ioflag, zp->z_is_mapped);
 					VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
-#if 0
-					/*
-					 * it's possible that a concurrently dirtied
-					 * page is waiting to go out to disk, which is
-					 * why we have a partial result from cluster_copy_ubc_data.
-					 * drop locks, ubc_msync the file, punt to
-					 * update_pages.
-					 *
-					 * it would be nice if we could sit here retrying
-					 * the cluster copy.   maybe we should?
-					 */
-					z_map_drop_lock(zp, &need_release, &need_upgrade);
-					const uint64_t rloff = rl->r_off;
-					const uint64_t rllen = rl->r_len;
-					printf("ZFS: %s:%d: rl->r_read_wanted %d rl->r_write_wanted %d"
-					    " file %s\n", __func__, __LINE__,
-					    rl->r_read_wanted, rl->r_write_wanted, zp->z_name_cache);
-					zfs_range_unlock(rl);
-					off_t retry_ubcresid_off = 0;
-					off_t retry_ubcsize = ubc_getsize(vp);
-					int retry_ubcretval = ubc_msync(vp, 0, retry_ubcsize,
-					    &retry_ubcresid_off, UBC_PUSHALL);
-					ASSERT3S(retry_ubcretval, ==, 0);
-					if (retry_ubcretval != 0)
-						ASSERT3S(retry_ubcresid_off, ==, retry_ubcsize);
-					rl = zfs_range_lock(zp, rloff, rllen, RL_WRITER);
-					z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-#endif
 					off_t resid_before = uio_resid(uio);
 					if (0 !=
 					    (error = adjusted_master_update_pages(vp, xfer_resid, uio))) {
