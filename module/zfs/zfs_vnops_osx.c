@@ -2735,6 +2735,16 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		VNOPS_OSX_STAT_INCR(pageoutv2_want_lock, secs);
 	}
 
+	/* extend file if necessary */
+	extern int zfs_write_maybe_extend_file(znode_t *zp, off_t woff, off_t start_resid, rl_t *rl);
+	error = zfs_write_maybe_extend_file(zp, ap->a_f_offset, ap->a_size, rl);
+
+	if (error) {
+		ZFS_EXIT(zfsvfs);
+                printf("ZFS: %s:%d: (extend fail) returning error %d\n", __func__, __LINE__, error);
+                return (error);
+	}
+
 	/* Grab UPL now */
 	int request_flags;
 
@@ -2762,90 +2772,8 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	}
 
 	tx = dmu_tx_create(zfsvfs->z_os);
-
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 	zfs_sa_upgrade_txholds(tx, zp);
-
-	/* extend file if necessary */
-	off_t end = ap->a_f_offset + ap->a_size;
-	if (rl->r_len == UINT64_MAX ||
-	    (end > zp->z_blksz &&
-		(!ISP2(zp->z_blksz || zp->z_blksz < zfsvfs->z_max_blksz))) ||
-	    (end > zp->z_blksz && !dmu_write_is_safe(zp, ap->a_f_offset, end))) {
-		uint64_t newblksz;
-		int      max_blksz = zfsvfs->z_max_blksz;
-		if (end > zp->z_blksz &&
-		    (!ISP2(zp->z_blksz) || zp->z_blksz < zfsvfs->z_max_blksz ||
-			!dmu_write_is_safe(zp, ap->a_offset, end))) {
-			/*
-			 * We are growing the file past the current block size.
-			 */
-			if (zp->z_blksz > zp->z_zfsvfs->z_max_blksz) {
-				/*
-				 * File's blocksize is already larger than the
-				 * "recordsize" property.  Only let it grow to
-				 * the next power of 2.
-				 */
-				ASSERT(!ISP2(zp->z_blksz));
-				newblksz = MIN(end, 1 << highbit64(zp->z_blksz));
-			} else {
-				newblksz = MIN(end, zp->z_zfsvfs->z_max_blksz);
-			}
-                        if (ISP2(newblksz) && newblksz < max_blksz && newblksz != 1) {
-				uint64_t new_new_blksz = newblksz + 1;
-				dprintf("ZFS: %s:%d: bumping new_blksz from %lld to %lld, file %s\n",
-				    __func__, __LINE__, newblksz, new_new_blksz, zp->z_name_cache);
-				if (ISP2(new_new_blksz)) {
-					printf("ZFS: %s:%d !ISP2(%lld) failed"
-					    " (newblksz = %lld), file %s!\n",
-					    __func__, __LINE__, new_new_blksz, newblksz,
-					    zp->z_name_cache);
-				}
-				newblksz = new_new_blksz;
-			}
-			dmu_tx_hold_write(tx, zp->z_id, 0, end);
-		} else {
-			newblksz = 0;
-		}
-		error = dmu_tx_assign(tx, TXG_WAIT);
-		if (error) {
-			dmu_tx_abort(tx);
-			z_map_drop_lock(zp, &need_release, &need_upgrade);
-			zfs_range_unlock(rl);
-			return (error);
-		}
-
-		if (newblksz > zp->z_blksz)
-			zfs_grow_blocksize(zp, newblksz, tx);
-
-		zfs_range_reduce(rl, rllen, rloff);
-
-		uint64_t pre = zp->z_size;
-		uint64_t woff = ap->a_f_offset;
-		// zp->z_size = woff; // we probably don't want to grow the file
-
-		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
-		ASSERT3S(zp->z_size, >, ap->a_f_offset);
-		//ASSERT3S(zp->z_size, >=, ap->a_f_offset + ap->a_size);
-
-		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
-			&zp->z_size,
-			sizeof (zp->z_size), tx));
-
-		dmu_tx_commit(tx);
-
-		if (zp->z_size != ubc_getsize(vp)) {
-			dprintf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld"
-			    " (woff = %lld, end = %lld, pre = %lld)\n",
-			    __func__, __LINE__, zp->z_size, ubc_getsize(vp), woff, end, pre);
-			zp->z_size = ubc_getsize(vp);
-		}
-		/* now create the next tx */
-		tx = dmu_tx_create(zfsvfs->z_os);
-		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
-		zfs_sa_upgrade_txholds(tx, zp);
-	}
-
 	dmu_tx_hold_write(tx, zp->z_id, ap->a_f_offset, ap->a_size);
 	error = dmu_tx_assign(tx, TXG_WAIT);
 	ASSERT3S(error, ==, 0);
