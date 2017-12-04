@@ -1113,6 +1113,7 @@ zfs_vnop_write(struct vnop_write_args *ap)
 			break;
 		}
 
+		/* finished everything OK */
 		if (uio_resid(uio) == 0)
 			return (0);
 
@@ -1120,6 +1121,7 @@ zfs_vnop_write(struct vnop_write_args *ap)
 		ASSERT3S(returned_uioresid, >, 0);
 		cum_bytes += cur_resid - returned_uioresid;
 
+		/* adjust flag if needed */
 		if (returned_uioresid < last_resid) {
 			/* we made progress */
 			last_resid = returned_uioresid;
@@ -1133,13 +1135,27 @@ zfs_vnop_write(struct vnop_write_args *ap)
 			continue;
 		}
 
+		/* try to salvage */
 		if (i > 5 && cum_bytes == 0) {
 			printf("ZFS: %s:%d: salvage, trying to flush out entire VP for file %s\n",
 			    __func__, __LINE__, (file_name != NULL) ? file_name : "(NULL)");
-			ubc_invalidate_range(ap->a_vp, 0, ubc_getsize(ap->a_vp));
+			off_t usiz = ubc_getsize(ap->a_vp);
+			error = ubc_invalidate_range(ap->a_vp, 0, usiz);
+			if (error != 0) {
+				printf("ZFS: %s:%d: error %d from ubc_invalidate_range(vp, 0, %lld),"
+				    "file %s (cum_bytes = %lld)\n",
+				    __func__, __LINE__, error, usiz,
+				    (file_name != NULL) ? file_name : "(NULL)",
+				    cum_bytes);
+
+				if (cum_bytes > 0)
+					return (0);
+				else
+					break;
+			}
 		}
 
-
+		/* give up */
 		if (i > 6) {
 			printf("ZFS: %s:%d aborting, out of retries for file %s"
 			    " (resid = %lld cum_bytes = %lld)\n",
