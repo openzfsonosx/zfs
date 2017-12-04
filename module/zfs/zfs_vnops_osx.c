@@ -1133,6 +1133,13 @@ zfs_vnop_write(struct vnop_write_args *ap)
 			continue;
 		}
 
+		if (i > 5 && cum_bytes == 0) {
+			printf("ZFS: %s:%d: salvage, trying to flush out entire VP for file %s\n",
+			    __func__, __LINE__, (file_name != NULL) ? file_name : "(NULL)");
+			ubc_invalidate_range(ap->a_vp, 0, ubc_getsize(ap->a_vp));
+		}
+
+
 		if (i > 6) {
 			printf("ZFS: %s:%d aborting, out of retries for file %s"
 			    " (resid = %lld cum_bytes = %lld)\n",

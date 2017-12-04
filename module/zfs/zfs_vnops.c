@@ -532,28 +532,29 @@ int ubc_invalidate_range_impl(vnode_t *vp, off_t start, off_t end)
 {
 	znode_t *zp = VTOZ(vp);
 
-	off_t resid_msync = 0;
 	off_t size = end - start;
 	int retval_msync = 0;
 
+	off_t resid_msync_off = end;
+
 	boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
 	uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-	retval_msync = ubc_msync(vp, start, end, &resid_msync, UBC_PUSHALL | UBC_INVALIDATE);
+	retval_msync = ubc_msync(vp, start, end, &resid_msync_off, UBC_PUSHALL | UBC_INVALIDATE);
 	z_map_drop_lock(zp, &need_release, &need_upgrade);
 	ASSERT3S(tries, <=, 2);
 
 	if (retval_msync != 0) {
-		if (resid_msync != PAGE_SIZE_64)
-			printf("ZFS: %s:%d: msync error %d invalidating %lld - %lld (%lld),"
-			    " resid = %lld, file %s\n",
+		if (resid_msync_off != end)
+			printf("ZFS: %s:%d: msync error %d invalidating %lld - %lld (%lld bytes),"
+			    " resid_off = %lld, file %s\n",
 			    __func__, __LINE__, retval_msync, start, end, size,
-			    resid_msync, zp->z_name_cache);
+			    resid_msync_off, zp->z_name_cache);
 		else
-			ASSERT3U(resid_msync, ==, size);
+			ASSERT3U(resid_msync_off, ==, end);
 	} else {
 		dprintf("ZFS: (DEBUG) %s:%d: inval %lld - %lld (%lld), resid %lld , file %s\n",
 		    __func__, __LINE__, start, end, size,
-		    resid_msync, zp->z_name_cache);
+		    resid_msync_off, zp->z_name_cache);
 	}
 	return (retval_msync);
 }
@@ -1930,7 +1931,7 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 		}
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3S(ubcsize, ==, zp->z_size);
-		ASSERT3S(woff, <, ubcsize);
+		ASSERT3S(woff, <=, ubcsize);
 		if (ubcsize == 0 || woff >= ubcsize) {
 			zfs_range_unlock(rlock);
 			return (0);
@@ -1949,7 +1950,7 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 			    sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
 			ASSERT3S(retval, ==, 0);
 			if (retval != 0) {
-				ASSERT3S(resid_off, ==, start_resid);
+				ASSERT3S(resid_off, ==, aend);
 				error = retval;
 				printf("ZFS: %s:%d: returning error %d for [%lld, %lld] file %s\n",
 				    __func__, __LINE__, error, aoff, aend, zp->z_name_cache);
