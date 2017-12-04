@@ -151,7 +151,7 @@ extern int    zfs_ioctl  ( vnode_t *vp, u_long com, intptr_t data, int flag,
 extern int    zfs_read   ( vnode_t *vp, uio_t *uio, int ioflag,
                            cred_t *cr, caller_context_t *ct);
 extern int    zfs_write  ( vnode_t *vp, uio_t *uio, int ioflag,
-                           cred_t *cr, caller_context_t *ct, char *file_name);
+                           cred_t *cr, caller_context_t *ct, char **file_name);
 extern int    zfs_lookup ( vnode_t *dvp, char *nm, vnode_t **vpp,
                            struct componentname *cnp, int nameiop,
                            cred_t *cr, int flags);

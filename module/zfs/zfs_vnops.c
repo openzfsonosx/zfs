@@ -1891,10 +1891,45 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 	 * our range, then unless sync is disabled, push them (syncing
 	 * if we are sync always).
 	 */
-	if (zp->z_is_mapped && zfsvfs->z_log &&
+	if (zfsvfs->z_log &&
 	    (zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED || (ioflag & (FSYNC | FDSYNC)))) {
 		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
-		rlock = zfs_range_lock(zp, aoff, alen, RL_WRITER);
+		if (ioflag & FAPPEND) {
+			rlock = zfs_range_lock(zp, 0, alen, RL_APPEND);
+			woff = rlock->r_off;
+		} else {
+			rlock = zfs_range_lock(zp, aoff, alen, RL_WRITER);
+		}
+		if (rlock->r_len == UINT64_MAX) {
+			off_t end_size = woff + start_resid;
+			int  max_blksz = zfsvfs->z_max_blksz;
+			dmu_tx_t *tx;
+			woff = zp->z_size;
+			tx = dmu_tx_create(zfsvfs->z_os);
+			dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+			dmu_tx_hold_write(tx, zp->z_id, woff, start_resid);
+			zfs_sa_upgrade_txholds(tx, zp);
+			error = dmu_tx_assign(tx, TXG_WAIT);
+			if (error) {
+				dmu_tx_abort(tx);
+				zfs_range_unlock(rlock);
+				printf("ZFS: %s:%d: dmu_tx_assign error %d\n",
+				    __func__, __LINE__, error);
+				return(error);
+			}
+			uint64_t new_blksz;
+			if (zp->z_blksz > max_blksz) {
+				new_blksz = MIN(end_size,
+				    1 << highbit64(zp->z_blksz));
+			} else {
+				new_blksz = MIN(end_size, max_blksz);
+			}
+			zfs_grow_blocksize(zp, new_blksz, tx);
+			zfs_range_reduce(rlock, aoff, alen);
+			dmu_tx_commit(tx);
+		} else {
+			zfs_range_reduce(rlock, aoff, alen);
+		}
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3S(ubcsize, ==, zp->z_size);
 		ASSERT3S(woff, <, ubcsize);
@@ -1938,6 +1973,80 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 	return (error);
 }
 
+int
+zfs_write_maybe_extend_file(znode_t *zp, off_t woff, off_t start_resid, rl_t *rl)
+{
+	vnode_t *vp = ZTOV(zp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	dmu_tx_t *tx;
+	int error = 0;
+
+	/* extend the file if necessary */
+	off_t end = woff + start_resid;
+
+	if (rl->r_len == UINT64_MAX ||
+	    (end > zp->z_blksz &&
+		(!ISP2(zp->z_blksz || zp->z_blksz < zfsvfs->z_max_blksz))) ||
+	    (end > zp->z_blksz && !dmu_write_is_safe(zp, woff, end))) {
+		uint64_t newblksz = 0;
+		const int max_blksz = zfsvfs->z_max_blksz;
+		/* start a transaction */
+		tx = dmu_tx_create(zfsvfs->z_os);
+		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+		dmu_tx_hold_write(tx, zp->z_id, woff, start_resid);
+		zfs_sa_upgrade_txholds(tx, zp);
+		error = dmu_tx_assign(tx, TXG_WAIT);
+		if (error) {
+			dmu_tx_abort(tx);
+			zfs_range_unlock(rl);
+			printf("ZFS: %s:%d: dmu_tx_assign error %d\n",
+			    __func__, __LINE__, error);
+			return(error);
+		}
+		if (zp->z_blksz > max_blksz) {
+			ASSERT(!ISP2(zp->z_blksz));
+			newblksz = MIN(end, 1 << highbit64(zp->z_blksz));
+		} else {
+			newblksz = MIN(end, zp->z_zfsvfs->z_max_blksz);
+		}
+		if (ISP2(newblksz) && newblksz < max_blksz && newblksz != 1) {
+			uint64_t new_new_blksz = newblksz + 1;
+			dprintf("ZFS: %s:%d: bumping new_blksz from %lld to %lld, file %s\n",
+			    __func__, __LINE__, newblksz, new_new_blksz, zp->z_name_cache);
+			if (ISP2(new_new_blksz)) {
+				printf("ZFS: %s:%d !ISP2(%lld) failed"
+				    " (newblksz = %lld) file %s!\n",
+				    __func__, __LINE__, new_new_blksz, newblksz,
+				    zp->z_name_cache);
+			}
+			newblksz = new_new_blksz;
+		}
+		if (newblksz > zp->z_blksz)
+			zfs_grow_blocksize(zp, newblksz, tx);
+
+		zfs_range_reduce(rl, woff, start_resid);
+
+		uint64_t pre = zp->z_size;
+		zp->z_size = woff;
+
+		VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
+			&zp->z_size,
+			sizeof (zp->z_size), tx));
+
+		/* end the tx */
+		dmu_tx_commit(tx);
+
+		if (zp->z_size != ubc_getsize(vp)) {
+			printf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld"
+			    "(woff = %lld, end = %lld, pre = %lld) file %s\n",
+			    __func__, __LINE__, zp->z_size, ubc_getsize(vp), woff, end, pre,
+			    zp->z_name_cache);
+			zp->z_size = ubc_getsize(vp);
+		}
+	}
+	return (error);
+}
+
 /*
  * Write the bytes to a file.
  *
@@ -1959,7 +2068,7 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 
 /* ARGSUSED */
 int
-zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct, char *file_name)
+zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct, char **file_name)
 {
 	znode_t		*zp = VTOZ(vp);
 	rlim64_t	limit = MAXOFFSET_T;
@@ -1997,7 +2106,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
 
-	file_name = zp->z_name_cache;
+	*file_name = zp->z_name_cache;
 
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL, &mtime, 16);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL, &ctime, 16);
@@ -2039,8 +2148,52 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		return (SET_ERROR(EINVAL));
 	}
 
+	if (vnode_isreg(vp)) {
+		error = zfs_write_possibly_msync(zp, woff, start_resid, ioflag);
+		if (error) {
+			ZFS_EXIT(zfsvfs);
+			printf("ZFS: %s:%d: (early msync fail) returning error %d\n",
+			    __func__, __LINE__, error);
+			return (error);
+		}
+	}
 
-	zfs_write_possibly_msync(zp, woff, start_resid, ioflag);
+	/*
+	 * The range lock principally protects us against
+	 * pageoutv2, which takes an RL and then the z_map_lock.
+	 */
+
+	/* if we are appending, bump woff to the end of file */
+	if (ioflag & FAPPEND) {
+		const off_t old_woff = woff;
+		rl = zfs_range_lock(zp, 0, n, RL_APPEND);
+		woff = rl->r_off;
+		if (rl->r_len == UINT64_MAX) {
+			woff = zp->z_size;
+		}
+ 		if (woff != old_woff) {
+			printf("ZFS: %s:%d: append range lock says set woff to %lld from %lld"
+			    " rl->r_len %lld uio_offset %lld uio_resid %lld file %s\n",
+			    __func__, __LINE__, woff, old_woff, rl->r_len,
+			    uio_offset(uio), uio_resid(uio), zp->z_name_cache);
+		}
+		uio_setoffset(uio, woff);
+	} else {
+		rl = zfs_range_lock(zp, woff, start_resid, RL_WRITER);
+	}
+
+	if (woff >= limit) {
+		zfs_range_unlock(rl);
+		ZFS_EXIT(zfsvfs);
+		return ((EFBIG));
+	}
+
+        error = zfs_write_maybe_extend_file(zp, woff, start_resid, rl);
+	if (error) {
+		ZFS_EXIT(zfsvfs);
+		printf("ZFS: %s:%d: (extend fail) returning error %d\n", __func__, __LINE__, error);
+		return (error);
+	}
 
 	/*
 	 * if we are a regular file, we move our data into UBC, and if
@@ -2053,94 +2206,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 
 		off_t sync_resid = start_resid;
 
-		/* if we are appending, bump the offset to woff */
-		if (ioflag & FAPPEND) {
-			uio_setoffset(uio, woff);
-		}
-
-		/*
-		 * The range lock principally protects us against
-		 * pageoutv2, which takes an RL and then the z_map_lock.
-		 */
-
-		rl = zfs_range_lock(zp, woff, start_resid, RL_WRITER);
-
-		/* extend the file if necessary */
-		off_t end = woff + start_resid;
-		if (rl->r_len == UINT64_MAX ||
-		    (end > zp->z_blksz &&
-			(!ISP2(zp->z_blksz || zp->z_blksz < zfsvfs->z_max_blksz))) ||
-		    !dmu_write_is_safe(zp, woff, end)) {
-			uint64_t newblksz;
-			const int max_blksz = zfsvfs->z_max_blksz;
-			/* start a transaction */
-			tx = dmu_tx_create(zfsvfs->z_os);
-			dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
-			zfs_sa_upgrade_txholds(tx, zp);
-
-			if (end > zp->z_blksz &&
-			    (!ISP2(zp->z_blksz) || zp->z_blksz < zfsvfs->z_max_blksz)) {
-				/*
-				 * We are growing the file past the current block size.
-				 */
-				if (zp->z_blksz > zp->z_zfsvfs->z_max_blksz) {
-					/*
-					 * File's blocksize is already larger than the
-					 * "recordsize" property.  Only let it grow to
-					 * the next power of 2.
-					 */
-					ASSERT(!ISP2(zp->z_blksz));
-					newblksz = MIN(end, 1 << highbit64(zp->z_blksz));
-				} else {
-					newblksz = MIN(end, zp->z_zfsvfs->z_max_blksz);
-				}
-				if (ISP2(newblksz) && newblksz < max_blksz && newblksz != 1) {
-					uint64_t new_new_blksz = newblksz + 1;
-					dprintf("ZFS: %s:%d: bumping new_blksz from %lld to %lld, file %s\n",
-					    __func__, __LINE__, newblksz, new_new_blksz, zp->z_name_cache);
-					if (ISP2(new_new_blksz)) {
-						printf("ZFS: %s:%d !ISP2(%lld) failed"
-						    " (newblksz = %lld) file %s!\n",
-						    __func__, __LINE__, new_new_blksz, newblksz,
-						    zp->z_name_cache);
-					}
-					newblksz = new_new_blksz;
-				}
-				dmu_tx_hold_write(tx, zp->z_id, 0, newblksz);
-			} else {
-				newblksz = 0;
-			}
-			error = dmu_tx_assign(tx, TXG_WAIT);
-			if (error) {
-				dmu_tx_abort(tx);
-				zfs_range_unlock(rl);
-				return (error);
-			}
-
-			if (newblksz)
-				zfs_grow_blocksize(zp, newblksz, tx);
-
-			if (rl->r_len == UINT64_MAX)
-				zfs_range_reduce(rl, woff, start_resid);
-
-			uint64_t pre = zp->z_size;
-			zp->z_size = woff;
-
-			VERIFY(0 == sa_update(zp->z_sa_hdl, SA_ZPL_SIZE(zp->z_zfsvfs),
-				&zp->z_size,
-				sizeof (zp->z_size), tx));
-
-			/* end the tx */
-			dmu_tx_commit(tx);
-
-			if (zp->z_size != ubc_getsize(vp)) {
-				printf("ZFS: %s:%d: restoring z_size from %lld to ubc size %lld"
-				    "(woff = %lld, end = %lld, pre = %lld) file %s\n",
-				    __func__, __LINE__, zp->z_size, ubc_getsize(vp), woff, end, pre,
-				    zp->z_name_cache);
-				zp->z_size = ubc_getsize(vp);
-			}
-		}
 
 		/* grab the map lock, protecting against other zfs UBC users */
 		boolean_t need_release = B_FALSE;
@@ -2415,6 +2480,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 	 * prefaulting function that walks through a copy of the uio.
 	 */
 
+#if 0 // we do this above
+
 	/*
 	 * If in append mode, set the io offset pointer to eof.
 	 */
@@ -2456,6 +2523,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		ZFS_EXIT(zfsvfs);
 		return ((EFBIG));
 	}
+#endif
 
 	if ((woff + n) > limit || woff > (limit - n))
 		n = limit - woff;

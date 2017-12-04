@@ -1099,7 +1099,7 @@ zfs_vnop_write(struct vnop_write_args *ap)
 			kpreempt(KPREEMPT_SYNC);
 		}
 
-		error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct, file_name);
+		error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct, &file_name);
 
 		if (error) {
 			uint64_t elapsed_msec = NSEC2MSEC(gethrtime() - start_time);
