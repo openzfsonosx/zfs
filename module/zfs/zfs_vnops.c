@@ -1872,6 +1872,70 @@ zfs_write_sync_range(void *arg)
 	kmem_free(sync_range, sizeof(sync_range_t));
 }
 
+int
+zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
+{
+	vnode_t *vp = ZTOV(zp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	rl_t *rlock;
+	int error = 0;
+
+	ASSERT3S(start_resid, >, 0);
+	const off_t aoff = trunc_page_64(woff);
+	const off_t alen = round_page_64(start_resid);
+
+	/*
+	 * if this file has been mmapped and there are dirty pages, in
+	 * our range, then unless sync is disabled, push them (syncing
+	 * if we are sync always).
+	 */
+	if (zp->z_is_mapped && zfsvfs->z_log &&
+	    (zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED || (ioflag & (FSYNC | FDSYNC)))) {
+		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+		rlock = zfs_range_lock(zp, aoff, alen, RL_WRITER);
+		off_t ubcsize = ubc_getsize(vp);
+		ASSERT3S(ubcsize, ==, zp->z_size);
+		ASSERT3S(woff, <, ubcsize);
+		if (ubcsize == 0 || woff >= ubcsize) {
+			zfs_range_unlock(rlock);
+			return (0);
+		}
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+		if (!(0 == is_file_clean(vp, ubcsize))) { // expensive test ?
+			boolean_t sync = (ioflag & (FSYNC | FDSYNC)) ||
+			    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
+			ASSERT3S(zp->z_size, ==, ubcsize);
+			ASSERT3S(ubcsize, >, 0);
+			off_t resid_off = 0;
+			const off_t aend = MIN(aoff + alen, ubcsize);
+			ASSERT3S(aend, >, aoff);
+			zfs_range_unlock(rlock);
+			int retval = ubc_msync(vp, aoff, aend, &resid_off,
+			    sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
+			ASSERT3S(retval, ==, 0);
+			if (retval != 0) {
+				ASSERT3S(resid_off, ==, start_resid);
+				error = retval;
+				printf("ZFS: %s:%d: returning error %d for [%lld, %lld] file %s\n",
+				    __func__, __LINE__, error, aoff, aend, zp->z_name_cache);
+			} else {
+				ASSERT3P(zp->z_sa_hdl, !=, NULL);
+				if (sync == B_TRUE) {
+					zil_commit(zfsvfs->z_log, zp->z_id);
+					VNOPS_STAT_BUMP(zfs_write_sync_push_mapped);
+				}
+				VNOPS_STAT_BUMP(zfs_write_clean_on_write);
+			}
+		} else {
+			zfs_range_unlock(rlock);
+		}
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		rlock = NULL;
+		ASSERT3U(tries, <=, 2);
+	}
+	return (error);
+}
+
 /*
  * Write the bytes to a file.
  *
@@ -1893,7 +1957,7 @@ zfs_write_sync_range(void *arg)
 
 /* ARGSUSED */
 int
-zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
+zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct, char *file_name)
 {
 	znode_t		*zp = VTOZ(vp);
 	rlim64_t	limit = MAXOFFSET_T;
@@ -1930,6 +1994,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
+
+	file_name = zp->z_name_cache;
 
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MTIME(zfsvfs), NULL, &mtime, 16);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_CTIME(zfsvfs), NULL, &ctime, 16);
@@ -1971,50 +2037,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 		return (SET_ERROR(EINVAL));
 	}
 
-#if 0
-	/*
-	 * if this file has been mmapped and there are dirty pages, in
-	 * our range, then unless sync is disabled, push them (syncing
-	 * if we are sync always).
-	 */
-	if (zp->z_is_mapped && zfsvfs->z_log &&
-	    (zfsvfs->z_os->os_sync != ZFS_SYNC_DISABLED || (ioflag & (FSYNC | FDSYNC)))) {
-		off_t ubcsize = ubc_getsize(vp);
-		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
-		rl = zfs_range_lock(zp, trunc_page_64(woff), round_page_64(woff+start_resid),
-		    RL_WRITER);
-		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-		zfs_range_unlock(rl);
-		if (!(0 == is_file_clean(vp, ubcsize))) {
-			boolean_t sync = (ioflag & (FSYNC | FDSYNC)) ||
-			    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
-			ASSERT3S(zp->z_size, ==, ubcsize);
-			off_t resid_off = 0;
-			int retval = ubc_msync(vp, woff, woff + start_resid, &resid_off,
-			    sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
-			ASSERT3S(retval, ==, 0);
-			if (retval != 0) {
-				ASSERT3S(resid_off, ==, start_resid);
-			} else {
-				ASSERT3P(zp->z_sa_hdl, !=, NULL);
-				if (sync == B_TRUE) {
-					zil_commit(zfsvfs->z_log, zp->z_id);
-					VNOPS_STAT_BUMP(zfs_write_sync_push_mapped);
-				}
-				VNOPS_STAT_BUMP(zfs_write_clean_on_write);
-			}
-		}
-		z_map_drop_lock(zp, &need_release, &need_upgrade);
-		rl = NULL;
-		ASSERT3U(tries, <=, 2);
-	}
-#endif
+
+	zfs_write_possibly_msync(zp, woff, start_resid, ioflag);
 
 	/*
 	 * if we are a regular file, we move our data into UBC, and if
 	 * we are synchronous, we trigger a ubc_msync
 	 */
-
 
 	if (vnode_isreg(vp)) {
 		ASSERT3S(start_resid, <=, INT_MAX);

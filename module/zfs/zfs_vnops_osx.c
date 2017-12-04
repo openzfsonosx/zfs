@@ -1067,17 +1067,48 @@ zfs_vnop_write(struct vnop_write_args *ap)
 {
 	int ioflag = zfs_ioflags(ap->a_ioflag);
 	int error;
-	/* uint64_t resid; */
+
 	DECLARE_CRED_AND_CONTEXT(ap);
 
 	dprintf("zfs_vnop_write(vp %p, offset 0x%llx size 0x%llx\n",
 	    ap->a_vp, uio_offset(ap->a_uio), uio_resid(ap->a_uio));
 
-	/* resid=uio_resid(ap->a_uio); */
-	error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct);
+	/*
+	 * Loop down to zfs_write which will make progress on the uio;
+	 * we only return to the writer when we get either error != 0 OR
+	 * uio_resid == 0.
+	 */
 
-	if (error)
-		dprintf("%s error %d\n", __func__, error);
+	uio_t *uio = ap->a_uio;
+	const off_t start_resid=uio_resid(uio);
+	int64_t cur_resid = start_resid;
+	ASSERT3S(cur_resid, >, 0);
+	char *file_name = NULL;
+
+	const hrtime_t start_time = gethrtime();
+
+	for (int i = 0; cur_resid > 0; cur_resid = uio_resid(uio)) {
+		i++;
+
+		if (i > 1) {
+			uint64_t elapsed_msec = NSEC2MSEC(gethrtime() - start_time);
+			printf("ZFS: %s:%d (pass %d, msec %lld) continuing to progress uio"
+			    " (resid = %lld) for file %s\n", __func__, __LINE__,
+			    i, elapsed_msec, cur_resid,
+			    (file_name != NULL) ? file_name : "(NULL)");
+			kpreempt(KPREEMPT_SYNC);
+		}
+
+		error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct, file_name);
+
+		if (error) {
+			uint64_t elapsed_msec = NSEC2MSEC(gethrtime() - start_time);
+			printf("ZFS: %s:%d error %d pass %d msec %lld from zfs_write for file %s\n",
+			    __func__, __LINE__, error, i, elapsed_msec,
+			    (file_name != NULL) ? file_name : "(NULL)");
+			break;
+		}
+	}
 
 	return (error);
 }
