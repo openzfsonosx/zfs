@@ -2771,11 +2771,12 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	if (rl->r_len == UINT64_MAX ||
 	    (end > zp->z_blksz &&
 		(!ISP2(zp->z_blksz || zp->z_blksz < zfsvfs->z_max_blksz))) ||
-	    !dmu_write_is_safe(zp, ap->a_f_offset, end)) {
+	    (end > zp->z_blksz && !dmu_write_is_safe(zp, ap->a_f_offset, end))) {
 		uint64_t newblksz;
 		int      max_blksz = zfsvfs->z_max_blksz;
 		if (end > zp->z_blksz &&
-		    (!ISP2(zp->z_blksz) || zp->z_blksz < zfsvfs->z_max_blksz)) {
+		    (!ISP2(zp->z_blksz) || zp->z_blksz < zfsvfs->z_max_blksz ||
+			!dmu_write_is_safe(zp, ap->a_offset, end))) {
 			/*
 			 * We are growing the file past the current block size.
 			 */
@@ -2814,11 +2815,10 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			return (error);
 		}
 
-		if (newblksz)
+		if (newblksz > zp->z_blksz)
 			zfs_grow_blocksize(zp, newblksz, tx);
 
-		if (rl->r_len == UINT64_MAX)
-			zfs_range_reduce(rl, rllen, rloff);
+		zfs_range_reduce(rl, rllen, rloff);
 
 		uint64_t pre = zp->z_size;
 		uint64_t woff = ap->a_f_offset;
