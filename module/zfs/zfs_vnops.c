@@ -703,6 +703,7 @@ drop_and_exit:
 	ASSERT3S(error, ==, 0);
 }
 
+#if 0
 static int
 adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
 {
@@ -829,6 +830,7 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
 	    error, zp->z_name_cache);
 	return (error);
 }
+#endif
 
 /* OSX UBC-aware implementation of zfs_read and mappedread follows */
 
@@ -2049,6 +2051,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		ASSERT3S(start_resid, <=, INT_MAX);
 		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 
+		off_t sync_resid = start_resid;
+
 		/* if we are appending, bump the offset to woff */
 		if (ioflag & FAPPEND) {
 			uio_setoffset(uio, woff);
@@ -2209,47 +2213,46 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			if (error == 0) {
 				VNOPS_STAT_BUMP(zfs_write_cluster_copy_ok);
 				if (xfer_resid != 0) {
-					dprintf("ZFS: %s:%d nonzero xfer_resid %d this_chunk %ld this_off %lld,"
-					    " uio_off %lld, file %s\n",
-					    __func__, __LINE__, xfer_resid, this_chunk,
-					    this_off, uio_offset(uio), zp->z_name_cache);
 					ASSERT3S(this_chunk, >=, xfer_resid);
 					IMPLY(xfer_resid == this_chunk, uio_offset(uio) == this_off);
-					printf("ZFS: %s:%d no progress on file %s,"
-					    " returning short write, woff %lld,"
+					printf("ZFS: %s:%d incomplete progress on file %s,"
+					    " returning short write, c %d, woff %lld,"
 					    " this_off %lld uio_offset %lld uio_resid %lld"
 					    " this_chunk %ld xfer_resid %d file_size %lld %lld"
 					    " ioflag %d - punting to update pages function (mapped %d)\n",
-					    __func__, __LINE__, zp->z_name_cache,
+					    __func__, __LINE__, zp->z_name_cache, c,
 					    woff, this_off, uio_offset(uio), uio_resid(uio),
 					    this_chunk, xfer_resid,
 					    zp->z_size, ubc_getsize(vp), ioflag, zp->z_is_mapped);
-					VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
-					off_t resid_before = uio_resid(uio);
-					if (0 !=
-					    (error = adjusted_master_update_pages(vp, xfer_resid, uio))) {
+					if (xfer_resid == this_chunk) {
+						// wrote nothing at all
+						printf("ZFS: %s:%d no progress made, c == %d,"
+						    " returning 0 for file %s\n",
+						    __func__, __LINE__, c, zp->z_name_cache);
 						z_map_drop_lock(zp, &need_release, &need_upgrade);
-						printf("ZFS: %s:%d: error %d from"
-						    " adjusted_master_update_pages, file %s\n",
-						    __func__, __LINE__, error, zp->z_name_cache);
 						zfs_range_unlock(rl);
-						VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
 						ZFS_EXIT(zfsvfs);
-						return (error);
+						return (0);
 					} else {
-						printf("ZFS: %s:%d: uio_resid before %lld after %lld file %s\n",
-						    __func__, __LINE__, resid_before,
-						    uio_resid(uio), zp->z_name_cache);
+						// wrote a little: xfer_resid == 0, xfer_resid != this_chunk
+						VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
+						off_t uioresid = uio_resid(uio);
+						ASSERT3S(start_resid, >, uioresid);
+						sync_resid = start_resid - uioresid;
+						ASSERT3S(sync_resid, >, 0);
+						ASSERT3S(sync_resid, <, start_resid);
+						break;
 					}
 				} else {
+					// complete copy, error == 0, xfer_resid == 0
 					VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
 				}
 				VNOPS_STAT_INCR(zfs_write_cluster_copy_bytes, this_chunk - xfer_resid);
 			} else {
 				printf("ZFS: %s:%d: error %d from cluster_copy_ubc_data"
-				    " (woff %lld, resid %ld) (now %lld %lld) file %s\n",
+				    " (woff %lld, resid %ld) (now %lld %lld) c %d file %s\n",
 				    __func__, __LINE__, error, woff, start_resid,
-				    uio_offset(uio), uio_resid(uio),
+				    uio_offset(uio), uio_resid(uio), c,
 				    zp->z_name_cache);
 				z_map_drop_lock(zp, &need_release, &need_upgrade);
 				zfs_range_unlock(rl);
@@ -2318,12 +2321,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		 * in its *arg argument; it is responsible for freeing the
 		 * communications structure, not us.
 		 */
-		const boolean_t is_safe = dmu_write_is_safe(zp, woff, woff + start_resid);
+		const boolean_t is_safe = dmu_write_is_safe(zp, woff, woff + sync_resid);
 		if (!is_safe) {
 			printf("ZFS: %s:%d: sending %s write [%lld, %lld] to task file %s\n",
 			    __func__, __LINE__,
 			    (do_sync) ? "sync" : "standard",
-			    woff, woff + start_resid, zp->z_name_cache);
+			    woff, woff + sync_resid, zp->z_name_cache);
 			sync_range_t *sync_range = kmem_zalloc(sizeof(sync_range_t), KM_SLEEP);
 
 			if (sync_range == NULL) {
@@ -2343,9 +2346,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			sync_range->safety_check = B_TRUE;
 			sync_range->range_lock   = B_TRUE;
 			sync_range->sync         = do_sync;
-			sync_range->end          = woff + start_resid;
+			sync_range->end          = woff + sync_resid;
 			sync_range->start        = woff;
-			sync_range->start_resid  = start_resid;
+			sync_range->start_resid  = sync_resid;
 			sync_range->vp           = vp;
 
 			VERIFY3U(taskq_dispatch(system_taskq, zfs_write_sync_range, sync_range,
@@ -2358,25 +2361,25 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		/* we can become unsafe here */
 
 		if (is_safe & do_sync) {
-			error = zfs_write_sync_range_helper(vp, woff, woff + start_resid,
-			    start_resid, do_sync, B_TRUE, B_FALSE);
+			error = zfs_write_sync_range_helper(vp, woff, woff + sync_resid,
+			    sync_resid, do_sync, B_TRUE, B_FALSE);
 			if (error != 0) {
 				zfs_panic_recover("%s:%d zfs_write_sync_range_helper"
 				    " returned error %d for range [%lld, %lld], file %s\n",
 				    __func__, __LINE__, error,
-				    woff, woff+start_resid, zp->z_name_cache);
+				    woff, woff+sync_resid, zp->z_name_cache);
 			}
 
 		}
 #else
 		zfs_range_unlock(rl);
-		error = zfs_write_sync_range_helper(vp, woff, woff + start_resid,
-		    start_resid, do_sync);
+		error = zfs_write_sync_range_helper(vp, woff, woff + sync_resid,
+		    sync_resid, do_sync);
 		if (error != 0) {
 			zfs_panic_recover("%s:%d zfs_write_sync_range_helper"
 			    " returned error %d for range [%lld, %lld], file %s\n",
 			    __func__, __LINE__, error,
-			    woff, woff+start_resid, zp->z_name_cache);
+			    woff, woff+sync_resid, zp->z_name_cache);
 		}
 #endif
 		ZFS_EXIT(zfsvfs);
