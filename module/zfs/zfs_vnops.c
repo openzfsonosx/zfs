@@ -1927,8 +1927,6 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 			zfs_grow_blocksize(zp, new_blksz, tx);
 			zfs_range_reduce(rlock, aoff, alen);
 			dmu_tx_commit(tx);
-		} else {
-			zfs_range_reduce(rlock, aoff, alen);
 		}
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3S(ubcsize, ==, zp->z_size);
