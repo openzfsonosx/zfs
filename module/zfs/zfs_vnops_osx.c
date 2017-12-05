@@ -2724,10 +2724,12 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	 *
 	 * Eventually we have ordered: [1] rl [2] z_map_lock.
 	 */
+	boolean_t had_map_lock_at_entry = B_FALSE;
 	if (rw_write_held(&zp->z_map_lock)) {
 		dprintf("ZFS: %s:%d: dropping held-on-entry z_map_lock for file %s\n",
 		    __func__, __LINE__, zp->z_name_cache);
 		rw_exit(&zp->z_map_lock);
+		had_map_lock_at_entry = B_TRUE;
 	}
 
 	/*
@@ -3051,10 +3053,10 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		ubc_upl_commit_range(upl, 0, a_size, UPL_COMMIT_FREE_ON_EMPTY);
 
 	upl = NULL;
-
-	z_map_drop_lock(zp, &need_release, &need_upgrade);
-
-	ASSERT(!rw_write_held(&zp->z_map_lock));
+	if (had_map_lock_at_entry == B_FALSE) {
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		ASSERT(!rw_write_held(&zp->z_map_lock));
+	}
 
 	zfs_range_unlock(rl);
 
@@ -3069,7 +3071,10 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	return (error);
 
   pageout_done:
-	z_map_drop_lock(zp, &need_release, &need_upgrade);
+
+	if (had_map_lock_at_entry == B_FALSE) {
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+	}
 
 	zfs_range_unlock(rl);
 
@@ -3077,8 +3082,6 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	dprintf("ZFS: pageoutv2 aborted %d\n", error);
 	//VERIFY(ubc_create_upl(vp, off, len, &upl, &pl, flags) == 0);
 	//ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-
-	ASSERT(!rw_write_held(&zp->z_map_lock));
 
 	if (zfsvfs)
 		ZFS_EXIT(zfsvfs);
