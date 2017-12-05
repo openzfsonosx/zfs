@@ -2474,9 +2474,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		return (error);
 	}
 
-	if (old_style == B_TRUE) {
+	if (old_style == B_FALSE) {
 		VERIFY(!vnode_isreg(vp));
 	}
+	EQUIV(old_style == B_TRUE, vnode_isreg(vp));
 
 	/* Illumos here checks for mandatory locks; OSX (and Linux) do this elsewhere */
 
