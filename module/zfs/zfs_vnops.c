@@ -879,8 +879,14 @@ fill_hole(vnode_t *vp, const off_t foffset,
 
 	for (int pg = 0; pg < upl_pages; pg++) {
 		if (upl_valid_page(pl, pg)) {
-			printf("ZFS: %s: pg %d (upl_size = %lld, upl_start = %lld) of file %s is VALID\n",
+			printf("ZFS: %s: pg %d of (upl_size = %lld, upl_start = %lld) of file %s is VALID\n",
 			    __func__, pg, upl_size, upl_start, filename);
+			(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+			return (EAGAIN);
+		}
+		if (upl_dirty_page(pl, pg)) {
+			printf("ZFS: %s%d: pg %d of (upl_size %lld upl_start %lld) file %s is DIRTY\n",
+			    __func__, __LINE__, pg, upl_size, upl_start, filename);
 			(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 			return (EAGAIN);
 		}
@@ -1086,13 +1092,23 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 				/* don't count pages not present during first pass */
 				if (i == 0) present_pages_skipped++;
 				continue;
+			} else if (upl_dirty_page(pl, page_index)) {
+				/* don't count dirty pages during first pass either */
+				if (i == 0) present_pages_skipped++;
+				printf("ZFS: %s:%d: skipping DIRTY,!VALID page %d in range"
+				    " [off %lld len %ld] of file %s\n", __func__, __LINE__,
+				    page_index, cur_upl_file_offset, cur_upl_size,
+				    zp->z_name_cache);
+				page_index++;
+				continue;
 			}
 			/* this is a hole.  find its end */
 			page_index_hole_start = page_index;
 			for (page_index_hole_end = page_index + 1;
 			     page_index_hole_end < upl_num_pages;
 			     page_index_hole_end++) {
-				if (upl_valid_page(pl, page_index_hole_end))
+				if (upl_valid_page(pl, page_index_hole_end) ||
+				    upl_dirty_page(pl, page_index_hole_end))
 					break;
 			}
 
