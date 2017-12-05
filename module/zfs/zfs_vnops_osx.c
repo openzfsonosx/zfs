@@ -2167,17 +2167,12 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 * zfs_vnop_mnomap(), since those may update the file as well.
 	 */
 
+	rl_t *rl = zfs_range_lock(zp, off, len, RL_READER);
+
 	boolean_t need_release = B_FALSE;
 	boolean_t need_upgrade = B_FALSE;
-	if (!rw_write_held(&zp->z_map_lock)) {
-		ASSERT3S(zp->z_is_mapped, >, 0);
-		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-		VNOPS_OSX_STAT_INCR(pagein_want_lock, tries);
-	} else {
-		ASSERT3S(zp->z_is_mapped, >, 0);
-		dprintf("ZFS: %s:%d already have z_map_lock for file %s\n",
-		    __func__, __LINE__, zp->z_name_cache);
-	}
+	uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+	VNOPS_OSX_STAT_INCR(pagein_want_lock, tries);
 
 	int ubc_map_retval = 0;
 	if ((ubc_map_retval = ubc_upl_map(upl, (vm_offset_t *)&vaddr)) != KERN_SUCCESS) {
@@ -2186,6 +2181,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 		if (!(flags & UPL_NOCOMMIT))
 			(void) ubc_upl_abort(upl, 0);
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
+		zfs_range_unlock(rl);
 		ZFS_EXIT(zfsvfs);
 		return (ENOMEM);
 	}
@@ -2259,7 +2255,7 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 		error = EFAULT;
 
 	z_map_drop_lock(zp, &need_release, &need_upgrade);
-
+	zfs_range_unlock(rl);
 	ZFS_EXIT(zfsvfs);
 	if (error) dprintf("%s error %d\n", __func__, error);
 	return (error);
@@ -2728,16 +2724,10 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	 *
 	 * Eventually we have ordered: [1] rl [2] z_map_lock.
 	 */
-
-	boolean_t need_release = B_FALSE;
-	boolean_t need_upgrade = B_FALSE;
-
 	if (rw_write_held(&zp->z_map_lock)) {
 		dprintf("ZFS: %s:%d: dropping held-on-entry z_map_lock for file %s\n",
 		    __func__, __LINE__, zp->z_name_cache);
 		rw_exit(&zp->z_map_lock);
-	} else {
-		need_release = B_TRUE;
 	}
 
 	/*
@@ -2757,6 +2747,10 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 
 	extern void IOSleep(unsigned milliseconds); // yields thread
 	extern void IODelay(unsigned microseconds); // x86_64 rep nop
+
+
+	boolean_t need_release = B_FALSE;
+	boolean_t need_upgrade = B_FALSE;
 
 	while(!rw_write_held(&zp->z_map_lock)){
 		if (secs == 0)
@@ -2784,8 +2778,9 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		}
 		IODelay(1);
 	}
-	ASSERT(rw_write_held(&zp->z_map_lock));
 
+	ASSERT(rw_write_held(&zp->z_map_lock));
+	need_release = B_TRUE;
 	zp->z_map_lock_holder = __func__;
 
 	if (secs == 0) {
@@ -3059,6 +3054,8 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 
 	z_map_drop_lock(zp, &need_release, &need_upgrade);
 
+	ASSERT(!rw_write_held(&zp->z_map_lock));
+
 	zfs_range_unlock(rl);
 
 	if (a_flags & UPL_IOSYNC) {
@@ -3080,6 +3077,9 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	dprintf("ZFS: pageoutv2 aborted %d\n", error);
 	//VERIFY(ubc_create_upl(vp, off, len, &upl, &pl, flags) == 0);
 	//ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+
+	ASSERT(!rw_write_held(&zp->z_map_lock));
+
 	if (zfsvfs)
 		ZFS_EXIT(zfsvfs);
 	return (error);
@@ -3239,6 +3239,28 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	/* zp->z_is_mapped = 0; */
 	ASSERT3U((uint64_t)zp->z_is_mapped, >, 0ULL);
 	mutex_exit(&zp->z_lock);
+
+	off_t ubcsize = ubc_getsize(vp);
+	off_t resid_msync_off = ubcsize;
+        boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+        uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+        int retval_msync = ubc_msync(vp, 0, ubcsize, &resid_msync_off, UBC_PUSHALL);
+        z_map_drop_lock(zp, &need_release, &need_upgrade);
+        ASSERT3S(tries, <=, 2);
+
+	if (retval_msync != 0) {
+                if (resid_msync_off != ubcsize)
+                        printf("ZFS: %s:%d: msync error %d invalidating %lld - %lld (%lld bytes),"
+                            " resid_off = %lld, file %s\n",
+                            __func__, __LINE__, retval_msync, 0LL, ubcsize, ubcsize,
+                            resid_msync_off, zp->z_name_cache);
+                else
+                        ASSERT3U(resid_msync_off, ==, ubcsize);
+        } else {
+                dprintf("ZFS: (DEBUG) %s:%d: inval %lld - %lld (%lld), resid %lld , file %s\n",
+                    __func__, __LINE__, 0LL, ubcsize, ubcsize,
+                    resid_msync_off, zp->z_name_cache);
+        }
 
 	VNOPS_OSX_STAT_BUMP(mnomap_calls);
 
