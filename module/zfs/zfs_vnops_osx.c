@@ -3240,12 +3240,21 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	ASSERT3U((uint64_t)zp->z_is_mapped, >, 0ULL);
 	mutex_exit(&zp->z_lock);
 
-	off_t ubcsize = ubc_getsize(vp);
-	off_t resid_msync_off = ubcsize;
+	ASSERT(!rw_write_held(&zp->z_map_lock));
         boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
         uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+	ASSERT(rw_write_held(&zp->z_map_lock));
+	off_t ubcsize = ubc_getsize(vp);
+	off_t resid_msync_off = ubcsize;
         int retval_msync = ubc_msync(vp, 0, ubcsize, &resid_msync_off, UBC_PUSHALL);
-        z_map_drop_lock(zp, &need_release, &need_upgrade);
+	if (rw_lock_held(&zp->z_map_lock)) {
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+	} else {
+		const char *fn = zp->z_map_lock_holder;
+		printf("ZFS: %s:%d: someone below us released our lock! file %s curholder %s\n",
+		    __func__, __LINE__,	zp->z_name_cache,
+		    (fn == NULL) ? "(NULL fn)" : fn);
+	}
         ASSERT3S(tries, <=, 2);
 
 	if (retval_msync != 0) {
