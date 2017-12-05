@@ -973,12 +973,12 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	ASSERT3U(upl_size, <=, INT_MAX);
 	ASSERT3U(upl_size, >, 0);
 
-	err = ubc_upl_commit_range(upl, 0, (int)upl_size, commit_flags);
+	kern_return_t commit_ret = ubc_upl_commit_range(upl, 0, (int)upl_size, commit_flags);
 
-	if (err != 0) {
-		printf("ZFS: %s: error committing range [0, %d] (vs %lld) for file %s\n",
-		    __func__, (int)upl_size, upl_size, filename);
-		return (err);
+	if (commit_ret != KERN_SUCCESS) {
+		printf("ZFS: %s: error %d committing range [0, %d] (vs %lld) for file %s\n",
+		    __func__, commit_ret, (int)upl_size, upl_size, filename);
+		return (commit_ret);
 	}
 
 	return (err);
