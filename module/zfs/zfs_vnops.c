@@ -2331,11 +2331,42 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 					    zp->z_size, ubc_getsize(vp), ioflag, zp->z_is_mapped,
 					    start_off, start_resid);
 					if (xfer_resid == this_chunk) {
-						// wrote nothing at all
+						/*
+						 * We have written nothing at all.
+						 * This seems to be because the first (or only)
+						 * page is condition that memory_object_control_uiomove
+						 * does not want to deal with (cur_run == 0 at line
+						 * 463 of osfmk/vm/bsd_vm.c), or possibly because
+						 * of the mark_dirty test at line 388.
+						 *
+						 * We want to only do this for the range
+						 * from uio_offset(uio) to the end of the page;
+						 * if uio_resid crosses that end, then we will
+						 * want to go through this loop again, trying
+						 * to cluster copy with mark_write.
+						 */
+						const off_t recov_off = uio_offset(uio);
+						const off_t recov_resid_max = MIN(uio_resid(uio),
+						    PAGE_SIZE_64);
+						const off_t recov_off_page_offset = recov_off & PAGE_MASK_64;
+						const off_t recov_bytes_left_in_page = PAGE_SIZE_64 -
+						    recov_off_page_offset;
+						const off_t recov_resid = MIN(recov_resid_max,
+						    recov_bytes_left_in_page);
+						ASSERT3S(recov_resid, <=, PAGE_SIZE_64);
+						ASSERT3S(((recov_off + recov_resid) & PAGE_MASK_64), ==, 0);
+						ASSERT3S(recov_resid, >, 0);
+						const int recov_resid_int = (int) recov_resid;
+
 						printf("ZFS: %s:%d no progress made, c == %d,"
-						    " returning attempting cluster_copy_ubc_data(..., 0)"
+						    " attempting cluster_copy_ubc_data(..ioreq %d, 0)"
+						    " (recoff %lld uio_resid %lld xfer_resid was %d)"
 						    " for file %s\n",
-						    __func__, __LINE__, c, zp->z_name_cache);
+						    __func__, __LINE__, c, recov_resid_int,
+						    recov_off, uio_resid(uio), xfer_resid,
+						    zp->z_name_cache);
+
+						xfer_resid = recov_resid_int;
 						error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 0);
 					        if (error == 0) {
 							if (xfer_resid == this_chunk) {
