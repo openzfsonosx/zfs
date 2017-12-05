@@ -2333,12 +2333,58 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 					if (xfer_resid == this_chunk) {
 						// wrote nothing at all
 						printf("ZFS: %s:%d no progress made, c == %d,"
-						    " returning 0 for file %s\n",
+						    " returning attempting cluster_copy_ubc_data(..., 0)"
+						    " for file %s\n",
 						    __func__, __LINE__, c, zp->z_name_cache);
-						z_map_drop_lock(zp, &need_release, &need_upgrade);
-						zfs_range_unlock(rl);
-						ZFS_EXIT(zfsvfs);
-						return (0);
+						error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 0);
+					        if (error == 0) {
+							if (xfer_resid == this_chunk) {
+								printf("ZFS: %s:%d no luck, returning"
+								    " with %d bytes unwritten to file %s\n",
+								    __func__, __LINE__, xfer_resid,
+								    zp->z_name_cache);
+								z_map_drop_lock(zp,
+								    &need_release, &need_upgrade);
+								zfs_range_unlock(rl);
+								ZFS_EXIT(zfsvfs);
+								return (0);
+							} else if (xfer_resid != 0) {
+								printf("ZFS: %s:%d: wrote %ld more bytes"
+								    " to file %s (p.s., should dirty "
+								    " these) \n", __func__, __LINE__,
+								    this_chunk - xfer_resid,
+								    zp->z_name_cache);
+								VNOPS_STAT_BUMP(
+								    zfs_write_cluster_copy_short_write);
+								off_t uioresid = uio_resid(uio);
+								ASSERT3S(start_resid, >, uioresid);
+								sync_resid = start_resid - uioresid;
+								ASSERT3S(sync_resid, >, 0);
+								ASSERT3S(sync_resid, <, start_resid);
+								break;
+							} else {
+								ASSERT3S(xfer_resid, ==, 0);
+								ASSERT3S(uio_resid(uio), ==, 0);
+								printf("ZFS: %s:%d successfully progressed"
+								    " %ld bytes, uio_resid now %lld, file %s"
+								    " p.s. should mark this range dirty\n",
+								    __func__, __LINE__,
+								    this_chunk - xfer_resid,
+								    uio_resid(uio),
+								    zp->z_name_cache);
+								/* recovery kstat */
+							}
+						} else {
+							printf("ZFS: %s:%d: error %d from"
+							    " recovery cluster_copy_ubc_data(..., 0)"
+							    " for file %s\n", __func__, __LINE__,
+							    error, zp->z_name_cache);
+							z_map_drop_lock(zp, &need_release, &need_upgrade);
+							zfs_range_unlock(rl);
+							VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
+							ZFS_EXIT(zfsvfs);
+							return (error);
+						}
 					} else {
 						// wrote a little: xfer_resid == 0, xfer_resid != this_chunk
 						VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
