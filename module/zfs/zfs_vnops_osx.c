@@ -1135,6 +1135,7 @@ zfs_vnop_write(struct vnop_write_args *ap)
 			continue;
 		}
 
+#if 0
 		/* try to salvage */
 		if (i > 5 && cum_bytes == 0) {
 			printf("ZFS: %s:%d: salvage, trying to flush out entire VP for file %s\n",
@@ -1154,6 +1155,7 @@ zfs_vnop_write(struct vnop_write_args *ap)
 					break;
 			}
 		}
+#endif
 
 		/* give up */
 		if (i > 6) {
