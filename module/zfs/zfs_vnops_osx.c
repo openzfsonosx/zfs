@@ -2853,7 +2853,8 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			ubc_upl_unmap(upl);
 			vaddr = NULL;
 		}
-		ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
+		kern_return_t abort_ret = ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
+		ASSERT3S(abort_ret, ==, KERN_SUCCESS);
 		goto pageout_done;
 	}
 
@@ -2924,7 +2925,9 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 				ubc_upl_unmap(upl);
 				vaddr = NULL;
 			}
-			ubc_upl_abort_range(upl, 0, isize, UPL_ABORT_FREE_ON_EMPTY);
+			kern_return_t all_freed_abort_ret =
+			    ubc_upl_abort_range(upl, 0, isize, UPL_ABORT_FREE_ON_EMPTY);
+			ASSERT3S(all_freed_abort_ret, ==, KERN_SUCCESS);
 			goto pageout_done;
 		}
 	}
@@ -3061,10 +3064,20 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		vaddr = NULL;
 	}
 
-	if (error)
-		ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
-	else
-		ubc_upl_commit_range(upl, 0, a_size, UPL_COMMIT_FREE_ON_EMPTY); // errorcheck!
+	if (error) {
+		kern_return_t abortret = ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
+		if (abortret != KERN_SUCCESS) {
+			printf("ZFS: %s:%d: ubc_upl_abort error %d (already had error %d for file %s)\n",
+			    __func__, __LINE__, abortret, error, zp->z_name_cache);
+		}
+	} else {
+		kern_return_t commitret = ubc_upl_commit_range(upl, 0, a_size, UPL_COMMIT_FREE_ON_EMPTY);
+		if (commitret != KERN_SUCCESS) {
+			printf("ZFS: %s:%d: error %d from ubc_upl_commit_range 0 - %ld f_off %lld file %s\n",
+			    __func__, __LINE__, commitret, a_size, ap->a_f_offset, zp->z_name_cache);
+			error = commitret;
+		}
+	}
 
 	upl = NULL;
 	if (had_map_lock_at_entry == B_FALSE) {
