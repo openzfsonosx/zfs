@@ -1280,11 +1280,13 @@ ubc_refresh_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 	znode_t *zp = VTOZ(vp);
 	const char *filename = zp->z_name_cache;
 
+#if 0
 	int inval_err = ubc_invalidate_range(vp, start_byte, end_byte);
 	if (inval_err) {
 		printf("ZFS: %s: error from ubc_invalidate_range [%lld, %lld], file %s\n",
 		    __func__, start_byte, end_byte, filename);
 	}
+#endif
 
 	int fill_err = ubc_fill_holes_in_range(vp, start_byte, end_byte);
 	if (fill_err) {
@@ -1292,9 +1294,16 @@ ubc_refresh_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 		    __func__, start_byte, end_byte, filename);
 	}
 
+#if 0
 	if (inval_err != 0 || fill_err != 0) {
 		return (1);
 	}
+#else
+	if (fill_err != 0) {
+		return (1);
+	}
+#endif
+
 
 	return (0);
 }
@@ -3846,6 +3855,7 @@ top:
 #ifdef __APPLE__
 	may_delete_now = !vnode_isinuse(vp, 0) && !vn_has_cached_data(vp);
 
+#if 0
 	if (may_delete_now && ubc_pages_resident(vp) != 0) {
 		// zfs_unlinked_drain's zfs_zget may bring in pages
 		// we should report and invalidate any
@@ -3855,7 +3865,9 @@ top:
 		ASSERT3S(inval_err, ==, 0);
 		ASSERT3S(ubc_pages_resident(vp), ==, 0);
 		ASSERT0(vnode_isinuse(vp, 0));
+
 	}
+#endif
 #else
 	VI_LOCK(vp);
 	may_delete_now = vp->v_count == 1 && !vn_has_cached_data(vp);
