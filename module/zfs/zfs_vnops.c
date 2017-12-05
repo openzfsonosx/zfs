@@ -1277,6 +1277,7 @@ ubc_fill_holes_in_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 int
 ubc_refresh_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 {
+#ifdef __UNDEFINED__
 	znode_t *zp = VTOZ(vp);
 	const char *filename = zp->z_name_cache;
 
@@ -1303,7 +1304,7 @@ ubc_refresh_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 		return (1);
 	}
 #endif
-
+#endif //__UNDEFINED__
 
 	return (0);
 }
