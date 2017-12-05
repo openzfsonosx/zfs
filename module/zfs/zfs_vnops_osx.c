@@ -2614,9 +2614,14 @@ bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 	rounded_size = (io_size + (PAGE_SIZE - 1)) & ~PAGE_MASK;
 
 	if (size > rounded_size) {
-		if (is_clcommit)
-			ubc_upl_abort_range(upl, upl_offset + rounded_size, size - rounded_size,
+		if (is_clcommit) {
+			kern_return_t big_upl_abort_trim_ret =
+			    ubc_upl_abort_range(upl, upl_offset + rounded_size, size - rounded_size,
 								UPL_ABORT_FREE_ON_EMPTY);
+			ASSERT3S(big_upl_abort_trim_ret, ==, KERN_SUCCESS);
+			printf("ZFS: %s:%d: upl was too big, trimmed %d-%d\n", __func__, __LINE__,
+			    upl_offset + rounded_size, size - rounded_size);
+		}
 	}
 
 	if (f_offset > filesize) {
@@ -2689,7 +2694,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	 * pager (ie, swap - when we eventually support it)
 	 */
 	if (upl) {
-		dprintf("ZFS: Relaying vnop_pageoutv2 to vnop_pageout\n");
+		printf("ZFS: Relaying vnop_pageoutv2 to vnop_pageout\n");
 		return zfs_vnop_pageout(ap);
 	}
 
@@ -2713,12 +2718,12 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	 */
 	ZFS_ENTER_NOERROR(zfsvfs);
 	if (zfsvfs->z_unmounted) {
-		dprintf("ZFS: vnop_pageoutv2: abort on z_unmounted\n");
+		printf("ZFS: vnop_pageoutv2: abort on z_unmounted\n");
 		error = EIO;
 		goto exit_abort;
 	}
 
-	ASSERT(ubc_pages_resident(ZTOV(zp)));
+	ASSERT(ubc_pages_resident(vp));
 	ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 
 	/*
@@ -2858,39 +2863,40 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	 * on the first iteration since zfs_range_reduce() will
 	 * shrink down r_len to the appropriate size.
 	 */
-	if (rl->r_len == UINT64_MAX) {
-		off_t woff = ap->a_f_offset;
-		off_t end_size = MAX(zp->z_size, woff + a_size);
-		uint64_t new_blksz;
-		int max_blksz = zfsvfs->z_max_blksz;
-		if (zp->z_blksz > max_blksz) {
-			/*
-			 * File's blocksize is already larger than the
-			 * "recordsize" property.  Only let it grow to
-			 * the next power of 2.
-			 */
-			ASSERT(!ISP2(zp->z_blksz));
-			new_blksz = MIN(end_size,
-			    1 << highbit64(zp->z_blksz));
-			if (new_blksz == end_size) {
-				ASSERT(!ISP2(end_size));
-			}
-		} else {
-			new_blksz = MIN(end_size, max_blksz);
-		}
-		if (ISP2(new_blksz) && new_blksz < max_blksz) {
-			uint64_t new_new_blksz = new_blksz + 1;
-			dprintf("ZFS: %s:%d: bumping new_blksz from %lld to %lld\n",
-			    __func__, __LINE__, new_blksz, new_new_blksz);
-			ASSERT(!ISP2(new_new_blksz));
-			new_blksz = new_new_blksz;
-		}
+	off_t woff = ap->a_f_offset;
+	off_t end_size = MAX(zp->z_size, woff + a_size);
 
-		printf("ZFS: %s:%d growing buffer to %llu (from %d) file %s\n",
-		    __func__, __LINE__, new_blksz, zp->z_blksz, zp->z_name_cache);
-		zfs_grow_blocksize(zp, new_blksz, tx);
-		zfs_range_reduce(rl, rloff, rllen);
-	}
+	if (rl->r_len == UINT64_MAX ||
+	    (end_size > zp->z_blksz &&
+		((!ISP2(zp->z_blksz || zp->z_blksz < zfsvfs->z_max_blksz)) ||
+		    !dmu_write_is_safe(zp, woff, end_size)))) {
+
+		    uint64_t new_blksz = 0;
+		    const int max_blksz = zfsvfs->z_max_blksz;
+		    if (zp->z_blksz < max_blksz) {
+			    ASSERT(!ISP2(zp->z_blksz));
+			    new_blksz = MIN(end_size,
+				1 << highbit64(zp->z_blksz));
+			    if (new_blksz == end_size) {
+				    ASSERT(!ISP2(end_size));
+			    }
+		    } else {
+			    new_blksz = MIN(end_size, max_blksz);
+		    }
+		    if (ISP2(new_blksz) && new_blksz < max_blksz) {
+			    uint64_t new_new_blksz = new_blksz + 1;
+			    dprintf("ZFS: %s:%d: bumping new_blksz from %lld to %lld\n",
+				__func__, __LINE__, new_blksz, new_new_blksz);
+			    ASSERT(!ISP2(new_new_blksz));
+			    new_blksz = new_new_blksz;
+		    }
+		    if (new_blksz > zp->z_blksz) {
+			    printf("ZFS: %s:%d growing buffer to %llu (from %d) file %s\n",
+				__func__, __LINE__, new_blksz, zp->z_blksz, zp->z_name_cache);
+			    zfs_grow_blocksize(zp, new_blksz, tx);
+		    }
+		    zfs_range_reduce(rl, rloff, rllen);
+	    }
 
 	off_t f_offset;
 	int64_t offset;
