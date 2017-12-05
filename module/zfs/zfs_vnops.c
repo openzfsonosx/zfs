@@ -1277,6 +1277,7 @@ ubc_fill_holes_in_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 int
 ubc_refresh_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 {
+
 #ifdef __UNDEFINED__
 	znode_t *zp = VTOZ(vp);
 	const char *filename = zp->z_name_cache;
@@ -2105,6 +2106,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 	znode_t		*zp = VTOZ(vp);
 	rlim64_t	limit = MAXOFFSET_T;
 	const ssize_t	start_resid = uio_resid(uio);
+	const off_t     start_off = uio_offset(uio);
 	ssize_t		tx_bytes;
 	uint64_t	end_size;
 	dmu_tx_t	*tx;
@@ -2209,10 +2211,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			    __func__, __LINE__, woff, old_woff, rl->r_len,
 			    uio_offset(uio), uio_resid(uio), zp->z_name_cache);
 		}
+		ASSERT3S(woff, ==, ubc_getsize(vp));
 		uio_setoffset(uio, woff);
 	} else {
 		rl = zfs_range_lock(zp, woff, start_resid, RL_WRITER);
 	}
+
 
 	if (woff >= limit) {
 		zfs_range_unlock(rl);
@@ -2226,6 +2230,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		printf("ZFS: %s:%d: (extend fail) returning error %d\n", __func__, __LINE__, error);
 		return (error);
 	}
+	ASSERT3S(woff, ==, zp->z_size);
+	ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 
 	/*
 	 * if we are a regular file, we move our data into UBC, and if
@@ -2264,6 +2270,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 
 			/* increase ubc size if we are growing the file */
 			end_size = MAX(ubc_getsize(vp), this_off + this_chunk);
+			ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 			if (end_size > ubc_getsize(vp)) {
 				int setsize_retval = ubc_setsize(vp, end_size);
 				if (setsize_retval == 0) {
@@ -2316,11 +2323,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 					    " returning short write, c %d, woff %lld,"
 					    " this_off %lld uio_offset %lld uio_resid %lld"
 					    " this_chunk %ld xfer_resid %d file_size %lld %lld"
-					    " ioflag %d - punting to update pages function (mapped %d)\n",
+					    " ioflag %d - punting to update pages function (mapped %d)"
+					    " start_off %lld start_resid %ld\n",
 					    __func__, __LINE__, zp->z_name_cache, c,
 					    woff, this_off, uio_offset(uio), uio_resid(uio),
 					    this_chunk, xfer_resid,
-					    zp->z_size, ubc_getsize(vp), ioflag, zp->z_is_mapped);
+					    zp->z_size, ubc_getsize(vp), ioflag, zp->z_is_mapped,
+					    start_off, start_resid);
 					if (xfer_resid == this_chunk) {
 						// wrote nothing at all
 						printf("ZFS: %s:%d no progress made, c == %d,"
