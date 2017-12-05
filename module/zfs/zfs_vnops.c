@@ -1964,7 +1964,7 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 			return (0);
 		}
 		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-		if (!(0 == is_file_clean(vp, ubcsize))) { // expensive test ?
+		if (1 /*!(0 == is_file_clean(vp, ubcsize))*/) { // expensive test ?
 			boolean_t sync = (ioflag & (FSYNC | FDSYNC)) ||
 			    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
 			ASSERT3S(zp->z_size, ==, ubcsize);
@@ -2230,7 +2230,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		printf("ZFS: %s:%d: (extend fail) returning error %d\n", __func__, __LINE__, error);
 		return (error);
 	}
-	ASSERT3S(woff, ==, zp->z_size);
+	ASSERT3S(woff, <=, zp->z_size);
 	ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 
 	/*
