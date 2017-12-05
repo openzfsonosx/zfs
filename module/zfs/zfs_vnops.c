@@ -2073,7 +2073,8 @@ zfs_write_maybe_extend_file(znode_t *zp, off_t woff, off_t start_resid, rl_t *rl
 
 /* ARGSUSED */
 int
-zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct, char **file_name)
+zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
+    char **file_name, boolean_t old_style)
 {
 	znode_t		*zp = VTOZ(vp);
 	rlim64_t	limit = MAXOFFSET_T;
@@ -2205,7 +2206,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 	 * we are synchronous, we trigger a ubc_msync
 	 */
 
-	if (vnode_isreg(vp)) {
+	if (vnode_isreg(vp) && old_style != B_TRUE) {
 		ASSERT3S(start_resid, <=, INT_MAX);
 		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 
@@ -2473,7 +2474,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		return (error);
 	}
 
-	VERIFY(!vnode_isreg(vp));
+	if (old_style == B_TRUE) {
+		VERIFY(!vnode_isreg(vp));
+	}
 
 	/* Illumos here checks for mandatory locks; OSX (and Linux) do this elsewhere */
 
@@ -2530,6 +2533,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 	}
 #endif
 
+	/*
+	 * here we are old_style, most likely recovering from a stuck
+	 * ubc page, and up above we have already taken a range lock,
+	 * done any requisite pushing, and set woff correctly
+	 */
+
 	if ((woff + n) > limit || woff > (limit - n))
 		n = limit - woff;
 
@@ -2543,8 +2552,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 	 * in a separate transaction; this keeps the intent log records small
 	 * and allows us to do more fine-grained space accounting.
 	 */
-    dprintf("zfs_write: resid/n %llu : offset %llu (rl_len %llu) blksz %llu\n",
-           n,uio_offset(uio), rl->r_len, zp->z_blksz );
+	printf("ZFS: %s:%d: (old_style) resid/n %lu : offset %llu (rl_len %llu) blksz %u fn %s\n",
+	    __func__,__LINE__,n,uio_offset(uio), rl->r_len, zp->z_blksz, zp->z_name_cache );
 
 	while (n > 0) {
 		woff = uio_offset(uio);
@@ -2569,6 +2578,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			break;
 		}
 
+#if 0 // we have done this above already
 		/*
 		 * If zfs_range_lock() over-locked we grow the blocksize
 		 * and then reduce the lock range.  This will only happen
@@ -2609,6 +2619,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			zfs_grow_blocksize(zp, new_blksz, tx);
 			zfs_range_reduce(rl, woff, n);
 		}
+#endif
 
 #ifdef __APPLE__
 		boolean_t write_with_dbuf = B_TRUE;
@@ -2631,7 +2642,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			safe_write_n = zfs_safe_dbuf_write_size(zp, uio, max_n);
 			nbytes = MIN(safe_write_n, max_max_n - P2PHASE(woff, max_max_n));
 			if (nbytes < 1) {
-				dprintf("ZFS: %s:%d: WARNING nbytes == %ld, safe_write_n == %lld,"
+				printf("ZFS: %s:%d: WARNING nbytes == %ld, safe_write_n == %lld,"
 				    " n == %ld, file %s\n", __func__, __LINE__,
 				    nbytes, safe_write_n, n, zp->z_name_cache);
 				nbytes = MIN(n, max_blksz - P2PHASE(woff, max_blksz));
@@ -2656,12 +2667,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		}
 
 		/* set tx_bytes to the amount we hope to write in this tx */
-		boolean_t need_release = B_FALSE;
-		boolean_t need_upgrade = B_FALSE;
-		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		tx_bytes = uio_resid(uio);
-		z_map_drop_lock(zp, &need_release, &need_upgrade);
-		ASSERT3S(tries, <=, 2);
 
 		/*
 		 * For regular files, we have two write cases:
@@ -2735,11 +2741,11 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			ASSERT(vnode_isreg(vp));
 			printf("ZFS: %s:%d: fell through ioflag %d end_size %lld"
 			    " offset %lld nbytes %ld"
-			    " n %ld max_blksz %d filesz %lld safe_write_n %lld new_blksz %lld"
+			    " n %ld max_blksz %d filesz %lld safe_write_n %lld"
 			    " z_blksz %d@file %s\n",
 			    __func__, __LINE__, ioflag, end_size,
 			    woff, nbytes, n, max_blksz,
-			    zp->z_size, safe_write_n, new_blksz, zp->z_blksz, zp->z_name_cache);
+			    zp->z_size, safe_write_n, zp->z_blksz, zp->z_name_cache);
 
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 
@@ -2776,7 +2782,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 					}
 				}
 				if (n_new_blksz > 0) {
-					ASSERT3S(n_new_blksz, >, new_blksz);
 					zfs_grow_blocksize(zp, n_new_blksz, tx);
 				}
 				uint64_t size_update_ctr = 0;
@@ -2862,11 +2867,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			 * want to do this before update_pages.
 			 */
 
-			/*
-			 * Grab a READER lock from trunc_page_64(woff) to woff-1
-			 *                and from woff+n+1 to round_page_64(woff+n).
-			 */
-
 			boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
                         uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 			int setsize_retval = ubc_setsize(vp, zp->z_size);
@@ -2882,7 +2882,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			uio_copy = NULL;
 		}
 
-		/* we may have made a uio copy, but were unable to do
+		/*
+		 * we may have made a uio copy, but were unable to do
 		 * any write or update_pages work
 		 */
 		if (uio_copy != NULL) {
@@ -2891,7 +2892,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		}
 
 		/*
-		 * If we made no progress, we're done after retry_count attempts.
+		 * If we made no progress, we're done.
 		 */
 		if (tx_bytes == 0) {
 			ASSERT3S(n, >, 0);
@@ -2916,6 +2917,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		 *
 		 * Note: we don't call zfs_fuid_map_id() here because
 		 * user 0 is not an ephemeral uid.
+		 *
+		 * NOTE: This has no effect on OSX.
 		 */
 		mutex_enter(&zp->z_acl_lock);
 		if ((zp->z_mode & (S_IXUSR | (S_IXUSR >> 3) |
@@ -2981,7 +2984,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 	}
 
 	// n could be nonzero, we are allowed to do partial writes by VNOP_WRITE rules
-	dprintf("zfs_write done remainder %llu\n", n);
+	printf("ZFS: %s:%d (old_style) done remainder %lu\n", __func__, __LINE__,  n);
 
 	zfs_range_unlock(rl);
 

@@ -1089,20 +1089,22 @@ zfs_vnop_write(struct vnop_write_args *ap)
 
 	const hrtime_t start_time = gethrtime();
 	off_t last_resid = uio_resid(uio);
+	boolean_t old_style = B_FALSE;
 
 	for (int i = 0; cur_resid > 0; cur_resid = uio_resid(uio)) {
 		i++;
 		if (i > 1) {
 			uint64_t elapsed_msec = NSEC2MSEC(gethrtime() - start_time);
 			printf("ZFS: %s:%d (retry %d, msec %lld) continuing to progress uio"
-			    " (resid = %lld) for file %s (cum_bytes %lld)\n", __func__, __LINE__,
+			    " (resid = %lld) for file %s (cum_bytes %lld, old_style %d)\n",
+			    __func__, __LINE__,
 			    i, elapsed_msec, cur_resid,
-			    (file_name != NULL) ? file_name : "(NULL)", cum_bytes);
+			    (file_name != NULL) ? file_name : "(NULL)", cum_bytes, old_style);
 			extern void IOSleep(unsigned milliseconds);
 			IOSleep(i);
 		}
 
-		error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct, &file_name);
+		error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct, &file_name, old_style);
 
 		if (error) {
 			uint64_t elapsed_msec = NSEC2MSEC(gethrtime() - start_time);
@@ -1135,27 +1137,12 @@ zfs_vnop_write(struct vnop_write_args *ap)
 			continue;
 		}
 
-#if 0
 		/* try to salvage */
 		if (i > 5 && cum_bytes == 0) {
-			printf("ZFS: %s:%d: salvage, trying to flush out entire VP for file %s\n",
-			    __func__, __LINE__, (file_name != NULL) ? file_name : "(NULL)");
-			off_t usiz = ubc_getsize(ap->a_vp);
-			error = ubc_invalidate_range(ap->a_vp, 0, usiz);
-			if (error != 0) {
-				printf("ZFS: %s:%d: error %d from ubc_invalidate_range(vp, 0, %lld),"
-				    "file %s (cum_bytes = %lld)\n",
-				    __func__, __LINE__, error, usiz,
-				    (file_name != NULL) ? file_name : "(NULL)",
-				    cum_bytes);
-
-				if (cum_bytes > 0)
-					return (0);
-				else
-					break;
-			}
+			printf("ZFS: %s:%d: salvage (%d), trying old_style zfs_write for file %s\n",
+			    __func__, __LINE__, i, (file_name != NULL) ? file_name : "(NULL)");
+			old_style = B_TRUE;
 		}
-#endif
 
 		/* give up */
 		if (i > 6) {
