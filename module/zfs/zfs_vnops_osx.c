@@ -2269,9 +2269,9 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	return (error);
 }
 
-static int
+int
 zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
-			offset_t off, size_t size, int flags)
+    offset_t off, size_t size, int flags, boolean_t take_rlock)
 {
 	dmu_tx_t *tx;
 	rl_t *rl;
@@ -2352,7 +2352,8 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 
 
 top:
-	rl = zfs_range_lock(zp, off, len, RL_WRITER);
+	if (take_rlock)
+		rl = zfs_range_lock(zp, off, len, RL_WRITER);
 	/*
 	 * can't push pages past end-of-file
 	 */
@@ -2390,7 +2391,8 @@ top:
 	err = dmu_tx_assign(tx, TXG_WAIT);
 	if (err != 0) {
 		if (err == ERESTART) {
-			zfs_range_unlock(rl);
+			if (take_rlock)
+				zfs_range_unlock(rl);
 			dmu_tx_wait(tx);
 			dmu_tx_abort(tx);
 			goto top;
@@ -2470,7 +2472,8 @@ top:
 	dmu_tx_commit(tx);
 
 out:
-	zfs_range_unlock(rl);
+	if (take_rlock)
+		zfs_range_unlock(rl);
 	if (flags & UPL_IOSYNC)
 		zil_commit(zfsvfs->z_log, zp->z_id);
 
@@ -2550,7 +2553,7 @@ zfs_vnop_pageout(struct vnop_pageout_args *ap)
 	 */
 
 	int retval =  zfs_pageout(zfsvfs, zp, upl, upl_offset, ap->a_f_offset,
-					   len, flags);
+	    len, flags, B_TRUE);
 
 	z_map_drop_lock(zp, &need_release, &need_upgrade);
 
