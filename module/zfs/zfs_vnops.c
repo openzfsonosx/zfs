@@ -2365,21 +2365,23 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						const int recov_resid_int = (int) recov_resid;
 
 						const off_t pop_f_off = trunc_page_64(recov_off);
-						int pop_q_flags = 0;
-						kern_return_t pop_q_result =
-						    ubc_page_op(vp, pop_f_off, 0, NULL, &pop_q_flags);
-						ASSERT3S(pop_q_result, ==, KERN_SUCCESS);
+						int pop_set_op = UPL_POP_SET;
+						int pop_set_flags = 0;
+						kern_return_t pop_set_result =
+						    ubc_page_op(vp, pop_f_off, pop_set_op,
+							NULL, &pop_set_flags);
+						ASSERT3S(pop_set_result, ==, KERN_SUCCESS);
 
 						printf("ZFS: %s:%d no progress made, c == %d,"
 						    " attempting cluster_copy_ubc_data(..ioreq %d, 0)"
 						    " (recoff %lld uio_resid %lld xfer_resid was %d)"
 						    " page flags 0%o for file %s\n",
 						    __func__, __LINE__, c, recov_resid_int,
-						    recov_off, uio_resid(uio), xfer_resid, pop_q_flags,
+						    recov_off, uio_resid(uio), xfer_resid, pop_set_flags,
 						    zp->z_name_cache);
 
 						xfer_resid = recov_resid_int;
-						error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 0);
+						error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
 					        if (error == 0) {
 							if (xfer_resid == this_chunk) {
 								printf("ZFS: %s:%d no luck, returning"
@@ -2404,22 +2406,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								sync_resid = start_resid - uioresid;
 								ASSERT3S(sync_resid, >, 0);
 								ASSERT3S(sync_resid, <, start_resid);
-								int popflags = UPL_POP_DIRTY
-								    | UPL_POP_BUSY;
-								int pop_ops = UPL_POP_SET | popflags;
-
-								kern_return_t popret =
-								    ubc_page_op(vp, pop_f_off,
-									pop_ops, NULL, &popflags);
-								if (popret != KERN_SUCCESS) {
-									printf("ZFS: %s:%d: error %d"
-									    " from ubc_page_op for"
-									    " offs %lld, popflags now 0%o"
-									    " file %s\n",
-									    __func__, __LINE__, popret,
-									    pop_f_off, popflags,
-									    zp->z_name_cache);
-								}
 								break;
 							} else {
 								ASSERT3S(xfer_resid, ==, 0);
@@ -2431,21 +2417,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								    this_chunk - xfer_resid,
 								    uio_resid(uio),
 								    zp->z_name_cache);
-								int popflags = UPL_POP_DIRTY
-								    | UPL_POP_BUSY;
-								int pop_ops = UPL_POP_SET | popflags;
-								kern_return_t popret =
-								    ubc_page_op(vp, pop_f_off,
-									pop_ops, NULL, &popflags);
-								if (popret != KERN_SUCCESS) {
-									printf("ZFS: %s:%d: error %d"
-									    " from ubc_page_op for"
-									    " offs %lld, flags now 0%o"
-									    " file %s\n",
-									    __func__, __LINE__, popret,
-									    pop_f_off, popflags,
-									    zp->z_name_cache);
-								}
 								/* recovery kstat */
 							}
 						} else {
