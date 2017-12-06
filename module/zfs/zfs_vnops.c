@@ -2366,7 +2366,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 
 						const off_t pop_f_off = trunc_page_64(recov_off);
 						int pop_set_op = UPL_POP_SET;
-						int pop_set_flags = 0;
+						int pop_set_flags = UPL_POP_BUSY | UPL_POP_DIRTY;
 						kern_return_t pop_set_result =
 						    ubc_page_op(vp, pop_f_off, pop_set_op,
 							NULL, &pop_set_flags);
