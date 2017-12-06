@@ -2364,72 +2364,46 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						ASSERT3S(recov_resid, >, 0);
 						const int recov_resid_int = (int) recov_resid;
 
-						const off_t pop_f_off = trunc_page_64(recov_off);
-						int pop_set_op = UPL_POP_SET;
-						int pop_set_flags = UPL_POP_BUSY | UPL_POP_DIRTY;
-						kern_return_t pop_set_result =
-						    ubc_page_op(vp, pop_f_off, pop_set_op,
-							NULL, &pop_set_flags);
-						ASSERT3S(pop_set_result, ==, KERN_SUCCESS);
+						const off_t pop_q_off = trunc_page_64(recov_off);
+						int pop_q_op = 0;
+						int pop_q_flags = 0;
+						kern_return_t pop_q_result =
+						    ubc_page_op(vp, pop_q_off, pop_q_op,
+							NULL, &pop_q_flags);
+						ASSERT3S(pop_q_result, ==, KERN_SUCCESS);
 
 						printf("ZFS: %s:%d no progress made, c == %d,"
 						    " attempting cluster_copy_ubc_data(..ioreq %d, 0)"
 						    " (recoff %lld uio_resid %lld xfer_resid was %d)"
 						    " page flags 0%o for file %s\n",
 						    __func__, __LINE__, c, recov_resid_int,
-						    recov_off, uio_resid(uio), xfer_resid, pop_set_flags,
+						    recov_off, uio_resid(uio), xfer_resid, pop_q_flags,
 						    zp->z_name_cache);
 
-						xfer_resid = recov_resid_int;
-						error = cluster_copy_ubc_data(vp, uio, &xfer_resid, 1);
-					        if (error == 0) {
-							if (xfer_resid == this_chunk) {
-								printf("ZFS: %s:%d no luck, returning"
-								    " with %d bytes unwritten to file %s\n",
-								    __func__, __LINE__, xfer_resid,
-								    zp->z_name_cache);
-								z_map_drop_lock(zp,
-								    &need_release, &need_upgrade);
-								zfs_range_unlock(rl);
-								ZFS_EXIT(zfsvfs);
-								return (0);
-							} else if (xfer_resid != 0) {
-								printf("ZFS: %s:%d: wrote %ld more bytes"
-								    " to file %s (p.s., should dirty "
-								    " these) \n", __func__, __LINE__,
-								    this_chunk - xfer_resid,
-								    zp->z_name_cache);
-								VNOPS_STAT_BUMP(
-								    zfs_write_cluster_copy_short_write);
-								off_t uioresid = uio_resid(uio);
-								ASSERT3S(start_resid, >, uioresid);
-								sync_resid = start_resid - uioresid;
-								ASSERT3S(sync_resid, >, 0);
-								ASSERT3S(sync_resid, <, start_resid);
-								break;
-							} else {
-								ASSERT3S(xfer_resid, ==, 0);
-								ASSERT3S(uio_resid(uio), ==, 0);
-								printf("ZFS: %s:%d successfully progressed"
-								    " %ld bytes, uio_resid now %lld, file %s"
-								    " p.s. should mark this range dirty\n",
-								    __func__, __LINE__,
-								    this_chunk - xfer_resid,
-								    uio_resid(uio),
-								    zp->z_name_cache);
-								/* recovery kstat */
-							}
+						if (pop_q_flags & UPL_POP_DIRTY) {
+							printf("ZFS: %s:%d skipping UPL_POP_DUMP"
+							    "offset %lld file %s\n",
+							    __func__, __LINE__,
+							    pop_q_off, zp->z_name_cache);
 						} else {
-							printf("ZFS: %s:%d: error %d from"
-							    " recovery cluster_copy_ubc_data(..., 0)"
-							    " for file %s\n", __func__, __LINE__,
-							    error, zp->z_name_cache);
-							z_map_drop_lock(zp, &need_release, &need_upgrade);
-							zfs_range_unlock(rl);
-							VNOPS_STAT_BUMP(zfs_write_cluster_copy_error);
-							ZFS_EXIT(zfsvfs);
-							return (error);
+							const off_t pop_f_off = trunc_page_64(recov_off);
+							int pop_set_op = UPL_POP_DUMP;
+							int pop_set_flags = 0;
+							kern_return_t pop_set_result =
+							    ubc_page_op(vp, pop_f_off, pop_set_op,
+								NULL, &pop_set_flags);
+							ASSERT3S(pop_set_result, ==, KERN_SUCCESS);
+							printf("ZFS: %s:%d: page dumped"
+							    " off %lld file %s\n",
+							    __func__, __LINE__,
+							    pop_f_off, zp->z_name_cache);
 						}
+
+						z_map_drop_lock(zp,
+						    &need_release, &need_upgrade);
+						zfs_range_unlock(rl);
+						ZFS_EXIT(zfsvfs);
+						return (0);
 					} else {
 						// wrote a little: xfer_resid == 0, xfer_resid != this_chunk
 						VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
