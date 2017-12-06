@@ -3030,7 +3030,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 		if ((error == 0) && (merror))
 			error = merror;
 
-		if (error != 35) { ASSERT3S(error, ==, 0); }
+		//if (error != EAGAIN) { ASSERT3S(error, ==, 0); }
 
 		f_offset += xsize;
 		offset   += xsize;
@@ -3066,7 +3066,13 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	}
 
 	if (error) {
-		kern_return_t abortret = ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
+		int abortflags;
+		if (error == EAGAIN)
+			abortflags = UPL_ABORT_RESTART | UPL_ABORT_FREE_ON_EMPTY;
+		else
+			abortflags = UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY;
+
+		kern_return_t abortret = ubc_upl_abort(upl, abortflags);
 		if (abortret != KERN_SUCCESS) {
 			printf("ZFS: %s:%d: ubc_upl_abort error %d (already had error %d for file %s)\n",
 			    __func__, __LINE__, abortret, error, zp->z_name_cache);
@@ -3277,7 +3283,7 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	ASSERT(rw_write_held(&zp->z_map_lock));
 	off_t ubcsize = ubc_getsize(vp);
 	off_t resid_msync_off = ubcsize;
-        int retval_msync = ubc_msync(vp, 0, ubcsize, &resid_msync_off, UBC_PUSHALL);
+        int retval_msync = ubc_msync(vp, 0, ubcsize, &resid_msync_off, UBC_PUSHDIRTY);
 	if (rw_lock_held(&zp->z_map_lock)) {
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
 	} else {

@@ -436,7 +436,7 @@ zfs_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *cr,
 		int sync = zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS ||
 		    (flag & (FSYNC | FDSYNC)) != 0;
 		int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
-		    sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
+		    sync ? UBC_PUSHDIRTY | UBC_SYNC : UBC_PUSHDIRTY);
 	        ASSERT3S(retval, ==, 0);
 		if (retval != 0)
 			ASSERT3S(resid_off, ==, ubcsize);
@@ -870,7 +870,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	int err = 0;
 
 	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	     UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT);
+	     UPL_UBC_PAGEIN | UPL_RET_ONLY_ABSENT);
 
 	if (err != KERN_SUCCESS) {
 		printf("ZFS: %s: failed to create (sub) upl: err %d\n", __func__, err);
@@ -881,13 +881,13 @@ fill_hole(vnode_t *vp, const off_t foffset,
 		if (upl_valid_page(pl, pg)) {
 			printf("ZFS: %s: pg %d of (upl_size = %lld, upl_start = %lld) of file %s is VALID\n",
 			    __func__, pg, upl_size, upl_start, filename);
-			(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+			(void) ubc_upl_abort(upl, UPL_ABORT_RESTART | UPL_ABORT_FREE_ON_EMPTY);
 			return (EAGAIN);
 		}
 		if (upl_dirty_page(pl, pg)) {
 			printf("ZFS: %s%d: pg %d of (upl_size %lld upl_start %lld) file %s is DIRTY\n",
 			    __func__, __LINE__, pg, upl_size, upl_start, filename);
-			(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
+			(void) ubc_upl_abort(upl, UPL_ABORT_RESTART | UPL_ABORT_FREE_ON_EMPTY);
 			return (EAGAIN);
 		}
 	}
@@ -1061,9 +1061,9 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 
 		int uplcflags;
 		if (will_mod)
-			uplcflags = UPL_WILL_MODIFY;
+			uplcflags = UPL_UBC_PAGEIN | UPL_WILL_MODIFY;
 		else
-			uplcflags = UPL_SET_LITE;
+			uplcflags = UPL_UBC_PAGEIN;
 
 		err = ubc_create_upl(vp, cur_upl_file_offset, cur_upl_size, &upl, &pl, uplcflags);
 
@@ -1132,7 +1132,6 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 			 */
 
 			err = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_REFERENCE);
-
 			if (err != 0) {
 				printf("ZFS: %s: upl_abort failed (err: %d, pass: %d, file: %s)\n",
 				    __func__, err, i, filename);
@@ -1207,8 +1206,7 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 				    __func__, err, i, filename);
 			}
 			if (upl != NULL) {
-				int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY
-				    | UPL_ABORT_REFERENCE | UPL_ABORT_DUMP_PAGES);
+				int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 				if (error != 0) {
 					printf("ZFS: %s: while aborting loop, upl_abort error %d\n",
 					    __func__, error);
@@ -1221,7 +1219,7 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 
 		if (upl != NULL) {
 			printf("ZFS: %s: WOAH: why are we here? Aborting non-NULL UPL.\n", __func__);
-			int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_REFERENCE);
+			int error = ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 			if (error != 0) {
 				printf("ZFS: %s in woah, error %d aborting upl for file %s\n",
 				    __func__, error, filename);
@@ -1564,7 +1562,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 			boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
                         uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 			int retval = ubc_msync(vp, 0, ubcsize, &resid_off,
-			    UBC_PUSHALL | UBC_SYNC);
+			    UBC_PUSHDIRTY | UBC_SYNC);
 			z_map_drop_lock(zp, &need_release, &need_upgrade);
 			ASSERT3S(tries, <=, 2);
 			ASSERT3S(retval, ==, 0);
@@ -1864,7 +1862,7 @@ zfs_write_sync_range_helper(vnode_t *vp, off_t woff, off_t end_range,
 		zfs_range_unlock(rl);
 	}
 	error = ubc_msync(vp, woff, end_range, &msync_resid,
-	    (do_sync) ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
+	    (do_sync) ? UBC_PUSHDIRTY | UBC_SYNC : UBC_PUSHDIRTY);
 
 	z_map_drop_lock(zp, &need_release, &need_upgrade);
 	ASSERT3U(tries, <=, 2);
@@ -1984,7 +1982,7 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 			ASSERT3S(aend, >, aoff);
 			zfs_range_unlock(rlock);
 			int retval = ubc_msync(vp, aoff, aend, &resid_off,
-			    sync ? UBC_PUSHALL | UBC_SYNC : UBC_PUSHALL);
+			    sync ? UBC_PUSHDIRTY | UBC_SYNC : UBC_PUSHDIRTY);
 			ASSERT3S(retval, ==, 0);
 			if (retval != 0) {
 				ASSERT3S(resid_off, ==, aend);
@@ -2394,7 +2392,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							upl_page_info_t *dpl = NULL;
 							kern_return_t uplret = ubc_create_upl(vp,
 							    pop_q_off, PAGE_SIZE, &dupl, &dpl,
-							    UPL_WILL_MODIFY);
+							    UPL_WILL_MODIFY | UPL_SET_LITE);
 							ASSERT3S(uplret, ==, KERN_SUCCESS);
 							if (uplret != KERN_SUCCESS)
 								goto drop_and_return_to_retry;
@@ -2405,7 +2403,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							if (ccretval) {
 								kern_return_t abortret =
 								    ubc_upl_abort_range(dupl, 0, PAGESIZE,
-									UPL_ABORT_ERROR |
+									UPL_ABORT_RESTART |
 									UPL_ABORT_FREE_ON_EMPTY);
 								ASSERT3S(abortret, ==, KERN_SUCCESS);
 								printf("ZFS: %s:%d aborted at"
@@ -2422,7 +2420,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								    ubc_upl_commit_range(dupl,
 									0, PAGESIZE,
 									UPL_COMMIT_SET_DIRTY |
-									UPL_COMMIT_INACTIVATE |
 									UPL_COMMIT_FREE_ON_EMPTY);
 								ASSERT3S(commitret, ==, KERN_SUCCESS);
 								printf("ZFS: %s:%d committed at"
@@ -3182,7 +3179,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			int clean_before = is_file_clean(vp, ubcsize);
 			if (clean_before != 0) {
 				ASSERT3U(ubcsize, >, 0);
-				int flag = UBC_PUSHALL | (do_ubc_sync == B_TRUE) ? UBC_SYNC : 0;
+				int flag = UBC_PUSHDIRTY | (do_ubc_sync == B_TRUE) ? UBC_SYNC : 0;
 				boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
 				uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 				ubc_msync_err = ubc_msync(vp, 0, ubc_getsize(vp), &resid_off, flag);
@@ -5166,7 +5163,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		off_t resid_off = 0;
 		if (rw_write_held(&zp->z_map_lock)) {
 			int retval = ubc_msync(vp, 0, ubcsize,
-			    &resid_off, UBC_PUSHALL);
+			    &resid_off, UBC_PUSHDIRTY);
 			ASSERT3S(retval, ==, 0);
 			if (retval != 0)
 				ASSERT3S(resid_off, ==, ubcsize);
