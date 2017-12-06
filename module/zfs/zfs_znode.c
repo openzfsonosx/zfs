@@ -1969,6 +1969,9 @@ zfs_free_range(znode_t *zp, uint64_t off, uint64_t len)
 	 * Lock the range being freed.
 	 */
 
+	printf("ZFS: %s:%d: HEY!  SOMEONE CALLED ZFS_FREE_RANGE [off %lld len %lld] for file %s!\n",
+	    __func__, __LINE__, off, len, zp->z_name_cache);
+
 #define round_page_64(x) (((uint64_t)(x) + PAGE_MASK_64) & ~((uint64_t)PAGE_MASK_64))
 #define trunc_page_64(x) ((uint64_t)(x) & ~((uint64_t)PAGE_MASK_64))
 	rl = zfs_range_lock(zp, trunc_page_64(off), round_page_64(len), RL_WRITER);
