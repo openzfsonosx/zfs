@@ -2386,19 +2386,24 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							    __func__, __LINE__,
 							    pop_q_off, zp->z_name_cache);
 						} else {
-							const off_t pop_f_off = trunc_page_64(recov_off);
-							int pop_set_op = UPL_POP_DUMP;
-							int pop_set_flags = 0;
-							kern_return_t pop_set_result =
-							    ubc_page_op(vp, pop_f_off, pop_set_op,
-								NULL, &pop_set_flags);
-							ASSERT3S(pop_set_result, ==, KERN_SUCCESS);
-							printf("ZFS: %s:%d: page dumped"
-							    " off %lld file %s\n",
-							    __func__, __LINE__,
-							    pop_f_off, zp->z_name_cache);
+							upl_t dupl;
+							upl_page_info_t *dpl = NULL;
+							kern_return_t uplret = ubc_create_upl(vp,
+							    pop_q_off, PAGE_SIZE, &dupl, &dpl,
+							    UPL_SET_LITE);
+							ASSERT3S(uplret, ==, KERN_SUCCESS);
+							if (uplret != KERN_SUCCESS)
+								goto drop_and_return_to_retry;
+							kern_return_t abortret =
+							    ubc_upl_abort_range(dupl, 0, PAGESIZE,
+								UPL_ABORT_FREE_ON_EMPTY |
+								UPL_ABORT_DUMP_PAGES);
+							ASSERT3S(abortret, ==, KERN_SUCCESS);
+							printf("ZFS: %s:%d dumped page at file offset %lld"
+							    " file %s abortret %d\n", __func__, __LINE__,
+							    pop_q_off, zp->z_name_cache, abortret);
 						}
-
+					drop_and_return_to_retry:
 						z_map_drop_lock(zp,
 						    &need_release, &need_upgrade);
 						zfs_range_unlock(rl);
