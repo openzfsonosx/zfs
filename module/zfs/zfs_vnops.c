@@ -582,7 +582,8 @@ ubc_invalidate_range(vnode_t *vp, off_t start_byte, off_t end_byte)
  * On Write:    If we find a memory mapped page, we write to *both*
  *              the page and the dmu buffer.
  */
-static int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_size);
+static int fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_size,
+	boolean_t will_mod);
 
 static void
 update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
@@ -666,7 +667,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * Loop through the pages, looking for holes to fill.
 	 */
 
-	error = ubc_fill_holes_in_range(vp, upl_start, upl_start + upl_size);
+	error = ubc_fill_holes_in_range(vp, upl_start, upl_start + upl_size, B_TRUE);
 	if (error != 0) {
 		printf("ZFS: %s: fill_holes_in_range error %d range [%lld, +%lld], filename %s\n",
 		    __func__, error, upl_start, upl_size, filename);
@@ -998,7 +999,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
  */
 
 static int
-fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_size)
+fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_size, boolean_t will_mod)
 {
 
 	/* the range should be page aligned */
@@ -1059,8 +1060,12 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 
 		ASSERT3S(err, ==, 0);
 
-		err = ubc_create_upl(vp, cur_upl_file_offset, cur_upl_size, &upl, &pl,
-		    UPL_FILE_IO | UPL_SET_LITE);
+		int uplcflags = UPL_FILE_IO | UPL_SET_LITE;
+		if (will_mod)
+			uplcflags |= UPL_WILL_MODIFY;
+
+		err = ubc_create_upl(vp, cur_upl_file_offset, cur_upl_size, &upl, &pl, uplcflags);
+
 
 		if (err != KERN_SUCCESS || (upl == NULL)) {
 			printf("ZFS: %s: failed to create upl: err %d (pass %d, curoff %lld,"
@@ -1242,7 +1247,7 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 }
 
 int
-ubc_fill_holes_in_range(vnode_t *vp, off_t start_byte, off_t end_byte)
+ubc_fill_holes_in_range(vnode_t *vp, off_t start_byte, off_t end_byte, boolean_t will_mod)
 {
 
 	ASSERT3S(start_byte, <=, end_byte);
@@ -1262,7 +1267,7 @@ ubc_fill_holes_in_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 		const off_t todo = total_size - size_done;
 		const off_t cur_size = MIN(todo, MAX_UPL_SIZE_BYTES);
 
-		int err = fill_holes_in_range(vp, cur_off, cur_size);
+		int err = fill_holes_in_range(vp, cur_off, cur_size, will_mod);
 		if (err) {
 			printf("ZFS: %s:%d: error %d from fill_holes_in_range(vp, %lld, %lld) todo %lld iter %d\n",
 			    __func__, __LINE__, err, cur_off, cur_size, todo, i);
@@ -1290,7 +1295,7 @@ ubc_refresh_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 	}
 #endif
 
-	int fill_err = ubc_fill_holes_in_range(vp, start_byte, end_byte);
+	int fill_err = ubc_fill_holes_in_range(vp, start_byte, end_byte, B_TRUE);
 	if (fill_err) {
 		printf("ZFS: %s: error filling holes [%lld, %lld], file %s\n",
 		    __func__, start_byte, end_byte, filename);
@@ -1399,7 +1404,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	ASSERT3S(upl_size, >=, PAGE_SIZE_64);
 	ASSERT3S(upl_size, >=, inbytes);
 
-	err = fill_holes_in_range(vp, upl_file_offset, upl_size);
+	err = fill_holes_in_range(vp, upl_file_offset, upl_size, B_FALSE);
 
 	if (err != 0) {
 		printf("ZFS: %s: fill_holes_in_range (%lld, %ld) error %d file %s\n",
@@ -1416,8 +1421,10 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	upl_page_info_t *pl = NULL;
 
 	if (err == 0) {
-		err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl,
-		    UPL_FILE_IO | UPL_SET_LITE);
+		int uplcflags = UPL_FILE_IO | UPL_SET_LITE;
+		if (zp->z_is_mapped)
+			uplcflags |= UPL_WILL_MODIFY;
+		err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl, uplcflags);
 
 		if (err != KERN_SUCCESS || (upl == NULL)) {
 			printf("ZFS: %s: failed to create final upl: err %d file %s\n",
@@ -2304,7 +2311,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			uint64_t ubcsize_before_cluster_ops = ubc_getsize(vp);
 
 			/* fill any holes */
-			int fill_err = ubc_fill_holes_in_range(vp, this_off, this_off + this_chunk);
+			int fill_err = ubc_fill_holes_in_range(vp, this_off, this_off + this_chunk, B_TRUE);
 			if (fill_err) {
 				printf("ZFS: %s:%d: error filling holes [%lld, %lld] file %s\n",
 				    __func__, __LINE__, this_off, this_off + this_chunk, zp->z_name_cache);
