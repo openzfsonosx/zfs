@@ -667,7 +667,7 @@ update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio,
 	 * Loop through the pages, looking for holes to fill.
 	 */
 
-	error = ubc_fill_holes_in_range(vp, upl_start, upl_start + upl_size, B_TRUE);
+	error = ubc_fill_holes_in_range(vp, upl_start, upl_start + upl_size, B_FALSE);
 	if (error != 0) {
 		printf("ZFS: %s: fill_holes_in_range error %d range [%lld, +%lld], filename %s\n",
 		    __func__, error, upl_start, upl_size, filename);
@@ -738,8 +738,7 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
      * Create a UPL for the current range and map its
      * page list into the kernel virtual address space.
      */
-    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
+    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl, UPL_SET_LITE | UPL_WILL_MODIFY);
         if ((error != KERN_SUCCESS) || !upl) {
                 printf("ZFS: update_pages failed to ubc_create_upl: %d\n", error);
                 return (error);
@@ -871,7 +870,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	int err = 0;
 
 	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	    UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT);
+	    UPL_SET_LITE | UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT);
 
 	if (err != KERN_SUCCESS) {
 		printf("ZFS: %s: failed to create (sub) upl: err %d\n", __func__, err);
@@ -1060,7 +1059,7 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 
 		ASSERT3S(err, ==, 0);
 
-		int uplcflags = UPL_FILE_IO | UPL_SET_LITE;
+		int uplcflags = UPL_SET_LITE;
 		if (will_mod)
 			uplcflags |= UPL_WILL_MODIFY;
 
@@ -1295,7 +1294,7 @@ ubc_refresh_range(vnode_t *vp, off_t start_byte, off_t end_byte)
 	}
 #endif
 
-	int fill_err = ubc_fill_holes_in_range(vp, start_byte, end_byte, B_TRUE);
+	int fill_err = ubc_fill_holes_in_range(vp, start_byte, end_byte, B_FALSE);
 	if (fill_err) {
 		printf("ZFS: %s: error filling holes [%lld, %lld], file %s\n",
 		    __func__, start_byte, end_byte, filename);
@@ -1421,7 +1420,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	upl_page_info_t *pl = NULL;
 
 	if (err == 0) {
-		int uplcflags = UPL_FILE_IO | UPL_SET_LITE;
+		int uplcflags = UPL_SET_LITE;
 		if (zp->z_is_mapped)
 			uplcflags |= UPL_WILL_MODIFY;
 		err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl, uplcflags);
