@@ -2354,7 +2354,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						const off_t recov_resid = MIN(recov_resid_max,
 						    recov_bytes_left_in_page);
 						ASSERT3S(recov_resid, <=, PAGE_SIZE_64);
-						ASSERT3S(((recov_off + recov_resid) & PAGE_MASK_64), ==, 0);
+						ASSERT3S(((recov_off + recov_resid) & PAGE_MASK_64), <, 4096LL);
 						ASSERT3S(recov_resid, >, 0);
 						const int recov_resid_int = (int) recov_resid;
 
