@@ -2406,7 +2406,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								ASSERT3S(sync_resid, <, start_resid);
 								int popflags = UPL_POP_DIRTY
 								    | UPL_POP_BUSY;
-								int pop_ops = UPL_POP_SET;
+								int pop_ops = UPL_POP_SET | popflags;
 
 								kern_return_t popret =
 								    ubc_page_op(vp, pop_f_off,
@@ -2433,7 +2433,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								    zp->z_name_cache);
 								int popflags = UPL_POP_DIRTY
 								    | UPL_POP_BUSY;
-								int pop_ops = UPL_POP_SET;
+								int pop_ops = UPL_POP_SET | popflags;
 								kern_return_t popret =
 								    ubc_page_op(vp, pop_f_off,
 									pop_ops, NULL, &popflags);
