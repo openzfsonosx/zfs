@@ -3942,7 +3942,6 @@ top:
 #ifdef __APPLE__
 	may_delete_now = !vnode_isinuse(vp, 0) && !vn_has_cached_data(vp);
 
-#if 0
 	if (may_delete_now && ubc_pages_resident(vp) != 0) {
 		// zfs_unlinked_drain's zfs_zget may bring in pages
 		// we should report and invalidate any
@@ -3954,7 +3953,6 @@ top:
 		ASSERT0(vnode_isinuse(vp, 0));
 
 	}
-#endif
 #else
 	VI_LOCK(vp);
 	may_delete_now = vp->v_count == 1 && !vn_has_cached_data(vp);
