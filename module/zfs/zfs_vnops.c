@@ -738,7 +738,7 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
      * Create a UPL for the current range and map its
      * page list into the kernel virtual address space.
      */
-    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl, UPL_SET_LITE | UPL_WILL_MODIFY);
+    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl, UPL_WILL_MODIFY);
         if ((error != KERN_SUCCESS) || !upl) {
                 printf("ZFS: update_pages failed to ubc_create_upl: %d\n", error);
                 return (error);
@@ -791,7 +791,7 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
                  */
 
                 kern_return_t kret = ubc_upl_abort_range(upl, upl_start, PAGESIZE,
-		    UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_DUMP_PAGES);
+		    UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_DUMP_PAGES);
 
 		    printf("ZFS: %s:%d: uiomove error %d off %lld bytes %lld upl_abort_range kret %d\n",
 			__func__, __LINE__, error, off, bytes, kret);
@@ -870,7 +870,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	int err = 0;
 
 	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	    UPL_SET_LITE | UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT);
+	     UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT);
 
 	if (err != KERN_SUCCESS) {
 		printf("ZFS: %s: failed to create (sub) upl: err %d\n", __func__, err);
@@ -1059,9 +1059,11 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 
 		ASSERT3S(err, ==, 0);
 
-		int uplcflags = UPL_SET_LITE;
+		int uplcflags;
 		if (will_mod)
-			uplcflags |= UPL_WILL_MODIFY;
+			uplcflags = UPL_WILL_MODIFY;
+		else
+			uplcflags = UPL_SET_LITE;
 
 		err = ubc_create_upl(vp, cur_upl_file_offset, cur_upl_size, &upl, &pl, uplcflags);
 
@@ -1420,9 +1422,11 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	upl_page_info_t *pl = NULL;
 
 	if (err == 0) {
-		int uplcflags = UPL_SET_LITE;
+		int uplcflags;
 		if (zp->z_is_mapped)
-			uplcflags |= UPL_WILL_MODIFY;
+			uplcflags = UPL_WILL_MODIFY;
+		else
+			uplcflags = UPL_SET_LITE;
 		err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl, uplcflags);
 
 		if (err != KERN_SUCCESS || (upl == NULL)) {
@@ -2401,6 +2405,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							if (ccretval) {
 								kern_return_t abortret =
 								    ubc_upl_abort_range(dupl, 0, PAGESIZE,
+									UPL_ABORT_ERROR |
 									UPL_ABORT_FREE_ON_EMPTY);
 								ASSERT3S(abortret, ==, KERN_SUCCESS);
 								printf("ZFS: %s:%d aborted at"

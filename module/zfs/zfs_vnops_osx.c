@@ -2315,7 +2315,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	if (vnode_vfsisrdonly(ZTOV(zp))) {
 		if (!(flags & UPL_NOCOMMIT))
 			ubc_upl_abort_range(upl, upl_offset, len,
-			    UPL_ABORT_FREE_ON_EMPTY);
+			    UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY);
 		err = EROFS;
 		goto exit;
 	}
@@ -2326,6 +2326,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	    (len & PAGE_MASK)) {
 		if (!(flags & UPL_NOCOMMIT))
 			ubc_upl_abort_range(upl, upl_offset, len,
+			    UPL_ABORT_ERROR |
 			    UPL_ABORT_FREE_ON_EMPTY);
 		err = EINVAL;
 		goto exit;
@@ -2378,7 +2379,7 @@ top:
 		printf("ZFS: zfs_vnops_osx: NULL TX encountered!\n");
 		if (!(flags & UPL_NOCOMMIT))
 			ubc_upl_abort_range(upl, upl_offset, len,
-			    UPL_ABORT_FREE_ON_EMPTY);
+			    UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY);
 		err = EINVAL;
 		goto exit;
 	}
@@ -2585,7 +2586,7 @@ bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 
 	if (vnode_vfsisrdonly(ZTOV(zp))) {
 		if (is_clcommit)
-			ubc_upl_abort_range(upl, upl_offset, size, UPL_ABORT_FREE_ON_EMPTY);
+			ubc_upl_abort_range(upl, upl_offset, size, UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY);
 		printf("ZFS: %s: readonly fs\n", __func__);
 		return (EROFS);
 	}
@@ -2599,7 +2600,7 @@ bluster_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl,
 	if (f_offset < 0 || f_offset >= filesize ||
 		(f_offset & PAGE_MASK_64) || (size & PAGE_MASK)) {
 		if (is_clcommit)
-			ubc_upl_abort_range(upl, upl_offset, size, UPL_ABORT_FREE_ON_EMPTY);
+			ubc_upl_abort_range(upl, upl_offset, size, UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY);
 		printf("ZFS: %s:%d invalid offset or size (off %lld, size %d, filesize %lld)"
 		    " file %s\n" , __func__, __LINE__, f_offset, size, filesize, zp->z_name_cache);
 		return (EINVAL);
@@ -5633,7 +5634,7 @@ zfs_advisory_read_ext(vnode_t *vp, off_t filesize, off_t f_offset, int resid, in
                                       upl_size,
                                       &upl,
                                       &pl,
-                                      UPL_RET_ONLY_ABSENT | UPL_SET_LITE);
+                                      UPL_RET_ONLY_ABSENT | UPL_WILL_MODIFY);
                 if (kret != KERN_SUCCESS)
                         return(retval);
                 issued_io = 0;
