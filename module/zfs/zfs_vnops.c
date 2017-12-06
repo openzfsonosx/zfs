@@ -2436,7 +2436,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								if (uio_resid(uio) == 0) {
 									break;
 								} else {
-									goto drop_and_return_to_retry;
+									off_t uioresid = uio_resid(uio);
+									ASSERT3S(start_resid, >, uioresid);
+									sync_resid = start_resid -
+									    uio_resid(uio);
+									ASSERT3S(sync_resid, >, 0);
+									ASSERT3S(sync_resid, <, start_resid);
+									break;
 								}
 							}
 						}
@@ -2577,10 +2583,17 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			error = zfs_write_sync_range_helper(vp, woff, woff + sync_resid,
 			    sync_resid, do_sync, B_TRUE, B_FALSE);
 			if (error != 0) {
-				zfs_panic_recover("%s:%d zfs_write_sync_range_helper"
-				    " returned error %d for range [%lld, %lld], file %s\n",
-				    __func__, __LINE__, error,
-				    woff, woff+sync_resid, zp->z_name_cache);
+				if (do_sync) {
+					zfs_panic_recover("%s:%d (do_sync) zfs_write_sync_range_helper"
+					    " returned error %d for range [%lld, %lld], file %s\n",
+					    __func__, __LINE__, error,
+					    woff, woff+sync_resid, zp->z_name_cache);
+				} else {
+					printf("%s:%d (not do_sync) zfs_write_sync_range_helper"
+					    " returned error %d for range [%lld, %lld], file %s\n",
+					    __func__, __LINE__, error,
+					    woff, woff+sync_resid, zp->z_name_cache);
+				}
 			}
 
 		}
