@@ -2279,7 +2279,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 	int err = 0;
 	size_t len = size;
 
-	dprintf("+vnop_pageout: %p/%p off 0x%llx len 0x%lx upl_off 0x%lx: "
+	printf("+vnop_pageout: %p/%p off 0x%llx len 0x%lx upl_off 0x%lx: "
 			"blksz 0x%x, z_size 0x%llx upl %p flags 0x%x\n", zp, ZTOV(zp),
 			off, len, upl_offset, zp->z_blksz,
 			zp->z_size, upl, flags);
@@ -2336,8 +2336,8 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 
 	/* Any whole pages beyond the end of the file while we abort */
 	if ((size + off) > pgsize) {
-		printf("ZFS: pageout abort outside pages (rounded 0x%llx > UPLlen "
-			   "0x%llx\n", pgsize, size + off);
+		printf("ZFS: %s:%d: pageout abort outside pages (rounded 0x%llx > UPLlen "
+		    "0x%llx\n", __func__, __LINE__, pgsize, size + off);
 		ubc_upl_abort_range(upl, pgsize,
 		    pgsize - (size + off),
 		    UPL_ABORT_FREE_ON_EMPTY);
@@ -2377,7 +2377,7 @@ top:
 
 	tx = dmu_tx_create(zfsvfs->z_os);
 	if (!tx) {
-		printf("ZFS: zfs_vnops_osx: NULL TX encountered!\n");
+		printf("ZFS: %s:%d: zfs_vnops_osx: NULL TX encountered!\n", __func__, __LINE__);
 		if (!(flags & UPL_NOCOMMIT))
 			ubc_upl_abort_range(upl, upl_offset, len,
 			    UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY);
@@ -2413,7 +2413,8 @@ top:
 	while (len >= PAGESIZE) {
 		ssize_t sz = PAGESIZE;
 
-		dprintf("pageout: dmu_write off 0x%llx size 0x%lx\n", off, sz);
+		printf("ZFS: %s:%d: pageout: dmu_write off 0x%llx size 0x%lx\n",
+		    __func__, __LINE__, off, sz);
 
 		dmu_write(zfsvfs->z_os, zp->z_id, off, sz, va, tx);
 		va += sz;
@@ -2429,7 +2430,8 @@ top:
 	if (len > 0) {
 		ssize_t sz = len;
 
-		dprintf("pageout: dmu_writeX off 0x%llx size 0x%lx\n", off, sz);
+		printf("ZFS: %s:%d (last block) pageout: dmu_writeX off 0x%llx size 0x%lx\n",
+		    __func__, __LINE__, off, sz);
 		dmu_write(zfsvfs->z_os, zp->z_id, off, sz, va, tx);
 
 		va += sz;
@@ -2466,7 +2468,7 @@ top:
 		    B_TRUE);
 		err = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
 		ASSERT0(err);
-		zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, off, len, 0,
+		zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, off, size, 0,
 		    NULL, NULL);
 	}
 	dmu_tx_commit(tx);
@@ -2488,7 +2490,7 @@ out:
 	}
 exit:
 	ZFS_EXIT(zfsvfs);
-	if (err) dprintf("%s err %d\n", __func__, err);
+	if (err) printf("%s err %d\n", __func__, err);
 	return (err);
 }
 
