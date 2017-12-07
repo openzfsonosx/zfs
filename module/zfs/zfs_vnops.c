@@ -2497,15 +2497,31 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								    pop_q_off, zp->z_name_cache);
 								goto drop_and_return_to_retry;
 							}
+							/* now try to get rid of the page */
+							upl_t dumpupl;
+							upl_page_info_t *dumppl = NULL;
+							kern_return_t dumpuplret = ubc_create_upl(vp,
+							    pop_q_off, PAGE_SIZE, &dumpupl, &dumppl,
+							    UPL_WILL_BE_DUMPED);
+							ASSERT3S(dumpuplret, ==, KERN_SUCCESS);
+							if (dumpuplret != KERN_SUCCESS)
+								goto skip_dumpabort;
+							ASSERT(upl_page_present(dumppl, 0));
+							ASSERT(upl_valid_page(dumppl, 0));
+							ASSERT(!upl_dirty_page(dumppl, 0));
+							kern_return_t dumpabortret =
+							    ubc_upl_abort(dumpupl,
+								UPL_ABORT_DUMP_PAGES |
+								UPL_ABORT_FREE_ON_EMPTY);
+							ASSERT3S(dumpabortret, ==, KERN_SUCCESS);
+						skip_dumpabort:
+							printf("ZFS: %s:%d: page at %lld done file %s"
+							    " uio_resid %lld\n",
+							    __func__, __LINE__, pop_q_off,
+							    zp->z_name_cache, uio_resid(uio));
 							if (uio_resid(uio) == 0) {
 								break;
 							} else {
-								off_t uioresid = uio_resid(uio);
-								ASSERT3S(start_resid, >, uioresid);
-								sync_resid = start_resid -
-								    uio_resid(uio);
-								ASSERT3S(sync_resid, >, 0);
-								ASSERT3S(sync_resid, <, start_resid);
 								continue;
 							}
 						}
@@ -2647,7 +2663,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			    sync_resid, do_sync, B_TRUE, B_FALSE);
 			if (error != 0) {
 				if (do_sync) {
-					zfs_panic_recover("%s:%d (do_sync) zfs_write_sync_range_helper"
+					printf("%s:%d BAD! ERROR! (do_sync) zfs_write_sync_range_helper"
 					    " returned error %d for range [%lld, %lld], file %s\n",
 					    __func__, __LINE__, error,
 					    woff, woff+sync_resid, zp->z_name_cache);
