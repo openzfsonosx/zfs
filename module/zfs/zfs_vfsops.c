@@ -223,7 +223,7 @@ zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 		}
 		off_t resid_off = 0;
 		off_t ubcsize = ubc_getsize(vp);
-		int flags = UBC_PUSHALL;
+		int flags = UBC_PUSHDIRTY;
 		if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
 			flags |= UBC_SYNC;
 		/* give up range_lock, since pageoutv2 may need it */
