@@ -850,7 +850,8 @@ adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
 
 static int
 fill_hole(vnode_t *vp, const off_t foffset,
-    int page_hole_start, int page_hole_end, const char *filename)
+    int page_hole_start, int page_hole_end, const char *filename,
+    boolean_t will_mod)
 {
 	ASSERT3S(page_hole_end - page_hole_start, >, 0);
 	const int upl_pages = page_hole_end - page_hole_start;
@@ -869,16 +870,29 @@ fill_hole(vnode_t *vp, const off_t foffset,
 
 	int err = 0;
 
-	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl,
-	     UPL_UBC_PAGEIN | UPL_RET_ONLY_ABSENT);
+	boolean_t map_mod = B_FALSE;
+	if (zp->z_is_mapped || will_mod)
+		map_mod = B_TRUE;
+
+	int upl_flags = 0;
+	if (!map_mod)
+		upl_flags = UPL_UBC_PAGEIN | UPL_RET_ONLY_ABSENT;
+	else
+		upl_flags = UPL_UBC_PAGEIN;
+
+	if (will_mod)
+		upl_flags |= UPL_WILL_MODIFY;
+
+	err = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl, upl_flags);
 
 	if (err != KERN_SUCCESS) {
-		printf("ZFS: %s: failed to create (sub) upl: err %d\n", __func__, err);
+		printf("ZFS: %s:%d failed to create upl: err %d flags %d for file %s\n",
+		    __func__, __LINE__, err, upl_flags, filename);
 		return (err);
 	}
 
 	for (int pg = 0; pg < upl_pages; pg++) {
-		if (upl_valid_page(pl, pg)) {
+		if (upl_valid_page(pl, pg) && !zp->z_is_mapped) {
 			printf("ZFS: %s: pg %d of (upl_size = %lld, upl_start = %lld) of file %s is VALID\n",
 			    __func__, pg, upl_size, upl_start, filename);
 			(void) ubc_upl_abort(upl, UPL_ABORT_RESTART | UPL_ABORT_FREE_ON_EMPTY);
@@ -895,7 +909,8 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	vm_offset_t vaddr = 0;
 	err = ubc_upl_map(upl, &vaddr);
 	if (err != KERN_SUCCESS) {
-		printf("ZFS: %s: failed to ubc_map_upl: err %d\n", __func__, err);
+		printf("ZFS: %s:%d failed to ubc_map_upl: err %d, mapped %d\n", __func__, __LINE__,
+		    err, zp->z_is_mapped);
 		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR);
 		return (err);
 	}
@@ -904,8 +919,8 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	    upl_start, upl_size, (caddr_t)vaddr, DMU_READ_PREFETCH);
 
 	if (err != 0) {
-		printf("ZFS: %s: dmu_read error %d reading %llu bytes offs %llu from file %s\n",
-		    __func__, err, upl_size, upl_start, filename);
+		printf("ZFS: %s:%d dmu_read error %d reading %llu bytes offs %llu from file %s\n",
+		    __func__, __LINE__, err, upl_size, upl_start, filename);
 		(void) ubc_upl_unmap(upl);
 		(void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_ERROR | UPL_ABORT_DUMP_PAGES);
 		if (err == EAGAIN) {
@@ -1158,7 +1173,7 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 			 */
 
 			err = fill_hole(vp, cur_upl_file_offset, page_index_hole_start, page_index_hole_end,
-			    filename);
+			    filename, will_mod);
 
 			if (err == EAGAIN) {
 				printf("ZFS: %s:%d: EAGAIN curoff %lld pist %d pien %d pass %d file %s\n",
