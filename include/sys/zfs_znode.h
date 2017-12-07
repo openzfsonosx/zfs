@@ -227,8 +227,8 @@ typedef struct znode {
 	boolean_t	z_is_sa;	/* are we native sa? */
 
 	boolean_t	z_is_zvol;	/* are we used by the zvol */
-	boolean_t	z_is_mapped;	/* are we mmap'ed */
-	boolean_t       z_is_mapped_write;
+	uint8_t	        z_is_mapped;	/* are we mmap'ed */
+	int32_t         z_is_mapped_write;
 	boolean_t	z_is_ctldir;	/* are we .zfs entry */
 
 #ifdef __APPLE__

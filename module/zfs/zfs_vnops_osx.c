@@ -3241,8 +3241,10 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 		VNOPS_OSX_STAT_BUMP(mmap_file_first_mmapped);
 	}
 	zp->z_is_mapped = 1;
-        if (ISSET(ap->a_fflags, VM_PROT_WRITE))
-                zp->z_is_mapped_write = TRUE;
+        if (ISSET(ap->a_fflags, VM_PROT_WRITE)) {
+		ASSERT3S(zp->z_is_mapped_write, <, INT32_MAX);
+                zp->z_is_mapped_write++;
+	}
 	mutex_exit(&zp->z_lock);
 	VNOPS_OSX_STAT_BUMP(mmap_calls);
 	ZFS_EXIT(zfsvfs);
@@ -3253,6 +3255,14 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 int
 zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 #if 0
+	10.11:
+	struct vnop_mnomap_args {
+		struct vnodeop_desc *a_desc;
+		vnode_t a_vp;
+		vfs_context_t a_context;
+	};
+
+        ???
 	struct vnop_mnomap_args {
 		struct vnode	*a_vp;
 		int		a_fflags;
@@ -3284,7 +3294,15 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	 */
 	/* zp->z_is_mapped = 0; */
 	ASSERT3U((uint64_t)zp->z_is_mapped, >, 0ULL);
+	/*
+	 * unfortunately ubc_is_mapped and ubc_is_mapped_writable are not
+	 * exported to us.
+	 */
+	int32_t write_before = zp->z_is_mapped_write;
+	zp->z_is_mapped_write = -1;
 	mutex_exit(&zp->z_lock);
+
+	ASSERT3S(write_before, >, -1);
 
 	ASSERT(!rw_write_held(&zp->z_map_lock));
         boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
@@ -3292,7 +3310,8 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	ASSERT(rw_write_held(&zp->z_map_lock));
 	off_t ubcsize = ubc_getsize(vp);
 	off_t resid_msync_off = ubcsize;
-        int retval_msync = ubc_msync(vp, 0, ubcsize, &resid_msync_off, UBC_PUSHDIRTY);
+	/* PUSHALL because we may have precious pages to commit */
+        int retval_msync = ubc_msync(vp, 0, ubcsize, &resid_msync_off, UBC_PUSHALL);
 	if (rw_lock_held(&zp->z_map_lock)) {
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
 	} else {

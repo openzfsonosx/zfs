@@ -890,15 +890,19 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	}
 
 	for (int pg = 0; pg < upl_pages; pg++) {
-		if (upl_valid_page(pl, pg) && !zp->z_is_mapped) {
-			printf("ZFS: %s: pg %d of (upl_size = %lld, upl_start = %lld) of file %s is VALID\n",
-			    __func__, pg, upl_size, upl_start, filename);
+		if (upl_valid_page(pl, pg)) {
+			printf("ZFS: %s:%d pg %d of (upl_size = %lld, upl_start = %lld) of file %s is VALID"
+			    " upl_flags %d, will_mod %d, map_mod %d, is_mapped %d, is_mapped_write %d\n",
+			    __func__, __LINE__, pg, upl_size, upl_start, filename,
+			    upl_flags, will_mod, map_mod, zp->z_is_mapped, zp->z_is_mapped_write);
 			(void) ubc_upl_abort(upl, UPL_ABORT_RESTART | UPL_ABORT_FREE_ON_EMPTY);
 			return (EAGAIN);
 		}
 		if (upl_dirty_page(pl, pg)) {
-			printf("ZFS: %s%d: pg %d of (upl_size %lld upl_start %lld) file %s is DIRTY\n",
-			    __func__, __LINE__, pg, upl_size, upl_start, filename);
+			printf("ZFS: %s%d: pg %d of (upl_size %lld upl_start %lld) file %s is DIRTY"
+			    " upl_flags %d, will_mod %d, map_mod %d, is_mapped %d, is_mapped_write %d\n",
+			    __func__, __LINE__, pg, upl_size, upl_start, filename,
+			    upl_flags, will_mod, map_mod, zp->z_is_mapped, zp->z_is_mapped_write);
 			(void) ubc_upl_abort(upl, UPL_ABORT_RESTART | UPL_ABORT_FREE_ON_EMPTY);
 			return (EAGAIN);
 		}
@@ -1074,9 +1078,9 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 
 		int uplcflags;
 		if (will_mod)
-			uplcflags = UPL_UBC_PAGEIN | UPL_WILL_MODIFY;
+			uplcflags = UPL_UBC_PAGEIN | UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT;
 		else
-			uplcflags = UPL_UBC_PAGEIN;
+			uplcflags = UPL_UBC_PAGEIN | UPL_RET_ONLY_ABSENT;
 
 		int map_mod = B_FALSE;
 		if (will_mod && zp->z_is_mapped > 0)
@@ -1119,9 +1123,11 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 				/* don't count dirty pages during first pass either */
 				if (i == 0) present_pages_skipped++;
 				printf("ZFS: %s:%d: skipping DIRTY,!VALID (map_mod %d) page %d in range"
-				    " [off %lld len %ld] of file %s\n", __func__, __LINE__, will_mod,
+				    " [off %lld len %ld] of file %s uplcflags %d will_mod %d"
+				    " mapped %d mapped_write %d\n", __func__, __LINE__, will_mod,
 				    page_index, cur_upl_file_offset, cur_upl_size,
-				    zp->z_name_cache);
+				    zp->z_name_cache, uplcflags, will_mod,
+				    zp->z_is_mapped, zp->z_is_mapped_write);
 				page_index++;
 				continue;
 			}
@@ -1137,6 +1143,14 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 				} else {
 					if (upl_dirty_page(pl, page_index_hole_end))
 						break;
+					/* we may overwrite a precious page */
+					if (upl_valid_page(pl, page_index_hole_end))
+						printf("ZFS: %s:%d: precious page? pg_index %d in upl range"
+						    " [off %lld len %ld] of file %s uplcflags %d will_mod %d"
+						    " mapped %d mapped_write %d\n", __func__, __LINE__,
+						    page_index_hole_end, cur_upl_file_offset,
+						    cur_upl_size, zp->z_name_cache, uplcflags, will_mod,
+						    zp->z_is_mapped, zp->z_is_mapped_write);
 				}
 			}
 
