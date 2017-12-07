@@ -3244,6 +3244,9 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
         if (ISSET(ap->a_fflags, VM_PROT_WRITE)) {
 		ASSERT3S(zp->z_is_mapped_write, <, INT32_MAX);
                 zp->z_is_mapped_write++;
+		/* don't let it RTZ */
+		if (zp->z_is_mapped_write == 0)
+			zp->z_is_mapped_write == 1;
 	}
 	mutex_exit(&zp->z_lock);
 	VNOPS_OSX_STAT_BUMP(mmap_calls);
@@ -3299,7 +3302,10 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	 * exported to us.
 	 */
 	int32_t write_before = zp->z_is_mapped_write;
-	zp->z_is_mapped_write = -1;
+	zp->z_is_mapped_write--;
+	/* don't let it RTZ */
+	if (zp->z_is_mapped_write == 0)
+		zp->z_is_mapped_write == -1;
 	mutex_exit(&zp->z_lock);
 
 	ASSERT3S(write_before, >, -1);
