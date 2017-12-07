@@ -874,11 +874,9 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	if (zp->z_is_mapped || will_mod)
 		map_mod = B_TRUE;
 
-	int upl_flags = 0;
+	int upl_flags = UPL_UBC_PAGEIN | UPL_FILE_IO;
 	if (!map_mod)
-		upl_flags = UPL_UBC_PAGEIN | UPL_RET_ONLY_ABSENT;
-	else
-		upl_flags = UPL_UBC_PAGEIN;
+		upl_flags |= UPL_RET_ONLY_ABSENT;
 
 	if (will_mod)
 		upl_flags |= UPL_WILL_MODIFY;
