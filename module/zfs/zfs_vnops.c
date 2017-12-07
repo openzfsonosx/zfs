@@ -1065,6 +1065,10 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 		else
 			uplcflags = UPL_UBC_PAGEIN;
 
+		int map_mod = B_FALSE;
+		if (will_mod && zp->z_is_mapped > 0)
+			map_mod = B_TRUE;
+
 		err = ubc_create_upl(vp, cur_upl_file_offset, cur_upl_size, &upl, &pl, uplcflags);
 
 
@@ -1093,7 +1097,7 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 		while (page_index < upl_num_pages && err == 0) {
 			VERIFY3P(upl, !=, NULL);
 			VERIFY3P(pl, !=, NULL);
-			if (upl_valid_page(pl, page_index)) {
+			if (upl_valid_page(pl, page_index) && !map_mod) {
 				page_index++;
 				/* don't count pages not present during first pass */
 				if (i == 0) present_pages_skipped++;
@@ -1101,8 +1105,8 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 			} else if (upl_dirty_page(pl, page_index)) {
 				/* don't count dirty pages during first pass either */
 				if (i == 0) present_pages_skipped++;
-				printf("ZFS: %s:%d: skipping DIRTY,!VALID page %d in range"
-				    " [off %lld len %ld] of file %s\n", __func__, __LINE__,
+				printf("ZFS: %s:%d: skipping DIRTY,!VALID (map_mod %d) page %d in range"
+				    " [off %lld len %ld] of file %s\n", __func__, __LINE__, will_mod,
 				    page_index, cur_upl_file_offset, cur_upl_size,
 				    zp->z_name_cache);
 				page_index++;
@@ -1113,9 +1117,14 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 			for (page_index_hole_end = page_index + 1;
 			     page_index_hole_end < upl_num_pages;
 			     page_index_hole_end++) {
-				if (upl_valid_page(pl, page_index_hole_end) ||
-				    upl_dirty_page(pl, page_index_hole_end))
-					break;
+				if (!map_mod) {
+					if (upl_valid_page(pl, page_index_hole_end) ||
+					    upl_dirty_page(pl, page_index_hole_end))
+						break;
+				} else {
+					if (upl_dirty_page(pl, page_index_hole_end))
+						break;
+				}
 			}
 
 			/*
@@ -1420,11 +1429,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	upl_page_info_t *pl = NULL;
 
 	if (err == 0) {
-		int uplcflags;
-		if (zp->z_is_mapped)
-			uplcflags = UPL_WILL_MODIFY;
-		else
-			uplcflags = UPL_SET_LITE;
+		int uplcflags = UPL_SET_LITE;
 		err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl, uplcflags);
 
 		if (err != KERN_SUCCESS || (upl == NULL)) {
