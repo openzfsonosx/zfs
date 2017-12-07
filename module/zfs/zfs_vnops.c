@@ -2425,7 +2425,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							    pop_q_off, zp->z_name_cache, pop_q_flags);
 							upl_t poupl;
 							upl_page_info_t *popl = NULL;
-							int popupl_flags = UPL_UBC_PAGEOUT;
+							int popupl_flags = UPL_UBC_PAGEOUT
+							    | UPL_FORCE_DATA_SYNC;
 							if (pop_q_flags & UPL_POP_DIRTY)
 								popupl_flags |= UPL_RET_ONLY_DIRTY;
 							printf("ZFS: %s:%d: upl with flags 0x%x"
@@ -2569,7 +2570,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							upl_page_info_t *compl = NULL;
 							kern_return_t comuplret = ubc_create_upl(vp,
 							    pop_q_off, PAGE_SIZE, &comupl, &compl,
-							    UPL_UBC_PAGEOUT);
+							    UPL_UBC_PAGEOUT
+							    | UPL_FORCE_DATA_SYNC);
 							ASSERT3S(comuplret, ==, KERN_SUCCESS);
 							if (comuplret != KERN_SUCCESS)
 								goto drop_and_return_to_retry;
