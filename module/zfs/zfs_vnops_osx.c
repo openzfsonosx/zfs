@@ -3234,11 +3234,15 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 	 *      _Atomic structure member, or at least be set atomically
 	 *      with one of the Illumos atomic functions.
 	 */
+	// z_is_mapped should be for mapped-for-write only?
+	// should we flush everything from the ubc here?
 	mutex_enter(&zp->z_lock);
 	if (zp->z_is_mapped == 0) {
 		VNOPS_OSX_STAT_BUMP(mmap_file_first_mmapped);
 	}
 	zp->z_is_mapped = 1;
+        if (ISSET(ap->a_fflags, VM_PROT_WRITE))
+                zp->z_is_mapped_write = TRUE;
 	mutex_exit(&zp->z_lock);
 	VNOPS_OSX_STAT_BUMP(mmap_calls);
 	ZFS_EXIT(zfsvfs);

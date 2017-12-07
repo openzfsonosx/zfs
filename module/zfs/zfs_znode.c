@@ -724,6 +724,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 
 	zp->z_is_zvol = 0;
 	zp->z_is_mapped = 0;
+	zp->z_is_mapped_write = 0;
 	zp->z_is_ctldir = 0;
 	zp->z_vid = 0;
 	zp->z_uid = 0;

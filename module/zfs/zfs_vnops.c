@@ -2349,12 +2349,14 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 					    " returning short write, c %d, woff %lld,"
 					    " this_off %lld uio_offset %lld uio_resid %lld"
 					    " this_chunk %ld xfer_resid %d file_size %lld %lld"
-					    " ioflag %d - punting to update pages function (mapped %d)"
+					    " ioflag %d - punting to update pages function"
+					    " (mapped %d mappedwrite %d)"
 					    " start_off %lld start_resid %ld\n",
 					    __func__, __LINE__, zp->z_name_cache, c,
 					    woff, this_off, uio_offset(uio), uio_resid(uio),
 					    this_chunk, xfer_resid,
 					    zp->z_size, ubc_getsize(vp), ioflag, zp->z_is_mapped,
+					    zp->z_is_mapped_write,
 					    start_off, start_resid);
 					if (xfer_resid == this_chunk) {
 						/*
@@ -2438,6 +2440,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								goto drop_and_return_to_retry;
 							}
 						}
+						// go back to cluster_copy_ubc_data(, ...0) and
+						// follow it with the manual pageout as below
 						/*
 						 * build a upl for the (now clean) intransigent page
 						 * and do cluster_copy_upl_data to update it
