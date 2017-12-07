@@ -2455,21 +2455,28 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							    recov_resid_int, ccresid);
 							goto drop_and_return_to_retry;
 						} else {
-							/* commit the page update */
+							/*
+							 * abort the upl.   although we
+							 * have successfully dirtied the
+							 * pages, we do not want to commit
+							 * here, as that creates a copy
+							 * object that will be overwritten
+							 * when the intransigent page is
+							 * disposed of when the vnode is
+							 * reclaimed.   so, like old
+							 * update_pages, we just abort.
+							 */
 							ASSERT3S(ccresid, !=, recov_resid_int);
-							kern_return_t commitret =
-							    ubc_upl_commit_range(dupl,
-								0, PAGESIZE,
-								UPL_COMMIT_SET_DIRTY |
-								UPL_COMMIT_INACTIVATE |
-								UPL_COMMIT_FREE_ON_EMPTY);
-							ASSERT3S(commitret, ==, KERN_SUCCESS);
-							printf("ZFS: %s:%d committed at"
+							kern_return_t abortret =
+							    ubc_upl_abort(dupl,
+								UPL_ABORT_FREE_ON_EMPTY);
+							ASSERT3S(abortret, ==, KERN_SUCCESS);
+							printf("ZFS: %s:%d upl aborted at"
 							    " file offset %lld"
-							    " file %s commitret %d uio_resid %lld"
+							    " file %s abortret %d uio_resid %lld"
 							    " recov_resid_int %d ccresid %d\n",
 							    __func__, __LINE__, pop_q_off,
-							    zp->z_name_cache, commitret,
+							    zp->z_name_cache, abortret,
 							    uio_resid(uio),
 							    recov_resid_int, ccresid);
 							/* page out the page */
