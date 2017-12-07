@@ -2411,20 +2411,44 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							    pop_q_off, zp->z_name_cache, pop_q_flags);
 							upl_t poupl;
 							upl_page_info_t *popl = NULL;
+							int popupl_flags = UPL_UBC_PAGEOUT;
+							if (pop_q_flags & UPL_POP_DIRTY)
+								popupl_flags |= UPL_RET_ONLY_DIRTY;
+							printf("ZFS: %s:%d: upl with flags 0x%x"
+							    " ret_only_dirty %d"
+							    " file %s\n",
+							    __func__, __LINE__, popupl_flags,
+							    (popupl_flags & UPL_RET_ONLY_DIRTY) ==
+							    UPL_RET_ONLY_DIRTY,
+							    zp->z_name_cache);
 							kern_return_t pouplret = ubc_create_upl(vp,
 							    pop_q_off, PAGE_SIZE, &poupl, &popl,
 							    UPL_UBC_PAGEOUT);
 							ASSERT3S(pouplret, ==, KERN_SUCCESS);
 							if (pouplret != KERN_SUCCESS)
 								goto drop_and_return_to_retry;
-							if (pop_q_flags & UPL_POP_DIRTY) {
-								ASSERT(upl_dirty_page(popl, 0));
-							}
+
+							ASSERT(upl_dirty_page(popl, 0));
 							ASSERT(upl_page_present(popl, 0));
 							ASSERT(upl_valid_page(popl, 0));
+							EQUIV(popupl_flags & UPL_RET_ONLY_DIRTY,
+							    upl_dirty_page(popl, 0));
 							/*
-							 * check page is there and dirty
-							 * as UPL_UBC_PAGEOUT sets RET_ONLY_DIRTY
+							 * check page is there and dirty; if
+							 * it's dirty, then set UPL_RET_ONLY_DIRTY,
+							 * which is not masked out by ubc_create_upl.
+							 *
+							 * The hardware dirty bit will have beeen cleared
+							 * upon gathering into the pagelist, but the
+							 * software dirty bit will have been set (
+							 * and will stay set if we abort).
+							 * When we commit in zfs_pageout, the
+							 * software dirty bit is cleared, but the
+							 * hardware dirty bit is untouched.
+							 *
+							 * N.B.: RET_ONLY_DIRTY will return non-dirty
+							 *       'precious' pages.  Should we steal
+							 * them and page them out?
 							 */
 							int poflags = 0;
 							if (ioflag & (FSYNC|FDSYNC))
