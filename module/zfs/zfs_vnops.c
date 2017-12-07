@@ -2383,12 +2383,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						    recov_off, uio_resid(uio), xfer_resid, pop_q_flags,
 						    zp->z_name_cache);
 
-						if (pop_q_flags & UPL_POP_DIRTY) {
+						if (B_TRUE || pop_q_flags & UPL_POP_DIRTY) {
 							/* page out this dirty page */
-							printf("ZFS: %s:%d paging out dirty page"
-							    " offset %lld file %s\n",
+							printf("ZFS: %s:%d paging out intransigent page"
+							    " offset %lld file %s (pop flags 0%o)\n",
 							    __func__, __LINE__,
-							    pop_q_off, zp->z_name_cache);
+							    pop_q_off, zp->z_name_cache, pop_q_flags);
 							upl_t poupl;
 							upl_page_info_t *popl = NULL;
 							kern_return_t pouplret = ubc_create_upl(vp,
@@ -2397,7 +2397,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							ASSERT3S(pouplret, ==, KERN_SUCCESS);
 							if (pouplret != KERN_SUCCESS)
 								goto drop_and_return_to_retry;
-							ASSERT(upl_dirty_page(popl, 0));
+							if (pop_q_flags & UPL_POP_DIRTY) {
+								ASSERT(upl_dirty_page(popl, 0));
+							}
 							ASSERT(upl_page_present(popl, 0));
 							ASSERT(upl_valid_page(popl, 0));
 							/*
