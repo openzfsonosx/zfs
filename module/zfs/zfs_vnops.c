@@ -2376,7 +2376,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						ASSERT3S(pop_q_result, ==, KERN_SUCCESS);
 
 						printf("ZFS: %s:%d no progress made, c == %d,"
-						    " attempting cluster_copy_ubc_data(..ioreq %d, 0)"
+						    " attempting cluster_copy_upl_data(.., ioreq %d)"
 						    " (recoff %lld uio_resid %lld xfer_resid was %d)"
 						    " page flags 0%o for file %s\n",
 						    __func__, __LINE__, c, recov_resid_int,
