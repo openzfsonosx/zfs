@@ -2481,57 +2481,89 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						// go back to cluster_copy_ubc_data(, ...0) and
 						// follow it with the manual pageout as below
 						/*
-						 * build a upl for the (now clean) intransigent page
-						 * and do cluster_copy_upl_data to update it
+						 * having cleaned the page, attempt to do
+						 * a cluster_copy again
 						 */
-						upl_t dupl;
-						upl_page_info_t *dpl = NULL;
-						kern_return_t uplret = ubc_create_upl(vp,
-						    pop_q_off, PAGE_SIZE, &dupl, &dpl,
-						    UPL_SET_LITE | UPL_FILE_IO);
-						ASSERT3S(uplret, ==, KERN_SUCCESS);
-						if (uplret != KERN_SUCCESS)
-							goto drop_and_return_to_retry;
-						ASSERT(upl_page_present(dpl, 0));
-						ASSERT(upl_valid_page(dpl, 0));
+						off_t pre_offset = uio_offset(uio);
+						ASSERT3S(trunc_page_64(pre_offset), ==, pop_q_off);
 						int ccresid = recov_resid_int;
-						int ccretval = cluster_copy_upl_data(uio,
-						    dupl, recov_off_page_offset,
-						    &ccresid);
-						if (ccretval) {
-							/* cluster_copy_upl_data failed */
-							kern_return_t abortret =
-							    ubc_upl_abort_range(dupl, 0, PAGESIZE,
-								UPL_ABORT_RESTART |
-								UPL_ABORT_FREE_ON_EMPTY);
-							ASSERT3S(abortret, ==, KERN_SUCCESS);
-							printf("ZFS: %s:%d aborted at"
-							    " file offset %lld"
-							    " file %s abortret %d uioresid %lld"
-							    " recov_resid_int %d ccresid %d \n",
-							    __func__, __LINE__,
-							    pop_q_off, zp->z_name_cache, abortret,
-							    uio_resid(uio),
-							    recov_resid_int, ccresid);
+						int ccretval = 0;
+						if ((ccretval = cluster_copy_ubc_data(vp, uio, &ccresid, 1))
+						    != 0) {
+							printf("ZFS: %s:%d ERROR %d"
+							    " from cluster_copy(vp, uio,"
+							    " [resid %d], 1), resid ret/uio %d/%lld"
+							    " uio_off %lld pre_off %lld"
+							    " file %s\n",
+							    __func__, __LINE__, error,
+							    recov_resid_int,
+							    ccresid, uio_resid(uio), uio_offset(uio),
+							    pre_offset, zp->z_name_cache);
 							goto drop_and_return_to_retry;
-						} else {
-							/* commit the page update */
-							ASSERT3S(ccresid, !=, recov_resid_int);
-							kern_return_t commitret =
-							    ubc_upl_commit_range(dupl,
-								0, PAGESIZE,
-								UPL_COMMIT_SET_DIRTY |
-								UPL_COMMIT_INACTIVATE |
-								UPL_COMMIT_FREE_ON_EMPTY);
-							ASSERT3S(commitret, ==, KERN_SUCCESS);
-							printf("ZFS: %s:%d committed at"
-							    " file offset %lld"
-							    " file %s commitret %d uio_resid %lld"
-							    " recov_resid_int %d ccresid %d\n",
-							    __func__, __LINE__, pop_q_off,
-							    zp->z_name_cache, commitret,
-							    uio_resid(uio),
-							    recov_resid_int, ccresid);
+						}
+						ASSERT3S(ccretval, ==, 0);
+						if (ccresid != recov_resid_int || uio_resid(uio) == 0) {
+							IMPLY(uio_resid(uio) == 0, ccresid == 0);
+							if (ccresid == 0) {
+								printf("ZFS: %s:%d recovery OK, file %s"
+								    " uio_resid %lld uio_off %lld\n",
+								    __func__, __LINE__,
+								    zp->z_name_cache,
+								    uio_resid(uio), uio_offset(uio));
+								if (uio_resid(uio) == 0)
+									break;
+								else
+									continue;
+							}
+							ASSERT3S(ccresid, <, recov_resid_int);
+							printf("ZFS: %s:%d recovery made progress, file %s"
+							    " recov_resid %d ccresid %d uio_resid %lld"
+							    " uio_off %lld",
+							    __func__, __LINE__, zp->z_name_cache,
+							    recov_resid_int, ccresid, uio_resid(uio),
+							    uio_offset(uio));
+							if (uio_resid(uio) == 0)
+								break;
+							else
+								continue;
+							printf("ZFS: %s:%d: not reachable?!\n",
+							    __func__, __LINE__);
+						}
+						ASSERT3S(ccresid, ==, recov_resid_int);
+						ASSERT3S(uio_offset(uio), ==, pre_offset);
+						ASSERT3S(error, ==, 0);
+						printf("ZFS: %s:%d WARNING : no progress on"
+						    " recovery cluster_copy(vp, uio,"
+						    " [resid %d], 1), resid ret/uio %d/%lld"
+						    " uio_off %lld - trying with ,0 and upl update, "
+						    "file %s\n",
+						    __func__, __LINE__,
+						    recov_resid_int,
+						    ccresid, uio_resid(uio), uio_offset(uio),
+						    zp->z_name_cache);
+						ccresid = recov_resid_int;
+						pre_offset = uio_offset(uio);
+						if ((ccretval = cluster_copy_ubc_data(vp, uio, &ccresid, 0))
+						    != 0) {
+							printf("ZFS: %s:%d (nondirty) ERROR %d"
+							    " from cluster_copy(vp, uio,"
+							    " [resid %d], 0), resid ret/uio %d/%lld"
+							    " uio_off %lld"
+							    " file %s\n",
+							    __func__, __LINE__, error,
+							    recov_resid_int,
+							    ccresid, uio_resid(uio), uio_offset(uio),
+							    zp->z_name_cache);
+							goto drop_and_return_to_retry;
+						}
+						ASSERT3S(ccretval, ==, 0);
+						if (ccresid != recov_resid_int || uio_resid(uio) == 0) {
+							ASSERT3S(ccresid, <, recov_resid_int);
+							IMPLY(uio_resid(uio) == 0, ccresid == 0);
+							printf("ZFS: %s:%d: PROGRESS MADE, paging out page"
+							    " for file %s off %lld\n",
+							    __func__, __LINE__,
+							    zp->z_name_cache, pop_q_off);
 							/* page out the page */
 							upl_t comupl;
 							upl_page_info_t *compl = NULL;
@@ -2567,6 +2599,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								continue;
 							}
 						}
+						ASSERT3S(ccresid, ==, recov_resid_int);
+						printf("ZFS: %s:%d: NO PROGRESS AT ALL for file %s,"
+						    " uiooff %lld uioresid %lld"
+						    ", returning for retry\n",
+						    __func__, __LINE__, zp->z_name_cache,
+						    uio_offset(uio), uio_resid(uio));
 					drop_and_return_to_retry:
 						z_map_drop_lock(zp,
 						    &need_release, &need_upgrade);
