@@ -2956,6 +2956,38 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 
 		//printf("isize %d for page %d\n", isize, pg_index);
 
+		if ( !upl_dirty_page(pl, pg_index) && upl_page_present(pl, pg_index)) {
+			/* hfs has a call to panic here, but we trigger this *a lot* so
+			 * unsure what is going on */
+			/*
+			 * RET_ONLY_DIRTY brings forward 'precious' pages that are not
+			 * dirty.   We probably don't want to steal them or modify their
+			 * status beyond what gathering them up into the UPL has done
+			 * (gathering into the UPL sets the hw dirty bit false but the
+			 * sw dirty bit true).    If we commit this page, it will set
+			 * the sw dirty bit false (but not disturb the hw dirty bit
+			 * further).
+			 *
+			 * This could be the source of the "intransigent" page wiping
+			 * out the changes at unmount.
+			 */
+			printf ("ZFS: %s:%d unforeseen clean page @ index %lld upl_offset %lld for UPL %p,"
+			    " need_release = %d, msync %d, foff %lld size %ld flags 0x%x file %s\n",
+			    __func__, __LINE__, pg_index, offset, upl, need_release,
+			    (a_flags & UPL_UBC_MSYNC) == UPL_UBC_MSYNC,
+			    ap->a_f_offset, ap->a_size, ap->a_flags, zp->z_name_cache);
+			ASSERT3U(trunc_page_64(offset), ==, pg_index * PAGE_SIZE);
+			/* don't further molest this precious page */
+			kern_return_t kret_precious_abort = ubc_upl_abort_range(upl, pg_index * PAGE_SIZE,
+			    PAGE_SIZE, UPL_ABORT_FREE_ON_EMPTY);
+			ASSERT3S(kret_precious_abort, ==, KERN_SUCCESS);
+			f_offset += PAGE_SIZE;
+			offset   += PAGE_SIZE;
+			isize    -= PAGE_SIZE;
+			pg_index++;
+			continue;
+		}
+
 		if ( !upl_page_present(pl, pg_index)) {
 			/*
 			 * we asked for RET_ONLY_DIRTY, so it's possible
@@ -2968,17 +3000,6 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			isize    -= PAGE_SIZE;
 			pg_index++;
 
-			continue;
-		}
-		if ( !upl_dirty_page(pl, pg_index)) {
-			/* hfs has a call to panic here, but we trigger this *a lot* so
-			 * unsure what is going on */
-			printf ("ZFS: %s: unforeseen clean page @ index %lld for UPL %p, need_release = %d\n",
-			    __func__,  pg_index, upl, need_release);
-			f_offset += PAGE_SIZE;
-			offset   += PAGE_SIZE;
-			isize    -= PAGE_SIZE;
-			pg_index++;
 			continue;
 		}
 
@@ -3246,7 +3267,7 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
                 zp->z_is_mapped_write++;
 		/* don't let it RTZ */
 		if (zp->z_is_mapped_write == 0)
-			zp->z_is_mapped_write == 1;
+			zp->z_is_mapped_write = 1;
 	}
 	mutex_exit(&zp->z_lock);
 	VNOPS_OSX_STAT_BUMP(mmap_calls);
@@ -3302,13 +3323,17 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	 * exported to us.
 	 */
 	int32_t write_before = zp->z_is_mapped_write;
-	zp->z_is_mapped_write--;
-	/* don't let it RTZ */
-	if (zp->z_is_mapped_write == 0)
-		zp->z_is_mapped_write == -1;
+	/*
+	 * if we had set z_is_mapped_write previously, decrement it, but
+	 * don't let it RTZ
+	 */
+	if (write_before != 0)
+		zp->z_is_mapped_write--;
+	else if (zp->z_is_mapped_write == 0)
+		zp->z_is_mapped_write = -1;
 	mutex_exit(&zp->z_lock);
 
-	ASSERT3S(write_before, >, -1);
+	ASSERT3S(write_before, >, -2);
 
 	ASSERT(!rw_write_held(&zp->z_map_lock));
         boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
