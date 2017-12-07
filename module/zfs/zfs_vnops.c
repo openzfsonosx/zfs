@@ -2461,6 +2461,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							    ubc_upl_commit_range(dupl,
 								0, PAGESIZE,
 								UPL_COMMIT_SET_DIRTY |
+								UPL_COMMIT_INACTIVATE |
 								UPL_COMMIT_FREE_ON_EMPTY);
 							ASSERT3S(commitret, ==, KERN_SUCCESS);
 							printf("ZFS: %s:%d committed at"
