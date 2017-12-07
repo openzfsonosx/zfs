@@ -3266,7 +3266,7 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 		ASSERT3S(zp->z_is_mapped_write, <, INT32_MAX);
                 zp->z_is_mapped_write++;
 		/* don't let it RTZ */
-		if (zp->z_is_mapped_write == 0)
+		if (zp->z_is_mapped_write <= 0)
 			zp->z_is_mapped_write = 1;
 	}
 	mutex_exit(&zp->z_lock);
@@ -3333,7 +3333,7 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 		zp->z_is_mapped_write = -1;
 	mutex_exit(&zp->z_lock);
 
-	// trips a lot, goes way under -2: ASSERT3S(write_before, >, -2);
+	ASSERT3S(write_before, >, -2);
 
 	ASSERT(!rw_write_held(&zp->z_map_lock));
         boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
