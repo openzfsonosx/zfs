@@ -2397,6 +2397,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							ASSERT3S(pouplret, ==, KERN_SUCCESS);
 							if (pouplret != KERN_SUCCESS)
 								goto drop_and_return_to_retry;
+							ASSERT(upl_dirty_page(popl, 0));
+							ASSERT(upl_page_present(popl, 0));
+							ASSERT(upl_valid_page(popl, 0));
+							/*
+							 * check page is there and dirty
+							 * as UPL_UBC_PAGEOUT sets RET_ONLY_DIRTY
+							 */
 							int poflags = 0;
 							if (ioflag & (FSYNC|FDSYNC))
 								poflags |= UPL_IOSYNC;
@@ -2423,6 +2430,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						ASSERT3S(uplret, ==, KERN_SUCCESS);
 						if (uplret != KERN_SUCCESS)
 							goto drop_and_return_to_retry;
+						ASSERT(upl_page_present(dpl, 0));
+						ASSERT(upl_valid_page(dpl, 0));
 						int ccresid = recov_resid_int;
 						int ccretval = cluster_copy_upl_data(uio,
 						    dupl, recov_off_page_offset,
@@ -2469,6 +2478,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							ASSERT3S(comuplret, ==, KERN_SUCCESS);
 							if (comuplret != KERN_SUCCESS)
 								goto drop_and_return_to_retry;
+							ASSERT(upl_page_present(compl, 0));
+							ASSERT(upl_valid_page(compl, 0));
+							ASSERT(upl_dirty_page(compl, 0));
 							int compoflags = 0;
 							if (ioflag & (FSYNC|FDSYNC))
 								compoflags |= UPL_IOSYNC;
