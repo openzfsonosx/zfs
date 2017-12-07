@@ -2428,7 +2428,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						upl_page_info_t *dpl = NULL;
 						kern_return_t uplret = ubc_create_upl(vp,
 						    pop_q_off, PAGE_SIZE, &dupl, &dpl,
-						    UPL_WILL_MODIFY | UPL_SET_LITE);
+						    UPL_WILL_MODIFY | UPL_SET_LITE | UPL_FILE_IO);
 						ASSERT3S(uplret, ==, KERN_SUCCESS);
 						if (uplret != KERN_SUCCESS)
 							goto drop_and_return_to_retry;
