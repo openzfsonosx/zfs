@@ -7811,8 +7811,10 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 			    zp->z_name_cache);
 			if (vret == 0)
 				vnode_rele(vp);
+#if 0
 			rw_exit(&zfsvfs->z_teardown_inactive_lock);
 			return;
+#endif
 		}
 		if (vret == 0)
 			vnode_rele(vp);
