@@ -192,8 +192,12 @@ extern void zfs_ioctl_fini(void);
 #endif
 
 static int
-zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
+zfs_vfs_umcallback(vnode_t *vp, void * arg)
 {
+	int *waitfor_arg = arg;
+	int waitfor = (*waitfor_arg & MNT_WAIT) == MNT_WAIT;
+	int err = 0;
+
 	if (vnode_isreg(vp) && ubc_pages_resident(vp) && (0 != is_file_clean(vp, ubc_getsize(vp)))) {
 		znode_t *zp = VTOZ(vp);
 		zfsvfs_t *zfsvfs = zp->z_zfsvfs;
@@ -205,26 +209,34 @@ zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 		boolean_t need_release = B_FALSE, need_upgrade = B_TRUE;
 		/*
 		 * we try very briefly to grab the z_map_lock and give up
-		 * if we can't get it
+		 * if we can't get it - longer if MNT_WAITFOR
 		 */
-		for (int tries = 0; tries < 10; tries++) {
+		int max_try = 10;
+		if (waitfor)
+			max_try= 100;
+		for (int tries = 0; tries < max_try; tries++) {
 			if (rw_tryenter(&zp->z_map_lock, RW_WRITER)) {
 				need_release = B_TRUE;
 				zp->z_map_lock_holder = __func__;
 				break;
 			}
 			kpreempt(KPREEMPT_SYNC);
+			extern void IODelay(unsigned microseconds);
+			if (waitfor)
+				IODelay(1);
 		}
 		if (!rw_write_held(&zp->z_map_lock)) {
-			printf("ZFS: %s:%d: (skipping sync) could not acquire z_map_lock for file %s\n",
-			    __func__, __LINE__, zp->z_name_cache);
+			printf("ZFS: %s:%d: (skipping sync) waitfor %d "
+			    " could not acquire z_map_lock for file %s\n",
+			    __func__, __LINE__, waitfor, zp->z_name_cache);
 			zfs_range_unlock(rl);
 			ZFS_EXIT(zfsvfs);
+			return (VNODE_CLAIMED);
 		}
 		off_t resid_off = 0;
 		off_t ubcsize = ubc_getsize(vp);
 		int flags = UBC_PUSHDIRTY;
-		if (zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
+		if (waitfor || zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
 			flags |= UBC_SYNC;
 		/* give up range_lock, since pageoutv2 may need it */
 		zfs_range_unlock(rl);
@@ -234,17 +246,28 @@ zfs_vfs_umcallback(vnode_t *vp, __unused void * args)
 		if (msync_retval != 0 &&
 		    !(msync_retval == EINVAL && resid_off == ubcsize)) {
 			/* we can get an EINVAL spuriously */
-			printf("ZFS: %s:%d: ubc_msync returned error %d\n", __func__, __LINE__,
-			    msync_retval);
+			printf("ZFS: %s:%d: (waitfor %d) ubc_msync returned error %d resid_off %lld"
+			    " vs ubcsize %lld for file %s\n", __func__, __LINE__, waitfor,
+			    msync_retval, resid_off, ubcsize, zp->z_name_cache);
+			if (waitfor)
+				err = EAGAIN;
+		} else if (msync_retval && waitfor) {
+			printf("ZFS: %s:%d: (waitfor %d) ubc_msync returned error %d but ubcsize %lld !="
+			    "resid_off %lld for file %s\n", __func__, __LINE__, waitfor,
+			    msync_retval, ubcsize, resid_off, zp->z_name_cache);
+			err = EAGAIN;
 		}
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
 		ZFS_EXIT(zfsvfs);
 	}
-	return (0);
+	if (err != 0)
+		return (VNODE_CLAIMED);
+	else
+		return (VNODE_RETURNED);
 }
 
 int
-zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t context)
+zfs_vfs_sync(struct mount *vfsp, int waitfor, __unused vfs_context_t context)
 {
     /*
      * Data integrity is job one. We don't want a compromised kernel
@@ -273,7 +296,7 @@ zfs_vfs_sync(struct mount *vfsp, __unused int waitfor, __unused vfs_context_t co
             return (0);
         }
 
-	vnode_iterate(vfsp, 0, zfs_vfs_umcallback, 0);
+	vnode_iterate(vfsp, 0, zfs_vfs_umcallback, &waitfor);
 
         if (zfsvfs->z_log != NULL)
             zil_commit(zfsvfs->z_log, 0);
