@@ -7798,26 +7798,20 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 
 	if (ubc_pages_resident(vp)) {
 		ASSERT3P(zp->z_sa_hdl, !=, NULL);
-		int vret = vnode_ref(vp);
-		ASSERT3S(vret, ==, 0);
 		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 		ASSERT3S(ubc_getsize(ZTOV(zp)), >, 0);
 		if (is_file_clean(ZTOV(zp), ubc_getsize(vp)) != 0 ||
-		    vnode_isinuse(vp, 1) != 0) {
+		    vnode_isinuse(vp, 0) != 0) {
 			printf("ZFS: %s:%d: ubc_pages_resident true, is_file_clean %d (0==clean),"
 			    " isinuse %d file %s -- RETURNING\n",
 			    __func__, __LINE__, is_file_clean(ZTOV(zp), ubc_getsize(vp)),
 			    vnode_isinuse(vp, 0),
 			    zp->z_name_cache);
-			if (vret == 0)
-				vnode_rele(vp);
 #if 0
 			rw_exit(&zfsvfs->z_teardown_inactive_lock);
 			return;
 #endif
 		}
-		if (vret == 0)
-			vnode_rele(vp);
 	}
 
 	// see above - rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
