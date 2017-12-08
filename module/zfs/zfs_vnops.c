@@ -2481,31 +2481,42 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								goto drop_and_return_to_retry;
 							}
 						}
-						printf("ZFS: %s:%d destroying page\n", __func__, __LINE__);
-						off_t msresid = 0;
-						int mserr = ubc_msync(vp, pop_q_off, pop_q_off + 4095,
-						    &msresid, UBC_INVALIDATE);
-						if (mserr != 0) {
-							printf("ZFS: %s:%d: error %d from ubc_msync(vp,"
-							    " off %lld, end %lld, UBC_INVALIDATE)"
-							    " file %s, msresid %lld\n",
-							    __func__, __LINE__, mserr,
-							    pop_q_off, pop_q_off + 4095,
-							    zp->z_name_cache, msresid);
-							// goto drop_and_return_to_retry;
-							// try fill anyway
+						int i = 0, mserr = 0;
+						for (int i = 0; i < 10; i++) {
+							printf("ZFS: %s:%d destroying page pass (%d)\n",
+							    __func__, __LINE__, i);
+							off_t msresid = 0;
+							mserr = ubc_msync(vp, pop_q_off,
+							    pop_q_off + 4095,
+							    &msresid, UBC_INVALIDATE);
+							if (mserr != 0) {
+								printf("ZFS: %s:%d: (pass %d) error %d from"
+								    " ubc_msync(vp,"
+								    " off %lld, end %lld, UBC_INVALIDATE)"
+								    " file %s, (msresid %lld)\n",
+								    __func__, __LINE__, i, mserr,
+								    pop_q_off, pop_q_off + 4095,
+								    zp->z_name_cache, msresid);
+								break;
+								// goto drop_and_return_to_retry;
+								// try fill anyway
+							}
 						}
-						ASSERT3S(mserr, ==, 0);
+						ASSERT3S(i, <=, 3);
+						IMPLY(i == 0, mserr == 0);
 						int fherr = fill_hole(vp, pop_q_off,
 						    0, 1, zp->z_name_cache, B_FALSE);
 						if (fherr != 0) {
-							printf("ZFS: %s:%d: error %d from fill_hole(vp,"
-							    " off %lld, end %lld, %s, UBC_INVALIDATE)\n",
+							printf("ZFS: %s:%d: error %d from"
+							    " fill_hole(vp,"
+							    " off %lld, end %lld, %s,"
+							    " UBC_INVALIDATE)\n",
 							    __func__, __LINE__, fherr, pop_q_off,
 							    pop_q_off + PAGE_SIZE_64,
 							    zp->z_name_cache);
 							goto drop_and_return_to_retry;
 						}
+
 						/*
 						 * We have now stored the intransigent page in
 						 * the file, then invalidated it, then filled it
