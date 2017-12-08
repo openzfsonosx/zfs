@@ -895,8 +895,10 @@ fill_hole(vnode_t *vp, const off_t foffset,
 			    " upl_flags %d, will_mod %d, map_mod %d, is_mapped %d, is_mapped_write %d\n",
 			    __func__, __LINE__, pg, upl_size, upl_start, filename,
 			    upl_flags, will_mod, map_mod, zp->z_is_mapped, zp->z_is_mapped_write);
-			(void) ubc_upl_abort(upl, UPL_ABORT_RESTART | UPL_ABORT_FREE_ON_EMPTY);
-			return (EAGAIN);
+			if (!will_mod) {
+				(void) ubc_upl_abort(upl, UPL_ABORT_RESTART | UPL_ABORT_FREE_ON_EMPTY);
+				return (EAGAIN);
+			}
 		}
 		if (upl_dirty_page(pl, pg)) {
 			printf("ZFS: %s%d: pg %d of (upl_size %lld upl_start %lld) file %s is DIRTY"
@@ -2490,7 +2492,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							    __func__, __LINE__, mserr,
 							    pop_q_off, pop_q_off + 4095,
 							    zp->z_name_cache, msresid);
-							goto drop_and_return_to_retry;
+							// goto drop_and_return_to_retry;
+							// try fill anyway
 						}
 						ASSERT3S(mserr, ==, 0);
 						int fherr = fill_hole(vp, pop_q_off,
