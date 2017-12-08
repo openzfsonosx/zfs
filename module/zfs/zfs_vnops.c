@@ -705,134 +705,6 @@ drop_and_exit:
 	ASSERT3S(error, ==, 0);
 }
 
-#if 0
-static int
-adjusted_master_update_pages(vnode_t *vp, int64_t nbytes, struct uio *uio)
-{
-
-	/*
-	 * like update_pages but is called with z_map_lock already held,
-	 * and it will dirty the updated page(s)
-	 */
-
-    znode_t *zp = VTOZ(vp);
-    //zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-    int len = nbytes;
-    int error = 0;
-    vm_offset_t vaddr = 0;
-    upl_t upl;
-    upl_page_info_t *pl = NULL;
-    off_t upl_start;
-    int upl_size;
-    int upl_page;
-    off_t off;
-
-    upl_start = uio_offset(uio);
-    off = upl_start & (PAGE_SIZE - 1);
-    upl_start &= ~PAGE_MASK;
-    upl_size = (off + nbytes + (PAGE_SIZE - 1)) & ~PAGE_MASK;
-
-    printf("ZFS: %s:%d  @ %llu : %llu bytes (adjusted %llu - %d): off %llu file %s\n", __func__, __LINE__,
-	uio_offset(uio), nbytes, upl_start, upl_size, off, zp->z_name_cache);
-    /*
-     * Create a UPL for the current range and map its
-     * page list into the kernel virtual address space.
-     */
-    error = ubc_create_upl(vp, upl_start, upl_size, &upl, &pl, UPL_WILL_MODIFY);
-        if ((error != KERN_SUCCESS) || !upl) {
-                printf("ZFS: update_pages failed to ubc_create_upl: %d\n", error);
-                return (error);
-        }
-
-        if (ubc_upl_map(upl, &vaddr) != KERN_SUCCESS) {
-                printf("ZFS: update_pages failed to ubc_upl_map: %d\n", error);
-                (void) ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-                return (error);
-        }
-
-    for (upl_page = 0; len > 0; ++upl_page) {
-        uint64_t bytes = MIN(PAGESIZE - off, len);
-        //uint64_t woff = uio_offset(uio);
-        /*
-         * We don't want a new page to "appear" in the middle of
-         * the file update (because it may not get the write
-         * update data), so we grab a lock to block
-         * zfs_getpage().
-         */
-
-	int ret_error = 0;
-
-        if (pl && upl_valid_page(pl, upl_page)) {
-            uio_setrw(uio, UIO_WRITE);
-           error = uiomove((caddr_t)vaddr + off, bytes, UIO_WRITE, uio);
-            if (error == 0) {
-
-                                /*
-                                  dmu_write(zfsvfs->z_os, zp->z_id,
-                                  woff, bytes, (caddr_t)vaddr + off, tx);
-                                */
-                /*
-                 * We don't need a ubc_upl_commit_range()
-                 * here since the dmu_write() effectively
-                 * pushed this page to disk.
-                 */
-
-		    kern_return_t kret = ubc_upl_commit_range(upl, upl_start, PAGESIZE,
-			UPL_COMMIT_FREE_ON_EMPTY | UPL_COMMIT_SET_DIRTY);
-
-		    printf("ZFS: %s:%d: committed off %lld bytes %lld kret %d\n",
-			__func__, __LINE__, off, bytes, kret);
-
-		    ret_error = error;
-
-            } else {
-                /*
-                 * page is now in an unknown state so dump it.
-                 */
-
-                kern_return_t kret = ubc_upl_abort_range(upl, upl_start, PAGESIZE,
-		    UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY | UPL_ABORT_DUMP_PAGES);
-
-		    printf("ZFS: %s:%d: uiomove error %d off %lld bytes %lld upl_abort_range kret %d\n",
-			__func__, __LINE__, error, off, bytes, kret);
-
-		    if (kret != KERN_SUCCESS && error == 0)
-			    ret_error = error;
-
-            }
-        } else { // !upl_valid_page
-                        /*
-                          error = dmu_write_uio(zfsvfs->z_os, zp->z_id,
-                          uio, bytes, tx);
-                        */
-		kern_return_t kret = ubc_upl_abort_range(upl, upl_start, PAGESIZE, UPL_ABORT_FREE_ON_EMPTY);
-
-		printf("ZFS: %s:%d: aborted invalid page %d off %lld bytes %lld upl_abort_range ret %d\n",
-		    __func__, __LINE__, upl_page, off, bytes, kret);
-
-		if (kret != KERN_SUCCESS && error == 0)
-			ret_error = error;
-        }
-
-        vaddr += PAGE_SIZE;
-        upl_start += PAGE_SIZE;
-        len -= bytes;
-        off = 0;
-    }
-    /*
-     * Unmap the page list and free the UPL.
-     */
-        kern_return_t unmap_ret = ubc_upl_unmap(upl);
-	ASSERT3S(unmap_ret, ==, 0);
-	if (error == 0 && unmap_ret != 0)
-		error = unmap_ret;
-
-	printf("ZFS: %s:%d: returning %d for %s\n", __func__, __LINE__,
-	    error, zp->z_name_cache);
-	return (error);
-}
-#endif
-
 /* OSX UBC-aware implementation of zfs_read and mappedread follows */
 
 /*
@@ -2284,8 +2156,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		ASSERT3S(start_resid, <=, INT_MAX);
 		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 
+		const off_t loop_start_off = uio_offset(uio);
 		off_t sync_resid = start_resid;
-
 
 		/* grab the map lock, protecting against other zfs UBC users */
 		boolean_t need_release = B_FALSE;
@@ -2362,7 +2234,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 					ASSERT3S(this_chunk, >=, xfer_resid);
 					IMPLY(xfer_resid == this_chunk, uio_offset(uio) == this_off);
 					printf("ZFS: %s:%d incomplete progress on file %s,"
-					    " returning short write, c %d, woff %lld,"
+					    " short write, c %d, woff %lld,"
 					    " this_off %lld uio_offset %lld uio_resid %lld"
 					    " this_chunk %ld xfer_resid %d file_size %lld %lld"
 					    " ioflag %d - punting to update pages function"
@@ -2389,8 +2261,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						 * want to go through the main loop again, in
 						 * order to exhaust the uio (or find a proper error).
 						 */
+						const off_t resid_at_break = uio_resid(uio);
 						const off_t recov_off = uio_offset(uio);
-						const off_t recov_resid_max = MIN(uio_resid(uio),
+						const off_t recov_resid_max = MIN(resid_at_break,
 						    PAGE_SIZE_64);
 						const off_t recov_off_page_offset = recov_off & PAGE_MASK_64;
 						const off_t recov_bytes_left_in_page = PAGE_SIZE_64 -
@@ -2400,7 +2273,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						ASSERT3S(recov_resid, <=, PAGE_SIZE_64);
 						ASSERT3S(((recov_off + recov_resid) & PAGE_MASK_64), <, 4096LL);
 						ASSERT3S(recov_resid, >, 0);
+						ASSERT3S(recov_resid, <=, resid_at_break);
 						const int recov_resid_int = (int) recov_resid;
+						ASSERT3S(recov_resid_int, ==, recov_resid);
 
 						/* is the page we're interested in dirty ? */
 						const off_t pop_q_off = trunc_page_64(recov_off);
@@ -2410,244 +2285,144 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						    ubc_page_op(vp, pop_q_off, pop_q_op,
 							NULL, &pop_q_flags);
 						ASSERT3S(pop_q_result, ==, KERN_SUCCESS);
+						ASSERT3S(pop_q_flags, ==, 0);
 
 						printf("ZFS: %s:%d no progress made, c == %d,"
-						    " attempting cluster_copy_upl_data(.., ioreq %d)"
+						    " attempting to overwrite %d bytes:"
 						    " (recoff %lld uio_resid %lld xfer_resid was %d)"
 						    " page flags 0%o for file %s\n",
 						    __func__, __LINE__, c, recov_resid_int,
-						    recov_off, uio_resid(uio), xfer_resid, pop_q_flags,
+						    recov_off, resid_at_break, xfer_resid, pop_q_flags,
 						    zp->z_name_cache);
-
-						if (B_TRUE || pop_q_flags & UPL_POP_DIRTY) {
-							/* page out this dirty page */
-							printf("ZFS: %s:%d paging out intransigent page"
-							    " offset %lld file %s (pop flags 0%o)\n",
-							    __func__, __LINE__,
-							    pop_q_off, zp->z_name_cache, pop_q_flags);
-							upl_t poupl;
-							upl_page_info_t *popl = NULL;
-							int popupl_flags = UPL_UBC_PAGEOUT
-							    | UPL_FORCE_DATA_SYNC;
-							if (pop_q_flags & UPL_POP_DIRTY)
-								popupl_flags |= UPL_RET_ONLY_DIRTY;
-							printf("ZFS: %s:%d: upl with flags 0x%x"
-							    " ret_only_dirty %d"
-							    " file %s\n",
-							    __func__, __LINE__, popupl_flags,
-							    (popupl_flags & UPL_RET_ONLY_DIRTY) ==
-							    UPL_RET_ONLY_DIRTY,
-							    zp->z_name_cache);
-							kern_return_t pouplret = ubc_create_upl(vp,
-							    pop_q_off, PAGE_SIZE, &poupl, &popl,
-							    UPL_UBC_PAGEOUT);
-							ASSERT3S(pouplret, ==, KERN_SUCCESS);
-							if (pouplret != KERN_SUCCESS)
-								goto drop_and_return_to_retry;
-
-							ASSERT(upl_dirty_page(popl, 0));
-							ASSERT(upl_page_present(popl, 0));
-							ASSERT(upl_valid_page(popl, 0));
-							EQUIV(popupl_flags & UPL_RET_ONLY_DIRTY,
-							    upl_dirty_page(popl, 0));
-							/*
-							 * check page is there and dirty; if
-							 * it's dirty, then set UPL_RET_ONLY_DIRTY,
-							 * which is not masked out by ubc_create_upl.
-							 *
-							 * The hardware dirty bit will have beeen cleared
-							 * upon gathering into the pagelist, but the
-							 * software dirty bit will have been set (
-							 * and will stay set if we abort).
-							 * When we commit in zfs_pageout, the
-							 * software dirty bit is cleared, but the
-							 * hardware dirty bit is untouched.
-							 *
-							 * N.B.: RET_ONLY_DIRTY will return non-dirty
-							 *       'precious' pages.  Should we steal
-							 * them and page them out?
-							 */
-							int poflags = 0;
-							if (ioflag & (FSYNC|FDSYNC))
-								poflags |= UPL_IOSYNC;
-							int poret = zfs_pageout(zfsvfs, zp,
-							    poupl, 0, pop_q_off, PAGESIZE, poflags,
-							    B_FALSE);
-							if (poret != 0) {
-								printf("ZFS: %s:%d: error %d from"
-								    " zfs_pageout, page at %lld file %s\n",
-								    __func__, __LINE__, poret,
-								    pop_q_off, zp->z_name_cache);
-								goto drop_and_return_to_retry;
-							}
-						}
-						int i = 0, mserr = 0;
-						for (int i = 0; i < 3; i++) {
-							printf("ZFS: %s:%d destroying page pass (%d)\n",
-							    __func__, __LINE__, i);
-							off_t msresid = 0;
-							mserr = ubc_msync(vp, pop_q_off,
-							    pop_q_off + 4095,
-							    &msresid, UBC_PUSHALL | UBC_INVALIDATE);
-							if (mserr != 0) {
-								printf("ZFS: %s:%d: (pass %d) error %d from"
-								    " ubc_msync(vp,"
-								    " off %lld, end %lld, UBC_INVALIDATE)"
-								    " file %s, (msresid %lld)\n",
-								    __func__, __LINE__, i, mserr,
-								    pop_q_off, pop_q_off + 4095,
-								    zp->z_name_cache, msresid);
-								break;
-								// goto drop_and_return_to_retry;
-								// try fill anyway
-							}
-						}
-						ASSERT3S(i, <=, 3);
-						IMPLY(i == 0, mserr == 0);
-						int fherr = fill_hole(vp, pop_q_off,
-						    0, 1, zp->z_name_cache, B_FALSE);
-						if (fherr != 0) {
-							printf("ZFS: %s:%d: error %d from"
-							    " fill_hole(vp,"
-							    " off %lld, end %lld, %s,"
-							    " UBC_INVALIDATE)\n",
-							    __func__, __LINE__, fherr, pop_q_off,
-							    pop_q_off + PAGE_SIZE_64,
-							    zp->z_name_cache);
-							goto drop_and_return_to_retry;
-						}
-
 						/*
-						 * We have now stored the intransigent page in
-						 * the file, then invalidated it, then filled it
-						 * back in from the file.
+						 * make a UPL from pop_q_off for PAGE_SIZE
+						 * map the UPL in
+						 * uiomove recov_resid of data into the mapped space
+						 * unmap
+						 * commit
+						 * continue, noting uio_resid(uio)
 						 *
-						 * Now attempt to do the cluster copy again,
-						 * and recover if that fails.
+						 * on an error, go to drop_and_return_to_retry
 						 */
-						off_t pre_offset = uio_offset(uio);
-						ASSERT3S(trunc_page_64(pre_offset), ==, pop_q_off);
-						int ccresid = recov_resid_int;
-						int ccretval = 0;
-						if ((ccretval = cluster_copy_ubc_data(vp, uio, &ccresid, 1))
-						    != 0) {
-							printf("ZFS: %s:%d ERROR %d"
-							    " from cluster_copy(vp, uio,"
-							    " [resid %d], 1), resid ret/uio %d/%lld"
-							    " uio_off %lld pre_off %lld"
-							    " file %s\n",
-							    __func__, __LINE__, error,
-							    recov_resid_int,
-							    ccresid, uio_resid(uio), uio_offset(uio),
-							    pre_offset, zp->z_name_cache);
-							goto drop_and_return_to_retry;
-						}
-						ASSERT3S(ccretval, ==, 0);
-						if (ccresid != recov_resid_int || uio_resid(uio) == 0) {
-							IMPLY(uio_resid(uio) == 0, ccresid == 0);
-							if (ccresid == 0) {
-								printf("ZFS: %s:%d recovery OK, file %s"
-								    " uio_resid %lld uio_off %lld\n",
-								    __func__, __LINE__,
-								    zp->z_name_cache,
-								    uio_resid(uio), uio_offset(uio));
-								if (uio_resid(uio) == 0)
-									break;
-								else
-									continue;
-							}
-							ASSERT3S(ccresid, <, recov_resid_int);
-							printf("ZFS: %s:%d recovery made progress, file %s"
-							    " recov_resid %d ccresid %d uio_resid %lld"
-							    " uio_off %lld",
-							    __func__, __LINE__, zp->z_name_cache,
-							    recov_resid_int, ccresid, uio_resid(uio),
-							    uio_offset(uio));
-							if (uio_resid(uio) == 0)
-								break;
-							else
-								continue;
-							printf("ZFS: %s:%d: not reachable?!\n",
-							    __func__, __LINE__);
-						}
-						ASSERT3S(ccresid, ==, recov_resid_int);
-						ASSERT3S(uio_offset(uio), ==, pre_offset);
-						ASSERT3S(error, ==, 0);
-						printf("ZFS: %s:%d WARNING : no progress on"
-						    " recovery cluster_copy(vp, uio,"
-						    " [resid %d], 1), resid ret/uio %d/%lld"
-						    " uio_off %lld - trying with ,0 and upl update, "
-						    "file %s\n",
-						    __func__, __LINE__,
-						    recov_resid_int,
-						    ccresid, uio_resid(uio), uio_offset(uio),
-						    zp->z_name_cache);
-						ccresid = recov_resid_int;
-						pre_offset = uio_offset(uio);
-						if ((ccretval = cluster_copy_ubc_data(vp, uio, &ccresid, 0))
-						    != 0) {
-							printf("ZFS: %s:%d (nondirty) ERROR %d"
-							    " from cluster_copy(vp, uio,"
-							    " [resid %d], 0), resid ret/uio %d/%lld"
-							    " uio_off %lld"
-							    " file %s\n",
-							    __func__, __LINE__, error,
-							    recov_resid_int,
-							    ccresid, uio_resid(uio), uio_offset(uio),
+						upl_t rupl = NULL;
+                                                upl_page_info_t *rpl = NULL;
+                                                kern_return_t uplret = ubc_create_upl(vp,
+                                                    pop_q_off, PAGE_SIZE, &rupl, &rpl,
+						    UPL_SET_LITE
+						    | UPL_WILL_MODIFY);
+                                                ASSERT3S(uplret, ==, KERN_SUCCESS);
+                                                if (uplret != KERN_SUCCESS)
+                                                        goto drop_and_return_to_retry;
+                                                ASSERT(upl_page_present(rpl, 0));
+                                                ASSERT(upl_valid_page(rpl, 0));
+						ASSERT0(upl_dirty_page(rpl, 0));
+						vm_offset_t page_start_vaddr = 0;
+						kern_return_t maperr =
+						    ubc_upl_map(rupl, &page_start_vaddr);
+						if (maperr != KERN_SUCCESS) {
+							printf("ZFS: %s:%d: failed to ubc_upl_map"
+							    " error %d file %s\n",
+							    __func__, __LINE__, maperr,
 							    zp->z_name_cache);
+							kern_return_t kret_abort =
+							    ubc_upl_abort(rupl,
+								UPL_ABORT_ERROR
+								| UPL_ABORT_FREE_ON_EMPTY);
+							ASSERT3S(kret_abort, ==, KERN_SUCCESS);
 							goto drop_and_return_to_retry;
 						}
-						ASSERT3S(ccretval, ==, 0);
-						if (ccresid != recov_resid_int || uio_resid(uio) == 0) {
-							ASSERT3S(ccresid, <, recov_resid_int);
-							IMPLY(uio_resid(uio) == 0, ccresid == 0);
-							printf("ZFS: %s:%d: PROGRESS MADE, paging out page"
-							    " for file %s off %lld\n",
-							    __func__, __LINE__,
-							    zp->z_name_cache, pop_q_off);
-							/* page out the page */
-							upl_t comupl;
-							upl_page_info_t *compl = NULL;
-							kern_return_t comuplret = ubc_create_upl(vp,
-							    pop_q_off, PAGE_SIZE, &comupl, &compl,
-							    UPL_UBC_PAGEOUT
-							    | UPL_FORCE_DATA_SYNC);
-							ASSERT3S(comuplret, ==, KERN_SUCCESS);
-							if (comuplret != KERN_SUCCESS)
-								goto drop_and_return_to_retry;
-							ASSERT(upl_page_present(compl, 0));
-							ASSERT(upl_valid_page(compl, 0));
-							ASSERT(upl_dirty_page(compl, 0));
-							int compoflags = 0;
-							if (ioflag & (FSYNC|FDSYNC))
-								compoflags |= UPL_IOSYNC;
-							int comporet = zfs_pageout(zfsvfs, zp,
-							    comupl, 0, pop_q_off, PAGESIZE, compoflags,
-							    B_FALSE);
-							if (comporet != 0) {
-								printf("ZFS: %s:%d: error %d from"
-								    " zfs_pageout, page at %lld file %s\n",
-								    __func__, __LINE__, comporet,
-								    pop_q_off, zp->z_name_cache);
-								goto drop_and_return_to_retry;
-							}
-							printf("ZFS: %s:%d: page at %lld done file %s"
-							    " uio_resid %lld\n",
-							    __func__, __LINE__, pop_q_off,
-							    zp->z_name_cache, uio_resid(uio));
-							if (uio_resid(uio) == 0) {
-								break;
-							} else {
+						addr64_t uio_start_vaddr =
+						    page_start_vaddr +
+							recov_off_page_offset;
+						int uioret = uiomove64(uio_start_vaddr,
+						    recov_resid_int, uio);
+						if (uioret != 0) {
+							printf("ZFS: %s:%d: error %d from"
+							    " uiomove64(%llx, %d, uio) for file %s"
+							    " ptr is mapped upl addr + %lld, "
+							    " now: uio_off %lld, uio_res %lld\n",
+							    __func__, __LINE__, uioret,
+							    uio_start_vaddr, recov_resid_int,
+							    zp->z_name_cache, recov_off_page_offset,
+							    uio_offset(uio), uio_resid(uio));
+							if (uio_resid(uio) < resid_at_break) {
+								ASSERT3S(uio_offset(uio), >, recov_off);
+								printf("ZFS: %s:%d: uio progressed by"
+								    " %lld bytes, XXX continuing"
+								    " file %s\n",
+								    __func__, __LINE__,
+								    resid_at_break - uio_resid(uio),
+								    zp->z_name_cache);
+								kern_return_t unmapret =
+								    ubc_upl_unmap(rupl);
+								ASSERT3S(unmapret, ==, KERN_SUCCESS);
+								kern_return_t commitret =
+								    ubc_upl_commit_range(rupl,
+									0, PAGE_SIZE,
+									UPL_COMMIT_SET_DIRTY |
+									UPL_COMMIT_FREE_ON_EMPTY);
+								ASSERT3S(commitret, ==, KERN_SUCCESS);
 								continue;
+							} else {
+								printf("ZFS: %s:%d uio not progressed for"
+								    " file %s, aborting upl\n",
+								    __func__, __LINE__, zp->z_name_cache);
+								kern_return_t unmapret =
+								    ubc_upl_unmap(rupl);
+								ASSERT3S(unmapret, ==, KERN_SUCCESS);
+								kern_return_t abortret =
+								    ubc_upl_abort(rupl,
+									UPL_ABORT_ERROR |
+									UPL_ABORT_FREE_ON_EMPTY);
+								ASSERT3S(abortret, ==, KERN_SUCCESS);
+								goto drop_and_return_to_retry;
 							}
 						}
-						ASSERT3S(ccresid, ==, recov_resid_int);
-						printf("ZFS: %s:%d: NO PROGRESS AT ALL for file %s,"
-						    " uiooff %lld uioresid %lld"
-						    ", returning for retry\n",
-						    __func__, __LINE__, zp->z_name_cache,
-						    uio_offset(uio), uio_resid(uio));
+						ASSERT3S(uioret, ==, 0);
+						const off_t uioresid = uio_resid(uio);
+						ASSERT3S(uioresid, <, resid_at_break);
+						printf("ZFS: %s:%d: successfully moved %lld bytes,"
+						    " for file %s committing and continuing,"
+						    " uio_resid now %lld\n",
+						    __func__, __LINE__, resid_at_break - uioresid,
+						    zp->z_name_cache, uioresid);
+						kern_return_t unmapret =
+						    ubc_upl_unmap(rupl);
+ 						if (unmapret != KERN_SUCCESS) {
+							printf("ZFS: %s:%d error %d unmapping UPL"
+							    "for file %s XXX continuing\n",
+							    __func__, __LINE__, unmapret,
+							    zp->z_name_cache);
+
+						}
+						kern_return_t commitret =
+						    ubc_upl_commit_range(rupl,
+							0, PAGE_SIZE,
+							UPL_COMMIT_SET_DIRTY |
+							UPL_COMMIT_FREE_ON_EMPTY);
+						if (unmapret != KERN_SUCCESS) {
+							printf("ZFS: %s:%d ERROR %d committing UPL"
+							    "for file %s XXX continuing\n",
+							    __func__, __LINE__, commitret,
+							    zp->z_name_cache);
+						}
+						continue;
 					drop_and_return_to_retry:
+						/*
+						 * if we are here that we made no progress in
+						 * in the most recent cluster_copy_ubc_data.
+						 *
+						 * we are not tearing a write here
+						 * as long as we have made no progress
+						 * on the uio in an early cluster_copy_ubc_data.
+						 */
+						ASSERT3S(uio_resid(uio), ==, start_resid);
+						ASSERT3S(uio_offset(uio), ==, loop_start_off);
+						/*
+						 * if the above assertions fail, we should probably
+						 * jump down to skip_sync telling it to sync only
+						 * the work we did do.
+						 */
 						z_map_drop_lock(zp,
 						    &need_release, &need_upgrade);
 						zfs_range_unlock(rl);
