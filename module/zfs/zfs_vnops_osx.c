@@ -2430,9 +2430,14 @@ top:
 	if (len > 0) {
 		ssize_t sz = len;
 
-		printf("ZFS: %s:%d (last block) pageout: dmu_writeX off 0x%llx size 0x%lx\n",
-		    __func__, __LINE__, off, sz);
+		printf("ZFS: %s:%d (last block) pageout: dmu_writeX off 0x%llx size 0x%lx file size 0x%llx\n",
+		    __func__, __LINE__, off, sz, zp->z_size);
+		off_t pre_size = zp->z_size;
+		vnode_t *vp = ZTOV(zp);
+		if (vnode_isreg(vp)) { ASSERT3S(zp->z_size, ==, ubc_getsize(vp)); }
 		dmu_write(zfsvfs->z_os, zp->z_id, off, sz, va, tx);
+		if (vnode_isreg(vp)) { ASSERT3S(zp->z_size, ==, ubc_getsize(vp)); }
+		ASSERT3S(pre_size, ==, zp->z_size);
 
 		va += sz;
 		off += sz;
@@ -3078,6 +3083,8 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
                     &zp->z_pflags, 8);
                 zfs_tstamp_update_setup(zp, CONTENT_MODIFIED, mtime, ctime,
                     B_TRUE);
+		error = sa_bulk_update(zp->z_sa_hdl, bulk, count, tx);
+		ASSERT0(error);
                 zfs_log_write(zfsvfs->z_log, tx, TX_WRITE, zp, ap->a_f_offset,
                                           a_size, 0,
                     NULL, NULL);
