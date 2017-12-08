@@ -3333,7 +3333,10 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 		zp->z_is_mapped_write = -1;
 	mutex_exit(&zp->z_lock);
 
-	ASSERT3S(write_before, >, -2);
+	if (zp->z_is_mapped == -2 || (zp->z_is_mapped % 64)==0) {
+		printf("ZFS: %s:%d: z_is_mapped %d for file %s",
+		    __func__, __LINE__, zp->z_is_mapped, zp->z_name_cache);
+	}
 
 	ASSERT(!rw_write_held(&zp->z_map_lock));
         boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
