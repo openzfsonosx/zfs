@@ -3278,6 +3278,8 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 	}
 	mutex_exit(&zp->z_lock);
 
+#if 0
+	// deadlocks
 	ASSERT(!rw_write_held(&zp->z_map_lock));
         boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
         uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
@@ -3309,6 +3311,7 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
                     __func__, __LINE__, 0LL, ubcsize, ubcsize,
                     resid_msync_off, zp->z_name_cache);
         }
+#endif
 
 	VNOPS_OSX_STAT_BUMP(mmap_calls);
 	ZFS_EXIT(zfsvfs);
