@@ -3540,8 +3540,10 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 		ASSERT3S(retval, ==, 0);
 		if (retval != 0)
 			ASSERT3S(resid_off, ==, ubcsize);
+		ASSERT0(ubc_pages_resident(vp));
 	}
 	ASSERT3P(zp->z_sa_hdl, !=, NULL);
+	ASSERT0(vnode_isinuse(vp, 0));
 
 	zfsvfs = zp->z_zfsvfs;
 

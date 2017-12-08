@@ -7794,6 +7794,16 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
 
+	if (ZTOV(zp) && ubc_pages_resident(ZTOV(zp))) {
+		ASSERT3S(zp->z_size, ==, ubc_getsize(ZTOV(zp)));
+		ASSERT3S(ubc_getsize(ZTOV(zp)), >, 0);
+		printf("ZFS: %s:%d: ubc_pages_resident true, is_file_clean %d (0==clean),"
+		    " isinuse %d file %s\n",
+		    __func__, __LINE__, is_file_clean(ZTOV(zp), ubc_getsize(ZTOV(zp))),
+		    vnode_isinuse(ZTOV(zp), 0),
+		    zp->z_name_cache);
+	}
+
 	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 	if (zp->z_sa_hdl == NULL) {
 		/*

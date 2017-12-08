@@ -1677,6 +1677,16 @@ zfs_zinactive(znode_t *zp)
 	//	printf("ZFS: zinactive(%p) has non-zero vp reference!\n", zp);
 	//}
 
+	if (ZTOV(zp) && ubc_pages_resident(ZTOV(zp))) {
+		ASSERT3S(zp->z_size, ==, ubc_getsize(ZTOV(zp)));
+		ASSERT3S(ubc_getsize(ZTOV(zp)), >, 0);
+		printf("ZFS: %s:%d: ubc_pages_resident true, is_file_clean %d (0==clean),"
+		    " isinuse %d file %s\n",
+		    __func__, __LINE__, is_file_clean(ZTOV(zp), ubc_getsize(ZTOV(zp))),
+		    vnode_isinuse(ZTOV(zp), 0),
+		    zp->z_name_cache);
+	}
+
 	/*
 	 * If this was the last reference to a file with no links,
 	 * remove the file from the file system.
