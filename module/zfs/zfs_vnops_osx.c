@@ -3277,6 +3277,39 @@ zfs_vnop_mmap(struct vnop_mmap_args *ap)
 			zp->z_is_mapped_write = 1;
 	}
 	mutex_exit(&zp->z_lock);
+
+	ASSERT(!rw_write_held(&zp->z_map_lock));
+        boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
+        uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+	ASSERT(rw_write_held(&zp->z_map_lock));
+	off_t ubcsize = ubc_getsize(vp);
+	off_t resid_msync_off = ubcsize;
+	/* PUSHALL because we may have precious pages to commit */
+        int retval_msync = ubc_msync(vp, 0, ubcsize, &resid_msync_off, UBC_PUSHALL | UBC_SYNC);
+	if (rw_lock_held(&zp->z_map_lock)) {
+		z_map_drop_lock(zp, &need_release, &need_upgrade);
+	} else {
+		const char *fn = zp->z_map_lock_holder;
+		printf("ZFS: %s:%d: someone below us released our lock! file %s curholder %s\n",
+		    __func__, __LINE__,	zp->z_name_cache,
+		    (fn == NULL) ? "(NULL fn)" : fn);
+	}
+        ASSERT3S(tries, <=, 2);
+
+	if (retval_msync != 0) {
+                if (resid_msync_off != ubcsize)
+                        printf("ZFS: %s:%d: msync error %d invalidating %lld - %lld (%lld bytes),"
+                            " resid_off = %lld, file %s\n",
+                            __func__, __LINE__, retval_msync, 0LL, ubcsize, ubcsize,
+                            resid_msync_off, zp->z_name_cache);
+                else
+                        ASSERT3U(resid_msync_off, ==, ubcsize);
+        } else {
+                dprintf("ZFS: (DEBUG) %s:%d: inval %lld - %lld (%lld), resid %lld , file %s\n",
+                    __func__, __LINE__, 0LL, ubcsize, ubcsize,
+                    resid_msync_off, zp->z_name_cache);
+        }
+
 	VNOPS_OSX_STAT_BUMP(mmap_calls);
 	ZFS_EXIT(zfsvfs);
 	dprintf("-vnop_mmap\n");
@@ -3345,7 +3378,6 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 		    __func__, __LINE__, zp->z_is_mapped, zp->z_name_cache);
 	}
 
-#if 0
 	ASSERT(!rw_write_held(&zp->z_map_lock));
         boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
         uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
@@ -3353,7 +3385,7 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 	off_t ubcsize = ubc_getsize(vp);
 	off_t resid_msync_off = ubcsize;
 	/* PUSHALL because we may have precious pages to commit */
-        int retval_msync = ubc_msync(vp, 0, ubcsize, &resid_msync_off, UBC_PUSHALL);
+        int retval_msync = ubc_msync(vp, 0, ubcsize, &resid_msync_off, UBC_PUSHALL | UBC_SYNC);
 	if (rw_lock_held(&zp->z_map_lock)) {
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
 	} else {
@@ -3377,7 +3409,6 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
                     __func__, __LINE__, 0LL, ubcsize, ubcsize,
                     resid_msync_off, zp->z_name_cache);
         }
-#endif
 
 	VNOPS_OSX_STAT_BUMP(mnomap_calls);
 
