@@ -7794,6 +7794,8 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
 
+#if 0
+	// deadlocks and unnecessarily purge-y
 	if (ubc_pages_resident(vp)) {
 		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 		ASSERT3S(ubc_getsize(ZTOV(zp)), >, 0);
@@ -7841,6 +7843,7 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 		if (vret == 0)
 			vnode_rele(vp);
 	}
+#endif
 
 	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 	if (zp->z_sa_hdl == NULL) {
