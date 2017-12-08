@@ -3338,6 +3338,7 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
 		    __func__, __LINE__, zp->z_is_mapped, zp->z_name_cache);
 	}
 
+#if 0
 	ASSERT(!rw_write_held(&zp->z_map_lock));
         boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
         uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
@@ -3369,6 +3370,7 @@ zfs_vnop_mnomap(struct vnop_mnomap_args *ap)
                     __func__, __LINE__, 0LL, ubcsize, ubcsize,
                     resid_msync_off, zp->z_name_cache);
         }
+#endif
 
 	VNOPS_OSX_STAT_BUMP(mnomap_calls);
 

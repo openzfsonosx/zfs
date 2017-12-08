@@ -2482,7 +2482,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							}
 						}
 						int i = 0, mserr = 0;
-						for (int i = 0; i < 10; i++) {
+						for (int i = 0; i < 3; i++) {
 							printf("ZFS: %s:%d destroying page pass (%d)\n",
 							    __func__, __LINE__, i);
 							off_t msresid = 0;
