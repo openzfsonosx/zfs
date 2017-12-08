@@ -7794,58 +7794,30 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error;
 
-#if 0
-	// deadlocks and unnecessarily purge-y
+	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+
 	if (ubc_pages_resident(vp)) {
+		ASSERT3P(zp->z_sa_hdl, !=, NULL);
+		int vret = vnode_ref(vp);
+		ASSERT3S(vret, ==, 0);
 		ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 		ASSERT3S(ubc_getsize(ZTOV(zp)), >, 0);
-		if (is_file_clean(ZTOV(zp), ubc_getsize(vp)) != 0)
+		if (is_file_clean(ZTOV(zp), ubc_getsize(vp)) != 0 ||
+		    vnode_isinuse(vp, 1) != 0) {
 			printf("ZFS: %s:%d: ubc_pages_resident true, is_file_clean %d (0==clean),"
-			    " isinuse %d file %s\n",
+			    " isinuse %d file %s -- RETURNING\n",
 			    __func__, __LINE__, is_file_clean(ZTOV(zp), ubc_getsize(vp)),
 			    vnode_isinuse(vp, 0),
 			    zp->z_name_cache);
-		int vret = vnode_ref(vp);
-		ASSERT3S(vret, ==, 0);
-		if (vret == 0 && vnode_isinuse(vp, 1) != 0) {
-			int retval_msync = 0;
-			off_t start = 0;
-			off_t end = ubc_getsize(vp);
-			off_t resid_msync_off = end;
-			boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
-			uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-			retval_msync = ubc_msync(vp, start, end, &resid_msync_off,
-			    UBC_PUSHALL | UBC_INVALIDATE | UBC_SYNC);
-			if (rw_write_held(&zp->z_map_lock)) {
-				z_map_drop_lock(zp, &need_release, &need_upgrade);
-			} else {
-				printf("ZFS: %s:%d: someone below me gave up my lock!\n",
-				    __func__, __LINE__);
-			}
-			ASSERT3S(tries, <=, 2);
-
-			if (retval_msync != 0) {
-				if (resid_msync_off != end)
-					printf("ZFS: %s:%d: msync error %d invalidating %lld - %lld"
-					    " resid_off = %lld, file %s\n",
-					    __func__, __LINE__, retval_msync, start, end,
-					    resid_msync_off, zp->z_name_cache);
-				else
-					ASSERT3U(resid_msync_off, ==, end);
-			} else {
-				dprintf("ZFS: (DEBUG) %s:%d: inval %lld - %lld, resid %lld,"
-				    " file %s\n",
-				    __func__, __LINE__, start, end,
-				    resid_msync_off, zp->z_name_cache);
-			}
-			ASSERT0(ubc_pages_resident(ZTOV(zp)));
+			rw_exit(&zfsvfs->z_teardown_inactive_lock);
+			return;
 		}
 		if (vret == 0)
 			vnode_rele(vp);
-	}
-#endif
 
-	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+	}
+
+	// see above - rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
 	if (zp->z_sa_hdl == NULL) {
 		/*
 		 * The fs has been unmounted, or we did a
