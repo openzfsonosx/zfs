@@ -2488,7 +2488,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							off_t msresid = 0;
 							mserr = ubc_msync(vp, pop_q_off,
 							    pop_q_off + 4095,
-							    &msresid, UBC_INVALIDATE);
+							    &msresid, UBC_PUSHALL | UBC_INVALIDATE);
 							if (mserr != 0) {
 								printf("ZFS: %s:%d: (pass %d) error %d from"
 								    " ubc_msync(vp,"
