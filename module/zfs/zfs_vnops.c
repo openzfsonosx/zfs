@@ -7809,12 +7809,13 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 			    __func__, __LINE__, is_file_clean(ZTOV(zp), ubc_getsize(vp)),
 			    vnode_isinuse(vp, 0),
 			    zp->z_name_cache);
+			if (vret == 0)
+				vnode_rele(vp);
 			rw_exit(&zfsvfs->z_teardown_inactive_lock);
 			return;
 		}
 		if (vret == 0)
 			vnode_rele(vp);
-
 	}
 
 	// see above - rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
