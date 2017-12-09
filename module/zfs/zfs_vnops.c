@@ -2560,7 +2560,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						sync_resid = start_resid - uioresid;
 						ASSERT3S(sync_resid, >, 0);
 						ASSERT3S(sync_resid, <, start_resid);
-						break;
 					}
 				} else {
 					ASSERT3S(xfer_resid, ==, 0);
@@ -2588,22 +2587,30 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 
 			const uint64_t def_z_size = zp->z_size;
-			const uint64_t def_woff_plus_start_resid = woff + start_resid;
+			const uint64_t resid_dispatched =
+			    (start_resid > uio_resid(uio))
+			    ? start_resid - uio_resid(uio)
+			    : 0;
+			ASSERT3S(start_resid - uio_resid(uio), >=, 0);
+			const uint64_t def_woff_plus_resid_dispatched = woff + resid_dispatched;
+
 			const int64_t  def_deficit =
-			    (def_z_size < def_woff_plus_start_resid)
-			    ? def_woff_plus_start_resid - def_z_size
+			    (def_z_size < def_woff_plus_resid_dispatched)
+			    ? def_woff_plus_resid_dispatched - def_z_size
 			    : 0;
 
-			if (zp->z_size < woff + start_resid) {
+			if (zp->z_size < def_woff_plus_resid_dispatched) {
 				printf("ZFS: %s:%d: z_size %lld should be at least"
-				    " woff+start_resid %lld, deficit %lld"
+				    " woff+resid_dispatched %lld, resid_dispatched %lld,"
+				    " size deficit %lld"
 				    " uio_off %lld uio_resid %lld file %s\n",
 				    __func__, __LINE__,
-				    def_z_size, def_woff_plus_start_resid, def_deficit,
+				    def_z_size, def_woff_plus_resid_dispatched, resid_dispatched,
+				    def_deficit,
 				    uio_offset(uio), uio_resid(uio),
 				    zp->z_name_cache);
 				if (uio_resid(uio) == 0) {
-					uint64_t end_size = MAX(zp->z_size, def_woff_plus_start_resid);
+					uint64_t end_size = MAX(zp->z_size, def_woff_plus_resid_dispatched);
 					uint64_t size_update_ctr = 0;
 					uint64_t n_end_size;
 					while ((n_end_size = zp->z_size) < end_size) {
