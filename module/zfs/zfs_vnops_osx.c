@@ -3524,7 +3524,6 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	if (!zp) goto out;
 
 	VNOPS_OSX_STAT_BUMP(reclaim_mapped);
-	//ASSERT(ubc_pages_resident(vp));
 	off_t ubcsize = ubc_getsize(vp);
 	ASSERT3S(ubcsize, >=, 0);
 	if (ubcsize == 0)
@@ -3532,6 +3531,11 @@ zfs_vnop_reclaim(struct vnop_reclaim_args *ap)
 	if (ubcsize > 0) {
 		ASSERT(ubc_pages_resident(vp));
 		ASSERT3S(zp->z_size, ==, ubcsize);
+		if (is_file_clean(vp, ubcsize)) {
+			    // nonzero is unclean
+			printf("ZFS: %s:%d: (syncing out) unclean file %s size %lld\n",
+			    __func__, __LINE__, zp->z_name_cache, ubcsize);
+		}
 		off_t resid_off = 0;
 		int retval = 0;
 		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
