@@ -2361,12 +2361,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								    zp->z_name_cache);
 								dmu_tx_t *txupdate =
 								    dmu_tx_create(zfsvfs->z_os);
-//								dmu_tx_hold_sa(txupdate, zp->z_sa_hdl,
-//								    B_FALSE);
+								dmu_tx_hold_sa(txupdate, zp->z_sa_hdl,
+								    B_FALSE);
 								dmu_tx_hold_write(txupdate,
 								    zp->z_id, recov_off,
 								    bytes_to_write);
-//								zfs_sa_upgrade_txholds(txupdate, zp);
+								zfs_sa_upgrade_txholds(txupdate, zp);
 								int txasgerr = dmu_tx_assign(txupdate,
 								    TXG_WAIT);
 								if (txasgerr) {
@@ -2447,12 +2447,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						    resid_at_break - uio_resid(uio);
 						dmu_tx_t *txupdate =
 						    dmu_tx_create(zfsvfs->z_os);
-//						dmu_tx_hold_sa(txupdate, zp->z_sa_hdl,
-//						    B_FALSE);
+						dmu_tx_hold_sa(txupdate, zp->z_sa_hdl,
+						    B_FALSE);
 						dmu_tx_hold_write(txupdate,
 						    zp->z_id, recov_off,
 						    bytes_to_write);
-//						zfs_sa_upgrade_txholds(txupdate, zp);
+						zfs_sa_upgrade_txholds(txupdate, zp);
 						int txasgerr = dmu_tx_assign(txupdate,
 						    TXG_WAIT);
 						if (txasgerr) {
@@ -2480,6 +2480,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						    txupdate, TX_WRITE, zp,
 						    recov_off, bytes_to_write, 0,
 						    NULL, NULL);
+						dmu_tx_commit(txupdate);
 						kern_return_t unmapret =
 						    ubc_upl_unmap(rupl);
  						if (unmapret != KERN_SUCCESS) {
