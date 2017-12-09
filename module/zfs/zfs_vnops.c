@@ -2234,7 +2234,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 				if (xfer_resid != 0) {
 					ASSERT3S(this_chunk, >=, xfer_resid);
 					IMPLY(xfer_resid == this_chunk, uio_offset(uio) == this_off);
-					printf("ZFS: %s:%d incomplete progress on file %s,"
+					printf("ZFS: %s:%d incomplete (or no)progress on file %s,"
 					    " short write, c %d, woff %lld,"
 					    " this_off %lld uio_offset %lld uio_resid %lld"
 					    " this_chunk %ld xfer_resid %d file_size %lld %lld"
@@ -2334,8 +2334,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						addr64_t uio_start_vaddr =
 						    page_start_vaddr +
 							recov_off_page_offset;
+						printf("ZFS: %s:%d calling uiomove64 file %s\n",
+						    __func__, __LINE__, zp->z_name_cache);
 						int uioret = uiomove64(uio_start_vaddr,
 						    recov_resid_int, uio);
+						printf("ZFS: %s:%d uiomove64 returned %d file %s\n",
+						    __func__, __LINE__, uioret, zp->z_name_cache);
 						if (uioret != 0) {
 							printf("ZFS: %s:%d: error %d from"
 							    " uiomove64(%llx, %d, uio) for file %s"
@@ -2395,10 +2399,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								 *      activity on this file
 								 */
 								dmu_tx_commit(txupdate);
-#ifdef COMMITNOTABORT
 								kern_return_t unmapret =
 								    ubc_upl_unmap(rupl);
 								ASSERT3S(unmapret, ==, KERN_SUCCESS);
+#ifdef COMMITNOTABORT
 								kern_return_t commitret =
 								    ubc_upl_commit_range(rupl,
 									0, PAGE_SIZE,
@@ -2445,17 +2449,33 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							    zp->z_name_cache);
 
 						}
+#ifdef COMMITNOTABORT
 						kern_return_t commitret =
 						    ubc_upl_commit_range(rupl,
 							0, PAGE_SIZE,
 							UPL_COMMIT_SET_DIRTY |
 							UPL_COMMIT_FREE_ON_EMPTY);
-						if (unmapret != KERN_SUCCESS) {
+						if (commitret != KERN_SUCCESS) {
 							printf("ZFS: %s:%d ERROR %d committing UPL"
-							    "for file %s XXX continuing\n",
+							    " for file %s XXX continuing\n",
 							    __func__, __LINE__, commitret,
 							    zp->z_name_cache);
 						}
+#else
+						kern_return_t abortret =
+						    ubc_upl_abort(rupl,
+							UPL_ABORT_ERROR |
+							UPL_ABORT_FREE_ON_EMPTY);
+						ASSERT3S(abortret, ==, KERN_SUCCESS);
+						if (abortret != KERN_SUCCESS)
+						{
+							printf("ZFS: %s:%d ERROR %d aborting UPL"
+							    " for file %s XXX continuing\n",
+							    __func__, __LINE__, abortret,
+							    zp->z_name_cache);
+						}
+#endif
+						printf("ZFS: %s:%d continuing\n", __func__, __LINE__);
 						continue;
 					drop_and_return_to_retry:
 						/*
@@ -2473,6 +2493,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						 * jump down to skip_sync telling it to sync only
 						 * the work we did do.
 						 */
+						printf("ZFS: %s:%d error %d file %s\n",
+						    __func__, __LINE__, error, zp->z_name_cache);
 						z_map_drop_lock(zp,
 						    &need_release, &need_upgrade);
 						zfs_range_unlock(rl);
@@ -2481,6 +2503,12 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						return (error);
 					} else {
 						// wrote a little: xfer_resid == 0, xfer_resid != this_chunk
+						printf("ZFS: %s:%d we had written a little:"
+						    " xfer_resid %d this_chunk %ld uio_resid %lld"
+						    " file %s\n",
+						    __func__, __LINE__,
+						    xfer_resid, this_chunk, uio_resid(uio),
+							zp->z_name_cache);
 						VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
 						off_t uioresid = uio_resid(uio);
 						ASSERT3S(start_resid, >, uioresid);
@@ -2490,6 +2518,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						break;
 					}
 				} else {
+					ASSERT3S(xfer_resid, ==, 0);
 					// complete copy, error == 0, xfer_resid == 0
 					VNOPS_STAT_BUMP(zfs_write_cluster_copy_complete);
 				}
