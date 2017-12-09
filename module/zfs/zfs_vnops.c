@@ -726,6 +726,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
     boolean_t will_mod)
 {
 	ASSERT3S(page_hole_end - page_hole_start, >, 0);
+	ASSERT3S(page_hole_end, >, 0);
 	const int upl_pages = page_hole_end - page_hole_start;
 	const off_t upl_size = (off_t)upl_pages * PAGE_SIZE_64;
 	ASSERT3S(upl_size, >=, PAGE_SIZE_64);
@@ -746,7 +747,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	if (zp->z_is_mapped || will_mod)
 		map_mod = B_TRUE;
 
-	int upl_flags = UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY;
+	int upl_flags = UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT;
 	if (!map_mod)
 		upl_flags |= UPL_RET_ONLY_ABSENT;
 
@@ -952,9 +953,9 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 
 		int uplcflags;
 		if (will_mod)
-			uplcflags = UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT;
+			uplcflags = UPL_FILE_IO | UPL_SET_LITE;
 		else
-			uplcflags = UPL_FILE_IO | UPL_SET_LITE | UPL_RET_ONLY_ABSENT;
+			uplcflags = UPL_FILE_IO | UPL_SET_LITE;
 
 		int map_mod = B_FALSE;
 		if (will_mod && zp->z_is_mapped > 0)
@@ -2218,7 +2219,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			uint64_t ubcsize_before_cluster_ops = ubc_getsize(vp);
 
 			/* fill any holes */
-			int fill_err = ubc_fill_holes_in_range(vp, this_off, this_off + this_chunk, B_TRUE);
+			int fill_err = ubc_fill_holes_in_range(vp, this_off, this_off + this_chunk, B_FALSE);
 			if (fill_err) {
 				printf("ZFS: %s:%d: error filling holes [%lld, %lld] file %s\n",
 				    __func__, __LINE__, this_off, this_off + this_chunk, zp->z_name_cache);
