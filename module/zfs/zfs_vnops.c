@@ -2309,7 +2309,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
                                                 kern_return_t uplret = ubc_create_upl(vp,
                                                     pop_q_off, PAGE_SIZE, &rupl, &rpl,
 						    UPL_SET_LITE
-						    | UPL_FILE_IO
 						    | UPL_WILL_MODIFY);
                                                 ASSERT3S(uplret, ==, KERN_SUCCESS);
                                                 if (uplret != KERN_SUCCESS)
@@ -2347,13 +2346,56 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							    zp->z_name_cache, recov_off_page_offset,
 							    uio_offset(uio), uio_resid(uio));
 							if (uio_resid(uio) < resid_at_break) {
+								const uint64_t bytes_to_write =
+								    resid_at_break - uio_resid(uio);
 								ASSERT3S(uio_offset(uio), >, recov_off);
 								printf("ZFS: %s:%d: uio progressed by"
 								    " %lld bytes, XXX continuing"
 								    " file %s\n",
 								    __func__, __LINE__,
-								    resid_at_break - uio_resid(uio),
+								    bytes_to_write,
 								    zp->z_name_cache);
+								dmu_tx_t *txupdate =
+								    dmu_tx_create(zfsvfs->z_os);
+								dmu_tx_hold_sa(txupdate, zp->z_sa_hdl,
+								    B_FALSE);
+								dmu_tx_hold_write(txupdate,
+								    zp->z_id, recov_off,
+								    bytes_to_write);
+								zfs_sa_upgrade_txholds(txupdate, zp);
+								int txasgerr = dmu_tx_assign(txupdate,
+								    TXG_WAIT);
+								if (txasgerr) {
+									printf("ZFS: %s:%d: error %d"
+									    " from dmu_tx_assign for"
+									    " file %s, aborting\n",
+									    __func__, __LINE__,
+									    txasgerr, zp->z_name_cache);
+									dmu_tx_abort(tx);
+									kern_return_t unmapret =
+									    ubc_upl_unmap(rupl);
+									ASSERT3S(unmapret, ==, KERN_SUCCESS);
+									kern_return_t abortret =
+									    ubc_upl_abort(rupl,
+										UPL_ABORT_ERROR |
+										UPL_ABORT_FREE_ON_EMPTY);
+									ASSERT3S(abortret, ==, KERN_SUCCESS);
+									error = txasgerr;
+									goto drop_and_return_to_retry;
+								}
+								dmu_write(zfsvfs->z_os, zp->z_id,
+								    recov_off, bytes_to_write,
+								    (caddr_t)uio_start_vaddr, txupdate);
+								zfs_log_write(zfsvfs->z_log,
+								    txupdate, TX_WRITE, zp,
+								    recov_off, bytes_to_write, 0,
+								    NULL, NULL);
+								/* XXX: maybe should update times,
+								 *      in case there is no further
+								 *      activity on this file
+								 */
+								dmu_tx_commit(txupdate);
+#ifdef COMMITNOTABORT
 								kern_return_t unmapret =
 								    ubc_upl_unmap(rupl);
 								ASSERT3S(unmapret, ==, KERN_SUCCESS);
@@ -2363,6 +2405,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 									UPL_COMMIT_SET_DIRTY |
 									UPL_COMMIT_FREE_ON_EMPTY);
 								ASSERT3S(commitret, ==, KERN_SUCCESS);
+#else
+								kern_return_t abortret =
+								    ubc_upl_abort(rupl,
+									UPL_ABORT_FREE_ON_EMPTY);
+								ASSERT3S(abortret, ==, KERN_SUCCESS);
+#endif
+
 								continue;
 							} else {
 								printf("ZFS: %s:%d uio not progressed for"
@@ -2428,7 +2477,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						    &need_release, &need_upgrade);
 						zfs_range_unlock(rl);
 						ZFS_EXIT(zfsvfs);
-						return (0);
+						ASSERT3S(error, ==, 0);
+						return (error);
 					} else {
 						// wrote a little: xfer_resid == 0, xfer_resid != this_chunk
 						VNOPS_STAT_BUMP(zfs_write_cluster_copy_short_write);
