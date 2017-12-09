@@ -2511,15 +2511,13 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			ASSERT3S(zp->z_size, >=, uio_offset(uio));
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
 			ASSERT3S(zp->z_size, ==, ubc_getsize(vp));
-			if (0) {
-				ASSERT3S(zp->z_size, >=, woff + start_resid);
-				ASSERT3S(ubc_getsize(vp), >=, woff + start_resid);
-			} else if (zp->z_size < woff + start_resid) {
-				printf("ZFS: %s:%d: z_size %lld should be at least"
-				    " woff+start_resid %lld, file %s\n",
-				    __func__, __LINE__, zp->z_size, woff + start_resid,
-				    zp->z_name_cache);
-			}
+
+			const uint64_t def_z_size = zp->z_size;
+			const uint64_t def_woff_plus_start_resid = woff + start_resid;
+			const int64_t  def_deficit =
+			    (def_z_size < def_woff_plus_start_resid)
+			    ? def_woff_plus_start_resid - def_z_size
+			    : 0;
 
 			/*  as we have completed a uio_move, commit the size change */
 
@@ -2543,6 +2541,18 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 					dmu_tx_commit(tx);
 				}
 			}
+
+			if (zp->z_size < woff + start_resid) {
+				printf("ZFS: %s:%d: z_size %lld should be at least"
+				    " woff+start_resid %lld, deficit %lld (prior to tx_commit,"
+				    " z_size %lld and deficit %lld), file %s\n",
+				    __func__, __LINE__, zp->z_size, woff + start_resid,
+				    woff + start_resid - zp->z_size,
+				    def_z_size, def_deficit,
+				    zp->z_name_cache);
+			}
+
+
 		} // for
 
 		z_map_drop_lock(zp, &need_release, &need_upgrade);
