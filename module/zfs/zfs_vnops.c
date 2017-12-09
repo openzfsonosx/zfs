@@ -2298,8 +2298,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						 * make a UPL from pop_q_off for PAGE_SIZE
 						 * map the UPL in
 						 * uiomove recov_resid of data into the mapped space
-						 * unmap
-						 * commit
+						 * dmu_write
+						 * abort
 						 * continue, noting uio_resid(uio)
 						 *
 						 * on an error, go to drop_and_return_to_retry
@@ -2309,6 +2309,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
                                                 kern_return_t uplret = ubc_create_upl(vp,
                                                     pop_q_off, PAGE_SIZE, &rupl, &rpl,
 						    UPL_SET_LITE
+						    | UPL_FILE_IO
 						    | UPL_WILL_MODIFY);
                                                 ASSERT3S(uplret, ==, KERN_SUCCESS);
                                                 if (uplret != KERN_SUCCESS)
