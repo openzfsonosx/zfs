@@ -2594,6 +2594,37 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			    ? def_woff_plus_start_resid - def_z_size
 			    : 0;
 
+			if (zp->z_size < woff + start_resid) {
+				printf("ZFS: %s:%d: z_size %lld should be at least"
+				    " woff+start_resid %lld, deficit %lld"
+				    " uio_off %lld uio_resid %lld file %s\n",
+				    __func__, __LINE__,
+				    def_z_size, def_woff_plus_start_resid, def_deficit,
+				    uio_offset(uio), uio_resid(uio),
+				    zp->z_name_cache);
+				if (uio_resid(uio) == 0) {
+					uint64_t end_size = MAX(zp->z_size, def_woff_plus_start_resid);
+					uint64_t size_update_ctr = 0;
+					uint64_t n_end_size;
+					while ((n_end_size = zp->z_size) < end_size) {
+						size_update_ctr++;
+						(void) atomic_cas_64(&zp->z_size, n_end_size,
+						    end_size);
+						ASSERT3S(error, ==, 0);
+					}
+					if (size_update_ctr > 0) {
+						printf("ZFS: %s:%d: %llu tries to increase"
+						    " zp->z_size to end_size"
+						    "  %lld (it is now %lld)\n",
+						    __func__, __LINE__, size_update_ctr,
+						    end_size, zp->z_size);
+					}
+					int setsize_retval = ubc_setsize(vp, zp->z_size);
+					ASSERT3S(setsize_retval, !=, 0);
+				}
+			}
+
+
 			/*  as we have completed a uio_move, commit the size change */
 
 			/* commit the znode change */
@@ -2616,17 +2647,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 					dmu_tx_commit(tx);
 				}
 			}
-
-			if (zp->z_size < woff + start_resid) {
-				printf("ZFS: %s:%d: z_size %lld should be at least"
-				    " woff+start_resid %lld, deficit %lld (prior to tx_commit,"
-				    " z_size %lld and deficit %lld), file %s\n",
-				    __func__, __LINE__, zp->z_size, woff + start_resid,
-				    woff + start_resid - zp->z_size,
-				    def_z_size, def_deficit,
-				    zp->z_name_cache);
-			}
-
 
 		} // for
 
