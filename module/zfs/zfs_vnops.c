@@ -2402,7 +2402,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								kern_return_t unmapret =
 								    ubc_upl_unmap(rupl);
 								ASSERT3S(unmapret, ==, KERN_SUCCESS);
-#ifdef COMMITNOTABORT
+#ifndef COMMITNOTABORT
 								kern_return_t commitret =
 								    ubc_upl_commit_range(rupl,
 									0, PAGE_SIZE,
@@ -2490,7 +2490,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 							    zp->z_name_cache);
 
 						}
-#ifdef COMMITNOTABORT
+#ifndef COMMITNOTABORT
 						kern_return_t commitret =
 						    ubc_upl_commit_range(rupl,
 							0, PAGE_SIZE,
