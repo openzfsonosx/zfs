@@ -7632,10 +7632,7 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 			    __func__, __LINE__, is_file_clean(ZTOV(zp), ubc_getsize(vp)),
 			    vnode_isinuse(vp, 0),
 			    zp->z_name_cache);
-#if 0
-			rw_exit(&zfsvfs->z_teardown_inactive_lock);
-			return;
-#endif
+			goto atime_check;
 		}
 	}
 
@@ -7662,6 +7659,7 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	}
 	mutex_exit(&zp->z_lock);
 
+atime_check:
 	if (zp->z_atime_dirty && zp->z_unlinked == 0) {
 		dmu_tx_t *tx = dmu_tx_create(zfsvfs->z_os);
 
