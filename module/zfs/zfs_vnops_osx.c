@@ -2126,6 +2126,11 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	ASSERT3S(file_sz, ==, ubc_getsize(vp));
 
 	ASSERT(vn_has_cached_data(vp));
+	if (!vn_has_cached_data(vp)) {
+		printf("ZFS: %s:%d: file without vn_has_cached_data(vp) (file_sz %lld): %s\n",
+		    __func__, __LINE__, file_sz, zp->z_name_cache);
+
+	}
 	/* ASSERT(zp->z_dbuf_held && zp->z_phys); */
 	/* can't fault passed EOF */
 	if ((off < 0) || (off >= file_sz) ||
