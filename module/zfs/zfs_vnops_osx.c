@@ -5728,7 +5728,7 @@ zfs_advisory_read_ext(vnode_t *vp, off_t filesize, off_t f_offset, int resid, in
                                       upl_size,
                                       &upl,
                                       &pl,
-                                      UPL_RET_ONLY_ABSENT | UPL_WILL_MODIFY);
+                                      UPL_RET_ONLY_ABSENT | UPL_SET_LITE);
                 if (kret != KERN_SUCCESS)
                         return(retval);
                 issued_io = 0;

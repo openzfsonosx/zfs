@@ -746,7 +746,7 @@ fill_hole(vnode_t *vp, const off_t foffset,
 	if (zp->z_is_mapped || will_mod)
 		map_mod = B_TRUE;
 
-	int upl_flags = UPL_UBC_PAGEIN | UPL_FILE_IO;
+	int upl_flags = UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY;
 	if (!map_mod)
 		upl_flags |= UPL_RET_ONLY_ABSENT;
 
@@ -952,9 +952,9 @@ fill_holes_in_range(vnode_t *vp, const off_t upl_file_offset, const size_t upl_s
 
 		int uplcflags;
 		if (will_mod)
-			uplcflags = UPL_UBC_PAGEIN | UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT;
+			uplcflags = UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY | UPL_RET_ONLY_ABSENT;
 		else
-			uplcflags = UPL_UBC_PAGEIN | UPL_RET_ONLY_ABSENT;
+			uplcflags = UPL_FILE_IO | UPL_SET_LITE | UPL_RET_ONLY_ABSENT;
 
 		int map_mod = B_FALSE;
 		if (will_mod && zp->z_is_mapped > 0)
@@ -1330,7 +1330,7 @@ mappedread_new(vnode_t *vp, int arg_bytes, struct uio *uio)
 	upl_page_info_t *pl = NULL;
 
 	if (err == 0) {
-		int uplcflags = UPL_SET_LITE;
+		int uplcflags = UPL_FILE_IO | UPL_SET_LITE;
 		err = ubc_create_upl(vp, upl_file_offset, upl_size, &upl, &pl, uplcflags);
 
 		if (err != KERN_SUCCESS || (upl == NULL)) {
@@ -2308,7 +2308,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
                                                 upl_page_info_t *rpl = NULL;
                                                 kern_return_t uplret = ubc_create_upl(vp,
                                                     pop_q_off, PAGE_SIZE, &rupl, &rpl,
-						    UPL_SET_LITE);
+						    UPL_FILE_IO | UPL_SET_LITE | UPL_WILL_MODIFY);
                                                 ASSERT3S(uplret, ==, KERN_SUCCESS);
                                                 if (uplret != KERN_SUCCESS)
                                                         goto drop_and_return_to_retry;
