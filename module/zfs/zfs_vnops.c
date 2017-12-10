@@ -2184,6 +2184,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			ASSERT3S(this_chunk, >, 0);
 
 			/* increase ubc size if we are growing the file */
+			const off_t ubcsize_at_start_of_pass = ubc_getsize(vp);
 			end_size = MAX(ubc_getsize(vp), this_off + this_chunk);
 			ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 			if (end_size > ubc_getsize(vp)) {
@@ -2211,7 +2212,37 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 					    end_size, zp->z_size, prev_size);
 				}
 			}
+			/*
+			 * Let ubc_setsize zero-fill the trailling part of the file
+			 * if necessary, and also maybe cause a page-in-and-flush
+			 * of the page containing ubcsize_at_start_of_pass.
+			 */
+			if (end_size > ubcsize_at_start_of_pass) {
+				ASSERT3S(ubc_getsize(vp), ==, end_size);
+				int setsize_shrink_retval = ubc_setsize(vp, ubcsize_at_start_of_pass);
+				if (setsize_shrink_retval == 0) {
+					// ubc_setsize returns TRUE on success
+					printf("ZFS: %s:%d: ubc_setsize(vp, %lld)"
+					    " shrinking from %lld"
+					    " failed for file %s\n",
+					    __func__, __LINE__, end_size,
+					    ubcsize_at_start_of_pass,
+					    zp->z_name_cache);
+				}
+				int setsize_restore_retval = ubc_setsize(vp, end_size);
+				if (setsize_restore_retval == 0) {
+					// ubc_setsize returns TRUE on success
+					printf("ZFS: %s:%d: ubc_setsize(vp, %lld)"
+					    " shrinking from %lld"
+					    " failed for file %s\n",
+					    __func__, __LINE__, end_size,
+					    ubcsize_at_start_of_pass,
+					    zp->z_name_cache);
+				}
+			}
+
 			ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
+			ASSERT3S(ubc_getsize(vp), ==, end_size);
 
 			ASSERT3S(uio_offset(uio), ==, this_off);
 			ASSERT3S(ubc_getsize(vp), >, uio_offset(uio));
