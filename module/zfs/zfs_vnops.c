@@ -2406,7 +2406,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								kern_return_t commitret =
 								    ubc_upl_commit_range(rupl,
 									0, PAGE_SIZE,
-									UPL_COMMIT_CLEAR_DIRTY |
+									UPL_COMMIT_SET_DIRTY |
 									UPL_COMMIT_INACTIVATE |
 									UPL_COMMIT_FREE_ON_EMPTY);
 								ASSERT3S(commitret, ==, KERN_SUCCESS);
@@ -2495,7 +2495,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						kern_return_t commitret =
 						    ubc_upl_commit_range(rupl,
 							0, PAGE_SIZE,
-							UPL_COMMIT_CLEAR_DIRTY |
+							UPL_COMMIT_SET_DIRTY |
 							UPL_COMMIT_INACTIVATE |
 							UPL_COMMIT_FREE_ON_EMPTY);
 						if (commitret != KERN_SUCCESS) {
