@@ -1876,7 +1876,7 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 		ASSERT3S(woff, <=, ubcsize);
 		if (ubcsize == 0 || woff >= ubcsize) {
 			zfs_range_unlock(rlock);
-			return (-ERANGE);
+			return (0);
 		}
 		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 		if (1 /*!(0 == is_file_clean(vp, ubcsize))*/) { // expensive test ?
