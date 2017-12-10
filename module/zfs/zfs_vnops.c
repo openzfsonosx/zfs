@@ -2309,7 +2309,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
                                                 upl_page_info_t *rpl = NULL;
                                                 kern_return_t uplret = ubc_create_upl(vp,
                                                     pop_q_off, PAGE_SIZE, &rupl, &rpl,
-						    UPL_FILE_IO | UPL_SET_LITE);
+						    UPL_UBC_PAGEOUT | UPL_FILE_IO | UPL_SET_LITE);
                                                 ASSERT3S(uplret, ==, KERN_SUCCESS);
                                                 if (uplret != KERN_SUCCESS)
                                                         goto drop_and_return_to_retry;
@@ -2406,7 +2406,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 								kern_return_t commitret =
 								    ubc_upl_commit_range(rupl,
 									0, PAGE_SIZE,
-									UPL_COMMIT_SET_DIRTY |
+									UPL_COMMIT_CLEAR_DIRTY |
 									UPL_COMMIT_INACTIVATE |
 									UPL_COMMIT_FREE_ON_EMPTY);
 								ASSERT3S(commitret, ==, KERN_SUCCESS);
@@ -2495,7 +2495,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						kern_return_t commitret =
 						    ubc_upl_commit_range(rupl,
 							0, PAGE_SIZE,
-							UPL_COMMIT_SET_DIRTY |
+							UPL_COMMIT_CLEAR_DIRTY |
 							UPL_COMMIT_INACTIVATE |
 							UPL_COMMIT_FREE_ON_EMPTY);
 						if (commitret != KERN_SUCCESS) {
