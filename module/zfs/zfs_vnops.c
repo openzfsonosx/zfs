@@ -1873,7 +1873,6 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 		}
 		off_t ubcsize = ubc_getsize(vp);
 		ASSERT3S(ubcsize, ==, zp->z_size);
-		ASSERT3S(woff, <=, ubcsize);
 		if (ubcsize == 0 || woff >= ubcsize) {
 			zfs_range_unlock(rlock);
 			return (0);
@@ -2120,7 +2119,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		if (rl->r_len == UINT64_MAX) {
 			woff = zp->z_size;
 		}
- 		if (woff != old_woff) {
+		if (woff != old_woff) {
 			printf("ZFS: %s:%d: append range lock says set woff to %lld from %lld"
 			    " rl->r_len %lld uio_offset %lld uio_resid %lld file %s\n",
 			    __func__, __LINE__, woff, old_woff, rl->r_len,
@@ -2145,7 +2144,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 		printf("ZFS: %s:%d: (extend fail) returning error %d\n", __func__, __LINE__, error);
 		return (error);
 	}
-	ASSERT3S(woff, <=, zp->z_size);
+	if (woff > zp->z_size) {
+		printf("ZFS: %s:%d: woff %lld is past EOF %lld file %s\n",
+		    __func__, __LINE__, woff, zp->z_size);
+	}
 	ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 
 	/*
