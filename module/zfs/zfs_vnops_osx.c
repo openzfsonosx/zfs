@@ -1106,7 +1106,7 @@ zfs_vnop_write(struct vnop_write_args *ap)
 
 		error = zfs_write(ap->a_vp, ap->a_uio, ioflag, cr, ct, &file_name, old_style);
 
-		if (error && error != -ERANGE) {
+		if (error) {
 			uint64_t elapsed_msec = NSEC2MSEC(gethrtime() - start_time);
 			printf("ZFS: %s:%d error %d pass %d msec %lld from zfs_write for file"
 			    " %s (cum_bytes %lld)\n",
@@ -1116,8 +1116,15 @@ zfs_vnop_write(struct vnop_write_args *ap)
 		}
 
 		/* finished everything OK */
-		if (uio_resid(uio) == 0 || error == -ERANGE)
+		if (uio_resid(uio) == 0)
 			return (0);
+
+		if (error == -ERANGE) {
+			printf("ZFS: %s:%d: error == -ERANGE (%d), returning uio_resid %lld\n",
+			    __func__, __LINE__, error, uio_resid(uio));
+			return (0);
+		}
+
 
 		const int64_t returned_uioresid = uio_resid(uio);
 		ASSERT3S(returned_uioresid, >, 0);
