@@ -2184,9 +2184,8 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 			ASSERT3S(this_chunk, >, 0);
 
 			/* increase ubc size if we are growing the file */
-			const off_t pre_end_size = ubc_getsize(vp);
 			end_size = MAX(ubc_getsize(vp), this_off + this_chunk);
- 			ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
+			ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 			if (end_size > ubc_getsize(vp)) {
 				int setsize_retval = ubc_setsize(vp, end_size);
 				if (setsize_retval == 0) {
@@ -2263,47 +2262,6 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 						 * want to go through the main loop again, in
 						 * order to exhaust the uio (or find a proper error).
 						 */
-						/*
-						 * First, potentially manipulate ubc_setsize slightly.
-						 * This is OK if we have made *no* progress
-						 * in this pass, and previous passes will have committed
-						 * their results.
-						 */
-						if (end_size > pre_end_size) {
-							// XXX: hoist ASSERT to if expr if this works
-							//      This also doesn't obviously fix the
-							//      libcurl.a case, as opposed to the
-							//      fish_history one
-							ASSERT3S(uio_resid(uio), ==, start_resid);
-							printf("ZFS: %s:%d pre_end_size %lld end_size %lld"
-							    " ubc_getsize %lld --> pre_end_size and back\n",
-							    __func__, __LINE__, pre_end_size, end_size,
-							    ubc_getsize(vp));
-							ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
-							ASSERT3S(ubc_getsize(vp), ==, end_size);
-							int setsize_retval_shrink =
-							    ubc_setsize(vp, pre_end_size);
-							if (setsize_retval_shrink == 0) {
-								// ubc_setsize returns TRUE
-								// on success
-								printf("ZFS: %s:%d: ubc_setsize(vp,"
-								    " %lld) failed for file %s\n",
-								    __func__, __LINE__,
-								    pre_end_size, zp->z_name_cache);
-							} else {
-								int setsize_retval_regrow =
-								    ubc_setsize(vp, end_size);
-								if (setsize_retval_regrow == 0) {
-									printf("ZFS: %s:%d: ubc_setsize"
-									    "(vp, %lld) (restoring)"
-									    " failed ! for file %s\n",
-									    __func__, __LINE__,
-									    end_size,
-									    zp->z_name_cache);
-								}
-							}
-							ASSERT3S(ubc_getsize(vp), ==, end_size);
-						}
 						const off_t resid_at_break = uio_resid(uio);
 						const off_t recov_off = uio_offset(uio);
 						const off_t recov_resid_max = MIN(resid_at_break,
