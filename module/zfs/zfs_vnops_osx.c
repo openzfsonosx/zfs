@@ -2157,6 +2157,9 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 * middle of a write to this file (i.e., we are writing to this file
 	 * using data from a mapped region of the file).
 	 *
+	 * An example stack is zfs_vnop_write->fill_holes_in_range->ubc_create_upl->
+	 * vm_fault_page->vnode_pager_data_request->zfs_vnop_pagein (that's us).
+	 *
 	 * For this file, we lock against update_pages() which is called
 	 * from zfs_write() to update the UBC.  If we have contention,
 	 * then we serialize the whole contending operations.
@@ -2169,13 +2172,26 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	 * zfs_vnop_mnomap(), since those may update the file as well.
 	 */
 
-	rl_t *rl = zfs_range_lock(zp, off, len, RL_READER);
+	boolean_t need_rl_unlock;
+	boolean_t need_z_lock;
+	rl_t *rl;
+	if (rw_write_held(&zp->z_map_lock)) {
+		need_rl_unlock = B_FALSE;
+		need_z_lock = B_FALSE;
+		printf("ZFS: %s:%d: lock held on entry for file %s, avoiding rangelocking\n",
+		    __func__, __LINE__, zp->z_name_cache);
+	} else {
+		need_rl_unlock = B_TRUE;
+		need_z_lock = B_TRUE;
+		rl = zfs_range_lock(zp, off, len, RL_READER);
+	}
 
-	ASSERT(!rw_write_held(&zp->z_map_lock)); // just to see how frequent it is
 	boolean_t need_release = B_FALSE;
 	boolean_t need_upgrade = B_FALSE;
-	uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-	VNOPS_OSX_STAT_INCR(pagein_want_lock, tries);
+	if (need_z_lock) {
+		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
+		VNOPS_OSX_STAT_INCR(pagein_want_lock, tries);
+	}
 
 	int ubc_map_retval = 0;
 	if ((ubc_map_retval = ubc_upl_map(upl, (vm_offset_t *)&vaddr)) != KERN_SUCCESS) {
@@ -2184,8 +2200,8 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 		    ubc_map_retval, zp->z_name_cache);
 		if (!(flags & UPL_NOCOMMIT))
 			(void) ubc_upl_abort(upl, 0);
-		z_map_drop_lock(zp, &need_release, &need_upgrade);
-		zfs_range_unlock(rl);
+		if (need_z_lock) { z_map_drop_lock(zp, &need_release, &need_upgrade); }
+		if (need_rl_unlock) { zfs_range_unlock(rl); }
 		ZFS_EXIT(zfsvfs);
 		return (ENOMEM);
 	}
@@ -2274,8 +2290,8 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 	if (ap->a_f_offset >= file_sz || ap->a_f_offset >= zp->z_size)
 		error = EFAULT;
 
-	z_map_drop_lock(zp, &need_release, &need_upgrade);
-	zfs_range_unlock(rl);
+	if (need_z_lock) { z_map_drop_lock(zp, &need_release, &need_upgrade); }
+	if (need_rl_unlock) { zfs_range_unlock(rl); }
 	ZFS_EXIT(zfsvfs);
 	if (error) {
 		printf("%s:%d returning error %d for (%lld, %ld) in file %s\n", __func__, __LINE__,
