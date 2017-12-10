@@ -1598,6 +1598,7 @@ zfs_rezget(znode_t *zp)
 		 * interfering with other users of the
 		 * file size (notably update_pages, mappedread
 		 */
+		rl_t *rl = zfs_range_lock(zp, 0, UINT64_MAX, RL_WRITER);
 		int setsize_retval = 0;
 		boolean_t did_setsize = B_FALSE;
 		boolean_t need_release = B_FALSE, need_upgrade = B_FALSE;
@@ -1631,6 +1632,7 @@ zfs_rezget(znode_t *zp)
 		} else {
 			ASSERT3S(zsize, ==, ubcsize);
 		}
+		zfs_range_unlock(rl);
 	}
 
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
