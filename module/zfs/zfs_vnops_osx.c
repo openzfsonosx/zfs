@@ -2241,8 +2241,9 @@ zfs_vnop_pagein(struct vnop_pagein_args *ap)
 			}
 		} else {
 			kern_return_t commitret = ubc_upl_commit_range(upl, upl_offset, ap->a_size,
-			    (UPL_COMMIT_CLEAR_DIRTY |
-			    UPL_COMMIT_FREE_ON_EMPTY));
+			    (UPL_COMMIT_CLEAR_DIRTY
+				|  UPL_COMMIT_CLEAR_PRECIOUS
+				| UPL_COMMIT_FREE_ON_EMPTY));
 			if (commitret != KERN_SUCCESS) {
 				printf("ZFS: %s:%d: ubc_upl_commit_range returned %d"
 				    " (uoff %d sz %ld) at off %lld file %s error was already %d\n",
@@ -2497,8 +2498,9 @@ out:
 			    (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
 		else
 			ubc_upl_commit_range(upl, upl_offset, size,
-								 (UPL_COMMIT_CLEAR_DIRTY |
-								  UPL_COMMIT_FREE_ON_EMPTY));
+								 (UPL_COMMIT_CLEAR_DIRTY
+								     | UPL_COMMIT_CLEAR_PRECIOUS
+								     | UPL_COMMIT_FREE_ON_EMPTY));
 	}
 exit:
 	ZFS_EXIT(zfsvfs);
@@ -3118,7 +3120,10 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 			    __func__, __LINE__, abortret, error, zp->z_name_cache);
 		}
 	} else {
-		kern_return_t commitret = ubc_upl_commit_range(upl, 0, a_size, UPL_COMMIT_FREE_ON_EMPTY);
+		kern_return_t commitret = ubc_upl_commit_range(upl, 0, a_size,
+		    UPL_COMMIT_CLEAR_DIRTY
+		    | UPL_COMMIT_CLEAR_PRECIOUS
+		    | UPL_COMMIT_FREE_ON_EMPTY);
 		if (commitret != KERN_SUCCESS) {
 			printf("ZFS: %s:%d: error %d from ubc_upl_commit_range 0 - %ld f_off %lld file %s\n",
 			    __func__, __LINE__, commitret, a_size, ap->a_f_offset, zp->z_name_cache);
