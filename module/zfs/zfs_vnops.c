@@ -2148,7 +2148,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct,
 	}
 	if (woff > zp->z_size) {
 		printf("ZFS: %s:%d: woff %lld is past EOF %lld file %s\n",
-		    __func__, __LINE__, woff, zp->z_size);
+		    __func__, __LINE__, woff, zp->z_size, zp->z_name_cache);
 	}
 	ASSERT3S(ubc_getsize(vp), ==, zp->z_size);
 
