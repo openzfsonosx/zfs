@@ -123,7 +123,7 @@ typedef struct vnops_stats {
 	kstat_named_t fill_holes_absent_pages_filled;
 	kstat_named_t zfs_write_calls;
 	kstat_named_t zfs_write_clean_on_write;
-	kstat_named_t zfs_write_sync_push_mapped;
+	kstat_named_t zfs_write_clean_on_write_sync;
 	kstat_named_t zfs_write_cluster_copy_ok;
 	kstat_named_t zfs_write_cluster_copy_complete;
 	kstat_named_t zfs_write_cluster_copy_bytes;
@@ -168,7 +168,7 @@ static vnops_stats_t vnops_stats = {
 	{ "fill_holes_absent_pages_filled",              KSTAT_DATA_UINT64 },
 	{ "zfs_write_calls",                             KSTAT_DATA_UINT64 },
 	{ "zfs_write_clean_on_write",                    KSTAT_DATA_UINT64 },
-	{ "zfs_write_sync_push_mapped",                  KSTAT_DATA_UINT64 },
+	{ "zfs_write_clean_on_write_sync",                  KSTAT_DATA_UINT64 },
 	{ "zfs_write_sync_cluster_copy_ok",              KSTAT_DATA_UINT64 },
 	{ "zfs_write_sync_cluster_copy_complete",        KSTAT_DATA_UINT64 },
 	{ "zfs_write_sync_cluster_copy_bytes",           KSTAT_DATA_UINT64 },
@@ -1877,10 +1877,11 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 			zfs_range_unlock(rlock);
 			return (0);
 		}
-		uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
-		if (1 /*!(0 == is_file_clean(vp, ubcsize))*/) { // expensive test ?
-			boolean_t sync = (ioflag & (FSYNC | FDSYNC)) ||
-			    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
+		boolean_t sync = (ioflag & (FSYNC | FDSYNC)) ||
+		    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS;
+
+		if (sync || zp->z_is_mapped) {
+			uint64_t tries = z_map_rw_lock(zp, &need_release, &need_upgrade, __func__);
 			ASSERT3S(zp->z_size, ==, ubcsize);
 			ASSERT3S(ubcsize, >, 0);
 			off_t resid_off = 0;
@@ -1889,6 +1890,7 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 			zfs_range_unlock(rlock);
 			int retval = ubc_msync(vp, aoff, aend, &resid_off,
 			    sync ? UBC_PUSHDIRTY | UBC_SYNC : UBC_PUSHDIRTY);
+			z_map_drop_lock(zp, &need_release, &need_upgrade);
 			ASSERT3S(retval, ==, 0);
 			if (retval != 0) {
 				ASSERT3S(resid_off, ==, aend);
@@ -1899,14 +1901,14 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 				ASSERT3P(zp->z_sa_hdl, !=, NULL);
 				if (sync == B_TRUE) {
 					zil_commit(zfsvfs->z_log, zp->z_id);
-					VNOPS_STAT_BUMP(zfs_write_sync_push_mapped);
+					VNOPS_STAT_BUMP(zfs_write_clean_on_write_sync);
 				}
 				VNOPS_STAT_BUMP(zfs_write_clean_on_write);
 			}
 		} else {
 			zfs_range_unlock(rlock);
 		}
-		z_map_drop_lock(zp, &need_release, &need_upgrade);
+
 		rlock = NULL;
 		ASSERT3U(tries, <=, 2);
 	}
