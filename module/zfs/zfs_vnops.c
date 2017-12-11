@@ -1905,12 +1905,12 @@ zfs_write_possibly_msync(znode_t *zp, off_t woff, off_t start_resid, int ioflag)
 				}
 				VNOPS_STAT_BUMP(zfs_write_clean_on_write);
 			}
+			ASSERT3S(tries, <=, 2);
 		} else {
 			zfs_range_unlock(rlock);
 		}
 
 		rlock = NULL;
-		ASSERT3U(tries, <=, 2);
 	}
 	return (error);
 }
