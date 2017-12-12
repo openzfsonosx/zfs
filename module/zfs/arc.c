@@ -5805,9 +5805,8 @@ arc_read_done(zio_t *zio)
                 sizeof (zil_chain_t));
             zio_crypt_decode_mac_zil(tmpbuf,
                 hdr->b_crypt_hdr.b_mac);
-	    ASSERT3S(zio->io_abd->abd_size, >=, sizeof (zil_chain_t));
-            abd_return_buf_off(zio->io_abd, tmpbuf,
-                0, sizeof (zil_chain_t), zio->io_abd->abd_size);
+            abd_return_buf(zio->io_abd, tmpbuf,
+                sizeof (zil_chain_t));
 		} else {
 			zio_crypt_decode_mac_bp(bp, hdr->b_crypt_hdr.b_mac);
 		}
