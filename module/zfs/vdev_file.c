@@ -123,11 +123,7 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 
     error = vn_openat(vd->vdev_path + 1,
                       UIO_SYSSPACE,
-#ifndef __APPLE__
                       spa_mode(vd->vdev_spa) | FOFFMAX,
-#else
-                      spa_mode(vd->vdev_spa),
-#endif
                       0,
                       &vp,
                       0,
@@ -303,7 +299,8 @@ vdev_file_io_start(zio_t *zio)
             zio->io_error = SET_ERROR(ENOTSUP);
         }
 
-	zio_execute(zio);
+
+		zio_interrupt(zio);
         return;
     }
 
