@@ -172,6 +172,38 @@ such as "foo.rtf" -> "foo.rtfd" */
 #define HFSIOC_SET_HOTFILE_STATE _IOWR('h', 47, u_int32_t)
 #define HFS_SET_HOTFILE_STATE    IOCBASECMD(HFSIOC_SET_HOTFILE_STATE)
 
+
+
+#define HFSIOC_RESIZE_PROGRESS  _IOR('h', 1, u_int32_t)
+#define HFSIOC_RESIZE_VOLUME  _IOW('h', 2, u_int64_t)
+#define HFSIOC_CHANGE_NEXT_ALLOCATION  _IOWR('h', 3, u_int32_t)
+#define HFSIOC_GETCREATETIME  _IOR('h', 4, time_t)
+#define HFSIOC_SETBACKINGSTOREINFO  _IOW('h', 7, struct hfs_backingstoreinfo)
+#define HFSIOC_CLRBACKINGSTOREINFO  _IO('h', 8)
+#define HFSIOC_PREV_LINK  _IOWR('h', 11, u_int32_t)
+#define HFSIOC_NEXT_LINK  _IOWR('h', 12, u_int32_t)
+#define HFSIOC_GETPATH  _IOWR('h', 13, pathname_t)
+#define HFSIOC_SET_XATTREXTENTS_STATE  _IOW('h', 14, u_int32_t)
+#define HFSIOC_EXT_BULKACCESS32 _IOW('h', 15, struct user32_ext_access_t)
+#define HFSIOC_EXT_BULKACCESS64 _IOW('h', 15, struct user64_ext_access_t)
+#define HFSIOC_MARK_BOOT_CORRUPT _IO('h', 16)
+#define HFSIOC_GET_JOURNAL_INFO _IOR('h', 17, struct hfs_journal_info)
+#define HFSIOC_SET_VERY_LOW_DISK _IOW('h', 20, u_int32_t)
+#define HFSIOC_SET_LOW_DISK _IOW('h', 21, u_int32_t)
+#define HFSIOC_SET_DESIRED_DISK _IOW('h', 22, u_int32_t)
+#define HFSIOC_SET_ALWAYS_ZEROFILL _IOW('h', 23, int32_t)
+#define HFSIOC_VOLUME_STATUS  _IOR('h', 24, u_int32_t)
+#define HFSIOC_DISABLE_METAZONE _IO('h', 25)
+#define HFSIOC_CHANGE_NEXTCNID  _IOWR('h', 26, u_int32_t)
+#define HFSIOC_GET_VERY_LOW_DISK        _IOR('h', 27, u_int32_t)
+#define HFSIOC_GET_LOW_DISK     _IOR('h', 28, u_int32_t)
+#define HFSIOC_GET_DESIRED_DISK _IOR('h', 29, u_int32_t)
+#define HFSIOC_TRANSFER_DOCUMENT_ID  _IOW('h', 32, u_int32_t)
+#define HFSIOC_FSINFO_METADATA_BLOCKS  _IOWR('h', 38, struct hfsinfo_metadata)
+#define HFSIOC_CS_FREESPACE_TRIM _IOWR('h', 39, u_int32_t)
+#define HFSIOC_GET_FSINFO        _IOWR('h', 45, hfs_fsinfo)
+#define HFSIOC_SET_HOTFILE_STATE _IOWR('h', 47, u_int32_t)
+
 // END of definitions
 
 #endif
