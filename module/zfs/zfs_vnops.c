@@ -5222,7 +5222,7 @@ zfs_fsync(vnode_t *vp, int syncflag, cred_t *cr, caller_context_t *ct)
 		if (now_serving == my_ticket)
 			continue;
 		const unsigned int tickdiff = (unsigned int) (my_ticket - now_serving);
-		const unsigned int scale = MAX(4, tickdiff);
+		const unsigned int scale = MAX(4, MIN(tickdiff, 9));
 		const unsigned int printfscale = (1 << 20) >> scale;
 		const unsigned int sleepscale = 16384 >> scale;
 		const unsigned int preemptscale = 2048 >> scale;

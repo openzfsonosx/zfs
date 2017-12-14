@@ -3166,7 +3166,7 @@ pageoutv2_helper(struct vnop_pageout_args *ap)
 	} else {
 		kern_return_t commitret = ubc_upl_commit_range(upl, 0, a_size,
 		    UPL_COMMIT_CLEAR_DIRTY
-		    | UPL_COMMIT_CLEAR_PRECIOUS
+		    /*| UPL_COMMIT_CLEAR_PRECIOUS*/
 		    | UPL_COMMIT_FREE_ON_EMPTY);
 		if (commitret != KERN_SUCCESS) {
 			printf("ZFS: %s:%d: error %d from ubc_upl_commit_range 0 - %ld f_off %lld file %s\n",
@@ -3744,7 +3744,7 @@ zfs_vnop_whiteout(struct vnop_whiteout_args *ap)
 	};
 #endif
 {
-	dprintf("vnop_whiteout: ENOTSUP\n");
+	printf("vnop_whiteout: ENOTSUP\n");
 
 	return (ENOTSUP);
 }
