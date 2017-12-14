@@ -2999,12 +2999,61 @@ zfs_vnop_allocate(struct vnop_allocate_args *ap)
 	};
 #endif
 {
-	dprintf("%s %llu %d %llu %llu\n", __func__, ap->a_length, ap->a_flags,
-	    (ap->a_bytesallocated ? *ap->a_bytesallocated : 0), ap->a_offset);
+	DECLARE_CRED_AND_CONTEXT(ap);
+	struct vnode *vp = ap->a_vp;
+	znode_t *zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs;
+	uint64_t wantedsize = 0, filesize = 0;
+	int err = 0;
 
-//	*ap->a_bytesallocated = 0;
+	printf("%s %llu %d %llu %llu: '%s'\n", __func__, ap->a_length, ap->a_flags,
+	    (ap->a_bytesallocated ? *ap->a_bytesallocated : 0), ap->a_offset,
+		zp->z_name_cache);
 
-	return (0);
+	if (!zp) return ENODEV;
+
+	zfsvfs = zp->z_zfsvfs;
+
+	dprintf("+%s: %p\n", __func__, ap->a_vp);
+
+	ZFS_ENTER(zfsvfs);
+
+	if (!vnode_isreg(vp)) {
+		ZFS_EXIT(zfsvfs);
+		return (ENODEV);
+	}
+
+	filesize = zp->z_size;
+	wantedsize = ap->a_length;
+
+	if (ap->a_flags & ALLOCATEFROMPEOF)
+		wantedsize += filesize;
+	else if (ap->a_flags & ALLOCATEFROMVOL)
+		/* blockhint = ap->a_offset / blocksize */  // yeah, no idea
+		printf("%s: help, allocatefromvolume set?\n", __func__);
+
+	printf("%s: filesize %llu wantedsize %llu\n", __func__,
+		filesize, wantedsize);
+
+	// If we are extending
+	if (wantedsize > filesize) {
+
+		err = zfs_freesp(zp, wantedsize, 0, FWRITE, B_TRUE);
+
+		// If we are truncating, Apple claims this code is never called.
+	} else if (wantedsize < filesize) {
+
+		printf("%s: file shrinking branch taken?\n", __func__);
+
+	}
+
+	if (!err) {
+		*(ap->a_bytesallocated) = wantedsize - filesize;
+	}
+
+	ZFS_EXIT(zfsvfs);
+	printf("-%s: %d\n", __func__, err);
+	return (err);
 }
 
 int
