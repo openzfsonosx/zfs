@@ -2446,6 +2446,12 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_FMT_FAST_STATFS |
 			VOL_CAP_FMT_PATH_FROM_ID |
 			VOL_CAP_FMT_64BIT_OBJECT_IDS |
+			/*
+			 * Technically, we "support" it by uncompressing files immediately
+			 * This is enabled below if mimic is enabled.
+			 */
+			/* VOL_CAP_FMT_DECMPFS_COMPRESSION | */
+
 			VOL_CAP_FMT_HIDDEN_FILES ;
 		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_INTERFACES] =
 			VOL_CAP_INT_ATTRLIST |          // ZFS
@@ -2511,7 +2517,6 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 #if NAMEDSTREAMS
 			VOL_CAP_INT_NAMEDSTREAMS |
 #endif
-
 			VOL_CAP_INT_MANLOCK ;
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_RESERVED1] = 0;
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_RESERVED2] = 0;
@@ -2525,6 +2530,14 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 		if (zfsvfs->z_xattr == B_TRUE) {
 			fsap->f_capabilities.capabilities[VOL_CAPABILITIES_INTERFACES]
 				|= VOL_CAP_INT_EXTENDED_ATTR;
+		}
+
+		// Check if mimic is on
+		struct vfsstatfs *vfsstatfs;
+		vfsstatfs = vfs_statfs(zfsvfs->z_vfs);
+	    if (strcmp(vfsstatfs->f_fstypename, "hfs") == 0) {
+			fsap->f_capabilities.capabilities[VOL_CAPABILITIES_FORMAT]
+				|= VOL_CAP_FMT_DECMPFS_COMPRESSION;
 		}
 
 		VFSATTR_SET_SUPPORTED(fsap, f_capabilities);
@@ -2736,7 +2749,7 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 	}
 */
 
-	/* If we are mimicing, we need to let userland know we are really ZFS */
+	/* If we are mimicking, we need to let userland know we are really ZFS */
 	VFSATTR_RETURN(fsap, f_fssubtype, MNTTYPE_ZFS_SUBTYPE);
 
     /* According to joshade over at

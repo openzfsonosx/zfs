@@ -72,7 +72,21 @@ extern "C" {
 	 * I guess we will claim the whole nibble for OSX
 	 * 0x00n0000000000000ull : n = 1 2 4 8
 	 */
+	/*
+	 * Apple's DOCUMENTID is a unique ID that moves along with the file
+	 * even after rename
+	 */
 #define	ZFS_TRACKED		0x0010000000000000ull
+	/*
+	 * HFS Compression is done by creating a namedstream
+	 * "com.apple.ResourceFork" where it saves the compressed file, then
+	 * saves the compressed header as xattr "com.apple.decmpfs". Finally
+	 * it truncates the source file to 0 bytes, and chflags(UF_COMPRESSED).
+	 * ZFS handles it by decompressing the namedstream immediately back to
+	 * normal file by calling decmpfs_decompress_file() and undoing everything.
+	 * See zfs_vnop_setattr();
+	 */
+#define	ZFS_COMPRESSED	0x0020000000000000ull
 #endif
 
 #define	ZFS_ATTR_SET(zp, attr, value, pflags, tx) \

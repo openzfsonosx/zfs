@@ -465,8 +465,6 @@ off_t fsize = zp->z_size;
 			error = is_file_clean(ap->a_vp, fsize);
 			//error = is_file_clean(ap->a_vp, zp->z_size);
 
-/* XXX be loud */
-printf("F_CHKCLEAN size %llu ret %d\n", fsize, error);
 			if (error) dprintf("F_CHKCLEAN ret %d\n", error);
 			break;
 
@@ -691,8 +689,8 @@ printf("F_CHKCLEAN size %llu ret %d\n", fsize, error);
 				goto out;
 			}
 
-			/* Return success */
-			error = 0;
+			/* Return failure */
+			error = EINVAL;
 			break;
 
 		case HFS_PREV_LINK:
@@ -1005,6 +1003,7 @@ zfs_vnop_write(struct vnop_write_args *ap)
 	 * Mac OS X: pageout requires that the UBC file size be current.
 	 * Possibly, we could update it only if size has changed.
 	 */
+
 	/* if (tx_bytes != 0) { */
 	if (!error) {
 		ubc_setsize(ap->a_vp, VTOZ(ap->a_vp)->z_size);
@@ -1643,7 +1642,7 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 	vattr_t *vap = ap->a_vap;
 	uint_t mask = vap->va_mask;
 	int error = 0;
-
+	int hfscompression = 0;
 
 	int ignore_ownership = (((unsigned int)vfs_flags(vnode_mount(ap->a_vp)))
 							& MNT_IGNORE_OWNERSHIP);
@@ -1700,6 +1699,8 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 			zfs_setattr_generate_id(zp, 0, NULL);
 			zfs_setattr_set_documentid(zp, B_FALSE); /* flags updated in vnops */
 		}
+		if ((vap->va_flags & UF_COMPRESSED) && !(zp->z_pflags & ZFS_COMPRESSED))
+			hfscompression = 1;
 
 		/* Map OS X file flags to zfs file flags */
 		zfs_setbsdflags(zp, vap->va_flags);
@@ -1747,6 +1748,27 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 		if (VATTR_IS_ACTIVE(vap, va_flags)) {
 			VATTR_SET_SUPPORTED(vap, va_flags);
 		}
+
+		// Get rid of HFS Compression
+		if (hfscompression) {
+			struct decmpfs_cnode *cp;
+			znode_t *zp = VTOZ(ap->a_vp);
+			int iscompressed;
+
+			cp = spl_decmpfs_cnode_alloc();
+			spl_decmpfs_cnode_init(cp);
+			/* _is_compressed() will getattr to make sure UF_COMPRESSED */
+			iscompressed = spl_decmpfs_file_is_compressed(ap->a_vp, cp);
+			if (iscompressed == 1) {
+				dprintf("%s: decompressing HFS+ file '%s'\n", __func__,
+					zp->z_name_cache);
+				error = spl_decmpfs_decompress_file(ap->a_vp, cp,
+					/*tosize*/ -1, /*truncateok*/ 1, /*skiplock*/ 1 );
+			}
+			spl_decmpfs_cnode_destroy(cp);
+			spl_decmpfs_cnode_free(cp);
+		}
+
 	}
 
 #if 0
@@ -2692,10 +2714,9 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		ubc_upl_abort(upl,  (UPL_ABORT_ERROR | UPL_ABORT_FREE_ON_EMPTY));
 	else
 		ubc_upl_commit_range(upl, 0, a_size,
-		    UPL_COMMIT_CLEAR_DIRTY
-		    | UPL_COMMIT_CLEAR_PRECIOUS
-		    | UPL_COMMIT_FREE_ON_EMPTY);
-
+			UPL_COMMIT_CLEAR_DIRTY
+			| UPL_COMMIT_CLEAR_PRECIOUS
+			| UPL_COMMIT_FREE_ON_EMPTY);
 	upl = NULL;
 
 	ZFS_EXIT(zfsvfs);
@@ -2999,14 +3020,13 @@ zfs_vnop_allocate(struct vnop_allocate_args *ap)
 	};
 #endif
 {
-	DECLARE_CRED_AND_CONTEXT(ap);
 	struct vnode *vp = ap->a_vp;
 	znode_t *zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs;
 	uint64_t wantedsize = 0, filesize = 0;
 	int err = 0;
 
-	printf("%s %llu %d %llu %llu: '%s'\n", __func__, ap->a_length, ap->a_flags,
+	dprintf("%s %llu %d %llu %llu: '%s'\n", __func__, ap->a_length, ap->a_flags,
 	    (ap->a_bytesallocated ? *ap->a_bytesallocated : 0), ap->a_offset,
 		zp->z_name_cache);
 
@@ -3032,7 +3052,7 @@ zfs_vnop_allocate(struct vnop_allocate_args *ap)
 		/* blockhint = ap->a_offset / blocksize */  // yeah, no idea
 		printf("%s: help, allocatefromvolume set?\n", __func__);
 
-	printf("%s: filesize %llu wantedsize %llu\n", __func__,
+	dprintf("%s: filesize %llu wantedsize %llu\n", __func__,
 		filesize, wantedsize);
 
 	// If we are extending
@@ -3052,7 +3072,7 @@ zfs_vnop_allocate(struct vnop_allocate_args *ap)
 	}
 
 	ZFS_EXIT(zfsvfs);
-	printf("-%s: %d\n", __func__, err);
+	dprintf("-%s: %d\n", __func__, err);
 	return (err);
 }
 
@@ -3175,8 +3195,9 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	pathname_t cn = { 0 };
 	int  error = 0;
 	struct uio *finderinfo_uio = NULL;
+	uint64_t resid = uio ? uio_resid(uio) : 0;
 
-	/* dprintf("+getxattr vp %p\n", ap->a_vp); */
+	dprintf("+getxattr vp %p: '%s'\n", ap->a_vp, ap->a_name);
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
@@ -3200,9 +3221,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	}
 #endif
 
-
 	if (zfsvfs->z_use_sa && zp->z_is_sa) {
-		uint64_t size = uio_resid(uio);
 		char *value;
 
 		rw_enter(&zp->z_xattr_lock, RW_READER);
@@ -3210,7 +3229,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 			error = -zfs_sa_get_xattr(zp);
 		rw_exit(&zp->z_xattr_lock);
 
-		if (!size) { /* Lookup size */
+		if (!resid) { /* Lookup size */
 
 			rw_enter(&zp->z_xattr_lock, RW_READER);
 			error = zpl_xattr_get_sa(vp, ap->a_name, NULL, 0);
@@ -3223,10 +3242,10 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 			}
 		}
 
-		value = kmem_alloc(size, KM_SLEEP);
+		value = kmem_alloc(resid, KM_SLEEP);
 		if (value) {
 			rw_enter(&zp->z_xattr_lock, RW_READER);
-			error = zpl_xattr_get_sa(vp, ap->a_name, value, size);
+			error = zpl_xattr_get_sa(vp, ap->a_name, value, resid);
 			rw_exit(&zp->z_xattr_lock);
 
 			//dprintf("ZFS: SA XATTR said %d\n", error);
@@ -3235,7 +3254,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 				uiomove((const char*)value, error, 0, uio);
 				error = 0;
 			}
-			kmem_free(value, size);
+			kmem_free(value, resid);
 
 			if (error != -ENOENT)
 				goto out;
@@ -3278,11 +3297,18 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 	if (uio == NULL) {
 		znode_t  *xzp = VTOZ(xvp);
 
-		mutex_enter(&xzp->z_lock);
-		*ap->a_size = (size_t)xzp->z_size;
-		mutex_exit(&xzp->z_lock);
+		if (ap->a_size) {
+			mutex_enter(&xzp->z_lock);
+			*ap->a_size = (size_t)xzp->z_size;
+			mutex_exit(&xzp->z_lock);
+		}
 	} else {
+
 		error = VNOP_READ(xvp, uio, 0, ap->a_context);
+
+		if (ap->a_size && uio) {
+			*ap->a_size = (size_t)resid - uio_resid(ap->a_uio);
+		}
 	}
 
 
@@ -3323,7 +3349,8 @@ out:
 	}
 
 	ZFS_EXIT(zfsvfs);
-	/* dprintf("-getxattr vp %p : %d\n", ap->a_vp, error); */
+	dprintf("-getxattr vp %p : %d size %lu\n", ap->a_vp, error,
+		*ap->a_size);
 	return (error);
 }
 
@@ -3351,8 +3378,8 @@ zfs_vnop_setxattr(struct vnop_setxattr_args *ap)
 	int  flag;
 	int  error = 0;
 
-	dprintf("+setxattr vp %p '%s' enabled? %d\n", ap->a_vp,
-		   ap->a_name, zfsvfs->z_xattr);
+	dprintf("+setxattr vp %p '%s' (enabled: %d) resid %llu\n", ap->a_vp,
+		ap->a_name, zfsvfs->z_xattr, uio_resid(ap->a_uio));
 
 	/* xattrs disabled? */
 	if (zfsvfs->z_xattr == B_FALSE) {
@@ -3738,7 +3765,8 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 	pathname_t cn = { 0 };
 	int  error = ENOATTR;
 
-	dprintf("+getnamedstream vp %p\n", ap->a_vp);
+	dprintf("+getnamedstream vp %p '%s': op %u\n", ap->a_vp, ap->a_name,
+		ap->a_operation);
 
 	*svpp = NULLVP;
 
@@ -3750,6 +3778,11 @@ zfs_vnop_getnamedstream(struct vnop_getnamedstream_args *ap)
 	if (bcmp(ap->a_name, XATTR_RESOURCEFORK_NAME,
 	    sizeof (XATTR_RESOURCEFORK_NAME)) != 0)
 		goto out;
+
+	/* Only regular files */
+	if (!vnode_isreg(vp)) {
+		return EPERM;
+	}
 
 	/* Grab the hidden attribute directory vnode. */
 	if (zfs_get_xattrdir(zp, &xdvp, cr, 0) != 0)
@@ -3771,6 +3804,7 @@ out:
 	if (xdvp)
 		vnode_put(xdvp);
 
+#if 0 // Disabled, not sure its required and empty vnodes are odd.
 	/*
 	 * If the lookup is NS_OPEN, they are accessing "..namedfork/rsrc"
 	 * to which we should return 0 with empty vp to empty file.
@@ -3787,6 +3821,7 @@ out:
 			vnode_put(xdvp);
 		}
 	}
+#endif
 
 	ZFS_EXIT(zfsvfs);
 	if (error) dprintf("%s vp %p: error %d\n", __func__, ap->a_vp, error);
@@ -3812,7 +3847,7 @@ zfs_vnop_makenamedstream(struct vnop_makenamedstream_args *ap)
 	struct vnode_attr  vattr;
 	int  error = 0;
 
-	dprintf("+makenamedstream vp %p\n", ap->a_vp);
+	dprintf("+makenamedstream vp %p: '%s'\n", ap->a_vp, ap->a_name);
 
 	*ap->a_svpp = NULLVP;
 
@@ -3874,6 +3909,8 @@ zfs_vnop_removenamedstream(struct vnop_removenamedstream_args *ap)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	int error = 0;
 
+	dprintf("zfs_vnop_removenamedstream: %p '%s'\n",
+		svp, ap->a_name);
 	ZFS_ENTER(zfsvfs);
 
 	/*
@@ -3886,7 +3923,11 @@ zfs_vnop_removenamedstream(struct vnop_removenamedstream_args *ap)
 	}
 
 	/* ### MISING CODE ### */
-	printf("zfs_vnop_removenamedstream\n");
+	/* It turns out that even though APPLE uses makenamedstream() to
+	 * create a stream, for example compression, they use vnop_removexattr
+	 * to delete it, so this appears not in use.
+	 */
+	dprintf("zfs_vnop_removenamedstream\n");
 	error = EPERM;
 out:
 	ZFS_EXIT(zfsvfs);

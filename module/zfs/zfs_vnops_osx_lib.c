@@ -646,6 +646,8 @@ zfs_getbsdflags(znode_t *zp)
 		bsdflags |= UF_HIDDEN;
 	if (zflags & ZFS_TRACKED)
 		bsdflags |= UF_TRACKED;
+	if (zflags & ZFS_COMPRESSED)
+		bsdflags |= UF_COMPRESSED;
     /*
      * Due to every file getting archive set automatically, and OSX
      * don't let you move/copy it as a user, we disable archive connection
@@ -694,6 +696,11 @@ zfs_setbsdflags(znode_t *zp, uint32_t bsdflags)
 		zflags |= ZFS_TRACKED;
 	else
 		zflags &= ~ZFS_TRACKED;
+
+	if (bsdflags & UF_COMPRESSED)
+		zflags |= ZFS_COMPRESSED;
+	else
+		zflags &= ~ZFS_COMPRESSED;
 
     /*
 	if (bsdflags & SF_ARCHIVED)
