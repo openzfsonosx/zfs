@@ -5964,6 +5964,8 @@ top:
 		 * should be addressed in openat().
 		 */
 		/* XXX - would it be OK to generate a log record here? */
+		dprintf("ZFS setattr size to %llu: '%s'\n", vap->va_size,
+			zp->z_name_cache);
 		err = zfs_freesp(zp, vap->va_size, 0, 0, FALSE);
 		if (err)
 			goto out3;

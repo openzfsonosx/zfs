@@ -2533,6 +2533,13 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			VOL_CAP_FMT_FAST_STATFS |
 			VOL_CAP_FMT_PATH_FROM_ID |
 			VOL_CAP_FMT_64BIT_OBJECT_IDS |
+			/*
+			 * Technically, we "support" it my uncompressing files immediately
+			 * and it would be nice if Mail would check this capability
+			 * instead of assuming the support is there.
+			 */
+			/* VOL_CAP_FMT_DECMPFS_COMPRESSION | */
+
 			VOL_CAP_FMT_HIDDEN_FILES ;
 		fsap->f_capabilities.capabilities[VOL_CAPABILITIES_INTERFACES] =
 			VOL_CAP_INT_ATTRLIST |          // ZFS
@@ -2598,7 +2605,6 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 #if NAMEDSTREAMS
 			VOL_CAP_INT_NAMEDSTREAMS |
 #endif
-
 			VOL_CAP_INT_MANLOCK ;
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_RESERVED1] = 0;
 		fsap->f_capabilities.valid[VOL_CAPABILITIES_RESERVED2] = 0;
