@@ -684,7 +684,7 @@ ldi_open_vnode_by_path(char *path, dev_t device,
 		handle_open_done(retlhp, LDI_STATUS_CLOSED);
 		handle_release(retlhp);
 		retlhp = 0;
-		return (EIO);
+		return ((error == EACCES) ? EROFS:EIO);
 	}
 	handle_open_done(retlhp, LDI_STATUS_ONLINE);
 
