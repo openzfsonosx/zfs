@@ -56,9 +56,9 @@ extern "C" {
 #define	ZFS_HIDDEN		0x0000000200000000ull
 #define	ZFS_SYSTEM		0x0000000400000000ull
 #define	ZFS_ARCHIVE		0x0000000800000000ull
-#define	ZFS_IMMUTABLE		0x0000001000000000ull
+#define	ZFS_UIMMUTABLE		0x0000001000000000ull // OSX
 #define	ZFS_NOUNLINK		0x0000002000000000ull
-#define	ZFS_APPENDONLY		0x0000004000000000ull
+#define	ZFS_UAPPENDONLY		0x0000004000000000ull // OSX
 #define	ZFS_NODUMP		0x0000008000000000ull
 #define	ZFS_OPAQUE		0x0000010000000000ull
 #define	ZFS_AV_QUARANTINED	0x0000020000000000ull
@@ -68,7 +68,11 @@ extern "C" {
 #define	ZFS_SPARSE		0x0000200000000000ull
 
 #ifdef __APPLE__
-	/* Unsure how we officially register new flags bits, but
+
+#define ZFS_IMMUTABLE  (ZFS_UIMMUTABLE  | ZFS_SIMMUTABLE)
+#define ZFS_APPENDONLY (ZFS_UAPPENDONLY | ZFS_SAPPENDONLY)
+
+    /* Unsure how we officially register new flags bits, but
 	 * I guess we will claim the whole nibble for OSX
 	 * 0x00n0000000000000ull : n = 1 2 4 8
 	 */
@@ -87,6 +91,11 @@ extern "C" {
 	 * See zfs_vnop_setattr();
 	 */
 #define	ZFS_COMPRESSED	0x0020000000000000ull
+
+	// Super-user versions (OSX)
+#define	ZFS_SIMMUTABLE		0x0040000000000000ull
+#define	ZFS_SAPPENDONLY		0x0080000000000000ull
+
 #endif
 
 #define	ZFS_ATTR_SET(zp, attr, value, pflags, tx) \

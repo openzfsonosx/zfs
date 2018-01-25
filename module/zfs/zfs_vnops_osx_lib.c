@@ -636,9 +636,9 @@ zfs_getbsdflags(znode_t *zp)
 
 	if (zflags & ZFS_NODUMP)
 		bsdflags |= UF_NODUMP;
-	if (zflags & ZFS_IMMUTABLE)
+	if (zflags & ZFS_UIMMUTABLE)
 		bsdflags |= UF_IMMUTABLE;
-	if (zflags & ZFS_APPENDONLY)
+	if (zflags & ZFS_UAPPENDONLY)
 		bsdflags |= UF_APPEND;
 	if (zflags & ZFS_OPAQUE)
 		bsdflags |= UF_OPAQUE;
@@ -648,6 +648,11 @@ zfs_getbsdflags(znode_t *zp)
 		bsdflags |= UF_TRACKED;
 	if (zflags & ZFS_COMPRESSED)
 		bsdflags |= UF_COMPRESSED;
+
+	if (zflags & ZFS_SIMMUTABLE)
+		bsdflags |= SF_IMMUTABLE;
+	if (zflags & ZFS_SAPPENDONLY)
+		bsdflags |= SF_APPEND;
     /*
      * Due to every file getting archive set automatically, and OSX
      * don't let you move/copy it as a user, we disable archive connection
@@ -673,14 +678,14 @@ zfs_setbsdflags(znode_t *zp, uint32_t bsdflags)
 		zflags &= ~ZFS_NODUMP;
 
 	if (bsdflags & UF_IMMUTABLE)
-		zflags |= ZFS_IMMUTABLE;
+		zflags |= ZFS_UIMMUTABLE;
 	else
-		zflags &= ~ZFS_IMMUTABLE;
+		zflags &= ~ZFS_UIMMUTABLE;
 
 	if (bsdflags & UF_APPEND)
-		zflags |= ZFS_APPENDONLY;
+		zflags |= ZFS_UAPPENDONLY;
 	else
-		zflags &= ~ZFS_APPENDONLY;
+		zflags &= ~ZFS_UAPPENDONLY;
 
 	if (bsdflags & UF_OPAQUE)
 		zflags |= ZFS_OPAQUE;
@@ -708,6 +713,15 @@ zfs_setbsdflags(znode_t *zp, uint32_t bsdflags)
 	else
 		zflags &= ~ZFS_ARCHIVE;
     */
+	if (bsdflags & SF_IMMUTABLE)
+		zflags |= ZFS_SIMMUTABLE;
+	else
+		zflags &= ~ZFS_SIMMUTABLE;
+
+	if (bsdflags & SF_APPEND)
+		zflags |= ZFS_SAPPENDONLY;
+	else
+		zflags &= ~ZFS_SAPPENDONLY;
 
     zp->z_pflags = zflags;
     dprintf("setbsd changing osx %08lx to zfs %08lx\n",
