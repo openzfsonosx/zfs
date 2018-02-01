@@ -645,7 +645,7 @@ ldi_open_vnode_by_path(char *path, dev_t device,
 {
 	struct ldi_handle *retlhp;
 	ldi_status_t status;
-	int error;
+	int error = EIO;
 
 	/* Validate arguments */
 	if (!path || strlen(path) <= 1 || device == 0 || !lhp) {
