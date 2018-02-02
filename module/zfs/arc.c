@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2012, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2018, Joyent, Inc.
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2014 by Saso Kiselkov. All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
@@ -345,6 +345,9 @@ int zfs_arc_num_sublists_per_state = 0;
 
 /* number of seconds before growing cache again */
 static int		arc_grow_retry = 60;
+
+/* number of milliseconds before attempting a kmem-cache-reap */
+static int		arc_kmem_cache_reap_retry_ms = 1000;
 
 /* shift of arc_c for calculating overflow limit in arc_get_data_impl */
 int		zfs_arc_overflow_shift = 8;
@@ -4841,26 +4844,37 @@ arc_kmem_reap_now(void)
 #endif
 #endif
 
+	/*
+	 * If a kmem reap is already active, don't schedule more.  We must
+	 * check for this because kmem_cache_reap_soon() won't actually
+	 * block on the cache being reaped (this is to prevent callers from
+	 * becoming implicitly blocked by a system-wide kmem reap -- which,
+	 * on a system with many, many full magazines, can take minutes).
+	 */
+	if (kmem_cache_reap_active())
+		return;
+
 	for (i = 0; i < SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT; i++) {
 		if (zio_buf_cache[i] != prev_cache) {
 			prev_cache = zio_buf_cache[i];
-			kmem_cache_reap_now(zio_buf_cache[i]);
+			kmem_cache_reap_soon(zio_buf_cache[i]);
 		}
 		if (zio_data_buf_cache[i] != prev_data_cache) {
 			prev_data_cache = zio_data_buf_cache[i];
-			kmem_cache_reap_now(zio_data_buf_cache[i]);
+			kmem_cache_reap_soon(zio_data_buf_cache[i]);
 		}
 	}
-	kmem_cache_reap_now(abd_chunk_cache);
-	kmem_cache_reap_now(buf_cache);
-	kmem_cache_reap_now(hdr_full_cache);
-	kmem_cache_reap_now(hdr_l2only_cache);
-	kmem_cache_reap_now(range_seg_cache);
+
+	kmem_cache_reap_soon(abd_chunk_cache);
+	kmem_cache_reap_soon(buf_cache);
+	kmem_cache_reap_soon(hdr_full_cache);
+	kmem_cache_reap_soon(hdr_l2only_cache);
+	kmem_cache_reap_soon(range_seg_cache);
 #ifdef _KERNEL
 	extern kmem_cache_t *dnode_cache;
-	if (dnode_cache) kmem_cache_reap_now(dnode_cache);
+	if (dnode_cache) kmem_cache_reap_soon(dnode_cache);
 	extern kmem_cache_t *znode_cache;
-	if (znode_cache) kmem_cache_reap_now(znode_cache);
+	if (znode_cache) kmem_cache_reap_soon(znode_cache);
 
 	if (zio_arena_parent != NULL) {
 		/*
@@ -4893,6 +4907,7 @@ static void
 arc_reclaim_thread(void *unused)
 {
 	hrtime_t		growtime = 0;
+	hrtime_t		kmem_reap_time = 0;
 	callb_cpr_t		cpr;
 
 	CALLB_CPR_INIT(&cpr, &arc_reclaim_lock, callb_generic_cpr, FTAG);
@@ -4918,24 +4933,6 @@ arc_reclaim_thread(void *unused)
 
 		mutex_exit(&arc_reclaim_lock);
 
-#ifdef __APPLE__
-#ifdef _KERNEL
-		if (reclaim_shrink_target > 0) {
-			int64_t t = reclaim_shrink_target;
-			reclaim_shrink_target = 0;
-			evicted = arc_shrink(t);
-			extern kmem_cache_t	*abd_chunk_cache;
-			kmem_cache_reap_now(abd_chunk_cache);
-			IOSleep(1);
-			goto lock_and_sleep;
-		}
-
-		int64_t pre_adjust_free_memory = MIN(spl_free_wrapper(), arc_available_memory());
-
-		int64_t manual_pressure = spl_free_manual_pressure_wrapper();
-		spl_free_set_pressure(0); // clears both spl pressure variables
-#endif
-#endif
 		/*
 		 * We call arc_adjust() before (possibly) calling
 		 * arc_kmem_reap_now(), so that we can wake up
@@ -4949,114 +4946,29 @@ arc_reclaim_thread(void *unused)
 #endif
 
 		int64_t free_memory = arc_available_memory();
-
-#if defined(__APPLE__) && defined(_KERNEL)
-
-		int64_t post_adjust_manual_pressure = spl_free_manual_pressure_wrapper();
-		manual_pressure = MAX(manual_pressure,post_adjust_manual_pressure);
-		spl_free_set_pressure(0);
-
-		int64_t post_adjust_free_memory = MIN(spl_free_wrapper(), arc_available_memory());
-
-		// if arc_adjust() evicted, we expect post_adjust_free_memory to be
-		// larger than pre_adjust_free_memory (as there should be more free memory).
-		int64_t d_adj = post_adjust_free_memory - pre_adjust_free_memory;
-
-		if (manual_pressure > 0 && post_adjust_manual_pressure == 0) {
-			// pressure did not get re-signalled during the arc_adjust()
-			if (d_adj >= 0) {
-				manual_pressure -= MIN(evicted, d_adj);
-			} else {
-				manual_pressure -= evicted;
-			}
-		} else if (evicted > 0 && manual_pressure > 0 && post_adjust_manual_pressure > 0) {
-			// otherwise use the most recent pressure value
-			manual_pressure = post_adjust_manual_pressure;
-		}
-
-		free_memory = post_adjust_free_memory;
-
-		if (free_memory >= 0 && manual_pressure <= 0 && evicted > 0) {
-			extern kmem_cache_t	*abd_chunk_cache;
-			kmem_cache_reap_now(abd_chunk_cache);
-		}
-
-		if (free_memory < 0 || manual_pressure > 0) {
-
-			if (free_memory <= (arc_c >> arc_no_grow_shift) + SPA_MAXBLOCKSIZE) {
-				arc_no_grow = B_TRUE;
-				/*
-				 * Absorb occasional low memory conditions, as they
-				 * may be caused by a single sequentially writing thread
-				 * pushing a lot of dirty data into the ARC.
-				 *
-				 * In particular, we want to quickly
-				 * begin re-growing the ARC if we are
-				 * not in chronic high pressure.
-				 * However, if we're in chronic high
-				 * pressure, we want to reduce reclaim
-				 * thread work by keeping arc_no_grow set.
-				 *
-				 * If growtime is in the past, then set it to last
-				 * half a second (which is the length of the
-				 * cv_timedwait_hires() call below; if this works,
-				 * that value should be a parameter, #defined or constified.
-				 *
-				 * If growtime is in the future, then make sure that it
-				 * is no further than 60 seconds into the future.
-				 * If it's in the nearer future, then grow growtime by
-				 * an exponentially increasing value starting with 500msec.
-				 *
-				 */
-				const hrtime_t curtime = gethrtime();
-				const hrtime_t agr = SEC2NSEC(arc_grow_retry);
-				static int grow_pass = 0;
-
-				if (growtime == 0) {
-					growtime = curtime + MSEC2NSEC(500);
-					grow_pass = 0;
-				} else {
-					// check for 500ms not being enough
-					ASSERT3U(growtime,>,curtime);
-					if (growtime <= curtime)
-						growtime = curtime + MSEC2NSEC(500);
-
-					// growtime is in the future!
-					const hrtime_t difference = growtime - curtime;
-
-					if (difference >= agr) {
-						// cap at arc_grow_retry seconds from now
-						growtime = curtime + agr - 1LL;
-						grow_pass = 0;
-					} else {
-						hrtime_t grow_by =
-						    MSEC2NSEC(500) * (1LL << grow_pass);
-
-						if (grow_by > (agr >> 1))
-							grow_by = agr >> 1;
-
-						growtime += grow_by;
-
-						if (grow_pass < 10) // add 512 seconds maximum
-							grow_pass++;
-					}
-				}
-			}
-#else
-	        if (free_memory < 0) {
-
+		if (free_memory < 0) {
+			hrtime_t curtime = gethrtime();
 			arc_no_grow = B_TRUE;
+			arc_warm = B_TRUE;
 
 			/*
 			 * Wait at least zfs_grow_retry (default 60) seconds
 			 * before considering growing.
 			 */
-			growtime = gethrtime() + SEC2NSEC(arc_grow_retry);
-#endif
+			growtime = curtime + SEC2NSEC(arc_grow_retry);
 
-			arc_warm = B_TRUE;
-
-			arc_kmem_reap_now();
+			/*
+			 * Wait at least arc_kmem_cache_reap_retry_ms
+			 * between arc_kmem_reap_now() calls. Without
+			 * this check it is possible to end up in a
+			 * situation where we spend lots of time
+			 * reaping caches, while we're near arc_c_min.
+			 */
+			if (curtime >= kmem_reap_time) {
+				arc_kmem_reap_now();
+				kmem_reap_time = gethrtime() +
+				    MSEC2NSEC(arc_kmem_cache_reap_retry_ms);
+			}
 
 			/*
 			 * If we are still low on memory, shrink the ARC
@@ -5064,105 +4976,24 @@ arc_reclaim_thread(void *unused)
 			 */
 			free_memory = arc_available_memory();
 
-#ifdef _KERNEL
-#ifdef __APPLE__
-			static int64_t old_to_free = 0;
-#endif
-#endif
-
 			int64_t to_free =
 			    (arc_c >> arc_shrink_shift) - free_memory;
 
-#ifndef _KERNEL
 			if (to_free > 0) {
-#else
-#ifdef __APPLE__
-			if(to_free > 0 || manual_pressure != 0) {
-				const int64_t large_amount = 32LL * 1024LL * 1024LL; // 2 * SPA_MAXBLOCKSIZE
-				const int64_t huge_amount = 128LL * 1024LL * 1024LL;
+				to_free = MAX(to_free, spl_free_manual_pressure_wrapper());
 
-				if (to_free > large_amount || evicted > huge_amount)
-					printf("SPL: %s: post-reap %lld post-evict %lld adjusted %lld "
-					    "pre-adjust %lld to-free %lld pressure %lld\n",
-					    __func__, free_memory, d_adj, evicted,
-					    pre_adjust_free_memory, to_free, manual_pressure);
-#endif
-#endif
-#ifdef _KERNEL
-#ifdef sun
-				to_free = MAX(to_free, ptob(needfree));
-#endif
-#ifdef __APPLE__
-				to_free = MAX(to_free, manual_pressure);
-
-				int64_t old_arc_size = (int64_t)aggsum_value(&arc_size);
-#endif // __APPLE__
-#endif // _KERNEL
 				(void) arc_shrink(to_free);
-#ifdef _KERNEL
-#ifdef	__APPLE__
-				int64_t new_arc_size = (int64_t)aggsum_value(&arc_size);
-				int64_t arc_shrink_freed = old_arc_size - new_arc_size;
-				int64_t left_to_free = to_free - arc_shrink_freed;
-				if (left_to_free <= 0) {
-					if (arc_shrink_freed > large_amount) {
-						printf("ZFS: %s, arc_shrink freed %lld, "
-						    "zeroing old_to_free from %lld\n",
-						    __func__, arc_shrink_freed, old_to_free);
-					}
-					old_to_free = 0;
-				} else if (arc_shrink_freed > 2LL * (int64_t)SPA_MAXBLOCKSIZE) {
-					printf("ZFS: %s, arc_shrink freed %lld, setting old_to_free to %lld from %lld\n",
-					    __func__, arc_shrink_freed, left_to_free, old_to_free);
-					old_to_free = left_to_free;
-				} else {
-					old_to_free = left_to_free;
-				}
-
-				// If we have reduced ARC by a lot before this point,
-				// try to give memory back to lower arenas (and possibly xnu).
-
-				int64_t total_freed = arc_shrink_freed + evicted;
-				if (total_freed >= huge_amount) {
-					if (zio_arena_parent != NULL)
-						vmem_qcache_reap(zio_arena_parent);
-					cv_signal(&arc_abd_move_thr_cv);
-				}
-				if (arc_shrink_freed > 0)
-					evicted += arc_shrink_freed;
-			} else if (old_to_free > 0) {
-			  printf("ZFS: %s, (old_)to_free has returned to zero from %lld\n",
-				 __func__, old_to_free);
-			  old_to_free = 0;
 			}
-#endif // __APPLE__
-#ifdef sun
-			}
-#endif // sun
-#endif // _KERNEL
-#ifndef _KERNEL
-			}
-#endif // !_KERNEL
-		} else if (free_memory < (arc_c >> arc_no_grow_shift) &&
-		    aggsum_value(&arc_size) > arc_c_min + SPA_MAXBLOCKSIZE) {
+		} else if (free_memory < (arc_c >> arc_no_grow_shift)) {
 			// relatively low memory and arc is above arc_c_min
 			arc_no_grow = B_TRUE;
-			growtime = gethrtime() + SEC2NSEC(1);
 		}
 
 		if (growtime > 0 && gethrtime() >= growtime) {
-			if (arc_no_grow == B_TRUE)
-				printf("ZFS: arc growtime expired\n");
-			growtime = 0;
 			arc_no_grow = B_FALSE;
 		}
 
-#ifdef __APPLE__
-#ifdef _KERNEL
-	lock_and_sleep:
-#endif
-#endif
-               mutex_enter(&arc_reclaim_lock);
+		mutex_enter(&arc_reclaim_lock);
 
 		/*
 		 * If evicted is zero, we couldn't evict anything via
@@ -5180,9 +5011,6 @@ arc_reclaim_thread(void *unused)
 			 * up any threads before we go to sleep.
 			 */
 			cv_broadcast(&arc_reclaim_waiters_cv);
-#ifdef __APPLE__
-			arc_reclaim_in_loop = B_FALSE;
-#endif
 
 			/*
 			 * Block until signaled, or after one second (we
@@ -5193,18 +5021,6 @@ arc_reclaim_thread(void *unused)
 			(void) cv_timedwait_hires(&arc_reclaim_thread_cv,
 			    &arc_reclaim_lock, MSEC2NSEC(500), MSEC2NSEC(1), 0);
 			CALLB_CPR_SAFE_END(&cpr, &arc_reclaim_lock);
-#ifdef __APPLE__
-	       } else if (evicted >= SPA_MAXBLOCKSIZE * ARCSTAT(arc_reclaim_waiters_count)) {
-		       // we evicted plenty of buffers, so let's wake up
-		       // all the waiters rather than having them stall
-		       ARCSTAT_BUMP(arc_reclaim_waiters_early_broadcast);
-		       cv_broadcast(&arc_reclaim_waiters_cv);
-	       } else if (ARCSTAT(arc_reclaim_waiters_count) > 0) {
-		       // we evicted some buffers but are still overflowing,
-		       // so wake up only one waiter
-		       ARCSTAT_BUMP(arc_reclaim_waiters_early_wakeup);
-		       cv_signal(&arc_reclaim_waiters_cv);
-#endif
 	       }
 	}
 
