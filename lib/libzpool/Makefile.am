@@ -5,6 +5,7 @@ AUTOMAKE_OPTIONS = subdir-objects
 VPATH = \
         $(top_srcdir)/module/zfs \
         $(top_srcdir)/module/zcommon \
+		$(top_srcdir)/module/lua \
         $(top_srcdir)/lib/libzpool
 
 AM_CFLAGS += $(DEBUG_STACKFLAGS) $(FRAME_LARGER_THAN)
@@ -108,6 +109,11 @@ KERNEL_C = \
 	zap.c \
 	zap_leaf.c \
 	zap_micro.c \
+	zcp.c \
+	zcp_get.c \
+	zcp_global.c \
+	zcp_iter.c \
+	zcp_synctask.c \
 	zfeature.c \
 	zfeature_common.c \
 	zfs_byteswap.c \
@@ -126,9 +132,39 @@ KERNEL_C = \
 	zrlock.c \
 	zthr.c
 
+LUA_C = \
+	lapi.c \
+	lauxlib.c \
+	lbaselib.c \
+	lbitlib.c \
+	lcode.c \
+	lcompat.c \
+	lcorolib.c \
+	lctype.c \
+	ldebug.c \
+	ldo.c \
+	ldump.c \
+	lfunc.c \
+	lgc.c \
+	llex.c \
+	lmem.c \
+	lobject.c \
+	lopcodes.c \
+	lparser.c \
+	lstate.c \
+	lstring.c \
+	lstrlib.c \
+	ltable.c \
+	ltablib.c \
+	ltm.c \
+	lundump.c \
+	lvm.c \
+	lzio.c
+
 libzpool_la_SOURCES = \
 	$(USER_C) \
-	$(KERNEL_C)
+	$(KERNEL_C) \
+	$(LUA_C)
 
 libzpool_la_LIBADD = \
 	$(top_builddir)/lib/libunicode/libunicode.la \

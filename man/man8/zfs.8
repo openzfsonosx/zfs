@@ -275,6 +275,10 @@
 .Op Fl m Ar memory_limit
 .Ar pool script
 .Op Ar arg1 No ...
+<<<<<<< HEAD
+=======
+.Nm
+>>>>>>> d99a015... OpenZFS 7431 - ZFS Channel Programs
 .Cm load-key
 .Op Fl rn
 .Op Fl L Ar keylocation
@@ -3749,7 +3753,7 @@ Channel programs may only be run with root privileges.
 .sp
 For full documentation of the ZFS channel program interface, see the manual
 page for
-.Xr zfs-program 1M .
+.Xr zfs-program 8 .
 .Bl -tag -width ""
 .It Fl t Ar timeout
 Execution time limit, in milliseconds.
@@ -3765,8 +3769,11 @@ The default memory limit is 10 MB, and can be set to a maximum of 100 MB.
 All remaining argument strings are passed directly to the channel program as
 arguments.
 See
-.Xr zfs-program 1M
+.Xr zfs-program 8
 for more information.
+.El
+.It Xo
+.Nm
 .Cm load-key
 .Op Fl nr
 .Op Fl L Ar keylocation

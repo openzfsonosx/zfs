@@ -22,6 +22,8 @@ installkernel() {
 	instmods znvpair
 	instmods zavl
 	instmods zunicode
+	instmods zlua
+	instmods icp
 	instmods spl
 	instmods zlib_deflate
 	instmods zlib_inflate

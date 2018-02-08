@@ -1,4 +1,4 @@
-SUBDIRS = fm fs crypto
+SUBDIRS = fm fs crypto lua
 
 COMMON_H = \
 	$(top_srcdir)/include/sys/arc.h \
@@ -70,6 +70,10 @@ COMMON_H = \
 	$(top_srcdir)/include/sys/zap.h \
 	$(top_srcdir)/include/sys/zap_impl.h \
 	$(top_srcdir)/include/sys/zap_leaf.h \
+	$(top_srcdir)/include/sys/zcp.h \
+	$(top_srcdir)/include/sys/zcp_global.h \
+	$(top_srcdir)/include/sys/zcp_iter.h \
+	$(top_srcdir)/include/sys/zcp_prop.h \
 	$(top_srcdir)/include/sys/zfeature.h \
 	$(top_srcdir)/include/sys/zfs_acl.h \
 	$(top_srcdir)/include/sys/zfs_context.h \
