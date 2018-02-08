@@ -22,6 +22,7 @@ CFLAGS_KMOD = \
 	-DDRIVER_PRIVATE \
 	-DAPPLE \
 	-DNeXT \
+	-DLUA_USE_LONGLONG \
 	-DNAMEDSTREAMS=1 \
 	-DHAVE_SPL=1 \
 	-I$(top_srcdir)/include \
@@ -147,6 +148,11 @@ zfs_SOURCES = \
 	zap.c \
 	zap_leaf.c \
 	zap_micro.c \
+	zcp.c \
+	zcp_get.c \
+	zcp_global.c \
+	zcp_iter.c \
+	zcp_synctask.c \
 	zfeature.c \
 	zfeature_common.c \
 	zfs_acl.c \
@@ -230,6 +236,34 @@ zfs_SOURCES = \
 	../icp/algs/skein/skein_iv.c \
 	../icp/algs/aes/aes_impl.c \
 	../icp/algs/aes/aes_modes.c \
+	../lua/lapi.c \
+	../lua/lauxlib.c \
+	../lua/lbaselib.c \
+	../lua/lbitlib.c \
+	../lua/lcode.c \
+	../lua/lcompat.c \
+	../lua/lcorolib.c \
+	../lua/lctype.c \
+	../lua/ldebug.c \
+	../lua/ldo.c \
+	../lua/ldump.c \
+	../lua/lfunc.c \
+	../lua/lgc.c \
+	../lua/llex.c \
+	../lua/lmem.c \
+	../lua/lobject.c \
+	../lua/lopcodes.c \
+	../lua/lparser.c \
+	../lua/lstate.c \
+	../lua/lstring.c \
+	../lua/lstrlib.c \
+	../lua/ltable.c \
+	../lua/ltablib.c \
+	../lua/ltm.c \
+	../lua/lundump.c \
+	../lua/lvm.c \
+	../lua/lzio.c \
+	../lua/setjmp/setjmp.S \
 	$(zfs_ASM_SOURCES_C) \
 	$(zfs_ASM_SOURCES_AS)
 

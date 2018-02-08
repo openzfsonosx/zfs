@@ -15,6 +15,7 @@ lib_LTLIBRARIES = libnvpair.la
 
 USER_C = \
 	libnvpair.c \
+	libnvpair_json.c \
 	nvpair_alloc_system.c
 
 KERNEL_C = \

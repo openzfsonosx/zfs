@@ -155,6 +155,7 @@ AC_CONFIG_FILES([
 	include/sys/fm/Makefile
 	include/sys/fm/fs/Makefile
 	include/sys/crypto/Makefile
+	include/sys/lua/Makefile
 	scripts/Makefile
 	scripts/zpios-profile/Makefile
 	scripts/zpios-test/Makefile
