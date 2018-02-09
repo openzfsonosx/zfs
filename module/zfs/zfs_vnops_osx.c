@@ -3028,7 +3028,7 @@ zfs_vnop_allocate(struct vnop_allocate_args *ap)
 	    (ap->a_bytesallocated ? *ap->a_bytesallocated : 0), ap->a_offset,
 		zp->z_name_cache);
 
-	if (!zp) return ENODEV;
+	if (!zp || !zp->z_sa_hdl) return ENODEV;
 
 	zfsvfs = zp->z_zfsvfs;
 
