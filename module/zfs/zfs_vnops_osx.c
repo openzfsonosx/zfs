@@ -1079,7 +1079,7 @@ static void zfs_cache_name(struct vnode *vp, struct vnode *dvp, char *filename)
 			MAXPATHLEN);
 
 	// If hardlink, remember the parentid.
-	if ((zp->z_links > 1) &&
+	if (((zp->z_links > 1) || (zp->z_finder_hardlink)) &&
 		(IFTOVT((mode_t)zp->z_mode) == VREG) &&
 		dvp) {
 		zp->z_finder_parentid = VTOZ(dvp)->z_id;

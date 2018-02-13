@@ -245,6 +245,8 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
 		1 : 0;
 	if (zp->z_finder_hardlink == TRUE)
 		ishardlink = 1;
+	else if (ishardlink)
+		zp->z_finder_hardlink = TRUE;
 
 	/* Work out which SA we need to fetch */
 
