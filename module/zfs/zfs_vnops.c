@@ -4458,6 +4458,9 @@ top:
 					szp->z_name_cache[0] = 0;
 					mutex_exit(&szp->z_lock);
 				}
+				// Update parent id, in case it changed
+				if (tzp && tdzp)
+					tzp->z_parent = tdzp->z_id;
 #endif
 
 			} else {

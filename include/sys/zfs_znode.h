@@ -217,6 +217,7 @@ typedef struct znode {
     struct zfsvfs   *z_zfsvfs;
     struct vnode    *z_vnode;
 	uint64_t	z_id;		/* object ID for this znode */
+	uint64_t	z_parent;	/* object ID for the parent, if valid */
 	kmutex_t	z_lock;		/* znode modification lock */
 	krwlock_t	z_parent_lock;	/* parent lock for directories */
 	krwlock_t	z_name_lock;	/* "master" lock for dirent locks */

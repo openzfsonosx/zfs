@@ -673,7 +673,6 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	znode_t	*zp;
 	struct vnode *vp;
 	uint64_t mode;
-	uint64_t parent;
 	sa_bulk_attr_t bulk[9];
 	int count = 0;
 
@@ -721,7 +720,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	    &zp->z_links, 8);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
 	    &zp->z_pflags, 8);
-	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_PARENT(zfsvfs), NULL, &parent, 8);
+	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_PARENT(zfsvfs), NULL, &zp->z_parent, 8);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_ATIME(zfsvfs), NULL,
 	    &zp->z_atime, 16);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_UID(zfsvfs), NULL,
@@ -769,7 +768,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 		vp->v_op = &zfs_fifoops;
 		break;
 	case VREG:
-		if (parent == zfsvfs->z_shares_dir) {
+		if (zp->z_parent == zfsvfs->z_shares_dir) {
 			ASSERT(zp->z_uid == 0 && zp->z_gid == 0);
 			vp->v_op = &zfs_shareops;
 		}

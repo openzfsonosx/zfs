@@ -1190,6 +1190,75 @@ zfs_vnop_lookup(struct vnop_lookup_args *ap)
 
 exit:
 
+	// hardlinks can be left "orphaned", ie with an invalid parentid,
+	// so we can detect that here. Also called for positive vnode cache lookup
+	if (error == 0) {
+		znode_t *zp = VTOZ(*ap->a_vpp);
+		znode_t *dzp = VTOZ(ap->a_dvp);
+		zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+		dmu_buf_t	*db;
+
+		if (zfsvfs && zfsvfs->z_vfs && !vfs_isrdonly(zfsvfs->z_vfs) &&
+			vnode_isreg(*ap->a_vpp)) {
+
+			/* If parent does not match here, and links==1 we
+			 * fix it. If links>1 then check if target is invalid
+			 * as we don't care which parent it points to, as long
+			 * as it is valid.
+			 */
+			if (zp->z_parent != dzp->z_id) {
+				int update = 0;
+
+				if (zp->z_links == 1) {
+					update = 1;
+				} else {
+					// Check dir exists
+					ZFS_OBJ_HOLD_ENTER(zfsvfs, zp->z_parent);
+					error = sa_buf_hold(zfsvfs->z_os, zp->z_parent, NULL, &db);
+					if (error == 0)
+						sa_buf_rele(db, NULL);
+					ZFS_OBJ_HOLD_EXIT(zfsvfs, zp->z_parent);
+					dprintf("Checking if parent %llu exists: %d\n",
+						zp->z_parent, error);
+					if (error)
+						update = 1;
+					error = 0;
+				}
+
+				if (update) {
+					boolean_t	waited = B_FALSE;
+					dmu_tx_t	*tx;
+
+				  top:
+					tx = dmu_tx_create(zfsvfs->z_os);
+					dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+					zfs_sa_upgrade_txholds(tx, zp);
+					error = dmu_tx_assign(tx, waited ? TXG_WAITED : TXG_NOWAIT);
+					if (error) {
+						if (error == ERESTART) {
+							waited = B_TRUE;
+							dmu_tx_wait(tx);
+							dmu_tx_abort(tx);
+							goto top;
+						}
+						dmu_tx_abort(tx);
+						ZFS_EXIT(zfsvfs);
+					} else { // error == 0
+						(void )sa_update(zp->z_sa_hdl,
+							SA_ZPL_PARENT(zp->z_zfsvfs), (void *)&dzp->z_id,
+							sizeof (uint64_t), tx);
+						zp->z_parent = dzp->z_id;
+						dmu_tx_commit(tx);
+						printf("%s: orphaned file '%s' %llu != %llu (links %llu) corrected.\n",
+							__func__, filename ? filename : cnp->cn_nameptr,
+							zp->z_parent, dzp->z_id, zp->z_links);
+					} //error
+					error = 0; // dont return error to vnop_lookup
+				} // update
+			} // parentid != z_id
+		} // sa_lookup(parentid)
+	} // error == 0
+
 #ifdef __APPLE__
 	if (!error)
 		zfs_cache_name(*ap->a_vpp, ap->a_dvp,
