@@ -7415,6 +7415,8 @@ zfs_do_channel_program(int argc, char **argv)
 	if ((zhp = zpool_open(g_zfs, poolname)) == NULL) {
 		(void) fprintf(stderr, gettext("cannot open pool '%s'"),
 		    poolname);
+		if (fd != 0)
+			(void) close(fd);
 		return (1);
 	}
 	zpool_close(zhp);
