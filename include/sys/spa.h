@@ -925,8 +925,10 @@ extern int spa_txg_history_set(spa_t *spa,  uint64_t txg,
 extern int spa_txg_history_set_io(spa_t *spa,  uint64_t txg, uint64_t nread,
     uint64_t nwritten, uint64_t reads, uint64_t writes, uint64_t ndirty);
 extern void spa_tx_assign_add_nsecs(spa_t *spa, uint64_t nsecs);
+extern int spa_mmp_history_set(spa_t *spa, uint64_t mmp_kstat_id, int io_error,
+    hrtime_t duration);
 extern void spa_mmp_history_add(uint64_t txg, uint64_t timestamp,
-    uint64_t mmp_delay, vdev_t *vd, int label);
+    uint64_t mmp_delay, vdev_t *vd, int label, uint64_t mmp_kstat_id);
 
 /* Pool configuration locks */
 extern int spa_config_tryenter(spa_t *spa, int locks, void *tag, krw_t rw);
