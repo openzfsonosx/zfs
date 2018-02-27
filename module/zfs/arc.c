@@ -6034,6 +6034,10 @@ top:
 			rc = arc_buf_alloc_impl(hdr, spa, zb->zb_objset,
 			    private, encrypted_read, compressed_read,
 			    noauth_read, B_TRUE, &buf);
+			if (rc != 0) {
+				arc_buf_destroy(buf, private);
+				buf = NULL;
+			}
 			ASSERT((zio_flags & ZIO_FLAG_SPECULATIVE) || rc == 0);
 		} else if (*arc_flags & ARC_FLAG_PREFETCH &&
 		    refcount_count(&hdr->b_l1hdr.b_refcnt) == 0) {
@@ -6098,6 +6102,7 @@ top:
                 ASSERT(!HDR_IO_IN_PROGRESS(hdr));
                 ASSERT0(refcount_count(&hdr->b_l1hdr.b_refcnt));
                 ASSERT3P(hdr->b_l1hdr.b_buf, ==, NULL);
+                VERIFY3P(hdr->b_l1hdr.b_buf, ==, NULL);
                 ASSERT3P(hdr->b_l1hdr.b_freeze_cksum, ==, NULL);
             } else if (HDR_IO_IN_PROGRESS(hdr)) {
                 /*
@@ -6656,6 +6661,17 @@ arc_write_ready(zio_t *zio)
  		/* ZIL blocks are written through zio_rewrite */
  		ASSERT3U(BP_GET_TYPE(bp), !=, DMU_OT_INTENT_LOG);
 		ASSERT(HDR_PROTECTED(hdr));
+
+		if (BP_SHOULD_BYTESWAP(bp)) {
+			if (BP_GET_LEVEL(bp) > 0) {
+				hdr->b_l1hdr.b_byteswap = DMU_BSWAP_UINT64;
+			} else {
+				hdr->b_l1hdr.b_byteswap =
+				    DMU_OT_BYTESWAP(BP_GET_TYPE(bp));
+			}
+		} else {
+			hdr->b_l1hdr.b_byteswap = DMU_BSWAP_NUMFUNCS;
+		}
 
  		hdr->b_crypt_hdr.b_ot = BP_GET_TYPE(bp);
 		hdr->b_crypt_hdr.b_dsobj = zio->io_bookmark.zb_objset;
