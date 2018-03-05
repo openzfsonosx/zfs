@@ -157,6 +157,12 @@ sub init {
 	usage() if !$res or $hflag or ($xflag and $desired_cols);
 	detailed_usage() if $vflag;
 	@hdr = @xhdr if $xflag;		#reset headers to xhdr
+
+	# we want to capture the stats here, so that we can use them to check
+	# if an L2ARC device exists; but more importantly, so that we print
+	# the stats since boot as the first line of output from main().
+	snap_stats();
+
 	if ($desired_cols) {
 		@hdr = split(/[ ,]+/, $desired_cols);
 		# Now check if they are valid fields
@@ -299,12 +305,12 @@ sub main {
 	if ($count > 0) { $count_flag = 1; }
 	while (1) {
 		print_header() if ($i == 0);
-		snap_stats();
 		calculate();
 		print_values();
 		last if ($count_flag == 1 && $count-- <= 1);
 		$i = ($i == $hdr_intr) ? 0 : $i+1;
 		sleep($int);
+		snap_stats();
 	}
 	close($out) if defined $out;
 }
