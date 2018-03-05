@@ -68,8 +68,8 @@ typedef struct arc_buf arc_buf_t;
  * (assuming that the checksum was correct). The "error" parameter will be
  * nonzero in this case, even if there is no associated zio.
  */
-typedef void arc_read_done_func_t(zio_t *zio, int error, arc_buf_t *buf,
-    void *_private);
+typedef void arc_read_done_func_t(zio_t *zio, const zbookmark_phys_t *zb,
+	const blkptr_t *bp, arc_buf_t *buf, void *_private);
 typedef void arc_write_done_func_t(zio_t *zio, arc_buf_t *buf, void *_private);
 
 /* generic arc_done_func_t's which you can use */

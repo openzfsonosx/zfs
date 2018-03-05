@@ -947,7 +947,8 @@ dbuf_whichblock(dnode_t *dn, int64_t level, uint64_t offset)
 }
 
 static void
-dbuf_read_done(zio_t *zio, int err, arc_buf_t *buf, void *vdb)
+dbuf_read_done(zio_t *zio, const zbookmark_phys_t *zb, const blkptr_t *bp,
+    arc_buf_t *buf, void *vdb)
 {
 	dmu_buf_impl_t *db = vdb;
 
@@ -961,19 +962,22 @@ dbuf_read_done(zio_t *zio, int err, arc_buf_t *buf, void *vdb)
 	ASSERT(db->db.db_data == NULL);
 	if (db->db_level == 0 && db->db_freed_in_flight) {
 		/* we were freed in flight; disregard any error */
+		if (buf == NULL) {
+			buf = arc_alloc_buf(db->db_objset->os_spa,
+			    db, DBUF_GET_BUFC_TYPE(db), db->db.db_size);
+		}
 		arc_release(buf, db);
 		bzero(buf->b_data, db->db.db_size);
 		arc_buf_freeze(buf);
 		db->db_freed_in_flight = FALSE;
 		dbuf_set_data(db, buf);
 		db->db_state = DB_CACHED;
-	} else if (err == 0) {
+	} else if (buf != NULL) {
 		dbuf_set_data(db, buf);
 		db->db_state = DB_CACHED;
 	} else {
 		ASSERT(db->db_blkid != DMU_BONUS_BLKID);
 		ASSERT3P(db->db_buf, ==, NULL);
-		arc_buf_destroy(buf, db);
 		db->db_state = DB_UNCACHED;
 	}
 	cv_broadcast(&db->db_changed);
@@ -1222,7 +1226,7 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 		    (arc_is_encrypted(db->db_buf) ||
 		    arc_get_compression(db->db_buf) != ZIO_COMPRESS_OFF)) {
 			dbuf_fix_old_data(db,
-			    spa_syncing_txg(dmu_objset_spa(db->db_objset)));
+			    spa_syncing_txg(spa));
 			err = arc_untransform(db->db_buf, spa,
 			    dmu_objset_id(db->db_objset), B_FALSE);
 			dbuf_set_data(db, db->db_buf);
@@ -2472,7 +2476,8 @@ dbuf_issue_final_prefetch(dbuf_prefetch_arg_t *dpa, blkptr_t *bp)
  * prefetch if the next block down is our target.
  */
 static void
-dbuf_prefetch_indirect_done(zio_t *zio, int err, arc_buf_t *abuf, void *private)
+dbuf_prefetch_indirect_done(zio_t *zio, const zbookmark_phys_t *zb,
+    const blkptr_t *iobp, arc_buf_t *abuf, void *private)
 {
 	dbuf_prefetch_arg_t *dpa = private;
 
@@ -2511,13 +2516,18 @@ dbuf_prefetch_indirect_done(zio_t *zio, int err, arc_buf_t *abuf, void *private)
 		dbuf_rele(db, FTAG);
 	}
 
+	if (abuf == NULL) {
+		kmem_free(dpa, sizeof (*dpa));
+		return;
+	}
+
 	dpa->dpa_curlevel--;
 
 	uint64_t nextblkid = dpa->dpa_zb.zb_blkid >>
 		(dpa->dpa_epbs * (dpa->dpa_curlevel - dpa->dpa_zb.zb_level));
 	blkptr_t *bp = ((blkptr_t *)abuf->b_data) +
 		P2PHASE(nextblkid, 1ULL << dpa->dpa_epbs);
-	if (BP_IS_HOLE(bp) || err != 0) {
+	if (BP_IS_HOLE(bp)) {
 		kmem_free(dpa, sizeof (*dpa));
 	} else if (dpa->dpa_curlevel == dpa->dpa_zb.zb_level) {
 		ASSERT3U(nextblkid, ==, dpa->dpa_zb.zb_blkid);
@@ -2526,6 +2536,10 @@ dbuf_prefetch_indirect_done(zio_t *zio, int err, arc_buf_t *abuf, void *private)
 	} else {
 		arc_flags_t iter_aflags = ARC_FLAG_NOWAIT;
 		zbookmark_phys_t zb;
+
+		/* flag if L2ARC eligible, l2arc_noprefetch then decides */
+		if (dpa->dpa_aflags & ARC_FLAG_L2CACHE)
+			iter_aflags |= ARC_FLAG_L2CACHE;
 
 		ASSERT3U(dpa->dpa_curlevel, ==, BP_GET_LEVEL(bp));
 
@@ -2637,6 +2651,10 @@ dbuf_prefetch(dnode_t *dn, int64_t level, uint64_t blkid, zio_priority_t prio,
 	dpa->dpa_epbs = epbs;
 	dpa->dpa_zio = pio;
 
+	/* flag if L2ARC eligible, l2arc_noprefetch then decides */
+	if (DNODE_LEVEL_IS_L2CACHEABLE(dn, level))
+		dpa->dpa_aflags |= ARC_FLAG_L2CACHE;
+
 	/*
 	 * If we have the indirect just above us, no need to do the asynchronous
 	 * prefetch chain; we'll just run the last step ourselves.  If we're at
@@ -2651,6 +2669,10 @@ dbuf_prefetch(dnode_t *dn, int64_t level, uint64_t blkid, zio_priority_t prio,
 	} else {
 		arc_flags_t iter_aflags = ARC_FLAG_NOWAIT;
 		zbookmark_phys_t zb;
+
+		/* flag if L2ARC eligible, l2arc_noprefetch then decides */
+		if (DNODE_LEVEL_IS_L2CACHEABLE(dn, level))
+			iter_aflags |= ARC_FLAG_L2CACHE;
 
 		SET_BOOKMARK(&zb, ds != NULL ? ds->ds_object : DMU_META_OBJSET,
 					 dn->dn_object, curlevel, curblkid);
@@ -3328,6 +3350,23 @@ dbuf_sync_leaf(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 
 	if (db->db_blkid == DMU_SPILL_BLKID) {
 		mutex_enter(&dn->dn_mtx);
+		if (!(dn->dn_phys->dn_flags & DNODE_FLAG_SPILL_BLKPTR)) {
+			/*
+			 * In the previous transaction group, the bonus buffer
+			 * was entirely used to store the attributes for the
+			 * dnode which overrode the dn_spill field.  However,
+			 * when adding more attributes to the file a spill
+			 * block was required to hold the extra attributes.
+			 *
+			 * Make sure to clear the garbage left in the dn_spill
+			 * field from the previous attributes in the bonus
+			 * buffer.  Otherwise, after writing out the spill
+			 * block to the new allocated dva, it will free
+			 * the old block pointed to by the invalid dn_spill.
+			 */
+			db->db_blkptr = NULL;
+		}
+
 		dn->dn_phys->dn_flags |= DNODE_FLAG_SPILL_BLKPTR;
 		mutex_exit(&dn->dn_mtx);
 	}

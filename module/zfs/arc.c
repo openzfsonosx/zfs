@@ -1054,7 +1054,7 @@ uint64_t l2arc_feed_secs = L2ARC_FEED_SECS;	/* interval seconds */
 uint64_t l2arc_feed_min_ms = L2ARC_FEED_MIN_MS;	/* min interval milliseconds */
 boolean_t l2arc_noprefetch = B_TRUE;		/* don't cache prefetch bufs */
 boolean_t l2arc_feed_again = B_TRUE;		/* turbo warmup */
-boolean_t l2arc_norw = B_TRUE;			/* no reads during writes */
+boolean_t l2arc_norw = B_FALSE;			/* no reads during writes */
 
 static list_t L2ARC_dev_list;			/* device list */
 static list_t *l2arc_dev_list;			/* device list pointer */
@@ -1531,11 +1531,7 @@ arc_buf_is_shared(arc_buf_t *buf)
 	boolean_t shared = (buf->b_data != NULL &&
 	    buf->b_hdr->b_l1hdr.b_pabd != NULL &&
 	    abd_is_linear(buf->b_hdr->b_l1hdr.b_pabd) &&
-#ifndef __APPLE__
 	    buf->b_data == abd_to_buf(buf->b_hdr->b_l1hdr.b_pabd));
-#else
-	buf->b_data == abd_to_buf_ephemeral(buf->b_hdr->b_l1hdr.b_pabd));
-#endif
 	IMPLY(shared, HDR_SHARED_DATA(buf->b_hdr));
 	IMPLY(shared, ARC_BUF_SHARED(buf));
 	IMPLY(shared, ARC_BUF_COMPRESSED(buf) || ARC_BUF_LAST(buf));
@@ -2076,6 +2072,7 @@ arc_hdr_decrypt(arc_buf_hdr_t *hdr, spa_t *spa, uint64_t dsobj)
 		abd_return_buf_copy(cabd, tmp, arc_hdr_size(hdr));
 		arc_free_data_abd(hdr, hdr->b_l1hdr.b_pabd,
 		    arc_hdr_size(hdr), hdr);
+		printf("1Assigning hdr %p to %p\n", hdr, cabd);
 		hdr->b_l1hdr.b_pabd = cabd;
 	}
 
@@ -2526,6 +2523,7 @@ arc_change_state(arc_state_t *new_state, arc_buf_hdr_t *hdr,
 		update_old = (bufcnt > 0 || hdr->b_l1hdr.b_pabd != NULL ||
 			HDR_HAS_RABD(hdr));
 	} else {
+		printf("Setting hdr %p to l2c_only\n", hdr);
 		old_state = arc_l2c_only;
 		refcnt = 0;
 		bufcnt = 0;
@@ -2899,6 +2897,9 @@ arc_buf_alloc_impl(arc_buf_hdr_t *hdr, spa_t *spa, uint64_t dsobj, void *tag,
 	VERIFY3P(buf->b_data, !=, NULL);
 
 	hdr->b_l1hdr.b_buf = buf;
+	printf("2Assigning hdr %p to %p (fill %d, canshare %d)\n", hdr, buf,
+		fill, can_share);
+
 	hdr->b_l1hdr.b_bufcnt += 1;
 	if (encrypted)
 		hdr->b_crypt_hdr.b_ebufcnt += 1;
@@ -3122,6 +3123,7 @@ arc_buf_remove(arc_buf_hdr_t *hdr, arc_buf_t *buf)
 	while (*bufp != NULL) {
 		if (*bufp == buf)
 			*bufp = buf->b_next;
+		printf("3Removing hdr %p: b_next %p\n", hdr, buf->b_next);
 
 		/*
 		 * If we've removed a buffer in the middle of
@@ -3348,6 +3350,7 @@ arc_hdr_alloc(uint64_t spa, int32_t psize, int32_t lsize,
 	hdr->b_l1hdr.b_arc_access = 0;
 	hdr->b_l1hdr.b_bufcnt = 0;
 	hdr->b_l1hdr.b_buf = NULL;
+	printf("4New hdr %p\n", hdr);
 
 	/*
 	 * Allocate the hdr's buffer. This will contain either
@@ -3368,33 +3371,33 @@ arc_hdr_alloc(uint64_t spa, int32_t psize, int32_t lsize,
  * memory usage.
  */
 static arc_buf_hdr_t *
-arc_hdr_realloc(arc_buf_hdr_t *hdr, kmem_cache_t *old, kmem_cache_t *new)
+arc_hdr_realloc(arc_buf_hdr_t *hdr, kmem_cache_t *old, kmem_cache_t *nnew)
 {
 	arc_buf_hdr_t *nhdr;
 	l2arc_dev_t *dev = hdr->b_l2hdr.b_dev;
 
 	ASSERT(HDR_HAS_L2HDR(hdr));
-	ASSERT((old == hdr_full_cache && new == hdr_l2only_cache) ||
-	    (old == hdr_l2only_cache && new == hdr_full_cache));
+	ASSERT((old == hdr_full_cache && nnew == hdr_l2only_cache) ||
+	    (old == hdr_l2only_cache && nnew == hdr_full_cache));
 
 	/*
 	 * if the caller wanted a new full header and the header is to be
 	 * encrypted we will actually allocate the header from the full crypt
 	 * cache instead. The same applies to freeing from the old cache.
 	 */
-	if (HDR_PROTECTED(hdr) && new == hdr_full_cache)
-		new = hdr_full_crypt_cache;
+	if (HDR_PROTECTED(hdr) && nnew == hdr_full_cache)
+		nnew = hdr_full_crypt_cache;
 	if (HDR_PROTECTED(hdr) && old == hdr_full_cache)
 		old = hdr_full_crypt_cache;
 
-	nhdr = kmem_cache_alloc(new, KM_PUSHPAGE);
+	nhdr = kmem_cache_alloc(nnew, KM_PUSHPAGE);
 
 	ASSERT(MUTEX_HELD(HDR_LOCK(hdr)));
 	buf_hash_remove(hdr);
 
 	bcopy(hdr, nhdr, HDR_L2ONLY_SIZE);
 
-	if (new == hdr_full_cache || new == hdr_full_crypt_cache) {
+	if (nnew == hdr_full_cache || nnew == hdr_full_crypt_cache) {
 		arc_hdr_set_flags(nhdr, ARC_FLAG_HAS_L1HDR);
 		/*
 		 * arc_access and arc_change_state need to be aware that a
@@ -3402,7 +3405,7 @@ arc_hdr_realloc(arc_buf_hdr_t *hdr, kmem_cache_t *old, kmem_cache_t *new)
 		 * l2c_only even though it's about to change.
 		 */
 		nhdr->b_l1hdr.b_state = arc_l2c_only;
-
+		printf("2Setting hdr %p to l2c_only\n", nhdr);
 		/* Verify previous threads set to NULL before freeing */
 		ASSERT3P(nhdr->b_l1hdr.b_pabd, ==, NULL);
 		ASSERT(!HDR_HAS_RABD(hdr));
@@ -3517,6 +3520,8 @@ arc_hdr_realloc_crypt(arc_buf_hdr_t *hdr, boolean_t need_crypt)
 	nhdr->b_l1hdr.b_acb = hdr->b_l1hdr.b_acb;
 	nhdr->b_l1hdr.b_pabd = hdr->b_l1hdr.b_pabd;
 	nhdr->b_l1hdr.b_buf = hdr->b_l1hdr.b_buf;
+	printf("4Realloc nhdr %p to %p\n", nhdr, hdr->b_l1hdr.b_buf);
+
 #ifdef ZFS_DEBUG
 	if (hdr->b_l1hdr.b_thawed != NULL) {
 		nhdr->b_l1hdr.b_thawed = hdr->b_l1hdr.b_thawed;
@@ -3858,6 +3863,7 @@ arc_evict_hdr(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 			 * This buffer is cached on the 2nd Level ARC;
 			 * don't destroy the header.
 			 */
+			printf("evict hdr %p\n", hdr);
 			arc_change_state(arc_l2c_only, hdr, hash_lock);
 			/*
 			 * dropping from L1+L2 cached to L2-only,
@@ -5657,20 +5663,24 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 /* a generic arc_read_done_func_t which you can use */
 /* ARGSUSED */
 void
-arc_bcopy_func(zio_t *zio, int error, arc_buf_t *buf, void *arg)
+arc_bcopy_func(zio_t *zio, const zbookmark_phys_t *zb, const blkptr_t *bp,
+    arc_buf_t *buf, void *arg)
 {
-	if (error == 0)
-		bcopy(buf->b_data, arg, arc_buf_size(buf));
+	if (buf == NULL)
+		return;
+
+	bcopy(buf->b_data, arg, arc_buf_size(buf));
 	arc_buf_destroy(buf, arg);
 }
 
 /* a generic arc_read_done_func_t */
 void
-arc_getbuf_func(zio_t *zio, int error, arc_buf_t *buf, void *arg)
+arc_getbuf_func(zio_t *zio, const zbookmark_phys_t *zb, const blkptr_t *bp,
+    arc_buf_t *buf, void *arg)
 {
 	arc_buf_t **bufp = arg;
-	if (error != 0) {
-		arc_buf_destroy(buf, arg);
+
+	if (buf == NULL) {
 		*bufp = NULL;
 	} else {
 		*bufp = buf;
@@ -5798,11 +5808,17 @@ arc_read_done(zio_t *zio)
 		/* This is a demand read since prefetches don't use callbacks */
 		callback_cnt++;
 
+		if (zio->io_error != 0)
+			continue;
+
 		int	error = arc_buf_alloc_impl(hdr, zio->io_spa,
 		    acb->acb_dsobj, acb->acb_private, acb->acb_encrypted,
-		    acb->acb_compressed, acb->acb_noauth, no_zio_error,
+		    acb->acb_compressed, acb->acb_noauth, B_TRUE,
 		    &acb->acb_buf);
-
+		if (error != 0) {
+			arc_buf_destroy(acb->acb_buf, acb->acb_private);
+			acb->acb_buf = NULL;
+		}
 		/*
 		 * Assert non-speculative zios didn't fail because an
 		 * encryption key wasn't loaded
@@ -5870,8 +5886,8 @@ arc_read_done(zio_t *zio)
 	/* execute each callback and free its structure */
 	while ((acb = callback_list) != NULL) {
 		if (acb->acb_done) {
-			acb->acb_done(zio, zio->io_error, acb->acb_buf,
-			    acb->acb_private);
+			acb->acb_done(zio, &zio->io_bookmark, zio->io_bp,
+				acb->acb_buf, acb->acb_private);
 		}
 
 		if (acb->acb_zio_dummy != NULL) {
@@ -5946,29 +5962,17 @@ top:
 		*arc_flags |= ARC_FLAG_CACHED;
 
 		if (HDR_IO_IN_PROGRESS(hdr)) {
+			zio_t *head_zio = hdr->b_l1hdr.b_acb->acb_zio_head;
 
+			ASSERT3P(head_zio, !=, NULL);
 			if ((hdr->b_flags & ARC_FLAG_PRIO_ASYNC_READ) &&
 			    priority == ZIO_PRIORITY_SYNC_READ) {
 				/*
-				 * This sync read must wait for an
-				 * in-progress async read (e.g. a predictive
-				 * prefetch).  Async reads are queued
-				 * separately at the vdev_queue layer, so
-				 * this is a form of priority inversion.
-				 * Ideally, we would "inherit" the demand
-				 * i/o's priority by moving the i/o from
-				 * the async queue to the synchronous queue,
-				 * but there is currently no mechanism to do
-				 * so.  Track this so that we can evaluate
-				 * the magnitude of this potential performance
-				 * problem.
-				 *
-				 * Note that if the prefetch i/o is already
-				 * active (has been issued to the device),
-				 * the prefetch improved performance, because
-				 * we issued it sooner than we would have
-				 * without the prefetch.
+				 * This is a sync read that needs to wait for
+				 * an in-flight async read. Request that the
+				 * zio have its priority upgraded.
 				 */
+//				zio_change_priority(head_zio, priority);
 				DTRACE_PROBE1(arc__sync__wait__for__async,
 				    arc_buf_hdr_t *, hdr);
 				ARCSTAT_BUMP(arcstat_sync_wait_for_async);
@@ -6001,13 +6005,14 @@ top:
 					    spa, NULL, NULL, NULL, zio_flags);
 
 				ASSERT3P(acb->acb_done, !=, NULL);
+				acb->acb_zio_head = head_zio;
 				acb->acb_next = hdr->b_l1hdr.b_acb;
 				hdr->b_l1hdr.b_acb = acb;
 				mutex_exit(hash_lock);
-				return (0);
+				goto out;
 			}
 			mutex_exit(hash_lock);
-			return (0);
+			goto out;
 		}
 
 		ASSERT(hdr->b_l1hdr.b_state == arc_mru ||
@@ -6054,7 +6059,7 @@ top:
 		    data, metadata, hits);
 
 		if (done)
-			done(NULL, rc, buf, private);
+			done(NULL, zb, bp, buf, private);
 	} else {
 		uint64_t lsize = BP_GET_LSIZE(bp);
 		uint64_t psize = BP_GET_PSIZE(bp);
@@ -6096,13 +6101,13 @@ top:
 				hdr = arc_hdr_realloc(hdr, hdr_l2only_cache,
 				    hdr_full_cache);
 			}
-            if (GHOST_STATE(hdr->b_l1hdr.b_state)) {
+			if (GHOST_STATE(hdr->b_l1hdr.b_state)) {
                 ASSERT3P(hdr->b_l1hdr.b_pabd, ==, NULL);
                 ASSERT(!HDR_HAS_RABD(hdr));
                 ASSERT(!HDR_IO_IN_PROGRESS(hdr));
                 ASSERT0(refcount_count(&hdr->b_l1hdr.b_refcnt));
                 ASSERT3P(hdr->b_l1hdr.b_buf, ==, NULL);
-                VERIFY3P(hdr->b_l1hdr.b_buf, ==, NULL);
+				VERIFY3P(hdr->b_l1hdr.b_buf, ==, NULL);
                 ASSERT3P(hdr->b_l1hdr.b_freeze_cksum, ==, NULL);
             } else if (HDR_IO_IN_PROGRESS(hdr)) {
                 /*
@@ -6200,9 +6205,6 @@ top:
 		else
 			arc_hdr_clear_flags(hdr, ARC_FLAG_PRIO_ASYNC_READ);
 
-		if (hash_lock != NULL)
-			mutex_exit(hash_lock);
-
 		/*
 		 * At this point, we have a level 1 cache miss.  Try again in
 		 * L2ARC if possible.
@@ -6272,6 +6274,10 @@ top:
 				    ZIO_FLAG_CANFAIL |
 				    ZIO_FLAG_DONT_PROPAGATE |
 				    ZIO_FLAG_DONT_RETRY, B_FALSE);
+				acb->acb_zio_head = rzio;
+
+				if (hash_lock != NULL)
+					mutex_exit(hash_lock);
 
 				DTRACE_PROBE2(l2arc__read, vdev_t *, vd,
 				    zio_t *, rzio);
@@ -6279,14 +6285,17 @@ top:
 
 				if (*arc_flags & ARC_FLAG_NOWAIT) {
 					zio_nowait(rzio);
-					return (0);
+					goto out;
 				}
 
 				ASSERT(*arc_flags & ARC_FLAG_WAIT);
 				if (zio_wait(rzio) == 0)
-					return (0);
+					goto out;
 
 				/* l2arc read error; goto zio_read() */
+				if (hash_lock != NULL)
+					mutex_enter(hash_lock);
+
 			} else {
 				DTRACE_PROBE1(l2arc__miss,
 				    arc_buf_hdr_t *, hdr);
@@ -6307,14 +6316,22 @@ top:
 
 		rzio = zio_read(pio, spa, bp, hdr_abd, size,
 		    arc_read_done, hdr, priority, zio_flags, zb);
+		acb->acb_zio_head = rzio;
 
-		if (*arc_flags & ARC_FLAG_WAIT)
-			return (zio_wait(rzio));
+		if (hash_lock != NULL)
+			mutex_exit(hash_lock);
+
+		if (*arc_flags & ARC_FLAG_WAIT) {
+			rc = zio_wait(rzio);
+			goto out;
+		}
 
 		ASSERT(*arc_flags & ARC_FLAG_NOWAIT);
 		zio_nowait(rzio);
 	}
-	return (0);
+
+  out:
+	return (rc);
 }
 
 /*
@@ -6555,6 +6572,7 @@ arc_release(arc_buf_t *buf, void *tag)
 		ASSERT(!HDR_SHARED_DATA(nhdr));
 
 		nhdr->b_l1hdr.b_buf = buf;
+		printf("6Assigning hdr %p to %p\n", nhdr, buf);
 		nhdr->b_l1hdr.b_bufcnt = 1;
 		if (ARC_BUF_ENCRYPTED(buf))
 			nhdr->b_crypt_hdr.b_ebufcnt = 1;
@@ -6741,7 +6759,8 @@ arc_write_ready(zio_t *zio)
 			arc_hdr_alloc_abd(hdr, B_FALSE);
 			ASSERT3U(psize, <=, hdr->b_l1hdr.b_pabd->abd_size);
 			ASSERT3U(psize, <=, zio->io_abd->abd_size);
-			abd_copy_off(hdr->b_l1hdr.b_pabd, zio->io_abd, 0, 0, psize);
+			//abd_copy_off(hdr->b_l1hdr.b_pabd, zio->io_abd, 0, 0, psize);
+			abd_copy(hdr->b_l1hdr.b_pabd, zio->io_abd, psize);
 		} else {
 			ASSERT3U(zio->io_orig_size, ==, arc_hdr_size(hdr));
 			arc_hdr_alloc_abd(hdr, B_FALSE);
@@ -7379,6 +7398,13 @@ arc_state_init(void)
 	refcount_create(&arc_mfu->arcs_size);
 	refcount_create(&arc_mfu_ghost->arcs_size);
 	refcount_create(&arc_l2c_only->arcs_size);
+
+	arc_anon->arcs_state = ARC_STATE_ANON;
+	arc_mru->arcs_state = ARC_STATE_MRU;
+	arc_mru_ghost->arcs_state = ARC_STATE_MRU_GHOST;
+	arc_mfu->arcs_state = ARC_STATE_MFU;
+	arc_mfu_ghost->arcs_state = ARC_STATE_MFU_GHOST;
+	arc_l2c_only->arcs_state = ARC_STATE_L2C_ONLY;
 }
 
 static void
@@ -7572,7 +7598,7 @@ arc_init(void)
 	}
 	if (!zfs_dirty_data_max) printf("ZFS: ARC zfs_dirty_data_max is zero\n");
 
-#ifdef __APPLE__
+#ifdef __OPPLE__
 	arc_abd_move_thr_init();
 #endif
 }
@@ -7580,7 +7606,7 @@ arc_init(void)
 void
 arc_fini(void)
 {
-#ifdef __APPLE__
+#ifdef __OPPLE__
 	arc_abd_move_thr_fini();
 #endif
 	mutex_enter(&arc_reclaim_lock);
@@ -8161,8 +8187,10 @@ l2arc_read_done(zio_t *zio)
 		ASSERT3U(arc_hdr_size(hdr), <=, hdr->b_l1hdr.b_pabd->abd_size);
 		ASSERT3U(arc_hdr_size(hdr), <=, cb->l2rcb_abd->abd_size);
 		if (zio->io_error == 0) {
-			abd_copy_off(hdr->b_l1hdr.b_pabd, cb->l2rcb_abd,
-			    0, 0, arc_hdr_size(hdr));
+			//abd_copy_off(hdr->b_l1hdr.b_pabd, cb->l2rcb_abd,
+			//    0, 0, arc_hdr_size(hdr));
+			abd_copy(hdr->b_l1hdr.b_pabd, cb->l2rcb_abd,
+				arc_hdr_size(hdr));
 		}
 
 		/*
@@ -8443,7 +8471,8 @@ l2arc_apply_transforms(spa_t *spa, arc_buf_hdr_t *hdr, uint64_t asize,
 		ASSERT3U(size, ==, psize);
         to_write = abd_alloc_for_io(asize, ismd);
 	ASSERT3S(size,<=,hdr->b_l1hdr.b_pabd->abd_size);
-	abd_copy_off(to_write, hdr->b_l1hdr.b_pabd, 0, 0, size);
+	//abd_copy_off(to_write, hdr->b_l1hdr.b_pabd, 0, 0, size);
+	abd_copy(to_write, hdr->b_l1hdr.b_pabd, size);
 	if (size != asize)
 		abd_zero_off(to_write, size, asize - size);
 	goto out;
@@ -8710,8 +8739,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz)
 			DTRACE_PROBE2(l2arc__write, vdev_t *, dev->l2ad_vdev,
 			    zio_t *, wzio);
 
-			write_asize += asize;
 			write_psize += psize;
+			write_asize += asize;
 			dev->l2ad_hand += asize;
 
 			mutex_exit(hash_lock);
@@ -8895,6 +8924,7 @@ l2arc_add_vdev(spa_t *spa, vdev_t *vd)
 	adddev->l2ad_hand = adddev->l2ad_start;
 	adddev->l2ad_first = B_TRUE;
 	adddev->l2ad_writing = B_FALSE;
+	list_link_init(&adddev->l2ad_node);
 
 	mutex_init(&adddev->l2ad_mtx, NULL, MUTEX_DEFAULT, NULL);
 	/*
@@ -9035,7 +9065,7 @@ static boolean_t
 arc_abd_try_move(arc_buf_hdr_t *hdr)
 {
 	ARCSTAT_BUMP(abd_move_try);
-
+	return B_FALSE;
 	if (!HDR_HAS_L1HDR(hdr) || GHOST_STATE(hdr->b_l1hdr.b_state) ||
 	    !HDR_IN_HASH_TABLE(hdr)) {
 		fprintf(stderr, "a");

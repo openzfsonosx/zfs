@@ -65,7 +65,7 @@ int zfs_nopwrite_enabled = 1;
  * wait until the next TXG.
  * A value of zero will disable this throttle.
  */
-uint32_t zfs_per_txg_dirty_frees_percent = 30;
+uint32_t zfs_per_txg_dirty_frees_percent = 0;
 
 const dmu_object_type_info_t dmu_ot[DMU_OT_NUMTYPES] = {
 	{ DMU_BSWAP_UINT8,	TRUE,	FALSE,	"unallocated"		},
