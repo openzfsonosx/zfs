@@ -1046,8 +1046,6 @@ int dmu_diff(const char *tosnap_name, const char *fromsnap_name,
 	//extern uint64_t zfs_crc64_table[256];
 extern uint64_t *zfs_crc64_table;
 
-extern int zfs_mdcomp_disable;
-
 #ifdef	__cplusplus
 }
 #endif

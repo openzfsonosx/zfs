@@ -111,7 +111,6 @@ osx_kstat_t osx_kstat = {
 	{"zfs_delay_min_dirty_percent",	KSTAT_DATA_INT64  },
 	{"zfs_delay_scale",				KSTAT_DATA_INT64  },
 	{"spa_asize_inflation",			KSTAT_DATA_INT64  },
-	{"zfs_mdcomp_disable",			KSTAT_DATA_INT64  },
 	{"zfs_prefetch_disable",		KSTAT_DATA_INT64  },
 	{"zfetch_max_streams",			KSTAT_DATA_INT64  },
 	{"zfetch_min_sec_reap",			KSTAT_DATA_INT64  },
@@ -273,8 +272,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			ks->zfs_delay_scale.value.i64;
 		spa_asize_inflation =
 			ks->spa_asize_inflation.value.i64;
-		zfs_mdcomp_disable =
-			ks->zfs_mdcomp_disable.value.i64;
 		zfs_prefetch_disable =
 			ks->zfs_prefetch_disable.value.i64;
 		zfetch_max_streams =
@@ -461,8 +458,6 @@ static int osx_kstat_update(kstat_t *ksp, int rw)
 			zfs_delay_scale;
 		ks->spa_asize_inflation.value.i64 =
 			spa_asize_inflation;
-		ks->zfs_mdcomp_disable.value.i64 =
-			zfs_mdcomp_disable;
 		ks->zfs_prefetch_disable.value.i64 =
 			zfs_prefetch_disable;
 		ks->zfetch_max_streams.value.i64 =

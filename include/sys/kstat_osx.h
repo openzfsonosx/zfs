@@ -80,7 +80,6 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_delay_min_dirty_percent;
 	kstat_named_t zfs_delay_scale;
 	kstat_named_t spa_asize_inflation;
-	kstat_named_t zfs_mdcomp_disable;
 	kstat_named_t zfs_prefetch_disable;
 	kstat_named_t zfetch_max_streams;
 	kstat_named_t zfetch_min_sec_reap;
