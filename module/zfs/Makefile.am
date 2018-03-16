@@ -245,6 +245,9 @@ install-exec-local:: zfs.kext
 	@echo "To uninstall module: rm -rf $(KERNEL_MODDIR)"
 	@echo
 
+clean-binPROGRAMS:
+	rm -rf zfs.kext/
+
 clean:
 	rm -rf zfs.kext/
 	rm -f *.o *.lo zfs

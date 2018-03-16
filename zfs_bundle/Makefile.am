@@ -36,6 +36,9 @@ install-exec-local:: zfs.fs
 	cp -f $(DESTDIR)/$(MOUNTEXECDIR)/mount_zfs $(FS_BUNDLEDIR)/Contents/Resources/mount_zfs
 	chown -R root:wheel $(FS_BUNDLEDIR) || echo "Unable to chown root:wheel in $(FS_BUNDLEDIR)"
 
+clean-binPROGRAMS:
+	rm -rf zfs.fs/
+
 clean:
 	rm -rf zfs.fs
 
