@@ -89,8 +89,9 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	if (vd->vdev_tsd != NULL) {
 		ASSERT(vd->vdev_reopening);
 		vf = vd->vdev_tsd;
-        if (vnode_getwithvid(vf->vf_vnode, vf->vf_vid) != 0) {
+        if ((error = vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) != 0) {
 			vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
+			printf("%s: getwithvid failed: %d\n", __func__, error);
 			return (error);
 		}
         dprintf("skip to open\n");
@@ -142,7 +143,6 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	vf->vf_vnode = vp;
 #ifdef _KERNEL
     vf->vf_vid = vnode_vid(vp);
-    dprintf("assigning vid %d\n", vf->vf_vid);
 
 	/*
 	 * Make sure it's a regular file.
@@ -152,6 +152,10 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
         VN_RELE(vf->vf_vnode);
 		return (SET_ERROR(ENODEV));
 	}
+
+	// Hold a long time reference
+	vnode_ref(vp);
+
 #endif
 
 #if _KERNEL
@@ -195,6 +199,10 @@ vdev_file_close(vdev_t *vd)
 	if (vf->vf_vnode != NULL) {
 
         if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
+
+			// Release long time ref
+			vnode_rele(vf->vf_vnode);
+
 			// Also commented out in MacZFS
 			//(void) VOP_PUTPAGE(vf->vf_vnode, 0, 0, B_INVAL, kcred, NULL);
 			(void) VOP_CLOSE(vf->vf_vnode, spa_mode(vd->vdev_spa), 1, 0,
@@ -223,7 +231,7 @@ vdev_file_io_strategy(void *arg)
 
     if (!vnode_getwithvid(vf->vf_vnode, vf->vf_vid)) {
 
-#ifdef DEBUG
+#ifdef DEBAG
 		if (zio->io_abd->abd_size != zio->io_size) {
 			zfs_vdev_file_size_mismatch_cnt++;
 
