@@ -3028,13 +3028,16 @@ zfs_vnop_allocate(struct vnop_allocate_args *ap)
 	    (ap->a_bytesallocated ? *ap->a_bytesallocated : 0), ap->a_offset,
 		zp->z_name_cache);
 
+	/*
+	 * This code has been reverted:
+	 * https://github.com/openzfsonosx/zfs/issues/631
+	 * Most likely not correctly aligned, and too-large offsets.
+	 */
+	return 0;
+
 	if (!zp || !zp->z_sa_hdl) return ENODEV;
 
-	zfsvfs = zp->z_zfsvfs;
-
-	dprintf("+%s: %p\n", __func__, ap->a_vp);
-
-	ZFS_ENTER(zfsvfs);
+//	*ap->a_bytesallocated = 0;
 
 	if (!vnode_isreg(vp)) {
 		ZFS_EXIT(zfsvfs);
