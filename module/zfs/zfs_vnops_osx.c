@@ -2658,6 +2658,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		if (!vaddr) {
 			if (ubc_upl_map(upl, (vm_offset_t *)&vaddr) != KERN_SUCCESS) {
 				error = EINVAL;
+				vaddr = NULL;
 				dprintf("ZFS: unable to map\n");
 				goto out;
 			}
