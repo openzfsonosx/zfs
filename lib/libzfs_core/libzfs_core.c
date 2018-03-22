@@ -558,6 +558,8 @@ lzc_send_resume(const char *snapname, const char *from, int fd,
 		fnvlist_add_boolean(args, "embedok");
 	if (flags & LZC_SEND_FLAG_COMPRESS)
 		fnvlist_add_boolean(args, "compressok");
+	if (flags & LZC_SEND_FLAG_SIGINFO)
+		fnvlist_add_boolean(args, "siginfo");
 	if (resumeobj != 0 || resumeoff != 0) {
 		fnvlist_add_uint64(args, "resume_object", resumeobj);
 		fnvlist_add_uint64(args, "resume_offset", resumeoff);

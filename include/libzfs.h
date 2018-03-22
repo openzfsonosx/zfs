@@ -686,6 +686,9 @@ typedef struct sendflags {
 
 	/* raw encrypted records are permitted */
 	boolean_t raw;
+
+	/* signal handling for SIGINFO are permitted */
+	boolean_t siginfo;
 } sendflags_t;
 
 typedef boolean_t (snapfilter_cb_t)(zfs_handle_t *, void *);

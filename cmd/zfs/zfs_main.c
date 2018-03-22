@@ -3906,6 +3906,9 @@ zfs_do_send(int argc, char **argv)
 		return (1);
 	}
 
+	/* Always enable siginfo from 'zfs' command */
+	flags.siginfo = B_TRUE;
+
 	if (resume_token != NULL) {
 		return (zfs_send_resume(g_zfs, &flags, STDOUT_FILENO,
 		    resume_token));
@@ -3940,6 +3943,8 @@ zfs_do_send(int argc, char **argv)
 			lzc_flags |= LZC_SEND_FLAG_COMPRESS;
 		if (flags.raw)
 			lzc_flags |= LZC_SEND_FLAG_RAW;
+		if (flags.siginfo)
+			lzc_flags |= LZC_SEND_FLAG_SIGINFO;
 
 		if (fromname != NULL &&
 		    (fromname[0] == '#' || fromname[0] == '@')) {
