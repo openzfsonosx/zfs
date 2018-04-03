@@ -123,6 +123,7 @@ KERNEL_C = \
 	zfs_debug.c \
 	zfs_fm.c \
 	zfs_fuid.c \
+	zfs_rlock.c \
 	zfs_sa.c \
 	zfs_znode.c \
 	zil.c \

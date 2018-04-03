@@ -143,6 +143,7 @@
 #include <sys/zap.h>
 #include <sys/vdev.h>
 #include <sys/vdev_impl.h>
+#include <sys/vdev_raidz.h>
 #include <sys/uberblock_impl.h>
 #include <sys/metaslab.h>
 #include <sys/metaslab_impl.h>
@@ -208,37 +209,6 @@ vdev_label_write(zio_t *zio, vdev_t *vd, int l, abd_t *buf, uint64_t offset,
 	    vdev_label_offset(vd->vdev_psize, l, offset),
 	    size, buf, ZIO_CHECKSUM_LABEL, done, private,
 	    ZIO_PRIORITY_SYNC_WRITE, flags, B_TRUE));
-}
-
-static void
-root_vdev_actions_getprogress(vdev_t *vd, nvlist_t *nvl)
-{
-	spa_t *spa = vd->vdev_spa;
-
-	if (vd != spa->spa_root_vdev)
-		return;
-
-	/* provide either current or previous scan information */
-	pool_scan_stat_t ps;
-	if (spa_scan_get_stats(spa, &ps) == 0) {
-		fnvlist_add_uint64_array(nvl,
-		    ZPOOL_CONFIG_SCAN_STATS, (uint64_t *)&ps,
-		    sizeof (pool_scan_stat_t) / sizeof (uint64_t));
-	}
-
-	pool_removal_stat_t prs;
-	if (spa_removal_get_stats(spa, &prs) == 0) {
-		fnvlist_add_uint64_array(nvl,
-		    ZPOOL_CONFIG_REMOVAL_STATS, (uint64_t *)&prs,
-		    sizeof (prs) / sizeof (uint64_t));
-	}
-
-	pool_checkpoint_stat_t pcs;
-	if (spa_checkpoint_get_stats(spa, &pcs) == 0) {
-		fnvlist_add_uint64_array(nvl,
-		    ZPOOL_CONFIG_CHECKPOINT_STATS, (uint64_t *)&pcs,
-		    sizeof (pcs) / sizeof (uint64_t));
-	}
 }
 
 /*
@@ -402,6 +372,44 @@ vdev_config_generate_stats(vdev_t *vd, nvlist_t *nv)
 	kmem_free(vsx, sizeof (*vsx));
 }
 
+static void
+root_vdev_actions_getprogress(vdev_t *vd, nvlist_t *nvl)
+{
+	spa_t *spa = vd->vdev_spa;
+
+	if (vd != spa->spa_root_vdev)
+		return;
+
+	/* provide either current or previous scan information */
+	pool_scan_stat_t ps;
+	if (spa_scan_get_stats(spa, &ps) == 0) {
+		fnvlist_add_uint64_array(nvl,
+		    ZPOOL_CONFIG_SCAN_STATS, (uint64_t *)&ps,
+		    sizeof (pool_scan_stat_t) / sizeof (uint64_t));
+	}
+
+	pool_removal_stat_t prs;
+	if (spa_removal_get_stats(spa, &prs) == 0) {
+		fnvlist_add_uint64_array(nvl,
+		    ZPOOL_CONFIG_REMOVAL_STATS, (uint64_t *)&prs,
+		    sizeof (prs) / sizeof (uint64_t));
+	}
+
+	pool_checkpoint_stat_t pcs;
+	if (spa_checkpoint_get_stats(spa, &pcs) == 0) {
+		fnvlist_add_uint64_array(nvl,
+		    ZPOOL_CONFIG_CHECKPOINT_STATS, (uint64_t *)&pcs,
+		    sizeof (pcs) / sizeof (uint64_t));
+	}
+
+	pool_raidz_expand_stat_t pres;
+	if (spa_raidz_expand_get_stats(spa, &pres) == 0) {
+		fnvlist_add_uint64_array(nvl,
+		    ZPOOL_CONFIG_RAIDZ_EXPAND_STATS, (uint64_t *)&pres,
+		    sizeof (pres) / sizeof (uint64_t));
+	}
+}
+
 /*
  * Generate the nvlist representing this vdev's config.
  */
@@ -432,31 +440,13 @@ vdev_config_generate(spa_t *spa, vdev_t *vd, boolean_t getstats,
 	if (vd->vdev_fru != NULL)
 		fnvlist_add_string(nv, ZPOOL_CONFIG_FRU, vd->vdev_fru);
 
-	if (vd->vdev_nparity != 0) {
-		ASSERT(strcmp(vd->vdev_ops->vdev_op_type,
-		    VDEV_TYPE_RAIDZ) == 0);
+	if (vd->vdev_ops == &vdev_raidz_ops)
+		vdev_raidz_config_generate(vd, nv);
 
-		/*
-		 * Make sure someone hasn't managed to sneak a fancy new vdev
-		 * into a crufty old storage pool.
-		 */
-		ASSERT(vd->vdev_nparity == 1 ||
-		    (vd->vdev_nparity <= 2 &&
-		    spa_version(spa) >= SPA_VERSION_RAIDZ2) ||
-		    (vd->vdev_nparity <= 3 &&
-		    spa_version(spa) >= SPA_VERSION_RAIDZ3));
-
-		/*
-		 * Note that we'll add the nparity tag even on storage pools
-		 * that only support a single parity device -- older software
-		 * will just ignore it.
-		 */
-		fnvlist_add_uint64(nv, ZPOOL_CONFIG_NPARITY, vd->vdev_nparity);
-	}
-
-	if (vd->vdev_wholedisk != -1ULL)
+	if (vd->vdev_wholedisk != -1ULL) {
 		fnvlist_add_uint64(nv, ZPOOL_CONFIG_WHOLE_DISK,
 		    vd->vdev_wholedisk);
+	}
 
 	if (vd->vdev_not_present && !(flags & VDEV_CONFIG_MISSING))
 		fnvlist_add_uint64(nv, ZPOOL_CONFIG_NOT_PRESENT, 1);
