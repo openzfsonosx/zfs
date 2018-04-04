@@ -1637,7 +1637,6 @@ retry:
 		goto retry;
 	}
 
-
 	if (spa_multihost(spa))
 		mmp_update_uberblock(spa, ub);
 
