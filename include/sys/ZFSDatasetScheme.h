@@ -30,6 +30,7 @@
 #include <IOKit/storage/IOPartitionScheme.h>
 #include <sys/ZFSDataset.h>
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -75,15 +76,25 @@ public:
 	    IOStorageAttributes	*attributes,
 	    IOStorageCompletion	*completion);
 
+#if defined (MAC_OS_X_VERSION_10_11) &&        \
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_11)
 	virtual IOReturn synchronize(IOService *client,
 	    UInt64			byteStart,
 	    UInt64			byteCount,
 	    IOStorageSynchronizeOptions	options = 0);
+#else
+	virtual IOReturn synchronizeCache(IOService *client);
+#endif
 
 	virtual IOReturn unmap(IOService *client,
 	    IOStorageExtent		*extents,
 	    UInt32			extentsCount,
+#if defined (MAC_OS_X_VERSION_10_11) &&        \
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_11)
 	    IOStorageUnmapOptions	options = 0);
+#else
+	    UInt32	options = 0);
+#endif
 
 	virtual bool lockPhysicalExtents(IOService *client);
 
@@ -93,10 +104,13 @@ public:
 
 	virtual void unlockPhysicalExtents(IOService *client);
 
+#if defined (MAC_OS_X_VERSION_10_10) &&        \
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_10)
 	virtual IOReturn setPriority(IOService *client,
 	    IOStorageExtent	*extents,
 	    UInt32		extentsCount,
 	    IOStoragePriority	priority);
+#endif
 
 protected:
 private:

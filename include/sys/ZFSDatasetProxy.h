@@ -56,6 +56,8 @@ public:
 	virtual IOReturn reportEjectability(bool *);
 	virtual IOReturn reportMaxValidBlock(UInt64 *);
 
+	virtual IOReturn setWriteCacheState(bool enabled);
+	virtual IOReturn getWriteCacheState(bool *enabled);
 #if 0
 	virtual void read(IOService *client, UInt64 byteStart,
 	    IOMemoryDescriptor *buffer, IOStorageAttributes *attr,

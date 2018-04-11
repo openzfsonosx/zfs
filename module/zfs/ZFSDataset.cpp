@@ -697,10 +697,16 @@ volatile SInt64 num_sync = 0;
 /*
  * Compatibility method simulates a barrier sync as a no-op.
  */
+#if defined (MAC_OS_X_VERSION_10_11) &&        \
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_11)
 IOReturn
 ZFSDataset::synchronize(IOService *client,
     UInt64 byteStart, UInt64 byteCount,
     IOStorageSynchronizeOptions options)
+#else
+IOReturn
+ZFSDataset::synchronizeCache(IOService *client)
+#endif
 {
 #ifdef DEBUG
 	SInt64 cur_sync = 0;
@@ -719,7 +725,12 @@ ZFSDataset::synchronize(IOService *client,
 IOReturn
 ZFSDataset::unmap(IOService *client,
     IOStorageExtent *extents, UInt32 extentsCount,
-    IOStorageUnmapOptions options)
+#if defined (MAC_OS_X_VERSION_10_11) &&        \
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_11)
+	IOStorageUnmapOptions	options)
+#else
+	UInt32	options)
+#endif
 {
 	DPRINTF_FUNC();
 	return (kIOReturnUnsupported);
@@ -761,6 +772,8 @@ ZFSDataset::unlockPhysicalExtents(IOService *client)
 /*
  * Compatibility method returns failure (unsupported).
  */
+#if defined (MAC_OS_X_VERSION_10_10) &&        \
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_10)
 IOReturn
 ZFSDataset::setPriority(IOService *client,
     IOStorageExtent *extents, UInt32 extentsCount,
@@ -770,6 +783,7 @@ ZFSDataset::setPriority(IOService *client,
 	return (kIOReturnUnsupported);
 	//return (IOMedia::setPriority(client, extents, extentsCount, priority));
 }
+#endif
 
 /*
  * Compatibility method returns default system blocksize.

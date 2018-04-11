@@ -2420,8 +2420,12 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			ATTR_CMN_EXTENDED_SECURITY |
 			ATTR_CMN_UUID |
 			ATTR_CMN_GRPUUID |
+#ifdef ATTR_CMN_DOCUMENT_ID
 			ATTR_CMN_DOCUMENT_ID |
+#endif
+#ifdef ATTR_CMN_GEN_COUNT
 			ATTR_CMN_GEN_COUNT |
+#endif
 			0;
 		fsap->f_attributes.validattr.volattr =
 			ATTR_VOL_FSTYPE	|
@@ -2484,9 +2488,12 @@ zfs_vfs_getattr(struct mount *mp, struct vfs_attr *fsap, __unused vfs_context_t 
 			ATTR_CMN_EXTENDED_SECURITY |
 			ATTR_CMN_UUID |
 			ATTR_CMN_GRPUUID |
+#ifdef ATTR_CMN_DOCUMENT_ID
 			ATTR_CMN_DOCUMENT_ID |
+#endif
+#ifdef ATTR_CMN_GEN_COUNT
 			ATTR_CMN_GEN_COUNT |
-
+#endif
 			0;
 		fsap->f_attributes.nativeattr.volattr =
 			ATTR_VOL_FSTYPE	|

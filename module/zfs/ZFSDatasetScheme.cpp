@@ -923,7 +923,9 @@ ZFSDatasetScheme::addDataset(const char *osname)
 
 	/* Set location in plane and partiton ID property */
 	dataset->setLocation(location);
+#ifdef kIOMediaBaseKey
 	dataset->setProperty(kIOMediaBaseKey, 0ULL, 64);
+#endif
 	dataset->setProperty(kIOMediaPartitionIDKey, part_id, 32);
 
 	// This sets the "diskutil list -> TYPE" field
@@ -1054,11 +1056,17 @@ ZFSDatasetScheme::write(IOService *client,
 	IOStorage::complete(completion, kIOReturnError, 0);
 }
 
+#if defined (MAC_OS_X_VERSION_10_11) &&        \
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_11)
 IOReturn
 ZFSDatasetScheme::synchronize(IOService *client,
     UInt64			byteStart,
     UInt64			byteCount,
     IOStorageSynchronizeOptions	options)
+#else
+IOReturn
+ZFSDatasetScheme::synchronizeCache(IOService *client)
+#endif
 {
 	return (kIOReturnUnsupported);
 }
@@ -1067,7 +1075,12 @@ IOReturn
 ZFSDatasetScheme::unmap(IOService *client,
     IOStorageExtent		*extents,
     UInt32			extentsCount,
-    IOStorageUnmapOptions	options)
+#if defined (MAC_OS_X_VERSION_10_11) &&        \
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_11)
+	    IOStorageUnmapOptions	options)
+#else
+	    UInt32	options)
+#endif
 {
 	return (kIOReturnUnsupported);
 }
@@ -1092,6 +1105,8 @@ ZFSDatasetScheme::unlockPhysicalExtents(IOService *client)
 	return;
 }
 
+#if defined (MAC_OS_X_VERSION_10_10) &&        \
+	(MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_10)
 IOReturn
 ZFSDatasetScheme::setPriority(IOService *client,
     IOStorageExtent	*extents,
@@ -1100,3 +1115,4 @@ ZFSDatasetScheme::setPriority(IOService *client,
 {
 	return (kIOReturnUnsupported);
 }
+#endif

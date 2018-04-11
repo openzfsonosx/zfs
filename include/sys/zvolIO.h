@@ -57,7 +57,7 @@ public:
 	virtual IOService* probe(IOService* provider, SInt32* score);
 	virtual bool start(IOService* provider);
 	virtual void stop(IOService* provider);
-	
+
 	virtual bool handleOpen(IOService *client,
 	    IOOptionBits options, void *arg);
 	virtual bool handleIsOpen(const IOService *client) const;

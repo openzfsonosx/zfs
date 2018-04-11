@@ -94,7 +94,7 @@ public:
 	virtual IOReturn reportMaxValidBlock(UInt64 *);
 
 	virtual IOReturn setWriteCacheState(bool enabled);
-	virtual IOReturn    getWriteCacheState(bool *enabled);
+	virtual IOReturn getWriteCacheState(bool *enabled);
 
 private:
 	/* These are declared class static to share across instances */
