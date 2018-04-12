@@ -458,3 +458,18 @@ ZFSDatasetProxy::reportMaxValidBlock(UInt64 *maxBlock)
 
 	return (kIOReturnSuccess);
 }
+
+IOReturn
+ZFSDatasetProxy::getWriteCacheState(bool *enabled)
+{
+	dprintf("getCacheState\n");
+	if (enabled) *enabled = true;
+	return (kIOReturnSuccess);
+}
+
+IOReturn
+ZFSDatasetProxy::setWriteCacheState(bool enabled)
+{
+	dprintf("setWriteCache\n");
+	return (kIOReturnSuccess);
+}
