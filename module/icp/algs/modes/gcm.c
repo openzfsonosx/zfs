@@ -28,11 +28,6 @@
 #include <sys/crypto/impl.h>
 #include <sys/byteorder.h>
 
-#ifdef __APPLE__
-// No assembler for now
-#undef __amd64
-#endif
-
 #ifdef __amd64
 
 #ifdef _KERNEL

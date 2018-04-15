@@ -70,10 +70,6 @@
 
 #ifdef __APPLE__
 #define _RESTRICT_KYWD
-/* In the future we can look at the assembler version, produced from the
- * perl script sha512-x86_64.pl
- */
-#undef __amd64
 #endif
 
 #ifdef _LITTLE_ENDIAN
@@ -86,7 +82,7 @@ static void Encode64(uint8_t *, uint64_t *, size_t);
 
 #if	defined(__amd64)
 #define	SHA512Transform(ctx, in) SHA512TransformBlocks((ctx), (in), 1)
-#define	SHA256Transform(ctx, in) ((ctx), (in), 1)
+#define	SHA256Transform(ctx, in) SHA256TransformBlocks((ctx), (in), 1)
 
 void SHA512TransformBlocks(SHA2_CTX *ctx, const void *in, size_t num);
 void SHA256TransformBlocks(SHA2_CTX *ctx, const void *in, size_t num);

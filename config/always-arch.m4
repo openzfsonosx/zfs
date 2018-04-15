@@ -5,14 +5,14 @@ AC_DEFUN([ZFS_AC_CONFIG_ALWAYS_ARCH], [
 	AC_MSG_CHECKING(for target asm dir)
 	TARGET_ARCH=`echo ${target_cpu} | sed -e s/i.86/i386/`
 
-	#	case $TARGET_ARCH in
-	#i386|x86_64)
-	#	TARGET_ASM_DIR=asm-${TARGET_ARCH}
-	#	;;
-	#*)
-		TARGET_ASM_DIR=asm-generic
-	#	;;
-	#esac
+		case $TARGET_ARCH in
+	i386|x86_64)
+		TARGET_ASM_DIR=asm-${TARGET_ARCH}
+		;;
+	*)
+		TARGET_ASM_DIR=asm-x86_64
+		;;
+	esac
 
 	AC_SUBST([TARGET_ASM_DIR])
 	AM_CONDITIONAL([TARGET_ASM_X86_64], test $TARGET_ASM_DIR = asm-x86_64)

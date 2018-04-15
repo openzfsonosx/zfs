@@ -101,12 +101,12 @@ ENTRY_NP(SHA512TransformBlocks)
 	mov	%rdx,16*8+2*8(%rsp)		# save end pointer, "3rd" arg
 	mov	%rbp,16*8+3*8(%rsp)		# save copy of %rsp
 
-	/.picmeup %rbp
-	/ The .picmeup pseudo-directive, from perlasm/x86_64_xlate.pl, puts
-	/ the address of the "next" instruction into the target register
-	/ (%rbp).  This generates these 2 instructions:
+	//.picmeup %rbp
+	// The .picmeup pseudo-directive, from perlasm/x86_64_xlate.pl, puts
+	// the address of the "next" instruction into the target register
+	// (%rbp).  This generates these 2 instructions:
 	lea	.Llea(%rip),%rbp
-	/nop	/ .picmeup generates a nop for mod 8 alignment--not needed here
+	//nop	// .picmeup generates a nop for mod 8 alignment--not needed here
 
 .Llea:
 	lea	K512-.(%rbp),%rbp
@@ -121,7 +121,7 @@ ENTRY_NP(SHA512TransformBlocks)
 	mov	8*7(%rdi),%r11
 	jmp	.Lloop
 
-.align	16
+.align	4, 0x90
 .Lloop:
 	xor	%rdi,%rdi
 	mov	8*0(%rsi),%r12
@@ -861,7 +861,7 @@ ENTRY_NP(SHA512TransformBlocks)
 
 	add	%r14,%rax			# h+=Maj(a,b,c)
 	jmp	.Lrounds_16_xx
-.align	16
+.align	4, 0x90
 .Lrounds_16_xx:
 	mov	8(%rsp),%r13
 	mov	112(%rsp),%r12
@@ -2037,8 +2037,7 @@ ENTRY_NP(SHA512TransformBlocks)
 	ret
 SET_SIZE(SHA512TransformBlocks)
 
-.align	64
-.type	K512,@object
+.align	6, 0x90
 K512:
 	.quad	0x428a2f98d728ae22,0x7137449123ef65cd
 	.quad	0xb5c0fbcfec4d3b2f,0xe9b5dba58189dbbc

@@ -5,7 +5,7 @@ AUTOMAKE_OPTIONS = subdir-objects
 AM_CFLAGS += $(DEBUG_STACKFLAGS) $(FRAME_LARGER_THAN)
 
 SUBDIRS = include $(TARGET_ASM_DIR)
-DIST_SUBDIRS = include asm-generic #asm-i386 asm-x86_64
+DIST_SUBDIRS = include asm-generic asm-i386 asm-x86_64
 
 DEFAULT_INCLUDES += \
 	-I$(top_srcdir)/lib/libspl/include \
@@ -34,7 +34,7 @@ libspl_la_SOURCES = \
 	zmount.c \
 	zone.c \
 	xdr.c \
-	asm-generic/atomic.S \
+	asm-x86_64/atomic.S \
 	include/sys/list.h \
 	include/sys/list_impl.h
 

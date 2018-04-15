@@ -42,6 +42,26 @@ noinst_PROGRAMS = zfs
 
 zfs_kext_SOURCE =
 
+if TARGET_ASM_X86_64
+zfs_ASM_SOURCES_C = ../icp/asm-x86_64/aes/aeskey.c
+zfs_ASM_SOURCES_AS = \
+	../icp/asm-x86_64/aes/aes_amd64.S \
+	../icp/asm-x86_64/aes/aes_intel.S \
+	../icp/asm-x86_64/modes/gcm_intel.S \
+	../icp/asm-x86_64/sha2/sha256_impl.S \
+	../icp/asm-x86_64/sha2/sha512_impl.S
+endif
+
+if TARGET_ASM_I386
+zfs_ASM_SOURCES_C =
+zfs_ASM_SOURCES_AS =
+endif
+
+if TARGET_ASM_GENERIC
+zfs_ASM_SOURCES_C =
+zfs_ASM_SOURCES_AS =
+endif
+
 zfs_SOURCES = \
 	abd.c \
 	aggsum.c \
@@ -210,7 +230,8 @@ zfs_SOURCES = \
 	../icp/algs/skein/skein_iv.c \
 	../icp/algs/aes/aes_impl.c \
 	../icp/algs/aes/aes_modes.c \
-	../icp/asm-x86_64/aes/aeskey.c
+	$(zfs_ASM_SOURCES_C) \
+	$(zfs_ASM_SOURCES_AS)
 
 zfs_CPPFLAGS=$(CFLAGS_KMOD)
 zfs_CXXFLAGS=$(CFLAGS_KMOD)

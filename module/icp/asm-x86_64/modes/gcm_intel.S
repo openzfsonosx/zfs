@@ -95,7 +95,7 @@ gcm_mul_pclmulqdq(uint64_t *x_in, uint64_t *y, uint64_t *res) {
 #define _ASM
 #include <sys/asm_linkage.h>
 
-#ifdef _KERNEL
+#if defined(_KERNEL) && !defined(__APPLE__)
 	/*
 	 * Note: the CLTS macro clobbers P2 (%rsi) under i86xpv.  That is,
 	 * it calls HYPERVISOR_fpu_taskswitch() which modifies %rsi when it
@@ -125,7 +125,7 @@ gcm_mul_pclmulqdq(uint64_t *x_in, uint64_t *y, uint64_t *res) {
 	testq	$CR0_TS, tmpreg; \
 	jnz	1f; \
 	and	$-XMM_ALIGN, %rsp; \
-	sub	$[XMM_SIZE * 11], %rsp; \
+	sub	$(XMM_SIZE * 11), %rsp; \
 	movaps	%xmm0, 160(%rsp); \
 	movaps	%xmm1, 144(%rsp); \
 	movaps	%xmm2, 128(%rsp); \
@@ -182,7 +182,7 @@ gcm_mul_pclmulqdq(uint64_t *x_in, uint64_t *y, uint64_t *res) {
 // static uint8_t byte_swap16_mask[] = {
 //	 15, 14, 13, 12, 11, 10, 9, 8, 7, 6 ,5, 4, 3, 2, 1, 0 };
 .text
-.align XMM_ALIGN
+.align XMM_ALIGN_LOG
 .Lbyte_swap16_mask:
 	.byte	15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
 

@@ -43,11 +43,6 @@
 
 #define	_RESTRICT_KYWD
 
-#ifdef __APPLE__
-// No assembler for now
-#undef __amd64
-#endif
-
 #ifdef _LITTLE_ENDIAN
 #include <sys/byteorder.h>
 #define	HAVE_HTONL

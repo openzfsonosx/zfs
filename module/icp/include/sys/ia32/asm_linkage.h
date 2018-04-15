@@ -102,7 +102,7 @@ extern "C" {
 #error	"inconsistent mask constants"
 #endif
 
-#define	ASM_ENTRY_ALIGN	16
+#define	ASM_ENTRY_ALIGN	4, 0x90
 
 /*
  * SSE register alignment and save areas
@@ -110,6 +110,7 @@ extern "C" {
 
 #define	XMM_SIZE	16
 #define	XMM_ALIGN	16
+#define	XMM_ALIGN_LOG	4, 0x90
 
 #if defined(__amd64)
 
@@ -180,8 +181,6 @@ extern "C" {
 /* CSTYLED */ \
 	.weak	_/**/sym; \
 /* CSTYLED */ \
-	.type	_/**/sym, @stype; \
-/* CSTYLED */ \
 _/**/sym = sym
 
 /*
@@ -190,7 +189,6 @@ _/**/sym = sym
  */
 #define	ANSI_PRAGMA_WEAK2(sym1, sym2, stype)	\
 	.weak	sym1; \
-	.type sym1, @stype; \
 sym1	= sym2
 
 /*
@@ -201,22 +199,25 @@ sym1	= sym2
 #define	ENTRY(x) \
 	.text; \
 	.align	ASM_ENTRY_ALIGN; \
+	.globl	_##x; \
 	.globl	x; \
-	.type	x, @function; \
+_##x:	; \
 x:	MCOUNT(x)
 
 #define	ENTRY_NP(x) \
 	.text; \
 	.align	ASM_ENTRY_ALIGN; \
+	.globl	_##x; \
 	.globl	x; \
-	.type	x, @function; \
+_##x:	; \
 x:
 
 #define	RTENTRY(x) \
 	.text; \
 	.align	ASM_ENTRY_ALIGN; \
+	.globl	_##x; \
 	.globl	x; \
-	.type	x, @function; \
+_##x:	; \
 x:	RTMCOUNT(x)
 
 /*
@@ -225,20 +226,22 @@ x:	RTMCOUNT(x)
 #define	ENTRY2(x, y) \
 	.text; \
 	.align	ASM_ENTRY_ALIGN; \
+	.globl	_##x, _##y; \
 	.globl	x, y; \
-	.type	x, @function; \
-	.type	y, @function; \
 /* CSTYLED */ \
+_##x:	; \
+_##y:	; \
 x:	; \
 y:	MCOUNT(x)
 
 #define	ENTRY_NP2(x, y) \
 	.text; \
 	.align	ASM_ENTRY_ALIGN; \
+	.globl	_##x, _##y; \
 	.globl	x, y; \
-	.type	x, @function; \
-	.type	y, @function; \
 /* CSTYLED */ \
+_##x:	; \
+_##y:	; \
 x:	; \
 y:
 
@@ -247,8 +250,9 @@ y:
  * ALTENTRY provides for additional entry points.
  */
 #define	ALTENTRY(x) \
+	.globl	_##x; \
 	.globl x; \
-	.type	x, @function; \
+_##x:	; \
 x:
 
 /*
@@ -264,7 +268,6 @@ x:
 #define	DGDEF2(name, sz) \
 	.data; \
 	.globl	name; \
-	.type	name, @object; \
 	.size	name, sz; \
 name:
 
@@ -272,7 +275,6 @@ name:
 	.data; \
 	.align	algn; \
 	.globl	name; \
-	.type	name, @object; \
 	.size	name, sz; \
 name:
 
@@ -281,8 +283,7 @@ name:
 /*
  * SET_SIZE trails a function and set the size for the ELF symbol table.
  */
-#define	SET_SIZE(x) \
-	.size	x, [.-x]
+#define	SET_SIZE(x)
 
 /*
  * NWORD provides native word value.
