@@ -85,9 +85,11 @@ zmount(zfs_handle_t *zhp, const char *spec, const char *dir, int mflag,
 
 			rv = zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_PROXY_DATASET, &zc);
 
+#ifdef DEBUG
 			if (rv)
 				fprintf(stderr, "proxy dataset returns %d '%s'\n",
 					rv, zc.zc_value);
+#endif
 
 			// Mount using /dev/diskX, use temporary buffer to give it full
 			// name
@@ -111,7 +113,7 @@ zmount(zfs_handle_t *zhp, const char *spec, const char *dir, int mflag,
 	 */
 	rpath = realpath(dir, NULL);
 
-	printf("%s calling mount with fstype %s, %s %s, fspec %s, mflag %d,"
+	dprintf("%s calling mount with fstype %s, %s %s, fspec %s, mflag %d,"
 		" optptr %s, optlen %d, devdisk %d, ispool %d\n",
 		__func__, fstype, (rpath ? "rpath" : "dir"),
 		(rpath ? rpath : dir), mnt_args.fspec, mflag, optptr, optlen,
