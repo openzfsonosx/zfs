@@ -10,7 +10,7 @@ AC_DEFUN([ZFS_AC_CONFIG_ALWAYS_ARCH], [
 		TARGET_ASM_DIR=asm-${TARGET_ARCH}
 		;;
 	*)
-		TARGET_ASM_DIR=asm-x86_64
+		TARGET_ASM_DIR=asm-generic
 		;;
 	esac
 
