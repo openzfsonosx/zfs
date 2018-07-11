@@ -81,7 +81,15 @@ zfs_release_sa_handle(sa_handle_t *hdl, dmu_buf_t *db, void *tag);
 
 
 // #define dprintf printf
+#ifdef  DEBUG
+#define ZNODE_STATS
+#endif  /* DEBUG */
 
+#ifdef  ZNODE_STATS
+#define ZNODE_STAT_ADD(stat)                    ((stat)++)
+#else
+#define ZNODE_STAT_ADD(stat)                    /* nothing */
+#endif  /* ZNODE_STATS */
 
 /*
  * Functions needed for userland (ie: libzpool) are not put under
@@ -204,7 +212,26 @@ zfs_znode_cache_destructor(void *buf, void *arg)
 	ASSERT(zp->z_xattr_cached == NULL);
 }
 
-#ifdef sun
+#define LOOKAWAY_HACKZ
+#ifdef LOOKAWAY_HACKZ
+
+#ifdef  ZNODE_STATS
+static struct {
+        uint64_t zms_zfsvfs_invalid;
+        uint64_t zms_zfsvfs_recheck1;
+        uint64_t zms_zfsvfs_unmounted;
+        uint64_t zms_zfsvfs_recheck2;
+        uint64_t zms_obj_held;
+        uint64_t zms_vnode_locked;
+        uint64_t zms_not_only_dnlc;
+} znode_move_stats;
+#endif  /* ZNODE_STATS */
+
+struct hack_vnode {
+	uint64_t misc[28];
+	void *v_data;
+};
+
 static void
 zfs_znode_move_impl(znode_t *ozp, znode_t *nzp)
 {
@@ -217,9 +244,14 @@ zfs_znode_move_impl(znode_t *ozp, znode_t *nzp)
 	vp = nzp->z_vnode;
 	nzp->z_vnode = ozp->z_vnode;
 	ozp->z_vnode = vp; /* let destructor free the overwritten vnode */
+#ifdef sun
 	ZTOV(ozp)->v_data = ozp;
 	ZTOV(nzp)->v_data = nzp;
-
+#else
+	struct hack_vnode *hvp = (struct hack_vnode *)nzp->z_vnode;
+	ASSERT3P(hvp->v_data, ==, ozp);
+	hvp->v_data = nzp;
+#endif
 	nzp->z_id = ozp->z_id;
 	ASSERT(ozp->z_dirlocks == NULL); /* znode not in use */
 	ASSERT(avl_numnodes(&ozp->z_range_avl) == 0);
@@ -240,7 +272,22 @@ zfs_znode_move_impl(znode_t *ozp, znode_t *nzp)
 	nzp->z_uid = ozp->z_uid;
 	nzp->z_gid = ozp->z_gid;
 	nzp->z_mode = ozp->z_mode;
+	nzp->z_is_zvol = ozp->z_is_zvol;
+	nzp->z_is_mapped = ozp->z_is_mapped;
+	nzp->z_is_ctldir = ozp->z_is_ctldir;
+#ifdef __APPLE__
+	nzp->z_vid = ozp->z_vid;
+	nzp->z_document_id = ozp->z_document_id;
+	nzp->z_finder_parentid = ozp->z_finder_parentid;
+	nzp->z_finder_hardlink = ozp->z_finder_hardlink;
+	nzp->z_write_gencount = ozp->z_write_gencount;
+	bcopy(ozp->z_name_cache, nzp->z_name_cache, MAXPATHLEN);
 
+	if (ozp->z_xattr_cached) {
+		nvlist_free(ozp->z_xattr_cached);
+		ozp->z_xattr_cached = NULL;
+	}
+#endif
 	/*
 	 * Since this is just an idle znode and kmem is already dealing with
 	 * memory pressure, release any cached ACL.
@@ -266,6 +313,9 @@ zfs_znode_move_impl(znode_t *ozp, znode_t *nzp)
 	 */
 	nzp->z_moved = 1;
 	ozp->z_moved = (uint8_t)-1;
+#ifdef __APPLE__
+	ASSERT3P(hvp->v_data, ==, nzp);
+#endif
 }
 
 /*ARGSUSED*/
@@ -335,6 +385,7 @@ zfs_znode_move(void *buf, void *newbuf, size_t size, void *arg)
 	 * znode cannot be freed and fields within the znode can be safely
 	 * accessed. Now, prevent a race with zfs_zget().
 	 */
+
 	if (ZFS_OBJ_HOLD_TRYENTER(zfsvfs, ozp->z_id) == 0) {
 		mutex_exit(&zfsvfs->z_znodes_lock);
 		ZFS_EXIT(zfsvfs);
@@ -343,7 +394,20 @@ zfs_znode_move(void *buf, void *newbuf, size_t size, void *arg)
 	}
 
 	vp = ZTOV(ozp);
-	if (mutex_tryenter(&vp->v_lock) == 0) {
+
+	// Confirm that the hack_vnode node is correct
+	// probably only need to check once, to make sure XNU has not
+	// changed the kernel's vnode struct.
+	struct hack_vnode *hvp = (struct hack_vnode *)vp;
+	if (hvp->v_data != ozp) {
+		ZFS_OBJ_HOLD_EXIT(zfsvfs, ozp->z_id);
+		mutex_exit(&zfsvfs->z_znodes_lock);
+		ZFS_EXIT(zfsvfs);
+		ZNODE_STAT_ADD(znode_move_stats.zms_vnode_locked);
+		return (KMEM_CBRC_DONT_KNOW);
+	}
+
+	if (vnode_get(vp) != 0) {
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, ozp->z_id);
 		mutex_exit(&zfsvfs->z_znodes_lock);
 		ZFS_EXIT(zfsvfs);
@@ -351,9 +415,9 @@ zfs_znode_move(void *buf, void *newbuf, size_t size, void *arg)
 		return (KMEM_CBRC_LATER);
 	}
 
-	/* Only move znodes that are referenced _only_ by the DNLC. */
-	if (vp->v_count != 1 || !vn_in_dnlc(vp)) {
-		mutex_exit(&vp->v_lock);
+	/* Only move znodes that are referenced _only_ by our hold. */
+	if (vnode_isinuse(vp, 1)) {
+		vnode_put(vp);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, ozp->z_id);
 		mutex_exit(&zfsvfs->z_znodes_lock);
 		ZFS_EXIT(zfsvfs);
@@ -365,17 +429,21 @@ zfs_znode_move(void *buf, void *newbuf, size_t size, void *arg)
 	 * The znode is known and in a valid state to move. We're holding the
 	 * locks needed to execute the critical section.
 	 */
+	spl_vnode_lock(vp);
 	zfs_znode_move_impl(ozp, nzp);
-	mutex_exit(&vp->v_lock);
+	spl_vnode_unlock(vp);
+
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, ozp->z_id);
 
 	list_link_replace(&ozp->z_link_node, &nzp->z_link_node);
 	mutex_exit(&zfsvfs->z_znodes_lock);
 	ZFS_EXIT(zfsvfs);
 
+	vnode_put(vp);
+
 	return (KMEM_CBRC_YES);
 }
-#endif /* sun */
+#endif
 
 void
 zfs_znode_init(void)
@@ -393,9 +461,9 @@ zfs_znode_init(void)
 	    zfs_znode_cache_destructor, NULL, NULL,
 	    NULL, 0);
 
-	// BGH - dont support move semantics here yet.
-	// zfs_znode_move() requires porting
-	//kmem_cache_set_move(znode_cache, zfs_znode_move);
+#ifdef LOOKAWAY_HACKZ
+	kmem_cache_set_move(znode_cache, zfs_znode_move);
+#endif
 }
 
 void

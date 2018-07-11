@@ -353,7 +353,9 @@ typedef struct znode {
         mutex_enter(&zfsvfs->z_hold_mtx[ZFS_OBJ_HASH(obj_num)])
 #define ZFS_OBJ_HELD(zfsvfs, obj_num) \
         mutex_owned(&zfsvfs->z_hold_mtx[ZFS_OBJ_HASH(obj_num)])
-#define ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num) \
+#define ZFS_OBJ_HOLD_TRYENTER(zfsvfs, obj_num) \
+        mutex_tryenter(ZFS_OBJ_MUTEX((zfsvfs), (obj_num)))
+#define ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num)						\
         mutex_exit(&zfsvfs->z_hold_mtx[ZFS_OBJ_HASH(obj_num)])
 
 
