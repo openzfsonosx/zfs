@@ -3640,12 +3640,6 @@ arc_hdr_realloc_crypt(arc_buf_hdr_t *hdr, boolean_t need_crypt)
 		arc_hdr_clear_flags(nhdr, ARC_FLAG_PROTECTED);
  	}
 
-	// Due to lazy cons/dest in kmem_cache - clear it
-	hdr->b_l1hdr.b_acb = NULL;
-	hdr->b_l1hdr.b_pabd = NULL;
-	hdr->b_l1hdr.b_buf = NULL;
-	hdr->b_l1hdr.b_state = 0;
-
 	buf_discard_identity(hdr);
  	kmem_cache_free(ocache, hdr);
 
