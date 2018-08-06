@@ -2045,16 +2045,6 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		error = ddi_copyin((const void *)mnt_args.optptr, (caddr_t)options,
 						   mnt_args.optlen, 0);
 
-		printf("%s: fspec '%s' : osname '%s' : proxy '%s' : mflag %04x :"
-			" optptr %p : optlen %d : options %s\n",
-			__func__,
-			mnt_args.fspec,
-			osname,
-			proxy && *proxy ? proxy : "",
-			mnt_args.mflag,
-			mnt_args.optptr,
-			mnt_args.optlen,
-			options);
 	}
 
 	if (mflag & MS_RDONLY) {
