@@ -60,9 +60,14 @@ typedef struct refcount {
 
 /* Note: refcount_t must be initialized with refcount_create[_untracked]() */
 
-void refcount_create(refcount_t *rc);
-void refcount_create_untracked(refcount_t *rc);
-void refcount_create_tracked(refcount_t *rc);
+void refcount_create_leak(refcount_t *rc, char *, int);
+void refcount_create_untracked_leak(refcount_t *rc, char *, int);
+void refcount_create_tracked_leak(refcount_t *rc, char *, int);
+
+#define refcount_create(X) refcount_create_leak((X), __FILE__, __LINE__)
+#define refcount_create_untracked(X) refcount_create_untracked_leak((X), __FILE__, __LINE__)
+#define refcount_create_tracked(X) refcount_create_tracked_leak((X), __FILE__, __LINE__)
+
 void refcount_destroy(refcount_t *rc);
 void refcount_destroy_many(refcount_t *rc, uint64_t number);
 int refcount_is_zero(refcount_t *rc);

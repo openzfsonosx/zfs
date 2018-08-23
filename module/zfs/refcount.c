@@ -38,6 +38,17 @@ int reference_history = 3; /* tunable */
 static kmem_cache_t *reference_cache;
 static kmem_cache_t *reference_history_cache;
 
+struct leak_struct {
+	void *rc;
+	char file[16];
+	uint32_t line;
+	list_node_t node;
+};
+typedef struct leak_struct leak_t;
+
+static list_t leak_list;
+static kmutex_t leak_lock;
+
 void
 refcount_init(void)
 {
@@ -46,17 +57,33 @@ refcount_init(void)
 
 	reference_history_cache = kmem_cache_create("reference_history_cache",
 	    sizeof (uint64_t), 0, NULL, NULL, NULL, NULL, NULL, 0);
+
+	mutex_init(&leak_lock, NULL, MUTEX_DEFAULT, NULL);
+	list_create(&leak_list, sizeof (leak_t),
+		offsetof(leak_t, node));
+	printf("ZFS: refcount leak detection\n");
 }
 
 void
 refcount_fini(void)
 {
+	leak_t *kp;
+
+	for (kp = list_head(&leak_list);
+		 kp;
+		 kp = list_next(&leak_list, kp)) {
+		printf("ZFS: %s:%d\n", kp->file, kp->line);
+	}
+	printf("ZFS: End of refcount leaks (if any)\n");
+	list_destroy(&leak_list);
+	mutex_destroy(&leak_lock);
+
 	kmem_cache_destroy(reference_cache);
 	kmem_cache_destroy(reference_history_cache);
 }
 
 void
-refcount_create(refcount_t *rc)
+refcount_create_leak(refcount_t *rc, char *file, int line)
 {
 	mutex_init(&rc->rc_mtx, NULL, MUTEX_DEFAULT, NULL);
 	list_create(&rc->rc_list, sizeof (reference_t),
@@ -66,19 +93,30 @@ refcount_create(refcount_t *rc)
 	rc->rc_count = 0;
 	rc->rc_removed_count = 0;
 	rc->rc_tracked = reference_tracking_enable;
+
+	leak_t *kp = kmem_alloc(sizeof(leak_t), KM_SLEEP);
+	char *r;
+	kp->rc = rc;
+	strlcpy(kp->file, (r = strrchr(file, '/')) ? r+1 : file,
+		sizeof(kp->file));
+	kp->line = line;
+	list_link_init(&kp->node);
+	mutex_enter(&leak_lock);
+	list_insert_head(&leak_list, kp);
+	mutex_exit(&leak_lock);
 }
 
 void
-refcount_create_tracked(refcount_t *rc)
+refcount_create_tracked_leak(refcount_t *rc, char *file, int line)
 {
-	refcount_create(rc);
+	refcount_create_leak(rc, file, line);
 	rc->rc_tracked = B_TRUE;
 }
 
 void
-refcount_create_untracked(refcount_t *rc)
+refcount_create_untracked_leak(refcount_t *rc, char *file, int line)
 {
-	refcount_create(rc);
+	refcount_create_leak(rc, file, line);
 	rc->rc_tracked = B_FALSE;
 }
 
@@ -101,6 +139,19 @@ refcount_destroy_many(refcount_t *rc, uint64_t number)
 	}
 	list_destroy(&rc->rc_removed);
 	mutex_destroy(&rc->rc_mtx);
+
+	mutex_enter(&leak_lock);
+	leak_t *kp;
+	for (kp = list_head(&leak_list);
+		 kp;
+		 kp = list_next(&leak_list, kp)) {
+		if (kp->rc == rc) {
+			list_remove(&leak_list, kp);
+			break;
+		}
+	}
+	mutex_exit(&leak_lock);
+
 }
 
 void
