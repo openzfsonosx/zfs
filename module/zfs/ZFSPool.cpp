@@ -244,9 +244,11 @@ ZFSPool::setPoolName(const char *name)
 	/* Save an OSString copy for IORegistry */
 	dsstr = OSString::withCString(newname);
 	//dsstr = OSSymbol::withCString(newname);
+
+	kmem_free(newname, len+1);
+
 	if (!dsstr) {
 		dprintf("OSString failed");
-		kmem_free(newname, len+1);
 		return (false);
 	}
 
