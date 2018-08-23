@@ -1024,6 +1024,7 @@ spa_keystore_remove_mapping(spa_t *spa, uint64_t dsobj, void *tag)
 	/* destroy the key mapping */
 	if (should_free) {
 		spa_keystore_dsl_key_rele(spa, found_km->km_key, found_km);
+		refcount_destroy(&found_km->km_refcnt);
 		kmem_free(found_km, sizeof (dsl_key_mapping_t));
 	}
 
