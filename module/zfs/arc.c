@@ -6248,6 +6248,14 @@ top:
 		uint64_t size;
 		abd_t *hdr_abd;
 
+		/*
+		 * Gracefully handle a damaged logical block size as a
+		 * checksum error.
+		 */
+		if (lsize > spa_maxblocksize(spa)) {
+			return SET_ERROR(ECKSUM);
+		}
+
 		if (hdr == NULL) {
 			/* this block is not in the cache */
 			arc_buf_hdr_t *exists = NULL;
