@@ -6252,7 +6252,7 @@ top:
 		 * Gracefully handle a damaged logical block size as a
 		 * checksum error.
 		 */
-		if (lsize > spa_maxblocksize(spa)) {
+		if ((lsize > spa_maxblocksize(spa)) || (psize > spa_maxblocksize(spa))) {
 			return SET_ERROR(ECKSUM);
 		}
 
