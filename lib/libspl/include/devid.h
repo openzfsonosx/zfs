@@ -31,6 +31,8 @@
 
 typedef int ddi_devid_t;
 
+#define	DEVID_FAILURE		-1
+
 typedef struct devid_nmlist {
 	char *devname;
 	dev_t dev;
@@ -43,7 +45,7 @@ devid_str_decode(
     ddi_devid_t *retdevid,
     char **retminor_name)
 {
-	abort();
+	return (DEVID_FAILURE);
 }
 
 static inline
@@ -54,28 +56,25 @@ devid_deviceid_to_nmlist(
     char *minor_name,
     devid_nmlist_t **retlist)
 {
-	abort();
+	return (DEVID_FAILURE);
 }
 
 static inline
 void
 devid_str_free(char *str)
 {
-	abort();
 }
 
 static inline
 void
 devid_free(ddi_devid_t devid)
 {
-	abort();
 }
 
 static inline
 void
 devid_free_nmlist(devid_nmlist_t *list)
 {
-	abort();
 }
 
 static inline
@@ -84,7 +83,7 @@ devid_get(
     int fd,
     ddi_devid_t *retdevid)
 {
-	return (-1);
+	return (DEVID_FAILURE);
 }
 
 static inline
@@ -93,7 +92,7 @@ devid_get_minor_name(
     int fd,
     char **retminor_name)
 {
-	abort();
+	return (-1);
 }
 
 static inline
@@ -102,7 +101,7 @@ devid_str_encode(
     ddi_devid_t devid,
     char *minor_name)
 {
-	abort();
+	return NULL;
 }
 
 #endif
