@@ -2102,7 +2102,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 			offset_t off, size_t size, int flags)
 {
 	dmu_tx_t *tx;
-	rl_t *rl;
+	locked_range_t *lr;
 	uint64_t filesz;
 	int err = 0;
 	size_t len = size;
@@ -2178,7 +2178,7 @@ zfs_pageout(zfsvfs_t *zfsvfs, znode_t *zp, upl_t upl, vm_offset_t upl_offset,
 
 
 top:
-	rl = zfs_range_lock(zp, off, len, RL_WRITER);
+	lr = rangelock_enter(&zp->z_rangelock, off, len, RL_WRITER);
 	/*
 	 * can't push pages passed end-of-file
 	 */
@@ -2216,7 +2216,7 @@ top:
 	err = dmu_tx_assign(tx, TXG_WAIT);
 	if (err != 0) {
 		if (err == ERESTART) {
-			zfs_range_unlock(rl);
+			rangelock_exit(lr);
 			dmu_tx_wait(tx);
 			dmu_tx_abort(tx);
 			goto top;
@@ -2289,7 +2289,7 @@ top:
 	dmu_tx_commit(tx);
 
 out:
-	zfs_range_unlock(rl);
+	rangelock_exit(lr);
 	if (flags & UPL_IOSYNC)
 		zil_commit(zfsvfs->z_log, zp->z_id);
 
@@ -2464,7 +2464,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	zfsvfs_t *zfsvfs = NULL;
 	int error = 0;
 	uint64_t filesize;
-	rl_t *rl;
+	locked_range_t *lr;
 	dmu_tx_t *tx;
 	caddr_t vaddr = NULL;
 	int merror = 0;
@@ -2540,7 +2540,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	ASSERT(vn_has_cached_data(ZTOV(zp)));
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
-	rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
+	lr = rangelock_enter(&zp->z_rangelock, ap->a_f_offset, a_size, RL_WRITER);
 
 	/* Grab UPL now */
 	int request_flags;
@@ -2735,8 +2735,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		vaddr = NULL;
 	}
   out:
-
-	zfs_range_unlock(rl);
+	rangelock_exit(lr);
 	if (a_flags & UPL_IOSYNC)
 		zil_commit(zfsvfs->z_log, zp->z_id);
 
@@ -2755,7 +2754,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	return (error);
 
   pageout_done:
-	zfs_range_unlock(rl);
+	rangelock_exit(lr);
 
   exit_abort:
 	dprintf("ZFS: pageoutv2 aborted %d\n", error);
