@@ -15,6 +15,7 @@
 
 /*
  * Copyright (c) 2017, Datto, Inc. All rights reserved.
+ * Copyright (c) 2018 by Delphix. All rights reserved.
  */
 
 #include <sys/dsl_crypt.h>

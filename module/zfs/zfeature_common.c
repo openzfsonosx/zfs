@@ -265,7 +265,6 @@ zpool_feature_init(void)
 	    "Support for blocks larger than 128KB.",
 	    ZFEATURE_FLAG_PER_DATASET, large_blocks_deps);
 
-	{
 	static const spa_feature_t large_dnode_deps[] = {
 		SPA_FEATURE_EXTENSIBLE_DATASET,
 		SPA_FEATURE_NONE
@@ -273,8 +272,8 @@ zpool_feature_init(void)
 	zfeature_register(SPA_FEATURE_LARGE_DNODE,
 	    "org.zfsonlinux:large_dnode", "large_dnode",
 	    "Variable on-disk size of dnodes.",
-	    ZFEATURE_FLAG_PER_DATASET, large_dnode_deps);
-	}
+	    ZFEATURE_FLAG_PER_DATASET,
+	    large_dnode_deps);
 
 	static const spa_feature_t sha512_deps[] = {
 		SPA_FEATURE_EXTENSIBLE_DATASET,
@@ -303,34 +302,6 @@ zpool_feature_init(void)
 	    "Edon-R hash algorithm.",
 	    ZFEATURE_FLAG_PER_DATASET, edonr_deps);
 
-	{
-	static const spa_feature_t bookmark_v2_deps[] = {
-		SPA_FEATURE_EXTENSIBLE_DATASET,
-		SPA_FEATURE_BOOKMARKS,
-		SPA_FEATURE_NONE
-	};
-	zfeature_register(SPA_FEATURE_BOOKMARK_V2,
-	    "com.datto:bookmark_v2", "bookmark_v2",
-	    "Support for larger bookmarks",
-	    ZFEATURE_FLAG_PER_DATASET, bookmark_v2_deps);
-	}
-
-	{
-	static const spa_feature_t encryption_deps[] = {
-		SPA_FEATURE_EXTENSIBLE_DATASET,
-		SPA_FEATURE_BOOKMARK_V2,
-		SPA_FEATURE_NONE
-	};
-	zfeature_register(SPA_FEATURE_ENCRYPTION,
-	    "com.datto:encryption", "encryption",
-	    "Support for dataset level encryption",
-	    ZFEATURE_FLAG_PER_DATASET, encryption_deps);
-	}
-	zfeature_register(SPA_FEATURE_DEVICE_REMOVAL,
-	    "com.delphix:device_removal", "device_removal",
-	    "Top-level vdevs can be removed, reducing logical pool size.",
-	    ZFEATURE_FLAG_MOS, NULL);
-
 	static const spa_feature_t obsolete_counts_deps[] = {
 		SPA_FEATURE_EXTENSIBLE_DATASET,
 		SPA_FEATURE_DEVICE_REMOVAL,
@@ -340,16 +311,43 @@ zpool_feature_init(void)
 	    "com.delphix:obsolete_counts", "obsolete_counts",
 	    "Reduce memory used by removed devices when their blocks are "
 	    "freed or remapped.",
-	    ZFEATURE_FLAG_READONLY_COMPAT, obsolete_counts_deps);
-	{
+	    ZFEATURE_FLAG_READONLY_COMPAT,
+	    obsolete_counts_deps);
+
+	static const spa_feature_t bookmark_v2_deps[] = {
+		SPA_FEATURE_EXTENSIBLE_DATASET,
+		SPA_FEATURE_BOOKMARKS,
+		SPA_FEATURE_NONE
+	};
+	zfeature_register(SPA_FEATURE_BOOKMARK_V2,
+	    "com.datto:bookmark_v2", "bookmark_v2",
+	    "Support for larger bookmarks",
+	    ZFEATURE_FLAG_PER_DATASET,
+	    bookmark_v2_deps);
+
+	static const spa_feature_t encryption_deps[] = {
+		SPA_FEATURE_EXTENSIBLE_DATASET,
+		SPA_FEATURE_BOOKMARK_V2,
+		SPA_FEATURE_NONE
+	};
+	zfeature_register(SPA_FEATURE_ENCRYPTION,
+	    "com.datto:encryption", "encryption",
+	    "Support for dataset level encryption",
+	    ZFEATURE_FLAG_PER_DATASET,
+	    encryption_deps);
+
+	zfeature_register(SPA_FEATURE_DEVICE_REMOVAL,
+	    "com.delphix:device_removal", "device_removal",
+	    "Top-level vdevs can be removed, reducing logical pool size.",
+	    ZFEATURE_FLAG_MOS, NULL);
+
 	zfeature_register(SPA_FEATURE_ALLOCATION_CLASSES,
 	    "org.zfsonlinux:allocation_classes", "allocation_classes",
 	    "Support for separate allocation classes.",
 	    ZFEATURE_FLAG_READONLY_COMPAT, NULL);
-	}
 
 	zfeature_register(SPA_FEATURE_RESILVER_DEFER,
 	    "com.datto:resilver_defer", "resilver_defer",
 	    "Support for defering new resilvers when one is already running.",
-	    ZFEATURE_FLAG_READONLY_COMPAT, /*ZFEATURE_TYPE_BOOLEAN,*/ NULL);
+	    ZFEATURE_FLAG_READONLY_COMPAT, NULL);
 }
