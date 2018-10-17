@@ -154,9 +154,9 @@ l_noret luaD_throw (lua_State *L, int errcode) {
       luaD_throw(G(L)->mainthread, errcode);  /* re-throw in main thread */
     }
     else {  /* no handler at all; abort */
-      if (G(L)->panic) {  /* panic function? */
+      if (G(L)->luapanic) {  /* panic function? */
         lua_unlock(L);
-        G(L)->panic(L);  /* call it (last chance to jump out) */
+        G(L)->luapanic(L);  /* call it (last chance to jump out) */
       }
       panic("no error handler");
     }

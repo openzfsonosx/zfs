@@ -125,8 +125,8 @@ LUA_API void lua_xmove (lua_State *from, lua_State *to, int n) {
 LUA_API lua_CFunction lua_atpanic (lua_State *L, lua_CFunction panicf) {
   lua_CFunction old;
   lua_lock(L);
-  old = G(L)->panic;
-  G(L)->panic = panicf;
+  old = G(L)->luapanic;
+  G(L)->luapanic = panicf;
   lua_unlock(L);
   return old;
 }

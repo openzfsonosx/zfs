@@ -287,7 +287,7 @@ LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud) {
   g->strt.hash = NULL;
   setnilvalue(&g->l_registry);
   luaZ_initbuffer(L, &g->buff);
-  g->panic = NULL;
+  g->luapanic = NULL;
   g->version = NULL;
   g->gcstate = GCSpause;
   g->allgc = NULL;

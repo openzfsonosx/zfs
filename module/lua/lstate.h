@@ -140,7 +140,7 @@ typedef struct global_State {
   int gcpause;  /* size of pause between successive GCs */
   int gcmajorinc;  /* pause between major collections (only in gen. mode) */
   int gcstepmul;  /* GC `granularity' */
-  lua_CFunction panic;  /* to be called in unprotected errors */
+  lua_CFunction luapanic;  /* to be called in unprotected errors */
   struct lua_State *mainthread;
   const lua_Number *version;  /* pointer to version number */
   TString *memerrmsg;  /* memory-error message */
