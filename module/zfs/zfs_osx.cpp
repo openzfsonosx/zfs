@@ -55,6 +55,7 @@ extern "C" {
 	kmod_start_func_t *_realmain = 0;
 	kmod_stop_func_t  *_antimain = 0;
 	int _kext_apple_cc = __APPLE_CC__ ;
+	extern uint64_t spl_initialised;
 };
 
 // Define the superclass.
@@ -268,47 +269,19 @@ net_lundman_zfs_zvol::probe (IOService* provider, SInt32* score)
     return res;
 }
 
+static void zfs_start_continue(void *);
+
 bool
 net_lundman_zfs_zvol::start (IOService *provider)
 {
     bool res = super::start(provider);
 
-
     IOLog("ZFS: Loading module ... \n");
 
-    sysctl_register_oid(&sysctl__zfs);
-    sysctl_register_oid(&sysctl__zfs_kext_version);
-
-	/* Init LDI */
-	int error = 0;
-	error = ldi_init(this);
-	if (error) {
-		IOLog("%s ldi_init error %d\n", __func__, error);
-		sysctl_unregister_oid(&sysctl__zfs_kext_version);
-		sysctl_unregister_oid(&sysctl__zfs);
-		return (false);
-		/* XXX Needs to fail ZFS start */
-	}
-
-	/*
-	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
-	 */
-	zfs_ioctl_osx_init();
+	(void)thread_create(NULL, 0, zfs_start_continue, (void *)this, 0, 0, 0, 92);
 
 	/* registerService() allows zconfigd to match against the service */
 	this->registerService();
-
-	///sysctl_register_oid(&sysctl__debug_maczfs);
-	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
-
-    zfs_vfsops_init();
-
-    /*
-     * When is the best time to start the system_taskq? It is strictly
-     * speaking not used by SPL, but by ZFS. ZFS should really start it?
-     */
-    system_taskq_init();
-
 
     /*
      * hostid is left as 0 on OSX, and left to be set if developers wish to
@@ -341,11 +314,52 @@ net_lundman_zfs_zvol::start (IOService *provider)
       }
     }
 
+	return res;
+}
+
+static void zfs_start_continue(void *this_arg)
+{
+	while(spl_initialised == 0) {
+		printf("ZFS: waiting for SPL init\n");
+		delay(hz >> 1);
+	}
+
+    sysctl_register_oid(&sysctl__zfs);
+    sysctl_register_oid(&sysctl__zfs_kext_version);
+
+	/* Init LDI */
+	int error = 0;
+	error = ldi_init(NULL);
+	if (error) {
+		IOLog("%s ldi_init error %d\n", __func__, error);
+		sysctl_unregister_oid(&sysctl__zfs_kext_version);
+		sysctl_unregister_oid(&sysctl__zfs);
+		thread_exit();
+		/* XXX Needs to fail ZFS start */
+	}
+
+	/*
+	 * Initialize /dev/zfs, this calls spa_init->dmu_init->arc_init-> etc
+	 */
+	zfs_ioctl_osx_init();
+
+	///sysctl_register_oid(&sysctl__debug_maczfs);
+	//sysctl_register_oid(&sysctl__debug_maczfs_stalk);
+
+    zfs_vfsops_init();
+
+    /*
+     * When is the best time to start the system_taskq? It is strictly
+     * speaking not used by SPL, but by ZFS. ZFS should really start it?
+     */
+    system_taskq_init();
+
+
 #ifdef ZFS_BOOT
-	zfs_boot_init(this);
+	zfs_boot_init((IOService *)this_arg);
 #endif
 
-    return res;
+	thread_exit();
 }
 
 void
