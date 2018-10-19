@@ -19,22 +19,20 @@
 
 #
 # DESCRIPTION:
-# Test zpool reopen -n while scrub is running.
-# Checks if re-plugged device is NOT resilvered.
+# Test zpool reopen -n while resilver is running.
+# Checks if the resilver is restarted.
 #
 # STRATEGY:
 # 1. Create a pool
 # 2. Remove a disk.
 # 3. Write test file to pool.
-# 4. Execute scrub.
-# 5. "Plug back" disk.
-# 6. Reopen a pool with an -n flag.
-# 7. Check if resilver was deferred.
-# 8. Check if trying to put device to offline fails because of no valid
-#    replicas.
+# 4. "Plug back" disk.
+# 5. Reopen a pool and wait until resilvering is started.
+# 6. Reopen a pool again with -n flag.
+# 7. Wait until resilvering is finished and check if it was restarted.
 #
 # NOTES:
-#	A 125ms delay is added to make sure that the scrub is running while
+#	A 25ms delay is added to make sure that the resilver is running while
 #	the reopen is invoked.
 #
 
@@ -43,7 +41,6 @@ verify_runnable "global"
 function cleanup
 {
 	log_must zinject -c all
-	# bring back removed disk online for further tests
 	insert_disk $REMOVED_DISK $scsi_host
 	poolexists $TESTPOOL && destroy_pool $TESTPOOL
 }
@@ -58,29 +55,30 @@ scsi_host=$(get_scsi_host $REMOVED_DISK)
 default_mirror_setup_noexit $REMOVED_DISK_ID $DISK2
 # 2. Remove a disk.
 remove_disk $REMOVED_DISK
-log_must zpool reopen -n $TESTPOOL
+
+log_must zpool reopen $TESTPOOL
 log_must check_state $TESTPOOL "$REMOVED_DISK_ID" "unavail"
 # 3. Write test file to pool.
 log_must generate_random_file /$TESTPOOL/data $LARGE_FILE_SIZE
-# 4. Execute scrub.
-# add delay to I/O requests for remaining disk in pool
-log_must zinject -d $DISK2 -D125:1 $TESTPOOL
-log_must zpool scrub $TESTPOOL
-# 5. "Plug back" disk.
+# 4. "Plug back" disk.
 insert_disk $REMOVED_DISK $scsi_host
-# 6. Reopen a pool with an -n flag.
-log_must zpool reopen -n $TESTPOOL
+
+# 5. Reopen a pool and wait until resilvering is started.
+log_must zpool reopen $TESTPOOL
 log_must check_state $TESTPOOL "$REMOVED_DISK_ID" "online"
+# add delay to I/O requests for the reopened disk
+log_must zinject -d $REMOVED_DISK_ID -D25:1 $TESTPOOL
+# wait until resilver starts
+log_must wait_for_resilver_start $TESTPOOL $MAXTIMEOUT
+
+# 6. Reopen a pool again with -n flag.
+log_must zpool reopen -n $TESTPOOL
+
+# 7. Wait until resilvering is finished and check if it was restarted.
+log_must wait_for_resilver_end $TESTPOOL $MAXTIMEOUT
 # remove delay from disk
 log_must zinject -c all
-# 7. Check if scrub scan is NOT replaced by resilver.
-log_must wait_for_scrub_end $TESTPOOL $MAXTIMEOUT
-log_must is_deferred_scan_started $TESTPOOL
-
-# 8. Check if trying to put device to offline fails because of no valid
-#    replicas.
-log_must wait_for_resilver_end $TESTPOOL $MAXTIMEOUT
-log_must zpool offline $TESTPOOL $DISK2
+log_mustnot is_scan_restarted $TESTPOOL
 
 # clean up
 log_must zpool destroy $TESTPOOL
