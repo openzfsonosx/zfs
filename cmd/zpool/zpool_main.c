@@ -103,6 +103,7 @@ static int zpool_do_split(int, char **);
 
 static int zpool_do_initialize(int, char **);
 static int zpool_do_scrub(int, char **);
+static int zpool_do_resilver(int, char **);
 
 static int zpool_do_trim(int, char **);
 
@@ -159,6 +160,7 @@ typedef enum {
 	HELP_INITIALIZE,
 	HELP_SCRUB,
 	HELP_TRIM,
+	HELP_RESILVER,
 	HELP_STATUS,
 	HELP_UPGRADE,
 	HELP_EVENTS,
@@ -293,6 +295,7 @@ static zpool_command_t command_table[] = {
 	{ "initialize",	zpool_do_initialize,	HELP_INITIALIZE		},
 	{ "scrub",	zpool_do_scrub,		HELP_SCRUB		},
 	{ "trim",	zpool_do_trim,		HELP_TRIM		},
+	{ "resilver",	zpool_do_resilver,	HELP_RESILVER		},
 	{ NULL },
 	{ "import",	zpool_do_import,	HELP_IMPORT		},
 	{ "export",	zpool_do_export,	HELP_EXPORT		},
@@ -380,6 +383,8 @@ get_usage(zpool_help_t idx) {
 	case HELP_TRIM:
 		return (gettext("\ttrim [-dp] [-r <rate>] [-c | -s] <pool> "
 		    "[<device> ...]\n"));
+	case HELP_RESILVER:
+		return (gettext("\tresilver <pool> ...\n"));
 	case HELP_STATUS:
 		return (gettext("\tstatus [-gLPvxD] [-T d|u] [pool] ... "
 		    "[interval [count]]\n"));
@@ -2018,11 +2023,14 @@ print_status_config(zpool_handle_t *zhp, status_cbdata_t *cb, const char *name,
 	(void) nvlist_lookup_uint64_array(nv, ZPOOL_CONFIG_SCAN_STATS,
 	    (uint64_t **)&ps, &c);
 
-	if (ps != NULL && ps->pss_state == DSS_SCANNING &&
-	    vs->vs_scan_processed != 0 && children == 0) {
-		(void) printf(gettext("  (%s)"),
-		    (ps->pss_func == POOL_SCAN_RESILVER) ?
-		    "resilvering" : "repairing");
+	if (ps != NULL && ps->pss_state == DSS_SCANNING && children == 0) {
+		if (vs->vs_scan_processed != 0) {
+			(void) printf(gettext("  (%s)"),
+			    (ps->pss_func == POOL_SCAN_RESILVER) ?
+			    "resilvering" : "repairing");
+		} else if (vs->vs_resilver_deferred) {
+			(void) printf(gettext("  (awaiting resilver)"));
+		}
 	}
 
 	/* Display vdev initialization and trim status for leaves */
@@ -6198,7 +6206,7 @@ scrub_callback(zpool_handle_t *zhp, void *data)
 	 * Ignore faulted pools.
 	 */
 	if (zpool_get_state(zhp) == POOL_STATE_UNAVAIL) {
-		(void) fprintf(stderr, gettext("cannot scrub '%s': pool is "
+		(void) fprintf(stderr, gettext("cannot scan '%s': pool is "
 		    "currently unavailable\n"), zpool_get_name(zhp));
 		return (1);
 	}

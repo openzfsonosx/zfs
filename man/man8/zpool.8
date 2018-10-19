@@ -156,6 +156,9 @@
 .Op Fl f
 .Ar pool Ar device Op Ar new_device
 .Nm
+.Cm resilver
+.Ar pool Ns ...
+.Nm
 .Cm scrub
 .Op Fl s | Fl p
 .Ar pool Ns ...
@@ -1903,7 +1906,14 @@ with no flags on the relevant target devices.
 .El
 .It Xo
 .Nm
->>>>>>> d1120a3417... Add UNMAP/TRIM functionality to ZFS [WIP]
+.Cm resilver
+.Ar pool Ns ...
+.Xc
+Starts a resilver. If an existing resilver is already running it will be
+restarted from the beginning. Any drives that were scheduled for a deferred
+resilver will be added to the new one.
+.It Xo
+.Nm
 .Cm set
 .Ar property Ns = Ns Ar value
 .Ar pool
