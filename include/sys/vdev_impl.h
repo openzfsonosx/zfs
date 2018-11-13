@@ -252,7 +252,7 @@ struct vdev {
 
 	/* pool checkpoint related */
 	space_map_t	*vdev_checkpoint_sm;	/* contains reserved blocks */
-	
+
 	boolean_t	vdev_initialize_exit_wanted;
 	vdev_initializing_state_t	vdev_initialize_state;
 	kthread_t	*vdev_initialize_thread;
@@ -499,14 +499,6 @@ extern boolean_t vdev_obsolete_counts_are_precise(vdev_t *vd);
  * Other miscellaneous functions
  */
 int vdev_checkpoint_sm_object(vdev_t *vd);
-
-/*
- * The vdev_buf_t is used to translate between zio_t and buf_t, and back again.
- */
-typedef struct vdev_buf {
-	ldi_buf_t	vb_buf;		/* buffer that describes the io */
-	zio_t	*vb_io;		/* pointer back to the original zio_t */
-} vdev_buf_t;
 
 #ifdef	__cplusplus
 }

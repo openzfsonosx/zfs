@@ -711,7 +711,7 @@ vdev_disk_io_intr(ldi_buf_t *bp)
 		    0, zio->io_size, zio->io_abd->abd_size);
 	}
 
-	kmem_free(vb, sizeof (vdev_buf_t));
+	//kmem_free(vb, sizeof (vdev_buf_t));
 
 	zio_delay_interrupt(zio);
 }
@@ -838,7 +838,8 @@ vdev_disk_io_start(zio_t *zio)
 
 	zio->io_target_timestamp = zio_handle_io_delay(zio);
 
-	vb = kmem_alloc(sizeof (vdev_buf_t), KM_SLEEP);
+//	vb = kmem_alloc(sizeof (vdev_buf_t), KM_SLEEP);
+	vb = &(zio->io_ldi_buf);
 
 	vb->vb_io = zio;
 	bp = &vb->vb_buf;
@@ -892,7 +893,7 @@ vdev_disk_io_start(zio_t *zio)
 	if (error != 0) {
 		dprintf("%s error from ldi_strategy %d\n", __func__, error);
 		zio->io_error = EIO;
-		kmem_free(vb, sizeof (vdev_buf_t));
+		//kmem_free(vb, sizeof (vdev_buf_t));
 		zio_execute(zio);
 		// zio_interrupt(zio);
 	}

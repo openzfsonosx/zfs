@@ -36,6 +36,8 @@
 #include <sys/avl.h>
 #include <sys/fs/zfs.h>
 #include <sys/zio_impl.h>
+#include <sys/ldi_buf.h>
+
 
 #ifdef	__cplusplus
 extern "C" {
@@ -488,6 +490,10 @@ struct zio {
 	kmutex_t	io_lock;
 	kcondvar_t	io_cv;
 	int		io_allocator;
+
+#if __APPLE__
+	vdev_buf_t  io_ldi_buf;
+#endif
 
 	/* FMA state */
 	zio_cksum_report_t *io_cksum_report;

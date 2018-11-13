@@ -32,6 +32,7 @@
 extern "C" {
 #endif /* __cplusplus */
 
+
 /*
  * Buffer context for LDI strategy
  */
@@ -49,6 +50,11 @@ typedef struct ldi_buf {
 	int		b_error;	/* IO error code */
 	uint64_t	pad;		/* Pad to 64 bytes */
 } ldi_buf_t;				/* XXX Currently 64b */
+
+typedef struct vdev_buf {
+	ldi_buf_t	vb_buf;		/* buffer that describes the io */
+	void *vb_io;		/* pointer back to the original zio_t */
+} vdev_buf_t;
 
 ldi_buf_t *ldi_getrbuf(int);
 void ldi_freerbuf(ldi_buf_t *);

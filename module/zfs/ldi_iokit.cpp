@@ -50,6 +50,8 @@
 #include <IOKit/storage/IOBlockStorageDevice.h>
 #include <IOKit/storage/IOStorageDeviceCharacteristics.h>
 
+#include <sys/ldi_buf.h>
+
 /*
  * ZFS internal
  */
@@ -1176,10 +1178,10 @@ media_from_path(const char *path = 0)
 
 /* Define an IOKit buffer for buf_strategy_iokit */
 typedef struct ldi_iokit_buf {
-	IOMemoryDescriptor	*iomem;
-	IOStorageCompletion	iocompletion;
-	IOStorageAttributes	ioattr;
-} ldi_iokit_buf_t;		/* XXX Currently 64b */
+       IOMemoryDescriptor      *iomem;
+       IOStorageCompletion     iocompletion;
+       IOStorageAttributes     ioattr;
+} ldi_iokit_buf_t;             /* XXX Currently 64b */
 
 /* Completion handler for IOKit strategy */
 static void
@@ -1188,7 +1190,6 @@ ldi_iokit_io_intr(void *target, void *parameter,
 {
 	ldi_iokit_buf_t *iobp = (ldi_iokit_buf_t *)target;
 	ldi_buf_t *lbp = (ldi_buf_t *)parameter;
-
 #ifdef DEBUG
 	/* In debug builds, verify buffer pointers */
 	ASSERT3U(lbp, !=, 0);
@@ -1243,7 +1244,8 @@ ldi_iokit_io_intr(void *target, void *parameter,
 	}
 
 	/* Free IOKit buffer */
-	kmem_free(iobp, sizeof (ldi_iokit_buf_t));
+	//kmem_free(iobp, sizeof (ldi_iokit_buf_t));
+	FREE(iobp, M_TEMP);
 
 	/* Call original completion function */
 	if (lbp->b_iodone) {
@@ -1291,6 +1293,7 @@ buf_sync_strategy_iokit(ldi_buf_t *lbp, ldi_iokit_buf_t *iobp,
  *     IOStorageAttributes *		attributes = 0,
  *     UInt64 *				actualByteCount = 0);
  */
+
 int
 buf_strategy_iokit(ldi_buf_t *lbp, struct ldi_handle *lhp)
 {
@@ -1309,8 +1312,9 @@ buf_strategy_iokit(ldi_buf_t *lbp, struct ldi_handle *lhp)
 #endif /* DEBUG */
 
 	/* Allocate an IOKit buffer */
-	iobp = (ldi_iokit_buf_t *)kmem_alloc(sizeof (ldi_iokit_buf_t),
-	    KM_SLEEP);
+	//iobp = (ldi_iokit_buf_t *)MALLOC(sizeof (ldi_iokit_buf_t));
+	MALLOC(iobp, ldi_iokit_buf_t *, sizeof (ldi_iokit_buf_t),M_TEMP,M_WAITOK);
+
 	if (!iobp) {
 		dprintf("%s couldn't allocate buf_iokit_t\n", __func__);
 		return (ENOMEM);
@@ -1346,7 +1350,7 @@ buf_strategy_iokit(ldi_buf_t *lbp, struct ldi_handle *lhp)
 		if (iobp->iomem) {
 			iobp->iomem->release();
 		}
-		kmem_free(iobp, sizeof (ldi_iokit_buf_t));
+		//kmem_free(iobp, sizeof (ldi_iokit_buf_t));
 		return (ENOMEM);
 	}
 
@@ -1355,7 +1359,7 @@ buf_strategy_iokit(ldi_buf_t *lbp, struct ldi_handle *lhp)
 		dprintf("%s device not online\n", __func__);
 		iobp->iomem->complete();
 		iobp->iomem->release();
-		kmem_free(iobp, sizeof (ldi_iokit_buf_t));
+		//kmem_free(iobp, sizeof (ldi_iokit_buf_t));
 		return (ENODEV);
 	}
 
