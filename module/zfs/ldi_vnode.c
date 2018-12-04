@@ -46,7 +46,7 @@
  * LDI Includes
  */
 #include <sys/ldi_impl_osx.h>
-
+#include <sys/spa.h>
 /* Debug prints */
 #ifdef DEBUG
 
@@ -228,9 +228,16 @@ handle_open_vnode(struct ldi_handle *lhp, char *path)
 		return (ENOMEM);
 	}
 
+	int locked = 0;
+	if (mutex_owned(&spa_namespace_lock)) {
+		locked = 1;
+		mutex_exit(&spa_namespace_lock);
+	}
 	/* Try to open the device by path (takes iocount) */
 	error = vnode_open(path, lhp->lh_fmode, 0, 0,
 	    &(LH_VNODE(lhp)), context);
+	if (locked)
+		mutex_enter(&spa_namespace_lock);
 
 	if (error) {
 		dprintf("%s vnode_open error %d\n", __func__, error);
