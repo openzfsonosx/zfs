@@ -1454,7 +1454,7 @@ zfs_boot_publish_bootfs(IOService *zfs_hl, pool_list_t *pools)
 	OSDictionary *properties = NULL;
 	spa_t *spa = NULL;
 	char *zfs_bootfs = NULL;
-	uint64_t bootfs = NULL;
+	uint64_t bootfs = 0ULL;
 	int error, len = ZFS_MAX_DATASET_NAME_LEN;
 
 	dprintf("%s\n", __func__);
