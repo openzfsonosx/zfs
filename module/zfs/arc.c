@@ -299,6 +299,8 @@
 
 #ifdef __APPLE__
 #include <sys/kstat_osx.h>
+#include <vm/vm_monitor.h>
+
 static void arc_abd_move_thr_init(void);
 static void arc_abd_move_thr_fini(void);
 static kcondvar_t arc_abd_move_thr_cv;
@@ -7677,6 +7679,15 @@ arc_max_bytes(void)
 	return (arc_c_max);
 }
 
+#ifdef __APPLE__
+
+void pressure_callback(int all, void* context)
+{
+	
+}
+
+#endif
+
 void
 arc_init(void)
 {
@@ -7808,6 +7819,8 @@ arc_init(void)
 	(void) thread_create(NULL, 0, arc_reclaim_thread, NULL, 0, &p0,
 	    TS_RUN, minclsyspri);
 
+	(void)vm_monitor_pressure_register(pressure_callback, NULL);
+	
 	arc_dead = B_FALSE;
 	arc_warm = B_FALSE;
 
@@ -7836,6 +7849,7 @@ void
 arc_fini(void)
 {
 #ifdef __APPLE__
+	vm_monitor_pressure_unregister(pressure_callback, NULL);
 	arc_abd_move_thr_fini();
 #endif
 	mutex_enter(&arc_reclaim_lock);
