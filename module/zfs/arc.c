@@ -286,6 +286,11 @@
 #include <sys/zil.h>
 #include <sys/fm/fs/zfs.h>
 #ifdef _KERNEL
+
+#ifdef __APPLE__
+#include <vm/vm_monitor.h>
+#endif
+
 #include <sys/vmsystm.h>
 #include <vm/anon.h>
 #include <sys/fs/swapnode.h>
@@ -299,7 +304,6 @@
 
 #ifdef __APPLE__
 #include <sys/kstat_osx.h>
-#include <vm/vm_monitor.h>
 
 static void arc_abd_move_thr_init(void);
 static void arc_abd_move_thr_fini(void);
@@ -7679,13 +7683,21 @@ arc_max_bytes(void)
 	return (arc_c_max);
 }
 
+#ifdef _KERNEL
 #ifdef __APPLE__
 
 void pressure_callback(int all, void* context)
 {
+	const uint64_t BYTES_TO_RELEASE_ON_PRESSURE = 1024 * 1024;
 	
+	(void)arc_shrink(BYTES_TO_RELEASE_ON_PRESSURE);
+	(void)arc_adjust();
+	
+	extern kmem_cache_t	*abd_chunk_cache;
+	kmem_cache_reap_now(abd_chunk_cache);
 }
 
+#endif
 #endif
 
 void
@@ -7819,7 +7831,11 @@ arc_init(void)
 	(void) thread_create(NULL, 0, arc_reclaim_thread, NULL, 0, &p0,
 	    TS_RUN, minclsyspri);
 
+#ifdef _KERNEL
+#ifdef __APPLE__
 	(void)vm_monitor_pressure_register(pressure_callback, NULL);
+#endif
+#endif
 	
 	arc_dead = B_FALSE;
 	arc_warm = B_FALSE;
@@ -7848,8 +7864,14 @@ arc_init(void)
 void
 arc_fini(void)
 {
+
+#ifdef _KERNEL
 #ifdef __APPLE__
 	vm_monitor_pressure_unregister(pressure_callback, NULL);
+#endif
+#endif
+	
+#ifdef __APPLE__
 	arc_abd_move_thr_fini();
 #endif
 	mutex_enter(&arc_reclaim_lock);
