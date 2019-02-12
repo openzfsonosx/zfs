@@ -1062,8 +1062,8 @@ vdev_trim_restart(vdev_t *vd)
 static void
 vdev_trim_range_verify(void *arg, uint64_t start, uint64_t size)
 {
-	ASSERTV(trim_args_t *ta = arg);
-	ASSERTV(metaslab_t *msp = ta->trim_msp);
+	trim_args_t *ta = arg;
+	metaslab_t *msp = ta->trim_msp;
 
 	VERIFY3B(msp->ms_loaded, ==, B_TRUE);
 	VERIFY3U(msp->ms_trimming, >, 0);

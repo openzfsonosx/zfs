@@ -419,12 +419,8 @@ zpool_collect_leaves(zpool_handle_t *zhp, nvlist_t *nvroot, nvlist_t *res)
 	    &child, &children);
 
 	if (children == 0) {
-		char *path = zpool_vdev_name(g_zfs, zhp, nvroot,
-		    VDEV_NAME_PATH);
-
-		if (strcmp(path, VDEV_TYPE_INDIRECT) != 0)
-			fnvlist_add_boolean(res, path);
-
+		char *path = zpool_vdev_name(g_zfs, zhp, nvroot, B_FALSE);
+		fnvlist_add_boolean(res, path);
 		free(path);
 		return;
 	}
@@ -6160,28 +6156,6 @@ zpool_do_scrub(int argc, char **argv)
 	}
 
 	return (for_each_pool(argc, argv, B_TRUE, NULL, scrub_callback, &cb));
-}
-
-static void
-zpool_collect_leaves(zpool_handle_t *zhp, nvlist_t *nvroot, nvlist_t *res)
-{
-	uint_t children = 0;
-	nvlist_t **child;
-	uint_t i;
-
-	(void) nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_CHILDREN,
-	    &child, &children);
-
-	if (children == 0) {
-		char *path = zpool_vdev_name(g_zfs, zhp, nvroot, B_FALSE);
-		fnvlist_add_boolean(res, path);
-		free(path);
-		return;
-	}
-
-	for (i = 0; i < children; i++) {
-		zpool_collect_leaves(zhp, child[i], res);
-	}
 }
 
 /*
