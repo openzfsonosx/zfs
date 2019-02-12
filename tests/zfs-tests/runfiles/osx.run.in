@@ -496,13 +496,13 @@ tests = ['zpool_sync_001_pos', 'zpool_sync_002_neg']
 # zfs_share_001_neg - requires additional dependencies
 # zfs_unshare_001_neg - requires additional dependencies
 [@PREFIX@/zfs-tests/tests/functional/cli_user/misc]
-tests = ['zdb_001_neg', 'zfs_001_neg', 
+tests = ['zdb_001_neg', 'zfs_001_neg',
 	# osx 'zfs_allow_001_neg',
     'zfs_clone_001_neg', 'zfs_create_001_neg', 'zfs_destroy_001_neg',
     'zfs_get_001_neg', 'zfs_inherit_001_neg', 'zfs_mount_001_neg',
     'zfs_promote_001_neg', 'zfs_receive_001_neg', 'zfs_rename_001_neg',
     'zfs_rollback_001_neg', 'zfs_send_001_neg', 'zfs_set_001_neg',
-    'zfs_snapshot_001_neg', 
+    'zfs_snapshot_001_neg',
     # osx 'zfs_unallow_001_neg',
     'zfs_unmount_001_neg', 'zfs_upgrade_001_neg',
     'zpool_001_neg', 'zpool_add_001_neg', 'zpool_attach_001_neg',
@@ -645,7 +645,7 @@ tests = ['mmp_on_thread', 'mmp_on_uberblocks', 'mmp_on_off', 'mmp_interval',
 tags = ['functional', 'mmp']
 
 [@PREFIX@/zfs-tests/tests/functional/mount]
-tests = ['umount_001']
+tests = ['umount_001', 'umount_unlinked_drain', 'umountall_001']
 
 [@PREFIX@/zfs-tests/tests/functional/mv_files]
 tests = ['mv_files_001_pos', 'mv_files_002_pos']

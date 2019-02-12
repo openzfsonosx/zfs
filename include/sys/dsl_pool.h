@@ -97,6 +97,7 @@ typedef struct dsl_pool {
 	uint64_t dp_root_dir_obj;
 	struct taskq *dp_vnget_taskq;    // async vnode_create
 	struct taskq *dp_vnrele_taskq;   // async vnode_put
+	struct taskq *dp_unlinked_drain_taskq;
 
 	/* No lock needed - sync context only */
 	blkptr_t dp_meta_rootbp;
@@ -178,6 +179,7 @@ boolean_t dsl_pool_config_held_writer(dsl_pool_t *dp);
 
 taskq_t *dsl_pool_vnget_taskq(dsl_pool_t *dp);
 taskq_t *dsl_pool_vnrele_taskq(dsl_pool_t *dp);
+taskq_t *dsl_pool_unlinked_drain_taskq(dsl_pool_t *dp);
 
 int dsl_pool_user_hold(dsl_pool_t *dp, uint64_t dsobj,
     const char *tag, uint64_t now, dmu_tx_t *tx);

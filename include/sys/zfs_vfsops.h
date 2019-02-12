@@ -50,6 +50,15 @@ struct znode;
 #define HIDE_TRIVIAL_ACL 1
 #endif
 
+/*
+ * Status of the zfs_unlinked_drain thread.
+ */
+typedef enum drain_state {
+	ZFS_DRAIN_SHUTDOWN = 0,
+	ZFS_DRAIN_RUNNING,
+    ZFS_DRAIN_SHUTDOWN_REQ
+} drain_state_t;
+
 
 typedef struct zfsvfs zfsvfs_t;
 
@@ -91,6 +100,11 @@ struct zfsvfs {
         uint64_t        z_version;
         uint64_t        z_shares_dir;   /* hidden shares dir */
         kmutex_t	    z_lock;
+
+        /* for controlling async zfs_unlinked_drain */
+        kmutex_t		z_drain_lock;
+        kcondvar_t		z_drain_cv;
+        drain_state_t	z_drain_state;
 
 #ifdef __APPLE__
 	dev_t		z_rdev;		/* proxy device for mount */
