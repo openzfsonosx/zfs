@@ -1620,7 +1620,7 @@ metaslab_init(metaslab_group_t *mg, uint64_t id, uint64_t object, uint64_t txg,
 
 	/*
 	 * The ms_trim tree is a subset of ms_allocatable which is kept
-	 * in-core as long as the autotrim property is set.  It's purpose
+	 * in-core as long as the autotrim property is set.  Its purpose
 	 * is to aggregate freed ranges to facilitate efficient trimming.
 	 */
 	ms->ms_trim = range_tree_create(NULL, NULL);
@@ -2737,12 +2737,12 @@ metaslab_sync_done(metaslab_t *msp, uint64_t txg)
 	metaslab_load_wait(msp);
 
 	/*
-	 * When auto-trimming is enabled then free ranges which are added
-	 * to ms_allocatable are also be added to ms_trim.  This tree is
+	 * When auto-trimming is enabled, free ranges which are added to
+	 * ms_allocatable are also be added to ms_trim.  The ms_trim tree is
 	 * periodically consumed by the vdev_autotrim_thread() which issues
 	 * trims for all ranges and then vacates the tree.  The ms_trim tree
 	 * can be discarded at any time with the sole consequence of recent
-	 * frees will not be trimmed.
+	 * frees not being trimmed.
 	 */
 	if (spa_get_autotrim(spa) == SPA_AUTOTRIM_ON) {
 		range_tree_walk(*defer_tree, range_tree_add, msp->ms_trim);

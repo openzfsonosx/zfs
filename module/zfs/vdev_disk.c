@@ -555,7 +555,7 @@ skip_open:
 	    FKIOCTL, kcred, NULL) == 0) {
 		vd->vdev_nonrot = (isssd ? B_TRUE : B_FALSE);
 	}
-	vd->vdev_trim = B_TRUE;
+	vd->vdev_notrim = B_FALSE;
 #endif //__APPLE__
 
 	return (0);
@@ -828,9 +828,15 @@ vdev_disk_io_start(zio_t *zio)
 		break;
 
 	case ZIO_TYPE_TRIM:
-		zio->io_error = -blkdev_issue_discard(vd->vd_bdev,
-		    zio->io_offset >> 9, zio->io_size >> 9, GFP_NOFS, 0);
-		rw_exit(&vd->vd_lock);
+		zio->io_vsd = dkc = kmem_alloc(sizeof (*dkc), KM_SLEEP);
+		zio->io_vsd_ops = &vdev_disk_vsd_ops;
+
+		dkc->dkc_callback = vdev_disk_ioctl_done;
+		dkc->dkc_flag = 0;
+		dkc->dkc_cookie = zio;
+
+		zio->io_error = ldi_ioctl(dvd->vd_lh, zio->io_cmd,
+			(uintptr_t)dkc, FKIOCTL, kcred, NULL);
 		zio_interrupt(zio);
 		return;
 

@@ -1724,6 +1724,19 @@ Default value: \fB5\fR.
 .sp
 .ne 2
 .na
+\fBzfs_vdev_aggregate_trim\fR (int)
+.ad
+.RS 12n
+Allow TRIM I/Os to be aggregated.  This is normally not helpful because
+the extents to be trimmed will have been already been aggregated by the
+metaslab.  This option is provided for debugging and performance analysis.
+.sp
+Default value: \fB0\fR.
+.RE
+
+.sp
+.ne 2
+.na
 \fBzfs_vdev_aggregation_limit\fR (int)
 .ad
 .RS 12n

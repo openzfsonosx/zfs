@@ -660,13 +660,15 @@ typedef struct zpool_load_policy {
 #define	ZPOOL_CONFIG_VDEV_ASYNC_IND_R_HISTO	"vdev_async_ind_r_histo"
 #define	ZPOOL_CONFIG_VDEV_ASYNC_IND_W_HISTO	"vdev_async_ind_w_histo"
 #define	ZPOOL_CONFIG_VDEV_IND_SCRUB_HISTO	"vdev_ind_scrub_histo"
+#define	ZPOOL_CONFIG_VDEV_IND_TRIM_HISTO	"vdev_ind_trim_histo"
+#define	ZPOOL_CONFIG_VDEV_IND_AUTOTRIM_HISTO	"vdev_ind_autotrim_histo"
 #define	ZPOOL_CONFIG_VDEV_SYNC_AGG_R_HISTO	"vdev_sync_agg_r_histo"
 #define	ZPOOL_CONFIG_VDEV_SYNC_AGG_W_HISTO	"vdev_sync_agg_w_histo"
 #define	ZPOOL_CONFIG_VDEV_ASYNC_AGG_R_HISTO	"vdev_async_agg_r_histo"
 #define	ZPOOL_CONFIG_VDEV_ASYNC_AGG_W_HISTO	"vdev_async_agg_w_histo"
 #define	ZPOOL_CONFIG_VDEV_AGG_SCRUB_HISTO	"vdev_agg_scrub_histo"
-#define	ZPOOL_CONFIG_VDEV_IND_TRIM_HISTO	"vdev_ind_trim_histo"
-#define	ZPOOL_CONFIG_VDEV_IND_AUTOTRIM_HISTO	"vdev_ind_autotrim_histo"
+#define	ZPOOL_CONFIG_VDEV_AGG_TRIM_HISTO	"vdev_agg_trim_histo"
+#define	ZPOOL_CONFIG_VDEV_AGG_AUTOTRIM_HISTO	"vdev_agg_autotrim_histo"
 
 #define	ZPOOL_CONFIG_INDIRECT_SIZE	"indirect_size"	/* not stored on disk */
 #define	ZPOOL_CONFIG_WHOLE_DISK		"whole_disk"

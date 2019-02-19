@@ -198,7 +198,7 @@ enum iostat_type {
  * of all the nvlists a flag requires.  Also specifies the order in
  * which data gets printed in zpool iostat.
  */
-static const char *vsx_type_to_nvlist[IOS_COUNT][13] = {
+static const char *vsx_type_to_nvlist[IOS_COUNT][15] = {
 	[IOS_L_HISTO] = {
 	    ZPOOL_CONFIG_VDEV_TOT_R_LAT_HISTO,
 	    ZPOOL_CONFIG_VDEV_TOT_W_LAT_HISTO,
@@ -241,7 +241,9 @@ static const char *vsx_type_to_nvlist[IOS_COUNT][13] = {
 	    ZPOOL_CONFIG_VDEV_IND_SCRUB_HISTO,
 	    ZPOOL_CONFIG_VDEV_AGG_SCRUB_HISTO,
 	    ZPOOL_CONFIG_VDEV_IND_TRIM_HISTO,
+	    ZPOOL_CONFIG_VDEV_AGG_TRIM_HISTO,
 	    ZPOOL_CONFIG_VDEV_IND_AUTOTRIM_HISTO,
+	    ZPOOL_CONFIG_VDEV_AGG_AUTOTRIM_HISTO,
 	    NULL},
 };
 
@@ -1659,6 +1661,7 @@ typedef struct status_cbdata {
 	boolean_t	cb_first;
 	boolean_t	cb_dedup_stats;
 	boolean_t	cb_print_status;
+	boolean_t	cb_print_vdev_init;
 	boolean_t	cb_print_vdev_trim;
 } status_cbdata_t;
 
@@ -1907,14 +1910,6 @@ print_status_config(zpool_handle_t *zhp, status_cbdata_t *cb, const char *name,
 		    (ps->pss_func == POOL_SCAN_RESILVER) ?
 		    "resilvering" : "repairing");
 	}
-
-	if ((vs->vs_initialize_state == VDEV_INITIALIZE_ACTIVE ||
-	    vs->vs_initialize_state == VDEV_INITIALIZE_SUSPENDED ||
-	    vs->vs_initialize_state == VDEV_INITIALIZE_COMPLETE) &&
-	    !vs->vs_scan_removing) {
-		char zbuf[1024];
-		char tbuf[256];
-		struct tm zaction_ts;
 
 	/* Display vdev initialization and trim status for leaves */
 	if (children == 0) {
@@ -3199,15 +3194,16 @@ static const name_and_columns_t iostat_top_labels[][IOSTAT_MAX_LABELS] =
 	[IOS_DEFAULT] = {{"capacity", 2}, {"operations", 2}, {"bandwidth", 2},
 	    {NULL}},
 	[IOS_LATENCY] = {{"total_wait", 2}, {"disk_wait", 2}, {"syncq_wait", 2},
-	    {"asyncq_wait", 2}, {"scrub"}, {"trim"}, {"autotrim"}},
+	    {"asyncq_wait", 2}, {"scrub", 1}, {"trim", 1}, {"atrim", 1},
+	    {NULL}},
 	[IOS_QUEUES] = {{"syncq_read", 2}, {"syncq_write", 2},
 	    {"asyncq_read", 2}, {"asyncq_write", 2}, {"scrubq_read", 2},
-	    {"trim", 2}, {NULL}},
-	[IOS_L_HISTO] = {{"total_wait", 2}, {"disk_wait", 2},
-	    {"sync_queue", 2}, {"async_queue", 2}, {NULL}},
+	    {"trimq_read", 2}, {"atrim_read", 2}, {NULL}},
+	[IOS_L_HISTO] = {{"total_wait", 2}, {"disk_wait", 2}, {"syncq_wait", 2},
+	    {"asyncq_wait", 2}, {NULL}},
 	[IOS_RQ_HISTO] = {{"sync_read", 2}, {"sync_write", 2},
 	    {"async_read", 2}, {"async_write", 2}, {"scrub", 2},
-	    {"trim", 2}, {NULL}},
+	    {"trim", 2}, {"autotrim", 2}, {NULL}},
 };
 
 /* Shorthand - if "columns" field not set, default to 1 column */
@@ -3223,9 +3219,10 @@ static const name_and_columns_t iostat_bottom_labels[][IOSTAT_MAX_LABELS] =
 	    {"pend"}, {"activ"}, {"pend"}, {"activ"}, {NULL}},
 	[IOS_L_HISTO] = {{"read"}, {"write"}, {"read"}, {"write"}, {"read"},
 	    {"write"}, {"read"}, {"write"}, {"scrub"}, {"trim"},
-	    {"autotrim"}, {NULL}},
+	    {"atrim"}, {NULL}},
 	[IOS_RQ_HISTO] = {{"ind"}, {"agg"}, {"ind"}, {"agg"}, {"ind"}, {"agg"},
-	    {"ind"}, {"agg"}, {"ind"}, {"agg"}, {"man"}, {"auto"}, {NULL}},
+	    {"ind"}, {"agg"}, {"ind"}, {"agg"}, {"ind"}, {"agg"},
+	    {"ind"}, {"agg"}, {NULL}},
 };
 
 static const char *histo_to_title[] = {
@@ -3284,6 +3281,8 @@ default_column_width(iostat_cbdata_t *cb, enum iostat_type type)
 		[IOS_DEFAULT] = 15, /* 1PB capacity */
 		[IOS_LATENCY] = 10, /* 1B ns = 10sec */
 		[IOS_QUEUES] = 6,   /* 1M queue entries */
+		[IOS_L_HISTO] = 10, /* 1B ns = 10sec */
+		[IOS_RQ_HISTO] = 6, /* 1M queue entries */
 	};
 
 	if (cb->cb_literal)
@@ -3306,7 +3305,7 @@ print_iostat_labels(iostat_cbdata_t *cb, unsigned int force_column_width,
     const name_and_columns_t labels[][IOSTAT_MAX_LABELS])
 {
 	int i, idx, s;
-	unsigned int text_start, rw_column_width, spaces_to_end;
+	int text_start, rw_column_width, spaces_to_end;
 	uint64_t flags = cb->cb_flags;
 	uint64_t f;
 	unsigned int column_width = force_column_width;
@@ -3330,8 +3329,10 @@ print_iostat_labels(iostat_cbdata_t *cb, unsigned int force_column_width,
 			rw_column_width = (column_width * columns) +
 			    (2 * (columns - 1));
 
-			text_start = (int) ((rw_column_width)/columns -
-			    slen/columns);
+			text_start = (int)((rw_column_width) / columns -
+			    slen / columns);
+			if (text_start < 0)
+				text_start = 0;
 
 			printf("  ");	/* Two spaces between columns */
 
@@ -3343,9 +3344,11 @@ print_iostat_labels(iostat_cbdata_t *cb, unsigned int force_column_width,
 
 			/* Print space after label to end of column */
 			spaces_to_end = rw_column_width - text_start - slen;
+			if (spaces_to_end < 0)
+				spaces_to_end = 0;
+
 			for (s = 0; s < spaces_to_end; s++)
 				printf(" ");
-
 		}
 	}
 	printf("\n");

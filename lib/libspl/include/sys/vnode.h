@@ -29,5 +29,6 @@
 
 #include_next <sys/vnode.h>
 
+#define F_FREESP 11
 
 #endif /* _LIBSPL_SYS_VNODE_H */

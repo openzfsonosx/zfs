@@ -55,8 +55,8 @@ function cleanup
 
 	log_must rm -f $TRIM_VDEVS
 
-        log_must set_tunable64 zfs_trim_extent_bytes_min $trim_extent_bytes_min
-        log_must set_tunable64 zfs_trim_txg_batch $trim_txg_batch
+	log_must set_tunable64 zfs_trim_extent_bytes_min $trim_extent_bytes_min
+	log_must set_tunable64 zfs_trim_txg_batch $trim_txg_batch
 	log_must set_tunable64 zfs_vdev_min_ms_count $vdev_min_ms_count
 }
 log_onexit cleanup

@@ -964,13 +964,13 @@ static spa_iostats_t spa_iostats_template = {
 #define	SPA_IOSTATS_ADD(stat, val) \
     atomic_add_64(&iostats->stat.value.ui64, (val));
 
-extern void
+void
 spa_iostats_trim_add(spa_t *spa, zio_priority_t priority,
     uint64_t extents_written, uint64_t bytes_written,
     uint64_t extents_skipped, uint64_t bytes_skipped,
     uint64_t extents_failed, uint64_t bytes_failed)
 {
-	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
+	spa_stats_history_t *shk = &spa->spa_stats.iostats;
 	kstat_t *ksp = shk->kstat;
 	spa_iostats_t *iostats;
 
@@ -1007,7 +1007,7 @@ spa_iostats_update(kstat_t *ksp, int rw)
 static void
 spa_iostats_init(spa_t *spa)
 {
-	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
+	spa_stats_history_t *shk = &spa->spa_stats.iostats;
 	char *name;
 	kstat_t *ksp;
 
@@ -1035,7 +1035,7 @@ spa_iostats_init(spa_t *spa)
 static void
 spa_iostats_destroy(spa_t *spa)
 {
-	spa_history_kstat_t *shk = &spa->spa_stats.iostats;
+	spa_stats_history_t *shk = &spa->spa_stats.iostats;
 	kstat_t *ksp = shk->kstat;
 	if (ksp) {
 		kmem_free(ksp->ks_data, sizeof (spa_iostats_t));
@@ -1053,7 +1053,6 @@ spa_stats_init(spa_t *spa)
 	spa_tx_assign_init(spa);
 	spa_io_history_init(spa);
 	spa_mmp_history_init(spa);
-	spa_state_init(spa);
 	spa_iostats_init(spa);
 }
 
@@ -1061,7 +1060,6 @@ void
 spa_stats_destroy(spa_t *spa)
 {
 	spa_iostats_destroy(spa);
-	spa_health_destroy(spa);
 	spa_tx_assign_destroy(spa);
 	spa_txg_history_destroy(spa);
 	spa_read_history_destroy(spa);

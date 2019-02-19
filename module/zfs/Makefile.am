@@ -146,6 +146,7 @@ zfs_SOURCES = \
 	vdev_raidz.c \
 	vdev_removal.c \
 	vdev_root.c \
+	vdev_trim.c \
 	zap.c \
 	zap_leaf.c \
 	zap_micro.c \

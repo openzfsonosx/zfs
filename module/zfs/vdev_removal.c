@@ -47,7 +47,6 @@
 #include <inttypes.h>
 #include <sys/vdev_initialize.h>
 #include <sys/vdev_trim.h>
-#include <sys/trace_vdev.h>
 
 /*
  * This file contains the necessary logic to remove vdevs from a
@@ -1832,15 +1831,10 @@ spa_vdev_remove_log(vdev_t *vd, uint64_t *txg)
 	/* Make sure these changes are sync'ed */
 	spa_vdev_config_exit(spa, NULL, *txg, 0, FTAG);
 
-<<<<<<< HEAD
-	/* Stop initializing */
-	vdev_initialize_stop_all(vd, VDEV_INITIALIZE_CANCELED);
-=======
 	/* Stop initializing and TRIM */
 	vdev_initialize_stop_all(vd, VDEV_INITIALIZE_CANCELED);
 	vdev_trim_stop_all(vd, VDEV_TRIM_CANCELED);
 	vdev_autotrim_stop_wait(vd);
->>>>>>> c0650da42e... Add UNMAP/TRIM functionality to ZFS [WIP]
 
 	*txg = spa_vdev_config_enter(spa);
 

@@ -825,7 +825,8 @@ extern int spa_vdev_detach(spa_t *spa, uint64_t guid, uint64_t pguid,
     int replace_done);
 extern int spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare);
 extern boolean_t spa_vdev_remove_active(spa_t *spa);
-extern int spa_vdev_initialize(spa_t *spa, uint64_t guid, uint64_t cmd_type);
+extern int spa_vdev_initialize(spa_t *spa, nvlist_t *nv, uint64_t guid,
+    nvlist_t *vdev_errlist);
 extern int spa_vdev_trim(spa_t *spa, nvlist_t *nv, uint64_t cmd_type,
     uint64_t rate, boolean_t fulltrim, nvlist_t *vdev_errlist);
 extern int spa_vdev_setpath(spa_t *spa, uint64_t guid, const char *newpath);

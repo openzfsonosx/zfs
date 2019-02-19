@@ -45,7 +45,7 @@ function get_trim_io
 		;;
 	"auto")
 		rval=$(zpool iostat -pr $pool | awk \
-		    '$1 ~ /[0-9].*/ { sum += $13 } END { print sum }')
+		    '$1 ~ /[0-9].*/ { sum += $14 } END { print sum }')
 		echo -n "$rval"
 		;;
 	*)

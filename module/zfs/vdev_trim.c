@@ -744,7 +744,7 @@ vdev_trim_range_add(void *arg, uint64_t start, uint64_t size)
 
 /*
  * Each (manual) trim thread is responsible for trimming the unallocated
- * space for each leaf vdev as described by its top-level ms->allocable.
+ * space for each leaf vdev as described by its top-level ms_allocatable.
  */
 static void
 vdev_trim_thread(void *arg)
@@ -1041,8 +1041,8 @@ vdev_trim_restart(vdev_t *vd)
 static void
 vdev_trim_range_verify(void *arg, uint64_t start, uint64_t size)
 {
-	trim_args_t *ta = arg;
-	metaslab_t *msp = ta->trim_msp;
+	ASSERTV(trim_args_t *ta = arg);
+	ASSERTV(metaslab_t *msp = ta->trim_msp);
 
 	ASSERT3B(msp->ms_loaded, ==, B_TRUE);
 	ASSERT3U(msp->ms_trimming, >, 0);
@@ -1064,8 +1064,10 @@ vdev_autotrim_thread(void *arg)
 	abd_t *deadbeef = NULL;
 	int shift = 0;
 
+	mutex_enter(&vd->vdev_autotrim_lock);
 	ASSERT3P(vd->vdev_top, ==, vd);
 	ASSERT3P(vd->vdev_autotrim_thread, !=, NULL);
+	mutex_exit(&vd->vdev_autotrim_lock);
 	spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
 	/*

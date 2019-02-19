@@ -55,7 +55,6 @@
 #include <sys/vdev_initialize.h>
 #include <sys/vdev_trim.h>
 #include <sys/zvol.h>
-#include <sys/zfs_ratelimit.h>
 
 /*
  * Virtual device management.
@@ -925,9 +924,6 @@ vdev_free(vdev_t *vd)
 	cv_destroy(&vd->vdev_autotrim_cv);
 	cv_destroy(&vd->vdev_trim_io_cv);
 
-	zfs_ratelimit_fini(&vd->vdev_delay_rl);
-	zfs_ratelimit_fini(&vd->vdev_checksum_rl);
-
 	if (vd == spa->spa_root_vdev)
 		spa->spa_root_vdev = NULL;
 
@@ -1127,6 +1123,12 @@ vdev_remove_parent(vdev_t *cvd)
 		 */
 		if (!cvd->vdev_spa->spa_autoexpand)
 			cvd->vdev_asize = mvd->vdev_asize;
+
+		/*
+		 * If the pool has autotrim enabled the autotrim thread needs
+		 * to be stopped on the top-level vdev before it can be freed.
+		 */
+		vdev_autotrim_stop_wait(mvd);
 	}
 	cvd->vdev_id = mvd->vdev_id;
 	vdev_add_child(pvd, cvd);
@@ -4563,21 +4565,6 @@ vdev_deadman(vdev_t *vd)
 		}
 		mutex_exit(&vq->vq_lock);
 	}
-}
-
-void
-vdev_set_deferred_resilver(spa_t *spa, vdev_t *vd)
-{
-	for (uint64_t i = 0; i < vd->vdev_children; i++)
-		vdev_set_deferred_resilver(spa, vd->vdev_child[i]);
-
-	if (!vd->vdev_ops->vdev_op_leaf || !vdev_writeable(vd) ||
-	    range_tree_is_empty(vd->vdev_dtl[DTL_MISSING])) {
-		return;
-	}
-
-	vd->vdev_resilver_deferred = B_TRUE;
-	spa->spa_resilver_deferred = B_TRUE;
 }
 
 /*

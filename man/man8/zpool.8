@@ -759,12 +759,11 @@ Prints out a message to the console and generates a system crash dump.
 .It Sy autotrim Ns = Ns Sy on Ns | Ns Sy off
 When set to
 .Sy on
-space which has been recently freed, and is is no longer allocated
-by the pool, will be periodically trimmed.  This allows thinly provisioned
-devices to reclaim unused blocks. This feature is supported on file vdevs via
-hole punching when supported by the underlying file system, and on block
-device vdevs when the underlying driver supports BLKDISCARD. The default
-setting for this property is
+space which has been recently freed, and is no longer allocated by the pool,
+will be periodically trimmed.  This allows block device vdevs which support
+BLKDISCARD, such as SSDs, or file vdevs on which the underlying file system
+supports hole-punching to reclaim unused blocks.  The default setting for
+this property is
 .Sy off .
 .Pp
 Please note that automatic trimming of data blocks can put significant stress
@@ -1535,11 +1534,9 @@ flag.
 .It Fl r
 Print request size histograms for the leaf vdev's IO. This includes
 histograms of individual IOs (ind) and aggregate IOs (agg).  TRIM IOs are
-not aggregated and are split in to manual (man) and automatic (auto).
-TRIM requests which exceed 16M in size are counted as 16M requests. These
-stats can be useful for observing how well IO aggregation is working.  This
-stats should not be confused with the block layer requests; it's possible
-these IOs will be broken up or merged before being sent to the block device.
+not aggregated and requests which exceed 16M in size are counted as 16M
+requests. These stats can be useful for observing how well IO aggregation
+is working.
 .It Fl v
 Verbose statistics Reports usage statistics for individual vdevs within the
 pool, in addition to the pool-wide statistics.
@@ -1872,9 +1869,9 @@ again.
 .Op Ar device Ns ...
 .Xc
 Initiates an immediate on-demand TRIM operation for all of the free space in
-a pool.  This operation informs the underlying storage devices of all of
-blocks that the pool no longer considers to be allocated.  This allows thinly
-provisioned storage devices to reclaim this space.
+a pool.  This operation informs the underlying storage devices of all blocks
+in the pool which are no longer allocated and allows thinly provisioned
+devices to reclaim the space.
 .Pp
 A manual on-demand TRIM operation can be initiated irrespective of the
 .Sy autotrim
