@@ -294,6 +294,17 @@ typedef struct splitflags {
 	int name_flags;
 } splitflags_t;
 
+typedef struct trimflags {
+	/* requested vdevs are for the entire pool */
+	boolean_t fullpool;
+
+	/* request a partial trim, ignores unallocated metaslabs */
+	boolean_t partial;
+
+	/* trim at the requested rate in bytes/second */
+	uint64_t rate;
+} trimflags_t;
+
 /*
  * Functions to manipulate pool and vdev state
  */
@@ -301,7 +312,7 @@ extern int zpool_scan(zpool_handle_t *, pool_scan_func_t, pool_scrub_cmd_t);
 extern int zpool_initialize(zpool_handle_t *, pool_initialize_func_t,
     nvlist_t *);
 extern int zpool_trim(zpool_handle_t *, pool_trim_func_t, nvlist_t *,
-    uint64_t, boolean_t);
+    trimflags_t *);
 
 extern int zpool_clear(zpool_handle_t *, const char *, nvlist_t *);
 extern int zpool_reguid(zpool_handle_t *);

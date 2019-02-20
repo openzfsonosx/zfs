@@ -2366,7 +2366,7 @@ xlate_trim_err(int err)
  */
 int
 zpool_trim(zpool_handle_t *zhp, pool_trim_func_t cmd_type, nvlist_t *vds,
-    uint64_t rate, boolean_t partial)
+    trimflags_t *trim_flags)
 {
 	char msg[1024];
 	int err;
@@ -2380,7 +2380,8 @@ zpool_trim(zpool_handle_t *zhp, pool_trim_func_t cmd_type, nvlist_t *vds,
 	err = zpool_translate_vdev_guids(zhp, vds, vdev_guids,
 	    guids_to_paths, &vd_errlist);
 	if (err == 0) {
-		err = lzc_trim(zhp->zpool_name, cmd_type, rate, partial,
+		err = lzc_trim(zhp->zpool_name, cmd_type,
+		    trim_flags->rate, trim_flags->partial,
 		    vdev_guids, &errlist);
 		if (err == 0) {
 			fnvlist_free(vdev_guids);
@@ -2403,6 +2404,13 @@ zpool_trim(zpool_handle_t *zhp, pool_trim_func_t cmd_type, nvlist_t *vds,
 	    elem != NULL; elem = nvlist_next_nvpair(vd_errlist, elem)) {
 		int64_t vd_error = xlate_trim_err(fnvpair_value_int64(elem));
 		char *path;
+
+		/*
+		 * If only the pool was specified suppress warnings for
+		 * individual vdevs which do not support trimming.
+		 */
+		if (vd_error == EZFS_TRIM_NOTSUP && trim_flags->fullpool)
+			continue;
 
 		if (nvlist_lookup_string(guids_to_paths, nvpair_name(elem),
 		    &path) != 0)

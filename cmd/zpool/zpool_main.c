@@ -6264,6 +6264,7 @@ zpool_do_trim(int argc, char **argv)
 	int c;
 	char *poolname;
 	zpool_handle_t *zhp;
+	trimflags_t trim_flags;
 	nvlist_t *vdevs;
 	int err = 0;
 
@@ -6347,6 +6348,9 @@ zpool_do_trim(int argc, char **argv)
 	if (zhp == NULL)
 		return (-1);
 
+	trim_flags.partial = partial;
+	trim_flags.rate = rate;
+
 	vdevs = fnvlist_alloc();
 	if (argc == 1) {
 		/* no individual leaf vdevs specified, so add them all */
@@ -6354,13 +6358,16 @@ zpool_do_trim(int argc, char **argv)
 		nvlist_t *nvroot = fnvlist_lookup_nvlist(config,
 		    ZPOOL_CONFIG_VDEV_TREE);
 		zpool_collect_leaves(zhp, nvroot, vdevs);
+		trim_flags.fullpool = B_TRUE;
 	} else {
+		trim_flags.fullpool = B_FALSE;
 		for (int i = 1; i < argc; i++) {
 			fnvlist_add_boolean(vdevs, argv[i]);
 		}
 	}
 
-	err = zpool_trim(zhp, cmd_type, vdevs, rate, partial);
+	err = zpool_trim(zhp, cmd_type, vdevs, &trim_flags);
+
 	fnvlist_free(vdevs);
 	zpool_close(zhp);
 
