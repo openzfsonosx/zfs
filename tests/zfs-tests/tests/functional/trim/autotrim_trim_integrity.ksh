@@ -98,8 +98,7 @@ for type in "" "mirror" "raidz" "raidz2" "raidz3"; do
 	done
 	log_must du -hs /$TESTPOOL
 
-	verify_trim_io $TESTPOOL "manual" 100
-	verify_trim_io $TESTPOOL "auto" 100
+	verify_trim_io $TESTPOOL "ind" 100
 	verify_pool $TESTPOOL
 
 	log_must zpool destroy $TESTPOOL

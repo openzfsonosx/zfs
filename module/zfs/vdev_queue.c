@@ -288,7 +288,6 @@ vdev_queue_class_min_active(zio_priority_t p)
 	case ZIO_PRIORITY_INITIALIZING:
 		return (zfs_vdev_initializing_min_active);
 	case ZIO_PRIORITY_TRIM:
-	case ZIO_PRIORITY_AUTOTRIM:
 		return (zfs_vdev_trim_min_active);
 	default:
 		panic("invalid priority %u", p);
@@ -354,7 +353,6 @@ vdev_queue_class_max_active(spa_t *spa, zio_priority_t p)
 	case ZIO_PRIORITY_INITIALIZING:
 		return (zfs_vdev_initializing_max_active);
 	case ZIO_PRIORITY_TRIM:
-	case ZIO_PRIORITY_AUTOTRIM:
 		return (zfs_vdev_trim_max_active);
 	default:
 		panic("invalid priority %u", p);
@@ -430,8 +428,7 @@ vdev_queue_init(vdev_t *vd)
 		 */
 		if (p == ZIO_PRIORITY_SYNC_READ ||
 		    p == ZIO_PRIORITY_SYNC_WRITE ||
-		    p == ZIO_PRIORITY_TRIM ||
-		    p == ZIO_PRIORITY_AUTOTRIM) {
+		    p == ZIO_PRIORITY_TRIM) {
 			compfn = vdev_queue_timestamp_compare;
 		} else {
 			compfn = vdev_queue_offset_compare;
@@ -831,21 +828,18 @@ vdev_queue_io(zio_t *zio)
 		    zio->io_priority != ZIO_PRIORITY_SCRUB &&
 		    zio->io_priority != ZIO_PRIORITY_REMOVAL &&
 		    zio->io_priority != ZIO_PRIORITY_INITIALIZING &&
-		    zio->io_priority != ZIO_PRIORITY_TRIM &&
-		    zio->io_priority != ZIO_PRIORITY_AUTOTRIM)
+		    zio->io_priority != ZIO_PRIORITY_TRIM)
 			zio->io_priority = ZIO_PRIORITY_ASYNC_READ;
 	} else if (zio->io_type == ZIO_TYPE_WRITE) {
 		if (zio->io_priority != ZIO_PRIORITY_SYNC_WRITE &&
 		    zio->io_priority != ZIO_PRIORITY_ASYNC_WRITE &&
 		    zio->io_priority != ZIO_PRIORITY_REMOVAL &&
 		    zio->io_priority != ZIO_PRIORITY_INITIALIZING &&
-		    zio->io_priority != ZIO_PRIORITY_TRIM &&
-		    zio->io_priority != ZIO_PRIORITY_AUTOTRIM)
+		    zio->io_priority != ZIO_PRIORITY_TRIM)
 			zio->io_priority = ZIO_PRIORITY_ASYNC_WRITE;
 	} else {
 		ASSERT(zio->io_type == ZIO_TYPE_TRIM);
-		ASSERT(zio->io_priority == ZIO_PRIORITY_TRIM ||
-		    zio->io_priority == ZIO_PRIORITY_AUTOTRIM);
+		ASSERT(zio->io_priority == ZIO_PRIORITY_TRIM);
 	}
 
 	zio->io_flags |= ZIO_FLAG_DONT_CACHE | ZIO_FLAG_DONT_QUEUE;

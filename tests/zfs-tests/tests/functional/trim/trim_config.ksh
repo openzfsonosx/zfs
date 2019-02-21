@@ -31,7 +31,7 @@
 
 #
 # DESCRIPTION:
-# 	Check various pool geometries (raidz[1-3], mirror, stripe)
+# 	Check various pool geometries (raidz[1-2], mirror, stripe)
 #
 # STRATEGY:
 #	1. Create a pool on file vdevs to trim.
@@ -103,6 +103,7 @@ for type in "" "mirror" "raidz" "raidz2"; do
 	log_must rm /$TESTPOOL/file
 	log_must zpool trim $TESTPOOL
 	wait_trim $TESTPOOL
+	wait_trim_io $TESTPOOL "ind" 10
 	verify_vdevs "-le" "$vdev_min_mb" $TRIM_VDEVS
 
 	log_must zpool destroy $TESTPOOL

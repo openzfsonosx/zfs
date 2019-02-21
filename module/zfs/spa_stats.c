@@ -965,7 +965,7 @@ static spa_iostats_t spa_iostats_template = {
     atomic_add_64(&iostats->stat.value.ui64, (val));
 
 void
-spa_iostats_trim_add(spa_t *spa, zio_priority_t priority,
+spa_iostats_trim_add(spa_t *spa, trim_type_t type,
     uint64_t extents_written, uint64_t bytes_written,
     uint64_t extents_skipped, uint64_t bytes_skipped,
     uint64_t extents_failed, uint64_t bytes_failed)
@@ -978,7 +978,7 @@ spa_iostats_trim_add(spa_t *spa, zio_priority_t priority,
 		return;
 
 	iostats = ksp->ks_data;
-	if (priority == ZIO_PRIORITY_TRIM) {
+	if (type == TRIM_TYPE_MANUAL) {
 		SPA_IOSTATS_ADD(trim_extents_written, extents_written);
 		SPA_IOSTATS_ADD(trim_bytes_written, bytes_written);
 		SPA_IOSTATS_ADD(trim_extents_skipped, extents_skipped);

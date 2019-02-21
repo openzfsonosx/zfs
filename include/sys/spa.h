@@ -772,6 +772,14 @@ typedef enum {
 	SPA_AUTOTRIM_ON
 } spa_autotrim_t;
 
+/*
+ * Reason TRIM command was issued, used internally for accounting purposes.
+ */
+typedef enum trim_type {
+	TRIM_TYPE_MANUAL = 0,
+	TRIM_TYPE_AUTO = 1,
+} trim_type_t;
+
 /* state manipulation functions */
 extern int spa_open(const char *pool, spa_t **, void *tag);
 extern int spa_open_rewind(const char *pool, spa_t **, void *tag,
@@ -964,7 +972,7 @@ extern int spa_mmp_history_set(spa_t *spa, uint64_t mmp_kstat_id, int io_error,
 extern void *spa_mmp_history_add(spa_t *spa, uint64_t txg, uint64_t timestamp,
     uint64_t mmp_delay, vdev_t *vd, int label, uint64_t mmp_kstat_id,
     int error);
-extern void spa_iostats_trim_add(spa_t *spa, zio_priority_t priority,
+extern void spa_iostats_trim_add(spa_t *spa, trim_type_t type,
     uint64_t extents_written, uint64_t bytes_written,
     uint64_t extents_skipped, uint64_t bytes_skipped,
     uint64_t extents_failed, uint64_t bytes_failed);

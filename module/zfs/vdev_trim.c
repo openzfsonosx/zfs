@@ -87,13 +87,12 @@ unsigned long zfs_trim_value = 0xdeadbeefdeadbeeeULL;
  */
 unsigned int zfs_trim_write = 0;
 
-
 typedef struct trim_args {
 	vdev_t		*trim_vdev;
 	metaslab_t	*trim_msp;
 	abd_t		*trim_abd;
 	range_tree_t	*trim_tree;
-	zio_priority_t	trim_priority;
+	trim_type_t	trim_type;
 	hrtime_t	trim_start_time;
 	uint64_t	trim_bytes_done;
 	uint64_t	trim_extent_bytes_max;
@@ -274,14 +273,9 @@ static void
 vdev_trim_cb(zio_t *zio)
 {
 	vdev_t *vd = zio->io_vd;
-	zio_priority_t priority = zio->io_priority;
-
-	ASSERT(priority == ZIO_PRIORITY_TRIM ||
-	    priority == ZIO_PRIORITY_AUTOTRIM);
 
 	mutex_enter(&vd->vdev_trim_io_lock);
-	if (zio->io_error == ENXIO && !vdev_writeable(vd) &&
-	    priority == ZIO_PRIORITY_TRIM) {
+	if (zio->io_error == ENXIO && !vdev_writeable(vd)) {
 		/*
 		 * The I/O failed because the vdev was unavailable; roll the
 		 * last offset back. (This works because spa_sync waits on
@@ -293,19 +287,42 @@ vdev_trim_cb(zio_t *zio)
 	} else {
 		if (zio->io_error != 0) {
 			vd->vdev_stat.vs_trim_errors++;
-			spa_iostats_trim_add(vd->vdev_spa, priority,
+			spa_iostats_trim_add(vd->vdev_spa, TRIM_TYPE_MANUAL,
 			    0, 0, 0, 0, 1, zio->io_orig_size);
 		} else {
-			spa_iostats_trim_add(vd->vdev_spa, priority,
+			spa_iostats_trim_add(vd->vdev_spa, TRIM_TYPE_MANUAL,
 			    1, zio->io_orig_size, 0, 0, 0, 0);
 		}
 
-		if (priority == ZIO_PRIORITY_TRIM)
-			vd->vdev_trim_bytes_done += zio->io_orig_size;
+		vd->vdev_trim_bytes_done += zio->io_orig_size;
 	}
 
-	ASSERT3U(vd->vdev_trim_inflight[priority - ZIO_PRIORITY_TRIM], >, 0);
-	vd->vdev_trim_inflight[priority - ZIO_PRIORITY_TRIM]--;
+	ASSERT3U(vd->vdev_trim_inflight[TRIM_TYPE_MANUAL], >, 0);
+	vd->vdev_trim_inflight[TRIM_TYPE_MANUAL]--;
+	cv_broadcast(&vd->vdev_trim_io_cv);
+	mutex_exit(&vd->vdev_trim_io_lock);
+
+	spa_config_exit(vd->vdev_spa, SCL_STATE_ALL, vd);
+}
+
+static void
+vdev_autotrim_cb(zio_t *zio)
+{
+	vdev_t *vd = zio->io_vd;
+
+	mutex_enter(&vd->vdev_trim_io_lock);
+
+	if (zio->io_error != 0) {
+		vd->vdev_stat.vs_trim_errors++;
+		spa_iostats_trim_add(vd->vdev_spa, TRIM_TYPE_AUTO,
+		    0, 0, 0, 0, 1, zio->io_orig_size);
+	} else {
+		spa_iostats_trim_add(vd->vdev_spa, TRIM_TYPE_AUTO,
+		    1, zio->io_orig_size, 0, 0, 0, 0);
+	}
+
+	ASSERT3U(vd->vdev_trim_inflight[TRIM_TYPE_AUTO], >, 0);
+	vd->vdev_trim_inflight[TRIM_TYPE_AUTO]--;
 	cv_broadcast(&vd->vdev_trim_io_cv);
 	mutex_exit(&vd->vdev_trim_io_lock);
 
@@ -326,7 +343,6 @@ vdev_trim_calculate_rate(trim_args_t *ta)
 static int
 vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 {
-	zio_priority_t priority = ta->trim_priority;
 	vdev_t *vd = ta->trim_vdev;
 	spa_t *spa = vd->vdev_spa;
 
@@ -345,7 +361,7 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	    zfs_trim_queue_limit) {
 		cv_wait(&vd->vdev_trim_io_cv, &vd->vdev_trim_io_lock);
 	}
-	vd->vdev_trim_inflight[priority - ZIO_PRIORITY_TRIM]++;
+	vd->vdev_trim_inflight[ta->trim_type]++;
 	mutex_exit(&vd->vdev_trim_io_lock);
 
 	dmu_tx_t *tx = dmu_tx_create_dd(spa_get_dsl(spa)->dp_mos_dir);
@@ -355,7 +371,7 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	spa_config_enter(spa, SCL_STATE_ALL, vd, RW_READER);
 	mutex_enter(&vd->vdev_trim_lock);
 
-	if (priority == ZIO_PRIORITY_TRIM &&
+	if (ta->trim_type == TRIM_TYPE_MANUAL &&
 	    vd->vdev_trim_offset[txg & TXG_MASK] == 0) {
 		uint64_t *guid = kmem_zalloc(sizeof (uint64_t), KM_SLEEP);
 		*guid = vd->vdev_guid;
@@ -372,7 +388,7 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	 */
 	if (vdev_trim_should_stop(vd)) {
 		mutex_enter(&vd->vdev_trim_io_lock);
-		vd->vdev_trim_inflight[priority - ZIO_PRIORITY_TRIM]--;
+		vd->vdev_trim_inflight[ta->trim_type]--;
 		mutex_exit(&vd->vdev_trim_io_lock);
 		spa_config_exit(vd->vdev_spa, SCL_STATE_ALL, vd);
 		mutex_exit(&vd->vdev_trim_lock);
@@ -381,17 +397,22 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	}
 	mutex_exit(&vd->vdev_trim_lock);
 
-	if (priority == ZIO_PRIORITY_TRIM)
+	if (ta->trim_type == TRIM_TYPE_MANUAL)
 		vd->vdev_trim_offset[txg & TXG_MASK] = start + size;
 
 	if (zfs_trim_write) {
 		zio_nowait(zio_write_phys(spa->spa_txg_zio[txg & TXG_MASK], vd,
-		    start, size, ta->trim_abd, ZIO_CHECKSUM_OFF, vdev_trim_cb,
-		    NULL, priority, ZIO_FLAG_CANFAIL, B_FALSE));
+		    start, size, ta->trim_abd, ZIO_CHECKSUM_OFF,
+		    ta->trim_type == TRIM_TYPE_MANUAL ?
+		    vdev_trim_cb : vdev_autotrim_cb, NULL,
+		    ZIO_PRIORITY_TRIM, ZIO_FLAG_CANFAIL, B_FALSE));
+		/* vdev_trim_cb and vdev_autotrim_cb release SCL_STATE_ALL */
 	} else {
 		zio_nowait(zio_trim(spa->spa_txg_zio[txg & TXG_MASK], vd,
-		    start, size, vdev_trim_cb, NULL, priority,
-		    ZIO_FLAG_CANFAIL));
+		    start, size, ta->trim_type == TRIM_TYPE_MANUAL ?
+		    vdev_trim_cb : vdev_autotrim_cb, NULL,
+		    ZIO_PRIORITY_TRIM, ZIO_FLAG_CANFAIL));
+		/* vdev_trim_cb and vdev_autotrim_cb release SCL_STATE_ALL */
 	}
 
 	dmu_tx_commit(tx);
@@ -457,7 +478,7 @@ vdev_trim_ranges(trim_args_t *ta)
 		uint64_t size = rs->rs_end - rs->rs_start;
 
 		if (extent_bytes_min && size < extent_bytes_min) {
-			spa_iostats_trim_add(spa, ta->trim_priority,
+			spa_iostats_trim_add(spa, ta->trim_type,
 			    0, 0, 1, size, 0, 0);
 			continue;
 		}
@@ -707,7 +728,7 @@ vdev_trim_range_add(void *arg, uint64_t start, uint64_t size)
 	 * Only a manual trim will be traversing the vdev sequentially.
 	 * For an auto trim all valid ranges should be added.
 	 */
-	if (ta->trim_priority == ZIO_PRIORITY_TRIM) {
+	if (ta->trim_type == TRIM_TYPE_MANUAL) {
 
 		/* Only add segments that we have not visited yet */
 		if (physical_rs.rs_end <= vd->vdev_trim_last_offset)
@@ -786,7 +807,7 @@ vdev_trim_thread(void *arg)
 	ta.trim_extent_bytes_max = extent_bytes_max;
 	ta.trim_extent_bytes_min = zfs_trim_extent_bytes_min;
 	ta.trim_tree = range_tree_create(NULL, NULL);
-	ta.trim_priority = ZIO_PRIORITY_TRIM;
+	ta.trim_type = TRIM_TYPE_MANUAL;
 
 	for (uint64_t i = 0; !vd->vdev_detached &&
 	    i < vd->vdev_top->vdev_ms_count; i++) {
@@ -1177,7 +1198,7 @@ vdev_autotrim_thread(void *arg)
 				ta->trim_abd = deadbeef;
 				ta->trim_extent_bytes_max = extent_bytes_max;
 				ta->trim_extent_bytes_min = extent_bytes_min;
-				ta->trim_priority = ZIO_PRIORITY_AUTOTRIM;
+				ta->trim_type = TRIM_TYPE_AUTO;
 
 				if (cvd->vdev_detached ||
 				    !vdev_writeable(cvd) ||

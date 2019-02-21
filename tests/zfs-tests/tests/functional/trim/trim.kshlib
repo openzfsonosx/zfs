@@ -28,28 +28,28 @@ function get_size_mb
 }
 
 #
-# Get the number of auto|manual trim IOs issued for the pool.
+# Get the number of trim IOs issued for the pool (ind or agg).
 #
 function get_trim_io
 {
 	typeset pool="${1-:$TESTPOOL}"
-	typeset type="${2-:auto}"
+	typeset type="${2-:ind}"
 	typeset rval
 
-	# Sum the manual or auto columns of the trim request size histogram.
+	# Sum the ind or agg columns of the trim request size histogram.
 	case "$type" in
-	"manual")
+	"ind")
 		rval=$(zpool iostat -pr $pool | awk \
 		    '$1 ~ /[0-9].*/ { sum += $12 } END { print sum }')
 		echo -n "$rval"
 		;;
-	"auto")
+	"agg")
 		rval=$(zpool iostat -pr $pool | awk \
-		    '$1 ~ /[0-9].*/ { sum += $14 } END { print sum }')
+		    '$1 ~ /[0-9].*/ { sum += $13 } END { print sum }')
 		echo -n "$rval"
 		;;
 	*)
-		log_fail "Type must be 'auto' or 'manual'"
+		log_fail "Type must be 'ind' or 'agg'"
 		;;
 	esac
 }
@@ -60,7 +60,7 @@ function get_trim_io
 function verify_trim_io
 {
 	typeset pool="${1:-$TESTPOOL}"
-	typeset type="${2:-auto}"
+	typeset type="${2:-ind}"
 	typeset min_trim_ios=${3:-100}
 	typeset ios
 
@@ -78,7 +78,7 @@ function verify_trim_io
 function wait_trim_io # pool type txgs
 {
 	typeset pool="${1-:$TESTPOOL}"
-	typeset type="${2-:auto}"
+	typeset type="${2-:ind}"
 	typeset txgs=${3:-10}
 	typeset timeout=120
 	typeset stop_time=$(( $(date +%s) + $timeout ))
