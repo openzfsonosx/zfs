@@ -1,5 +1,7 @@
 pkgdatadir = $(datadir)/@PACKAGE@/zfs-tests/tests/functional/trim
 dist_pkgdata_SCRIPTS = \
+	setup.ksh \
+	cleanup.ksh \
 	trim.kshlib \
 	autotrim_integrity.ksh \
 	autotrim_config.ksh \

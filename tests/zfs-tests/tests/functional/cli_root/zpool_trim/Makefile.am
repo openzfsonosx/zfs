@@ -1,5 +1,6 @@
 pkgdatadir = $(datadir)/@PACKAGE@/zfs-tests/tests/functional/cli_root/zpool_trim
 dist_pkgdata_SCRIPTS = \
+	setup.ksh \
 	cleanup.ksh \
 	zpool_trim.kshlib \
 	zpool_trim_attach_detach_add_remove.ksh \

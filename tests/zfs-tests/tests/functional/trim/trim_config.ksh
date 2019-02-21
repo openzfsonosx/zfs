@@ -31,7 +31,7 @@
 
 #
 # DESCRIPTION:
-# 	Check various pool geometries (raidz[1-2], mirror, stripe)
+# 	Check various pool geometries (raidz[1-3], mirror, stripe)
 #
 # STRATEGY:
 #	1. Create a pool on file vdevs to trim.
@@ -77,34 +77,25 @@ log_must set_tunable64 zfs_trim_txg_batch 8
 typeset vdev_min_ms_count=$(get_tunable zfs_vdev_min_ms_count)
 log_must set_tunable64 zfs_vdev_min_ms_count 64
 
-typeset vdev_max_mb=$(( floor(MINVDEVSIZE * 0.25 / 1024 / 1024) ))
-typeset vdev_min_mb=$(( floor(MINVDEVSIZE * 0.05 / 1024 / 1024) ))
+typeset VDEV_MAX_MB=$(( floor(MINVDEVSIZE * 0.40 / 1024 / 1024) ))
+typeset VDEV_MIN_MB=$(( floor(MINVDEVSIZE * 0.10 / 1024 / 1024) ))
 
-for type in "" "mirror" "raidz" "raidz2"; do
+for type in "" "mirror" "raidz" "raidz2" "raidz3"; do
 	log_must truncate -s $MINVDEVSIZE $TRIM_VDEVS
 	log_must zpool create -f $TESTPOOL $type $TRIM_VDEVS
 
-	# Fill pool.  Striped, mirrored, and raidz pools are filled to
-	# different capacities due to differences in the reserved space.
 	typeset availspace=$(get_prop available $TESTPOOL)
-	if [[ "$type" = "mirror" ]]; then
-		typeset fill_mb=$(( floor(availspace * 0.65 / 1024 / 1024) ))
-	elif [[ "$type" = "" ]]; then
-		typeset fill_mb=$(( floor(availspace * 0.35 / 1024 / 1024) ))
-	else
-		typeset fill_mb=$(( floor(availspace * 0.40 / 1024 / 1024) ))
-	fi
+	typeset fill_mb=$(( floor(availspace * 0.95 / 1024 / 1024) ))
 
-	log_must file_write -o create -f /$TESTPOOL/file \
-	    -b 1048576 -c $fill_mb -d R
-	verify_vdevs "-gt" "$vdev_max_mb" $TRIM_VDEVS
+	# Fill the pool, verify the vdevs are no longer sparse.
+	file_write -o create -f /$TESTPOOL/file -b 1048576 -c $fill_mb -d R
+	verify_vdevs "-gt" "$VDEV_MAX_MB" $TRIM_VDEVS
 
-	# Remove the file vdev usage should drop to less than 5%.
+	# Remove the file, issue trim, verify the vdevs are now sparse.
 	log_must rm /$TESTPOOL/file
 	log_must zpool trim $TESTPOOL
-	wait_trim $TESTPOOL
-	wait_trim_io $TESTPOOL "ind" 10
-	verify_vdevs "-le" "$vdev_min_mb" $TRIM_VDEVS
+	wait_trim $TESTPOOL $TRIM_VDEVS
+	verify_vdevs "-le" "$VDEV_MIN_MB" $TRIM_VDEVS
 
 	log_must zpool destroy $TESTPOOL
 	log_must rm -f $TRIM_VDEVS

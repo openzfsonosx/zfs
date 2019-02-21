@@ -1065,9 +1065,9 @@ vdev_trim_range_verify(void *arg, uint64_t start, uint64_t size)
 	ASSERTV(trim_args_t *ta = arg);
 	ASSERTV(metaslab_t *msp = ta->trim_msp);
 
-	ASSERT3B(msp->ms_loaded, ==, B_TRUE);
-	ASSERT3U(msp->ms_trimming, >, 0);
-	ASSERT(range_tree_find(msp->ms_allocatable, start, size) != NULL);
+	VERIFY3B(msp->ms_loaded, ==, B_TRUE);
+	VERIFY3U(msp->ms_trimming, >, 0);
+	VERIFY(range_tree_find(msp->ms_allocatable, start, size) != NULL);
 }
 
 /*

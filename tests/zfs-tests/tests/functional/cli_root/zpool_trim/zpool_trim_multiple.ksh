@@ -64,6 +64,7 @@ for n in {1..3}; do
 	done
 
 	log_must eval "trim_prog_line $TESTPOOL $DISK1 | grep complete"
+	sleep 1
 done
 
 log_pass "Trimming multiple times performs as expected"

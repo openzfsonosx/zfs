@@ -414,7 +414,6 @@ tests = ['zpool_trim_attach_detach_add_remove',
     'zpool_trim_start_and_cancel_pos', 'zpool_trim_suspend_resume',
     'zpool_trim_unsupported_vdevs', 'zpool_trim_verify_checksums',
     'zpool_trim_verify_trimmed']
-pre =
 tags = ['functional', 'zpool_trim']
 
 [tests/functional/cli_root/zpool_upgrade]
@@ -710,8 +709,6 @@ tests = ['tmpfile_001_pos', 'tmpfile_002_pos', 'tmpfile_003_pos']
 [tests/functional/trim]
 tests = ['autotrim_integrity', 'autotrim_config', 'autotrim_trim_integrity',
     'trim_integrity', 'trim_config']
-pre =
-post =
 tags = ['functional', 'trim']
 
 [tests/functional/truncate]
