@@ -206,7 +206,9 @@ vdev_file_close(vdev_t *vd)
 
 	if (vf->vf_vnode != NULL) {
 
-		// Also commented out in MacZFS
+		vnode_rele(vf->vf_vnode);
+
+	// Also commented out in MacZFS
 		//(void) VOP_PUTPAGE(vf->vf_vnode, 0, 0, B_INVAL, kcred, NULL);
 		(void) VOP_CLOSE(vf->vf_vnode, spa_mode(vd->vdev_spa), 1, 0,
 		    kcred, NULL);
