@@ -4,7 +4,7 @@ OpenZFS on OS X (O3X) brings OpenZFS features to Apple's OS X.
 ** zfs.kext depends upon spl.kext, so start with that repository:
 https://github.com/openzfsonosx/spl.git
 
-It is tested primarily on Mac OS X Sierra.
+It is tested primarily on MacOs Mojave.
 
 See http://openzfsonosx.org/ for more information.
 
@@ -12,17 +12,9 @@ Open Issues:
 
   https://github.com/openzfsonosx/zfs/issues?state=open
 
-Place repository directories "spl" and "zfs" next to each other, on
-the same level.
+Detailed compiling instructions can be found in the wiki:
 
-```
-# git clone https://github.com/openzfsonosx/zfs.git
-# ./autogen.sh
-# ./configure
-# make
-```
-
-Issue "make install" if you want it installed on the system.
+https://openzfsonosx.org/wiki/Install
 
 If you want to load it directly;
 
