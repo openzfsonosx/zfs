@@ -828,17 +828,15 @@ vdev_disk_io_start(zio_t *zio)
 		break;
 
 	case ZIO_TYPE_TRIM:
-		zio->io_vsd = dkc = kmem_alloc(sizeof (*dkc), KM_SLEEP);
-		zio->io_vsd_ops = &vdev_disk_vsd_ops;
-
-		dkc->dkc_callback = vdev_disk_ioctl_done;
-		dkc->dkc_flag = 0;
-		dkc->dkc_cookie = zio;
-
-		zio->io_error = ldi_ioctl(dvd->vd_lh, zio->io_cmd,
-			(uintptr_t)dkc, FKIOCTL, kcred, NULL);
+	{
+		dkioc_free_list_ext_t dfle;
+		dfle.dfle_start = zio->io_offset;
+		dfle.dfle_length = zio->io_size;
+		zio->io_error = ldi_ioctl(dvd->vd_lh, DKIOCFREE,
+			(uintptr_t)&dfle, FKIOCTL, kcred, NULL);
 		zio_interrupt(zio);
 		return;
+	}
 
 	default:
 		zio->io_error = SET_ERROR(ENOTSUP);

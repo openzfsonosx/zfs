@@ -1888,4 +1888,49 @@ handle_is_solidstate_iokit(struct ldi_handle *lhp, int *isssd)
 	return (0);
 }
 
+int
+handle_unmap_iokit(struct ldi_handle *lhp,
+    dkioc_free_list_ext_t *dkm)
+{
+	int error = 0;
+
+	if (!lhp || !dkm) {
+		return (EINVAL);
+	}
+
+	/* Validate IOMedia */
+	if (!OSDynamicCast(IOMedia, LH_MEDIA(lhp))) {
+		dprintf("%s invalid IOKit handle\n", __func__);
+		return (ENODEV);
+	}
+
+	LH_MEDIA(lhp)->retain();
+
+	/* We need to convert illumos' dkioc_free_list_t to dk_unmap_t */
+	IOStorageExtent *extents;
+	extents = IONew(IOStorageExtent, 1);
+	extents[0].byteStart = dkm->dfle_start;
+	extents[0].byteCount = dkm->dfle_length;
+
+	/* dkm->dfl_flags vs IOStorageUnmapOptions
+	 * #define DF_WAIT_SYNC 0x00000001 / * Wait for full write-out of free. * /
+	 * IOStorageUnmapOptions is only 0
+	 */
+
+	/* issue unmap */
+	error = LH_MEDIA(lhp)->unmap(LH_CLIENT(lhp),
+	    extents, 1, 0);
+
+	if (error != 0) {
+		printf("%s unmap: 0x%x\n", __func__, error);
+		error = ENOTSUP; /* As expected in vdev_disk.c DKIOCFREE */
+	}
+
+	IODelete(extents, IOStorageExtent, 1);
+	LH_MEDIA(lhp)->release();
+
+	return (error);
+}
+
+
 } /* extern "C" */

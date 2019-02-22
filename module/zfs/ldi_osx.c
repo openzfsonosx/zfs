@@ -2194,6 +2194,21 @@ ldi_ioctl(ldi_handle_t lh, int cmd, intptr_t arg,
 			return (ENOTSUP);
 		}
 
+    case DKIOCFREE: /* UNMAP */
+		/* IOMedia or vnode */
+		switch (handlep->lh_type) {
+        case LDI_TYPE_IOKIT:
+			return (handle_unmap_iokit(handlep,
+					(dkioc_free_list_ext_t *)arg));
+
+        case LDI_TYPE_VNODE:
+			return (handle_unmap_vnode(handlep,
+					(dkioc_free_list_ext_t *)arg));
+
+        default:
+			return (ENOTSUP);
+		}
+
 	default:
 		return (ENOTSUP);
 	}
