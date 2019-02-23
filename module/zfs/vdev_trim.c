@@ -844,6 +844,13 @@ vdev_trim_thread(void *arg)
 
 		spa_config_exit(spa, SCL_CONFIG, FTAG);
 		error = vdev_trim_ranges(&ta);
+
+		/*
+		 * Wait for any trims which have been issued to be
+		 * synced before allowing new allocations to occur.
+		 */
+		txg_wait_synced(spa->spa_dsl_pool, 0);
+
 		vdev_trim_ms_unmark(msp);
 		spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
