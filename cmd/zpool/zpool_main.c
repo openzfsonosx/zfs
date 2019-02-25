@@ -1715,16 +1715,16 @@ print_status_initialize(vdev_stat_t *vs, boolean_t verbose)
 
 			switch (vs->vs_initialize_state) {
 			case VDEV_INITIALIZE_SUSPENDED:
-				(void) snprintf(zbuf, sizeof (zbuf),
-				    ", suspended, started at %s", tbuf);
+				(void) snprintf(zbuf, sizeof (zbuf), ", %s %s",
+				    gettext("suspended, started at"), tbuf);
 				break;
 			case VDEV_INITIALIZE_ACTIVE:
-				(void) snprintf(zbuf, sizeof (zbuf),
-				    ", started at %s", tbuf);
+				(void) snprintf(zbuf, sizeof (zbuf), ", %s %s",
+				    gettext("started at"), tbuf);
 				break;
 			case VDEV_INITIALIZE_COMPLETE:
-				(void) snprintf(zbuf, sizeof (zbuf),
-				    ", completed at %s", tbuf);
+				(void) snprintf(zbuf, sizeof (zbuf), ", %s %s",
+				    gettext("completed at"), tbuf);
 				break;
 			}
 
@@ -1765,16 +1765,16 @@ print_status_trim(vdev_stat_t *vs, boolean_t verbose)
 
 			switch (vs->vs_trim_state) {
 			case VDEV_TRIM_SUSPENDED:
-				(void) snprintf(zbuf, sizeof (zbuf),
-				    ", suspended, started at %s", tbuf);
+				(void) snprintf(zbuf, sizeof (zbuf), ", %s %s",
+				    gettext("suspended, started at"), tbuf);
 				break;
 			case VDEV_TRIM_ACTIVE:
-				(void) snprintf(zbuf, sizeof (zbuf),
-				    ", started at %s", tbuf);
+				(void) snprintf(zbuf, sizeof (zbuf), ", %s %s",
+				    gettext("started at"), tbuf);
 				break;
 			case VDEV_TRIM_COMPLETE:
-				(void) snprintf(zbuf, sizeof (zbuf),
-				    ", completed at %s", tbuf);
+				(void) snprintf(zbuf, sizeof (zbuf), ", %s %s",
+				    gettext("completed at"), tbuf);
 				break;
 			}
 

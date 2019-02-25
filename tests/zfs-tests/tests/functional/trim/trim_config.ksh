@@ -36,7 +36,7 @@
 # STRATEGY:
 #	1. Create a pool on file vdevs to trim.
 #	2. Fill the pool to a known percentage of capacity.
-#	3. Verify the vdevs contain 25% or more allocated blocks.
+#	3. Verify the vdevs contain 30% or more allocated blocks.
 #	4. Remove all files making it possible to trim the entire pool.
 #	5. Manually trim the pool.
 #	6. Wait for trim to issue trim IOs for the free blocks.
@@ -50,7 +50,7 @@ log_assert "Run 'zpool trim' verify pool disks were trimmed"
 function cleanup
 {
 	if poolexists $TESTPOOL; then
-		log_must zpool destroy -f $TESTPOOL
+		destroy_pool $TESTPOOL
 	fi
 
 	log_must rm -f $TRIM_VDEVS
@@ -65,7 +65,7 @@ TRIM_DIR="$TEST_BASE_DIR"
 TRIM_VDEVS="$TRIM_DIR/trim-vdev1 $TRIM_DIR/trim-vdev2 \
     $TRIM_DIR/trim-vdev3 $TRIM_DIR/trim-vdev4"
 
-# Minimum trim size is decreased to verity all trim sizes.
+# Minimum trim size is decreased to verify all trim sizes.
 typeset trim_extent_bytes_min=$(get_tunable zfs_trim_extent_bytes_min)
 log_must set_tunable64 zfs_trim_extent_bytes_min 4096
 
@@ -75,13 +75,13 @@ log_must set_tunable64 zfs_trim_txg_batch 8
 
 # Increased metaslabs to better simulate larger more realistic devices.
 typeset vdev_min_ms_count=$(get_tunable zfs_vdev_min_ms_count)
-log_must set_tunable64 zfs_vdev_min_ms_count 64
+log_must set_tunable64 zfs_vdev_min_ms_count 32
 
-typeset VDEV_MAX_MB=$(( floor(MINVDEVSIZE * 0.40 / 1024 / 1024) ))
-typeset VDEV_MIN_MB=$(( floor(MINVDEVSIZE * 0.10 / 1024 / 1024) ))
+typeset VDEV_MAX_MB=$(( floor(4 * MINVDEVSIZE * 0.40 / 1024 / 1024) ))
+typeset VDEV_MIN_MB=$(( floor(4 * MINVDEVSIZE * 0.30 / 1024 / 1024) ))
 
 for type in "" "mirror" "raidz" "raidz2" "raidz3"; do
-	log_must truncate -s $MINVDEVSIZE $TRIM_VDEVS
+	log_must truncate -s $((4 * MINVDEVSIZE)) $TRIM_VDEVS
 	log_must zpool create -f $TESTPOOL $type $TRIM_VDEVS
 
 	typeset availspace=$(get_prop available $TESTPOOL)

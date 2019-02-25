@@ -1192,12 +1192,12 @@ spa_vdev_config_exit(spa_t *spa, vdev_t *vd, uint64_t txg, int error, char *tag)
 			mutex_enter(&vd->vdev_trim_lock);
 			vdev_trim_stop(vd, VDEV_TRIM_CANCELED, NULL);
 			mutex_exit(&vd->vdev_trim_lock);
-
-			/*
-			 * The vdev may be both a leaf and top-level device.
-			 */
-			vdev_autotrim_stop_wait(vd);
 		}
+
+		/*
+		 * The vdev may be both a leaf and top-level device.
+		 */
+		vdev_autotrim_stop_wait(vd);
 
 		spa_config_enter(spa, SCL_ALL, spa, RW_WRITER);
 		vdev_free(vd);

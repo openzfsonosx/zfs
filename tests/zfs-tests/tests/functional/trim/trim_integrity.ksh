@@ -48,7 +48,7 @@ log_assert "Run 'zpool trim' and verify pool data integrity"
 function cleanup
 {
 	if poolexists $TESTPOOL; then
-		log_must zpool destroy -f $TESTPOOL
+		destroy_pool $TESTPOOL
 	fi
 
 	log_must rm -f $TRIM_VDEVS
@@ -63,7 +63,7 @@ TRIM_DIR="$TEST_BASE_DIR"
 TRIM_VDEVS="$TRIM_DIR/trim-vdev1 $TRIM_DIR/trim-vdev2 \
     $TRIM_DIR/trim-vdev3 $TRIM_DIR/trim-vdev4"
 
-# Minimum trim size is decreased to verity all trim sizes.
+# Minimum trim size is decreased to verify all trim sizes.
 typeset trim_extent_bytes_min=$(get_tunable zfs_trim_extent_bytes_min)
 log_must set_tunable64 zfs_trim_extent_bytes_min 4096
 

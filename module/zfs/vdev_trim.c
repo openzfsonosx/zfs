@@ -83,7 +83,9 @@ unsigned long zfs_trim_value = 0xdeadbeefdeadbeeeULL;
 
 /*
  * When set issues writes for the extents to be trimmed instead of discards.
- * This functionality has been added for debugging.
+ * This functionality has been added for debugging and intentionally not
+ * added as a module option.  The 'zpool initialize' command should be used
+ * when a new vdev needs to be initialized with a known pattern.
  */
 unsigned int zfs_trim_write = 0;
 
@@ -182,6 +184,9 @@ vdev_trim_zap_update_sync(void *arg, dmu_tx_t *tx)
 	}
 
 	uint64_t partial = vd->vdev_trim_partial;
+	if (partial == UINT64_MAX)
+		partial = 0;
+
 	VERIFY0(zap_update(mos, vd->vdev_leaf_zap, VDEV_LEAF_ZAP_TRIM_PARTIAL,
 	    sizeof (partial), 1, &partial, tx));
 
@@ -221,8 +226,8 @@ vdev_trim_change_state(vdev_t *vd, vdev_trim_state_t new_state,
 	if (new_state == VDEV_TRIM_ACTIVE) {
 		if (vd->vdev_trim_state == VDEV_TRIM_COMPLETE) {
 			vd->vdev_trim_last_offset = UINT64_MAX;
-			vd->vdev_trim_rate = 0;
-			vd->vdev_trim_partial = 0;
+			vd->vdev_trim_rate = UINT64_MAX;
+			vd->vdev_trim_partial = UINT64_MAX;
 		}
 
 		if (rate != 0)
@@ -736,12 +741,6 @@ vdev_trim_range_add(void *arg, uint64_t start, uint64_t size)
 
 		/* Pick up where we left off mid-range. */
 		if (vd->vdev_trim_last_offset > physical_rs.rs_start) {
-			zfs_dbgmsg("range write: vd %s changed (%llu, %llu) to "
-			    "(%llu, %llu)", vd->vdev_path,
-			    (u_longlong_t)physical_rs.rs_start,
-			    (u_longlong_t)physical_rs.rs_end,
-			    (u_longlong_t)vd->vdev_trim_last_offset,
-			    (u_longlong_t)physical_rs.rs_end);
 			ASSERT3U(physical_rs.rs_end, >,
 			    vd->vdev_trim_last_offset);
 			physical_rs.rs_start = vd->vdev_trim_last_offset;

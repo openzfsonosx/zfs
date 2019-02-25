@@ -47,7 +47,7 @@
 function cleanup
 {
 	if poolexists $TESTPOOL; then
-		log_must zpool destroy -f $TESTPOOL
+		destroy_pool $TESTPOOL
 	fi
 
 	if [[ -d "$TESTDIR" ]]; then

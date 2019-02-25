@@ -159,7 +159,7 @@ uint32_t zfs_vdev_removal_max_active = 2;
 uint32_t zfs_vdev_initializing_min_active = 1;
 uint32_t zfs_vdev_initializing_max_active = 1;
 uint32_t zfs_vdev_trim_min_active = 1;
-uint32_t zfs_vdev_trim_max_active = 10;
+uint32_t zfs_vdev_trim_max_active = 2;
 
 /*
  * When the pool has less than zfs_vdev_async_write_active_min_dirty_percent

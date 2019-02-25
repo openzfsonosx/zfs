@@ -41,39 +41,46 @@
 function cleanup
 {
 	if poolexists $TESTPOOL; then
-		log_must zpool destroy -f $TESTPOOL
+		destroy_pool $TESTPOOL
 	fi
 
         if [[ -d "$TESTDIR" ]]; then
                 rm -rf "$TESTDIR"
         fi
+
+	log_must set_tunable64 zfs_trim_extent_bytes_min $trim_extent_bytes_min
 }
 log_onexit cleanup
 
-SMALLFILE="$TESTDIR/smallfile"
+LARGESIZE=$((MINVDEVSIZE * 4))
+LARGEFILE="$TESTDIR/largefile"
+
+# Reduce trim size to allow for tighter tolerance below when checking.
+typeset trim_extent_bytes_min=$(get_tunable zfs_trim_extent_bytes_min)
+log_must set_tunable64 zfs_trim_extent_bytes_min 4096
 
 log_must mkdir "$TESTDIR"
-log_must truncate -s $MINVDEVSIZE "$SMALLFILE"
-log_must zpool create $TESTPOOL "$SMALLFILE"
+log_must truncate -s $LARGESIZE "$LARGEFILE"
+log_must zpool create $TESTPOOL "$LARGEFILE"
 
-original_size=$(du -B1 "$SMALLFILE" | cut -f1)
+original_size=$(du -B1 "$LARGEFILE" | cut -f1)
 
 log_must zpool initialize $TESTPOOL
 
-while [[ "$(initialize_progress $TESTPOOL $SMALLFILE)" -lt "100" ]]; do
+while [[ "$(initialize_progress $TESTPOOL $LARGEFILE)" -lt "100" ]]; do
         sleep 0.5
 done
 
-new_size=$(du -B1 "$SMALLFILE" | cut -f1)
-log_must within_tolerance $new_size $MINVDEVSIZE 33554432
+new_size=$(du -B1 "$LARGEFILE" | cut -f1)
+log_must within_tolerance $new_size $LARGESIZE $((128 * 1024 * 1024))
 
 log_must zpool trim $TESTPOOL
 
-while [[ "$(trim_progress $TESTPOOL $SMALLFILE)" -lt "100" ]]; do
+while [[ "$(trim_progress $TESTPOOL $LARGEFILE)" -lt "100" ]]; do
         sleep 0.5
 done
 
-new_size=$(du -B1 "$SMALLFILE" | cut -f1)
-log_must within_tolerance $new_size $original_size 4194304
+new_size=$(du -B1 "$LARGEFILE" | cut -f1)
+log_must within_tolerance $new_size $original_size $((128 * 1024 * 1024))
 
 log_pass "Trimmed appropriate amount of disk space"

@@ -46,7 +46,7 @@
 function cleanup
 {
         if datasetexists $TESTPOOL; then
-                log_must zpool destroy -f $TESTPOOL
+                destroy_pool $TESTPOOL
         fi
         if [[ -d $TESTDIR ]]; then
                 log_must rm -rf $TESTDIR

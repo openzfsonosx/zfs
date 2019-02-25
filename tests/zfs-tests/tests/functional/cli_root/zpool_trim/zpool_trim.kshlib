@@ -33,11 +33,11 @@ function trim_progress # pool disk
 function cleanup
 {
 	if poolexists $TESTPOOL; then
-		log_must zpool destroy -f $TESTPOOL
+		destroy_pool $TESTPOOL
 	fi
 
 	if poolexists $TESTPOOL1; then
-		log_must zpool destroy -f $TESTPOOL1
+		destroy_pool $TESTPOOL1
 	fi
 }
 log_onexit cleanup
