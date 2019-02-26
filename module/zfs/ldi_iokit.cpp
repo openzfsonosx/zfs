@@ -1889,6 +1889,70 @@ handle_is_solidstate_iokit(struct ldi_handle *lhp, int *isssd)
 }
 
 int
+handle_features_iokit(struct ldi_handle *lhp,
+    uint32_t *data)
+{
+	if (!lhp || !data) {
+		return (EINVAL);
+	}
+
+	/* Validate IOMedia */
+	if (!OSDynamicCast(IOMedia, LH_MEDIA(lhp))) {
+		dprintf("%s invalid IOKit handle\n", __func__);
+		return (ENODEV);
+	}
+
+	LH_MEDIA(lhp)->retain();
+
+	OSDictionary *dictionary = OSDynamicCast(
+		/* class  */ OSDictionary,
+		/* object */ LH_MEDIA(lhp)->getProperty(
+			/* key    */ kIOStorageFeaturesKey,
+			/* plane  */ gIOServicePlane ) );
+
+	*data = 0;
+
+	if ( dictionary ) {
+		OSBoolean *boolean;
+
+		boolean = OSDynamicCast(
+			/* class  */ OSBoolean,
+			/* object */ dictionary->getObject(
+				/* key    */ kIOStorageFeatureBarrier ) );
+
+		if ( boolean == kOSBooleanTrue )
+			*(uint32_t *)data |= DK_FEATURE_BARRIER;
+
+		boolean = OSDynamicCast(
+			/* class  */ OSBoolean,
+			/* object */ dictionary->getObject(
+				/* key    */ kIOStorageFeatureForceUnitAccess ) );
+
+		if ( boolean == kOSBooleanTrue )
+			*(uint32_t *)data |= DK_FEATURE_FORCE_UNIT_ACCESS;
+
+		boolean = OSDynamicCast(
+			/* class  */ OSBoolean,
+			/* object */ dictionary->getObject(
+				/* key    */ kIOStorageFeaturePriority ) );
+
+		if ( boolean == kOSBooleanTrue )
+			*(uint32_t *)data |= DK_FEATURE_PRIORITY;
+
+		boolean = OSDynamicCast(
+			/* class  */ OSBoolean,
+			/* object */ dictionary->getObject(
+				/* key    */ kIOStorageFeatureUnmap ) );
+
+		if ( boolean == kOSBooleanTrue )
+			*(uint32_t *)data |= DK_FEATURE_UNMAP;
+	}
+
+	LH_MEDIA(lhp)->release();
+	return (0);
+}
+
+int
 handle_unmap_iokit(struct ldi_handle *lhp,
     dkioc_free_list_ext_t *dkm)
 {
@@ -1922,8 +1986,9 @@ handle_unmap_iokit(struct ldi_handle *lhp,
 	    extents, 1, 0);
 
 	if (error != 0) {
-		printf("%s unmap: 0x%x\n", __func__, error);
-		error = ENOTSUP; /* As expected in vdev_disk.c DKIOCFREE */
+		dprintf("%s unmap: 0x%x\n", __func__, error);
+		// Convert IOReturn to errno
+		error = LH_MEDIA(lhp)->errnoFromReturn(error);
 	}
 
 	IODelete(extents, IOStorageExtent, 1);

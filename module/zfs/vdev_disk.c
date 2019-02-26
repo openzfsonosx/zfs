@@ -555,7 +555,16 @@ skip_open:
 	    FKIOCTL, kcred, NULL) == 0) {
 		vd->vdev_nonrot = (isssd ? B_TRUE : B_FALSE);
 	}
-	vd->vdev_notrim = B_FALSE;
+
+	// Assume no TRIM
+	vd->vdev_notrim = B_TRUE;
+	uint32_t features;
+	if (ldi_ioctl(dvd->vd_lh, DKIOCGETFEATURES, (intptr_t)&features,
+	    FKIOCTL, kcred, NULL) == 0) {
+		if (features & DK_FEATURE_UNMAP)
+			vd->vdev_notrim = B_FALSE;
+	}
+	printf("%s: notrim set to %x\n", __func__, vd->vdev_notrim);
 #endif //__APPLE__
 
 	return (0);

@@ -910,6 +910,63 @@ handle_is_solidstate_vnode(struct ldi_handle *lhp, int *isssd)
 }
 
 int
+handle_features_vnode(struct ldi_handle *lhp,
+    uint32_t *features)
+{
+	vfs_context_t context;
+	int error;
+
+#ifdef DEBUG
+	if (!lhp || !dkm) {
+		dprintf("%s missing lhp or dkm\n", __func__);
+		return (EINVAL);
+	}
+	if (lhp->lh_status != LDI_STATUS_ONLINE) {
+		dprintf("%s handle is not Online\n", __func__);
+		return (ENODEV);
+	}
+
+	/* Validate vnode */
+	if (LH_VNODE(lhp) == NULLVP) {
+		dprintf("%s missing vnode\n", __func__);
+		return (ENODEV);
+	}
+#endif
+
+	/* Allocate and validate context */
+	context = vfs_context_create(spl_vfs_context_kernel());
+	if (!context) {
+		dprintf("%s couldn't create VFS context\n", __func__);
+		return (0);
+	}
+
+	/* Take an iocount on devvp vnode. */
+	error = vnode_getwithref(LH_VNODE(lhp));
+	if (error) {
+		dprintf("%s vnode_getwithref error %d\n",
+		    __func__, error);
+		vfs_context_rele(context);
+		return (ENODEV);
+	}
+
+	/* All code paths from here must vnode_put. */
+
+	error = VNOP_IOCTL(LH_VNODE(lhp), DKIOCGETFEATURES,
+	    (caddr_t)features, 0, context);
+
+	if (error) {
+		printf("%s: 0x%x\n", __func__, error);
+	}
+
+	/* Release iocount on vnode (still has usecount) */
+	vnode_put(LH_VNODE(lhp));
+	/* Drop vfs_context */
+	vfs_context_rele(context);
+
+	return (error);
+}
+
+int
 handle_unmap_vnode(struct ldi_handle *lhp,
     dkioc_free_list_ext_t *dkm)
 {
@@ -952,7 +1009,7 @@ handle_unmap_vnode(struct ldi_handle *lhp,
 
 	/* We need to convert illumos' dkioc_free_list_t to dk_unmap_t */
 	/* We only support 1 entry now */
-	dk_unmap_t dkun;
+	dk_unmap_t dkun = { 0 };
 	dk_extent_t ext;
 	dkun.extentsCount = 1;
 	dkun.extents = &ext;
@@ -969,8 +1026,8 @@ handle_unmap_vnode(struct ldi_handle *lhp,
 	    (caddr_t)&dkun, 0, context);
 
 	if (error) {
-		printf("%s unmap: 0x%x\n", __func__, error);
-		error = ENOTSUP; /* As expected in vdev_disk.c DKIOCFREE */
+		dprintf("%s unmap: 0x%x for off %llx size %llx\n", __func__, error,
+			ext.offset, ext.length);
 	}
 
 	/* Release iocount on vnode (still has usecount) */
