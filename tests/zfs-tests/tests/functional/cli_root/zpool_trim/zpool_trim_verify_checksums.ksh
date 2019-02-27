@@ -42,7 +42,7 @@
 DISK1=${DISKS%% *}
 
 log_must zpool create -f $TESTPOOL $DISK1
-log_must dd if=/dev/urandom of=/$TESTPOOL/file1 bs=1M count=30
+log_must dd if=/dev/urandom of=/$TESTPOOL/file1 bs=1048576 count=30
 log_must sync
 
 log_must zpool trim $TESTPOOL

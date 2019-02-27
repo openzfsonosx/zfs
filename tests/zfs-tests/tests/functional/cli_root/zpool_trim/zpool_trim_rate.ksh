@@ -58,8 +58,8 @@ log_onexit cleanup
 
 LARGEFILE="$TESTDIR/largefile"
 
-log_must mkdir "$TESTDIR"
-log_must truncate -s 10G "$LARGEFILE"
+log_must mkdir -p "$TESTDIR"
+log_must $TRUNCATE -s 10G "$LARGEFILE"
 log_must zpool create -f $TESTPOOL "$LARGEFILE"
 
 # Start trimming at 200M/s for 5 seconds (approximately 10% of the pool)

@@ -32,8 +32,14 @@ verify_runnable "global"
 DISK1=${DISKS%% *}
 
 typeset -i max_discard=0
-if [[ -b $DEV_RDSKDIR/$DISK1 ]]; then
-	max_discard=$(lsblk -Dbn $DEV_RDSKDIR/$DISK1 | awk '{ print $4; exit }')
+if is_linux; then
+	if [[ -b $DEV_RDSKDIR/$DISK1 ]]; then
+		max_discard=$(lsblk -Dbn $DEV_RDSKDIR/$DISK1 | awk '{ print $4; exit }')
+	fi
+fi
+
+if is_osx; then
+	max_discard=1
 fi
 
 if test $max_discard -eq 0; then

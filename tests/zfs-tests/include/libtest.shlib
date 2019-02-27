@@ -48,6 +48,20 @@ ZPOOL=${ZPOOL:-/usr/sbin/zpool}
 #
 export __ZFS_MAIN_MOUNTPOINT_DIR=/
 
+function is_linux
+{
+        return 1
+}
+
+function is_osx
+{
+        if [[ $(uname -s) == "Darwin" ]]; then
+                return 0
+        else
+                return 1
+        fi
+}
+
 # Determine whether a dataset is mounted
 #
 # $1 dataset name
