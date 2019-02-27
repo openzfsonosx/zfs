@@ -3,6 +3,7 @@ dist_pkgdata_SCRIPTS = \
 	setup.ksh \
 	cleanup.ksh \
 	trim.kshlib \
+	trim.cfg \
 	autotrim_integrity.ksh \
 	autotrim_config.ksh \
 	autotrim_trim_integrity.ksh \

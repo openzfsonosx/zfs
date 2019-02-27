@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2019 by Lawrence Livermore National Security, LLC.
  */
 
 #include <sys/spa.h>

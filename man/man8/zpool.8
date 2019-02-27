@@ -762,21 +762,22 @@ When set to
 space which has been recently freed, and is no longer allocated by the pool,
 will be periodically trimmed.  This allows block device vdevs which support
 BLKDISCARD, such as SSDs, or file vdevs on which the underlying file system
-supports hole-punching to reclaim unused blocks.  The default setting for
+supports hole-punching, to reclaim unused blocks.  The default setting for
 this property is
 .Sy off .
 .Pp
-Please note that automatic trimming of data blocks can put significant stress
-on the underlying storage devices if they do not handle these commands in a
-background, low-priority manner. In this case, it may be possible to achieve
-most of the benefits of trimming free space on the pool by running an
-on-demand (manual) trim every once in a while using the
+Automatic TRIM does not immediately reclaim blocks after a free. Instead,
+it will optimistically delay allowing smaller ranges to be aggregated in to
+a few larger ones.  These can then be issued more efficiently to the storage.
+.Pp
+Be aware that automatic trimming of recently freed data blocks can put
+significant stress on the underlying storage devices.  This will vary
+depending of how well the specific device handles these commands.  For
+lower end devices it is often possible to achieve most of the benefits
+of automatic trimming by running an on-demand (manual) TRIM periodically
+using the
 .Nm zpool Cm trim
 command.
-.Pp
-Automatic trim does not immediately reclaim blocks after a delete. Instead,
-it will optimistically wait a few minutes to allow for more efficient
-aggregation of smaller ranges in to a few large ones if possible.
 .It Sy feature@ Ns Ar feature_name Ns = Ns Sy enabled
 The value of this property is the current state of
 .Ar feature_name .
@@ -1533,10 +1534,9 @@ the path. This can be used in conjunction with the
 flag.
 .It Fl r
 Print request size histograms for the leaf vdev's IO. This includes
-histograms of individual IOs (ind) and aggregate IOs (agg).  TRIM IOs are
-not aggregated and requests which exceed 16M in size are counted as 16M
-requests. These stats can be useful for observing how well IO aggregation
-is working.
+histograms of individual IOs (ind) and aggregate IOs (agg). These stats
+can be useful for observing how well IO aggregation is working.  Note
+that TRIM IOs may exceed 16M, but will be counted as 16M.
 .It Fl v
 Verbose statistics Reports usage statistics for individual vdevs within the
 pool, in addition to the pool-wide statistics.
@@ -1594,8 +1594,8 @@ queues.
 Current number of entries in asynchronous priority queues.
 .Ar scrubq_read :
 Current number of entries in scrub queue.
-.Ar auto/man_trimq :
-Current number of entries in automatic or manual trim queues.
+.Ar trimq_write :
+Current number of entries in trim queue.
 .Pp
 All queue statistics are instantaneous measurements of the number of
 entries in the queues. If you specify an interval, the measurements
@@ -1875,15 +1875,15 @@ devices to reclaim the space.
 .Pp
 A manual on-demand TRIM operation can be initiated irrespective of the
 .Sy autotrim
-zpool property setting.  See the documentation for the
+pool property setting.  See the documentation for the
 .Sy autotrim
 property above for the types of vdev devices which can be trimmed.
 .Bl -tag -width Ds
 .It Fl p -partial
-Causes a partial trim to be initiated.  When performing a partial TRIM only
+Causes a partial TRIM to be initiated.  When performing a partial TRIM only
 space which has been previously allocated, and then freed, will be trimmed.
 This option is useful for certain storage devices such as large
-thinly-provisioned SANS on which large trim operations are slow.
+thinly-provisioned SANS on which large TRIM operations are slow.
 .It Fl r -rate Ar rate
 Controls the rate at which the TRIM operation progresses.  Without this
 option TRIM is executed as quickly as possible. The rate, expressed in bytes

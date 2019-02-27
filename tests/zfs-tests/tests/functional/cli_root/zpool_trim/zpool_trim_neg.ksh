@@ -15,8 +15,8 @@
 #
 
 #
-# Copyright (c) 2017 by Tim Chase. All rights reserved.
-# Copyright (c) 2017 Lawrence Livermore National Security, LLC.
+# Copyright (c) 2019 by Tim Chase. All rights reserved.
+# Copyright (c) 2019 Lawrence Livermore National Security, LLC.
 #
 
 . $STF_SUITE/include/libtest.shlib
