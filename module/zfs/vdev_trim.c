@@ -73,27 +73,9 @@ unsigned int zfs_trim_ms_max = 3;
  */
 int zfs_trim_txg_batch = 32;
 
-/*
- * Value that is written to disk during TRIM (debug)
- */
-#ifdef _ILP32
-unsigned long zfs_trim_value = 0xdeadbeefUL;
-#else
-unsigned long zfs_trim_value = 0xdeadbeefdeadbeeeULL;
-#endif
-
-/*
- * When set issues writes for the extents to be trimmed instead of discards.
- * This functionality has been added for debugging and intentionally not
- * added as a module option.  The 'zpool initialize' command should be used
- * when a new vdev needs to be initialized with a known pattern.
- */
-unsigned int zfs_trim_write = 0;
-
 typedef struct trim_args {
 	vdev_t		*trim_vdev;
 	metaslab_t	*trim_msp;
-	abd_t		*trim_abd;
 	range_tree_t	*trim_tree;
 	trim_type_t	trim_type;
 	hrtime_t	trim_start_time;
@@ -406,65 +388,15 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	if (ta->trim_type == TRIM_TYPE_MANUAL)
 		vd->vdev_trim_offset[txg & TXG_MASK] = start + size;
 
-	if (zfs_trim_write) {
-		zio_nowait(zio_write_phys(spa->spa_txg_zio[txg & TXG_MASK], vd,
-		    start, size, ta->trim_abd, ZIO_CHECKSUM_OFF,
-		    ta->trim_type == TRIM_TYPE_MANUAL ?
-		    vdev_trim_cb : vdev_autotrim_cb, NULL,
-		    ZIO_PRIORITY_TRIM, ZIO_FLAG_CANFAIL, B_FALSE));
-		/* vdev_trim_cb and vdev_autotrim_cb release SCL_STATE_ALL */
-	} else {
-		zio_nowait(zio_trim(spa->spa_txg_zio[txg & TXG_MASK], vd,
-		    start, size, ta->trim_type == TRIM_TYPE_MANUAL ?
-		    vdev_trim_cb : vdev_autotrim_cb, NULL,
-		    ZIO_PRIORITY_TRIM, ZIO_FLAG_CANFAIL));
-		/* vdev_trim_cb and vdev_autotrim_cb release SCL_STATE_ALL */
-	}
+	zio_nowait(zio_trim(spa->spa_txg_zio[txg & TXG_MASK], vd,
+	    start, size, ta->trim_type == TRIM_TYPE_MANUAL ?
+	    vdev_trim_cb : vdev_autotrim_cb, NULL,
+	    ZIO_PRIORITY_TRIM, ZIO_FLAG_CANFAIL));
+	/* vdev_trim_cb and vdev_autotrim_cb release SCL_STATE_ALL */
 
 	dmu_tx_commit(tx);
 
 	return (0);
-}
-
-/*
- * Callback to fill each ABD chunk with zfs_trim_value. len must be
- * divisible by sizeof (uint64_t), and buf must be 8-byte aligned. The ABD
- * allocation will guarantee these for us.
- */
-/* ARGSUSED */
-static int
-vdev_trim_block_fill(void *buf, size_t len, void *unused)
-{
-	ASSERT0(len % sizeof (uint64_t));
-#ifdef _ILP32
-	for (uint64_t i = 0; i < len; i += sizeof (uint32_t)) {
-		*(uint32_t *)((char *)(buf) + i) = zfs_trim_value;
-	}
-#else
-	for (uint64_t i = 0; i < len; i += sizeof (uint64_t)) {
-		*(uint64_t *)((char *)(buf) + i) = zfs_trim_value;
-}
-#endif
-	return (0);
-}
-
-static abd_t *
-vdev_trim_block_alloc(uint64_t extent_bytes_max)
-{
-	/* Allocate ABD for filler data */
-	abd_t *data = abd_alloc_for_io(extent_bytes_max, B_FALSE);
-
-	ASSERT0(extent_bytes_max % sizeof (uint64_t));
-	(void) abd_iterate_func(data, 0, extent_bytes_max,
-	    vdev_trim_block_fill, NULL);
-
-	return (data);
-}
-
-static void
-vdev_trim_block_free(abd_t *data)
-{
-	abd_free(data);
 }
 
 static int
@@ -772,10 +704,8 @@ vdev_trim_thread(void *arg)
 {
 	vdev_t *vd = arg;
 	spa_t *spa = vd->vdev_spa;
-	abd_t *deadbeef = NULL;
 	trim_args_t ta;
 	int error = 0;
-	uint64_t ms_count = 0;
 
 	/*
 	 * The VDEV_LEAF_ZAP_TRIM_* entries may have been updated by
@@ -790,25 +720,16 @@ vdev_trim_thread(void *arg)
 	vd->vdev_trim_last_offset = 0;
 	vd->vdev_trim_rate = 0;
 	vd->vdev_trim_partial = 0;
+
 	VERIFY0(vdev_trim_load(vd));
 
-	/*
-	 * When performing writes instead of discards the maximum extent
-	 * size needs to be capped at the maximum block size.
-	 */
-	uint64_t extent_bytes_max = zfs_trim_extent_bytes_max;
-	if (zfs_trim_write) {
-		extent_bytes_max = MIN(extent_bytes_max, SPA_MAXBLOCKSIZE);
-		deadbeef = vdev_trim_block_alloc(extent_bytes_max);
-	}
-
 	ta.trim_vdev = vd;
-	ta.trim_abd = deadbeef;
-	ta.trim_extent_bytes_max = extent_bytes_max;
+	ta.trim_extent_bytes_max = zfs_trim_extent_bytes_max;
 	ta.trim_extent_bytes_min = zfs_trim_extent_bytes_min;
 	ta.trim_tree = range_tree_create(NULL, NULL);
 	ta.trim_type = TRIM_TYPE_MANUAL;
 
+	uint64_t ms_count = 0;
 	for (uint64_t i = 0; !vd->vdev_detached &&
 	    i < vd->vdev_top->vdev_ms_count; i++) {
 		metaslab_t *msp = vd->vdev_top->vdev_ms[i];
@@ -867,9 +788,6 @@ vdev_trim_thread(void *arg)
 	mutex_exit(&vd->vdev_trim_io_lock);
 
 	range_tree_destroy(ta.trim_tree);
-
-	if (ta.trim_abd != NULL)
-		vdev_trim_block_free(ta.trim_abd);
 
 	mutex_enter(&vd->vdev_trim_lock);
 	if (!vd->vdev_trim_exit_wanted && vdev_writeable(vd)) {
@@ -1089,7 +1007,6 @@ vdev_autotrim_thread(void *arg)
 {
 	vdev_t *vd = arg;
 	spa_t *spa = vd->vdev_spa;
-	abd_t *deadbeef = NULL;
 	int shift = 0;
 
 	mutex_enter(&vd->vdev_autotrim_lock);
@@ -1098,16 +1015,7 @@ vdev_autotrim_thread(void *arg)
 	mutex_exit(&vd->vdev_autotrim_lock);
 	spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
-	/*
-	 * When performing writes instead of discards the maximum extent
-	 * size needs to be capped at the maximum block size.
-	 */
 	uint64_t extent_bytes_max = zfs_trim_extent_bytes_max;
-	if (zfs_trim_write) {
-		extent_bytes_max = MIN(extent_bytes_max, SPA_MAXBLOCKSIZE);
-		deadbeef = vdev_trim_block_alloc(extent_bytes_max);
-	}
-
 	uint64_t extent_bytes_min = zfs_trim_extent_bytes_min;
 
 	while (!vd->vdev_autotrim_exit_wanted && vdev_writeable(vd) &&
@@ -1202,7 +1110,6 @@ vdev_autotrim_thread(void *arg)
 				vdev_t *cvd = ta->trim_vdev;
 
 				ta->trim_msp = msp;
-				ta->trim_abd = deadbeef;
 				ta->trim_extent_bytes_max = extent_bytes_max;
 				ta->trim_extent_bytes_min = extent_bytes_min;
 				ta->trim_type = TRIM_TYPE_AUTO;
@@ -1319,9 +1226,6 @@ vdev_autotrim_thread(void *arg)
 			mutex_exit(&msp->ms_lock);
 		}
 	}
-
-	if (deadbeef != NULL)
-		vdev_trim_block_free(deadbeef);
 
 	mutex_enter(&vd->vdev_autotrim_lock);
 	ASSERT(vd->vdev_autotrim_thread != NULL);
