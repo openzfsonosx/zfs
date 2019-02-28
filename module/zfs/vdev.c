@@ -1122,12 +1122,6 @@ vdev_remove_parent(vdev_t *cvd)
 		 */
 		if (!cvd->vdev_spa->spa_autoexpand)
 			cvd->vdev_asize = mvd->vdev_asize;
-
-		/*
-		 * If the pool has autotrim enabled the autotrim thread needs
-		 * to be stopped on the top-level vdev before it can be freed.
-		 */
-		vdev_autotrim_stop_wait(mvd);
 	}
 	cvd->vdev_id = mvd->vdev_id;
 	vdev_add_child(pvd, cvd);

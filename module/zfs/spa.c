@@ -6189,7 +6189,6 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	spa_config_update(spa, SPA_CONFIG_UPDATE_POOL);
 
 	spa_event_notify(spa, NULL, NULL, ESC_ZFS_VDEV_ADD);
-	vdev_autotrim_restart(spa);
 	mutex_exit(&spa_namespace_lock);
 
 #if defined(_KERNEL)
@@ -6627,13 +6626,6 @@ spa_vdev_detach(spa_t *spa, uint64_t guid, uint64_t pguid, int replace_done)
 		vdev_reopen(tvd);
 		vdev_expand(tvd, txg);
 	}
-
-	/*
-	 * If the 'autotrim' property is set and the previous top-level
-	 * device was removed and replaced by its child, then the autotrim
-	 * needs to be restarted on the new top-level device.
-	 */
-	vdev_autotrim_restart(spa);
 
 	vdev_config_dirty(tvd);
 
