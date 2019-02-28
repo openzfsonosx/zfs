@@ -1008,14 +1008,12 @@ static void
 spa_iostats_init(spa_t *spa)
 {
 	spa_stats_history_t *shk = &spa->spa_stats.iostats;
-	char *name;
-	kstat_t *ksp;
 
 	mutex_init(&shk->lock, NULL, MUTEX_DEFAULT, NULL);
 
-	name = kmem_asprintf("zfs/%s", spa_name(spa));
-	ksp = kstat_create(name, 0, "iostats", "misc", KSTAT_TYPE_NAMED,
-	    sizeof (spa_iostats_t) / sizeof (kstat_named_t),
+	char *name = kmem_asprintf("zfs/%s", spa_name(spa));
+	kstat_t *ksp = kstat_create(name, 0, "iostats", "misc",
+	    KSTAT_TYPE_NAMED, sizeof (spa_iostats_t) / sizeof (kstat_named_t),
 	    KSTAT_FLAG_VIRTUAL);
 
 	shk->kstat = ksp;

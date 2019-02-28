@@ -1693,11 +1693,6 @@ metaslab_init(metaslab_group_t *mg, uint64_t id, uint64_t object, uint64_t txg,
 	 */
 	ms->ms_allocatable = range_tree_create(&metaslab_rt_ops, ms);
 
-	/*
-	 * The ms_trim tree is a subset of ms_allocatable which is kept
-	 * in-core as long as the autotrim property is set.  Its purpose
-	 * is to aggregate freed ranges to facilitate efficient trimming.
-	 */
 	ms->ms_trim = range_tree_create(NULL, NULL);
 
 	metaslab_group_add(mg, ms);

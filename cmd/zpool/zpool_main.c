@@ -198,7 +198,7 @@ enum iostat_type {
  * of all the nvlists a flag requires.  Also specifies the order in
  * which data gets printed in zpool iostat.
  */
-static const char *vsx_type_to_nvlist[IOS_COUNT][15] = {
+static const char *vsx_type_to_nvlist[IOS_COUNT][13] = {
 	[IOS_L_HISTO] = {
 	    ZPOOL_CONFIG_VDEV_TOT_R_LAT_HISTO,
 	    ZPOOL_CONFIG_VDEV_TOT_W_LAT_HISTO,
@@ -6266,13 +6266,6 @@ zpool_do_initialize(int argc, char **argv)
 int
 zpool_do_trim(int argc, char **argv)
 {
-	int c;
-	char *poolname;
-	zpool_handle_t *zhp;
-	trimflags_t trim_flags;
-	nvlist_t *vdevs;
-	int err = 0;
-
 	struct option long_options[] = {
 		{"cancel",	no_argument,		NULL,	'c'},
 		{"partial",	no_argument,		NULL,	'p'},
@@ -6285,6 +6278,7 @@ zpool_do_trim(int argc, char **argv)
 	uint64_t rate = 0;
 	boolean_t partial = B_FALSE;
 
+	int c;
 	while ((c = getopt_long(argc, argv, "cpr:s", long_options, NULL))
 	    != -1) {
 		switch (c) {
@@ -6348,15 +6342,17 @@ zpool_do_trim(int argc, char **argv)
 		return (-1);
 	}
 
-	poolname = argv[0];
-	zhp = zpool_open(g_zfs, poolname);
+	char *poolname = argv[0];
+	zpool_handle_t *zhp = zpool_open(g_zfs, poolname);
 	if (zhp == NULL)
 		return (-1);
 
-	trim_flags.partial = partial;
-	trim_flags.rate = rate;
+	trimflags_t trim_flags = {
+		.partial = partial,
+		.rate = rate,
+	};
 
-	vdevs = fnvlist_alloc();
+	nvlist_t *vdevs = fnvlist_alloc();
 	if (argc == 1) {
 		/* no individual leaf vdevs specified, so add them all */
 		nvlist_t *config = zpool_get_config(zhp, NULL);
@@ -6371,12 +6367,12 @@ zpool_do_trim(int argc, char **argv)
 		}
 	}
 
-	err = zpool_trim(zhp, cmd_type, vdevs, &trim_flags);
+	int error = zpool_trim(zhp, cmd_type, vdevs, &trim_flags);
 
 	fnvlist_free(vdevs);
 	zpool_close(zhp);
 
-	return (err);
+	return (error);
 }
 
 /*

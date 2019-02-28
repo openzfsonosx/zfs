@@ -395,7 +395,15 @@ struct metaslab {
 	range_tree_t	*ms_freed;	/* already freed this syncing txg */
 	range_tree_t	*ms_defer[TXG_DEFER_SIZE];
 	range_tree_t	*ms_checkpointing; /* to add to the checkpoint */
-	range_tree_t	*ms_trim;	/* to be auto trimmed */
+
+	/*
+	 * The ms_trim tree is a subset of ms_allocatable while a metaslab
+	 * is loaded.  It is kept in-core as long as the autotrim property
+	 * is set and is not vacated when the metaslab is unloaded.  Its
+	 * purpose is to aggregate freed ranges to facilitate efficient
+	 * trimming.
+	 */
+	range_tree_t	*ms_trim;
 
 	boolean_t	ms_condensing;	/* condensing? */
 	boolean_t	ms_condense_wanted;

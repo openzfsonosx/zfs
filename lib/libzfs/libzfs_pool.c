@@ -2201,16 +2201,16 @@ static int
 zpool_translate_vdev_guids(zpool_handle_t *zhp, nvlist_t *vds,
     nvlist_t *vdev_guids, nvlist_t *guids_to_paths, nvlist_t **vd_errlist)
 {
-	char msg[MAXNAMELEN];
-	boolean_t spare, cache;
 	nvlist_t *errlist = NULL;
-	nvlist_t *tgt;
 	int error = 0;
 
 	for (nvpair_t *elem = nvlist_next_nvpair(vds, NULL); elem != NULL;
 	    elem = nvlist_next_nvpair(vds, elem)) {
+		boolean_t spare, cache;
+
 		char *vd_path = nvpair_name(elem);
-		tgt = zpool_find_vdev(zhp, vd_path, &spare, &cache, NULL);
+		nvlist_t *tgt = zpool_find_vdev(zhp, vd_path, &spare, &cache,
+		    NULL);
 
 		if ((tgt == NULL) || cache || spare) {
 			if (errlist == NULL) {
@@ -2227,6 +2227,7 @@ zpool_translate_vdev_guids(zpool_handle_t *zhp, nvlist_t *vds,
 		uint64_t guid = fnvlist_lookup_uint64(tgt, ZPOOL_CONFIG_GUID);
 		fnvlist_add_uint64(vdev_guids, vd_path, guid);
 
+		char msg[MAXNAMELEN];
 		(void) snprintf(msg, sizeof (msg), "%llu", (u_longlong_t)guid);
 		fnvlist_add_string(guids_to_paths, msg, vd_path);
 	}

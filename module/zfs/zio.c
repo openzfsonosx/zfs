@@ -50,7 +50,6 @@
 #include <sys/abd.h>
 #include <sys/dsl_crypt.h>
 #include <sys/cityhash.h>
-#include <sys/metaslab_impl.h>
 
 /*
  * ==========================================================================

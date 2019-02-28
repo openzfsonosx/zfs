@@ -1003,18 +1003,15 @@ typedef enum {
 } vdev_initializing_state_t;
 
 /*
- * For backwards compatibility with the existing user space utilities the
- * vs->vs_ops and vs->vs_bytes arrays are limited to six entries.  The new
- * ZIO_TYPE_TRIM stats are included in the unused ZIO_TYPE_IOCTL stats.
+ * Vdev statistics.  Note: all fields should be 64-bit because this
+ * is passed between kernel and user land as an nvlist uint64 array.
+ *
+ * The vs_ops[] and vs_bytes[] arrays must always be an array size of 6 in
+ * order to keep subsequent members at their known fixed offsets.  When
+ * adding a new field it must be added to the end the structure.
  */
 #define	VS_ZIO_TYPES	6
 
-/*
- * Vdev statistics.  Note: all fields should be 64-bit because this
- * is passed between kernel and userland as an nvlist uint64 array.
- * When adding a new field it must be added to the end the structure
- * for compatibility with the existing user space utilities.
- */
 typedef struct vdev_stat {
 	hrtime_t	vs_timestamp;		/* time since vdev load	*/
 	uint64_t	vs_state;		/* vdev state		*/

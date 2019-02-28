@@ -47,7 +47,7 @@ log_must zdb -cc $TESTPOOL
 [[ -z "$(trim_progress $TESTPOOL $DISK1)" ]] && \
     log_fail "Trimming did not start"
 
-log_must dd if=/dev/urandom of=/$TESTPOOL/file2 bs=1M count=30
+log_must dd if=/dev/urandom of=/$TESTPOOL/file2 bs=1048576 count=30
 log_must sync
 
 log_must zdb -cc $TESTPOOL
