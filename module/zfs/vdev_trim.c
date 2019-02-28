@@ -53,12 +53,6 @@ unsigned int zfs_trim_extent_bytes_min = 32 * 1024;
 unsigned int zfs_trim_queue_limit = 10;
 
 /*
- * Maximum number of metaslabs per group that can be trimmed simultaneously.
- * This limit applies to both the manual and automatic TRIM.
- */
-unsigned int zfs_trim_ms_max = 3;
-
-/*
  * How many transaction groups worth of updates should be aggregated before
  * TRIM operations are issued to the device.  This setting represents a
  * trade-off between issuing more efficient TRIM operations, by allowing
@@ -441,81 +435,6 @@ vdev_trim_ranges(trim_args_t *ta)
 }
 
 static void
-vdev_trim_mg_wait(metaslab_group_t *mg)
-{
-	ASSERT(MUTEX_HELD(&mg->mg_ms_trim_lock));
-	while (mg->mg_trim_updating) {
-		cv_wait(&mg->mg_ms_trim_cv, &mg->mg_ms_trim_lock);
-	}
-}
-
-static void
-vdev_trim_mg_mark(metaslab_group_t *mg)
-{
-	ASSERT(MUTEX_HELD(&mg->mg_ms_trim_lock));
-	ASSERT(mg->mg_trim_updating);
-
-	while (mg->mg_ms_trimming >= zfs_trim_ms_max) {
-		cv_wait(&mg->mg_ms_trim_cv, &mg->mg_ms_trim_lock);
-	}
-	mg->mg_ms_trimming++;
-	ASSERT3U(mg->mg_ms_trimming, <=, zfs_trim_ms_max);
-}
-
-/*
- * Mark the metaslab as being trimmed to prevent any allocations on
- * this metaslab. We must also track how many metaslabs are currently
- * being trimmed within a metaslab group and limit them to prevent
- * allocation failures from occurring because all metaslabs are being
- * trimmed.
- */
-static void
-vdev_trim_ms_mark(metaslab_t *msp)
-{
-	ASSERT(!MUTEX_HELD(&msp->ms_lock));
-	metaslab_group_t *mg = msp->ms_group;
-
-	mutex_enter(&mg->mg_ms_trim_lock);
-
-	/*
-	 * To keep an accurate count of how many threads are trimming
-	 * a specific metaslab group, we only allow one thread to mark
-	 * the metaslab group at a time. This ensures that the value of
-	 * ms_trimming will be accurate when we decide to mark a metaslab
-	 * group as being trimmed. To do this we force all other threads
-	 * to wait till the metaslab's mg_trim_updating flag is no
-	 * longer set.
-	 */
-	vdev_trim_mg_wait(mg);
-	mg->mg_trim_updating = B_TRUE;
-	if (msp->ms_trimming == 0) {
-		vdev_trim_mg_mark(mg);
-	}
-	mutex_enter(&msp->ms_lock);
-	msp->ms_trimming++;
-	mutex_exit(&msp->ms_lock);
-
-	mg->mg_trim_updating = B_FALSE;
-	cv_broadcast(&mg->mg_ms_trim_cv);
-	mutex_exit(&mg->mg_ms_trim_lock);
-}
-
-static void
-vdev_trim_ms_unmark(metaslab_t *msp)
-{
-	ASSERT(!MUTEX_HELD(&msp->ms_lock));
-	metaslab_group_t *mg = msp->ms_group;
-	mutex_enter(&mg->mg_ms_trim_lock);
-	mutex_enter(&msp->ms_lock);
-	if (--msp->ms_trimming == 0) {
-		mg->mg_ms_trimming--;
-		cv_broadcast(&mg->mg_ms_trim_cv);
-	}
-	mutex_exit(&msp->ms_lock);
-	mutex_exit(&mg->mg_ms_trim_lock);
-}
-
-static void
 vdev_trim_calculate_progress(vdev_t *vd)
 {
 	ASSERT(spa_config_held(vd->vdev_spa, SCL_CONFIG, RW_READER) ||
@@ -743,7 +662,7 @@ vdev_trim_thread(void *arg)
 			ms_count = vd->vdev_top->vdev_ms_count;
 		}
 
-		vdev_trim_ms_mark(msp);
+		metaslab_disable(msp);
 		mutex_enter(&msp->ms_lock);
 		VERIFY0(metaslab_load(msp));
 
@@ -753,7 +672,7 @@ vdev_trim_thread(void *arg)
 		 */
 		if (msp->ms_sm == NULL && vd->vdev_trim_partial) {
 			mutex_exit(&msp->ms_lock);
-			vdev_trim_ms_unmark(msp);
+			metaslab_enable(spa, msp, B_FALSE);
 			vdev_trim_calculate_progress(vd);
 			continue;
 		}
@@ -765,14 +684,7 @@ vdev_trim_thread(void *arg)
 
 		spa_config_exit(spa, SCL_CONFIG, FTAG);
 		error = vdev_trim_ranges(&ta);
-
-		/*
-		 * Wait for any trims which have been issued to be
-		 * synced before allowing new allocations to occur.
-		 */
-		txg_wait_synced(spa->spa_dsl_pool, 0);
-
-		vdev_trim_ms_unmark(msp);
+		metaslab_enable(spa, msp, B_TRUE);
 		spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
 		range_tree_vacate(ta.trim_tree, NULL, NULL);
@@ -991,7 +903,7 @@ vdev_trim_range_verify(void *arg, uint64_t start, uint64_t size)
 	metaslab_t *msp = ta->trim_msp;
 
 	VERIFY3B(msp->ms_loaded, ==, B_TRUE);
-	VERIFY3U(msp->ms_trimming, >, 0);
+	VERIFY3U(msp->ms_disabled, >, 0);
 	VERIFY(range_tree_find(msp->ms_allocatable, start, size) != NULL);
 }
 
@@ -1039,7 +951,7 @@ vdev_autotrim_thread(void *arg)
 			metaslab_t *msp = vd->vdev_ms[i];
 			range_tree_t *trim_tree;
 
-			vdev_trim_ms_mark(msp);
+			metaslab_disable(msp);
 			mutex_enter(&msp->ms_lock);
 
 			/*
@@ -1049,19 +961,22 @@ vdev_autotrim_thread(void *arg)
 			if (msp->ms_sm == NULL ||
 			    range_tree_is_empty(msp->ms_trim)) {
 				mutex_exit(&msp->ms_lock);
-				vdev_trim_ms_unmark(msp);
+				metaslab_enable(spa, msp, B_FALSE);
 				continue;
 			}
 
 			/*
-			 * Skip the metaslab when a manual TRIM is operating
-			 * on the this same metaslab.  The ms_trim tree will
-			 * have been vacated by the manual TRIM, but there may
-			 * be new ranges added after the manual TRIM began.
+			 * Skip the metaslab when it has already been disabled.
+			 * This may happen when a manual TRIM or initialize
+			 * operation is running concurrently.  In the case
+			 * of a manual TRIM, the ms_trim tree will have been
+			 * vacated.  Only ranges added after the manual TRIM
+			 * disabled the metaslab will be included in the tree.
+			 * These will be processed on the next autotrim pass.
 			 */
-			if (msp->ms_trimming > 1) {
+			if (msp->ms_disabled > 1) {
 				mutex_exit(&msp->ms_lock);
-				vdev_trim_ms_unmark(msp);
+				metaslab_enable(spa, msp, B_FALSE);
 				continue;
 			}
 
@@ -1154,13 +1069,6 @@ vdev_autotrim_thread(void *arg)
 			}
 
 			/*
-			 * Wait for any trims which have been issued to be
-			 * synced before allowing new allocations to occur.
-			 */
-			if (issued_trim)
-				txg_wait_synced(spa->spa_dsl_pool, 0);
-
-			/*
 			 * Verify every range which was trimmed is still
 			 * contained within the ms_allocatable tree.
 			 */
@@ -1176,7 +1084,7 @@ vdev_autotrim_thread(void *arg)
 			range_tree_vacate(trim_tree, NULL, NULL);
 			range_tree_destroy(trim_tree);
 
-			vdev_trim_ms_unmark(msp);
+			metaslab_enable(spa, msp, issued_trim);
 			spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
 			for (uint64_t c = 0; c < children; c++) {
