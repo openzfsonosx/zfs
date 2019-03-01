@@ -6729,7 +6729,7 @@ spa_vdev_initialize_impl(spa_t *spa, uint64_t guid, uint64_t cmd_type,
 	 * a previous initialization process which has completed but
 	 * the thread is not exited.
 	 */
-	if (cmd_type == POOL_INITIALIZE_DO &&
+	if (cmd_type == POOL_INITIALIZE_START &&
 	    (vd->vdev_initialize_thread != NULL ||
 	    vd->vdev_top->vdev_removing)) {
 		mutex_exit(&vd->vdev_initialize_lock);
@@ -6746,7 +6746,7 @@ spa_vdev_initialize_impl(spa_t *spa, uint64_t guid, uint64_t cmd_type,
 	}
 
 	switch (cmd_type) {
-	case POOL_INITIALIZE_DO:
+	case POOL_INITIALIZE_START:
 		vdev_initialize(vd);
 		break;
 	case POOL_INITIALIZE_CANCEL:
@@ -6842,7 +6842,7 @@ spa_vdev_trim_impl(spa_t *spa, uint64_t guid, uint64_t cmd_type,
 	 * vdev_trim_state since there might be a previous TRIM process
 	 * which has completed but the thread is not exited.
 	 */
-	if (cmd_type == POOL_TRIM_DO &&
+	if (cmd_type == POOL_TRIM_START &&
 	    (vd->vdev_trim_thread != NULL || vd->vdev_top->vdev_removing)) {
 		mutex_exit(&vd->vdev_trim_lock);
 		return (SET_ERROR(EBUSY));
@@ -6858,7 +6858,7 @@ spa_vdev_trim_impl(spa_t *spa, uint64_t guid, uint64_t cmd_type,
 	}
 
 	switch (cmd_type) {
-	case POOL_TRIM_DO:
+	case POOL_TRIM_START:
 		vdev_trim(vd, rate, partial);
 		break;
 	case POOL_TRIM_CANCEL:

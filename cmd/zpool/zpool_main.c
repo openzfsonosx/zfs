@@ -521,6 +521,98 @@ usage(boolean_t requested)
 }
 
 /*
+ * zpool initialize [-c | -s] <pool> [<vdev> ...]
+ * Initialize all unused blocks in the specified vdevs, or all vdevs in the pool
+ * if none specified.
+ *
+ *	-c	Cancel. Ends active initializing.
+ *	-s	Suspend. Initializing can then be restarted with no flags.
+ */
+int
+zpool_do_initialize(int argc, char **argv)
+{
+	int c;
+	char *poolname;
+	zpool_handle_t *zhp;
+	nvlist_t *vdevs;
+	int err = 0;
+
+	struct option long_options[] = {
+		{"cancel",	no_argument,		NULL, 'c'},
+		{"suspend",	no_argument,		NULL, 's'},
+		{0, 0, 0, 0}
+	};
+
+	pool_initialize_func_t cmd_type = POOL_INITIALIZE_START;
+	while ((c = getopt_long(argc, argv, "cs", long_options, NULL)) != -1) {
+		switch (c) {
+		case 'c':
+			if (cmd_type != POOL_INITIALIZE_START &&
+			    cmd_type != POOL_INITIALIZE_CANCEL) {
+				(void) fprintf(stderr, gettext("-c cannot be "
+				    "combined with other options\n"));
+				usage(B_FALSE);
+			}
+			cmd_type = POOL_INITIALIZE_CANCEL;
+			break;
+		case 's':
+			if (cmd_type != POOL_INITIALIZE_START &&
+			    cmd_type != POOL_INITIALIZE_SUSPEND) {
+				(void) fprintf(stderr, gettext("-s cannot be "
+				    "combined with other options\n"));
+				usage(B_FALSE);
+			}
+			cmd_type = POOL_INITIALIZE_SUSPEND;
+			break;
+		case '?':
+			if (optopt != 0) {
+				(void) fprintf(stderr,
+				    gettext("invalid option '%c'\n"), optopt);
+			} else {
+				(void) fprintf(stderr,
+				    gettext("invalid option '%s'\n"),
+				    argv[optind - 1]);
+			}
+			usage(B_FALSE);
+		}
+	}
+
+	argc -= optind;
+	argv += optind;
+
+	if (argc < 1) {
+		(void) fprintf(stderr, gettext("missing pool name argument\n"));
+		usage(B_FALSE);
+		return (-1);
+	}
+
+	poolname = argv[0];
+	zhp = zpool_open(g_zfs, poolname);
+	if (zhp == NULL)
+		return (-1);
+
+	vdevs = fnvlist_alloc();
+	if (argc == 1) {
+		/* no individual leaf vdevs specified, so add them all */
+		nvlist_t *config = zpool_get_config(zhp, NULL);
+		nvlist_t *nvroot = fnvlist_lookup_nvlist(config,
+		    ZPOOL_CONFIG_VDEV_TREE);
+		zpool_collect_leaves(zhp, nvroot, vdevs);
+	} else {
+		for (int i = 1; i < argc; i++) {
+			fnvlist_add_boolean(vdevs, argv[i]);
+		}
+	}
+
+	err = zpool_initialize(zhp, cmd_type, vdevs);
+
+	fnvlist_free(vdevs);
+	zpool_close(zhp);
+
+	return (err);
+}
+
+/*
  * print a pool vdev config for dry runs
  */
 static void
@@ -6164,97 +6256,6 @@ zpool_do_scrub(int argc, char **argv)
 }
 
 /*
- * zpool initialize [-cs] <pool> [<vdev> ...]
- * Initialize all unused blocks in the specified vdevs, or all vdevs in the pool
- * if none specified.
- *
- *	-c	Cancel. Ends active initializing.
- *	-s	Suspend. Initializing can then be restarted with no flags.
- */
-int
-zpool_do_initialize(int argc, char **argv)
-{
-	int c;
-	char *poolname;
-	zpool_handle_t *zhp;
-	nvlist_t *vdevs;
-	int err = 0;
-
-	struct option long_options[] = {
-		{"cancel",	no_argument,		NULL, 'c'},
-		{"suspend",	no_argument,		NULL, 's'},
-		{0, 0, 0, 0}
-	};
-
-	pool_initialize_func_t cmd_type = POOL_INITIALIZE_DO;
-	while ((c = getopt_long(argc, argv, "cs", long_options, NULL)) != -1) {
-		switch (c) {
-		case 'c':
-			if (cmd_type != POOL_INITIALIZE_DO) {
-				(void) fprintf(stderr, gettext("-c cannot be "
-				    "combined with other options\n"));
-				usage(B_FALSE);
-			}
-			cmd_type = POOL_INITIALIZE_CANCEL;
-			break;
-		case 's':
-			if (cmd_type != POOL_INITIALIZE_DO) {
-				(void) fprintf(stderr, gettext("-s cannot be "
-				    "combined with other options\n"));
-				usage(B_FALSE);
-			}
-			cmd_type = POOL_INITIALIZE_SUSPEND;
-			break;
-		case '?':
-			if (optopt != 0) {
-				(void) fprintf(stderr,
-				    gettext("invalid option '%c'\n"), optopt);
-			} else {
-				(void) fprintf(stderr,
-				    gettext("invalid option '%s'\n"),
-				    argv[optind - 1]);
-			}
-			usage(B_FALSE);
-		}
-	}
-
-	argc -= optind;
-	argv += optind;
-
-	if (argc < 1) {
-		(void) fprintf(stderr, gettext("missing pool name argument\n"));
-		usage(B_FALSE);
-		return (-1);
-	}
-
-	poolname = argv[0];
-	zhp = zpool_open(g_zfs, poolname);
-	if (zhp == NULL)
-		return (-1);
-
-	vdevs = fnvlist_alloc();
-	if (argc == 1) {
-		/* no individual leaf vdevs specified, so add them all */
-		nvlist_t *config = zpool_get_config(zhp, NULL);
-		nvlist_t *nvroot = fnvlist_lookup_nvlist(config,
-		    ZPOOL_CONFIG_VDEV_TREE);
-		zpool_collect_leaves(zhp, nvroot, vdevs);
-	} else {
-		int i;
-		for (i = 1; i < argc; i++) {
-			fnvlist_add_boolean(vdevs, argv[i]);
-		}
-	}
-
-	err = zpool_initialize(zhp, cmd_type, vdevs);
-
-	fnvlist_free(vdevs);
-	zpool_close(zhp);
-
-	return (err);
-}
-
-/*
  * zpool trim [-p] [-r <rate>] [-c | -s] <pool> [<device> ...]
  *
  *	-c		Cancel. Ends any in-progress trim.
@@ -6274,7 +6275,7 @@ zpool_do_trim(int argc, char **argv)
 		{0, 0, 0, 0}
 	};
 
-	pool_trim_func_t cmd_type = POOL_TRIM_DO;
+	pool_trim_func_t cmd_type = POOL_TRIM_START;
 	uint64_t rate = 0;
 	boolean_t partial = B_FALSE;
 
@@ -6283,7 +6284,7 @@ zpool_do_trim(int argc, char **argv)
 	    != -1) {
 		switch (c) {
 		case 'c':
-			if (cmd_type != POOL_TRIM_DO &&
+			if (cmd_type != POOL_TRIM_START &&
 			    cmd_type != POOL_TRIM_CANCEL) {
 				(void) fprintf(stderr, gettext("-c cannot be "
 				    "combined with other options\n"));
@@ -6292,7 +6293,7 @@ zpool_do_trim(int argc, char **argv)
 			cmd_type = POOL_TRIM_CANCEL;
 			break;
 		case 'p':
-			if (cmd_type != POOL_TRIM_DO) {
+			if (cmd_type != POOL_TRIM_START) {
 				(void) fprintf(stderr, gettext("-p cannot be "
 				    "combined with the -c or -s options\n"));
 				usage(B_FALSE);
@@ -6300,7 +6301,7 @@ zpool_do_trim(int argc, char **argv)
 			partial = B_TRUE;
 			break;
 		case 'r':
-			if (cmd_type != POOL_TRIM_DO) {
+			if (cmd_type != POOL_TRIM_START) {
 				(void) fprintf(stderr, gettext("-r cannot be "
 				    "combined with the -c or -s options\n"));
 				usage(B_FALSE);
@@ -6312,7 +6313,7 @@ zpool_do_trim(int argc, char **argv)
 			}
 			break;
 		case 's':
-			if (cmd_type != POOL_TRIM_DO &&
+			if (cmd_type != POOL_TRIM_START &&
 			    cmd_type != POOL_TRIM_SUSPEND) {
 				(void) fprintf(stderr, gettext("-s cannot be "
 				    "combined with other options\n"));
