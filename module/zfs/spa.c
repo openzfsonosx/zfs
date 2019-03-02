@@ -6804,7 +6804,7 @@ spa_vdev_initialize(spa_t *spa, nvlist_t *nv, uint64_t cmd_type,
 
 static int
 spa_vdev_trim_impl(spa_t *spa, uint64_t guid, uint64_t cmd_type,
-    uint64_t rate, boolean_t partial, list_t *vd_list)
+    uint64_t rate, boolean_t partial, boolean_t secure, list_t *vd_list)
 {
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
@@ -6821,7 +6821,10 @@ spa_vdev_trim_impl(spa_t *spa, uint64_t guid, uint64_t cmd_type,
 	} else if (!vdev_writeable(vd)) {
 		spa_config_exit(spa, SCL_CONFIG | SCL_STATE, FTAG);
 		return (SET_ERROR(EROFS));
-	} else if (vd->vdev_notrim) {
+	} else if (!vd->vdev_trim) {
+		spa_config_exit(spa, SCL_CONFIG | SCL_STATE, FTAG);
+		return (SET_ERROR(EOPNOTSUPP));
+	} else if (secure && !vd->vdev_securetrim) {
 		spa_config_exit(spa, SCL_CONFIG | SCL_STATE, FTAG);
 		return (SET_ERROR(EOPNOTSUPP));
 	}
@@ -6851,7 +6854,7 @@ spa_vdev_trim_impl(spa_t *spa, uint64_t guid, uint64_t cmd_type,
 
 	switch (cmd_type) {
 	case POOL_TRIM_START:
-		vdev_trim(vd, rate, partial);
+		vdev_trim(vd, rate, partial, secure);
 		break;
 	case POOL_TRIM_CANCEL:
 		vdev_trim_stop(vd, VDEV_TRIM_CANCELED, vd_list);
@@ -6875,7 +6878,7 @@ spa_vdev_trim_impl(spa_t *spa, uint64_t guid, uint64_t cmd_type,
  */
 int
 spa_vdev_trim(spa_t *spa, nvlist_t *nv, uint64_t cmd_type, uint64_t rate,
-    boolean_t partial, nvlist_t *vdev_errlist)
+    boolean_t partial, boolean_t secure, nvlist_t *vdev_errlist)
 {
 	int total_errors = 0;
 	list_t vd_list;
@@ -6897,7 +6900,7 @@ spa_vdev_trim(spa_t *spa, nvlist_t *nv, uint64_t cmd_type, uint64_t rate,
 		uint64_t vdev_guid = fnvpair_value_uint64(pair);
 
 		int error = spa_vdev_trim_impl(spa, vdev_guid, cmd_type,
-		    rate, partial, &vd_list);
+		    rate, partial, secure, &vd_list);
 		if (error != 0) {
 			char guid_as_str[MAXNAMELEN];
 

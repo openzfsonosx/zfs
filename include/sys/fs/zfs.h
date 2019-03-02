@@ -785,6 +785,8 @@ typedef struct zpool_load_policy {
 	"org.zfsonlinux:vdev_trim_rate"
 #define	VDEV_LEAF_ZAP_TRIM_PARTIAL	\
 	"org.zfsonlinux:vdev_trim_partial"
+#define	VDEV_LEAF_ZAP_TRIM_SECURE	\
+	"org.zfsonlinux:vdev_trim_secure"
 
 /*
  * This is needed in userland to report the minimum necessary device size.
@@ -1251,6 +1253,7 @@ typedef enum {
 #define	ZPOOL_TRIM_VDEVS		"trim_vdevs"
 #define	ZPOOL_TRIM_RATE			"trim_rate"
 #define	ZPOOL_TRIM_PARTIAL		"trim_partial"
+#define	ZPOOL_TRIM_SECURE		"trim_secure"
 
 /*
  * Flags for ZFS_IOC_VDEV_SET_STATE

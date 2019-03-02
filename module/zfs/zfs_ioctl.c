@@ -3875,7 +3875,7 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 
 /*
  * innvl: {
- *     "initialize_command" -> POOL_INITIALIZE_{CANCEL|DO|SUSPEND} (uint64)
+ *     "initialize_command" -> POOL_INITIALIZE_{CANCEL|START|SUSPEND} (uint64)
  *     "initialize_vdevs": { -> guids to initialize (nvlist)
  *         "vdev_path_1": vdev_guid_1, (uint64),
  *         "vdev_path_2": vdev_guid_2, (uint64),
@@ -3949,14 +3949,15 @@ zfs_ioc_pool_initialize(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 
 /*
  * innvl: {
- *     "trim_command" -> POOL_TRIM_{CANCEL|DO|SUSPEND} (uint64)
+ *     "trim_command" -> POOL_TRIM_{CANCEL|START|SUSPEND} (uint64)
  *     "trim_vdevs": { -> guids to TRIM (nvlist)
  *         "vdev_path_1": vdev_guid_1, (uint64),
  *         "vdev_path_2": vdev_guid_2, (uint64),
  *         ...
  *     },
  *     "trim_rate" -> Target TRIM rate in bytes/sec.
- *     "trim_full" -> Set to TRIM space never allocated.
+ *     "trim_partial" -> Set to only TRIM space previously allocated.
+ *     "trim_secure" -> Set to request a secure TRIM.
  * }
  *
  * outnvl: {
@@ -3975,6 +3976,7 @@ static const zfs_ioc_key_t zfs_keys_pool_trim[] = {
 	{ZPOOL_TRIM_VDEVS,	DATA_TYPE_NVLIST,		0},
 	{ZPOOL_TRIM_RATE,	DATA_TYPE_UINT64,		ZK_OPTIONAL},
 	{ZPOOL_TRIM_PARTIAL,	DATA_TYPE_BOOLEAN_VALUE,	ZK_OPTIONAL},
+	{ZPOOL_TRIM_SECURE,	DATA_TYPE_BOOLEAN_VALUE,	ZK_OPTIONAL},
 };
 
 static int
@@ -4014,6 +4016,13 @@ zfs_ioc_pool_trim(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 		partial = B_FALSE;
 	}
 
+	/* Optional, defaults to standard TRIM when not provided */
+	boolean_t secure;
+	if (nvlist_lookup_boolean_value(innvl, ZPOOL_TRIM_SECURE,
+	    &secure) != 0) {
+		secure = B_FALSE;
+	}
+
 	spa_t *spa;
 	int error = spa_open(poolname, &spa, FTAG);
 	if (error != 0)
@@ -4021,7 +4030,7 @@ zfs_ioc_pool_trim(const char *poolname, nvlist_t *innvl, nvlist_t *outnvl)
 
 	nvlist_t *vdev_errlist = fnvlist_alloc();
 	int total_errors = spa_vdev_trim(spa, vdev_guids, cmd_type,
-	    rate, partial, vdev_errlist);
+	    rate, partial, secure, vdev_errlist);
 
 	if (fnvlist_size(vdev_errlist) > 0)
 		fnvlist_add_nvlist(outnvl, ZPOOL_TRIM_VDEVS, vdev_errlist);

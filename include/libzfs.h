@@ -301,6 +301,9 @@ typedef struct trimflags {
 	/* request a partial trim, ignores unallocated metaslabs */
 	boolean_t partial;
 
+	/* request a secure trim, requires support from device */
+	boolean_t secure;
+
 	/* trim at the requested rate in bytes/second */
 	uint64_t rate;
 } trimflags_t;

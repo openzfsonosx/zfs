@@ -1225,11 +1225,10 @@ zio_ioctl(zio_t *pio, spa_t *spa, vdev_t *vd, int cmd,
 zio_t *
 zio_trim(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
     zio_done_func_t *done, void *private, zio_priority_t priority,
-    enum zio_flag flags)
+    enum zio_flag flags, enum trim_flag trim_flags)
 {
 	zio_t *zio;
 
-	ASSERT0(vd->vdev_notrim);
 	ASSERT0(vd->vdev_children);
 	ASSERT0(offset & ((1 << vd->vdev_ashift) - 1));
 	ASSERT0(size & ((1 << vd->vdev_ashift) - 1));
@@ -1238,6 +1237,7 @@ zio_trim(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
 	zio = zio_create(pio, vd->vdev_spa, 0, NULL, NULL, size, size, done,
 	    private, ZIO_TYPE_TRIM, priority, flags | ZIO_FLAG_PHYSICAL,
 	    vd, offset, NULL, ZIO_STAGE_OPEN, ZIO_TRIM_PIPELINE);
+	zio->io_trim_flags = trim_flags;
 
 	return (zio);
 }

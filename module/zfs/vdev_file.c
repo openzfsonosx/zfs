@@ -78,11 +78,17 @@ vdev_file_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	vd->vdev_nonrot = B_TRUE;
 
 	/*
-	 * Allow trimming of file based vdevs.  This may not always be
-	 * possible depending on your kernel version but it is always
-	 * safe to attempt.
+	 * Allow TRIM on file based vdevs.  This may not always be supported,
+	 * since it depends on your kernel version and underlying filesystem
+	 * type but it is always safe to attempt.
 	 */
-	vd->vdev_notrim = B_FALSE;
+	vd->vdev_trim = B_TRUE;
+
+	/*
+	 * Disable secure TRIM on file based vdevs.  There is no way to
+	 * request this behavior from the underlying filesystem.
+	 */
+	vd->vdev_securetrim = B_FALSE;
 
 	/*
 	 * We must have a pathname, and it must be absolute.

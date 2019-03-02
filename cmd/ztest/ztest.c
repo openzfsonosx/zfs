@@ -6294,13 +6294,14 @@ ztest_trim(ztest_ds_t *zd, uint64_t id)
 
 	uint64_t cmd = ztest_random(POOL_TRIM_FUNCS);
 	uint64_t rate = 1 << ztest_random(30);
-	boolean_t fulltrim = (ztest_random(5) > 0);
+	boolean_t partial = (ztest_random(5) > 0);
+	boolean_t secure = (ztest_random(5) > 0);
 
 	nvlist_t *vdev_guids = fnvlist_alloc();
 	nvlist_t *vdev_errlist = fnvlist_alloc();
 	fnvlist_add_uint64(vdev_guids, path, guid);
-	error = spa_vdev_trim(spa, vdev_guids, cmd, rate, fulltrim,
-	    vdev_errlist);
+	error = spa_vdev_trim(spa, vdev_guids, cmd, rate, partial,
+	    secure, vdev_errlist);
 	fnvlist_free(vdev_guids);
 	fnvlist_free(vdev_errlist);
 

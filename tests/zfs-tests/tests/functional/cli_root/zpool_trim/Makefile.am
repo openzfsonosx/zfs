@@ -12,6 +12,7 @@ dist_pkgdata_SCRIPTS = \
 	zpool_trim_partial.ksh \
 	zpool_trim_rate.ksh \
 	zpool_trim_rate_neg.ksh \
+	zpool_trim_secure.ksh \
 	zpool_trim_split.ksh \
 	zpool_trim_start_and_cancel_neg.ksh \
 	zpool_trim_start_and_cancel_pos.ksh \

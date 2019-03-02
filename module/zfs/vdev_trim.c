@@ -76,6 +76,7 @@ typedef struct trim_args {
 	uint64_t	trim_bytes_done;
 	uint64_t	trim_extent_bytes_max;
 	uint64_t	trim_extent_bytes_min;
+	enum trim_flag	trim_flags;
 } trim_args_t;
 
 static boolean_t
@@ -167,6 +168,14 @@ vdev_trim_zap_update_sync(void *arg, dmu_tx_t *tx)
 	VERIFY0(zap_update(mos, vd->vdev_leaf_zap, VDEV_LEAF_ZAP_TRIM_PARTIAL,
 	    sizeof (partial), 1, &partial, tx));
 
+	uint64_t secure = vd->vdev_trim_secure;
+	if (secure == UINT64_MAX)
+		secure = 0;
+
+	VERIFY0(zap_update(mos, vd->vdev_leaf_zap, VDEV_LEAF_ZAP_TRIM_SECURE,
+	    sizeof (secure), 1, &secure, tx));
+
+
 	uint64_t trim_state = vd->vdev_trim_state;
 	VERIFY0(zap_update(mos, vd->vdev_leaf_zap, VDEV_LEAF_ZAP_TRIM_STATE,
 	    sizeof (trim_state), 1, &trim_state, tx));
@@ -174,7 +183,7 @@ vdev_trim_zap_update_sync(void *arg, dmu_tx_t *tx)
 
 static void
 vdev_trim_change_state(vdev_t *vd, vdev_trim_state_t new_state,
-    uint64_t rate, boolean_t partial)
+    uint64_t rate, boolean_t partial, boolean_t secure)
 {
 	ASSERT(MUTEX_HELD(&vd->vdev_trim_lock));
 	spa_t *spa = vd->vdev_spa;
@@ -205,6 +214,7 @@ vdev_trim_change_state(vdev_t *vd, vdev_trim_state_t new_state,
 			vd->vdev_trim_last_offset = UINT64_MAX;
 			vd->vdev_trim_rate = UINT64_MAX;
 			vd->vdev_trim_partial = UINT64_MAX;
+			vd->vdev_trim_secure = UINT64_MAX;
 		}
 
 		if (rate != 0)
@@ -212,6 +222,9 @@ vdev_trim_change_state(vdev_t *vd, vdev_trim_state_t new_state,
 
 		if (partial != 0)
 			vd->vdev_trim_partial = partial;
+
+		if (secure != 0)
+			vd->vdev_trim_secure = secure;
 	}
 
 	boolean_t resumed = !!(vd->vdev_trim_state == VDEV_TRIM_SUSPENDED);
@@ -385,7 +398,7 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	zio_nowait(zio_trim(spa->spa_txg_zio[txg & TXG_MASK], vd,
 	    start, size, ta->trim_type == TRIM_TYPE_MANUAL ?
 	    vdev_trim_cb : vdev_autotrim_cb, NULL,
-	    ZIO_PRIORITY_TRIM, ZIO_FLAG_CANFAIL));
+	    ZIO_PRIORITY_TRIM, ZIO_FLAG_CANFAIL, ta->trim_flags));
 	/* vdev_trim_cb and vdev_autotrim_cb release SCL_STATE_ALL */
 
 	dmu_tx_commit(tx);
@@ -546,6 +559,17 @@ vdev_trim_load(vdev_t *vd)
 				err = 0;
 			}
 		}
+
+		if (err == 0) {
+			err = zap_lookup(vd->vdev_spa->spa_meta_objset,
+			    vd->vdev_leaf_zap, VDEV_LEAF_ZAP_TRIM_SECURE,
+			    sizeof (vd->vdev_trim_secure), 1,
+			    &vd->vdev_trim_secure);
+			if (err == ENOENT) {
+				vd->vdev_trim_secure = 0;
+				err = 0;
+			}
+		}
 	}
 
 	vdev_trim_calculate_progress(vd);
@@ -639,6 +663,7 @@ vdev_trim_thread(void *arg)
 	vd->vdev_trim_last_offset = 0;
 	vd->vdev_trim_rate = 0;
 	vd->vdev_trim_partial = 0;
+	vd->vdev_trim_secure = 0;
 
 	VERIFY0(vdev_trim_load(vd));
 
@@ -647,6 +672,17 @@ vdev_trim_thread(void *arg)
 	ta.trim_extent_bytes_min = zfs_trim_extent_bytes_min;
 	ta.trim_tree = range_tree_create(NULL, NULL);
 	ta.trim_type = TRIM_TYPE_MANUAL;
+	ta.trim_flags = 0;
+
+	/*
+	 * When a secure TRIM has been requested infer that the intent
+	 * is that everything must be trimmed.  Override the default
+	 * minimum TRIM size to prevent ranges from being skipped.
+	 */
+	if (vd->vdev_trim_secure) {
+		ta.trim_flags |= ZIO_TRIM_SECURE;
+		ta.trim_extent_bytes_min = SPA_MINBLOCKSIZE;
+	}
 
 	uint64_t ms_count = 0;
 	for (uint64_t i = 0; !vd->vdev_detached &&
@@ -704,7 +740,8 @@ vdev_trim_thread(void *arg)
 	mutex_enter(&vd->vdev_trim_lock);
 	if (!vd->vdev_trim_exit_wanted && vdev_writeable(vd)) {
 		vdev_trim_change_state(vd, VDEV_TRIM_COMPLETE,
-		    vd->vdev_trim_rate, vd->vdev_trim_partial);
+		    vd->vdev_trim_rate, vd->vdev_trim_partial,
+		    vd->vdev_trim_secure);
 	}
 	ASSERT(vd->vdev_trim_thread != NULL || vd->vdev_trim_inflight[0] == 0);
 
@@ -729,7 +766,7 @@ vdev_trim_thread(void *arg)
  * Device must be a leaf and not already be trimming.
  */
 void
-vdev_trim(vdev_t *vd, uint64_t rate, boolean_t partial)
+vdev_trim(vdev_t *vd, uint64_t rate, boolean_t partial, boolean_t secure)
 {
 	ASSERT(MUTEX_HELD(&vd->vdev_trim_lock));
 	ASSERT(vd->vdev_ops->vdev_op_leaf);
@@ -739,7 +776,7 @@ vdev_trim(vdev_t *vd, uint64_t rate, boolean_t partial)
 	ASSERT(!vd->vdev_trim_exit_wanted);
 	ASSERT(!vd->vdev_top->vdev_removing);
 
-	vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, rate, partial);
+	vdev_trim_change_state(vd, VDEV_TRIM_ACTIVE, rate, partial, secure);
 	vd->vdev_trim_thread = thread_create(NULL, 0,
 	    vdev_trim_thread, vd, 0, &p0, TS_RUN, maxclsyspri);
 }
@@ -800,7 +837,7 @@ vdev_trim_stop(vdev_t *vd, vdev_trim_state_t tgt_state, list_t *vd_list)
 	if (vd->vdev_trim_thread == NULL && tgt_state != VDEV_TRIM_CANCELED)
 		return;
 
-	vdev_trim_change_state(vd, tgt_state, 0, 0);
+	vdev_trim_change_state(vd, tgt_state, 0, 0, 0);
 	vd->vdev_trim_exit_wanted = B_TRUE;
 
 	if (vd_list == NULL) {
@@ -885,7 +922,7 @@ vdev_trim_restart(vdev_t *vd)
 		    vd->vdev_trim_thread == NULL) {
 			VERIFY0(vdev_trim_load(vd));
 			vdev_trim(vd, vd->vdev_trim_rate,
-			    vd->vdev_trim_partial);
+			    vd->vdev_trim_partial, vd->vdev_trim_secure);
 		}
 
 		mutex_exit(&vd->vdev_trim_lock);
@@ -1028,9 +1065,11 @@ vdev_autotrim_thread(void *arg)
 				ta->trim_extent_bytes_max = extent_bytes_max;
 				ta->trim_extent_bytes_min = extent_bytes_min;
 				ta->trim_type = TRIM_TYPE_AUTO;
+				ta->trim_flags = 0;
 
 				if (cvd->vdev_detached ||
 				    !vdev_writeable(cvd) ||
+				    !cvd->vdev_trim ||
 				    !cvd->vdev_ops->vdev_op_leaf ||
 				    cvd->vdev_trim_thread != NULL)
 					continue;

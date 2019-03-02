@@ -1270,7 +1270,7 @@ lzc_reopen(const char *pool_name, boolean_t scrub_restart)
  *	- EBUSY start requested but the device is already being either trimmed
  *	        or initialized
  *	- ESRCH cancel/suspend requested but device is not being initialized
- *	- EOPNOTSUPP if the device does not support TRIM
+ *	- EOPNOTSUPP if the device does not support TRIM (or secure TRIM)
  *
  * If the errlist is empty, then return value will be:
  *	- EINVAL if one or more arguments was invalid
@@ -1279,7 +1279,7 @@ lzc_reopen(const char *pool_name, boolean_t scrub_restart)
  */
 int
 lzc_trim(const char *poolname, pool_trim_func_t cmd_type, uint64_t rate,
-    boolean_t partial, nvlist_t *vdevs, nvlist_t **errlist)
+    boolean_t partial, boolean_t secure, nvlist_t *vdevs, nvlist_t **errlist)
 {
 	int error;
 
@@ -1288,6 +1288,7 @@ lzc_trim(const char *poolname, pool_trim_func_t cmd_type, uint64_t rate,
 	fnvlist_add_nvlist(args, ZPOOL_TRIM_VDEVS, vdevs);
 	fnvlist_add_uint64(args, ZPOOL_TRIM_RATE, rate);
 	fnvlist_add_boolean_value(args, ZPOOL_TRIM_PARTIAL, partial);
+	fnvlist_add_boolean_value(args, ZPOOL_TRIM_SECURE, secure);
 
 	error = lzc_ioctl(ZFS_IOC_POOL_TRIM, poolname, args, errlist);
 

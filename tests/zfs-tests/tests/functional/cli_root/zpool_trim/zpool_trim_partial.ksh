@@ -32,7 +32,7 @@
 #	3. Run 'zpool trim -p' to only TRIM allocated space maps.
 #	4. Verify the disk is least 90% of its original size.
 #	5. Run 'zpool trim' to perform a full TRIM.
-#	6. Verify the disk is less than 10% of its original size.a
+#	6. Verify the disk is less than 10% of its original size.
 
 function cleanup
 {

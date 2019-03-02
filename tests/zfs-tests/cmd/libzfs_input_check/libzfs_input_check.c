@@ -670,6 +670,7 @@ test_vdev_trim(const char *pool)
 	fnvlist_add_nvlist(required, ZPOOL_TRIM_VDEVS, vdev_guids);
 	fnvlist_add_uint64(optional, ZPOOL_TRIM_RATE, 1ULL << 30);
 	fnvlist_add_boolean_value(optional, ZPOOL_TRIM_PARTIAL, B_TRUE);
+	fnvlist_add_boolean_value(optional, ZPOOL_TRIM_SECURE, B_TRUE);
 
 	IOC_INPUT_TEST(ZFS_IOC_POOL_TRIM, pool, required, optional, EINVAL);
 	nvlist_free(vdev_guids);
