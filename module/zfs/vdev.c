@@ -3778,7 +3778,7 @@ vdev_get_stats_ex(vdev_t *vd, vdev_stat_t *vs, vdev_stat_ex_t *vsx)
 			 * the manual TRIM locks held, this is only an
 			 * estimate (although fairly accurate one).
 			 */
-			vs->vs_trim_notsup = !vd->vdev_trim;
+			vs->vs_trim_notsup = !vd->vdev_has_trim;
 			vs->vs_trim_bytes_done = vd->vdev_trim_bytes_done;
 			vs->vs_trim_bytes_est = vd->vdev_trim_bytes_est;
 			vs->vs_trim_state = vd->vdev_trim_state;

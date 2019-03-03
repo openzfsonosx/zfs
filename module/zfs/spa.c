@@ -6821,10 +6821,10 @@ spa_vdev_trim_impl(spa_t *spa, uint64_t guid, uint64_t cmd_type,
 	} else if (!vdev_writeable(vd)) {
 		spa_config_exit(spa, SCL_CONFIG | SCL_STATE, FTAG);
 		return (SET_ERROR(EROFS));
-	} else if (!vd->vdev_trim) {
+	} else if (!vd->vdev_has_trim) {
 		spa_config_exit(spa, SCL_CONFIG | SCL_STATE, FTAG);
 		return (SET_ERROR(EOPNOTSUPP));
-	} else if (secure && !vd->vdev_securetrim) {
+	} else if (secure && !vd->vdev_has_securetrim) {
 		spa_config_exit(spa, SCL_CONFIG | SCL_STATE, FTAG);
 		return (SET_ERROR(EOPNOTSUPP));
 	}
@@ -6871,10 +6871,9 @@ spa_vdev_trim_impl(spa_t *spa, uint64_t guid, uint64_t cmd_type,
 }
 
 /*
- * Initiates an manual TRIM of the whole pool. This kicks off individual
- * TRIM threads for each child vdev, which then pass over all of the free
- * space in all of the vdev's metaslabs and issues TRIM commands for that
- * space to the underlying vdevs.
+ * Initiates a manual TRIM for the requested vdevs. This kicks off individual
+ * TRIM threads for each child vdev.  These threads pass over all of the free
+ * space in the vdev's metaslabs and issues TRIM commands for that space.
  */
 int
 spa_vdev_trim(spa_t *spa, nvlist_t *nv, uint64_t cmd_type, uint64_t rate,

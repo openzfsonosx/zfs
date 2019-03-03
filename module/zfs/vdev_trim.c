@@ -87,28 +87,14 @@ vdev_trim_should_stop(vdev_t *vd)
 }
 
 /*
- * Determines the minimum sensible rate at which a manual TRIM can be
- * performed on a given spa and returns it (in bytes per second).  The
- * minimum rate is  calculated by assuming that trimming a metaslab
- * should not take longer than 1000 seconds.
+ * Returns the minimum allowed rate (bytes per second) at which a manual
+ * TRIM can be rate limited too.  A floor of 1 MB/s was selected as a
+ * reasonable minimum value.
  */
 uint64_t
 vdev_trim_min_rate(spa_t *spa)
 {
-	uint64_t i, smallest_ms_sz = UINT64_MAX;
-
-	spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
-	for (i = 0; i < spa->spa_root_vdev->vdev_children; i++) {
-		vdev_t *cvd = spa->spa_root_vdev->vdev_child[i];
-		if (!vdev_is_concrete(cvd) || cvd->vdev_ms == NULL ||
-		    cvd->vdev_ms[0] == NULL)
-			continue;
-		smallest_ms_sz = MIN(smallest_ms_sz, cvd->vdev_ms[0]->ms_size);
-	}
-	spa_config_exit(spa, SCL_CONFIG, FTAG);
-	ASSERT3U(smallest_ms_sz, !=, 0);
-
-	return (smallest_ms_sz / 1000);
+	return (1024 * 1024);
 }
 
 static void
@@ -973,15 +959,13 @@ vdev_autotrim_thread(void *arg)
 		boolean_t issued_trim = B_FALSE;
 
 		/*
-		 * Since there may be thousands of metaslabs per top-level
-		 * vdev we rotate over them in zfs_txgs_per_trim sized
-		 * groups.  The intent is to allow enough time to aggregate
-		 * a sufficiently large TRIM set such that it can issued
-		 * efficiently to the underlying devices.  Ideally, we also
-		 * want to keep the TRIM set small enough that it can be
-		 * completed in a small number of transaction.  This is
-		 * because while a metaslab is being trimmed it is not
-		 * eligible for new allocations.
+		 * The metaslabs are rotated over in groups of num_metaslabs /
+		 * zfs_trim_txg_batch per txg.  The intent is to always allow
+		 * a minimum number of txgs to be processed before revisiting
+		 * a metaslab.  In this way, free space can be aggregated and
+		 * sufficiently large TRIM commands issued.  Depending on how
+		 * much free space needs to be trimmed, it may take longer to
+		 * revisit a metaslab allowing additional aggregation.
 		 */
 		for (uint64_t i = shift % txgs_per_trim; i < vd->vdev_ms_count;
 		    i += txgs_per_trim) {
@@ -1069,7 +1053,7 @@ vdev_autotrim_thread(void *arg)
 
 				if (cvd->vdev_detached ||
 				    !vdev_writeable(cvd) ||
-				    !cvd->vdev_trim ||
+				    !cvd->vdev_has_trim ||
 				    !cvd->vdev_ops->vdev_op_leaf ||
 				    cvd->vdev_trim_thread != NULL)
 					continue;
@@ -1086,7 +1070,7 @@ vdev_autotrim_thread(void *arg)
 			 * Issue the trims for all ranges covered by the trim
 			 * trees.  These ranges are safe to trim because no
 			 * new allocations will be performed until the call
-			 * to vdev_trim_ms_unmark() below.
+			 * to metaslab_enabled() below.
 			 */
 			for (uint64_t c = 0; c < children; c++) {
 				trim_args_t *ta = &tap[c];
@@ -1140,6 +1124,13 @@ vdev_autotrim_thread(void *arg)
 		}
 
 		spa_config_exit(spa, SCL_CONFIG, FTAG);
+
+		/*
+		 * When there was no need to issue TRIM commands for any
+		 * of the scanned metaslabs (and therefore no reason to wait
+		 * on outstanding IO), then artifically delay before checking
+		 * the next group of metaslabs.
+		 */
 		if (!issued_trim)
 			delay(hz);
 

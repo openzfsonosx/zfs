@@ -557,18 +557,18 @@ skip_open:
 	}
 
 	// Assume no TRIM
-	vd->vdev_trim = B_FALSE;
+	vd->vdev_has_trim = B_FALSE;
 	uint32_t features;
 	if (ldi_ioctl(dvd->vd_lh, DKIOCGETFEATURES, (intptr_t)&features,
 	    FKIOCTL, kcred, NULL) == 0) {
 		if (features & DK_FEATURE_UNMAP)
-			vd->vdev_trim = B_TRUE;
+			vd->vdev_has_trim = B_TRUE;
 	}
-	printf("%s: trim set to %x\n", __func__, vd->vdev_trim);
+	printf("%s: has_trim set to %x\n", __func__, vd->vdev_has_trim);
 
 	/* Set when device reports it supports secure TRIM. */
 	// No secure trim in Apple yet.
-	vd->vdev_securetrim = B_FALSE;
+	vd->vdev_has_securetrim = B_FALSE;
 #endif //__APPLE__
 
 	return (0);

@@ -391,11 +391,12 @@ struct metaslab {
 	range_tree_t	*ms_checkpointing; /* to add to the checkpoint */
 
 	/*
-	 * The ms_trim tree is a subset of ms_allocatable while a metaslab
-	 * is loaded.  It is kept in-core as long as the autotrim property
-	 * is set and is not vacated when the metaslab is unloaded.  Its
-	 * purpose is to aggregate freed ranges to facilitate efficient
-	 * trimming.
+	 * The ms_trim tree is the set of allocatable segments which are
+	 * eligible for trimming. (When the metaslab is loaded, it's a
+	 * subset of ms_allocatable.)  It is kept in-core as long as the
+	 * autotrim property is set and is not vacated when the metaslab
+	 * is unloaded.  Its purpose is to aggregate freed ranges to
+	 * facilitate efficient trimming.
 	 */
 	range_tree_t	*ms_trim;
 
@@ -403,7 +404,10 @@ struct metaslab {
 	boolean_t	ms_condense_wanted;
 	uint64_t	ms_condense_checked_txg;
 
-	uint64_t	ms_disabled; /* allocations disabled? */
+	/*
+	 * The number of consumers which have disabled the metaslab.
+	 */
+	uint64_t	ms_disabled;
 
 	/*
 	 * We must hold both ms_lock and ms_group->mg_lock in order to
