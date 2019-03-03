@@ -683,7 +683,7 @@ vdev_trim_thread(void *arg)
 		 */
 		if (msp->ms_sm == NULL && vd->vdev_trim_partial) {
 			mutex_exit(&msp->ms_lock);
-			metaslab_enable(spa, msp, B_FALSE);
+			metaslab_enable(msp, B_FALSE);
 			vdev_trim_calculate_progress(vd);
 			continue;
 		}
@@ -695,7 +695,7 @@ vdev_trim_thread(void *arg)
 
 		spa_config_exit(spa, SCL_CONFIG, FTAG);
 		error = vdev_trim_ranges(&ta);
-		metaslab_enable(spa, msp, B_TRUE);
+		metaslab_enable(msp, B_TRUE);
 		spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
 		range_tree_vacate(ta.trim_tree, NULL, NULL);
@@ -971,7 +971,7 @@ vdev_autotrim_thread(void *arg)
 			if (msp->ms_sm == NULL ||
 			    range_tree_is_empty(msp->ms_trim)) {
 				mutex_exit(&msp->ms_lock);
-				metaslab_enable(spa, msp, B_FALSE);
+				metaslab_enable(msp, B_FALSE);
 				continue;
 			}
 
@@ -986,7 +986,7 @@ vdev_autotrim_thread(void *arg)
 			 */
 			if (msp->ms_disabled > 1) {
 				mutex_exit(&msp->ms_lock);
-				metaslab_enable(spa, msp, B_FALSE);
+				metaslab_enable(msp, B_FALSE);
 				continue;
 			}
 
@@ -1096,7 +1096,7 @@ vdev_autotrim_thread(void *arg)
 			range_tree_vacate(trim_tree, NULL, NULL);
 			range_tree_destroy(trim_tree);
 
-			metaslab_enable(spa, msp, issued_trim);
+			metaslab_enable(msp, issued_trim);
 			spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
 			for (uint64_t c = 0; c < children; c++) {

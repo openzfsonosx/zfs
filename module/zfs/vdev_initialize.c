@@ -491,7 +491,7 @@ vdev_initialize_thread(void *arg)
 
 		spa_config_exit(spa, SCL_CONFIG, FTAG);
 		error = vdev_initialize_ranges(vd, deadbeef);
-		metaslab_enable(spa, msp, B_TRUE);
+		metaslab_enable(msp, B_TRUE);
 		spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 
 		range_tree_vacate(vd->vdev_initialize_tree, NULL, NULL);

@@ -4518,26 +4518,18 @@ metaslab_disable(metaslab_t *msp)
 }
 
 void
-metaslab_enable(spa_t *spa, metaslab_t *msp, boolean_t sync)
+metaslab_enable(metaslab_t *msp, boolean_t sync)
 {
-	ASSERT(!MUTEX_HELD(&msp->ms_lock));
 	metaslab_group_t *mg = msp->ms_group;
+	spa_t *spa = mg->mg_vd->vdev_spa;
 
 	/*
-	 * When the last thread has finished and is enabling a metaslab,
-	 * then it may be to wait for any outstanding I/Os to be synced.
-	 * The initialize and TRIM features depend on this sync to prevent
-	 * newly allocated blocks from being overwritten.  Another thread
-	 * may safely disable this metaslab while this function is waiting
-	 * on the sync.
+	 * When enabling a metaslab, then it may need to wait for outstanding
+	 * I/Os to be synced.  The initialize and TRIM features depend on this
+	 * sync to prevent newly allocated blocks from being overwritten.
 	 */
-	if (sync) {
-		mutex_enter(&msp->ms_lock);
-		sync = (msp->ms_disabled == 1);
-		mutex_exit(&msp->ms_lock);
-		if (sync)
-			txg_wait_synced(spa->spa_dsl_pool, 0);
-	}
+	if (sync)
+		txg_wait_synced(spa_get_dsl(spa), 0);
 
 	mutex_enter(&mg->mg_ms_disabled_lock);
 	mutex_enter(&msp->ms_lock);
