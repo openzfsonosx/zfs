@@ -694,7 +694,9 @@ vdev_initialize_restart(vdev_t *vd)
 			/* load progress for reporting, but don't resume */
 			vdev_initialize_load(vd);
 		} else if (vd->vdev_initialize_state ==
-		    VDEV_INITIALIZE_ACTIVE && vdev_writeable(vd)) {
+		    VDEV_INITIALIZE_ACTIVE && vdev_writeable(vd) &&
+		    !vd->vdev_top->vdev_removing &&
+		    vd->vdev_initialize_thread == NULL) {
 			vdev_initialize(vd);
 		}
 

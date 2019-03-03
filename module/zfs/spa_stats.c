@@ -998,8 +998,10 @@ spa_iostats_trim_add(spa_t *spa, trim_type_t type,
 int
 spa_iostats_update(kstat_t *ksp, int rw)
 {
-	if (rw == KSTAT_WRITE)
-		bzero(ksp->ks_data, sizeof (spa_iostats_t));
+	if (rw == KSTAT_WRITE) {
+		memcpy(ksp->ks_data, &spa_iostats_template,
+		    sizeof (spa_iostats_t));
+	}
 
 	return (0);
 }

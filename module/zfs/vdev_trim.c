@@ -86,17 +86,6 @@ vdev_trim_should_stop(vdev_t *vd)
 	    vd->vdev_detached || vd->vdev_top->vdev_removing);
 }
 
-/*
- * Returns the minimum allowed rate (bytes per second) at which a manual
- * TRIM can be rate limited too.  A floor of 1 MB/s was selected as a
- * reasonable minimum value.
- */
-uint64_t
-vdev_trim_min_rate(spa_t *spa)
-{
-	return (1024 * 1024);
-}
-
 static void
 vdev_trim_zap_update_sync(void *arg, dmu_tx_t *tx)
 {
@@ -204,7 +193,7 @@ vdev_trim_change_state(vdev_t *vd, vdev_trim_state_t new_state,
 		}
 
 		if (rate != 0)
-			vd->vdev_trim_rate = MAX(rate, vdev_trim_min_rate(spa));
+			vd->vdev_trim_rate = rate;
 
 		if (partial != 0)
 			vd->vdev_trim_partial = partial;
