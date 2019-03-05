@@ -7270,7 +7270,7 @@ out:
 	/* restart initializing or trimming disks as necessary */
 	spa_async_request(spa, SPA_ASYNC_INITIALIZE_RESTART);
 	spa_async_request(spa, SPA_ASYNC_TRIM_RESTART);
-	spa_async_request(spa, SPA_ASYNC_AUTOTRIM);
+	spa_async_request(spa, SPA_ASYNC_AUTOTRIM_RESTART);
 
 	vdev_reopen(spa->spa_root_vdev);
 
@@ -7662,7 +7662,7 @@ spa_async_thread(void *arg)
 		mutex_exit(&spa_namespace_lock);
 	}
 
-	if (tasks & SPA_ASYNC_AUTOTRIM) {
+	if (tasks & SPA_ASYNC_AUTOTRIM_RESTART) {
 		mutex_enter(&spa_namespace_lock);
 		spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
 		vdev_autotrim_restart(spa);
@@ -8151,7 +8151,8 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 				break;
 			case ZPOOL_PROP_AUTOTRIM:
 				spa->spa_autotrim = intval;
-				spa_async_request(spa, SPA_ASYNC_AUTOTRIM);
+				spa_async_request(spa,
+				    SPA_ASYNC_AUTOTRIM_RESTART);
 				break;
 			case ZPOOL_PROP_AUTOEXPAND:
 				spa->spa_autoexpand = intval;

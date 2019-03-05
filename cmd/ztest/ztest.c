@@ -4838,7 +4838,7 @@ ztest_dmu_read_write_zcopy(ztest_ds_t *zd, uint64_t id)
 			umem_free(bigcheck, bigsize);
 		}
 		if (i == 2) {
-			txg_wait_open(dmu_objset_pool(os), 0);
+			txg_wait_open(dmu_objset_pool(os), 0, B_TRUE);
 		} else if (i == 3) {
 			txg_wait_synced(dmu_objset_pool(os), 0);
 		}

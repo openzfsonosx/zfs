@@ -1230,8 +1230,8 @@ zio_trim(zio_t *pio, vdev_t *vd, uint64_t offset, uint64_t size,
 	zio_t *zio;
 
 	ASSERT0(vd->vdev_children);
-	ASSERT0(offset & ((1 << vd->vdev_ashift) - 1));
-	ASSERT0(size & ((1 << vd->vdev_ashift) - 1));
+	ASSERT0(P2PHASE(offset, 1ULL << vd->vdev_ashift));
+	ASSERT0(P2PHASE(size, 1ULL << vd->vdev_ashift));
 	ASSERT3U(size, !=, 0);
 
 	zio = zio_create(pio, vd->vdev_spa, 0, NULL, NULL, size, size, done,

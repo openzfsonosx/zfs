@@ -2006,7 +2006,7 @@ spa_vdev_remove_top(vdev_t *vd, uint64_t *txg)
 		metaslab_group_activate(mg);
 		spa_async_request(spa, SPA_ASYNC_INITIALIZE_RESTART);
 		spa_async_request(spa, SPA_ASYNC_TRIM_RESTART);
-		spa_async_request(spa, SPA_ASYNC_AUTOTRIM);
+		spa_async_request(spa, SPA_ASYNC_AUTOTRIM_RESTART);
 		return (error);
 	}
 

@@ -53,16 +53,17 @@ unsigned int zfs_trim_extent_bytes_min = 32 * 1024;
 unsigned int zfs_trim_queue_limit = 10;
 
 /*
- * How many transaction groups worth of updates should be aggregated before
- * TRIM operations are issued to the device.  This setting represents a
- * trade-off between issuing more efficient TRIM operations, by allowing
- * them to be aggregated longer, and issuing them promptly enough that the
- * space is trimmed and available for use by the device.
+ * The minimum number of transaction groups between automatic trims of a
+ * metaslab.  This setting represents a trade-off between issuing more
+ * efficient TRIM operations, by allowing them to be aggregated longer,
+ * and issuing them promptly so the trimmed space is available.  Note
+ * that this value is a minimum; metaslabs are trimmed less frequently
+ * when each has a large number of ranges which need to be trimmed.
  *
  * Increasing this value will allow frees to be aggregated for a longer
- * time.  This will result is larger TRIM operations, and increased memory
- * usage in order to track the pending TRIMs.  Decreasing this value will
- * have the opposite effect.  The default value of 32 was determined to be
+ * time.  This can result is larger TRIM operations, and increased memory
+ * usage in order to track the ranges to be trimmed.  Decreasing this value
+ * has the opposite effect.  The default value of 32 was determined to be
  * a reasonable compromise.
  */
 int zfs_trim_txg_batch = 32;
@@ -948,13 +949,30 @@ vdev_autotrim_thread(void *arg)
 		boolean_t issued_trim = B_FALSE;
 
 		/*
-		 * The metaslabs are rotated over in groups of num_metaslabs /
-		 * zfs_trim_txg_batch per txg.  The intent is to always allow
-		 * a minimum number of txgs to be processed before revisiting
-		 * a metaslab.  In this way, free space can be aggregated and
-		 * sufficiently large TRIM commands issued.  Depending on how
-		 * much free space needs to be trimmed, it may take longer to
-		 * revisit a metaslab allowing additional aggregation.
+		 * All of the metaslabs are divided in to groups of size
+		 * num_metaslabs / zfs_trim_txg_batch.  Each of these groups
+		 * is composed of metaslabs which are spread evenly over the
+		 * device.
+		 *
+		 * For example, when zfs_trim_txg_batch = 32 (default) then
+		 * group 0 will contain metaslabs 0, 16, 32, ...;
+		 * group 1 will contain metaslabs 1, 17, 33, ...;
+		 * group 2 will contain metaslabs 2, 18, 34, ...; and so on.
+		 *
+		 * On each pass through the while() loop one of these groups
+		 * is selected.  This is accomplished by using a shift value
+		 * to select the starting metaslab, then striding over the
+		 * metaslabs using the zfs_trim_txg_batch size.  This is
+		 * done to accomplish two things.
+		 *
+		 * 1) By dividing the metaslabs in to groups, and making sure
+		 *    that each group takes a minimum of one txg to process.
+		 *    Then zfs_trim_txg_batch controls the minimum number of
+		 *    txgs which must occur before a metaslab is revisited.
+		 *
+		 * 2) Selecting non-consecutive metaslabs distributes the
+		 *    TRIM commands for a group evenly over the entire device.
+		 *    This can be advantageous for certain types of devices.
 		 */
 		for (uint64_t i = shift % txgs_per_trim; i < vd->vdev_ms_count;
 		    i += txgs_per_trim) {
@@ -1115,13 +1133,13 @@ vdev_autotrim_thread(void *arg)
 		spa_config_exit(spa, SCL_CONFIG, FTAG);
 
 		/*
-		 * When there was no need to issue TRIM commands for any
-		 * of the scanned metaslabs (and therefore no reason to wait
-		 * on outstanding IO), then artifically delay before checking
-		 * the next group of metaslabs.
+		 * When no TRIM commands were issues for the metaslabs,
+		 * then wait for the next open txg.  This is done to make
+		 * sure that a minimum of zfs_trim_txg_batch txgs will
+		 * occur before these metaslabs are rescanned.
 		 */
 		if (!issued_trim)
-			delay(hz);
+			txg_wait_open(spa_get_dsl(spa), 0, B_FALSE);
 
 		shift++;
 		spa_config_enter(spa, SCL_CONFIG, FTAG, RW_READER);
@@ -1247,7 +1265,7 @@ MODULE_PARM_DESC(zfs_trim_extent_bytes_min,
 
 module_param(zfs_trim_txg_batch, uint, 0644);
 MODULE_PARM_DESC(zfs_trim_txg_batch,
-    "Number of txgs to aggregate frees before issuing TRIM");
+    "Min number of txgs to aggregate frees before issuing TRIM");
 
 module_param(zfs_trim_queue_limit, uint, 0644);
 MODULE_PARM_DESC(zfs_trim_queue_limit,
