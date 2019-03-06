@@ -88,12 +88,7 @@ assfail(const char *buf, const char *file, int line)
 #ifndef DEBUG
 
 /* Compile time assert */
-#define	CTASSERT_GLOBAL(x)		_CTASSERT(x, __LINE__)
-#define	CTASSERT(x)			{ _CTASSERT(x, __LINE__); }
-#define	_CTASSERT(x, y)			__CTASSERT(x, y)
-#define	__CTASSERT(x, y)						\
-	typedef char __attribute__((unused))				\
-	__compile_time_assertion__ ## y[(x) ? 1 : -1]
+#define	CTASSERT(x)			_Static_assert((x), #x)
 
 #define	ASSERT3B(x, y, z)	((void)0)
 #define	ASSERT3S(x, y, z)	((void)0)

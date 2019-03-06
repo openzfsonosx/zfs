@@ -22,11 +22,11 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Joyent, Inc.
  * Copyright (c) 2017 Datto Inc.
  * Copyright (c) 2017, Intel Corporation.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -672,6 +672,7 @@ typedef struct zpool_load_policy {
 #define	ZPOOL_CONFIG_PHYS_PATH		"phys_path"
 #define	ZPOOL_CONFIG_IS_LOG		"is_log"
 #define	ZPOOL_CONFIG_L2CACHE		"l2cache"
+#define	ZPOOL_CONFIG_L2CACHE_PERSISTENT	"l2cache_persistent"
 #define	ZPOOL_CONFIG_HOLE_ARRAY		"hole_array"
 #define	ZPOOL_CONFIG_VDEV_CHILDREN	"vdev_children"
 #define	ZPOOL_CONFIG_IS_HOLE		"is_hole"

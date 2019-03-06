@@ -21,9 +21,8 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Joyent, Inc.
  * Copyright (c) 2017 Datto Inc.
@@ -798,6 +797,7 @@ extern int spa_scan_get_stats(spa_t *spa, pool_scan_stat_t *ps);
 #define	SPA_ASYNC_REMOVE_DONE	0x40
 #define	SPA_ASYNC_REMOVE_STOP	0x80
 #define	SPA_ASYNC_INITIALIZE_RESTART	0x100
+#define	SPA_ASYNC_L2CACHE_REBUILD  	0x200
 
 /*
  * Controls the behavior of spa_vdev_remove().

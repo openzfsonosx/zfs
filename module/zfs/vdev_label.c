@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2017, Intel Corporation.
  */
 
@@ -483,6 +483,11 @@ vdev_config_generate(spa_t *spa, vdev_t *vd, boolean_t getstats,
 			    bias);
 		}
 	}
+
+	if (flags & VDEV_CONFIG_L2CACHE)
+		/* indicate that we support L2ARC persistency */
+		VERIFY(nvlist_add_boolean_value(nv,
+		    ZPOOL_CONFIG_L2CACHE_PERSISTENT, B_TRUE) == 0);
 
 	if (vd->vdev_dtl_sm != NULL) {
 		fnvlist_add_uint64(nv, ZPOOL_CONFIG_DTL,
