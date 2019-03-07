@@ -709,6 +709,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_name_cache[0] = 0;
 	zp->z_finder_parentid = 0;
 	zp->z_finder_hardlink = FALSE;
+	zp->z_attach_vnode = B_FALSE;
 
 	vp = ZTOV(zp); /* Does nothing in OSX */
 
@@ -1356,13 +1357,12 @@ again:
 			return (ENOENT);
 		}
 
-		mutex_exit(&zp->z_lock);
-		sa_buf_rele(db, NULL);
-		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
-
 		if ((flags & ZGET_FLAG_WITHOUT_VNODE_GET)) {
 			/* Do not increase vnode iocount */
 			*zpp = zp;
+			mutex_exit(&zp->z_lock);
+			sa_buf_rele(db, NULL);
+			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 			return 0;
 		}
 
@@ -1370,9 +1370,21 @@ again:
 		 * need to let it get ahead */
 		if (!vp) {
 			kpreempt(KPREEMPT_SYNC);
-			dprintf("zget racing attach\n");
+			printf("zget racing attach\n");
+
+			if (zp->z_attach_vnode == B_TRUE) {
+				zp->z_attach_vnode = B_FALSE;
+				zfs_znode_getvnode(zp, zfsvfs);
+			}
+			mutex_exit(&zp->z_lock);
+			sa_buf_rele(db, NULL);
+			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 			goto again;
 		}
+
+		mutex_exit(&zp->z_lock);
+		sa_buf_rele(db, NULL);
+		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
 		/* Due to vnode_create() -> zfs_fsync() -> zil_commit() -> zget()
 		 * -> vnode_getwithvid() -> deadlock. Unsure why vnode_getwithvid()
@@ -1459,6 +1471,7 @@ again:
 		//mutex_exit(&zfsvfs->z_znodes_lock);
 		if (flags & ZGET_FLAG_WITHOUT_VNODE_GET)
 			printf("ZFS: zget without vnode in znodealloc case\n");
+		zp->z_attach_vnode = B_TRUE;
 	} else {
 		/* Attach a vnode to our new znode */
 		zfs_znode_getvnode(zp, zfsvfs); /* Assigns both vp and z_vnode */
