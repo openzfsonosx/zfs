@@ -1111,10 +1111,11 @@ spa_l2cache_activate(vdev_t *vd)
 uint64_t
 spa_vdev_enter(spa_t *spa)
 {
-	vdev_autotrim_stop_all(spa);
-
 	mutex_enter(&spa->spa_vdev_top_lock);
 	mutex_enter(&spa_namespace_lock);
+
+	vdev_autotrim_stop_all(spa);
+
 	return (spa_vdev_config_enter(spa));
 }
 
@@ -1222,11 +1223,11 @@ spa_vdev_config_exit(spa_t *spa, vdev_t *vd, uint64_t txg, int error, char *tag)
 int
 spa_vdev_exit(spa_t *spa, vdev_t *vd, uint64_t txg, int error)
 {
+	vdev_autotrim_restart(spa);
+
 	spa_vdev_config_exit(spa, vd, txg, error, FTAG);
 	mutex_exit(&spa_namespace_lock);
 	mutex_exit(&spa->spa_vdev_top_lock);
-
-	vdev_autotrim_restart(spa);
 
 	return (error);
 }

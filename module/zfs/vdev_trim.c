@@ -36,18 +36,18 @@
 #include <sys/dmu_tx.h>
 
 /*
- * Maximum size of TRIM command, ranges will be chunked in to 128MiB extents.
+ * Maximum size of TRIM I/O, ranges will be chunked in to 128MiB lengths.
  */
 unsigned int zfs_trim_extent_bytes_max = 128 * 1024 * 1024;
 
 /*
- * Minimum size of TRIM commands, extents smaller than 32Kib will be skipped.
+ * Minimum size of TRIM I/O, extents smaller than 32Kib will be skipped.
  */
 unsigned int zfs_trim_extent_bytes_min = 32 * 1024;
 
 /*
- * Maximum number of queued TRIMs outstanding per leaf vdev.  The number of
- * concurrent TRIM commands issued to the device is controlled by the
+ * Maximum number of queued TRIM I/Os per leaf vdev.  The number of
+ * concurrent TRIM I/Os issued to the device is controlled by the
  * zfs_vdev_trim_min_active and zfs_vdev_trim_max_active module options.
  */
 unsigned int zfs_trim_queue_limit = 10;
@@ -57,29 +57,45 @@ unsigned int zfs_trim_queue_limit = 10;
  * metaslab.  This setting represents a trade-off between issuing more
  * efficient TRIM operations, by allowing them to be aggregated longer,
  * and issuing them promptly so the trimmed space is available.  Note
- * that this value is a minimum; metaslabs are trimmed less frequently
- * when each has a large number of ranges which need to be trimmed.
+ * that this value is a minimum; metaslabs can be trimmed less frequently
+ * when there are a large number of ranges which need to be trimmed.
  *
  * Increasing this value will allow frees to be aggregated for a longer
  * time.  This can result is larger TRIM operations, and increased memory
  * usage in order to track the ranges to be trimmed.  Decreasing this value
- * has the opposite effect.  The default value of 32 was determined to be
- * a reasonable compromise.
+ * has the opposite effect.  The default value of 32 was determined though
+ * testing to be a reasonable compromise.
  */
 int zfs_trim_txg_batch = 32;
 
+/*
+ * The trim_args are a control structure which describe how a leaf vdev
+ * should be trimmed.  The core elements are the vdev, the metaslab being
+ * trimmed and a range tree containing the extents to TRIM.  All provided
+ * ranges must be within the metaslab.
+ */
 typedef struct trim_args {
-	vdev_t		*trim_vdev;
-	metaslab_t	*trim_msp;
-	range_tree_t	*trim_tree;
-	trim_type_t	trim_type;
-	hrtime_t	trim_start_time;
-	uint64_t	trim_bytes_done;
-	uint64_t	trim_extent_bytes_max;
-	uint64_t	trim_extent_bytes_min;
-	enum trim_flag	trim_flags;
+	/*
+	 * These fields are set by the caller of vdev_trim_ranges().
+	 */
+	vdev_t		*trim_vdev;		/* Leaf vdev to TRIM */
+	metaslab_t	*trim_msp;		/* Disabled metaslab */
+	range_tree_t	*trim_tree;		/* TRIM ranges (in metaslab) */
+	trim_type_t	trim_type;		/* Manual or auto TRIM */
+	uint64_t	trim_extent_bytes_max;	/* Maximum TRIM I/O size */
+	uint64_t	trim_extent_bytes_min;	/* Minimum TRIM I/O size */
+	enum trim_flag	trim_flags;		/* TRIM flags (secure) */
+
+	/*
+	 * These fields are updated by vdev_trim_ranges().
+	 */
+	hrtime_t	trim_start_time;	/* Start time */
+	uint64_t	trim_bytes_done;	/* Bytes trimmed */
 } trim_args_t;
 
+/*
+ * Determines whether a vdev_trim_thread() should be stopped.
+ */
 static boolean_t
 vdev_trim_should_stop(vdev_t *vd)
 {
@@ -87,12 +103,16 @@ vdev_trim_should_stop(vdev_t *vd)
 	    vd->vdev_detached || vd->vdev_top->vdev_removing);
 }
 
+/*
+ * The sync task for updating the on-disk state of a manual TRIM.  This
+ * is scheduled by vdev_trim_change_state().
+ */
 static void
 vdev_trim_zap_update_sync(void *arg, dmu_tx_t *tx)
 {
 	/*
 	 * We pass in the guid instead of the vdev_t since the vdev may
-	 * have been freed prior to the sync task being processed. This
+	 * have been freed prior to the sync task being processed.  This
 	 * happens when a vdev is detached as we call spa_config_vdev_exit(),
 	 * stop the trimming thread, schedule the sync task, and free
 	 * the vdev. Later when the scheduled sync task is invoked, it would
@@ -157,6 +177,11 @@ vdev_trim_zap_update_sync(void *arg, dmu_tx_t *tx)
 	    sizeof (trim_state), 1, &trim_state, tx));
 }
 
+/*
+ * Update the on-disk state of a manual TRIM.  This is called to request
+ * that a TRIM be started/suspended/canceled, or to change one of the
+ * TRIM options (partial, secure, rate).
+ */
 static void
 vdev_trim_change_state(vdev_t *vd, vdev_trim_state_t new_state,
     uint64_t rate, boolean_t partial, boolean_t secure)
@@ -240,6 +265,11 @@ vdev_trim_change_state(vdev_t *vd, vdev_trim_state_t new_state,
 	dmu_tx_commit(tx);
 }
 
+/*
+ * The zio_done_func_t done callback for each manual TRIM issued.  It is
+ * responsible for updating the TRIM stats, reissuing failed TRIM I/Os,
+ * and limiting the number of in flight TRIM I/Os.
+ */
 static void
 vdev_trim_cb(zio_t *zio)
 {
@@ -276,6 +306,12 @@ vdev_trim_cb(zio_t *zio)
 	spa_config_exit(vd->vdev_spa, SCL_STATE_ALL, vd);
 }
 
+/*
+ * The zio_done_func_t done callback for each automatic TRIM issued.  It
+ * is responsible for updating the TRIM stats and limiting the number of
+ * in flight TRIM I/Os.  Automatic TRIM I/Os are best effort and are
+ * never reissued on failure.
+ */
 static void
 vdev_autotrim_cb(zio_t *zio)
 {
@@ -310,7 +346,10 @@ vdev_trim_calculate_rate(trim_args_t *ta)
 	    (NSEC2MSEC(gethrtime() - ta->trim_start_time) + 1));
 }
 
-/* Takes care of physical discards and limiting # of concurrent ZIOs. */
+/*
+ * Issues a physical TRIM and takes care of rate limiting (bytes/sec)
+ * and number of concurrent TRIM I/Os.
+ */
 static int
 vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 {
@@ -319,15 +358,21 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 
 	mutex_enter(&vd->vdev_trim_io_lock);
 
-	/* Limit trim to requested rate */
-	while (vd->vdev_trim_rate != 0 && !vdev_trim_should_stop(vd) &&
-	    vdev_trim_calculate_rate(ta) > vd->vdev_trim_rate) {
-		cv_timedwait_sig(&vd->vdev_trim_io_cv, &vd->vdev_trim_io_lock,
-		    ddi_get_lbolt() + MSEC_TO_TICK(10));
+	/*
+	 * Limit manual TRIM I/Os to the requested rate.  This does not
+	 * apply to automatic TRIM since no per vdev rate can be specified.
+	 */
+	if (ta->trim_type == TRIM_TYPE_MANUAL) {
+		while (vd->vdev_trim_rate != 0 && !vdev_trim_should_stop(vd) &&
+		    vdev_trim_calculate_rate(ta) > vd->vdev_trim_rate) {
+			cv_timedwait_sig(&vd->vdev_trim_io_cv,
+			    &vd->vdev_trim_io_lock, ddi_get_lbolt() +
+			    MSEC_TO_TICK(10));
+		}
 	}
 	ta->trim_bytes_done += size;
 
-	/* Limit inflight trimming I/Os */
+	/* Limit in flight trimming I/Os */
 	while (vd->vdev_trim_inflight[0] + vd->vdev_trim_inflight[1] >=
 	    zfs_trim_queue_limit) {
 		cv_wait(&vd->vdev_trim_io_cv, &vd->vdev_trim_io_lock);
@@ -354,8 +399,8 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	}
 
 	/*
-	 * We know the vdev struct will still be around since all
-	 * consumers of vdev_free must stop the trimming first.
+	 * We know the vdev_t will still be around since all consumers of
+	 * vdev_free must stop the trimming first.
 	 */
 	if (vdev_trim_should_stop(vd)) {
 		mutex_enter(&vd->vdev_trim_io_lock);
@@ -382,6 +427,12 @@ vdev_trim_range(trim_args_t *ta, uint64_t start, uint64_t size)
 	return (0);
 }
 
+/*
+ * Issues TRIM I/Os for all ranges in the provided ta->trim_tree range tree.
+ * Additional parameters describing how the TRIM should be performed must
+ * be set in the trim_args structure.  See the trim_args definition for
+ * additional information.
+ */
 static int
 vdev_trim_ranges(trim_args_t *ta)
 {
@@ -423,6 +474,9 @@ vdev_trim_ranges(trim_args_t *ta)
 	return (0);
 }
 
+/*
+ * Calculates the completion percentage of a manual TRIM.
+ */
 static void
 vdev_trim_calculate_progress(vdev_t *vd)
 {
@@ -466,8 +520,8 @@ vdev_trim_calculate_progress(vdev_t *vd)
 
 		/*
 		 * If we get here, we're in the middle of trimming this
-		 * metaslab. Load it and walk the free tree for more accurate
-		 * progress estimation.
+		 * metaslab.  Load it and walk the free tree for more
+		 * accurate progress estimation.
 		 */
 		VERIFY0(metaslab_load(msp));
 
@@ -495,6 +549,10 @@ vdev_trim_calculate_progress(vdev_t *vd)
 	}
 }
 
+/*
+ * Load from disk the vdev's manual TRIM information.  This includes the
+ * state, progress, and options provided when initiating the manual TRIM.
+ */
 static int
 vdev_trim_load(vdev_t *vd)
 {
@@ -557,7 +615,7 @@ vdev_trim_load(vdev_t *vd)
  * Convert the logical range into a physical range and add it to the
  * range tree passed in the trim_args_t.
  */
-void
+static void
 vdev_trim_range_add(void *arg, uint64_t start, uint64_t size)
 {
 	trim_args_t *ta = arg;
@@ -615,8 +673,11 @@ vdev_trim_range_add(void *arg, uint64_t start, uint64_t size)
 }
 
 /*
- * Each (manual) trim thread is responsible for trimming the unallocated
- * space for each leaf vdev as described by its top-level ms_allocatable.
+ * Each manual TRIM thread is responsible for trimming the unallocated
+ * space for each leaf vdev.  This is accomplished by sequentially iterating
+ * over its top-level metaslabs and issuing TRIM I/O for the space described
+ * by its ms_allocatable.  While a metaslab is undergoing trimming it is
+ * not eligible for new allocations.
  */
 static void
 vdev_trim_thread(void *arg)
@@ -738,8 +799,8 @@ vdev_trim_thread(void *arg)
 }
 
 /*
- * Initiates a device. Caller must hold vdev_trim_lock.
- * Device must be a leaf and not already be trimming.
+ * Initiates a manual TRIM for the vdev_t.  Callers must hold vdev_trim_lock,
+ * the vdev_t must be a leaf and cannot already be manually trimming.
  */
 void
 vdev_trim(vdev_t *vd, uint64_t rate, boolean_t partial, boolean_t secure)
@@ -758,7 +819,7 @@ vdev_trim(vdev_t *vd, uint64_t rate, boolean_t partial, boolean_t secure)
 }
 
 /*
- * Wait for the trimming thread to be terminated (cancelled or stopped).
+ * Wait for the trimming thread to be terminated (canceled or stopped).
  */
 static void
 vdev_trim_stop_wait_impl(vdev_t *vd)
@@ -773,7 +834,7 @@ vdev_trim_stop_wait_impl(vdev_t *vd)
 }
 
 /*
- * Wait for vdev trim threads which were either to cleanly exit.
+ * Wait for vdev trim threads which were listed to cleanly exit.
  */
 void
 vdev_trim_stop_wait(spa_t *spa, list_t *vd_list)
@@ -824,6 +885,9 @@ vdev_trim_stop(vdev_t *vd, vdev_trim_state_t tgt_state, list_t *vd_list)
 	}
 }
 
+/*
+ * Requests that all listed vdevs stop trimming.
+ */
 static void
 vdev_trim_stop_all_impl(vdev_t *vd, vdev_trim_state_t tgt_state,
     list_t *vd_list)
@@ -867,6 +931,9 @@ vdev_trim_stop_all(vdev_t *vd, vdev_trim_state_t tgt_state)
 	list_destroy(&vd_list);
 }
 
+/*
+ * Conditionally restarts a manual TRIM given its on-disk state.
+ */
 void
 vdev_trim_restart(vdev_t *vd)
 {
@@ -909,6 +976,10 @@ vdev_trim_restart(vdev_t *vd)
 	}
 }
 
+/*
+ * Used by the automatic TRIM when ZFS_DEBUG_TRIM is set to verify that
+ * every TRIM range is contained within ms_allocatable.
+ */
 static void
 vdev_trim_range_verify(void *arg, uint64_t start, uint64_t size)
 {
@@ -921,8 +992,8 @@ vdev_trim_range_verify(void *arg, uint64_t start, uint64_t size)
 }
 
 /*
- * Each auto-trim thread is responsible for managing the auto-trimming for
- * a top-level vdev in the pool.  No auto-trim state is maintained on-disk.
+ * Each automatic TRIM thread is responsible for managing the trimming of a
+ * top-level vdev in the pool.  No automatic TRIM state is maintained on-disk.
  *
  * N.B. This behavior is different from a manual TRIM where a thread
  * is created for each leaf vdev, instead of each top-level vdev.
@@ -1000,7 +1071,8 @@ vdev_autotrim_thread(void *arg)
 			 * of a manual TRIM, the ms_trim tree will have been
 			 * vacated.  Only ranges added after the manual TRIM
 			 * disabled the metaslab will be included in the tree.
-			 * These will be processed on the next autotrim pass.
+			 * These will be processed when the automatic TRIM
+			 * next revisits this metaslab.
 			 */
 			if (msp->ms_disabled > 1) {
 				mutex_exit(&msp->ms_lock);
@@ -1074,9 +1146,9 @@ vdev_autotrim_thread(void *arg)
 			spa_config_exit(spa, SCL_CONFIG, FTAG);
 
 			/*
-			 * Issue the trims for all ranges covered by the trim
-			 * trees.  These ranges are safe to trim because no
-			 * new allocations will be performed until the call
+			 * Issue the TRIM I/Os for all ranges covered by the
+			 * TRIM trees.  These ranges are safe to TRIM because
+			 * no new allocations will be performed until the call
 			 * to metaslab_enabled() below.
 			 */
 			for (uint64_t c = 0; c < children; c++) {
@@ -1133,10 +1205,10 @@ vdev_autotrim_thread(void *arg)
 		spa_config_exit(spa, SCL_CONFIG, FTAG);
 
 		/*
-		 * When no TRIM commands were issues for the metaslabs,
+		 * When no TRIM commands were issued for the metaslabs,
 		 * then wait for the next open txg.  This is done to make
 		 * sure that a minimum of zfs_trim_txg_batch txgs will
-		 * occur before these metaslabs are rescanned.
+		 * occur before these metaslabs are trimmed again.
 		 */
 		if (!issued_trim)
 			txg_wait_open(spa_get_dsl(spa), 0, B_FALSE);
@@ -1160,7 +1232,7 @@ vdev_autotrim_thread(void *arg)
 
 	/*
 	 * When exiting because the autotrim property was set to off, then
-	 * abandon any unprocessed auto-trim ranges to reclaim the memory.
+	 * abandon any unprocessed ms_trim ranges to reclaim the memory.
 	 */
 	if (spa_get_autotrim(spa) == SPA_AUTOTRIM_OFF) {
 		for (uint64_t i = 0; i < vd->vdev_ms_count; i++) {
@@ -1206,8 +1278,8 @@ vdev_autotrim(spa_t *spa)
 }
 
 /*
- * Wait for the autotrim thread associated with the passed top-level vdev
- * to be terminated (cancelled or stopped).
+ * Wait for the vdev_autotrim_thread associated with the passed top-level
+ * vdev to be terminated (canceled or stopped).
  */
 void
 vdev_autotrim_stop_wait(vdev_t *tvd)
@@ -1227,6 +1299,10 @@ vdev_autotrim_stop_wait(vdev_t *tvd)
 	mutex_exit(&tvd->vdev_autotrim_lock);
 }
 
+/*
+ * Wait for all of the vdev_autotrim_thread associated with the pool to
+ * be terminated (canceled or stopped).
+ */
 void
 vdev_autotrim_stop_all(spa_t *spa)
 {
@@ -1236,9 +1312,14 @@ vdev_autotrim_stop_all(spa_t *spa)
 		vdev_autotrim_stop_wait(root_vd->vdev_child[i]);
 }
 
+/*
+ * Conditionally restart all of the vdev_autotrim_thread's for the pool.
+ */
 void
 vdev_autotrim_restart(spa_t *spa)
 {
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
+
 	if (spa->spa_autotrim)
 		vdev_autotrim(spa);
 }

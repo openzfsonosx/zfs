@@ -31,25 +31,39 @@
 # 2. Write data to the pool.
 # 3. Start trimming and verify that trimming is active.
 # 4. Write more data to the pool.
-# 5. Run zdb to validate checksums.
+# 5. Export the pool and use zdb to validate checksums.
 #
 
-DISK1=${DISKS%% *}
+function cleanup
+{
+	if poolexists $TESTPOOL; then
+		destroy_pool $TESTPOOL
+	fi
 
-log_must zpool create -f $TESTPOOL $DISK1
-log_must dd if=/dev/urandom of=/$TESTPOOL/file1 bs=1048576 count=30
-log_must sync
+	if [[ -d "$TESTDIR" ]]; then
+		rm -rf "$TESTDIR"
+	fi
+}
+log_onexit cleanup
 
+LARGESIZE=$((MINVDEVSIZE * 4))
+LARGEFILE="$TESTDIR/largefile"
+
+log_must mkdir "$TESTDIR"
+log_must truncate -s $LARGESIZE "$LARGEFILE"
+log_must zpool create $TESTPOOL "$LARGEFILE"
+
+log_must dd if=/dev/urandom of=/$TESTPOOL/file1 bs=1048576 count=64
+log_must zpool sync
 log_must zpool trim $TESTPOOL
-
-log_must zdb -cc $TESTPOOL
 
 [[ -z "$(trim_progress $TESTPOOL $DISK1)" ]] && \
     log_fail "Trimming did not start"
 
-log_must dd if=/dev/urandom of=/$TESTPOOL/file2 bs=1048576 count=30
-log_must sync
+log_must dd if=/dev/urandom of=/$TESTPOOL/file2 bs=1048576 count=64
+log_must zpool sync
 
-log_must zdb -cc $TESTPOOL
+log_must zpool export $TESTPOOL
+log_must zdb -e -p "$TESTDIR" -cc $TESTPOOL
 
 log_pass "Trimming does not corrupt existing or new data"
