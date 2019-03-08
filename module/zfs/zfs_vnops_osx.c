@@ -2469,7 +2469,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	dmu_tx_t *tx;
 	caddr_t vaddr = NULL;
 	int merror = 0;
-	dmu_buf_t       *db;
 
 	/* We can still get into this function as non-v2 style, by the default
 	 * pager (ie, swap - when we eventually support it)
@@ -2479,27 +2478,12 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		return zfs_vnop_pageout(ap);
 	}
 
-	if (!zp || !zp->z_zfsvfs) {
+	if (!zp || !zp->z_zfsvfs || !zp->z_sa_hdl) {
 		printf("ZFS: vnop_pageout: null zp or zfsvfs\n");
 		return ENXIO;
 	}
 
-	mutex_enter(&zp->z_lock);
-	if (!zp->z_sa_hdl) {
-		mutex_exit(&zp->z_lock);
-		printf("ZFS: vnop_pageout: null sa_hdl\n");
-		return ENXIO;
-	}
-
 	zfsvfs = zp->z_zfsvfs;
-
-	error = sa_buf_hold(zfsvfs->z_os, zp->z_id, NULL, &db);
-	mutex_exit(&zp->z_lock);
-
-	if (error) {
-		printf("ZFS: %s: can't hold_sa: %d\n", __func__, error);
-		return ENXIO;
-	}
 
 	dprintf("+vnop_pageout2: off 0x%llx len 0x%lx upl_off 0x%lx: "
 		   "blksz 0x%x, z_size 0x%llx\n", ap->a_f_offset, a_size,
@@ -2527,6 +2511,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	/* ASSERT(zp->z_dbuf_held); */ /* field no longer present in znode. */
 
 	rl = zfs_range_lock(zp, ap->a_f_offset, a_size, RL_WRITER);
+
 
 	/* Grab UPL now */
 	int request_flags;
@@ -2557,7 +2542,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	dmu_tx_hold_write(tx, zp->z_id, ap->a_f_offset, ap->a_size);
 
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
-
 	zfs_sa_upgrade_txholds(tx, zp);
 	error = dmu_tx_assign(tx, TXG_WAIT);
 	if (error != 0) {
@@ -2730,7 +2714,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		ubc_upl_commit_range(upl, 0, a_size, UPL_COMMIT_FREE_ON_EMPTY);
 
 	upl = NULL;
-	sa_buf_rele(db, NULL);
 
 	ZFS_EXIT(zfsvfs);
 	if (error)
@@ -2744,8 +2727,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	dprintf("ZFS: pageoutv2 aborted %d\n", error);
 	//VERIFY(ubc_create_upl(vp, off, len, &upl, &pl, flags) == 0);
 	//ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-	sa_buf_rele(db, NULL);
-
 	if (zfsvfs)
 		ZFS_EXIT(zfsvfs);
 	return (error);
