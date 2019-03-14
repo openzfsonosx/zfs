@@ -81,6 +81,7 @@ zfs_SOURCES = \
 	dmu_diff.c \
 	dmu_object.c \
 	dmu_objset.c \
+	dmu_recv.c \
 	dmu_send.c \
 	dmu_traverse.c \
 	dmu_tx.c \
