@@ -340,6 +340,7 @@ extern nvlist_t *zpool_find_vdev_by_physpath(zpool_handle_t *, const char *,
     boolean_t *, boolean_t *, boolean_t *);
 extern int zpool_label_disk_wait(char *, int);
 extern int zpool_label_disk(libzfs_handle_t *, zpool_handle_t *, const char *);
+extern uint64_t zpool_vdev_path_to_guid(zpool_handle_t *zhp, const char *path);
 
 /*
  * Functions to manage pool properties
