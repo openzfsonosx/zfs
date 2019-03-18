@@ -95,7 +95,8 @@ typedef struct dsl_pool {
 	struct dsl_dir *dp_leak_dir;
 	struct dsl_dataset *dp_origin_snap;
 	uint64_t dp_root_dir_obj;
-	struct taskq *dp_vnrele_taskq;   // ZOL's *dp_iput_taskq;
+	struct taskq *dp_vnget_taskq;    // async vnode_create
+	struct taskq *dp_vnrele_taskq;   // async vnode_put
 
 	/* No lock needed - sync context only */
 	blkptr_t dp_meta_rootbp;
@@ -175,6 +176,7 @@ void dsl_pool_config_exit(dsl_pool_t *dp, void *tag);
 boolean_t dsl_pool_config_held(dsl_pool_t *dp);
 boolean_t dsl_pool_config_held_writer(dsl_pool_t *dp);
 
+taskq_t *dsl_pool_vnget_taskq(dsl_pool_t *dp);
 taskq_t *dsl_pool_vnrele_taskq(dsl_pool_t *dp);
 
 int dsl_pool_user_hold(dsl_pool_t *dp, uint64_t dsobj,

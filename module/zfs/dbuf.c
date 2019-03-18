@@ -3187,7 +3187,8 @@ dbuf_rm_spill(dnode_t *dn, dmu_tx_t *tx)
 void
 dbuf_add_ref(dmu_buf_impl_t *db, void *tag)
 {
-	VERIFY(zfs_refcount_add(&db->db_holds, tag) > 1);
+	int64_t holds = zfs_refcount_add(&db->db_holds, tag);
+	VERIFY3S(holds, >, 1);
 }
 
 #pragma weak dmu_buf_try_add_ref = dbuf_try_add_ref
