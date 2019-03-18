@@ -1359,23 +1359,18 @@ again:
 		sa_buf_rele(db, NULL);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 
-		if ((flags & ZGET_FLAG_WITHOUT_VNODE_GET)) {
-			/* Do not increase vnode iocount */
-			*zpp = zp;
-			return 0;
-		}
-
 		/* We are racing zfs_znode_getvnode() and we got here first, we
 		 * need to let it get ahead */
 		if (!vp) {
 			kpreempt(KPREEMPT_SYNC);
-			dprintf("zget racing attach\n");
+			printf("zget async racing attach\n");
 			goto again;
 		}
 
 		/* Due to vnode_create() -> zfs_fsync() -> zil_commit() -> zget()
 		 * -> vnode_getwithvid() -> deadlock. Unsure why vnode_getwithvid()
 		 * ends up sleeping in msleep() but vnode_get() does not.
+		 * If we hang here, investigate ZGET_FLAG_ASYNC getting used here
 		 */
 		if (!vp || (err=vnode_getwithvid(vp, vid) != 0)) {
 			//if ((err = vnode_get(vp)) != 0) {
@@ -1446,21 +1441,20 @@ again:
 		}
 #endif
 	}
+
+	// Spawn taskq to attach while we are locked
+	if (flags & ZGET_FLAG_ASYNC) {
+		zfs_znode_asyncgetvnode(zp, zfsvfs);
+	}
+
 	ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
 	getnewvnode_drop_reserve();
 
-	if ((flags & ZGET_FLAG_WITHOUT_VNODE) ||
-		(flags & ZGET_FLAG_WITHOUT_VNODE_GET))	{
-		/* Insert it on our list of active znodes */
-		//mutex_enter(&zfsvfs->z_znodes_lock);
-		//list_insert_tail(&zfsvfs->z_all_znodes, zp);
-		//membar_producer();
-		//mutex_exit(&zfsvfs->z_znodes_lock);
-		if (flags & ZGET_FLAG_WITHOUT_VNODE_GET)
-			printf("ZFS: zget without vnode in znodealloc case\n");
+	/* Attach a vnode to our new znode */
+	if (flags & ZGET_FLAG_ASYNC) {
+		//zfs_znode_asyncgetvnode(zp, zfsvfs);
 	} else {
-		/* Attach a vnode to our new znode */
-		zfs_znode_getvnode(zp, zfsvfs); /* Assigns both vp and z_vnode */
+		zfs_znode_getvnode(zp, zfsvfs);
 	}
 
 	dprintf("zget returning %d\n", err);

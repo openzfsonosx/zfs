@@ -4824,6 +4824,57 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 	return (0);
 }
 
+
+/*
+ * Call zfs_znode_async_getvnode() then sleep until told to release
+ * iocount.
+ */
+void zfs_znode_asyncgetvnode_impl(void *arg)
+{
+    znode_t *zp = (znode_t *)arg;
+	VERIFY3P(zp, !=, NULL);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	VERIFY3P(zfsvfs, !=, NULL);
+
+	// Attach vnode, done as different thread
+	zfs_znode_getvnode(zp, zfsvfs);
+}
+
+void zfs_znode_asyncput(znode_t *zp)
+{
+	// Make sure the other thread finished zfs_znode_getvnode();
+	// Make wait better, obvs
+	while(zp->z_vnode == NULL) {
+		delay(hz>>1);
+	}
+
+	// Safe to release now that it is attached.
+	VN_RELE(ZTOV(zp));
+}
+
+/*
+ * Attach a new vnode to the znode asynchronically. We do this using
+ * a taskq to call it, and then wait to release the iocount.
+ * Called of zget_ext(..., ZGET_FLAG_ASYNC); will use
+ * VN_RELE_ZGET(vp) instead.
+ */
+int
+zfs_znode_asyncgetvnode(znode_t *zp, zfsvfs_t *zfsvfs)
+{
+	VERIFY(zp != NULL);
+	VERIFY(zfsvfs != NULL);
+
+	// We should not have a vnode here.
+	VERIFY3P(ZTOV(zp), ==, NULL);
+
+	VERIFY(taskq_dispatch(
+			(taskq_t *)dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)),
+			(task_func_t *)zfs_znode_asyncgetvnode_impl, zp, TQ_SLEEP) != 0);
+	return 0;
+}
+
+
+
 /*
  * Maybe these should live in vfsops
  */

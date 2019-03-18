@@ -271,7 +271,6 @@ typedef struct znode {
 	boolean_t   z_finder_hardlink;  /* set high if it ever had a hardlink hash */
 
 	boolean_t   z_fastpath;
-	boolean_t   z_reclaim_reentry; /* vnode_create()->vnop_reclaim() */
 	uint64_t    z_write_gencount;
 #endif
 
@@ -418,8 +417,8 @@ extern void	zfs_znode_init(void);
 extern void	zfs_znode_fini(void);
 
 #define ZGET_FLAG_UNLINKED          (1<<0) /* Also lookup unlinked */
-#define ZGET_FLAG_WITHOUT_VNODE     (1<<1) /* Don't attach vnode */
-#define ZGET_FLAG_WITHOUT_VNODE_GET (1<<2) /* Don't attach vnode + vnode_get*/
+#define ZGET_FLAG_ASYNC				(1<<3) /* taskq the vnode_create call */
+
 extern int zfs_zget(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp);
 extern int zfs_zget_ext(zfsvfs_t *zfsvfs, uint64_t obj_num, znode_t **zpp, int flags);
 #define zfs_zget(A,B,C) zfs_zget_ext((A),(B),(C),0)
@@ -523,6 +522,7 @@ extern void znode_stalker_fini(znode_t *zp);
 #endif /* _KERNEL */
 
 extern int zfs_obj_to_path(objset_t *osp, uint64_t obj, char *buf, int len);
+
 
 #ifdef	__cplusplus
 }
