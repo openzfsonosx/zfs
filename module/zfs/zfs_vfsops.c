@@ -2887,6 +2887,15 @@ zfs_vfs_unmount(struct mount *mp, int mntflags, vfs_context_t context)
 
     dprintf("+unmount\n");
 
+	/*
+	 * We might skip the sync called in the unmount path, since
+	 * zfs_vfs_sync() is generally ignoring xnu's calls, and alas,
+	 * mount_isforce() is set AFTER that sync call, so we can not
+	 * detect unmount is inflight. But why not just sync now, it
+	 * is safe. Optionally, sync if (mount_isforce());
+	 */
+	spa_sync_allpools();
+
 #ifndef __APPLE__
 	/*XXX NOEL: delegation admin stuffs, add back if we use delg. admin */
 	ret = secpolicy_fs_unmount(cr, zfsvfs->z_vfs);
