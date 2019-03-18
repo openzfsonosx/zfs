@@ -4844,6 +4844,117 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 	return (0);
 }
 
+
+/*
+ * Called by taskq, to call zfs_znode_getvnode( vnode_create( - and
+ * attach vnode to znode.
+ */
+void zfs_znode_asyncgetvnode_impl(void *arg)
+{
+    znode_t *zp = (znode_t *)arg;
+	VERIFY3P(zp, !=, NULL);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	VERIFY3P(zfsvfs, !=, NULL);
+
+	// Attach vnode, done as different thread
+	zfs_znode_getvnode(zp, zfsvfs);
+
+	// Wake up anyone blocked on us
+	mutex_enter(&zp->z_attach_lock);
+	zp->z_attach_tqid = 0;
+	cv_broadcast(&zp->z_attach_cv);
+	mutex_exit(&zp->z_attach_lock);
+
+}
+
+
+/*
+ * If the znode's vnode is not yet attached (zp->z_vnode == NULL)
+ * we call taskq_wait to wait for it to complete.
+ * We guarantee znode has a vnode at the return of function only
+ * when return is "0". On failure to wait, it returns -1, and caller
+ * may consider waiting by other means.
+ */
+int zfs_znode_asyncwait(znode_t *zp)
+{
+	int ret = -1;
+	if (zp == NULL ||
+		zp->z_zfsvfs == NULL ||
+		zp->z_zfsvfs->z_os == NULL)
+		return ret;
+
+	// Work out if we need to block, that is, we have
+	// no vnode AND a taskq was launched.
+	mutex_enter(&zp->z_attach_lock);
+	if (zp->z_vnode == NULL && zp->z_attach_tqid) {
+		// We need to block and wait for taskq to finish.
+		cv_wait(&zp->z_attach_cv, &zp->z_attach_lock);
+		ret = 0;
+	}
+	mutex_exit(&zp->z_attach_lock);
+	return ret;
+}
+
+/*
+ * Called in place of VN_RELE() for the places that uses ZGET_FLAG_ASYNC.
+ */
+void zfs_znode_asyncput_impl(znode_t *zp)
+{
+	// Make sure the other thread finished zfs_znode_getvnode();
+	// This may block, if waiting is required.
+	zfs_znode_asyncwait(zp);
+
+	// Safe to release now that it is attached.
+	VN_RELE(ZTOV(zp));
+}
+
+/*
+ * Called in place of VN_RELE() for the places that uses ZGET_FLAG_ASYNC,
+ * where we also taskq it - as we come from reclaim.
+ */
+void zfs_znode_asyncput(znode_t *zp)
+{
+	dsl_pool_t *dp = dmu_objset_pool(zp->z_zfsvfs->z_os);
+	taskq_t *tq = dsl_pool_vnrele_taskq(dp);
+	VERIFY3P(tq, !=, NULL);
+
+	VERIFY(taskq_dispatch(
+		(taskq_t *)tq,
+		(task_func_t *)zfs_znode_asyncput_impl, zp, TQ_SLEEP) != 0);
+}
+
+/*
+ * Attach a new vnode to the znode asynchronically. We do this using
+ * a taskq to call it, and then wait to release the iocount.
+ * Called of zget_ext(..., ZGET_FLAG_ASYNC); will use
+ * zfs_znode_asyncput(zp) instead of VN_RELE(vp).
+ */
+int
+zfs_znode_asyncgetvnode(znode_t *zp, zfsvfs_t *zfsvfs)
+{
+	VERIFY(zp != NULL);
+	VERIFY(zfsvfs != NULL);
+
+	// We should not have a vnode here.
+	VERIFY3P(ZTOV(zp), ==, NULL);
+	VERIFY3U(zp->z_attach_tqid, ==, NULL);
+
+	dsl_pool_t *dp = dmu_objset_pool(zfsvfs->z_os);
+	taskq_t *tq = dsl_pool_vnget_taskq(dp);
+	VERIFY3P(tq, !=, NULL);
+
+	mutex_enter(&zp->z_attach_lock);
+	zp->z_attach_tqid = taskq_dispatch(
+		(taskq_t *)tq,
+		(task_func_t *)zfs_znode_asyncgetvnode_impl, zp, TQ_SLEEP);
+	mutex_exit(&zp->z_attach_lock);
+
+	VERIFY3U(zp->z_attach_tqid, !=, NULL);
+	return 0;
+}
+
+
+
 /*
  * Maybe these should live in vfsops
  */

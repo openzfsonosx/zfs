@@ -35,8 +35,11 @@
 verify_runnable "global"
 
 for pool in "$TESTPOOL" "$TESTPOOL1"; do
+	destroy_dataset -R $pool/$TESTFS
+	destroy_pool $pool
 	destroy_dataset -Rf $pool/$TESTFS
 	destroy_pool -f $pool
+	$ZPOOL export -fa
 done
 
 $ZPOOL export -fa
