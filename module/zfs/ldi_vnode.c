@@ -917,10 +917,6 @@ handle_features_vnode(struct ldi_handle *lhp,
 	int error;
 
 #ifdef DEBUG
-	if (!lhp || !dkm) {
-		dprintf("%s missing lhp or dkm\n", __func__);
-		return (EINVAL);
-	}
 	if (lhp->lh_status != LDI_STATUS_ONLINE) {
 		dprintf("%s handle is not Online\n", __func__);
 		return (ENODEV);

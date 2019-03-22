@@ -1279,7 +1279,7 @@ lzc_reopen(const char *pool_name, boolean_t scrub_restart)
  */
 int
 lzc_trim(const char *poolname, pool_trim_func_t cmd_type, uint64_t rate,
-    boolean_t partial, boolean_t secure, nvlist_t *vdevs, nvlist_t **errlist)
+    boolean_t secure, nvlist_t *vdevs, nvlist_t **errlist)
 {
 	int error;
 
@@ -1287,7 +1287,6 @@ lzc_trim(const char *poolname, pool_trim_func_t cmd_type, uint64_t rate,
 	fnvlist_add_uint64(args, ZPOOL_TRIM_COMMAND, (uint64_t)cmd_type);
 	fnvlist_add_nvlist(args, ZPOOL_TRIM_VDEVS, vdevs);
 	fnvlist_add_uint64(args, ZPOOL_TRIM_RATE, rate);
-	fnvlist_add_boolean_value(args, ZPOOL_TRIM_PARTIAL, partial);
 	fnvlist_add_boolean_value(args, ZPOOL_TRIM_SECURE, secure);
 
 	error = lzc_ioctl(ZFS_IOC_POOL_TRIM, poolname, args, errlist);
