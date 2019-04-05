@@ -708,6 +708,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zp->z_name_cache[0] = 0;
 	zp->z_finder_parentid = 0;
 	zp->z_finder_hardlink = FALSE;
+	zp->z_sanity = 0;
 
 	vp = ZTOV(zp); /* Does nothing in OSX */
 
@@ -1395,6 +1396,12 @@ again:
 		if (vnode_vid(vp) != zp->z_vid)
 			printf("ZFS: the vids do not match\n");
 		mutex_exit(&zp->z_lock);
+
+		extern uint64_t async_asyncget;
+		if (flags & ZGET_FLAG_ASYNC) {
+			atomic_inc_64(&async_asyncget);
+			zp->z_sanity = 3;
+		}
 
 		*zpp = zp;
 		getnewvnode_drop_reserve();

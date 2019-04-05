@@ -4825,6 +4825,11 @@ zfs_znode_getvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 }
 
 
+uint64_t async_called = 0;
+uint64_t async_attached = 0;
+uint64_t async_asyncput = 0;
+uint64_t async_asyncget = 0;
+
 /*
  * Call zfs_znode_async_getvnode() then sleep until told to release
  * iocount.
@@ -4836,8 +4841,13 @@ void zfs_znode_asyncgetvnode_impl(void *arg)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 	VERIFY3P(zfsvfs, !=, NULL);
 
+	VERIFY3U(zp->z_sanity, ==, 1);
+
 	// Attach vnode, done as different thread
+	atomic_inc_64(&async_attached);
+	atomic_inc_64(&zp->z_sanity);
 	zfs_znode_getvnode(zp, zfsvfs);
+
 }
 
 void zfs_znode_asyncput(znode_t *zp)
@@ -4849,6 +4859,8 @@ void zfs_znode_asyncput(znode_t *zp)
 	}
 
 	// Safe to release now that it is attached.
+	atomic_inc_64(&async_asyncput);
+	VERIFY3U(zp->z_sanity, >=, 2);
 	VN_RELE(ZTOV(zp));
 }
 
@@ -4866,6 +4878,9 @@ zfs_znode_asyncgetvnode(znode_t *zp, zfsvfs_t *zfsvfs)
 
 	// We should not have a vnode here.
 	VERIFY3P(ZTOV(zp), ==, NULL);
+
+	atomic_inc_64(&zp->z_sanity);
+	atomic_inc_64(&async_called);
 
 	VERIFY(taskq_dispatch(
 			(taskq_t *)dsl_pool_vnrele_taskq(dmu_objset_pool(zfsvfs->z_os)),
@@ -4926,6 +4941,11 @@ zfs_vfsops_fini(void)
 	zfs_stop_notify_thread();
 
 	zfs_fini();
+
+	printf("&async_called   %llu\n", async_called);
+	printf("&async_attached %llu\n", async_attached);
+	printf("&async_asyncput %llu\n", async_asyncput);
+	printf("&async_asyncget %llu\n", async_asyncget);
 
 	return (vfs_fsremove(zfs_vfsconf));
 }

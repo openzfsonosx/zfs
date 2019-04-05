@@ -272,6 +272,8 @@ typedef struct znode {
 
 	boolean_t   z_fastpath;
 	uint64_t    z_write_gencount;
+
+	uint64_t    z_sanity;
 #endif
 
 #ifdef ZFS_DEBUG
