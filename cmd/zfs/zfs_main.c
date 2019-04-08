@@ -272,11 +272,13 @@ get_usage(zfs_help_t idx)
 	case HELP_PROMOTE:
 		return (gettext("\tpromote <clone-filesystem>\n"));
 	case HELP_RECEIVE:
-		return (gettext("\treceive [-vnsFu] <filesystem|volume|"
-			"snapshot>\n"
-			"\treceive [-vnsFu] [-o origin=<snapshot>] [-d | -e] "
-			"<filesystem>\n"
-			"\treceive -A <filesystem|volume>\n"));
+		return (gettext("\treceive [-vnsFhu] "
+		    "[-o <property>=<value>] ... [-x <property>] ...\n"
+		    "\t    <filesystem|volume|snapshot>\n"
+		    "\treceive [-vnsFhu] [-o <property>=<value>] ... "
+		    "[-x <property>] ... \n"
+		    "\t    [-d | -e] <filesystem>\n"
+		    "\treceive -A <filesystem|volume>\n"));
 	case HELP_RENAME:
 		return (gettext("\trename [-f] <filesystem|volume|snapshot> "
 		    "<filesystem|volume|snapshot>\n"
@@ -285,9 +287,9 @@ get_usage(zfs_help_t idx)
 	case HELP_ROLLBACK:
 		return (gettext("\trollback [-rRf] <snapshot>\n"));
 	case HELP_SEND:
-		return (gettext("\tsend [-DnPpRvLecr] [-[iI] snapshot] "
+		return (gettext("\tsend [-DnPpRvLecwhb] [-[i|I] snapshot] "
 		    "<snapshot>\n"
-		    "\tsend [-Lecr] [-i snapshot|bookmark] "
+		    "\tsend [-nvPLecw] [-i snapshot|bookmark] "
 		    "<filesystem|volume|snapshot>\n"
 		    "\tsend [-nvPe] -t <receive_resume_token>\n"));
 	case HELP_SET:
@@ -539,26 +541,48 @@ usage(boolean_t requested)
  * Take a property=value argument string and add it to the given nvlist.
  * Modifies the argument inplace.
  */
-static int
+static boolean_t
 parseprop(nvlist_t *props, char *propname)
 {
-	char *propval, *strval;
+	char *propval;
 
 	if ((propval = strchr(propname, '=')) == NULL) {
 		(void) fprintf(stderr, gettext("missing "
-			"'=' for property=value argument\n"));
-		return (-1);
+		    "'=' for property=value argument\n"));
+		return (B_FALSE);
 	}
 	*propval = '\0';
 	propval++;
-	if (nvlist_lookup_string(props, propname, &strval) == 0) {
+	if (nvlist_exists(props, propname)) {
 		(void) fprintf(stderr, gettext("property '%s' "
-			"specified multiple times\n"), propname);
-		return (-1);
+		    "specified multiple times\n"), propname);
+		return (B_FALSE);
 	}
 	if (nvlist_add_string(props, propname, propval) != 0)
 		nomem();
-	return (0);
+	return (B_TRUE);
+}
+
+/*
+ * Take a property name argument and add it to the given nvlist.
+ * Modifies the argument inplace.
+ */
+static boolean_t
+parsepropname(nvlist_t *props, char *propname)
+{
+	if (strchr(propname, '=') != NULL) {
+		(void) fprintf(stderr, gettext("invalid character "
+		    "'=' in property argument\n"));
+		return (B_FALSE);
+	}
+	if (nvlist_exists(props, propname)) {
+		(void) fprintf(stderr, gettext("property '%s' "
+		    "specified multiple times\n"), propname);
+		return (B_FALSE);
+	}
+	if (nvlist_add_boolean(props, propname) != 0)
+		nomem();
+	return (B_TRUE);
 }
 
 static int
@@ -663,7 +687,7 @@ zfs_mount_and_share(libzfs_handle_t *hdl, const char *dataset, zfs_type_t type)
 	 * If the user doesn't want the dataset automatically mounted, then
 	 * skip the mount/share step
 	 */
-	if (zfs_prop_valid_for_type(ZFS_PROP_CANMOUNT, type) &&
+	if (zfs_prop_valid_for_type(ZFS_PROP_CANMOUNT, type, B_FALSE) &&
 	    zfs_prop_get_int(zhp, ZFS_PROP_CANMOUNT) == ZFS_CANMOUNT_ON) {
 		if (zfs_mount(zhp, NULL, 0) != 0) {
 			(void) fprintf(stderr, gettext("filesystem "
@@ -707,7 +731,7 @@ zfs_do_clone(int argc, char **argv)
 	while ((c = getopt(argc, argv, "o:p")) != -1) {
 		switch (c) {
 		case 'o':
-			if (parseprop(props, optarg) != 0) {
+			if (!parseprop(props, optarg)) {
 				nvlist_free(props);
 				return (1);
 			}
@@ -859,7 +883,7 @@ zfs_do_create(int argc, char **argv)
 				nomem();
 			break;
 		case 'o':
-			if (parseprop(props, optarg))
+			if (!parseprop(props, optarg))
 				goto error;
 			break;
 		case 's':
@@ -1165,7 +1189,7 @@ destroy_print_snapshots(zfs_handle_t *fs_zhp, destroy_cbdata_t *cb)
 	int err;
 	assert(cb->cb_firstsnap == NULL);
 	assert(cb->cb_prevsnap == NULL);
-	err = zfs_iter_snapshots_sorted(fs_zhp, destroy_print_cb, cb);
+	err = zfs_iter_snapshots_sorted(fs_zhp, destroy_print_cb, cb, 0, 0);
 	if (cb->cb_firstsnap != NULL) {
 		uint64_t used = 0;
 		if (err == 0) {
@@ -1559,7 +1583,7 @@ get_callback(zfs_handle_t *zhp, void *data)
 				if (pl->pl_all)
 					continue;
 				if (!zfs_prop_valid_for_type(pl->pl_prop,
-				    ZFS_TYPE_DATASET)) {
+						ZFS_TYPE_DATASET, B_FALSE)) {
 					(void) fprintf(stderr,
 					    gettext("No such property '%s'\n"),
 					    zfs_prop_to_name(pl->pl_prop));
@@ -1899,7 +1923,7 @@ inherit_recurse_cb(zfs_handle_t *zhp, void *data)
 	 * are not valid for this type of dataset.
 	 */
 	if (prop != ZPROP_INVAL &&
-	    !zfs_prop_valid_for_type(prop, zfs_get_type(zhp)))
+	    !zfs_prop_valid_for_type(prop, zfs_get_type(zhp), B_FALSE))
 		return (0);
 
 	return (zfs_prop_inherit(zhp, cb->cb_propname, cb->cb_received) != 0);
@@ -3385,6 +3409,7 @@ zfs_do_promote(int argc, char **argv)
  */
 typedef struct rollback_cbdata {
 	uint64_t	cb_create;
+	uint8_t         cb_younger_ds_printed;
 	boolean_t	cb_first;
 	int		cb_doclones;
 	char		*cb_target;
@@ -3416,15 +3441,20 @@ rollback_check_dependent(zfs_handle_t *zhp, void *data)
 
 
 /*
- * Report any snapshots more recent than the one specified.  Used when '-r' is
- * not specified.  We reuse this same callback for the snapshot dependents - if
- * 'cb_dependent' is set, then this is a dependent and we should report it
- * without checking the transaction group.
+ * Report some snapshots/bookmarks more recent than the one specified.
+ * Used when '-r' is not specified. We reuse this same callback for the
+ * snapshot dependents - if 'cb_dependent' is set, then this is a
+ * dependent and we should report it without checking the transaction group.
  */
 static int
 rollback_check(zfs_handle_t *zhp, void *data)
 {
 	rollback_cbdata_t *cbp = data;
+	/*
+	 * Max number of younger snapshots and/or bookmarks to display before
+	 * we stop the iteration.
+	 */
+	const uint8_t max_younger = 32;
 
 	if (cbp->cb_doclones) {
 		zfs_close(zhp);
@@ -3453,9 +3483,24 @@ rollback_check(zfs_handle_t *zhp, void *data)
 		} else {
 			(void) fprintf(stderr, "%s\n",
 			    zfs_get_name(zhp));
+			cbp->cb_younger_ds_printed++;
 		}
 	}
 	zfs_close(zhp);
+
+	if (cbp->cb_younger_ds_printed == max_younger) {
+		/*
+		 * This non-recursive rollback is going to fail due to the
+		 * presence of snapshots and/or bookmarks that are younger than
+		 * the rollback target.
+		 * We printed some of the offending objects, now we stop
+		 * zfs_iter_snapshot/bookmark iteration so we can fail fast and
+		 * avoid iterating over the rest of the younger objects
+		 */
+		(void) fprintf(stderr, gettext("Output limited to %d "
+		    "snapshots/bookmarks\n"), max_younger);
+		return (-1);
+	}
 	return (0);
 }
 
@@ -3469,6 +3514,7 @@ zfs_do_rollback(int argc, char **argv)
 	zfs_handle_t *zhp, *snap;
 	char parentname[ZFS_MAX_DATASET_NAME_LEN];
 	char *delim;
+	uint64_t min_txg = 0;
 
 	/* check options */
 	while ((c = getopt(argc, argv, "rRf")) != -1) {
@@ -3524,7 +3570,12 @@ zfs_do_rollback(int argc, char **argv)
 	cb.cb_create = zfs_prop_get_int(snap, ZFS_PROP_CREATETXG);
 	cb.cb_first = B_TRUE;
 	cb.cb_error = 0;
-	if ((ret = zfs_iter_snapshots(zhp, B_FALSE, rollback_check, &cb)) != 0)
+
+	if (cb.cb_create > 0)
+		min_txg = cb.cb_create;
+
+	if ((ret = zfs_iter_snapshots(zhp, B_FALSE, rollback_check, &cb,
+	    min_txg, 0)) != 0)
 		goto out;
 	if ((ret = zfs_iter_bookmarks(zhp, rollback_check, &cb)) != 0)
 		goto out;
@@ -3544,7 +3595,8 @@ zfs_do_rollback(int argc, char **argv)
 		char mountpoint[ZFS_MAXPROPLEN];
         zprop_source_t sourcetype;
 
-        if (zfs_prop_valid_for_type(ZFS_PROP_MOUNTPOINT, zhp->zfs_type)) {
+        if (zfs_prop_valid_for_type(ZFS_PROP_MOUNTPOINT, zhp->zfs_type,
+				B_FALSE)) {
 			if (zfs_prop_get(zhp, ZFS_PROP_MOUNTPOINT,
 				mountpoint, sizeof(mountpoint),
 				&sourcetype, sourceloc, sizeof (sourceloc), B_FALSE) == 0)
@@ -3640,8 +3692,10 @@ zfs_do_set(int argc, char **argv)
 	if (nvlist_alloc(&props, NV_UNIQUE_NAME, 0) != 0)
 		nomem();
 	for (int i = 1; i < ds_start; i++) {
-		if ((ret = parseprop(props, argv[i])) != 0)
+		if (!parseprop(props, argv[i])) {
+			ret = -1;
 			goto error;
+		}
 	}
 
 	ret = zfs_for_each(argc - ds_start, argv + ds_start, 0,
@@ -3708,7 +3762,7 @@ zfs_do_snapshot(int argc, char **argv)
 	while ((c = getopt(argc, argv, "ro:")) != -1) {
 		switch (c) {
 		case 'o':
-			if (parseprop(props, optarg) != 0) {
+			if (!parseprop(props, optarg)) {
 				nvlist_free(sd.sd_nvl);
 				nvlist_free(props);
 				return (1);
@@ -3795,11 +3849,13 @@ zfs_do_send(int argc, char **argv)
 		{"resume",	required_argument,	NULL, 't'},
 		{"compressed",	no_argument,		NULL, 'c'},
 		{"raw",		no_argument,		NULL, 'w'},
+		{"backup",	no_argument,		NULL, 'b'},
+		{"holds",	no_argument,		NULL, 'h'},
 		{0, 0, 0, 0}
 	};
 
 	/* check options */
-	while ((c = getopt_long(argc, argv, ":i:I:RbDpvnPLet:cw", long_options,
+	while ((c = getopt_long(argc, argv, ":i:I:RDpvnPLeht:cwb", long_options,
 	    NULL)) != -1) {
 		switch (c) {
 		case 'i':
@@ -3818,6 +3874,12 @@ zfs_do_send(int argc, char **argv)
 			break;
 		case 'p':
 			flags.props = B_TRUE;
+			break;
+		case 'b':
+			flags.backup = B_TRUE;
+			break;
+		case 'h':
+			flags.holds = B_TRUE;
 			break;
 		case 'P':
 			flags.parsable = B_TRUE;
@@ -3939,11 +4001,11 @@ zfs_do_send(int argc, char **argv)
 	if (strchr(argv[0], '@') == NULL ||
 	    (fromname && strchr(fromname, '#') != NULL)) {
 		char frombuf[ZFS_MAX_DATASET_NAME_LEN];
-		enum lzc_send_flags lzc_flags = 0;
 
 		if (flags.replicate || flags.doall || flags.props ||
-		    flags.dedup || flags.dryrun || flags.verbose ||
-		    flags.progress) {
+		    flags.backup || flags.dedup || flags.holds ||
+		    (strchr(argv[0], '@') == NULL &&
+		    (flags.dryrun || flags.verbose || flags.progress))) {
 			(void) fprintf(stderr,
 			    gettext("Error: "
 			    "Unsupported flag with filesystem or bookmark.\n"));
@@ -3953,15 +4015,6 @@ zfs_do_send(int argc, char **argv)
 		zhp = zfs_open(g_zfs, argv[0], ZFS_TYPE_DATASET);
 		if (zhp == NULL)
 			return (1);
-
-		if (flags.largeblock)
-			lzc_flags |= LZC_SEND_FLAG_LARGE_BLOCK;
-		if (flags.embed_data)
-			lzc_flags |= LZC_SEND_FLAG_EMBED_DATA;
-		if (flags.compress)
-			lzc_flags |= LZC_SEND_FLAG_COMPRESS;
-		if (flags.raw)
-			lzc_flags |= LZC_SEND_FLAG_RAW;
 
 		if (fromname != NULL &&
 		    (fromname[0] == '#' || fromname[0] == '@')) {
@@ -3976,7 +4029,7 @@ zfs_do_send(int argc, char **argv)
 			(void) strlcat(frombuf, fromname, sizeof (frombuf));
 			fromname = frombuf;
 		}
-		err = zfs_send_one(zhp, fromname, STDOUT_FILENO, lzc_flags);
+		err = zfs_send_one(zhp, fromname, STDOUT_FILENO, flags);
 		zfs_close(zhp);
 		return (err != 0);
 	}
@@ -4051,26 +4104,45 @@ zfs_do_receive(int argc, char **argv)
 	recvflags_t flags = { 0 };
 	boolean_t abort_resumable = B_FALSE;
 	nvlist_t *props;
-	nvpair_t *nvp = NULL;
 
 	if (nvlist_alloc(&props, NV_UNIQUE_NAME, 0) != 0)
 		nomem();
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":o:denuvFsA")) != -1) {
+	while ((c = getopt(argc, argv, ":o:x:dehnuvFsA")) != -1) {
 		switch (c) {
 		case 'o':
-			if (parseprop(props, optarg) != 0) {
+			if (!parseprop(props, optarg)) {
 				nvlist_free(props);
-				return (1);
+				usage(B_FALSE);
+			}
+			break;
+		case 'x':
+			if (!parsepropname(props, optarg)) {
+				nvlist_free(props);
+				usage(B_FALSE);
 			}
 			break;
 		case 'd':
+			if (flags.istail) {
+				(void) fprintf(stderr, gettext("invalid option "
+				    "combination: -d and -e are mutually "
+				    "exclusive\n"));
+				usage(B_FALSE);
+			}
 			flags.isprefix = B_TRUE;
 			break;
 		case 'e':
-			flags.isprefix = B_TRUE;
+			if (flags.isprefix) {
+				(void) fprintf(stderr, gettext("invalid option "
+				    "combination: -d and -e are mutually "
+				    "exclusive\n"));
+				usage(B_FALSE);
+			}
 			flags.istail = B_TRUE;
+			break;
+		case 'h':
+			flags.skipholds = B_TRUE;
 			break;
 		case 'n':
 			flags.dryrun = B_TRUE;
@@ -4105,6 +4177,10 @@ zfs_do_receive(int argc, char **argv)
 	argc -= optind;
 	argv += optind;
 
+	/* zfs recv -e (use "tail" name) implies -d (remove dataset "head") */
+	if (flags.istail)
+		flags.isprefix = B_TRUE;
+
 	/* check number of arguments */
 	if (argc < 1) {
 		(void) fprintf(stderr, gettext("missing snapshot argument\n"));
@@ -4118,7 +4194,7 @@ zfs_do_receive(int argc, char **argv)
 	if (abort_resumable) {
 		if (flags.isprefix || flags.istail || flags.dryrun ||
 		    flags.resumable || flags.nomount) {
-			(void) fprintf(stderr, gettext("invalid option"));
+			(void) fprintf(stderr, gettext("invalid option\n"));
 			usage(B_FALSE);
 		}
 
@@ -4159,13 +4235,6 @@ zfs_do_receive(int argc, char **argv)
 		return (err != 0);
 	}
 
-	while ((nvp = nvlist_next_nvpair(props, nvp))) {
-		if (strcmp(nvpair_name(nvp), "origin") != 0) {
-			(void) fprintf(stderr, gettext("invalid option"));
-			usage(B_FALSE);
-		}
-	}
-
 	if (isatty(STDIN_FILENO)) {
 		(void) fprintf(stderr,
 		    gettext("Error: Backup stream can not be read "
@@ -4174,7 +4243,6 @@ zfs_do_receive(int argc, char **argv)
 		nvlist_free(props);
 		return (1);
 	}
-
 	err = zfs_receive(g_zfs, argv[0], props, &flags, STDIN_FILENO, NULL);
 	nvlist_free(props);
 
