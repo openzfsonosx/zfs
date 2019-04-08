@@ -933,26 +933,30 @@ zvol_suspend(const char *name)
 #ifdef linux
 	zv = zvol_find_by_name(name, RW_WRITER);
 #else
+	mutex_enter(&zfsdev_state_lock);
 	zv = zvol_minor_lookup(name);
+	mutex_exit(&zfsdev_state_lock);
 #endif
 	if (zv == NULL)
 		return (NULL);
 
+#ifdef linux
 	/* block all I/O, release in zvol_resume. */
 	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 
-#ifdef linux
 	atomic_inc(&zv->zv_suspend_ref);
 #endif
 
 	if (zv->zv_open_count > 0)
 		zvol_shutdown_zv(zv);
 
+#ifdef linux
 	/*
 	 * do not hold zv_state_lock across suspend/resume to
 	 * avoid locking up zvol lookups
 	 */
 	mutex_exit(&zfsdev_state_lock);
+#endif
 
 	/* zv_suspend_lock is released in zvol_resume() */
 	return (zv);
