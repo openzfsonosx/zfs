@@ -3692,7 +3692,7 @@ zfs_do_set(int argc, char **argv)
 	if (nvlist_alloc(&props, NV_UNIQUE_NAME, 0) != 0)
 		nomem();
 	for (int i = 1; i < ds_start; i++) {
-		if ((ret = parseprop(props, argv[i])) != 0) {
+		if (!parseprop(props, argv[i])) {
 			ret = -1;
 			goto error;
 		}
