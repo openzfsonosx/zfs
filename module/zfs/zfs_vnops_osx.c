@@ -1592,8 +1592,7 @@ zfs_vnop_fsync(struct vnop_fsync_args *ap)
 	 * zil_commit() or we will deadlock. But we know that vnop_reclaim will
 	 * be called next, so we just return success.
 	 */
-	// this might not be needed now
-	//if (vnode_isrecycled(ap->a_vp)) return 0;
+	if (vnode_isrecycled(ap->a_vp)) return 0;
 
 	err = zfs_fsync(ap->a_vp, /* flag */0, cr, ct);
 
@@ -2484,9 +2483,22 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		return ENXIO;
 	}
 
+	if (ZTOV(zp) == NULL) {
+		printf("ZFS: vnop_pageout: null vp\n");
+		return ENXIO;
+	}
+
+	// XNU can call us with iocount == 0 && usecount == 0. Grab
+	// a ref now so the vp doesn't reclaim while we are in here.
+	if (vnode_get(ZTOV(zp)) != 0) {
+		printf("ZFS: vnop_pageout: vnode_ref failed.\n");
+		return ENXIO;
+	}
+
 	mutex_enter(&zp->z_lock);
 	if (!zp->z_sa_hdl) {
 		mutex_exit(&zp->z_lock);
+		vnode_put(ZTOV(zp));
 		printf("ZFS: vnop_pageout: null sa_hdl\n");
 		return ENXIO;
 	}
@@ -2498,6 +2510,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 	if (error) {
 		printf("ZFS: %s: can't hold_sa: %d\n", __func__, error);
+		vnode_put(ZTOV(zp));
 		return ENXIO;
 	}
 
@@ -2556,6 +2569,7 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	tx = dmu_tx_create(zfsvfs->z_os);
 	dmu_tx_hold_write(tx, zp->z_id, ap->a_f_offset, ap->a_size);
 
+	// NULL z_sa_hdl
 	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 
 	zfs_sa_upgrade_txholds(tx, zp);
@@ -2732,6 +2746,8 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	upl = NULL;
 	sa_buf_rele(db, NULL);
 
+	vnode_put(ZTOV(zp));
+
 	ZFS_EXIT(zfsvfs);
 	if (error)
 		dprintf("ZFS: pageoutv2 failed %d\n", error);
@@ -2745,6 +2761,8 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	//VERIFY(ubc_create_upl(vp, off, len, &upl, &pl, flags) == 0);
 	//ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
 	sa_buf_rele(db, NULL);
+
+	vnode_put(ZTOV(zp));
 
 	if (zfsvfs)
 		ZFS_EXIT(zfsvfs);
