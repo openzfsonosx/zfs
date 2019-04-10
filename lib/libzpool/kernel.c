@@ -999,7 +999,8 @@ __dprintf(const char *file, const char *func, int line, const char *fmt, ...)
 		if (dprintf_find_string("pid"))
 			(void) printf("%d ", getpid());
 		if (dprintf_find_string("tid"))
-			(void) printf("%llu ", (uint64_t) pthread_self());
+			(void) printf("%ju ",
+			    (uintmax_t)(uintptr_t)pthread_self());
 		if (dprintf_find_string("cpu"))
 			(void) printf("%u ", getcpuid());
 		if (dprintf_find_string("time"))
