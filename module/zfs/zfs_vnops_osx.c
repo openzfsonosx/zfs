@@ -3259,7 +3259,7 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 #endif
 
 	if (zfsvfs->z_use_sa && zp->z_is_sa) {
-		char *value;
+		char *value = NULL;
 
 		rw_enter(&zp->z_xattr_lock, RW_READER);
 		if (zp->z_xattr_cached == NULL)
@@ -3279,8 +3279,9 @@ zfs_vnop_getxattr(struct vnop_getxattr_args *ap)
 			}
 		}
 
-		value = kmem_alloc(resid, KM_SLEEP);
-		if (value) {
+		if (resid)
+			value = kmem_alloc(resid, KM_SLEEP);
+		if (value && resid) {
 			rw_enter(&zp->z_xattr_lock, RW_READER);
 			error = zpl_xattr_get_sa(vp, ap->a_name, value, resid);
 			rw_exit(&zp->z_xattr_lock);
