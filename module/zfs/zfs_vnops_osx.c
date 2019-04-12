@@ -2570,7 +2570,8 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	dmu_tx_hold_write(tx, zp->z_id, ap->a_f_offset, ap->a_size);
 
 	// NULL z_sa_hdl
-	dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+	if (zp->z_sa_hdl != NULL)
+		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
 
 	zfs_sa_upgrade_txholds(tx, zp);
 	error = dmu_tx_assign(tx, TXG_WAIT);
