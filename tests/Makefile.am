@@ -12,6 +12,8 @@ SUBDIRS += zfs-tests/cmd/readmmap
 SUBDIRS += zfs-tests/cmd/mmapwrite
 SUBDIRS += zfs-tests/cmd/file_trunc
 SUBDIRS += zfs-tests/cmd/file_check
+SUBDIRS += zfs-tests/tests/functional/libzfs
+SUBDIRS += zfs-tests/tests/functional/tmpfile
 
 abs_top_srcdir = @abs_top_srcdir@
 SHELL = /bin/bash

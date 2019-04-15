@@ -33,9 +33,10 @@ AM_MAINTAINER_MODE
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 AM_INIT_AUTOMAKE
 
-AC_PROG_CC
+AC_PROG_CC(clang)
 AC_PROG_INSTALL
 AM_PROG_AS
+AC_PROG_LIBTOOL
 
 PREFIX=`/bin/pwd`
 AC_SUBST(PREFIX)
@@ -68,6 +69,8 @@ AC_CONFIG_FILES([
 	zfs-tests/include/commands.cfg
 	zfs-tests/runfiles/osx.run
 	zfs-tests/include/default.cfg
+	zfs-tests/tests/functional/libzfs/Makefile
+	zfs-tests/tests/functional/tmpfile/Makefile
 ])
 
 AC_OUTPUT
