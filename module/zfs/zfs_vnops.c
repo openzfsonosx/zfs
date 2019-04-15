@@ -1225,10 +1225,11 @@ static int zil_fault_io = 0;
  */
 int
 zfs_get_data(void *arg, lr_write_t *lr, char *buf, 	struct lwb *lwb,
-	zio_t *zio, znode_t *zp, rl_t *rl)
+	zio_t *zio)
 {
 	zfsvfs_t *zfsvfs = arg;
 	objset_t *os = zfsvfs->z_os;
+	znode_t *zp;
 	uint64_t object = lr->lr_foid;
 	uint64_t offset = lr->lr_offset;
 	uint64_t size = lr->lr_length;
