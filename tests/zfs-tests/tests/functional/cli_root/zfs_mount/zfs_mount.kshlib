@@ -95,6 +95,31 @@ function setup_filesystem #disklist #pool #fs #mntpoint #type #vdev
 	return 0
 }
 
+# Destroy ( fs | container | vol ) with the given parameters.
+function cleanup_filesystem #pool #fs
+{
+	typeset pool=$1
+	typeset fs=${2##/}
+	typeset mtpt=""
+
+	if [[ -z $pool || -z $fs ]]; then
+		log_note "Missing parameter: (\"$pool\", \"$fs\")"
+		return 1
+	fi
+
+	if datasetexists "$pool/$fs" ; then
+		mtpt=$(get_prop mountpoint "$pool/$fs")
+		log_must zfs destroy -r $pool/$fs
+
+		[[ -d $mtpt ]] && \
+			log_must rm -rf $mtpt
+	else
+		return 1
+	fi
+
+	return 0
+}
+
 # Make sure 'zfs mount' should display all ZFS filesystems currently mounted.
 # The results of 'zfs mount' and 'df -F zfs' should be identical.
 function verify_mount_display

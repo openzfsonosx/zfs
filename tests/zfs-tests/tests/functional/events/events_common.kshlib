@@ -39,7 +39,8 @@ function file_wait # file delay timeout
 
 	SECONDS=0
 
-	while [ $(( $(date +%s) - $(stat -c %Y $file) )) -lt $delay ]; do
+	#while [ $(( $(date +%s) - $(stat -c %Y $file) )) -lt $delay ]; do
+	while [ $(( $(date +%s) - $(stat -f %m $file) )) -lt $delay ]; do
 		if [[ $SECONDS -gt $timeout ]]; then
 			return 1
 		fi
@@ -87,7 +88,7 @@ function run_and_verify
 
 	# Remove any previous events from the logs.
 	log_must zpool events -c
-	log_must truncate -s 0 $zedlog
+	log_must $TRUNCATE -s 0 $zedlog
 
 	# Run the command as provided.
 	log_must eval "$fullcmd"

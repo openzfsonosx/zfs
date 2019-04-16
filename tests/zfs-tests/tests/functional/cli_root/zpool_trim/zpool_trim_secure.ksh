@@ -52,7 +52,7 @@ LARGESIZE=$((MINVDEVSIZE * 4))
 LARGEFILE="$TESTDIR/largefile"
 
 log_must mkdir "$TESTDIR"
-log_must truncate -s $LARGESIZE "$LARGEFILE"
+log_must $TRUNCATE -s $LARGESIZE "$LARGEFILE"
 log_must zpool create $TESTPOOL "$LARGEFILE"
 log_mustnot zpool trim -d $TESTPOOL
 

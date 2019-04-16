@@ -57,7 +57,7 @@ TESTFILE="/$TESTPOOL/$TESTFS/testfile"
 
 for type in "mirror" "raidz" "raidz2"; do
 	# 1. Create a pool with hot spares
-	truncate -s $SPA_MINDEVSIZE $VDEV_FILES $SPARE_FILE
+	$TRUNCATE -s $SPA_MINDEVSIZE $VDEV_FILES $SPARE_FILE
 	log_must zpool create -f $TESTPOOL $type $VDEV_FILES spare $SPARE_FILE
 
 	# 2. Create a filesystem with the primary cache disable to force reads

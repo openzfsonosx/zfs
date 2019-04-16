@@ -72,7 +72,7 @@ SPARE_DISKDEV="$(get_debug_device)"
 
 for vdev in $SAFE_FILEDEVPOOL1 $SAFE_FILEDEVPOOL2 $FAIL_FILEDEVPOOL1 \
     $FAIL_FILEDEVPOOL2 $SPARE_FILEDEV; do
-	log_must truncate -s $SPA_MINDEVSIZE $vdev
+	log_must $TRUNCATE -s $SPA_MINDEVSIZE $vdev
 done
 
 for spare in $SPARE_FILEDEV $SPARE_DISKDEV; do

@@ -46,9 +46,9 @@ verify_runnable "both"
 
 function cleanup
 {
-	destroy_dataset $TESTPOOL/recv "-r"
-	destroy_dataset $TESTPOOL/crypt "-r"
-	destroy_dataset $TESTPOOL/ds "-r"
+	destroy_dataset "-r" $TESTPOOL/recv
+	destroy_dataset "-r" $TESTPOOL/crypt
+	destroy_dataset "-r" $TESTPOOL/ds
 	[[ -f $sendfile ]] && log_must rm $sendfile
 	[[ -f $keyfile ]] && log_must rm $keyfile
 }
@@ -75,7 +75,7 @@ log_must zfs create -o keyformat=passphrase -o keylocation=file://$keyfile \
 
 log_must mkfile 1M /$TESTPOOL/ds/$TESTFILE0
 log_must cp /$TESTPOOL/ds/$TESTFILE0 /$TESTPOOL/crypt/$TESTFILE0
-typeset cksum=$(md5sum /$TESTPOOL/ds/$TESTFILE0 | awk '{  print $1 }')
+typeset cksum=$($MD5SUM /$TESTPOOL/ds/$TESTFILE0 | awk '{  print $1 }')
 
 log_must zfs snap -r $snap
 log_must zfs snap -r $esnap
@@ -127,7 +127,7 @@ log_must test "$(get_prop 'encryptionroot' $ds)" == "$ds"
 log_must test "$(get_prop 'keyformat' $ds)" == "passphrase"
 log_must test "$(get_prop 'keylocation' $ds)" == "file://$keyfile"
 log_must test "$(get_prop 'mounted' $ds)" == "yes"
-recv_cksum=$(md5sum /$ds/$TESTFILE0 | awk '{ print $1 }')
+recv_cksum=$($MD5SUM /$ds/$TESTFILE0 | awk '{ print $1 }')
 log_must test "$recv_cksum" == "$cksum"
 log_must zfs destroy -r $ds
 
@@ -143,7 +143,7 @@ log_must test "$(get_prop 'encryptionroot' $ds)" == "$ds"
 log_must test "$(get_prop 'keyformat' $ds)" == "passphrase"
 log_must test "$(get_prop 'keylocation' $ds)" == "file://$keyfile"
 log_must test "$(get_prop 'mounted' $ds)" == "yes"
-recv_cksum=$(md5sum /$ds/$TESTFILE0 | awk '{ print $1 }')
+recv_cksum=$($MD5SUM /$ds/$TESTFILE0 | awk '{ print $1 }')
 log_must test "$recv_cksum" == "$cksum"
 log_must zfs destroy -r $ds
 
@@ -161,7 +161,7 @@ log_must test "$(get_prop 'encryptionroot' $ds)" == "$ds"
 log_must test "$(get_prop 'keyformat' $ds)" == "passphrase"
 log_must test "$(get_prop 'keylocation' $ds)" == "file://$keyfile"
 log_must test "$(get_prop 'mounted' $ds)" == "yes"
-recv_cksum=$(md5sum /$ds/$TESTFILE0 | awk '{ print $1 }')
+recv_cksum=$($MD5SUM /$ds/$TESTFILE0 | awk '{ print $1 }')
 log_must test "$recv_cksum" == "$cksum"
 log_must zfs destroy -r $ds
 
@@ -175,7 +175,7 @@ log_must test "$(get_prop 'encryptionroot' $ds)" == "$TESTPOOL/crypt"
 log_must test "$(get_prop 'encryption' $ds)" == "aes-256-ccm"
 log_must test "$(get_prop 'keyformat' $ds)" == "passphrase"
 log_must test "$(get_prop 'mounted' $ds)" == "yes"
-recv_cksum=$(md5sum /$ds/$TESTFILE0 | awk '{ print $1 }')
+recv_cksum=$($MD5SUM /$ds/$TESTFILE0 | awk '{ print $1 }')
 log_must test "$recv_cksum" == "$cksum"
 log_must zfs destroy -r $ds
 
@@ -189,7 +189,7 @@ log_must test "$(get_prop 'encryptionroot' $ds)" == "$TESTPOOL/crypt"
 log_must test "$(get_prop 'encryption' $ds)" == "aes-256-ccm"
 log_must test "$(get_prop 'keyformat' $ds)" == "passphrase"
 log_must test "$(get_prop 'mounted' $ds)" == "yes"
-recv_cksum=$(md5sum /$ds/$TESTFILE0 | awk '{ print $1 }')
+recv_cksum=$($MD5SUM /$ds/$TESTFILE0 | awk '{ print $1 }')
 log_must test "$recv_cksum" == "$cksum"
 log_must zfs destroy -r $ds
 

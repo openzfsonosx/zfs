@@ -37,7 +37,7 @@
 #
 
 log_assert "kstats are published as sysctls."
-log_onexit cleanup
+#log_onexit cleanup
 
 typeset -i i=0
 
@@ -64,7 +64,5 @@ while (( i < ${#ZFS_TUNEABLE_SYSCTLS[@]} )); do
 	log_must sysctl_exists ${ZFS_TUNEABLE_SYSCTLS[i]}
 	(( i += 1 ))
 done
-
-
 
 log_pass

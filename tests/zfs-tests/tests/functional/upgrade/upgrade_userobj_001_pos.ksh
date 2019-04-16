@@ -48,11 +48,11 @@ log_onexit cleanup_upgrade
 
 log_must zpool create -d -m $TESTDIR $TESTPOOL $TMPDEV
 
-log_must mkfiles $TESTDIR/tf $((RANDOM % 1000 + 1))
+log_must $MKFILES $TESTDIR/tf $((RANDOM % 1000 + 1))
 log_must zfs create $TESTPOOL/fs1
-log_must mkfiles $TESTDIR/fs1/tf $((RANDOM % 1000 + 1))
+log_must $MKFILES $TESTDIR/fs1/tf $((RANDOM % 1000 + 1))
 log_must zfs create $TESTPOOL/fs2
-log_must mkfiles $TESTDIR/fs2/tf $((RANDOM % 1000 + 1))
+log_must $MKFILES $TESTDIR/fs2/tf $((RANDOM % 1000 + 1))
 log_must zfs umount $TESTPOOL/fs2
 
 # Make sure userobj accounting is disabled

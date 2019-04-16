@@ -101,7 +101,7 @@ function pool_config # <vdev-type>
 		while [[ -f $filedev ]]; do
 			filedev="$filedev.$RANDOM"
 		done
-		truncate -s $SPA_MINDEVSIZE "$filedev"
+		$TRUNCATE -s $SPA_MINDEVSIZE "$filedev"
 		config="$config $filedev"
 	done
 	echo "$config"

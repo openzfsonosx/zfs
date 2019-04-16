@@ -63,12 +63,12 @@ log_assert "Verify 'zpool resilver' restarts in-progress resilvers"
 mntpnt=$(get_prop mountpoint $TESTPOOL/$TESTFS)
 
 # 1. Write some data and detatch the first drive so it has resilver work to do
-log_must file_write -b 524288 -c 1024 -o create -d 0 -f $mntpnt/biggerfile1
+log_must $FILE_WRITE -b 524288 -c 1024 -o create -d 0 -f $mntpnt/biggerfile1
 log_must sync
 log_must zpool detach $TESTPOOL $DISK2
 
 # 2. Repeat the process with a second disk
-log_must file_write -b 524288 -c 1024 -o create -d 0 -f $mntpnt/biggerfile2
+log_must $FILE_WRITE -b 524288 -c 1024 -o create -d 0 -f $mntpnt/biggerfile2
 log_must sync
 log_must zpool detach $TESTPOOL $DISK3
 

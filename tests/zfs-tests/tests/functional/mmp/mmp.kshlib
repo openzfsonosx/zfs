@@ -104,7 +104,7 @@ function mmp_pool_create_simple # pool dir
 	typeset dir=${2:-$MMP_DIR}
 
 	log_must mkdir -p $dir
-	log_must truncate -s $MINVDEVSIZE $dir/vdev1 $dir/vdev2
+	log_must $TRUNCATE -s $MINVDEVSIZE $dir/vdev1 $dir/vdev2
 
 	log_must mmp_set_hostid $HOSTID1
 	log_must zpool create -f $pool mirror $dir/vdev1 $dir/vdev2

@@ -39,10 +39,6 @@
 
 verify_runnable "global"
 
-if is_32bit; then
-	log_unsupported "Test case runs slowly on 32 bit"
-fi
-
 function cleanup
 {
 	if [[ -n "$child_pids" ]]; then
@@ -81,8 +77,8 @@ function zpool_stress
 	typeset retry=10
 	typeset j=0
 
-	truncate -s $FILESIZE $vdev0
-	truncate -s $FILESIZE $vdev1
+	$TRUNCATE -s $FILESIZE $vdev0
+	$TRUNCATE -s $FILESIZE $vdev1
 
 	while [[ $j -lt $iters ]]; do
 		((j = j + 1))

@@ -40,6 +40,11 @@
 
 verify_runnable "both"
 
+function cleanup
+{
+	log_must $ZFS set atime=off $TESTPOOL/$TESTFS
+}
+
 log_assert "'zfs get' should get consistent report with different option."
 log_onexit cleanup
 

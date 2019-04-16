@@ -43,8 +43,13 @@ main(int argc, char **argv)
 	struct rlimit limit;
 	libzfs_handle_t *h;
 
+#ifdef __APPLE__
+	limit.rlim_cur = 1023;
+	limit.rlim_max = 1023;
+#else
 	limit.rlim_cur = 65535;
 	limit.rlim_max = 65535;
+#endif
 
 	if (setrlimit(RLIMIT_NOFILE, &limit) != 0) {
 		(void) printf("many_fds: setrlimit() failed with errno=%d\n",

@@ -38,7 +38,7 @@
 
 log_assert "Per dataset kstats are created and destroyed as dataset is imported and exported"
 
-log_onexit cleanup
+#log_onexit cleanup
 
 DISK=${DISKS%% *}
 default_setup $DISK

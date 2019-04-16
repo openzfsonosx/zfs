@@ -39,7 +39,7 @@ function cleanup
 function setup_mirror # <conf>
 {
 	for filedev in "${fd[@]}"; do
-		truncate -s $SPA_MINDEVSIZE "$filedev"
+		$TRUNCATE -s $SPA_MINDEVSIZE "$filedev"
 	done
 	log_must zpool create -f $TESTPOOL $conf
 }

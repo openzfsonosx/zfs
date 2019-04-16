@@ -32,12 +32,12 @@
 # if we're running NIS, turn it off until we clean up
 # (it can cause useradd to take a long time, hitting our TIMEOUT)
 USES_NIS=FALSE
-$SVCS svc:/network/nis/client:default | $GREP online > /dev/null
-if [ $? -eq 0 ]
-then
-	$SVCADM disable -t svc:/network/nis/client:default
-	USES_NIS=true
-fi
+#$SVCS svc:/network/nis/client:default | $GREP online > /dev/null
+#if [ $? -eq 0 ]
+#then
+#	$SVCADM disable -t svc:/network/nis/client:default
+#	USES_NIS=true
+#fi
 
 # Make sure we use a brand new user for this
 ZFS_USER=zxtr

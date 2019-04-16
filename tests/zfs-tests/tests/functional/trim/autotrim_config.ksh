@@ -80,14 +80,14 @@ for type in "" "mirror" "raidz2"; do
 		VDEVS="$TRIM_VDEV1 $TRIM_VDEV2 $TRIM_VDEV3"
 	fi
 
-	log_must truncate -s $((4 * MINVDEVSIZE)) $VDEVS
+	log_must $TRUNCATE -s $((4 * MINVDEVSIZE)) $VDEVS
 	log_must zpool create -f $TESTPOOL $VDEVS
 	log_must zpool set autotrim=on $TESTPOOL
 	typeset availspace=$(get_prop available $TESTPOOL)
 	typeset fill_mb=$(( floor(availspace * 0.90 / 1024 / 1024) ))
 
 	# Fill the pool, verify the vdevs are no longer sparse.
-	file_write -o create -f /$TESTPOOL/file -b 1048576 -c $fill_mb -d R
+	$FILE_WRITE -o create -f /$TESTPOOL/file -b 1048576 -c $fill_mb -d R
 	verify_vdevs "-gt" "$VDEV_MAX_MB" $VDEVS
 
 	# Remove the file, wait for trim, verify the vdevs are now sparse.

@@ -54,7 +54,7 @@ for recsize in "${recsize_prop_vals[@]}"; do
 	[[ $recsize -eq $((32 * 1024)) ]] && break
 
 	if is_linux; then
-		log_must truncate -s $recsize $dir/$recsize
+		log_must $TRUNCATE -s $recsize $dir/$recsize
 		log_must dd if=/dev/urandom of=$dir/$recsize \
 		    seek=$((recsize - 8)) bs=1 count=8 conv=notrunc
 	else

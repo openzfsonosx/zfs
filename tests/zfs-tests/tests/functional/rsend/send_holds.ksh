@@ -119,7 +119,7 @@ log_must zfs create $recv_root
 log_must zfs set mountpoint=$TESTDIR $TESTPOOL/$TESTFS1
 log_must zfs set mountpoint=$TESTDIR1 $recv_root
 
-file_write -o create -f $init_data -b $BLOCK_SIZE -c $WRITE_COUNT
+$FILE_WRITE -o create -f $init_data -b $BLOCK_SIZE -c $WRITE_COUNT
 
 log_must zfs snapshot $init_snap
 log_must zfs hold hold1-1 $init_snap
@@ -139,7 +139,7 @@ compare_cksum $init_data $recv_data
 
 log_note "Verify 'zfs send -i' can create incremental send stream."
 
-file_write -o create -f $inc_data -b $BLOCK_SIZE -c $WRITE_COUNT -d 0
+$FILE_WRITE -o create -f $inc_data -b $BLOCK_SIZE -c $WRITE_COUNT -d 0
 
 log_must zfs snapshot $inc_snap
 log_must zfs hold hold2-1 $inc_snap
@@ -156,7 +156,7 @@ log_must check_hold $recv_inc_snap hold2-1
 compare_cksum $inc_data $recv_inc_data
 
 log_note "Verify send -h works when there are no holds."
-file_write -o create -f $inc_data2 -b $BLOCK_SIZE -c $WRITE_COUNT -d 0
+$FILE_WRITE -o create -f $inc_data2 -b $BLOCK_SIZE -c $WRITE_COUNT -d 0
 log_must zfs snapshot $inc_snap2
 log_must eval "zfs send -h -i $inc_snap $inc_snap2 > $inc_bkup"
 log_must zfs recv -F $recv_inc_snap2 <$inc_bkup

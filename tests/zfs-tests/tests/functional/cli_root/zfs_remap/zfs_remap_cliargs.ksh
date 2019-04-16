@@ -54,14 +54,14 @@ DISK1="/var/tmp/zfs_remap-1"
 DISK2="/var/tmp/zfs_remap-2"
 
 # 1. Prepare a pool where a top-level VDEV has been removed
-log_must truncate -s $(($MINVDEVSIZE * 2)) $DISK1
+log_must $TRUNCATE -s $(($MINVDEVSIZE * 2)) $DISK1
 log_must zpool create $TESTPOOL $DISK1
 log_must zfs create $f
 log_must zfs create -V 1M -s $v
 log_must zfs snap $s
 log_must zfs bookmark $s $b
 log_must zfs clone $s $c
-log_must truncate -s $(($MINVDEVSIZE * 2)) $DISK2
+log_must $TRUNCATE -s $(($MINVDEVSIZE * 2)) $DISK2
 log_must zpool add $TESTPOOL $DISK2
 log_must zpool remove $TESTPOOL $DISK1
 log_must wait_for_removal $TESTPOOL

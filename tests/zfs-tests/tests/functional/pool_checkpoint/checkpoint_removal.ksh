@@ -56,7 +56,7 @@ populate_test_pool
 # have compression enabled.
 #
 log_must mkfile $BIGFILESIZE $FS0FILE
-log_must randwritecomp $FS0FILE 1000
+log_must $RANDWRITECOMP $FS0FILE 1000
 
 #
 # Add second disk

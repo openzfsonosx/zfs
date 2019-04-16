@@ -60,7 +60,7 @@ FAIL_DEVICE="$TEST_BASE_DIR/fail-dev"
 
 # 1. Create a pool from 512b devices and set "ashift" pool property accordingly
 for vdev in $SAFE_DEVICE $FAIL_DEVICE; do
-	truncate -s $SPA_MINDEVSIZE $vdev
+	$TRUNCATE -s $SPA_MINDEVSIZE $vdev
 done
 log_must zpool create -f $TESTPOOL mirror $SAFE_DEVICE $FAIL_DEVICE
 # NOTE: file VDEVs should be added as 512b devices, verify this "just in case"

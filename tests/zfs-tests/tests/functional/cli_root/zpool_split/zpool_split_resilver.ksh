@@ -49,8 +49,8 @@ function cleanup
 
 function setup_mirror
 {
-	truncate -s $DEVSIZE $DEVICE1
-	truncate -s $DEVSIZE $DEVICE2
+	$TRUNCATE -s $DEVSIZE $DEVICE1
+	$TRUNCATE -s $DEVSIZE $DEVICE2
 	log_must zpool create -f $TESTPOOL mirror $DEVICE1 $DEVICE2
 }
 
@@ -65,7 +65,7 @@ function zpool_split #disk_to_be_offline/online
 
 	# Create 2G of additional data
 	mntpnt=$(get_prop mountpoint $TESTPOOL)
-	log_must file_write -b 2097152 -c 1024 -o create -d 0 -f $mntpnt/biggerfile
+	log_must $FILE_WRITE -b 2097152 -c 1024 -o create -d 0 -f $mntpnt/biggerfile
 	log_must sync
 
 	# temporarily prevent resilvering progress, so it will not finish too early

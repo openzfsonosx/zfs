@@ -50,7 +50,7 @@ log_note "$DEVS"
 [[ -n $DEVS ]] && set -A DISK $DEVS
 
 log_must dd if=/dev/zero of=$DEV_RDSKDIR/${DISK[1]} bs=1K count=256 conv=notrunc
-log_must truncate -s 0 $TEMPFILE
+log_must $TRUNCATE -s 0 $TEMPFILE
 
 zdb -l $DEV_RDSKDIR/${DISK[0]}
 [[ $? -ne 0 ]] &&

@@ -42,10 +42,10 @@ log_must zpool checkpoint -d $TESTPOOL
 test_wait_discard_finish
 
 log_must mkfile -n 100M $FS2FILE
-log_must randwritecomp $FS2FILE 100
+log_must $RANDWRITECOMP $FS2FILE 100
 log_must zpool checkpoint $TESTPOOL
 
-log_must randwritecomp $FS2FILE 100
+log_must $RANDWRITECOMP $FS2FILE 100
 log_must zpool checkpoint -d $TESTPOOL
 test_wait_discard_finish
 

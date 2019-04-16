@@ -50,7 +50,7 @@ function cleanup
 function setup_mirror
 {
 	# NOTE: "-f" is required to create a mixed (file and disk device) mirror
-	log_must truncate -s $SPA_MINDEVSIZE $FILE_DEVICE
+	log_must $TRUNCATE -s $SPA_MINDEVSIZE $FILE_DEVICE
 	log_must zpool create -f $TESTPOOL mirror $FILE_DEVICE $DISK_DEVICE
 	# NOTE: verify disk is actually a "whole-disk" device
 	log_must test  "$(zdb -PC $TESTPOOL | grep -c 'whole_disk: 1')" == 1

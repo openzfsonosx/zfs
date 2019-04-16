@@ -51,6 +51,7 @@ verify_runnable "both"
 
 function cleanup
 {
+	$ZFS umount $SNAPFS
 	destroy_dataset $SNAPFS
 
 	[[ -e $TESTDIR ]] && \
@@ -76,8 +77,9 @@ while [[ $i -le $COUNT ]]; do
 done
 
 log_must $ZFS snapshot $SNAPFS
+log_must $ZFS mount $SNAPFS
 
-FILE_COUNT=`$LS -Al $SNAPDIR | $GREP -v "total" | wc -l`
+FILE_COUNT=`$LS -Al $SNAPDIR | egrep -v $IGNORE | wc -l`
 if [[ $FILE_COUNT -ne $COUNT ]]; then
         $LS -Al $SNAPDIR
         log_fail "AFTER: $SNAPFS contains $FILE_COUNT files(s)."
@@ -92,22 +94,27 @@ while [[ $i -le $COUNT ]]; do
         (( i = i + 1 ))
 done
 
+$ZFS umount $SNAPFS
 #
 # Now rollback to latest snapshot
 #
 log_must $ZFS rollback $SNAPFS
 
-FILE_COUNT=`$LS -Al $TESTDIR/after* 2> /dev/null | $GREP -v "total" | wc -l`
+$ZFS mount $SNAPFS
+
+FILE_COUNT=`$LS -Al $TESTDIR/after* 2> /dev/null | egrep -v $IGNORE | wc -l`
 if [[ $FILE_COUNT -ne 0 ]]; then
         $LS -Al $TESTDIR
         log_fail "$TESTDIR contains $FILE_COUNT after* files(s)."
 fi
 
 FILE_COUNT=`$LS -Al $TESTDIR/before* 2> /dev/null \
-    | $GREP -v "total" | wc -l`
+    | egrep -v $IGNORE | wc -l`
 if [[ $FILE_COUNT -ne $COUNT ]]; then
 	$LS -Al $TESTDIR
 	log_fail "$TESTDIR contains $FILE_COUNT before* files(s)."
 fi
+
+$ZFS umount $SNAPFS
 
 log_pass "The rollback operation succeeded."

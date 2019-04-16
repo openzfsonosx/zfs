@@ -77,8 +77,8 @@ log_must zfs set xattr=sa $QFS
 
 ((user1_cnt = RANDOM % 100 + 1))
 ((user2_cnt = RANDOM % 100 + 1))
-log_must user_run $QUSER1 mkfiles ${QFILE}_1 $user1_cnt
-log_must user_run $QUSER2 mkfiles ${QFILE}_2 $user2_cnt
+log_must user_run $QUSER1 $MKFILES ${QFILE}_1 $user1_cnt
+log_must user_run $QUSER2 $MKFILES ${QFILE}_2 $user2_cnt
 ((grp_cnt = user1_cnt + user2_cnt))
 sync_pool
 

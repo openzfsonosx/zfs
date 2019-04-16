@@ -77,11 +77,11 @@ log_must set_tunable64 send_holes_without_birth_time 0
 # Incremental send truncating the file and adding new data.
 log_must zfs create -o recordsize=4k $sendfs
 
-log_must truncate -s 1G /$sendfs/file1
+log_must $TRUNCATE -s 1G /$sendfs/file1
 log_must dd if=/dev/urandom of=/$sendfs/file1 bs=4k count=11264 seek=1152
 log_must zfs snapshot $sendfs@snap1
 
-log_must truncate -s 4194304 /$sendfs/file1
+log_must $TRUNCATE -s 4194304 /$sendfs/file1
 log_must dd if=/dev/urandom of=/$sendfs/file1 bs=4k count=152 seek=384 \
     conv=notrunc
 log_must dd if=/dev/urandom of=/$sendfs/file1 bs=4k count=10 seek=1408 \
@@ -109,11 +109,11 @@ log_must cleanup_pool $recvpool
 # Incremental send truncating the file and adding new data.
 log_must zfs create -o recordsize=512 $sendfs
 
-log_must truncate -s 300M /$sendfs/file1
+log_must $TRUNCATE -s 300M /$sendfs/file1
 log_must dd if=/dev/urandom of=/$sendfs/file1 bs=512 count=128k conv=notrunc
 log_must zfs snapshot $sendfs@snap1
 
-log_must truncate -s 10M /$sendfs/file1
+log_must $TRUNCATE -s 10M /$sendfs/file1
 log_must dd if=/dev/urandom of=/$sendfs/file1 bs=512 count=1 seek=96k \
     conv=notrunc
 log_must zfs snapshot $sendfs@snap2

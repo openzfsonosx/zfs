@@ -37,15 +37,17 @@
 
 verify_runnable "global"
 
-properties="feature@async_destroy=disabled " \
-    "feature@async_destroy=active " \
-    "feature@xxx_fake_xxx=enabled " \
-    "unsupported@some_feature=inactive " \
-    "unsupported@some_feature=readonly "
+properties="\
+feature@async_destroy=disabled \
+feature@async_destroy=active \
+feature@xxx_fake_xxx=enabled \
+unsupported@some_feature=inactive \
+unsupported@some_feature=readonly \
+"
 
 function cleanup
 {
-	destroy_pool $TESTPOOL
+    datasetexists $TESTPOOL && log_must zpool destroy $TESTPOOL
 }
 
 log_assert "'zpool create with invalid features fails"

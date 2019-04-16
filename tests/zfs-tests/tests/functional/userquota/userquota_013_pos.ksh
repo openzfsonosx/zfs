@@ -61,7 +61,7 @@ log_must zfs set xattr=sa $QFS
 
 log_note "Check the userobjquota@$QUSER1"
 log_must zfs set userobjquota@$QUSER1=100 $QFS
-log_must user_run $QUSER1 mkfiles ${QFILE}_1 100
+log_must user_run $QUSER1 $MKFILES ${QFILE}_1 100
 sync_pool
 log_mustnot user_run $QUSER1 mkfile 1 $OFILE
 cleanup_quota
@@ -69,7 +69,7 @@ cleanup_quota
 log_note "Check the groupobjquota@$QGROUP"
 log_must zfs set groupobjquota@$QGROUP=200 $QFS
 mkmount_writable $QFS
-log_must user_run $QUSER1 mkfiles ${QFILE}_2 100
+log_must user_run $QUSER1 $MKFILES ${QFILE}_2 100
 sync_pool
 log_mustnot user_run $QUSER2 mkfile 1 $OFILE
 

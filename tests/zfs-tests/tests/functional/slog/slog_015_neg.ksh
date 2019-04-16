@@ -54,8 +54,9 @@ for PCT in 0 1 2 4 8 16 32 64 128 256 512 1024; do
 	log_must zpool create $TESTPOOL $VDEV log $SDEV
 
 	for i in {1..10}; do
-		log_must fio --rw write --sync 1 --directory "/$TESTPOOL" \
-		    --bs 8K --size 8K --name slog-test
+		#log_must fio --rw write --sync 1 --directory "/$TESTPOOL" \
+		#    --bs 8K --size 8K --name slog-test
+		log_must $FILE_WRITE -o create -f "/$TESTPOOL/slog-test" -b 8192 -c 600 -d 0
 	done &
 
 	for i in {1..10}; do

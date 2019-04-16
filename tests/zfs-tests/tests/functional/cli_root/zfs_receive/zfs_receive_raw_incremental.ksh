@@ -80,10 +80,11 @@ log_must eval "zfs send -w $snap1 | zfs receive $TESTPOOL/$TESTFS2"
 log_must eval "echo $passphrase2 | zfs change-key $TESTPOOL/$TESTFS1"
 log_must eval "zfs send -w -i $snap1 $snap2 > $ibackup"
 
-typeset trunc_size=$(stat -c %s $ibackup)
+#typeset trunc_size=$(stat -c %s $ibackup)
+typeset trunc_size=$(stat -f %z $ibackup)
 trunc_size=$(expr $trunc_size - 64)
 log_must cp $ibackup $ibackup_trunc
-log_must truncate -s $trunc_size $ibackup_trunc
+log_must $TRUNCATE -s $trunc_size $ibackup_trunc
 log_mustnot eval "zfs receive $TESTPOOL/$TESTFS2 < $ibackup_trunc"
 log_mustnot eval "echo $passphrase2 | zfs load-key $TESTPOOL/$TESTFS2"
 log_must eval "echo $passphrase | zfs load-key $TESTPOOL/$TESTFS2"

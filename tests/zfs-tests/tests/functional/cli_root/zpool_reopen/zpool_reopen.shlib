@@ -53,7 +53,7 @@ function generate_random_file #path size_mb
 {
 	typeset path=$1
 	typeset -i size_mb=$2
-	file_write -o create -f $path -b 1048576 -s0 -c $size_mb -d R
+	$FILE_WRITE -o create -f $path -b 1048576 -s0 -c $size_mb -d R
 }
 
 #

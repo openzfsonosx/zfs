@@ -49,7 +49,7 @@ log_assert "Verify 'zpool clear' cannot be used on readonly pools."
 log_onexit cleanup
 
 # 1. Create a pool.
-log_must truncate -s $FILESIZE $TESTDIR/file.{1,2,3}
+log_must $TRUNCATE -s $FILESIZE $TESTDIR/file.{1,2,3}
 log_must zpool create $TESTPOOL1 raidz $TESTDIR/file.*
 
 # 2. Export the pool and import it readonly.

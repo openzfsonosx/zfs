@@ -25,6 +25,6 @@ verify_runnable "global"
 
 log_assert "libzfs ioctls handle invalid input arguments"
 
-log_must libzfs_input_check $TESTPOOL
+log_must $LIBZFS_INPUT_CHECK $TESTPOOL
 
 log_pass "libzfs ioctls handle invalid input arguments"

@@ -62,7 +62,7 @@ typeset trim_txg_batch=$(get_tunable zfs_trim_txg_batch)
 log_must set_tunable64 zfs_trim_txg_batch 8
 
 for type in "" "mirror" "raidz" "raidz2" "raidz3"; do
-	log_must truncate -s 1G $TRIM_VDEVS
+	log_must $TRUNCATE -s 1G $TRIM_VDEVS
 
 	log_must zpool create -f $TESTPOOL $type $TRIM_VDEVS
 	log_must zpool set autotrim=on $TESTPOOL

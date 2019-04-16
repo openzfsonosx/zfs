@@ -67,7 +67,7 @@ SPARE_DEVS="$SPARE_DEV1 $SPARE_DEV2"
 
 for type in "mirror" "raidz" "raidz2" "raidz3"; do
 	# 1. Create a pool with two hot spares
-	truncate -s $SPA_MINDEVSIZE $DATA_DEVS $SPARE_DEVS
+	$TRUNCATE -s $SPA_MINDEVSIZE $DATA_DEVS $SPARE_DEVS
 	log_must zpool create -f $TESTPOOL $type $DATA_DEVS spare $SPARE_DEVS
 
 	# 2. Inject IO ERRORS with a zinject error handler on the first device
@@ -120,7 +120,7 @@ done
 # NOTE: "mirror" is a 4-way mirror here and should survive this test
 for type in "mirror" "raidz2" "raidz3"; do
 	# 1. Create a pool with two hot spares
-	truncate -s $SPA_MINDEVSIZE $DATA_DEVS $SPARE_DEVS
+	$TRUNCATE -s $SPA_MINDEVSIZE $DATA_DEVS $SPARE_DEVS
 	log_must zpool create -f $TESTPOOL $type $DATA_DEVS spare $SPARE_DEVS
 
 	# 2. Inject IO ERRORS with a zinject error handler on two devices

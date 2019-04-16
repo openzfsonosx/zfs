@@ -46,13 +46,11 @@ DISK1=${DISKS%% *}
 log_must zpool create -f $TESTPOOL $DISK1
 log_must zpool initialize $TESTPOOL
 
-sleep 2
-
 progress="$(initialize_progress $TESTPOOL $DISK1)"
 [[ -z "$progress" ]] && log_fail "Initializing did not start"
 
 log_must zpool export $TESTPOOL
-log_must zpool import $TESTPOOL
+log_must zpool import -d /dev $TESTPOOL
 
 new_progress="$(initialize_progress $TESTPOOL $DISK1)"
 [[ -z "$new_progress" ]] && log_fail "Initializing did not restart after import"
@@ -64,7 +62,7 @@ log_must zpool initialize -s $TESTPOOL $DISK1
 action_date="$(initialize_prog_line $TESTPOOL $DISK1 | \
     sed 's/.*ed at \(.*\)).*/\1/g')"
 log_must zpool export $TESTPOOL
-log_must zpool import $TESTPOOL
+log_must zpool import -d /dev/ $TESTPOOL
 new_action_date=$(initialize_prog_line $TESTPOOL $DISK1 | \
     sed 's/.*ed at \(.*\)).*/\1/g')
 [[ "$action_date" != "$new_action_date" ]] && \

@@ -51,7 +51,7 @@ function cleanup
 LARGEFILE="$TESTDIR/largefile"
 
 log_must mkdir "$TESTDIR"
-log_must truncate -s 10G "$LARGEFILE"
+log_must $TRUNCATE -s 10G "$LARGEFILE"
 log_must zpool create -f $TESTPOOL $LARGEFILE
 
 log_must zpool trim -r 256M $TESTPOOL

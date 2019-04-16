@@ -80,7 +80,7 @@ typeset -i i=1
 while [[ $i -lt ${#CHECKSUM_TYPES[*]} ]]; do
 	type=${CHECKSUM_TYPES[i]}
 	log_must zfs set checksum=$type $TESTPOOL
-	log_must file_write -o overwrite -f $TESTDIR/test_$type \
+	log_must $FILE_WRITE -o overwrite -f $TESTDIR/test_$type \
 	    -b $WRITESZ -c 5 -d R
 	(( i = i + 1 ))
 done
@@ -90,7 +90,7 @@ log_must zpool import $TESTPOOL
 log_must zpool scrub $TESTPOOL
 log_must wait_scrubbed $TESTPOOL
 
-cksum=$(zpool status -P -v $TESTPOOL | grep "$firstvdev" | awk '{print $5}')
+cksum=$(zpool status -LP -v $TESTPOOL | grep "$firstvdev" | awk '{print $5}')
 log_assert "Normal file write test saw $cksum checksum errors"
 log_must [ $cksum -eq 0 ]
 
@@ -101,7 +101,7 @@ typeset -i j=1
 while [[ $j -lt ${#CHECKSUM_TYPES[*]} ]]; do
 	type=${CHECKSUM_TYPES[$j]}
 	log_must zfs set checksum=$type $TESTPOOL
-	log_must file_write -o overwrite -f $TESTDIR/test_$type \
+	log_must $FILE_WRITE -o overwrite -f $TESTDIR/test_$type \
 	    -b $WRITESZ -c 5 -d R
 
 	log_must zpool export $TESTPOOL
@@ -115,7 +115,7 @@ while [[ $j -lt ${#CHECKSUM_TYPES[*]} ]]; do
 	log_must zpool scrub $TESTPOOL
 	log_must wait_scrubbed $TESTPOOL
 
-	cksum=$(zpool status -P -v $TESTPOOL | grep "$firstvdev" | \
+	cksum=$(zpool status -LP -v $TESTPOOL | grep "$firstvdev" | \
 	    awk '{print $5}')
 
 	log_assert "Checksum '$type' caught $cksum checksum errors"

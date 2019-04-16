@@ -26,6 +26,37 @@
 #include <sys/nvpair.h>
 #include <sys/zfs_ioctl.h>
 
+#ifdef __APPLE__
+uint64_t zfs_flags = 0;
+
+/*
+ * In osx the error code is returned differently
+ * so we have to wrap plain ioctl() calls.
+ */
+static int
+zioctl(int fildes, zfs_ioc_t ioc, zfs_cmd_t *zc)
+{
+	int ioctl_err;
+	ioctl_err = ioctl(fildes, ioc, zc);
+
+	// OS call failed (ZFS not reached)
+	if (ioctl_err != 0) return ioctl_err;
+
+	if (zc->zc_ioc_error == 0)
+		return 0;
+
+	// Call to ZFS OK, check for ZFS error
+	if (zc->zc_ioc_error != 0) {
+		errno = zc->zc_ioc_error;
+	} else if (ioctl_err != -1) {
+		errno = ioctl_err;
+	} else if (ioctl_err == -1 && errno == 0) {
+		errno = -1;
+	}
+	return -1;
+}
+#endif
+
 /*
  * Test the nvpair inputs for the non-legacy zfs ioctl commands.
  */
@@ -154,7 +185,7 @@ lzc_ioctl_run(zfs_ioc_t ioc, const char *name, nvlist_t *innvl, int expected)
 	zc.zc_nvlist_dst_size = MAX(size * 2, 128 * 1024);
 	zc.zc_nvlist_dst = (uint64_t)(uintptr_t)malloc(zc.zc_nvlist_dst_size);
 
-	if (ioctl(zfs_fd, ioc, &zc) != 0)
+	if (zioctl(zfs_fd, ioc, &zc) != 0)
 		error = errno;
 
 	if (error != expected) {
@@ -713,7 +744,7 @@ zfs_ioc_input_tests(const char *pool)
 	(void) snprintf(clone, sizeof (clone), "%s/test-fs-clone", pool);
 	(void) snprintf(backup, sizeof (backup), "%s/backup", pool);
 
-	err = lzc_create(dataset, DMU_OST_ZFS, NULL, NULL, 0);
+	err = lzc_create(dataset, (enum lzc_dataset_type)DMU_OST_ZFS, NULL, NULL, 0);
 	if (err) {
 		(void) fprintf(stderr, "could not create '%s': %s\n",
 		    dataset, strerror(errno));
@@ -816,9 +847,14 @@ zfs_ioc_input_tests(const char *pool)
 }
 
 enum zfs_ioc_ref {
+#ifdef __APPLE__
+	ZFS_IOC_BASE = _IOWR('Z', 0, struct zfs_cmd),
+#else
 	ZFS_IOC_BASE = ('Z' << 8),
-	LINUX_IOC_BASE = ('Z' << 8) + 0x80,
-	FREEBSD_IOC_BASE = ('Z' << 8) + 0xC0,
+#endif
+	LINUX_IOC_BASE = ZFS_IOC_BASE + 0x80,
+	FREEBSD_IOC_BASE = ZFS_IOC_BASE + 0xC0,
+	OSX_IOC_BASE = ZFS_IOC_BASE + 0xD0,
 };
 
 /*
@@ -899,17 +935,17 @@ validate_ioc_values(void)
 	    ZFS_IOC_BASE + 67 == ZFS_IOC_BOOKMARK &&
 	    ZFS_IOC_BASE + 68 == ZFS_IOC_GET_BOOKMARKS &&
 	    ZFS_IOC_BASE + 69 == ZFS_IOC_DESTROY_BOOKMARKS &&
-	    ZFS_IOC_BASE + 70 == ZFS_IOC_CHANNEL_PROGRAM &&
-	    ZFS_IOC_BASE + 71 == ZFS_IOC_RECV_NEW &&
-	    ZFS_IOC_BASE + 72 == ZFS_IOC_POOL_SYNC &&
-	    ZFS_IOC_BASE + 73 == ZFS_IOC_LOAD_KEY &&
-	    ZFS_IOC_BASE + 74 == ZFS_IOC_UNLOAD_KEY &&
-	    ZFS_IOC_BASE + 75 == ZFS_IOC_CHANGE_KEY &&
-	    ZFS_IOC_BASE + 76 == ZFS_IOC_REMAP &&
-	    ZFS_IOC_BASE + 77 == ZFS_IOC_POOL_CHECKPOINT &&
-	    ZFS_IOC_BASE + 78 == ZFS_IOC_POOL_DISCARD_CHECKPOINT &&
-	    ZFS_IOC_BASE + 79 == ZFS_IOC_POOL_INITIALIZE &&
-	    ZFS_IOC_BASE + 80 == ZFS_IOC_POOL_TRIM &&
+	    ZFS_IOC_BASE + 70 == ZFS_IOC_LOAD_KEY &&
+	    ZFS_IOC_BASE + 71 == ZFS_IOC_UNLOAD_KEY &&
+	    ZFS_IOC_BASE + 72 == ZFS_IOC_CHANGE_KEY &&
+	    ZFS_IOC_BASE + 73 == ZFS_IOC_REMAP &&
+	    ZFS_IOC_BASE + 74 == ZFS_IOC_POOL_CHECKPOINT &&
+	    ZFS_IOC_BASE + 75 == ZFS_IOC_POOL_DISCARD_CHECKPOINT &&
+	    ZFS_IOC_BASE + 76 == ZFS_IOC_POOL_INITIALIZE &&
+	    ZFS_IOC_BASE + 77 == ZFS_IOC_CHANNEL_PROGRAM &&
+	    ZFS_IOC_BASE + 78 == ZFS_IOC_POOL_SYNC &&
+	    ZFS_IOC_BASE + 79 == ZFS_IOC_POOL_TRIM &&
+	    ZFS_IOC_BASE + 80 == ZFS_IOC_RECV_NEW &&
 	    LINUX_IOC_BASE + 1 == ZFS_IOC_EVENTS_NEXT &&
 	    LINUX_IOC_BASE + 2 == ZFS_IOC_EVENTS_CLEAR &&
 	    LINUX_IOC_BASE + 3 == ZFS_IOC_EVENTS_SEEK);

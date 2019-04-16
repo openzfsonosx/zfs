@@ -48,6 +48,7 @@ verify_runnable "both"
 
 function cleanup
 {
+	$ZFS umount $ctr
 	destroy_dataset $snap
 	destroy_dataset -r $ctr
 
@@ -72,6 +73,8 @@ function do_testing # <prop> <prop_value>
 	$ZFS receive -d $ctr <$stream
 	(( $? != 0 )) && \
 		log_fail "'$ZFS receive' fails to receive send streams."
+
+	$ZFS mount $ctr
 
 	#verify receive result
 	! datasetexists $rstfs && \

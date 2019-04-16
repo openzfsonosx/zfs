@@ -40,8 +40,8 @@ function cleanup
 
 function setup_mirror
 {
-	truncate -s $SPA_MINDEVSIZE $DEVICE1
-	truncate -s $SPA_MINDEVSIZE $DEVICE2
+	$TRUNCATE -s $SPA_MINDEVSIZE $DEVICE1
+	$TRUNCATE -s $SPA_MINDEVSIZE $DEVICE2
 	log_must zpool create -f $TESTPOOL mirror $DEVICE1 $DEVICE2
 }
 

@@ -103,7 +103,8 @@ function _generate_data_common
 		for j in {1..$files}; do
 			typeset file="/$pool/$datasetname$i/file$j"
 			dd if=/dev/urandom of=$file bs=128k count=$blocks > /dev/null
-			[[ -n $md5file ]] && md5sum $file >> $md5file
+#			[[ -n $md5file ]] && md5sum  $file >> $md5file
+			[[ -n $md5file ]] && $MD5SUM -r $file >> $md5file
 		done
 		( $newdata ) && sync
 	done
@@ -141,7 +142,15 @@ function verify_data_md5sums
 		return 1
 	fi
 
-	md5sum -c --quiet $md5file
+	#$MD5SUM -c --quiet $md5file
+	# md5sum -c file - will check the contents listed in file
+	# no such equivalence on osx.
+	typeset files = $(awk '{print $2}' $md5file)
+	for j in {1..$files}; do
+		[[ -n $md5file ]] && $MD5SUM -r $file >> "${md5file}.2"
+	done
+
+	$DIFF "$md5file" "${md5file}.2" > /dev/null
 	return $?
 }
 

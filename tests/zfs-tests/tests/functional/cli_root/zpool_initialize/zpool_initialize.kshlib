@@ -21,7 +21,7 @@ function initialize_prog_line # pool disk
 {
         typeset pool="$1"
         typeset disk="$2"
-        zpool status -i "$pool" | grep "$disk" | grep "[[:digit:]]* initialized"
+		zpool status -LPi "$pool" | grep "$disk" | grep "[[:digit:]]* initialized"
 }
 
 function initialize_progress # pool disk
@@ -32,12 +32,8 @@ function initialize_progress # pool disk
 
 function cleanup
 {
-        if poolexists $TESTPOOL; then
-                log_must zpool destroy -f $TESTPOOL
-        fi
-
-	if poolexists $TESTPOOL1; then
-		log_must zpool destroy -f $TESTPOOL1
-	fi
+	if poolexists $TESTPOOL; then
+	   log_must zpool destroy -f $TESTPOOL
+    fi
 }
 log_onexit cleanup

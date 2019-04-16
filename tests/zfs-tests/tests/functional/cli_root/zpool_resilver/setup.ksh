@@ -35,5 +35,5 @@ default_mirror_setup_noexit $DISK1 $DISK2 $DISK3
 mntpnt=$(get_prop mountpoint $TESTPOOL/$TESTFS)
 
 # Create 256M of data
-log_must file_write -b 1048576 -c 256 -o create -d 0 -f $mntpnt/bigfile
+log_must $FILE_WRITE -b 1048576 -c 256 -o create -d 0 -f $mntpnt/bigfile
 log_pass

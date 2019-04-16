@@ -55,6 +55,7 @@ function cleanup
 		cd $CWD || log_fail "Could not cd $CWD"
 	fi
 
+	$ZFS umount $SNAPFS
 	destroy_dataset $SNAPFS
 
         if [[ -e $SNAPDIR ]]; then
@@ -104,6 +105,8 @@ log_must $ZFS snapshot $SNAPFS
 log_note "Remove all of the original files..."
 log_must $RM -f $TESTDIR/file* > /dev/null 2>&1
 
+$ZFS mount $SNAPFS
+
 log_note "Create tarball of snapshot..."
 CWD=$PWD
 cd $SNAPDIR || log_fail "Could not cd $SNAPDIR"
@@ -127,5 +130,7 @@ $GREP different /tmp/zfs_snapshot2.$$ >/dev/null 2>&1
 if [[ $? -ne 1 ]]; then
 	log_fail "Directory structures differ."
 fi
+
+$ZFS umount $SNAPFS
 
 log_pass "Directory structures match."

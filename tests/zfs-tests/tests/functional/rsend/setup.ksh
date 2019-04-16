@@ -47,8 +47,8 @@ fi
 sysctl -w kstat.zfs.darwin.tunable.zvol_inhibit_dev=1
 
 if is_global_zone ; then
-	log_must $ZPOOL create $POOL $DISK1
-	log_must $ZPOOL create $POOL2 $DISK2
+	log_must $ZPOOL create -f $POOL $DISK1
+	log_must $ZPOOL create -f $POOL2 $DISK2
 fi
 log_must $MKDIR -p $BACKDIR $TESTDIR
 

@@ -48,6 +48,7 @@ verify_runnable "both"
 
 function cleanup
 {
+	$ZFS umount $snapctrfs
 	destroy_dataset -r $ctrfs
 	destroy_dataset -r $snappool
 
@@ -88,9 +89,13 @@ if ! datasetexists $ctrfs || ! snapexists $snapctrfs; then
 	log_fail "zfs send/receive fails with snapshot $snapfs."
 fi
 
+$ZFS mount $snapctrfs
+
 for dir in $fsdir $snapdir; do
-	FILE_COUNT=`$LS -Al $dir | $GREP -v "total" | wc -l`
+	FILE_COUNT=`$LS -Al $dir | egrep -v $IGNORE | wc -l`
 	(( FILE_COUNT != COUNT )) && log_fail "Got $FILE_COUNT expected $COUNT"
 done
+
+$ZFS umount $snapctrfs
 
 log_pass "'zfs send/receive' works as expected with snapshots from 'snapshot -r'"

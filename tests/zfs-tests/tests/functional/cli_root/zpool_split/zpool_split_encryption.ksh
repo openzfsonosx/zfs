@@ -44,8 +44,8 @@ passphrase="password"
 altroot="$TESTDIR/zpool-split-$RANDOM"
 
 # 1. Create an encrypted pool
-truncate -s $SPA_MINDEVSIZE $DEVICE1
-truncate -s $SPA_MINDEVSIZE $DEVICE2
+$TRUNCATE -s $SPA_MINDEVSIZE $DEVICE1
+$TRUNCATE -s $SPA_MINDEVSIZE $DEVICE2
 log_must eval "echo "$passphrase" | zpool create -O encryption=aes-256-ccm " \
 	"-O keyformat=passphrase $TESTPOOL mirror $DEVICE1 $DEVICE2"
 

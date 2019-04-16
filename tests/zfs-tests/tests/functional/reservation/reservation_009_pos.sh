@@ -52,7 +52,7 @@ set -p
 
 verify_runnable "both"
 
-log_assert "Setting top level dataset reservation to 'none' allows more data "
+log_assert "Setting top level dataset reservation to 'none' allows more data "\
     "to be written to top level filesystem"
 
 function cleanup

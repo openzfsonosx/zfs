@@ -67,7 +67,7 @@ SPARE_DEVS="$SPARE_DEV1 $SPARE_DEV2"
 for type in "mirror" "raidz1" "raidz2" "raidz3"
 do
 	# 1. Create a redundant pool with a spare device
-	truncate -s $SPA_MINDEVSIZE $DATA_DEVS $SPARE_DEVS
+	$TRUNCATE -s $SPA_MINDEVSIZE $DATA_DEVS $SPARE_DEVS
 	log_must zpool create $TESTPOOL $type $FAULT_DEV $SAFE_DEVS
 	log_must zpool add $TESTPOOL spare $SPARE_DEV1
 
@@ -83,7 +83,7 @@ do
 	#     spare vdev
 	log_must zpool replace $TESTPOOL $FAULT_DEV $REPLACE_DEV
 	log_must wait_vdev_state $TESTPOOL $REPLACE_DEV "ONLINE" 60
-	zpool status | nawk -v poolname="$TESTPOOL" -v type="$type" 'BEGIN {s=""}
+	zpool status | $NAWK -v poolname="$TESTPOOL" -v type="$type" 'BEGIN {s=""}
 	    $1 ~ poolname {c=4}; (c && c--) { s=s$1":" }
 	    END { if (s != poolname":"type"-0:spare-0:replacing-0:") exit 1; }'
 	if [[ $? -ne 0 ]]; then

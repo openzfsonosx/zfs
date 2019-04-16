@@ -48,7 +48,7 @@ verify_runnable "both"
 
 function set_max_blocks
 {
-	echo "zfs_async_block_max_blocks/Z$1" | mdb -kw
+	#echo "zfs_async_block_max_blocks/Z$1" | mdb -kw
 }
 
 function cleanup

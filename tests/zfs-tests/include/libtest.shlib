@@ -32,6 +32,7 @@
 #
 
 . ${STF_TOOLS}/contrib/include/logapi.shlib
+. ${STF_SUITE}/include/math.shlib
 
 ZFS=${ZFS:-/usr/sbin/zfs}
 ZPOOL=${ZPOOL:-/usr/sbin/zpool}
@@ -56,6 +57,15 @@ function is_linux
 function is_osx
 {
         if [[ $(uname -s) == "Darwin" ]]; then
+                return 0
+        else
+                return 1
+        fi
+}
+
+function is_32bit
+{
+		if [[ $(getconf LONG_BIT) == "32" ]]; then
                 return 0
         else
                 return 1
@@ -558,6 +568,80 @@ function default_cleanup_noexit
 
 	[[ -d $TESTDIR ]] && \
 		log_must $RM -rf $TESTDIR
+}
+
+#
+# Common function used to cleanup snapshot of file system or volume. Default to
+# delete the file system's snapshot
+#
+# $1 snapshot name
+#
+function destroy_snapshot
+{
+	typeset snap=${1:-$TESTPOOL/$TESTFS@$TESTSNAP}
+
+	if ! snapexists $snap; then
+		log_fail "'$snap' does not exist."
+	fi
+
+	#
+	# For the sake of the value which come from 'get_prop' is not equal
+	# to the really mountpoint when the snapshot is unmounted. So, firstly
+	# check and make sure this snapshot's been mounted in current system.
+	#
+	typeset mtpt=""
+	if ismounted $snap; then
+		mtpt=$(get_prop mountpoint $snap)
+		(($? != 0)) && \
+			log_fail "get_prop mountpoint $snap failed."
+	fi
+
+	destroy_dataset "$snap"
+	[[ $mtpt != "" && -d $mtpt ]] && \
+		log_must rm -rf $mtpt
+}
+
+#
+# Common function used to cleanup clone.
+#
+# $1 clone name
+#
+function destroy_clone
+{
+	typeset clone=${1:-$TESTPOOL/$TESTCLONE}
+
+	if ! datasetexists $clone; then
+		log_fail "'$clone' does not existed."
+	fi
+
+	# With the same reason in destroy_snapshot
+	typeset mtpt=""
+	if ismounted $clone; then
+		mtpt=$(get_prop mountpoint $clone)
+		(($? != 0)) && \
+			log_fail "get_prop mountpoint $clone failed."
+	fi
+
+	destroy_dataset "$clone"
+	[[ $mtpt != "" && -d $mtpt ]] && \
+		log_must rm -rf $mtpt
+}
+
+#
+# Common function used to cleanup bookmark of file system or volume.  Default
+# to delete the file system's bookmark.
+#
+# $1 bookmark name
+#
+function destroy_bookmark
+{
+	typeset bkmark=${1:-$TESTPOOL/$TESTFS#$TESTBKMARK}
+
+	if ! bkmarkexists $bkmark; then
+		log_fail "'$bkmarkp' does not existed."
+	fi
+
+	destroy_dataset "$bkmark"
 }
 
 
@@ -1685,6 +1769,16 @@ function get_disklist # pool
 }
 
 #
+# Given a pool, and this function list all disks in the pool with their full
+# path (like "/dev/sda" instead of "sda").
+#
+function get_disklist_fullpath # pool
+{
+	args="-P $1"
+	get_disklist $args
+}
+
+#
 # Destroy all existing metadevices and state database
 #
 function destroy_metas
@@ -2756,6 +2850,39 @@ function random_get
 	_random_get "$#" "$@"
 }
 
+# Write data that can be compressed into a directory
+function write_compressible
+{
+	typeset dir=$1
+	typeset megs=$2
+	typeset nfiles=${3:-1}
+	typeset bs=${4:-1024k}
+	typeset fname=${5:-file}
+
+	[[ -d $dir ]] || log_fail "No directory: $dir"
+
+	# Under Linux fio is not currently used since its behavior can
+	# differ significantly across versions.  This includes missing
+	# command line options and cases where the --buffer_compress_*
+	# options fail to behave as expected.
+	typeset file_bytes=$(to_bytes $megs)
+	typeset bs_bytes=4096
+	typeset blocks=$(($file_bytes / $bs_bytes))
+
+	for (( i = 0; i < $nfiles; i++ )); do
+		$TRUNCATE -s $file_bytes $dir/$fname.$i
+
+		# Write every third block to get 66% compression.
+		for (( j = 0; j < $blocks; j += 3 )); do
+			dd if=/dev/urandom of=$dir/$fname.$i \
+			    seek=$j bs=$bs_bytes count=1 \
+			    conv=notrunc >/dev/null 2>&1
+		done
+	done
+}
+
+
+
 #
 # Detect if the current system support slog
 #
@@ -3113,6 +3240,17 @@ function is_mp
 	fi
 }
 
+function get_cpu_freq
+{
+        if is_linux; then
+                lscpu | awk '/CPU MHz/ { print $3 }'
+		elif is_osx; then
+			 	sysctl hw.cpufrequency | awk '{ print $1 / 1000000 }'
+        else
+                psrinfo -v 0 | awk '/processor operates at/ {print $6}'
+        fi
+}
+
 # Run the given command as the user provided.
 function user_run
 {
@@ -3313,24 +3451,52 @@ function sync_pool #pool <force>
 }
 
 #
-# Sync data to the pool
+# Wait for zpool 'freeing' property drops to zero.
 #
 # $1 pool name
-# $2 boolean to force uberblock (and config including zpool cache file) update
 #
-function sync_pool #pool <force>
+function wait_freeing #pool
 {
 	typeset pool=${1:-$TESTPOOL}
-	typeset force=${2:-false}
-
-	if [[ $force == true ]]; then
-		log_must zpool sync -f $pool
-	else
-		log_must zpool sync $pool
-	fi
-
-	return 0
+    while true; do
+    	  [[ "0" == "$(zpool list -Ho freeing $pool)" ]] && break
+          log_must sleep 1
+	done
 }
+
+#
+# Wait for every device replace operation to complete
+#
+# $1 pool name
+#
+function wait_replacing #pool
+{
+	typeset pool=${1:-$TESTPOOL}
+    while true; do
+    	  [[ "" == "$(zpool status $pool |
+          awk '/replacing-[0-9]+/ {print $1}')" ]] && break
+          log_must sleep 1
+    done
+}
+
+# Wait for a pool to be scrubbed
+#
+# $1 pool name
+# $2 number of seconds to wait (optional)
+#
+# Returns true when pool has been scrubbed, or false if there's a timeout or if
+# no scrub was done.
+#
+function wait_scrubbed
+{
+	typeset pool=${1:-$TESTPOOL}
+    while true ; do
+    	  is_pool_scrubbed $pool && break
+          log_must sleep 1
+    done
+}
+
+
 
 function unmount_fs_mountpoint # mountpoint
 {

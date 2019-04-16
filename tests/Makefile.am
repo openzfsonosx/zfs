@@ -1,6 +1,8 @@
 SUBDIRS  = zfs-tests/tests/functional/ctime
 SUBDIRS += zfs-tests/tests/functional/exec
 SUBDIRS += zfs-tests/cmd/chg_usr_exec
+SUBDIRS += zfs-tests/cmd/mkfile
+SUBDIRS += zfs-tests/cmd/mkfiles
 SUBDIRS += zfs-tests/cmd/mktree
 SUBDIRS += zfs-tests/cmd/file_write
 SUBDIRS += zfs-tests/cmd/mkbusy
@@ -10,10 +12,13 @@ SUBDIRS += zfs-tests/cmd/largest_file
 SUBDIRS += zfs-tests/cmd/rm_lnkcnt_zero_file
 SUBDIRS += zfs-tests/cmd/readmmap
 SUBDIRS += zfs-tests/cmd/mmapwrite
+SUBDIRS += zfs-tests/cmd/nvlist_to_lua
 SUBDIRS += zfs-tests/cmd/file_trunc
 SUBDIRS += zfs-tests/cmd/file_check
+SUBDIRS += zfs-tests/cmd/libzfs_input_check
 SUBDIRS += zfs-tests/tests/functional/libzfs
 SUBDIRS += zfs-tests/tests/functional/tmpfile
+SUBDIRS += zfs-tests/tests/functional/checksum
 
 abs_top_srcdir = @abs_top_srcdir@
 SHELL = /bin/bash

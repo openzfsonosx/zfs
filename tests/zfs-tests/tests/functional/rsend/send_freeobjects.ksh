@@ -74,8 +74,8 @@ log_must rm $f2
 log_must zfs snap $POOL/$sendds@A
 log_must rm $f3
 log_must zfs snap $POOL/$sendds@B
-log_must eval "zfs send $POOL/$sendds@A | zfs recv $POOL/$recvds"
+log_must eval "zfs send $POOL/$sendds@A | zfs recv -F $POOL/$recvds"
 log_must eval "zfs send -i $POOL/$sendds@A $POOL/$sendds@B |" \
-	"zfs recv $POOL/$recvds"
+	"zfs recv -F $POOL/$recvds"
 log_mustnot zdb $POOL/$recvds@B $o3
 log_pass "Verify FREEOBJECTS record frees sequential objects"

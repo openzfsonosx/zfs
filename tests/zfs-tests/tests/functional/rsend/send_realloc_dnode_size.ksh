@@ -93,7 +93,8 @@ log_must zfs snapshot $POOL/fs@c
 # 4. Create an empty file and add xattrs to it to exercise reclaiming a
 #    dnode that requires more than 1 slot for its bonus buffer (Zol #7433)
 log_must zfs set compression=on xattr=sa $POOL/fs
-log_must eval "python -c 'print \"a\" * 512' | attr -s bigval /$POOL/fs/attrs"
+#log_must eval "python -c 'print \"a\" * 512' | attr -s bigval /$POOL/fs/attrs"
+log_must eval "xattr -wx bigval $(python -c 'print "a" * 512') /$POOL/fs/attrs"
 log_must zfs snapshot $POOL/fs@d
 
 # 5. Generate initial and incremental streams
@@ -103,9 +104,9 @@ log_must eval "zfs send -i $POOL/fs@b $POOL/fs@c > $BACKDIR/fs-dn-2k"
 log_must eval "zfs send -i $POOL/fs@c $POOL/fs@d > $BACKDIR/fs-attr"
 
 # 6. Verify initial and incremental streams can be received
-log_must eval "zfs recv $POOL/newfs < $BACKDIR/fs-dn-1k"
-log_must eval "zfs recv $POOL/newfs < $BACKDIR/fs-dn-legacy"
-log_must eval "zfs recv $POOL/newfs < $BACKDIR/fs-dn-2k"
-log_must eval "zfs recv $POOL/newfs < $BACKDIR/fs-attr"
+log_must eval "zfs recv -F $POOL/newfs < $BACKDIR/fs-dn-1k"
+log_must eval "zfs recv -F $POOL/newfs < $BACKDIR/fs-dn-legacy"
+log_must eval "zfs recv -F $POOL/newfs < $BACKDIR/fs-dn-2k"
+log_must eval "zfs recv -F $POOL/newfs < $BACKDIR/fs-attr"
 
 log_pass "Verify incremental receive handles objects with changed dnode size"

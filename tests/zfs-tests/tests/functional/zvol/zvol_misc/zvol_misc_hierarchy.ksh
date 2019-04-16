@@ -53,7 +53,7 @@ streamfile_zvol="$TEST_BASE_DIR/streamfile_zvol.$$"
 
 # 1. Create filesystems and ZVOLs
 # NOTE: set "mountpoint=none" just to speed up the test process
-log_must truncate -s $MINVDEVSIZE "$vdevfile"
+log_must $TRUNCATE -s $MINVDEVSIZE "$vdevfile"
 log_must zpool create -O mountpoint=none "$poolname" "$vdevfile"
 log_must zfs create "$poolname/sendfs"
 log_must zfs create -V 1M -s "$poolname/sendvol"

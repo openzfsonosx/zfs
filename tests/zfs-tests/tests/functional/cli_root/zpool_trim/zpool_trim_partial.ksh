@@ -63,7 +63,7 @@ typeset trim_extent_bytes_min=$(get_tunable zfs_trim_extent_bytes_min)
 log_must set_tunable64 zfs_trim_extent_bytes_min 4096
 
 log_must mkdir "$TESTDIR"
-log_must truncate -s $LARGESIZE "$LARGEFILE"
+log_must $TRUNCATE -s $LARGESIZE "$LARGEFILE"
 log_must zpool create $TESTPOOL "$LARGEFILE"
 log_must mkfile $(( floor(LARGESIZE * 0.80) )) /$TESTPOOL/file
 log_must zpool sync

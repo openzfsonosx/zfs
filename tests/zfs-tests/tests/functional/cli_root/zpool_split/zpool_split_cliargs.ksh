@@ -38,8 +38,8 @@ function cleanup
 
 function setup_mirror
 {
-	truncate -s $SPA_MINDEVSIZE $DEVICE1
-	truncate -s $SPA_MINDEVSIZE $DEVICE2
+	$TRUNCATE -s $SPA_MINDEVSIZE $DEVICE1
+	$TRUNCATE -s $SPA_MINDEVSIZE $DEVICE2
 	log_must zpool create -f $TESTPOOL mirror $DEVICE1 $DEVICE2
 }
 
@@ -73,7 +73,7 @@ cleanup
 
 # 3. Verify we cannot split a pool if the destination already exists
 setup_mirror
-truncate -s $SPA_MINDEVSIZE $DEVICE3
+$TRUNCATE -s $SPA_MINDEVSIZE $DEVICE3
 log_must zpool create $TESTPOOL2 $DEVICE3
 log_mustnot zpool split $TESTPOOL $TESTPOOL2
 

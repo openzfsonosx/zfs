@@ -49,7 +49,7 @@ function cleanup
 log_assert "Verifying 'zfs receive' works correctly on deduplicated streams"
 log_onexit cleanup
 
-truncate -s 100M $tpoolfile
+$TRUNCATE -s 100M $tpoolfile
 log_must zpool create $temppool $tpoolfile
 log_must zfs create $src_fs
 src_mnt=$(get_prop mountpoint $src_fs) || log_fail "get_prop mountpoint $src_fs"

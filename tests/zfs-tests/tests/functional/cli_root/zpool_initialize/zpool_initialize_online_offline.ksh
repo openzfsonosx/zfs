@@ -72,3 +72,5 @@ new_action_date=$(initialize_prog_line $TESTPOOL $DISK1 | \
 log_must eval "initialize_prog_line $TESTPOOL $DISK1 | grep suspended"
 
 log_pass "Initializing performs as expected across offline/online"
+
+zpool export $TESTPOOL

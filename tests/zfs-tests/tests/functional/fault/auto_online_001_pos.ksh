@@ -55,7 +55,7 @@ fi
 function cleanup
 {
 	destroy_pool $TESTPOOL
-	unload_scsi_debug
+	#unload_scsi_debug
 }
 
 log_assert "Testing automated auto-online FMA test"
@@ -63,7 +63,8 @@ log_assert "Testing automated auto-online FMA test"
 log_onexit cleanup
 
 # If using the default loop devices, need a scsi_debug device for auto-online
-if is_loop_device $DISK1; then
+#if is_loop_device $DISK1; then
+if false $DISK1; then
 	load_scsi_debug $SDSIZE $SDHOSTS $SDTGTS $SDLUNS '512b'
 	SDDEVICE=$(get_debug_device)
 	SDDEVICE_ID=$(get_persistent_disk_name $SDDEVICE)

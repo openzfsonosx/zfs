@@ -31,8 +31,6 @@
 . $STF_SUITE/include/libtest.shlib
 . $STF_SUITE/tests/functional/rsend/rsend.cfg
 
-TRUNCATE=/usr/local/bin/gtruncate
-
 #
 # Set up test model which includes various datasets
 #
@@ -118,7 +116,8 @@ function cleanup_pool
 	log_must $RM -rf $BACKDIR/*
 
 	if is_global_zone ; then
-                log_must $ZFS destroy -Rf $pool	
+                log_must $ZFS destroy -R $pool
+                $ZFS destroy -Rf $pool
 	else
 		typeset list=$($ZFS list -H -r -t filesystem,snapshot,volume -o name $pool)
 		for ds in $list ; do
@@ -486,19 +485,23 @@ function churn_files
 			value=$((RANDOM % 5))
 			if [ $value -eq 0 -a $xattrs -ne 0 ]; then
 				attrname="testattr$((RANDOM % 3))"
-				attr -qr $attrname $file_name || \
+				#attr -qr $attrname $file_name || \
+				#    log_fail "Failed to remove $attrname"
+				xattr -d $attrname $file_name || \
 				    log_fail "Failed to remove $attrname"
-				attr -qs $attrname -V TestValue $file_name || \
+				#attr -qs $attrname -V TestValue $file_name || \
+				#    log_fail "Failed to set $attrname"
+				xattr -w "$attrname" "TestValue" $file_name || \
 				    log_fail "Failed to set $attrname"
 			elif [ $value -eq 1 ]; then
 				dd if=/dev/urandom of=$file_name \
 				    bs=$file_size count=1 >/dev/null 2>&1 || \
 				    log_fail "Failed to overwrite $file_name"
 			elif [ $value -eq 2 ]; then
-				truncate -s $file_size $file_name || \
+				$TRUNCATE -s $file_size $file_name || \
 				    log_fail "Failed to truncate $file_name"
 			elif [ $value -eq 3 ]; then
-				truncate -s 0 $file_name || \
+				$TRUNCATE -s 0 $file_name || \
 				    log_fail "Failed to truncate $file_name"
 			else
 				rm $file_name || \
@@ -516,7 +519,10 @@ function churn_files
 			if [ $xattrs -ne 0 ]; then
 				for j in {0..2}; do
 					attrname="testattr$j"
-					attr -qs $attrname -V TestValue \
+					#attr -qs $attrname -V TestValue \
+					#    $file_name || log_fail \
+					#    "Failed to set $attrname"
+					xattr -w "$attrname" "TestValue" \
 					    $file_name || log_fail \
 					    "Failed to set $attrname"
 				done
@@ -718,7 +724,7 @@ function verify_stream_size
 {
 	typeset stream=$1
 	typeset ds=$2
-	typeset percent=${3:-90}
+	typeset percent=${3:-66}
 	typeset inc_src=$4
 
 	[[ -f $stream ]] || log_fail "No such file: $stream"
@@ -774,6 +780,6 @@ function rand_set_prop
 # data is included in the checksum (no meta data, or xattrs).
 function recursive_cksum
 {
-	find $1 -type f -exec sha256sum {} \; | \
-	    sort -k 2 | awk '{ print $1 }' | sha256sum
+	find $1 -type f -exec shasum -a 256 {} \; | \
+	    sort -k 2 | awk '{ print $1 }' | shasum -a 256
 }

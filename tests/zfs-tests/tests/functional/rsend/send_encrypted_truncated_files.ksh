@@ -52,8 +52,8 @@ log_onexit cleanup
 
 function recursive_cksum
 {
-	find $1 -type f -exec sha256sum {} \; | \
-		sort -k 2 | awk '{ print $1 }' | sha256sum
+	find $1 -type f -exec shasum -a 256 {} \; | \
+		sort -k 2 | awk '{ print $1 }' | shasum -a 256
 }
 
 log_assert "Verify 'zfs send -w' works with many different file layouts"
@@ -88,17 +88,17 @@ log_must zfs snapshot $TESTPOOL/$TESTFS2@snap1
 # fourth tests an object that is truncated from a single block
 # to a smaller single block.
 #
-log_must truncate -s 131072 /$TESTPOOL/$TESTFS2/truncated
-log_must truncate -s 393216 /$TESTPOOL/$TESTFS2/truncated2
+log_must $TRUNCATE -s 131072 /$TESTPOOL/$TESTFS2/truncated
+log_must $TRUNCATE -s 393216 /$TESTPOOL/$TESTFS2/truncated2
 log_must rm -f /$TESTPOOL/$TESTFS2/truncated3
 log_must rm -f /$TESTPOOL/$TESTFS2/truncated4
 log_must zpool sync $TESTPOOL
 log_must zfs umount $TESTPOOL/$TESTFS2
 log_must zfs mount $TESTPOOL/$TESTFS2
 log_must dd if=/dev/urandom of=/$TESTPOOL/$TESTFS2/truncated3 \
-	bs=128k count=3 iflag=fullblock
+	bs=128k count=3
 log_must dd if=/dev/urandom of=/$TESTPOOL/$TESTFS2/truncated4 \
-	bs=512 count=1 iflag=fullblock
+	bs=512 count=1
 
 log_must zfs snapshot $TESTPOOL/$TESTFS2@snap2
 expected_cksum=$(recursive_cksum /$TESTPOOL/$TESTFS2)

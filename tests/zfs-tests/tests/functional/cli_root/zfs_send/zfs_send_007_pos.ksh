@@ -63,7 +63,7 @@ test_pool ()
 	while true; do
 		log_must find $mntpnt/* -delete
 		sync
-		log_must mkfiles "$mntpnt/" 4000
+		log_must $MKFILES "$mntpnt/" 4000
 		FILE=$(ls -i $mntpnt | awk \
 			'{if ($1 == '$first_object') {print $2}}')
 		if [[ -n "$FILE" ]]; then
@@ -87,7 +87,7 @@ test_pool ()
 }
 
 test_pool $TESTPOOL
-log_must truncate --size=1G $vdev
+log_must $TRUNCATE --size=1G $vdev
 log_must zpool create -o version=1 tmp_pool $vdev
 test_pool tmp_pool
 log_must zpool destroy tmp_pool

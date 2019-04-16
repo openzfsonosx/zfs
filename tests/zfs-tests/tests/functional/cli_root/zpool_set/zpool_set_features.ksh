@@ -53,7 +53,7 @@ FILEVDEV="$TEST_BASE_DIR/zpool_set_features.$$.dat"
 for feature in "${features[@]}"
 do
 	propname="feature@$feature"
-	truncate -s $SPA_MINDEVSIZE $FILEVDEV
+	$TRUNCATE -s $SPA_MINDEVSIZE $FILEVDEV
 	log_must zpool create -d -f $TESTPOOL1 $FILEVDEV
 	log_must zpool set "$propname=enabled" $TESTPOOL1
 	propval="$(get_pool_prop $propname $TESTPOOL1)"
@@ -64,7 +64,7 @@ done
 for feature in "${features[@]}"
 do
 	propname="feature@$feature"
-	truncate -s $SPA_MINDEVSIZE $FILEVDEV
+	$TRUNCATE -s $SPA_MINDEVSIZE $FILEVDEV
 	log_must zpool create -f $TESTPOOL1 $FILEVDEV
 	log_mustnot zpool set "$propname=disabled" $TESTPOOL1
 	propval="$(get_pool_prop $propname $TESTPOOL1)"

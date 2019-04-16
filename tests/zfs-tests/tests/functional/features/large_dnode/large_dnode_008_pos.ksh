@@ -67,7 +67,7 @@ log_must zfs set xattr=sa $TEST_FS
 for ((i=0; i < 100; i++)); do
 	dir="/$TEST_FS/dir.$i"
 	log_must mkdir "$dir"
-	log_must eval "xattrtest -R -r -y -x 1 -f 1024 -k -p $dir >/dev/null 2>&1 &"
+	log_must eval "$XATTRTEST -R -r -y -x 1 -f 1024 -k -p $dir >/dev/null 2>&1 &"
 done
 
 log_must wait

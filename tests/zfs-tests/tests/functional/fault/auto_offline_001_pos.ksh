@@ -82,10 +82,10 @@ typeset poolconfs=("mirror $filedev1 $removedev"
     "raidz $filedev1 $filedev2 $filedev3 cache $removedev"
 )
 
-log_must truncate -s $SPA_MINDEVSIZE $filedev1
-log_must truncate -s $SPA_MINDEVSIZE $filedev2
-log_must truncate -s $SPA_MINDEVSIZE $filedev3
-log_must truncate -s $SPA_MINDEVSIZE $sparedev
+log_must $TRUNCATE -s $SPA_MINDEVSIZE $filedev1
+log_must $TRUNCATE -s $SPA_MINDEVSIZE $filedev2
+log_must $TRUNCATE -s $SPA_MINDEVSIZE $filedev3
+log_must $TRUNCATE -s $SPA_MINDEVSIZE $sparedev
 
 for conf in "${poolconfs[@]}"
 do

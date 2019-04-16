@@ -33,3 +33,4 @@
 
 $SLEEP 5
 default_cleanup
+$ZPOOL export -fa

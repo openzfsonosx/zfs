@@ -45,7 +45,7 @@ populate_nested_pool
 INITSZ=$(zpool list -v | grep "$FILEDISK1" | awk '{print $2}')
 log_must zpool checkpoint $NESTEDPOOL
 
-log_must truncate -s $EXPSZ $FILEDISK1
+log_must $TRUNCATE -s $EXPSZ $FILEDISK1
 log_must zpool online -e $NESTEDPOOL $FILEDISK1
 NEWSZ=$(zpool list -v | grep "$FILEDISK1" | awk '{print $2}')
 nested_change_state_after_checkpoint

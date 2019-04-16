@@ -24,6 +24,11 @@
 #include <libzfs_core.h>
 #include <sys/nvpair.h>
 
+#ifdef __APPLE__
+// Why does our libuutil pull in zfs_flags?
+int zfs_flags = 0;
+#endif
+
 nvlist_t *nvl;
 const char *pool;
 boolean_t unexpected_failures;

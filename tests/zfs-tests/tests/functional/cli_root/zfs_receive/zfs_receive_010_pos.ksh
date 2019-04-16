@@ -145,6 +145,8 @@ done
 log_must zfs snapshot $fs@s1
 log_must zfs snapshot $fs2@s1
 
+mkdir -p $TESTDIR
+
 log_must zfs send $fs@s1 > $TESTDIR/zr010p
 log_must zfs send $fs2@s1 > $TESTDIR/zr010p2
 

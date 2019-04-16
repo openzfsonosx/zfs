@@ -59,7 +59,7 @@ for ((i=0; i < 100; i++)); do
 	else
 		do_unlink="-f $((RANDOM % 1024))"
 	fi
-	log_must eval "xattrtest -R -r -y -x 1 $do_unlink -p $dir >/dev/null 2>&1 &"
+	log_must eval "$XATTRTEST -R -r -y -x 1 $do_unlink -p $dir >/dev/null 2>&1 &"
 done
 
 log_must wait

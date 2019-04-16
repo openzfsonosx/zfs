@@ -99,10 +99,10 @@ DISK4="$TEST_BASE_DIR/zpool_disk4.dat"
 RESILVER_TIMEOUT=40
 
 # 1. Create the pool
-log_must truncate -s $DEVSIZE $DISK1
-log_must truncate -s $DEVSIZE $DISK2
-log_must truncate -s $DEVSIZE $DISK3
-log_must truncate -s $DEVSIZE $DISK4
+log_must $TRUNCATE -s $DEVSIZE $DISK1
+log_must $TRUNCATE -s $DEVSIZE $DISK2
+log_must $TRUNCATE -s $DEVSIZE $DISK3
+log_must $TRUNCATE -s $DEVSIZE $DISK4
 poolexists $TESTPOOL && destroy_pool $TESTPOOL
 log_must zpool create -O mountpoint=$TESTDIR $TESTPOOL \
     raidz2 $DISK1 $DISK2 $DISK3 $DISK4

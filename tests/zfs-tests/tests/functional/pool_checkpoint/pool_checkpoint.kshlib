@@ -292,8 +292,8 @@ function fragment_before_checkpoint
 	populate_nested_pool
 	log_must mkfile -n $BIGFILESIZE $NESTEDFS0FILE
 	log_must mkfile -n $BIGFILESIZE $NESTEDFS1FILE
-	log_must randwritecomp $NESTEDFS0FILE $RANDOMWRITES
-	log_must randwritecomp $NESTEDFS1FILE $RANDOMWRITES
+	log_must $RANDWRITECOMP $NESTEDFS0FILE $RANDOMWRITES
+	log_must $RANDWRITECOMP $NESTEDFS1FILE $RANDOMWRITES
 
 	#
 	# Display fragmentation on test log
@@ -306,8 +306,8 @@ function fragment_after_checkpoint_and_verify
 	log_must zfs destroy $NESTEDFS1
 	log_must zfs create -o compression=lz4 -o recordsize=8k $NESTEDFS2
 	log_must mkfile -n $BIGFILESIZE $NESTEDFS2FILE
-	log_must randwritecomp $NESTEDFS0FILE $RANDOMWRITES
-	log_must randwritecomp $NESTEDFS2FILE $RANDOMWRITES
+	log_must $RANDWRITECOMP $NESTEDFS0FILE $RANDOMWRITES
+	log_must $RANDWRITECOMP $NESTEDFS2FILE $RANDOMWRITES
 
 	#
 	# Display fragmentation on test log

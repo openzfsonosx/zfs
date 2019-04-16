@@ -70,7 +70,7 @@ log_must $FILE_WRITE -o create -f $TESTDIR/$TESTFILE -b $BLOCKSZ \
     -c $NUM_WRITES -d $DATA
 
 log_note "Sum the file, save for later comparison..."
-FILE_SUM=`$SUM -r $TESTDIR/$TESTFILE | $AWK  '{ print $1 }'`
+FILE_SUM=`$MD5SUM $TESTDIR/$TESTFILE | $AWK  '{ print $1 }'`
 log_note "FILE_SUM = $FILE_SUM"
 
 log_note "Create a snapshot and mount it..."
@@ -80,7 +80,7 @@ log_note "Append to the original file..."
 log_must $FILE_WRITE -o append -f $TESTDIR/$TESTFILE -b $BLOCKSZ \
     -c $NUM_WRITES -d $DATA
 
-SNAP_FILE_SUM=`$SUM -r $SNAPDIR/$TESTFILE | $AWK '{ print $1 }'`
+SNAP_FILE_SUM=`$MD5SUM $SNAPDIR/$TESTFILE | $AWK '{ print $1 }'`
 if [[ $SNAP_FILE_SUM -ne $FILE_SUM ]]; then
 	log_fail "Sums do not match, aborting!! ($SNAP_FILE_SUM != $FILE_SUM)"
 fi

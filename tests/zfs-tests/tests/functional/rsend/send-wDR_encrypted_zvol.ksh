@@ -86,8 +86,8 @@ log_must block_device_wait
 
 log_must mount $recvdev $recvmnt
 
-md5_1=$(cat $mntpnt/* | md5sum | awk '{print $1}')
-md5_2=$(cat $recvmnt/* | md5sum | awk '{print $1}')
+md5_1=$(cat $mntpnt/* | $MD5SUM | awk '{print $1}')
+md5_2=$(cat $recvmnt/* | $MD5SUM | awk '{print $1}')
 [[ "$md5_1" == "$md5_2" ]] || log_fail "md5 mismatch: $md5_1 != $md5_2"
 
 log_pass "zfs can receive raw, recursive, and deduplicated send streams"

@@ -39,7 +39,7 @@
 
 function cleanup
 {
-        mdb -kwe "zfs_initialize_value/Z $ORIG_PATTERN"
+        #mdb -kwe "zfs_initialize_value/Z $ORIG_PATTERN"
         zpool import -d $TESTDIR $TESTPOOL
 
         if datasetexists $TESTPOOL ; then
@@ -53,8 +53,8 @@ log_onexit cleanup
 PATTERN="deadbeefdeadbeef"
 SMALLFILE="$TESTDIR/smallfile"
 
-ORIG_PATTERN=$(mdb -ke "zfs_initialize_value/J" | tail -1 | awk '{print $NF}')
-log_must mdb -kwe "zfs_initialize_value/Z $PATTERN"
+#ORIG_PATTERN=$(mdb -ke "zfs_initialize_value/J" | tail -1 | awk '{print $NF}')
+#log_must mdb -kwe "zfs_initialize_value/Z $PATTERN"
 
 log_must mkdir "$TESTDIR"
 log_must mkfile $MINVDEVSIZE "$SMALLFILE"
