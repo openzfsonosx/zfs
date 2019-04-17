@@ -139,12 +139,12 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 	uint64_t version;
 
 	verify(nvlist_lookup_string(config, ZPOOL_CONFIG_POOL_NAME,
-	    &name) == 0);
+			&name) == 0);
 
 	verify(nvlist_lookup_uint64(config,
-	    ZPOOL_CONFIG_POOL_STATE, &state) == 0);
+			ZPOOL_CONFIG_POOL_STATE, &state) == 0);
 	verify(nvlist_lookup_uint64(config,
-	    ZPOOL_CONFIG_VERSION, &version) == 0);
+			ZPOOL_CONFIG_VERSION, &version) == 0);
 	if (!SPA_VERSION_IS_SUPPORTED(version)) {
 		printf("cannot import '%s': pool is formatted using an "
 		    "unsupported ZFS version\n", name);
@@ -154,7 +154,7 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 		uint64_t hostid;
 
 		if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_HOSTID,
-		    &hostid) == 0) {
+				&hostid) == 0) {
 			unsigned long system_hostid = gethostid() & 0xffffffff;
 
 			if ((unsigned long)hostid != system_hostid) {
@@ -163,9 +163,9 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 				time_t t;
 
 				verify(nvlist_lookup_string(config,
-				    ZPOOL_CONFIG_HOSTNAME, &hostname) == 0);
+						ZPOOL_CONFIG_HOSTNAME, &hostname) == 0);
 				verify(nvlist_lookup_uint64(config,
-				    ZPOOL_CONFIG_TIMESTAMP, &timestamp) == 0);
+						ZPOOL_CONFIG_TIMESTAMP, &timestamp) == 0);
 				t = timestamp;
 				printf("cannot import " "'%s': pool may be in "
 				    "use from other system, it was last "
@@ -272,12 +272,12 @@ zpool_import_by_guid(uint64_t searchguid)
 		verify(nvpair_value_nvlist(elem, &config) == 0);
 
 		verify(nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_STATE,
-		    &pool_state) == 0);
+				&pool_state) == 0);
 		if (pool_state == POOL_STATE_DESTROYED)
 			continue;
 
 		verify(nvlist_add_nvlist(config, ZPOOL_LOAD_POLICY,
-		    policy) == 0);
+				policy) == 0);
 
 		uint64_t guid;
 
@@ -285,7 +285,7 @@ zpool_import_by_guid(uint64_t searchguid)
 		 * Search for a pool by guid.
 		 */
 		verify(nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_GUID,
-		    &guid) == 0);
+				&guid) == 0);
 
 		if (guid == searchguid)
 			found_config = config;
@@ -314,7 +314,7 @@ zpool_import_by_guid(uint64_t searchguid)
 		}
 	}
 
-error:
+  error:
 	nvlist_free(pools);
 	nvlist_free(policy);
 	libzfs_fini(g_zfs);
@@ -386,9 +386,9 @@ zfs_probe(const char *devpath, probe_args_t *args)
 		char *name;
 		ret = FSUR_RECOGNIZED;
 		args->pool_guid = (nvlist_lookup_uint64(config,
-		    ZPOOL_CONFIG_POOL_GUID, &guid) == 0) ? guid : 0;
+				ZPOOL_CONFIG_POOL_GUID, &guid) == 0) ? guid : 0;
 		args->vdev_guid = (nvlist_lookup_uint64(config,
-		    ZPOOL_CONFIG_GUID, &guid) == 0) ? guid : 0;
+				ZPOOL_CONFIG_GUID, &guid) == 0) ? guid : 0;
 		if (args->pool_name &&
 			nvlist_lookup_string(config, ZPOOL_CONFIG_POOL_NAME,
 				&name) == 0)
@@ -402,11 +402,88 @@ zfs_probe(const char *devpath, probe_args_t *args)
 		}
 		//printf("zfs.util: FATAL: read_label config is NULL\n");
 	}
-out:
+  out:
 	printf("-zfs_probe : ret %s\n", ret == FSUR_RECOGNIZED ? "FSUR_RECOGNIZED" : "FSUR_UNRECOGNIZED");
 	return (ret);
 }
 
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreServices/CoreServices.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/storage/IOMedia.h>
+#include <DiskArbitration/DiskArbitration.h>
+
+/* Look up "/dev/rdisk5" in ioreg to see if it is a pseudodisk */
+static int
+zfs_probe_iokit(const char *devpath, probe_args_t *args)
+{
+	const char *name;
+	CFMutableDictionaryRef matchingDict;
+	io_service_t service = IO_OBJECT_NULL;
+	CFStringRef cfstr = NULL;
+	int result = FSUR_UNRECOGNIZED;
+
+	// Make sure it is "disk5s1" not "/dev/" and not "rdisk"
+	if (!strncmp("/dev/disk", devpath, 9))
+		name = &devpath[5];
+	else if (!strncmp("/dev/rdisk", devpath, 10))
+		name = &devpath[6];
+	else if (!strncmp("rdisk", devpath, 5))
+		name = &devpath[1];
+	else
+		name = devpath;
+
+	printf("%s: looking for '%s' in ioreg\n", __func__, name);
+
+	matchingDict = IOBSDNameMatching(kIOMasterPortDefault, 0, name);
+	if (NULL == matchingDict) {
+		printf("%s: IOBSDNameMatching returned NULL dictionary\n",
+			__func__);
+		goto fail;
+	}
+
+	/*
+	 * Fetch the object with the matching BSD node name.
+	 * Note that there should only be one match, so
+	 * IOServiceGetMatchingService is used instead of
+	 * IOServiceGetMatchingServices to simplify the code.
+	 */
+	service = IOServiceGetMatchingService(kIOMasterPortDefault,
+		matchingDict);
+
+	if (IO_OBJECT_NULL == service) {
+		printf("%s: IOServiceGetMatchingService returned IO_OBJECT_NULL.\n",
+			__func__);
+		goto fail;
+	}
+
+	if (IOObjectConformsTo(service, kIOMediaClass)) {
+		cfstr = IORegistryEntryCreateCFProperty(service,
+			CFSTR("ZFS Dataset"), kCFAllocatorDefault, 0);
+		if (cfstr != NULL) {
+			(void) strlcpy(args->pool_name,
+				CFStringGetCStringPtr(cfstr,
+					kCFStringEncodingMacRoman),
+				sizeof (io_name_t));
+
+			result = FSUR_RECOGNIZED;
+		}
+	}
+
+fail:
+	if (service != IO_OBJECT_NULL)
+		IOObjectRelease(service);
+	if (cfstr != NULL)
+		CFRelease(cfstr);
+
+	printf("%s: result %s name '%s'\n", __func__,
+		result == FSUR_RECOGNIZED ? "FSUR_RECOGNIZED" :
+		result == FSUR_UNRECOGNIZED ? "FSUR_UNRECOGNIZED" :
+		"UNKNOWN",
+		result == FSUR_RECOGNIZED ? args->pool_name : "");
+
+	return result;
+}
 
 #ifdef ZFS_AUTOIMPORT_ZPOOL_CACHE_ONLY
 void
@@ -449,7 +526,7 @@ zpool_read_cachefile(void)
 		printf("Cachefile has pool '%s'\n", nvpair_name(nvpair));
 
 		if (nvlist_lookup_uint64(child, ZPOOL_CONFIG_POOL_GUID,
-		    &guid) == 0) {
+				&guid) == 0) {
 			printf("Cachefile has pool '%s' guid %llu\n",
 			    nvpair_name(nvpair), guid);
 
@@ -460,7 +537,7 @@ zpool_read_cachefile(void)
 	}
 	nvlist_free(nvlist);
 
-out:
+  out:
 	close(fd);
 	if (buf)
 		kmem_free(buf, stbf.st_size);
@@ -482,9 +559,9 @@ int zfs_util_uuid_gen(probe_args_t *probe, char *uuid_str)
 	/* namespace (generated by uuidgen) */
 	/* 50670853-FBD2-4EC3-9802-73D847BF7E62 */
 	char namespace[16] = {0x50, 0x67, 0x08, 0x53, /* - */
-	    0xfb, 0xd2, /* - */ 0x4e, 0xc3, /* - */
-	    0x98, 0x02, /* - */
-	    0x73, 0xd8, 0x47, 0xbf, 0x7e, 0x62};
+						  0xfb, 0xd2, /* - */ 0x4e, 0xc3, /* - */
+						  0x98, 0x02, /* - */
+						  0x73, 0xd8, 0x47, 0xbf, 0x7e, 0x62};
 
 	/* Validate arguments */
 	if (!probe->vdev_guid) {
@@ -615,7 +692,7 @@ main(int argc, char **argv)
 		for (i = 0; i < num; i++) {
 			if (strlen(statfs[i].f_mntfromname) == len &&
 			    strcmp(statfs[i].f_mntfromname,
-			    blockdevice) == 0) {
+					blockdevice) == 0) {
 				//printf("matched mountpoint %s\n",
 				//  statfs[i].f_mntonname);
 				is_mounted = B_TRUE;
@@ -646,237 +723,242 @@ main(int argc, char **argv)
 
 	/* Check the request type */
 	switch (what) {
-	case FSUC_PROBE:
+		case FSUC_PROBE:
 
-		/* XXX For now only checks mounted fs (root fs) */
-		if (!is_mounted) {
-			printf("FSUR_PROBE : unmounted fs\n");
+			/* XXX For now only checks mounted fs (root fs) */
+			if (!is_mounted) {
+				printf("FSUR_PROBE : unmounted fs: %s\n", rawdevice);
 
-			ret = zfs_probe(rawdevice, &probe_args);
+				/* rawdevice might be a pseudo disk for devdisk mounts */
+				ret = zfs_probe_iokit(rawdevice, &probe_args);
 
-			/*
-			 * Validate guid and name, valid vdev
-			 * must have a vdev_guid, but not
-			 * necessarily a pool_guid
-			 */
-			if (ret == FSUR_RECOGNIZED &&
-			    (probe_args.vdev_guid == 0)) {
-				ret = FSUR_UNRECOGNIZED;
-			}
+				/* otherwise, read disk */
+				if (ret == FSUR_UNRECOGNIZED)
+					ret = zfs_probe(rawdevice, &probe_args);
 
-			if (ret == FSUR_RECOGNIZED) {
-				printf("FSUC_PROBE %s : FSUR_RECOGNIZED :"
-				    " %s : pool guid 0x%016LLx vdev guid 0x%016LLx\n",
-				    blockdevice, probe_args.pool_name,
-				    probe_args.pool_guid,
-				    probe_args.vdev_guid);
-				/* Output pool name for DiskArbitration */
-				write(1, probe_args.pool_name, strlen(probe_args.pool_name));
-			} else {
-				printf("FSUC_PROBE %s : FSUR_UNRECOGNIZED :"
-				    " %d\n", blockdevice, ret);
-				ret = FSUR_UNRECOGNIZED;
-			}
+				   /*
+				   * Validate guid and name, valid vdev
+				   * must have a vdev_guid, but not
+				   * necessarily a pool_guid
+				   */
+				if (ret == FSUR_RECOGNIZED &&
+					(probe_args.vdev_guid == 0)) {
+					ret = FSUR_UNRECOGNIZED;
+				}
+
+				if (ret == FSUR_RECOGNIZED) {
+					printf("FSUC_PROBE %s : FSUR_RECOGNIZED :"
+						" %s : pool guid 0x%016LLx vdev guid 0x%016LLx\n",
+						blockdevice, probe_args.pool_name,
+						probe_args.pool_guid,
+						probe_args.vdev_guid);
+					/* Output pool name for DiskArbitration */
+					write(1, probe_args.pool_name, strlen(probe_args.pool_name));
+				} else {
+					printf("FSUC_PROBE %s : FSUR_UNRECOGNIZED :"
+						" %d\n", blockdevice, ret);
+					ret = FSUR_UNRECOGNIZED;
+				}
+
+				break;
+
+
+
+			} else {  /* is_mounted == true */
+
+
+
+				bzero(&attr, sizeof (attr));
+				bzero(&nameBuf, sizeof (nameBuf));
+				bzero(&volname, sizeof (volname));
+				attr.bitmapcount = 5;
+				attr.volattr = ATTR_VOL_INFO | ATTR_VOL_NAME;
+
+				ret = getattrlist(statfs[i].f_mntonname, &attr, &nameBuf,
+					sizeof (nameBuf), 0);
+				if (ret != 0) {
+					printf("%s FATAL: couldn't get mount [%s] attr\n",
+						__func__, statfs[i].f_mntonname);
+					ret = FSUR_UNRECOGNIZED;
+					break;
+				}
+				if (nameBuf.length < offsetof (struct attrNameBuf, name)) {
+					printf("PROBE: FATAL: short attrlist return\n");
+					ret = FSUR_UNRECOGNIZED;
+					break;
+				}
+				if (nameBuf.length > sizeof (nameBuf)) {
+					printf("PROBE: FATAL: overflow attrlist return\n");
+					ret = FSUR_UNRECOGNIZED;
+					break;
+				}
+
+				snprintf(volname, nameBuf.nameRef.attr_length, "%s",
+					((char *)&nameBuf.nameRef) +
+					nameBuf.nameRef.attr_dataoffset);
+
+				printf("volname [%s]\n", volname);
+				write(1, volname, strlen(volname));
+				ret = FSUR_RECOGNIZED;
+				break;
+
+			} // ismounted
 
 			break;
 
+			/* Done */
+
+		case FSUC_GETUUID:
+		{
+			uint32_t buf[5];
+
+			/* Try to get a UUID either way */
+			/* First, zpool vdev disks */
+			if (!is_mounted) {
+				char uuid[40];
+
+				bzero(&probe_args, sizeof (probe_args_t));
+
+				ret = zfs_probe(rawdevice, &probe_args);
+
+				/* Validate vdev guid */
+				if (ret == FSUR_RECOGNIZED &&
+					probe_args.vdev_guid == 0) {
+					ret = FSUR_UNRECOGNIZED;
+				}
+
+				if (ret != FSUR_RECOGNIZED) {
+					printf("FSUC_GET_UUID %s : "
+						"FSUR_UNRECOGNIZED %d\n",
+						blockdevice, ret);
+					ret = FSUR_IO_FAIL;
+					break;
+				}
+
+				/* Generate valid UUID from guids */
+				if (zfs_util_uuid_gen(&probe_args, uuid) != 0) {
+					printf("FSUC_GET_UUID %s : "
+						"uuid_gen error %d\n",
+						blockdevice, ret);
+					ret = FSUR_IO_FAIL;
+					break;
+				}
+
+				printf("FSUC_GET_UUID %s : FSUR_RECOGNIZED :"
+					" pool guid 0x%016llx :"
+					" vdev guid 0x%016llx : UUID %s\n",
+					blockdevice, probe_args.pool_guid,
+					probe_args.vdev_guid, uuid);
+
+				/* Output the vdev guid for DiskArbitration */
+				write(1, uuid, sizeof (uuid));
+				ret = FSUR_IO_SUCCESS;
+
+				break;
+
+			} else { /* is_mounted == true */
 
 
-		} else {  /* is_mounted == true */
+				/* Otherwise, ZFS filesystem pseudo device */
 
+				//struct attrlist attr;
+				bzero(&buf, sizeof (buf));
+				bzero(&attr, sizeof (attr));
+				attr.bitmapcount = 5;
+				attr.volattr = ATTR_VOL_INFO | ATTR_VOL_UUID;
 
+				/* Retrieve UUID from mp */
+				ret = getattrlist(statfs[i].f_mntonname, &attr,
+					&buf, sizeof (buf), 0);
+				if (ret != 0) {
+					printf("%s FATAL: couldn't get mount [%s] attr\n",
+						__func__, statfs[i].f_mntonname);
+					ret = FSUR_IO_FAIL;
+					break;
+				}
 
-			bzero(&attr, sizeof (attr));
-			bzero(&nameBuf, sizeof (nameBuf));
-			bzero(&volname, sizeof (volname));
-			attr.bitmapcount = 5;
-			attr.volattr = ATTR_VOL_INFO | ATTR_VOL_NAME;
+				/* buf[0] is count of uint32_t values returned,
+				 * including itself */
+				if (buf[0] < (5 * sizeof (uint32_t))) {
+					printf("FATAL: getattrlist result len %d != %d\n",
+						buf[0], (5 * sizeof (uint32_t)));
+					ret = FSUR_IO_FAIL;
+					break;
+				}
 
-			ret = getattrlist(statfs[i].f_mntonname, &attr, &nameBuf,
-				sizeof (nameBuf), 0);
-			if (ret != 0) {
-				printf("%s FATAL: couldn't get mount [%s] attr\n",
-					__func__, statfs[i].f_mntonname);
-				ret = FSUR_UNRECOGNIZED;
+				/*
+				 * getattr results are big-endian uint32_t
+				 * and need to be swapped to host.
+				 * Verified by reading UUID from mounted HFS
+				 * via getattrlist and validating result.
+				 */
+				buf[1] = OSSwapBigToHostInt32(buf[1]);
+				buf[2] = OSSwapBigToHostInt32(buf[2]);
+				buf[3] = OSSwapBigToHostInt32(buf[3]);
+				buf[4] = OSSwapBigToHostInt32(buf[4]);
+
+				/*
+				 * Validate UUID version 3 (namespace variant w/MD5)
+				 * We need to check a few bits:
+				 * xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx
+				 * [uint32]-[ uint32]-[ uint32][uint32]
+				 * M should be 0x3xxx to indicate version 3
+				 * N should be 0x8xxx, 0x9xxx, 0xaxxx, or 0xbxxx
+				 */
+				// (reverse) buf[2] = (buf[2] & 0xFFFF0FFF) | 0x00003000;
+				if (buf[2] != ((buf[2] & 0xFFFF0FFF) | 0x00003000)) {
+					printf("FATAL: missing version 3 in UUID\n");
+					ret = FSUR_IO_FAIL;
+				}
+				// (reverse) buf[3] = (buf[3] & 0x3FFFFFFF) | 0x80000000;
+				if (buf[3] != ((buf[3] & 0x3FFFFFFF) | 0x80000000)) {
+					printf("FATAL: missing variant bits in UUID\n");
+					ret = FSUR_IO_FAIL;
+				}
+				if (ret == FSUR_IO_FAIL) break;
+
+				/* As char (reverse)
+				   result_uuid[6] = (result_uuid[6] & 0x0F) | 0x30;
+				   result_uuid[8] = (result_uuid[8] & 0x3F) | 0x80;
+				*/
+				printf("uuid: %08X-%04X-%04X-%04X-%04X%08X\n",
+					buf[1], (buf[2]&0xffff0000)>>16, buf[2]&0x0000ffff,
+					(buf[3]&0xffff0000)>>16, buf[3]&0x0000ffff, buf[4]);
+				/* Print all caps to please DiskArbitration */
+
+				/* Print UUID string only (no newline) to stdout, as expected */
+				fprintf(stdout, "%08X-%04X-%04X-%04X-%04X%08X",
+					buf[1], (buf[2]&0xffff0000)>>16, buf[2]&0x0000ffff,
+					(buf[3]&0xffff0000)>>16, buf[3]&0x0000ffff, buf[4]);
+				ret = FSUR_IO_SUCCESS;
+
 				break;
 			}
-			if (nameBuf.length < offsetof (struct attrNameBuf, name)) {
-				printf("PROBE: FATAL: short attrlist return\n");
-				ret = FSUR_UNRECOGNIZED;
-				break;
-			}
-			if (nameBuf.length > sizeof (nameBuf)) {
-				printf("PROBE: FATAL: overflow attrlist return\n");
-				ret = FSUR_UNRECOGNIZED;
-				break;
-			}
-
-			snprintf(volname, nameBuf.nameRef.attr_length, "%s",
-				((char *)&nameBuf.nameRef) +
-				nameBuf.nameRef.attr_dataoffset);
-
-			printf("volname [%s]\n", volname);
-			write(1, volname, strlen(volname));
-			ret = FSUR_RECOGNIZED;
-			break;
-
-		} // ismounted
-
-		break;
-
-		/* Done */
-
-	case FSUC_GETUUID:
-	{
-		uint32_t buf[5];
-
-		/* Try to get a UUID either way */
-		/* First, zpool vdev disks */
-		if (!is_mounted) {
-			char uuid[40];
-
-			bzero(&probe_args, sizeof (probe_args_t));
-
-			ret = zfs_probe(rawdevice, &probe_args);
-
-			/* Validate vdev guid */
-			if (ret == FSUR_RECOGNIZED &&
-			    probe_args.vdev_guid == 0) {
-				ret = FSUR_UNRECOGNIZED;
-			}
-
-			if (ret != FSUR_RECOGNIZED) {
-				printf("FSUC_GET_UUID %s : "
-				    "FSUR_UNRECOGNIZED %d\n",
-				    blockdevice, ret);
-				ret = FSUR_IO_FAIL;
-				break;
-			}
-
-			/* Generate valid UUID from guids */
-			if (zfs_util_uuid_gen(&probe_args, uuid) != 0) {
-				printf("FSUC_GET_UUID %s : "
-				    "uuid_gen error %d\n",
-				    blockdevice, ret);
-				ret = FSUR_IO_FAIL;
-				break;
-			}
-
-			printf("FSUC_GET_UUID %s : FSUR_RECOGNIZED :"
-			    " pool guid 0x%016llx :"
-			    " vdev guid 0x%016llx : UUID %s\n",
-			    blockdevice, probe_args.pool_guid,
-			    probe_args.vdev_guid, uuid);
-
-			/* Output the vdev guid for DiskArbitration */
-			write(1, uuid, sizeof (uuid));
-			ret = FSUR_IO_SUCCESS;
-
-			break;
-
-		} else { /* is_mounted == true */
-
-
-			/* Otherwise, ZFS filesystem pseudo device */
-
-			//struct attrlist attr;
-			bzero(&buf, sizeof (buf));
-			bzero(&attr, sizeof (attr));
-			attr.bitmapcount = 5;
-			attr.volattr = ATTR_VOL_INFO | ATTR_VOL_UUID;
-
-			/* Retrieve UUID from mp */
-			ret = getattrlist(statfs[i].f_mntonname, &attr,
-				&buf, sizeof (buf), 0);
-			if (ret != 0) {
-				printf("%s FATAL: couldn't get mount [%s] attr\n",
-					__func__, statfs[i].f_mntonname);
-				ret = FSUR_IO_FAIL;
-				break;
-			}
-
-			/* buf[0] is count of uint32_t values returned,
-			 * including itself */
-			if (buf[0] < (5 * sizeof (uint32_t))) {
-				printf("FATAL: getattrlist result len %d != %d\n",
-					buf[0], (5 * sizeof (uint32_t)));
-				ret = FSUR_IO_FAIL;
-				break;
-			}
-
-			/*
-			 * getattr results are big-endian uint32_t
-			 * and need to be swapped to host.
-			 * Verified by reading UUID from mounted HFS
-			 * via getattrlist and validating result.
-			 */
-			buf[1] = OSSwapBigToHostInt32(buf[1]);
-			buf[2] = OSSwapBigToHostInt32(buf[2]);
-			buf[3] = OSSwapBigToHostInt32(buf[3]);
-			buf[4] = OSSwapBigToHostInt32(buf[4]);
-
-			/*
-			 * Validate UUID version 3 (namespace variant w/MD5)
-			 * We need to check a few bits:
-			 * xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx
-			 * [uint32]-[ uint32]-[ uint32][uint32]
-			 * M should be 0x3xxx to indicate version 3
-			 * N should be 0x8xxx, 0x9xxx, 0xaxxx, or 0xbxxx
-			 */
-			// (reverse) buf[2] = (buf[2] & 0xFFFF0FFF) | 0x00003000;
-			if (buf[2] != ((buf[2] & 0xFFFF0FFF) | 0x00003000)) {
-				printf("FATAL: missing version 3 in UUID\n");
-				ret = FSUR_IO_FAIL;
-			}
-			// (reverse) buf[3] = (buf[3] & 0x3FFFFFFF) | 0x80000000;
-			if (buf[3] != ((buf[3] & 0x3FFFFFFF) | 0x80000000)) {
-				printf("FATAL: missing variant bits in UUID\n");
-				ret = FSUR_IO_FAIL;
-			}
-			if (ret == FSUR_IO_FAIL) break;
-
-			/* As char (reverse)
-			   result_uuid[6] = (result_uuid[6] & 0x0F) | 0x30;
-			   result_uuid[8] = (result_uuid[8] & 0x3F) | 0x80;
-			*/
-			printf("uuid: %08X-%04X-%04X-%04X-%04X%08X\n",
-				buf[1], (buf[2]&0xffff0000)>>16, buf[2]&0x0000ffff,
-				(buf[3]&0xffff0000)>>16, buf[3]&0x0000ffff, buf[4]);
-			/* Print all caps to please DiskArbitration */
-
-			/* Print UUID string only (no newline) to stdout, as expected */
-			fprintf(stdout, "%08X-%04X-%04X-%04X-%04X%08X",
-				buf[1], (buf[2]&0xffff0000)>>16, buf[2]&0x0000ffff,
-				(buf[3]&0xffff0000)>>16, buf[3]&0x0000ffff, buf[4]);
-			ret = FSUR_IO_SUCCESS;
-
 			break;
 		}
-		break;
-		}
 
 
-	case FSUC_SETUUID:
-		/* Set a UUID */
-		printf("FSUC_SETUUID\n");
-		ret = FSUR_INVAL;
-		break;
-	case FSUC_MOUNT:
-		/* Reject automount */
-		printf("FSUC_MOUNT\n");
-		ret = FSUR_IO_FAIL;
-		break;
-	case FSUC_UNMOUNT:
-		/* Reject unmount */
-		printf("FSUC_UNMOUNT\n");
-		ret = FSUR_IO_FAIL;
-		break;
-	default:
-		printf("unrecognized command %c\n", what);
-		ret = FSUR_INVAL;
-		usage();
+		case FSUC_SETUUID:
+			/* Set a UUID */
+			printf("FSUC_SETUUID\n");
+			ret = FSUR_INVAL;
+			break;
+		case FSUC_MOUNT:
+			/* Reject automount */
+			printf("FSUC_MOUNT\n");
+			ret = FSUR_IO_FAIL;
+			break;
+		case FSUC_UNMOUNT:
+			/* Reject unmount */
+			printf("FSUC_UNMOUNT\n");
+			ret = FSUR_IO_FAIL;
+			break;
+		default:
+			printf("unrecognized command %c\n", what);
+			ret = FSUR_INVAL;
+			usage();
 	}
-out:
+  out:
 	if (pool_name)
 		kmem_free(pool_name, len);
 	printf("Clean exit: %d (%d)\n", getpid(), ret);
