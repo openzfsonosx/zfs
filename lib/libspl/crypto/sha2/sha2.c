@@ -56,7 +56,34 @@
 
 #else
 
-#ifndef __APPLE__
+#ifdef __APPLE__
+// Alas, no #pragma weak yet.
+void SHA256Update(SHA2_CTX *ctx, const void *inptr, size_t input_len)
+{
+	SHA2Update(ctx, inptr, input_len);
+}
+void SHA256Final(void *digest, SHA2_CTX *ctx)
+{
+	SHA2Final(digest, ctx);
+}
+void SHA384Update(SHA2_CTX *ctx, const void *inptr, size_t input_len)
+{
+	SHA2Update(ctx, inptr, input_len);
+}
+void SHA384Final(void *digest, SHA2_CTX *ctx)
+{
+	SHA2Final(digest, ctx);
+}
+void SHA512Update(SHA2_CTX *ctx, const void *inptr, size_t input_len)
+{
+	SHA2Update(ctx, inptr, input_len);
+}
+void SHA512Final(void *digest, SHA2_CTX *ctx)
+{
+	SHA2Final(digest, ctx);
+}
+
+#else // Not APPLE
 #pragma weak SHA256Update = SHA2Update
 #pragma weak SHA384Update = SHA2Update
 #pragma weak SHA512Update = SHA2Update
