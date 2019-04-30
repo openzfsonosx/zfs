@@ -28,6 +28,20 @@ AUTOMAKE_OPTIONS = foreign
 EXTRA_DIST  = autogen.sh copy-builtin
 EXTRA_DIST += config/config.awk config/rpm.am config/deb.am config/tgz.am
 EXTRA_DIST += META DISCLAIMER COPYRIGHT README.markdown OPENSOLARIS.LICENSE
+EXTRA_DIST += CODE_OF_CONDUCT.md
+
+# Include all the extra licensing information for modules
+EXTRA_DIST += module/icp/algs/skein/THIRDPARTYLICENSE module/icp/algs/skein/THIRDPARTYLICENSE.descrip
+EXTRA_DIST += module/icp/asm-x86_64/aes/THIRDPARTYLICENSE.gladman module/icp/asm-x86_64/aes/THIRDPARTYLICENSE.gladman.descrip
+EXTRA_DIST += module/icp/asm-x86_64/aes/THIRDPARTYLICENSE.openssl module/icp/asm-x86_64/aes/THIRDPARTYLICENSE.openssl.descrip
+EXTRA_DIST += module/spl/THIRDPARTYLICENSE.gplv2 module/spl/THIRDPARTYLICENSE.gplv2.descrip
+EXTRA_DIST += module/zfs/THIRDPARTYLICENSE.cityhash module/zfs/THIRDPARTYLICENSE.cityhash.descrip
+
+.PHONY: gitrev
+gitrev:
+	-${top_srcdir}/scripts/make_gitrev.sh
+
+BUILT_SOURCES = gitrev
 
 distclean-local::
 	-$(RM) -R autom4te*.cache
