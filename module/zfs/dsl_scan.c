@@ -1819,6 +1819,10 @@ dsl_scan_visitdnode(dsl_scan_t *scn, dsl_dataset_t *ds,
  * The arguments are in this order because mdb can only print the
  * first 5; we want them to be useful.
  */
+#ifndef __OPTIMIZE__
+#warning "dsl_scan_visitbp is known to panic during scrubs without optimize (-O)"
+#endif
+
 void
 dsl_scan_visitbp(blkptr_t *bp, const zbookmark_phys_t *zb,
     dnode_phys_t *dnp, dsl_dataset_t *ds, dsl_scan_t *scn,
