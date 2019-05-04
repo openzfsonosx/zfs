@@ -28,6 +28,9 @@
  *
  * Portions Copyright 2013 Jorgen Lundman
  *
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2016 Actifio, Inc. All rights reserved.
+ * Copyright (c) 2012, 2019 by Delphix. All rights reserved.
  */
 
 /*
@@ -689,6 +692,87 @@ zvol_is_zvol(const char *device)
 	return (B_FALSE);
 }
 
+/* ARGSUSED */
+static void
+zvol_get_done(zgd_t *zgd, int error)
+{
+	if (zgd->zgd_db)
+		dmu_buf_rele(zgd->zgd_db, zgd);
+
+	rangelock_exit(zgd->zgd_lr);
+
+	kmem_free(zgd, sizeof (zgd_t));
+}
+
+/*
+ * Get data to generate a TX_WRITE intent log record.
+ */
+static int
+zvol_get_data(void *arg, lr_write_t *lr, char *buf, struct lwb *lwb, zio_t *zio)
+{
+	zvol_state_t *zv = arg;
+	objset_t *os = zv->zv_objset;
+	uint64_t object = ZVOL_OBJ;
+	uint64_t offset = lr->lr_offset;
+	uint64_t size = lr->lr_length;
+	dmu_buf_t *db;
+	zgd_t *zgd;
+	int error;
+
+	ASSERT3P(lwb, !=, NULL);
+	ASSERT3P(zio, !=, NULL);
+	ASSERT3U(size, !=, 0);
+
+	zgd = (zgd_t *)kmem_zalloc(sizeof (zgd_t), KM_SLEEP);
+	zgd->zgd_lwb = lwb;
+
+	/*
+	 * Write records come in two flavors: immediate and indirect.
+	 * For small writes it's cheaper to store the data with the
+	 * log record (immediate); for large writes it's cheaper to
+	 * sync the data and get a pointer to it (indirect) so that
+	 * we don't have to write the data twice.
+	 */
+	if (buf != NULL) { /* immediate write */
+		zgd->zgd_lr = rangelock_enter(&zv->zv_rangelock, offset, size,
+		    RL_READER);
+		error = dmu_read(os, object, offset, size, buf,
+			DMU_READ_NO_PREFETCH);
+	} else { /* indirect write */
+		/*
+		 * Have to lock the whole block to ensure when it's written out
+		 * and its checksum is being calculated that no one can change
+		 * the data. Contrarily to zfs_get_data we need not re-check
+		 * blocksize after we get the lock because it cannot be changed.
+		 */
+		size = zv->zv_volblocksize;
+		offset = P2ALIGN_TYPED(offset, size, uint64_t);
+		zgd->zgd_lr = rangelock_enter(&zv->zv_rangelock, offset, size,
+		    RL_READER);
+		error = dmu_buf_hold(os, object, offset, zgd, &db,
+			DMU_READ_NO_PREFETCH);
+		if (error == 0) {
+			blkptr_t *bp = &lr->lr_blkptr;
+
+			zgd->zgd_db = db;
+			zgd->zgd_bp = bp;
+
+			ASSERT(db != NULL);
+			ASSERT(db->db_offset == offset);
+			ASSERT(db->db_size == size);
+
+			error = dmu_sync(zio, lr->lr_common.lrc_txg,
+			    zvol_get_done, zgd);
+
+			if (error == 0)
+				return (0);
+		}
+	}
+
+	zvol_get_done(zgd, error);
+
+	return (SET_ERROR(error));
+}
 
 /*
  * Remove minor node for the specified volume.
@@ -892,7 +976,11 @@ zvol_shutdown_zv(zvol_state_t *zv)
 	//ASSERT(MUTEX_HELD(&zv->zv_state_lock) &&
 	//    RW_LOCK_HELD(&zv->zv_suspend_lock));
 
-	zil_close(zv->zv_zilog);
+	if (zv->zv_flags & ZVOL_WRITTEN_TO) {
+		ASSERT(zv->zv_zilog != NULL);
+		zil_close(zv->zv_zilog);
+	}
+
 	zv->zv_zilog = NULL;
 
 #ifdef linux
@@ -905,7 +993,7 @@ zvol_shutdown_zv(zvol_state_t *zv)
 	 * Evict cached data. We must write out any dirty data before
 	 * disowning the dataset.
 	 */
-	if (!(zv->zv_flags & ZVOL_RDONLY))
+	if (zv->zv_flags & ZVOL_WRITTEN_TO)
 		txg_wait_synced(dmu_objset_pool(zv->zv_objset), 0);
 	(void) dmu_objset_evict_dbufs(zv->zv_objset);
 }
@@ -992,6 +1080,9 @@ zvol_first_open(zvol_state_t *zv)
 
 	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 
+	zv->zv_zilog = NULL;
+	zv->zv_flags &= ~ZVOL_WRITTEN_TO;
+
 	/* lie and say we're read-only */
 	error = dmu_objset_own(zv->zv_name, DMU_OST_ZVOL, B_TRUE,
 						   B_TRUE, zvol_tag, &os);
@@ -1022,7 +1113,6 @@ zvol_first_open(zvol_state_t *zv)
 	}
 
 	zvol_size_changed(zv, volsize);
-	zv->zv_zilog = zil_open(os, zvol_get_data);
 
 	if (readonly || dmu_objset_is_snapshot(os) ||
 	    !spa_writeable(dmu_objset_spa(os)))
@@ -1889,77 +1979,6 @@ zvol_close(dev_t dev, int flag, int otyp, struct proc *p)
 	return (zvol_close_impl(zv, flag, otyp, p));
 }
 
-static void
-zvol_get_done(zgd_t *zgd, int error)
-{
-	if (zgd->zgd_db)
-		dmu_buf_rele(zgd->zgd_db, zgd);
-
-	rangelock_exit(zgd->zgd_lr);
-	kmem_free(zgd, sizeof (zgd_t));
-}
-
-/*
- * Get data to generate a TX_WRITE intent log record.
- */
-static int
-zvol_get_data(void *arg, lr_write_t *lr, char *buf, struct lwb *lwb,
-	zio_t *zio)
-{
-	zvol_state_t *zv = arg;
-	objset_t *os = zv->zv_objset;
-	uint64_t object = ZVOL_OBJ;
-	uint64_t offset = lr->lr_offset;
-	uint64_t size = lr->lr_length;	/* length of user data */
-	dmu_buf_t *db;
-	zgd_t *zgd;
-	int error;
-
-	ASSERT3P(lwb, !=, NULL);
-	ASSERT3P(zio, !=, NULL);
-	ASSERT3U(size, !=, 0);
-
-	zgd = kmem_zalloc(sizeof (zgd_t), KM_SLEEP);
-	zgd->zgd_lwb = lwb;
-	zgd->zgd_lr = rangelock_enter(&zv->zv_rangelock, offset, size,
-		RL_READER);
-	/*
-	 * Write records come in two flavors: immediate and indirect.
-	 * For small writes it's cheaper to store the data with the
-	 * log record (immediate); for large writes it's cheaper to
-	 * sync the data and get a pointer to it (indirect) so that
-	 * we don't have to write the data twice.
-	 */
-	if (buf != NULL) {	/* immediate write */
-		error = dmu_read(os, object, offset, size, buf,
-		    DMU_READ_NO_PREFETCH);
-	} else {
-		size = zv->zv_volblocksize;
-		offset = P2ALIGN(offset, size);
-		error = dmu_buf_hold(os, object, offset, zgd, &db,
-		    DMU_READ_NO_PREFETCH);
-		if (error == 0) {
-			blkptr_t *bp = &lr->lr_blkptr;
-
-			zgd->zgd_db = db;
-			zgd->zgd_bp = bp;
-
-			ASSERT(db->db_offset == offset);
-			ASSERT(db->db_size == size);
-
-			error = dmu_sync(zio, lr->lr_common.lrc_txg,
-			    zvol_get_done, zgd);
-
-			if (error == 0)
-				return (0);
-		}
-	}
-
-	zvol_get_done(zgd, error);
-
-	return (error);
-}
-
 /*
  * zvol_log_write() handles synchronous writes using TX_WRITE ZIL transactions.
  *
@@ -2379,6 +2398,20 @@ zvol_write(dev_t dev, struct uio *uio, int p)
 		return (error);
 	}
 #endif
+
+	/*
+	 * Open a ZIL if this is the first time we have written to this
+	 * zvol.
+	 */
+	if (zv->zv_zilog == NULL) {
+		mutex_enter(&zfsdev_state_lock);
+		if (zv->zv_zilog == NULL) {
+			zv->zv_zilog = zil_open(zv->zv_objset,
+				zvol_get_data);
+			zv->zv_flags |= ZVOL_WRITTEN_TO;
+		}
+		mutex_exit(&zfsdev_state_lock);
+	}
 
 	sync = !(zv->zv_flags & ZVOL_WCE) ||
 	    (zv->zv_objset->os_sync == ZFS_SYNC_ALWAYS);
