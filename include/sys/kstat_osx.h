@@ -143,6 +143,8 @@ typedef struct osx_kstat {
 	kstat_named_t zfs_trim_metaslab_skip;
 	kstat_named_t zfs_trim_txg_batch;
 	kstat_named_t zfs_trim_queue_limit;
+
+	kstat_named_t zfs_send_unmodified_spill_blocks;
 } osx_kstat_t;
 
 
@@ -246,6 +248,8 @@ extern uint64_t  zfs_trim_extent_bytes_min;
 extern uint64_t  zfs_trim_metaslab_skip;
 extern uint64_t  zfs_trim_txg_batch;
 extern uint64_t  zfs_trim_queue_limit;
+
+extern uint64_t  zfs_send_unmodified_spill_blocks;
 
 int        kstat_osx_init(void);
 void       kstat_osx_fini(void);
