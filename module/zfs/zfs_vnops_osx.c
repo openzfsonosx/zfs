@@ -2468,7 +2468,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	dmu_tx_t *tx;
 	caddr_t vaddr = NULL;
 	int merror = 0;
-	dmu_buf_t       *db;
 
 	/* We can still get into this function as non-v2 style, by the default
 	 * pager (ie, swap - when we eventually support it)
@@ -2496,7 +2495,10 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	}
 
 	mutex_enter(&zp->z_lock);
-	if (!zp->z_sa_hdl) {
+
+	sa_handle_t *z_sa_hdl;
+	z_sa_hdl = zp->z_sa_hdl;
+	if (!z_sa_hdl) {
 		mutex_exit(&zp->z_lock);
 		vnode_put(ZTOV(zp));
 		printf("ZFS: vnop_pageout: null sa_hdl\n");
@@ -2505,7 +2507,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 
 	zfsvfs = zp->z_zfsvfs;
 
-	error = sa_buf_hold(zfsvfs->z_os, zp->z_id, NULL, &db);
 	mutex_exit(&zp->z_lock);
 
 	if (error) {
@@ -2570,8 +2571,8 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	dmu_tx_hold_write(tx, zp->z_id, ap->a_f_offset, ap->a_size);
 
 	// NULL z_sa_hdl
-	if (zp->z_sa_hdl != NULL)
-		dmu_tx_hold_sa(tx, zp->z_sa_hdl, B_FALSE);
+	if (z_sa_hdl != NULL)
+		dmu_tx_hold_sa(tx, z_sa_hdl, B_FALSE);
 
 	zfs_sa_upgrade_txholds(tx, zp);
 	error = dmu_tx_assign(tx, TXG_WAIT);
@@ -2745,7 +2746,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 		ubc_upl_commit_range(upl, 0, a_size, UPL_COMMIT_FREE_ON_EMPTY);
 
 	upl = NULL;
-	sa_buf_rele(db, NULL);
 
 	vnode_put(ZTOV(zp));
 
@@ -2761,7 +2761,6 @@ zfs_vnop_pageoutv2(struct vnop_pageout_args *ap)
 	dprintf("ZFS: pageoutv2 aborted %d\n", error);
 	//VERIFY(ubc_create_upl(vp, off, len, &upl, &pl, flags) == 0);
 	//ubc_upl_abort(upl, UPL_ABORT_FREE_ON_EMPTY);
-	sa_buf_rele(db, NULL);
 
 	vnode_put(ZTOV(zp));
 

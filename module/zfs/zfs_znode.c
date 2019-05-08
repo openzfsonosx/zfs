@@ -1372,9 +1372,9 @@ again:
 			// Wait until attached, if we can.
 			if ((flags & ZGET_FLAG_ASYNC) &&
 				zfs_znode_asyncwait(zp) == 0) {
-				printf("%s: waited on z_vnode OK\n", __func__);
+				dprintf("%s: waited on z_vnode OK\n", __func__);
 			} else {
-				printf("%s: async racing attach\n", __func__);
+				dprintf("%s: async racing attach\n", __func__);
 				// Could be zp is being torn down, idle a bit, and retry
 				delay(hz >> 2);
 			}

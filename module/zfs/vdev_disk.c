@@ -564,7 +564,6 @@ skip_open:
 		if (features & DK_FEATURE_UNMAP)
 			vd->vdev_has_trim = B_TRUE;
 	}
-	printf("%s: has_trim set to %x\n", __func__, vd->vdev_has_trim);
 
 	/* Set when device reports it supports secure TRIM. */
 	// No secure trim in Apple yet.

@@ -200,9 +200,7 @@ bool
 net_lundman_zfs_zvol::isOpen(const IOService *forClient) const
 {
 	bool ret;
-	IOLog("net_lundman_zfs_zvol %s\n", __func__);
 	ret = IOService::isOpen(forClient);
-	IOLog("net_lundman_zfs_zvol %s ret %d\n", __func__, ret);
 	return (ret);
 }
 

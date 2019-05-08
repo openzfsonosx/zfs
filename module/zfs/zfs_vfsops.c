@@ -1991,7 +1991,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 		 * call vfs_mount if not set. Since data is always passed NULL
 		 * in this case, we know we are supposed to call mountroot.
 		 */
-		printf("ZFS: vfs_mount -> vfs_mountroot\n");
+		dprintf("ZFS: vfs_mount -> vfs_mountroot\n");
 		return zfs_vfs_mountroot(vfsp, mvp, context);
 	}
 
@@ -2057,7 +2057,7 @@ zfs_vfs_mount(struct mount *vfsp, vnode_t *mvp /*devvp*/,
 			error = ENOENT;
 			goto out;
 		}
-		printf("%s got new osname %s\n", __func__, osname);
+		dprintf("%s got new osname %s\n", __func__, osname);
 	}
 
 	if (mnt_args.struct_size == sizeof(mnt_args)) {
@@ -2729,7 +2729,7 @@ int
 zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
 {
 	zfsvfs_t *zfsvfs = vfs_fsprivate(mp);
-	znode_t *rootzp;
+	znode_t *rootzp = NULL;
 	int error;
 
 	if (!zfsvfs) {
@@ -2746,11 +2746,15 @@ zfs_vfs_root(struct mount *mp, vnode_t **vpp, __unused vfs_context_t context)
 	error = zfs_zget(zfsvfs, zfsvfs->z_root, &rootzp);
 	if (error == 0)
 		*vpp = ZTOV(rootzp);
+	else
+		*vpp = NULL;
 
 	ZFS_EXIT(zfsvfs);
 
-	if (error != 0)
-		*vpp = NULL;
+	if (error == 0 && *vpp != NULL)
+		if (vnode_vtype(*vpp) != VDIR) {
+			panic("%s: not a directory\n", __func__);
+		}
 
 	return (error);
 }
