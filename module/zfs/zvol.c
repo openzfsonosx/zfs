@@ -552,7 +552,7 @@ zvol_create_minor_impl(const char *name)
 		return (error);
 	}
 	if (dmu_objset_type(os) != DMU_OST_ZVOL) {
-		printf("%s: dataset '%s' not ZVOL -- ignoring\n",
+		dprintf("%s: dataset '%s' not ZVOL -- ignoring\n",
 			__func__, name);
 		dmu_objset_rele(os, FTAG);
 		return 0;
@@ -1900,9 +1900,6 @@ zvol_get_done(zgd_t *zgd, int error)
 		dmu_buf_rele(zgd->zgd_db, zgd);
 
 	zfs_range_unlock(zgd->zgd_rl);
-
-	if (error == 0 && zgd->zgd_bp)
-		zil_lwb_add_block(zgd->zgd_lwb, zgd->zgd_bp);
 
 	kmem_free(zgd, sizeof (zgd_t));
 }
