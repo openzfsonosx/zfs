@@ -893,8 +893,8 @@ zvol_create_minors_cb(const char *dsname, void *arg)
 static void
 zvol_shutdown_zv(zvol_state_t *zv)
 {
-	ASSERT(MUTEX_HELD(&zv->zv_state_lock) &&
-	    RW_LOCK_HELD(&zv->zv_suspend_lock));
+	//ASSERT(MUTEX_HELD(&zv->zv_state_lock) &&
+	//    RW_LOCK_HELD(&zv->zv_suspend_lock));
 
 	zil_close(zv->zv_zilog);
 	zv->zv_zilog = NULL;
@@ -920,7 +920,7 @@ zvol_shutdown_zv(zvol_state_t *zv)
 void *
 zvol_tag(zvol_state_t *zv)
 {
-	ASSERT(RW_WRITE_HELD(&zv->zv_suspend_lock));
+	//ASSERT(RW_WRITE_HELD(&zv->zv_suspend_lock));
 	return (zv->zv_open_count > 0 ? zv : NULL);
 }
 
