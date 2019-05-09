@@ -1376,6 +1376,7 @@ again:
 			} else {
 				dprintf("%s: async racing attach\n", __func__);
 				// Could be zp is being torn down, idle a bit, and retry
+				// This branch is rarely executed.
 				delay(hz >> 2);
 			}
 			goto again;
@@ -1384,10 +1385,16 @@ again:
 		/* Due to vnode_create() -> zfs_fsync() -> zil_commit() -> zget()
 		 * -> vnode_getwithvid() -> deadlock. Unsure why vnode_getwithvid()
 		 * ends up sleeping in msleep() but vnode_get() does not.
-		 * If we hang here, investigate ZGET_FLAG_ASYNC getting used here
+		 * As we can deadlock here using vnode_getwithvid() we will use
+		 * the simpler vnode_get() in the ASYNC cases. We verify the
+		 * vids match below.
 		 */
-		if (!vp || (err=vnode_getwithvid(vp, vid) != 0)) {
-			//if ((err = vnode_get(vp)) != 0) {
+		if ((flags & ZGET_FLAG_ASYNC))
+			err=vnode_get(vp);
+		else
+			err=vnode_getwithvid(vp, vid);
+
+		if (err != 0) {
 			dprintf("ZFS: vnode_get() returned %d\n", err);
 			kpreempt(KPREEMPT_SYNC);
 			goto again;
