@@ -72,6 +72,14 @@ function is_32bit
         fi
 }
 
+# Determine if kmemleak is enabled
+#
+# Return 0 if kmemleak is enabled, 1 if otherwise
+function is_kmemleak
+{
+        return 0
+}
+
 # Determine whether a dataset is mounted
 #
 # $1 dataset name
