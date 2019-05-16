@@ -779,6 +779,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	if (sa_bulk_lookup(zp->z_sa_hdl, bulk, count) != 0 || zp->z_gen == 0) {
 		if (hdl == NULL)
 			sa_handle_destroy(zp->z_sa_hdl);
+		zp->z_sa_hdl = NULL;
 		printf("znode_alloc: sa_bulk_lookup failed - aborting\n");
 		zfs_vnode_forget(vp);
 		zp->z_vnode = NULL;
@@ -1746,6 +1747,8 @@ zfs_znode_free(znode_t *zp)
 		zp->z_xattr_cached = NULL;
 	}
 
+	ASSERT(zp->z_sa_hdl == NULL);
+
 	kmem_cache_free(znode_cache, zp);
 
 	VFS_RELE(zfsvfs->z_vfs);
@@ -2337,6 +2340,7 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	POINTER_INVALIDATE(&rootzp->z_zfsvfs);
 
 	sa_handle_destroy(rootzp->z_sa_hdl);
+	rootzp->z_sa_hdl = NULL;
 	rootzp->z_vnode = NULL;
 	kmem_cache_free(znode_cache, rootzp);
 

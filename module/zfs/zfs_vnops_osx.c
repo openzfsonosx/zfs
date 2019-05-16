@@ -4876,10 +4876,21 @@ void zfs_znode_asyncgetvnode_impl(void *arg)
 int zfs_znode_asyncwait(znode_t *zp)
 {
 	int ret = -1;
-	if (zp == NULL ||
-		zp->z_zfsvfs == NULL ||
-		zp->z_zfsvfs->z_os == NULL)
+	zfsvfs_t *zfsvfs;
+
+	if (zp == NULL)
 		return ret;
+
+	zfsvfs = zp->z_zfsvfs;
+	if (zfsvfs == NULL)
+		return ret;
+
+	ZFS_ENTER_NOERROR(zfsvfs);
+	if (zfsvfs->z_unmounted)
+		goto out;
+
+	if (zfsvfs->z_os == NULL)
+		goto out;
 
 	// Work out if we need to block, that is, we have
 	// no vnode AND a taskq was launched. Unsure if we should
@@ -4892,6 +4903,9 @@ int zfs_znode_asyncwait(znode_t *zp)
 		ret = 0;
 	}
 	mutex_exit(&zp->z_attach_lock);
+
+out:
+	ZFS_EXIT(zfsvfs);
 	return ret;
 }
 
