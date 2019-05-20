@@ -2535,6 +2535,12 @@ vdev_dtl_reassess(vdev_t *vd, uint64_t txg, uint64_t scrub_txg, int scrub_done)
 		return;
 
 	if (vd->vdev_ops->vdev_op_leaf) {
+
+		if (spa->spa_dsl_pool == NULL) {
+			printf("%s: spa->spa_dsl_pool == NULL\n", __func__);
+			return;
+		}
+
 		dsl_scan_t *scn = spa->spa_dsl_pool->dp_scan;
 
 		mutex_enter(&vd->vdev_dtl_lock);
@@ -4682,4 +4688,3 @@ vdev_set_deferred_resilver(spa_t *spa, vdev_t *vd)
 	vd->vdev_resilver_deferred = B_TRUE;
 	spa->spa_resilver_deferred = B_TRUE;
 }
-
