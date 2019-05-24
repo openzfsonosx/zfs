@@ -37,6 +37,7 @@
 #include <sys/sunddi.h>
 #include <sys/cred.h>
 #include "zfs_comutil.h"
+#include "zfs_gitrev.h"
 #ifdef _KERNEL
 #include <sys/zone.h>
 #endif
@@ -531,7 +532,7 @@ spa_history_log_version(spa_t *spa, const char *operation)
 {
 	spa_history_log_internal(spa, operation, NULL,
 	    "pool version %llu; software version %llu/%llu; uts %s %s %s %s",
-	    (u_longlong_t)spa_version(spa), SPA_VERSION, ZPL_VERSION,
+	    (u_longlong_t)spa_version(spa), SPA_VERSION, ZFS_META_GITREV,
 		utsname.nodename, utsname.release, utsname.version,
 		utsname.machine);
 }
