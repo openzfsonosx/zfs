@@ -29,7 +29,9 @@
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
- * Copyright 2017 RackTop Systems.
+ * Copyright 2017-2018 RackTop Systems.
+ * Copyright (c) 2019 Datto Inc.
+ * Copyright (c) 2019, loli10K <ezomori.nozomu@gmail.com>
  */
 
 #include <ctype.h>
@@ -3037,8 +3039,11 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 		break;
 
 	case ZFS_PROP_GUID:
+	case ZFS_PROP_CREATETXG:
+	case ZFS_PROP_OBJSETID:
 		/*
-		 * GUIDs are stored as numbers, but they are identifiers.
+		 * These properties are stored as numbers, but they are
+		 * identifiers.
 		 * We don't want them to be pretty printed, because pretty
 		 * printing mangles the ID into a truncated and useless value.
 		 */
