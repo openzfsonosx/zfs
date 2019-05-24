@@ -393,8 +393,9 @@ get_usage(zpool_help_t idx) {
 	case HELP_RESILVER:
 		return (gettext("\tresilver <pool> ...\n"));
 	case HELP_STATUS:
-		return (gettext("\tstatus [-giLPtvxD] [-T d|u] [pool] ... "
-		    "[interval [count]]\n"));
+		return (gettext("\tstatus [-c [script1,script2,...]] "
+		    "[-igLpPstvxD]  [-T d|u] [pool] ... \n"
+		    "\t    [interval [count]]\n"));
 	case HELP_UPGRADE:
 		return (gettext("\tupgrade\n"
 		    "\tupgrade -v\n"
