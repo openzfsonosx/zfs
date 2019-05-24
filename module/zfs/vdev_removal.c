@@ -1556,7 +1556,9 @@ spa_vdev_remove_cancel_sync(void *arg, dmu_tx_t *tx)
 		    VDEV_TOP_ZAP_OBSOLETE_COUNTS_ARE_PRECISE, tx));
 	}
 
-	if (vdev_obsolete_sm_object(vd) != 0) {
+	uint64_t obsolete_sm_object;
+	VERIFY0(vdev_obsolete_sm_object(vd, &obsolete_sm_object));
+	if (obsolete_sm_object != 0) {
 		ASSERT(vd->vdev_obsolete_sm != NULL);
 		ASSERT3U(vdev_obsolete_sm_object(vd), ==,
 		    space_map_object(vd->vdev_obsolete_sm));

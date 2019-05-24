@@ -8284,7 +8284,9 @@ vdev_indirect_state_sync_verify(vdev_t *vd)
 		ASSERT(vib != NULL);
 	}
 
-	if (vdev_obsolete_sm_object(vd) != 0) {
+	uint64_t obsolete_sm_object = 0;
+	ASSERT0(vdev_obsolete_sm_object(vd, &obsolete_sm_object));
+	if (obsolete_sm_object != 0) {
 		ASSERT(vd->vdev_obsolete_sm != NULL);
 		ASSERT(vd->vdev_removing ||
 		    vd->vdev_ops == &vdev_indirect_ops);

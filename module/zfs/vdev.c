@@ -3004,8 +3004,9 @@ vdev_load(vdev_t *vd)
 		return (error);
 	}
 
-	uint64_t obsolete_sm_object = vdev_obsolete_sm_object(vd);
-	if (obsolete_sm_object != 0) {
+	uint64_t obsolete_sm_object;
+	error = vdev_obsolete_sm_object(vd, &obsolete_sm_object);
+	if (error == 0 && obsolete_sm_object != 0) {
 		objset_t *mos = vd->vdev_spa->spa_meta_objset;
 		ASSERT(vd->vdev_asize != 0);
 		ASSERT3P(vd->vdev_obsolete_sm, ==, NULL);

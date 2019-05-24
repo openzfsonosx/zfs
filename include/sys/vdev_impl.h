@@ -550,7 +550,7 @@ extern int zfs_vdev_cache_size;
 extern void vdev_indirect_sync_obsolete(vdev_t *vd, dmu_tx_t *tx);
 extern boolean_t vdev_indirect_should_condense(vdev_t *vd);
 extern void spa_condense_indirect_start_sync(vdev_t *vd, dmu_tx_t *tx);
-extern int vdev_obsolete_sm_object(vdev_t *vd);
+extern int vdev_obsolete_sm_object(vdev_t *vd, uint64_t *);
 extern boolean_t vdev_obsolete_counts_are_precise(vdev_t *vd);
 
 /*

@@ -15,6 +15,7 @@
 
 /*
  * Copyright (c) 2014, 2017 by Delphix. All rights reserved.
+ * Copyright (c) 2019, loli10K <ezomori.nozomu@gmail.com>. All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -397,8 +398,10 @@ vdev_indirect_should_condense(vdev_t *vd)
 	 * If nothing new has been marked obsolete, there is no
 	 * point in condensing.
 	 */
+	ASSERTV(uint64_t obsolete_sm_obj);
+	ASSERT0(vdev_obsolete_sm_object(vd, &obsolete_sm_obj));
 	if (vd->vdev_obsolete_sm == NULL) {
-		ASSERT0(vdev_obsolete_sm_object(vd));
+		ASSERT0(obsolete_sm_obj);
 		return (B_FALSE);
 	}
 
@@ -741,7 +744,8 @@ spa_condense_indirect_start_sync(vdev_t *vd, dmu_tx_t *tx)
 	ASSERT(spa_feature_is_active(spa, SPA_FEATURE_OBSOLETE_COUNTS));
 	ASSERT(vdev_indirect_mapping_num_entries(vd->vdev_indirect_mapping));
 
-	uint64_t obsolete_sm_obj = vdev_obsolete_sm_object(vd);
+	uint64_t obsolete_sm_obj;
+	VERIFY0(vdev_obsolete_sm_object(vd, &obsolete_sm_obj));
 	ASSERT(obsolete_sm_obj != 0);
 
 	scip->scip_vdev = vd->vdev_id;
@@ -793,7 +797,9 @@ vdev_indirect_sync_obsolete(vdev_t *vd, dmu_tx_t *tx)
 	ASSERT(vd->vdev_removing || vd->vdev_ops == &vdev_indirect_ops);
 	ASSERT(spa_feature_is_enabled(spa, SPA_FEATURE_OBSOLETE_COUNTS));
 
-	if (vdev_obsolete_sm_object(vd) == 0) {
+	uint64_t obsolete_sm_object;
+	VERIFY0(vdev_obsolete_sm_object(vd, &obsolete_sm_object));
+	if (obsolete_sm_object == 0) {
 		uint64_t obsolete_sm_object =
 		    space_map_alloc(spa->spa_meta_objset,
 		    vdev_standard_sm_blksz, tx);
@@ -802,7 +808,7 @@ vdev_indirect_sync_obsolete(vdev_t *vd, dmu_tx_t *tx)
 		VERIFY0(zap_add(vd->vdev_spa->spa_meta_objset, vd->vdev_top_zap,
 		    VDEV_TOP_ZAP_INDIRECT_OBSOLETE_SM,
 		    sizeof (obsolete_sm_object), 1, &obsolete_sm_object, tx));
-		ASSERT3U(vdev_obsolete_sm_object(vd), !=, 0);
+		ASSERT0(vdev_obsolete_sm_object(vd, &obsolete_sm_object));
 
 		spa_feature_incr(spa, SPA_FEATURE_OBSOLETE_COUNTS, tx);
 		VERIFY0(space_map_open(&vd->vdev_obsolete_sm,
@@ -863,19 +869,19 @@ spa_start_indirect_condensing_thread(spa_t *spa)
  * exist yet.
  */
 int
-vdev_obsolete_sm_object(vdev_t *vd)
+vdev_obsolete_sm_object(vdev_t *vd, uint64_t *sm_obj)
 {
 	ASSERT0(spa_config_held(vd->vdev_spa, SCL_ALL, RW_WRITER));
 	if (vd->vdev_top_zap == 0) {
 		return (0);
 	}
 
-	uint64_t sm_obj = 0;
-	ASSERTV(int err = )
-		zap_lookup(vd->vdev_spa->spa_meta_objset, vd->vdev_top_zap,
-	    VDEV_TOP_ZAP_INDIRECT_OBSOLETE_SM, sizeof (sm_obj), 1, &sm_obj);
-
-	ASSERT(err == 0 || err == ENOENT);
+	int error = zap_lookup(vd->vdev_spa->spa_meta_objset, vd->vdev_top_zap,
+	    VDEV_TOP_ZAP_INDIRECT_OBSOLETE_SM, sizeof (uint64_t), 1, sm_obj);
+	if (error == ENOENT) {
+		*sm_obj = 0;
+		error = 0;
+	}
 
 	return (sm_obj);
 }

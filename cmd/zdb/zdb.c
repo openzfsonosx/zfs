@@ -696,19 +696,20 @@ get_metaslab_refcount(vdev_t *vd)
 static int
 get_obsolete_refcount(vdev_t *vd)
 {
+	uint64_t obsolete_sm_object;
 	int refcount = 0;
 
-	uint64_t obsolete_sm_obj = vdev_obsolete_sm_object(vd);
-	if (vd->vdev_top == vd && obsolete_sm_obj != 0) {
+	VERIFY0(vdev_obsolete_sm_object(vd, &obsolete_sm_object));
+	if (vd->vdev_top == vd && obsolete_sm_object != 0) {
 		dmu_object_info_t doi;
 		VERIFY0(dmu_object_info(vd->vdev_spa->spa_meta_objset,
-		    obsolete_sm_obj, &doi));
+		    obsolete_sm_object, &doi));
 		if (doi.doi_bonus_size == sizeof (space_map_phys_t)) {
 			refcount++;
 		}
 	} else {
 		ASSERT3P(vd->vdev_obsolete_sm, ==, NULL);
-		ASSERT3U(obsolete_sm_obj, ==, 0);
+		ASSERT3U(obsolete_sm_object, ==, 0);
 	}
 	for (unsigned c = 0; c < vd->vdev_children; c++) {
 		refcount += get_obsolete_refcount(vd->vdev_child[c]);
@@ -1047,7 +1048,8 @@ print_vdev_indirect(vdev_t *vd)
 	}
 	(void) printf("\n");
 
-	uint64_t obsolete_sm_object = vdev_obsolete_sm_object(vd);
+	uint64_t obsolete_sm_object;
+	VERIFY0(vdev_obsolete_sm_object(vd, &obsolete_sm_object));
 	if (obsolete_sm_object != 0) {
 		objset_t *mos = vd->vdev_spa->spa_meta_objset;
 		(void) printf("obsolete space map object %llu:\n",
@@ -3508,9 +3510,11 @@ zdb_load_obsolete_counts(vdev_t *vd)
 	spa_t *spa = vd->vdev_spa;
 	spa_condensing_indirect_phys_t *scip =
 	    &spa->spa_condensing_indirect_phys;
+	uint64_t obsolete_sm_object;
 	uint32_t *counts;
 
-	EQUIV(vdev_obsolete_sm_object(vd) != 0, vd->vdev_obsolete_sm != NULL);
+	VERIFY0(vdev_obsolete_sm_object(vd, &obsolete_sm_object));
+	EQUIV(obsolete_sm_object != 0, vd->vdev_obsolete_sm != NULL);
 	counts = vdev_indirect_mapping_load_obsolete_counts(vim);
 	if (vd->vdev_obsolete_sm != NULL) {
 		vdev_indirect_mapping_load_obsolete_spacemap(vim, counts,
@@ -4432,7 +4436,9 @@ verify_device_removal_feature_counts(spa_t *spa)
 			ASSERT(vic->vic_mapping_object != 0);
 			precise_vdev_count++;
 		}
-		if (vdev_obsolete_sm_object(vd) != 0) {
+		uint64_t obsolete_sm_object;
+		VERIFY0(vdev_obsolete_sm_object(vd, &obsolete_sm_object));
+		if (obsolete_sm_object != 0) {
 			ASSERT(vic->vic_mapping_object != 0);
 			obsolete_sm_count++;
 		}
