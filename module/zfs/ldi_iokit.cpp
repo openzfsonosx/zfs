@@ -1915,6 +1915,7 @@ handle_features_iokit(struct ldi_handle *lhp,
 	if ( dictionary ) {
 		OSBoolean *boolean;
 
+#ifdef DK_FEATURE_BARRIER
 		boolean = OSDynamicCast(
 			/* class  */ OSBoolean,
 			/* object */ dictionary->getObject(
@@ -1922,6 +1923,7 @@ handle_features_iokit(struct ldi_handle *lhp,
 
 		if ( boolean == kOSBooleanTrue )
 			*(uint32_t *)data |= DK_FEATURE_BARRIER;
+#endif
 
 		boolean = OSDynamicCast(
 			/* class  */ OSBoolean,
@@ -1931,6 +1933,7 @@ handle_features_iokit(struct ldi_handle *lhp,
 		if ( boolean == kOSBooleanTrue )
 			*(uint32_t *)data |= DK_FEATURE_FORCE_UNIT_ACCESS;
 
+#ifdef DK_FEATURE_PRIORITY
 		boolean = OSDynamicCast(
 			/* class  */ OSBoolean,
 			/* object */ dictionary->getObject(
@@ -1938,6 +1941,7 @@ handle_features_iokit(struct ldi_handle *lhp,
 
 		if ( boolean == kOSBooleanTrue )
 			*(uint32_t *)data |= DK_FEATURE_PRIORITY;
+#endif
 
 		boolean = OSDynamicCast(
 			/* class  */ OSBoolean,

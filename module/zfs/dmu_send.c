@@ -120,7 +120,7 @@ dump_bytes_cb(void *arg)
 	 * introduced after the requirement was made obsolete.
 	 */
 
-	ASSERT(len % 8 == 0 ||
+	ASSERT(dbi->dbi_len % 8 == 0 ||
 		(dsp->dsa_featureflags & DMU_BACKUP_FEATURE_RAW) != 0);
 
 #ifdef _KERNEL
