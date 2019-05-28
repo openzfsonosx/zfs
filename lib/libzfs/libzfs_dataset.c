@@ -4530,8 +4530,6 @@ zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
 	zfs_cmd_t zc = {"\0"};
 	char *delim;
 	prop_changelist_t *cl = NULL;
-	zfs_handle_t *zhrp = NULL;
-	char *parentname = NULL;
 	char parent[ZFS_MAX_DATASET_NAME_LEN];
 	libzfs_handle_t *hdl = zhp->zfs_hdl;
 	char errbuf[1024];
@@ -4626,8 +4624,8 @@ zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
 	}
 
 	if (recursive) {
-
-		parentname = zfs_strdup(zhp->zfs_hdl, zhp->zfs_name);
+		zfs_handle_t *zhrp;
+		char *parentname = zfs_strdup(zhp->zfs_hdl, zhp->zfs_name);
 		if (parentname == NULL) {
 			ret = -1;
 			goto error;
@@ -4635,13 +4633,15 @@ zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
 		delim = strchr(parentname, '@');
 		*delim = '\0';
 		zhrp = zfs_open(zhp->zfs_hdl, parentname, ZFS_TYPE_DATASET);
+		free(parentname);
 		if (zhrp == NULL) {
 			ret = -1;
 			goto error;
 		}
-
-	} else {
-		if ((cl = changelist_gather(zhp, ZFS_PROP_NAME, 0,
+		zfs_close(zhrp);
+	} else if (zhp->zfs_type != ZFS_TYPE_SNAPSHOT) {
+		if ((cl = changelist_gather(zhp, ZFS_PROP_NAME,
+		    0,
 		    force_unmount ? MS_FORCE : 0)) == NULL)
 			return (-1);
 
@@ -4711,13 +4711,7 @@ zfs_rename(zfs_handle_t *zhp, const char *target, boolean_t recursive,
 	}
 
 error:
-	if (parentname) {
-		free(parentname);
-	}
-	if (zhrp) {
-		zfs_close(zhrp);
-	}
-	if (cl) {
+	if (cl != NULL) {
 		changelist_free(cl);
 	}
 	return (ret);
