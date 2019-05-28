@@ -958,9 +958,9 @@ zpool_do_remove(int argc, char **argv)
 	int i, ret = 0;
 	zpool_handle_t *zhp;
 	boolean_t stop = B_FALSE;
+	int c;
 	boolean_t noop = B_FALSE;
 	boolean_t parsable = B_FALSE;
-	char c;
 
 	/* check options */
 	while ((c = getopt(argc, argv, "nps")) != -1) {
