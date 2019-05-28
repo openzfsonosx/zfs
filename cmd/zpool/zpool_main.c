@@ -784,7 +784,7 @@ add_prop_list_default(const char *propname, char *propval, nvlist_t **props,
  *	-P	Display full path for vdev name.
  *
  * Adds the given vdevs to 'pool'.  As with create, the bulk of this work is
- * handled by get_vdev_spec(), which constructs the nvlist needed to pass to
+ * handled by make_root_vdev(), which constructs the nvlist needed to pass to
  * libzfs.
  */
 int
@@ -868,7 +868,21 @@ zpool_do_add(int argc, char **argv)
 		return (1);
 	}
 
-	/* pass off to get_vdev_spec for processing */
+	/* unless manually specified use "ashift" pool property (if set) */
+	if (!nvlist_exists(props, ZPOOL_CONFIG_ASHIFT)) {
+		int intval;
+		zprop_source_t src;
+		char strval[ZPOOL_MAXPROPLEN];
+
+		intval = zpool_get_prop_int(zhp, ZPOOL_PROP_ASHIFT, &src);
+		if (src != ZPROP_SRC_DEFAULT) {
+			(void) sprintf(strval, "%" PRId32, intval);
+			verify(add_prop_list(ZPOOL_CONFIG_ASHIFT, strval,
+			    &props, B_TRUE) == 0);
+		}
+	}
+
+	/* pass off to make_root_vdev for processing */
 	nvroot = make_root_vdev(zhp, props, force, !force, B_FALSE, dryrun,
 	    argc, argv);
 	if (nvroot == NULL) {
@@ -1204,9 +1218,9 @@ errout:
  *	-O	Set fsproperty=value in the pool's root file system
  *
  * Creates the named pool according to the given vdev specification.  The
- * bulk of the vdev processing is done in get_vdev_spec() in zpool_vdev.c.  Once
- * we get the nvlist back from get_vdev_spec(), we either print out the contents
- * (if '-n' was specified), or pass it to libzfs to do the creation.
+ * bulk of the vdev processing is done in make_root_vdev() in zpool_vdev.c.
+ * Once we get the nvlist back from make_root_vdev(), we either print out the
+ * contents (if '-n' was specified), or pass it to libzfs to do the creation.
  */
 int
 zpool_do_create(int argc, char **argv)
@@ -1358,7 +1372,7 @@ zpool_do_create(int argc, char **argv)
 		goto errout;
 	}
 
-	/* pass off to get_vdev_spec for bulk processing */
+	/* pass off to make_root_vdev for bulk processing */
 	nvroot = make_root_vdev(NULL, props, force, !force, B_FALSE, dryrun,
 	    argc - 1, argv + 1);
 	if (nvroot == NULL)
