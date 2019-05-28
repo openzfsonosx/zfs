@@ -2,10 +2,10 @@
 
 export ZFS_DEV=/dev/zfs
 export ZED_PROG_NAME=zed
-export ZED_PATH=/usr/local/sbin/${ZED_PROG_NAME}
+export ZED_PATH=/usr/local/bin/${ZED_PROG_NAME}
 export ERRNO_PATH=/usr/include/sys/errno.h
-export ZFS=/usr/local/sbin/zfs
-export ZPOOL=/usr/local/sbin/zpool
+export ZFS=/usr/local/bin/zfs
+export ZPOOL=/usr/local/bin/zpool
 export ZPOOL_CACHE=/etc/zfs/zpool.cache
 
 [ -f "$ZPOOL_CACHE" ] && cp "$ZPOOL_CACHE" "$ZPOOL_CACHE".bak
