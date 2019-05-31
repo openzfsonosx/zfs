@@ -68,6 +68,11 @@ int zfs_nopwrite_enabled = 1;
 uint32_t zfs_per_txg_dirty_frees_percent = 30;
 
 /*
+ * Enable/disable forcing txg sync when dirty in dmu_offset_next.
+ */
+int zfs_dmu_offset_next_sync = 0;
+
+/*
  * This can be used for testing, to ensure that certain actions happen
  * while in the middle of a remap (which might otherwise complete too
  * quickly).
@@ -2553,55 +2558,43 @@ int
 dmu_offset_next(objset_t *os, uint64_t object, boolean_t hole, uint64_t *off)
 {
 	dnode_t *dn;
-	int err;
-
-	/*
-	 * Sync any current changes before
-	 * we go trundling through the block pointers.
-	 */
-	err = dmu_object_wait_synced(os, object);
-	if (err) {
-		return (err);
-	}
+	int i, err;
+	boolean_t clean = B_TRUE;
 
 	err = dnode_hold(os, object, FTAG, &dn);
-	if (err) {
+	if (err)
 		return (err);
-	}
 
-	err = dnode_next_offset(dn, (hole ? DNODE_FIND_HOLE : 0), off, 1, 1, 0);
-	dnode_rele(dn, FTAG);
-
-	return (err);
-}
-
-/*
- * Given the ZFS object, if it contains any dirty nodes
- * this function flushes all dirty blocks to disk. This
- * ensures the DMU object info is updated. A more efficient
- * future version might just find the TXG with the maximum
- * ID and wait for that to be synced.
- */
-int
-dmu_object_wait_synced(objset_t *os, uint64_t object)
-{
-	dnode_t *dn;
-	int error, i;
-
-	error = dnode_hold(os, object, FTAG, &dn);
-	if (error) {
-		return (error);
-	}
-
+	/*
+	 * Check if dnode is dirty
+	 */
 	for (i = 0; i < TXG_SIZE; i++) {
-		if (list_link_active(&dn->dn_dirty_link[i])) {
+		if (multilist_link_active(&dn->dn_dirty_link[i])) {
+			clean = B_FALSE;
 			break;
 		}
 	}
-	dnode_rele(dn, FTAG);
-	if (i != TXG_SIZE) {
+
+	/*
+	 * If compatibility option is on, sync any current changes before
+	 * we go trundling through the block pointers.
+	 */
+	if (!clean && zfs_dmu_offset_next_sync) {
+		clean = B_TRUE;
+		dnode_rele(dn, FTAG);
 		txg_wait_synced(dmu_objset_pool(os), 0);
+		err = dnode_hold(os, object, FTAG, &dn);
+		if (err)
+			return (err);
 	}
+
+	if (clean)
+		err = dnode_next_offset(dn,
+			(hole ? DNODE_FIND_HOLE : 0), off, 1, 1, 0);
+	else
+		err = SET_ERROR(EBUSY);
+
+	dnode_rele(dn, FTAG);
 
 	return (0);
 }
