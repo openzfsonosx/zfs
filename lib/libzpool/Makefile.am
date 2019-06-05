@@ -25,6 +25,11 @@ KERNEL_C = \
 	zfs_comutil.c \
 	zfs_deleg.c \
 	zfs_fletcher.c \
+	zfs_fletcher_avx512.c \
+	zfs_fletcher_intel.c \
+	zfs_fletcher_sse.c \
+	zfs_fletcher_superscalar.c \
+	zfs_fletcher_superscalar4.c \
 	zfs_namecheck.c \
 	zfs_prop.c \
 	zfs_uio.c \
@@ -106,6 +111,13 @@ KERNEL_C = \
 	vdev_missing.c \
 	vdev_queue.c \
 	vdev_raidz.c \
+	vdev_raidz_math_avx2.c \
+	vdev_raidz_math_avx512bw.c \
+	vdev_raidz_math_avx512f.c \
+	vdev_raidz_math.c \
+	vdev_raidz_math_scalar.c \
+	vdev_raidz_math_sse2.c \
+	vdev_raidz_math_ssse3.c \
 	vdev_removal.c \
 	vdev_root.c \
 	vdev_trim.c \
