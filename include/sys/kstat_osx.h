@@ -31,7 +31,7 @@ typedef struct osx_kstat {
 
 	kstat_named_t darwin_active_vnodes;
 	kstat_named_t darwin_debug;
-        kstat_named_t darwin_reclaim_nodes;
+	kstat_named_t darwin_reclaim_nodes;
 	kstat_named_t darwin_ignore_negatives;
 	kstat_named_t darwin_ignore_positives;
 	kstat_named_t darwin_create_negatives;
@@ -146,6 +146,11 @@ typedef struct osx_kstat {
 
 	kstat_named_t zfs_send_unmodified_spill_blocks;
 	kstat_named_t zfs_special_class_metadata_reserve_pct;
+
+	kstat_named_t zfs_vdev_raidz_impl;
+	kstat_named_t icp_gcm_impl;
+	kstat_named_t icp_aes_impl;
+	kstat_named_t zfs_fletcher_4_impl;
 } osx_kstat_t;
 
 

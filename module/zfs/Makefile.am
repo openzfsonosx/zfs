@@ -44,11 +44,21 @@ noinst_PROGRAMS = zfs
 zfs_kext_SOURCE =
 
 if TARGET_ASM_X86_64
-zfs_ASM_SOURCES_C = ../icp/asm-x86_64/aes/aeskey.c
+zfs_ASM_SOURCES_C = \
+	../icp/asm-x86_64/aes/aeskey.c \
+	../icp/algs/modes/gcm_pclmulqdq.c \
+	../zcommon/zfs_fletcher_intel.c \
+	../zcommon/zfs_fletcher_sse.c \
+	../zcommon/zfs_fletcher_avx512.c \
+	vdev_raidz_math_sse2.c \
+	vdev_raidz_math_ssse3.c \
+	vdev_raidz_math_avx2.c \
+	vdev_raidz_math_avx512f.c \
+	vdev_raidz_math_avx512bw.c
 zfs_ASM_SOURCES_AS = \
 	../icp/asm-x86_64/aes/aes_amd64.S \
-	../icp/asm-x86_64/aes/aes_intel.S \
-	../icp/asm-x86_64/modes/gcm_intel.S \
+	../icp/asm-x86_64/aes/aes_aesni.S \
+	../icp/asm-x86_64/modes/gcm_pclmulqdq.S \
 	../icp/asm-x86_64/sha2/sha256_impl.S \
 	../icp/asm-x86_64/sha2/sha512_impl.S
 endif
@@ -145,6 +155,8 @@ zfs_SOURCES = \
 	vdev_missing.c \
 	vdev_queue.c \
 	vdev_raidz.c \
+	vdev_raidz_math.c \
+	vdev_raidz_math_scalar.c \
 	vdev_removal.c \
 	vdev_root.c \
 	vdev_trim.c \
@@ -203,6 +215,8 @@ zfs_SOURCES = \
 	../zcommon/zfs_comutil.c \
 	../zcommon/zfs_deleg.c \
 	../zcommon/zfs_fletcher.c \
+	../zcommon/zfs_fletcher_superscalar.c \
+	../zcommon/zfs_fletcher_superscalar4.c \
 	../zcommon/zfs_namecheck.c \
 	../zcommon/zfs_prop.c \
 	../zcommon/zpool_prop.c \
@@ -230,6 +244,7 @@ zfs_SOURCES = \
 	../icp/algs/modes/ccm.c \
 	../icp/algs/modes/ctr.c \
 	../icp/algs/modes/ecb.c \
+	../icp/algs/modes/gcm_generic.c \
 	../icp/algs/modes/gcm.c \
 	../icp/algs/modes/modes.c \
 	../icp/algs/sha1/sha1.c \
@@ -237,6 +252,9 @@ zfs_SOURCES = \
 	../icp/algs/skein/skein.c \
 	../icp/algs/skein/skein_block.c \
 	../icp/algs/skein/skein_iv.c \
+	../icp/algs/aes/aes_impl_aesni.c \
+	../icp/algs/aes/aes_impl_generic.c \
+	../icp/algs/aes/aes_impl_x86-64.c \
 	../icp/algs/aes/aes_impl.c \
 	../icp/algs/aes/aes_modes.c \
 	../lua/lapi.c \

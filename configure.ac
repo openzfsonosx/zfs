@@ -134,12 +134,7 @@ AC_CONFIG_FILES([
 	contrib/dracut/90zfs/Makefile
 	contrib/initramfs/Makefile
 	module/Makefile
-	module/avl/Makefile
-	module/nvpair/Makefile
-	module/unicode/Makefile
-	module/zcommon/Makefile
 	module/zfs/Makefile
-	module/zpios/Makefile
 	include/Makefile
 	include/sys/Makefile
 	include/sys/fs/Makefile
