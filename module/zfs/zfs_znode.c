@@ -713,7 +713,7 @@ zfs_vnode_forget(struct vnode *vp)
  */
 static znode_t *
 zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
-				dmu_object_type_t obj_type, sa_handle_t *hdl)
+    dmu_object_type_t obj_type, sa_handle_t *hdl)
 {
 	znode_t	*zp;
 	struct vnode *vp;
@@ -1188,8 +1188,12 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 		 * we will have to attach the vnode after the dmu_commit like
 		 * maczfs does, in each vnop caller.
 		 */
-		*zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, sa_hdl);
-		ASSERT(*zpp != NULL);
+		do {
+			*zpp = zfs_znode_alloc(zfsvfs, db, 0, obj_type, sa_hdl);
+		} while (*zpp == NULL);
+
+		VERIFY(*zpp != NULL);
+		VERIFY(dzp != NULL);
 	} else {
 		/*
 		 * If we are creating the root node, the "parent" we
@@ -1479,7 +1483,6 @@ again:
 	zp = NULL;
 	zp = zfs_znode_alloc(zfsvfs, db, doi.doi_data_block_size,
 	    doi.doi_bonus_type, NULL);
-
 	if (zp == NULL) {
 		err = SET_ERROR(ENOENT);
 		ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
