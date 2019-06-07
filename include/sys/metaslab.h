@@ -51,6 +51,7 @@ void metaslab_fini(metaslab_t *);
 
 void metaslab_load_wait(metaslab_t *);
 int metaslab_load(metaslab_t *);
+void metaslab_potentially_unload(metaslab_t *, uint64_t);
 void metaslab_unload(metaslab_t *);
 
 uint64_t metaslab_allocated_space(metaslab_t *);
