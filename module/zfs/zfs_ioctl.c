@@ -3429,8 +3429,9 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 
 #ifdef __APPLE__
 		if (type == DMU_OST_ZVOL) {
-			if ((error = spa_open(fsname, &spa, FTAG)) != 0)
-				return (error);
+			int error2;
+			if ((error2 = spa_open(fsname, &spa, FTAG)) != 0)
+				return (error2);
 
 			zvol_create_minors(spa, fsname, B_TRUE);
 
