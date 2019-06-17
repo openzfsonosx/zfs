@@ -1560,8 +1560,8 @@ spa_vdev_remove_cancel_sync(void *arg, dmu_tx_t *tx)
 	VERIFY0(vdev_obsolete_sm_object(vd, &obsolete_sm_object));
 	if (obsolete_sm_object != 0) {
 		ASSERT(vd->vdev_obsolete_sm != NULL);
-		ASSERT3U(vdev_obsolete_sm_object(vd), ==,
-		    space_map_object(vd->vdev_obsolete_sm));
+		ASSERT3U(obsolete_sm_object, ==,
+			space_map_object(vd->vdev_obsolete_sm));
 
 		space_map_free(vd->vdev_obsolete_sm, tx);
 		VERIFY0(zap_remove(spa->spa_meta_objset, vd->vdev_top_zap,

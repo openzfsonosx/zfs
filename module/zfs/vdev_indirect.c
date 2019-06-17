@@ -407,8 +407,7 @@ vdev_indirect_should_condense(vdev_t *vd)
 
 	ASSERT(vd->vdev_obsolete_sm != NULL);
 
-	ASSERT3U(vdev_obsolete_sm_object(vd), ==,
-	    space_map_object(vd->vdev_obsolete_sm));
+	ASSERT3U(obsolete_sm_obj, ==, space_map_object(vd->vdev_obsolete_sm));
 
 	uint64_t bytes_mapped = vdev_indirect_mapping_bytes_mapped(vim);
 	uint64_t bytes_obsolete = space_map_allocated(vd->vdev_obsolete_sm);
@@ -817,7 +816,7 @@ vdev_indirect_sync_obsolete(vdev_t *vd, dmu_tx_t *tx)
 	}
 
 	ASSERT(vd->vdev_obsolete_sm != NULL);
-	ASSERT3U(vdev_obsolete_sm_object(vd), ==,
+	ASSERT3U(obsolete_sm_object, ==,
 	    space_map_object(vd->vdev_obsolete_sm));
 
 	space_map_write(vd->vdev_obsolete_sm,

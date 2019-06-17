@@ -8292,8 +8292,7 @@ vdev_indirect_state_sync_verify(vdev_t *vd)
 		    vd->vdev_ops == &vdev_indirect_ops);
 		ASSERT(vdev_indirect_mapping_num_entries(vim) > 0);
 		ASSERT(vdev_indirect_mapping_bytes_mapped(vim) > 0);
-
-		ASSERT3U(vdev_obsolete_sm_object(vd), ==,
+		ASSERT3U(obsolete_sm_object, ==,
 		    space_map_object(vd->vdev_obsolete_sm));
 		ASSERT3U(vdev_indirect_mapping_bytes_mapped(vim), >=,
 		    space_map_allocated(vd->vdev_obsolete_sm));
