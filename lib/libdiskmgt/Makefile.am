@@ -19,7 +19,7 @@ libdiskmgt_la_SOURCES = \
 	inuse_zpool.c \
 	slice.c
 
-libdiskmgt_core_la_LIBADD = \
+libdiskmgt_la_LIBADD = \
 	$(top_builddir)/lib/libnvpair/libnvpair.la
 
 libdiskmgt_la_LDFLAGS = -version-info 1:0:0 -framework DiskArbitration -framework CoreServices
