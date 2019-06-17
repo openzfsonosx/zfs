@@ -873,6 +873,7 @@ vdev_obsolete_sm_object(vdev_t *vd, uint64_t *sm_obj)
 {
 	ASSERT0(spa_config_held(vd->vdev_spa, SCL_ALL, RW_WRITER));
 	if (vd->vdev_top_zap == 0) {
+		*sm_obj = 0;
 		return (0);
 	}
 
@@ -883,7 +884,7 @@ vdev_obsolete_sm_object(vdev_t *vd, uint64_t *sm_obj)
 		error = 0;
 	}
 
-	return (sm_obj);
+	return (error);
 }
 
 boolean_t
