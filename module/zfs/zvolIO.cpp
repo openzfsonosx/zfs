@@ -604,9 +604,9 @@ net_lundman_zfs_zvol_device::doAsyncReadWrite(
 		return (kIOReturnBadArgument);
 	}
 
-	dprintf("%s offset @block %llu numblocks %llu: blksz %u\n",
-	    direction == kIODirectionIn ? "Read" : "Write",
-	    block, nblks, (ZVOL_BSIZE));
+	//dprintf("%s offset @block %llu numblocks %llu: blksz %u\n",
+	//   direction == kIODirectionIn ? "Read" : "Write",
+	//  block, nblks, (ZVOL_BSIZE));
 
 	/* Perform the read or write operation through the transport driver. */
 	actualByteCount = (nblks*(ZVOL_BSIZE));

@@ -2868,10 +2868,11 @@ zil_commit(zilog_t *zilog, uint64_t foid)
 	 *    checks in the code that enforce this invariant, and will
 	 *    cause a panic if it's not upheld.
 	 */
-	ASSERT3B(dmu_objset_is_snapshot(zilog->zl_os), ==, B_FALSE);
 
 	// OSX often has NULL zil for some reason
 	if (!zilog) return;
+
+	ASSERT3B(dmu_objset_is_snapshot(zilog->zl_os), ==, B_FALSE);
 
 	if (zilog->zl_sync == ZFS_SYNC_DISABLED)
 		return;
