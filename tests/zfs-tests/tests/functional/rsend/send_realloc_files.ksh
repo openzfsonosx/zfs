@@ -35,8 +35,6 @@
 #   e) Destroy the incremental stream and old snapshot.
 #
 
-verify_runnable "both"
-
 log_assert "Verify incremental receive handles reallocation"
 
 function cleanup
@@ -58,16 +56,7 @@ log_must eval "zfs recv $POOL/newfs < $BACKDIR/fs@snap${last_snap}"
 # Set atime=off to prevent the recursive_cksum from modifying newfs.
 log_must zfs set atime=off $POOL/newfs
 
-# Due to reduced performance on debug kernels use fewer files by default.
-if is_kmemleak; then
-	nr_files=100
-	passes=2
-else
-	nr_files=1000
-	passes=3
-fi
-
-for i in {1..$passes}; do
+for i in {1..5}; do
 	# Randomly modify several dataset properties in order to generate
 	# more interesting incremental send streams.
 	rand_set_prop $POOL/fs checksum "off" "fletcher4" "sha256"
@@ -78,8 +67,8 @@ for i in {1..$passes}; do
 
 	# Churn the filesystem in such a way that we're likely to be both
 	# allocating and reallocating objects in the incremental stream.
-	log_must churn_files $nr_files 524288 $POOL/fs
-	expected_cksum=$(recursive_cksum /$POOL/fs)
+	log_must churn_files 1000 524288 $POOL/fs
+	expected_cksum=$(recursive_cksum /$fs)
 
 	# Create a snapshot and use it to send an incremental stream.
 	this_snap=$((last_snap + 1))
