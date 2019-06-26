@@ -148,7 +148,7 @@ dump_bytes(dmu_sendarg_t *dsp, void *buf, int len)
 	dbi.dbi_buf = buf;
 	dbi.dbi_len = len;
 
-#if defined(HAVE_LARGE_STACKS)
+#if defined(HAVE_LARGE_STACKS) || defined(__APPLE__)
 	dump_bytes_cb(&dbi);
 #else
 	/*
@@ -1179,7 +1179,8 @@ dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *to_ds,
 		goto out;
 	}
 
-	err = bqueue_init(&to_arg.q, zfs_send_queue_length,
+	err = bqueue_init(&to_arg.q,
+	    MAX(zfs_send_queue_length, 2 * zfs_max_recordsize),
 	    offsetof(struct send_block_record, ln));
 	to_arg.error_code = 0;
 	to_arg.cancel = B_FALSE;
