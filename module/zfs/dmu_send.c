@@ -969,8 +969,17 @@ do_dump(dmu_sendarg_t *dsa, struct send_block_record *data)
 /*
  * Pop the new data off the queue, and free the old data.
  */
+
 static struct send_block_record *
-get_next_record(bqueue_t *bq, struct send_block_record *data)
+lund1get_next_record(bqueue_t *bq, struct send_block_record *data)
+{
+	struct send_block_record *tmp = bqueue_dequeue(bq);
+	kmem_free(data, sizeof (*data));
+	return (tmp);
+}
+
+static struct send_block_record *
+lund2get_next_record(bqueue_t *bq, struct send_block_record *data)
 {
 	struct send_block_record *tmp = bqueue_dequeue(bq);
 	kmem_free(data, sizeof (*data));
@@ -982,7 +991,7 @@ get_next_record(bqueue_t *bq, struct send_block_record *data)
  *
  * Note: Releases dp using the specified tag.
  */
-static int
+noinline int
 dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *to_ds,
     zfs_bookmark_phys_t *ancestor_zb, boolean_t is_clone,
     boolean_t embedok, boolean_t large_block_ok, boolean_t compressok,
@@ -996,6 +1005,7 @@ dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *to_ds,
 	uint64_t fromtxg = 0;
 	uint64_t featureflags = 0;
 	void *payload = NULL;
+
 	size_t payload_len = 0;
 	struct send_thread_arg to_arg = { { { 0 } } };
 
@@ -1189,15 +1199,18 @@ dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *to_ds,
 	to_arg.flags = TRAVERSE_PRE | TRAVERSE_PREFETCH;
 	if (rawok)
 		to_arg.flags |= TRAVERSE_NO_DECRYPT;
-	(void) thread_create(NULL, 0, send_traverse_thread, &to_arg, 0, curproc,
-	    TS_RUN, minclsyspri);
+	if (thread_create(NULL, 0, send_traverse_thread, &to_arg, 0, curproc,
+			TS_RUN, minclsyspri) == 0) {
+		err = EINVAL;
+		goto failed;
+	}
 
 	struct send_block_record *to_data;
 	to_data = bqueue_dequeue(&to_arg.q);
 
 	while (!to_data->eos_marker && err == 0) {
 		err = do_dump(dsp, to_data);
-		to_data = get_next_record(&to_arg.q, to_data);
+		to_data = lund1get_next_record(&to_arg.q, to_data);
 		if (issig(JUSTLOOKING) && issig(FORREAL))
 			err = EINTR;
 	}
@@ -1205,11 +1218,12 @@ dmu_send_impl(void *tag, dsl_pool_t *dp, dsl_dataset_t *to_ds,
 	if (err != 0) {
 		to_arg.cancel = B_TRUE;
 		while (!to_data->eos_marker) {
-			to_data = get_next_record(&to_arg.q, to_data);
+			to_data = lund2get_next_record(&to_arg.q, to_data);
 		}
 	}
-	kmem_free(to_data, sizeof (*to_data));
 
+	kmem_free(to_data, sizeof (*to_data));
+failed:
 	bqueue_destroy(&to_arg.q);
 
 	if (err == 0 && to_arg.error_code != 0)
