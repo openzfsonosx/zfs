@@ -670,8 +670,8 @@ abd_get_offset_impl(abd_t *sabd, size_t off, size_t size)
 		    (char *)sabd->abd_u.abd_linear.abd_buf + off;
 	} else {
 		size_t new_offset = sabd->abd_u.abd_scatter.abd_offset + off;
-		size_t chunkcnt = abd_scatter_chunkcnt(sabd) -
-		    (new_offset / zfs_abd_chunk_size);
+		size_t chunkcnt =  abd_chunkcnt_for_bytes(size +
+		    new_offset % zfs_abd_chunk_size);
 
 		abd = abd_alloc_struct(chunkcnt);
 
@@ -693,7 +693,7 @@ abd_get_offset_impl(abd_t *sabd, size_t off, size_t size)
 		    chunkcnt * sizeof (void *));
 	}
 
-	abd->abd_size = sabd->abd_size - off;
+	abd->abd_size = size;
 	abd->abd_parent = sabd;
 	abd->abd_flags |= ABD_FLAG_NOMOVE;
 	zfs_refcount_create(&abd->abd_children);
@@ -974,10 +974,13 @@ abd_release_ownership_of_buf(abd_t *abd)
 }
 
 struct abd_iter {
-	abd_t		*iter_abd;	/* ABD being iterated through */
-	size_t		iter_pos;	/* position (relative to abd_offset) */
+	/* public interface */
 	void		*iter_mapaddr;	/* addr corresponding to iter_pos */
 	size_t		iter_mapsize;	/* length of data valid at mapaddr */
+
+	/* private */
+	abd_t		*iter_abd;	/* ABD being iterated through */
+	size_t		iter_pos;	/* position (relative to abd_offset) */
 };
 
 static inline size_t
@@ -1055,7 +1058,8 @@ abd_iter_map(struct abd_iter *aiter)
 	} else {
 		size_t index = abd_iter_scatter_chunk_index(aiter);
 		offset = abd_iter_scatter_chunk_offset(aiter);
-		aiter->iter_mapsize = zfs_abd_chunk_size - offset;
+		aiter->iter_mapsize = MIN(zfs_abd_chunk_size - offset,
+			aiter->iter_abd->abd_size - aiter->iter_pos);
 		paddr = aiter->iter_abd->abd_u.abd_scatter.abd_chunks[index];
 	}
 	aiter->iter_mapaddr = (char *)paddr + offset;
