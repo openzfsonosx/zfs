@@ -5201,7 +5201,7 @@ arc_reclaim_thread(void *unused)
 
 		if (growtime > 0 && gethrtime() >= growtime) {
 			if (arc_no_grow == B_TRUE)
-				printf("ZFS: arc growtime expired\n");
+				dprintf("ZFS: arc growtime expired\n");
 			growtime = 0;
 			arc_no_grow = B_FALSE;
 		}
