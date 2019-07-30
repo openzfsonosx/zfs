@@ -400,6 +400,45 @@ zfs_vnop_close(struct vnop_close_args *ap)
 	return (zfs_close(ap->a_vp, ap->a_fflag, count, offset, cr, ct));
 }
 
+static int
+zfs_ioctl_getxattr(vnode_t *vp, zfsxattr_t *fsx, cred_t *cr,
+	caller_context_t *ct)
+{
+	znode_t *zp = VTOZ(vp);
+
+	if (zp->z_pflags & ZFS_PROJINHERIT)
+		fsx->fsx_xflags = ZFS_PROJINHERIT_FL;
+	if (zp->z_pflags & ZFS_PROJID)
+		fsx->fsx_projid = zp->z_projid;
+	return (0);
+}
+
+static int
+zfs_ioctl_setxattr(vnode_t *vp, zfsxattr_t *fsx, cred_t *cr,
+	caller_context_t *ct)
+{
+	xvattr_t xva;
+	xoptattr_t *xoap;
+
+	if (!zpl_is_valid_projid(fsx->fsx_projid))
+		return (SET_ERROR(EINVAL));
+
+	if (fsx->fsx_xflags & ~ZFS_PROJINHERIT_FL)
+		return (SET_ERROR(EOPNOTSUPP));
+
+	xva_init(&xva);
+	xoap = xva_getxoptattr(&xva);
+
+	XVA_SET_REQ(&xva, XAT_PROJINHERIT);
+	if (fsx->fsx_xflags & ZFS_PROJINHERIT_FL)
+		xoap->xoa_projinherit = B_TRUE;
+
+	XVA_SET_REQ(&xva, XAT_PROJID);
+	xoap->xoa_projid = fsx->fsx_projid;
+
+	return (zfs_setattr(vp, (vattr_t *)&xva, 0, cr, ct));
+}
+
 int
 zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 #if 0
@@ -444,7 +483,7 @@ zfs_vnop_ioctl(struct vnop_ioctl_args *ap)
 	}
 	ZFS_EXIT(zfsvfs);
 
-	switch (ap->a_command) {
+	switch ((uint32_t)ap->a_command) {
 
 		/* ioctl supported by ZFS and POSIX */
 
@@ -518,6 +557,23 @@ off_t fsize = zp->z_size;
 #endif
 
 			break;
+
+		case ZFS_IOC_FSGETXATTR:
+		case ZFS_FSCTL_FSGETXATTR:
+		{
+			dprintf("ZFS_IOC_FSGETXATTR\n");
+			zfsxattr_t *fsx = (zfsxattr_t *)ap->a_data;
+			fsx->fsx_ioc_error = zfs_ioctl_getxattr(ap->a_vp, fsx, cr, ct);
+			break;
+		}
+        case ZFS_IOC_FSSETXATTR:
+        case ZFS_FSCTL_FSSETXATTR:
+		{
+			dprintf("ZFS_IOC_FSSETXATTR\n");
+			zfsxattr_t *fsx = (zfsxattr_t *)ap->a_data;
+			fsx->fsx_ioc_error = zfs_ioctl_setxattr(ap->a_vp, fsx, cr, ct);
+			break;
+		}
 
 		case SPOTLIGHT_GET_MOUNT_TIME:
 		case SPOTLIGHT_IOC_GET_MOUNT_TIME:

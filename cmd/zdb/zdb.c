@@ -2209,11 +2209,13 @@ dump_object(objset_t *os, uint64_t object, int verbosity, int *print_header,
 	}
 
 	if (verbosity >= 4) {
-		(void) printf("\tdnode flags: %s%s%s\n",
+		(void) printf("\tdnode flags: %s%s%s%s\n",
 		    (dn->dn_phys->dn_flags & DNODE_FLAG_USED_BYTES) ?
 		    "USED_BYTES " : "",
 		    (dn->dn_phys->dn_flags & DNODE_FLAG_USERUSED_ACCOUNTED) ?
 		    "USERUSED_ACCOUNTED " : "",
+		    (dn->dn_phys->dn_flags & DNODE_FLAG_USEROBJUSED_ACCOUNTED) ?
+		    "USEROBJUSED_ACCOUNTED " : "",
 		    (dn->dn_phys->dn_flags & DNODE_FLAG_SPILL_BLKPTR) ?
 		    "SPILL_BLKPTR" : "");
 		(void) printf("\tdnode maxblkid: %llu\n",
@@ -3010,16 +3012,17 @@ dump_one_dir(const char *dsname, void *arg)
 {
 	int error;
 	objset_t *os;
+	spa_feature_t f;
 
 	error = open_objset(dsname, DMU_OST_ANY, FTAG, &os);
 	if (error != 0)
 		return (0);
 
-	for (spa_feature_t f = 0; f < SPA_FEATURES; f++) {
-		if (!dmu_objset_ds(os)->ds_feature_inuse[f])
+	for (f = 0; f < SPA_FEATURES; f++) {
+		if (!dsl_dataset_feature_is_active(dmu_objset_ds(os), f))
 			continue;
 		ASSERT(spa_feature_table[f].fi_flags &
-			   ZFEATURE_FLAG_PER_DATASET);
+		    ZFEATURE_FLAG_PER_DATASET);
 		dataset_feature_count[f]++;
 	}
 

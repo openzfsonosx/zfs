@@ -1215,11 +1215,17 @@ zio_crypt_do_objset_hmacs(zio_crypt_key_t *key, void *data, uint_t datalen,
 	bcopy(raw_portable_mac, portable_mac, ZIO_OBJSET_MAC_LEN);
 
 	/*
-	 * The local MAC protects the user and group accounting. If these
-	 * objects are not present, the local MAC is zeroed out.
+	 * The local MAC protects the user, group and project accounting.
+	 * If these objects are not present, the local MAC is zeroed out.
 	 */
-	if (osp->os_userused_dnode.dn_type == DMU_OT_NONE &&
-	    osp->os_groupused_dnode.dn_type == DMU_OT_NONE) {
+	if ((datalen >= OBJSET_PHYS_SIZE_V3 &&
+	    osp->os_userused_dnode.dn_type == DMU_OT_NONE &&
+	    osp->os_groupused_dnode.dn_type == DMU_OT_NONE &&
+	    osp->os_projectused_dnode.dn_type == DMU_OT_NONE) ||
+	    (datalen >= OBJSET_PHYS_SIZE_V2 &&
+	    osp->os_userused_dnode.dn_type == DMU_OT_NONE &&
+	    osp->os_groupused_dnode.dn_type == DMU_OT_NONE) ||
+	    (datalen <= OBJSET_PHYS_SIZE_V1)) {
 		bzero(local_mac, ZIO_OBJSET_MAC_LEN);
 		return (0);
 	}
@@ -1250,15 +1256,27 @@ zio_crypt_do_objset_hmacs(zio_crypt_key_t *key, void *data, uint_t datalen,
 	}
 
 	/* add in fields from the user accounting dnodes */
-	ret = zio_crypt_do_dnode_hmac_updates(ctx, key->zk_version,
-	    should_bswap, &osp->os_userused_dnode);
-	if (ret)
-		goto error;
+	if (osp->os_userused_dnode.dn_type != DMU_OT_NONE) {
+		ret = zio_crypt_do_dnode_hmac_updates(ctx, key->zk_version,
+		    should_bswap, &osp->os_userused_dnode);
+		if (ret)
+			goto error;
+	}
 
-	ret = zio_crypt_do_dnode_hmac_updates(ctx, key->zk_version,
-	    should_bswap, &osp->os_groupused_dnode);
-	if (ret)
-		goto error;
+	if (osp->os_groupused_dnode.dn_type != DMU_OT_NONE) {
+		ret = zio_crypt_do_dnode_hmac_updates(ctx, key->zk_version,
+		    should_bswap, &osp->os_groupused_dnode);
+		if (ret)
+			goto error;
+	}
+
+	if (osp->os_projectused_dnode.dn_type != DMU_OT_NONE &&
+	    datalen >= OBJSET_PHYS_SIZE_V3) {
+		ret = zio_crypt_do_dnode_hmac_updates(ctx, key->zk_version,
+		    should_bswap, &osp->os_projectused_dnode);
+		if (ret)
+			goto error;
+	}
 
 	/* store the final digest in a temporary buffer and copy what we need */
 	cd.cd_length = SHA512_DIGEST_LENGTH;

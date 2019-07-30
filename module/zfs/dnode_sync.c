@@ -610,7 +610,8 @@ dnode_sync(dnode_t *dn, dmu_tx_t *tx)
 	ASSERT(dn->dn_dbuf == NULL || arc_released(dn->dn_dbuf->db_buf));
 
 	/*
-	 * Do user accounting if it is enabled and this is not a raw recv
+	 * Do user accounting if it is enabled and this is not
+	 * an encrypted receive.
 	 */
 	if (dmu_objset_userused_enabled(os) &&
 	    !DMU_OBJECT_IS_SPECIAL(dn->dn_object) &&
@@ -619,12 +620,17 @@ dnode_sync(dnode_t *dn, dmu_tx_t *tx)
 		dn->dn_oldused = DN_USED_BYTES(dn->dn_phys);
 		dn->dn_oldflags = dn->dn_phys->dn_flags;
 		dn->dn_phys->dn_flags |= DNODE_FLAG_USERUSED_ACCOUNTED;
+		if (dmu_objset_userobjused_enabled(dn->dn_objset))
+			dn->dn_phys->dn_flags |=
+			    DNODE_FLAG_USEROBJUSED_ACCOUNTED;
 		mutex_exit(&dn->dn_mtx);
 		dmu_objset_userquota_get_ids(dn, B_FALSE, tx);
 	} else {
 		/* Once we account for it, we should always account for it */
 		ASSERT(!(dn->dn_phys->dn_flags &
 		    DNODE_FLAG_USERUSED_ACCOUNTED));
+		ASSERT(!(dn->dn_phys->dn_flags &
+		    DNODE_FLAG_USEROBJUSED_ACCOUNTED));
 	}
 
 	mutex_enter(&dn->dn_mtx);
@@ -748,8 +754,8 @@ dnode_sync(dnode_t *dn, dmu_tx_t *tx)
 	if (dn->dn_num_slots > DNODE_MIN_SLOTS) {
 		dsl_dataset_t *ds = dn->dn_objset->os_dsl_dataset;
 		mutex_enter(&ds->ds_lock);
-		ds->ds_feature_activation_needed[SPA_FEATURE_LARGE_DNODE] =
-		    B_TRUE;
+		ds->ds_feature_activation[SPA_FEATURE_LARGE_DNODE] =
+		    (void *)B_TRUE;
 		mutex_exit(&ds->ds_lock);
 	}
 

@@ -67,8 +67,8 @@ typedef struct traverse_data {
 	boolean_t td_realloc_possible;
 } traverse_data_t;
 
-static int traverse_dnode(traverse_data_t *td, const dnode_phys_t *dnp,
-    uint64_t objset, uint64_t object);
+static int traverse_dnode(traverse_data_t *td, const blkptr_t *bp,
+    const dnode_phys_t *dnp, uint64_t objset, uint64_t object);
 static void prefetch_dnode_metadata(traverse_data_t *td, const dnode_phys_t *,
     uint64_t objset, uint64_t object);
 
@@ -353,8 +353,8 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 
 		/* recursively visitbp() blocks below this */
 		for (i = 0; i < epb; i += child_dnp[i].dn_extra_slots + 1) {
-			err = traverse_dnode(td, &child_dnp[i],
-				zb->zb_objset, zb->zb_blkid * epb + i);
+			err = traverse_dnode(td, bp, &child_dnp[i],
+			    zb->zb_objset, zb->zb_blkid * epb + i);
 			if (err != 0)
 				break;
 		}
@@ -387,22 +387,32 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 		if (osp->os_meta_dnode.dn_maxblkid == 0)
 			td->td_realloc_possible = B_FALSE;
 
-		if (arc_buf_size(buf) >= sizeof (objset_phys_t)) {
-			prefetch_dnode_metadata(td, gdnp, zb->zb_objset,
-			    DMU_GROUPUSED_OBJECT);
-			prefetch_dnode_metadata(td, udnp, zb->zb_objset,
-			    DMU_USERUSED_OBJECT);
+		if (OBJSET_BUF_HAS_USERUSED(buf)) {
+			if (OBJSET_BUF_HAS_PROJECTUSED(buf))
+				prefetch_dnode_metadata(td,
+				    &osp->os_projectused_dnode,
+				    zb->zb_objset, DMU_PROJECTUSED_OBJECT);
+			prefetch_dnode_metadata(td, &osp->os_groupused_dnode,
+			    zb->zb_objset, DMU_GROUPUSED_OBJECT);
+			prefetch_dnode_metadata(td, &osp->os_userused_dnode,
+			    zb->zb_objset, DMU_USERUSED_OBJECT);
 		}
 
-		err = traverse_dnode(td, &osp->os_meta_dnode, zb->zb_objset,
-			DMU_META_DNODE_OBJECT);
-		if (err == 0 && arc_buf_size(buf) >= sizeof (objset_phys_t)) {
-			err = traverse_dnode(td, &osp->os_groupused_dnode,
-				zb->zb_objset, DMU_GROUPUSED_OBJECT);
-		}
-		if (err == 0 && arc_buf_size(buf) >= sizeof (objset_phys_t)) {
-			err = traverse_dnode(td, &osp->os_userused_dnode,
-				zb->zb_objset, DMU_USERUSED_OBJECT);
+		err = traverse_dnode(td, bp, &osp->os_meta_dnode, zb->zb_objset,
+		    DMU_META_DNODE_OBJECT);
+		if (err == 0 && OBJSET_BUF_HAS_USERUSED(buf)) {
+			if (OBJSET_BUF_HAS_PROJECTUSED(buf))
+				err = traverse_dnode(td, bp,
+				    &osp->os_projectused_dnode, zb->zb_objset,
+				    DMU_PROJECTUSED_OBJECT);
+			if (err == 0)
+				err = traverse_dnode(td, bp,
+				    &osp->os_groupused_dnode, zb->zb_objset,
+				    DMU_GROUPUSED_OBJECT);
+			if (err == 0)
+				err = traverse_dnode(td, bp,
+				    &osp->os_userused_dnode, zb->zb_objset,
+				    DMU_USERUSED_OBJECT);
 		}
 	}
 
@@ -468,26 +478,26 @@ prefetch_dnode_metadata(traverse_data_t *td, const dnode_phys_t *dnp,
 }
 
 static int
-traverse_dnode(traverse_data_t *td, const dnode_phys_t *dnp,
+traverse_dnode(traverse_data_t *td, const blkptr_t *bp, const dnode_phys_t *dnp,
     uint64_t objset, uint64_t object)
 {
 	int j, err = 0;
 	zbookmark_phys_t czb;
 
+	if (object != DMU_META_DNODE_OBJECT && td->td_resume != NULL &&
+	    object < td->td_resume->zb_object)
+		return (0);
+
 	if (td->td_flags & TRAVERSE_PRE) {
 		SET_BOOKMARK(&czb, objset, object, ZB_DNODE_LEVEL,
-					 ZB_DNODE_BLKID);
-		err = td->td_func(td->td_spa, NULL, NULL, &czb, dnp,
-						  td->td_arg);
+		    ZB_DNODE_BLKID);
+		err = td->td_func(td->td_spa, NULL, bp, &czb, dnp,
+		    td->td_arg);
 		if (err == TRAVERSE_VISIT_NO_CHILDREN)
 			return (0);
 		if (err != 0)
 			return (err);
 	}
-
-	if (object != DMU_META_DNODE_OBJECT && td->td_resume != NULL &&
-		object < td->td_resume->zb_object)
-		return (0);
 
 	for (j = 0; j < dnp->dn_nblkptr; j++) {
 		SET_BOOKMARK(&czb, objset, object, dnp->dn_nlevels - 1, j);
@@ -504,7 +514,7 @@ traverse_dnode(traverse_data_t *td, const dnode_phys_t *dnp,
 	if (err == 0 && (td->td_flags & TRAVERSE_POST)) {
 		SET_BOOKMARK(&czb, objset, object, ZB_DNODE_LEVEL,
 		    ZB_DNODE_BLKID);
-		err = td->td_func(td->td_spa, NULL, NULL, &czb, dnp,
+		err = td->td_func(td->td_spa, NULL, bp, &czb, dnp,
 		    td->td_arg);
 		if (err == TRAVERSE_VISIT_NO_CHILDREN)
 			return (0);

@@ -65,6 +65,8 @@ typedef enum spa_feature {
 	SPA_FEATURE_ALLOCATION_CLASSES,
 	SPA_FEATURE_BOOKMARK_V2,
 	SPA_FEATURE_RESILVER_DEFER,
+	SPA_FEATURE_USEROBJ_ACCOUNTING,
+	SPA_FEATURE_PROJECT_QUOTA,
 	SPA_FEATURES
 } spa_feature_t;
 
@@ -96,6 +98,7 @@ typedef struct zfeature_info {
 	const char *fi_guid;	/* On-disk feature identifier */
 	const char *fi_desc;	/* Feature description */
 	zfeature_flags_t fi_flags;
+	zfeature_type_t fi_type; /* Only relevant for PER_DATASET features */
 	/* array of dependencies, terminated by SPA_FEATURE_NONE */
 	const spa_feature_t *fi_depends;
 } zfeature_info_t;

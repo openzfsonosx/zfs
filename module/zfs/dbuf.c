@@ -2494,6 +2494,12 @@ dbuf_destroy(dmu_buf_impl_t *db)
 	}
 }
 
+/*
+ * Note: While bpp will always be updated if the function returns success,
+ * parentp will not be updated if the dnode does not have dn_dbuf filled in;
+ * this happens when the dnode is the meta-dnode, or {user|group|project}used
+ * object.
+ */
 __attribute__((always_inline))
 static inline int
 dbuf_findbp(dnode_t *dn, int level, uint64_t blkid, int fail_sparse,

@@ -692,18 +692,6 @@ zfs_znode_dmu_fini(znode_t *zp)
 	zp->z_sa_hdl = NULL;
 }
 
-static void
-zfs_vnode_forget(struct vnode *vp)
-{
-
-	/* copied from insmntque_stddtr */
-	if (vp) {
-		vnode_clearfsnode(vp);
-		vnode_put(vp);
-		vnode_recycle(vp);
-	}
-}
-
 /*
  * Construct a new znode/vnode and intialize.
  *
@@ -719,7 +707,9 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	struct vnode *vp;
 	uint64_t mode;
 	uint64_t parent;
-	sa_bulk_attr_t bulk[9];
+	uint64_t tmp_gen;
+	sa_bulk_attr_t bulk[11];
+	uint64_t projid = ZFS_DEFAULT_PROJID;
 	int count = 0;
 
 	zp = kmem_cache_alloc(znode_cache, KM_SLEEP);
@@ -761,7 +751,7 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	zfs_znode_sa_init(zfsvfs, zp, db, obj_type, hdl);
 
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_MODE(zfsvfs), NULL, &mode, 8);
-	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_GEN(zfsvfs), NULL, &zp->z_gen, 8);
+	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_GEN(zfsvfs), NULL, &tmp_gen, 8);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_SIZE(zfsvfs), NULL,
 	    &zp->z_size, 8);
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_LINKS(zfsvfs), NULL,
@@ -776,18 +766,20 @@ zfs_znode_alloc(zfsvfs_t *zfsvfs, dmu_buf_t *db, int blksz,
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_GID(zfsvfs), NULL,
 	    &zp->z_gid, 8);
 
-	if (sa_bulk_lookup(zp->z_sa_hdl, bulk, count) != 0 || zp->z_gen == 0) {
+	if (sa_bulk_lookup(zp->z_sa_hdl, bulk, count) != 0 || tmp_gen == 0 ||
+	    (dmu_objset_projectquota_enabled(zfsvfs->z_os) &&
+	    (zp->z_pflags & ZFS_PROJID) &&
+	    sa_lookup(zp->z_sa_hdl, SA_ZPL_PROJID(zfsvfs), &projid, 8) != 0)) {
 		if (hdl == NULL)
 			sa_handle_destroy(zp->z_sa_hdl);
 		zp->z_sa_hdl = NULL;
-		printf("znode_alloc: sa_bulk_lookup failed - aborting\n");
-		zfs_vnode_forget(vp);
-		zp->z_vnode = NULL;
 		kmem_cache_free(znode_cache, zp);
 		return (NULL);
 	}
 
+	zp->z_projid = projid;
 	zp->z_mode = mode;
+	zp->z_gen = tmp_gen;
 
 #ifndef __APPLE__
 	vp->v_type = IFTOVT((mode_t)mode);
@@ -959,6 +951,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 {
 	uint64_t	crtime[2], atime[2], mtime[2], ctime[2];
 	uint64_t	mode, size, links, parent, pflags;
+	uint64_t	projid = ZFS_DEFAULT_PROJID;
 	uint64_t	dzp_pflags = 0;
 	uint64_t	rdev = 0;
 	zfsvfs_t	*zfsvfs = dzp->z_zfsvfs;
@@ -1068,6 +1061,23 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	if (flag & IS_XATTR)
 		pflags |= ZFS_XATTR;
 
+	if (S_ISREG(vap->va_mode) || S_ISDIR(vap->va_mode)) {
+		/*
+		 * With ZFS_PROJID flag, we can easily know whether there is
+		 * project ID stored on disk or not. See zfs_space_delta_cb().
+		 */
+		if (obj_type != DMU_OT_ZNODE &&
+		    dmu_objset_projectquota_enabled(zfsvfs->z_os))
+			pflags |= ZFS_PROJID;
+
+		/*
+		 * Inherit project ID from parent if required.
+		 */
+		projid = zfs_inherit_projid(dzp);
+		if (dzp->z_pflags & ZFS_PROJINHERIT)
+			pflags |= ZFS_PROJINHERIT;
+	}
+
 	/*
 	 * No execs denied will be deterimed when zfs_mode_compute() is called.
 	 */
@@ -1149,6 +1159,10 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	if (obj_type == DMU_OT_ZNODE) {
 		SA_ADD_BULK_ATTR(sa_attrs, cnt, SA_ZPL_XATTR(zfsvfs), NULL,
 		    &empty_xattr, 8);
+	} else if (dmu_objset_projectquota_enabled(zfsvfs->z_os) &&
+	    pflags & ZFS_PROJID) {
+		SA_ADD_BULK_ATTR(sa_attrs, cnt, SA_ZPL_PROJID(zfsvfs),
+		    NULL, &projid, 8);
 	}
 	if (obj_type == DMU_OT_ZNODE ||
 	    (vap->va_type == VBLK || vap->va_type == VCHR)) {
@@ -1207,6 +1221,7 @@ zfs_mknode(znode_t *dzp, vattr_t *vap, dmu_tx_t *tx, cred_t *cr,
 	(*zpp)->z_pflags = pflags;
 	(*zpp)->z_mode = mode;
 	(*zpp)->z_dnodesize = dnodesize;
+	(*zpp)->z_projid = projid;
 
 	if (vap->va_mask & AT_XVATTR)
 		zfs_xvattr_set(*zpp, (xvattr_t *)vap, tx);
@@ -1537,10 +1552,11 @@ zfs_rezget(znode_t *zp)
 	struct vnode *vp;
 	uint64_t obj_num = zp->z_id;
 	uint64_t mode, size;
-	sa_bulk_attr_t bulk[8];
+	sa_bulk_attr_t bulk[10];
 	int err;
 	int count = 0;
 	uint64_t gen;
+	uint64_t projid = ZFS_DEFAULT_PROJID;
 
 	ZFS_OBJ_HOLD_ENTER(zfsvfs, obj_num);
 
@@ -1607,6 +1623,17 @@ zfs_rezget(znode_t *zp)
 		return (SET_ERROR(EIO));
 	}
 
+	if (dmu_objset_projectquota_enabled(zfsvfs->z_os)) {
+		err = sa_lookup(zp->z_sa_hdl, SA_ZPL_PROJID(zfsvfs),
+		    &projid, 8);
+		if (err != 0 && err != ENOENT) {
+			zfs_znode_dmu_fini(zp);
+			ZFS_OBJ_HOLD_EXIT(zfsvfs, obj_num);
+			return (SET_ERROR(err));
+		}
+	}
+
+	zp->z_projid = projid;
 	zp->z_mode = mode;
 
 	if (gen != zp->z_gen) {

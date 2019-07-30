@@ -83,6 +83,7 @@ typedef enum zpl_attr {
 	ZPL_ADDTIME,
 	ZPL_DOCUMENTID,
 #endif
+	ZPL_PROJID,
 	ZPL_END
 } zpl_attr_t;
 
@@ -97,6 +98,8 @@ typedef enum zpl_attr {
 #define	SA_UID_OFFSET		24
 #define	SA_GID_OFFSET		32
 #define	SA_PARENT_OFFSET	40
+#define	SA_FLAGS_OFFSET		48
+#define	SA_PROJID_OFFSET	128
 
 extern sa_attr_reg_t zfs_attr_table[ZPL_END + 1];
 extern sa_attr_reg_t zfs_legacy_attr_table[ZPL_END + 1];

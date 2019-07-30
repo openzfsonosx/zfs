@@ -53,7 +53,15 @@ const char *zfs_userquota_prop_prefixes[] = {
 	"userused@",
 	"userquota@",
 	"groupused@",
-	"groupquota@"
+	"groupquota@",
+	"userobjused@",
+	"userobjquota@",
+	"groupobjused@",
+	"groupobjquota@",
+	"projectused@",
+	"projectquota@",
+	"projectobjused@",
+	"projectobjquota@"
 };
 
 zprop_desc_t *

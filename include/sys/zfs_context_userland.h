@@ -756,6 +756,7 @@ void ksiddomain_rele(ksiddomain_t *);
 
 extern boolean_t dataset_name_hidden(const char *);
 
+#define        TASKQID_INVALID         (0)
 
 #endif /* !_KERNEL */
 

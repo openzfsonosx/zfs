@@ -63,80 +63,85 @@ typedef enum drain_state {
 typedef struct zfsvfs zfsvfs_t;
 
 struct zfsvfs {
-        vfs_t           *z_vfs;         /* generic fs struct */
-        zfsvfs_t        *z_parent;      /* parent fs */
-        objset_t        *z_os;          /* objset reference */
-        uint64_t        z_root;         /* id of root znode */
-        uint64_t        z_unlinkedobj;  /* id of unlinked zapobj */
-        uint64_t        z_max_blksz;    /* maximum block size for files */
-        uint64_t	    z_fuid_obj;	    /* fuid table object number */
-        uint64_t	    z_fuid_size;	/* fuid table size */
-     	avl_tree_t   	z_fuid_idx;	    /* fuid tree keyed by index */
-        avl_tree_t	    z_fuid_domain;	/* fuid tree keyed by domain */
-        krwlock_t	    z_fuid_lock;	/* fuid lock */
-        boolean_t	    z_fuid_loaded;	/* fuid tables are loaded */
-        boolean_t	    z_fuid_dirty;   /* need to sync fuid table ? */
-        struct zfs_fuid_info    *z_fuid_replay; /* fuid info for replay */
-        uint64_t        z_assign;       /* TXG_NOWAIT or set by zil_replay() */
-        zilog_t         *z_log;         /* intent log pointer */
-        uint_t          z_acl_mode;     /* acl chmod/mode behavior */
-        uint_t          z_acl_inherit;  /* acl inheritance behavior */
-        zfs_case_t      z_case;         /* case-sense */
-        boolean_t       z_utf8;         /* utf8-only */
-        int             z_norm;         /* normalization flags */
-        boolean_t       z_atime;        /* enable atimes mount option */
-        boolean_t       z_unmounted;    /* unmounted */
-	    rrmlock_t	    z_teardown_lock;
-        krwlock_t	    z_teardown_inactive_lock;
-        list_t          z_all_znodes;   /* all vnodes in the fs */
-        kmutex_t        z_znodes_lock;  /* lock for z_all_znodes */
-        struct vnode   *z_ctldir;      /* .zfs directory pointer */
-        boolean_t       z_show_ctldir;  /* expose .zfs in the root dir */
-        boolean_t       z_issnap;       /* true if this is a snapshot */
-        boolean_t	    z_use_fuids;	/* version allows fuids */
-        boolean_t       z_replay;       /* set during ZIL replay */
-        boolean_t       z_use_sa;       /* version allow system attributes */
-	    boolean_t       z_xattr_sa;     /* allow xattrs to be stores as SA */
-        uint64_t        z_version;
-        uint64_t        z_shares_dir;   /* hidden shares dir */
-        kmutex_t	    z_lock;
+	vfs_t		*z_vfs;		/* generic fs struct */
+	zfsvfs_t	*z_parent;	/* parent fs */
+	objset_t	*z_os;		/* objset reference */
+	uint64_t	z_root;		/* id of root znode */
+	uint64_t	z_unlinkedobj;	/* id of unlinked zapobj */
+	uint64_t	z_max_blksz;	/* maximum block size for files */
+	uint64_t	z_fuid_obj;	/* fuid table object number */
+	uint64_t	z_fuid_size;	/* fuid table size */
+	avl_tree_t	z_fuid_idx;	/* fuid tree keyed by index */
+	avl_tree_t	z_fuid_domain;	/* fuid tree keyed by domain */
+	krwlock_t	z_fuid_lock;	/* fuid lock */
+	boolean_t	z_fuid_loaded;	/* fuid tables are loaded */
+	boolean_t	z_fuid_dirty;	/* need to sync fuid table ? */
+	struct zfs_fuid_info	*z_fuid_replay;	/* fuid info for replay */
+	uint64_t	z_assign;	/* TXG_NOWAIT or set by zil_replay() */
+	zilog_t		*z_log;		/* intent log pointer */
+	uint_t		z_acl_mode;	/* acl chmod/mode behavior */
+	uint_t		z_acl_inherit;	/* acl inheritance behavior */
+	zfs_case_t	z_case;		/* case-sense */
+	boolean_t	z_utf8;		/* utf8-only */
+	int			z_norm;		/* normalization flags */
+	boolean_t	z_atime;	/* enable atimes mount option */
+	boolean_t	z_unmounted;	/* unmounted */
+	rrmlock_t	z_teardown_lock;
+	krwlock_t	z_teardown_inactive_lock;
+	list_t		z_all_znodes;	/* all vnodes in the fs */
+	kmutex_t	z_znodes_lock;	/* lock for z_all_znodes */
+	struct vnode	*z_ctldir;	/* .zfs directory pointer */
+	boolean_t	z_show_ctldir;	/* expose .zfs in the root dir */
+	boolean_t	z_issnap;	/* true if this is a snapshot */
+	boolean_t	z_use_fuids;	/* version allows fuids */
+	boolean_t	z_replay;	/* set during ZIL replay */
+	boolean_t	z_use_sa;	/* version allow system attributes */
+	boolean_t	z_xattr_sa;	/* allow xattrs to be stores as SA */
+	uint64_t	z_version;
+	uint64_t	z_shares_dir;	/* hidden shares dir */
+	kmutex_t	z_lock;
 
-        /* for controlling async zfs_unlinked_drain */
-        kmutex_t		z_drain_lock;
-        kcondvar_t		z_drain_cv;
-        drain_state_t	z_drain_state;
+	/* for controlling async zfs_unlinked_drain */
+	kmutex_t	z_drain_lock;
+	kcondvar_t	z_drain_cv;
+	drain_state_t	z_drain_state;
 
 #ifdef __APPLE__
 	dev_t		z_rdev;		/* proxy device for mount */
 	boolean_t	z_rdonly;	/* is mount read-only? */
-        time_t          z_mount_time;           /* mount timestamp (for Spotlight) */
-        time_t          z_last_unmount_time;    /* unmount timestamp (for Spotlight) */
-        boolean_t       z_xattr;        /* enable atimes mount option */
+	time_t		z_mount_time;	/* mount timestamp (for Spotlight) */
+	time_t		z_last_unmount_time;	/* unmount timestamp (for Spotlight) */
+	boolean_t	z_xattr;	/* enable atimes mount option */
 
-	    avl_tree_t   	z_hardlinks;    /* linkid hash avl tree for vget */
-	    avl_tree_t   	z_hardlinks_linkid; /* same tree, sorted on linkid */
-	    krwlock_t	    z_hardlinks_lock;	/* lock to access z_hardlinks */
+	avl_tree_t	z_hardlinks;	/* linkid hash avl tree for vget */
+	avl_tree_t	z_hardlinks_linkid;	/* same tree, sorted on linkid */
+	krwlock_t	z_hardlinks_lock;	/* lock to access z_hardlinks */
 
-	    uint64_t	    z_notification_conditions; /* HFSIOC_VOLUME_STATUS */
-	    uint64_t	    z_freespace_notify_warninglimit; /* HFSIOC_ - number of free blocks */
-	    uint64_t	    z_freespace_notify_dangerlimit; /* HFSIOC_ - number of free blocks */
-	    uint64_t	    z_freespace_notify_desiredlevel; /* HFSIOC_ - number of free blocks */
+	uint64_t	z_notification_conditions;	/* HFSIOC_VOLUME_STATUS */
+	uint64_t	z_freespace_notify_warninglimit;	/* HFSIOC_ - # of free blocks */
+	uint64_t	z_freespace_notify_dangerlimit;		/* HFSIOC_ - # of free blocks */
+	uint64_t	z_freespace_notify_desiredlevel;	/* HFSIOC_ - # of free blocks */
 
-	void *z_devdisk; /* Hold fake disk if prop devdisk is on */
+	void		*z_devdisk;	/* Hold fake disk if prop devdisk is on */
 
 #ifdef APPLE_SA_RECOVER
-	    uint64_t        z_recover_parent;/* Temporary holder until SA corruption are gone */
+	uint64_t	z_recover_parent;	/* Temporary holder, SA corruption are gone */
 #endif /* APPLE_SA_RECOVER */
 
-	    uint64_t        z_findernotify_space;
+	uint64_t	z_findernotify_space;
 
 #endif
-    	uint64_t	    z_userquota_obj;
-        uint64_t	    z_groupquota_obj;
-        uint64_t	    z_replay_eof;	/* New end of file - replay only */
-        sa_attr_type_t  *z_attr_table;  /* SA attr mapping->id */
+	uint64_t	z_userquota_obj;
+	uint64_t	z_groupquota_obj;
+	uint64_t	z_userobjquota_obj;
+	uint64_t	z_groupobjquota_obj;
+	uint64_t	z_projectquota_obj;
+	uint64_t	z_projectobjquota_obj;
+
+	uint64_t	z_replay_eof;	/* New end of file - replay only */
+	sa_attr_type_t	*z_attr_table;	/* SA attr mapping->id */
 #define ZFS_OBJ_MTX_SZ  256
-        kmutex_t        z_hold_mtx[ZFS_OBJ_MTX_SZ];     /* znode hold locks */
+	kmutex_t	z_hold_mtx[ZFS_OBJ_MTX_SZ];	/* znode hold locks */
 };
 
 
@@ -225,10 +230,12 @@ extern int zfs_userspace_many(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
     uint64_t *cookiep, void *vbuf, uint64_t *bufsizep);
 extern int zfs_set_userquota(zfsvfs_t *zfsvfs, zfs_userquota_prop_t type,
     const char *domain, uint64_t rid, uint64_t quota);
-extern boolean_t zfs_owner_overquota(zfsvfs_t *zfsvfs, struct znode *,
-    boolean_t isgroup);
-extern boolean_t zfs_fuid_overquota(zfsvfs_t *zfsvfs, boolean_t isgroup,
-    uint64_t fuid);
+extern boolean_t zfs_id_overblockquota(zfsvfs_t *zfsvfs, uint64_t usedobj,
+    uint64_t id);
+extern boolean_t zfs_id_overobjquota(zfsvfs_t *zfsvfs, uint64_t usedobj,
+    uint64_t id);
+extern boolean_t zfs_id_overquota(zfsvfs_t *zfsvfs, uint64_t usedobj,
+    uint64_t id);
 extern int zfs_set_version(zfsvfs_t *zfsvfs, uint64_t newvers);
 extern int zfsvfs_create(const char *name, zfsvfs_t **zfvp);
 extern int zfsvfs_create_impl(zfsvfs_t **zfvp, zfsvfs_t *zfsvfs, objset_t *os);
