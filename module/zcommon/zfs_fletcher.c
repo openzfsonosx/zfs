@@ -180,7 +180,11 @@ static const fletcher_4_ops_t *fletcher_4_impls[] = {
 #if defined(HAVE_AVX) && defined(HAVE_AVX2)
 	&fletcher_4_avx2_ops,
 #endif
-#if defined(__x86_64) && defined(HAVE_AVX512F)
+/*
+ * APPLE: the AVX512* variants (possibly only AVX512F) cause panics
+ * on modern CPUs, in _cause_ast_check().
+ */
+#if defined(__x86_64) && defined(XXXHAVE_AVX512F)
 	&fletcher_4_avx512f_ops,
 #endif
 #if defined(__aarch64__)
