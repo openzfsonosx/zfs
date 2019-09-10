@@ -520,19 +520,17 @@ off_t fsize = zp->z_size;
 			break;
 
 		case SPOTLIGHT_GET_MOUNT_TIME:
+		case SPOTLIGHT_IOC_GET_MOUNT_TIME:
+		case SPOTLIGHT_FSCTL_GET_MOUNT_TIME:
 			dprintf("%s SPOTLIGHT_GET_MOUNT_TIME\n", __func__);
 			*(uint32_t *)ap->a_data = zfsvfs->z_mount_time;
 			break;
-		case SPOTLIGHT_FSCTL_GET_MOUNT_TIME:
-			dprintf("%s SPOTLIGHT_FSCTL_GET_MOUNT_TIME\n", __func__);
-			*(uint32_t *)ap->a_data = zfsvfs->z_mount_time;
-			break;
-
 		case SPOTLIGHT_GET_UNMOUNT_TIME:
 			dprintf("%s SPOTLIGHT_GET_UNMOUNT_TIME\n", __func__);
 			*(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
 			break;
 		case SPOTLIGHT_FSCTL_GET_LAST_MTIME:
+		case SPOTLIGHT_IOC_GET_LAST_MTIME:
 			dprintf("%s SPOTLIGHT_FSCTL_GET_LAST_MTIME\n", __func__);
 			*(uint32_t *)ap->a_data = zfsvfs->z_last_unmount_time;
 			break;
