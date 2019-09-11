@@ -6,7 +6,7 @@ DEFAULT_INCLUDES += \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/lib/libspl/include
 
-sbin_PROGRAMS = mount.zfs
+sbin_PROGRAMS = mount_zfs
 
 mount_zfs_SOURCES = \
 	mount_zfs.c

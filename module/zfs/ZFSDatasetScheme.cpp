@@ -23,6 +23,7 @@
  * Copyright (c) 2017, Jorgen Lundman.  All rights reserved.
  */
 
+#include <sys/types.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
 #include <libkern/libkern.h>

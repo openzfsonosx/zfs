@@ -22,6 +22,7 @@
  * Copyright (c) 2015, Evan Susarret.  All rights reserved.
  */
 
+#include <sys/types.h>
 #include <IOKit/IOLib.h>
 #include <sys/ZFSDatasetProxy.h>
 #include <sys/ZFSPool.h>

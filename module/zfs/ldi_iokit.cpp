@@ -40,6 +40,7 @@
 /*
  * Apple IOKit (c++)
  */
+#include <sys/types.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/IOTypes.h>
 #include <IOKit/IOBSD.h>

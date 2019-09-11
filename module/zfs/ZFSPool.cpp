@@ -22,6 +22,7 @@
  * Copyright (c) 2016, Evan Susarret.  All rights reserved.
  */
 
+#include <sys/types.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>

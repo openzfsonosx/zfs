@@ -78,6 +78,7 @@
  * Empty and deallocate pool_list (and lock).
  */
 
+#include <sys/types.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitKeys.h>

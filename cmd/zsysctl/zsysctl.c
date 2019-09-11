@@ -262,7 +262,7 @@ old_parse(string, flags)
 char *string;
 int flags;
 {
-    int indx, type, state, len;
+    int indx, type, len;
     size_t size;
     int special = 0;
     void *newval = 0;
@@ -316,6 +316,9 @@ int flags;
         case CTL_KERN:
             switch (mib[1]) {
                 case KERN_PROF:
+#ifdef GPROF_STATE
+		  {
+                    int state;
                     mib[2] = GPROF_STATE;
                     size = sizeof state;
                     if (sysctl(mib, 3, &state, &size, NULL, 0) < 0) {
@@ -330,6 +333,8 @@ int flags;
                     if (!nflag)
                         fprintf(stdout, "%s: %s\n", string,
                                 state == GMON_PROF_OFF ? "off" : "running");
+		  }
+#endif
                     return;
                 case KERN_VNODE:
                 case KERN_FILE:

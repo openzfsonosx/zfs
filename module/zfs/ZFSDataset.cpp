@@ -25,6 +25,7 @@
  * ZFSDataset - proxy disk for legacy and com.apple.devicenode mounts.
  */
 
+#include <sys/types.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/storage/IOBlockStorageDevice.h>
