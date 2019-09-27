@@ -147,8 +147,8 @@ tests = ['zfs_clone_001_neg', 'zfs_clone_002_pos', 'zfs_clone_003_pos',
 # zfs_copies_003_pos - https://github.com/zfsonlinux/zfs/issues/3484
 # zfs_copies_005_neg - https://github.com/zfsonlinux/zfs/issues/3484
 [@PREFIX@/zfs-tests/tests/functional/cli_root/zfs_copies]
-tests = ['zfs_copies_001_pos', 'zfs_copies_002_pos', 'zfs_copies_004_neg',
-    'zfs_copies_006_pos']
+tests = ['zfs_copies_001_pos', 'zfs_copies_002_pos', 'zfs_copies_004_neg']
+#    'zfs_copies_006_pos']
 
 [@PREFIX@/zfs-tests/tests/functional/cli_root/zfs_create]
 tests = ['zfs_create_001_pos', 'zfs_create_002_pos', 'zfs_create_003_pos',

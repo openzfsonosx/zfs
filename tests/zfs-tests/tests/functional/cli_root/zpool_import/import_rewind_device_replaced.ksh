@@ -155,7 +155,7 @@ is_linux && log_must set_tunable32 zfs_txg_history 100
 
 log_must mkdir -p $BACKUP_DEVICE_DIR
 # Make the devices bigger to reduce chances of overwriting MOS metadata.
-increase_device_sizes $(( FILE_SIZE * 4 ))
+increase_device_sizes $(( 256m ))
 
 # We set zfs_txg_timeout to 1 to reduce resilvering time at each sync.
 ZFS_TXG_TIMEOUT=$(get_zfs_txg_timeout)
