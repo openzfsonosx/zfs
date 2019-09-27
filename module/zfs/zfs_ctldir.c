@@ -207,8 +207,6 @@ traverse(struct vnode **cvpp, int lktype)
         /*
          * tvp is NULL for *cvpp vnode, which we can't unlock.
          */
-        VN_RELE(cvp);
-
         if (error)
             return (error);
 
@@ -220,6 +218,8 @@ traverse(struct vnode **cvpp, int lktype)
         vfs_unbusy(vfsp);
         if (error != 0)
             return (error);
+
+        VN_RELE(cvp);
 
         cvp = tvp;
 
@@ -951,7 +951,13 @@ zfsctl_snapdir_lookup(struct vnop_lookup_args /* {
 	search.se_name = (char *)nm;
 	if ((sep = avl_find(&sdp->sd_snaps, &search, &where)) != NULL) {
 		*vpp = sep->se_root;
-		VN_HOLD(*vpp);
+
+		if (VN_HOLD(*vpp) != 0) {
+			mutex_exit(&sdp->sd_lock);
+			ZFS_EXIT(zfsvfs);
+			return (err);
+		}
+
 		err = traverse(vpp, LK_EXCLUSIVE | LK_RETRY);
 
 		if (err) {
