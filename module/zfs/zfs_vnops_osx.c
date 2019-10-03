@@ -300,7 +300,7 @@ zfs_findernotify_callback(mount_t mp, __unused void *arg)
 	return (VFS_RETURNED);
 }
 
-
+void verify_events(void *);
 static void
 zfs_findernotify_thread(void *notused)
 {
@@ -312,6 +312,7 @@ zfs_findernotify_thread(void *notused)
 	mutex_enter(&zfs_findernotify_lock);
 	while (!zfs_findernotify_thread_exit) {
 
+#if 0
 		/* Sleep 32 seconds */
 		CALLB_CPR_SAFE_BEGIN(&cpr);
 		(void) cv_timedwait(&zfs_findernotify_thread_cv,
@@ -320,7 +321,10 @@ zfs_findernotify_thread(void *notused)
 
 		if (!zfs_findernotify_thread_exit)
 			vfs_iterate(LK_NOWAIT, zfs_findernotify_callback, NULL);
-
+#else
+		verify_events(NULL);
+		delay(hz >> 1);
+#endif
 	}
 
 	zfs_findernotify_thread_exit = FALSE;

@@ -587,6 +587,10 @@ nvlist_free(nvlist_t *nvl)
 	 */
 	curr = priv->nvp_list;
 	while (curr != NULL) {
+#ifdef _KERNEL
+	if (curr == (void *)0x0000200721000000ULL)
+		panic("modified");
+#endif
 		nvpair_t *nvp = &curr->nvi_nvp;
 		curr = curr->nvi_next;
 
@@ -1819,6 +1823,9 @@ nvlist_exists(nvlist_t *nvl, const char *name)
 
 	for (curr = priv->nvp_list; curr != NULL; curr = curr->nvi_next) {
 		nvp = &curr->nvi_nvp;
+
+		if (curr == (void *)0x0000200721000000ULL)
+			panic("triggered");
 
 		if (strcmp(name, NVP_NAME(nvp)) == 0)
 			return (B_TRUE);

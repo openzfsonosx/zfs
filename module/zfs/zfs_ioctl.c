@@ -251,6 +251,7 @@ static uint_t zfs_allow_log_key;
 typedef int zfs_ioc_legacy_func_t(zfs_cmd_t *);
 typedef int zfs_ioc_func_t(const char *, nvlist_t *, nvlist_t *);
 typedef int zfs_secpolicy_func_t(zfs_cmd_t *, nvlist_t *, cred_t *);
+	void verify_events(void *);
 
 /*
  * IOC Keys are used to document and validate user->kernel interface inputs.
@@ -3607,6 +3608,8 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 	 * Only one log ioctl is allowed after each successful ioctl, so
 	 * we clear the TSD here.
 	 */
+	verify_events(NULL);
+
 	poolname = tsd_get(zfs_allow_log_key);
 	(void) tsd_set(zfs_allow_log_key, NULL);
 	if (!poolname) {
@@ -3628,6 +3631,8 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 
 	error = spa_history_log(spa, message);
 	spa_close(spa, FTAG);
+
+	verify_events(NULL);
 	return (error);
 }
 
@@ -7296,6 +7301,7 @@ zfsdev_open(dev_t dev, int flags, int devtype, struct proc *p)
 {
 	int error;
 
+	verify_events(NULL);
 	dprintf("zfsdev_open, dev %d flag %02X devtype %d, proc is %p: thread %p\n",
 			minor(dev), flags, devtype, p, current_thread());
 
@@ -7309,6 +7315,8 @@ zfsdev_open(dev_t dev, int flags, int devtype, struct proc *p)
 	error = zfsdev_state_init(dev);
 	mutex_exit(&zfsdev_state_lock);
 
+	verify_events(NULL);
+
 	return (-error);
 }
 
@@ -7319,12 +7327,14 @@ zfsdev_release(dev_t dev, int flags, int devtype, struct proc *p)
 {
 	int error;
 
+	verify_events(NULL);
 	dprintf("zfsdev_release, dev %d flag %02X devtype %d, dev is %p, thread %p\n",
 		   minor(dev), flags, devtype, p, current_thread());
 	mutex_enter(&zfsdev_state_lock);
 	error = zfsdev_state_destroy(dev);
 	mutex_exit(&zfsdev_state_lock);
 
+	verify_events(NULL);
 	return (-error);
 }
 
@@ -7343,6 +7353,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 	//vfs_context_t ctx = vfs_context_current();
 
 	//printf("ioctl minor %d\n", minor);
+	verify_events(NULL);
 
 #ifdef __OPPLE__
 	error = proc_suser(p);			/* Are we superman? */
@@ -7372,7 +7383,9 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 #ifdef illumos
 	ASSERT3U(getmajor(dev), ==, ddi_driver_major(zfs_dip));
 #endif
-	dprintf("[zfs] got ioctl %lx (%lx)\n", vecnum, vecnum);
+	printf("[zfs] got ioctl %x (%x)\n", vecnum, vecnum);
+
+	verify_events(NULL);
 
 	if (vecnum >= sizeof (zfs_ioc_vec) / sizeof (zfs_ioc_vec[0])) {
 		return (-SET_ERROR(ZFS_ERR_IOC_CMD_UNAVAIL));
@@ -7458,6 +7471,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 	len = strcspn(zc->zc_name, "/@#") + 1;
 	saved_poolname = kmem_alloc(len, KM_SLEEP);
 	(void) strlcpy(saved_poolname, zc->zc_name, len);
+	verify_events(NULL);
 
 	if (vec->zvec_func != NULL) {
 		nvlist_t *outnvl;
@@ -7528,6 +7542,8 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 	}
 
  out:
+	verify_events(NULL);
+
 	nvlist_free(innvl);
 	rc = ddi_copyout(zc, (void *)arg, sizeof (zfs_cmd_t), flag);
 	if (error == 0 && rc != 0) {
@@ -7561,6 +7577,7 @@ zfsdev_ioctl(dev_t dev, u_long cmd, caddr_t arg,  __unused int xflag, struct pro
 	((zfs_cmd_t *)arg)->zc_ioc_error = error;
 #endif
 	dprintf("ioctl out result %d\n", error);
+	verify_events(NULL);
 	return (0);
 }
 
@@ -7599,6 +7616,7 @@ zfsdev_bioctl(dev_t dev, u_long cmd, caddr_t data,  __unused int flag, struct pr
     error = proc_suser(p);                  /* Are we superman? */
     if (error) return (error);              /* Nope... */
 #endif /* __OPPLE__ */
+	verify_events(NULL);
     return (zvol_ioctl(dev, cmd, data, 1, NULL, NULL));
 }
 

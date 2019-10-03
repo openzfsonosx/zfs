@@ -109,6 +109,8 @@ void *zfsdev_state;
 
 #define	ZVOL_DUMPSIZE		"dumpsize"
 
+void verify_events(void *);
+
 extern kmutex_t zfsdev_state_lock;
 void zvol_register_device(spa_t *spa, zvol_state_t *zv);
 
@@ -177,6 +179,7 @@ zvol_size_changed(zvol_state_t *zv, uint64_t volsize)
 	/* Notify specfs to invalidate the cached size */
 	// spec_size_invalidate(dev, VBLK);
 	// spec_size_invalidate(dev, VCHR);
+	verify_events(NULL);
 }
 
 int
@@ -227,6 +230,7 @@ zvol_get_stats(objset_t *os, nvlist_t *nv)
 	}
 
 	kmem_free(doi, sizeof (dmu_object_info_t));
+	verify_events(NULL);
 
 	return (SET_ERROR(error));
 }
@@ -545,6 +549,7 @@ zvol_create_minor_impl(const char *name)
 #ifdef linux
 	}
 #endif
+	verify_events(NULL);
 
 	// Take a quick peek to see if it is a volume first, because we
 	// are racing with zfs_vfs_mount/zfsvfs_create calling
@@ -678,6 +683,7 @@ zvol_create_minor_impl(const char *name)
 	}
 #endif /* __APPLE__ */
 
+	verify_events(NULL);
 	return (0);
 }
 
@@ -770,6 +776,7 @@ zvol_get_data(void *arg, lr_write_t *lr, char *buf, struct lwb *lwb, zio_t *zio)
 	}
 
 	zvol_get_done(zgd, error);
+	verify_events(NULL);
 
 	return (SET_ERROR(error));
 }
@@ -847,6 +854,7 @@ zvol_remove_minor_impl(const char *name)
 
 	// Remove device from IOKit
 	zvolRemoveDevice(iokitdev);
+	verify_events(NULL);
 	return (rc);
 }
 
@@ -1044,6 +1052,7 @@ zvol_suspend(const char *name)
 	mutex_exit(&zfsdev_state_lock);
 #endif
 
+	verify_events(NULL);
 	/* zv_suspend_lock is released in zvol_resume() */
 	return (zv);
 }
@@ -1065,6 +1074,7 @@ zvol_resume(zvol_state_t *zv)
 
 	mutex_exit(&zfsdev_state_lock);
 
+	verify_events(NULL);
 	return (SET_ERROR(error));
 }
 
@@ -1802,6 +1812,7 @@ out:
 		zvolSetVolsize(zv);
 	}
 #endif /* __APPLE__ */
+	verify_events(NULL);
 
 	return (error);
 }
@@ -1813,6 +1824,7 @@ zvol_open_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 	int err = 0;
 	boolean_t locked = B_FALSE;
 
+	verify_events(NULL);
 	if (!MUTEX_HELD(&zfsdev_state_lock)) {
 		mutex_enter(&zfsdev_state_lock);
 		locked = B_TRUE;
@@ -1916,6 +1928,7 @@ zvol_close_impl(zvol_state_t *zv, int flag, int otyp, struct proc *p)
 	 * zfsdev_state_lock mutex
 	 */
 
+	verify_events(NULL);
 
 	if (!MUTEX_HELD(&zfsdev_state_lock)) {
 		mutex_enter(&zfsdev_state_lock);

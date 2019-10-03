@@ -47,6 +47,10 @@ _NOTE(CONSTCOND) } while (0)
 #endif
 #endif /* if DEBUG or ZFS_DEBUG */
 
+extern "C" {
+	extern void verify_events(void *);
+}
+
 static ZFSDatasetScheme *
 zfs_osx_proxy_scheme_by_osname(const char *osname)
 {
@@ -57,6 +61,8 @@ zfs_osx_proxy_scheme_by_osname(const char *osname)
 	OSIterator *iter;
 	char *pool_name, *slash;
 	size_t len;
+
+	verify_events(NULL);
 
 	slash = strchr(osname, '/');
 	if (slash) {
@@ -170,6 +176,8 @@ zfs_osx_proxy_scheme_by_osname(const char *osname)
 	}
 	mutex_exit(&spa_namespace_lock);
 
+	verify_events(NULL);
+
 	/* Need a pool proxy to attach to */
 	if (!pool) {
 		dprintf("couldn't get pool proxy");
@@ -262,6 +270,9 @@ zfs_osx_proxy_lookup(const char *property, OSObject *value)
 	/* Release iterator */
 	OSSafeReleaseNULL(iter);
 
+	verify_events(NULL);
+
+
 	/* Leave retain */
 	return (dataset);
 #if 0
@@ -311,6 +322,8 @@ zfs_osx_proxy_get(const char *osname)
 
 	dataset = zfs_osx_proxy_lookup(kZFSDatasetNameKey, osstr);
 	OSSafeReleaseNULL(osstr);
+
+	verify_events(NULL);
 
 	if (!dataset) {
 		dprintf("lookup failed");
@@ -579,6 +592,8 @@ zfs_osx_proxy_remove(const char *osname)
 	OSSafeReleaseNULL(dataset);
 	dprintf("removing %s", osname);
 	provider->removeDataset(osname, /* force */ true);
+	verify_events(NULL);
+
 }
 
 /*
@@ -726,11 +741,15 @@ ZFSDatasetScheme::start(IOService *provider)
 	return (true);
 }
 
+
 IOService *
 ZFSDatasetScheme::probe(IOService *provider, SInt32 *score)
 {
 	OSObject *property;
 	IOService *parent;
+
+	verify_events(NULL);
+
 
 	/* First ask IOPartitionScheme to probe */
 	if (IOPartitionScheme::probe(provider, score) == 0) {

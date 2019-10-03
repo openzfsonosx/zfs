@@ -121,6 +121,29 @@ kstat_t *fm_ksp;
 
 #ifdef _KERNEL
 
+
+void verify_events(zevent_t *ev)
+{
+	int took_lock = 0;
+
+	if (!mutex_owned(&zevent_lock)) {
+		mutex_enter(&zevent_lock);
+		took_lock = 1;
+	}
+
+	// If given a separate ev to check, do so first
+	if (ev)
+		nvlist_exists(ev->ev_nvl, "cantfindthis");
+
+	// Iterate all events, and check all lists
+	for (ev = list_head(&zevent_list);
+		 ev != NULL;
+		 ev = list_next(&zevent_list, ev))
+		nvlist_exists(ev->ev_nvl, "cantfindthis");
+	if (took_lock)
+		mutex_exit(&zevent_lock);
+}
+
 /*
  * Formatting utility function for fm_nvprintr.  We attempt to wrap chunks of
  * output so they aren't split across console lines, and return the end column.
@@ -455,6 +478,9 @@ zfs_zevent_drain(zevent_t *ev)
 	ASSERT(MUTEX_HELD(&zevent_lock));
 	list_remove(&zevent_list, ev);
 
+	// verify
+	verify_events(ev);
+
 	/* Remove references to this event in all private file data */
 	while ((ze = list_head(&ev->ev_ze_list)) != NULL) {
 		list_remove(&ev->ev_ze_list, ze);
@@ -470,6 +496,8 @@ zfs_zevent_drain_all(int *count)
 {
 	zevent_t *ev;
 
+	verify_events(NULL);
+
 	mutex_enter(&zevent_lock);
 	while ((ev = list_head(&zevent_list)) != NULL)
 		zfs_zevent_drain(ev);
@@ -477,6 +505,9 @@ zfs_zevent_drain_all(int *count)
 	*count = zevent_len_cur;
 	zevent_len_cur = 0;
 	mutex_exit(&zevent_lock);
+
+	verify_events(NULL);
+
 }
 
 /*
@@ -490,6 +521,9 @@ static void
 zfs_zevent_insert(zevent_t *ev)
 {
 	ASSERT(MUTEX_HELD(&zevent_lock));
+	// verify
+	verify_events(ev);
+
 	list_insert_head(&zevent_list, ev);
 
 	if (zevent_len_cur >= zfs_zevent_len_max)
@@ -516,6 +550,9 @@ zfs_zevent_post(nvlist_t *nvl, nvlist_t *detector, zevent_cb_t *cb)
 	int error;
 
 	ASSERT(cb != NULL);
+
+	// verify
+	verify_events(NULL);
 
 	gethrestime(&tv);
 	tv_array[0] = tv.tv_sec;
@@ -562,6 +599,10 @@ zfs_zevent_post(nvlist_t *nvl, nvlist_t *detector, zevent_cb_t *cb)
 	ev->ev_eid = eid;
 
 	mutex_enter(&zevent_lock);
+
+	// verify
+	verify_events(ev);
+
 	zfs_zevent_insert(ev);
 	cv_broadcast(&zevent_cv);
 	mutex_exit(&zevent_lock);

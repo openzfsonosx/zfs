@@ -226,6 +226,8 @@ dsl_prop_record_find(dsl_dir_t *dd, const char *propname)
 
 	for (pr = list_head(&dd->dd_props);
 	    pr != NULL; pr = list_next(&dd->dd_props, pr)) {
+		if (pr == (void *)0x0000200721000000ULL)
+			panic("modifued");
 		if (strcmp(pr->pr_propname, propname) == 0)
 			break;
 	}
