@@ -244,6 +244,7 @@ dsl_prop_record_create(dsl_dir_t *dd, const char *propname)
 	pr->pr_propname = spa_strdup(propname);
 	list_create(&pr->pr_cbs, sizeof (dsl_prop_cb_record_t),
 	    offsetof(dsl_prop_cb_record_t, cbr_pr_node));
+	list_link_init(&pr->pr_node);
 	list_insert_head(&dd->dd_props, pr);
 
 	return (pr);
