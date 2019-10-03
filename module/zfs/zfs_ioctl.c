@@ -3609,6 +3609,7 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 	 * we clear the TSD here.
 	 */
 	verify_events(NULL);
+	return (0);
 
 	poolname = tsd_get(zfs_allow_log_key);
 	(void) tsd_set(zfs_allow_log_key, NULL);
