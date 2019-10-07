@@ -1746,11 +1746,6 @@ zfs_vnop_setattr(struct vnop_setattr_args *ap)
 			VATTR_SET_SUPPORTED(vap, va_flags);
 		}
 
-		// Under Catalina, calling _decmpfs_file_is_compressed()
-		// appears to write 0x0000200721000000 into a random memory
-		// location. Disabled until a solution can be found.
-		hfscompression = 0;
-
 		// Get rid of HFS Compression
 		if (hfscompression) {
 			struct decmpfs_cnode *cp;
