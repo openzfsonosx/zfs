@@ -231,7 +231,7 @@ spa_write_cachefile(spa_t *target, boolean_t removing, boolean_t postsysevent)
 
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
-	if (/*rootdir == NULL ||*/ !(spa_mode_global & FWRITE))
+	if (getrootdir() == NULL || !(spa_mode_global & FWRITE))
 		return;
 
 	/*
