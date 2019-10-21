@@ -118,7 +118,6 @@ AC_CONFIG_FILES([
 	cmd/zsysctl/Makefile
 	cmd/ztest/Makefile
 	cmd/zpios/Makefile
-	cmd/mount_zfs/Makefile
 	cmd/fsck_zfs/Makefile
 	cmd/zvol_id/Makefile
 	cmd/vdev_id/Makefile
