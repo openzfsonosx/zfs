@@ -955,26 +955,11 @@ zfs_mount(zfs_handle_t *zhp, const char *options, int flags)
 
 	if (!(flags & MS_RDONLY)) {
 
+		/* Disable icon code until we can work out why on some systems
+		 * it adds a new icon each time
 		zfs_mount_seticon(mountpoint);
-
-		/*
-		 * We automatically created root ".metadate_index_never" files while
-		 * spotlight support was broken, we will be nice and try to clean
-		 * those up here, if the file date is older than before the release
-		 * with spotlight support. (So if users create newer, they want
-		 * spotlist disabled)
-		 * This should probably be removed after next release. (1.4.0?)
+		 *
 		 */
-		char *path;
-		if (asprintf(&path, "%s/.metadata_never_index", mountpoint) > 0) {
-			struct stat stsb;
-			/* UTC: Fri, 01 May 2015 00:00:00 +0000 */
-			if (!stat(path, &stsb) && (stsb.st_mtime < 1430438400)) {
-				unlink(path);
-				osx_start_spotlight(mountpoint);
-			}
-			free(path);
-		}
 
 		/* If we mount without DA, it fails to create .Trashes folder, so
 		 * we manually attempt to create it here until proper integration
