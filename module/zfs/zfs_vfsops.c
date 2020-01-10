@@ -3302,6 +3302,21 @@ zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_
 		return (error);
 	}
 
+	// We also need to handle id 3 (.zfs) and id 4 (.zfs/snapshot).
+	if (ino == ZFSCTL_INO_ROOT) {
+		*vpp = zfsvfs->z_ctldir;
+		error = VN_HOLD(*vpp);
+		ZFS_EXIT(zfsvfs);
+		return error;
+	}
+
+	if (ino == ZFSCTL_INO_SNAPDIR) {
+        error = zfsctl_root_lookup(zfsvfs->z_ctldir, "snapshot", vpp,
+            NULL, 0, NULL, NULL, NULL, NULL, NULL);
+		ZFS_EXIT(zfsvfs);
+		return error;
+	}
+
 	error = zfs_vget_internal(zfsvfs, ino, vpp);
 
 	ZFS_EXIT(zfsvfs);
