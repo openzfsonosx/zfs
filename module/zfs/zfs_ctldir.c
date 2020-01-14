@@ -1180,7 +1180,7 @@ zfsctl_snapdir_getattr(ap)
 
 	ZFS_ENTER(zfsvfs);
 	zfsctl_common_getattr(vp, vap);
-	vap->va_nodeid = gfs_file_inode(vp);
+	vap->va_nodeid = INO_ZFSTOXNU(gfs_file_inode(vp), zfsvfs->z_root);
 	vap->va_nlink = vap->va_size = avl_numnodes(&sdp->sd_snaps) + 2;
 	vap->va_ctime = vap->va_mtime = vap->va_mtime = dmu_objset_snap_cmtime(zfsvfs->z_os);
 #ifdef __APPLE__
@@ -1373,7 +1373,7 @@ zfsctl_snapshot_getattr(ap)
 
 	ZFS_ENTER(zfsvfs);
 	zfsctl_common_getattr(vp, vap);
-	vap->va_nodeid = gfs_file_inode(vp);
+	vap->va_nodeid = INO_ZFSTOXNU(gfs_file_inode(vp), zfsvfs->z_root);
 	vap->va_nlink = vap->va_size = 2;
 	vap->va_ctime = vap->va_mtime = vap->va_mtime = dmu_objset_snap_cmtime(zfsvfs->z_os);
 #ifdef __APPLE__

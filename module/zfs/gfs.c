@@ -343,8 +343,8 @@ gfs_readdir_emit(gfs_readdir_state_t *st, uio_t *uiop, offset_t voff,
     //boolean_t   extended = (st->grd_flags & VNODE_READDIR_EXTENDED);
     dirent64_t *dp = st->grd_dirent;
 
-    dp->d_ino = ino;
-    dp->d_fileno = ino;
+    dp->d_ino = INO_ZFSTOXNU(ino, ino);
+    dp->d_fileno = INO_ZFSTOXNU(ino, ino);
     (void) strncpy(dp->d_name, name, st->grd_namlen);
 
 	/*

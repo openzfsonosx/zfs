@@ -274,7 +274,7 @@ zfs_getattr_znode_unlocked(struct vnode *vp, vattr_t *vap)
     /*
 	 * On Mac OS X we always export the root directory id as 2
 	 */
-	vap->va_fileid = (zp->z_id == zfsvfs->z_root) ? 2 : zp->z_id;
+	vap->va_fileid = INO_ZFSTOXNU(zp->z_id, zfsvfs->z_root);
 
 	vap->va_data_size = zp->z_size;
 	vap->va_total_size = zp->z_size;

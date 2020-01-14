@@ -2789,7 +2789,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 			eodp = (dirent64_t  *)bufptr;
 			/* NOTE: d_seekoff is the offset for the *next* entry */
 			next = &(eodp->d_seekoff);
-			eodp->d_ino = objnum;
+			eodp->d_ino = INO_ZFSTOXNU(objnum, zfsvfs->z_root);
 			eodp->d_type = dtype;
 
 			/*
@@ -2818,7 +2818,7 @@ zfs_readdir(vnode_t *vp, uio_t *uio, cred_t *cr, int *eofp, int flags, int *a_nu
 
 			odp = (dirent_t  *)bufptr;
 			//odp = (dirent64_t  *)bufptr;
-			odp->d_ino = objnum;
+			odp->d_ino = INO_ZFSTOXNU(objnum, zfsvfs->z_root);
 			odp->d_type = dtype;
 
 			/*

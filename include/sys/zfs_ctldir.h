@@ -107,19 +107,9 @@ extern void zfs_ereport_snapshot_post(const char *subclass, spa_t *spa, const ch
  * with the objects which are assigned monotonically by the dmu.
  */
 
-#ifdef __LINUX__
-//#ifdef __APPLE__
 #define	ZFSCTL_INO_ROOT		0x0000FFFFFFFFFFFFULL
 #define	ZFSCTL_INO_SHARES	0x0000FFFFFFFFFFFEULL
 #define	ZFSCTL_INO_SNAPDIR	0x0000FFFFFFFFFFFDULL
 #define	ZFSCTL_INO_SNAPDIRS	0x0000FFFFFFFFFFFCULL
-
-#define	ZFSCTL_EXPIRE_SNAPSHOT	300
-#else
-
-#define	ZFSCTL_INO_ROOT		0x3
-#define	ZFSCTL_INO_SNAPDIR	0x4
-#define	ZFSCTL_INO_SHARES	0x5
-#endif
 
 #endif	/* _ZFS_CTLDIR_H */

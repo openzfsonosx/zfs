@@ -3122,15 +3122,6 @@ zfs_vget_internal(zfsvfs_t *zfsvfs, ino64_t ino, vnode_t **vpp)
 	int 		err;
 
     dprintf("vget get %llu\n", ino);
-	/*
-	 * zfs_zget() can't operate on virtual entries like .zfs/ or
-	 * .zfs/snapshot/ directories, that's why we return EOPNOTSUPP.
-	 * This will make NFS to switch to LOOKUP instead of using VGET.
-	 */
-	if (ino == ZFSCTL_INO_ROOT || ino == ZFSCTL_INO_SNAPDIR ||
-	    (zfsvfs->z_shares_dir != 0 && ino == zfsvfs->z_shares_dir))
-		return (EOPNOTSUPP);
-
 
 	/*
 	 * Check to see if we expect to find this in the hardlink avl tree of
@@ -3294,16 +3285,12 @@ zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_
 	 * from zfs_vfs_vget KPI (unless of course the real id was
 	 * already 2).
 	 */
-	if (ino == 2) ino = zfsvfs->z_root;
+	ino = INO_XNUTOZFS(ino, zfsvfs->z_root);
 
-	if ((ino == zfsvfs->z_root) && (zfsvfs->z_root != 2)) {
-		error = VFS_ROOT(mp, 0, vpp);
-		ZFS_EXIT(zfsvfs);
-		return (error);
-	}
-
-	// We also need to handle id 3 (.zfs) and id 4 (.zfs/snapshot).
+	// We also need to handle (.zfs) and (.zfs/snapshot).
 	if (ino == ZFSCTL_INO_ROOT) {
+		if (zfsvfs->z_ctldir == NULL)
+			return ENOENT;
 		*vpp = zfsvfs->z_ctldir;
 		error = VN_HOLD(*vpp);
 		ZFS_EXIT(zfsvfs);
@@ -3311,8 +3298,10 @@ zfs_vfs_vget(struct mount *mp, ino64_t ino, vnode_t **vpp, __unused vfs_context_
 	}
 
 	if (ino == ZFSCTL_INO_SNAPDIR) {
-        error = zfsctl_root_lookup(zfsvfs->z_ctldir, "snapshot", vpp,
-            NULL, 0, NULL, NULL, NULL, NULL, NULL);
+		if (zfsvfs->z_ctldir == NULL)
+			return ENOENT;
+		error = zfsctl_root_lookup(zfsvfs->z_ctldir, "snapshot", vpp,
+			NULL, 0, NULL, NULL, NULL, NULL, NULL);
 		ZFS_EXIT(zfsvfs);
 		return error;
 	}
