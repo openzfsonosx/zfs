@@ -1843,6 +1843,78 @@ zfs_vnop_rename(struct vnop_rename_args *ap)
 	if (error) dprintf("%s: error %d\n", __func__, error);
 	return (error);
 }
+
+#if defined (MAC_OS_X_VERSION_10_12) &&        \
+        (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_12)
+int
+zfs_vnop_renamex(struct vnop_renamex_args *ap)
+#if 0
+	struct vnop_renamex_args {
+		struct vnode	*a_fdvp;
+		struct vnode	*a_fvp;
+		struct componentname *a_fcnp;
+		struct vnode	*a_tdvp;
+		struct vnode	*a_tvp;
+		struct componentname *a_tcnp;
+		struct vnode_attr *a_vap;		// Reserved for future use
+        vfs_rename_flags_t a_flags;
+		vfs_context_t	a_context;
+	};
+#endif
+{
+	DECLARE_CRED_AND_CONTEXT(ap);
+	int error;
+
+	dprintf("vnop_renamex\n");
+
+	/*
+	 * extern int zfs_rename(struct vnode *sdvp, char *snm,
+	 *     struct vnode *tdvp, char *tnm, cred_t *cr, caller_context_t *ct,
+	 *     int flags);
+	 *
+	 * Currently, hfs only supports one flag, VFS_RENAME_EXCL, so
+	 * we will do the same. Since zfs_rename() only has logic for
+	 * FIGNORECASE, passing VFS_RENAME_EXCL should be ok, if a bit
+	 * hacky.
+	 */
+	error = zfs_rename(ap->a_fdvp, ap->a_fcnp->cn_nameptr, ap->a_tdvp,
+	    ap->a_tcnp->cn_nameptr, cr, ct, (ap->a_flags&VFS_RENAME_EXCL));
+
+	if (!error) {
+		cache_purge_negatives(ap->a_fdvp);
+		cache_purge_negatives(ap->a_tdvp);
+		cache_purge(ap->a_fvp);
+
+		zfs_rename_hardlink(ap->a_fvp, ap->a_tvp,
+							ap->a_fdvp, ap->a_tdvp,
+							ap->a_fcnp->cn_nameptr,
+							ap->a_tcnp->cn_nameptr);
+		if (ap->a_tvp) {
+			cache_purge(ap->a_tvp);
+		}
+
+#ifdef __APPLE__
+		/*
+		 * After a rename, the VGET path /.vol/$fsid/$ino fails for a short
+		 * period on hardlinks (until someone calls lookup).
+		 * So until we can figure out exactly why this is, we drive a lookup
+		 * here to ensure that vget will work (Finder/Spotlight).
+		 */
+		if (ap->a_fvp && VTOZ(ap->a_fvp) &&
+			VTOZ(ap->a_fvp)->z_finder_hardlink) {
+			struct vnode *vp;
+			if (VOP_LOOKUP(ap->a_tdvp, &vp, ap->a_tcnp, spl_vfs_context_kernel())
+				== 0) vnode_put(vp);
+		}
+#endif
+
+	}
+
+	if (error) dprintf("%s: error %d\n", __func__, error);
+	return (error);
+}
+#endif // vnop_renamex_args
+
 int
 zfs_vnop_symlink(struct vnop_symlink_args *ap)
 #if 0
@@ -4504,6 +4576,10 @@ struct vnodeopv_entry_desc zfs_dvnodeops_template[] = {
 	{&vnop_remove_desc,	(VOPFUNC)zfs_vnop_remove},
 	{&vnop_link_desc,	(VOPFUNC)zfs_vnop_link},
 	{&vnop_rename_desc,	(VOPFUNC)zfs_vnop_rename},
+#if defined (MAC_OS_X_VERSION_10_12) &&        \
+        (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_12)
+	{&vnop_renamex_desc,	(VOPFUNC)zfs_vnop_renamex},
+#endif
 	{&vnop_mkdir_desc,	(VOPFUNC)zfs_vnop_mkdir},
 	{&vnop_rmdir_desc,	(VOPFUNC)zfs_vnop_rmdir},
 	{&vnop_symlink_desc,	(VOPFUNC)zfs_vnop_symlink},

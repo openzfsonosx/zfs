@@ -4343,6 +4343,16 @@ top:
 			error = 0;
 			goto out;
 		}
+
+#if defined (MAC_OS_X_VERSION_10_12) &&        \
+        (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_12)
+		/* If renamex(VFS_RENAME_EXCL) is used, error out */
+		if (flags & VFS_RENAME_EXCL) {
+			error = EEXIST;
+			goto out;
+		}
+#endif
+
 	}
 
 	vnevent_rename_src(ZTOV(szp), sdvp, snm, ct);
